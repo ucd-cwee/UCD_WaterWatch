@@ -1,14 +1,12 @@
-[![Build Status](https://dev.azure.com/ucd-cwee/CPP_Prototype_EDMS/_apis/build/status/ucd-cwee.EDMS?branchName=master)](https://dev.azure.com/ucd-cwee/CPP_Prototype_EDMS/_build/latest?definitionId=1&branchName=master)
-
-<img src="EDMS_UWP_App/Assets/SmallTile.scale-400.png" align="left" width = "100"> 
+<img src="UWP_WaterWatch/Assets/SmallTile.scale-400.png" align="left" width = "100"> 
 
 # Energy Demand Management Software for <br/> Water Distribution Systems
 Developed by the University of California Davis, Center for Water-Energy Efficiency, Project CECFL79.     
 Funded by the California Energy Commission EPIC program, Award EPC-16-062.        
 > Principle Investigator: Dr. Frank Loge, PE.       
-> Engineering Manager and Design Lead: Robert Good.     
-> PhD Student Researcher: Erin Musabandesu, PE.    
-> PhD Student Researcher: Greg Miller.    
+> Engineering Manager and Design Lead: Robert Good, M.S.
+> PhD Researcher: Erin Musabandesu, P.E.    
+> PhD Researcher: Greg Miller.    
 > Research Engineer: David Linz.    
 > Research Engineer: Behzad Ahmadi.     
 > UWP Graphical User Interface Developer: Allen Huber.      
