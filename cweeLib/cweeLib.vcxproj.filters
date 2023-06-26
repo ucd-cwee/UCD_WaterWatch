@@ -1,0 +1,1497 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="0. System">
+      <UniqueIdentifier>{6896bf16-a752-477c-939b-c0ab8c60c844}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="2. Math">
+      <UniqueIdentifier>{bb9b00fe-f092-4b09-87ca-34c01e2159a9}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="3. Lib">
+      <UniqueIdentifier>{a62b9794-f856-4c0b-b3ee-3ceece34e664}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="1. Utilities">
+      <UniqueIdentifier>{27c4019f-7789-4fd9-98c9-49a5063e271d}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="3. Lib\0. Shared_Header">
+      <UniqueIdentifier>{c640f8f8-95d9-4f5f-847c-fc7c41a77951}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="1. Utilities\0. Containers">
+      <UniqueIdentifier>{f7c48f3a-b561-495b-ad51-2bc838e9581e}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="1. Utilities\1. Strings">
+      <UniqueIdentifier>{2f5c12d3-82dd-48dd-9110-b01d1f7797e0}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="1. Utilities\0. Containers\1. VecX%255cMatX">
+      <UniqueIdentifier>{7f83ec40-9f12-4a0d-8571-47bf8aad360f}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="1. Utilities\0. Containers\3. Curves%255cPatterns">
+      <UniqueIdentifier>{baba68cb-d768-4bc0-ad00-ea0f1c89e9b0}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="1. Utilities\0. Containers\0. Balanced_Tree">
+      <UniqueIdentifier>{3c839504-a51a-479c-8bd0-e12b44786596}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="1. Utilities\0. Containers\2. Lists">
+      <UniqueIdentifier>{8bda4ae4-9f9e-4f05-b7ab-0ac121427b87}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="1. Utilities\0. Containers\2. Lists\0. Thread-Unsafe_Lists">
+      <UniqueIdentifier>{21a0d242-1bf1-43d0-8f2d-351efe60423e}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="1. Utilities\0. Containers\2. Lists\1. Thread-Safe_Lists">
+      <UniqueIdentifier>{2273afcf-09b9-4a83-8791-81cdb50b1634}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="1. Utilities\0. Containers\2. Lists\1. Thread-Safe_Lists\0. tsl">
+      <UniqueIdentifier>{fb28cb4f-1275-4430-922d-80db12b3c9ab}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="1. Utilities\0. Containers\2. Lists\1. Thread-Safe_Lists\1. Mutex_alt">
+      <UniqueIdentifier>{8ed96d7c-a112-4eb1-9fe3-5202f7a94459}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="1. Utilities\1. Strings\0. Sentance_Parser">
+      <UniqueIdentifier>{f9107d39-2fc8-476d-9b99-74470801ed27}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="0. System\0. Desktop_Support">
+      <UniqueIdentifier>{47b57653-151d-4ef0-81d7-fe8a1b345d07}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="0. System\1. Memory_System">
+      <UniqueIdentifier>{16c16321-5d92-44fe-8fa0-b88a27a6718d}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="0. System\2. Multithreading_System">
+      <UniqueIdentifier>{910f49d4-11b6-4e4a-b056-998b09a3341f}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="0. System\3. File_System">
+      <UniqueIdentifier>{05439ee6-7789-4396-8011-c78187b419d6}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="0. System\3. File_System\1. SQLite">
+      <UniqueIdentifier>{18c8a21b-03b3-406c-bd85-d817b9eb168e}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="0. System\3. File_System\1. SQLite\0. Wrapper">
+      <UniqueIdentifier>{1c372ed6-d953-4866-b2e6-32137a54d798}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="0. System\3. File_System\0. Zip/Unzip">
+      <UniqueIdentifier>{2c987c0e-8815-4a3d-8d72-b38247a33195}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="0. System\3. File_System\2. In-Memory Files">
+      <UniqueIdentifier>{a4c4b48a-8dbb-4e8f-9ea9-53f112c29737}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="2. Math\0. Nanosecond_Clock">
+      <UniqueIdentifier>{7eec7a14-f1bb-430c-b0ea-fbb766cfcd0c}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="0. System\1. Memory_System\0. Serialization">
+      <UniqueIdentifier>{9944d6c9-433b-456f-9f97-5b12651893a6}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="0. System\1. Memory_System\1. SIMD">
+      <UniqueIdentifier>{12c32c8c-8b09-4099-8b9b-97edff0c16d4}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="0. System\2. Multithreading_System\0. Hardware">
+      <UniqueIdentifier>{6381b433-7fdf-4149-a7a3-ba555b9b1167}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="0. System\2. Multithreading_System\1. Software">
+      <UniqueIdentifier>{2b19546b-ae9a-4378-a7a6-2b5ca99a790a}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="0. System\2. Multithreading_System\0. Hardware\0. Windows">
+      <UniqueIdentifier>{b9bff95b-83d1-48c1-9587-6a6540d1e19a}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="0. System\2. Multithreading_System\1. Software\0. ConcurrentJobs">
+      <UniqueIdentifier>{58559142-2a09-4baa-9cfd-d96db667fc63}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="0. System\2. Multithreading_System\1. Software\1. ParallelThreads">
+      <UniqueIdentifier>{12e962b5-5917-48eb-8265-6e372feff826}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="2. Math\1. Machine_Learning">
+      <UniqueIdentifier>{55b6f89a-d6bc-476e-a6cf-3a886caf21b7}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="2. Math\2. Engineering">
+      <UniqueIdentifier>{892905c9-97f3-400e-8aa3-8e1c22de8f3c}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="0. System\3. File_System\3. GeoCoding">
+      <UniqueIdentifier>{05d3c857-da50-4ffd-9c97-a6c760af6c17}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="0. System\3. File_System\4. ODBC">
+      <UniqueIdentifier>{75eb8a10-d5a9-4417-bb45-6abf7206005b}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="1. Utilities\0. Containers\4. SpatialAsset">
+      <UniqueIdentifier>{3ddc5f75-e2d3-4a27-b0a8-cbd78f73e1fc}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="0. System\3. File_System\5. Sockets">
+      <UniqueIdentifier>{59f190aa-511b-476b-964b-00d99dddeae0}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="0. System\3. File_System\5. Sockets\external">
+      <UniqueIdentifier>{98a22be7-ef6b-4fc0-95b7-d99a65302ddc}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="0. System\3. File_System\5. Sockets\external\sha1">
+      <UniqueIdentifier>{2b010688-34da-4a7e-917c-11fa76e92f54}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="0. System\3. File_System\5. Sockets\external\wepoll">
+      <UniqueIdentifier>{e09e4e0d-9ef3-44df-a6ed-f4209cac1e84}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="1. Utilities\2. Scripting">
+      <UniqueIdentifier>{ed6d3c67-8842-4dbf-ac56-ea3d0d2e78c4}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="1. Utilities\2. Scripting\ChaiScript">
+      <UniqueIdentifier>{67ccc029-f59c-4dc1-a4ba-50b7e486ba1a}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="1. Utilities\2. Scripting\ChaiScript\dispatchkit">
+      <UniqueIdentifier>{01ae7011-df91-47c8-abfa-a6f672537c5e}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="1. Utilities\2. Scripting\ChaiScript\language">
+      <UniqueIdentifier>{89b78843-0df0-4699-b394-f9bcbe2ff05b}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="1. Utilities\2. Scripting\ChaiScript\utility">
+      <UniqueIdentifier>{3a7c7db9-3767-40f8-accb-2c908d97d527}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="1. Utilities\0. Containers\5. Generic">
+      <UniqueIdentifier>{c8b0a183-7868-4f6b-b95f-d686f64e5dda}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="1. Utilities\0. Containers\2. Lists\1. Thread-Safe_Lists\2. Iterator">
+      <UniqueIdentifier>{040140ee-5338-4ae7-85ca-a03196bc6f1f}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="0. System\3. File_System\6. Stack Tracing">
+      <UniqueIdentifier>{c6c58128-9795-4850-8de8-a3d5d728d0a4}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="0. System\3. File_System\0. Zip/Unzip\Partial ZipLib Cpp Files">
+      <UniqueIdentifier>{5edd0340-cd8a-4e89-9459-04c13e871f03}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="4. Natvis">
+      <UniqueIdentifier>{5ddb03c9-96bf-4fcc-b8f8-d0b9cfb3b285}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="1. Utilities\1. Strings\1. StringView">
+      <UniqueIdentifier>{65148925-dd6a-4a5c-b7a6-48c673ec51fd}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="1. Utilities\0. Containers\2. Lists\1. Thread-Safe_Lists\3. cweeThreadedMap">
+      <UniqueIdentifier>{d0d0ae63-7cfa-4aa9-becb-ebc9329aa805}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="cweeLib.h" />
+    <ClInclude Include="BTree.h">
+      <Filter>1. Utilities\0. Containers\0. Balanced_Tree</Filter>
+    </ClInclude>
+    <ClInclude Include="SIMD_Generic.h">
+      <Filter>0. System\1. Memory_System\1. SIMD</Filter>
+    </ClInclude>
+    <ClInclude Include="SIMD.h">
+      <Filter>0. System\1. Memory_System\1. SIMD</Filter>
+    </ClInclude>
+    <ClInclude Include="Heap.h">
+      <Filter>0. System\1. Memory_System</Filter>
+    </ClInclude>
+    <ClInclude Include="lib.h">
+      <Filter>3. Lib</Filter>
+    </ClInclude>
+    <ClInclude Include="strings.h">
+      <Filter>1. Utilities\1. Strings</Filter>
+    </ClInclude>
+    <ClInclude Include="cweeMachineLearn.h">
+      <Filter>2. Math\1. Machine_Learning</Filter>
+    </ClInclude>
+    <ClInclude Include="FileSystem.h">
+      <Filter>0. System\3. File_System</Filter>
+    </ClInclude>
+    <ClInclude Include="Curve.h">
+      <Filter>1. Utilities\0. Containers\3. Curves%255cPatterns</Filter>
+    </ClInclude>
+    <ClInclude Include="Pattern.h">
+      <Filter>1. Utilities\0. Containers\3. Curves%255cPatterns</Filter>
+    </ClInclude>
+    <ClInclude Include="ConcurrentJobs.h">
+      <Filter>0. System\2. Multithreading_System\1. Software\0. ConcurrentJobs</Filter>
+    </ClInclude>
+    <ClInclude Include="Clock.h">
+      <Filter>2. Math\0. Nanosecond_Clock</Filter>
+    </ClInclude>
+    <ClInclude Include="Engineering.h">
+      <Filter>2. Math\2. Engineering</Filter>
+    </ClInclude>
+    <ClInclude Include="sys_local.h">
+      <Filter>0. System\0. Desktop_Support</Filter>
+    </ClInclude>
+    <ClInclude Include="sys_assert.h">
+      <Filter>0. System\0. Desktop_Support</Filter>
+    </ClInclude>
+    <ClInclude Include="sys_public.h">
+      <Filter>0. System\0. Desktop_Support</Filter>
+    </ClInclude>
+    <ClInclude Include="sys_threading.h">
+      <Filter>0. System\0. Desktop_Support</Filter>
+    </ClInclude>
+    <ClInclude Include="MatX.h">
+      <Filter>1. Utilities\0. Containers\1. VecX%255cMatX</Filter>
+    </ClInclude>
+    <ClInclude Include="VecX.h">
+      <Filter>1. Utilities\0. Containers\1. VecX%255cMatX</Filter>
+    </ClInclude>
+    <ClInclude Include="Serialization.h">
+      <Filter>0. System\1. Memory_System\0. Serialization</Filter>
+    </ClInclude>
+    <ClInclude Include="ZipLib.h">
+      <Filter>0. System\3. File_System\0. Zip/Unzip</Filter>
+    </ClInclude>
+    <ClInclude Include="sqlite3.h">
+      <Filter>0. System\3. File_System\1. SQLite\0. Wrapper</Filter>
+    </ClInclude>
+    <ClInclude Include="SQLite.h">
+      <Filter>0. System\3. File_System\1. SQLite</Filter>
+    </ClInclude>
+    <ClInclude Include="safe_ptr.h">
+      <Filter>1. Utilities\0. Containers\2. Lists\1. Thread-Safe_Lists\1. Mutex_alt</Filter>
+    </ClInclude>
+    <ClInclude Include="robin_growth_policy.h">
+      <Filter>1. Utilities\0. Containers\2. Lists\1. Thread-Safe_Lists\0. tsl</Filter>
+    </ClInclude>
+    <ClInclude Include="robin_hash.h">
+      <Filter>1. Utilities\0. Containers\2. Lists\1. Thread-Safe_Lists\0. tsl</Filter>
+    </ClInclude>
+    <ClInclude Include="robin_map.h">
+      <Filter>1. Utilities\0. Containers\2. Lists\1. Thread-Safe_Lists\0. tsl</Filter>
+    </ClInclude>
+    <ClInclude Include="robin_set.h">
+      <Filter>1. Utilities\0. Containers\2. Lists\1. Thread-Safe_Lists\0. tsl</Filter>
+    </ClInclude>
+    <ClInclude Include="ParallelThreads.h">
+      <Filter>0. System\2. Multithreading_System\1. Software\1. ParallelThreads</Filter>
+    </ClInclude>
+    <ClInclude Include="Multithreading.h">
+      <Filter>0. System\2. Multithreading_System\0. Hardware</Filter>
+    </ClInclude>
+    <ClInclude Include="precompiled.h">
+      <Filter>3. Lib\0. Shared_Header</Filter>
+    </ClInclude>
+    <ClInclude Include="File.h">
+      <Filter>0. System\3. File_System\2. In-Memory Files</Filter>
+    </ClInclude>
+    <ClInclude Include="List.h">
+      <Filter>1. Utilities\0. Containers\2. Lists\0. Thread-Unsafe_Lists</Filter>
+    </ClInclude>
+    <ClInclude Include="Sort.h">
+      <Filter>1. Utilities\0. Containers\2. Lists\0. Thread-Unsafe_Lists</Filter>
+    </ClInclude>
+    <ClInclude Include="StaticList.h">
+      <Filter>1. Utilities\0. Containers\2. Lists\0. Thread-Unsafe_Lists</Filter>
+    </ClInclude>
+    <ClInclude Include="Vector.h">
+      <Filter>1. Utilities\0. Containers\2. Lists\0. Thread-Unsafe_Lists</Filter>
+    </ClInclude>
+    <ClInclude Include="ThreadedList.h">
+      <Filter>1. Utilities\0. Containers\2. Lists\1. Thread-Safe_Lists</Filter>
+    </ClInclude>
+    <ClInclude Include="UnorderedList.h">
+      <Filter>1. Utilities\0. Containers\2. Lists\1. Thread-Safe_Lists</Filter>
+    </ClInclude>
+    <ClInclude Include="bitFlags.h">
+      <Filter>1. Utilities\0. Containers\2. Lists\0. Thread-Unsafe_Lists</Filter>
+    </ClInclude>
+    <ClInclude Include="Parser.h">
+      <Filter>1. Utilities\1. Strings\0. Sentance_Parser</Filter>
+    </ClInclude>
+    <ClInclude Include="interlockedGeneric.h">
+      <Filter>1. Utilities\0. Containers\2. Lists\1. Thread-Safe_Lists</Filter>
+    </ClInclude>
+    <ClInclude Include="Machine_Learning.h">
+      <Filter>2. Math\1. Machine_Learning</Filter>
+    </ClInclude>
+    <ClInclude Include="cnominatim.h">
+      <Filter>0. System\3. File_System\3. GeoCoding</Filter>
+    </ClInclude>
+    <ClInclude Include="Geocoding.h">
+      <Filter>0. System\3. File_System\3. GeoCoding</Filter>
+    </ClInclude>
+    <ClInclude Include="nanodbc.h">
+      <Filter>0. System\3. File_System\4. ODBC</Filter>
+    </ClInclude>
+    <ClInclude Include="BasicUnits.h">
+      <Filter>2. Math\2. Engineering</Filter>
+    </ClInclude>
+    <ClInclude Include="cweeSpatialAsset.h">
+      <Filter>1. Utilities\0. Containers\4. SpatialAsset</Filter>
+    </ClInclude>
+    <ClInclude Include="objManager.h">
+      <Filter>0. System\2. Multithreading_System\1. Software</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\address.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\array.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\atomic_counter.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\atomic_ptr.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\blob.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\channel.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\client.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\clock.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\command.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\compat.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\condition_variable.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\config.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\ctx.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\curve_client.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\curve_client_tools.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\curve_mechanism_base.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\curve_server.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\dbuffer.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\dealer.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\decoder.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\decoder_allocators.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\devpoll.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\dgram.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\dish.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\dist.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\encoder.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\endpoint.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\epoll.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\err.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\fd.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\fq.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\gather.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\generic_mtrie.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\generic_mtrie_impl.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\gssapi_client.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\gssapi_mechanism_base.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\gssapi_server.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\i_decoder.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\i_encoder.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\i_engine.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\i_mailbox.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\i_poll_events.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\io_object.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\io_thread.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\ip.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\ip_resolver.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\ipc_address.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\ipc_connecter.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\ipc_listener.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\kqueue.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\lb.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\likely.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\macros.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\mailbox.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\mailbox_safe.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\mechanism.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\mechanism_base.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\metadata.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\msg.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\mtrie.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\mutex.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\norm_engine.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\null_mechanism.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\object.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\options.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\own.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\pair.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\peer.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\pgm_receiver.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\pgm_sender.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\pgm_socket.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\pipe.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\plain_client.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\plain_common.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\plain_server.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\poll.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\poller.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\poller_base.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\polling_util.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\pollset.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\_precompiled.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\proxy.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\pub.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\pull.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\push.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\radio.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\radix_tree.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\random.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\raw_decoder.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\raw_encoder.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\raw_engine.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\reaper.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\rep.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\req.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\router.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\scatter.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\secure_allocator.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\select.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\server.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\session_base.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\signaler.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\socket_base.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\socket_poller.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\socks.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\socks_connecter.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\stdint.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\stream.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\stream_connecter_base.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\stream_engine_base.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\stream_listener_base.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\sub.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\tcp.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\tcp_address.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\tcp_connecter.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\tcp_listener.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\thread.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\timers.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\tipc_address.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\tipc_connecter.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\tipc_listener.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\trie.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\tweetnacl.h">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\udp_address.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\udp_engine.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\v1_decoder.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\v1_encoder.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\v2_decoder.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\v2_encoder.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\v2_protocol.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\v3_1_encoder.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\vmci.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\vmci_address.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\vmci_connecter.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\vmci_listener.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\windows.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\wire.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\ws_address.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\ws_connecter.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\ws_decoder.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\ws_encoder.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\ws_engine.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\ws_listener.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\ws_protocol.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\wss_address.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\wss_engine.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\xpub.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\xsub.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\ypipe.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\ypipe_base.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\ypipe_conflate.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\yqueue.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\zap_client.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\zmq_draft.h">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\zmtp_engine.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\platform.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\zmq.h">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\zmq.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\zmq_addon.hpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\zmq_utils.h">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClInclude>
+    <ClInclude Include="external\wepoll\wepoll.h">
+      <Filter>0. System\3. File_System\5. Sockets\external\wepoll</Filter>
+    </ClInclude>
+    <ClInclude Include="external\sha1\sha1.h">
+      <Filter>0. System\3. File_System\5. Sockets\external\sha1</Filter>
+    </ClInclude>
+    <ClInclude Include="chaiscript.hpp">
+      <Filter>1. Utilities\2. Scripting\ChaiScript</Filter>
+    </ClInclude>
+    <ClInclude Include="chaiscript_defines.hpp">
+      <Filter>1. Utilities\2. Scripting\ChaiScript</Filter>
+    </ClInclude>
+    <ClInclude Include="chaiscript_stdlib.hpp">
+      <Filter>1. Utilities\2. Scripting\ChaiScript</Filter>
+    </ClInclude>
+    <ClInclude Include="chaiscript_threading.hpp">
+      <Filter>1. Utilities\2. Scripting\ChaiScript</Filter>
+    </ClInclude>
+    <ClInclude Include="dispatchkit\any.hpp">
+      <Filter>1. Utilities\2. Scripting\ChaiScript\dispatchkit</Filter>
+    </ClInclude>
+    <ClInclude Include="dispatchkit\bad_boxed_cast.hpp">
+      <Filter>1. Utilities\2. Scripting\ChaiScript\dispatchkit</Filter>
+    </ClInclude>
+    <ClInclude Include="dispatchkit\bind_first.hpp">
+      <Filter>1. Utilities\2. Scripting\ChaiScript\dispatchkit</Filter>
+    </ClInclude>
+    <ClInclude Include="dispatchkit\bootstrap.hpp">
+      <Filter>1. Utilities\2. Scripting\ChaiScript\dispatchkit</Filter>
+    </ClInclude>
+    <ClInclude Include="dispatchkit\bootstrap_stl.hpp">
+      <Filter>1. Utilities\2. Scripting\ChaiScript\dispatchkit</Filter>
+    </ClInclude>
+    <ClInclude Include="dispatchkit\boxed_cast.hpp">
+      <Filter>1. Utilities\2. Scripting\ChaiScript\dispatchkit</Filter>
+    </ClInclude>
+    <ClInclude Include="dispatchkit\boxed_cast_helper.hpp">
+      <Filter>1. Utilities\2. Scripting\ChaiScript\dispatchkit</Filter>
+    </ClInclude>
+    <ClInclude Include="dispatchkit\boxed_number.hpp">
+      <Filter>1. Utilities\2. Scripting\ChaiScript\dispatchkit</Filter>
+    </ClInclude>
+    <ClInclude Include="dispatchkit\boxed_value.hpp">
+      <Filter>1. Utilities\2. Scripting\ChaiScript\dispatchkit</Filter>
+    </ClInclude>
+    <ClInclude Include="dispatchkit\callable_traits.hpp">
+      <Filter>1. Utilities\2. Scripting\ChaiScript\dispatchkit</Filter>
+    </ClInclude>
+    <ClInclude Include="dispatchkit\dispatchkit.hpp">
+      <Filter>1. Utilities\2. Scripting\ChaiScript\dispatchkit</Filter>
+    </ClInclude>
+    <ClInclude Include="dispatchkit\dynamic_object.hpp">
+      <Filter>1. Utilities\2. Scripting\ChaiScript\dispatchkit</Filter>
+    </ClInclude>
+    <ClInclude Include="dispatchkit\dynamic_object_detail.hpp">
+      <Filter>1. Utilities\2. Scripting\ChaiScript\dispatchkit</Filter>
+    </ClInclude>
+    <ClInclude Include="dispatchkit\exception_specification.hpp">
+      <Filter>1. Utilities\2. Scripting\ChaiScript\dispatchkit</Filter>
+    </ClInclude>
+    <ClInclude Include="dispatchkit\function_call.hpp">
+      <Filter>1. Utilities\2. Scripting\ChaiScript\dispatchkit</Filter>
+    </ClInclude>
+    <ClInclude Include="dispatchkit\function_call_detail.hpp">
+      <Filter>1. Utilities\2. Scripting\ChaiScript\dispatchkit</Filter>
+    </ClInclude>
+    <ClInclude Include="dispatchkit\function_params.hpp">
+      <Filter>1. Utilities\2. Scripting\ChaiScript\dispatchkit</Filter>
+    </ClInclude>
+    <ClInclude Include="dispatchkit\function_signature.hpp">
+      <Filter>1. Utilities\2. Scripting\ChaiScript\dispatchkit</Filter>
+    </ClInclude>
+    <ClInclude Include="dispatchkit\handle_return.hpp">
+      <Filter>1. Utilities\2. Scripting\ChaiScript\dispatchkit</Filter>
+    </ClInclude>
+    <ClInclude Include="dispatchkit\operators.hpp">
+      <Filter>1. Utilities\2. Scripting\ChaiScript\dispatchkit</Filter>
+    </ClInclude>
+    <ClInclude Include="dispatchkit\proxy_constructors.hpp">
+      <Filter>1. Utilities\2. Scripting\ChaiScript\dispatchkit</Filter>
+    </ClInclude>
+    <ClInclude Include="dispatchkit\proxy_functions.hpp">
+      <Filter>1. Utilities\2. Scripting\ChaiScript\dispatchkit</Filter>
+    </ClInclude>
+    <ClInclude Include="dispatchkit\proxy_functions_detail.hpp">
+      <Filter>1. Utilities\2. Scripting\ChaiScript\dispatchkit</Filter>
+    </ClInclude>
+    <ClInclude Include="dispatchkit\register_function.hpp">
+      <Filter>1. Utilities\2. Scripting\ChaiScript\dispatchkit</Filter>
+    </ClInclude>
+    <ClInclude Include="dispatchkit\short_alloc.hpp">
+      <Filter>1. Utilities\2. Scripting\ChaiScript\dispatchkit</Filter>
+    </ClInclude>
+    <ClInclude Include="dispatchkit\type_conversions.hpp">
+      <Filter>1. Utilities\2. Scripting\ChaiScript\dispatchkit</Filter>
+    </ClInclude>
+    <ClInclude Include="dispatchkit\type_info.hpp">
+      <Filter>1. Utilities\2. Scripting\ChaiScript\dispatchkit</Filter>
+    </ClInclude>
+    <ClInclude Include="language\chaiscript_algebraic.hpp">
+      <Filter>1. Utilities\2. Scripting\ChaiScript\language</Filter>
+    </ClInclude>
+    <ClInclude Include="language\chaiscript_common.hpp">
+      <Filter>1. Utilities\2. Scripting\ChaiScript\language</Filter>
+    </ClInclude>
+    <ClInclude Include="language\chaiscript_engine.hpp">
+      <Filter>1. Utilities\2. Scripting\ChaiScript\language</Filter>
+    </ClInclude>
+    <ClInclude Include="language\chaiscript_eval.hpp">
+      <Filter>1. Utilities\2. Scripting\ChaiScript\language</Filter>
+    </ClInclude>
+    <ClInclude Include="language\chaiscript_optimizer.hpp">
+      <Filter>1. Utilities\2. Scripting\ChaiScript\language</Filter>
+    </ClInclude>
+    <ClInclude Include="language\chaiscript_parser.hpp">
+      <Filter>1. Utilities\2. Scripting\ChaiScript\language</Filter>
+    </ClInclude>
+    <ClInclude Include="language\chaiscript_posix.hpp">
+      <Filter>1. Utilities\2. Scripting\ChaiScript\language</Filter>
+    </ClInclude>
+    <ClInclude Include="language\chaiscript_prelude.hpp">
+      <Filter>1. Utilities\2. Scripting\ChaiScript\language</Filter>
+    </ClInclude>
+    <ClInclude Include="language\chaiscript_prelude_docs.hpp">
+      <Filter>1. Utilities\2. Scripting\ChaiScript\language</Filter>
+    </ClInclude>
+    <ClInclude Include="language\chaiscript_tracer.hpp">
+      <Filter>1. Utilities\2. Scripting\ChaiScript\language</Filter>
+    </ClInclude>
+    <ClInclude Include="language\chaiscript_unknown.hpp">
+      <Filter>1. Utilities\2. Scripting\ChaiScript\language</Filter>
+    </ClInclude>
+    <ClInclude Include="language\chaiscript_windows.hpp">
+      <Filter>1. Utilities\2. Scripting\ChaiScript\language</Filter>
+    </ClInclude>
+    <ClInclude Include="utility\fnv1a.hpp">
+      <Filter>1. Utilities\2. Scripting\ChaiScript\utility</Filter>
+    </ClInclude>
+    <ClInclude Include="utility\hash.hpp">
+      <Filter>1. Utilities\2. Scripting\ChaiScript\utility</Filter>
+    </ClInclude>
+    <ClInclude Include="utility\json.hpp">
+      <Filter>1. Utilities\2. Scripting\ChaiScript\utility</Filter>
+    </ClInclude>
+    <ClInclude Include="utility\json_wrap.hpp">
+      <Filter>1. Utilities\2. Scripting\ChaiScript\utility</Filter>
+    </ClInclude>
+    <ClInclude Include="utility\quick_flat_map.hpp">
+      <Filter>1. Utilities\2. Scripting\ChaiScript\utility</Filter>
+    </ClInclude>
+    <ClInclude Include="utility\stack_vector.hpp">
+      <Filter>1. Utilities\2. Scripting\ChaiScript\utility</Filter>
+    </ClInclude>
+    <ClInclude Include="utility\static_string.hpp">
+      <Filter>1. Utilities\2. Scripting\ChaiScript\utility</Filter>
+    </ClInclude>
+    <ClInclude Include="utility\utility.hpp">
+      <Filter>1. Utilities\2. Scripting\ChaiScript\utility</Filter>
+    </ClInclude>
+    <ClInclude Include="ChaiScriptManager.h">
+      <Filter>1. Utilities\2. Scripting</Filter>
+    </ClInclude>
+    <ClInclude Include="enum.h">
+      <Filter>2. Math\2. Engineering</Filter>
+    </ClInclude>
+    <ClInclude Include="cweeAny.h">
+      <Filter>1. Utilities\0. Containers\5. Generic</Filter>
+    </ClInclude>
+    <ClInclude Include="BalancedPattern.h">
+      <Filter>1. Utilities\0. Containers\3. Curves%255cPatterns</Filter>
+    </ClInclude>
+    <ClInclude Include="BalancedTree.h">
+      <Filter>1. Utilities\0. Containers\0. Balanced_Tree</Filter>
+    </ClInclude>
+    <ClInclude Include="Iterator.h">
+      <Filter>1. Utilities\0. Containers\2. Lists\1. Thread-Safe_Lists\2. Iterator</Filter>
+    </ClInclude>
+    <ClInclude Include="LinkedList.h">
+      <Filter>1. Utilities\0. Containers\2. Lists\1. Thread-Safe_Lists</Filter>
+    </ClInclude>
+    <ClInclude Include="StackWalker.h">
+      <Filter>0. System\3. File_System\6. Stack Tracing</Filter>
+    </ClInclude>
+    <ClInclude Include="ChaiScriptHelperClasses.h">
+      <Filter>1. Utilities\2. Scripting</Filter>
+    </ClInclude>
+    <ClInclude Include="InterpolatedMatrix.h">
+      <Filter>1. Utilities\0. Containers\2. Lists\1. Thread-Safe_Lists</Filter>
+    </ClInclude>
+    <ClInclude Include="StringView.h">
+      <Filter>1. Utilities\1. Strings\1. StringView</Filter>
+    </ClInclude>
+    <ClInclude Include="cweeThreadedMap.h">
+      <Filter>1. Utilities\0. Containers\2. Lists\1. Thread-Safe_Lists\3. cweeThreadedMap</Filter>
+    </ClInclude>
+    <ClInclude Include="math.h">
+      <Filter>2. Math</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="SIMD_Generic.cpp">
+      <Filter>0. System\1. Memory_System\1. SIMD</Filter>
+    </ClCompile>
+    <ClCompile Include="SIMD.cpp">
+      <Filter>0. System\1. Memory_System\1. SIMD</Filter>
+    </ClCompile>
+    <ClCompile Include="Heap.cpp">
+      <Filter>0. System\1. Memory_System</Filter>
+    </ClCompile>
+    <ClCompile Include="math.cpp">
+      <Filter>2. Math</Filter>
+    </ClCompile>
+    <ClCompile Include="strings.cpp">
+      <Filter>1. Utilities\1. Strings</Filter>
+    </ClCompile>
+    <ClCompile Include="cweeLib.cpp" />
+    <ClCompile Include="lib.cpp">
+      <Filter>3. Lib</Filter>
+    </ClCompile>
+    <ClCompile Include="windows_threading.cpp">
+      <Filter>0. System\2. Multithreading_System\0. Hardware\0. Windows</Filter>
+    </ClCompile>
+    <ClCompile Include="..\dlib-19.17\source\dlib\all\source.cpp">
+      <Filter>2. Math\1. Machine_Learning</Filter>
+    </ClCompile>
+    <ClCompile Include="FileSystem.cpp">
+      <Filter>0. System\3. File_System</Filter>
+    </ClCompile>
+    <ClCompile Include="ConcurrentJobs.cpp">
+      <Filter>0. System\2. Multithreading_System\1. Software\0. ConcurrentJobs</Filter>
+    </ClCompile>
+    <ClCompile Include="sys_assert.cpp">
+      <Filter>0. System\0. Desktop_Support</Filter>
+    </ClCompile>
+    <ClCompile Include="sys_local.cpp">
+      <Filter>0. System\0. Desktop_Support</Filter>
+    </ClCompile>
+    <ClCompile Include="MatX.cpp">
+      <Filter>1. Utilities\0. Containers\1. VecX%255cMatX</Filter>
+    </ClCompile>
+    <ClCompile Include="VecX.cpp">
+      <Filter>1. Utilities\0. Containers\1. VecX%255cMatX</Filter>
+    </ClCompile>
+    <ClCompile Include="ZipLib.cpp">
+      <Filter>0. System\3. File_System\0. Zip/Unzip</Filter>
+    </ClCompile>
+    <ClCompile Include="sqlite3.c">
+      <Filter>0. System\3. File_System\1. SQLite\0. Wrapper</Filter>
+    </ClCompile>
+    <ClCompile Include="SQLite.cpp">
+      <Filter>0. System\3. File_System\1. SQLite</Filter>
+    </ClCompile>
+    <ClCompile Include="ParallelThreads.cpp">
+      <Filter>0. System\2. Multithreading_System\1. Software\1. ParallelThreads</Filter>
+    </ClCompile>
+    <ClCompile Include="Multithreading.cpp">
+      <Filter>0. System\2. Multithreading_System\0. Hardware</Filter>
+    </ClCompile>
+    <ClCompile Include="precompiled.cpp">
+      <Filter>3. Lib\0. Shared_Header</Filter>
+    </ClCompile>
+    <ClCompile Include="File.cpp">
+      <Filter>0. System\3. File_System\2. In-Memory Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Geocoding.cpp">
+      <Filter>0. System\3. File_System\3. GeoCoding</Filter>
+    </ClCompile>
+    <ClCompile Include="nanodbc.cpp">
+      <Filter>0. System\3. File_System\4. ODBC</Filter>
+    </ClCompile>
+    <ClCompile Include="Pattern.cpp">
+      <Filter>1. Utilities\0. Containers\3. Curves%255cPatterns</Filter>
+    </ClCompile>
+    <ClCompile Include="cweeMachineLearn.cpp">
+      <Filter>2. Math\1. Machine_Learning</Filter>
+    </ClCompile>
+    <ClCompile Include="objManager.cpp">
+      <Filter>0. System\2. Multithreading_System\1. Software</Filter>
+    </ClCompile>
+    <ClCompile Include="Engineering.cpp">
+      <Filter>2. Math\2. Engineering</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\address.cpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\channel.cpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\client.cpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\clock.cpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\ctx.cpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\curve_client.cpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\curve_mechanism_base.cpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\curve_server.cpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\dealer.cpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\decoder_allocators.cpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\devpoll.cpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\dgram.cpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\dish.cpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\dist.cpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\endpoint.cpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\epoll.cpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\err.cpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\fq.cpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\gather.cpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\gssapi_client.cpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\gssapi_mechanism_base.cpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\gssapi_server.cpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\io_object.cpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\io_thread.cpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\ip.cpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\ip_resolver.cpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\ipc_address.cpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\ipc_connecter.cpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\ipc_listener.cpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\kqueue.cpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\lb.cpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\mailbox.cpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\mailbox_safe.cpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\mechanism.cpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\mechanism_base.cpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\metadata.cpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\msg.cpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\mtrie.cpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\norm_engine.cpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\null_mechanism.cpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\object.cpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\options.cpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\own.cpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\pair.cpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\peer.cpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\pgm_receiver.cpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\pgm_sender.cpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\pgm_socket.cpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\pipe.cpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\plain_client.cpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\plain_server.cpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\poll.cpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\poller_base.cpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\polling_util.cpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\pollset.cpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\_precompiled.cpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\proxy.cpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\pub.cpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\pull.cpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\push.cpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\radio.cpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\radix_tree.cpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\random.cpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\raw_decoder.cpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\raw_encoder.cpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\raw_engine.cpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\reaper.cpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\rep.cpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\req.cpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\router.cpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\scatter.cpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\select.cpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\server.cpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\session_base.cpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\signaler.cpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\socket_base.cpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\socket_poller.cpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\socks.cpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\socks_connecter.cpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\stream.cpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\stream_connecter_base.cpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\stream_engine_base.cpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\stream_listener_base.cpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\sub.cpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\tcp.cpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\tcp_address.cpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\tcp_connecter.cpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\tcp_listener.cpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\thread.cpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\timers.cpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\tipc_address.cpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\tipc_connecter.cpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\tipc_listener.cpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\trie.cpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\tweetnacl.c">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\udp_address.cpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\udp_engine.cpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\v1_decoder.cpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\v1_encoder.cpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\v2_decoder.cpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\v2_encoder.cpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\v3_1_encoder.cpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\vmci.cpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\vmci_address.cpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\vmci_connecter.cpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\vmci_listener.cpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\ws_address.cpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\ws_connecter.cpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\ws_decoder.cpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\ws_encoder.cpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\ws_engine.cpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\ws_listener.cpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\wss_address.cpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\wss_engine.cpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\xpub.cpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\xsub.cpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\zap_client.cpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\zmq.cpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\zmq_utils.cpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\zmtp_engine.cpp">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </ClCompile>
+    <ClCompile Include="external\wepoll\wepoll.c">
+      <Filter>0. System\3. File_System\5. Sockets\external\wepoll</Filter>
+    </ClCompile>
+    <ClCompile Include="external\sha1\sha1.c">
+      <Filter>0. System\3. File_System\5. Sockets\external\sha1</Filter>
+    </ClCompile>
+    <ClCompile Include="cweeAny.cpp">
+      <Filter>1. Utilities\0. Containers\5. Generic</Filter>
+    </ClCompile>
+    <ClCompile Include="BalancedPattern.cpp">
+      <Filter>1. Utilities\0. Containers\3. Curves%255cPatterns</Filter>
+    </ClCompile>
+    <ClCompile Include="BalancedTree.cpp">
+      <Filter>1. Utilities\0. Containers\0. Balanced_Tree</Filter>
+    </ClCompile>
+    <ClCompile Include="LinkedList.cpp">
+      <Filter>1. Utilities\0. Containers\2. Lists\1. Thread-Safe_Lists</Filter>
+    </ClCompile>
+    <ClCompile Include="StackWalker.cpp">
+      <Filter>0. System\3. File_System\6. Stack Tracing</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="zeroMQ\libzmq.pc.in">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </None>
+    <None Include="zeroMQ\libzmq.vers">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </None>
+    <None Include="zeroMQ\version.rc.in">
+      <Filter>0. System\3. File_System\5. Sockets</Filter>
+    </None>
+    <None Include="external\wepoll\README.md">
+      <Filter>0. System\3. File_System\5. Sockets\external\wepoll</Filter>
+    </None>
+    <None Include="packages.config" />
+    <None Include="ZipLibCppPartial1.pcpp">
+      <Filter>0. System\3. File_System\0. Zip/Unzip\Partial ZipLib Cpp Files</Filter>
+    </None>
+    <None Include="ZipLibCppPartial2.pcpp">
+      <Filter>0. System\3. File_System\0. Zip/Unzip\Partial ZipLib Cpp Files</Filter>
+    </None>
+    <None Include="ZipLibCppPartial3.pcpp">
+      <Filter>0. System\3. File_System\0. Zip/Unzip\Partial ZipLib Cpp Files</Filter>
+    </None>
+    <None Include="ZipLibCppPartial4.pcpp">
+      <Filter>0. System\3. File_System\0. Zip/Unzip\Partial ZipLib Cpp Files</Filter>
+    </None>
+  </ItemGroup>
+  <ItemGroup>
+    <Text Include="external\wepoll\license.txt">
+      <Filter>0. System\3. File_System\5. Sockets\external\wepoll</Filter>
+    </Text>
+    <Text Include="external\wepoll\version.txt">
+      <Filter>0. System\3. File_System\5. Sockets\external\wepoll</Filter>
+    </Text>
+    <Text Include="external\sha1\license.txt">
+      <Filter>0. System\3. File_System\5. Sockets\external\sha1</Filter>
+    </Text>
+    <Text Include="ChaiScriptLicense.txt">
+      <Filter>1. Utilities\2. Scripting\ChaiScript</Filter>
+    </Text>
+  </ItemGroup>
+  <ItemGroup>
+    <Natvis Include="cweeAny_Vis.natvis">
+      <Filter>4. Natvis</Filter>
+    </Natvis>
+  </ItemGroup>
+</Project>

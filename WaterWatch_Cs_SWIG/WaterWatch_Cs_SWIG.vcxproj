@@ -1,0 +1,166 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|Win32">
+      <Configuration>Debug</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|Win32">
+      <Configuration>Release</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <VCProjectVersion>16.0</VCProjectVersion>
+    <Keyword>Win32Proj</Keyword>
+    <ProjectGuid>{3f1dafbd-9e14-4e38-81e9-db4af4809721}</ProjectGuid>
+    <RootNamespace>WaterWatchCsSWIG</RootNamespace>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
+    <ConfigurationType>DynamicLibrary</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v142</PlatformToolset>
+    <WholeProgramOptimization>false</WholeProgramOptimization>
+    <CharacterSet>MultiByte</CharacterSet>
+    <PreferredToolArchitecture>
+    </PreferredToolArchitecture>
+  </PropertyGroup>
+  <PropertyGroup Label="Configuration" Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+    <PlatformToolset>v143</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Label="Configuration" Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <PlatformToolset>v143</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Label="Configuration" Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <PlatformToolset>v143</PlatformToolset>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="ExtensionSettings">
+  </ImportGroup>
+  <ImportGroup Label="Shared">
+    <Import Project="..\WaterWatchCpp\WaterWatchCpp.vcxitems" Label="Shared" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <PropertyGroup Label="UserMacros" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <LinkIncremental>false</LinkIncremental>
+    <CustomBuildBeforeTargets>
+    </CustomBuildBeforeTargets>
+  </PropertyGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>NDEBUG;WATERWATCHCSSWIG_EXPORTS;_WINDOWS;_USRDLL;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>true</ConformanceMode>
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <AdditionalIncludeDirectories>$(SolutionDir)epanet;$(SolutionDir)WaterWatchCpp\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalUsingDirectories>$(AdditionalUsingDirectories)</AdditionalUsingDirectories>
+      <AdditionalOptions>%(AdditionalOptions) /bigobj</AdditionalOptions>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+    </ClCompile>
+    <Link>
+      <SubSystem>Windows</SubSystem>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <OptimizeReferences>true</OptimizeReferences>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <EnableUAC>false</EnableUAC>
+      <AdditionalLibraryDirectories>$(SolutionDir)$(Platform)\$(Configuration);$(SolutionDir)epanet;$(SolutionDir)epanet\$(Platform)_$(Configuration)\epanet2;$(SolutionDir)$(Platform)\$(Configuration)\WaterWatch_Win32_DLL;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>libmysql.lib;libcurl_a.lib;kernel32.lib;user32.lib;gdi32.lib;winspool.lib;comdlg32.lib;advapi32.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;odbc32.lib;odbccp32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <OutputFile>$(OutDir)Conv.dll</OutputFile>
+    </Link>
+    <ProjectReference>
+      <UseLibraryDependencyInputs>true</UseLibraryDependencyInputs>
+      <LinkLibraryDependencies>true</LinkLibraryDependencies>
+    </ProjectReference>
+    <PostBuildEvent>
+      <Command>echo on
+copy "$(OutDir)Conv.dll" "$(ProjectDir)"
+%40echo off</Command>
+    </PostBuildEvent>
+    <PostBuildEvent>
+      <Message>Copying unmanaged dll to root directory...</Message>
+    </PostBuildEvent>
+    <PreBuildEvent>
+      <Command>
+      </Command>
+    </PreBuildEvent>
+    <PreLinkEvent>
+      <Command>
+      </Command>
+    </PreLinkEvent>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ClInclude Include="Header.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <CustomBuild Include="SWIG.i">
+      <Command Condition="'$(Configuration)|$(Platform)'=='Release|x64'">echo Invoking SWIG...
+		echo on
+		del /s/q "$(ProjectDir)\*.cs"
+		"$(SolutionDir)swigwin-4.1.1\swig.exe" -c++ -csharp -DSWIG_CSHARP_NO_WSTRING_HELPER "%(FullPath)"
+		%40echo off
+</Command>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|x64'">%(Filename)_wrap.cxx;%(Outputs)</Outputs>
+    </CustomBuild>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="Impl.cpp" />
+    <ClCompile Include="SWIG_wrap.cxx" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\cNominitum\cNominitum.vcxproj">
+      <Project>{a9a70f1b-a6d7-4094-8cb4-cd5a90af940e}</Project>
+    </ProjectReference>
+    <ProjectReference Include="..\CURL_STATIC_LIB\CURL_STATIC_LIB.vcxproj">
+      <Project>{b529d683-66c5-4c07-a660-0e886c17346a}</Project>
+    </ProjectReference>
+    <ProjectReference Include="..\DlibStaticLibrary\DlibStaticLibrary.vcxproj">
+      <Project>{c9ca8908-0fcd-4302-a962-a50215223380}</Project>
+    </ProjectReference>
+    <ProjectReference Include="..\EPAnetLib\EPAnetLib.vcxproj">
+      <Project>{e402eb0b-ba79-4b97-8bd4-b07bb860c9c2}</Project>
+    </ProjectReference>
+    <ProjectReference Include="..\ODBC\ODBC.vcxproj">
+      <Project>{1a272023-c990-41f9-bcff-7f480377a6a0}</Project>
+    </ProjectReference>
+    <ProjectReference Include="..\WindowsPlatformTools\WindowsPlatformTools.vcxproj">
+      <Project>{6d90b501-45bf-4777-8ee1-be7f74a8d6d1}</Project>
+    </ProjectReference>
+  </ItemGroup>
+  <ItemGroup>
+    <Natvis Update="C:\Users\14154\source\repos\WaterWatch2\WaterWatchCpp\..\cweeLib\cweeDebugVisualizer.natvis">
+      <FileType>Document</FileType>
+    </Natvis>
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ImportGroup Label="ExtensionTargets">
+    <Import Project="..\packages\boost.1.81.0\build\boost.targets" Condition="Exists('..\packages\boost.1.81.0\build\boost.targets')" />
+  </ImportGroup>
+  <Target Name="EnsureNuGetPackageBuildImports" BeforeTargets="PrepareForBuild">
+    <PropertyGroup>
+      <ErrorText>This project references NuGet package(s) that are missing on this computer. Use NuGet Package Restore to download them.  For more information, see http://go.microsoft.com/fwlink/?LinkID=322105. The missing file is {0}.</ErrorText>
+    </PropertyGroup>
+    <Error Condition="!Exists('..\packages\boost.1.81.0\build\boost.targets')" Text="$([System.String]::Format('$(ErrorText)', '..\packages\boost.1.81.0\build\boost.targets'))" />
+  </Target>
+  <Target Name="OnCleanOnly" AfterTargets="Clean">
+    <Message Text="Removing Compiled Files" Importance="High" />
+    <Exec Command="del /s/q &quot;$(ProjectDir)\*.cs&quot;" />
+  </Target>
+</Project>

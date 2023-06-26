@@ -1,0 +1,1067 @@
+{Title} {Content}
+<Grid HorizontalAlignment="Stretch" VerticalAlignment="Stretch" >
+    <ListView SelectionMode="None" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" VerticalContentAlignment="Stretch" HorizontalContentAlignment="Stretch">
+        <ListView.ItemContainerStyle> <Style TargetType="ListViewItem"> <Setter Property="Padding" Value="0"/> <Setter Property="Margin" Value="0,0,0,5"/> </Style> </ListView.ItemContainerStyle>
+
+	<!-- Header Example -->
+        <ListViewHeaderItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Center" HorizontalTextAlignment="Center"
+		Text="Header 1" 
+	/> </ListViewHeaderItem>
+
+        <!-- Paragraph Example -->
+        <ListViewItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Stretch"  
+		Text="ContentContentContentContentContentContentContentContentContentContentContentContentContentContentContentContentContentContentContentContentContentContentContentContentContentContentContentContentContentContentContentContentContentContentContentContentContentContentContentContentContent" 
+	/> </ListViewItem>
+
+        <!-- Image Example -->
+        <ListViewItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+            <Image HorizontalAlignment="Stretch" Source="/Assets/GENERAL-INFO-BUTTON.png" />
+        </ListViewItem>
+
+        <!-- Video Example -->
+        <ListViewItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <Border BorderBrush="Black" BorderThickness="1" HorizontalAlignment="Stretch" > <MediaPlayerElement AutoPlay="False" AreTransportControlsEnabled="True"
+	     Source="ms-appx:///Assets/TutorialVideos/WaterWatch Software 2020-12-13 17-49-3222.mp4"                    
+        /> </Border> </ListViewItem>      
+
+	<!-- Hyperlink Example -->
+        <ListViewItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> 
+		<HyperlinkButton Content="EPAnet Rule Formats" NavigateUri="https://epanet22.readthedocs.io/en/latest/input_keywords.html?highlight=rules#rules"/>
+	</ListViewItem>
+
+    </ListView>
+</Grid>
+
+{Title}Main Page{Content}
+<Grid HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
+    <ListView SelectionMode="None" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" VerticalContentAlignment="Stretch" HorizontalContentAlignment="Stretch">
+        <ListView.ItemContainerStyle> <Style TargetType="ListViewItem"> <Setter Property="Padding" Value="0"/> <Setter Property="Margin" Value="0,0,0,5"/> </Style> </ListView.ItemContainerStyle>
+
+	<!-- Header -->
+        <ListViewHeaderItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Center" HorizontalTextAlignment="Center"
+		Text="Using WaterWatch" 
+	/> </ListViewHeaderItem>
+
+        <!-- Paragraph -->
+        <ListViewItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Stretch"  
+		Text="WaterWatch is a stand-alone hydraulic model analysis toolkit. Built for water agencies to better leverage their hydraulic models, WaterWatch integrates machine learning, optimization, multi-threaded anlaysis, and more into a comprehensive solution that allows you to make long-term and safe recommendations for water system operation, expansion, and more." 
+	/> </ListViewItem>
+
+        <!-- Image -->
+        <ListViewItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+            <Image Width="400" HorizontalAlignment="Stretch" Source="/Assets\SplashScreen.scale-400.png" />
+        </ListViewItem>
+
+	<!-- Header -->
+        <ListViewHeaderItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Center" HorizontalTextAlignment="Center"
+		Text="WaterWatch Projects" 
+	/> </ListViewHeaderItem>
+
+        <!-- Paragraph -->
+        <ListViewItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Stretch"  
+		Text="WaterWatch projects are individual computer files that use the &quot;.water&quot; format. Each &quot;.water&quot; file contains the hydraulic model, Supervisory Control and Data Acquisition (SCADA) data, customer billing data, operational scenarios, and much more." 
+	/> </ListViewItem>
+
+	<!-- Paragraph -->
+        <ListViewItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Stretch"  
+		Text="Starting a new project requires importing a hydraulic model into WaterWatch using the EPAnet 2.x format. EPAnet is a common export format used by most hydraulic modeling software on the market. You can also import an already developed &quot;.water&quot; project into WaterWatch. Because WaterWatch frequently auto-saves, your projects are kept in a hidden location on your computer. You can load a project by simply clicking on the file name from the WaterWatch home page." 
+	/> </ListViewItem>
+
+        <!-- Video -->
+        <ListViewItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <Border BorderBrush="Black" BorderThickness="1" HorizontalAlignment="Stretch" > <MediaPlayerElement AutoPlay="False" AreTransportControlsEnabled="True"
+	     Source="ms-appx:///Assets/TutorialVideos/Loading Project.mp4"                    
+        /> </Border> </ListViewItem>      
+
+	<!-- Header -->
+        <ListViewHeaderItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Center" HorizontalTextAlignment="Center"
+		Text="WaterWatch's Main Page" 
+	/> </ListViewHeaderItem>
+
+	<!-- Paragraph -->
+        <ListViewItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Stretch"  
+		Text="Once a &quot;.water&quot; project is loaded or created, the Main Page of WaterWatch opens into a grid of features that can be be navigated to:" 
+	/> </ListViewItem>
+
+        <!-- Image -->
+        <ListViewItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+            <Image Width="400" HorizontalAlignment="Stretch" Source="/Assets/TutorialVideos/Main Page.png" />
+        </ListViewItem>
+
+	<!-- Paragraph -->
+        <ListViewItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Stretch"  
+		Text="To the left-hand side of the Main Page is a navigation panel with a list of common features. Above the Main Page is a list of tabs, which populate with features as you open them. They can also be closed at any time:" 
+	/> </ListViewItem>
+
+        <!-- Video -->
+        <ListViewItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <Border BorderBrush="Black" BorderThickness="1" HorizontalAlignment="Stretch" > <MediaPlayerElement AutoPlay="False" AreTransportControlsEnabled="True"
+	     Source="ms-appx:///Assets/TutorialVideos/OpenCloseTabs.mp4"                    
+        /> </Border> </ListViewItem>      
+
+    </ListView>
+</Grid>
+
+{Title}Import From EPAnet{Content}
+<Grid HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
+	
+    <ListView SelectionMode="None" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" VerticalContentAlignment="Stretch" HorizontalContentAlignment="Stretch">
+        <ListView.ItemContainerStyle> <Style TargetType="ListViewItem"> <Setter Property="Padding" Value="0"/> <Setter Property="Margin" Value="0,0,0,5"/> </Style> </ListView.ItemContainerStyle>
+
+	<!-- Header -->
+        <ListViewHeaderItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Center" HorizontalTextAlignment="Center"
+		Text="Creating a New Project" 
+	/> </ListViewHeaderItem>
+
+        <!-- Paragraph -->
+        <ListViewItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Stretch"  
+		Text="Each new WaterWatch project, or &quot;.water&quot; file, requires:" 
+	/> </ListViewItem>
+
+        <ListViewItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Stretch"  
+		Text="1. Project Name: This can be any name of your choice, which will be visible on the start screen of WaterWatch" 
+	/> </ListViewItem>
+
+        <ListViewItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Stretch"  
+		Text="2. Project Description: This can be any description of your choice, which will be visible on the start screen of WaterWatch" 
+	/> </ListViewItem>
+
+        <ListViewItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Stretch"  
+		Text="3. EPAnet INP File: This must be an EPAnet 2.x &quot;.INP&quot; file, as made available through most hydraulic modeling software. You are advised to confirm that the exportation process was successful by reviewing your EPAnet file seperately for any issues." 
+	/> </ListViewItem>
+
+        <ListViewItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Stretch"  
+		Text="4. Calibration Date: This date determines the earliest possible date that WaterWatch will make available to you. Dates earlier than the calibration date are considered outside the scope of WaterWatch. WaterWatch assumes that the model is calibrated starting at midnight on the same day." 
+	/> </ListViewItem>
+
+        <ListViewItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Stretch"  
+		Text="5. Nearest Major City: WaterWatch will use geocoding to estimate the center of the hydraulic model using this city. If geocoding fails, your model will be places at &quot;0,0&quot; longitude and latitude. The size and scale of your model is estimated from the nearby areas." 
+	/> </ListViewItem>
+
+        <!-- Image -->
+        <ListViewItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+            <Image Width="400" HorizontalAlignment="Stretch" Source="/Assets/TutorialVideos/New Project.png" />
+        </ListViewItem>      
+
+    </ListView>
+
+</Grid>
+
+{Title}Options{Content}
+<Grid HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
+	
+    <ListView SelectionMode="None" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" VerticalContentAlignment="Stretch" HorizontalContentAlignment="Stretch">
+        <ListView.ItemContainerStyle> <Style TargetType="ListViewItem"> <Setter Property="Padding" Value="0"/> <Setter Property="Margin" Value="0,0,0,5"/> </Style> </ListView.ItemContainerStyle>
+
+	<!-- Header -->
+        <ListViewHeaderItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Center" HorizontalTextAlignment="Center"
+		Text="Options Page" 
+	/> </ListViewHeaderItem>
+
+        <!-- Paragraph -->
+        <ListViewItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Stretch"  
+		Text="The Options page includes &quot;Application&quot;, &quot;Current Project&quot;, &quot;Performance&quot;, and &quot;Theme Colors&quot; panels to allow you to customize your experience with WaterWatch." 
+	/> </ListViewItem>
+
+	<!-- Header -->
+        <ListViewHeaderItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Center" HorizontalTextAlignment="Center"
+		Text="Application" 
+	/> </ListViewHeaderItem>
+
+        <ListViewItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Stretch"  
+		Text="Autosave Frequency specifies how often you would like WaterWatch to save your project. Saving can take several seconds to minutes, depending on how large the hydraulic model and SCADA data are, and it is advised that autosaving can save time later. Additionally, each autosave compresses the data and can save on your computer's resources." 
+	/> </ListViewItem>
+
+        <ListViewItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Stretch"  
+		Text="Multithreading Target specifies how many of your computer's CPU cores can be used for the WaterWatch data engine. Note that this does not impact how many CPU cores the graphical interface may utilize. It is advised to set this target to 4 or higher." 
+	/> </ListViewItem>
+
+        <ListViewItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Stretch"  
+		Text="Color theme allows you to switch between the &quot;Dark&quot; and &quot;Light&quot; color schemes. Changing the theme will require restarting this application."
+	/> </ListViewItem>
+
+        <ListViewItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Stretch"  
+		Text="Toast Messages are the notifications that WaterWatch submits to your computer's notification bar. You can suppress these messages if you are recieving too many." 
+	/> </ListViewItem>
+
+        <ListViewItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Stretch"  
+		Text="The Multithreading Job Strategy determines how the WaterWatch data engine manages its work. Dynamic allocation results in WaterWatch spending some of its time reviewing itself to make sure the work is balanced. Constant allows WaterWatch to always be working as hard as it can, but may run into a situation where some jobs are not balanced or are being ignored. It is recommended to use the Dynamic setting for a more responsive experience." 
+	/> </ListViewItem>
+
+        <ListViewItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Stretch"  
+		Text="Full Screen mode forces WaterWatch to use the entire screen. Not all computers support this feature. Some computers, such as tablets, may have a built-in full screen mode which can conflict with this feature." 
+	/> </ListViewItem>
+
+        <ListViewItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Stretch"  
+		Text="Showing the Current Framerate will overlay a real-time counter on the top-right of the screen, displaying this application's current framerate, resource usage, and the activities of the graphical user interface (GUI). If you notice major slowdowns to the framerate, take note of what GUI tasks are likely causing the slow-down." 
+	/> </ListViewItem>
+
+	<!-- Header -->
+        <ListViewHeaderItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Center" HorizontalTextAlignment="Center"
+		Text="Current Project" 
+	/> </ListViewHeaderItem>
+
+        <ListViewItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Stretch"  
+		Text="When a WaterWatch project is loaded, this feature will be available. The user can connect to their SCADA and Billing databases using this feature." 
+	/> </ListViewItem>
+
+        <ListViewItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Stretch"  
+		Text="SCADA and Billing databases can be remote Microsoft SQL Servers, MySQL Servers, or local SQLite databases. If the SQL driver is known, you can select it before connection, otherwise leave it blank to let WaterWatch attempt connection with all drivers. Press 'Submit Changes' when you have set the connection details." 
+	/> </ListViewItem>
+
+        <ListViewItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Stretch"  
+		Text="SCADA data, once connected, can be modified using the 'Assign' feature. This enables you to set the units and type of measurements collected in the SCADA database, as well as associate it to the reservoirs and pumps in the hydraulic model." 
+	/> </ListViewItem>
+
+	<!-- Header -->
+        <ListViewHeaderItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Center" HorizontalTextAlignment="Center"
+		Text="Performance"
+	/> </ListViewHeaderItem>
+
+        <ListViewItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Stretch"  
+		Text="The Performance page allows you to watch the WaterWatch data engine work through the data processing tasks. You can use your mouse to hover over a task's rectangle to identify the name, duration, and callee for each task. Tasks that appear to be in-progress are shaded with a non-solid color." 
+	/> </ListViewItem>
+
+	<!-- Header -->
+        <ListViewHeaderItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Center" HorizontalTextAlignment="Center"
+		Text="Theme Colors"
+	/> </ListViewHeaderItem>
+
+        <ListViewItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Stretch"  
+		Text="Select and modify the color of the various 'resources' used throughout the application. The nomenclature is based on the 'Light' theme mode. For example, 'cweeDarkBlue' is actually rendered as a bright white when in 'Dark' mode. When modifying each theme resource, you are only modifying the value for the active theme." 
+	/> </ListViewItem>
+
+        <ListViewItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Stretch"  
+		Text="Changes to any colors in this page are automatically applied throughout the applicaiton. Users are encouraged to keep pages open in their tabs to quickly compare and refine their color picks. Note that users can cause the application to be difficult to read with some color choices, and are advised to reset any colors that make the application difficult to use." 
+	/> </ListViewItem>
+
+    </ListView>
+
+</Grid>
+
+{Title}Save & Export{Content}
+<Grid HorizontalAlignment="Stretch" VerticalAlignment="Stretch" >
+	
+    <ListView SelectionMode="None" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" VerticalContentAlignment="Stretch" HorizontalContentAlignment="Stretch">
+        <ListView.ItemContainerStyle> <Style TargetType="ListViewItem"> <Setter Property="Padding" Value="0"/> <Setter Property="Margin" Value="0,0,0,5"/> </Style> </ListView.ItemContainerStyle>
+
+	<!-- Header -->
+        <ListViewHeaderItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Center" HorizontalTextAlignment="Center"
+		Text="Save and Export Options" 
+	/> </ListViewHeaderItem>
+
+        <!-- Paragraph -->
+        <ListViewItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Stretch"  
+		Text="Manage your active, loaded WaterWatch project, or &quot;.water&quot; file, from the Save and Export page." 
+	/> </ListViewItem>
+
+        <!-- Video -->
+        <ListViewItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <Border BorderBrush="Black" BorderThickness="1" HorizontalAlignment="Stretch" > <MediaPlayerElement AutoPlay="False" AreTransportControlsEnabled="True"
+	     Source="ms-appx:///Assets/TutorialVideos/Saving Project.mp4"                    
+        /> </Border> </ListViewItem>    
+
+        <ListViewItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Stretch"  
+		Text="WaterWatch supports automatic saving in the background on a period of your choosing in the Options page. However, you can also request that WaterWatch begin saving the project immediately. When saving, you will see a loading bar appear in the navigation panel on the left-hand side of the screen. When the saving completes, the loading bar will also disappear." 
+	/> </ListViewItem>
+
+        <ListViewItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Stretch"  
+		Text="Because WaterWatch can spend several minutes saving your project, WaterWatch protects your file by storing it in a secure, temporary location, the &quot;Data Directory&quot;. You can navigate to it if you believe there are any issues with your files, but we advise this only for advanced users." 
+	/> </ListViewItem>
+
+        <ListViewItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Stretch"  
+		Text="Because of this, WaterWatch does not work on any WaterWatch file outside of that Data Directory. If you want to recieve a copy of your current project, you must request to &quot;Export&quot; it. You can export the current project file immediately or request WaterWatch to save your project and export once saving completes." 
+	/> </ListViewItem>
+
+        <ListViewItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Stretch"  
+		Text="Additionally, you can request to export your currently active scenario to EPAnet 2.x format, for interchange or debugging outside of WaterWatch." 
+	/> </ListViewItem>
+
+    </ListView>
+
+</Grid>
+
+{Title}Dynamic Programming{Content}
+<Grid HorizontalAlignment="Stretch" VerticalAlignment="Stretch"  >
+	
+    <ListView SelectionMode="None" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" VerticalContentAlignment="Stretch" HorizontalContentAlignment="Stretch">
+        <ListView.ItemContainerStyle> <Style TargetType="ListViewItem"> <Setter Property="Padding" Value="0"/> <Setter Property="Margin" Value="0,0,0,5"/> </Style> </ListView.ItemContainerStyle>
+
+	<!-- Header -->
+        <ListViewHeaderItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Center" HorizontalTextAlignment="Center"
+		Text="Dynamic Programming" 
+	/> </ListViewHeaderItem>
+
+        <!-- Paragraph -->
+        <ListViewItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Stretch"  
+		Text="The dynamic programming component of WaterWatch enables users to write generalize programming code similar to the style and performance of C++ in real-time." 
+	/> </ListViewItem>
+
+        <ListViewItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Stretch"  
+		Text="This editor is a mix of generalized object oriented programming environment (with features and functions tied to objects and their types) and a node-based programming language that allows inidividual values or scripts to be connected to one another."
+	/> </ListViewItem>
+
+        <ListViewItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Stretch"  
+		Text="Each floating panel can take in a variable number of 'inputs', of any type, and can return a single 'output' of any type. Inputs are given names automatically ('a', 'b', 'c', and so forth) which can then be accessed within your code."
+	/> </ListViewItem>
+
+        <ListViewItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Stretch"  
+		Text="These outputs are not temporary -- they will remain 'within' the floating panels, and can be quickly viewed by selecting the viewing tool on the top-right of any panel."
+	/> </ListViewItem>
+
+        <ListViewItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Stretch"  
+		Text="Panels can be connected to one another by selecting the output dot and dragging it towards the input dot of another panel. Loops and self-connections are not allowed."
+	/> </ListViewItem>
+
+	<!-- Header -->
+        <ListViewHeaderItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Center" HorizontalTextAlignment="Center"
+		Text="Coding Features" 
+	/> </ListViewHeaderItem>
+
+        <ListViewItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> 
+		<Grid  Margin="0"  HorizontalAlignment="Stretch" VerticalAlignment="Stretch"> 
+			<Grid.ColumnDefinitions>
+				<ColumnDefinition Width="10" />
+				<ColumnDefinition Width="Auto" />
+				<ColumnDefinition Width="10" />
+				<ColumnDefinition Width="*" />	
+			</Grid.ColumnDefinitions> 
+			<Rectangle RadiusX="5" RadiusY="5" Width="10" Height="10" Fill="Red" HorizontalAlignment="Stretch" VerticalAlignment="Top" Grid.Column="1" Margin="0,6,0,0" />
+			<Border HorizontalAlignment="Stretch" Grid.Column="3" >
+				<TextBlock TextWrapping="Wrap" HorizontalAlignment="Stretch">
+					<Run Text="Variables:" FontWeight="Bold"/>
+					<Run Text="You can declare new variables utilizing the 'var', 'auto', and 'global' terms." /> <LineBreak/> 
+					<LineBreak/>
+					<Run Text="var x = 100;"  FontWeight="Thin" FontStyle="Italic"/> <LineBreak/>					
+					<Run Text="auto y = &quot;How now brown cow?&quot;;"  FontWeight="Thin" FontStyle="Italic"/> <LineBreak/>					
+					<Run Text="global z = string();"  FontWeight="Thin" FontStyle="Italic"/> <LineBreak/> 
+					<LineBreak/>
+					<Run Text="Variable types are not defined until you choose to do so." /> <LineBreak/> 
+					<LineBreak/>
+					<Run Text="var z; // undefined"  FontWeight="Thin" FontStyle="Italic"/> <LineBreak/>
+					<Run Text="z = 500.0f; // now 'z' is a floating point value"  FontWeight="Thin" FontStyle="Italic"/> 
+				</TextBlock>
+			</Border>
+		</Grid>
+	</ListViewItem>    
+
+        <ListViewItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> 
+		<Grid  Margin="0"  HorizontalAlignment="Stretch" VerticalAlignment="Stretch"> 
+			<Grid.ColumnDefinitions>
+				<ColumnDefinition Width="10" />
+				<ColumnDefinition Width="Auto" />
+				<ColumnDefinition Width="10" />
+				<ColumnDefinition Width="*" />	
+			</Grid.ColumnDefinitions> 
+			<Rectangle RadiusX="5" RadiusY="5" Width="10" Height="10" Fill="Red" HorizontalAlignment="Stretch" VerticalAlignment="Top" Grid.Column="1" Margin="0,6,0,0" />
+			<Border HorizontalAlignment="Stretch" Grid.Column="3" >
+				<TextBlock TextWrapping="Wrap" HorizontalAlignment="Stretch">
+					<Run Text="Scopes:" FontWeight="Bold"/>
+					<Run Text="Similar to C++, you can scope your code within curly brackets." /> <LineBreak/> 
+					<LineBreak/>
+					<Run Text="var x = 100;"  FontWeight="Thin" FontStyle="Italic"/> <LineBreak/>						
+					<Run Text=" {
+						x = x + 100;
+						}"  FontWeight="Thin" FontStyle="Italic"/>
+				</TextBlock>
+			</Border>
+		</Grid>
+	</ListViewItem> 
+
+	<ListViewItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> 
+		<Grid  Margin="0"  HorizontalAlignment="Stretch" VerticalAlignment="Stretch"> 
+			<Grid.ColumnDefinitions>
+				<ColumnDefinition Width="10" />
+				<ColumnDefinition Width="Auto" />
+				<ColumnDefinition Width="10" />
+				<ColumnDefinition Width="*" />	
+			</Grid.ColumnDefinitions> 
+			<Rectangle RadiusX="5" RadiusY="5" Width="10" Height="10" Fill="Red" HorizontalAlignment="Stretch" VerticalAlignment="Top" Grid.Column="1" Margin="0,6,0,0" />
+			<Border HorizontalAlignment="Stretch" Grid.Column="3" >
+				<TextBlock TextWrapping="Wrap" HorizontalAlignment="Stretch">
+					<Run Text="Returning Values:" FontWeight="Bold"/>
+					<Run Text="You can 'return' a variable or value automatically if it's the last thing you do." /> <LineBreak/> 
+					<LineBreak/>
+					<Run Text="var z = 200;"  FontWeight="Thin" FontStyle="Italic"/> <LineBreak/>		
+					<Run Text="var x = 100; // the return value of the script is 'x', which equals 100"  FontWeight="Thin" FontStyle="Italic"/> <LineBreak/>		
+					<LineBreak/>
+					<Run Text="Alternatively, you can explicitly return a variable of your choice within or above your current Scope." /> <LineBreak/> 
+					<LineBreak/>
+					<Run Text="var z = 100; var y = 20; return z; // the return value of the script is 'z'"  FontWeight="Thin" FontStyle="Italic"/>
+				</TextBlock>
+			</Border>
+		</Grid>
+	</ListViewItem>    
+
+        <ListViewItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> 
+		<Grid  Margin="0"  HorizontalAlignment="Stretch" VerticalAlignment="Stretch"> 
+			<Grid.ColumnDefinitions>
+				<ColumnDefinition Width="10" />
+				<ColumnDefinition Width="Auto" />
+				<ColumnDefinition Width="10" />
+				<ColumnDefinition Width="*" />	
+			</Grid.ColumnDefinitions> 
+			<Rectangle RadiusX="5" RadiusY="5" Width="10" Height="10" Fill="Red" HorizontalAlignment="Stretch" VerticalAlignment="Top" Grid.Column="1" Margin="0,6,0,0" />
+			<Border HorizontalAlignment="Stretch" Grid.Column="3" >
+				<TextBlock TextWrapping="Wrap" HorizontalAlignment="Stretch">
+					<Run Text="Vectors:" FontWeight="Bold"/>
+					<Run Text="You can declare and use vectors:" /> <LineBreak/> 
+					<LineBreak/>
+					<Run Text="var x = Vector();"  FontWeight="Thin" FontStyle="Italic"/> <LineBreak/>					
+					<Run Text="x.push_back_ref(&quot;How now brown cow?&quot;);"  FontWeight="Thin" FontStyle="Italic"/> <LineBreak/>					
+					<Run Text="return x[0]; // returns 100"  FontWeight="Thin" FontStyle="Italic"/>
+				</TextBlock>
+			</Border>
+		</Grid>
+	</ListViewItem>  
+
+        <ListViewItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> 
+		<Grid  Margin="0"  HorizontalAlignment="Stretch" VerticalAlignment="Stretch"> 
+			<Grid.ColumnDefinitions>
+				<ColumnDefinition Width="10" />
+				<ColumnDefinition Width="Auto" />
+				<ColumnDefinition Width="10" />
+				<ColumnDefinition Width="*" />	
+			</Grid.ColumnDefinitions> 
+			<Rectangle RadiusX="5" RadiusY="5" Width="10" Height="10" Fill="Red" HorizontalAlignment="Stretch" VerticalAlignment="Top" Grid.Column="1" Margin="0,6,0,0" />
+			<Border HorizontalAlignment="Stretch" Grid.Column="3" >
+				<TextBlock TextWrapping="Wrap" HorizontalAlignment="Stretch">
+					<Run Text="Maps:" FontWeight="Bold"/>
+					<Run Text="You can declare and use maps that bind a string with other content:" /> <LineBreak/> 
+					<LineBreak/>
+					<Run Text="var x = Map();"  FontWeight="Thin" FontStyle="Italic"/> <LineBreak/>					
+					<Run Text="x[&quot;How now brown cow?&quot;] = 100;"  FontWeight="Thin" FontStyle="Italic"/> <LineBreak/>					
+					<Run Text="return x[&quot;How now brown cow?&quot;]; // returns 100"  FontWeight="Thin" FontStyle="Italic"/>
+				</TextBlock>
+			</Border>
+		</Grid>
+	</ListViewItem>  
+
+        <ListViewItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> 
+		<Grid  Margin="0"  HorizontalAlignment="Stretch" VerticalAlignment="Stretch"> 
+			<Grid.ColumnDefinitions>
+				<ColumnDefinition Width="10" />
+				<ColumnDefinition Width="Auto" />
+				<ColumnDefinition Width="10" />
+				<ColumnDefinition Width="*" />	
+			</Grid.ColumnDefinitions> 
+			<Rectangle RadiusX="5" RadiusY="5" Width="10" Height="10" Fill="Red" HorizontalAlignment="Stretch" VerticalAlignment="Top" Grid.Column="1" Margin="0,6,0,0" />
+			<Border HorizontalAlignment="Stretch" Grid.Column="3" >
+				<TextBlock TextWrapping="Wrap" HorizontalAlignment="Stretch">
+					<Run Text="Loops:" FontWeight="Bold"/>
+					<Run Text="You can perform three types of loops. First is the automatic loop:" /> <LineBreak/> 
+					<LineBreak/>
+					<Run Text="var x = Vector();"  FontWeight="Thin" FontStyle="Italic"/> <LineBreak/>					
+					<Run Text="for (iterator : x){ "  FontWeight="Thin" FontStyle="Italic"/> <LineBreak/>					
+					<Run Text="     var content := iterator;" FontWeight="Thin" FontStyle="Italic"/> <LineBreak/>					
+					<Run Text="     // Note: "  FontWeight="Thin" FontStyle="Italic"/> <LineBreak/>					
+					<Run Text="     // with automatic loops, the iterator is temporary and"  FontWeight="Thin" FontStyle="Italic"/> <LineBreak/>					
+					<Run Text="     // will not exist after the loop ends."  FontWeight="Thin" FontStyle="Italic"/> <LineBreak/>					
+					<Run Text="     // It is suggested to 'grab' the content within the "  FontWeight="Thin" FontStyle="Italic"/> <LineBreak/>	
+					<Run Text="     // iterator before using its value."  FontWeight="Thin" FontStyle="Italic"/> <LineBreak/>
+					<Run Text=" } "  FontWeight="Thin" FontStyle="Italic"/> <LineBreak/>
+					<LineBreak/>						
+					<Run Text="The second type of loop is the C-style loop:" /> <LineBreak/> 
+					<LineBreak/>	
+					<Run Text="var x = Vector();"  FontWeight="Thin" FontStyle="Italic"/> <LineBreak/>					
+					<Run Text="for (var j = 0; j &lt; x.size(); ++x) { "  FontWeight="Thin" FontStyle="Italic"/> <LineBreak/>					
+					<Run Text="     var content := x[j];" FontWeight="Thin" FontStyle="Italic"/> <LineBreak/>					
+					<Run Text=" } "  FontWeight="Thin" FontStyle="Italic"/> <LineBreak/>
+					<LineBreak/>						
+					<Run Text="The final type of loop is the while loop:" /> <LineBreak/> 
+					<LineBreak/>	
+					<Run Text="while (true) { "  FontWeight="Thin" FontStyle="Italic"/> <LineBreak/>					
+					<Run Text="     var x = 100;"  FontWeight="Thin" FontStyle="Italic"/> <LineBreak/>					
+					<Run Text=" } "  FontWeight="Thin" FontStyle="Italic"/> <LineBreak/>
+				</TextBlock>
+			</Border>
+		</Grid>
+	</ListViewItem>  
+
+
+    </ListView>
+
+</Grid>
+
+{Title}SCADA+{Content}
+<Grid HorizontalAlignment="Stretch" VerticalAlignment="Stretch"  >
+	
+    <ListView SelectionMode="None" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" VerticalContentAlignment="Stretch" HorizontalContentAlignment="Stretch">
+        <ListView.ItemContainerStyle> <Style TargetType="ListViewItem"> <Setter Property="Padding" Value="0"/> <Setter Property="Margin" Value="0,0,0,5"/> </Style> </ListView.ItemContainerStyle>
+
+	<!-- Header -->
+        <ListViewHeaderItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Center" HorizontalTextAlignment="Center"
+		Text="SCADA+ Dashboard" 
+	/> </ListViewHeaderItem>
+
+        <!-- Paragraph -->
+        <ListViewItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Stretch"  
+		Text="The SCADA+ feature of WaterWatch acts as a plug-and-play dashboard for hydraulic models, allowing you to watch your water system's forecast in much the same way you would normally watch the recent past in a traditional SCADA system." 
+	/> </ListViewItem>
+
+        <!-- Video -->
+        <ListViewItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <Border BorderBrush="Black" BorderThickness="1" HorizontalAlignment="Stretch" > <MediaPlayerElement AutoPlay="False" AreTransportControlsEnabled="True"
+	     Source="ms-appx:///Assets/TutorialVideos/ScadaPlus.mp4"                    
+        /> </Border> </ListViewItem>    
+
+        <ListViewItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Stretch"  
+		Text="The SCADA+ Dashboard has two main views: the 5-Day Forecast, and the Network Diagram." 
+	/> </ListViewItem>
+
+	<!-- Header -->
+        <ListViewHeaderItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Center" HorizontalTextAlignment="Center"
+		Text="5-Day Forecast" 
+	/> </ListViewHeaderItem>
+
+        <ListViewItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Stretch"  
+		Text="As the main dashboard component, this page has three main components."
+	/> </ListViewItem>
+
+        <ListViewItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Stretch"  
+		Text="On the left side, the current system characteristics as of the current time are displayed. Each pressure zone of the water system are available for display. Right-clicking any zone or asset gives you the option of editing the list, including the addition or removal of assets or the renaming of assets. The list of zones can be reordered based on preference or current analysis goals. Users can click on the zones or assets therein to view a specific forecast for the characteristics of that asset." 
+	/> </ListViewItem>
+
+        <ListViewItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Stretch"  
+		Text="In the center, the upcoming 2-day forecast is shown for the entire water system, including net storage, net water demand, and net energy demand. The user can hover their mouse or pen over the center figures to automatically identify the values at that time." 
+	/> </ListViewItem>
+
+        <ListViewItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Stretch"  
+		Text="On the right side, the forecast is extended by an additional 3 days for a total of a 5-day forecast. The colors of the last 3 days correspond to the same colors used for storage, water demand, and energy demand. The magnitudes are relative for each day, giving the user a general trend without using specific values." 
+	/> </ListViewItem>
+
+	<!-- Header -->
+        <ListViewHeaderItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Center" HorizontalTextAlignment="Center"
+		Text="Network Diagram" 
+	/> </ListViewHeaderItem>
+
+        <ListViewItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Stretch"  
+		Text="Selecting the Network Diagram button on the top of the page, this feature displays the current list of zones and assets in a visual grid that can be zoomed and panned. Lines are drawn between zones based on the presense of the same assets within them." 
+	/> </ListViewItem>
+
+        <ListViewItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Stretch"  
+		Text="Clicking on specific assets will 'open' any zones that contain that asset. Clicking on zones will 'open' that zone in the list as well." 
+	/> </ListViewItem>
+
+    </ListView>
+
+</Grid>
+
+{Title}Service Territory{Content}
+<Grid HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
+	
+    <ListView SelectionMode="None" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" VerticalContentAlignment="Stretch" HorizontalContentAlignment="Stretch">
+        <ListView.ItemContainerStyle> <Style TargetType="ListViewItem"> <Setter Property="Padding" Value="0"/> <Setter Property="Margin" Value="0,0,0,5"/> </Style> </ListView.ItemContainerStyle>
+
+	<!-- Header -->
+        <ListViewHeaderItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Center" HorizontalTextAlignment="Center"
+		Text="Service Territory Map" 
+	/> </ListViewHeaderItem>
+
+        <!-- Paragraph -->
+        <ListViewItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Stretch"  
+		Text="The Service Territory feature of WaterWatch allows you to explore a real-time and 3-D map of your hydraulic model, utilizing correct geocoding with latitude-longitude conversion to real map coordinates, allowing your hydraulic model to overlay with Bing map backgrounds." 
+	/> </ListViewItem>
+
+        <!-- Video -->
+        <ListViewItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <Border BorderBrush="Black" BorderThickness="1" HorizontalAlignment="Stretch" > <MediaPlayerElement AutoPlay="False" AreTransportControlsEnabled="True"
+	     Source="ms-appx:///Assets/TutorialVideos/ServiceTerritory.mp4"                    
+        /> </Border> </ListViewItem>    
+
+	<!-- Header -->
+        <ListViewHeaderItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Center" HorizontalTextAlignment="Center"
+		Text="Exploring the Map" 
+	/> </ListViewHeaderItem>
+
+        <ListViewItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Stretch"  
+		Text="Using your pen, finger, or mouse you can tilt, pan, zoom, and scroll the main map in the center of the page. This map is entirely 3-D and allows you to zoom into any asset. Selecting an asset brings up its asset-specific explorer in a panel on the right-hand side of the screen. This panel can collect as many assets as you need." 
+	/> </ListViewItem>
+
+        <ListViewItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Stretch"  
+		Text="In the asset explorer panels, you can view a 2-day forecast for the characteristics of any asset. Most assets also include a 'Properties' page with unique modifiers for each asset which can be edited in real-time." 
+	/> </ListViewItem>
+
+        <!-- Image -->
+        <ListViewItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+            <Image Width="400" HorizontalAlignment="Stretch" Source="/Assets/TutorialVideos/ServiceTerritory1.png" />
+        </ListViewItem>  
+
+	<!-- Header -->
+        <ListViewHeaderItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Center" HorizontalTextAlignment="Center"
+		Text="Layer Options" 
+	/> </ListViewHeaderItem>
+
+        <ListViewItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Stretch"  
+		Text="Selecting this drop-down menu will present a list of options for how the hydraulic model is visualized in the map. Major asset types, such as junctions and pumps, can be individually hidden or made visible. Junctions, pipes, pump stations, and district metered areas (DMAs) can be colorized. Colorization can be done in either a 'solid' mode (where all assets of that type recieve the same color) or 'variable' mode (where all assets of that type recieve a unique color based on a selected quality)." 
+	/> </ListViewItem>
+
+        <ListViewItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Stretch"  
+		Text="Variable color modes will transition between one color and another color based on the normalized (0 to 1) range of the selected characteristic. The color channels are transitioned through in order of Red, Green, then Blue, creating a heat-map effect to extend the visual difference between higher and lower values once normalized." 
+	/> </ListViewItem>
+
+	<!-- Header -->
+        <ListViewHeaderItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Center" HorizontalTextAlignment="Center"
+		Text="Map Options" 
+	/> </ListViewHeaderItem>
+
+        <ListViewItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Stretch"  
+		Text="The map options allows you to customize the look and feel of your map." 
+	/> </ListViewItem>
+
+        <ListViewItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Stretch"  
+		Text="World Map Rendering determines the background of the map behind your hydraulic model. This can include which map style is streamed in from Bind maps, or the custom background that you can generate. WaterWatch supports the creation on-the-fly of a custom background based on your hydraulic model or its outputs. The space inbetween your junctions, pipes, and more are filled dynamically based on a space-filling Hilbert Curve that identifies the two nearest assets with those characteristics." 
+	/> </ListViewItem>
+
+        <ListViewItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Stretch"  
+		Text="Model Rendering determines some of the additional visuals for your hydraulic model layers. The thickness and size of pipes or junctions can be selected from one of 4 sizes. Polygons for DMAs and pump stations are generated on-the-fly based on the distribution of assets within them, and you can specify how sensitive the polygons are to the clustering. 'Small' clusters will result in more polygons per DMA, whereas 'Large' or 'All' will result in far fewer polygons (But the same number of zones). Colored animations will re-generate the colors for pipes, junctions, as often as possible as it scrolls through time to visualize the requested period." 
+	/> </ListViewItem>
+
+        <ListViewItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Stretch"  
+		Text="Map Fucntionality allows the user to activate or deactivate specific features of the map. Dynamic Zoom allows the map to switch to a lower-detail map style when zooming too close to 3-D map elements. Automatic Redraw allows WaterWatch to regenerate the map content whenever it believes a change occured. Without Automatic Redraw, the user will experience better performance but the map will not update response to any changes." 
+	/> </ListViewItem>
+
+        <!-- Image -->
+        <ListViewItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+            <Image Width="400" HorizontalAlignment="Stretch" Source="/Assets/TutorialVideos/ServiceTerritory2.png" />
+        </ListViewItem>  
+
+	<!-- Header -->
+        <ListViewHeaderItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Center" HorizontalTextAlignment="Center"
+		Text="Controls and Map Editing" 
+	/> </ListViewHeaderItem>
+
+        <ListViewItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Stretch"  
+		Text="The controls drop-down menu allows the user to re-center the map or to regenerate the map, in case the 3-D rendering has any issues and needs to be rebooted." 
+	/> </ListViewItem>
+
+        <ListViewItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Stretch"  
+		Text="Additionally, the user can activate 'edit' mode, allowing the user to set the northern, southern, western, and eastern corners of the map. This allows the user to right-click onto the map and place these corners wherever in the world they wish. Right-clicking and setting the corner will place it at the location of the right-click. It is highly recommended to utilize Automatic Redraw when editing the map. Additionally, polygons such as DMAs and pump stations do not automatically redraw when the coordinates are changes and require the user to regenerate the map with the appropriate control." 
+	/> </ListViewItem>
+
+    </ListView>
+
+</Grid>
+
+{Title}Manual Controls{Content}
+<Grid HorizontalAlignment="Stretch" VerticalAlignment="Stretch" >
+	
+    <ListView SelectionMode="None" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" VerticalContentAlignment="Stretch" HorizontalContentAlignment="Stretch">
+        <ListView.ItemContainerStyle> <Style TargetType="ListViewItem"> <Setter Property="Padding" Value="0"/> <Setter Property="Margin" Value="0,0,0,5"/> </Style> </ListView.ItemContainerStyle>
+
+	<!-- Header -->
+        <ListViewHeaderItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Center" HorizontalTextAlignment="Center"
+		Text="Control Overrides" 
+	/> </ListViewHeaderItem>
+
+        <!-- Paragraph -->
+        <ListViewItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Stretch"  
+		Text="Your hydraulic model is operated using controls, which could be programmable logic (PLCs), machine learning (ML), proportional-integrative-derivative (PID) controllers, and more. But these controls do not always perform the exact maneuvers your water system may require. They cannot predict maintenance, power shutoffs, or your desire to experiment." 
+	/> </ListViewItem>
+
+        <ListViewItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Stretch"  
+		Text="As a result, this Manual Controls page exists to allow you to override any control for any time period, and specify what you want that asset to do and when to do it." 
+	/> </ListViewItem>
+
+        <ListViewItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Stretch"  
+		Text="An override is made when you select any cell in this dynamic table. The cell will highlight Red, to visualize that it is being determined through an override. All other cells are determined by the normal logic. This means that any overrides can - and often does - result in a change to the logic outputs." 
+	/> </ListViewItem>
+
+	<!-- Header -->
+        <ListViewHeaderItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Center" HorizontalTextAlignment="Center"
+		Text="Types of Controls" 
+	/> </ListViewHeaderItem>
+
+        <ListViewItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Stretch"  
+		Text="There are two types of controls. The first are 'Status' controls, such as the On/Off status of pumps. The second are 'Setting' controls, such as the flow through a flow-control valve." 
+	/> </ListViewItem>
+
+        <ListViewItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Stretch"  
+		Text="Overriding a status control will switch it to the opposite setting as when it was clicked, and force the simulation to try and keep the asset at that new, switched state. Clicking a secon time will instead force the imulation to try and keep the asset at that state instead, but it will retain the red override visuals since the controls are still being overriden." 
+	/> </ListViewItem>
+
+        <ListViewItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Stretch"  
+		Text="Overriding a setting control is more complex because there is a range of possible values. Next to each 'setting' is a spinner that can increase or decrease the value of that setting by a dynamic amount, depending on the range of the setting seen by WaterWatch. The suer can alternatively click directly on the setting value to write-in their desired setting." 
+	/> </ListViewItem>
+
+	<!-- Header -->
+        <ListViewHeaderItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Center" HorizontalTextAlignment="Center"
+		Text="Removing an Override" 
+	/> </ListViewHeaderItem>
+
+        <ListViewItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Stretch"  
+		Text="Regardless of the control type, any overrides are utilized by the model without question. Even if the hydraulics results in drained tanks and negative pressures, the model will perform your overrides. If you choose to remove an override, use the 'Overrides' button to select one of many ways to remove and undo overrides, which will inform WaterWatch that the cell can be determined through logic once again." 
+	/> </ListViewItem>
+
+	<!-- Header -->
+        <ListViewHeaderItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Center" HorizontalTextAlignment="Center"
+		Text="Simulation Updates" 
+	/> </ListViewHeaderItem>
+
+        <ListViewItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Stretch"  
+		Text="WaterWatch does not require you to press 'play' to update a simulation. This means that when you add an override, the simulation begins automatically and you may see that after you click a cell, future cells automatically 'change' their recommendations. This is normal and expected. For example, if you fill a storage tank 5 hours earlier than normal, you would of course expect that the PLCs for any pumps serving that tank to activate or deactivate at different hours than they would have previously. The same is true in WaterWatch." 
+	/> </ListViewItem>
+
+    </ListView>
+
+</Grid>
+
+{Title}Scenario Builder{Content}
+<Grid HorizontalAlignment="Stretch" VerticalAlignment="Stretch" >
+	
+    <ListView SelectionMode="None" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" VerticalContentAlignment="Stretch" HorizontalContentAlignment="Stretch">
+        <ListView.ItemContainerStyle> <Style TargetType="ListViewItem"> <Setter Property="Padding" Value="0"/> <Setter Property="Margin" Value="0,0,0,5"/> </Style> </ListView.ItemContainerStyle>
+
+	<!-- Header -->
+        <ListViewHeaderItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Center" HorizontalTextAlignment="Center"
+		Text="Scenarios" 
+	/> </ListViewHeaderItem>
+
+        <!-- Paragraph -->
+        <ListViewItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Stretch"  
+		Text="In WaterWatch, scenarios represent how the water system operates. From pump logic to which overrides are present, the scenarios allow you to compare alternative operations to each other to help decide the best possible future." 
+	/> </ListViewItem>
+
+	<!-- Header -->
+        <ListViewHeaderItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Center" HorizontalTextAlignment="Center"
+		Text="Tags" 
+	/> </ListViewHeaderItem>
+
+        <!-- Paragraph -->
+        <ListViewItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Stretch"  
+		Text="There are four types of 'tags' that can be used on scenarios. Baseline indicates that this scenario should be used for comparisons, such as with the Scenario Explorer page."
+	/> </ListViewItem>
+
+        <!-- Paragraph -->
+        <ListViewItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Stretch"  
+		Text="Favorite indicates that the scenario should be included in addition in most side-by-side comparisons. In addition, being tagged as 'Favorite' indicates to WaterWatch to maintain background simulations and ensure the scenario is up-to-date and ready for rapid comparisons." 
+	/> </ListViewItem>
+
+        <!-- Paragraph -->
+        <ListViewItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Stretch"  
+		Text="Active indicates that the scenario should be the focus throughout the applicaiton, from the SCADA+ page to the Service Territory page." 
+	/> </ListViewItem>
+
+        <!-- Paragraph -->
+        <ListViewItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Stretch"  
+		Text="Lastly, the Reality tag indicates which scenario is meant to most closely reflect how your water system intends to operate into the future." 
+	/> </ListViewItem>
+
+	<!-- Header -->
+        <ListViewHeaderItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Center" HorizontalTextAlignment="Center"
+		Text="Cold Storage" 
+	/> </ListViewHeaderItem>
+
+        <ListViewItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Stretch"  
+		Text="WaterWatch runs entirely inside of your computer's memory, or RAM. This is necessary to achieve the speed and responsiveness that WaterWatch seeks, but requires working within a limited resource. Depending on your computer and the size of your hydraulic model, you will have a limited number of operating scenarios that WaterWatch supports. If you want to retain more scenarios than this, you must place them into Cold Storage." 
+	/> </ListViewItem>
+
+        <ListViewItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Stretch"  
+		Text="Cold Storage allows WaterWatch to move a scenario from the RAM to inside of the WaterWatch project file. Doing so means that the scenario will no longer be available, but will open your computer memory back up for additional scenario development." 
+	/> </ListViewItem>
+
+	<!-- Header -->
+        <ListViewHeaderItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Center" HorizontalTextAlignment="Center"
+		Text="Operating Scenarios Page" 
+	/> </ListViewHeaderItem>
+
+        <ListViewItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Stretch"  
+		Text="The Scenario Builder's list of Operating Scenarios allows you to tag, edit, copy, delete, or 'cold storage' a scenario. Copying, Cold Storage, and Deletion are not available when the project is saving." 
+	/> </ListViewItem>
+
+	<!-- Header -->
+        <ListViewHeaderItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Center" HorizontalTextAlignment="Center"
+		Text="Editing Scenario Details" 
+	/> </ListViewHeaderItem>
+
+        <ListViewItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Stretch"  
+		Text="When you select to edit a scenario, you will be given the option to edit the visual details of the scenario." 
+	/> </ListViewItem>
+
+        <ListViewItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Stretch"  
+		Text="When you select to edit a scenario, you will be given the option to edit the visual details of the scenario. The 'Scenario Name' must be unique between all scenarios. The 'Subtitle' can be anything to help you identify the scenario's intent. The Icon and Color helps distinguish the scenario when plotting time-series data or listing scenarios. It is recommended to keep the colors distinct and the scenario names short, to assist with comparisons." 
+	/> </ListViewItem>
+
+
+	<!-- Header -->
+        <ListViewHeaderItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Center" HorizontalTextAlignment="Center"
+		Text="Asset Controls" 
+	/> </ListViewHeaderItem>
+
+        <ListViewItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Stretch"  
+		Text="Assets in WaterWatch can have many characteristics. Some, including Status and Setting, are 'controllable', meaning that their values can be determined by some logic in the middle of the simulations. This enables you to open pumps, move valve positions, and more. In WaterWatch, there are several methods for how a Status or Setting or an aset can be determined, including: 1) Programmable Logic Controller Rules (PLC Rules), 2) a Trained Machine Learning (ML) Model, 3) Optimized Rules, and 4) a Proportional-Integrative-Derivative (PID) Controller." 
+	/> </ListViewItem>
+
+	<!-- Header -->
+        <ListViewHeaderItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Center" HorizontalTextAlignment="Center"
+		Text="PLC Rules" 
+	/> </ListViewHeaderItem>
+
+        <ListViewItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Stretch"  
+		Text="PLCs are interpretted by WaterWatch using the same format specifications as those found in EPAnet: " 
+	/> </ListViewItem>
+
+        <ListViewItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> 
+		<HyperlinkButton Content="EPAnet Rule Formats" NavigateUri="https://epanet22.readthedocs.io/en/latest/input_keywords.html?highlight=rules#rules"/>
+	</ListViewItem>
+
+        <ListViewItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Stretch"  
+		Text="The main difference to EPAnet is that in WaterWatch, each PLC must be 'assigned' to the owning asset characteristic. This means that writing a rule for controlling 'Pump 1' inside of 'Pump 3' will not have the desired effect." 
+	/> </ListViewItem>
+
+        <ListViewItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Stretch"  
+		Text="The benefit of this limitation is that WaterWatch will automatically correct most spelling mistakes, including by identifying issues with asset names, characteristic types, and more." 
+	/> </ListViewItem>
+
+        <ListViewItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Stretch"  
+		Text="You can also copy controls from another rule, and WaterWatch will automatically replace the names with that of the new asset." 
+	/> </ListViewItem>
+
+	<!-- Header -->
+        <ListViewHeaderItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Center" HorizontalTextAlignment="Center"
+		Text="PID Controller" 
+	/> </ListViewHeaderItem>
+
+        <ListViewItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Stretch"  
+		Text="Only available for 'Setting' characteristics, this controller enables you to set and achieve a target elsewhere in the water system, such as a reservoir level, junction head, or pipe flow. WaterWatch will attempt to achieve the target by increasing and decreasing the 'Setting' of the pump or valve as appropriate." 
+	/> </ListViewItem>
+
+        <ListViewItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Stretch"  
+		Text="The minimum and maximum settings are the bounds for the PID algorithm. Note that the algorithm can request, as an example, a setting of '0.4' for a pump, but the hydraulics may not allow the pump to open, and the pump will as a result remain closed with a setting of '0' on the end of the simulation." 
+	/> </ListViewItem>
+
+        <ListViewItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Stretch"  
+		Text="The padding value for the PID algorithm is used to help fit the response of the algorithm to changes in the environment. A large 'padding' will increase the responsiveness, while a small 'padding' will reduce its responsiveness. A positive 'padding' value indicates that if the simulation results are below the target, the setting should increase, whereas a negative 'padding' will in that case decrease the setting." 
+	/> </ListViewItem>
+
+        <ListViewItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Stretch"  
+		Text="When you have built the PID algorithm, select to 'submit' the settings to WaterWatch and the PID algorithm will immediately begin work." 
+	/> </ListViewItem>
+
+	<!-- Header -->
+        <ListViewHeaderItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Center" HorizontalTextAlignment="Center"
+		Text="Trained Machine Learning Model" 
+	/> </ListViewHeaderItem>
+
+        <ListViewItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Stretch"  
+		Text="WaterWatch utilizes the Support Vector Machine Regression technique to predict time-series data using other time-series information as hints. At its most basic, you can try and associate time-varying data such as the time and day of the year to potentially predict values like water demand or weather. At the most extreme, you can predict valve settings based on the water demand in a pressure zone." 
+	/> </ListViewItem>
+
+        <ListViewItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Stretch"  
+		Text="When training a machine-learning tool, it is important to remember that it is ultimately building predictions based on what relationships you show it. If you choose to provide random, unassociated events then the model is unlikely to build a strong predictor. On the other hand, if you know a strong relationship already exists (such as a valve opening when a pump closes) then using those as inputs will give the model the highest likelihood of success." 
+	/> </ListViewItem>
+
+        <ListViewItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Stretch"  
+		Text="These ML models cannot necessarily be read or understood like PLC rules - instead, they are useful in place where rules do not apply, such as decisions made in response to weather or where human operators make decisions on a daily or weekly basis." 
+	/> </ListViewItem>
+
+	<!-- Header -->
+        <ListViewHeaderItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Center" HorizontalTextAlignment="Center"
+		Text="Optimized Rules" 
+	/> </ListViewHeaderItem>
+
+        <ListViewItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Stretch"  
+		Text="WaterWatch supports an advanced multi-threaded optimization scheme, published here:" 
+	/> </ListViewItem>
+
+        <ListViewItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> 
+		<HyperlinkButton Content="UC Davis Optimization Research" NavigateUri="https://ieeexplore.ieee.org/stamp/stamp.jsp?arnumber=9383920"/>
+	</ListViewItem>
+
+        <ListViewItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Stretch"  
+		Text="Optimization in WaterWatch means that a new set of PLC rules will be generated based on your preferences which minimize some objective, while attempting to avoid violating any constraints." 
+	/> </ListViewItem>
+
+        <ListViewItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Stretch"  
+		Text="Objective functions must always be minimized. Each component of an objective function is summed together. If needed, the weights per component can be set to negative, higher, or lower values to design custom objectives." 
+	/> </ListViewItem>
+
+        <ListViewItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Stretch"  
+		Text="For example, negative weights could be used to create a maximization instead of a minimization. Or, weights could help balance the optimization between water storage levels or energy costs." 
+	/> </ListViewItem>
+
+        <ListViewItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Stretch"  
+		Text="Constraints are thresholds that the optimization will seek to avoid crossing, such as maximum power demand or minimum storage levels." 
+	/> </ListViewItem>
+
+        <ListViewItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Stretch"  
+		Text="You can set the start and end date that the optimization is analyzing. It is recommended to select a week-long analysis." 
+	/> </ListViewItem>
+
+        <ListViewItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Stretch"  
+		Text="The optimization methods determine how the tool explores the available solution space. Particle Swarm and Random Search tend to perform well for some water systems." 
+	/> </ListViewItem>
+
+        <ListViewItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Stretch"  
+		Text="The Search Space indicates how WaterWatch should handle optimizations with more than one asset. No search space inidates that a new, potential PLC rule will be selected for all assets at the same time. 'Each Asset' and 'Each Zone' will instead only generate new PLC rules in batches based on the selection, leaving all other assets to use the best PLC generated upt to that point during that batch." 
+	/> </ListViewItem>
+
+        <ListViewItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Stretch"  
+		Text="The number of iterations and the number of policies determines how long the optimization will take. More iterations allows for subtle improvements on the best PLC rules found, whereas more policies encourages better exploration of the solution space to find new PLC rules not previously attempted." 
+	/> </ListViewItem>
+
+    </ListView>
+
+</Grid>
+
+{Title}Scenario Explorer{Content}
+<Grid HorizontalAlignment="Stretch" VerticalAlignment="Stretch"  >
+	
+    <ListView SelectionMode="None" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" VerticalContentAlignment="Stretch" HorizontalContentAlignment="Stretch">
+        <ListView.ItemContainerStyle> <Style TargetType="ListViewItem"> <Setter Property="Padding" Value="0"/> <Setter Property="Margin" Value="0,0,0,5"/> </Style> </ListView.ItemContainerStyle>
+
+	<!-- Header -->
+        <ListViewHeaderItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Center" HorizontalTextAlignment="Center"
+		Text="Scenario Explorer Tools" 
+	/> </ListViewHeaderItem>
+
+        <!-- Paragraph -->
+        <ListViewItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Stretch"  
+		Text="The Scenario Explorer allows you to quickly compare operating scenarios either through their key performance indicators (KPI) or per-asset, using the scenario colors to distinguish between them. At the top of the page, the KPI are organized in a table for each 'Favorited' Scenario. At the bottom of the page, a tree-network of assets and their characteristics are organized by their containing District Metered Areas (DMAs)." 
+	/> </ListViewItem> 
+
+	<!-- Header -->
+        <ListViewHeaderItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Center" HorizontalTextAlignment="Center"
+		Text="KPI Table" 
+	/> </ListViewHeaderItem>
+
+        <ListViewItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Stretch"  
+		Text="The KPI table can be sorted by any column. The most common, 'Performance', evaluates the other KPIs in comparison to the Baseline and the customizable weight per-column. As an example, using the weights you can specify that you prefer scenarios that increase (positive weight) water storage while decreasing (negative weight) total operating costs. The higher performing scenario will take each column into account proportionally. This is a useful tool for apples-to-oranges comparisons like these." 
+	/> </ListViewItem>
+
+	<!-- Header -->
+        <ListViewHeaderItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Center" HorizontalTextAlignment="Center"
+		Text="Tree Network" 
+	/> </ListViewHeaderItem>
+
+        <ListViewItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Stretch"  
+		Text="The tree network of assets and their characteristics, at the bottom of the page, are ordered by: DMA .. Asset Type .. Characteristic Type .. Asset Names" 
+	/> </ListViewItem>
+
+        <ListViewItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Stretch"  
+		Text="At the end of the tree, a time-series figure is available that compares the top four scenarios based on your current ranking or sorting in the KPI table." 
+	/> </ListViewItem>
+    </ListView>
+
+</Grid>
+
+{Title}Energy Rate Comparison{Content}
+<Grid HorizontalAlignment="Stretch" VerticalAlignment="Stretch" >
+	
+    <ListView SelectionMode="None" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" VerticalContentAlignment="Stretch" HorizontalContentAlignment="Stretch">
+        <ListView.ItemContainerStyle> <Style TargetType="ListViewItem"> <Setter Property="Padding" Value="0"/> <Setter Property="Margin" Value="0,0,0,5"/> </Style> </ListView.ItemContainerStyle>
+
+	<!-- Header -->
+        <ListViewHeaderItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Center" HorizontalTextAlignment="Center"
+		Text="Energy Rate Comparison Tool" 
+	/> </ListViewHeaderItem>
+
+        <!-- Paragraph -->
+        <ListViewItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Stretch"  
+		Text="The energy rate comparison tool incorporates the energy rate definitions made available through the California Energy Commission's MIDAS API:" 
+	/> </ListViewItem> 
+
+        <ListViewItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> 
+		<HyperlinkButton Content="CEC MIDAS" NavigateUri="https://midasapi.energy.ca.gov/"/>
+	</ListViewItem>
+
+        <!-- Paragraph -->
+        <ListViewItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Stretch"  
+		Text="The MIDAS API allows major energy suppliers in California to upload definitions of their energy rates for the public to evaluate and utilize. WaterWatch executes these definitions for every hour of every day, taking into account holidays, weekends, night pricing, and demand charges." 
+	/> </ListViewItem> 
+
+	<!-- Header -->
+        <ListViewHeaderItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Center" HorizontalTextAlignment="Center"
+		Text="Demand Charges and Consumption Charges" 
+	/> </ListViewHeaderItem>
+
+        <!-- Paragraph -->
+        <ListViewItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Stretch"  
+		Text="Energy Rates frequently have two components: Demand Charges and Consumption Charges. Demand Charges are pentalties for the maximum power demand (kW). Not all hours and not all days have a demand charge. Consumption Charges are the costs for the amount of actual power used (kWh). Frequently, the price per kWh changes with each day, hour, or season." 
+	/> </ListViewItem> 
+
+        <!-- Paragraph -->
+        <ListViewItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Stretch"  
+		Text="This tool evaluates the energy costs from both components simultaneously, taking into account periods with and without demand charges, time-varying consumtpion charges, and more." 
+	/> </ListViewItem> 
+
+	<!-- Header -->
+        <ListViewHeaderItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Center" HorizontalTextAlignment="Center"
+		Text="Using This Tool" 
+	/> </ListViewHeaderItem>
+
+        <!-- Paragraph -->
+        <ListViewItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Stretch"  
+		Text="The left-hand panel displays the list of available energy rates. Rates can be hidden temporarily, or they can be 'reviewed', which will navigate to the online rate definition unique to each rate. These definitions often contain additional information, requirements, or fees that the MIDAS API does not include, and if you are interested in a rate, then this should be considered required reading before contacting your energy supplier." 
+	/> </ListViewItem> 
+
+        <!-- Paragraph -->
+        <ListViewItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Stretch"  
+		Text="The top-right panel displays the resulting energy rate costs for the selected rate on the left-side panel. You can change the evaluation period here as well." 
+	/> </ListViewItem> 
+
+
+        <!-- Paragraph -->
+        <ListViewItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Stretch"  
+		Text="The bottom-right panel is a table of every pump station for every 'Favorited' Scenario, evaluated for the total, demand, and consumption charges for every energy rate in the left-hand panel. The table columns can be sorted and re-ordered." 
+	/> </ListViewItem> 
+
+        <!-- Paragraph -->
+        <ListViewItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Stretch"  
+		Text="Please note that normally there is only one available service provider per pump station - you are encouraged to identify your service provider before using this tool." 
+	/> </ListViewItem> 
+
+    </ListView>	
+
+</Grid>
+
+{Title}Optimization Viewer{Content}
+<Grid HorizontalAlignment="Stretch" VerticalAlignment="Stretch" >
+	
+    <ListView SelectionMode="None" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" VerticalContentAlignment="Stretch" HorizontalContentAlignment="Stretch">
+        <ListView.ItemContainerStyle> <Style TargetType="ListViewItem"> <Setter Property="Padding" Value="0"/> <Setter Property="Margin" Value="0,0,0,5"/> </Style> </ListView.ItemContainerStyle>
+
+	<!-- Header -->
+        <ListViewHeaderItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Center" HorizontalTextAlignment="Center"
+		Text="Optimization Viewer Tool" 
+	/> </ListViewHeaderItem>
+
+        <!-- Paragraph -->
+        <ListViewItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Stretch"  
+		Text="This tool allows you to watch in-progress optimizations, or review already-completed optimizations. Optimizations must be created at first through the Scenario Builder tool before they will appear in this tool." 
+	/> </ListViewItem> 
+
+	    <!-- Container -->
+    <ListViewItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> 
+		<StackPanel HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
+			<ListViewItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+				<Image Width="400" HorizontalAlignment="Stretch" Source="/Assets/TutorialVideos/OptimizationDiagram.png"  />
+			</ListViewItem>  
+			<TextBlock TextWrapping="Wrap" HorizontalAlignment="Right"  VerticalAlignment="Bottom"
+				Text="Linz, Musabandesu, Ahmadi, Good, and Loge (2020)"
+			/> 
+		</StackPanel>		
+	</ListViewItem> 
+
+        <!-- Paragraph -->
+        <ListViewItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Stretch"  
+		Text="Once an optimization has been submitted, the WaterWatch data engine will queue its work for evaluation. Optimizations, depending on the size of the hydraulic model and the number of policies or iterations, can take minutes to days for evaluation." 
+	/> </ListViewItem> 
+
+        <!-- Paragraph -->
+        <ListViewItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Stretch"  
+		Text="The left-hand panel will list the optimizations currently running or completed. Running optimizations can be stopped if the results are no longer needed. Once a stop has been requested, the optimization will report the results at the end of the current iteration. Optimizations will remain in this list for as long as any asset uses the optimization results. If at any time an asset no longer uses the optimized PLCs from that optimization, the optimization will automatically self-delete." 
+	/> </ListViewItem> 
+
+        <!-- Paragraph -->
+        <ListViewItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Stretch"  
+		Text="The top-right panel displays the objective values for each policy evaluated for the selected optimization from the left-hand panel. The running-average objective value in a dashed line is displayed on top, while the background is shaded based on the search space (per zone or per asset)" 
+	/> </ListViewItem> 
+
+        <!-- Paragraph -->
+        <ListViewItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Stretch"  
+		Text="The Optimization Log, bottom-middle, displays the outputs of the optimization directly from the WaterWatch data engine. This can be helpful for debugging issues in the optimization." 
+	/> </ListViewItem> 
+
+        <!-- Paragraph -->
+        <ListViewItem HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"> <TextBlock TextWrapping="Wrap" HorizontalAlignment="Stretch"  
+		Text="The Results Log, bottom-right, lists the final optimized PLC rules generated by the optimization which are being used by the requested assets." 
+	/> </ListViewItem> 
+
+    </ListView>	
+
+</Grid>

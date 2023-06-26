@@ -1,0 +1,679 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 
+WaterWatch, Energy Demand Management System for Water Systems. For further information on WaterWatch, please see https://cwee.ucdavis.edu/waterwatch.
+
+Copyright (c) 2019 - 2023 by Robert Good, Erin Musabandesu, and David Linz. (Email: rtgood@ucdavis.edu). All rights reserved.
+
+Created: RTG	/	2023
+History: RTG	/	2023		1. Initial Release.
+
+Copyright / Usage Details: You are allowed to include the source code in any product (commercial, shareware, freeware or otherwise)
+when your product is released in binary form. You are allowed to modify the source code in any way you want
+except you cannot modify the copyright details at the top of each module. If you want to distribute source
+code with your application, then you are only allowed to distribute versions released by the author. This is
+to maintain a single distribution point for the source code.
+-->
+<AutoVisualizer xmlns="http://schemas.microsoft.com/vstudio/debugger/natvis/2010"> 
+
+  <Type Name="BoxedAny::Data_Impl&lt;*&gt;">
+    <Intrinsic Name="content"     Expression="m_data"/>
+        
+    <DisplayString >{content()}</DisplayString>
+    
+    <Expand>
+      <Item Name="Data">content()</Item>
+    </Expand>   
+  </Type> 
+  
+  <Type Name="cweeSysInterlockedInteger">
+    <DisplayString>{{{value}}}</DisplayString>
+  </Type>  
+  <Type Name="cweeSysInterlockedPointer&lt;*&gt;">
+    <Intrinsic Name="content"   Expression="(*ptr)"/>
+    <Intrinsic Name="is_empty"   Expression="ptr == nullptr"/>
+    <DisplayString Condition="!is_empty()" >{content()}</DisplayString>     
+    <DisplayString Condition="is_empty()" >{"EMPTY",sb}</DisplayString>         
+    <Expand>
+      <ExpandedItem Condition="!is_empty()">content()</ExpandedItem>
+    </Expand>   
+  </Type> 
+  
+  <Type Name="cweeSharedPtr&lt;*&gt;">
+    <Intrinsic Name="is_locked" Expression="mutex.value != 0"/>
+    <Intrinsic Name="content"   Expression="*m_data.ptr"/>
+    <Intrinsic Name="Mutex"   Expression="mutex"/>    
+    <Intrinsic Name="is_empty"   Expression="m_data.ptr == nullptr"/>    
+    <DisplayString Condition="!is_empty()">{content()}</DisplayString>    
+    <DisplayString Condition="is_empty()">EMPTY</DisplayString>       
+    <Expand>
+      <ExpandedItem Condition="!is_empty()">content()</ExpandedItem>    
+    </Expand>   
+  </Type>       
+  <Type Name="cweeSharedPtr&lt;*&gt;::cweeSharedPtr_DataImpl">
+    <Intrinsic Name="Details"   Expression="det.ptr"/>
+    <DisplayString >{Details()}</DisplayString>      
+    <Expand>
+      <ExpandedItem>Details()</ExpandedItem>        
+    </Expand> 
+  </Type>   
+  <Type Name="cweeSharedPtr&lt;*&gt;::details_withData">
+    <Intrinsic Name="Ptr"   Expression="d"/>
+    <Intrinsic Name="Count"   Expression="count"/>     
+    <DisplayString>{Ptr()}</DisplayString>  
+    <Expand>
+      <Item Name="[Shared Count]">Count()</Item>  
+      <ExpandedItem>Ptr()</ExpandedItem>                  
+    </Expand> 
+  </Type>   
+  <Type Name="cweeSharedPtr&lt;*&gt;::details">
+    <Intrinsic Name="Ptr"   Expression="*p.ptr"/>
+    <Intrinsic Name="Count"   Expression="count"/>     
+    <DisplayString>{Ptr()}</DisplayString>  
+    <Expand>
+      <Item Name="[Shared Count]">Count()</Item>   
+      <ExpandedItem>Ptr()</ExpandedItem>                 
+    </Expand> 
+  </Type>   
+  <Type Name="cweeSharedPtr&lt;*&gt;::details_no_destructor">
+    <Intrinsic Name="Ptr"   Expression="*p.ptr"/>
+    <Intrinsic Name="Count"   Expression="count"/>     
+    <DisplayString>{Ptr()}</DisplayString>  
+    <Expand>
+      <Item Name="[Shared Count]">Count()</Item>        
+      <ExpandedItem>Ptr()</ExpandedItem>            
+    </Expand> 
+  </Type>               
+
+  <Type Name="cweeSharedPtrWithSentinel&lt;*&gt;">
+    <Intrinsic Name="is_locked" Expression="mutex.value != 0"/>
+    <Intrinsic Name="content"   Expression="*m_data.ptr"/>
+    <Intrinsic Name="Mutex"   Expression="mutex"/>    
+    <Intrinsic Name="is_empty"   Expression="m_data.ptr == nullptr"/>
+    
+    <DisplayString Condition="!is_empty()">{content()}</DisplayString>    
+    <DisplayString Condition="is_empty()">EMPTY</DisplayString>       
+    <Expand>
+      <ExpandedItem Condition="!is_empty()">content()</ExpandedItem>    
+    </Expand>   
+  </Type>       
+  <Type Name="cweeSharedPtrWithSentinel_Data_Interface">
+    <Intrinsic Name="Details"   Expression="det.ptr"/>
+    <DisplayString >{Details()}</DisplayString>      
+    <Expand>
+      <ExpandedItem>Details()</ExpandedItem>        
+    </Expand> 
+  </Type>   
+  <Type Name="cweeSharedPtrWithSentinel&lt;*&gt;::details">
+    <Intrinsic Name="Ptr"   Expression="m_source"/>
+    <Intrinsic Name="Count"   Expression="m_count"/>     
+    <DisplayString>{Ptr()}</DisplayString>  
+    <Expand>
+      <Item Name="[Sentinel Shared Count]">Count()</Item>     
+      <ExpandedItem>Ptr()</ExpandedItem>              
+    </Expand> 
+  </Type>   
+  <Type Name="cweeSharedPtrWithSentinel&lt;*&gt;::details_no_destructor">
+    <Intrinsic Name="Ptr"   Expression="m_source"/>
+    <Intrinsic Name="Count"   Expression="m_count"/>     
+    <DisplayString>{Ptr()}</DisplayString>  
+    <Expand>
+      <Item Name="[Sentinel Shared Count]">Count()</Item>               
+      <ExpandedItem>Ptr()</ExpandedItem>           
+    </Expand> 
+  </Type>               
+
+      
+  <Type Name="cweeAnyData">
+    <Intrinsic Name="content"   Expression="m_ptr"/>        
+    <DisplayString >{content()}</DisplayString>      
+    <Expand>
+      <ExpandedItem>content()</ExpandedItem>      
+    </Expand>   
+  </Type>     
+  <!--<Type Name="cweeAnyData_Impl&lt;*&gt;">  
+    <Intrinsic Name="content"   Expression="(*(cweeAnyData*)(this)).m_ptr"/>
+    <DisplayString >{content()}</DisplayString>      
+    <Expand>
+      <ExpandedItem>content()</ExpandedItem>      
+    </Expand>   
+  </Type>-->      
+  <Type Name="cweeAny">
+    <Intrinsic Name="content"   Expression="container"/>        
+    <DisplayString >{content()}</DisplayString>      
+    <Expand>
+      <ExpandedItem>content()</ExpandedItem>      
+    </Expand>   
+  </Type>
+  
+  <Type Name="cweeUnion&lt;*&gt;" >    
+    <Intrinsic Name="Item_0"   Expression="*($T1*)(&amp;data[bitOffset_0])"/>        
+    <DisplayString >{{{num_parameters}}} Items</DisplayString>  
+    <Expand>    
+      <Item Name="Item 1">Item_0()</Item>      
+    </Expand>     
+  </Type>             
+  <Type Name="cweeUnion&lt;*,*&gt;" >    
+    <Intrinsic Name="Item_0"   Expression="*($T1*)(&amp;data[bitOffset_0])"/>
+    <Intrinsic Name="Item_1"   Expression="*($T2*)(&amp;data[bitOffset_1])"/>        
+    <DisplayString >{{{num_parameters}}} Items</DisplayString>  
+    <Expand>    
+      <Item Name="Item 1">Item_0()</Item>
+      <Item Name="Item 2">Item_1()</Item>        
+    </Expand>     
+  </Type>                
+  <Type Name="cweeUnion&lt;*,*,*&gt;" >    
+    <Intrinsic Name="Item_0"   Expression="*($T1*)(&amp;data[bitOffset_0])"/>
+    <Intrinsic Name="Item_1"   Expression="*($T2*)(&amp;data[bitOffset_1])"/>
+    <Intrinsic Name="Item_2"   Expression="*($T3*)(&amp;data[bitOffset_2])"/>        
+    <DisplayString >{{{num_parameters}}} Items</DisplayString>  
+    <Expand>    
+      <Item Name="Item 1">Item_0()</Item>
+      <Item Name="Item 2">Item_1()</Item>    
+      <Item Name="Item 3">Item_2()</Item>        
+    </Expand>     
+  </Type>            
+  <Type Name="cweeUnion&lt;*,*,*,*&gt;" >    
+    <Intrinsic Name="Item_0"   Expression="*($T1*)(&amp;data[bitOffset_0])"/>
+    <Intrinsic Name="Item_1"   Expression="*($T2*)(&amp;data[bitOffset_1])"/>
+    <Intrinsic Name="Item_2"   Expression="*($T3*)(&amp;data[bitOffset_2])"/>
+    <Intrinsic Name="Item_3"   Expression="*($T4*)(&amp;data[bitOffset_3])"/>        
+    <DisplayString >{{{num_parameters}}} Items</DisplayString>  
+    <Expand>    
+      <Item Name="Item 1">Item_0()</Item>
+      <Item Name="Item 2">Item_1()</Item>    
+      <Item Name="Item 3">Item_2()</Item>       
+      <Item Name="Item 4">Item_3()</Item>        
+    </Expand>     
+  </Type>          
+  <Type Name="cweeUnion&lt;*,*,*,*,*&gt;" >    
+    <Intrinsic Name="Item_0"   Expression="*($T1*)(&amp;data[bitOffset_0])"/>
+    <Intrinsic Name="Item_1"   Expression="*($T2*)(&amp;data[bitOffset_1])"/>
+    <Intrinsic Name="Item_2"   Expression="*($T3*)(&amp;data[bitOffset_2])"/>
+    <Intrinsic Name="Item_3"   Expression="*($T4*)(&amp;data[bitOffset_3])"/>
+    <Intrinsic Name="Item_4"   Expression="*($T5*)(&amp;data[bitOffset_4])"/>        
+    <DisplayString >{{{num_parameters}}} Items</DisplayString>  
+    <Expand>    
+      <Item Name="Item 1">Item_0()</Item>
+      <Item Name="Item 2">Item_1()</Item>    
+      <Item Name="Item 3">Item_2()</Item>       
+      <Item Name="Item 4">Item_3()</Item>       
+      <Item Name="Item 5">Item_4()</Item>        
+    </Expand>     
+  </Type>            
+  <Type Name="cweeUnion&lt;*,*,*,*,*,*&gt;" >    
+    <Intrinsic Name="Item_0"   Expression="*($T1*)(&amp;data[bitOffset_0])"/>
+    <Intrinsic Name="Item_1"   Expression="*($T2*)(&amp;data[bitOffset_1])"/>
+    <Intrinsic Name="Item_2"   Expression="*($T3*)(&amp;data[bitOffset_2])"/>
+    <Intrinsic Name="Item_3"   Expression="*($T4*)(&amp;data[bitOffset_3])"/>
+    <Intrinsic Name="Item_4"   Expression="*($T5*)(&amp;data[bitOffset_4])"/>
+    <Intrinsic Name="Item_5"   Expression="*($T6*)(&amp;data[bitOffset_5])"/>        
+    <DisplayString >{{{num_parameters}}} Items</DisplayString>  
+    <Expand>    
+      <Item Name="Item 1">Item_0()</Item>
+      <Item Name="Item 2">Item_1()</Item>    
+      <Item Name="Item 3">Item_2()</Item>       
+      <Item Name="Item 4">Item_3()</Item>       
+      <Item Name="Item 5">Item_4()</Item>       
+      <Item Name="Item 6">Item_5()</Item>        
+    </Expand>     
+  </Type>         
+  <Type Name="cweeUnion&lt;*,*,*,*,*,*,*&gt;" >    
+    <Intrinsic Name="Item_0"   Expression="*($T1*)(&amp;data[bitOffset_0])"/>
+    <Intrinsic Name="Item_1"   Expression="*($T2*)(&amp;data[bitOffset_1])"/>
+    <Intrinsic Name="Item_2"   Expression="*($T3*)(&amp;data[bitOffset_2])"/>
+    <Intrinsic Name="Item_3"   Expression="*($T4*)(&amp;data[bitOffset_3])"/>
+    <Intrinsic Name="Item_4"   Expression="*($T5*)(&amp;data[bitOffset_4])"/>
+    <Intrinsic Name="Item_5"   Expression="*($T6*)(&amp;data[bitOffset_5])"/>
+    <Intrinsic Name="Item_6"   Expression="*($T7*)(&amp;data[bitOffset_6])"/>        
+    <DisplayString >{{{num_parameters}}} Items</DisplayString>  
+    <Expand>    
+      <Item Name="Item 1">Item_0()</Item>
+      <Item Name="Item 2">Item_1()</Item>    
+      <Item Name="Item 3">Item_2()</Item>       
+      <Item Name="Item 4">Item_3()</Item>       
+      <Item Name="Item 5">Item_4()</Item>       
+      <Item Name="Item 6">Item_5()</Item>       
+      <Item Name="Item 7">Item_6()</Item>        
+    </Expand>     
+  </Type>        
+  <Type Name="cweeUnion&lt;*,*,*,*,*,*,*,*&gt;" >    
+    <Intrinsic Name="Item_0"   Expression="*($T1*)(&amp;data[bitOffset_0])"/>
+    <Intrinsic Name="Item_1"   Expression="*($T2*)(&amp;data[bitOffset_1])"/>
+    <Intrinsic Name="Item_2"   Expression="*($T3*)(&amp;data[bitOffset_2])"/>
+    <Intrinsic Name="Item_3"   Expression="*($T4*)(&amp;data[bitOffset_3])"/>
+    <Intrinsic Name="Item_4"   Expression="*($T5*)(&amp;data[bitOffset_4])"/>
+    <Intrinsic Name="Item_5"   Expression="*($T6*)(&amp;data[bitOffset_5])"/>
+    <Intrinsic Name="Item_6"   Expression="*($T7*)(&amp;data[bitOffset_6])"/>
+    <Intrinsic Name="Item_7"   Expression="*($T8*)(&amp;data[bitOffset_7])"/>        
+    <DisplayString >{{{num_parameters}}} Items</DisplayString>  
+    <Expand>    
+      <Item Name="Item 1">Item_0()</Item>
+      <Item Name="Item 2">Item_1()</Item>    
+      <Item Name="Item 3">Item_2()</Item>       
+      <Item Name="Item 4">Item_3()</Item>       
+      <Item Name="Item 5">Item_4()</Item>       
+      <Item Name="Item 6">Item_5()</Item>       
+      <Item Name="Item 7">Item_6()</Item>       
+      <Item Name="Item 8">Item_7()</Item>        
+    </Expand>     
+  </Type>      
+  <Type Name="cweeUnion&lt;*,*,*,*,*,*,*,*,*&gt;" >    
+    <Intrinsic Name="Item_0"   Expression="*($T1*)(&amp;data[bitOffset_0])"/>
+    <Intrinsic Name="Item_1"   Expression="*($T2*)(&amp;data[bitOffset_1])"/>
+    <Intrinsic Name="Item_2"   Expression="*($T3*)(&amp;data[bitOffset_2])"/>
+    <Intrinsic Name="Item_3"   Expression="*($T4*)(&amp;data[bitOffset_3])"/>
+    <Intrinsic Name="Item_4"   Expression="*($T5*)(&amp;data[bitOffset_4])"/>
+    <Intrinsic Name="Item_5"   Expression="*($T6*)(&amp;data[bitOffset_5])"/>
+    <Intrinsic Name="Item_6"   Expression="*($T7*)(&amp;data[bitOffset_6])"/>
+    <Intrinsic Name="Item_7"   Expression="*($T8*)(&amp;data[bitOffset_7])"/>
+    <Intrinsic Name="Item_8"   Expression="*($T9*)(&amp;data[bitOffset_8])"/>        
+    <DisplayString >{{{num_parameters}}} Items</DisplayString>  
+    <Expand>    
+      <Item Name="Item 1">Item_0()</Item>
+      <Item Name="Item 2">Item_1()</Item>    
+      <Item Name="Item 3">Item_2()</Item>       
+      <Item Name="Item 4">Item_3()</Item>       
+      <Item Name="Item 5">Item_4()</Item>       
+      <Item Name="Item 6">Item_5()</Item>       
+      <Item Name="Item 7">Item_6()</Item>       
+      <Item Name="Item 8">Item_7()</Item>       
+      <Item Name="Item 9">Item_8()</Item>        
+    </Expand>     
+  </Type>    
+  <Type Name="cweeUnion&lt;*,*,*,*,*,*,*,*,*,*&gt;" >    
+    <Intrinsic Name="Item_0"   Expression="*($T1*)(&amp;data[bitOffset_0])"/>
+    <Intrinsic Name="Item_1"   Expression="*($T2*)(&amp;data[bitOffset_1])"/>
+    <Intrinsic Name="Item_2"   Expression="*($T3*)(&amp;data[bitOffset_2])"/>
+    <Intrinsic Name="Item_3"   Expression="*($T4*)(&amp;data[bitOffset_3])"/>
+    <Intrinsic Name="Item_4"   Expression="*($T5*)(&amp;data[bitOffset_4])"/>
+    <Intrinsic Name="Item_5"   Expression="*($T6*)(&amp;data[bitOffset_5])"/>
+    <Intrinsic Name="Item_6"   Expression="*($T7*)(&amp;data[bitOffset_6])"/>
+    <Intrinsic Name="Item_7"   Expression="*($T8*)(&amp;data[bitOffset_7])"/>
+    <Intrinsic Name="Item_8"   Expression="*($T9*)(&amp;data[bitOffset_8])"/>
+    <Intrinsic Name="Item_9"   Expression="*($T10*)(&amp;data[bitOffset_9])"/>
+    <DisplayString >{{{num_parameters}}} Items</DisplayString>  
+    <Expand>    
+      <Item Name="Item 1">Item_0()</Item>
+      <Item Name="Item 2">Item_1()</Item>    
+      <Item Name="Item 3">Item_2()</Item>       
+      <Item Name="Item 4">Item_3()</Item>       
+      <Item Name="Item 5">Item_4()</Item>       
+      <Item Name="Item 6">Item_5()</Item>       
+      <Item Name="Item 7">Item_6()</Item>       
+      <Item Name="Item 8">Item_7()</Item>       
+      <Item Name="Item 9">Item_8()</Item>       
+      <Item Name="Item 10">Item_9()</Item>        
+    </Expand>     
+  </Type>    
+  <Type Name="cweeUnion&lt;*,*,*,*,*,*,*,*,*,*,*&gt;" >    
+    <Intrinsic Name="Item_0"   Expression="*($T1*)(&amp;data[bitOffset_0])"/>
+    <Intrinsic Name="Item_1"   Expression="*($T2*)(&amp;data[bitOffset_1])"/>
+    <Intrinsic Name="Item_2"   Expression="*($T3*)(&amp;data[bitOffset_2])"/>
+    <Intrinsic Name="Item_3"   Expression="*($T4*)(&amp;data[bitOffset_3])"/>
+    <Intrinsic Name="Item_4"   Expression="*($T5*)(&amp;data[bitOffset_4])"/>
+    <Intrinsic Name="Item_5"   Expression="*($T6*)(&amp;data[bitOffset_5])"/>
+    <Intrinsic Name="Item_6"   Expression="*($T7*)(&amp;data[bitOffset_6])"/>
+    <Intrinsic Name="Item_7"   Expression="*($T8*)(&amp;data[bitOffset_7])"/>
+    <Intrinsic Name="Item_8"   Expression="*($T9*)(&amp;data[bitOffset_8])"/>
+    <Intrinsic Name="Item_9"   Expression="*($T10*)(&amp;data[bitOffset_9])"/>
+    <Intrinsic Name="Item_10"   Expression="*($T11*)(&amp;data[bitOffset_10])"/>        
+    <DisplayString >{{{num_parameters}}} Items</DisplayString>  
+    <Expand>    
+      <Item Name="Item 1">Item_0()</Item>
+      <Item Name="Item 2">Item_1()</Item>    
+      <Item Name="Item 3">Item_2()</Item>       
+      <Item Name="Item 4">Item_3()</Item>       
+      <Item Name="Item 5">Item_4()</Item>       
+      <Item Name="Item 6">Item_5()</Item>       
+      <Item Name="Item 7">Item_6()</Item>       
+      <Item Name="Item 8">Item_7()</Item>       
+      <Item Name="Item 9">Item_8()</Item>       
+      <Item Name="Item 10">Item_9()</Item>       
+      <Item Name="Item 11">Item_10()</Item>        
+    </Expand>     
+  </Type>     
+  <Type Name="cweeUnion&lt;*,*,*,*,*,*,*,*,*,*,*,*&gt;" >    
+    <Intrinsic Name="Item_0"   Expression="*($T1*)(&amp;data[bitOffset_0])"/>
+    <Intrinsic Name="Item_1"   Expression="*($T2*)(&amp;data[bitOffset_1])"/>
+    <Intrinsic Name="Item_2"   Expression="*($T3*)(&amp;data[bitOffset_2])"/>
+    <Intrinsic Name="Item_3"   Expression="*($T4*)(&amp;data[bitOffset_3])"/>
+    <Intrinsic Name="Item_4"   Expression="*($T5*)(&amp;data[bitOffset_4])"/>
+    <Intrinsic Name="Item_5"   Expression="*($T6*)(&amp;data[bitOffset_5])"/>
+    <Intrinsic Name="Item_6"   Expression="*($T7*)(&amp;data[bitOffset_6])"/>
+    <Intrinsic Name="Item_7"   Expression="*($T8*)(&amp;data[bitOffset_7])"/>
+    <Intrinsic Name="Item_8"   Expression="*($T9*)(&amp;data[bitOffset_8])"/>
+    <Intrinsic Name="Item_9"   Expression="*($T10*)(&amp;data[bitOffset_9])"/>
+    <Intrinsic Name="Item_10"   Expression="*($T11*)(&amp;data[bitOffset_10])"/>
+    <Intrinsic Name="Item_11"   Expression="*($T12*)(&amp;data[bitOffset_11])"/>        
+    <DisplayString >{{{num_parameters}}} Items</DisplayString>  
+    <Expand>    
+      <Item Name="Item 1">Item_0()</Item>
+      <Item Name="Item 2">Item_1()</Item>    
+      <Item Name="Item 3">Item_2()</Item>       
+      <Item Name="Item 4">Item_3()</Item>       
+      <Item Name="Item 5">Item_4()</Item>       
+      <Item Name="Item 6">Item_5()</Item>       
+      <Item Name="Item 7">Item_6()</Item>       
+      <Item Name="Item 8">Item_7()</Item>       
+      <Item Name="Item 9">Item_8()</Item>       
+      <Item Name="Item 10">Item_9()</Item>       
+      <Item Name="Item 11">Item_10()</Item>       
+      <Item Name="Item 12">Item_11()</Item>        
+    </Expand>     
+  </Type>      
+  <Type Name="cweeUnion&lt;*,*,*,*,*,*,*,*,*,*,*,*,*&gt;" >    
+    <Intrinsic Name="Item_0"   Expression="*($T1*)(&amp;data[bitOffset_0])"/>
+    <Intrinsic Name="Item_1"   Expression="*($T2*)(&amp;data[bitOffset_1])"/>
+    <Intrinsic Name="Item_2"   Expression="*($T3*)(&amp;data[bitOffset_2])"/>
+    <Intrinsic Name="Item_3"   Expression="*($T4*)(&amp;data[bitOffset_3])"/>
+    <Intrinsic Name="Item_4"   Expression="*($T5*)(&amp;data[bitOffset_4])"/>
+    <Intrinsic Name="Item_5"   Expression="*($T6*)(&amp;data[bitOffset_5])"/>
+    <Intrinsic Name="Item_6"   Expression="*($T7*)(&amp;data[bitOffset_6])"/>
+    <Intrinsic Name="Item_7"   Expression="*($T8*)(&amp;data[bitOffset_7])"/>
+    <Intrinsic Name="Item_8"   Expression="*($T9*)(&amp;data[bitOffset_8])"/>
+    <Intrinsic Name="Item_9"   Expression="*($T10*)(&amp;data[bitOffset_9])"/>
+    <Intrinsic Name="Item_10"   Expression="*($T11*)(&amp;data[bitOffset_10])"/>
+    <Intrinsic Name="Item_11"   Expression="*($T12*)(&amp;data[bitOffset_11])"/>
+    <Intrinsic Name="Item_12"   Expression="*($T13*)(&amp;data[bitOffset_12])"/>        
+    <DisplayString >{{{num_parameters}}} Items</DisplayString>  
+    <Expand>    
+      <Item Name="Item 1">Item_0()</Item>
+      <Item Name="Item 2">Item_1()</Item>    
+      <Item Name="Item 3">Item_2()</Item>       
+      <Item Name="Item 4">Item_3()</Item>       
+      <Item Name="Item 5">Item_4()</Item>       
+      <Item Name="Item 6">Item_5()</Item>       
+      <Item Name="Item 7">Item_6()</Item>       
+      <Item Name="Item 8">Item_7()</Item>       
+      <Item Name="Item 9">Item_8()</Item>       
+      <Item Name="Item 10">Item_9()</Item>       
+      <Item Name="Item 11">Item_10()</Item>       
+      <Item Name="Item 12">Item_11()</Item>       
+      <Item Name="Item 13">Item_12()</Item>        
+    </Expand>     
+  </Type>
+  <Type Name="cweeUnion&lt;*,*,*,*,*,*,*,*,*,*,*,*,*,*&gt;" >    
+    <Intrinsic Name="Item_0"   Expression="*($T1*)(&amp;data[bitOffset_0])"/>
+    <Intrinsic Name="Item_1"   Expression="*($T2*)(&amp;data[bitOffset_1])"/>
+    <Intrinsic Name="Item_2"   Expression="*($T3*)(&amp;data[bitOffset_2])"/>
+    <Intrinsic Name="Item_3"   Expression="*($T4*)(&amp;data[bitOffset_3])"/>
+    <Intrinsic Name="Item_4"   Expression="*($T5*)(&amp;data[bitOffset_4])"/>
+    <Intrinsic Name="Item_5"   Expression="*($T6*)(&amp;data[bitOffset_5])"/>
+    <Intrinsic Name="Item_6"   Expression="*($T7*)(&amp;data[bitOffset_6])"/>
+    <Intrinsic Name="Item_7"   Expression="*($T8*)(&amp;data[bitOffset_7])"/>
+    <Intrinsic Name="Item_8"   Expression="*($T9*)(&amp;data[bitOffset_8])"/>
+    <Intrinsic Name="Item_9"   Expression="*($T10*)(&amp;data[bitOffset_9])"/>
+    <Intrinsic Name="Item_10"   Expression="*($T11*)(&amp;data[bitOffset_10])"/>
+    <Intrinsic Name="Item_11"   Expression="*($T12*)(&amp;data[bitOffset_11])"/>
+    <Intrinsic Name="Item_12"   Expression="*($T13*)(&amp;data[bitOffset_12])"/>
+    <Intrinsic Name="Item_13"   Expression="*($T14*)(&amp;data[bitOffset_13])"/>        
+    <DisplayString >{{{num_parameters}}} Items</DisplayString>  
+    <Expand>    
+      <Item Name="Item 1">Item_0()</Item>
+      <Item Name="Item 2">Item_1()</Item>    
+      <Item Name="Item 3">Item_2()</Item>       
+      <Item Name="Item 4">Item_3()</Item>       
+      <Item Name="Item 5">Item_4()</Item>       
+      <Item Name="Item 6">Item_5()</Item>       
+      <Item Name="Item 7">Item_6()</Item>       
+      <Item Name="Item 8">Item_7()</Item>       
+      <Item Name="Item 9">Item_8()</Item>       
+      <Item Name="Item 10">Item_9()</Item>       
+      <Item Name="Item 11">Item_10()</Item>       
+      <Item Name="Item 12">Item_11()</Item>       
+      <Item Name="Item 13">Item_12()</Item>       
+      <Item Name="Item 14">Item_13()</Item>         
+    </Expand>     
+  </Type>
+  <Type Name="cweeUnion&lt;*,*,*,*,*,*,*,*,*,*,*,*,*,*,*&gt;" >    
+    <Intrinsic Name="Item_0"   Expression="*($T1*)(&amp;data[bitOffset_0])"/>
+    <Intrinsic Name="Item_1"   Expression="*($T2*)(&amp;data[bitOffset_1])"/>
+    <Intrinsic Name="Item_2"   Expression="*($T3*)(&amp;data[bitOffset_2])"/>
+    <Intrinsic Name="Item_3"   Expression="*($T4*)(&amp;data[bitOffset_3])"/>
+    <Intrinsic Name="Item_4"   Expression="*($T5*)(&amp;data[bitOffset_4])"/>
+    <Intrinsic Name="Item_5"   Expression="*($T6*)(&amp;data[bitOffset_5])"/>
+    <Intrinsic Name="Item_6"   Expression="*($T7*)(&amp;data[bitOffset_6])"/>
+    <Intrinsic Name="Item_7"   Expression="*($T8*)(&amp;data[bitOffset_7])"/>
+    <Intrinsic Name="Item_8"   Expression="*($T9*)(&amp;data[bitOffset_8])"/>
+    <Intrinsic Name="Item_9"   Expression="*($T10*)(&amp;data[bitOffset_9])"/>
+    <Intrinsic Name="Item_10"   Expression="*($T11*)(&amp;data[bitOffset_10])"/>
+    <Intrinsic Name="Item_11"   Expression="*($T12*)(&amp;data[bitOffset_11])"/>
+    <Intrinsic Name="Item_12"   Expression="*($T13*)(&amp;data[bitOffset_12])"/>
+    <Intrinsic Name="Item_13"   Expression="*($T14*)(&amp;data[bitOffset_13])"/>
+    <Intrinsic Name="Item_14"   Expression="*($T15*)(&amp;data[bitOffset_14])"/>        
+    <DisplayString >{{{num_parameters}}} Items</DisplayString>  
+    <Expand>    
+      <Item Name="Item 1">Item_0()</Item>
+      <Item Name="Item 2">Item_1()</Item>    
+      <Item Name="Item 3">Item_2()</Item>       
+      <Item Name="Item 4">Item_3()</Item>       
+      <Item Name="Item 5">Item_4()</Item>       
+      <Item Name="Item 6">Item_5()</Item>       
+      <Item Name="Item 7">Item_6()</Item>       
+      <Item Name="Item 8">Item_7()</Item>       
+      <Item Name="Item 9">Item_8()</Item>       
+      <Item Name="Item 10">Item_9()</Item>       
+      <Item Name="Item 11">Item_10()</Item>       
+      <Item Name="Item 12">Item_11()</Item>       
+      <Item Name="Item 13">Item_12()</Item>       
+      <Item Name="Item 14">Item_13()</Item>       
+      <Item Name="Item 15">Item_14()</Item>         
+    </Expand>     
+  </Type>
+  <Type Name="cweeUnion&lt;*,*,*,*,*,*,*,*,*,*,*,*,*,*,*,*&gt;" >    
+    <Intrinsic Name="Item_0"   Expression="*($T1*)(&amp;data[bitOffset_0])"/>
+    <Intrinsic Name="Item_1"   Expression="*($T2*)(&amp;data[bitOffset_1])"/>
+    <Intrinsic Name="Item_2"   Expression="*($T3*)(&amp;data[bitOffset_2])"/>
+    <Intrinsic Name="Item_3"   Expression="*($T4*)(&amp;data[bitOffset_3])"/>
+    <Intrinsic Name="Item_4"   Expression="*($T5*)(&amp;data[bitOffset_4])"/>
+    <Intrinsic Name="Item_5"   Expression="*($T6*)(&amp;data[bitOffset_5])"/>
+    <Intrinsic Name="Item_6"   Expression="*($T7*)(&amp;data[bitOffset_6])"/>
+    <Intrinsic Name="Item_7"   Expression="*($T8*)(&amp;data[bitOffset_7])"/>
+    <Intrinsic Name="Item_8"   Expression="*($T9*)(&amp;data[bitOffset_8])"/>
+    <Intrinsic Name="Item_9"   Expression="*($T10*)(&amp;data[bitOffset_9])"/>
+    <Intrinsic Name="Item_10"   Expression="*($T11*)(&amp;data[bitOffset_10])"/>
+    <Intrinsic Name="Item_11"   Expression="*($T12*)(&amp;data[bitOffset_11])"/>
+    <Intrinsic Name="Item_12"   Expression="*($T13*)(&amp;data[bitOffset_12])"/>
+    <Intrinsic Name="Item_13"   Expression="*($T14*)(&amp;data[bitOffset_13])"/>
+    <Intrinsic Name="Item_14"   Expression="*($T15*)(&amp;data[bitOffset_14])"/>
+    <Intrinsic Name="Item_15"   Expression="*($T16*)(&amp;data[bitOffset_15])"/>        
+    <DisplayString >{{{num_parameters}}} Items</DisplayString>  
+    <Expand>    
+      <Item Name="Item 1">Item_0()</Item>
+      <Item Name="Item 2">Item_1()</Item>    
+      <Item Name="Item 3">Item_2()</Item>       
+      <Item Name="Item 4">Item_3()</Item>       
+      <Item Name="Item 5">Item_4()</Item>       
+      <Item Name="Item 6">Item_5()</Item>       
+      <Item Name="Item 7">Item_6()</Item>       
+      <Item Name="Item 8">Item_7()</Item>       
+      <Item Name="Item 9">Item_8()</Item>       
+      <Item Name="Item 10">Item_9()</Item>       
+      <Item Name="Item 11">Item_10()</Item>       
+      <Item Name="Item 12">Item_11()</Item>       
+      <Item Name="Item 13">Item_12()</Item>       
+      <Item Name="Item 14">Item_13()</Item>       
+      <Item Name="Item 15">Item_14()</Item>          
+      <Item Name="Item 16">Item_15()</Item>          
+    </Expand>     
+  </Type>
+
+  <Type Name="cweeBlockAlloc&lt;*,*,*&gt;::element_t">
+    <Intrinsic Name="Item"   Expression="*($T1*)(&amp;buffer[0])"/>
+    <Expand>
+      <ExpandedItem>Item()</ExpandedItem>
+    </Expand>
+  </Type>
+  <Type Name="cweeBlockAlloc&lt;*,*,*&gt;::cweeBlock">
+    <Intrinsic Name="_num"            Expression="$T2" />
+    <Expand>
+      <IndexListItems>
+        <Size>_num()</Size>
+        <ValueNode>elements[$i]</ValueNode>
+      </IndexListItems>
+    </Expand>       
+  </Type>
+  
+  <Type Name="cweeBlockAlloc&lt;*,*,*&gt;">
+    <Intrinsic Name="_num"            Expression="active" />
+    <Intrinsic Name="_allocated"      Expression="total" />
+    <Intrinsic Name="_blocks"         Expression="total / $T2" />
+    <Expand>
+      <IndexListItems>
+        <Size>_blocks()</Size>
+        <ValueNode>blocks[$i]</ValueNode>
+      </IndexListItems>
+    </Expand>
+
+  </Type>
+
+  <Type Name="cweeThreadedSet&lt;*&gt;">
+    <Intrinsic Name="content"   Expression="impl"/>
+    <DisplayString >{content()}</DisplayString>
+    <Expand>
+      <ExpandedItem>content()</ExpandedItem>
+    </Expand>
+  </Type>
+  
+  <Type Name="cweeThreadedList&lt;*,*&gt;">
+    <Intrinsic Name="_num"            Expression="num" /> 
+    <Intrinsic Name="_granularity"    Expression="granularity" /> 
+    <Intrinsic Name="_capacity"       Expression="_size" /> 
+    
+    <DisplayString >{{ Num({_num()}), Size({_capacity()}), Granularity({_granularity()})}}</DisplayString>
+  
+    <Expand>
+      <IndexListItems>
+        <Size>_num()</Size>
+        <ValueNode>list[$i]</ValueNode>
+      </IndexListItems>
+    </Expand>
+      
+  </Type>
+
+  <Type Name="cweePattern_CatmullRomSpline&lt;*&gt;" >
+    <DisplayString >{{ Num({values.num}), Granularity({Granularity}), Learned({learned}), Name({Name}) }}</DisplayString>
+  </Type>
+
+  <Type Name="mutexHandle_t" >
+    <!--<Intrinsic Name="_lockcount"    Expression="LockCount" />
+    <Intrinsic Name="_owningthread"    Expression="OwningThread" />-->
+    <DisplayString>{{ LockCount={LockCount()}, OwningThread={OwningThread()}}}</DisplayString>
+    <Expand>
+      <Item Name="Lock Count">LockCount()</Item>
+      <Item Name="Owning Thread">OwningThread()</Item>
+    </Expand>
+  </Type>
+  
+  <Type Name="cweeSysMutexImpl" >
+    <Intrinsic Name="_lockcount"    Expression="Handle.LockCount" />
+    <Intrinsic Name="_owningthread"    Expression="Handle.OwningThread" />
+    <DisplayString>{{ LockCount={_lockcount()}, OwningThread={_owningthread()}}}</DisplayString>
+    <Expand>
+      <Item Name="Lock Count">_lockcount()</Item>
+      <Item Name="Owning Thread">_owningthread()</Item>
+    </Expand>
+  </Type>
+  
+  <Type Name="cweeSysMutex::cweeSysMutexLifetimeGuard" >
+    <Intrinsic Name="_data"    Expression="owner" />
+
+    <DisplayString>{{{_data()}}}</DisplayString>
+    
+    <Expand>
+      <ExpandedItem>_data()</ExpandedItem>
+    </Expand>    
+  </Type>  
+    
+  <Type Name="cweeSysMutex" >
+    <Intrinsic Name="_data"    Expression="Handle" />
+
+    <DisplayString>{{{_data()}}}</DisplayString>
+    
+    <Expand>
+      <ExpandedItem>_data()</ExpandedItem>
+    </Expand>    
+  </Type>
+  
+  <Type Name="cweeJob">
+    <!--<Intrinsic Name="underlying_content"   />-->
+    <DisplayString>{impl}</DisplayString>
+    <!--<DisplayString Condition="!underlying_content()">{{empty}}</DisplayString>-->
+    <!-- Expression="impl->get()->todo->get()->container.m_data != nullptr" -->
+  </Type> 
+  
+
+  
+  <Type Name="cweeUnpooledInterlocked&lt;*&gt;">
+    <Intrinsic Name="_data"    Expression="*data._ptr.ptr" /> 
+    <DisplayString>{{{_data()}}}</DisplayString>
+     <Expand>
+      <Item Name="Data">_data()</Item>
+    </Expand>
+  </Type>
+
+  <Type Name="cweeInterlocked&lt;*&gt;">
+    <Intrinsic Name="_data"    Expression="*data._ptr.ptr" />
+    <DisplayString>{{{_data()}}}</DisplayString>
+    <Expand>
+      <Item Name="Data">_data()</Item>
+    </Expand>
+  </Type>
+
+  <Type Name="tsl::robin_map&lt;*,*,*,*,*,*,*&gt;" >
+    <DisplayString>{{{m_ht}}}</DisplayString>
+  </Type>
+
+  <Type Name="tsl::detail_robin_hash::robin_hash&lt;*,*,*,*,*,*,*,*&gt;" >
+    <DisplayString>{{NumBuckets({m_bucket_count}), NumElements({m_nb_elements}), Data({m_buckets_data}) }}</DisplayString>
+  </Type>
+
+  <Type Name="cweeUnorderedList&lt;*,*&gt;" >
+      <DisplayString>{{Num({num}), EraseQueue({eraseQueue}), Allocator({allocator}) }}</DisplayString>       
+  </Type>
+
+  <Type Name="cweeUnorderedListReferenceObject&lt;*&gt;">
+    <DisplayString>{{ Item[{which}]={*item}}}</DisplayString>
+  </Type>
+
+  <Type Name="cweeUnorderedListManagedObject&lt;*&gt;">
+    <DisplayString>{{ Item[{which}]={*item}}}</DisplayString>
+  </Type>
+  
+  <!--<Type Name="cweeBlockAlloc&lt;*,*,*&gt;" >
+    <DisplayString>{{Active({ active }), Total({ total })}}</DisplayString>
+    <Expand>
+      <LinkedListItems>
+        <Size>active</Size>
+        <HeadPointer>blocks</HeadPointer>
+        <NextPointer>next</NextPointer>
+        <ValueNode>elements</ValueNode>
+      </LinkedListItems>
+    </Expand>  
+  </Type>-->
+
+  <Type Name="cweeAction">
+    <DisplayString>{{{*content}}}</DisplayString>
+  </Type>
+
+  <Type Name="cweeFunction&lt;*&gt;">
+    <DisplayString>{{Finished({IsFinished}), Result({Result}), Inputs({_data}), Function({_function})}}</DisplayString>
+  </Type>
+ 
+  <Type Name="cweeStr">
+    <Intrinsic Name="Length"   Expression="len"/>
+    <Intrinsic Name="Content"   Expression="data"/>
+    
+    <DisplayString>{Content(),[len]s8}</DisplayString>    
+    <Expand>
+      <!--<Item Name="Type Name">type_name()</Item>-->
+      <Item Name="[String]">Content()</Item>
+      <Item Name="[Length]">Length()</Item>
+    </Expand>       
+    <!--<DisplayString>{{Length({len}), Data({data})}}</DisplayString>-->
+  </Type>  
+
+  
+
+
+</AutoVisualizer>

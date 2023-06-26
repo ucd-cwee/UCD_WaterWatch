@@ -1,0 +1,60 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="Files">
+      <UniqueIdentifier>{4FC737F1-C7A5-4376-A066-2A32D752A2FF}</UniqueIdentifier>
+      <Extensions>cpp;c;cc;cxx;c++;cppm;ixx;def;odl;idl;hpj;bat;asm;asmx</Extensions>
+    </Filter>
+    <Filter Include="Files\0. Precompiled">
+      <UniqueIdentifier>{9905f17a-7888-47ef-915b-630f369fe033}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Files\1. Compiled">
+      <UniqueIdentifier>{0ebf3ac1-6b02-44ce-bbc5-bf74b61a0131}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Files\2. PostCompiled">
+      <UniqueIdentifier>{9a2fa738-6955-4830-a93d-e27e74cfd2fd}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Files\3. EPAnet Interface">
+      <UniqueIdentifier>{b7ab3967-2bcf-427b-b3f7-22b17af09678}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Files\4. EPAnet Wrapper">
+      <UniqueIdentifier>{b8300671-c863-4321-a69d-5931f9fd0d6d}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="..\WaterWatchCpp\EPANET_COMPILED.cpp">
+      <Filter>Files\1. Compiled</Filter>
+    </ClCompile>
+    <ClCompile Include="..\WaterWatchCpp\EPANET_POSTCOMPILED.cpp">
+      <Filter>Files\2. PostCompiled</Filter>
+    </ClCompile>
+    <ClCompile Include="..\WaterWatchCpp\EPANET_CPP.cpp">
+      <Filter>Files\3. EPAnet Interface</Filter>
+    </ClCompile>
+    <ClCompile Include="..\WaterWatchCpp\EPAnetWrapper.cpp">
+      <Filter>Files\4. EPAnet Wrapper</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="..\WaterWatchCpp\EPANET_Precompiled.h">
+      <Filter>Files\0. Precompiled</Filter>
+    </ClInclude>
+    <ClInclude Include="..\WaterWatchCpp\EPANET_COMPILED.h">
+      <Filter>Files\1. Compiled</Filter>
+    </ClInclude>
+    <ClInclude Include="..\WaterWatchCpp\EPANET_POSTCOMPILED.h">
+      <Filter>Files\2. PostCompiled</Filter>
+    </ClInclude>
+    <ClInclude Include="..\WaterWatchCpp\EPANET_CPP.h">
+      <Filter>Files\3. EPAnet Interface</Filter>
+    </ClInclude>
+    <ClInclude Include="..\WaterWatchCpp\EPAnetWrapper.h">
+      <Filter>Files\4. EPAnet Wrapper</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="..\WaterWatchCpp\EPANET_errors.dat">
+      <Filter>Files\0. Precompiled</Filter>
+    </None>
+  </ItemGroup>
+</Project>

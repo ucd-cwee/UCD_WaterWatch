@@ -1,0 +1,464 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="Lib">
+      <UniqueIdentifier>{400f74f4-6a74-41a4-a26d-8f670259e484}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Lib\Header-Only">
+      <UniqueIdentifier>{653967f0-ddfe-4156-ac4e-57999756009e}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Lib\Header-Only\Chaiscript">
+      <UniqueIdentifier>{56295b63-a100-4c12-be9a-71b3e646989e}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Lib\Implimentations-Only">
+      <UniqueIdentifier>{7dbd2a68-826f-4d0e-8a9b-dad7f12974c5}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Lib\Implimentations-Only\odbc">
+      <UniqueIdentifier>{775597df-1d27-49bd-950e-68c63bd2f63d}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Lib\Implimentations-Only\Machine Learning">
+      <UniqueIdentifier>{40d62b75-88eb-4e2b-9bf5-e53b896564c0}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Lib\Implimentations-Only\WaterWatchInit">
+      <UniqueIdentifier>{5b1d98f1-af6e-47ec-a9fc-4a9a6b4c52e4}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Lib\Implimentations-Only\FileSystem and Geocoding">
+      <UniqueIdentifier>{b1e00583-6aae-47c1-adda-a491b7c26730}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Lib\Implimentations-Only\FileSystem and Geocoding\Geocoding">
+      <UniqueIdentifier>{5e1d9c16-2afc-4093-bfc8-2e22090a04c1}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Lib\Implimentations-Only\FileSystem and Geocoding\FileSystem">
+      <UniqueIdentifier>{768d890b-8e23-4339-9f63-a7771a06222b}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Lib\Implimentations-Only\WaterWatch Chaiscript Module">
+      <UniqueIdentifier>{b1a009cc-af5b-42a3-9b2c-a297329ed91e}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Lib\Implimentations-Only\Toasts">
+      <UniqueIdentifier>{6cbade4f-d6ba-46ed-9ee1-bb02850d692e}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Lib\Implimentations-Only\AppLayerRequests">
+      <UniqueIdentifier>{4aa9c13b-52a2-472c-b7c0-a2df60468ad8}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Lib\Implimentations-Only\DispatchTimer">
+      <UniqueIdentifier>{44e5e3c4-9751-48ec-b144-d5814edb6c8e}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Lib\Precompiled">
+      <UniqueIdentifier>{f5dfd597-e417-4da1-b19b-4a8c8ffd34ea}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Lib\Implimentations-Only\InteropData">
+      <UniqueIdentifier>{b4bfb3e8-09cb-47aa-b8f3-75110c6a25da}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Lib\Implimentations-Only\cweeJob">
+      <UniqueIdentifier>{b4da197a-fa02-461e-bdf9-1bcf897a2518}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Lib\Implimentations-Only\WaterWatch Chaiscript Module\Module 1">
+      <UniqueIdentifier>{19b9a0d8-7f71-45b0-8d03-994c5e96476c}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Lib\Implimentations-Only\WaterWatch Chaiscript Module\Module 2">
+      <UniqueIdentifier>{028268e1-ecfd-468a-9163-41d417c32bc4}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Lib\Implimentations-Only\WaterWatch Chaiscript Module\Module 3">
+      <UniqueIdentifier>{abf3d169-7747-4837-b0df-b528b1931d7c}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Lib\Implimentations-Only\WaterWatch Chaiscript Module\Module 4">
+      <UniqueIdentifier>{c7b2fecf-80dc-4c1d-83df-5cb71e132aae}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Lib\Implimentations-Only\WaterWatch Chaiscript Module\EPAnet Module">
+      <UniqueIdentifier>{34e447f1-87a0-45e0-baf0-fe94f1758597}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Lib\Implimentations-Only\External %28Shared%29 Data">
+      <UniqueIdentifier>{19796895-8eb8-4b67-809e-d043476b14a2}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Units.h">
+      <Filter>Lib\Header-Only</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Windows_SysThreading.h">
+      <Filter>Lib\Header-Only</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Windows_SysAssert.h">
+      <Filter>Lib\Header-Only</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)BasicDefines.h">
+      <Filter>Lib\Header-Only</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Heap.h">
+      <Filter>Lib\Header-Only</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)BTree.h">
+      <Filter>Lib\Header-Only</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)enum.h">
+      <Filter>Lib\Header-Only</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Clock.h">
+      <Filter>Lib\Header-Only</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)StringView.h">
+      <Filter>Lib\Header-Only</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)InterlockedValues.h">
+      <Filter>Lib\Header-Only</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)SharedPtr.h">
+      <Filter>Lib\Header-Only</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)cweeAllocator.h">
+      <Filter>Lib\Header-Only</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)DelayedInstantiation.h">
+      <Filter>Lib\Header-Only</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)SharedPtrWithSentinel.h">
+      <Filter>Lib\Header-Only</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Mutex.h">
+      <Filter>Lib\Header-Only</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)cweeInterlocked.h">
+      <Filter>Lib\Header-Only</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Strings.h">
+      <Filter>Lib\Header-Only</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)MatX.h">
+      <Filter>Lib\Header-Only</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Parser.h">
+      <Filter>Lib\Header-Only</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Serialization.h">
+      <Filter>Lib\Header-Only</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)vec.h">
+      <Filter>Lib\Header-Only</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)VecX.h">
+      <Filter>Lib\Header-Only</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)ZipLib.h">
+      <Filter>Lib\Header-Only</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)BasicUnits.h">
+      <Filter>Lib\Header-Only</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)bitFlags.h">
+      <Filter>Lib\Header-Only</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Curve.h">
+      <Filter>Lib\Header-Only</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)cwee_math.h">
+      <Filter>Lib\Header-Only</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)cweeTime.h">
+      <Filter>Lib\Header-Only</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)cweeUnitedValue.h">
+      <Filter>Lib\Header-Only</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)File.h">
+      <Filter>Lib\Header-Only</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Iterator.h">
+      <Filter>Lib\Header-Only</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)LinkedList.h">
+      <Filter>Lib\Header-Only</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)List.h">
+      <Filter>Lib\Header-Only</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)UnorderedList.h">
+      <Filter>Lib\Header-Only</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Pattern.h">
+      <Filter>Lib\Header-Only</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Engineering.h">
+      <Filter>Lib\Header-Only</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)cweeSet.h">
+      <Filter>Lib\Header-Only</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)cweeScheduler.h">
+      <Filter>Lib\Header-Only</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)cweeAny.h">
+      <Filter>Lib\Header-Only</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)BalancedTree.h">
+      <Filter>Lib\Header-Only</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)cweeThreadedMap.h">
+      <Filter>Lib\Header-Only</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)AlgLibWrapper.h">
+      <Filter>Lib\Header-Only</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)InterpolatedMatrix.h">
+      <Filter>Lib\Header-Only</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)BalancedPattern.h">
+      <Filter>Lib\Header-Only</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)chaiscript_wrapper.h">
+      <Filter>Lib\Header-Only\Chaiscript</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Chaiscript_Windows.h">
+      <Filter>Lib\Header-Only\Chaiscript</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Chaiscript_Utility.h">
+      <Filter>Lib\Header-Only\Chaiscript</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Chaiscript_TypeConversions.h">
+      <Filter>Lib\Header-Only\Chaiscript</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Chaiscript_Type_Info.h">
+      <Filter>Lib\Header-Only\Chaiscript</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Chaiscript_Tracer.h">
+      <Filter>Lib\Header-Only\Chaiscript</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Chaiscript_Threading.h">
+      <Filter>Lib\Header-Only\Chaiscript</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Chaiscript_STL_Module.h">
+      <Filter>Lib\Header-Only\Chaiscript</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Chaiscript_STL_Bootstrap.h">
+      <Filter>Lib\Header-Only\Chaiscript</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Chaiscript_ShortAlloc.h">
+      <Filter>Lib\Header-Only\Chaiscript</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Chaiscript_QuickFlatMap.h">
+      <Filter>Lib\Header-Only\Chaiscript</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Chaiscript_ProxyFunctions.h">
+      <Filter>Lib\Header-Only\Chaiscript</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Chaiscript_ProxyConstructors.h">
+      <Filter>Lib\Header-Only\Chaiscript</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Chaiscript_Prelude.h">
+      <Filter>Lib\Header-Only\Chaiscript</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Chaiscript_Postfix.h">
+      <Filter>Lib\Header-Only\Chaiscript</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Chaiscript_Parser.h">
+      <Filter>Lib\Header-Only\Chaiscript</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Chaiscript_Optimizer.h">
+      <Filter>Lib\Header-Only\Chaiscript</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Chaiscript_Operators.h">
+      <Filter>Lib\Header-Only\Chaiscript</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Chaiscript_LanguageCommon.h">
+      <Filter>Lib\Header-Only\Chaiscript</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Chaiscript_JSON.h">
+      <Filter>Lib\Header-Only\Chaiscript</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Chaiscript_Hash.h">
+      <Filter>Lib\Header-Only\Chaiscript</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Chaiscript_FunctionParams.h">
+      <Filter>Lib\Header-Only\Chaiscript</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Chaiscript_FunctionCall.h">
+      <Filter>Lib\Header-Only\Chaiscript</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Chaiscript_ExceptionSpecification.h">
+      <Filter>Lib\Header-Only\Chaiscript</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Chaiscript_Eval.h">
+      <Filter>Lib\Header-Only\Chaiscript</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Chaiscript_Engine.h">
+      <Filter>Lib\Header-Only\Chaiscript</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Chaiscript_DynamicObjectImpl.h">
+      <Filter>Lib\Header-Only\Chaiscript</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Chaiscript_DynamicObject.h">
+      <Filter>Lib\Header-Only\Chaiscript</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Chaiscript_DispatchKit.h">
+      <Filter>Lib\Header-Only\Chaiscript</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Chaiscript_Defines.h">
+      <Filter>Lib\Header-Only\Chaiscript</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Chaiscript_ConstexprString.h">
+      <Filter>Lib\Header-Only\Chaiscript</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Chaiscript_BoxedValue.h">
+      <Filter>Lib\Header-Only\Chaiscript</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Chaiscript_BoxedNumber.h">
+      <Filter>Lib\Header-Only\Chaiscript</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Chaiscript_BoxedCastHelper.h">
+      <Filter>Lib\Header-Only\Chaiscript</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Chaiscript_BoxedCast.h">
+      <Filter>Lib\Header-Only\Chaiscript</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Chaiscript_Bootstrap.h">
+      <Filter>Lib\Header-Only\Chaiscript</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Chaiscript_BadBoxedCast.h">
+      <Filter>Lib\Header-Only\Chaiscript</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Chaiscript_Any.h">
+      <Filter>Lib\Header-Only\Chaiscript</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Chaiscript_Algebra.h">
+      <Filter>Lib\Header-Only\Chaiscript</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Chaiscript.h">
+      <Filter>Lib\Header-Only\Chaiscript</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)odbc.h">
+      <Filter>Lib\Implimentations-Only\odbc</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)MachineLearning.h">
+      <Filter>Lib\Implimentations-Only\Machine Learning</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)cweeSpatialAsset.h">
+      <Filter>Lib\Header-Only</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Chaiscript_WaterWatch_Module.h">
+      <Filter>Lib\Implimentations-Only\WaterWatch Chaiscript Module</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)WaterWatchInit.h">
+      <Filter>Lib\Implimentations-Only\WaterWatchInit</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)FileSystemH.h">
+      <Filter>Lib\Implimentations-Only\FileSystem and Geocoding\FileSystem</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Geocoding.h">
+      <Filter>Lib\Implimentations-Only\FileSystem and Geocoding\Geocoding</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Toasts.h">
+      <Filter>Lib\Implimentations-Only\Toasts</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)AppLayerRequests.h">
+      <Filter>Lib\Implimentations-Only\AppLayerRequests</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)DispatchTimer.h">
+      <Filter>Lib\Implimentations-Only\DispatchTimer</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Precompiled.h">
+      <Filter>Lib\Precompiled</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)InteropData.h">
+      <Filter>Lib\Implimentations-Only\InteropData</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)cweeJob.h">
+      <Filter>Lib\Implimentations-Only\cweeJob</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)cweeUnitPattern.h">
+      <Filter>Lib\Header-Only</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)WaterWatch_Module_Header.h">
+      <Filter>Lib\Implimentations-Only\WaterWatch Chaiscript Module</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)WaterWatch_Module_P1.h">
+      <Filter>Lib\Implimentations-Only\WaterWatch Chaiscript Module\Module 1</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)WaterWatch_Module_P2.h">
+      <Filter>Lib\Implimentations-Only\WaterWatch Chaiscript Module\Module 2</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)WaterWatch_Module_P4.h">
+      <Filter>Lib\Implimentations-Only\WaterWatch Chaiscript Module\Module 4</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)WaterWatch_Module_P3.h">
+      <Filter>Lib\Implimentations-Only\WaterWatch Chaiscript Module\Module 3</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)WaterWatch_Module_EPAnet.h">
+      <Filter>Lib\Implimentations-Only\WaterWatch Chaiscript Module\EPAnet Module</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)ExternData.h">
+      <Filter>Lib\Implimentations-Only\External %28Shared%29 Data</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Chaiscript_AST_Node.h">
+      <Filter>Lib\Header-Only\Chaiscript</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Chaiscript_ContainerValueType.h">
+      <Filter>Lib\Header-Only\Chaiscript</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="$(MSBuildThisFileDirectory)odbc.cpp">
+      <Filter>Lib\Implimentations-Only\odbc</Filter>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)MachineLearning.cpp">
+      <Filter>Lib\Implimentations-Only\Machine Learning</Filter>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)WaterWatchInit.cpp">
+      <Filter>Lib\Implimentations-Only\WaterWatchInit</Filter>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)FileSystemH.cpp">
+      <Filter>Lib\Implimentations-Only\FileSystem and Geocoding\FileSystem</Filter>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)Geocoding.cpp">
+      <Filter>Lib\Implimentations-Only\FileSystem and Geocoding\Geocoding</Filter>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)Chaiscript_WaterWatch_Module.cpp">
+      <Filter>Lib\Implimentations-Only\WaterWatch Chaiscript Module</Filter>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)Toasts.cpp">
+      <Filter>Lib\Implimentations-Only\Toasts</Filter>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)AppLayerRequets.cpp">
+      <Filter>Lib\Implimentations-Only\AppLayerRequests</Filter>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)DispatchTimer.cpp">
+      <Filter>Lib\Implimentations-Only\DispatchTimer</Filter>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)InteropData.cpp">
+      <Filter>Lib\Implimentations-Only\InteropData</Filter>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)cweeJob.cpp">
+      <Filter>Lib\Implimentations-Only\cweeJob</Filter>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)WaterWatch_Module_P1.cpp">
+      <Filter>Lib\Implimentations-Only\WaterWatch Chaiscript Module\Module 1</Filter>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)WaterWatch_Module_P2.cpp">
+      <Filter>Lib\Implimentations-Only\WaterWatch Chaiscript Module\Module 2</Filter>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)WaterWatch_Module_P4.cpp">
+      <Filter>Lib\Implimentations-Only\WaterWatch Chaiscript Module\Module 4</Filter>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)WaterWatch_Module_P3.cpp">
+      <Filter>Lib\Implimentations-Only\WaterWatch Chaiscript Module\Module 3</Filter>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)WaterWatch_Module_EPAnet.cpp">
+      <Filter>Lib\Implimentations-Only\WaterWatch Chaiscript Module\EPAnet Module</Filter>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)WaterWatch_Module_P3p1.cpp">
+      <Filter>Lib\Implimentations-Only\WaterWatch Chaiscript Module\Module 3</Filter>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)WaterWatch_Module_P3p2.cpp">
+      <Filter>Lib\Implimentations-Only\WaterWatch Chaiscript Module\Module 3</Filter>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)ExternData.cpp">
+      <Filter>Lib\Implimentations-Only\External %28Shared%29 Data</Filter>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)WaterWatch_Module_P3p3.cpp">
+      <Filter>Lib\Implimentations-Only\WaterWatch Chaiscript Module\Module 3</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <Natvis Include="$(MSBuildThisFileDirectory)..\cweeLib\cweeDebugVisualizer.natvis">
+      <Filter>Lib</Filter>
+    </Natvis>
+  </ItemGroup>
+</Project>

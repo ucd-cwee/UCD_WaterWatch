@@ -1,0 +1,150 @@
+﻿<Page
+    x:Class="UWP_WaterWatch.MainPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:UWP_WaterWatch"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
+    xmlns:muxc="using:Microsoft.UI.Xaml.Controls"
+    mc:Ignorable="d"
+    Background="{ThemeResource ApplicationPageBackgroundThemeBrush}">
+
+    <Grid>
+        <Grid x:Name="KeyBoardShortcuts">
+            <AppBarButton 
+                Label="Save" 
+                Click="SaveProject_Keyboard" 
+                AccessKey="C">
+                <AppBarButton.KeyboardAccelerators>
+                    <KeyboardAccelerator 
+                        Modifiers="Control" 
+                        Key="S" />
+                </AppBarButton.KeyboardAccelerators>
+            </AppBarButton>
+            <AppBarButton 
+                Label="Quit" 
+                Click="QuitProject_Keyboard" 
+                AccessKey="Q">
+                <AppBarButton.KeyboardAccelerators>
+                    <KeyboardAccelerator 
+                        Modifiers="Control" 
+                        Key="Q" />
+                </AppBarButton.KeyboardAccelerators>
+            </AppBarButton>
+            <AppBarButton 
+                Label="CloseWindow" 
+                Click="CloseWindow_Keyboard" 
+                AccessKey="W">
+                <AppBarButton.KeyboardAccelerators>
+                    <KeyboardAccelerator 
+                        Modifiers="Control" 
+                        Key="W" />
+                </AppBarButton.KeyboardAccelerators>
+            </AppBarButton>
+            <AppBarButton 
+                Label="PrintScreen" 
+                Click="PrintScreen_Keyboard" 
+                AccessKey="P">
+                <AppBarButton.KeyboardAccelerators>
+                    <KeyboardAccelerator 
+                        Modifiers="Control" 
+                        Key="P" />
+                </AppBarButton.KeyboardAccelerators>
+            </AppBarButton>
+            <AppBarButton 
+                Label="ContextHelp" 
+                Click="ContextHelp_Keyboard" 
+                AccessKey="F1">
+                <AppBarButton.KeyboardAccelerators>
+                    <KeyboardAccelerator 
+                         Key="F1"
+                        />
+                </AppBarButton.KeyboardAccelerators>
+            </AppBarButton>
+            <AppBarButton x:Name="F12Button" Click="F12ButtonClicked"
+                Label="DynamicObjectScriptEditor" 
+                AccessKey="F12">
+                <AppBarButton.KeyboardAccelerators>
+                    <KeyboardAccelerator 
+                         Key="F12"
+                        />
+                </AppBarButton.KeyboardAccelerators>
+            </AppBarButton>
+            <AppBarButton x:Name="F5Button" Click="F5ButtonClicked"
+                Label="DynamicObjectScriptEditor" 
+                AccessKey="F5">
+                <AppBarButton.KeyboardAccelerators>
+                    <KeyboardAccelerator 
+                         Key="F5"
+                        />
+                </AppBarButton.KeyboardAccelerators>
+            </AppBarButton>
+            <AppBarButton 
+                Label="ScriptingEditActivate" 
+                Click="ScriptingEditActivate_Keyboard" 
+                AccessKey="F2">
+                <AppBarButton.KeyboardAccelerators>
+                    <KeyboardAccelerator 
+                         Key="F2"
+                        />
+                </AppBarButton.KeyboardAccelerators>
+            </AppBarButton>
+        </Grid>
+        <Grid Background="{ThemeResource SystemColorWindowColor}" />
+        <SplitView x:Name="splitView" PaneBackground="{ThemeResource SystemControlBackgroundChromeMediumLowBrush}" Background="{ThemeResource SystemColorWindowColor}" Padding="0" Margin="0"
+           IsPaneOpen="{x:Bind local:MainPage.VM.IsDeveloperToolOpen}" OpenPaneLength="256" CompactPaneLength="48" DisplayMode="Inline" PanePlacement="Right" >
+            <SplitView.Pane>
+                <Grid RowSpacing="5">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+                    <Border BorderThickness="0,0,0,1" BorderBrush="Gray" Padding="5,0,5,0" Margin="5,0,5,0" >
+                        <TextBlock Text="DEVELOPER TOOLS" Margin="0" Padding="0" HorizontalAlignment="Center" VerticalAlignment="Center" Style="{StaticResource BaseTextBlockStyle}"/>
+                    </Border>
+                </Grid>
+            </SplitView.Pane>
+            <muxc:TabView x:Name="ScriptTabs"
+                HorizontalAlignment="Stretch" VerticalAlignment="Stretch" Margin="0" Padding="0" 
+                CanDragTabs ="True"
+                TabDroppedOutside="TabView_TabDroppedOutside"
+                AddTabButtonClick="TabView_AddTabButtonClick" 
+                SelectionChanged="TabView_SelectionChanged" 
+                TabCloseRequested="TabView_TabCloseRequested"                
+            >
+                <muxc:TabView.TabStripHeader>
+                    <Grid x:Name="ShellTitlebarInset" Background="Transparent" />
+                </muxc:TabView.TabStripHeader>
+                <muxc:TabView.TabStripFooter>
+                    <Grid x:Name="CustomDragRegion" Background="Transparent" />
+                </muxc:TabView.TabStripFooter>
+                
+                
+                <muxc:TabViewItem Header="Home" IsClosable="False">
+                    <muxc:TabViewItem.IconSource>
+                        <muxc:SymbolIconSource Symbol="Home" />
+                    </muxc:TabViewItem.IconSource>
+                    <TextBlock Text="{x:Bind local:MainPage.VM.THINGY}" Margin="12,12,0,0" Style="{StaticResource BaseTextBlockStyle}" Foreground="{ThemeResource SystemColorButtonTextBrush}" />
+                    
+                </muxc:TabViewItem>
+                <muxc:TabViewItem Header="Document 0">
+                    <muxc:TabViewItem.IconSource>
+                        <muxc:SymbolIconSource Symbol="Document" />
+                    </muxc:TabViewItem.IconSource>
+                </muxc:TabViewItem>
+                <muxc:TabViewItem Header="Document 1">
+                    <muxc:TabViewItem.IconSource>
+                        <muxc:SymbolIconSource Symbol="Document" />
+                    </muxc:TabViewItem.IconSource>
+                </muxc:TabViewItem>
+                <muxc:TabViewItem Header="Document 2">
+                    <muxc:TabViewItem.IconSource>
+                        <muxc:SymbolIconSource Symbol="Document" />
+                    </muxc:TabViewItem.IconSource>
+                </muxc:TabViewItem>
+            </muxc:TabView>
+        </SplitView>
+        
+    </Grid>
+</Page>

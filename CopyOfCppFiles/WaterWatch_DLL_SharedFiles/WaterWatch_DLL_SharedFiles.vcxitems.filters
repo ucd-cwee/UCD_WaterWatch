@@ -1,0 +1,1045 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <ClCompile Include="$(MSBuildThisFileDirectory)WaterWatchDll.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\dlib-19.17\source\dlib\all\source.cpp">
+      <Filter>Lib\0. Header-Only Lib\Tools\Mathematics and Engineering\Machine Learning</Filter>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)Precompiled.cpp">
+      <Filter>Lib\2. Final Lib\0. Precompiled Headers</Filter>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)CweeLib.cpp">
+      <Filter>Lib\2. Final Lib\1. cweeLib</Filter>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)AlgLib\alglibinternal.cpp">
+      <Filter>Lib\0. Header-Only Lib\Tools\Mathematics and Engineering\AlgLib\AlgLib Src</Filter>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)AlgLib\alglibmisc.cpp">
+      <Filter>Lib\0. Header-Only Lib\Tools\Mathematics and Engineering\AlgLib\AlgLib Src</Filter>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)AlgLib\ap.cpp">
+      <Filter>Lib\0. Header-Only Lib\Tools\Mathematics and Engineering\AlgLib\AlgLib Src</Filter>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)AlgLib\dataanalysis.cpp">
+      <Filter>Lib\0. Header-Only Lib\Tools\Mathematics and Engineering\AlgLib\AlgLib Src</Filter>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)AlgLib\diffequations.cpp">
+      <Filter>Lib\0. Header-Only Lib\Tools\Mathematics and Engineering\AlgLib\AlgLib Src</Filter>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)AlgLib\fasttransforms.cpp">
+      <Filter>Lib\0. Header-Only Lib\Tools\Mathematics and Engineering\AlgLib\AlgLib Src</Filter>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)AlgLib\integration.cpp">
+      <Filter>Lib\0. Header-Only Lib\Tools\Mathematics and Engineering\AlgLib\AlgLib Src</Filter>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)AlgLib\interpolation.cpp">
+      <Filter>Lib\0. Header-Only Lib\Tools\Mathematics and Engineering\AlgLib\AlgLib Src</Filter>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)AlgLib\kernels_avx2.cpp">
+      <Filter>Lib\0. Header-Only Lib\Tools\Mathematics and Engineering\AlgLib\AlgLib Src</Filter>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)AlgLib\kernels_fma.cpp">
+      <Filter>Lib\0. Header-Only Lib\Tools\Mathematics and Engineering\AlgLib\AlgLib Src</Filter>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)AlgLib\kernels_sse2.cpp">
+      <Filter>Lib\0. Header-Only Lib\Tools\Mathematics and Engineering\AlgLib\AlgLib Src</Filter>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)AlgLib\linalg.cpp">
+      <Filter>Lib\0. Header-Only Lib\Tools\Mathematics and Engineering\AlgLib\AlgLib Src</Filter>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)AlgLib\optimization.cpp">
+      <Filter>Lib\0. Header-Only Lib\Tools\Mathematics and Engineering\AlgLib\AlgLib Src</Filter>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)AlgLib\solvers.cpp">
+      <Filter>Lib\0. Header-Only Lib\Tools\Mathematics and Engineering\AlgLib\AlgLib Src</Filter>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)AlgLib\specialfunctions.cpp">
+      <Filter>Lib\0. Header-Only Lib\Tools\Mathematics and Engineering\AlgLib\AlgLib Src</Filter>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)AlgLib\statistics.cpp">
+      <Filter>Lib\0. Header-Only Lib\Tools\Mathematics and Engineering\AlgLib\AlgLib Src</Filter>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)EPAnet3\Core\datamanager.cpp">
+      <Filter>Lib\0. Header-Only Lib\Tools\Hydraulic Simulation\EPAnet 3.0\Core</Filter>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)EPAnet3\Core\diagnostics.cpp">
+      <Filter>Lib\0. Header-Only Lib\Tools\Hydraulic Simulation\EPAnet 3.0\Core</Filter>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)EPAnet3\Core\epanet3.cpp">
+      <Filter>Lib\0. Header-Only Lib\Tools\Hydraulic Simulation\EPAnet 3.0\Core</Filter>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)EPAnet3\Core\error.cpp">
+      <Filter>Lib\0. Header-Only Lib\Tools\Hydraulic Simulation\EPAnet 3.0\Core</Filter>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)EPAnet3\Core\hydbalance.cpp">
+      <Filter>Lib\0. Header-Only Lib\Tools\Hydraulic Simulation\EPAnet 3.0\Core</Filter>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)EPAnet3\Core\hydengine.cpp">
+      <Filter>Lib\0. Header-Only Lib\Tools\Hydraulic Simulation\EPAnet 3.0\Core</Filter>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)EPAnet3\Core\network.cpp">
+      <Filter>Lib\0. Header-Only Lib\Tools\Hydraulic Simulation\EPAnet 3.0\Core</Filter>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)EPAnet3\Core\options.cpp">
+      <Filter>Lib\0. Header-Only Lib\Tools\Hydraulic Simulation\EPAnet 3.0\Core</Filter>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)EPAnet3\Core\project.cpp">
+      <Filter>Lib\0. Header-Only Lib\Tools\Hydraulic Simulation\EPAnet 3.0\Core</Filter>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)EPAnet3\Core\qualbalance.cpp">
+      <Filter>Lib\0. Header-Only Lib\Tools\Hydraulic Simulation\EPAnet 3.0\Core</Filter>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)EPAnet3\Core\qualengine.cpp">
+      <Filter>Lib\0. Header-Only Lib\Tools\Hydraulic Simulation\EPAnet 3.0\Core</Filter>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)EPAnet3\Core\units.cpp">
+      <Filter>Lib\0. Header-Only Lib\Tools\Hydraulic Simulation\EPAnet 3.0\Core</Filter>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)EPAnet3\Elements\control.cpp">
+      <Filter>Lib\0. Header-Only Lib\Tools\Hydraulic Simulation\EPAnet 3.0\Elements</Filter>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)EPAnet3\Elements\curve.cpp">
+      <Filter>Lib\0. Header-Only Lib\Tools\Hydraulic Simulation\EPAnet 3.0\Elements</Filter>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)EPAnet3\Elements\demand.cpp">
+      <Filter>Lib\0. Header-Only Lib\Tools\Hydraulic Simulation\EPAnet 3.0\Elements</Filter>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)EPAnet3\Elements\element.cpp">
+      <Filter>Lib\0. Header-Only Lib\Tools\Hydraulic Simulation\EPAnet 3.0\Elements</Filter>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)EPAnet3\Elements\emitter.cpp">
+      <Filter>Lib\0. Header-Only Lib\Tools\Hydraulic Simulation\EPAnet 3.0\Elements</Filter>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)EPAnet3\Elements\junction.cpp">
+      <Filter>Lib\0. Header-Only Lib\Tools\Hydraulic Simulation\EPAnet 3.0\Elements</Filter>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)EPAnet3\Elements\link.cpp">
+      <Filter>Lib\0. Header-Only Lib\Tools\Hydraulic Simulation\EPAnet 3.0\Elements</Filter>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)EPAnet3\Elements\node.cpp">
+      <Filter>Lib\0. Header-Only Lib\Tools\Hydraulic Simulation\EPAnet 3.0\Elements</Filter>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)EPAnet3\Elements\pattern.cpp">
+      <Filter>Lib\0. Header-Only Lib\Tools\Hydraulic Simulation\EPAnet 3.0\Elements</Filter>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)EPAnet3\Elements\pipe.cpp">
+      <Filter>Lib\0. Header-Only Lib\Tools\Hydraulic Simulation\EPAnet 3.0\Elements</Filter>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)EPAnet3\Elements\pump.cpp">
+      <Filter>Lib\0. Header-Only Lib\Tools\Hydraulic Simulation\EPAnet 3.0\Elements</Filter>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)EPAnet3\Elements\pumpcurve.cpp">
+      <Filter>Lib\0. Header-Only Lib\Tools\Hydraulic Simulation\EPAnet 3.0\Elements</Filter>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)EPAnet3\Elements\qualsource.cpp">
+      <Filter>Lib\0. Header-Only Lib\Tools\Hydraulic Simulation\EPAnet 3.0\Elements</Filter>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)EPAnet3\Elements\reservoir.cpp">
+      <Filter>Lib\0. Header-Only Lib\Tools\Hydraulic Simulation\EPAnet 3.0\Elements</Filter>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)EPAnet3\Elements\tank.cpp">
+      <Filter>Lib\0. Header-Only Lib\Tools\Hydraulic Simulation\EPAnet 3.0\Elements</Filter>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)EPAnet3\Elements\valve.cpp">
+      <Filter>Lib\0. Header-Only Lib\Tools\Hydraulic Simulation\EPAnet 3.0\Elements</Filter>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)EPAnet3\Input\controlparser.cpp">
+      <Filter>Lib\0. Header-Only Lib\Tools\Hydraulic Simulation\EPAnet 3.0\Input</Filter>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)EPAnet3\Input\curveparser.cpp">
+      <Filter>Lib\0. Header-Only Lib\Tools\Hydraulic Simulation\EPAnet 3.0\Input</Filter>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)EPAnet3\Input\inputparser.cpp">
+      <Filter>Lib\0. Header-Only Lib\Tools\Hydraulic Simulation\EPAnet 3.0\Input</Filter>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)EPAnet3\Input\inputreader.cpp">
+      <Filter>Lib\0. Header-Only Lib\Tools\Hydraulic Simulation\EPAnet 3.0\Input</Filter>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)EPAnet3\Input\linkparser.cpp">
+      <Filter>Lib\0. Header-Only Lib\Tools\Hydraulic Simulation\EPAnet 3.0\Input</Filter>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)EPAnet3\Input\nodeparser.cpp">
+      <Filter>Lib\0. Header-Only Lib\Tools\Hydraulic Simulation\EPAnet 3.0\Input</Filter>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)EPAnet3\Input\optionparser.cpp">
+      <Filter>Lib\0. Header-Only Lib\Tools\Hydraulic Simulation\EPAnet 3.0\Input</Filter>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)EPAnet3\Input\patternparser.cpp">
+      <Filter>Lib\0. Header-Only Lib\Tools\Hydraulic Simulation\EPAnet 3.0\Input</Filter>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)EPAnet3\Models\demandmodel.cpp">
+      <Filter>Lib\0. Header-Only Lib\Tools\Hydraulic Simulation\EPAnet 3.0\Models</Filter>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)EPAnet3\Models\headlossmodel.cpp">
+      <Filter>Lib\0. Header-Only Lib\Tools\Hydraulic Simulation\EPAnet 3.0\Models</Filter>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)EPAnet3\Models\leakagemodel.cpp">
+      <Filter>Lib\0. Header-Only Lib\Tools\Hydraulic Simulation\EPAnet 3.0\Models</Filter>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)EPAnet3\Models\pumpenergy.cpp">
+      <Filter>Lib\0. Header-Only Lib\Tools\Hydraulic Simulation\EPAnet 3.0\Models</Filter>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)EPAnet3\Models\qualmodel.cpp">
+      <Filter>Lib\0. Header-Only Lib\Tools\Hydraulic Simulation\EPAnet 3.0\Models</Filter>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)EPAnet3\Models\tankmixmodel.cpp">
+      <Filter>Lib\0. Header-Only Lib\Tools\Hydraulic Simulation\EPAnet 3.0\Models</Filter>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)EPAnet3\Utilities\graph.cpp">
+      <Filter>Lib\0. Header-Only Lib\Tools\Hydraulic Simulation\EPAnet 3.0\Utilities</Filter>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)EPAnet3\Utilities\mempool.cpp">
+      <Filter>Lib\0. Header-Only Lib\Tools\Hydraulic Simulation\EPAnet 3.0\Utilities</Filter>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)EPAnet3\Utilities\segpool.cpp">
+      <Filter>Lib\0. Header-Only Lib\Tools\Hydraulic Simulation\EPAnet 3.0\Utilities</Filter>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)EPAnet3\Utilities\utilities.cpp">
+      <Filter>Lib\0. Header-Only Lib\Tools\Hydraulic Simulation\EPAnet 3.0\Utilities</Filter>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)EPAnet3\Solvers\ggasolver.cpp">
+      <Filter>Lib\0. Header-Only Lib\Tools\Hydraulic Simulation\EPAnet 3.0\Solvers</Filter>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)EPAnet3\Solvers\hydsolver.cpp">
+      <Filter>Lib\0. Header-Only Lib\Tools\Hydraulic Simulation\EPAnet 3.0\Solvers</Filter>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)EPAnet3\Solvers\ltdsolver.cpp">
+      <Filter>Lib\0. Header-Only Lib\Tools\Hydraulic Simulation\EPAnet 3.0\Solvers</Filter>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)EPAnet3\Solvers\matrixsolver.cpp">
+      <Filter>Lib\0. Header-Only Lib\Tools\Hydraulic Simulation\EPAnet 3.0\Solvers</Filter>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)EPAnet3\Solvers\qualsolver.cpp">
+      <Filter>Lib\0. Header-Only Lib\Tools\Hydraulic Simulation\EPAnet 3.0\Solvers</Filter>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)EPAnet3\Solvers\rwcggasolver.cpp">
+      <Filter>Lib\0. Header-Only Lib\Tools\Hydraulic Simulation\EPAnet 3.0\Solvers</Filter>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)EPAnet3\Solvers\sparspak.cpp">
+      <Filter>Lib\0. Header-Only Lib\Tools\Hydraulic Simulation\EPAnet 3.0\Solvers</Filter>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)EPAnet3\Solvers\sparspaksolver.cpp">
+      <Filter>Lib\0. Header-Only Lib\Tools\Hydraulic Simulation\EPAnet 3.0\Solvers</Filter>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)EPAnet3\Output\outputfile.cpp">
+      <Filter>Lib\0. Header-Only Lib\Tools\Hydraulic Simulation\EPAnet 3.0\Output</Filter>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)EPAnet3\Output\projectwriter.cpp">
+      <Filter>Lib\0. Header-Only Lib\Tools\Hydraulic Simulation\EPAnet 3.0\Output</Filter>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)EPAnet3\Output\reportfields.cpp">
+      <Filter>Lib\0. Header-Only Lib\Tools\Hydraulic Simulation\EPAnet 3.0\Output</Filter>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)EPAnet3\Output\reportwriter.cpp">
+      <Filter>Lib\0. Header-Only Lib\Tools\Hydraulic Simulation\EPAnet 3.0\Output</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="$(MSBuildThisFileDirectory)WaterWatchDll.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)DispatchTimer.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\DispatchTimer</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Windows_SysAssert.h">
+      <Filter>Lib\0. Header-Only Lib\NonPortable_Services\Windows</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Windows_SysThreading.h">
+      <Filter>Lib\0. Header-Only Lib\NonPortable_Services\Windows</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Clock.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\Clock</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Heap.h">
+      <Filter>Lib\0. Header-Only Lib\Memory_Services\Heap</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)BTree.h">
+      <Filter>Lib\0. Header-Only Lib\Memory_Services\Heap</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)StringView.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\Strings</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)InterlockedValues.h">
+      <Filter>Lib\0. Header-Only Lib\Memory_Services\Multithreading</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)SharedPtr.h">
+      <Filter>Lib\0. Header-Only Lib\Memory_Services\Multithreading</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)SharedPtrWithSentinel.h">
+      <Filter>Lib\0. Header-Only Lib\Memory_Services\Multithreading</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Mutex.h">
+      <Filter>Lib\0. Header-Only Lib\Memory_Services\Multithreading</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Strings.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\Strings</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)cweeTime.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\Time</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Iterator.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\Containers\Iterator</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)List.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\Containers\List</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)cwee_math.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\Mathematics and Engineering</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)DelayedInstantiation.h">
+      <Filter>Lib\0. Header-Only Lib\Memory_Services\Multithreading</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Parser.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\Strings</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)bitFlags.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\Flags</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)ZipLib.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\ZipLib</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)SQLiteWrapper.h">
+      <Filter>Lib\1. Implimentation-Only Lib\Tools\Databases\SQLite</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)sqlite3.h">
+      <Filter>Lib\1. Implimentation-Only Lib\Tools\Databases\SQLite</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)cweeHeaderOnlyLib.h">
+      <Filter>Lib\0. Header-Only Lib</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)BasicDefines.h">
+      <Filter>Lib\0. Header-Only Lib</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Serialization.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\Serializer</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)vec.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\Containers\Vector</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)VecX.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\Containers\VecX &amp; MatX</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)MatX.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\Containers\VecX &amp; MatX</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)enum.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\Enums</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)BasicUnits.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\Mathematics and Engineering</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)File.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\FileSystem</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)cNominitum.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\FileSystem\cNominitum</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Geocoding.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\FileSystem\cNominitum</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Engineering.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\Mathematics and Engineering</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Curve.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\Containers\Curves and Patterns</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)LinkedList.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\Containers\List</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Toasts.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\Toasts</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)cweeInterlocked.h">
+      <Filter>Lib\0. Header-Only Lib\Memory_Services\Multithreading</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)cweeAny.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\Type Erasure</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)UnorderedList.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\Containers\List</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)robin_map.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\Containers\tsl</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)robin_set.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\Containers\tsl</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)robin_hash.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\Containers\tsl</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)robin_growth_policy.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\Containers\tsl</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)cweeThreadedMap.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\Containers\Map</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)cweeJob.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\Job System</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)BalancedTree.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\Containers\List</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)MachineLearningHeader.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\Mathematics and Engineering\Machine Learning</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)cweeImplimentationLib.h">
+      <Filter>Lib\1. Implimentation-Only Lib</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)MachineLearningTools.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\Mathematics and Engineering\Machine Learning</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)cweeScheduler.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\Job System</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Pattern.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\Containers\Curves and Patterns</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)BalancedPattern.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\Containers\Curves and Patterns</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)InterpolatedMatrix.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\Containers\Matrix</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)odbc.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\Databases\odbc</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)AppLayerRequests.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\ScriptingTools</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)chaiscript_wrapper.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\ScriptingTools</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Chaiscript_QuickFlatMap.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\ScriptingTools\Chaiscript\Utility</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Chaiscript_Defines.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\ScriptingTools\Chaiscript</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Chaiscript_ConstexprString.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\ScriptingTools\Chaiscript\Utility</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Chaiscript_Hash.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\ScriptingTools\Chaiscript\Utility</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Chaiscript_Algebra.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\ScriptingTools\Chaiscript\Language</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Chaiscript_Any.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\ScriptingTools\Chaiscript\DispatchKit</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Chaiscript_Type_Info.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\ScriptingTools\Chaiscript\DispatchKit</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Chaiscript_BadBoxedCast.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\ScriptingTools\Chaiscript\DispatchKit</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Chaiscript_BoxedValue.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\ScriptingTools\Chaiscript\DispatchKit</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Chaiscript_BoxedCastHelper.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\ScriptingTools\Chaiscript\DispatchKit</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Chaiscript_Threading.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\ScriptingTools\Chaiscript</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Chaiscript_TypeConversions.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\ScriptingTools\Chaiscript\DispatchKit</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Chaiscript_BoxedCast.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\ScriptingTools\Chaiscript\DispatchKit</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Chaiscript_BoxedNumber.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\ScriptingTools\Chaiscript\DispatchKit</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Chaiscript_DynamicObject.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\ScriptingTools\Chaiscript\DispatchKit</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Chaiscript_FunctionParams.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\ScriptingTools\Chaiscript\DispatchKit</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Chaiscript_ProxyFunctions.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\ScriptingTools\Chaiscript\DispatchKit</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Chaiscript_ProxyConstructors.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\ScriptingTools\Chaiscript\DispatchKit</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Chaiscript_ShortAlloc.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\ScriptingTools\Chaiscript\DispatchKit</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Chaiscript_DispatchKit.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\ScriptingTools\Chaiscript\DispatchKit</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Chaiscript_LanguageCommon.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\ScriptingTools\Chaiscript\Language</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Chaiscript_FunctionCall.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\ScriptingTools\Chaiscript\DispatchKit</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Chaiscript_Utility.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\ScriptingTools\Chaiscript\Utility</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Chaiscript_Bootstrap.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\ScriptingTools\Chaiscript\Bootstrap</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Chaiscript_Operators.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\ScriptingTools\Chaiscript\Bootstrap</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Precompiled.h">
+      <Filter>Lib\2. Final Lib\0. Precompiled Headers</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)CweeLib.h">
+      <Filter>Lib\2. Final Lib\1. cweeLib</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Chaiscript_Prelude.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\ScriptingTools\Chaiscript\Language</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Chaiscript_JSON.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\ScriptingTools\Chaiscript\Utility</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Chaiscript_Engine.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\ScriptingTools\Chaiscript\Language</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Chaiscript_Windows.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\ScriptingTools\Chaiscript\Language\Windows</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Chaiscript_ExceptionSpecification.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\ScriptingTools\Chaiscript\Language</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Chaiscript_DynamicObjectImpl.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\ScriptingTools\Chaiscript\DispatchKit</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Chaiscript_Eval.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\ScriptingTools\Chaiscript\Language</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Chaiscript_Optimizer.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\ScriptingTools\Chaiscript\Language</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Chaiscript_Tracer.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\ScriptingTools\Chaiscript\Language</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Chaiscript_Parser.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\ScriptingTools\Chaiscript\Language</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Chaiscript.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\ScriptingTools\Chaiscript</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Chaiscript_STL_Bootstrap.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\ScriptingTools\Chaiscript\Bootstrap\STL</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Chaiscript_STL_Module.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\ScriptingTools\Chaiscript\Bootstrap\STL</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)FileSystem.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\FileSystem</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)cURL.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\FileSystem\cURL</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)cweeSpatialAsset.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\Containers\SpatialAsset</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)EPAnetWrapper.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\Hydraulic Simulation\EPAnet 2.2</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)EPANET_epanet.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\Hydraulic Simulation\EPAnet 2.2\EPAnet 2.2 Source</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)EPANET_Compiled.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\Hydraulic Simulation\EPAnet 2.2\EPAnet 2.2 Source\C++ Conversion</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)EPANET_Precompiled.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\Hydraulic Simulation\EPAnet 2.2\EPAnet 2.2 Source\C++ Conversion</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)EPANET_Postcompiled.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\Hydraulic Simulation\EPAnet 2.2\EPAnet 2.2 Source\C++ Conversion</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)EPANET_CPP.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\Hydraulic Simulation\EPAnet 2.2\EPAnet 2.2 Source\C++ Conversion</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)InteropData.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\Mathematics and Engineering\Interop Data</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Asset.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\Mathematics and Engineering\Hydraulic Modeling</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)AssetControls.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\Mathematics and Engineering\Hydraulic Modeling</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Units.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\Mathematics and Engineering\Units</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)AlgLibWrapper.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\Mathematics and Engineering\AlgLib</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)AlgLib\alglibinternal.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\Mathematics and Engineering\AlgLib\AlgLib Src</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)AlgLib\alglibmisc.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\Mathematics and Engineering\AlgLib\AlgLib Src</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)AlgLib\ap.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\Mathematics and Engineering\AlgLib\AlgLib Src</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)AlgLib\dataanalysis.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\Mathematics and Engineering\AlgLib\AlgLib Src</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)AlgLib\diffequations.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\Mathematics and Engineering\AlgLib\AlgLib Src</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)AlgLib\fasttransforms.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\Mathematics and Engineering\AlgLib\AlgLib Src</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)AlgLib\integration.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\Mathematics and Engineering\AlgLib\AlgLib Src</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)AlgLib\interpolation.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\Mathematics and Engineering\AlgLib\AlgLib Src</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)AlgLib\kernels_avx2.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\Mathematics and Engineering\AlgLib\AlgLib Src</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)AlgLib\kernels_fma.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\Mathematics and Engineering\AlgLib\AlgLib Src</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)AlgLib\kernels_sse2.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\Mathematics and Engineering\AlgLib\AlgLib Src</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)AlgLib\linalg.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\Mathematics and Engineering\AlgLib\AlgLib Src</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)AlgLib\optimization.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\Mathematics and Engineering\AlgLib\AlgLib Src</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)AlgLib\solvers.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\Mathematics and Engineering\AlgLib\AlgLib Src</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)AlgLib\specialfunctions.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\Mathematics and Engineering\AlgLib\AlgLib Src</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)AlgLib\statistics.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\Mathematics and Engineering\AlgLib\AlgLib Src</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)AlgLib\stdafx.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\Mathematics and Engineering\AlgLib\AlgLib Src</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)TypedPattern.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\Containers\Curves and Patterns</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)cweeSet.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\Containers\Set</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)cweeEpanet_p1.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\Mathematics and Engineering\Hydraulic Modeling</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)cweeEpanet_p2.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\Mathematics and Engineering\Hydraulic Modeling</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)cweeAllocator.h">
+      <Filter>Lib\0. Header-Only Lib\Memory_Services\Multithreading</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)EPAnet3\epanet3.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\Hydraulic Simulation\EPAnet 3.0</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)EPAnet3\Core\constants.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\Hydraulic Simulation\EPAnet 3.0\Core</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)EPAnet3\Core\datamanager.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\Hydraulic Simulation\EPAnet 3.0\Core</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)EPAnet3\Core\diagnostics.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\Hydraulic Simulation\EPAnet 3.0\Core</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)EPAnet3\Core\error.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\Hydraulic Simulation\EPAnet 3.0\Core</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)EPAnet3\Core\hydbalance.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\Hydraulic Simulation\EPAnet 3.0\Core</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)EPAnet3\Core\hydengine.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\Hydraulic Simulation\EPAnet 3.0\Core</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)EPAnet3\Core\network.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\Hydraulic Simulation\EPAnet 3.0\Core</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)EPAnet3\Core\options.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\Hydraulic Simulation\EPAnet 3.0\Core</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)EPAnet3\Core\project.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\Hydraulic Simulation\EPAnet 3.0\Core</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)EPAnet3\Core\qualbalance.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\Hydraulic Simulation\EPAnet 3.0\Core</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)EPAnet3\Core\qualengine.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\Hydraulic Simulation\EPAnet 3.0\Core</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)EPAnet3\Core\units.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\Hydraulic Simulation\EPAnet 3.0\Core</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)EPAnet3\Elements\control.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\Hydraulic Simulation\EPAnet 3.0\Elements</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)EPAnet3\Elements\curve.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\Hydraulic Simulation\EPAnet 3.0\Elements</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)EPAnet3\Elements\demand.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\Hydraulic Simulation\EPAnet 3.0\Elements</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)EPAnet3\Elements\element.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\Hydraulic Simulation\EPAnet 3.0\Elements</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)EPAnet3\Elements\emitter.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\Hydraulic Simulation\EPAnet 3.0\Elements</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)EPAnet3\Elements\junction.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\Hydraulic Simulation\EPAnet 3.0\Elements</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)EPAnet3\Elements\link.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\Hydraulic Simulation\EPAnet 3.0\Elements</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)EPAnet3\Elements\node.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\Hydraulic Simulation\EPAnet 3.0\Elements</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)EPAnet3\Elements\pattern.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\Hydraulic Simulation\EPAnet 3.0\Elements</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)EPAnet3\Elements\pipe.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\Hydraulic Simulation\EPAnet 3.0\Elements</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)EPAnet3\Elements\pump.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\Hydraulic Simulation\EPAnet 3.0\Elements</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)EPAnet3\Elements\pumpcurve.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\Hydraulic Simulation\EPAnet 3.0\Elements</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)EPAnet3\Elements\qualsource.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\Hydraulic Simulation\EPAnet 3.0\Elements</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)EPAnet3\Elements\reservoir.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\Hydraulic Simulation\EPAnet 3.0\Elements</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)EPAnet3\Elements\tank.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\Hydraulic Simulation\EPAnet 3.0\Elements</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)EPAnet3\Elements\valve.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\Hydraulic Simulation\EPAnet 3.0\Elements</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)EPAnet3\Input\controlparser.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\Hydraulic Simulation\EPAnet 3.0\Input</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)EPAnet3\Input\curveparser.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\Hydraulic Simulation\EPAnet 3.0\Input</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)EPAnet3\Input\inputparser.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\Hydraulic Simulation\EPAnet 3.0\Input</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)EPAnet3\Input\inputreader.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\Hydraulic Simulation\EPAnet 3.0\Input</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)EPAnet3\Input\linkparser.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\Hydraulic Simulation\EPAnet 3.0\Input</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)EPAnet3\Input\nodeparser.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\Hydraulic Simulation\EPAnet 3.0\Input</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)EPAnet3\Input\optionparser.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\Hydraulic Simulation\EPAnet 3.0\Input</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)EPAnet3\Input\patternparser.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\Hydraulic Simulation\EPAnet 3.0\Input</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)EPAnet3\Models\demandmodel.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\Hydraulic Simulation\EPAnet 3.0\Models</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)EPAnet3\Models\headlossmodel.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\Hydraulic Simulation\EPAnet 3.0\Models</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)EPAnet3\Models\leakagemodel.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\Hydraulic Simulation\EPAnet 3.0\Models</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)EPAnet3\Models\pumpenergy.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\Hydraulic Simulation\EPAnet 3.0\Models</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)EPAnet3\Models\qualmodel.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\Hydraulic Simulation\EPAnet 3.0\Models</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)EPAnet3\Models\tankmixmodel.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\Hydraulic Simulation\EPAnet 3.0\Models</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)EPAnet3\Utilities\graph.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\Hydraulic Simulation\EPAnet 3.0\Utilities</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)EPAnet3\Utilities\mempool.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\Hydraulic Simulation\EPAnet 3.0\Utilities</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)EPAnet3\Utilities\segpool.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\Hydraulic Simulation\EPAnet 3.0\Utilities</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)EPAnet3\Utilities\utilities.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\Hydraulic Simulation\EPAnet 3.0\Utilities</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)EPAnet3\Solvers\ggasolver.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\Hydraulic Simulation\EPAnet 3.0\Solvers</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)EPAnet3\Solvers\hydsolver.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\Hydraulic Simulation\EPAnet 3.0\Solvers</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)EPAnet3\Solvers\ltdsolver.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\Hydraulic Simulation\EPAnet 3.0\Solvers</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)EPAnet3\Solvers\matrixsolver.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\Hydraulic Simulation\EPAnet 3.0\Solvers</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)EPAnet3\Solvers\qualsolver.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\Hydraulic Simulation\EPAnet 3.0\Solvers</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)EPAnet3\Solvers\rwcggasolver.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\Hydraulic Simulation\EPAnet 3.0\Solvers</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)EPAnet3\Solvers\sparspak.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\Hydraulic Simulation\EPAnet 3.0\Solvers</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)EPAnet3\Solvers\sparspaksolver.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\Hydraulic Simulation\EPAnet 3.0\Solvers</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)EPAnet3\Output\outputfile.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\Hydraulic Simulation\EPAnet 3.0\Output</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)EPAnet3\Output\projectwriter.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\Hydraulic Simulation\EPAnet 3.0\Output</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)EPAnet3\Output\reportfields.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\Hydraulic Simulation\EPAnet 3.0\Output</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)EPAnet3\Output\reportwriter.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\Hydraulic Simulation\EPAnet 3.0\Output</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Chaiscript_WaterWatch_Module.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\ScriptingTools</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)cweeUnitedValue.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\Mathematics and Engineering\Units</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Chaiscript_Postfix.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\ScriptingTools\Chaiscript\DispatchKit</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)cweePattern.h">
+      <Filter>Lib\0. Header-Only Lib\Tools\Containers\Curves and Patterns</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="Lib">
+      <UniqueIdentifier>{dc6a2be2-b652-467a-a182-02a5baa9aa21}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Lib\0. Header-Only Lib">
+      <UniqueIdentifier>{034f1e17-0b5b-4200-b609-f61312bc6241}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Lib\0. Header-Only Lib\NonPortable_Services">
+      <UniqueIdentifier>{d7822886-9151-4a6b-9ef2-6cf131e5c4d1}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Lib\0. Header-Only Lib\NonPortable_Services\Windows">
+      <UniqueIdentifier>{f1b597ad-132b-4c38-81a4-28843289eb80}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Lib\0. Header-Only Lib\Memory_Services">
+      <UniqueIdentifier>{d7253f7a-6de9-4e4c-8a0c-3afcb4fc96ad}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Lib\0. Header-Only Lib\Memory_Services\Heap">
+      <UniqueIdentifier>{7117decf-f023-4b19-9428-57bb3953ce5e}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Lib\0. Header-Only Lib\Memory_Services\Multithreading">
+      <UniqueIdentifier>{8f48570b-46a1-447c-9851-c8b7b406f1e6}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Lib\0. Header-Only Lib\Tools">
+      <UniqueIdentifier>{1cc820b6-ed22-4f85-bb29-70f69fab8526}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Lib\0. Header-Only Lib\Tools\Clock">
+      <UniqueIdentifier>{5e81d630-2ef6-45f5-b0bb-cc09e8f4d0c1}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Lib\0. Header-Only Lib\Tools\DispatchTimer">
+      <UniqueIdentifier>{dc1006c0-668a-4f44-ac0f-415f9bc8f416}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Lib\0. Header-Only Lib\Tools\Containers">
+      <UniqueIdentifier>{4da51050-5d3b-4d7d-95d1-ea24a7953af2}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Lib\0. Header-Only Lib\Tools\Containers\List">
+      <UniqueIdentifier>{2c3a1664-8357-4249-aa25-4facc02ff4d6}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Lib\0. Header-Only Lib\Tools\Containers\Iterator">
+      <UniqueIdentifier>{36caa927-2333-48a6-be0b-86d84d073cbd}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Lib\0. Header-Only Lib\Tools\Containers\Vector">
+      <UniqueIdentifier>{2bceecf7-97f8-44c5-82b9-c1a06a0c844b}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Lib\0. Header-Only Lib\Tools\Containers\VecX &amp; MatX">
+      <UniqueIdentifier>{00a36716-ff51-43f1-8f49-73021deeb459}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Lib\0. Header-Only Lib\Tools\Containers\Curves and Patterns">
+      <UniqueIdentifier>{b48e3c93-054a-411d-b4e5-370d8f48e387}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Lib\0. Header-Only Lib\Tools\Containers\tsl">
+      <UniqueIdentifier>{9609e4d9-14b0-4117-8a21-001e4fbbf9a4}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Lib\0. Header-Only Lib\Tools\Containers\Map">
+      <UniqueIdentifier>{81045cbf-4cc3-43f6-98fb-1916afb5d37c}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Lib\0. Header-Only Lib\Tools\Containers\Matrix">
+      <UniqueIdentifier>{fcb4af0b-a0d8-48ca-96af-63a665d5f54a}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Lib\0. Header-Only Lib\Tools\Mathematics and Engineering">
+      <UniqueIdentifier>{3a2f5656-28bd-4ebd-8659-bb38e0768180}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Lib\0. Header-Only Lib\Tools\Mathematics and Engineering\Machine Learning">
+      <UniqueIdentifier>{a9402e95-eb5f-4119-a088-0b1b1c889b89}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Lib\0. Header-Only Lib\Tools\Flags">
+      <UniqueIdentifier>{cde9dc08-7f99-4fa3-9132-fd12bffa52c8}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Lib\0. Header-Only Lib\Tools\ZipLib">
+      <UniqueIdentifier>{a13bbf9b-85c8-4990-9ba1-393a188eddfb}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Lib\0. Header-Only Lib\Tools\Time">
+      <UniqueIdentifier>{85860f3e-622c-43a7-8861-6a8887312d2c}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Lib\0. Header-Only Lib\Tools\Strings">
+      <UniqueIdentifier>{15ad7733-8177-45c3-91e4-3e12f1b79ff9}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Lib\0. Header-Only Lib\Tools\Serializer">
+      <UniqueIdentifier>{398dfc44-207d-480b-a8e6-5d19aa3027ef}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Lib\0. Header-Only Lib\Tools\Enums">
+      <UniqueIdentifier>{696dddea-fbd2-43e0-bf82-fe1e13da5c05}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Lib\0. Header-Only Lib\Tools\FileSystem">
+      <UniqueIdentifier>{920bb680-9eb7-4f98-90e1-f619eea7a62f}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Lib\0. Header-Only Lib\Tools\FileSystem\cNominitum">
+      <UniqueIdentifier>{7908eea8-e6a3-48a3-93f6-f391c1698f44}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Lib\0. Header-Only Lib\Tools\Toasts">
+      <UniqueIdentifier>{da199167-59ec-45e8-aa79-b6d93939e5c1}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Lib\0. Header-Only Lib\Tools\Type Erasure">
+      <UniqueIdentifier>{439c7498-d028-48fb-94c2-bc4a23bc55e7}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Lib\0. Header-Only Lib\Tools\Job System">
+      <UniqueIdentifier>{04784d04-da18-4add-922f-307dcb9d9c21}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Lib\0. Header-Only Lib\Tools\Databases">
+      <UniqueIdentifier>{5d40328f-e171-4a72-9715-2af2026a67d2}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Lib\0. Header-Only Lib\Tools\Databases\odbc">
+      <UniqueIdentifier>{bd5a7dba-3b3b-4f09-b898-5fd2d9922bdb}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Lib\0. Header-Only Lib\Tools\ScriptingTools">
+      <UniqueIdentifier>{0da1d36f-812e-427f-8933-8acb58aafe63}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Lib\0. Header-Only Lib\Tools\ScriptingTools\Chaiscript">
+      <UniqueIdentifier>{a042ba2a-1416-4468-b744-467afebde404}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Lib\0. Header-Only Lib\Tools\ScriptingTools\Chaiscript\Utility">
+      <UniqueIdentifier>{e8b7204e-63cc-48c2-aaf7-e27c56ae8e4e}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Lib\0. Header-Only Lib\Tools\ScriptingTools\Chaiscript\DispatchKit">
+      <UniqueIdentifier>{cbb52021-0741-4290-aecf-ca94a0cc420b}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Lib\0. Header-Only Lib\Tools\ScriptingTools\Chaiscript\Language">
+      <UniqueIdentifier>{d92dde4d-7e63-4df7-9f92-e2f222d4d78f}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Lib\0. Header-Only Lib\Tools\ScriptingTools\Chaiscript\Bootstrap">
+      <UniqueIdentifier>{c62ab4b5-c764-480f-8d8e-6ab6f7ba0b0f}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Lib\1. Implimentation-Only Lib">
+      <UniqueIdentifier>{880d548a-e58a-4a8c-baa1-ea3ec0d2bd99}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Lib\1. Implimentation-Only Lib\Tools">
+      <UniqueIdentifier>{c8a89bd9-a7a8-40ac-a701-181a38e475da}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Lib\1. Implimentation-Only Lib\Tools\Databases">
+      <UniqueIdentifier>{8a092ad0-daa8-4299-a3e6-1356ed218975}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Lib\1. Implimentation-Only Lib\Tools\Databases\SQLite">
+      <UniqueIdentifier>{dd469204-fdb3-41ad-b020-46c788fb95ad}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Lib\1. Implimentation-Only Lib\Tools\Implimentation_Test">
+      <UniqueIdentifier>{3e9f9008-a118-4e9c-8ddf-271994bf4d6e}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Lib\2. Final Lib">
+      <UniqueIdentifier>{44531bee-c431-47bf-882e-e6f8c95af712}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Lib\2. Final Lib\0. Precompiled Headers">
+      <UniqueIdentifier>{86f180fc-2aae-4e70-ba59-9489cbcd9f5d}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Lib\2. Final Lib\1. cweeLib">
+      <UniqueIdentifier>{24ac13dc-65cc-45f7-9fdb-c7522a0ce5ad}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Lib\0. Header-Only Lib\Tools\ScriptingTools\Chaiscript\Language\Windows">
+      <UniqueIdentifier>{9b10d82e-71a6-45bb-8996-157abd35d005}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Lib\0. Header-Only Lib\Tools\ScriptingTools\Chaiscript\Bootstrap\STL">
+      <UniqueIdentifier>{9dd1e3cd-f0f0-4af1-a7bf-65c2b81cbef7}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Lib\0. Header-Only Lib\Tools\FileSystem\cURL">
+      <UniqueIdentifier>{7b7daacf-6b5f-4bc1-89ec-aedc08b34f23}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Lib\0. Header-Only Lib\Tools\Containers\SpatialAsset">
+      <UniqueIdentifier>{e43b1a6d-f60f-4821-9a4a-1448364d6b36}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Lib\0. Header-Only Lib\Tools\Hydraulic Simulation">
+      <UniqueIdentifier>{2c88f2da-6fcc-4a35-9242-b915421f28d4}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Lib\0. Header-Only Lib\Tools\Hydraulic Simulation\EPAnet 2.2">
+      <UniqueIdentifier>{cdb83b59-8225-4e2b-93a7-a0dbe56acb98}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Lib\0. Header-Only Lib\Tools\Hydraulic Simulation\EPAnet 2.2\EPAnet 2.2 Source">
+      <UniqueIdentifier>{929abff8-5d4a-461e-bbcd-265ef06bad4a}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Lib\0. Header-Only Lib\Tools\Hydraulic Simulation\EPAnet 2.2\EPAnet 2.2 Source\C++ Conversion">
+      <UniqueIdentifier>{38e7f389-5fe9-4f33-ac83-068effba65a4}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Lib\0. Header-Only Lib\Tools\Mathematics and Engineering\Interop Data">
+      <UniqueIdentifier>{0cf9a189-b3e5-4d5a-a721-a761cc76de01}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Lib\0. Header-Only Lib\Tools\Mathematics and Engineering\Units">
+      <UniqueIdentifier>{0df61058-62f5-4730-921b-5417e61baa68}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Lib\0. Header-Only Lib\Tools\Mathematics and Engineering\AlgLib">
+      <UniqueIdentifier>{e3897d07-93db-48c0-80c6-9a81d873a688}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Lib\0. Header-Only Lib\Tools\Mathematics and Engineering\AlgLib\AlgLib Src">
+      <UniqueIdentifier>{171b988e-3ef9-49db-bb19-652e220915ab}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Lib\0. Header-Only Lib\Tools\Containers\Set">
+      <UniqueIdentifier>{e9638250-2324-4133-99f1-c4c4258398b2}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Lib\0. Header-Only Lib\Tools\Mathematics and Engineering\Hydraulic Modeling">
+      <UniqueIdentifier>{6254042b-0d62-495c-9b1f-a19ec9224901}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Lib\0. Header-Only Lib\Tools\Hydraulic Simulation\EPAnet 3.0">
+      <UniqueIdentifier>{a4777298-5225-4e27-b935-54de138850d2}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Lib\0. Header-Only Lib\Tools\Hydraulic Simulation\EPAnet 3.0\Core">
+      <UniqueIdentifier>{ead3519a-1959-4f86-9736-33d287bded09}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Lib\0. Header-Only Lib\Tools\Hydraulic Simulation\EPAnet 3.0\Elements">
+      <UniqueIdentifier>{607a2346-93d7-4072-a5b0-826cacd84e4d}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Lib\0. Header-Only Lib\Tools\Hydraulic Simulation\EPAnet 3.0\Input">
+      <UniqueIdentifier>{b067686d-280a-4d98-8663-399c8e864ddf}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Lib\0. Header-Only Lib\Tools\Hydraulic Simulation\EPAnet 3.0\Models">
+      <UniqueIdentifier>{17a7d366-5042-453a-9268-dd5b6bed205c}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Lib\0. Header-Only Lib\Tools\Hydraulic Simulation\EPAnet 3.0\Output">
+      <UniqueIdentifier>{07b84f49-cad4-42bf-8490-ea1297c3273d}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Lib\0. Header-Only Lib\Tools\Hydraulic Simulation\EPAnet 3.0\Solvers">
+      <UniqueIdentifier>{ed5498d4-61dc-4131-ace4-dd4d33228a9c}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Lib\0. Header-Only Lib\Tools\Hydraulic Simulation\EPAnet 3.0\Utilities">
+      <UniqueIdentifier>{71c9e0d4-2116-471f-89ae-ba9bd80547d7}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="$(MSBuildThisFileDirectory)EPANET_errors.dat">
+      <Filter>Lib\0. Header-Only Lib\Tools\Hydraulic Simulation\EPAnet 2.2\EPAnet 2.2 Source\C++ Conversion</Filter>
+    </None>
+  </ItemGroup>
+</Project>

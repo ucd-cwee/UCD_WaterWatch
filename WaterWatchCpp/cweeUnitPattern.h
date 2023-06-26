@@ -1,0 +1,1934 @@
+/*
+WaterWatch, Energy Demand Management System for Water Systems. For further information on WaterWatch, please see https://cwee.ucdavis.edu/waterwatch.
+
+Copyright (c) 2019 - 2023 by Robert Good, Erin Musabandesu, and David Linz. (Email: rtgood@ucdavis.edu). All rights reserved.
+
+Created: RTG	/	2023
+History: RTG	/	2023		1. Initial Release.
+
+Copyright / Usage Details: You are allowed to include the source code in any product (commercial, shareware, freeware or otherwise)
+when your product is released in binary form. You are allowed to modify the source code in any way you want
+except you cannot modify the copyright details at the top of each module. If you want to distribute source
+code with your application, then you are only allowed to distribute versions released by the author. This is
+to maintain a single distribution point for the source code.
+*/
+
+#pragma once
+#include "Precompiled.h"
+#include "Curve.h"
+#include "Pattern.h"
+#include "List.h"
+#include "LinkedList.h"
+#include "BasicUnits.h"
+#include "vec.h"
+#include "cwee_math.h"
+#include "UnorderedList.h"
+#include "BalancedTree.h"
+#include "Strings.h"
+#include "cweeTime.h"
+#include "Engineering.h"
+#include "cweeUnitedValue.h"
+#include "BalancedPattern.h"
+#include "Iterator.h"
+
+namespace cweeUnitValues {
+	class cweeUnitPatternContainer_t {
+	public:
+		mutable unit_value											internal_X_type;
+		mutable unit_value											internal_Y_type;
+
+		class GenericIterator {
+		public:
+			class DataContainer {
+			public:
+				DataContainer() : X(), Y(nullptr) {};
+				DataContainer(unit_value x) : X(x), Y(nullptr) {};
+				DataContainer(unit_value x, unit_value y) : X(x), Y(y) {};
+
+				unit_value X;
+				cweeSharedPtr<unit_value> Y;
+				// unit_value* X;
+				// unit_value* Y;
+			};
+
+			mutable cweeSharedPtr<DataContainer> thisContainer;
+
+			// cweeSharedPtr<void> data;
+			GenericIterator() : thisContainer() {};
+			virtual ~GenericIterator() {};
+			virtual void begin(cweeUnitPatternContainer_t const* ref) = 0;
+			virtual void next(cweeUnitPatternContainer_t const* ref) = 0;
+			virtual void end(cweeUnitPatternContainer_t const* ref) = 0;
+			virtual DataContainer& get(cweeUnitPatternContainer_t const* ref) = 0;
+			virtual bool cmp(const cweeSharedPtr<GenericIterator>& s) const = 0;
+			virtual long long distance(const cweeSharedPtr<GenericIterator>& s) const = 0;
+			virtual void prev(const cweeUnitPatternContainer_t* ref) = 0;
+			virtual const DataContainer& get(const cweeUnitPatternContainer_t* ref) const = 0;
+		};
+		virtual cweeSharedPtr<GenericIterator> CreateIterationState() const = 0;
+
+		using ParentClass = cweeUnitPatternContainer_t;
+		using IterType = GenericIterator::DataContainer;
+		using StateType = GenericIterator;
+
+		typedef std::ptrdiff_t difference_type;											
+		typedef size_t size_type; 
+		typedef IterType value_type; 
+		typedef IterType* pointer; 
+		typedef const IterType* const_pointer;					
+		typedef IterType& reference;																												
+		typedef const IterType& const_reference;																									
+		class iterator : public std::iterator<std::random_access_iterator_tag, value_type, difference_type, pointer, reference> {
+		public: 
+			const ParentClass* ref;	
+			mutable cweeSharedPtr<StateType> state;
+			iterator() : ref(nullptr), state(nullptr) {};																									
+			iterator(const ParentClass* parent, cweeSharedPtr<StateType> State) : ref(parent), state(State) {};
+			iterator& operator+=(difference_type n) { for (int i = 0; i < n; i++) if (state) state->next(ref); return *this; };									
+			iterator& operator-=(difference_type n) { for (int i = 0; i < n; i++) if (state) state->prev(ref); return *this; };
+			difference_type operator-(iterator const& other) { if (state) return state->distance(other.state); return 0; };
+			iterator& operator-(difference_type dist) { for (int i = 0; i < dist; i++) if (state) state->prev(ref); return *this; };
+			iterator& operator--() { if (state) state->prev(ref); return *this; };
+			iterator operator--(int) { iterator retval = *this; --(*this); return retval; };														
+			iterator& operator+(difference_type dist) { for (int i = 0; i < dist; i++) if (state) state->next(ref); return *this; };
+			iterator& operator++() { if (state) state->next(ref); return *this; };
+			iterator operator++(int) { iterator retval = *this; ++(*this); return retval; };														
+			bool operator==(iterator const& other) const { return !(operator!=(other)); };															
+			bool operator!=(iterator const& other) const { if (state) return (ref != other.ref || state->cmp(other.state)); return false; };
+			reference operator*() { return const_cast<reference>(state->get(ref)); };																
+			pointer operator->() { return const_cast<pointer>(&state->get(ref)); };																	
+			const_reference operator*() const { return state->get(ref); };																			
+			const_pointer operator->() const { return &state->get(ref); };																			
+			iterator& begin() { if (state) state->begin(ref); return *this; };
+			iterator& end() { if (state) state->end(ref); return *this; };
+		};																													
+		iterator begin() { return iterator(this, this->CreateIterationState()).begin(); };																						
+		iterator end() { return iterator(this, this->CreateIterationState()).end(); };
+
+	protected:
+		virtual void AddValueActual(unit_value X, unit_value Y, bool isUnique) = 0;
+		virtual void Convert_X(unit_value old_unit, unit_value new_unit) = 0;
+		virtual void Convert_Y(unit_value old_unit, unit_value new_unit) = 0;
+		virtual bool StaticUnits() { return false; };
+
+	public:
+		cweeSharedPtr< cweeUnitPatternContainer_t> CopyAnotherContainer(cweeSharedPtr< cweeUnitPatternContainer_t> other) {
+			bool canConvertX = CheckCanConvert(this->internal_X_type, other->internal_X_type);
+			bool canConvertY = CheckCanConvert(this->internal_Y_type, other->internal_Y_type);
+
+			if (!other->StaticUnits() && canConvertX && canConvertY) {
+				// we can copy their container and change their units -- this is the best path as it prevents us from copying their data one-by-one
+				auto out = other->Clone();
+
+				out->Convert_X(other->internal_X_type, this->internal_X_type);
+				out->Convert_Y(other->internal_Y_type, this->internal_Y_type);
+
+				out->internal_X_type.Clear();
+				out->internal_Y_type.Clear();
+				out->internal_X_type = this->internal_X_type;
+				out->internal_Y_type = this->internal_Y_type;
+
+				return out;
+			}
+			else if (!this->StaticUnits()) {
+				// we couldn't use their data container, so we will have to use a copy of our our own. 
+				auto out = this->Clone();
+				
+				out->ClearData();
+
+				if (canConvertX && canConvertY) {
+					for (auto& x : *other) {
+						if (x.Y) {
+							out->AddValueActual(x.X, *x.Y, false);
+						}
+					}
+					out->Convert_X(other->internal_X_type, this->internal_X_type);
+					out->Convert_Y(other->internal_Y_type, this->internal_Y_type);
+				}
+				else if (!canConvertX && canConvertY) {
+					for (auto& x : *other) {
+						if (x.Y) {
+							out->AddValueActual(x.X, *x.Y, false);
+						}
+					}
+					out->Convert_Y(other->internal_Y_type, this->internal_Y_type);
+				}
+				else if (canConvertX && !canConvertY) {
+					for (auto& x : *other) {
+						if (x.Y) {
+							out->AddValueActual(x.X, *x.Y, false);
+						}
+					}
+					out->Convert_X(other->internal_X_type, this->internal_X_type);
+				}
+				else if (!canConvertX && !canConvertY) {
+					for (auto& x : *other) {
+						if (x.Y) {
+							out->AddValueActual(x.X, *x.Y, false);
+						}
+					}
+				}
+				return out;
+			}
+			else {
+				// everyone involved is statically typed, meaning there is no winning here.
+				return other->Clone();
+			}
+
+		};
+		virtual cweeSharedPtr< cweeUnitPatternContainer_t> Clone() = 0;
+		cweeUnitPatternContainer_t() : internal_X_type(second()), internal_Y_type(scalar()) {};
+		cweeUnitPatternContainer_t(unit_value const& Y_type) : internal_X_type(second()), internal_Y_type(Y_type) {};
+		cweeUnitPatternContainer_t(unit_value const& X_type, unit_value const& Y_type) : internal_X_type(X_type), internal_Y_type(Y_type) {};
+		cweeUnitPatternContainer_t(cweeUnitPatternContainer_t const& o) : internal_X_type(o.internal_X_type), internal_Y_type(o.internal_Y_type) {};
+		cweeUnitPatternContainer_t& operator=(cweeUnitPatternContainer_t const& o) = delete; /* {
+			if (!StaticUnits() && CheckCanConvert(internal_X_type, o.internal_X_type) && CheckCanConvert(internal_Y_type, o.internal_Y_type)) {
+				Convert_X(internal_X_type, o.internal_X_type);
+				Convert_Y(internal_Y_type, o.internal_Y_type);
+				internal_X_type = o.internal_X_type;
+				internal_Y_type = o.internal_Y_type;
+			}
+			else {
+				internal_X_type.Clear(); internal_Y_type.Clear();
+				internal_X_type = o.internal_X_type;
+				internal_Y_type = o.internal_Y_type;
+			}
+			return *this;
+		};*/
+		virtual ~cweeUnitPatternContainer_t() {};
+
+		static bool CheckCanConvert(unit_value const& a, unit_value const& b) {
+			return a.AreConvertableTypes(b);
+		};
+		static void RequireCanConvert(unit_value const& a, unit_value const& b) {
+			if (!CheckCanConvert(a, b)) {
+				throw(std::runtime_error(cweeStr::printf("Could not convert from '%s' to '%s' due to unit types.", a.ToString().c_str(), b.ToString().c_str()).c_str()));
+			};
+		};
+
+		virtual unit_value GetMinTime() const = 0;
+		virtual unit_value GetMaxTime() const = 0;
+		virtual unit_value GetAvgTime(void) const = 0;
+		virtual scalar											GetMinimumDecimals() const = 0;
+		virtual unit_value										GetMinimumTimeStep() const = 0;
+		virtual void											Translate(const unit_value& translation) = 0;
+		virtual void											ShiftTime(const unit_value& deltaTime) = 0;
+		virtual void											UnsafeBasis(const unit_value& t, u64* bvals, interpolation_t interpolationType) const = 0;
+		virtual unit_value										GetCurrentValue(unit_value time, interpolation_t interpolationType) const = 0;
+		virtual int GetNodeCount() const = 0;
+		void AddValue(unit_value const& X, unit_value const& Y) {
+			RequireCanConvert(X, internal_X_type); RequireCanConvert(Y, internal_Y_type);
+
+			internal_Y_type = Y;
+			internal_X_type = X;
+
+			AddValueActual(internal_X_type, internal_Y_type, false);
+		};
+		void AddUniqueValue(unit_value const& X, unit_value const& Y) {
+			RequireCanConvert(X, internal_X_type); RequireCanConvert(Y, internal_Y_type);
+
+			internal_Y_type = Y;
+			internal_X_type = X;
+
+			AddValueActual(internal_X_type, internal_Y_type, true);
+		};
+		virtual void  ClearData() = 0;
+		void  Clear() {
+			ClearData();
+			internal_X_type.Clear();
+			internal_Y_type.Clear();
+		};
+	};
+
+	class cweeUnitPatternContainer final : public cweeUnitPatternContainer_t {
+	public:
+		cweeBalancedTree<double, double, 10>						container;
+		cweeSysInterlockedInteger									granularity;
+		class SpecializedIterator final : public GenericIterator {
+		public:
+			SpecializedIterator() : GenericIterator() {};
+			~SpecializedIterator() {};
+
+			decltype(container)::const_iterator iter;
+
+			void begin(cweeUnitPatternContainer_t const* ref) {
+				auto* p = dynamic_cast<cweeUnitPatternContainer const*>(ref);
+				if (p) {
+					iter = p->container.begin();
+				}
+			};
+			void next(cweeUnitPatternContainer_t const* ref) {
+				auto* p = dynamic_cast<cweeUnitPatternContainer const*>(ref);
+				if (p) {
+					iter++;
+					while (iter != p->container.end() && !iter->object) iter++;					
+				}
+			};
+			void end(cweeUnitPatternContainer_t const* ref) {
+				auto* p = dynamic_cast<cweeUnitPatternContainer const*>(ref);
+				if (p) {
+					iter = p->container.end();
+				}
+			};
+			DataContainer& get(cweeUnitPatternContainer_t const* ref) {
+				auto* p = const_cast<cweeUnitPatternContainer*>(dynamic_cast<cweeUnitPatternContainer const*>(ref));
+				if (p) {
+					unit_value x_0 = (p->internal_X_type = iter->key);
+					unit_value y_0;
+					DataContainer* new_ptr;
+					if (iter->object) {
+						y_0 = (p->internal_Y_type = *iter->object);
+						new_ptr = new DataContainer(x_0, y_0);
+					}
+					else {
+						new_ptr = new DataContainer(x_0);
+					}
+					
+					thisContainer = cweeSharedPtr< DataContainer >(new_ptr, [x_0,y_0,p](DataContainer* ptr) {
+						if (ptr->X != x_0) {
+							if (ptr->Y) {
+								if (*ptr->Y != y_0) {
+									// x changed && y changed
+									auto* node = p->container.NodeFind(x_0());
+									p->container.Remove(node);
+									p->container.Add(ptr->Y->operator()(), ptr->X(), true);
+								}
+								else {
+									// x changed but y is the same
+									auto* node = p->container.NodeFind(x_0());
+									p->container.Remove(node);
+									p->container.Add(y_0(), ptr->X(), true);
+								}
+							}
+						}
+						else {
+							if (ptr->Y) {
+								if (*ptr->Y != y_0) {
+									// x is the same but y changed
+									auto* node = p->container.NodeFind(x_0());
+									if (node) {
+										*node->object = ptr->Y->operator()();
+									}
+								}
+								else {
+									// x is the same && y is the same
+									// DO NOTHING
+								}
+							}
+						}
+					delete ptr; });
+				}
+				return *thisContainer;
+			};
+			bool cmp(const cweeSharedPtr<GenericIterator>& s) const {
+				if (!s) return 0;
+				auto p = s.CastReference<SpecializedIterator>();
+				if (p) {
+					return iter.state.cmp(p->iter.state);
+				}
+				return true;
+			};
+			long long distance(const cweeSharedPtr<GenericIterator>& s) const {
+				if (!s) return 0;
+				auto p = s.CastReference<SpecializedIterator>();
+				if (p) {
+					return iter.state.distance(p->iter.state);
+				}
+				return 0;				
+			};
+			void prev(const cweeUnitPatternContainer_t* ref) {
+				auto* p = dynamic_cast<cweeUnitPatternContainer const*>(ref);
+				if (p) {
+					iter--;
+					while (iter != (p->container.begin()--) && !iter->object) iter--;
+				}
+			};
+			const DataContainer& get(const cweeUnitPatternContainer_t* ref) const {
+				auto* p = const_cast<cweeUnitPatternContainer*>(dynamic_cast<cweeUnitPatternContainer const*>(ref));
+				if (p) {
+					unit_value x_0 = (p->internal_X_type = iter->key);
+					unit_value y_0;
+					DataContainer* new_ptr;
+					if (iter->object) {
+						y_0 = (p->internal_Y_type = *iter->object);
+						new_ptr = new DataContainer(x_0, y_0);
+					}
+					else {
+						new_ptr = new DataContainer(x_0);
+					}
+
+					thisContainer = cweeSharedPtr< DataContainer >(new_ptr, [x_0, y_0, p](DataContainer* ptr) {
+						if (ptr->X != x_0) {
+							if (ptr->Y) {
+								if (*ptr->Y != y_0) {
+									// x changed && y changed
+									auto* node = p->container.NodeFind(x_0());
+									p->container.Remove(node);
+									p->container.Add(ptr->Y->operator()(), ptr->X(), true);
+								}
+								else {
+									// x changed but y is the same
+									auto* node = p->container.NodeFind(x_0());
+									p->container.Remove(node);
+									p->container.Add(y_0(), ptr->X(), true);
+								}
+							}
+						}
+						else {
+							if (ptr->Y) {
+								if (*ptr->Y != y_0) {
+									// x is the same but y changed
+									auto* node = p->container.NodeFind(x_0());
+									if (node) {
+										*node->object = ptr->Y->operator()();
+									}
+								}
+								else {
+									// x is the same && y is the same
+									// DO NOTHING
+								}
+							}
+						}
+						delete ptr; });
+				}
+				return *thisContainer;
+			};
+		};
+		virtual cweeSharedPtr<GenericIterator> CreateIterationState() const {
+			return make_cwee_shared<SpecializedIterator>().CastReference<GenericIterator>();
+		};
+
+	public:
+		cweeSharedPtr< cweeUnitPatternContainer_t> Clone() {
+			cweeSharedPtr< cweeUnitPatternContainer> out = make_cwee_shared<cweeUnitPatternContainer>(*this);
+			return out.CastReference< cweeUnitPatternContainer_t>();
+		};
+		cweeUnitPatternContainer() : cweeUnitPatternContainer_t(), container(), granularity(16) {};
+		cweeUnitPatternContainer(unit_value const& Y_type) : cweeUnitPatternContainer_t(Y_type), container(), granularity(16) {};
+		cweeUnitPatternContainer(unit_value const& X_type, unit_value const& Y_type) : cweeUnitPatternContainer_t(X_type, Y_type), container(), granularity(16) {};
+		cweeUnitPatternContainer(cweeUnitPatternContainer const& o) : cweeUnitPatternContainer_t(o.internal_X_type, o.internal_Y_type), container(), granularity(16) { container = o.container; };
+		cweeUnitPatternContainer& operator=(cweeUnitPatternContainer const& o) = delete; /* {
+			if (!StaticUnits() && CheckCanConvert(internal_X_type, o.internal_X_type) && CheckCanConvert(internal_Y_type, o.internal_Y_type)) {
+				container = o.container;
+				Convert_X(internal_X_type, o.internal_X_type);
+				Convert_Y(internal_Y_type, o.internal_Y_type);
+				internal_X_type = o.internal_X_type;
+				internal_Y_type = o.internal_Y_type;
+			}
+			else {
+				internal_X_type.Clear(); internal_Y_type.Clear();
+
+				internal_X_type = o.internal_X_type;
+				internal_Y_type = o.internal_Y_type;
+				container = o.container;
+			}
+			return *this;
+		};*/
+		~cweeUnitPatternContainer() {};
+
+		unit_value GetMinTime() const {
+			unit_value out(0);
+
+			if (container.GetNodeCount() > 0) {
+				auto ptr = container.GetFirst();
+				if (ptr) {
+					out = (internal_X_type = ptr->key);
+				}
+			}
+			return out;
+		};
+		unit_value GetMaxTime() const {
+			unit_value out(0);
+
+			if (container.GetNodeCount() > 0) {
+				auto ptr = container.GetLast();
+				if (ptr) {
+					out = (internal_X_type = ptr->key);
+				}
+			}
+			return out;
+		};
+		unit_value GetAvgTime(void) const {
+			unit_value out;
+
+			int num(0);
+
+			out = (internal_X_type = 0);
+			for (auto& x : container) {
+				if (x.object) {
+					num++;
+					out -= (out / num);
+					out += ((internal_X_type = x.key) / num);
+				}
+			}
+			return out;
+		};
+
+		scalar											GetMinimumDecimals() const {
+			scalar decimal = 1.0f;
+			int numbs = GetNodeCount();
+			if (numbs == 0) return 0.0001f;
+			scalar F;
+			int numSuccess = 0;
+
+			for (auto& x : container) {
+				if (x.object) {
+					F = cweeMath::roundNearest((float)*x.object, (float)decimal);
+					if (cweeMath::Fabs((float)(F - (float)*x.object)) > 0.00001) {
+						// too great an error
+						decimal = (float)decimal / 10.0f;
+						numSuccess = 0;
+						if (decimal <= 0.0001f) {
+							decimal = 0.0001f;
+							break;
+						}
+					}
+					else {
+						numSuccess++;
+						if (numSuccess > 10) {
+							break;
+						}
+					}
+				}
+			}
+			return decimal;
+		};
+		unit_value										GetMinimumTimeStep() const {
+			unit_value out, prevTime, t;
+			int numFailures, numbs;
+
+			numbs = GetNodeCount();
+			if (numbs <= 1) return 1;
+
+			out = GetMaxTime() - GetMinTime();
+			prevTime = out;
+			prevTime = std::numeric_limits<unit_value>::max();
+			numFailures = 100;
+
+			for (auto& x : container) {
+				if (x.object) {
+					t = math::abs(prevTime - x.key);
+					prevTime = x.key;
+					if (t < out && t > 0) {
+						out = t;
+					}
+					else {
+						numFailures--;
+						if (numFailures <= 0) break;
+					}
+				}
+			}
+
+			if (out <= 1) out = 1;
+
+			return out;
+		};
+
+		void											ShiftTime(const unit_value& deltaTime) {
+			for (auto& x : container) {
+				x.key = ((internal_X_type = deltaTime) + x.key)();
+			}
+		};
+		void											Translate(const unit_value& translation) {
+			for (auto& x : container) {
+				if (x.object) {
+					*x.object = ((internal_Y_type = translation) + *x.object)();
+				}
+			}
+		};
+
+		void											UnsafeBasis(const unit_value& t, u64* bvals, interpolation_t interpolationType) const {
+			using node_type = cweeBalancedTree<double, double, 10>::cweeBalancedTreeNode;
+
+			//const float x = cweeMath::min(cweeMath::max((float)((t - this->TimeForIndex(index)) / (this->TimeForIndex(index + 1) - this->TimeForIndex(index))), 0), 1);
+			//const float s = 0; // where s=0 means linear, s=1 means fully smooth, s=0.5 = traditional catmull-rom. 
+			//const float sx = s * x;
+			//const float sx2 = sx * x;
+			//const float sx3 = sx2 * x;
+			//const float x2 = x * x;
+			//const float x3 = x2 * x;
+			//bvals[0] = 2.0f*sx2-sx-sx3;
+			//bvals[1] = 1.0f-3.0f*x2+sx2+2.0f*x3-sx3;
+			//bvals[2] = sx+3.0f*x2-2.0f*sx2-2.0f*x3+sx3;
+			//bvals[3] = sx3 - sx2;
+			u64 s; node_type* index1 = nullptr;
+			switch (interpolationType) {
+			case interpolation_t::IT_RIGHT_CLAMP: {
+				bvals[0] = 0;
+				bvals[1] = 0;
+				bvals[2] = 1;
+				bvals[3] = 0;
+				break;
+			}
+			case interpolation_t::IT_SPLINE: {
+				index1 = container.NodeFindLargestSmallerEqual(t());
+				if (index1) {
+					s = (u64)index1->key;
+					index1 = container.GetNextLeaf(index1);
+					if (index1) {
+						if (s <= (u64)t && index1->key >= t) {
+							s = (u64)((u64)t - s) / ((u64)index1->key - s);
+							if (!::isfinite(s)) s = 0;
+
+							bvals[0] = ((2.0f - s) * s - 1.0f) * s * 0.5f;				// -0.5f s * s * s + s * s - 0.5f * s
+							bvals[1] = (((3.0f * s - 5.0f) * s) * s + 2.0f) * 0.5f;		// 1.5f * s * s * s - 2.5f * s * s + 1.0f
+							bvals[2] = ((-3.0f * s + 4.0f) * s + 1.0f) * s * 0.5f;		// -1.5f * s * s * s - 2.0f * s * s + 0.5f s
+							bvals[3] = ((s - 1.0f) * s * s) * 0.5f;						// 0.5f * s * s * s - 0.5f * s * s
+						}
+						else {
+							// something went wrong - snap left. 
+							s = (u64)(s - s) / ((u64)index1->key - s);
+							if (!::isfinite(s)) s = 0;
+
+							bvals[0] = ((2.0f - s) * s - 1.0f) * s * 0.5f;				// -0.5f s * s * s + s * s - 0.5f * s
+							bvals[1] = (((3.0f * s - 5.0f) * s) * s + 2.0f) * 0.5f;		// 1.5f * s * s * s - 2.5f * s * s + 1.0f
+							bvals[2] = ((-3.0f * s + 4.0f) * s + 1.0f) * s * 0.5f;		// -1.5f * s * s * s - 2.0f * s * s + 0.5f s
+							bvals[3] = ((s - 1.0f) * s * s) * 0.5f;						// 0.5f * s * s * s - 0.5f * s * s
+						}
+					}
+					else {
+						bvals[0] = 0;
+						bvals[1] = 1;
+						bvals[2] = 0;
+						bvals[3] = 0;
+					}
+				}
+				else {
+					bvals[0] = 0;
+					bvals[1] = 1;
+					bvals[2] = 0;
+					bvals[3] = 0;
+				}
+				break;
+			}
+			case interpolation_t::IT_LINEAR: {
+				index1 = container.NodeFindLargestSmallerEqual(t());
+				if (index1) {
+					s = (u64)index1->key;
+					index1 = container.GetNextLeaf(index1);
+					if (index1) {
+						if (s <= (u64)t && index1->key >= t) {
+							s = (u64)((u64)t - s) / ((u64)index1->key - s);
+							if (!::isfinite(s)) s = 0;
+
+							bvals[0] = 0;
+							bvals[1] = (u64)(1.0f - s);
+							bvals[2] = s;
+							bvals[3] = 0;
+
+						}
+						else {
+							// something went wrong - snap left. 
+							s = (u64)(s - s) / ((u64)index1->key - s);
+							if (!::isfinite(s)) s = 0;
+
+							bvals[0] = 0;
+							bvals[1] = (u64)(1.0f - s);
+							bvals[2] = s;
+							bvals[3] = 0;
+						}
+					}
+					else {
+						bvals[0] = 0;
+						bvals[1] = 1;
+						bvals[2] = 0;
+						bvals[3] = 0;
+					}
+				}
+				else {
+					bvals[0] = 0;
+					bvals[1] = 1;
+					bvals[2] = 0;
+					bvals[3] = 0;
+				}
+				break;
+			}
+			default:
+			case interpolation_t::IT_LEFT_CLAMP: {
+				bvals[0] = 0;
+				bvals[1] = 1;
+				bvals[2] = 0;
+				bvals[3] = 0;
+				break;
+			}
+			}
+		};
+
+		unit_value										GetCurrentValue(unit_value time, interpolation_t interpolationType) const {
+			using node_type = cweeBalancedTree<double, double, 10>::cweeBalancedTreeNode;
+
+			int i = 0, j, k = 0;
+			u64 bvals[4];
+			unit_value v;
+			v = (internal_Y_type = 0);
+			internal_X_type = time; time.Clear(); time = internal_X_type;
+			j = container.GetNodeCount();
+			if (j < 1) {
+				v = 0;
+				return v;
+			}
+			else if (j == 1) {
+				auto* ptr = container.FindLargestSmallerEqual(time());
+				if (ptr) v = *ptr;
+				return v;
+			}
+			else {
+				{
+					switch (interpolationType) {
+					case interpolation_t::IT_RIGHT_CLAMP: {
+						auto* ptr = container.FindSmallestLargerEqual(time());
+						if (ptr) v = *ptr;
+						break;
+					}
+					case interpolation_t::IT_SPLINE: {
+						UnsafeBasis(time, bvals, interpolationType);
+						node_type* x1 = container.NodeFindLargestSmallerEqual(time());
+						node_type* x0 = x1 == nullptr ? (node_type*)nullptr : container.GetPrevLeaf(x1);
+						node_type* x2 = x1 == nullptr ? (node_type*)nullptr : container.GetNextLeaf(x1);
+						node_type* x3 = x2 == nullptr ? (node_type*)nullptr : container.GetNextLeaf(x2);
+						if (x0) v += *x0->object * bvals[0];	else if (x1) v += *x1->object * bvals[0];
+						if (x1) v += *x1->object * bvals[1];
+						if (x2) v += *x2->object * bvals[2];	else if (x1) v += *x1->object * bvals[2];
+						if (x3) v += *x3->object * bvals[3]; else if (x1) v += *x1->object * bvals[3];
+						break;
+					}
+					case interpolation_t::IT_LINEAR: {
+						UnsafeBasis(time, bvals, interpolationType);
+						node_type* x1 = container.NodeFindLargestSmallerEqual(time());
+						node_type* x2 = x1 == nullptr ? (node_type*)nullptr : container.GetNextLeaf(x1);
+						if (x1) v += *x1->object * bvals[1];
+						if (x2) v += *x2->object * bvals[2];	else if (x1) v += *x1->object * bvals[2];
+						break;
+					}
+					default:
+					case interpolation_t::IT_LEFT_CLAMP: {
+						auto* ptr = container.FindLargestSmallerEqual(time());
+						if (ptr) v = *ptr;
+						break;
+					}
+					}
+				}
+				return v;
+			}
+		};
+
+		int GetNodeCount() const { return container.GetNodeCount(); };
+		void Convert_X(unit_value old_unit, unit_value new_unit) {
+			for (auto& x : container) {
+				old_unit = x.key;
+				new_unit = old_unit;
+				x.key = new_unit();
+			}
+		};
+		void Convert_Y(unit_value old_unit, unit_value new_unit) {
+			for (auto& x : container) {
+				if (x.object) {
+					old_unit = *x.object;
+					new_unit = old_unit;
+					*x.object = new_unit();
+				}
+			}
+		};
+		bool StaticUnits() override { return false; };
+		void AddValueActual(unit_value X, unit_value Y, bool isUnique) {
+			if (granularity <= 0) {	// this is a hack to fix our memset classes
+				granularity = 16;
+			}
+			if ((GetNodeCount() + 1) >= (granularity.GetValue() * GRANULARITY_SCALER)) {
+				granularity.SetValue(granularity.GetValue() * GRANULARITY_SCALER);
+				int newsize = GetNodeCount() + granularity.GetValue();
+				newsize -= newsize % granularity.GetValue();
+				// if (container.GetReservedCount() < newsize) {
+					container.Reserve(newsize);
+				// }
+			}
+			container.Add(Y(), X(), isUnique);
+		};
+		void  ClearData() {
+			container.Clear();
+		};
+	};
+
+	template<typename Y_Axis_Type, typename X_Axis_Type>
+	class cweeBalancedPatternReferenceContainer final : public cweeUnitPatternContainer_t {
+	public:
+		cweeBalancedPattern<Y_Axis_Type, X_Axis_Type>* ref;
+
+		class SpecializedIterator final : public GenericIterator {
+		public:
+			SpecializedIterator() : GenericIterator(), pos(0), numVars(0) {};
+			~SpecializedIterator() {};
+
+			int pos;
+			int numVars;
+
+			void begin(cweeUnitPatternContainer_t const* ref) {
+				auto* p = dynamic_cast<cweeBalancedPatternReferenceContainer const*>(ref);
+				if (p) {
+					pos = 0;
+					numVars = p->ref->GetNumValues();
+
+
+					// knots = p->ref->UnsafeGetKnotSeries();
+				}
+			};
+			void next(cweeUnitPatternContainer_t const* ref) {
+				auto* p = dynamic_cast<cweeBalancedPatternReferenceContainer const*>(ref);
+				if (p) {
+					pos++;
+				}
+			};
+			void end(cweeUnitPatternContainer_t const* ref) {
+				auto* p = dynamic_cast<cweeBalancedPatternReferenceContainer const*>(ref);
+				if (p) {
+					numVars = p->ref->GetNumValues();
+					pos = numVars;
+				}
+			};
+			DataContainer& get(cweeUnitPatternContainer_t const* ref) {
+				auto* p = const_cast<cweeBalancedPatternReferenceContainer*>(dynamic_cast<cweeBalancedPatternReferenceContainer const*>(ref));
+				if (p) {
+					AUTO t = p->ref->GetTimeAtIndex(pos);
+					p->ref->Lock();
+					auto* node = p->ref->UnsafeGetValue(t);
+
+					unit_value x_0 = (p->internal_X_type = t);
+					unit_value y_0;
+					DataContainer* new_ptr;
+					if (node && node->object) {
+						y_0 = (p->internal_Y_type = *node->object);
+						new_ptr = new DataContainer(x_0, y_0);
+					}
+					else {
+						new_ptr = new DataContainer(x_0);
+					}
+					p->ref->Unlock();
+					this->thisContainer = cweeSharedPtr< DataContainer >(new_ptr);
+				}
+				return *thisContainer;
+			};
+			bool cmp(const cweeSharedPtr<GenericIterator>& s) const {
+				if (!s) return 0;
+				auto p = s.CastReference<SpecializedIterator>();
+				if (p) {
+					return pos == p->pos;
+				}
+				return true;
+			};
+			long long distance(const cweeSharedPtr<GenericIterator>& s) const {
+				if (!s) return 0;
+				auto p = s.CastReference<SpecializedIterator>();
+				if (p) {
+					return pos - p->pos;
+				}
+				return 0;
+			};
+			void prev(const cweeUnitPatternContainer_t* ref) {
+				auto* p = const_cast<cweeBalancedPatternReferenceContainer*>(dynamic_cast<cweeBalancedPatternReferenceContainer const*>(ref));
+				if (p) {
+					pos--;
+				}
+			};
+			const DataContainer& get(const cweeUnitPatternContainer_t* ref) const {
+				auto* p = const_cast<cweeBalancedPatternReferenceContainer*>(dynamic_cast<cweeBalancedPatternReferenceContainer const*>(ref));
+				if (p) {
+					AUTO t = p->ref->GetTimeAtIndex(pos);
+					p->ref->Lock();
+					auto* node = p->ref->UnsafeGetValue(t);
+
+					unit_value x_0 = (p->internal_X_type = t);
+					unit_value y_0;
+					DataContainer* new_ptr;
+					if (node && node->object) {
+						y_0 = (p->internal_Y_type = *node->object);
+						new_ptr = new DataContainer(x_0, y_0);
+					}
+					else {
+						new_ptr = new DataContainer(x_0);
+					}
+					p->ref->Unlock();
+					this->thisContainer = cweeSharedPtr< DataContainer >(new_ptr);
+				}
+				return *thisContainer;
+			};
+		};
+		virtual cweeSharedPtr<GenericIterator> CreateIterationState() const {
+			return make_cwee_shared<SpecializedIterator>().CastReference<GenericIterator>();
+		};
+
+	public:
+		cweeSharedPtr< cweeUnitPatternContainer_t> Clone() {
+			cweeSharedPtr< cweeBalancedPatternReferenceContainer> out = make_cwee_shared<cweeBalancedPatternReferenceContainer>(*this);
+			return out.CastReference< cweeUnitPatternContainer_t>();
+		};
+		cweeBalancedPatternReferenceContainer() : cweeUnitPatternContainer_t(), ref(nullptr) {};
+		cweeBalancedPatternReferenceContainer(cweeBalancedPattern<Y_Axis_Type, X_Axis_Type>* Ref) : cweeUnitPatternContainer_t(unit_value(X_Axis_Type(0)), unit_value(Y_Axis_Type(0))), ref(Ref) {};
+		cweeBalancedPatternReferenceContainer(cweeBalancedPatternReferenceContainer const& o) : cweeUnitPatternContainer_t(o.internal_X_type, o.internal_Y_type), ref(o.ref) {};
+		cweeBalancedPatternReferenceContainer& operator=(cweeBalancedPatternReferenceContainer const& o) = delete; /* {
+
+			internal_X_type.Clear(); internal_Y_type.Clear();
+
+			internal_X_type = o.internal_X_type;
+			internal_Y_type = o.internal_Y_type;
+
+			ref = o.ref;
+			
+			return *this;
+		};*/
+		~cweeBalancedPatternReferenceContainer() {};
+
+		unit_value GetMinTime() const {
+			return internal_X_type = ref->GetMinTime();
+		};
+		unit_value GetMaxTime() const {
+			return internal_X_type = ref->GetMaxTime();
+		};
+		unit_value GetAvgTime(void) const {
+			return internal_X_type = ref->GetAvgTime();
+		};
+
+		scalar											GetMinimumDecimals() const {
+			return ref->GetMinimumDecimals();
+		};
+		unit_value										GetMinimumTimeStep() const {
+			return ref->GetMinimumTimeStep();
+		};
+
+		void											ShiftTime(const unit_value& deltaTime) {
+			ref->ShiftTime((internal_X_type = deltaTime)());
+		};
+		void											Translate(const unit_value& translation) {
+			ref->Translate((internal_Y_type = translation)());
+		};
+
+		void											UnsafeBasis(const unit_value& t, u64* bvals, interpolation_t interpolationType) const {};
+		unit_value										GetCurrentValue(unit_value time, interpolation_t interpolationType) const {
+			AUTO prevIT = ref->GetInterpolationType();
+			ref->SetInterpolationType(interpolationType);
+			AUTO answer = ref->GetCurrentValue((internal_X_type = time)());
+			ref->SetInterpolationType(prevIT);
+			return answer;
+		};
+
+		int  GetNodeCount() const { return ref->GetNumValues(); };
+		void Convert_X(unit_value old_unit, unit_value new_unit) {
+			// we cannot do this -- cweeBalancedPattern is statically typed
+		};
+		void Convert_Y(unit_value old_unit, unit_value new_unit) {
+			// we cannot do this -- cweeBalancedPattern is statically typed
+		};
+		bool StaticUnits() override { return true; };
+		void AddValueActual(unit_value X, unit_value Y, bool isUnique) {
+			if (isUnique) {
+				ref->AddUniqueValue((internal_X_type = X)(),(internal_Y_type = Y)());
+			}
+			else {
+				ref->AddValue((internal_X_type = X)(), (internal_Y_type = Y)());
+			}
+		};
+		void ClearData() {
+			ref->Clear();
+		};
+	};
+
+	template<typename Y_Axis_Type>
+	class cweeBalancedPatternReferencePartialContainer final : public cweeUnitPatternContainer_t {
+	public:
+		using X_Axis_Type = typename cweeUnitValues::second;
+		cweeBalancedPattern<Y_Axis_Type, u64>* ref;
+
+		class SpecializedIterator final : public GenericIterator {
+		public:
+			SpecializedIterator() : GenericIterator(), pos(0), numVars(0) {};
+			~SpecializedIterator() {};
+
+			int pos;
+			int numVars;
+
+			void begin(cweeUnitPatternContainer_t const* ref) {
+				auto* p = dynamic_cast<cweeBalancedPatternReferencePartialContainer const*>(ref);
+				if (p) {
+					pos = 0;
+					numVars = p->ref->GetNumValues();
+
+
+					// knots = p->ref->UnsafeGetKnotSeries();
+				}
+			};
+			void next(cweeUnitPatternContainer_t const* ref) {
+				auto* p = dynamic_cast<cweeBalancedPatternReferencePartialContainer const*>(ref);
+				if (p) {
+					pos++;
+				}
+			};
+			void end(cweeUnitPatternContainer_t const* ref) {
+				auto* p = dynamic_cast<cweeBalancedPatternReferencePartialContainer const*>(ref);
+				if (p) {
+					numVars = p->ref->GetNumValues();
+					pos = numVars;
+				}
+			};
+			DataContainer& get(cweeUnitPatternContainer_t const* ref) {
+				auto* p = const_cast<cweeBalancedPatternReferencePartialContainer*>(dynamic_cast<cweeBalancedPatternReferencePartialContainer const*>(ref));
+				if (p) {
+					AUTO t = p->ref->GetTimeAtIndex(pos);
+					p->ref->Lock();
+					auto* node = p->ref->UnsafeGetValue(t);
+
+					unit_value x_0 = (p->internal_X_type = t);
+					unit_value y_0;
+					DataContainer* new_ptr;
+					if (node && node->object) {
+						y_0 = (p->internal_Y_type = *node->object);
+						new_ptr = new DataContainer(x_0, y_0);
+					}
+					else {
+						new_ptr = new DataContainer(x_0);
+					}
+					p->ref->Unlock();
+					this->thisContainer = cweeSharedPtr< DataContainer >(new_ptr);
+				}
+				return *thisContainer;
+			};
+			bool cmp(const cweeSharedPtr<GenericIterator>& s) const {
+				if (!s) return 0;
+				auto p = s.CastReference<SpecializedIterator>();
+				if (p) {
+					return pos != p->pos;
+				}
+				return true;
+			};
+			long long distance(const cweeSharedPtr<GenericIterator>& s) const {
+				if (!s) return 0;
+				auto p = s.CastReference<SpecializedIterator>();
+				if (p) {
+					return pos - p->pos;
+				}
+				return 0;
+			};
+			void prev(const cweeUnitPatternContainer_t* ref) {
+				auto* p = const_cast<cweeBalancedPatternReferencePartialContainer*>(dynamic_cast<cweeBalancedPatternReferencePartialContainer const*>(ref));
+				if (p) {
+					pos--;
+				}
+			};
+			const DataContainer& get(const cweeUnitPatternContainer_t* ref) const {
+				auto* p = const_cast<cweeBalancedPatternReferencePartialContainer*>(dynamic_cast<cweeBalancedPatternReferencePartialContainer const*>(ref));
+				if (p) {
+					AUTO t = p->ref->GetTimeAtIndex(pos);
+					p->ref->Lock();
+					auto* node = p->ref->UnsafeGetValue(t);
+
+					unit_value x_0 = (p->internal_X_type = t);
+					unit_value y_0;
+					DataContainer* new_ptr;
+					if (node && node->object) {
+						y_0 = (p->internal_Y_type = *node->object);
+						new_ptr = new DataContainer(x_0, y_0);
+					}
+					else {
+						new_ptr = new DataContainer(x_0);
+					}
+					p->ref->Unlock();
+					this->thisContainer = cweeSharedPtr< DataContainer >(new_ptr);
+				}
+				return *thisContainer;
+			};
+		};
+		virtual cweeSharedPtr<GenericIterator> CreateIterationState() const {
+			return make_cwee_shared<SpecializedIterator>().CastReference<GenericIterator>();
+		};
+
+	public:
+		cweeSharedPtr< cweeUnitPatternContainer_t> Clone() {
+			cweeSharedPtr< cweeBalancedPatternReferencePartialContainer> out = make_cwee_shared<cweeBalancedPatternReferencePartialContainer>(*this);
+			return out.CastReference< cweeUnitPatternContainer_t>();
+		};
+		cweeBalancedPatternReferencePartialContainer() : cweeUnitPatternContainer_t(), ref(nullptr) {};
+		cweeBalancedPatternReferencePartialContainer(cweeBalancedPattern<Y_Axis_Type, u64>* Ref) : cweeUnitPatternContainer_t(unit_value(X_Axis_Type(0)), unit_value(Y_Axis_Type(0))), ref(Ref) {};
+		cweeBalancedPatternReferencePartialContainer(cweeBalancedPatternReferencePartialContainer const& o) : cweeUnitPatternContainer_t(o.internal_X_type, o.internal_Y_type), ref(o.ref) {};
+		cweeBalancedPatternReferencePartialContainer& operator=(cweeBalancedPatternReferencePartialContainer const& o) = delete; /* {
+			internal_X_type.Clear(); internal_Y_type.Clear();
+			internal_X_type = o.internal_X_type;
+			internal_Y_type = o.internal_Y_type;
+			ref = o.ref;
+			return *this;
+		};*/
+		~cweeBalancedPatternReferencePartialContainer() {};
+
+		unit_value GetMinTime() const { return internal_X_type = ref->GetMinTime(); };
+		unit_value GetMaxTime() const { return internal_X_type = ref->GetMaxTime(); };
+		unit_value GetAvgTime(void) const { return internal_X_type = ref->GetAvgTime(); };
+
+		scalar											GetMinimumDecimals() const {
+			return ref->GetMinimumDecimals();
+		};
+		unit_value										GetMinimumTimeStep() const {
+			return ref->GetMinimumTimeStep();
+		};
+
+		void											ShiftTime(const unit_value& deltaTime) {
+			ref->ShiftTime((internal_X_type = deltaTime)());
+	};
+		void											Translate(const unit_value& translation) {
+			ref->Translate((internal_Y_type = translation)());
+		};
+
+		void											UnsafeBasis(const unit_value& t, u64* bvals, interpolation_t interpolationType) const {};
+		unit_value										GetCurrentValue(unit_value time, interpolation_t interpolationType) const {
+			AUTO prevIT = ref->GetInterpolationType();
+			ref->SetInterpolationType(interpolationType);
+			AUTO answer = ref->GetCurrentValue((internal_X_type = time)());
+			ref->SetInterpolationType(prevIT);
+			return answer;
+		};
+
+		int  GetNodeCount() const { return ref->GetNumValues(); };
+		void Convert_X(unit_value old_unit, unit_value new_unit) {
+			// we cannot do this -- cweeBalancedPattern is statically typed
+		};
+		void Convert_Y(unit_value old_unit, unit_value new_unit) {
+			// we cannot do this -- cweeBalancedPattern is statically typed
+		};
+		bool StaticUnits() override { return true; };
+		void AddValueActual(unit_value X, unit_value Y, bool isUnique) {
+			if (isUnique) {
+				ref->AddUniqueValue((internal_X_type = X)(), (internal_Y_type = Y)());
+			}
+			else {
+				ref->AddValue((internal_X_type = X)(), (internal_Y_type = Y)());
+			}
+		};
+		void ClearData() {
+			ref->Clear();
+		};
+	};
+
+	class cweeUnitPattern {
+	protected:
+		using pairT = typename cweePair< unit_value, unit_value >;
+
+		cweeSharedPtr<cweeUnitPatternContainer_t>			container;
+		boundary_t											boundaryType;
+		interpolation_t										interpolationType;
+		mutable cweeSysMutex								lock;
+
+	public:
+		unit_value X_Type() const { AUTO g = lock.Guard();  return container->internal_X_type; };
+		unit_value Y_Type() const { AUTO g = lock.Guard();  return container->internal_Y_type; };
+
+		cweeUnitPattern() : 
+			container(make_cwee_shared<cweeUnitPatternContainer>(cweeUnitPatternContainer(second(), scalar())).CastReference<cweeUnitPatternContainer_t>()),
+			boundaryType(boundary_t::BT_FREE), interpolationType(interpolation_t::IT_LINEAR), lock() {};
+		cweeUnitPattern(unit_value const& X_type, unit_value const& Y_type) : 
+			container(make_cwee_shared<cweeUnitPatternContainer>(cweeUnitPatternContainer(X_type, Y_type)).CastReference<cweeUnitPatternContainer_t>()),
+			boundaryType(boundary_t::BT_FREE), interpolationType(interpolation_t::IT_LINEAR), lock() {};
+
+		template<typename Y_Axis_Type, typename X_Axis_Type>
+		cweeUnitPattern(cweeBalancedPattern<Y_Axis_Type, X_Axis_Type>& ref) :
+			container(make_cwee_shared<cweeBalancedPatternReferenceContainer<Y_Axis_Type, X_Axis_Type>>(cweeBalancedPatternReferenceContainer<Y_Axis_Type, X_Axis_Type>(&ref)).CastReference<cweeUnitPatternContainer_t>()),
+			boundaryType(ref.GetBoundaryType()), interpolationType(ref.GetInterpolationType()), lock() {};
+
+		template<typename Y_Axis_Type>
+		cweeUnitPattern(cweeBalancedPattern<Y_Axis_Type, u64>& ref) :
+			container(make_cwee_shared<cweeBalancedPatternReferencePartialContainer<Y_Axis_Type>>(cweeBalancedPatternReferencePartialContainer<Y_Axis_Type>(&ref)).CastReference<cweeUnitPatternContainer_t>()),
+			boundaryType(ref.GetBoundaryType()), interpolationType(ref.GetInterpolationType()), lock() {};
+
+		~cweeUnitPattern() {};
+
+		cweeUnitPattern(cweeUnitPattern const& o) : 
+			container(nullptr),
+			boundaryType(boundary_t::BT_FREE), interpolationType(interpolation_t::IT_LINEAR), lock() {
+			AUTO g = lock.Guard();
+			AUTO g1 = o.lock.Guard();
+			container = o.container->Clone();	
+			boundaryType = o.boundaryType;
+			interpolationType = o.interpolationType;
+		};
+		cweeUnitPattern& operator=(cweeUnitPattern const& o) {
+			if (this == &o) return *this;
+
+			AUTO g = lock.Guard();
+			AUTO g1 = o.lock.Guard();
+			// auto newP = container->CopyAnotherContainer(o.container);
+			// container = newP->Clone();
+
+			container = container->CopyAnotherContainer(o.container);
+
+			boundaryType = o.boundaryType;
+			interpolationType = o.interpolationType;
+			return *this;
+		};
+
+		void AddValue(unit_value const& X, unit_value const& Y) {
+			container->AddValue(X, Y);
+		};
+		void AddUniqueValue(unit_value const& X, unit_value const& Y) {
+			container->AddUniqueValue(X, Y);
+		};
+
+		void												SetBoundaryType(const boundary_t& bt) {
+			AUTO g = lock.Guard();
+			boundaryType = bt;
+		};
+		boundary_t											GetBoundaryType() const {
+			boundary_t out;
+			AUTO g = lock.Guard();
+			out = boundaryType;
+			return out;
+		};
+
+		void												SetInterpolationType(const interpolation_t& it) {
+			AUTO g = lock.Guard();
+			interpolationType = it;
+		};
+		interpolation_t										GetInterpolationType() const {
+			interpolation_t out;
+			AUTO g = lock.Guard();
+			out = interpolationType;
+			return out;
+		};
+
+		void Clear() {
+			AUTO g = lock.Guard();
+			container->Clear();
+			boundaryType = boundary_t::BT_FREE;
+			interpolationType = interpolation_t::IT_LINEAR;
+		};
+		void ClearData() {
+			AUTO g = lock.Guard();
+			container->ClearData();
+		};
+
+		int												GetNumValues() const {
+			int out;
+			AUTO g = lock.Guard();
+			out = container->GetNodeCount();
+			return out;
+		};
+
+		unit_value										GetMinValue() const {
+			if (GetNumValues() == 0) return 0;
+			bool skipFirst = true;
+			AUTO g = lock.Guard();
+			auto out = container->internal_Y_type;
+			for (auto& x : *container) {
+				if (x.Y) {
+					if (skipFirst) {
+						skipFirst = false;
+						out = *x.Y;
+					}
+					else {
+						if ((container->internal_Y_type = *x.Y) < out) out = container->internal_Y_type;
+					}
+				}
+			}
+			return out;
+		};
+		unit_value										GetMaxValue() const {
+			if (GetNumValues() == 0) return 0;
+			bool skipFirst = true;
+			AUTO g = lock.Guard();
+			auto out = container->internal_Y_type;
+			for (auto& x : *container) {
+				if (x.Y) {
+					if (skipFirst) {
+						skipFirst = false;
+						out = *x.Y;
+					}
+					else {
+						if ((container->internal_Y_type = *x.Y) > out) out = container->internal_Y_type;
+					}
+				}
+			}
+			return out;
+		};
+		unit_value										GetAvgValue() const {
+			unit_value out;
+			
+			int num(0);
+
+			AUTO g = lock.Guard();
+			out = (container->internal_Y_type = 0);
+			for (auto& x : *container) {
+				if (x.Y) {
+					num++;
+					out -= (out / num);
+					out += ((container->internal_Y_type = *x.Y) / num);
+				}
+			}
+			return out;
+		};
+		unit_value										GetMinValue(unit_value start, unit_value end) const {
+			unit_value out;
+			int n = GetNumValues();
+			if (n == 0) return out;
+			bool skipFirst = true;
+			AUTO g = lock.Guard();
+			out = (container->internal_Y_type = 0);
+			container->internal_X_type = start; start.Clear(); start = container->internal_X_type;
+			container->internal_X_type = end; end.Clear(); end = container->internal_X_type;
+
+			for (auto& x : *container) {
+				if (x.X > start) {
+					if (x.X <= end) {
+						if (skipFirst) {
+							skipFirst = false;
+							out = *x.Y;
+						}
+						else {
+							if ((container->internal_Y_type = *x.Y) < out) out = container->internal_Y_type;
+						}
+					}
+					else { break; }
+				}
+			}
+
+			return out;
+		};
+		unit_value										GetMaxValue(unit_value start, unit_value end) const {
+			unit_value out;
+			
+			int n = GetNumValues();
+			if (n == 0) return out;
+			bool skipFirst = true;
+			AUTO g = lock.Guard();
+			out = (container->internal_Y_type = 0);
+			container->internal_X_type = start; start.Clear(); start = container->internal_X_type;
+			container->internal_X_type = end; end.Clear(); end = container->internal_X_type;
+
+			for (auto& x : *container) {
+				if (x.X > start) {
+					if (x.X <= end) {
+						if (skipFirst) {
+							skipFirst = false;
+							out = *x.Y;
+						}
+						else {
+							if ((container->internal_Y_type = *x.Y) > out) out = container->internal_Y_type;
+						}
+					}
+					else { break; }
+				}
+			}
+
+
+			return out;
+		};
+		unit_value										GetAvgValue(unit_value start, unit_value end) const {
+			unit_value out;
+
+			int num(0);
+			int n = GetNumValues();
+			if (n == 0) return out;
+			AUTO g = lock.Guard();
+			out = (container->internal_Y_type = 0);
+			container->internal_X_type = start; start.Clear(); start = container->internal_X_type;
+			container->internal_X_type = end; end.Clear(); end = container->internal_X_type;
+
+			for (auto& x : *container) {
+				if (x.X > start) {
+					if (x.X <= end) {
+						num++;
+						out -= (out / num);
+						out += ((container->internal_Y_type = *x.Y) / num);
+					}
+					else { break; }
+				}
+			}
+			return out;
+		};
+
+		unit_value										GetMinTime(void) const {
+			AUTO g = lock.Guard();
+			return container->GetMinTime();
+		};
+		unit_value										GetMaxTime(void) const {
+			AUTO g = lock.Guard();
+			return container->GetMaxTime();
+		};
+		unit_value										GetAvgTime(void) const {
+			AUTO g = lock.Guard();
+			return container->GetAvgTime();
+		};
+
+		scalar											GetMinimumDecimals() const {
+			AUTO g = lock.Guard();
+			return container->GetMinimumDecimals();
+		};
+		unit_value										GetMinimumTimeStep() const {
+			AUTO g = lock.Guard();
+			return container->GetMinimumTimeStep();
+		};
+
+		void											ShiftTime(const unit_value& deltaTime) {
+			AUTO g = lock.Guard();
+			return container->ShiftTime(deltaTime);
+		};
+		void											Translate(const unit_value& translation) {
+			AUTO g = lock.Guard();
+			return container->Translate(translation);
+		};
+
+		cweeUnitPattern&								Copy(const cweeUnitPattern& o, const unit_value& timeStart = -std::numeric_limits < unit_value>::max(), const unit_value& timeEnd = std::numeric_limits < unit_value>::max()) {
+			if (this == &o) return *this;
+
+			AUTO g = lock.Guard();
+			AUTO g1 = o.lock.Guard();
+
+			//auto newP = container->CopyAnotherContainer(o.container);
+			//container = newP->Clone();
+			container = container->CopyAnotherContainer(o.container);
+
+			boundaryType = o.boundaryType;
+			interpolationType = o.interpolationType;
+			return *this;
+		};
+
+		cweeThreadedList<pairT>								GetKnotSeries(const unit_value& timeStart = -std::numeric_limits < unit_value>::max(), const unit_value& timeEnd = std::numeric_limits <unit_value>::max()) const {
+			int numKnots = this->GetNumValues();
+			cweeThreadedList<pairT> out(numKnots + 16);
+
+			AUTO g = lock.Guard();
+			for (auto& x : *container) {
+				if (x.Y) {
+					if (x.X >= (container->internal_X_type = timeStart)()) {
+						if (x.X < (container->internal_X_type = timeEnd)()) {
+							auto& set = out.Alloc();
+							set.first = (container->internal_X_type = x.X);
+							set.second = (container->internal_Y_type = *x.Y);
+						}
+						else {
+							break;
+						}
+					}
+				}
+			}
+
+			return out;
+		};
+
+		void												ClampValues(const unit_value& min, const unit_value& max) {
+			AUTO g = lock.Guard();
+			for (auto& x : *container) {
+				*x.Y = (container->internal_Y_type = math::clamp((container->internal_Y_type = *x.Y), min, max))();
+			}
+		};
+
+		unit_value											GetValueAtIndex(size_t index) {
+			AUTO g = lock.Guard();
+			int n = 0;
+			for (auto& x : *container) {
+				if (x.Y) {
+					if (n >= index) {
+						return (container->internal_Y_type = *x.Y);
+					}
+					n++;
+				}
+			}
+			return unit_value();
+		};
+		unit_value											GetTimeAtIndex(size_t index) {
+			AUTO g = lock.Guard();
+			int n = 0;
+			for (auto& x : *container) {
+				if (x.Y) {
+					if (n >= index) {
+						return (container->internal_X_type = x.X);
+					}
+					n++;
+				}
+			}
+			return unit_value();
+		};
+
+		size_t												GetLargestSmallerOrEqualTime(const unit_value& time) const {
+			AUTO g = lock.Guard();
+			size_t n = -1;
+			for (auto& x : *container) {
+				if (x.Y) {
+					if (x.X > (container->internal_X_type = time)) {
+						return n;
+					}
+					n++;
+				}
+			}
+			return n;
+		};
+
+	private:
+		bool												IsLooped() const {
+			bool out = false;
+			lock.Lock();
+			out = (boundaryType == boundary_t::BT_LOOP);
+			lock.Unlock();
+			return out;
+		};
+		bool												IsClamped() const {
+			bool out = false;
+			lock.Lock();
+			out = (boundaryType == boundary_t::BT_CLAMPED);
+			lock.Unlock();
+			return out;
+		};
+		unit_value											LoopedTime(unit_value t, bool forceLoop = false) const {
+			if (forceLoop || IsLooped()) {
+				unit_value minTime, maxTime, len, currentTime, avgStep;
+				minTime = GetMinTime();
+				maxTime = GetMaxTime();
+				{
+					AUTO g = lock.Guard();
+					container->internal_X_type = t;
+					t.Clear();
+					t = container->internal_X_type;
+
+				}
+
+				if (maxTime < t || minTime > t) {
+					if (maxTime > minTime) {
+						len = maxTime - minTime;
+						avgStep = len / (GetNumValues() - 1);
+						len += avgStep;
+						maxTime = len + minTime;
+
+						if (t < minTime) {
+							currentTime = t;
+							while (currentTime < minTime) currentTime += len;
+							return currentTime;
+						}
+						if (t > maxTime) {
+							currentTime = t;
+							while (currentTime > maxTime) currentTime -= len;
+							return currentTime;
+						}
+					}
+					else {
+						return minTime;
+					}
+				}
+			}
+			return t;
+		};
+		unit_value											ClampedTime(unit_value t) const {
+			if (IsClamped()) {
+				unit_value mT = this->GetMinTime();
+				{
+					AUTO g = lock.Guard();
+					container->internal_X_type = t;
+					t.Clear();
+					t = container->internal_X_type;
+				}
+				if (t <= mT) {
+					return mT;
+				}
+				else {
+					mT = this->GetMaxTime();
+					if (t > mT)
+						return mT;
+				}
+			}
+			return t;
+		};
+		void												Basis(const unit_value& t, u64* bvals) const {
+			AUTO g = lock.Guard();
+			UnsafeBasis(t, bvals);
+		};
+		void												UnsafeBasis(const unit_value& t, u64* bvals) const {
+			AUTO g = lock.Guard();
+			return container->UnsafeBasis(t, bvals, interpolationType);
+		};
+
+	public:
+
+		unit_value											GetCurrentValue(unit_value time) const {
+			AUTO g = lock.Guard();
+			return container->GetCurrentValue(LoopedTime(ClampedTime(time)), interpolationType);
+		};
+		/*! Return approximate derivative of spline at time */
+		unit_value											GetCurrentFirstDerivative(unit_value time) const {
+			unit_value step; {
+				AUTO g = lock.Guard();
+				container->internal_X_type = time; time.Clear(); time = container->internal_X_type;
+				step = (container->internal_X_type = 0.01);
+			}			
+			return (GetCurrentValue(time + step) - GetCurrentValue(time - step)) / (step * 2.0);
+		};
+
+		/*! Return approximate second derivative of spline at time */
+		unit_value											GetCurrentSecondDerivative(unit_value time) const {
+			unit_value step; {
+				AUTO g = lock.Guard();
+				container->internal_X_type = time; time.Clear(); time = container->internal_X_type;
+				step = (container->internal_X_type = 0.01);
+			}
+			return (GetCurrentFirstDerivative(time + step) - GetCurrentFirstDerivative(time - step)) / (step * 2.0);
+		};
+
+		/*! Get list of spline samples at a specified Timestep */
+		cweeThreadedList<pairT>								GetTimeSeries(const unit_value& timeStart, const unit_value& timeEnd, const unit_value& timeStep) const {
+			pairT v;
+			unit_value realTimestep = timeStep; if (realTimestep < 1) realTimestep = 1;
+
+			cweeThreadedList<pairT> out(cweeMath::max(cweeMath::min(((u64)(timeEnd - timeStart) / (u64)(realTimestep)), 100000), 1000) + 16);
+
+			v.first = timeStart; v.second = GetCurrentValue(timeStart);
+			out.Append(v); // ensure pattern always has a starter? 
+
+			for (v.first = timeStart + realTimestep; v.first < timeEnd; v.first += realTimestep) {
+				v.second = GetCurrentValue(v.first);
+				out.Append(v);
+			}
+
+			v.first = timeEnd; v.second = GetCurrentValue(timeEnd);
+			out.Append(v); // ensure pattern always has a closure? 
+
+			return out;
+		};
+
+		cweeThreadedList<unit_value>						GetValueTimeSeries(const unit_value& timeStart, const unit_value& timeEnd, const unit_value& timeStep) const {
+			unit_value realTimestep = timeStep; if (realTimestep < 1) realTimestep = 1;
+			cweeThreadedList<unit_value> out(cweeMath::max(cweeMath::min((u64)((u64)(timeEnd - timeStart) / (u64)(realTimestep)), 100000), 1000) + 16);
+
+			out.Append(GetCurrentValue(timeStart)); // ensure pattern always has a starter? 
+			for (unit_value t = timeStart + realTimestep; t < timeEnd; t += realTimestep) {
+				out.Append(GetCurrentValue(t));
+			}
+			out.Append(GetCurrentValue(timeEnd)); // ensure pattern always has a closure? 
+
+			return out;
+		};
+
+		AUTO												R_Squared(const cweeUnitPattern& other) const {
+			scalar out;
+			AUTO x0 = this->GetMinTime() < other.GetMinTime() ? other.GetMinTime() : this->GetMinTime();
+			AUTO x1 = this->GetMaxTime() < other.GetMaxTime() ? this->GetMaxTime() : other.GetMaxTime();
+			if (x1 > x0) {
+				double N_steps = cweeMath::max(10, cweeMath::max(this->GetNumValues(), other.GetNumValues())); // at least 10 samples
+				AUTO real = this->GetValueTimeSeries(x0, x1, (x1 - x0) * (1.0 / N_steps));
+				AUTO estimate = other.GetValueTimeSeries(x0, x1, (x1 - x0) * (1.0 / N_steps));
+				out = cweeEng::R_Squared(real, estimate);
+			}
+			else {
+				out = 0;
+			}
+			return out;
+		};
+
+		/*! Request an integration of the time series. The timefactor determines the resulting time component. I.e. A pattern of kilowatt_t and a time factor of hour_t will return a kilowatt_hour_t. */
+		AUTO												RombergIntegral(unit_value t0, unit_value t1) const {
+			using node_type = cweeBalancedTree<double, double, 10>::cweeBalancedTreeNode;
+			unit_value step, sum, t, stepDiv2, maxT;
+
+			{
+				AUTO g = lock.Guard();
+				sum = container->internal_X_type * container->internal_Y_type;
+				sum = 0;
+
+				step = container->internal_X_type;
+
+				container->internal_X_type = t0;
+				t0.Clear();
+				t0 = container->internal_X_type;
+
+				container->internal_X_type = t1;
+				t1.Clear();
+				t1 = container->internal_X_type;
+			}
+					
+			if (this->GetNumValues() > 1) {
+				step = this->GetMinimumTimeStep();
+				unit_value minGot = t1, maxGot = t1;
+				if (true) {
+					auto data = GetKnotSeries(t0, t1);
+					AUTO Guard = this->lock.Guard();
+					if (Guard) {
+						if (data.Num() > 1) {
+							minGot = data[0].first;
+							maxGot = data[data.Num() - 1].first;
+
+							for (int i = 0; i < (data.Num() - 1); i++) {
+								const auto& left = data[i];
+								const auto& right = data[i + 1];
+
+								sum += (container->internal_Y_type = ((right.second + left.second) * 0.5)) * (container->internal_X_type = (right.first - left.first));
+							}
+						}
+					}
+				}
+
+				{
+					AUTO g = lock.Guard();
+					t = (container->internal_X_type = 0);
+					stepDiv2 = (container->internal_X_type = (step / 2.0));
+					maxT = (container->internal_X_type = (t1 + stepDiv2));
+				}
+
+				for (t = t0; (t + step) < minGot; t += step) sum += step * GetCurrentValue(t + stepDiv2);
+				if (minGot > t) sum += (minGot - t) * GetCurrentValue(t + ((minGot - t) / 2.0));
+				for (t = maxGot; (t + step) < t1; t += step) sum += step * GetCurrentValue(t + stepDiv2);
+				if (t1 > t)  sum += (t1 - t) * GetCurrentValue(t + ((t1 - t) / 2.0));
+			}
+			return sum;
+		};
+
+#if 1
+		static friend cweeUnitPattern operator+(const cweeUnitPattern& a, const cweeUnitPattern& b) {
+			cweeUnitPattern result(a.GetMinTime(), a.GetCurrentValue(0)); {
+				result.SetBoundaryType(a.GetBoundaryType());
+				result.SetInterpolationType(a.GetInterpolationType());
+			}
+			if (true) {
+				a.lock.Lock();
+				for (auto& x : a.GetKnotSeries()) {
+					result.AddUniqueValue((a.container->internal_X_type = x.first), (a.container->internal_Y_type = x.second) + b.GetCurrentValue((a.container->internal_X_type = x.first)));
+				}
+				a.lock.Unlock();
+				b.lock.Lock();
+				for (auto& x : b.GetKnotSeries()) {
+					result.AddUniqueValue((b.container->internal_X_type = x.first), (b.container->internal_Y_type = x.second) + a.GetCurrentValue((b.container->internal_X_type = x.first)));
+				}
+				b.lock.Unlock();
+			}
+			return result;
+		};
+		static friend cweeUnitPattern operator-(const cweeUnitPattern& a, const cweeUnitPattern& b) {
+			cweeUnitPattern result(a.GetMinTime(), a.GetCurrentValue(0)); {
+				result.SetBoundaryType(a.GetBoundaryType());
+				result.SetInterpolationType(a.GetInterpolationType());
+			}
+			if (true) {
+				a.lock.Lock();
+				for (auto& x : a.GetKnotSeries()) {
+					result.AddUniqueValue((a.container->internal_X_type = x.first), (a.container->internal_Y_type = x.second) - b.GetCurrentValue((a.container->internal_X_type = x.first)));
+				}
+				a.lock.Unlock();
+				b.lock.Lock();
+				for (auto& x : b.GetKnotSeries()) {
+					result.AddUniqueValue((b.container->internal_X_type = x.first), a.GetCurrentValue((b.container->internal_X_type = x.first)) - (b.container->internal_Y_type = x.second));
+				}
+				b.lock.Unlock();
+			}
+			return result;
+		};
+		static friend cweeUnitPattern operator*(const cweeUnitPattern& a, const cweeUnitPattern& b) {
+			cweeUnitPattern result(a.GetMinTime(), a.GetCurrentValue(0) * b.GetCurrentValue(0)); {
+				result.SetBoundaryType(a.GetBoundaryType());
+				result.SetInterpolationType(a.GetInterpolationType());
+			}
+			if (true) {
+				a.lock.Lock();
+				for (auto& x : a.GetKnotSeries()) {
+					result.AddUniqueValue(x.first, x.second * b.GetCurrentValue(x.first));
+				}
+				a.lock.Unlock();
+				b.lock.Lock();
+				for (auto& x : b.GetKnotSeries()) {
+					result.AddUniqueValue(x.first, x.second * a.GetCurrentValue(x.first));
+				}
+				b.lock.Unlock();
+			}
+			return result;
+		};
+		static friend cweeUnitPattern operator/(const cweeUnitPattern& a, const cweeUnitPattern& b) {
+			cweeUnitPattern result(a.GetMinTime(), a.GetCurrentValue(0) / b.GetCurrentValue(0)); {
+				result.SetBoundaryType(a.GetBoundaryType());
+				result.SetInterpolationType(a.GetInterpolationType());
+			}
+			if (true) {
+				a.lock.Lock();
+				for (auto& x : a.GetKnotSeries()) {
+					result.AddUniqueValue((a.container->internal_X_type = x.first), (a.container->internal_Y_type = x.second) / b.GetCurrentValue((a.container->internal_X_type = x.first)));
+				}
+				a.lock.Unlock();
+				b.lock.Lock();
+				for (auto& x : b.GetKnotSeries()) {
+					result.AddUniqueValue((b.container->internal_X_type = x.first), a.GetCurrentValue((b.container->internal_X_type = x.first)) / (b.container->internal_Y_type = x.second));
+				}
+				b.lock.Unlock();
+			}
+			return result;
+		};
+
+		static friend cweeUnitPattern operator+(const cweeUnitPattern& a, const unit_value& b) {
+			cweeUnitPattern result(a.GetMinTime(), a.GetCurrentValue(0) + b); {
+				result.SetBoundaryType(a.GetBoundaryType());
+				result.SetInterpolationType(a.GetInterpolationType());
+			}
+			if (true) {
+				a.lock.Lock();
+				for (auto& x : a.GetKnotSeries()) {
+					result.AddUniqueValue((a.container->internal_X_type = x.first), (a.container->internal_Y_type = x.second) + b);
+				}
+				a.lock.Unlock();
+			}
+			return result;
+		};
+		static friend cweeUnitPattern operator-(const cweeUnitPattern& a, const unit_value& b) {
+			cweeUnitPattern result(a.GetMinTime(), a.GetCurrentValue(0) - b); {
+				result.SetBoundaryType(a.GetBoundaryType());
+				result.SetInterpolationType(a.GetInterpolationType());
+			}
+			if (true) {
+				a.lock.Lock();
+				for (auto& x : a.GetKnotSeries()) {
+					result.AddUniqueValue((a.container->internal_X_type = x.first), (a.container->internal_Y_type = x.second) - b);
+				}
+				a.lock.Unlock();
+			}
+			return result;
+		};
+		static friend cweeUnitPattern operator*(const cweeUnitPattern& a, const unit_value& b) {
+			cweeUnitPattern result(a.GetMinTime(), a.GetCurrentValue(0) * b); {
+				result.SetBoundaryType(a.GetBoundaryType());
+				result.SetInterpolationType(a.GetInterpolationType());
+			}
+			if (true) {
+				a.lock.Lock();
+				for (auto& x : a.GetKnotSeries()) {
+					result.AddUniqueValue((a.container->internal_X_type = x.first), (a.container->internal_Y_type = x.second) * b);
+				}
+				a.lock.Unlock();
+			}
+			return result;
+		};
+		static friend cweeUnitPattern operator/(const cweeUnitPattern& a, const unit_value& b) {
+			cweeUnitPattern result(a.GetMinTime(), a.GetCurrentValue(0) / b); {
+				result.SetBoundaryType(a.GetBoundaryType());
+				result.SetInterpolationType(a.GetInterpolationType());
+			}
+			if (true) {
+				a.lock.Lock();
+				for (auto& x : a.GetKnotSeries()) {
+					result.AddUniqueValue((a.container->internal_X_type = x.first), (a.container->internal_Y_type = x.second) / b);
+				}
+				a.lock.Unlock();
+			}
+			return result;
+		};
+
+		static friend cweeUnitPattern operator+(const unit_value& b, const cweeUnitPattern& a) {
+			cweeUnitPattern result(a.GetMinTime(), a.GetCurrentValue(0) + b); {
+				result.SetBoundaryType(a.GetBoundaryType());
+				result.SetInterpolationType(a.GetInterpolationType());
+			}
+			if (true) {
+				a.lock.Lock();
+				for (auto& x : a.GetKnotSeries()) {
+					result.AddUniqueValue((a.container->internal_X_type = x.first), (a.container->internal_Y_type = x.second) + b);
+				}
+				a.lock.Unlock();
+			}
+			return result;
+		};
+		static friend cweeUnitPattern operator-(const unit_value& b, const cweeUnitPattern& a) {
+			cweeUnitPattern result(a.GetMinTime(), b - a.GetCurrentValue(0)); {
+				result.SetBoundaryType(a.GetBoundaryType());
+				result.SetInterpolationType(a.GetInterpolationType());
+			}
+			if (true) {
+				a.lock.Lock();
+				for (auto& x : a.GetKnotSeries()) {
+					result.AddUniqueValue((a.container->internal_X_type = x.first), b - (a.container->internal_Y_type = x.second));
+				}
+				a.lock.Unlock();
+			}
+			return result;
+		};
+		static friend cweeUnitPattern operator*(const unit_value& b, const cweeUnitPattern& a) {
+			cweeUnitPattern result(a.GetMinTime(), a.GetCurrentValue(0) * b); {
+				result.SetBoundaryType(a.GetBoundaryType());
+				result.SetInterpolationType(a.GetInterpolationType());
+			}
+			if (true) {
+				a.lock.Lock();
+				for (auto& x : a.GetKnotSeries()) {
+					result.AddUniqueValue((a.container->internal_X_type = x.first), (a.container->internal_Y_type = x.second) * b);
+				}
+				a.lock.Unlock();
+			}
+			return result;
+		};
+		static friend cweeUnitPattern operator/(const unit_value& b, const cweeUnitPattern& a) {
+			cweeUnitPattern result(a.GetMinTime(), b/a.GetCurrentValue(0)); {
+				result.SetBoundaryType(a.GetBoundaryType());
+				result.SetInterpolationType(a.GetInterpolationType());
+			}
+			if (true) {
+				a.lock.Lock();
+				for (auto& x : a.GetKnotSeries()) {
+					result.AddUniqueValue((a.container->internal_X_type = x.first), b / (a.container->internal_Y_type = x.second));
+				}
+				a.lock.Unlock();
+			}
+			return result;
+		};
+
+		cweeUnitPattern& operator+=(const cweeUnitPattern& b) { 
+			this->lock.Lock(); 
+			for (auto& iter : *container) {
+				if (iter.Y) {
+					*iter.Y += b.GetCurrentValue(iter.X);
+				}
+			}
+			this->lock.Unlock();
+
+			b.lock.Lock();
+			for (auto& x : b.GetKnotSeries()) {
+				this->AddUniqueValue(
+					x.first, 
+					x.second + this->GetCurrentValue(x.first)
+				);
+			}
+			b.lock.Unlock();
+			
+			// *this = (*this + b); 
+			return *this; 
+		};
+		cweeUnitPattern& operator-=(const cweeUnitPattern& b) { *this = (*this - b); return *this; };
+		cweeUnitPattern& operator*=(const cweeUnitPattern& b) { *this = (*this * b); return *this; };
+		cweeUnitPattern& operator/=(const cweeUnitPattern& b) { *this = (*this / b); return *this; };
+
+		cweeUnitPattern& operator+=(const unit_value& b) { *this = (*this + b); return *this; };
+		cweeUnitPattern& operator-=(const unit_value& b) { *this = (*this - b); return *this; };
+		cweeUnitPattern& operator*=(const unit_value& b) { *this = (*this * b); return *this; };
+		cweeUnitPattern& operator/=(const unit_value& b) { *this = (*this / b); return *this; };
+
+		cweeUnitPattern pow(const cweeUnitPattern& b)const {
+			auto x = cweeUnitPattern(GetMinTime(), GetCurrentValue(0).pow(b.GetCurrentValue(0)));
+			lock.Lock();
+			for (auto& j : GetKnotSeries()) {
+				auto newTypeAndValue = (container->internal_Y_type = j.second).pow(b.GetCurrentValue(container->internal_X_type = j.first));
+				x.AddValue((container->internal_X_type = j.first), newTypeAndValue);				
+			}
+			lock.Unlock();
+			return x;
+		};
+		cweeUnitPattern pow(const unit_value& b)const {
+			auto x = cweeUnitPattern(GetMinTime(), GetCurrentValue(0).pow(b));
+			lock.Lock();
+			for (auto& j : GetKnotSeries()) {
+				auto newTypeAndValue = (container->internal_Y_type = j.second).pow(b);
+				x.AddValue((container->internal_X_type = j.first), newTypeAndValue);				
+			}
+			lock.Unlock();
+			return x;
+		};
+#endif
+
+	};
+
+	INLINE void cweeBalancedPatternRefTest(){
+		cweeBalancedPattern<units::length::meter_t, u64> t1;
+		cweeUnitPattern pat1 = cweeUnitPattern(t1);
+
+		pat1.GetCurrentFirstDerivative(0);
+
+		cweeBalancedPattern<units::length::meter_t, units::time::second_t> t2;
+		cweeUnitPattern pat2 = cweeUnitPattern(t2);
+
+		pat2.GetCurrentFirstDerivative(0);
+
+
+	};
+
+};

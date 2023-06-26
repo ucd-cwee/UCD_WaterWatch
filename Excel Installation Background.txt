@@ -1,0 +1,8 @@
+https://learn.microsoft.com/en-us/visualstudio/vsto/deploying-a-vsto-solution-by-using-windows-installer?view=vs-2022
+
+https://marketplace.visualstudio.com/items?itemName=visualstudioclient.MicrosoftVisualStudio2017InstallerProjects
+
+// By all accounts, the Installer should produce a working installation tool. Currently, it fails silently and will not make a working VSTO.
+// The current means of distribution is to copy all of the ../bin/Release/.. content to a ZIP file, and have the end-user run a BAT or run the VSTO directly. 
+// The installer is supposed to do the hard work of making sure the needed dependancies are present... which is why this should be fixed in the future for a more robust install experience.
+

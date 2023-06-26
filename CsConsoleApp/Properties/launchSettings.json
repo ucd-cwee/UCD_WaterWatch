@@ -1,0 +1,9 @@
+{
+  "profiles": {
+    "CsConsoleApp": {
+      "commandName": "Project",
+      "sqlDebugging": false,
+      "nativeDebugging": true
+    }
+  }
+}

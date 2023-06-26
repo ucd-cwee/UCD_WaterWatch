@@ -1,0 +1,460 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|Win32">
+      <Configuration>Debug</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|Win32">
+      <Configuration>Release</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <VCProjectVersion>16.0</VCProjectVersion>
+    <Keyword>Win32Proj</Keyword>
+    <ProjectGuid>{b529d683-66c5-4c07-a660-0e886c17346a}</ProjectGuid>
+    <RootNamespace>CURLSTATICLIB</RootNamespace>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
+    <ConfigurationType>StaticLibrary</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <PlatformToolset>v142</PlatformToolset>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="Configuration">
+    <ConfigurationType>StaticLibrary</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v142</PlatformToolset>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
+    <ConfigurationType>StaticLibrary</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <PlatformToolset>v142</PlatformToolset>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
+    <ConfigurationType>StaticLibrary</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v142</PlatformToolset>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+    <CharacterSet>Unicode</CharacterSet>
+    <PreferredToolArchitecture>x64</PreferredToolArchitecture>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="ExtensionSettings">
+  </ImportGroup>
+  <ImportGroup Label="Shared">
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <PropertyGroup Label="UserMacros" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+    <LinkIncremental>true</LinkIncremental>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <LinkIncremental>false</LinkIncremental>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <LinkIncremental>true</LinkIncremental>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <LinkIncremental>false</LinkIncremental>
+  </PropertyGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>WIN32;_DEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>true</ConformanceMode>
+      <PrecompiledHeader>Use</PrecompiledHeader>
+      <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
+    </ClCompile>
+    <Link>
+      <SubSystem>
+      </SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>WIN32;NDEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>true</ConformanceMode>
+      <PrecompiledHeader>Use</PrecompiledHeader>
+      <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
+    </ClCompile>
+    <Link>
+      <SubSystem>
+      </SubSystem>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <OptimizeReferences>true</OptimizeReferences>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>_DEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>true</ConformanceMode>
+      <PrecompiledHeader>Use</PrecompiledHeader>
+      <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
+    </ClCompile>
+    <Link>
+      <SubSystem>
+      </SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>NDEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>true</ConformanceMode>
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+    </ClCompile>
+    <Link>
+      <SubSystem>
+      </SubSystem>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <OptimizeReferences>true</OptimizeReferences>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+    </Link>
+    <Lib>
+      <AdditionalLibraryDirectories>$(ProjectDir)curl;$(ProjectDir)zeroMQ;$(SolutionDir)epanet</AdditionalLibraryDirectories>
+    </Lib>
+    <ProjectReference>
+      <LinkLibraryDependencies>true</LinkLibraryDependencies>
+    </ProjectReference>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ClCompile Include="CURL_STATIC_LIB.cpp" />
+    <ClCompile Include="external\sha1\sha1.c" />
+    <ClCompile Include="external\wepoll\wepoll.c" />
+    <ClCompile Include="zeroMQ\address.cpp" />
+    <ClCompile Include="zeroMQ\channel.cpp" />
+    <ClCompile Include="zeroMQ\client.cpp" />
+    <ClCompile Include="zeroMQ\clock.cpp" />
+    <ClCompile Include="zeroMQ\ctx.cpp" />
+    <ClCompile Include="zeroMQ\curve_client.cpp" />
+    <ClCompile Include="zeroMQ\curve_mechanism_base.cpp" />
+    <ClCompile Include="zeroMQ\curve_server.cpp" />
+    <ClCompile Include="zeroMQ\dealer.cpp" />
+    <ClCompile Include="zeroMQ\decoder_allocators.cpp" />
+    <ClCompile Include="zeroMQ\devpoll.cpp" />
+    <ClCompile Include="zeroMQ\dgram.cpp" />
+    <ClCompile Include="zeroMQ\dish.cpp" />
+    <ClCompile Include="zeroMQ\dist.cpp" />
+    <ClCompile Include="zeroMQ\endpoint.cpp" />
+    <ClCompile Include="zeroMQ\epoll.cpp" />
+    <ClCompile Include="zeroMQ\err.cpp" />
+    <ClCompile Include="zeroMQ\fq.cpp" />
+    <ClCompile Include="zeroMQ\gather.cpp" />
+    <ClCompile Include="zeroMQ\gssapi_client.cpp" />
+    <ClCompile Include="zeroMQ\gssapi_mechanism_base.cpp" />
+    <ClCompile Include="zeroMQ\gssapi_server.cpp" />
+    <ClCompile Include="zeroMQ\io_object.cpp" />
+    <ClCompile Include="zeroMQ\io_thread.cpp" />
+    <ClCompile Include="zeroMQ\ip.cpp" />
+    <ClCompile Include="zeroMQ\ipc_address.cpp" />
+    <ClCompile Include="zeroMQ\ipc_connecter.cpp" />
+    <ClCompile Include="zeroMQ\ipc_listener.cpp" />
+    <ClCompile Include="zeroMQ\ip_resolver.cpp" />
+    <ClCompile Include="zeroMQ\kqueue.cpp" />
+    <ClCompile Include="zeroMQ\lb.cpp" />
+    <ClCompile Include="zeroMQ\mailbox.cpp" />
+    <ClCompile Include="zeroMQ\mailbox_safe.cpp" />
+    <ClCompile Include="zeroMQ\mechanism.cpp" />
+    <ClCompile Include="zeroMQ\mechanism_base.cpp" />
+    <ClCompile Include="zeroMQ\metadata.cpp" />
+    <ClCompile Include="zeroMQ\msg.cpp" />
+    <ClCompile Include="zeroMQ\mtrie.cpp" />
+    <ClCompile Include="zeroMQ\norm_engine.cpp" />
+    <ClCompile Include="zeroMQ\null_mechanism.cpp" />
+    <ClCompile Include="zeroMQ\object.cpp" />
+    <ClCompile Include="zeroMQ\options.cpp" />
+    <ClCompile Include="zeroMQ\own.cpp" />
+    <ClCompile Include="zeroMQ\pair.cpp" />
+    <ClCompile Include="zeroMQ\peer.cpp" />
+    <ClCompile Include="zeroMQ\pgm_receiver.cpp" />
+    <ClCompile Include="zeroMQ\pgm_sender.cpp" />
+    <ClCompile Include="zeroMQ\pgm_socket.cpp" />
+    <ClCompile Include="zeroMQ\pipe.cpp" />
+    <ClCompile Include="zeroMQ\plain_client.cpp" />
+    <ClCompile Include="zeroMQ\plain_server.cpp" />
+    <ClCompile Include="zeroMQ\poll.cpp" />
+    <ClCompile Include="zeroMQ\poller_base.cpp" />
+    <ClCompile Include="zeroMQ\polling_util.cpp" />
+    <ClCompile Include="zeroMQ\pollset.cpp" />
+    <ClCompile Include="zeroMQ\proxy.cpp" />
+    <ClCompile Include="zeroMQ\pub.cpp" />
+    <ClCompile Include="zeroMQ\pull.cpp" />
+    <ClCompile Include="zeroMQ\push.cpp" />
+    <ClCompile Include="zeroMQ\radio.cpp" />
+    <ClCompile Include="zeroMQ\radix_tree.cpp" />
+    <ClCompile Include="zeroMQ\random.cpp" />
+    <ClCompile Include="zeroMQ\raw_decoder.cpp" />
+    <ClCompile Include="zeroMQ\raw_encoder.cpp" />
+    <ClCompile Include="zeroMQ\raw_engine.cpp" />
+    <ClCompile Include="zeroMQ\reaper.cpp" />
+    <ClCompile Include="zeroMQ\rep.cpp" />
+    <ClCompile Include="zeroMQ\req.cpp" />
+    <ClCompile Include="zeroMQ\router.cpp" />
+    <ClCompile Include="zeroMQ\scatter.cpp" />
+    <ClCompile Include="zeroMQ\select.cpp" />
+    <ClCompile Include="zeroMQ\server.cpp" />
+    <ClCompile Include="zeroMQ\session_base.cpp" />
+    <ClCompile Include="zeroMQ\signaler.cpp" />
+    <ClCompile Include="zeroMQ\socket_base.cpp" />
+    <ClCompile Include="zeroMQ\socket_poller.cpp" />
+    <ClCompile Include="zeroMQ\socks.cpp" />
+    <ClCompile Include="zeroMQ\socks_connecter.cpp" />
+    <ClCompile Include="zeroMQ\stream.cpp" />
+    <ClCompile Include="zeroMQ\stream_connecter_base.cpp" />
+    <ClCompile Include="zeroMQ\stream_engine_base.cpp" />
+    <ClCompile Include="zeroMQ\stream_listener_base.cpp" />
+    <ClCompile Include="zeroMQ\sub.cpp" />
+    <ClCompile Include="zeroMQ\tcp.cpp" />
+    <ClCompile Include="zeroMQ\tcp_address.cpp" />
+    <ClCompile Include="zeroMQ\tcp_connecter.cpp" />
+    <ClCompile Include="zeroMQ\tcp_listener.cpp" />
+    <ClCompile Include="zeroMQ\thread.cpp" />
+    <ClCompile Include="zeroMQ\timers.cpp" />
+    <ClCompile Include="zeroMQ\tipc_address.cpp" />
+    <ClCompile Include="zeroMQ\tipc_connecter.cpp" />
+    <ClCompile Include="zeroMQ\tipc_listener.cpp" />
+    <ClCompile Include="zeroMQ\trie.cpp" />
+    <ClCompile Include="zeroMQ\tweetnacl.c" />
+    <ClCompile Include="zeroMQ\udp_address.cpp" />
+    <ClCompile Include="zeroMQ\udp_engine.cpp" />
+    <ClCompile Include="zeroMQ\v1_decoder.cpp" />
+    <ClCompile Include="zeroMQ\v1_encoder.cpp" />
+    <ClCompile Include="zeroMQ\v2_decoder.cpp" />
+    <ClCompile Include="zeroMQ\v2_encoder.cpp" />
+    <ClCompile Include="zeroMQ\v3_1_encoder.cpp" />
+    <ClCompile Include="zeroMQ\vmci.cpp" />
+    <ClCompile Include="zeroMQ\vmci_address.cpp" />
+    <ClCompile Include="zeroMQ\vmci_connecter.cpp" />
+    <ClCompile Include="zeroMQ\vmci_listener.cpp" />
+    <ClCompile Include="zeroMQ\wss_address.cpp" />
+    <ClCompile Include="zeroMQ\wss_engine.cpp" />
+    <ClCompile Include="zeroMQ\ws_address.cpp" />
+    <ClCompile Include="zeroMQ\ws_connecter.cpp" />
+    <ClCompile Include="zeroMQ\ws_decoder.cpp" />
+    <ClCompile Include="zeroMQ\ws_encoder.cpp" />
+    <ClCompile Include="zeroMQ\ws_engine.cpp" />
+    <ClCompile Include="zeroMQ\ws_listener.cpp" />
+    <ClCompile Include="zeroMQ\xpub.cpp" />
+    <ClCompile Include="zeroMQ\xsub.cpp" />
+    <ClCompile Include="zeroMQ\zap_client.cpp" />
+    <ClCompile Include="zeroMQ\zmq.cpp" />
+    <ClCompile Include="zeroMQ\zmq_utils.cpp" />
+    <ClCompile Include="zeroMQ\zmtp_engine.cpp" />
+    <ClCompile Include="zeroMQ\_precompiled.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="CURL_STATIC_LIB.h" />
+    <ClInclude Include="external\sha1\sha1.h" />
+    <ClInclude Include="external\wepoll\wepoll.h" />
+    <ClInclude Include="zeroMQ\address.hpp" />
+    <ClInclude Include="zeroMQ\array.hpp" />
+    <ClInclude Include="zeroMQ\atomic_counter.hpp" />
+    <ClInclude Include="zeroMQ\atomic_ptr.hpp" />
+    <ClInclude Include="zeroMQ\blob.hpp" />
+    <ClInclude Include="zeroMQ\channel.hpp" />
+    <ClInclude Include="zeroMQ\client.hpp" />
+    <ClInclude Include="zeroMQ\clock.hpp" />
+    <ClInclude Include="zeroMQ\command.hpp" />
+    <ClInclude Include="zeroMQ\compat.hpp" />
+    <ClInclude Include="zeroMQ\condition_variable.hpp" />
+    <ClInclude Include="zeroMQ\config.hpp" />
+    <ClInclude Include="zeroMQ\ctx.hpp" />
+    <ClInclude Include="zeroMQ\curve_client.hpp" />
+    <ClInclude Include="zeroMQ\curve_client_tools.hpp" />
+    <ClInclude Include="zeroMQ\curve_mechanism_base.hpp" />
+    <ClInclude Include="zeroMQ\curve_server.hpp" />
+    <ClInclude Include="zeroMQ\dbuffer.hpp" />
+    <ClInclude Include="zeroMQ\dealer.hpp" />
+    <ClInclude Include="zeroMQ\decoder.hpp" />
+    <ClInclude Include="zeroMQ\decoder_allocators.hpp" />
+    <ClInclude Include="zeroMQ\devpoll.hpp" />
+    <ClInclude Include="zeroMQ\dgram.hpp" />
+    <ClInclude Include="zeroMQ\dish.hpp" />
+    <ClInclude Include="zeroMQ\dist.hpp" />
+    <ClInclude Include="zeroMQ\encoder.hpp" />
+    <ClInclude Include="zeroMQ\endpoint.hpp" />
+    <ClInclude Include="zeroMQ\epoll.hpp" />
+    <ClInclude Include="zeroMQ\err.hpp" />
+    <ClInclude Include="zeroMQ\fd.hpp" />
+    <ClInclude Include="zeroMQ\fq.hpp" />
+    <ClInclude Include="zeroMQ\gather.hpp" />
+    <ClInclude Include="zeroMQ\generic_mtrie.hpp" />
+    <ClInclude Include="zeroMQ\generic_mtrie_impl.hpp" />
+    <ClInclude Include="zeroMQ\gssapi_client.hpp" />
+    <ClInclude Include="zeroMQ\gssapi_mechanism_base.hpp" />
+    <ClInclude Include="zeroMQ\gssapi_server.hpp" />
+    <ClInclude Include="zeroMQ\io_object.hpp" />
+    <ClInclude Include="zeroMQ\io_thread.hpp" />
+    <ClInclude Include="zeroMQ\ip.hpp" />
+    <ClInclude Include="zeroMQ\ipc_address.hpp" />
+    <ClInclude Include="zeroMQ\ipc_connecter.hpp" />
+    <ClInclude Include="zeroMQ\ipc_listener.hpp" />
+    <ClInclude Include="zeroMQ\ip_resolver.hpp" />
+    <ClInclude Include="zeroMQ\i_decoder.hpp" />
+    <ClInclude Include="zeroMQ\i_encoder.hpp" />
+    <ClInclude Include="zeroMQ\i_engine.hpp" />
+    <ClInclude Include="zeroMQ\i_mailbox.hpp" />
+    <ClInclude Include="zeroMQ\i_poll_events.hpp" />
+    <ClInclude Include="zeroMQ\kqueue.hpp" />
+    <ClInclude Include="zeroMQ\lb.hpp" />
+    <ClInclude Include="zeroMQ\likely.hpp" />
+    <ClInclude Include="zeroMQ\macros.hpp" />
+    <ClInclude Include="zeroMQ\mailbox.hpp" />
+    <ClInclude Include="zeroMQ\mailbox_safe.hpp" />
+    <ClInclude Include="zeroMQ\mechanism.hpp" />
+    <ClInclude Include="zeroMQ\mechanism_base.hpp" />
+    <ClInclude Include="zeroMQ\metadata.hpp" />
+    <ClInclude Include="zeroMQ\msg.hpp" />
+    <ClInclude Include="zeroMQ\mtrie.hpp" />
+    <ClInclude Include="zeroMQ\mutex.hpp" />
+    <ClInclude Include="zeroMQ\norm_engine.hpp" />
+    <ClInclude Include="zeroMQ\null_mechanism.hpp" />
+    <ClInclude Include="zeroMQ\object.hpp" />
+    <ClInclude Include="zeroMQ\options.hpp" />
+    <ClInclude Include="zeroMQ\own.hpp" />
+    <ClInclude Include="zeroMQ\pair.hpp" />
+    <ClInclude Include="zeroMQ\peer.hpp" />
+    <ClInclude Include="zeroMQ\pgm_receiver.hpp" />
+    <ClInclude Include="zeroMQ\pgm_sender.hpp" />
+    <ClInclude Include="zeroMQ\pgm_socket.hpp" />
+    <ClInclude Include="zeroMQ\pipe.hpp" />
+    <ClInclude Include="zeroMQ\plain_client.hpp" />
+    <ClInclude Include="zeroMQ\plain_common.hpp" />
+    <ClInclude Include="zeroMQ\plain_server.hpp" />
+    <ClInclude Include="zeroMQ\platform.hpp" />
+    <ClInclude Include="zeroMQ\poll.hpp" />
+    <ClInclude Include="zeroMQ\poller.hpp" />
+    <ClInclude Include="zeroMQ\poller_base.hpp" />
+    <ClInclude Include="zeroMQ\polling_util.hpp" />
+    <ClInclude Include="zeroMQ\pollset.hpp" />
+    <ClInclude Include="zeroMQ\proxy.hpp" />
+    <ClInclude Include="zeroMQ\pub.hpp" />
+    <ClInclude Include="zeroMQ\pull.hpp" />
+    <ClInclude Include="zeroMQ\push.hpp" />
+    <ClInclude Include="zeroMQ\radio.hpp" />
+    <ClInclude Include="zeroMQ\radix_tree.hpp" />
+    <ClInclude Include="zeroMQ\random.hpp" />
+    <ClInclude Include="zeroMQ\raw_decoder.hpp" />
+    <ClInclude Include="zeroMQ\raw_encoder.hpp" />
+    <ClInclude Include="zeroMQ\raw_engine.hpp" />
+    <ClInclude Include="zeroMQ\reaper.hpp" />
+    <ClInclude Include="zeroMQ\rep.hpp" />
+    <ClInclude Include="zeroMQ\req.hpp" />
+    <ClInclude Include="zeroMQ\router.hpp" />
+    <ClInclude Include="zeroMQ\scatter.hpp" />
+    <ClInclude Include="zeroMQ\secure_allocator.hpp" />
+    <ClInclude Include="zeroMQ\select.hpp" />
+    <ClInclude Include="zeroMQ\server.hpp" />
+    <ClInclude Include="zeroMQ\session_base.hpp" />
+    <ClInclude Include="zeroMQ\signaler.hpp" />
+    <ClInclude Include="zeroMQ\socket_base.hpp" />
+    <ClInclude Include="zeroMQ\socket_poller.hpp" />
+    <ClInclude Include="zeroMQ\socks.hpp" />
+    <ClInclude Include="zeroMQ\socks_connecter.hpp" />
+    <ClInclude Include="zeroMQ\stdint.hpp" />
+    <ClInclude Include="zeroMQ\stream.hpp" />
+    <ClInclude Include="zeroMQ\stream_connecter_base.hpp" />
+    <ClInclude Include="zeroMQ\stream_engine_base.hpp" />
+    <ClInclude Include="zeroMQ\stream_listener_base.hpp" />
+    <ClInclude Include="zeroMQ\sub.hpp" />
+    <ClInclude Include="zeroMQ\tcp.hpp" />
+    <ClInclude Include="zeroMQ\tcp_address.hpp" />
+    <ClInclude Include="zeroMQ\tcp_connecter.hpp" />
+    <ClInclude Include="zeroMQ\tcp_listener.hpp" />
+    <ClInclude Include="zeroMQ\thread.hpp" />
+    <ClInclude Include="zeroMQ\timers.hpp" />
+    <ClInclude Include="zeroMQ\tipc_address.hpp" />
+    <ClInclude Include="zeroMQ\tipc_connecter.hpp" />
+    <ClInclude Include="zeroMQ\tipc_listener.hpp" />
+    <ClInclude Include="zeroMQ\trie.hpp" />
+    <ClInclude Include="zeroMQ\tweetnacl.h" />
+    <ClInclude Include="zeroMQ\udp_address.hpp" />
+    <ClInclude Include="zeroMQ\udp_engine.hpp" />
+    <ClInclude Include="zeroMQ\v1_decoder.hpp" />
+    <ClInclude Include="zeroMQ\v1_encoder.hpp" />
+    <ClInclude Include="zeroMQ\v2_decoder.hpp" />
+    <ClInclude Include="zeroMQ\v2_encoder.hpp" />
+    <ClInclude Include="zeroMQ\v2_protocol.hpp" />
+    <ClInclude Include="zeroMQ\v3_1_encoder.hpp" />
+    <ClInclude Include="zeroMQ\vmci.hpp" />
+    <ClInclude Include="zeroMQ\vmci_address.hpp" />
+    <ClInclude Include="zeroMQ\vmci_connecter.hpp" />
+    <ClInclude Include="zeroMQ\vmci_listener.hpp" />
+    <ClInclude Include="zeroMQ\windows.hpp" />
+    <ClInclude Include="zeroMQ\wire.hpp" />
+    <ClInclude Include="zeroMQ\wss_address.hpp" />
+    <ClInclude Include="zeroMQ\wss_engine.hpp" />
+    <ClInclude Include="zeroMQ\ws_address.hpp" />
+    <ClInclude Include="zeroMQ\ws_connecter.hpp" />
+    <ClInclude Include="zeroMQ\ws_decoder.hpp" />
+    <ClInclude Include="zeroMQ\ws_encoder.hpp" />
+    <ClInclude Include="zeroMQ\ws_engine.hpp" />
+    <ClInclude Include="zeroMQ\ws_listener.hpp" />
+    <ClInclude Include="zeroMQ\ws_protocol.hpp" />
+    <ClInclude Include="zeroMQ\xpub.hpp" />
+    <ClInclude Include="zeroMQ\xsub.hpp" />
+    <ClInclude Include="zeroMQ\ypipe.hpp" />
+    <ClInclude Include="zeroMQ\ypipe_base.hpp" />
+    <ClInclude Include="zeroMQ\ypipe_conflate.hpp" />
+    <ClInclude Include="zeroMQ\yqueue.hpp" />
+    <ClInclude Include="zeroMQ\zap_client.hpp" />
+    <ClInclude Include="zeroMQ\zmq.h" />
+    <ClInclude Include="zeroMQ\zmq.hpp" />
+    <ClInclude Include="zeroMQ\zmq_addon.hpp" />
+    <ClInclude Include="zeroMQ\zmq_draft.h" />
+    <ClInclude Include="zeroMQ\zmq_utils.h" />
+    <ClInclude Include="zeroMQ\zmtp_engine.hpp" />
+    <ClInclude Include="zeroMQ\_precompiled.hpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="zeroMQ\libzmq.pc.in" />
+    <None Include="zeroMQ\libzmq.vers" />
+    <None Include="zeroMQ\version.rc.in" />
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ImportGroup Label="ExtensionTargets">
+    <Import Project="..\packages\boost.1.81.0\build\boost.targets" Condition="Exists('..\packages\boost.1.81.0\build\boost.targets')" />
+  </ImportGroup>
+</Project>

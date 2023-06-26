@@ -1,0 +1,890 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="Files">
+      <UniqueIdentifier>{f069da6d-398c-4636-9c3d-e737becb54bf}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Files\ZeroMQ">
+      <UniqueIdentifier>{b2ece711-b40e-42c0-bec8-6e24eb959668}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Files\ZeroMQ\external">
+      <UniqueIdentifier>{16556781-e1e0-4df1-bc19-1ed19f9f4319}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Files\ZeroMQ\external\sha1">
+      <UniqueIdentifier>{87d1f9cc-d23a-45af-9737-abb91f8343d8}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Files\ZeroMQ\external\wepoll">
+      <UniqueIdentifier>{bb7576c9-07c5-4e70-9669-301cf8d703db}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="zeroMQ\_precompiled.cpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\address.cpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\channel.cpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\client.cpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\clock.cpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\ctx.cpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\curve_client.cpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\curve_mechanism_base.cpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\curve_server.cpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\dealer.cpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\decoder_allocators.cpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\devpoll.cpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\dgram.cpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\dish.cpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\dist.cpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\endpoint.cpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\epoll.cpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\err.cpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\fq.cpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\gather.cpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\gssapi_client.cpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\gssapi_mechanism_base.cpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\gssapi_server.cpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\io_object.cpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\io_thread.cpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\ip.cpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\ip_resolver.cpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\ipc_address.cpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\ipc_connecter.cpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\ipc_listener.cpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\kqueue.cpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\lb.cpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\mailbox.cpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\mailbox_safe.cpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\mechanism.cpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\mechanism_base.cpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\metadata.cpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\msg.cpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\mtrie.cpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\norm_engine.cpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\null_mechanism.cpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\object.cpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\options.cpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\own.cpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\pair.cpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\peer.cpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\pgm_receiver.cpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\pgm_sender.cpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\pgm_socket.cpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\pipe.cpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\plain_client.cpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\plain_server.cpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\poll.cpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\poller_base.cpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\polling_util.cpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\pollset.cpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\proxy.cpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\pub.cpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\pull.cpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\push.cpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\radio.cpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\radix_tree.cpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\random.cpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\raw_decoder.cpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\raw_encoder.cpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\raw_engine.cpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\reaper.cpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\rep.cpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\req.cpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\router.cpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\scatter.cpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\select.cpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\server.cpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\session_base.cpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\signaler.cpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\socket_base.cpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\socket_poller.cpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\socks.cpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\socks_connecter.cpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\stream.cpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\stream_connecter_base.cpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\stream_engine_base.cpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\stream_listener_base.cpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\sub.cpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\tcp.cpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\tcp_address.cpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\tcp_connecter.cpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\tcp_listener.cpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\thread.cpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\timers.cpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\tipc_address.cpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\tipc_connecter.cpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\tipc_listener.cpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\trie.cpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\tweetnacl.c">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\udp_address.cpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\udp_engine.cpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\v1_decoder.cpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\v1_encoder.cpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\v2_decoder.cpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\v2_encoder.cpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\v3_1_encoder.cpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\vmci.cpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\vmci_address.cpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\vmci_connecter.cpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\vmci_listener.cpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\ws_address.cpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\ws_connecter.cpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\ws_decoder.cpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\ws_encoder.cpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\ws_engine.cpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\ws_listener.cpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\wss_address.cpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\wss_engine.cpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\xpub.cpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\xsub.cpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\zap_client.cpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\zmq.cpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\zmq_utils.cpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClCompile>
+    <ClCompile Include="zeroMQ\zmtp_engine.cpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClCompile>
+    <ClCompile Include="external\wepoll\wepoll.c">
+      <Filter>Files\ZeroMQ\external\wepoll</Filter>
+    </ClCompile>
+    <ClCompile Include="external\sha1\sha1.c">
+      <Filter>Files\ZeroMQ\external\sha1</Filter>
+    </ClCompile>
+    <ClCompile Include="CURL_STATIC_LIB.cpp">
+      <Filter>Files</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="zeroMQ\_precompiled.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\address.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\array.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\atomic_counter.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\atomic_ptr.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\blob.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\channel.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\client.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\clock.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\command.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\compat.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\condition_variable.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\config.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\ctx.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\curve_client.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\curve_client_tools.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\curve_mechanism_base.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\curve_server.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\dbuffer.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\dealer.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\decoder.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\decoder_allocators.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\devpoll.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\dgram.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\dish.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\dist.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\encoder.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\endpoint.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\epoll.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\err.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\fd.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\fq.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\gather.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\generic_mtrie.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\generic_mtrie_impl.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\gssapi_client.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\gssapi_mechanism_base.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\gssapi_server.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\i_decoder.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\i_encoder.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\i_engine.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\i_mailbox.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\i_poll_events.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\io_object.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\io_thread.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\ip.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\ip_resolver.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\ipc_address.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\ipc_connecter.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\ipc_listener.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\kqueue.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\lb.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\likely.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\macros.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\mailbox.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\mailbox_safe.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\mechanism.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\mechanism_base.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\metadata.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\msg.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\mtrie.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\mutex.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\norm_engine.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\null_mechanism.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\object.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\options.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\own.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\pair.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\peer.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\pgm_receiver.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\pgm_sender.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\pgm_socket.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\pipe.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\plain_client.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\plain_common.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\plain_server.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\platform.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\poll.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\poller.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\poller_base.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\polling_util.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\pollset.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\proxy.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\pub.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\pull.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\push.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\radio.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\radix_tree.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\random.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\raw_decoder.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\raw_encoder.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\raw_engine.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\reaper.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\rep.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\req.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\router.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\scatter.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\secure_allocator.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\select.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\server.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\session_base.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\signaler.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\socket_base.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\socket_poller.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\socks.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\socks_connecter.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\stdint.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\stream.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\stream_connecter_base.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\stream_engine_base.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\stream_listener_base.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\sub.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\tcp.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\tcp_address.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\tcp_connecter.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\tcp_listener.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\thread.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\timers.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\tipc_address.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\tipc_connecter.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\tipc_listener.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\trie.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\tweetnacl.h">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\udp_address.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\udp_engine.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\v1_decoder.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\v1_encoder.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\v2_decoder.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\v2_encoder.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\v2_protocol.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\v3_1_encoder.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\vmci.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\vmci_address.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\vmci_connecter.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\vmci_listener.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\windows.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\wire.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\ws_address.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\ws_connecter.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\ws_decoder.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\ws_encoder.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\ws_engine.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\ws_listener.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\ws_protocol.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\wss_address.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\wss_engine.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\xpub.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\xsub.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\ypipe.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\ypipe_base.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\ypipe_conflate.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\yqueue.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\zap_client.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\zmq.h">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\zmq.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\zmq_addon.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\zmq_draft.h">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\zmq_utils.h">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="zeroMQ\zmtp_engine.hpp">
+      <Filter>Files\ZeroMQ</Filter>
+    </ClInclude>
+    <ClInclude Include="external\wepoll\wepoll.h">
+      <Filter>Files\ZeroMQ\external\wepoll</Filter>
+    </ClInclude>
+    <ClInclude Include="external\sha1\sha1.h">
+      <Filter>Files\ZeroMQ\external\sha1</Filter>
+    </ClInclude>
+    <ClInclude Include="CURL_STATIC_LIB.h">
+      <Filter>Files</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="zeroMQ\libzmq.pc.in">
+      <Filter>Files\ZeroMQ</Filter>
+    </None>
+    <None Include="zeroMQ\libzmq.vers">
+      <Filter>Files\ZeroMQ</Filter>
+    </None>
+    <None Include="zeroMQ\version.rc.in">
+      <Filter>Files\ZeroMQ</Filter>
+    </None>
+  </ItemGroup>
+</Project>

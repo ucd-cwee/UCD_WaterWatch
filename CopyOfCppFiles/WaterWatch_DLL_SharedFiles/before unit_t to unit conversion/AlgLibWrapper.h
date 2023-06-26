@@ -1,0 +1,95 @@
+#pragma once
+#include "Precompiled.h"
+
+#include "AlgLib/alglibinternal.h"
+#include "AlgLib/alglibmisc.h"
+#include "AlgLib/ap.h"
+#include "AlgLib/dataanalysis.h"
+#include "AlgLib/diffequations.h"
+#include "AlgLib/fasttransforms.h"
+#include "AlgLib/integration.h"
+#include "AlgLib/interpolation.h"
+#include "AlgLib/kernels_avx2.h"
+#include "AlgLib/kernels_fma.h"
+#include "AlgLib/kernels_sse2.h"
+#include "AlgLib/linalg.h"
+#include "AlgLib/optimization.h"
+#include "AlgLib/solvers.h"
+#include "AlgLib/specialfunctions.h"
+#include "AlgLib/statistics.h"
+
+namespace alglibwrapper {
+	// using namespace alglib;
+
+    class Interpolator {
+    public:
+        static double SparseMatrixInterp(cweeThreadedList<cweeUnion<double, double, double>> const& data, double X, double Y) {
+            double out = 0; 
+            if (data.Num() > 0) {
+                //cweeDynamicAlloc<double, 16, 8> alloc;
+                //alloc.Init();
+                //double* ptr = alloc.Alloc(data.Num() * 3);
+                //for (int i = 0; i < data.Num(); i++) {
+                //    ptr[(i * 3)] = data[i].get<0>();
+                //    ptr[(i * 3) + 1] = data[i].get<1>();
+                //    ptr[(i * 3) + 2] = data[i].get<2>();
+                //}
+                {
+                    alglib::real_2d_array arr;
+                    arr.attach_to_ptr(data.Num(), 3, (double*)(void*)data.Ptr()); // ptr);
+                    {
+                        alglib::rbfmodel model;
+                        alglib::rbfcreate(2, 1, model);
+                        rbfsetpoints(model, arr);
+                        alglib::rbfreport rep;
+                        alglib::rbfsetalgohierarchical(model, 1.0, 3, 0.0);
+                        alglib::rbfbuildmodel(model, rep);
+                        out = alglib::rbfcalc2(model, X, Y);
+                    }
+                }
+                //alloc.Free(ptr);
+                //alloc.Shutdown();
+            }
+            return out;
+        };
+        static cweeThreadedList<double> PredictNextInSequence(cweeThreadedList<double> const& sequence, int N_to_Predict) {
+            using namespace alglib;
+
+            cweeThreadedList<double> out;
+
+            // Here we demonstrate SSA forecasting on some toy problem with clearly visible linear trend and small amount of noise.
+            ssamodel s;
+            real_1d_array x;
+            x.attach_to_ptr(sequence.Num(), const_cast<double*>(sequence.Ptr()));
+
+            // First, we create SSA model, set its properties and add dataset.            
+            // We use window with width=3 and configure model to use direct SSA
+            // algorithm - one which runs exact O(N*W^2) analysis - to extract
+            // two top singular vectors. Well, it is toy problem :)            
+            // NOTE: SSA model may store and analyze more than one sequence
+            //       (say, different sequences may correspond to data collected
+            //       from different devices)
+            ssacreate(s);
+            ssasetwindow(s, 3);
+            ssaaddsequence(s, x);
+            ssasetalgotopkdirect(s, 2);
+
+            // Now we begin analysis. Internally SSA model stores everything it needs:
+            // data, settings, solvers and so on. Right after first call to analysis-
+            // related function it will analyze dataset, build basis and perform analysis.            
+            // Subsequent calls to analysis functions will reuse previously computed
+            // basis, unless you invalidate it by changing model settings (or dataset).            
+            // In this example we show how to use ssaforecastlast() function, which
+            // predicts changed in the last sequence of the dataset. If you want to
+            // perform prediction for some other sequence, use ssaforecastsequence().
+            real_1d_array trend;
+            ssaforecastlast(s, N_to_Predict, trend);
+
+            for (size_t i = 0; i < trend.length(); i++) { out.Append(trend[i]); }
+
+            return out;
+        };
+
+    };
+
+};

@@ -1,0 +1,55 @@
+﻿<UserControl
+    x:Class="UWP_WaterWatch.Custom_Controls.ScriptingManagerOutputPanel"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:UWP_WaterWatch.Custom_Controls"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:converters="using:UWP_WaterWatchLibrary.Converters" xmlns:muxc="using:Microsoft.UI.Xaml.Controls"
+    mc:Ignorable="d"
+    d:DesignHeight="40"
+    d:DesignWidth="600">
+
+    <UserControl.Resources>
+        <ResourceDictionary>
+            <converters:VisBoolConverter x:Key="VisBoolConverter"/>
+            <converters:DoubleStringConverter x:Key="DoubleStringConverter"/>
+        </ResourceDictionary>
+    </UserControl.Resources>
+    
+    <Grid Background="LightBlue" ColumnSpacing="5" Padding="0,0,0,0">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="Auto" /> <!--- CPU% -->
+            <ColumnDefinition Width="Auto" /> <!--- MEMORY% -->
+            <ColumnDefinition Width="*" />  <!--- MESSAGE -->
+            <ColumnDefinition Width="Auto" /> <!--- ALERTS, NOTIFICATIONS, ETC -->
+        </Grid.ColumnDefinitions>
+
+        <!-- , Converter={StaticResource DoubleStringConverter} -->
+        <Grid Grid.Column="0" >
+            <StackPanel Orientation="Horizontal" Spacing="2">
+                <FontIcon FontFamily="Segoe MDL2 Assets" Glyph="&#xE964;"/>
+                <TextBlock Text="{x:Bind vm.PercentCPU, Mode=OneWay}" Width="20" HorizontalAlignment="Right" HorizontalTextAlignment="Right" />
+                <TextBlock Text="% CPU" />
+            </StackPanel>
+        </Grid>
+        <!-- , Converter={StaticResource DoubleStringConverter} -->
+        <Grid Grid.Column="1" >
+            <StackPanel Orientation="Horizontal" Spacing="2">
+                <FontIcon FontFamily="Segoe MDL2 Assets" Glyph="&#xE96A;"/>
+                <TextBlock Text="{x:Bind vm.PercentMemoryUsed, Mode=OneWay}" Width="20" HorizontalAlignment="Right" HorizontalTextAlignment="Right" />
+                <TextBlock Text="% RAM" />
+            </StackPanel>
+        </Grid>
+        <!-- , UpdateSourceTrigger=PropertyChanged -->
+        <Grid Grid.Column="2" >
+            <TextBlock Text="{x:Bind vm.StatusString, Mode=OneWay}" />
+        </Grid>
+        <Grid Grid.Column="3" >
+            <Grid HorizontalAlignment="Stretch" VerticalAlignment="Stretch" Width="Auto" Height="Auto">
+                <SymbolIcon Symbol="Message" HorizontalAlignment="Left" Margin="0,0,10,0" />
+                <muxc:InfoBadge FontSize="6" Background="#C42B1C" Margin="10,0,0,0" HorizontalAlignment="Right" VerticalAlignment="Top" Value="{x:Bind vm.NumStatusReports, Mode=OneWay}"/>
+            </Grid>
+        </Grid>
+    </Grid>
+</UserControl>

@@ -1,0 +1,39 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net5.0</TargetFramework>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|AnyCPU'">
+    <PlatformTarget>x64</PlatformTarget>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="$(SolutionDir)WaterWatch_Cs_SWIG\*.cs">
+      <Link>WaterWatch_C++\%(RecursiveDir)%(FileName)%(Extension)</Link>
+      <BuildAction>Compile</BuildAction>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Compile>
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="$(SolutionDir)WaterWatch_Cs_SWIG\Conv.dll">
+      <Link>%(FileName)%(Extension)</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\WaterWatch_Cs_SWIG\WaterWatch_Cs_SWIG.vcxproj" />
+  </ItemGroup>
+
+  <Target Name="PostBuild" AfterTargets="PostBuildEvent">
+    <Exec Command="xcopy /y /d &quot;$(SolutionDir)WaterWatch_Cs_SWIG\Conv.dll&quot; &quot;$(OutDir)&quot;&#xD;&#xA;xcopy /y /d &quot;$(SolutionDir)epanet\libmysql.dll&quot; &quot;$(OutDir)&quot;&#xD;&#xA;xcopy /y /d &quot;$(SolutionDir)epanet\nanodbc.lib&quot; &quot;$(OutDir)&quot;" />
+  </Target>
+
+  <Target Name="PreBuild" BeforeTargets="PreBuildEvent">
+    <Exec Command="xcopy /y /d &quot;$(SolutionDir)WaterWatch_Cs_SWIG\Conv.dll&quot; &quot;$(OutDir)&quot;&#xD;&#xA;xcopy /y /d &quot;$(SolutionDir)epanet\libmysql.dll&quot; &quot;$(OutDir)&quot;&#xD;&#xA;xcopy /y /d &quot;$(SolutionDir)epanet\nanodbc.lib&quot; &quot;$(OutDir)&quot;" />
+  </Target>
+
+</Project>
