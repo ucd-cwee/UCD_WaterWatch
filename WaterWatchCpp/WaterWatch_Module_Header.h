@@ -1258,6 +1258,30 @@ namespace chaiscript {
                     lib->add(chaiscript::constructor<bool(cweeSharedPtr<##Namespace::##Type> const &)>(), "bool"); \
                     lib->add(chaiscript::type_conversion<cweeSharedPtr<##Namespace::##Type>, bool>([](const cweeSharedPtr<##Namespace::##Type>& t_bt)->bool { return (bool)t_bt; }, nullptr)); \
                 }
+
+
+#define AddSharedPtrClass(Namespace, BaseType) { \
+                    lib->add(chaiscript::user_type<cweeSharedPtr<##Namespace::##BaseType>>(), #BaseType); \
+                    lib->add(chaiscript::fun([]()->cweeSharedPtr<##Namespace::##BaseType> { return make_cwee_shared<##Namespace::##BaseType>(); }), #BaseType); \
+                    lib->add(chaiscript::constructor<cweeSharedPtr<##Namespace::##BaseType>(cweeSharedPtr<##Namespace::##BaseType> const &)>(), #BaseType); \
+                    lib->add(chaiscript::fun([](cweeSharedPtr<##Namespace::##BaseType>& a, cweeSharedPtr<##Namespace::##BaseType> const& b) { a = b; return a; }), "="); \
+                    lib->add(chaiscript::constructor<bool(cweeSharedPtr<##Namespace::##BaseType> const &)>(), "bool"); \
+                    lib->add(chaiscript::type_conversion<cweeSharedPtr<##Namespace::##BaseType>, bool>([](const cweeSharedPtr<##Namespace::##BaseType>& t_bt)->bool { return (bool)t_bt; }, nullptr)); \
+                }
+#define AddSharedPtrClassMember(Namespace, BaseType, Member) { \
+                    lib->add(chaiscript::fun([](cweeSharedPtr<##Namespace::##BaseType>& a) -> decltype(##Namespace::##BaseType::##Member)& { if (a) return a->Member; else throw(chaiscript::exception::eval_error("Cannot access a member of a null (empty) shared object.")); }), #Member); \
+                }
+#define AddSharedPtrClassMember_SpecializedName(Namespace, BaseType, Member, newName) { \
+                    lib->add(chaiscript::fun([](cweeSharedPtr<##Namespace::##BaseType>& a) -> decltype(##Namespace::##BaseType::##Member)& { if (a) return a->Member; else throw(chaiscript::exception::eval_error("Cannot access a member of a null (empty) shared object.")); }), #newName); \
+                }
+#define AddSharedPtrClassFunction(Namespace, BaseType, Function) { \
+                    lib->add(chaiscript::fun([](cweeSharedPtr<##Namespace::##BaseType>& a) { if (a) return a->Function(); else throw(chaiscript::exception::eval_error("Cannot access a member of a null (empty) shared object.")); }), #Function); \
+                }
+
+
+
+
+
 #define AddNamespacedClassMember(Namespace, Type, Member) { lib->add(chaiscript::fun(&##Namespace::##Type::##Member), #Member); }
 #define AddNamespacedClassMember_SupportSharedPtr(Namespace, Type, Member) {  \
         lib->add(chaiscript::fun(&##Namespace::##Type::##Member), #Member); \

@@ -1031,6 +1031,9 @@ namespace UWP_WaterWatch.Custom_Controls
                                         chart.Result.Height = r.ActualHeight;
                                     }
 
+                                    chart.Result.MinHeight = 80;
+                                    chart.Result.MinWidth = 100;
+
                                     r.Child = chart.Result;
 
                                     return chart;

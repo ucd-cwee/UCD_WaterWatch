@@ -26,6 +26,7 @@ to maintain a single distribution point for the source code.
 #include "cwee_math.h"
 #include "BalancedPattern.h"
 #include "cweeSet.h"
+#include "cweeUnitPattern.h"
 
 #pragma warning(disable : 4996)
 namespace epanet {
@@ -2251,7 +2252,8 @@ namespace epanet {
     private:
         cweeSharedPtr<ValuesContainerType>	Values_p; // private access due to the type-erasure
     };
-    
+    using Passet = cweeSharedPtr<Sasset>;
+
     class Szone;
 
     class Snode : public Sasset            // Node Object
@@ -2640,8 +2642,10 @@ namespace epanet {
         cweeStr Icon() const noexcept override { return ""; };
 
         /* Can we identify the best survey frequency right here? */
-
         cweeList< Pnode > FindDeadends(cweeSharedPtr<Project> pr);
+        /* returns the list of assets that feed into or out of this zone. */
+        cweeList< cweeUnion<Passet, direction_t> > GetMassBalanceAssets(cweeSharedPtr<Project> pr);
+        void TryCalibrateZone(cweeSharedPtr<Project> pr, std::map<std::string, cweeUnitValues::cweeUnitPattern> const& ScadaSources);
 
     private:
         template <int distance = 0>
@@ -2654,7 +2658,7 @@ namespace epanet {
             if (zone.Get() == this) { return distance; }
 
             for (auto& BL : Boundary_Link) {
-                int reply;
+                int reply = -1;
                 switch (BL.second) {
                 case direction_t::FLOW_IN_DMA:
                     reply = BL.first->StartingNode->Zone->NumberOfBoundaryLinksBetweenZones_Impl<distance + 1>(zone);
@@ -2679,9 +2683,6 @@ namespace epanet {
                 return -1;
         };
         template<> int   NumberOfBoundaryLinksBetweenZones_Impl<3>(cweeSharedPtr<Szone> const& zone) { return -1; };
-
-        
-
     };
     using Pzone = cweeSharedPtr<Szone>;
 
@@ -4227,6 +4228,48 @@ namespace epanet {
 
         return DeadEnds;
     };
+    INLINE cweeList< cweeUnion<Passet, direction_t> > Szone::GetMassBalanceAssets(cweeSharedPtr<Project> pr) {
+        cweeList< cweeUnion<Passet, direction_t> > out;
+
+        for (auto& link_dir : this->Boundary_Link) {
+            if (link_dir.first) {
+                // is this link always closed? If so, exclude it.
+
+                AUTO link_index = hashtable_t::hashtable_find(pr->network->LinkHashTable, (char*)(link_dir.first->Name_p.c_str()));
+                if (pr->incontrols(LINK, link_index)) { // controlled == wonderful candidate
+                    out.emplace_back(cweeUnion<Passet, direction_t>(link_dir.first.CastReference<Sasset>(), link_dir.second));
+                }
+                else {
+                    // not controlled.. is it open by default?
+                    if ((::epanet::StatusType)(double)link_dir.first->Status(pr->times.GetSimStartTime()) == ::epanet::CLOSED) {
+                        // bad option!
+                        continue;
+                    }
+                    out.emplace_back(cweeUnion<Passet, direction_t>(link_dir.first.CastReference<Sasset>(), link_dir.second));
+                }                
+            }
+        }
+
+        for (auto& node : this->Node) {
+            if (node) {
+                AUTO tank = node.CastReference<Stank>();
+                if (tank) {
+                    out.emplace_back(cweeUnion<Passet, direction_t>(tank.CastReference<Sasset>(), direction_t::FLOW_WITHIN_DMA));
+                }
+            }
+        }
+
+        return out;
+    };
+
+    INLINE void Szone::TryCalibrateZone(cweeSharedPtr<Project> pr, std::map<std::string, cweeUnitValues::cweeUnitPattern> const& ScadaSources) {
+        
+
+
+
+    
+    };
+
 
 #pragma region sparse matrix
     class smatrix_t {

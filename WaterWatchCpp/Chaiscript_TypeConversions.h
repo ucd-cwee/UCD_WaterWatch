@@ -540,10 +540,9 @@ namespace chaiscript {
     template<typename Base, typename Derived>
     Type_Conversion base_class() {
         // Can only be used with related polymorphic types
-        // may be expanded some day to support conversions other than child -> parent
-        static_assert(std::is_base_of<Base, Derived>::value, "Classes are not related by inheritance");
+        // static_assert(std::is_base_of<Base, Derived>::value, "Classes are not related by inheritance");
 
-        if constexpr (std::is_polymorphic<Base>::value && std::is_polymorphic<Derived>::value) {
+        if constexpr (std::is_polymorphic<Base>::value && std::is_polymorphic<Derived>::value && std::is_base_of<Base, Derived>::value) {
             return chaiscript::make_shared<detail::Type_Conversion_Base, detail::Dynamic_Conversion_Impl<Base, Derived>>();
         }
         else {

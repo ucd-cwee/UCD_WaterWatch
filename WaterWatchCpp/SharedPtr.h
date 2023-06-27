@@ -314,12 +314,24 @@ public:
 	/*! instantiate from another ptr with a different Type, using basic cast operations */
 	template <typename T, typename = std::enable_if_t<!std::is_same_v<Type, T>> >
 	cweeSharedPtr(cweeSharedPtr<T> const& similarPtr) noexcept : mutex(0), m_data(InitDataFromAnotherPtr(similarPtr, [](void* p) constexpr -> PtrType {
-		return static_cast<PtrType>((T*)p); // dynamic_cast
-		})) {};
+		if constexpr (std::is_polymorphic<Type>::value && std::is_polymorphic<T>::value && (std::is_base_of<T, Type>::value || std::is_base_of<Type, T>::value)) {
+			return dynamic_cast<PtrType>((T*)p);
+		}
+		else {
+			return static_cast<PtrType>((T*)p);
+		}
+		// return static_cast<PtrType>((T*)p); // dynamic_cast
+	})) {};
 	template <typename T, typename = std::enable_if_t<!std::is_same_v<Type, T>> >
 	cweeSharedPtr(cweeSharedPtr<T>&& other) noexcept : mutex(0), m_data(InitDataFromAnotherPtr(std::forward<cweeSharedPtr<T>>(other), [](void* p) constexpr -> PtrType {
-		return static_cast<PtrType>((T*)p); // dynamic_cast
-		})) {};
+		if constexpr (std::is_polymorphic<Type>::value && std::is_polymorphic<T>::value && (std::is_base_of<T, Type>::value || std::is_base_of<Type, T>::value)) {
+			return dynamic_cast<PtrType>((T*)p);
+		}
+		else {
+			return static_cast<PtrType>((T*)p);
+		}
+		// return static_cast<PtrType>((T*)p); // dynamic_cast
+	})) {};
 
 	/*! instantiate from another ptr with a different Type with complex "get" instructions */
 	template <typename T, typename = std::enable_if_t<!std::is_same_v<Type, T>> >
