@@ -31,6 +31,16 @@ namespace UWP_WaterWatchLibrary
 {
     public static class Extensions
     {
+        public static Boolean isAlphaNumeric(this string strToCheck)
+        {
+            System.Text.RegularExpressions.Regex rg = new System.Text.RegularExpressions.Regex(@"^[a-zA-Z0-9_]*$");
+            return rg.IsMatch(strToCheck);
+        }
+
+        public static bool IsAlphaNumeric(this char v)
+        {
+            return $"{v}".isAlphaNumeric();
+        }
         public static char ToSuperScript(this char v)
         {
             switch (v)

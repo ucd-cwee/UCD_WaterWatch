@@ -1099,6 +1099,42 @@ namespace chaiscript {
             }
 
             /* --> */
+            decltype(auto) FunctionNames_CweeStr() const {
+                AUTO shared_guard = GUARD();
+
+                std::map<std::string, bool> objs; // list of strings
+
+                const auto& funs = get_function_objects_int();
+
+                for (const auto& fun : funs) {
+                    objs[fun.first.c_str()] = true;
+                }
+
+                const auto& funs2 = get_functions_int();
+                for (const auto& fun : funs2) {
+#ifdef UseCweeThreadedMapAsQuickFlatMap
+                    auto* vec = fun.second->get();
+                    if (vec && vec->size() > 0) {
+                        auto& func = vec->operator[](0);
+                        objs.push_back(fun.first);
+                    }
+#else
+                    auto* vec = fun.second.get();
+                    if (vec && vec->size() > 0) {
+                        auto& func = vec->operator[](0);
+                        objs[fun.first.c_str()] = true;
+                    }
+#endif
+                }
+
+                const auto& funs3 = get_boxed_functions_int();
+                for (const auto& fun : funs3) {
+                    objs[fun.first.c_str()] = true;
+                }
+                cweeList<cweeStr> reply;
+                for (auto& x : objs) reply.Append(x.first.c_str());
+                return reply;
+            }
             decltype(auto) FunctionNames_exposed() const {
                 AUTO shared_guard = GUARD();
 

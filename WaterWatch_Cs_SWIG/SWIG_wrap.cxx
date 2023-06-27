@@ -2512,6 +2512,24 @@ SWIGEXPORT void * SWIGSTDCALL CSharp_ScriptEngine_CompatibleFunctions(void * jar
 }
 
 
+SWIGEXPORT void * SWIGSTDCALL CSharp_ScriptEngine_FunctionsThatStartWith(void * jarg1, const char * jarg2) {
+  void * jresult ;
+  ScriptEngine *arg1 = (ScriptEngine *) 0 ;
+  std::string arg2 ;
+  std::vector< std::string > result;
+  
+  arg1 = (ScriptEngine *)jarg1; 
+  if (!jarg2) {
+    SWIG_CSharpSetPendingExceptionArgument(SWIG_CSharpArgumentNullException, "null string", 0);
+    return 0;
+  }
+  (&arg2)->assign(jarg2); 
+  result = (arg1)->FunctionsThatStartWith(arg2);
+  jresult = new std::vector< std::string >(result); 
+  return jresult;
+}
+
+
 SWIGEXPORT void SWIGSTDCALL CSharp_ScriptEngine_StopCurrentScript(void * jarg1) {
   ScriptEngine *arg1 = (ScriptEngine *) 0 ;
   

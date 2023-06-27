@@ -851,6 +851,15 @@ public:
 
 		return result.Append(&data[start], l);
 	};				// return 'len' characters starting at 'start'
+	bool				StartsWith(const cweeStr& startsWith) const {
+		if (startsWith.Length() <= 0) return true;
+		if (this->Length() >= startsWith.Length()) {
+			if (this->Left(startsWith.Length()) == startsWith) {
+				return true;
+			}
+		}
+		return false;
+	};
 	void				ReduceSpaces(bool keepNewLine = false) {
 		//ReplaceChar('\t', ' '); // may be worth to keep tabs...
 		if (!keepNewLine) ReplaceChar('\n', ' ');

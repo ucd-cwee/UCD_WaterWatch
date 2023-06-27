@@ -203,7 +203,23 @@ namespace chaiscript {
 
                 return out;
             }), "get_compatible_functions"); // returns the functions that could be reasonably accessed by a dot accessor
-
+            m_engine.add(fun([this](cweeStr const& startsWith) {
+                chaiscript::small_vector< Boxed_Value > out;
+                auto FunctionNames = m_engine.FunctionNames_CweeStr();
+                AUTO selected = FunctionNames.Select([=](const cweeStr& a)->bool {
+                    if (a.StartsWith(startsWith)) {
+                        return true;
+                    }
+                    return false;
+                });  
+                out.reserve(selected.size() + 1);
+                for (auto& x : selected) {
+                    if (x) {
+                        out.emplace_back(chaiscript::var(std::string(x->c_str())));
+                    }
+                }
+                return out;
+            }), "get_functions_that_start_with"); // returns the functions that could be reasonably accessed by typing
             m_engine.add(fun([this]() { return m_engine.get_function_objects(); }), "get_functions"); // DO NOT EXPOSE GLOBAL OBJECTS TO PUBLIC LIKE THIS?
             m_engine.add(fun([this]() { return m_engine.get_all_function_objects(); }), "get_all_functions"); // DO NOT EXPOSE GLOBAL OBJECTS TO PUBLIC LIKE THIS?
             m_engine.add(fun([this](const dispatch::Proxy_Function_Base* func) { return m_engine.get_function_name(func); }), "get_function_name");

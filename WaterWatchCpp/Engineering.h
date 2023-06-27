@@ -23,22 +23,19 @@ to maintain a single distribution point for the source code.
 #include "Curve.h"
 #include "cweeUnitedValue.h"
 
-INLINE int vec3d_compare(const void* a, const void* b)
-{
+INLINE int vec3d_compare(const void* a, const void* b) {
 	vec3d& aR = *((vec3d*)a);
 	vec3d& bR = *((vec3d*)b);
 	if (aR.x < bR.x) return 1;
 	else return 0;
 	//return -1;
 }
-INLINE void vec3d_swap(vec3d* a, vec3d* b, vec3d& temp)
-{
+INLINE void vec3d_swap(vec3d* a, vec3d* b, vec3d& temp) {
 	temp = *a;
 	*a = *b;
 	*b = temp;
 }
-INLINE int vec3d_partition(vec3d* arr, int low, int high)
-{
+INLINE int vec3d_partition(vec3d* arr, int low, int high) {
 	auto& pivot = arr[cweeRandomInt(low, high)];    // pivot // was 'high' -- randomizing the pivot should result in lower complexity when the array is already sorted. 
 	int i = (low - 1);			// Index of smaller element
 	vec3d temp;
@@ -55,8 +52,7 @@ INLINE int vec3d_partition(vec3d* arr, int low, int high)
 	vec3d_swap(&arr[i + 1], &arr[high], temp);
 	return (i + 1);
 }
-INLINE void vec3d_quickSort(vec3d* arr, int low, int high)
-{
+INLINE void vec3d_quickSort(vec3d* arr, int low, int high) {
 	if (low < high)
 	{
 		/* pi is partitioning index, arr[p] is now

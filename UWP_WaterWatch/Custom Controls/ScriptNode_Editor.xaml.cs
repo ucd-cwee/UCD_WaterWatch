@@ -1068,11 +1068,11 @@ namespace UWP_WaterWatch.Custom_Controls
                 var ftm = GetOpenFunctionTipManager();
                 if (ftm != null)
                 {
-                    if (ftm.AssociatedScriptNode != vm.ParentVM.uniqueName)
+                    if (ftm.AssociatedScriptNode != vm.ParentVM.uniqueName || !args.Character.IsAlphaNumeric())
                     {
                         HideAllFunctionTips();
                     }
-                    else
+                    else 
                     {
                         ftm.written = ftm.written + args.Character;
                         ftm.UpdateTips();
@@ -1081,6 +1081,29 @@ namespace UWP_WaterWatch.Custom_Controls
                             HideAllFunctionTips();
                         }
                     }
+                }
+                else
+                {
+                    if (args.Character.IsAlphaNumeric())
+                    {
+                        string comparison = $"{args.Character}";
+                        EdmsTasks.InsertJob(() =>
+                        {
+                            // potentially writing a new command
+                            List<string> funcs = vm.ParentVM.ParentVM.engine.FunctionsThatStartWith(comparison);
+                            if (funcs.Count > 0)
+                            {
+                                EdmsTasks.InsertJob(() =>
+                                {
+                                    ftm = new FunctionTipManager() { orig_functions = funcs, written = comparison, AssociatedScriptNode = vm.ParentVM.uniqueName };
+                                    ftm.UpdateTips();
+                                    var TeachingTip = CreateFunctionTip(ftm.tips, ftm);
+                                }, true);
+                            }
+                        }, false);
+                    }
+
+
                 }
             }
             catch (Exception){ }

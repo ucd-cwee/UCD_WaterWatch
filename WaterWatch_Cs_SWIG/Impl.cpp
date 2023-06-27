@@ -824,6 +824,9 @@ std::vector< ScriptingNode > ScriptEngine::PreParseScript(std::string command) {
 std::vector<std::string> ScriptEngine::CompatibleFunctions(std::string TypeName) {
 	return DoScript_Cast_VectorStrings(cweeStr::printf("return `%s`.get_compatible_functions().keys();", TypeName.c_str()).c_str());
 };
+std::vector<std::string> ScriptEngine::FunctionsThatStartWith(std::string startsWith) {
+	return DoScript_Cast_VectorStrings(cweeStr::printf("get_functions_that_start_with(\"%s\")", startsWith.c_str()).c_str());
+};
 void ScriptEngine::StopCurrentScript() {
 	cweeSharedPtr<chaiscript::WaterWatch_ChaiScript> engine(ptr, [](void* p) { return static_cast<chaiscript::WaterWatch_ChaiScript*>(p); });
 	if (engine) {

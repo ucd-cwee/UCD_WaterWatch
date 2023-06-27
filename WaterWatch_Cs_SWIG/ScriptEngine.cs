@@ -89,6 +89,12 @@ public class ScriptEngine : global::System.IDisposable {
     return ret;
   }
 
+  public vector_string FunctionsThatStartWith(string startsWith) {
+    vector_string ret = new vector_string(ConvPINVOKE.ScriptEngine_FunctionsThatStartWith(swigCPtr, startsWith), true);
+    if (ConvPINVOKE.SWIGPendingException.Pending) throw ConvPINVOKE.SWIGPendingException.Retrieve();
+    return ret;
+  }
+
   public void StopCurrentScript() {
     ConvPINVOKE.ScriptEngine_StopCurrentScript(swigCPtr);
   }

@@ -221,6 +221,7 @@ public:
     Awaiter DoScriptAsync(std::string command);
     std::vector< ScriptingNode > PreParseScript(std::string command);
     std::vector<std::string> CompatibleFunctions(std::string TypeName);
+    std::vector<std::string> FunctionsThatStartWith(std::string startsWith);
     void StopCurrentScript();
 
     std::string Cast_String(std::string command);

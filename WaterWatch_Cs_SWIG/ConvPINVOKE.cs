@@ -564,6 +564,9 @@ class ConvPINVOKE {
   [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_ScriptEngine_CompatibleFunctions")]
   public static extern global::System.IntPtr ScriptEngine_CompatibleFunctions(global::System.Runtime.InteropServices.HandleRef jarg1, string jarg2);
 
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_ScriptEngine_FunctionsThatStartWith")]
+  public static extern global::System.IntPtr ScriptEngine_FunctionsThatStartWith(global::System.Runtime.InteropServices.HandleRef jarg1, string jarg2);
+
   [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_ScriptEngine_StopCurrentScript")]
   public static extern void ScriptEngine_StopCurrentScript(global::System.Runtime.InteropServices.HandleRef jarg1);
 
