@@ -19,19 +19,19 @@
     </ProjectConfiguration>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="..\..\xlnt\third-party\libstudxml\libstudxml\details\expat\xmlparse.c" />
-    <ClCompile Include="..\..\xlnt\third-party\libstudxml\libstudxml\details\expat\xmlrole.c" />
-    <ClCompile Include="..\..\xlnt\third-party\libstudxml\libstudxml\details\expat\xmltok.c" />
-    <ClCompile Include="..\..\xlnt\third-party\libstudxml\libstudxml\details\expat\xmltok_impl.c" />
-    <ClCompile Include="..\..\xlnt\third-party\libstudxml\libstudxml\details\expat\xmltok_ns.c" />
-    <ClCompile Include="..\..\xlnt\third-party\libstudxml\libstudxml\details\genx\char-props.c" />
-    <ClCompile Include="..\..\xlnt\third-party\libstudxml\libstudxml\details\genx\genx.c" />
-    <ClCompile Include="..\..\xlnt\third-party\libstudxml\libstudxml\parser.cxx" />
-    <ClCompile Include="..\..\xlnt\third-party\libstudxml\libstudxml\qname.cxx" />
-    <ClCompile Include="..\..\xlnt\third-party\libstudxml\libstudxml\serializer.cxx" />
-    <ClCompile Include="..\..\xlnt\third-party\libstudxml\libstudxml\serializer.ixx" />
-    <ClCompile Include="..\..\xlnt\third-party\libstudxml\libstudxml\value-traits.cxx" />
-    <ClCompile Include="..\..\xlnt\third-party\miniz\miniz.c" />
+    <ClCompile Include="third-party\libstudxml\libstudxml\details\expat\xmlparse.c" />
+    <ClCompile Include="third-party\libstudxml\libstudxml\details\expat\xmlrole.c" />
+    <ClCompile Include="third-party\libstudxml\libstudxml\details\expat\xmltok.c" />
+    <ClCompile Include="third-party\libstudxml\libstudxml\details\expat\xmltok_impl.c" />
+    <ClCompile Include="third-party\libstudxml\libstudxml\details\expat\xmltok_ns.c" />
+    <ClCompile Include="third-party\libstudxml\libstudxml\details\genx\char-props.c" />
+    <ClCompile Include="third-party\libstudxml\libstudxml\details\genx\genx.c" />
+    <ClCompile Include="third-party\libstudxml\libstudxml\parser.cxx" />
+    <ClCompile Include="third-party\libstudxml\libstudxml\qname.cxx" />
+    <ClCompile Include="third-party\libstudxml\libstudxml\serializer.cxx" />
+    <ClCompile Include="third-party\libstudxml\libstudxml\serializer.ixx" />
+    <ClCompile Include="third-party\libstudxml\libstudxml\value-traits.cxx" />
+    <ClCompile Include="third-party\miniz\miniz.c" />
     <ClCompile Include="source\cell\cell.cpp" />
     <ClCompile Include="source\cell\cell_reference.cpp" />
     <ClCompile Include="source\cell\comment.cpp" />
@@ -102,40 +102,40 @@
     <ClCompile Include="Wrapper.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="..\..\xlnt\third-party\libstudxml\libstudxml\content.hxx" />
-    <ClInclude Include="..\..\xlnt\third-party\libstudxml\libstudxml\details\config-vc.h" />
-    <ClInclude Include="..\..\xlnt\third-party\libstudxml\libstudxml\details\config.h" />
-    <ClInclude Include="..\..\xlnt\third-party\libstudxml\libstudxml\details\config.hxx" />
-    <ClInclude Include="..\..\xlnt\third-party\libstudxml\libstudxml\details\expat\ascii.h" />
-    <ClInclude Include="..\..\xlnt\third-party\libstudxml\libstudxml\details\expat\asciitab.h" />
-    <ClInclude Include="..\..\xlnt\third-party\libstudxml\libstudxml\details\expat\config.h" />
-    <ClInclude Include="..\..\xlnt\third-party\libstudxml\libstudxml\details\expat\expat.h" />
-    <ClInclude Include="..\..\xlnt\third-party\libstudxml\libstudxml\details\expat\expat_external.h" />
-    <ClInclude Include="..\..\xlnt\third-party\libstudxml\libstudxml\details\expat\iasciitab.h" />
-    <ClInclude Include="..\..\xlnt\third-party\libstudxml\libstudxml\details\expat\internal.h" />
-    <ClInclude Include="..\..\xlnt\third-party\libstudxml\libstudxml\details\expat\latin1tab.h" />
-    <ClInclude Include="..\..\xlnt\third-party\libstudxml\libstudxml\details\expat\nametab.h" />
-    <ClInclude Include="..\..\xlnt\third-party\libstudxml\libstudxml\details\expat\utf8tab.h" />
-    <ClInclude Include="..\..\xlnt\third-party\libstudxml\libstudxml\details\expat\xmlrole.h" />
-    <ClInclude Include="..\..\xlnt\third-party\libstudxml\libstudxml\details\expat\xmltok.h" />
-    <ClInclude Include="..\..\xlnt\third-party\libstudxml\libstudxml\details\expat\xmltok_impl.h" />
-    <ClInclude Include="..\..\xlnt\third-party\libstudxml\libstudxml\details\export.hxx" />
-    <ClInclude Include="..\..\xlnt\third-party\libstudxml\libstudxml\details\genx\genx.h" />
-    <ClInclude Include="..\..\xlnt\third-party\libstudxml\libstudxml\details\post.hxx" />
-    <ClInclude Include="..\..\xlnt\third-party\libstudxml\libstudxml\details\pre.hxx" />
-    <ClInclude Include="..\..\xlnt\third-party\libstudxml\libstudxml\exception.hxx" />
-    <ClInclude Include="..\..\xlnt\third-party\libstudxml\libstudxml\forward.hxx" />
-    <ClInclude Include="..\..\xlnt\third-party\libstudxml\libstudxml\parser.hxx" />
-    <ClInclude Include="..\..\xlnt\third-party\libstudxml\libstudxml\qname.hxx" />
-    <ClInclude Include="..\..\xlnt\third-party\libstudxml\libstudxml\serializer.hxx" />
-    <ClInclude Include="..\..\xlnt\third-party\libstudxml\libstudxml\value-traits.hxx" />
-    <ClInclude Include="..\..\xlnt\third-party\libstudxml\libstudxml\version.hxx" />
-    <ClInclude Include="..\..\xlnt\third-party\miniz\miniz.h" />
-    <ClInclude Include="..\..\xlnt\third-party\utfcpp\utf8.h" />
-    <ClInclude Include="..\..\xlnt\third-party\utfcpp\utf8\checked.h" />
-    <ClInclude Include="..\..\xlnt\third-party\utfcpp\utf8\core.h" />
-    <ClInclude Include="..\..\xlnt\third-party\utfcpp\utf8\cpp11.h" />
-    <ClInclude Include="..\..\xlnt\third-party\utfcpp\utf8\unchecked.h" />
+    <ClInclude Include="third-party\libstudxml\libstudxml\content.hxx" />
+    <ClInclude Include="third-party\libstudxml\libstudxml\details\config-vc.h" />
+    <ClInclude Include="third-party\libstudxml\libstudxml\details\config.h" />
+    <ClInclude Include="third-party\libstudxml\libstudxml\details\config.hxx" />
+    <ClInclude Include="third-party\libstudxml\libstudxml\details\expat\ascii.h" />
+    <ClInclude Include="third-party\libstudxml\libstudxml\details\expat\asciitab.h" />
+    <ClInclude Include="third-party\libstudxml\libstudxml\details\expat\config.h" />
+    <ClInclude Include="third-party\libstudxml\libstudxml\details\expat\expat.h" />
+    <ClInclude Include="third-party\libstudxml\libstudxml\details\expat\expat_external.h" />
+    <ClInclude Include="third-party\libstudxml\libstudxml\details\expat\iasciitab.h" />
+    <ClInclude Include="third-party\libstudxml\libstudxml\details\expat\internal.h" />
+    <ClInclude Include="third-party\libstudxml\libstudxml\details\expat\latin1tab.h" />
+    <ClInclude Include="third-party\libstudxml\libstudxml\details\expat\nametab.h" />
+    <ClInclude Include="third-party\libstudxml\libstudxml\details\expat\utf8tab.h" />
+    <ClInclude Include="third-party\libstudxml\libstudxml\details\expat\xmlrole.h" />
+    <ClInclude Include="third-party\libstudxml\libstudxml\details\expat\xmltok.h" />
+    <ClInclude Include="third-party\libstudxml\libstudxml\details\expat\xmltok_impl.h" />
+    <ClInclude Include="third-party\libstudxml\libstudxml\details\export.hxx" />
+    <ClInclude Include="third-party\libstudxml\libstudxml\details\genx\genx.h" />
+    <ClInclude Include="third-party\libstudxml\libstudxml\details\post.hxx" />
+    <ClInclude Include="third-party\libstudxml\libstudxml\details\pre.hxx" />
+    <ClInclude Include="third-party\libstudxml\libstudxml\exception.hxx" />
+    <ClInclude Include="third-party\libstudxml\libstudxml\forward.hxx" />
+    <ClInclude Include="third-party\libstudxml\libstudxml\parser.hxx" />
+    <ClInclude Include="third-party\libstudxml\libstudxml\qname.hxx" />
+    <ClInclude Include="third-party\libstudxml\libstudxml\serializer.hxx" />
+    <ClInclude Include="third-party\libstudxml\libstudxml\value-traits.hxx" />
+    <ClInclude Include="third-party\libstudxml\libstudxml\version.hxx" />
+    <ClInclude Include="third-party\miniz\miniz.h" />
+    <ClInclude Include="third-party\utfcpp\utf8.h" />
+    <ClInclude Include="third-party\utfcpp\utf8\checked.h" />
+    <ClInclude Include="third-party\utfcpp\utf8\core.h" />
+    <ClInclude Include="third-party\utfcpp\utf8\cpp11.h" />
+    <ClInclude Include="third-party\utfcpp\utf8\unchecked.h" />
     <ClInclude Include="source\detail\binary.hpp" />
     <ClInclude Include="source\detail\constants.hpp" />
     <ClInclude Include="source\detail\cryptography\aes.hpp" />
@@ -175,16 +175,16 @@
     <ClInclude Include="Wrapper.h" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="..\..\xlnt\third-party\libstudxml\libstudxml\buildfile" />
-    <None Include="..\..\xlnt\third-party\libstudxml\libstudxml\details\expat\COPYING" />
-    <None Include="..\..\xlnt\third-party\libstudxml\libstudxml\details\expat\README" />
-    <None Include="..\..\xlnt\third-party\libstudxml\libstudxml\details\genx\LICENSE" />
-    <None Include="..\..\xlnt\third-party\libstudxml\libstudxml\details\genx\README" />
-    <None Include="..\..\xlnt\third-party\libstudxml\libstudxml\parser.txx" />
-    <None Include="..\..\xlnt\third-party\libstudxml\libstudxml\value-traits.txx" />
-    <None Include="..\..\xlnt\third-party\libstudxml\libstudxml\version.hxx.in" />
-    <None Include="..\..\xlnt\third-party\miniz\LICENSE" />
-    <None Include="..\..\xlnt\third-party\utfcpp\LICENSE" />
+    <None Include="third-party\libstudxml\libstudxml\buildfile" />
+    <None Include="third-party\libstudxml\libstudxml\details\expat\COPYING" />
+    <None Include="third-party\libstudxml\libstudxml\details\expat\README" />
+    <None Include="third-party\libstudxml\libstudxml\details\genx\LICENSE" />
+    <None Include="third-party\libstudxml\libstudxml\details\genx\README" />
+    <None Include="third-party\libstudxml\libstudxml\parser.txx" />
+    <None Include="third-party\libstudxml\libstudxml\value-traits.txx" />
+    <None Include="third-party\libstudxml\libstudxml\version.hxx.in" />
+    <None Include="third-party\miniz\LICENSE" />
+    <None Include="third-party\utfcpp\LICENSE" />
   </ItemGroup>
   <PropertyGroup Label="Globals">
     <VCProjectVersion>16.0</VCProjectVersion>
@@ -256,8 +256,9 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>WIN32;_DEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <PrecompiledHeader>Use</PrecompiledHeader>
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
       <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
+      <AdditionalIncludeDirectories>$(ProjectDir)third-party/miniz;$(ProjectDir)third-party/utfcpp;$(ProjectDir)third-party/utfcpp/utf8;$(ProjectDir)third-party/libstudxml;$(ProjectDir)third-party/libstudxml/libstudxml;$(ProjectDir)third-party/libstudxml/libstudxml/details;$(ProjectDir)third-party/libstudxml/libstudxml/details/expat;$(ProjectDir)third-party/libstudxml/libstudxml/details/genx;$(ProjectDir)third-party;$(ProjectDir)source;$(ProjectDir)include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>
@@ -275,7 +276,7 @@
       <ConformanceMode>true</ConformanceMode>
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
       <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
-      <AdditionalIncludeDirectories>$(ProjectDir)include;$(ProjectDir)source;$(ProjectDir)third-party/utfcpp;$(ProjectDir)third-party/miniz;$(ProjectDir)third-party/libstudxml;$(ProjectDir)third-party;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir)third-party/miniz;$(ProjectDir)third-party/utfcpp;$(ProjectDir)third-party/utfcpp/utf8;$(ProjectDir)third-party/libstudxml;$(ProjectDir)third-party/libstudxml/libstudxml;$(ProjectDir)third-party/libstudxml/libstudxml/details;$(ProjectDir)third-party/libstudxml/libstudxml/details/expat;$(ProjectDir)third-party/libstudxml/libstudxml/details/genx;$(ProjectDir)third-party;$(ProjectDir)source;$(ProjectDir)include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>
@@ -291,8 +292,9 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>_DEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <PrecompiledHeader>Use</PrecompiledHeader>
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
       <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
+      <AdditionalIncludeDirectories>$(ProjectDir)third-party/miniz;$(ProjectDir)third-party/utfcpp;$(ProjectDir)third-party/utfcpp/utf8;$(ProjectDir)third-party/libstudxml;$(ProjectDir)third-party/libstudxml/libstudxml;$(ProjectDir)third-party/libstudxml/libstudxml/details;$(ProjectDir)third-party/libstudxml/libstudxml/details/expat;$(ProjectDir)third-party/libstudxml/libstudxml/details/genx;$(ProjectDir)third-party;$(ProjectDir)source;$(ProjectDir)include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>
