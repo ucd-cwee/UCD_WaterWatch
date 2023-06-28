@@ -1,0 +1,326 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|Win32">
+      <Configuration>Debug</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|Win32">
+      <Configuration>Release</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="..\..\xlnt\third-party\libstudxml\libstudxml\details\expat\xmlparse.c" />
+    <ClCompile Include="..\..\xlnt\third-party\libstudxml\libstudxml\details\expat\xmlrole.c" />
+    <ClCompile Include="..\..\xlnt\third-party\libstudxml\libstudxml\details\expat\xmltok.c" />
+    <ClCompile Include="..\..\xlnt\third-party\libstudxml\libstudxml\details\expat\xmltok_impl.c" />
+    <ClCompile Include="..\..\xlnt\third-party\libstudxml\libstudxml\details\expat\xmltok_ns.c" />
+    <ClCompile Include="..\..\xlnt\third-party\libstudxml\libstudxml\details\genx\char-props.c" />
+    <ClCompile Include="..\..\xlnt\third-party\libstudxml\libstudxml\details\genx\genx.c" />
+    <ClCompile Include="..\..\xlnt\third-party\libstudxml\libstudxml\parser.cxx" />
+    <ClCompile Include="..\..\xlnt\third-party\libstudxml\libstudxml\qname.cxx" />
+    <ClCompile Include="..\..\xlnt\third-party\libstudxml\libstudxml\serializer.cxx" />
+    <ClCompile Include="..\..\xlnt\third-party\libstudxml\libstudxml\serializer.ixx" />
+    <ClCompile Include="..\..\xlnt\third-party\libstudxml\libstudxml\value-traits.cxx" />
+    <ClCompile Include="..\..\xlnt\third-party\miniz\miniz.c" />
+    <ClCompile Include="source\cell\cell.cpp" />
+    <ClCompile Include="source\cell\cell_reference.cpp" />
+    <ClCompile Include="source\cell\comment.cpp" />
+    <ClCompile Include="source\cell\hyperlink.cpp" />
+    <ClCompile Include="source\cell\index_types.cpp" />
+    <ClCompile Include="source\cell\phonetic_run.cpp" />
+    <ClCompile Include="source\cell\rich_text.cpp" />
+    <ClCompile Include="source\cell\rich_text_run.cpp" />
+    <ClCompile Include="source\detail\constants.cpp" />
+    <ClCompile Include="source\detail\cryptography\aes.cpp" />
+    <ClCompile Include="source\detail\cryptography\base64.cpp" />
+    <ClCompile Include="source\detail\cryptography\compound_document.cpp" />
+    <ClCompile Include="source\detail\cryptography\encryption_info.cpp" />
+    <ClCompile Include="source\detail\cryptography\hash.cpp" />
+    <ClCompile Include="source\detail\cryptography\sha.cpp" />
+    <ClCompile Include="source\detail\cryptography\sha1.c" />
+    <ClCompile Include="source\detail\cryptography\sha512.c" />
+    <ClCompile Include="source\detail\cryptography\xlsx_crypto_consumer.cpp" />
+    <ClCompile Include="source\detail\cryptography\xlsx_crypto_producer.cpp" />
+    <ClCompile Include="source\detail\header_footer\header_footer_code.cpp" />
+    <ClCompile Include="source\detail\implementations\cell_impl.cpp" />
+    <ClCompile Include="source\detail\number_format\number_formatter.cpp" />
+    <ClCompile Include="source\detail\serialization\custom_value_traits.cpp" />
+    <ClCompile Include="source\detail\serialization\open_stream.cpp" />
+    <ClCompile Include="source\detail\serialization\vector_streambuf.cpp" />
+    <ClCompile Include="source\detail\serialization\xlsx_consumer.cpp" />
+    <ClCompile Include="source\detail\serialization\xlsx_producer.cpp" />
+    <ClCompile Include="source\detail\serialization\zstream.cpp" />
+    <ClCompile Include="source\detail\unicode.cpp" />
+    <ClCompile Include="source\drawing\spreadsheet_drawing.cpp" />
+    <ClCompile Include="source\packaging\ext_list.cpp" />
+    <ClCompile Include="source\packaging\manifest.cpp" />
+    <ClCompile Include="source\packaging\relationship.cpp" />
+    <ClCompile Include="source\packaging\uri.cpp" />
+    <ClCompile Include="source\styles\alignment.cpp" />
+    <ClCompile Include="source\styles\border.cpp" />
+    <ClCompile Include="source\styles\color.cpp" />
+    <ClCompile Include="source\styles\conditional_format.cpp" />
+    <ClCompile Include="source\styles\fill.cpp" />
+    <ClCompile Include="source\styles\font.cpp" />
+    <ClCompile Include="source\styles\format.cpp" />
+    <ClCompile Include="source\styles\number_format.cpp" />
+    <ClCompile Include="source\styles\protection.cpp" />
+    <ClCompile Include="source\styles\style.cpp" />
+    <ClCompile Include="source\utils\date.cpp" />
+    <ClCompile Include="source\utils\datetime.cpp" />
+    <ClCompile Include="source\utils\exceptions.cpp" />
+    <ClCompile Include="source\utils\path.cpp" />
+    <ClCompile Include="source\utils\time.cpp" />
+    <ClCompile Include="source\utils\timedelta.cpp" />
+    <ClCompile Include="source\utils\variant.cpp" />
+    <ClCompile Include="source\workbook\named_range.cpp" />
+    <ClCompile Include="source\workbook\streaming_workbook_reader.cpp" />
+    <ClCompile Include="source\workbook\streaming_workbook_writer.cpp" />
+    <ClCompile Include="source\workbook\workbook.cpp" />
+    <ClCompile Include="source\workbook\worksheet_iterator.cpp" />
+    <ClCompile Include="source\worksheet\cell_iterator.cpp" />
+    <ClCompile Include="source\worksheet\cell_vector.cpp" />
+    <ClCompile Include="source\worksheet\header_footer.cpp" />
+    <ClCompile Include="source\worksheet\page_margins.cpp" />
+    <ClCompile Include="source\worksheet\page_setup.cpp" />
+    <ClCompile Include="source\worksheet\phonetic_pr.cpp" />
+    <ClCompile Include="source\worksheet\range.cpp" />
+    <ClCompile Include="source\worksheet\range_iterator.cpp" />
+    <ClCompile Include="source\worksheet\range_reference.cpp" />
+    <ClCompile Include="source\worksheet\sheet_protection.cpp" />
+    <ClCompile Include="source\worksheet\worksheet.cpp" />
+    <ClCompile Include="Wrapper.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="..\..\xlnt\third-party\libstudxml\libstudxml\content.hxx" />
+    <ClInclude Include="..\..\xlnt\third-party\libstudxml\libstudxml\details\config-vc.h" />
+    <ClInclude Include="..\..\xlnt\third-party\libstudxml\libstudxml\details\config.h" />
+    <ClInclude Include="..\..\xlnt\third-party\libstudxml\libstudxml\details\config.hxx" />
+    <ClInclude Include="..\..\xlnt\third-party\libstudxml\libstudxml\details\expat\ascii.h" />
+    <ClInclude Include="..\..\xlnt\third-party\libstudxml\libstudxml\details\expat\asciitab.h" />
+    <ClInclude Include="..\..\xlnt\third-party\libstudxml\libstudxml\details\expat\config.h" />
+    <ClInclude Include="..\..\xlnt\third-party\libstudxml\libstudxml\details\expat\expat.h" />
+    <ClInclude Include="..\..\xlnt\third-party\libstudxml\libstudxml\details\expat\expat_external.h" />
+    <ClInclude Include="..\..\xlnt\third-party\libstudxml\libstudxml\details\expat\iasciitab.h" />
+    <ClInclude Include="..\..\xlnt\third-party\libstudxml\libstudxml\details\expat\internal.h" />
+    <ClInclude Include="..\..\xlnt\third-party\libstudxml\libstudxml\details\expat\latin1tab.h" />
+    <ClInclude Include="..\..\xlnt\third-party\libstudxml\libstudxml\details\expat\nametab.h" />
+    <ClInclude Include="..\..\xlnt\third-party\libstudxml\libstudxml\details\expat\utf8tab.h" />
+    <ClInclude Include="..\..\xlnt\third-party\libstudxml\libstudxml\details\expat\xmlrole.h" />
+    <ClInclude Include="..\..\xlnt\third-party\libstudxml\libstudxml\details\expat\xmltok.h" />
+    <ClInclude Include="..\..\xlnt\third-party\libstudxml\libstudxml\details\expat\xmltok_impl.h" />
+    <ClInclude Include="..\..\xlnt\third-party\libstudxml\libstudxml\details\export.hxx" />
+    <ClInclude Include="..\..\xlnt\third-party\libstudxml\libstudxml\details\genx\genx.h" />
+    <ClInclude Include="..\..\xlnt\third-party\libstudxml\libstudxml\details\post.hxx" />
+    <ClInclude Include="..\..\xlnt\third-party\libstudxml\libstudxml\details\pre.hxx" />
+    <ClInclude Include="..\..\xlnt\third-party\libstudxml\libstudxml\exception.hxx" />
+    <ClInclude Include="..\..\xlnt\third-party\libstudxml\libstudxml\forward.hxx" />
+    <ClInclude Include="..\..\xlnt\third-party\libstudxml\libstudxml\parser.hxx" />
+    <ClInclude Include="..\..\xlnt\third-party\libstudxml\libstudxml\qname.hxx" />
+    <ClInclude Include="..\..\xlnt\third-party\libstudxml\libstudxml\serializer.hxx" />
+    <ClInclude Include="..\..\xlnt\third-party\libstudxml\libstudxml\value-traits.hxx" />
+    <ClInclude Include="..\..\xlnt\third-party\libstudxml\libstudxml\version.hxx" />
+    <ClInclude Include="..\..\xlnt\third-party\miniz\miniz.h" />
+    <ClInclude Include="..\..\xlnt\third-party\utfcpp\utf8.h" />
+    <ClInclude Include="..\..\xlnt\third-party\utfcpp\utf8\checked.h" />
+    <ClInclude Include="..\..\xlnt\third-party\utfcpp\utf8\core.h" />
+    <ClInclude Include="..\..\xlnt\third-party\utfcpp\utf8\cpp11.h" />
+    <ClInclude Include="..\..\xlnt\third-party\utfcpp\utf8\unchecked.h" />
+    <ClInclude Include="source\detail\binary.hpp" />
+    <ClInclude Include="source\detail\constants.hpp" />
+    <ClInclude Include="source\detail\cryptography\aes.hpp" />
+    <ClInclude Include="source\detail\cryptography\base64.hpp" />
+    <ClInclude Include="source\detail\cryptography\cipher.hpp" />
+    <ClInclude Include="source\detail\cryptography\compound_document.hpp" />
+    <ClInclude Include="source\detail\cryptography\encryption_info.hpp" />
+    <ClInclude Include="source\detail\cryptography\hash.hpp" />
+    <ClInclude Include="source\detail\cryptography\sha.hpp" />
+    <ClInclude Include="source\detail\cryptography\value_traits.hpp" />
+    <ClInclude Include="source\detail\cryptography\xlsx_crypto_consumer.hpp" />
+    <ClInclude Include="source\detail\cryptography\xlsx_crypto_producer.hpp" />
+    <ClInclude Include="source\detail\default_case.hpp" />
+    <ClInclude Include="source\detail\external\include_libstudxml.hpp" />
+    <ClInclude Include="source\detail\external\include_windows.hpp" />
+    <ClInclude Include="source\detail\header_footer\header_footer_code.hpp" />
+    <ClInclude Include="source\detail\implementations\cell_impl.hpp" />
+    <ClInclude Include="source\detail\implementations\conditional_format_impl.hpp" />
+    <ClInclude Include="source\detail\implementations\formatting_record.hpp" />
+    <ClInclude Include="source\detail\implementations\format_impl.hpp" />
+    <ClInclude Include="source\detail\implementations\hyperlink_impl.hpp" />
+    <ClInclude Include="source\detail\implementations\stylesheet.hpp" />
+    <ClInclude Include="source\detail\implementations\style_impl.hpp" />
+    <ClInclude Include="source\detail\implementations\workbook_impl.hpp" />
+    <ClInclude Include="source\detail\implementations\worksheet_impl.hpp" />
+    <ClInclude Include="source\detail\number_format\number_formatter.hpp" />
+    <ClInclude Include="source\detail\serialization\custom_value_traits.hpp" />
+    <ClInclude Include="source\detail\serialization\defined_name.hpp" />
+    <ClInclude Include="source\detail\serialization\excel_thumbnail.hpp" />
+    <ClInclude Include="source\detail\serialization\open_stream.hpp" />
+    <ClInclude Include="source\detail\serialization\serialisation_helpers.hpp" />
+    <ClInclude Include="source\detail\serialization\vector_streambuf.hpp" />
+    <ClInclude Include="source\detail\serialization\xlsx_consumer.hpp" />
+    <ClInclude Include="source\detail\serialization\xlsx_producer.hpp" />
+    <ClInclude Include="source\detail\serialization\zstream.hpp" />
+    <ClInclude Include="source\detail\unicode.hpp" />
+    <ClInclude Include="Wrapper.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="..\..\xlnt\third-party\libstudxml\libstudxml\buildfile" />
+    <None Include="..\..\xlnt\third-party\libstudxml\libstudxml\details\expat\COPYING" />
+    <None Include="..\..\xlnt\third-party\libstudxml\libstudxml\details\expat\README" />
+    <None Include="..\..\xlnt\third-party\libstudxml\libstudxml\details\genx\LICENSE" />
+    <None Include="..\..\xlnt\third-party\libstudxml\libstudxml\details\genx\README" />
+    <None Include="..\..\xlnt\third-party\libstudxml\libstudxml\parser.txx" />
+    <None Include="..\..\xlnt\third-party\libstudxml\libstudxml\value-traits.txx" />
+    <None Include="..\..\xlnt\third-party\libstudxml\libstudxml\version.hxx.in" />
+    <None Include="..\..\xlnt\third-party\miniz\LICENSE" />
+    <None Include="..\..\xlnt\third-party\utfcpp\LICENSE" />
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <VCProjectVersion>16.0</VCProjectVersion>
+    <Keyword>Win32Proj</Keyword>
+    <ProjectGuid>{3dabaf53-08be-41ce-aca1-bbd6b36fc7ae}</ProjectGuid>
+    <RootNamespace>ExcelInterop</RootNamespace>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
+    <ConfigurationType>StaticLibrary</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <PlatformToolset>v142</PlatformToolset>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="Configuration">
+    <ConfigurationType>StaticLibrary</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v142</PlatformToolset>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+    <CharacterSet>MultiByte</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
+    <ConfigurationType>StaticLibrary</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <PlatformToolset>v142</PlatformToolset>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
+    <ConfigurationType>StaticLibrary</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v142</PlatformToolset>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="ExtensionSettings">
+  </ImportGroup>
+  <ImportGroup Label="Shared">
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <PropertyGroup Label="UserMacros" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+    <LinkIncremental>true</LinkIncremental>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <LinkIncremental>false</LinkIncremental>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <LinkIncremental>true</LinkIncremental>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <LinkIncremental>false</LinkIncremental>
+  </PropertyGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>WIN32;_DEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>true</ConformanceMode>
+      <PrecompiledHeader>Use</PrecompiledHeader>
+      <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
+    </ClCompile>
+    <Link>
+      <SubSystem>
+      </SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>WIN32;NDEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>true</ConformanceMode>
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
+      <AdditionalIncludeDirectories>$(ProjectDir)include;$(ProjectDir)source;$(ProjectDir)third-party/utfcpp;$(ProjectDir)third-party/miniz;$(ProjectDir)third-party/libstudxml;$(ProjectDir)third-party;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ClCompile>
+    <Link>
+      <SubSystem>
+      </SubSystem>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <OptimizeReferences>true</OptimizeReferences>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>_DEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>true</ConformanceMode>
+      <PrecompiledHeader>Use</PrecompiledHeader>
+      <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
+    </ClCompile>
+    <Link>
+      <SubSystem>
+      </SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>NDEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>true</ConformanceMode>
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
+      <AdditionalIncludeDirectories>$(ProjectDir)third-party/miniz;$(ProjectDir)third-party/utfcpp;$(ProjectDir)third-party/utfcpp/utf8;$(ProjectDir)third-party/libstudxml;$(ProjectDir)third-party/libstudxml/libstudxml;$(ProjectDir)third-party/libstudxml/libstudxml/details;$(ProjectDir)third-party/libstudxml/libstudxml/details/expat;$(ProjectDir)third-party/libstudxml/libstudxml/details/genx;$(ProjectDir)third-party;$(ProjectDir)source;$(ProjectDir)include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ClCompile>
+    <Link>
+      <SubSystem>
+      </SubSystem>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <OptimizeReferences>true</OptimizeReferences>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+    </Link>
+  </ItemDefinitionGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ImportGroup Label="ExtensionTargets">
+  </ImportGroup>
+</Project>

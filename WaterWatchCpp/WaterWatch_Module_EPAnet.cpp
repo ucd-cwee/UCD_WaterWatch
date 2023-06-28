@@ -178,7 +178,7 @@ namespace chaiscript {
                     AddSharedPtrClassFunction(::epanet, Szone, MinimumCustomerPressure);
 
                     lib->add(chaiscript::fun([](::epanet::Pzone const& a) { 
-                        std::vector< chaiscript::Boxed_Value >;
+                        // std::vector< chaiscript::Boxed_Value >;
 
 
                         std::vector<std::pair<chaiscript::Boxed_Value, chaiscript::Boxed_Value>> out; // object, ::epanet::direction_t

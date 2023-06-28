@@ -1,0 +1,10 @@
+# file      : build/bootstrap.build
+# license   : MIT; see accompanying LICENSE file
+
+project = libstudxml
+
+using version
+using config
+using dist
+using test
+using install

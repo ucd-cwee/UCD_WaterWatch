@@ -175,6 +175,9 @@ xcopy /y /d "$(SolutionDir)epanet\nanodbc.lib" "$(OutDir)"
     <ProjectReference Include="..\EPAnetLib\EPAnetLib.vcxproj">
       <Project>{e402eb0b-ba79-4b97-8bd4-b07bb860c9c2}</Project>
     </ProjectReference>
+    <ProjectReference Include="..\ExcelInterop\ExcelInterop.vcxproj">
+      <Project>{3dabaf53-08be-41ce-aca1-bbd6b36fc7ae}</Project>
+    </ProjectReference>
     <ProjectReference Include="..\ODBC\ODBC.vcxproj">
       <Project>{1a272023-c990-41f9-bcff-7f480377a6a0}</Project>
     </ProjectReference>

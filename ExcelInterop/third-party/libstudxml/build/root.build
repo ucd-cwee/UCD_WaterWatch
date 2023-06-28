@@ -1,0 +1,19 @@
+# file      : build/root.build
+# license   : MIT; see accompanying LICENSE file
+
+cxx.std = latest
+
+using cxx
+
+hxx{*}: extension = hxx
+cxx{*}: extension = cxx
+ixx{*}: extension = ixx
+txx{*}: extension = txx
+
+using c
+
+if ($cxx.target.system == 'win32-msvc')
+  cc.poptions += -D_CRT_SECURE_NO_WARNINGS -D_SCL_SECURE_NO_WARNINGS
+
+if ($cxx.class == 'msvc')
+  cc.coptions += /wd4251 /wd4275 /wd4800

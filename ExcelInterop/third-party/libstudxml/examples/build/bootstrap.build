@@ -1,0 +1,8 @@
+# file      : examples/build/bootstrap.build
+# license   : MIT; see accompanying LICENSE file
+
+project = # Unnamed subproject.
+
+using config
+using dist
+using test

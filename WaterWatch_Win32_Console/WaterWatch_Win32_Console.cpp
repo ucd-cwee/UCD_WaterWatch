@@ -14,6 +14,7 @@ to maintain a single distribution point for the source code.
 */
 
 #include "WaterWatch_Win32_Console.h"
+#include "../ExcelInterop/Wrapper.h"
 
 class Win32ConsoleSupport {
 public:
@@ -198,6 +199,9 @@ static cweeStr GetHeaderString() {
 
 int main() {
 	using namespace cwee_units;
+
+	fileSystem->ensureDirectoryExists(fileSystem->getDataFolder() + "//excelTest");
+	cweeExcel::main((fileSystem->getDataFolder() + "//excelTest//excelExample.xlsx").c_str());
 
 	std::cout << GetHeaderString() << std::endl;
 
