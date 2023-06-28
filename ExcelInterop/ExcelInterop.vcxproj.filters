@@ -1,562 +1,565 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup>
-    <ClCompile Include="Wrapper.cpp" />
     <ClCompile Include="source\cell\rich_text_run.cpp">
-      <Filter>source\cell</Filter>
+      <Filter>XLNL Library\source\cell</Filter>
     </ClCompile>
     <ClCompile Include="source\cell\cell.cpp">
-      <Filter>source\cell</Filter>
+      <Filter>XLNL Library\source\cell</Filter>
     </ClCompile>
     <ClCompile Include="source\cell\cell_reference.cpp">
-      <Filter>source\cell</Filter>
+      <Filter>XLNL Library\source\cell</Filter>
     </ClCompile>
     <ClCompile Include="source\cell\comment.cpp">
-      <Filter>source\cell</Filter>
+      <Filter>XLNL Library\source\cell</Filter>
     </ClCompile>
     <ClCompile Include="source\cell\hyperlink.cpp">
-      <Filter>source\cell</Filter>
+      <Filter>XLNL Library\source\cell</Filter>
     </ClCompile>
     <ClCompile Include="source\cell\index_types.cpp">
-      <Filter>source\cell</Filter>
+      <Filter>XLNL Library\source\cell</Filter>
     </ClCompile>
     <ClCompile Include="source\cell\phonetic_run.cpp">
-      <Filter>source\cell</Filter>
+      <Filter>XLNL Library\source\cell</Filter>
     </ClCompile>
     <ClCompile Include="source\cell\rich_text.cpp">
-      <Filter>source\cell</Filter>
+      <Filter>XLNL Library\source\cell</Filter>
     </ClCompile>
     <ClCompile Include="source\detail\constants.cpp">
-      <Filter>source\detail</Filter>
+      <Filter>XLNL Library\source\detail</Filter>
     </ClCompile>
     <ClCompile Include="source\detail\unicode.cpp">
-      <Filter>source\detail</Filter>
+      <Filter>XLNL Library\source\detail</Filter>
     </ClCompile>
     <ClCompile Include="source\detail\cryptography\aes.cpp">
-      <Filter>source\detail\cryptography</Filter>
+      <Filter>XLNL Library\source\detail\cryptography</Filter>
     </ClCompile>
     <ClCompile Include="source\detail\cryptography\base64.cpp">
-      <Filter>source\detail\cryptography</Filter>
+      <Filter>XLNL Library\source\detail\cryptography</Filter>
     </ClCompile>
     <ClCompile Include="source\detail\cryptography\compound_document.cpp">
-      <Filter>source\detail\cryptography</Filter>
+      <Filter>XLNL Library\source\detail\cryptography</Filter>
     </ClCompile>
     <ClCompile Include="source\detail\cryptography\encryption_info.cpp">
-      <Filter>source\detail\cryptography</Filter>
+      <Filter>XLNL Library\source\detail\cryptography</Filter>
     </ClCompile>
     <ClCompile Include="source\detail\cryptography\hash.cpp">
-      <Filter>source\detail\cryptography</Filter>
+      <Filter>XLNL Library\source\detail\cryptography</Filter>
     </ClCompile>
     <ClCompile Include="source\detail\cryptography\sha.cpp">
-      <Filter>source\detail\cryptography</Filter>
+      <Filter>XLNL Library\source\detail\cryptography</Filter>
     </ClCompile>
     <ClCompile Include="source\detail\cryptography\sha1.c">
-      <Filter>source\detail\cryptography</Filter>
+      <Filter>XLNL Library\source\detail\cryptography</Filter>
     </ClCompile>
     <ClCompile Include="source\detail\cryptography\sha512.c">
-      <Filter>source\detail\cryptography</Filter>
+      <Filter>XLNL Library\source\detail\cryptography</Filter>
     </ClCompile>
     <ClCompile Include="source\detail\cryptography\xlsx_crypto_consumer.cpp">
-      <Filter>source\detail\cryptography</Filter>
+      <Filter>XLNL Library\source\detail\cryptography</Filter>
     </ClCompile>
     <ClCompile Include="source\detail\cryptography\xlsx_crypto_producer.cpp">
-      <Filter>source\detail\cryptography</Filter>
+      <Filter>XLNL Library\source\detail\cryptography</Filter>
     </ClCompile>
     <ClCompile Include="source\detail\header_footer\header_footer_code.cpp">
-      <Filter>source\detail\header_footer</Filter>
+      <Filter>XLNL Library\source\detail\header_footer</Filter>
     </ClCompile>
     <ClCompile Include="source\detail\implementations\cell_impl.cpp">
-      <Filter>source\detail\implimentations</Filter>
+      <Filter>XLNL Library\source\detail\implimentations</Filter>
     </ClCompile>
     <ClCompile Include="source\detail\number_format\number_formatter.cpp">
-      <Filter>source\detail\number_format</Filter>
+      <Filter>XLNL Library\source\detail\number_format</Filter>
     </ClCompile>
     <ClCompile Include="source\detail\serialization\custom_value_traits.cpp">
-      <Filter>source\detail\serialization</Filter>
+      <Filter>XLNL Library\source\detail\serialization</Filter>
     </ClCompile>
     <ClCompile Include="source\detail\serialization\open_stream.cpp">
-      <Filter>source\detail\serialization</Filter>
+      <Filter>XLNL Library\source\detail\serialization</Filter>
     </ClCompile>
     <ClCompile Include="source\detail\serialization\vector_streambuf.cpp">
-      <Filter>source\detail\serialization</Filter>
+      <Filter>XLNL Library\source\detail\serialization</Filter>
     </ClCompile>
     <ClCompile Include="source\detail\serialization\xlsx_consumer.cpp">
-      <Filter>source\detail\serialization</Filter>
+      <Filter>XLNL Library\source\detail\serialization</Filter>
     </ClCompile>
     <ClCompile Include="source\detail\serialization\xlsx_producer.cpp">
-      <Filter>source\detail\serialization</Filter>
+      <Filter>XLNL Library\source\detail\serialization</Filter>
     </ClCompile>
     <ClCompile Include="source\detail\serialization\zstream.cpp">
-      <Filter>source\detail\serialization</Filter>
+      <Filter>XLNL Library\source\detail\serialization</Filter>
     </ClCompile>
     <ClCompile Include="source\drawing\spreadsheet_drawing.cpp">
-      <Filter>source\drawing</Filter>
+      <Filter>XLNL Library\source\drawing</Filter>
     </ClCompile>
     <ClCompile Include="source\packaging\ext_list.cpp">
-      <Filter>source\packaging</Filter>
+      <Filter>XLNL Library\source\packaging</Filter>
     </ClCompile>
     <ClCompile Include="source\packaging\manifest.cpp">
-      <Filter>source\packaging</Filter>
+      <Filter>XLNL Library\source\packaging</Filter>
     </ClCompile>
     <ClCompile Include="source\packaging\relationship.cpp">
-      <Filter>source\packaging</Filter>
+      <Filter>XLNL Library\source\packaging</Filter>
     </ClCompile>
     <ClCompile Include="source\packaging\uri.cpp">
-      <Filter>source\packaging</Filter>
+      <Filter>XLNL Library\source\packaging</Filter>
     </ClCompile>
     <ClCompile Include="source\styles\alignment.cpp">
-      <Filter>source\styles</Filter>
+      <Filter>XLNL Library\source\styles</Filter>
     </ClCompile>
     <ClCompile Include="source\styles\border.cpp">
-      <Filter>source\styles</Filter>
+      <Filter>XLNL Library\source\styles</Filter>
     </ClCompile>
     <ClCompile Include="source\styles\color.cpp">
-      <Filter>source\styles</Filter>
+      <Filter>XLNL Library\source\styles</Filter>
     </ClCompile>
     <ClCompile Include="source\styles\conditional_format.cpp">
-      <Filter>source\styles</Filter>
+      <Filter>XLNL Library\source\styles</Filter>
     </ClCompile>
     <ClCompile Include="source\styles\fill.cpp">
-      <Filter>source\styles</Filter>
+      <Filter>XLNL Library\source\styles</Filter>
     </ClCompile>
     <ClCompile Include="source\styles\font.cpp">
-      <Filter>source\styles</Filter>
+      <Filter>XLNL Library\source\styles</Filter>
     </ClCompile>
     <ClCompile Include="source\styles\format.cpp">
-      <Filter>source\styles</Filter>
+      <Filter>XLNL Library\source\styles</Filter>
     </ClCompile>
     <ClCompile Include="source\styles\number_format.cpp">
-      <Filter>source\styles</Filter>
+      <Filter>XLNL Library\source\styles</Filter>
     </ClCompile>
     <ClCompile Include="source\styles\protection.cpp">
-      <Filter>source\styles</Filter>
+      <Filter>XLNL Library\source\styles</Filter>
     </ClCompile>
     <ClCompile Include="source\styles\style.cpp">
-      <Filter>source\styles</Filter>
+      <Filter>XLNL Library\source\styles</Filter>
     </ClCompile>
     <ClCompile Include="source\utils\date.cpp">
-      <Filter>source\utils</Filter>
+      <Filter>XLNL Library\source\utils</Filter>
     </ClCompile>
     <ClCompile Include="source\utils\datetime.cpp">
-      <Filter>source\utils</Filter>
+      <Filter>XLNL Library\source\utils</Filter>
     </ClCompile>
     <ClCompile Include="source\utils\exceptions.cpp">
-      <Filter>source\utils</Filter>
+      <Filter>XLNL Library\source\utils</Filter>
     </ClCompile>
     <ClCompile Include="source\utils\path.cpp">
-      <Filter>source\utils</Filter>
+      <Filter>XLNL Library\source\utils</Filter>
     </ClCompile>
     <ClCompile Include="source\utils\time.cpp">
-      <Filter>source\utils</Filter>
+      <Filter>XLNL Library\source\utils</Filter>
     </ClCompile>
     <ClCompile Include="source\utils\timedelta.cpp">
-      <Filter>source\utils</Filter>
+      <Filter>XLNL Library\source\utils</Filter>
     </ClCompile>
     <ClCompile Include="source\utils\variant.cpp">
-      <Filter>source\utils</Filter>
+      <Filter>XLNL Library\source\utils</Filter>
     </ClCompile>
     <ClCompile Include="source\workbook\named_range.cpp">
-      <Filter>source\workbook</Filter>
+      <Filter>XLNL Library\source\workbook</Filter>
     </ClCompile>
     <ClCompile Include="source\workbook\streaming_workbook_reader.cpp">
-      <Filter>source\workbook</Filter>
+      <Filter>XLNL Library\source\workbook</Filter>
     </ClCompile>
     <ClCompile Include="source\workbook\streaming_workbook_writer.cpp">
-      <Filter>source\workbook</Filter>
+      <Filter>XLNL Library\source\workbook</Filter>
     </ClCompile>
     <ClCompile Include="source\workbook\workbook.cpp">
-      <Filter>source\workbook</Filter>
+      <Filter>XLNL Library\source\workbook</Filter>
     </ClCompile>
     <ClCompile Include="source\workbook\worksheet_iterator.cpp">
-      <Filter>source\workbook</Filter>
+      <Filter>XLNL Library\source\workbook</Filter>
     </ClCompile>
     <ClCompile Include="source\worksheet\cell_iterator.cpp">
-      <Filter>source\worksheet</Filter>
+      <Filter>XLNL Library\source\worksheet</Filter>
     </ClCompile>
     <ClCompile Include="source\worksheet\cell_vector.cpp">
-      <Filter>source\worksheet</Filter>
+      <Filter>XLNL Library\source\worksheet</Filter>
     </ClCompile>
     <ClCompile Include="source\worksheet\header_footer.cpp">
-      <Filter>source\worksheet</Filter>
+      <Filter>XLNL Library\source\worksheet</Filter>
     </ClCompile>
     <ClCompile Include="source\worksheet\page_margins.cpp">
-      <Filter>source\worksheet</Filter>
+      <Filter>XLNL Library\source\worksheet</Filter>
     </ClCompile>
     <ClCompile Include="source\worksheet\page_setup.cpp">
-      <Filter>source\worksheet</Filter>
+      <Filter>XLNL Library\source\worksheet</Filter>
     </ClCompile>
     <ClCompile Include="source\worksheet\phonetic_pr.cpp">
-      <Filter>source\worksheet</Filter>
+      <Filter>XLNL Library\source\worksheet</Filter>
     </ClCompile>
     <ClCompile Include="source\worksheet\range.cpp">
-      <Filter>source\worksheet</Filter>
+      <Filter>XLNL Library\source\worksheet</Filter>
     </ClCompile>
     <ClCompile Include="source\worksheet\range_iterator.cpp">
-      <Filter>source\worksheet</Filter>
+      <Filter>XLNL Library\source\worksheet</Filter>
     </ClCompile>
     <ClCompile Include="source\worksheet\range_reference.cpp">
-      <Filter>source\worksheet</Filter>
+      <Filter>XLNL Library\source\worksheet</Filter>
     </ClCompile>
     <ClCompile Include="source\worksheet\sheet_protection.cpp">
-      <Filter>source\worksheet</Filter>
+      <Filter>XLNL Library\source\worksheet</Filter>
     </ClCompile>
     <ClCompile Include="source\worksheet\worksheet.cpp">
-      <Filter>source\worksheet</Filter>
+      <Filter>XLNL Library\source\worksheet</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\xlnt\third-party\libstudxml\libstudxml\details\genx\char-props.c">
-      <Filter>third-party\libstudxml\details\genx</Filter>
+    <ClCompile Include="third-party\miniz\miniz.c">
+      <Filter>XLNL Library\third-party\miniz</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\xlnt\third-party\libstudxml\libstudxml\details\genx\genx.c">
-      <Filter>third-party\libstudxml\details\genx</Filter>
+    <ClCompile Include="third-party\libstudxml\libstudxml\parser.cxx">
+      <Filter>XLNL Library\third-party</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\xlnt\third-party\libstudxml\libstudxml\details\expat\xmlparse.c">
-      <Filter>third-party\libstudxml\details\expat</Filter>
+    <ClCompile Include="third-party\libstudxml\libstudxml\qname.cxx">
+      <Filter>XLNL Library\third-party</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\xlnt\third-party\libstudxml\libstudxml\details\expat\xmlrole.c">
-      <Filter>third-party\libstudxml\details\expat</Filter>
+    <ClCompile Include="third-party\libstudxml\libstudxml\serializer.cxx">
+      <Filter>XLNL Library\third-party</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\xlnt\third-party\libstudxml\libstudxml\details\expat\xmltok.c">
-      <Filter>third-party\libstudxml\details\expat</Filter>
+    <ClCompile Include="third-party\libstudxml\libstudxml\serializer.ixx">
+      <Filter>XLNL Library\third-party</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\xlnt\third-party\libstudxml\libstudxml\details\expat\xmltok_impl.c">
-      <Filter>third-party\libstudxml\details\expat</Filter>
+    <ClCompile Include="third-party\libstudxml\libstudxml\value-traits.cxx">
+      <Filter>XLNL Library\third-party</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\xlnt\third-party\libstudxml\libstudxml\details\expat\xmltok_ns.c">
-      <Filter>third-party\libstudxml\details\expat</Filter>
+    <ClCompile Include="third-party\libstudxml\libstudxml\details\genx\genx.c">
+      <Filter>XLNL Library\third-party\libstudxml\details\genx</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\xlnt\third-party\libstudxml\libstudxml\parser.cxx">
-      <Filter>third-party\libstudxml</Filter>
+    <ClCompile Include="third-party\libstudxml\libstudxml\details\genx\char-props.c">
+      <Filter>XLNL Library\third-party\libstudxml\details\genx</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\xlnt\third-party\libstudxml\libstudxml\qname.cxx">
-      <Filter>third-party\libstudxml</Filter>
+    <ClCompile Include="third-party\libstudxml\libstudxml\details\expat\xmltok_ns.c">
+      <Filter>XLNL Library\third-party\libstudxml\details\expat</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\xlnt\third-party\libstudxml\libstudxml\serializer.cxx">
-      <Filter>third-party\libstudxml</Filter>
+    <ClCompile Include="third-party\libstudxml\libstudxml\details\expat\xmlparse.c">
+      <Filter>XLNL Library\third-party\libstudxml\details\expat</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\xlnt\third-party\libstudxml\libstudxml\serializer.ixx">
-      <Filter>third-party\libstudxml</Filter>
+    <ClCompile Include="third-party\libstudxml\libstudxml\details\expat\xmlrole.c">
+      <Filter>XLNL Library\third-party\libstudxml\details\expat</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\xlnt\third-party\libstudxml\libstudxml\value-traits.cxx">
-      <Filter>third-party\libstudxml</Filter>
+    <ClCompile Include="third-party\libstudxml\libstudxml\details\expat\xmltok.c">
+      <Filter>XLNL Library\third-party\libstudxml\details\expat</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\xlnt\third-party\miniz\miniz.c">
-      <Filter>third-party\miniz</Filter>
+    <ClCompile Include="third-party\libstudxml\libstudxml\details\expat\xmltok_impl.c">
+      <Filter>XLNL Library\third-party\libstudxml\details\expat</Filter>
     </ClCompile>
+    <ClCompile Include="Wrapper.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <Filter Include="source">
-      <UniqueIdentifier>{5bc4f02a-b528-4ca2-a506-6d2af2f0a635}</UniqueIdentifier>
+    <Filter Include="XLNL Library">
+      <UniqueIdentifier>{1e869aba-07c2-43c0-a9f4-7b6cc585dd4f}</UniqueIdentifier>
     </Filter>
-    <Filter Include="source\cell">
-      <UniqueIdentifier>{f8e7802d-e167-4e51-8495-af29e6c99595}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="source\detail">
-      <UniqueIdentifier>{551f8096-fd4c-4146-81a5-47a83de7854b}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="source\drawing">
-      <UniqueIdentifier>{061538d9-f1e3-47cc-9455-19ac336521c1}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="source\packaging">
-      <UniqueIdentifier>{2f580602-2d08-4679-82f8-57807ba9ebe4}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="source\styles">
-      <UniqueIdentifier>{015c56b0-7734-466a-a9f8-2262a4be2d14}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="source\utils">
-      <UniqueIdentifier>{13a37733-436f-4bc8-b0f2-34a0a2959219}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="source\workbook">
-      <UniqueIdentifier>{bf767140-09be-49ae-ad51-49a7d1e50ef7}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="source\worksheet">
-      <UniqueIdentifier>{eda800b7-5889-495e-a35b-a7d5b4121625}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="source\detail\cryptography">
-      <UniqueIdentifier>{2bd6b092-d93a-409e-b4cf-0cd08de35de6}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="source\detail\external">
-      <UniqueIdentifier>{9db88889-ec35-47c5-b97e-bc5e18612ca7}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="source\detail\header_footer">
-      <UniqueIdentifier>{fcc7efd1-b7d9-42a2-bfda-1a485370b730}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="source\detail\implimentations">
-      <UniqueIdentifier>{b1badb4d-6b45-4817-8bcd-f22958d991fe}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="source\detail\number_format">
-      <UniqueIdentifier>{91f883ff-a415-41d3-aace-f49193a0cffb}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="source\detail\serialization">
-      <UniqueIdentifier>{4a087973-cff1-4c20-812e-289353095416}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="third-party">
+    <Filter Include="XLNL Library\third-party">
       <UniqueIdentifier>{31c6bc2a-dad6-49bc-af0c-188a97e3cef9}</UniqueIdentifier>
     </Filter>
-    <Filter Include="third-party\libstudxml">
+    <Filter Include="XLNL Library\third-party\libstudxml">
       <UniqueIdentifier>{f36532fa-8b7e-407b-8687-966a205bb2b6}</UniqueIdentifier>
     </Filter>
-    <Filter Include="third-party\libstudxml\details">
+    <Filter Include="XLNL Library\third-party\libstudxml\details">
       <UniqueIdentifier>{c06a86fa-fe60-44bd-8e94-9940c6f3724d}</UniqueIdentifier>
     </Filter>
-    <Filter Include="third-party\libstudxml\details\expat">
+    <Filter Include="XLNL Library\third-party\libstudxml\details\expat">
       <UniqueIdentifier>{cc54058b-b64d-4d50-8af0-9b550638c523}</UniqueIdentifier>
     </Filter>
-    <Filter Include="third-party\libstudxml\details\genx">
+    <Filter Include="XLNL Library\third-party\libstudxml\details\genx">
       <UniqueIdentifier>{fc52e757-c529-47a8-893e-3e18f8ce7263}</UniqueIdentifier>
     </Filter>
-    <Filter Include="third-party\miniz">
+    <Filter Include="XLNL Library\third-party\miniz">
       <UniqueIdentifier>{1bbb2f42-2106-44fb-abb3-7ee5ff7f1eca}</UniqueIdentifier>
     </Filter>
-    <Filter Include="third-party\utfcpp">
+    <Filter Include="XLNL Library\third-party\utfcpp">
       <UniqueIdentifier>{c57e83b2-9a9e-4f46-af6e-5d76d081c024}</UniqueIdentifier>
     </Filter>
-    <Filter Include="third-party\utfcpp\utf8">
+    <Filter Include="XLNL Library\third-party\utfcpp\utf8">
       <UniqueIdentifier>{7627ffa5-294d-438d-b3b3-5960924b3bf2}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="XLNL Library\source">
+      <UniqueIdentifier>{5bc4f02a-b528-4ca2-a506-6d2af2f0a635}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="XLNL Library\source\cell">
+      <UniqueIdentifier>{f8e7802d-e167-4e51-8495-af29e6c99595}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="XLNL Library\source\detail">
+      <UniqueIdentifier>{551f8096-fd4c-4146-81a5-47a83de7854b}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="XLNL Library\source\detail\cryptography">
+      <UniqueIdentifier>{2bd6b092-d93a-409e-b4cf-0cd08de35de6}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="XLNL Library\source\detail\external">
+      <UniqueIdentifier>{9db88889-ec35-47c5-b97e-bc5e18612ca7}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="XLNL Library\source\detail\header_footer">
+      <UniqueIdentifier>{fcc7efd1-b7d9-42a2-bfda-1a485370b730}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="XLNL Library\source\detail\implimentations">
+      <UniqueIdentifier>{b1badb4d-6b45-4817-8bcd-f22958d991fe}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="XLNL Library\source\detail\number_format">
+      <UniqueIdentifier>{91f883ff-a415-41d3-aace-f49193a0cffb}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="XLNL Library\source\detail\serialization">
+      <UniqueIdentifier>{4a087973-cff1-4c20-812e-289353095416}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="XLNL Library\source\drawing">
+      <UniqueIdentifier>{061538d9-f1e3-47cc-9455-19ac336521c1}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="XLNL Library\source\packaging">
+      <UniqueIdentifier>{2f580602-2d08-4679-82f8-57807ba9ebe4}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="XLNL Library\source\styles">
+      <UniqueIdentifier>{015c56b0-7734-466a-a9f8-2262a4be2d14}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="XLNL Library\source\utils">
+      <UniqueIdentifier>{13a37733-436f-4bc8-b0f2-34a0a2959219}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="XLNL Library\source\workbook">
+      <UniqueIdentifier>{bf767140-09be-49ae-ad51-49a7d1e50ef7}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="XLNL Library\source\worksheet">
+      <UniqueIdentifier>{eda800b7-5889-495e-a35b-a7d5b4121625}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="Wrapper.h" />
     <ClInclude Include="source\detail\binary.hpp">
-      <Filter>source\detail</Filter>
+      <Filter>XLNL Library\source\detail</Filter>
     </ClInclude>
     <ClInclude Include="source\detail\constants.hpp">
-      <Filter>source\detail</Filter>
+      <Filter>XLNL Library\source\detail</Filter>
     </ClInclude>
     <ClInclude Include="source\detail\default_case.hpp">
-      <Filter>source\detail</Filter>
+      <Filter>XLNL Library\source\detail</Filter>
     </ClInclude>
     <ClInclude Include="source\detail\unicode.hpp">
-      <Filter>source\detail</Filter>
+      <Filter>XLNL Library\source\detail</Filter>
     </ClInclude>
     <ClInclude Include="source\detail\cryptography\aes.hpp">
-      <Filter>source\detail\cryptography</Filter>
+      <Filter>XLNL Library\source\detail\cryptography</Filter>
     </ClInclude>
     <ClInclude Include="source\detail\cryptography\base64.hpp">
-      <Filter>source\detail\cryptography</Filter>
+      <Filter>XLNL Library\source\detail\cryptography</Filter>
     </ClInclude>
     <ClInclude Include="source\detail\cryptography\cipher.hpp">
-      <Filter>source\detail\cryptography</Filter>
+      <Filter>XLNL Library\source\detail\cryptography</Filter>
     </ClInclude>
     <ClInclude Include="source\detail\cryptography\compound_document.hpp">
-      <Filter>source\detail\cryptography</Filter>
+      <Filter>XLNL Library\source\detail\cryptography</Filter>
     </ClInclude>
     <ClInclude Include="source\detail\cryptography\encryption_info.hpp">
-      <Filter>source\detail\cryptography</Filter>
+      <Filter>XLNL Library\source\detail\cryptography</Filter>
     </ClInclude>
     <ClInclude Include="source\detail\cryptography\hash.hpp">
-      <Filter>source\detail\cryptography</Filter>
+      <Filter>XLNL Library\source\detail\cryptography</Filter>
     </ClInclude>
     <ClInclude Include="source\detail\cryptography\sha.hpp">
-      <Filter>source\detail\cryptography</Filter>
+      <Filter>XLNL Library\source\detail\cryptography</Filter>
     </ClInclude>
     <ClInclude Include="source\detail\cryptography\value_traits.hpp">
-      <Filter>source\detail\cryptography</Filter>
+      <Filter>XLNL Library\source\detail\cryptography</Filter>
     </ClInclude>
     <ClInclude Include="source\detail\cryptography\xlsx_crypto_consumer.hpp">
-      <Filter>source\detail\cryptography</Filter>
+      <Filter>XLNL Library\source\detail\cryptography</Filter>
     </ClInclude>
     <ClInclude Include="source\detail\cryptography\xlsx_crypto_producer.hpp">
-      <Filter>source\detail\cryptography</Filter>
+      <Filter>XLNL Library\source\detail\cryptography</Filter>
     </ClInclude>
     <ClInclude Include="source\detail\external\include_libstudxml.hpp">
-      <Filter>source\detail\external</Filter>
+      <Filter>XLNL Library\source\detail\external</Filter>
     </ClInclude>
     <ClInclude Include="source\detail\external\include_windows.hpp">
-      <Filter>source\detail\external</Filter>
+      <Filter>XLNL Library\source\detail\external</Filter>
     </ClInclude>
     <ClInclude Include="source\detail\header_footer\header_footer_code.hpp">
-      <Filter>source\detail\header_footer</Filter>
+      <Filter>XLNL Library\source\detail\header_footer</Filter>
     </ClInclude>
     <ClInclude Include="source\detail\implementations\cell_impl.hpp">
-      <Filter>source\detail\implimentations</Filter>
+      <Filter>XLNL Library\source\detail\implimentations</Filter>
     </ClInclude>
     <ClInclude Include="source\detail\implementations\conditional_format_impl.hpp">
-      <Filter>source\detail\implimentations</Filter>
+      <Filter>XLNL Library\source\detail\implimentations</Filter>
     </ClInclude>
     <ClInclude Include="source\detail\implementations\format_impl.hpp">
-      <Filter>source\detail\implimentations</Filter>
+      <Filter>XLNL Library\source\detail\implimentations</Filter>
     </ClInclude>
     <ClInclude Include="source\detail\implementations\formatting_record.hpp">
-      <Filter>source\detail\implimentations</Filter>
+      <Filter>XLNL Library\source\detail\implimentations</Filter>
     </ClInclude>
     <ClInclude Include="source\detail\implementations\hyperlink_impl.hpp">
-      <Filter>source\detail\implimentations</Filter>
+      <Filter>XLNL Library\source\detail\implimentations</Filter>
     </ClInclude>
     <ClInclude Include="source\detail\implementations\style_impl.hpp">
-      <Filter>source\detail\implimentations</Filter>
+      <Filter>XLNL Library\source\detail\implimentations</Filter>
     </ClInclude>
     <ClInclude Include="source\detail\implementations\stylesheet.hpp">
-      <Filter>source\detail\implimentations</Filter>
+      <Filter>XLNL Library\source\detail\implimentations</Filter>
     </ClInclude>
     <ClInclude Include="source\detail\implementations\workbook_impl.hpp">
-      <Filter>source\detail\implimentations</Filter>
+      <Filter>XLNL Library\source\detail\implimentations</Filter>
     </ClInclude>
     <ClInclude Include="source\detail\implementations\worksheet_impl.hpp">
-      <Filter>source\detail\implimentations</Filter>
+      <Filter>XLNL Library\source\detail\implimentations</Filter>
     </ClInclude>
     <ClInclude Include="source\detail\number_format\number_formatter.hpp">
-      <Filter>source\detail\number_format</Filter>
+      <Filter>XLNL Library\source\detail\number_format</Filter>
     </ClInclude>
     <ClInclude Include="source\detail\serialization\custom_value_traits.hpp">
-      <Filter>source\detail\serialization</Filter>
+      <Filter>XLNL Library\source\detail\serialization</Filter>
     </ClInclude>
     <ClInclude Include="source\detail\serialization\defined_name.hpp">
-      <Filter>source\detail\serialization</Filter>
+      <Filter>XLNL Library\source\detail\serialization</Filter>
     </ClInclude>
     <ClInclude Include="source\detail\serialization\excel_thumbnail.hpp">
-      <Filter>source\detail\serialization</Filter>
+      <Filter>XLNL Library\source\detail\serialization</Filter>
     </ClInclude>
     <ClInclude Include="source\detail\serialization\open_stream.hpp">
-      <Filter>source\detail\serialization</Filter>
+      <Filter>XLNL Library\source\detail\serialization</Filter>
     </ClInclude>
     <ClInclude Include="source\detail\serialization\serialisation_helpers.hpp">
-      <Filter>source\detail\serialization</Filter>
+      <Filter>XLNL Library\source\detail\serialization</Filter>
     </ClInclude>
     <ClInclude Include="source\detail\serialization\vector_streambuf.hpp">
-      <Filter>source\detail\serialization</Filter>
+      <Filter>XLNL Library\source\detail\serialization</Filter>
     </ClInclude>
     <ClInclude Include="source\detail\serialization\xlsx_consumer.hpp">
-      <Filter>source\detail\serialization</Filter>
+      <Filter>XLNL Library\source\detail\serialization</Filter>
     </ClInclude>
     <ClInclude Include="source\detail\serialization\xlsx_producer.hpp">
-      <Filter>source\detail\serialization</Filter>
+      <Filter>XLNL Library\source\detail\serialization</Filter>
     </ClInclude>
     <ClInclude Include="source\detail\serialization\zstream.hpp">
-      <Filter>source\detail\serialization</Filter>
+      <Filter>XLNL Library\source\detail\serialization</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\xlnt\third-party\libstudxml\libstudxml\details\genx\genx.h">
-      <Filter>third-party\libstudxml\details\genx</Filter>
+    <ClInclude Include="third-party\utfcpp\utf8\checked.h">
+      <Filter>XLNL Library\third-party\utfcpp\utf8</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\xlnt\third-party\libstudxml\libstudxml\details\expat\ascii.h">
-      <Filter>third-party\libstudxml\details\expat</Filter>
+    <ClInclude Include="third-party\utfcpp\utf8\core.h">
+      <Filter>XLNL Library\third-party\utfcpp\utf8</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\xlnt\third-party\libstudxml\libstudxml\details\expat\asciitab.h">
-      <Filter>third-party\libstudxml\details\expat</Filter>
+    <ClInclude Include="third-party\utfcpp\utf8\cpp11.h">
+      <Filter>XLNL Library\third-party\utfcpp\utf8</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\xlnt\third-party\libstudxml\libstudxml\details\expat\config.h">
-      <Filter>third-party\libstudxml\details\expat</Filter>
+    <ClInclude Include="third-party\utfcpp\utf8\unchecked.h">
+      <Filter>XLNL Library\third-party\utfcpp\utf8</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\xlnt\third-party\libstudxml\libstudxml\details\expat\expat.h">
-      <Filter>third-party\libstudxml\details\expat</Filter>
+    <ClInclude Include="third-party\utfcpp\utf8.h">
+      <Filter>XLNL Library\third-party\utfcpp</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\xlnt\third-party\libstudxml\libstudxml\details\expat\expat_external.h">
-      <Filter>third-party\libstudxml\details\expat</Filter>
+    <ClInclude Include="third-party\miniz\miniz.h">
+      <Filter>XLNL Library\third-party\miniz</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\xlnt\third-party\libstudxml\libstudxml\details\expat\iasciitab.h">
-      <Filter>third-party\libstudxml\details\expat</Filter>
+    <ClInclude Include="third-party\libstudxml\libstudxml\exception.hxx">
+      <Filter>XLNL Library\third-party\libstudxml</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\xlnt\third-party\libstudxml\libstudxml\details\expat\internal.h">
-      <Filter>third-party\libstudxml\details\expat</Filter>
+    <ClInclude Include="third-party\libstudxml\libstudxml\content.hxx">
+      <Filter>XLNL Library\third-party\libstudxml</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\xlnt\third-party\libstudxml\libstudxml\details\expat\latin1tab.h">
-      <Filter>third-party\libstudxml\details\expat</Filter>
+    <ClInclude Include="third-party\libstudxml\libstudxml\forward.hxx">
+      <Filter>XLNL Library\third-party</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\xlnt\third-party\libstudxml\libstudxml\details\expat\nametab.h">
-      <Filter>third-party\libstudxml\details\expat</Filter>
+    <ClInclude Include="third-party\libstudxml\libstudxml\parser.hxx">
+      <Filter>XLNL Library\third-party</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\xlnt\third-party\libstudxml\libstudxml\details\expat\utf8tab.h">
-      <Filter>third-party\libstudxml\details\expat</Filter>
+    <ClInclude Include="third-party\libstudxml\libstudxml\details\pre.hxx">
+      <Filter>XLNL Library\third-party</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\xlnt\third-party\libstudxml\libstudxml\details\expat\xmlrole.h">
-      <Filter>third-party\libstudxml\details\expat</Filter>
+    <ClInclude Include="third-party\libstudxml\libstudxml\qname.hxx">
+      <Filter>XLNL Library\third-party</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\xlnt\third-party\libstudxml\libstudxml\details\expat\xmltok.h">
-      <Filter>third-party\libstudxml\details\expat</Filter>
+    <ClInclude Include="third-party\libstudxml\libstudxml\serializer.hxx">
+      <Filter>XLNL Library\third-party</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\xlnt\third-party\libstudxml\libstudxml\details\expat\xmltok_impl.h">
-      <Filter>third-party\libstudxml\details\expat</Filter>
+    <ClInclude Include="third-party\libstudxml\libstudxml\value-traits.hxx">
+      <Filter>XLNL Library\third-party</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\xlnt\third-party\libstudxml\libstudxml\details\config.h">
-      <Filter>third-party\libstudxml\details</Filter>
+    <ClInclude Include="third-party\libstudxml\libstudxml\version.hxx">
+      <Filter>XLNL Library\third-party</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\xlnt\third-party\libstudxml\libstudxml\details\config.hxx">
-      <Filter>third-party\libstudxml\details</Filter>
+    <ClInclude Include="third-party\libstudxml\libstudxml\details\config.h">
+      <Filter>XLNL Library\third-party\libstudxml</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\xlnt\third-party\libstudxml\libstudxml\details\config-vc.h">
-      <Filter>third-party\libstudxml\details</Filter>
+    <ClInclude Include="third-party\libstudxml\libstudxml\details\config.hxx">
+      <Filter>XLNL Library\third-party\libstudxml</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\xlnt\third-party\libstudxml\libstudxml\details\export.hxx">
-      <Filter>third-party\libstudxml\details</Filter>
+    <ClInclude Include="third-party\libstudxml\libstudxml\details\config-vc.h">
+      <Filter>XLNL Library\third-party\libstudxml</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\xlnt\third-party\libstudxml\libstudxml\details\post.hxx">
-      <Filter>third-party\libstudxml\details</Filter>
+    <ClInclude Include="third-party\libstudxml\libstudxml\details\export.hxx">
+      <Filter>XLNL Library\third-party\libstudxml</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\xlnt\third-party\libstudxml\libstudxml\details\pre.hxx">
-      <Filter>third-party\libstudxml\details</Filter>
+    <ClInclude Include="third-party\libstudxml\libstudxml\details\post.hxx">
+      <Filter>XLNL Library\third-party\libstudxml</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\xlnt\third-party\libstudxml\libstudxml\content.hxx">
-      <Filter>third-party\libstudxml</Filter>
+    <ClInclude Include="third-party\libstudxml\libstudxml\details\genx\genx.h">
+      <Filter>XLNL Library\third-party\libstudxml\details\genx</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\xlnt\third-party\libstudxml\libstudxml\exception.hxx">
-      <Filter>third-party\libstudxml</Filter>
+    <ClInclude Include="third-party\libstudxml\libstudxml\details\expat\ascii.h">
+      <Filter>XLNL Library\third-party\libstudxml\details\expat</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\xlnt\third-party\libstudxml\libstudxml\forward.hxx">
-      <Filter>third-party\libstudxml</Filter>
+    <ClInclude Include="third-party\libstudxml\libstudxml\details\expat\asciitab.h">
+      <Filter>XLNL Library\third-party\libstudxml\details\expat</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\xlnt\third-party\libstudxml\libstudxml\parser.hxx">
-      <Filter>third-party\libstudxml</Filter>
+    <ClInclude Include="third-party\libstudxml\libstudxml\details\expat\config.h">
+      <Filter>XLNL Library\third-party\libstudxml\details\expat</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\xlnt\third-party\libstudxml\libstudxml\qname.hxx">
-      <Filter>third-party\libstudxml</Filter>
+    <ClInclude Include="third-party\libstudxml\libstudxml\details\expat\expat.h">
+      <Filter>XLNL Library\third-party\libstudxml\details\expat</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\xlnt\third-party\libstudxml\libstudxml\serializer.hxx">
-      <Filter>third-party\libstudxml</Filter>
+    <ClInclude Include="third-party\libstudxml\libstudxml\details\expat\expat_external.h">
+      <Filter>XLNL Library\third-party\libstudxml\details\expat</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\xlnt\third-party\libstudxml\libstudxml\value-traits.hxx">
-      <Filter>third-party\libstudxml</Filter>
+    <ClInclude Include="third-party\libstudxml\libstudxml\details\expat\iasciitab.h">
+      <Filter>XLNL Library\third-party\libstudxml\details\expat</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\xlnt\third-party\libstudxml\libstudxml\version.hxx">
-      <Filter>third-party\libstudxml</Filter>
+    <ClInclude Include="third-party\libstudxml\libstudxml\details\expat\internal.h">
+      <Filter>XLNL Library\third-party\libstudxml\details\expat</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\xlnt\third-party\miniz\miniz.h">
-      <Filter>third-party\miniz</Filter>
+    <ClInclude Include="third-party\libstudxml\libstudxml\details\expat\latin1tab.h">
+      <Filter>XLNL Library\third-party\libstudxml\details\expat</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\xlnt\third-party\utfcpp\utf8.h">
-      <Filter>third-party\utfcpp</Filter>
+    <ClInclude Include="third-party\libstudxml\libstudxml\details\expat\nametab.h">
+      <Filter>XLNL Library\third-party\libstudxml\details\expat</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\xlnt\third-party\utfcpp\utf8\checked.h">
-      <Filter>third-party\utfcpp\utf8</Filter>
+    <ClInclude Include="third-party\libstudxml\libstudxml\details\expat\utf8tab.h">
+      <Filter>XLNL Library\third-party\libstudxml\details\expat</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\xlnt\third-party\utfcpp\utf8\core.h">
-      <Filter>third-party\utfcpp\utf8</Filter>
+    <ClInclude Include="third-party\libstudxml\libstudxml\details\expat\xmlrole.h">
+      <Filter>XLNL Library\third-party\libstudxml\details\expat</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\xlnt\third-party\utfcpp\utf8\cpp11.h">
-      <Filter>third-party\utfcpp\utf8</Filter>
+    <ClInclude Include="third-party\libstudxml\libstudxml\details\expat\xmltok.h">
+      <Filter>XLNL Library\third-party\libstudxml\details\expat</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\xlnt\third-party\utfcpp\utf8\unchecked.h">
-      <Filter>third-party\utfcpp\utf8</Filter>
+    <ClInclude Include="third-party\libstudxml\libstudxml\details\expat\xmltok_impl.h">
+      <Filter>XLNL Library\third-party\libstudxml\details\expat</Filter>
     </ClInclude>
+    <ClInclude Include="Wrapper.h" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="..\..\xlnt\third-party\libstudxml\libstudxml\details\genx\LICENSE">
-      <Filter>third-party\libstudxml\details\genx</Filter>
+    <None Include="third-party\libstudxml\libstudxml\buildfile">
+      <Filter>XLNL Library\third-party</Filter>
     </None>
-    <None Include="..\..\xlnt\third-party\libstudxml\libstudxml\details\genx\README">
-      <Filter>third-party\libstudxml\details\genx</Filter>
+    <None Include="third-party\libstudxml\libstudxml\details\expat\COPYING">
+      <Filter>XLNL Library\third-party</Filter>
     </None>
-    <None Include="..\..\xlnt\third-party\libstudxml\libstudxml\details\expat\COPYING">
-      <Filter>third-party\libstudxml\details\expat</Filter>
+    <None Include="third-party\utfcpp\LICENSE">
+      <Filter>XLNL Library\third-party</Filter>
     </None>
-    <None Include="..\..\xlnt\third-party\libstudxml\libstudxml\details\expat\README">
-      <Filter>third-party\libstudxml\details\expat</Filter>
+    <None Include="third-party\miniz\LICENSE">
+      <Filter>XLNL Library\third-party</Filter>
     </None>
-    <None Include="..\..\xlnt\third-party\libstudxml\libstudxml\buildfile">
-      <Filter>third-party\libstudxml</Filter>
+    <None Include="third-party\libstudxml\libstudxml\details\genx\LICENSE">
+      <Filter>XLNL Library\third-party</Filter>
     </None>
-    <None Include="..\..\xlnt\third-party\libstudxml\libstudxml\parser.txx">
-      <Filter>third-party\libstudxml</Filter>
+    <None Include="third-party\libstudxml\libstudxml\parser.txx">
+      <Filter>XLNL Library\third-party</Filter>
     </None>
-    <None Include="..\..\xlnt\third-party\libstudxml\libstudxml\value-traits.txx">
-      <Filter>third-party\libstudxml</Filter>
+    <None Include="third-party\libstudxml\libstudxml\details\expat\README">
+      <Filter>XLNL Library\third-party</Filter>
     </None>
-    <None Include="..\..\xlnt\third-party\libstudxml\libstudxml\version.hxx.in">
-      <Filter>third-party\libstudxml</Filter>
+    <None Include="third-party\libstudxml\libstudxml\details\genx\README">
+      <Filter>XLNL Library\third-party</Filter>
     </None>
-    <None Include="..\..\xlnt\third-party\miniz\LICENSE">
-      <Filter>third-party\miniz</Filter>
+    <None Include="third-party\libstudxml\libstudxml\value-traits.txx">
+      <Filter>XLNL Library\third-party</Filter>
     </None>
-    <None Include="..\..\xlnt\third-party\utfcpp\LICENSE">
-      <Filter>third-party\utfcpp</Filter>
+    <None Include="third-party\libstudxml\libstudxml\version.hxx.in">
+      <Filter>XLNL Library\third-party</Filter>
     </None>
   </ItemGroup>
 </Project>
