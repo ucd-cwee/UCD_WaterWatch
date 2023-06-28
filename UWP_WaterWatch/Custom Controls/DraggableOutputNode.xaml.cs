@@ -280,9 +280,19 @@ namespace UWP_WaterWatch.Custom_Controls
         }
         public static DroppableInputNode FindDropNode(Windows.UI.Xaml.Shapes.Path path, string ownerNodeName, string DropNodeUniqueID)
         {
-            foreach (DroppableInputNode x in FindScriptNode(path, ownerNodeName)?.DroppableInputNodeList?.Children?.Where((UIElement x) => { return (x != null) && (x is DroppableInputNode) && (x as DroppableInputNode)?.vm?.UniqueDroppableInputNodeID == DropNodeUniqueID; })) {
-                return x;
+            if (path != null)
+            {
+                var foundNodes = FindScriptNode(path, ownerNodeName);
+                if (foundNodes != null)
+                {
+                    foreach (DroppableInputNode x in foundNodes?.DroppableInputNodeList?.Children?.Where((UIElement x) => { return (x != null) && (x is DroppableInputNode) && (x as DroppableInputNode)?.vm?.UniqueDroppableInputNodeID == DropNodeUniqueID; }))
+                    {
+                        return x;
+                    }
+                }
             }
+
+            
             return null;
         }
 

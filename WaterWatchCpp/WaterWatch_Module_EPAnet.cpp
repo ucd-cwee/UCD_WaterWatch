@@ -31,7 +31,7 @@ namespace chaiscript {
             auto lib = chaiscript::make_shared<Module>();
 #if 1
             // EPAnet 2.2 Wrapper
-#if 0
+#if 1
             if (1) {
                 /* Spattern */ {
                     AddSharedPtrClass(::epanet, Spattern);
@@ -73,15 +73,15 @@ namespace chaiscript {
                     AddSharedPtrClassMember(::epanet, Sasset, Type_p);
                     AddSharedPtrClassMember(::epanet, Sasset, Name_p);
 
-                    lib->add(chaiscript::fun([](cweeSharedPtr < ::epanet::Sasset> const& a) { return cweeUnitValues::cweeUnitPattern(*(a->GetValue<_HEAD_>())); }), "Head");
-                    lib->add(chaiscript::fun([](cweeSharedPtr < ::epanet::Sasset> const& a) { return cweeUnitValues::cweeUnitPattern(*(a->GetValue<_DEMAND_>())); }), "Demand");
-                    lib->add(chaiscript::fun([](cweeSharedPtr < ::epanet::Sasset> const& a) { return cweeUnitValues::cweeUnitPattern(*(a->GetValue<_FLOW_>())); }), "Flow");
-                    lib->add(chaiscript::fun([](cweeSharedPtr < ::epanet::Sasset> const& a) { return cweeUnitValues::cweeUnitPattern(*(a->GetValue<_ENERGY_>())); }), "Energy");
-                    lib->add(chaiscript::fun([](cweeSharedPtr < ::epanet::Sasset> const& a) { return cweeUnitValues::cweeUnitPattern(*(a->GetValue<_HEADLOSS_>())); }), "Headloss");
-                    lib->add(chaiscript::fun([](cweeSharedPtr < ::epanet::Sasset> const& a) { return cweeUnitValues::cweeUnitPattern(*(a->GetValue<_VELOCITY_>())); }), "Velocity");
-                    lib->add(chaiscript::fun([](cweeSharedPtr < ::epanet::Sasset> const& a) { return cweeUnitValues::cweeUnitPattern(*(a->GetValue<_SETTING_>())); }), "Setting");
-                    lib->add(chaiscript::fun([](cweeSharedPtr < ::epanet::Sasset> const& a) { return cweeUnitValues::cweeUnitPattern(*(a->GetValue<_STATUS_>())); }), "Status");
-                    lib->add(chaiscript::fun([](cweeSharedPtr < ::epanet::Sasset> const& a) { return cweeUnitValues::cweeUnitPattern(*(a->GetValue<_QUALITY_>())); }), "Quality");
+                    lib->add(chaiscript::fun([](cweeSharedPtr < ::epanet::Sasset> const& a) { AUTO p = a->GetValue<_HEAD_>(); if (p) return cweeUnitValues::cweeUnitPattern(*p); else return cweeUnitValues::cweeUnitPattern((units::time::second_t)(1), (typename ::epanet::DefaultUnits<_HEAD_>::unit)(1)); }), "Head");
+                    lib->add(chaiscript::fun([](cweeSharedPtr < ::epanet::Sasset> const& a) { AUTO p = a->GetValue<_DEMAND_>(); if (p) return cweeUnitValues::cweeUnitPattern(*p); else return cweeUnitValues::cweeUnitPattern((units::time::second_t)(1), (typename ::epanet::DefaultUnits<_DEMAND_>::unit)(1)); }), "Demand");
+                    lib->add(chaiscript::fun([](cweeSharedPtr < ::epanet::Sasset> const& a) { AUTO p = a->GetValue<_FLOW_>(); if (p) return cweeUnitValues::cweeUnitPattern(*p); else return cweeUnitValues::cweeUnitPattern((units::time::second_t)(1), (typename ::epanet::DefaultUnits<_FLOW_>::unit)(1)); }), "Flow");
+                    lib->add(chaiscript::fun([](cweeSharedPtr < ::epanet::Sasset> const& a) { AUTO p = a->GetValue<_ENERGY_>(); if (p) return cweeUnitValues::cweeUnitPattern(*p); else return cweeUnitValues::cweeUnitPattern((units::time::second_t)(1), (typename ::epanet::DefaultUnits<_ENERGY_>::unit)(1)); }), "Energy");
+                    lib->add(chaiscript::fun([](cweeSharedPtr < ::epanet::Sasset> const& a) { AUTO p = a->GetValue<_HEADLOSS_>(); if (p) return cweeUnitValues::cweeUnitPattern(*p); else return cweeUnitValues::cweeUnitPattern((units::time::second_t)(1), (typename ::epanet::DefaultUnits<_HEADLOSS_>::unit)(1)); }), "Headloss");
+                    lib->add(chaiscript::fun([](cweeSharedPtr < ::epanet::Sasset> const& a) { AUTO p = a->GetValue<_VELOCITY_>(); if (p) return cweeUnitValues::cweeUnitPattern(*p); else return cweeUnitValues::cweeUnitPattern((units::time::second_t)(1), (typename ::epanet::DefaultUnits<_VELOCITY_>::unit)(1)); }), "Velocity");
+                    lib->add(chaiscript::fun([](cweeSharedPtr < ::epanet::Sasset> const& a) { AUTO p = a->GetValue<_SETTING_>(); if (p) return cweeUnitValues::cweeUnitPattern(*p); else return cweeUnitValues::cweeUnitPattern((units::time::second_t)(1), (typename ::epanet::DefaultUnits<_SETTING_>::unit)(1)); }), "Setting");
+                    lib->add(chaiscript::fun([](cweeSharedPtr < ::epanet::Sasset> const& a) { AUTO p = a->GetValue<_STATUS_>(); if (p) return cweeUnitValues::cweeUnitPattern(*p); else return cweeUnitValues::cweeUnitPattern((units::time::second_t)(1), (typename ::epanet::DefaultUnits<_STATUS_>::unit)(1)); }), "Status");
+                    lib->add(chaiscript::fun([](cweeSharedPtr < ::epanet::Sasset> const& a) { AUTO p = a->GetValue<_QUALITY_>(); if (p) return cweeUnitValues::cweeUnitPattern(*p); else return cweeUnitValues::cweeUnitPattern((units::time::second_t)(1), (typename ::epanet::DefaultUnits<_QUALITY_>::unit)(1)); }), "Quality");
                 }
                 /* Snode */ {
                     AddSharedPtrClass(::epanet, Snode);
@@ -92,7 +92,7 @@ namespace chaiscript {
                     AddSharedPtrClassMember(::epanet, Snode, S);
                     AddSharedPtrClassMember(::epanet, Snode, Ke);
                     AddSharedPtrClassMember(::epanet, Snode, Zone);
-                    lib->add(chaiscript::base_class<cweeSharedPtr<::epanet::Sasset>, cweeSharedPtr<::epanet::Snode>>());
+                    lib->add(chaiscript::castable_class<cweeSharedPtr<::epanet::Sasset>, cweeSharedPtr<::epanet::Snode>>());
                 }
                 /* Slink */ {
                     AddSharedPtrClass(::epanet, Slink);
@@ -109,8 +109,7 @@ namespace chaiscript {
                     AddSharedPtrClassMember(::epanet, Slink, Vertices);
                     AddSharedPtrClassFunction(::epanet, Slink, Area);
                     AddSharedPtrClassFunction(::epanet, Slink, IsBiDirectionalPipe);
-
-                    lib->add(chaiscript::base_class<cweeSharedPtr<::epanet::Sasset>, cweeSharedPtr<::epanet::Slink>>());
+                    lib->add(chaiscript::castable_class<cweeSharedPtr<::epanet::Sasset>, cweeSharedPtr<::epanet::Slink>>());
                 }
                 /* Stank */ {
                     AddSharedPtrClass(::epanet, Stank);
@@ -128,8 +127,8 @@ namespace chaiscript {
                     AddSharedPtrClassMember(::epanet, Stank, CanOverflow);
                     AddSharedPtrClassFunction(::epanet, Stank, Area);
 
-                    lib->add(chaiscript::base_class<cweeSharedPtr<::epanet::Snode>, cweeSharedPtr<::epanet::Stank>>());
-                    lib->add(chaiscript::base_class<cweeSharedPtr<::epanet::Sasset>, cweeSharedPtr<::epanet::Stank>>());
+                    lib->add(chaiscript::castable_class<cweeSharedPtr<::epanet::Snode>, cweeSharedPtr<::epanet::Stank>>());
+                    lib->add(chaiscript::castable_class<cweeSharedPtr<::epanet::Sasset>, cweeSharedPtr<::epanet::Stank>>());
                 }
                 /* Spump */ {
                     AddSharedPtrClass(::epanet, Spump);
@@ -146,8 +145,8 @@ namespace chaiscript {
                     AddSharedPtrClassMember(::epanet, Spump, TimeEpat);
                     AddSharedPtrClassMember_SpecializedName(::epanet, Spump, Energy, EnergySummary);
 
-                    lib->add(chaiscript::base_class<cweeSharedPtr<::epanet::Slink>, cweeSharedPtr<::epanet::Spump>>());
-                    lib->add(chaiscript::base_class<cweeSharedPtr<::epanet::Sasset>, cweeSharedPtr<::epanet::Spump>>());
+                    lib->add(chaiscript::castable_class<cweeSharedPtr<::epanet::Slink>, cweeSharedPtr<::epanet::Spump>>());
+                    lib->add(chaiscript::castable_class<cweeSharedPtr<::epanet::Sasset>, cweeSharedPtr<::epanet::Spump>>());
                 }
                 /* Svalve */ {
                     AddSharedPtrClass(::epanet, Svalve);
@@ -155,8 +154,8 @@ namespace chaiscript {
                     AddSharedPtrClassMember(::epanet, Svalve, ProducesElectricity);
                     AddSharedPtrClassMember_SpecializedName(::epanet, Svalve, Energy, EnergySummary);
 
-                    lib->add(chaiscript::base_class<cweeSharedPtr<::epanet::Slink>, cweeSharedPtr<::epanet::Svalve>>());
-                    lib->add(chaiscript::base_class<cweeSharedPtr<::epanet::Sasset>, cweeSharedPtr<::epanet::Svalve>>());
+                    lib->add(chaiscript::castable_class<cweeSharedPtr<::epanet::Slink>, cweeSharedPtr<::epanet::Svalve>>());
+                    lib->add(chaiscript::castable_class<cweeSharedPtr<::epanet::Sasset>, cweeSharedPtr<::epanet::Svalve>>());
                 }
                 /* Szone */ {
                     ADD_BETTER_ENUM_TO_SCRIPT_ENGINE(::epanet::zoneType_t, zoneType_t);
@@ -178,7 +177,22 @@ namespace chaiscript {
                     AddSharedPtrClassFunction(::epanet, Szone, AverageCustomerPressure);
                     AddSharedPtrClassFunction(::epanet, Szone, MinimumCustomerPressure);
 
-                    lib->add(chaiscript::base_class<cweeSharedPtr<::epanet::Sasset>, cweeSharedPtr<::epanet::Szone>>());
+                    lib->add(chaiscript::fun([](::epanet::Pzone const& a) { 
+                        std::vector< chaiscript::Boxed_Value >;
+
+
+                        std::vector<std::pair<chaiscript::Boxed_Value, chaiscript::Boxed_Value>> out; // object, ::epanet::direction_t
+                        
+
+
+
+
+
+                        return out;
+                    }), "GetMassBalanceAssets");
+
+
+                    lib->add(chaiscript::castable_class<cweeSharedPtr<::epanet::Sasset>, cweeSharedPtr<::epanet::Szone>>());
                 }
 
                 // ...

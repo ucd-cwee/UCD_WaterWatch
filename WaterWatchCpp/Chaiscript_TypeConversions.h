@@ -202,6 +202,43 @@ namespace chaiscript {
             }
         };
 
+        template<typename From, typename To>
+        class Value_Caster {
+        public:
+            static Boxed_Value cast(const Boxed_Value& t_from) {
+                if (t_from.get_type_info().bare_equal(chaiscript::user_type<From>())) {
+                    if (t_from.is_pointer()) {
+                        // Dynamic cast out the contained boxed value, which we know is the type we want
+                        if (t_from.is_const()) {
+                            AUTO dPtr = detail::Cast_Helper<chaiscript::shared_ptr<const From>>::cast(t_from, nullptr);
+                            const From& d = *dPtr;
+                            return Boxed_Value((To)(d));
+                        }
+                        else {
+                            AUTO dPtr = detail::Cast_Helper<chaiscript::shared_ptr<From>>::cast(t_from, nullptr);
+                            From& d = *dPtr;
+                            return Boxed_Value((To)(d));
+                        }
+                    }
+                    else {
+                        // Pull the reference out of the contained boxed value, which we know is the type we want
+                        if (t_from.is_const()) {
+                            const From& d = detail::Cast_Helper<const From&>::cast(t_from, nullptr);
+                            return Boxed_Value((To)(d));
+                        }
+                        else {
+                            From& d = detail::Cast_Helper<From&>::cast(t_from, nullptr);
+                            return Boxed_Value((To)(d));
+                        }
+                    }
+                }
+                else {
+                    throw chaiscript::exception::bad_boxed_dynamic_cast(t_from.get_type_info(), typeid(To), "Unknown dynamic_cast_conversion");
+                }
+            }
+        };
+
+
         template<typename Base, typename Derived>
         class Dynamic_Conversion_Impl : public Type_Conversion_Base {
         public:
@@ -233,6 +270,19 @@ namespace chaiscript {
 
             Boxed_Value convert(const Boxed_Value& t_derived) const override { return Static_Caster<Derived, Base>::cast(t_derived); }
         };
+
+        template<typename Base, typename Derived>
+        class Value_Conversion_Impl : public Type_Conversion_Base {
+        public:
+            Value_Conversion_Impl()
+                : Type_Conversion_Base(chaiscript::user_type<Base>(), chaiscript::user_type<Derived>()) {
+            }
+
+            Boxed_Value convert_down(const Boxed_Value& t_base) const override { return Value_Caster<Base, Derived>::cast(t_base); }
+
+            Boxed_Value convert(const Boxed_Value& t_derived) const override { return Value_Caster<Derived, Base>::cast(t_derived); }
+        };
+
 
         template<typename Callable>
         class Type_Conversion_Impl : public Type_Conversion_Base {
@@ -547,6 +597,19 @@ namespace chaiscript {
         }
         else {
             return chaiscript::make_shared<detail::Type_Conversion_Base, detail::Static_Conversion_Impl<Base, Derived>>();
+        }
+    }
+
+    template<typename Base, typename Derived>
+    Type_Conversion castable_class() {
+        // Can only be used with related polymorphic types
+        // static_assert(std::is_base_of<Base, Derived>::value, "Classes are not related by inheritance");
+
+        if constexpr (std::is_polymorphic<Base>::value && std::is_polymorphic<Derived>::value && std::is_base_of<Base, Derived>::value) {
+            return chaiscript::make_shared<detail::Type_Conversion_Base, detail::Dynamic_Conversion_Impl<Base, Derived>>();
+        }
+        else {
+            return chaiscript::make_shared<detail::Type_Conversion_Base, detail::Value_Conversion_Impl<Base, Derived>>();
         }
     }
 
