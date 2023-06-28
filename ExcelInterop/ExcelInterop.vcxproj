@@ -313,6 +313,7 @@
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
       <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
       <AdditionalIncludeDirectories>$(ProjectDir)third-party/miniz;$(ProjectDir)third-party/utfcpp;$(ProjectDir)third-party/utfcpp/utf8;$(ProjectDir)third-party/libstudxml;$(ProjectDir)third-party/libstudxml/libstudxml;$(ProjectDir)third-party/libstudxml/libstudxml/details;$(ProjectDir)third-party/libstudxml/libstudxml/details/expat;$(ProjectDir)third-party/libstudxml/libstudxml/details/genx;$(ProjectDir)third-party;$(ProjectDir)source;$(ProjectDir)include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <LanguageStandard>stdcpp17</LanguageStandard>
     </ClCompile>
     <Link>
       <SubSystem>

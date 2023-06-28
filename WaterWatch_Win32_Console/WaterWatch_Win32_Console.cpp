@@ -200,8 +200,35 @@ static cweeStr GetHeaderString() {
 int main() {
 	using namespace cwee_units;
 
-	fileSystem->ensureDirectoryExists(fileSystem->getDataFolder() + "//excelTest");
-	cweeExcel::main((fileSystem->getDataFolder() + "//excelTest//excelExample.xlsx").c_str());
+
+
+
+	fileSystem->ensureDirectoryExists(fileSystem->getDataFolder());
+	cweeStr filePath = fileSystem->getDataFolder() + "\\excelExample.xlsx";
+	if (!fileSystem->checkFileExists(filePath)) {
+		std::cout << "The Excel File Could Not Be Found At: " << filePath << std::endl;
+	}
+	else {
+		AUTO workbook = cweeExcel::OpenExcel(filePath);
+
+		AUTO worksheet = workbook->OpenWorksheet();
+
+		AUTO reply = worksheet->ReadCell("A1");
+
+		std::cout << reply << std::endl;
+	}
+
+
+
+
+
+
+
+
+
+
+
+
 
 	std::cout << GetHeaderString() << std::endl;
 
