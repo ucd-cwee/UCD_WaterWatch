@@ -21,14 +21,14 @@ The Center for Water-Energy Efficiency (CWEE) at the University of California, D
 ## System Requirements
 Minimum requirements:
 > OS:             Windows 10.0.17134 Build 17134        
-> CPU:            4 logical cores, 2 GHz Intel compatible.      
-> System Memory:  4096MB+       
+> CPU:            8 logical cores, 2 GHz Intel compatible.      
+> System Memory:  8192MB+       
 > Graphics card:  N/A       
 
 Recommended requirements:
 > OS:             Windows 10.0.18362 Build 18362        
-> CPU:            8 logical cores, 3 GHz Intel compatible.      
-> System Memory:  8192MB+       
+> CPU:            12 logical cores, 3 GHz Intel compatible.      
+> System Memory:  16384MB+       
 > Graphics card:  N/A       
 
 ## Other Requirements
@@ -54,14 +54,35 @@ In order to use the UWP version, the minimum Windows 10 OS version is 1308, Buil
 
 6. At this point Visual Studio will notify you if you are missing any necessary packages to run the software. Click install and wait for the installer to finish. You will be required to restart your computer after these are installed. 
 
-7. Once your computer restarts, open Visual Studio Installer and select to "modify" the version of Visual Studio you will utilize for this software. Under individual components, please install the following extensions: 
-   > SQL Server Data Tools                      
-   > C++ ATL for latest vXXX build tools (x86 & x64)                             
-   > C++ ATL for latest vXXX build tools with Spectre Mitigations (x86 & x64)                      
-   > C++ MFC for latest vXXX build tools (x86 & x64)                             
-   > C++ MFC for latest vXXX build tools with Spectre Mitigations (x86 & x64)                      
+7. Once your computer restarts, open Visual Studio Installer and select to "modify" the version of Visual Studio you will utilize for this software. Under Workloads or individual components, please install the following extensions:
+   > ASP.NET and web development        
+   > .NET Desktop Development        
+   > Desktop Development with C++        
+   > Universal Windows Platform development        
+   > Data storage and Processing        
+   > Data Science and Analytical Tools        
+   > Office Sharepoint development        
+   > .NET cross-platform development        
+   > .NET 5.0 Runtime        
+   > .NET Framework X.X SDK (Most Recent Available)        
+   > .NET SDK        
+   > ClickOnce Publishing        
+   > Git for Windows        
+   > GitHub extension for Visual Studio        
+   > NuGet Package Manager         
+   > .NET Compiler Platform SDK        
+   > MSVC vXYZ - VS 2019 C++ x64/x86 (Most Recent Available)        
+   > MSVC vXYZ - VS 2019 C++ x64/x86 Spectre-mitigated libs (Most Recent Available)        
+   > Windows Universal CRT SDK        
+   > Visual Studio Tools for Office (VSTO)        
+   > C++ ATL for latest vXYZ (x86/x64) (Most Recent Available)        
+   > C++ ATL for latest vXYZ build tools with Spectre Mitigations (x86 & x64)            
+   > C++ MFC for latest vXYZ (x86/x64) (Most Recent Available)        
+   > C++ MFC for latest vXYZ build tools with Spectre Mitigations (x86 & x64)               
+   > Windows 10 SDK (10.0.16299.0 through 19041.0)        
+   > Windows Universal C Runtime                              
 
-8. Once all installations are complete, open Visual Studio and open the project by selecting the "EDMS.sln" file in the EDMS repository.
+9. Once all installations are complete, open Visual Studio and open the project by selecting the "EDMS.sln" file in the EDMS repository.
 
 ## Compiling and Running the Windows 10 UWP Application with Visual Studio 2019 Community or Professional Edition
 1. After opening the "EDMS.sln" file in Visual Studio, from the toolbar select "Build", then "Configuration Manager". Set the Active solution configuration to "Release", and the Active solution platform to "x64". 
