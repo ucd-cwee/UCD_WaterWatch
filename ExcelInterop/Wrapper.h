@@ -1,6 +1,3 @@
-
-#if 0
-
 #pragma once
 #include "../WaterWatchCpp/Precompiled.h"
 #include "../WaterWatchCpp/Units.h"
@@ -9,15 +6,14 @@
 #include "../WaterWatchCpp/cweeTime.h"
 #include "../WaterWatchCpp/List.h"
 #include "../WaterWatchCpp/enum.h"
-
-
+#include "../WaterWatchCpp/Iterator.h"
 
 BETTER_ENUM(CellType, uint8_t, empty, boolean, date, error, inline_string, number, shared_string, formula_string);
-
 
 class ExcelWorksheet;
 class ExcelWorkbook;
 class ExcelCell;
+class ExcelRangeReference;
 
 class ExcelCellReference {
 public:
@@ -25,6 +21,154 @@ public:
     ExcelCellReference(cweeSharedPtr<void> d) : data(d) {};
     cweeSharedPtr<void> data; // could be anything! represents the worksheet ACTUALLY
 
+    /// <summary>
+    /// Returns true if the reference refers to an absolute column, otherwise false.
+    /// </summary>
+    bool column_absolute() const;
+
+    /// <summary>
+    /// Makes this reference have an absolute column if absolute_column is true,
+    /// otherwise not absolute.
+    /// </summary>
+    void column_absolute(bool absolute_column);
+
+    /// <summary>
+    /// Returns true if the reference refers to an absolute row, otherwise false.
+    /// </summary>
+    bool row_absolute() const;
+
+    /// <summary>
+    /// Makes this reference have an absolute row if absolute_row is true,
+    /// otherwise not absolute.
+    /// </summary>
+    void row_absolute(bool absolute_row);
+
+    /// <summary>
+    /// Converts a coordinate to an absolute coordinate string (e.g. B12 -> $B$12)
+    /// Defaulting to true, absolute_column and absolute_row can optionally control
+    /// whether the resulting cell_reference has an absolute column (e.g. B12 -> $B12)
+    /// and absolute row (e.g. B12 -> B$12) respectively.
+    /// </summary>
+    /// <remarks>
+    /// This is functionally equivalent to:
+    /// cell_reference copy(*this);
+    /// copy.column_absolute(absolute_column);
+    /// copy.row_absolute(absolute_row);
+    /// return copy;
+    /// </remarks>
+    cweeSharedPtr< ExcelCellReference> make_absolute(bool absolute_column = true, bool absolute_row = true);
+
+    /// <summary>
+    /// Returns a string that identifies the column of this reference
+    /// (e.g. second column from left is "B")
+    /// </summary>
+    int column() const;
+
+    /// <summary>
+    /// Sets the column of this reference from a string that identifies a particular column.
+    /// </summary>
+    void column(const cweeStr& column_string);
+
+    /// <summary>
+    /// Returns a 1-indexed numeric index of the column of this reference.
+    /// </summary>
+    int column_index() const;
+
+    /// <summary>
+    /// Sets the column of this reference from a 1-indexed number that identifies a particular column.
+    /// </summary>
+    void column_index(int column);
+
+    /// <summary>
+    /// Returns a 1-indexed numeric index of the row of this reference.
+    /// </summary>
+    int row() const;
+
+    /// <summary>
+    /// Sets the row of this reference from a 1-indexed number that identifies a particular row.
+    /// </summary>
+    void row(int row);
+
+    /// <summary>
+    /// Returns a cell_reference offset from this cell_reference by
+    /// the number of columns and rows specified by the parameters.
+    /// A negative value for column_offset or row_offset results
+    /// in a reference above or left of this cell_reference, respectively.
+    /// </summary>
+    cweeSharedPtr< ExcelCellReference> make_offset(int column_offset, int row_offset) const;
+
+    /// <summary>
+    /// Returns a string like "A1" for cell_reference(1, 1).
+    /// </summary>
+    cweeStr to_string() const;
+
+    /// <summary>
+    /// Returns a 1x1 range_reference containing only this cell_reference.
+    /// </summary>
+    cweeSharedPtr< ExcelRangeReference> to_range() const;
+};
+
+class ExcelRangeReference {
+public:
+    ExcelRangeReference() : data() {};
+    ExcelRangeReference(cweeSharedPtr<void> d) : data(d) {};
+    cweeSharedPtr<void> data; // could be anything! represents the worksheet ACTUALLY
+
+    /// <summary>
+    /// Converts relative reference coordinates to absolute coordinates (B12 -> $B$12)
+    /// </summary>
+    cweeSharedPtr<ExcelRangeReference> make_absolute();
+
+    /// <summary>
+    /// Returns true if the range has a width and height of 1 cell.
+    /// </summary>
+    bool is_single_cell() const;
+
+    /// <summary>
+    /// Returns the number of columns encompassed by this range.
+    /// </summary>
+    std::size_t width() const;
+
+    /// <summary>
+    /// Returns the number of rows encompassed by this range.
+    /// </summary>
+    std::size_t height() const;
+
+    /// <summary>
+    /// Returns the coordinate of the top left cell of this range.
+    /// </summary>
+    cweeSharedPtr< ExcelCellReference > top_left() const;
+
+    /// <summary>
+    /// Returns the coordinate of the top right cell of this range.
+    /// </summary>
+    cweeSharedPtr< ExcelCellReference > top_right() const;
+
+    /// <summary>
+    /// Returns the coordinate of the bottom left cell of this range.
+    /// </summary>
+    cweeSharedPtr< ExcelCellReference > bottom_left() const;
+
+    /// <summary>
+    /// Returns the coordinate of the bottom right cell of this range.
+    /// </summary>
+    cweeSharedPtr< ExcelCellReference > bottom_right() const;
+
+    /// <summary>
+    /// Returns a new range reference with the same width and height as this
+    /// range but shifted by the given number of columns and rows.
+    /// </summary>
+    cweeSharedPtr<ExcelRangeReference> make_offset(int column_offset, int row_offset) const;
+
+    /// <summary>
+    /// Returns a string representation of this range.
+    /// </summary>
+    cweeStr to_string() const;
+
+    /// <summary>
+    /// Returns true if the given cell reference is within the bounds of this range reference.
+    /// </summary>
+    bool contains(cweeSharedPtr< ExcelCellReference > ref) const;
 };
 
 class ExcelCell {
@@ -43,7 +187,7 @@ public:
     /// <summary>
     /// Returns the value of this cell as an instance of type T.
     /// Overloads exist for most C++ fundamental types like bool, int, etc. as well
-    /// as for std::string and xlnt datetime types: date, time, datetime, and timedelta.
+    /// as for cweeStr and xlnt datetime types: date, time, datetime, and timedelta.
     /// </summary>
     template <typename T>
     T value() const;
@@ -244,36 +388,15 @@ public:
     /// </summary>
     double height() const;
 };
-
-template <>
-bool ExcelCell::value<bool>() const;
-
-template <>
-int ExcelCell::value<int>() const;
-
-template <>
-unsigned int ExcelCell::value<unsigned int>() const;
-
-template <>
-long long int ExcelCell::value<long long int>() const;
-
-template <>
-unsigned long long ExcelCell::value<unsigned long long int>() const;
-
-template <>
-float ExcelCell::value<float>() const;
-
-template <>
-double ExcelCell::value<double>() const;
-
-template <>
-cweeTime ExcelCell::value<cweeTime>() const;
-
-template <>
-cweeStr ExcelCell::value<cweeStr>() const;
-
-
-
+template <> bool ExcelCell::value<bool>() const;
+template <> int ExcelCell::value<int>() const;
+template <> unsigned int ExcelCell::value<unsigned int>() const;
+template <> long long int ExcelCell::value<long long int>() const;
+template <> unsigned long long ExcelCell::value<unsigned long long int>() const;
+template <> float ExcelCell::value<float>() const;
+template <> double ExcelCell::value<double>() const;
+template <> cweeTime ExcelCell::value<cweeTime>() const;
+template <> cweeStr ExcelCell::value<cweeStr>() const;
 
 class ExcelRange {
 public:
@@ -281,6 +404,105 @@ public:
     ExcelRange(cweeSharedPtr<void> d) : data(d) {};
     cweeSharedPtr<void> data; // could be anything! represents the worksheet ACTUALLY
 
+    using cell_vector = cweeList<cweeSharedPtr<ExcelCell>>;
+
+    /// <summary>
+    /// Erases all cell data from the worksheet for cells within this range.
+    /// </summary>
+    void clear_cells();
+
+    /// <summary>
+    /// Returns a vector pointing to the n-th row or column in this range (depending
+    /// on major order).
+    /// </summary>
+    cell_vector vector(std::size_t n);
+
+    /// <summary>
+    /// Returns a vector pointing to the n-th row or column in this range (depending
+    /// on major order).
+    /// </summary>
+    const cell_vector vector(std::size_t n) const;
+
+    /// <summary>
+    /// Returns a cell in the range relative to its top left cell.
+    /// </summary>
+    cweeSharedPtr<ExcelCell> cell(cweeSharedPtr<ExcelCellReference> ref);
+
+    /// <summary>
+    /// Returns a cell in the range relative to its top left cell.
+    /// </summary>
+    const cweeSharedPtr<ExcelCell> cell(cweeSharedPtr<ExcelCellReference> ref) const;
+
+    /// <summary>
+    /// The worksheet this range targets
+    /// </summary>
+    cweeSharedPtr<ExcelWorksheet> target_worksheet() const;
+
+    /// <summary>
+    /// Returns the reference defining the bounds of this range.
+    /// </summary>
+    cweeSharedPtr<ExcelRangeReference> ref() const;
+
+    /// <summary>
+    /// Returns the number of rows or columns in this range (depending on major order).
+    /// </summary>
+    std::size_t length() const;
+
+    /// <summary>
+    /// Returns true if the given cell exists in the parent worksheet of this range.
+    /// </summary>
+    bool contains(cweeSharedPtr<ExcelCellReference> ref);
+
+    /// <summary>
+    /// Returns the first row or column in this range.
+    /// </summary>
+    cell_vector front();
+
+    /// <summary>
+    /// Returns the first row or column in this range.
+    /// </summary>
+    const cell_vector front() const;
+
+    /// <summary>
+    /// Returns the last row or column in this range.
+    /// </summary>
+    cell_vector back();
+
+    /// <summary>
+    /// Returns the last row or column in this range.
+    /// </summary>
+    const cell_vector back() const;
+
+    /// <summary>
+    /// Applies function f to all cells in the range
+    /// </summary>
+    void apply(std::function<void(cweeSharedPtr<ExcelCell>)> f);
+
+    /// <summary>
+    /// Returns the n-th row or column in this range.
+    /// </summary>
+    cell_vector operator[](std::size_t n);
+
+    /// <summary>
+    /// Returns the n-th row or column in this range.
+    /// </summary>
+    const cell_vector operator[](std::size_t n) const;
+
+    struct it_state {
+        mutable int pos = 0;
+        mutable cweeSharedPtr< cell_vector> obj;
+        inline void begin(const ExcelRange* ref) { pos = 0; }
+        inline void next(const ExcelRange* ref) { ++pos; }
+        inline void end(const ExcelRange* ref) { pos = ref->length(); }
+        inline cell_vector& get(ExcelRange* ref) { obj = ref->operator[](pos); return *obj; }
+        inline bool cmp(const it_state& s) const { return (pos == s.pos) ? false : true; }
+        inline long long distance(const it_state& s) const { return pos - s.pos; };
+        // Optional to allow operator--() and reverse iterators:
+        inline void prev(const ExcelRange* ref) { --pos; }
+        // Optional to allow `const_iterator`:
+        inline const cell_vector& get(const ExcelRange* ref) const { obj = ref->operator[](pos); return *obj; }
+    };
+    SETUP_STL_ITERATOR(ExcelRange, cell_vector, it_state);
 };
 
 class ExcelWorksheet {
@@ -407,7 +629,6 @@ public:
     void delete_columns(int column, std::uint32_t amount);
 
     // properties
-
     /// <summary>
     /// Calculates the width of the given column. This will be the default column width if
     /// a custom width is not set on this column's column_properties.
@@ -421,7 +642,6 @@ public:
     double row_height(int row) const;
 
     // named range
-
     /// <summary>
     /// Creates a new named range with the given name encompassing the string representing a range.
     /// </summary>
@@ -497,12 +717,10 @@ public:
     int highest_column_or_props() const;
 
     // cell merge
-
     /// <summary>
     /// Merges the cells within the range represented by the given string.
     /// </summary>
     void merge_cells(cweeStr reference_string);
-
 
     /// <summary>
     /// Removes the merging of the cells in the range represented by the given string.
@@ -510,7 +728,6 @@ public:
     void unmerge_cells(cweeStr reference_string);
 
     // operators
-
     // page
 
     /// <summary>
@@ -629,11 +846,6 @@ public:
     /// A worksheet is considered empty if it doesn't have any cells.
     /// </summary>
     bool is_empty() const;
-
-public:
-
-	cweeSharedPtr<ExcelCell> GetCell(cweeStr const& cellName);
-
 };
 
 class ExcelWorkbook {
@@ -642,8 +854,193 @@ public:
 	ExcelWorkbook(cweeSharedPtr<void> d) : data(d) {};
 	cweeSharedPtr<void> data; // could be anything! represents the workbook ACTUALLY
 
-	cweeSharedPtr<ExcelWorksheet> OpenWorksheet(int i);
-	cweeSharedPtr<ExcelWorksheet> OpenWorksheet();
+    /// <summary>
+    /// Creates and returns a sheet after the last sheet in this workbook.
+    /// </summary>
+    cweeSharedPtr<ExcelWorksheet> create_sheet();
+
+    /// <summary>
+    /// Creates and returns a sheet at the specified index.
+    /// </summary>
+    cweeSharedPtr<ExcelWorksheet> create_sheet(std::size_t index);
+
+    /// <summary>
+    /// Creates and returns a new sheet after the last sheet initializing it
+    /// with all of the data from the provided worksheet.
+    /// </summary>
+    cweeSharedPtr<ExcelWorksheet> copy_sheet(cweeSharedPtr<ExcelWorksheet> worksheet);
+
+    /// <summary>
+    /// Creates and returns a new sheet at the specified index initializing it
+    /// with all of the data from the provided worksheet.
+    /// </summary>
+    cweeSharedPtr<ExcelWorksheet> copy_sheet(cweeSharedPtr<ExcelWorksheet> worksheet, std::size_t index);
+
+    /// <summary>
+    /// Returns the worksheet that is determined to be active. An active
+    /// sheet is that which is initially shown by the spreadsheet editor.
+    /// </summary>
+    cweeSharedPtr<ExcelWorksheet> active_sheet();
+
+    /// <summary>
+    /// Sets the worksheet that is determined to be active. An active
+    /// sheet is that which is initially shown by the spreadsheet editor.
+    /// </summary>
+    void active_sheet(std::size_t index);
+
+    /// <summary>
+    /// Returns the worksheet with the given name. This may throw an exception
+    /// if the sheet isn't found. Use workbook::contains(const cweeStr &)
+    /// to make sure the sheet exists before calling this method.
+    /// </summary>
+    cweeSharedPtr<ExcelWorksheet> sheet_by_title(const cweeStr& title);
+
+    /// <summary>
+    /// Returns the worksheet with the given name. This may throw an exception
+    /// if the sheet isn't found. Use workbook::contains(const cweeStr &)
+    /// to make sure the sheet exists before calling this method.
+    /// </summary>
+    const cweeSharedPtr<ExcelWorksheet> sheet_by_title(const cweeStr& title) const;
+
+    /// <summary>
+    /// Returns the worksheet at the given index. This will throw an exception
+    /// if index is greater than or equal to the number of sheets in this workbook.
+    /// </summary>
+    cweeSharedPtr<ExcelWorksheet> sheet_by_index(std::size_t index);
+
+    /// <summary>
+    /// Returns the worksheet at the given index. This will throw an exception
+    /// if index is greater than or equal to the number of sheets in this workbook.
+    /// </summary>
+    const cweeSharedPtr<ExcelWorksheet> sheet_by_index(std::size_t index) const;
+
+    /// <summary>
+    /// Returns the worksheet with a sheetId of id. Sheet IDs are arbitrary numbers
+    /// that uniquely identify a sheet. Most users won't need this.
+    /// </summary>
+    cweeSharedPtr<ExcelWorksheet> sheet_by_id(std::size_t id);
+
+    /// <summary>
+    /// Returns the worksheet with a sheetId of id. Sheet IDs are arbitrary numbers
+    /// that uniquely identify a sheet. Most users won't need this.
+    /// </summary>
+    const cweeSharedPtr<ExcelWorksheet> sheet_by_id(std::size_t id) const;
+
+    /// <summary>
+    /// Returns the hidden identifier of the worksheet at the given index.
+    /// This will throw an exception if index is greater than or equal to the
+    /// number of sheets in this workbook.
+    /// </summary>
+    bool sheet_hidden_by_index(std::size_t index) const;
+
+    /// <summary>
+    /// Returns true if this workbook contains a sheet with the given title.
+    /// </summary>
+    bool contains(const cweeStr& title) const;
+
+    /// <summary>
+    /// Returns the index of the given worksheet. The worksheet must be owned by this workbook.
+    /// </summary>
+    std::size_t index(cweeSharedPtr<ExcelWorksheet> worksheet);
+
+    // remove worksheets
+    /// <summary>
+    /// Removes the given worksheet from this workbook.
+    /// </summary>
+    void remove_sheet(cweeSharedPtr<ExcelWorksheet> worksheet);
+
+    /// <summary>
+    /// Sets the contents of this workbook to be equivalent to that of
+    /// a workbook returned by workbook::empty().
+    /// </summary>
+    void clear();
+
+    /// <summary>
+    /// Applies the function "f" to every non-empty cell in every worksheet in this workbook.
+    /// </summary>
+    void apply_to_cells(std::function<void(cweeSharedPtr<ExcelCell>)> f);
+
+    /// <summary>
+    /// Returns a temporary vector containing the titles of each sheet in the order
+    /// of the sheets in the workbook.
+    /// </summary>
+    cweeList<cweeStr> sheet_titles() const;
+
+    /// <summary>
+    /// Returns the number of sheets in this workbook.
+    /// </summary>
+    std::size_t sheet_count() const;
+
+    /// <summary>
+    /// Returns true if this workbook has had its title set.
+    /// </summary>
+    bool has_title() const;
+
+    /// <summary>
+    /// Returns the title of this workbook.
+    /// </summary>
+    cweeStr title() const;
+
+    /// <summary>
+    /// Sets the title of this workbook to title.
+    /// </summary>
+    void title(const cweeStr& title);
+
+    /// <summary>
+    /// Sets the absolute path of this workbook to path.
+    /// </summary>
+    void abs_path(const cweeStr& path);
+
+    /// <summary>
+    /// Serializes the workbook into an XLSX file and saves the data into a file
+    /// named filename.
+    /// </summary>
+    void save(const cweeStr& filename) const;
+
+    /// <summary>
+    /// Serializes the workbook into an XLSX file encrypted with the given password
+    /// and loads the bytes into a file named filename.
+    /// </summary>
+    void save(const cweeStr& filename, const cweeStr& password) const;
+
+    /// <summary>
+    /// Interprets file with the given filename as an XLSX file and sets
+    /// the content of this workbook to match that file.
+    /// </summary>
+    void load(const cweeStr& filename);
+
+    /// <summary>
+    /// Interprets file with the given filename as an XLSX file encrypted with the
+    /// given password and sets the content of this workbook to match that file.
+    /// </summary>
+    void load(const cweeStr& filename, const cweeStr& password);
+
+    /// <summary>
+    /// Returns the n-th worksheet
+    /// </summary>
+    cweeSharedPtr<ExcelWorksheet> operator[](std::size_t n);
+
+    /// <summary>
+    /// Returns the n-th row or column in this range.
+    /// </summary>
+    const cweeSharedPtr<ExcelWorksheet> operator[](std::size_t n) const;
+
+    struct it_state {
+        mutable int pos = 0;
+        mutable cweeSharedPtr<ExcelWorksheet> obj;
+        inline void begin(const ExcelWorkbook* ref) { pos = 0; }
+        inline void next(const ExcelWorkbook* ref) { ++pos; }
+        inline void end(const ExcelWorkbook* ref) { pos = ref->sheet_count(); }
+        inline ExcelWorksheet& get(ExcelWorkbook* ref) { obj = ref->operator[](pos); return *obj; }
+        inline bool cmp(const it_state& s) const { return (pos == s.pos) ? false : true; }
+        inline long long distance(const it_state& s) const { return pos - s.pos; };
+        // Optional to allow operator--() and reverse iterators:
+        inline void prev(const ExcelWorkbook* ref) { --pos; }
+        // Optional to allow `const_iterator`:
+        inline const ExcelWorksheet& get(const ExcelWorkbook* ref) const { obj = ref->operator[](pos); return *obj; }
+    };
+    SETUP_STL_ITERATOR(ExcelWorkbook, ExcelWorksheet, it_state);
+
 };
 
 class cweeExcel {
@@ -651,6 +1048,3 @@ public:
 	static cweeSharedPtr<ExcelWorkbook> OpenExcel(cweeStr filePath);
     static cweeSharedPtr<ExcelWorkbook> OpenExcel();
 };
-
-
-#endif
