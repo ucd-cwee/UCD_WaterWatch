@@ -1888,16 +1888,18 @@ public:
 			data = GetValueKnotSeries(timeStart, timeEnd); // copy data
 		}
 
-		data.AssureSize(probs.Num());
+		if (data.Num() < probs.Num()) {
+			data.AssureSize(probs.Num());
+		}		
 		if (data.Num() <= 1) return data;
 		
 		data.Sort(); // sort data
 
 		for (size_t i = 0; i < probs.Num(); ++i)
 		{
-			poi = (1.0f - probs[i]) * -0.5f + probs[i] * (data.Num() - 0.5f);
+			poi = (1.0f - probs[i]) * -0.5f + probs[i] * ((float)data.Num() - 0.5f);
 			left = std::max(int64_t(std::floor((double)poi)), int64_t(0));
-			right = std::min(int64_t(std::ceil((double)poi)), int64_t(data.Num() - 1.0f));
+			right = std::min(int64_t(std::ceil((double)poi)), int64_t((float)data.Num() - 1.0f));
 			quantiles.Append((((scalarT)1.0f - (poi - (scalarT)left)) * data[left]) + ((poi - (scalarT)left) * data[right]));
 		}
 
