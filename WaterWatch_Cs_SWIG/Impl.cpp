@@ -16,7 +16,6 @@ to maintain a single distribution point for the source code.
 #pragma once
 #include "../WaterWatchCpp/Precompiled.h"
 #include "../WindowsPlatformTools/WindowsPlatformTools.h"
-#include "../WaterWatchCpp/WaterWatchInit.h"
 #include "../WaterWatchCpp/Clock.h"
 #include "../WaterWatchCpp/Strings.h"
 #include "../WaterWatchCpp/List.h"

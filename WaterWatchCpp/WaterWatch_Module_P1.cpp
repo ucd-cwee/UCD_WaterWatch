@@ -505,19 +505,6 @@ namespace chaiscript {
                 }), "GetResults");
                 lib->add(chaiscript::fun([](nanodbcResult& con) { AUTO d = odbc->GetNextRow(con); std::vector<chaiscript::Boxed_Value> out; out.reserve(d.size() + 1); for (auto& x : d) { out.push_back(chaiscript::var(std::string(x.c_str()))); } return out; }), "GetNextRow");                
             }
-        
-
-            // THING
-#if 0 
-            {
-                lib->add(fun([](const std::set<chaiscript::shared_ptr<chaiscript::detail::Type_Conversion_Base>>* m_conversions, const Type_Info& to) {
-                    ConversionDynamicOptimization::DynamicProgram::TEST(m_conversions, to);
-                    }), "TEST_IMPL");
-                lib->eval(R"(
-                    def TEST(Type_Info ti){ TEST_IMPL(get_conversions(), ti); };
-                )");
-            }
-#endif
 
             return lib;
         };

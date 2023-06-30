@@ -15,10 +15,11 @@ to maintain a single distribution point for the source code.
 
 #pragma once
 #include "Precompiled.h"
+#include "chaiscript_wrapper.h"
+#include "WaterWatch_Module_Header.h"
 
-
-class WaterWatchInit {
-public:
-	static void Init();
-	static void Shutdown();
-};
+namespace chaiscript {
+    namespace WaterWatch_Lib {
+        [[nodiscard]] ModulePtr library_Excel();
+    };
+}; // namespace chaiscript

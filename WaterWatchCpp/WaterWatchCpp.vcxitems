@@ -84,6 +84,7 @@
     <ClInclude Include="$(MSBuildThisFileDirectory)DispatchTimer.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)Engineering.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)enum.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)ExcelInterop_Module.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)ExternData.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)File.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)FileSystemH.h" />
@@ -112,7 +113,6 @@
     <ClInclude Include="$(MSBuildThisFileDirectory)UnorderedList.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)vec.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)VecX.h" />
-    <ClInclude Include="$(MSBuildThisFileDirectory)WaterWatchInit.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)WaterWatch_Module_EPAnet.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)WaterWatch_Module_Header.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)WaterWatch_Module_P1.h" />
@@ -128,6 +128,7 @@
     <ClCompile Include="$(MSBuildThisFileDirectory)Chaiscript_WaterWatch_Module.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)cweeJob.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)DispatchTimer.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)ExcelInterop_Module.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)ExternData.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)FileSystemH.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)Geocoding.cpp" />
@@ -135,7 +136,6 @@
     <ClCompile Include="$(MSBuildThisFileDirectory)MachineLearning.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)odbc.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)Toasts.cpp" />
-    <ClCompile Include="$(MSBuildThisFileDirectory)WaterWatchInit.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)WaterWatch_Module_EPAnet.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)WaterWatch_Module_P1.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)WaterWatch_Module_P2.cpp" />

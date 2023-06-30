@@ -16,9 +16,6 @@
     <Filter Include="Lib\Implimentations-Only\Machine Learning">
       <UniqueIdentifier>{40d62b75-88eb-4e2b-9bf5-e53b896564c0}</UniqueIdentifier>
     </Filter>
-    <Filter Include="Lib\Implimentations-Only\WaterWatchInit">
-      <UniqueIdentifier>{5b1d98f1-af6e-47ec-a9fc-4a9a6b4c52e4}</UniqueIdentifier>
-    </Filter>
     <Filter Include="Lib\Implimentations-Only\FileSystem and Geocoding">
       <UniqueIdentifier>{b1e00583-6aae-47c1-adda-a491b7c26730}</UniqueIdentifier>
     </Filter>
@@ -100,6 +97,9 @@
     <Filter Include="Lib\Header-Only\Containers\Matrix">
       <UniqueIdentifier>{6b3c7ca8-4fa6-4f6f-8399-4d4fe6afcfc0}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Lib\Implimentations-Only\WaterWatch Chaiscript Module\Excel Interop Module">
+      <UniqueIdentifier>{e134db1b-0135-44df-ae26-8be4a187628e}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="$(MSBuildThisFileDirectory)odbc.h">
@@ -110,9 +110,6 @@
     </ClInclude>
     <ClInclude Include="$(MSBuildThisFileDirectory)Chaiscript_WaterWatch_Module.h">
       <Filter>Lib\Implimentations-Only\WaterWatch Chaiscript Module</Filter>
-    </ClInclude>
-    <ClInclude Include="$(MSBuildThisFileDirectory)WaterWatchInit.h">
-      <Filter>Lib\Implimentations-Only\WaterWatchInit</Filter>
     </ClInclude>
     <ClInclude Include="$(MSBuildThisFileDirectory)FileSystemH.h">
       <Filter>Lib\Implimentations-Only\FileSystem and Geocoding\FileSystem</Filter>
@@ -423,6 +420,9 @@
     <ClInclude Include="$(MSBuildThisFileDirectory)UnorderedList.h">
       <Filter>Lib\Header-Only\Containers\Lists</Filter>
     </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)ExcelInterop_Module.h">
+      <Filter>Lib\Implimentations-Only\WaterWatch Chaiscript Module\Excel Interop Module</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="$(MSBuildThisFileDirectory)odbc.cpp">
@@ -430,9 +430,6 @@
     </ClCompile>
     <ClCompile Include="$(MSBuildThisFileDirectory)MachineLearning.cpp">
       <Filter>Lib\Implimentations-Only\Machine Learning</Filter>
-    </ClCompile>
-    <ClCompile Include="$(MSBuildThisFileDirectory)WaterWatchInit.cpp">
-      <Filter>Lib\Implimentations-Only\WaterWatchInit</Filter>
     </ClCompile>
     <ClCompile Include="$(MSBuildThisFileDirectory)FileSystemH.cpp">
       <Filter>Lib\Implimentations-Only\FileSystem and Geocoding\FileSystem</Filter>
@@ -484,6 +481,9 @@
     </ClCompile>
     <ClCompile Include="$(MSBuildThisFileDirectory)WaterWatch_Module_P3p3.cpp">
       <Filter>Lib\Implimentations-Only\WaterWatch Chaiscript Module\Module 3</Filter>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)ExcelInterop_Module.cpp">
+      <Filter>Lib\Implimentations-Only\WaterWatch Chaiscript Module\Excel Interop Module</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>

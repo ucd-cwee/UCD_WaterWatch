@@ -28,7 +28,8 @@ namespace chaiscript {
                 chaiscript::WaterWatch_Lib::library_3p2(),
                 chaiscript::WaterWatch_Lib::library_3p3(),
                 chaiscript::WaterWatch_Lib::library_EPAnet(),
-                chaiscript::WaterWatch_Lib::library_4()
+                chaiscript::WaterWatch_Lib::library_4(),
+                chaiscript::WaterWatch_Lib::library_Excel()
             }
             , chaiscript::make_parser<eval::Noop_Tracer, optimizer::Optimizer_Default>()
             , std::move(t_modulepaths)
