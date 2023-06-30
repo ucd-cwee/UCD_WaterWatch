@@ -1,6 +1,8 @@
 #include <xlnt/xlnt.hpp>
 #include "Wrapper.h"
 
+INLINE void TESTING() {};
+
 INLINE cweeSharedPtr<ExcelCellReference> To_ExcelCellReference(xlnt::cell_reference cell) {
     return make_cwee_shared<ExcelCellReference>(new ExcelCellReference(cweeSharedPtr<void>(make_cwee_shared<xlnt::cell_reference>(cell), [](void* p) { return p; })));
 };
