@@ -307,7 +307,9 @@ namespace chaiscript {
     AddMemberToScriptFromClass(MinHeight); \
     AddMemberToScriptFromClass(MaxWidth); \
     AddMemberToScriptFromClass(MaxHeight); \
-    AddMemberToScriptFromClass(Margin); }
+    AddMemberToScriptFromClass(Margin); \
+    AddMemberToScriptFromClass(OnLoaded); \
+}
     class UI_FrameworkElement {
     public:
         using ThisType = typename UI_FrameworkElement;
@@ -341,6 +343,8 @@ namespace chaiscript {
         double 			MaxWidth = -1;
         double 			MaxHeight = -1;
         cweeStr 		Margin = "0,0,0,0";
+        chaiscript::Boxed_Value OnLoaded;
+
 
         static void		AppendToScriptingLanguage(Module& scriptingLanguage) {
             AddBasicClassTemplate();

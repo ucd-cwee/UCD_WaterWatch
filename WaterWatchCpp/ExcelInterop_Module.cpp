@@ -61,7 +61,209 @@ namespace chaiscript {
                 lib->add(chaiscript::fun([](WorkbookPtr& a, WorksheetPtr worksheet) { if (a) return a->remove_sheet(worksheet); else ThrowIfBadAccess; }), "remove_sheet");
 
 
+                lib->add(chaiscript::fun([](cweeStr filePathToData, cweeStr filePathToCoordinates) {
+					// This is the script code called from C# to C++, that requests the underlying data to be used to draw into C#. 
 
+					using TimeSeriesType = cweeUnitValues::cweeUnitPattern; // Time to Measurement .. setting measurement units to "dimensionless" for now.
+					using SiteMeasurementType = cweeThreadedMap<cweeStr, TimeSeriesType>; // AL to TimeSeries
+					using SiteCollectionType = cweeThreadedMap<cweeStr, SiteMeasurementType>; // AA-01 to SiteMeasurementType
+
+					cweeSharedPtr<SiteCollectionType> SiteCollection = make_cwee_shared<SiteCollectionType>();
+					cweeThreadedMap<cweeStr, cweePair<double, double>> Coordinates;
+
+					// Parse Data
+					{
+						cweeSharedPtr<ExcelWorkbook> workbook;
+						workbook = cweeExcel::OpenExcel();
+						workbook->load(filePathToData);
+
+						for (auto& worksheet : *workbook) {
+							int rowNum = 0;
+							cweeStr siteName = worksheet.title();
+							AUTO siteMeasurement = SiteCollection->GetPtr(siteName); // gets a shared PTR
+							if (siteMeasurement) {
+								cweeList<cweeStr> header;
+								try {
+									AUTO rows = worksheet.rows();
+									for (auto& row : *rows) {
+										rowNum++;
+										if (rowNum <= 1) {
+											for (auto& cell : row) {
+												header.Append(cell->to_string());
+											}
+										}
+										else {
+											int colNum = 0; cweeTime time;
+											for (auto& cell : row) {
+												colNum++;
+
+												switch (colNum) {
+												case 1: break;
+												case 2: {
+													try {
+														time = cell->value<cweeTime>();
+													}
+													catch (...) {}
+													break;
+												}
+												default: {
+													cweeStr& headerForThisCell = header[colNum - 1];
+
+													AUTO TM = siteMeasurement->GetPtr(headerForThisCell);
+													if (TM) {
+														try {
+															TM->AddValue((u64)time, cell->value<double>());
+														}
+														catch (...) {}
+													}
+													break;
+												}
+												}
+											}
+										}
+									}
+								}
+								catch (...) {}
+							}
+						}
+					}
+					// Parse Coordinates
+					{
+						cweeSharedPtr<ExcelWorkbook> workbook;
+						workbook = cweeExcel::OpenExcel();
+						workbook->load(filePathToCoordinates);
+
+						for (auto& worksheet : *workbook) {
+								try {
+									int rowNum = 0;
+									AUTO rows = worksheet.rows();
+									for (auto& row : *rows) {
+										rowNum++;
+										if (rowNum <= 2) { /* skip the headers */ }
+										else {
+											int colNum = 0; cweeStr name; double longitude, latitude;
+											for (auto& cell : row) {
+												colNum++;
+
+												switch (colNum) {
+												case 1: 
+													name = cell->value<cweeStr>();
+													break;
+												case 2: {
+													longitude = cell->value<double>();
+													break;
+												}
+												case 3: {
+													latitude = cell->value<double>();
+													break;
+												}
+												default: {
+													break;
+												}
+												}
+											}
+											Coordinates.Emplace(name, cweePair<double, double>(longitude, latitude));
+										}
+									}
+								}
+								catch (...) {}
+						}
+					}
+
+					// This is the overall display
+					std::shared_ptr<UI_Grid> displayGrid = make_shared<UI_Grid>(); {
+						displayGrid->RowDefinitions.push_back("*");
+						displayGrid->ColumnDefinitions.push_back("2*");
+						displayGrid->ColumnDefinitions.push_back("1*");
+					}
+					// This is the pattern display
+					std::shared_ptr<UI_Grid> listPatternsContainer = make_shared<UI_Grid>(); {
+						listPatternsContainer->ColumnDefinitions.push_back("*");
+						listPatternsContainer->RowDefinitions.push_back("*");
+					}
+					displayGrid->AddChild(var(listPatternsContainer), 0, 1, 1, 1);
+					
+					// this function is called when the pop-up for each DOT or site is loaded -- and is called EVERY time it is loaded.
+					AUTO updatePatterns = [=](UI_Grid& destination, cweeSharedPtr< SiteMeasurementType> measurements) {
+						listPatternsContainer->Children.Clear();
+						std::map<std::string, chaiscript::Boxed_Value> listPatterns;
+
+						for (auto& meas : *measurements) {
+							AUTO measurementName = meas.first;
+							AUTO measurementData = meas.second;
+
+							UI_Grid patContainer;
+							patContainer.MinHeight = 180;
+							patContainer.MinWidth = 600;
+							{
+								patContainer.AddChild(var(*measurementData), 0, 0, 1, 1);
+
+								AUTO title = UI_TextBlock(measurementName);
+								{
+									title.HorizontalAlignment = "Left";
+									title.VerticalAlignment = "Top";
+									title.HorizontalTextAlignment = "Left";
+									title.FontSize = 12;
+									title.Foreground = UI_Color(cweeRandomFloat(0, 255), cweeRandomFloat(0, 255), cweeRandomFloat(0, 255), cweeRandomFloat(128, 200));
+								}
+
+								patContainer.AddChild(var(title), 0, 0, 1, 1);
+							}
+							listPatterns[measurementName.c_str()] = var(patContainer);
+						}
+
+						listPatternsContainer->AddChild(var(listPatterns), 0, 0, 1, 1);
+						listPatternsContainer->Update();
+					};
+
+					{	
+						UI_Map map;
+						{
+							UI_MapLayer layer;
+							{
+								for (auto& site : *SiteCollection) {
+									UI_MapIcon icon;
+									AUTO measurements = site.second;
+
+									double longitude = -1;
+									double latitude = -1;
+
+									AUTO coords = Coordinates.TryGetPtr(site.first);
+									if (coords) {
+										longitude = coords->first;
+										latitude = coords->second;
+									}
+
+									icon.color = UI_Color(cweeRandomFloat(0,255), cweeRandomFloat(0, 255), cweeRandomFloat(0, 255), cweeRandomFloat(128, 200));
+									icon.longitude = longitude;
+									icon.latitude = latitude;
+									icon.size = 24;
+									{
+										// set the Tag object, which when "Loaded" will update the righthand side of the figure.
+										UI_Grid panel; {
+											panel.RowDefinitions.push_back("Auto");
+											panel.RowDefinitions.push_back("Auto");
+											panel.RowDefinitions.push_back("Auto");
+											panel.OnLoaded = var(fun([=]() {
+												updatePatterns(*listPatternsContainer, measurements);
+											}));
+											panel.AddChild(var(site.first), 0, 0, 1, 1);
+											panel.AddChild(var(longitude), 1, 0, 1, 1);
+											panel.AddChild(var(latitude), 2, 0, 1, 1);
+										}
+										icon.Tag = var(panel);
+									}
+									icon.HideOnCollision = false;
+
+									layer.Children.push_back(var(icon));
+								}
+							}
+							map.Layers.push_back(var(layer));
+						}
+						displayGrid->AddChild(var(map), 0, 0, 1, 1);	
+					}
+					return displayGrid;                    
+                }), "WaterQualityMap");
 
 
 

@@ -1270,6 +1270,8 @@ namespace UWP_WaterWatch.Custom_Controls
                     "]"
                     , "%s", res.additionalParams);
 
+                res.result.CustomizableQueryResult("%s.OnLoaded();", "%s", res.additionalParams);
+
                 return FrameworkJob.ContinueWith(() => {
                     List<string> frameworkParms = FrameworkJob.Result;
                     { if (double.TryParse(frameworkParms[0], out double w) && w != -1.0) { R.Opacity = w; } }
