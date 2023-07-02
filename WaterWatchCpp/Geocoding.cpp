@@ -53,8 +53,17 @@ public:
 		return nominatim->GetLongLat(address);
     };
 
-    vec2d           GetLongLat(double easting_feet, double northing_feet) {
-        return cweeEng::CoordinateConversion_FeetToLongLat(vec2d(easting_feet, northing_feet));
+    vec2d           GetLongLat(double easting_feet, double northing_feet,
+        double centralMeridian,
+        double LatFirstStandardParallel,
+        double LatSecondStandardParallel,
+        double LatOrigin,
+        double FalseNorthing,
+        double FalseEasting
+    ) {
+        return cweeEng::CoordinateConversion_FeetToLongLat(vec2d(easting_feet, northing_feet), 
+            centralMeridian, LatFirstStandardParallel, LatSecondStandardParallel, LatOrigin, FalseNorthing, FalseEasting
+        );
     };
 
     std::vector<std::map<std::string, cweeStr>> Geocode(const cweeStr& address) {

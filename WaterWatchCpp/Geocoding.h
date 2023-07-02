@@ -44,7 +44,14 @@ public:
     */
     virtual vec2d           GetLongLat(const cweeStr& address) = 0;
 
-    virtual vec2d           GetLongLat(double easting_feet, double northing_feet) = 0;
+    virtual vec2d           GetLongLat(double easting_feet, double northing_feet,
+        double centralMeridian = -120.5000000000000000,
+        double LatFirstStandardParallel = 37.0666666666666666667,
+        double LatSecondStandardParallel = 38.433333333333333333,
+        double LatOrigin = 36.500000000000000000,
+        double FalseNorthing = 1640416.6666666666666,
+        double FalseEasting = 6561666.6666666666666
+        ) = 0;
 
     virtual std::vector<std::map<std::string, cweeStr>> Geocode(const cweeStr& address) = 0;
 

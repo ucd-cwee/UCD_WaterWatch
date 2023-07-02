@@ -3136,199 +3136,9 @@ namespace chaiscript {
                 return eval::AST_Node_Impl_Ptr<Tracer>(dynamic_cast<eval::AST_Node_Impl<Tracer> *>(retval.release()));
             }
 
-#if 0
-            bool TryParseReturnType(eval::AST_Node_Impl_Ptr<Tracer>& node, AST_Node_Type const& nodeType, const chaiscript::detail::Dispatch_Engine* thisEngine, std::map<std::string, chaiscript::shared_ptr<chaiscript::shared_ptr<Type_Info>>>* IdsMap = nullptr) {
-                bool successfulParse = false;
-                if (node->identifier == nodeType) {
-                    std::string varName;
-                    switch (nodeType) {
-                    case AST_Node_Type::Fun_Call: {
-                        chaiscript::eval::Fun_Call_AST_Node<Tracer>* funCallNodePointer = dynamic_cast<chaiscript::eval::Fun_Call_AST_Node<Tracer>*>(node.get());
-                        if (funCallNodePointer) {
-                            std::pair<size_t, chaiscript::shared_ptr<chaiscript::small_vector<Proxy_Function>>> funcs = thisEngine->get_function(funCallNodePointer->children[0]->text, 0);
-                            if (funcs.second) {
-                                for (auto& func : *funcs.second) {
-                                    if (func) {
-                                        const chaiscript::small_vector<Type_Info>& params = func->get_param_types(); // includes the return type
-                                        if (params.size() > 0) {
-
-
-                                            *(funCallNodePointer->children[0]->potentialReturnType) = chaiscript::make_shared<Type_Info>(params[0]);
-                                            node->potentialReturnType = funCallNodePointer->children[0]->potentialReturnType;
-
-                                            successfulParse = true;
-                                            break;
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        break;
-                    }
-                    case AST_Node_Type::Dot_Access: {
-                        // unusual node arrangement:
-                        /*
-                            ex. cweeStr("test").Mid(0,4.0);
-                            Dot_Access_AST_Node{
-                                m_fun_name = "Mid",
-                                children = [
-                                    FunCall(
-                                        Id(cweeStr), 
-                                        Const("test")
-                                    ), 
-                                    FunCall(
-                                        Id(Mid), // Note that when calling this during eval, the first param must be passed in as a parameter
-                                        ArgList(
-                                            Const(0), 
-                                            Const(4.0)
-                                        )
-                                    )
-                                ]
-                            }
-                        */
-                        chaiscript::eval::Dot_Access_AST_Node<Tracer>* dotAccessNodePointer = dynamic_cast<chaiscript::eval::Dot_Access_AST_Node<Tracer>*>(node.get());
-                        if (dotAccessNodePointer) {
-                            varName = dotAccessNodePointer->m_fun_name;
-
-                            // find this function!
-#if 0
-                            std::pair<size_t, chaiscript::shared_ptr<chaiscript::small_vector<Proxy_Function>>> funcs = thisEngine->get_function(varName, 0);
-                            if (funcs.second) {
-                                for (auto& func : *funcs.second) {
-                                    if (func) {
-                                        const chaiscript::small_vector<Type_Info>& params = func->get_param_types(); // includes the return type
-                                        if (params.size() > 0) {
-                                            // if ((params.size() - 1) <= (node->children[2]->children.size() + 1)) { // since this is a dot access, add one to the input params
-                                            *node->potentialReturnType = chaiscript::make_shared<Type_Info>(params[0]);
-                                            successfulParse = true;
-                                            break;
-                                            // }
-                                        }
-                                    }
-                                }
-                            }
-#else
-                            *dotAccessNodePointer->potentialReturnType = *dotAccessNodePointer->children[1]->potentialReturnType;
-#endif
-                        }
-                        break;
-                    }
-                    case AST_Node_Type::Postfix: {
-                        chaiscript::eval::Postfix_AST_Node<Tracer>* postfixNodePointer = dynamic_cast<chaiscript::eval::Postfix_AST_Node<Tracer>*>(node.get());
-                        if (postfixNodePointer) {
-                            if (postfixNodePointer->m_oper == Operators::Opers::invalid) {
-                                // the user is likely typing something like "10_ft" or "100_gpm" to generate a new, custom type. 
-                                if (postfixNodePointer->text != "") {
-                                    AUTO ptr = thisEngine->get_postfixes().GetPtr(postfixNodePointer->text); // convert from "_ft" to "foot"
-                                    if (ptr) {
-                                        // *ptr == "foot" 
-                                        std::pair<size_t, chaiscript::shared_ptr<chaiscript::small_vector<Proxy_Function>>> funcs = thisEngine->get_function(*ptr, 0);
-                                        if (funcs.second) {
-                                            for (auto& func : *funcs.second) {
-                                                if (func) {
-                                                    const chaiscript::small_vector<Type_Info>& params = func->get_param_types(); // includes the return type
-                                                    if (params.size() > 0) {
-                                                        *node->potentialReturnType = chaiscript::make_shared<Type_Info>(params[0]);
-                                                        successfulParse = true;
-                                                        break;
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                    else {
-                                        *node->potentialReturnType = *node->children[0]->potentialReturnType;
-                                        successfulParse = true;
-                                    }
-                                }
-                            }
-                            else {
-                                *node->potentialReturnType = *node->children[0]->potentialReturnType;
-                            }
-                        }
-                        break;
-                    }
-                    case AST_Node_Type::Assign_Retroactively: {
-                        if (chaiscript::eval::TryGetVariableName(*(node->children[0]), varName)) { // i.e. int or float or string, etc.
-                            // find this function!
-                            std::pair<size_t, chaiscript::shared_ptr<chaiscript::small_vector<Proxy_Function>>> funcs = thisEngine->get_function(varName, 0);
-                            if (funcs.second) {
-                                for (auto& func : *funcs.second) {
-                                    if (func) {
-                                        const chaiscript::small_vector<Type_Info>& params = func->get_param_types(); // includes the return type
-                                        if (params.size() == 1) {
-                                            *node->potentialReturnType = chaiscript::make_shared<Type_Info>(params[0]);
-                                            *node->children[1]->potentialReturnType = *node->potentialReturnType;
-                                            
-                                            chaiscript::eval::Id_AST_Node<Tracer>* idNode = nullptr;
-                                            if (chaiscript::eval::TryGetIdNode<Tracer>(*(node->children[1]), idNode)) {
-                                                *idNode->potentialReturnType = *node->potentialReturnType;
-                                            }
-
-                                            successfulParse = true;
-
-                                            break;
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        break;
-                    }
-                    case AST_Node_Type::Id: {
-                        if (IdsMap && chaiscript::eval::TryGetVariableName(*node, varName)) {
-                            if (IdsMap->count(varName) <= 0) {
-                                if (node->potentialReturnType && (*node->potentialReturnType)) {
-                                    if (!(*node->potentialReturnType)->is_undef() && *(*node->potentialReturnType) != user_type<void>()) {
-                                        IdsMap->operator[](varName) = node->potentialReturnType;
-                                    }
-                                }
-                            }
-                            else {
-                                *node->potentialReturnType = *IdsMap->operator[](varName);
-                                successfulParse = true;
-                            }
-                        }
-                        break;
-                    }
-                    case AST_Node_Type::Array_Call: {
-                        chaiscript::eval::Array_Call_AST_Node<Tracer>* arrayCallNodePointer = dynamic_cast<chaiscript::eval::Array_Call_AST_Node<Tracer>*>(node.get());
-                        if (arrayCallNodePointer) {
-                            auto& potRetType = arrayCallNodePointer->children[0]->potentialReturnType;
-                            if (potRetType && (*potRetType)) {
-                                if ((*potRetType)->is_container_type()) {
-                                    auto& containerTypes = thisEngine->get_containerValueTypes();
-                                    AUTO name = std::string((*potRetType)->name());
-                                    AUTO def = containerTypes.TryGetPtr(name);
-                                    if (def) {
-                                        *arrayCallNodePointer->potentialReturnType = make_shared<Type_Info>(def->value_type_m);
-                                        successfulParse = true;
-                                    }
-                                }
-                            }
-                        }
-                        break;
-                    }
-                    case AST_Node_Type::Assign_Decl: {
-                        chaiscript::eval::Assign_Decl_AST_Node<Tracer>* assignDeclNodePointer = dynamic_cast<chaiscript::eval::Assign_Decl_AST_Node<Tracer>*>(node.get());
-                        if (assignDeclNodePointer) {
-                            *assignDeclNodePointer->children[0]->potentialReturnType = *assignDeclNodePointer->children[1]->potentialReturnType;
-                            successfulParse = true;
-                        }
-                        break;
-                    }
-                    }
-                }
-
-                for (auto& nodes : node->children) {
-                    successfulParse = successfulParse || TryParseReturnType(nodes, nodeType, thisEngine, IdsMap);
-                }
-
-                return successfulParse;
-            }
-#endif
             bool TryParseReturnType(eval::AST_Node_Impl_Ptr<Tracer>& node, AST_Node_Type const& nodeType, const chaiscript::detail::Dispatch_Engine* thisEngine, std::map<std::string, ReturnType>* IdsMap = nullptr) {
                 bool successfulParse = false;
+                constexpr AUTO ObjType = chaiscript::user_type<Boxed_Value>().bare_type_info();
                 if (node->identifier == nodeType) {
                     switch (nodeType) {
                     case AST_Node_Type::Postfix: {
@@ -3376,20 +3186,59 @@ namespace chaiscript {
                         if (funCallNodePointer) {
                             std::pair<size_t, chaiscript::shared_ptr<chaiscript::small_vector<Proxy_Function>>> funcs = thisEngine->get_function(funCallNodePointer->children[0]->text, 0);
                             if (funcs.second) {
-                                for (auto& func : *funcs.second) {
-                                    if (func) {
-                                        const chaiscript::small_vector<Type_Info>& params = func->get_param_types(); // includes the return type
-                                        if (params.size() > 0) {
-                                            node->potentialReturnType.Set(ReturnType(params[0], node->identifier, true));
-                                            node->children[0]->potentialReturnType = node->potentialReturnType;
+                                // attempt 1
+                                if (!successfulParse) {
+                                    for (auto& func : *funcs.second) {
+                                        if (func) {
+                                            if (func->get_arity() >= 0) {
+                                                const chaiscript::small_vector<Type_Info>& params = func->get_param_types(); // includes the return type
+                                                if (params.size() > 0 && !params[0].bare_equal_type_info(*ObjType)) {
+                                                    node->potentialReturnType.Set(ReturnType(params[0], node->identifier, true));
+                                                    node->children[0]->potentialReturnType = node->potentialReturnType;
 
-                                            // node->children[0]->potentialReturnType.ForwardRef(node->potentialReturnType);
-                                            // node->potentialReturnType = ReturnType(params[0], node->identifier, true);      
-                                            successfulParse = true;
-                                            break;
+                                                    // node->children[0]->potentialReturnType.ForwardRef(node->potentialReturnType);
+                                                    // node->potentialReturnType = ReturnType(params[0], node->identifier, true);      
+                                                    successfulParse = true;
+                                                    break;
+                                                }
+                                            }
+                                            else {
+                                                for (auto& F_func : func->get_contained_functions()) {
+                                                    if (F_func) {
+                                                        const chaiscript::small_vector<Type_Info>& params = func->get_param_types(); // includes the return type
+                                                        if (params.size() > 0 && !params[0].bare_equal_type_info(*ObjType)) {
+                                                            node->potentialReturnType.Set(ReturnType(params[0], node->identifier, true));
+                                                            node->children[0]->potentialReturnType = node->potentialReturnType;
+
+                                                            // node->children[0]->potentialReturnType.ForwardRef(node->potentialReturnType);
+                                                            // node->potentialReturnType = ReturnType(params[0], node->identifier, true);      
+                                                            successfulParse = true;
+                                                            break;
+                                                        }
+                                                    }
+                                                }
+                                            }
+
                                         }
                                     }
                                 }
+                                if (!successfulParse) {
+                                    for (auto& func : *funcs.second) {
+                                        if (func) {
+                                            const chaiscript::small_vector<Type_Info>& params = func->get_param_types(); // includes the return type
+                                            if (params.size() > 0) {
+                                                node->potentialReturnType.Set(ReturnType(params[0], node->identifier, true));
+                                                node->children[0]->potentialReturnType = node->potentialReturnType;
+
+                                                // node->children[0]->potentialReturnType.ForwardRef(node->potentialReturnType);
+                                                // node->potentialReturnType = ReturnType(params[0], node->identifier, true);      
+                                                successfulParse = true;
+                                                break;
+                                            }
+                                        }
+                                    }
+                                }
+
                             }
                         }
                         break;

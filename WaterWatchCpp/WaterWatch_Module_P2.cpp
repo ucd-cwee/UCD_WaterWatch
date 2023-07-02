@@ -70,15 +70,21 @@ namespace chaiscript {
             // Engineering
             if (1) {
                 using namespace cwee_units;
-                lib->add(chaiscript::fun([](gallon_per_minute_t Flow_gpm, foot_t Head_feet, scalar_t Efficiency_percent) { return cweeEng::CentrifugalPumpEnergyDemand_kW(Flow_gpm, Head_feet, Efficiency_percent); }), "CentrifugalPumpEnergyDemand_kW");
-                lib->add(chaiscript::fun([](foot_t Diameter_feet) { return cweeEng::SurfaceAreaCircle_ft2(Diameter_feet); }), "SurfaceAreaCircle_ft2");
-                lib->add(chaiscript::fun([](foot_t Diameter_feet, foot_t Height_feet) { return cweeEng::VolumeCylinder_gal(Diameter_feet, Height_feet); }), "VolumeCylinder_gal");
-                lib->add(chaiscript::fun([](gallon_per_minute_t FlowRate_gpm, foot_t Diameter_feet) { return cweeEng::Cylinder_FlowRate_to_LevelRate_fph(FlowRate_gpm, Diameter_feet); }), "Cylinder_FlowRate_to_LevelRate_fph");
-                lib->add(chaiscript::fun([](cubic_foot_t volume, foot_t Diameter_feet) { return cweeEng::Cylinder_Volume_to_Level_f(volume, Diameter_feet); }), "Cylinder_Volume_to_Level_f");
-                lib->add(chaiscript::fun([](foot_t HydraulicHead_feet, foot_t BaseElevation_feet) { return cweeEng::Head_to_Pressure_psi(HydraulicHead_feet, BaseElevation_feet); }), "Head_to_Pressure_psi");
-                lib->add(chaiscript::fun([](feet_per_second_t velocity_ftPerSec, inch_t diameter_inches) { return cweeEng::ReynoldsNumberInPipe(velocity_ftPerSec, diameter_inches); }), "ReynoldsNumberInPipe");
-                lib->add(chaiscript::fun([](feet_per_second_t velocity_ftPerSec, inch_t diameter_inches, float kinematicViscosity_ft2PerSec) { return cweeEng::ReynoldsNumberInPipe(velocity_ftPerSec, diameter_inches, kinematicViscosity_ft2PerSec); }), "ReynoldsNumberInPipe");
-                lib->add(chaiscript::fun(&cweeEng::EquivalentPipeRoughness), "EquivalentPipeRoughness");
+                lib->AddFunction(, CentrifugalPumpEnergyDemand, , return cweeEng::CentrifugalPumpEnergyDemand_kW(Flow_gpm, Head_feet, Efficiency_percent), gallon_per_minute_t Flow_gpm, foot_t Head_feet, scalar_t Efficiency_percent);
+                lib->AddFunction(, SurfaceAreaCircle, , return cweeEng::SurfaceAreaCircle_ft2(Diameter_feet), foot_t Diameter_feet);
+                lib->AddFunction(, VolumeCylinder, , return cweeEng::VolumeCylinder_gal(Diameter_feet, Height_feet), foot_t Diameter_feet, foot_t Height_feet);
+                lib->AddFunction(, Cylinder_FlowRate_to_LevelRate, , return cweeEng::Cylinder_FlowRate_to_LevelRate_fph(FlowRate_gpm, Diameter_feet), gallon_per_minute_t FlowRate_gpm, foot_t Diameter_feet);
+
+                lib->AddFunction(, Cylinder_Volume_to_Level, , return cweeEng::Cylinder_Volume_to_Level_f(volume, Diameter_feet), cubic_foot_t volume, foot_t Diameter_feet);
+                lib->AddFunction(, Head_to_Pressure, , return cweeEng::Head_to_Pressure_psi(HydraulicHead_feet, BaseElevation_feet), foot_t HydraulicHead_feet, foot_t BaseElevation_feet);
+                lib->AddFunction(, ReynoldsNumberInPipe, , return cweeEng::ReynoldsNumberInPipe(velocity_ftPerSec, diameter_inches), feet_per_second_t velocity_ftPerSec, inch_t diameter_inches);
+
+                lib->AddFunction(, ReynoldsNumberInPipe, , return cweeEng::ReynoldsNumberInPipe(velocity_ftPerSec, diameter_inches, kinematicViscosity_ft2PerSec), feet_per_second_t velocity_ftPerSec, inch_t diameter_inches, float kinematicViscosity_ft2PerSec);
+                lib->AddFunction(, EquivalentPipeRoughness, , return cweeEng::Cylinder_Volume_to_Level_f(volume, Diameter_feet), cubic_foot_t volume, foot_t Diameter_feet);
+                
+                lib->add(chaiscript::fun(&cweeEng::EquivalentPipeRoughness, 
+                    { "desiredDiameter", "pipe1_length", "pipe2_length", "pipe1_diameter", "pipe2_diameter", "pipe1_roughness", "pipe2_roughness" }
+                ), "EquivalentPipeRoughness");
 
 #if 0
                 using namespace cweeEng;
@@ -190,11 +196,40 @@ namespace chaiscript {
 
             // Geocoding
             if (1) {
-                lib->add(chaiscript::fun([](double X, double Y) { return cwee_units::length::foot_t(geocoding->GetElevation(vec2d(X, Y))); }), "GetElevation");
-                lib->add(chaiscript::fun([](cweeStr const& address) { auto v = geocoding->GetLongLat(address); return cweePair<double, double>(v.x, v.y); }), "GetLongLat");
-                lib->add(chaiscript::fun([](double X, double Y) { auto v = geocoding->GetLongLat(X, Y); return cweePair<double, double>(v.x, v.y); }), "GetLongLat");
-                lib->add(chaiscript::fun([](double X, double Y) { return geocoding->GetAddress(vec2d(X, Y)); }), "GetAddress");
-                lib->add(chaiscript::fun([](double X1, double Y1, double X2, double Y2) { return geocoding->Distance(vec2d(X1, Y1), vec2d(X2, Y2)); }), "Distance");
+                lib->add(chaiscript::fun([](double X, double Y) { return cwee_units::length::foot_t(geocoding->GetElevation(vec2d(X, Y))); }, {"Longitude", "Latitude"}), "GetElevation");
+                lib->add(chaiscript::fun([](cweeStr const& address) { auto v = geocoding->GetLongLat(address); return cweePair<double, double>(v.x, v.y); }, { "Address" }), "GetLongLat");
+                // lib->add(chaiscript::fun([](double X, double Y) { auto v = geocoding->GetLongLat(X, Y); return cweePair<double, double>(v.x, v.y); }, { "Easting_ft", "Northing_ft" }), "GetLongLat");
+               
+                lib->AddFunction(, GetLongLat, , SINGLE_ARG(if (true) {
+                    auto v = geocoding->GetLongLat(easting(), northing(), centralMeridian, LatFirstStandardParallel, LatSecondStandardParallel, LatOrigin, FalseNorthing, FalseEasting); return cweePair<double, double>(v.x, v.y);
+                }), cwee_units::length::foot_t easting, cwee_units::length::foot_t northing, double centralMeridian, double LatFirstStandardParallel, double LatSecondStandardParallel, double LatOrigin, double FalseNorthing, double FalseEasting);
+
+                lib->AddFunction(, GetLongLat, , SINGLE_ARG(if (true) {
+                    auto v = geocoding->GetLongLat(easting(), northing(), centralMeridian, LatFirstStandardParallel, LatSecondStandardParallel, LatOrigin, FalseNorthing); return cweePair<double, double>(v.x, v.y);
+                }), cwee_units::length::foot_t easting, cwee_units::length::foot_t northing, double centralMeridian, double LatFirstStandardParallel, double LatSecondStandardParallel, double LatOrigin, double FalseNorthing);
+
+                lib->AddFunction(, GetLongLat, , SINGLE_ARG(if (true) {
+                    auto v = geocoding->GetLongLat(easting(), northing(), centralMeridian, LatFirstStandardParallel, LatSecondStandardParallel, LatOrigin); return cweePair<double, double>(v.x, v.y);
+                }), cwee_units::length::foot_t easting, cwee_units::length::foot_t northing, double centralMeridian, double LatFirstStandardParallel, double LatSecondStandardParallel, double LatOrigin);
+
+                lib->AddFunction(, GetLongLat, , SINGLE_ARG(if (true) {
+                    auto v = geocoding->GetLongLat(easting(), northing(), centralMeridian, LatFirstStandardParallel, LatSecondStandardParallel); return cweePair<double, double>(v.x, v.y);
+                }), cwee_units::length::foot_t easting, cwee_units::length::foot_t northing, double centralMeridian, double LatFirstStandardParallel, double LatSecondStandardParallel);
+
+                lib->AddFunction(, GetLongLat, , SINGLE_ARG(if (true) {
+                    auto v = geocoding->GetLongLat(easting(), northing(), centralMeridian, LatFirstStandardParallel); return cweePair<double, double>(v.x, v.y);
+                }), cwee_units::length::foot_t easting, cwee_units::length::foot_t northing, double centralMeridian, double LatFirstStandardParallel);
+
+                lib->AddFunction(, GetLongLat, , SINGLE_ARG(if (true) {
+                    auto v = geocoding->GetLongLat(easting(), northing(), centralMeridian); return cweePair<double, double>(v.x, v.y);
+                }), cwee_units::length::foot_t easting, cwee_units::length::foot_t northing, double centralMeridian);
+
+                lib->AddFunction(, GetLongLat, , SINGLE_ARG(if (true) {
+                    auto v = geocoding->GetLongLat(easting(), northing()); return cweePair<double, double>(v.x, v.y);
+                }), cwee_units::length::foot_t easting, cwee_units::length::foot_t northing);
+
+                lib->add(chaiscript::fun([](double X, double Y) { return geocoding->GetAddress(vec2d(X, Y)); }, { "Longitude", "Latitude" }), "GetAddress");
+                lib->add(chaiscript::fun([](double X1, double Y1, double X2, double Y2) { return geocoding->Distance(vec2d(X1, Y1), vec2d(X2, Y2)); }, { "Longitude1", "Latitude1", "Longitude2", "Latitude2" }), "Distance");
             }
 
             // Patterns
@@ -229,7 +264,7 @@ namespace chaiscript {
                     }), "=");
 
                 ADD_BETTER_ENUM_TO_SCRIPT_ENGINE(interpolation_t, interpolation_t);
-                lib->add(chaiscript::fun([](cweeUnitPattern& a, const interpolation_t& b) { a.SetInterpolationType(b); }), "SetInterpolationType");
+                lib->AddFunction(, SetInterpolationType, , a.SetInterpolationType(interpType); , cweeUnitPattern& a, const interpolation_t& interpType);
                 lib->add(chaiscript::fun([](cweeUnitPattern& a) { return a.GetInterpolationType(); }), "GetInterpolationType");
 
                 ADD_BETTER_ENUM_TO_SCRIPT_ENGINE(boundary_t, boundary_t);

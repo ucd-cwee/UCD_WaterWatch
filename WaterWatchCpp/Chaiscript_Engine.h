@@ -129,31 +129,35 @@ namespace chaiscript {
 
             m_engine.add(fun([this](const dispatch::Proxy_Function_Base* func) { 
                 std::map<std::string, Boxed_Value> out;
-                const chaiscript::small_vector<Type_Info>& inputFuncTypes = func->get_param_types();
-                if (inputFuncTypes.size() >= 1) {
-                    const Type_Info& TheType = inputFuncTypes[0];
-                    const Type_Conversions_State convs(m_engine.conversions(), m_engine.conversions().conversion_saves());
 
-                    std::map<std::string, Boxed_Value> functions = m_engine.get_function_objects();
-                    const auto boxed_value_ti = user_type<Boxed_Value>();
-                    for (auto& x : functions) {
-                        auto& funcName = x.first;
-                        AUTO f = chaiscript::boxed_cast<chaiscript::shared_ptr<const dispatch::Proxy_Function_Base>>(x.second);
-                        if (f) {
-                            AUTO funcs = f->get_contained_functions();
-                            funcs.push_back(f);
-                            for (chaiscript::shared_ptr<const dispatch::Proxy_Function_Base> ff : funcs) {
-                                if (ff) {
-                                    const chaiscript::small_vector<Type_Info>& resultFuncTypes = ff->get_param_types();
-                                    if (resultFuncTypes.size() >= 2) {
-                                        const Type_Info& inputParam1 = resultFuncTypes[1];
-                                        if (inputParam1.is_undef() || inputParam1.bare_equal(boxed_value_ti)) { //  || inputParam1.name() == ""
-                                            // anything could match with this... it kinda isn't fair and should be skipped
-                                            continue;
-                                        }
-                                        else {
-                                            if (dispatch::Proxy_Function_Base::compare_type_to_type(inputParam1, TheType, convs)) {
-                                                out[funcName] = chaiscript::var(ff);
+                if (func->get_arity() >= 0) {
+
+                    const chaiscript::small_vector<Type_Info>& inputFuncTypes = func->get_param_types();
+                    if (inputFuncTypes.size() >= 1) {
+                        const Type_Info& TheType = inputFuncTypes[0];
+                        const Type_Conversions_State convs(m_engine.conversions(), m_engine.conversions().conversion_saves());
+
+                        std::map<std::string, Boxed_Value> functions = m_engine.get_function_objects();
+                        const auto boxed_value_ti = user_type<Boxed_Value>();
+                        for (auto& x : functions) {
+                            auto& funcName = x.first;
+                            AUTO f = chaiscript::boxed_cast<chaiscript::shared_ptr<const dispatch::Proxy_Function_Base>>(x.second);
+                            if (f) {
+                                AUTO funcs = f->get_contained_functions();
+                                funcs.push_back(f);
+                                for (chaiscript::shared_ptr<const dispatch::Proxy_Function_Base> ff : funcs) {
+                                    if (ff) {
+                                        const chaiscript::small_vector<Type_Info>& resultFuncTypes = ff->get_param_types();
+                                        if (resultFuncTypes.size() >= 2) {
+                                            const Type_Info& inputParam1 = resultFuncTypes[1];
+                                            if (inputParam1.is_undef() || inputParam1.bare_equal(boxed_value_ti)) { //  || inputParam1.name() == ""
+                                                // anything could match with this... it kinda isn't fair and should be skipped
+                                                continue;
+                                            }
+                                            else {
+                                                if (dispatch::Proxy_Function_Base::compare_type_to_type(inputParam1, TheType, convs)) {
+                                                    out[funcName] = chaiscript::var(ff);
+                                                }
                                             }
                                         }
                                     }
@@ -161,7 +165,53 @@ namespace chaiscript {
                             }
                         }
                     }
+
                 }
+                else {
+                    for (auto& internalFunc : func->get_contained_functions()) {
+
+                        const chaiscript::small_vector<Type_Info>& inputFuncTypes = internalFunc->get_param_types();
+                        if (inputFuncTypes.size() >= 1) {
+                            const Type_Info& TheType = inputFuncTypes[0];
+                            const Type_Conversions_State convs(m_engine.conversions(), m_engine.conversions().conversion_saves());
+
+                            std::map<std::string, Boxed_Value> functions = m_engine.get_function_objects();
+                            const auto boxed_value_ti = user_type<Boxed_Value>();
+                            for (auto& x : functions) {
+                                auto& funcName = x.first;
+                                AUTO f = chaiscript::boxed_cast<chaiscript::shared_ptr<const dispatch::Proxy_Function_Base>>(x.second);
+                                if (f) {
+                                    AUTO funcs = f->get_contained_functions();
+                                    funcs.push_back(f);
+                                    for (chaiscript::shared_ptr<const dispatch::Proxy_Function_Base> ff : funcs) {
+                                        if (ff) {
+                                            const chaiscript::small_vector<Type_Info>& resultFuncTypes = ff->get_param_types();
+                                            if (resultFuncTypes.size() >= 2) {
+                                                const Type_Info& inputParam1 = resultFuncTypes[1];
+                                                if (inputParam1.is_undef() || inputParam1.bare_equal(boxed_value_ti)) { //  || inputParam1.name() == ""
+                                                    // anything could match with this... it kinda isn't fair and should be skipped
+                                                    continue;
+                                                }
+                                                else {
+                                                    if (dispatch::Proxy_Function_Base::compare_type_to_type(inputParam1, TheType, convs)) {
+                                                        out[funcName] = chaiscript::var(ff);
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+
+
+
+
+                    }
+                }
+
+
 
                 return out;
                 }, { "func" }), "get_compatible_functions"); // returns the functions that could be reasonably accessed by a dot accessor
