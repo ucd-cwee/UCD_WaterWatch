@@ -296,6 +296,31 @@ namespace chaiscript {
 
             std::string get_description() const noexcept { return descriptor; };
             void set_description(const std::string& newDescription) const noexcept { descriptor = newDescription; };
+            const std::vector<std::string>& get_parameterNames() const noexcept { return parameterNames; };
+            void set_parameterNames(const std::vector<std::string>& newParamNames) const noexcept { parameterNames = newParamNames; };
+
+            std::string get_ParameterName(int which) const noexcept {
+                if (which < parameterNames.size()) return parameterNames[which];
+                else return cweeStr::printf("param%i", which).c_str();
+            };
+            void RegenerateDefaultDescription() {
+                descriptor = "";
+                if (m_types.size() > 0) {
+                    cweeStr description_p1 = m_types[0].name();
+                    cweeStr description_p2;
+                    for (size_t i = 1; i < m_types.size(); ++i) {
+                        cweeStr description_p21 = m_types[i].name();
+                        auto paramName = get_ParameterName(i - 1);
+                        if (paramName.size() <= 0) {
+                            description_p2.AddToDelimiter(description_p21, ", ");
+                        }
+                        else {
+                            description_p2.AddToDelimiter(cweeStr::printf("%s %s", description_p21.c_str(), paramName.c_str()), ", ");
+                        }                        
+                    }
+                    descriptor = cweeStr::printf("%s = (%s)", description_p1.c_str(), description_p2.c_str());
+                }
+            };
 
         protected:
             virtual Boxed_Value do_call(const Function_Params& params, const Type_Conversions_State& t_conversions) const = 0;
@@ -305,22 +330,9 @@ namespace chaiscript {
                 , m_arity(t_arity)
                 , m_has_arithmetic_param(false) 
                 , descriptor()
+                , parameterNames()
             {                
-                descriptor = "";
-                if (m_types.size() > 0) {
-                    descriptor = m_types[0].name();
-                    descriptor += "(";
-                    for (size_t i = 1; i < m_types.size(); ++i) {
-                        descriptor += m_types[i].name();
-                        break;
-                    }
-                    for (size_t i = 2; i < m_types.size(); ++i) {
-                        descriptor += ", ";
-                        descriptor += m_types[i].name();
-                    }
-                    descriptor += ")";
-                }
-               
+                RegenerateDefaultDescription();
                 for (size_t i = 1; i < m_types.size(); ++i) {
                     if (m_types[i].is_arithmetic()) {
                         m_has_arithmetic_param = true;
@@ -348,6 +360,7 @@ namespace chaiscript {
             int m_arity;
             bool m_has_arithmetic_param;
             mutable std::string descriptor;
+            mutable std::vector<std::string> parameterNames;
         };
 
         template<typename FunctionType> std::function<FunctionType> functor(chaiscript::shared_ptr<const Proxy_Function_Base> func, const Type_Conversions_State* t_conversions);

@@ -98,6 +98,37 @@ public:
 	void ParseFirstDelimiterOnly(const cweeStr& text, const cweeStr& delimiter) {
 		processTextFast_FirstDelimiterOnly(text, delimiter);
 	};
+	std::vector<std::string> GetEveryOtherVar() const {
+		std::vector<std::string> out;
+		for (int i = 1; i < getNumVars(); i += 2) {
+			out.push_back(argV[i].c_str());
+		}
+		return out;
+	};
+
+	cweeParser& Trim(char c) {
+		for (auto& x : argV) {
+			x.Strip(c);
+		}
+		return *this;
+	};
+	cweeParser& ReplaceInline(cweeStr old, cweeStr n) {
+		for (auto& x : argV) {
+			x.ReplaceInline(old, n);
+		}
+		return *this;
+	};
+	cweeParser SplitAgain(cweeStr delim) const {
+		cweeParser out;
+		for (auto& x : *this) {
+			cweeParser temp;
+			temp.Parse(x, delim, true);
+			for (auto& y : temp) {
+				out.argV.Append(y);
+			}
+		}
+		return out;
+	};
 	int getNumVars() { return argV.Num(); }
 	int getNumVars() const { return argV.Num(); }
 	//cweeStr getVar(int i) { if (i < argV.Num()) return argV[i]; else return ""; }

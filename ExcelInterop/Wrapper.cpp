@@ -285,11 +285,6 @@ bool ExcelCell::is_merged() const {
     xlnt::cell& ThisCell = To_Cell(*this);
     return ThisCell.is_merged();
 };
-void ExcelCell::merged(bool merged) {
-    using namespace xlnt;
-    xlnt::cell& ThisCell = To_Cell(*this);
-    return ThisCell.merged(merged);
-};
 cweeStr ExcelCell::error() const {
     using namespace xlnt;
     xlnt::cell& ThisCell = To_Cell(*this);

@@ -1410,6 +1410,7 @@ namespace chaiscript {
                         },
                         static_cast<int>(numparams),
                             m_guard_node);
+                    guard->set_parameterNames(t_param_names);
                 }
 
                 try {
@@ -1422,15 +1423,16 @@ namespace chaiscript {
                     }
 
                     const std::string& l_function_name = this->children[0]->text;
-                    t_ss->add(dispatch::make_dynamic_proxy_function(
+                    AUTO funcPtr = dispatch::make_dynamic_proxy_function(
                         [engine, func_node = m_body_node, t_param_names](const Function_Params& t_params) {
                             return detail::eval_function(engine, *func_node, t_param_names, t_params);
                         },
                         static_cast<int>(numparams),
                             m_body_node,
                             param_types,
-                            guard),
-                        l_function_name);
+                            guard);
+                    funcPtr->set_parameterNames(t_param_names);
+                    t_ss->add(funcPtr, l_function_name);
                 }
                 catch (const exception::name_conflict_error& e) {
                     throw exception::eval_error("Function redefined '" + e.name() + "'");
@@ -2456,17 +2458,16 @@ namespace chaiscript {
                     if (function_name == class_name) {
                         param_types.push_front(class_name, Type_Info());
 
-                        t_ss->add(chaiscript::make_shared<dispatch::detail::Dynamic_Object_Constructor>(
-                            class_name,
-                            dispatch::make_dynamic_proxy_function(
-                                [engine, t_param_names, node = m_body_node](const Function_Params& t_params) {
-                                    return chaiscript::eval::detail::eval_function(engine, *node, t_param_names, t_params);
-                                },
-                                static_cast<int>(numparams),
-                                    m_body_node,
-                                    param_types,
-                                    guard)),
-                            function_name);
+                        AUTO funcPtr = dispatch::make_dynamic_proxy_function(
+                            [engine, t_param_names, node = m_body_node](const Function_Params& t_params) {
+                                return chaiscript::eval::detail::eval_function(engine, *node, t_param_names, t_params);
+                            },
+                            static_cast<int>(numparams),
+                                m_body_node,
+                                param_types,
+                                guard);
+                        funcPtr->set_parameterNames(t_param_names);
+                        t_ss->add(chaiscript::make_shared<dispatch::detail::Dynamic_Object_Constructor>( class_name, funcPtr ), function_name);
 
                     }
                     else {
@@ -2474,17 +2475,18 @@ namespace chaiscript {
                         // at runtime. Defining the type first before this is called is better
                         auto type = t_ss->get_type(class_name, false);
                         param_types.push_front(class_name, type);
-
+                        AUTO funcPtr = dispatch::make_dynamic_proxy_function(
+                            [engine, t_param_names, node = m_body_node](const Function_Params& t_params) {
+                                return chaiscript::eval::detail::eval_function(engine, *node, t_param_names, t_params);
+                            },
+                            static_cast<int>(numparams),
+                                m_body_node,
+                                param_types,
+                                guard);
+                        funcPtr->set_parameterNames(t_param_names);
                         t_ss->add(chaiscript::make_shared<dispatch::detail::Dynamic_Object_Function>(
                             class_name,
-                            dispatch::make_dynamic_proxy_function(
-                                [engine, t_param_names, node = m_body_node](const Function_Params& t_params) {
-                                    return chaiscript::eval::detail::eval_function(engine, *node, t_param_names, t_params);
-                                },
-                                static_cast<int>(numparams),
-                                    m_body_node,
-                                    param_types,
-                                    guard),
+                            funcPtr,
                             type),
                             function_name);
                     }

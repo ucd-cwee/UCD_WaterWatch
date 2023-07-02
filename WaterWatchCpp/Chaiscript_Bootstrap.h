@@ -25,6 +25,9 @@ namespace chaiscript::bootstrap {
         using ReturnType = typename std::remove_extent<T>::type;
 
         m.add(user_type<T>(), type);
+
+
+
         m.add(fun([](T& t, size_t index) -> ReturnType& {
             constexpr const auto extent = std::extent<T>::value;
             if (extent > 0 && index >= extent) {

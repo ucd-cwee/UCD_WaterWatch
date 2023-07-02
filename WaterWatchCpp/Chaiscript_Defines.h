@@ -17,6 +17,8 @@ to maintain a single distribution point for the source code.
 
 #pragma once
 #include "Precompiled.h"
+#include "Strings.h"
+#include "Parser.h"
 
 #ifdef _MSC_VER
 #define CHAISCRIPT_STRINGIZE(x) "" #x
@@ -24,6 +26,8 @@ to maintain a single distribution point for the source code.
 #define CHAISCRIPT_COMPILER_VERSION CHAISCRIPT_STRINGIZE_EXPANDED(_MSC_FULL_VER)
 #define CHAISCRIPT_MSVC _MSC_VER
 #define CHAISCRIPT_HAS_DECLSPEC
+
+#define AddFunction(captures, name, returns, todo, ...) add(fun([captures](__VA_ARGS__) returns { todo; }, cweeStr(#__VA_ARGS__).RemoveBetween("<", ">").ReplaceInline("*", " ").ReplaceInline(" const", " ").ReplaceInline("const ", " ").ReplaceInline("&", " ").ReplaceInline("  ", " ").ReplaceInline("  ", " ").ReplaceInline("  ", " ").Split(",").Trim(' ').ReplaceInline("  ", " ").SplitAgain(" ").Trim(' ').GetEveryOtherVar()), #name)
 
 static_assert(_MSC_FULL_VER >= 190024210, "Visual C++ 2015 Update 3 or later required");
 

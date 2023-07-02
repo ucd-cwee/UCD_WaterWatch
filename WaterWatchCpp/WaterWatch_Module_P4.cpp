@@ -389,7 +389,17 @@ namespace chaiscript {
                             for (int i = 1; i < x.size(); i++) {
                                 t.push_back(chaiscript::Boxed_Value(x[i]));
                             }
-                            out[std::string("params")] = chaiscript::Boxed_Value(t);
+                            out[std::string("params")] = var(std::move(t));
+                        }
+                        if (x.size() > 1) {
+                            std::vector<chaiscript::Boxed_Value> t2;
+                            for (int i = 1; i < x.size(); i++) {
+                                std::string paramName = func->get_ParameterName(i - 1);
+                                if (paramName.size() >= 1) {
+                                    t2.push_back(var(std::string(paramName)));
+                                }                                
+                            }
+                            out[std::string("paramNames")] = var(std::move(t2));
                         }
                         return out;
                     }), "get");

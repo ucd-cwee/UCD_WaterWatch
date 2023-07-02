@@ -331,13 +331,6 @@ public:
     bool is_merged() const;
 
     /// <summary>
-    /// Makes this a merged cell iff merged is true.
-    /// Generally, this shouldn't be called directly. Instead,
-    /// use worksheet::merge_cells on its parent worksheet.
-    /// </summary>
-    void merged(bool merged);
-
-    /// <summary>
     /// Returns the error string that is stored in this cell.
     /// </summary>
     cweeStr error() const;

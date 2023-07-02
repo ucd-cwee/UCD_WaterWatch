@@ -775,7 +775,7 @@ namespace UWP_WaterWatch.Custom_Controls
             private string _bestMatch = "";
 
             public string written = "";
-
+            public string TypeHint = "";
             public ListView tips = new ListView() {
                 AllowFocusOnInteraction = false,
                 MaxHeight = 200,
@@ -933,7 +933,32 @@ namespace UWP_WaterWatch.Custom_Controls
                 {
                     if (ftm != null)
                     {
-                        string toWrite = ftm.GetCurrentMatch().Right(ftm.GetCurrentMatch().Length - ftm.written.Length);
+                        List<string> ParamNames = new List<string>();
+                        string CurrentMatch = ftm.GetCurrentMatch();
+                        if (!string.IsNullOrEmpty(ftm.TypeHint))
+                        {
+                            // dot access
+                            ParamNames = vm.ParentVM.ParentVM.engine.DoScript_Cast_VectorStrings($"{CurrentMatch}.get_function_param_names(\"{ftm.TypeHint}\")");
+                        }
+                        else
+                        {
+                            // free function
+                            ParamNames = vm.ParentVM.ParentVM.engine.DoScript_Cast_VectorStrings($"{CurrentMatch}.get_function_param_names()");
+                        }
+
+                        string toWrite = CurrentMatch.Right(CurrentMatch.Length - ftm.written.Length);
+                        if (ParamNames.Count > 0)
+                        {
+                            string vv = "";
+                            toWrite += "(";
+                            foreach (var x in ParamNames)
+                            {
+                                vv = vv.AddToDelimiter(x, ", ");
+                            }
+                            toWrite += vv;
+                            toWrite += ")";
+                        }
+
                         HideAllFunctionTips();
                         e.Handled = true;
                         tb.Document.Selection.TypeText(toWrite);
@@ -1025,7 +1050,7 @@ namespace UWP_WaterWatch.Custom_Controls
                                     if (funcs.Count > 0) {
                                         EdmsTasks.InsertJob(() => {
                                             HideAllFunctionTips();
-                                            ftm = new FunctionTipManager() { orig_functions = funcs, written = "", AssociatedScriptNode = vm.ParentVM.uniqueName };
+                                            ftm = new FunctionTipManager() { orig_functions = funcs, written = "", AssociatedScriptNode = vm.ParentVM.uniqueName, TypeHint = node.typeHint };
                                             ftm.UpdateTips();
                                             var TeachingTip = CreateFunctionTip(ftm.tips, ftm, node.typeHint);
                                         }, true, true);
@@ -1041,7 +1066,7 @@ namespace UWP_WaterWatch.Custom_Controls
                                         if (funcs.Count > 0) {
                                             EdmsTasks.InsertJob(() => {
                                                 HideAllFunctionTips();
-                                                ftm = new FunctionTipManager() { orig_functions = funcs, written = "", AssociatedScriptNode = vm.ParentVM.uniqueName };
+                                                ftm = new FunctionTipManager() { orig_functions = funcs, written = "", AssociatedScriptNode = vm.ParentVM.uniqueName, TypeHint = node.text };
                                                 ftm.UpdateTips();
                                                 var TeachingTip = CreateFunctionTip(ftm.tips, ftm, node.text);
                                             }, true, true);

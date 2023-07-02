@@ -169,8 +169,8 @@ namespace chaiscript {
 
             // BASIC COUT 
             if (1) {
-                lib->add(chaiscript::fun([](const std::string& str) { std::cout << str << std::endl; }), "cout");
-                lib->add(chaiscript::fun([](const cweeStr& str) { std::cout << str << std::endl; }), "cout");
+                lib->AddFunction(, cout, , std::cout << str << std::endl; , const std::string& str);
+                lib->AddFunction(, cout, , std::cout << str << std::endl;, const cweeStr & str);
             }
 
             // CLOCK
@@ -183,9 +183,10 @@ namespace chaiscript {
                 AddBasicClassTemplate(Stopwatch);
                 lib->add(chaiscript::fun([](Stopwatch const& a) { return std::string(cweeStr(a.Seconds_Passed()) + "s"); }), "to_string");
                 lib->add(chaiscript::fun(&Stopwatch::Start), "Start");
-                lib->add(chaiscript::fun(&Stopwatch::Stop), "Stop");
-                lib->add(chaiscript::fun(&Stopwatch::Seconds_Passed), "Seconds_Passed");
-                lib->add(chaiscript::fun(&Stopwatch::Nanoseconds_Passed), "Nanoseconds_Passed");
+                lib->AddFunction(, Stop, -> units::time::second_t, using namespace cwee_units; units::time::nanosecond_t x; x = (float)stopwatch.Stop(); return x; , Stopwatch& stopwatch);
+                lib->AddFunction(, Duration, -> units::time::second_t, using namespace cwee_units; units::time::second_t x; x = (float)stopwatch.Seconds_Passed(); return x;, const Stopwatch& stopwatch);
+                lib->AddFunction(, Seconds_Passed, -> units::time::second_t, using namespace cwee_units; units::time::second_t x; x = (float)stopwatch.Seconds_Passed(); return x; , const Stopwatch& stopwatch);
+                lib->AddFunction(, Nanoseconds_Passed, -> units::time::nanosecond_t, using namespace cwee_units; units::time::nanosecond_t x; x = (float)stopwatch.Nanoseconds_Passed(); return x; , const Stopwatch& stopwatch);
             }
 
             // DispatchTimer
@@ -196,7 +197,7 @@ namespace chaiscript {
                         func();
                         }, t_func));
                     return out;
-                    }), "DispatchTimer");         // do something on-queue until the timer goes out-of-scope 
+                    }, {"millisecondsBetween", "t_func"}), "DispatchTimer");         // do something on-queue until the timer goes out-of-scope 
             }
 
             // number to number operators
@@ -316,21 +317,23 @@ namespace chaiscript {
                 lib->add(chaiscript::fun(&cweeStr::Empty), "Empty");
                 lib->add(chaiscript::fun(&cweeStr::IsEmpty), "IsEmpty");
                 lib->add(chaiscript::fun(&cweeStr::Clear), "Clear");
-                lib->add(chaiscript::fun([](cweeStr& a) { a.ToLower(); return a; }), "ToLower");
-                lib->add(chaiscript::fun([](cweeStr& a) { a.ToUpper(); return a; }), "ToUpper");
+
+                lib->AddFunction(, ToLower, , a.ToLower(); return a;, cweeStr& a);
+                lib->AddFunction(, ToUpper, , a.ToUpper(); return a; , cweeStr& a);
                 lib->add(chaiscript::fun([](cweeStr& a) { return a.IsNumeric(); }), "IsNumeric");
                 lib->add(chaiscript::fun([](cweeStr& a, cweeStr const& b) { return a.Find(b, true); }), "Find");
                 lib->add(chaiscript::fun([](cweeStr& a, cweeStr const& b) { return a.Find(b, false); }), "iFind");
                 lib->add(chaiscript::fun([](cweeStr& a, cweeStr const& b) { return a.rFind(b, true); }), "rFind");
                 lib->add(chaiscript::fun([](cweeStr& a, cweeStr const& b) { return a.rFind(b, false); }), "riFind");
-                lib->add(chaiscript::fun([](cweeStr& a, const int& N) { return a.Left(N); }), "Left");
-                lib->add(chaiscript::fun([](cweeStr& a, const int& N) { return a.Right(N); }), "Right");
-                lib->add(chaiscript::fun([](cweeStr& a, const int& start, const int& N) { return a.Mid(start, N); }), "Mid");
+                lib->AddFunction(, Left, , return a.Left(num); return a;, cweeStr& a, int num);
+                lib->AddFunction(, Right, , return a.Right(num); return a; , cweeStr& a, int num);
+                lib->AddFunction(, Mid, , return a.Mid(start, num); return a;, cweeStr& a, int start, int num);
                 lib->add(chaiscript::fun(&cweeStr::ReduceSpaces), "ReduceSpaces");
-                lib->add(chaiscript::fun([](cweeStr& a, cweeStr const& b, cweeStr const& c) { a.Replace(b, c); return a; }), "Replace");
+
+                lib->AddFunction(, Replace, , return a.ReplaceInline(findWhat, replaceWith);, cweeStr& a, cweeStr const& findWhat, cweeStr const& replaceWith);
                 lib->add(chaiscript::fun(&cweeStr::ReturnNumeric), "ReturnNumeric");
 
-                lib->add(chaiscript::fun([](cweeStr& a, cweeStr const& b, cweeStr const& c) { return a.AddToDelimiter(b, c); }), "AddToDelimiter");
+                lib->AddFunction(, AddToDelimiter, , return a.AddToDelimiter(add, delim); , cweeStr& a, cweeStr const& add, cweeStr const& delim);
                 lib->add(chaiscript::fun([](cweeStr& a) { return cweeStr::Hash(a); }), "Hash");
 
                 lib->add(chaiscript::fun(&cweeStr::Levenshtein), "Levenshtein");
@@ -437,8 +440,10 @@ namespace chaiscript {
                     lib->add(chaiscript::fun([](float a, float b) { return cweeMath::roundNearest(a, b); }), "Round");
                     lib->add(chaiscript::fun([](float a) { return cweeMath::roundDownNearest(a, 1); }), "RoundDown");
                     lib->add(chaiscript::fun([](float a, float b) { return cweeMath::roundDownNearest(a, b); }), "RoundDown");
-                    lib->add(chaiscript::fun([](float a, float b, float c) { return cweeMath::Lerp(a, b, c); }), "Lerp");
-                    lib->add(chaiscript::fun([](double& currentAverage, const double& newSample, int& numSamples) { cweeMath::rollingAverageRef<double>(currentAverage, newSample, numSamples); return currentAverage; }), "RollingAverage");
+
+
+                    lib->AddFunction(, Lerp, , return cweeMath::Lerp<float>(from, to, by); , float from, float to, float by);
+                    lib->AddFunction(, RollingAverage, , cweeMath::rollingAverageRef<double>(currentAverage, newSample, numSamples); return currentAverage; , double& currentAverage, const double& newSample, int& numSamples);
 
                     lib->add(chaiscript::fun(cweeMath::roundNearest), "roundNearest");
                     lib->add(chaiscript::fun(cweeMath::roundDownNearest), "roundDownNearest");

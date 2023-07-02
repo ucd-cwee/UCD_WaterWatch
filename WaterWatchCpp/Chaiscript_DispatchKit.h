@@ -1960,6 +1960,10 @@ namespace chaiscript {
             void add_function(const Proxy_Function& t_f, const std::string& t_name, const std::string& t_descriptor = "") {
                 AUTO shared_guard = GUARD();
 
+                if (t_descriptor.size() > 0) {
+                    t_f->set_description(t_descriptor);
+                }
+
                 Proxy_Function new_func = [&]() -> Proxy_Function {
                     auto& funcs = get_functions_int();
                     auto itr = funcs.find(t_name);
@@ -1992,7 +1996,8 @@ namespace chaiscript {
 #ifndef CHAISCRIPT_ALLOW_NAME_CONFLICTS
                                 throw chaiscript::exception::name_conflict_error(t_name);
 #else
-                                return t_f;
+                                return func;
+                                // return t_f;
 #endif
                             }
                         }
@@ -2019,6 +2024,8 @@ namespace chaiscript {
                         funcs.insert(std::pair{ t_name, chaiscript::make_shared<chaiscript::small_vector<Proxy_Function>>(vec) });
 
                         chaiscript::shared_ptr< Dispatch_Function> sp = chaiscript::make_shared<Dispatch_Function>(std::move(vec));
+                        sp->set_parameterNames(t_f->get_parameterNames());
+
                         return sp;
                     }
                     else {
@@ -2028,7 +2035,6 @@ namespace chaiscript {
                         return t_f;
                     }
                 }();
-                t_f->set_description(t_descriptor);
                 get_boxed_functions_int().insert_or_assign(t_name, const_var(new_func));
                 get_function_objects_int().insert_or_assign(t_name, std::move(new_func));
             }

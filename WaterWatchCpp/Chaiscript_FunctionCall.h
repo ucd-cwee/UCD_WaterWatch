@@ -455,6 +455,32 @@ namespace chaiscript {
         return dispatch::detail::make_callable(std::forward<T>(t), dispatch::detail::function_signature(t));
     }
 
+    /// \brief Creates a new Proxy_Function object from a free function, member function or data member
+    /// \param[in] t Function / member to expose
+    ///
+    /// \b Example:
+    /// \code
+    /// int myfunction(const std::string &);
+    /// class MyClass
+    /// {
+    ///   public:
+    ///     void memberfunction();
+    ///     int memberdata;
+    /// };
+    ///
+    /// chaiscript::ChaiScript chai;
+    /// chai.add(fun(&myfunction), "myfunction");
+    /// chai.add(fun(&MyClass::memberfunction), "memberfunction");
+    /// chai.add(fun(&MyClass::memberdata), "memberdata");
+    /// \endcode
+    ///
+    /// \sa \ref adding_functions
+    template<typename T> Proxy_Function fun(T&& t, std::vector<std::string> const& parameterNames) {
+        Proxy_Function out = dispatch::detail::make_callable(std::forward<T>(t), dispatch::detail::function_signature(t));        
+        out->set_parameterNames(parameterNames);
+        return out;
+    }
+
     //template<typename T>
     //Proxy_Function attr_fun(T&& t) {
     //    return dispatch::detail::make_callable_attr(std::forward<T>(t), dispatch::detail::function_signature(t));

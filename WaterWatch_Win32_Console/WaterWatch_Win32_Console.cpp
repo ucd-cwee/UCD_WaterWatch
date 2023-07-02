@@ -197,9 +197,23 @@ static cweeStr GetHeaderString() {
 	return toRet;
 }
 
-
+#define AddFunctionToLib(lib, name, todo, ...){ \
+	auto varNames = cweeStr(#__VA_ARGS__).RemoveBetween("<", ">").ReplaceInline("*", " ").ReplaceInline("&", " ").ReplaceInline("  ", " ").ReplaceInline("  ", " ").ReplaceInline("  ", " ").Split(",").Trim(' ').ReplaceInline("  ", " ").SplitAgain(" ").Trim(' ').GetEveryOtherVar(); \
+	lib->add(fun([](__VA_ARGS__) { todo; }, varNames), #name);	\
+}
 int main() {
 	using namespace cwee_units;
+	
+
+	using namespace chaiscript;
+	auto lib = chaiscript::make_shared<Module>();
+	AddFunctionToLib(lib, OpenExcel,return cweeExcel::OpenExcel(filePath), cweeStr filePath, cweeStr filePath2);
+	AddFunctionToLib(lib, TestFunction, {
+		return cweeExcel::OpenExcel();
+	}, cweeThreadedList<float> x1, std::map<cweeStr, double>& x2);
+	AddFunctionToLib(lib, TestFunction2, {
+		return cweeExcel::OpenExcel();
+	}, cweeSharedPtr<float>* x1, cweeBalancedPattern<>&& x2);
 
 
 #if 1
