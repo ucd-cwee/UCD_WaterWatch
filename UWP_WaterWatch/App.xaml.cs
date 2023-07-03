@@ -353,10 +353,11 @@ namespace UWP_WaterWatch
     internal class AppSupport
     {
         public static AtomicInt AppLayerJobManager_Atomic = new AtomicInt();
+        public static AtomicInt AppLayerJobManager_Position = new AtomicInt();
         public static void AppLayerJobManager_Elapsed(object sender, System.Timers.ElapsedEventArgs e) {
             if (AppLayerJobManager_Atomic.TryIncrementTo(1))
             {
-                EdmsTasks.DoJob();
+                EdmsTasks.DoJob(AppLayerJobManager_Position);
 
                 AppLayerJobManager_Atomic.Decrement();
             }

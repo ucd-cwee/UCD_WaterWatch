@@ -1093,9 +1093,14 @@ namespace chaiscript {
                 bool minimize,
                 std::function<chaiscript::Boxed_Value(chaiscript::small_vector<chaiscript::Boxed_Value>)> const& per_sample_Function, // double(Vector<double>)
                 chaiscript::small_vector<chaiscript::Boxed_Value> const& lowBound_Vector,
-                chaiscript::small_vector<chaiscript::Boxed_Value> const& highBound_Vector
+                chaiscript::small_vector<chaiscript::Boxed_Value> const& highBound_Vector,
+                cweeStr optimizationType = "Genetic"
             )
         {
+            cweeList<cweeStr> optimizationOptions; optimizationOptions = { cweeStr("Random"), cweeStr("Genetic"), cweeStr("PSO") };
+
+            optimizationType = optimizationType.BestMatch(optimizationOptions);
+
             cweeThreadedList<float> lowerBound, upperBound;
             for (auto& bv : lowBound_Vector) lowerBound.push_back(boxed_cast<double>(bv));
             for (auto& bv : highBound_Vector) upperBound.push_back(boxed_cast<double>(bv));
@@ -1156,16 +1161,54 @@ namespace chaiscript {
             cweeSharedPtr<sharedObjType> shared = make_cwee_shared<sharedObjType>();
             cweeJob toAwait;
             if (minimize) {
-                Genetic_OptimizationManagementTool<true> ramt(numDimensions, ::Min<int>(128, numDimensions * 16));
-                ramt.lower_constraints() = lowerBound;
-                ramt.upper_constraints() = upperBound;
-                toAwait = cweeOptimizer::run_optimization(shared, ramt, objFunc, isFinishedFunc, maxIterations);
+                switch (optimizationType.Hash()) {
+                case cweeStr::Hash("Random"): {
+                    Random_OptimizationManagementTool<true> ramt(numDimensions, ::Min<int>(128, numDimensions * 16));
+                    ramt.lower_constraints() = lowerBound;
+                    ramt.upper_constraints() = upperBound;
+                    toAwait = cweeOptimizer::run_optimization(shared, ramt, objFunc, isFinishedFunc, maxIterations);
+                    break;
+                }
+                case cweeStr::Hash("Genetic"): {
+                    Genetic_OptimizationManagementTool<true> ramt(numDimensions, ::Min<int>(128, numDimensions * 16));
+                    ramt.lower_constraints() = lowerBound;
+                    ramt.upper_constraints() = upperBound;
+                    toAwait = cweeOptimizer::run_optimization(shared, ramt, objFunc, isFinishedFunc, maxIterations);
+                    break;
+                }
+                case cweeStr::Hash("PSO"): {
+                    ParticleSwarm_OptimizationManagementTool<true> ramt(numDimensions, ::Min<int>(128, numDimensions * 16));
+                    ramt.lower_constraints() = lowerBound;
+                    ramt.upper_constraints() = upperBound;
+                    toAwait = cweeOptimizer::run_optimization(shared, ramt, objFunc, isFinishedFunc, maxIterations);
+                    break;
+                }
+                }
             }
             else {
-                Genetic_OptimizationManagementTool<false> ramt(numDimensions, ::Min<int>(128, numDimensions * 16));
-                ramt.lower_constraints() = lowerBound;
-                ramt.upper_constraints() = upperBound;
-                toAwait = cweeOptimizer::run_optimization(shared, ramt, objFunc, isFinishedFunc, maxIterations);
+                switch (optimizationType.Hash()) {
+                case cweeStr::Hash("Random"): {
+                    Random_OptimizationManagementTool<false> ramt(numDimensions, ::Min<int>(128, numDimensions * 16));
+                    ramt.lower_constraints() = lowerBound;
+                    ramt.upper_constraints() = upperBound;
+                    toAwait = cweeOptimizer::run_optimization(shared, ramt, objFunc, isFinishedFunc, maxIterations);
+                    break;
+                }
+                case cweeStr::Hash("Genetic"): {
+                    Genetic_OptimizationManagementTool<false> ramt(numDimensions, ::Min<int>(128, numDimensions * 16));
+                    ramt.lower_constraints() = lowerBound;
+                    ramt.upper_constraints() = upperBound;
+                    toAwait = cweeOptimizer::run_optimization(shared, ramt, objFunc, isFinishedFunc, maxIterations);
+                    break;
+                }
+                case cweeStr::Hash("PSO"): {
+                    ParticleSwarm_OptimizationManagementTool<false> ramt(numDimensions, ::Min<int>(128, numDimensions * 16));
+                    ramt.lower_constraints() = lowerBound;
+                    ramt.upper_constraints() = upperBound;
+                    toAwait = cweeOptimizer::run_optimization(shared, ramt, objFunc, isFinishedFunc, maxIterations);
+                    break;
+                }
+                }
             }
 #ifdef ReturnFutureObjFromOptimizations
             cweeAny p = make_cwee_shared<std::promise<chaiscript::Boxed_Value>>(new std::promise<chaiscript::Boxed_Value>());
@@ -1200,7 +1243,7 @@ namespace chaiscript {
         };
 
         static void		AppendToScriptingLanguage(Module& scriptingLanguage) {
-            scriptingLanguage.add(chaiscript::fun(&ChaiscriptOptimizations::OptimizeFunction), "OptimizeFunction");
+            scriptingLanguage.add(chaiscript::fun(&ChaiscriptOptimizations::OptimizeFunction, {"minimize", "per_sample_func", "lowBoundVector", "highBoundVector", "OptimizationType" }), "OptimizeFunction");
 
             if (1) {
                 scriptingLanguage.eval(R"(
@@ -1208,12 +1251,22 @@ namespace chaiscript {
 			        def Minimize(Function per_sample, Vector lowBound, Vector highBound){   
                         var low_double = Vector(); for (x:lowBound){ low_double.push_back_ref(double(x)); }                    
                         var hih_double = Vector(); for (x:highBound){ hih_double.push_back_ref(double(x)); }
-				        return OptimizeFunction(true, per_sample, low_double, hih_double);	
+				        return OptimizeFunction(true, fun[per_sample](Vector x){ return double(per_sample(x)); }, low_double, hih_double);
 			        };
 			        def Maximize(Function per_sample, Vector lowBound, Vector highBound){
                         var low_double = Vector(); for (x:lowBound){ low_double.push_back_ref(double(x)); }                    
                         var hih_double = Vector(); for (x:highBound){ hih_double.push_back_ref(double(x)); }
-				        return OptimizeFunction(false, per_sample, low_double, hih_double);				
+				        return OptimizeFunction(false, fun[per_sample](Vector x){ return double(per_sample(x)); }, low_double, hih_double);
+			        };
+			        def Minimize(Function per_sample, Vector lowBound, Vector highBound, string OptType){   
+                        var low_double = Vector(); for (x:lowBound){ low_double.push_back_ref(double(x)); }                    
+                        var hih_double = Vector(); for (x:highBound){ hih_double.push_back_ref(double(x)); }
+				        return OptimizeFunction(true, fun[per_sample](Vector x){ return double(per_sample(x)); }, low_double, hih_double, OptType);
+			        };
+			        def Maximize(Function per_sample, Vector lowBound, Vector highBound, string OptType){
+                        var low_double = Vector(); for (x:lowBound){ low_double.push_back_ref(double(x)); }                    
+                        var hih_double = Vector(); for (x:highBound){ hih_double.push_back_ref(double(x)); }
+				        return OptimizeFunction(false, fun[per_sample](Vector x){ return double(per_sample(x)); }, low_double, hih_double, OptType);
 			        };
 		        )");
 #ifndef ReturnFutureObjFromOptimizations
@@ -1227,6 +1280,16 @@ namespace chaiscript {
 			        def MaximizeAsync(Function per_sample, Vector lowBound, Vector highBound){
                         return Async(fun[per_sample, lowBound, highBound](){
                             return Maximize(per_sample, lowBound, highBound);
+                        });
+			        };
+			        def MinimizeAsync(Function per_sample, Vector lowBound, Vector highBound, string OptType){   
+                        return Async(fun[per_sample, lowBound, highBound, OptType](){
+                            return Minimize(per_sample, lowBound, highBound, OptType);
+                        });
+			        };
+			        def MaximizeAsync(Function per_sample, Vector lowBound, Vector highBound, string OptType){
+                        return Async(fun[per_sample, lowBound, highBound, OptType](){
+                            return Maximize(per_sample, lowBound, highBound, OptType);
                         });
 			        };
 		        )");
@@ -1391,6 +1454,8 @@ lib->add(chaiscript::type_conversion<From, To>([](const From& t_bt)->To { return
                     cweeStr pairName = (cweeStr("pair_") + STR_FUNC(ValueTypeAClass) + "_" + STR_FUNC(ValueTypeBClass) + "_").ReplaceInline("std::", "").ReplaceInline("::", "").ReplaceInline(" ", ""); \
                     chaiscript::bootstrap::standard_library::pair_type<std::pair<ValueTypeAClass, ValueTypeBClass>>(pairName.c_str(), *lib); \
                     lib->add(chaiscript::type_conversion<std::pair<ValueTypeAClass, ValueTypeBClass>, std::string>([](const std::pair<ValueTypeAClass, ValueTypeBClass>& t_bt) { return std::string(cweeStr::printf("%s|%s", cweeStr::ToString<ValueTypeAClass>(t_bt.first).c_str(), cweeStr::ToString<ValueTypeBClass>(t_bt.second).c_str()).c_str()); }, nullptr)); \
+                    lib->add(chaiscript::type_conversion<std::pair<ValueTypeAClass, ValueTypeBClass>, std::pair<Boxed_Value, Boxed_Value>>([](const std::pair<ValueTypeAClass, ValueTypeBClass>& t_bt) { return std::pair<Boxed_Value, Boxed_Value>(var((ValueTypeAClass)(t_bt.first)), var((ValueTypeBClass)(t_bt.second))); }, nullptr)); \
+                    lib->add(chaiscript::fun([](const std::pair<ValueTypeAClass, ValueTypeBClass>& t_bt) { return std::pair<Boxed_Value, Boxed_Value>(var((ValueTypeAClass)(t_bt.first)), var((ValueTypeBClass)(t_bt.second))); }), "Pair"); \
                     lib->add(chaiscript::fun([](std::string& a, const std::pair<ValueTypeAClass, ValueTypeBClass>& b) {	a = std::string(cweeStr::printf("%s|%s", cweeStr::ToString<ValueTypeAClass>(b.first).c_str(), cweeStr::ToString<ValueTypeBClass>(b.second).c_str()).c_str()); return a; }), "="); \
                     lib->add(chaiscript::fun([](const std::pair<ValueTypeAClass, ValueTypeBClass>& b) {	return std::string(cweeStr::printf("%s|%s", cweeStr::ToString<ValueTypeAClass>(b.first).c_str(), cweeStr::ToString<ValueTypeBClass>(b.second).c_str()).c_str()); }), "to_string"); \
                 } \
@@ -1398,6 +1463,8 @@ lib->add(chaiscript::type_conversion<From, To>([](const From& t_bt)->To { return
                     cweeStr pairName = (cweeStr("cweepair_") + STR_FUNC(ValueTypeAClass) + "_" + STR_FUNC(ValueTypeBClass) + "_").ReplaceInline("std::", "").ReplaceInline("::", "").ReplaceInline(" ", ""); \
                     chaiscript::bootstrap::standard_library::pair_type<cweePair<ValueTypeAClass, ValueTypeBClass>>(pairName.c_str(), *lib); \
                     lib->add(chaiscript::type_conversion<cweePair<ValueTypeAClass, ValueTypeBClass>, std::string>([](const cweePair<ValueTypeAClass, ValueTypeBClass>& t_bt) { return std::string(cweeStr::printf("%s|%s", cweeStr::ToString<ValueTypeAClass>(t_bt.first).c_str(), cweeStr::ToString<ValueTypeBClass>(t_bt.second).c_str()).c_str()); }, nullptr)); \
+                    lib->add(chaiscript::type_conversion<cweePair<ValueTypeAClass, ValueTypeBClass>, std::pair<Boxed_Value, Boxed_Value>>([](const cweePair<ValueTypeAClass, ValueTypeBClass>& t_bt) { return std::pair<Boxed_Value, Boxed_Value>(var((ValueTypeAClass)(t_bt.first)), var((ValueTypeBClass)(t_bt.second))); }, nullptr)); \
+                    lib->add(chaiscript::fun([](const cweePair<ValueTypeAClass, ValueTypeBClass>& t_bt) { return std::pair<Boxed_Value, Boxed_Value>(var((ValueTypeAClass)(t_bt.first)), var((ValueTypeBClass)(t_bt.second))); }), "Pair"); \
                     lib->add(chaiscript::fun([](std::string& a, const cweePair<ValueTypeAClass, ValueTypeBClass>& b) {	a = std::string(cweeStr::printf("%s|%s", cweeStr::ToString<ValueTypeAClass>(b.first).c_str(), cweeStr::ToString<ValueTypeBClass>(b.second).c_str()).c_str()); return a; }), "="); \
                     lib->add(chaiscript::fun([](const cweePair<ValueTypeAClass, ValueTypeBClass>& b) {	return std::string(cweeStr::printf("%s|%s", cweeStr::ToString<ValueTypeAClass>(b.first).c_str(), cweeStr::ToString<ValueTypeBClass>(b.second).c_str()).c_str()); }), "to_string"); \
                 }

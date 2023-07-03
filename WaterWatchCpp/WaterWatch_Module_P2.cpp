@@ -198,33 +198,32 @@ namespace chaiscript {
             if (1) {
                 lib->add(chaiscript::fun([](double X, double Y) { return cwee_units::length::foot_t(geocoding->GetElevation(vec2d(X, Y))); }, {"Longitude", "Latitude"}), "GetElevation");
                 lib->add(chaiscript::fun([](cweeStr const& address) { auto v = geocoding->GetLongLat(address); return cweePair<double, double>(v.x, v.y); }, { "Address" }), "GetLongLat");
-                // lib->add(chaiscript::fun([](double X, double Y) { auto v = geocoding->GetLongLat(X, Y); return cweePair<double, double>(v.x, v.y); }, { "Easting_ft", "Northing_ft" }), "GetLongLat");
                
-                lib->AddFunction(, GetLongLat, , SINGLE_ARG(if (true) {
+                lib->AddFunction(, GetLongLat, SINGLE_ARG(->cweePair<double, double>) , SINGLE_ARG(if (true) {
                     auto v = geocoding->GetLongLat(easting(), northing(), centralMeridian, LatFirstStandardParallel, LatSecondStandardParallel, LatOrigin, FalseNorthing, FalseEasting); return cweePair<double, double>(v.x, v.y);
                 }), cwee_units::length::foot_t easting, cwee_units::length::foot_t northing, double centralMeridian, double LatFirstStandardParallel, double LatSecondStandardParallel, double LatOrigin, double FalseNorthing, double FalseEasting);
 
-                lib->AddFunction(, GetLongLat, , SINGLE_ARG(if (true) {
+                lib->AddFunction(, GetLongLat, SINGLE_ARG(->cweePair<double, double>), SINGLE_ARG(if (true) {
                     auto v = geocoding->GetLongLat(easting(), northing(), centralMeridian, LatFirstStandardParallel, LatSecondStandardParallel, LatOrigin, FalseNorthing); return cweePair<double, double>(v.x, v.y);
                 }), cwee_units::length::foot_t easting, cwee_units::length::foot_t northing, double centralMeridian, double LatFirstStandardParallel, double LatSecondStandardParallel, double LatOrigin, double FalseNorthing);
 
-                lib->AddFunction(, GetLongLat, , SINGLE_ARG(if (true) {
+                lib->AddFunction(, GetLongLat, SINGLE_ARG(->cweePair<double, double>), SINGLE_ARG(if (true) {
                     auto v = geocoding->GetLongLat(easting(), northing(), centralMeridian, LatFirstStandardParallel, LatSecondStandardParallel, LatOrigin); return cweePair<double, double>(v.x, v.y);
                 }), cwee_units::length::foot_t easting, cwee_units::length::foot_t northing, double centralMeridian, double LatFirstStandardParallel, double LatSecondStandardParallel, double LatOrigin);
 
-                lib->AddFunction(, GetLongLat, , SINGLE_ARG(if (true) {
+                lib->AddFunction(, GetLongLat, SINGLE_ARG(->cweePair<double, double>), SINGLE_ARG(if (true) {
                     auto v = geocoding->GetLongLat(easting(), northing(), centralMeridian, LatFirstStandardParallel, LatSecondStandardParallel); return cweePair<double, double>(v.x, v.y);
                 }), cwee_units::length::foot_t easting, cwee_units::length::foot_t northing, double centralMeridian, double LatFirstStandardParallel, double LatSecondStandardParallel);
 
-                lib->AddFunction(, GetLongLat, , SINGLE_ARG(if (true) {
+                lib->AddFunction(, GetLongLat, SINGLE_ARG(->cweePair<double, double>), SINGLE_ARG(if (true) {
                     auto v = geocoding->GetLongLat(easting(), northing(), centralMeridian, LatFirstStandardParallel); return cweePair<double, double>(v.x, v.y);
                 }), cwee_units::length::foot_t easting, cwee_units::length::foot_t northing, double centralMeridian, double LatFirstStandardParallel);
 
-                lib->AddFunction(, GetLongLat, , SINGLE_ARG(if (true) {
+                lib->AddFunction(, GetLongLat, SINGLE_ARG(->cweePair<double, double>), SINGLE_ARG(if (true) {
                     auto v = geocoding->GetLongLat(easting(), northing(), centralMeridian); return cweePair<double, double>(v.x, v.y);
                 }), cwee_units::length::foot_t easting, cwee_units::length::foot_t northing, double centralMeridian);
 
-                lib->AddFunction(, GetLongLat, , SINGLE_ARG(if (true) {
+                lib->AddFunction(, GetLongLat, SINGLE_ARG(->cweePair<double, double>), SINGLE_ARG(if (true) {
                     auto v = geocoding->GetLongLat(easting(), northing()); return cweePair<double, double>(v.x, v.y);
                 }), cwee_units::length::foot_t easting, cwee_units::length::foot_t northing);
 

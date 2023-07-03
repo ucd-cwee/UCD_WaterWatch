@@ -3671,17 +3671,21 @@ namespace UWP_WaterWatchLibrary
                     }
                     else if (parallelToDo.Count >= 2)
                     {
-                        Parallel.ForEach(parallelToDo, (cweeTask t) =>
+                        foreach (var job in parallelToDo)
                         {
-                            if (t.mainThreadOnly)
+                            var jobCopy = job;
+                            Task.Run(() =>
                             {
-                                main_actions.Enqueue(t);
-                            }
-                            else
-                            {
-                                t.Resolve();
-                            }
-                        });
+                                if (jobCopy.mainThreadOnly)
+                                {
+                                    main_actions.Enqueue(jobCopy);
+                                }
+                                else
+                                {
+                                    jobCopy.Resolve();
+                                }
+                            });
+                        }
                     }
                 }
 
@@ -3709,7 +3713,6 @@ namespace UWP_WaterWatchLibrary
                 }
                 else
                 {
-
                     if (mainThreadLooping.Increment() == 1 && main_actions.Count > 0)
                     {
                         Task.Run(async () =>
@@ -3766,14 +3769,12 @@ namespace UWP_WaterWatchLibrary
                                     content = content.AddToDelimiter($"{key}\t:\t{seconds}", "\n");
                                 }
                             }
-
                             WaterWatch.AddToLog(WaterWatch.GetDataDirectory() + "\\SLOWLOG.txt", content + "\n\n");
                         }
 
                     }
                 }
             }
-
             return toReturn;
         }
     }
