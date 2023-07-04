@@ -506,13 +506,13 @@ namespace UWP_WaterWatch.Custom_Controls
         public override bool Equals(object obj) => Equals(obj as FormatCharDetails);
         public bool Equals(FormatCharDetails a)
         {
-            return (a.FontStyle == FontStyle
-                && Functions.ListIsEqual(a.BackgroundColor, BackgroundColor)
-                && Functions.ListIsEqual(a.ForegroundColor, ForegroundColor)
+            return a.FontStyle == FontStyle
+                && a.AvgForegroundColor == AvgForegroundColor
+                && a.AvgBackgroundColor == AvgBackgroundColor
                 && a.Underline == Underline
                 && a.Bold == Bold
                 && a.Italic == Italic
-            );
+            ;
         }
         public override int GetHashCode()
         {
@@ -1754,9 +1754,78 @@ namespace UWP_WaterWatch.Custom_Controls
             }, false);
 
             return toReturn;
-        }        
+        }
+
+        private EdmsTasks.cweeTask DoFormattingActualImp(string whatGotParsed, List<FormatStrDetails> finalFormat, bool WasWarning, string SuccessfulOutputString, bool wasSuccessful, int position = 0)
+        {
+            if (DateTime.Now < queueTm) return EdmsTasks.cweeTask.CompletedTask(null);
+            else
+            {
+                Editor.TextDocument.GetText(TextGetOptions.NoHidden, out string newV);
+                newV = newV.Replace("\r", "\n");
+                if (newV == whatGotParsed)
+                {
+                    if (position < finalFormat.Count)
+                    {
+                        FormatStrDetails formatter = finalFormat[position];
+
+                        var sel = Editor.TextDocument.Selection;
+                        var startPos = sel.StartPosition;
+                        var endPos = sel.EndPosition;
+
+                        EditorParent.Children.Remove(Editor);
+
+                        {
+                            sel.SetRange(formatter.start, formatter.end);
+                            sel.ParagraphFormat = defaultParagraphFormat;
+                            sel.CharacterFormat = defaultCharacterFormat;
+                            sel.CharacterFormat.ForegroundColor = formatter.details.AvgForegroundColor;
+                            sel.CharacterFormat.BackgroundColor = formatter.details.AvgBackgroundColor;
+                            if (sel.CharacterFormat.Bold != formatter.details.Bold) sel.CharacterFormat.Bold = formatter.details.Bold;
+                            if (sel.CharacterFormat.FontStyle != formatter.details.FontStyle) sel.CharacterFormat.FontStyle = formatter.details.FontStyle;
+                            if (sel.CharacterFormat.Italic != formatter.details.Italic) sel.CharacterFormat.Italic = formatter.details.Italic;
+                            if (sel.CharacterFormat.Underline != formatter.details.Underline) sel.CharacterFormat.Underline = formatter.details.Underline;
+                        }
+
+                        EditorParent.Children.Add(Editor);
+                        Editor.Focus(FocusState.Programmatic);
+
+                        sel.SetRange(startPos, endPos);
+                        sel.ScrollIntoView(PointOptions.Start);
+
+                        
+ 
+                        if (DateTime.Now < queueTm) return EdmsTasks.cweeTask.CompletedTask(null);
+
+                        return EdmsTasks.InsertJob(() => DoFormattingActualImp(whatGotParsed, finalFormat, WasWarning, SuccessfulOutputString, wasSuccessful, position + 1), true);
+                    }
+                    else
+                    {
+                        if (!WasWarning)
+                        {
+                            if (vm != null && vm.ParentVM != null)
+                            {
+                                if (SuccessfulOutputString != null)
+                                    vm.ParentVM.outputPanel.vm.StatusString = SuccessfulOutputString;
+                                else
+                                    vm.ParentVM.outputPanel.vm.StatusString = "Successful parse.";
+                            }
+                            vm.errorManager.RemoveWarning(-1);
+                            vm.errorManager.RemoveWarning(-2);
+                        }
+                    }
+                }
+                else
+                {
+                    HandleFormatting(newV, wasSuccessful, SuccessfulOutputString);
+                }
+            }
+            return EdmsTasks.cweeTask.CompletedTask(null);
+        }
+
         private EdmsTasks.cweeTask DoFormattingActual(string whatGotParsed, List<FormatStrDetails> finalFormat, bool WasWarning, string SuccessfulOutputString, bool wasSuccessful)
         {
+#if true
             if (DateTime.Now < queueTm) return EdmsTasks.cweeTask.CompletedTask(null);
             else {
                 Editor.TextDocument.GetText(TextGetOptions.NoHidden, out string newV);
@@ -1823,6 +1892,12 @@ namespace UWP_WaterWatch.Custom_Controls
                 }
                 return EdmsTasks.cweeTask.CompletedTask(null);
             }
+#else
+            if (DateTime.Now < queueTm) 
+                return EdmsTasks.cweeTask.CompletedTask(null);
+            else
+                return EdmsTasks.InsertJob(() => DoFormattingActualImp(whatGotParsed, finalFormat, WasWarning, SuccessfulOutputString, wasSuccessful), true);
+#endif
         }
         private (bool, int, int) TryParseErrorMessage(string err, List<string> textJ)
         {

@@ -2333,6 +2333,58 @@ bool EPAnetProject::CombineBasicPipesInSeries() {
 	}
 	return false;
 };
+bool EPAnetProject::CollapseZone(::epanet::Pzone const& zone) {
+	// Can only "Collapse" Reduced and Closed zones (Currently)
+	if (zone) {
+		switch (zone->Type) {
+		case ::epanet::zoneType_t::Closed:
+		case ::epanet::zoneType_t::Reduced: {
+			for (auto& bL : zone->Boundary_Link) {
+				if (bL.first) {
+					AUTO flowPat = bL.first->GetValue<_FLOW_>();
+					if (flowPat) {
+						cweeStr replacementPatName = cweeStr::printf("%s_%s_ReplacementPattern", bL.first->Type_p.ToString(), bL.first->Name_p.c_str());
+						this->addPattern(replacementPatName);
+
+						::epanet::Ppattern demandPat;
+
+						for (auto& x : this->epanetProj->network->Pattern) {
+							if (x) {
+								if (x->ID == replacementPatName) {
+									for (auto& v : flowPat->GetKnotSeries()) {
+										x->Pat.AddUniqueValue(v.first, (double)(v.second * epanetProj->Ucf[::epanet::FLOW]));
+									}
+									demandPat = x;
+									break;
+								}
+							}
+						}
+
+						if (demandPat) {
+							AUTO node_index = ::epanet::hashtable_t::hashtable_find(epanetProj->network->NodeHashTable, (char*)(bL.first->StartingNode->Name_p.c_str()));
+							this->addDemand(node_index, 1, replacementPatName, replacementPatName);
+						}
+					}
+				}
+			}
+			// for every node and link inside of this zone, delete them.
+			for (auto& node : zone->Node) {
+				if (node) {
+					int node_index = getNodeindex(node->Name_p);
+					deleteNode(node_index, ::epanet::EN_UNCONDITIONAL);
+				}
+			}
+			ParseNetwork();
+			return true;
+		}
+		break;
+		case ::epanet::zoneType_t::Open:
+		case ::epanet::zoneType_t::Draw:
+		break;
+		}
+	}
+	return false;
+};
 
 // link management
 int EPAnetProject::addLink(cweeStr const& id, int const& linkType, cweeStr const& fromNode, cweeStr const& toNode) { return EPAnetLocal->addLink(proj, id, linkType, fromNode, toNode); };

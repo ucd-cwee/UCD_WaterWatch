@@ -541,6 +541,7 @@ public:
 	void ParseNetwork();
 	bool RemoveDeadEnds();
 	bool CombineBasicPipesInSeries();
+	bool CollapseZone(::epanet::Pzone const& zone);
 
 	int addLink(cweeStr const& id, int const& linkType, cweeStr const& fromNode, cweeStr const& toNode);
 	void deleteLink(int const& index, int const& actionCode);

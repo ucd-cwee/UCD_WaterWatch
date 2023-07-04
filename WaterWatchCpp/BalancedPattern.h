@@ -1131,19 +1131,19 @@ public:
 	auto& operator*=(RHS const& b) { *this = (*this * b); return *this; };
 
 	/* Patterns */
-	auto& operator/=(cweeBalancedPattern<units::dimensionless::scalar_t> const& b) { *this = (*this * b); return *this; };
+	auto& operator/=(cweeBalancedPattern<units::dimensionless::scalar_t> const& b) { *this = (*this / b); return *this; };
 	/* non-pattern */			template<class RHS, class = std::enable_if_t<!cweeBalancedPatternDetail::is_balanced_pattern_t<RHS>::value>>
-	auto& operator/=(RHS const& b) { *this = (*this * b); return *this; };
+	auto& operator/=(RHS const& b) { *this = (*this / b); return *this; };
 
 	/* Patterns */ template<class RHS>
-	auto& operator+=(cweeBalancedPattern<RHS> const& b) { *this = (*this * b); return *this; };
+	auto& operator+=(cweeBalancedPattern<RHS> const& b) { *this = (*this + b); return *this; };
 	/* non-pattern */			template<class RHS, class = std::enable_if_t<!cweeBalancedPatternDetail::is_balanced_pattern_t<RHS>::value>>
-	auto& operator+=(RHS const& b) { *this = (*this * b); return *this; };
+	auto& operator+=(RHS const& b) { *this = (*this + b); return *this; };
 
 	/* Patterns */ template<class RHS>
-	auto& operator-=(cweeBalancedPattern<RHS> const& b) { *this = (*this * b); return *this; };
+	auto& operator-=(cweeBalancedPattern<RHS> const& b) { *this = (*this - b); return *this; };
 	/* non-pattern */			template<class RHS, class = std::enable_if_t<!cweeBalancedPatternDetail::is_balanced_pattern_t<RHS>::value>>
-	auto& operator-=(RHS const& b) { *this = (*this * b); return *this; };
+	auto& operator-=(RHS const& b) { *this = (*this - b); return *this; };
 
 	/*! Clamp the y-axis Values such that they do not exceed the maximum and minimum Values. */
 	void												ClampValues(const Y_Axis_Type& min, const Y_Axis_Type& max) {

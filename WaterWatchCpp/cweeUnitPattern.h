@@ -233,6 +233,7 @@ namespace cweeUnitValues {
 			AddValueActual(internal_X_type, internal_Y_type, true);
 		};
 		virtual void  ClearData() = 0;
+		virtual void  RemoveUnnecessaryKnots(const unit_value& timeStart, const unit_value& timeEnd) = 0;
 		void  Clear() {
 			ClearData();
 			internal_X_type.Clear();
@@ -744,8 +745,87 @@ namespace cweeUnitValues {
 			}
 			container.Add(Y(), X(), isUnique);
 		};
-		void  ClearData() {
+		void ClearData() {
 			container.Clear();
+		};
+		void RemoveUnnecessaryKnots(const unit_value& start, const unit_value& end) {
+
+			if (start >= end) return;
+			int num, index; cweeThreadedList<double> keysToDelete;
+			double epsilon = 0.001f;
+			double* val1 = nullptr, * val2 = nullptr, * val3 = nullptr, * val4 = nullptr, * val5 = nullptr;
+			double t1 = 0, t2 = 0, t3 = 0, t4 = 0, t5 = 0;
+
+			{
+				decltype(container)& _values = container;
+
+				num = _values.GetNodeCount();
+
+				if (num > 5) {
+					index = 0;
+					for (auto& knot : _values) {
+						if (index + 3 >= num) break;
+						if (index >= 5) {
+							if (::fabs(*val1 - *val2) > epsilon) { // !=
+								++index;
+								val1 = val2; t1 = t2;
+								val2 = val3; t2 = t3;
+								val3 = val4; t3 = t4;
+								val4 = val5; t4 = t5;
+								val5 = knot.object;
+								t5 = knot.key;
+								continue;
+							}
+							else if (::fabs(*val5 - *val2) <= epsilon) { // ==
+								if (::fabs(*val4 - *val2) <= epsilon) { // ==
+									if (::fabs(*val3 - *val2) <= epsilon) { // ==
+										keysToDelete.Append(t3);
+										++index;
+										val3 = val4; t3 = t4;
+										val4 = val5; t4 = t5;
+										val5 = knot.object;
+										t5 = knot.key;
+										continue; // don't move the currentPos forward. Repeat the analysis from this spot. 								
+									}
+								}
+							}
+							val1 = val2; t1 = t2;
+							val2 = val3; t2 = t3;
+							val3 = val4; t3 = t4;
+							val4 = val5; t4 = t5;
+							val5 = knot.object;
+							t5 = knot.key;
+						}
+						else {
+							switch (index) {
+							case 0:
+								val1 = knot.object;
+								t1 = knot.key;
+								break;
+							case 1:
+								val2 = knot.object;
+								t2 = knot.key;
+								break;
+							case 2:
+								val3 = knot.object;
+								t3 = knot.key;
+								break;
+							case 3:
+								val4 = knot.object;
+								t4 = knot.key;
+								break;
+							case 4:
+								val5 = knot.object;
+								t5 = knot.key;
+								break;
+							}
+						}
+						index++;
+					}
+				}
+
+				for (auto& key : keysToDelete) { _values.Remove(_values.NodeFind(key)); }
+			}
 		};
 	};
 
@@ -929,6 +1009,9 @@ namespace cweeUnitValues {
 		void ClearData() {
 			ref->Clear();
 		};
+		void RemoveUnnecessaryKnots(const unit_value& timeStart, const unit_value& timeEnd) {
+			ref->RemoveUnnecessaryKnots((internal_X_type = timeStart)(), (internal_X_type = timeEnd)());
+		};
 	};
 
 	template<typename Y_Axis_Type>
@@ -1101,6 +1184,9 @@ namespace cweeUnitValues {
 		};
 		void ClearData() {
 			ref->Clear();
+		};
+		void RemoveUnnecessaryKnots(const unit_value& timeStart, const unit_value& timeEnd) {
+			ref->RemoveUnnecessaryKnots((internal_X_type = timeStart)(), (internal_X_type = timeEnd)());
 		};
 	};
 
@@ -1369,6 +1455,17 @@ namespace cweeUnitValues {
 			AUTO g = lock.Guard();
 			return container->Translate(translation);
 		};
+
+		cweeUnitPattern& RemoveUnnecessaryKnots(const unit_value& timeStart = -std::numeric_limits < unit_value>::max(), const unit_value& timeEnd = std::numeric_limits < unit_value>::max())  {
+			AUTO g = lock.Guard();
+			container->RemoveUnnecessaryKnots(timeStart, timeEnd);
+			return *this;
+		};
+
+
+
+
+
 
 		cweeUnitPattern&								Copy(const cweeUnitPattern& o, const unit_value& timeStart = -std::numeric_limits < unit_value>::max(), const unit_value& timeEnd = std::numeric_limits < unit_value>::max()) {
 			if (this == &o) return *this;
@@ -1863,27 +1960,7 @@ namespace cweeUnitValues {
 			return result;
 		};
 
-		cweeUnitPattern& operator+=(const cweeUnitPattern& b) { 
-			this->lock.Lock(); 
-			for (auto& iter : *container) {
-				if (iter.Y) {
-					*iter.Y += b.GetCurrentValue(iter.X);
-				}
-			}
-			this->lock.Unlock();
-
-			b.lock.Lock();
-			for (auto& x : b.GetKnotSeries()) {
-				this->AddUniqueValue(
-					x.first, 
-					x.second + this->GetCurrentValue(x.first)
-				);
-			}
-			b.lock.Unlock();
-			
-			// *this = (*this + b); 
-			return *this; 
-		};
+		cweeUnitPattern& operator+=(const cweeUnitPattern& b) { *this = (*this + b); return *this; };
 		cweeUnitPattern& operator-=(const cweeUnitPattern& b) { *this = (*this - b); return *this; };
 		cweeUnitPattern& operator*=(const cweeUnitPattern& b) { *this = (*this * b); return *this; };
 		cweeUnitPattern& operator/=(const cweeUnitPattern& b) { *this = (*this / b); return *this; };

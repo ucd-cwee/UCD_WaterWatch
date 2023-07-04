@@ -285,9 +285,10 @@ namespace chaiscript {
                 lib->add(chaiscript::fun([](cweeUnitPattern& a, const unit_value& b, const unit_value& c) { return a.GetMaxValue(b, c); }), "GetMaxValue");
 
                 lib->add(chaiscript::fun([](cweeUnitPattern& a) { return a.GetMinimumTimeStep(); }), "GetMinimumTimeStep");
+                lib->add(chaiscript::fun([](cweeUnitPattern& a, const unit_value& b) { a.ShiftTime(b); return a; }), "ShiftTime");
+                lib->add(chaiscript::fun([](cweeUnitPattern& a, const unit_value& b) { a.Translate(b); return a; }), "Translate");
 
-                //lib->add(chaiscript::fun([](cweeUnitPattern& a) { a.RemoveUnnecessaryKnots(); }), "RemoveUnnecessaryKnots");
-                //lib->add(chaiscript::fun([](cweeUnitPattern& a, const float& percentToRemove) { a.ReduceMemory(percentToRemove); }), "ReduceMemory");
+                lib->add(chaiscript::fun([](cweeUnitPattern& a) { a.RemoveUnnecessaryKnots(); }), "RemoveUnnecessaryKnots");
                 lib->add(chaiscript::fun([](cweeUnitPattern& a, const unit_value& min, const unit_value& max) { a.ClampValues(min, max); }), "ClampValues");
 
                 lib->add(chaiscript::fun([](cweeUnitPattern& a) { return a.GetMinTime(); }), "GetMinTime");

@@ -73,6 +73,8 @@ namespace chaiscript {
                     AddSharedPtrClassMember(::epanet, Sasset, Type_p);
                     AddSharedPtrClassMember(::epanet, Sasset, Name_p);
 
+                    lib->add(chaiscript::fun([](cweeSharedPtr < ::epanet::Sasset> const& a) -> std::string { if (!a) throw(chaiscript::exception::eval_error("Cannot access a member of a null (empty) shared object.")); return (cweeStr(a->Type_p.ToString()) + " " + a->Name_p).c_str(); }), "to_string");
+
                     lib->add(chaiscript::fun([](cweeSharedPtr < ::epanet::Sasset> const& a) { AUTO p = a->GetValue<_HEAD_>(); if (p) return cweeUnitValues::cweeUnitPattern(*p); else return cweeUnitValues::cweeUnitPattern((units::time::second_t)(1), (typename ::epanet::DefaultUnits<_HEAD_>::unit)(1)); }), "Head");
                     lib->add(chaiscript::fun([](cweeSharedPtr < ::epanet::Sasset> const& a) { AUTO p = a->GetValue<_DEMAND_>(); if (p) return cweeUnitValues::cweeUnitPattern(*p); else return cweeUnitValues::cweeUnitPattern((units::time::second_t)(1), (typename ::epanet::DefaultUnits<_DEMAND_>::unit)(1)); }), "Demand");
                     lib->add(chaiscript::fun([](cweeSharedPtr < ::epanet::Sasset> const& a) { AUTO p = a->GetValue<_FLOW_>(); if (p) return cweeUnitValues::cweeUnitPattern(*p); else return cweeUnitValues::cweeUnitPattern((units::time::second_t)(1), (typename ::epanet::DefaultUnits<_FLOW_>::unit)(1)); }), "Flow");
@@ -92,6 +94,7 @@ namespace chaiscript {
                     AddSharedPtrClassMember(::epanet, Snode, S);
                     AddSharedPtrClassMember(::epanet, Snode, Ke);
                     AddSharedPtrClassMember(::epanet, Snode, Zone);
+                    lib->add(chaiscript::fun([](cweeSharedPtr < ::epanet::Snode> const& a) -> std::string { if (!a) throw(chaiscript::exception::eval_error("Cannot access a member of a null (empty) shared object.")); return (cweeStr(a->Type_p.ToString()) + " " + a->Name_p).c_str(); }), "to_string");
                     lib->add(chaiscript::castable_class<cweeSharedPtr<::epanet::Sasset>, cweeSharedPtr<::epanet::Snode>>());
                 }
                 /* Slink */ {
@@ -109,6 +112,7 @@ namespace chaiscript {
                     AddSharedPtrClassMember(::epanet, Slink, Vertices);
                     AddSharedPtrClassFunction(::epanet, Slink, Area);
                     AddSharedPtrClassFunction(::epanet, Slink, IsBiDirectionalPipe);
+                    lib->add(chaiscript::fun([](cweeSharedPtr < ::epanet::Slink> const& a) -> std::string { if (!a) throw(chaiscript::exception::eval_error("Cannot access a member of a null (empty) shared object.")); return (cweeStr(a->Type_p.ToString()) + " " + a->Name_p).c_str(); }), "to_string");
                     lib->add(chaiscript::castable_class<cweeSharedPtr<::epanet::Sasset>, cweeSharedPtr<::epanet::Slink>>());
                 }
                 /* Stank */ {
@@ -126,7 +130,7 @@ namespace chaiscript {
                     AddSharedPtrClassMember(::epanet, Stank, V1frac);
                     AddSharedPtrClassMember(::epanet, Stank, CanOverflow);
                     AddSharedPtrClassFunction(::epanet, Stank, Area);
-
+                    lib->add(chaiscript::fun([](cweeSharedPtr < ::epanet::Stank> const& a) -> std::string { if (!a) throw(chaiscript::exception::eval_error("Cannot access a member of a null (empty) shared object.")); return (cweeStr(a->Type_p.ToString()) + " " + a->Name_p).c_str(); }), "to_string");
                     lib->add(chaiscript::castable_class<cweeSharedPtr<::epanet::Snode>, cweeSharedPtr<::epanet::Stank>>());
                     lib->add(chaiscript::castable_class<cweeSharedPtr<::epanet::Sasset>, cweeSharedPtr<::epanet::Stank>>());
                 }
@@ -144,7 +148,7 @@ namespace chaiscript {
                     AddSharedPtrClassMember(::epanet, Spump, TimeUpat);
                     AddSharedPtrClassMember(::epanet, Spump, TimeEpat);
                     AddSharedPtrClassMember_SpecializedName(::epanet, Spump, Energy, EnergySummary);
-
+                    lib->add(chaiscript::fun([](cweeSharedPtr < ::epanet::Spump> const& a) -> std::string { if (!a) throw(chaiscript::exception::eval_error("Cannot access a member of a null (empty) shared object.")); return (cweeStr(a->Type_p.ToString()) + " " + a->Name_p).c_str(); }), "to_string");
                     lib->add(chaiscript::castable_class<cweeSharedPtr<::epanet::Slink>, cweeSharedPtr<::epanet::Spump>>());
                     lib->add(chaiscript::castable_class<cweeSharedPtr<::epanet::Sasset>, cweeSharedPtr<::epanet::Spump>>());
                 }
@@ -153,7 +157,7 @@ namespace chaiscript {
                     AddSharedPtrClassMember(::epanet, Svalve, Link);
                     AddSharedPtrClassMember(::epanet, Svalve, ProducesElectricity);
                     AddSharedPtrClassMember_SpecializedName(::epanet, Svalve, Energy, EnergySummary);
-
+                    lib->add(chaiscript::fun([](cweeSharedPtr < ::epanet::Svalve> const& a) -> std::string { if (!a) throw(chaiscript::exception::eval_error("Cannot access a member of a null (empty) shared object.")); return (cweeStr(a->Type_p.ToString()) + " " + a->Name_p).c_str(); }), "to_string");
                     lib->add(chaiscript::castable_class<cweeSharedPtr<::epanet::Slink>, cweeSharedPtr<::epanet::Svalve>>());
                     lib->add(chaiscript::castable_class<cweeSharedPtr<::epanet::Sasset>, cweeSharedPtr<::epanet::Svalve>>());
                 }
@@ -177,20 +181,52 @@ namespace chaiscript {
                     AddSharedPtrClassFunction(::epanet, Szone, AverageCustomerPressure);
                     AddSharedPtrClassFunction(::epanet, Szone, MinimumCustomerPressure);
 
-                    lib->add(chaiscript::fun([](::epanet::Pzone const& a) { 
+                    lib->add(chaiscript::fun([](cweeSharedPtr < ::epanet::Szone> const& a) -> std::string { if (!a) throw(chaiscript::exception::eval_error("Cannot access a member of a null (empty) shared object.")); return (cweeStr(a->Type_p.ToString()) + " " + a->Name_p).c_str(); }), "to_string");
+
+                    lib->add(chaiscript::fun([](::epanet::Pzone const& a, cweeSharedPtr<EPAnetProject>& proj) {
                         // std::vector< chaiscript::Boxed_Value >;
 
-
-                        std::vector<std::pair<chaiscript::Boxed_Value, chaiscript::Boxed_Value>> out; // object, ::epanet::direction_t
+                        std::vector<chaiscript::Boxed_Value> out; // std::pair<chaiscript::Boxed_Value, chaiscript::Boxed_Value> // object, ::epanet::direction_t
                         
+                        AUTO assets = a->GetMassBalanceAssets(proj->epanetProj);
 
+                        for (auto& x : assets) {
+                            epanet::Passet assetP = x.get<0>();
+                            epanet::direction_t dir = x.get<1>();
 
-
-
+                            if (assetP) {
+                                switch (assetP->Type_p) {
+                                case asset_t::JUNCTION:
+                                    out.emplace_back(var(std::pair<chaiscript::Boxed_Value, chaiscript::Boxed_Value>(var(assetP.CastReference<epanet::Snode>()), var(std::move(dir)))));
+                                    break;
+                                case asset_t::RESERVOIR:
+                                    out.emplace_back(var(std::pair<chaiscript::Boxed_Value, chaiscript::Boxed_Value>(var(assetP.CastReference<epanet::Stank>()), var(std::move(dir)))));
+                                    break;
+                                case asset_t::PIPE:
+                                    out.emplace_back(var(std::pair<chaiscript::Boxed_Value, chaiscript::Boxed_Value>(var(assetP.CastReference<epanet::Slink>()), var(std::move(dir)))));
+                                    break;
+                                case asset_t::PUMP:
+                                    out.emplace_back(var(std::pair<chaiscript::Boxed_Value, chaiscript::Boxed_Value>(var(assetP.CastReference<epanet::Spump>()), var(std::move(dir)))));
+                                    break;
+                                case asset_t::VALVE:
+                                    out.emplace_back(var(std::pair<chaiscript::Boxed_Value, chaiscript::Boxed_Value>(var(assetP.CastReference<epanet::Svalve>()), var(std::move(dir)))));
+                                    break;
+                                }
+                            }
+                        }
 
                         return out;
                     }), "GetMassBalanceAssets");
-
+                    lib->add(chaiscript::fun([](::epanet::Pzone& a, cweeSharedPtr<EPAnetProject>& proj, std::map<std::string, Boxed_Value> const& scadaPatterns) {
+                        AUTO set = std::map<std::string, cweeUnitValues::cweeUnitPattern>();
+                        for (auto& x : scadaPatterns) {
+                            AUTO ptr = boxed_cast<cweeUnitValues::cweeUnitPattern*>(x.second);
+                            if (ptr) {
+                                set[x.first] = *ptr;
+                            }
+                        }
+                        return a->TryCalibrateZone(proj->epanetProj, set);
+                    }), "TryCalibrateZone");
 
                     lib->add(chaiscript::castable_class<cweeSharedPtr<::epanet::Sasset>, cweeSharedPtr<::epanet::Szone>>());
                 }
@@ -224,6 +260,8 @@ namespace chaiscript {
                     AddNamespacedClassMember_SupportSharedPtr(::epanet, Network, Control);
                     AddNamespacedClassMember_SupportSharedPtr(::epanet, Network, Rule);
                     AddNamespacedClassMember_SupportSharedPtr(::epanet, Network, Adjlist);
+
+                    AddSharedPtrClassFunction(::epanet, Network, getCalibrationOrder);
                 }
                 /* Project */ {
                     AddNamespacedClassTemplate_SupportSharedPtr(::epanet, Project);
@@ -318,6 +356,11 @@ namespace chaiscript {
                         lib->add(fun([](cweeSharedPtr<EPAnetProject>& proj, int nodeIndex, int demandIndex) { return proj->getDemandPattern(nodeIndex, demandIndex); }), "getDemandPattern");
                         lib->add(fun([](cweeSharedPtr<EPAnetProject>& proj, int nodeIndex, int demandIndex) { return proj->getDemandName(nodeIndex, demandIndex); }), "getDemandName");
                         lib->add(fun([](cweeSharedPtr<EPAnetProject>& proj) { proj->ParseNetwork(); }), "ParseNetwork");
+                        lib->add(fun([](cweeSharedPtr<EPAnetProject>& proj) { proj->RemoveDeadEnds(); }), "RemoveDeadEnds");
+                        lib->add(fun([](cweeSharedPtr<EPAnetProject>& proj) { proj->CombineBasicPipesInSeries(); }), "CombineBasicPipesInSeries");
+                        lib->add(fun([](cweeSharedPtr<EPAnetProject>& proj, ::epanet::Pzone const& z) { proj->CollapseZone(z); }), "CollapseZone");
+
+
                         lib->add(fun([](cweeSharedPtr<EPAnetProject>& proj, cweeStr id, int linkType, cweeStr fromNode, cweeStr toNode) { return proj->addLink(id, linkType, fromNode, toNode); }), "addLink");
                         lib->add(fun([](cweeSharedPtr<EPAnetProject>& proj, int index, int actionCode) { proj->deleteLink(index, actionCode); }), "deleteLink");
                         lib->add(fun([](cweeSharedPtr<EPAnetProject>& proj, int index, int property, double value) { proj->setLinkValue(index, property, value); }), "setLinkValue");

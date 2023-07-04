@@ -2645,12 +2645,12 @@ namespace epanet {
         cweeList< Pnode > FindDeadends(cweeSharedPtr<Project> pr);
         /* returns the list of assets that feed into or out of this zone. */
         cweeList< cweeUnion<Passet, direction_t> > GetMassBalanceAssets(cweeSharedPtr<Project> pr);
-        void TryCalibrateZone(cweeSharedPtr<Project> pr, std::map<std::string, cweeUnitValues::cweeUnitPattern> const& ScadaSources);
+        cweeUnitValues::cweeUnitPattern TryCalibrateZone(cweeSharedPtr<Project> pr, std::map<std::string, cweeUnitValues::cweeUnitPattern> const& ScadaSources);
 
     private:
         template <int distance = 0>
         int   NumberOfBoundaryLinksBetweenZones_Impl(cweeSharedPtr<Szone> const& zone) {
-            constexpr int maxDepth = 3;
+            constexpr int maxDepth = 5;
             bool found = false;
 
             int minAnswer = maxDepth + 1;
@@ -2682,7 +2682,7 @@ namespace epanet {
             else
                 return -1;
         };
-        template<> int   NumberOfBoundaryLinksBetweenZones_Impl<3>(cweeSharedPtr<Szone> const& zone) { return -1; };
+        template<> int   NumberOfBoundaryLinksBetweenZones_Impl<5>(cweeSharedPtr<Szone> const& zone) { return -1; };
     };
     using Pzone = cweeSharedPtr<Szone>;
 
@@ -3181,6 +3181,8 @@ namespace epanet {
             * NodeHashTable,                        // Hash table for Node ID names
             * LinkHashTable;                        // Hash table for Link ID names
         cweeThreadedList<Padjlist> Adjlist;         // Node adjacency lists
+
+        cweeList<::epanet::Pzone>         getCalibrationOrder() const;
     };
     using EN_Network = cweeSharedPtr<Network>; // Network*;
 
@@ -3385,7 +3387,7 @@ namespace epanet {
             }
             
             return out;
-        };
+        };        
 
 #if 0
 
@@ -4234,27 +4236,32 @@ namespace epanet {
         for (auto& link_dir : this->Boundary_Link) {
             if (link_dir.first) {
                 // is this link always closed? If so, exclude it.
-
-                AUTO link_index = hashtable_t::hashtable_find(pr->network->LinkHashTable, (char*)(link_dir.first->Name_p.c_str()));
-                if (pr->incontrols(LINK, link_index)) { // controlled == wonderful candidate
-                    out.emplace_back(cweeUnion<Passet, direction_t>(link_dir.first.CastReference<Sasset>(), link_dir.second));
-                }
-                else {
-                    // not controlled.. is it open by default?
-                    if ((::epanet::StatusType)(double)link_dir.first->Status(pr->times.GetSimStartTime()) == ::epanet::CLOSED) {
-                        // bad option!
-                        continue;
+                AUTO assetPtr = link_dir.first.CastReference<Sasset>();
+                if (assetPtr) {
+                    AUTO link_index = hashtable_t::hashtable_find(pr->network->LinkHashTable, (char*)(assetPtr->Name_p.c_str()));
+                    if (pr->incontrols(LINK, link_index)) { // controlled == wonderful candidate
+                        out.emplace_back(cweeUnion<Passet, direction_t>(assetPtr, link_dir.second));
                     }
-                    out.emplace_back(cweeUnion<Passet, direction_t>(link_dir.first.CastReference<Sasset>(), link_dir.second));
-                }                
+                    else {
+                        // not controlled.. is it open by default?
+                        if ((::epanet::StatusType)(double)link_dir.first->Status(pr->times.GetSimStartTime()) == ::epanet::CLOSED) {
+                            // bad option!
+                            continue;
+                        }
+                        out.emplace_back(cweeUnion<Passet, direction_t>(assetPtr, link_dir.second));
+                    }
+                }
             }
         }
 
         for (auto& node : this->Node) {
-            if (node) {
+            if (node && node->Type_p == asset_t::RESERVOIR) {
                 AUTO tank = node.CastReference<Stank>();
                 if (tank) {
-                    out.emplace_back(cweeUnion<Passet, direction_t>(tank.CastReference<Sasset>(), direction_t::FLOW_WITHIN_DMA));
+                    AUTO assetPtr = node.CastReference<Sasset>();
+                    if (assetPtr) {
+                        out.emplace_back(cweeUnion<Passet, direction_t>(assetPtr, direction_t::FLOW_WITHIN_DMA));
+                    }
                 }
             }
         }
@@ -4262,14 +4269,105 @@ namespace epanet {
         return out;
     };
 
-    INLINE void Szone::TryCalibrateZone(cweeSharedPtr<Project> pr, std::map<std::string, cweeUnitValues::cweeUnitPattern> const& ScadaSources) {
-        
+    INLINE cweeUnitValues::cweeUnitPattern Szone::TryCalibrateZone(cweeSharedPtr<Project> pr, std::map<std::string, cweeUnitValues::cweeUnitPattern> const& ScadaSources) {
+        // if zone is ill-defined, then that must be addressed before calibration
+        if (IsIllDefined()) throw(std::exception(cweeStr::printf("Zone %s is ill-defined (%s). Ill-defined zones cannot be calibrated until after they are declared \"Okay\".", this->Name_p.c_str(), this->IllDefined.ToString()).c_str()));
+
+        cweeList< cweeUnion<Passet, direction_t> > massBalanceAssets = GetMassBalanceAssets(pr);
+        // for each asset, get the scada source as well as the simulation values
+
+        cweeList< cweeUnitValues::cweeUnitPattern > contributions;
+        for (auto& asset_direction : massBalanceAssets) {
+            Passet& asset = asset_direction.get<0>();
+            direction_t& dir = asset_direction.get<1>();
+            switch (asset->Type_p) {
+            case asset_t::RESERVOIR:  // works for tanks or water sources
+                if (ScadaSources.count(asset->Name_p.c_str()) > 0) {
+                    AUTO resPtr = asset.CastReference<Stank>();
+                    // check the units. If in GPM, then great. 
+                    auto& pat = ScadaSources.at(asset->Name_p.c_str());
+                    if (pat.Y_Type().AreConvertableTypes(1_gpm)) { // demand 
+                        contributions.Append(pat * -1);
+                        // sumDemands -= pat;
+                    }
+                    else if (pat.Y_Type().AreConvertableTypes(1_ft)) { // level
+                        // convert level to demand.
+                        // when level increases, positive demand. 
+                        
+                        AUTO pat1 = cweeUnitValues::cweeUnitPattern(pat);
+                        pat1.ShiftTime(-1_hr);
+
+                        
+                        AUTO pat2 = cweeUnitValues::cweeUnitPattern(pat1.X_Type(), 1_gal);
+                        pat2 = ((pat1 - cweeUnitValues::cweeUnitPattern(pat)) * (units::math::pow<2>(resPtr->Diameter)) * cweeMath::PI / 4.0); // correct conversion to gallons
+                        
+                        AUTO pat3 = cweeUnitValues::cweeUnitPattern(pat1.X_Type(), 1_gph); // force-cast to account for the 1-hour adjustment
+                        pat3 = pat2;
+
+                        AUTO pat4 = cweeUnitValues::cweeUnitPattern(pat1.X_Type(), 1_cfs); // 
+                        pat4 = pat3;
+
+                        pat4.ShiftTime(0.5_hr); // final adjustment for the "peaks"
+
+                        contributions.Append(pat4 * -1);
+                        // sumDemands -= pat4;
+                    }
+                }
+                else {
+                    // sumDemands -= cweeUnitValues::cweeUnitPattern(*asset->GetValue<_DEMAND_>());
+                    contributions.Append(cweeUnitValues::cweeUnitPattern(*asset->GetValue<_DEMAND_>()) * -1);
+
+                    // positive demand = filling. Negative tank demand = positive customer demand.
+                }                
+                break;
+            case asset_t::PUMP:
+            case asset_t::VALVE:
+            case asset_t::PIPE:
+                if (ScadaSources.count(asset->Name_p.c_str()) > 0) {
+                    auto& pat = ScadaSources.at(asset->Name_p.c_str());
+                    if (dir == direction_t::FLOW_IN_DMA) {
+                        contributions.Append(pat);
+                        // sumDemands += pat;
+                    }
+                    else {
+                        contributions.Append(pat * -1);
+                        // sumDemands -= pat;
+                    }
+                }
+                else {
+                    if (dir == direction_t::FLOW_IN_DMA) {
+                        contributions.Append(cweeUnitValues::cweeUnitPattern(*asset->GetValue<_FLOW_>()));
+                        // sumDemands += cweeUnitValues::cweeUnitPattern(*asset->GetValue<_FLOW_>());
+                    }
+                    else {
+                        contributions.Append(cweeUnitValues::cweeUnitPattern(*asset->GetValue<_FLOW_>()) * -1);
+                        // sumDemands -= cweeUnitValues::cweeUnitPattern(*asset->GetValue<_FLOW_>());
+                    }
+                }
+                break;
+            }
+        }
+       
+        cweeUnitValues::cweeUnitPattern sumDemands = cweeUnitValues::cweeUnitPattern(1_s, 1_gpm);
+        for (auto& pat : contributions) {
+            sumDemands += pat;
+        }
+
+        if (sumDemands.GetMinValue() <= -1_gpm) {
+            // we have a problem! What is the potential solution? 
+            
 
 
 
-    
+
+
+
+
+
+        }
+
+        return sumDemands;    
     };
-
 
 #pragma region sparse matrix
     class smatrix_t {
@@ -5292,6 +5390,91 @@ namespace epanet {
         // re-evaluate the zones
         this->parseNetwork();
 #endif
+    };
+
+
+
+    INLINE cweeList<::epanet::Pzone>         Network::getCalibrationOrder() const {
+        // order the zones according to which would be easiest to calibrate. 
+        cweeList<::epanet::Pzone> out;
+
+        cweeList<::epanet::Pzone> ZonesProcessing = this->Zone;
+        ZonesProcessing.Sort([](::epanet::Pzone const& a, ::epanet::Pzone const& b)->bool { return a->Type >= b->Type; });
+
+        int currentConnectivityDistance = 1;
+        while (ZonesProcessing.Num() > 0) {
+            bool success = false;
+
+            // ill-defined zones are added first and must be resolved for obvious reasons
+            if (!success) {
+                for (auto& p : ZonesProcessing) {
+                    if (p->IsIllDefined()) {
+                        success = true;
+                        out.Append(p);
+                        ZonesProcessing.Remove(p);
+                        break;
+                    }
+                }
+            }
+
+            // draw zones are simply dropped 
+            if (!success) {
+                for (auto& p : ZonesProcessing) {
+                    if (p->Type == zoneType_t::Draw) {
+                        success = true;
+                        ZonesProcessing.Remove(p);
+                        break;
+                    }
+                }
+            }
+
+            // add all reduced zones (end of the line)
+            if (!success) {
+                for (auto& p : ZonesProcessing) {
+                    if (p->Type == zoneType_t::Reduced) {
+                        success = true;
+                        out.Append(p);
+                        ZonesProcessing.Remove(p);
+                        break;
+                    }
+                }
+            }
+
+            // add all closed zones (end of the line)
+            if (!success) {
+                for (auto& p : ZonesProcessing) {
+                    if (p->Type == zoneType_t::Closed) {
+                        success = true;
+                        out.Append(p);
+                        ZonesProcessing.Remove(p);
+                        break;
+                    }
+                }
+            }
+
+            // Open zones are added last
+            if (!success) {
+                for (auto& p : ZonesProcessing) {
+                    if (p->Type == zoneType_t::Open) {                        
+                        success = true;
+                        out.Append(p);
+                        ZonesProcessing.Remove(p);
+                        break;
+                    }
+                }
+            }
+
+            if (!success) {
+                for (auto& p : ZonesProcessing) {
+                    success = true;
+                    out.Append(p);
+                    ZonesProcessing.Remove(p);
+                    break;
+                }
+            }
+        }
+
+        return out;
     };
 
 
