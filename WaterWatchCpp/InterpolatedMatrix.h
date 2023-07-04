@@ -248,13 +248,13 @@ public:
 	cweeInterpolatedMatrix() {
 		mut.Lock();
 		hilbertContainer.SetBoundaryType(boundary_t::BT_CLOSED);
-		hilbertContainer.SetInterpolationType(interpolation_t::IT_LINEAR);
+		hilbertContainer.SetInterpolationType(interpolation_t::LINEAR);
 		mut.Unlock();
 	};
 	cweeInterpolatedMatrix(const cweeInterpolatedMatrix<T>& s) {
 		Lock();
 		hilbertContainer.SetBoundaryType(boundary_t::BT_CLOSED);
-		hilbertContainer.SetInterpolationType(interpolation_t::IT_LINEAR);
+		hilbertContainer.SetInterpolationType(interpolation_t::LINEAR);
 		Unlock();
 
 		s.Lock();
@@ -273,7 +273,7 @@ public:
 
 		Lock();
 		hilbertContainer.SetBoundaryType(boundary_t::BT_CLOSED);
-		hilbertContainer.SetInterpolationType(interpolation_t::IT_LINEAR);
+		hilbertContainer.SetInterpolationType(interpolation_t::LINEAR);
 		Unlock();
 
 		s.Lock();
@@ -654,7 +654,7 @@ private: // private member methods
 
 			hilbertContainer.Clear();
 			hilbertContainer.SetBoundaryType(boundary_t::BT_CLOSED);
-			hilbertContainer.SetInterpolationType(interpolation_t::IT_LINEAR);
+			hilbertContainer.SetInterpolationType(interpolation_t::LINEAR);
 
 			source.Lock();
 			for (auto* ptr : source.UnsafeGetKnotSeries()) {

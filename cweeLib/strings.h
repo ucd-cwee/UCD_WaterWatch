@@ -705,6 +705,7 @@ public:
 	static cweeStr		FormatNumber(size_t number);
 	int					Levenshtein(const cweeStr& other) const;
 	cweeStr				BestMatch(std::vector<cweeStr> list) const;
+	cweeStr				iBestMatch(std::vector<cweeStr> list) const;
 
 protected:
 	size_t				len;

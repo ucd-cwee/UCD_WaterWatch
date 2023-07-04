@@ -554,14 +554,14 @@ namespace cweeUnitValues {
 			//bvals[3] = sx3 - sx2;
 			u64 s; node_type* index1 = nullptr;
 			switch (interpolationType) {
-			case interpolation_t::IT_RIGHT_CLAMP: {
+			case interpolation_t::RIGHT: {
 				bvals[0] = 0;
 				bvals[1] = 0;
 				bvals[2] = 1;
 				bvals[3] = 0;
 				break;
 			}
-			case interpolation_t::IT_SPLINE: {
+			case interpolation_t::SPLINE: {
 				index1 = container.NodeFindLargestSmallerEqual(t());
 				if (index1) {
 					s = (u64)index1->key;
@@ -602,7 +602,7 @@ namespace cweeUnitValues {
 				}
 				break;
 			}
-			case interpolation_t::IT_LINEAR: {
+			case interpolation_t::LINEAR: {
 				index1 = container.NodeFindLargestSmallerEqual(t());
 				if (index1) {
 					s = (u64)index1->key;
@@ -645,7 +645,7 @@ namespace cweeUnitValues {
 				break;
 			}
 			default:
-			case interpolation_t::IT_LEFT_CLAMP: {
+			case interpolation_t::LEFT: {
 				bvals[0] = 0;
 				bvals[1] = 1;
 				bvals[2] = 0;
@@ -676,12 +676,12 @@ namespace cweeUnitValues {
 			else {
 				{
 					switch (interpolationType) {
-					case interpolation_t::IT_RIGHT_CLAMP: {
+					case interpolation_t::RIGHT: {
 						auto* ptr = container.FindSmallestLargerEqual(time());
 						if (ptr) v = *ptr;
 						break;
 					}
-					case interpolation_t::IT_SPLINE: {
+					case interpolation_t::SPLINE: {
 						UnsafeBasis(time, bvals, interpolationType);
 						node_type* x1 = container.NodeFindLargestSmallerEqual(time());
 						node_type* x0 = x1 == nullptr ? (node_type*)nullptr : container.GetPrevLeaf(x1);
@@ -693,7 +693,7 @@ namespace cweeUnitValues {
 						if (x3) v += *x3->object * bvals[3]; else if (x1) v += *x1->object * bvals[3];
 						break;
 					}
-					case interpolation_t::IT_LINEAR: {
+					case interpolation_t::LINEAR: {
 						UnsafeBasis(time, bvals, interpolationType);
 						node_type* x1 = container.NodeFindLargestSmallerEqual(time());
 						node_type* x2 = x1 == nullptr ? (node_type*)nullptr : container.GetNextLeaf(x1);
@@ -702,7 +702,7 @@ namespace cweeUnitValues {
 						break;
 					}
 					default:
-					case interpolation_t::IT_LEFT_CLAMP: {
+					case interpolation_t::LEFT: {
 						auto* ptr = container.FindLargestSmallerEqual(time());
 						if (ptr) v = *ptr;
 						break;
@@ -1205,10 +1205,10 @@ namespace cweeUnitValues {
 
 		cweeUnitPattern() : 
 			container(make_cwee_shared<cweeUnitPatternContainer>(cweeUnitPatternContainer(second(), scalar())).CastReference<cweeUnitPatternContainer_t>()),
-			boundaryType(boundary_t::BT_FREE), interpolationType(interpolation_t::IT_LINEAR), lock() {};
+			boundaryType(boundary_t::BT_FREE), interpolationType(interpolation_t::LINEAR), lock() {};
 		cweeUnitPattern(unit_value const& X_type, unit_value const& Y_type) : 
 			container(make_cwee_shared<cweeUnitPatternContainer>(cweeUnitPatternContainer(X_type, Y_type)).CastReference<cweeUnitPatternContainer_t>()),
-			boundaryType(boundary_t::BT_FREE), interpolationType(interpolation_t::IT_LINEAR), lock() {};
+			boundaryType(boundary_t::BT_FREE), interpolationType(interpolation_t::LINEAR), lock() {};
 
 		template<typename Y_Axis_Type, typename X_Axis_Type>
 		cweeUnitPattern(cweeBalancedPattern<Y_Axis_Type, X_Axis_Type>& ref) :
@@ -1224,7 +1224,7 @@ namespace cweeUnitValues {
 
 		cweeUnitPattern(cweeUnitPattern const& o) : 
 			container(nullptr),
-			boundaryType(boundary_t::BT_FREE), interpolationType(interpolation_t::IT_LINEAR), lock() {
+			boundaryType(boundary_t::BT_FREE), interpolationType(interpolation_t::LINEAR), lock() {
 			AUTO g = lock.Guard();
 			AUTO g1 = o.lock.Guard();
 			container = o.container->Clone();	
@@ -1279,7 +1279,7 @@ namespace cweeUnitValues {
 			AUTO g = lock.Guard();
 			container->Clear();
 			boundaryType = boundary_t::BT_FREE;
-			interpolationType = interpolation_t::IT_LINEAR;
+			interpolationType = interpolation_t::LINEAR;
 		};
 		void ClearData() {
 			AUTO g = lock.Guard();

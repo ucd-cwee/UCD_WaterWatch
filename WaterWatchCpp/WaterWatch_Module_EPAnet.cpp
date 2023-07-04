@@ -38,6 +38,11 @@ namespace chaiscript {
                     AddSharedPtrClassMember(::epanet, Spattern, Comment);
                     lib->add(chaiscript::fun([](cweeSharedPtr<::epanet::Spattern> const& a) { if (a) return cweeUnitValues::cweeUnitPattern(a->Pat); else return cweeUnitValues::cweeUnitPattern(); }), "Pat");
                 }
+                /* Scurve */ {
+                    AddSharedPtrClass(::epanet, Scurve);
+                    AddSharedPtrClassMember(::epanet, Scurve, Comment);
+                    lib->add(chaiscript::fun([](cweeSharedPtr<::epanet::Scurve> const& a) { if (a) return cweeUnitValues::cweeUnitPattern(a->Curve); else return cweeUnitValues::cweeUnitPattern(); }), "Pat");
+                }
                 /* Sdemand */ {
                     AddSharedPtrClass(::epanet, Sdemand);
                     AddSharedPtrClassMember(::epanet, Sdemand, Base);
@@ -230,6 +235,8 @@ namespace chaiscript {
 
                     lib->add(chaiscript::castable_class<cweeSharedPtr<::epanet::Sasset>, cweeSharedPtr<::epanet::Szone>>());
                 }
+
+
 
                 // ...
 
@@ -467,11 +474,11 @@ namespace chaiscript {
 
                 /* EPAnet optimization */
                 {
-                    lib->add(chaiscript::fun([](cweeSharedPtr<EPAnetProject>& control_project, int numValves) {
+                    AUTO lambda = [](cweeSharedPtr<EPAnetProject>& control_project, int numValves, cweeStr method, int numPolicies) {
                         ParticleSwarm_OptimizationManagementTool<true> // Alternating_OptimizationManagementTool< Random_OptimizationManagementTool<true>, Genetic_OptimizationManagementTool<true>>
-                            ramt(numValves, 10 + 10 * numValves * numValves);
+                            ramtT(numValves, numPolicies);
 
-                        const auto PenaltyValue = ramt.default_constraint();
+                        const auto PenaltyValue = ramtT.default_constraint();
 
                         cweeSharedPtr<cweeThreadedMap<std::string, double>>  cachedResults = make_cwee_shared<cweeThreadedMap<std::string, double>>();
 
@@ -1258,12 +1265,34 @@ namespace chaiscript {
                             }
                         };
 
+                        cweeJob toAwait;
                         cweeSharedPtr<sharedObjType> shared = make_cwee_shared<sharedObjType>();
-                        for (int i = 0; i < numValves; i++) ramt.lower_constraints().Emplace((float)coord_to_index->MinHilbertPosition(), i);
-                        for (int i = 0; i < numValves; i++) ramt.upper_constraints().Emplace((float)coord_to_index->MaxHilbertPosition(), i);
-                        cweeJob toAwait = cweeOptimizer::run_optimization(shared, ramt, std::function(objFunc), std::function(isFinishedFunc), maxIterations);
 
-                        toAwait.AwaitAll();
+                        method = method.BestMatch({ "PSO", "Genetic", "Random" });
+                        switch (method.Hash()) {
+                        default:
+                        case cweeStr::Hash("PSO"): {
+                            ParticleSwarm_OptimizationManagementTool<true> ramt(numValves, numPolicies);
+                            for (int i = 0; i < numValves; i++) ramt.lower_constraints().Emplace((float)coord_to_index->MinHilbertPosition(), i);
+                            for (int i = 0; i < numValves; i++) ramt.upper_constraints().Emplace((float)coord_to_index->MaxHilbertPosition(), i);
+                            toAwait = cweeOptimizer::run_optimization(shared, ramt, std::function(objFunc), std::function(isFinishedFunc), maxIterations);
+                            toAwait.AwaitAll();
+                            break; }
+                        case cweeStr::Hash("Genetic"): {
+                            Genetic_OptimizationManagementTool<true> ramt(numValves, numPolicies);
+                            for (int i = 0; i < numValves; i++) ramt.lower_constraints().Emplace((float)coord_to_index->MinHilbertPosition(), i);
+                            for (int i = 0; i < numValves; i++) ramt.upper_constraints().Emplace((float)coord_to_index->MaxHilbertPosition(), i);
+                            toAwait = cweeOptimizer::run_optimization(shared, ramt, std::function(objFunc), std::function(isFinishedFunc), maxIterations);
+                            toAwait.AwaitAll();
+                            break; }
+                        case cweeStr::Hash("Random"): {
+                            Random_OptimizationManagementTool<true> ramt(numValves, numPolicies);
+                            for (int i = 0; i < numValves; i++) ramt.lower_constraints().Emplace((float)coord_to_index->MinHilbertPosition(), i);
+                            for (int i = 0; i < numValves; i++) ramt.upper_constraints().Emplace((float)coord_to_index->MaxHilbertPosition(), i);
+                            toAwait = cweeOptimizer::run_optimization(shared, ramt, std::function(objFunc), std::function(isFinishedFunc), maxIterations);
+                            toAwait.AwaitAll();
+                            break; }
+                        }
 
                         std::map<std::string, chaiscript::Boxed_Value> bv_final;
                         try {
@@ -1353,10 +1382,421 @@ namespace chaiscript {
                         fileSystem->removeFile(fp);
 
                         return bv_final;
-                        }), "Optimize");
+                    };
+                    lib->add(chaiscript::fun([=](cweeSharedPtr<EPAnetProject>& control_project, int numValves) { return lambda(control_project, numValves, "PSO", 10 + 10 * numValves * numValves); }), "Optimize");
+                    lib->add(chaiscript::fun([=](cweeSharedPtr<EPAnetProject>& control_project, int numValves, cweeStr method) { return lambda(control_project, numValves, method, 10 + 10 * numValves * numValves); }), "Optimize");
+                    lib->add(chaiscript::fun([=](cweeSharedPtr<EPAnetProject>& control_project, int numValves, cweeStr method, int numPolicies) { return lambda(control_project, numValves, method, numPolicies); }), "Optimize");
                 }
 
                 /* Easy Map Display */ if (1) {
+                    lib->add(chaiscript::fun([](cweeSharedPtr<EPAnetProject>& p) { using namespace cwee_units;
+                        UI_Grid entireDisplay;
+                        entireDisplay.RowDefinitions = { "Auto", "*", };
+                        entireDisplay.ColumnDefinitions = { "*", "Auto", };
+
+                        AUTO mapRegen = [](UI_Map& map, cweeSharedPtr<EPAnetProject> p, cweeStr option) {
+                            using namespace cwee_units;
+                            map.Layers.clear();
+                            AUTO network = p->epanetProj->network;
+
+                            switch (option.Hash()) {
+                            default:
+                            case cweeStr::Hash("Zone"):
+                            {
+                                foot_t minEl = std::numeric_limits<foot_t>::max();
+                                foot_t maxEl = -std::numeric_limits<foot_t>::max();
+                                for (auto& zone : network->Zone) {
+                                    AUTO el = foot_t(zone->AverageElevation());
+                                    if (el > maxEl) { maxEl = el; }
+                                    if (el < minEl) { minEl = el; }
+                                }
+
+                                for (auto& zone : network->Zone) {
+                                    if (zone) {
+                                        UI_MapLayer layer;
+                                        auto c = UI_Color((254.0 * (zone->AverageElevation() - minEl) / (maxEl - minEl))(), cweeRandomFloat(128, 254), cweeRandomFloat(128, 254), 255);
+                                        for (auto& node : zone->Node) {
+                                            UI_MapIcon icon; {
+                                                icon.color = c;
+                                                icon.longitude = node->X;
+                                                icon.latitude = node->Y;
+                                                icon.size = (node->Type_p != asset_t::RESERVOIR) ? 4 : 26;
+                                                icon.Tag = var(std::map<std::string, Boxed_Value>({
+                                                    {"Longitude", var(double(node->X))}
+                                                    , {"Latitude", var(double(node->Y))}
+                                                    , {"Elevation", var(foot_t(node->El))}
+                                                    , {"Name", var(cweeStr(node->Name_p))}
+                                                    , {"Type", var(cweeStr(node->Type_p))}
+                                                    }));
+                                                icon.IconPathGeometry = node->Icon();
+                                                icon.HideOnCollision = (node->Type_p != asset_t::RESERVOIR);
+                                                if (node->Type_p == asset_t::RESERVOIR) {
+                                                    icon.Label = "Reservoir " + node->Name_p;
+                                                }
+                                            }
+                                            layer.Children.push_back(var(std::move(icon)));
+                                        }
+                                        AUTO minPressureCustomer = zone->FindMinPressureCustomer();
+                                        if (minPressureCustomer) {
+                                            UI_MapIcon icon; {
+                                                icon.color = UI_Color(254, 25, 25, 254);
+                                                icon.longitude = minPressureCustomer->X;
+                                                icon.latitude = minPressureCustomer->Y;
+                                                icon.size = 16;
+                                                AUTO headPat = *minPressureCustomer->GetValue<_HEAD_>() - minPressureCustomer->El;
+                                                AUTO avgPressure = (units::pressure::pounds_per_square_inch_t)(units::pressure::head_t)(headPat.GetAvgValue()());
+                                                AUTO minPressure = (units::pressure::pounds_per_square_inch_t)(units::pressure::head_t)(headPat.GetMinValue()());
+
+                                                icon.Tag = var(std::map<std::string, Boxed_Value>({
+                                                      {"Avg Pressure", var(std::move(avgPressure))}
+                                                    , {"Min Pressure", var(std::move(minPressure))}
+                                                    , {"Longitude", var(double(minPressureCustomer->X))}
+                                                    , {"Latitude", var(double(minPressureCustomer->Y))}
+                                                    , {"Elevation", var(foot_t(minPressureCustomer->El))}
+                                                    , {"Name", var(cweeStr(minPressureCustomer->Name_p))}
+                                                    , {"Type", var(cweeStr(minPressureCustomer->Type_p))}
+                                                    }));
+                                                icon.IconPathGeometry = minPressureCustomer->Icon();
+                                                icon.HideOnCollision = false;
+                                                icon.Label = cweeUnitValues::unit_value(minPressure).ToString();
+                                            }
+                                            layer.Children.push_back(var(std::move(icon)));
+                                        }
+                                        for (auto& link : zone->Within_Link) {
+                                            UI_MapPolyline line; {
+                                                line.thickness = 3;
+                                                line.color = UI_Color(c.R, c.G, c.B, 128);
+                                                line.AddPoint(link->StartingNode->X, link->StartingNode->Y);
+                                                if (link->Vertices) {
+                                                    for (auto& vert : link->Vertices->Array) {
+                                                        line.AddPoint(vert.first, vert.second);
+                                                    }
+                                                }
+                                                line.AddPoint(link->EndingNode->X, link->EndingNode->Y);
+                                                line.Tag = var(std::map<std::string, Boxed_Value>({
+                                                    {"Name", var(cweeStr(link->Name_p))}
+                                                    , {"Type", var(cweeStr(link->Type_p))}
+                                                    }));
+                                            }
+                                            if (link->Icon().Length() > 0) {
+                                                line.thickness = 4;
+                                                UI_MapIcon icon; {
+                                                    icon.color = c;
+                                                    icon.longitude = link->X()(); // (link->EndingNode->X + link->StartingNode->X) / 2.0;
+                                                    icon.latitude = link->Y()(); // (link->EndingNode->Y + link->StartingNode->Y) / 2.0;
+                                                    icon.size = 24;
+                                                    icon.Tag = var(std::map<std::string, Boxed_Value>({
+                                                        {"Longitude", var(double(icon.longitude))}
+                                                        , {"Latitude", var(double(icon.latitude))}
+                                                        , {"Elevation", var((link->EndingNode->El + link->StartingNode->El) / 2.0)}
+                                                        , {"Name", var(cweeStr(link->Name_p))}
+                                                        , {"Type", var(cweeStr(link->Type_p))}
+                                                        }));
+                                                    icon.IconPathGeometry = link->Icon();
+                                                    icon.HideOnCollision = false;
+                                                    if (link->Type_p != asset_t::PIPE) {
+                                                        icon.Label = cweeStr(link->Type_p.ToString()) + " " + link->Name_p;
+                                                    }
+                                                }
+                                                layer.Children.push_back(var(std::move(icon)));
+                                            }
+                                            layer.Children.push_back(var(std::move(line)));
+                                        }
+                                        for (auto& link_dir : zone->Boundary_Link) {
+                                            if (link_dir.second == ::epanet::direction_t::FLOW_IN_DMA) {
+                                                auto& link = link_dir.first;
+                                                UI_MapPolyline line; {
+                                                    line.thickness = 3;
+                                                    line.color = UI_Color(c.R, c.G, c.B, 128);
+                                                    line.dashed = true;
+                                                    line.AddPoint(link->StartingNode->X, link->StartingNode->Y);
+                                                    if (link->Vertices) {
+                                                        for (auto& vert : link->Vertices->Array) {
+                                                            line.AddPoint(vert.first, vert.second);
+                                                        }
+                                                    }
+                                                    line.AddPoint(link->EndingNode->X, link->EndingNode->Y);
+                                                    line.Tag = var(std::map<std::string, Boxed_Value>({
+                                                        {"Name", var(cweeStr(link->Name_p))}
+                                                        , {"Type", var(cweeStr(link->Type_p))}
+                                                        }));
+                                                }
+                                                if (link->Icon().Length() > 0) {
+                                                    line.thickness = 4;
+                                                    UI_MapIcon icon; {
+                                                        icon.color = c;
+                                                        icon.longitude = link->X()(); // (link->EndingNode->X + link->StartingNode->X) / 2.0;
+                                                        icon.latitude = link->Y()(); // (link->EndingNode->Y + link->StartingNode->Y) / 2.0;
+                                                        icon.size = 24;
+                                                        icon.Tag = var(std::map<std::string, Boxed_Value>({
+                                                            {"Longitude", var(double(icon.longitude))}
+                                                            , {"Latitude", var(double(icon.latitude))}
+                                                            , {"Elevation", var((link->EndingNode->El + link->StartingNode->El) / 2.0)}
+                                                            , {"Name", var(cweeStr(link->Name_p))}
+                                                            , {"Type", var(cweeStr(link->Type_p))}
+                                                            }));
+                                                        icon.IconPathGeometry = link->Icon();
+                                                        icon.HideOnCollision = false;
+                                                        if (link->Type_p != asset_t::PIPE) {
+                                                            icon.Label = cweeStr(link->Type_p.ToString()) + " " + link->Name_p;
+                                                        }
+                                                    }
+                                                    layer.Children.push_back(var(std::move(icon)));
+                                                }
+                                                layer.Children.push_back(var(std::move(line)));
+                                            }
+                                        }
+
+                                        layer.Name = zone->Name_p;
+
+                                        map.Layers.push_back(var(std::move(layer)));
+                                    }
+                                }
+                            }
+                            break;
+                            case cweeStr::Hash("Pressure"):
+                            {
+                                pounds_per_square_inch_t minEl = std::numeric_limits<pounds_per_square_inch_t>::max();
+                                pounds_per_square_inch_t maxEl = -std::numeric_limits<pounds_per_square_inch_t>::max();
+                                for (auto& zone : network->Zone) {
+                                    AUTO el = zone->MinimumNodePressure();
+                                    if (el > maxEl) { maxEl = el; }
+                                    if (el < minEl) { minEl = el; }
+
+                                    el = zone->MaximumNodePressure();
+                                    if (el > maxEl) { maxEl = el; }
+                                    if (el < minEl) { minEl = el; }
+                                }
+
+                                for (auto& zone : network->Zone) {
+                                    if (zone) {
+                                        UI_MapLayer layer;
+                                        
+                                        for (auto& node : zone->Node) {
+                                            UI_MapIcon icon; {
+                                                auto cV = (254.0 * (node->GetAvgPressure() - minEl) / (maxEl - minEl))();
+                                                auto c = UI_Color(cV, cV, cV, 255);
+
+                                                icon.color = c;
+                                                icon.longitude = node->X;
+                                                icon.latitude = node->Y;
+                                                icon.size = (node->Type_p != asset_t::RESERVOIR) ? 4 : 26;
+                                                icon.Tag = var(std::map<std::string, Boxed_Value>({
+                                                    {"Longitude", var(double(node->X))}
+                                                    , {"Latitude", var(double(node->Y))}
+                                                    , {"Elevation", var(foot_t(node->El))}
+                                                    , {"Name", var(cweeStr(node->Name_p))}
+                                                    , {"Type", var(cweeStr(node->Type_p))}
+                                                    }));
+                                                icon.IconPathGeometry = node->Icon();
+                                                icon.HideOnCollision = (node->Type_p != asset_t::RESERVOIR);
+                                                if (node->Type_p == asset_t::RESERVOIR) {
+                                                    icon.Label = "Reservoir " + node->Name_p;
+                                                }
+                                            }
+                                            layer.Children.push_back(var(std::move(icon)));
+                                        }
+                                        AUTO minPressureCustomer = zone->FindMinPressureCustomer();
+                                        if (minPressureCustomer) {
+                                            UI_MapIcon icon; {
+                                                icon.color = UI_Color(254, 25, 25, 254);
+                                                icon.longitude = minPressureCustomer->X;
+                                                icon.latitude = minPressureCustomer->Y;
+                                                icon.size = 16;
+                                                AUTO headPat = *minPressureCustomer->GetValue<_HEAD_>() - minPressureCustomer->El;
+                                                AUTO avgPressure = (units::pressure::pounds_per_square_inch_t)(units::pressure::head_t)(headPat.GetAvgValue()());
+                                                AUTO minPressure = (units::pressure::pounds_per_square_inch_t)(units::pressure::head_t)(headPat.GetMinValue()());
+
+                                                icon.Tag = var(std::map<std::string, Boxed_Value>({
+                                                      {"Avg Pressure", var(std::move(avgPressure))}
+                                                    , {"Min Pressure", var(std::move(minPressure))}
+                                                    , {"Longitude", var(double(minPressureCustomer->X))}
+                                                    , {"Latitude", var(double(minPressureCustomer->Y))}
+                                                    , {"Elevation", var(foot_t(minPressureCustomer->El))}
+                                                    , {"Name", var(cweeStr(minPressureCustomer->Name_p))}
+                                                    , {"Type", var(cweeStr(minPressureCustomer->Type_p))}
+                                                    }));
+                                                icon.IconPathGeometry = minPressureCustomer->Icon();
+                                                icon.HideOnCollision = false;
+                                                icon.Label = cweeUnitValues::unit_value(minPressure).ToString();
+                                            }
+                                            layer.Children.push_back(var(std::move(icon)));
+                                        }
+                                        for (auto& link : zone->Within_Link) {
+                                            auto cV = (254.0 * (((link->StartingNode->GetAvgPressure() + link->EndingNode->GetAvgPressure()) / 2.0) - minEl) / (maxEl - minEl))();
+                                            auto c = UI_Color(cV, cV, cV, 255);
+                                            UI_MapPolyline line; {
+                                                line.thickness = 3;
+                                                line.color = UI_Color(c.R, c.G, c.B, 128);
+                                                line.AddPoint(link->StartingNode->X, link->StartingNode->Y);
+                                                if (link->Vertices) {
+                                                    for (auto& vert : link->Vertices->Array) {
+                                                        line.AddPoint(vert.first, vert.second);
+                                                    }
+                                                }
+                                                line.AddPoint(link->EndingNode->X, link->EndingNode->Y);
+                                                line.Tag = var(std::map<std::string, Boxed_Value>({
+                                                    {"Name", var(cweeStr(link->Name_p))}
+                                                    , {"Type", var(cweeStr(link->Type_p))}
+                                                    }));
+                                            }
+                                            if (link->Icon().Length() > 0) {
+                                                line.thickness = 4;
+                                                UI_MapIcon icon; {
+                                                    icon.color = c;
+                                                    icon.longitude = link->X()(); // (link->EndingNode->X + link->StartingNode->X) / 2.0;
+                                                    icon.latitude = link->Y()(); // (link->EndingNode->Y + link->StartingNode->Y) / 2.0;
+                                                    icon.size = 24;
+                                                    icon.Tag = var(std::map<std::string, Boxed_Value>({
+                                                        {"Longitude", var(double(icon.longitude))}
+                                                        , {"Latitude", var(double(icon.latitude))}
+                                                        , {"Elevation", var((link->EndingNode->El + link->StartingNode->El) / 2.0)}
+                                                        , {"Name", var(cweeStr(link->Name_p))}
+                                                        , {"Type", var(cweeStr(link->Type_p))}
+                                                        }));
+                                                    icon.IconPathGeometry = link->Icon();
+                                                    icon.HideOnCollision = false;
+                                                    if (link->Type_p != asset_t::PIPE) {
+                                                        icon.Label = cweeStr(link->Type_p.ToString()) + " " + link->Name_p;
+                                                    }
+                                                }
+                                                layer.Children.push_back(var(std::move(icon)));
+                                            }
+                                            layer.Children.push_back(var(std::move(line)));
+                                        }
+                                        for (auto& link_dir : zone->Boundary_Link) {
+                                            if (link_dir.second == ::epanet::direction_t::FLOW_IN_DMA) {
+                                                auto& link = link_dir.first;
+                                                auto cV = (254.0 * (((link->StartingNode->GetAvgPressure() + link->EndingNode->GetAvgPressure()) / 2.0) - minEl) / (maxEl - minEl))();
+                                                auto c = UI_Color(cV, cV, cV, 255);
+                                                UI_MapPolyline line; {
+                                                    line.thickness = 3;
+                                                    line.color = UI_Color(c.R, c.G, c.B, 128);
+                                                    line.dashed = true;
+                                                    line.AddPoint(link->StartingNode->X, link->StartingNode->Y);
+                                                    if (link->Vertices) {
+                                                        for (auto& vert : link->Vertices->Array) {
+                                                            line.AddPoint(vert.first, vert.second);
+                                                        }
+                                                    }
+                                                    line.AddPoint(link->EndingNode->X, link->EndingNode->Y);
+                                                    line.Tag = var(std::map<std::string, Boxed_Value>({
+                                                        {"Name", var(cweeStr(link->Name_p))}
+                                                        , {"Type", var(cweeStr(link->Type_p))}
+                                                        }));
+                                                }
+                                                if (link->Icon().Length() > 0) {
+                                                    line.thickness = 4;
+                                                    UI_MapIcon icon; {
+                                                        icon.color = c;
+                                                        icon.longitude = link->X()(); // (link->EndingNode->X + link->StartingNode->X) / 2.0;
+                                                        icon.latitude = link->Y()(); // (link->EndingNode->Y + link->StartingNode->Y) / 2.0;
+                                                        icon.size = 24;
+                                                        icon.Tag = var(std::map<std::string, Boxed_Value>({
+                                                            {"Longitude", var(double(icon.longitude))}
+                                                            , {"Latitude", var(double(icon.latitude))}
+                                                            , {"Elevation", var((link->EndingNode->El + link->StartingNode->El) / 2.0)}
+                                                            , {"Name", var(cweeStr(link->Name_p))}
+                                                            , {"Type", var(cweeStr(link->Type_p))}
+                                                            }));
+                                                        icon.IconPathGeometry = link->Icon();
+                                                        icon.HideOnCollision = false;
+                                                        if (link->Type_p != asset_t::PIPE) {
+                                                            icon.Label = cweeStr(link->Type_p.ToString()) + " " + link->Name_p;
+                                                        }
+                                                    }
+                                                    layer.Children.push_back(var(std::move(icon)));
+                                                }
+                                                layer.Children.push_back(var(std::move(line)));
+                                            }
+                                        }
+
+                                        layer.Name = zone->Name_p;
+
+                                        map.Layers.push_back(var(std::move(layer)));
+                                    }
+                                }                            
+                            }
+                            break;
+                            }
+                            return map;
+                        };
+                        std::shared_ptr<UI_Map> map = std::make_shared<UI_Map>();
+
+                        /* Headers / Controls */ {
+                            UI_StackPanel header; 
+                            header.Orientation = "Horizontal";
+                            header.Spacing = 10;
+                            {
+                                UI_Button zoneDisplay; {
+                                    zoneDisplay.Content = var(UI_TextBlock("Zone Display"));
+                                    zoneDisplay.Clicked = var(fun([=]() {
+                                        mapRegen(*map, p, "Zone");
+                                        map->Update();
+                                    }));
+                                    header.AddChild(var(std::move(zoneDisplay)));
+                                }
+                                UI_Button pressureDisplay; {
+                                    pressureDisplay.Content = var(UI_TextBlock("Pressure Display"));
+                                    pressureDisplay.Clicked = var(fun([=]() {
+                                        mapRegen(*map, p, "Pressure");
+                                        map->Update();
+                                    }));
+                                    header.AddChild(var(std::move(pressureDisplay)));
+                                }
+                            }
+                            entireDisplay.AddChild(var(std::move(header)), 0, 0, 1, 2);
+                        }
+                        /* Map */ {
+                            mapRegen(*map, p, "Zone");
+                            entireDisplay.AddChild(var(map), 1, 0, 1, 1);
+                        }
+                        /* Zone List */ {
+                            UI_Grid zones;
+                            zones.RowDefinitions = { "Auto", "1", "*", };
+                            zones.RowSpacing = 5;
+                            {
+                                {
+                                    zones.AddChild(var(UI_TextBlock("Zones")), 0, 0, 1, 1);
+                                }
+                                {
+                                    UI_Rectangle rect; {
+                                        rect.Fill = UI_Color(128, 128, 128, 255);
+                                    }
+                                    zones.AddChild(var(std::move(rect)), 1, 0, 1, 1);
+                                }
+                                {
+                                    std::vector<Boxed_Value> zoneList; {
+                                        for (auto& zone : p->epanetProj->network->Zone) {
+                                            if (zone) {
+                                                UI_Button zoneDisplay; {
+                                                    zoneDisplay.Content = var(UI_TextBlock(zone->Name_p));
+                                                    cweeSharedPtr<bool> visibilityTracker = make_cwee_shared<bool>(true);
+                                                    zoneDisplay.Clicked = var(fun([=]() {
+                                                        for (auto& layer : map->Layers) {
+                                                            auto* layerP = boxed_cast<UI_MapLayer*>(layer);
+                                                            if (layerP && layerP->Name == zone->Name_p) {
+                                                                *visibilityTracker = !*visibilityTracker;
+                                                                layerP->SetVisibility(*visibilityTracker);
+                                                            }
+                                                        }
+                                                    }));
+                                                    zoneList.push_back(var(std::move(zoneDisplay)));
+                                                }
+                                            }
+                                        }
+
+                                    }
+                                    zones.AddChild(var(std::move(zoneList)), 2, 0, 1, 1);
+                                }
+                            }
+                            entireDisplay.AddChild(var(std::move(zones)), 1, 1, 1, 1);
+                        }                        
+                        
+                        return entireDisplay;
+                    }), "Display");
+
+
                     AUTO lambda = [](UI_Map& map, cweeSharedPtr<EPAnetProject>& p) {
                         using namespace cwee_units;
 
@@ -1373,7 +1813,7 @@ namespace chaiscript {
                         for (auto& zone : network->Zone) {
                             if (zone) {
                                 UI_MapLayer layer;
-                                auto c = UI_Color((254.0 * (zone->AverageElevation() - minEl) / (maxEl - minEl))(), cweeRandomFloat(128, 254), cweeRandomFloat(128, 254), 255);
+                                auto c = UI_Color((254.0 * (zone->AverageElevation() - minEl) / (maxEl - minEl))(), cweeRandomFloat(128, 254), cweeRandomFloat(128, 254), 255);                                                               
                                 for (auto& node : zone->Node) {
                                     UI_MapIcon icon; {
                                         icon.color = c;
@@ -1392,6 +1832,32 @@ namespace chaiscript {
                                         if (node->Type_p == asset_t::RESERVOIR) {
                                             icon.Label = "Reservoir " + node->Name_p;
                                         }
+                                    }
+                                    layer.Children.push_back(var(std::move(icon)));
+                                }
+                                AUTO minPressureCustomer = zone->FindMinPressureCustomer();
+                                if (minPressureCustomer) {
+                                    UI_MapIcon icon; {
+                                        icon.color = UI_Color(254, 25, 25, 254);
+                                        icon.longitude = minPressureCustomer->X;
+                                        icon.latitude = minPressureCustomer->Y;
+                                        icon.size = 16;
+                                        AUTO headPat = *minPressureCustomer->GetValue<_HEAD_>() - minPressureCustomer->El;
+                                        AUTO avgPressure = (units::pressure::pounds_per_square_inch_t)(units::pressure::head_t)(headPat.GetAvgValue()());
+                                        AUTO minPressure = (units::pressure::pounds_per_square_inch_t)(units::pressure::head_t)(headPat.GetMinValue()());
+
+                                        icon.Tag = var(std::map<std::string, Boxed_Value>({
+                                              {"Avg Pressure", var(std::move(avgPressure))}
+                                            , {"Min Pressure", var(std::move(minPressure))}
+                                            , {"Longitude", var(double(minPressureCustomer->X))}
+                                            , {"Latitude", var(double(minPressureCustomer->Y))}
+                                            , {"Elevation", var(foot_t(minPressureCustomer->El))}
+                                            , {"Name", var(cweeStr(minPressureCustomer->Name_p))}
+                                            , {"Type", var(cweeStr(minPressureCustomer->Type_p))}
+                                            }));
+                                        icon.IconPathGeometry = minPressureCustomer->Icon();
+                                        icon.HideOnCollision = false;
+                                        icon.Label = cweeUnitValues::unit_value(minPressure).ToString();
                                     }
                                     layer.Children.push_back(var(std::move(icon)));
                                 }
@@ -1489,6 +1955,9 @@ namespace chaiscript {
                     lib->add(chaiscript::fun(lambda), "=");
                     lib->add(chaiscript::type_conversion<cweeSharedPtr<EPAnetProject>, UI_Map>([=](cweeSharedPtr<EPAnetProject> p) { UI_Map o; return lambda(o, p); }, nullptr));
                 }
+
+
+
             }
 #else
             if (1) {

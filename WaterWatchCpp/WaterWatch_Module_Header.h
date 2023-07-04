@@ -1097,9 +1097,7 @@ namespace chaiscript {
                 cweeStr optimizationType = "Genetic"
             )
         {
-            cweeList<cweeStr> optimizationOptions; optimizationOptions = { cweeStr("Random"), cweeStr("Genetic"), cweeStr("PSO") };
-
-            optimizationType = optimizationType.BestMatch(optimizationOptions);
+            optimizationType = optimizationType.BestMatch({ cweeStr("Random"), cweeStr("Genetic"), cweeStr("PSO") });
 
             cweeThreadedList<float> lowerBound, upperBound;
             for (auto& bv : lowBound_Vector) lowerBound.push_back(boxed_cast<double>(bv));

@@ -26,15 +26,15 @@ to maintain a single distribution point for the source code.
 #include "cweeTime.h"
 #include "enum.h"
 
-BETTER_ENUM(interpolation_t, int, IT_SPLINE, IT_LEFT_CLAMP, IT_RIGHT_CLAMP, IT_LINEAR, IT_END);
+BETTER_ENUM(interpolation_t, int, SPLINE, LEFT, RIGHT, LINEAR, END);
 // enum class interpolation_t { IT_SPLINE, IT_LEFT_CLAMP, IT_RIGHT_CLAMP, IT_LINEAR, IT_END };
 
 const static std::map<interpolation_t, const char*> StringMap_interpolation_t = {
-	{interpolation_t::IT_SPLINE, "Spline"},
-	{interpolation_t::IT_LEFT_CLAMP, "Left"},
-	{interpolation_t::IT_RIGHT_CLAMP, "Right"},
-	{interpolation_t::IT_LINEAR, "Linear"},
-	{interpolation_t::IT_END, "End"}
+	{interpolation_t::SPLINE, "Spline"},
+	{interpolation_t::LEFT, "Left"},
+	{interpolation_t::RIGHT, "Right"},
+	{interpolation_t::LINEAR, "Linear"},
+	{interpolation_t::END, "End"}
 };
 template<> const static std::map<interpolation_t, const char*>& StaticStringMap< interpolation_t >() { return StringMap_interpolation_t; };
 
@@ -1037,7 +1037,7 @@ class cweePattern_Spline : public cweePattern<type> {
 public:
 	cweePattern_Spline() {
 		SetBoundaryType(boundary_t::BT_LOOP);
-		SetInterpolationType(interpolation_t::IT_LINEAR);
+		SetInterpolationType(interpolation_t::LINEAR);
 		SetCloseTime(0.0f);
 	};
 	~cweePattern_Spline() {};
@@ -1274,7 +1274,7 @@ public:
 		this->SetChanged(true);
 
 		this->SetCloseTime(0);
-		this->SetInterpolationType(interpolation_t::IT_LINEAR);
+		this->SetInterpolationType(interpolation_t::LINEAR);
 		this->SetBoundaryType(boundary_t::BT_FREE);
 	}
 
@@ -1285,7 +1285,7 @@ protected:
 
 private:
 	boundary_t			boundaryType = boundary_t::BT_FREE;
-	interpolation_t		interpolationType = interpolation_t::IT_LINEAR;
+	interpolation_t		interpolationType = interpolation_t::LINEAR;
 	u64					closeTime = 0;
 };
 
@@ -1329,7 +1329,7 @@ public:
 		this->SetChanged(true);
 
 		this->SetCloseTime(0);
-		this->SetInterpolationType(interpolation_t::IT_LINEAR);
+		this->SetInterpolationType(interpolation_t::LINEAR);
 		this->SetBoundaryType(boundary_t::BT_FREE);
 	}
 
@@ -1576,7 +1576,7 @@ public:
 	};
 	cweePattern_CatmullRomSpline<type>& operator*=(const cweePattern_CatmullRomSpline<type>& a) {
 		cweePattern_CatmullRomSpline<type> pat = *this; float val;
-		//pat.SetInterpolationType(interpolation_t::IT_LINEAR);
+		//pat.SetInterpolationType(interpolation_t::LINEAR);
 		{
 			auto thisKnotSeries = pat.GetKnotSeries();
 			for (std::pair<u64, float>& x : thisKnotSeries) {
@@ -1596,7 +1596,7 @@ public:
 	};
 	cweePattern_CatmullRomSpline<type>& operator/=(const cweePattern_CatmullRomSpline<type>& a) {
 		cweePattern_CatmullRomSpline<type> pat = *this; float val;
-		//pat.SetInterpolationType(interpolation_t::IT_LINEAR);
+		//pat.SetInterpolationType(interpolation_t::LINEAR);
 		{
 			auto thisKnotSeries = pat.GetKnotSeries();
 			for (std::pair<u64, float>& x : thisKnotSeries) {
@@ -2659,7 +2659,7 @@ protected:
 
 		u64 s;
 		switch (this->GetInterpolationType()) {
-		case interpolation_t::IT_SPLINE: {
+		case interpolation_t::SPLINE: {
 			s = (u64)(t - this->TimeForIndex(index)) / (this->TimeForIndex(index + 1) - this->TimeForIndex(index));
 			if (!::isfinite(s)) s = 0;
 
@@ -2670,7 +2670,7 @@ protected:
 
 			break;
 		}
-		case interpolation_t::IT_LEFT_CLAMP: {
+		case interpolation_t::LEFT: {
 			bvals[0] = 0;
 			bvals[1] = 1;
 			bvals[2] = 0;
@@ -2678,7 +2678,7 @@ protected:
 
 			break;
 		}
-		case interpolation_t::IT_RIGHT_CLAMP: {
+		case interpolation_t::RIGHT: {
 			bvals[0] = 0;
 			bvals[1] = 0;
 			bvals[2] = 1;
@@ -2686,7 +2686,7 @@ protected:
 
 			break;
 		}
-		case interpolation_t::IT_LINEAR: {
+		case interpolation_t::LINEAR: {
 			s = (u64)(t - this->TimeForIndex(index)) / (this->TimeForIndex(index + 1) - this->TimeForIndex(index));
 			if (!::isfinite(s)) s = 0;
 

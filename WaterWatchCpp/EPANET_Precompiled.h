@@ -2042,7 +2042,7 @@ namespace epanet {
     public:
         Spattern() {
             Pat.SetBoundaryType(boundary_t::BT_LOOP);
-            Pat.SetInterpolationType(interpolation_t::IT_LEFT_CLAMP);
+            Pat.SetInterpolationType(interpolation_t::LEFT);
         };
         cweeStr ID;              // pattern ID
         cweeStr Comment;         // pattern comment
@@ -2054,7 +2054,7 @@ namespace epanet {
     public:
         Scurve() {
             Curve.SetBoundaryType(boundary_t::BT_FREE); // can extend beyond bounds, following last available angle
-            Curve.SetInterpolationType(interpolation_t::IT_SPLINE); // linear interpolation or spline? 
+            Curve.SetInterpolationType(interpolation_t::SPLINE); // linear interpolation or spline? 
         };
 
         char        ID[MAXID + 1];  // curve ID
@@ -2128,7 +2128,7 @@ namespace epanet {
     template<> struct DefaultUnits<value_t::_LEVEL_> { using unit = foot_t; };
     template<> struct DefaultUnits<value_t::_EMISSION_INTENSITY_> { using unit = metric_ton_per_day_t; };
 
-#define AddValueType(v) { cweeBalancedPattern<typename DefaultUnits<v>::unit> pat; pat.SetInterpolationType(interpolation_t::IT_LEFT_CLAMP); pat.SetBoundaryType(boundary_t::BT_CLAMPED); out->Add(cweeUnion<int, cweeAny>(static_cast<int>(v), pat)); }
+#define AddValueType(v) { cweeBalancedPattern<typename DefaultUnits<v>::unit> pat; pat.SetInterpolationType(interpolation_t::LEFT); pat.SetBoundaryType(boundary_t::BT_CLAMPED); out->Add(cweeUnion<int, cweeAny>(static_cast<int>(v), pat)); }
     using ValuesContainerType = cweeThreadedSet<cweeUnion<int, cweeAny>, int>; 
     template <int type> class cweeAssetValueCollection {
     public:
@@ -2141,7 +2141,7 @@ namespace epanet {
 
                 { 
                     cweeBalancedPattern<typename DefaultUnits<_DEMAND_>::unit> pat;
-                    pat.SetInterpolationType(interpolation_t::IT_LEFT_CLAMP); 
+                    pat.SetInterpolationType(interpolation_t::LEFT); 
                     pat.SetBoundaryType(boundary_t::BT_CLAMPED); 
                     out->Add(cweeUnion<int, cweeAny>(static_cast<int>(_DEMAND_), pat));
                 }
@@ -2277,6 +2277,28 @@ namespace epanet {
             }
             return out;
         };
+        pounds_per_square_inch_t GetMinPressure() const {
+            AUTO head = this->GetValue<_HEAD_>();
+            if (!head) return 0_psi;
+
+            head_t headV = (head->GetMinValue() - this->El)();
+            return headV;
+        };
+        pounds_per_square_inch_t GetAvgPressure() const {
+            AUTO head = this->GetValue<_HEAD_>();
+            if (!head) return 0_psi;
+
+            head_t headV = (head->GetAvgValue() - this->El)();
+            return headV;
+        };
+        pounds_per_square_inch_t GetMaxPressure() const {
+            AUTO head = this->GetValue<_HEAD_>();
+            if (!head) return 0_psi;
+
+            head_t headV = (head->GetMaxValue() - this->El)();
+            return headV;
+        };
+
 
         char     ID[MAXID + 1];  // node ID
         SCALER   X;              // x-coordinate
@@ -2572,6 +2594,56 @@ namespace epanet {
         cweeThreadedList< Pnode > Node; // this contains all 'within' junctions or reservoirs/tanks
         cweeThreadedList<std::pair<Plink, direction_t>> Boundary_Link; // note that this only inludes the 'critical' links that determine inflow or outflow or can be controlled. 
         cweeThreadedList < Plink > Within_Link; // includes only the completely contained links
+        
+        Pnode FindMinPressureCustomer() const {
+            Pnode out;
+            pounds_per_square_inch_t avgPressure = std::numeric_limits<pounds_per_square_inch_t>::max(); int count = 0;
+            for (auto& node : Node) {
+                if (!node) continue;
+                if (!node->HasWaterDemand()) continue;
+                AUTO head = node->GetValue<_HEAD_>();
+                if (!head) continue;
+                head_t headV = (head->GetMinValue() - node->El)();
+                pounds_per_square_inch_t pressure = headV;
+
+                if (avgPressure > pressure) {
+                    out = node;
+                    avgPressure = pressure;
+                }
+            }
+            return out;
+        };
+        Pnode FindMinPressureNode() const {
+            Pnode out;
+            pounds_per_square_inch_t avgPressure = std::numeric_limits<pounds_per_square_inch_t>::max(); int count = 0;
+            for (auto& node : Node) {
+                if (!node) continue;
+                AUTO head = node->GetValue<_HEAD_>();
+                if (!head) continue;
+                head_t headV = (head->GetMinValue() - node->El)();
+                pounds_per_square_inch_t pressure = headV;
+
+                if (avgPressure > pressure) {
+                    out = node;
+                    avgPressure = pressure;
+                }
+            }
+            return out;
+        };
+
+        pounds_per_square_inch_t MaximumNodePressure() const {
+            pounds_per_square_inch_t avgPressure = -std::numeric_limits<pounds_per_square_inch_t>::max(); int count = 0;
+            for (auto& node : Node) {
+                if (!node) continue;
+                AUTO head = node->GetValue<_HEAD_>();
+                if (!head) continue;
+                head_t headV = (head->GetMinValue() - node->El)();
+                pounds_per_square_inch_t pressure = headV;
+
+                avgPressure = Max< pounds_per_square_inch_t>(avgPressure, pressure);
+            }
+            return avgPressure;
+        };
         pounds_per_square_inch_t AverageNodePressure() const {
             pounds_per_square_inch_t avgPressure = 0; int count = 0;
             for (auto& node : Node) {

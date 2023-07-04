@@ -598,14 +598,14 @@ public:
 	cweeBalancedPattern() : 
 		granularity(16), 
 		boundaryType(boundary_t::BT_FREE), 
-		interpolationType(interpolation_t::IT_LINEAR), 
+		interpolationType(interpolation_t::LINEAR), 
 		lock(), 
 		container(16) 
 	{};
-	cweeBalancedPattern(const cweeBalancedPattern& source) : granularity(16), boundaryType(boundary_t::BT_FREE), interpolationType(interpolation_t::IT_LINEAR), lock(), container(16) {
+	cweeBalancedPattern(const cweeBalancedPattern& source) : granularity(16), boundaryType(boundary_t::BT_FREE), interpolationType(interpolation_t::LINEAR), lock(), container(16) {
 		Copy(source);
 	};
-	cweeBalancedPattern(const cweeThreadedList<pairT>& data) : granularity(16), boundaryType(boundary_t::BT_FREE), interpolationType(interpolation_t::IT_LINEAR), lock(), container(16) {
+	cweeBalancedPattern(const cweeThreadedList<pairT>& data) : granularity(16), boundaryType(boundary_t::BT_FREE), interpolationType(interpolation_t::LINEAR), lock(), container(16) {
 		AcceptNewData(data);
 	};
 	~cweeBalancedPattern() { Clear(); };
@@ -786,7 +786,7 @@ public:
 		 AUTO g = lock.Guard();
 		container.Clear();
 		boundaryType = boundary_t::BT_FREE;
-		interpolationType = interpolation_t::IT_LINEAR;
+		interpolationType = interpolation_t::LINEAR;
 	};
 	 void												ClearData() {
 		 AUTO g = lock.Guard();
@@ -1220,12 +1220,12 @@ public:
 			{
 				Lock();
 				switch (interpolationType) {
-				case interpolation_t::IT_RIGHT_CLAMP: {
+				case interpolation_t::RIGHT: {
 					ptr = container.FindSmallestLargerEqual(clampedTime);
 					if (ptr) v = *ptr;
 					break;
 				}
-				case interpolation_t::IT_SPLINE: {
+				case interpolation_t::SPLINE: {
 					Unlock();
 					Basis(clampedTime, bvals);
 					Lock();
@@ -1239,7 +1239,7 @@ public:
 					if (x3) v += (*x3->object * (scalarT)(u64)bvals[3]); else if (x1) v += (*x1->object * (scalarT)(u64)bvals[3]);
 					break;
 				}
-				case interpolation_t::IT_LINEAR: {
+				case interpolation_t::LINEAR: {
 					Unlock();
 					Basis(clampedTime, bvals);
 					Lock();
@@ -1250,7 +1250,7 @@ public:
 					break;
 				}
 				default:
-				case interpolation_t::IT_LEFT_CLAMP: {
+				case interpolation_t::LEFT: {
 					ptr = container.FindLargestSmallerEqual(clampedTime);
 					if (ptr) v = *ptr;
 					break;
@@ -2382,14 +2382,14 @@ protected:
 		//bvals[3] = sx3 - sx2;
 		u64 s; node_type* index1 = nullptr;
 		switch (interpolationType) {
-		case interpolation_t::IT_RIGHT_CLAMP: {
+		case interpolation_t::RIGHT: {
 			bvals[0] = 0;
 			bvals[1] = 0;
 			bvals[2] = 1;
 			bvals[3] = 0;
 			break;
 		}
-		case interpolation_t::IT_SPLINE: {
+		case interpolation_t::SPLINE: {
 			index1 = container.NodeFindLargestSmallerEqual(t);
 			if (index1) {
 				s = (u64)index1->key;
@@ -2430,7 +2430,7 @@ protected:
 			}
 			break;
 		}
-		case interpolation_t::IT_LINEAR: {
+		case interpolation_t::LINEAR: {
 			index1 = container.NodeFindLargestSmallerEqual(t);
 			if (index1) {
 				s = (u64)index1->key;
@@ -2473,7 +2473,7 @@ protected:
 			break;
 		}
 		default:
-		case interpolation_t::IT_LEFT_CLAMP: {
+		case interpolation_t::LEFT: {
 			bvals[0] = 0;
 			bvals[1] = 1;
 			bvals[2] = 0;

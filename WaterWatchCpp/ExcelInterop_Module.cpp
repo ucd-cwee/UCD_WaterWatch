@@ -365,24 +365,32 @@ namespace chaiscript {
 					AddSharedPtrClassFunction(, ExcelCell, has_value);
 					lib->add(chaiscript::fun([](CellPtr& a) -> chaiscript::Boxed_Value { if (a) { 
 						switch (a->data_type()) {
-						case CellType::boolean:
-							return var(a->value<bool>());
-						case CellType::date:
-							return var(a->value<cweeTime>());
+						case CellType::empty:
+							return var(nullptr);
 						case CellType::error:
 							return var(a->error());
-						case CellType::formula_string: // formula that returns a string
-							return var(a->value<cweeStr>());
-						case CellType::inline_string:
-							return var(a->value<cweeStr>());
-						case CellType::number:
-							return var(a->value<double>());
-						case CellType::shared_string:
-							return var(a->value<cweeStr>());
-						case CellType::empty:
 						default:
-							return var(nullptr);
+							if (a->is_date()) {
+								return var(a->value<cweeTime>());
+							}
+							else {
+								switch (a->data_type()) {
+								case CellType::date:
+									return var(a->value<cweeTime>());
+								case CellType::formula_string:
+								case CellType::inline_string:
+								case CellType::shared_string:
+									return var(a->value<cweeStr>());
+								case CellType::number:
+									return var(a->value<double>());
+								case CellType::boolean:
+									return var(a->value<bool>());
+								default:
+									return var(nullptr);
+								}
+							}
 						}
+						
 					}  else ThrowIfBadAccess; }), "value");
 					AddSharedPtrClassFunction(, ExcelCell, clear_value);
 					lib->add(chaiscript::fun([](CellPtr& a, bool v) { if (a) a->value(v); else ThrowIfBadAccess; }), "value");

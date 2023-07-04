@@ -2496,8 +2496,23 @@ cweeStr	cweeStr::BestMatch(std::vector<cweeStr> list) const {
 		}
 	}
 	return out;
-}
-
+};
+cweeStr	cweeStr::iBestMatch(std::vector<cweeStr> list) const {
+	cweeStr out;
+	int minL = std::numeric_limits<int>::max();
+	cweeStr target = *this;
+	target.ToLower();
+	for (auto& x : list) {
+		x.ToLower();
+		int i = x.Levenshtein(target);
+		if (i <= minL) {
+			minL = i;
+			out = x;
+			if (i == 0) return out;
+		}
+	}
+	return out;
+};
 
 
 
