@@ -1249,12 +1249,12 @@ namespace chaiscript {
 			        def Minimize(Function per_sample, Vector lowBound, Vector highBound){   
                         var low_double = Vector(); for (x:lowBound){ low_double.push_back_ref(double(x)); }                    
                         var hih_double = Vector(); for (x:highBound){ hih_double.push_back_ref(double(x)); }
-				        return OptimizeFunction(true, fun[per_sample](Vector x){ return double(per_sample(x)); }, low_double, hih_double);
+				        return OptimizeFunction(true, fun[per_sample](Vector x){ return double(per_sample(x)); }, low_double, hih_double, "Genetic");
 			        };
 			        def Maximize(Function per_sample, Vector lowBound, Vector highBound){
                         var low_double = Vector(); for (x:lowBound){ low_double.push_back_ref(double(x)); }                    
                         var hih_double = Vector(); for (x:highBound){ hih_double.push_back_ref(double(x)); }
-				        return OptimizeFunction(false, fun[per_sample](Vector x){ return double(per_sample(x)); }, low_double, hih_double);
+				        return OptimizeFunction(false, fun[per_sample](Vector x){ return double(per_sample(x)); }, low_double, hih_double, "Genetic");
 			        };
 			        def Minimize(Function per_sample, Vector lowBound, Vector highBound, string OptType){   
                         var low_double = Vector(); for (x:lowBound){ low_double.push_back_ref(double(x)); }                    

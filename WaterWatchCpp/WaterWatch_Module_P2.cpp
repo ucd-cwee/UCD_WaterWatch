@@ -310,7 +310,6 @@ namespace chaiscript {
                 lib->add(chaiscript::fun([](cweeUnitPattern& a) { return a.RombergIntegral(a.GetMinTime(), a.GetMaxTime()); }), "Integrate");
                 lib->add(chaiscript::fun([](cweeUnitPattern& a, const unit_value& from, const unit_value& to) { return a.RombergIntegral(from, to); }), "Integrate");
 
-#if 1
                 lib->add(chaiscript::fun([](cweeUnitPattern& a, unit_value b) { a += b; return a; }), "+=");
                 lib->add(chaiscript::fun([](cweeUnitPattern& a, unit_value b) { a -= b; return a; }), "-=");
                 lib->add(chaiscript::fun([](cweeUnitPattern& a, unit_value b) { a *= b; return a; }), "*=");
@@ -337,7 +336,6 @@ namespace chaiscript {
                 lib->add(chaiscript::fun([](const unit_value& b, const cweeUnitPattern& a) { return b / a; }), "/");
 
                 lib->add(chaiscript::fun([](const cweeUnitPattern& a, const unit_value& b) { return a.pow(b); }), "^");
-#endif
 
                 lib->add(chaiscript::fun([](const cweeUnitPattern& a, const cweeUnitPattern& b) { return a.R_Squared(b); }), "R_Squared");
 

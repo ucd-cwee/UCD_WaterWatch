@@ -285,6 +285,7 @@ namespace chaiscript {
                     {
                         lib->add(chaiscript::user_type<EPAnet_Shared>(), "EPAnet");
                         lib->add(chaiscript::fun([]()->EPAnet_Shared* { return &*EPAnet; }), "EPAnet");
+                        lib->add(chaiscript::fun([](EPAnet_Shared& p, cweeStr filePath)->cweeSharedPtr<EPAnetProject> { AUTO proj = p.createNewProject(); proj->loadINP(filePath); return proj; }), "loadProject");
                         lib->add(chaiscript::fun([](EPAnet_Shared& p)->cweeSharedPtr<EPAnetProject> { return p.createNewProject(); }), "createNewProject");
                         lib->add(chaiscript::fun([](EPAnet_Shared& p, cweeSharedPtr<EPAnetProject>& proj) -> cweeSharedPtr<EPAnetProject> {
                             auto fp = fileSystem->createRandomFile(fileType_t::INP);
@@ -464,6 +465,15 @@ namespace chaiscript {
                         lib->add(constructor<cweeSharedPtr<EPAnetProject::EPAnetHydraulicSimulation>(const cweeSharedPtr<EPAnetProject::EPAnetHydraulicSimulation>&)>(), "EPAnetHydraulicSim");
                         lib->add(fun([](cweeSharedPtr<EPAnetProject::EPAnetHydraulicSimulation>& a, const cweeSharedPtr<EPAnetProject::EPAnetHydraulicSimulation>& b) { a = b; return a; }), "=");
 
+                        lib->add(fun([](cweeSharedPtr<EPAnetProject>& a) -> bool { 
+                            auto hyd = a->StartHydraulicSimulation(); 
+                            while (true) {
+                                hyd->DoSteadyState();
+                                if (a->getCurrentError() > 100) { return false; }
+                                if (!hyd->ShouldContinueSimulation()) { break; }
+                            }
+                            return true;
+                        }), "DoHydraulicSimulation");
                         lib->add(fun([](cweeSharedPtr<EPAnetProject>& a) { return a->StartHydraulicSimulation(); }), "StartHydraulicSimulation");
                         lib->add(fun([](cweeSharedPtr<EPAnetProject::EPAnetHydraulicSimulation> const& a, cweeUnitValues::minute minutes) { a->SetTimestep(minutes()); }), "SetTimestep");
                         lib->add(fun([](cweeSharedPtr<EPAnetProject::EPAnetHydraulicSimulation> const& a) { return a->GetCurrentSimTime(); }), "GetCurrentSimTime");
@@ -1421,13 +1431,81 @@ namespace chaiscript {
                                                 icon.longitude = node->X;
                                                 icon.latitude = node->Y;
                                                 icon.size = (node->Type_p != asset_t::RESERVOIR) ? 4 : 26;
-                                                icon.Tag = var(std::map<std::string, Boxed_Value>({
-                                                    {"Longitude", var(double(node->X))}
-                                                    , {"Latitude", var(double(node->Y))}
-                                                    , {"Elevation", var(foot_t(node->El))}
-                                                    , {"Name", var(cweeStr(node->Name_p))}
-                                                    , {"Type", var(cweeStr(node->Type_p))}
+
+                                                UI_Grid iconTag;
+                                                {
+                                                    std::shared_ptr<UI_StackPanel> iconTagContent = std::make_shared<UI_StackPanel>();
+                                                    iconTag.OnLoaded = var(fun([=]() {
+                                                        iconTagContent->Children.Clear();
+                                                        {
+                                                            iconTagContent->AddChild(var(std::map<std::string, Boxed_Value>({
+                                                                  {"Longitude", var(double(node->X))}
+                                                                , {"Latitude", var(double(node->Y))}
+                                                                , {"Elevation", var(foot_t(node->El))}
+                                                                , {"Name", var(cweeStr(node->Name_p))}
+                                                                , {"Type", var(cweeStr(node->Type_p))}
+                                                            })));
+                                                        }
+                                                        {
+                                                            AUTO headPat = node->GetValue<_HEAD_>();
+                                                            if (headPat) {
+                                                                // Head or Level
+                                                                {
+                                                                    if (node->Type_p == asset_t::RESERVOIR) {
+                                                                        UI_StackPanel patContainer; patContainer.MinHeight = 180; patContainer.MinWidth = 400;
+                                                                        {
+                                                                            patContainer.AddChild(var(cweeStr("Level")));
+                                                                            patContainer.AddChild(var(cweeUnitValues::cweeUnitPattern(*headPat) - node->El));
+                                                                        }
+                                                                        iconTagContent->AddChild(var(std::move(patContainer)));
+                                                                    }
+                                                                    else {
+                                                                        UI_StackPanel patContainer; patContainer.MinHeight = 180; patContainer.MinWidth = 400;
+                                                                        {
+                                                                            patContainer.AddChild(var(cweeStr("Head")));
+                                                                            patContainer.AddChild(var(cweeUnitValues::cweeUnitPattern(*headPat)));
+                                                                        }
+                                                                        iconTagContent->AddChild(var(std::move(patContainer)));
+                                                                    }
+                                                                }
+                                                                // Pressure
+                                                                {
+                                                                    UI_StackPanel patContainer; patContainer.MinHeight = 180; patContainer.MinWidth = 400;
+                                                                    {
+                                                                        AUTO pat = cweeUnitValues::cweeUnitPattern(*headPat) - node->El;
+                                                                        AUTO pat1 = cweeUnitValues::cweeUnitPattern(1_s, 1_ft_water);
+                                                                        pat1 = pat;
+                                                                        AUTO pat2 = cweeUnitValues::cweeUnitPattern(1_s, 1_psi);
+                                                                        pat2 = pat1;
+
+                                                                        patContainer.AddChild(var(cweeStr("Pressure")));
+                                                                        patContainer.AddChild(var(std::move(pat2)));
+                                                                    }
+                                                                    iconTagContent->AddChild(var(std::move(patContainer)));
+                                                                }
+                                                            }
+
+                                                            AUTO demandPat = node->GetValue<_DEMAND_>();
+                                                            if (demandPat) {
+                                                                // Demand
+                                                                {
+                                                                    UI_StackPanel patContainer; patContainer.MinHeight = 180; patContainer.MinWidth = 400;
+                                                                    {
+                                                                        patContainer.AddChild(var(cweeStr("Demand")));
+                                                                        AUTO pat1 = cweeUnitValues::cweeUnitPattern(1_s, 1_gpm);
+                                                                        pat1 = cweeUnitValues::cweeUnitPattern(*demandPat);
+                                                                        patContainer.AddChild(var(std::move(pat1)));
+                                                                    }
+                                                                    iconTagContent->AddChild(var(std::move(patContainer)));
+                                                                }
+                                                            }
+                                                        }
+                                                        // iconTagContent->Update();
                                                     }));
+                                                    iconTag.AddChild(var(iconTagContent), 0, 0, 1, 1);
+                                                }
+                                                icon.Tag = var(std::move(iconTag));
+
                                                 icon.IconPathGeometry = node->Icon();
                                                 icon.HideOnCollision = (node->Type_p != asset_t::RESERVOIR);
                                                 if (node->Type_p == asset_t::RESERVOIR) {
@@ -1447,15 +1525,83 @@ namespace chaiscript {
                                                 AUTO avgPressure = (units::pressure::pounds_per_square_inch_t)(units::pressure::head_t)(headPat.GetAvgValue()());
                                                 AUTO minPressure = (units::pressure::pounds_per_square_inch_t)(units::pressure::head_t)(headPat.GetMinValue()());
 
-                                                icon.Tag = var(std::map<std::string, Boxed_Value>({
-                                                      {"Avg Pressure", var(std::move(avgPressure))}
-                                                    , {"Min Pressure", var(std::move(minPressure))}
-                                                    , {"Longitude", var(double(minPressureCustomer->X))}
-                                                    , {"Latitude", var(double(minPressureCustomer->Y))}
-                                                    , {"Elevation", var(foot_t(minPressureCustomer->El))}
-                                                    , {"Name", var(cweeStr(minPressureCustomer->Name_p))}
-                                                    , {"Type", var(cweeStr(minPressureCustomer->Type_p))}
-                                                    }));
+                                                UI_Grid iconTag;
+                                                {
+                                                    std::shared_ptr<UI_StackPanel> iconTagContent = std::make_shared<UI_StackPanel>();
+                                                    iconTag.OnLoaded = var(fun([=]() {
+                                                        iconTagContent->Children.Clear();
+                                                        {
+                                                            iconTagContent->AddChild(var(std::map<std::string, Boxed_Value>({
+                                                                  {"Avg Pressure", var(std::move(avgPressure))}
+                                                                , {"Min Pressure", var(std::move(minPressure))}
+                                                                , {"Longitude", var(double(minPressureCustomer->X))}
+                                                                , {"Latitude", var(double(minPressureCustomer->Y))}
+                                                                , {"Elevation", var(foot_t(minPressureCustomer->El))}
+                                                                , {"Name", var(cweeStr(minPressureCustomer->Name_p))}
+                                                                , {"Type", var(cweeStr(minPressureCustomer->Type_p))}
+                                                            })));
+                                                        }
+                                                        {
+                                                            AUTO headPat = minPressureCustomer->GetValue<_HEAD_>();
+                                                            if (headPat) {
+                                                                // Head or Level
+                                                                {
+                                                                    if (minPressureCustomer->Type_p == asset_t::RESERVOIR) {
+                                                                        UI_StackPanel patContainer; patContainer.MinHeight = 180; patContainer.MinWidth = 400;
+                                                                        {
+                                                                            patContainer.AddChild(var(cweeStr("Level")));
+                                                                            patContainer.AddChild(var(cweeUnitValues::cweeUnitPattern(*headPat) - minPressureCustomer->El));
+                                                                        }
+                                                                        iconTagContent->AddChild(var(std::move(patContainer)));
+                                                                    }
+                                                                    else {
+                                                                        UI_StackPanel patContainer; patContainer.MinHeight = 180; patContainer.MinWidth = 400;
+                                                                        {
+                                                                            patContainer.AddChild(var(cweeStr("Head")));
+                                                                            patContainer.AddChild(var(cweeUnitValues::cweeUnitPattern(*headPat)));
+                                                                        }
+                                                                        iconTagContent->AddChild(var(std::move(patContainer)));
+                                                                    }
+                                                                }
+                                                                // Pressure
+                                                                {
+                                                                    UI_StackPanel patContainer; patContainer.MinHeight = 180; patContainer.MinWidth = 400;
+                                                                    {
+                                                                        AUTO pat = cweeUnitValues::cweeUnitPattern(*headPat) - minPressureCustomer->El;
+                                                                        AUTO pat1 = cweeUnitValues::cweeUnitPattern(1_s, 1_ft_water);
+                                                                        pat1 = pat;
+                                                                        AUTO pat2 = cweeUnitValues::cweeUnitPattern(1_s, 1_psi);
+                                                                        pat2 = pat1;
+
+                                                                        patContainer.AddChild(var(cweeStr("Pressure")));
+                                                                        patContainer.AddChild(var(std::move(pat2)));
+                                                                    }
+                                                                    iconTagContent->AddChild(var(std::move(patContainer)));
+                                                                }
+                                                            }
+
+                                                            AUTO demandPat = minPressureCustomer->GetValue<_DEMAND_>();
+                                                            if (demandPat) {
+                                                                // Demand
+                                                                {
+                                                                    UI_StackPanel patContainer; patContainer.MinHeight = 180; patContainer.MinWidth = 400;
+                                                                    {
+                                                                        patContainer.AddChild(var(cweeStr("Demand")));
+
+                                                                        AUTO pat1 = cweeUnitValues::cweeUnitPattern(1_s, 1_gpm);
+                                                                        pat1 = cweeUnitValues::cweeUnitPattern(*demandPat);
+                                                                        patContainer.AddChild(var(std::move(pat1)));
+                                                                    }
+                                                                    iconTagContent->AddChild(var(std::move(patContainer)));
+                                                                }
+                                                            }
+                                                        }
+                                                        // iconTagContent->Update();
+                                                        }));
+                                                    iconTag.AddChild(var(iconTagContent), 0, 0, 1, 1);
+                                                }
+                                                icon.Tag = var(std::move(iconTag));
+
                                                 icon.IconPathGeometry = minPressureCustomer->Icon();
                                                 icon.HideOnCollision = false;
                                                 icon.Label = cweeUnitValues::unit_value(minPressure).ToString();
@@ -1485,13 +1631,72 @@ namespace chaiscript {
                                                     icon.longitude = link->X()(); // (link->EndingNode->X + link->StartingNode->X) / 2.0;
                                                     icon.latitude = link->Y()(); // (link->EndingNode->Y + link->StartingNode->Y) / 2.0;
                                                     icon.size = 24;
-                                                    icon.Tag = var(std::map<std::string, Boxed_Value>({
-                                                        {"Longitude", var(double(icon.longitude))}
-                                                        , {"Latitude", var(double(icon.latitude))}
-                                                        , {"Elevation", var((link->EndingNode->El + link->StartingNode->El) / 2.0)}
-                                                        , {"Name", var(cweeStr(link->Name_p))}
-                                                        , {"Type", var(cweeStr(link->Type_p))}
-                                                        }));
+
+                                                    UI_Grid iconTag;
+                                                    {
+                                                        std::shared_ptr<UI_StackPanel> iconTagContent = std::make_shared<UI_StackPanel>();
+                                                        iconTag.OnLoaded = var(fun([=]() {
+                                                            iconTagContent->Children.Clear();
+                                                            {
+                                                                iconTagContent->AddChild(var(std::map<std::string, Boxed_Value>({
+                                                                    {"Longitude", var(double(icon.longitude))}
+                                                                    , {"Latitude", var(double(icon.latitude))}
+                                                                    , {"Elevation", var((link->EndingNode->El + link->StartingNode->El) / 2.0)}
+                                                                    , {"Name", var(cweeStr(link->Name_p))}
+                                                                    , {"Type", var(cweeStr(link->Type_p))}
+                                                                    })));
+                                                            }
+                                                            {
+                                                                AUTO pat = link->GetValue<_FLOW_>();
+                                                                if (pat) {
+                                                                    UI_StackPanel patContainer; patContainer.MinHeight = 180; patContainer.MinWidth = 400;
+                                                                    {
+                                                                        patContainer.AddChild(var(cweeStr("Flow")));
+
+                                                                        AUTO pat1 = cweeUnitValues::cweeUnitPattern(1_s, 1_gpm);
+                                                                        pat1 = cweeUnitValues::cweeUnitPattern(*pat);
+
+                                                                        AUTO pattern = pat1;
+                                                                        patContainer.AddChild(var(cweeStr::printf("Flow (%s)", cweeUnitValues::unit_value(pattern.RombergIntegral(pattern.GetMinTime(), pattern.GetMaxTime())).ToString().c_str())));
+
+                                                                        patContainer.AddChild(var(std::move(pattern)));
+                                                                    }
+                                                                    iconTagContent->AddChild(var(std::move(patContainer)));
+                                                                }
+                                                            }
+                                                            {
+                                                                AUTO pat = link->GetValue<_HEADLOSS_>();
+                                                                if (pat) {
+                                                                    UI_StackPanel patContainer; patContainer.MinHeight = 180; patContainer.MinWidth = 400;
+                                                                    {
+                                                                        patContainer.AddChild(var(cweeStr("Headloss")));
+                                                                        patContainer.AddChild(var(cweeUnitValues::cweeUnitPattern(*pat)));
+                                                                    }
+                                                                    iconTagContent->AddChild(var(std::move(patContainer)));
+                                                                }
+                                                            }
+                                                            {
+                                                                AUTO pat = link->GetValue<_ENERGY_>();
+                                                                if (pat) {
+                                                                    UI_StackPanel patContainer; patContainer.MinHeight = 180; patContainer.MinWidth = 400;
+                                                                    {
+                                                                        AUTO pattern = cweeUnitValues::cweeUnitPattern(*pat);
+                                                                        patContainer.AddChild(var(cweeStr::printf("Energy (%s)", cweeUnitValues::kilowatt_hour(cweeUnitValues::unit_value(pattern.RombergIntegral(pattern.GetMinTime(), pattern.GetMaxTime()))).ToString().c_str())));
+                                                                        patContainer.AddChild(var(std::move(pattern)));
+                                                                    }
+                                                                    iconTagContent->AddChild(var(std::move(patContainer)));
+                                                                }
+                                                            }
+                                                            // iconTagContent->Update();
+                                                            }));
+                                                        iconTag.AddChild(var(iconTagContent), 0, 0, 1, 1);
+                                                    }
+                                                    icon.Tag = var(std::move(iconTag));
+
+
+
+
+
                                                     icon.IconPathGeometry = link->Icon();
                                                     icon.HideOnCollision = false;
                                                     if (link->Type_p != asset_t::PIPE) {
@@ -1528,13 +1733,68 @@ namespace chaiscript {
                                                         icon.longitude = link->X()(); // (link->EndingNode->X + link->StartingNode->X) / 2.0;
                                                         icon.latitude = link->Y()(); // (link->EndingNode->Y + link->StartingNode->Y) / 2.0;
                                                         icon.size = 24;
-                                                        icon.Tag = var(std::map<std::string, Boxed_Value>({
-                                                            {"Longitude", var(double(icon.longitude))}
-                                                            , {"Latitude", var(double(icon.latitude))}
-                                                            , {"Elevation", var((link->EndingNode->El + link->StartingNode->El) / 2.0)}
-                                                            , {"Name", var(cweeStr(link->Name_p))}
-                                                            , {"Type", var(cweeStr(link->Type_p))}
+
+                                                        UI_Grid iconTag;
+                                                        {
+                                                            std::shared_ptr<UI_StackPanel> iconTagContent = std::make_shared<UI_StackPanel>();
+                                                            iconTag.OnLoaded = var(fun([=]() {
+                                                                iconTagContent->Children.Clear();
+                                                                {
+                                                                    iconTagContent->AddChild(var(std::map<std::string, Boxed_Value>({
+                                                                        {"Longitude", var(double(icon.longitude))}
+                                                                        , {"Latitude", var(double(icon.latitude))}
+                                                                        , {"Elevation", var((link->EndingNode->El + link->StartingNode->El) / 2.0)}
+                                                                        , {"Name", var(cweeStr(link->Name_p))}
+                                                                        , {"Type", var(cweeStr(link->Type_p))}
+                                                                        })));
+                                                                }
+                                                                {
+                                                                    AUTO pat = link->GetValue<_FLOW_>();
+                                                                    if (pat) {
+                                                                        UI_StackPanel patContainer; patContainer.MinHeight = 180; patContainer.MinWidth = 400;
+                                                                        {
+                                                                            patContainer.AddChild(var(cweeStr("Flow")));
+
+                                                                            AUTO pat1 = cweeUnitValues::cweeUnitPattern(1_s, 1_gpm);
+                                                                            pat1 = cweeUnitValues::cweeUnitPattern(*pat);
+
+                                                                            AUTO pattern = pat1;
+                                                                            patContainer.AddChild(var(cweeStr::printf("Flow (%s)", cweeUnitValues::unit_value(pattern.RombergIntegral(pattern.GetMinTime(), pattern.GetMaxTime())).ToString().c_str())));
+
+                                                                            patContainer.AddChild(var(std::move(pattern)));
+                                                                        }
+                                                                        iconTagContent->AddChild(var(std::move(patContainer)));
+                                                                    }
+                                                                }
+                                                                {
+                                                                    AUTO pat = link->GetValue<_HEADLOSS_>();
+                                                                    if (pat) {
+                                                                        UI_StackPanel patContainer; patContainer.MinHeight = 180; patContainer.MinWidth = 400;
+                                                                        {
+                                                                            patContainer.AddChild(var(cweeStr("Headloss")));
+                                                                            patContainer.AddChild(var(cweeUnitValues::cweeUnitPattern(*pat)));
+                                                                        }
+                                                                        iconTagContent->AddChild(var(std::move(patContainer)));
+                                                                    }
+                                                                }
+                                                                {
+                                                                    AUTO pat = link->GetValue<_ENERGY_>();
+                                                                    if (pat) {
+                                                                        UI_StackPanel patContainer; patContainer.MinHeight = 180; patContainer.MinWidth = 400;
+                                                                        {
+                                                                            AUTO pattern = cweeUnitValues::cweeUnitPattern(*pat);
+                                                                            patContainer.AddChild(var(cweeStr::printf("Energy (%s)", cweeUnitValues::kilowatt_hour(cweeUnitValues::unit_value(pattern.RombergIntegral(pattern.GetMinTime(), pattern.GetMaxTime()))).ToString().c_str())));
+                                                                            patContainer.AddChild(var(std::move(pattern)));
+                                                                        }
+                                                                        iconTagContent->AddChild(var(std::move(patContainer)));
+                                                                    }
+                                                                }
+                                                                // iconTagContent->Update();
                                                             }));
+                                                            iconTag.AddChild(var(iconTagContent), 0, 0, 1, 1);
+                                                        }
+                                                        icon.Tag = var(std::move(iconTag));
+
                                                         icon.IconPathGeometry = link->Icon();
                                                         icon.HideOnCollision = false;
                                                         if (link->Type_p != asset_t::PIPE) {
@@ -1745,7 +2005,7 @@ namespace chaiscript {
                                     header.AddChild(var(std::move(pressureDisplay)));
                                 }
                             }
-                            entireDisplay.AddChild(var(std::move(header)), 0, 0, 1, 2);
+                            entireDisplay.AddChild(var(std::move(header)), 0, 0, 1, 1);
                         }
                         /* Map */ {
                             mapRegen(*map, p, "Zone");
@@ -1770,19 +2030,31 @@ namespace chaiscript {
                                         for (auto& zone : p->epanetProj->network->Zone) {
                                             if (zone) {
                                                 UI_Button zoneDisplay; {
-                                                    zoneDisplay.Content = var(UI_TextBlock(zone->Name_p));
-                                                    cweeSharedPtr<bool> visibilityTracker = make_cwee_shared<bool>(true);
+                                                    std::shared_ptr<UI_TextBlock> ZoneName = std::make_shared<UI_TextBlock>(zone->Name_p);
+                                                    ZoneName->Foreground = UI_Color(64, 188, 64, 255);
+                                                    ZoneName->HorizontalAlignment = "Center";
+                                                    ZoneName->HorizontalTextAlignment = "Center";
+                                                    zoneDisplay.Content = var(ZoneName);
+                                                    cweeSharedPtr<bool> visibilityTracker = make_cwee_shared<bool>(true);                                                    
                                                     zoneDisplay.Clicked = var(fun([=]() {
                                                         for (auto& layer : map->Layers) {
                                                             auto* layerP = boxed_cast<UI_MapLayer*>(layer);
                                                             if (layerP && layerP->Name == zone->Name_p) {
                                                                 *visibilityTracker = !*visibilityTracker;
+                                                                if (*visibilityTracker) {
+                                                                    ZoneName->Foreground = UI_Color(64, 188, 64, 255);
+                                                                    ZoneName->Update();
+                                                                }
+                                                                else {
+                                                                    ZoneName->Foreground = UI_Color(255, 128, 128, 255);
+                                                                    ZoneName->Update();
+                                                                }
                                                                 layerP->SetVisibility(*visibilityTracker);
                                                             }
                                                         }
-                                                    }));
-                                                    zoneList.push_back(var(std::move(zoneDisplay)));
+                                                    }));                                                    
                                                 }
+                                                zoneList.push_back(var(std::move(zoneDisplay)));
                                             }
                                         }
 
@@ -1790,7 +2062,7 @@ namespace chaiscript {
                                     zones.AddChild(var(std::move(zoneList)), 2, 0, 1, 1);
                                 }
                             }
-                            entireDisplay.AddChild(var(std::move(zones)), 1, 1, 1, 1);
+                            entireDisplay.AddChild(var(std::move(zones)), 0, 1, 2, 1);
                         }                        
                         
                         return entireDisplay;
