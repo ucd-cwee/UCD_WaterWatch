@@ -542,6 +542,7 @@ public:
 	bool RemoveDeadEnds();
 	bool CombineBasicPipesInSeries();
 	bool CollapseZone(::epanet::Pzone const& zone);
+	bool DemandRedistribution(::epanet::Pzone const& zone, cweeStr const& mode, double val);
 
 	int addLink(cweeStr const& id, int const& linkType, cweeStr const& fromNode, cweeStr const& toNode);
 	void deleteLink(int const& index, int const& actionCode);

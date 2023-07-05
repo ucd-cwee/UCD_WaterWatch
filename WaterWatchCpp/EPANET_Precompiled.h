@@ -2064,14 +2064,12 @@ namespace epanet {
     };
     using Pcurve = cweeSharedPtr<Scurve>; // Pointer to a curve
 
-    class Sdemand             // Demand List Item
-    {
+    class Sdemand {            // Demand List Item    
     public:
         cubic_foot_per_second_t Base;             // baseline demand
         int    Pat;              // pattern index
         Ppattern   TimePat;    // actual pattern (shared ptr)
         char* Name;            // demand category name
-        //cweeSharedPtr<Sdemand> next;    // next demand list item
     };
 
     class Senergy             // Energy Usage Object
@@ -2267,6 +2265,21 @@ namespace epanet {
         SCALER   C0_internal;             // initial quality
 
     public:
+        void     AddDemands(cweeList<Sdemand> const& demands) {
+            for (auto& in_d : demands) {
+                if (in_d.Base != 0_gpm) { // valid                    
+                    AUTO matches = D.Select([&](Sdemand const& thisD)->bool {
+                        return thisD.TimePat == in_d.TimePat;
+                    });
+                    if (matches.Num() > 0) {
+                        matches[0]->Base += in_d.Base;
+                    } else {
+                        D.Append(in_d);
+                    }
+                }
+            }
+        };
+
         bool     HasWaterDemand() const {
             bool out = false;
             for (auto& demand : D) {

@@ -367,7 +367,7 @@ namespace chaiscript {
                         lib->add(fun([](cweeSharedPtr<EPAnetProject>& proj) { proj->RemoveDeadEnds(); }), "RemoveDeadEnds");
                         lib->add(fun([](cweeSharedPtr<EPAnetProject>& proj) { proj->CombineBasicPipesInSeries(); }), "CombineBasicPipesInSeries");
                         lib->add(fun([](cweeSharedPtr<EPAnetProject>& proj, ::epanet::Pzone const& z) { proj->CollapseZone(z); }), "CollapseZone");
-
+                        lib->add(fun([](cweeSharedPtr<EPAnetProject>& proj, ::epanet::Pzone const& z, cweeStr mode, double val) { proj->DemandRedistribution(z, mode, val); }), "DemandRedistribution");
 
                         lib->add(fun([](cweeSharedPtr<EPAnetProject>& proj, cweeStr id, int linkType, cweeStr fromNode, cweeStr toNode) { return proj->addLink(id, linkType, fromNode, toNode); }), "addLink");
                         lib->add(fun([](cweeSharedPtr<EPAnetProject>& proj, int index, int actionCode) { proj->deleteLink(index, actionCode); }), "deleteLink");
@@ -704,7 +704,8 @@ namespace chaiscript {
                                     auto control_link2 = control_network->Link[link_index];
                                     if (control_link2) {
                                         auto control_link = control_link2;
-                                        int preventLoop = 10;
+#if 0
+                                        int preventLoop = 25;
                                         // move upstream/downstream to get the best link that starts this path
                                         while (control_link2 && control_link) {
                                             control_link2 = getNextGoodLink(control_link);
@@ -712,11 +713,21 @@ namespace chaiscript {
                                                 break;
                                             }
                                             else {
-                                                control_link = control_link2;
+                                                // only accept the recommendation if our elevation DID NOT increase. 
+                                                if (
+                                                    (control_link->StartingNode->El + control_link->EndingNode->El)
+                                                    >=
+                                                    (control_link2->StartingNode->El + control_link2->EndingNode->El)
+                                                    ) {
+                                                    control_link = control_link2;
+                                                }
+                                                else {
+                                                    break;
+                                                }
                                             }
                                             if (--preventLoop <= 0) break;
                                         }
-
+#endif
                                         if (control_link) {
                                             // the control_link now determines the link_index;
                                             link_index = control_project->getlinkIndex(control_link->Name_p);
@@ -914,18 +925,18 @@ namespace chaiscript {
                             scalar_t penalty = 0;
 
                             /* simulation */ {
-                                proj->epanetProj->times.Dur /= 7.0;
+                                // proj->epanetProj->times.Dur /= 7.0;
                                 AUTO sim = proj->StartHydraulicSimulation();
                                 while (true) {
-                                    sim->DoSteadyState(::epanet::HydraulicSimulationQuality::LOWRES);
-                                    if (proj->getCurrentError() >= 1) {
+                                    sim->DoSteadyState(); // ::epanet::HydraulicSimulationQuality::LOWRES);
+                                    if (proj->getCurrentError() >= 100) {
                                         // bad simulation -- big penalty.
                                         penalty = PenaltyValue;
                                         break;
                                     }
                                     if (!sim->ShouldContinueSimulation()) break;
                                 }
-                                proj->epanetProj->times.Dur *= 7.0;
+                                // proj->epanetProj->times.Dur *= 7.0;
                             }
 
                             // Get valve definitions, and if more cost effective, fix the PRV/ERT distinction.

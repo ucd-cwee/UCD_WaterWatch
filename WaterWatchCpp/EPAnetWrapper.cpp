@@ -2385,6 +2385,70 @@ bool EPAnetProject::CollapseZone(::epanet::Pzone const& zone) {
 	}
 	return false;
 };
+bool EPAnetProject::DemandRedistribution(::epanet::Pzone const& zone, cweeStr const& mode, double val) {
+	using namespace cwee_units;
+	switch (mode.Hash()) {
+	default:
+	case cweeStr::Hash("LowPressureRemoval"): { 
+		// Goal: Re-distribute demands from customers with low pressure to customers with acceptable pressure. 		
+		// Intended to be used after demand allocation, to help "move" demands placed on nodes with higher elevations that is actually served
+		pounds_per_square_inch_t psiTarget = val;
+		std::map<std::string, cweeUnitValues::cweeUnitPattern> pressurePatterns;
+
+		// STEP 1: Get the pressure patterns for all of our nodes.
+		for (auto& node : zone->Node) {
+			if (node->Type_p == asset_t::JUNCTION) {
+				AUTO headPat = node->GetValue<_HEAD_>();
+				if (headPat) {
+					AUTO pressurePat = cweeUnitValues::cweeUnitPattern(1_s, 1_psi); {
+						AUTO waterHeadPat = cweeUnitValues::cweeUnitPattern(1_s, 1_ft_water);
+						waterHeadPat = (cweeUnitValues::cweeUnitPattern(*headPat) - node->El);
+						pressurePat = waterHeadPat;
+					}
+					pressurePatterns[node->Name_p.c_str()] = pressurePat;
+				}
+			}
+		}
+
+		// STEP 2: Seperate the customers with average service pressure less than or equal to our target.
+		cweeList<::epanet::Pnode> good_nodes;
+		cweeList<::epanet::Pnode> bad_nodes;
+		for (auto& node : zone->Node) {
+			if ((node->Type_p == asset_t::JUNCTION) && (pressurePatterns.count(node->Name_p.c_str()) > 0)) {
+				if (node->HasWaterDemand()) {
+					auto& pressurePat = pressurePatterns[node->Name_p.c_str()];
+					if (pressurePat.GetAvgValue() <= psiTarget) {
+						bad_nodes.Append(node);						
+					}
+					else {
+						good_nodes.Append(node);
+					}
+				}				
+			}
+		}
+
+		// EARLY EXIT IF THERE ARE NO GOOD OR NO BAD NODES
+		if (good_nodes.Num() == 0 || bad_nodes.Num() == 0) return false;
+
+		// STEP 3: Move demands from each bad node to the good nodes (Even distribution? Local distribution?)
+		for (auto& badNode : bad_nodes) {
+			cweeList<::epanet::Sdemand> demands = badNode->D;
+			for (auto& d : demands) {
+				d.Base /= good_nodes.Num(); // assumes even distribution
+			}
+
+			for (auto& goodNode : good_nodes) {
+				goodNode->AddDemands(demands);
+			}
+
+			badNode->D.Clear();
+		}
+		return true;
+	}	
+	}
+	return false;
+};
+
 
 // link management
 int EPAnetProject::addLink(cweeStr const& id, int const& linkType, cweeStr const& fromNode, cweeStr const& toNode) { return EPAnetLocal->addLink(proj, id, linkType, fromNode, toNode); };

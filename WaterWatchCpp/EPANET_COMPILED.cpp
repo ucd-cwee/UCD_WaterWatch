@@ -265,7 +265,7 @@ namespace epanet {
             demand.TimePat = TimePat;
 
             demand.Name = NULL;
-            if (dname && strlen(dname) > 0) xstrcpy(&demand.Name, dname, MAXID);
+            if (dname && strlen(dname) > 0) demand.Name = xstrcpy(&demand.Name, dname, MAXID);
 
             node->D.Append(demand);
 

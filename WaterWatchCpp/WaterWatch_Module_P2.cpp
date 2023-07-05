@@ -354,6 +354,48 @@ namespace chaiscript {
                 }), "Cast");
             }
 
+            // Sparse Matrix
+            if (1) {
+                using SparseMatrixT = cweeInterpolatedMatrix<float>;
+
+                lib->add(chaiscript::user_type<SparseMatrixT>(), "Matrix");
+                lib->add(chaiscript::constructor<SparseMatrixT()>(), "Matrix");
+                lib->add(chaiscript::constructor<SparseMatrixT(const SparseMatrixT&)>(), "Matrix");
+
+                lib->AddFunction(, =, ->SparseMatrixT&, matrix1 = matrix2; return matrix1, SparseMatrixT& matrix1, SparseMatrixT const& matrix2);
+
+                lib->AddFunction(, GetMinX, ->double , return matrix.GetMinX(), SparseMatrixT const& matrix);
+                lib->AddFunction(, GetMaxX, ->double , return matrix.GetMaxX(), SparseMatrixT const& matrix);
+                lib->AddFunction(, GetMinY, ->double , return matrix.GetMinY(), SparseMatrixT const& matrix);
+                lib->AddFunction(, GetMaxY, ->double , return matrix.GetMaxY(), SparseMatrixT const& matrix);
+                lib->AddFunction(, GetMinValue, , return matrix.GetMinValue(), SparseMatrixT const& matrix);
+                lib->AddFunction(, GetMaxValue, , return matrix.GetMaxValue(), SparseMatrixT const& matrix);
+
+                lib->AddFunction(, RemoveUnnecessaryKnots, , matrix.RemoveUnnecessaryKnots(), SparseMatrixT& matrix);
+
+                lib->AddFunction(, GetValue, , return matrix.GetValue(X,Y), SparseMatrixT const& matrix, double X, double Y);
+                lib->AddFunction(, GetCurrentValue, , return matrix.GetCurrentValue(X, Y), SparseMatrixT const& matrix, double X, double Y);
+
+                lib->AddFunction(, InsertValue, , matrix.InsertValue(X, Y, V), SparseMatrixT& matrix, double X, double Y, float V);
+                lib->AddFunction(, AddValue, , matrix.AddValue(X, Y, V), SparseMatrixT& matrix, double X, double Y, float V);
+
+                lib->AddFunction(, Clear, , matrix.Clear(), SparseMatrixT& matrix);
+
+                lib->AddFunction(, to_string, ->std::string , return matrix.ToString().c_str(), SparseMatrixT const& matrix);
+                lib->AddFunction(, from_string, , return matrix.FromString(str), SparseMatrixT& matrix, cweeStr const& str);
+
+                lib->AddFunction(, Num, , return matrix.Num(), SparseMatrixT& matrix);
+                lib->AddFunction(, size, , return matrix.Num(), SparseMatrixT& matrix);
+
+                lib->AddFunction(, MinHilbertPosition, ->double, return matrix.MinHilbertPosition(), SparseMatrixT const& matrix);
+                lib->AddFunction(, MaxHilbertPosition, ->double, return matrix.MaxHilbertPosition(), SparseMatrixT const& matrix);
+                lib->AddFunction(, HilbertPositionToValue, , return matrix.HilbertPositionToValue(position), SparseMatrixT const& matrix, double position);
+                lib->AddFunction(, HilbertPositionToXY, , SINGLE_ARG(
+                    AUTO x = matrix.HilbertPositionToXY(position);
+                    return std::pair<Boxed_Value, Boxed_Value>(var((double)(x.first)), var((double)(x.second)));
+                ), SparseMatrixT const& matrix, double position);
+            }
+
             // Extern Data
             if(1) {
                 chaiscript::dispatch::Dynamic_Object o;

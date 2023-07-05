@@ -581,7 +581,7 @@ public:
 		return hilbertContainer.GetNumValues();
 	};
 
-	u64 MinHilbertPosition() {
+	u64 MinHilbertPosition() const  {
 		u64 out;
 		Lock();
 		UnsafeValidateData();
@@ -589,7 +589,7 @@ public:
 		Unlock();
 		return out;
 	};
-	u64 MaxHilbertPosition() {
+	u64 MaxHilbertPosition() const  {
 		u64 out;
 		Lock();
 		UnsafeValidateData();
@@ -597,7 +597,7 @@ public:
 		Unlock();
 		return out;
 	};
-	T	HilbertPositionToValue(const u64& hilbertPos) {
+	T	HilbertPositionToValue(const u64& hilbertPos) const  {
 		T out;
 		Lock();
 		UnsafeValidateData();
