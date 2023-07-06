@@ -2312,7 +2312,6 @@ namespace epanet {
             return headV;
         };
 
-
         char     ID[MAXID + 1];  // node ID
         SCALER   X;              // x-coordinate
         SCALER   Y;              // y-coordinate
@@ -2731,6 +2730,7 @@ namespace epanet {
         /* returns the list of assets that feed into or out of this zone. */
         cweeList< cweeUnion<Passet, direction_t> > GetMassBalanceAssets(cweeSharedPtr<Project> pr);
         cweeUnitValues::cweeUnitPattern TryCalibrateZone(cweeSharedPtr<Project> pr, std::map<std::string, cweeUnitValues::cweeUnitPattern> const& ScadaSources);
+        std::map<std::string, cweeUnitValues::unit_value> LeakModelResults(cweeSharedPtr<Project> pr, year_t surveyFrequency) const;
 
     private:
         template <int distance = 0>
@@ -3225,9 +3225,214 @@ namespace epanet {
             MassBalance;           // Mass balance components
     };
 
+    class LeakModel {
+    public:
+        SCALER ICF = 1.3; // # infrastructure condition factor
+        SCALER ILI = 1.1; // # infrastructure leakage index
+
+        typedef unit<std::ratio<2628000>, seconds> month;
+        typedef unit_t <month> month_t;
+        typedef unit_t< compound_unit<million_gallon, squared<inverse<month>>> > rateOfRise_t;
+        typedef unit_t< compound_unit<million_gallon, inverse<month>> > million_gallon_per_month_t;
+
+        static constexpr million_gallon_t Vol_Lost_At_t(month_t t, scalar_t gamma, rateOfRise_t R, million_gallon_per_month_t init, scalar_t eta) { //only under under one period, if do nothing, init = initial leakge rate
+            return (gamma * R * t * t / 2.0) + (eta * init * t); // eta is zero for the case where the first surveyand repair eliminates all leaks
+        };
+        template <int months, typename T> static constexpr T Get_F_Given_P(T input, scalar_t rate) {
+            return input * units::math::cpow<months>(1.0 + rate);
+        };
+        template <typename T> static T Get_F_Given_P(T input, scalar_t rate, month_t time) {
+            return input * std::pow(1.0 + rate, time());
+        };
+        template <int months, typename T> static T  Get_P_Given_F(T input, scalar_t rate) {
+            return input * units::math::pow<-1 * months>(1.0 + rate);
+        };
+        template <typename T> static T Get_P_Given_F(T input, scalar_t rate, month_t time) {
+            return input * std::pow(1.0 + rate(), -1 * time());
+        };
+
+        std::map<std::string, cweeUnitValues::unit_value> LeakModelResults(
+            mile_t MilesMains,
+            year_t surveyFrequency,
+            pounds_per_square_inch_t avgPressure
+        ) {
+            // internal 
+            constexpr scalar_t unitScalar = 1;
+
+            // CONSTANTS, INDEPENDANT OF SYSTEM
+            constexpr scalar_t dis = 0.04 / 12.0; // discount rate
+            constexpr scalar_t g = 0.025 / 12.0; //growth rate
+            constexpr scalar_t inflation = 0.025 / 12.0;
+            constexpr scalar_t leak_reduction_eta = 0; // 0 ONLY WE ASSUME ALL LEAKS FIXED AT TIME 0 SO NO LEAKAGE REMAINING
+            // need to know if we are counting the initial leak reductionand repair as benefits, eta is a variable that gives the fraction of the leakage(gal / yr) remaining after initial survey / repair
+            constexpr scalar_t do_nothing_eta = 1.0; // set to 1 to include the benefits of the initial survey and repair over the study period
+            constexpr scalar_t w_prv = 0.025 / 12.0;
+            constexpr scalar_t N_PRV = 20.0;
+            constexpr scalar_t w_pat = 0.025 / 12;
+            constexpr scalar_t N_PAT = 20.0;
+            constexpr scalar_t w_E = 0.025 / 12;
+            constexpr Dollar_per_kilowatt_hour_t Ce = 0.12; // $ / KWh
+            constexpr Dollar_per_gallon_t Cvp = 0.001215862; // $ / gallon
+            constexpr million_gallon_per_month_t connectionLeakRate = 4_gpd;
+            constexpr AUTO LeakRatePerMile = connectionLeakRate * ((92950900.0 / 4.0) / 365.0) / 852.95_mi;
+            constexpr scalar_t PercRigid = 0.75;
+            constexpr scalar_t w_F = 0.025 / 12.0;
+            constexpr scalar_t w_M = 0.025 / 12.0;
+            constexpr scalar_t w_su = 0.025 / 12.0;
+            constexpr million_gallon_per_month_t  L = 500000.00_gal / 1_yr; // flowrate per leak average(gal / year) / months per year = gal / month
+            constexpr Dollar_t 	Calr = 5340.7; // cost per leak to repair
+            constexpr scalar_t 	Dldr = 1; // true positive rate for leak detection, cannot find for Marin in Amanda's data
+            constexpr Dollar_per_mile_t M = Get_F_Given_P<1 * 12>(605_USD_p_mi, w_M);
+            constexpr Dollar_t F = Get_F_Given_P<1 * 12>(Calr / Dldr, w_F); // adjust for one year, 2022 publication
+
+            // SYSTEM CHARACTERISTICS / ANALYSIS VARIABLES
+            month_t surveyFrequency_Months = surveyFrequency;
+            pounds_per_square_inch_t P0 = avgPressure; // # initial pressure
+            pounds_per_square_inch_t P1 = avgPressure; // # pressure after reduction
+            mile_t d = MilesMains; // miles of mains
+
+            // months
+            cweeList<month_t> t;  for (int i = 0; i <= 12 * 30; i++) t.Append((month_t)(i));
+
+            // define the rate of rise of leakage
+            rateOfRise_t R = LeakRatePerMile * MilesMains / 365_d;
+            scalar_t N1 = 1.5 - (1.0 - (2.0 / 3.0) * (ICF / ILI)) * PercRigid;
+            scalar_t gamma = std::pow((P1 / P0)(), N1()); // # fraction leakage rate remaining after pressure reduction, about 0.6 right now
+            million_gallon_per_month_t init = R * 2_yr; // # initial leakage rate, gallons / yr
+
+            // calculate water lost volume and value
+            cweeList<million_gallon_t> Water_Lost_Volume; Water_Lost_Volume.AssureSize(t.size(), 0_MG);
+            cweeList<Dollar_t> Water_Lost_Value; Water_Lost_Value.AssureSize(t.size(), 0_USD); {
+                month_t idx_i = 0;
+                bool firstPass = true;
+                month_t zeroMonth = 0;
+                for (month_t idx = 0; idx < ((month_t)(t.size())); idx++) {
+                    if (idx == zeroMonth || units::math::round(units::math::fmod(idx, surveyFrequency_Months)) == zeroMonth) {
+                        idx_i = zeroMonth;
+                        if (firstPass) {
+                            Water_Lost_Volume[idx()] = 0;
+                            firstPass = false;
+                        }
+                        else {
+                            Water_Lost_Volume[idx()] =
+                                Vol_Lost_At_t(surveyFrequency_Months, gamma, R, init, leak_reduction_eta) -
+                                Vol_Lost_At_t(surveyFrequency_Months - month_t(1), gamma, R, init, leak_reduction_eta);
+                        }
+                    }
+                    else {
+                        AUTO vol0 = Vol_Lost_At_t(
+                            t[idx_i()],
+                            gamma,
+                            R,
+                            init,
+                            leak_reduction_eta
+                        );
+                        AUTO vol1 = Vol_Lost_At_t(
+                            t[(idx_i - month_t(1))()],
+                            gamma,
+                            R,
+                            init,
+                            leak_reduction_eta
+                        );
+                        Water_Lost_Volume[idx()] = vol0 - vol1;
+                    }
+                    idx_i += month_t(1);
+                }
+                for (month_t idx = 0; idx < ((month_t)(t.size())); idx++) {
+                    Water_Lost_Value[idx()] = Water_Lost_Volume[idx()] * Get_F_Given_P(Cvp, g, t[idx()]);
+                }
+            }
+
+            // calculate the water lost under the do-nothing scenario
+            cweeList<million_gallon_t> Water_Lost_Do_Nothing; Water_Lost_Do_Nothing.AssureSize(t.size(), 0_MG); {
+                month_t idx_i = 0;
+                bool firstPass = true;
+                month_t zeroMonth = 0;
+                for (month_t idx = 0; idx < ((month_t)(t.size())); idx++) {
+                    if (firstPass) {
+                        Water_Lost_Do_Nothing[idx()] = 0;
+                        firstPass = false;
+                    }
+                    else {
+                        Water_Lost_Do_Nothing[idx()] =
+                            Vol_Lost_At_t(t[idx()], 1, R, init, do_nothing_eta) -
+                            Vol_Lost_At_t(t[idx() - 1], 1, R, init, do_nothing_eta);
+                    }
+                }
+            }
+
+            // calculate the water saved volume and value for each time period
+            cweeList<million_gallon_t> Water_Saved_Volume; Water_Saved_Volume.AssureSize(t.size(), 0_MG); {
+                for (int i = 0; i < Water_Saved_Volume.size(); i++) {
+                    Water_Saved_Volume[i] = Water_Lost_Do_Nothing[i] - Water_Lost_Volume[i];
+                }
+            }
+            cweeList<Dollar_t> Water_Saved_Value; Water_Saved_Value.AssureSize(t.size(), 0_USD); {
+                month_t idx_i = 0;
+                for (month_t idx = 0; idx < ((month_t)(t.size())); idx++) {
+                    Water_Saved_Value[idx()] = Water_Saved_Volume[idx()] * Get_F_Given_P(Cvp, g, t[idx()]);
+                }
+            }
+
+            // calculate costs of surveying over time period
+            Dollar_t 	D = d * M; // D full leak detection survey cost
+
+            // surveys after initial
+            Dollar_t Cs_0 = (R * surveyFrequency_Months / L) * F + D; // cost of survey in year 0 dollars
+            cweeList<Dollar_t> SurveyRep; SurveyRep.AssureSize(t.size(), 0_USD); {
+                month_t idx_i = 0;
+                month_t zeroMonth = 0;
+                for (month_t idx = 0; idx < ((month_t)(t.size())); idx++) {
+                    if (units::math::fmod(idx, surveyFrequency_Months) == zeroMonth) {
+                        SurveyRep[idx()] = Get_F_Given_P(Cs_0, w_su, t[idx()]);
+                    }
+                    else { // only take the periods the surveys are actually done
+                        SurveyRep[idx()] = 0_USD;
+                    }
+                }
+            }
+
+            // initial survey
+
+            if (do_nothing_eta >= unitScalar) {
+                SurveyRep[0] = (init / L) * F + D; // Initial survey cost
+            }
+            else {
+                SurveyRep[0] = 0_USD;
+            }
+
+            // calculate net present values, smarter ways to do this, not worrying about it now
+            Dollar_t NPV_costs = 0;
+            {
+                for (month_t idx = 0; idx < ((month_t)(t.size())); idx++) {
+                    try {
+                        NPV_costs += Get_P_Given_F(SurveyRep[idx()], dis, t[idx()]);
+                        NPV_costs += Get_P_Given_F(Water_Lost_Value[idx()], dis, t[idx()]);
+                    }
+                    catch (...) {}
+                }
+            }
+
+            Dollar_t NPV_benefits = 0;
+            {
+                month_t idx_i = 0;
+                for (month_t idx = 0; idx < ((month_t)(t.size())); idx++) {
+                    NPV_benefits += Get_P_Given_F(Water_Saved_Value[idx()], dis, t[idx()]);
+                }
+            }
+
+            std::map<std::string, cweeUnitValues::unit_value> results;
+            {
+                results["Total Costs"] = cweeUnitValues::Dollar(NPV_costs);
+                results["Total Benefits"] = cweeUnitValues::Dollar(NPV_benefits);
+                results["Net Benefits"] = cweeUnitValues::Dollar(NPV_benefits - NPV_costs);
+            }
+
+            return results;
+        };
+    };
+
     // Pipe Network Wrapper
-
-
     class Network {
     public:
         Network() :
@@ -3266,6 +3471,7 @@ namespace epanet {
             * NodeHashTable,                        // Hash table for Node ID names
             * LinkHashTable;                        // Hash table for Link ID names
         cweeThreadedList<Padjlist> Adjlist;         // Node adjacency lists
+        LeakModel       Leakage;
 
         cweeList<::epanet::Pzone>         getCalibrationOrder() const;
     };
@@ -4453,7 +4659,19 @@ namespace epanet {
 
         return sumDemands;    
     };
+    INLINE std::map<std::string, cweeUnitValues::unit_value> Szone::LeakModelResults(cweeSharedPtr<Project> pr, year_t surveyFrequency) const {
+        mile_t MilesMains;
+        pounds_per_square_inch_t avgPressure;
 
+        for (auto& link : this->Within_Link) {
+            MilesMains += link->Len;
+        }
+        for (auto& node : this->Node) {
+            avgPressure += node->GetAvgPressure();
+        } avgPressure /= this->Node.Num();
+
+        return pr->network->Leakage.LeakModelResults(MilesMains, surveyFrequency, avgPressure);
+    };
 #pragma region sparse matrix
     class smatrix_t {
     public:

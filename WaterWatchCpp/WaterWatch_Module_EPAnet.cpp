@@ -100,6 +100,12 @@ namespace chaiscript {
                     AddSharedPtrClassMember(::epanet, Snode, Ke);
                     AddSharedPtrClassMember(::epanet, Snode, Zone);
                     lib->add(chaiscript::fun([](cweeSharedPtr < ::epanet::Snode> const& a) -> std::string { if (!a) throw(chaiscript::exception::eval_error("Cannot access a member of a null (empty) shared object.")); return (cweeStr(a->Type_p.ToString()) + " " + a->Name_p).c_str(); }), "to_string");
+
+                    AddSharedPtrClassFunction(::epanet, Snode, HasWaterDemand);
+                    AddSharedPtrClassFunction(::epanet, Snode, GetMinPressure);
+                    AddSharedPtrClassFunction(::epanet, Snode, GetMaxPressure);
+                    AddSharedPtrClassFunction(::epanet, Snode, GetAvgPressure);
+
                     lib->add(chaiscript::castable_class<cweeSharedPtr<::epanet::Sasset>, cweeSharedPtr<::epanet::Snode>>());
                 }
                 /* Slink */ {
@@ -186,6 +192,9 @@ namespace chaiscript {
                     AddSharedPtrClassFunction(::epanet, Szone, AverageCustomerPressure);
                     AddSharedPtrClassFunction(::epanet, Szone, MinimumCustomerPressure);
 
+                    AddSharedPtrClassFunction(::epanet, Szone, FindMinPressureCustomer);
+                    AddSharedPtrClassFunction(::epanet, Szone, FindMinPressureNode);
+
                     lib->add(chaiscript::fun([](cweeSharedPtr < ::epanet::Szone> const& a) -> std::string { if (!a) throw(chaiscript::exception::eval_error("Cannot access a member of a null (empty) shared object.")); return (cweeStr(a->Type_p.ToString()) + " " + a->Name_p).c_str(); }), "to_string");
 
                     lib->add(chaiscript::fun([](::epanet::Pzone const& a, cweeSharedPtr<EPAnetProject>& proj) {
@@ -232,6 +241,11 @@ namespace chaiscript {
                         }
                         return a->TryCalibrateZone(proj->epanetProj, set);
                     }), "TryCalibrateZone");
+                    lib->AddFunction(, LeakModelResults, , SINGLE_ARG({
+                        std::map<std::string, Boxed_Value> out;
+                        for (auto& item : zone->LeakModelResults(proj->epanetProj, surveyFrequency))  out[item.first] = var(cweeUnitValues::unit_value(item.second));
+                        return out;
+                    }), ::epanet::Pzone const& zone, cweeSharedPtr<EPAnetProject> const& proj, units::time::year_t surveyFrequency);
 
                     lib->add(chaiscript::castable_class<cweeSharedPtr<::epanet::Sasset>, cweeSharedPtr<::epanet::Szone>>());
                 }
