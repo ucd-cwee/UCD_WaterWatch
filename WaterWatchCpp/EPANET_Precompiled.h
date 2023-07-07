@@ -3259,7 +3259,7 @@ namespace epanet {
                 );
         };
 
-
+    public:
         // internal 
         static constexpr scalar_t unitScalar = 1;
         static constexpr scalar_t dis = 0.04 / 12.0; // discount rate
@@ -3555,7 +3555,10 @@ namespace epanet {
                 convFlow = cweeUnitValues::cweeUnitPattern(*flowPat);
                 convHead = cweeUnitValues::cweeUnitPattern(*headPat);
 
-                AUTO energyPat = (convFlow * convHead) * (units::constants::d * units::constants::g * (131.0 / 100.0));
+                cweeUnitValues::unit_value g = cweeUnitValues::meter(9.8067) / (cweeUnitValues::second(1) * cweeUnitValues::second(1));
+                cweeUnitValues::unit_value d = cweeUnitValues::kilogram(998.57) / (cweeUnitValues::meter(1) * cweeUnitValues::meter(1) * cweeUnitValues::meter(1));
+
+                AUTO energyPat = (convFlow * convHead) * (d * g * (131.0 / 100.0));
 
                 cweeUnitValues::kilowatt w = cweeUnitValues::math::fabs(energyPat.GetAvgValue());
 
@@ -4073,7 +4076,8 @@ namespace epanet {
         }
         for (auto& node : this->Node) {
             avgPressure += node->GetAvgPressure();
-        } avgPressure /= this->Node.Num();
+        } 
+        if (this->Node.Num() > 0) avgPressure /= this->Node.Num();
 
         return pr->network->Leakage.LeakModelResults(MilesMains, surveyFrequency, pr->network->Zone, oldPressure, avgPressure);
     };
@@ -4086,7 +4090,8 @@ namespace epanet {
         }
         for (auto& node : this->Node) {
             avgPressure += node->GetAvgPressure();
-        } avgPressure /= this->Node.Num();
+        } 
+        if (this->Node.Num() > 0) avgPressure /= this->Node.Num();
 
         return pr->network->Leakage.BestSurveyFrequency(MilesMains, pr->network->Zone, oldPressure, avgPressure);
     };

@@ -963,28 +963,46 @@ namespace chaiscript {
                             }
 
                             // if more cost effective, fix the PRV/ERT distinction.
-#if 0
-                            Dollar_t NPV_valves = 0_USD;
+                            units::dollar::Dollar_t NPV_valves = 0_USD;
                             for (auto& link : newLinks) {
                                 if (link && link->Type_p == asset_t::VALVE) {
                                     AUTO valveP = link.CastReference<::epanet::Svalve>();
                                     if (valveP) {
+
                                         AUTO NPV_PRV = proj->epanetProj->network->Leakage.NetPresentValueOfValve(valveP, 1);
                                         AUTO NPV_PAT = proj->epanetProj->network->Leakage.NetPresentValueOfValve(valveP, 2);
 
                                         if (NPV_PRV > NPV_PAT) {
                                             valveP->ProducesElectricity = false;
-                                            link->GetValue<_ENERGY_>()->operator=(0_kW); // zero-out the energy generation
+                                            //valveP->GetValue<_ENERGY_>()->operator=(0_kW); // zero-out the energy generation
+
+                                            NPV_valves += NPV_PRV;
                                         }
                                         else {
                                             valveP->ProducesElectricity = true;
-                                        }
 
-                                        NPV_valves += proj->epanetProj->network->Leakage.NetPresentValueOfValve(valveP);
+                                            //cweeUnitValues::cweeUnitPattern convFlow(1_s, 1_cmh);
+                                            //cweeUnitValues::cweeUnitPattern convHead(1_s, 1_m);
+
+                                            //convFlow = cweeUnitValues::cweeUnitPattern(*valveP->GetValue<_FLOW_>());
+                                            //convHead = cweeUnitValues::cweeUnitPattern(*valveP->GetValue<_HEADLOSS_>());
+
+                                            //cweeUnitValues::unit_value g = cweeUnitValues::meter(9.8067) / (cweeUnitValues::second(1) * cweeUnitValues::second(1));
+                                            //cweeUnitValues::unit_value d = cweeUnitValues::kilogram(998.57) / (cweeUnitValues::meter(1) * cweeUnitValues::meter(1) * cweeUnitValues::meter(1));
+
+                                            //AUTO energyPat = (convFlow * convHead) * (d * g * (131.0 / 100.0));
+
+                                            //AUTO actualE_pat = valveP->GetValue<_ENERGY_>();
+                                            //actualE_pat->operator=(0_kW); // zero-out the energy generation
+                                            //for (auto& x : energyPat.GetKnotSeries()) {
+                                            //    actualE_pat->AddValue(x.first(), x.second()); // set the energy pat equal to what we have
+                                            //}
+
+                                            NPV_valves += NPV_PAT;
+                                        }
                                     }
                                 }
                             }
-#endif
 
                             // pressure penalties
                             for (auto& zone : proj->epanetProj->network->Zone) {
@@ -1021,7 +1039,7 @@ namespace chaiscript {
                             // total energy used minus total energy generated
                             kilowatt_hour_t totalEnergyDemand = 0; {
                                 for (auto& link : proj->epanetProj->network->Link) {
-                                    if (link) {
+                                    if (link && !newLinks.Find(link)) { // new link's energy demand was already included in their NPV calc
                                         AUTO pat = link->GetValue<_ENERGY_>();
                                         if (pat) {
                                             totalEnergyDemand += pat->RombergIntegral(pat->GetMinTime(), pat->GetMaxTime());
@@ -1029,6 +1047,7 @@ namespace chaiscript {
                                     }
                                 }
                             }
+                            Dollar_t totalEnergyDemandCost = ::epanet::LeakModel::Ce * totalEnergyDemand;
 
                             // average water pressure
                             pounds_per_square_inch_t customerPressure = 0; { int count = 0;
@@ -1053,54 +1072,58 @@ namespace chaiscript {
                             // reduction to average customer pressure
                             pounds_per_square_inch_t customerPressureDelta = controlCustomerPressure - customerPressure;
 
-#if 0
                             Dollar_t NPV_zones = 0_USD;
                             for (auto& zone : proj->epanetProj->network->Zone) {
-                                ::epanet::Pzone control_zone = nullptr; {
-                                    // find this zone in the control network if possible. If not possible, find one with shared links. If none of the above work, we'll simply not "reduce" pressure in the new zone.
-                                    if (!control_zone) {
-                                        for (auto& czone : control_network->Zone) {
-                                            // best case scenario
-                                            if (czone->Name_p == zone->Name_p) {
-                                                control_zone = czone;
-                                                break;
-                                            }
-                                        }
-                                    }
-                                    if (!control_zone) {
-                                        for (auto& node : zone->Node) {
-                                            for (auto& cnode : control_network->Node) {
+                                if (zone) {
+                                    ::epanet::Pzone control_zone = nullptr; {
+                                        // find this zone in the control network if possible. If not possible, find one with shared links. If none of the above work, we'll simply not "reduce" pressure in the new zone.
+                                        if (!control_zone) {
+                                            for (auto& czone : control_network->Zone) {
                                                 // best case scenario
-                                                if (cnode->Name_p == node->Name_p) {
-                                                    control_zone = cnode->Zone;
+                                                if (czone && czone->Name_p == zone->Name_p) {
+                                                    control_zone = czone;
                                                     break;
                                                 }
                                             }
-                                            break;
+                                        }
+                                        if (!control_zone) {
+                                            for (auto& node : zone->Node) {
+                                                if (node) {
+                                                    for (auto& cnode : control_network->Node) {
+                                                        // best case scenario
+                                                        if (cnode && cnode->Zone && cnode->Name_p == node->Name_p) {
+                                                            control_zone = cnode->Zone;
+                                                            break;
+                                                        }
+                                                    }
+                                                    break;
+                                                }
+                                            }
                                         }
                                     }
-                                }
 
-                                Dollar_t NPV_zone = 0_USD; {
-                                    if (control_zone) {
-                                        AUTO cP = control_zone->AverageNodePressure();
-                                        year_t surveyFreq = zone->SurveyFrequency(proj->epanetProj, cP);
-                                        NPV_zone = zone->LeakModelResults(proj->epanetProj, surveyFreq, cP)["Net Benefits"]();
+                                    Dollar_t NPV_zone = 0_USD; {
+                                        if (control_zone) {
+                                            AUTO cP = control_zone->AverageNodePressure();
+                                            year_t surveyFreq = zone->SurveyFrequency(proj->epanetProj, cP);
+                                            NPV_zone = zone->LeakModelResults(proj->epanetProj, surveyFreq, cP)["Net Benefits"]();
+                                        }
+                                        else {
+                                            AUTO cP = zone->AverageNodePressure();
+                                            year_t surveyFreq = zone->SurveyFrequency(proj->epanetProj, cP);
+                                            NPV_zone = zone->LeakModelResults(proj->epanetProj, surveyFreq, cP)["Net Benefits"]();
+                                        }
                                     }
-                                    else {
-                                        AUTO cP = zone->AverageNodePressure();
-                                        year_t surveyFreq = zone->SurveyFrequency(proj->epanetProj, cP);
-                                        NPV_zone = zone->LeakModelResults(proj->epanetProj, surveyFreq, cP)["Net Benefits"]();
-                                    }
+                                    if (!std::isnan(NPV_zone()))
+                                        NPV_zones += NPV_zone;
                                 }
-                                NPV_zones += NPV_zone;
                             }
-#endif
 
                             // Final Performance Results
                             Dollar_t performance = 0; {
-                                //performance += NPV_valves;
-                                //performance += NPV_zones;
+                                performance -= NPV_valves;
+                                performance -= NPV_zones;
+                                performance += totalEnergyDemandCost;
 
                                 if (std::isnan((performance + (Dollar_t)((std::min(std::max(0.0, penalty()), (double)numValves) / (double)numValves) * PenaltyValue))())) {
                                     performance = PenaltyValue;
@@ -1112,13 +1135,13 @@ namespace chaiscript {
 
                             cweeThreadedMap<std::string, cweeUnitValues::unit_value> results;
                             results.Emplace("Penalty", penalty);
-                            results.Emplace("Energy Demand", totalEnergyDemand);
                             results.Emplace("Customer Pressure", customerPressure);
                             results.Emplace("Pressure Delta", customerPressureDelta);
                             results.Emplace("Performance", performance);
-                            //results.Emplace("Net Benefits (Zones)", NPV_zones);
-                            //results.Emplace("Net Benefits (Valves)", NPV_valves);
-                            //results.Emplace("Net Benefits", NPV_zones + NPV_valves);
+                            results.Emplace("Net Costs (Non-New Pumps and Valves)", totalEnergyDemandCost);
+                            results.Emplace("Net Benefits (Zones)", NPV_zones);
+                            results.Emplace("Net Benefits (Valves)", NPV_valves);
+                            results.Emplace("Net Benefits", NPV_zones + NPV_valves - totalEnergyDemandCost);
 
                             return results;
                         };
