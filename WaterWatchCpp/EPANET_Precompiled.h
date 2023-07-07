@@ -2730,7 +2730,8 @@ namespace epanet {
         /* returns the list of assets that feed into or out of this zone. */
         cweeList< cweeUnion<Passet, direction_t> > GetMassBalanceAssets(cweeSharedPtr<Project> pr);
         cweeUnitValues::cweeUnitPattern TryCalibrateZone(cweeSharedPtr<Project> pr, std::map<std::string, cweeUnitValues::cweeUnitPattern> const& ScadaSources);
-        std::map<std::string, cweeUnitValues::unit_value> LeakModelResults(cweeSharedPtr<Project> pr, year_t surveyFrequency) const;
+        std::map<std::string, cweeUnitValues::unit_value> LeakModelResults(cweeSharedPtr<Project> pr, year_t surveyFrequency, pounds_per_square_inch_t oldPressure) const;
+        year_t SurveyFrequency(cweeSharedPtr<Project> pr, pounds_per_square_inch_t oldPressure) const;
 
     private:
         template <int distance = 0>
@@ -3227,14 +3228,12 @@ namespace epanet {
 
     class LeakModel {
     public:
-        SCALER ICF = 1.3; // # infrastructure condition factor
-        SCALER ILI = 1.1; // # infrastructure leakage index
-
-        typedef unit<std::ratio<2628000>, seconds> month;
-        typedef unit_t <month> month_t;
+        // typedefs (new unit types)
         typedef unit_t< compound_unit<million_gallon, squared<inverse<month>>> > rateOfRise_t;
         typedef unit_t< compound_unit<million_gallon, inverse<month>> > million_gallon_per_month_t;
 
+    private:
+        // Static support functions
         static constexpr million_gallon_t Vol_Lost_At_t(month_t t, scalar_t gamma, rateOfRise_t R, million_gallon_per_month_t init, scalar_t eta) { //only under under one period, if do nothing, init = initial leakge rate
             return (gamma * R * t * t / 2.0) + (eta * init * t); // eta is zero for the case where the first surveyand repair eliminates all leaks
         };
@@ -3250,96 +3249,137 @@ namespace epanet {
         template <typename T> static T Get_P_Given_F(T input, scalar_t rate, month_t time) {
             return input * std::pow(1.0 + rate(), -1 * time());
         };
+        static Dollar_t CostOfPRV(inch_t diam, scalar_t rate) {
+            return Get_F_Given_P<1 * 12>(
+                1474.8_USD * std::exp(0.2094 * diam())
+                + 500_USD * std::exp(0.167 * diam())
+                + (255.36_USD * diam / 1_in - 300_USD)
+                + (1047_USD * diam / 1_in - 512_USD)
+                , rate
+                );
+        };
 
+
+        // internal 
+        static constexpr scalar_t unitScalar = 1;
+        static constexpr scalar_t dis = 0.04 / 12.0; // discount rate
+        static constexpr scalar_t g = 0.025 / 12.0; //growth rate
+        static constexpr scalar_t inflation = 0.025 / 12.0;
+        static constexpr scalar_t leak_reduction_eta = 0; // 0 ONLY WE ASSUME ALL LEAKS FIXED AT TIME 0 SO NO LEAKAGE REMAINING
+        static constexpr scalar_t do_nothing_eta = 1.0; // set to 1 to include the benefits of the initial survey and repair over the study period
+        static constexpr scalar_t w_prv = 0.025 / 12.0;
+        static constexpr scalar_t N_PRV = 20.0;
+        static constexpr scalar_t w_pat = 0.025 / 12;
+        static constexpr scalar_t N_PAT = 20.0;
+        static constexpr scalar_t w_E = 0.025 / 12;
+        static constexpr Dollar_per_kilowatt_hour_t Ce = 0.12; // $ / KWh
+        static constexpr Dollar_per_gallon_t Cvp = 682.6732941_USD / 1_ac_ft; // 0.001215862; // $ / gallon
+        static constexpr million_gallon_per_month_t connectionLeakRate = 4_gpd;
+        static constexpr AUTO SystemLeakRatePerMile = connectionLeakRate * ((92950900.0 / 4.0) / 365.0) / 852.95_mi;
+        static constexpr scalar_t PercRigid = 0.75;
+        static constexpr scalar_t w_F = 0.025 / 12.0;
+        static constexpr scalar_t w_M = 0.025 / 12.0;
+        static constexpr scalar_t w_su = 0.025 / 12.0;
+        static constexpr million_gallon_per_month_t  L = 500000.00_gal / 1_yr; // flowrate per leak average(gal / year) / months per year = gal / month
+        static constexpr Dollar_t 	Calr = 5340.7; // cost per leak to repair
+        static constexpr scalar_t 	Dldr = 1; // true positive rate for leak detection, cannot find for Marin in Amanda's data
+        static constexpr Dollar_per_mile_t M = Get_F_Given_P<1 * 12>(605_USD_p_mi, w_M);
+        static constexpr Dollar_t F = Get_F_Given_P<1 * 12>(Calr / Dldr, w_F); // adjust for one year, 2022 publication
+    
+    public:
+        SCALER ICF = 1.3; // # infrastructure condition factor
+        SCALER ILI = 1.1; // # infrastructure leakage index
+
+        // evaluate the leak model on a network, assuming leak rates on pipe lengths, as a function of zone pressures and zone pipes.
         std::map<std::string, cweeUnitValues::unit_value> LeakModelResults(
             mile_t MilesMains,
             year_t surveyFrequency,
-            pounds_per_square_inch_t avgPressure
+            cweeList<Pzone> new_zones, 
+            pounds_per_square_inch_t avgPressure_old,
+            pounds_per_square_inch_t avgPressure_new
         ) {
-            // internal 
-            constexpr scalar_t unitScalar = 1;
-
-            // CONSTANTS, INDEPENDANT OF SYSTEM
-            constexpr scalar_t dis = 0.04 / 12.0; // discount rate
-            constexpr scalar_t g = 0.025 / 12.0; //growth rate
-            constexpr scalar_t inflation = 0.025 / 12.0;
-            constexpr scalar_t leak_reduction_eta = 0; // 0 ONLY WE ASSUME ALL LEAKS FIXED AT TIME 0 SO NO LEAKAGE REMAINING
-            // need to know if we are counting the initial leak reductionand repair as benefits, eta is a variable that gives the fraction of the leakage(gal / yr) remaining after initial survey / repair
-            constexpr scalar_t do_nothing_eta = 1.0; // set to 1 to include the benefits of the initial survey and repair over the study period
-            constexpr scalar_t w_prv = 0.025 / 12.0;
-            constexpr scalar_t N_PRV = 20.0;
-            constexpr scalar_t w_pat = 0.025 / 12;
-            constexpr scalar_t N_PAT = 20.0;
-            constexpr scalar_t w_E = 0.025 / 12;
-            constexpr Dollar_per_kilowatt_hour_t Ce = 0.12; // $ / KWh
-            constexpr Dollar_per_gallon_t Cvp = 0.001215862; // $ / gallon
-            constexpr million_gallon_per_month_t connectionLeakRate = 4_gpd;
-            constexpr AUTO LeakRatePerMile = connectionLeakRate * ((92950900.0 / 4.0) / 365.0) / 852.95_mi;
-            constexpr scalar_t PercRigid = 0.75;
-            constexpr scalar_t w_F = 0.025 / 12.0;
-            constexpr scalar_t w_M = 0.025 / 12.0;
-            constexpr scalar_t w_su = 0.025 / 12.0;
-            constexpr million_gallon_per_month_t  L = 500000.00_gal / 1_yr; // flowrate per leak average(gal / year) / months per year = gal / month
-            constexpr Dollar_t 	Calr = 5340.7; // cost per leak to repair
-            constexpr scalar_t 	Dldr = 1; // true positive rate for leak detection, cannot find for Marin in Amanda's data
-            constexpr Dollar_per_mile_t M = Get_F_Given_P<1 * 12>(605_USD_p_mi, w_M);
-            constexpr Dollar_t F = Get_F_Given_P<1 * 12>(Calr / Dldr, w_F); // adjust for one year, 2022 publication
+            // compare this zone to all of the zones, and determine what this zone's weighted responsibility is for the net leakage            
+            scalar_t N1 = 1.5 - (1.0 - (2.0 / 3.0) * (ICF / ILI)) * PercRigid;
+            
+            AUTO LeakRatePerMile = connectionLeakRate * ((92950900.0 / 4.0) / 365.0) / 852.95_mi;
+            if (new_zones.Num () > 0) {
+                pounds_per_square_inch_t avgSystemPressure = 0;
+                mile_t totalSystemLength = 0;
+                double totalSysRatio = 0;
+                million_gallon_per_month_t totalSystemLeakage = 0;
+                cweeList< pounds_per_square_inch_t > pressures;
+                {
+                    for (auto& zone : new_zones) {
+                        if (zone) {
+                            for (auto& link : zone->Within_Link) totalSystemLength += link->Len;
+                            pressures.Append(zone->AverageNodePressure());
+                        }
+                    }
+                    int Pcount = 0;
+                    for (auto& pressure : pressures) cweeMath::rollingAverageRef<pounds_per_square_inch_t>(avgSystemPressure, pressure, Pcount);
+                    totalSystemLeakage = totalSystemLength * SystemLeakRatePerMile;                    
+                    Pcount = 0;
+                    for (auto& zone : new_zones) {
+                        mile_t _MilesMains = 0;
+                        for (auto& link : zone->Within_Link) _MilesMains += link->Len;
+                        totalSysRatio += std::pow((pressures[Pcount] / avgSystemPressure)(), N1()) * _MilesMains();
+                        Pcount++;
+                    }
+                }
+                auto thisRatio = std::pow((avgPressure_new / avgSystemPressure)(), N1()) * MilesMains() / totalSysRatio; // this would sum to one across all zones
+                // each zone is "responsible" for zome percent of the total system leakage. Their responsibility is a function of their pressure relative to the average, and their mileage.
+                LeakRatePerMile = (totalSystemLeakage / totalSystemLength) * thisRatio;
+            }
 
             // SYSTEM CHARACTERISTICS / ANALYSIS VARIABLES
-            month_t surveyFrequency_Months = surveyFrequency;
-            pounds_per_square_inch_t P0 = avgPressure; // # initial pressure
-            pounds_per_square_inch_t P1 = avgPressure; // # pressure after reduction
+            month_t surveyFrequency_Months = surveyFrequency; 
+            surveyFrequency_Months = units::math::round(surveyFrequency_Months); // must be in increments of months to be valid
+            surveyFrequency_Months = units::math::max(surveyFrequency_Months, (month_t)1);
+
+            pounds_per_square_inch_t P0 = avgPressure_old; // # initial pressure
+            pounds_per_square_inch_t P1 = avgPressure_new; // # pressure after reduction
             mile_t d = MilesMains; // miles of mains
 
+            // stepsize
+            month_t stepSize = 1;
+
             // months
-            cweeList<month_t> t;  for (int i = 0; i <= 12 * 30; i++) t.Append((month_t)(i));
+            cweeList<month_t> t;
+            for (month_t i = 0; i <= 30_yr; i += stepSize) t.Append(i);
 
             // define the rate of rise of leakage
-            rateOfRise_t R = LeakRatePerMile * MilesMains / 365_d;
-            scalar_t N1 = 1.5 - (1.0 - (2.0 / 3.0) * (ICF / ILI)) * PercRigid;
+            rateOfRise_t R = LeakRatePerMile * MilesMains / 365_d;            
             scalar_t gamma = std::pow((P1 / P0)(), N1()); // # fraction leakage rate remaining after pressure reduction, about 0.6 right now
-            million_gallon_per_month_t init = R * 2_yr; // # initial leakage rate, gallons / yr
+            million_gallon_per_month_t init = R * 3.66424_yr; // # initial leakage rate, gallons / yr... solved by: (1 / (R/(1045.244408_ac_ft_y))). 1045_ac_ft_y came from 2022 water audit data for Marin.
 
             // calculate water lost volume and value
             cweeList<million_gallon_t> Water_Lost_Volume; Water_Lost_Volume.AssureSize(t.size(), 0_MG);
             cweeList<Dollar_t> Water_Lost_Value; Water_Lost_Value.AssureSize(t.size(), 0_USD); {
-                month_t idx_i = 0;
                 bool firstPass = true;
                 month_t zeroMonth = 0;
-                for (month_t idx = 0; idx < ((month_t)(t.size())); idx++) {
+                int indexFollowingSurvey = 0;
+                for (int t_ind = 0; t_ind < t.size(); t_ind++) { month_t idx = t[t_ind];                    
                     if (idx == zeroMonth || units::math::round(units::math::fmod(idx, surveyFrequency_Months)) == zeroMonth) {
-                        idx_i = zeroMonth;
                         if (firstPass) {
-                            Water_Lost_Volume[idx()] = 0;
+                            Water_Lost_Volume[t_ind] = 0;
                             firstPass = false;
                         }
                         else {
-                            Water_Lost_Volume[idx()] =
+                            Water_Lost_Volume[t_ind] = // was 0
                                 Vol_Lost_At_t(surveyFrequency_Months, gamma, R, init, leak_reduction_eta) -
                                 Vol_Lost_At_t(surveyFrequency_Months - month_t(1), gamma, R, init, leak_reduction_eta);
                         }
+                        indexFollowingSurvey = 0;
                     }
                     else {
-                        AUTO vol0 = Vol_Lost_At_t(
-                            t[idx_i()],
-                            gamma,
-                            R,
-                            init,
-                            leak_reduction_eta
-                        );
-                        AUTO vol1 = Vol_Lost_At_t(
-                            t[(idx_i - month_t(1))()],
-                            gamma,
-                            R,
-                            init,
-                            leak_reduction_eta
-                        );
-                        Water_Lost_Volume[idx()] = vol0 - vol1;
+                        Water_Lost_Volume[t_ind] = 
+                            Vol_Lost_At_t(t[indexFollowingSurvey], gamma, R, init, leak_reduction_eta) -
+                            Vol_Lost_At_t(t[indexFollowingSurvey-1], gamma, R, init, leak_reduction_eta);
                     }
-                    idx_i += month_t(1);
+                    indexFollowingSurvey++;                    
                 }
-                for (month_t idx = 0; idx < ((month_t)(t.size())); idx++) {
-                    Water_Lost_Value[idx()] = Water_Lost_Volume[idx()] * Get_F_Given_P(Cvp, g, t[idx()]);
+                for (int t_ind = 0; t_ind < t.size(); t_ind++) { month_t idx = t[t_ind];
+                    Water_Lost_Value[t_ind] = Water_Lost_Volume[t_ind] * Get_F_Given_P(Cvp, g, idx);
                 }
             }
 
@@ -3348,15 +3388,15 @@ namespace epanet {
                 month_t idx_i = 0;
                 bool firstPass = true;
                 month_t zeroMonth = 0;
-                for (month_t idx = 0; idx < ((month_t)(t.size())); idx++) {
+                for (int t_ind = 0; t_ind < t.size(); t_ind++) { month_t idx = t[t_ind];
                     if (firstPass) {
-                        Water_Lost_Do_Nothing[idx()] = 0;
+                        Water_Lost_Do_Nothing[t_ind] = 0;
                         firstPass = false;
                     }
                     else {
-                        Water_Lost_Do_Nothing[idx()] =
-                            Vol_Lost_At_t(t[idx()], 1, R, init, do_nothing_eta) -
-                            Vol_Lost_At_t(t[idx() - 1], 1, R, init, do_nothing_eta);
+                        Water_Lost_Do_Nothing[t_ind] =
+                            Vol_Lost_At_t(t[t_ind], 1, R, init, do_nothing_eta) -
+                            Vol_Lost_At_t(t[t_ind - 1], 1, R, init, do_nothing_eta);
                     }
                 }
             }
@@ -3369,8 +3409,8 @@ namespace epanet {
             }
             cweeList<Dollar_t> Water_Saved_Value; Water_Saved_Value.AssureSize(t.size(), 0_USD); {
                 month_t idx_i = 0;
-                for (month_t idx = 0; idx < ((month_t)(t.size())); idx++) {
-                    Water_Saved_Value[idx()] = Water_Saved_Volume[idx()] * Get_F_Given_P(Cvp, g, t[idx()]);
+                for (int t_ind = 0; t_ind < t.size(); t_ind++) { month_t idx = t[t_ind];
+                    Water_Saved_Value[t_ind] = Water_Saved_Volume[t_ind] * Get_F_Given_P(Cvp, g, idx);
                 }
             }
 
@@ -3382,18 +3422,17 @@ namespace epanet {
             cweeList<Dollar_t> SurveyRep; SurveyRep.AssureSize(t.size(), 0_USD); {
                 month_t idx_i = 0;
                 month_t zeroMonth = 0;
-                for (month_t idx = 0; idx < ((month_t)(t.size())); idx++) {
+                for (int t_ind = 0; t_ind < t.size(); t_ind++) { month_t idx = t[t_ind];
                     if (units::math::fmod(idx, surveyFrequency_Months) == zeroMonth) {
-                        SurveyRep[idx()] = Get_F_Given_P(Cs_0, w_su, t[idx()]);
+                        SurveyRep[t_ind] = Get_F_Given_P(Cs_0, w_su, idx);
                     }
                     else { // only take the periods the surveys are actually done
-                        SurveyRep[idx()] = 0_USD;
+                        SurveyRep[t_ind] = 0_USD;
                     }
                 }
             }
 
             // initial survey
-
             if (do_nothing_eta >= unitScalar) {
                 SurveyRep[0] = (init / L) * F + D; // Initial survey cost
             }
@@ -3404,10 +3443,10 @@ namespace epanet {
             // calculate net present values, smarter ways to do this, not worrying about it now
             Dollar_t NPV_costs = 0;
             {
-                for (month_t idx = 0; idx < ((month_t)(t.size())); idx++) {
+                for (int t_ind = 0; t_ind < t.size(); t_ind++) { month_t idx = t[t_ind];
                     try {
-                        NPV_costs += Get_P_Given_F(SurveyRep[idx()], dis, t[idx()]);
-                        NPV_costs += Get_P_Given_F(Water_Lost_Value[idx()], dis, t[idx()]);
+                        NPV_costs += Get_P_Given_F(SurveyRep[t_ind], dis, idx);
+                        NPV_costs += Get_P_Given_F(Water_Lost_Value[t_ind], dis, idx);
                     }
                     catch (...) {}
                 }
@@ -3416,8 +3455,8 @@ namespace epanet {
             Dollar_t NPV_benefits = 0;
             {
                 month_t idx_i = 0;
-                for (month_t idx = 0; idx < ((month_t)(t.size())); idx++) {
-                    NPV_benefits += Get_P_Given_F(Water_Saved_Value[idx()], dis, t[idx()]);
+                for (int t_ind = 0; t_ind < t.size(); t_ind++) { month_t idx = t[t_ind];
+                    NPV_benefits += Get_P_Given_F(Water_Saved_Value[t_ind], dis, idx);
                 }
             }
 
@@ -3430,6 +3469,152 @@ namespace epanet {
 
             return results;
         };
+
+        // evaluate the leak model on a network repeatably to find the most cost-effective survey frequency
+        year_t BestSurveyFrequency(mile_t MilesMains, cweeList<Pzone> new_zones, pounds_per_square_inch_t avgPressure_old, pounds_per_square_inch_t avgPressure_new) {
+            Dollar_t bestNetBenefit = -std::numeric_limits<Dollar_t>::max();
+            month_t bestMonth = 1;
+            Dollar_t thisV = 0;
+
+            std::map< month_t, Dollar_t> cache;
+
+            // test entire sampel space at low resolution
+            for (month_t S = 1; S <= 30_yr; S += month_t(12)) {
+                auto r = LeakModelResults(MilesMains, S, new_zones, avgPressure_old, avgPressure_new);
+                cache[S] = r["Net Benefits"]();
+                if (cache[S] > bestNetBenefit) {
+                    bestNetBenefit = cache[S];
+                    bestMonth = S;
+                }
+            }
+
+            // Dial-in to local 3-year period
+            month_t bestMonthPrev = bestMonth;
+            for (month_t S = units::math::max(month_t(1), (bestMonthPrev - month_t(18))); S <= units::math::min(30_yr, (bestMonthPrev + month_t(18))); S += month_t(2)) {                
+                if (cache.count(S) > 0) { 
+                    thisV = cache[S];
+                } 
+                else {
+                    cache[S] = LeakModelResults(MilesMains, S, new_zones, avgPressure_old, avgPressure_new)["Net Benefits"]();
+                    thisV = cache[S];
+                }
+
+                if (thisV > bestNetBenefit) {
+                    bestNetBenefit = thisV;
+                    bestMonth = S;
+                }
+            }
+
+            // Dial-in to specific month
+            bestMonthPrev = bestMonth;
+            for (month_t S = units::math::max(month_t(1), (bestMonthPrev - month_t(4))); S <= units::math::min(30_yr, (bestMonthPrev + month_t(4))); S += month_t(1)) {
+                if (cache.count(S) > 0) {
+                    thisV = cache[S];
+                }
+                else {
+                    cache[S] = LeakModelResults(MilesMains, S, new_zones, avgPressure_old, avgPressure_new)["Net Benefits"]();
+                    thisV = cache[S];
+                }
+
+                if (thisV > bestNetBenefit) {
+                    bestNetBenefit = thisV;
+                    bestMonth = S;
+                }
+            }
+
+            if (bestMonth < 1_yr) return 30_yr;
+            else return bestMonth;
+        };
+
+        /*! evalMode: 0 = normal, 1 = force as PRV, 2 = force as ERT
+        evaluate the net present 30 - year value of a PRV or ERT valve, including accounting for energy generation revenue.Should be combined with LeakModelResults to estimate benefits from pressure reduction, which is not done directly here.
+        */
+        Dollar_t NetPresentValueOfValve(Pvalve valve, int evalMode = 0) {
+            // Bad Data Early Exit
+            if (!valve) return 0_USD;
+
+            // AVERAGE FLOW
+            AUTO flowPat = valve->GetValue<_FLOW_>();
+            cubic_meter_per_second_t avgFlow = units::math::fabs(flowPat->GetAvgValue());
+
+            // AVERAGE HEADLOSS
+            AUTO headPat = valve->GetValue<_HEADLOSS_>();
+            meter_t avgHeadloss = units::math::fabs(headPat->GetAvgValue());
+
+            // AVERAGE ENERGY PRODUCTION
+            kilowatt_t avgEnergy = 0;
+            if (valve->ProducesElectricity) {
+                AUTO EnPat = valve->GetValue<_ENERGY_>();
+                avgEnergy = units::math::fabs(EnPat->GetAvgValue());
+            }
+            else if (evalMode == 2) {
+                // build the (POTENTIAL) energy generation
+                cweeUnitValues::cweeUnitPattern convFlow(1_s, 1_cmh);
+                cweeUnitValues::cweeUnitPattern convHead(1_s, 1_m);
+
+                convFlow = cweeUnitValues::cweeUnitPattern(*flowPat);
+                convHead = cweeUnitValues::cweeUnitPattern(*headPat);
+
+                AUTO energyPat = (convFlow * convHead) * (units::constants::d * units::constants::g * (131.0 / 100.0));
+
+                cweeUnitValues::kilowatt w = cweeUnitValues::math::fabs(energyPat.GetAvgValue());
+
+                avgEnergy = w();
+            }
+
+            // stepsize
+            month_t stepSize = 1;
+
+            // months
+            cweeList<month_t> t;
+            for (month_t i = 0; i <= 30_yr; i += stepSize) t.Append(i);
+
+            // Capital Costs, Operation & Maintenance
+            cweeList<Dollar_t> Ci_T; Ci_T.AssureSize(t.size(), 0_USD);
+            cweeList<Dollar_t> OM_T; OM_T.AssureSize(t.size(), 0_USD);
+            cweeList<Dollar_t> EN_T; EN_T.AssureSize(t.size(), 0_USD);
+            if (evalMode == 1 || (evalMode == 0 && !valve->ProducesElectricity)) {
+                // PRV: Installation fees, no maintenance, no energy
+                AUTO C_PRV = CostOfPRV(valve->Diam, w_prv);
+                Ci_T[0] += N_PRV * C_PRV;
+            }
+            else {
+                // ERT: Installation, maintenance, and energy generation
+                AUTO C_PAT = Get_F_Given_P<4 * 12>(11913.91_USD * avgFlow() * std::sqrt(avgHeadloss()), w_pat); // # average, inflated from 2019 to 2023 dollars
+                C_PAT += (1.0 - 0.26) * C_PAT / 0.26;
+                Ci_T[0] += N_PAT * C_PAT;
+
+                for (int i = 0; i < OM_T.size(); i++) {
+                    OM_T[i] += Get_F_Given_P((0.15 / 12) * C_PAT, w_pat, t[i]);
+                };
+
+                kilowatt_hour_t E_Production_Monthly = avgEnergy * month_t(1);
+                for (int i = 0; i < EN_T.size(); i++) {
+                    EN_T[i] += E_Production_Monthly * Get_F_Given_P(Ce, w_E, t[i]);
+                };
+            }
+            OM_T[0] = 0_USD;
+
+            // Costs
+            Dollar_t NPV_costs = 0;
+            for (int idx = 0; idx < t.size(); idx++) {
+                try {
+                    NPV_costs += Get_P_Given_F(Ci_T[idx], dis, t[idx]);
+                    NPV_costs += Get_P_Given_F(OM_T[idx], dis, t[idx]);
+                }
+                catch (...) {}
+            }            
+            
+            // Benefits
+            Dollar_t NPV_benefits = 0;
+            for (month_t idx = 0; idx < ((month_t)(t.size())); idx++) {
+                NPV_benefits += Get_P_Given_F(EN_T[idx()], dis, t[idx()]);
+            }
+
+            // return NPV
+            return NPV_benefits - NPV_costs;
+        };
+
     };
 
     // Pipe Network Wrapper
@@ -3679,790 +3864,10 @@ namespace epanet {
             
             return out;
         };        
-
-#if 0
-
-        bool    TryFindValidDiameter(Plink link, int nodeIndex, foot_t& diameter) {
-            AUTO pr = this; 
-            EN_Network net = pr->network;
-            foot_t avg_diameter = 0; int num = 0; foot_t diameter_sample = 0;
-            for (Padjlist adj_p = net->Adjlist[nodeIndex]; adj_p; adj_p = adj_p->next) {
-                if (net->Link[adj_p->link] != link) {
-                    if ((diameter_sample = net->Link[adj_p->link]->Diam) != 0_ft) {
-                        cweeMath::rollingAverageRef(avg_diameter, diameter_sample, num);
-                    }
-                }
-            }
-            if (num > 0) {
-                diameter = avg_diameter;
-                return true;
-            }
-            else {
-                return false;
-            }
-        };
-
-        bool    IsLinkControlled(int LinkN) {
-            AUTO pr = this;
-            bool controlled = false;
-            {
-                auto& controls = pr->network->Control;
-                for (int controlIndex = 1; controlIndex < controls.Num(); controlIndex++) {
-                    auto& control = controls[controlIndex];
-                    if (control) {
-                        if (control->Link == LinkN) {
-                            // it's controlled... so it's basically the same as a closed pipe. 
-                            controlled = true;
-                            break;
-                        }
-                    }
-                }
-                ::epanet::Saction* actions;
-                if (!controlled) {
-                    auto& rules = pr->network->Rule;
-                    // Is it the subject of a rule? 
-                    for (auto& rule : rules) {
-                        if (rule) {
-                            actions = rule->ThenActions;
-                            while (actions) {
-                                if (actions->link == LinkN) {
-                                    controlled = true;
-                                    break;
-                                }
-                                actions = actions->next;
-                            }
-                            if (!controlled) {
-                                actions = rule->ElseActions;
-                                while (actions) {
-                                    if (actions->link == LinkN) {
-                                        controlled = true;
-                                        break;
-                                    }
-                                    actions = actions->next;
-                                }
-                            }
-                        }
-                        if (controlled) break;
-                    }
-                }
-            }
-            return controlled;
-        };
-        bool    IsLinkControlled(Plink Link) {
-            AUTO pr = this;
-            int LinkN = hashtable_t::hashtable_find(pr->network->LinkHashTable, Link->ID);
-            if (LinkN > 0)
-                return IsLinkControlled(LinkN);
-            else
-                return false;
-        };
-
-        void    parseZone_Basic(Pzone const& zone, cweeList<Pnode>& nodes, int nodeIndex, u64 const& startTime) {
-            AUTO pr = this;
-            Padjlist adj; auto& links = pr->network->Link;
-            if (nodes[nodeIndex]) {
-                zone->Node.Append(nodes[nodeIndex]);
-                nodes[nodeIndex]->Zone = zone;
-
-                // set this node to NULL so we don't re-add it later;
-                nodes[nodeIndex] = nullptr;
-
-                // check all of the connected nodes:               
-                adj = pr->network->Adjlist[nodeIndex];
-                while (adj) {
-                    if (links[adj->link]) {
-                        if (links[adj->link]->N1 == nodeIndex) {
-                            zone->Boundary_Link.Append(std::pair<Plink, direction_t>(pr->network->Link[adj->link], direction_t::FLOW_OUT_DMA));
-                        }
-                        else if (links[adj->link]->N2 == nodeIndex) {
-                            zone->Boundary_Link.Append(std::pair<Plink, direction_t>(pr->network->Link[adj->link], direction_t::FLOW_IN_DMA));
-                        }
-                        else {
-                            throw(std::exception("Something went wrong with the EPAnet Sparse Matrix"));
-                        }
-                    }
-                    adj = adj->next;
-                }
-            }
-        };
-        void    combineZonesActual(cweeList<Pzone>& zones, Pzone const& first, Pzone const& second) {
-            // merge parameter names/type based on priority of the zone type
-            if (static_cast<int>(second->Type) < static_cast<int>(first->Type)) {
-                first->Name_p = second->Name_p;
-                first->Type = second->Type;
-            }
-            if (second->IllDefined < first->IllDefined) {
-                first->IllDefined = second->IllDefined;
-            }
-
-            for (auto& N : second->Node) N->Zone = first;
-            first->Node.Append(second->Node);
-            first->Within_Link.Append(second->Within_Link);
-
-            // add all of the 'boundary' links
-            auto& BL = first->Boundary_Link;
-            for (auto& L1 : second->Boundary_Link) {
-                bool isUnique = true;
-                int i = -1;
-                for (i = BL.Num() - 1; i >= 0; i--) {
-                    auto& L2 = BL[i];
-                    if (L2.first == L1.first) {
-                        isUnique = false;
-                        break;
-                    }
-                }
-                if (isUnique) {
-                    first->Boundary_Link.Append(L1);
-                }
-                else {
-                    // shared by the two zones -> Move it from 'Boundary' to 'Within'
-                    if (i >= 0) {
-                        first->Boundary_Link.RemoveIndexFast(i);
-                        first->Within_Link.Append(L1.first);
-                    }
-                }
-            }
-
-            // Remove the old zone from the list
-            zones.RemoveFast(second);
-        };
-        int     getAllSharedLinks(Pzone const& zone_1, Pzone const& zone_2, cweeList<Plink>& out, std::unordered_map<Slink*, bool>& map) {
-            auto& zone1Boundary = zone_1->Boundary_Link;
-            int N = 0;
-
-            out.SetGranularity(cweeMath::max(zone1Boundary.Num(), out.GetGranularity()));
-            // tag these links 
-            for (auto& boundary_link : zone1Boundary) {
-                auto& p = boundary_link.first;
-                map[p.Get()] = true;
-            }
-            // compare with tagged links
-            for (auto& boundary_link : zone_2->Boundary_Link) {
-                auto& p = boundary_link.first;
-                if (map[p.Get()]) {
-                    out.Emplace(p, N);
-                    N++;
-                }
-            }
-            // untag the links
-            for (auto& boundary_link : zone1Boundary) {
-                auto& p = boundary_link.first;
-                map[p.Get()] = false;
-            }
-
-            return N;
-        };
-
-        bool    combineZones(
-            cweeList<Pzone>& zones, cweeList<Plink>& sharedLinks, std::unordered_map<Slink*, bool>& sharedLinksMap,
-            std::unordered_map<Slink*, StatusType>& sharedLinksStatusMap, std::unordered_map<Slink*, bool>& sharedLinksContolledMap) {
-            AUTO pr = this;
-
-            // outter loop
-            AUTO startTime = (u64)pr->times.GetSimStartTime();
-            for (auto& zone_1 : zones) {
-                bool Zone1_HasWaterDemand = false; {
-                    for (auto& node : zone_1->Node) {
-                        if (node->HasWaterDemand()) {
-                            Zone1_HasWaterDemand = true;
-                            break;
-                        }
-                    }
-                }
-
-                Pzone zone_2;
-                for (auto& boundary_link : zone_1->Boundary_Link) {
-                    auto& link = boundary_link.first;
-                    if (link) {
-                        zone_2 = link->StartingNode->Zone;
-                        if (zone_2 == zone_1) {
-                            zone_2 = link->EndingNode->Zone;
-                        }
-                        if (zone_2 == zone_1) {
-                            // this link is defined as a boundary link BUT its two nodes are inside of the zone... a loop has happened and must be resolved. 
-                            zone_1->Within_Link.Append(link);
-                            zone_1->Boundary_Link.RemoveFast(boundary_link);
-                            return true; // return and try again
-                        }
-
-                        // we have two zones connected by one or more links. Collect all of them for evaluation.
-                        int numConnections = getAllSharedLinks(zone_1, zone_2, sharedLinks, sharedLinksMap);
-
-                        int numControlled = 0;
-                        int numOpenPipe = 0;
-
-                        // remove pipes / valves / pumps that are closed && not controlled. (Since not controlled, will always be closed)
-                        for (int i = numConnections - 1; i >= 0; i--) {
-                            if (sharedLinksContolledMap[sharedLinks[i].Get()]) {
-                                numControlled++;
-                            }
-                            else {
-                                if (sharedLinksStatusMap[sharedLinks[i].Get()] == StatusType::CLOSED) {
-                                    numConnections--;
-                                }
-                                else {
-                                    if (sharedLinks[i]->IsBiDirectionalPipe() || sharedLinks[i]->Type_p == asset_t::PIPE) {
-                                        numOpenPipe++;
-                                    }
-                                }
-                            }
-                        }
-
-                        if (numConnections == 0) {
-                            // there are no non-closed connections (including controlled) and therefore we elect to leave these zones seperated
-                            continue;
-                        }
-                        else if (numControlled == 0 && numOpenPipe != 0) {
-                            // this is typical. The zones are officially connected. 
-                            combineZonesActual(zones, zone_1, zone_2);
-                            return true;
-                        }
-                        else if (numControlled != 0 && numOpenPipe == 0) {
-                            // this is typical. The zones are connected exclusively by 'controlled' Links and therefore we elect to not combine them.
-                            continue;
-                        }
-                        else if (numControlled == 0 && numOpenPipe == 0) {
-                            // this is not typical. These zones are not connected. 
-                            continue;
-                        }
-                        else if (numControlled != 0 && numOpenPipe != 0) {
-                            // this is not typical. A controlled Link was short-circuted and another Link has an open connection to this same zone.
-                            // We classify these zones as being connected.
-                            combineZonesActual(zones, zone_1, zone_2);
-                            return true;
-                        }
-                    }
-                }
-            }
-            return false;
-        };
-
-        bool    isZoneWaterFlowPossible(Pzone& zone, std::unordered_map<Slink*, bool>& sharedLinksContolledMap, std::unordered_map<Slink*, StatusType>& sharedLinksStatusMap) {
-            AUTO pr = this;
-            AUTO startTime = (u64)pr->times.GetSimStartTime();
-
-            // Is there an infinite reservoir available?
-            for (auto& node : zone->Node) {
-                // are any of these nodes an infinite reservoir? 
-                if (node->Type_p == asset_t::RESERVOIR) {
-                    if (AUTO res_p = node.CastReference<Stank>()) {
-                        if (res_p->Diameter == 0.0_ft) { // otherwise a finite tank will eventually go empty and therefore there is no point
-                            return true;
-                        }
-                    }
-
-                }
-            }
-
-            // Does an open pipe connect, or does a directional link point inward? 
-            for (auto& boundary_link : zone->Boundary_Link) {
-                auto& link = boundary_link.first;
-                if (link) {
-                    if (link->IsBiDirectionalPipe()) { // pipe or TCV
-                        if (sharedLinksContolledMap[link.Get()]) { return true; }
-                        else {
-                            // is it closed? 
-                            if (sharedLinksStatusMap[link.Get()] == StatusType::CLOSED) {
-                                continue;
-                            }
-                            else {
-                                return true;
-                            }
-                        }
-                    }
-                    else {
-                        // check valve, valve, or pump therefore directionality matters
-                        if (boundary_link.second == direction_t::FLOW_IN_DMA) {
-                            if (sharedLinksContolledMap[link.Get()]) { return true; }
-                            else {
-                                // is it closed? 
-                                if (sharedLinksStatusMap[link.Get()] == StatusType::CLOSED) {
-                                    continue;
-                                }
-                                else {
-                                    return true;
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            return false;
-        };
-
-        int     getnodetype(int index, int* nodeType)
-            /*----------------------------------------------------------------
-            **  Input:   index = node index
-            **  Output:  nodeType  = node type (see EN_NodeType)
-            **  Returns: error code
-            **  Purpose: retrieves the type of a node
-            **----------------------------------------------------------------
-            */
-        {
-            AUTO p = this;
-
-            *nodeType = -1;
-            if (!p->Openflag) return 102;
-            if (index < 1 || index > p->network->Nnodes) return 203;
-            if (index <= p->network->Njuncs) *nodeType = EN_JUNCTION;
-            else
-            {
-                if (p->network->Tank[index - p->network->Njuncs]->Diameter == 0.0_ft)
-                {
-                    *nodeType = EN_RESERVOIR;
-                }
-                else *nodeType = EN_TANK;
-            }
-            return 0;
-        };
-        int     getlinktype(int index, int* linkType)
-            /*----------------------------------------------------------------
-            **  Input:   index = link index
-            **  Output:  linkType = link type (see EN_LinkType)
-            **  Returns: error code
-            **  Purpose: retrieves the type code of a link
-            **----------------------------------------------------------------
-            */
-        {
-            AUTO p = this;
-            *linkType = -1;
-            if (!p->Openflag) return 102;
-            if (index < 1 || index > p->network->Nlinks) return 204;
-            *linkType = p->network->Link[index]->Type;
-            return 0;
-        };
-        int     deletecontrol(int index)
-            /*----------------------------------------------------------------
-            **  Input:   index  = index of the control
-            **  Output:  none
-            **  Returns: error code
-            **  Purpose: deletes a simple control from a project
-            **----------------------------------------------------------------
-            */
-        {
-            AUTO p = this;
-            EN_Network net = p->network;
-            int i;
-
-            if (index <= 0 || index > net->Ncontrols) return 241;
-            for (i = index; i <= net->Ncontrols - 1; i++)
-            {
-                net->Control[i] = net->Control[i + 1];
-            }
-            net->Ncontrols--;
-            return 0;
-        };
-
-        void    clearrule(int i)
-            //-----------------------------------------------------------
-            //  Clears memory used by a rule for premises & actions
-            //-----------------------------------------------------------
-        {
-            AUTO pr = this;
-            EN_Network net = pr->network;
-
-            Spremise* p;
-            Spremise* pnext;
-            Saction* a;
-            Saction* anext;
-
-            p = net->Rule[i]->Premises;
-            while (p != NULL)
-            {
-                pnext = p->next;
-                free(p);
-                p = pnext;
-            }
-            a = net->Rule[i]->ThenActions;
-            while (a != NULL)
-            {
-                anext = a->next;
-                free(a);
-                a = anext;
-            }
-            a = net->Rule[i]->ElseActions;
-            while (a != NULL)
-            {
-                anext = a->next;
-                free(a);
-                a = anext;
-            }
-        };
-        void    deleterule(int index)
-            //-----------------------------------------------------------
-            //    Deletes a specific rule
-            //-----------------------------------------------------------
-        {
-            AUTO pr = this;
-            EN_Network net = pr->network;
-
-            int i;
-            Prule lastRule;
-
-            // Free memory allocated to rule's premises & actions
-            clearrule(index);
-
-            // Shift position of higher indexed rules down one
-            for (i = index; i <= net->Nrules - 1; i++)
-            {
-                net->Rule[i] = net->Rule[i + 1];
-            }
-
-            // Remove premises & actions from last (inactive) entry in Rule array
-            lastRule = net->Rule[net->Nrules];
-            lastRule->Premises = NULL;
-            lastRule->ThenActions = NULL;
-            lastRule->ElseActions = NULL;
-
-            // Reduce active rule count by one
-            net->Nrules--;
-        };
-        void    adjustrules(int objtype, int index)
-            //-----------------------------------------------------------
-            //    Adjusts rules when a specific node or link is deleted.
-            //-----------------------------------------------------------
-        {
-            AUTO pr = this;
-
-            EN_Network net = pr->network;
-
-            int i, Delete;
-            Spremise* p;
-            Saction* a;
-
-            // Delete rules that refer to objtype and index
-            for (i = net->Nrules; i >= 1; i--)
-            {
-                Delete = FALSE;
-                p = net->Rule[i]->Premises;
-                while (p != NULL && !Delete)
-                {
-                    if (objtype == p->object && p->index == index) Delete = TRUE;
-                    p = p->next;
-                }
-                if (objtype == r_LINK)
-                {
-                    a = net->Rule[i]->ThenActions;
-                    while (a != NULL && !Delete)
-                    {
-                        if (a->link == index) Delete = TRUE;
-                        a = a->next;
-                    }
-                    a = net->Rule[i]->ElseActions;
-                    while (a != NULL && !Delete)
-                    {
-                        if (a->link == index) Delete = TRUE;
-                        a = a->next;
-                    }
-                }
-                if (Delete) deleterule(i);
-            }
-
-            // Adjust all higher object indices to reflect deletion of object index
-            for (i = 1; i <= net->Nrules; i++)
-            {
-                p = net->Rule[i]->Premises;
-                while (p != NULL)
-                {
-                    if (objtype == p->object && p->index > index) p->index--;
-                    p = p->next;
-                }
-                if (objtype == r_LINK)
-                {
-                    a = net->Rule[i]->ThenActions;
-                    while (a != NULL)
-                    {
-                        if (a->link > index) a->link--;
-                        a = a->next;
-                    }
-                    a = net->Rule[i]->ElseActions;
-                    while (a != NULL)
-                    {
-                        if (a->link > index) a->link--;
-                        a = a->next;
-                    }
-                }
-            }
-        };
-
-        int	    findtank(int index)
-            /*----------------------------------------------------------------
-            **  Input:   index = node index
-            **  Output:  none
-            **  Returns: index of tank with given node id, or NOTFOUND if tank not found
-            **  Purpose: for use in the deletenode function
-            **----------------------------------------------------------------
-            */
-        {
-            int i;
-            for (i = 1; i <= network->Ntanks; i++)
-            {
-                if (network->Tank[i]->Node == index) return i;
-            }
-            return NOTFOUND;
-        };
-        int	    findpump(int index)
-            /*----------------------------------------------------------------
-            **  Input:   index = link ID
-            **  Output:  none
-            **  Returns: index of pump with given link id, or NOTFOUND if pump not found
-            **  Purpose: for use in the deletelink function
-            **----------------------------------------------------------------
-            */
-        {
-            int i;
-            for (i = 1; i <= network->Npumps; i++)
-            {
-                if (network->Pump[i]->Link == index) return i;
-            }
-            return NOTFOUND;
-        };
-        int		findvalve(int index)
-            /*----------------------------------------------------------------
-            **  Input:   index = link ID
-            **  Output:  none
-            **  Returns: index of valve with given link id, or NOTFOUND if valve not found
-            **  Purpose: for use in the deletelink function
-            **----------------------------------------------------------------
-            */
-        {
-            int i;
-            for (i = 1; i <= network->Nvalves; i++)
-            {
-                if (network->Valve[i]->Link == index) return i;
-            }
-            return NOTFOUND;
-        };
-
-        int     deletelink(int index, int actionCode)
-            /*----------------------------------------------------------------
-            **  Input:   index  = index of the link to delete
-            **           actionCode = how to treat controls that contain the link:
-            **           EN_UNCONDITIONAL deletes all such controls plus the link,
-            **           EN_CONDITIONAL does not delete the link if it appears
-            **           in a control and returns an error code
-            **  Output:  none
-            **  Returns: error code
-            **  Purpose: deletes a link from a project
-            **----------------------------------------------------------------
-            */
-        {
-            AUTO p = this;
-
-            EN_Network net = p->network;
-
-            int i;
-            int pumpindex;
-            int valveindex;
-            int linkType;
-            Plink link;
-
-            // Cannot modify network structure while solvers are active
-            if (!p->Openflag) return 102;
-            if (p->hydraul.OpenHflag || p->quality.OpenQflag) return 262;
-
-            // Check that link exists
-            if (index <= 0 || index > net->Nlinks) return 204;
-            if (actionCode < EN_UNCONDITIONAL || actionCode > EN_CONDITIONAL) return 251;
-
-            // Deletion will be cancelled if link appears in any controls
-            if (actionCode == EN_CONDITIONAL)
-            {
-                actionCode = incontrols(LINK, index);
-                if (actionCode > 0) return 261;
-            }
-
-            // Get references to the link and its type
-            link = net->Link[index];
-            getlinktype(index, &linkType);
-
-            // Remove link from its hash table
-            hashtable_t::hashtable_delete(net->LinkHashTable, link->ID);
-
-            // Remove link's comment and vertices
-            free(link->Comment);
-            link->Vertices = nullptr;            
-
-            // Shift position of higher entries in Link array down one
-            for (i = index; i <= net->Nlinks - 1; i++)
-            {
-                net->Link[i] = net->Link[i + 1];
-                // ... update link's entry in the hash table
-                hashtable_t::hashtable_update(net->LinkHashTable, net->Link[i]->ID, i);
-            }
-
-            // Adjust references to higher numbered links for pumps & valves
-            for (i = 1; i <= net->Npumps; i++)
-            {
-                if (net->Pump[i]->Link > index) net->Pump[i]->Link -= 1;
-            }
-            for (i = 1; i <= net->Nvalves; i++)
-            {
-                if (net->Valve[i]->Link > index) net->Valve[i]->Link -= 1;
-            }
-
-            // Delete any pump associated with the deleted link
-            if (linkType == PUMP)
-            {
-                pumpindex = findpump(index);
-                for (i = pumpindex; i <= net->Npumps - 1; i++)
-                {
-                    net->Pump[i] = net->Pump[i + 1];
-                }
-                net->Npumps--;
-            }
-
-            // Delete any valve (linkType > PUMP) associated with the deleted link
-            if (linkType > PUMP)
-            {
-                valveindex = findvalve(index);
-                for (i = valveindex; i <= net->Nvalves - 1; i++)
-                {
-                    net->Valve[i] = net->Valve[i + 1];
-                }
-                net->Nvalves--;
-            }
-
-            // Delete any control containing the link
-            for (i = net->Ncontrols; i >= 1; i--)
-            {
-                if (net->Control[i]->Link == index) deletecontrol(i);
-            }
-
-            // Adjust higher numbered link indices in remaining controls
-            for (i = 1; i <= net->Ncontrols; i++)
-            {
-                if (net->Control[i]->Link > index) net->Control[i]->Link--;
-            }
-
-            // Make necessary adjustments to rule-based controls
-            adjustrules(EN_R_LINK, index);
-
-            // Reduce link count by one
-            net->Nlinks--;
-            return 0;
-        };
-        int     deletenode(int index, int actionCode)
-            /*----------------------------------------------------------------
-            **  Input:   index  = index of the node to delete
-            **           actionCode = how to treat controls that contain the link
-            **           or its incident links:
-            **           EN_UNCONDITIONAL deletes all such controls plus the node,
-            **           EN_CONDITIONAL does not delete the node if it or any of
-            **           its links appear in a control and returns an error code
-            **  Output:  none
-            **  Returns: error code
-            **  Purpose: deletes a node from a project
-            **----------------------------------------------------------------
-            */
-        {
-            AUTO p = this;
-
-            EN_Network net = p->network;
-
-            int i, nodeType, tankindex;
-            Pnode node;
-
-            // Cannot modify network structure while solvers are active
-            if (!p->Openflag) return 102;
-            if (p->hydraul.OpenHflag || p->quality.OpenQflag) return 262;
-
-            // Check that node exists
-            if (index <= 0 || index > net->Nnodes) return 203;
-            if (actionCode < EN_UNCONDITIONAL || actionCode > EN_CONDITIONAL) return 251;
-
-            // Can't delete a water quality trace node
-            if (index == hashtable_t::hashtable_find(network->NodeHashTable, (char*)p->quality.TraceNode.c_str())) return 260;
-
-            // Do not delete a node contained in a control or is connected to a link
-            if (actionCode == EN_CONDITIONAL)
-            {
-                if (incontrols(NODE, index)) return 261;
-                for (i = 1; i <= net->Nlinks; i++)
-                {
-                    if (net->Link[i]->N1 == index ||
-                        net->Link[i]->N2 == index)  return 259;
-                }
-            }
-
-            // Get a reference to the node & its type
-            node = net->Node[index];
-            getnodetype(index, &nodeType);
-
-            // Remove node from its hash table
-            hashtable_t::hashtable_delete(net->NodeHashTable, node->ID);
-
-            // Free memory allocated to node's demands, WQ source & comment
-            node->D.Clear();
-            node->S = nullptr;
-            free(node->Comment);
-
-            // Shift position of higher entries in Node & Coord arrays down one
-            for (i = index; i <= net->Nnodes - 1; i++)
-            {
-                net->Node[i] = net->Node[i + 1];
-                // ... update node's entry in the hash table
-                hashtable_t::hashtable_t::hashtable_update(net->NodeHashTable, net->Node[i]->ID, i);
-            }
-
-            // If deleted node is a tank, remove it from the Tank array
-            if (nodeType != EN_JUNCTION)
-            {
-                tankindex = findtank(index);
-                for (i = tankindex; i <= net->Ntanks - 1; i++)
-                {
-                    net->Tank[i] = net->Tank[i + 1];
-                }
-            }
-
-            // Shift higher node indices in Tank array down one
-            for (i = 1; i <= net->Ntanks; i++)
-            {
-                if (net->Tank[i]->Node > index) net->Tank[i]->Node -= 1;
-            }
-
-            // Delete any links connected to the deleted node
-            // (Process links in reverse order to maintain their indexing)
-            for (i = net->Nlinks; i >= 1; i--)
-            {
-                if (net->Link[i]->N1 == index ||
-                    net->Link[i]->N2 == index)  deletelink(i, EN_UNCONDITIONAL);
-            }
-
-            // Adjust indices of all link end nodes
-            for (i = 1; i <= net->Nlinks; i++)
-            {
-                if (net->Link[i]->N1 > index) net->Link[i]->N1 -= 1;
-                if (net->Link[i]->N2 > index) net->Link[i]->N2 -= 1;
-            }
-
-            // Delete any control containing the node
-            for (i = net->Ncontrols; i >= 1; i--)
-            {
-                if (net->Control[i]->Node == index) deletecontrol(i);
-            }
-
-            // Adjust higher numbered link indices in remaining controls
-            for (i = 1; i <= net->Ncontrols; i++)
-            {
-                if (net->Control[i]->Node > index) net->Control[i]->Node--;
-            }
-
-            // Make necessary adjustments to rule-based controls
-            adjustrules(EN_R_NODE, index);
-
-            // Reduce counts of node types
-            if (nodeType == EN_JUNCTION) net->Njuncs--;
-            else net->Ntanks--;
-            net->Nnodes--;
-            return 0;
-        };
-
-        void    parseNetwork();
-#endif
-
         cweeList<Pnode>    findDeadEnds();
+
+
+
     };
     using EN_Project = cweeSharedPtr<Project>;
 
@@ -4659,9 +4064,9 @@ namespace epanet {
 
         return sumDemands;    
     };
-    INLINE std::map<std::string, cweeUnitValues::unit_value> Szone::LeakModelResults(cweeSharedPtr<Project> pr, year_t surveyFrequency) const {
-        mile_t MilesMains;
-        pounds_per_square_inch_t avgPressure;
+    INLINE std::map<std::string, cweeUnitValues::unit_value> Szone::LeakModelResults(cweeSharedPtr<Project> pr, year_t surveyFrequency, pounds_per_square_inch_t oldPressure) const {
+        mile_t MilesMains = 0;
+        pounds_per_square_inch_t avgPressure = 0;
 
         for (auto& link : this->Within_Link) {
             MilesMains += link->Len;
@@ -4670,8 +4075,22 @@ namespace epanet {
             avgPressure += node->GetAvgPressure();
         } avgPressure /= this->Node.Num();
 
-        return pr->network->Leakage.LeakModelResults(MilesMains, surveyFrequency, avgPressure);
+        return pr->network->Leakage.LeakModelResults(MilesMains, surveyFrequency, pr->network->Zone, oldPressure, avgPressure);
     };
+    INLINE year_t Szone::SurveyFrequency(cweeSharedPtr<Project> pr, pounds_per_square_inch_t oldPressure) const {
+        mile_t MilesMains = 0;
+        pounds_per_square_inch_t avgPressure = 0;
+
+        for (auto& link : this->Within_Link) {
+            MilesMains += link->Len;
+        }
+        for (auto& node : this->Node) {
+            avgPressure += node->GetAvgPressure();
+        } avgPressure /= this->Node.Num();
+
+        return pr->network->Leakage.BestSurveyFrequency(MilesMains, pr->network->Zone, oldPressure, avgPressure);
+    };
+
 #pragma region sparse matrix
     class smatrix_t {
     public:

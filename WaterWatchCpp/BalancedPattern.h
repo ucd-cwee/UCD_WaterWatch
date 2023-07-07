@@ -892,6 +892,11 @@ public:
 		 return out;
 	 };
 	 Y_Axis_Type										GetAvgValue() const {
+		//AUTO minT = this->GetMinTime();
+		//AUTO delta = this->GetMaxTime() - minT;
+		//if (delta <= 0) return 0;
+		//return this->RombergIntegral(minT, minT + delta) / delta;
+
 		Y_Axis_Type out;
 		out = 0;
 		int num(0);

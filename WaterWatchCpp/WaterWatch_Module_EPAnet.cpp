@@ -169,6 +169,15 @@ namespace chaiscript {
                     AddSharedPtrClassMember(::epanet, Svalve, ProducesElectricity);
                     AddSharedPtrClassMember_SpecializedName(::epanet, Svalve, Energy, EnergySummary);
                     lib->add(chaiscript::fun([](cweeSharedPtr < ::epanet::Svalve> const& a) -> std::string { if (!a) throw(chaiscript::exception::eval_error("Cannot access a member of a null (empty) shared object.")); return (cweeStr(a->Type_p.ToString()) + " " + a->Name_p).c_str(); }), "to_string");
+
+                    //lib->AddFunction(, NetPresentValue, , SINGLE_ARG({
+                    //    return proj->epanetProj->network->Leakage.NetPresentValueOfValve(valve);
+                    //}), ::epanet::Pvalve const& valve, cweeSharedPtr<EPAnetProject> const& proj);
+
+                    //lib->AddFunction(, NetPresentValue, , SINGLE_ARG({
+                    //    return proj->epanetProj->network->Leakage.NetPresentValueOfValve(valve, mode);
+                    //}), ::epanet::Pvalve const& valve, cweeSharedPtr<EPAnetProject> const& proj, int mode);
+
                     lib->add(chaiscript::castable_class<cweeSharedPtr<::epanet::Slink>, cweeSharedPtr<::epanet::Svalve>>());
                     lib->add(chaiscript::castable_class<cweeSharedPtr<::epanet::Sasset>, cweeSharedPtr<::epanet::Svalve>>());
                 }
@@ -243,14 +252,15 @@ namespace chaiscript {
                     }), "TryCalibrateZone");
                     lib->AddFunction(, LeakModelResults, , SINGLE_ARG({
                         std::map<std::string, Boxed_Value> out;
-                        for (auto& item : zone->LeakModelResults(proj->epanetProj, surveyFrequency))  out[item.first] = var(cweeUnitValues::unit_value(item.second));
+                        for (auto& item : zone->LeakModelResults(proj->epanetProj, surveyFrequency, oldPressure)) out[item.first] = var(cweeUnitValues::unit_value(item.second));
                         return out;
-                    }), ::epanet::Pzone const& zone, cweeSharedPtr<EPAnetProject> const& proj, units::time::year_t surveyFrequency);
+                    }), ::epanet::Pzone const& zone, cweeSharedPtr<EPAnetProject> const& proj, units::time::year_t surveyFrequency, units::pressure::pounds_per_square_inch_t oldPressure);
+                    lib->AddFunction(, SurveyFrequency, , SINGLE_ARG({
+                        return zone->SurveyFrequency(proj->epanetProj, oldPressure);
+                    }), ::epanet::Pzone const& zone, cweeSharedPtr<EPAnetProject> const& proj, units::pressure::pounds_per_square_inch_t oldPressure);
 
                     lib->add(chaiscript::castable_class<cweeSharedPtr<::epanet::Sasset>, cweeSharedPtr<::epanet::Szone>>());
                 }
-
-
 
                 // ...
 
@@ -496,8 +506,7 @@ namespace chaiscript {
                     }
                 }
 
-                /* EPAnet optimization */
-                {
+                /* EPAnet optimization */ {
                     AUTO lambda = [](cweeSharedPtr<EPAnetProject>& control_project, int numValves, cweeStr method, int numPolicies) {
                         ParticleSwarm_OptimizationManagementTool<true> // Alternating_OptimizationManagementTool< Random_OptimizationManagementTool<true>, Genetic_OptimizationManagementTool<true>>
                             ramtT(numValves, numPolicies);
@@ -953,106 +962,29 @@ namespace chaiscript {
                                 // proj->epanetProj->times.Dur *= 7.0;
                             }
 
-                            // Get valve definitions, and if more cost effective, fix the PRV/ERT distinction.
-                            cweeList< cweeEng::LeakageModel::ValveDefinition > valves;
+                            // if more cost effective, fix the PRV/ERT distinction.
+#if 0
+                            Dollar_t NPV_valves = 0_USD;
                             for (auto& link : newLinks) {
                                 if (link && link->Type_p == asset_t::VALVE) {
-                                    cweeEng::LeakageModel::ValveDefinition valveDef;
-                                    {
-                                        valveDef.dia = link->Diam;
-                                        {
-                                            AUTO energy = link->GetValue<_ENERGY_>();
-                                            if (energy) {
-                                                valveDef.E_Production_Weekly_Summer = units::math::fabs(energy->GetAvgValue());
-                                                valveDef.E_Production_Weekly_Winter = units::math::fabs(energy->GetAvgValue());
-                                            }
-                                            else {
-                                                valveDef.E_Production_Weekly_Summer = 0; // KW
-                                                valveDef.E_Production_Weekly_Winter = 0; // KW
-                                            }
+                                    AUTO valveP = link.CastReference<::epanet::Svalve>();
+                                    if (valveP) {
+                                        AUTO NPV_PRV = proj->epanetProj->network->Leakage.NetPresentValueOfValve(valveP, 1);
+                                        AUTO NPV_PAT = proj->epanetProj->network->Leakage.NetPresentValueOfValve(valveP, 2);
+
+                                        if (NPV_PRV > NPV_PAT) {
+                                            valveP->ProducesElectricity = false;
+                                            link->GetValue<_ENERGY_>()->operator=(0_kW); // zero-out the energy generation
                                         }
-                                        {
-                                            AUTO flow = link->GetValue<_FLOW_>();
-                                            if (flow) {
-                                                valveDef.Qbep = flow->GetAvgValue();
-                                            }
-                                            else {
-                                                valveDef.Qbep = 0;
-                                            }
+                                        else {
+                                            valveP->ProducesElectricity = true;
                                         }
-                                        {
-                                            AUTO headloss = link->GetValue<_HEADLOSS_>();
-                                            if (headloss) {
-                                                valveDef.Hbep = units::math::fabs(headloss->GetAvgValue());
-                                            }
-                                            else {
-                                                valveDef.Hbep = 0;
-                                            }
-                                        }
+
+                                        NPV_valves += proj->epanetProj->network->Leakage.NetPresentValueOfValve(valveP);
                                     }
-
-                                    // If a PRV would be more cost effective, do that instead
-                                    // The hydraulics are identical, so it's just a quick comparison.
-                                    {
-                                        constexpr scalar_t N_PRV = 20.0;
-                                        constexpr scalar_t w_prv = 0.025 / 12.0;
-                                        constexpr scalar_t w_pat = 0.025 / 12;
-                                        constexpr scalar_t N_PAT = 20.0;
-                                        constexpr scalar_t w_E = 0.025 / 12;
-                                        constexpr Dollar_per_kilowatt_hour_t Ce = 0.12; // $ / KWh
-
-                                        Dollar_t PRV_Install_Cost; {
-                                            AUTO C_PRV = cweeEng::LeakageModel::CostOfPRV(valveDef.dia, w_prv);
-                                            PRV_Install_Cost = N_PRV * C_PRV;
-                                        }
-                                        Dollar_t PRV_OM_Cost; {
-                                            PRV_OM_Cost = 0; // assumed 0;
-                                        }
-
-                                        Dollar_t ERT_Install_Cost = 0;
-                                        Dollar_t ERT_OM_Cost = 0;
-                                        {
-                                            AUTO C_PAT = cweeEng::LeakageModel::Get_F_Given_P<4 * 12>(11913.91_USD * valveDef.Qbep() * std::sqrt(valveDef.Hbep()), w_pat); // # average, inflated from 2019 to 2023 dollars
-                                            C_PAT += (1.0 - 0.26) * C_PAT / 0.26;
-                                            ERT_Install_Cost = N_PAT * C_PAT;
-
-                                            for (int i = 0; i <= 12 * 30; i++) {
-                                                ERT_OM_Cost += cweeEng::LeakageModel::Get_F_Given_P(C_PAT * (0.15 / 12), w_pat, i);
-                                            };
-                                        }
-
-                                        Dollar_t ERT_Energy_Production_Benefits = 0;
-                                        {
-                                            kilowatt_hour_t E_Production_Monthly = ((valveDef.E_Production_Weekly_Summer + valveDef.E_Production_Weekly_Winter) / 2.0) * cweeEng::LeakageModel::month_t(1);
-                                            for (int i = 0; i <= 12 * 30; i++) {
-                                                ERT_Energy_Production_Benefits += E_Production_Monthly * cweeEng::LeakageModel::Get_F_Given_P(Ce, w_E, i);
-                                            };
-                                        }
-
-                                        if ((ERT_Install_Cost + ERT_OM_Cost - ERT_Energy_Production_Benefits) > (PRV_Install_Cost + PRV_OM_Cost)) {
-                                            AUTO valveP = link.CastReference<::epanet::Svalve>();
-                                            if (valveP) {
-                                                valveP->ProducesElectricity = false;
-                                                valveP->GetValue<_ENERGY_>()->operator*=(0);
-                                            }
-                                            valveDef.E_Production_Weekly_Summer = 0; // KW
-                                            valveDef.E_Production_Weekly_Winter = 0; // KW
-                                        }
-                                    }
-
-                                    //if (cweeEng::LeakageModel::IsPrvMoreEffective(valveDef)) {
-                                    //    AUTO valveP = link.CastReference<::epanet::Svalve>();
-                                    //    if (valveP) {
-                                    //        valveP->ProducesElectricity = false;
-                                    //        valveP->GetValue<_ENERGY_>()->operator*=(0);
-                                    //    }
-                                    //    valveDef.E_Production_Weekly_Summer = 0; // KW
-                                    //    valveDef.E_Production_Weekly_Winter = 0; // KW
-                                    //}
-
-                                    valves.Append(valveDef);
                                 }
                             }
+#endif
 
                             // pressure penalties
                             for (auto& zone : proj->epanetProj->network->Zone) {
@@ -1076,7 +1008,7 @@ namespace chaiscript {
                                                         penalty += (minAllowedPSI - thisPressure)();
                                                     }
                                                     if (node->HasWaterDemand() && thisPressure < *minPressure) {
-                                                        // no customer should recieve less than 40psi                                                            
+                                                        // no customer should recieve less than 40psi
                                                         penalty += (*minPressure - thisPressure)(); // minAllowedCustomerPSI - thisPressure
                                                     }
                                                 }
@@ -1121,32 +1053,54 @@ namespace chaiscript {
                             // reduction to average customer pressure
                             pounds_per_square_inch_t customerPressureDelta = controlCustomerPressure - customerPressure;
 
-                            // total length of mains
-                            mile_t milesPipe = 0;
+#if 0
+                            Dollar_t NPV_zones = 0_USD;
                             for (auto& zone : proj->epanetProj->network->Zone) {
-                                if (!zone) continue;
-                                for (auto& link : zone->Within_Link) {
-                                    if (!link) continue;
-                                    milesPipe += link->Len;
+                                ::epanet::Pzone control_zone = nullptr; {
+                                    // find this zone in the control network if possible. If not possible, find one with shared links. If none of the above work, we'll simply not "reduce" pressure in the new zone.
+                                    if (!control_zone) {
+                                        for (auto& czone : control_network->Zone) {
+                                            // best case scenario
+                                            if (czone->Name_p == zone->Name_p) {
+                                                control_zone = czone;
+                                                break;
+                                            }
+                                        }
+                                    }
+                                    if (!control_zone) {
+                                        for (auto& node : zone->Node) {
+                                            for (auto& cnode : control_network->Node) {
+                                                // best case scenario
+                                                if (cnode->Name_p == node->Name_p) {
+                                                    control_zone = cnode->Zone;
+                                                    break;
+                                                }
+                                            }
+                                            break;
+                                        }
+                                    }
                                 }
-                            }
 
-                            year_t surveyFreq = cweeEng::LeakageModel::IdealSurveyFrequency(valves, milesPipe,
-                                controlCustomerPressure,
-                                customerPressure,
-                                1.3, // # infrastructure condition factor
-                                1.1 // # infrastructure leakage index                                    
-                            );
-                            AUTO result = cweeEng::LeakageModel::LeakModelResults(valves, milesPipe, surveyFreq,
-                                controlCustomerPressure,
-                                customerPressure,
-                                1.3, // # infrastructure condition factor
-                                1.1 // # infrastructure leakage index
-                            );
+                                Dollar_t NPV_zone = 0_USD; {
+                                    if (control_zone) {
+                                        AUTO cP = control_zone->AverageNodePressure();
+                                        year_t surveyFreq = zone->SurveyFrequency(proj->epanetProj, cP);
+                                        NPV_zone = zone->LeakModelResults(proj->epanetProj, surveyFreq, cP)["Net Benefits"]();
+                                    }
+                                    else {
+                                        AUTO cP = zone->AverageNodePressure();
+                                        year_t surveyFreq = zone->SurveyFrequency(proj->epanetProj, cP);
+                                        NPV_zone = zone->LeakModelResults(proj->epanetProj, surveyFreq, cP)["Net Benefits"]();
+                                    }
+                                }
+                                NPV_zones += NPV_zone;
+                            }
+#endif
 
                             // Final Performance Results
                             Dollar_t performance = 0; {
-                                performance += (Dollar_t)((result["Total Costs"] - result["Total Benefits"])() / (30.0 * 12.0));
+                                //performance += NPV_valves;
+                                //performance += NPV_zones;
 
                                 if (std::isnan((performance + (Dollar_t)((std::min(std::max(0.0, penalty()), (double)numValves) / (double)numValves) * PenaltyValue))())) {
                                     performance = PenaltyValue;
@@ -1162,10 +1116,9 @@ namespace chaiscript {
                             results.Emplace("Customer Pressure", customerPressure);
                             results.Emplace("Pressure Delta", customerPressureDelta);
                             results.Emplace("Performance", performance);
-                            results.Emplace("Survey Freq", surveyFreq);
-                            results.Emplace("Total Costs", result["Total Costs"]);
-                            results.Emplace("Total Benefits", result["Total Benefits"]);
-                            results.Emplace("Net Benefits", result["Net Benefits"]);
+                            //results.Emplace("Net Benefits (Zones)", NPV_zones);
+                            //results.Emplace("Net Benefits (Valves)", NPV_valves);
+                            //results.Emplace("Net Benefits", NPV_zones + NPV_valves);
 
                             return results;
                         };

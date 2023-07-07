@@ -623,6 +623,7 @@ to maintain a single distribution point for the source code.
 	DerivedUnitType(day, time, d, Conversion<hour>(24.0));
 	DerivedUnitType(week, time, wk, Conversion<day>(7.0));
 	DerivedUnitType(year, time, yr, Conversion<day>(365));
+	DerivedUnitType(month, time, mnth, Conversion<year>(1.0 / 12.0));
 	DerivedUnitType(julian_year, time, a_j, Conversion<second>(31557600.0));
 	DerivedUnitType(gregorian_year, time, a_g, Conversion<second>(31556952.0));
 
@@ -877,7 +878,7 @@ namespace cweeUnitValues {
 			CreateRow(tera ## Type), \
 			CreateRow(peta ## Type)
 			
-			static constexpr std::array<std::pair<unsigned long long, std::pair< const char*, const char*>>, 557> unit_types{
+			static constexpr std::array<std::pair<unsigned long long, std::pair< const char*, const char*>>, 558> unit_types{
 				{
 					CreateRowWithMetricPrefixes(meter),
 					CreateRow(foot),
@@ -901,6 +902,7 @@ namespace cweeUnitValues {
 					CreateRow(day),
 					CreateRow(week),
 					CreateRow(year),
+					CreateRow(month),
 					CreateRow(julian_year),
 					CreateRow(gregorian_year),
 					CreateRowWithMetricPrefixes(ampere),
