@@ -19,6 +19,7 @@ to maintain a single distribution point for the source code.
 #pragma once
 #include "EPANET_COMPILED.h"
 #include "InterpolatedMatrix.h"
+#include "FileSystemH.h"
 
 namespace epanet {
     namespace epanet_shared {
@@ -8415,6 +8416,9 @@ namespace epanet {
             Pcontrol control;
             Pcurve curve;
 
+            // Guard the new text file (prevent multiple threads from writing to the same filepath... which may result in a deadlock or bad writes)
+            AUTO fileGuard = fileSystem->GuardFile(fname);
+            
             // Open the new text file
             if ((f = fopen(fname, "wt")) == NULL) return 302;
 

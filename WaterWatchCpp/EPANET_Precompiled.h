@@ -27,6 +27,7 @@ to maintain a single distribution point for the source code.
 #include "BalancedPattern.h"
 #include "cweeSet.h"
 #include "cweeUnitPattern.h"
+#include "Engineering.h"
 
 #pragma warning(disable : 4996)
 namespace epanet {
@@ -2184,7 +2185,17 @@ namespace epanet {
 #undef AddValueType
 
     class Project; // forward declaration
-    
+
+    class Sadjlist {           // Node Adjacency List Item
+    public:
+        int    node;           // index of connecting node
+        int    link;           // index of connecting link
+        cweeSharedPtr<Sadjlist> next; // next item in list
+    };
+    using Padjlist = cweeSharedPtr<Sadjlist>; // Pointer to adjacency list
+
+
+
     class Sasset {
     public: // construction or destruction
         Sasset() : 
@@ -2251,6 +2262,21 @@ namespace epanet {
         cweeSharedPtr<ValuesContainerType>	Values_p; // private access due to the type-erasure
     };
     using Passet = cweeSharedPtr<Sasset>;
+}
+
+namespace std {
+    template <>
+    struct hash<::epanet::Passet>
+    {
+        std::size_t operator()(::epanet::Passet const& k) const
+        {
+            static const size_t shift = (size_t)log2(1 + sizeof(::epanet::Sasset));
+            return (size_t)(k.Get()) >> shift;
+        }
+    };
+}
+
+namespace epanet {
 
     class Szone;
 
@@ -2733,7 +2759,110 @@ namespace epanet {
         std::map<std::string, cweeUnitValues::unit_value> LeakModelResults(cweeSharedPtr<Project> pr, year_t surveyFrequency, pounds_per_square_inch_t oldPressure) const;
         year_t SurveyFrequency(cweeSharedPtr<Project> pr, pounds_per_square_inch_t oldPressure) const;
 
+
+        treeNS::tree< Passet > BuildAssetTree(Passet center, cweeList< Passet > const& exclusions) {
+            using namespace treeNS;
+            tree< Passet > data;
+            {
+                // build list of connections
+                std::unordered_map < Passet, cweeThreadedList<Passet> > connections; {
+                    for (auto& linkP : Within_Link) {
+                        AUTO asset_ptr = linkP.CastReference<Sasset>();
+                        if (!exclusions.Find(asset_ptr)) {
+                            AUTO asset_ptr = linkP.CastReference<Sasset>();
+                            cweeThreadedList<Passet> toAdd;
+                            toAdd.Append(linkP->StartingNode.CastReference<Sasset>());
+                            toAdd.Append(linkP->EndingNode.CastReference<Sasset>());
+                            connections[asset_ptr] = toAdd;                            
+                        }
+                    }
+                    for (auto& nodeP : Node) {
+                        AUTO asset_ptr = nodeP.CastReference<Sasset>();
+                        cweeThreadedList<Passet> toAdd;
+
+                        auto stop = connections.end();
+                        for (auto a_idS = connections.begin(); a_idS != stop; a_idS++) {
+                            if (a_idS->first->Type_p != asset_t::JUNCTION && a_idS->first->Type_p != asset_t::RESERVOIR) {
+                                if (a_idS->second.Find(asset_ptr)) {
+                                    toAdd.AddUnique(a_idS->first);
+                                }
+                            }
+                        }
+
+                        connections[asset_ptr] = toAdd;
+                    }
+                }
+
+                // build connection order
+                cweeThreadedList< std::pair<Passet, Passet> > treeConstructionOrder; {
+                    treeConstructionOrder.Clear();
+                    treeConstructionOrder.SetGranularity(connections.size() + 1024);
+
+                    std::pair<Passet, Passet> temp;
+                    temp.second = center;
+                    treeConstructionOrder.Append(temp);
+                    bool unique;
+                    int j;
+                    std::pair<Passet, Passet> temp2;
+                    for (int i = 0; i < treeConstructionOrder.Num(); i++) {
+                        for (auto& x : connections[treeConstructionOrder[i].second]) {
+                            temp2.first = treeConstructionOrder[i].second;
+                            temp2.second = x;
+                            unique = true;
+                            for (j = treeConstructionOrder.Num() - 1; j >= 0; j--) {
+                                if (treeConstructionOrder[j].second == x) {
+                                    unique = false;
+                                    break;
+                                }
+                            }
+                            if (unique) treeConstructionOrder.Append(temp2);
+                        }
+                    }
+                }
+
+                // build tree
+                decltype(data)::pre_order_iterator ptr, owner;
+                {
+                    ptr = data.insert(data.begin(), center);
+                    for (int i = 1; i < treeConstructionOrder.Num(); i++) {
+                        owner = std::find(data.begin(), data.end(), treeConstructionOrder[i].first);
+                        ptr = data.append_child(owner, treeConstructionOrder[i].second);
+                    }
+                }
+            }
+            return data;
+        };
+
+        // Relatively fast algorithm that finds a path from the start of a pipe to the end of a pipe without using the pipe itself. (Looks for connections)
+        cweeList<Passet>    findPathAroundLink(Plink link) {
+            // ensure the link is "within" our zone;
+            cweeList<Passet> out;
+            if (Within_Link.Find(link)) {
+                // Want to find the (ideally, shortest) path that connects the start and end node of this link WITHOUT using this link. 
+                cweeList< Passet > exclusions; 
+                
+                exclusions.Append(link.CastReference<Sasset>());
+                AUTO tree = BuildAssetTree(link->StartingNode.CastReference<Sasset>(), exclusions);
+                
+                Passet toFind = link->EndingNode.CastReference<Sasset>();
+                for (auto itr = tree.begin(); itr != tree.end(); itr++) {
+                    AUTO this_asset = itr.node->data;
+                    if (toFind == this_asset) {
+                        // navigate up the parents until we reach home? 
+                        AUTO currentNode = itr.node;
+                        while (currentNode) {
+                            out.Append(currentNode->data);
+                            currentNode = currentNode->parent;                        
+                        }
+                        return out;
+                    }
+                }
+            }
+            return out;
+        };
+
     private:
+
         template <int distance = 0>
         int   NumberOfBoundaryLinksBetweenZones_Impl(cweeSharedPtr<Szone> const& zone) {
             constexpr int maxDepth = 5;
@@ -2794,13 +2923,7 @@ namespace epanet {
         SCALER RptLim[2];      // lower/upper report limits
     } SField;
 
-    class Sadjlist {           // Node Adjacency List Item
-    public:
-        int    node;           // index of connecting node
-        int    link;           // index of connecting link
-        cweeSharedPtr<Sadjlist> next; // next item in list
-    };
-    using Padjlist = cweeSharedPtr<Sadjlist>; // Pointer to adjacency list
+
 
     struct  Sseg               // Pipe Segment List Item
     {
@@ -3302,6 +3425,7 @@ namespace epanet {
             scalar_t N1 = 1.5 - (1.0 - (2.0 / 3.0) * (ICF / ILI)) * PercRigid;
             
             AUTO LeakRatePerMile = connectionLeakRate * ((92950900.0 / 4.0) / 365.0) / 852.95_mi;
+            rateOfRise_t R = LeakRatePerMile * MilesMains / 365_d;
             if (new_zones.Num () > 0) {
                 pounds_per_square_inch_t avgSystemPressure = 0;
                 mile_t totalSystemLength = 0;
@@ -3327,8 +3451,7 @@ namespace epanet {
                     }
                 }
                 auto thisRatio = std::pow((avgPressure_new / avgSystemPressure)(), N1()) * MilesMains() / totalSysRatio; // this would sum to one across all zones
-                // each zone is "responsible" for zome percent of the total system leakage. Their responsibility is a function of their pressure relative to the average, and their mileage.
-                LeakRatePerMile = (totalSystemLeakage / totalSystemLength) * thisRatio;
+                R = (thisRatio * totalSystemLeakage) / 365_d;
             }
 
             // SYSTEM CHARACTERISTICS / ANALYSIS VARIABLES
@@ -3347,8 +3470,7 @@ namespace epanet {
             cweeList<month_t> t;
             for (month_t i = 0; i <= 30_yr; i += stepSize) t.Append(i);
 
-            // define the rate of rise of leakage
-            rateOfRise_t R = LeakRatePerMile * MilesMains / 365_d;            
+            // define the rate of rise of leakage           
             scalar_t gamma = std::pow((P1 / P0)(), N1()); // # fraction leakage rate remaining after pressure reduction, about 0.6 right now
             million_gallon_per_month_t init = R * 3.66424_yr; // # initial leakage rate, gallons / yr... solved by: (1 / (R/(1045.244408_ac_ft_y))). 1045_ac_ft_y came from 2022 water audit data for Marin.
 
@@ -3868,9 +3990,6 @@ namespace epanet {
             return out;
         };        
         cweeList<Pnode>    findDeadEnds();
-
-
-
     };
     using EN_Project = cweeSharedPtr<Project>;
 

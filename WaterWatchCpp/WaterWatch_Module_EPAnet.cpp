@@ -99,6 +99,7 @@ namespace chaiscript {
                     AddSharedPtrClassMember(::epanet, Snode, S);
                     AddSharedPtrClassMember(::epanet, Snode, Ke);
                     AddSharedPtrClassMember(::epanet, Snode, Zone);
+                    AddSharedPtrClassMember(::epanet, Snode, ResultIndex);
                     lib->add(chaiscript::fun([](cweeSharedPtr < ::epanet::Snode> const& a) -> std::string { if (!a) throw(chaiscript::exception::eval_error("Cannot access a member of a null (empty) shared object.")); return (cweeStr(a->Type_p.ToString()) + " " + a->Name_p).c_str(); }), "to_string");
 
                     AddSharedPtrClassFunction(::epanet, Snode, HasWaterDemand);
@@ -258,6 +259,9 @@ namespace chaiscript {
                     lib->AddFunction(, SurveyFrequency, , SINGLE_ARG({
                         return zone->SurveyFrequency(proj->epanetProj, oldPressure);
                     }), ::epanet::Pzone const& zone, cweeSharedPtr<EPAnetProject> const& proj, units::pressure::pounds_per_square_inch_t oldPressure);
+                    lib->AddFunction(, findPathAroundLink, , SINGLE_ARG({
+                        return zone->findPathAroundLink(link);
+                    }), ::epanet::Pzone const& zone, ::epanet::Plink const& link);
 
                     lib->add(chaiscript::castable_class<cweeSharedPtr<::epanet::Sasset>, cweeSharedPtr<::epanet::Szone>>());
                 }
@@ -564,12 +568,19 @@ namespace chaiscript {
                         cweeSharedPtr < cweeInterpolatedMatrix<float>> coord_to_index = make_cwee_shared < cweeInterpolatedMatrix<float> >();
                         cweeSharedPtr < cweeInterpolatedMatrix<float>> coord_to_x = make_cwee_shared < cweeInterpolatedMatrix<float> >();
                         cweeSharedPtr < cweeInterpolatedMatrix<float>> coord_to_y = make_cwee_shared < cweeInterpolatedMatrix<float> >();
-                        for (int i = 1; i < control_network->Link.size(); i++) {
-                            AUTO link = control_network->Link[i];
-                            if (link) {
-                                coord_to_index->AddValue(link->X()(), link->Y()(), i);
-                                coord_to_x->AddValue(link->X()(), link->Y()(), link->X()());
-                                coord_to_y->AddValue(link->X()(), link->Y()(), link->Y()());
+
+                        for (auto& zone : control_network->Zone) {
+                            if (zone->AverageCustomerPressure() < minAllowedCustomerPSI) continue; // pressure is already too low
+                            if (!zone->HasWaterDemand()) continue; // no demand to split
+                            if (zone->GetValue<_DEMAND_>()->GetAvgValue() < units::flowrate::gallon_per_minute_t(50)) continue; // this zone simply does not have enough demand to warrant splitting it. 
+
+                            for (auto& link : zone->Within_Link) {
+                                if (link) {
+                                    int i = control_project->getlinkIndex(link->Name_p);
+                                    coord_to_index->AddValue(link->X()(), link->Y()(), i);
+                                    coord_to_x->AddValue(link->X()(), link->Y()(), link->X()());
+                                    coord_to_y->AddValue(link->X()(), link->Y()(), link->Y()());
+                                }
                             }
                         }
 
@@ -613,103 +624,6 @@ namespace chaiscript {
                             }
                         }
                         }
-
-                        AUTO linkIsGoodCandidate = [=](::epanet::Plink link) -> bool {
-                            if (link) {
-                                if (link->Type_p == asset_t::PUMP) { // cannot replace a pump
-                                    return false;
-                                }
-                                if (link->Type >= ::epanet::LinkType::PRV) {
-                                    // existing prv's and fcv's are decent options considering they already reduce pressure - question is are they open? 
-                                    if (link->Kc == ::epanet::MISSING) {
-                                        if ((::epanet::StatusType)(double)link->Status(control_project->epanetProj->times.GetSimStartTime()) == ::epanet::OPEN)
-                                        {
-                                            return true; // OPEN VALVE
-                                        }
-                                        if ((::epanet::StatusType)(double)link->Status(control_project->epanetProj->times.GetSimStartTime()) == ::epanet::CLOSED)
-                                        {
-                                            return false; // CLOSED VALVE
-                                        }
-                                    }
-                                    return false; // UNKNOWN
-                                }
-
-                                AUTO flowPat = link->GetValue<_FLOW_>();
-                                // AUTO min_flow = flowPat->GetMinValue();
-                                AUTO max_flow = flowPat->GetAvgValue(); // was GetMaxValue
-                                if (units::math::fabs(max_flow) < minFlowrate) {
-                                    return false; // not enough flow to warrant analysis
-                                }
-
-                                return true;
-                            }
-                            return false;
-                        };
-                        AUTO getNextGoodLink = [=](::epanet::Plink link) -> ::epanet::Plink {
-                            if (link && linkIsGoodCandidate(link)) {
-                                if (link->GetValue<_FLOW_>()->GetAvgValue() > units::flowrate::gallon_per_minute_t(0)) { // positive direction
-                                    AUTO links = control_project->getConnectedLinks(link->N1); // upstream
-                                    links.RemoveFast(link);
-                                    if (links.size() == 1 && links[0]) {
-                                        if (linkIsGoodCandidate(links[0])) {
-                                            // this connecting pipe appears to be a good candidate. Make sure we don't cause a loop
-                                            // by finding pipes that connect to a node that happen to both be feeding it. I.e.:
-                                            // -->--> * <--<--
-                                            // We want:
-                                            // -->--> * -->-->
-
-                                            if (links[0]->GetDownstreamNode()->Name_p == link->StartingNode->Name_p) {
-                                                // good! 
-                                                return links[0];
-
-                                            }
-                                            else {
-                                                // bad!
-                                                return link;
-                                            }
-                                        }
-                                        else {
-                                            return link;
-                                        }
-                                    }
-                                    else {
-                                        // this pipe connects to a tree -> unclear how to handle, so accept this pipe
-                                        return link;
-                                    }
-                                }
-                                else { // negative direction
-                                    AUTO links = control_project->getConnectedLinks(link->N2); // downstream
-                                    links.RemoveFast(link);
-                                    if (links.size() == 1 && links[0]) {
-                                        if (linkIsGoodCandidate(links[0])) {
-                                            // this connecting pipe appears to be a good candidate. Make sure we don't cause a loop
-                                            // by finding pipes that connect to a node that happen to both be feeding it. I.e.:
-                                            // -->--> * <--<--
-                                            // We want:
-                                            // -->--> * -->-->
-
-                                            if (links[0]->GetDownstreamNode()->Name_p == link->EndingNode->Name_p) {
-                                                // good!
-                                                return link;
-                                            }
-                                            else {
-                                                // bad!
-                                                return links[0];
-                                            }
-                                        }
-                                        else {
-                                            return link;
-                                        }
-                                    }
-                                    else {
-                                        // this pipe connects to a tree -> unclear how to handle, so accept this pipe
-                                        return link;
-                                    }
-
-                                }
-                            }
-                            return link;
-                        };
 
                         AUTO createEPAnetProject = [=](cweeThreadedList<float> const& policy, cweeList<::epanet::Plink>& newLinks, cweeStr& policyStr)->cweeSharedPtr<EPAnetProject> {
                             AUTO p = EPAnet->createNewProject();
@@ -833,9 +747,6 @@ namespace chaiscript {
                                                         if (destLink && thisLink && thisLink->Vertices) {
                                                             // the vertices need to be reversed to make any sense
                                                             thisLink->Vertices->Array.Reverse();
-                                                            // copies the list to the end, then fast-swaps the first with the last items and results 
-                                                            // in a reversed list.
-
                                                             destLink->Vertices = thisLink->Vertices;
                                                         }
                                                         if (destLink) {
@@ -861,20 +772,47 @@ namespace chaiscript {
                             }
 
                             /* Regenerate zones after changing pipes */
-                            p->ParseNetwork();
+                            while (true) {
+                                p->ParseNetwork();
 
-                            /* Check if the network is physically possible. */
-                            for (auto& zone : p->epanetProj->network->Zone) {
-                                if (zone && zone->IllDefined != ::epanet::illDefined_t::Okay) {
-                                    return nullptr;
-                                }
-                            }
+                                bool successfulParse = true;
 
-                            /* Check if one of the valves are essentially useless */
-                            for (auto& link : newLinks) {
-                                if (link && (link->StartingNode->Zone == link->EndingNode->Zone)) {
-                                    return nullptr;
+                                /* Check if the network is physically possible. */
+                                for (auto& zone : p->epanetProj->network->Zone) {
+                                    if (zone && zone->IllDefined != ::epanet::illDefined_t::Okay) {
+                                        return nullptr;
+                                    }
                                 }
+
+                                /* Check if one of the valves are essentially useless */
+                                for (auto& link : newLinks) {
+                                    if (link && link->StartingNode->Zone == link->EndingNode->Zone) {
+                                        successfulParse = false;
+
+                                        // this must be fixed.
+                                        AUTO path = link->StartingNode->Zone->findPathAroundLink(link);
+                                        for (int NN = path.Num() - 1; NN >= 0; NN--) {
+                                            if (path[NN]->Type_p != asset_t::PIPE) {
+                                                path.RemoveIndex(NN);
+                                            }
+                                        }
+                                        if (path.Num() >= 2) {
+                                            ::epanet::Plink pipe = path[path.Num() / 2].CastReference<::epanet::Slink>();
+                                            if (pipe) {
+                                                pipe->Status(p->epanetProj->times.GetSimStartTime()) = ::epanet::CLOSED;
+                                                break;
+                                            }
+                                            else {
+                                                return nullptr;
+                                            }
+                                        }
+                                        else {
+                                            return nullptr; // something went wrong. This link shares a zone, but cannot be connected. Unknown how to fix.
+                                        }
+                                    }
+                                }
+
+                                if (successfulParse) break;
                             }
 
                             // optimize the setting for the new turbines or valves to reduce pressure as much as possible                                
@@ -882,62 +820,43 @@ namespace chaiscript {
                                 if (link && link->EndingNode) {
                                     // for each of the new links, go through their downstream zone nodes
                                     AUTO downstream_zone = link->EndingNode->Zone;
-                                    if (downstream_zone && downstream_zone->HasWaterDemand()) {
-                                        units::pressure::pounds_per_square_inch_t minZonePressure = std::numeric_limits<units::pressure::pounds_per_square_inch_t>::max();
-                                        units::pressure::pounds_per_square_inch_t minZoneCustomerPressure = std::numeric_limits<units::pressure::pounds_per_square_inch_t>::max();
-                                        for (auto& node : downstream_zone->Node) {
-                                            if (node) {
-                                                // find this node in the control network to retrieve its pressure                                                    
-                                                int index = control_project->getNodeindex(node->Name_p);
-                                                if (index > 0) {
-                                                    AUTO thisPressure = (units::pressure::pounds_per_square_inch_t)(units::pressure::head_t)(((units::length::foot_t)(control_network->Node[index]->GetValue<_HEAD_>()->GetMinValue() - control_network->Node[index]->El))());
-                                                    if (node->HasWaterDemand()) {
-                                                        if (minZonePressure > thisPressure) minZonePressure = thisPressure;
-                                                        if (minZoneCustomerPressure > thisPressure) minZoneCustomerPressure = thisPressure;
-                                                    }
-                                                    else {
-                                                        if (minZonePressure > thisPressure) minZonePressure = thisPressure;
+                                    if (downstream_zone) {
+                                        //if (downstream_zone->HasWaterDemand()) {
+                                            units::pressure::pounds_per_square_inch_t minZonePressure = std::numeric_limits<units::pressure::pounds_per_square_inch_t>::max();
+                                            units::pressure::pounds_per_square_inch_t minZoneCustomerPressure = std::numeric_limits<units::pressure::pounds_per_square_inch_t>::max();
+                                            for (auto& node : downstream_zone->Node) {
+                                                if (node) {
+                                                    // find this node in the control network to retrieve its pressure                                                    
+                                                    int index = control_project->getNodeindex(node->Name_p);
+                                                    if (index > 0) {
+                                                        AUTO thisPressure = (units::pressure::pounds_per_square_inch_t)(units::pressure::head_t)(((units::length::foot_t)(control_network->Node[index]->GetValue<_HEAD_>()->GetAvgValue() - control_network->Node[index]->El))());
+                                                        if (node->HasWaterDemand()) {
+                                                            if (minZonePressure > thisPressure) minZonePressure = thisPressure;
+                                                            if (minZoneCustomerPressure > thisPressure) minZoneCustomerPressure = thisPressure;
+                                                        }
+                                                        else {
+                                                            if (minZonePressure > thisPressure) minZonePressure = thisPressure;
+                                                        }
                                                     }
                                                 }
                                             }
-                                        }
 
-                                        if (minZoneCustomerPressure > minAllowedCustomerPSI && minZonePressure > minAllowedPSI) {
-                                            // there is room to further decrease the pressure, potentially.
-                                            AUTO diff1 = minZoneCustomerPressure - minAllowedCustomerPSI; // i.e. 65psi - 40psi = 25psi
-                                            AUTO diff2 = minZonePressure - minAllowedPSI; // i.e. 25psi - 5psi = 20psi
-                                            units::pressure::pounds_per_square_inch_t diff = diff1 < diff2 ? diff1 : diff2; // i.e. 20psi
+                                            if (minZoneCustomerPressure > minAllowedCustomerPSI && minZonePressure > minAllowedPSI) {
+                                                // there is room to further decrease the pressure, potentially.
+                                                AUTO diff1 = minZoneCustomerPressure - minAllowedCustomerPSI; // i.e. 65psi - 40psi = 25psi
+                                                AUTO diff2 = minZonePressure - minAllowedPSI; // i.e. 25psi - 5psi = 20psi
+                                                units::pressure::pounds_per_square_inch_t diff = diff1 < diff2 ? diff1 : diff2; // i.e. 20psi
 
-                                            // estimate the energy production of this valve:
-                                            units::pressure::head_t H = diff;
-                                            units::length::foot_t H_ft = H();
-                                            AUTO f_ptr = averageFlowrateMap.TryGetPtr(link->Name_p.c_str());
-                                            if (f_ptr) {
-                                                AUTO kW_potential = cweeEng::CentrifugalPumpEnergyDemand_kW(*f_ptr, H_ft, 131);
-                                                if (kW_potential < (units::power::kilowatt_t)(50)) {
-                                                    // this valve likely does not produce enough energy to be meaningful or a worthwhile ERT. BUT it could still be a PRV!
-                                                    p->setLinkValue(
+                                                if (diff > (units::pressure::pounds_per_square_inch_t)0) {
+                                                    p->setLinkValue( // change the previous setting (whatever it was) by reducing it as much as we can
                                                         p->getlinkIndex(link->Name_p), // index
-                                                        ::epanet::EN_LinkProperty::EN_VALVE_ELEC, // produces electricity
-                                                        0.0
+                                                        ::epanet::EN_LinkProperty::EN_INITSETTING, // initial setting
+                                                        p->getLinkValue(p->getlinkIndex(link->Name_p), ::epanet::EN_LinkProperty::EN_INITSETTING) - diff()
                                                     );
                                                 }
                                             }
-
-                                            if (diff > (units::pressure::pounds_per_square_inch_t)0) {
-                                                p->setLinkValue( // change the previous setting (whatever it was) by reducing it as much as we could
-                                                    p->getlinkIndex(link->Name_p), // index
-                                                    ::epanet::EN_LinkProperty::EN_INITSETTING, // initial setting
-                                                    p->getLinkValue(p->getlinkIndex(link->Name_p), ::epanet::EN_LinkProperty::EN_INITSETTING) - diff()
-                                                );
-                                            }
-                                        }
-                                        else {
-                                            // there is no room to further reduce pressure -- this position was never going to work.
-
-                                        }
+                                        //}                    
                                     }
-
                                 }
                             }
                             return p;
@@ -951,8 +870,8 @@ namespace chaiscript {
                                 // proj->epanetProj->times.Dur /= 7.0;
                                 AUTO sim = proj->StartHydraulicSimulation();
                                 while (true) {
-                                    sim->DoSteadyState(); // ::epanet::HydraulicSimulationQuality::LOWRES);
-                                    if (proj->getCurrentError() >= 100) {
+                                    sim->DoSteadyState(::epanet::HydraulicSimulationQuality::LOWRES); // ::epanet::HydraulicSimulationQuality::LOWRES);
+                                    if (proj->getCurrentError() >= 1) {
                                         // bad simulation -- big penalty.
                                         penalty = PenaltyValue;
                                         break;
@@ -1019,15 +938,26 @@ namespace chaiscript {
                                                 }
 
                                                 AUTO minPressure = controlNodeToMinCustomerZonePressure.TryGetPtr(node->Name_p.c_str());
-                                                if (minPressure && thisPressure < minAllowedCustomerPSI) {
-                                                    // We reduced pressure more than the original pressure (Possibly OK). Is it unacceptable though? 
-                                                    if (thisPressure < minAllowedPSI) {
-                                                        // no node should be below 5 psi
-                                                        penalty += (minAllowedPSI - thisPressure)();
+                                                if (minPressure) {
+                                                    if (thisPressure < minAllowedCustomerPSI) {
+                                                        // We reduced pressure more than the original pressure (Possibly OK). Is it unacceptable though? 
+                                                        if (thisPressure < minAllowedPSI) {
+                                                            // no node should be below 5 psi
+                                                            penalty += (minAllowedPSI - thisPressure)();
+                                                        }
+                                                        if (node->HasWaterDemand() && thisPressure < *minPressure) {
+                                                            // no customer should recieve less than 40psi
+                                                            penalty += (*minPressure - thisPressure)(); // minAllowedCustomerPSI - thisPressure
+                                                        }
                                                     }
-                                                    if (node->HasWaterDemand() && thisPressure < *minPressure) {
-                                                        // no customer should recieve less than 40psi
-                                                        penalty += (*minPressure - thisPressure)(); // minAllowedCustomerPSI - thisPressure
+                                                }
+                                                else {
+                                                    // new zone
+                                                    if (node->HasWaterDemand() && thisPressure < minAllowedCustomerPSI) {
+                                                        penalty += (minAllowedCustomerPSI - thisPressure)(); // minAllowedCustomerPSI - thisPressure                                                        
+                                                    }
+                                                    else if (thisPressure < minAllowedPSI) {
+                                                        penalty += (minAllowedPSI - thisPressure)();
                                                     }
                                                 }
                                             }
@@ -1121,15 +1051,23 @@ namespace chaiscript {
 
                             // Final Performance Results
                             Dollar_t performance = 0; {
-                                performance -= NPV_valves;
-                                performance -= NPV_zones;
-                                performance += totalEnergyDemandCost;
+                                performance -= NPV_valves / numValves;
+                                performance -= NPV_zones / numValves;
+                                performance += totalEnergyDemandCost / numValves;
 
-                                if (std::isnan((performance + (Dollar_t)((std::min(std::max(0.0, penalty()), (double)numValves) / (double)numValves) * PenaltyValue))())) {
-                                    performance = PenaltyValue;
+                                if (penalty >= scalar_t(PenaltyValue)) {
+                                    performance = Dollar_t(PenaltyValue);
                                 }
                                 else {
-                                    performance += (Dollar_t)((std::min(std::max(0.0, penalty()), (double)numValves) / (double)numValves) * PenaltyValue);
+                                    if (std::isnan((performance + (Dollar_t)((std::min(std::max(0.0, penalty()), (double)numValves) / (double)numValves) * PenaltyValue))())) {
+                                        performance = PenaltyValue;
+                                    }
+                                    else {
+                                        performance += (Dollar_t)((std::min(std::max(0.0, penalty()), (double)numValves) / (double)numValves) * PenaltyValue);
+                                    }
+                                }
+                                if (performance >= Dollar_t(PenaltyValue)) {
+                                    performance = Dollar_t(PenaltyValue);
                                 }
                             }
 
@@ -1223,6 +1161,13 @@ namespace chaiscript {
 
                             cachedResults->Emplace(policyStr.c_str(), performance);
                             cachedResults->Emplace(newPolicyStr.c_str(), performance);
+
+                            fileSystem->ensureDirectoryExists(cweeStr::printf("%s//opt_policies", fileSystem->getDataFolder().c_str()));
+                            if (performance < 0) {
+                                sim_result = evaluate(p, newLinks);
+                            }
+                            p->saveINP(cweeStr::printf("%s//opt_policies//%s_%s.inp", fileSystem->getDataFolder().c_str(), cweeStr((int)performance).c_str(), policyStr.c_str()));
+
                             return performance;
                         };
                         AUTO objFunc = [=](cweeThreadedList<u64>& policy) -> u64 {
