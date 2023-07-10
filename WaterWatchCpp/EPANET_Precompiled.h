@@ -2851,7 +2851,9 @@ namespace epanet {
                         // navigate up the parents until we reach home? 
                         AUTO currentNode = itr.node;
                         while (currentNode) {
-                            out.Append(currentNode->data);
+                            if (currentNode->data->Type_p != asset_t::JUNCTION && currentNode->data->Type_p != asset_t::RESERVOIR) {
+                                out.Append(currentNode->data);
+                            }
                             currentNode = currentNode->parent;                        
                         }
                         return out;
@@ -3680,7 +3682,7 @@ namespace epanet {
                 cweeUnitValues::unit_value g = cweeUnitValues::meter(9.8067) / (cweeUnitValues::second(1) * cweeUnitValues::second(1));
                 cweeUnitValues::unit_value d = cweeUnitValues::kilogram(998.57) / (cweeUnitValues::meter(1) * cweeUnitValues::meter(1) * cweeUnitValues::meter(1));
 
-                AUTO energyPat = (convFlow * convHead) * (d * g * (131.0 / 100.0));
+                AUTO energyPat = (convFlow * convHead) * (d * g / (131.0 / 100.0));
 
                 cweeUnitValues::kilowatt w = cweeUnitValues::math::fabs(energyPat.GetAvgValue());
 
@@ -3705,7 +3707,10 @@ namespace epanet {
             }
             else {
                 // ERT: Installation, maintenance, and energy generation
-                AUTO C_PAT = Get_F_Given_P<4 * 12>(11913.91_USD * avgFlow() * std::sqrt(avgHeadloss()), w_pat); // # average, inflated from 2019 to 2023 dollars
+                AUTO C_PAT = ::Max<Dollar_t>(
+                    CostOfPRV(valve->Diam, w_pat) * 1.5, 
+                    Get_F_Given_P<4 * 12>(11913.91_USD * avgFlow() * std::sqrt(avgHeadloss()), w_pat)
+                ); // # average, inflated from 2019 to 2023 dollars
                 C_PAT += (1.0 - 0.26) * C_PAT / 0.26;
                 Ci_T[0] += N_PAT * C_PAT;
 

@@ -315,7 +315,7 @@ to maintain a single distribution point for the source code.
 			currentTimeStep = getCurrentSimTimestep(projectNum);
 			if (currentTime == (decltype(currentTime))0 && currentTimeStep == (decltype(currentTime))0)
 				setError(projectNum, epanet::epanet_cpp::EN_initH(toModify, 0));
-			epanet::epanet_cpp::EN_runH(toModify, &currentTime, (::epanet::HydraulicSimulationQuality)simQuality);
+			setError(projectNum, epanet::epanet_cpp::EN_runH(toModify, &currentTime, (::epanet::HydraulicSimulationQuality)simQuality));
 			projectTime.GetExclusive()->operator[](projectNum) = currentTime;
 		}
 	};

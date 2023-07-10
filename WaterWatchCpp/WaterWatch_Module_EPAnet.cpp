@@ -208,8 +208,6 @@ namespace chaiscript {
                     lib->add(chaiscript::fun([](cweeSharedPtr < ::epanet::Szone> const& a) -> std::string { if (!a) throw(chaiscript::exception::eval_error("Cannot access a member of a null (empty) shared object.")); return (cweeStr(a->Type_p.ToString()) + " " + a->Name_p).c_str(); }), "to_string");
 
                     lib->add(chaiscript::fun([](::epanet::Pzone const& a, cweeSharedPtr<EPAnetProject>& proj) {
-                        // std::vector< chaiscript::Boxed_Value >;
-
                         std::vector<chaiscript::Boxed_Value> out; // std::pair<chaiscript::Boxed_Value, chaiscript::Boxed_Value> // object, ::epanet::direction_t
                         
                         AUTO assets = a->GetMassBalanceAssets(proj->epanetProj);
@@ -772,6 +770,7 @@ namespace chaiscript {
                             }
 
                             /* Regenerate zones after changing pipes */
+                            int maxRegenerations = 10;
                             while (true) {
                                 p->ParseNetwork();
 
@@ -791,11 +790,11 @@ namespace chaiscript {
 
                                         // this must be fixed.
                                         AUTO path = link->StartingNode->Zone->findPathAroundLink(link);
-                                        for (int NN = path.Num() - 1; NN >= 0; NN--) {
-                                            if (path[NN]->Type_p != asset_t::PIPE) {
-                                                path.RemoveIndex(NN);
-                                            }
-                                        }
+                                        //for (int NN = path.Num() - 1; NN >= 0; NN--) {
+                                        //    if (path[NN]->Type_p != asset_t::PIPE) {
+                                        //        path.RemoveIndex(NN);
+                                        //    }
+                                        //}
                                         if (path.Num() >= 2) {
                                             ::epanet::Plink pipe = path[path.Num() / 2].CastReference<::epanet::Slink>();
                                             if (pipe) {
@@ -813,6 +812,7 @@ namespace chaiscript {
                                 }
 
                                 if (successfulParse) break;
+                                if (maxRegenerations-- <= 0) return nullptr;
                             }
 
                             // optimize the setting for the new turbines or valves to reduce pressure as much as possible                                
@@ -881,45 +881,50 @@ namespace chaiscript {
                                 // proj->epanetProj->times.Dur *= 7.0;
                             }
 
-                            // if more cost effective, fix the PRV/ERT distinction.
+                            // if more cost effective, fix the PRV/ERT/Closed Pipe distinction.
                             units::dollar::Dollar_t NPV_valves = 0_USD;
-                            for (auto& link : newLinks) {
-                                if (link && link->Type_p == asset_t::VALVE) {
-                                    AUTO valveP = link.CastReference<::epanet::Svalve>();
+                            bool anyChanges = false;
+                            for (auto& valveP : proj->epanetProj->network->Valve) {
+                                if (valveP) {
                                     if (valveP) {
-
-                                        AUTO NPV_PRV = proj->epanetProj->network->Leakage.NetPresentValueOfValve(valveP, 1);
-                                        AUTO NPV_PAT = proj->epanetProj->network->Leakage.NetPresentValueOfValve(valveP, 2);
-
-                                        if (NPV_PRV > NPV_PAT) {
+                                        if (valveP->GetValue<_STATUS_>()->GetMaxValue() == (::epanet::SCALER)(::epanet::CLOSED)) {
+                                            // the valve may as well have been a closed pipe
                                             valveP->ProducesElectricity = false;
-                                            //valveP->GetValue<_ENERGY_>()->operator=(0_kW); // zero-out the energy generation
-
-                                            NPV_valves += NPV_PRV;
+                                            // valveP->Status(proj->epanetProj->times.GetSimStartTime()) = (::epanet::SCALER)(::epanet::CLOSED);
+                                            NPV_valves += 0_USD; // assumed "free" to close a pipe, since gate valves are typically already in-situ
                                         }
                                         else {
-                                            valveP->ProducesElectricity = true;
-
-                                            //cweeUnitValues::cweeUnitPattern convFlow(1_s, 1_cmh);
-                                            //cweeUnitValues::cweeUnitPattern convHead(1_s, 1_m);
-
-                                            //convFlow = cweeUnitValues::cweeUnitPattern(*valveP->GetValue<_FLOW_>());
-                                            //convHead = cweeUnitValues::cweeUnitPattern(*valveP->GetValue<_HEADLOSS_>());
-
-                                            //cweeUnitValues::unit_value g = cweeUnitValues::meter(9.8067) / (cweeUnitValues::second(1) * cweeUnitValues::second(1));
-                                            //cweeUnitValues::unit_value d = cweeUnitValues::kilogram(998.57) / (cweeUnitValues::meter(1) * cweeUnitValues::meter(1) * cweeUnitValues::meter(1));
-
-                                            //AUTO energyPat = (convFlow * convHead) * (d * g * (131.0 / 100.0));
-
-                                            //AUTO actualE_pat = valveP->GetValue<_ENERGY_>();
-                                            //actualE_pat->operator=(0_kW); // zero-out the energy generation
-                                            //for (auto& x : energyPat.GetKnotSeries()) {
-                                            //    actualE_pat->AddValue(x.first(), x.second()); // set the energy pat equal to what we have
-                                            //}
-
-                                            NPV_valves += NPV_PAT;
+                                            AUTO NPV_PRV = proj->epanetProj->network->Leakage.NetPresentValueOfValve(valveP, 1);
+                                            AUTO NPV_PAT = proj->epanetProj->network->Leakage.NetPresentValueOfValve(valveP, 2);
+                                            if (NPV_PRV > NPV_PAT && valveP->ProducesElectricity) {
+                                                anyChanges = true;
+                                                valveP->ProducesElectricity = false;
+                                                NPV_valves += NPV_PRV;
+                                            }
+                                            else if (NPV_PRV < NPV_PAT && !valveP->ProducesElectricity) {
+                                                anyChanges = true;
+                                                valveP->ProducesElectricity = true;
+                                                NPV_valves += NPV_PAT;
+                                            }
                                         }
                                     }
+                                }
+                            }
+
+                            if (anyChanges) {
+                                /* simulation */ {
+                                    // proj->epanetProj->times.Dur /= 7.0;
+                                    AUTO sim = proj->StartHydraulicSimulation();
+                                    while (true) {
+                                        sim->DoSteadyState(::epanet::HydraulicSimulationQuality::LOWRES); // ::epanet::HydraulicSimulationQuality::LOWRES);
+                                        if (proj->getCurrentError() >= 1) {
+                                            // bad simulation -- big penalty.
+                                            penalty = PenaltyValue;
+                                            break;
+                                        }
+                                        if (!sim->ShouldContinueSimulation()) break;
+                                    }
+                                    // proj->epanetProj->times.Dur *= 7.0;
                                 }
                             }
 
@@ -966,10 +971,10 @@ namespace chaiscript {
                                 }
                             }
 
-                            // total energy used minus total energy generated
+                            // total energy used (which can change due to pressure differences and new zone layouts)
                             kilowatt_hour_t totalEnergyDemand = 0; {
-                                for (auto& link : proj->epanetProj->network->Link) {
-                                    if (link && !newLinks.Find(link)) { // new link's energy demand was already included in their NPV calc
+                                for (auto& link : proj->epanetProj->network->Pump) {
+                                    if (link){ 
                                         AUTO pat = link->GetValue<_ENERGY_>();
                                         if (pat) {
                                             totalEnergyDemand += pat->RombergIntegral(pat->GetMinTime(), pat->GetMaxTime());
@@ -1069,6 +1074,9 @@ namespace chaiscript {
                                 if (performance >= Dollar_t(PenaltyValue)) {
                                     performance = Dollar_t(PenaltyValue);
                                 }
+                                if (performance <= -2147483648_USD) {
+                                    performance = 2147483648_USD;
+                                }
                             }
 
                             cweeThreadedMap<std::string, cweeUnitValues::unit_value> results;
@@ -1076,7 +1084,7 @@ namespace chaiscript {
                             results.Emplace("Customer Pressure", customerPressure);
                             results.Emplace("Pressure Delta", customerPressureDelta);
                             results.Emplace("Performance", performance);
-                            results.Emplace("Net Costs (Non-New Pumps and Valves)", totalEnergyDemandCost);
+                            results.Emplace("Net Pump Costs", totalEnergyDemandCost);
                             results.Emplace("Net Benefits (Zones)", NPV_zones);
                             results.Emplace("Net Benefits (Valves)", NPV_valves);
                             results.Emplace("Net Benefits", NPV_zones + NPV_valves - totalEnergyDemandCost);
@@ -1132,6 +1140,13 @@ namespace chaiscript {
                             AUTO sim_result = evaluate(p, newLinks);
 
                             performance = sim_result.TryGetPtr("Performance")->operator()();
+
+                            if (performance <= -2147483648.0) {
+                                // something went wrong
+                                cachedResults->Emplace(policyStr.c_str(), 2147483648.0);
+                                cachedResults->Emplace(newPolicyStr.c_str(), 2147483648.0);
+                                return 2147483648.0;
+                            }
 
                             units::pressure::pounds_per_square_inch_t this_minCustomerPSI = std::numeric_limits<units::pressure::pounds_per_square_inch_t>::max();
                             units::pressure::pounds_per_square_inch_t this_avgCustomerPSI = 0;
