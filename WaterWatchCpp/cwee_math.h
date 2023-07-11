@@ -144,11 +144,14 @@ public:
 		return a * (((((-2.39e-08f * s + 2.7526e-06f) * s - 1.98409e-04f) * s + 8.3333315e-03f) * s - 1.666666664e-01f) * s + 1.0f);
 	};
 
-	static float					Pow(float x, float y) {
-		return powf(x, y);
+	static double					Pow(double x, double y) {
+		AUTO r = std::pow(x, y);
+		if (std::isnan(r)) return 0;
+		if (std::isinf(r)) return 0;
+		return r;
 	};	// x raised to the power y with 32 bits precision
 	static double					Pow64(float x, float y) {
-		return pow(x, y);
+		return std::pow(x, y);
 	};	// x raised to the power y with 64 bits precision
 
 	static int						Rint(float f) {

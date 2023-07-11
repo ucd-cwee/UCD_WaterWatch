@@ -147,7 +147,7 @@ namespace epanet {
     template<typename T> INLINE AUTO SGN(T x) { return x < (T)0 ? (SCALER)-1 : (SCALER)1; }; // sign of x
     template<typename T> INLINE AUTO UCHAR(T x) { return (x >= 'a' && x <= 'z') ? (x & ~32) : x; }; 
     template<typename T> INLINE AUTO log(T x) { return units::math::log((SCALER)(double)x); };
-    template<typename T, typename Z> INLINE AUTO pow(T x, Z i) { return (T)std::pow((double)x, (double)i); };
+    template<typename T, typename Z> INLINE AUTO pow(T x, Z i) { return (T)cweeMath::Pow((double)x, (double)i); };
     template<typename T> INLINE AUTO sqrt(T x) { return units::math::sqrt(x); };
 #pragma endregion
 #pragma region Enums
@@ -3366,13 +3366,13 @@ namespace epanet {
             return input * units::math::cpow<months>(1.0 + rate);
         };
         template <typename T> static T Get_F_Given_P(T input, scalar_t rate, month_t time) {
-            return input * std::pow(1.0 + rate, time());
+            return input * cweeMath::Pow(1.0 + rate, time());
         };
         template <int months, typename T> static T  Get_P_Given_F(T input, scalar_t rate) {
             return input * units::math::pow<-1 * months>(1.0 + rate);
         };
         template <typename T> static T Get_P_Given_F(T input, scalar_t rate, month_t time) {
-            return input * std::pow(1.0 + rate(), -1 * time());
+            return input * cweeMath::Pow(1.0 + rate(), -1 * time());
         };
         static Dollar_t CostOfPRV(inch_t diam, scalar_t rate) {
             return Get_F_Given_P<1 * 12>(
@@ -3445,14 +3445,16 @@ namespace epanet {
                     for (auto& pressure : pressures) cweeMath::rollingAverageRef<pounds_per_square_inch_t>(avgSystemPressure, pressure, Pcount);
                     totalSystemLeakage = totalSystemLength * SystemLeakRatePerMile;                    
                     Pcount = 0;
+                    avgSystemPressure += 0.00001_psi;
                     for (auto& zone : new_zones) {
                         mile_t _MilesMains = 0;
                         for (auto& link : zone->Within_Link) _MilesMains += link->Len;
-                        totalSysRatio += std::pow((pressures[Pcount] / avgSystemPressure)(), N1()) * _MilesMains();
+                        totalSysRatio += cweeMath::Pow((pressures[Pcount] / avgSystemPressure)(), N1()) * _MilesMains();
                         Pcount++;
                     }
                 }
-                auto thisRatio = std::pow((avgPressure_new / avgSystemPressure)(), N1()) * MilesMains() / totalSysRatio; // this would sum to one across all zones
+                if (totalSysRatio == 0) { totalSysRatio = 1; };
+                auto thisRatio = cweeMath::Pow((avgPressure_new / avgSystemPressure)(), N1()) * MilesMains() / totalSysRatio; // this would sum to one across all zones
                 R = (thisRatio * totalSystemLeakage) / 365_d;
             }
 
@@ -3461,7 +3463,7 @@ namespace epanet {
             surveyFrequency_Months = units::math::round(surveyFrequency_Months); // must be in increments of months to be valid
             surveyFrequency_Months = units::math::max(surveyFrequency_Months, (month_t)1);
 
-            pounds_per_square_inch_t P0 = avgPressure_old; // # initial pressure
+            pounds_per_square_inch_t P0 = avgPressure_old + 0.00001_psi; // # initial pressure
             pounds_per_square_inch_t P1 = avgPressure_new; // # pressure after reduction
             mile_t d = MilesMains; // miles of mains
 
@@ -3473,7 +3475,7 @@ namespace epanet {
             for (month_t i = 0; i <= 30_yr; i += stepSize) t.Append(i);
 
             // define the rate of rise of leakage           
-            scalar_t gamma = std::pow((P1 / P0)(), N1()); // # fraction leakage rate remaining after pressure reduction, about 0.6 right now
+            scalar_t gamma = cweeMath::Pow((P1 / P0)(), N1()); // # fraction leakage rate remaining after pressure reduction, about 0.6 right now
             million_gallon_per_month_t init = R * 3.66424_yr; // # initial leakage rate, gallons / yr... solved by: (1 / (R/(1045.244408_ac_ft_y))). 1045_ac_ft_y came from 2022 water audit data for Marin.
 
             // calculate water lost volume and value
@@ -3707,10 +3709,19 @@ namespace epanet {
             }
             else {
                 // ERT: Installation, maintenance, and energy generation
-                AUTO C_PAT = ::Max<Dollar_t>(
-                    CostOfPRV(valve->Diam, w_pat) * 1.5, 
-                    Get_F_Given_P<4 * 12>(11913.91_USD * avgFlow() * std::sqrt(avgHeadloss()), w_pat)
-                ); // # average, inflated from 2019 to 2023 dollars
+                Dollar_t C_PAT;
+                if ((avgFlow > 3_lps && avgHeadloss > 3_m && avgFlow < 320_lps && avgHeadloss < 352_m) || (avgFlow > 1_lps && avgHeadloss > 10_m && avgFlow > 62_lps && avgHeadloss > 311_m)) {
+                    // good range
+                    C_PAT = Get_F_Given_P<4 * 12>(11913.91_USD * avgFlow() * std::sqrt(avgHeadloss()), w_pat); // # average, inflated from 2019 to 2023 dollars
+                }
+                else {
+                    // bad range
+                    C_PAT = ::Max<Dollar_t>(
+                        CostOfPRV(valve->Diam, w_pat),
+                        Get_F_Given_P<4 * 12>(11913.91_USD * avgFlow() * std::sqrt(avgHeadloss()), w_pat)
+                    ) * 10; // # average, inflated from 2019 to 2023 dollars, increased 10x for a hypothetical "custom" installation
+                }
+                                
                 C_PAT += (1.0 - 0.26) * C_PAT / 0.26;
                 Ci_T[0] += N_PAT * C_PAT;
 

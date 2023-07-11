@@ -509,8 +509,244 @@ namespace chaiscript {
                 }
 
                 /* EPAnet optimization */ {
-                    AUTO lambda = [](cweeSharedPtr<EPAnetProject>& control_project, int numValves, cweeStr method, int numPolicies) {
-                        ParticleSwarm_OptimizationManagementTool<true> // Alternating_OptimizationManagementTool< Random_OptimizationManagementTool<true>, Genetic_OptimizationManagementTool<true>>
+                    AUTO evaluate = [=](
+                        cweeSharedPtr<EPAnetProject> proj, cweeSharedPtr<EPAnetProject> control_proj,
+                        double PenaltyValue, 
+                        cwee_units::pounds_per_square_inch_t minAllowedCustomerPSI, 
+                        cwee_units::pounds_per_square_inch_t minAllowedPSI, 
+                        int numValves
+                    ) -> cweeThreadedMap<std::string, cweeUnitValues::unit_value> {
+                        using namespace cwee_units;
+                        scalar_t penalty = 0;
+
+                        /* simulation */ {
+                            // proj->epanetProj->times.Dur /= 7.0;
+                            AUTO sim = proj->StartHydraulicSimulation();
+                            while (true) {
+                                sim->DoSteadyState(::epanet::HydraulicSimulationQuality::LOWRES); // ::epanet::HydraulicSimulationQuality::LOWRES);
+                                if (proj->getCurrentError() >= 1) {
+                                    // bad simulation -- big penalty.
+                                    penalty = PenaltyValue;
+                                    break;
+                                }
+                                if (!sim->ShouldContinueSimulation()) break;
+                            }
+                            // proj->epanetProj->times.Dur *= 7.0;
+                        }
+
+                        // if more cost effective, fix the PRV/ERT/Closed Pipe distinction.
+                        units::dollar::Dollar_t NPV_valves = 0_USD;
+                        bool anyChanges = false;
+                        for (auto& valveP : proj->epanetProj->network->Valve) {
+                            if (valveP) {
+                                if (valveP) {
+                                    if (valveP->GetValue<_STATUS_>()->GetMaxValue() == (::epanet::SCALER)(::epanet::CLOSED)) {
+                                        // the valve may as well have been a closed pipe
+                                        valveP->ProducesElectricity = false;
+                                        // valveP->Status(proj->epanetProj->times.GetSimStartTime()) = (::epanet::SCALER)(::epanet::CLOSED);
+                                        NPV_valves += 0_USD; // assumed "free" to close a pipe, since gate valves are typically already in-situ
+                                    }
+                                    else {
+                                        AUTO NPV_PRV = proj->epanetProj->network->Leakage.NetPresentValueOfValve(valveP, 1);
+                                        AUTO NPV_PAT = proj->epanetProj->network->Leakage.NetPresentValueOfValve(valveP, 2);
+                                        if (NPV_PRV > NPV_PAT && valveP->ProducesElectricity) {
+                                            // anyChanges = true;
+                                            valveP->ProducesElectricity = false;
+                                            NPV_valves += NPV_PRV;
+                                        }
+                                        else if (NPV_PRV < NPV_PAT && !valveP->ProducesElectricity) {
+                                            // anyChanges = true;
+                                            valveP->ProducesElectricity = true;
+                                            NPV_valves += NPV_PAT;
+                                        }
+                                        else {
+                                            NPV_valves += ::Min<units::dollar::Dollar_t>(NPV_PRV, NPV_PAT);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        //if (anyChanges) {
+                        //    /* simulation */ {
+                        //        // proj->epanetProj->times.Dur /= 7.0;
+                        //        AUTO sim = proj->StartHydraulicSimulation();
+                        //        while (true) {
+                        //            sim->DoSteadyState(::epanet::HydraulicSimulationQuality::LOWRES); // ::epanet::HydraulicSimulationQuality::LOWRES);
+                        //            if (proj->getCurrentError() >= 1) {
+                        //                // bad simulation -- big penalty.
+                        //                penalty = PenaltyValue;
+                        //                break;
+                        //            }
+                        //            if (!sim->ShouldContinueSimulation()) break;
+                        //        }
+                        //        // proj->epanetProj->times.Dur *= 7.0;
+                        //    }
+                        //}
+
+                        // pressure penalties
+                        for (auto& zone : proj->epanetProj->network->Zone) {
+                            if (zone && zone->HasWaterDemand()) {
+                                for (auto& node : zone->Node) {
+                                    if (node) {
+                                        AUTO pat = node->GetValue<_HEAD_>();
+                                        if (pat) {
+                                            units::pressure::pounds_per_square_inch_t thisPressure;
+                                            {
+                                                units::length::foot_t head_ft = pat->GetAvgValue() - node->El;
+                                                units::pressure::head_t head = head_ft();
+                                                thisPressure = head;
+                                            }
+
+                                            //AUTO minPressure = controlNodeToMinCustomerZonePressure.TryGetPtr(node->Name_p.c_str());
+                                            //if (minPressure) {
+                                                //if (thisPressure < minAllowedCustomerPSI) {
+                                                //    // We reduced pressure more than the original pressure (Possibly OK). Is it unacceptable though? 
+                                                //    if (thisPressure < minAllowedPSI) {
+                                                //        // no node should be below 5 psi
+                                                //        penalty += (minAllowedPSI - thisPressure)();
+                                                //    }
+                                                //    if (node->HasWaterDemand() && thisPressure < *minPressure) {
+                                                //        // no customer should recieve less than 40psi
+                                                //        penalty += (*minPressure - thisPressure)(); // minAllowedCustomerPSI - thisPressure
+                                                //    }
+                                                //}
+                                            //}
+                                            //else {
+                                                // new zone
+                                                if (node->HasWaterDemand() && thisPressure < minAllowedCustomerPSI) {
+                                                    penalty += (minAllowedCustomerPSI - thisPressure)(); // minAllowedCustomerPSI - thisPressure                                                        
+                                                }
+                                                else if (thisPressure < minAllowedPSI) {
+                                                    penalty += (minAllowedPSI - thisPressure)();
+                                                }
+                                            //}
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // total energy used (which can change due to pressure differences and new zone layouts)
+                        kilowatt_hour_t totalEnergyDemand = 0; {
+                            for (auto& link : proj->epanetProj->network->Pump) {
+                                if (link) {
+                                    AUTO pat = link->GetValue<_ENERGY_>();
+                                    if (pat) {
+                                        totalEnergyDemand += pat->RombergIntegral(pat->GetMinTime(), pat->GetMaxTime()) * ((second_t)(30_yr) / (second_t)(pat->GetMaxTime() - pat->GetMinTime()));
+                                    }
+                                }
+                            }
+                        }
+                        Dollar_t totalEnergyDemandCost = ::epanet::LeakModel::Ce * totalEnergyDemand;
+
+                        // average water pressure
+                        pounds_per_square_inch_t customerPressure = 0; { int count = 0;
+                        for (auto& zone : proj->epanetProj->network->Zone) {
+                            if (zone && zone->HasWaterDemand()) {
+                                for (auto& node : zone->Node) {
+                                    if (node && node->HasWaterDemand()) {
+                                        AUTO pat = node->GetValue<_HEAD_>();
+                                        if (pat) {
+                                            units::length::foot_t head_ft = pat->GetAvgValue() - node->El;
+                                            units::pressure::head_t head = head_ft();
+                                            units::pressure::pounds_per_square_inch_t thisPressure = head;
+
+                                            cweeMath::rollingAverageRef(customerPressure, thisPressure, count);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        }
+
+                        // reduction to average customer pressure
+                        Dollar_t NPV_zones = 0_USD;
+                        for (auto& zone : proj->epanetProj->network->Zone) {
+                            if (zone) {
+                                ::epanet::Pzone control_zone = nullptr; {
+                                    // find this zone in the control network if possible. If not possible, find one with shared links. If none of the above work, we'll simply not "reduce" pressure in the new zone.
+                                    if (!control_zone) {
+                                        for (auto& czone : control_proj->epanetProj->network->Zone) {
+                                            // best case scenario
+                                            if (czone && czone->Name_p == zone->Name_p) {
+                                                control_zone = czone;
+                                                break;
+                                            }
+                                        }
+                                    }
+                                    if (!control_zone) {
+                                        for (auto& node : zone->Node) {
+                                            if (node) {
+                                                for (auto& cnode : control_proj->epanetProj->network->Node) {
+                                                    // best case scenario
+                                                    if (cnode && cnode->Zone && cnode->Name_p == node->Name_p) {
+                                                        control_zone = cnode->Zone;
+                                                        break;
+                                                    }
+                                                }
+                                                break;
+                                            }
+                                        }
+                                    }
+                                }
+
+                                Dollar_t NPV_zone = 0_USD; {
+                                    if (control_zone) {
+                                        AUTO cP = control_zone->AverageNodePressure();
+                                        year_t surveyFreq = zone->SurveyFrequency(proj->epanetProj, cP);
+                                        NPV_zone = zone->LeakModelResults(proj->epanetProj, surveyFreq, cP)["Net Benefits"]();
+                                    }
+                                    else {
+                                        AUTO cP = zone->AverageNodePressure();
+                                        year_t surveyFreq = zone->SurveyFrequency(proj->epanetProj, cP);
+                                        NPV_zone = zone->LeakModelResults(proj->epanetProj, surveyFreq, cP)["Net Benefits"]();
+                                    }
+                                }
+                                //if (!std::isnan(NPV_zone()))
+                                    NPV_zones = NPV_zones + NPV_zone;
+                            }
+                        }
+
+                        // Final Performance Results
+                        scalar_t performance = 0; 
+                        {
+                            performance = NPV_valves();
+                            performance = performance + NPV_zones();
+                            performance = performance - totalEnergyDemandCost();
+                            performance = performance - ((penalty() * 100000)* (penalty < scalar_t(PenaltyValue)));
+                            performance = performance - ((scalar_t(PenaltyValue)) * (penalty >= scalar_t(PenaltyValue)));
+                        }
+
+                        cweeThreadedMap<std::string, cweeUnitValues::unit_value> results;
+                        results.Emplace("Penalty", penalty);
+                        results.Emplace("Customer Pressure", customerPressure);
+                        results.Emplace("Performance", performance);
+                        results.Emplace("Net Pump Costs", totalEnergyDemandCost);
+                        results.Emplace("Net Benefits (Zones)", NPV_zones);
+                        results.Emplace("Net Benefits (Valves)", NPV_valves);
+                        results.Emplace("Net Benefits", NPV_zones + NPV_valves - totalEnergyDemandCost);
+
+                        return results;
+                    };
+
+                    lib->add(chaiscript::fun([=](
+                        cweeSharedPtr<EPAnetProject> proj, 
+                        cweeSharedPtr<EPAnetProject> control_proj
+                    ) { 
+                        // -> cweeThreadedMap<std::string, cweeUnitValues::unit_value>
+                        using namespace cwee_units;  
+                        std::map<std::string, Boxed_Value> out;
+                        for (auto& x : evaluate(proj, control_proj, cweeMath::INF / 10000, 40_psi, 5_psi, proj->epanetProj->network->Valve.Num() - control_proj->epanetProj->network->Valve.Num())) {
+                            if (x.second) 
+                                out.emplace(x.first.c_str(), var(cweeUnitValues::unit_value(*x.second)));
+                        }
+                        return out;
+                    }), 
+                    "SystemPerformance");
+
+                    AUTO lambda = [=](cweeSharedPtr<EPAnetProject>& control_project, int numValves, cweeStr method, int numPolicies) {
+                        ParticleSwarm_OptimizationManagementTool<false> // Alternating_OptimizationManagementTool< Random_OptimizationManagementTool<true>, Genetic_OptimizationManagementTool<true>>
                             ramtT(numValves, numPolicies);
 
                         const auto PenaltyValue = ramtT.default_constraint();
@@ -861,7 +1097,7 @@ namespace chaiscript {
                             }
                             return p;
                         };
-
+#if 0
                         AUTO evaluate = [=](cweeSharedPtr<EPAnetProject> proj, cweeList<::epanet::Plink> newLinks) -> cweeThreadedMap<std::string, cweeUnitValues::unit_value> {
                             using namespace cwee_units;
                             scalar_t penalty = 0;
@@ -1091,14 +1327,14 @@ namespace chaiscript {
 
                             return results;
                         };
-
+#endif
                         cweeSharedPtr<cweeThreadedList<float>> BestPolicy = make_cwee_shared<cweeThreadedList<float>>();
                         cweeSharedPtr<float> bestPerformance = std::numeric_limits<float>::max();
 
                         /* policies are positions along the hilbert curve. */
                         AUTO todo = [=](cweeThreadedList<float> const& policy)-> float {
                             double performance = 0.0;
-                            performance = PenaltyValue;
+                            performance = -PenaltyValue;
 
                             cweeStr policyStr; {
                                 cweeList<int> sortedIndexes1;
@@ -1123,7 +1359,7 @@ namespace chaiscript {
                             cweeList<::epanet::Plink> newLinks; cweeStr newPolicyStr;
                             AUTO p = createEPAnetProject(policy, newLinks, newPolicyStr);
                             if (!p || newLinks.size() != numValves) { // newPolicyStr is unusable in this state                                    
-                                performance = PenaltyValue;
+                                performance = -PenaltyValue;
                                 cachedResults->Emplace(policyStr.c_str(), performance);
                                 return performance;
                             }
@@ -1137,16 +1373,9 @@ namespace chaiscript {
                             }
 
                             /* The placement appears to be valid. Let's try it */
-                            AUTO sim_result = evaluate(p, newLinks);
+                            AUTO sim_result = evaluate(p, control_project, PenaltyValue, minAllowedCustomerPSI, minAllowedPSI, numValves);
 
                             performance = sim_result.TryGetPtr("Performance")->operator()();
-
-                            if (performance <= -2147483648.0) {
-                                // something went wrong
-                                cachedResults->Emplace(policyStr.c_str(), 2147483648.0);
-                                cachedResults->Emplace(newPolicyStr.c_str(), 2147483648.0);
-                                return 2147483648.0;
-                            }
 
                             units::pressure::pounds_per_square_inch_t this_minCustomerPSI = std::numeric_limits<units::pressure::pounds_per_square_inch_t>::max();
                             units::pressure::pounds_per_square_inch_t this_avgCustomerPSI = 0;
@@ -1160,17 +1389,33 @@ namespace chaiscript {
                                                 cweeMath::rollingAverageRef<units::pressure::pounds_per_square_inch_t>(this_avgCustomerPSI, thisPSI, this_pressureCount);
                                                 this_minCustomerPSI = std::min(this_minCustomerPSI, thisPSI);
                                             }
+                                            if (node && node->Type_p == asset_t::RESERVOIR) {
+                                                AUTO thisPSI = (units::pressure::pounds_per_square_inch_t)(units::pressure::head_t)((node->GetValue<_HEAD_>()->GetMinValue() - node->El)());
+
+                                                if (thisPSI <= units::pressure::pounds_per_square_inch_t(0.001)) {
+                                                    // this cannot be allowed to happen with reservoirs
+                                                    performance = -PenaltyValue;
+                                                    cachedResults->Emplace(policyStr.c_str(), performance);
+                                                    cachedResults->Emplace(newPolicyStr.c_str(), performance);
+
+                                                    return performance;
+                                                }                                                
+                                            }
                                         }
                                     }
                                 }
 
                                 if (this_minCustomerPSI < units::pressure::pounds_per_square_inch_t(0)) {
-                                    // very bad customer pressure
-                                    performance += (((units::pressure::pounds_per_square_inch_t(0) - this_minCustomerPSI) / units::pressure::pounds_per_square_inch_t(1)) * units::energy::megawatt_hour_t(5000))(); // 50MWh penalty per min pressure reduction
+                                    // very bad customer pressure - this is also not allowed
+                                    performance = -PenaltyValue;
+                                    cachedResults->Emplace(policyStr.c_str(), performance);
+                                    cachedResults->Emplace(newPolicyStr.c_str(), performance);
+
+                                    return performance;
                                 }
                                 if (this_minCustomerPSI < minCustomerPSI) {
                                     // bad customer pressure
-                                    performance += (((minCustomerPSI - this_minCustomerPSI) / units::pressure::pounds_per_square_inch_t(1)) * units::energy::megawatt_hour_t(500))(); // 50MWh penalty per min pressure reduction
+                                    performance -= (((minCustomerPSI - this_minCustomerPSI) / units::pressure::pounds_per_square_inch_t(1)) * units::energy::megawatt_hour_t(500))(); // 50MWh penalty per min pressure reduction
                                 }
                             }
 
@@ -1178,9 +1423,6 @@ namespace chaiscript {
                             cachedResults->Emplace(newPolicyStr.c_str(), performance);
 
                             fileSystem->ensureDirectoryExists(cweeStr::printf("%s//opt_policies", fileSystem->getDataFolder().c_str()));
-                            if (performance < 0) {
-                                sim_result = evaluate(p, newLinks);
-                            }
                             p->saveINP(cweeStr::printf("%s//opt_policies//%s_%s.inp", fileSystem->getDataFolder().c_str(), cweeStr((int)performance).c_str(), policyStr.c_str()));
 
                             return performance;
@@ -1243,21 +1485,21 @@ namespace chaiscript {
                         switch (method.Hash()) {
                         default:
                         case cweeStr::Hash("PSO"): {
-                            ParticleSwarm_OptimizationManagementTool<true> ramt(numValves, numPolicies);
+                            ParticleSwarm_OptimizationManagementTool<false> ramt(numValves, numPolicies);
                             for (int i = 0; i < numValves; i++) ramt.lower_constraints().Emplace((float)coord_to_index->MinHilbertPosition(), i);
                             for (int i = 0; i < numValves; i++) ramt.upper_constraints().Emplace((float)coord_to_index->MaxHilbertPosition(), i);
                             toAwait = cweeOptimizer::run_optimization(shared, ramt, std::function(objFunc), std::function(isFinishedFunc), maxIterations);
                             toAwait.AwaitAll();
                             break; }
                         case cweeStr::Hash("Genetic"): {
-                            Genetic_OptimizationManagementTool<true> ramt(numValves, numPolicies);
+                            Genetic_OptimizationManagementTool<false> ramt(numValves, numPolicies);
                             for (int i = 0; i < numValves; i++) ramt.lower_constraints().Emplace((float)coord_to_index->MinHilbertPosition(), i);
                             for (int i = 0; i < numValves; i++) ramt.upper_constraints().Emplace((float)coord_to_index->MaxHilbertPosition(), i);
                             toAwait = cweeOptimizer::run_optimization(shared, ramt, std::function(objFunc), std::function(isFinishedFunc), maxIterations);
                             toAwait.AwaitAll();
                             break; }
                         case cweeStr::Hash("Random"): {
-                            Random_OptimizationManagementTool<true> ramt(numValves, numPolicies);
+                            Random_OptimizationManagementTool<false> ramt(numValves, numPolicies);
                             for (int i = 0; i < numValves; i++) ramt.lower_constraints().Emplace((float)coord_to_index->MinHilbertPosition(), i);
                             for (int i = 0; i < numValves; i++) ramt.upper_constraints().Emplace((float)coord_to_index->MaxHilbertPosition(), i);
                             toAwait = cweeOptimizer::run_optimization(shared, ramt, std::function(objFunc), std::function(isFinishedFunc), maxIterations);
@@ -1284,7 +1526,7 @@ namespace chaiscript {
                                     }
                                 } }
 
-                                auto evaluated = evaluate(p, newLinks);
+                                auto evaluated = evaluate(p, control_project, PenaltyValue, minAllowedCustomerPSI, minAllowedPSI, numValves);
                                 for (auto& r : evaluated) {
                                     bv_final[r.first] = chaiscript::var(cweeUnitValues::unit_value(*r.second));
                                 }
@@ -2028,7 +2270,6 @@ namespace chaiscript {
                         
                         return entireDisplay;
                     }), "Display");
-
 
                     AUTO lambda = [](UI_Map& map, cweeSharedPtr<EPAnetProject>& p) {
                         using namespace cwee_units;

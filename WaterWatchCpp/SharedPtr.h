@@ -64,15 +64,15 @@ public:
 		details_withData& operator=(details_withData const&) = delete;
 		details_withData& operator=(details_withData&&) = delete;
 
-		template <typename Q = type, typename = std::enable_if_t<!std::is_same_v<Q, void>> > explicit details_withData() noexcept : count(1), d() {};
-		template <typename Q = type, typename = std::enable_if_t<!std::is_same_v<Q, void>> > explicit details_withData(std::decay_t<typename std::remove_reference<typename std::remove_pointer<Q>::type>::type>&& obj) noexcept : count(1), d(std::forward<type>(obj)) {};
-		template <typename Q = type, typename = std::enable_if_t<!std::is_same_v<Q, void>> > explicit details_withData(std::decay_t<typename std::remove_reference<typename std::remove_pointer<Q>::type>::type>const& obj) noexcept : count(1), d(obj) {};
+		template <typename Q = type, typename = std::enable_if_t<!std::is_same_v<Q, void>> > INLINE explicit details_withData() noexcept : count(1), d() {};
+		template <typename Q = type, typename = std::enable_if_t<!std::is_same_v<Q, void>> > INLINE explicit details_withData(std::decay_t<typename std::remove_reference<typename std::remove_pointer<Q>::type>::type>&& obj) noexcept : count(1), d(std::forward<type>(obj)) {};
+		template <typename Q = type, typename = std::enable_if_t<!std::is_same_v<Q, void>> > INLINE explicit details_withData(std::decay_t<typename std::remove_reference<typename std::remove_pointer<Q>::type>::type>const& obj) noexcept : count(1), d(obj) {};
 
-		void* source() const noexcept final { return const_cast<void*>(static_cast<const void*>(&d)); };
-		int	use_count() const noexcept final { return count.GetValue(); };
-		void increment() const noexcept final { count.Increment(); };
-		int decrement() const noexcept final { return count.Decrement(); };
-		std::function<void(Details_Interface*)> Details_Interface_Deleter() const noexcept final {
+		INLINE void* source() const noexcept final { return const_cast<void*>(static_cast<const void*>(&d)); };
+		INLINE int	use_count() const noexcept final { return count.GetValue(); };
+		INLINE void increment() const noexcept final { count.Increment(); };
+		INLINE int decrement() const noexcept final { return count.Decrement(); };
+		INLINE std::function<void(Details_Interface*)> Details_Interface_Deleter() const noexcept final {
 			return [](Details_Interface* p) {
 				if (p) {
 					AUTO q = dynamic_cast<cweeSharedPtr<type>::details_withData*>(p);
@@ -99,23 +99,23 @@ public:
 		explicit details(details&&) = delete;
 		details& operator=(details const&) = delete;
 		details& operator=(details&&) = delete;
-		explicit details(type* _source, std::function<void(type*)> _destroy) noexcept :
+		INLINE explicit details(type* _source, std::function<void(type*)> _destroy) noexcept :
 			p(_source), count(1), deleter(std::move(_destroy)) {};
-		void* source() const noexcept final { return static_cast<void*>(p.Get()); };
-		int	use_count() const noexcept final {
+		INLINE void* source() const noexcept final { return static_cast<void*>(p.Get()); };
+		INLINE int	use_count() const noexcept final {
 			return count.GetValue();
 		};
-		void increment() const noexcept final {
+		INLINE void increment() const noexcept final {
 			count.Increment();
 		};
-		int decrement() const noexcept final {
+		INLINE int decrement() const noexcept final {
 			int i = count.Decrement();
 			if (i == 0) {
 				deleter(p.Set(nullptr));
 			}
 			return i;
 		};
-		std::function<void(Details_Interface*)> Details_Interface_Deleter() const noexcept final {
+		INLINE std::function<void(Details_Interface*)> Details_Interface_Deleter() const noexcept final {
 			return [](Details_Interface* p) {
 				if (p) {
 					AUTO q = dynamic_cast<cweeSharedPtr<type>::details*>(p);
@@ -141,18 +141,18 @@ public:
 		explicit details_no_destructor(details_no_destructor&&) = delete;
 		details_no_destructor& operator=(details_no_destructor const&) = delete;
 		details_no_destructor& operator=(details_no_destructor&&) = delete;
-		explicit details_no_destructor(type* _source) noexcept :
+		INLINE explicit details_no_destructor(type* _source) noexcept :
 			p(_source), count(1) {};
-		void* source() const noexcept final {
+		INLINE void* source() const noexcept final {
 			return static_cast<void*>(p.Get());
 		};
-		int	use_count() const noexcept final {
+		INLINE int	use_count() const noexcept final {
 			return count.GetValue();
 		};
-		void increment() const noexcept final {
+		INLINE void increment() const noexcept final {
 			count.Increment();
 		};
-		int decrement() const noexcept final {
+		INLINE int decrement() const noexcept final {
 			int i = count.Decrement();
 			if (i == 0) {
 				AUTO P = p.Set(nullptr);
@@ -162,7 +162,7 @@ public:
 			}
 			return i;
 		};
-		std::function<void(Details_Interface*)> Details_Interface_Deleter() const noexcept final {
+		INLINE std::function<void(Details_Interface*)> Details_Interface_Deleter() const noexcept final {
 			return [](Details_Interface* p) {
 				if (p) {
 					AUTO q = dynamic_cast<cweeSharedPtr<type>::details_no_destructor*>(p);
@@ -191,61 +191,61 @@ public:
 		cweeSharedPtr_DataImpl& operator=(cweeSharedPtr_DataImpl const&) = delete;
 		cweeSharedPtr_DataImpl& operator=(cweeSharedPtr_DataImpl&&) = delete;
 
-		explicit cweeSharedPtr_DataImpl(const cweeSharedPtr_Data_Interface& other, type* _ptr) noexcept : det(other.ptr()), m_ptr(_ptr) {
+		INLINE explicit cweeSharedPtr_DataImpl(const cweeSharedPtr_Data_Interface& other, type* _ptr) noexcept : det(other.ptr()), m_ptr(_ptr) {
 			increment();
 		};
 
-		explicit cweeSharedPtr_DataImpl(const cweeSharedPtr_Data_Interface& other, std::function<type* (void*)> _getter) noexcept : det(other.ptr()) { 
+		INLINE explicit cweeSharedPtr_DataImpl(const cweeSharedPtr_Data_Interface& other, std::function<type* (void*)> _getter) noexcept : det(other.ptr()) {
 			m_ptr = _getter(other.source());
 			increment(); 
 		};
 
-		explicit cweeSharedPtr_DataImpl(type* _source, std::function<void(type*)> _on_destroy, std::function<type* (void*)> _getter) noexcept : 
+		INLINE explicit cweeSharedPtr_DataImpl(type* _source, std::function<void(type*)> _on_destroy, std::function<type* (void*)> _getter) noexcept :
 			det(new details(_source, std::move(_on_destroy))) 
 		{
 			m_ptr = _source;
 		};
-		explicit cweeSharedPtr_DataImpl(type* _source, std::function<type* (void*)> _getter) noexcept : det(new details_no_destructor(_source)) {
+		INLINE explicit cweeSharedPtr_DataImpl(type* _source, std::function<type* (void*)> _getter) noexcept : det(new details_no_destructor(_source)) {
 			m_ptr = _source;
 		};
 
 #ifdef allowCweeSharedPtrCaptureByValue
 		template <typename Q = type, typename = std::enable_if_t<!std::is_same_v<Q, void>> >
-		explicit cweeSharedPtr_DataImpl(std::function<type* (void*)> _getter) noexcept : det(new details_withData()) {
+		INLINE explicit cweeSharedPtr_DataImpl(std::function<type* (void*)> _getter) noexcept : det(new details_withData()) {
 			m_ptr = _getter(source());
 		};
 
 		template <typename Q = type, typename = std::enable_if_t<!std::is_same_v<Q, void>> >
-		explicit cweeSharedPtr_DataImpl(std::decay_t<typename std::remove_reference<typename std::remove_pointer<Q>::type>::type>&& _obj, std::function<type* (void*)> _getter) noexcept : det(new details_withData(std::forward<type>(_obj))) {
+		INLINE explicit cweeSharedPtr_DataImpl(std::decay_t<typename std::remove_reference<typename std::remove_pointer<Q>::type>::type>&& _obj, std::function<type* (void*)> _getter) noexcept : det(new details_withData(std::forward<type>(_obj))) {
 			m_ptr = _getter(source());
 		};
 
 		template <typename Q = type, typename = std::enable_if_t<!std::is_same_v<Q, void>> >
-		explicit cweeSharedPtr_DataImpl(std::decay_t<typename std::remove_reference<typename std::remove_pointer<Q>::type>::type>const& _obj, std::function<type* (void*)> _getter) noexcept : det(new details_withData(_obj)) {
+		INLINE explicit cweeSharedPtr_DataImpl(std::decay_t<typename std::remove_reference<typename std::remove_pointer<Q>::type>::type>const& _obj, std::function<type* (void*)> _getter) noexcept : det(new details_withData(_obj)) {
 			m_ptr = _getter(source());
 		};
 #endif
-		void* source() const noexcept final {
+		INLINE void* source() const noexcept final {
 			AUTO p = det.Get();
 			if (p) {
 				return p->source();
 			}
 			return nullptr;
 		};
-		int	use_count() const noexcept final {
+		INLINE int	use_count() const noexcept final {
 			AUTO p = det.Get();
 			if (p) {
 				return p->use_count();
 			}
 			return 0;
 		};
-		void increment() const noexcept final {
+		INLINE void increment() const noexcept final {
 			AUTO p = det.Get();
 			if (p) {
 				p->increment();
 			}
 		};
-		int decrement() const noexcept final {
+		INLINE int decrement() const noexcept final {
 			int i = -1;
 			AUTO p = det.Get();
 			if (p) {
@@ -266,7 +266,7 @@ public:
 			}
 			return i;
 		};
-		cweeSysInterlockedPointer<Details_Interface>& ptr() const noexcept final { return det; };
+		INLINE cweeSysInterlockedPointer<Details_Interface>& ptr() const noexcept final { return det; };
 
 	public:
 		mutable cweeSysInterlockedPointer<Details_Interface>	det;
@@ -292,28 +292,28 @@ public:
 	constexpr cweeSharedPtr(std::nullptr_t) noexcept : mutex(0), m_data(nullptr) {};
 
 	/*! Instantiate a shared pointer by handing over a "new pointer()" to be managed, shared, and ultimately deleted by the shared pointer. */
-	cweeSharedPtr(PtrType source) noexcept : mutex(0), m_data(InitData(source)) {};
+	INLINE cweeSharedPtr(PtrType source) noexcept : mutex(0), m_data(InitData(source)) {};
 
 	/*! Instantiate a shared pointer by handing over a "new pointer()" to be managed, shared, and ultimately deleted by the shared pointer. */
-	cweeSharedPtr(PtrType source, std::function<void(PtrType)> destroy) noexcept : mutex(0), m_data(InitData(source, std::move(destroy))) {};
+	INLINE cweeSharedPtr(PtrType source, std::function<void(PtrType)> destroy) noexcept : mutex(0), m_data(InitData(source, std::move(destroy))) {};
 
 	/*! Instantiate a shared pointer by handing over a "new pointer()" to be managed, shared, and ultimately deleted by the shared pointer. */
-	cweeSharedPtr(PtrType source, std::function<void(PtrType)> destroy, std::function<PtrType(void*)> _getter) noexcept : mutex(0), m_data(InitData(source, std::move(destroy), std::move(_getter))) {};
+	INLINE cweeSharedPtr(PtrType source, std::function<void(PtrType)> destroy, std::function<PtrType(void*)> _getter) noexcept : mutex(0), m_data(InitData(source, std::move(destroy), std::move(_getter))) {};
 
 	/*! instantiate with a constructor and destructor */
-	cweeSharedPtr(std::function<PtrType()> create, std::function<void(PtrType)> destroy) noexcept : mutex(0), m_data(InitData(std::move(create), std::move(destroy))) {};
+	INLINE cweeSharedPtr(std::function<PtrType()> create, std::function<void(PtrType)> destroy) noexcept : mutex(0), m_data(InitData(std::move(create), std::move(destroy))) {};
 
 	/*! instantiate from another ptr */
-	cweeSharedPtr(cweeSharedPtr const& samePtr) noexcept : mutex(0), m_data(InitDataFromAnotherPtr(samePtr)) {};
-	cweeSharedPtr(cweeSharedPtr&& other) noexcept : mutex(0), m_data(InitDataFromAnotherPtr(std::forward<cweeSharedPtr>(other))) {};
+	INLINE cweeSharedPtr(cweeSharedPtr const& samePtr) noexcept : mutex(0), m_data(InitDataFromAnotherPtr(samePtr)) {};
+	INLINE cweeSharedPtr(cweeSharedPtr&& other) noexcept : mutex(0), m_data(InitDataFromAnotherPtr(std::forward<cweeSharedPtr>(other))) {};
 
 	/*! instantiate from another ptr with complex "get" instructions */
-	cweeSharedPtr(cweeSharedPtr const& samePtr, std::function<PtrType(void*)> _getter) noexcept : mutex(0), m_data(InitDataFromAnotherPtr(samePtr, std::move(_getter))) {};
-	cweeSharedPtr(cweeSharedPtr&& other, std::function<PtrType(void*)> _getter) noexcept : mutex(0), m_data(InitDataFromAnotherPtr(std::forward<cweeSharedPtr>(other), std::move(_getter))) {};
+	INLINE cweeSharedPtr(cweeSharedPtr const& samePtr, std::function<PtrType(void*)> _getter) noexcept : mutex(0), m_data(InitDataFromAnotherPtr(samePtr, std::move(_getter))) {};
+	INLINE cweeSharedPtr(cweeSharedPtr&& other, std::function<PtrType(void*)> _getter) noexcept : mutex(0), m_data(InitDataFromAnotherPtr(std::forward<cweeSharedPtr>(other), std::move(_getter))) {};
 
 	/*! instantiate from another ptr with a different Type, using basic cast operations */
 	template <typename T, typename = std::enable_if_t<!std::is_same_v<Type, T>> >
-	cweeSharedPtr(cweeSharedPtr<T> const& similarPtr) noexcept : mutex(0), m_data(InitDataFromAnotherPtr(similarPtr, [](void* p) constexpr -> PtrType {
+	INLINE cweeSharedPtr(cweeSharedPtr<T> const& similarPtr) noexcept : mutex(0), m_data(InitDataFromAnotherPtr(similarPtr, [](void* p) constexpr -> PtrType {
 		if constexpr (std::is_polymorphic<Type>::value && std::is_polymorphic<T>::value && (std::is_base_of<T, Type>::value || std::is_base_of<Type, T>::value)) {
 			return dynamic_cast<PtrType>((T*)p);
 		}
@@ -323,7 +323,7 @@ public:
 		// return static_cast<PtrType>((T*)p); // dynamic_cast
 	})) {};
 	template <typename T, typename = std::enable_if_t<!std::is_same_v<Type, T>> >
-	cweeSharedPtr(cweeSharedPtr<T>&& other) noexcept : mutex(0), m_data(InitDataFromAnotherPtr(std::forward<cweeSharedPtr<T>>(other), [](void* p) constexpr -> PtrType {
+	INLINE cweeSharedPtr(cweeSharedPtr<T>&& other) noexcept : mutex(0), m_data(InitDataFromAnotherPtr(std::forward<cweeSharedPtr<T>>(other), [](void* p) constexpr -> PtrType {
 		if constexpr (std::is_polymorphic<Type>::value && std::is_polymorphic<T>::value && (std::is_base_of<T, Type>::value || std::is_base_of<Type, T>::value)) {
 			return dynamic_cast<PtrType>((T*)p);
 		}
@@ -335,12 +335,12 @@ public:
 
 	/*! instantiate from another ptr with a different Type with complex "get" instructions */
 	template <typename T, typename = std::enable_if_t<!std::is_same_v<Type, T>> >
-	cweeSharedPtr(cweeSharedPtr<T> const& similarPtr, std::function<PtrType(void*)> _getter) noexcept : mutex(0), m_data(InitDataFromAnotherPtr(similarPtr, std::move(_getter))) {};
+	INLINE cweeSharedPtr(cweeSharedPtr<T> const& similarPtr, std::function<PtrType(void*)> _getter) noexcept : mutex(0), m_data(InitDataFromAnotherPtr(similarPtr, std::move(_getter))) {};
 	template <typename T, typename = std::enable_if_t<!std::is_same_v<Type, T>> >
-	cweeSharedPtr(cweeSharedPtr<T>&& other, std::function<PtrType(void*)> _getter) noexcept : mutex(0), m_data(InitDataFromAnotherPtr(std::forward<cweeSharedPtr<T>>(other), std::move(_getter))) {};
+	INLINE cweeSharedPtr(cweeSharedPtr<T>&& other, std::function<PtrType(void*)> _getter) noexcept : mutex(0), m_data(InitDataFromAnotherPtr(std::forward<cweeSharedPtr<T>>(other), std::move(_getter))) {};
 
 	template <typename Q = type, typename = std::enable_if_t<!std::is_same_v<Q, void>> >
-	cweeSharedPtr(std::decay_t<typename std::remove_reference<typename std::remove_pointer<Q>::type>::type> const& source) noexcept : mutex(0), m_data(
+	INLINE cweeSharedPtr(std::decay_t<typename std::remove_reference<typename std::remove_pointer<Q>::type>::type> const& source) noexcept : mutex(0), m_data(
 #ifdef allowCweeSharedPtrCaptureByValue
 		new cweeSharedPtr_DataImpl(source, std::function<PtrType(void*)>([](void* p) constexpr -> PtrType {return (PtrType)p; }))
 #else
@@ -349,7 +349,7 @@ public:
 	) {};
 
 	template <typename Q = type, typename = std::enable_if_t<!std::is_same_v<Q, void>> >
-	cweeSharedPtr(std::decay_t<typename std::remove_reference<typename std::remove_pointer<Q>::type>::type>&& source) noexcept : mutex(0), m_data(
+	INLINE cweeSharedPtr(std::decay_t<typename std::remove_reference<typename std::remove_pointer<Q>::type>::type>&& source) noexcept : mutex(0), m_data(
 #ifdef allowCweeSharedPtrCaptureByValue
 		new cweeSharedPtr_DataImpl(std::forward<std::decay_t<typename std::remove_reference<typename std::remove_pointer<Q>::type>::type>>(source), std::function<PtrType(void*)>([](void* p) constexpr -> PtrType {return (PtrType)p; }))
 #else
@@ -359,7 +359,7 @@ public:
 
 #ifdef allowCweeSharedPtrCaptureByValue
 	template <typename Q = type, typename = std::enable_if_t<!std::is_same_v<Q, void>> >
-	static cweeSharedPtr<Q> InstantiateInline() {
+	INLINE static cweeSharedPtr<Q> InstantiateInline() {
 		AUTO toReturn = cweeSharedPtr<Q>();
 		toReturn.UnsafeSetData(
 			new cweeSharedPtr_DataImpl(
