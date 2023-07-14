@@ -135,6 +135,8 @@ public:
 	//cweeStr getVar(int i) const { if (i < argV.Num()) return argV[i]; else return ""; }
 	cweeStr& getVar(int i) { return argV[i]; }
 	cweeStr getVar(int i) const { return argV[i]; }
+
+	cweeThreadedList<cweeStr>& getVars() { return argV; }
 private:
 	void			processTextFast_FirstDelimiterOnly(const cweeStr& text, const cweeStr& delimiter) { // used for complex delimiters like ':cweeJunctionDelimiter:'
 		argV.Clear();

@@ -60,6 +60,6 @@ public:
 
     virtual bool TableExists(nanodbcConnection con, cweeStr tableName) { return ODBC::TableExists(con, tableName); };
 
-    virtual void InsertRow(nanodbcConnection con, cweeStr tableFullPath, const cweeThreadedList<cweeStr>& values) { return ODBC::InsertRow(con, tableFullPath, values); };
+    virtual void InsertRow(nanodbcConnection const& con, cweeStr const& tableFullPath, const cweeThreadedList<cweeStr>& values) { return ODBC::InsertRow(con, tableFullPath, values); };
 };
 cweeSharedPtr<cweeODBC> odbc = make_cwee_shared<cweeOdbcLocal>(new cweeOdbcLocal()).CastReference<cweeODBC>();

@@ -3374,14 +3374,22 @@ namespace epanet {
         template <typename T> static T Get_P_Given_F(T input, scalar_t rate, month_t time) {
             return input * cweeMath::Pow(1.0 + rate(), -1 * time());
         };
-        static Dollar_t CostOfPRV(inch_t diam, scalar_t rate) {
+        static Dollar_t CostOfPRV(centimeter_t diam, scalar_t rate) {
             return Get_F_Given_P<1 * 12>(
-                1474.8_USD * std::exp(0.2094 * diam())
-                + 500_USD * std::exp(0.167 * diam())
-                + (255.36_USD * diam / 1_in - 300_USD)
-                + (1047_USD * diam / 1_in - 512_USD)
+                1474.8_USD * std::exp(0.0824 * diam())
+                + 500_USD * std::exp(0.0658 * diam())
+                + (100.5_USD * diam / 1_cm - 300_USD)
+                + (412.2_USD * diam / 1_cm - 512_USD)
                 , rate
                 );
+
+            //return Get_F_Given_P<1 * 12>(
+            //    1474.8_USD * std::exp(0.2094 * diam())
+            //    + 500_USD * std::exp(0.167 * diam())
+            //    + (255.36_USD * diam / 1_in - 300_USD)
+            //    + (1047_USD * diam / 1_in - 512_USD)
+            //    , rate
+            //    );
         };
 
     public:
@@ -3393,9 +3401,9 @@ namespace epanet {
         static constexpr scalar_t leak_reduction_eta = 0; // 0 ONLY WE ASSUME ALL LEAKS FIXED AT TIME 0 SO NO LEAKAGE REMAINING
         static constexpr scalar_t do_nothing_eta = 1.0; // set to 1 to include the benefits of the initial survey and repair over the study period
         static constexpr scalar_t w_prv = 0.025 / 12.0;
-        static constexpr scalar_t N_PRV = 20.0;
+        // static constexpr scalar_t N_PRV = 20.0;
         static constexpr scalar_t w_pat = 0.025 / 12;
-        static constexpr scalar_t N_PAT = 20.0;
+        // static constexpr scalar_t N_PAT = 20.0;
         static constexpr scalar_t w_E = 0.025 / 12;
         static constexpr Dollar_per_kilowatt_hour_t Ce = 0.12; // $ / KWh
         static constexpr Dollar_per_gallon_t Cvp = 682.6732941_USD / 1_ac_ft; // 0.001215862; // $ / gallon
@@ -3668,27 +3676,11 @@ namespace epanet {
             meter_t avgHeadloss = units::math::fabs(headPat->GetAvgValue());
 
             // AVERAGE ENERGY PRODUCTION
-            kilowatt_t avgEnergy = 0;
-            if (valve->ProducesElectricity) {
-                AUTO EnPat = valve->GetValue<_ENERGY_>();
-                avgEnergy = units::math::fabs(EnPat->GetAvgValue());
-            }
-            else if (evalMode == 2) {
-                // build the (POTENTIAL) energy generation
-                cweeUnitValues::cweeUnitPattern convFlow(1_s, 1_cmh);
-                cweeUnitValues::cweeUnitPattern convHead(1_s, 1_m);
-
-                convFlow = cweeUnitValues::cweeUnitPattern(*flowPat);
-                convHead = cweeUnitValues::cweeUnitPattern(*headPat);
-
-                cweeUnitValues::unit_value g = cweeUnitValues::meter(9.8067) / (cweeUnitValues::second(1) * cweeUnitValues::second(1));
-                cweeUnitValues::unit_value d = cweeUnitValues::kilogram(998.57) / (cweeUnitValues::meter(1) * cweeUnitValues::meter(1) * cweeUnitValues::meter(1));
-
-                AUTO energyPat = (convFlow * convHead) * (d * g / (131.0 / 100.0));
-
-                cweeUnitValues::kilowatt w = cweeUnitValues::math::fabs(energyPat.GetAvgValue());
-
-                avgEnergy = w();
+            kilowatt_t avgEnergy = 0; // ISSUE IS HERE.
+            if (valve->ProducesElectricity || evalMode == 2) {
+                // build the energy generation (Building it here from flow/head instead of using the sim result because of evalMode)
+                AUTO new_energy_pat = (*flowPat) * cwee_units::constants::d * cwee_units::constants::g * (*headPat) * (131.0 / 100.0);
+                avgEnergy = cwee_units::math::fabs(new_energy_pat.GetAvgValue());
             }
 
             // stepsize
@@ -3705,7 +3697,7 @@ namespace epanet {
             if (evalMode == 1 || (evalMode == 0 && !valve->ProducesElectricity)) {
                 // PRV: Installation fees, no maintenance, no energy
                 AUTO C_PRV = CostOfPRV(valve->Diam, w_prv);
-                Ci_T[0] += N_PRV * C_PRV;
+                Ci_T[0] += /*N_PRV * */C_PRV;
             }
             else {
                 // ERT: Installation, maintenance, and energy generation
@@ -3723,7 +3715,7 @@ namespace epanet {
                 }
                                 
                 C_PAT += (1.0 - 0.26) * C_PAT / 0.26;
-                Ci_T[0] += N_PAT * C_PAT;
+                Ci_T[0] += /*N_PAT * */C_PAT;
 
                 for (int i = 0; i < OM_T.size(); i++) {
                     OM_T[i] += Get_F_Given_P((0.15 / 12) * C_PAT, w_pat, t[i]);

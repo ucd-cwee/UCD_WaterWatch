@@ -45,6 +45,7 @@ to maintain a single distribution point for the source code.
 #include "enum.h"
 //#include "cweeUnitPattern.h"
 #include "odbc.h"
+#include "cweeJob.h"
 
 namespace chaiscript {
     namespace WaterWatch_Lib {
@@ -457,6 +458,72 @@ namespace chaiscript {
             // ODBC
             if (1) {                
                 AddBasicClassTemplate(nanodbcConnection);
+                lib->AddFunction(, CsvToTable, , SINGLE_ARG({
+                    // stream the file
+                    tableName = odbc->SafeString(tableName);
+
+                    std::string get;
+                    bool started = true;
+
+
+                    bool startedTransaction = false;
+                    int i = 1; int num = 0;
+                    fileSystem->LockFile(filePath);
+                    {
+                        std::ifstream file(filePath); // ifstream is read only, ofstream is write only, fstream is read/write.
+                        while (file.good()) {
+                            getline(file, get);
+                            num++;
+                        }
+                        file.close();
+                    }
+                    {
+                        std::ifstream file(filePath); // ifstream is read only, ofstream is write only, fstream is read/write.
+                        cweeParser p;
+                        while (file.good()) {
+                            getline(file, get);
+                            if (started) {
+                                if (!odbc->TableExists(con, tableName)) {
+                                    cweeList<cweeStr> header = cweeStr(get.c_str()).Split(",");
+                                    for (auto& x : header) x = odbc->SafeString(x);
+                                    if (!odbc->CreateTable(con, tableName, header)) { throw(std::exception("Could not create the table.")); }
+                                }
+
+                                started = false;
+                                startedTransaction = true;
+                                {
+                                    AUTO r = odbc->Query(con, "BEGIN DEFERRED TRANSACTION;");
+                                    odbc->GetResults(r);
+                                }
+                            }
+                            else {
+                                p.Parse(get.c_str(), ",", true);
+                                p.Trim(' ');
+                                odbc->InsertRow(con, tableName, p.getVars());
+                                if (++i % (num / 100) == 0) {
+                                    if (startedTransaction) {
+                                        AUTO r = odbc->Query(con, "COMMIT TRANSACTION;");
+                                        odbc->GetResults(r);
+                                    }
+                                    {
+                                        AUTO r = odbc->Query(con, "BEGIN DEFERRED TRANSACTION;");
+                                        odbc->GetResults(r);
+                                    }
+                                }
+                            }
+                        }
+                        file.close();
+                    }
+                    fileSystem->UnlockFile(filePath);
+
+                    if (startedTransaction) {
+                        AUTO r = odbc->Query(con, "COMMIT TRANSACTION;");
+                        odbc->GetResults(r);
+                    }
+
+                    return tableName;
+                });, nanodbcConnection& con, cweeStr tableName, cweeStr const& filePath);
+                lib->add(chaiscript::fun([](cweeStr const& in) { return odbc->SafeString(in); }), "");
                 lib->add(chaiscript::fun([](cweeStr const& in) { return odbc->SafeString(in); }), "SafeString"); // adds/removes quotes/database/table names as needed
                 lib->add(chaiscript::fun([](cweeStr const& in, nanodbcConnection& con) { return odbc->SafeString(in, &con); }), "SafeString"); // adds/removes quotes/database/table names as needed
                 lib->add(chaiscript::fun([](nanodbcConnection& con, cweeStr const& in) { return odbc->SafeString(in, &con); }), "SafeString"); // adds/removes quotes/database/table names as needed

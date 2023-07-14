@@ -353,7 +353,7 @@ cweeThreadedList<cweeStr>	FileSystemLocal::readFileAsStrList(cweeStr const& file
 		std::ifstream file(filePath); // ifstream is read only, ofstream is write only, fstream is read/write.
 		while (file.good()) {
 			getline(file, get);
-			if (!cweeStr(get.c_str()).IsEmpty()) {
+			if (!get.empty()) {
 				size++;
 			}
 		}
@@ -365,12 +365,12 @@ cweeThreadedList<cweeStr>	FileSystemLocal::readFileAsStrList(cweeStr const& file
 		std::ifstream file2(filePath); // ifstream is read only, ofstream is write only, fstream is read/write.
 		while (file2.good()) {
 			getline(file2, get);
-			if (!cweeStr(get.c_str()).IsEmpty()) {
+			if (!get.empty()) {
 				if (size >= collection.Num()) {
-					collection.Append(cweeStr(get.c_str()));
+					collection.Alloc() == get.c_str();
 				}
 				else {
-					collection[size] = cweeStr(get.c_str());
+					collection[size] = get.c_str();
 				}
 				size++;
 			}

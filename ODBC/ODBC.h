@@ -77,5 +77,5 @@ public:
     /* Check if table exists */
     static bool TableExists(nanodbcConnection con, cweeStr tableName);
     /* Insert a row into the existing table */
-    static void InsertRow(nanodbcConnection con, cweeStr tableFullPath, const cweeThreadedList<cweeStr>& values);
+    static void InsertRow(nanodbcConnection const& con, cweeStr const& tableFullPath, const cweeThreadedList<cweeStr>& values);
 };

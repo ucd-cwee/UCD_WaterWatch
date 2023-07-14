@@ -7772,19 +7772,13 @@ bool ODBC::TableExists(nanodbcConnection con, cweeStr tableName) {
     }
     return false;
 };
-void ODBC::InsertRow(nanodbcConnection con, cweeStr tableFullPath, const cweeThreadedList<cweeStr>& values) {
+void ODBC::InsertRow(nanodbcConnection const& con, cweeStr const& tableFullPath, const cweeThreadedList<cweeStr>& values) {
     cweeStr query;
     if (Connection(con).SQLiteHandle() >= 0) {
         // database name is not used here. 
         {
-            query = cweeStr::printf("INSERT INTO %s VALUES(", tableFullPath.c_str());
-            cweeStr Values; for (auto& x : values) {
-                Values.AddToDelimiter("'" + x + "'", ",");
-            }
-            query += Values;
-            query += ");";
-
-            GetResults(con, query, 1);
+            cweeStr Values; for (auto& x : values) Values.AddToDelimiter(cweeStr::printf("'%s'", x.c_str()), ",");
+            GetResults(con, cweeStr::printf("INSERT INTO %s VALUES(%s);", tableFullPath.c_str(), Values.c_str()), 1);
         }
     }
     else {

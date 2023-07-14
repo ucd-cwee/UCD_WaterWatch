@@ -1302,24 +1302,24 @@ namespace chaiscript {
                     lib->add(chaiscript::user_type<Type>(), #Type); \
                     lib->add(chaiscript::constructor<Type()>(), #Type); \
                     lib->add(chaiscript::constructor<Type(const Type&)>(), #Type); \
-                    lib->add(chaiscript::fun([](Type& a, const Type& b) { a = b; return a; }), "="); \
+                    lib->add(chaiscript::fun([](Type& a, const Type& b)->Type& { a = b; return a; }), "="); \
                 }
 #define AddBasicClassMember(Type, Member) { lib->add(chaiscript::fun(&##Type::##Member), #Member); }
 #define AddNamespacedClassTemplate(Namespace, Type) { \
                     lib->add(chaiscript::user_type<##Namespace::##Type>(), #Type); \
                     lib->add(chaiscript::constructor<##Namespace::##Type()>(), #Type); \
                     lib->add(chaiscript::constructor<##Namespace::##Type(##Namespace::##Type const &)>(), #Type); \
-                    lib->add(chaiscript::fun([](##Namespace::##Type& a, ##Namespace::##Type const& b) { a = b; return a; }), "="); \
+                    lib->add(chaiscript::fun([](##Namespace::##Type& a, ##Namespace::##Type const& b)->##Namespace::##Type& { a = b; return a; }), "="); \
                 }
 #define AddNamespacedClassTemplate_SupportSharedPtr(Namespace, Type) { \
                     lib->add(chaiscript::user_type<##Namespace::##Type>(), #Type); \
                     lib->add(chaiscript::constructor<##Namespace::##Type()>(), #Type); \
                     lib->add(chaiscript::constructor<##Namespace::##Type(##Namespace::##Type const &)>(), #Type); \
-                    lib->add(chaiscript::fun([](##Namespace::##Type& a, ##Namespace::##Type const& b) { a = b; return a; }), "="); \
+                    lib->add(chaiscript::fun([](##Namespace::##Type& a, ##Namespace::##Type const& b)->##Namespace::##Type& { a = b; return a; }), "="); \
                     \
                     lib->add(chaiscript::user_type<cweeSharedPtr<##Namespace::##Type>>(), (cweeStr(#Type) + cweeStr("_Shared")).c_str()); \
                     lib->add(chaiscript::constructor<cweeSharedPtr<##Namespace::##Type>(cweeSharedPtr<##Namespace::##Type> const &)>(), (cweeStr(#Type) + cweeStr("_Shared")).c_str()); \
-                    lib->add(chaiscript::fun([](cweeSharedPtr<##Namespace::##Type>& a, cweeSharedPtr<##Namespace::##Type> const& b) { a = b; return a; }), "="); \
+                    lib->add(chaiscript::fun([](cweeSharedPtr<##Namespace::##Type>& a, cweeSharedPtr<##Namespace::##Type> const& b)->cweeSharedPtr<##Namespace::##Type>& { a = b; return a; }), "="); \
                     lib->add(chaiscript::constructor<bool(cweeSharedPtr<##Namespace::##Type> const &)>(), "bool"); \
                     lib->add(chaiscript::type_conversion<cweeSharedPtr<##Namespace::##Type>, bool>([](const cweeSharedPtr<##Namespace::##Type>& t_bt)->bool { return (bool)t_bt; }, nullptr)); \
                 }
@@ -1329,7 +1329,7 @@ namespace chaiscript {
                     lib->add(chaiscript::user_type<cweeSharedPtr<##Namespace::##BaseType>>(), #BaseType); \
                     lib->add(chaiscript::fun([]()->cweeSharedPtr<##Namespace::##BaseType> { return make_cwee_shared<##Namespace::##BaseType>(); }), #BaseType); \
                     lib->add(chaiscript::constructor<cweeSharedPtr<##Namespace::##BaseType>(cweeSharedPtr<##Namespace::##BaseType> const &)>(), #BaseType); \
-                    lib->add(chaiscript::fun([](cweeSharedPtr<##Namespace::##BaseType>& a, cweeSharedPtr<##Namespace::##BaseType> const& b) { a = b; return a; }), "="); \
+                    lib->add(chaiscript::fun([](cweeSharedPtr<##Namespace::##BaseType>& a, cweeSharedPtr<##Namespace::##BaseType> const& b)->cweeSharedPtr<##Namespace::##BaseType>& { a = b; return a; }), "="); \
                     lib->add(chaiscript::constructor<bool(cweeSharedPtr<##Namespace::##BaseType> const &)>(), "bool"); \
                     lib->add(chaiscript::type_conversion<cweeSharedPtr<##Namespace::##BaseType>, bool>([](const cweeSharedPtr<##Namespace::##BaseType>& t_bt)->bool { return (bool)t_bt; }, nullptr)); \
                 }
@@ -1365,7 +1365,7 @@ namespace chaiscript {
 
 #define ChaiscriptConstructor(From, To) {\
 lib->add(chaiscript::constructor<To(const From&)>(), #To);\
-lib->add(chaiscript::fun([](To& a, const From& b) { a = To(b); return a; }), "=");\
+lib->add(chaiscript::fun([](To& a, const From& b)->To& { a = To(b); return a; }), "=");\
 lib->add(chaiscript::type_conversion<From, To>([](const From& t_bt)->To { return To(t_bt); }, nullptr)); }
 #define ADD_BETTER_ENUM_TO_SCRIPT_ENGINE(Type, TypeName) {   \
             lib->add(chaiscript::user_type<Type>(), #TypeName);    \
@@ -1406,11 +1406,11 @@ lib->add(chaiscript::type_conversion<From, To>([](const From& t_bt)->To { return
                     lib->add(chaiscript::constructor<Type(double)>(), #Type);   \
                     lib->add(chaiscript::constructor<Type(float)>(), #Type);   \
                     lib->add(chaiscript::constructor<Type(int)>(), #Type);   \
-                    lib->add(fun([](Type& a, const int& b) { a = b; return a; }), "=");   \
-                    lib->add(fun([](Type& a, const double& b) { a = b; return a; }), "=");   \
-                    lib->add(fun([](Type& a, const float& b) { a = b; return a; }), "=");   \
-                    lib->add(fun([](Type& a, const u64& b) { a = b; return a; }), "=");   \
-                    lib->add(fun([](Type& a, const long& b) { a = b; return a; }), "=");   \
+                    lib->add(fun([](Type& a, const int& b)->Type& { a = b; return a; }), "=");   \
+                    lib->add(fun([](Type& a, const double& b)->Type& { a = b; return a; }), "=");   \
+                    lib->add(fun([](Type& a, const float& b)->Type& { a = b; return a; }), "=");   \
+                    lib->add(fun([](Type& a, const u64& b)->Type& { a = b; return a; }), "=");   \
+                    lib->add(fun([](Type& a, const long& b)->Type& { a = b; return a; }), "=");   \
                     lib->add(type_conversion<Type, int>([](const Type& a)->int { return a(); }, nullptr));  \
                     lib->add(type_conversion<Type, double>([](const Type& a)->double { return a(); }, nullptr));  \
                     lib->add(type_conversion<Type, float>([](const Type& a)->float { return a(); }, nullptr));  \
@@ -1421,19 +1421,19 @@ lib->add(chaiscript::type_conversion<From, To>([](const From& t_bt)->To { return
                     lib->add(chaiscript::fun([](Type const& a) -> float { return a(); }), "float");   \
                     lib->add(chaiscript::fun([](Type const& a) -> u64 { return a(); }), "u64");   \
                     lib->add(chaiscript::fun([](Type const& a) -> long { return a(); }), "long");   \
-                    lib->add(fun([](int& a, const Type& b) { a = b(); return a; }), "=");   \
-                    lib->add(fun([](double& a, const Type& b) { a = b(); return a; }), "=");   \
-                    lib->add(fun([](float& a, const Type& b) { a = b(); return a; }), "=");   \
-                    lib->add(fun([](u64& a, const Type& b) { a = b(); return a; }), "=");   \
-                    lib->add(fun([](long& a, const Type& b) { a = b(); return a; }), "=");   \
+                    lib->add(fun([](int& a, const Type& b)->int& { a = b(); return a; }), "=");   \
+                    lib->add(fun([](double& a, const Type& b)->double& { a = b(); return a; }), "=");   \
+                    lib->add(fun([](float& a, const Type& b)->float& { a = b(); return a; }), "=");   \
+                    lib->add(fun([](u64& a, const Type& b)->u64& { a = b(); return a; }), "=");   \
+                    lib->add(fun([](long& a, const Type& b)->long& { a = b(); return a; }), "=");   \
                     lib->add(type_conversion<Type, unit_value>([](const Type& a)->unit_value { return unit_value(a); }, nullptr)); \
                     lib->add(type_conversion<unit_value, Type>([](const unit_value& a)->Type { unit_value temp = unit_value(Type()); temp = a; Type out = temp(); return out; }, nullptr)); \
-                    lib->add(chaiscript::fun([](Type& a, const unit_value& b) { unit_value temp = unit_value(Type()); temp = b; a = temp(); return a; }), "=");   \
-                    lib->add(chaiscript::fun([](unit_value& a, const Type& b) { a = unit_value(b); return a; }), "=");   \
+                    lib->add(chaiscript::fun([](Type& a, const unit_value& b)->Type& { unit_value temp = unit_value(Type()); temp = b; a = temp(); return a; }), "=");   \
+                    lib->add(chaiscript::fun([](unit_value& a, const Type& b)->unit_value& { a = unit_value(b); return a; }), "=");   \
                     lib->add(chaiscript::fun([](const Type& a, const Type& b) { return a + b; }), "+");   \
                     lib->add(chaiscript::fun([](const Type& a, const Type& b) { return a - b; }), "-");   \
-                    lib->add(chaiscript::fun([](Type& a, const Type& b) { return a += b; }), "+=");   \
-                    lib->add(chaiscript::fun([](Type& a, const Type& b) { return a -= b; }), "-="); \
+                    lib->add(chaiscript::fun([](Type& a, const Type& b) -> Type& { a += b; return a; }), "+=");   \
+                    lib->add(chaiscript::fun([](Type& a, const Type& b) -> Type& { a -= b; return a; }), "-="); \
                     lib->add(chaiscript::fun([](const Type& a)->cweeStr { \
                             using namespace cweeUnitValues; \
                             unit_value t = a; \

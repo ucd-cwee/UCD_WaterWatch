@@ -301,7 +301,7 @@ to maintain a single distribution point for the source code.
 			friend inline std::ostream& operator<<(std::ostream& os, unit_value const& obj) { os << obj.ToString(); return os; };
 			friend inline std::stringstream& operator>>(std::stringstream& os, unit_value& obj) { double v = 0; os >> v; obj = v; return os; };
 			static bool IdenticalUnits(unit_value const& LHS, unit_value const& RHS) noexcept { return LHS.unit_m.IsSameCategory(RHS.unit_m); };
-			static bool is_scalar(unit_value const& V) noexcept { if (V.unit_m.isScalar_m) return true; return false; };
+			static bool is_scalar(unit_value const& V) noexcept { return V.unit_m.isScalar_m; };
 
 		private:
 			static cweeStr GetValueStr(unit_value const& V) noexcept { return cweeStr((float)V()); };
@@ -310,7 +310,7 @@ to maintain a single distribution point for the source code.
 				if (IdenticalUnits(LHS, RHS)) return true;
 				return false;
 			};
-			static bool UnaryArithmeticOkay(unit_value& LHS, unit_value const& RHS) noexcept {
+			static bool UnaryArithmeticOkay(unit_value const& LHS, unit_value const& RHS) noexcept {
 				if (is_scalar(RHS)) return true;
 				if (IdenticalUnits(LHS, RHS)) return true;
 				return false;
@@ -319,7 +319,7 @@ to maintain a single distribution point for the source code.
 				if (NormalArithmeticOkay(LHS, RHS)) return;
 				throw(std::runtime_error(cweeStr::printf("Normal, dynamic arithmetic failed due to incompatible non-scalar units: '%s' and '%s'", LHS.Abbreviation(), RHS.Abbreviation())));
 			};
-			static void HandleUnaryArithmetic(unit_value& LHS, unit_value const& RHS) {
+			static void HandleUnaryArithmetic(unit_value const& LHS, unit_value const& RHS) {
 				if (UnaryArithmeticOkay(LHS, RHS)) return;
 				throw(std::runtime_error(cweeStr::printf("Unary (in-place or self-modifying) arithmetic failed due to incompatible units: '%s' and '%s'", LHS.Abbreviation(), RHS.Abbreviation())));
 			};
@@ -406,7 +406,8 @@ to maintain a single distribution point for the source code.
 			};
 
 		public: // Comparison operators
-			friend bool operator==(unit_value const& A, unit_value const& V) noexcept { if (NormalArithmeticOkay(A, V) && A.GetVisibleValue() == V.GetVisibleValue()) { return true; } else { return false; } };
+			// friend bool operator==(unit_value const& A, unit_value const& V) noexcept { if (NormalArithmeticOkay(A, V) && A.GetVisibleValue() == V.GetVisibleValue()) { return true; } else { return false; } };
+			friend bool operator==(unit_value const& A, unit_value const& V) noexcept { if (!NormalArithmeticOkay(A, V)) return false; if (is_scalar(V) == is_scalar(A)) { return A.value_m == V.value_m; } else if (is_scalar(V)) { unit_value W = A; W = V; return A.value_m == W.value_m; } else { unit_value W = V; W = A; return W.value_m == V.value_m; } };
 			friend bool operator!=(unit_value const& A, unit_value const& V) noexcept { return !(operator==(A, V)); };
 			friend bool operator<(unit_value const& A, unit_value const& V) { HandleNormalArithmetic(A, V); if (is_scalar(V) == is_scalar(A)) { return A.value_m < V.value_m; } else if (is_scalar(V)) { unit_value W = A; W = V; return A.value_m < W.value_m; } else { unit_value W = V; W = A; return W.value_m < V.value_m; } };
 			friend bool operator<=(unit_value const& A, unit_value const& V) { HandleNormalArithmetic(A, V); if (is_scalar(V) == is_scalar(A)) { return A.value_m <= V.value_m; } else if (is_scalar(V)) { unit_value W = A; W = V; return A.value_m <= W.value_m; } else { unit_value W = V; W = A; return W.value_m <= V.value_m; } };
@@ -436,8 +437,20 @@ to maintain a single distribution point for the source code.
 			};
 			friend unit_value operator+(unit_value const& A, unit_value const& V) { return Add(A, V); };
 			friend unit_value operator-(unit_value const& A, unit_value const& V) { return Sub(A, V); };
-			unit_value& operator+=(unit_value const& V) { HandleUnaryArithmetic(*this, V); unit_value temp = *this; temp = V; value_m += temp.value_m; return *this; };
-			unit_value& operator-=(unit_value const& V) { HandleUnaryArithmetic(*this, V); unit_value temp = *this; temp = V; value_m -= temp.value_m; return *this; };
+			unit_value& operator+=(unit_value const& V) { 
+				HandleUnaryArithmetic(*this, V); 
+				unit_value temp = *this; 
+				temp = V; 
+				this->value_m += temp.value_m; 
+				return *this; 
+			};
+			unit_value& operator-=(unit_value const& V) { 
+				HandleUnaryArithmetic(*this, V); 
+				unit_value temp = *this; 
+				temp = V; 
+				this->value_m -= temp.value_m;
+				return *this; 
+			};
 
 		public: // * and / Operators
 			friend unit_value operator*(unit_value const& A, unit_value const& V) {

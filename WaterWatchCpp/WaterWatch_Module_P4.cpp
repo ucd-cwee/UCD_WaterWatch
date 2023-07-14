@@ -48,7 +48,7 @@ namespace chaiscript {
                 lib->add(user_type<unit_value>(), "value");
                 lib->add(constructor<unit_value()>(), "value");
                 lib->add(constructor<unit_value(const unit_value&)>(), "value");
-                lib->add(fun([](unit_value& a, const unit_value& b) { a = b; return a; }), "=");
+                lib->add(fun([](unit_value& a, const unit_value& b)->unit_value& { a = b; return a; }), "=");
 
                 // Numbers to unit_value
                 lib->add(constructor<unit_value(int)>(), "value");
@@ -67,11 +67,11 @@ namespace chaiscript {
                 lib->add(chaiscript::fun([](u64 const& a) -> unit_value { return a; }), "value");
                 lib->add(chaiscript::fun([](long const& a) -> unit_value { return a; }), "value");
 
-                lib->add(fun([](unit_value& a, const int& b) { a = b; return a; }), "=");
-                lib->add(fun([](unit_value& a, const double& b) { a = b; return a; }), "=");
-                lib->add(fun([](unit_value& a, const float& b) { a = b; return a; }), "=");
-                lib->add(fun([](unit_value& a, const u64& b) { a = b; return a; }), "=");
-                lib->add(fun([](unit_value& a, const long& b) { a = b; return a; }), "=");
+                lib->add(fun([](unit_value& a, const int& b)->unit_value& { a = b; return a; }), "=");
+                lib->add(fun([](unit_value& a, const double& b)->unit_value& { a = b; return a; }), "=");
+                lib->add(fun([](unit_value& a, const float& b)->unit_value& { a = b; return a; }), "=");
+                lib->add(fun([](unit_value& a, const u64& b)->unit_value& { a = b; return a; }), "=");
+                lib->add(fun([](unit_value& a, const long& b)->unit_value& { a = b; return a; }), "=");
 
                 // unit_value to Numbers
                 lib->add(type_conversion<unit_value, int>([](const unit_value& a)->int { return a(); }, nullptr));
@@ -85,23 +85,23 @@ namespace chaiscript {
                 lib->add(chaiscript::fun([](unit_value const& a) -> u64 { return a(); }), "u64");
                 lib->add(chaiscript::fun([](unit_value const& a) -> long { return a(); }), "long");
 
-                lib->add(fun([](int& a, const unit_value& b) { a = b(); return a; }), "=");
-                lib->add(fun([](double& a, const unit_value& b) { a = b(); return a; }), "=");
-                lib->add(fun([](float& a, const unit_value& b) { a = b(); return a; }), "=");
-                lib->add(fun([](u64& a, const unit_value& b) { a = b(); return a; }), "=");
-                lib->add(fun([](long& a, const unit_value& b) { a = b(); return a; }), "=");
+                lib->add(fun([](int& a, const unit_value& b)->int& { a = b(); return a; }), "=");
+                lib->add(fun([](double& a, const unit_value& b)->double& { a = b(); return a; }), "=");
+                lib->add(fun([](float& a, const unit_value& b)->float& { a = b(); return a; }), "=");
+                lib->add(fun([](u64& a, const unit_value& b)->u64& { a = b(); return a; }), "=");
+                lib->add(fun([](long& a, const unit_value& b)->long& { a = b(); return a; }), "=");
 
                 // operators 
                 lib->add(chaiscript::fun([](const unit_value& a, const unit_value& b) { return a.pow(b); }), "^");
-                lib->add(chaiscript::fun([](unit_value& a, const unit_value& b) { return a.pow_value(b); }), "^=");
+                lib->add(chaiscript::fun([](unit_value& a, const unit_value& b) -> unit_value& { return a.pow_value(b); }), "^=");
                 lib->add(chaiscript::fun(&unit_value::Add), "+");
-                lib->add(chaiscript::fun([](unit_value& a, const unit_value& b) { return a += b; }), "+=");
+                lib->add(chaiscript::fun([](unit_value& a, const unit_value& b) -> unit_value& { a += b; return a; }), "+=");
                 lib->add(chaiscript::fun(&unit_value::Sub), "-");
-                lib->add(chaiscript::fun([](unit_value& a, const unit_value& b) { return a -= b; }), "-=");
+                lib->add(chaiscript::fun([](unit_value& a, const unit_value& b) -> unit_value& { a -= b; return a; }), "-=");
                 lib->add(chaiscript::fun([](const unit_value& a, const unit_value& b) { return a * b; }), "*");
-                lib->add(chaiscript::fun([](unit_value& a, const unit_value& b) { return a *= b; }), "*=");
+                lib->add(chaiscript::fun([](unit_value& a, const unit_value& b) -> unit_value& { a *= b; return a; }), "*=");
                 lib->add(chaiscript::fun([](const unit_value& a, const unit_value& b) { return a / b; }), "/");
-                lib->add(chaiscript::fun([](unit_value& a, const unit_value& b) { return a /= b; }), "/=");
+                lib->add(chaiscript::fun([](unit_value& a, const unit_value& b) -> unit_value& { a /= b; return a; }), "/=");
                 lib->add(chaiscript::fun([](const unit_value& a) -> cweeStr { return a.ToString(); }), "to_string");
                 lib->add(type_conversion<unit_value, std::string>([](const unit_value& a)->std::string { return a.ToString().c_str(); }, nullptr));
                 lib->add(type_conversion<unit_value, cweeStr>([](const unit_value& a)->cweeStr { return a.ToString(); }, nullptr));

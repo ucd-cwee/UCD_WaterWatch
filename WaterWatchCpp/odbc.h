@@ -41,7 +41,7 @@ public:
     virtual bool CreateTable(nanodbcConnection con, cweeStr tableName, const cweeThreadedList<cweeStr>& columnNames, cweeStr databaseName = "") = 0;
     virtual cweeStr GetDatabaseName(nanodbcConnection con, cweeStr tableName) = 0;
     virtual bool TableExists(nanodbcConnection con, cweeStr tableName) = 0;
-    virtual void InsertRow(nanodbcConnection con, cweeStr tableFullPath, const cweeThreadedList<cweeStr>& values) = 0;
+    virtual void InsertRow(nanodbcConnection const& con, cweeStr const& tableFullPath, const cweeThreadedList<cweeStr>& values) = 0;
 };
 /*!
 geocoding and mapping services
