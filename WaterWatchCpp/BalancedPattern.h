@@ -623,7 +623,7 @@ public:
 	auto&												UnsafeGetValues() const { return container; };
 	node_type*											UnsafeGetValue(const X_Axis_Type& time) const { return UnsafeGetValues().NodeFindLargestSmallerEqual(time); };
 	cweeThreadedList<node_type*>						UnsafeGetKnotSeries(const X_Axis_Type& t0 = -std::numeric_limits < X_Axis_Type>::max(), const X_Axis_Type& t1 = std::numeric_limits < X_Axis_Type>::max()) const {
-		cweeThreadedList<node_type*> out;
+		cweeThreadedList<node_type*> out(container.GetNodeCount() + 16);
 		for (auto& x : UnsafeGetValues()) {
 			if (x.key >= t0 && x.key <= t1) {
 				out.Append(&x);
@@ -892,24 +892,31 @@ public:
 		 return out;
 	 };
 	 Y_Axis_Type										GetAvgValue() const {
-		//AUTO minT = this->GetMinTime();
-		//AUTO delta = this->GetMaxTime() - minT;
-		//if (delta <= 0) return 0;
-		//return this->RombergIntegral(minT, minT + delta) / delta;
-
-		Y_Axis_Type out;
-		out = 0;
-		int num(0);
-
-		AUTO g = lock.Guard();
-		for (auto& x : container) {
-			if (x.object) {
-				num++;
-				out -= (out / (scalarT)num);
-				out += (*x.object / (scalarT)num);
-			}
+		Y_Axis_Type out(0);
+		X_Axis_Type zero(0);
+		X_Axis_Type minT = this->GetMinTime();
+		X_Axis_Type delta = this->GetMaxTime() - minT;
+		if (delta <= zero) return GetCurrentValue(minT);
+		if constexpr (std::is_same<X_Axis_Type, u64>::value) {
+			out = this->RombergIntegral(minT, minT + delta) / units::time::second_t(delta);
 		}
+		else {
+			out = this->RombergIntegral(minT, minT + delta) / delta;
+		}		
 		return out;
+
+		//Y_Axis_Type out;
+		//out = 0;
+		//int num(0);
+		//AUTO g = lock.Guard();
+		//for (auto& x : container) {
+		//	if (x.object) {
+		//		num++;
+		//		out -= (out / (scalarT)num);
+		//		out += (*x.object / (scalarT)num);
+		//	}
+		//}
+		//return out;
 	};
 
 	 Y_Axis_Type										GetMinValue(const X_Axis_Type& start, const X_Axis_Type& end) const {
@@ -1834,43 +1841,331 @@ public:
 		return out;
 	}; 
 
-	/*! Request an integration of the time series. The timefactor determines the resulting time component. I.e. A pattern of kilowatt_t and a time factor of hour_t will return a kilowatt_hour_t. */
-	template <typename timeFactor = units::time::second_t>
-	AUTO												RombergIntegral(const X_Axis_Type& t0, const X_Axis_Type& t1) const {
-		auto sum = Y_Axis_Type(0) * timeFactor(0);
-		if (this->GetNumValues() > 1) {
-			X_Axis_Type step = this->GetMinimumTimeStep();
-			X_Axis_Type minGot = t1, maxGot = t1;
-			if (true) {
-				AUTO Guard = this->lock.Guard();
-				if (Guard) {
-					cweeThreadedList<node_type*> data = this->UnsafeGetKnotSeries(t0, t1);
-					if (data.Num() > 1) {
-						minGot = data[0]->key;
-						maxGot = data[data.Num() - 1]->key;
+	/*! Request an integration of the time series. A pattern of kilowatt_t/u64 will return a kilowatt_second_t, which can be natively cast to kilwatt_hour_t, etc. */
+	AUTO												RombergIntegral(const X_Axis_Type& t0, const X_Axis_Type& t1) const {		
+#if 0
+		if constexpr (std::is_same<X_Axis_Type, u64>::value) {
+			auto sum = Y_Axis_Type(0) * units::time::second_t(0);
+			if (this->GetNumValues() > 1) {
+				X_Axis_Type step = this->GetMinimumTimeStep();
+				X_Axis_Type minGot = t1, maxGot = t1;
+				if (true) {
+					AUTO Guard = this->lock.Guard();
+					if (Guard) {
+						cweeThreadedList<node_type*> data = this->UnsafeGetKnotSeries(t0, t1);
+						if (data.Num() > 1) {
+							minGot = data[0]->key;
+							maxGot = data[data.Num() - 1]->key;
 
-						for (int i = 0; i < (data.Num() - 1); i++) {
-							node_type&
-								left = *data.operator[](i),
-								right = *data.operator[](i + 1);
+							for (int i = 0; i < (data.Num() - 1); i++) {
+								node_type*&
+									left = data[i],
+									right = data[i + 1];
 
-							sum += ((*right.object + *left.object) * scalarT(0.5)) * units::time::second_t(right.key - left.key);
+								sum += ((*right->object + *left->object) * scalarT(0.5)) * units::time::second_t(right->key - left->key);
+							}
 						}
 					}
 				}
+
+				X_Axis_Type
+					t = 0,
+					stepDiv2 = step / 2.0,
+					maxT = t1 + stepDiv2;
+
+				for (t = t0; (t + step) < minGot; t += step) sum += units::time::second_t(step) * GetCurrentValue(t + stepDiv2);
+				if (minGot > t) sum += units::time::second_t(minGot - t) * GetCurrentValue(t + ((minGot - t) / 2.0));
+				for (t = maxGot; (t + step) < t1; t += step) sum += units::time::second_t(step) * GetCurrentValue(t + stepDiv2);
+				if (t1 > t)  sum += units::time::second_t(t1 - t) * GetCurrentValue(t + ((t1 - t) / 2.0));
 			}
-
-			X_Axis_Type
-				t = 0,
-				stepDiv2 = step / 2.0,
-				maxT = t1 + stepDiv2;
-
-			for (t = t0; (t + step) < minGot; t += step) sum += units::time::second_t(step) * GetCurrentValue(t + stepDiv2);
-			if (minGot > t) sum += units::time::second_t(minGot - t) * GetCurrentValue(t + ((minGot - t) / 2.0));
-			for (t = maxGot; (t + step) < t1; t += step) sum += units::time::second_t(step) * GetCurrentValue(t + stepDiv2);
-			if (t1 > t)  sum += units::time::second_t(t1 - t) * GetCurrentValue(t + ((t1 - t) / 2.0));
+			return sum;
 		}
-		return sum;		
+		else {
+			auto sum = Y_Axis_Type(0) * X_Axis_Type(0);
+			if (this->GetNumValues() > 1) {
+				X_Axis_Type step = this->GetMinimumTimeStep();
+				X_Axis_Type minGot = t1, maxGot = t1;
+				if (true) {
+					AUTO Guard = this->lock.Guard();
+					if (Guard) {
+						cweeThreadedList<node_type*> data = this->UnsafeGetKnotSeries(t0, t1);
+						if (data.Num() > 1) {
+							minGot = data[0]->key;
+							maxGot = data[data.Num() - 1]->key;
+
+							for (int i = 0; i < (data.Num() - 1); i++) {
+								node_type*&
+									left = data[i],
+									right = data[i + 1];
+
+								sum += ((*right->object + *left->object) * scalarT(0.5)) * X_Axis_Type(right->key - left->key);
+							}
+						}
+					}
+				}
+
+				X_Axis_Type
+					t = 0,
+					stepDiv2 = step / 2.0,
+					maxT = t1 + stepDiv2;
+
+				for (t = t0; (t + step) < minGot; t += step) sum += X_Axis_Type(step) * GetCurrentValue(t + stepDiv2);
+				if (minGot > t) sum += X_Axis_Type(minGot - t) * GetCurrentValue(t + ((minGot - t) / 2.0));
+				for (t = maxGot; (t + step) < t1; t += step) sum += X_Axis_Type(step) * GetCurrentValue(t + stepDiv2);
+				if (t1 > t)  sum += X_Axis_Type(t1 - t) * GetCurrentValue(t + ((t1 - t) / 2.0));
+			}
+			return sum;
+		}	
+#else
+		switch (this->GetInterpolationType()) {
+		case interpolation_t::LEFT: {
+			if constexpr (std::is_same<X_Axis_Type, u64>::value) {
+				auto sum = Y_Axis_Type(0) * units::time::second_t(0);
+				if (this->GetNumValues() > 1) {
+					X_Axis_Type step = this->GetMinimumTimeStep();
+					X_Axis_Type minGot = t1, maxGot = t1;
+					if (true) {
+						AUTO Guard = this->lock.Guard();
+						if (Guard) {
+							node_type* prevValue = nullptr;
+							for (node_type& dataPair : this->container) {
+								if (dataPair.key >= t0) {
+									if (dataPair.key <= t1) {
+										if (prevValue) {
+											sum += (*prevValue->object) * units::time::second_t(dataPair.key - prevValue->key);
+										}
+										else {
+											minGot = dataPair.key;
+										}
+										prevValue = &dataPair;
+									}
+								}
+							}
+							if (prevValue) {
+								maxGot = prevValue->key;
+							}
+						}
+					}
+
+					X_Axis_Type
+						t = 0,
+						stepDiv2 = step / 2.0,
+						maxT = t1 + stepDiv2;
+
+					for (t = t0; (t + step) < minGot; t += step) sum += units::time::second_t(step) * GetCurrentValue(t + stepDiv2);
+					if (minGot > t) sum += units::time::second_t(minGot - t) * GetCurrentValue(t + ((minGot - t) / 2.0));
+					for (t = maxGot; (t + step) < t1; t += step) sum += units::time::second_t(step) * GetCurrentValue(t + stepDiv2);
+					if (t1 > t)  sum += units::time::second_t(t1 - t) * GetCurrentValue(t + ((t1 - t) / 2.0));
+				}
+				return sum;
+			}
+			else {
+				auto sum = Y_Axis_Type(0) * X_Axis_Type(0);
+				if (this->GetNumValues() > 1) {
+					X_Axis_Type step = this->GetMinimumTimeStep();
+					X_Axis_Type minGot = t1, maxGot = t1;
+					if (true) {
+						AUTO Guard = this->lock.Guard();
+						if (Guard) {
+							node_type* prevValue = nullptr;
+							for (node_type& dataPair : this->container) {
+								if (dataPair.key >= t0) {
+									if (dataPair.key <= t1) {
+										if (prevValue) {
+											sum += (*prevValue->object) * X_Axis_Type(dataPair.key - prevValue->key);
+										}
+										else {
+											minGot = dataPair.key;
+										}
+										prevValue = &dataPair;
+									}
+								}
+							}
+							if (prevValue) {
+								maxGot = prevValue->key;
+							}
+						}
+					}
+
+					X_Axis_Type
+						t = 0,
+						stepDiv2 = step / 2.0,
+						maxT = t1 + stepDiv2;
+
+					for (t = t0; (t + step) < minGot; t += step) sum += X_Axis_Type(step) * GetCurrentValue(t + stepDiv2);
+					if (minGot > t) sum += X_Axis_Type(minGot - t) * GetCurrentValue(t + ((minGot - t) / 2.0));
+					for (t = maxGot; (t + step) < t1; t += step) sum += X_Axis_Type(step) * GetCurrentValue(t + stepDiv2);
+					if (t1 > t)  sum += X_Axis_Type(t1 - t) * GetCurrentValue(t + ((t1 - t) / 2.0));
+				}
+				return sum;
+			}
+		}
+		case interpolation_t::RIGHT: {
+			if constexpr (std::is_same<X_Axis_Type, u64>::value) {
+				auto sum = Y_Axis_Type(0) * units::time::second_t(0);
+				if (this->GetNumValues() > 1) {
+					X_Axis_Type step = this->GetMinimumTimeStep();
+					X_Axis_Type minGot = t1, maxGot = t1;
+					if (true) {
+						AUTO Guard = this->lock.Guard();
+						if (Guard) {
+							node_type* prevValue = nullptr;
+							for (node_type& dataPair : this->container) {
+								if (dataPair.key >= t0) {
+									if (dataPair.key <= t1) {
+										if (prevValue) {
+											sum += (*dataPair.object) * units::time::second_t(dataPair.key - prevValue->key);
+										}
+										else {
+											minGot = dataPair.key;
+										}
+										prevValue = &dataPair;
+									}
+								}
+							}
+							if (prevValue) {
+								maxGot = prevValue->key;
+							}
+						}
+					}
+
+					X_Axis_Type
+						t = 0,
+						stepDiv2 = step / 2.0,
+						maxT = t1 + stepDiv2;
+
+					for (t = t0; (t + step) < minGot; t += step) sum += units::time::second_t(step) * GetCurrentValue(t + stepDiv2);
+					if (minGot > t) sum += units::time::second_t(minGot - t) * GetCurrentValue(t + ((minGot - t) / 2.0));
+					for (t = maxGot; (t + step) < t1; t += step) sum += units::time::second_t(step) * GetCurrentValue(t + stepDiv2);
+					if (t1 > t)  sum += units::time::second_t(t1 - t) * GetCurrentValue(t + ((t1 - t) / 2.0));
+				}
+				return sum;
+			}
+			else {
+				auto sum = Y_Axis_Type(0) * X_Axis_Type(0);
+				if (this->GetNumValues() > 1) {
+					X_Axis_Type step = this->GetMinimumTimeStep();
+					X_Axis_Type minGot = t1, maxGot = t1;
+					if (true) {
+						AUTO Guard = this->lock.Guard();
+						if (Guard) {
+							node_type* prevValue = nullptr;
+							for (node_type& dataPair : this->container) {
+								if (dataPair.key >= t0) {
+									if (dataPair.key <= t1) {
+										if (prevValue) {
+											sum += (*dataPair.object) * X_Axis_Type(dataPair.key - prevValue->key);
+										}
+										else {
+											minGot = dataPair.key;
+										}
+										prevValue = &dataPair;
+									}
+								}
+							}
+							if (prevValue) {
+								maxGot = prevValue->key;
+							}
+						}
+					}
+
+					X_Axis_Type
+						t = 0,
+						stepDiv2 = step / 2.0,
+						maxT = t1 + stepDiv2;
+
+					for (t = t0; (t + step) < minGot; t += step) sum += X_Axis_Type(step) * GetCurrentValue(t + stepDiv2);
+					if (minGot > t) sum += X_Axis_Type(minGot - t) * GetCurrentValue(t + ((minGot - t) / 2.0));
+					for (t = maxGot; (t + step) < t1; t += step) sum += X_Axis_Type(step) * GetCurrentValue(t + stepDiv2);
+					if (t1 > t)  sum += X_Axis_Type(t1 - t) * GetCurrentValue(t + ((t1 - t) / 2.0));
+				}
+				return sum;
+			}
+		}
+		default: {
+			if constexpr (std::is_same<X_Axis_Type, u64>::value) {
+				auto sum = Y_Axis_Type(0) * units::time::second_t(0);
+				if (this->GetNumValues() > 1) {
+					X_Axis_Type step = this->GetMinimumTimeStep();
+					X_Axis_Type minGot = t1, maxGot = t1;
+					if (true) {
+						AUTO Guard = this->lock.Guard();
+						if (Guard) {
+							node_type* prevValue = nullptr;
+							for (node_type& dataPair : this->container) {
+								if (dataPair.key >= t0) {
+									if (dataPair.key <= t1) {
+										if (prevValue) {
+											sum += ((*dataPair.object + *prevValue->object) * scalarT(0.5)) * units::time::second_t(dataPair.key - prevValue->key);
+										}
+										else {
+											minGot = dataPair.key;
+										}
+										prevValue = &dataPair;
+									}
+								}
+							}
+							if (prevValue) {
+								maxGot = prevValue->key;
+							}
+						}
+					}
+
+					X_Axis_Type
+						t = 0,
+						stepDiv2 = step / 2.0,
+						maxT = t1 + stepDiv2;
+
+					for (t = t0; (t + step) < minGot; t += step) sum += units::time::second_t(step) * GetCurrentValue(t + stepDiv2);
+					if (minGot > t) sum += units::time::second_t(minGot - t) * GetCurrentValue(t + ((minGot - t) / 2.0));
+					for (t = maxGot; (t + step) < t1; t += step) sum += units::time::second_t(step) * GetCurrentValue(t + stepDiv2);
+					if (t1 > t)  sum += units::time::second_t(t1 - t) * GetCurrentValue(t + ((t1 - t) / 2.0));
+				}
+				return sum;
+			}
+			else {
+				auto sum = Y_Axis_Type(0) * X_Axis_Type(0);
+				if (this->GetNumValues() > 1) {
+					X_Axis_Type step = this->GetMinimumTimeStep();
+					X_Axis_Type minGot = t1, maxGot = t1;
+					if (true) {
+						AUTO Guard = this->lock.Guard();
+						if (Guard) {
+							node_type* prevValue = nullptr;
+							for (node_type& dataPair : this->container) {
+								if (dataPair.key >= t0) {
+									if (dataPair.key <= t1) {
+										if (prevValue) {
+											sum += ((*dataPair.object + *prevValue->object) * scalarT(0.5)) * X_Axis_Type(dataPair.key - prevValue->key);
+										}
+										else {
+											minGot = dataPair.key;
+										}
+										prevValue = &dataPair;
+									}
+								}
+							}
+							if (prevValue) {
+								maxGot = prevValue->key;
+							}
+						}
+					}
+
+					X_Axis_Type
+						t = 0,
+						stepDiv2 = step / 2.0,
+						maxT = t1 + stepDiv2;
+
+					for (t = t0; (t + step) < minGot; t += step) sum += X_Axis_Type(step) * GetCurrentValue(t + stepDiv2);
+					if (minGot > t) sum += X_Axis_Type(minGot - t) * GetCurrentValue(t + ((minGot - t) / 2.0));
+					for (t = maxGot; (t + step) < t1; t += step) sum += X_Axis_Type(step) * GetCurrentValue(t + stepDiv2);
+					if (t1 > t)  sum += X_Axis_Type(t1 - t) * GetCurrentValue(t + ((t1 - t) / 2.0));
+				}
+				return sum;
+			}
+		}
+		}
+#endif
 	};
 
 	/*! <X,X,X> = pattern.ValueQuantiles({ 0.25, 0.5, 0.75 }); */

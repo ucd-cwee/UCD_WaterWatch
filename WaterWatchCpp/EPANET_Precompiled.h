@@ -2127,7 +2127,7 @@ namespace epanet {
     template<> struct DefaultUnits<value_t::_LEVEL_> { using unit = foot_t; };
     template<> struct DefaultUnits<value_t::_EMISSION_INTENSITY_> { using unit = metric_ton_per_day_t; };
 
-#define AddValueType(v) { cweeBalancedPattern<typename DefaultUnits<v>::unit> pat; pat.SetInterpolationType(interpolation_t::LEFT); pat.SetBoundaryType(boundary_t::BT_CLAMPED); out->Add(cweeUnion<int, cweeAny>(static_cast<int>(v), pat)); }
+#define AddValueType(v, INTERP) { cweeBalancedPattern<typename DefaultUnits<v>::unit> pat; pat.SetInterpolationType(interpolation_t::INTERP); pat.SetBoundaryType(boundary_t::BT_CLAMPED); out->Add(cweeUnion<int, cweeAny>(static_cast<int>(v), pat)); }
     using ValuesContainerType = cweeThreadedSet<cweeUnion<int, cweeAny>, int>; 
     template <int type> class cweeAssetValueCollection {
     public:
@@ -2146,36 +2146,36 @@ namespace epanet {
                 }
 
 
-                AddValueType(_ENERGY_);
+                AddValueType(_ENERGY_, LINEAR);
             }
             else {
                 if constexpr (type == asset_t::DMA) {
-                    AddValueType(_DEMAND_);
-                    AddValueType(_HEAD_);
-                    AddValueType(_FLOW_);
+                    AddValueType(_DEMAND_, LINEAR);
+                    AddValueType(_HEAD_, LINEAR);
+                    AddValueType(_FLOW_, LINEAR);
                 }
                 else if constexpr (type == asset_t::PUMPSTATION) {
-                    AddValueType(_FLOW_);
-                    AddValueType(_ENERGY_);
-                    AddValueType(_ENERGY_PRICE_);
-                    AddValueType(_EMISSION_INTENSITY_);
+                    AddValueType(_FLOW_, LINEAR);
+                    AddValueType(_ENERGY_, LINEAR);
+                    AddValueType(_ENERGY_PRICE_, LEFT);
+                    AddValueType(_EMISSION_INTENSITY_, LEFT);
                 }
                 else if constexpr (type == asset_t::JUNCTION || type == asset_t::RESERVOIR) {
-                    AddValueType(_HEAD_);
-                    AddValueType(_DEMAND_);
-                    AddValueType(_QUALITY_);
+                    AddValueType(_HEAD_, LINEAR);
+                    AddValueType(_DEMAND_, LINEAR);
+                    AddValueType(_QUALITY_, LINEAR);
                     //AddValueType(_MASS_FLOW_);
                 }
                 else {
                     if constexpr (type == asset_t::PIPE || type == asset_t::PUMP || type == asset_t::VALVE) {
-                        AddValueType(_FLOW_);
-                        AddValueType(_VELOCITY_);
-                        AddValueType(_HEADLOSS_);
-                        AddValueType(_STATUS_);
+                        AddValueType(_FLOW_, LINEAR);
+                        AddValueType(_VELOCITY_, LINEAR);
+                        AddValueType(_HEADLOSS_, LINEAR);
+                        AddValueType(_STATUS_, LEFT);
                     }
                     if constexpr (type == asset_t::PUMP || type == asset_t::VALVE) {
-                        AddValueType(_SETTING_);
-                        AddValueType(_ENERGY_);
+                        AddValueType(_SETTING_, LEFT);
+                        AddValueType(_ENERGY_, LINEAR);
                     }
                 }
             }

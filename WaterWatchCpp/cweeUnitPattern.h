@@ -1329,22 +1329,7 @@ namespace cweeUnitValues {
 			}
 			return out;
 		};
-		unit_value										GetAvgValue() const {
-			unit_value out;
-			
-			int num(0);
 
-			AUTO g = lock.Guard();
-			out = (container->internal_Y_type = 0);
-			for (auto& x : *container) {
-				if (x.Y) {
-					num++;
-					out -= (out / num);
-					out += ((container->internal_Y_type = *x.Y) / num);
-				}
-			}
-			return out;
-		};
 		unit_value										GetMinValue(unit_value start, unit_value end) const {
 			unit_value out;
 			int n = GetNumValues();
@@ -1399,29 +1384,6 @@ namespace cweeUnitValues {
 			}
 
 
-			return out;
-		};
-		unit_value										GetAvgValue(unit_value start, unit_value end) const {
-			unit_value out;
-
-			int num(0);
-			int n = GetNumValues();
-			if (n == 0) return out;
-			AUTO g = lock.Guard();
-			out = (container->internal_Y_type = 0);
-			container->internal_X_type = start; start.Clear(); start = container->internal_X_type;
-			container->internal_X_type = end; end.Clear(); end = container->internal_X_type;
-
-			for (auto& x : *container) {
-				if (x.X > start) {
-					if (x.X <= end) {
-						num++;
-						out -= (out / num);
-						out += ((container->internal_Y_type = *x.Y) / num);
-					}
-					else { break; }
-				}
-			}
 			return out;
 		};
 
@@ -1731,42 +1693,244 @@ namespace cweeUnitValues {
 				t1.Clear();
 				t1 = container->internal_X_type;
 			}
-					
-			if (this->GetNumValues() > 1) {
-				step = this->GetMinimumTimeStep();
-				unit_value minGot = t1, maxGot = t1;
-				if (true) {
-					auto data = GetKnotSeries(t0, t1);
-					AUTO Guard = this->lock.Guard();
-					if (Guard) {
-						if (data.Num() > 1) {
-							minGot = data[0].first;
-							maxGot = data[data.Num() - 1].first;
+			
+			switch (this->GetInterpolationType()) {
+			case interpolation_t::LEFT: {
+				if (this->GetNumValues() > 1) {
+					step = this->GetMinimumTimeStep();
+					unit_value minGot = t1, maxGot = t1;
+					if (true) {
+#if 0
+						auto data = GetKnotSeries(t0, t1);
+						AUTO Guard = this->lock.Guard();
+						if (Guard) {
+							if (data.Num() > 1) {
+								minGot = data[0].first;
+								maxGot = data[data.Num() - 1].first;
 
-							for (int i = 0; i < (data.Num() - 1); i++) {
-								const auto& left = data[i];
-								const auto& right = data[i + 1];
+								for (int i = 0; i < (data.Num() - 1); i++) {
+									const auto& left = data[i];
+									const auto& right = data[i + 1];
 
-								sum += (container->internal_Y_type = ((right.second + left.second) * 0.5)) * (container->internal_X_type = (right.first - left.first));
+									sum += (container->internal_Y_type = ((right.second + left.second) * 0.5)) * (container->internal_X_type = (right.first - left.first));
+								}
 							}
 						}
+#else
+						cweeUnitValues::cweeUnitPatternContainer_t::IterType prevValue;
+						for (auto& dataPair : *this->container) {
+							if (dataPair.Y) {
+								if (dataPair.X >= t0) {
+									if (dataPair.X <= t1) {
+										if (prevValue.Y) {
+											sum += (container->internal_Y_type = ((*prevValue.Y))) * (container->internal_X_type = (dataPair.X - prevValue.X));
+										}
+										else {
+											minGot = dataPair.X;
+										}
+										prevValue = dataPair;
+									}
+								}
+							}
+						}
+						if (prevValue.Y) {
+							maxGot = prevValue.X;
+						}
+#endif
 					}
+
+					{
+						AUTO g = lock.Guard();
+						t = (container->internal_X_type = 0);
+						stepDiv2 = (container->internal_X_type = (step / 2.0));
+						maxT = (container->internal_X_type = (t1 + stepDiv2));
+					}
+
+					for (t = t0; (t + step) < minGot; t += step) sum += step * GetCurrentValue(t + stepDiv2);
+					if (minGot > t) sum += (minGot - t) * GetCurrentValue(t + ((minGot - t) / 2.0));
+					for (t = maxGot; (t + step) < t1; t += step) sum += step * GetCurrentValue(t + stepDiv2);
+					if (t1 > t)  sum += (t1 - t) * GetCurrentValue(t + ((t1 - t) / 2.0));
 				}
 
-				{
-					AUTO g = lock.Guard();
-					t = (container->internal_X_type = 0);
-					stepDiv2 = (container->internal_X_type = (step / 2.0));
-					maxT = (container->internal_X_type = (t1 + stepDiv2));
-				}
-
-				for (t = t0; (t + step) < minGot; t += step) sum += step * GetCurrentValue(t + stepDiv2);
-				if (minGot > t) sum += (minGot - t) * GetCurrentValue(t + ((minGot - t) / 2.0));
-				for (t = maxGot; (t + step) < t1; t += step) sum += step * GetCurrentValue(t + stepDiv2);
-				if (t1 > t)  sum += (t1 - t) * GetCurrentValue(t + ((t1 - t) / 2.0));
 			}
+			break;
+			case interpolation_t::RIGHT: {
+				if (this->GetNumValues() > 1) {
+					step = this->GetMinimumTimeStep();
+					unit_value minGot = t1, maxGot = t1;
+					if (true) {
+#if 0
+						auto data = GetKnotSeries(t0, t1);
+						AUTO Guard = this->lock.Guard();
+						if (Guard) {
+							if (data.Num() > 1) {
+								minGot = data[0].first;
+								maxGot = data[data.Num() - 1].first;
+
+								for (int i = 0; i < (data.Num() - 1); i++) {
+									const auto& left = data[i];
+									const auto& right = data[i + 1];
+
+									sum += (container->internal_Y_type = ((right.second + left.second) * 0.5)) * (container->internal_X_type = (right.first - left.first));
+								}
+							}
+						}
+#else
+						cweeUnitValues::cweeUnitPatternContainer_t::IterType prevValue;
+						for (auto& dataPair : *this->container) {
+							if (dataPair.Y) {
+								if (dataPair.X >= t0) {
+									if (dataPair.X <= t1) {
+										if (prevValue.Y) {
+											sum += (container->internal_Y_type = ((*dataPair.Y))) * (container->internal_X_type = (dataPair.X - prevValue.X));
+										}
+										else {
+											minGot = dataPair.X;
+										}
+										prevValue = dataPair;
+									}
+								}
+							}
+						}
+						if (prevValue.Y) {
+							maxGot = prevValue.X;
+						}
+#endif
+					}
+
+					{
+						AUTO g = lock.Guard();
+						t = (container->internal_X_type = 0);
+						stepDiv2 = (container->internal_X_type = (step / 2.0));
+						maxT = (container->internal_X_type = (t1 + stepDiv2));
+					}
+
+					for (t = t0; (t + step) < minGot; t += step) sum += step * GetCurrentValue(t + stepDiv2);
+					if (minGot > t) sum += (minGot - t) * GetCurrentValue(t + ((minGot - t) / 2.0));
+					for (t = maxGot; (t + step) < t1; t += step) sum += step * GetCurrentValue(t + stepDiv2);
+					if (t1 > t)  sum += (t1 - t) * GetCurrentValue(t + ((t1 - t) / 2.0));
+				}
+
+			}
+			break;
+			default: {
+				if (this->GetNumValues() > 1) {
+					step = this->GetMinimumTimeStep();
+					unit_value minGot = t1, maxGot = t1;
+					if (true) {
+#if 0
+						auto data = GetKnotSeries(t0, t1);
+						AUTO Guard = this->lock.Guard();
+						if (Guard) {
+							if (data.Num() > 1) {
+								minGot = data[0].first;
+								maxGot = data[data.Num() - 1].first;
+
+								for (int i = 0; i < (data.Num() - 1); i++) {
+									const auto& left = data[i];
+									const auto& right = data[i + 1];
+
+									sum += (container->internal_Y_type = ((right.second + left.second) * 0.5)) * (container->internal_X_type = (right.first - left.first));
+								}
+							}
+						}
+#else
+						cweeUnitValues::cweeUnitPatternContainer_t::IterType prevValue;
+						for (auto& dataPair : *this->container) {
+							if (dataPair.Y) {
+								if (dataPair.X >= t0) {
+									if (dataPair.X <= t1) {
+										if (prevValue.Y) {
+											sum += (container->internal_Y_type = ((*prevValue.Y + *dataPair.Y)*0.5)) * (container->internal_X_type = (dataPair.X - prevValue.X));
+										}
+										else {
+											minGot = dataPair.X;
+										}
+										prevValue = dataPair;
+									}
+								}
+							}
+						}
+						if (prevValue.Y) {
+							maxGot = prevValue.X;
+						}
+#endif
+					}
+
+					{
+						AUTO g = lock.Guard();
+						t = (container->internal_X_type = 0);
+						stepDiv2 = (container->internal_X_type = (step / 2.0));
+						maxT = (container->internal_X_type = (t1 + stepDiv2));
+					}
+
+					for (t = t0; (t + step) < minGot; t += step) sum += step * GetCurrentValue(t + stepDiv2);
+					if (minGot > t) sum += (minGot - t) * GetCurrentValue(t + ((minGot - t) / 2.0));
+					for (t = maxGot; (t + step) < t1; t += step) sum += step * GetCurrentValue(t + stepDiv2);
+					if (t1 > t)  sum += (t1 - t) * GetCurrentValue(t + ((t1 - t) / 2.0));
+				}
+
+			}
+			break;
+			}
+
 			return sum;
 		};
+
+		unit_value										GetAvgValue() const {
+			unit_value out;
+
+			int num(0);
+
+			AUTO g = lock.Guard();
+			out = (container->internal_Y_type = 0);
+
+#if 1
+			AUTO minT = this->GetMinTime(), maxT = this->GetMaxTime();
+			out = this->RombergIntegral(minT, maxT) / (maxT - minT);
+#else
+			for (auto& x : *container) {
+				if (x.Y) {
+					num++;
+					out -= (out / num);
+					out += ((container->internal_Y_type = *x.Y) / num);
+				}
+			}
+#endif
+			return out;
+
+		};
+		unit_value										GetAvgValue(unit_value start, unit_value end) const {
+			unit_value out;
+
+			int num(0);
+			int n = GetNumValues();
+			if (n == 0) return out;
+			AUTO g = lock.Guard();
+			out = (container->internal_Y_type = 0);
+			container->internal_X_type = start; start.Clear(); start = container->internal_X_type;
+			container->internal_X_type = end; end.Clear(); end = container->internal_X_type;
+
+#if 1
+			if (start >= end) return out;
+			out = this->RombergIntegral(start, end) / (start - end);
+#else
+			for (auto& x : *container) {
+				if (x.X > start) {
+					if (x.X <= end) {
+						num++;
+						out -= (out / num);
+						out += ((container->internal_Y_type = *x.Y) / num);
+					}
+					else { break; }
+				}
+			}
+#endif
+			return out;
+		};
+
+
+
 
 #if 1
 		static friend cweeUnitPattern operator+(const cweeUnitPattern& a, const cweeUnitPattern& b) {
