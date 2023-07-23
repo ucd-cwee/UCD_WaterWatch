@@ -223,6 +223,10 @@ namespace UWP_WaterWatch.Custom_Controls
                 {
                     string vt = typeNameJob.Result;
 
+                    if (string.IsNullOrEmpty(vt)) {
+                        return ValueTypeModes.Void;
+                    }
+
                     bool isNull = (vt == "void");
                     bool _container = vt.Contains("_", StringComparison.OrdinalIgnoreCase) || vt.Contains("<", StringComparison.OrdinalIgnoreCase);
                     bool _isMap = (vt == "Map");
@@ -1797,71 +1801,99 @@ namespace UWP_WaterWatch.Custom_Controls
                                                 queryTask.ContinueWith(() => {
                                                     if (double.TryParse(queryTask.Result, out double numChildren))
                                                     {
-                                                        cweeTask<SimpleMap> obj = EdmsTasks.InsertJob(()=> { 
-                                                            var JJ = new SimpleMap();
-                                                            JJ.Loaded += HandleMapLoaded;
-                                                            return JJ; 
-                                                        }, true, true);
-                                                        return obj.ContinueWith(()=> {
-                                                            var tasks = new List<EdmsTasks.cweeTask>((int)(numChildren + 1));
-                                                            for (int childN = 0; childN < numChildren; childN++)
+                                                        var queryTask2 = res.result.QueryResult(res.additionalParams + ".Backgrounds.size()");
+                                                        return queryTask2.ContinueWith(() =>
+                                                        {
+                                                            if (double.TryParse(queryTask2.Result, out double numBackgrounds))
                                                             {
-                                                                var toQuery = new SharedNodeResult() { result = res.result, additionalParams = res.additionalParams + ".Layers[" + childN.ToString() + "]" };
-                                                                tasks.Add(new EdmsTasks.cweeTask(() => {
-                                                                    cweeTask<MapElementsLayer> newLayer = (EdmsTasks.cweeTask)GetNodeContent(toQuery);
-                                                                    return newLayer.ContinueWith(() => {
+                                                                cweeTask<SimpleMap> obj = EdmsTasks.InsertJob(() => {
+                                                                    var JJ = new SimpleMap();
+                                                                    JJ.Loaded += HandleMapLoaded;
+                                                                    return JJ;
+                                                                }, true, true);
+                                                                return obj.ContinueWith(() => {
+                                                                    var tasks = new List<EdmsTasks.cweeTask>((int)(numChildren + 1));
+                                                                    for (int childN = 0; childN < numChildren; childN++)
+                                                                    {
+                                                                        var toQuery = new SharedNodeResult() { result = res.result, additionalParams = res.additionalParams + ".Layers[" + childN.ToString() + "]" };
+                                                                        tasks.Add(new EdmsTasks.cweeTask(() => {
+                                                                            cweeTask<MapElementsLayer> newLayer = (EdmsTasks.cweeTask)GetNodeContent(toQuery);
+                                                                            return newLayer.ContinueWith(() => {
 #if UseFrameworkUpdater
-                                                                        Framework_Updater.Subscribe(obj.Result as SimpleMap, toQuery, (object Res, List<string> tasks2) => {
-                                                                            SharedNodeResult query = Res as SharedNodeResult;
-                                                                            foreach (var task in tasks2)
-                                                                            {
-                                                                                var task_params = task.SplitNum(" ", 1);
-                                                                                if (task_params.Count > 0)
-                                                                                {
-                                                                                    switch (task_params[0])
+                                                                                Framework_Updater.Subscribe(obj.Result as SimpleMap, toQuery, (object Res, List<string> tasks2) => {
+                                                                                    SharedNodeResult query = Res as SharedNodeResult;
+                                                                                    foreach (var task in tasks2)
                                                                                     {
-                                                                                        case "Update": { break; }
-                                                                                        case "SetVisibility":
+                                                                                        var task_params = task.SplitNum(" ", 1);
+                                                                                        if (task_params.Count > 0)
+                                                                                        {
+                                                                                            switch (task_params[0])
                                                                                             {
-                                                                                                if (int.TryParse(task_params[1].Trim(), out int V))
-                                                                                                {
-                                                                                                    if (V > 0)
+                                                                                                case "Update": { break; }
+                                                                                                case "SetVisibility":
                                                                                                     {
-                                                                                                        EdmsTasks.InsertJob(() => {
-                                                                                                            newLayer.Result.Visible = true; 
-                                                                                                        }, true, true);
+                                                                                                        if (int.TryParse(task_params[1].Trim(), out int V))
+                                                                                                        {
+                                                                                                            if (V > 0)
+                                                                                                            {
+                                                                                                                EdmsTasks.InsertJob(() => {
+                                                                                                                    newLayer.Result.Visible = true;
+                                                                                                                }, true, true);
+                                                                                                            }
+                                                                                                            else
+                                                                                                            {
+                                                                                                                EdmsTasks.InsertJob(() => {
+                                                                                                                    newLayer.Result.Visible = false;
+                                                                                                                }, true, true);
+                                                                                                            }
+                                                                                                        }
+                                                                                                        break;
                                                                                                     }
-                                                                                                    else
-                                                                                                    {
-                                                                                                        EdmsTasks.InsertJob(() => {
-                                                                                                            newLayer.Result.Visible = false; 
-                                                                                                        }, true, true);
-                                                                                                    }
-                                                                                                }
-                                                                                                break;
+                                                                                                default: WaterWatch.SubmitToast("Failed to Parse UI Task at " + System.Reflection.MethodBase.GetCurrentMethod().Name, task); break;
                                                                                             }
-                                                                                        default: WaterWatch.SubmitToast("Failed to Parse UI Task at " + System.Reflection.MethodBase.GetCurrentMethod().Name, task); break;
+                                                                                        }
                                                                                     }
-                                                                                }
-                                                                            }
-                                                                        });
+                                                                                });
 #endif
-                                                                        return newLayer.Result;
+                                                                                return newLayer.Result;
+                                                                            }, true);
+                                                                        }, false, true));
+                                                                    }
+
+                                                                    for (int bgN = 0; bgN < numBackgrounds; bgN++)
+                                                                    {
+                                                                        var toQuery = new SharedNodeResult() { result = res.result, additionalParams = res.additionalParams + ".Backgrounds[" + bgN.ToString() + "]" };
+                                                                        tasks.Add(new EdmsTasks.cweeTask(() => {
+                                                                            return (EdmsTasks.cweeTask)(toQuery.result.Query_MapBackground());
+                                                                        }, false, true));
+                                                                    }
+
+                                                                    return EdmsTasks.cweeTask.InsertListAsTask(tasks, true).ContinueWith(() => {
+                                                                        var x = obj.Result.vm.map;
+                                                                        foreach (var lay in tasks)
+                                                                        {
+                                                                            if (lay.Result is MapElementsLayer)
+                                                                            {
+                                                                                x.AddMapLayer(lay.Result as MapElementsLayer);
+                                                                            }
+                                                                            else if (lay.Result is MapBackground_Interop)
+                                                                            {
+                                                                                x.StreamBackground(lay.Result);
+                                                                            }                                                                            
+                                                                        }
+                                                                        r.Child = obj.Result;
                                                                     }, true);
-                                                                }, false, true));
+                                                                }, false);
                                                             }
-                                                            return EdmsTasks.cweeTask.InsertListAsTask(tasks, true).ContinueWith(() => {
-                                                                var x = obj.Result.vm.map;
-                                                                foreach (var lay in tasks) {
-                                                                    x.AddMapLayer(lay.Result as MapElementsLayer);
-                                                                }
-                                                                r.Child = obj.Result;
-                                                                // return obj;
-                                                            }, true);
+                                                            return null;
                                                         }, false);
+
+
                                                     }
                                                     return null;
                                                 }, false);
+
+
                                             }, false); // expect this to be called shortly and to have its queue revised
                                             r.Tag = updateDequeue;
 #if UseFrameworkUpdater
@@ -1895,7 +1927,7 @@ namespace UWP_WaterWatch.Custom_Controls
                                                 var L = new MapElementsLayer();
                                                 return L;
                                             }, true, true);
-                                            return LAYER.ContinueWith(()=> {                                            
+                                            return LAYER.ContinueWith(()=> {
                                                 foreach (var key in layer.polylines.Keys)
                                                 {
                                                     if (layer.polylines.TryGetValue(key, out MapPolyline_Interop polyline))

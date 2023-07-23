@@ -75,6 +75,10 @@ namespace UWP_WaterWatch.Custom_Controls
         public cweeTask<MapPolyline_Interop> Query_MapPolyline(string additional_params = "") {
             return EdmsTasks.InsertJob(() => { return vm.ParentVM?.engine?.Cast_MapPolyline($"{BasicCall}{additional_params};"); }, false);
         }
+        public cweeTask<MapBackground_Interop> Query_MapBackground(string additional_params = "")
+        {
+            return EdmsTasks.InsertJob(() => { return vm.ParentVM?.engine?.Cast_MapBackground($"{BasicCall}{additional_params};"); }, false);
+        }
         public cweeTask<MapLayer_Interop> Query_MapLayer(string additional_params = "") {
             return EdmsTasks.InsertJob(() => { return vm.ParentVM?.engine?.Cast_MapLayer($"{BasicCall}{additional_params};"); }, false);
         }

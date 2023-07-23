@@ -2209,7 +2209,10 @@ public:
 	 void												RemoveUnnecessaryKnots(const X_Axis_Type& start = -std::numeric_limits < X_Axis_Type>::max(), const X_Axis_Type& end = std::numeric_limits<X_Axis_Type>::max()) const {
 		if (start >= end) return;
 		int num, index; cweeThreadedList<X_Axis_Type> keysToDelete;
-		constexpr Y_Axis_Type epsilon = 0.001f;
+
+		Y_Axis_Type epsilon = (this->GetMaxValue() - this->GetMinValue()) / 10000.0;
+
+		// constexpr Y_Axis_Type epsilon = 0.001f;
 		Y_Axis_Type* val1 = nullptr, *val2 = nullptr, *val3 = nullptr, *val4 = nullptr, *val5 = nullptr;
 		X_Axis_Type t1 = 0, t2 = 0, t3 = 0, t4 = 0, t5 = 0;
 

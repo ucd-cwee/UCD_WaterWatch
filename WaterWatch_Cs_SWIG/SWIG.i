@@ -36,5 +36,6 @@ to maintain a single distribution point for the source code. */
 %template(vector_pair_timeseries) std::vector<Pair<cweeDateTime, float>>;
 %template(vector_pair_double_double) std::vector<Pair<double, double>>;
 %template(vector_scriptingnode) std::vector<ScriptingNode>;
+%template(map_int_background) std::map<int, MapBackground_Interop>;
 %template(map_int_polyline) std::map<int, MapPolyline_Interop>;
 %template(map_int_icon) std::map<int, MapIcon_Interop>;

@@ -1544,7 +1544,11 @@ namespace UWP_WaterWatchLibrary
         }
         public static float Lerp(this float firstFloat, float secondFloat, float by)
         {
-            return firstFloat * (1 - by) + secondFloat * by;
+            return firstFloat * (1.0f - by) + secondFloat * by;
+        }
+        public static double Lerp(this double firstFloat, double secondFloat, double by)
+        {
+            return firstFloat * (1.0 - by) + secondFloat * by;
         }
         public static byte Lerp(this byte first, byte second, float by)
         {

@@ -50,7 +50,7 @@ namespace chaiscript {
                 UI_MapElement::AppendToScriptingLanguage(*lib);
                 UI_MapIcon::AppendToScriptingLanguage(*lib);
                 UI_MapPolyline::AppendToScriptingLanguage(*lib);
-                //UI_MapBackground::AppendToScriptingLanguage(*lib);
+                UI_MapBackground::AppendToScriptingLanguage(*lib);
                 UI_MapLayer::AppendToScriptingLanguage(*lib);
                 UI_Map::AppendToScriptingLanguage(*lib);
             }

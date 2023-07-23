@@ -56,23 +56,7 @@ namespace chaiscript {
             ADD_BETTER_ENUM_TO_SCRIPT_ENGINE(chaiscript::AST_Node_Type, AST_Node_Type);
 
 #ifndef CHAISCRIPT_NO_THREADS
-            lib->add(chaiscript::user_type<FutureObj>(), "future");
-
-            // lib->add(chaiscript::user_type<cweeJob>(), "cweeJob");
-            //lib->add(chaiscript::fun([](cweeJob& a)->FutureObj { 
-            //
-            //    cweeAny p = make_cwee_shared<std::promise<chaiscript::Boxed_Value>>(new std::promise<chaiscript::Boxed_Value>());
-            //    auto awaiter = a.ContinueWith(cweeJob([](std::promise<chaiscript::Boxed_Value>& promise, cweeJob& j) {
-            //        chaiscript::Boxed_Value toReturn;
-            //        promise.set_value(toReturn);
-            //    }, p, a));
-            //    return FutureObj(
-            //        p, /* promise container */
-            //        p.cast< std::promise<chaiscript::Boxed_Value>& >().get_future(), /* future container */
-            //        awaiter /* job task */
-            //    );   
-            //}), "future");
-
+            AddBasicClassTemplate_SpecializedName(FutureObj, future); // lib->add(chaiscript::user_type<FutureObj>(), "future");
             lib->add(chaiscript::fun([](FutureObj const& a) { return a.valid(); }), "valid");
             lib->add(chaiscript::fun([](FutureObj& a) { return a.get(); }), "get");
             lib->add(chaiscript::fun([](FutureObj& a) { return a.wait(); }), "wait");
@@ -158,14 +142,14 @@ namespace chaiscript {
             lib->eval(R"(
                     def Async(string r){ return Async(fun[r](){ return eval(r); }); };
                     def async(string r){ return Async(fun[r](){ return eval(r); }); };
-                    def continue_with(future a, string r){ return a.continue_with(Async(fun[r](){ return eval(r); })); };
+                    def future::continue_with(string r){ return this.continue_with(Async(fun[r](){ return eval(r); })); };
                 )");
-            lib->add(chaiscript::fun([](units::time::millisecond_t const& milliseconds) {
+            lib->add(chaiscript::fun([](units::time::second_t const& Seconds) {
                 using namespace cwee_units;
-                if (milliseconds > 0_ms) {
-                    ::Sleep(milliseconds());
+                if (Seconds > 0_s) {
+                    ::Sleep(Seconds() * 1000.0);
                 }
-                }), "sleep");
+            }), "sleep");
 #endif
 
             // BASIC COUT 

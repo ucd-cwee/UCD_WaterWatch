@@ -1021,6 +1021,45 @@ SWIGINTERN void std_vector_Sl_ScriptingNode_Sg__SetRange(std::vector< ScriptingN
           throw std::out_of_range("index");
         std::copy(values.begin(), values.end(), self->begin()+index);
       }
+SWIGINTERN std::map< int,MapBackground_Interop >::mapped_type const &std_map_Sl_int_Sc_MapBackground_Interop_Sg__getitem(std::map< int,MapBackground_Interop > *self,std::map< int,MapBackground_Interop >::key_type const &key){
+        std::map< int, MapBackground_Interop, std::less< int > >::iterator iter = self->find(key);
+        if (iter != self->end())
+          return iter->second;
+        else
+          throw std::out_of_range("key not found");
+      }
+SWIGINTERN void std_map_Sl_int_Sc_MapBackground_Interop_Sg__setitem(std::map< int,MapBackground_Interop > *self,std::map< int,MapBackground_Interop >::key_type const &key,std::map< int,MapBackground_Interop >::mapped_type const &x){
+        (*self)[key] = x;
+      }
+SWIGINTERN bool std_map_Sl_int_Sc_MapBackground_Interop_Sg__ContainsKey(std::map< int,MapBackground_Interop > *self,std::map< int,MapBackground_Interop >::key_type const &key){
+        std::map< int, MapBackground_Interop, std::less< int > >::iterator iter = self->find(key);
+        return iter != self->end();
+      }
+SWIGINTERN void std_map_Sl_int_Sc_MapBackground_Interop_Sg__Add(std::map< int,MapBackground_Interop > *self,std::map< int,MapBackground_Interop >::key_type const &key,std::map< int,MapBackground_Interop >::mapped_type const &value){
+        std::map< int, MapBackground_Interop, std::less< int > >::iterator iter = self->find(key);
+        if (iter != self->end())
+          throw std::out_of_range("key already exists");
+        self->insert(std::pair< int, MapBackground_Interop >(key, value));
+      }
+SWIGINTERN bool std_map_Sl_int_Sc_MapBackground_Interop_Sg__Remove(std::map< int,MapBackground_Interop > *self,std::map< int,MapBackground_Interop >::key_type const &key){
+        std::map< int, MapBackground_Interop, std::less< int > >::iterator iter = self->find(key);
+        if (iter != self->end()) {
+          self->erase(iter);
+          return true;
+        }
+        return false;
+      }
+SWIGINTERN std::map< int,MapBackground_Interop,std::less< int > >::iterator *std_map_Sl_int_Sc_MapBackground_Interop_Sg__create_iterator_begin(std::map< int,MapBackground_Interop > *self){
+        return new std::map< int, MapBackground_Interop, std::less< int > >::iterator(self->begin());
+      }
+SWIGINTERN std::map< int,MapBackground_Interop >::key_type const &std_map_Sl_int_Sc_MapBackground_Interop_Sg__get_next_key(std::map< int,MapBackground_Interop > *self,std::map< int,MapBackground_Interop,std::less< int > >::iterator *swigiterator){
+        std::map< int, MapBackground_Interop, std::less< int > >::iterator iter = *swigiterator;
+        (*swigiterator)++;
+        return (*iter).first;
+      }
+SWIGINTERN void std_map_Sl_int_Sc_MapBackground_Interop_Sg__destroy_iterator(std::map< int,MapBackground_Interop > *self,std::map< int,MapBackground_Interop,std::less< int > >::iterator *swigiterator){
+        delete swigiterator;
+      }
 SWIGINTERN std::map< int,MapPolyline_Interop >::mapped_type const &std_map_Sl_int_Sc_MapPolyline_Interop_Sg__getitem(std::map< int,MapPolyline_Interop > *self,std::map< int,MapPolyline_Interop >::key_type const &key){
         std::map< int, MapPolyline_Interop, std::less< int > >::iterator iter = self->find(key);
         if (iter != self->end())
@@ -1393,6 +1432,208 @@ SWIGEXPORT void SWIGSTDCALL CSharp_delete_Awaiter(void * jarg1) {
   
   arg1 = (Awaiter *)jarg1; 
   delete arg1;
+}
+
+
+SWIGEXPORT void * SWIGSTDCALL CSharp_new_SharedMatrix__SWIG_0() {
+  void * jresult ;
+  SharedMatrix *result = 0 ;
+  
+  result = (SharedMatrix *)new SharedMatrix();
+  jresult = (void *)result; 
+  return jresult;
+}
+
+
+SWIGEXPORT void * SWIGSTDCALL CSharp_new_SharedMatrix__SWIG_1(int jarg1, unsigned int jarg2) {
+  void * jresult ;
+  int arg1 ;
+  bool arg2 ;
+  SharedMatrix *result = 0 ;
+  
+  arg1 = (int)jarg1; 
+  arg2 = jarg2 ? true : false; 
+  result = (SharedMatrix *)new SharedMatrix(arg1,arg2);
+  jresult = (void *)result; 
+  return jresult;
+}
+
+
+SWIGEXPORT void * SWIGSTDCALL CSharp_new_SharedMatrix__SWIG_2(int jarg1) {
+  void * jresult ;
+  int arg1 ;
+  SharedMatrix *result = 0 ;
+  
+  arg1 = (int)jarg1; 
+  result = (SharedMatrix *)new SharedMatrix(arg1);
+  jresult = (void *)result; 
+  return jresult;
+}
+
+
+SWIGEXPORT void SWIGSTDCALL CSharp_delete_SharedMatrix(void * jarg1) {
+  SharedMatrix *arg1 = (SharedMatrix *) 0 ;
+  
+  arg1 = (SharedMatrix *)jarg1; 
+  delete arg1;
+}
+
+
+SWIGEXPORT void SWIGSTDCALL CSharp_SharedMatrix_Clear(void * jarg1) {
+  SharedMatrix *arg1 = (SharedMatrix *) 0 ;
+  
+  arg1 = (SharedMatrix *)jarg1; 
+  (arg1)->Clear();
+}
+
+
+SWIGEXPORT void SWIGSTDCALL CSharp_SharedMatrix_AppendData(void * jarg1, double jarg2, double jarg3, float jarg4) {
+  SharedMatrix *arg1 = (SharedMatrix *) 0 ;
+  double arg2 ;
+  double arg3 ;
+  float arg4 ;
+  
+  arg1 = (SharedMatrix *)jarg1; 
+  arg2 = (double)jarg2; 
+  arg3 = (double)jarg3; 
+  arg4 = (float)jarg4; 
+  (arg1)->AppendData(arg2,arg3,arg4);
+}
+
+
+SWIGEXPORT double SWIGSTDCALL CSharp_SharedMatrix_GetValue(void * jarg1, double jarg2, double jarg3) {
+  double jresult ;
+  SharedMatrix *arg1 = (SharedMatrix *) 0 ;
+  double arg2 ;
+  double arg3 ;
+  double result;
+  
+  arg1 = (SharedMatrix *)jarg1; 
+  arg2 = (double)jarg2; 
+  arg3 = (double)jarg3; 
+  result = (double)(arg1)->GetValue(arg2,arg3);
+  jresult = result; 
+  return jresult;
+}
+
+
+SWIGEXPORT void * SWIGSTDCALL CSharp_SharedMatrix_GetTimeSeries(void * jarg1, double jarg2, double jarg3, double jarg4, double jarg5, int jarg6, int jarg7) {
+  void * jresult ;
+  SharedMatrix *arg1 = (SharedMatrix *) 0 ;
+  double arg2 ;
+  double arg3 ;
+  double arg4 ;
+  double arg5 ;
+  int arg6 ;
+  int arg7 ;
+  std::vector< double > result;
+  
+  arg1 = (SharedMatrix *)jarg1; 
+  arg2 = (double)jarg2; 
+  arg3 = (double)jarg3; 
+  arg4 = (double)jarg4; 
+  arg5 = (double)jarg5; 
+  arg6 = (int)jarg6; 
+  arg7 = (int)jarg7; 
+  result = (arg1)->GetTimeSeries(arg2,arg3,arg4,arg5,arg6,arg7);
+  jresult = new std::vector< double >(result); 
+  return jresult;
+}
+
+
+SWIGEXPORT double SWIGSTDCALL CSharp_SharedMatrix_GetMinX(void * jarg1) {
+  double jresult ;
+  SharedMatrix *arg1 = (SharedMatrix *) 0 ;
+  double result;
+  
+  arg1 = (SharedMatrix *)jarg1; 
+  result = (double)(arg1)->GetMinX();
+  jresult = result; 
+  return jresult;
+}
+
+
+SWIGEXPORT double SWIGSTDCALL CSharp_SharedMatrix_GetMaxX(void * jarg1) {
+  double jresult ;
+  SharedMatrix *arg1 = (SharedMatrix *) 0 ;
+  double result;
+  
+  arg1 = (SharedMatrix *)jarg1; 
+  result = (double)(arg1)->GetMaxX();
+  jresult = result; 
+  return jresult;
+}
+
+
+SWIGEXPORT double SWIGSTDCALL CSharp_SharedMatrix_GetMinY(void * jarg1) {
+  double jresult ;
+  SharedMatrix *arg1 = (SharedMatrix *) 0 ;
+  double result;
+  
+  arg1 = (SharedMatrix *)jarg1; 
+  result = (double)(arg1)->GetMinY();
+  jresult = result; 
+  return jresult;
+}
+
+
+SWIGEXPORT double SWIGSTDCALL CSharp_SharedMatrix_GetMaxY(void * jarg1) {
+  double jresult ;
+  SharedMatrix *arg1 = (SharedMatrix *) 0 ;
+  double result;
+  
+  arg1 = (SharedMatrix *)jarg1; 
+  result = (double)(arg1)->GetMaxY();
+  jresult = result; 
+  return jresult;
+}
+
+
+SWIGEXPORT double SWIGSTDCALL CSharp_SharedMatrix_GetMinValue(void * jarg1) {
+  double jresult ;
+  SharedMatrix *arg1 = (SharedMatrix *) 0 ;
+  double result;
+  
+  arg1 = (SharedMatrix *)jarg1; 
+  result = (double)(arg1)->GetMinValue();
+  jresult = result; 
+  return jresult;
+}
+
+
+SWIGEXPORT double SWIGSTDCALL CSharp_SharedMatrix_GetMaxValue(void * jarg1) {
+  double jresult ;
+  SharedMatrix *arg1 = (SharedMatrix *) 0 ;
+  double result;
+  
+  arg1 = (SharedMatrix *)jarg1; 
+  result = (double)(arg1)->GetMaxValue();
+  jresult = result; 
+  return jresult;
+}
+
+
+SWIGEXPORT int SWIGSTDCALL CSharp_SharedMatrix_GetNumValues(void * jarg1) {
+  int jresult ;
+  SharedMatrix *arg1 = (SharedMatrix *) 0 ;
+  int result;
+  
+  arg1 = (SharedMatrix *)jarg1; 
+  result = (int)(arg1)->GetNumValues();
+  jresult = result; 
+  return jresult;
+}
+
+
+SWIGEXPORT int SWIGSTDCALL CSharp_SharedMatrix_Index(void * jarg1) {
+  int jresult ;
+  SharedMatrix *arg1 = (SharedMatrix *) 0 ;
+  int result;
+  
+  arg1 = (SharedMatrix *)jarg1; 
+  result = (int)(arg1)->Index();
+  jresult = result; 
+  return jresult;
 }
 
 
@@ -1862,6 +2103,50 @@ SWIGEXPORT int SWIGSTDCALL CSharp_ScriptingNode_depth_get(void * jarg1) {
 }
 
 
+SWIGEXPORT void * SWIGSTDCALL CSharp_new_Color_Interop__SWIG_0() {
+  void * jresult ;
+  Color_Interop *result = 0 ;
+  
+  result = (Color_Interop *)new Color_Interop();
+  jresult = (void *)result; 
+  return jresult;
+}
+
+
+SWIGEXPORT void * SWIGSTDCALL CSharp_new_Color_Interop__SWIG_1(void * jarg1) {
+  void * jresult ;
+  Color_Interop *arg1 = 0 ;
+  Color_Interop *result = 0 ;
+  
+  arg1 = (Color_Interop *)jarg1;
+  if (!arg1) {
+    SWIG_CSharpSetPendingExceptionArgument(SWIG_CSharpArgumentNullException, "Color_Interop const & is null", 0);
+    return 0;
+  } 
+  result = (Color_Interop *)new Color_Interop((Color_Interop const &)*arg1);
+  jresult = (void *)result; 
+  return jresult;
+}
+
+
+SWIGEXPORT void * SWIGSTDCALL CSharp_new_Color_Interop__SWIG_2(double jarg1, double jarg2, double jarg3, double jarg4) {
+  void * jresult ;
+  double arg1 ;
+  double arg2 ;
+  double arg3 ;
+  double arg4 ;
+  Color_Interop *result = 0 ;
+  
+  arg1 = (double)jarg1; 
+  arg2 = (double)jarg2; 
+  arg3 = (double)jarg3; 
+  arg4 = (double)jarg4; 
+  result = (Color_Interop *)new Color_Interop(arg1,arg2,arg3,arg4);
+  jresult = (void *)result; 
+  return jresult;
+}
+
+
 SWIGEXPORT void SWIGSTDCALL CSharp_Color_Interop_R_set(void * jarg1, double jarg2) {
   Color_Interop *arg1 = (Color_Interop *) 0 ;
   double arg2 ;
@@ -1946,16 +2231,6 @@ SWIGEXPORT double SWIGSTDCALL CSharp_Color_Interop_A_get(void * jarg1) {
   arg1 = (Color_Interop *)jarg1; 
   result = (double) ((arg1)->A);
   jresult = result; 
-  return jresult;
-}
-
-
-SWIGEXPORT void * SWIGSTDCALL CSharp_new_Color_Interop() {
-  void * jresult ;
-  Color_Interop *result = 0 ;
-  
-  result = (Color_Interop *)new Color_Interop();
-  jresult = (void *)result; 
   return jresult;
 }
 
@@ -2252,6 +2527,90 @@ SWIGEXPORT void SWIGSTDCALL CSharp_delete_MapPolyline_Interop(void * jarg1) {
   MapPolyline_Interop *arg1 = (MapPolyline_Interop *) 0 ;
   
   arg1 = (MapPolyline_Interop *)jarg1; 
+  delete arg1;
+}
+
+
+SWIGEXPORT void SWIGSTDCALL CSharp_MapBackground_Interop_matrix_set(void * jarg1, void * jarg2) {
+  MapBackground_Interop *arg1 = (MapBackground_Interop *) 0 ;
+  SharedMatrix *arg2 = (SharedMatrix *) 0 ;
+  
+  arg1 = (MapBackground_Interop *)jarg1; 
+  arg2 = (SharedMatrix *)jarg2; 
+  if (arg1) (arg1)->matrix = *arg2;
+}
+
+
+SWIGEXPORT void * SWIGSTDCALL CSharp_MapBackground_Interop_matrix_get(void * jarg1) {
+  void * jresult ;
+  MapBackground_Interop *arg1 = (MapBackground_Interop *) 0 ;
+  SharedMatrix *result = 0 ;
+  
+  arg1 = (MapBackground_Interop *)jarg1; 
+  result = (SharedMatrix *)& ((arg1)->matrix);
+  jresult = (void *)result; 
+  return jresult;
+}
+
+
+SWIGEXPORT void SWIGSTDCALL CSharp_MapBackground_Interop_min_color_set(void * jarg1, void * jarg2) {
+  MapBackground_Interop *arg1 = (MapBackground_Interop *) 0 ;
+  Color_Interop *arg2 = (Color_Interop *) 0 ;
+  
+  arg1 = (MapBackground_Interop *)jarg1; 
+  arg2 = (Color_Interop *)jarg2; 
+  if (arg1) (arg1)->min_color = *arg2;
+}
+
+
+SWIGEXPORT void * SWIGSTDCALL CSharp_MapBackground_Interop_min_color_get(void * jarg1) {
+  void * jresult ;
+  MapBackground_Interop *arg1 = (MapBackground_Interop *) 0 ;
+  Color_Interop *result = 0 ;
+  
+  arg1 = (MapBackground_Interop *)jarg1; 
+  result = (Color_Interop *)& ((arg1)->min_color);
+  jresult = (void *)result; 
+  return jresult;
+}
+
+
+SWIGEXPORT void SWIGSTDCALL CSharp_MapBackground_Interop_max_color_set(void * jarg1, void * jarg2) {
+  MapBackground_Interop *arg1 = (MapBackground_Interop *) 0 ;
+  Color_Interop *arg2 = (Color_Interop *) 0 ;
+  
+  arg1 = (MapBackground_Interop *)jarg1; 
+  arg2 = (Color_Interop *)jarg2; 
+  if (arg1) (arg1)->max_color = *arg2;
+}
+
+
+SWIGEXPORT void * SWIGSTDCALL CSharp_MapBackground_Interop_max_color_get(void * jarg1) {
+  void * jresult ;
+  MapBackground_Interop *arg1 = (MapBackground_Interop *) 0 ;
+  Color_Interop *result = 0 ;
+  
+  arg1 = (MapBackground_Interop *)jarg1; 
+  result = (Color_Interop *)& ((arg1)->max_color);
+  jresult = (void *)result; 
+  return jresult;
+}
+
+
+SWIGEXPORT void * SWIGSTDCALL CSharp_new_MapBackground_Interop() {
+  void * jresult ;
+  MapBackground_Interop *result = 0 ;
+  
+  result = (MapBackground_Interop *)new MapBackground_Interop();
+  jresult = (void *)result; 
+  return jresult;
+}
+
+
+SWIGEXPORT void SWIGSTDCALL CSharp_delete_MapBackground_Interop(void * jarg1) {
+  MapBackground_Interop *arg1 = (MapBackground_Interop *) 0 ;
+  
+  arg1 = (MapBackground_Interop *)jarg1; 
   delete arg1;
 }
 
@@ -2606,6 +2965,24 @@ SWIGEXPORT void * SWIGSTDCALL CSharp_ScriptEngine_Cast_MapPolyline(void * jarg1,
   (&arg2)->assign(jarg2); 
   result = (arg1)->Cast_MapPolyline(arg2);
   jresult = new MapPolyline_Interop(result); 
+  return jresult;
+}
+
+
+SWIGEXPORT void * SWIGSTDCALL CSharp_ScriptEngine_Cast_MapBackground(void * jarg1, const char * jarg2) {
+  void * jresult ;
+  ScriptEngine *arg1 = (ScriptEngine *) 0 ;
+  std::string arg2 ;
+  MapBackground_Interop result;
+  
+  arg1 = (ScriptEngine *)jarg1; 
+  if (!jarg2) {
+    SWIG_CSharpSetPendingExceptionArgument(SWIG_CSharpArgumentNullException, "null string", 0);
+    return 0;
+  }
+  (&arg2)->assign(jarg2); 
+  result = (arg1)->Cast_MapBackground(arg2);
+  jresult = new MapBackground_Interop(result); 
   return jresult;
 }
 
@@ -6051,6 +6428,202 @@ SWIGEXPORT void SWIGSTDCALL CSharp_delete_vector_scriptingnode(void * jarg1) {
   std::vector< ScriptingNode > *arg1 = (std::vector< ScriptingNode > *) 0 ;
   
   arg1 = (std::vector< ScriptingNode > *)jarg1; 
+  delete arg1;
+}
+
+
+SWIGEXPORT void * SWIGSTDCALL CSharp_new_map_int_background__SWIG_0() {
+  void * jresult ;
+  std::map< int,MapBackground_Interop > *result = 0 ;
+  
+  result = (std::map< int,MapBackground_Interop > *)new std::map< int,MapBackground_Interop >();
+  jresult = (void *)result; 
+  return jresult;
+}
+
+
+SWIGEXPORT void * SWIGSTDCALL CSharp_new_map_int_background__SWIG_1(void * jarg1) {
+  void * jresult ;
+  std::map< int,MapBackground_Interop > *arg1 = 0 ;
+  std::map< int,MapBackground_Interop > *result = 0 ;
+  
+  arg1 = (std::map< int,MapBackground_Interop > *)jarg1;
+  if (!arg1) {
+    SWIG_CSharpSetPendingExceptionArgument(SWIG_CSharpArgumentNullException, "std::map< int,MapBackground_Interop > const & is null", 0);
+    return 0;
+  } 
+  result = (std::map< int,MapBackground_Interop > *)new std::map< int,MapBackground_Interop >((std::map< int,MapBackground_Interop > const &)*arg1);
+  jresult = (void *)result; 
+  return jresult;
+}
+
+
+SWIGEXPORT unsigned long SWIGSTDCALL CSharp_map_int_background_size(void * jarg1) {
+  unsigned long jresult ;
+  std::map< int,MapBackground_Interop > *arg1 = (std::map< int,MapBackground_Interop > *) 0 ;
+  std::map< int,MapBackground_Interop >::size_type result;
+  
+  arg1 = (std::map< int,MapBackground_Interop > *)jarg1; 
+  result = ((std::map< int,MapBackground_Interop > const *)arg1)->size();
+  jresult = (unsigned long)result; 
+  return jresult;
+}
+
+
+SWIGEXPORT unsigned int SWIGSTDCALL CSharp_map_int_background_empty(void * jarg1) {
+  unsigned int jresult ;
+  std::map< int,MapBackground_Interop > *arg1 = (std::map< int,MapBackground_Interop > *) 0 ;
+  bool result;
+  
+  arg1 = (std::map< int,MapBackground_Interop > *)jarg1; 
+  result = (bool)((std::map< int,MapBackground_Interop > const *)arg1)->empty();
+  jresult = result; 
+  return jresult;
+}
+
+
+SWIGEXPORT void SWIGSTDCALL CSharp_map_int_background_Clear(void * jarg1) {
+  std::map< int,MapBackground_Interop > *arg1 = (std::map< int,MapBackground_Interop > *) 0 ;
+  
+  arg1 = (std::map< int,MapBackground_Interop > *)jarg1; 
+  (arg1)->clear();
+}
+
+
+SWIGEXPORT void * SWIGSTDCALL CSharp_map_int_background_getitem(void * jarg1, int jarg2) {
+  void * jresult ;
+  std::map< int,MapBackground_Interop > *arg1 = (std::map< int,MapBackground_Interop > *) 0 ;
+  std::map< int,MapBackground_Interop >::key_type *arg2 = 0 ;
+  std::map< int,MapBackground_Interop >::key_type temp2 ;
+  std::map< int,MapBackground_Interop >::mapped_type *result = 0 ;
+  
+  arg1 = (std::map< int,MapBackground_Interop > *)jarg1; 
+  temp2 = (std::map< int,MapBackground_Interop >::key_type)jarg2; 
+  arg2 = &temp2; 
+  try {
+    result = (std::map< int,MapBackground_Interop >::mapped_type *) &std_map_Sl_int_Sc_MapBackground_Interop_Sg__getitem(arg1,(int const &)*arg2);
+  } catch(std::out_of_range &_e) {
+    SWIG_CSharpSetPendingExceptionArgument(SWIG_CSharpArgumentOutOfRangeException, 0, (&_e)->what());
+    return 0;
+  }
+  jresult = (void *)result; 
+  return jresult;
+}
+
+
+SWIGEXPORT void SWIGSTDCALL CSharp_map_int_background_setitem(void * jarg1, int jarg2, void * jarg3) {
+  std::map< int,MapBackground_Interop > *arg1 = (std::map< int,MapBackground_Interop > *) 0 ;
+  std::map< int,MapBackground_Interop >::key_type *arg2 = 0 ;
+  std::map< int,MapBackground_Interop >::mapped_type *arg3 = 0 ;
+  std::map< int,MapBackground_Interop >::key_type temp2 ;
+  
+  arg1 = (std::map< int,MapBackground_Interop > *)jarg1; 
+  temp2 = (std::map< int,MapBackground_Interop >::key_type)jarg2; 
+  arg2 = &temp2; 
+  arg3 = (std::map< int,MapBackground_Interop >::mapped_type *)jarg3;
+  if (!arg3) {
+    SWIG_CSharpSetPendingExceptionArgument(SWIG_CSharpArgumentNullException, "std::map< int,MapBackground_Interop >::mapped_type const & is null", 0);
+    return ;
+  } 
+  std_map_Sl_int_Sc_MapBackground_Interop_Sg__setitem(arg1,(int const &)*arg2,(MapBackground_Interop const &)*arg3);
+}
+
+
+SWIGEXPORT unsigned int SWIGSTDCALL CSharp_map_int_background_ContainsKey(void * jarg1, int jarg2) {
+  unsigned int jresult ;
+  std::map< int,MapBackground_Interop > *arg1 = (std::map< int,MapBackground_Interop > *) 0 ;
+  std::map< int,MapBackground_Interop >::key_type *arg2 = 0 ;
+  std::map< int,MapBackground_Interop >::key_type temp2 ;
+  bool result;
+  
+  arg1 = (std::map< int,MapBackground_Interop > *)jarg1; 
+  temp2 = (std::map< int,MapBackground_Interop >::key_type)jarg2; 
+  arg2 = &temp2; 
+  result = (bool)std_map_Sl_int_Sc_MapBackground_Interop_Sg__ContainsKey(arg1,(int const &)*arg2);
+  jresult = result; 
+  return jresult;
+}
+
+
+SWIGEXPORT void SWIGSTDCALL CSharp_map_int_background_Add(void * jarg1, int jarg2, void * jarg3) {
+  std::map< int,MapBackground_Interop > *arg1 = (std::map< int,MapBackground_Interop > *) 0 ;
+  std::map< int,MapBackground_Interop >::key_type *arg2 = 0 ;
+  std::map< int,MapBackground_Interop >::mapped_type *arg3 = 0 ;
+  std::map< int,MapBackground_Interop >::key_type temp2 ;
+  
+  arg1 = (std::map< int,MapBackground_Interop > *)jarg1; 
+  temp2 = (std::map< int,MapBackground_Interop >::key_type)jarg2; 
+  arg2 = &temp2; 
+  arg3 = (std::map< int,MapBackground_Interop >::mapped_type *)jarg3;
+  if (!arg3) {
+    SWIG_CSharpSetPendingExceptionArgument(SWIG_CSharpArgumentNullException, "std::map< int,MapBackground_Interop >::mapped_type const & is null", 0);
+    return ;
+  } 
+  try {
+    std_map_Sl_int_Sc_MapBackground_Interop_Sg__Add(arg1,(int const &)*arg2,(MapBackground_Interop const &)*arg3);
+  } catch(std::out_of_range &_e) {
+    SWIG_CSharpSetPendingExceptionArgument(SWIG_CSharpArgumentOutOfRangeException, 0, (&_e)->what());
+    return ;
+  }
+}
+
+
+SWIGEXPORT unsigned int SWIGSTDCALL CSharp_map_int_background_Remove(void * jarg1, int jarg2) {
+  unsigned int jresult ;
+  std::map< int,MapBackground_Interop > *arg1 = (std::map< int,MapBackground_Interop > *) 0 ;
+  std::map< int,MapBackground_Interop >::key_type *arg2 = 0 ;
+  std::map< int,MapBackground_Interop >::key_type temp2 ;
+  bool result;
+  
+  arg1 = (std::map< int,MapBackground_Interop > *)jarg1; 
+  temp2 = (std::map< int,MapBackground_Interop >::key_type)jarg2; 
+  arg2 = &temp2; 
+  result = (bool)std_map_Sl_int_Sc_MapBackground_Interop_Sg__Remove(arg1,(int const &)*arg2);
+  jresult = result; 
+  return jresult;
+}
+
+
+SWIGEXPORT void * SWIGSTDCALL CSharp_map_int_background_create_iterator_begin(void * jarg1) {
+  void * jresult ;
+  std::map< int,MapBackground_Interop > *arg1 = (std::map< int,MapBackground_Interop > *) 0 ;
+  std::map< int,MapBackground_Interop,std::less< int > >::iterator *result = 0 ;
+  
+  arg1 = (std::map< int,MapBackground_Interop > *)jarg1; 
+  result = (std::map< int,MapBackground_Interop,std::less< int > >::iterator *)std_map_Sl_int_Sc_MapBackground_Interop_Sg__create_iterator_begin(arg1);
+  jresult = (void *)result; 
+  return jresult;
+}
+
+
+SWIGEXPORT int SWIGSTDCALL CSharp_map_int_background_get_next_key(void * jarg1, void * jarg2) {
+  int jresult ;
+  std::map< int,MapBackground_Interop > *arg1 = (std::map< int,MapBackground_Interop > *) 0 ;
+  std::map< int,MapBackground_Interop,std::less< int > >::iterator *arg2 = (std::map< int,MapBackground_Interop,std::less< int > >::iterator *) 0 ;
+  std::map< int,MapBackground_Interop >::key_type *result = 0 ;
+  
+  arg1 = (std::map< int,MapBackground_Interop > *)jarg1; 
+  arg2 = (std::map< int,MapBackground_Interop,std::less< int > >::iterator *)jarg2; 
+  result = (std::map< int,MapBackground_Interop >::key_type *) &std_map_Sl_int_Sc_MapBackground_Interop_Sg__get_next_key(arg1,arg2);
+  jresult = *result; 
+  return jresult;
+}
+
+
+SWIGEXPORT void SWIGSTDCALL CSharp_map_int_background_destroy_iterator(void * jarg1, void * jarg2) {
+  std::map< int,MapBackground_Interop > *arg1 = (std::map< int,MapBackground_Interop > *) 0 ;
+  std::map< int,MapBackground_Interop,std::less< int > >::iterator *arg2 = (std::map< int,MapBackground_Interop,std::less< int > >::iterator *) 0 ;
+  
+  arg1 = (std::map< int,MapBackground_Interop > *)jarg1; 
+  arg2 = (std::map< int,MapBackground_Interop,std::less< int > >::iterator *)jarg2; 
+  std_map_Sl_int_Sc_MapBackground_Interop_Sg__destroy_iterator(arg1,arg2);
+}
+
+
+SWIGEXPORT void SWIGSTDCALL CSharp_delete_map_int_background(void * jarg1) {
+  std::map< int,MapBackground_Interop > *arg1 = (std::map< int,MapBackground_Interop > *) 0 ;
+  
+  arg1 = (std::map< int,MapBackground_Interop > *)jarg1; 
   delete arg1;
 }
 

@@ -273,6 +273,54 @@ class ConvPINVOKE {
   [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_delete_Awaiter")]
   public static extern void delete_Awaiter(global::System.Runtime.InteropServices.HandleRef jarg1);
 
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_new_SharedMatrix__SWIG_0")]
+  public static extern global::System.IntPtr new_SharedMatrix__SWIG_0();
+
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_new_SharedMatrix__SWIG_1")]
+  public static extern global::System.IntPtr new_SharedMatrix__SWIG_1(int jarg1, bool jarg2);
+
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_new_SharedMatrix__SWIG_2")]
+  public static extern global::System.IntPtr new_SharedMatrix__SWIG_2(int jarg1);
+
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_delete_SharedMatrix")]
+  public static extern void delete_SharedMatrix(global::System.Runtime.InteropServices.HandleRef jarg1);
+
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_SharedMatrix_Clear")]
+  public static extern void SharedMatrix_Clear(global::System.Runtime.InteropServices.HandleRef jarg1);
+
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_SharedMatrix_AppendData")]
+  public static extern void SharedMatrix_AppendData(global::System.Runtime.InteropServices.HandleRef jarg1, double jarg2, double jarg3, float jarg4);
+
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_SharedMatrix_GetValue")]
+  public static extern double SharedMatrix_GetValue(global::System.Runtime.InteropServices.HandleRef jarg1, double jarg2, double jarg3);
+
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_SharedMatrix_GetTimeSeries")]
+  public static extern global::System.IntPtr SharedMatrix_GetTimeSeries(global::System.Runtime.InteropServices.HandleRef jarg1, double jarg2, double jarg3, double jarg4, double jarg5, int jarg6, int jarg7);
+
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_SharedMatrix_GetMinX")]
+  public static extern double SharedMatrix_GetMinX(global::System.Runtime.InteropServices.HandleRef jarg1);
+
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_SharedMatrix_GetMaxX")]
+  public static extern double SharedMatrix_GetMaxX(global::System.Runtime.InteropServices.HandleRef jarg1);
+
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_SharedMatrix_GetMinY")]
+  public static extern double SharedMatrix_GetMinY(global::System.Runtime.InteropServices.HandleRef jarg1);
+
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_SharedMatrix_GetMaxY")]
+  public static extern double SharedMatrix_GetMaxY(global::System.Runtime.InteropServices.HandleRef jarg1);
+
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_SharedMatrix_GetMinValue")]
+  public static extern double SharedMatrix_GetMinValue(global::System.Runtime.InteropServices.HandleRef jarg1);
+
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_SharedMatrix_GetMaxValue")]
+  public static extern double SharedMatrix_GetMaxValue(global::System.Runtime.InteropServices.HandleRef jarg1);
+
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_SharedMatrix_GetNumValues")]
+  public static extern int SharedMatrix_GetNumValues(global::System.Runtime.InteropServices.HandleRef jarg1);
+
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_SharedMatrix_Index")]
+  public static extern int SharedMatrix_Index(global::System.Runtime.InteropServices.HandleRef jarg1);
+
   [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_new_SharedTimeSeriesPattern__SWIG_0")]
   public static extern global::System.IntPtr new_SharedTimeSeriesPattern__SWIG_0();
 
@@ -396,6 +444,15 @@ class ConvPINVOKE {
   [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_ScriptingNode_depth_get")]
   public static extern int ScriptingNode_depth_get(global::System.Runtime.InteropServices.HandleRef jarg1);
 
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_new_Color_Interop__SWIG_0")]
+  public static extern global::System.IntPtr new_Color_Interop__SWIG_0();
+
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_new_Color_Interop__SWIG_1")]
+  public static extern global::System.IntPtr new_Color_Interop__SWIG_1(global::System.Runtime.InteropServices.HandleRef jarg1);
+
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_new_Color_Interop__SWIG_2")]
+  public static extern global::System.IntPtr new_Color_Interop__SWIG_2(double jarg1, double jarg2, double jarg3, double jarg4);
+
   [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_Color_Interop_R_set")]
   public static extern void Color_Interop_R_set(global::System.Runtime.InteropServices.HandleRef jarg1, double jarg2);
 
@@ -419,9 +476,6 @@ class ConvPINVOKE {
 
   [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_Color_Interop_A_get")]
   public static extern double Color_Interop_A_get(global::System.Runtime.InteropServices.HandleRef jarg1);
-
-  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_new_Color_Interop")]
-  public static extern global::System.IntPtr new_Color_Interop();
 
   [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_delete_Color_Interop")]
   public static extern void delete_Color_Interop(global::System.Runtime.InteropServices.HandleRef jarg1);
@@ -504,6 +558,30 @@ class ConvPINVOKE {
   [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_delete_MapPolyline_Interop")]
   public static extern void delete_MapPolyline_Interop(global::System.Runtime.InteropServices.HandleRef jarg1);
 
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_MapBackground_Interop_matrix_set")]
+  public static extern void MapBackground_Interop_matrix_set(global::System.Runtime.InteropServices.HandleRef jarg1, global::System.Runtime.InteropServices.HandleRef jarg2);
+
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_MapBackground_Interop_matrix_get")]
+  public static extern global::System.IntPtr MapBackground_Interop_matrix_get(global::System.Runtime.InteropServices.HandleRef jarg1);
+
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_MapBackground_Interop_min_color_set")]
+  public static extern void MapBackground_Interop_min_color_set(global::System.Runtime.InteropServices.HandleRef jarg1, global::System.Runtime.InteropServices.HandleRef jarg2);
+
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_MapBackground_Interop_min_color_get")]
+  public static extern global::System.IntPtr MapBackground_Interop_min_color_get(global::System.Runtime.InteropServices.HandleRef jarg1);
+
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_MapBackground_Interop_max_color_set")]
+  public static extern void MapBackground_Interop_max_color_set(global::System.Runtime.InteropServices.HandleRef jarg1, global::System.Runtime.InteropServices.HandleRef jarg2);
+
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_MapBackground_Interop_max_color_get")]
+  public static extern global::System.IntPtr MapBackground_Interop_max_color_get(global::System.Runtime.InteropServices.HandleRef jarg1);
+
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_new_MapBackground_Interop")]
+  public static extern global::System.IntPtr new_MapBackground_Interop();
+
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_delete_MapBackground_Interop")]
+  public static extern void delete_MapBackground_Interop(global::System.Runtime.InteropServices.HandleRef jarg1);
+
   [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_MapLayer_Interop_polylines_set")]
   public static extern void MapLayer_Interop_polylines_set(global::System.Runtime.InteropServices.HandleRef jarg1, global::System.Runtime.InteropServices.HandleRef jarg2);
 
@@ -581,6 +659,9 @@ class ConvPINVOKE {
 
   [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_ScriptEngine_Cast_MapPolyline")]
   public static extern global::System.IntPtr ScriptEngine_Cast_MapPolyline(global::System.Runtime.InteropServices.HandleRef jarg1, string jarg2);
+
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_ScriptEngine_Cast_MapBackground")]
+  public static extern global::System.IntPtr ScriptEngine_Cast_MapBackground(global::System.Runtime.InteropServices.HandleRef jarg1, string jarg2);
 
   [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_ScriptEngine_Cast_MapLayer")]
   public static extern global::System.IntPtr ScriptEngine_Cast_MapLayer(global::System.Runtime.InteropServices.HandleRef jarg1, string jarg2);
@@ -1259,6 +1340,48 @@ class ConvPINVOKE {
 
   [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_delete_vector_scriptingnode")]
   public static extern void delete_vector_scriptingnode(global::System.Runtime.InteropServices.HandleRef jarg1);
+
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_new_map_int_background__SWIG_0")]
+  public static extern global::System.IntPtr new_map_int_background__SWIG_0();
+
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_new_map_int_background__SWIG_1")]
+  public static extern global::System.IntPtr new_map_int_background__SWIG_1(global::System.Runtime.InteropServices.HandleRef jarg1);
+
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_map_int_background_size")]
+  public static extern uint map_int_background_size(global::System.Runtime.InteropServices.HandleRef jarg1);
+
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_map_int_background_empty")]
+  public static extern bool map_int_background_empty(global::System.Runtime.InteropServices.HandleRef jarg1);
+
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_map_int_background_Clear")]
+  public static extern void map_int_background_Clear(global::System.Runtime.InteropServices.HandleRef jarg1);
+
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_map_int_background_getitem")]
+  public static extern global::System.IntPtr map_int_background_getitem(global::System.Runtime.InteropServices.HandleRef jarg1, int jarg2);
+
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_map_int_background_setitem")]
+  public static extern void map_int_background_setitem(global::System.Runtime.InteropServices.HandleRef jarg1, int jarg2, global::System.Runtime.InteropServices.HandleRef jarg3);
+
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_map_int_background_ContainsKey")]
+  public static extern bool map_int_background_ContainsKey(global::System.Runtime.InteropServices.HandleRef jarg1, int jarg2);
+
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_map_int_background_Add")]
+  public static extern void map_int_background_Add(global::System.Runtime.InteropServices.HandleRef jarg1, int jarg2, global::System.Runtime.InteropServices.HandleRef jarg3);
+
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_map_int_background_Remove")]
+  public static extern bool map_int_background_Remove(global::System.Runtime.InteropServices.HandleRef jarg1, int jarg2);
+
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_map_int_background_create_iterator_begin")]
+  public static extern global::System.IntPtr map_int_background_create_iterator_begin(global::System.Runtime.InteropServices.HandleRef jarg1);
+
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_map_int_background_get_next_key")]
+  public static extern int map_int_background_get_next_key(global::System.Runtime.InteropServices.HandleRef jarg1, global::System.IntPtr jarg2);
+
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_map_int_background_destroy_iterator")]
+  public static extern void map_int_background_destroy_iterator(global::System.Runtime.InteropServices.HandleRef jarg1, global::System.IntPtr jarg2);
+
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_delete_map_int_background")]
+  public static extern void delete_map_int_background(global::System.Runtime.InteropServices.HandleRef jarg1);
 
   [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_new_map_int_polyline__SWIG_0")]
   public static extern global::System.IntPtr new_map_int_polyline__SWIG_0();

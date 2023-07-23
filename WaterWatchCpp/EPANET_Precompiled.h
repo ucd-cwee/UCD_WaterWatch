@@ -830,7 +830,7 @@ namespace epanet {
 
     typedef enum { IS_NUMBER, IS_OPEN, IS_CLOSED, IS_ACTIVE } Values;
 
-    typedef enum { HIGHRES, LOWRES } HydraulicSimulationQuality;
+    typedef enum { HIGHESTRES, HIGHRES, LOWRES } HydraulicSimulationQuality;
 #pragma endregion
 #pragma region precompiled classes 
 #pragma region MemPool
@@ -3065,7 +3065,7 @@ namespace epanet {
         };
 
         units::time::second_t
-            Tstart,                // Starting time of day // seconds or minutes????
+            Tstart,                // Starting time of day
             Hstep,                 // Nominal hyd. time step
             Pstep,                 // Time pattern time step            
             Rstep,                 // Reporting time step
@@ -3547,6 +3547,7 @@ namespace epanet {
                     Water_Saved_Value[t_ind] = Water_Saved_Volume[t_ind] * Get_F_Given_P(Cvp, g, idx);
                 }
             }
+            million_gallon_t TotalWaterSaved = 0_MG; for (auto& x : Water_Saved_Volume) TotalWaterSaved += x;
 
             // calculate costs of surveying over time period
             Dollar_t 	D = d * M; // D full leak detection survey cost
@@ -3599,6 +3600,7 @@ namespace epanet {
                 results["Total Costs"] = cweeUnitValues::Dollar(NPV_costs);
                 results["Total Benefits"] = cweeUnitValues::Dollar(NPV_benefits);
                 results["Net Benefits"] = cweeUnitValues::Dollar(NPV_benefits - NPV_costs);
+                results["Total Water Saved"] = cweeUnitValues::million_gallon(TotalWaterSaved);
             }
 
             return results;

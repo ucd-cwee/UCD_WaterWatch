@@ -1191,19 +1191,17 @@ namespace UWP_WaterWatch.Custom_Controls
         public class CustomMapTileDataSourceWithTag : CustomMapTileDataSource
         {
             public static int pixelsPerPage = 256;
+            public MapBackground_Interop Source; 
 
-            public object Tag { get; set; }
-            public int Holder { get; set; } = -1;
             public static void QueueBitMapStream(CustomMapTileDataSource sender, MapTileBitmapRequestedEventArgs args)
             {
-                CreateBitmapAsStreamAsync(args, CustomMapTileDataSourceWithTag.pixelsPerPage, (sender as CustomMapTileDataSourceWithTag).Tag as string, (sender as CustomMapTileDataSourceWithTag).Holder);
+                CreateBitmapAsStreamAsync(args, CustomMapTileDataSourceWithTag.pixelsPerPage, (sender as CustomMapTileDataSourceWithTag).Source);
             }
 
             // Create the custom tiles.
-            private static void CreateBitmapAsStreamAsync(MapTileBitmapRequestedEventArgs args, int pixelSize, string cweeMapBackground_ScriptVariable, int tempMatrix)
+            private static void CreateBitmapAsStreamAsync(MapTileBitmapRequestedEventArgs args, int pixelSize, MapBackground_Interop cweeMapBackground)
             {
                 MapTileBitmapRequestDeferral _deferral = args.Request.GetDeferral();
-                // EdmsCalls.EdmsTasks.InsertJob(async () =>
                 try
                 {
                     {
@@ -1238,7 +1236,7 @@ namespace UWP_WaterWatch.Custom_Controls
                             double mapSize = ExtensionMethods.TileSystem.MapSize(zoom);
                             double mapX;
                             double mapY;
-                            double latitude; double longitude; float v;
+                            double latitude; double longitude; double v;
 
                             double latitudeBottom; double longitudeRight;
 
@@ -1254,43 +1252,16 @@ namespace UWP_WaterWatch.Custom_Controls
                             mapX = (ExtensionMethods.TileSystem.Clip(x_pos + pixelWidth - 1, 0, mapSize - 1) / mapSize) - 0.5;
                             ExtensionMethods.TileSystem.PixelXToLong_Fast(ref mapX, out longitudeRight);
 
-                            var splits = new List<string>();
-#if false
-                            EdmsCalls.DoScriptImmediate(
-                                "\"" +
-                                "${" + $"{cweeMapBackground_ScriptVariable}.minColor.R" + "}" +
-                                "|${" + $"{cweeMapBackground_ScriptVariable}.minColor.G" + "}" +
-                                "|${" + $"{cweeMapBackground_ScriptVariable}.minColor.B" + "}" +
-                                "|${" + $"{cweeMapBackground_ScriptVariable}.minColor.A" + "}" +
-                                "|${" + $"{cweeMapBackground_ScriptVariable}.maxColor.R" + "}" +
-                                "|${" + $"{cweeMapBackground_ScriptVariable}.maxColor.G" + "}" +
-                                "|${" + $"{cweeMapBackground_ScriptVariable}.maxColor.B" + "}" +
-                                "|${" + $"{cweeMapBackground_ScriptVariable}.maxColor.A" + "}" +
-                                "|${" + $"{cweeMapBackground_ScriptVariable}.data.GetMinValue()" + "}" +
-                                "|${" + $"{cweeMapBackground_ScriptVariable}.data.GetMaxValue()" + "}" +
-                                //"|${" + $"{cweeMapBackground_ScriptVariable}.data.GetMinX()" + "}" +
-                                //"|${" + $"{cweeMapBackground_ScriptVariable}.data.GetMinY()" + "}" +
-                                //"|${" + $"{cweeMapBackground_ScriptVariable}.data.GetMaxX()" + "}" +
-                                //"|${" + $"{cweeMapBackground_ScriptVariable}.data.GetMaxY()" + "}" +
-
-                                "\""
-                                , false
-                            ).Split("|").ToList();
-#endif
                             try
                             {
-                                if (splits.Count >= 10) // 14
-                                {
-                                    Windows.UI.Color minCol = new Color() { R = (byte)int.Parse(splits[0]), G = (byte)int.Parse(splits[1]), B = (byte)int.Parse(splits[2]), A = (byte)int.Parse(splits[3]) };
-                                    Windows.UI.Color maxCol = new Color() { R = (byte)int.Parse(splits[4]), G = (byte)int.Parse(splits[5]), B = (byte)int.Parse(splits[6]), A = (byte)int.Parse(splits[7]) };
-                                    float minValue = float.Parse(splits[8]);
-                                    float maxValue = float.Parse(splits[9]);
-                                    //double minX = double.Parse(splits[10]);
-                                    //double minY = double.Parse(splits[11]);
-                                    //double maxX = double.Parse(splits[12]);
-                                    //double maxY = double.Parse(splits[13]);
+                                Color_Interop minCol = cweeMapBackground.min_color;
+                                Color_Interop maxCol = cweeMapBackground.max_color;
+                                double minValue = cweeMapBackground.matrix.GetMinValue();
+                                double maxValue = cweeMapBackground.matrix.GetMaxValue();
 
-                                    var values = new List<float>(); // Edms.Data_GetMatrix(tempMatrix, longitude, latitude, longitudeRight, latitudeBottom, pixelWidth, pixelHeight).ToList();
+                                if (maxValue > minValue)
+                                {
+                                    vector_double values = cweeMapBackground.matrix.GetTimeSeries(longitude, latitude, longitudeRight, latitudeBottom, pixelWidth, pixelHeight);
 
                                     int n = values.Count;
                                     for (int y = 0; y < pixelHeight; y++)
@@ -1303,27 +1274,27 @@ namespace UWP_WaterWatch.Custom_Controls
                                                 {
                                                     v = (values[(y * pixelWidth) + x] - minValue) / (maxValue - minValue); // 0 - 1 between the min and max for this value
 
-                                                    pixelCol.A = minCol.A.Lerp(maxCol.A, v);
+                                                    pixelCol.A = (byte)(minCol.A.Lerp(maxCol.A, v));
 
                                                     v *= 3.0f;
 
                                                     if (v <= 1)
                                                     {
-                                                        pixelCol.R = minCol.R.Lerp(maxCol.R, v);
-                                                        pixelCol.G = minCol.G;
-                                                        pixelCol.B = minCol.B;
+                                                        pixelCol.R = (byte)(minCol.R.Lerp(maxCol.R, v));
+                                                        pixelCol.G = (byte)(minCol.G);
+                                                        pixelCol.B = (byte)(minCol.B);
                                                     }
                                                     else if (v <= 2)
                                                     {
-                                                        pixelCol.R = maxCol.R;
-                                                        pixelCol.G = minCol.G.Lerp(maxCol.G, v - 1);
-                                                        pixelCol.B = minCol.B;
+                                                        pixelCol.R = (byte)(maxCol.R);
+                                                        pixelCol.G = (byte)(minCol.G.Lerp(maxCol.G, v - 1.0));
+                                                        pixelCol.B = (byte)(minCol.B);
                                                     }
                                                     else
                                                     {
-                                                        pixelCol.R = maxCol.R;
-                                                        pixelCol.G = maxCol.G;
-                                                        pixelCol.B = minCol.B.Lerp(maxCol.B, v - 2);
+                                                        pixelCol.R = (byte)(maxCol.R);
+                                                        pixelCol.G = (byte)(maxCol.G);
+                                                        pixelCol.B = (byte)(minCol.B.Lerp(maxCol.B, v - 2.0));
                                                     }
 
                                                     bytes[byteIndex] = pixelCol.R;           // Red
@@ -1368,28 +1339,58 @@ namespace UWP_WaterWatch.Custom_Controls
                 {
                     _deferral.Complete();
                 }
-                // );
             }
 
-            ~CustomMapTileDataSourceWithTag()
-            {
-                if (Holder >= 0)
+            ~CustomMapTileDataSourceWithTag(){ }
+        }
+
+
+        public EdmsTasks.cweeTask StreamBackground(MapBackground_Interop matrix)
+        {
+            double minX = matrix.matrix.GetMinX()
+                , maxX = matrix.matrix.GetMaxX()
+                , minY = matrix.matrix.GetMinY()
+                , maxY = matrix.matrix.GetMaxY()
+            ;
+            AtomicInt locker = new AtomicInt();
+            return EdmsTasks.InsertJob(()=> {
+                if (this.IsLoaded)
                 {
-                    // Edms.submitToast("Deleting Matrix", $"{Holder}");
-                    //Edms.Data_DeleteMatrix(Holder);
-                    Holder = -1;
+                    locker.Increment();
                 }
-            }
-            public EdmsTasks.cweeTask Initialize()
-            {
-                //Holder = Edms.Data_CreateMatrix();
-                //return EdmsCalls.DoScript(
-                //    "try{" +
-                //        $"externalData.SetMatrix({Holder}, {Tag as string}.data);" +
-                //    "}catch(e){}"
-                //, true);
-                return null;
-            }
+                else {
+                    this.Loaded += (object sender, RoutedEventArgs e)=> { locker.Increment(); };
+                }
+                return EdmsTasks.cweeTask.ContinueWhenTrue(() => { if (locker.Increment() > 1) { locker.Decrement(); return true; } else { locker.Decrement(); return false; } }).ContinueWith(() => {
+                    // custom data source
+                    CustomMapTileDataSourceWithTag customDataSource = new CustomMapTileDataSourceWithTag() { Source = matrix };
+                    GeoboundingBox bound = new GeoboundingBox(new BasicGeoposition()
+                    {
+                        Longitude = minX,
+                        Latitude = maxY
+                    }, new BasicGeoposition()
+                    {
+                        Longitude = maxX,
+                        Latitude = minY
+                    });
+
+                    map.TileSources.Add(new MapTileSource(customDataSource)
+                    {
+                        TilePixelSize = CustomMapTileDataSourceWithTag.pixelsPerPage
+                        ,
+                        AllowOverstretch = true
+                        ,
+                        IsFadingEnabled = false
+                        ,
+                        Layer = MapTileLayer.AreaOverlay
+                        // , ZoomLevelRange = new MapZoomLevelRange() { Min = 12, Max = 18 }
+                        ,
+                        Bounds = bound
+                    });
+                    customDataSource.BitmapRequested += CustomMapTileDataSourceWithTag.QueueBitMapStream;
+
+                }, true);
+            }, true);
         }
     }
 

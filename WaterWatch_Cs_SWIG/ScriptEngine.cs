@@ -123,6 +123,12 @@ public class ScriptEngine : global::System.IDisposable {
     return ret;
   }
 
+  public MapBackground_Interop Cast_MapBackground(string command) {
+    MapBackground_Interop ret = new MapBackground_Interop(ConvPINVOKE.ScriptEngine_Cast_MapBackground(swigCPtr, command), true);
+    if (ConvPINVOKE.SWIGPendingException.Pending) throw ConvPINVOKE.SWIGPendingException.Retrieve();
+    return ret;
+  }
+
   public MapLayer_Interop Cast_MapLayer(string command) {
     MapLayer_Interop ret = new MapLayer_Interop(ConvPINVOKE.ScriptEngine_Cast_MapLayer(swigCPtr, command), true);
     if (ConvPINVOKE.SWIGPendingException.Pending) throw ConvPINVOKE.SWIGPendingException.Retrieve();

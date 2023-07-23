@@ -108,7 +108,14 @@ public:
 		}
 		return out;
 	};
-
+	cweeInterpolatedMatrix<float>* GetMatrixRef(int index) {
+		cweeInterpolatedMatrix<float>* out = nullptr;
+		cweeUnorderedListReferenceObject< cweeInterpolatedMatrix<float> > safeContainer(matrixes, index);
+		if (safeContainer) {
+			out = &*safeContainer;
+		}
+		return out;
+	};
 	cweeStr* GetStringRef(int index) {
 		cweeStr* out = nullptr;
 		cweeUnorderedListReferenceObject< cweeStr > safeContainer(strings, index);

@@ -51,6 +51,38 @@ std::string Awaiter::Result() { if (this->data_m) return *this->data_m; return "
 #pragma endregion
 
 #pragma region Shared Data
+
+SharedMatrix::SharedMatrix() : index_p(external_data->CreateMatrix()), ptr(nullptr) {
+	ptr = cweeSharedPtr<void>(cweeSharedPtr<bool>(new bool(), [=](bool* d) { delete d; external_data->DeleteMatrix(index_p); }), [](void* p) { return p; });
+};
+SharedMatrix::SharedMatrix(int index, bool deleteDataWhenScopeEnds) : index_p(index), ptr(nullptr) {
+	if (deleteDataWhenScopeEnds) {
+		ptr = cweeSharedPtr<void>(cweeSharedPtr<bool>(new bool(), [=](bool* d) { delete d; external_data->DeleteMatrix(index_p); }), [](void* p) { return p; });
+	}	
+};
+SharedMatrix::~SharedMatrix() { 
+	ptr = cweeSharedPtr<void>(cweeSharedPtr<bool>(new bool(), [=](bool* d) { delete d; external_data->DeleteMatrix(index_p); }), [](void* p) { return p; });
+};
+void    SharedMatrix::Clear() { external_data->ClearMatrix(index_p); };
+void    SharedMatrix::AppendData(double X, double Y, float value) { external_data->AppendData(index_p, X, Y, value); };
+double  SharedMatrix::GetValue(double X, double Y) { return (double)external_data->GetValue(index_p, X, Y); };
+std::vector<double> SharedMatrix::GetTimeSeries(double Left, double Top, double Right, double Bottom, int numColumns, int numRows) {
+	std::vector<double> out;
+	AUTO v = external_data->GetMatrix(index_p, Left, Top, Right, Bottom, numColumns, numRows);
+	out.reserve(v.size() + 1);
+	for (auto& x : v) out.push_back(x);
+	return out;
+};
+double  SharedMatrix::GetMinX() { return external_data->GetMatrixRef(index_p)->GetMinX(); };
+double  SharedMatrix::GetMaxX() { return external_data->GetMatrixRef(index_p)->GetMaxX(); };
+double  SharedMatrix::GetMinY() { return external_data->GetMatrixRef(index_p)->GetMinY(); };
+double  SharedMatrix::GetMaxY() { return external_data->GetMatrixRef(index_p)->GetMaxY(); };
+double  SharedMatrix::GetMinValue() { return external_data->GetMatrixRef(index_p)->GetMinValue(); };
+double  SharedMatrix::GetMaxValue() { return external_data->GetMatrixRef(index_p)->GetMaxValue(); };
+int     SharedMatrix::GetNumValues() { return external_data->GetMatrixRef(index_p)->Num(); };
+int     SharedMatrix::Index() { return index_p; };
+
+
 SharedTimeSeriesPattern::SharedTimeSeriesPattern() : index_p(external_data->CreatePattern()), deleteDataWhenScopeEnds_p(true) {};
 SharedTimeSeriesPattern::SharedTimeSeriesPattern(int index, bool deleteDataWhenScopeEnds) : index_p(index), deleteDataWhenScopeEnds_p(deleteDataWhenScopeEnds) {};
 SharedTimeSeriesPattern::~SharedTimeSeriesPattern() {
@@ -895,6 +927,22 @@ MapPolyline_Interop ScriptEngine::Cast_MapPolyline(std::string command) {
 
 		out.coordinates.reserve(val->coordinates.size() + 1);
 		for (auto& x : val->coordinates) { out.coordinates.push_back(Pair<double, double>(x.first, x.second)); }
+	}
+	return out;
+};
+MapBackground_Interop ScriptEngine::Cast_MapBackground(std::string command) {
+	cweeSharedPtr<chaiscript::WaterWatch_ChaiScript> engine(ptr, [](void* p) { return static_cast<chaiscript::WaterWatch_ChaiScript*>(p); });
+
+	AUTO bv = engine->eval(command.c_str(), chaiscript::Exception_Handler());
+	MapBackground_Interop out;
+	AUTO val = chaiscript::boxed_cast<chaiscript::UI_MapBackground*>(bv);
+	if (val) {
+		int matrixIndex = external_data->CreateMatrix();
+		external_data->SetMatrix(matrixIndex, val->data);
+
+		out.matrix = SharedMatrix(matrixIndex, true); // this will clean-up the shared data container data when finished.
+		out.min_color = Color_Interop(val->minColor.R, val->minColor.G, val->minColor.B, val->minColor.A);
+		out.max_color = Color_Interop(val->maxColor.R, val->maxColor.G, val->maxColor.B, val->maxColor.A);
 	}
 	return out;
 };

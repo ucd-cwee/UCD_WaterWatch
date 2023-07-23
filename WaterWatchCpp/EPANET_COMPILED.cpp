@@ -4306,8 +4306,11 @@ namespace epanet {
             Times* time = &pr->times;
 
             u64 currentTime = (u64)pr->times.GetCurrentRealHtime();
-            units::time::second_t t;
-            if (simQuality == HydraulicSimulationQuality::HIGHRES) {
+            units::time::second_t t(0);
+            if (simQuality == HydraulicSimulationQuality::HIGHESTRES) {
+                t = 0; // units::math::fmod(time->Htime, time->Rstep);
+            }
+            else if (simQuality == HydraulicSimulationQuality::HIGHRES) {
                 t = units::math::fmod(time->Htime, time->Rstep_JunctionsPipes);
             }
             else {

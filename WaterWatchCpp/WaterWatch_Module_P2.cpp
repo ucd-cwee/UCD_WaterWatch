@@ -190,6 +190,34 @@ namespace chaiscript {
                 lib->add(chaiscript::fun([](cweeUnitPattern& a) { a.RemoveUnnecessaryKnots(); }), "RemoveUnnecessaryKnots");
                 lib->add(chaiscript::fun([](cweeUnitPattern& a, const unit_value& min, const unit_value& max) { a.ClampValues(min, max); }), "ClampValues");
 
+                lib->AddFunction(, GetValueQuantiles, ->std::vector<chaiscript::Boxed_Value>, SINGLE_ARG(
+                    std::vector<chaiscript::Boxed_Value> out; for (auto& x : a.GetValueQuantiles(std::vector<double>({ 0.01, 0.05, 0.5, 0.95, 0.99 }))) { out.push_back(var(cweeUnitValues::unit_value(x))); } return out;
+                ), cweeUnitPattern const& a);
+                lib->AddFunction(, GetValueQuantiles, ->std::vector<chaiscript::Boxed_Value>, SINGLE_ARG(
+                    std::vector<chaiscript::Boxed_Value> out; for (auto& x : a.GetValueQuantiles(std::vector<double>({ q1 }))) { out.push_back(var(cweeUnitValues::unit_value(x))); } return out;
+                ), cweeUnitPattern const& a, const double& q1);
+                lib->AddFunction(, GetValueQuantiles, ->std::vector<chaiscript::Boxed_Value>, SINGLE_ARG(
+                    std::vector<chaiscript::Boxed_Value> out; for (auto& x : a.GetValueQuantiles(std::vector<double>({ q1, q2 }))) { out.push_back(var(cweeUnitValues::unit_value(x))); } return out;
+                ), cweeUnitPattern const& a, const double& q1, const double& q2);
+                lib->AddFunction(, GetValueQuantiles, ->std::vector<chaiscript::Boxed_Value>, SINGLE_ARG(
+                    std::vector<chaiscript::Boxed_Value> out; for (auto& x : a.GetValueQuantiles(std::vector<double>({ q1, q2, q3 }))) { out.push_back(var(cweeUnitValues::unit_value(x))); } return out;
+                ), cweeUnitPattern const& a, const double& q1, const double& q2, const double& q3);
+                lib->AddFunction(, GetValueQuantiles, ->std::vector<chaiscript::Boxed_Value>, SINGLE_ARG(
+                    std::vector<chaiscript::Boxed_Value> out; for (auto& x : a.GetValueQuantiles(std::vector<double>({ q1, q2, q3, q4 }))) { out.push_back(var(cweeUnitValues::unit_value(x))); } return out;
+                ), cweeUnitPattern const& a, const double& q1, const double& q2, const double& q3, const double& q4);
+                lib->AddFunction(, GetValueQuantiles, ->std::vector<chaiscript::Boxed_Value>, SINGLE_ARG(
+                    std::vector<chaiscript::Boxed_Value> out; for (auto& x : a.GetValueQuantiles(std::vector<double>({ q1, q2, q3, q4, q5 }))) { out.push_back(var(cweeUnitValues::unit_value(x))); } return out;
+                ), cweeUnitPattern const& a, const double& q1, const double& q2, const double& q3, const double& q4, const double& q5);
+                lib->AddFunction(, GetValueQuantiles, ->std::vector<chaiscript::Boxed_Value>, SINGLE_ARG(
+                    std::vector<chaiscript::Boxed_Value> out; for (auto& x : a.GetValueQuantiles(std::vector<double>({ q1, q2, q3, q4, q5, q6 }))) { out.push_back(var(cweeUnitValues::unit_value(x))); } return out;
+                ), cweeUnitPattern const& a, const double& q1, const double& q2, const double& q3, const double& q4, const double& q5, const double& q6);
+                lib->AddFunction(, GetValueQuantiles, ->std::vector<chaiscript::Boxed_Value>, SINGLE_ARG(
+                    std::vector<chaiscript::Boxed_Value> out; for (auto& x : a.GetValueQuantiles(std::vector<double>({ q1, q2, q3, q4, q5, q6, q7 }))) { out.push_back(var(cweeUnitValues::unit_value(x))); } return out;
+                ), cweeUnitPattern const& a, const double& q1, const double& q2, const double& q3, const double& q4, const double& q5, const double& q6, const double& q7);
+                lib->AddFunction(, GetValueQuantiles, ->std::vector<chaiscript::Boxed_Value>, SINGLE_ARG(
+                    std::vector<chaiscript::Boxed_Value> out; for (auto& x : a.GetValueQuantiles(std::vector<double>({ q1, q2, q3, q4, q5, q6, q7, q8 }))) { out.push_back(var(cweeUnitValues::unit_value(x))); } return out;
+                ), cweeUnitPattern const& a, const double& q1, const double& q2, const double& q3, const double& q4, const double& q5, const double& q6, const double& q7, const double& q8);
+
                 lib->add(chaiscript::fun([](cweeUnitPattern& a) { return a.GetMinTime(); }), "GetMinTime");
                 lib->add(chaiscript::fun([](cweeUnitPattern& a) { return a.GetAvgTime(); }), "GetAvgTime");
                 lib->add(chaiscript::fun([](cweeUnitPattern& a) { return a.GetMaxTime(); }), "GetMaxTime");
@@ -236,10 +264,59 @@ namespace chaiscript {
 
                 lib->add(chaiscript::fun([](const cweeUnitPattern& a, const unit_value& b) { return a.pow(b); }), "^");
 
+                lib->add(chaiscript::fun([](cweeUnitPattern& a, const unit_value& from, const unit_value& to) { a.RemoveTimes(from, to); }), "RemoveTimes");
                 lib->add(chaiscript::fun([](const cweeUnitPattern& a, const cweeUnitPattern& b) { return a.R_Squared(b); }), "R_Squared");
                 lib->add(chaiscript::fun([](const cweeUnitPattern& a) { 
                     return (((a - a.GetAvgValue()).pow(2.0)).GetAvgValue()).pow(0.5);
                 }), "StdDev");
+                AUTO blur_pattern = [](cweeUnitPattern a, const cweeUnitValues::unit_value& scale){
+                    AUTO out = cweeUnitPattern(a);
+                    AUTO num = 1;
+
+                    AUTO t = scale / -2.0;
+                    for (; t <= scale / 2.0; t += scale / 100.0) {
+                        ++num;
+                    }
+
+                    auto pat = cweeUnitPattern(a) / num;
+                    out /= num;
+
+                    t = scale / -2.0;
+                    pat.ShiftTime(t);
+                    for (; t <= scale / 2.0; t += scale / 100.0) {
+                        out += pat;
+                        pat.ShiftTime(scale / 100.0);
+                    }
+                    if (num >= 1) {
+                        out /= num;
+                    }
+
+                    // Remove the values outside the valid range
+                    out.RemoveTimes(-std::numeric_limits<double>::max(), a.GetMinTime() - 0.0001);
+                    out.RemoveTimes(a.GetMaxTime() + 0.0001, std::numeric_limits<double>::max());
+                    out.RemoveUnnecessaryKnots();
+
+                    // Correct the avg/integral
+                    {
+                        AUTO t1 = a.RombergIntegral();
+                        AUTO t2 = out.RombergIntegral();
+                        if (t2 != 0) {
+                            out *= t1 / t2;
+                        }
+                    }
+                    return out;
+                };
+                
+                lib->add(chaiscript::fun([=](const cweeUnitPattern& a) {
+                    AUTO pat = blur_pattern(a, a.GetMinimumTimeStep() * 4.0);
+                    pat.RemoveUnnecessaryKnots();
+                    return pat;
+                }), "Blur");
+                lib->add(chaiscript::fun([=](const cweeUnitPattern& a, const cweeUnitValues::unit_value& scale) {
+                    AUTO pat = blur_pattern(a, scale);
+                    pat.RemoveUnnecessaryKnots();
+                    return pat;
+                }), "Blur");
 
                 lib->add(chaiscript::fun([](cweeUnitPattern const& a) { return a.X_Type(); }), "X");
                 lib->add(chaiscript::fun([](cweeUnitPattern const& a) { return a.Y_Type(); }), "Y");
@@ -302,11 +379,18 @@ namespace chaiscript {
             if(1) {
                 chaiscript::dispatch::Dynamic_Object o;
                 o["CreatePattern"] = chaiscript::var(chaiscript::fun([]() { return external_data->CreatePattern(); }));
-                o["SetPattern"] = chaiscript::var(chaiscript::fun([](int index, cweeUnitValues::cweeUnitPattern const& p) { external_data->SetPattern(index, p); }));
+                o["SetPattern"] = chaiscript::var(chaiscript::fun([](int index, cweeUnitValues::cweeUnitPattern const& p) { external_data->SetPattern(index, p); return index; }));
                 o["GetPattern"] = chaiscript::var(chaiscript::fun([](int index) { return external_data->GetPatternRef(index); }));
                 o["DeletePattern"]  = chaiscript::var(chaiscript::fun([](int index) { return external_data->DeletePattern(index); }));
 
+                o["CreateMatrix"] = chaiscript::var(chaiscript::fun([]() { return external_data->CreateMatrix(); }));
+                o["SetMatrix"] = chaiscript::var(chaiscript::fun([](int index, cweeInterpolatedMatrix<float> const& p) { external_data->SetMatrix(index, p); return index; }));
+                o["GetMatrix"] = chaiscript::var(chaiscript::fun([](int index) { return external_data->GetMatrixRef(index); }));
+                o["DeleteMatrix"] = chaiscript::var(chaiscript::fun([](int index) { return external_data->DeleteMatrix(index); }));
+
+
                 o["CreateString"] = chaiscript::var(chaiscript::fun([]() { return external_data->CreateString(); }));
+                o["SetString"] = chaiscript::var(chaiscript::fun([](int index, cweeStr const& p) { *external_data->GetStringRef(index) = p; return index; }));
                 o["GetString"] = chaiscript::var(chaiscript::fun([](int index) { return external_data->GetStringRef(index); }));
                 o["DeleteString"] = chaiscript::var(chaiscript::fun([](int index) { return external_data->DeleteString(index); }));
 

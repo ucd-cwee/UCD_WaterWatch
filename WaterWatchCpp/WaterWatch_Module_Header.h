@@ -23,6 +23,7 @@ to maintain a single distribution point for the source code.
 #include "Strings.h"
 #include "List.h"
 #include "cweeScheduler.h"
+#include "InterpolatedMatrix.h"
 
 // Async Support
 namespace chaiscript {
@@ -146,6 +147,7 @@ namespace chaiscript {
 namespace chaiscript {
 #define AddMemberToScriptFromClass(Name) scriptingLanguage.add(chaiscript::fun(static_cast<decltype(Name)(ThisType::*)>(&ThisType::Name)), #Name)
 #define AddFuncToScriptFromClass(Name) scriptingLanguage.add(chaiscript::fun(&ThisType::Name), #Name)
+
 #define AddBasicClassTemplate() { \
                         scriptingLanguage.add(chaiscript::user_type<ThisType>(), ThisTypeName()); \
                         scriptingLanguage.add(chaiscript::constructor<ThisType()>(), ThisTypeName()); \
@@ -981,7 +983,6 @@ namespace chaiscript {
             AddFuncToScriptFromClass(AddPoint);
         };
     };
-#if 0
     class UI_MapBackground final : public UI_MapElement {
     public:
         using ThisType = typename UI_MapBackground;
@@ -990,8 +991,14 @@ namespace chaiscript {
         UI_MapBackground() : data(cweeInterpolatedMatrix<float>()), minColor(UI_Color()), maxColor(UI_Color()) {};
         virtual ~UI_MapBackground() {};
         UI_Color	ColorForPosition(double X, double Y) {
-            float delta = (data.GetCurrentValue(X, Y) - data.GetMinValue()) / data.GetMaxValue(); // 0 to 1		
-            return minColor.Lerp(maxColor, delta);
+            AUTO maxV = data.GetMaxValue();
+            AUTO minV = data.GetMinValue();
+            if (maxV <= minV) {
+                return minColor;
+            }
+            else {
+                return minColor.Lerp(maxColor, (data.GetCurrentValue(X, Y) - minV) / (maxV - minV));
+            }
         };
 
         cweeInterpolatedMatrix<float> data;
@@ -1010,7 +1017,6 @@ namespace chaiscript {
             AddFuncToScriptFromClass(ColorForPosition);
         };
     };
-#endif
     class UI_MapLayer : public UI_MapElement {
     public:
         using ThisType = typename UI_MapLayer;
@@ -1044,16 +1050,20 @@ namespace chaiscript {
         virtual ~UI_Map() {};
 
         std::vector<chaiscript::Boxed_Value> Layers;
-
+        std::vector<chaiscript::Boxed_Value> Backgrounds;
         static void		AppendToScriptingLanguage(Module& scriptingLanguage) {
             AddBasicClassTemplate();
             scriptingLanguage.add(chaiscript::base_class<UI_FrameworkElement, ThisType>());
             scriptingLanguage.add(chaiscript::base_class<UI_MapElement, ThisType>());
 
             AddMemberToScriptFromClass(Layers);
+            AddMemberToScriptFromClass(Backgrounds);
             scriptingLanguage.eval(R"(
 			    def UI_Map::AddLayer(child) : child.is_type("UI_MapLayer") {
 				    this.Layers.push_back_ref(child);
+			    };
+			    def UI_Map::AddBackground(bg) : child.is_type("UI_MapBackground") {
+				    this.Backgrounds.push_back_ref(child);
 			    };
 		    )");
         };
@@ -1298,12 +1308,13 @@ namespace chaiscript {
 #undef OPT_FUNC_DIM
 };
 
-#define AddBasicClassTemplate(Type) { \
-                    lib->add(chaiscript::user_type<Type>(), #Type); \
-                    lib->add(chaiscript::constructor<Type()>(), #Type); \
-                    lib->add(chaiscript::constructor<Type(const Type&)>(), #Type); \
+#define AddBasicClassTemplate_SpecializedName(Type, Name) { \
+                    lib->add(chaiscript::user_type<Type>(), #Name); \
+                    lib->add(chaiscript::constructor<Type()>(), #Name); \
+                    lib->add(chaiscript::constructor<Type(const Type&)>(), #Name); \
                     lib->add(chaiscript::fun([](Type& a, const Type& b)->Type& { a = b; return a; }), "="); \
                 }
+#define AddBasicClassTemplate(Type) AddBasicClassTemplate_SpecializedName(Type, Type)
 #define AddBasicClassMember(Type, Member) { lib->add(chaiscript::fun(&##Type::##Member), #Member); }
 #define AddNamespacedClassTemplate(Namespace, Type) { \
                     lib->add(chaiscript::user_type<##Namespace::##Type>(), #Type); \

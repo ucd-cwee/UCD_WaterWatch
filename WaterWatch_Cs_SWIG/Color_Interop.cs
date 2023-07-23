@@ -56,6 +56,16 @@ public class Color_Interop : global::System.IDisposable {
     }
   }
 
+  public Color_Interop() : this(ConvPINVOKE.new_Color_Interop__SWIG_0(), true) {
+  }
+
+  public Color_Interop(Color_Interop arg0) : this(ConvPINVOKE.new_Color_Interop__SWIG_1(Color_Interop.getCPtr(arg0)), true) {
+    if (ConvPINVOKE.SWIGPendingException.Pending) throw ConvPINVOKE.SWIGPendingException.Retrieve();
+  }
+
+  public Color_Interop(double _R, double _G, double _B, double _A) : this(ConvPINVOKE.new_Color_Interop__SWIG_2(_R, _G, _B, _A), true) {
+  }
+
   public double R {
     set {
       ConvPINVOKE.Color_Interop_R_set(swigCPtr, value);
@@ -94,9 +104,6 @@ public class Color_Interop : global::System.IDisposable {
       double ret = ConvPINVOKE.Color_Interop_A_get(swigCPtr);
       return ret;
     } 
-  }
-
-  public Color_Interop() : this(ConvPINVOKE.new_Color_Interop(), true) {
   }
 
 }
