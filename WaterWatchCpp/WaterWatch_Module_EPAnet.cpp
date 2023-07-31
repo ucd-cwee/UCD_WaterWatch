@@ -123,6 +123,11 @@ namespace chaiscript {
                     AddSharedPtrClassMember(::epanet, Slink, Vertices);
                     AddSharedPtrClassFunction(::epanet, Slink, Area);
                     AddSharedPtrClassFunction(::epanet, Slink, IsBiDirectionalPipe);
+                    AddSharedPtrClassFunction(::epanet, Slink, X);
+                    AddSharedPtrClassFunction(::epanet, Slink, Y);
+                    AddSharedPtrClassFunction(::epanet, Slink, GetDownstreamNode);
+                    AddSharedPtrClassFunction(::epanet, Slink, GetUpstreamNode);
+                    AddSharedPtrClassFunction(::epanet, Slink, Zones);
                     lib->add(chaiscript::fun([](cweeSharedPtr < ::epanet::Slink> const& a) -> std::string { if (!a) throw(chaiscript::exception::eval_error("Cannot access a member of a null (empty) shared object.")); return (cweeStr(a->Type_p.ToString()) + " " + a->Name_p).c_str(); }), "to_string");
                     lib->add(chaiscript::castable_class<cweeSharedPtr<::epanet::Sasset>, cweeSharedPtr<::epanet::Slink>>());
                 }

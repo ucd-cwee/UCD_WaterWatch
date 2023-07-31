@@ -1864,7 +1864,7 @@ namespace UWP_WaterWatch.Custom_Controls
                                                                     {
                                                                         var toQuery = new SharedNodeResult() { result = res.result, additionalParams = res.additionalParams + ".Backgrounds[" + bgN.ToString() + "]" };
                                                                         tasks.Add(new EdmsTasks.cweeTask(() => {
-                                                                            return (EdmsTasks.cweeTask)(toQuery.result.Query_MapBackground());
+                                                                            return (EdmsTasks.cweeTask)(toQuery.result.Query_MapBackground(toQuery.additionalParams));
                                                                         }, false, true));
                                                                     }
 

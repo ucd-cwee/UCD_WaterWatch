@@ -2474,13 +2474,26 @@ namespace epanet {
             return false;
         };
         Pnode   GetDownstreamNode() const {
-            AUTO ptr = GetValue<_FLOW_>();
-            if (ptr) {
-                if (ptr->GetAvgValue() < 0_cfs) {
-                    return StartingNode;
+            if (IsBiDirectionalPipe()) {
+                AUTO ptr = GetValue<_FLOW_>();
+                if (ptr) {
+                    if (ptr->GetAvgValue() < 0_cfs) {
+                        return StartingNode;
+                    }
                 }
             }
             return EndingNode;
+        };
+        Pnode   GetUpstreamNode() const {
+            if (IsBiDirectionalPipe()) {
+                AUTO ptr = GetValue<_FLOW_>();
+                if (ptr) {
+                    if (ptr->GetAvgValue() < 0_cfs) {
+                        return EndingNode;
+                    }
+                }
+            }
+            return StartingNode;
         };
         virtual cweeStr Icon() const noexcept override { 
             if (Type == LinkType::CVPIPE) {
