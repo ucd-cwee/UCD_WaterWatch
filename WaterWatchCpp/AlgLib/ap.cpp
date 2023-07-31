@@ -184,9 +184,9 @@ typedef struct
  * Error tracking facilities; this fields are modified every time ae_set_error_flag()
  * is called with non-zero cond. Thread unsafe access, but it does not matter actually.
  */
-static const char * sef_file  = "";
-static int          sef_line  = 0;
-static const char * sef_xdesc = "";
+static constexpr const char * sef_file  = "";
+static constexpr int          sef_line  = 0;
+static constexpr const char * sef_xdesc = "";
 
 /*
  * Global flags, split into several char-sized variables in order
@@ -264,9 +264,9 @@ ae_int_t    _malloc_failure_after = 0;
 #define ALGLIB_TRACE_FILE 1
 #define ALGLIB_TRACE_TAGS_LEN 2048
 #define ALGLIB_TRACE_BUFFER_LEN (ALGLIB_TRACE_TAGS_LEN+2+1)
-static ae_int_t  alglib_trace_type = ALGLIB_TRACE_NONE;
-FILE            *alglib_trace_file = NULL;
-static ae_bool   alglib_fclose_trace = ae_false;
+static constexpr ae_int_t  alglib_trace_type = ALGLIB_TRACE_NONE;
+static FILE            *alglib_trace_file = NULL;
+static constexpr ae_bool   alglib_fclose_trace = ae_false;
 static char      alglib_trace_tags[ALGLIB_TRACE_BUFFER_LEN];
 
 /*
@@ -487,9 +487,9 @@ void ae_set_error_flag(ae_bool *p_flag, ae_bool cond, const char *filename, int 
     if( cond )
     {
         *p_flag = ae_true;
-        sef_file = filename;
-        sef_line = lineno;
-        sef_xdesc= xdesc;
+        // sef_file = filename;
+        // sef_line = lineno;
+        // sef_xdesc= xdesc;
 #ifdef ALGLIB_ABORT_ON_ERROR_FLAG
         printf("[ALGLIB] aborting on ae_set_error_flag(cond=true)\n");
         printf("[ALGLIB] %s:%d\n", filename, lineno);
@@ -2984,34 +2984,34 @@ IMPORTANT: this function is NOT thread-safe!  Calling  it  from  multiple
 ************************************************************************/
 void ae_trace_file(const char *tags, const char *filename)
 {
-    /*
-     * clean up previous call
-     */
-    if( alglib_fclose_trace )
-    {
-        if( alglib_trace_file!=NULL )
-            fclose(alglib_trace_file);
-        alglib_trace_file = NULL;
-        alglib_fclose_trace = ae_false;
-    }
-    
-    /*
-     * store ",tags," to buffer. Leading and trailing commas allow us
-     * to perform checks for various tags by simply calling strstr().
-     */
-    memset(alglib_trace_tags, 0, ALGLIB_TRACE_BUFFER_LEN);
-    strcat(alglib_trace_tags, ",");
-    strncat(alglib_trace_tags, tags, ALGLIB_TRACE_TAGS_LEN);
-    strcat(alglib_trace_tags, ",");
-    for(int i=0; alglib_trace_tags[i]!=0; i++)
-        alglib_trace_tags[i] = (char)tolower((int)alglib_trace_tags[i]);
-    
-    /*
-     * set up trace
-     */
-    alglib_trace_type = ALGLIB_TRACE_FILE;
-    alglib_trace_file = fopen(filename, "ab");
-    alglib_fclose_trace = ae_true;
+    ///*
+    // * clean up previous call
+    // */
+    //if( alglib_fclose_trace )
+    //{
+    //    if( alglib_trace_file!=NULL )
+    //        fclose(alglib_trace_file);
+    //    alglib_trace_file = NULL;
+    //    alglib_fclose_trace = ae_false;
+    //}
+    //
+    ///*
+    // * store ",tags," to buffer. Leading and trailing commas allow us
+    // * to perform checks for various tags by simply calling strstr().
+    // */
+    //memset(alglib_trace_tags, 0, ALGLIB_TRACE_BUFFER_LEN);
+    //strcat(alglib_trace_tags, ",");
+    //strncat(alglib_trace_tags, tags, ALGLIB_TRACE_TAGS_LEN);
+    //strcat(alglib_trace_tags, ",");
+    //for(int i=0; alglib_trace_tags[i]!=0; i++)
+    //    alglib_trace_tags[i] = (char)tolower((int)alglib_trace_tags[i]);
+    //
+    ///*
+    // * set up trace
+    // */
+    //alglib_trace_type = ALGLIB_TRACE_FILE;
+    //alglib_trace_file = fopen(filename, "ab");
+    //alglib_fclose_trace = ae_true;
 }
 
 /************************************************************************
@@ -3019,11 +3019,11 @@ Disables tracing
 ************************************************************************/
 void ae_trace_disable()
 {
-    alglib_trace_type = ALGLIB_TRACE_NONE;
-    if( alglib_fclose_trace )
-        fclose(alglib_trace_file);
-    alglib_trace_file = NULL;
-    alglib_fclose_trace = ae_false;
+    //alglib_trace_type = ALGLIB_TRACE_NONE;
+    //if( alglib_fclose_trace )
+    //    fclose(alglib_trace_file);
+    //alglib_trace_file = NULL;
+    //alglib_fclose_trace = ae_false;
 }
 
 /************************************************************************

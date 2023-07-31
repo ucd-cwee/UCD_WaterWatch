@@ -15,7 +15,6 @@
     <ProjectCapability Include="SourceItemsFromImports" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="$(MSBuildThisFileDirectory)AlgLibWrapper.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)AppLayerRequests.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)BalancedPattern.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)BalancedTree.h" />

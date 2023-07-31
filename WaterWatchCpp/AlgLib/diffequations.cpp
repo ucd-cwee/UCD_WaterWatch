@@ -559,9 +559,9 @@ void odesolverresults(const odesolverstate &state, ae_int_t &m, real_1d_array &x
 namespace alglib_impl
 {
 #if defined(AE_COMPILE_ODESOLVER) || !defined(AE_PARTIAL_BUILD)
-static double odesolver_odesolvermaxgrow = 3.0;
-static double odesolver_odesolvermaxshrink = 10.0;
-static double odesolver_odesolverguaranteeddecay = 0.9;
+static constexpr double odesolver_odesolvermaxgrow = 3.0;
+static constexpr double odesolver_odesolvermaxshrink = 10.0;
+static constexpr double odesolver_odesolverguaranteeddecay = 0.9;
 static void odesolver_odesolverinit(ae_int_t solvertype,
      /* Real    */ ae_vector* y,
      ae_int_t n,

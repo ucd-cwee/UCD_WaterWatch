@@ -18735,10 +18735,10 @@ namespace alglib_impl
 
 #endif
 #if defined(AE_COMPILE_OPTSERV) || !defined(AE_PARTIAL_BUILD)
-static double optserv_ognoiselevelf = 1.0E2*ae_machineepsilon;
-static double optserv_ognoiselevelg = 1.0E4*ae_machineepsilon;
-static double optserv_ogminrating0 = 50.0;
-static double optserv_ogminrating1 = 50.0;
+static constexpr double optserv_ognoiselevelf = 1.0E2*ae_machineepsilon;
+static constexpr double optserv_ognoiselevelg = 1.0E4*ae_machineepsilon;
+static constexpr double optserv_ogminrating0 = 50.0;
+static constexpr double optserv_ogminrating1 = 50.0;
 static double optserv_feasibilityerror(/* Real    */ ae_matrix* ce,
      /* Real    */ ae_vector* x,
      ae_int_t nmain,
@@ -18796,14 +18796,14 @@ static void optserv_recomputelowrankdiagonal(xbfgshessian* hess,
 
 #endif
 #if defined(AE_COMPILE_MINLBFGS) || !defined(AE_PARTIAL_BUILD)
-static double minlbfgs_gtol = 0.4;
+static constexpr double minlbfgs_gtol = 0.4;
 static void minlbfgs_clearrequestfields(minlbfgsstate* state,
      ae_state *_state);
 
 
 #endif
 #if defined(AE_COMPILE_CQMODELS) || !defined(AE_PARTIAL_BUILD)
-static ae_int_t cqmodels_newtonrefinementits = 3;
+static constexpr ae_int_t cqmodels_newtonrefinementits = 3;
 static ae_bool cqmodels_cqmrebuild(convexquadraticmodel* s,
      ae_state *_state);
 static void cqmodels_cqmsolveea(convexquadraticmodel* s,
@@ -18856,9 +18856,9 @@ static void snnls_trdfixvariable(/* Real    */ ae_vector* trdd,
 
 #endif
 #if defined(AE_COMPILE_SACTIVESETS) || !defined(AE_PARTIAL_BUILD)
-static ae_int_t sactivesets_maxbasisage = 5;
-static double sactivesets_maxbasisdecay = 0.01;
-static double sactivesets_minnormseparation = 0.25;
+static constexpr ae_int_t sactivesets_maxbasisage = 5;
+static constexpr double sactivesets_maxbasisdecay = 0.01;
+static constexpr double sactivesets_minnormseparation = 0.25;
 static void sactivesets_constraineddescent(sactiveset* state,
      /* Real    */ ae_vector* g,
      /* Real    */ ae_vector* h,
@@ -18874,8 +18874,8 @@ static void sactivesets_reactivateconstraints(sactiveset* state,
 
 #endif
 #if defined(AE_COMPILE_QQPSOLVER) || !defined(AE_PARTIAL_BUILD)
-static ae_int_t qqpsolver_quickqprestartcg = 50;
-static double qqpsolver_regz = 1.0E-9;
+static constexpr ae_int_t qqpsolver_quickqprestartcg = 50;
+static constexpr double qqpsolver_regz = 1.0E-9;
 static double qqpsolver_projectedtargetfunction(qqpbuffers* sstate,
      /* Real    */ ae_vector* x,
      /* Real    */ ae_vector* d,
@@ -18926,8 +18926,8 @@ static ae_bool qqpsolver_cnewtonstep(qqpbuffers* sstate,
 
 #endif
 #if defined(AE_COMPILE_QPDENSEAULSOLVER) || !defined(AE_PARTIAL_BUILD)
-static double qpdenseaulsolver_evictionlevel = -0.01;
-static double qpdenseaulsolver_expansionratio = 0.20;
+static constexpr double qpdenseaulsolver_evictionlevel = -0.01;
+static constexpr double qpdenseaulsolver_expansionratio = 0.20;
 static void qpdenseaulsolver_generateexmodel(/* Real    */ ae_matrix* sclsfta,
      /* Real    */ ae_vector* sclsftb,
      ae_int_t nmain,
@@ -19008,12 +19008,12 @@ static void qpdenseaulsolver_selectinitialworkingset(/* Real    */ ae_matrix* a,
 
 #endif
 #if defined(AE_COMPILE_MINBLEIC) || !defined(AE_PARTIAL_BUILD)
-static double minbleic_gtol = 0.4;
-static double minbleic_maxnonmonotoniclen = 1.0E-7;
-static double minbleic_initialdecay = 0.5;
-static double minbleic_mindecay = 0.1;
-static double minbleic_decaycorrection = 0.8;
-static double minbleic_penaltyfactor = 100;
+static constexpr double minbleic_gtol = 0.4;
+static constexpr double minbleic_maxnonmonotoniclen = 1.0E-7;
+static constexpr double minbleic_initialdecay = 0.5;
+static constexpr double minbleic_mindecay = 0.1;
+static constexpr double minbleic_decaycorrection = 0.8;
+static constexpr double minbleic_penaltyfactor = 100;
 static void minbleic_clearrequestfields(minbleicstate* state,
      ae_state *_state);
 static void minbleic_minbleicinitinternal(ae_int_t n,
@@ -19032,27 +19032,27 @@ static void minbleic_updateestimateofgoodstep(double* estimate,
 
 #endif
 #if defined(AE_COMPILE_VIPMSOLVER) || !defined(AE_PARTIAL_BUILD)
-static ae_int_t vipmsolver_maxipmits = 200;
-static double vipmsolver_initslackval = 100.0;
-static double vipmsolver_steplengthdecay = 0.95;
-static double vipmsolver_stagnationdelta = 0.99999;
-static double vipmsolver_primalinfeasible1 = 1.0E-3;
-static double vipmsolver_dualinfeasible1 = 1.0E-3;
-static double vipmsolver_bigy = 1.0E8;
-static double vipmsolver_ygrowth = 1.0E6;
-static ae_int_t vipmsolver_phase0length = 10;
-static ae_int_t vipmsolver_itersfortoostringentcond = 25;
-static ae_int_t vipmsolver_minitersbeforedroppingbounds = 3;
-static ae_int_t vipmsolver_minitersbeforeinfeasible = 3;
-static ae_int_t vipmsolver_minitersbeforestagnation = 5;
-static ae_int_t vipmsolver_minitersbeforeeworststagnation = 50;
-static ae_int_t vipmsolver_primalstagnationlen = 5;
-static ae_int_t vipmsolver_dualstagnationlen = 7;
-static double vipmsolver_bigconstrxtol = 1.0E-5;
-static double vipmsolver_bigconstrmag = 1.0E3;
-static double vipmsolver_minitersbeforesafeguards = 5;
-static double vipmsolver_badsteplength = 1.0E-3;
-static ae_int_t vipmsolver_maxrefinementits = 5;
+static constexpr ae_int_t vipmsolver_maxipmits = 200;
+static constexpr double vipmsolver_initslackval = 100.0;
+static constexpr double vipmsolver_steplengthdecay = 0.95;
+static constexpr double vipmsolver_stagnationdelta = 0.99999;
+static constexpr double vipmsolver_primalinfeasible1 = 1.0E-3;
+static constexpr double vipmsolver_dualinfeasible1 = 1.0E-3;
+static constexpr double vipmsolver_bigy = 1.0E8;
+static constexpr double vipmsolver_ygrowth = 1.0E6;
+static constexpr ae_int_t vipmsolver_phase0length = 10;
+static constexpr ae_int_t vipmsolver_itersfortoostringentcond = 25;
+static constexpr ae_int_t vipmsolver_minitersbeforedroppingbounds = 3;
+static constexpr ae_int_t vipmsolver_minitersbeforeinfeasible = 3;
+static constexpr ae_int_t vipmsolver_minitersbeforestagnation = 5;
+static constexpr ae_int_t vipmsolver_minitersbeforeeworststagnation = 50;
+static constexpr ae_int_t vipmsolver_primalstagnationlen = 5;
+static constexpr ae_int_t vipmsolver_dualstagnationlen = 7;
+static constexpr double vipmsolver_bigconstrxtol = 1.0E-5;
+static constexpr double vipmsolver_bigconstrmag = 1.0E3;
+static constexpr double vipmsolver_minitersbeforesafeguards = 5;
+static constexpr double vipmsolver_badsteplength = 1.0E-3;
+static constexpr ae_int_t vipmsolver_maxrefinementits = 5;
 static void vipmsolver_varsinitbyzero(vipmvars* vstate,
      ae_int_t n,
      ae_int_t m,
@@ -19241,11 +19241,11 @@ static double vipmsolver_maxprodnz(/* Real    */ ae_vector* x,
 
 #endif
 #if defined(AE_COMPILE_MINLM) || !defined(AE_PARTIAL_BUILD)
-static double minlm_lambdaup = 2.0;
-static double minlm_lambdadown = 0.33;
-static double minlm_suspiciousnu = 16;
-static ae_int_t minlm_smallmodelage = 3;
-static ae_int_t minlm_additers = 5;
+static constexpr double minlm_lambdaup = 2.0;
+static constexpr double minlm_lambdadown = 0.33;
+static constexpr double minlm_suspiciousnu = 16;
+static constexpr ae_int_t minlm_smallmodelage = 3;
+static constexpr ae_int_t minlm_additers = 5;
 static void minlm_lmprepare(ae_int_t n,
      ae_int_t m,
      ae_bool havegrad,
@@ -19306,8 +19306,8 @@ static ae_bool minlm_minlmstepfinderiteration(minlmstepfinder* state,
 
 #endif
 #if defined(AE_COMPILE_MINCG) || !defined(AE_PARTIAL_BUILD)
-static ae_int_t mincg_rscountdownlen = 10;
-static double mincg_gtol = 0.3;
+static constexpr ae_int_t mincg_rscountdownlen = 10;
+static constexpr double mincg_gtol = 0.3;
 static void mincg_clearrequestfields(mincgstate* state, ae_state *_state);
 static void mincg_preconditionedmultiply(mincgstate* state,
      /* Real    */ ae_vector* x,
@@ -19328,22 +19328,22 @@ static void mincg_mincginitinternal(ae_int_t n,
 
 #endif
 #if defined(AE_COMPILE_NLCSQP) || !defined(AE_PARTIAL_BUILD)
-static double nlcsqp_sqpdeltadecrease = 0.20;
-static double nlcsqp_sqpdeltaincrease = 0.80;
-static double nlcsqp_maxtrustraddecay = 0.1;
-static double nlcsqp_maxtrustradgrowth = 1.333;
-static double nlcsqp_maxbigc = 1.0E5;
-static double nlcsqp_meritfunctionbase = 0.0;
-static double nlcsqp_meritfunctiongain = 2.0;
-static double nlcsqp_augmentationfactor = 10.0;
-static double nlcsqp_inittrustrad = 0.1;
-static double nlcsqp_stagnationepsf = 1.0E-12;
-static ae_int_t nlcsqp_fstagnationlimit = 20;
-static ae_int_t nlcsqp_trustradstagnationlimit = 10;
-static double nlcsqp_sqpbigscale = 5.0;
-static double nlcsqp_sqpsmallscale = 0.2;
-static ae_int_t nlcsqp_penaltymemlen = 5;
-static ae_int_t nlcsqp_defaultbfgsresetfreq = 999999;
+static constexpr double nlcsqp_sqpdeltadecrease = 0.20;
+static constexpr double nlcsqp_sqpdeltaincrease = 0.80;
+static constexpr double nlcsqp_maxtrustraddecay = 0.1;
+static constexpr double nlcsqp_maxtrustradgrowth = 1.333;
+static constexpr double nlcsqp_maxbigc = 1.0E5;
+static constexpr double nlcsqp_meritfunctionbase = 0.0;
+static constexpr double nlcsqp_meritfunctiongain = 2.0;
+static constexpr double nlcsqp_augmentationfactor = 10.0;
+static constexpr double nlcsqp_inittrustrad = 0.1;
+static constexpr double nlcsqp_stagnationepsf = 1.0E-12;
+static constexpr ae_int_t nlcsqp_fstagnationlimit = 20;
+static constexpr ae_int_t nlcsqp_trustradstagnationlimit = 10;
+static constexpr double nlcsqp_sqpbigscale = 5.0;
+static constexpr double nlcsqp_sqpsmallscale = 0.2;
+static constexpr ae_int_t nlcsqp_penaltymemlen = 5;
+static constexpr ae_int_t nlcsqp_defaultbfgsresetfreq = 999999;
 static void nlcsqp_initqpsubsolver(minsqpstate* sstate,
      minsqpsubsolver* subsolver,
      ae_state *_state);
@@ -19685,23 +19685,23 @@ static void lpqppresolve_scalecostandconstraints(/* Real    */ ae_vector* s,
 
 #endif
 #if defined(AE_COMPILE_REVISEDDUALSIMPLEX) || !defined(AE_PARTIAL_BUILD)
-static ae_int_t reviseddualsimplex_maxforcedrestarts = 1;
-static ae_int_t reviseddualsimplex_safetrfage = 5;
-static ae_int_t reviseddualsimplex_defaultmaxtrfage = 100;
-static double reviseddualsimplex_minbeta = 1.0E-4;
-static double reviseddualsimplex_maxudecay = 0.001;
-static double reviseddualsimplex_shiftlen = 1.0E-12;
-static double reviseddualsimplex_alphatrigger = 1.0E8*ae_machineepsilon;
-static double reviseddualsimplex_alphatrigger2 = 0.001;
-static ae_int_t reviseddualsimplex_ssinvalid = 0;
-static ae_int_t reviseddualsimplex_ssvalidxn = 1;
-static ae_int_t reviseddualsimplex_ssvalid = 2;
-static ae_int_t reviseddualsimplex_ccfixed = 0;
-static ae_int_t reviseddualsimplex_cclower = 1;
-static ae_int_t reviseddualsimplex_ccupper = 2;
-static ae_int_t reviseddualsimplex_ccrange = 3;
-static ae_int_t reviseddualsimplex_ccfree = 4;
-static ae_int_t reviseddualsimplex_ccinfeasible = 5;
+static constexpr ae_int_t reviseddualsimplex_maxforcedrestarts = 1;
+static constexpr ae_int_t reviseddualsimplex_safetrfage = 5;
+static constexpr ae_int_t reviseddualsimplex_defaultmaxtrfage = 100;
+static constexpr double reviseddualsimplex_minbeta = 1.0E-4;
+static constexpr double reviseddualsimplex_maxudecay = 0.001;
+static constexpr double reviseddualsimplex_shiftlen = 1.0E-12;
+static constexpr double reviseddualsimplex_alphatrigger = 1.0E8*ae_machineepsilon;
+static constexpr double reviseddualsimplex_alphatrigger2 = 0.001;
+static constexpr ae_int_t reviseddualsimplex_ssinvalid = 0;
+static constexpr ae_int_t reviseddualsimplex_ssvalidxn = 1;
+static constexpr ae_int_t reviseddualsimplex_ssvalid = 2;
+static constexpr ae_int_t reviseddualsimplex_ccfixed = 0;
+static constexpr ae_int_t reviseddualsimplex_cclower = 1;
+static constexpr ae_int_t reviseddualsimplex_ccupper = 2;
+static constexpr ae_int_t reviseddualsimplex_ccrange = 3;
+static constexpr ae_int_t reviseddualsimplex_ccfree = 4;
+static constexpr ae_int_t reviseddualsimplex_ccinfeasible = 5;
 static void reviseddualsimplex_subprobleminit(ae_int_t n,
      dualsimplexsubproblem* s,
      ae_state *_state);
@@ -19961,30 +19961,30 @@ static void minlp_clearreportfields(minlpstate* state, ae_state *_state);
 
 #endif
 #if defined(AE_COMPILE_NLCSLP) || !defined(AE_PARTIAL_BUILD)
-static double nlcslp_slpstpclosetozero = 0.001;
-static double nlcslp_slpdeltadecrease = 0.20;
-static double nlcslp_slpdeltaincrease = 0.80;
-static double nlcslp_slpstpclosetoone = 0.95;
-static double nlcslp_maxtrustraddecay = 0.1;
-static double nlcslp_maxtrustradgrowth = 1.333;
-static double nlcslp_slpgtol = 0.4;
-static double nlcslp_initbigc = 500.0;
-static double nlcslp_maxbigc = 1.0E5;
-static double nlcslp_bfgstol = 1.0E-5;
-static double nlcslp_defaultl1penalty = 0.1;
-static double nlcslp_meritfunctionbase = 0.0;
-static double nlcslp_meritfunctiongain = 2.0;
-static double nlcslp_inequalitydampingfactor = 10.0;
-static double nlcslp_augmentationfactor = 10.0;
-static double nlcslp_inittrustrad = 0.1;
-static double nlcslp_stagnationepsf = 1.0E-12;
-static ae_int_t nlcslp_lpfailureslimit = 20;
-static ae_int_t nlcslp_fstagnationlimit = 20;
-static ae_int_t nlcslp_nondescentlimit = 99999;
-static ae_int_t nlcslp_nonmonotonicphase2limit = 5;
-static double nlcslp_slpbigscale = 5.0;
-static double nlcslp_slpsmallscale = 0.2;
-static double nlcslp_defaultmaglagdecay = 0.85;
+static constexpr double nlcslp_slpstpclosetozero = 0.001;
+static constexpr double nlcslp_slpdeltadecrease = 0.20;
+static constexpr double nlcslp_slpdeltaincrease = 0.80;
+static constexpr double nlcslp_slpstpclosetoone = 0.95;
+static constexpr double nlcslp_maxtrustraddecay = 0.1;
+static constexpr double nlcslp_maxtrustradgrowth = 1.333;
+static constexpr double nlcslp_slpgtol = 0.4;
+static constexpr double nlcslp_initbigc = 500.0;
+static constexpr double nlcslp_maxbigc = 1.0E5;
+static constexpr double nlcslp_bfgstol = 1.0E-5;
+static constexpr double nlcslp_defaultl1penalty = 0.1;
+static constexpr double nlcslp_meritfunctionbase = 0.0;
+static constexpr double nlcslp_meritfunctiongain = 2.0;
+static constexpr double nlcslp_inequalitydampingfactor = 10.0;
+static constexpr double nlcslp_augmentationfactor = 10.0;
+static constexpr double nlcslp_inittrustrad = 0.1;
+static constexpr double nlcslp_stagnationepsf = 1.0E-12;
+static constexpr ae_int_t nlcslp_lpfailureslimit = 20;
+static constexpr ae_int_t nlcslp_fstagnationlimit = 20;
+static constexpr ae_int_t nlcslp_nondescentlimit = 99999;
+static constexpr ae_int_t nlcslp_nonmonotonicphase2limit = 5;
+static constexpr double nlcslp_slpbigscale = 5.0;
+static constexpr double nlcslp_slpsmallscale = 0.2;
+static constexpr double nlcslp_defaultmaglagdecay = 0.85;
 static void nlcslp_initlpsubsolver(minslpstate* sstate,
      minslpsubsolver* subsolver,
      ae_state *_state);
@@ -20098,12 +20098,12 @@ static void nlcslp_meritfunctionandrawlagrangian(minslpstate* state,
 
 #endif
 #if defined(AE_COMPILE_MINNLC) || !defined(AE_PARTIAL_BUILD)
-static double minnlc_aulmaxgrowth = 10.0;
-static double minnlc_maxlagmult = 1.0E7;
-static ae_int_t minnlc_lbfgsfactor = 10;
-static double minnlc_hessesttol = 1.0E-6;
-static double minnlc_initgamma = 1.0E-6;
-static double minnlc_regprec = 1.0E-6;
+static constexpr double minnlc_aulmaxgrowth = 10.0;
+static constexpr double minnlc_maxlagmult = 1.0E7;
+static constexpr ae_int_t minnlc_lbfgsfactor = 10;
+static constexpr double minnlc_hessesttol = 1.0E-6;
+static constexpr double minnlc_initgamma = 1.0E-6;
+static constexpr double minnlc_regprec = 1.0E-6;
 static void minnlc_clearrequestfields(minnlcstate* state,
      ae_state *_state);
 static void minnlc_minnlcinitinternal(ae_int_t n,
@@ -20235,13 +20235,13 @@ static void minns_qpsolveut(/* Real    */ ae_matrix* a,
 
 #endif
 #if defined(AE_COMPILE_MINCOMP) || !defined(AE_PARTIAL_BUILD)
-static ae_int_t mincomp_n1 = 2;
-static ae_int_t mincomp_n2 = 2;
-static double mincomp_stpmin = 1.0E-300;
-static double mincomp_gtol = 0.3;
-static double mincomp_gpaftol = 0.0001;
-static double mincomp_gpadecay = 0.5;
-static double mincomp_asarho = 0.5;
+static constexpr ae_int_t mincomp_n1 = 2;
+static constexpr ae_int_t mincomp_n2 = 2;
+static constexpr double mincomp_stpmin = 1.0E-300;
+static constexpr double mincomp_gtol = 0.3;
+static constexpr double mincomp_gpaftol = 0.0001;
+static constexpr double mincomp_gpadecay = 0.5;
+static constexpr double mincomp_asarho = 0.5;
 static double mincomp_asaboundedantigradnorm(minasastate* state,
      ae_state *_state);
 static double mincomp_asaginorm(minasastate* state, ae_state *_state);
@@ -20253,11 +20253,11 @@ static void mincomp_clearrequestfields(minasastate* state,
 
 #endif
 #if defined(AE_COMPILE_MINBC) || !defined(AE_PARTIAL_BUILD)
-static double minbc_gtol = 0.4;
-static double minbc_maxnonmonotoniclen = 1.0E-5;
-static double minbc_initialdecay = 0.5;
-static double minbc_mindecay = 0.1;
-static double minbc_decaycorrection = 0.8;
+static constexpr double minbc_gtol = 0.4;
+static constexpr double minbc_maxnonmonotoniclen = 1.0E-5;
+static constexpr double minbc_initialdecay = 0.5;
+static constexpr double minbc_mindecay = 0.1;
+static constexpr double minbc_decaycorrection = 0.8;
 static void minbc_clearrequestfields(minbcstate* state, ae_state *_state);
 static void minbc_minbcinitinternal(ae_int_t n,
      /* Real    */ ae_vector* x,

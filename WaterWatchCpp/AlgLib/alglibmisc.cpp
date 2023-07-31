@@ -4206,10 +4206,10 @@ void kdtreequeryresultsdistancesi(const kdtree &kdt, real_1d_array &r, const xpa
 namespace alglib_impl
 {
 #if defined(AE_COMPILE_HQRND) || !defined(AE_PARTIAL_BUILD)
-static ae_int_t hqrnd_hqrndmax = 2147483561;
-static ae_int_t hqrnd_hqrndm1 = 2147483563;
-static ae_int_t hqrnd_hqrndm2 = 2147483399;
-static ae_int_t hqrnd_hqrndmagic = 1634357784;
+static constexpr ae_int_t hqrnd_hqrndmax = 2147483561;
+static constexpr ae_int_t hqrnd_hqrndm1 = 2147483563;
+static constexpr ae_int_t hqrnd_hqrndm2 = 2147483399;
+static constexpr ae_int_t hqrnd_hqrndmagic = 1634357784;
 static ae_int_t hqrnd_hqrndintegerbase(hqrndstate* state,
      ae_state *_state);
 
@@ -4220,8 +4220,8 @@ static ae_int_t hqrnd_hqrndintegerbase(hqrndstate* state,
 
 #endif
 #if defined(AE_COMPILE_NEARESTNEIGHBOR) || !defined(AE_PARTIAL_BUILD)
-static ae_int_t nearestneighbor_splitnodesize = 6;
-static ae_int_t nearestneighbor_kdtreefirstversion = 0;
+static constexpr ae_int_t nearestneighbor_splitnodesize = 6;
+static constexpr ae_int_t nearestneighbor_kdtreefirstversion = 0;
 static ae_int_t nearestneighbor_tsqueryrnn(kdtree* kdt,
      kdtreerequestbuffer* buf,
      /* Real    */ ae_vector* x,

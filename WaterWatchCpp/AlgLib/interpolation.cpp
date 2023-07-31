@@ -18530,10 +18530,10 @@ static void ratint_barycentricnormalize(barycentricinterpolant* b,
 
 #endif
 #if defined(AE_COMPILE_IDW) || !defined(AE_PARTIAL_BUILD)
-static double idw_w0 = 1.0;
-static double idw_meps = 1.0E-50;
-static ae_int_t idw_defaultnlayers = 16;
-static double idw_defaultlambda0 = 0.3333;
+static constexpr double idw_w0 = 1.0;
+static constexpr double idw_meps = 1.0E-50;
+static constexpr ae_int_t idw_defaultnlayers = 16;
+static constexpr double idw_defaultlambda0 = 0.3333;
 static void idw_errormetricsviacalc(idwbuilder* state,
      idwmodel* model,
      idwreport* rep,
@@ -18550,8 +18550,8 @@ static void idw_errormetricsviacalc(idwbuilder* state,
 
 #endif
 #if defined(AE_COMPILE_SPLINE1D) || !defined(AE_PARTIAL_BUILD)
-static double spline1d_lambdareg = 1.0e-9;
-static double spline1d_cholreg = 1.0e-12;
+static constexpr double spline1d_lambdareg = 1.0e-9;
+static constexpr double spline1d_cholreg = 1.0e-12;
 static void spline1d_spline1dgriddiffcubicinternal(/* Real    */ ae_vector* x,
      /* Real    */ ae_vector* y,
      ae_int_t n,
@@ -18749,11 +18749,11 @@ static void parametric_rdpanalyzesectionpar(/* Real    */ ae_matrix* xy,
 
 #endif
 #if defined(AE_COMPILE_RBFV1) || !defined(AE_PARTIAL_BUILD)
-static ae_int_t rbfv1_mxnx = 3;
-static double rbfv1_rbffarradius = 6;
-static double rbfv1_rbfnearradius = 2.1;
-static double rbfv1_rbfmlradius = 3;
-static double rbfv1_minbasecasecost = 100000;
+static constexpr ae_int_t rbfv1_mxnx = 3;
+static constexpr double rbfv1_rbffarradius = 6;
+static constexpr double rbfv1_rbfnearradius = 2.1;
+static constexpr double rbfv1_rbfmlradius = 3;
+static constexpr double rbfv1_minbasecasecost = 100000;
 static ae_bool rbfv1_rbfv1buildlinearmodel(/* Real    */ ae_matrix* x,
      /* Real    */ ae_matrix* y,
      ae_int_t n,
@@ -18837,19 +18837,19 @@ static ae_bool rbfv3farfields_bhpanelevalfastkernel(double d0,
 
 #endif
 #if defined(AE_COMPILE_RBFV3) || !defined(AE_PARTIAL_BUILD)
-static double rbfv3_epsred = 0.999999;
-static ae_int_t rbfv3_maxddmits = 25;
-static double rbfv3_polyharmonic2scale = 4.0;
-static ae_int_t rbfv3_acbfparallelthreshold = 512;
-static ae_int_t rbfv3_ddmparallelthreshold = 512;
-static ae_int_t rbfv3_bfparallelthreshold = 512;
-static ae_int_t rbfv3_defaultmaxpanelsize = 128;
-static ae_int_t rbfv3_maxcomputebatchsize = 128;
-static ae_int_t rbfv3_minfarfieldsize = 256;
-static ae_int_t rbfv3_biharmonicseriesmax = 15;
-static ae_int_t rbfv3_farfieldnone = -1;
-static ae_int_t rbfv3_farfieldbiharmonic = 1;
-static double rbfv3_defaultfastevaltol = 1.0E-3;
+static constexpr double rbfv3_epsred = 0.999999;
+static constexpr ae_int_t rbfv3_maxddmits = 25;
+static constexpr double rbfv3_polyharmonic2scale = 4.0;
+static constexpr ae_int_t rbfv3_acbfparallelthreshold = 512;
+static constexpr ae_int_t rbfv3_ddmparallelthreshold = 512;
+static constexpr ae_int_t rbfv3_bfparallelthreshold = 512;
+static constexpr ae_int_t rbfv3_defaultmaxpanelsize = 128;
+static constexpr ae_int_t rbfv3_maxcomputebatchsize = 128;
+static constexpr ae_int_t rbfv3_minfarfieldsize = 256;
+static constexpr ae_int_t rbfv3_biharmonicseriesmax = 15;
+static constexpr ae_int_t rbfv3_farfieldnone = -1;
+static constexpr ae_int_t rbfv3_farfieldbiharmonic = 1;
+static constexpr double rbfv3_defaultfastevaltol = 1.0E-3;
 static ae_bool rbfv3_userelaxederrorestimates = ae_true;
 static void rbfv3_evalbufferinit(rbf3evaluatorbuffer* buf,
      ae_int_t nx,
@@ -19236,10 +19236,10 @@ static ae_bool rbfv3_iscpdfunction(ae_int_t functype,
 
 #endif
 #if defined(AE_COMPILE_SPLINE2D) || !defined(AE_PARTIAL_BUILD)
-static double spline2d_cholreg = 1.0E-12;
-static double spline2d_lambdaregblocklls = 1.0E-6;
-static double spline2d_lambdaregfastddm = 1.0E-4;
-static double spline2d_lambdadecay = 0.5;
+static constexpr double spline2d_cholreg = 1.0E-12;
+static constexpr double spline2d_lambdaregblocklls = 1.0E-6;
+static constexpr double spline2d_lambdaregfastddm = 1.0E-4;
+static constexpr double spline2d_lambdadecay = 0.5;
 static void spline2d_bicubiccalcderivatives(/* Real    */ ae_matrix* a,
      /* Real    */ ae_vector* x,
      /* Real    */ ae_vector* y,
@@ -19559,12 +19559,12 @@ static ae_bool spline2d_adjustevaluationinterval(spline2dinterpolant* s,
 
 #endif
 #if defined(AE_COMPILE_RBFV2) || !defined(AE_PARTIAL_BUILD)
-static double rbfv2_defaultlambdareg = 1.0E-6;
-static double rbfv2_defaultsupportr = 0.10;
-static ae_int_t rbfv2_defaultmaxits = 400;
-static ae_int_t rbfv2_defaultbf = 1;
-static ae_int_t rbfv2_maxnodesize = 6;
-static double rbfv2_complexitymultiplier = 100.0;
+static constexpr double rbfv2_defaultlambdareg = 1.0E-6;
+static constexpr double rbfv2_defaultsupportr = 0.10;
+static constexpr ae_int_t rbfv2_defaultmaxits = 400;
+static constexpr ae_int_t rbfv2_defaultbf = 1;
+static constexpr ae_int_t rbfv2_maxnodesize = 6;
+static constexpr double rbfv2_complexitymultiplier = 100.0;
 static ae_bool rbfv2_rbfv2buildlinearmodel(/* Real    */ ae_matrix* x,
      /* Real    */ ae_matrix* y,
      ae_int_t n,
@@ -19729,11 +19729,11 @@ static void spline3d_spline3ddiff(spline3dinterpolant* c,
 
 #endif
 #if defined(AE_COMPILE_RBF) || !defined(AE_PARTIAL_BUILD)
-static double rbf_eps = 1.0E-6;
-static double rbf_rbffarradius = 6;
-static ae_int_t rbf_rbffirstversion = 0;
-static ae_int_t rbf_rbfversion2 = 2;
-static ae_int_t rbf_rbfversion3 = 3;
+static constexpr double rbf_eps = 1.0E-6;
+static constexpr double rbf_rbffarradius = 6;
+static constexpr ae_int_t rbf_rbffirstversion = 0;
+static constexpr ae_int_t rbf_rbfversion2 = 2;
+static constexpr ae_int_t rbf_rbfversion3 = 3;
 static void rbf_rbfpreparenonserializablefields(rbfmodel* s,
      ae_state *_state);
 static void rbf_initializev1(ae_int_t nx,

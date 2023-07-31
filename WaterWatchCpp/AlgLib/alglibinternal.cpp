@@ -51,7 +51,7 @@ namespace alglib
 namespace alglib_impl
 {
 #if defined(AE_COMPILE_APSERV) || !defined(AE_PARTIAL_BUILD)
-static ae_int_t apserv_maxtemporariesinnpool = 1000;
+static constexpr ae_int_t apserv_maxtemporariesinnpool = 1000;
 
 
 #endif
@@ -165,12 +165,12 @@ static double xblas_xfastpow(double r, ae_int_t n, ae_state *_state);
 
 #endif
 #if defined(AE_COMPILE_LINMIN) || !defined(AE_PARTIAL_BUILD)
-static double linmin_ftol = 0.001;
-static double linmin_xtol = (double)100*ae_machineepsilon;
-static ae_int_t linmin_maxfev = 20;
-static double linmin_stpmin = 1.0E-50;
-static double linmin_defstpmax = 1.0E+50;
-static double linmin_armijofactor = 1.3;
+static constexpr double linmin_ftol = 0.001;
+static constexpr double linmin_xtol = (double)100*ae_machineepsilon;
+static constexpr ae_int_t linmin_maxfev = 20;
+static constexpr double linmin_stpmin = 1.0E-50;
+static constexpr double linmin_defstpmax = 1.0E+50;
+static constexpr double linmin_armijofactor = 1.3;
 static void linmin_mcstep(double* stx,
      double* fx,
      double* dx,
@@ -206,33 +206,33 @@ static ae_int_t ntheory_modexp(ae_int_t a,
 
 #endif
 #if defined(AE_COMPILE_FTBASE) || !defined(AE_PARTIAL_BUILD)
-static ae_int_t ftbase_coltype = 0;
-static ae_int_t ftbase_coloperandscnt = 1;
-static ae_int_t ftbase_coloperandsize = 2;
-static ae_int_t ftbase_colmicrovectorsize = 3;
-static ae_int_t ftbase_colparam0 = 4;
-static ae_int_t ftbase_colparam1 = 5;
-static ae_int_t ftbase_colparam2 = 6;
-static ae_int_t ftbase_colparam3 = 7;
-static ae_int_t ftbase_colscnt = 8;
-static ae_int_t ftbase_opend = 0;
-static ae_int_t ftbase_opcomplexreffft = 1;
-static ae_int_t ftbase_opbluesteinsfft = 2;
-static ae_int_t ftbase_opcomplexcodeletfft = 3;
-static ae_int_t ftbase_opcomplexcodelettwfft = 4;
-static ae_int_t ftbase_opradersfft = 5;
-static ae_int_t ftbase_opcomplextranspose = -1;
-static ae_int_t ftbase_opcomplexfftfactors = -2;
-static ae_int_t ftbase_opstart = -3;
-static ae_int_t ftbase_opjmp = -4;
-static ae_int_t ftbase_opparallelcall = -5;
-static ae_int_t ftbase_maxradix = 6;
-static ae_int_t ftbase_updatetw = 16;
-static ae_int_t ftbase_recursivethreshold = 1024;
-static ae_int_t ftbase_raderthreshold = 19;
-static ae_int_t ftbase_ftbasecodeletrecommended = 5;
-static double ftbase_ftbaseinefficiencyfactor = 1.3;
-static ae_int_t ftbase_ftbasemaxsmoothfactor = 5;
+static constexpr ae_int_t ftbase_coltype = 0;
+static constexpr ae_int_t ftbase_coloperandscnt = 1;
+static constexpr ae_int_t ftbase_coloperandsize = 2;
+static constexpr ae_int_t ftbase_colmicrovectorsize = 3;
+static constexpr ae_int_t ftbase_colparam0 = 4;
+static constexpr ae_int_t ftbase_colparam1 = 5;
+static constexpr ae_int_t ftbase_colparam2 = 6;
+static constexpr  ae_int_t ftbase_colparam3 = 7;
+static constexpr ae_int_t ftbase_colscnt = 8;
+static constexpr ae_int_t ftbase_opend = 0;
+static constexpr ae_int_t ftbase_opcomplexreffft = 1;
+static constexpr ae_int_t ftbase_opbluesteinsfft = 2;
+static constexpr ae_int_t ftbase_opcomplexcodeletfft = 3;
+static constexpr ae_int_t ftbase_opcomplexcodelettwfft = 4;
+static constexpr ae_int_t ftbase_opradersfft = 5;
+static constexpr ae_int_t ftbase_opcomplextranspose = -1;
+static constexpr ae_int_t ftbase_opcomplexfftfactors = -2;
+static constexpr ae_int_t ftbase_opstart = -3;
+static constexpr ae_int_t ftbase_opjmp = -4;
+static constexpr ae_int_t ftbase_opparallelcall = -5;
+static constexpr ae_int_t ftbase_maxradix = 6;
+static constexpr ae_int_t ftbase_updatetw = 16;
+static constexpr ae_int_t ftbase_recursivethreshold = 1024;
+static constexpr ae_int_t ftbase_raderthreshold = 19;
+static constexpr ae_int_t ftbase_ftbasecodeletrecommended = 5;
+static constexpr double ftbase_ftbaseinefficiencyfactor = 1.3;
+static constexpr ae_int_t ftbase_ftbasemaxsmoothfactor = 5;
 static void ftbase_ftdeterminespacerequirements(ae_int_t n,
      ae_int_t* precrsize,
      ae_int_t* precisize,

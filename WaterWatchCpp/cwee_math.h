@@ -89,6 +89,21 @@ static DelayedInstantiation< cwee_rand > sharedCweeRandomGenerator;
 /*! cweeMath is a collection of various math functions for use throughout the EDMS */
 class cweeMath {
 public:
+	static float					RSqrtFast(float x) {
+		if (x != 0) {
+			long i;
+			float y, r;
+			y = x * 0.5f;
+			i = *reinterpret_cast<long*>(&x);
+			i = 0x5f3759df - (i >> 1);
+			r = *reinterpret_cast<float*>(&i);
+			r = r * (1.5f - r * r * y);
+			return r;
+		}
+		else {
+			return 1e30f;
+		}
+	};
 	static float					RSqrt(float x) {
 		return InvSqrt(x);
 

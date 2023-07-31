@@ -22,152 +22,111 @@ to maintain a single distribution point for the source code.
 #include "InterpolatedMatrix.h"
 #include "cweeUnitedValue.h"
 #include "cweeUnitPattern.h"
+#include "cweeThreadedMap.h"
 
 class cweeData {
 private:
-	cweeSharedPtr < cweeUnorderedList < cweeStr > > strings = make_cwee_shared < cweeUnorderedList < cweeStr > >();;
-	cweeSharedPtr < cweeUnorderedList < cweeUnitValues::cweeUnitPattern > >						patterns = make_cwee_shared < cweeUnorderedList < cweeUnitValues::cweeUnitPattern > >();;
-	cweeSharedPtr < cweeUnorderedList < cweeInterpolatedMatrix<float> > > matrixes = make_cwee_shared < cweeUnorderedList < cweeInterpolatedMatrix<float> > >();;
+	cweeThreadedMap<int, cweeStr> strings; cweeSysInterlockedInteger nStrings;
+	cweeThreadedMap<int, cweeUnitValues::cweeUnitPattern> patterns; cweeSysInterlockedInteger nPatterns;
+	cweeThreadedMap<int, cweeInterpolatedMatrix<float>> matrixes; cweeSysInterlockedInteger nMatrixes;
+
+	AUTO GetStringPtr(int index) { return strings.GetPtr(index); };
+	AUTO GetPatternPtr(int index) { return patterns.GetPtr(index); };
+	AUTO GetMatrixPtr(int index) { return matrixes.GetPtr(index); };
 
 public:
 	int CreateString() {
-		return strings->Append();
+		int index = nStrings.Increment();
+		strings.Emplace(index, cweeStr());
+		return index;
 	};
-
 	int CreatePattern() {
-		return patterns->Append();
+		int index = nPatterns.Increment();
+		patterns.Emplace(index, cweeUnitValues::cweeUnitPattern());
+		return index;
 	};
-
 	int CreateMatrix() {
-		return matrixes->Append();
+		int index = nMatrixes.Increment();
+		matrixes.Emplace(index, cweeInterpolatedMatrix<float>());
+		return index;
 	};
 	
+	bool CheckString(int index) {
+		return strings.count(index) > 0;
+	};
+	bool CheckPattern(int index) {
+		return patterns.count(index) > 0;
+	};
+	bool CheckMatrix(int index) {
+		return matrixes.count(index) > 0;
+	};
+
 	void DeleteString(int index) {
-		strings->Erase(index);
+		strings.Erase(index);
 	};
-
 	void DeletePattern(int index) {
-		patterns->Erase(index);
+		patterns.Erase(index);
 	};
-
 	void DeleteMatrix(int index) {
-		matrixes->Erase(index);
+		matrixes.Erase(index);
 	};
 
 	void ClearPattern(int index) {
-		cweeUnorderedListReferenceObject< cweeUnitValues::cweeUnitPattern > safeContainer(patterns, index);
-		if (safeContainer) safeContainer->Clear();
+		GetPatternPtr(index)->Clear();
 	};
-
 	void ClearMatrix(int index) {
-		cweeUnorderedListReferenceObject< cweeInterpolatedMatrix<float> > safeContainer(matrixes, index);
-		if (safeContainer) safeContainer->Clear();
+		GetMatrixPtr(index)->Clear();
 	};
 
 	void AppendData(int index, cweeStr const& value) {
-		cweeUnorderedListReferenceObject< cweeStr > safeContainer(strings, index);
-		if (safeContainer) safeContainer->operator=(value);
+		GetStringPtr(index)->operator=(value);
 	};
-
 	void AppendData(int index, const u64& time, float value) {
-		cweeUnorderedListReferenceObject< cweeUnitValues::cweeUnitPattern > safeContainer(patterns, index);
-		if (safeContainer) safeContainer->AddUniqueValue(time, value);
+		GetPatternPtr(index)->AddUniqueValue(time, value);
 	};
-
 	void AppendData(int index, const u64& column, const u64& row, float value) {
-		cweeUnorderedListReferenceObject< cweeInterpolatedMatrix<float> > safeContainer(matrixes, index);
-		if (safeContainer) safeContainer->InsertValue(column, row, value);
+		GetMatrixPtr(index)->InsertValue(column, row, value);
 	};
 
 	cweeStr GetValue(int index) {
-		cweeStr out;
-		cweeUnorderedListReferenceObject< cweeStr > safeContainer(strings, index);
-		if (safeContainer) out = *safeContainer;
-		return out;
+		return GetStringPtr(index)->c_str();
 	};
-
 	cweeUnitValues::unit_value GetValue(int index, const cweeUnitValues::unit_value& time) {
-		cweeUnitValues::unit_value out = 0;
-		cweeUnorderedListReferenceObject< cweeUnitValues::cweeUnitPattern > safeContainer(patterns, index);
-		if (safeContainer) out = safeContainer->GetCurrentValue(time);
-		return out;
+		return GetPatternPtr(index)->GetCurrentValue(time);
 	};
-
 	float GetValue(int index, const u64& column, const u64& row) {
-		float out = 0;
-		cweeUnorderedListReferenceObject< cweeInterpolatedMatrix<float> > safeContainer(matrixes, index);
-		if (safeContainer) out = safeContainer->GetValue(column, row);
-		return out;
+		return GetMatrixPtr(index)->GetValue(column, row);
 	};
 
 	cweeUnitValues::cweeUnitPattern* GetPatternRef(int index) {
-		cweeUnitValues::cweeUnitPattern* out = nullptr;
-		cweeUnorderedListReferenceObject< cweeUnitValues::cweeUnitPattern > safeContainer(patterns, index);
-		if (safeContainer) {
-			out = &*safeContainer;
-		}
-		return out;
+		return GetPatternPtr(index).Get();
 	};
 	cweeInterpolatedMatrix<float>* GetMatrixRef(int index) {
-		cweeInterpolatedMatrix<float>* out = nullptr;
-		cweeUnorderedListReferenceObject< cweeInterpolatedMatrix<float> > safeContainer(matrixes, index);
-		if (safeContainer) {
-			out = &*safeContainer;
-		}
-		return out;
+		return GetMatrixPtr(index).Get();
 	};
 	cweeStr* GetStringRef(int index) {
-		cweeStr* out = nullptr;
-		cweeUnorderedListReferenceObject< cweeStr > safeContainer(strings, index);
-		if (safeContainer) {
-			out = &*safeContainer;
-		}
-		return out;
+		return GetStringPtr(index).Get();
 	};
 
 	/*! Row1Column1, Row1Column2, ... Row1ColumnN, Row2Column1 ... etc. */
 	cweeThreadedList<std::pair<cweeUnitValues::unit_value, cweeUnitValues::unit_value>> GetPattern(int index) {
-		cweeThreadedList<std::pair<cweeUnitValues::unit_value, cweeUnitValues::unit_value>> out;
-		cweeUnorderedListReferenceObject< cweeUnitValues::cweeUnitPattern > safeContainer(patterns, index);
-		if (safeContainer) {
-			out = safeContainer->GetKnotSeries();
-		}
-		return out;
+		return GetPatternPtr(index)->GetKnotSeries();
 	};
 	cweeThreadedList<std::pair<cweeUnitValues::unit_value, cweeUnitValues::unit_value>> GetPattern(int index, const cweeUnitValues::unit_value& From, const cweeUnitValues::unit_value& Till) {
-		cweeThreadedList<std::pair<cweeUnitValues::unit_value, cweeUnitValues::unit_value>> out;
-		cweeUnorderedListReferenceObject< cweeUnitValues::cweeUnitPattern > safeContainer(patterns, index);
-		if (safeContainer) {
-			out = safeContainer->GetKnotSeries(From, Till);
-		}
-		return out;
+		return GetPatternPtr(index)->GetKnotSeries(From, Till);
 	};
 	cweeThreadedList<std::pair<cweeUnitValues::unit_value, cweeUnitValues::unit_value>> GetPattern(int index, const cweeUnitValues::unit_value& From, const cweeUnitValues::unit_value& Till, const cweeUnitValues::unit_value& step) {
-		cweeThreadedList<std::pair<cweeUnitValues::unit_value, cweeUnitValues::unit_value>> out;
-		cweeUnorderedListReferenceObject< cweeUnitValues::cweeUnitPattern > safeContainer(patterns, index);
-		if (safeContainer) {
-			out = safeContainer->GetTimeSeries(From, Till, step);
-		}
-		return out;
+		return GetPatternPtr(index)->GetTimeSeries(From, Till, step);
 	};
 
 	std::vector<float> GetMatrix(int index, const u64& Left, const u64& Top, const u64& Right, const u64& Bottom, int numColumns, int numRows) {
-		cweeUnorderedListReferenceObject< cweeInterpolatedMatrix<float> > safeContainer(matrixes, index);
-		if (safeContainer) {
-			return safeContainer->GetMatrix(Left, Top, Right, Bottom, numColumns, numRows);
-		}
-		else {
-			return std::vector<float>();
-		}
+		return GetMatrixPtr(index)->GetMatrix(Left, Top, Right, Bottom, numColumns, numRows);
 	};
 	void SetMatrix(int index, const cweeInterpolatedMatrix<float>& other) {
-		cweeUnorderedListReferenceObject< cweeInterpolatedMatrix<float> > safeContainer(matrixes, index);
-		if (safeContainer) {
-			safeContainer->operator=(other);
-		}
+		GetMatrixPtr(index)->operator=(other);
 	};
 	void SetPattern(int index, const cweeUnitValues::cweeUnitPattern& other) {
-		cweeUnorderedListReferenceObject< cweeUnitValues::cweeUnitPattern > safeContainer(patterns, index);
+		AUTO safeContainer = GetPatternPtr(index);
 		if (safeContainer) {
 			safeContainer->Clear();
 			for (auto& x : other.GetKnotSeries()) {
@@ -175,7 +134,6 @@ public:
 			}
 		}
 	};
-
 };
 
 extern cweeSharedPtr< cweeData> external_data;

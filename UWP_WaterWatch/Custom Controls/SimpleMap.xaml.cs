@@ -500,7 +500,6 @@ namespace UWP_WaterWatch.Custom_Controls
 
         }
 
-        private cweeDequeue AddMapElementsDequeue = new cweeDequeue();
         public MapControl map { get; set; }
         private ObservableCollection<MapElement> DynamicLayer { get; set; }
 
@@ -553,11 +552,9 @@ namespace UWP_WaterWatch.Custom_Controls
             this.Children.Add(map);
             this.map.IsRightTapEnabled = true;
             this.map.MapRightTapped += Map_MapRightTapped;
-            this.map.ZoomLevelChanged += Map_ZoomLevelChanged;
+            this.map.ZoomLevelChanged += Map_ZoomLevelChanged;            
         }
         ~cweeMap() {
-            AddMapElementsDequeue?.Cancel();
-            AddMapElementsDequeue = null;
             map = null;
             DynamicLayer = null;
             PolylineLayer_0 = null;
@@ -595,6 +592,44 @@ namespace UWP_WaterWatch.Custom_Controls
             }
         }
 
+        public void Map_CenterView(MapAnimationKind animationKind = MapAnimationKind.Default) {
+            var centerPoint = new Windows.Devices.Geolocation.BasicGeoposition();
+            double minX = double.MaxValue, maxX = -double.MaxValue, minY = double.MaxValue, maxY = -double.MaxValue, numSamples = 0;
+            foreach (MapElementsLayer layer in map.Layers)
+            {
+                if (layer != null)
+                {
+                    foreach (MapElement child in layer.MapElements)
+                    {
+                        if (child is MapIcon)
+                        {
+                            numSamples++;
+
+                            centerPoint.Longitude -= centerPoint.Longitude / numSamples;
+                            centerPoint.Longitude += (child as MapIcon).Location.Position.Longitude / numSamples;
+
+                            centerPoint.Latitude -= centerPoint.Latitude / numSamples;
+                            centerPoint.Latitude += (child as MapIcon).Location.Position.Latitude / numSamples;
+
+                            minX = Math.Min(minX, (child as MapIcon).Location.Position.Longitude);
+                            minY = Math.Min(minY, (child as MapIcon).Location.Position.Latitude);
+                            maxX = Math.Max(maxX, (child as MapIcon).Location.Position.Longitude);
+                            maxY = Math.Max(maxY, (child as MapIcon).Location.Position.Latitude);
+                        }
+                    }
+                }
+            }
+
+            map.TrySetSceneAsync(
+                MapScene.CreateFromBoundingBox(
+                    new Windows.Devices.Geolocation.GeoboundingBox(
+                        new Windows.Devices.Geolocation.BasicGeoposition() { Longitude = minX, Latitude = maxY },
+                        new Windows.Devices.Geolocation.BasicGeoposition() { Longitude = maxX, Latitude = minY }
+                    )
+                )
+                , animationKind
+            );
+        }
         private void Map_MapRightTapped(MapControl sender, MapRightTappedEventArgs args)
         {
             MapControl mp = (sender as MapControl);
@@ -611,7 +646,8 @@ namespace UWP_WaterWatch.Custom_Controls
                         {
                             AppBarButton but = new AppBarButton() { Icon = new SymbolIcon(Symbol.World), HorizontalAlignment = HorizontalAlignment.Left };
                             but.Click += (object sender123, RoutedEventArgs e1234) => {
-
+                                Map_CenterView();
+                                _fly.Hide();
                             };
                             panelA.PrimaryCommands.Add(but);
                         }
@@ -657,9 +693,28 @@ namespace UWP_WaterWatch.Custom_Controls
                             }
                             {
                                 AppBarButton but = new AppBarButton() { Icon = new SymbolIcon(Symbol.ZoomOut), HorizontalAlignment = HorizontalAlignment.Left };
-                                but.Click += (object sender123, RoutedEventArgs e1234) =>
+                                but.Click += async (object sender123, RoutedEventArgs e1234) =>
                                 {
-
+                                    double a = 0.000001d;
+                                    double b = 1.0d / (mp.MaxZoomLevel + 1.0d);
+                                    double l = ((mp.MaxZoomLevel + 1.0d) - mp.ZoomLevel) / (mp.MaxZoomLevel - 1.0d); l -= l * 0.9;
+                                    double size = b * l + a * (1.0d - l);
+                                    await mp.TrySetViewBoundsAsync(
+                                        new GeoboundingBox(
+                                            new BasicGeoposition()
+                                            {
+                                                Longitude = args.Location.Position.Longitude - size,
+                                                Latitude = Math.Min(90d, args.Location.Position.Latitude + size / 2.0d)
+                                            },
+                                            new BasicGeoposition()
+                                            {
+                                                Longitude = args.Location.Position.Longitude + size,
+                                                Latitude = Math.Max(-90d, args.Location.Position.Latitude - size / 2.0d)
+                                            }
+                                        ),
+                                        new Thickness() { Bottom = 25d, Left = 25d, Right = 25d, Top = 25d },
+                                        MapAnimationKind.Default
+                                    );
                                 };
                                 panelA.PrimaryCommands.Add(but);
                             }
@@ -717,7 +772,7 @@ namespace UWP_WaterWatch.Custom_Controls
                                     return EdmsTasks.InsertJob(() =>
                                     {
                                         {
-                                            var tb = cweeXamlHelper.SimpleTextBlock($"Elevation: {elevation}");
+                                            var tb = cweeXamlHelper.SimpleTextBlock($"Elevation: {elevation} ft");
                                             tb.HorizontalAlignment = HorizontalAlignment.Left;
                                             tb.HorizontalTextAlignment = TextAlignment.Left;
                                             PanelB.Children.Add(tb);
@@ -735,8 +790,6 @@ namespace UWP_WaterWatch.Custom_Controls
                                         }
                                     }, true, true);
                                 }, false);
-
-
                             }
                             flyout.Children.Add(PanelB);
                         }
@@ -1188,174 +1241,276 @@ namespace UWP_WaterWatch.Custom_Controls
             }, true);
         }
 
+        public class TemporaryMapTileDataSourceContainer
+        {
+            public MapBackground_Interop Source;
+            public int SourceIndex = -1;
+            ~TemporaryMapTileDataSourceContainer()
+            {
+                if (SourceIndex >= 0)
+                    WaterWatch.DoScript($"external_data.EraseMatrix({SourceIndex});");
+            }
+        }
+
         public class CustomMapTileDataSourceWithTag : CustomMapTileDataSource
         {
             public static int pixelsPerPage = 256;
-            public MapBackground_Interop Source; 
-
+            public List<TemporaryMapTileDataSourceContainer> Sources;
+            public int SourceIndex;
+            public AtomicInt StopStreaming;
             public static void QueueBitMapStream(CustomMapTileDataSource sender, MapTileBitmapRequestedEventArgs args)
             {
-                CreateBitmapAsStreamAsync(args, CustomMapTileDataSourceWithTag.pixelsPerPage, (sender as CustomMapTileDataSourceWithTag).Source);
+                if ((sender as CustomMapTileDataSourceWithTag).StopStreaming.Get() != 0)
+                {
+                    return;
+                }
+
+                CreateBitmapAsStreamAsync(args, CustomMapTileDataSourceWithTag.pixelsPerPage, (sender as CustomMapTileDataSourceWithTag).Sources.ElementAt((sender as CustomMapTileDataSourceWithTag).SourceIndex));
             }
 
             // Create the custom tiles.
-            private static void CreateBitmapAsStreamAsync(MapTileBitmapRequestedEventArgs args, int pixelSize, MapBackground_Interop cweeMapBackground)
+            private static void CreateBitmapAsStreamAsync(MapTileBitmapRequestedEventArgs args, int pixelSize, TemporaryMapTileDataSourceContainer cweeMapBackground)
             {
                 MapTileBitmapRequestDeferral _deferral = args.Request.GetDeferral();
-                try
-                {
+                try {
+                    int x_pos = args.X;
+                    int y_pos = args.Y;
+                    int zoom = args.ZoomLevel;
+
+                    int pixelHeight = pixelSize;
+                    int pixelWidth = pixelSize;
+                    int bpp = 4;
+                    int byteIndex; int x;
+
+                    byte[] bytes = new byte[pixelHeight * pixelWidth * bpp];
+
                     {
-                        int x_pos = args.X;
-                        int y_pos = args.Y;
-                        int zoom = args.ZoomLevel;
+                        ExtensionMethods.TileSystem.TileXYToPixelXY(x_pos, y_pos, out x_pos, out y_pos);
 
-                        int pixelHeight = pixelSize;
-                        int pixelWidth = pixelSize;
-                        int bpp = 4;
-                        int byteIndex; int x;
+                        double mapSize = ExtensionMethods.TileSystem.MapSize(zoom);
+                        double mapX = 0, mapY = 0, v = 0;
 
-                        byte[] bytes = new byte[pixelHeight * pixelWidth * bpp];
-                        for (int y = 0; y < pixelHeight; y++)
+                        mapY = 0.5 - (ExtensionMethods.TileSystem.Clip(y_pos, 0, mapSize - 1) / mapSize);
+                        ExtensionMethods.TileSystem.PixelYToLat_Fast(ref mapY, out double latitude);
+
+                        mapX = (ExtensionMethods.TileSystem.Clip(x_pos, 0, mapSize - 1) / mapSize) - 0.5;
+                        ExtensionMethods.TileSystem.PixelXToLong_Fast(ref mapX, out double longitude);
+
+                        mapY = 0.5 - (ExtensionMethods.TileSystem.Clip(y_pos + pixelHeight - 1, 0, mapSize - 1) / mapSize);
+                        ExtensionMethods.TileSystem.PixelYToLat_Fast(ref mapY, out double latitudeBottom);
+
+                        mapX = (ExtensionMethods.TileSystem.Clip(x_pos + pixelWidth - 1, 0, mapSize - 1) / mapSize) - 0.5;
+                        ExtensionMethods.TileSystem.PixelXToLong_Fast(ref mapX, out double longitudeRight);
+
+                        EdmsTasks.InsertJob(() =>
                         {
-                            for (x = 0; x < pixelWidth; x++)
-                            {
-                                byteIndex = (y * pixelWidth + x) * bpp;
-
-                                bytes[byteIndex + 0] = 0;       // Red
-                                bytes[byteIndex + 1] = 0;       // Green
-                                bytes[byteIndex + 2] = 0;       // Blue
-                                bytes[byteIndex + 3] = 255;     // Alpha (0xff = fully opaque) // 0x80
-                            }
-                        }
-
-                        {
-                            ExtensionMethods.TileSystem.TileXYToPixelXY(x_pos, y_pos, out x_pos, out y_pos);
-
-                            Windows.UI.Color pixelCol;
-
-                            double mapSize = ExtensionMethods.TileSystem.MapSize(zoom);
-                            double mapX;
-                            double mapY;
-                            double latitude; double longitude; double v;
-
-                            double latitudeBottom; double longitudeRight;
-
-                            mapY = 0.5 - (ExtensionMethods.TileSystem.Clip(y_pos, 0, mapSize - 1) / mapSize);
-                            ExtensionMethods.TileSystem.PixelYToLat_Fast(ref mapY, out latitude);
-
-                            mapX = (ExtensionMethods.TileSystem.Clip(x_pos, 0, mapSize - 1) / mapSize) - 0.5;
-                            ExtensionMethods.TileSystem.PixelXToLong_Fast(ref mapX, out longitude);
-
-                            mapY = 0.5 - (ExtensionMethods.TileSystem.Clip(y_pos + pixelHeight - 1, 0, mapSize - 1) / mapSize);
-                            ExtensionMethods.TileSystem.PixelYToLat_Fast(ref mapY, out latitudeBottom);
-
-                            mapX = (ExtensionMethods.TileSystem.Clip(x_pos + pixelWidth - 1, 0, mapSize - 1) / mapSize) - 0.5;
-                            ExtensionMethods.TileSystem.PixelXToLong_Fast(ref mapX, out longitudeRight);
+                            Array.Clear(bytes, 0, bytes.Length);
 
                             try
                             {
-                                Color_Interop minCol = cweeMapBackground.min_color;
-                                Color_Interop maxCol = cweeMapBackground.max_color;
-                                double minValue = cweeMapBackground.matrix.GetMinValue();
-                                double maxValue = cweeMapBackground.matrix.GetMaxValue();
-
-                                if (maxValue > minValue)
+                                // for (int matrix_index = 0; matrix_index < cweeMapBackgrounds.Count; matrix_index++)
                                 {
-                                    vector_double values = cweeMapBackground.matrix.GetTimeSeries(longitude, latitude, longitudeRight, latitudeBottom, pixelWidth, pixelHeight);
+                                    // TemporaryMapTileDataSourceContainer cweeMapBackground = cweeMapBackgrounds[matrix_index];
 
-                                    int n = values.Count;
-                                    for (int y = 0; y < pixelHeight; y++)
+                                    SharedMatrix shared_matrix = new SharedMatrix(cweeMapBackground.Source.matrix, false);
+
+                                    Color_Interop minCol = cweeMapBackground.Source.min_color;
+                                    Color_Interop maxCol = cweeMapBackground.Source.max_color;
+                                    double minValue = cweeMapBackground.Source.minValue;
+                                    double maxValue = cweeMapBackground.Source.maxValue;
+                                    double alpha_foreground = 0;
+                                    double alpha_background = 0;
+
+                                    if (shared_matrix.GetNumValues() > 0 && maxValue > minValue)
                                     {
-                                        for (x = 0; x < pixelWidth; x++)
                                         {
-                                            if (((y * pixelWidth) + x) < n)
                                             {
-                                                byteIndex = (y * pixelWidth + x) * bpp;
+#if true
+                                                if (minCol.A == maxCol.A && minCol.R == maxCol.R && minCol.G == maxCol.G && minCol.B == maxCol.B)
                                                 {
-                                                    v = (values[(y * pixelWidth) + x] - minValue) / (maxValue - minValue); // 0 - 1 between the min and max for this value
-
-                                                    pixelCol.A = (byte)(minCol.A.Lerp(maxCol.A, v));
-
-                                                    v *= 3.0f;
-
-                                                    if (v <= 1)
+                                                    // there is no gradient within this range -- are they using bounds clipping?
+                                                    if (cweeMapBackground.Source.clipToBounds)
                                                     {
-                                                        pixelCol.R = (byte)(minCol.R.Lerp(maxCol.R, v));
-                                                        pixelCol.G = (byte)(minCol.G);
-                                                        pixelCol.B = (byte)(minCol.B);
-                                                    }
-                                                    else if (v <= 2)
-                                                    {
-                                                        pixelCol.R = (byte)(maxCol.R);
-                                                        pixelCol.G = (byte)(minCol.G.Lerp(maxCol.G, v - 1.0));
-                                                        pixelCol.B = (byte)(minCol.B);
+                                                        // got to do the analysis, but we can skip blending the colors
+                                                        vector_double values;
+                                                        if (cweeMapBackground.Source.highQuality)
+                                                        {
+                                                            values = shared_matrix.GetTimeSeries(longitude, latitude, longitudeRight, latitudeBottom, pixelWidth, pixelHeight);
+                                                        }
+                                                        else
+                                                        {
+                                                            values = shared_matrix.GetKnotSeries(longitude, latitude, longitudeRight, latitudeBottom, pixelWidth, pixelHeight);
+                                                        }
+                                                        int n = values.Count;
+                                                        //alpha_foreground = minCol.A / 255.0;
+                                                        for (int i = 0; i < n; i++)
+                                                        {
+                                                            v = values[i];
+                                                            byteIndex = i * bpp;
+                                                            if (values[i] >= minValue && values[i] <= maxValue)
+                                                            {
+                                                                //alpha_background = (double)bytes[byteIndex + 3] / 255.0;
+
+                                                                bytes[byteIndex + 0] = (byte)minCol.R;// (alpha_foreground * minCol.R + alpha_background * (double)bytes[byteIndex + 0] * (1.0 - alpha_foreground));
+                                                                bytes[byteIndex + 1] = (byte)minCol.G;//(alpha_foreground * minCol.G + alpha_background * (double)bytes[byteIndex + 1] * (1.0 - alpha_foreground));
+                                                                bytes[byteIndex + 2] = (byte)minCol.B;//(alpha_foreground * minCol.B + alpha_background * (double)bytes[byteIndex + 2] * (1.0 - alpha_foreground));
+                                                                bytes[byteIndex + 3] = (byte)minCol.A;//((1.0 - (1.0 - alpha_foreground) * (1.0 - alpha_background)) * 255.0);
+                                                            }
+                                                            else
+                                                            {
+                                                                bytes[byteIndex + 0] = 0;
+                                                                bytes[byteIndex + 1] = 0;
+                                                                bytes[byteIndex + 2] = 0;
+                                                                bytes[byteIndex + 3] = 0;
+                                                            }
+                                                        }
+
                                                     }
                                                     else
                                                     {
-                                                        pixelCol.R = (byte)(maxCol.R);
-                                                        pixelCol.G = (byte)(maxCol.G);
-                                                        pixelCol.B = (byte)(minCol.B.Lerp(maxCol.B, v - 2.0));
-                                                    }
+                                                        // no point in doing the analysis -- there is no "clip to bounds" and there will be no color transitions. 
+                                                        // alpha_foreground = minCol.A / 255.0;
 
-                                                    bytes[byteIndex] = pixelCol.R;           // Red
-                                                    bytes[byteIndex + 1] = pixelCol.G;       // Green
-                                                    bytes[byteIndex + 2] = pixelCol.B;       // Blue
-                                                    bytes[byteIndex + 3] = pixelCol.A;    // Alpha (0xff = fully opaque) // 0x80
+                                                        for (int y = 0; y < pixelHeight; y++)
+                                                        {
+                                                            for (x = 0; x < pixelWidth; x++)
+                                                            {
+                                                                byteIndex = (y * pixelWidth + x) * bpp;
+
+                                                                // alpha_background = (double)bytes[byteIndex + 3] / 255.0;
+
+                                                                bytes[byteIndex + 0] = (byte)minCol.R;//(alpha_foreground * (double)minCol.R + alpha_background * (double)bytes[byteIndex + 0] * (1.0 - alpha_foreground));
+                                                                bytes[byteIndex + 1] = (byte)minCol.G;//(alpha_foreground * (double)minCol.G + alpha_background * (double)bytes[byteIndex + 1] * (1.0 - alpha_foreground));
+                                                                bytes[byteIndex + 2] = (byte)minCol.B;//(alpha_foreground * (double)minCol.B + alpha_background * (double)bytes[byteIndex + 2] * (1.0 - alpha_foreground));
+                                                                bytes[byteIndex + 3] = (byte)minCol.A;//((1.0 - (1.0 - alpha_foreground) * (1.0 - alpha_background)) * 255.0);
+                                                            }
+                                                        }
+                                                    }
                                                 }
+                                                else
+#endif
+                                                {
+                                                    // traditional, full analysis
+                                                    vector_double values;
+                                                    if (cweeMapBackground.Source.highQuality)
+                                                    {
+                                                        values = shared_matrix.GetTimeSeries(longitude, latitude, longitudeRight, latitudeBottom, pixelWidth, pixelHeight);
+                                                    }
+                                                    else
+                                                    {
+                                                        values = shared_matrix.GetKnotSeries(longitude, latitude, longitudeRight, latitudeBottom, pixelWidth, pixelHeight);
+                                                    }
+                                                    int n = values.Count;
+                                                    for (int i = 0; i < n; i++)
+                                                    {
+                                                        v = (values[i] - minValue) / (maxValue - minValue); // 0 - 1 between the min and max for this value
+                                                        byteIndex = i * bpp;
+
+                                                        if (v < 0)
+                                                        {
+                                                            if (!cweeMapBackground.Source.clipToBounds)
+                                                            {
+                                                                //alpha_foreground = minCol.A / 255.0;
+                                                                //alpha_background = (double)bytes[byteIndex + 3] / 255.0;
+
+                                                                bytes[byteIndex + 0] = (byte)minCol.R;//(alpha_foreground * minCol.R + alpha_background * (double)bytes[byteIndex + 0] * (1.0 - alpha_foreground));
+                                                                bytes[byteIndex + 1] = (byte)minCol.G;//(alpha_foreground * minCol.G + alpha_background * (double)bytes[byteIndex + 1] * (1.0 - alpha_foreground));
+                                                                bytes[byteIndex + 2] = (byte)minCol.B;//(alpha_foreground * minCol.B + alpha_background * (double)bytes[byteIndex + 2] * (1.0 - alpha_foreground));
+                                                                bytes[byteIndex + 3] = (byte)minCol.A;//((1.0 - (1.0 - alpha_foreground) * (1.0 - alpha_background)) * 255.0);
+                                                            }
+                                                        }
+                                                        else if (v > 1)
+                                                        {
+                                                            if (!cweeMapBackground.Source.clipToBounds)
+                                                            {
+                                                                //alpha_foreground = maxCol.A / 255.0;
+                                                                //alpha_background = (double)bytes[byteIndex + 3] / 255.0;
+
+                                                                bytes[byteIndex + 0] = (byte)maxCol.R; // (alpha_foreground * maxCol.R + alpha_background * (double)bytes[byteIndex + 0] * (1.0 - alpha_foreground));
+                                                                bytes[byteIndex + 1] = (byte)maxCol.G; // (alpha_foreground * maxCol.G + alpha_background * (double)bytes[byteIndex + 1] * (1.0 - alpha_foreground));
+                                                                bytes[byteIndex + 2] = (byte)maxCol.B; // (alpha_foreground * maxCol.B + alpha_background * (double)bytes[byteIndex + 2] * (1.0 - alpha_foreground));
+                                                                bytes[byteIndex + 3] = (byte)maxCol.A; // ((1.0 - (1.0 - alpha_foreground) * (1.0 - alpha_background)) * 255.0);
+                                                            }
+                                                        }
+                                                        else
+                                                        {
+                                                            //alpha_foreground = minCol.A.Lerp(maxCol.A, v) / 255.0;
+                                                            //alpha_background = (double)bytes[byteIndex + 3] / 255.0;
+
+                                                            bytes[byteIndex + 0] = (byte)minCol.R.Lerp(maxCol.R, v); // (alpha_foreground * minCol.R.Lerp(maxCol.R, v) + alpha_background * (double)bytes[byteIndex + 0] * (1.0 - alpha_foreground));
+                                                            bytes[byteIndex + 1] = (byte)minCol.G.Lerp(maxCol.G, v); // (alpha_foreground * minCol.G.Lerp(maxCol.G, v) + alpha_background * (double)bytes[byteIndex + 1] * (1.0 - alpha_foreground));
+                                                            bytes[byteIndex + 2] = (byte)minCol.B.Lerp(maxCol.B, v); // (alpha_foreground * minCol.B.Lerp(maxCol.B, v) + alpha_background * (double)bytes[byteIndex + 2] * (1.0 - alpha_foreground));
+                                                            bytes[byteIndex + 3] = (byte)minCol.A.Lerp(maxCol.A, v); // ((1.0 - (1.0 - alpha_foreground) * (1.0 - alpha_background)) * 255.0);
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                    else
+                                    {
+                                        alpha_foreground = minCol.A / 255.0;
+                                        for (int y = 0; y < pixelHeight; y++)
+                                        {
+                                            for (x = 0; x < pixelWidth; x++)
+                                            {
+                                                byteIndex = (y * pixelWidth + x) * bpp;
+                                                //alpha_background = (double)bytes[byteIndex + 3] / 255.0;
+
+                                                bytes[byteIndex + 0] = (byte)minCol.R; //  (alpha_foreground * (double)minCol.R + alpha_background * (double)bytes[byteIndex + 0] * (1.0 - alpha_foreground));
+                                                bytes[byteIndex + 1] = (byte)minCol.G; // (alpha_foreground * (double)minCol.G + alpha_background * (double)bytes[byteIndex + 1] * (1.0 - alpha_foreground));
+                                                bytes[byteIndex + 2] = (byte)minCol.B; // (alpha_foreground * (double)minCol.B + alpha_background * (double)bytes[byteIndex + 2] * (1.0 - alpha_foreground));
+                                                bytes[byteIndex + 3] = (byte)minCol.A; // ((1.0 - (1.0 - alpha_foreground) * (1.0 - alpha_background)) * 255.0);
                                             }
                                         }
                                     }
                                 }
                             }
-                            catch (Exception e)
-                            {
-                                e.EdmsHandle();
-                            }
-
+                            catch (Exception) { }
+                        }, false).ContinueWith(()=> {
                             // Create RandomAccessStream from byte array.
                             InMemoryRandomAccessStream randomAccessStream = new InMemoryRandomAccessStream();
                             IOutputStream outputStream = randomAccessStream.GetOutputStreamAt(0);
+
                             var writer = new DataWriter(outputStream);
                             {
                                 writer.WriteBytes(bytes);
                                 args.Request.PixelData = RandomAccessStreamReference.CreateFromStream(randomAccessStream);
+                                _deferral.Complete();
                                 writer.StoreAsync().AsTask().ContinueWith((System.Threading.Tasks.Task<uint> a) =>
                                 {
                                     writer.FlushAsync().AsTask().ContinueWith((System.Threading.Tasks.Task<bool> b) =>
                                     {
-                                        writer.DetachStream();
-                                        writer.Dispose();
+                                        try
+                                        {
+                                            writer.DetachStream();
+                                            writer.Dispose();
+                                        }
+                                        catch (Exception)
+                                        {
+
+                                        }
+                                        finally
+                                        {
+                                            // _deferral.Complete();
+                                        }
                                     });
                                 });
                             }
-                        }
-                    }
-                }
-                catch (Exception e)
-                {
+                        }, false);
+                    }                    
+                } catch (Exception e) {
                     e.EdmsHandle();
-                }
-                finally
-                {
                     _deferral.Complete();
-                }
+                } finally { }
             }
-
-            ~CustomMapTileDataSourceWithTag(){ }
         }
 
-
-        public EdmsTasks.cweeTask StreamBackground(MapBackground_Interop matrix)
+        public EdmsTasks.cweeTask StreamBackground(List<MapBackground_Interop> matrixes, AtomicInt streamStopper)
         {
-            double minX = matrix.matrix.GetMinX()
-                , maxX = matrix.matrix.GetMaxX()
-                , minY = matrix.matrix.GetMinY()
-                , maxY = matrix.matrix.GetMaxY()
-            ;
             AtomicInt locker = new AtomicInt();
             return EdmsTasks.InsertJob(()=> {
-                if (this.IsLoaded)
-                {
+                if (this.IsLoaded) {
                     locker.Increment();
                 }
                 else {
@@ -1363,32 +1518,79 @@ namespace UWP_WaterWatch.Custom_Controls
                 }
                 return EdmsTasks.cweeTask.ContinueWhenTrue(() => { if (locker.Increment() > 1) { locker.Decrement(); return true; } else { locker.Decrement(); return false; } }).ContinueWith(() => {
                     // custom data source
-                    CustomMapTileDataSourceWithTag customDataSource = new CustomMapTileDataSourceWithTag() { Source = matrix };
-                    GeoboundingBox bound = new GeoboundingBox(new BasicGeoposition()
+                    List<TemporaryMapTileDataSourceContainer> sources = new List<TemporaryMapTileDataSourceContainer>();
+                    int index = 0;
+                    foreach (var matrix in matrixes)
                     {
-                        Longitude = minX,
-                        Latitude = maxY
-                    }, new BasicGeoposition()
-                    {
-                        Longitude = maxX,
-                        Latitude = minY
-                    });
+                        double minX = -double.MaxValue, maxX = double.MaxValue, minY = -double.MaxValue, maxY = double.MaxValue;
 
-                    map.TileSources.Add(new MapTileSource(customDataSource)
-                    {
-                        TilePixelSize = CustomMapTileDataSourceWithTag.pixelsPerPage
-                        ,
-                        AllowOverstretch = true
-                        ,
-                        IsFadingEnabled = false
-                        ,
-                        Layer = MapTileLayer.AreaOverlay
-                        // , ZoomLevelRange = new MapZoomLevelRange() { Min = 12, Max = 18 }
-                        ,
-                        Bounds = bound
-                    });
-                    customDataSource.BitmapRequested += CustomMapTileDataSourceWithTag.QueueBitMapStream;
+                        sources.Add(new TemporaryMapTileDataSourceContainer() { Source = matrix, SourceIndex = matrix.matrix });
+                        SharedMatrix shared_matrix = new SharedMatrix(matrix.matrix, false);
 
+                        if (shared_matrix.GetNumValues() > 0)
+                        {
+                            minX = Math.Max(minX, shared_matrix.GetMinX());
+                            maxX = Math.Min(maxX, shared_matrix.GetMaxX());
+                            minY = Math.Max(minY, shared_matrix.GetMinY());
+                            maxY = Math.Min(maxY, shared_matrix.GetMaxY());
+                        }
+
+                        CustomMapTileDataSourceWithTag customDataSource = new CustomMapTileDataSourceWithTag() { SourceIndex = index, Sources = sources, StopStreaming = streamStopper };
+
+                        index++;
+
+                        AtomicInt stopStreaming = customDataSource.StopStreaming;
+
+                        map.Loaded += (object sender, RoutedEventArgs e) => {
+                            stopStreaming.Set(0);
+                        };
+                        map.Unloaded += (object sender, RoutedEventArgs e) => {
+                            stopStreaming.Set(1);
+                        };
+
+                        if (minX > -double.MaxValue && maxX < double.MaxValue && minY > -double.MaxValue && maxY < double.MaxValue)
+                        {
+                            try
+                            {
+                                customDataSource.BitmapRequested += CustomMapTileDataSourceWithTag.QueueBitMapStream;
+                                map.TileSources.Add(new MapTileSource(customDataSource)
+                                {
+                                    TilePixelSize = CustomMapTileDataSourceWithTag.pixelsPerPage
+                                    ,
+                                    AllowOverstretch = true
+                                    ,
+                                    IsFadingEnabled = false
+                                    ,
+                                    Layer = MapTileLayer.AreaOverlay
+                                    ,
+                                    Bounds = new GeoboundingBox(
+                                        new BasicGeoposition() { Longitude = minX, Latitude = maxY },
+                                        new BasicGeoposition() { Longitude = maxX, Latitude = minY }
+                                    )
+                                });
+                            }
+                            catch (Exception) { }
+                        }
+                        else
+                        {
+                            try
+                            {
+                                customDataSource.BitmapRequested += CustomMapTileDataSourceWithTag.QueueBitMapStream;
+                                map.TileSources.Add(new MapTileSource(customDataSource)
+                                {
+                                    TilePixelSize = CustomMapTileDataSourceWithTag.pixelsPerPage
+                                    ,
+                                    AllowOverstretch = true
+                                    ,
+                                    IsFadingEnabled = false
+                                    ,
+                                    Layer = MapTileLayer.AreaOverlay
+                                });
+
+                            }
+                            catch (Exception) { }
+                        }
+                    }
                 }, true);
             }, true);
         }
@@ -1404,7 +1606,6 @@ namespace UWP_WaterWatch.Custom_Controls
 
         public void Reload()
         {
-            // map = new cweeMap();
             for (int i = container.Children.Count-1; i >=0; i--)
             {
                 if (container.Children[i] is cweeMap)
@@ -1413,6 +1614,8 @@ namespace UWP_WaterWatch.Custom_Controls
                 }
             }
             container.Children.Add(map);
+
+            map.map.MapProjection = MapProjection.Globe;
         }
         public cweeMap map { get; set; } = new cweeMap();
         public Grid container { get; set; }
@@ -1431,7 +1634,6 @@ namespace UWP_WaterWatch.Custom_Controls
 
         // --> DATA
         public SimpleMapVM vm = new SimpleMapVM();
-        public cweeEvent<ScriptChangedArgs> ScriptChanged = new cweeEvent<ScriptChangedArgs>(); // public event model, used like a method with += and -=
 
         // --> Public Methods
         public SimpleMap()
@@ -1440,24 +1642,8 @@ namespace UWP_WaterWatch.Custom_Controls
             this.Loaded += DoOnceLoaded;
         }
         ~SimpleMap() {
-            vm = null; 
-            ScriptChanged = null;
+            vm = null;
         }
-
-        // --> EVENTS
-        public class ScriptChangedArgs
-        {
-            public ScriptChangedArgs() { }
-            public ScriptChangedArgs(SimpleMap owner, string newScript)
-            {
-                sender = owner;
-                NewScript = newScript;
-            }
-
-            public SimpleMap sender;
-            public string NewScript;
-        }
-        
 
         // --> Private Methods
         private static void DoOnceLoaded(object sender, RoutedEventArgs e)
@@ -1469,7 +1655,6 @@ namespace UWP_WaterWatch.Custom_Controls
 
             // Tell the VM to load
             (sender as SimpleMap).vm.Reload();
-
         }
 
         private void StyleSelect(object sender, RoutedEventArgs e)
@@ -1495,6 +1680,8 @@ namespace UWP_WaterWatch.Custom_Controls
                     this.vm.map.map.StyleSheet = cweeMap.MapTools.GetStyleSheet(selection);
                     break;
             }
+
+            this.vm.map.map.MapProjection = MapProjection.Globe;
 
         }
     }

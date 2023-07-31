@@ -164,6 +164,9 @@ xcopy /y /d "$(SolutionDir)epanet\nanodbc.lib" "$(OutDir)"
     <None Include="packages.config" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\AlgLib\AlgLib.vcxproj">
+      <Project>{49afc513-0fd8-4bf6-8136-eed5e1e306b4}</Project>
+    </ProjectReference>
     <ProjectReference Include="..\cNominitum\cNominitum.vcxproj">
       <Project>{a9a70f1b-a6d7-4094-8cb4-cd5a90af940e}</Project>
     </ProjectReference>

@@ -250,6 +250,8 @@ public:
 		hilbertContainer.SetBoundaryType(boundary_t::BT_CLOSED);
 		hilbertContainer.SetInterpolationType(interpolation_t::LINEAR);
 		mut.Unlock();
+
+		Tag = nullptr;
 	};
 	cweeInterpolatedMatrix(const cweeInterpolatedMatrix<T>& s) {
 		Lock();
@@ -267,6 +269,8 @@ public:
 		}
 		sD.Unlock();
 		s.Unlock();
+
+		Tag = s.Tag;
 	};
 	cweeInterpolatedMatrix& operator=(const cweeInterpolatedMatrix<T>& s) {
 		Clear();
@@ -287,9 +291,16 @@ public:
 		sD.Unlock();
 		s.Unlock();
 
+		Tag = s.Tag;
+
 		return *this;
 	};
-
+	void    Reserve(long long num) {
+		mut.Lock();
+		hilbertContainer.Reserve(num);
+		source.Reserve(num);
+		mut.Unlock();
+	};
 	u64		GetMinX() const {
 		u64 out;
 		Lock();
@@ -369,9 +380,17 @@ public:
 	};
 
 	void	RemoveUnnecessaryKnots() {
+		Lock();
+		UnsafeValidateData();
+		Unlock();
+		
 		hilbertContainer.RemoveUnnecessaryKnots();
 	};
 	void	ReduceMemory(float percentToRemove) {
+		Lock();
+		UnsafeValidateData();
+		Unlock();
+
 		hilbertContainer.ReduceMemory(percentToRemove);
 	};
 
@@ -491,6 +510,15 @@ public:
 		this->InsertValue(column, row, value);
 		return *this;
 	};
+	bool ContainsPosition(const u64& column, const u64& row) const {
+		Lock();
+		long long 
+			x = std::floor((double)(column * compressionFactor) + 0.5),
+			y = std::floor((double)(row * compressionFactor) + 0.5);
+		Unlock();
+		return source.ValueExists(uniqueHash(x, y));
+	};
+
 	void	Clear() {
 		Lock();
 
@@ -578,7 +606,87 @@ public:
 	};
 
 	int		Num() {
-		return hilbertContainer.GetNumValues();
+		int out;
+		Lock();
+		out = UnsafeGetSource().GetNumValues();
+		Unlock();
+		return out;
+	};
+
+	//u64 LocalDistanceBetweenKnots() const {
+	//	u64 minHilbertPosition = MinHilbertPosition();
+	//	u64 maxHilbertPosition = MaxHilbertPosition();
+	//	bool started = false;
+	//	long long x0, x1, y0, y1;
+	//	u64 Distance = 0; int count = 0;
+	//	Lock();
+	//	UnsafeValidateData();
+	//	for (std::pair<u64, T>& knot : hilbertContainer.GetKnotSeries()) {
+	//		if (started) {
+	//			d2xy(knot.first, x1, y1, hilbertN);
+	//			cweeMath::rollingAverageRef<u64>(Distance, cweeMath::RSqrtFast((x1 - x0) * (x1 - x0) + (y1 - y0) * (y1 - y0)), count);
+	//			x0 = x1;
+	//			y0 = y1;
+	//		}
+	//		else {
+	//			d2xy(knot.first, x0, y0, hilbertN);
+	//			started = true;
+	//		}						
+	//	}
+	//	Unlock();
+	//	if (Distance > 0) {
+	//		Distance = 1.0 / Distance;
+	//	}
+	//	return Distance;
+	//};
+
+	u64 AverageDistanceBetweenKnots() const {
+		u64 Distance = 0; int count = 0; long long x, y;
+		Lock();
+		UnsafeValidateData();
+		AUTO knots = hilbertContainer.GetKnotSeries();
+		cweeList<cweePair<double, double>> knotsXY(knots.Num() + 16);
+		for (auto& knot : knots) {
+			d2xy(knot.first, x, y, hilbertN);
+
+			x += minX;
+			y += minY;
+
+			x /= compressionFactor;
+			y /= compressionFactor;
+
+			knotsXY.Alloc(cweePair<double, double>(x, y));
+		}
+		Unlock();
+		for (auto& x : knotsXY) {
+			for (auto& y : knotsXY) {
+				cweeMath::rollingAverageRef<u64>(
+					Distance
+					,
+					cweeMath::RSqrtFast(
+						((x.get<0>() - y.get<0>()) * (x.get<0>() - y.get<0>()))
+						+ ((x.get<1>() - y.get<1>()) * (x.get<1>() - y.get<1>()))
+					)
+					, count
+					);
+			}
+		}
+
+		if (Distance > 0)
+			return 1.0 / Distance;
+		else
+			return Distance;
+	};
+
+	u64 EstimateDistanceBetweenKnots() const {
+		Lock();
+		u64 width = (maxX - minX) / compressionFactor;
+		u64 height = (maxY - minY) / compressionFactor;
+		int num = source.GetNumValues();
+		if (width <= 0 || height <= 0 || num <= 0) return 0;		
+		Unlock();
+
+		return cweeMath::Sqrt(width*height / num);
 	};
 
 	u64 MinHilbertPosition() const  {
@@ -627,9 +735,12 @@ public:
 		return out;
 	};
 
+	mutable cweeSharedPtr<void> Tag;
+	
 protected: // data
 	mutable sourceType source; // ordered by a hash, NOT ordered by the hilbert scaler
 	mutable cweePattern_CatmullRomSpline<T> hilbertContainer; // x-position is the length along the hilbert line 
+	
 
 	mutable bool	  invalidated = false;
 	mutable long long minX = std::numeric_limits<long long>::max();
@@ -647,6 +758,7 @@ protected: // data
 private: // private member methods
 	void UnsafeValidateData() const {
 		if (invalidated) {
+			Tag = nullptr;
 
 			long long width = next_pow2(maxX - minX); // i.e. 1,2,4,16,128,256,1024
 			long long height = next_pow2(maxY - minY); // i.e. 1,2,4,16,128,256,1024
@@ -655,6 +767,7 @@ private: // private member methods
 			hilbertContainer.Clear();
 			hilbertContainer.SetBoundaryType(boundary_t::BT_CLOSED);
 			hilbertContainer.SetInterpolationType(interpolation_t::LINEAR);
+			hilbertContainer.Reserve(source.GetNumValues() + 12);
 
 			source.Lock();
 			for (auto* ptr : source.UnsafeGetKnotSeries()) {

@@ -1860,13 +1860,16 @@ namespace UWP_WaterWatch.Custom_Controls
                                                                         }, false, true));
                                                                     }
 
-                                                                    for (int bgN = 0; bgN < numBackgrounds; bgN++)
-                                                                    {
-                                                                        var toQuery = new SharedNodeResult() { result = res.result, additionalParams = res.additionalParams + ".Backgrounds[" + bgN.ToString() + "]" };
-                                                                        tasks.Add(new EdmsTasks.cweeTask(() => {
-                                                                            return (EdmsTasks.cweeTask)(toQuery.result.Query_MapBackground(toQuery.additionalParams));
-                                                                        }, false, true));
-                                                                    }
+                                                                    // the backgrounds should be inserted in-order.
+                                                                    tasks.Add(new EdmsTasks.cweeTask(() => {
+                                                                        List<EdmsTasks.cweeTask> results = new List<EdmsTasks.cweeTask>();
+                                                                        for (int bgN = 0; bgN < numBackgrounds; bgN++)
+                                                                        {
+                                                                            var toQuery = new SharedNodeResult() { result = res.result, additionalParams = res.additionalParams + ".Backgrounds[" + bgN.ToString() + "]" };
+                                                                            results.Add((EdmsTasks.cweeTask)(toQuery.result.Query_MapBackground(toQuery.additionalParams)));
+                                                                        }
+                                                                        return EdmsTasks.cweeTask.TrueWhenCompleted(results, results);
+                                                                    }, false, true));
 
                                                                     return EdmsTasks.cweeTask.InsertListAsTask(tasks, true).ContinueWith(() => {
                                                                         var x = obj.Result.vm.map;
@@ -1876,11 +1879,30 @@ namespace UWP_WaterWatch.Custom_Controls
                                                                             {
                                                                                 x.AddMapLayer(lay.Result as MapElementsLayer);
                                                                             }
-                                                                            else if (lay.Result is MapBackground_Interop)
+                                                                            else if (lay.Result is List<EdmsTasks.cweeTask>)
                                                                             {
-                                                                                x.StreamBackground(lay.Result);
+                                                                                var streamStopper = new AtomicInt(0);
+
+                                                                                obj.Result.Loaded += (object sender, RoutedEventArgs e) => {
+                                                                                    streamStopper.Set(0);
+                                                                                };
+                                                                                obj.Result.Unloaded += (object sender, RoutedEventArgs e) => {
+                                                                                    streamStopper.Set(1);
+                                                                                };
+
+                                                                                List<MapBackground_Interop> backgrounds = new List<MapBackground_Interop>();
+                                                                                
+                                                                                foreach (EdmsTasks.cweeTask tsk in (lay.Result as List<EdmsTasks.cweeTask>)) {
+                                                                                    backgrounds.Add(tsk.Result);
+                                                                                }
+
+                                                                                x.StreamBackground(backgrounds, streamStopper);
                                                                             }                                                                            
                                                                         }
+
+                                                                        obj.Result.vm.map.Map_CenterView(MapAnimationKind.None);
+                                                                        obj.Result.vm.map.map.MapProjection = MapProjection.Globe;
+
                                                                         r.Child = obj.Result;
                                                                     }, true);
                                                                 }, false);

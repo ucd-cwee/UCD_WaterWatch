@@ -24,6 +24,7 @@ to maintain a single distribution point for the source code.
 #include "List.h"
 #include "cweeScheduler.h"
 #include "InterpolatedMatrix.h"
+#include "AlgLibWrapper.h"
 
 // Async Support
 namespace chaiscript {
@@ -988,7 +989,7 @@ namespace chaiscript {
         using ThisType = typename UI_MapBackground;
         static std::string	ThisTypeName() { return "UI_MapBackground"; };
 
-        UI_MapBackground() : data(cweeInterpolatedMatrix<float>()), minColor(UI_Color()), maxColor(UI_Color()) {};
+        UI_MapBackground() : data(decltype(data)()), minColor(UI_Color()), maxColor(UI_Color()), highQuality(true) {};
         virtual ~UI_MapBackground() {};
         UI_Color	ColorForPosition(double X, double Y) {
             AUTO maxV = data.GetMaxValue();
@@ -1000,7 +1001,11 @@ namespace chaiscript {
                 return minColor.Lerp(maxColor, (data.GetCurrentValue(X, Y) - minV) / (maxV - minV));
             }
         };
-
+        
+        bool     highQuality = true;
+        bool     clipToBounds = false;
+        float     minValue = -cweeMath::INF;
+        float     maxValue = cweeMath::INF;
         cweeInterpolatedMatrix<float> data;
         UI_Color minColor;
         UI_Color maxColor;
@@ -1010,9 +1015,13 @@ namespace chaiscript {
             scriptingLanguage.add(chaiscript::base_class<UI_FrameworkElement, ThisType>());
             scriptingLanguage.add(chaiscript::base_class<UI_MapElement, ThisType>());
 
+            AddMemberToScriptFromClass(highQuality);
+            AddMemberToScriptFromClass(clipToBounds);
             AddMemberToScriptFromClass(data);
             AddMemberToScriptFromClass(minColor);
             AddMemberToScriptFromClass(maxColor);
+            AddMemberToScriptFromClass(minValue);
+            AddMemberToScriptFromClass(maxValue);
 
             AddFuncToScriptFromClass(ColorForPosition);
         };
@@ -1062,8 +1071,8 @@ namespace chaiscript {
 			    def UI_Map::AddLayer(child) : child.is_type("UI_MapLayer") {
 				    this.Layers.push_back_ref(child);
 			    };
-			    def UI_Map::AddBackground(bg) : child.is_type("UI_MapBackground") {
-				    this.Backgrounds.push_back_ref(child);
+			    def UI_Map::AddBackground(bg) : bg.is_type("UI_MapBackground") {
+				    this.Backgrounds.push_back_ref(bg);
 			    };
 		    )");
         };

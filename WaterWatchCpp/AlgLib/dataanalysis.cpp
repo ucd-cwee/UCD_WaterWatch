@@ -16634,13 +16634,13 @@ static void bdss_tiesubc(/* Integer */ ae_vector* c,
 
 #endif
 #if defined(AE_COMPILE_MLPBASE) || !defined(AE_PARTIAL_BUILD)
-static ae_int_t mlpbase_mlpvnum = 7;
-static ae_int_t mlpbase_mlpfirstversion = 0;
-static ae_int_t mlpbase_nfieldwidth = 4;
-static ae_int_t mlpbase_hlconnfieldwidth = 5;
-static ae_int_t mlpbase_hlnfieldwidth = 4;
-static ae_int_t mlpbase_gradbasecasecost = 50000;
-static ae_int_t mlpbase_microbatchsize = 64;
+static constexpr ae_int_t mlpbase_mlpvnum = 7;
+static constexpr ae_int_t mlpbase_mlpfirstversion = 0;
+static constexpr ae_int_t mlpbase_nfieldwidth = 4;
+static constexpr ae_int_t mlpbase_hlconnfieldwidth = 5;
+static constexpr ae_int_t mlpbase_hlnfieldwidth = 4;
+static constexpr ae_int_t mlpbase_gradbasecasecost = 50000;
+static constexpr ae_int_t mlpbase_microbatchsize = 64;
 static void mlpbase_addinputlayer(ae_int_t ncount,
      /* Integer */ ae_vector* lsizes,
      /* Integer */ ae_vector* ltypes,
@@ -16759,10 +16759,10 @@ static ae_int_t mlpe_mlpefirstversion = 1;
 
 #endif
 #if defined(AE_COMPILE_CLUSTERING) || !defined(AE_PARTIAL_BUILD)
-static ae_int_t clustering_kmeansblocksize = 32;
-static ae_int_t clustering_kmeansparalleldim = 8;
-static ae_int_t clustering_kmeansparallelk = 4;
-static double clustering_complexitymultiplier = 1.0;
+static constexpr ae_int_t clustering_kmeansblocksize = 32;
+static constexpr ae_int_t clustering_kmeansparalleldim = 8;
+static constexpr ae_int_t clustering_kmeansparallelk = 4;
+static constexpr double clustering_complexitymultiplier = 1.0;
 static void clustering_selectinitialcenters(/* Real    */ ae_matrix* xy,
      ae_int_t npoints,
      ae_int_t nvars,
@@ -16806,16 +16806,16 @@ ae_bool _trypexec_clustering_evaluatedistancematrixrec(/* Real    */ ae_matrix* 
 
 #endif
 #if defined(AE_COMPILE_DFOREST) || !defined(AE_PARTIAL_BUILD)
-static ae_int_t dforest_innernodewidth = 3;
-static ae_int_t dforest_leafnodewidth = 2;
-static ae_int_t dforest_dfusestrongsplits = 1;
-static ae_int_t dforest_dfuseevs = 2;
-static ae_int_t dforest_dfuncompressedv0 = 0;
-static ae_int_t dforest_dfcompressedv0 = 1;
-static ae_int_t dforest_needtrngini = 1;
-static ae_int_t dforest_needoobgini = 2;
-static ae_int_t dforest_needpermutation = 3;
-static ae_int_t dforest_permutationimportancebatchsize = 512;
+static constexpr ae_int_t dforest_innernodewidth = 3;
+static constexpr ae_int_t dforest_leafnodewidth = 2;
+static constexpr ae_int_t dforest_dfusestrongsplits = 1;
+static constexpr ae_int_t dforest_dfuseevs = 2;
+static constexpr ae_int_t dforest_dfuncompressedv0 = 0;
+static constexpr ae_int_t dforest_dfcompressedv0 = 1;
+static constexpr ae_int_t dforest_needtrngini = 1;
+static constexpr ae_int_t dforest_needoobgini = 2;
+static constexpr ae_int_t dforest_needpermutation = 3;
+static constexpr ae_int_t dforest_permutationimportancebatchsize = 512;
 static void dforest_buildrandomtree(decisionforestbuilder* s,
      ae_int_t treeidx0,
      ae_int_t treeidx1,
@@ -17001,7 +17001,7 @@ static double dforest_xfastpow(double r, ae_int_t n, ae_state *_state);
 
 #endif
 #if defined(AE_COMPILE_LINREG) || !defined(AE_PARTIAL_BUILD)
-static ae_int_t linreg_lrvnum = 5;
+static constexpr ae_int_t linreg_lrvnum = 5;
 static void linreg_lrinternal(/* Real    */ ae_matrix* xy,
      /* Real    */ ae_vector* s,
      ae_int_t npoints,
@@ -17069,7 +17069,7 @@ static void ssa_updatexxtfinalize(ssamodel* s,
 
 #endif
 #if defined(AE_COMPILE_MCPD) || !defined(AE_PARTIAL_BUILD)
-static double mcpd_xtol = 1.0E-8;
+static constexpr double mcpd_xtol = 1.0E-8;
 static void mcpd_mcpdinit(ae_int_t n,
      ae_int_t entrystate,
      ae_int_t exitstate,
@@ -17079,13 +17079,13 @@ static void mcpd_mcpdinit(ae_int_t n,
 
 #endif
 #if defined(AE_COMPILE_LOGIT) || !defined(AE_PARTIAL_BUILD)
-static double logit_xtol = (double)100*ae_machineepsilon;
-static double logit_ftol = 0.0001;
-static double logit_gtol = 0.3;
-static ae_int_t logit_maxfev = 20;
-static double logit_stpmin = 1.0E-2;
-static double logit_stpmax = 1.0E5;
-static ae_int_t logit_logitvnum = 6;
+static constexpr double logit_xtol = (double)100*ae_machineepsilon;
+static constexpr double logit_ftol = 0.0001;
+static constexpr double logit_gtol = 0.3;
+static constexpr ae_int_t logit_maxfev = 20;
+static constexpr double logit_stpmin = 1.0E-2;
+static constexpr double logit_stpmax = 1.0E5;
+static constexpr ae_int_t logit_logitvnum = 6;
 static void logit_mnliexp(/* Real    */ ae_vector* w,
      /* Real    */ ae_vector* x,
      ae_state *_state);
@@ -17128,7 +17128,7 @@ static void logit_mnlmcstep(double* stx,
 
 #endif
 #if defined(AE_COMPILE_KNN) || !defined(AE_PARTIAL_BUILD)
-static ae_int_t knn_knnfirstversion = 0;
+static constexpr ae_int_t knn_knnfirstversion = 0;
 static void knn_clearreport(knnreport* rep, ae_state *_state);
 static void knn_processinternal(knnmodel* model,
      knnbuffer* buf,
@@ -17137,8 +17137,8 @@ static void knn_processinternal(knnmodel* model,
 
 #endif
 #if defined(AE_COMPILE_MLPTRAIN) || !defined(AE_PARTIAL_BUILD)
-static double mlptrain_mindecay = 0.001;
-static ae_int_t mlptrain_defaultlbfgsfactor = 6;
+static constexpr double mlptrain_mindecay = 0.001;
+static constexpr ae_int_t mlptrain_defaultlbfgsfactor = 6;
 static void mlptrain_mlpkfoldcvgeneral(multilayerperceptron* n,
      /* Real    */ ae_matrix* xy,
      ae_int_t npoints,

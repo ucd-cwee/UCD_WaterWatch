@@ -1230,7 +1230,7 @@ namespace alglib_impl
 
 #endif
 #if defined(AE_COMPILE_AUTOGK) || !defined(AE_PARTIAL_BUILD)
-static ae_int_t autogk_maxsubintervals = 10000;
+static constexpr ae_int_t autogk_maxsubintervals = 10000;
 static void autogk_autogkinternalprepare(double a,
      double b,
      double eps,

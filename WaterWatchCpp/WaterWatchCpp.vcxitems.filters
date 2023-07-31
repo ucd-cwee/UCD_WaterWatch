@@ -285,9 +285,6 @@
     <ClInclude Include="$(MSBuildThisFileDirectory)BasicUnits.h">
       <Filter>Lib\Header-Only\Units</Filter>
     </ClInclude>
-    <ClInclude Include="$(MSBuildThisFileDirectory)AlgLibWrapper.h">
-      <Filter>Lib\Header-Only\Math / Engineering</Filter>
-    </ClInclude>
     <ClInclude Include="$(MSBuildThisFileDirectory)BasicDefines.h">
       <Filter>Lib\Header-Only\Support</Filter>
     </ClInclude>

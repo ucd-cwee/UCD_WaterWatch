@@ -1318,6 +1318,10 @@ public:
 		Clear();
 	};
 
+	void Reserve(int num) {
+		this->SetGranularity(num);
+	};
+
 	virtual void		Clear() {
 		this->Lock();
 		this->UnsafeGetValues().Clear();

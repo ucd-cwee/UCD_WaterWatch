@@ -282,6 +282,9 @@ class ConvPINVOKE {
   [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_new_SharedMatrix__SWIG_2")]
   public static extern global::System.IntPtr new_SharedMatrix__SWIG_2(int jarg1);
 
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_new_SharedMatrix__SWIG_3")]
+  public static extern global::System.IntPtr new_SharedMatrix__SWIG_3(global::System.Runtime.InteropServices.HandleRef jarg1);
+
   [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_delete_SharedMatrix")]
   public static extern void delete_SharedMatrix(global::System.Runtime.InteropServices.HandleRef jarg1);
 
@@ -293,6 +296,9 @@ class ConvPINVOKE {
 
   [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_SharedMatrix_GetValue")]
   public static extern double SharedMatrix_GetValue(global::System.Runtime.InteropServices.HandleRef jarg1, double jarg2, double jarg3);
+
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_SharedMatrix_GetKnotSeries")]
+  public static extern global::System.IntPtr SharedMatrix_GetKnotSeries(global::System.Runtime.InteropServices.HandleRef jarg1, double jarg2, double jarg3, double jarg4, double jarg5, int jarg6, int jarg7);
 
   [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_SharedMatrix_GetTimeSeries")]
   public static extern global::System.IntPtr SharedMatrix_GetTimeSeries(global::System.Runtime.InteropServices.HandleRef jarg1, double jarg2, double jarg3, double jarg4, double jarg5, int jarg6, int jarg7);
@@ -558,11 +564,35 @@ class ConvPINVOKE {
   [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_delete_MapPolyline_Interop")]
   public static extern void delete_MapPolyline_Interop(global::System.Runtime.InteropServices.HandleRef jarg1);
 
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_MapBackground_Interop_highQuality_set")]
+  public static extern void MapBackground_Interop_highQuality_set(global::System.Runtime.InteropServices.HandleRef jarg1, bool jarg2);
+
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_MapBackground_Interop_highQuality_get")]
+  public static extern bool MapBackground_Interop_highQuality_get(global::System.Runtime.InteropServices.HandleRef jarg1);
+
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_MapBackground_Interop_clipToBounds_set")]
+  public static extern void MapBackground_Interop_clipToBounds_set(global::System.Runtime.InteropServices.HandleRef jarg1, bool jarg2);
+
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_MapBackground_Interop_clipToBounds_get")]
+  public static extern bool MapBackground_Interop_clipToBounds_get(global::System.Runtime.InteropServices.HandleRef jarg1);
+
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_MapBackground_Interop_minValue_set")]
+  public static extern void MapBackground_Interop_minValue_set(global::System.Runtime.InteropServices.HandleRef jarg1, double jarg2);
+
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_MapBackground_Interop_minValue_get")]
+  public static extern double MapBackground_Interop_minValue_get(global::System.Runtime.InteropServices.HandleRef jarg1);
+
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_MapBackground_Interop_maxValue_set")]
+  public static extern void MapBackground_Interop_maxValue_set(global::System.Runtime.InteropServices.HandleRef jarg1, double jarg2);
+
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_MapBackground_Interop_maxValue_get")]
+  public static extern double MapBackground_Interop_maxValue_get(global::System.Runtime.InteropServices.HandleRef jarg1);
+
   [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_MapBackground_Interop_matrix_set")]
-  public static extern void MapBackground_Interop_matrix_set(global::System.Runtime.InteropServices.HandleRef jarg1, global::System.Runtime.InteropServices.HandleRef jarg2);
+  public static extern void MapBackground_Interop_matrix_set(global::System.Runtime.InteropServices.HandleRef jarg1, int jarg2);
 
   [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_MapBackground_Interop_matrix_get")]
-  public static extern global::System.IntPtr MapBackground_Interop_matrix_get(global::System.Runtime.InteropServices.HandleRef jarg1);
+  public static extern int MapBackground_Interop_matrix_get(global::System.Runtime.InteropServices.HandleRef jarg1);
 
   [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_MapBackground_Interop_min_color_set")]
   public static extern void MapBackground_Interop_min_color_set(global::System.Runtime.InteropServices.HandleRef jarg1, global::System.Runtime.InteropServices.HandleRef jarg2);

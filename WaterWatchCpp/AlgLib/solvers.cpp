@@ -7013,15 +7013,15 @@ static void iterativesparse_clearreportfields(sparsesolverstate* state,
 
 #endif
 #if defined(AE_COMPILE_LINCG) || !defined(AE_PARTIAL_BUILD)
-static double lincg_defaultprecision = 1.0E-6;
+static constexpr double lincg_defaultprecision = 1.0E-6;
 static void lincg_clearrfields(lincgstate* state, ae_state *_state);
 static void lincg_updateitersdata(lincgstate* state, ae_state *_state);
 
 
 #endif
 #if defined(AE_COMPILE_LINLSQR) || !defined(AE_PARTIAL_BUILD)
-static double linlsqr_atol = 1.0E-6;
-static double linlsqr_btol = 1.0E-6;
+static constexpr double linlsqr_atol = 1.0E-6;
+static constexpr double linlsqr_btol = 1.0E-6;
 static void linlsqr_clearrfields(linlsqrstate* state, ae_state *_state);
 
 

@@ -26,6 +26,7 @@ to maintain a single distribution point for the source code.
 #include "enum.h"
 #include "cweeUnitPattern.h"
 #include "ExternData.h"
+#include "AlgLibWrapper.h"
 
 namespace chaiscript {
     namespace WaterWatch_Lib {
@@ -387,7 +388,6 @@ namespace chaiscript {
                 o["SetMatrix"] = chaiscript::var(chaiscript::fun([](int index, cweeInterpolatedMatrix<float> const& p) { external_data->SetMatrix(index, p); return index; }));
                 o["GetMatrix"] = chaiscript::var(chaiscript::fun([](int index) { return external_data->GetMatrixRef(index); }));
                 o["DeleteMatrix"] = chaiscript::var(chaiscript::fun([](int index) { return external_data->DeleteMatrix(index); }));
-
 
                 o["CreateString"] = chaiscript::var(chaiscript::fun([]() { return external_data->CreateString(); }));
                 o["SetString"] = chaiscript::var(chaiscript::fun([](int index, cweeStr const& p) { *external_data->GetStringRef(index) = p; return index; }));

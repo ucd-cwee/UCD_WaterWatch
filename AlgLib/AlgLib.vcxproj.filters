@@ -1,0 +1,41 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <ClCompile Include="..\WaterWatchCpp\AlgLib\alglibinternal.cpp" />
+    <ClCompile Include="..\WaterWatchCpp\AlgLib\alglibmisc.cpp" />
+    <ClCompile Include="..\WaterWatchCpp\AlgLib\ap.cpp" />
+    <ClCompile Include="..\WaterWatchCpp\AlgLib\dataanalysis.cpp" />
+    <ClCompile Include="..\WaterWatchCpp\AlgLib\diffequations.cpp" />
+    <ClCompile Include="..\WaterWatchCpp\AlgLib\fasttransforms.cpp" />
+    <ClCompile Include="..\WaterWatchCpp\AlgLib\integration.cpp" />
+    <ClCompile Include="..\WaterWatchCpp\AlgLib\interpolation.cpp" />
+    <ClCompile Include="..\WaterWatchCpp\AlgLib\kernels_avx2.cpp" />
+    <ClCompile Include="..\WaterWatchCpp\AlgLib\kernels_fma.cpp" />
+    <ClCompile Include="..\WaterWatchCpp\AlgLib\kernels_sse2.cpp" />
+    <ClCompile Include="..\WaterWatchCpp\AlgLib\linalg.cpp" />
+    <ClCompile Include="..\WaterWatchCpp\AlgLib\optimization.cpp" />
+    <ClCompile Include="..\WaterWatchCpp\AlgLib\solvers.cpp" />
+    <ClCompile Include="..\WaterWatchCpp\AlgLib\specialfunctions.cpp" />
+    <ClCompile Include="..\WaterWatchCpp\AlgLib\statistics.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="..\WaterWatchCpp\AlgLib\alglibinternal.h" />
+    <ClInclude Include="..\WaterWatchCpp\AlgLib\alglibmisc.h" />
+    <ClInclude Include="..\WaterWatchCpp\AlgLib\ap.h" />
+    <ClInclude Include="..\WaterWatchCpp\AlgLib\dataanalysis.h" />
+    <ClInclude Include="..\WaterWatchCpp\AlgLib\diffequations.h" />
+    <ClInclude Include="..\WaterWatchCpp\AlgLib\fasttransforms.h" />
+    <ClInclude Include="..\WaterWatchCpp\AlgLib\integration.h" />
+    <ClInclude Include="..\WaterWatchCpp\AlgLib\interpolation.h" />
+    <ClInclude Include="..\WaterWatchCpp\AlgLib\kernels_avx2.h" />
+    <ClInclude Include="..\WaterWatchCpp\AlgLib\kernels_fma.h" />
+    <ClInclude Include="..\WaterWatchCpp\AlgLib\kernels_sse2.h" />
+    <ClInclude Include="..\WaterWatchCpp\AlgLib\linalg.h" />
+    <ClInclude Include="..\WaterWatchCpp\AlgLib\optimization.h" />
+    <ClInclude Include="..\WaterWatchCpp\AlgLib\solvers.h" />
+    <ClInclude Include="..\WaterWatchCpp\AlgLib\specialfunctions.h" />
+    <ClInclude Include="..\WaterWatchCpp\AlgLib\statistics.h" />
+    <ClInclude Include="..\WaterWatchCpp\AlgLib\stdafx.h" />
+    <ClInclude Include="..\WaterWatchCpp\AlgLibWrapper.h" />
+  </ItemGroup>
+</Project>

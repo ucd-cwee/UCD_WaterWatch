@@ -65,6 +65,10 @@ public class SharedMatrix : global::System.IDisposable {
   public SharedMatrix(int index) : this(ConvPINVOKE.new_SharedMatrix__SWIG_2(index), true) {
   }
 
+  public SharedMatrix(SharedMatrix other) : this(ConvPINVOKE.new_SharedMatrix__SWIG_3(SharedMatrix.getCPtr(other)), true) {
+    if (ConvPINVOKE.SWIGPendingException.Pending) throw ConvPINVOKE.SWIGPendingException.Retrieve();
+  }
+
   public void Clear() {
     ConvPINVOKE.SharedMatrix_Clear(swigCPtr);
   }
@@ -75,6 +79,11 @@ public class SharedMatrix : global::System.IDisposable {
 
   public double GetValue(double X, double Y) {
     double ret = ConvPINVOKE.SharedMatrix_GetValue(swigCPtr, X, Y);
+    return ret;
+  }
+
+  public vector_double GetKnotSeries(double Left, double Top, double Right, double Bottom, int numColumns, int numRows) {
+    vector_double ret = new vector_double(ConvPINVOKE.SharedMatrix_GetKnotSeries(swigCPtr, Left, Top, Right, Bottom, numColumns, numRows), true);
     return ret;
   }
 

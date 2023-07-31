@@ -1471,6 +1471,22 @@ SWIGEXPORT void * SWIGSTDCALL CSharp_new_SharedMatrix__SWIG_2(int jarg1) {
 }
 
 
+SWIGEXPORT void * SWIGSTDCALL CSharp_new_SharedMatrix__SWIG_3(void * jarg1) {
+  void * jresult ;
+  SharedMatrix *arg1 = 0 ;
+  SharedMatrix *result = 0 ;
+  
+  arg1 = (SharedMatrix *)jarg1;
+  if (!arg1) {
+    SWIG_CSharpSetPendingExceptionArgument(SWIG_CSharpArgumentNullException, "SharedMatrix const & is null", 0);
+    return 0;
+  } 
+  result = (SharedMatrix *)new SharedMatrix((SharedMatrix const &)*arg1);
+  jresult = (void *)result; 
+  return jresult;
+}
+
+
 SWIGEXPORT void SWIGSTDCALL CSharp_delete_SharedMatrix(void * jarg1) {
   SharedMatrix *arg1 = (SharedMatrix *) 0 ;
   
@@ -1513,6 +1529,30 @@ SWIGEXPORT double SWIGSTDCALL CSharp_SharedMatrix_GetValue(void * jarg1, double 
   arg3 = (double)jarg3; 
   result = (double)(arg1)->GetValue(arg2,arg3);
   jresult = result; 
+  return jresult;
+}
+
+
+SWIGEXPORT void * SWIGSTDCALL CSharp_SharedMatrix_GetKnotSeries(void * jarg1, double jarg2, double jarg3, double jarg4, double jarg5, int jarg6, int jarg7) {
+  void * jresult ;
+  SharedMatrix *arg1 = (SharedMatrix *) 0 ;
+  double arg2 ;
+  double arg3 ;
+  double arg4 ;
+  double arg5 ;
+  int arg6 ;
+  int arg7 ;
+  std::vector< double > result;
+  
+  arg1 = (SharedMatrix *)jarg1; 
+  arg2 = (double)jarg2; 
+  arg3 = (double)jarg3; 
+  arg4 = (double)jarg4; 
+  arg5 = (double)jarg5; 
+  arg6 = (int)jarg6; 
+  arg7 = (int)jarg7; 
+  result = (arg1)->GetKnotSeries(arg2,arg3,arg4,arg5,arg6,arg7);
+  jresult = new std::vector< double >(result); 
   return jresult;
 }
 
@@ -2531,24 +2571,112 @@ SWIGEXPORT void SWIGSTDCALL CSharp_delete_MapPolyline_Interop(void * jarg1) {
 }
 
 
-SWIGEXPORT void SWIGSTDCALL CSharp_MapBackground_Interop_matrix_set(void * jarg1, void * jarg2) {
+SWIGEXPORT void SWIGSTDCALL CSharp_MapBackground_Interop_highQuality_set(void * jarg1, unsigned int jarg2) {
   MapBackground_Interop *arg1 = (MapBackground_Interop *) 0 ;
-  SharedMatrix *arg2 = (SharedMatrix *) 0 ;
+  bool arg2 ;
   
   arg1 = (MapBackground_Interop *)jarg1; 
-  arg2 = (SharedMatrix *)jarg2; 
-  if (arg1) (arg1)->matrix = *arg2;
+  arg2 = jarg2 ? true : false; 
+  if (arg1) (arg1)->highQuality = arg2;
 }
 
 
-SWIGEXPORT void * SWIGSTDCALL CSharp_MapBackground_Interop_matrix_get(void * jarg1) {
-  void * jresult ;
+SWIGEXPORT unsigned int SWIGSTDCALL CSharp_MapBackground_Interop_highQuality_get(void * jarg1) {
+  unsigned int jresult ;
   MapBackground_Interop *arg1 = (MapBackground_Interop *) 0 ;
-  SharedMatrix *result = 0 ;
+  bool result;
   
   arg1 = (MapBackground_Interop *)jarg1; 
-  result = (SharedMatrix *)& ((arg1)->matrix);
-  jresult = (void *)result; 
+  result = (bool) ((arg1)->highQuality);
+  jresult = result; 
+  return jresult;
+}
+
+
+SWIGEXPORT void SWIGSTDCALL CSharp_MapBackground_Interop_clipToBounds_set(void * jarg1, unsigned int jarg2) {
+  MapBackground_Interop *arg1 = (MapBackground_Interop *) 0 ;
+  bool arg2 ;
+  
+  arg1 = (MapBackground_Interop *)jarg1; 
+  arg2 = jarg2 ? true : false; 
+  if (arg1) (arg1)->clipToBounds = arg2;
+}
+
+
+SWIGEXPORT unsigned int SWIGSTDCALL CSharp_MapBackground_Interop_clipToBounds_get(void * jarg1) {
+  unsigned int jresult ;
+  MapBackground_Interop *arg1 = (MapBackground_Interop *) 0 ;
+  bool result;
+  
+  arg1 = (MapBackground_Interop *)jarg1; 
+  result = (bool) ((arg1)->clipToBounds);
+  jresult = result; 
+  return jresult;
+}
+
+
+SWIGEXPORT void SWIGSTDCALL CSharp_MapBackground_Interop_minValue_set(void * jarg1, double jarg2) {
+  MapBackground_Interop *arg1 = (MapBackground_Interop *) 0 ;
+  double arg2 ;
+  
+  arg1 = (MapBackground_Interop *)jarg1; 
+  arg2 = (double)jarg2; 
+  if (arg1) (arg1)->minValue = arg2;
+}
+
+
+SWIGEXPORT double SWIGSTDCALL CSharp_MapBackground_Interop_minValue_get(void * jarg1) {
+  double jresult ;
+  MapBackground_Interop *arg1 = (MapBackground_Interop *) 0 ;
+  double result;
+  
+  arg1 = (MapBackground_Interop *)jarg1; 
+  result = (double) ((arg1)->minValue);
+  jresult = result; 
+  return jresult;
+}
+
+
+SWIGEXPORT void SWIGSTDCALL CSharp_MapBackground_Interop_maxValue_set(void * jarg1, double jarg2) {
+  MapBackground_Interop *arg1 = (MapBackground_Interop *) 0 ;
+  double arg2 ;
+  
+  arg1 = (MapBackground_Interop *)jarg1; 
+  arg2 = (double)jarg2; 
+  if (arg1) (arg1)->maxValue = arg2;
+}
+
+
+SWIGEXPORT double SWIGSTDCALL CSharp_MapBackground_Interop_maxValue_get(void * jarg1) {
+  double jresult ;
+  MapBackground_Interop *arg1 = (MapBackground_Interop *) 0 ;
+  double result;
+  
+  arg1 = (MapBackground_Interop *)jarg1; 
+  result = (double) ((arg1)->maxValue);
+  jresult = result; 
+  return jresult;
+}
+
+
+SWIGEXPORT void SWIGSTDCALL CSharp_MapBackground_Interop_matrix_set(void * jarg1, int jarg2) {
+  MapBackground_Interop *arg1 = (MapBackground_Interop *) 0 ;
+  int arg2 ;
+  
+  arg1 = (MapBackground_Interop *)jarg1; 
+  arg2 = (int)jarg2; 
+  if (arg1) (arg1)->matrix = arg2;
+}
+
+
+SWIGEXPORT int SWIGSTDCALL CSharp_MapBackground_Interop_matrix_get(void * jarg1) {
+  int jresult ;
+  MapBackground_Interop *arg1 = (MapBackground_Interop *) 0 ;
+  int result;
+  
+  arg1 = (MapBackground_Interop *)jarg1; 
+  result = (int) ((arg1)->matrix);
+  jresult = result; 
   return jresult;
 }
 

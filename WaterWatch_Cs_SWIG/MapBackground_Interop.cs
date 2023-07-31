@@ -56,13 +56,52 @@ public class MapBackground_Interop : global::System.IDisposable {
     }
   }
 
-  public SharedMatrix matrix {
+  public bool highQuality {
     set {
-      ConvPINVOKE.MapBackground_Interop_matrix_set(swigCPtr, SharedMatrix.getCPtr(value));
+      ConvPINVOKE.MapBackground_Interop_highQuality_set(swigCPtr, value);
     } 
     get {
-      global::System.IntPtr cPtr = ConvPINVOKE.MapBackground_Interop_matrix_get(swigCPtr);
-      SharedMatrix ret = (cPtr == global::System.IntPtr.Zero) ? null : new SharedMatrix(cPtr, false);
+      bool ret = ConvPINVOKE.MapBackground_Interop_highQuality_get(swigCPtr);
+      return ret;
+    } 
+  }
+
+  public bool clipToBounds {
+    set {
+      ConvPINVOKE.MapBackground_Interop_clipToBounds_set(swigCPtr, value);
+    } 
+    get {
+      bool ret = ConvPINVOKE.MapBackground_Interop_clipToBounds_get(swigCPtr);
+      return ret;
+    } 
+  }
+
+  public double minValue {
+    set {
+      ConvPINVOKE.MapBackground_Interop_minValue_set(swigCPtr, value);
+    } 
+    get {
+      double ret = ConvPINVOKE.MapBackground_Interop_minValue_get(swigCPtr);
+      return ret;
+    } 
+  }
+
+  public double maxValue {
+    set {
+      ConvPINVOKE.MapBackground_Interop_maxValue_set(swigCPtr, value);
+    } 
+    get {
+      double ret = ConvPINVOKE.MapBackground_Interop_maxValue_get(swigCPtr);
+      return ret;
+    } 
+  }
+
+  public int matrix {
+    set {
+      ConvPINVOKE.MapBackground_Interop_matrix_set(swigCPtr, value);
+    } 
+    get {
+      int ret = ConvPINVOKE.MapBackground_Interop_matrix_get(swigCPtr);
       return ret;
     } 
   }

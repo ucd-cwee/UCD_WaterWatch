@@ -101,7 +101,11 @@ template< class type >
 class cweeBalancedCurve {
 public:
 	using node_type = typename cweeBalancedTree<type, u64>::cweeBalancedTreeNode;
-
+	void Reserve(int num) {
+		Lock();
+		container.Reserve(num);
+		Unlock();
+	};
 	cweeBalancedCurve() {};
 	cweeBalancedCurve(const cweeBalancedCurve& source) {
 		Copy(source);
@@ -179,7 +183,15 @@ public:
 		}
 		return out;
 	};
+	bool		ValueExists(const u64& time) const {
+		bool out; 
 
+		Lock();
+		out = container.NodeFind(time) != nullptr;
+		Unlock();
+
+		return out;
+	};
 	 void		AddValue(const u64& time, const type& valueIN) {
 		InsertPair(time, valueIN, false);
 	};;

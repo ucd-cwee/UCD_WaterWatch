@@ -63,11 +63,13 @@ class SharedMatrix {
 public:
     SharedMatrix();
     SharedMatrix(int index, bool deleteDataWhenScopeEnds = false);
+    SharedMatrix(SharedMatrix const& other);
     ~SharedMatrix();
 
     void    Clear();
     void    AppendData(double X, double Y, float value);
     double  GetValue(double X, double Y);
+    std::vector<double> GetKnotSeries(double Left, double Top, double Right, double Bottom, int numColumns, int numRows);
     std::vector<double> GetTimeSeries(double Left, double Top, double Right, double Bottom, int numColumns, int numRows);
     double  GetMinX();
     double  GetMaxX();
@@ -221,7 +223,11 @@ public:
 };
 class MapBackground_Interop {
 public:
-    SharedMatrix matrix;
+    bool highQuality;
+    bool clipToBounds;
+    double minValue;
+    double maxValue;
+    int matrix; // SharedMatrix 
     Color_Interop min_color;
     Color_Interop max_color;
 };

@@ -28,7 +28,7 @@ to maintain a single distribution point for the source code.
 #include "../WaterWatchCpp/cweeJob.h"
 #include "../WaterWatchCpp/Chaiscript_WaterWatch_Module.h"
 #include "../WaterWatchCpp/ExternData.h"
-
+#include "../WaterWatchCpp/AlgLibWrapper.h"
 #include "Header.h"
 
 #pragma region cweeDateTime
@@ -53,24 +53,130 @@ std::string Awaiter::Result() { if (this->data_m) return *this->data_m; return "
 #pragma region Shared Data
 
 SharedMatrix::SharedMatrix() : index_p(external_data->CreateMatrix()), ptr(nullptr) {
-	ptr = cweeSharedPtr<void>(cweeSharedPtr<bool>(new bool(), [=](bool* d) { delete d; external_data->DeleteMatrix(index_p); }), [](void* p) { return p; });
+	ptr = cweeSharedPtr<void>(cweeSharedPtr<bool>(new bool(true), [=](bool* d) { 
+		delete d; 
+		external_data->DeleteMatrix(index_p); 
+	}), [](void* p) { return p; });
 };
 SharedMatrix::SharedMatrix(int index, bool deleteDataWhenScopeEnds) : index_p(index), ptr(nullptr) {
+	// check that this index is valid
+	if (!external_data->CheckMatrix(index_p)) {
+		throw(std::exception(""));
+	}
+
 	if (deleteDataWhenScopeEnds) {
-		ptr = cweeSharedPtr<void>(cweeSharedPtr<bool>(new bool(), [=](bool* d) { delete d; external_data->DeleteMatrix(index_p); }), [](void* p) { return p; });
+		ptr = cweeSharedPtr<void>(cweeSharedPtr<bool>(new bool(true), [=](bool* d) { 
+			delete d; 
+			external_data->DeleteMatrix(index_p); 
+		}), [](void* p) { return p; });
 	}	
 };
-SharedMatrix::~SharedMatrix() { 
-	ptr = cweeSharedPtr<void>(cweeSharedPtr<bool>(new bool(), [=](bool* d) { delete d; external_data->DeleteMatrix(index_p); }), [](void* p) { return p; });
+SharedMatrix::SharedMatrix(SharedMatrix const& other) : index_p(other.index_p), ptr(other.ptr) {};
+SharedMatrix::~SharedMatrix() {
+	if (ptr) {
+		ptr = nullptr;
+	}
 };
 void    SharedMatrix::Clear() { external_data->ClearMatrix(index_p); };
 void    SharedMatrix::AppendData(double X, double Y, float value) { external_data->AppendData(index_p, X, Y, value); };
 double  SharedMatrix::GetValue(double X, double Y) { return (double)external_data->GetValue(index_p, X, Y); };
-std::vector<double> SharedMatrix::GetTimeSeries(double Left, double Top, double Right, double Bottom, int numColumns, int numRows) {
+std::vector<double> SharedMatrix::GetKnotSeries(double Left, double Top, double Right, double Bottom, int numColumns, int numRows) {
 	std::vector<double> out;
 	AUTO v = external_data->GetMatrix(index_p, Left, Top, Right, Bottom, numColumns, numRows);
 	out.reserve(v.size() + 1);
 	for (auto& x : v) out.push_back(x);
+	return out;
+};
+std::vector<double> SharedMatrix::GetTimeSeries(double Left, double Top, double Right, double Bottom, int numColumns, int numRows) {
+	std::vector<double> out;
+	out.reserve(numColumns * numRows + 12);
+	auto* knots = external_data->GetMatrixRef(index_p);
+
+	cweeSharedPtr<alglib::rbfmodel> model;
+	if (!knots->Tag) {
+		knots->Lock();
+	}
+	if (!knots->Tag) {
+		model = make_cwee_shared<alglib::rbfmodel>();
+		{
+			alglib::real_2d_array arr;
+			cweeThreadedList<cweeUnion<double, double, double>> data;
+			double avgDistanceBetweenKnots = knots->EstimateDistanceBetweenKnots();
+			{
+				for (auto& x : knots->UnsafeGetSource().GetKnotSeries()) {
+					data.Append(cweeUnion<double, double, double>(x.second.x, x.second.y, x.second.z));
+				}
+			}
+			{
+				arr.attach_to_ptr(data.Num(), 3, (double*)(void*)data.Ptr());
+				{
+					alglib::rbfcreate(2, 1, *model);
+					rbfsetpoints(*model, arr);
+					alglib::rbfreport rep;
+					alglib::rbfsetalgohierarchical(*model, avgDistanceBetweenKnots * 10.0, 3, 0.0); // 4, 0.0);
+					alglib::rbfbuildmodel(*model, rep);
+				}
+			}
+		}
+		knots->Tag = cweeSharedPtr<void>(model, [](void* p) { return p; });
+		knots->Unlock();
+	}
+	else {
+		model = cweeSharedPtr<alglib::rbfmodel>(knots->Tag, [](void* p) -> alglib::rbfmodel* { return static_cast<alglib::rbfmodel*>(p); });
+	}
+	
+	if (1) {
+		cweeUnion<double, double> 
+			coords(Left, Top);
+		u64 
+			col = Left, 
+			columnStep = (Right - Left) / numColumns, 
+			rowStep = (Top - Bottom) / numRows, 
+			row = Top; 
+		int 
+			R, 
+			C;
+		alglib::real_1d_array 
+			arr;
+		alglib::real_1d_array 
+			results;
+		alglib::rbfcalcbuffer 
+			buf;
+		cweeInterpolatedMatrix<float> 
+			tempMatrix;
+
+		arr.attach_to_ptr(2, (double*)(void*)(&coords));
+		alglib::rbfcreatecalcbuffer(*model, buf);
+		tempMatrix.Reserve(numColumns * numRows + 12);
+
+		constexpr int reductionRatio = 3;
+
+		for (coords.get<1>() = Top, R = 0; R < numRows; R++, coords.get<1>() -= rowStep) {
+			if (R != 0 && R % reductionRatio != 0) {
+				// skip me!
+			}
+			else {
+				for (coords.get<0>() = Left, C = 0; C < numColumns; C++, coords.get<0>() += columnStep) {
+					if (C != 0 && C % reductionRatio != 0) {
+						// skip me!
+					}
+					else {
+						alglib::rbftscalcbuf(*model, buf, arr, results);
+						tempMatrix.AddValue(C, R, results[0]);
+					}
+				}
+			}
+		}
+
+		tempMatrix.RemoveUnnecessaryKnots();
+
+		for (R = 0; R < numRows; R++) {
+			for (C = 0; C < numColumns; C++) {
+				out.push_back(tempMatrix.GetCurrentValue(C, R));
+			}
+		}
+	}
+
 	return out;
 };
 double  SharedMatrix::GetMinX() { return external_data->GetMatrixRef(index_p)->GetMinX(); };
@@ -938,9 +1044,14 @@ MapBackground_Interop ScriptEngine::Cast_MapBackground(std::string command) {
 	AUTO val = chaiscript::boxed_cast<chaiscript::UI_MapBackground*>(bv);
 	if (val) {
 		int matrixIndex = external_data->CreateMatrix();
+
 		external_data->SetMatrix(matrixIndex, val->data);
 
-		out.matrix = SharedMatrix(matrixIndex, true); // this will clean-up the shared data container data when finished.
+		out.highQuality = val->highQuality;
+		out.clipToBounds = val->clipToBounds;
+		out.minValue = val->minValue == -cweeMath::INF ? val->data.GetMinValue() : val->minValue;
+		out.maxValue = val->maxValue == cweeMath::INF ? val->data.GetMaxValue() : val->maxValue;
+		out.matrix = matrixIndex; 
 		out.min_color = Color_Interop(val->minColor.R, val->minColor.G, val->minColor.B, val->minColor.A);
 		out.max_color = Color_Interop(val->maxColor.R, val->maxColor.G, val->maxColor.B, val->maxColor.A);
 	}

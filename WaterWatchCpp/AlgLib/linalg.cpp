@@ -13327,7 +13327,7 @@ double spdmatrixdet(const real_2d_array &a, const xparams _xparams)
 namespace alglib_impl
 {
 #if defined(AE_COMPILE_ABLAS) || !defined(AE_PARTIAL_BUILD)
-static ae_int_t ablas_blas2minvendorkernelsize = 8;
+static constexpr ae_int_t ablas_blas2minvendorkernelsize = 8;
 static void ablas_ablasinternalsplitlength(ae_int_t n,
      ae_int_t nb,
      ae_int_t* n1,
@@ -13515,11 +13515,11 @@ static void ortfac_cmatrixblockreflector(/* Complex */ ae_matrix* a,
 
 #endif
 #if defined(AE_COMPILE_SPARSE) || !defined(AE_PARTIAL_BUILD)
-static double sparse_desiredloadfactor = 0.66;
-static double sparse_maxloadfactor = 0.75;
-static double sparse_growfactor = 2.00;
-static ae_int_t sparse_additional = 10;
-static ae_int_t sparse_linalgswitch = 16;
+static constexpr double sparse_desiredloadfactor = 0.66;
+static constexpr double sparse_maxloadfactor = 0.75;
+static constexpr double sparse_growfactor = 2.00;
+static constexpr ae_int_t sparse_additional = 10;
+static constexpr ae_int_t sparse_linalgswitch = 16;
 static ae_int_t sparse_hash(ae_int_t i,
      ae_int_t j,
      ae_int_t tabsize,
@@ -13562,7 +13562,7 @@ static ae_int_t hsschur_extschursigntoone(double b, ae_state *_state);
 
 #endif
 #if defined(AE_COMPILE_EVD) || !defined(AE_PARTIAL_BUILD)
-static ae_int_t evd_stepswithintol = 2;
+static constexpr ae_int_t evd_stepswithintol = 2;
 static void evd_clearrfields(eigsubspacestate* state, ae_state *_state);
 static ae_bool evd_tridiagonalevd(/* Real    */ ae_vector* d,
      /* Real    */ ae_vector* e,
@@ -13738,8 +13738,8 @@ static void dlu_rmatrixplu2(/* Real    */ ae_matrix* a,
 
 #endif
 #if defined(AE_COMPILE_SPTRF) || !defined(AE_PARTIAL_BUILD)
-static double sptrf_densebnd = 0.10;
-static ae_int_t sptrf_slswidth = 8;
+static constexpr double sptrf_densebnd = 0.10;
+static constexpr ae_int_t sptrf_slswidth = 8;
 static void sptrf_sluv2list1init(ae_int_t n,
      sluv2list1matrix* a,
      ae_state *_state);
@@ -13809,8 +13809,8 @@ static void sptrf_sparsetrailupdate(sluv2sparsetrail* a,
 
 #endif
 #if defined(AE_COMPILE_AMDORDERING) || !defined(AE_PARTIAL_BUILD)
-static ae_int_t amdordering_knsheadersize = 2;
-static ae_int_t amdordering_llmentrysize = 6;
+static constexpr ae_int_t amdordering_knsheadersize = 2;
+static constexpr ae_int_t amdordering_llmentrysize = 6;
 static void amdordering_nsaddkth(niset* sa,
      amdknset* src,
      ae_int_t k,
@@ -13966,17 +13966,17 @@ static void amdordering_amdmovetoquasidense(amdbuffer* buf,
 
 #endif
 #if defined(AE_COMPILE_SPCHOL) || !defined(AE_PARTIAL_BUILD)
-static ae_int_t spchol_maxsupernode = 4;
-static double spchol_maxmergeinefficiency = 0.25;
-static ae_int_t spchol_smallfakestolerance = 2;
-static ae_int_t spchol_maxfastkernel = 4;
-static ae_bool spchol_relaxedsupernodes = ae_true;
-static ae_int_t spchol_updatesheadersize = 2;
-static ae_int_t spchol_groupheadersize = 2;
-static ae_int_t spchol_batchheadersize = 2;
-static ae_int_t spchol_sequenceentrysize = 3;
-static ae_int_t spchol_smallupdate = 128;
-static double spchol_raw2sthreshold = 0.01;
+static constexpr ae_int_t spchol_maxsupernode = 4;
+static constexpr double spchol_maxmergeinefficiency = 0.25;
+static constexpr ae_int_t spchol_smallfakestolerance = 2;
+static constexpr ae_int_t spchol_maxfastkernel = 4;
+static constexpr ae_bool spchol_relaxedsupernodes = ae_true;
+static constexpr ae_int_t spchol_updatesheadersize = 2;
+static constexpr ae_int_t spchol_groupheadersize = 2;
+static constexpr ae_int_t spchol_batchheadersize = 2;
+static constexpr ae_int_t spchol_sequenceentrysize = 3;
+static constexpr ae_int_t spchol_smallupdate = 128;
+static constexpr double spchol_raw2sthreshold = 0.01;
 #ifdef ALGLIB_NO_FAST_KERNELS
 static ae_int_t spchol_spsymmgetmaxsimd(ae_state *_state);
 #endif
