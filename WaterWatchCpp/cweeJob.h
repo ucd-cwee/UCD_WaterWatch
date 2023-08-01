@@ -1059,7 +1059,7 @@ private:
 };
 
 #pragma region Parallel Job Processor
-#define jobListTypeAsList
+// #define jobListTypeAsList
 
 class cweeJobThreads {
 public:
@@ -1133,18 +1133,23 @@ public:
 					threadData->m_NumActiveThreads->Decrement();
 					return 0;
 				};
-				static bool	TryExtractNextJob(cweeSharedPtr<jobListType> jobs, cweeJob& nextJob) {
-					cweeSharedPtr<cweeJob> j;
+				static bool	TryExtractNextJob(cweeSharedPtr<jobListType> jobs, cweeJob& nextJob) {					
+					bool out;
 #ifdef jobListTypeAsList
 					jobs->Lock();
-					bool out = jobs->UnsafeExtractAny(nextJob);
+					out = jobs->UnsafeExtractAny(nextJob);
 					jobs->Unlock();
 #else
-					bool out = jobs->ExtractIndex(0, j); 
-#endif
+					cweeSharedPtr<cweeJob> j;
+
+					jobs->Lock();
+					out = jobs->UnsafeExtractAny(j);
+					jobs->Unlock();
+
 					if (j) {
 						nextJob = *j;
 					}
+#endif
 					return out;
 				};
 

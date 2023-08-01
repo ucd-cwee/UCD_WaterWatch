@@ -305,6 +305,7 @@ public:
 		u64 out;
 		Lock();
 		{
+			UnsafeValidateData();
 			out = minX / compressionFactor;
 		}
 		Unlock();
@@ -314,6 +315,7 @@ public:
 		u64 out;
 		Lock();
 		{
+			UnsafeValidateData();
 			out = maxX / compressionFactor;
 		}
 		Unlock();
@@ -323,6 +325,7 @@ public:
 		u64 out;
 		Lock();
 		{
+			UnsafeValidateData();
 			out = minY / compressionFactor;
 		}
 		Unlock();
@@ -332,6 +335,7 @@ public:
 		u64 out;
 		Lock();
 		{
+			UnsafeValidateData();
 			out = maxY / compressionFactor;
 		}
 		Unlock();
@@ -341,6 +345,7 @@ public:
 		T out;
 		Lock();
 		{
+			UnsafeValidateData();
 			out = minV;
 		}
 		Unlock();
@@ -350,6 +355,7 @@ public:
 		T out;
 		Lock();
 		{
+			UnsafeValidateData();
 			out = maxV;
 		}
 		Unlock();
@@ -470,52 +476,20 @@ public:
 		return out;
 	};
 	void	InsertValue(const u64& column, const u64& row, const T& value) {
-		Lock();
-
-		long long x = std::floor((double)(column * compressionFactor) + 0.5);
-		long long y = std::floor((double)(row * compressionFactor) + 0.5);
-		source.AddUniqueValue(uniqueHash(x, y), xyContainer<T>(column, row, value));
-
-		if (value < minV) minV = value;
-		if (value > maxV) maxV = value;
-
-		// does this new value invalidate the current hilbert formula?
-		if (x < minX || (x - minX) >= hilbertN || y < minY || (y - minY) >= hilbertN) {
-			// the current formula doesn't cover the needed range  - the hilbert must be re-calculated from scratch for the current 'source'
-			if (x < minX) {
-				minX = x;
-			}
-			if (x > maxX) {
-				maxX = x;
-			}
-			if (y < minY) {
-				minY = y;
-			}
-			if (y > maxY) {
-				maxY = y;
-			}
-
-			invalidated = true;
-		}
-		else {
-			// the current formula holds and can be re-applied
-			x = std::floor((double)(column * compressionFactor - minX) + 0.5);
-			y = std::floor((double)(row * compressionFactor - minY) + 0.5);
-			hilbertContainer.AddUniqueValue(xy2d(x, y, hilbertN), value);
-		}
-
-		Unlock();
+		long long 
+			x = std::floor((double)(column * compressionFactor) + 0.5),
+			y = std::floor((double)(row * compressionFactor) + 0.5);		
+		source.AddUniqueValue(uniqueHash(x, y), xyContainer<T>(column, row, value));	
+		invalidated.store(true);
 	};
 	cweeInterpolatedMatrix<T>& AddValue(const u64& column, const u64& row, const T& value) {
 		this->InsertValue(column, row, value);
 		return *this;
 	};
 	bool ContainsPosition(const u64& column, const u64& row) const {
-		Lock();
-		long long 
+		long long
 			x = std::floor((double)(column * compressionFactor) + 0.5),
 			y = std::floor((double)(row * compressionFactor) + 0.5);
-		Unlock();
 		return source.ValueExists(uniqueHash(x, y));
 	};
 
@@ -529,7 +503,7 @@ public:
 	void	UnsafeClear() {
 		source.Clear();
 		hilbertContainer.Clear();
-		invalidated = false;
+		invalidated.store(false);
 		minX = std::numeric_limits<long long>::max();
 		maxX = -std::numeric_limits<long long>::max();
 		minY = std::numeric_limits<long long>::max();
@@ -539,16 +513,19 @@ public:
 
 		hilbertN = 0;
 	};
-	void Lock() const {
+	void	Lock() const {
 		mut.Lock();
 	};
-	void Unlock() const {
+	void	Unlock() const {
 		mut.Unlock();
 	};
 	sourceType& UnsafeGetSource() const {
 		return source;
 	};
 	auto& UnsafeGetHilbertContainer() const {
+		Lock();
+		UnsafeValidateData();
+		Unlock();
 		return hilbertContainer;
 	};
 
@@ -562,40 +539,7 @@ public:
 		cweeStr v0 = v;
 		source.Deserialize(v0);
 
-		for (auto& it : source.GetKnotSeries()) {
-			xyContainer<T>& CC = it.second; // x = column, y = row, z = value;
-			double& column = CC.x;
-			double& row = CC.y;
-			T& value = CC.z;
-
-			long long x = std::floor((double)(column * compressionFactor) + 0.5);
-			long long y = std::floor((double)(row * compressionFactor) + 0.5);
-
-			if (x < minX || (x - minX) >= hilbertN || y < minY || (y - minY) >= hilbertN) {
-				// the current formula doesn't cover the needed range  - the hilbert must be re-calculated from scratch for the current 'source'
-				if (x < minX) {
-					minX = x;
-				}
-				if (x > maxX) {
-					maxX = x;
-				}
-				if (y < minY) {
-					minY = y;
-				}
-				if (y > maxY) {
-					maxY = y;
-				}
-
-				invalidated = true;
-			}
-			else {
-				// the current formula holds and can be re-applied
-				x = std::floor((double)(column * compressionFactor - minX) + 0.5);
-				y = std::floor((double)(row * compressionFactor - minY) + 0.5);
-				hilbertContainer.AddUniqueValue(xy2d(x, y, hilbertN), value);
-			}
-
-		}
+		invalidated.store(true);
 
 		Unlock();
 
@@ -615,33 +559,6 @@ public:
 		Unlock();
 		return out;
 	};
-
-	//u64 LocalDistanceBetweenKnots() const {
-	//	u64 minHilbertPosition = MinHilbertPosition();
-	//	u64 maxHilbertPosition = MaxHilbertPosition();
-	//	bool started = false;
-	//	long long x0, x1, y0, y1;
-	//	u64 Distance = 0; int count = 0;
-	//	Lock();
-	//	UnsafeValidateData();
-	//	for (std::pair<u64, T>& knot : hilbertContainer.GetKnotSeries()) {
-	//		if (started) {
-	//			d2xy(knot.first, x1, y1, hilbertN);
-	//			cweeMath::rollingAverageRef<u64>(Distance, cweeMath::RSqrtFast((x1 - x0) * (x1 - x0) + (y1 - y0) * (y1 - y0)), count);
-	//			x0 = x1;
-	//			y0 = y1;
-	//		}
-	//		else {
-	//			d2xy(knot.first, x0, y0, hilbertN);
-	//			started = true;
-	//		}						
-	//	}
-	//	Unlock();
-	//	if (Distance > 0) {
-	//		Distance = 1.0 / Distance;
-	//	}
-	//	return Distance;
-	//};
 
 	u64 AverageDistanceBetweenKnots() const {
 		u64 Distance = 0; int count = 0; long long x, y;
@@ -683,6 +600,7 @@ public:
 
 	u64 EstimateDistanceBetweenKnots() const {
 		Lock();
+		UnsafeValidateData();
 		u64 width = (maxX - minX) / compressionFactor;
 		u64 height = (maxY - minY) / compressionFactor;
 		int num = source.GetNumValues();
@@ -745,7 +663,8 @@ protected: // data
 	// mutable cweePattern_CatmullRomSpline<T> hilbertContainer; // x-position is the length along the hilbert line 
 	mutable cweeBalancedPattern<units::dimensionless::scalar_t> hilbertContainer; // x-position is the length along the hilbert line 
 
-	mutable bool	  invalidated = false;
+	
+	mutable std::atomic_bool invalidated = false;
 	mutable long long minX = std::numeric_limits<long long>::max();
 	mutable long long maxX = -std::numeric_limits<long long>::max();
 	mutable long long minY = std::numeric_limits<long long>::max();
@@ -760,8 +679,33 @@ protected: // data
 
 private: // private member methods
 	void UnsafeValidateData() const {
-		if (invalidated) {
+		if (invalidated.load()) {
 			Tag = nullptr;
+
+			long long x, y;
+
+			source.Lock();
+			for (auto& ptr : source.UnsafeGetValues()) {
+				if (ptr.object) {
+					auto& value = ptr.object->z;
+					
+					x = std::floor((double)(ptr.object->x * compressionFactor) + 0.5);
+					y = std::floor((double)(ptr.object->y * compressionFactor) + 0.5);
+
+					if (value < minV) minV = value;
+					if (value > maxV) maxV = value;
+
+					// does this new value invalidate the current hilbert formula?
+					if (x < minX || (x - minX) >= hilbertN || y < minY || (y - minY) >= hilbertN) {
+						// the current formula doesn't cover the needed range  - the hilbert must be re-calculated from scratch for the current 'source'
+						if (x < minX) minX = x;
+						if (x > maxX) maxX = x;
+						if (y < minY) minY = y;
+						if (y > maxY) maxY = y;
+					}
+				}
+			}
+			source.Unlock();
 
 			long long width = next_pow2(maxX - minX); // i.e. 1,2,4,16,128,256,1024
 			long long height = next_pow2(maxY - minY); // i.e. 1,2,4,16,128,256,1024
@@ -787,7 +731,7 @@ private: // private member methods
 			}
 			source.Unlock();
 
-			invalidated = false;
+			invalidated.store(false);
 		}
 	};
 

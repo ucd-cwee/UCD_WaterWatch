@@ -88,92 +88,200 @@ std::vector<double> SharedMatrix::GetKnotSeries(double Left, double Top, double 
 	return out;
 };
 std::vector<double> SharedMatrix::GetTimeSeries(double Left, double Top, double Right, double Bottom, int numColumns, int numRows) {
-	constexpr int 
-		reductionRatio = 3; 
+	constexpr int
+		reductionRatio = 3;
 	std::vector<double>
 		out;
-	cweeUnion<double, double>
-		coords(Left, Top);
-	u64
-		col = Left,
-		columnStep = (Right - Left) / numColumns,
-		rowStep = (Top - Bottom) / numRows,
-		row = Top;
-	int
-		R,
-		C;
-	alglib::real_1d_array
-		arr;
-	alglib::real_1d_array
-		results;// , derivativeResults;
-	static thread_local alglib::rbfcalcbuffer
-		buf;
-	cweeInterpolatedMatrix<float>
-		tempMatrix;
-
 	out.reserve(numColumns * numRows + 12);
-	auto* knots = external_data->GetMatrixRef(index_p);
 
-	// Get or create the underlying interpolation model
-	cweeSharedPtr<alglib::rbfmodel> model;
-	if (!knots->Tag) {
-		knots->Lock();
-	}
-	if (!knots->Tag) {
-		model = make_cwee_shared<alglib::rbfmodel>();
-		{
-			alglib::real_2d_array arr;
-			cweeThreadedList<cweeUnion<double, double, double>> data;
-			double avgDistanceBetweenKnots = knots->EstimateDistanceBetweenKnots();
-	
-			auto& knotSeries = knots->UnsafeGetSource();
-			knotSeries.Lock();
-			for (auto& knot : knotSeries.UnsafeGetValues()) {
-				if (knot.object) {
-					data.Append(cweeUnion<double, double, double>(knot.object->x, knot.object->y, knot.object->z));
+	Stopwatch sw;
+	sw.Start();
+
+	bool Multithreaded = cweeRandomInt(0, 100) < 50;
+	if (Multithreaded) {
+		u64
+			col = Left,
+			columnStep = (Right - Left) / numColumns,
+			rowStep = (Top - Bottom) / numRows,
+			row = Top;
+
+		cweeInterpolatedMatrix<float> tempMatrix;
+		
+		auto* knots = external_data->GetMatrixRef(index_p);
+
+		// Get or create the underlying interpolation model
+		cweeSharedPtr<alglib::rbfmodel> model;
+		if (!knots->Tag) {
+			knots->Lock();
+		}
+		if (!knots->Tag) {
+			model = make_cwee_shared<alglib::rbfmodel>();
+			{
+				alglib::real_2d_array arr;
+				cweeThreadedList<cweeUnion<double, double, double>> data;
+				double avgDistanceBetweenKnots = knots->EstimateDistanceBetweenKnots();
+
+				auto& knotSeries = knots->UnsafeGetSource();
+				knotSeries.Lock();
+				for (auto& knot : knotSeries.UnsafeGetValues()) {
+					if (knot.object) {
+						data.Append(cweeUnion<double, double, double>(knot.object->x, knot.object->y, knot.object->z));
+					}
+				}
+				knotSeries.Unlock();
+
+				{
+					arr.attach_to_ptr(data.Num(), 3, (double*)(void*)data.Ptr());
+					{
+						alglib::rbfcreate(2, 1, *model);
+						rbfsetpoints(*model, arr);
+						alglib::rbfreport rep;
+						alglib::rbfsetalgohierarchical(*model, avgDistanceBetweenKnots * 10.0, 3, 0.0); // 4, 0.0);
+						alglib::rbfbuildmodel(*model, rep, alglib::parallel);
+					}
 				}
 			}
-			knotSeries.Unlock();
+			knots->Tag = cweeSharedPtr<void>(model, [](void* p) { return p; });
+			knots->Unlock();
+		}
+		else {
+			model = cweeSharedPtr<alglib::rbfmodel>(knots->Tag, [](void* p) -> alglib::rbfmodel* { return static_cast<alglib::rbfmodel*>(p); });
+		}
 
-			{
-				arr.attach_to_ptr(data.Num(), 3, (double*)(void*)data.Ptr());
+		cweeList<cweeJob> jobs(numRows+1);
+		cweeSysInterlockedInteger count = 0; // numColumns
+		tempMatrix.Reserve(numColumns * numRows + 12);
+		for (int r = 0; r < numRows; r++) {
+			jobs.Append(cweeJob([&](alglib::rbfmodel& Model, int R, alglib::real_1d_array& results) {
+				static thread_local alglib::rbfcalcbuffer buf;
+				
+				// attach pointers for arrays for the interpolation
+				alglib::rbfcreatecalcbuffer(Model, buf, alglib::parallel);
+				
+				alglib::real_1d_array arr;
+				cweeUnion<double, double> coords;
+				arr.attach_to_ptr(2, (double*)(void*)(&coords));
+
+				int C;
+				for (
+					coords.get<0>() = Left, 
+					coords.get<1>() = Top - R * rowStep, 
+					C = 0; 
+					C < numColumns; 
+					C++, 
+					coords.get<0>() += columnStep) 
 				{
-					alglib::rbfcreate(2, 1, *model);
-					rbfsetpoints(*model, arr);
-					alglib::rbfreport rep;
-					alglib::rbfsetalgohierarchical(*model, avgDistanceBetweenKnots * 10.0, 3, 0.0); // 4, 0.0);
-					alglib::rbfbuildmodel(*model, rep, alglib::parallel);
+					if ((::Max(R, C) - ::Min(R, C)) % reductionRatio == 0) {
+						// get "real" interpolated results for 1/3 of the requested pixels using a slow, complex model, distributed diagonally along the grid								
+						alglib::rbftscalcbuf(Model, buf, arr, results, alglib::parallel);
+
+						// add it to the matrix
+						tempMatrix.AddValue(C, R, results[0]);
+					}
+				}
+				count.Increment();
+			}, model, (int)r, alglib::real_1d_array()).AsyncInvoke());
+		}
+
+		while (count.GetValue() != numRows) {}
+
+		// do a faster, local interpolation of those results using the Hilbert curve for the last 2/3 components. 
+		if (true) {
+			int R, C;
+			for (R = 0; R < numRows; R++) {
+				for (C = 0; C < numColumns; C++) {
+					out.push_back(tempMatrix.GetCurrentValue(C, R));
 				}
 			}
 		}
-		knots->Tag = cweeSharedPtr<void>(model, [](void* p) { return p; });
-		knots->Unlock();
 	}
 	else {
-		model = cweeSharedPtr<alglib::rbfmodel>(knots->Tag, [](void* p) -> alglib::rbfmodel* { return static_cast<alglib::rbfmodel*>(p); });
-	}
-	
-	// attach pointers for arrays for the interpolation
-	arr.attach_to_ptr(2, (double*)(void*)(&coords));
-	alglib::rbfcreatecalcbuffer(*model, buf);
-	tempMatrix.Reserve(numColumns * numRows + 12);
+		cweeUnion<double, double>
+			coords(Left, Top);
+		u64
+			col = Left,
+			columnStep = (Right - Left) / numColumns,
+			rowStep = (Top - Bottom) / numRows,
+			row = Top;
+		int
+			R,
+			C;
+		alglib::real_1d_array
+			arr;
+		alglib::real_1d_array
+			results;// , derivativeResults;
+		static thread_local alglib::rbfcalcbuffer
+			buf;
+		cweeInterpolatedMatrix<float>
+			tempMatrix;
 
-	// get "real" interpolated results for 1/3 of the requested pixels using a slow, complex model, distributed diagonally along the grid
-	for (coords.get<1>() = Top, R = 0; R < numRows; R++, coords.get<1>() -= rowStep) {
-		for (coords.get<0>() = Left, C = 0; C < numColumns; C++, coords.get<0>() += columnStep) {
-			if ((::Max(R, C) - ::Min(R, C)) % reductionRatio == 0) {
-				alglib::rbftscalcbuf(*model, buf, arr, results, alglib::parallel);
-				tempMatrix.AddValue(C, R, results[0]);
+		auto* knots = external_data->GetMatrixRef(index_p);
+
+		// Get or create the underlying interpolation model
+		cweeSharedPtr<alglib::rbfmodel> model;
+		if (!knots->Tag) {
+			knots->Lock();
+		}
+		if (!knots->Tag) {
+			model = make_cwee_shared<alglib::rbfmodel>();
+			{
+				alglib::real_2d_array arr;
+				cweeThreadedList<cweeUnion<double, double, double>> data;
+				double avgDistanceBetweenKnots = knots->EstimateDistanceBetweenKnots();
+
+				auto& knotSeries = knots->UnsafeGetSource();
+				knotSeries.Lock();
+				for (auto& knot : knotSeries.UnsafeGetValues()) {
+					if (knot.object) {
+						data.Append(cweeUnion<double, double, double>(knot.object->x, knot.object->y, knot.object->z));
+					}
+				}
+				knotSeries.Unlock();
+
+				{
+					arr.attach_to_ptr(data.Num(), 3, (double*)(void*)data.Ptr());
+					{
+						alglib::rbfcreate(2, 1, *model);
+						rbfsetpoints(*model, arr);
+						alglib::rbfreport rep;
+						alglib::rbfsetalgohierarchical(*model, avgDistanceBetweenKnots * 10.0, 3, 0.0); // 4, 0.0);
+						alglib::rbfbuildmodel(*model, rep, alglib::parallel);
+					}
+				}
+			}
+			knots->Tag = cweeSharedPtr<void>(model, [](void* p) { return p; });
+			knots->Unlock();
+		}
+		else {
+			model = cweeSharedPtr<alglib::rbfmodel>(knots->Tag, [](void* p) -> alglib::rbfmodel* { return static_cast<alglib::rbfmodel*>(p); });
+		}
+
+		// attach pointers for arrays for the interpolation
+		arr.attach_to_ptr(2, (double*)(void*)(&coords));
+		alglib::rbfcreatecalcbuffer(*model, buf);
+		tempMatrix.Reserve(numColumns * numRows + 12);
+
+		// get "real" interpolated results for 1/3 of the requested pixels using a slow, complex model, distributed diagonally along the grid
+		for (coords.get<1>() = Top, R = 0; R < numRows; R++, coords.get<1>() -= rowStep) {
+			for (coords.get<0>() = Left, C = 0; C < numColumns; C++, coords.get<0>() += columnStep) {
+				if ((::Max(R, C) - ::Min(R, C)) % reductionRatio == 0) {
+					alglib::rbftscalcbuf(*model, buf, arr, results, alglib::parallel);
+					tempMatrix.AddValue(C, R, results[0]);
+				}
 			}
 		}
+
+		// do a faster, local interpolation of those results using the Hilbert curve for the last 2/3 components. 
+		for (R = 0; R < numRows; R++) {
+			for (C = 0; C < numColumns; C++) {
+				out.push_back(tempMatrix.GetCurrentValue(C, R));
+			}
+		}
+
 	}
 
-	// do a faster, local interpolation of those results using the Hilbert curve for the last 2/3 components. 
-	for (R = 0; R < numRows; R++) {
-		for (C = 0; C < numColumns; C++) {
-			out.push_back(tempMatrix.GetCurrentValue(C, R));
-		}
-	}	
+	sw.Stop();
+	cweeToasts->submitToast(Multithreaded ? cweeStr("Multithreaded") : cweeStr("Single Threaded"), cweeUnitValues::second(sw.Seconds_Passed()).ToString());
 
 	return out;
 };

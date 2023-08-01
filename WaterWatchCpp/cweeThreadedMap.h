@@ -112,9 +112,9 @@ public:
 		};
 
 		/*! Mutex Lock to prevent race conditions. cweeSysMutex uses C++ CriticalSection */
-		mutable cweeConstexprLock													lock;
+		// mutable cweeConstexprLock													lock;
 		/*! Mutex Lock to prevent race conditions. cweeSysMutex uses C++ CriticalSection */
-		// mutable cweeSysMutex														lock;
+		mutable cweeSysMutex														lock;
 		/* Map between key and heap ptr. Cannot use PTR directly to allow for multithread-safe instant deletes, using the keys to control race conditions. */
 		mutable tsl::robin_map<Key, PtrType, robin_hood::hash<Key>, std::equal_to<Key>, std::allocator<_iterType>, true>	list;
 		/* Optimized search parameters */
@@ -618,6 +618,20 @@ public:
 		impl->list_version.Increment();
 		impl->CreatedListVersion.Increment();
 		return result;
+	};
+	/*!
+	After calling "Lock", this will allow access to directly erase the specified object on the heap without interuption or chance for mid-erase viewing, and return a copy of the object
+	*/
+	bool	UnsafeExtractAny(PtrType& out) {
+		bool result = false;
+		for (auto& x : impl->list) {
+			out = x.second;
+			impl->list.erase(x.first);
+			impl->list_version.Increment();
+			impl->CreatedListVersion.Increment();
+			return true;
+		}
+		return false;
 	};
 	/*!
 	After calling "Lock", this will allow access to directly erase the specified object on the heap without interuption or chance for mid-erase viewing, and return a copy of the object
