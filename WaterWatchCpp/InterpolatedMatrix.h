@@ -246,18 +246,18 @@ public:
 	using sourceType = typename cweeBalancedCurve<xyContainer<T>>;
 
 	cweeInterpolatedMatrix() {
-		mut.Lock();
+		//mut.Lock();
 		hilbertContainer.SetBoundaryType(boundary_t::BT_CLOSED);
 		hilbertContainer.SetInterpolationType(interpolation_t::LINEAR);
-		mut.Unlock();
+		//mut.Unlock();
 
 		Tag = nullptr;
 	};
 	cweeInterpolatedMatrix(const cweeInterpolatedMatrix<T>& s) {
-		Lock();
+		//Lock();
 		hilbertContainer.SetBoundaryType(boundary_t::BT_CLOSED);
 		hilbertContainer.SetInterpolationType(interpolation_t::LINEAR);
-		Unlock();
+		//Unlock();
 
 		s.Lock();
 		sourceType& sD = s.UnsafeGetSource();
@@ -275,10 +275,10 @@ public:
 	cweeInterpolatedMatrix& operator=(const cweeInterpolatedMatrix<T>& s) {
 		Clear();
 
-		Lock();
+		//Lock();
 		hilbertContainer.SetBoundaryType(boundary_t::BT_CLOSED);
 		hilbertContainer.SetInterpolationType(interpolation_t::LINEAR);
-		Unlock();
+		//Unlock();
 
 		s.Lock();
 		sourceType& sD = s.UnsafeGetSource();
@@ -296,10 +296,10 @@ public:
 		return *this;
 	};
 	void    Reserve(long long num) {
-		mut.Lock();
-		hilbertContainer.Reserve(num);
+		//mut.Lock();
+		hilbertContainer.SetGranularity(num);
 		source.Reserve(num);
-		mut.Unlock();
+		//mut.Unlock();
 	};
 	u64		GetMinX() const {
 		u64 out;
@@ -366,10 +366,10 @@ public:
 			long long y = std::floor((double)(row * compressionFactor - minY) + 0.5);
 			if (hilbertN > 0) {
 				long long pos = xy2d(x, y, hilbertN);
-				out = hilbertContainer.GetCurrentValue(pos);
+				out = hilbertContainer.GetCurrentValue(pos)();
 			}
 			else if (hilbertContainer.GetNumValues() > 0) {
-				out = hilbertContainer.GetCurrentValue(0);
+				out = hilbertContainer.GetCurrentValue(0)();
 			}
 		}
 		Unlock();
@@ -415,10 +415,10 @@ public:
 					y = std::floor((double)(row * compressionFactor - minY) + 0.5);
 					if (hilbertN > 0) {
 						pos = xy2d(x, y, hilbertN);
-						v = hilbertContainer.GetCurrentValue(pos);
+						v = hilbertContainer.GetCurrentValue(pos)();
 					}
 					else if (hilbertContainer.GetNumValues() > 0) {
-						v = hilbertContainer.GetCurrentValue(0);
+						v = hilbertContainer.GetCurrentValue(0)();
 					}
 					Unlock();
 				}
@@ -453,10 +453,10 @@ public:
 					y = std::floor((double)(row * compressionFactor - minY) + 0.5);
 					if (hilbertN > 0) {
 						pos = xy2d(x, y, hilbertN);
-						v = hilbertContainer.GetCurrentValue(pos);
+						v = hilbertContainer.GetCurrentValue(pos)();
 					}
 					else if (hilbertContainer.GetNumValues() > 0) {
-						v = hilbertContainer.GetCurrentValue(0);
+						v = hilbertContainer.GetCurrentValue(0)();
 					}
 					Unlock();
 				}
@@ -547,6 +547,9 @@ public:
 	};
 	sourceType& UnsafeGetSource() const {
 		return source;
+	};
+	auto& UnsafeGetHilbertContainer() const {
+		return hilbertContainer;
 	};
 
 	cweeStr			ToString(void) const {
@@ -709,7 +712,7 @@ public:
 		T out;
 		Lock();
 		UnsafeValidateData();
-		out = hilbertContainer.GetCurrentValue(hilbertPos);
+		out = hilbertContainer.GetCurrentValue(hilbertPos)();
 		Unlock();
 		return out;
 	};
@@ -739,8 +742,8 @@ public:
 	
 protected: // data
 	mutable sourceType source; // ordered by a hash, NOT ordered by the hilbert scaler
-	mutable cweePattern_CatmullRomSpline<T> hilbertContainer; // x-position is the length along the hilbert line 
-	
+	// mutable cweePattern_CatmullRomSpline<T> hilbertContainer; // x-position is the length along the hilbert line 
+	mutable cweeBalancedPattern<units::dimensionless::scalar_t> hilbertContainer; // x-position is the length along the hilbert line 
 
 	mutable bool	  invalidated = false;
 	mutable long long minX = std::numeric_limits<long long>::max();
@@ -767,7 +770,7 @@ private: // private member methods
 			hilbertContainer.Clear();
 			hilbertContainer.SetBoundaryType(boundary_t::BT_CLOSED);
 			hilbertContainer.SetInterpolationType(interpolation_t::LINEAR);
-			hilbertContainer.Reserve(source.GetNumValues() + 12);
+			hilbertContainer.SetGranularity(source.GetNumValues() + 12);
 
 			source.Lock();
 			for (auto* ptr : source.UnsafeGetKnotSeries()) {

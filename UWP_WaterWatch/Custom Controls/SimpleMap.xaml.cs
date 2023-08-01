@@ -1256,7 +1256,6 @@ namespace UWP_WaterWatch.Custom_Controls
         {
             public static int pixelsPerPage = 256;
             public List<TemporaryMapTileDataSourceContainer> Sources;
-            public int SourceIndex;
             public AtomicInt StopStreaming;
             public static void QueueBitMapStream(CustomMapTileDataSource sender, MapTileBitmapRequestedEventArgs args)
             {
@@ -1265,11 +1264,11 @@ namespace UWP_WaterWatch.Custom_Controls
                     return;
                 }
 
-                CreateBitmapAsStreamAsync(args, CustomMapTileDataSourceWithTag.pixelsPerPage, (sender as CustomMapTileDataSourceWithTag).Sources.ElementAt((sender as CustomMapTileDataSourceWithTag).SourceIndex));
+                CreateBitmapAsStreamAsync(args, CustomMapTileDataSourceWithTag.pixelsPerPage, (sender as CustomMapTileDataSourceWithTag).Sources);
             }
 
             // Create the custom tiles.
-            private static void CreateBitmapAsStreamAsync(MapTileBitmapRequestedEventArgs args, int pixelSize, TemporaryMapTileDataSourceContainer cweeMapBackground)
+            private static void CreateBitmapAsStreamAsync(MapTileBitmapRequestedEventArgs args, int pixelSize, List<TemporaryMapTileDataSourceContainer> cweeMapBackgrounds)
             {
                 MapTileBitmapRequestDeferral _deferral = args.Request.GetDeferral();
                 try {
@@ -1308,9 +1307,9 @@ namespace UWP_WaterWatch.Custom_Controls
 
                             try
                             {
-                                // for (int matrix_index = 0; matrix_index < cweeMapBackgrounds.Count; matrix_index++)
+                                for (int matrix_index = 0; matrix_index < cweeMapBackgrounds.Count; matrix_index++)
                                 {
-                                    // TemporaryMapTileDataSourceContainer cweeMapBackground = cweeMapBackgrounds[matrix_index];
+                                    TemporaryMapTileDataSourceContainer cweeMapBackground = cweeMapBackgrounds[matrix_index];
 
                                     SharedMatrix shared_matrix = new SharedMatrix(cweeMapBackground.Source.matrix, false);
 
@@ -1342,26 +1341,19 @@ namespace UWP_WaterWatch.Custom_Controls
                                                             values = shared_matrix.GetKnotSeries(longitude, latitude, longitudeRight, latitudeBottom, pixelWidth, pixelHeight);
                                                         }
                                                         int n = values.Count;
-                                                        //alpha_foreground = minCol.A / 255.0;
+                                                        alpha_foreground = minCol.A / 255.0;
                                                         for (int i = 0; i < n; i++)
                                                         {
                                                             v = values[i];
                                                             byteIndex = i * bpp;
                                                             if (values[i] >= minValue && values[i] <= maxValue)
                                                             {
-                                                                //alpha_background = (double)bytes[byteIndex + 3] / 255.0;
+                                                                alpha_background = (double)bytes[byteIndex + 3] / 255.0;
 
-                                                                bytes[byteIndex + 0] = (byte)minCol.R;// (alpha_foreground * minCol.R + alpha_background * (double)bytes[byteIndex + 0] * (1.0 - alpha_foreground));
-                                                                bytes[byteIndex + 1] = (byte)minCol.G;//(alpha_foreground * minCol.G + alpha_background * (double)bytes[byteIndex + 1] * (1.0 - alpha_foreground));
-                                                                bytes[byteIndex + 2] = (byte)minCol.B;//(alpha_foreground * minCol.B + alpha_background * (double)bytes[byteIndex + 2] * (1.0 - alpha_foreground));
-                                                                bytes[byteIndex + 3] = (byte)minCol.A;//((1.0 - (1.0 - alpha_foreground) * (1.0 - alpha_background)) * 255.0);
-                                                            }
-                                                            else
-                                                            {
-                                                                bytes[byteIndex + 0] = 0;
-                                                                bytes[byteIndex + 1] = 0;
-                                                                bytes[byteIndex + 2] = 0;
-                                                                bytes[byteIndex + 3] = 0;
+                                                                bytes[byteIndex + 0] = (byte)(alpha_foreground * minCol.R + alpha_background * (double)bytes[byteIndex + 0] * (1.0 - alpha_foreground));
+                                                                bytes[byteIndex + 1] = (byte)(alpha_foreground * minCol.G + alpha_background * (double)bytes[byteIndex + 1] * (1.0 - alpha_foreground));
+                                                                bytes[byteIndex + 2] = (byte)(alpha_foreground * minCol.B + alpha_background * (double)bytes[byteIndex + 2] * (1.0 - alpha_foreground));
+                                                                bytes[byteIndex + 3] = (byte)((1.0 - (1.0 - alpha_foreground) * (1.0 - alpha_background)) * 255.0);
                                                             }
                                                         }
 
@@ -1369,7 +1361,7 @@ namespace UWP_WaterWatch.Custom_Controls
                                                     else
                                                     {
                                                         // no point in doing the analysis -- there is no "clip to bounds" and there will be no color transitions. 
-                                                        // alpha_foreground = minCol.A / 255.0;
+                                                        alpha_foreground = minCol.A / 255.0;
 
                                                         for (int y = 0; y < pixelHeight; y++)
                                                         {
@@ -1377,12 +1369,12 @@ namespace UWP_WaterWatch.Custom_Controls
                                                             {
                                                                 byteIndex = (y * pixelWidth + x) * bpp;
 
-                                                                // alpha_background = (double)bytes[byteIndex + 3] / 255.0;
+                                                                alpha_background = (double)bytes[byteIndex + 3] / 255.0;
 
-                                                                bytes[byteIndex + 0] = (byte)minCol.R;//(alpha_foreground * (double)minCol.R + alpha_background * (double)bytes[byteIndex + 0] * (1.0 - alpha_foreground));
-                                                                bytes[byteIndex + 1] = (byte)minCol.G;//(alpha_foreground * (double)minCol.G + alpha_background * (double)bytes[byteIndex + 1] * (1.0 - alpha_foreground));
-                                                                bytes[byteIndex + 2] = (byte)minCol.B;//(alpha_foreground * (double)minCol.B + alpha_background * (double)bytes[byteIndex + 2] * (1.0 - alpha_foreground));
-                                                                bytes[byteIndex + 3] = (byte)minCol.A;//((1.0 - (1.0 - alpha_foreground) * (1.0 - alpha_background)) * 255.0);
+                                                                bytes[byteIndex + 0] = (byte)(alpha_foreground * (double)minCol.R + alpha_background * (double)bytes[byteIndex + 0] * (1.0 - alpha_foreground));
+                                                                bytes[byteIndex + 1] = (byte)(alpha_foreground * (double)minCol.G + alpha_background * (double)bytes[byteIndex + 1] * (1.0 - alpha_foreground));
+                                                                bytes[byteIndex + 2] = (byte)(alpha_foreground * (double)minCol.B + alpha_background * (double)bytes[byteIndex + 2] * (1.0 - alpha_foreground));
+                                                                bytes[byteIndex + 3] = (byte)((1.0 - (1.0 - alpha_foreground) * (1.0 - alpha_background)) * 255.0);
                                                             }
                                                         }
                                                     }
@@ -1410,37 +1402,37 @@ namespace UWP_WaterWatch.Custom_Controls
                                                         {
                                                             if (!cweeMapBackground.Source.clipToBounds)
                                                             {
-                                                                //alpha_foreground = minCol.A / 255.0;
-                                                                //alpha_background = (double)bytes[byteIndex + 3] / 255.0;
+                                                                alpha_foreground = minCol.A / 255.0;
+                                                                alpha_background = (double)bytes[byteIndex + 3] / 255.0;
 
-                                                                bytes[byteIndex + 0] = (byte)minCol.R;//(alpha_foreground * minCol.R + alpha_background * (double)bytes[byteIndex + 0] * (1.0 - alpha_foreground));
-                                                                bytes[byteIndex + 1] = (byte)minCol.G;//(alpha_foreground * minCol.G + alpha_background * (double)bytes[byteIndex + 1] * (1.0 - alpha_foreground));
-                                                                bytes[byteIndex + 2] = (byte)minCol.B;//(alpha_foreground * minCol.B + alpha_background * (double)bytes[byteIndex + 2] * (1.0 - alpha_foreground));
-                                                                bytes[byteIndex + 3] = (byte)minCol.A;//((1.0 - (1.0 - alpha_foreground) * (1.0 - alpha_background)) * 255.0);
+                                                                bytes[byteIndex + 0] = (byte)(alpha_foreground * minCol.R + alpha_background * (double)bytes[byteIndex + 0] * (1.0 - alpha_foreground));
+                                                                bytes[byteIndex + 1] = (byte)(alpha_foreground * minCol.G + alpha_background * (double)bytes[byteIndex + 1] * (1.0 - alpha_foreground));
+                                                                bytes[byteIndex + 2] = (byte)(alpha_foreground * minCol.B + alpha_background * (double)bytes[byteIndex + 2] * (1.0 - alpha_foreground));
+                                                                bytes[byteIndex + 3] = (byte)((1.0 - (1.0 - alpha_foreground) * (1.0 - alpha_background)) * 255.0);
                                                             }
                                                         }
                                                         else if (v > 1)
                                                         {
                                                             if (!cweeMapBackground.Source.clipToBounds)
                                                             {
-                                                                //alpha_foreground = maxCol.A / 255.0;
-                                                                //alpha_background = (double)bytes[byteIndex + 3] / 255.0;
+                                                                alpha_foreground = maxCol.A / 255.0;
+                                                                alpha_background = (double)bytes[byteIndex + 3] / 255.0;
 
-                                                                bytes[byteIndex + 0] = (byte)maxCol.R; // (alpha_foreground * maxCol.R + alpha_background * (double)bytes[byteIndex + 0] * (1.0 - alpha_foreground));
-                                                                bytes[byteIndex + 1] = (byte)maxCol.G; // (alpha_foreground * maxCol.G + alpha_background * (double)bytes[byteIndex + 1] * (1.0 - alpha_foreground));
-                                                                bytes[byteIndex + 2] = (byte)maxCol.B; // (alpha_foreground * maxCol.B + alpha_background * (double)bytes[byteIndex + 2] * (1.0 - alpha_foreground));
-                                                                bytes[byteIndex + 3] = (byte)maxCol.A; // ((1.0 - (1.0 - alpha_foreground) * (1.0 - alpha_background)) * 255.0);
+                                                                bytes[byteIndex + 0] = (byte)(alpha_foreground * maxCol.R + alpha_background * (double)bytes[byteIndex + 0] * (1.0 - alpha_foreground));
+                                                                bytes[byteIndex + 1] = (byte)(alpha_foreground * maxCol.G + alpha_background * (double)bytes[byteIndex + 1] * (1.0 - alpha_foreground));
+                                                                bytes[byteIndex + 2] = (byte)(alpha_foreground * maxCol.B + alpha_background * (double)bytes[byteIndex + 2] * (1.0 - alpha_foreground));
+                                                                bytes[byteIndex + 3] = (byte)((1.0 - (1.0 - alpha_foreground) * (1.0 - alpha_background)) * 255.0);
                                                             }
                                                         }
                                                         else
                                                         {
-                                                            //alpha_foreground = minCol.A.Lerp(maxCol.A, v) / 255.0;
-                                                            //alpha_background = (double)bytes[byteIndex + 3] / 255.0;
+                                                            alpha_foreground = minCol.A.Lerp(maxCol.A, v) / 255.0;
+                                                            alpha_background = (double)bytes[byteIndex + 3] / 255.0;
 
-                                                            bytes[byteIndex + 0] = (byte)minCol.R.Lerp(maxCol.R, v); // (alpha_foreground * minCol.R.Lerp(maxCol.R, v) + alpha_background * (double)bytes[byteIndex + 0] * (1.0 - alpha_foreground));
-                                                            bytes[byteIndex + 1] = (byte)minCol.G.Lerp(maxCol.G, v); // (alpha_foreground * minCol.G.Lerp(maxCol.G, v) + alpha_background * (double)bytes[byteIndex + 1] * (1.0 - alpha_foreground));
-                                                            bytes[byteIndex + 2] = (byte)minCol.B.Lerp(maxCol.B, v); // (alpha_foreground * minCol.B.Lerp(maxCol.B, v) + alpha_background * (double)bytes[byteIndex + 2] * (1.0 - alpha_foreground));
-                                                            bytes[byteIndex + 3] = (byte)minCol.A.Lerp(maxCol.A, v); // ((1.0 - (1.0 - alpha_foreground) * (1.0 - alpha_background)) * 255.0);
+                                                            bytes[byteIndex + 0] = (byte)(alpha_foreground * minCol.R.Lerp(maxCol.R, v) + alpha_background * (double)bytes[byteIndex + 0] * (1.0 - alpha_foreground));
+                                                            bytes[byteIndex + 1] = (byte)(alpha_foreground * minCol.G.Lerp(maxCol.G, v) + alpha_background * (double)bytes[byteIndex + 1] * (1.0 - alpha_foreground));
+                                                            bytes[byteIndex + 2] = (byte)(alpha_foreground * minCol.B.Lerp(maxCol.B, v) + alpha_background * (double)bytes[byteIndex + 2] * (1.0 - alpha_foreground));
+                                                            bytes[byteIndex + 3] = (byte)((1.0 - (1.0 - alpha_foreground) * (1.0 - alpha_background)) * 255.0);
                                                         }
                                                     }
                                                 }
@@ -1455,12 +1447,12 @@ namespace UWP_WaterWatch.Custom_Controls
                                             for (x = 0; x < pixelWidth; x++)
                                             {
                                                 byteIndex = (y * pixelWidth + x) * bpp;
-                                                //alpha_background = (double)bytes[byteIndex + 3] / 255.0;
+                                                alpha_background = (double)bytes[byteIndex + 3] / 255.0;
 
-                                                bytes[byteIndex + 0] = (byte)minCol.R; //  (alpha_foreground * (double)minCol.R + alpha_background * (double)bytes[byteIndex + 0] * (1.0 - alpha_foreground));
-                                                bytes[byteIndex + 1] = (byte)minCol.G; // (alpha_foreground * (double)minCol.G + alpha_background * (double)bytes[byteIndex + 1] * (1.0 - alpha_foreground));
-                                                bytes[byteIndex + 2] = (byte)minCol.B; // (alpha_foreground * (double)minCol.B + alpha_background * (double)bytes[byteIndex + 2] * (1.0 - alpha_foreground));
-                                                bytes[byteIndex + 3] = (byte)minCol.A; // ((1.0 - (1.0 - alpha_foreground) * (1.0 - alpha_background)) * 255.0);
+                                                bytes[byteIndex + 0] = (byte)(alpha_foreground * (double)minCol.R + alpha_background * (double)bytes[byteIndex + 0] * (1.0 - alpha_foreground));
+                                                bytes[byteIndex + 1] = (byte)(alpha_foreground * (double)minCol.G + alpha_background * (double)bytes[byteIndex + 1] * (1.0 - alpha_foreground));
+                                                bytes[byteIndex + 2] = (byte)(alpha_foreground * (double)minCol.B + alpha_background * (double)bytes[byteIndex + 2] * (1.0 - alpha_foreground));
+                                                bytes[byteIndex + 3] = (byte)((1.0 - (1.0 - alpha_foreground) * (1.0 - alpha_background)) * 255.0);
                                             }
                                         }
                                     }
@@ -1477,23 +1469,14 @@ namespace UWP_WaterWatch.Custom_Controls
                                 writer.WriteBytes(bytes);
                                 args.Request.PixelData = RandomAccessStreamReference.CreateFromStream(randomAccessStream);
                                 _deferral.Complete();
-                                writer.StoreAsync().AsTask().ContinueWith((System.Threading.Tasks.Task<uint> a) =>
-                                {
-                                    writer.FlushAsync().AsTask().ContinueWith((System.Threading.Tasks.Task<bool> b) =>
-                                    {
-                                        try
-                                        {
+                                writer.StoreAsync().AsTask().ContinueWith((System.Threading.Tasks.Task<uint> a) => {
+                                    writer.FlushAsync().AsTask().ContinueWith((System.Threading.Tasks.Task<bool> b) => {
+                                        try{
                                             writer.DetachStream();
                                             writer.Dispose();
                                         }
-                                        catch (Exception)
-                                        {
-
-                                        }
-                                        finally
-                                        {
-                                            // _deferral.Complete();
-                                        }
+                                        catch (Exception){}
+                                        finally{}
                                     });
                                 });
                             }
@@ -1519,78 +1502,83 @@ namespace UWP_WaterWatch.Custom_Controls
                 return EdmsTasks.cweeTask.ContinueWhenTrue(() => { if (locker.Increment() > 1) { locker.Decrement(); return true; } else { locker.Decrement(); return false; } }).ContinueWith(() => {
                     // custom data source
                     List<TemporaryMapTileDataSourceContainer> sources = new List<TemporaryMapTileDataSourceContainer>();
-                    int index = 0;
+                    double minX = -double.MaxValue, maxX = double.MaxValue, minY = -double.MaxValue, maxY = double.MaxValue;
                     foreach (var matrix in matrixes)
                     {
-                        double minX = -double.MaxValue, maxX = double.MaxValue, minY = -double.MaxValue, maxY = double.MaxValue;
-
                         sources.Add(new TemporaryMapTileDataSourceContainer() { Source = matrix, SourceIndex = matrix.matrix });
                         SharedMatrix shared_matrix = new SharedMatrix(matrix.matrix, false);
 
-                        if (shared_matrix.GetNumValues() > 0)
-                        {
+                        //if (matrix.highQuality) {
+                        //    EdmsTasks.InsertJob(()=> {
+                        //        // encourages development of the timeseries matrix model as early as possible.
+                        //        return shared_matrix.GetTimeSeries(shared_matrix.GetMinX(), shared_matrix.GetMaxY(), shared_matrix.GetMaxX(), shared_matrix.GetMinY(), CustomMapTileDataSourceWithTag.pixelsPerPage, CustomMapTileDataSourceWithTag.pixelsPerPage);
+                        //    }, false, true);                            
+                        //}
+
+                        if (shared_matrix.GetNumValues() > 0) {
                             minX = Math.Max(minX, shared_matrix.GetMinX());
                             maxX = Math.Min(maxX, shared_matrix.GetMaxX());
                             minY = Math.Max(minY, shared_matrix.GetMinY());
                             maxY = Math.Min(maxY, shared_matrix.GetMaxY());
                         }
-
-                        CustomMapTileDataSourceWithTag customDataSource = new CustomMapTileDataSourceWithTag() { SourceIndex = index, Sources = sources, StopStreaming = streamStopper };
-
-                        index++;
-
-                        AtomicInt stopStreaming = customDataSource.StopStreaming;
-
-                        map.Loaded += (object sender, RoutedEventArgs e) => {
-                            stopStreaming.Set(0);
-                        };
-                        map.Unloaded += (object sender, RoutedEventArgs e) => {
-                            stopStreaming.Set(1);
-                        };
-
-                        if (minX > -double.MaxValue && maxX < double.MaxValue && minY > -double.MaxValue && maxY < double.MaxValue)
-                        {
-                            try
-                            {
-                                customDataSource.BitmapRequested += CustomMapTileDataSourceWithTag.QueueBitMapStream;
-                                map.TileSources.Add(new MapTileSource(customDataSource)
-                                {
-                                    TilePixelSize = CustomMapTileDataSourceWithTag.pixelsPerPage
-                                    ,
-                                    AllowOverstretch = true
-                                    ,
-                                    IsFadingEnabled = false
-                                    ,
-                                    Layer = MapTileLayer.AreaOverlay
-                                    ,
-                                    Bounds = new GeoboundingBox(
-                                        new BasicGeoposition() { Longitude = minX, Latitude = maxY },
-                                        new BasicGeoposition() { Longitude = maxX, Latitude = minY }
-                                    )
-                                });
-                            }
-                            catch (Exception) { }
-                        }
-                        else
-                        {
-                            try
-                            {
-                                customDataSource.BitmapRequested += CustomMapTileDataSourceWithTag.QueueBitMapStream;
-                                map.TileSources.Add(new MapTileSource(customDataSource)
-                                {
-                                    TilePixelSize = CustomMapTileDataSourceWithTag.pixelsPerPage
-                                    ,
-                                    AllowOverstretch = true
-                                    ,
-                                    IsFadingEnabled = false
-                                    ,
-                                    Layer = MapTileLayer.AreaOverlay
-                                });
-
-                            }
-                            catch (Exception) { }
-                        }
                     }
+
+                    CustomMapTileDataSourceWithTag customDataSource = new CustomMapTileDataSourceWithTag() { Sources = sources, StopStreaming = streamStopper };
+
+                    AtomicInt stopStreaming = customDataSource.StopStreaming;
+
+                    map.Loaded += (object sender, RoutedEventArgs e) => {
+                        stopStreaming.Set(0);
+                    };
+                    map.GotFocus += (object sender, RoutedEventArgs e) => {
+                        stopStreaming.Set(0);
+                    };
+                    map.Unloaded += (object sender, RoutedEventArgs e) => {
+                        stopStreaming.Set(1);
+                    };
+
+                    if (minX > -double.MaxValue && maxX < double.MaxValue && minY > -double.MaxValue && maxY < double.MaxValue)
+                    {
+                        try
+                        {
+                            customDataSource.BitmapRequested += CustomMapTileDataSourceWithTag.QueueBitMapStream;
+                            map.TileSources.Add(new MapTileSource(customDataSource)
+                            {
+                                TilePixelSize = CustomMapTileDataSourceWithTag.pixelsPerPage
+                                ,
+                                AllowOverstretch = true
+                                ,
+                                IsFadingEnabled = false
+                                ,
+                                Layer = MapTileLayer.AreaOverlay
+                                ,
+                                Bounds = new GeoboundingBox(
+                                    new BasicGeoposition() { Longitude = minX, Latitude = maxY },
+                                    new BasicGeoposition() { Longitude = maxX, Latitude = minY }
+                                )
+                            });
+                        }
+                        catch (Exception) { }
+                    }
+                    else {
+                        try
+                        {
+                            customDataSource.BitmapRequested += CustomMapTileDataSourceWithTag.QueueBitMapStream;
+                            map.TileSources.Add(new MapTileSource(customDataSource)
+                            {
+                                TilePixelSize = CustomMapTileDataSourceWithTag.pixelsPerPage
+                                ,
+                                AllowOverstretch = true
+                                ,
+                                IsFadingEnabled = false
+                                ,
+                                Layer = MapTileLayer.AreaOverlay
+                            });
+
+                        }
+                        catch (Exception) { }
+                    }
+
                 }, true);
             }, true);
         }
