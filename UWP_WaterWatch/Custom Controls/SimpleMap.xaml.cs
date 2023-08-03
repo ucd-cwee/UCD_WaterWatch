@@ -1508,12 +1508,14 @@ namespace UWP_WaterWatch.Custom_Controls
                         sources.Add(new TemporaryMapTileDataSourceContainer() { Source = matrix, SourceIndex = matrix.matrix });
                         SharedMatrix shared_matrix = new SharedMatrix(matrix.matrix, false);
 
-                        //if (matrix.highQuality) {
-                        //    EdmsTasks.InsertJob(()=> {
-                        //        // encourages development of the timeseries matrix model as early as possible.
-                        //        return shared_matrix.GetTimeSeries(shared_matrix.GetMinX(), shared_matrix.GetMaxY(), shared_matrix.GetMaxX(), shared_matrix.GetMinY(), CustomMapTileDataSourceWithTag.pixelsPerPage, CustomMapTileDataSourceWithTag.pixelsPerPage);
-                        //    }, false, true);                            
-                        //}
+                        if (matrix.highQuality)
+                        {
+                            EdmsTasks.InsertJob(() =>
+                            {
+                                // encourages development of the timeseries matrix model as early as possible.
+                                return shared_matrix.GetTimeSeries(shared_matrix.GetMinX(), shared_matrix.GetMaxY(), shared_matrix.GetMaxX(), shared_matrix.GetMinY(), CustomMapTileDataSourceWithTag.pixelsPerPage, CustomMapTileDataSourceWithTag.pixelsPerPage);
+                            }, false, true);
+                        }
 
                         if (shared_matrix.GetNumValues() > 0) {
                             minX = Math.Max(minX, shared_matrix.GetMinX());

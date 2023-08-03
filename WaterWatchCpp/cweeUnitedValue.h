@@ -163,7 +163,7 @@ to maintain a single distribution point for the source code.
 		public:
 			std::array< double, NumUnits> unitType_m;
 			bool isScalar_m;
-			const char* abbreviation_m;
+			mutable const char* abbreviation_m;
 			double ratio_m;
 		};
 
@@ -232,7 +232,14 @@ to maintain a single distribution point for the source code.
 		public: // Functions
 			const char* Abbreviation() const noexcept {
 				if (unit_m.abbreviation_m == "") {
-					return CreateAbbreviation();
+					unit_m.abbreviation_m = unit_m.LookupAbbreviation();
+					if (unit_m.abbreviation_m == "") {
+						// unit_m.abbreviation_m = CreateAbbreviation();
+						return CreateAbbreviation(); // unit_m.abbreviation_m;
+					}
+					else {
+						return unit_m.abbreviation_m;
+					}
 				}
 				else {
 					return unit_m.abbreviation_m;
@@ -353,8 +360,9 @@ to maintain a single distribution point for the source code.
 				else {
 					unit_m.ratio_m /= V.unit_m.ratio_m;
 				}
-				unit_m.abbreviation_m = unit_m.LookupAbbreviation(); // To-Do: look-up the abbreviation based on the ratio and the unit vector. (i.e. [1.0, 0.0, 0.0, 0.0, 0.0, 1.0] = "m")
-				if (unit_m.abbreviation_m == "") unit_m.ratio_m = 1; // return to SI units if unknown combination
+				// unit_m.abbreviation_m = unit_m.LookupAbbreviation(); // To-Do: look-up the abbreviation based on the ratio and the unit vector. (i.e. [1.0, 0.0, 0.0, 0.0, 0.0, 1.0] = "m")
+				// if (unit_m.abbreviation_m == "") unit_m.ratio_m = 1; // return to SI units if unknown combination
+				unit_m.abbreviation_m = "";
 
 				return *this;
 			};
@@ -365,8 +373,9 @@ to maintain a single distribution point for the source code.
 
 				// now that we have modified the units, the conversion ratio makes no sense anymore and must be reset. 
 				unit_m.ratio_m = std::pow(unit_m.ratio_m, V);
-				unit_m.abbreviation_m = unit_m.LookupAbbreviation();
-				if (unit_m.abbreviation_m == "") unit_m.ratio_m = 1; // return to SI units if unknown combination
+				// unit_m.abbreviation_m = unit_m.LookupAbbreviation();
+				// if (unit_m.abbreviation_m == "") unit_m.ratio_m = 1; // return to SI units if unknown combination
+				unit_m.abbreviation_m = "";
 
 				return *this;
 			};

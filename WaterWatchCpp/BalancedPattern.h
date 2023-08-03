@@ -604,7 +604,8 @@ private:
 	int													granularity;
 	boundary_t											boundaryType;
 	interpolation_t										interpolationType;
-	mutable cweeSysMutex								lock;
+	mutable cweeReadWriteMutex							lock;
+	// mutable cweeSysMutex								lock;
 
 public:
 	cweeBalancedPattern() : 
@@ -623,12 +624,12 @@ public:
 	~cweeBalancedPattern() { Clear(); };
 
 	int													GetGranularity(void) const {
-		AUTO g = lock.Guard();
+		AUTO g = lock.Read_Guard();
 		int out = granularity;
 		return out;
 	};
 	void												SetGranularity(int newNum) {
-		AUTO g = lock.Guard();
+		AUTO g = lock.Read_Guard();
 		granularity = newNum;
 	};
 
@@ -645,23 +646,23 @@ public:
 	};
 
 	 void												SetBoundaryType(const boundary_t& bt) {
-		 AUTO g = lock.Guard();
+		 AUTO g = lock.Read_Guard();
 		 boundaryType = bt;
 	 };
 	 boundary_t											GetBoundaryType() const {
 		boundary_t out;
-		AUTO g = lock.Guard();
+		AUTO g = lock.Read_Guard();
 		out = boundaryType;		
 		return out;
 	 };
 
 	 void												SetInterpolationType(const interpolation_t& it) {
-		 AUTO g = lock.Guard();
+		 AUTO g = lock.Read_Guard();
 		interpolationType = it;		
 	};
 	 interpolation_t									GetInterpolationType() const {
 		interpolation_t out;
-		AUTO g = lock.Guard();
+		AUTO g = lock.Read_Guard();
 		out = interpolationType;
 		return out;
 	};
@@ -776,7 +777,7 @@ public:
 
 	 void												RemoveTimes(const X_Axis_Type& greaterThan, const X_Axis_Type& lessThenEqualTo) {
 		int lowerLimit, upperLimit, index; cweeThreadedList<int> indexesToDelete;
-		AUTO g = lock.Guard();
+		AUTO g = lock.Write_Guard();
 		{
 			auto iter = container.NodeFindSmallestLargerEqual(greaterThan);
 			if (iter) {
@@ -795,13 +796,13 @@ public:
 		}
 	};
 	 void												Clear() {
-		 AUTO g = lock.Guard();
+		 AUTO g = lock.Write_Guard();
 		container.Clear();
 		boundaryType = boundary_t::BT_FREE;
 		interpolationType = interpolation_t::LINEAR;
 	};
 	 void												ClearData() {
-		 AUTO g = lock.Guard();
+		 AUTO g = lock.Write_Guard();
 		 container.Clear();
 	 };
 	 scalarT											GetMinimumDecimals() const {
@@ -811,7 +812,7 @@ public:
 		scalarT F;
 		int numSuccess = 0;
 
-		AUTO g = lock.Guard();
+		AUTO g = lock.Read_Guard();
 		for (auto& x : container) {
 			if (x.object) {
 				F = cweeMath::roundNearest((float)*x.object, (float)decimal);
@@ -845,7 +846,7 @@ public:
 		prevTime = std::numeric_limits<X_Axis_Type>::max();
 		numFailures = 100;
 
-		AUTO g = lock.Guard();
+		AUTO g = lock.Read_Guard();
 		for (auto& x : container) {
 			if (x.object) {
 				t = (prevTime - x.key) >= (X_Axis_Type)0 ? (prevTime - x.key) : -(prevTime - x.key);
@@ -870,7 +871,7 @@ public:
 		out = 0;
 		if (GetNumValues() == 0) return out;
 		bool skipFirst = true;
-		AUTO g = lock.Guard(); 
+		AUTO g = lock.Read_Guard();
 		for (auto& x : container) {
 			if (x.object) {
 				if (skipFirst) {
@@ -889,7 +890,7 @@ public:
 		 out = 0;
 		 if (GetNumValues() == 0) return out;
 		 bool skipFirst = true;
-		 AUTO g = lock.Guard();
+		 AUTO g = lock.Read_Guard();
 		 for (auto& x : container) {
 			 if (x.object) {
 				 if (skipFirst) {
@@ -916,19 +917,6 @@ public:
 			out = this->RombergIntegral(minT, minT + delta) / delta;
 		}		
 		return out;
-
-		//Y_Axis_Type out;
-		//out = 0;
-		//int num(0);
-		//AUTO g = lock.Guard();
-		//for (auto& x : container) {
-		//	if (x.object) {
-		//		num++;
-		//		out -= (out / (scalarT)num);
-		//		out += (*x.object / (scalarT)num);
-		//	}
-		//}
-		//return out;
 	};
 
 	 Y_Axis_Type										GetMinValue(const X_Axis_Type& start, const X_Axis_Type& end) const {
@@ -937,7 +925,7 @@ public:
 		int n = GetNumValues();
 		if (n == 0) return out;
 		bool skipFirst = true;
-		AUTO g = lock.Guard();
+		AUTO g = lock.Read_Guard();
 		
 		auto iter = container.NodeFindSmallestLargerEqual(start);
 		if (iter) {
@@ -968,7 +956,7 @@ public:
 		 int n = GetNumValues();
 		 if (n == 0) return out;
 		 bool skipFirst = true;
-		 AUTO g = lock.Guard();
+		 AUTO g = lock.Read_Guard();
 
 		 auto iter = container.NodeFindSmallestLargerEqual(start);
 		 if (iter) {
@@ -992,41 +980,25 @@ public:
 		 }
 
 		 return out;
-	};;
+	};
 	 Y_Axis_Type										GetAvgValue(const X_Axis_Type& start, const X_Axis_Type& end) const {
-		 Y_Axis_Type out;
-		 out = 0;
-		 int num(0);
-		 int n = GetNumValues();
-		 if (n == 0) return out;
-
-		 AUTO g = lock.Guard();
-
-		 auto iter = container.NodeFindSmallestLargerEqual(start);
-		 if (iter) {
-			 do {
-				 if (iter->key > start) {
-					 if (iter->key <= end) {
-						 num++;
-						 out -= (out / (scalarT)num);
-						 out += (*iter->object / (scalarT)num);
-					 }
-					 else {
-						 break;
-					 }
-				 }
-				 iter = container.GetNextLeaf(iter);
-			 } while (iter);
+		 Y_Axis_Type out(0);
+		 X_Axis_Type zero(0);
+		 if ((end - start) <= zero) return GetCurrentValue(start);
+		 if constexpr (std::is_same<X_Axis_Type, u64>::value) {
+			 out = this->RombergIntegral(start, end) / (end-start);
 		 }
-
+		 else {
+			 out = this->RombergIntegral(start, end) / (end - start);
+		 }
 		 return out;
-	};;
+	};
 
 	 X_Axis_Type										GetAvgTime() const {
 		X_Axis_Type out(0);
 		int num(0);
 
-		AUTO g = lock.Guard();
+		AUTO g = lock.Read_Guard();
 		for (auto& x : container) {
 			if (x.object) {
 				num++;
@@ -1040,39 +1012,39 @@ public:
 	 X_Axis_Type										GetMaxTime(void) const {
 		X_Axis_Type out(0);
 
-		Lock();
+		this->lock.Read_Lock();
 		if (container.GetNodeCount() > 0) {
 			auto ptr = container.NodeFindLargestSmallerEqual(std::numeric_limits<X_Axis_Type>::max());
 			if (ptr) {
 				out = ptr->key;
 			}
 		}
-		Unlock();
+		this->lock.Read_Unlock();
 		return out;
 	};
 	 X_Axis_Type										GetMinTime(void) const {
 		X_Axis_Type out(0);
 
-		Lock();
+		this->lock.Read_Lock();
 		if (container.GetNodeCount() > 0) {
 			auto ptr = container.GetFirst(); //  NodeFindSmallestLargerEqual(-std::numeric_limits<X_Axis_Type>::max());
 			if (ptr) {
 				out = ptr->key;
 			}
 		}
-		Unlock();
+		this->lock.Read_Unlock();
 		return out;
 	};
 
 	 int												GetNumValues() const {
 		int out; 
-		Lock();
+		this->lock.Read_Lock();
 		out = container.GetNodeCount();
-		Unlock();
+		this->lock.Read_Unlock();
 		return out;
 	};
 	 void												ShiftTime(const X_Axis_Type& deltaTime) {
-		AUTO g = lock.Guard();
+		AUTO g = lock.Write_Guard();
 		for (auto& x : container) {
 			//if (x.object) {
 				x.key += deltaTime;
@@ -1080,7 +1052,7 @@ public:
 		}
 	};
 	 void												Translate(const Y_Axis_Type& translation) {
-		AUTO g = lock.Guard();
+		AUTO g = lock.Write_Guard();
 		for (auto& x : container) {
 			if (x.object) {
 				*x.object += translation;
@@ -1171,14 +1143,14 @@ public:
 
 	/*! Clamp the y-axis Values such that they do not exceed the maximum and minimum Values. */
 	void												ClampValues(const Y_Axis_Type& min, const Y_Axis_Type& max) {
-		AUTO g = lock.Guard();
+		AUTO g = lock.Write_Guard();
 		for (auto& x : this->container) {
 			*x.object = units::math::clamp(*x.object, min, max);
 		}
 	};
 
 	Y_Axis_Type											GetValueAtIndex(size_t index) {
-		AUTO g = lock.Guard();
+		AUTO g = lock.Read_Guard();
 		int n = 0; 
 		for (auto& x : container) {
 			if (x.object) {
@@ -1191,7 +1163,7 @@ public:
 		return Y_Axis_Type();
 	};
 	X_Axis_Type											GetTimeAtIndex(size_t index) {
-		AUTO g = lock.Guard();
+		AUTO g = lock.Read_Guard();
 		int n = 0;
 		for (auto& x : container) {
 			if (x.object) {
@@ -1205,7 +1177,7 @@ public:
 	};
 
 	size_t												GetLargestSmallerOrEqualTime(const X_Axis_Type& time) const {
-		AUTO g = lock.Guard();
+		AUTO g = lock.Read_Guard();
 		size_t n = -1;
 		for (auto& x : container) {
 			if (x.object) {
@@ -1224,25 +1196,25 @@ public:
 		X_Axis_Type clampedTime;
 		Y_Axis_Type v; Y_Axis_Type* ptr;
 		v = 0;
-		Lock();
+		this->lock.Read_Lock();
 		j = container.GetNodeCount();		
 		if (j < 1) {
 			v = 0;
-			Unlock();
+			this->lock.Read_Unlock();
 			return v;
 		}
 		else if (j == 1) {
 			ptr = container.FindLargestSmallerEqual(time);
 			if (ptr) v = *ptr;
-			Unlock();
+			this->lock.Read_Unlock();
 			return v;
 		}
 		else {
-			Unlock();
+			this->lock.Read_Unlock();
 			clampedTime = this->ClampedTime(time);
 			clampedTime = this->LoopedTime(clampedTime);
 			{
-				Lock();
+				this->lock.Read_Lock();
 				switch (interpolationType) {
 				case interpolation_t::RIGHT: {
 					ptr = container.FindSmallestLargerEqual(clampedTime);
@@ -1250,9 +1222,9 @@ public:
 					break;
 				}
 				case interpolation_t::SPLINE: {
-					Unlock();
+					this->lock.Read_Unlock();
 					Basis(clampedTime, bvals);
-					Lock();
+					this->lock.Read_Lock();
 					node_type* x1 = container.NodeFindLargestSmallerEqual(clampedTime);
 					node_type* x0 = x1 == nullptr ? (node_type*)nullptr : container.GetPrevLeaf(x1);
 					node_type* x2 = x1 == nullptr ? (node_type*)nullptr : container.GetNextLeaf(x1);
@@ -1264,9 +1236,9 @@ public:
 					break;
 				}
 				case interpolation_t::LINEAR: {
-					Unlock();
+					this->lock.Read_Unlock();
 					Basis(clampedTime, bvals);
-					Lock();
+					this->lock.Read_Lock();
 					node_type* x1 = container.NodeFindLargestSmallerEqual(clampedTime);
 					node_type* x2 = x1 == nullptr ? (node_type*)nullptr : container.GetNextLeaf(x1);
 					if (x1) v += (*x1->object * (scalarT)(u64)bvals[1]);
@@ -1280,7 +1252,7 @@ public:
 					break;
 				}
 				}
-				Unlock();
+				this->lock.Read_Unlock();
 			}
 			return v;
 		}
@@ -1288,7 +1260,7 @@ public:
 
 	 X_Axis_Type										GetTimeForValue(const Y_Axis_Type& val) const {
 		 // try and determine the first appropriate X-axis value that could generate the given Y-axis value;
-		 AUTO g = lock.Guard(); 
+		 AUTO g = lock.Read_Guard();
 		 cweeSharedPtr<bool> startedAbove;
 		 for (node_type& x1 : this->container) {
 			 if (*x1.object == val) return x1.key; // get out if found
@@ -1345,7 +1317,6 @@ public:
 	 };
 	 /*! Return approximate derivative of spline at time */
 	 AUTO												GetCurrentFirstDerivative(const X_Axis_Type& time) const {
-#if 1
 		 if constexpr (std::is_same<X_Axis_Type, u64>::value) {
 			 X_Axis_Type step = 0.01;
 			 return (GetCurrentValue(time + step) - GetCurrentValue(time - step)) / units::time::second_t(step * 2.0);
@@ -1354,308 +1325,10 @@ public:
 			 X_Axis_Type step = 0.01;
 			 return (GetCurrentValue(time + step) - GetCurrentValue(time - step)) / (step * 2.0);
 		 }
-#else
-		 if constexpr (std::is_same<X_Axis_Type, u64>::value) {
-			 AUTO v = (Y_Axis_Type)0 / units::time::second_t(1);
-			 int i, j, k;
-			 u64 bvals[4], d = 0, clampedTime;
-			 units::time::second_t t;
-			 units::time::second_t z = 0_s;
-
-			 j = GetNumValues();
-			 if (j > 1) {
-				 clampedTime = this->ClampedTime(time);
-				 clampedTime = this->LoopedTime(clampedTime);
-				 BasisFirstDerivative(clampedTime, bvals);
-				 {
-					 AUTO g = lock.Guard();
-					 node_type* x1 = container.NodeFindLargestSmallerEqual(clampedTime);
-					 node_type* x0 = x1 == nullptr ? (node_type*)nullptr : container.GetPrevLeaf(x1);
-					 node_type* x2 = x1 == nullptr ? (node_type*)nullptr : container.GetNextLeaf(x1);
-					 node_type* x3 = x2 == nullptr ? (node_type*)nullptr : container.GetNextLeaf(x2);
-
-					 if (x1 && x2) {
-						 if (x0 && x1 && x2 && x3) {
-							 // best case scenario
-
-							 if (x3) { t = (units::time::second_t)(double)x3->key; }
-							 else if (x2) { t = (units::time::second_t)(double)x2->key; }
-							 else if (x1) { t = (units::time::second_t)(double)x1->key; }
-							 else if (x0) { t = (units::time::second_t)(double)x0->key; }
-
-							 if (x0) { t -= (units::time::second_t)(double)x0->key; }
-							 else if (x1) { t -= (units::time::second_t)(double)x1->key; }
-							 else if (x2) { t -= (units::time::second_t)(double)x2->key; }
-							 else if (x3) { t -= (units::time::second_t)(double)x3->key; }
-
-							 if (t > z) {
-								 if (x0) v += (*x0->object) * ((units::dimensionless::scalar_t)bvals[0] / t);
-								 if (x1) v += (*x1->object) * ((units::dimensionless::scalar_t)bvals[1] / t);
-								 if (x2) v += (*x2->object) * ((units::dimensionless::scalar_t)bvals[2] / t);
-								 if (x3) v += (*x3->object) * ((units::dimensionless::scalar_t)bvals[3] / t);
-							 }
-						 }
-						 else if (!x0 && x1 && x2 && !x3) {
-							 // report the slope between the two values
-							 v = (*x2->object - *x1->object) / (units::time::second_t)(double)(x2->key - x1->key);
-						 }
-						 else if (!x0 && x1 && x2 && x3) {
-							 // estimate the first value
-							 X_Axis_Type x0_key; {
-								 cweeThreadedList<double> list;
-								 list.Append((double)x3->key);
-								 list.Append((double)x2->key);
-								 list.Append((double)x1->key);
-								 x0_key = alglibwrapper::Interpolator::PredictNextInSequence(list, 1)[0];
-							 }
-							 Y_Axis_Type x0_object = GetCurrentValue(x0_key);
-
-							 if (x3) { t = (units::time::second_t)(double)x3->key; }
-							 else if (x2) { t = (units::time::second_t)(double)x2->key; }
-							 else if (x1) { t = (units::time::second_t)(double)x1->key; }
-							 else { t = (units::time::second_t)(double)x0_key; }
-							 t -= (units::time::second_t)(double)x0_key;
-
-							 if (t > z) {
-								 if (x0) v += (x0_object) * ((units::dimensionless::scalar_t)bvals[0] / t);
-								 if (x1) v += (*x1->object) * ((units::dimensionless::scalar_t)bvals[1] / t);
-								 if (x2) v += (*x2->object) * ((units::dimensionless::scalar_t)bvals[2] / t);
-								 if (x3) v += (*x3->object) * ((units::dimensionless::scalar_t)bvals[3] / t);
-							 }
-						 }
-						 else if (x0 && x1 && x2 && !x3) {
-							 // estimate the last value
-							 X_Axis_Type x3_key; {
-								 cweeThreadedList<double> list;
-								 list.Append((double)x0->key);
-								 list.Append((double)x1->key);
-								 list.Append((double)x2->key);
-								 x3_key = alglibwrapper::Interpolator::PredictNextInSequence(list, 1)[0];
-							 }
-							 Y_Axis_Type x3_object = GetCurrentValue(x3_key);
-
-							 t = (units::time::second_t)(double)x3_key;
-
-							 if (x0) { t -= (units::time::second_t)(double)x0->key; }
-							 else if (x1) { t -= (units::time::second_t)(double)x1->key; }
-							 else if (x2) { t -= (units::time::second_t)(double)x2->key; }
-							 else { t -= (units::time::second_t)(double)x3_key; }
-
-							 if (t > z) {
-								 if (x0) v += (*x0->object) * ((units::dimensionless::scalar_t)bvals[0] / t);
-								 if (x1) v += (*x1->object) * ((units::dimensionless::scalar_t)bvals[1] / t);
-								 if (x2) v += (*x2->object) * ((units::dimensionless::scalar_t)bvals[2] / t);
-								 if (x3) v += (x3_object) * ((units::dimensionless::scalar_t)bvals[3] / t);
-							 }
-						 }
-					 }
-					 else {
-						 if (x1 && !x2) {
-							 if (x0) {
-								 AUTO step = x1->key - x0->key;
-
-								 Y_Axis_Type x2_object = GetCurrentValue(x1->key + step);
-								 Y_Axis_Type x3_object = GetCurrentValue(x1->key + step + step);
-
-								 t = (units::time::second_t)(double)(x1->key + step + step - x0->key);
-
-								 if (t > z) {
-									 if (x0) v += (*x0->object) * ((units::dimensionless::scalar_t)bvals[0] / t);
-									 if (x1) v += (*x1->object) * ((units::dimensionless::scalar_t)bvals[1] / t);
-									 if (x2) v += (x2_object) * ((units::dimensionless::scalar_t)bvals[2] / t);
-									 if (x3) v += (x3_object) * ((units::dimensionless::scalar_t)bvals[3] / t);
-								 }
-							 }
-							 else {
-								 // x1 is on its own.
-								 v = 0.0;
-							 }
-						 }
-						 else if (!x1 && x2) {
-							 if (x3) {
-								 AUTO step = x3->key - x2->key;
-
-								 Y_Axis_Type x0_object = GetCurrentValue((x2->key - step) - step);
-								 Y_Axis_Type x1_object = GetCurrentValue(x2->key - step);
-
-								 t = (units::time::second_t)(double)(x3->key - ((x2->key - step) - step));
-
-								 if (t > z) {
-									 if (x0) v += (x0_object) * ((units::dimensionless::scalar_t)bvals[0] / t);
-									 if (x1) v += (x1_object) * ((units::dimensionless::scalar_t)bvals[1] / t);
-									 if (x2) v += (*x2->object) * ((units::dimensionless::scalar_t)bvals[2] / t);
-									 if (x3) v += (*x3->object) * ((units::dimensionless::scalar_t)bvals[3] / t);
-								 }
-							 }
-							 else {
-								 // x2 is on its own.
-								 v = 0.0;
-							 }
-						 }
-						 else {
-							 // no good values.
-							 v = 0.0;
-						 }
-					 }
-				 }
-			 }
-			 return v;
-		 }
-		 else {
-			 AUTO v = (Y_Axis_Type)0 / X_Axis_Type(1);
-			 int i, j, k;
-			 u64 bvals[4];
-			 X_Axis_Type d = 0, clampedTime;
-			 X_Axis_Type z = 0;
-
-			 j = GetNumValues();
-			 if (j > 1) {
-				 clampedTime = this->ClampedTime(time);
-				 clampedTime = this->LoopedTime(clampedTime);
-				 BasisFirstDerivative(clampedTime, bvals);
-				 {
-					 AUTO g = lock.Guard();
-					 node_type* x1 = container.NodeFindLargestSmallerEqual(clampedTime);
-					 node_type* x0 = x1 == nullptr ? (node_type*)nullptr : container.GetPrevLeaf(x1);
-					 node_type* x2 = x1 == nullptr ? (node_type*)nullptr : container.GetNextLeaf(x1);
-					 node_type* x3 = x2 == nullptr ? (node_type*)nullptr : container.GetNextLeaf(x2);
-
-					 if (x1 && x2) {					
-						 if (x0 && x1 && x2 && x3) {
-							 // best case scenario
-
-							 X_Axis_Type t;
-							 if (x3) { t = x3->key; }
-							 else if (x2) { t = x2->key; }
-							 else if (x1) { t = x1->key; }
-							 else if (x0) { t = x0->key; }
-
-							 if (x0) { t -= x0->key; }
-							 else if (x1) { t -= x1->key; }
-							 else if (x2) { t -= x2->key; }
-							 else if (x3) { t -= x3->key; }
-
-							 if (t > z) {
-								 if (x0) v += (*x0->object) * ((units::dimensionless::scalar_t)bvals[0] / t);
-								 if (x1) v += (*x1->object) * ((units::dimensionless::scalar_t)bvals[1] / t);
-								 if (x2) v += (*x2->object) * ((units::dimensionless::scalar_t)bvals[2] / t);
-								 if (x3) v += (*x3->object) * ((units::dimensionless::scalar_t)bvals[3] / t);
-							 }
-						 }
-						 else if (!x0 && x1 && x2 && !x3) { 
-							 // report the slope between the two values
-							 v = (*x2->object - *x1->object) / (x2->key - x1->key);
-						 }
-						 else if (!x0 && x1 && x2 && x3) {
-							 // estimate the first value
-							 X_Axis_Type x0_key; {
-								 cweeThreadedList<double> list;
-								 list.Append((double)x3->key);
-								 list.Append((double)x2->key);
-								 list.Append((double)x1->key);
-								 x0_key = alglibwrapper::Interpolator::PredictNextInSequence(list, 1)[0];
-							 }
-							 Y_Axis_Type x0_object = GetCurrentValue(x0_key);
-
-							 X_Axis_Type t;
-							 if (x3) { t = x3->key; }
-							 else if (x2) { t = x2->key; }
-							 else if (x1) { t = x1->key; }
-							 else  { t = x0_key; }
-							 t -= x0_key;
-
-							 if (t > z) {
-								 if (x0) v += (x0_object) * ((units::dimensionless::scalar_t)bvals[0] / t);
-								 if (x1) v += (*x1->object) * ((units::dimensionless::scalar_t)bvals[1] / t);
-								 if (x2) v += (*x2->object) * ((units::dimensionless::scalar_t)bvals[2] / t);
-								 if (x3) v += (*x3->object) * ((units::dimensionless::scalar_t)bvals[3] / t);
-							 }
-						 } 
-						 else if (x0 && x1 && x2 && !x3) {
-							 // estimate the last value
-							 X_Axis_Type x3_key; {
-								 cweeThreadedList<double> list;
-								 list.Append((double)x0->key);
-								 list.Append((double)x1->key);
-								 list.Append((double)x2->key);
-								 x3_key = alglibwrapper::Interpolator::PredictNextInSequence(list, 1)[0];
-							 }
-							 Y_Axis_Type x3_object = GetCurrentValue(x3_key);
-
-							 X_Axis_Type t;
-							 t = x3_key;
-
-							 if (x0) { t -= x0->key; }
-							 else if (x1) { t -= x1->key; }
-							 else if (x2) { t -= x2->key; }
-							 else { t -= x3_key; }
-
-							 if (t > z) {
-								 if (x0) v += (*x0->object) * ((units::dimensionless::scalar_t)bvals[0] / t);
-								 if (x1) v += (*x1->object) * ((units::dimensionless::scalar_t)bvals[1] / t);
-								 if (x2) v += (*x2->object) * ((units::dimensionless::scalar_t)bvals[2] / t);
-								 if (x3) v += (x3_object) * ((units::dimensionless::scalar_t)bvals[3] / t);
-							 }
-						 }
-					 }
-					 else {
-						 if (x1 && !x2) {
-							 if (x0) {
-								 AUTO step = x1->key - x0->key;
-
-								 Y_Axis_Type x2_object = GetCurrentValue(x1->key + step);
-								 Y_Axis_Type x3_object = GetCurrentValue(x1->key + step + step);
-
-								 X_Axis_Type t = x1->key + step + step - x0->key;
-
-								 if (t > z) {
-									 if (x0) v += (*x0->object) * ((units::dimensionless::scalar_t)bvals[0] / t);
-									 if (x1) v += (*x1->object) * ((units::dimensionless::scalar_t)bvals[1] / t);
-									 if (x2) v += (x2_object) * ((units::dimensionless::scalar_t)bvals[2] / t);
-									 if (x3) v += (x3_object) * ((units::dimensionless::scalar_t)bvals[3] / t);
-								 }
-							 }
-							 else {
-								 // x1 is on its own.
-								 v = 0.0;
-							 }
-						 }
-						 else if (!x1 && x2) {
-							 if (x3) {
-								 AUTO step = x3->key - x2->key;
-
-								 Y_Axis_Type x0_object = GetCurrentValue((x2->key - step) - step);
-								 Y_Axis_Type x1_object = GetCurrentValue(x2->key - step);
-
-								 X_Axis_Type t = x3->key - ((x2->key - step) - step);
-
-								 if (t > z) {
-									 if (x0) v += (x0_object) * ((units::dimensionless::scalar_t)bvals[0] / t);
-									 if (x1) v += (x1_object) * ((units::dimensionless::scalar_t)bvals[1] / t);
-									 if (x2) v += (*x2->object) * ((units::dimensionless::scalar_t)bvals[2] / t);
-									 if (x3) v += (*x3->object) * ((units::dimensionless::scalar_t)bvals[3] / t);
-								 }
-							 }
-							 else {
-								 // x2 is on its own.
-								 v = 0.0;
-							 }
-						 }
-						 else {
-							 // no good values.
-							 v = 0.0;
-						 }
-					 }					
-				 }				 
-			 }
-			 return v;
-		 }
-#endif
 	 };
 
 	 /*! Return approximate second derivative of spline at time */
 	 AUTO												GetCurrentSecondDerivative(const X_Axis_Type& time) const {	
-#if 1
 		 if constexpr (std::is_same<X_Axis_Type, u64>::value) {
 			 X_Axis_Type step = 0.01;
 			 return (GetCurrentFirstDerivative(time + step) - GetCurrentFirstDerivative(time - step)) / units::time::second_t(step * 2.0);
@@ -1664,101 +1337,13 @@ public:
 			 X_Axis_Type step = 0.01;
 			 return (GetCurrentFirstDerivative(time + step) - GetCurrentFirstDerivative(time - step)) / (step * 2.0);
 		 }
-#else
-		 if constexpr (std::is_same<X_Axis_Type, u64>::value) {
-			 AUTO v = (Y_Axis_Type)0 / (units::time::second_t(1) * units::time::second_t(1));
-			 int i, j, k;
-			 u64 bvals[4], d = 0, clampedTime;
-
-			 j = GetNumValues();
-			 if (j <= 1) {
-				 return v;
-			 }
-			 else {
-				 clampedTime = this->ClampedTime(time);
-				 clampedTime = this->LoopedTime(clampedTime);
-				 BasisSecondDerivative(clampedTime, bvals);
-				 {
-					 AUTO g = lock.Guard();
-					 node_type* x1 = container.NodeFindLargestSmallerEqual(clampedTime);
-					 node_type* x0 = x1 == nullptr ? (node_type*)nullptr : container.GetPrevLeaf(x1);
-					 node_type* x2 = x1 == nullptr ? (node_type*)nullptr : container.GetNextLeaf(x1);
-					 node_type* x3 = x2 == nullptr ? (node_type*)nullptr : container.GetNextLeaf(x2);
-
-					 AUTO t = units::time::second_t(1) * units::time::second_t(1);
-					 if (x0 && x3) {
-						 t = units::time::second_t(x3->key - x0->key) * units::time::second_t(x3->key - x0->key);
-					 }
-					 if (x0 && x2) {
-						 t = units::time::second_t(x2->key - x0->key) * units::time::second_t(x2->key - x0->key);
-					 }
-					 if (x0 && x1) {
-						 t = units::time::second_t(x1->key - x0->key) * units::time::second_t(x1->key - x0->key);
-					 }
-					 if (x1 && x0) {
-						 v += ((*x0->object * (scalarT)bvals[0]) / t);
-						 v += ((*x1->object * (scalarT)bvals[1]) / t);
-						 if (x2) v += ((*x2->object * (scalarT)(u64)bvals[2]) / t); else v += ((*x1->object * (scalarT)(u64)bvals[2]) / t);
-						 if (x2) v += ((*x3->object * (scalarT)(u64)bvals[3]) / t); else v += ((*x1->object * (scalarT)(u64)bvals[3]) / t);
-					 }
-					 else {
-						 return v;
-					 }
-				 }
-				 return v;
-			 }
-			 return v;
-		 }
-		 else {
-			 AUTO v = (Y_Axis_Type)0 / (X_Axis_Type(1) * X_Axis_Type(1));
-			 int i, j, k;
-			 u64 bvals[4];
-			 X_Axis_Type d = 0, clampedTime;
-			 X_Axis_Type z = 0;
-
-			 j = GetNumValues();
-			 if (j > 1) {
-				 clampedTime = this->ClampedTime(time);
-				 clampedTime = this->LoopedTime(clampedTime);
-				 BasisSecondDerivative(clampedTime, bvals);
-				 {
-					 AUTO g = lock.Guard();
-					 node_type* x1 = container.NodeFindLargestSmallerEqual(clampedTime);
-					 node_type* x0 = x1 == nullptr ? (node_type*)nullptr : container.GetPrevLeaf(x1);
-					 node_type* x2 = x1 == nullptr ? (node_type*)nullptr : container.GetNextLeaf(x1);
-					 node_type* x3 = x2 == nullptr ? (node_type*)nullptr : container.GetNextLeaf(x2);
-
-					 X_Axis_Type t;
-					 if (x3) { t = x3->key; }
-					 else if (x2) { t = x2->key; }
-					 else if (x1) { t = x1->key; }
-					 else if (x0) { t = x0->key; }
-
-					 if (x0) { t -= x0->key; }
-					 else if (x1) { t -= x1->key; }
-					 else if (x2) { t -= x2->key; }
-					 else if (x3) { t -= x3->key; }
-
-					 AUTO T = t * t;
-
-					 if (T > z) {
-						 if (x0) v += (*x0->object) * ((units::dimensionless::scalar_t)bvals[0] / T);
-						 if (x1) v += (*x1->object) * ((units::dimensionless::scalar_t)bvals[1] / T);
-						 if (x2) v += (*x2->object) * ((units::dimensionless::scalar_t)bvals[2] / T);
-						 if (x3) v += (*x3->object) * ((units::dimensionless::scalar_t)bvals[3] / T);
-					 }
-				 }
-			 }
-			 return v;
-		 }
-#endif
 	 };
 
 	 cweeThreadedList<pairT>			GetKnotSeries(const X_Axis_Type& timeStart = -std::numeric_limits < X_Axis_Type>::max(), const X_Axis_Type& timeEnd = std::numeric_limits <X_Axis_Type>::max()) const {
 		int numKnots = this->GetNumValues();
 		cweeThreadedList<pairT> out(numKnots + 16);
 
-		AUTO g = lock.Guard();
+		AUTO g = lock.Read_Guard();
 		for (auto ptr = container.NodeFindSmallestLargerEqual(timeStart); ptr; ptr = container.GetNextLeaf(ptr)) {
 			if (ptr->object) {
 				if (ptr->key >= timeStart) {
@@ -1780,7 +1365,7 @@ public:
 		int numKnots = this->GetNumValues();
 		cweeThreadedList<pairT> out(numKnots + 16);
 
-		AUTO g = lock.Guard();
+		AUTO g = lock.Read_Guard();
 		for (auto ptr = container.NodeFindLargestSmallerEqual(timeEnd); ptr; ptr = container.GetPrevLeaf(ptr)) {
 			if (ptr->object) {
 				if (ptr->key >= timeStart) {
@@ -1823,7 +1408,7 @@ public:
 		int numKnots = this->GetNumValues();
 		cweeThreadedList<Y_Axis_Type> out(numKnots + 16);
 
-		AUTO g = lock.Guard();
+		AUTO g = lock.Read_Guard();
 		for (auto ptr = container.NodeFindSmallestLargerEqual(timeStart); ptr; ptr = container.GetNextLeaf(ptr)) {
 			if (ptr->object) {
 				if (ptr->key >= timeStart) {
@@ -1855,80 +1440,6 @@ public:
 
 	/*! Request an integration of the time series. A pattern of kilowatt_t/u64 will return a kilowatt_second_t, which can be natively cast to kilwatt_hour_t, etc. */
 	AUTO												RombergIntegral(const X_Axis_Type& t0, const X_Axis_Type& t1) const {		
-#if 0
-		if constexpr (std::is_same<X_Axis_Type, u64>::value) {
-			auto sum = Y_Axis_Type(0) * units::time::second_t(0);
-			if (this->GetNumValues() > 1) {
-				X_Axis_Type step = this->GetMinimumTimeStep();
-				X_Axis_Type minGot = t1, maxGot = t1;
-				if (true) {
-					AUTO Guard = this->lock.Guard();
-					if (Guard) {
-						cweeThreadedList<node_type*> data = this->UnsafeGetKnotSeries(t0, t1);
-						if (data.Num() > 1) {
-							minGot = data[0]->key;
-							maxGot = data[data.Num() - 1]->key;
-
-							for (int i = 0; i < (data.Num() - 1); i++) {
-								node_type*&
-									left = data[i],
-									right = data[i + 1];
-
-								sum += ((*right->object + *left->object) * scalarT(0.5)) * units::time::second_t(right->key - left->key);
-							}
-						}
-					}
-				}
-
-				X_Axis_Type
-					t = 0,
-					stepDiv2 = step / 2.0,
-					maxT = t1 + stepDiv2;
-
-				for (t = t0; (t + step) < minGot; t += step) sum += units::time::second_t(step) * GetCurrentValue(t + stepDiv2);
-				if (minGot > t) sum += units::time::second_t(minGot - t) * GetCurrentValue(t + ((minGot - t) / 2.0));
-				for (t = maxGot; (t + step) < t1; t += step) sum += units::time::second_t(step) * GetCurrentValue(t + stepDiv2);
-				if (t1 > t)  sum += units::time::second_t(t1 - t) * GetCurrentValue(t + ((t1 - t) / 2.0));
-			}
-			return sum;
-		}
-		else {
-			auto sum = Y_Axis_Type(0) * X_Axis_Type(0);
-			if (this->GetNumValues() > 1) {
-				X_Axis_Type step = this->GetMinimumTimeStep();
-				X_Axis_Type minGot = t1, maxGot = t1;
-				if (true) {
-					AUTO Guard = this->lock.Guard();
-					if (Guard) {
-						cweeThreadedList<node_type*> data = this->UnsafeGetKnotSeries(t0, t1);
-						if (data.Num() > 1) {
-							minGot = data[0]->key;
-							maxGot = data[data.Num() - 1]->key;
-
-							for (int i = 0; i < (data.Num() - 1); i++) {
-								node_type*&
-									left = data[i],
-									right = data[i + 1];
-
-								sum += ((*right->object + *left->object) * scalarT(0.5)) * X_Axis_Type(right->key - left->key);
-							}
-						}
-					}
-				}
-
-				X_Axis_Type
-					t = 0,
-					stepDiv2 = step / 2.0,
-					maxT = t1 + stepDiv2;
-
-				for (t = t0; (t + step) < minGot; t += step) sum += X_Axis_Type(step) * GetCurrentValue(t + stepDiv2);
-				if (minGot > t) sum += X_Axis_Type(minGot - t) * GetCurrentValue(t + ((minGot - t) / 2.0));
-				for (t = maxGot; (t + step) < t1; t += step) sum += X_Axis_Type(step) * GetCurrentValue(t + stepDiv2);
-				if (t1 > t)  sum += X_Axis_Type(t1 - t) * GetCurrentValue(t + ((t1 - t) / 2.0));
-			}
-			return sum;
-		}	
-#else
 		switch (this->GetInterpolationType()) {
 		case interpolation_t::LEFT: {
 			if constexpr (std::is_same<X_Axis_Type, u64>::value) {
@@ -1937,7 +1448,7 @@ public:
 					X_Axis_Type step = this->GetMinimumTimeStep();
 					X_Axis_Type minGot = t1, maxGot = t1;
 					if (true) {
-						AUTO Guard = this->lock.Guard();
+						AUTO Guard = this->lock.Read_Guard();
 						if (Guard) {
 							node_type* prevValue = nullptr;
 							for (node_type& dataPair : this->container) {
@@ -1977,7 +1488,7 @@ public:
 					X_Axis_Type step = this->GetMinimumTimeStep();
 					X_Axis_Type minGot = t1, maxGot = t1;
 					if (true) {
-						AUTO Guard = this->lock.Guard();
+						AUTO Guard = this->lock.Read_Guard();
 						if (Guard) {
 							node_type* prevValue = nullptr;
 							for (node_type& dataPair : this->container) {
@@ -2019,7 +1530,7 @@ public:
 					X_Axis_Type step = this->GetMinimumTimeStep();
 					X_Axis_Type minGot = t1, maxGot = t1;
 					if (true) {
-						AUTO Guard = this->lock.Guard();
+						AUTO Guard = this->lock.Read_Guard();
 						if (Guard) {
 							node_type* prevValue = nullptr;
 							for (node_type& dataPair : this->container) {
@@ -2059,7 +1570,7 @@ public:
 					X_Axis_Type step = this->GetMinimumTimeStep();
 					X_Axis_Type minGot = t1, maxGot = t1;
 					if (true) {
-						AUTO Guard = this->lock.Guard();
+						AUTO Guard = this->lock.Read_Guard();
 						if (Guard) {
 							node_type* prevValue = nullptr;
 							for (node_type& dataPair : this->container) {
@@ -2101,7 +1612,7 @@ public:
 					X_Axis_Type step = this->GetMinimumTimeStep();
 					X_Axis_Type minGot = t1, maxGot = t1;
 					if (true) {
-						AUTO Guard = this->lock.Guard();
+						AUTO Guard = this->lock.Read_Guard();
 						if (Guard) {
 							node_type* prevValue = nullptr;
 							for (node_type& dataPair : this->container) {
@@ -2141,7 +1652,7 @@ public:
 					X_Axis_Type step = this->GetMinimumTimeStep();
 					X_Axis_Type minGot = t1, maxGot = t1;
 					if (true) {
-						AUTO Guard = this->lock.Guard();
+						AUTO Guard = this->lock.Read_Guard();
 						if (Guard) {
 							node_type* prevValue = nullptr;
 							for (node_type& dataPair : this->container) {
@@ -2177,7 +1688,6 @@ public:
 			}
 		}
 		}
-#endif
 	};
 
 	/*! <X,X,X> = pattern.ValueQuantiles({ 0.25, 0.5, 0.75 }); */
@@ -2228,7 +1738,7 @@ public:
 		Y_Axis_Type* val1 = nullptr, *val2 = nullptr, *val3 = nullptr, *val4 = nullptr, *val5 = nullptr;
 		X_Axis_Type t1 = 0, t2 = 0, t3 = 0, t4 = 0, t5 = 0;
 
-		AUTO g = lock.Guard();
+		AUTO g = lock.Write_Guard();
 		{
 			decltype(container)& _values = container;
 
@@ -2315,7 +1825,7 @@ public:
 		Y_Axis_Type* val1 = nullptr, * val2 = nullptr, * val3 = nullptr, * val4 = nullptr, * val5 = nullptr;
 		X_Axis_Type t1 = 0, t2 = 0, t3 = 0, t4 = 0, t5 = 0;
 
-		AUTO g = lock.Guard();
+		AUTO g = lock.Write_Guard();
 		{
 			decltype(container)& _values = container;
 
@@ -2384,7 +1894,7 @@ public:
 	/*! Remove knots older than the specified time. */
 	 void												RemoveOlderThan(const X_Axis_Type& time) {
 		cweeThreadedList<X_Axis_Type> keysToDelete;
-		AUTO g = lock.Guard();
+		AUTO g = lock.Write_Guard();
 		{
 			decltype(container)& _values = container;
 			for (auto& x : _values) {
@@ -2411,7 +1921,7 @@ public:
 		cweeThreadedList<X_Axis_Type> keysToDelete;
 
 		{
-			AUTO g = lock.Guard();
+			AUTO g = lock.Write_Guard();
 			{
 				decltype(container)& _values = container;
 				for (auto& x : _values) {
@@ -2458,7 +1968,7 @@ public:
 	 Y_Axis_Type										GetCurrentMovingAverage(const X_Axis_Type& time) const {
 		Y_Axis_Type out; node_type* ptr = nullptr;
 		out = 0; int i = 0;
-		AUTO g = lock.Guard();
+		AUTO g = lock.Read_Guard();
 		ptr = container.NodeFindLargestSmallerEqual(time);
 		if (ptr) {
 			out += *ptr->object;
@@ -2480,7 +1990,7 @@ public:
 		cweeTime tmp;
 		if (returnHour == true) {
 			// return 0 - 23 value representing the hour (0 is midnight)
-			AUTO g = lock.Guard();
+			AUTO g = lock.Read_Guard();
 			for (auto& x : container) {
 				if (x.object) {
 					tmp = cweeTime(x.key);
@@ -2490,7 +2000,7 @@ public:
 		}
 		else {
 			// return 0 - 6 value representing the day of the week (0 is Sunday)
-			AUTO g = lock.Guard();
+			AUTO g = lock.Read_Guard();
 			for (auto& x : container) {
 				if (x.object) {
 					tmp = cweeTime(x.key);
@@ -2555,10 +2065,11 @@ public:
 		return out;
 	};
 
-	AUTO												Guard() const { return this->lock.Guard(); };
-	void												Lock() const { this->lock.Lock(); };
-	void												Unlock() const { this->lock.Unlock(); };
-
+	AUTO												Guard() const { return this->lock.Write_Guard(); };
+	void												Lock() const { this->lock.Write_Lock(); };
+	void												Unlock() const { this->lock.Write_Unlock(); };
+	void												Read_Lock() const { this->lock.Read_Lock(); };
+	void												Read_Unlock() const { this->lock.Read_Unlock(); };
 protected:
 	 void												InsertPair(const X_Axis_Type& time, const Y_Axis_Type& valueIN, bool unique = true) {
 		Lock();
@@ -2571,16 +2082,16 @@ protected:
 	};
 	 bool												IsLooped() const {
 		bool out = false;
-		Lock();
+		this->lock.Read_Lock();
 		out = (boundaryType == boundary_t::BT_LOOP);
-		Unlock();
+		this->lock.Read_Unlock();
 		return out;
 	};
 	 bool												IsClamped() const {
 		bool out = false;
-		Lock();
+		this->lock.Read_Lock();
 		out = (boundaryType == boundary_t::BT_CLAMPED);
-		Unlock();
+		this->lock.Read_Unlock();
 		return out;
 	};
 	 X_Axis_Type										LoopedTime(const X_Axis_Type& t, bool forceLoop = false) const {
@@ -2680,8 +2191,9 @@ protected:
 		return out;
 	};
 	 void												Basis(const X_Axis_Type& t, u64* bvals) const {
-		AUTO g = lock.Guard();
+		this->lock.Read_Lock();
 		UnsafeBasis(t, bvals);
+		this->lock.Read_Unlock();
 	};
 	 void												UnsafeBasis(const X_Axis_Type& t, u64* bvals) const {
 		//const float x = cweeMath::min(cweeMath::max((float)((t - this->TimeForIndex(index)) / (this->TimeForIndex(index + 1) - this->TimeForIndex(index))), 0), 1);
@@ -2800,7 +2312,7 @@ protected:
 	 void												BasisFirstDerivative(const X_Axis_Type& t, u64* bvals) const {
 		node_type* index1 = nullptr;
 		u64 s;
-		AUTO g = lock.Guard();
+		AUTO g = lock.Read_Guard();
 		index1 = container.NodeFindLargestSmallerEqual(t);
 		if (index1) {
 			s = (u64)index1->key;
@@ -2842,7 +2354,7 @@ protected:
 	 void												BasisSecondDerivative(const X_Axis_Type& t, u64* bvals) const {
 		node_type* index1 = nullptr;
 		u64 s;
-		AUTO g = lock.Guard();
+		AUTO g = lock.Read_Guard();
 		index1 = container.NodeFindLargestSmallerEqual(t);
 		if (index1) {
 			s = (u64)index1->key;
@@ -2893,16 +2405,16 @@ protected:
 		result.SetInterpolationType(a.GetInterpolationType());
 	}
 	if (true) {
-		a.Lock();
+		a.Read_Lock();
 		for (auto& x : a.UnsafeGetValues()) {
 			result.AddUniqueValue(x.key, *x.object * b.GetCurrentValue(x.key));
 		}
-		a.Unlock();
-		b.Lock();
+		a.Read_Unlock();
+		b.Read_Lock();
 		for (auto& x : b.UnsafeGetValues()) {
 			result.AddUniqueValue(x.key, *x.object * a.GetCurrentValue(x.key));
 		}
-		b.Unlock();
+		b.Read_Unlock();
 	}
 	return result;
 };
@@ -2918,11 +2430,11 @@ protected:
 				result.SetInterpolationType(a.GetInterpolationType());
 			}
 			if (true) {
-				a.Lock();
+				a.Read_Lock();
 				for (auto& x : a.UnsafeGetValues()) {
 					result.AddUniqueValue(x.key, *x.object * b);
 				}
-				a.Unlock();
+				a.Read_Unlock();
 			}
 			return result;
 		}
@@ -2935,11 +2447,11 @@ protected:
 				result.SetInterpolationType(a.GetInterpolationType());
 			}
 			if (true) {
-				a.Lock();
+				a.Read_Lock();
 				for (auto& x : a.UnsafeGetValues()) {
 					result.AddUniqueValue(x.key, *x.object * units::dimensionless::scalar_t(b));
 				}
-				a.Unlock();
+				a.Read_Unlock();
 			}
 			return result;
 		}
@@ -2958,11 +2470,11 @@ protected:
 				result.SetInterpolationType(b.GetInterpolationType());
 			}
 			if (true) {
-				b.Lock();
+				b.Read_Lock();
 				for (auto& x : b.UnsafeGetValues()) {
 					result.AddUniqueValue(x.key, *x.object * a);
 				}
-				b.Unlock();
+				b.Read_Unlock();
 			}
 			return result;
 		}
@@ -2975,11 +2487,11 @@ protected:
 				result.SetInterpolationType(b.GetInterpolationType());
 			}
 			if (true) {
-				b.Lock();
+				b.Read_Lock();
 				for (auto& x : b.UnsafeGetValues()) {
 					result.AddUniqueValue(x.key, *x.object * units::dimensionless::scalar_t(a));
 				}
-				b.Unlock();
+				b.Read_Unlock();
 			}
 			return result;
 		}
@@ -2998,16 +2510,16 @@ protected:
 		result.SetInterpolationType(a.GetInterpolationType());
 	}
 	if (true) {
-		a.Lock();
+		a.Read_Lock();
 		for (auto& x : a.UnsafeGetValues()) {
 			result.AddUniqueValue(x.key, *x.object * b.GetCurrentValue(x.key));
 		}
-		a.Unlock();
-		b.Lock();
+		a.Read_Unlock();
+		b.Read_Lock();
 		for (auto& x : b.UnsafeGetValues()) {
 			result.AddUniqueValue(x.key, *x.object * a.GetCurrentValue(x.key));
 		}
-		b.Unlock();
+		b.Read_Unlock();
 	}
 	return result;
 };
@@ -3021,16 +2533,16 @@ protected:
 		result.SetInterpolationType(a.GetInterpolationType());
 	}
 	if (true) {
-		a.Lock();
+		a.Read_Lock();
 		for (auto& x : a.UnsafeGetValues()) {
 			result.AddUniqueValue(x.key, *x.object / b.GetCurrentValue(x.key));
 		}
-		a.Unlock();
-		b.Lock();
+		a.Read_Unlock();
+		b.Read_Lock();
 		for (auto& x : b.UnsafeGetValues()) {
 			result.AddUniqueValue(x.key, a.GetCurrentValue(x.key) / *x.object);
 		}
-		b.Unlock();
+		b.Read_Unlock();
 	}
 	return result;
 };
@@ -3046,11 +2558,11 @@ protected:
 				result.SetInterpolationType(a.GetInterpolationType());
 			}
 			if (true) {
-				a.Lock();
+				a.Read_Lock();
 				for (auto& x : a.UnsafeGetValues()) {
 					result.AddUniqueValue(x.key, *x.object / b);
 				}
-				a.Unlock();
+				a.Read_Unlock();
 			}
 			return result;
 		}
@@ -3063,11 +2575,11 @@ protected:
 				result.SetInterpolationType(a.GetInterpolationType());
 			}
 			if (true) {
-				a.Lock();
+				a.Read_Lock();
 				for (auto& x : a.UnsafeGetValues()) {
 					result.AddUniqueValue(x.key, *x.object / units::dimensionless::scalar_t(b));
 				}
-				a.Unlock();
+				a.Read_Unlock();
 			}
 			return result;
 		}
@@ -3086,11 +2598,11 @@ protected:
 				result.SetInterpolationType(b.GetInterpolationType());
 			}
 			if (true) {
-				b.Lock();
+				b.Read_Lock();
 				for (auto& x : b.UnsafeGetValues()) {
 					result.AddUniqueValue(x.key, a / *x.object);
 				}
-				b.Unlock();
+				b.Read_Unlock();
 			}
 			return result;
 		}
@@ -3103,11 +2615,11 @@ protected:
 				result.SetInterpolationType(b.GetInterpolationType());
 			}
 			if (true) {
-				b.Lock();
+				b.Read_Lock();
 				for (auto& x : b.UnsafeGetValues()) {
 					result.AddUniqueValue(x.key, units::dimensionless::scalar_t(a) / *x.object);
 				}
-				b.Unlock();
+				b.Read_Unlock();
 			}
 			return result;
 		}
@@ -3126,16 +2638,16 @@ protected:
 		result.SetInterpolationType(a.GetInterpolationType());
 	}
 	if (true) {
-		a.Lock();
+		a.Read_Lock();
 		for (auto& x : a.UnsafeGetValues()) {
 			result.AddUniqueValue(x.key, *x.object / b.GetCurrentValue(x.key));
 		}
-		a.Unlock();
-		b.Lock();
+		a.Read_Unlock();
+		b.Read_Lock();
 		for (auto& x : b.UnsafeGetValues()) {
 			result.AddUniqueValue(x.key, a.GetCurrentValue(x.key) / *x.object);
 		}
-		b.Unlock();
+		b.Read_Unlock();
 	}
 	return result;
 };
@@ -3149,16 +2661,16 @@ protected:
 		result.SetInterpolationType(a.GetInterpolationType());
 	}
 	if (true) {
-		a.Lock();
+		a.Read_Lock();
 		for (auto& x : a.UnsafeGetValues()) {
 			result.AddUniqueValue(x.key, *x.object + b.GetCurrentValue(x.key));
 		}
-		a.Unlock();
-		b.Lock();
+		a.Read_Unlock();
+		b.Read_Lock();
 		for (auto& x : b.UnsafeGetValues()) {
 			result.AddUniqueValue(x.key, *x.object + a.GetCurrentValue(x.key));
 		}
-		b.Unlock();
+		b.Read_Unlock();
 	}
 	return result;
 };
@@ -3174,11 +2686,11 @@ protected:
 				result.SetInterpolationType(a.GetInterpolationType());
 			}
 			if (true) {
-				a.Lock();
+				a.Read_Lock();
 				for (auto& x : a.UnsafeGetValues()) {
 					result.AddUniqueValue(x.key, *x.object + b);
 				}
-				a.Unlock();
+				a.Read_Unlock();
 			}
 			return result;
 		}
@@ -3191,11 +2703,11 @@ protected:
 				result.SetInterpolationType(a.GetInterpolationType());
 			}
 			if (true) {
-				a.Lock();
+				a.Read_Lock();
 				for (auto& x : a.UnsafeGetValues()) {
 					result.AddUniqueValue(x.key, *x.object + (decltype(v))b);
 				}
-				a.Unlock();
+				a.Read_Unlock();
 			}
 			return result;
 		}
@@ -3214,11 +2726,11 @@ protected:
 				result.SetInterpolationType(b.GetInterpolationType());
 			}
 			if (true) {
-				b.Lock();
+				b.Read_Lock();
 				for (auto& x : b.UnsafeGetValues()) {
 					result.AddUniqueValue(x.key, *x.object + a);
 				}
-				b.Unlock();
+				b.Read_Unlock();
 			}
 			return result;
 		}
@@ -3231,11 +2743,11 @@ protected:
 				result.SetInterpolationType(b.GetInterpolationType());
 			}
 			if (true) {
-				b.Lock();
+				b.Read_Lock();
 				for (auto& x : b.UnsafeGetValues()) {
 					result.AddUniqueValue(x.key, *x.object + (decltype(v))a);
 				}
-				b.Unlock();
+				b.Read_Unlock();
 			}
 			return result;
 		}
@@ -3254,16 +2766,16 @@ protected:
 		result.SetInterpolationType(a.GetInterpolationType());
 	}
 	if (true) {
-		a.Lock();
+		a.Read_Lock();
 		for (auto& x : a.UnsafeGetValues()) {
 			result.AddUniqueValue(x.key, *x.object + b.GetCurrentValue(x.key));
 		}
-		a.Unlock();
-		b.Lock();
+		a.Read_Unlock();
+		b.Read_Lock();
 		for (auto& x : b.UnsafeGetValues()) {
 			result.AddUniqueValue(x.key, *x.object + a.GetCurrentValue(x.key));
 		}
-		b.Unlock();
+		b.Read_Unlock();
 	}
 	return result;
 };
@@ -3277,16 +2789,16 @@ protected:
 		result.SetInterpolationType(a.GetInterpolationType());
 	}
 	if (true) {
-		a.Lock();
+		a.Read_Lock();
 		for (auto& x : a.UnsafeGetValues()) {
 			result.AddUniqueValue(x.key, *x.object - b.GetCurrentValue(x.key));
 		}
-		a.Unlock();
-		b.Lock();
+		a.Read_Unlock();
+		b.Read_Lock();
 		for (auto& x : b.UnsafeGetValues()) {
 			result.AddUniqueValue(x.key, *x.object - a.GetCurrentValue(x.key));
 		}
-		b.Unlock();
+		b.Read_Unlock();
 	}
 	return result;
 };
@@ -3302,11 +2814,11 @@ protected:
 				result.SetInterpolationType(a.GetInterpolationType());
 			}
 			if (true) {
-				a.Lock();
+				a.Read_Lock();
 				for (auto& x : a.UnsafeGetValues()) {
 					result.AddUniqueValue(x.key, *x.object - b);
 				}
-				a.Unlock();
+				a.Read_Unlock();
 			}
 			return result;
 		}
@@ -3319,11 +2831,11 @@ protected:
 				result.SetInterpolationType(a.GetInterpolationType());
 			}
 			if (true) {
-				a.Lock();
+				a.Read_Lock();
 				for (auto& x : a.UnsafeGetValues()) {
 					result.AddUniqueValue(x.key, *x.object - (decltype(v))b);
 				}
-				a.Unlock();
+				a.Read_Unlock();
 			}
 			return result;
 		}
@@ -3342,11 +2854,11 @@ protected:
 				result.SetInterpolationType(b.GetInterpolationType());
 			}
 			if (true) {
-				b.Lock();
+				b.Read_Lock();
 				for (auto& x : b.UnsafeGetValues()) {
 					result.AddUniqueValue(x.key, *x.object - a);
 				}
-				b.Unlock();
+				b.Read_Unlock();
 			}
 			return result;
 		}
@@ -3359,11 +2871,11 @@ protected:
 				result.SetInterpolationType(b.GetInterpolationType());
 			}
 			if (true) {
-				b.Lock();
+				b.Read_Lock();
 				for (auto& x : b.UnsafeGetValues()) {
 					result.AddUniqueValue(x.key, *x.object - (decltype(v))a);
 				}
-				b.Unlock();
+				b.Read_Unlock();
 			}
 			return result;
 		}
@@ -3382,16 +2894,16 @@ protected:
 		result.SetInterpolationType(a.GetInterpolationType());
 	}
 	if (true) {
-		a.Lock();
+		a.Read_Lock();
 		for (auto& x : a.UnsafeGetValues()) {
 			result.AddUniqueValue(x.key, *x.object - b.GetCurrentValue(x.key));
 		}
-		a.Unlock();
-		b.Lock();
+		a.Read_Unlock();
+		b.Read_Lock();
 		for (auto& x : b.UnsafeGetValues()) {
 			result.AddUniqueValue(x.key, *x.object - a.GetCurrentValue(x.key));
 		}
-		b.Unlock();
+		b.Read_Unlock();
 	}
 	return result;
 };

@@ -17,6 +17,9 @@
     <ClCompile Include="..\WaterWatchCpp\AlgLib\solvers.cpp" />
     <ClCompile Include="..\WaterWatchCpp\AlgLib\specialfunctions.cpp" />
     <ClCompile Include="..\WaterWatchCpp\AlgLib\statistics.cpp" />
+    <ClCompile Include="fastexp.cpp">
+      <Filter>fastexp</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\WaterWatchCpp\AlgLib\alglibinternal.h" />
@@ -37,5 +40,19 @@
     <ClInclude Include="..\WaterWatchCpp\AlgLib\statistics.h" />
     <ClInclude Include="..\WaterWatchCpp\AlgLib\stdafx.h" />
     <ClInclude Include="..\WaterWatchCpp\AlgLibWrapper.h" />
+    <ClInclude Include="ieee.h">
+      <Filter>fastexp</Filter>
+    </ClInclude>
+    <ClInclude Include="product.h">
+      <Filter>fastexp</Filter>
+    </ClInclude>
+    <ClInclude Include="fastexp.h">
+      <Filter>fastexp</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="fastexp">
+      <UniqueIdentifier>{32cc2300-43bd-42e0-a3e8-f855722d6c39}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
 </Project>

@@ -60589,7 +60589,7 @@ double rbfv2basisfunc(ae_int_t bf, double d2, ae_state *_state)
     result = (double)(0);
     if( bf==0 )
     {
-        result = ae_exp(-d2, _state);
+        result = ae_exp_fast(-d2);
         return result;
     }
     if( bf==1 )
@@ -60601,13 +60601,13 @@ double rbfv2basisfunc(ae_int_t bf, double d2, ae_state *_state)
          * else:
          *     0
          */
-        v = (double)1-d2/(double)9;
-        if( ae_fp_less_eq(v,(double)(0)) )
+        v = 1.0-d2/9.0;
+        if( ae_fp_less_eq(v,0.0) )
         {
-            result = (double)(0);
+            result = 0.0;
             return result;
         }
-        result = 2.718281828459045*ae_exp(-d2, _state)*ae_exp(-(double)1/v, _state);
+        result = 2.718281828459045*ae_exp_fast(-d2)*ae_exp_fast(-1.0/v);
         return result;
     }
     ae_assert(ae_false, "RBFV2BasisFunc: unknown BF type", _state);

@@ -50,38 +50,42 @@ namespace chaiscript::detail::threading {
 
         inline const T* operator->() const noexcept {
             cweeThreadedMap<const void*, T>& m = t();
-            AUTO g = m.Guard();
+            m.Lock();
             if (!m.UnsafeCheck(this)) {
                 m.UnsafeEmplace(this, T());
             }
             AUTO ptr = m.UnsafeGetPtr(this);
+            m.Unlock();
             return &*ptr;
         }
         inline const T& operator*() const noexcept {
             cweeThreadedMap<const void*, T>& m = t();
-            AUTO g = m.Guard();
+            m.Lock();
             if (!m.UnsafeCheck(this)) {
                 m.UnsafeEmplace(this, T());
             }
             AUTO ptr = m.UnsafeGetPtr(this);
+            m.Unlock();
             return *ptr;
         }
         inline T* operator->() noexcept {
             cweeThreadedMap<const void*, T>& m = t();
-            AUTO g = m.Guard();
+            m.Lock();
             if (!m.UnsafeCheck(this)) {
                 m.UnsafeEmplace(this, T());
             }
             AUTO ptr = m.UnsafeGetPtr(this);
+            m.Unlock();
             return &*ptr;
         }
         inline T& operator*() noexcept {
             cweeThreadedMap<const void*, T>& m = t();
-            AUTO g = m.Guard();
+            m.Lock();
             if (!m.UnsafeCheck(this)) {
                 m.UnsafeEmplace(this, T());
             }
             AUTO ptr = m.UnsafeGetPtr(this);
+            m.Unlock();
             return *ptr;
         }
         void* m_key;

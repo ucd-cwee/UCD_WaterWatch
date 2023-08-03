@@ -349,23 +349,39 @@ namespace cweeUnitValues {
 			const DataContainer& cget(cweeUnitPatternContainer_t const* ref) const  {
 				auto* p = const_cast<cweeUnitPatternContainer*>(dynamic_cast<cweeUnitPatternContainer const*>(ref));
 				if (p) {
-					cweeUnitValues::unit_value x_0 = (p->internal_X_type = iter->key);
-					cweeUnitValues::unit_value y_0;
-					DataContainer* new_ptr;
-					if (iter->object) {
-						y_0 = (p->internal_Y_type = *iter->object);
-						new_ptr = new DataContainer(x_0, y_0);
+					cweeUnitValues::unit_value x_0 = (p->internal_X_type = iter->key), y_0;
+					if (thisContainer) {
+						thisContainer->X = x_0;
+						if (iter->object) {
+							y_0 = (p->internal_Y_type = *iter->object);
+							if (thisContainer->Y) {
+								*thisContainer->Y = y_0;
+							}
+							else {
+								thisContainer->Y = make_cwee_shared<unit_value>(y_0);
+							}
+						}
+						else {
+							thisContainer->Y = nullptr;
+						}
 					}
 					else {
-						new_ptr = new DataContainer(x_0);
+						DataContainer* new_ptr;
+						if (iter->object) {
+							y_0 = (p->internal_Y_type = *iter->object);
+							new_ptr = new DataContainer(x_0, y_0);
+						}
+						else {
+							new_ptr = new DataContainer(x_0);
+						}
+						const_cast<cweeSharedPtr<DataContainer>&>(thisContainer) = cweeSharedPtr< DataContainer >(new_ptr);
 					}
-					const_cast<cweeSharedPtr<DataContainer>&>(thisContainer) = cweeSharedPtr< DataContainer >(new_ptr);
 				}
 				return *thisContainer;
 			};
 			bool cmp(const cweeSharedPtr<GenericIterator>& s) const {
 				if (!s) return 0;
-				auto p = s.CastReference<SpecializedIterator>();
+				auto* p = dynamic_cast<SpecializedIterator*>(s.Get()); // auto p = s.CastReference<SpecializedIterator>();				
 				if (p) {
 					return iter.state.cmp(p->iter.state);
 				}
@@ -2350,13 +2366,17 @@ namespace cweeUnitValues {
 				result.SetBoundaryType(a.GetBoundaryType());
 				result.SetInterpolationType(a.GetInterpolationType());
 			}
-			if (true) {
-				AUTO knotsA = a.GetKnotSeries();
+			if (a.GetNumValues() > 0) {
 				a.lock.Lock();
-				for (auto& x : knotsA) {
-					result.AddUniqueValue((a.container->internal_X_type = x.first), (a.container->internal_Y_type = x.second) + b);
+				for (auto& kn : *a.container) {
+					if (kn.Y) {
+						result.AddValue(kn.X, *kn.Y + b);
+					}
 				}
 				a.lock.Unlock();
+			}
+			else {
+				result.AddValue(0, b);
 			}
 			return result;
 		};
@@ -2365,13 +2385,17 @@ namespace cweeUnitValues {
 				result.SetBoundaryType(a.GetBoundaryType());
 				result.SetInterpolationType(a.GetInterpolationType());
 			}
-			if (true) {
-				AUTO knotsA = a.GetKnotSeries();
+			if (a.GetNumValues() > 0) {
 				a.lock.Lock();
-				for (auto& x : knotsA) {
-					result.AddUniqueValue((a.container->internal_X_type = x.first), (a.container->internal_Y_type = x.second) - b);
+				for (auto& kn : *a.container) {
+					if (kn.Y) {
+						result.AddValue(kn.X, *kn.Y - b);
+					}
 				}
 				a.lock.Unlock();
+			}
+			else {
+				result.AddValue(0, -1 * b);
 			}
 			return result;
 		};
@@ -2380,11 +2404,12 @@ namespace cweeUnitValues {
 				result.SetBoundaryType(a.GetBoundaryType());
 				result.SetInterpolationType(a.GetInterpolationType());
 			}
-			if (true) {
-				AUTO knotsA = a.GetKnotSeries();
+			if (a.GetNumValues() > 0) {
 				a.lock.Lock();
-				for (auto& x : knotsA) {
-					result.AddUniqueValue((a.container->internal_X_type = x.first), (a.container->internal_Y_type = x.second) * b);
+				for (auto& kn : *a.container) {
+					if (kn.Y) {
+						result.AddValue(kn.X, *kn.Y * b);
+					}
 				}
 				a.lock.Unlock();
 			}
@@ -2395,11 +2420,12 @@ namespace cweeUnitValues {
 				result.SetBoundaryType(a.GetBoundaryType());
 				result.SetInterpolationType(a.GetInterpolationType());
 			}
-			if (true) {
-				AUTO knotsA = a.GetKnotSeries();
+			if (a.GetNumValues() > 0) {
 				a.lock.Lock();
-				for (auto& x : knotsA) {
-					result.AddUniqueValue((a.container->internal_X_type = x.first), (a.container->internal_Y_type = x.second) / b);
+				for (auto& kn : *a.container) {
+					if (kn.Y) {
+						result.AddValue(kn.X, *kn.Y / b);
+					}
 				}
 				a.lock.Unlock();
 			}
@@ -2411,13 +2437,17 @@ namespace cweeUnitValues {
 				result.SetBoundaryType(a.GetBoundaryType());
 				result.SetInterpolationType(a.GetInterpolationType());
 			}
-			if (true) {
-				AUTO knotsA = a.GetKnotSeries();
+			if (a.GetNumValues() > 0) {
 				a.lock.Lock();
-				for (auto& x : knotsA) {
-					result.AddUniqueValue((a.container->internal_X_type = x.first), (a.container->internal_Y_type = x.second) + b);
+				for (auto& kn : *a.container) {
+					if (kn.Y) {
+						result.AddValue(kn.X, b + *kn.Y);
+					}
 				}
 				a.lock.Unlock();
+			}
+			else {
+				result.AddValue(0, b);
 			}
 			return result;
 		};
@@ -2426,13 +2456,17 @@ namespace cweeUnitValues {
 				result.SetBoundaryType(a.GetBoundaryType());
 				result.SetInterpolationType(a.GetInterpolationType());
 			}
-			if (true) {
-				AUTO knotsA = a.GetKnotSeries();
+			if (a.GetNumValues() > 0) {
 				a.lock.Lock();
-				for (auto& x : knotsA) {
-					result.AddUniqueValue((a.container->internal_X_type = x.first), b - (a.container->internal_Y_type = x.second));
+				for (auto& kn : *a.container) {
+					if (kn.Y) {
+						result.AddValue(kn.X, b - *kn.Y);
+					}
 				}
 				a.lock.Unlock();
+			}
+			else {
+				result.AddValue(0, -1 * b);
 			}
 			return result;
 		};
@@ -2441,11 +2475,12 @@ namespace cweeUnitValues {
 				result.SetBoundaryType(a.GetBoundaryType());
 				result.SetInterpolationType(a.GetInterpolationType());
 			}
-			if (true) {
-				AUTO knotsA = a.GetKnotSeries();
+			if (a.GetNumValues() > 0) {
 				a.lock.Lock();
-				for (auto& x : knotsA) {
-					result.AddUniqueValue((a.container->internal_X_type = x.first), (a.container->internal_Y_type = x.second) * b);
+				for (auto& kn : *a.container) {
+					if (kn.Y) {
+						result.AddValue(kn.X, b * *kn.Y);
+					}
 				}
 				a.lock.Unlock();
 			}
@@ -2456,11 +2491,12 @@ namespace cweeUnitValues {
 				result.SetBoundaryType(a.GetBoundaryType());
 				result.SetInterpolationType(a.GetInterpolationType());
 			}
-			if (true) {
-				AUTO knotsA = a.GetKnotSeries();
+			if (a.GetNumValues() > 0) {
 				a.lock.Lock();
-				for (auto& x : knotsA) {
-					result.AddUniqueValue((a.container->internal_X_type = x.first), b / (a.container->internal_Y_type = x.second));
+				for (auto& kn : *a.container) {
+					if (kn.Y) {
+						result.AddValue(kn.X, b / *kn.Y);
+					}
 				}
 				a.lock.Unlock();
 			}

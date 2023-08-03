@@ -1080,6 +1080,7 @@ double   ae_atan2(double y, double x, ae_state *state);
 double   ae_log(double x, ae_state *state);
 double   ae_pow(double x, double y, ae_state *state);
 double   ae_exp(double x, ae_state *state);
+double   ae_exp_fast(double x);
 
 /************************************************************************
 Complex math functions:

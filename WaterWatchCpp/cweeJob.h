@@ -950,15 +950,11 @@ public:
 	explicit cweeJob(T function, Args... Fargs) : impl(new cweeJob_Impl(function, Fargs...)) {};
 
 	cweeJob& AsyncInvoke();
-	cweeJob& AsyncInvoke(int tag);
 
 	cweeJob& AsyncForceInvoke();
-	cweeJob& AsyncForceInvoke(int tag);
 
 	uintptr_t DelayedAsyncInvoke(u64 milliseconds_delay);
-	uintptr_t DelayedAsyncInvoke(u64 milliseconds_delay, int tag);
 	uintptr_t DelayedAsyncForceInvoke(u64 milliseconds_delay);
-	uintptr_t DelayedAsyncForceInvoke(u64 milliseconds_delay, int tag);
 
 	cweeAny Invoke(int iterationNumber = 0) {
 		AUTO ptr = GetImpl();
@@ -1082,7 +1078,6 @@ public:
 				cweeSysInterlockedInteger														m_Working;
 				cweeUnpooledInterlocked<cweeUnion<cweeSysInterlockedPointer<void>>>				m_Content;
 				cweeSharedPtr<jobListType>														m_SharedJobs;
-				cweeSharedPtr<cweeThreadedMap<int, cweeUnion<cweeSharedPtr<jobListType>, cweeCpuThread>>> m_taggedThreads;
 				cweeSharedPtr<cweeSysInterlockedInteger>										m_NumActiveThreads;
 
 			public:
@@ -1091,16 +1086,6 @@ public:
 					while (threadData->TryExtractNextJob(threadData->m_SharedJobs, todo)) { // for any and all jobs in the queue that we are sharing...						
 						todo.Invoke(); // do the work. 		
 						todo = cweeJob(); // forget about the work.
-					}
-
-					// secondary responsibility...
-					if (threadData->m_taggedThreads) {
-						for (auto& tag : *threadData->m_taggedThreads) {
-							while (threadData->TryExtractNextJob(tag.second->get<0>(), todo)) {
-								todo.Invoke(); // do the work.
-								todo = cweeJob(); // forget about the work.
-							}
-						}
 					}
 				};
 				static void ThreadSleep(cweeCpuThreadData* threadData) {
@@ -1140,15 +1125,7 @@ public:
 					out = jobs->UnsafeExtractAny(nextJob);
 					jobs->Unlock();
 #else
-					cweeSharedPtr<cweeJob> j;
-
-					jobs->Lock();
-					out = jobs->UnsafeExtractAny(j);
-					jobs->Unlock();
-
-					if (j) {
-						nextJob = *j;
-					}
+					out = jobs->ExtractAny(nextJob);
 #endif
 					return out;
 				};
@@ -1169,7 +1146,6 @@ public:
 			public:
 				explicit cweeCpuThreadData(
 					cweeSharedPtr<jobListType> const& p_sharedJobs,
-					cweeSharedPtr<cweeThreadedMap<int, cweeUnion<cweeSharedPtr<jobListType>, cweeCpuThread>>> p_taggedThreads,
 					cweeSharedPtr<cweeSysInterlockedInteger> numActive) :
 					m_Waiting(0),
 					m_Terminate(0),
@@ -1178,12 +1154,11 @@ public:
 					m_Working(1),
 					m_Content(cweeUnion<cweeSysInterlockedPointer<void>>(nullptr)),
 					m_SharedJobs(p_sharedJobs),
-					m_NumActiveThreads(numActive),
-					m_taggedThreads(p_taggedThreads)
+					m_NumActiveThreads(numActive)
 				{
 					m_Content = cweeUnion<cweeSysInterlockedPointer<void>>(
 						(void*)cweeSysThreadTools::Sys_CreateThread((xthread_t)ThreadProc, this, 512 * 1024)
-						);
+					);
 				};
 				void WakeUp() { TryStartThread(); };
 				bool IsRunning() { 
@@ -1209,7 +1184,7 @@ public:
 
 		public:
 			cweeCpuThread() : m_Data(nullptr) {};
-			explicit cweeCpuThread(cweeSharedPtr<jobListType> const& p_sharedJobs, cweeSharedPtr<cweeThreadedMap<int, cweeUnion<cweeSharedPtr<jobListType>, cweeCpuThread>>> p_taggedThreads, cweeSharedPtr<cweeSysInterlockedInteger> numActive) : m_Data(make_cwee_shared<cweeCpuThreadData>(p_sharedJobs, p_taggedThreads, numActive)) {};
+			explicit cweeCpuThread(cweeSharedPtr<jobListType> const& p_sharedJobs, cweeSharedPtr<cweeSysInterlockedInteger> numActive) : m_Data(make_cwee_shared<cweeCpuThreadData>(p_sharedJobs, numActive)) {};
 			cweeCpuThread(cweeCpuThread const& a) : m_Data(a.m_Data) {};
 			cweeCpuThread(cweeCpuThread&& a) : m_Data(a.m_Data) { a.m_Data = nullptr; };
 			cweeCpuThread& operator=(cweeCpuThread const& a) { m_Data = a.m_Data; return *this; };
@@ -1243,12 +1218,11 @@ public:
 			m_Jobs(make_cwee_shared<jobListType>()),
 			m_NumActiveThreads(make_cwee_shared<cweeSysInterlockedInteger>(0)),
 			m_Threads(),
-			m_numJobs(0),
-			m_taggedThreads(make_cwee_shared<cweeThreadedMap<int, cweeUnion<cweeSharedPtr<jobListType>, cweeCpuThread>>>())
+			m_numJobs(0)
 		{
-			m_Threads.Append(cweeCpuThread(m_Jobs, m_taggedThreads, m_NumActiveThreads)); // minimum of one thread
+			m_Threads.Append(cweeCpuThread(m_Jobs, m_NumActiveThreads)); // minimum of one thread
 			for (int i = 1; i < m_numLogicalCpuCores - 1; i++) { // one thread less to allow for the "UI" thread
-				m_Threads.Append(cweeCpuThread(m_Jobs, m_taggedThreads, m_NumActiveThreads));
+				m_Threads.Append(cweeCpuThread(m_Jobs, m_NumActiveThreads));
 			}
 		};
 		cweeJobThreadsData(cweeJobThreadsData const&) = delete;
@@ -1260,14 +1234,6 @@ public:
 	public:
 		void WakeUpAll() {
 			int n = m_Jobs->Num();
-			if (m_taggedThreads) {
-				for (auto& tag : *m_taggedThreads) {
-					if (tag.second->get<0>()->Num() > 0) {
-						tag.second->get<1>().WakeUp();
-						n += tag.second->get<0>()->Num();
-					}
-				}
-			}
 			for (auto& thread : m_Threads) {
 				if (!thread.IsRunning()) {
 					if (--n >= 0) {
@@ -1297,25 +1263,6 @@ public:
 #endif
 			WakeUpAll();
 		};
-		void AddTask(cweeJob const& j, int tag) {
-			{
-				{
-					AUTO g = m_taggedThreads->Guard();
-					if (!m_taggedThreads->UnsafeCheck(tag)) {
-						AUTO p = m_taggedThreads->UnsafeAppendAt(tag);
-						p->get<0>() = jobListType();
-						p->get<1>() = cweeCpuThread(p->get<0>(), nullptr, m_NumActiveThreads); // nullptr because these threads are designed to only support themselves - not each other. The generic threads do that.
-					}
-				}
-				AUTO p = m_taggedThreads->GetPtr(tag);
-#ifdef jobListTypeAsList
-				p->get<0>()->Append(j);
-#else
-				p->get<0>()->Emplace(m_numJobs.Increment(), j);
-#endif	
-			}
-			WakeUpAll();
-		};
 		void Wait() {
 			cweeJob out;
 			WakeUpAll();
@@ -1324,12 +1271,6 @@ public:
 				while (cweeJobThreadsData::cweeCpuThread::cweeCpuThreadData::TryExtractNextJob(m_Jobs, out)) { out.Invoke(); WakeUpAll(); }
 				for (auto& thread : m_Threads) {
 					if (thread.IsRunning()) {
-						stop = false;
-						break;
-					};
-				}
-				if (m_taggedThreads) for (auto& thread : *m_taggedThreads) {
-					if (thread.second->get<1>().IsRunning()) {
 						stop = false;
 						break;
 					};
@@ -1346,21 +1287,6 @@ public:
 				if (cweeJobThreadsData::cweeCpuThread::cweeCpuThreadData::TryExtractNextJob(m_Jobs, out)) { out.Invoke(); WakeUpAll(); }
 			}
 		};
-		void Wait_Once(int tag) {
-			cweeJob out;
-			WakeUpAll();
-			if (1) {
-				// see if the tagged thread is done
-				{
-					AUTO g = m_taggedThreads->Guard();
-					if (!m_taggedThreads->UnsafeCheck(tag)) {
-						AUTO p = m_taggedThreads->UnsafeAppendAt(tag);
-						p->get<0>() = jobListType();
-						p->get<1>() = cweeCpuThread(p->get<0>(), nullptr, m_NumActiveThreads); // nullptr because these threads are designed to only support themselves - not each other. The generic threads do that.
-					}
-				}
-			}
-		};
 
 	public:
 		cweeSysInterlockedInteger				m_numJobs;
@@ -1368,8 +1294,6 @@ public:
 		cweeSharedPtr<cweeSysInterlockedInteger> m_NumActiveThreads;
 		const int								m_numLogicalCpuCores;
 		cweeThreadedList<cweeCpuThread>			m_Threads;
-		cweeSharedPtr<cweeThreadedMap<int, cweeUnion<cweeSharedPtr<jobListType>, cweeCpuThread>>> m_taggedThreads;
-
 	};
 
 private:
@@ -1394,16 +1318,6 @@ public:
 			j.Invoke();
 		}
 	};
-	void Queue(cweeJob j, int tag) const {
-		cweeSharedPtr<cweeJobThreadsData> d = m_data;
-		cweeJobThreadsData* p = d.Get();
-		if (p) {
-			p->AddTask(j, tag);
-		}
-		else {
-			j.Invoke();
-		}
-	};
 	void Await() const {
 		cweeSharedPtr<cweeJobThreadsData> d = m_data;
 		cweeJobThreadsData* p = d.Get();
@@ -1418,21 +1332,11 @@ public:
 			p->Wait_Once();
 		}
 	};
-	void Await_Once(int thread) const {
-		cweeSharedPtr<cweeJobThreadsData> d = m_data;
-		cweeJobThreadsData* p = d.Get();
-		if (p) {
-			p->Wait_Once(thread);
-		}
-	};
-
 };
 extern cweeSharedPtr<cweeJobThreads> cweeSharedJobThreads;
 #pragma endregion
 
-INLINE cweeJob& cweeJob::AsyncInvoke(int type) { if (!IsFinished()) { cweeSharedJobThreads->Queue(*this, static_cast<int>(type)); } return *this; };
 INLINE cweeJob& cweeJob::AsyncInvoke() { if (!IsFinished()) { cweeSharedJobThreads->Queue(*this); } return *this; };
-INLINE cweeJob& cweeJob::AsyncForceInvoke(int type) { cweeSharedJobThreads->Queue(cweeJob([](cweeJob& todo) { todo.ForceInvoke(); }, *this), static_cast<int>(type)); return *this; };
 INLINE cweeJob& cweeJob::AsyncForceInvoke() { cweeSharedJobThreads->Queue(cweeJob([](cweeJob& todo) { todo.ForceInvoke(); }, *this)); return *this; };
 INLINE cweeAny cweeJob::Await() { while (!this->IsFinished()) { cweeSharedJobThreads->Await_Once(); } return GetResult(); };
 INLINE uintptr_t cweeJob::DelayedAsyncInvoke(u64 milliseconds_delay) {
@@ -1447,18 +1351,6 @@ INLINE uintptr_t cweeJob::DelayedAsyncInvoke(u64 milliseconds_delay) {
 		return 0;
 		}), (void*)data, 1024);
 };
-INLINE uintptr_t cweeJob::DelayedAsyncInvoke(u64 milliseconds_delay, int type) {
-	cweeUnion< u64, cweeJob, int >* data = new cweeUnion<u64, cweeJob, int>(milliseconds_delay, *this, type);
-	return cweeSysThreadTools::Sys_CreateThread((xthread_t)([](void* _anon_ptr) -> unsigned int {
-		if (_anon_ptr != nullptr) {
-			cweeUnion< u64, cweeJob, int >* T = static_cast<cweeUnion< u64, cweeJob, int>*>(_anon_ptr);
-			::Sleep(T->get<0>());
-			T->get<1>().AsyncInvoke(T->get<2>());
-			delete T;
-		}
-		return 0;
-		}), (void*)data, 1024);
-};
 INLINE uintptr_t cweeJob::DelayedAsyncForceInvoke(u64 milliseconds_delay) {
 	cweeUnion< u64, cweeJob >* data = new cweeUnion<u64, cweeJob>(milliseconds_delay, *this);
 	return cweeSysThreadTools::Sys_CreateThread((xthread_t)([](void* _anon_ptr) -> unsigned int {
@@ -1466,18 +1358,6 @@ INLINE uintptr_t cweeJob::DelayedAsyncForceInvoke(u64 milliseconds_delay) {
 			cweeUnion< u64, cweeJob >* T = static_cast<cweeUnion< u64, cweeJob>*>(_anon_ptr);
 			::Sleep(T->get<0>());
 			T->get<1>().AsyncForceInvoke();
-			delete T;
-		}
-		return 0;
-		}), (void*)data, 1024);
-};
-INLINE uintptr_t cweeJob::DelayedAsyncForceInvoke(u64 milliseconds_delay, int type) {
-	cweeUnion< u64, cweeJob, int >* data = new cweeUnion<u64, cweeJob, int>(milliseconds_delay, *this, type);
-	return cweeSysThreadTools::Sys_CreateThread((xthread_t)([](void* _anon_ptr) -> unsigned int {
-		if (_anon_ptr != nullptr) {
-			cweeUnion< u64, cweeJob, int >* T = static_cast<cweeUnion< u64, cweeJob, int>*>(_anon_ptr);
-			::Sleep(T->get<0>());
-			T->get<1>().AsyncForceInvoke(T->get<2>());
 			delete T;
 		}
 		return 0;

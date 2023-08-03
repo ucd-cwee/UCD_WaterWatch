@@ -171,6 +171,7 @@
     <ClCompile Include="..\WaterWatchCpp\AlgLib\solvers.cpp" />
     <ClCompile Include="..\WaterWatchCpp\AlgLib\specialfunctions.cpp" />
     <ClCompile Include="..\WaterWatchCpp\AlgLib\statistics.cpp" />
+    <ClCompile Include="fastexp.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\WaterWatchCpp\AlgLibWrapper.h" />
@@ -191,6 +192,9 @@
     <ClInclude Include="..\WaterWatchCpp\AlgLib\specialfunctions.h" />
     <ClInclude Include="..\WaterWatchCpp\AlgLib\statistics.h" />
     <ClInclude Include="..\WaterWatchCpp\AlgLib\stdafx.h" />
+    <ClInclude Include="fastexp.h" />
+    <ClInclude Include="ieee.h" />
+    <ClInclude Include="product.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

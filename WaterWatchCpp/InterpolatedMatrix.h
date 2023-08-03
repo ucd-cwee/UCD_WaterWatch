@@ -246,20 +246,14 @@ public:
 	using sourceType = typename cweeBalancedCurve<xyContainer<T>>;
 
 	cweeInterpolatedMatrix() {
-		//mut.Lock();
 		hilbertContainer.SetBoundaryType(boundary_t::BT_CLOSED);
 		hilbertContainer.SetInterpolationType(interpolation_t::LINEAR);
-		//mut.Unlock();
-
 		Tag = nullptr;
 	};
 	cweeInterpolatedMatrix(const cweeInterpolatedMatrix<T>& s) {
-		//Lock();
 		hilbertContainer.SetBoundaryType(boundary_t::BT_CLOSED);
 		hilbertContainer.SetInterpolationType(interpolation_t::LINEAR);
-		//Unlock();
 
-		s.Lock();
 		sourceType& sD = s.UnsafeGetSource();
 		sD.Lock();
 		for (auto* ptr : sD.UnsafeGetKnotSeries()) {
@@ -268,19 +262,15 @@ public:
 			}
 		}
 		sD.Unlock();
-		s.Unlock();
 
 		Tag = s.Tag;
 	};
 	cweeInterpolatedMatrix& operator=(const cweeInterpolatedMatrix<T>& s) {
 		Clear();
 
-		//Lock();
 		hilbertContainer.SetBoundaryType(boundary_t::BT_CLOSED);
 		hilbertContainer.SetInterpolationType(interpolation_t::LINEAR);
-		//Unlock();
 
-		s.Lock();
 		sourceType& sD = s.UnsafeGetSource();
 		sD.Lock();
 		for (auto* ptr : sD.UnsafeGetKnotSeries()) {
@@ -289,96 +279,94 @@ public:
 			}
 		}
 		sD.Unlock();
-		s.Unlock();
 
 		Tag = s.Tag;
 
 		return *this;
 	};
 	void    Reserve(long long num) {
-		//mut.Lock();
 		hilbertContainer.SetGranularity(num);
 		source.Reserve(num);
-		//mut.Unlock();
 	};
 	u64		GetMinX() const {
 		u64 out;
-		Lock();
+		ValidateData();
+		mut.Read_Lock();
 		{
-			UnsafeValidateData();
 			out = minX / compressionFactor;
 		}
-		Unlock();
+		mut.Read_Unlock();
 		return out;
 	};
 	u64		GetMaxX() const {
 		u64 out;
-		Lock();
+		ValidateData();
+		mut.Read_Lock();
 		{
-			UnsafeValidateData();
 			out = maxX / compressionFactor;
 		}
-		Unlock();
+		mut.Read_Unlock();
 		return out;
 	};
 	u64		GetMinY() const {
 		u64 out;
-		Lock();
+		ValidateData();
+		mut.Read_Lock();
 		{
-			UnsafeValidateData();
 			out = minY / compressionFactor;
 		}
-		Unlock();
+		mut.Read_Unlock();
 		return out;
 	};
 	u64		GetMaxY() const {
 		u64 out;
-		Lock();
+		ValidateData();
+		mut.Read_Lock();
 		{
-			UnsafeValidateData();
 			out = maxY / compressionFactor;
 		}
-		Unlock();
+		mut.Read_Unlock();
 		return out;
 	};
 	T		GetMinValue() const {
 		T out;
-		Lock();
+		ValidateData();
+		mut.Read_Lock();
 		{
-			UnsafeValidateData();
 			out = minV;
 		}
-		Unlock();
+		mut.Read_Unlock();
 		return out;
 	};
 	T		GetMaxValue() const {
 		T out;
-		Lock();
+		ValidateData();
+		mut.Read_Lock();
 		{
-			UnsafeValidateData();
 			out = maxV;
 		}
-		Unlock();
+		mut.Read_Unlock();
 		return out;
 	};
 
 	T		GetValue(const u64& column, const u64& row) const {
 		T out = 0;
-		Lock();
+		ValidateData();
+		mut.Read_Lock();
 		{
-			UnsafeValidateData();
-
 			long long x = std::floor((double)(column * compressionFactor - minX) + 0.5);
 			long long y = std::floor((double)(row * compressionFactor - minY) + 0.5);
 			if (hilbertN > 0) {
 				long long pos = xy2d(x, y, hilbertN);
 				out = hilbertContainer.GetCurrentValue(pos)();
 			}
-			else if (hilbertContainer.GetNumValues() > 0) {
-				out = hilbertContainer.GetCurrentValue(0)();
+			else {
+				if (hilbertContainer.GetNumValues() > 0) {
+					out = hilbertContainer.GetCurrentValue(0)();
+				}
 			}
 		}
-		Unlock();
+		mut.Read_Unlock();
 		return out;
 	};
 	T		GetCurrentValue(const u64& column, const u64& row) const {
@@ -386,17 +374,11 @@ public:
 	};
 
 	void	RemoveUnnecessaryKnots() {
-		Lock();
-		UnsafeValidateData();
-		Unlock();
-		
+		ValidateData();		
 		hilbertContainer.RemoveUnnecessaryKnots();
 	};
 	void	ReduceMemory(float percentToRemove) {
-		Lock();
-		UnsafeValidateData();
-		Unlock();
-
+		ValidateData();
 		hilbertContainer.ReduceMemory(percentToRemove);
 	};
 
@@ -409,14 +391,12 @@ public:
 		out.reserve(numRows * numColumns);
 
 		T v = 0; long long pos, x, y; u64 col = Left, columnStep = (Right - Left) / numColumns, rowStep = (Top - Bottom) / numRows, row = Top; int R, C;
+		ValidateData(); 
+		mut.Read_Lock();
 		for (R = 0; R < numRows; R++) {
 			col = Left;
 			for (C = 0; C < numColumns; C++) {
 				{
-					Lock();
-
-					UnsafeValidateData();
-
 					x = std::floor((double)(col * compressionFactor - minX) + 0.5);
 					y = std::floor((double)(row * compressionFactor - minY) + 0.5);
 					if (hilbertN > 0) {
@@ -426,7 +406,6 @@ public:
 					else if (hilbertContainer.GetNumValues() > 0) {
 						v = hilbertContainer.GetCurrentValue(0)();
 					}
-					Unlock();
 				}
 				out.push_back(v);
 
@@ -434,7 +413,7 @@ public:
 			}
 			row -= rowStep;
 		}
-
+		mut.Read_Unlock();
 		return out;
 	};
 	std::vector<T> GetMatrix(int numColumns, int numRows) const {
@@ -447,14 +426,12 @@ public:
 		const u64& Left = GetMinX(), Top = GetMaxY(), Right = GetMaxX(), Bottom = GetMinY();
 
 		T v = 0; long long pos, x, y; u64 col = Left, columnStep = (Right - Left) / numColumns, rowStep = (Top - Bottom) / numRows, row = Top; int R, C;
+		ValidateData(); 
+		mut.Read_Lock();
 		for (R = 0; R < numRows; R++) {
 			col = Left;
 			for (C = 0; C < numColumns; C++) {
 				{
-					Lock();
-
-					UnsafeValidateData();
-
 					x = std::floor((double)(col * compressionFactor - minX) + 0.5);
 					y = std::floor((double)(row * compressionFactor - minY) + 0.5);
 					if (hilbertN > 0) {
@@ -464,7 +441,6 @@ public:
 					else if (hilbertContainer.GetNumValues() > 0) {
 						v = hilbertContainer.GetCurrentValue(0)();
 					}
-					Unlock();
 				}
 				out.push_back(v);
 
@@ -472,18 +448,23 @@ public:
 			}
 			row -= rowStep;
 		}
-
+		mut.Read_Unlock();
 		return out;
 	};
-	void	InsertValue(const u64& column, const u64& row, const T& value) {
+	void	InsertValue(const u64& column, const u64& row, const T& value, bool AddUnique = true) {
 		long long 
 			x = std::floor((double)(column * compressionFactor) + 0.5),
-			y = std::floor((double)(row * compressionFactor) + 0.5);		
-		source.AddUniqueValue(uniqueHash(x, y), xyContainer<T>(column, row, value));	
+			y = std::floor((double)(row * compressionFactor) + 0.5);
+		xyContainer<T> val(column, row, value);
+		u64 hash = uniqueHash(x, y);
+		if (AddUnique)
+			source.AddUniqueValue(hash, val);
+		else 
+			source.AddValue(hash, val);
 		invalidated.store(true);
 	};
-	cweeInterpolatedMatrix<T>& AddValue(const u64& column, const u64& row, const T& value) {
-		this->InsertValue(column, row, value);
+	cweeInterpolatedMatrix<T>& AddValue(const u64& column, const u64& row, const T& value, bool AddUnique = true) {
+		this->InsertValue(column, row, value, AddUnique);
 		return *this;
 	};
 	bool ContainsPosition(const u64& column, const u64& row) const {
@@ -494,11 +475,9 @@ public:
 	};
 
 	void	Clear() {
-		Lock();
-
+		mut.Write_Lock();
 		UnsafeClear();
-
-		Unlock();
+		mut.Write_Unlock();
 	};
 	void	UnsafeClear() {
 		source.Clear();
@@ -514,19 +493,13 @@ public:
 		hilbertN = 0;
 	};
 	void	Lock() const {
-		mut.Lock();
+		mut.Write_Lock();
 	};
 	void	Unlock() const {
-		mut.Unlock();
+		mut.Write_Unlock();
 	};
 	sourceType& UnsafeGetSource() const {
 		return source;
-	};
-	auto& UnsafeGetHilbertContainer() const {
-		Lock();
-		UnsafeValidateData();
-		Unlock();
-		return hilbertContainer;
 	};
 
 	cweeStr			ToString(void) const {
@@ -553,19 +526,15 @@ public:
 	};
 
 	int		Num() {
-		int out;
-		Lock();
-		out = UnsafeGetSource().GetNumValues();
-		Unlock();
-		return out;
+		return source.GetNumValues();
 	};
 
 	u64 AverageDistanceBetweenKnots() const {
 		u64 Distance = 0; int count = 0; long long x, y;
-		Lock();
-		UnsafeValidateData();
+		ValidateData();
 		AUTO knots = hilbertContainer.GetKnotSeries();
 		cweeList<cweePair<double, double>> knotsXY(knots.Num() + 16);
+		mut.Read_Lock();
 		for (auto& knot : knots) {
 			d2xy(knot.first, x, y, hilbertN);
 
@@ -575,9 +544,9 @@ public:
 			x /= compressionFactor;
 			y /= compressionFactor;
 
-			knotsXY.Alloc(cweePair<double, double>(x, y));
+			knotsXY.Append(cweePair<double, double>(x, y));
 		}
-		Unlock();
+		mut.Read_Unlock();
 		for (auto& x : knotsXY) {
 			for (auto& y : knotsXY) {
 				cweeMath::rollingAverageRef<u64>(
@@ -588,7 +557,7 @@ public:
 						+ ((x.get<1>() - y.get<1>()) * (x.get<1>() - y.get<1>()))
 					)
 					, count
-					);
+				);
 			}
 		}
 
@@ -599,59 +568,40 @@ public:
 	};
 
 	u64 EstimateDistanceBetweenKnots() const {
-		Lock();
-		UnsafeValidateData();
-		u64 width = (maxX - minX) / compressionFactor;
-		u64 height = (maxY - minY) / compressionFactor;
+		u64 width, height;
+		ValidateData();
 		int num = source.GetNumValues();
-		if (width <= 0 || height <= 0 || num <= 0) return 0;		
-		Unlock();
-
-		return cweeMath::Sqrt(width*height / num);
+		mut.Read_Lock(); {
+			width = (maxX - minX) / compressionFactor;
+			height = (maxY - minY) / compressionFactor;
+		} mut.Read_Unlock();
+		if (width <= 0 || height <= 0 || num <= 0) return 0;
+		else return cweeMath::Sqrt(width*height / num);
 	};
 
 	u64 MinHilbertPosition() const  {
-		u64 out;
-		Lock();
-		UnsafeValidateData();
-		out = hilbertContainer.GetMinTime();
-		Unlock();
-		return out;
+		ValidateData();
+		return hilbertContainer.GetMinTime();
 	};
 	u64 MaxHilbertPosition() const  {
-		u64 out;
-		Lock();
-		UnsafeValidateData();
-		out = hilbertContainer.GetMaxTime();
-		Unlock();
-		return out;
+		ValidateData();
+		return hilbertContainer.GetMaxTime();
 	};
 	T	HilbertPositionToValue(const u64& hilbertPos) const  {
-		T out;
-		Lock();
-		UnsafeValidateData();
-		out = hilbertContainer.GetCurrentValue(hilbertPos)();
-		Unlock();
-		return out;
+		ValidateData();
+		return hilbertContainer.GetCurrentValue(hilbertPos)();
 	};
 	std::pair<u64, u64>	HilbertPositionToXY(const u64& hilbertPos) const {
 		std::pair<u64, u64> out; long long x, y;
-		Lock();
+		ValidateData();
+
+		mut.Read_Lock();
 		{
-			UnsafeValidateData();
-
 			d2xy(hilbertPos, x, y, hilbertN);
-
-			x += minX;
-			y += minY;
-
-			x /= compressionFactor;
-			y /= compressionFactor;
+			out.first = (x + minX) / compressionFactor;
+			out.second = (y + minY) / compressionFactor;
 		}
-		Unlock();
-
-		out.first = x;
-		out.second = y;
+		mut.Read_Unlock();
 
 		return out;
 	};
@@ -663,7 +613,6 @@ protected: // data
 	// mutable cweePattern_CatmullRomSpline<T> hilbertContainer; // x-position is the length along the hilbert line 
 	mutable cweeBalancedPattern<units::dimensionless::scalar_t> hilbertContainer; // x-position is the length along the hilbert line 
 
-	
 	mutable std::atomic_bool invalidated = false;
 	mutable long long minX = std::numeric_limits<long long>::max();
 	mutable long long maxX = -std::numeric_limits<long long>::max();
@@ -674,64 +623,67 @@ protected: // data
 
 	mutable long long hilbertN = 0;
 	constexpr static u64 compressionFactor = 100000.0f;
-	// mutable cweeConstexprLock mut;
-	mutable cweeSysMutex mut;
+	mutable cweeReadWriteMutex mut;
 
 private: // private member methods
-	void UnsafeValidateData() const {
+	void ValidateData() const {
 		if (invalidated.load()) {
-			Tag = nullptr;
+			mut.Write_Lock();
+			if (invalidated.load()) {
+				Tag = nullptr;
 
-			long long x, y;
+				long long x, y;
 
-			source.Lock();
-			for (auto& ptr : source.UnsafeGetValues()) {
-				if (ptr.object) {
-					auto& value = ptr.object->z;
-					
-					x = std::floor((double)(ptr.object->x * compressionFactor) + 0.5);
-					y = std::floor((double)(ptr.object->y * compressionFactor) + 0.5);
+				source.Lock();
+				for (auto& ptr : source.UnsafeGetValues()) {
+					if (ptr.object) {
+						auto& value = ptr.object->z;
 
-					if (value < minV) minV = value;
-					if (value > maxV) maxV = value;
+						x = std::floor((double)(ptr.object->x * compressionFactor) + 0.5);
+						y = std::floor((double)(ptr.object->y * compressionFactor) + 0.5);
 
-					// does this new value invalidate the current hilbert formula?
-					if (x < minX || (x - minX) >= hilbertN || y < minY || (y - minY) >= hilbertN) {
-						// the current formula doesn't cover the needed range  - the hilbert must be re-calculated from scratch for the current 'source'
-						if (x < minX) minX = x;
-						if (x > maxX) maxX = x;
-						if (y < minY) minY = y;
-						if (y > maxY) maxY = y;
+						if (value < minV) minV = value;
+						if (value > maxV) maxV = value;
+
+						// does this new value invalidate the current hilbert formula?
+						if (x < minX || (x - minX) >= hilbertN || y < minY || (y - minY) >= hilbertN) {
+							// the current formula doesn't cover the needed range  - the hilbert must be re-calculated from scratch for the current 'source'
+							if (x < minX) minX = x;
+							if (x > maxX) maxX = x;
+							if (y < minY) minY = y;
+							if (y > maxY) maxY = y;
+						}
 					}
 				}
-			}
-			source.Unlock();
+				source.Unlock();
 
-			long long width = next_pow2(maxX - minX); // i.e. 1,2,4,16,128,256,1024
-			long long height = next_pow2(maxY - minY); // i.e. 1,2,4,16,128,256,1024
-			hilbertN = ::Max(width, height);
+				long long width = next_pow2(maxX - minX); // i.e. 1,2,4,16,128,256,1024
+				long long height = next_pow2(maxY - minY); // i.e. 1,2,4,16,128,256,1024
+				hilbertN = ::Max(width, height);
 
-			hilbertContainer.Clear();
-			hilbertContainer.SetBoundaryType(boundary_t::BT_CLOSED);
-			hilbertContainer.SetInterpolationType(interpolation_t::LINEAR);
-			hilbertContainer.SetGranularity(source.GetNumValues() + 12);
+				hilbertContainer.Clear();
+				hilbertContainer.SetBoundaryType(boundary_t::BT_CLOSED);
+				hilbertContainer.SetInterpolationType(interpolation_t::LINEAR);
+				hilbertContainer.SetGranularity(source.GetNumValues() + 12);
 
-			source.Lock();
-			for (auto* ptr : source.UnsafeGetKnotSeries()) {
-				if (ptr && ptr->object) {
-					hilbertContainer.AddUniqueValue(
-						xy2d(
-							std::floor(((double)(ptr->object->x * compressionFactor) - minX) + 0.5),
-							std::floor(((double)(ptr->object->y * compressionFactor) - minY) + 0.5),
-							hilbertN
-						),
-						ptr->object->z
-					);
+				source.Lock();
+				for (auto* ptr : source.UnsafeGetKnotSeries()) {
+					if (ptr && ptr->object) {
+						hilbertContainer.AddUniqueValue(
+							xy2d(
+								std::floor(((double)(ptr->object->x * compressionFactor) - minX) + 0.5),
+								std::floor(((double)(ptr->object->y * compressionFactor) - minY) + 0.5),
+								hilbertN
+							),
+							ptr->object->z
+						);
+					}
 				}
-			}
-			source.Unlock();
+				source.Unlock();
 
-			invalidated.store(false);
+				invalidated.store(false);
+			}
+			mut.Write_Unlock();
 		}
 	};
 

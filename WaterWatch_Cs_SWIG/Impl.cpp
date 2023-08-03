@@ -89,16 +89,15 @@ std::vector<double> SharedMatrix::GetKnotSeries(double Left, double Top, double 
 };
 std::vector<double> SharedMatrix::GetTimeSeries(double Left, double Top, double Right, double Bottom, int numColumns, int numRows) {
 	constexpr int
-		reductionRatio = 3;
+		reductionRatio = 4;
 	std::vector<double>
 		out;
 	out.reserve(numColumns * numRows + 12);
 
-	Stopwatch sw;
-	sw.Start();
+	constexpr bool Multithreaded = true; //  cweeRandomInt(0, 100) < 50;
+	if constexpr (Multithreaded) {
+		out.resize(numColumns * numRows);
 
-	bool Multithreaded = cweeRandomInt(0, 100) < 50;
-	if (Multithreaded) {
 		u64
 			col = Left,
 			columnStep = (Right - Left) / numColumns,
@@ -111,7 +110,9 @@ std::vector<double> SharedMatrix::GetTimeSeries(double Left, double Top, double 
 
 		// Get or create the underlying interpolation model
 		cweeSharedPtr<alglib::rbfmodel> model;
+		double avgDistanceBetweenKnots = 1.0;
 		if (!knots->Tag) {
+			avgDistanceBetweenKnots = knots->EstimateDistanceBetweenKnots();
 			knots->Lock();
 		}
 		if (!knots->Tag) {
@@ -119,8 +120,6 @@ std::vector<double> SharedMatrix::GetTimeSeries(double Left, double Top, double 
 			{
 				alglib::real_2d_array arr;
 				cweeThreadedList<cweeUnion<double, double, double>> data;
-				double avgDistanceBetweenKnots = knots->EstimateDistanceBetweenKnots();
-
 				auto& knotSeries = knots->UnsafeGetSource();
 				knotSeries.Lock();
 				for (auto& knot : knotSeries.UnsafeGetValues()) {
@@ -136,7 +135,7 @@ std::vector<double> SharedMatrix::GetTimeSeries(double Left, double Top, double 
 						alglib::rbfcreate(2, 1, *model);
 						rbfsetpoints(*model, arr);
 						alglib::rbfreport rep;
-						alglib::rbfsetalgohierarchical(*model, avgDistanceBetweenKnots * 10.0, 3, 0.0); // 4, 0.0);
+						alglib::rbfsetalgohierarchical(*model, avgDistanceBetweenKnots * 10.0, 3, 0.0); // (*model, avgDistanceBetweenKnots * 10.0, 4, 0.0);
 						alglib::rbfbuildmodel(*model, rep, alglib::parallel);
 					}
 				}
@@ -151,7 +150,9 @@ std::vector<double> SharedMatrix::GetTimeSeries(double Left, double Top, double 
 		cweeList<cweeJob> jobs(numRows+1);
 		cweeSysInterlockedInteger count = 0; // numColumns
 		tempMatrix.Reserve(numColumns * numRows + 12);
-		for (int r = 0; r < numRows; r++) {
+		int AsyncRows = ::Max<double>(0, numRows*10.0/12.0); // 2/3 resulted in no waiting
+		
+		for (int r = 0; r < AsyncRows; r++) {
 			jobs.Append(cweeJob([&](alglib::rbfmodel& Model, int R, alglib::real_1d_array& results) {
 				static thread_local alglib::rbfcalcbuffer buf;
 				
@@ -161,6 +162,8 @@ std::vector<double> SharedMatrix::GetTimeSeries(double Left, double Top, double 
 				alglib::real_1d_array arr;
 				cweeUnion<double, double> coords;
 				arr.attach_to_ptr(2, (double*)(void*)(&coords));
+
+				cweeList< cweeUnion<double, double, double> > out(numColumns + 1);
 
 				int C;
 				for (
@@ -176,21 +179,78 @@ std::vector<double> SharedMatrix::GetTimeSeries(double Left, double Top, double 
 						alglib::rbftscalcbuf(Model, buf, arr, results, alglib::parallel);
 
 						// add it to the matrix
-						tempMatrix.AddValue(C, R, results[0]);
+						// tempMatrix.AddValue(C, R, results[0], false); // the lock in the matrix is our issue. 
+						out.Append(cweeUnion<double, double, double>((double)C, (double)R, (double)results[0]));
+					}
+					else {
+						out.Append(cweeUnion<double, double, double>(std::numeric_limits<double>::max(), std::numeric_limits<double>::max(), std::numeric_limits<double>::max()));
 					}
 				}
-				count.Increment();
+				cweeSharedPtr<int> incrementer = cweeSharedPtr<int>(&C, [&](int* p) { count.Increment(); });
+				return out;
 			}, model, (int)r, alglib::real_1d_array()).AsyncInvoke());
 		}
 
+		{
+			alglib::real_1d_array results;
+			for (int r = AsyncRows; r < numRows; r++) {
+				static thread_local alglib::rbfcalcbuffer buf;
+
+				// attach pointers for arrays for the interpolation
+				alglib::rbfcreatecalcbuffer(*model, buf, alglib::parallel);
+
+				alglib::real_1d_array arr;
+				cweeUnion<double, double> coords;
+				arr.attach_to_ptr(2, (double*)(void*)(&coords));
+
+				int C;
+				for (
+					coords.get<0>() = Left,
+					coords.get<1>() = Top - r * rowStep,
+					C = 0;
+					C < numColumns;
+					C++,
+					coords.get<0>() += columnStep)
+				{
+					if ((::Max(r, C) - ::Min(r, C)) % reductionRatio == 0) {
+						// get "real" interpolated results for 1/3 of the requested pixels using a slow, complex model, distributed diagonally along the grid								
+						alglib::rbftscalcbuf(*model, buf, arr, results, alglib::parallel);
+
+						// add it to the matrix
+						tempMatrix.AddValue(C, r, results[0]);
+						out[numColumns * r + C] = results[0];
+					}
+				}
+				count.Increment();
+			}
+		}
+
 		while (count.GetValue() != numRows) {}
+		for (auto& job : jobs) { 
+			cweeAny any = job.Await(); 
+			cweeList< cweeUnion<double, double, double> >* coords = any.cast();
+			if (coords) {
+				for (auto& coord : *coords) {
+					if (coord.get<0>() != std::numeric_limits<double>::max() 
+						&& coord.get<1>() != std::numeric_limits<double>::max() 
+						&& coord.get<2>() != std::numeric_limits<double>::max()) {
+						tempMatrix.AddValue(coord.get<0>(), coord.get<1>(), coord.get<2>(), false);
+						out[numColumns * coord.get<1>() + coord.get<0>()] = coord.get<2>();
+					}
+				}
+			}
+		}
 
 		// do a faster, local interpolation of those results using the Hilbert curve for the last 2/3 components. 
 		if (true) {
-			int R, C;
+			double R, C;
 			for (R = 0; R < numRows; R++) {
-				for (C = 0; C < numColumns; C++) {
-					out.push_back(tempMatrix.GetCurrentValue(C, R));
+				for (C = 0; C < numColumns; C++) {		
+					// out.push_back(tempMatrix.GetCurrentValue(C, R)); // tempMatrix.GetCurrentValue(C, R));
+
+					if (((int)(::Max(R, C) - ::Min(R, C))) % reductionRatio != 0) {
+						out[numColumns * R + C] = tempMatrix.GetCurrentValue(C, R);
+					}
 				}
 			}
 		}
@@ -279,9 +339,6 @@ std::vector<double> SharedMatrix::GetTimeSeries(double Left, double Top, double 
 		}
 
 	}
-
-	sw.Stop();
-	cweeToasts->submitToast(Multithreaded ? cweeStr("Multithreaded") : cweeStr("Single Threaded"), cweeUnitValues::second(sw.Seconds_Passed()).ToString());
 
 	return out;
 };
