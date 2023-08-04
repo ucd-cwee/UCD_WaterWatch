@@ -94,7 +94,10 @@ std::vector<double> SharedMatrix::GetTimeSeries(double Left, double Top, double 
 		out;
 	out.reserve(numColumns * numRows + 12);
 
-	constexpr bool Multithreaded = true; //  cweeRandomInt(0, 100) < 50;
+	//Stopwatch sw; 
+	//sw.Start();
+
+	constexpr bool Multithreaded = true;
 	if constexpr (Multithreaded) {
 		out.resize(numColumns * numRows);
 
@@ -256,6 +259,8 @@ std::vector<double> SharedMatrix::GetTimeSeries(double Left, double Top, double 
 		}
 	}
 	else {
+		out.resize(numColumns* numRows);
+
 		cweeUnion<double, double>
 			coords(Left, Top);
 		u64
@@ -279,7 +284,9 @@ std::vector<double> SharedMatrix::GetTimeSeries(double Left, double Top, double 
 
 		// Get or create the underlying interpolation model
 		cweeSharedPtr<alglib::rbfmodel> model;
+		double avgDistanceBetweenKnots = 1.0;
 		if (!knots->Tag) {
+			avgDistanceBetweenKnots = knots->EstimateDistanceBetweenKnots();
 			knots->Lock();
 		}
 		if (!knots->Tag) {
@@ -287,8 +294,6 @@ std::vector<double> SharedMatrix::GetTimeSeries(double Left, double Top, double 
 			{
 				alglib::real_2d_array arr;
 				cweeThreadedList<cweeUnion<double, double, double>> data;
-				double avgDistanceBetweenKnots = knots->EstimateDistanceBetweenKnots();
-
 				auto& knotSeries = knots->UnsafeGetSource();
 				knotSeries.Lock();
 				for (auto& knot : knotSeries.UnsafeGetValues()) {
@@ -327,18 +332,24 @@ std::vector<double> SharedMatrix::GetTimeSeries(double Left, double Top, double 
 				if ((::Max(R, C) - ::Min(R, C)) % reductionRatio == 0) {
 					alglib::rbftscalcbuf(*model, buf, arr, results, alglib::parallel);
 					tempMatrix.AddValue(C, R, results[0]);
+					out[numColumns * R + C] = results[0];
 				}
 			}
 		}
 
-		// do a faster, local interpolation of those results using the Hilbert curve for the last 2/3 components. 
+		// do a faster, local interpolation of those results using the Hilbert curve for the last components. 
 		for (R = 0; R < numRows; R++) {
 			for (C = 0; C < numColumns; C++) {
-				out.push_back(tempMatrix.GetCurrentValue(C, R));
+				if ((::Max(R, C) - ::Min(R, C)) % reductionRatio != 0) {
+					out[numColumns * R + C] = tempMatrix.GetCurrentValue(C, R);
+				}
 			}
 		}
 
 	}
+
+	//sw.Stop();
+	//cweeToasts->submitToast("Seconds Required", cweeUnitValues::second(sw.Seconds_Passed()).ToString());
 
 	return out;
 };
@@ -1263,6 +1274,173 @@ MapLayer_Interop ScriptEngine::Cast_MapLayer(std::string command) {
 	}
 	return out2;
 };
+std::vector<Color_Interop> MapBackground_Interop::GetMatrix(double Left, double Top, double Right, double Bottom, int numColumns, int numRows, std::vector<MapBackground_Interop> const& backgrounds) {
+	std::vector<Color_Interop> out; out.resize(numColumns * numRows);
+	std::vector< SharedMatrix > matrixes; matrixes.reserve(backgrounds.size() + 1);
+	// first, prep the matrices
+	for (auto& bg : backgrounds) {
+		matrixes.push_back(SharedMatrix(bg.matrix, false));
+	}
+
+	// second, do the queries on each matrix, taking care to reduce workload where the matrix problem can be simplified. 
+	for (int i = 0; i < backgrounds.size(); i++) {
+		auto& bg = backgrounds[i];
+		auto& shared_matrix = matrixes[i];
+
+		if (shared_matrix.GetMaxX() < Left || shared_matrix.GetMinX() > Right || shared_matrix.GetMaxY() < Bottom || shared_matrix.GetMinY() > Top) continue;
+
+		auto& minCol = bg.min_color;
+		auto& maxCol = bg.max_color;
+		double minValue = bg.minValue;
+		double maxValue = bg.maxValue;
+		double alpha_foreground = 0;
+		double alpha_background = 0;
+		int pixelWidth = numColumns;
+		int pixelHeight = numRows;
+		int x, y, byteIndex;
+		double v;
+
+		if (shared_matrix.GetNumValues() > 0 && maxValue > minValue) {						
+			if (minCol.A == maxCol.A && minCol.R == maxCol.R && minCol.G == maxCol.G && minCol.B == maxCol.B) {
+				// there is no gradient within this range -- are they using bounds clipping?
+				if (bg.clipToBounds)
+				{
+					// got to do the analysis, but we can skip blending the colors
+					std::vector<double> values;
+					if (bg.highQuality)
+					{
+						values = shared_matrix.GetTimeSeries(Left, Top, Right, Bottom, numColumns, numRows);
+					}
+					else
+					{
+						values = shared_matrix.GetKnotSeries(Left, Top, Right, Bottom, numColumns, numRows);
+					}
+					int n = values.size();
+					alpha_foreground = minCol.A / 255.0;
+					for (byteIndex = 0; byteIndex < n; byteIndex++)
+					{
+						v = values[byteIndex];
+						if (v >= minValue && v <= maxValue)
+						{
+							auto& pixel = out[byteIndex];
+							alpha_background = pixel.A / 255.0;
+
+							pixel.R = alpha_foreground * minCol.R + alpha_background * pixel.R * (1.0 - alpha_foreground);
+							pixel.G = alpha_foreground * minCol.G + alpha_background * pixel.G * (1.0 - alpha_foreground);
+							pixel.B = alpha_foreground * minCol.B + alpha_background * pixel.B * (1.0 - alpha_foreground);
+							pixel.A = (1.0 - (1.0 - alpha_foreground) * (1.0 - alpha_background)) * 255.0;
+						}
+					}
+
+				}
+				else
+				{
+					// no point in doing the analysis -- there is no "clip to bounds" and there will be no color transitions. 
+					alpha_foreground = minCol.A / 255.0;
+
+					for (int y = 0; y < pixelHeight; y++)
+					{
+						for (x = 0; x < pixelWidth; x++)
+						{
+							byteIndex = (y * pixelWidth + x);
+							auto& pixel = out[byteIndex];
+
+							alpha_background = pixel.A / 255.0;
+
+							pixel.R = alpha_foreground * minCol.R + alpha_background * pixel.R * (1.0 - alpha_foreground);
+							pixel.G = alpha_foreground * minCol.G + alpha_background * pixel.G * (1.0 - alpha_foreground);
+							pixel.B = alpha_foreground * minCol.B + alpha_background * pixel.B * (1.0 - alpha_foreground);
+							pixel.A = (1.0 - (1.0 - alpha_foreground) * (1.0 - alpha_background)) * 255.0;
+						}
+					}
+				}
+			}
+			else {
+				// traditional, full analysis
+				std::vector<double> values;
+				if (bg.highQuality)
+				{
+					values = shared_matrix.GetTimeSeries(Left, Top, Right, Bottom, numColumns, numRows);
+				}
+				else
+				{
+					values = shared_matrix.GetKnotSeries(Left, Top, Right, Bottom, numColumns, numRows);
+				}
+				int n = values.size();
+				for (byteIndex = 0; byteIndex < n; byteIndex++)
+				{
+					v = (values[byteIndex] - minValue) / (maxValue - minValue); // 0 - 1 between the min and max for this value
+					auto& pixel = out[byteIndex];
+
+					if (v < 0)
+					{
+						if (!bg.clipToBounds)
+						{
+							alpha_foreground = minCol.A / 255.0;
+							alpha_background = pixel.A / 255.0;
+
+							pixel.R = alpha_foreground * minCol.R + alpha_background * pixel.R * (1.0 - alpha_foreground);
+							pixel.G = alpha_foreground * minCol.G + alpha_background * pixel.G * (1.0 - alpha_foreground);
+							pixel.B = alpha_foreground * minCol.B + alpha_background * pixel.B * (1.0 - alpha_foreground);
+							pixel.A = (1.0 - (1.0 - alpha_foreground) * (1.0 - alpha_background)) * 255.0;
+						}
+					}
+					else if (v > 1)
+					{
+						if (!bg.clipToBounds)
+						{
+							alpha_foreground = maxCol.A / 255.0;
+							alpha_background = pixel.A / 255.0;
+
+							pixel.R = alpha_foreground * maxCol.R + alpha_background * pixel.R * (1.0 - alpha_foreground);
+							pixel.G = alpha_foreground * maxCol.G + alpha_background * pixel.G * (1.0 - alpha_foreground);
+							pixel.B = alpha_foreground * maxCol.B + alpha_background * pixel.B * (1.0 - alpha_foreground);
+							pixel.A = (1.0 - (1.0 - alpha_foreground) * (1.0 - alpha_background)) * 255.0;
+						}
+					}
+					else
+					{
+						alpha_foreground = cweeMath::Lerp(minCol.A, maxCol.A, v) / 255.0;
+						alpha_background = pixel.A / 255.0;
+
+						pixel.R = alpha_foreground * cweeMath::Lerp(minCol.R, maxCol.R, v) + alpha_background * pixel.R * (1.0 - alpha_foreground);
+						pixel.G = alpha_foreground * cweeMath::Lerp(minCol.G, maxCol.G, v) + alpha_background * pixel.G * (1.0 - alpha_foreground);
+						pixel.B = alpha_foreground * cweeMath::Lerp(minCol.B, maxCol.B, v) + alpha_background * pixel.B * (1.0 - alpha_foreground);
+						pixel.A = (1.0 - (1.0 - alpha_foreground) * (1.0 - alpha_background)) * 255.0;
+					}
+				}
+			}						
+		}
+		else {
+			alpha_foreground = minCol.A / 255.0;
+			for (y = 0; y < pixelHeight; y++)
+			{
+				for (x = 0; x < pixelWidth; x++)
+				{
+					byteIndex = (y * pixelWidth + x);
+					auto& pixel = out[byteIndex];
+
+					alpha_background = pixel.A / 255.0;		
+					pixel.R = alpha_foreground * minCol.R + alpha_background * pixel.R * (1.0 - alpha_foreground);
+					pixel.G = alpha_foreground * minCol.G + alpha_background * pixel.G * (1.0 - alpha_foreground);
+					pixel.B = alpha_foreground * minCol.B + alpha_background * pixel.B * (1.0 - alpha_foreground);
+					pixel.A = (1.0 - (1.0 - alpha_foreground) * (1.0 - alpha_background)) * 255.0;
+				}
+			}
+		}
+	}
+
+	// add random sub-byte noise to break up the visible "banding" in color gradients, typically seen in shadows (like white-to-grey gradients)
+	for (int i = out.size() - 1; i >= 0; i--) {
+		auto& pixel = out[i];
+		pixel.R = ::Min(255.0, ::Max<double>(0.0, pixel.R + cweeRandomFloat(-0.5, 0.5)));
+		pixel.G = ::Min(255.0, ::Max<double>(0.0, pixel.G + cweeRandomFloat(-0.5, 0.5)));
+		pixel.B = ::Min(255.0, ::Max<double>(0.0, pixel.B + cweeRandomFloat(-0.5, 0.5)));
+	}
+
+	return out;
+};
+
 #pragma endregion
 
 #pragma region WATERWATCH

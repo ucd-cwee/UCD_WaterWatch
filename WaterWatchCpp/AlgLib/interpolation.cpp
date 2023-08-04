@@ -60582,36 +60582,40 @@ Assumes that D2>=0
 *************************************************************************/
 double rbfv2basisfunc(ae_int_t bf, double d2, ae_state *_state)
 {
-    double v;
-    double result;
-
-
-    result = (double)(0);
-    if( bf==0 )
-    {
-        result = ae_exp_fast(-d2);
-        return result;
+    double result(0.0);
+    switch (bf) {
+    case 0: result = ae_exp_fast(-d2); break;
+    case 1: if (d2 < 9.0) result = 2.718281828459045 * ae_exp_fast((9.0 / (d2 - 9.0)) - d2); break;
+    default: ae_assert(ae_false, "RBFV2BasisFunc: unknown BF type", _state); break;
     }
-    if( bf==1 )
-    {
-        
-        /*
-         * if D2<3:
-         *     Exp(1)*Exp(-D2)*Exp(-1/(1-D2/9))
-         * else:
-         *     0
-         */
-        v = 1.0-d2/9.0;
-        if( ae_fp_less_eq(v,0.0) )
-        {
-            result = 0.0;
-            return result;
-        }
-        result = 2.718281828459045*ae_exp_fast(-d2)*ae_exp_fast(-1.0/v);
-        return result;
-    }
-    ae_assert(ae_false, "RBFV2BasisFunc: unknown BF type", _state);
     return result;
+
+    //double v;
+    //double result;
+    //if( bf==0 )
+    //{
+    //    result = ae_exp_fast(-d2);
+    //    return result;
+    //}
+    //if( bf==1 )
+    //{
+    //    /*
+    //     * if D2<3:
+    //     *     Exp(1)*Exp(-D2)*Exp(-1/(1-D2/9))
+    //     * else:
+    //     *     0
+    //     */
+    //    v = 1.0-d2/9.0;
+    //    if(v <= 0.0)
+    //    {
+    //        result = 0.0;
+    //        return result;
+    //    }
+    //    result = 2.718281828459045*ae_exp_fast((-1.0/v) - d2); // 2.718281828459045*ae_exp_fast(-d2)*ae_exp_fast(-1.0/v);
+    //    return result;
+    //}
+    //ae_assert(ae_false, "RBFV2BasisFunc: unknown BF type", _state);
+    //return result;
 }
 
 
@@ -62532,34 +62536,9 @@ static void rbfv2_partialcalcrec(rbfv2model* s,
      ae_int_t needdy,
      ae_state *_state)
 {
-    ae_int_t i;
-    ae_int_t j;
-    ae_int_t k;
-    ae_int_t k0;
-    ae_int_t k1;
-    double ptdist2;
-    double w;
-    double v;
-    double v0;
-    double v1;
-    ae_int_t cwoffs;
-    ae_int_t cwcnt;
-    ae_int_t itemoffs;
-    double arg;
-    double val;
-    double df;
-    double d2f;
-    ae_int_t d;
-    double split;
-    ae_int_t childle;
-    ae_int_t childge;
-    ae_int_t childoffs;
+    double ptdist2, w, v, v0, v1, arg, val, df, d2f, split, prevdist2, t1;
+    ae_int_t i, j, k, k0, k1, cwoffs, cwcnt, itemoffs, d, childle, childge, childoffs, nx, ny;
     ae_bool updatemin;
-    double prevdist2;
-    double t1;
-    ae_int_t nx;
-    ae_int_t ny;
-
 
     nx = s->nx;
     ny = s->ny;
@@ -62576,132 +62555,133 @@ static void rbfv2_partialcalcrec(rbfv2model* s,
     {
         cwcnt = s->kdnodes.ptr.p_int[rootidx+0];
         cwoffs = s->kdnodes.ptr.p_int[rootidx+1];
-        for(i=0; i<=cwcnt-1; i++)
+        for (i = 0; i < cwcnt; i++)
         {
-            
             /*
              * Calculate distance
              */
-            itemoffs = cwoffs+i*(nx+ny);
+            itemoffs = cwoffs + i * (nx + ny);
             ptdist2 = (double)(0);
-            for(j=0; j<=nx-1; j++)
+            for (j = 0; j < nx; j++)
             {
-                v = s->cw.ptr.p_double[itemoffs+j]-x->ptr.p_double[j];
-                ptdist2 = ptdist2+v*v;
+                v = s->cw.ptr.p_double[itemoffs + j] - x->ptr.p_double[j];
+                ptdist2 += v * v;
             }
-            
+
             /*
              * Skip points if distance too large
              */
-            if( ptdist2>=queryr2 )
+            if (ptdist2 < queryr2)
             {
-                continue;
-            }
-            
-            /*
-             * Update Y
-             */
-            arg = ptdist2*invr2;
-            val = (double)(0);
-            df = (double)(0);
-            d2f = (double)(0);
-            if( needdy==2 )
-            {
-                if( s->bf==0 )
+                /*
+                 * Update Y
+                 */
+                arg = ptdist2 * invr2;
+                val = (double)(0);
+                df = (double)(0);
+                d2f = (double)(0);
+                if (needdy == 2)
                 {
-                    val = ae_exp(-arg, _state);
-                    df = -val;
-                    d2f = val;
-                }
-                else
-                {
-                    if( s->bf==1 )
+                    if (s->bf == 0)
                     {
-                        rbfv2basisfuncdiff2(s->bf, arg, &val, &df, &d2f, _state);
+                        val = ae_exp(-arg, _state);
+                        df = -val;
+                        d2f = val;
                     }
                     else
                     {
-                        ae_assert(ae_false, "PartialCalcRec: integrity check failed", _state);
-                    }
-                }
-                for(j=0; j<=ny-1; j++)
-                {
-                    y->ptr.p_double[j] = y->ptr.p_double[j]+val*s->cw.ptr.p_double[itemoffs+nx+j];
-                    w = s->cw.ptr.p_double[itemoffs+nx+j];
-                    v = w*df*invr2*(double)2;
-                    for(k0=0; k0<=nx-1; k0++)
-                    {
-                        for(k1=0; k1<=nx-1; k1++)
+                        if (s->bf == 1)
                         {
-                            if( k0==k1 )
+                            rbfv2basisfuncdiff2(s->bf, arg, &val, &df, &d2f, _state);
+                        }
+                        else
+                        {
+                            ae_assert(ae_false, "PartialCalcRec: integrity check failed", _state);
+                        }
+                    }
+                    for (j = 0; j <= ny - 1; j++)
+                    {
+                        y->ptr.p_double[j] = y->ptr.p_double[j] + val * s->cw.ptr.p_double[itemoffs + nx + j];
+                        w = s->cw.ptr.p_double[itemoffs + nx + j];
+                        v = w * df * invr2 * (double)2;
+                        for (k0 = 0; k0 <= nx - 1; k0++)
+                        {
+                            for (k1 = 0; k1 <= nx - 1; k1++)
                             {
-                                
-                                /*
-                                 * Compute derivative and diagonal element of the Hessian
-                                 */
-                                dy->ptr.p_double[j*nx+k0] = dy->ptr.p_double[j*nx+k0]+v*(x->ptr.p_double[k0]-s->cw.ptr.p_double[itemoffs+k0]);
-                                d2y->ptr.p_double[j*nx*nx+k0*nx+k1] = d2y->ptr.p_double[j*nx*nx+k0*nx+k1]+w*(d2f*invr2*invr2*(double)4*ae_sqr(x->ptr.p_double[k0]-s->cw.ptr.p_double[itemoffs+k0], _state)+df*invr2*(double)2);
-                            }
-                            else
-                            {
-                                
-                                /*
-                                 * Compute offdiagonal element of the Hessian
-                                 */
-                                d2y->ptr.p_double[j*nx*nx+k0*nx+k1] = d2y->ptr.p_double[j*nx*nx+k0*nx+k1]+w*d2f*invr2*invr2*(double)4*(x->ptr.p_double[k0]-s->cw.ptr.p_double[itemoffs+k0])*(x->ptr.p_double[k1]-s->cw.ptr.p_double[itemoffs+k1]);
+                                if (k0 == k1)
+                                {
+
+                                    /*
+                                     * Compute derivative and diagonal element of the Hessian
+                                     */
+                                    dy->ptr.p_double[j * nx + k0] = dy->ptr.p_double[j * nx + k0] + v * (x->ptr.p_double[k0] - s->cw.ptr.p_double[itemoffs + k0]);
+                                    d2y->ptr.p_double[j * nx * nx + k0 * nx + k1] = d2y->ptr.p_double[j * nx * nx + k0 * nx + k1] + w * (d2f * invr2 * invr2 * (double)4 * ae_sqr(x->ptr.p_double[k0] - s->cw.ptr.p_double[itemoffs + k0], _state) + df * invr2 * (double)2);
+                                }
+                                else
+                                {
+
+                                    /*
+                                     * Compute offdiagonal element of the Hessian
+                                     */
+                                    d2y->ptr.p_double[j * nx * nx + k0 * nx + k1] = d2y->ptr.p_double[j * nx * nx + k0 * nx + k1] + w * d2f * invr2 * invr2 * (double)4 * (x->ptr.p_double[k0] - s->cw.ptr.p_double[itemoffs + k0]) * (x->ptr.p_double[k1] - s->cw.ptr.p_double[itemoffs + k1]);
+                                }
                             }
                         }
                     }
                 }
-            }
-            if( needdy==1 )
-            {
-                if( s->bf==0 )
+                if (needdy == 1)
                 {
-                    val = ae_exp(-arg, _state);
-                    df = -val;
-                }
-                else
-                {
-                    if( s->bf==1 )
+                    if (s->bf == 0)
                     {
-                        rbfv2basisfuncdiff2(s->bf, arg, &val, &df, &d2f, _state);
+                        val = ae_exp(-arg, _state);
+                        df = -val;
                     }
                     else
                     {
-                        ae_assert(ae_false, "PartialCalcRec: integrity check failed", _state);
+                        if (s->bf == 1)
+                        {
+                            rbfv2basisfuncdiff2(s->bf, arg, &val, &df, &d2f, _state);
+                        }
+                        else
+                        {
+                            ae_assert(ae_false, "PartialCalcRec: integrity check failed", _state);
+                        }
                     }
-                }
-                for(j=0; j<=ny-1; j++)
-                {
-                    y->ptr.p_double[j] = y->ptr.p_double[j]+val*s->cw.ptr.p_double[itemoffs+nx+j];
-                    v = s->cw.ptr.p_double[itemoffs+nx+j]*df*invr2*(double)2;
-                    for(k=0; k<=nx-1; k++)
+                    for (j = 0; j <= ny - 1; j++)
                     {
-                        dy->ptr.p_double[j*nx+k] = dy->ptr.p_double[j*nx+k]+v*(x->ptr.p_double[k]-s->cw.ptr.p_double[itemoffs+k]);
+                        y->ptr.p_double[j] = y->ptr.p_double[j] + val * s->cw.ptr.p_double[itemoffs + nx + j];
+                        v = s->cw.ptr.p_double[itemoffs + nx + j] * df * invr2 * (double)2;
+                        for (k = 0; k <= nx - 1; k++)
+                        {
+                            dy->ptr.p_double[j * nx + k] = dy->ptr.p_double[j * nx + k] + v * (x->ptr.p_double[k] - s->cw.ptr.p_double[itemoffs + k]);
+                        }
                     }
                 }
-            }
-            if( needdy==0 )
-            {
-                if( s->bf==0 )
+                if (needdy == 0)
                 {
-                    val = ae_exp(-arg, _state);
-                }
-                else
-                {
-                    if( s->bf==1 )
+                    val = rbfv2basisfunc(s->bf, arg, _state);
+
+                    //if (s->bf == 0)
+                    //{
+                    //    val = ae_exp(-arg, _state);
+                    //}
+                    //else
+                    //{
+                    //    if (s->bf == 1)
+                    //    {
+                    //        val = rbfv2basisfunc(s->bf, arg, _state);
+                    //    }
+                    //    else
+                    //    {
+                    //        ae_assert(ae_false, "PartialCalcRec: integrity check failed", _state);
+                    //    }
+                    //}
+                    for (j = 0; j < ny; j++)
                     {
-                        val = rbfv2basisfunc(s->bf, arg, _state);
+                        y->ptr.p_double[j] = 
+                            y->ptr.p_double[j] + 
+                            val * s->cw.ptr.p_double[itemoffs + nx + j];
                     }
-                    else
-                    {
-                        ae_assert(ae_false, "PartialCalcRec: integrity check failed", _state);
-                    }
-                }
-                for(j=0; j<=ny-1; j++)
-                {
-                    y->ptr.p_double[j] = y->ptr.p_double[j]+val*s->cw.ptr.p_double[itemoffs+nx+j];
                 }
             }
         }

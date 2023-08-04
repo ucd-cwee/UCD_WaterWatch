@@ -284,6 +284,11 @@ public:
 
 		return *this;
 	};
+	bool operator==(const cweeInterpolatedMatrix<T>& s) {
+		ValidateData(); s.ValidateData();
+		return this->hilbertContainer.operator==(s.hilbertContainer);
+	};
+	bool operator!=(const cweeInterpolatedMatrix<T>& obj) { return !operator==(obj); };
 	void    Reserve(long long num) {
 		hilbertContainer.SetGranularity(num);
 		source.Reserve(num);
@@ -625,7 +630,7 @@ protected: // data
 	constexpr static u64 compressionFactor = 100000.0f;
 	mutable cweeReadWriteMutex mut;
 
-private: // private member methods
+protected: // protected member methods
 	void ValidateData() const {
 		if (invalidated.load()) {
 			mut.Write_Lock();

@@ -599,7 +599,7 @@ public:
 	using scalarT = typename units::dimensionless::scalar_t;
 	using pairT = typename cweePair< X_Axis_Type, Y_Axis_Type >;
 
-private:
+protected:
 	mutable cweeBalancedTree< Y_Axis_Type, X_Axis_Type, 10>			container;
 	int													granularity;
 	boundary_t											boundaryType;
@@ -1086,6 +1086,12 @@ public:
 		this->AddValue(0, data);
 		return *this;
 	};
+	bool operator==(const cweeBalancedPattern& obj) {	
+		lock.Read_Lock(); obj.lock.Read_Lock();
+		UnsafeGetValues().operator==(obj.UnsafeGetValues());
+		lock.Read_Unlock(); obj.lock.Read_Unlock();
+	};
+	bool operator!=(const cweeBalancedPattern& obj) { return !operator==(obj); };
 
 	AUTO												R_Squared(const cweeBalancedPattern& other) const {
 		AUTO out = this->GetCurrentValue(0) / this->GetCurrentValue(0);

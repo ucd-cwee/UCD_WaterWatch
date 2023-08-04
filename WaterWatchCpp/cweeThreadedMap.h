@@ -636,6 +636,23 @@ public:
 	/*!
 	After calling "Lock", this will allow access to directly erase the specified object on the heap without interuption or chance for mid-erase viewing, and return a copy of the object
 	*/
+	/*!
+	After calling "Lock", this will allow access to directly erase the specified object on the heap without interuption or chance for mid-erase viewing, and return a copy of the object
+	*/
+	bool	ExtractAny(Type& out) {
+		bool res(false);
+		Lock();
+		AUTO bg = impl->list.cbegin();
+		if (bg != impl->list.cend()) {
+			if (bg->second) out = *bg->second;
+			impl->list.erase(bg->first);
+			impl->list_version.Increment();
+			impl->CreatedListVersion.Increment();
+			res = true;
+		}
+		Unlock();
+		return res;
+	};
 	bool	Extract(Key index, PtrType& out) {
 		bool result = false;
 		AUTO G = Guard();

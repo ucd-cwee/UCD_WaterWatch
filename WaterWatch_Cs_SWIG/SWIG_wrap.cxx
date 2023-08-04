@@ -1021,6 +1021,188 @@ SWIGINTERN void std_vector_Sl_ScriptingNode_Sg__SetRange(std::vector< ScriptingN
           throw std::out_of_range("index");
         std::copy(values.begin(), values.end(), self->begin()+index);
       }
+SWIGINTERN std::vector< MapBackground_Interop > *new_std_vector_Sl_MapBackground_Interop_Sg___SWIG_2(int capacity){
+        std::vector< MapBackground_Interop >* pv = 0;
+        if (capacity >= 0) {
+          pv = new std::vector< MapBackground_Interop >();
+          pv->reserve(capacity);
+       } else {
+          throw std::out_of_range("capacity");
+       }
+       return pv;
+      }
+SWIGINTERN MapBackground_Interop std_vector_Sl_MapBackground_Interop_Sg__getitemcopy(std::vector< MapBackground_Interop > *self,int index){
+        if (index>=0 && index<(int)self->size())
+          return (*self)[index];
+        else
+          throw std::out_of_range("index");
+      }
+SWIGINTERN std::vector< MapBackground_Interop >::value_type const &std_vector_Sl_MapBackground_Interop_Sg__getitem(std::vector< MapBackground_Interop > *self,int index){
+        if (index>=0 && index<(int)self->size())
+          return (*self)[index];
+        else
+          throw std::out_of_range("index");
+      }
+SWIGINTERN void std_vector_Sl_MapBackground_Interop_Sg__setitem(std::vector< MapBackground_Interop > *self,int index,MapBackground_Interop const &val){
+        if (index>=0 && index<(int)self->size())
+          (*self)[index] = val;
+        else
+          throw std::out_of_range("index");
+      }
+SWIGINTERN void std_vector_Sl_MapBackground_Interop_Sg__AddRange(std::vector< MapBackground_Interop > *self,std::vector< MapBackground_Interop > const &values){
+        self->insert(self->end(), values.begin(), values.end());
+      }
+SWIGINTERN std::vector< MapBackground_Interop > *std_vector_Sl_MapBackground_Interop_Sg__GetRange(std::vector< MapBackground_Interop > *self,int index,int count){
+        if (index < 0)
+          throw std::out_of_range("index");
+        if (count < 0)
+          throw std::out_of_range("count");
+        if (index >= (int)self->size()+1 || index+count > (int)self->size())
+          throw std::invalid_argument("invalid range");
+        return new std::vector< MapBackground_Interop >(self->begin()+index, self->begin()+index+count);
+      }
+SWIGINTERN void std_vector_Sl_MapBackground_Interop_Sg__Insert(std::vector< MapBackground_Interop > *self,int index,MapBackground_Interop const &x){
+        if (index>=0 && index<(int)self->size()+1)
+          self->insert(self->begin()+index, x);
+        else
+          throw std::out_of_range("index");
+      }
+SWIGINTERN void std_vector_Sl_MapBackground_Interop_Sg__InsertRange(std::vector< MapBackground_Interop > *self,int index,std::vector< MapBackground_Interop > const &values){
+        if (index>=0 && index<(int)self->size()+1)
+          self->insert(self->begin()+index, values.begin(), values.end());
+        else
+          throw std::out_of_range("index");
+      }
+SWIGINTERN void std_vector_Sl_MapBackground_Interop_Sg__RemoveAt(std::vector< MapBackground_Interop > *self,int index){
+        if (index>=0 && index<(int)self->size())
+          self->erase(self->begin() + index);
+        else
+          throw std::out_of_range("index");
+      }
+SWIGINTERN void std_vector_Sl_MapBackground_Interop_Sg__RemoveRange(std::vector< MapBackground_Interop > *self,int index,int count){
+        if (index < 0)
+          throw std::out_of_range("index");
+        if (count < 0)
+          throw std::out_of_range("count");
+        if (index >= (int)self->size()+1 || index+count > (int)self->size())
+          throw std::invalid_argument("invalid range");
+        self->erase(self->begin()+index, self->begin()+index+count);
+      }
+SWIGINTERN std::vector< MapBackground_Interop > *std_vector_Sl_MapBackground_Interop_Sg__Repeat(MapBackground_Interop const &value,int count){
+        if (count < 0)
+          throw std::out_of_range("count");
+        return new std::vector< MapBackground_Interop >(count, value);
+      }
+SWIGINTERN void std_vector_Sl_MapBackground_Interop_Sg__Reverse__SWIG_0(std::vector< MapBackground_Interop > *self){
+        std::reverse(self->begin(), self->end());
+      }
+SWIGINTERN void std_vector_Sl_MapBackground_Interop_Sg__Reverse__SWIG_1(std::vector< MapBackground_Interop > *self,int index,int count){
+        if (index < 0)
+          throw std::out_of_range("index");
+        if (count < 0)
+          throw std::out_of_range("count");
+        if (index >= (int)self->size()+1 || index+count > (int)self->size())
+          throw std::invalid_argument("invalid range");
+        std::reverse(self->begin()+index, self->begin()+index+count);
+      }
+SWIGINTERN void std_vector_Sl_MapBackground_Interop_Sg__SetRange(std::vector< MapBackground_Interop > *self,int index,std::vector< MapBackground_Interop > const &values){
+        if (index < 0)
+          throw std::out_of_range("index");
+        if (index+values.size() > self->size())
+          throw std::out_of_range("index");
+        std::copy(values.begin(), values.end(), self->begin()+index);
+      }
+SWIGINTERN std::vector< Color_Interop > *new_std_vector_Sl_Color_Interop_Sg___SWIG_2(int capacity){
+        std::vector< Color_Interop >* pv = 0;
+        if (capacity >= 0) {
+          pv = new std::vector< Color_Interop >();
+          pv->reserve(capacity);
+       } else {
+          throw std::out_of_range("capacity");
+       }
+       return pv;
+      }
+SWIGINTERN Color_Interop std_vector_Sl_Color_Interop_Sg__getitemcopy(std::vector< Color_Interop > *self,int index){
+        if (index>=0 && index<(int)self->size())
+          return (*self)[index];
+        else
+          throw std::out_of_range("index");
+      }
+SWIGINTERN std::vector< Color_Interop >::value_type const &std_vector_Sl_Color_Interop_Sg__getitem(std::vector< Color_Interop > *self,int index){
+        if (index>=0 && index<(int)self->size())
+          return (*self)[index];
+        else
+          throw std::out_of_range("index");
+      }
+SWIGINTERN void std_vector_Sl_Color_Interop_Sg__setitem(std::vector< Color_Interop > *self,int index,Color_Interop const &val){
+        if (index>=0 && index<(int)self->size())
+          (*self)[index] = val;
+        else
+          throw std::out_of_range("index");
+      }
+SWIGINTERN void std_vector_Sl_Color_Interop_Sg__AddRange(std::vector< Color_Interop > *self,std::vector< Color_Interop > const &values){
+        self->insert(self->end(), values.begin(), values.end());
+      }
+SWIGINTERN std::vector< Color_Interop > *std_vector_Sl_Color_Interop_Sg__GetRange(std::vector< Color_Interop > *self,int index,int count){
+        if (index < 0)
+          throw std::out_of_range("index");
+        if (count < 0)
+          throw std::out_of_range("count");
+        if (index >= (int)self->size()+1 || index+count > (int)self->size())
+          throw std::invalid_argument("invalid range");
+        return new std::vector< Color_Interop >(self->begin()+index, self->begin()+index+count);
+      }
+SWIGINTERN void std_vector_Sl_Color_Interop_Sg__Insert(std::vector< Color_Interop > *self,int index,Color_Interop const &x){
+        if (index>=0 && index<(int)self->size()+1)
+          self->insert(self->begin()+index, x);
+        else
+          throw std::out_of_range("index");
+      }
+SWIGINTERN void std_vector_Sl_Color_Interop_Sg__InsertRange(std::vector< Color_Interop > *self,int index,std::vector< Color_Interop > const &values){
+        if (index>=0 && index<(int)self->size()+1)
+          self->insert(self->begin()+index, values.begin(), values.end());
+        else
+          throw std::out_of_range("index");
+      }
+SWIGINTERN void std_vector_Sl_Color_Interop_Sg__RemoveAt(std::vector< Color_Interop > *self,int index){
+        if (index>=0 && index<(int)self->size())
+          self->erase(self->begin() + index);
+        else
+          throw std::out_of_range("index");
+      }
+SWIGINTERN void std_vector_Sl_Color_Interop_Sg__RemoveRange(std::vector< Color_Interop > *self,int index,int count){
+        if (index < 0)
+          throw std::out_of_range("index");
+        if (count < 0)
+          throw std::out_of_range("count");
+        if (index >= (int)self->size()+1 || index+count > (int)self->size())
+          throw std::invalid_argument("invalid range");
+        self->erase(self->begin()+index, self->begin()+index+count);
+      }
+SWIGINTERN std::vector< Color_Interop > *std_vector_Sl_Color_Interop_Sg__Repeat(Color_Interop const &value,int count){
+        if (count < 0)
+          throw std::out_of_range("count");
+        return new std::vector< Color_Interop >(count, value);
+      }
+SWIGINTERN void std_vector_Sl_Color_Interop_Sg__Reverse__SWIG_0(std::vector< Color_Interop > *self){
+        std::reverse(self->begin(), self->end());
+      }
+SWIGINTERN void std_vector_Sl_Color_Interop_Sg__Reverse__SWIG_1(std::vector< Color_Interop > *self,int index,int count){
+        if (index < 0)
+          throw std::out_of_range("index");
+        if (count < 0)
+          throw std::out_of_range("count");
+        if (index >= (int)self->size()+1 || index+count > (int)self->size())
+          throw std::invalid_argument("invalid range");
+        std::reverse(self->begin()+index, self->begin()+index+count);
+      }
+SWIGINTERN void std_vector_Sl_Color_Interop_Sg__SetRange(std::vector< Color_Interop > *self,int index,std::vector< Color_Interop > const &values){
+        if (index < 0)
+          throw std::out_of_range("index");
+        if (index+values.size() > self->size())
+          throw std::out_of_range("index");
+        std::copy(values.begin(), values.end(), self->begin()+index);
+      }
 SWIGINTERN std::map< int,MapBackground_Interop >::mapped_type const &std_map_Sl_int_Sc_MapBackground_Interop_Sg__getitem(std::map< int,MapBackground_Interop > *self,std::map< int,MapBackground_Interop >::key_type const &key){
         std::map< int, MapBackground_Interop, std::less< int > >::iterator iter = self->find(key);
         if (iter != self->end())
@@ -2721,6 +2903,34 @@ SWIGEXPORT void * SWIGSTDCALL CSharp_MapBackground_Interop_max_color_get(void * 
   arg1 = (MapBackground_Interop *)jarg1; 
   result = (Color_Interop *)& ((arg1)->max_color);
   jresult = (void *)result; 
+  return jresult;
+}
+
+
+SWIGEXPORT void * SWIGSTDCALL CSharp_MapBackground_Interop_GetMatrix(double jarg1, double jarg2, double jarg3, double jarg4, int jarg5, int jarg6, void * jarg7) {
+  void * jresult ;
+  double arg1 ;
+  double arg2 ;
+  double arg3 ;
+  double arg4 ;
+  int arg5 ;
+  int arg6 ;
+  std::vector< MapBackground_Interop > *arg7 = 0 ;
+  std::vector< Color_Interop > result;
+  
+  arg1 = (double)jarg1; 
+  arg2 = (double)jarg2; 
+  arg3 = (double)jarg3; 
+  arg4 = (double)jarg4; 
+  arg5 = (int)jarg5; 
+  arg6 = (int)jarg6; 
+  arg7 = (std::vector< MapBackground_Interop > *)jarg7;
+  if (!arg7) {
+    SWIG_CSharpSetPendingExceptionArgument(SWIG_CSharpArgumentNullException, "std::vector< MapBackground_Interop > const & is null", 0);
+    return 0;
+  } 
+  result = MapBackground_Interop::GetMatrix(arg1,arg2,arg3,arg4,arg5,arg6,(std::vector< MapBackground_Interop > const &)*arg7);
+  jresult = new std::vector< Color_Interop >(result); 
   return jresult;
 }
 
@@ -6556,6 +6766,712 @@ SWIGEXPORT void SWIGSTDCALL CSharp_delete_vector_scriptingnode(void * jarg1) {
   std::vector< ScriptingNode > *arg1 = (std::vector< ScriptingNode > *) 0 ;
   
   arg1 = (std::vector< ScriptingNode > *)jarg1; 
+  delete arg1;
+}
+
+
+SWIGEXPORT void SWIGSTDCALL CSharp_vector_background_Clear(void * jarg1) {
+  std::vector< MapBackground_Interop > *arg1 = (std::vector< MapBackground_Interop > *) 0 ;
+  
+  arg1 = (std::vector< MapBackground_Interop > *)jarg1; 
+  (arg1)->clear();
+}
+
+
+SWIGEXPORT void SWIGSTDCALL CSharp_vector_background_Add(void * jarg1, void * jarg2) {
+  std::vector< MapBackground_Interop > *arg1 = (std::vector< MapBackground_Interop > *) 0 ;
+  MapBackground_Interop *arg2 = 0 ;
+  
+  arg1 = (std::vector< MapBackground_Interop > *)jarg1; 
+  arg2 = (MapBackground_Interop *)jarg2;
+  if (!arg2) {
+    SWIG_CSharpSetPendingExceptionArgument(SWIG_CSharpArgumentNullException, "MapBackground_Interop const & is null", 0);
+    return ;
+  } 
+  (arg1)->push_back((MapBackground_Interop const &)*arg2);
+}
+
+
+SWIGEXPORT unsigned long SWIGSTDCALL CSharp_vector_background_size(void * jarg1) {
+  unsigned long jresult ;
+  std::vector< MapBackground_Interop > *arg1 = (std::vector< MapBackground_Interop > *) 0 ;
+  std::vector< MapBackground_Interop >::size_type result;
+  
+  arg1 = (std::vector< MapBackground_Interop > *)jarg1; 
+  result = ((std::vector< MapBackground_Interop > const *)arg1)->size();
+  jresult = (unsigned long)result; 
+  return jresult;
+}
+
+
+SWIGEXPORT unsigned long SWIGSTDCALL CSharp_vector_background_capacity(void * jarg1) {
+  unsigned long jresult ;
+  std::vector< MapBackground_Interop > *arg1 = (std::vector< MapBackground_Interop > *) 0 ;
+  std::vector< MapBackground_Interop >::size_type result;
+  
+  arg1 = (std::vector< MapBackground_Interop > *)jarg1; 
+  result = ((std::vector< MapBackground_Interop > const *)arg1)->capacity();
+  jresult = (unsigned long)result; 
+  return jresult;
+}
+
+
+SWIGEXPORT void SWIGSTDCALL CSharp_vector_background_reserve(void * jarg1, unsigned long jarg2) {
+  std::vector< MapBackground_Interop > *arg1 = (std::vector< MapBackground_Interop > *) 0 ;
+  std::vector< MapBackground_Interop >::size_type arg2 ;
+  
+  arg1 = (std::vector< MapBackground_Interop > *)jarg1; 
+  arg2 = (std::vector< MapBackground_Interop >::size_type)jarg2; 
+  (arg1)->reserve(arg2);
+}
+
+
+SWIGEXPORT void * SWIGSTDCALL CSharp_new_vector_background__SWIG_0() {
+  void * jresult ;
+  std::vector< MapBackground_Interop > *result = 0 ;
+  
+  result = (std::vector< MapBackground_Interop > *)new std::vector< MapBackground_Interop >();
+  jresult = (void *)result; 
+  return jresult;
+}
+
+
+SWIGEXPORT void * SWIGSTDCALL CSharp_new_vector_background__SWIG_1(void * jarg1) {
+  void * jresult ;
+  std::vector< MapBackground_Interop > *arg1 = 0 ;
+  std::vector< MapBackground_Interop > *result = 0 ;
+  
+  arg1 = (std::vector< MapBackground_Interop > *)jarg1;
+  if (!arg1) {
+    SWIG_CSharpSetPendingExceptionArgument(SWIG_CSharpArgumentNullException, "std::vector< MapBackground_Interop > const & is null", 0);
+    return 0;
+  } 
+  result = (std::vector< MapBackground_Interop > *)new std::vector< MapBackground_Interop >((std::vector< MapBackground_Interop > const &)*arg1);
+  jresult = (void *)result; 
+  return jresult;
+}
+
+
+SWIGEXPORT void * SWIGSTDCALL CSharp_new_vector_background__SWIG_2(int jarg1) {
+  void * jresult ;
+  int arg1 ;
+  std::vector< MapBackground_Interop > *result = 0 ;
+  
+  arg1 = (int)jarg1; 
+  try {
+    result = (std::vector< MapBackground_Interop > *)new_std_vector_Sl_MapBackground_Interop_Sg___SWIG_2(arg1);
+  } catch(std::out_of_range &_e) {
+    SWIG_CSharpSetPendingExceptionArgument(SWIG_CSharpArgumentOutOfRangeException, 0, (&_e)->what());
+    return 0;
+  }
+  jresult = (void *)result; 
+  return jresult;
+}
+
+
+SWIGEXPORT void * SWIGSTDCALL CSharp_vector_background_getitemcopy(void * jarg1, int jarg2) {
+  void * jresult ;
+  std::vector< MapBackground_Interop > *arg1 = (std::vector< MapBackground_Interop > *) 0 ;
+  int arg2 ;
+  MapBackground_Interop result;
+  
+  arg1 = (std::vector< MapBackground_Interop > *)jarg1; 
+  arg2 = (int)jarg2; 
+  try {
+    result = std_vector_Sl_MapBackground_Interop_Sg__getitemcopy(arg1,arg2);
+  } catch(std::out_of_range &_e) {
+    SWIG_CSharpSetPendingExceptionArgument(SWIG_CSharpArgumentOutOfRangeException, 0, (&_e)->what());
+    return 0;
+  }
+  jresult = new MapBackground_Interop(result); 
+  return jresult;
+}
+
+
+SWIGEXPORT void * SWIGSTDCALL CSharp_vector_background_getitem(void * jarg1, int jarg2) {
+  void * jresult ;
+  std::vector< MapBackground_Interop > *arg1 = (std::vector< MapBackground_Interop > *) 0 ;
+  int arg2 ;
+  std::vector< MapBackground_Interop >::value_type *result = 0 ;
+  
+  arg1 = (std::vector< MapBackground_Interop > *)jarg1; 
+  arg2 = (int)jarg2; 
+  try {
+    result = (std::vector< MapBackground_Interop >::value_type *) &std_vector_Sl_MapBackground_Interop_Sg__getitem(arg1,arg2);
+  } catch(std::out_of_range &_e) {
+    SWIG_CSharpSetPendingExceptionArgument(SWIG_CSharpArgumentOutOfRangeException, 0, (&_e)->what());
+    return 0;
+  }
+  jresult = (void *)result; 
+  return jresult;
+}
+
+
+SWIGEXPORT void SWIGSTDCALL CSharp_vector_background_setitem(void * jarg1, int jarg2, void * jarg3) {
+  std::vector< MapBackground_Interop > *arg1 = (std::vector< MapBackground_Interop > *) 0 ;
+  int arg2 ;
+  MapBackground_Interop *arg3 = 0 ;
+  
+  arg1 = (std::vector< MapBackground_Interop > *)jarg1; 
+  arg2 = (int)jarg2; 
+  arg3 = (MapBackground_Interop *)jarg3;
+  if (!arg3) {
+    SWIG_CSharpSetPendingExceptionArgument(SWIG_CSharpArgumentNullException, "MapBackground_Interop const & is null", 0);
+    return ;
+  } 
+  try {
+    std_vector_Sl_MapBackground_Interop_Sg__setitem(arg1,arg2,(MapBackground_Interop const &)*arg3);
+  } catch(std::out_of_range &_e) {
+    SWIG_CSharpSetPendingExceptionArgument(SWIG_CSharpArgumentOutOfRangeException, 0, (&_e)->what());
+    return ;
+  }
+}
+
+
+SWIGEXPORT void SWIGSTDCALL CSharp_vector_background_AddRange(void * jarg1, void * jarg2) {
+  std::vector< MapBackground_Interop > *arg1 = (std::vector< MapBackground_Interop > *) 0 ;
+  std::vector< MapBackground_Interop > *arg2 = 0 ;
+  
+  arg1 = (std::vector< MapBackground_Interop > *)jarg1; 
+  arg2 = (std::vector< MapBackground_Interop > *)jarg2;
+  if (!arg2) {
+    SWIG_CSharpSetPendingExceptionArgument(SWIG_CSharpArgumentNullException, "std::vector< MapBackground_Interop > const & is null", 0);
+    return ;
+  } 
+  std_vector_Sl_MapBackground_Interop_Sg__AddRange(arg1,(std::vector< MapBackground_Interop > const &)*arg2);
+}
+
+
+SWIGEXPORT void * SWIGSTDCALL CSharp_vector_background_GetRange(void * jarg1, int jarg2, int jarg3) {
+  void * jresult ;
+  std::vector< MapBackground_Interop > *arg1 = (std::vector< MapBackground_Interop > *) 0 ;
+  int arg2 ;
+  int arg3 ;
+  std::vector< MapBackground_Interop > *result = 0 ;
+  
+  arg1 = (std::vector< MapBackground_Interop > *)jarg1; 
+  arg2 = (int)jarg2; 
+  arg3 = (int)jarg3; 
+  try {
+    result = (std::vector< MapBackground_Interop > *)std_vector_Sl_MapBackground_Interop_Sg__GetRange(arg1,arg2,arg3);
+  } catch(std::out_of_range &_e) {
+    SWIG_CSharpSetPendingExceptionArgument(SWIG_CSharpArgumentOutOfRangeException, 0, (&_e)->what());
+    return 0;
+  } catch(std::invalid_argument &_e) {
+    SWIG_CSharpSetPendingExceptionArgument(SWIG_CSharpArgumentException, (&_e)->what(), "");
+    return 0;
+  }
+  jresult = (void *)result; 
+  return jresult;
+}
+
+
+SWIGEXPORT void SWIGSTDCALL CSharp_vector_background_Insert(void * jarg1, int jarg2, void * jarg3) {
+  std::vector< MapBackground_Interop > *arg1 = (std::vector< MapBackground_Interop > *) 0 ;
+  int arg2 ;
+  MapBackground_Interop *arg3 = 0 ;
+  
+  arg1 = (std::vector< MapBackground_Interop > *)jarg1; 
+  arg2 = (int)jarg2; 
+  arg3 = (MapBackground_Interop *)jarg3;
+  if (!arg3) {
+    SWIG_CSharpSetPendingExceptionArgument(SWIG_CSharpArgumentNullException, "MapBackground_Interop const & is null", 0);
+    return ;
+  } 
+  try {
+    std_vector_Sl_MapBackground_Interop_Sg__Insert(arg1,arg2,(MapBackground_Interop const &)*arg3);
+  } catch(std::out_of_range &_e) {
+    SWIG_CSharpSetPendingExceptionArgument(SWIG_CSharpArgumentOutOfRangeException, 0, (&_e)->what());
+    return ;
+  }
+}
+
+
+SWIGEXPORT void SWIGSTDCALL CSharp_vector_background_InsertRange(void * jarg1, int jarg2, void * jarg3) {
+  std::vector< MapBackground_Interop > *arg1 = (std::vector< MapBackground_Interop > *) 0 ;
+  int arg2 ;
+  std::vector< MapBackground_Interop > *arg3 = 0 ;
+  
+  arg1 = (std::vector< MapBackground_Interop > *)jarg1; 
+  arg2 = (int)jarg2; 
+  arg3 = (std::vector< MapBackground_Interop > *)jarg3;
+  if (!arg3) {
+    SWIG_CSharpSetPendingExceptionArgument(SWIG_CSharpArgumentNullException, "std::vector< MapBackground_Interop > const & is null", 0);
+    return ;
+  } 
+  try {
+    std_vector_Sl_MapBackground_Interop_Sg__InsertRange(arg1,arg2,(std::vector< MapBackground_Interop > const &)*arg3);
+  } catch(std::out_of_range &_e) {
+    SWIG_CSharpSetPendingExceptionArgument(SWIG_CSharpArgumentOutOfRangeException, 0, (&_e)->what());
+    return ;
+  }
+}
+
+
+SWIGEXPORT void SWIGSTDCALL CSharp_vector_background_RemoveAt(void * jarg1, int jarg2) {
+  std::vector< MapBackground_Interop > *arg1 = (std::vector< MapBackground_Interop > *) 0 ;
+  int arg2 ;
+  
+  arg1 = (std::vector< MapBackground_Interop > *)jarg1; 
+  arg2 = (int)jarg2; 
+  try {
+    std_vector_Sl_MapBackground_Interop_Sg__RemoveAt(arg1,arg2);
+  } catch(std::out_of_range &_e) {
+    SWIG_CSharpSetPendingExceptionArgument(SWIG_CSharpArgumentOutOfRangeException, 0, (&_e)->what());
+    return ;
+  }
+}
+
+
+SWIGEXPORT void SWIGSTDCALL CSharp_vector_background_RemoveRange(void * jarg1, int jarg2, int jarg3) {
+  std::vector< MapBackground_Interop > *arg1 = (std::vector< MapBackground_Interop > *) 0 ;
+  int arg2 ;
+  int arg3 ;
+  
+  arg1 = (std::vector< MapBackground_Interop > *)jarg1; 
+  arg2 = (int)jarg2; 
+  arg3 = (int)jarg3; 
+  try {
+    std_vector_Sl_MapBackground_Interop_Sg__RemoveRange(arg1,arg2,arg3);
+  } catch(std::out_of_range &_e) {
+    SWIG_CSharpSetPendingExceptionArgument(SWIG_CSharpArgumentOutOfRangeException, 0, (&_e)->what());
+    return ;
+  } catch(std::invalid_argument &_e) {
+    SWIG_CSharpSetPendingExceptionArgument(SWIG_CSharpArgumentException, (&_e)->what(), "");
+    return ;
+  }
+}
+
+
+SWIGEXPORT void * SWIGSTDCALL CSharp_vector_background_Repeat(void * jarg1, int jarg2) {
+  void * jresult ;
+  MapBackground_Interop *arg1 = 0 ;
+  int arg2 ;
+  std::vector< MapBackground_Interop > *result = 0 ;
+  
+  arg1 = (MapBackground_Interop *)jarg1;
+  if (!arg1) {
+    SWIG_CSharpSetPendingExceptionArgument(SWIG_CSharpArgumentNullException, "MapBackground_Interop const & is null", 0);
+    return 0;
+  } 
+  arg2 = (int)jarg2; 
+  try {
+    result = (std::vector< MapBackground_Interop > *)std_vector_Sl_MapBackground_Interop_Sg__Repeat((MapBackground_Interop const &)*arg1,arg2);
+  } catch(std::out_of_range &_e) {
+    SWIG_CSharpSetPendingExceptionArgument(SWIG_CSharpArgumentOutOfRangeException, 0, (&_e)->what());
+    return 0;
+  }
+  jresult = (void *)result; 
+  return jresult;
+}
+
+
+SWIGEXPORT void SWIGSTDCALL CSharp_vector_background_Reverse__SWIG_0(void * jarg1) {
+  std::vector< MapBackground_Interop > *arg1 = (std::vector< MapBackground_Interop > *) 0 ;
+  
+  arg1 = (std::vector< MapBackground_Interop > *)jarg1; 
+  std_vector_Sl_MapBackground_Interop_Sg__Reverse__SWIG_0(arg1);
+}
+
+
+SWIGEXPORT void SWIGSTDCALL CSharp_vector_background_Reverse__SWIG_1(void * jarg1, int jarg2, int jarg3) {
+  std::vector< MapBackground_Interop > *arg1 = (std::vector< MapBackground_Interop > *) 0 ;
+  int arg2 ;
+  int arg3 ;
+  
+  arg1 = (std::vector< MapBackground_Interop > *)jarg1; 
+  arg2 = (int)jarg2; 
+  arg3 = (int)jarg3; 
+  try {
+    std_vector_Sl_MapBackground_Interop_Sg__Reverse__SWIG_1(arg1,arg2,arg3);
+  } catch(std::out_of_range &_e) {
+    SWIG_CSharpSetPendingExceptionArgument(SWIG_CSharpArgumentOutOfRangeException, 0, (&_e)->what());
+    return ;
+  } catch(std::invalid_argument &_e) {
+    SWIG_CSharpSetPendingExceptionArgument(SWIG_CSharpArgumentException, (&_e)->what(), "");
+    return ;
+  }
+}
+
+
+SWIGEXPORT void SWIGSTDCALL CSharp_vector_background_SetRange(void * jarg1, int jarg2, void * jarg3) {
+  std::vector< MapBackground_Interop > *arg1 = (std::vector< MapBackground_Interop > *) 0 ;
+  int arg2 ;
+  std::vector< MapBackground_Interop > *arg3 = 0 ;
+  
+  arg1 = (std::vector< MapBackground_Interop > *)jarg1; 
+  arg2 = (int)jarg2; 
+  arg3 = (std::vector< MapBackground_Interop > *)jarg3;
+  if (!arg3) {
+    SWIG_CSharpSetPendingExceptionArgument(SWIG_CSharpArgumentNullException, "std::vector< MapBackground_Interop > const & is null", 0);
+    return ;
+  } 
+  try {
+    std_vector_Sl_MapBackground_Interop_Sg__SetRange(arg1,arg2,(std::vector< MapBackground_Interop > const &)*arg3);
+  } catch(std::out_of_range &_e) {
+    SWIG_CSharpSetPendingExceptionArgument(SWIG_CSharpArgumentOutOfRangeException, 0, (&_e)->what());
+    return ;
+  }
+}
+
+
+SWIGEXPORT void SWIGSTDCALL CSharp_delete_vector_background(void * jarg1) {
+  std::vector< MapBackground_Interop > *arg1 = (std::vector< MapBackground_Interop > *) 0 ;
+  
+  arg1 = (std::vector< MapBackground_Interop > *)jarg1; 
+  delete arg1;
+}
+
+
+SWIGEXPORT void SWIGSTDCALL CSharp_vector_colors_Clear(void * jarg1) {
+  std::vector< Color_Interop > *arg1 = (std::vector< Color_Interop > *) 0 ;
+  
+  arg1 = (std::vector< Color_Interop > *)jarg1; 
+  (arg1)->clear();
+}
+
+
+SWIGEXPORT void SWIGSTDCALL CSharp_vector_colors_Add(void * jarg1, void * jarg2) {
+  std::vector< Color_Interop > *arg1 = (std::vector< Color_Interop > *) 0 ;
+  Color_Interop *arg2 = 0 ;
+  
+  arg1 = (std::vector< Color_Interop > *)jarg1; 
+  arg2 = (Color_Interop *)jarg2;
+  if (!arg2) {
+    SWIG_CSharpSetPendingExceptionArgument(SWIG_CSharpArgumentNullException, "Color_Interop const & is null", 0);
+    return ;
+  } 
+  (arg1)->push_back((Color_Interop const &)*arg2);
+}
+
+
+SWIGEXPORT unsigned long SWIGSTDCALL CSharp_vector_colors_size(void * jarg1) {
+  unsigned long jresult ;
+  std::vector< Color_Interop > *arg1 = (std::vector< Color_Interop > *) 0 ;
+  std::vector< Color_Interop >::size_type result;
+  
+  arg1 = (std::vector< Color_Interop > *)jarg1; 
+  result = ((std::vector< Color_Interop > const *)arg1)->size();
+  jresult = (unsigned long)result; 
+  return jresult;
+}
+
+
+SWIGEXPORT unsigned long SWIGSTDCALL CSharp_vector_colors_capacity(void * jarg1) {
+  unsigned long jresult ;
+  std::vector< Color_Interop > *arg1 = (std::vector< Color_Interop > *) 0 ;
+  std::vector< Color_Interop >::size_type result;
+  
+  arg1 = (std::vector< Color_Interop > *)jarg1; 
+  result = ((std::vector< Color_Interop > const *)arg1)->capacity();
+  jresult = (unsigned long)result; 
+  return jresult;
+}
+
+
+SWIGEXPORT void SWIGSTDCALL CSharp_vector_colors_reserve(void * jarg1, unsigned long jarg2) {
+  std::vector< Color_Interop > *arg1 = (std::vector< Color_Interop > *) 0 ;
+  std::vector< Color_Interop >::size_type arg2 ;
+  
+  arg1 = (std::vector< Color_Interop > *)jarg1; 
+  arg2 = (std::vector< Color_Interop >::size_type)jarg2; 
+  (arg1)->reserve(arg2);
+}
+
+
+SWIGEXPORT void * SWIGSTDCALL CSharp_new_vector_colors__SWIG_0() {
+  void * jresult ;
+  std::vector< Color_Interop > *result = 0 ;
+  
+  result = (std::vector< Color_Interop > *)new std::vector< Color_Interop >();
+  jresult = (void *)result; 
+  return jresult;
+}
+
+
+SWIGEXPORT void * SWIGSTDCALL CSharp_new_vector_colors__SWIG_1(void * jarg1) {
+  void * jresult ;
+  std::vector< Color_Interop > *arg1 = 0 ;
+  std::vector< Color_Interop > *result = 0 ;
+  
+  arg1 = (std::vector< Color_Interop > *)jarg1;
+  if (!arg1) {
+    SWIG_CSharpSetPendingExceptionArgument(SWIG_CSharpArgumentNullException, "std::vector< Color_Interop > const & is null", 0);
+    return 0;
+  } 
+  result = (std::vector< Color_Interop > *)new std::vector< Color_Interop >((std::vector< Color_Interop > const &)*arg1);
+  jresult = (void *)result; 
+  return jresult;
+}
+
+
+SWIGEXPORT void * SWIGSTDCALL CSharp_new_vector_colors__SWIG_2(int jarg1) {
+  void * jresult ;
+  int arg1 ;
+  std::vector< Color_Interop > *result = 0 ;
+  
+  arg1 = (int)jarg1; 
+  try {
+    result = (std::vector< Color_Interop > *)new_std_vector_Sl_Color_Interop_Sg___SWIG_2(arg1);
+  } catch(std::out_of_range &_e) {
+    SWIG_CSharpSetPendingExceptionArgument(SWIG_CSharpArgumentOutOfRangeException, 0, (&_e)->what());
+    return 0;
+  }
+  jresult = (void *)result; 
+  return jresult;
+}
+
+
+SWIGEXPORT void * SWIGSTDCALL CSharp_vector_colors_getitemcopy(void * jarg1, int jarg2) {
+  void * jresult ;
+  std::vector< Color_Interop > *arg1 = (std::vector< Color_Interop > *) 0 ;
+  int arg2 ;
+  Color_Interop result;
+  
+  arg1 = (std::vector< Color_Interop > *)jarg1; 
+  arg2 = (int)jarg2; 
+  try {
+    result = std_vector_Sl_Color_Interop_Sg__getitemcopy(arg1,arg2);
+  } catch(std::out_of_range &_e) {
+    SWIG_CSharpSetPendingExceptionArgument(SWIG_CSharpArgumentOutOfRangeException, 0, (&_e)->what());
+    return 0;
+  }
+  jresult = new Color_Interop(result); 
+  return jresult;
+}
+
+
+SWIGEXPORT void * SWIGSTDCALL CSharp_vector_colors_getitem(void * jarg1, int jarg2) {
+  void * jresult ;
+  std::vector< Color_Interop > *arg1 = (std::vector< Color_Interop > *) 0 ;
+  int arg2 ;
+  std::vector< Color_Interop >::value_type *result = 0 ;
+  
+  arg1 = (std::vector< Color_Interop > *)jarg1; 
+  arg2 = (int)jarg2; 
+  try {
+    result = (std::vector< Color_Interop >::value_type *) &std_vector_Sl_Color_Interop_Sg__getitem(arg1,arg2);
+  } catch(std::out_of_range &_e) {
+    SWIG_CSharpSetPendingExceptionArgument(SWIG_CSharpArgumentOutOfRangeException, 0, (&_e)->what());
+    return 0;
+  }
+  jresult = (void *)result; 
+  return jresult;
+}
+
+
+SWIGEXPORT void SWIGSTDCALL CSharp_vector_colors_setitem(void * jarg1, int jarg2, void * jarg3) {
+  std::vector< Color_Interop > *arg1 = (std::vector< Color_Interop > *) 0 ;
+  int arg2 ;
+  Color_Interop *arg3 = 0 ;
+  
+  arg1 = (std::vector< Color_Interop > *)jarg1; 
+  arg2 = (int)jarg2; 
+  arg3 = (Color_Interop *)jarg3;
+  if (!arg3) {
+    SWIG_CSharpSetPendingExceptionArgument(SWIG_CSharpArgumentNullException, "Color_Interop const & is null", 0);
+    return ;
+  } 
+  try {
+    std_vector_Sl_Color_Interop_Sg__setitem(arg1,arg2,(Color_Interop const &)*arg3);
+  } catch(std::out_of_range &_e) {
+    SWIG_CSharpSetPendingExceptionArgument(SWIG_CSharpArgumentOutOfRangeException, 0, (&_e)->what());
+    return ;
+  }
+}
+
+
+SWIGEXPORT void SWIGSTDCALL CSharp_vector_colors_AddRange(void * jarg1, void * jarg2) {
+  std::vector< Color_Interop > *arg1 = (std::vector< Color_Interop > *) 0 ;
+  std::vector< Color_Interop > *arg2 = 0 ;
+  
+  arg1 = (std::vector< Color_Interop > *)jarg1; 
+  arg2 = (std::vector< Color_Interop > *)jarg2;
+  if (!arg2) {
+    SWIG_CSharpSetPendingExceptionArgument(SWIG_CSharpArgumentNullException, "std::vector< Color_Interop > const & is null", 0);
+    return ;
+  } 
+  std_vector_Sl_Color_Interop_Sg__AddRange(arg1,(std::vector< Color_Interop > const &)*arg2);
+}
+
+
+SWIGEXPORT void * SWIGSTDCALL CSharp_vector_colors_GetRange(void * jarg1, int jarg2, int jarg3) {
+  void * jresult ;
+  std::vector< Color_Interop > *arg1 = (std::vector< Color_Interop > *) 0 ;
+  int arg2 ;
+  int arg3 ;
+  std::vector< Color_Interop > *result = 0 ;
+  
+  arg1 = (std::vector< Color_Interop > *)jarg1; 
+  arg2 = (int)jarg2; 
+  arg3 = (int)jarg3; 
+  try {
+    result = (std::vector< Color_Interop > *)std_vector_Sl_Color_Interop_Sg__GetRange(arg1,arg2,arg3);
+  } catch(std::out_of_range &_e) {
+    SWIG_CSharpSetPendingExceptionArgument(SWIG_CSharpArgumentOutOfRangeException, 0, (&_e)->what());
+    return 0;
+  } catch(std::invalid_argument &_e) {
+    SWIG_CSharpSetPendingExceptionArgument(SWIG_CSharpArgumentException, (&_e)->what(), "");
+    return 0;
+  }
+  jresult = (void *)result; 
+  return jresult;
+}
+
+
+SWIGEXPORT void SWIGSTDCALL CSharp_vector_colors_Insert(void * jarg1, int jarg2, void * jarg3) {
+  std::vector< Color_Interop > *arg1 = (std::vector< Color_Interop > *) 0 ;
+  int arg2 ;
+  Color_Interop *arg3 = 0 ;
+  
+  arg1 = (std::vector< Color_Interop > *)jarg1; 
+  arg2 = (int)jarg2; 
+  arg3 = (Color_Interop *)jarg3;
+  if (!arg3) {
+    SWIG_CSharpSetPendingExceptionArgument(SWIG_CSharpArgumentNullException, "Color_Interop const & is null", 0);
+    return ;
+  } 
+  try {
+    std_vector_Sl_Color_Interop_Sg__Insert(arg1,arg2,(Color_Interop const &)*arg3);
+  } catch(std::out_of_range &_e) {
+    SWIG_CSharpSetPendingExceptionArgument(SWIG_CSharpArgumentOutOfRangeException, 0, (&_e)->what());
+    return ;
+  }
+}
+
+
+SWIGEXPORT void SWIGSTDCALL CSharp_vector_colors_InsertRange(void * jarg1, int jarg2, void * jarg3) {
+  std::vector< Color_Interop > *arg1 = (std::vector< Color_Interop > *) 0 ;
+  int arg2 ;
+  std::vector< Color_Interop > *arg3 = 0 ;
+  
+  arg1 = (std::vector< Color_Interop > *)jarg1; 
+  arg2 = (int)jarg2; 
+  arg3 = (std::vector< Color_Interop > *)jarg3;
+  if (!arg3) {
+    SWIG_CSharpSetPendingExceptionArgument(SWIG_CSharpArgumentNullException, "std::vector< Color_Interop > const & is null", 0);
+    return ;
+  } 
+  try {
+    std_vector_Sl_Color_Interop_Sg__InsertRange(arg1,arg2,(std::vector< Color_Interop > const &)*arg3);
+  } catch(std::out_of_range &_e) {
+    SWIG_CSharpSetPendingExceptionArgument(SWIG_CSharpArgumentOutOfRangeException, 0, (&_e)->what());
+    return ;
+  }
+}
+
+
+SWIGEXPORT void SWIGSTDCALL CSharp_vector_colors_RemoveAt(void * jarg1, int jarg2) {
+  std::vector< Color_Interop > *arg1 = (std::vector< Color_Interop > *) 0 ;
+  int arg2 ;
+  
+  arg1 = (std::vector< Color_Interop > *)jarg1; 
+  arg2 = (int)jarg2; 
+  try {
+    std_vector_Sl_Color_Interop_Sg__RemoveAt(arg1,arg2);
+  } catch(std::out_of_range &_e) {
+    SWIG_CSharpSetPendingExceptionArgument(SWIG_CSharpArgumentOutOfRangeException, 0, (&_e)->what());
+    return ;
+  }
+}
+
+
+SWIGEXPORT void SWIGSTDCALL CSharp_vector_colors_RemoveRange(void * jarg1, int jarg2, int jarg3) {
+  std::vector< Color_Interop > *arg1 = (std::vector< Color_Interop > *) 0 ;
+  int arg2 ;
+  int arg3 ;
+  
+  arg1 = (std::vector< Color_Interop > *)jarg1; 
+  arg2 = (int)jarg2; 
+  arg3 = (int)jarg3; 
+  try {
+    std_vector_Sl_Color_Interop_Sg__RemoveRange(arg1,arg2,arg3);
+  } catch(std::out_of_range &_e) {
+    SWIG_CSharpSetPendingExceptionArgument(SWIG_CSharpArgumentOutOfRangeException, 0, (&_e)->what());
+    return ;
+  } catch(std::invalid_argument &_e) {
+    SWIG_CSharpSetPendingExceptionArgument(SWIG_CSharpArgumentException, (&_e)->what(), "");
+    return ;
+  }
+}
+
+
+SWIGEXPORT void * SWIGSTDCALL CSharp_vector_colors_Repeat(void * jarg1, int jarg2) {
+  void * jresult ;
+  Color_Interop *arg1 = 0 ;
+  int arg2 ;
+  std::vector< Color_Interop > *result = 0 ;
+  
+  arg1 = (Color_Interop *)jarg1;
+  if (!arg1) {
+    SWIG_CSharpSetPendingExceptionArgument(SWIG_CSharpArgumentNullException, "Color_Interop const & is null", 0);
+    return 0;
+  } 
+  arg2 = (int)jarg2; 
+  try {
+    result = (std::vector< Color_Interop > *)std_vector_Sl_Color_Interop_Sg__Repeat((Color_Interop const &)*arg1,arg2);
+  } catch(std::out_of_range &_e) {
+    SWIG_CSharpSetPendingExceptionArgument(SWIG_CSharpArgumentOutOfRangeException, 0, (&_e)->what());
+    return 0;
+  }
+  jresult = (void *)result; 
+  return jresult;
+}
+
+
+SWIGEXPORT void SWIGSTDCALL CSharp_vector_colors_Reverse__SWIG_0(void * jarg1) {
+  std::vector< Color_Interop > *arg1 = (std::vector< Color_Interop > *) 0 ;
+  
+  arg1 = (std::vector< Color_Interop > *)jarg1; 
+  std_vector_Sl_Color_Interop_Sg__Reverse__SWIG_0(arg1);
+}
+
+
+SWIGEXPORT void SWIGSTDCALL CSharp_vector_colors_Reverse__SWIG_1(void * jarg1, int jarg2, int jarg3) {
+  std::vector< Color_Interop > *arg1 = (std::vector< Color_Interop > *) 0 ;
+  int arg2 ;
+  int arg3 ;
+  
+  arg1 = (std::vector< Color_Interop > *)jarg1; 
+  arg2 = (int)jarg2; 
+  arg3 = (int)jarg3; 
+  try {
+    std_vector_Sl_Color_Interop_Sg__Reverse__SWIG_1(arg1,arg2,arg3);
+  } catch(std::out_of_range &_e) {
+    SWIG_CSharpSetPendingExceptionArgument(SWIG_CSharpArgumentOutOfRangeException, 0, (&_e)->what());
+    return ;
+  } catch(std::invalid_argument &_e) {
+    SWIG_CSharpSetPendingExceptionArgument(SWIG_CSharpArgumentException, (&_e)->what(), "");
+    return ;
+  }
+}
+
+
+SWIGEXPORT void SWIGSTDCALL CSharp_vector_colors_SetRange(void * jarg1, int jarg2, void * jarg3) {
+  std::vector< Color_Interop > *arg1 = (std::vector< Color_Interop > *) 0 ;
+  int arg2 ;
+  std::vector< Color_Interop > *arg3 = 0 ;
+  
+  arg1 = (std::vector< Color_Interop > *)jarg1; 
+  arg2 = (int)jarg2; 
+  arg3 = (std::vector< Color_Interop > *)jarg3;
+  if (!arg3) {
+    SWIG_CSharpSetPendingExceptionArgument(SWIG_CSharpArgumentNullException, "std::vector< Color_Interop > const & is null", 0);
+    return ;
+  } 
+  try {
+    std_vector_Sl_Color_Interop_Sg__SetRange(arg1,arg2,(std::vector< Color_Interop > const &)*arg3);
+  } catch(std::out_of_range &_e) {
+    SWIG_CSharpSetPendingExceptionArgument(SWIG_CSharpArgumentOutOfRangeException, 0, (&_e)->what());
+    return ;
+  }
+}
+
+
+SWIGEXPORT void SWIGSTDCALL CSharp_delete_vector_colors(void * jarg1) {
+  std::vector< Color_Interop > *arg1 = (std::vector< Color_Interop > *) 0 ;
+  
+  arg1 = (std::vector< Color_Interop > *)jarg1; 
   delete arg1;
 }
 

@@ -3711,51 +3711,6 @@ static constexpr double ExpAdjustment[256] = {
 
 
 #include "../../AlgLib/fastexp.h"
-double   ae_exp(double x, ae_state *state)
-{
-#if 1
-#if 1
-    return exp(x);
-#else
-    using fastexp::IEEE;
-    using fastexp::Product;
-    if (x < -709) return 0.0;
-    else if (x > 709) return std::numeric_limits<double>::max();
-    else return fastexp::exp(x);
-#endif
-#else
-#if 0
-    volatile union {
-        float f;
-        unsigned int i;
-    } cvt;
-    if (x < -709)
-        return 0.0;
-    else if (x > 709)
-        return std::numeric_limits<double>::max();
-
-    /* exp(x) = 2^i * 2^f; i = floor (log2(e) * x), 0 <= f <= 1 */
-    float t = x * 1.442695041f;
-    float fi = floorf(t);
-    float f = t - fi;
-    int i = (int)fi;
-    cvt.f = (0.3371894346f * f + 0.657636276f) * f + 1.00172476f; /* compute 2^f */
-    cvt.i += (i << 23);                                          /* scale by 2^i */
-    return cvt.f;
-
-#else
-
-    // must check bounds first!
-    if (x < -709)
-        return 0.0;
-    else if (x > 709)
-        return std::numeric_limits<double>::max();
-    auto tmp = (long)(1512775 * x + 1072632447);
-    int index = (int)(tmp >> 12) & 0xFF;
-    return ((double)(tmp << 32)) * ExpAdjustment[index];
-#endif
-#endif
-}
 double   ae_exp_fast(double x) {
     using fastexp::IEEE;
     using fastexp::Product;
@@ -3763,6 +3718,12 @@ double   ae_exp_fast(double x) {
     else if (x > 709) return std::numeric_limits<double>::max();
     else return fastexp::exp(x);
 };
+
+double   ae_exp(double x, ae_state *state)
+{
+    return ae_exp_fast(x); // exp(x);
+}
+
 
 
 /************************************************************************

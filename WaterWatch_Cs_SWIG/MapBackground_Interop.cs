@@ -128,6 +128,12 @@ public class MapBackground_Interop : global::System.IDisposable {
     } 
   }
 
+  public static vector_colors GetMatrix(double Left, double Top, double Right, double Bottom, int numColumns, int numRows, vector_background backgrounds) {
+    vector_colors ret = new vector_colors(ConvPINVOKE.MapBackground_Interop_GetMatrix(Left, Top, Right, Bottom, numColumns, numRows, vector_background.getCPtr(backgrounds)), true);
+    if (ConvPINVOKE.SWIGPendingException.Pending) throw ConvPINVOKE.SWIGPendingException.Retrieve();
+    return ret;
+  }
+
   public MapBackground_Interop() : this(ConvPINVOKE.new_MapBackground_Interop(), true) {
   }
 

@@ -606,6 +606,9 @@ class ConvPINVOKE {
   [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_MapBackground_Interop_max_color_get")]
   public static extern global::System.IntPtr MapBackground_Interop_max_color_get(global::System.Runtime.InteropServices.HandleRef jarg1);
 
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_MapBackground_Interop_GetMatrix")]
+  public static extern global::System.IntPtr MapBackground_Interop_GetMatrix(double jarg1, double jarg2, double jarg3, double jarg4, int jarg5, int jarg6, global::System.Runtime.InteropServices.HandleRef jarg7);
+
   [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_new_MapBackground_Interop")]
   public static extern global::System.IntPtr new_MapBackground_Interop();
 
@@ -1370,6 +1373,138 @@ class ConvPINVOKE {
 
   [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_delete_vector_scriptingnode")]
   public static extern void delete_vector_scriptingnode(global::System.Runtime.InteropServices.HandleRef jarg1);
+
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_vector_background_Clear")]
+  public static extern void vector_background_Clear(global::System.Runtime.InteropServices.HandleRef jarg1);
+
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_vector_background_Add")]
+  public static extern void vector_background_Add(global::System.Runtime.InteropServices.HandleRef jarg1, global::System.Runtime.InteropServices.HandleRef jarg2);
+
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_vector_background_size")]
+  public static extern uint vector_background_size(global::System.Runtime.InteropServices.HandleRef jarg1);
+
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_vector_background_capacity")]
+  public static extern uint vector_background_capacity(global::System.Runtime.InteropServices.HandleRef jarg1);
+
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_vector_background_reserve")]
+  public static extern void vector_background_reserve(global::System.Runtime.InteropServices.HandleRef jarg1, uint jarg2);
+
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_new_vector_background__SWIG_0")]
+  public static extern global::System.IntPtr new_vector_background__SWIG_0();
+
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_new_vector_background__SWIG_1")]
+  public static extern global::System.IntPtr new_vector_background__SWIG_1(global::System.Runtime.InteropServices.HandleRef jarg1);
+
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_new_vector_background__SWIG_2")]
+  public static extern global::System.IntPtr new_vector_background__SWIG_2(int jarg1);
+
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_vector_background_getitemcopy")]
+  public static extern global::System.IntPtr vector_background_getitemcopy(global::System.Runtime.InteropServices.HandleRef jarg1, int jarg2);
+
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_vector_background_getitem")]
+  public static extern global::System.IntPtr vector_background_getitem(global::System.Runtime.InteropServices.HandleRef jarg1, int jarg2);
+
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_vector_background_setitem")]
+  public static extern void vector_background_setitem(global::System.Runtime.InteropServices.HandleRef jarg1, int jarg2, global::System.Runtime.InteropServices.HandleRef jarg3);
+
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_vector_background_AddRange")]
+  public static extern void vector_background_AddRange(global::System.Runtime.InteropServices.HandleRef jarg1, global::System.Runtime.InteropServices.HandleRef jarg2);
+
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_vector_background_GetRange")]
+  public static extern global::System.IntPtr vector_background_GetRange(global::System.Runtime.InteropServices.HandleRef jarg1, int jarg2, int jarg3);
+
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_vector_background_Insert")]
+  public static extern void vector_background_Insert(global::System.Runtime.InteropServices.HandleRef jarg1, int jarg2, global::System.Runtime.InteropServices.HandleRef jarg3);
+
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_vector_background_InsertRange")]
+  public static extern void vector_background_InsertRange(global::System.Runtime.InteropServices.HandleRef jarg1, int jarg2, global::System.Runtime.InteropServices.HandleRef jarg3);
+
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_vector_background_RemoveAt")]
+  public static extern void vector_background_RemoveAt(global::System.Runtime.InteropServices.HandleRef jarg1, int jarg2);
+
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_vector_background_RemoveRange")]
+  public static extern void vector_background_RemoveRange(global::System.Runtime.InteropServices.HandleRef jarg1, int jarg2, int jarg3);
+
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_vector_background_Repeat")]
+  public static extern global::System.IntPtr vector_background_Repeat(global::System.Runtime.InteropServices.HandleRef jarg1, int jarg2);
+
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_vector_background_Reverse__SWIG_0")]
+  public static extern void vector_background_Reverse__SWIG_0(global::System.Runtime.InteropServices.HandleRef jarg1);
+
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_vector_background_Reverse__SWIG_1")]
+  public static extern void vector_background_Reverse__SWIG_1(global::System.Runtime.InteropServices.HandleRef jarg1, int jarg2, int jarg3);
+
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_vector_background_SetRange")]
+  public static extern void vector_background_SetRange(global::System.Runtime.InteropServices.HandleRef jarg1, int jarg2, global::System.Runtime.InteropServices.HandleRef jarg3);
+
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_delete_vector_background")]
+  public static extern void delete_vector_background(global::System.Runtime.InteropServices.HandleRef jarg1);
+
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_vector_colors_Clear")]
+  public static extern void vector_colors_Clear(global::System.Runtime.InteropServices.HandleRef jarg1);
+
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_vector_colors_Add")]
+  public static extern void vector_colors_Add(global::System.Runtime.InteropServices.HandleRef jarg1, global::System.Runtime.InteropServices.HandleRef jarg2);
+
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_vector_colors_size")]
+  public static extern uint vector_colors_size(global::System.Runtime.InteropServices.HandleRef jarg1);
+
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_vector_colors_capacity")]
+  public static extern uint vector_colors_capacity(global::System.Runtime.InteropServices.HandleRef jarg1);
+
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_vector_colors_reserve")]
+  public static extern void vector_colors_reserve(global::System.Runtime.InteropServices.HandleRef jarg1, uint jarg2);
+
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_new_vector_colors__SWIG_0")]
+  public static extern global::System.IntPtr new_vector_colors__SWIG_0();
+
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_new_vector_colors__SWIG_1")]
+  public static extern global::System.IntPtr new_vector_colors__SWIG_1(global::System.Runtime.InteropServices.HandleRef jarg1);
+
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_new_vector_colors__SWIG_2")]
+  public static extern global::System.IntPtr new_vector_colors__SWIG_2(int jarg1);
+
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_vector_colors_getitemcopy")]
+  public static extern global::System.IntPtr vector_colors_getitemcopy(global::System.Runtime.InteropServices.HandleRef jarg1, int jarg2);
+
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_vector_colors_getitem")]
+  public static extern global::System.IntPtr vector_colors_getitem(global::System.Runtime.InteropServices.HandleRef jarg1, int jarg2);
+
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_vector_colors_setitem")]
+  public static extern void vector_colors_setitem(global::System.Runtime.InteropServices.HandleRef jarg1, int jarg2, global::System.Runtime.InteropServices.HandleRef jarg3);
+
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_vector_colors_AddRange")]
+  public static extern void vector_colors_AddRange(global::System.Runtime.InteropServices.HandleRef jarg1, global::System.Runtime.InteropServices.HandleRef jarg2);
+
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_vector_colors_GetRange")]
+  public static extern global::System.IntPtr vector_colors_GetRange(global::System.Runtime.InteropServices.HandleRef jarg1, int jarg2, int jarg3);
+
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_vector_colors_Insert")]
+  public static extern void vector_colors_Insert(global::System.Runtime.InteropServices.HandleRef jarg1, int jarg2, global::System.Runtime.InteropServices.HandleRef jarg3);
+
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_vector_colors_InsertRange")]
+  public static extern void vector_colors_InsertRange(global::System.Runtime.InteropServices.HandleRef jarg1, int jarg2, global::System.Runtime.InteropServices.HandleRef jarg3);
+
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_vector_colors_RemoveAt")]
+  public static extern void vector_colors_RemoveAt(global::System.Runtime.InteropServices.HandleRef jarg1, int jarg2);
+
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_vector_colors_RemoveRange")]
+  public static extern void vector_colors_RemoveRange(global::System.Runtime.InteropServices.HandleRef jarg1, int jarg2, int jarg3);
+
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_vector_colors_Repeat")]
+  public static extern global::System.IntPtr vector_colors_Repeat(global::System.Runtime.InteropServices.HandleRef jarg1, int jarg2);
+
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_vector_colors_Reverse__SWIG_0")]
+  public static extern void vector_colors_Reverse__SWIG_0(global::System.Runtime.InteropServices.HandleRef jarg1);
+
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_vector_colors_Reverse__SWIG_1")]
+  public static extern void vector_colors_Reverse__SWIG_1(global::System.Runtime.InteropServices.HandleRef jarg1, int jarg2, int jarg3);
+
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_vector_colors_SetRange")]
+  public static extern void vector_colors_SetRange(global::System.Runtime.InteropServices.HandleRef jarg1, int jarg2, global::System.Runtime.InteropServices.HandleRef jarg3);
+
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_delete_vector_colors")]
+  public static extern void delete_vector_colors(global::System.Runtime.InteropServices.HandleRef jarg1);
 
   [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_new_map_int_background__SWIG_0")]
   public static extern global::System.IntPtr new_map_int_background__SWIG_0();

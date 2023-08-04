@@ -70,7 +70,7 @@ public:
     void    AppendData(double X, double Y, float value);
     double  GetValue(double X, double Y);
     std::vector<double> GetKnotSeries(double Left, double Top, double Right, double Bottom, int numColumns, int numRows);
-    std::vector<double> GetTimeSeries(double Left, double Top, double Right, double Bottom, int numColumns, int numRows);
+    std::vector<double> GetTimeSeries(double Left, double Top, double Right, double Bottom, int numColumns, int numRows);    
     double  GetMinX();
     double  GetMaxX();
     double  GetMinY();
@@ -200,8 +200,8 @@ public:
 
 class Color_Interop {
 public:
-    Color_Interop() = default;
-    Color_Interop(Color_Interop const&) = default;
+    Color_Interop() : R(0), G(0), B(0), A(0) {};
+    Color_Interop(Color_Interop const& a) : R(a.R), G(a.G), B(a.B), A(a.A) {};
     Color_Interop(double _R, double _G, double _B, double _A) : R(_R), G(_G), B(_B), A(_A) {};
 
     double R,G,B,A;
@@ -227,9 +227,11 @@ public:
     bool clipToBounds;
     double minValue;
     double maxValue;
-    int matrix; // SharedMatrix 
-    Color_Interop min_color;
+    int matrix;
+    Color_Interop min_color;    
     Color_Interop max_color;
+    /* Support function to allow streaming of background images from a series of layers matrixes (such as for a stratified heat plot) into a vector of row-major pixels to be drawn on screen. */
+    static std::vector<Color_Interop> GetMatrix(double Left, double Top, double Right, double Bottom, int numColumns, int numRows, std::vector<MapBackground_Interop> const& backgrounds);
 };
 class MapLayer_Interop {
 public:

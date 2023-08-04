@@ -105,6 +105,10 @@ public:
 
 		return *this;
 	};
+	bool operator==(const cweeBalancedTree& obj) {
+		return GetFirst() == obj.GetFirst() && GetLast() == obj.GetLast();
+	};
+	bool operator!=(const cweeBalancedTree& obj) { return !operator==(obj); };
 
 	cweeBalancedTree() : Num(0), root(nullptr), first(nullptr), last(nullptr), objAllocator(), nodeAllocator() {
 		static_assert(maxChildrenPerNode >= 4);

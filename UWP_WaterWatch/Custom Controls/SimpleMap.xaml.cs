@@ -1303,159 +1303,26 @@ namespace UWP_WaterWatch.Custom_Controls
 
                         EdmsTasks.InsertJob(() =>
                         {
-                            Array.Clear(bytes, 0, bytes.Length);
+                            // Array.Clear(bytes, 0, bytes.Length);
 
                             try
                             {
-                                for (int matrix_index = 0; matrix_index < cweeMapBackgrounds.Count; matrix_index++)
+                                List<MapBackground_Interop> bgs = new List<MapBackground_Interop>(cweeMapBackgrounds.Count);
+                                foreach (var bg in cweeMapBackgrounds) {
+                                    bgs.Add(bg.Source);
+                                }
+                                var result = MapBackground_Interop.GetMatrix(longitude, latitude, longitudeRight, latitudeBottom, pixelWidth, pixelHeight, bgs);
+
+                                int n = result.Count; 
+                                Color_Interop c;
+                                for (int i = 0; i < n; i++)
                                 {
-                                    TemporaryMapTileDataSourceContainer cweeMapBackground = cweeMapBackgrounds[matrix_index];
-
-                                    SharedMatrix shared_matrix = new SharedMatrix(cweeMapBackground.Source.matrix, false);
-
-                                    Color_Interop minCol = cweeMapBackground.Source.min_color;
-                                    Color_Interop maxCol = cweeMapBackground.Source.max_color;
-                                    double minValue = cweeMapBackground.Source.minValue;
-                                    double maxValue = cweeMapBackground.Source.maxValue;
-                                    double alpha_foreground = 0;
-                                    double alpha_background = 0;
-
-                                    if (shared_matrix.GetNumValues() > 0 && maxValue > minValue)
-                                    {
-                                        {
-                                            {
-#if true
-                                                if (minCol.A == maxCol.A && minCol.R == maxCol.R && minCol.G == maxCol.G && minCol.B == maxCol.B)
-                                                {
-                                                    // there is no gradient within this range -- are they using bounds clipping?
-                                                    if (cweeMapBackground.Source.clipToBounds)
-                                                    {
-                                                        // got to do the analysis, but we can skip blending the colors
-                                                        vector_double values;
-                                                        if (cweeMapBackground.Source.highQuality)
-                                                        {
-                                                            values = shared_matrix.GetTimeSeries(longitude, latitude, longitudeRight, latitudeBottom, pixelWidth, pixelHeight);
-                                                        }
-                                                        else
-                                                        {
-                                                            values = shared_matrix.GetKnotSeries(longitude, latitude, longitudeRight, latitudeBottom, pixelWidth, pixelHeight);
-                                                        }
-                                                        int n = values.Count;
-                                                        alpha_foreground = minCol.A / 255.0;
-                                                        for (int i = 0; i < n; i++)
-                                                        {
-                                                            v = values[i];
-                                                            byteIndex = i * bpp;
-                                                            if (values[i] >= minValue && values[i] <= maxValue)
-                                                            {
-                                                                alpha_background = (double)bytes[byteIndex + 3] / 255.0;
-
-                                                                bytes[byteIndex + 0] = (byte)(alpha_foreground * minCol.R + alpha_background * (double)bytes[byteIndex + 0] * (1.0 - alpha_foreground));
-                                                                bytes[byteIndex + 1] = (byte)(alpha_foreground * minCol.G + alpha_background * (double)bytes[byteIndex + 1] * (1.0 - alpha_foreground));
-                                                                bytes[byteIndex + 2] = (byte)(alpha_foreground * minCol.B + alpha_background * (double)bytes[byteIndex + 2] * (1.0 - alpha_foreground));
-                                                                bytes[byteIndex + 3] = (byte)((1.0 - (1.0 - alpha_foreground) * (1.0 - alpha_background)) * 255.0);
-                                                            }
-                                                        }
-
-                                                    }
-                                                    else
-                                                    {
-                                                        // no point in doing the analysis -- there is no "clip to bounds" and there will be no color transitions. 
-                                                        alpha_foreground = minCol.A / 255.0;
-
-                                                        for (int y = 0; y < pixelHeight; y++)
-                                                        {
-                                                            for (x = 0; x < pixelWidth; x++)
-                                                            {
-                                                                byteIndex = (y * pixelWidth + x) * bpp;
-
-                                                                alpha_background = (double)bytes[byteIndex + 3] / 255.0;
-
-                                                                bytes[byteIndex + 0] = (byte)(alpha_foreground * (double)minCol.R + alpha_background * (double)bytes[byteIndex + 0] * (1.0 - alpha_foreground));
-                                                                bytes[byteIndex + 1] = (byte)(alpha_foreground * (double)minCol.G + alpha_background * (double)bytes[byteIndex + 1] * (1.0 - alpha_foreground));
-                                                                bytes[byteIndex + 2] = (byte)(alpha_foreground * (double)minCol.B + alpha_background * (double)bytes[byteIndex + 2] * (1.0 - alpha_foreground));
-                                                                bytes[byteIndex + 3] = (byte)((1.0 - (1.0 - alpha_foreground) * (1.0 - alpha_background)) * 255.0);
-                                                            }
-                                                        }
-                                                    }
-                                                }
-                                                else
-#endif
-                                                {
-                                                    // traditional, full analysis
-                                                    vector_double values;
-                                                    if (cweeMapBackground.Source.highQuality)
-                                                    {
-                                                        values = shared_matrix.GetTimeSeries(longitude, latitude, longitudeRight, latitudeBottom, pixelWidth, pixelHeight);
-                                                    }
-                                                    else
-                                                    {
-                                                        values = shared_matrix.GetKnotSeries(longitude, latitude, longitudeRight, latitudeBottom, pixelWidth, pixelHeight);
-                                                    }
-                                                    int n = values.Count;
-                                                    for (int i = 0; i < n; i++)
-                                                    {
-                                                        v = (values[i] - minValue) / (maxValue - minValue); // 0 - 1 between the min and max for this value
-                                                        byteIndex = i * bpp;
-
-                                                        if (v < 0)
-                                                        {
-                                                            if (!cweeMapBackground.Source.clipToBounds)
-                                                            {
-                                                                alpha_foreground = minCol.A / 255.0;
-                                                                alpha_background = (double)bytes[byteIndex + 3] / 255.0;
-
-                                                                bytes[byteIndex + 0] = (byte)(alpha_foreground * minCol.R + alpha_background * (double)bytes[byteIndex + 0] * (1.0 - alpha_foreground));
-                                                                bytes[byteIndex + 1] = (byte)(alpha_foreground * minCol.G + alpha_background * (double)bytes[byteIndex + 1] * (1.0 - alpha_foreground));
-                                                                bytes[byteIndex + 2] = (byte)(alpha_foreground * minCol.B + alpha_background * (double)bytes[byteIndex + 2] * (1.0 - alpha_foreground));
-                                                                bytes[byteIndex + 3] = (byte)((1.0 - (1.0 - alpha_foreground) * (1.0 - alpha_background)) * 255.0);
-                                                            }
-                                                        }
-                                                        else if (v > 1)
-                                                        {
-                                                            if (!cweeMapBackground.Source.clipToBounds)
-                                                            {
-                                                                alpha_foreground = maxCol.A / 255.0;
-                                                                alpha_background = (double)bytes[byteIndex + 3] / 255.0;
-
-                                                                bytes[byteIndex + 0] = (byte)(alpha_foreground * maxCol.R + alpha_background * (double)bytes[byteIndex + 0] * (1.0 - alpha_foreground));
-                                                                bytes[byteIndex + 1] = (byte)(alpha_foreground * maxCol.G + alpha_background * (double)bytes[byteIndex + 1] * (1.0 - alpha_foreground));
-                                                                bytes[byteIndex + 2] = (byte)(alpha_foreground * maxCol.B + alpha_background * (double)bytes[byteIndex + 2] * (1.0 - alpha_foreground));
-                                                                bytes[byteIndex + 3] = (byte)((1.0 - (1.0 - alpha_foreground) * (1.0 - alpha_background)) * 255.0);
-                                                            }
-                                                        }
-                                                        else
-                                                        {
-                                                            alpha_foreground = minCol.A.Lerp(maxCol.A, v) / 255.0;
-                                                            alpha_background = (double)bytes[byteIndex + 3] / 255.0;
-
-                                                            bytes[byteIndex + 0] = (byte)(alpha_foreground * minCol.R.Lerp(maxCol.R, v) + alpha_background * (double)bytes[byteIndex + 0] * (1.0 - alpha_foreground));
-                                                            bytes[byteIndex + 1] = (byte)(alpha_foreground * minCol.G.Lerp(maxCol.G, v) + alpha_background * (double)bytes[byteIndex + 1] * (1.0 - alpha_foreground));
-                                                            bytes[byteIndex + 2] = (byte)(alpha_foreground * minCol.B.Lerp(maxCol.B, v) + alpha_background * (double)bytes[byteIndex + 2] * (1.0 - alpha_foreground));
-                                                            bytes[byteIndex + 3] = (byte)((1.0 - (1.0 - alpha_foreground) * (1.0 - alpha_background)) * 255.0);
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                    else
-                                    {
-                                        alpha_foreground = minCol.A / 255.0;
-                                        for (int y = 0; y < pixelHeight; y++)
-                                        {
-                                            for (x = 0; x < pixelWidth; x++)
-                                            {
-                                                byteIndex = (y * pixelWidth + x) * bpp;
-                                                alpha_background = (double)bytes[byteIndex + 3] / 255.0;
-
-                                                bytes[byteIndex + 0] = (byte)(alpha_foreground * (double)minCol.R + alpha_background * (double)bytes[byteIndex + 0] * (1.0 - alpha_foreground));
-                                                bytes[byteIndex + 1] = (byte)(alpha_foreground * (double)minCol.G + alpha_background * (double)bytes[byteIndex + 1] * (1.0 - alpha_foreground));
-                                                bytes[byteIndex + 2] = (byte)(alpha_foreground * (double)minCol.B + alpha_background * (double)bytes[byteIndex + 2] * (1.0 - alpha_foreground));
-                                                bytes[byteIndex + 3] = (byte)((1.0 - (1.0 - alpha_foreground) * (1.0 - alpha_background)) * 255.0);
-                                            }
-                                        }
-                                    }
+                                    byteIndex = i * bpp;
+                                    c = result[i];
+                                    bytes[byteIndex + 0] = (byte)c.R;
+                                    bytes[byteIndex + 1] = (byte)c.G;
+                                    bytes[byteIndex + 2] = (byte)c.B;
+                                    bytes[byteIndex + 3] = (byte)c.A;
                                 }
                             }
                             catch (Exception) { }

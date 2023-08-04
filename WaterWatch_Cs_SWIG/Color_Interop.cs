@@ -59,7 +59,7 @@ public class Color_Interop : global::System.IDisposable {
   public Color_Interop() : this(ConvPINVOKE.new_Color_Interop__SWIG_0(), true) {
   }
 
-  public Color_Interop(Color_Interop arg0) : this(ConvPINVOKE.new_Color_Interop__SWIG_1(Color_Interop.getCPtr(arg0)), true) {
+  public Color_Interop(Color_Interop a) : this(ConvPINVOKE.new_Color_Interop__SWIG_1(Color_Interop.getCPtr(a)), true) {
     if (ConvPINVOKE.SWIGPendingException.Pending) throw ConvPINVOKE.SWIGPendingException.Retrieve();
   }
 
