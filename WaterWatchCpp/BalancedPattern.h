@@ -1014,7 +1014,7 @@ public:
 
 		this->lock.Read_Lock();
 		if (container.GetNodeCount() > 0) {
-			auto ptr = container.NodeFindLargestSmallerEqual(std::numeric_limits<X_Axis_Type>::max());
+			auto ptr = container.GetLast(); // .NodeFindLargestSmallerEqual(std::numeric_limits<X_Axis_Type>::max());
 			if (ptr) {
 				out = ptr->key;
 			}
