@@ -33,6 +33,7 @@ public:
     virtual cweeThreadedList<cweeStr> GetNextRow(nanodbcResult& results) { return ODBC::GetNextRow(results); };
 
     virtual bool GetNextRow(nanodbcResult& results, cweeThreadedList<cweeStr>& out) { return ODBC::GetNextRow(results, out); };
+    virtual bool GetNextRow(nanodbcResult& results, cweeThreadedList<double>& out) { return ODBC::GetNextRow(results, out); };
 
     virtual cweeThreadedList < cweeThreadedList<cweeStr> > GetResults(nanodbcResult& results) { return ODBC::GetResults(results); };
 

@@ -3721,7 +3721,7 @@ double   ae_exp_fast(double x) {
 
 double   ae_exp(double x, ae_state *state)
 {
-    return ae_exp_fast(x); // exp(x);
+    return exp(x); // ae_exp_fast(x); // exp(x);
 }
 
 

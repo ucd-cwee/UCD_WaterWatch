@@ -1937,6 +1937,22 @@ SWIGEXPORT float SWIGSTDCALL CSharp_SharedTimeSeriesPattern_GetValue(void * jarg
 }
 
 
+SWIGEXPORT float SWIGSTDCALL CSharp_SharedTimeSeriesPattern_GetAvgValue(void * jarg1, double jarg2, double jarg3) {
+  float jresult ;
+  SharedTimeSeriesPattern *arg1 = (SharedTimeSeriesPattern *) 0 ;
+  double arg2 ;
+  double arg3 ;
+  float result;
+  
+  arg1 = (SharedTimeSeriesPattern *)jarg1; 
+  arg2 = (double)jarg2; 
+  arg3 = (double)jarg3; 
+  result = (float)(arg1)->GetAvgValue(arg2,arg3);
+  jresult = result; 
+  return jresult;
+}
+
+
 SWIGEXPORT void * SWIGSTDCALL CSharp_SharedTimeSeriesPattern_GetTimeSeries(void * jarg1) {
   void * jresult ;
   SharedTimeSeriesPattern *arg1 = (SharedTimeSeriesPattern *) 0 ;
@@ -1981,6 +1997,18 @@ SWIGEXPORT int SWIGSTDCALL CSharp_SharedTimeSeriesPattern_GetNumValues(void * ja
   arg1 = (SharedTimeSeriesPattern *)jarg1; 
   result = (int)(arg1)->GetNumValues();
   jresult = result; 
+  return jresult;
+}
+
+
+SWIGEXPORT int SWIGSTDCALL CSharp_SharedTimeSeriesPattern_GetInterpolationType(void * jarg1) {
+  int jresult ;
+  SharedTimeSeriesPattern *arg1 = (SharedTimeSeriesPattern *) 0 ;
+  uwp_patternInterpType result;
+  
+  arg1 = (SharedTimeSeriesPattern *)jarg1; 
+  result = (uwp_patternInterpType)(arg1)->GetInterpolationType();
+  jresult = (int)result; 
   return jresult;
 }
 
@@ -2139,40 +2167,15 @@ SWIGEXPORT void SWIGSTDCALL CSharp_delete_ScriptingNode(void * jarg1) {
 }
 
 
-SWIGEXPORT void SWIGSTDCALL CSharp_ScriptingNode_text_set(void * jarg1, const char * jarg2) {
-  ScriptingNode *arg1 = (ScriptingNode *) 0 ;
-  std::string *arg2 = 0 ;
-  
-  arg1 = (ScriptingNode *)jarg1; 
-  if (!jarg2) {
-    SWIG_CSharpSetPendingExceptionArgument(SWIG_CSharpArgumentNullException, "null string", 0);
-    return ;
-  }
-  std::string arg2_str(jarg2);
-  arg2 = &arg2_str; 
-  if (arg1) (arg1)->text = *arg2;
-}
-
-
 SWIGEXPORT const char * SWIGSTDCALL CSharp_ScriptingNode_text_get(void * jarg1) {
   const char * jresult ;
   ScriptingNode *arg1 = (ScriptingNode *) 0 ;
-  std::string *result = 0 ;
+  std::string result;
   
   arg1 = (ScriptingNode *)jarg1; 
-  result = (std::string *) & ((arg1)->text);
-  jresult = SWIG_csharp_string_callback(result->c_str()); 
+  result = ((ScriptingNode const *)arg1)->text_get();
+  jresult = SWIG_csharp_string_callback((&result)->c_str()); 
   return jresult;
-}
-
-
-SWIGEXPORT void SWIGSTDCALL CSharp_ScriptingNode_startLine_set(void * jarg1, int jarg2) {
-  ScriptingNode *arg1 = (ScriptingNode *) 0 ;
-  int arg2 ;
-  
-  arg1 = (ScriptingNode *)jarg1; 
-  arg2 = (int)jarg2; 
-  if (arg1) (arg1)->startLine = arg2;
 }
 
 
@@ -2182,19 +2185,9 @@ SWIGEXPORT int SWIGSTDCALL CSharp_ScriptingNode_startLine_get(void * jarg1) {
   int result;
   
   arg1 = (ScriptingNode *)jarg1; 
-  result = (int) ((arg1)->startLine);
+  result = (int)((ScriptingNode const *)arg1)->startLine_get();
   jresult = result; 
   return jresult;
-}
-
-
-SWIGEXPORT void SWIGSTDCALL CSharp_ScriptingNode_startColumn_set(void * jarg1, int jarg2) {
-  ScriptingNode *arg1 = (ScriptingNode *) 0 ;
-  int arg2 ;
-  
-  arg1 = (ScriptingNode *)jarg1; 
-  arg2 = (int)jarg2; 
-  if (arg1) (arg1)->startColumn = arg2;
 }
 
 
@@ -2204,19 +2197,9 @@ SWIGEXPORT int SWIGSTDCALL CSharp_ScriptingNode_startColumn_get(void * jarg1) {
   int result;
   
   arg1 = (ScriptingNode *)jarg1; 
-  result = (int) ((arg1)->startColumn);
+  result = (int)((ScriptingNode const *)arg1)->startColumn_get();
   jresult = result; 
   return jresult;
-}
-
-
-SWIGEXPORT void SWIGSTDCALL CSharp_ScriptingNode_endLine_set(void * jarg1, int jarg2) {
-  ScriptingNode *arg1 = (ScriptingNode *) 0 ;
-  int arg2 ;
-  
-  arg1 = (ScriptingNode *)jarg1; 
-  arg2 = (int)jarg2; 
-  if (arg1) (arg1)->endLine = arg2;
 }
 
 
@@ -2226,19 +2209,9 @@ SWIGEXPORT int SWIGSTDCALL CSharp_ScriptingNode_endLine_get(void * jarg1) {
   int result;
   
   arg1 = (ScriptingNode *)jarg1; 
-  result = (int) ((arg1)->endLine);
+  result = (int)((ScriptingNode const *)arg1)->endLine_get();
   jresult = result; 
   return jresult;
-}
-
-
-SWIGEXPORT void SWIGSTDCALL CSharp_ScriptingNode_endColumn_set(void * jarg1, int jarg2) {
-  ScriptingNode *arg1 = (ScriptingNode *) 0 ;
-  int arg2 ;
-  
-  arg1 = (ScriptingNode *)jarg1; 
-  arg2 = (int)jarg2; 
-  if (arg1) (arg1)->endColumn = arg2;
 }
 
 
@@ -2248,19 +2221,9 @@ SWIGEXPORT int SWIGSTDCALL CSharp_ScriptingNode_endColumn_get(void * jarg1) {
   int result;
   
   arg1 = (ScriptingNode *)jarg1; 
-  result = (int) ((arg1)->endColumn);
+  result = (int)((ScriptingNode const *)arg1)->endColumn_get();
   jresult = result; 
   return jresult;
-}
-
-
-SWIGEXPORT void SWIGSTDCALL CSharp_ScriptingNode_type_set(void * jarg1, int jarg2) {
-  ScriptingNode *arg1 = (ScriptingNode *) 0 ;
-  WaterWatchEnums::ScriptNodeType arg2 ;
-  
-  arg1 = (ScriptingNode *)jarg1; 
-  arg2 = (WaterWatchEnums::ScriptNodeType)jarg2; 
-  if (arg1) (arg1)->type = arg2;
 }
 
 
@@ -2270,46 +2233,21 @@ SWIGEXPORT int SWIGSTDCALL CSharp_ScriptingNode_type_get(void * jarg1) {
   WaterWatchEnums::ScriptNodeType result;
   
   arg1 = (ScriptingNode *)jarg1; 
-  result = (WaterWatchEnums::ScriptNodeType) ((arg1)->type);
+  result = (WaterWatchEnums::ScriptNodeType)((ScriptingNode const *)arg1)->type_get();
   jresult = (int)result; 
   return jresult;
-}
-
-
-SWIGEXPORT void SWIGSTDCALL CSharp_ScriptingNode_typeHint_set(void * jarg1, const char * jarg2) {
-  ScriptingNode *arg1 = (ScriptingNode *) 0 ;
-  std::string *arg2 = 0 ;
-  
-  arg1 = (ScriptingNode *)jarg1; 
-  if (!jarg2) {
-    SWIG_CSharpSetPendingExceptionArgument(SWIG_CSharpArgumentNullException, "null string", 0);
-    return ;
-  }
-  std::string arg2_str(jarg2);
-  arg2 = &arg2_str; 
-  if (arg1) (arg1)->typeHint = *arg2;
 }
 
 
 SWIGEXPORT const char * SWIGSTDCALL CSharp_ScriptingNode_typeHint_get(void * jarg1) {
   const char * jresult ;
   ScriptingNode *arg1 = (ScriptingNode *) 0 ;
-  std::string *result = 0 ;
+  std::string result;
   
   arg1 = (ScriptingNode *)jarg1; 
-  result = (std::string *) & ((arg1)->typeHint);
-  jresult = SWIG_csharp_string_callback(result->c_str()); 
+  result = ((ScriptingNode const *)arg1)->typeHint_get();
+  jresult = SWIG_csharp_string_callback((&result)->c_str()); 
   return jresult;
-}
-
-
-SWIGEXPORT void SWIGSTDCALL CSharp_ScriptingNode_depth_set(void * jarg1, int jarg2) {
-  ScriptingNode *arg1 = (ScriptingNode *) 0 ;
-  int arg2 ;
-  
-  arg1 = (ScriptingNode *)jarg1; 
-  arg2 = (int)jarg2; 
-  if (arg1) (arg1)->depth = arg2;
 }
 
 
@@ -2319,9 +2257,97 @@ SWIGEXPORT int SWIGSTDCALL CSharp_ScriptingNode_depth_get(void * jarg1) {
   int result;
   
   arg1 = (ScriptingNode *)jarg1; 
-  result = (int) ((arg1)->depth);
+  result = (int)((ScriptingNode const *)arg1)->depth_get();
   jresult = result; 
   return jresult;
+}
+
+
+SWIGEXPORT void SWIGSTDCALL CSharp_ScriptingNode_text_set(void * jarg1, const char * jarg2) {
+  ScriptingNode *arg1 = (ScriptingNode *) 0 ;
+  std::string arg2 ;
+  
+  arg1 = (ScriptingNode *)jarg1; 
+  if (!jarg2) {
+    SWIG_CSharpSetPendingExceptionArgument(SWIG_CSharpArgumentNullException, "null string", 0);
+    return ;
+  }
+  (&arg2)->assign(jarg2); 
+  (arg1)->text_set(arg2);
+}
+
+
+SWIGEXPORT void SWIGSTDCALL CSharp_ScriptingNode_startLine_set(void * jarg1, int jarg2) {
+  ScriptingNode *arg1 = (ScriptingNode *) 0 ;
+  int arg2 ;
+  
+  arg1 = (ScriptingNode *)jarg1; 
+  arg2 = (int)jarg2; 
+  (arg1)->startLine_set(arg2);
+}
+
+
+SWIGEXPORT void SWIGSTDCALL CSharp_ScriptingNode_startColumn_set(void * jarg1, int jarg2) {
+  ScriptingNode *arg1 = (ScriptingNode *) 0 ;
+  int arg2 ;
+  
+  arg1 = (ScriptingNode *)jarg1; 
+  arg2 = (int)jarg2; 
+  (arg1)->startColumn_set(arg2);
+}
+
+
+SWIGEXPORT void SWIGSTDCALL CSharp_ScriptingNode_endLine_set(void * jarg1, int jarg2) {
+  ScriptingNode *arg1 = (ScriptingNode *) 0 ;
+  int arg2 ;
+  
+  arg1 = (ScriptingNode *)jarg1; 
+  arg2 = (int)jarg2; 
+  (arg1)->endLine_set(arg2);
+}
+
+
+SWIGEXPORT void SWIGSTDCALL CSharp_ScriptingNode_endColumn_set(void * jarg1, int jarg2) {
+  ScriptingNode *arg1 = (ScriptingNode *) 0 ;
+  int arg2 ;
+  
+  arg1 = (ScriptingNode *)jarg1; 
+  arg2 = (int)jarg2; 
+  (arg1)->endColumn_set(arg2);
+}
+
+
+SWIGEXPORT void SWIGSTDCALL CSharp_ScriptingNode_type_set(void * jarg1, int jarg2) {
+  ScriptingNode *arg1 = (ScriptingNode *) 0 ;
+  WaterWatchEnums::ScriptNodeType arg2 ;
+  
+  arg1 = (ScriptingNode *)jarg1; 
+  arg2 = (WaterWatchEnums::ScriptNodeType)jarg2; 
+  (arg1)->type_set(arg2);
+}
+
+
+SWIGEXPORT void SWIGSTDCALL CSharp_ScriptingNode_typeHint_set(void * jarg1, const char * jarg2) {
+  ScriptingNode *arg1 = (ScriptingNode *) 0 ;
+  std::string arg2 ;
+  
+  arg1 = (ScriptingNode *)jarg1; 
+  if (!jarg2) {
+    SWIG_CSharpSetPendingExceptionArgument(SWIG_CSharpArgumentNullException, "null string", 0);
+    return ;
+  }
+  (&arg2)->assign(jarg2); 
+  (arg1)->typeHint_set(arg2);
+}
+
+
+SWIGEXPORT void SWIGSTDCALL CSharp_ScriptingNode_depth_set(void * jarg1, int jarg2) {
+  ScriptingNode *arg1 = (ScriptingNode *) 0 ;
+  int arg2 ;
+  
+  arg1 = (ScriptingNode *)jarg1; 
+  arg2 = (int)jarg2; 
+  (arg1)->depth_set(arg2);
 }
 
 
@@ -3137,6 +3163,24 @@ SWIGEXPORT void * SWIGSTDCALL CSharp_ScriptEngine_DoScript_Cast_VectorStrings(vo
 }
 
 
+SWIGEXPORT void * SWIGSTDCALL CSharp_ScriptEngine_DoScript_Cast_VectorFloats(void * jarg1, const char * jarg2) {
+  void * jresult ;
+  ScriptEngine *arg1 = (ScriptEngine *) 0 ;
+  std::string arg2 ;
+  std::vector< float > result;
+  
+  arg1 = (ScriptEngine *)jarg1; 
+  if (!jarg2) {
+    SWIG_CSharpSetPendingExceptionArgument(SWIG_CSharpArgumentNullException, "null string", 0);
+    return 0;
+  }
+  (&arg2)->assign(jarg2); 
+  result = (arg1)->DoScript_Cast_VectorFloats(arg2);
+  jresult = new std::vector< float >(result); 
+  return jresult;
+}
+
+
 SWIGEXPORT const char * SWIGSTDCALL CSharp_ScriptEngine_DoScript(void * jarg1, const char * jarg2) {
   const char * jresult ;
   ScriptEngine *arg1 = (ScriptEngine *) 0 ;
@@ -3343,6 +3387,24 @@ SWIGEXPORT void * SWIGSTDCALL CSharp_ScriptEngine_Cast_MapLayer(void * jarg1, co
 }
 
 
+SWIGEXPORT void * SWIGSTDCALL CSharp_ScriptEngine_Cast_VectorFloats(void * jarg1, const char * jarg2) {
+  void * jresult ;
+  ScriptEngine *arg1 = (ScriptEngine *) 0 ;
+  std::string arg2 ;
+  std::vector< float > result;
+  
+  arg1 = (ScriptEngine *)jarg1; 
+  if (!jarg2) {
+    SWIG_CSharpSetPendingExceptionArgument(SWIG_CSharpArgumentNullException, "null string", 0);
+    return 0;
+  }
+  (&arg2)->assign(jarg2); 
+  result = (arg1)->Cast_VectorFloats(arg2);
+  jresult = new std::vector< float >(result); 
+  return jresult;
+}
+
+
 SWIGEXPORT void SWIGSTDCALL CSharp_WaterWatch_SubmitToast(const char * jarg1, const char * jarg2) {
   std::string arg1 ;
   std::string arg2 ;
@@ -3414,6 +3476,22 @@ SWIGEXPORT void SWIGSTDCALL CSharp_WaterWatch_SetDataDirectory(const char * jarg
   }
   (&arg1)->assign(jarg1); 
   WaterWatch::SetDataDirectory(SWIG_STD_MOVE(arg1));
+}
+
+
+SWIGEXPORT const char * SWIGSTDCALL CSharp_WaterWatch_GetTemporaryFilePath(const char * jarg1) {
+  const char * jresult ;
+  std::string arg1 ;
+  std::string result;
+  
+  if (!jarg1) {
+    SWIG_CSharpSetPendingExceptionArgument(SWIG_CSharpArgumentNullException, "null string", 0);
+    return 0;
+  }
+  (&arg1)->assign(jarg1); 
+  result = WaterWatch::GetTemporaryFilePath(SWIG_STD_MOVE(arg1));
+  jresult = SWIG_csharp_string_callback((&result)->c_str()); 
+  return jresult;
 }
 
 
@@ -3646,6 +3724,22 @@ SWIGEXPORT void * SWIGSTDCALL CSharp_WaterWatch_DoScript(const char * jarg1) {
   (&arg1)->assign(jarg1); 
   result = WaterWatch::DoScript(SWIG_STD_MOVE(arg1));
   jresult = new Awaiter(result); 
+  return jresult;
+}
+
+
+SWIGEXPORT const char * SWIGSTDCALL CSharp_WaterWatch_DoScriptImmediately(const char * jarg1) {
+  const char * jresult ;
+  std::string arg1 ;
+  std::string result;
+  
+  if (!jarg1) {
+    SWIG_CSharpSetPendingExceptionArgument(SWIG_CSharpArgumentNullException, "null string", 0);
+    return 0;
+  }
+  (&arg1)->assign(jarg1); 
+  result = WaterWatch::DoScriptImmediately(SWIG_STD_MOVE(arg1));
+  jresult = SWIG_csharp_string_callback((&result)->c_str()); 
   return jresult;
 }
 

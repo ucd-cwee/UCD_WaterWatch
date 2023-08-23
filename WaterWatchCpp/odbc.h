@@ -28,6 +28,7 @@ public:
     virtual nanodbcResult Query(nanodbcConnection con, const cweeStr& query, int batchSize = 10) = 0;
     virtual cweeThreadedList<cweeStr> GetNextRow(nanodbcResult& results) = 0;
     virtual bool GetNextRow(nanodbcResult& results, cweeThreadedList<cweeStr>& out) = 0;
+    virtual bool GetNextRow(nanodbcResult& results, cweeThreadedList<double>& out) = 0;
     virtual cweeThreadedList < cweeThreadedList<cweeStr> > GetResults(nanodbcResult& results) = 0;
     virtual cweeThreadedList < cweeThreadedList<cweeStr> > GetResults(nanodbcConnection con, const cweeStr& query, int batchSize = 10) = 0;
     virtual void GetResults(nanodbcConnection con, const cweeStr& query, cweeThreadedList < cweeThreadedList<cweeStr> >& out, int batchSize = 10) = 0;

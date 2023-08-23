@@ -164,14 +164,24 @@ public class vector_colors : global::System.IDisposable, global::System.Collecti
   }
 
   public static implicit operator vector_colors(global::System.Collections.Generic.List<Color_Interop> v) {
-        var toReturn = new vector_colors(v.Count);
-        foreach (var x in v) toReturn.Add(x);
-        return toReturn;
+        if (v == null){
+            var toReturn = new vector_colors();
+            return toReturn;
+        }else{
+            var toReturn = new vector_colors(v.Count);
+            foreach (var x in v) toReturn.Add(x);
+            return toReturn;
+        }
   }
   public static implicit operator global::System.Collections.Generic.List<Color_Interop>(vector_colors v) {
-        var toReturn = new global::System.Collections.Generic.List<Color_Interop>(v.Count);
-        foreach (var x in v) toReturn.Add(x);
-        return toReturn;
+        if (v == null){
+            var toReturn = new global::System.Collections.Generic.List<Color_Interop>();
+            return toReturn;
+        }else{
+            var toReturn = new global::System.Collections.Generic.List<Color_Interop>(v.Count);
+            foreach (var x in v) toReturn.Add(x);
+            return toReturn;
+        }
   }
 
   // Type-safe enumerator

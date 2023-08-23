@@ -78,6 +78,11 @@ public class SharedTimeSeriesPattern : global::System.IDisposable {
     return ret;
   }
 
+  public float GetAvgValue(double time1, double time2) {
+    float ret = ConvPINVOKE.SharedTimeSeriesPattern_GetAvgValue(swigCPtr, time1, time2);
+    return ret;
+  }
+
   public vector_pair_double_double GetTimeSeries() {
     vector_pair_double_double ret = new vector_pair_double_double(ConvPINVOKE.SharedTimeSeriesPattern_GetTimeSeries(swigCPtr), true);
     return ret;
@@ -95,6 +100,11 @@ public class SharedTimeSeriesPattern : global::System.IDisposable {
 
   public int GetNumValues() {
     int ret = ConvPINVOKE.SharedTimeSeriesPattern_GetNumValues(swigCPtr);
+    return ret;
+  }
+
+  public uwp_patternInterpType GetInterpolationType() {
+    uwp_patternInterpType ret = (uwp_patternInterpType)ConvPINVOKE.SharedTimeSeriesPattern_GetInterpolationType(swigCPtr);
     return ret;
   }
 

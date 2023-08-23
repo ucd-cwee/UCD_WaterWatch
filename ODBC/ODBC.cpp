@@ -7131,8 +7131,7 @@ cweeThreadedList<cweeStr> ODBC::GetNextRow(nanodbcResult& results) {
 };
 bool ODBC::GetNextRow(nanodbcResult& results, cweeThreadedList<cweeStr>& out) {
     if (Result(results).SQLiteHandle() >= 0) {
-        out = SQLite::getNextRow(Result(results).SQLiteHandle());
-        return (out.Num() > 0);
+        return SQLite::getNextRow(Result(results).SQLiteHandle(), out);
     }
     else {
         int columns = Result(results).columns();
@@ -7164,6 +7163,39 @@ bool ODBC::GetNextRow(nanodbcResult& results, cweeThreadedList<cweeStr>& out) {
         return (out.Num() > 0);
     }
 };
+bool ODBC::GetNextRow(nanodbcResult& results, cweeThreadedList<double>& out) {
+    if (Result(results).SQLiteHandle() >= 0) {
+        return SQLite::getNextRow(Result(results).SQLiteHandle(), out);
+    }
+    else {
+        int columns = Result(results).columns();
+        cweeStr nullV;
+        if (out.Num() == columns) {
+            if (Result(results).next()) {
+                for (int col = 0; col < columns; ++col)
+                {
+                    out[col] = cweeStr(Result(results).get<nanodbc::string>(col, nullV.c_str()).c_str()).ReturnNumericD();
+                }
+            }
+            else {
+                out.Clear();
+            }
+        }
+        else {
+            out.Clear();
+            out.SetGranularity(cweeMath::max(columns + 16, out.GetGranularity()));
+            if (Result(results).next()) {
+                cweeStr value;
+                for (int col = 0; col < columns; ++col)
+                {
+                    out.Append(cweeStr(Result(results).get<nanodbc::string>(col, nullV.c_str()).c_str()).ReturnNumericD());
+                }
+            }
+        }
+        return (out.Num() > 0);
+    }
+};
+
 cweeThreadedList < cweeThreadedList<cweeStr> > ODBC::GetResults(nanodbcResult& results) {
     cweeThreadedList < cweeThreadedList<cweeStr> > out(Result(results).rows() + 100);
     cweeThreadedList<cweeStr> row;

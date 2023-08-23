@@ -138,7 +138,7 @@ std::vector<double> SharedMatrix::GetTimeSeries(double Left, double Top, double 
 						alglib::rbfcreate(2, 1, *model);
 						rbfsetpoints(*model, arr);
 						alglib::rbfreport rep;
-						alglib::rbfsetalgohierarchical(*model, avgDistanceBetweenKnots * 10.0, 3, 0.0); // (*model, avgDistanceBetweenKnots * 10.0, 4, 0.0);
+						alglib::rbfsetalgohierarchical(*model, avgDistanceBetweenKnots * 10.0, 4, 0.0); // (*model, avgDistanceBetweenKnots * 10.0, 4, 0.0);
 						alglib::rbfbuildmodel(*model, rep, alglib::parallel);
 					}
 				}
@@ -373,6 +373,7 @@ SharedTimeSeriesPattern::~SharedTimeSeriesPattern() {
 void    SharedTimeSeriesPattern::Clear() { external_data->ClearPattern(index_p); };
 void    SharedTimeSeriesPattern::AppendData(double time, float value) { external_data->AppendData(index_p, time, value); };
 float   SharedTimeSeriesPattern::GetValue(double time) { return (double)external_data->GetValue(index_p, time); };
+float   SharedTimeSeriesPattern::GetAvgValue(double time1, double time2) { return (double)(external_data->GetPatternRef(index_p)->GetAvgValue(time1, time2)); };
 int     SharedTimeSeriesPattern::Index() { return index_p; };
 std::vector<Pair<double, double>> SharedTimeSeriesPattern::GetTimeSeries() {
 	std::vector<Pair<double, double>> out;
@@ -384,6 +385,19 @@ std::vector<Pair<double, double>> SharedTimeSeriesPattern::GetTimeSeries() {
 double  SharedTimeSeriesPattern::GetMinTime() { return external_data->GetPatternRef(index_p)->GetMinTime()(); };
 double  SharedTimeSeriesPattern::GetMaxTime() { return external_data->GetPatternRef(index_p)->GetMaxTime()(); };
 int     SharedTimeSeriesPattern::GetNumValues() { return external_data->GetPatternRef(index_p)->GetNumValues(); };
+uwp_patternInterpType     SharedTimeSeriesPattern::GetInterpolationType() {
+	switch (external_data->GetPatternRef(index_p)->GetInterpolationType()) {
+	default:
+	case interpolation_t::LEFT:
+		return uwp_patternInterpType::LEFT;
+	case interpolation_t::RIGHT:
+		return uwp_patternInterpType::RIGHT;
+	case interpolation_t::LINEAR:
+		return uwp_patternInterpType::LINEAR;
+	case interpolation_t::SPLINE:
+		return uwp_patternInterpType::SPLINE;
+	}
+};
 std::string SharedTimeSeriesPattern::X_Units() {
 	return external_data->GetPatternRef(index_p)->X_Type().Abbreviation();
 };
@@ -411,6 +425,164 @@ std::string   SharedString::Get() {
 };
 int     SharedString::Index() { return index_p; };
 #pragma endregion
+
+#pragma region ScriptingNode
+
+class ScriptingNodeImpl
+{
+public:
+	ScriptingNodeImpl() : mutex(), startLine(0), startColumn(0), endLine(0), endColumn(0), text(""), type(WaterWatchEnums::ScriptNodeType::Noop), typeHint(""), depth(0) {};
+	~ScriptingNodeImpl() {};
+
+	std::string			text_get() const { 
+		AUTO g = mutex.Guard(); 
+		return std::string(text.c_str()); 
+	};
+	int			        startLine_get() const { 
+		AUTO g = mutex.Guard(); 
+		return startLine; 
+	};
+	int			        startColumn_get() const { 
+		AUTO g = mutex.Guard(); 
+		return startColumn; 
+	};
+	int			        endLine_get() const { 
+		AUTO g = mutex.Guard(); 
+		return endLine; 
+	};
+	int			        endColumn_get() const { 
+		AUTO g = mutex.Guard(); 
+		return endColumn; 
+	};
+	WaterWatchEnums::ScriptNodeType	    type_get() const { 
+		AUTO g = mutex.Guard(); 
+		return type; 
+	};
+	std::string			typeHint_get() const { 
+		AUTO g = mutex.Guard(); 
+		return std::string(typeHint.c_str());
+	};
+	int			        depth_get() const { 
+		AUTO g = mutex.Guard(); 
+		return depth; 
+	};
+	void			    text_set(std::string s) { 
+		AUTO g = mutex.Guard(); 
+		text = s; 
+	};
+	void		        startLine_set(int s) { 
+		AUTO g = mutex.Guard(); 
+		startLine = s; 
+	};
+	void		        startColumn_set(int s) { 
+		AUTO g = mutex.Guard(); 
+		startColumn = s; 
+	};
+	void		        endLine_set(int s) { 
+		AUTO g = mutex.Guard(); 
+		endLine = s; 
+	};
+	void		        endColumn_set(int s) { 
+		AUTO g = mutex.Guard(); 
+		endColumn = s; 
+	};
+	void        	    type_set(WaterWatchEnums::ScriptNodeType s) { 
+		AUTO g = mutex.Guard(); 
+		type = s; 
+	};
+	void	    		typeHint_set(std::string s) { 
+		AUTO g = mutex.Guard(); 
+		typeHint = s; 
+	};
+	void		        depth_set(int s) { 
+		AUTO g = mutex.Guard(); 
+		depth = s; 
+	};
+
+private:
+	mutable cweeSysMutex        mutex;
+
+	std::string			text;
+	int			        startLine;
+	int			        startColumn;
+	int			        endLine;
+	int			        endColumn;
+	WaterWatchEnums::ScriptNodeType	    type;
+	std::string			typeHint;
+	int			        depth;
+};
+
+ScriptingNode::ScriptingNode() : data(cweeSharedPtr<void>(cweeSharedPtr<ScriptingNodeImpl>(new ScriptingNodeImpl()), [](void* p) { return p; })) {};
+ScriptingNode::~ScriptingNode() {};
+
+std::string			ScriptingNode::text_get() const { 
+	cweeSharedPtr<ScriptingNodeImpl> ptr(data, [](void* p) { return static_cast<ScriptingNodeImpl*>(p); });
+	return ptr->text_get();
+};
+int			        ScriptingNode::startLine_get() const {
+	cweeSharedPtr<ScriptingNodeImpl> ptr(data, [](void* p) { return static_cast<ScriptingNodeImpl*>(p); });
+	return ptr->startLine_get();
+};
+int			        ScriptingNode::startColumn_get() const {
+	cweeSharedPtr<ScriptingNodeImpl> ptr(data, [](void* p) { return static_cast<ScriptingNodeImpl*>(p); });
+	return ptr->startColumn_get();
+};
+int			        ScriptingNode::endLine_get() const {
+	cweeSharedPtr<ScriptingNodeImpl> ptr(data, [](void* p) { return static_cast<ScriptingNodeImpl*>(p); });
+	return ptr->endLine_get();
+};
+int			        ScriptingNode::endColumn_get() const {
+	cweeSharedPtr<ScriptingNodeImpl> ptr(data, [](void* p) { return static_cast<ScriptingNodeImpl*>(p); });
+	return ptr->endColumn_get();
+};
+WaterWatchEnums::ScriptNodeType	    ScriptingNode::type_get() const {
+	cweeSharedPtr<ScriptingNodeImpl> ptr(data, [](void* p) { return static_cast<ScriptingNodeImpl*>(p); });
+	return ptr->type_get();
+};
+std::string			ScriptingNode::typeHint_get() const {
+	cweeSharedPtr<ScriptingNodeImpl> ptr(data, [](void* p) { return static_cast<ScriptingNodeImpl*>(p); });
+	return ptr->typeHint_get();
+};
+int			        ScriptingNode::depth_get() const {
+	cweeSharedPtr<ScriptingNodeImpl> ptr(data, [](void* p) { return static_cast<ScriptingNodeImpl*>(p); });
+	return ptr->depth_get();
+};
+void			    ScriptingNode::text_set(std::string s) {
+	cweeSharedPtr<ScriptingNodeImpl> ptr(data, [](void* p) { return static_cast<ScriptingNodeImpl*>(p); });
+	ptr->text_set(s);
+};
+void		        ScriptingNode::startLine_set(int s) {
+	cweeSharedPtr<ScriptingNodeImpl> ptr(data, [](void* p) { return static_cast<ScriptingNodeImpl*>(p); });
+	ptr->startLine_set(s);
+};
+void		        ScriptingNode::startColumn_set(int s) {
+	cweeSharedPtr<ScriptingNodeImpl> ptr(data, [](void* p) { return static_cast<ScriptingNodeImpl*>(p); });
+	ptr->startColumn_set(s);
+};
+void		        ScriptingNode::endLine_set(int s) {
+	cweeSharedPtr<ScriptingNodeImpl> ptr(data, [](void* p) { return static_cast<ScriptingNodeImpl*>(p); });
+	ptr->endLine_set(s);
+};
+void		        ScriptingNode::endColumn_set(int s) {
+	cweeSharedPtr<ScriptingNodeImpl> ptr(data, [](void* p) { return static_cast<ScriptingNodeImpl*>(p); });
+	ptr->endColumn_set(s);
+};
+void        	    ScriptingNode::type_set(WaterWatchEnums::ScriptNodeType s) {
+	cweeSharedPtr<ScriptingNodeImpl> ptr(data, [](void* p) { return static_cast<ScriptingNodeImpl*>(p); });
+	ptr->type_set(s);
+};
+void	    		ScriptingNode::typeHint_set(std::string s) {
+	cweeSharedPtr<ScriptingNodeImpl> ptr(data, [](void* p) { return static_cast<ScriptingNodeImpl*>(p); });
+	ptr->typeHint_set(s);
+};
+void		        ScriptingNode::depth_set(int s) {
+	cweeSharedPtr<ScriptingNodeImpl> ptr(data, [](void* p) { return static_cast<ScriptingNodeImpl*>(p); });
+	ptr->depth_set(s);
+};
+
+#pragma endregion
+
+
 
 
 #pragma region ScriptObject
@@ -789,6 +961,110 @@ std::vector<std::string> ScriptEngine::DoScript_Cast_VectorStrings(std::string c
 	catch (...) {}
 	return result;
 };
+std::vector<float> ScriptEngine::DoScript_Cast_VectorFloats(std::string command) {
+	cweeSharedPtr<chaiscript::WaterWatch_ChaiScript> engine(ptr, [](void* p) { return static_cast<chaiscript::WaterWatch_ChaiScript*>(p); });
+
+	std::vector<float> result;
+	try {
+		auto bv = engine->eval(command.c_str());
+		if (bv.is_type(chaiscript::user_type<void>())) {
+			return result;
+		}
+		else if (bv.is_type(chaiscript::user_type<std::vector<chaiscript::Boxed_Value>>())) {
+			auto res = chaiscript::boxed_cast<std::vector<chaiscript::Boxed_Value>>(bv);
+			for (auto& x : res) {
+				if (x.is_type(chaiscript::user_type<float>())) {
+					result.push_back(chaiscript::boxed_cast<float>(x));
+				}
+				else if (x.is_type(chaiscript::user_type<double>())) {
+					result.push_back(chaiscript::boxed_cast<double>(x));
+				}
+				else {
+
+				}
+			}
+			return result;
+		}
+		else if (bv.is_type(chaiscript::user_type<cweeList<chaiscript::Boxed_Value>>())) {
+			auto res = chaiscript::boxed_cast<cweeList<chaiscript::Boxed_Value>>(bv);
+			for (auto& x : res) {
+				if (x.is_type(chaiscript::user_type<float>())) {
+					result.push_back(chaiscript::boxed_cast<float>(x));
+				}
+				else if (x.is_type(chaiscript::user_type<double>())) {
+					result.push_back(chaiscript::boxed_cast<double>(x));
+				}
+				else {
+
+				}
+			}
+			return result;
+		}
+		else if (bv.is_type(chaiscript::user_type<std::vector<float>>())) {
+			result = *chaiscript::boxed_cast<std::vector<float>*>(bv);
+			return result;
+		}
+		else if (bv.is_type(chaiscript::user_type<std::vector<double>>())) {
+			auto res = chaiscript::boxed_cast<std::vector<double>*>(bv);
+			for (auto& x : *res) {
+				result.push_back(x);
+			}
+			return result;
+		}
+		else {
+			// do what we can... 
+
+		}
+	}
+	catch (chaiscript::Boxed_Value bv) {
+		if (bv.is_type(chaiscript::user_type<void>())) {
+			return result;
+		}
+		else if (bv.is_type(chaiscript::user_type<std::vector<chaiscript::Boxed_Value>>())) {
+			auto res = chaiscript::boxed_cast<std::vector<chaiscript::Boxed_Value>>(bv);
+			for (auto& x : res) {
+				if (x.is_type(chaiscript::user_type<float>())) {
+					result.push_back(chaiscript::boxed_cast<float>(x));
+				}
+				else if (x.is_type(chaiscript::user_type<double>())) {
+					result.push_back(chaiscript::boxed_cast<double>(x));
+				}
+				else {
+
+				}
+			}
+			return result;
+		}
+		else if (bv.is_type(chaiscript::user_type<cweeList<chaiscript::Boxed_Value>>())) {
+			auto res = chaiscript::boxed_cast<cweeList<chaiscript::Boxed_Value>>(bv);
+			for (auto& x : res) {
+				if (x.is_type(chaiscript::user_type<float>())) {
+					result.push_back(chaiscript::boxed_cast<float>(x));
+				}
+				else if (x.is_type(chaiscript::user_type<double>())) {
+					result.push_back(chaiscript::boxed_cast<double>(x));
+				}
+				else {
+
+				}
+			}
+			return result;
+		}
+		else if (bv.is_type(chaiscript::user_type<std::vector<float>>())) {
+			result = *chaiscript::boxed_cast<std::vector<float>*>(bv);
+			return result;
+		}
+		else if (bv.is_type(chaiscript::user_type<std::vector<double>>())) {
+			auto res = chaiscript::boxed_cast<std::vector<double>*>(bv);
+			for (auto& x : *res) {
+				result.push_back(x);
+			}
+			return result;
+		}
+	}
+	catch (...) {}
+	return result;
+};
 std::vector< ScriptingNode > ScriptEngine::PreParseScript(std::string command) {
 	std::vector< ScriptingNode > out;
 	cweeStr STR = "";
@@ -830,43 +1106,42 @@ std::vector< ScriptingNode > ScriptEngine::PreParseScript(std::string command) {
 												try {
 													std::string* type_str_ptr = engine->boxed_cast<std::string*>(containerPTR->operator[]("type"));
 													if (type_str_ptr) {
-														temp.typeHint = *type_str_ptr;
+														temp.typeHint_set(*type_str_ptr);
 													}
 													else {
-														temp.typeHint = "";
+														temp.typeHint_set("");
 													}
 												}
-												catch (...) { temp.typeHint = ""; }
+												catch (...) { temp.typeHint_set(""); }
 											}
 											else {
-												temp.typeHint = "";
+												temp.typeHint_set("");
 											}
 
 											if (containerPTR->find("depth") != containerPTR->end()) {
 												try {
 													int* depth_ptr = engine->boxed_cast<int*>(containerPTR->operator[]("depth"));
 													if (depth_ptr) {
-														temp.depth = *depth_ptr;
+														temp.depth_set(*depth_ptr);
 													}
 													else {
-														temp.depth = 0;
+														temp.depth_set(0);
 													}
 												}
-												catch (...) { temp.depth = 0; }
+												catch (...) { temp.depth_set(0); }
 											}
 											else {
-												temp.depth = 0;
+												temp.depth_set(0);
 											}
 
-											temp.text = nodePtr->text.c_str();
-											temp.startLine = nodePtr->start().line - 1;
-											temp.startColumn = nodePtr->start().column;
-											temp.endLine = nodePtr->end().line - 1;
-											temp.endColumn = nodePtr->end().column;
-											temp.type = static_cast<WaterWatchEnums::ScriptNodeType>(static_cast<int>(nodePtr->identifier));
+											temp.text_set(nodePtr->text.c_str());
+											temp.startLine_set(nodePtr->start().line - 1);
+											temp.startColumn_set(nodePtr->start().column);
+											temp.endLine_set(nodePtr->end().line - 1);
+											temp.endColumn_set(nodePtr->end().column);
+											temp.type_set(static_cast<WaterWatchEnums::ScriptNodeType>(static_cast<int>(nodePtr->identifier)));
 
 											out.push_back(temp);
-											
 										}
 										else {
 										}
@@ -943,9 +1218,9 @@ std::vector< ScriptingNode > ScriptEngine::PreParseScript(std::string command) {
 			}
 			if (STR != "") { 
 				ScriptingNode node; 
-				node.depth = 0; 
-				node.type = WaterWatchEnums::ScriptNodeType::Error; 
-				node.text = STR; 
+				node.depth_set(0);
+				node.type_set(WaterWatchEnums::ScriptNodeType::Error);
+				node.text_set(STR.c_str());
 				auto splitter = STR.Split(" at (");
 				if (splitter.getNumVars() >= 2) {
 					auto splitter2 = splitter[1].Split(")");
@@ -953,10 +1228,10 @@ std::vector< ScriptingNode > ScriptEngine::PreParseScript(std::string command) {
 						auto line_col = splitter2[0].Split(",");
 						for (auto& c : line_col) c.Replace(" ", "");
 						if (line_col.getNumVars() >= 2) {
-							node.startLine = 0;
-							node.endLine = (int)(line_col[0]);
-							node.startColumn = 0;
-							node.endColumn = (int)(line_col[1]);
+							node.startLine_set(0);
+							node.endLine_set((int)(line_col[0]));
+							node.startColumn_set(0);
+							node.endColumn_set((int)(line_col[1]));
 						}
 					}
 				}
@@ -1027,9 +1302,9 @@ std::vector< ScriptingNode > ScriptEngine::PreParseScript(std::string command) {
 		}
 		if (STR != "") {
 			ScriptingNode node;
-			node.depth = 0;
-			node.type = WaterWatchEnums::ScriptNodeType::Error;
-			node.text = STR;
+			node.depth_set(0);
+			node.type_set(WaterWatchEnums::ScriptNodeType::Error);
+			node.text_set(STR.c_str());
 			auto splitter = STR.Split(" at (");
 			if (splitter.getNumVars() >= 2) {
 				auto splitter2 = splitter[1].Split(")");
@@ -1037,10 +1312,10 @@ std::vector< ScriptingNode > ScriptEngine::PreParseScript(std::string command) {
 					auto line_col = splitter2[0].Split(",");
 					for (auto& c : line_col) c.Replace(" ", "");
 					if (line_col.getNumVars() >= 2) {
-						node.startLine = 0;
-						node.endLine = (int)(line_col[0]);
-						node.startColumn = 0;
-						node.endColumn = (int)(line_col[1]);
+						node.startLine_set(0);
+						node.endLine_set((int)(line_col[0]));
+						node.startColumn_set(0);
+						node.endColumn_set((int)(line_col[1]));
 					}
 				}
 			}
@@ -1109,9 +1384,9 @@ std::vector< ScriptingNode > ScriptEngine::PreParseScript(std::string command) {
 	}
 	if (STR != "") {
 		ScriptingNode node;
-		node.depth = 0;
-		node.type = WaterWatchEnums::ScriptNodeType::Error;
-		node.text = STR;
+		node.depth_set(0);
+		node.type_set(WaterWatchEnums::ScriptNodeType::Error);
+		node.text_set(STR.c_str());
 		auto splitter = STR.Split(" at (");
 		if (splitter.getNumVars() >= 2) {
 			auto splitter2 = splitter[1].Split(")");
@@ -1119,10 +1394,10 @@ std::vector< ScriptingNode > ScriptEngine::PreParseScript(std::string command) {
 				auto line_col = splitter2[0].Split(",");
 				for (auto& c : line_col) c.Replace(" ", "");
 				if (line_col.getNumVars() >= 2) {
-					node.startLine = 0;
-					node.endLine = (int)(line_col[0]);
-					node.startColumn = 0;
-					node.endColumn = (int)(line_col[1]);
+					node.startLine_set(0);
+					node.endLine_set((int)(line_col[0]));
+					node.startColumn_set(0);
+					node.endColumn_set((int)(line_col[1]));
 				}
 			}
 		}
@@ -1273,6 +1548,17 @@ MapLayer_Interop ScriptEngine::Cast_MapLayer(std::string command) {
 		}
 	}
 	return out2;
+};
+std::vector<float> ScriptEngine::Cast_VectorFloats(std::string command) {
+	cweeSharedPtr<chaiscript::WaterWatch_ChaiScript> engine(ptr, [](void* p) { return static_cast<chaiscript::WaterWatch_ChaiScript*>(p); });
+
+	AUTO boxed = engine->eval(command.c_str(), chaiscript::Exception_Handler());
+	std::vector<float> out;
+	AUTO val2 = chaiscript::boxed_cast<std::vector<float>*>(boxed);
+	if (val2) {
+		out = *val2;
+	}
+	return out;
 };
 std::vector<Color_Interop> MapBackground_Interop::GetMatrix(double Left, double Top, double Right, double Bottom, int numColumns, int numRows, std::vector<MapBackground_Interop> const& backgrounds) {
 	std::vector<Color_Interop> out; out.resize(numColumns * numRows);
@@ -1485,6 +1771,10 @@ std::string WaterWatch::GetDataDirectory() {
 void WaterWatch::SetDataDirectory(std::string dir) { 	
 	fileSystem->setDataFolder(dir.c_str()); 
 };
+std::string WaterWatch::GetTemporaryFilePath(std::string extension) {
+	return fileSystem->createRandomFile(extension.c_str()).c_str();
+};
+
 Pair<double, double> WaterWatch::GeocodeAddress(std::string address) {
 	auto t = geocoding->GetLongLat(address.c_str());
 	return std::make_pair(t.x, t.y);
@@ -1504,6 +1794,7 @@ Pair<double, double> WaterWatch::ValidateCoordinates(double longitude, double la
 		return Pair<double, double>(coords.x, coords.y);
 	}
 };
+
 double WaterWatch::Encode_2D_to_1D(double x, double y, double H) {
 	return cweeInterpolatedMatrix<float>::Encode_2D_to_1D(x, y, H);
 };
@@ -1566,6 +1857,33 @@ double WaterWatch::GetNanosecondsSinceStart() {
 	return clock_ns();
 };
 
+
+std::string WaterWatch::DoScriptImmediately(std::string command) {
+
+	static cweeSharedPtr<chaiscript::WaterWatch_ChaiScript> engine = cweeSharedPtr<chaiscript::WaterWatch_ChaiScript>(new chaiscript::WaterWatch_ChaiScript(), [](chaiscript::WaterWatch_ChaiScript* p) {
+		delete p;
+	});
+	try {
+		auto bv = engine->eval(command);
+		if (!bv.is_type(chaiscript::user_type<void>())) {
+			try {
+				return engine->to_string(bv).c_str();
+			}
+			catch (std::runtime_error e) {
+				return (cweeStr("Error: ") + cweeStr(e.what())).c_str();
+			}
+			catch (...) {
+				return "";
+			}
+		}
+	}
+	catch (std::runtime_error e) {
+		return (cweeStr("Error: ") + cweeStr(e.what())).c_str();
+	}
+	catch (...) {
+		return "";
+	}	
+};
 Awaiter WaterWatch::DoScript(std::string command) {
 	Awaiter toReturn;
 

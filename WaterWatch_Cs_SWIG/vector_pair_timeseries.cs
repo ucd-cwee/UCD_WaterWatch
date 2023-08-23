@@ -164,14 +164,24 @@ public class vector_pair_timeseries : global::System.IDisposable, global::System
   }
 
   public static implicit operator vector_pair_timeseries(global::System.Collections.Generic.List<pair_timeseries> v) {
-        var toReturn = new vector_pair_timeseries(v.Count);
-        foreach (var x in v) toReturn.Add(x);
-        return toReturn;
+        if (v == null){
+            var toReturn = new vector_pair_timeseries();
+            return toReturn;
+        }else{
+            var toReturn = new vector_pair_timeseries(v.Count);
+            foreach (var x in v) toReturn.Add(x);
+            return toReturn;
+        }
   }
   public static implicit operator global::System.Collections.Generic.List<pair_timeseries>(vector_pair_timeseries v) {
-        var toReturn = new global::System.Collections.Generic.List<pair_timeseries>(v.Count);
-        foreach (var x in v) toReturn.Add(x);
-        return toReturn;
+        if (v == null){
+            var toReturn = new global::System.Collections.Generic.List<pair_timeseries>();
+            return toReturn;
+        }else{
+            var toReturn = new global::System.Collections.Generic.List<pair_timeseries>(v.Count);
+            foreach (var x in v) toReturn.Add(x);
+            return toReturn;
+        }
   }
 
   // Type-safe enumerator

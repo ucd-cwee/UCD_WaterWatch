@@ -50,6 +50,8 @@ public:
     static cweeThreadedList<cweeStr> GetNextRow(nanodbcResult& results);
     /* Returns true if successful. Fills the "out" vector with the next row. Highly optimized and suggested path for looping results. Memory stable for even large queries. */
     static bool GetNextRow(nanodbcResult& results, cweeThreadedList<cweeStr>& out);
+    /* Returns true if successful. Fills the "out" vector with the next row. Highly optimized and suggested path for looping results. Memory stable for even large queries. */
+    static bool GetNextRow(nanodbcResult& results, cweeThreadedList<double>& out);
     /* Get all results from a query, as a row-major matrix. Be careful when calling this on a large query. */
     static cweeThreadedList < cweeThreadedList<cweeStr> > GetResults(nanodbcResult& results);
     /* Get all results from a query, as a row-major matrix. Be careful when calling this on a large query. */

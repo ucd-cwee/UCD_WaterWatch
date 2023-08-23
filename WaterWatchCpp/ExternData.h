@@ -129,6 +129,8 @@ public:
 		AUTO safeContainer = GetPatternPtr(index);
 		if (safeContainer) {
 			safeContainer->Clear();
+			safeContainer->SetInterpolationType(other.GetInterpolationType());
+			safeContainer->SetBoundaryType(other.GetBoundaryType());
 			for (auto& x : other.GetKnotSeries()) {
 				safeContainer->AddValue(x.first, x.second);
 			}

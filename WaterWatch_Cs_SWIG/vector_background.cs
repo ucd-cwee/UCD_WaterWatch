@@ -164,14 +164,24 @@ public class vector_background : global::System.IDisposable, global::System.Coll
   }
 
   public static implicit operator vector_background(global::System.Collections.Generic.List<MapBackground_Interop> v) {
-        var toReturn = new vector_background(v.Count);
-        foreach (var x in v) toReturn.Add(x);
-        return toReturn;
+        if (v == null){
+            var toReturn = new vector_background();
+            return toReturn;
+        }else{
+            var toReturn = new vector_background(v.Count);
+            foreach (var x in v) toReturn.Add(x);
+            return toReturn;
+        }
   }
   public static implicit operator global::System.Collections.Generic.List<MapBackground_Interop>(vector_background v) {
-        var toReturn = new global::System.Collections.Generic.List<MapBackground_Interop>(v.Count);
-        foreach (var x in v) toReturn.Add(x);
-        return toReturn;
+        if (v == null){
+            var toReturn = new global::System.Collections.Generic.List<MapBackground_Interop>();
+            return toReturn;
+        }else{
+            var toReturn = new global::System.Collections.Generic.List<MapBackground_Interop>(v.Count);
+            foreach (var x in v) toReturn.Add(x);
+            return toReturn;
+        }
   }
 
   // Type-safe enumerator

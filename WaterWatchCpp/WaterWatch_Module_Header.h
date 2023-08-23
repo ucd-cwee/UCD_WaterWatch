@@ -312,6 +312,7 @@ namespace chaiscript {
     AddMemberToScriptFromClass(MaxHeight); \
     AddMemberToScriptFromClass(Margin); \
     AddMemberToScriptFromClass(OnLoaded); \
+    AddMemberToScriptFromClass(OnUnloaded); \
 }
     class UI_FrameworkElement {
     public:
@@ -346,12 +347,28 @@ namespace chaiscript {
         double 			MaxWidth = -1;
         double 			MaxHeight = -1;
         cweeStr 		Margin = "0,0,0,0";
-        chaiscript::Boxed_Value OnLoaded;
-
+        chaiscript::Boxed_Value OnLoaded; // function
+        chaiscript::Boxed_Value OnUnloaded; // function
 
         static void		AppendToScriptingLanguage(Module& scriptingLanguage) {
             AddBasicClassTemplate();
             AddFrameworkElementCharacteristicsToScriptFromClass();
+        };
+    };
+    class UI_ProgressRing final : public UI_FrameworkElement {
+    public:
+        using ThisType = typename UI_ProgressRing;
+        static  std::string	ThisTypeName() { return "UI_ProgressRing"; };
+
+        virtual ~UI_ProgressRing() {};
+
+        UI_Color 		Foreground;
+
+        static void		AppendToScriptingLanguage(Module& scriptingLanguage) {
+            AddBasicClassTemplate();
+            scriptingLanguage.add(chaiscript::base_class<UI_FrameworkElement, ThisType>());
+
+            AddMemberToScriptFromClass(Foreground);
         };
     };
     class UI_Rectangle final : public UI_FrameworkElement {
@@ -439,6 +456,9 @@ namespace chaiscript {
         };
         virtual ~UI_Image() {};
 
+        std::vector<float> ImagePixels;
+        int             ImagePixelsWidth;
+        int             ImagePixelsHeight;
         cweeStr 		ImagePath;
         cweeStr			Stretch = "UniformToFill";
 
@@ -447,8 +467,9 @@ namespace chaiscript {
             scriptingLanguage.add(chaiscript::constructor<ThisType(const cweeStr&)>(), ThisTypeName());
             scriptingLanguage.add(chaiscript::base_class<UI_FrameworkElement, ThisType>());
 
-            //AddFrameworkElementCharacteristicsToScriptFromClass();
-
+            AddMemberToScriptFromClass(ImagePixels);
+            AddMemberToScriptFromClass(ImagePixelsWidth);
+            AddMemberToScriptFromClass(ImagePixelsHeight);
             AddMemberToScriptFromClass(ImagePath);
             AddMemberToScriptFromClass(Stretch);
         };
@@ -498,9 +519,11 @@ namespace chaiscript {
     };
 
 #define AddPanelCharacteristicsToScriptFromClass(){\
+    AddMemberToScriptFromClass(BorderBrush); \
     AddMemberToScriptFromClass(Background); \
     AddMemberToScriptFromClass(Children); \
     AddMemberToScriptFromClass(Padding); \
+    AddMemberToScriptFromClass(BorderThickness); \
     };
     class UI_Panel : public UI_FrameworkElement {
     public:
@@ -508,10 +531,11 @@ namespace chaiscript {
         static std::string	ThisTypeName() { return "UI_Panel"; };
 
         virtual ~UI_Panel() {};
-
+        UI_Color 		BorderBrush = UI_Color(0.0f, 0.0f, 0.0f, 0.0f);
         UI_Color 		Background = UI_Color(0.0f, 0.0f, 0.0f, 0.0f);
         cweeThreadedList<chaiscript::Boxed_Value> Children;
         cweeStr 		Padding = "0,0,0,0";
+        cweeStr 		BorderThickness = "0,0,0,0";
 
         static void		AppendToScriptingLanguage(Module& scriptingLanguage) {
             AddBasicClassTemplate();
@@ -1024,6 +1048,374 @@ namespace chaiscript {
             AddMemberToScriptFromClass(maxValue);
 
             AddFuncToScriptFromClass(ColorForPosition);
+
+            // cast to UI_Image
+            {
+                auto GetTimeSeries = [](double Left, double Top, double Right, double Bottom, int numColumns, int numRows, cweeInterpolatedMatrix<float> const& matrix, int reductionRatio)->std::vector<float> {
+                    std::vector<float>
+                        out;
+                    out.reserve(numColumns * numRows + 12);
+
+                     {
+                        out.resize(numColumns * numRows);
+
+                        u64
+                            col = Left,
+                            columnStep = (Right - Left) / numColumns,
+                            rowStep = (Top - Bottom) / numRows,
+                            row = Top;
+
+                        cweeInterpolatedMatrix<float> tempMatrix;
+
+                        auto* knots = &matrix;
+
+                        // Get or create the underlying interpolation model
+                        cweeSharedPtr<alglib::rbfmodel> model;
+                        double avgDistanceBetweenKnots = 1.0;
+                        if (!knots->Tag) {
+                            avgDistanceBetweenKnots = knots->EstimateDistanceBetweenKnots();
+                            knots->Lock();
+                        }
+                        if (!knots->Tag) {
+                            model = make_cwee_shared<alglib::rbfmodel>();
+                            {
+                                alglib::real_2d_array arr;
+                                cweeThreadedList<cweeUnion<double, double, double>> data;
+                                auto& knotSeries = knots->UnsafeGetSource();
+                                knotSeries.Lock();
+                                for (auto& knot : knotSeries.UnsafeGetValues()) {
+                                    if (knot.object) {
+                                        data.Append(cweeUnion<double, double, double>(knot.object->x, knot.object->y, knot.object->z));
+                                    }
+                                }
+                                knotSeries.Unlock();
+
+                                {
+                                    arr.attach_to_ptr(data.Num(), 3, (double*)(void*)data.Ptr());
+                                    {
+                                        alglib::rbfcreate(2, 1, *model);
+                                        rbfsetpoints(*model, arr);
+                                        alglib::rbfreport rep;
+                                        alglib::rbfsetalgohierarchical(*model, avgDistanceBetweenKnots * 10.0, 3, 0.0); // (*model, avgDistanceBetweenKnots * 10.0, 4, 0.0);
+                                        alglib::rbfbuildmodel(*model, rep, alglib::parallel);
+                                    }
+                                }
+                            }
+                            knots->Tag = cweeSharedPtr<void>(model, [](void* p) { return p; });
+                            knots->Unlock();
+                        }
+                        else {
+                            model = cweeSharedPtr<alglib::rbfmodel>(knots->Tag, [](void* p) -> alglib::rbfmodel* { return static_cast<alglib::rbfmodel*>(p); });
+                        }
+
+                        cweeList<cweeJob> jobs(numRows + 1);
+                        cweeSysInterlockedInteger count = 0; // numColumns
+                        tempMatrix.Reserve(numColumns * numRows + 12);
+                        int AsyncRows = ::Max<double>(0, numRows * 10.0 / 12.0); // 2/3 resulted in no waiting
+
+                        for (int r = 0; r < AsyncRows; r++) {
+                            jobs.Append(cweeJob([&](alglib::rbfmodel& Model, int R, alglib::real_1d_array& results) {
+                                static thread_local alglib::rbfcalcbuffer buf;
+
+                                // attach pointers for arrays for the interpolation
+                                alglib::rbfcreatecalcbuffer(Model, buf, alglib::parallel);
+
+                                alglib::real_1d_array arr;
+                                cweeUnion<double, double> coords;
+                                arr.attach_to_ptr(2, (double*)(void*)(&coords));
+
+                                cweeList< cweeUnion<double, double, double> > out(numColumns + 1);
+
+                                int C;
+                                for (
+                                    coords.get<0>() = Left,
+                                    coords.get<1>() = Top - R * rowStep,
+                                    C = 0;
+                                    C < numColumns;
+                                    C++,
+                                    coords.get<0>() += columnStep)
+                                {
+                                    if ((::Max(R, C) - ::Min(R, C)) % reductionRatio == 0) {
+                                        // get "real" interpolated results for 1/3 of the requested pixels using a slow, complex model, distributed diagonally along the grid								
+                                        alglib::rbftscalcbuf(Model, buf, arr, results, alglib::parallel);
+
+                                        // add it to the matrix
+                                        // tempMatrix.AddValue(C, R, results[0], false); // the lock in the matrix is our issue. 
+                                        out.Append(cweeUnion<double, double, double>((double)C, (double)R, (double)results[0]));
+                                    }
+                                    else {
+                                        out.Append(cweeUnion<double, double, double>(std::numeric_limits<double>::max(), std::numeric_limits<double>::max(), std::numeric_limits<double>::max()));
+                                    }
+                                }
+                                cweeSharedPtr<int> incrementer = cweeSharedPtr<int>(&C, [&](int* p) { count.Increment(); });
+                                return out;
+                                }, model, (int)r, alglib::real_1d_array()).AsyncInvoke());
+                        }
+
+                        {
+                            alglib::real_1d_array results;
+                            for (int r = AsyncRows; r < numRows; r++) {
+                                static thread_local alglib::rbfcalcbuffer buf;
+
+                                // attach pointers for arrays for the interpolation
+                                alglib::rbfcreatecalcbuffer(*model, buf, alglib::parallel);
+
+                                alglib::real_1d_array arr;
+                                cweeUnion<double, double> coords;
+                                arr.attach_to_ptr(2, (double*)(void*)(&coords));
+
+                                int C;
+                                for (
+                                    coords.get<0>() = Left,
+                                    coords.get<1>() = Top - r * rowStep,
+                                    C = 0;
+                                    C < numColumns;
+                                    C++,
+                                    coords.get<0>() += columnStep)
+                                {
+                                    if ((::Max(r, C) - ::Min(r, C)) % reductionRatio == 0) {
+                                        // get "real" interpolated results for 1/3 of the requested pixels using a slow, complex model, distributed diagonally along the grid								
+                                        alglib::rbftscalcbuf(*model, buf, arr, results, alglib::parallel);
+
+                                        // add it to the matrix
+                                        tempMatrix.AddValue(C, r, results[0]);
+                                        out[numColumns * r + C] = results[0];
+                                    }
+                                }
+                                count.Increment();
+                            }
+                        }
+
+                        while (count.GetValue() != numRows) {}
+                        for (auto& job : jobs) {
+                            cweeAny any = job.Await();
+                            cweeList< cweeUnion<double, double, double> >* coords = any.cast();
+                            if (coords) {
+                                for (auto& coord : *coords) {
+                                    if (coord.get<0>() != std::numeric_limits<double>::max()
+                                        && coord.get<1>() != std::numeric_limits<double>::max()
+                                        && coord.get<2>() != std::numeric_limits<double>::max()) {
+                                        tempMatrix.AddValue(coord.get<0>(), coord.get<1>(), coord.get<2>(), false);
+                                        out[numColumns * coord.get<1>() + coord.get<0>()] = coord.get<2>();
+                                    }
+                                }
+                            }
+                        }
+
+                        // do a faster, local interpolation of those results using the Hilbert curve for the last 2/3 components. 
+                        if (true) {
+                            double R, C;
+                            for (R = 0; R < numRows; R++) {
+                                for (C = 0; C < numColumns; C++) {
+                                    // out.push_back(tempMatrix.GetCurrentValue(C, R)); // tempMatrix.GetCurrentValue(C, R));
+
+                                    if (((int)(::Max(R, C) - ::Min(R, C))) % reductionRatio != 0) {
+                                        out[numColumns * R + C] = tempMatrix.GetCurrentValue(C, R);
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    return out;
+                };
+
+                auto GetMatrix = [GetTimeSeries](double Left, double Top, double Right, double Bottom, int numColumns, int numRows, cweeList<UI_MapBackground*> const& backgrounds, int Accuracy) -> cweeList<UI_Color> {
+                    std::vector<UI_Color> out; out.resize(numColumns * numRows);
+
+                    // second, do the queries on each matrix, taking care to reduce workload where the matrix problem can be simplified. 
+                    for (int i = 0; i < backgrounds.size(); i++) {
+                        auto& bg = *backgrounds[i];
+                        auto& shared_matrix = backgrounds[i]->data;
+
+                        if (shared_matrix.GetMaxX() < Left || shared_matrix.GetMinX() > Right || shared_matrix.GetMaxY() < Bottom || shared_matrix.GetMinY() > Top) continue;
+
+                        auto& minCol = bg.minColor;
+                        auto& maxCol = bg.maxColor;
+                        float minValue = bg.minValue == -cweeMath::INF ? shared_matrix.GetMinValue() : bg.minValue;
+                        float maxValue = bg.maxValue == cweeMath::INF ? shared_matrix.GetMaxValue() : bg.maxValue;
+                        float alpha_foreground = 0;
+                        float alpha_background = 0;
+                        int pixelWidth = numColumns;
+                        int pixelHeight = numRows;
+                        int x, y, byteIndex;
+                        float v;
+
+                        if (shared_matrix.Num() > 0 && maxValue > minValue) {
+                            if (minCol.A == maxCol.A && minCol.R == maxCol.R && minCol.G == maxCol.G && minCol.B == maxCol.B) {
+                                // there is no gradient within this range -- are they using bounds clipping?
+                                if (bg.clipToBounds) {
+                                    // got to do the analysis, but we can skip blending the colors
+                                    std::vector<float> values;
+                                    if (bg.highQuality)
+                                    {
+                                        values = GetTimeSeries(Left, Top, Right, Bottom, numColumns, numRows, shared_matrix, Accuracy);
+                                    }
+                                    else
+                                    {
+                                        values = shared_matrix.GetMatrix(Left, Top, Right, Bottom, numColumns, numRows);
+                                    }
+
+                                    int n = values.size();
+                                    alpha_foreground = minCol.A / 255.0;
+                                    for (byteIndex = 0; byteIndex < n; byteIndex++) {
+                                        v = values[byteIndex];
+                                        if (v >= minValue && v <= maxValue) {
+                                            auto& pixel = out[byteIndex];
+                                            alpha_background = pixel.A / 255.0;
+
+                                            pixel.R = alpha_foreground * minCol.R + alpha_background * pixel.R * (1.0 - alpha_foreground);
+                                            pixel.G = alpha_foreground * minCol.G + alpha_background * pixel.G * (1.0 - alpha_foreground);
+                                            pixel.B = alpha_foreground * minCol.B + alpha_background * pixel.B * (1.0 - alpha_foreground);
+                                            pixel.A = (1.0 - (1.0 - alpha_foreground) * (1.0 - alpha_background)) * 255.0;
+                                        }
+                                    }
+
+                                }
+                                else {
+                                    // no point in doing the analysis -- there is no "clip to bounds" and there will be no color transitions. 
+                                    alpha_foreground = minCol.A / 255.0;
+
+                                    for (int y = 0; y < pixelHeight; y++) {
+                                        for (x = 0; x < pixelWidth; x++) {
+                                            byteIndex = (y * pixelWidth + x);
+                                            auto& pixel = out[byteIndex];
+
+                                            alpha_background = pixel.A / 255.0;
+
+                                            pixel.R = alpha_foreground * minCol.R + alpha_background * pixel.R * (1.0 - alpha_foreground);
+                                            pixel.G = alpha_foreground * minCol.G + alpha_background * pixel.G * (1.0 - alpha_foreground);
+                                            pixel.B = alpha_foreground * minCol.B + alpha_background * pixel.B * (1.0 - alpha_foreground);
+                                            pixel.A = (1.0 - (1.0 - alpha_foreground) * (1.0 - alpha_background)) * 255.0;
+                                        }
+                                    }
+                                }
+                            }
+                            else {
+                                // traditional, full analysis
+                                std::vector<float> values;
+                                if (bg.highQuality) {
+                                    values = GetTimeSeries(Left, Top, Right, Bottom, numColumns, numRows, shared_matrix, Accuracy);
+                                } 
+                                else {
+                                    values = shared_matrix.GetMatrix(Left, Top, Right, Bottom, numColumns, numRows);
+                                }
+
+                                int n = values.size();
+                                for (byteIndex = 0; byteIndex < n; byteIndex++) {
+                                    v = (values[byteIndex] - minValue) / (maxValue - minValue); // 0 - 1 between the min and max for this value
+                                    auto& pixel = out[byteIndex];
+
+                                    if (v < 0) {
+                                        if (!bg.clipToBounds) {
+                                            alpha_foreground = minCol.A / 255.0;
+                                            alpha_background = pixel.A / 255.0;
+
+                                            pixel.R = alpha_foreground * minCol.R + alpha_background * pixel.R * (1.0 - alpha_foreground);
+                                            pixel.G = alpha_foreground * minCol.G + alpha_background * pixel.G * (1.0 - alpha_foreground);
+                                            pixel.B = alpha_foreground * minCol.B + alpha_background * pixel.B * (1.0 - alpha_foreground);
+                                            pixel.A = (1.0 - (1.0 - alpha_foreground) * (1.0 - alpha_background)) * 255.0;
+                                        }
+                                    }
+                                    else if (v > 1) {
+                                        if (!bg.clipToBounds) {
+                                            alpha_foreground = maxCol.A / 255.0;
+                                            alpha_background = pixel.A / 255.0;
+
+                                            pixel.R = alpha_foreground * maxCol.R + alpha_background * pixel.R * (1.0 - alpha_foreground);
+                                            pixel.G = alpha_foreground * maxCol.G + alpha_background * pixel.G * (1.0 - alpha_foreground);
+                                            pixel.B = alpha_foreground * maxCol.B + alpha_background * pixel.B * (1.0 - alpha_foreground);
+                                            pixel.A = (1.0 - (1.0 - alpha_foreground) * (1.0 - alpha_background)) * 255.0;
+                                        }
+                                    }
+                                    else {
+                                        alpha_foreground = cweeMath::Lerp(minCol.A, maxCol.A, v) / 255.0;
+                                        alpha_background = pixel.A / 255.0;
+
+                                        pixel.R = alpha_foreground * cweeMath::Lerp(minCol.R, maxCol.R, v) + alpha_background * pixel.R * (1.0 - alpha_foreground);
+                                        pixel.G = alpha_foreground * cweeMath::Lerp(minCol.G, maxCol.G, v) + alpha_background * pixel.G * (1.0 - alpha_foreground);
+                                        pixel.B = alpha_foreground * cweeMath::Lerp(minCol.B, maxCol.B, v) + alpha_background * pixel.B * (1.0 - alpha_foreground);
+                                        pixel.A = (1.0 - (1.0 - alpha_foreground) * (1.0 - alpha_background)) * 255.0;
+                                    }
+                                }
+                            }
+                        }
+                        else {
+                            alpha_foreground = minCol.A / 255.0;
+                            for (y = 0; y < pixelHeight; y++) {
+                                for (x = 0; x < pixelWidth; x++) {
+                                    byteIndex = (y * pixelWidth + x);
+                                    auto& pixel = out[byteIndex];
+
+                                    alpha_background = pixel.A / 255.0;
+                                    pixel.R = alpha_foreground * minCol.R + alpha_background * pixel.R * (1.0 - alpha_foreground);
+                                    pixel.G = alpha_foreground * minCol.G + alpha_background * pixel.G * (1.0 - alpha_foreground);
+                                    pixel.B = alpha_foreground * minCol.B + alpha_background * pixel.B * (1.0 - alpha_foreground);
+                                    pixel.A = (1.0 - (1.0 - alpha_foreground) * (1.0 - alpha_background)) * 255.0;
+                                }
+                            }
+                        }
+                    }
+
+                    // add random sub-byte noise to break up the visible "banding" in color gradients, typically seen in shadows (like white-to-grey gradients)
+                    for (int i = out.size() - 1; i >= 0; i--) {
+                        auto& pixel = out[i];
+                        pixel.R = ::Min(255.0, ::Max<double>(0.0, pixel.R + cweeRandomFloat(-0.5, 0.5)));
+                        pixel.G = ::Min(255.0, ::Max<double>(0.0, pixel.G + cweeRandomFloat(-0.5, 0.5)));
+                        pixel.B = ::Min(255.0, ::Max<double>(0.0, pixel.B + cweeRandomFloat(-0.5, 0.5)));
+                    }
+
+                    return out;
+                };
+
+                auto GetMatrixs = [GetMatrix](std::vector<chaiscript::Boxed_Value> const& backgrounds, int width, int height, int Accuracy) -> cweeList<UI_Color> {
+                    cweeList<UI_MapBackground*> backgrounds_bgs(backgrounds.size() + 1);                    
+                    for (auto& x : backgrounds) {
+                        auto* p = chaiscript::boxed_cast<UI_MapBackground*>(x);
+                        if (p) {
+                            backgrounds_bgs.Append(chaiscript::boxed_cast<UI_MapBackground*>(x));
+                        }
+                    }
+                    
+                    double Left = -std::numeric_limits<double>::max(), Top = std::numeric_limits<double>::max(), Right = std::numeric_limits<double>::max(), Bottom = -std::numeric_limits<double>::max();
+                    for (auto& x : backgrounds_bgs) {
+                        if (x->data.Num() > 0) {
+                            Left = ::Max<u64>(Left, x->data.GetMinX());
+                            Top = ::Min<u64>(Top, x->data.GetMaxY());
+                            Right = ::Min<u64>(Right, x->data.GetMaxX());
+                            Bottom = ::Max<u64>(Bottom, x->data.GetMinY());
+                        }
+                    }
+
+                    return GetMatrix(Left, Top, Right, Bottom, width, height, backgrounds_bgs, Accuracy);
+                };
+
+                auto from_bgs = [GetMatrixs](std::vector<chaiscript::Boxed_Value> const& backgrounds, int width, int height, int Accuracy) -> UI_Image {
+                    UI_Image out;
+                    auto imageColors = GetMatrixs(backgrounds, width, height, Accuracy);
+                    out.ImagePixels.reserve(imageColors.Num() * 4 + 1);
+                    for (auto& x : imageColors) {
+                        out.ImagePixels.push_back(x.R);
+                        out.ImagePixels.push_back(x.G);
+                        out.ImagePixels.push_back(x.B);
+                        out.ImagePixels.push_back(x.A);
+                    }
+                    out.ImagePixelsWidth = width;
+                    out.ImagePixelsHeight = height;
+                    return out;
+                };
+                auto from_bgs2 = [GetMatrixs, from_bgs](std::vector<chaiscript::Boxed_Value> const& backgrounds, int width, int height) -> UI_Image {
+                    return from_bgs(backgrounds, width, height, 1);
+                };
+                auto from_bgs3 = [GetMatrixs, from_bgs2](std::vector<chaiscript::Boxed_Value> const& backgrounds) -> UI_Image {
+                    return from_bgs2(backgrounds, 256, 256);
+                };
+
+                scriptingLanguage.add(chaiscript::fun(from_bgs), "UI_Image");
+                scriptingLanguage.add(chaiscript::fun(from_bgs2), "UI_Image");
+                scriptingLanguage.add(chaiscript::fun(from_bgs3), "UI_Image");
+
+            }
         };
     };
     class UI_MapLayer : public UI_MapElement {

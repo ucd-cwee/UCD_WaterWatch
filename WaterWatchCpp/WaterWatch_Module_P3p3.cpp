@@ -29,6 +29,7 @@ namespace chaiscript {
                 UI_App::AppendToScriptingLanguage(*lib);
                 UI_Color::AppendToScriptingLanguage(*lib);
                 UI_FrameworkElement::AppendToScriptingLanguage(*lib);
+                UI_ProgressRing::AppendToScriptingLanguage(*lib);
                 UI_Rectangle::AppendToScriptingLanguage(*lib);
                 UI_TextBlock::AppendToScriptingLanguage(*lib);
                 UI_Image::AppendToScriptingLanguage(*lib);

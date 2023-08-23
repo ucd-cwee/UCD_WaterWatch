@@ -164,14 +164,24 @@ public class vector_double : global::System.IDisposable, global::System.Collecti
   }
 
   public static implicit operator vector_double(global::System.Collections.Generic.List<double> v) {
-        var toReturn = new vector_double(v.Count);
-        foreach (var x in v) toReturn.Add(x);
-        return toReturn;
+        if (v == null){
+            var toReturn = new vector_double();
+            return toReturn;
+        }else{
+            var toReturn = new vector_double(v.Count);
+            foreach (var x in v) toReturn.Add(x);
+            return toReturn;
+        }
   }
   public static implicit operator global::System.Collections.Generic.List<double>(vector_double v) {
-        var toReturn = new global::System.Collections.Generic.List<double>(v.Count);
-        foreach (var x in v) toReturn.Add(x);
-        return toReturn;
+        if (v == null){
+            var toReturn = new global::System.Collections.Generic.List<double>();
+            return toReturn;
+        }else{
+            var toReturn = new global::System.Collections.Generic.List<double>(v.Count);
+            foreach (var x in v) toReturn.Add(x);
+            return toReturn;
+        }
   }
 
   // Type-safe enumerator

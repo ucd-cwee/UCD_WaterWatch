@@ -19,9 +19,12 @@ to maintain a single distribution point for the source code.
 #include <vector>
 #include <utility>
 #include "../WaterWatchCpp/SharedPtr.h"
+#include "../WaterWatchCpp/Mutex.h"
+
 #pragma region UTILITY CLASSES
 
 enum uwp_color { RED, BLUE, GREEN };
+enum uwp_patternInterpType { LEFT, RIGHT, LINEAR, SPLINE };
 
 class cweeDateTime {
 public:
@@ -85,7 +88,6 @@ private:
     cweeSharedPtr<void> ptr;
 };
 
-
 class SharedTimeSeriesPattern {
 public:
     SharedTimeSeriesPattern();
@@ -95,10 +97,12 @@ public:
     void    Clear();
     void    AppendData(double time, float value);
     float   GetValue(double time);
+    float   GetAvgValue(double time1, double time2);
     std::vector<Pair<double, double>> GetTimeSeries();
     double  GetMinTime();
     double  GetMaxTime();
     int     GetNumValues();
+    uwp_patternInterpType     GetInterpolationType();
     std::string X_Units();
     std::string Y_Units();
     int     Index();
@@ -182,20 +186,31 @@ public:
     };
 };
 
-class ScriptingNode
-{
+class ScriptingNode {
 public:
-    ScriptingNode() : startLine(0), startColumn(0), endLine(0), endColumn(0), text(""), type(WaterWatchEnums::ScriptNodeType::Noop), typeHint(""), depth(0) {};
-    ~ScriptingNode() {};
+    ScriptingNode();
+    ~ScriptingNode();
 
-    std::string			text;
-    int			        startLine;
-    int			        startColumn;
-    int			        endLine;
-    int			        endColumn;
-    WaterWatchEnums::ScriptNodeType	    type;
-    std::string			typeHint;
-    int			        depth;
+    std::string			text_get() const;
+    int			        startLine_get() const;
+    int			        startColumn_get() const;
+    int			        endLine_get() const;
+    int			        endColumn_get() const;
+    WaterWatchEnums::ScriptNodeType	    type_get() const;
+    std::string			typeHint_get() const;
+    int			        depth_get() const;
+
+    void			    text_set(std::string s);
+    void		        startLine_set(int s);
+    void		        startColumn_set(int s);
+    void		        endLine_set(int s);
+    void		        endColumn_set(int s);
+    void        	    type_set(WaterWatchEnums::ScriptNodeType s);
+    void	    		typeHint_set(std::string s);
+    void		        depth_set(int s);
+
+private:
+    cweeSharedPtr<void> data;
 };
 
 class Color_Interop {
@@ -259,6 +274,7 @@ public:
     ScriptEngine();
     ~ScriptEngine();    
     std::vector<std::string> DoScript_Cast_VectorStrings(std::string command); /* Specialty function(s) to support casting to C# types instead of to a string */
+    std::vector<float> DoScript_Cast_VectorFloats(std::string command); /* Specialty function(s) to support casting to C# types instead of to a string */
     std::string DoScript(std::string command);
     // ScriptObject GetObject(std::string command);
     Awaiter DoScriptAsync(std::string command);
@@ -273,6 +289,7 @@ public:
     MapPolyline_Interop Cast_MapPolyline(std::string command);
     MapBackground_Interop Cast_MapBackground(std::string command);
     MapLayer_Interop Cast_MapLayer(std::string command);
+    std::vector<float> Cast_VectorFloats(std::string command);
 
 private:
     cweeSharedPtr<void> ptr;
@@ -291,10 +308,13 @@ public:
 
     static std::string GetDataDirectory();
     static void SetDataDirectory(std::string dir);
+    static std::string GetTemporaryFilePath(std::string extension);
+
     static Pair<double, double> GeocodeAddress(std::string address);
     static std::string GeocodeAddress(double longitude, double latitude);
     static double GeocodeElevation(double longitude, double latitude);
-    static Pair<double, double> ValidateCoordinates(double longitude, double latitude);
+    static Pair<double, double> ValidateCoordinates(double longitude, double latitude);    
+
     static double Encode_2D_to_1D(double x, double y, double H);
     static Pair<double, double> Decode_1D_to_2D(double l, double H);
 
@@ -312,6 +332,7 @@ public:
     static float GetPercentCpuUsedOfMachine();
 
     static Awaiter DoScript(std::string command);
+    static std::string DoScriptImmediately(std::string command);
 
     static void AddToLog(std::string filePath, std::string content);
     static double GetNanosecondsSinceStart();

@@ -426,10 +426,52 @@ namespace UWP_WaterWatch.Custom_Controls
                 }, false);
             }
         }
-        public static ProgressRing GenericLoadingRing()
+        public static Microsoft.UI.Xaml.Controls.ProgressRing GenericLoadingRing()
         {
-            return new ProgressRing() { Width = 24, Height = 24, Padding = new Thickness(0), Margin = new Thickness(0), Foreground = (SolidColorBrush)App.Current.Resources["cweeDarkBlue"], IsActive = true };
+            var toReturn = new Microsoft.UI.Xaml.Controls.ProgressRing()
+            {
+                Width = 24,
+                Height = 24,
+                MaxWidth = 24,
+                MaxHeight = 24,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center,
+                HorizontalContentAlignment = HorizontalAlignment.Center,
+                VerticalContentAlignment = VerticalAlignment.Center,
+                Padding = new Thickness(0),
+                Margin = new Thickness(0),
+                Foreground = (SolidColorBrush)App.Current.Resources["cweeDarkBlue"],
+                IsIndeterminate = true
+            };
+            return toReturn;
         }
+        public static Microsoft.UI.Xaml.Controls.ProgressRing GenericLoadingRing(AtomicInt progress)
+        {
+            AtomicInt prev_progress = new AtomicInt(0);
+            var toReturn = GenericLoadingRing();
+            toReturn.IsIndeterminate = false;
+            toReturn.Value = 0; 
+
+            toReturn.Loaded += (object sender, RoutedEventArgs e)=> {
+                var PR = sender as Microsoft.UI.Xaml.Controls.ProgressRing;
+                PR.Tag = new cweeTimer(20.0 / 60.0, ()=> {
+                    if (prev_progress.Get() != progress.Get())
+                    {
+                        prev_progress.Set(progress.Get());
+                        EdmsTasks.InsertJob(()=> {
+                            PR.Value = (double)prev_progress.Get();
+                        }, true);
+                    }
+                }, false);               
+            };
+            toReturn.Unloaded += (object sender, RoutedEventArgs e) =>
+            {
+                var PR = sender as Microsoft.UI.Xaml.Controls.ProgressRing;
+                PR.Tag = null;
+            };
+            return toReturn;
+        }
+
         public static cweeTask<FrameworkElement> GetNodeContent(SharedNodeResult res)
         {
             if (!string.IsNullOrEmpty(res.result.Error))
@@ -455,378 +497,8 @@ namespace UWP_WaterWatch.Custom_Controls
                             return GetNodeContent_DynamicObject(res);
                         case ValueTypeModes.Pattern:
                             return GetNodeContent_Pattern(res);
-#if false
-                    
-                    case ValueTypeModes.VectorMapItems:
-                        {
-                            var task1 = DoScript($"return {uniqueID}.size();", false);
-                            return task1.ContinueWith(() => {
-                                if (int.TryParse(task1.Result, out int n))
-                                {
-                                    return EdmsTasks.InsertJob(() =>
-                                    {
-                                        var L = new WaterWatch.CustomControls.SimpleMap();
-                                        L.Loaded += ((object sender, RoutedEventArgs e) => {
-                                            var collection = new WaterWatch.Data.cweeDeferredIncrementalLoader<VectorMapItemsStreamingSource, Windows.UI.Xaml.Controls.Maps.MapElement>(
-                                                Math.Min(1000, Math.Max(n / 5, 50)), null, null, null, false
-                                            //,(IEnumerable<Windows.UI.Xaml.Controls.Maps.MapElement> t) => {
-                                            //    L.vm.map.AddMapElements(t);
-                                            //}
-                                            );
-                                            collection.Tag = (L.vm.map, n, uniqueID);
-                                            L.Tag = collection;
-                                            collection.RefreshAsync();
-
-                                            L.vm.map.map.MapElementClick += ((Windows.UI.Xaml.Controls.Maps.MapControl mapSender, Windows.UI.Xaml.Controls.Maps.MapElementClickEventArgs mapArgs) =>
-                                            {
-                                                if (mapArgs.MapElements.Count > 0)
-                                                {
-                                                    if (mapArgs.MapElements[0].Tag != null && mapArgs.MapElements[0].Tag is string)
-                                                    {
-                                                        string varName = mapArgs.MapElements[0].Tag as string;
-                                                        if (!string.IsNullOrEmpty(varName))
-                                                        {
-                                                            var getContent = GetNodeContent(varName);
-                                                            getContent.ContinueWith(() =>
-                                                            {
-                                                                FrameworkElement toPresent = getContent.Result;
-                                                                var flyout = L.SetFlyout(toPresent, mapSender, L, mapArgs.Position);
-                                                            }, true);
-                                                        }
-                                                    }
-                                                }
-                                            });
-
-                                        });
-                                        return L;
-                                    }, EdmsTasks.Priority.Low, true);
-                                }
-                                else
-                                {
-                                    return GetDefaultContent(uniqueID);
-                                }
-                            }, false);
-                        }
-#if true
-                    case ValueTypeModes.Matrix:
-                        {
-                            EdmsTasks.cweeTask toReturn = null;
-
-                            var matrIndex = Edms.Data_CreateMatrix();
-                            var reply = DoScriptImmediate(
-                                $"externalData.SetMatrix({matrIndex}, {uniqueID});" +
-                                "\n" +
-                                "return \"" +
-                                " ${" + $"{uniqueID}.GetMinValue()" + "}" +
-                                "|${" + $"{uniqueID}.GetMaxValue()" + "}" +
-                                "|${" + $"{uniqueID}.GetMinX()" + "}" +
-                                "|${" + $"{uniqueID}.GetMinY()" + "}" +
-                                "|${" + $"{uniqueID}.GetMaxX()" + "}" +
-                                "|${" + $"{uniqueID}.GetMaxY()" + "}" +
-                                "\""
-                                , false
-                            );
-                            var splits = reply.Split("|");
-                            try
-                            {
-                                if (splits.Length >= 6)
-                                {
-                                    float minValue = float.Parse(splits[0]);
-                                    float maxValue = float.Parse(splits[1]);
-                                    double minX = double.Parse(splits[2]);
-                                    double minY = double.Parse(splits[3]);
-                                    double maxX = double.Parse(splits[4]);
-                                    double maxY = double.Parse(splits[5]);
-
-                                    // const double numPixels = 65536.0;
-                                    const double numPixels = 786432.0;
-                                    const double PixelsPerSide = 3000.0; // 886.0;
-
-                                    var width = (maxX - minX);
-                                    var height = (maxY - minY);
-
-
-                                    int pixelWidth = (int)(PixelsPerSide * width / height);
-                                    int pixelHeight = (int)(PixelsPerSide * height / width);
-
-                                    Windows.UI.Color minCol = new Windows.UI.Color() { R = 0, G = 0, B = 0, A = 255 };
-                                    Windows.UI.Color maxCol = new Windows.UI.Color() { R = 254, G = 254, B = 254, A = 255 };
-
-                                    float[] values = Edms.Data_GetMatrix(matrIndex, minX, maxY, maxX, minY, pixelWidth, pixelHeight);
-
-                                    int bpp = 4;
-                                    int byteIndex; int x; float v;
-
-                                    byte[] bytes = new byte[pixelHeight * pixelWidth * bpp];
-                                    Windows.UI.Color pixelCol;
-
-                                    int n = values.Length;
-                                    for (int y = 0; y < pixelHeight; y++)
-                                    {
-                                        for (x = 0; x < pixelWidth; x++)
-                                        {
-                                            if (((y * pixelWidth) + x) < n)
-                                            {
-                                                byteIndex = (y * pixelWidth + x) * bpp;
-                                                {
-                                                    v = (values[(y * pixelWidth) + x] - minValue) / (maxValue - minValue); // 0 - 1 between the min and max for this value
-                                                    pixelCol.A = minCol.A.Lerp(maxCol.A, v);
-
-                                                    v *= 3.0f;
-
-                                                    if (v <= 1)
-                                                    {
-                                                        pixelCol.R = minCol.R.Lerp(maxCol.R, v);
-                                                        pixelCol.G = minCol.G;
-                                                        pixelCol.B = minCol.B;
-                                                    }
-                                                    else if (v <= 2)
-                                                    {
-                                                        pixelCol.R = maxCol.R;
-                                                        pixelCol.G = minCol.G.Lerp(maxCol.G, v - 1);
-                                                        pixelCol.B = minCol.B;
-                                                    }
-                                                    else
-                                                    {
-                                                        pixelCol.R = maxCol.R;
-                                                        pixelCol.G = maxCol.G;
-                                                        pixelCol.B = minCol.B.Lerp(maxCol.B, v - 2);
-                                                    }
-
-                                                    bytes[byteIndex] = pixelCol.R;           // Red
-                                                    bytes[byteIndex + 1] = pixelCol.G;       // Green
-                                                    bytes[byteIndex + 2] = pixelCol.B;       // Blue
-                                                    bytes[byteIndex + 3] = pixelCol.A;       // Alpha (0xff = fully opaque) // 0x80
-                                                }
-                                            }
-                                        }
-                                    }
-
-                                    var imageJob = cweeXamlHelper.PixelsToImage(bytes, pixelWidth, pixelHeight);
-                                    toReturn = imageJob.ContinueWith(() =>
-                                    {
-                                        Grid container = new Grid() { HorizontalAlignment = HorizontalAlignment.Stretch, VerticalAlignment = VerticalAlignment.Stretch };
-                                        container.SizeChanged += ToReturn_SizeChanged;
-                                        container.Children.Add(imageJob.Result);
-
-                                        //container.Tag = new cweeDequeue();
-                                        //container.SizeChanged += (object sender, SizeChangedEventArgs e) => {
-                                        //    Grid parent = sender as Grid;
-                                        //    if (parent != null)
-                                        //    {
-                                        //        cweeDequeue q = (parent.Tag as cweeDequeue);
-                                        //        if (q != null)
-                                        //        {
-                                        //            q.Dequeue(DateTime.Now.AddSeconds(1), () =>
-                                        //            {
-                                        //                var newImageJob = cweeXamlHelper.PixelsToImage(bytes, pixelWidth, pixelHeight);
-                                        //                newImageJob.ContinueWith(()=> {
-                                        //                    parent.Children.RemoveAt(0);
-                                        //                    parent.Children.Add(newImageJob.Result);
-                                        //                }, true);
-                                        //            }, false);
-                                        //        }
-                                        //    }
-                                        //};
-                                        //container.Unloaded += (object sender, RoutedEventArgs e) => {
-                                        //Edms.Data_DeleteMatrix(matrIndex);
-                                        //};
-
-                                        return container;
-                                    }, true);
-                                }
-                            }
-                            catch (Exception e) { }
-
-                            Edms.Data_DeleteMatrix(matrIndex);
-
-                            if (toReturn == null)
-                            {
-                                toReturn = DefaultContent(uniqueID, reply);
-                            }
-                            return toReturn;
-                        }
-#endif
-                    case ValueTypeModes.MatX:
-                        {
-                            var task1 = DoScript($"return [{uniqueID}.Rows(), {uniqueID}.Columns()].to_string();", false);
-                            return task1.ContinueWith(() => {
-                                string input = task1.Result;
-                                var rowCol = input.Mid(1, input.Length - 2).Split(", ");
-                                if (rowCol.Length >= 2 && int.TryParse(rowCol[0], out int nR) && int.TryParse(rowCol[1], out int nC))
-                                {
-                                    const int elementwidth = 48;
-                                    const int elementheight = 48;
-                                    return EdmsTasks.InsertJob(() =>
-                                    {
-                                        List<EdmsTasks.cweeTask> tasks = new List<EdmsTasks.cweeTask>();
-                                        var s = new ScrollViewer()
-                                        {
-                                            HorizontalScrollBarVisibility = ScrollBarVisibility.Visible,
-                                            VerticalScrollBarVisibility = ScrollBarVisibility.Visible,
-                                            HorizontalAlignment = HorizontalAlignment.Stretch,
-                                            VerticalAlignment = VerticalAlignment.Stretch,
-                                            HorizontalContentAlignment = HorizontalAlignment.Stretch,
-                                            VerticalContentAlignment = VerticalAlignment.Stretch,
-                                            Padding = new Thickness(0),
-                                            Margin = new Thickness(0)
-                                        };
-                                        {
-                                            var g = new Grid()
-                                            {
-                                                Background = cweeXamlHelper.ThemeColor("cweeRed"),
-                                                Width = (nC) * elementwidth,
-                                                Height = elementheight * (nR),
-                                                HorizontalAlignment = HorizontalAlignment.Stretch,
-                                                VerticalAlignment = VerticalAlignment.Stretch,
-                                                ColumnSpacing = 0,
-                                                RowSpacing = 0,
-                                                Padding = new Thickness(0),
-                                                Margin = new Thickness(0)
-                                            };
-                                            {
-                                                for (int i = 0; i < nR; i++) { g.RowDefinitions.Add(new RowDefinition() { Height = new GridLength(1, GridUnitType.Auto) }); }
-                                                for (int i = 0; i < nC; i++) { g.ColumnDefinitions.Add(new ColumnDefinition() { Width = new GridLength(1, GridUnitType.Auto) }); }
-
-                                                var cb = cweeXamlHelper.ThemeColor("cweeBlack");
-                                                var bg = cweeXamlHelper.ThemeColor("cweeLightBlue");
-                                                var db = cweeXamlHelper.ThemeColor("cweeDarkBlue");
-                                                var zT = new Thickness(0);
-                                                var t_1 = new Thickness(1);
-
-                                                for (int r = 0; r < nR; r++)
-                                                {
-                                                    for (int c = 0; c < nC && c < 10; c++) // setting maximum number of columns to 10 because otherwise it breaks the max width limit
-                                                    {
-                                                        int r_temp = r;
-                                                        int c_temp = c;
-                                                        string command = $"{uniqueID}[{r_temp}][{c_temp}]";
-                                                        tasks.Add(new EdmsTasks.cweeTask(() => {
-                                                            Border b = new Border()
-                                                            {
-                                                                HorizontalAlignment = HorizontalAlignment.Center,
-                                                                VerticalAlignment = VerticalAlignment.Center,
-                                                                Width = elementwidth,
-                                                                Height = elementheight,
-                                                                Padding = zT,
-                                                                Margin = zT,
-                                                                BorderThickness = t_1,
-                                                                Background = bg,
-                                                                BorderBrush = cb
-                                                            };
-                                                            {
-                                                                // b.Tag = command;
-                                                                var behavior = new ViewportBehavior() { IsAlwaysOn = true };
-                                                                behavior.EnteredViewport += (object sender, EventArgs e) => {
-                                                                    Border bb = (sender as Border);
-                                                                    if (bb.Child == null)
-                                                                    {
-                                                                        bb.Child = new ProgressRing() { Width = elementwidth / 2.0, Height = elementheight / 2.0, Padding = zT, Margin = zT, Foreground = db, IsActive = true }; ;
-                                                                        var cellData = DoScript($"{command}.to_string();", false);
-                                                                        cellData.ContinueWith(() =>
-                                                                        {
-                                                                            string data = cellData.Result;
-                                                                            var tb = cweeXamlHelper.SimpleTextBlock(data);
-                                                                            tb.HorizontalAlignment = HorizontalAlignment.Center;
-                                                                            tb.VerticalAlignment = VerticalAlignment.Center;
-                                                                            tb.HorizontalTextAlignment = TextAlignment.Center;
-                                                                            tb.Margin = zT;
-                                                                            tb.Padding = zT;
-                                                                            // tb.SizeChanged += cweeXamlHelper.AutomaticTextSize;
-                                                                            //bb.Width = elementwidth;
-                                                                            //bb.Height = elementheight;
-                                                                            bb.Child = tb;
-                                                                        }, true);
-                                                                    }
-                                                                };
-                                                                behavior.EnteringViewport += (object sender, EventArgs e) =>
-                                                                { // load the content of this cell
-                                                                    Border bb = (sender as Border);
-                                                                    if (bb.Child == null)
-                                                                    {
-                                                                        bb.Child = new ProgressRing() { Width = elementwidth / 2.0, Height = elementheight / 2.0, Padding = zT, Margin = zT, Foreground = db, IsActive = true }; ;
-                                                                        var cellData = DoScript($"{command}.to_string();", false);
-                                                                        cellData.ContinueWith(() =>
-                                                                        {
-                                                                            string data = cellData.Result;
-                                                                            var tb = cweeXamlHelper.SimpleTextBlock(data);
-                                                                            tb.HorizontalAlignment = HorizontalAlignment.Center;
-                                                                            tb.VerticalAlignment = VerticalAlignment.Center;
-                                                                            tb.HorizontalTextAlignment = TextAlignment.Center;
-                                                                            tb.Margin = zT;
-                                                                            tb.Padding = zT;
-                                                                            // tb.SizeChanged += cweeXamlHelper.AutomaticTextSize;
-                                                                            //bb.Width = elementwidth;
-                                                                            //bb.Height = elementheight;
-                                                                            bb.Child = tb;
-                                                                        }, true);
-                                                                    }
-                                                                };
-                                                                behavior.ExitedViewport += (object sender, EventArgs e) => { Border bb = (sender as Border); bb.Child = null; };
-                                                                behavior.ExitingViewport += (object sender, EventArgs e) => { };
-                                                                behavior.Attach(b);
-                                                                b.Tag = false;
-                                                                b.Loaded += (object sender, RoutedEventArgs e) => {
-                                                                    Border bb = (sender as Border);
-                                                                    if (((bool)bb.Tag) == false)
-                                                                    {
-                                                                        bb.Tag = true;
-                                                                        FrameworkElement container = s;
-                                                                        FrameworkElement element = bb;
-                                                                        Rect elementBounds = element.TransformToVisual(container).TransformBounds(new Rect(0.0, 0.0, element.ActualWidth, element.ActualHeight));
-                                                                        Rect containerRect = new Rect(0.0, 0.0, container.ActualWidth, container.ActualHeight);
-                                                                        bool isPartiallyVisible = containerRect.Contains(new Point(elementBounds.Left, elementBounds.Top)) || containerRect.Contains(new Point(elementBounds.Right, elementBounds.Bottom));
-                                                                        bool isFullyVisible = containerRect.Contains(new Point(elementBounds.Left, elementBounds.Top)) && containerRect.Contains(new Point(elementBounds.Right, elementBounds.Bottom));
-
-                                                                        if (isPartiallyVisible || isFullyVisible)
-                                                                        {
-                                                                            bb.Child = new ProgressRing() { Width = elementwidth / 2.0, Height = elementheight / 2.0, Padding = zT, Margin = zT, Foreground = db, IsActive = true }; ;
-                                                                            var cellData = DoScript($"{command}.to_string();", false);
-                                                                            cellData.ContinueWith(() =>
-                                                                            {
-                                                                                string data = cellData.Result;
-                                                                                var tb = cweeXamlHelper.SimpleTextBlock(data);
-
-                                                                                tb.HorizontalAlignment = HorizontalAlignment.Center;
-                                                                                tb.VerticalAlignment = VerticalAlignment.Center;
-                                                                                tb.HorizontalTextAlignment = TextAlignment.Center;
-                                                                                tb.Margin = zT;
-                                                                                tb.Padding = zT;
-
-                                                                                // tb.SizeChanged += cweeXamlHelper.AutomaticTextSize;
-                                                                                //bb.Width = elementwidth;
-                                                                                //bb.Height = elementheight;
-                                                                                bb.Child = tb;
-                                                                            }, true);
-                                                                        }
-                                                                    }
-                                                                };
-                                                            }
-                                                            g.Children.Add(b);
-                                                            Grid.SetColumn(b, c_temp);
-                                                            Grid.SetRow(b, r_temp);
-                                                        }, true, true));
-                                                    }
-                                                }
-                                            }
-                                            s.Content = g;
-                                        }
-                                        return EdmsTasks.cweeTask.InsertListAsTask(tasks).ContinueWith(() => {
-                                            return s;
-                                        }, false);
-                                    }, EdmsTasks.Priority.Low, true);
-                                }
-                                else
-                                {
-                                    return GetDefaultContent(uniqueID);
-                                }
-                            }, false);
-                        }
-#endif
                         case ValueTypeModes.FrameworkElement:
                             return GetNodeContent_FrameworkElement(res);
-
-
                         case ValueTypeModes.Pair:
                         case ValueTypeModes.Other:
                         case ValueTypeModes.String:
@@ -877,7 +549,7 @@ namespace UWP_WaterWatch.Custom_Controls
                         var L = new ListView();
                         L.ItemsSource = collection;
                         return L;
-                    }, /*EdmsTasks.Priority.Low, */true, true);
+                    }, true, true);
                 }
                 else
                 {
@@ -971,78 +643,114 @@ namespace UWP_WaterWatch.Custom_Controls
         private static cweeTask<FrameworkElement> GetNodeContent_Pattern(SharedNodeResult res)
         {
             return (EdmsTasks.cweeTask)EdmsTasks.InsertJob(() => {
-                var r = new Border() { HorizontalAlignment = HorizontalAlignment.Stretch, VerticalAlignment = VerticalAlignment.Stretch, Child = GenericLoadingRing() };
+                AtomicInt loadingProgress = new AtomicInt(0);
+                var r = new Border() { HorizontalAlignment = HorizontalAlignment.Stretch, VerticalAlignment = VerticalAlignment.Stretch, Child = GenericLoadingRing(loadingProgress) };
                 r.SizeChanged += ToReturn_SizeChanged;
                 double screenWidth = Window.Current.CoreWindow.Bounds.Width;
                 EdmsTasks.InsertJob(() => {
                     var sharedPattern = new SharedTimeSeriesPattern(); // will self-delete some time after scope ends (required GC) -- including the C++ objects. 
                     {
-                        var setupTask = res.result.CustomizableQueryResult($"external_data.SetPattern({sharedPattern.Index()}, %s);", "%s", res.additionalParams);
-                        setupTask.ContinueWith(() => {
+                        loadingProgress.Set(10);
+                        var setupTask = res.result.CustomizableQueryResult($"external_data.SetPattern({sharedPattern.Index()}, %s)", "%s", res.additionalParams); // .Blur({screenWidth}).RemoveUnnecessaryKnots();
+                        return setupTask.ContinueWith(() => {
                             var numValues = sharedPattern.GetNumValues();
-                            
-                            // we cannot (choose not to) render more datapoints than there are pixels on the screen. 
-                            List<ChartItem> actualDataList = new List<ChartItem>((int)(screenWidth + 1.0));
-                            if (numValues > screenWidth)
-                            {
-                                double minTime = sharedPattern.GetMinTime();
-                                double maxTime = sharedPattern.GetMaxTime();
-                                double step = ((maxTime - minTime) / (screenWidth + 1)) + 1;
-
-                                for (double timeV = minTime; (actualDataList.Count < 2) || (timeV <= maxTime); timeV += step)
-                                {
-                                    actualDataList.Add(new ChartItem() { 
-                                        Date = DateTime.Now.FromUnixTimeSeconds(timeV), 
-                                        Value = sharedPattern.GetValue(timeV)
-                                    });
-                                }
-                            }
-                            else
-                            {
-                                var data = sharedPattern.GetTimeSeries();
-                                foreach (var tsv in data)
-                                {
-                                    actualDataList.Add(new ChartItem() { Date = DateTime.Now.FromUnixTimeSeconds(tsv.first), Value = (float)tsv.second });
-                                }
-                            }
-
-                            (string, string) units = (sharedPattern.X_Units(), sharedPattern.Y_Units());
-
-                            List<EdmsTasks.cweeTask> colorTask = new List<EdmsTasks.cweeTask>() { cweeXamlHelper.ThemeColor("cweeDarkBlue"), cweeXamlHelper.ThemeColor("cweeLightBlue") };
-
-                            return EdmsTasks.cweeTask.TrueWhenCompleted(colorTask).ContinueWith(() => {
-                                var chart = TelerikHelper.CreateTelerikChart(new TelerikChartDetails()
-                                {
-                                    X_axis_title = units.Item1 == "s" ? null : units.Item1,
-                                    y_axis_title = units.Item2,
-                                    charts = new List<TelerikChartData>()
-                                    {
-                                        new TelerikChartData()
-                                        {
-                                            fillColor = colorTask[0].Result,
-                                            spline_data = actualDataList,
-                                            strokeColor = colorTask[1].Result,
-                                            strokeThickness = 0.25
-                                        }
-                                    }
+#if false
+                            int progress = 0;
+                            loadingProgress.Set(20);
+                            List<ChartItem> actualDataList = new List<ChartItem>();
+                            foreach (var point in sharedPattern.GetTimeSeries()) {                                
+                                actualDataList.Add(new ChartItem() { 
+                                    Date = DateTime.Now.FromUnixTimeSeconds(point.first), 
+                                    Value = (float)(point.second) 
                                 });
-                                return chart.ContinueWith(() => {
-                                    //chart.Result.HorizontalAlignment = HorizontalAlignment.Left;
-                                    //chart.Result.VerticalAlignment = VerticalAlignment.Top;
-                                    if (r.IsLoaded)
+                                loadingProgress.Set((int)(20.0 + ((double)(progress++) / (double)(numValues))*80.0));
+                            }
+                            List<EdmsTasks.cweeTask> tasks = new List<EdmsTasks.cweeTask>();
+#else
+                            loadingProgress.Set(20);
+
+                            int totalProgress = 2;
+                            
+                            double minTime = sharedPattern.GetMinTime();
+                            double maxTime = sharedPattern.GetMaxTime();
+                            double step = ((maxTime - minTime) / (screenWidth + 1)) + 1;
+                            for (double timeV = minTime; timeV <= maxTime; timeV += step) totalProgress++;
+
+                            var arr = new ChartItem[totalProgress];
+                            for (int i = 0; i < arr.Length; i++) arr[i] = new ChartItem();                            
+                            List<ChartItem> actualDataList = arr.ToList();
+                            
+                            actualDataList[0].Date = DateTime.Now.FromUnixTimeSeconds(minTime);
+                            actualDataList[0].Value = sharedPattern.GetValue(minTime);
+                            actualDataList[totalProgress - 1].Date = DateTime.Now.FromUnixTimeSeconds(maxTime);
+                            actualDataList[totalProgress - 1].Value = sharedPattern.GetValue(maxTime);
+
+                            List<EdmsTasks.cweeTask> tasks = new List<EdmsTasks.cweeTask>();
+
+                            AtomicInt progress = new AtomicInt(2);
+                            int capStep = Math.Max(100, (int)((double)totalProgress / 10.0));
+                            for (int start = 1; start < (totalProgress - 1); start += capStep) {
+                                int start_actual = start;
+                                int end_actual = Math.Min(start + capStep, (totalProgress - 1));
+                                tasks.Add(new EdmsTasks.cweeTask(()=> {
+                                    for (int i = start_actual; i < end_actual; i++)
                                     {
-                                        chart.Result.Width = r.ActualWidth;
-                                        chart.Result.Height = r.ActualHeight;
+                                        double timeV = minTime + step * (double)(i - 1);                                 
+                                        actualDataList[i].Date = DateTime.Now.FromUnixTimeSeconds(timeV + (step / 2.0));
+                                        actualDataList[i].Value = sharedPattern.GetAvgValue(timeV, timeV + step);
+
+                                        loadingProgress.Set((long)(20.0 + 80.0 * ((double)progress.Increment() / (double)totalProgress)));                          
                                     }
+                                }, false, true));
+                            }
 
-                                    chart.Result.MinHeight = 80;
-                                    chart.Result.MinWidth = 100;
+                            //for (int j = 1; j<(totalProgress - 1); j++){
+                            //    int i = j;
+                            //    double timeV = minTime + step * (double)(i - 1);
+                            //    //tasks.Add(new EdmsTasks.cweeTask(()=> {                                    
+                            //        actualDataList[i].Date = DateTime.Now.FromUnixTimeSeconds(timeV + (step / 2.0));
+                            //        actualDataList[i].Value = sharedPattern.GetAvgValue(timeV, timeV + step);
 
-                                    r.Child = chart.Result;
+                            //        loadingProgress.Set((long)(20.0 + 80.0 * ((double)progress.Increment() / (double)totalProgress)));                                   
+                            //    //}, false, true));                                
+                            //}
+#endif
+                            return EdmsTasks.cweeTask.InsertListAsTask(tasks, true).ContinueWith(()=> {
+                                loadingProgress.Set(100);
+                                (string, string) units = (sharedPattern.X_Units(), sharedPattern.Y_Units());
+                                List<EdmsTasks.cweeTask> colorTask = new List<EdmsTasks.cweeTask>() { cweeXamlHelper.ThemeColor("cweeDarkBlue"), cweeXamlHelper.ThemeColor("cweeLightBlue") };
+                                return EdmsTasks.cweeTask.TrueWhenCompleted(colorTask).ContinueWith(() => {
+                                    var chart = TelerikHelper.CreateTelerikChart(new TelerikChartDetails() {
+                                        X_axis_title = units.Item1 == "s" ? null : units.Item1,
+                                        y_axis_title = units.Item2,
+                                        charts = new List<TelerikChartData>() {
+                                            new TelerikChartData()
+                                            {
+                                                fillColor = colorTask[0].Result,
+                                                spline_data = actualDataList,
+                                                strokeColor = colorTask[1].Result,
+                                                strokeThickness = 0.25
+                                            }
+                                        }
+                                    });
+                                    return chart.ContinueWith(() => {
+                                        //chart.Result.HorizontalAlignment = HorizontalAlignment.Left;
+                                        //chart.Result.VerticalAlignment = VerticalAlignment.Top;
+                                        if (r.IsLoaded)
+                                        {
+                                            chart.Result.Width = r.ActualWidth;
+                                            chart.Result.Height = r.ActualHeight;
+                                        }
 
-                                    return chart;
+                                        chart.Result.MinHeight = 80;
+                                        chart.Result.MinWidth = 100;
+
+                                        r.Child = chart.Result;
+
+                                        return chart;
+                                    }, true);
                                 }, true);
-                            }, true);
+                            }, false);
                         }, false);
                     }
                 }, false, true);
@@ -1061,6 +769,7 @@ namespace UWP_WaterWatch.Custom_Controls
                     case "UI_MapLayer": return ScriptedFrameworkElements.GetFrameworkElement_Map(res);
                     case "UI_MapPolyline": return ScriptedFrameworkElements.GetFrameworkElement_Map(res);
                     case "UI_MapIcon": return ScriptedFrameworkElements.GetFrameworkElement_Map(res);
+                    case "UI_ProgressRing": return ScriptedFrameworkElements.GetFrameworkElement_ProgressRing(res);
                     case "UI_Rectangle": return ScriptedFrameworkElements.GetFrameworkElement_Rectangle(res);
                     case "UI_TextBlock": return ScriptedFrameworkElements.GetFrameworkElement_TextBlock(res);
                     case "UI_Image": return ScriptedFrameworkElements.GetFrameworkElement_Image(res);
@@ -1085,7 +794,7 @@ namespace UWP_WaterWatch.Custom_Controls
 #if UseFrameworkUpdater
             public static class Framework_Updater
             {
-                internal static cweeMultiAppendableTimer timer = new cweeMultiAppendableTimer(0.25, false);
+                internal static cweeMultiAppendableTimer timer = new cweeMultiAppendableTimer(1.0 / 60.0, false);
                 internal class Framework_Updater_Impl
                 {
                     public int currentVersion = -1;
@@ -1113,8 +822,7 @@ namespace UWP_WaterWatch.Custom_Controls
                         if (!ManagedBackendObjects.ContainsKey(shared_key)) { ManagedBackendObjects[shared_key] = new Framework_Updater_Impl(); }
                         ManagedBackendObjects[shared_key].tasks += DoUpdateSubscriber;
                         AtomicInt localLock = new AtomicInt();
-                        timer.AddAction(() =>
-                        {
+                        timer.AddAction(() => {
                             if (localLock.TryIncrementTo(1))
                             {
                                 var versionJob = res.result.QueryResult(res.additionalParams + ".Version");
@@ -1273,8 +981,13 @@ namespace UWP_WaterWatch.Custom_Controls
                     ", \"${ %s.Margin }\"" +
                     "]"
                     , "%s", res.additionalParams);
-
-                res.result.CustomizableQueryResult("%s.OnLoaded();", "%s", res.additionalParams);
+                
+                R.Loaded += (object sender, RoutedEventArgs e) => {
+                    res.result.CustomizableQueryResult("%s.OnLoaded();", "%s", res.additionalParams);
+                };
+                R.Unloaded += (object sender, RoutedEventArgs e) => {
+                    res.result.CustomizableQueryResult("%s.OnUnloaded();", "%s", res.additionalParams);
+                };
 
                 return FrameworkJob.ContinueWith(() => {
                     List<string> frameworkParms = FrameworkJob.Result;
@@ -1320,7 +1033,49 @@ namespace UWP_WaterWatch.Custom_Controls
 
                 frameworkElement.Loaded -= FrameworkElement_FirstLoaded;
             }
+            public static cweeTask<FrameworkElement> GetFrameworkElement_ProgressRing(SharedNodeResult res)
+            {
+                return (EdmsTasks.cweeTask)EdmsTasks.InsertJob(() => {
+                    var r = new Border() { HorizontalAlignment = HorizontalAlignment.Stretch, VerticalAlignment = VerticalAlignment.Stretch, Child = GenericLoadingRing() };
 
+                    cweeDequeue updateDequeue = new cweeDequeue(DateTime.Now.AddSeconds(60), () =>
+                    {
+                        var actualContainer = EdmsTasks.InsertJob(() => { return GenericLoadingRing(); }, true);
+                        actualContainer.ContinueWith(() => {
+                            var frameworkJob = SetFrameworkElement(res, actualContainer.Result as Microsoft.UI.Xaml.Controls.ProgressRing);
+                            frameworkJob.ContinueWith(() => {
+                                Microsoft.UI.Xaml.Controls.ProgressRing R = frameworkJob.Result;
+                                {
+                                    var fill = GetColor(new SharedNodeResult() { result = res.result, additionalParams = res.additionalParams + ".Foreground" });
+                                    fill.ContinueWith(() => {
+                                        R.Foreground = new SolidColorBrush(fill.Result);
+                                        r.Child = R; // DONE
+                                    }, true);
+                                }
+                            }, false);
+                        }, false);
+
+                    }, false); // expect this to be called shortly and to have its queue revised
+                    r.Tag = updateDequeue;
+#if UseFrameworkUpdater
+                    Framework_Updater.Subscribe(r, res, (object Res, List<string> tasks) => {
+                        SharedNodeResult query = Res as SharedNodeResult;
+
+                        foreach (var task in tasks)
+                        {
+                            switch (task)
+                            {
+                                case "Update": { updateDequeue.Dequeue(DateTime.Now.AddSeconds(1.0 / 60.0)); break; }
+                                default: WaterWatch.SubmitToast("Failed to Parse UI Task at " + System.Reflection.MethodBase.GetCurrentMethod().Name, task); break;
+                            }
+                        }
+                    });
+#endif
+                    r.Loaded += FrameworkElement_FirstLoaded;
+
+                    return r;
+                }, true, true);
+            }
             public static cweeTask<FrameworkElement> GetFrameworkElement_Rectangle(SharedNodeResult res) {
                 return (EdmsTasks.cweeTask)EdmsTasks.InsertJob(() => {
                     var r = new Border() { HorizontalAlignment = HorizontalAlignment.Stretch, VerticalAlignment = VerticalAlignment.Stretch, Child = GenericLoadingRing() };
@@ -1450,6 +1205,9 @@ namespace UWP_WaterWatch.Custom_Controls
                                         "return [" +
                                         "\"${ %s.ImagePath }\"" +
                                         ", \"${ %s.Stretch }\"" +
+                                        ", \"${ %s.ImagePixels.size() }\"" +
+                                        ", \"${ %s.ImagePixelsWidth }\"" +
+                                        ", \"${ %s.ImagePixelsHeight }\"" +
                                         "]"
                                     , "%s", res.additionalParams);
 
@@ -1457,10 +1215,75 @@ namespace UWP_WaterWatch.Custom_Controls
                                     customJob
                                 }).ContinueWith(() =>
                                 {
-                                    R.Source = new Windows.UI.Xaml.Media.Imaging.BitmapImage(new Uri(customJob.Result[0]));
-                                    { if (Enum.TryParse<Stretch>(customJob.Result[1], out Stretch w)) { R.Stretch = w; } }
+                                    R.RightTapped += (object sender, RightTappedRoutedEventArgs e) =>
+                                    {
+                                        StackPanel tempGrid = new StackPanel() { Orientation = Orientation.Vertical, HorizontalAlignment = HorizontalAlignment.Stretch, VerticalAlignment = VerticalAlignment.Stretch, Margin = new Thickness(0), Padding = new Thickness(0) };
+                                        {
+                                            {
+                                                var but = new Button()
+                                                {
+                                                    HorizontalAlignment = HorizontalAlignment.Stretch,
+                                                    VerticalAlignment = VerticalAlignment.Stretch,
+                                                    Margin = new Thickness(0),
+                                                    Padding = new Thickness(0)
+                                                };
+                                                but.Content = "Copy to Clipboard";
+                                                but.Click += (object sender2, RoutedEventArgs e2) =>
+                                                {
+                                                    EdmsTasks.InsertJob(() =>
+                                                    {
+                                                        Functions.CopyToClipboard((sender as Image));
+                                                    }, true, true);
+                                                };
+                                                tempGrid.Children.Add(but);
+                                            }
+                                        }
+                                        var flyout = (sender as Image).SetFlyout(tempGrid, (sender as Image), tempGrid, e.GetPosition((sender as Image)));
+                                        e.Handled = true;
+                                        (sender as Image).ContextFlyout.LightDismissOverlayMode = LightDismissOverlayMode.On;
+                                    };
 
-                                    r.Child = R; // DONE
+
+
+
+
+
+
+
+
+                                    { if (Enum.TryParse<Stretch>(customJob.Result[1], out Stretch w)) { R.Stretch = w; } }
+                                    if (customJob.Result[0].Length > 0)
+                                    {
+                                        R.Source = new Windows.UI.Xaml.Media.Imaging.BitmapImage(new Uri(customJob.Result[0]));
+                                        r.Child = R; // DONE
+                                    }
+                                    else
+                                    {
+                                        if (
+                                            int.TryParse(customJob.Result[2], out int w) && w > 0
+                                            && int.TryParse(customJob.Result[3], out int pixelsWidth) && pixelsWidth > 0
+                                            && int.TryParse(customJob.Result[4], out int pixelsHeight) && pixelsHeight > 0
+                                            ) {
+                                            var customJob2 = res.result.CustomizableQueryResult_Cast_VectorFloat(
+                                                "%s.ImagePixels"
+                                            , "%s", res.additionalParams);
+                                            customJob2.ContinueWith(() => {
+                                                byte[] bytes = new byte[customJob2.Result.Count];
+                                                for (int i = 0; i < bytes.Length; i++)
+                                                {
+                                                    bytes[i] = (byte)(MathF.Min(255, MathF.Max(0, customJob2.Result[i])));
+                                                }
+                                                var imageTask = cweeXamlHelper.PixelsToImage(bytes, pixelsWidth, pixelsHeight, R);
+                                                imageTask.ContinueWith(()=> {                                                    
+                                                    r.Child = imageTask.Result; // DONE
+                                                }, true);                                                
+                                            }, false);                                            
+                                        }
+                                        else
+                                        {
+                                            r.Child = R; // DONE
+                                        }
+                                    }
                                 }, true);
                                 }
                             }, false);
@@ -1586,17 +1409,30 @@ namespace UWP_WaterWatch.Custom_Controls
                     "return [" +
                     "\"${ %s.Padding }\"" +
                     ", \"${ %s.Children.size() }\"" +
+                    ", \"${ %s.BorderThickness }\"" +
                     "]"
                     , "%s", res.additionalParams);
                 var bg = GetColor(new SharedNodeResult() { result = res.result, additionalParams = res.additionalParams + ".Background" });
+                var borderBrushColor = GetColor(new SharedNodeResult() { result = res.result, additionalParams = res.additionalParams + ".BorderBrush" });
 
                 return EdmsTasks.cweeTask.TrueWhenCompleted(new List<EdmsTasks.cweeTask>() {
                     FrameworkJob
-                    , bg
+                    , bg, borderBrushColor
                 }).ContinueWith(() => {
                     List<string> frameworkParms = FrameworkJob.Result;
                     { if (TryStringToThickness(frameworkParms[0], out Thickness t)) { if (R is StackPanel) (R as StackPanel).Padding = t; if (R is Grid) (R as Grid).Padding = t; } }
                     R.Background = new SolidColorBrush(bg.Result);
+                    if (R is Grid)
+                    {
+                        (R as Grid).BorderBrush = new SolidColorBrush(borderBrushColor.Result);
+                        if (TryStringToThickness(frameworkParms[2], out Thickness t)) (R as Grid).BorderThickness = t;
+                    }
+                    if (R is StackPanel)
+                    {
+                        (R as StackPanel).BorderBrush = new SolidColorBrush(borderBrushColor.Result);
+                        if (TryStringToThickness(frameworkParms[2], out Thickness t)) (R as StackPanel).BorderThickness = t;
+                    }
+
                     { 
                         if (double.TryParse(frameworkParms[1], out double w) && w != -1.0) { 
                             if (w > 0) {
@@ -2346,7 +2182,7 @@ namespace UWP_WaterWatch.Custom_Controls
 
                                 var secondTask = new EdmsTasks.cweeTask(() => {
                                     Border border = new Border() { Padding = new Thickness(0), Margin = new Thickness(0), BorderBrush = cdb.Result, BorderThickness = new Thickness(0, 1, 0, 1), HorizontalAlignment = HorizontalAlignment.Stretch, VerticalAlignment = VerticalAlignment.Stretch, MinWidth = 200, MinHeight = 40, MaxHeight = 200 };
-                                    border.Child = new ProgressRing() { Width = 24, Height = 24, Padding = new Thickness(0), Margin = new Thickness(0), Foreground = cdb.Result, IsActive = true };
+                                    border.Child = new Microsoft.UI.Xaml.Controls.ProgressRing() { Width = 24, Height = 24, Padding = new Thickness(0), Margin = new Thickness(0), Foreground = cdb.Result, IsIndeterminate = true };
 
                                     Grid container = new Grid() { Padding = new Thickness(0), Margin = new Thickness(0), HorizontalAlignment = HorizontalAlignment.Stretch, VerticalAlignment = VerticalAlignment.Stretch };
                                     {
@@ -2444,7 +2280,7 @@ namespace UWP_WaterWatch.Custom_Controls
                             var secondTask = new EdmsTasks.cweeTask(() =>
                             {
                                 Border border = new Border() { Padding = new Thickness(0), Margin = new Thickness(0), BorderBrush = cdb.Result, BorderThickness = new Thickness(0, 1, 0, 1), HorizontalAlignment = HorizontalAlignment.Stretch, VerticalAlignment = VerticalAlignment.Stretch, MinWidth = 200, MinHeight = 40, MaxHeight = 200 };
-                                border.Child = new ProgressRing() { Width = 24, Height = 24, Padding = new Thickness(0), Margin = new Thickness(0), Foreground = cdb.Result, IsActive = true };
+                                border.Child = new Microsoft.UI.Xaml.Controls.ProgressRing() { Width = 24, Height = 24, Padding = new Thickness(0), Margin = new Thickness(0), Foreground = cdb.Result, IsIndeterminate = true };
 
                                 Grid container = new Grid() { Padding = new Thickness(0), Margin = new Thickness(0), HorizontalAlignment = HorizontalAlignment.Stretch, VerticalAlignment = VerticalAlignment.Stretch };
                                 {

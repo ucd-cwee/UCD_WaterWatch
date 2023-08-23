@@ -142,9 +142,10 @@ to maintain a single distribution point for the source code.
 		public:
 			bool IsSameCategory(Unit_ID const& other) const noexcept {
 				if (isScalar_m && other.isScalar_m) return true;
-				for (int i = NumUnits - 1; i >= 0; i--)
-					if (unitType_m[i] != other.unitType_m[i]) return false;
-				return true;
+				return std::memcmp(&unitType_m, &other.unitType_m, sizeof(unitType_m)) == 0;
+				//for (int i = NumUnits - 1; i >= 0; i--)
+				//	if (unitType_m[i] != other.unitType_m[i]) return false;
+				//return true;
 			};
 			bool IsSameUnit(Unit_ID const& other) const noexcept {
 				return IsSameCategory(other) && (ratio_m == other.ratio_m);
@@ -447,10 +448,27 @@ to maintain a single distribution point for the source code.
 			friend unit_value operator+(unit_value const& A, unit_value const& V) { return Add(A, V); };
 			friend unit_value operator-(unit_value const& A, unit_value const& V) { return Sub(A, V); };
 			unit_value& operator+=(unit_value const& V) { 
-				HandleUnaryArithmetic(*this, V); 
-				unit_value temp = *this; 
-				temp = V; 
-				this->value_m += temp.value_m; 
+				if (this->unit_m.IsSameCategory(V.unit_m)) { // same category, but perhaps different conversion factor. That's OK. 
+					this->value_m += V.value_m;
+				}
+				else if (is_scalar(V)) { // incoming is a scaler and this unit is not. Use this unit's conversion factor.
+					this->value_m += V.GetVisibleValue() * conversion();
+				}
+				else if (is_scalar(*this)) { // I am a scaler but the incoming unit is not. Simply copy the incoming unit entirely.
+					this->value_m += V.value_m;
+				}
+				else { // incoming unit AND this unit are different non-scalers of different categories. No exchange is reasonable. 
+					HandleUnaryArithmetic(*this, V); 
+					unit_value temp = *this; 
+					temp = V; 
+					this->value_m += temp.value_m; 					
+				}
+
+				//HandleUnaryArithmetic(*this, V); 
+				//unit_value temp = *this; 
+				//temp = V; 
+				//this->value_m += temp.value_m; 
+
 				return *this; 
 			};
 			unit_value& operator-=(unit_value const& V) { 

@@ -519,6 +519,33 @@ namespace UWP_WaterWatchLibrary
                 catch (Exception) { }
             }, true, true);
         }
+        public static void CopyToClipboard(StorageFile file)
+        {
+            DataPackage dp = new DataPackage();
+            dp.SetStorageItems(new List<IStorageItem>() { file });
+            EdmsTasks.InsertJob(() => {
+                Clipboard.SetContent(dp);
+            }, true);
+        }
+        public static void CopyToClipboard(Windows.UI.Xaml.Controls.Image r)
+        {
+            var filePath = cweeXamlHelper.UIElementToFile((UIElement)r, (int)r.ActualWidth, (int)r.ActualHeight);
+            filePath.ContinueWith(()=> {
+                string filePathFinal = WaterWatch.GetTemporaryFilePath(".png");
+                StorageFile.GetFileFromPathAsync(filePathFinal).AsTask().ContinueWith((Task<StorageFile> file2) => {
+                    StorageFile.GetFileFromPathAsync(filePath.Result).AsTask().ContinueWith((Task<StorageFile> file) => {
+                        file.Result.CopyAndReplaceAsync(file2.Result).AsTask().ContinueWith((Task t) => {
+                            DataPackage dp = new DataPackage();
+                            dp.SetStorageItems(new List<IStorageItem>() { file2.Result });
+                            EdmsTasks.InsertJob(() => {
+                                Clipboard.SetContent(dp);
+                            }, true);
+                            File.Delete(filePath.Result);
+                        });
+                    });
+                });
+            }, true);
+        }
         public static cweeTask<string> GetTextFromClipboard()
         {
             string toReturn = "";
@@ -1862,12 +1889,22 @@ namespace UWP_WaterWatchLibrary
 
             return true;
         }
+        private static double minTime = System.DateTime.MinValue.ToUnixTimeSeconds();
+        private static double maxTime = System.DateTime.MaxValue.ToUnixTimeSeconds();
         public static DateTime FromUnixTimeSeconds(this DateTime a, double unixTimeStamp)
         {
             // Unix timestamp is seconds past epoch
-            DateTime dateTime = new DateTime(1970, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc);
-            dateTime = dateTime.AddSeconds(unixTimeStamp).ToLocalTime();
-            a = dateTime;
+            if (unixTimeStamp == 0)
+            {
+                a = new DateTime(1970, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc).ToLocalTime();
+            }
+            else if (unixTimeStamp >= minTime && unixTimeStamp <= maxTime) {
+                a = new DateTime(1970, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc).AddSeconds(unixTimeStamp).ToLocalTime();
+            }
+            else {
+                a = new DateTime(1970, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc).ToLocalTime();
+            }
+
             return a;
         }
         public static double ToUnixTimeSeconds(this DateTime a)
@@ -2383,6 +2420,7 @@ namespace UWP_WaterWatchLibrary
             }
             return ev;
         }
+
         internal List<cweeEventHandle> Registrees = new List<cweeEventHandle>();
         internal class cweeEventHandle
         {
@@ -3001,19 +3039,19 @@ namespace UWP_WaterWatchLibrary
                 mainThreadOnly = false;
                 canBeDeferred = true;
             }
-            public cweeTask(cweeAction _todo, bool _mainThreadOnly, bool _canBeDeferred)
+            public cweeTask(cweeAction _todo, bool _mainThreadOnly, bool _canBeDeferred = true)
             {
                 todo = _todo;
                 mainThreadOnly = _mainThreadOnly;
                 canBeDeferred = _canBeDeferred;
             }
-            public cweeTask(Action _todo, bool _mainThreadOnly, bool _canBeDeferred, [System.Runtime.CompilerServices.CallerMemberName] string membername = "", [System.Runtime.CompilerServices.CallerFilePath] string filepath = "", [System.Runtime.CompilerServices.CallerLineNumber] int linenumber = 0)
+            public cweeTask(Action _todo, bool _mainThreadOnly, bool _canBeDeferred = true, [System.Runtime.CompilerServices.CallerMemberName] string membername = "", [System.Runtime.CompilerServices.CallerFilePath] string filepath = "", [System.Runtime.CompilerServices.CallerLineNumber] int linenumber = 0)
             {
                 todo = new cweeAction(_todo, membername, filepath, linenumber);
                 mainThreadOnly = _mainThreadOnly;
                 canBeDeferred = _canBeDeferred;
             }
-            public cweeTask(Func<dynamic> _todo, bool _mainThreadOnly, bool _canBeDeferred, [System.Runtime.CompilerServices.CallerMemberName] string membername = "", [System.Runtime.CompilerServices.CallerFilePath] string filepath = "", [System.Runtime.CompilerServices.CallerLineNumber] int linenumber = 0)
+            public cweeTask(Func<dynamic> _todo, bool _mainThreadOnly, bool _canBeDeferred = true, [System.Runtime.CompilerServices.CallerMemberName] string membername = "", [System.Runtime.CompilerServices.CallerFilePath] string filepath = "", [System.Runtime.CompilerServices.CallerLineNumber] int linenumber = 0)
             {
                 todo = new cweeAction(_todo, membername, filepath, linenumber);
                 mainThreadOnly = _mainThreadOnly;
@@ -4313,12 +4351,13 @@ namespace UWP_WaterWatchLibrary
     {
         internal class CountedActions
         {
-            public int count = 1;
+            public AtomicInt count = new AtomicInt(1);
             public EdmsTasks.cweeAction action = null;
         }
 
         private Mutex mut = new Mutex();
-        private Dictionary<int, CountedActions> _actions = new Dictionary<int, CountedActions>();
+        private System.Collections.Concurrent.ConcurrentDictionary<int, CountedActions> _actions = new System.Collections.Concurrent.ConcurrentDictionary<int, CountedActions>();
+        // private Dictionary<int, CountedActions> _actions = new Dictionary<int, CountedActions>();
         private TimerState _state;
         private double _seconds_interval = 0.017;
 
@@ -4348,33 +4387,32 @@ namespace UWP_WaterWatchLibrary
 
         public void AddAction(Action todo, int key, [System.Runtime.CompilerServices.CallerMemberName] string membername = "", [System.Runtime.CompilerServices.CallerFilePath] string filepath = "", [System.Runtime.CompilerServices.CallerLineNumber] int linenumber = 0)
         {
-            mut.WaitOne();
+            //mut.WaitOne();
             if (_actions.TryGetValue(key, out CountedActions v))
             {
                 v.action = new EdmsTasks.cweeAction(todo, membername, filepath, linenumber);
-                v.count++;
+                v.count.Increment();
             }
             else
             {
-                _actions.TryAdd(key, new CountedActions() { count = 1, action = new EdmsTasks.cweeAction(todo, membername, filepath, linenumber) });
+                _actions.TryAdd(key, new CountedActions() { count = new AtomicInt(1), action = new EdmsTasks.cweeAction(todo, membername, filepath, linenumber) });
             }
-            mut.ReleaseMutex();
+            //mut.ReleaseMutex();
         }
 
         public bool RemoveAction(int key)
         {
             bool toR = false;
-            mut.WaitOne();
+            //mut.WaitOne();
             if (_actions.TryGetValue(key, out CountedActions v))
             {
-                v.count--;
-                if (v.count <= 0)
+                if (v.count.Decrement() == 0)
                 {
-                    _actions.Remove(key);
+                    _actions.TryRemove(key, out CountedActions v2);
                     toR = true;
                 }
             }            
-            mut.ReleaseMutex();
+            //mut.ReleaseMutex();
             return toR;
         }
 
@@ -4395,12 +4433,12 @@ namespace UWP_WaterWatchLibrary
             {
                 if (t.Working.Increment() == 1)
                 {
-                    t.owner.mut.WaitOne();
-                    Dictionary<int, CountedActions> actions = new Dictionary<int, CountedActions>(t.owner._actions);
-                    t.owner.mut.ReleaseMutex();
+                    // t.owner.mut.WaitOne();
+                    // Dictionary<int, CountedActions> actions = new Dictionary<int, CountedActions>(t.owner._actions);
+                    // t.owner.mut.ReleaseMutex();
 
                     List<EdmsTasks.cweeTask> tasks = new List<EdmsTasks.cweeTask>();
-                    foreach (var x in actions)
+                    foreach (var x in t.owner._actions)
                     {
                         tasks.Add(new EdmsTasks.cweeTask(x.Value.action, t._mainThread, true));
                     }
@@ -4669,10 +4707,10 @@ namespace UWP_WaterWatchLibrary
                 }, true);                
             }, true);
         }
-        public static cweeTask<Windows.UI.Xaml.Controls.Image> PixelsToImage(byte[] bytes, int width, int height)
+        public static cweeTask<Windows.UI.Xaml.Controls.Image> PixelsToImage(byte[] bytes, int width, int height, Windows.UI.Xaml.Controls.Image newImage)
         {
             return (EdmsTasks.cweeTask)EdmsTasks.InsertJob(() => {
-                var newImage = new Windows.UI.Xaml.Controls.Image();
+                // var newImage = new Windows.UI.Xaml.Controls.Image();
                 var toReturn = new EdmsTasks.cweeTask(() => { return newImage; }, true, true);
 
                 var t1 = EdmsTasks.InsertJob(() =>
@@ -4699,8 +4737,8 @@ namespace UWP_WaterWatchLibrary
                                             EdmsTasks.InsertJob(() =>
                                             {
                                                 image.Invalidate();
-                                                newImage.Width = width;
-                                                newImage.Height = height;
+                                                if (newImage.Width == double.NaN) newImage.Width = width;
+                                                if (newImage.Height == double.NaN) newImage.Height = height;
                                                 newImage.Source = image;
 
                                                 toReturn.QueueJob();

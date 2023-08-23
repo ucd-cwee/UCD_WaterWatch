@@ -59,88 +59,78 @@ public class ScriptingNode : global::System.IDisposable {
   public ScriptingNode() : this(ConvPINVOKE.new_ScriptingNode(), true) {
   }
 
-  public string text {
-    set {
-      ConvPINVOKE.ScriptingNode_text_set(swigCPtr, value);
-      if (ConvPINVOKE.SWIGPendingException.Pending) throw ConvPINVOKE.SWIGPendingException.Retrieve();
-    } 
-    get {
-      string ret = ConvPINVOKE.ScriptingNode_text_get(swigCPtr);
-      if (ConvPINVOKE.SWIGPendingException.Pending) throw ConvPINVOKE.SWIGPendingException.Retrieve();
-      return ret;
-    } 
+  public string text_get() {
+    string ret = ConvPINVOKE.ScriptingNode_text_get(swigCPtr);
+    return ret;
   }
 
-  public int startLine {
-    set {
-      ConvPINVOKE.ScriptingNode_startLine_set(swigCPtr, value);
-    } 
-    get {
-      int ret = ConvPINVOKE.ScriptingNode_startLine_get(swigCPtr);
-      return ret;
-    } 
+  public int startLine_get() {
+    int ret = ConvPINVOKE.ScriptingNode_startLine_get(swigCPtr);
+    return ret;
   }
 
-  public int startColumn {
-    set {
-      ConvPINVOKE.ScriptingNode_startColumn_set(swigCPtr, value);
-    } 
-    get {
-      int ret = ConvPINVOKE.ScriptingNode_startColumn_get(swigCPtr);
-      return ret;
-    } 
+  public int startColumn_get() {
+    int ret = ConvPINVOKE.ScriptingNode_startColumn_get(swigCPtr);
+    return ret;
   }
 
-  public int endLine {
-    set {
-      ConvPINVOKE.ScriptingNode_endLine_set(swigCPtr, value);
-    } 
-    get {
-      int ret = ConvPINVOKE.ScriptingNode_endLine_get(swigCPtr);
-      return ret;
-    } 
+  public int endLine_get() {
+    int ret = ConvPINVOKE.ScriptingNode_endLine_get(swigCPtr);
+    return ret;
   }
 
-  public int endColumn {
-    set {
-      ConvPINVOKE.ScriptingNode_endColumn_set(swigCPtr, value);
-    } 
-    get {
-      int ret = ConvPINVOKE.ScriptingNode_endColumn_get(swigCPtr);
-      return ret;
-    } 
+  public int endColumn_get() {
+    int ret = ConvPINVOKE.ScriptingNode_endColumn_get(swigCPtr);
+    return ret;
   }
 
-  public WaterWatchEnums.ScriptNodeType type {
-    set {
-      ConvPINVOKE.ScriptingNode_type_set(swigCPtr, (int)value);
-    } 
-    get {
-      WaterWatchEnums.ScriptNodeType ret = (WaterWatchEnums.ScriptNodeType)ConvPINVOKE.ScriptingNode_type_get(swigCPtr);
-      return ret;
-    } 
+  public WaterWatchEnums.ScriptNodeType type_get() {
+    WaterWatchEnums.ScriptNodeType ret = (WaterWatchEnums.ScriptNodeType)ConvPINVOKE.ScriptingNode_type_get(swigCPtr);
+    return ret;
   }
 
-  public string typeHint {
-    set {
-      ConvPINVOKE.ScriptingNode_typeHint_set(swigCPtr, value);
-      if (ConvPINVOKE.SWIGPendingException.Pending) throw ConvPINVOKE.SWIGPendingException.Retrieve();
-    } 
-    get {
-      string ret = ConvPINVOKE.ScriptingNode_typeHint_get(swigCPtr);
-      if (ConvPINVOKE.SWIGPendingException.Pending) throw ConvPINVOKE.SWIGPendingException.Retrieve();
-      return ret;
-    } 
+  public string typeHint_get() {
+    string ret = ConvPINVOKE.ScriptingNode_typeHint_get(swigCPtr);
+    return ret;
   }
 
-  public int depth {
-    set {
-      ConvPINVOKE.ScriptingNode_depth_set(swigCPtr, value);
-    } 
-    get {
-      int ret = ConvPINVOKE.ScriptingNode_depth_get(swigCPtr);
-      return ret;
-    } 
+  public int depth_get() {
+    int ret = ConvPINVOKE.ScriptingNode_depth_get(swigCPtr);
+    return ret;
+  }
+
+  public void text_set(string s) {
+    ConvPINVOKE.ScriptingNode_text_set(swigCPtr, s);
+    if (ConvPINVOKE.SWIGPendingException.Pending) throw ConvPINVOKE.SWIGPendingException.Retrieve();
+  }
+
+  public void startLine_set(int s) {
+    ConvPINVOKE.ScriptingNode_startLine_set(swigCPtr, s);
+  }
+
+  public void startColumn_set(int s) {
+    ConvPINVOKE.ScriptingNode_startColumn_set(swigCPtr, s);
+  }
+
+  public void endLine_set(int s) {
+    ConvPINVOKE.ScriptingNode_endLine_set(swigCPtr, s);
+  }
+
+  public void endColumn_set(int s) {
+    ConvPINVOKE.ScriptingNode_endColumn_set(swigCPtr, s);
+  }
+
+  public void type_set(WaterWatchEnums.ScriptNodeType s) {
+    ConvPINVOKE.ScriptingNode_type_set(swigCPtr, (int)s);
+  }
+
+  public void typeHint_set(string s) {
+    ConvPINVOKE.ScriptingNode_typeHint_set(swigCPtr, s);
+    if (ConvPINVOKE.SWIGPendingException.Pending) throw ConvPINVOKE.SWIGPendingException.Retrieve();
+  }
+
+  public void depth_set(int s) {
+    ConvPINVOKE.ScriptingNode_depth_set(swigCPtr, s);
   }
 
 }

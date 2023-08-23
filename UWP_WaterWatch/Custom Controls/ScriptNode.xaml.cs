@@ -98,6 +98,13 @@ namespace UWP_WaterWatch.Custom_Controls
 
             return EdmsTasks.InsertJob(() => { return (List<string>)vm.ParentVM?.engine?.DoScript_Cast_VectorStrings(script); }, false, true);
         }
+        public cweeTask<List<float>> CustomizableQueryResult_Cast_VectorFloat(string script, string replaceWithVariable, string additionalParams = "")
+        {
+            script = script.Replace(replaceWithVariable, $"{BasicCall}" + additionalParams);
+
+            return EdmsTasks.InsertJob(() => { return (List<float>)vm.ParentVM?.engine?.DoScript_Cast_VectorFloats(script); }, false, true);
+        }
+
         public (ScriptEngine, string) AccessDirectly() {
             return (vm.ParentVM?.engine, $"{BasicCall}");
         }

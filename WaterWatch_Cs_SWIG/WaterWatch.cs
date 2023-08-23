@@ -86,6 +86,12 @@ public class WaterWatch : global::System.IDisposable {
     if (ConvPINVOKE.SWIGPendingException.Pending) throw ConvPINVOKE.SWIGPendingException.Retrieve();
   }
 
+  public static string GetTemporaryFilePath(string extension) {
+    string ret = ConvPINVOKE.WaterWatch_GetTemporaryFilePath(extension);
+    if (ConvPINVOKE.SWIGPendingException.Pending) throw ConvPINVOKE.SWIGPendingException.Retrieve();
+    return ret;
+  }
+
   public static pair_double_double GeocodeAddress(string address) {
     pair_double_double ret = new pair_double_double(ConvPINVOKE.WaterWatch_GeocodeAddress__SWIG_0(address), true);
     if (ConvPINVOKE.SWIGPendingException.Pending) throw ConvPINVOKE.SWIGPendingException.Retrieve();
@@ -171,6 +177,12 @@ public class WaterWatch : global::System.IDisposable {
 
   public static Awaiter DoScript(string command) {
     Awaiter ret = new Awaiter(ConvPINVOKE.WaterWatch_DoScript(command), true);
+    if (ConvPINVOKE.SWIGPendingException.Pending) throw ConvPINVOKE.SWIGPendingException.Retrieve();
+    return ret;
+  }
+
+  public static string DoScriptImmediately(string command) {
+    string ret = ConvPINVOKE.WaterWatch_DoScriptImmediately(command);
     if (ConvPINVOKE.SWIGPendingException.Pending) throw ConvPINVOKE.SWIGPendingException.Retrieve();
     return ret;
   }

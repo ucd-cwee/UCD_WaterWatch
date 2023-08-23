@@ -27,6 +27,7 @@ to maintain a single distribution point for the source code.
 #include "cweeUnitPattern.h"
 #include "ExternData.h"
 #include "AlgLibWrapper.h"
+#include "odbc.h"
 
 namespace chaiscript {
     namespace WaterWatch_Lib {
@@ -173,6 +174,7 @@ namespace chaiscript {
                 lib->add(chaiscript::fun([](cweeUnitPattern& a, const unit_value& b, const unit_value& c) { return a.AddValue(b, c); }), "AddValue");
                 lib->add(chaiscript::fun([](cweeUnitPattern& a, const unit_value& b, const unit_value& c) { return a.AddUniqueValue(b, c); }), "AddUniqueValue");
                 lib->add(chaiscript::fun([](cweeUnitPattern& a) { a.Clear(); }), "Clear");
+                lib->add(chaiscript::fun([](cweeUnitPattern& a) { a.ClearData(); }), "ClearData");
                 lib->add(chaiscript::fun([](cweeUnitPattern& a, const unit_value& b) { return a.GetCurrentValue(b); }), "GetCurrentValue");
                 lib->add(chaiscript::fun([](cweeUnitPattern& a, const unit_value& b) { return a.GetCurrentFirstDerivative(b); }), "GetCurrentFirstDerivative");
                 lib->add(chaiscript::fun([](cweeUnitPattern& a, const unit_value& b) { return a.GetCurrentSecondDerivative(b); }), "GetCurrentSecondDerivative");
@@ -188,7 +190,7 @@ namespace chaiscript {
                 lib->add(chaiscript::fun([](cweeUnitPattern& a, const unit_value& b) { a.ShiftTime(b); return a; }), "ShiftTime");
                 lib->add(chaiscript::fun([](cweeUnitPattern& a, const unit_value& b) { a.Translate(b); return a; }), "Translate");
 
-                lib->add(chaiscript::fun([](cweeUnitPattern& a) { a.RemoveUnnecessaryKnots(); }), "RemoveUnnecessaryKnots");
+                lib->add(chaiscript::fun([](cweeUnitPattern& a)->cweeUnitPattern& { a.RemoveUnnecessaryKnots(); return a; }), "RemoveUnnecessaryKnots");
                 lib->add(chaiscript::fun([](cweeUnitPattern& a, const unit_value& min, const unit_value& max) { a.ClampValues(min, max); }), "ClampValues");
 
                 lib->AddFunction(, GetValueQuantiles, ->std::vector<chaiscript::Boxed_Value>, SINGLE_ARG(
@@ -270,46 +272,35 @@ namespace chaiscript {
                 lib->add(chaiscript::fun([](const cweeUnitPattern& a) { 
                     return (((a - a.GetAvgValue()).pow(2.0)).GetAvgValue()).pow(0.5);
                 }), "StdDev");
-                AUTO blur_pattern = [](cweeUnitPattern a, const cweeUnitValues::unit_value& scale){
-                    AUTO out = cweeUnitPattern(a);
-                    AUTO num = 1;
-
-                    AUTO t = scale / -2.0;
-                    for (; t <= scale / 2.0; t += scale / 100.0) {
-                        ++num;
+                AUTO blur_pattern = [](cweeUnitPattern const& a, cweeUnitValues::unit_value desiredNumValues){
+                    AUTO width = a.GetMaxTime() - a.GetMinTime();                    
+                    if (width() <= 0 || desiredNumValues() <= 0) {
+                        return cweeUnitPattern(a);
                     }
+                    AUTO out = cweeUnitPattern();
 
-                    auto pat = cweeUnitPattern(a) / num;
-                    out /= num;
-
-                    t = scale / -2.0;
-                    pat.ShiftTime(t);
-                    for (; t <= scale / 2.0; t += scale / 100.0) {
-                        out += pat;
-                        pat.ShiftTime(scale / 100.0);
-                    }
-                    if (num >= 1) {
-                        out /= num;
-                    }
-
-                    // Remove the values outside the valid range
-                    out.RemoveTimes(-std::numeric_limits<double>::max(), a.GetMinTime() - 0.0001);
-                    out.RemoveTimes(a.GetMaxTime() + 0.0001, std::numeric_limits<double>::max());
+                    AUTO scale = width / desiredNumValues;
+                    
+                    out.AddValue(a.GetMinTime(), a.GetCurrentValue(a.GetMinTime()));
+                    for (auto time = a.GetMinTime(); time < a.GetMaxTime(); time += scale) 
+                        out.AddValue(time + scale / 2.0, a.GetAvgValue(time, time + scale));                    
+                    out.AddValue(a.GetMaxTime(), a.GetCurrentValue(a.GetMaxTime()));
                     out.RemoveUnnecessaryKnots();
+                    
 
-                    // Correct the avg/integral
-                    {
-                        AUTO t1 = a.RombergIntegral();
-                        AUTO t2 = out.RombergIntegral();
+                    { // Correct the avg/integral
+                        AUTO t1 = a.RombergIntegral(a.GetMinTime(), a.GetMaxTime());
+                        AUTO t2 = out.RombergIntegral(a.GetMinTime(), a.GetMaxTime());
                         if (t2 != 0) {
                             out *= t1 / t2;
                         }
                     }
+
                     return out;
                 };
                 
                 lib->add(chaiscript::fun([=](const cweeUnitPattern& a) {
-                    AUTO pat = blur_pattern(a, a.GetMinimumTimeStep() * 4.0);
+                    AUTO pat = blur_pattern(a, (a.GetNumValues() / 32) + 1);
                     pat.RemoveUnnecessaryKnots();
                     return pat;
                 }), "Blur");
@@ -332,6 +323,33 @@ namespace chaiscript {
                     out = a;
                     return out;
                 }), "Cast");
+
+                lib->add(chaiscript::fun([](cweeUnitPattern& a, cweeList<cweeList<cweeStr>> const& data, int TimeColumn, int ValueColumn) {
+                    unit_value X_type = a.X_Type();
+                    unit_value Y_type= a.Y_Type();
+
+                    for (auto& row : data) {
+                        X_type = row[TimeColumn].ReturnNumeric();
+                        Y_type = row[ValueColumn].ReturnNumeric();
+                        a.AddUniqueValue(X_type, Y_type);
+                    }
+
+                    return a;
+                }), "AppendFromSQL");
+
+                lib->add(chaiscript::fun([](cweeUnitPattern& a, nanodbcResult& con, int TimeColumn, int ValueColumn) {
+                    unit_value X_type = a.X_Type();
+                    unit_value Y_type = a.Y_Type();
+
+                    cweeList<double> row;
+                    while (odbc->GetNextRow(con, row)) {
+                        X_type = row[TimeColumn];
+                        Y_type = row[ValueColumn];
+                        a.AddUniqueValue(X_type, Y_type);
+                    }
+
+                    return a;
+                }), "AppendFromSQL");
             }
 
             // Sparse Matrix

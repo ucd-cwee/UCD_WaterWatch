@@ -336,8 +336,15 @@ namespace chaiscript {
             m_engine.add(fun([this](const dispatch::Proxy_Function_Base& t_fun, const chaiscript::small_vector<Boxed_Value>& t_params) -> Boxed_Value {
                 Type_Conversions_State s(this->m_engine.conversions(), this->m_engine.conversions().conversion_saves());
                 return t_fun(Function_Params{ t_params }, s);
-                }),
-                "call");
+            }), "call");
+
+            m_engine.add(fun([this](const chaiscript::small_vector<Boxed_Value>& t_params) -> Boxed_Value {
+                if (t_params.size() < 1) {
+                    throw chaiscript::exception::arithmetic_error("Can not call a vector with no parameters.");
+                }
+                auto* t_fun = this->boxed_cast<const dispatch::Proxy_Function_Base*>(t_params[0]);
+                return t_fun->operator()(Function_Params{ &t_params.front() + 1, &t_params.front() + t_params.size() }, Type_Conversions_State(this->m_engine.conversions(), this->m_engine.conversions().conversion_saves()));
+             }), "call_vector");
 
             m_engine.AddFunction(this, name, , return m_engine.get_type_name(t_ti); , const Type_Info& t_ti);
             m_engine.AddFunction(this, to_string, , return m_engine.get_type_name(t_ti);, const Type_Info& t_ti);

@@ -348,6 +348,9 @@ class ConvPINVOKE {
   [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_SharedTimeSeriesPattern_GetValue")]
   public static extern float SharedTimeSeriesPattern_GetValue(global::System.Runtime.InteropServices.HandleRef jarg1, double jarg2);
 
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_SharedTimeSeriesPattern_GetAvgValue")]
+  public static extern float SharedTimeSeriesPattern_GetAvgValue(global::System.Runtime.InteropServices.HandleRef jarg1, double jarg2, double jarg3);
+
   [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_SharedTimeSeriesPattern_GetTimeSeries")]
   public static extern global::System.IntPtr SharedTimeSeriesPattern_GetTimeSeries(global::System.Runtime.InteropServices.HandleRef jarg1);
 
@@ -359,6 +362,9 @@ class ConvPINVOKE {
 
   [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_SharedTimeSeriesPattern_GetNumValues")]
   public static extern int SharedTimeSeriesPattern_GetNumValues(global::System.Runtime.InteropServices.HandleRef jarg1);
+
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_SharedTimeSeriesPattern_GetInterpolationType")]
+  public static extern int SharedTimeSeriesPattern_GetInterpolationType(global::System.Runtime.InteropServices.HandleRef jarg1);
 
   [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_SharedTimeSeriesPattern_X_Units")]
   public static extern string SharedTimeSeriesPattern_X_Units(global::System.Runtime.InteropServices.HandleRef jarg1);
@@ -402,53 +408,53 @@ class ConvPINVOKE {
   [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_delete_ScriptingNode")]
   public static extern void delete_ScriptingNode(global::System.Runtime.InteropServices.HandleRef jarg1);
 
-  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_ScriptingNode_text_set")]
-  public static extern void ScriptingNode_text_set(global::System.Runtime.InteropServices.HandleRef jarg1, string jarg2);
-
   [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_ScriptingNode_text_get")]
   public static extern string ScriptingNode_text_get(global::System.Runtime.InteropServices.HandleRef jarg1);
-
-  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_ScriptingNode_startLine_set")]
-  public static extern void ScriptingNode_startLine_set(global::System.Runtime.InteropServices.HandleRef jarg1, int jarg2);
 
   [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_ScriptingNode_startLine_get")]
   public static extern int ScriptingNode_startLine_get(global::System.Runtime.InteropServices.HandleRef jarg1);
 
-  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_ScriptingNode_startColumn_set")]
-  public static extern void ScriptingNode_startColumn_set(global::System.Runtime.InteropServices.HandleRef jarg1, int jarg2);
-
   [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_ScriptingNode_startColumn_get")]
   public static extern int ScriptingNode_startColumn_get(global::System.Runtime.InteropServices.HandleRef jarg1);
-
-  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_ScriptingNode_endLine_set")]
-  public static extern void ScriptingNode_endLine_set(global::System.Runtime.InteropServices.HandleRef jarg1, int jarg2);
 
   [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_ScriptingNode_endLine_get")]
   public static extern int ScriptingNode_endLine_get(global::System.Runtime.InteropServices.HandleRef jarg1);
 
-  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_ScriptingNode_endColumn_set")]
-  public static extern void ScriptingNode_endColumn_set(global::System.Runtime.InteropServices.HandleRef jarg1, int jarg2);
-
   [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_ScriptingNode_endColumn_get")]
   public static extern int ScriptingNode_endColumn_get(global::System.Runtime.InteropServices.HandleRef jarg1);
-
-  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_ScriptingNode_type_set")]
-  public static extern void ScriptingNode_type_set(global::System.Runtime.InteropServices.HandleRef jarg1, int jarg2);
 
   [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_ScriptingNode_type_get")]
   public static extern int ScriptingNode_type_get(global::System.Runtime.InteropServices.HandleRef jarg1);
 
-  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_ScriptingNode_typeHint_set")]
-  public static extern void ScriptingNode_typeHint_set(global::System.Runtime.InteropServices.HandleRef jarg1, string jarg2);
-
   [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_ScriptingNode_typeHint_get")]
   public static extern string ScriptingNode_typeHint_get(global::System.Runtime.InteropServices.HandleRef jarg1);
 
-  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_ScriptingNode_depth_set")]
-  public static extern void ScriptingNode_depth_set(global::System.Runtime.InteropServices.HandleRef jarg1, int jarg2);
-
   [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_ScriptingNode_depth_get")]
   public static extern int ScriptingNode_depth_get(global::System.Runtime.InteropServices.HandleRef jarg1);
+
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_ScriptingNode_text_set")]
+  public static extern void ScriptingNode_text_set(global::System.Runtime.InteropServices.HandleRef jarg1, string jarg2);
+
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_ScriptingNode_startLine_set")]
+  public static extern void ScriptingNode_startLine_set(global::System.Runtime.InteropServices.HandleRef jarg1, int jarg2);
+
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_ScriptingNode_startColumn_set")]
+  public static extern void ScriptingNode_startColumn_set(global::System.Runtime.InteropServices.HandleRef jarg1, int jarg2);
+
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_ScriptingNode_endLine_set")]
+  public static extern void ScriptingNode_endLine_set(global::System.Runtime.InteropServices.HandleRef jarg1, int jarg2);
+
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_ScriptingNode_endColumn_set")]
+  public static extern void ScriptingNode_endColumn_set(global::System.Runtime.InteropServices.HandleRef jarg1, int jarg2);
+
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_ScriptingNode_type_set")]
+  public static extern void ScriptingNode_type_set(global::System.Runtime.InteropServices.HandleRef jarg1, int jarg2);
+
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_ScriptingNode_typeHint_set")]
+  public static extern void ScriptingNode_typeHint_set(global::System.Runtime.InteropServices.HandleRef jarg1, string jarg2);
+
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_ScriptingNode_depth_set")]
+  public static extern void ScriptingNode_depth_set(global::System.Runtime.InteropServices.HandleRef jarg1, int jarg2);
 
   [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_new_Color_Interop__SWIG_0")]
   public static extern global::System.IntPtr new_Color_Interop__SWIG_0();
@@ -663,6 +669,9 @@ class ConvPINVOKE {
   [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_ScriptEngine_DoScript_Cast_VectorStrings")]
   public static extern global::System.IntPtr ScriptEngine_DoScript_Cast_VectorStrings(global::System.Runtime.InteropServices.HandleRef jarg1, string jarg2);
 
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_ScriptEngine_DoScript_Cast_VectorFloats")]
+  public static extern global::System.IntPtr ScriptEngine_DoScript_Cast_VectorFloats(global::System.Runtime.InteropServices.HandleRef jarg1, string jarg2);
+
   [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_ScriptEngine_DoScript")]
   public static extern string ScriptEngine_DoScript(global::System.Runtime.InteropServices.HandleRef jarg1, string jarg2);
 
@@ -699,6 +708,9 @@ class ConvPINVOKE {
   [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_ScriptEngine_Cast_MapLayer")]
   public static extern global::System.IntPtr ScriptEngine_Cast_MapLayer(global::System.Runtime.InteropServices.HandleRef jarg1, string jarg2);
 
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_ScriptEngine_Cast_VectorFloats")]
+  public static extern global::System.IntPtr ScriptEngine_Cast_VectorFloats(global::System.Runtime.InteropServices.HandleRef jarg1, string jarg2);
+
   [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_WaterWatch_SubmitToast")]
   public static extern void WaterWatch_SubmitToast(string jarg1, string jarg2);
 
@@ -716,6 +728,9 @@ class ConvPINVOKE {
 
   [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_WaterWatch_SetDataDirectory")]
   public static extern void WaterWatch_SetDataDirectory(string jarg1);
+
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_WaterWatch_GetTemporaryFilePath")]
+  public static extern string WaterWatch_GetTemporaryFilePath(string jarg1);
 
   [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_WaterWatch_GeocodeAddress__SWIG_0")]
   public static extern global::System.IntPtr WaterWatch_GeocodeAddress__SWIG_0(string jarg1);
@@ -767,6 +782,9 @@ class ConvPINVOKE {
 
   [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_WaterWatch_DoScript")]
   public static extern global::System.IntPtr WaterWatch_DoScript(string jarg1);
+
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_WaterWatch_DoScriptImmediately")]
+  public static extern string WaterWatch_DoScriptImmediately(string jarg1);
 
   [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_WaterWatch_AddToLog")]
   public static extern void WaterWatch_AddToLog(string jarg1, string jarg2);

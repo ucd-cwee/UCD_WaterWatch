@@ -1746,21 +1746,27 @@ namespace chaiscript {
                 }
             }
 
-            static void save_function_params(Stack_Holder& t_s, const Function_Params& t_params) {
+            static void save_function_params(Stack_Holder& t_s, const Function_Params& t_params) {      
                 AUTO P = &t_s;
+                AUTO end = t_params.end();
+                for (AUTO param = t_params.begin(); param != end; param++) {
+                    t_s.call_params.back().insert(
+                        t_s.call_params.back().begin(),
+                        *param
+                    );
+                }
 
-                AUTO a = t_params.begin();
-                AUTO b = t_params.end();
-                AUTO alpha = &P->call_params;
-
-                AUTO a1 = alpha->back();
-                AUTO a2 = alpha->back();
-
-                a1.insert(
-                    a2.begin(),
-                    a,
-                    b
-                );
+                //AUTO P = &t_s;
+                //AUTO a = t_params.begin();
+                //AUTO b = t_params.end();
+                //AUTO alpha = &P->call_params;
+                //AUTO a1 = alpha->back();
+                //AUTO a2 = alpha->back();
+                //a1.insert(
+                //    a2.begin(),
+                //    a,
+                //    b
+                //);
             }
 
             void save_function_params(chaiscript::small_vector<Boxed_Value>&& t_params) { save_function_params(*m_stack_holder, std::move(t_params)); }

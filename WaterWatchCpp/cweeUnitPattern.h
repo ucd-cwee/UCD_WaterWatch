@@ -45,6 +45,15 @@ namespace cweeUnitValues {
 				DataContainer(unit_value x) : X(x), Y(nullptr) {};
 				DataContainer(unit_value x, unit_value y) : X(x), Y(y) {};
 
+				DataContainer(DataContainer const& other) : X(other.X), Y(other.Y) {};
+				DataContainer(DataContainer&& other) : X(std::forward<decltype(X)>(other.X)), Y(std::forward<decltype(Y)>(other.Y)) {};
+
+				DataContainer& operator=(DataContainer const& other) {
+					this->X = other.X;
+					this->Y = other.Y;
+					return *this;
+				};
+
 				unit_value X;
 				cweeSharedPtr<unit_value> Y;
 			};
@@ -54,6 +63,7 @@ namespace cweeUnitValues {
 			GenericIterator() : thisContainer() {};
 			virtual ~GenericIterator() {};
 			virtual void begin(cweeUnitPatternContainer_t const* ref) = 0;
+			virtual void begin_at(cweeUnitPatternContainer_t const* ref, unit_value x) = 0;
 			virtual void next(cweeUnitPatternContainer_t const* ref) = 0;
 			virtual void end(cweeUnitPatternContainer_t const* ref) = 0;
 			virtual DataContainer& get(cweeUnitPatternContainer_t const* ref) = 0;
@@ -97,7 +107,8 @@ namespace cweeUnitValues {
 			pointer operator->() { return const_cast<pointer>(&state->get(ref)); };																	
 			const_reference operator*() const { return state->cget(ref); };																			
 			const_pointer operator->() const { return &state->cget(ref); };																			
-			iterator& begin() { if (state) state->begin(ref); return *this; };		
+			iterator& begin() { if (state) state->begin(ref); return *this; };
+			iterator& begin_at(unit_value x) { if (state) state->begin_at(ref, x); return *this; };
 			iterator& end() { if (state) state->end(ref); return *this; };
 		};				
 		class const_iterator : public std::iterator<std::random_access_iterator_tag, value_type, difference_type, const_pointer, const_reference> {
@@ -111,22 +122,26 @@ namespace cweeUnitValues {
 			difference_type operator-(const_iterator const& other) { if (state) return state->distance(other.state); return 0; };
 			const_iterator& operator-(difference_type dist) { for (int i = 0; i < dist; i++) if (state) state->prev(ref); return *this; };
 			const_iterator& operator--() { if (state) state->prev(ref); return *this; };
-			const_iterator operator--(int) { const_iterator retval = *this; --(*this); return retval; };
+			const_iterator operator--(int) { const_iterator retval = *this; --(retval); return retval; };
 			const_iterator& operator+(difference_type dist) { for (int i = 0; i < dist; i++) if (state) state->next(ref); return *this; };
 			const_iterator& operator++() { if (state) state->next(ref); return *this; };
-			const_iterator operator++(int) { const_iterator retval = *this; ++(*this); return retval; };
+			const_iterator operator++(int) { const_iterator retval = *this; ++(retval); return retval; };
 			bool operator==(const_iterator const& other) const { return !(operator!=(other)); };
 			bool operator!=(const_iterator const& other) const { if (state) return (ref != other.ref || state->cmp(other.state)); return false; };
 			const_reference operator*() const { return state->cget(ref); };
 			const_pointer operator->() const { return &state->cget(ref); };
 			const_iterator& begin() { if (state) state->begin(ref); return *this; };
+			const_iterator& begin_at(unit_value x) { if (state) state->begin_at(ref, x); return *this; };
 			const_iterator& end() { if (state) state->end(ref); return *this; };
 		};
-		iterator begin() { return iterator(this, this->CreateIterationState()).begin(); };																						
+		iterator begin() { return iterator(this, this->CreateIterationState()).begin(); };		
+		iterator begin_at(unit_value x) { return iterator(this, this->CreateIterationState()).begin_at(x); };
 		iterator end() { return iterator(this, this->CreateIterationState()).end(); };
 		const_iterator begin() const { return const_iterator(this, this->CreateIterationState()).begin(); };
+		const_iterator begin_at(unit_value x) const { return const_iterator(this, this->CreateIterationState()).begin_at(x); };
 		const_iterator end() const { return const_iterator(this, this->CreateIterationState()).end(); };
 		const_iterator cbegin() const { return const_iterator(this, this->CreateIterationState()).begin(); };
+		const_iterator cbegin_at(unit_value x) const { return const_iterator(this, this->CreateIterationState()).begin_at(x); };
 		const_iterator cend() const { return const_iterator(this, this->CreateIterationState()).end(); };
 
 	protected:
@@ -276,24 +291,44 @@ namespace cweeUnitValues {
 			~SpecializedIterator() {};
 
 			decltype(container)::const_iterator iter;
+			decltype(container)::const_iterator iter_end;
+			mutable unit_value x_type;
+			mutable unit_value y_type;
 
 			void begin(cweeUnitPatternContainer_t const* ref) {
 				auto* p = dynamic_cast<cweeUnitPatternContainer const*>(ref);
 				if (p) {
 					iter = p->container.begin();
+					iter_end = p->container.end();
+
+					x_type = p->internal_X_type;
+					y_type = p->internal_Y_type;
+				}
+			};
+			void begin_at(cweeUnitPatternContainer_t const* ref, unit_value x) {
+				auto* p = dynamic_cast<cweeUnitPatternContainer const*>(ref);
+				if (p) {
+					iter = p->container.begin_at(x());
+					iter_end = p->container.end();
+
+					x_type = p->internal_X_type;
+					y_type = p->internal_Y_type;
 				}
 			};
 			void next(cweeUnitPatternContainer_t const* ref) {
-				auto* p = dynamic_cast<cweeUnitPatternContainer const*>(ref);
-				if (p) {
-					iter++;
-					while (iter != p->container.end() && !iter->object) iter++;					
-				}
+				//auto* p = dynamic_cast<cweeUnitPatternContainer const*>(ref);
+				//if (p) {
+					++iter;
+					//while (iter != iter_end && !iter->object) {
+					//	++iter;
+					//}
+				//}
 			};
 			void end(cweeUnitPatternContainer_t const* ref) {
 				auto* p = dynamic_cast<cweeUnitPatternContainer const*>(ref);
 				if (p) {
 					iter = p->container.end();
+					iter_end = p->container.end();
 				}
 			};
 			DataContainer& get(cweeUnitPatternContainer_t const* ref) {
@@ -347,36 +382,50 @@ namespace cweeUnitValues {
 				return *thisContainer;
 			};
 			const DataContainer& cget(cweeUnitPatternContainer_t const* ref) const  {
-				auto* p = const_cast<cweeUnitPatternContainer*>(dynamic_cast<cweeUnitPatternContainer const*>(ref));
-				if (p) {
-					cweeUnitValues::unit_value x_0 = (p->internal_X_type = iter->key), y_0;
+				//auto* p = const_cast<cweeUnitPatternContainer*>(dynamic_cast<cweeUnitPatternContainer const*>(ref));
+				//if (p) {
 					if (thisContainer) {
-						thisContainer->X = x_0;
-						if (iter->object) {
-							y_0 = (p->internal_Y_type = *iter->object);
-							if (thisContainer->Y) {
-								*thisContainer->Y = y_0;
-							}
-							else {
-								thisContainer->Y = make_cwee_shared<unit_value>(y_0);
-							}
+						auto& x = thisContainer->X;
+						auto& y = thisContainer->Y;
+
+						if (unit_value::IdenticalUnits(x, x_type)) {
+							x.value_m = iter->key;
 						}
 						else {
-							thisContainer->Y = nullptr;
+							x = (x_type = iter->key);
+						}
+						
+						if (iter->object) {
+							y = make_cwee_shared<unit_value>(y_type = *iter->object);
+
+							//if (y) {	
+							//	auto& z = *y;
+							//	if (unit_value::IdenticalUnits(z, y_type)) {
+							//		z = *iter->object;
+							//	}
+							//	else {
+							//		z = (y_type = *iter->object);
+							//	}
+							//}
+							//else {
+							//	y = make_cwee_shared<unit_value>(y_type = *iter->object);
+							//}
+						}
+						else {
+							y = nullptr;
 						}
 					}
 					else {
 						DataContainer* new_ptr;
 						if (iter->object) {
-							y_0 = (p->internal_Y_type = *iter->object);
-							new_ptr = new DataContainer(x_0, y_0);
+							new_ptr = new DataContainer((x_type = iter->key), (y_type = *iter->object));
 						}
 						else {
-							new_ptr = new DataContainer(x_0);
+							new_ptr = new DataContainer((x_type = iter->key));
 						}
 						const_cast<cweeSharedPtr<DataContainer>&>(thisContainer) = cweeSharedPtr< DataContainer >(new_ptr);
 					}
-				}
+				//}
 				return *thisContainer;
 			};
 			bool cmp(const cweeSharedPtr<GenericIterator>& s) const {
@@ -398,8 +447,8 @@ namespace cweeUnitValues {
 			void prev(const cweeUnitPatternContainer_t* ref) {
 				auto* p = dynamic_cast<cweeUnitPatternContainer const*>(ref);
 				if (p) {
-					iter--;
-					while (iter != (p->container.begin()--) && !iter->object) iter--;
+					--iter;
+					while (iter != (p->container.begin()--) && !iter->object) --iter;
 				}
 			};
 			const DataContainer& get(const cweeUnitPatternContainer_t* ref) const {
@@ -456,7 +505,6 @@ namespace cweeUnitValues {
 		virtual cweeSharedPtr<GenericIterator> CreateIterationState() const {
 			return make_cwee_shared<SpecializedIterator>().CastReference<GenericIterator>();
 		};
-
 	public:
 		cweeSharedPtr< cweeUnitPatternContainer_t> Clone() {
 			cweeSharedPtr< cweeUnitPatternContainer> out = make_cwee_shared<cweeUnitPatternContainer>(*this);
@@ -967,9 +1015,13 @@ namespace cweeUnitValues {
 				if (p) {
 					pos = 0;
 					numVars = p->ref->GetNumValues();
-
-
-					// knots = p->ref->UnsafeGetKnotSeries();
+				}
+			};
+			void begin_at(cweeUnitPatternContainer_t const* ref, unit_value x) {
+				auto* p = dynamic_cast<cweeBalancedPatternReferenceContainer const*>(ref);
+				if (p) {
+					pos = 0;
+					numVars = p->ref->GetNumValues();
 				}
 			};
 			void next(cweeUnitPatternContainer_t const* ref) {
@@ -1178,9 +1230,13 @@ namespace cweeUnitValues {
 				if (p) {
 					pos = 0;
 					numVars = p->ref->GetNumValues();
-
-
-					// knots = p->ref->UnsafeGetKnotSeries();
+				}
+			};
+			void begin_at(cweeUnitPatternContainer_t const* ref, unit_value x) {
+				auto* p = dynamic_cast<cweeBalancedPatternReferencePartialContainer const*>(ref);
+				if (p) {
+					pos = 0;
+					numVars = p->ref->GetNumValues();
 				}
 			};
 			void next(cweeUnitPatternContainer_t const* ref) {
@@ -1848,12 +1904,12 @@ namespace cweeUnitValues {
 		/*! Request an integration of the time series. The timefactor determines the resulting time component. I.e. A pattern of kilowatt_t and a time factor of hour_t will return a kilowatt_hour_t. */
 		AUTO												RombergIntegral(unit_value t0, unit_value t1) const {
 			using node_type = cweeBalancedTree<double, double, 10>::cweeBalancedTreeNode;
-			unit_value step, sum, t, stepDiv2, maxT;
+			unit_value step, t, stepDiv2, maxT;
+			unit_value sum;
 
 			{
 				AUTO g = lock.Guard();
-				sum = container->internal_X_type * container->internal_Y_type;
-				sum = 0;
+				sum = ((container->internal_X_type * container->internal_Y_type) = 0);
 
 				step = container->internal_X_type;
 
@@ -1872,30 +1928,18 @@ namespace cweeUnitValues {
 					step = this->GetMinimumTimeStep();
 					unit_value minGot = t1, maxGot = t1;
 					if (true) {
-#if 0
-						auto data = GetKnotSeries(t0, t1);
-						AUTO Guard = this->lock.Guard();
-						if (Guard) {
-							if (data.Num() > 1) {
-								minGot = data[0].first;
-								maxGot = data[data.Num() - 1].first;
 
-								for (int i = 0; i < (data.Num() - 1); i++) {
-									const auto& left = data[i];
-									const auto& right = data[i + 1];
-
-									sum += (container->internal_Y_type = ((right.second + left.second) * 0.5)) * (container->internal_X_type = (right.first - left.first));
-								}
-							}
-						}
-#else
-						cweeUnitValues::cweeUnitPatternContainer_t::IterType prevValue;
-						for (auto& dataPair : const_cast<const cweeUnitPatternContainer_t&>(*this->container)) {
+						cweeUnitValues::cweeUnitPatternContainer_t::IterType prevValue; 
+						prevValue.Y = nullptr;
+						AUTO endIter = const_cast<const cweeUnitPatternContainer_t&>(*this->container).end();
+						for (auto iter = const_cast<const cweeUnitPatternContainer_t&>(*this->container).begin_at(t0); iter != endIter; ++iter) {
+							auto& dataPair = *iter;
 							if (dataPair.Y) {
 								if (dataPair.X >= t0) {
 									if (dataPair.X <= t1) {
 										if (prevValue.Y) {
-											sum += (container->internal_Y_type = ((*prevValue.Y))) * (container->internal_X_type = (dataPair.X - prevValue.X));
+											// sum += (container->internal_Y_type = ((*prevValue.Y))) * (container->internal_X_type = (dataPair.X - prevValue.X));
+											sum += ((*prevValue.Y) * (dataPair.X - prevValue.X));
 										}
 										else {
 											minGot = dataPair.X;
@@ -1908,7 +1952,6 @@ namespace cweeUnitValues {
 						if (prevValue.Y) {
 							maxGot = prevValue.X;
 						}
-#endif
 					}
 
 					{
@@ -1931,30 +1974,17 @@ namespace cweeUnitValues {
 					step = this->GetMinimumTimeStep();
 					unit_value minGot = t1, maxGot = t1;
 					if (true) {
-#if 0
-						auto data = GetKnotSeries(t0, t1);
-						AUTO Guard = this->lock.Guard();
-						if (Guard) {
-							if (data.Num() > 1) {
-								minGot = data[0].first;
-								maxGot = data[data.Num() - 1].first;
-
-								for (int i = 0; i < (data.Num() - 1); i++) {
-									const auto& left = data[i];
-									const auto& right = data[i + 1];
-
-									sum += (container->internal_Y_type = ((right.second + left.second) * 0.5)) * (container->internal_X_type = (right.first - left.first));
-								}
-							}
-						}
-#else
 						cweeUnitValues::cweeUnitPatternContainer_t::IterType prevValue;
-						for (auto& dataPair : const_cast<const cweeUnitPatternContainer_t&>(*this->container)) {
+						prevValue.Y = nullptr;
+						AUTO endIter = const_cast<const cweeUnitPatternContainer_t&>(*this->container).end();
+						for (auto iter = const_cast<const cweeUnitPatternContainer_t&>(*this->container).begin_at(t0); iter != endIter; ++iter) {
+							auto& dataPair = *iter;
 							if (dataPair.Y) {
 								if (dataPair.X >= t0) {
 									if (dataPair.X <= t1) {
 										if (prevValue.Y) {
-											sum += (container->internal_Y_type = ((*dataPair.Y))) * (container->internal_X_type = (dataPair.X - prevValue.X));
+											// sum += (container->internal_Y_type = ((*dataPair.Y))) * (container->internal_X_type = (dataPair.X - prevValue.X));
+											sum += ((*dataPair.Y) * (dataPair.X - prevValue.X));
 										}
 										else {
 											minGot = dataPair.X;
@@ -1967,7 +1997,6 @@ namespace cweeUnitValues {
 						if (prevValue.Y) {
 							maxGot = prevValue.X;
 						}
-#endif
 					}
 
 					{
@@ -1990,30 +2019,17 @@ namespace cweeUnitValues {
 					step = this->GetMinimumTimeStep();
 					unit_value minGot = t1, maxGot = t1;
 					if (true) {
-#if 0
-						auto data = GetKnotSeries(t0, t1);
-						AUTO Guard = this->lock.Guard();
-						if (Guard) {
-							if (data.Num() > 1) {
-								minGot = data[0].first;
-								maxGot = data[data.Num() - 1].first;
-
-								for (int i = 0; i < (data.Num() - 1); i++) {
-									const auto& left = data[i];
-									const auto& right = data[i + 1];
-
-									sum += (container->internal_Y_type = ((right.second + left.second) * 0.5)) * (container->internal_X_type = (right.first - left.first));
-								}
-							}
-						}
-#else
 						cweeUnitValues::cweeUnitPatternContainer_t::IterType prevValue;
-						for (auto& dataPair : const_cast<const cweeUnitPatternContainer_t&>(*this->container)) {
+						prevValue.Y = nullptr;
+						AUTO endIter = const_cast<const cweeUnitPatternContainer_t&>(*this->container).end();
+						for (auto iter = const_cast<const cweeUnitPatternContainer_t&>(*this->container).begin_at(t0); iter != endIter; ++iter) {
+							auto& dataPair = *iter;
 							if (dataPair.Y) {
 								if (dataPair.X >= t0) {
 									if (dataPair.X <= t1) {
 										if (prevValue.Y) {
-											sum += (container->internal_Y_type = ((*prevValue.Y + *dataPair.Y)*0.5)) * (container->internal_X_type = (dataPair.X - prevValue.X));
+											// sum += (container->internal_Y_type = ((*prevValue.Y + *dataPair.Y)*0.5)) * (container->internal_X_type = (dataPair.X - prevValue.X));
+											sum += (((*prevValue.Y + *dataPair.Y) * 0.5) * (dataPair.X - prevValue.X));
 										}
 										else {
 											minGot = dataPair.X;
@@ -2026,7 +2042,6 @@ namespace cweeUnitValues {
 						if (prevValue.Y) {
 							maxGot = prevValue.X;
 						}
-#endif
 					}
 
 					{
@@ -2250,7 +2265,7 @@ namespace cweeUnitValues {
 
 #if 1
 			if (start >= end) return out;
-			out = this->RombergIntegral(start, end) / (start - end);
+			out = this->RombergIntegral(start, end) / (end - start);
 #else
 			for (auto& x : *container) {
 				if (x.X > start) {

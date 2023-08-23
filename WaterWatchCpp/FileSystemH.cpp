@@ -74,6 +74,7 @@ public:
 	cweeStr			createFilePath(cweeStr const& directory, cweeStr const& fileName, fileType_t const& fileType);
 	cweeStr			createRandomFilePath(fileType_t const& fileType);
 	cweeStr			createRandomFile(fileType_t const& fileType);
+	cweeStr			createRandomFile(cweeStr const& fileType);
 	u64				getCurrentTime();
 
 	cweeStr			QueryHttp(const cweeStr& mainAddress = "nationalmap.gov", const cweeStr& requestParameters = "epqs/pqs.php?y=-117&x=33&output=xml&units=Feet", const cweeStr& UniqueSessionName = "WaterWatchCpp");
@@ -293,6 +294,18 @@ cweeStr			FileSystemLocal::createRandomFilePath(fileType_t const& fileType) {
 };
 cweeStr			FileSystemLocal::createRandomFile(fileType_t const& fileType) {
 	cweeStr filePath = createFilePath(getDataFolder() + "\\temp", cweeStr::printf("%i_%i_%i", cweeRandomInt(0, 1000), cweeRandomInt(0, 1000), cweeRandomInt(0, 1000)), fileType);
+	this->writeFileFromCweeStr(filePath, "");
+	tempFiles.Emplace(filePath, false);
+	return filePath;
+};
+cweeStr			FileSystemLocal::createRandomFile(cweeStr const& fileType) {
+	ensureDirectoryExists(getDataFolder() + "\\temp");
+	cweeStr filePath = 
+		getDataFolder() + 
+		"\\temp\\" + 
+		cweeStr::printf("%i_%i_%i", cweeRandomInt(0, 1000), cweeRandomInt(0, 1000), cweeRandomInt(0, 1000)) + 
+		fileType;
+
 	this->writeFileFromCweeStr(filePath, "");
 	tempFiles.Emplace(filePath, false);
 	return filePath;

@@ -67,12 +67,6 @@ namespace UWP_WaterWatch.Pages
                 "       this.set_explicit(true);" +
                 "   };" +
                 "};" +
-                //"def `==`(ScriptNode a, ScriptNode b){ " +
-                //"   return a.uniqueID == b.uniqueID; " +
-                //"}; " +
-                //"def `!=`(ScriptNode a, ScriptNode b){ " +
-                //"   return a.uniqueID != b.uniqueID; " +
-                //"}; " +
                 "global __scriptNodeType = type(\"ScriptNode\"); " +
                 "def _evaluate(ScriptNode node){" +
                 "   __LOCK__{ if (node._working){ try { return node._result; } catch(e){ return; } }else{ node._working = true; } }" +
@@ -86,14 +80,11 @@ namespace UWP_WaterWatch.Pages
                 "              funcHeader = funcHeader.AddToDelimiter(x, \", \");" +
                 "          }" +
                 "       }" +
-                "       var& FUNC; " +
-                "       __LOCK__{ " +
-                "           FUNC := eval(\"fun[](${funcHeader}){ eval(__script, \\\"${ node.uniqueID }\\\"); };\"); " +
-                "       }; " +
+                "       cweeStr uniqueID_copy; __LOCK__{ uniqueID_copy = node.uniqueID; }" +
+                "       var& FUNC := eval(\"fun[](${funcHeader}){ eval(__script, \\\"${ uniqueID_copy }\\\"); };\"); " +
+                "       cweeStr scriptCopy; __LOCK__{ scriptCopy = node.script; }" +
                 "       var Inputs = Vector();" +
-                "       __LOCK__{ " +
-                "           Inputs.push_back_ref(node.script); " +
-                "       }; " +
+                "       Inputs.push_back_ref(scriptCopy); " +
                 "       for (x : keys){ " +
                 "           if (x == \"\") { continue; } " +
                 "           var& k; " +
@@ -101,20 +92,14 @@ namespace UWP_WaterWatch.Pages
                 "               k := node.inputs[x]; " +
                 "           }; " +
                 "           if (k.is_type(\"ScriptNode\")){ " +
-                //"               if (k != node){ " +
-                "                   Inputs.push_back_ref(k.result); " +
-                //"               } else { " +
-                //"                   __LOCK__{ " +
-                //"                       Inputs.push_back_ref(k._result); " +
-                //"                   }; " +
-                //"               } " +
+                "               Inputs.push_back_ref(k.result); " +
                 "           } else { " +
                 "               Inputs.push_back_ref(k); " +
                 "           }; " +
                 "       }; " +
                 "       var& r := call(FUNC, Inputs); " +
                 "       __LOCK__{ " +
-                "           node._evaluatedScript = node.script; " +
+                "           node._evaluatedScript = scriptCopy; " +
                 "           node.version++; " +
                 "           node.remove_attr(\"_result\"); " +
                 "           node.set_explicit(false); " +

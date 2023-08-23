@@ -62,6 +62,8 @@ public:
 	static cweeStr  getColumnText(int proj, int whichCol) noexcept;
 	static cweeStr  getCurrentRow(int proj, int numColumns = -1) noexcept;
 	static cweeThreadedList<cweeStr>  getNextRow(int proj) noexcept;
+	static bool getNextRow(int proj, cweeThreadedList<cweeStr>& row) noexcept;
+	static bool getNextRow(int proj, cweeThreadedList<double>& row) noexcept;
 	static void		endStatement(int proj) noexcept;
 	static void		closeDB(int proj) noexcept;
 };

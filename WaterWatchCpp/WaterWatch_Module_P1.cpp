@@ -559,7 +559,12 @@ namespace chaiscript {
                     }
                     return out;
                 }), "GetResults");
+                lib->add(chaiscript::fun([](nanodbcResult& con) {
+                    return odbc->GetResults(con);
+                }), "GetCweeStrResults");
                 lib->add(chaiscript::fun([](nanodbcResult& con) { AUTO d = odbc->GetNextRow(con); std::vector<chaiscript::Boxed_Value> out; out.reserve(d.size() + 1); for (auto& x : d) { out.push_back(chaiscript::var(std::string(x.c_str()))); } return out; }), "GetNextRow");                
+                lib->add(chaiscript::fun([](nanodbcResult& con, cweeList<cweeStr>& row) { return odbc->GetNextRow(con, row); }), "GetNextRow");
+                lib->add(chaiscript::fun([](nanodbcResult& con, cweeList<double>& row) { return odbc->GetNextRow(con, row); }), "GetNextRow");
             }
 
             return lib;

@@ -164,14 +164,24 @@ public class vector_pair_double_double : global::System.IDisposable, global::Sys
   }
 
   public static implicit operator vector_pair_double_double(global::System.Collections.Generic.List<pair_double_double> v) {
-        var toReturn = new vector_pair_double_double(v.Count);
-        foreach (var x in v) toReturn.Add(x);
-        return toReturn;
+        if (v == null){
+            var toReturn = new vector_pair_double_double();
+            return toReturn;
+        }else{
+            var toReturn = new vector_pair_double_double(v.Count);
+            foreach (var x in v) toReturn.Add(x);
+            return toReturn;
+        }
   }
   public static implicit operator global::System.Collections.Generic.List<pair_double_double>(vector_pair_double_double v) {
-        var toReturn = new global::System.Collections.Generic.List<pair_double_double>(v.Count);
-        foreach (var x in v) toReturn.Add(x);
-        return toReturn;
+        if (v == null){
+            var toReturn = new global::System.Collections.Generic.List<pair_double_double>();
+            return toReturn;
+        }else{
+            var toReturn = new global::System.Collections.Generic.List<pair_double_double>(v.Count);
+            foreach (var x in v) toReturn.Add(x);
+            return toReturn;
+        }
   }
 
   // Type-safe enumerator

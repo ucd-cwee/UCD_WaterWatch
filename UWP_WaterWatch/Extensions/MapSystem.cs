@@ -359,11 +359,20 @@ namespace UWP_WaterWatchLibrary
 
             if (map.ActualWidth == 0 || map.ActualHeight == 0) return false;
 
-            Geopoint nw;//  = new Geopoint(new BasicGeoposition());
-            if (!map.TryGetLocationFromOffset(new Windows.Foundation.Point(0, 0), out nw)) return false;
+            if (!map.TryGetLocationFromOffset(new Windows.Foundation.Point(0, 0), out Geopoint nw_sample)) return false;
 
-            Geopoint se;//  = new Geopoint(new BasicGeoposition());
-            if (!map.TryGetLocationFromOffset(new Windows.Foundation.Point(map.ActualWidth, map.ActualHeight), out se)) return false;
+            if (!map.TryGetLocationFromOffset(new Windows.Foundation.Point(map.ActualWidth, map.ActualHeight), out Geopoint se_sample)) return false;
+
+            var nw = new Geopoint(new BasicGeoposition() { 
+                Longitude = se_sample.Position.Longitude < nw_sample.Position.Longitude ? se_sample.Position.Longitude : nw_sample.Position.Longitude
+                , 
+                Latitude = se_sample.Position.Latitude >= nw_sample.Position.Latitude ? se_sample.Position.Latitude : nw_sample.Position.Latitude
+            });
+            var se = new Geopoint(new BasicGeoposition() { 
+                Longitude = se_sample.Position.Longitude >= nw_sample.Position.Longitude ? se_sample.Position.Longitude : nw_sample.Position.Longitude
+                , 
+                Latitude = se_sample.Position.Latitude < nw_sample.Position.Latitude ? se_sample.Position.Latitude : nw_sample.Position.Latitude
+            });
 
             bb = new GeoboundingBox(nw.Position, se.Position);
             return true;

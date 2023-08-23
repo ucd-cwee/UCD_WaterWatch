@@ -82,9 +82,9 @@ INLINE const char* SQLite_GetColumnName(void* pStmt, int N) noexcept
 	return sqlite3_column_name((sqlite3_stmt*)pStmt, N);
 };
 
-cweeSysInterlockedInteger			SQLite_numSQLiteAccess;
-std::map<int, sqlite3*>				SQLite_databaseMap;
-std::map<int, sqlite3_stmt*>		SQLite_statementMap;
+cweeSysInterlockedInteger					SQLite_numSQLiteAccess;
+std::unordered_map<int, sqlite3*>			SQLite_databaseMap;
+std::unordered_map<int, sqlite3_stmt*>		SQLite_statementMap;
 
 int SQLite::openDbDirect(cweeStr fullPath) noexcept {
 	sqlite3* DB;
@@ -737,9 +737,49 @@ cweeThreadedList<cweeStr>  SQLite::getNextRow(int proj) noexcept {
 			out.SetGranularity(cweeMath::max(16, j));
 			for (int i = 0; i < j; i++)	out.Append(cweeStr((char*)SQLite_Column_Text(SQLite_statementMap.find(proj)->second, i)));
 		}
-
 	return out;
 }
+bool  SQLite::getNextRow(int proj, cweeThreadedList<cweeStr>& row) noexcept {	
+	AUTO p = SQLite_statementMap.find(proj);
+	if (p != SQLite_statementMap.end())
+		if (stepStatement(proj) != SQLITE_DONE) {
+			int j = SQLite_Column_Count(p->second);
+			if (j > 0) {
+				row.AssureSize(j);
+				for (int i = 0; i < j; i++)
+					row[i] = (char*)SQLite_Column_Text(p->second, i);
+			}
+			else {
+				row.Clear();
+			}
+		}
+		else {
+			row.Clear();
+		}
+	return row.Num() > 0;
+};
+bool  SQLite::getNextRow(int proj, cweeThreadedList<double>& row) noexcept {
+	AUTO p = SQLite_statementMap.find(proj);
+	cweeStr temp;
+	if (p != SQLite_statementMap.end())
+		if (stepStatement(proj) != SQLITE_DONE) {
+			int j = SQLite_Column_Count(p->second);
+			if (j > 0) {
+				row.AssureSize(j);
+				for (int i = 0; i < j; i++) {
+					temp = (char*)(SQLite_Column_Text(p->second, i));
+					row[i] = temp.ReturnNumericD();
+				}
+			}
+			else {
+				row.Clear();
+			}
+		}
+		else {
+			row.Clear();
+		}
+	return row.Num() > 0;
+};
 void SQLite::endStatement(int proj) noexcept {
 	if (SQLite_statementMap.find(proj) != SQLite_statementMap.end()) {
 		SQLite_Finalize(SQLite_statementMap.find(proj)->second);

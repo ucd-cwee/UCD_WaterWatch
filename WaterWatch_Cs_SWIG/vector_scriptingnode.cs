@@ -164,14 +164,24 @@ public class vector_scriptingnode : global::System.IDisposable, global::System.C
   }
 
   public static implicit operator vector_scriptingnode(global::System.Collections.Generic.List<ScriptingNode> v) {
-        var toReturn = new vector_scriptingnode(v.Count);
-        foreach (var x in v) toReturn.Add(x);
-        return toReturn;
+        if (v == null){
+            var toReturn = new vector_scriptingnode();
+            return toReturn;
+        }else{
+            var toReturn = new vector_scriptingnode(v.Count);
+            foreach (var x in v) toReturn.Add(x);
+            return toReturn;
+        }
   }
   public static implicit operator global::System.Collections.Generic.List<ScriptingNode>(vector_scriptingnode v) {
-        var toReturn = new global::System.Collections.Generic.List<ScriptingNode>(v.Count);
-        foreach (var x in v) toReturn.Add(x);
-        return toReturn;
+        if (v == null){
+            var toReturn = new global::System.Collections.Generic.List<ScriptingNode>();
+            return toReturn;
+        }else{
+            var toReturn = new global::System.Collections.Generic.List<ScriptingNode>(v.Count);
+            foreach (var x in v) toReturn.Add(x);
+            return toReturn;
+        }
   }
 
   // Type-safe enumerator

@@ -120,6 +120,7 @@ public:
 	virtual cweeStr			createFilePath(cweeStr const& directory, cweeStr const& fileName, fileType_t const& fileType) = 0;
 	virtual cweeStr			createRandomFilePath(fileType_t const& fileType) = 0;
 	virtual cweeStr			createRandomFile(fileType_t const& fileType) = 0;
+	virtual cweeStr			createRandomFile(cweeStr const& fileType) = 0;
 	virtual u64				getCurrentTime() = 0;
 	static cweeTime			localtime(const u64& time) {
 		return cweeTime(time);

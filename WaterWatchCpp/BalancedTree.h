@@ -23,7 +23,17 @@ class cweeBalancedTree {
 public:
 	class cweeBalancedTreeNode {
 	public:
-		// cweeBalancedTreeNode() : key(0), object(nullptr), parent(nullptr), next(nullptr), prev(nullptr), numChildren(0), firstChild(nullptr), lastChild(nullptr) {};
+		cweeBalancedTreeNode() : 
+			key(0), 
+			object(nullptr), 
+			parent(nullptr), 
+			next(nullptr), 
+			prev(nullptr), 
+			numChildren(0), 
+			firstChild(nullptr), 
+			lastChild(nullptr) 
+		{};
+
 		keyType							key;								// key used for sorting
 		objType* object;						// if != NULL pointer to object stored in leaf node
 		cweeBalancedTreeNode* parent;						// parent node
@@ -52,9 +62,12 @@ public:
 		_iterType _node;
 		_iterType* node = &_node;
 		inline void begin(const cweeBalancedTree* ref) {
-			// node = ref->GetNextLeaf(ref->GetRoot());
 			node = ref->GetFirst();
 			if (!node) node = &_node;
+		};
+		inline void begin_at(const cweeBalancedTree* ref, keyType key) {
+			node = ref->NodeFindLargestSmallerEqual(key);
+			if (!node) this->begin(ref);
 		};
 		inline void next(const cweeBalancedTree* ref) {
 			node = ref->GetNextLeaf(node);
@@ -70,7 +83,8 @@ public:
 #ifdef useCweeUnorderedListForBalancedTreeObjAlloc
 			return (node->objectIndex == s.node->objectIndex) ? false : true;
 #else
-			return ((node->object == s.node->object) || (node->object == nullptr)) ? false : true;
+			return !(!node->object || (node->object == s.node->object));
+			// return ((node->object == s.node->object) || (node->object == nullptr)) ? false : true;
 #endif
 		};
 
@@ -84,7 +98,21 @@ public:
 		inline const _iterType& get(const cweeBalancedTree* ref) const { return *node; }
 	};
 	SETUP_STL_ITERATOR(cweeBalancedTree, _iterType, it_state);
-
+	iterator begin_at(keyType key) { 
+		AUTO iter = this->begin();
+		iter.state.begin_at(this, key);
+		return iter;
+	};
+	const_iterator begin_at(keyType key) const {
+		AUTO iter = this->begin();
+		iter.state.begin_at(this, key);
+		return iter;
+	};
+	const_iterator cbegin_at(keyType key) const {
+		AUTO iter = this->cbegin();
+		iter.state.begin_at(this, key);
+		return iter;
+	};
 private:
 	// cweeLinkedList< objType, maxChildrenPerNode> objAllocator;
 	cweeAlloc<objType, maxChildrenPerNode>	objAllocator;
@@ -459,40 +487,80 @@ public:
 		return objAllocator.GetTotalCount();  // .Num(); //  
 	};
 	static cweeBalancedTreeNode*			GetNext(cweeBalancedTreeNode* node) {
-		if (node->firstChild) {
-			return node->firstChild;
-		}
-		else {
-			while (node && node->next == nullptr) {
-				node = node->parent;
-			}
-			return node;
-		}
-	};		// goes through all nodes of the tree;
-	static cweeBalancedTreeNode*			GetNextLeaf(cweeBalancedTreeNode* node) {
-		if (node->firstChild) {
-			while (node->firstChild) {
+		if (node) {
+			if (node->firstChild) {
 				node = node->firstChild;
 			}
-			return node;
-		}
-		else {
-			while (node && node->next == nullptr) {
-				node = node->parent;
+			else {
+				while (node && node->next == nullptr) {
+					node = node->parent;
+				}
 			}
-			if (node) {
-				node = node->next;
+		}
+		return node;
+
+		//if (!node) return nullptr; 
+		//if (node->firstChild) {
+		//	return node->firstChild;
+		//}
+		//else {
+		//	while (node && node->next == nullptr) {
+		//		node = node->parent;
+		//	}
+		//	return node;
+		//}
+	};		// goes through all nodes of the tree;
+
+public:
+	static cweeBalancedTreeNode*			GetNextLeaf(cweeBalancedTreeNode* node) {
+		if (node) {
+			if (node->firstChild) {
 				while (node->firstChild) {
 					node = node->firstChild;
 				}
-				return node;
 			}
 			else {
-				return nullptr;
+				while (node && !node->next) {
+					node = node->parent;
+				}
+				if (node) {
+					node = node->next;
+					while (node->firstChild) {
+						node = node->firstChild;
+					}
+				}
+				else {
+					node = nullptr;
+				}
 			}
 		}
+		return node;
+
+		//if (!node) return nullptr;
+		//if (node->firstChild) {
+		//	while (node->firstChild) {
+		//		node = node->firstChild;
+		//	}
+		//	return node;
+		//}
+		//else {
+		//	while (node && node->next == nullptr) {
+		//		node = node->parent;
+		//	}
+		//	if (node) {
+		//		node = node->next;
+		//		while (node->firstChild) {
+		//			node = node->firstChild;
+		//		}
+		//		return node;
+		//	}
+		//	else {
+		//		return nullptr;
+		//	}
+		//}
 	};	// goes through all leaf nodes of the tree;
 	static cweeBalancedTreeNode*			GetPrevLeaf(cweeBalancedTreeNode* node) {
+		if (!node) return nullptr; 
 		if (node->lastChild) {
 			while (node->lastChild) {
 				node = node->lastChild;

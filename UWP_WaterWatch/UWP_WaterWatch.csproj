@@ -134,6 +134,9 @@
     <Compile Include="Custom Controls\DroppableInputNode.xaml.cs">
       <DependentUpon>DroppableInputNode.xaml</DependentUpon>
     </Compile>
+    <Compile Include="Custom Controls\Maps\MapScale.xaml.cs">
+      <DependentUpon>MapScale.xaml</DependentUpon>
+    </Compile>
     <Compile Include="Custom Controls\ScriptingManagerCommandBar.xaml.cs">
       <DependentUpon>ScriptingManagerCommandBar.xaml</DependentUpon>
     </Compile>
@@ -152,7 +155,7 @@
     <Compile Include="Custom Controls\ScriptNode_Visualizer.xaml.cs">
       <DependentUpon>ScriptNode_Visualizer.xaml</DependentUpon>
     </Compile>
-    <Compile Include="Custom Controls\SimpleMap.xaml.cs">
+    <Compile Include="Custom Controls\Maps\SimpleMap.xaml.cs">
       <DependentUpon>SimpleMap.xaml</DependentUpon>
     </Compile>
     <Compile Include="Extensions\Extensions.cs" />
@@ -257,6 +260,10 @@
       <SubType>Designer</SubType>
       <Generator>MSBuild:Compile</Generator>
     </Page>
+    <Page Include="Custom Controls\Maps\MapScale.xaml">
+      <SubType>Designer</SubType>
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
     <Page Include="Custom Controls\ScriptingManagerCommandBar.xaml">
       <SubType>Designer</SubType>
       <Generator>MSBuild:Compile</Generator>
@@ -281,7 +288,7 @@
       <SubType>Designer</SubType>
       <Generator>MSBuild:Compile</Generator>
     </Page>
-    <Page Include="Custom Controls\SimpleMap.xaml">
+    <Page Include="Custom Controls\Maps\SimpleMap.xaml">
       <SubType>Designer</SubType>
       <Generator>MSBuild:Compile</Generator>
     </Page>

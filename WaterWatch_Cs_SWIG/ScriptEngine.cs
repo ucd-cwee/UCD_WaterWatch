@@ -65,6 +65,12 @@ public class ScriptEngine : global::System.IDisposable {
     return ret;
   }
 
+  public vector_float DoScript_Cast_VectorFloats(string command) {
+    vector_float ret = new vector_float(ConvPINVOKE.ScriptEngine_DoScript_Cast_VectorFloats(swigCPtr, command), true);
+    if (ConvPINVOKE.SWIGPendingException.Pending) throw ConvPINVOKE.SWIGPendingException.Retrieve();
+    return ret;
+  }
+
   public string DoScript(string command) {
     string ret = ConvPINVOKE.ScriptEngine_DoScript(swigCPtr, command);
     if (ConvPINVOKE.SWIGPendingException.Pending) throw ConvPINVOKE.SWIGPendingException.Retrieve();
@@ -131,6 +137,12 @@ public class ScriptEngine : global::System.IDisposable {
 
   public MapLayer_Interop Cast_MapLayer(string command) {
     MapLayer_Interop ret = new MapLayer_Interop(ConvPINVOKE.ScriptEngine_Cast_MapLayer(swigCPtr, command), true);
+    if (ConvPINVOKE.SWIGPendingException.Pending) throw ConvPINVOKE.SWIGPendingException.Retrieve();
+    return ret;
+  }
+
+  public vector_float Cast_VectorFloats(string command) {
+    vector_float ret = new vector_float(ConvPINVOKE.ScriptEngine_Cast_VectorFloats(swigCPtr, command), true);
     if (ConvPINVOKE.SWIGPendingException.Pending) throw ConvPINVOKE.SWIGPendingException.Retrieve();
     return ret;
   }

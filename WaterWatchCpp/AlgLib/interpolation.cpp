@@ -60584,8 +60584,8 @@ double rbfv2basisfunc(ae_int_t bf, double d2, ae_state *_state)
 {
     double result(0.0);
     switch (bf) {
-    case 0: result = ae_exp_fast(-d2); break;
-    case 1: if (d2 < 9.0) result = 2.718281828459045 * ae_exp_fast((9.0 / (d2 - 9.0)) - d2); break;
+    case 0: result = ae_exp(-d2, _state); break;
+    case 1: if (d2 < 9.0) result = 2.718281828459045 * ae_exp((9.0 / (d2 - 9.0)) - d2, _state); break;
     default: ae_assert(ae_false, "RBFV2BasisFunc: unknown BF type", _state); break;
     }
     return result;

@@ -128,14 +128,24 @@
   }
 
   public static implicit operator $csclassname(global::System.Collections.Generic.List<$typemap(cstype, CTYPE)> v) {
-        var toReturn = new $csclassname(v.Count);
-        foreach (var x in v) toReturn.Add(x);
-        return toReturn;
+        if (v == null){
+            var toReturn = new $csclassname();
+            return toReturn;
+        }else{
+            var toReturn = new $csclassname(v.Count);
+            foreach (var x in v) toReturn.Add(x);
+            return toReturn;
+        }
   }
   public static implicit operator global::System.Collections.Generic.List<$typemap(cstype, CTYPE)>($csclassname v) {
-        var toReturn = new global::System.Collections.Generic.List<$typemap(cstype, CTYPE)>(v.Count);
-        foreach (var x in v) toReturn.Add(x);
-        return toReturn;
+        if (v == null){
+            var toReturn = new global::System.Collections.Generic.List<$typemap(cstype, CTYPE)>();
+            return toReturn;
+        }else{
+            var toReturn = new global::System.Collections.Generic.List<$typemap(cstype, CTYPE)>(v.Count);
+            foreach (var x in v) toReturn.Add(x);
+            return toReturn;
+        }
   }
 
   // Type-safe enumerator
