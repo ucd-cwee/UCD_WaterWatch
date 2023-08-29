@@ -1085,16 +1085,58 @@ namespace UWP_WaterWatch.Custom_Controls
                         var actualContainer = EdmsTasks.InsertJob(() => { return new Rectangle(); }, true);
                         actualContainer.ContinueWith(()=> {
                             var frameworkJob = SetFrameworkElement(res, actualContainer.Result as Rectangle);
-                            frameworkJob.ContinueWith(() => {
+                            var customJob = res.result.CustomizableQueryResult_Cast_VectorString(
+                            "return [" +
+                                "\"${ Min(%s.GradientOffsets.size, %s.GradientColors.size) }\"" +
+                                ", \"${ %s.GradientStart }\"" +
+                                ", \"${ %s.GradientEnd }\"" +
+                            "]"
+                            , "%s", res.additionalParams);
+                            var fill = GetColor(new SharedNodeResult() { result = res.result, additionalParams = res.additionalParams + ".Fill" });
+                            EdmsTasks.cweeTask.TrueWhenCompleted(new List<EdmsTasks.cweeTask>() {
+                                    frameworkJob,
+                                    customJob,
+                                    fill
+                            }).ContinueWith(() => { 
                                 Rectangle R = frameworkJob.Result;
                                 {
-                                    var fill = GetColor(new SharedNodeResult() { result = res.result, additionalParams = res.additionalParams + ".Fill" });
-                                    fill.ContinueWith(() => {
+                                    int numGradients = 0;
+                                    { if (double.TryParse(customJob.Result[0], out double w)) {
+                                            numGradients = (int)w; 
+                                    } }
+                                    if (numGradients > 0)
+                                    {
+                                        var startP = new Point();
+                                        var endP = new Point();
+                                        { if (TryStringToThickness(customJob.Result[1], out Thickness w)) { startP.X = w.Left; startP.Y = w.Top; } }
+                                        { if (TryStringToThickness(customJob.Result[2], out Thickness w)) { endP.X = w.Left; endP.Y = w.Top; } }
+                                        
+                                        var gradientJobs = new List<EdmsTasks.cweeTask>();
+                                        for (int i = 0; i < numGradients; i++) {
+                                            gradientJobs.Add(res.result.CustomizableQueryResult_Cast_VectorFloat(
+                                                $"return [%s.GradientOffsets[{i}].float, %s.GradientColors[{i}].R.float, %s.GradientColors[{i}].G.float, %s.GradientColors[{i}].B.float, %s.GradientColors[{i}].A.float]"
+                                            , "%s", res.additionalParams));
+                                        }
+                                        EdmsTasks.cweeTask.TrueWhenCompleted(gradientJobs).ContinueWith(()=> {
+                                            var gsc = new GradientStopCollection();
+                                            foreach (var job in gradientJobs) {
+                                                List<float> f = (job.Result as List<float>);
+                                                if (f.Count >= 5) {
+                                                    gsc.Add(new GradientStop() { Color = new Color() { R= (byte)f[1], G = (byte)f[2], B = (byte)f[3], A = (byte)f[4] }, Offset = (double)(f[0]) });
+                                                }
+                                            }
+                                            var brush = new LinearGradientBrush() { StartPoint = startP, EndPoint = endP, GradientStops = gsc };
+                                            R.Fill = brush;
+                                            r.Child = R;
+                                        }, true);
+                                    }
+                                    else
+                                    {
                                         R.Fill = new SolidColorBrush(fill.Result);
                                         r.Child = R; // DONE
-                                    }, true);
+                                    }
                                 }
-                            }, false);
+                            }, true);
                         }, false);
 
                     }, false); // expect this to be called shortly and to have its queue revised

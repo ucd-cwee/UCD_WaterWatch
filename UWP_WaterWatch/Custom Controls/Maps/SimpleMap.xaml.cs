@@ -520,14 +520,14 @@ namespace UWP_WaterWatch.Custom_Controls
             {
                 newMap.Margin = new Thickness(0, 0, 0, 0);
                 newMap.Padding = new Thickness(0, 0, 0, 0);
-                newMap.MapServiceToken = "pwnqy6Z8qh4QUbDZgS2g~78ks7kQdYRvPl2RF-zA2eg~AjF-TNNVnDBR4FfaLMfMGehMdn2lnCrT94JcIjbNLF2Ys0lx33TsQEp69Zey52uB";
-                newMap.RotateInteractionMode = MapInteractionMode.Auto;
-                newMap.ZoomInteractionMode = MapInteractionMode.Auto;
+                newMap.MapServiceToken = "pwnqy6Z8qh4QUbDZgS2g~78ks7kQdYRvPl2RF-zA2eg~AjF-TNNVnDBR4FfaLMfMGehMdn2lnCrT94JcIjbNLF2Ys0lx33TsQEp69Zey52uB";                
+                // newMap.ZoomInteractionMode = MapInteractionMode.Auto;
                 newMap.Style = MapStyle.None;
                 newMap.StyleSheet = MapTools.GetStyleSheet(0);
+                newMap.RotateInteractionMode = MapInteractionMode.PointerOnly;
                 newMap.TiltInteractionMode = MapInteractionMode.PointerOnly;
                 newMap.ZoomInteractionMode = MapInteractionMode.PointerOnly;
-                newMap.MapProjection = MapProjection.Globe;
+                newMap.MapProjection = MapProjection.WebMercator;
             }
             this.map = newMap;
 
@@ -1483,7 +1483,7 @@ namespace UWP_WaterWatch.Custom_Controls
             }
             container.Children.Add(map);
 
-            map.map.MapProjection = MapProjection.Globe;
+            // map.map.MapProjection = MapProjection.Globe;
         }
         public cweeMap map { get; set; } = new cweeMap();
         public Grid container { get; set; }
@@ -1548,9 +1548,17 @@ namespace UWP_WaterWatch.Custom_Controls
                     this.vm.map.map.StyleSheet = cweeMap.MapTools.GetStyleSheet(selection);
                     break;
             }
+            // this.vm.map.map.MapProjection = MapProjection.Globe;
+        }
 
-            this.vm.map.map.MapProjection = MapProjection.Globe;
+        private void Style_PointerEntered(object sender, PointerRoutedEventArgs e)
+        {
+            (sender as Border).Opacity = 1.0;
+        }
 
+        private void Style_PointerExited(object sender, PointerRoutedEventArgs e)
+        {
+            (sender as Border).Opacity = 0.01;
         }
     }
 }

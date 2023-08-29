@@ -4368,6 +4368,15 @@ namespace units
 			return (lhs + rhs) * (UnitTypeLhs)(0.5) / (UnitTypeLhs)(1.0);
 		}
 
+		template<typename UnitTypeLhs>
+		void rolling_avg(UnitTypeLhs& currentAverage, const UnitTypeLhs& newSample, int& count)
+		{
+			count++;
+
+			currentAverage -= (currentAverage / (double)count);
+			currentAverage += (newSample / (double)count);
+		}
+
 		//----------------------------------
 		//	MIN/MAX FUNCTIONS
 		//----------------------------------

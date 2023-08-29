@@ -3455,17 +3455,49 @@ namespace epanet {
             
             AUTO LeakRatePerMile = connectionLeakRate * ((92950900.0 / 4.0) / 365.0) / 852.95_mi;
             rateOfRise_t R = LeakRatePerMile * MilesMains / 365_d;
+            million_gallon_per_day_t totalWaterDemand = 0;
+            mile_t totalSystemLength = 0;
+            scalar_t numValves = 0;
+            scalar_t numERTs = 0;
+            scalar_t numJunctions = 0;
+            scalar_t numCustomers = 0;
+            inch_t avgPipeDiameter = 0; int pipeCount = 0;
             if (new_zones.Num () > 0) {
-                pounds_per_square_inch_t avgSystemPressure = 0;
-                mile_t totalSystemLength = 0;
+                pounds_per_square_inch_t avgSystemPressure = 0;                
                 double totalSysRatio = 0;
                 million_gallon_per_month_t totalSystemLeakage = 0;
                 cweeList< pounds_per_square_inch_t > pressures;
                 {
                     for (auto& zone : new_zones) {
                         if (zone) {
-                            for (auto& link : zone->Within_Link) totalSystemLength += link->Len;
+                            for (auto& link : zone->Within_Link) {
+                                totalSystemLength += link->Len;
+                                units::math::rolling_avg<inch_t>(avgPipeDiameter, link->Diam, pipeCount);
+                            }
+                            for (auto& link : zone->Boundary_Link) {
+                                if (link.second == epanet::direction_t::FLOW_IN_DMA) {
+                                    if (link.first->Type_p == asset_t::VALVE) {
+                                        AUTO valve = link.first.CastReference< epanet::Svalve >();
+                                        if (valve) {
+                                            if (valve->ProducesElectricity) {
+                                                numERTs++;
+                                            }
+                                            numValves++;
+                                        }
+                                    }
+                                }                                
+                            }
                             pressures.Append(zone->AverageNodePressure());
+                            for (auto& node : zone->Node) {
+                                if (node && node->Type_p == asset_t::JUNCTION) {
+                                    numJunctions += 1;
+                                    if (node->HasWaterDemand()) {
+                                        totalWaterDemand += node->GetValue<_DEMAND_>()->GetAvgValue();
+                                        numCustomers += 1;
+                                    }
+                                    
+                                }
+                            }
                         }
                     }
                     int Pcount = 0;
@@ -3490,7 +3522,7 @@ namespace epanet {
             surveyFrequency_Months = units::math::round(surveyFrequency_Months); // must be in increments of months to be valid
             surveyFrequency_Months = units::math::max(surveyFrequency_Months, (month_t)1);
 
-            pounds_per_square_inch_t P0 = avgPressure_old + 0.00001_psi; // # initial pressure
+            pounds_per_square_inch_t P0 = avgPressure_old/* + 0.00001_psi*/; // # initial pressure
             pounds_per_square_inch_t P1 = avgPressure_new; // # pressure after reduction
             mile_t d = MilesMains; // miles of mains
 
@@ -3502,7 +3534,7 @@ namespace epanet {
             for (month_t i = 0; i <= 30_yr; i += stepSize) t.Append(i);
 
             // define the rate of rise of leakage           
-            scalar_t gamma = cweeMath::Pow((P1 / P0)(), N1()); // # fraction leakage rate remaining after pressure reduction, about 0.6 right now
+            scalar_t gamma = (P0 == 0_psi) ? 1.0 : cweeMath::Pow((P1 / P0)(), N1()); // # fraction leakage rate remaining after pressure reduction, about 0.6 right now
             million_gallon_per_month_t init = R * 3.66424_yr; // # initial leakage rate, gallons / yr... solved by: (1 / (R/(1045.244408_ac_ft_y))). 1045_ac_ft_y came from 2022 water audit data for Marin.
 
             // calculate water lost volume and value
@@ -3614,12 +3646,21 @@ namespace epanet {
                 }
             }
 
-            std::map<std::string, cweeUnitValues::unit_value> results;
-            {
+            std::map<std::string, cweeUnitValues::unit_value> results; {
                 results["Total Costs"] = cweeUnitValues::Dollar(NPV_costs);
                 results["Total Benefits"] = cweeUnitValues::Dollar(NPV_benefits);
                 results["Net Benefits"] = cweeUnitValues::Dollar(NPV_benefits - NPV_costs);
                 results["Total Water Saved"] = cweeUnitValues::million_gallon(TotalWaterSaved);
+                results["Total Pipe Length"] = cweeUnitValues::mile(MilesMains);
+                results["Initial Leak Rate"] = cweeUnitValues::million_gallon_per_day((million_gallon_per_day_t)init);
+                
+                
+                //results["Average Water Demand"] = cweeUnitValues::million_gallon_per_day(totalWaterDemand);
+                //results["Number of Valves"] = cweeUnitValues::scalar(numValves);
+                //results["Number of ERTs"] = cweeUnitValues::scalar(numERTs);
+                //results["Number of Junctions"] = cweeUnitValues::scalar(numJunctions);
+                //results["Number of Customer Nodes"] = cweeUnitValues::scalar(numCustomers);
+                //results["Average Pipe Diameter"] = cweeUnitValues::inch(avgPipeDiameter);
             }
 
             return results;
@@ -4217,17 +4258,58 @@ namespace epanet {
     };
     INLINE std::map<std::string, cweeUnitValues::unit_value> Szone::LeakModelResults(cweeSharedPtr<Project> pr, year_t surveyFrequency, pounds_per_square_inch_t oldPressure) const {
         mile_t MilesMains = 0;
-        pounds_per_square_inch_t avgPressure = 0;
+        pounds_per_square_inch_t avgPressure = this->AverageNodePressure();
 
         for (auto& link : this->Within_Link) {
             MilesMains += link->Len;
         }
-        for (auto& node : this->Node) {
-            avgPressure += node->GetAvgPressure();
-        } 
-        if (this->Node.Num() > 0) avgPressure /= this->Node.Num();
 
-        return pr->network->Leakage.LeakModelResults(MilesMains, surveyFrequency, pr->network->Zone, oldPressure, avgPressure);
+        AUTO results = pr->network->Leakage.LeakModelResults(MilesMains, surveyFrequency, pr->network->Zone, oldPressure, avgPressure);
+
+        million_gallon_per_day_t totalWaterDemand = 0;
+        scalar_t numValves = 0;
+        scalar_t numERTs = 0;
+        scalar_t numJunctions = 0;
+        scalar_t numCustomers = 0;
+        inch_t avgPipeDiameter = 0; int pipeCount = 0;
+
+        {
+            for (auto& link : this->Within_Link) {
+                units::math::rolling_avg<inch_t>(avgPipeDiameter, link->Diam, pipeCount);
+            }
+            for (auto& link : this->Boundary_Link) {
+                if (link.second == epanet::direction_t::FLOW_IN_DMA) {
+                    if (link.first->Type_p == asset_t::VALVE) {
+                        AUTO valve = link.first.CastReference< epanet::Svalve >();
+                        if (valve) {
+                            if (valve->ProducesElectricity) {
+                                numERTs++;
+                            }
+                            numValves++;
+                        }
+                    }
+                }
+            }
+            for (auto& node : this->Node) {
+                if (node && node->Type_p == asset_t::JUNCTION) {
+                    numJunctions += 1;
+                    if (node->HasWaterDemand()) {
+                        totalWaterDemand += node->GetValue<_DEMAND_>()->GetAvgValue();
+                        numCustomers += 1;
+                    }
+
+                }
+            }
+        }
+
+        results["Average Water Demand"] = cweeUnitValues::million_gallon_per_day(totalWaterDemand);
+        results["Number of Valves"] = cweeUnitValues::scalar(numValves);
+        results["Number of ERTs"] = cweeUnitValues::scalar(numERTs);
+        results["Number of Junctions"] = cweeUnitValues::scalar(numJunctions);
+        results["Number of Customer Nodes"] = cweeUnitValues::scalar(numCustomers);
+        results["Average Pipe Diameter"] = cweeUnitValues::inch(avgPipeDiameter);
+
+        return results;
     };
     INLINE year_t Szone::SurveyFrequency(cweeSharedPtr<Project> pr, pounds_per_square_inch_t oldPressure) const {
         mile_t MilesMains = 0;

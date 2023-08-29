@@ -379,33 +379,26 @@ namespace chaiscript {
         virtual ~UI_Rectangle() {};
 
         UI_Color 		Fill;
+        std::vector<double> GradientOffsets;
+        std::vector<UI_Color> GradientColors;
+        std::string     GradientStart = "0.5, 0.0";
+        std::string     GradientEnd = "0.5, 1.0";
+        void 			AddGradient(UI_Color const& color, double Offset) {
+            this->GradientOffsets.push_back(Offset);
+            this->GradientColors.push_back(color);
+        };
 
         static void		AppendToScriptingLanguage(Module& scriptingLanguage) {
             AddBasicClassTemplate();
             scriptingLanguage.add(chaiscript::base_class<UI_FrameworkElement, ThisType>());
-#if 0
-            AddFrameworkElementCharacteristicsToScriptFromClass();
-#else
-            //AddMemberToScriptFromClass(Version); 
-            //AddMemberToScriptFromClass(UniqueName); 
-            //scriptingLanguage.add(chaiscript::fun(&ThisType::Update), "Update"); 
-            //scriptingLanguage.add(chaiscript::fun(&ThisType::AddTask), "AddTask"); 
-            //scriptingLanguage.add(chaiscript::fun(&ThisType::GetTasks), "GetTasks"); 
-            //AddMemberToScriptFromClass(Tasks); 
-            //AddMemberToScriptFromClass(Opacity); 
-            //AddMemberToScriptFromClass(Width); 
-            //AddMemberToScriptFromClass(Height); 
-            //AddMemberToScriptFromClass(VerticalAlignment); 
-            //AddMemberToScriptFromClass(HorizontalAlignment); 
-            //AddMemberToScriptFromClass(Tag); 
-            // AddMemberToScriptFromClass(Name); 
-            //AddMemberToScriptFromClass(MinWidth); 
-            //AddMemberToScriptFromClass(MinHeight); 
-            //AddMemberToScriptFromClass(MaxWidth); 
-            //AddMemberToScriptFromClass(MaxHeight); 
-            //AddMemberToScriptFromClass(Margin);
-#endif
+
             AddMemberToScriptFromClass(Fill);
+            AddMemberToScriptFromClass(GradientOffsets);
+            AddMemberToScriptFromClass(GradientColors);
+            AddMemberToScriptFromClass(GradientStart);
+            AddMemberToScriptFromClass(GradientEnd);
+
+            scriptingLanguage.add(chaiscript::fun(&ThisType::AddGradient), "AddGradient");
         };
     };
     class UI_TextBlock final: public UI_FrameworkElement {
@@ -1452,6 +1445,7 @@ namespace chaiscript {
 
         std::vector<chaiscript::Boxed_Value> Layers;
         std::vector<chaiscript::Boxed_Value> Backgrounds;
+
         static void		AppendToScriptingLanguage(Module& scriptingLanguage) {
             AddBasicClassTemplate();
             scriptingLanguage.add(chaiscript::base_class<UI_FrameworkElement, ThisType>());

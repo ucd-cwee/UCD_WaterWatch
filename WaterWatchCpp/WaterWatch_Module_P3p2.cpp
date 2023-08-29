@@ -42,6 +42,8 @@ namespace chaiscript {
             DEF_DECLARE_VECTOR_WITH_SCRIPT_ENGINE_AND_MODULE(double);
             DEF_DECLARE_VECTOR_OF_PAIR_WITH_SCRIPT_ENGINE_AND_MODULE(double, double);
 
+            DEF_DECLARE_VECTOR_WITH_SCRIPT_ENGINE_AND_MODULE(UI_Color);
+
             DEF_DECLARE_VECTOR_WITH_SCRIPT_ENGINE_AND_MODULE(FlowDirection);
 
             {

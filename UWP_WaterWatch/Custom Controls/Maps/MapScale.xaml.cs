@@ -71,6 +71,17 @@ namespace UWP_WaterWatch.Custom_Controls
                     scale /= 10.0;
                 }
 
+#if false
+                string abbrev = "km";
+                var width_kilometers = width_meters / 1000.0;
+
+                Text1 = (1.0 * width_kilometers / 10.0).ToString("0.###");
+                Text2 = (2.0 * width_kilometers / 10.0).ToString("0.###");
+                Text3 = (3.0 * width_kilometers / 10.0).ToString("0.###");
+                Text4 = (4.0 * width_kilometers / 10.0).ToString("0.###");
+                Text5 = (5.0 * width_kilometers / 10.0).ToString("0.###") + abbrev;
+                Text6 = (width_kilometers).ToString("0.###") + abbrev;
+#else
                 string abbrev = "m";
                 {
                     Dictionary<int, string> map = new Dictionary<int, string>() {
@@ -84,11 +95,11 @@ namespace UWP_WaterWatch.Custom_Controls
                     , { 9, "Gm" }
                     , { 6, "Mm" }
                     , { 3, "km" }
-                    , { 2, "hm" }
-                    , { 1, "dam" }
+                    // , { 2, "hm" }
+                    // , { 1, "dam" }
                     , { 0, "m" }
-                    , { -1, "dm" }
-                    , { -2, "cm" }
+                    // , { -1, "dm" }
+                    // , { -2, "cm" }
                     , { -3, "mm" }
                     , { -6, "μm" }
                     , { -9, "nm" }
@@ -115,12 +126,13 @@ namespace UWP_WaterWatch.Custom_Controls
                     }
                 }
 
-                Text1 = (1.0 * width_meters / 10.0).ToString("0.##");
-                Text2 = (2.0 * width_meters / 10.0).ToString("0.##");
-                Text3 = (3.0 * width_meters / 10.0).ToString("0.##");
-                Text4 = (4.0 * width_meters / 10.0).ToString("0.##");
-                Text5 = (5.0 * width_meters / 10.0).ToString("0.##") + abbrev;
-                Text6 = (width_meters).ToString("0.##") + abbrev;
+                Text1 = Math.Round((1.0 * width_meters / 10.0)).ToString("0.###"); //  (1.0 * width_meters / 10.0).ToString("0.###");
+                Text2 = Math.Round((2.0 * width_meters / 10.0)).ToString("0.###"); // (2.0 * width_meters / 10.0).ToString("0.###");
+                Text3 = Math.Round((3.0 * width_meters / 10.0)).ToString("0.###"); // (3.0 * width_meters / 10.0).ToString("0.###");
+                Text4 = Math.Round((4.0 * width_meters / 10.0)).ToString("0.###"); // (4.0 * width_meters / 10.0).ToString("0.###");
+                Text5 = Math.Round((5.0 * width_meters / 10.0)).ToString("0.###") + abbrev; // (5.0 * width_meters / 10.0).ToString("0.###") + abbrev;
+                Text6 = Math.Round(width_meters).ToString("0.###") + abbrev;
+#endif
             }
         }
     }

@@ -256,6 +256,57 @@ namespace chaiscript {
                     lib->AddFunction(, LeakModelResults, , SINGLE_ARG({
                         std::map<std::string, Boxed_Value> out;
                         for (auto& item : zone->LeakModelResults(proj->epanetProj, surveyFrequency, oldPressure)) out[item.first] = var(cweeUnitValues::unit_value(item.second));
+
+                        // Energy Produced TS
+                        {
+                            AUTO pat = cweeUnitValues::cweeUnitPattern(cweeUnitValues::second(), cweeUnitValues::kilowatt());
+
+                            for (auto& link : zone->Boundary_Link) {
+                                if (link.second == ::epanet::direction_t::FLOW_IN_DMA) {
+                                    if (link.first->Type_p == asset_t::VALVE) {
+                                        AUTO valve = link.first.CastReference< epanet::Svalve >();
+                                        if (valve) {
+                                            if (valve->ProducesElectricity) {
+                                                pat -= cweeUnitValues::cweeUnitPattern(*link.first->GetValue<_ENERGY_>());
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            out["Energy Produced Pattern"] = var(cweeUnitValues::cweeUnitPattern(pat));
+                        }
+
+                        // Energy Demanded TS
+                        {
+                            AUTO pat = cweeUnitValues::cweeUnitPattern(cweeUnitValues::second(), cweeUnitValues::kilowatt());
+
+                            for (auto& link : zone->Boundary_Link) {
+                                if (link.second == ::epanet::direction_t::FLOW_IN_DMA) {
+                                    if (link.first->Type_p == asset_t::PUMP) {
+                                        pat += cweeUnitValues::cweeUnitPattern(*link.first->GetValue<_ENERGY_>());
+                                    }
+                                }
+                            }
+
+                            out["Energy Demanded Pattern"] = var(cweeUnitValues::cweeUnitPattern(pat));
+                        }
+
+                        // Water Demanded TS
+                        {
+                            AUTO pat = cweeUnitValues::cweeUnitPattern(cweeUnitValues::second(), cweeUnitValues::gallon_per_minute());
+
+                            pat += cweeUnitValues::cweeUnitPattern(*zone->GetValue<_DEMAND_>());
+
+                            //for (auto& node : zone->Node) {
+                            //    if (node->Type_p == asset_t::JUNCTION) {
+                            //        pat += cweeUnitValues::cweeUnitPattern(*node->GetValue<_DEMAND_>());
+                            //    }
+                            //}
+
+                            out["Water Demand Pattern"] = var(cweeUnitValues::cweeUnitPattern(pat));
+                        }
+
                         return out;
                     }), ::epanet::Pzone const& zone, cweeSharedPtr<EPAnetProject> const& proj, units::time::year_t surveyFrequency, units::pressure::pounds_per_square_inch_t oldPressure);
                     lib->AddFunction(, SurveyFrequency, , SINGLE_ARG({

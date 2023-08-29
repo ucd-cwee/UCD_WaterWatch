@@ -29,7 +29,7 @@
 
         <local:MapScale HorizontalAlignment="Left" VerticalAlignment="Bottom" Margin="5" Grid.Column="0" Grid.ColumnSpan="2" Grid.Row="1" ParentViewModel="{x:Bind vm, Mode=OneWay}" />
 
-        <Border HorizontalAlignment="Left" VerticalAlignment="Top" Background="{ThemeResource AcrylicInAppFillColorDefaultBrush}" CornerRadius="5">
+        <Border PointerEntered="Style_PointerEntered" PointerExited="Style_PointerExited" Opacity="0.01" HorizontalAlignment="Left" VerticalAlignment="Top" Background="{ThemeResource AcrylicInAppFillColorDefaultBrush}" CornerRadius="5">
             <MenuBar HorizontalAlignment="Left" VerticalAlignment="Top">
                 <MenuBarItem Title="Style"  >
                     <MenuFlyoutItem Text="None" Tag="-1" Click="StyleSelect" />
