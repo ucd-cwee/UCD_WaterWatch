@@ -1854,14 +1854,14 @@ namespace cweeUnitValues {
 		/*! Get list of spline samples at a specified Timestep */
 		cweeThreadedList<pairT>								GetTimeSeries(const unit_value& timeStart, const unit_value& timeEnd, const unit_value& timeStep) const {
 			pairT v;
-			unit_value realTimestep = timeStep; if (realTimestep < 1) realTimestep = 1;
+			unit_value realTimestep = (container->internal_X_type = timeStep); if (realTimestep < (container->internal_X_type = 1)) realTimestep = (container->internal_X_type = 1);
 
 			cweeThreadedList<pairT> out(cweeMath::max(cweeMath::min(((u64)(timeEnd - timeStart) / (u64)(realTimestep)), 100000), 1000) + 16);
 
-			v.first = timeStart; v.second = GetCurrentValue(timeStart);
+			v.first = (container->internal_X_type = timeStart); v.second = GetCurrentValue(timeStart);
 			out.Append(v); // ensure pattern always has a starter? 
 
-			for (v.first = timeStart + realTimestep; v.first < timeEnd; v.first += realTimestep) {
+			for (v.first = (container->internal_X_type = (timeStart + realTimestep)); v.first < timeEnd; v.first += realTimestep) {
 				v.second = GetCurrentValue(v.first);
 				out.Append(v);
 			}
