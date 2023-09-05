@@ -1464,8 +1464,7 @@ namespace cweeUnitValues {
 			AUTO g = lock.Guard();
 			AUTO g1 = o.lock.Guard();
 			
-			// container = container->CopyAnotherContainer(o.container);
-			container = o.container->Clone();
+			container = container->CopyAnotherContainer(o.container); // gets the values of another, uses my units
 
 			boundaryType = o.boundaryType;
 			interpolationType = o.interpolationType;
@@ -1652,20 +1651,13 @@ namespace cweeUnitValues {
 			return *this;
 		};
 
-
-
-
-
-
 		cweeUnitPattern&								Copy(const cweeUnitPattern& o, const unit_value& timeStart = -std::numeric_limits < unit_value>::max(), const unit_value& timeEnd = std::numeric_limits < unit_value>::max()) {
 			if (this == &o) return *this;
 
 			AUTO g = lock.Guard();
 			AUTO g1 = o.lock.Guard();
 
-
-			// container = container->CopyAnotherContainer(o.container);
-			container = o.container->Clone();
+			container = container->CopyAnotherContainer(o.container); // gets the values of another, uses my units			
 
 			boundaryType = o.boundaryType;
 			interpolationType = o.interpolationType;

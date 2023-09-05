@@ -3658,8 +3658,7 @@ namespace epanet {
                 results["Total Pipe Length"] = cweeUnion<cweeUnitValues::unit_value, cweeUnitValues::cweeUnitPattern>(cweeUnitValues::mile(MilesMains), cweeUnitValues::cweeUnitPattern());
                 results["Initial Leak Rate"] = cweeUnion<cweeUnitValues::unit_value, cweeUnitValues::cweeUnitPattern>(cweeUnitValues::million_gallon_per_day((million_gallon_per_day_t)init), cweeUnitValues::cweeUnitPattern());
                 {
-                    cweeUnitValues::cweeUnitPattern pat;
-                    pat = cweeUnitValues::cweeUnitPattern(cweeUnitValues::second(), cweeUnitValues::million_gallon());
+                    AUTO pat = cweeUnitValues::cweeUnitPattern(cweeUnitValues::second(), cweeUnitValues::million_gallon());
 
                     for (int t_ind = 0; t_ind < t.size(); t_ind++) {
                         month_t idx = t[t_ind];
@@ -3671,8 +3670,7 @@ namespace epanet {
                     results["Water_Lost_Do_Nothing"] = cweeUnion<cweeUnitValues::unit_value, cweeUnitValues::cweeUnitPattern>(cweeUnitValues::unit_value(0), cweeUnitValues::cweeUnitPattern(pat));
                 }
                 {
-                    cweeUnitValues::cweeUnitPattern pat;
-                    pat = cweeUnitValues::cweeUnitPattern(cweeUnitValues::second(), cweeUnitValues::million_gallon());
+                    AUTO pat = cweeUnitValues::cweeUnitPattern(cweeUnitValues::second(), cweeUnitValues::million_gallon());
 
                     for (int t_ind = 0; t_ind < t.size(); t_ind++) {
                         month_t idx = t[t_ind];
@@ -3684,8 +3682,7 @@ namespace epanet {
                     results["Water_Lost_Volume"] = cweeUnion<cweeUnitValues::unit_value, cweeUnitValues::cweeUnitPattern>(cweeUnitValues::unit_value(0), cweeUnitValues::cweeUnitPattern(pat));
                 }
                 {
-                    cweeUnitValues::cweeUnitPattern pat;
-                    pat = cweeUnitValues::cweeUnitPattern(cweeUnitValues::second(), cweeUnitValues::million_gallon());
+                    AUTO pat = cweeUnitValues::cweeUnitPattern(cweeUnitValues::second(), cweeUnitValues::million_gallon());
 
                     for (int t_ind = 0; t_ind < t.size(); t_ind++) {
                         month_t idx = t[t_ind];
