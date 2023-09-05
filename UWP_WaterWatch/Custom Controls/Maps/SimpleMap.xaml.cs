@@ -467,8 +467,21 @@ namespace UWP_WaterWatch.Custom_Controls
                 MapStyleSheet toReturn;
                 switch (mapStyle)
                 {
+                    case -2:
+                        toReturn = MapStyleSheet.Combine(new List<MapStyleSheet>
+                        {
+                            MapStyleSheet.Aerial(),
+                            MapStyleSheet.ParseFromJson("{ \"version\": \"1.*\", \"settings\": { }, \"elements\": { \"mapElement\": { \"stemAnchorRadiusScale\": 0, \"stemHeightScale\": 0, \"labelColor\": \"#FF000000\", \"labelOutlineColor\": \"#FFFFFFFF\" } } }")
+                        });
+                        break;
                     case 0:
-                        toReturn = MapStyleSheet.Aerial(); break;
+                        toReturn = MapStyleSheet.Combine(new List<MapStyleSheet>
+                        {
+                            MapStyleSheet.Aerial(),
+                            MapStyleSheet.ParseFromJson("{ \"version\": \"1.*\", \"settings\": { }, \"elements\": { \"mapElement\": { \"stemAnchorRadiusScale\": 0, \"stemHeightScale\": 0, \"labelColor\": \"#FFFFFFFF\", \"labelOutlineColor\": \"#FF000000\" } } }")
+                        });
+                        //toReturn = MapStyleSheet.Aerial();
+                        break;
                     case 1:
                         toReturn = MapStyleSheet.AerialWithOverlay(); break;
                     case 2:
@@ -1542,6 +1555,10 @@ namespace UWP_WaterWatch.Custom_Controls
             {
                 case -1:
                     this.vm.map.map.Style = MapStyle.None;
+                    break;
+                case -2:
+                    this.vm.map.map.Style = MapStyle.None;
+                    this.vm.map.map.StyleSheet = cweeMap.MapTools.GetStyleSheet(selection);
                     break;
                 default:
                     this.vm.map.map.Style = MapStyle.None;

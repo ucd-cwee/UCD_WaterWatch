@@ -253,15 +253,18 @@ namespace chaiscript::dispatch::detail {
     // Free functions
 
     template<typename Ret, typename... Param>
-    Function_Signature(Ret(*f)(Param...))->Function_Signature<Ret, Function_Params<Param...>>;
+    Function_Signature(Ret(*f)(Param...))
+        ->Function_Signature<Ret, Function_Params<Param...>>;
 
     template<typename Ret, typename... Param>
-    Function_Signature(Ret(*f)(Param...) noexcept)->Function_Signature<Ret, Function_Params<Param...>, true>;
+    Function_Signature(Ret(*f)(Param...) noexcept)
+        ->Function_Signature<Ret, Function_Params<Param...>, true>;
 
     // no reference specifier
 
     template<typename Ret, typename Class, typename... Param>
-    Function_Signature(Ret(Class::* f)(Param...) volatile)->Function_Signature<Ret, Function_Params<volatile Class&, Param...>, false, true>;
+    Function_Signature(Ret(Class::* f)(Param...) volatile)
+        ->Function_Signature<Ret, Function_Params<volatile Class&, Param...>, false, true>;
 
     template<typename Ret, typename Class, typename... Param>
     Function_Signature(Ret(Class::* f)(Param...) volatile noexcept)
@@ -276,21 +279,26 @@ namespace chaiscript::dispatch::detail {
         ->Function_Signature<Ret, Function_Params<volatile const Class&, Param...>, true, true>;
 
     template<typename Ret, typename Class, typename... Param>
-    Function_Signature(Ret(Class::* f)(Param...))->Function_Signature<Ret, Function_Params<Class&, Param...>, false, true>;
+    Function_Signature(Ret(Class::* f)(Param...))
+        ->Function_Signature<Ret, Function_Params<Class&, Param...>, false, true>;
 
     template<typename Ret, typename Class, typename... Param>
-    Function_Signature(Ret(Class::* f)(Param...) noexcept)->Function_Signature<Ret, Function_Params<Class&, Param...>, true, true>;
+    Function_Signature(Ret(Class::* f)(Param...) noexcept)
+        ->Function_Signature<Ret, Function_Params<Class&, Param...>, true, true>;
 
     template<typename Ret, typename Class, typename... Param>
-    Function_Signature(Ret(Class::* f)(Param...) const)->Function_Signature<Ret, Function_Params<const Class&, Param...>, false, true>;
+    Function_Signature(Ret(Class::* f)(Param...) const)
+        ->Function_Signature<Ret, Function_Params<const Class&, Param...>, false, true>;
 
     template<typename Ret, typename Class, typename... Param>
-    Function_Signature(Ret(Class::* f)(Param...) const noexcept)->Function_Signature<Ret, Function_Params<const Class&, Param...>, true, true>;
+    Function_Signature(Ret(Class::* f)(Param...) const noexcept)
+        ->Function_Signature<Ret, Function_Params<const Class&, Param...>, true, true>;
 
     // & reference specifier
 
     template<typename Ret, typename Class, typename... Param>
-    Function_Signature(Ret(Class::* f)(Param...) volatile&)->Function_Signature<Ret, Function_Params<volatile Class&, Param...>, false, true>;
+    Function_Signature(Ret(Class::* f)(Param...) volatile&)
+        ->Function_Signature<Ret, Function_Params<volatile Class&, Param...>, false, true>;
 
     template<typename Ret, typename Class, typename... Param>
     Function_Signature(Ret(Class::* f)(Param...) volatile& noexcept)
@@ -305,21 +313,26 @@ namespace chaiscript::dispatch::detail {
         ->Function_Signature<Ret, Function_Params<volatile const Class&, Param...>, true, true>;
 
     template<typename Ret, typename Class, typename... Param>
-    Function_Signature(Ret(Class::* f)(Param...)&)->Function_Signature<Ret, Function_Params<Class&, Param...>, false, true>;
+    Function_Signature(Ret(Class::* f)(Param...)&)
+        ->Function_Signature<Ret, Function_Params<Class&, Param...>, false, true>;
 
     template<typename Ret, typename Class, typename... Param>
-    Function_Signature(Ret(Class::* f)(Param...) & noexcept)->Function_Signature<Ret, Function_Params<Class&, Param...>, true, true>;
+    Function_Signature(Ret(Class::* f)(Param...) & noexcept)
+        ->Function_Signature<Ret, Function_Params<Class&, Param...>, true, true>;
 
     template<typename Ret, typename Class, typename... Param>
-    Function_Signature(Ret(Class::* f)(Param...) const&)->Function_Signature<Ret, Function_Params<const Class&, Param...>, false, true>;
+    Function_Signature(Ret(Class::* f)(Param...) const&)
+        ->Function_Signature<Ret, Function_Params<const Class&, Param...>, false, true>;
 
     template<typename Ret, typename Class, typename... Param>
-    Function_Signature(Ret(Class::* f)(Param...) const& noexcept)->Function_Signature<Ret, Function_Params<const Class&, Param...>, true, true>;
+    Function_Signature(Ret(Class::* f)(Param...) const& noexcept)
+        ->Function_Signature<Ret, Function_Params<const Class&, Param...>, true, true>;
 
     // && reference specifier
 
     template<typename Ret, typename Class, typename... Param>
-    Function_Signature(Ret(Class::* f)(Param...) volatile&&)->Function_Signature<Ret, Function_Params<volatile Class&&, Param...>, false, true>;
+    Function_Signature(Ret(Class::* f)(Param...) volatile&&)
+        ->Function_Signature<Ret, Function_Params<volatile Class&&, Param...>, false, true>;
 
     template<typename Ret, typename Class, typename... Param>
     Function_Signature(Ret(Class::* f)(Param...) volatile&& noexcept)
@@ -334,40 +347,44 @@ namespace chaiscript::dispatch::detail {
         ->Function_Signature<Ret, Function_Params<volatile const Class&&, Param...>, true, true>;
 
     template<typename Ret, typename Class, typename... Param>
-    Function_Signature(Ret(Class::* f)(Param...)&&)->Function_Signature<Ret, Function_Params<Class&&, Param...>, false, true>;
+    Function_Signature(Ret(Class::* f)(Param...)&&)
+        ->Function_Signature<Ret, Function_Params<Class&&, Param...>, false, true>;
 
     template<typename Ret, typename Class, typename... Param>
-    Function_Signature(Ret(Class::* f)(Param...) && noexcept)->Function_Signature<Ret, Function_Params<Class&&, Param...>, true, true>;
+    Function_Signature(Ret(Class::* f)(Param...) && noexcept)
+        ->Function_Signature<Ret, Function_Params<Class&&, Param...>, true, true>;
 
     template<typename Ret, typename Class, typename... Param>
-    Function_Signature(Ret(Class::* f)(Param...) const&&)->Function_Signature<Ret, Function_Params<const Class&&, Param...>, false, true>;
+    Function_Signature(Ret(Class::* f)(Param...) const&&)
+        ->Function_Signature<Ret, Function_Params<const Class&&, Param...>, false, true>;
 
     template<typename Ret, typename Class, typename... Param>
     Function_Signature(Ret(Class::* f)(Param...) const&& noexcept)
         ->Function_Signature<Ret, Function_Params<const Class&&, Param...>, true, true>;
 
     template<typename Ret, typename Class>
-    Function_Signature(Ret Class::* f)->Function_Signature<Ret, Function_Params<Class&>, true, true, true>;
+    Function_Signature(Ret Class::* f)
+        ->Function_Signature<Ret, Function_Params<Class&>, true, true, true>;
 
     // primary template handles types that have no nested ::type member:
     template<class, class = std::void_t<>>
-    struct has_call_operator : std::false_type {
-    };
+    struct has_call_operator : std::false_type {};
 
     // specialization recognizes types that do have a nested ::type member:
     template<class T>
-    struct has_call_operator<T, std::void_t<decltype(&T::operator())>> : std::true_type {
-    };
+    struct has_call_operator<T, std::void_t<decltype(&T::operator())>> : std::true_type {};
 
     template<typename Func>
     auto function_signature(const Func& f) {
         if constexpr (has_call_operator<Func>::value) {
-            return Function_Signature<typename decltype(Function_Signature{ &std::decay_t<Func>::operator() })::Return_Type,
+            return Function_Signature<
+                typename decltype(Function_Signature{ &std::decay_t<Func>::operator() })::Return_Type,
                 typename decltype(Function_Signature{ &std::decay_t<Func>::operator() })::Param_Types,
                 decltype(Function_Signature{ &std::decay_t<Func>::operator() })::is_noexcept,
                 false,
                 false,
-                true > {};
+                true 
+            > {};
         }
         else {
             return Function_Signature{ f };
@@ -385,7 +402,7 @@ namespace chaiscript {
         template<typename Func, bool Is_Noexcept, bool Is_Member, bool Is_MemberObject, bool Is_Object, typename Ret, typename... Param>
         auto make_callable_impl(Func&& func, Function_Signature<Ret, Function_Params<Param...>, Is_Noexcept, Is_Member, Is_MemberObject, Is_Object>) {
             if constexpr (Is_MemberObject) {
-                // we now that the Param pack will have only one element, so we are safe expanding it here
+                // we know that the Param pack will have only one element, so we are safe expanding it here
                 return Proxy_Function(chaiscript::make_shared<dispatch::Proxy_Function_Base, dispatch::Attribute_Access<Ret, std::decay_t<Param>...>>(
                     std::forward<Func>(func)));
             }
@@ -423,11 +440,6 @@ namespace chaiscript {
         auto make_callable(Func&& func, Function_Signature<Ret, Function_Params<Param...>, Is_Noexcept, Is_Member, Is_MemberObject, false> fs) {
             return make_callable_impl(std::forward<Func>(func), fs);
         }
-
-        //template<typename Func, typename Ret, typename... Param, bool Is_Noexcept, bool Is_Member, bool Is_MemberObject>
-        //auto make_callable_attr(Func&& func, Function_Signature<Ret, Function_Params<Param...>, Is_Noexcept, Is_Member, Is_MemberObject, false> fs) {
-        //    return make_callable_impl(std::forward<Func>(func), fs);
-        //}
     } // namespace dispatch::detail
 
     /// \brief Creates a new Proxy_Function object from a free function, member function or data member
@@ -483,32 +495,9 @@ namespace chaiscript {
 
     //template<typename T>
     //Proxy_Function attr_fun(T&& t) {
-    //    return dispatch::detail::make_callable_attr(std::forward<T>(t), dispatch::detail::function_signature(t));
+    //    Proxy_Function out = dispatch::detail::make_callable_attr(std::forward<T>(t), dispatch::detail::function_signature(t));
+    //    // out->is_attribute_function
+    //    return out;
     //}
-
-#if 0
-    /// \brief Creates a new Proxy_Function object from a free function, member function or data member and binds the first parameter of it
-    /// \param[in] t Function / member to expose
-    /// \param[in] q Value to bind to first parameter
-    ///
-    /// \b Example:
-    /// \code
-    /// struct MyClass
-    /// {
-    ///   void memberfunction(int);
-    /// };
-    ///
-    /// MyClass obj;
-    /// chaiscript::ChaiScript chai;
-    /// // Add function taking only one argument, an int, and permanently bound to "obj"
-    /// chai.add(fun(&MyClass::memberfunction, std::ref(obj)), "memberfunction");
-    /// \endcode
-    ///
-    /// \sa \ref adding_functions
-    template<typename T, typename Q>
-    Proxy_Function fun(T&& t, const Q& q) {
-        return fun(detail::bind_first(std::forward<T>(t), q));
-    }
-#endif
 
 } // namespace chaiscript

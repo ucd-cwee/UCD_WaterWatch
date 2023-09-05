@@ -25,6 +25,8 @@ to maintain a single distribution point for the source code.
 #include "InterpolatedMatrix.h"
 #include "Engineering.h"
 
+BETTER_ENUM(LinkType, uint8_t, CVPIPE, PIPE, PUMP, PRV, PSV, PBV, FCV, TCV, GPV);
+
 namespace chaiscript {
     namespace WaterWatch_Lib {
         [[nodiscard]] ModulePtr library_EPAnet() {
@@ -128,6 +130,10 @@ namespace chaiscript {
                     AddSharedPtrClassFunction(::epanet, Slink, GetDownstreamNode);
                     AddSharedPtrClassFunction(::epanet, Slink, GetUpstreamNode);
                     AddSharedPtrClassFunction(::epanet, Slink, Zones);
+
+                    ADD_BETTER_ENUM_TO_SCRIPT_ENGINE(LinkType, LinkType);
+                    lib->add(chaiscript::fun([](cweeSharedPtr < ::epanet::Slink> const& a) -> LinkType { if (!a) throw(chaiscript::exception::eval_error("Cannot access a member of a null (empty) shared object.")); return LinkType::_from_index(static_cast<int>(a->Type)); }), "LinkType");
+
                     lib->add(chaiscript::fun([](cweeSharedPtr < ::epanet::Slink> const& a) -> std::string { if (!a) throw(chaiscript::exception::eval_error("Cannot access a member of a null (empty) shared object.")); return (cweeStr(a->Type_p.ToString()) + " " + a->Name_p).c_str(); }), "to_string");
                     lib->add(chaiscript::castable_class<cweeSharedPtr<::epanet::Sasset>, cweeSharedPtr<::epanet::Slink>>());
                 }
@@ -174,14 +180,6 @@ namespace chaiscript {
                     AddSharedPtrClassMember(::epanet, Svalve, ProducesElectricity);
                     AddSharedPtrClassMember_SpecializedName(::epanet, Svalve, Energy, EnergySummary);
                     lib->add(chaiscript::fun([](cweeSharedPtr < ::epanet::Svalve> const& a) -> std::string { if (!a) throw(chaiscript::exception::eval_error("Cannot access a member of a null (empty) shared object.")); return (cweeStr(a->Type_p.ToString()) + " " + a->Name_p).c_str(); }), "to_string");
-
-                    //lib->AddFunction(, NetPresentValue, , SINGLE_ARG({
-                    //    return proj->epanetProj->network->Leakage.NetPresentValueOfValve(valve);
-                    //}), ::epanet::Pvalve const& valve, cweeSharedPtr<EPAnetProject> const& proj);
-
-                    //lib->AddFunction(, NetPresentValue, , SINGLE_ARG({
-                    //    return proj->epanetProj->network->Leakage.NetPresentValueOfValve(valve, mode);
-                    //}), ::epanet::Pvalve const& valve, cweeSharedPtr<EPAnetProject> const& proj, int mode);
 
                     lib->add(chaiscript::castable_class<cweeSharedPtr<::epanet::Slink>, cweeSharedPtr<::epanet::Svalve>>());
                     lib->add(chaiscript::castable_class<cweeSharedPtr<::epanet::Sasset>, cweeSharedPtr<::epanet::Svalve>>());
@@ -255,7 +253,14 @@ namespace chaiscript {
                     }), "TryCalibrateZone");
                     lib->AddFunction(, LeakModelResults, , SINGLE_ARG({
                         std::map<std::string, Boxed_Value> out;
-                        for (auto& item : zone->LeakModelResults(proj->epanetProj, surveyFrequency, oldPressure)) out[item.first] = var(cweeUnitValues::unit_value(item.second));
+                        for (auto& item : zone->LeakModelResults(proj->epanetProj, surveyFrequency, oldPressure)) {
+                            if (item.second.get<1>().GetNumValues() > 0) {
+                                out[item.first] = var(cweeUnitValues::cweeUnitPattern(item.second.get<1>()));
+                            }
+                            else {
+                                out[item.first] = var(cweeUnitValues::unit_value(item.second.get<0>()));
+                            }
+                        }
 
                         // Energy Produced TS
                         {
@@ -778,12 +783,12 @@ namespace chaiscript {
                                     if (control_zone) {
                                         AUTO cP = control_zone->AverageNodePressure();
                                         year_t surveyFreq = zone->SurveyFrequency(proj->epanetProj, cP);
-                                        NPV_zone = zone->LeakModelResults(proj->epanetProj, surveyFreq, cP)["Net Benefits"]();
+                                        NPV_zone = zone->LeakModelResults(proj->epanetProj, surveyFreq, cP)["Net Benefits"].get<0>()();
                                     }
                                     else {
                                         AUTO cP = zone->AverageNodePressure();
                                         year_t surveyFreq = zone->SurveyFrequency(proj->epanetProj, cP);
-                                        NPV_zone = zone->LeakModelResults(proj->epanetProj, surveyFreq, cP)["Net Benefits"]();
+                                        NPV_zone = zone->LeakModelResults(proj->epanetProj, surveyFreq, cP)["Net Benefits"].get<0>()();
                                     }
                                 }
                                 //if (!std::isnan(NPV_zone()))

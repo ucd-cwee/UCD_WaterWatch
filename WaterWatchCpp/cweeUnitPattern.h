@@ -164,6 +164,7 @@ namespace cweeUnitValues {
 
 				out->internal_X_type.Clear();
 				out->internal_Y_type.Clear();
+
 				out->internal_X_type = this->internal_X_type;
 				out->internal_Y_type = this->internal_Y_type;
 
@@ -1462,10 +1463,9 @@ namespace cweeUnitValues {
 
 			AUTO g = lock.Guard();
 			AUTO g1 = o.lock.Guard();
-			// auto newP = container->CopyAnotherContainer(o.container);
-			// container = newP->Clone();
-
-			container = container->CopyAnotherContainer(o.container);
+			
+			// container = container->CopyAnotherContainer(o.container);
+			container = o.container->Clone();
 
 			boundaryType = o.boundaryType;
 			interpolationType = o.interpolationType;
@@ -1663,9 +1663,9 @@ namespace cweeUnitValues {
 			AUTO g = lock.Guard();
 			AUTO g1 = o.lock.Guard();
 
-			//auto newP = container->CopyAnotherContainer(o.container);
-			//container = newP->Clone();
-			container = container->CopyAnotherContainer(o.container);
+
+			// container = container->CopyAnotherContainer(o.container);
+			container = o.container->Clone();
 
 			boundaryType = o.boundaryType;
 			interpolationType = o.interpolationType;

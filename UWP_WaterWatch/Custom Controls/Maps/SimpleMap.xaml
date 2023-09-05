@@ -32,7 +32,8 @@
         <Border PointerEntered="Style_PointerEntered" PointerExited="Style_PointerExited" Opacity="0.01" HorizontalAlignment="Left" VerticalAlignment="Top" Background="{ThemeResource AcrylicInAppFillColorDefaultBrush}" CornerRadius="5">
             <MenuBar HorizontalAlignment="Left" VerticalAlignment="Top">
                 <MenuBarItem Title="Style"  >
-                    <MenuFlyoutItem Text="None" Tag="-1" Click="StyleSelect" />
+                    <MenuFlyoutItem Text="None (Black)" Tag="-1" Click="StyleSelect" />
+                    <MenuFlyoutItem Text="None (White)" Tag="-2" Click="StyleSelect" />
                     <MenuFlyoutItem Text="Aerial" Tag="0" Click="StyleSelect" />
                     <MenuFlyoutItem Text="Aerial With Overlay" Tag="1" Click="StyleSelect" />
                     <MenuFlyoutItem Text="Light Road" Tag="2" Click="StyleSelect" />

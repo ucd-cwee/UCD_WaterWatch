@@ -614,6 +614,8 @@ namespace epanet {
         TANK
     } NodeType;
 
+    // BETTER_ENUM(LinkType, uint8_t, CVPIPE, PIPE, PUMP, PRV, PSV, PBV, FCV, TCV, GPV);
+
     typedef enum {
         CVPIPE,        // pipe with check valve
         PIPE,          // pipe
@@ -2775,7 +2777,7 @@ namespace epanet {
         /* returns the list of assets that feed into or out of this zone. */
         cweeList< cweeUnion<Passet, direction_t> > GetMassBalanceAssets(cweeSharedPtr<Project> pr);
         cweeUnitValues::cweeUnitPattern TryCalibrateZone(cweeSharedPtr<Project> pr, std::map<std::string, cweeUnitValues::cweeUnitPattern> const& ScadaSources);
-        std::map<std::string, cweeUnitValues::unit_value> LeakModelResults(cweeSharedPtr<Project> pr, year_t surveyFrequency, pounds_per_square_inch_t oldPressure) const;
+        std::map<std::string, cweeUnion<cweeUnitValues::unit_value, cweeUnitValues::cweeUnitPattern>> LeakModelResults(cweeSharedPtr<Project> pr, year_t surveyFrequency, pounds_per_square_inch_t oldPressure) const;
         year_t SurveyFrequency(cweeSharedPtr<Project> pr, pounds_per_square_inch_t oldPressure) const;
 
 
@@ -3443,7 +3445,9 @@ namespace epanet {
         SCALER ILI = 1.1; // # infrastructure leakage index
 
         // evaluate the leak model on a network, assuming leak rates on pipe lengths, as a function of zone pressures and zone pipes.
-        std::map<std::string, cweeUnitValues::unit_value> LeakModelResults(
+        
+
+        std::map<std::string, cweeUnion<cweeUnitValues::unit_value, cweeUnitValues::cweeUnitPattern>> LeakModelResults(
             mile_t MilesMains,
             year_t surveyFrequency,
             cweeList<Pzone> new_zones, 
@@ -3646,21 +3650,52 @@ namespace epanet {
                 }
             }
 
-            std::map<std::string, cweeUnitValues::unit_value> results; {
-                results["Total Costs"] = cweeUnitValues::Dollar(NPV_costs);
-                results["Total Benefits"] = cweeUnitValues::Dollar(NPV_benefits);
-                results["Net Benefits"] = cweeUnitValues::Dollar(NPV_benefits - NPV_costs);
-                results["Total Water Saved"] = cweeUnitValues::million_gallon(TotalWaterSaved);
-                results["Total Pipe Length"] = cweeUnitValues::mile(MilesMains);
-                results["Initial Leak Rate"] = cweeUnitValues::million_gallon_per_day((million_gallon_per_day_t)init);
-                
-                
-                //results["Average Water Demand"] = cweeUnitValues::million_gallon_per_day(totalWaterDemand);
-                //results["Number of Valves"] = cweeUnitValues::scalar(numValves);
-                //results["Number of ERTs"] = cweeUnitValues::scalar(numERTs);
-                //results["Number of Junctions"] = cweeUnitValues::scalar(numJunctions);
-                //results["Number of Customer Nodes"] = cweeUnitValues::scalar(numCustomers);
-                //results["Average Pipe Diameter"] = cweeUnitValues::inch(avgPipeDiameter);
+            std::map<std::string, cweeUnion<cweeUnitValues::unit_value, cweeUnitValues::cweeUnitPattern>> results; {
+                results["Total Costs"] = cweeUnion<cweeUnitValues::unit_value, cweeUnitValues::cweeUnitPattern>(cweeUnitValues::Dollar(NPV_costs), cweeUnitValues::cweeUnitPattern());
+                results["Total Benefits"] = cweeUnion<cweeUnitValues::unit_value, cweeUnitValues::cweeUnitPattern>(cweeUnitValues::Dollar(NPV_benefits), cweeUnitValues::cweeUnitPattern());
+                results["Net Benefits"] = cweeUnion<cweeUnitValues::unit_value, cweeUnitValues::cweeUnitPattern>(cweeUnitValues::Dollar(NPV_benefits - NPV_costs), cweeUnitValues::cweeUnitPattern());
+                results["Total Water Saved"] = cweeUnion<cweeUnitValues::unit_value, cweeUnitValues::cweeUnitPattern>(cweeUnitValues::million_gallon(TotalWaterSaved), cweeUnitValues::cweeUnitPattern());
+                results["Total Pipe Length"] = cweeUnion<cweeUnitValues::unit_value, cweeUnitValues::cweeUnitPattern>(cweeUnitValues::mile(MilesMains), cweeUnitValues::cweeUnitPattern());
+                results["Initial Leak Rate"] = cweeUnion<cweeUnitValues::unit_value, cweeUnitValues::cweeUnitPattern>(cweeUnitValues::million_gallon_per_day((million_gallon_per_day_t)init), cweeUnitValues::cweeUnitPattern());
+                {
+                    cweeUnitValues::cweeUnitPattern pat;
+                    pat = cweeUnitValues::cweeUnitPattern(cweeUnitValues::second(), cweeUnitValues::million_gallon());
+
+                    for (int t_ind = 0; t_ind < t.size(); t_ind++) {
+                        month_t idx = t[t_ind];
+                        cweeTime t = cweeTime::Now().ToStartOfMonth() + second_t(idx)();
+
+                        pat.AddValue(cweeUnitValues::second((u64)t), cweeUnitValues::million_gallon(Water_Lost_Do_Nothing[t_ind]));
+                    }  
+
+                    results["Water_Lost_Do_Nothing"] = cweeUnion<cweeUnitValues::unit_value, cweeUnitValues::cweeUnitPattern>(cweeUnitValues::unit_value(0), cweeUnitValues::cweeUnitPattern(pat));
+                }
+                {
+                    cweeUnitValues::cweeUnitPattern pat;
+                    pat = cweeUnitValues::cweeUnitPattern(cweeUnitValues::second(), cweeUnitValues::million_gallon());
+
+                    for (int t_ind = 0; t_ind < t.size(); t_ind++) {
+                        month_t idx = t[t_ind];
+                        cweeTime t = cweeTime::Now().ToStartOfMonth() + second_t(idx)();
+
+                        pat.AddValue(cweeUnitValues::second((u64)t), cweeUnitValues::million_gallon(Water_Lost_Volume[t_ind]));
+                    }
+
+                    results["Water_Lost_Volume"] = cweeUnion<cweeUnitValues::unit_value, cweeUnitValues::cweeUnitPattern>(cweeUnitValues::unit_value(0), cweeUnitValues::cweeUnitPattern(pat));
+                }
+                {
+                    cweeUnitValues::cweeUnitPattern pat;
+                    pat = cweeUnitValues::cweeUnitPattern(cweeUnitValues::second(), cweeUnitValues::million_gallon());
+
+                    for (int t_ind = 0; t_ind < t.size(); t_ind++) {
+                        month_t idx = t[t_ind];
+                        cweeTime t = cweeTime::Now().ToStartOfMonth() + second_t(idx)();
+
+                        pat.AddValue(cweeUnitValues::second((u64)t), cweeUnitValues::million_gallon(Water_Saved_Volume[t_ind]));
+                    }
+
+                    results["Water_Saved_Volume"] = cweeUnion<cweeUnitValues::unit_value, cweeUnitValues::cweeUnitPattern>(cweeUnitValues::unit_value(0), cweeUnitValues::cweeUnitPattern(pat));
+                }
             }
 
             return results;
@@ -3677,7 +3712,7 @@ namespace epanet {
             // test entire sampel space at low resolution
             for (month_t S = 1; S <= 30_yr; S += month_t(12)) {
                 auto r = LeakModelResults(MilesMains, S, new_zones, avgPressure_old, avgPressure_new);
-                cache[S] = r["Net Benefits"]();
+                cache[S] = r["Net Benefits"].get<0>()();
                 if (cache[S] > bestNetBenefit) {
                     bestNetBenefit = cache[S];
                     bestMonth = S;
@@ -3691,7 +3726,7 @@ namespace epanet {
                     thisV = cache[S];
                 } 
                 else {
-                    cache[S] = LeakModelResults(MilesMains, S, new_zones, avgPressure_old, avgPressure_new)["Net Benefits"]();
+                    cache[S] = LeakModelResults(MilesMains, S, new_zones, avgPressure_old, avgPressure_new)["Net Benefits"].get<0>()();
                     thisV = cache[S];
                 }
 
@@ -3708,7 +3743,7 @@ namespace epanet {
                     thisV = cache[S];
                 }
                 else {
-                    cache[S] = LeakModelResults(MilesMains, S, new_zones, avgPressure_old, avgPressure_new)["Net Benefits"]();
+                    cache[S] = LeakModelResults(MilesMains, S, new_zones, avgPressure_old, avgPressure_new)["Net Benefits"].get<0>()();
                     thisV = cache[S];
                 }
 
@@ -4256,7 +4291,7 @@ namespace epanet {
 
         return sumDemands;    
     };
-    INLINE std::map<std::string, cweeUnitValues::unit_value> Szone::LeakModelResults(cweeSharedPtr<Project> pr, year_t surveyFrequency, pounds_per_square_inch_t oldPressure) const {
+    INLINE std::map<std::string, cweeUnion<cweeUnitValues::unit_value, cweeUnitValues::cweeUnitPattern>> Szone::LeakModelResults(cweeSharedPtr<Project> pr, year_t surveyFrequency, pounds_per_square_inch_t oldPressure) const {
         mile_t MilesMains = 0;
         pounds_per_square_inch_t avgPressure = this->AverageNodePressure();
 
@@ -4302,12 +4337,12 @@ namespace epanet {
             }
         }
 
-        results["Average Water Demand"] = cweeUnitValues::million_gallon_per_day(totalWaterDemand);
-        results["Number of Valves"] = cweeUnitValues::scalar(numValves);
-        results["Number of ERTs"] = cweeUnitValues::scalar(numERTs);
-        results["Number of Junctions"] = cweeUnitValues::scalar(numJunctions);
-        results["Number of Customer Nodes"] = cweeUnitValues::scalar(numCustomers);
-        results["Average Pipe Diameter"] = cweeUnitValues::inch(avgPipeDiameter);
+        results["Average Water Demand"] = cweeUnion<cweeUnitValues::unit_value, cweeUnitValues::cweeUnitPattern>(cweeUnitValues::million_gallon_per_day(totalWaterDemand), cweeUnitValues::cweeUnitPattern());
+        results["Number of Valves"] = cweeUnion<cweeUnitValues::unit_value, cweeUnitValues::cweeUnitPattern>(cweeUnitValues::scalar(numValves), cweeUnitValues::cweeUnitPattern()); 
+        results["Number of ERTs"] = cweeUnion<cweeUnitValues::unit_value, cweeUnitValues::cweeUnitPattern>(cweeUnitValues::scalar(numERTs), cweeUnitValues::cweeUnitPattern()); 
+        results["Number of Junctions"] = cweeUnion<cweeUnitValues::unit_value, cweeUnitValues::cweeUnitPattern>(cweeUnitValues::scalar(numJunctions), cweeUnitValues::cweeUnitPattern()); 
+        results["Number of Customer Nodes"] = cweeUnion<cweeUnitValues::unit_value, cweeUnitValues::cweeUnitPattern>(cweeUnitValues::scalar(numCustomers), cweeUnitValues::cweeUnitPattern());
+        results["Average Pipe Diameter"] = cweeUnion<cweeUnitValues::unit_value, cweeUnitValues::cweeUnitPattern>(cweeUnitValues::inch(avgPipeDiameter), cweeUnitValues::cweeUnitPattern()); 
 
         return results;
     };
