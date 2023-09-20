@@ -130,6 +130,7 @@ public:
 	};;
 
 	virtual cweeStr			QueryHttp(const cweeStr& mainAddress = "nationalmap.gov", const cweeStr& requestParameters = "epqs/pqs.php?y=-117&x=33&output=xml&units=Feet", const cweeStr& UniqueSessionName = "WaterWatchCpp") = 0;
+	virtual cweeStr			QueryHttpToFile(const cweeStr& mainAddress = "nationalmap.gov", const cweeStr& requestParameters = "epqs/pqs.php?y=-117&x=33&output=xml&units=Feet", const cweeStr& UniqueSessionName = "WaterWatchCpp") = 0;
 	virtual cweeStr			GetIpAddress() = 0;
 	virtual IpAddressInformation			GetAddress() = 0;
 	static cweeThreadedList<std::pair<cweeStr, cweeStr>> ParseJson(cweeStr source, bool* failed = nullptr);

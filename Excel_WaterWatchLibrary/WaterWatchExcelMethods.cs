@@ -1522,6 +1522,14 @@ namespace Excel_WaterWatchLibrary
         }
 
         [ComVisible(true)]
+        public string ExcelWaterWatch(string request)
+        {
+            var await = WaterWatch.DoScript(request);
+            while (!await.IsFinished()) { }
+            return await.Result();
+        }
+
+        [ComVisible(true)]
         public string WW_Command(string request)
         {
             var await = WaterWatch.DoScript(request);

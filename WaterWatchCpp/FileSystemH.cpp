@@ -78,6 +78,7 @@ public:
 	u64				getCurrentTime();
 
 	cweeStr			QueryHttp(const cweeStr& mainAddress = "nationalmap.gov", const cweeStr& requestParameters = "epqs/pqs.php?y=-117&x=33&output=xml&units=Feet", const cweeStr& UniqueSessionName = "WaterWatchCpp");
+	cweeStr			QueryHttpToFile(const cweeStr& mainAddress = "nationalmap.gov", const cweeStr& requestParameters = "epqs/pqs.php?y=-117&x=33&output=xml&units=Feet", const cweeStr& UniqueSessionName = "WaterWatchCpp");
 	cweeStr			GetIpAddress();
 	IpAddressInformation			GetAddress();
 
@@ -321,10 +322,63 @@ cweeStr  FileSystemLocal::QueryHttp(const cweeStr& mainAddress, const cweeStr& r
 	cweeStr filePath, out;
 
 	C_WINHTTP http;
+	HRESULT hr;
 
-	HRESULT hr = http.Query(filePath, mainAddress, requestParameters, UniqueSessionName);	
+	cweeStr newAddress = cweeStr(mainAddress).ReplaceInline("https://", "").ReplaceInline("http://", "");
+	if (newAddress.Find('/') < 0 && requestParameters.IsEmpty()) {
+		// example: "api.ipify.org" with no params
+		// convert to: http.Query("api.ipify.org", "/", UniqueSessionName)
+		hr = http.Query(filePath, newAddress, "/", UniqueSessionName);
 
-	{
+	}else if (newAddress.Find('/') < 0 && !requestParameters.IsEmpty()) {
+		// example: "gis.ngdc.noaa.gov" with good params
+		// good as-is
+		hr = http.Query(filePath, newAddress, requestParameters, UniqueSessionName);
+	}
+	else if (newAddress.Find('/') >= 0 && requestParameters.IsEmpty()) {
+		// example: "gis.ngdc.noaa.gov/arcgis/rest/..." with no params
+		// split based on that first '/'
+		// convert to: http.Query("gis.ngdc.noaa.gov", "/arcgis/rest/...", UniqueSessionName)
+
+		AUTO parms = newAddress.Split("/");
+		cweeStr newAddress2;
+		cweeStr newRequestParams;
+
+		int i;
+		for (i = 0; i < 1; i++) {
+			newAddress2.AddToDelimiter(parms[i], "/");
+		}
+		for (; i < parms.getNumVars(); i++) {
+			newRequestParams.AddToDelimiter(parms[i], "/");
+		}
+
+		hr = http.Query(filePath, newAddress2, "/" + newRequestParams, UniqueSessionName);
+	}
+	else if (newAddress.Find('/') >= 0 && !requestParameters.IsEmpty()) {
+		// example: "gis.ngdc.noaa.gov/arcgis/rest/..." with no params
+		// split based on that first '/'
+		// convert to: http.Query("gis.ngdc.noaa.gov", "/arcgis/rest/..." + requestParameters, UniqueSessionName)
+
+		AUTO parms = newAddress.Split("/");
+		cweeStr newAddress2;
+		cweeStr newRequestParams;
+
+		int i;
+		for (i = 0; i < 1; i++) {
+			newAddress2.AddToDelimiter(parms[i], "/");
+		}
+		for (; i < parms.getNumVars(); i++) {
+			newRequestParams.AddToDelimiter(parms[i], "/");
+		}
+
+		hr = http.Query(filePath, newAddress2, "/" + newRequestParams + requestParameters, UniqueSessionName);
+	}
+	else {
+		// unknown... just push it through.
+		hr = http.Query(filePath, newAddress, requestParameters, UniqueSessionName);
+	}
+
+	if (!filePath.IsEmpty()) {
 		std::string get;
 		std::ifstream file(filePath.c_str()); 
 		out.Clear();
@@ -332,10 +386,73 @@ cweeStr  FileSystemLocal::QueryHttp(const cweeStr& mainAddress, const cweeStr& r
 			out.AddToDelimiter(get.c_str(), '\n');
 		}
 		file.close();
-	}
-	std::remove(filePath.c_str());
+		std::remove(filePath.c_str());
+	}	
 
 	return out;
+};
+cweeStr	 FileSystemLocal::QueryHttpToFile(const cweeStr& mainAddress, const cweeStr& requestParameters, const cweeStr& UniqueSessionName) {
+	cweeStr filePath, out;
+
+	C_WINHTTP http;
+	HRESULT hr;
+
+	cweeStr newAddress = cweeStr(mainAddress).ReplaceInline("https://", "").ReplaceInline("http://", "");
+	if (newAddress.Find('/') < 0 && requestParameters.IsEmpty()) {
+		// example: "api.ipify.org" with no params
+		// convert to: http.Query("api.ipify.org", "/", UniqueSessionName)
+		hr = http.Query(filePath, newAddress, "/", UniqueSessionName);
+
+	}
+	else if (newAddress.Find('/') < 0 && !requestParameters.IsEmpty()) {
+		// example: "gis.ngdc.noaa.gov" with good params
+		// good as-is
+		hr = http.Query(filePath, newAddress, requestParameters, UniqueSessionName);
+	}
+	else if (newAddress.Find('/') >= 0 && requestParameters.IsEmpty()) {
+		// example: "gis.ngdc.noaa.gov/arcgis/rest/..." with no params
+		// split based on that first '/'
+		// convert to: http.Query("gis.ngdc.noaa.gov", "/arcgis/rest/...", UniqueSessionName)
+
+		AUTO parms = newAddress.Split("/");
+		cweeStr newAddress2;
+		cweeStr newRequestParams;
+
+		int i;
+		for (i = 0; i < 1; i++) {
+			newAddress2.AddToDelimiter(parms[i], "/");
+		}
+		for (; i < parms.getNumVars(); i++) {
+			newRequestParams.AddToDelimiter(parms[i], "/");
+		}
+
+		hr = http.Query(filePath, newAddress2, "/" + newRequestParams, UniqueSessionName);
+	}
+	else if (newAddress.Find('/') >= 0 && !requestParameters.IsEmpty()) {
+		// example: "gis.ngdc.noaa.gov/arcgis/rest/..." with no params
+		// split based on that first '/'
+		// convert to: http.Query("gis.ngdc.noaa.gov", "/arcgis/rest/..." + requestParameters, UniqueSessionName)
+
+		AUTO parms = newAddress.Split("/");
+		cweeStr newAddress2;
+		cweeStr newRequestParams;
+
+		int i;
+		for (i = 0; i < 1; i++) {
+			newAddress2.AddToDelimiter(parms[i], "/");
+		}
+		for (; i < parms.getNumVars(); i++) {
+			newRequestParams.AddToDelimiter(parms[i], "/");
+		}
+
+		hr = http.Query(filePath, newAddress2, "/" + newRequestParams + requestParameters, UniqueSessionName);
+	}
+	else {
+		// unknown... just push it through.
+		hr = http.Query(filePath, newAddress, requestParameters, UniqueSessionName);
+	}
+
+	return filePath;
 };
 cweeStr			FileSystemLocal::GetIpAddress() {
 	cweeStr out;

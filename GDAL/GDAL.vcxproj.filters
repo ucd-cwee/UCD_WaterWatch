@@ -1,0 +1,14 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="GDAL Source">
+      <UniqueIdentifier>{a6fdfaa2-597d-4a8f-8fd2-091b8ee65c39}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="GDAL.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="GDAL.h" />
+  </ItemGroup>
+</Project>

@@ -143,6 +143,9 @@ copy "$(OutDir)Conv.dll" "$(ProjectDir)"
     <ProjectReference Include="..\ODBC\ODBC.vcxproj">
       <Project>{1a272023-c990-41f9-bcff-7f480377a6a0}</Project>
     </ProjectReference>
+    <ProjectReference Include="..\GDAL\GDAL.vcxproj">
+      <Project>{0fd47813-8575-4e53-90ca-fcffa5992d31}</Project>
+    </ProjectReference>
     <ProjectReference Include="..\WindowsPlatformTools\WindowsPlatformTools.vcxproj">
       <Project>{6d90b501-45bf-4777-8ee1-be7f74a8d6d1}</Project>
     </ProjectReference>

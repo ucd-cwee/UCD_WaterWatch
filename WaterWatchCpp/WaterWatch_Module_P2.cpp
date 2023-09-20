@@ -429,10 +429,14 @@ namespace chaiscript {
                     AddBasicClassMember(IpAddressInformation, time_zone);
                     AddBasicClassMember(IpAddressInformation, zip_code);
                     lib->add(chaiscript::fun([](IpAddressInformation& a) -> cwee_units::length::foot_t { return cwee_units::length::foot_t(a.coordinates.z); }), "elevation");
+                    lib->add(chaiscript::fun([](IpAddressInformation const& a) -> std::string { 
+                        return cweeStr::printf("%s, %s %s, %s", a.city.c_str(), a.region_name.c_str(), a.zip_code.c_str(), a.country_name.c_str()).c_str();
+                    }), "to_string");
                 }
                 lib->add(chaiscript::fun([](const cweeStr& Directory) { return fileSystem->ensureDirectoryExists(Directory); }), "ensureDirectoryExists");
                 lib->add(chaiscript::fun([](const cweeStr& oldFilePath, const cweeStr& newFilePath) { return fileSystem->renameFile(oldFilePath, newFilePath); }), "renameFile");
                 lib->add(chaiscript::fun([](const cweeStr& oldFilePath, const cweeStr& newFilePath) { return fileSystem->copyFile(oldFilePath, newFilePath); }), "copyFile");
+                lib->add(chaiscript::fun([](const cweeStr& oldFilePath) { return fileSystem->removeFile(oldFilePath); }), "removeFile");
                 lib->add(chaiscript::fun([](const cweeStr& oldFilePath) { return fileSystem->checkFileExists(oldFilePath); }), "checkFileExists");
                 lib->add(chaiscript::fun([]() { return fileSystem->getAppFolder(); }), "getAppFolder");
                 lib->add(chaiscript::fun([]() { return fileSystem->getAppName(); }), "getAppName");
@@ -452,6 +456,15 @@ namespace chaiscript {
                     lib->add(chaiscript::fun([](cweeStr const& filePath, cweeStr const& content) { fileSystem->writeFileFromCweeStr(filePath, content);  }), "writeFileFromCweeStr");
                     lib->add(chaiscript::fun([](cweeStr const& filePath, cweeThreadedList<cweeStr> const& content) { fileSystem->writeFileFromStrList(filePath, content);  }), "writeFileFromStrList");
                     lib->add(chaiscript::fun([](cweeStr const& url) { return fileSystem->DownloadCweeStrFromURL(url); }), "DownloadCweeStrFromURL");
+                    lib->add(chaiscript::fun([](cweeStr const& url) {
+                        AUTO filePath_dwnl = fileSystem->QueryHttpToFile(url, "");
+                        return filePath_dwnl;
+                    }), "DownloadFileFromURL");
+                    lib->add(chaiscript::fun([](cweeStr const& url, cweeStr const& filePath) {
+                        AUTO filePath_dwnl = fileSystem->QueryHttpToFile(url, "");
+                        fileSystem->renameFile(filePath_dwnl, filePath);
+                        return filePath;
+                    }), "DownloadFileFromURL");
                     lib->add(chaiscript::fun([](cweeStr const& url) { return fileSystem->QueryHttp(url, ""); }), "QueryHTTP");
                     lib->add(chaiscript::fun([](cweeStr const& url, cweeStr const& params) { return fileSystem->QueryHttp(url, params); }), "QueryHTTP");
                     lib->add(chaiscript::fun([](cweeStr const& directory, cweeStr const& extension) { cweeList<chaiscript::Boxed_Value> bv; for (auto& s : fileSystem->listFilesWithExtension(directory, extension)) { bv.Append(chaiscript::Boxed_Value(s)); } return bv; }), "listFilesWithExtension");

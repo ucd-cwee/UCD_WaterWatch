@@ -1,0 +1,9 @@
+#pragma once
+#include "../WaterWatchCpp/Precompiled.h"
+#include "../WaterWatchCpp/Units.h"
+#include "../WaterWatchCpp/Strings.h"
+#include "../WaterWatchCpp/SharedPtr.h"
+#include "../WaterWatchCpp/cweeTime.h"
+#include "../WaterWatchCpp/List.h"
+#include "../WaterWatchCpp/enum.h"
+#include "../WaterWatchCpp/Iterator.h"
