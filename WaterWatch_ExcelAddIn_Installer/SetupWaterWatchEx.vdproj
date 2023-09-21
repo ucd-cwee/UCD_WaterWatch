@@ -33,12 +33,6 @@
         }
         "Entry"
         {
-        "MsmKey" = "8:_454A0F7DF70043C3A4C097B6D80AB4C4"
-        "OwnerKey" = "8:_UNDEFINED"
-        "MsmSig" = "8:_UNDEFINED"
-        }
-        "Entry"
-        {
         "MsmKey" = "8:_63C61D03F4B8F8628C957A6974BB3097"
         "OwnerKey" = "8:_0C55A1C578289A7D0DFC885CC713259A"
         "MsmSig" = "8:_UNDEFINED"
@@ -63,30 +57,6 @@
         }
         "Entry"
         {
-        "MsmKey" = "8:_6DCBD549EB254CF6A3A0C9A251BCFF9C"
-        "OwnerKey" = "8:_UNDEFINED"
-        "MsmSig" = "8:_UNDEFINED"
-        }
-        "Entry"
-        {
-        "MsmKey" = "8:_7734685573C44A3B8E1F15310F98BE91"
-        "OwnerKey" = "8:_UNDEFINED"
-        "MsmSig" = "8:_UNDEFINED"
-        }
-        "Entry"
-        {
-        "MsmKey" = "8:_8D68117F2E2543ACBE446D8DAA4234AC"
-        "OwnerKey" = "8:_UNDEFINED"
-        "MsmSig" = "8:_UNDEFINED"
-        }
-        "Entry"
-        {
-        "MsmKey" = "8:_939EAFCCE9D84C09990F883DB93B2DBC"
-        "OwnerKey" = "8:_UNDEFINED"
-        "MsmSig" = "8:_UNDEFINED"
-        }
-        "Entry"
-        {
         "MsmKey" = "8:_97115B5EFCEF4F02B729C2A3D30E676B"
         "OwnerKey" = "8:_UNDEFINED"
         "MsmSig" = "8:_UNDEFINED"
@@ -105,32 +75,20 @@
         }
         "Entry"
         {
+        "MsmKey" = "8:_B50FDFCD15E54400854BA756D2ABF8FA"
+        "OwnerKey" = "8:_UNDEFINED"
+        "MsmSig" = "8:_UNDEFINED"
+        }
+        "Entry"
+        {
         "MsmKey" = "8:_C90AA7406A811C1325CF7B78D4992E5F"
         "OwnerKey" = "8:_97115B5EFCEF4F02B729C2A3D30E676B"
         "MsmSig" = "8:_UNDEFINED"
         }
         "Entry"
         {
-        "MsmKey" = "8:_C9A104B0187C464E9395EF183C20E7E4"
-        "OwnerKey" = "8:_UNDEFINED"
-        "MsmSig" = "8:_UNDEFINED"
-        }
-        "Entry"
-        {
         "MsmKey" = "8:_D828496B42EAD0BDBA5CF61070B4909B"
         "OwnerKey" = "8:_97115B5EFCEF4F02B729C2A3D30E676B"
-        "MsmSig" = "8:_UNDEFINED"
-        }
-        "Entry"
-        {
-        "MsmKey" = "8:_DACC63943CF7451DACA9322AEB1BBFC4"
-        "OwnerKey" = "8:_UNDEFINED"
-        "MsmSig" = "8:_UNDEFINED"
-        }
-        "Entry"
-        {
-        "MsmKey" = "8:_UNDEFINED"
-        "OwnerKey" = "8:_C90AA7406A811C1325CF7B78D4992E5F"
         "MsmSig" = "8:_UNDEFINED"
         }
         "Entry"
@@ -173,6 +131,12 @@
         {
         "MsmKey" = "8:_UNDEFINED"
         "OwnerKey" = "8:_63C61D03F4B8F8628C957A6974BB3097"
+        "MsmSig" = "8:_UNDEFINED"
+        }
+        "Entry"
+        {
+        "MsmKey" = "8:_UNDEFINED"
+        "OwnerKey" = "8:_C90AA7406A811C1325CF7B78D4992E5F"
         "MsmSig" = "8:_UNDEFINED"
         }
     }
@@ -337,26 +301,6 @@
             "IsDependency" = "11:TRUE"
             "IsolateTo" = "8:"
             }
-            "{1FB2D0AE-D3B9-43D4-B9DD-F88EC61E35DE}:_454A0F7DF70043C3A4C097B6D80AB4C4"
-            {
-            "SourcePath" = "8:..\\epanet\\nanodbc.lib"
-            "TargetName" = "8:nanodbc.lib"
-            "Tag" = "8:"
-            "Folder" = "8:_3593A3F397814CF89A1500AD1C34B2D2"
-            "Condition" = "8:"
-            "Transitive" = "11:FALSE"
-            "Vital" = "11:TRUE"
-            "ReadOnly" = "11:FALSE"
-            "Hidden" = "11:FALSE"
-            "System" = "11:FALSE"
-            "Permanent" = "11:FALSE"
-            "SharedLegacy" = "11:FALSE"
-            "PackageAs" = "3:1"
-            "Register" = "3:1"
-            "Exclude" = "11:FALSE"
-            "IsDependency" = "11:FALSE"
-            "IsolateTo" = "8:"
-            }
             "{9F6F8455-1EF1-4B85-886A-4223BCC8E7F7}:_63C61D03F4B8F8628C957A6974BB3097"
             {
             "AssemblyRegister" = "3:1"
@@ -419,86 +363,6 @@
             "IsDependency" = "11:TRUE"
             "IsolateTo" = "8:"
             }
-            "{1FB2D0AE-D3B9-43D4-B9DD-F88EC61E35DE}:_6DCBD549EB254CF6A3A0C9A251BCFF9C"
-            {
-            "SourcePath" = "8:..\\UWP_WaterWatch\\Assets\\WaterWatch.ico"
-            "TargetName" = "8:WaterWatch.ico"
-            "Tag" = "8:"
-            "Folder" = "8:_3593A3F397814CF89A1500AD1C34B2D2"
-            "Condition" = "8:"
-            "Transitive" = "11:FALSE"
-            "Vital" = "11:TRUE"
-            "ReadOnly" = "11:FALSE"
-            "Hidden" = "11:FALSE"
-            "System" = "11:FALSE"
-            "Permanent" = "11:FALSE"
-            "SharedLegacy" = "11:FALSE"
-            "PackageAs" = "3:1"
-            "Register" = "3:1"
-            "Exclude" = "11:FALSE"
-            "IsDependency" = "11:FALSE"
-            "IsolateTo" = "8:"
-            }
-            "{1FB2D0AE-D3B9-43D4-B9DD-F88EC61E35DE}:_7734685573C44A3B8E1F15310F98BE91"
-            {
-            "SourcePath" = "8:..\\epanet\\libmysql.dll"
-            "TargetName" = "8:libmysql.dll"
-            "Tag" = "8:"
-            "Folder" = "8:_3593A3F397814CF89A1500AD1C34B2D2"
-            "Condition" = "8:"
-            "Transitive" = "11:FALSE"
-            "Vital" = "11:TRUE"
-            "ReadOnly" = "11:FALSE"
-            "Hidden" = "11:FALSE"
-            "System" = "11:FALSE"
-            "Permanent" = "11:FALSE"
-            "SharedLegacy" = "11:FALSE"
-            "PackageAs" = "3:1"
-            "Register" = "3:1"
-            "Exclude" = "11:FALSE"
-            "IsDependency" = "11:FALSE"
-            "IsolateTo" = "8:"
-            }
-            "{1FB2D0AE-D3B9-43D4-B9DD-F88EC61E35DE}:_8D68117F2E2543ACBE446D8DAA4234AC"
-            {
-            "SourcePath" = "8:..\\Excel_WaterWatchLibrary\\bin\\Release\\Excel_WaterWatchLibrary.dll.manifest"
-            "TargetName" = "8:Excel_WaterWatchLibrary.dll.manifest"
-            "Tag" = "8:"
-            "Folder" = "8:_3593A3F397814CF89A1500AD1C34B2D2"
-            "Condition" = "8:"
-            "Transitive" = "11:FALSE"
-            "Vital" = "11:TRUE"
-            "ReadOnly" = "11:FALSE"
-            "Hidden" = "11:FALSE"
-            "System" = "11:FALSE"
-            "Permanent" = "11:FALSE"
-            "SharedLegacy" = "11:FALSE"
-            "PackageAs" = "3:1"
-            "Register" = "3:1"
-            "Exclude" = "11:FALSE"
-            "IsDependency" = "11:FALSE"
-            "IsolateTo" = "8:"
-            }
-            "{1FB2D0AE-D3B9-43D4-B9DD-F88EC61E35DE}:_939EAFCCE9D84C09990F883DB93B2DBC"
-            {
-            "SourcePath" = "8:..\\Excel_WaterWatchLibrary\\bin\\Release\\Excel_WaterWatchLibrary.vsto"
-            "TargetName" = "8:Excel_WaterWatchLibrary.vsto"
-            "Tag" = "8:"
-            "Folder" = "8:_3593A3F397814CF89A1500AD1C34B2D2"
-            "Condition" = "8:"
-            "Transitive" = "11:FALSE"
-            "Vital" = "11:TRUE"
-            "ReadOnly" = "11:FALSE"
-            "Hidden" = "11:FALSE"
-            "System" = "11:FALSE"
-            "Permanent" = "11:FALSE"
-            "SharedLegacy" = "11:FALSE"
-            "PackageAs" = "3:1"
-            "Register" = "3:1"
-            "Exclude" = "11:FALSE"
-            "IsDependency" = "11:FALSE"
-            "IsolateTo" = "8:"
-            }
             "{9F6F8455-1EF1-4B85-886A-4223BCC8E7F7}:_A5FC459D2FF19400A5E652A222B27F51"
             {
             "AssemblyRegister" = "3:1"
@@ -528,6 +392,26 @@
             "Register" = "3:1"
             "Exclude" = "11:TRUE"
             "IsDependency" = "11:TRUE"
+            "IsolateTo" = "8:"
+            }
+            "{1FB2D0AE-D3B9-43D4-B9DD-F88EC61E35DE}:_B50FDFCD15E54400854BA756D2ABF8FA"
+            {
+            "SourcePath" = "8:..\\UWP_WaterWatch\\Assets\\WaterWatch.ico"
+            "TargetName" = "8:WaterWatch.ico"
+            "Tag" = "8:"
+            "Folder" = "8:_3593A3F397814CF89A1500AD1C34B2D2"
+            "Condition" = "8:"
+            "Transitive" = "11:FALSE"
+            "Vital" = "11:TRUE"
+            "ReadOnly" = "11:FALSE"
+            "Hidden" = "11:FALSE"
+            "System" = "11:FALSE"
+            "Permanent" = "11:FALSE"
+            "SharedLegacy" = "11:FALSE"
+            "PackageAs" = "3:1"
+            "Register" = "3:1"
+            "Exclude" = "11:FALSE"
+            "IsDependency" = "11:FALSE"
             "IsolateTo" = "8:"
             }
             "{9F6F8455-1EF1-4B85-886A-4223BCC8E7F7}:_C90AA7406A811C1325CF7B78D4992E5F"
@@ -561,26 +445,6 @@
             "IsDependency" = "11:TRUE"
             "IsolateTo" = "8:"
             }
-            "{1FB2D0AE-D3B9-43D4-B9DD-F88EC61E35DE}:_C9A104B0187C464E9395EF183C20E7E4"
-            {
-            "SourcePath" = "8:..\\epanet\\libmysql.lib"
-            "TargetName" = "8:libmysql.lib"
-            "Tag" = "8:"
-            "Folder" = "8:_3593A3F397814CF89A1500AD1C34B2D2"
-            "Condition" = "8:"
-            "Transitive" = "11:FALSE"
-            "Vital" = "11:TRUE"
-            "ReadOnly" = "11:FALSE"
-            "Hidden" = "11:FALSE"
-            "System" = "11:FALSE"
-            "Permanent" = "11:FALSE"
-            "SharedLegacy" = "11:FALSE"
-            "PackageAs" = "3:1"
-            "Register" = "3:1"
-            "Exclude" = "11:FALSE"
-            "IsDependency" = "11:FALSE"
-            "IsolateTo" = "8:"
-            }
             "{9F6F8455-1EF1-4B85-886A-4223BCC8E7F7}:_D828496B42EAD0BDBA5CF61070B4909B"
             {
             "AssemblyRegister" = "3:1"
@@ -610,26 +474,6 @@
             "Register" = "3:1"
             "Exclude" = "11:FALSE"
             "IsDependency" = "11:TRUE"
-            "IsolateTo" = "8:"
-            }
-            "{1FB2D0AE-D3B9-43D4-B9DD-F88EC61E35DE}:_DACC63943CF7451DACA9322AEB1BBFC4"
-            {
-            "SourcePath" = "8:..\\epanet\\libcurl_a.lib"
-            "TargetName" = "8:libcurl_a.lib"
-            "Tag" = "8:"
-            "Folder" = "8:_3593A3F397814CF89A1500AD1C34B2D2"
-            "Condition" = "8:"
-            "Transitive" = "11:FALSE"
-            "Vital" = "11:TRUE"
-            "ReadOnly" = "11:FALSE"
-            "Hidden" = "11:FALSE"
-            "System" = "11:FALSE"
-            "Permanent" = "11:FALSE"
-            "SharedLegacy" = "11:FALSE"
-            "PackageAs" = "3:1"
-            "Register" = "3:1"
-            "Exclude" = "11:FALSE"
-            "IsDependency" = "11:FALSE"
             "IsolateTo" = "8:"
             }
         }
@@ -712,7 +556,7 @@
         "Name" = "8:Microsoft Visual Studio"
         "ProductName" = "8:WaterWatch Excel Add-In"
         "ProductCode" = "8:{3F73C0C5-D941-4A1B-AF2F-985B2D58757F}"
-        "PackageCode" = "8:{B3463430-0781-4932-8131-DFF1FEF5275A}"
+        "PackageCode" = "8:{7B32E476-4C50-4C7E-9547-94FD9B419A95}"
         "UpgradeCode" = "8:{BA4F2BDD-E5E9-4C07-874F-06DA25FB6F85}"
         "AspNetVersion" = "8:2.0.50727.0"
         "RestartWWWService" = "11:FALSE"
@@ -727,9 +571,9 @@
         "Subject" = "8:"
         "ARPCONTACT" = "8:Robert Good, M.S."
         "Keywords" = "8:"
-        "ARPCOMMENTS" = "8:Installs the WaterWatch extension for Microsoft Office's Excel"
+        "ARPCOMMENTS" = "8:Installs the WaterWatch extension for Microsoft Office Excel"
         "ARPURLINFOABOUT" = "8:https://cwee.ucdavis.edu/"
-        "ARPPRODUCTICON" = "8:_6DCBD549EB254CF6A3A0C9A251BCFF9C"
+        "ARPPRODUCTICON" = "8:_B50FDFCD15E54400854BA756D2ABF8FA"
         "ARPIconIndex" = "3:0"
         "SearchPath" = "8:"
         "UseSystemSearchPath" = "11:TRUE"

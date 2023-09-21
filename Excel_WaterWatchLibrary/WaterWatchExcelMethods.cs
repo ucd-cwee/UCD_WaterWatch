@@ -655,14 +655,26 @@ namespace Excel_WaterWatchLibrary
         /// <param name="OutputRange"></param>
         /// <returns></returns>
         [System.Runtime.InteropServices.ComVisible(true)]
-        public object GetUniques(object InputRange, object OutputRange) // returns the string-array-matrix that (should) fit the size specified by the output range. 
+        public object GetUniques(object InputRange, object OutputRange = null) // returns the string-array-matrix that (should) fit the size specified by the output range. 
         {
-            if (InputRange is null || OutputRange is null || !(InputRange is Excel.Range) || !(OutputRange is Excel.Range))
+            if (InputRange is null || !(InputRange is Excel.Range))
             {
-                return -1;
+                return null;
             }
             else
             {
+                int nCol, nRow;
+
+                if (OutputRange is null || !(OutputRange is Excel.Range)) {
+                    nCol = 1;
+                    nRow = 1000000;
+                }
+                else
+                {
+                    nCol = ((Excel.Range)OutputRange).Columns.Count;
+                    nRow = ((Excel.Range)OutputRange).Rows.Count;
+                }
+
                 List<dynamic> ListOut = new List<dynamic>();
                 foreach (Excel.Range cell in ((Excel.Range)InputRange).Cells)
                 {
@@ -682,13 +694,7 @@ namespace Excel_WaterWatchLibrary
                             ListOut.Add(cell.Value);
                         }
                     }
-                }
-
-                // if (((Excel.Range)OutputRange).Cells.Count <= 0) return -1;
-
-                int nCol = ((Excel.Range)OutputRange).Columns.Count;
-
-                int nRow = ((Excel.Range)OutputRange).Rows.Count;
+                }                
 
                 var value = Extensions.ListToMatrix(ListOut, nCol, nRow, false);
 
@@ -1163,7 +1169,6 @@ namespace Excel_WaterWatchLibrary
             }
         }
 
-
         public object CopyRangeTo(object rangeA, object OutputRange)
         {
             // for each object in rangeA... 
@@ -1228,7 +1233,7 @@ namespace Excel_WaterWatchLibrary
         }
 
         /// <summary>
-        /// Returns the range associated with the celling cell. Note: Calling this can cause a recursive formula if not done intentionally.
+        /// Returns the range associated with the calling cell. Note: Calling this can cause a recursive formula if not done intentionally.
         /// </summary>
         /// <returns></returns>
         [System.Runtime.InteropServices.ComVisible(true)]
@@ -1285,20 +1290,26 @@ namespace Excel_WaterWatchLibrary
         /// <param name="OutputRange"></param>
         /// <returns></returns>
         [ComVisible(true)]
-        public object SplitString(string InputString, string splitBy, object OutputRange)
+        public object SplitString(string InputString, string splitBy, object OutputRange = null)
         {
+            int nCol,nRow;
             if (OutputRange is null || !(OutputRange is Excel.Range))
             {
-                return -1;
+                nCol = 10000;
+                nRow = 1;
+            }
+            else
+            {
+                nCol = ((Excel.Range)OutputRange).Columns.Count;
+
+                nRow = ((Excel.Range)OutputRange).Rows.Count;
             }
 
             var sepBy = new List<string>() { splitBy };
 
             var strings = InputString.Split(sepBy.ToArray(), StringSplitOptions.None);
 
-            int nCol = ((Excel.Range)OutputRange).Columns.Count;
-
-            int nRow = ((Excel.Range)OutputRange).Rows.Count;
+            
 
             var value = Extensions.ListToMatrix(strings.ToList(), nCol, nRow);
 
@@ -1522,6 +1533,111 @@ namespace Excel_WaterWatchLibrary
         }
 
         [ComVisible(true)]
+        public double ErtPotential_kW(double averageWaterDemand, double expectedNumberOfCascadesThroughErts = 1.719395)
+        {
+            double potential = averageWaterDemand * 0.007637 * expectedNumberOfCascadesThroughErts / 1.719395;
+            return potential;
+            //var await = WaterWatch.DoScript($"{potential}_kW");
+            //while (!await.IsFinished()) { }
+            //string reply = await.Result();
+            //if (double.TryParse(reply, out double kilowatt))
+            //{
+            //    return kilowatt;
+            //}
+            //else
+            //{
+            //    return 0.0;
+            //}
+        }
+
+        [ComVisible(true)]
+        public double ErtAnalysis_kW(double AverageFlow_GPM, double AverageDownstreamPressure_PSI = 60.0, double Efficiency = 76.3359, double MinAvgPressure_PSI = 40.0, double expectedNumberOfCascadesThroughErts = 1)
+        {
+            if (AverageDownstreamPressure_PSI > MinAvgPressure_PSI)
+            {
+                var await = WaterWatch.DoScript($"CentrifugalPumpEnergyDemand({AverageFlow_GPM}_gpm, ({AverageDownstreamPressure_PSI - MinAvgPressure_PSI}_psi).head.double.foot, (10000.0 / {Efficiency}).scalar_t).double"); // 76.3359f
+                while (!await.IsFinished()) { }
+                string reply = await.Result();
+                if (double.TryParse(reply, out double kilowatt))
+                {
+                    return expectedNumberOfCascadesThroughErts * kilowatt;
+                }
+                else
+                {
+                    return 0.0;
+                }
+            }
+            else
+            {
+                return 0.0;
+            }
+        }
+
+        [ComVisible(true)]
+        public object ErtTimeseriesAnalysis_kW(object Flow_GPM, object DownstreamPressure_PSI, double Efficiency = 76.3359, double MinPressure_PSI = 40.0, double expectedNumberOfCascadesThroughErts = 1)
+        {
+            if (Flow_GPM is Excel.Range && DownstreamPressure_PSI is Excel.Range)
+            {
+                List<double> flows = new List<double>();
+                List<double> pressures = new List<double>();
+
+                List<double> values = new List<double>();
+
+                int nCol = (Flow_GPM as Excel.Range).Columns.Count;
+                int nRow = (Flow_GPM as Excel.Range).Rows.Count;
+
+                int progress = 0;
+
+                foreach (Excel.Range cell in (Flow_GPM as Excel.Range).Cells)
+                {
+                    if (cell.Value != null)
+                    {
+                        if (double.TryParse(cell.Value.ToString(), out double v))
+                        {
+                            flows.Add(v);
+                        }
+                    }
+                }
+                foreach (Excel.Range cell in (DownstreamPressure_PSI as Excel.Range).Cells)
+                {
+                    if (cell.Value != null)
+                    {
+                        if (double.TryParse(cell.Value.ToString(), out double v))
+                        {
+                            pressures.Add(v);
+                        }
+                    }
+                }
+
+                double minPressure = double.MaxValue;
+                for (int i = 0; i < pressures.Count && i < flows.Count; i++)
+                {
+                    minPressure = Math.Min(minPressure, pressures[i]);
+                }
+
+                if (minPressure > MinPressure_PSI)
+                {
+                    double pressureRemoval = minPressure - MinPressure_PSI;
+                    for (int i = 0; i < pressures.Count && i < flows.Count; i++)                    
+                        values.Add(expectedNumberOfCascadesThroughErts * ErtAnalysis_kW(flows[i], pressures[i], Efficiency, pressures[i] - pressureRemoval));                    
+                }
+                else
+                {
+                    for (int i = 0; i < pressures.Count && i < flows.Count; i++)                    
+                        values.Add(0.0);                    
+                }
+
+                var matrix = Extensions.ListToMatrix(values.ToList(), nCol, nRow);
+
+                return matrix;
+            }
+            else
+            {
+                return ErtAnalysis_kW((double)Flow_GPM, (double)DownstreamPressure_PSI, Efficiency, MinPressure_PSI);
+            }
+        }
+
+        [ComVisible(true)]
         public string ExcelWaterWatch(string request)
         {
             var await = WaterWatch.DoScript(request);
@@ -1537,7 +1653,7 @@ namespace Excel_WaterWatchLibrary
             return await.Result();
         }
 
-        [System.Runtime.InteropServices.ComVisible(true)]
+        [ComVisible(true)]
         public string WW_Commands(object range)
         {
             if (range is null)
