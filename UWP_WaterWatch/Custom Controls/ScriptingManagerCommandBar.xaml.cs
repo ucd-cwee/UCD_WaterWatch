@@ -714,9 +714,22 @@ namespace UWP_WaterWatch.Custom_Controls
                             if (file.FileType.Contains("script"))
                             {
                                 EdmsTasks.cweeTask streamJob = new EdmsTasks.cweeTask();
-                                EdmsTasks.InsertJob(async () => {
-                                    streamJob.SetFinished(await Windows.Storage.FileIO.ReadTextAsync(file));
-                                }, true);
+                                file.OpenReadAsync().AsTask().ContinueWith(async (System.Threading.Tasks.Task<Windows.Storage.Streams.IRandomAccessStreamWithContentType> c) => {
+                                    try
+                                    {
+                                        using (var reader = new StreamReader(c.Result.AsStreamForRead()))
+                                        {
+                                            string content = await reader.ReadToEndAsync();
+                                            streamJob.SetFinished(content);
+                                        }
+                                    }
+                                    catch (Exception) { streamJob.SetFinished(""); }
+                                });
+
+                                //EdmsTasks.InsertJob(async () => {
+                                //    streamJob.SetFinished(await Windows.Storage.FileIO.ReadTextAsync(file));
+                                //}, true);
+
                                 streamJob.ContinueWith(() => {
                                     JSON_Serializer_Workspace jsonObj = JsonConvert.DeserializeObject<JSON_Serializer_Workspace>(streamJob.Result);
                                     var page = AddNewTextScriptPage();
@@ -729,9 +742,17 @@ namespace UWP_WaterWatch.Custom_Controls
                             else
                             {
                                 EdmsTasks.cweeTask streamJob = new EdmsTasks.cweeTask();
-                                EdmsTasks.InsertJob(async () => {
-                                    streamJob.SetFinished(await Windows.Storage.FileIO.ReadTextAsync(file));
-                                }, true);
+                                file.OpenReadAsync().AsTask().ContinueWith(async (System.Threading.Tasks.Task<Windows.Storage.Streams.IRandomAccessStreamWithContentType> c) => {
+                                    try
+                                    {
+                                        using (var reader = new StreamReader(c.Result.AsStreamForRead()))
+                                        {
+                                            string content = await reader.ReadToEndAsync();
+                                            streamJob.SetFinished(content);
+                                        }
+                                    }
+                                    catch (Exception) { streamJob.SetFinished(""); }                                    
+                                });
                                 streamJob.ContinueWith(() => {
                                     JSON_Serializer_Workspace jsonObj = JsonConvert.DeserializeObject<JSON_Serializer_Workspace>(streamJob.Result);
                                     var page = AddNewVisualScriptPage();
