@@ -4,7 +4,7 @@
 Developed by the University of California Davis, Center for Water-Energy Efficiency, Project CECFL79.     
 Funded by the California Energy Commission EPIC program, Award EPC-16-062.        
 > Principle Investigator: Dr. Frank Loge, PE.       
-> Engineering Manager and Design Lead: Robert Good, M.S.
+> Engineering Manager and Design Lead: Robert Good, M.S.       
 > PhD Researcher: Erin Musabandesu, P.E.    
 > PhD Researcher: Greg Miller.    
 > Research Engineer: David Linz.    
