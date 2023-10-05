@@ -603,7 +603,7 @@ namespace chaiscript {
                     throw chaiscript::exception::global_non_const();
                 }
 
-                return set_global(obj, std::move(name));
+                return set_global(obj, name);
             }
 
             /// Adds a new global (non-const) shared object, between all the threads
@@ -1716,7 +1716,8 @@ namespace chaiscript {
                     const Type_Conversions_State convs(m_conversions, m_conversions.conversion_saves());
                     return convs->boxed_type_conversion_polymorphic(get_type(user_typename) /*to*/, m_conversions.conversion_saves() /* conversion saves */, bv /* from */);
                 }
-                throw std::bad_cast::__construct_from_string_literal(cweeStr::printf("Could not cast from '%s' to '%s'.", bv.get_type_info().name(), user_typename.data()));
+                throw std::runtime_error(cweeStr::printf("Could not cast from '%s' to '%s'.", bv.get_type_info().name(), user_typename.data()).c_str());               
+                // throw std::bad_cast::__construct_from_string_literal(cweeStr::printf("Could not cast from '%s' to '%s'.", bv.get_type_info().name(), user_typename.data()));
             };
 
             std::string type_name(const Boxed_Value& obj) const { return get_type_name(obj.get_type_info()); }
@@ -1747,7 +1748,6 @@ namespace chaiscript {
             }
 
             static void save_function_params(Stack_Holder& t_s, const Function_Params& t_params) {      
-                AUTO P = &t_s;
                 AUTO end = t_params.end();
                 for (AUTO param = t_params.begin(); param != end; param++) {
                     t_s.call_params.back().insert(
@@ -1755,18 +1755,6 @@ namespace chaiscript {
                         *param
                     );
                 }
-
-                //AUTO P = &t_s;
-                //AUTO a = t_params.begin();
-                //AUTO b = t_params.end();
-                //AUTO alpha = &P->call_params;
-                //AUTO a1 = alpha->back();
-                //AUTO a2 = alpha->back();
-                //a1.insert(
-                //    a2.begin(),
-                //    a,
-                //    b
-                //);
             }
 
             void save_function_params(chaiscript::small_vector<Boxed_Value>&& t_params) { save_function_params(*m_stack_holder, std::move(t_params)); }

@@ -24,7 +24,7 @@ to maintain a single distribution point for the source code.
 
 template <typename T> class cweeInterpolatedMatrix {
 public:
-	template <typename T> class xyContainer {
+	class xyContainer {
 	public:
 		double			x = 0;
 		double			y = 0;
@@ -243,7 +243,7 @@ public:
 		};
 
 	};
-	using sourceType = typename cweeBalancedCurve<xyContainer<T>>;
+	using sourceType = cweeBalancedCurve<xyContainer>;
 
 	cweeInterpolatedMatrix() {
 		hilbertContainer.SetBoundaryType(boundary_t::BT_CLOSED);
@@ -460,7 +460,7 @@ public:
 		long long 
 			x = std::floor((double)(column * compressionFactor) + 0.5),
 			y = std::floor((double)(row * compressionFactor) + 0.5);
-		xyContainer<T> val(column, row, value);
+		xyContainer val(column, row, value);
 		u64 hash = uniqueHash(x, y);
 		if (AddUnique)
 			source.AddUniqueValue(hash, val);
@@ -558,8 +558,8 @@ public:
 					Distance
 					,
 					cweeMath::RSqrtFast(
-						((x.get<0>() - y.get<0>()) * (x.get<0>() - y.get<0>()))
-						+ ((x.get<1>() - y.get<1>()) * (x.get<1>() - y.get<1>()))
+						((x.first - y.first) * (x.first - y.first))
+						+ ((x.second - y.second) * (x.second - y.second))
 					)
 					, count
 				);

@@ -87,44 +87,51 @@ to maintain a single distribution point for the source code.
 		};
 
 	} // namespace constexpr_to_string
-	template<std::intmax_t N> constexpr const char* ConstexprIntToString() { static constexpr AUTO str = constexpr_to_string::to_string_t<N, 10, char>(); return str(); };
+	template<std::intmax_t N> constexpr const char* ConstexprIntToString() { 
+		/*static constexpr AUTO str = constexpr_to_string::to_string_t<N, 10, char>(); 
+		return str(); */
+		return constexpr_to_string::to_string_t<N, 10, char>().operator();
+	};
 
 	namespace cweeUnitValues {
 		BETTER_ENUM(unit_value_type, uint8_t, METERS, KILOGRAMS, SECONDS, AMPERES, DOLLAR);
 
-		INLINE constexpr unsigned long long HashUnits(double a, double b, double c, double d, double e) noexcept {
-			constexpr AUTO A = 54059; /* a prime */
-			constexpr AUTO B = 76963; /* another prime */
-			constexpr AUTO C = 86969; /* yet another prime */
-			constexpr AUTO FIRSTH = 37; /* also prime */
+		INLINE constexpr size_t HashUnits(double a, double b, double c, double d, double e) noexcept {
+			constexpr double OFFSET = 1000;
+			constexpr size_t A = 54059; /* a prime */
+			constexpr double B = 76963; /* another prime */
+			constexpr size_t C = 86969; /* yet another prime */
+			constexpr size_t FIRSTH = 37; /* also prime */
 
 			size_t h = FIRSTH;
-			h = (h * A) ^ (long long)(a * B * 100.0);
-			h = (h * A) ^ (long long)(b * B * 100.0);
-			h = (h * A) ^ (long long)(c * B * 100.0);
-			h = (h * A) ^ (long long)(d * B * 100.0);
-			h = (h * A) ^ (long long)(e * B * 100.0);
+			h = (h * A) ^ (size_t)((a+ OFFSET) * B * 100.0); 
+			h = (h * A) ^ (size_t)((b + OFFSET) * B * 100.0); 
+			h = (h * A) ^ (size_t)((c + OFFSET) * B * 100.0); 
+			h = (h * A) ^ (size_t)((d + OFFSET) * B * 100.0); 
+			h = (h * A) ^ (size_t)((e + OFFSET) * B * 100.0); 
 
 			AUTO result = h % C;
 			return result;
 		};
-		INLINE constexpr unsigned long long HashUnitAndRatio(unsigned long long unitHash, double ratio) noexcept {
-			constexpr AUTO A = 54059; /* a prime */
-			constexpr AUTO B = 76963; /* another prime */
-			constexpr AUTO C = 86969; /* yet another prime */
-			constexpr AUTO FIRSTH = 37; /* also prime */
+		INLINE constexpr size_t HashUnitAndRatio(double unitHash, double ratio) noexcept {
+			constexpr double OFFSETA = 10000;
+			constexpr double OFFSETB = 1000;
+			constexpr size_t A = 54059; /* a prime */
+			constexpr double B = 76963; /* another prime */
+			constexpr size_t C = 86969; /* yet another prime */
+			constexpr size_t FIRSTH = 37; /* also prime */
 
 			size_t h = FIRSTH;
-			h = (h * A) ^ (long long)(unitHash * B);
-			h = (h * A) ^ (long long)(ratio * B * 10000000.0);
+			h = (h * A) ^ (size_t)((unitHash + OFFSETA) * B); 
+			h = (h * A) ^ (size_t)((ratio + OFFSETB) * B * 100000.0); // 10000000.0
 
 			AUTO result = h % C;
 			return result;
 		};
 
 		namespace cweeUnitValuesDetail { 
-			const char* lookup_abbreviation(unsigned long long ull); 
-			const char* lookup_typename(unsigned long long ull);
+			const char* lookup_abbreviation(size_t ull);
+			const char* lookup_typename(size_t ull);
 		};
 
 		class Unit_ID {
@@ -150,7 +157,7 @@ to maintain a single distribution point for the source code.
 			bool IsSameUnit(Unit_ID const& other) const noexcept {
 				return IsSameCategory(other) && (ratio_m == other.ratio_m);
 			};
-			unsigned long long HashCategory() const noexcept {
+			AUTO HashCategory() const noexcept {
 				return cweeUnitValues::HashUnits(unitType_m[0], unitType_m[1], unitType_m[2], unitType_m[3], unitType_m[4]);
 			};
 			const char* LookupAbbreviation() const {
@@ -232,11 +239,10 @@ to maintain a single distribution point for the source code.
 
 		public: // Functions
 			const char* Abbreviation() const noexcept {
-				if (unit_m.abbreviation_m == "") {
+				if (cweeStr::Cmp(unit_m.abbreviation_m, "") == 0) {
 					unit_m.abbreviation_m = unit_m.LookupAbbreviation();
-					if (unit_m.abbreviation_m == "") {
-						// unit_m.abbreviation_m = CreateAbbreviation();
-						return CreateAbbreviation(); // unit_m.abbreviation_m;
+					if (cweeStr::Cmp(unit_m.abbreviation_m, "") == 0) {
+						return CreateAbbreviation();
 					}
 					else {
 						return unit_m.abbreviation_m;
@@ -264,43 +270,48 @@ to maintain a single distribution point for the source code.
 				cweeStr out; double v;
 				{
 					v = unit_m.unitType_m[unit_value_type::METERS];
-					if (v != 0)
+					if (v != 0) {
 						if (v == 1)
 							out.AddToDelimiter("m", " ");
 						else
 							out.AddToDelimiter(cweeStr::printf("m^%s", cweeStr((float)v).c_str()), " ");
+					}
 				}
 				{
 					v = unit_m.unitType_m[unit_value_type::KILOGRAMS];
-					if (v != 0)
+					if (v != 0) {
 						if (v == 1)
 							out.AddToDelimiter("kg", " ");
 						else
 							out.AddToDelimiter(cweeStr::printf("kg^%s", cweeStr((float)v).c_str()), " ");
+					}
 				}
 				{
 					v = unit_m.unitType_m[unit_value_type::SECONDS];
-					if (v != 0)
+					if (v != 0) {
 						if (v == 1)
 							out.AddToDelimiter("s", " ");
 						else
 							out.AddToDelimiter(cweeStr::printf("s^%s", cweeStr((float)v).c_str()), " ");
+					}
 				}
 				{
 					v = unit_m.unitType_m[unit_value_type::AMPERES];
-					if (v != 0)
+					if (v != 0) {
 						if (v == 1)
 							out.AddToDelimiter("a", " ");
 						else
 							out.AddToDelimiter(cweeStr::printf("a^%s", cweeStr((float)v).c_str()), " ");
+					}
 				}
 				{
 					v = unit_m.unitType_m[unit_value_type::DOLLAR];
-					if (v != 0)
+					if (v != 0) {
 						if (v == 1)
 							out.AddToDelimiter("$", " ");
 						else
 							out.AddToDelimiter(cweeStr::printf("$^%s", cweeStr((float)v).c_str()), " ");
+					}
 				}
 				return out;
 			};
@@ -612,9 +623,9 @@ to maintain a single distribution point for the source code.
 	};
 
 #define CalculateMetricPrefixV(metric) ((double)std::metric::num / (double)std::metric::den)
-#define DerivedUnitTypeWithMetricPrefix(type, category, abbreviation, ratio, prefix, prefix_abbrev) DerivedUnitType(prefix ## type, category, prefix_abbrev ## abbreviation, (ratio) * CalculateMetricPrefixV(prefix))
+#define DerivedUnitTypeWithMetricPrefix(type, category, abbreviation, ratio, prefix, prefix_abbrev) DerivedUnitType(prefix ## type, category, prefix_abbrev ## abbreviation, ratio * CalculateMetricPrefixV(prefix))
 #define DerivedUnitTypeWithMetricPrefixes(type, category, abbreviation, ratio)\
-	DerivedUnitType(type, category, abbreviation, (ratio));\
+	DerivedUnitType(type, category, abbreviation, ratio);\
 	DerivedUnitTypeWithMetricPrefix(type, category, abbreviation, ratio, femto, f); \
 	DerivedUnitTypeWithMetricPrefix(type, category, abbreviation, ratio, pico, p);\
 	DerivedUnitTypeWithMetricPrefix(type, category, abbreviation, ratio, nano, n);\
@@ -893,13 +904,7 @@ namespace cweeUnitValues {
 			};
 			using namespace std::literals::string_view_literals;
 			
-			//template <typename T> static constexpr std::pair<unsigned long long, const char*> CreateRow() {
-			//	constexpr std::pair<unsigned long long, const char*> out { HashUnitAndRatio(HashUnits(T::A(), T::B(), T::C(), T::D(), T::E()), T::conversion()), T::specialized_abbreviation() };
-			//	return out;
-			//};
-
-#define CreateRow(Type) \
-			{ HashUnitAndRatio(HashUnits(Type::A(), Type::B(), Type::C(), Type::D(), Type::E()), Type::conversion()), { Type::specialized_abbreviation(), #Type } }
+#define CreateRow(Type) { HashUnitAndRatio(HashUnits(Type::A(), Type::B(), Type::C(), Type::D(), Type::E()), Type::conversion()), { Type::specialized_abbreviation(), #Type } }
 
 #define CreateRowWithMetricPrefixes(Type)\
 			CreateRow(Type), \
@@ -918,7 +923,8 @@ namespace cweeUnitValues {
 			CreateRow(tera ## Type), \
 			CreateRow(peta ## Type)
 			
-			static constexpr std::array<std::pair<unsigned long long, std::pair< const char*, const char*>>, 558> unit_types{
+			static constexpr size_t unit_types_size{ 558 }; // 558, should be 488?		
+			static constexpr std::array<std::pair<size_t, std::pair< const char*, const char*>>, unit_types_size> unit_types { 
 				{
 					CreateRowWithMetricPrefixes(meter),
 					CreateRow(foot),
@@ -1088,14 +1094,14 @@ namespace cweeUnitValues {
 					CreateRow(per_year)
 				}
 			};
-
+			
 #undef CreateRowWithMetricPrefixes
 #undef CreateRow
 		}
 		/*! Lookup the abbreviation for the type based on its unique characteristic combination (time/length/mass/etc.) */
-		INLINE std::pair< const char*, const char*> lookup_impl(unsigned long long ull) {
+		INLINE std::pair< const char*, const char*> lookup_impl(size_t ull) {
 			using namespace cweeUnitValuesDetails;
-			static constexpr auto map = Map<unsigned long long, std::pair< const char*, const char*>, unit_types.size()>{ {unit_types} }; // constexpr lookup map meaning it's always in memory for the lifetime of the DLL -- keep this small. 
+			static constexpr auto map = Map<size_t, std::pair< const char*, const char*>, unit_types.size()>{ {unit_types} }; // constexpr lookup map meaning it's always in memory for the lifetime of the DLL -- keep this small. 
 			try {
 				return map.at(ull);
 			}
@@ -1103,11 +1109,11 @@ namespace cweeUnitValues {
 				return std::pair< const char*, const char*>("", "");
 			}
 		}
-		INLINE const char* lookup_abbreviation(unsigned long long ull) { 
+		INLINE const char* lookup_abbreviation(size_t ull) {
 			AUTO p = lookup_impl(std::move(ull));
 			return p.first;
 		}
-		INLINE const char* lookup_typename(unsigned long long ull) {
+		INLINE const char* lookup_typename(size_t ull) {
 			AUTO p = lookup_impl(std::move(ull));
 			return p.second;
 		}

@@ -142,7 +142,7 @@ SWIG_AsCharPtrAndSize(SEXP obj, char** cptr, size_t* psize, int *alloc)
       }
     } else {
       *cptr = %reinterpret_cast(malloc(len + 1), char *);
-      *cptr = strcpy(*cptr, cstr);
+      ::strncpy(*cptr, cstr, len); // ::strcpy_s(*cptr, sizeof(*cptr), cstr);
     }
     if (psize) *psize = len + 1;
     return SWIG_OK;
@@ -157,7 +157,8 @@ SWIGINTERN char *
 SWIG_strdup(const char *str)
 {
   char *newstr = %reinterpret_cast(malloc(strlen(str) + 1), char *);
-  return strcpy(newstr, str);
+  ::strncpy(newstr, str, strlen(str)); //  ::strcpy_s(newstr, sizeof newstr, str);
+  return newstr;
 }
 }
 

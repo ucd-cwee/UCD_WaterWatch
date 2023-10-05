@@ -140,6 +140,7 @@ namespace chaiscript {
                     
                     for (size_t i = 0; i < (num_children - 1); ++i) {
                         const auto& child = *node->children[i];
+
                         switch (child.identifier) {
                         case AST_Node_Type::Constant: break;
                         case AST_Node_Type::Noop: break;

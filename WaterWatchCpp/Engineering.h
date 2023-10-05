@@ -3588,9 +3588,9 @@ namespace cweeEng {
 		*/
 	public:
 		pidLogic(float maxOutput = 1, float minOutput = 0, float Kp = 0.1, float Kd = 0.1, float Ki = 0.5) :
+			_Ku(1), 
 			_max(maxOutput),
-			_min(minOutput),
-			_Ku(1),
+			_min(minOutput),			
 			_Kp(Kp),
 			_Kd(Kd),
 			_Ki(Ki),
@@ -3777,7 +3777,7 @@ namespace cweeEng {
 				return;
 			int idx = 0;
 			double dist = distvec3Line(A, B, vec3s[0]);
-			for (int i = 1; i < vec3s.size(); i++) {
+			for (size_t i = 1; i < vec3s.size(); i++) {
 				if (distvec3Line(A, B, vec3s[i]) > dist) {
 					dist = distvec3Line(A, B, vec3s[i]);
 					idx = i;
@@ -3785,7 +3785,7 @@ namespace cweeEng {
 			}
 			ret.push_back(vec3s[idx]);
 			std::vector<vec3> R, T;
-			for (int i = 0; i < vec3s.size(); i++) {
+			for (size_t i = 0; i < vec3s.size(); i++) {
 				if (i != idx) {
 					int tmp = testSide(A, vec3s[idx], vec3s[i]);
 					if (tmp >= 0)
@@ -3813,7 +3813,7 @@ namespace cweeEng {
 			ret.push_back(vec3s.back());
 			// test whether a vec3 on the left side right side or on the line
 			std::vector<vec3> Left, Right, Online;
-			for (int i = 1; i < vec3s.size() - 1; i++) {
+			for (size_t i = 1; i < vec3s.size() - 1; i++) {
 				int tmp = testSide(vec3s[0], vec3s.back(), vec3s[i]);
 				if (tmp < 0)
 					Right.push_back(vec3s[i]);
@@ -3824,7 +3824,7 @@ namespace cweeEng {
 			}
 			// if Upper or Down is empty, Online should be pushed into ret
 			if (Left.empty() || Right.empty())
-				for (int i = 0; i < Online.size(); i++)
+				for (size_t i = 0; i < Online.size(); i++)
 					ret.push_back(Online[i]);
 			FindHull(Left, vec3s[0], vec3s.back(), ret);
 			FindHull(Right, vec3s.back(), vec3s[0], ret);
@@ -3991,7 +3991,15 @@ namespace cweeEng {
 		int j = polygon.Num() - 1;
 		for (int i = 0; i < polygon.Num(); i++)
 		{
-			if (polygon[i].y < testPoint.y && polygon[j].y >= testPoint.y || polygon[j].y < testPoint.y && polygon[i].y >= testPoint.y)
+			if (
+				(polygon[i].y < testPoint.y 
+				&& 
+				polygon[j].y >= testPoint.y) 
+				|| 
+				(polygon[j].y < testPoint.y 
+				&& 
+				polygon[i].y >= testPoint.y)
+				)
 			{
 				if (polygon[i].x + (testPoint.y - polygon[i].y) / (polygon[j].y - polygon[i].y) * (polygon[j].x - polygon[i].x) < testPoint.x)
 				{
@@ -4008,7 +4016,15 @@ namespace cweeEng {
 		int j = polygon.Num() - 1;
 		for (int i = 0; i < polygon.Num(); i++)
 		{
-			if (polygon[i].y < testPoint.y && polygon[j].y >= testPoint.y || polygon[j].y < testPoint.y && polygon[i].y >= testPoint.y)
+			if (
+				(polygon[i].y < testPoint.y 
+				&& 
+				polygon[j].y >= testPoint.y) 
+				|| 
+				(polygon[j].y < testPoint.y 
+				&& 
+				polygon[i].y >= testPoint.y)
+				)
 			{
 				if (polygon[i].x + (testPoint.y - polygon[i].y) / (polygon[j].y - polygon[i].y) * (polygon[j].x - polygon[i].x) < testPoint.x)
 				{

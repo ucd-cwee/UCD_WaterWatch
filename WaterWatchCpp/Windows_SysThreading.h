@@ -22,7 +22,7 @@ to maintain a single distribution point for the source code.
 #include <libloaderapi.h>
 #include <errhandlingapi.h>
 #include <winerror.h>
-#include <corecrt_malloc.h>
+// #include <corecrt_malloc.h>
 #include <Windows.h>
 #include <winnt.h>
 
@@ -215,12 +215,8 @@ public:
 private:
 	std::vector<std::string> files;
 	void Init(const char* directory) {
-		TCHAR argv;
 		WIN32_FIND_DATAW ffd;
-		LARGE_INTEGER filesize;
-		size_t length_of_arg;
 		HANDLE hFind = INVALID_HANDLE_VALUE;
-		DWORD dwError = 0;
 		WCHAR szDir[MAX_PATH];
 
 		std::string s = directory;

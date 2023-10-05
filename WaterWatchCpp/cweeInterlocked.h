@@ -21,7 +21,6 @@ to maintain a single distribution point for the source code.
 template< typename type>
 class cweeUnpooledInterlocked {
 public:
-	template< typename type>
 	class ExclusiveObject {
 	public:
 		constexpr ExclusiveObject(const cweeUnpooledInterlocked<type>& mut) : owner(const_cast<cweeUnpooledInterlocked<type>&>(mut)) { this->owner.Lock(); };
@@ -44,7 +43,7 @@ public:
 	};
 
 public: // construction and destruction
-	typedef type		Type;
+	typedef type Type;
 
 	cweeUnpooledInterlocked() : data(new type()) {};
 	cweeUnpooledInterlocked(const type& other) : data(new type()) { Swap(other); };
@@ -94,41 +93,21 @@ public: // read and swap
 			*ptr = replacement;
 		}
 	};
-	cweeUnpooledInterlocked<type>& operator=(const type& other) {
-		Swap(other);
-		return *this;
-	};
-	operator type() {
-		return Read();
-	};
-	operator type() const {
-		return Read();
+	cweeUnpooledInterlocked<type>& operator=(const type& other) { 
+		Swap(other); 
+		return *this; 
 	};
 
-	cweeSharedPtr<type> operator->() {
-		return data;
-	};
-	cweeSharedPtr<type> operator->() const {
-		return data;
-	};
+	operator type() const { return Read(); };
+	cweeSharedPtr<type> operator->() const { return data; };
 
 public: // lock, unlock, and direct edit
-	ExclusiveObject<type> GetExclusive() const {
-		return ExclusiveObject<type>(*this);
-	};
+	ExclusiveObject GetExclusive() const { return ExclusiveObject(*this); };
 
-	NODISCARD AUTO Guard() const {
-		return data.Guard();
-	};
-	void Lock() const {
-		data.Lock();
-	};
-	void Unlock() const {
-		data.Unlock();
-	};
-	type* UnsafeRead() const {
-		return data.UnsafeGet();
-	};
+	NODISCARD AUTO Guard() const { return data.Guard(); };
+	void Lock() const {	data.Lock(); };
+	void Unlock() const { data.Unlock(); };
+	type* UnsafeRead() const { return data.UnsafeGet(); };
 
 private:
 	mutable cweeSharedPtr<type> data;

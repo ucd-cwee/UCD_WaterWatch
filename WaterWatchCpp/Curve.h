@@ -40,9 +40,7 @@ const static std::map<boundary_t, const char*> StringMap_boundary_t = {
 	{boundary_t::BT_LOOP, "Loop"},
 	{boundary_t::BT_END, "End"}
 };
-template<> const static std::map<boundary_t, const char*>& StaticStringMap< boundary_t >() {
-	return StringMap_boundary_t;
-};
+StaticStringMapDecl(boundary_t);
 
 template< class type = float >
 class cweeCurve {
@@ -429,7 +427,7 @@ public:
 	int					FindExactY(const type& val) const {
 		int i = 0;
 		for (auto& j : knots) {
-			if (j.get<1>() == val) {
+			if (j.template get<1>() == val) {
 				return i;
 			}
 			i++;
@@ -502,67 +500,66 @@ public:
 		return out;
 	};
 
-	template<class type> cweeStr						SerializeKnots() {
-		cweeStr delim = ":Knots_DELIM:";
-		cweeStr out;
-		int numItems = this->Num();
-		cweeStr recorder;
-		for (int i = 0; i < numItems; i++) {
-			recorder.Clear();
-			recorder.Append(cweeStr((u64)(this->TimeAt(i)) / serializationTimeConverter));
-			recorder.Append(',');
-			recorder.Append(cweeStr((u64)this->ValueAt(i)));
-			out.AddToDelimiter(recorder, delim);
-		}
-		return out;
-	}
-
-	template<> cweeStr									SerializeKnots<cweeStr>() {
+	cweeStr						SerializeKnots() {
 		RemoveUnnecessaryKnots();
-
-		cweeStr delim = ":Knots_DELIM:";
-		cweeStr out;
-		int numItems = this->Num();
-		cweeStr recorder;
-		for (int i = 0; i < numItems; i++) {
-			recorder.Clear();
-			recorder.Append(cweeStr((u64)(this->TimeAt(i)) / serializationTimeConverter));
-			recorder.Append(',');
-			recorder.Append(this->ValueAt(i));
-			out.AddToDelimiter(recorder, delim);
+		if constexpr (std::is_same<cweeStr, type>::value) {
+			cweeStr delim = ":Knots_DELIM:";
+			cweeStr out;
+			int numItems = this->Num();
+			cweeStr recorder;
+			for (int i = 0; i < numItems; i++) {
+				recorder.Clear();
+				recorder.Append(cweeStr((u64)(this->TimeAt(i)) / serializationTimeConverter));
+				recorder.Append(',');
+				recorder.Append(this->ValueAt(i));
+				out.AddToDelimiter(recorder, delim);
+			}
+			return out;
+		} else {
+			cweeStr delim = ":Knots_DELIM:";
+			cweeStr out;
+			int numItems = this->Num();
+			cweeStr recorder;
+			for (int i = 0; i < numItems; i++) {
+				recorder.Clear();
+				recorder.Append(cweeStr((u64)(this->TimeAt(i)) / serializationTimeConverter));
+				recorder.Append(',');
+				recorder.Append(cweeStr((u64)this->ValueAt(i)));
+				out.AddToDelimiter(recorder, delim);
+			}
+			return out;
 		}
-		return out;
-	}
+	};
 
-	template<class type> void							DeserializeKnots(cweeStr& in) {
-		const cweeStr delim(":Knots_DELIM:");
-		this->knots.Clear();
-		if (!in.IsEmpty()) {
-			cweeParser obj(in, delim, true);
-			int finder(0); cweeStr left; cweeStr right;
-			for (auto& x : obj) {
-				finder = x.Find(',');
-				if (finder != -1) {
-					x.Mid(0, finder, left);
-					x.Mid(finder + 1, x.Length(), right);
-					this->AddValue((((u64)(left)) * serializationTimeConverter), (u64)right);
+	void						DeserializeKnots(cweeStr& in) {
+		if constexpr (std::is_same<cweeStr, type>::value) {
+			const cweeStr delim(":Knots_DELIM:");
+			this->knots.Clear();
+			if (!in.IsEmpty()) {
+				cweeParser obj(in, delim, true);
+				int finder(0); cweeStr left; cweeStr right;
+				for (auto& x : obj) {
+					finder = x.Find(',');
+					if (finder != -1) {
+						x.Mid(0, finder, left);
+						x.Mid(finder + 1, x.Length(), right);
+						this->AddValue((((u64)(left)) * serializationTimeConverter), right);
+					}
 				}
 			}
-		}
-	}
-
-	template<> void										DeserializeKnots<cweeStr>(cweeStr& in) {
-		const cweeStr delim(":Knots_DELIM:");
-		this->knots.Clear();
-		if (!in.IsEmpty()) {
-			cweeParser obj(in, delim, true);
-			int finder(0); cweeStr left; cweeStr right;
-			for (auto& x : obj) {
-				finder = x.Find(',');
-				if (finder != -1) {
-					x.Mid(0, finder, left);
-					x.Mid(finder + 1, x.Length(), right);
-					this->AddValue((((u64)(left)) * serializationTimeConverter), right);
+		} else {
+			const cweeStr delim(":Knots_DELIM:");
+			this->knots.Clear();
+			if (!in.IsEmpty()) {
+				cweeParser obj(in, delim, true);
+				int finder(0); cweeStr left; cweeStr right;
+				for (auto& x : obj) {
+					finder = x.Find(',');
+					if (finder != -1) {
+						x.Mid(0, finder, left);
+						x.Mid(finder + 1, x.Length(), right);
+						this->AddValue((((u64)(left)) * serializationTimeConverter), (u64)right);
+					}
 				}
 			}
 		}
@@ -574,7 +571,7 @@ public:
 		if (((cweeStr)this->Name).IsEmpty()) out = " "; else out.AddToDelimiter((cweeStr)this->Name, delim);
 		out.AddToDelimiter((int)this->boundaryType, delim);
 		out.AddToDelimiter((u64)this->closeTime, delim);
-		out.AddToDelimiter(SerializeKnots<type>(), delim);
+		out.AddToDelimiter(SerializeKnots(), delim);
 		return out;
 	};
 	void				Deserialize(cweeStr& in) {
@@ -582,7 +579,7 @@ public:
 		this->Name = obj.getVar(0);
 		this->boundaryType = boundary_t::_from_integral((int)(u64)obj.getVar(1));
 		this->closeTime = (u64)obj.getVar(2);
-		DeserializeKnots<type>(obj.getVar(3));
+		DeserializeKnots(obj.getVar(3));
 	};
 
 	mutable cweeLinkedList<cweeUnion<u64, type>> knots;
@@ -601,10 +598,10 @@ protected:
 		return (u64)value;
 	};
 	u64& TimeAt(int index) const {
-		return knots[index].get<0>();
+		return knots[index].template get<0>();
 	};
 	type& ValueAt(int index) const {
-		return knots[index].get<1>();
+		return knots[index].template get<1>();
 	};
 	void				InsertValue_Impl(int index, u64 const& t, type const& v) {
 		knots.Insert(cweeUnion<u64, type>(t, v), index);

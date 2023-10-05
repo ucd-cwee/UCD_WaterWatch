@@ -31,8 +31,8 @@ to maintain a single distribution point for the source code.
 template<typename A, typename B>
 class cweePair {
 public:
-	using first_type = typename A;
-	using second_type = typename B;
+	using first_type = A;
+	using second_type = B;
 	 
 	cweePair<A, B>() {};
 	cweePair<A, B>(const A& in1, const B& in2) {
@@ -597,15 +597,14 @@ class cweeBalancedPattern : public cweeBalancedPatternDetail::_cwee_balanced_pat
 public:
 	using node_type = typename cweeBalancedTree<Y_Axis_Type, X_Axis_Type>::cweeBalancedTreeNode;
 	using scalarT = typename units::dimensionless::scalar_t;
-	using pairT = typename cweePair< X_Axis_Type, Y_Axis_Type >;
+	using pairT = cweePair< X_Axis_Type, Y_Axis_Type >;
 
-protected:
-	mutable cweeBalancedTree< Y_Axis_Type, X_Axis_Type, 10>			container;
+protected:	
 	int													granularity;
 	boundary_t											boundaryType;
 	interpolation_t										interpolationType;
 	mutable cweeReadWriteMutex							lock;
-	// mutable cweeSysMutex								lock;
+	mutable cweeBalancedTree< Y_Axis_Type, X_Axis_Type, 10>			container;
 
 public:
 	cweeBalancedPattern() : 
@@ -2462,7 +2461,7 @@ protected:
 			return result;
 		}
 		else {
-			static_assert(false, "Cannot perform the requested arithmetic with the given types.");
+			throw std::runtime_error("Cannot perform the requested arithmetic with the given types.");
 			return 0;
 		}
 	}
@@ -2502,7 +2501,7 @@ protected:
 			return result;
 		}
 		else {
-			static_assert(false, "Cannot perform the requested arithmetic with the given types.");
+			throw std::runtime_error("Cannot perform the requested arithmetic with the given types.");
 			return 0;
 		}
 	}
@@ -2590,7 +2589,7 @@ protected:
 			return result;
 		}
 		else {
-			static_assert(false, "Cannot perform the requested arithmetic with the given types.");
+			throw std::runtime_error("Cannot perform the requested arithmetic with the given types.");
 			return 0;
 		}
 	}
@@ -2630,7 +2629,7 @@ protected:
 			return result;
 		}
 		else {
-			static_assert(false, "Cannot perform the requested arithmetic with the given types.");
+			throw std::runtime_error("Cannot perform the requested arithmetic with the given types.");
 			return 0;
 		}
 	}
@@ -2718,7 +2717,7 @@ protected:
 			return result;
 		}
 		else {
-			static_assert(false, "Cannot perform the requested arithmetic with the given types.");
+			throw std::runtime_error("Cannot perform the requested arithmetic with the given types.");
 			return 0;
 		}
 	}
@@ -2758,7 +2757,7 @@ protected:
 			return result;
 		}
 		else {
-			static_assert(false, "Cannot perform the requested arithmetic with the given types.");
+			throw std::runtime_error("Cannot perform the requested arithmetic with the given types.");
 			return 0;
 		}
 	}
@@ -2846,7 +2845,7 @@ protected:
 			return result;
 		}
 		else {
-			static_assert(false, "Cannot perform the requested arithmetic with the given types.");
+			throw std::runtime_error("Cannot perform the requested arithmetic with the given types.");
 			return 0;
 		}
 	}
@@ -2886,7 +2885,7 @@ protected:
 			return result;
 		}
 		else {
-			static_assert(false, "Cannot perform the requested arithmetic with the given types.");
+			throw std::runtime_error("Cannot perform the requested arithmetic with the given types.");
 			return 0;
 		}
 	}

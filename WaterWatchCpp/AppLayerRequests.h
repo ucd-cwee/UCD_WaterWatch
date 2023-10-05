@@ -25,9 +25,9 @@ to maintain a single distribution point for the source code.
 /*! Class that allows backend to push requests or jobs forwards to the UI or user-layer to process asynchronously. */
 class appLayerRequests {
 public:
-	using arguments_type = typename cweeThreadedList<cweeStr>;
-	using method_type = typename cweeStr;
-	using container_type = typename cweeUnion<cweeStr, cweeThreadedList<cweeStr>, cweeSharedPtr<cweeStr>>;
+	using arguments_type = cweeThreadedList<cweeStr>;
+	using method_type = cweeStr;
+	using container_type = cweeUnion<cweeStr, cweeThreadedList<cweeStr>, cweeSharedPtr<cweeStr>>;
 
 	appLayerRequests() : requests(), jobs(), jobNums(0) {};
 

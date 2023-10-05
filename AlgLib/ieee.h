@@ -4,6 +4,8 @@
 
 // #include "MagicNumberFloorOperation.h"
 
+#pragma warning(disable : 4305)
+#pragma warning(disable : 4244)
 namespace fastexp
 {
     template<typename Real, size_t degree, size_t i = 0> struct PolynomialFit;
@@ -16,7 +18,7 @@ namespace fastexp
             constexpr unsigned_t shift = static_cast<unsigned_t>(1) << Info<Real>::shift;
             x *= Info<Real>::log2e;
 #if 1
-            Real xi = (int)(x + 32768.) - 32768;
+            Real xi = (Real)((int)(x + 32768.) - 32768);
 #else
             Real xi = floor(x);
 #endif
@@ -37,7 +39,7 @@ namespace fastexp
     template<> struct Info<float> {
         using unsigned_t = uint32_t;
         static constexpr uint32_t shift = 23;
-        static constexpr float  log2e = 1.442695040;
+        static constexpr float  log2e = 1.442695040f;
     };
 
     template<> struct Info<double> {

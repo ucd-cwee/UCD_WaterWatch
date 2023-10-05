@@ -27,7 +27,6 @@ to maintain a single distribution point for the source code.
 #include "enum.h"
 
 BETTER_ENUM(interpolation_t, int, SPLINE, LEFT, RIGHT, LINEAR, END);
-// enum class interpolation_t { IT_SPLINE, IT_LEFT_CLAMP, IT_RIGHT_CLAMP, IT_LINEAR, IT_END };
 
 const static std::map<interpolation_t, const char*> StringMap_interpolation_t = {
 	{interpolation_t::SPLINE, "Spline"},
@@ -36,7 +35,7 @@ const static std::map<interpolation_t, const char*> StringMap_interpolation_t = 
 	{interpolation_t::LINEAR, "Linear"},
 	{interpolation_t::END, "End"}
 };
-template<> const static std::map<interpolation_t, const char*>& StaticStringMap< interpolation_t >() { return StringMap_interpolation_t; };
+StaticStringMapDecl(interpolation_t);
 
 enum class patternSource {
 	Scada,

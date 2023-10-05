@@ -97,9 +97,14 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "8. Geospatial Data", "8. Ge
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "GDAL", "GDAL\GDAL.vcxproj", "{0FD47813-8575-4E53-90CA-FCFFA5992D31}"
 EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "2. Cpp to R", "2. Cpp to R", "{28C83983-9987-4653-9C89-4984821BD62F}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "WaterWatch_R_SWIG", "WaterWatch_R_SWIG\WaterWatch_R_SWIG.vcxproj", "{1DBE1F51-C9D9-4A89-A0E5-E28E7B664B2A}"
+EndProject
 Global
 	GlobalSection(SharedMSBuildProjectFiles) = preSolution
 		WaterWatchCpp\WaterWatchCpp.vcxitems*{00159e40-c6f1-41f4-8b5f-1ec191a27a14}*SharedItemsImports = 4
+		WaterWatchCpp\WaterWatchCpp.vcxitems*{1dbe1f51-c9d9-4a89-a0e5-e28e7b664b2a}*SharedItemsImports = 4
 		WaterWatchCpp\WaterWatchCpp.vcxitems*{28ade060-7df2-4fba-bc96-9801c7993490}*SharedItemsImports = 4
 		WaterWatchCpp\WaterWatchCpp.vcxitems*{3f1dafbd-9e14-4e38-81e9-db4af4809721}*SharedItemsImports = 4
 		CsFoundation\CsFoundation.projitems*{66b946ed-ab97-4ec5-af0a-fcfeef08e938}*SharedItemsImports = 4
@@ -510,6 +515,25 @@ Global
 		{0FD47813-8575-4E53-90CA-FCFFA5992D31}.Release|x64.Build.0 = Release|x64
 		{0FD47813-8575-4E53-90CA-FCFFA5992D31}.Release|x86.ActiveCfg = Release|Win32
 		{0FD47813-8575-4E53-90CA-FCFFA5992D31}.Release|x86.Build.0 = Release|Win32
+		{1DBE1F51-C9D9-4A89-A0E5-E28E7B664B2A}.Debug|Any CPU.ActiveCfg = Debug|Win32
+		{1DBE1F51-C9D9-4A89-A0E5-E28E7B664B2A}.Debug|ARM.ActiveCfg = Debug|Win32
+		{1DBE1F51-C9D9-4A89-A0E5-E28E7B664B2A}.Debug|ARM64.ActiveCfg = Debug|Win32
+		{1DBE1F51-C9D9-4A89-A0E5-E28E7B664B2A}.Debug|iPhone.ActiveCfg = Debug|Win32
+		{1DBE1F51-C9D9-4A89-A0E5-E28E7B664B2A}.Debug|iPhoneSimulator.ActiveCfg = Debug|Win32
+		{1DBE1F51-C9D9-4A89-A0E5-E28E7B664B2A}.Debug|x64.ActiveCfg = Debug|x64
+		{1DBE1F51-C9D9-4A89-A0E5-E28E7B664B2A}.Debug|x64.Build.0 = Debug|x64
+		{1DBE1F51-C9D9-4A89-A0E5-E28E7B664B2A}.Debug|x86.ActiveCfg = Debug|Win32
+		{1DBE1F51-C9D9-4A89-A0E5-E28E7B664B2A}.Debug|x86.Build.0 = Debug|Win32
+		{1DBE1F51-C9D9-4A89-A0E5-E28E7B664B2A}.Release|Any CPU.ActiveCfg = Release|x64
+		{1DBE1F51-C9D9-4A89-A0E5-E28E7B664B2A}.Release|Any CPU.Build.0 = Release|x64
+		{1DBE1F51-C9D9-4A89-A0E5-E28E7B664B2A}.Release|ARM.ActiveCfg = Release|Win32
+		{1DBE1F51-C9D9-4A89-A0E5-E28E7B664B2A}.Release|ARM64.ActiveCfg = Release|Win32
+		{1DBE1F51-C9D9-4A89-A0E5-E28E7B664B2A}.Release|iPhone.ActiveCfg = Release|Win32
+		{1DBE1F51-C9D9-4A89-A0E5-E28E7B664B2A}.Release|iPhoneSimulator.ActiveCfg = Release|Win32
+		{1DBE1F51-C9D9-4A89-A0E5-E28E7B664B2A}.Release|x64.ActiveCfg = Release|x64
+		{1DBE1F51-C9D9-4A89-A0E5-E28E7B664B2A}.Release|x64.Build.0 = Release|x64
+		{1DBE1F51-C9D9-4A89-A0E5-E28E7B664B2A}.Release|x86.ActiveCfg = Release|Win32
+		{1DBE1F51-C9D9-4A89-A0E5-E28E7B664B2A}.Release|x86.Build.0 = Release|Win32
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -553,6 +577,8 @@ Global
 		{49AFC513-0FD8-4BF6-8136-EED5E1E306B4} = {00F960F7-FA25-492F-BD11-A173B43D6D12}
 		{DF32A5DF-A28F-4E8B-8162-5B3425977217} = {2CF0C9A6-7CDD-4F5E-98D9-190F88BEA6F3}
 		{0FD47813-8575-4E53-90CA-FCFFA5992D31} = {DF32A5DF-A28F-4E8B-8162-5B3425977217}
+		{28C83983-9987-4653-9C89-4984821BD62F} = {446C44D6-C51A-4301-AC7A-D3A734372C92}
+		{1DBE1F51-C9D9-4A89-A0E5-E28E7B664B2A} = {28C83983-9987-4653-9C89-4984821BD62F}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {B59528EA-E859-4397-B830-FB65FBAA4835}

@@ -54,7 +54,7 @@ protected:
 		::GetModuleFileNameW(0, buffer, 2048);
 		std::wstring tempStr(buffer);
 		std::string FileDir(std::string(tempStr.begin(), tempStr.end()).erase(std::string(tempStr.begin(), tempStr.end()).length()));
-		return cweeStr(FileDir.c_str());
+		return cweeStr(FileDir);
 	};
 	static cweeStr	getApplicationPath() {
 		cweeStr appPath;

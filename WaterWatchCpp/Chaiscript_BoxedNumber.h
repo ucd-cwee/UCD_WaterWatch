@@ -231,7 +231,7 @@ namespace chaiscript {
                 case Operators::Opers::bitwise_or:
                     return const_var(c_lhs | c_rhs);
                 case Operators::Opers::bitwise_xor:
-                    return const_var(std::powf(c_lhs, c_rhs)); // << RG
+                    return const_var(std::pow(c_lhs, c_rhs)); // << RG
                     // return const_var(c_lhs ^ c_rhs);
                 case Operators::Opers::logical_list: { // << RG
                     auto type = c_lhs + c_rhs;

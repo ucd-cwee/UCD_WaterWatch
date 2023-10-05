@@ -27,8 +27,10 @@ to maintain a single distribution point for the source code.
 #define CHAISCRIPT_MSVC _MSC_VER
 #define CHAISCRIPT_HAS_DECLSPEC
 
-#define AddFunction(captures, name, returns, todo, ...) add(fun([captures](__VA_ARGS__) returns { todo; }, cweeStr(#__VA_ARGS__).RemoveBetween("<", ">").ReplaceInline("*", " ").ReplaceInline(" const", " ").ReplaceInline("const ", " ").ReplaceInline("&", " ").ReplaceInline("  ", " ").ReplaceInline("  ", " ").ReplaceInline("  ", " ").Split(",").Trim(' ').ReplaceInline("  ", " ").SplitAgain(" ").Trim(' ').GetEveryOtherVar()), #name)
 #define SINGLE_ARG(...) __VA_ARGS__
+#define AddFunction(captures,name,returns,todo,...) add(fun([captures](__VA_ARGS__) returns { SINGLE_ARG(todo); }, cweeStr(#__VA_ARGS__).RemoveBetween("<", ">").ReplaceInline("*", " ").ReplaceInline(" const", " ").ReplaceInline("const ", " ").ReplaceInline("&", " ").ReplaceInline("  ", " ").ReplaceInline("  ", " ").ReplaceInline("  ", " ").Split(",").Trim(' ').ReplaceInline("  ", " ").SplitAgain(" ").Trim(' ').GetEveryOtherVar()), #name)
+#define AddFunctionTo(toWhom,captures,name,returns,todo,...) toWhom.add(fun([captures](__VA_ARGS__) returns { SINGLE_ARG(todo); }, cweeStr(#__VA_ARGS__).RemoveBetween("<", ">").ReplaceInline("*", " ").ReplaceInline(" const", " ").ReplaceInline("const ", " ").ReplaceInline("&", " ").ReplaceInline("  ", " ").ReplaceInline("  ", " ").ReplaceInline("  ", " ").Split(",").Trim(' ').ReplaceInline("  ", " ").SplitAgain(" ").Trim(' ').GetEveryOtherVar()), #name)
+
 
 static_assert(_MSC_FULL_VER >= 190024210, "Visual C++ 2015 Update 3 or later required");
 

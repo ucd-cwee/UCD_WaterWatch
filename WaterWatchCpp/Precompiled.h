@@ -79,6 +79,7 @@ namespace cwee_units {
 #pragma warning(disable : 28182)			// Dereferencing NULL pointer
 #pragma warning(disable : 28251)			// Inconsistent annotation for 'new'
 #define _CRT_FUNCTIONS_REQUIRED 1
+#define _SILENCE_CXX17_ITERATOR_BASE_CLASS_DEPRECATION_WARNING
 #include <malloc.h>							
 #include <windows.h>		
 
@@ -171,8 +172,8 @@ namespace cwee_units {
 #include <limits>
 
 #if !defined(WINAPI_FAMILY) || (WINAPI_FAMILY == WINAPI_FAMILY_DESKTOP_APP)
-#include <atlbase.h>
-#include <atlstr.h>
+//#include <atlbase.h>
+//#include <atlstr.h>
 #endif
 
 #include <windows.h>

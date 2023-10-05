@@ -765,7 +765,7 @@ namespace cweeUnitValues {
 		unit_value										GetCurrentValue(unit_value time, interpolation_t interpolationType) const {
 			using node_type = cweeBalancedTree<double, double, 10>::cweeBalancedTreeNode;
 
-			int i = 0, j, k = 0;
+			int j;
 			u64 bvals[4];
 			unit_value v;
 			v = (internal_Y_type = 0);
@@ -976,7 +976,7 @@ namespace cweeUnitValues {
 			}
 		};
 		void  RemoveTimes(unit_value greaterThanOrEqual, unit_value LessThan) {
-			int lowerLimit, upperLimit, index; cweeThreadedList<int> indexesToDelete;
+			cweeThreadedList<int> indexesToDelete;
 			{
 				double greaterThan = (internal_X_type = greaterThanOrEqual)();
 
@@ -1128,13 +1128,13 @@ namespace cweeUnitValues {
 			};
 		};
 		virtual cweeSharedPtr<GenericIterator> CreateIterationState() const {
-			return make_cwee_shared<SpecializedIterator>().CastReference<GenericIterator>();
+			return make_cwee_shared<SpecializedIterator>().template CastReference<GenericIterator>();
 		};
 
 	public:
 		cweeSharedPtr< cweeUnitPatternContainer_t> Clone() {
 			cweeSharedPtr< cweeBalancedPatternReferenceContainer> out = make_cwee_shared<cweeBalancedPatternReferenceContainer>(*this);
-			return out.CastReference< cweeUnitPatternContainer_t>();
+			return out.template CastReference< cweeUnitPatternContainer_t>();
 		};
 		cweeBalancedPatternReferenceContainer() : cweeUnitPatternContainer_t(), ref(nullptr) {};
 		cweeBalancedPatternReferenceContainer(cweeBalancedPattern<Y_Axis_Type, X_Axis_Type>* Ref) : cweeUnitPatternContainer_t(unit_value(X_Axis_Type(0)), unit_value(Y_Axis_Type(0))), ref(Ref) {};
@@ -1343,13 +1343,13 @@ namespace cweeUnitValues {
 			};
 		};
 		virtual cweeSharedPtr<GenericIterator> CreateIterationState() const {
-			return make_cwee_shared<SpecializedIterator>().CastReference<GenericIterator>();
+			return make_cwee_shared<SpecializedIterator>().template CastReference<GenericIterator>();
 		};
 
 	public:
 		cweeSharedPtr< cweeUnitPatternContainer_t> Clone() {
 			cweeSharedPtr< cweeBalancedPatternReferencePartialContainer> out = make_cwee_shared<cweeBalancedPatternReferencePartialContainer>(*this);
-			return out.CastReference< cweeUnitPatternContainer_t>();
+			return out.template CastReference< cweeUnitPatternContainer_t>();
 		};
 		cweeBalancedPatternReferencePartialContainer() : cweeUnitPatternContainer_t(), ref(nullptr) {};
 		cweeBalancedPatternReferencePartialContainer(cweeBalancedPattern<Y_Axis_Type, u64>* Ref) : cweeUnitPatternContainer_t(unit_value(X_Axis_Type(0)), unit_value(Y_Axis_Type(0))), ref(Ref) {};
@@ -1418,9 +1418,10 @@ namespace cweeUnitValues {
 	};
 
 	class cweeUnitPattern {
-	protected:
-		using pairT = typename cweePair< unit_value, unit_value >;
+	public:
+		using pairT = cweePair< unit_value, unit_value >;
 
+	protected:
 		cweeSharedPtr<cweeUnitPatternContainer_t>			container;
 		boundary_t											boundaryType;
 		interpolation_t										interpolationType;
@@ -1439,12 +1440,12 @@ namespace cweeUnitValues {
 
 		template<typename Y_Axis_Type, typename X_Axis_Type>
 		cweeUnitPattern(cweeBalancedPattern<Y_Axis_Type, X_Axis_Type>& ref) :
-			container(make_cwee_shared<cweeBalancedPatternReferenceContainer<Y_Axis_Type, X_Axis_Type>>(cweeBalancedPatternReferenceContainer<Y_Axis_Type, X_Axis_Type>(&ref)).CastReference<cweeUnitPatternContainer_t>()),
+			container(make_cwee_shared<cweeBalancedPatternReferenceContainer<Y_Axis_Type, X_Axis_Type>>(cweeBalancedPatternReferenceContainer<Y_Axis_Type, X_Axis_Type>(&ref)).template CastReference<cweeUnitPatternContainer_t>()),
 			boundaryType(ref.GetBoundaryType()), interpolationType(ref.GetInterpolationType()), lock() {};
 
 		template<typename Y_Axis_Type>
 		cweeUnitPattern(cweeBalancedPattern<Y_Axis_Type, u64>& ref) :
-			container(make_cwee_shared<cweeBalancedPatternReferencePartialContainer<Y_Axis_Type>>(cweeBalancedPatternReferencePartialContainer<Y_Axis_Type>(&ref)).CastReference<cweeUnitPatternContainer_t>()),
+			container(make_cwee_shared<cweeBalancedPatternReferencePartialContainer<Y_Axis_Type>>(cweeBalancedPatternReferencePartialContainer<Y_Axis_Type>(&ref)).template CastReference<cweeUnitPatternContainer_t>()),
 			boundaryType(ref.GetBoundaryType()), interpolationType(ref.GetInterpolationType()), lock() {};
 
 		~cweeUnitPattern() {};
@@ -1666,14 +1667,14 @@ namespace cweeUnitValues {
 
 		cweeThreadedList<pairT>								GetKnotSeries(const unit_value& timeStart = -std::numeric_limits < unit_value>::max(), const unit_value& timeEnd = std::numeric_limits <unit_value>::max()) const {
 			int numKnots = this->GetNumValues();
-			cweeThreadedList<pairT> out(numKnots + 16);
+			cweeThreadedList<pairT> toReturn(numKnots + 16);
 
 			AUTO g = lock.Guard();
 			for (auto& x : *container) {
 				if (x.Y) {
 					if (x.X >= (container->internal_X_type = timeStart)()) {
 						if (x.X < (container->internal_X_type = timeEnd)()) {
-							auto& set = out.Alloc();
+							auto& set = toReturn.Alloc();
 							set.first = (container->internal_X_type = x.X);
 							set.second = (container->internal_Y_type = *x.Y);
 						}
@@ -1684,7 +1685,7 @@ namespace cweeUnitValues {
 				}
 			}
 
-			return out;
+			return toReturn;
 		};
 
 		void												ClampValues(const unit_value& min, const unit_value& max) {
@@ -2279,7 +2280,7 @@ namespace cweeUnitValues {
 
 
 #if 1
-		static friend cweeUnitPattern operator+(const cweeUnitPattern& a, const cweeUnitPattern& b) {
+		friend cweeUnitPattern operator+(const cweeUnitPattern& a, const cweeUnitPattern& b) {
 			cweeUnitPattern result(a.GetMinTime(), a.GetCurrentValue(0)); {
 				result.SetBoundaryType(a.GetBoundaryType());
 				result.SetInterpolationType(a.GetInterpolationType());
@@ -2304,7 +2305,7 @@ namespace cweeUnitValues {
 			}
 			return result;
 		};
-		static friend cweeUnitPattern operator-(const cweeUnitPattern& a, const cweeUnitPattern& b) {
+		friend cweeUnitPattern operator-(const cweeUnitPattern& a, const cweeUnitPattern& b) {
 			cweeUnitPattern result(a.GetMinTime(), a.GetCurrentValue(0)); {
 				result.SetBoundaryType(a.GetBoundaryType());
 				result.SetInterpolationType(a.GetInterpolationType());
@@ -2325,7 +2326,7 @@ namespace cweeUnitValues {
 			}
 			return result;
 		};
-		static friend cweeUnitPattern operator*(const cweeUnitPattern& a, const cweeUnitPattern& b) {
+		friend cweeUnitPattern operator*(const cweeUnitPattern& a, const cweeUnitPattern& b) {
 			cweeUnitPattern result(a.GetMinTime(), a.GetCurrentValue(0) * b.GetCurrentValue(0)); {
 				result.SetBoundaryType(a.GetBoundaryType());
 				result.SetInterpolationType(a.GetInterpolationType());
@@ -2346,7 +2347,7 @@ namespace cweeUnitValues {
 			}
 			return result;
 		};
-		static friend cweeUnitPattern operator/(const cweeUnitPattern& a, const cweeUnitPattern& b) {
+		friend cweeUnitPattern operator/(const cweeUnitPattern& a, const cweeUnitPattern& b) {
 			cweeUnitPattern result(a.GetMinTime(), a.GetCurrentValue(0) / b.GetCurrentValue(0)); {
 				result.SetBoundaryType(a.GetBoundaryType());
 				result.SetInterpolationType(a.GetInterpolationType());
@@ -2368,7 +2369,7 @@ namespace cweeUnitValues {
 			return result;
 		};
 
-		static friend cweeUnitPattern operator+(const cweeUnitPattern& a, const unit_value& b) {
+		friend cweeUnitPattern operator+(const cweeUnitPattern& a, const unit_value& b) {
 			cweeUnitPattern result(a.GetMinTime(), a.GetCurrentValue(0) + b); {
 				result.SetBoundaryType(a.GetBoundaryType());
 				result.SetInterpolationType(a.GetInterpolationType());
@@ -2387,7 +2388,7 @@ namespace cweeUnitValues {
 			}
 			return result;
 		};
-		static friend cweeUnitPattern operator-(const cweeUnitPattern& a, const unit_value& b) {
+		friend cweeUnitPattern operator-(const cweeUnitPattern& a, const unit_value& b) {
 			cweeUnitPattern result(a.GetMinTime(), a.GetCurrentValue(0) - b); {
 				result.SetBoundaryType(a.GetBoundaryType());
 				result.SetInterpolationType(a.GetInterpolationType());
@@ -2406,7 +2407,7 @@ namespace cweeUnitValues {
 			}
 			return result;
 		};
-		static friend cweeUnitPattern operator*(const cweeUnitPattern& a, const unit_value& b) {
+		friend cweeUnitPattern operator*(const cweeUnitPattern& a, const unit_value& b) {
 			cweeUnitPattern result(a.GetMinTime(), a.GetCurrentValue(0) * b); {
 				result.SetBoundaryType(a.GetBoundaryType());
 				result.SetInterpolationType(a.GetInterpolationType());
@@ -2422,7 +2423,7 @@ namespace cweeUnitValues {
 			}
 			return result;
 		};
-		static friend cweeUnitPattern operator/(const cweeUnitPattern& a, const unit_value& b) {
+		friend cweeUnitPattern operator/(const cweeUnitPattern& a, const unit_value& b) {
 			cweeUnitPattern result(a.GetMinTime(), a.GetCurrentValue(0) / b); {
 				result.SetBoundaryType(a.GetBoundaryType());
 				result.SetInterpolationType(a.GetInterpolationType());
@@ -2439,7 +2440,7 @@ namespace cweeUnitValues {
 			return result;
 		};
 
-		static friend cweeUnitPattern operator+(const unit_value& b, const cweeUnitPattern& a) {
+		friend cweeUnitPattern operator+(const unit_value& b, const cweeUnitPattern& a) {
 			cweeUnitPattern result(a.GetMinTime(), a.GetCurrentValue(0) + b); {
 				result.SetBoundaryType(a.GetBoundaryType());
 				result.SetInterpolationType(a.GetInterpolationType());
@@ -2458,7 +2459,7 @@ namespace cweeUnitValues {
 			}
 			return result;
 		};
-		static friend cweeUnitPattern operator-(const unit_value& b, const cweeUnitPattern& a) {
+		friend cweeUnitPattern operator-(const unit_value& b, const cweeUnitPattern& a) {
 			cweeUnitPattern result(a.GetMinTime(), b - a.GetCurrentValue(0)); {
 				result.SetBoundaryType(a.GetBoundaryType());
 				result.SetInterpolationType(a.GetInterpolationType());
@@ -2477,7 +2478,7 @@ namespace cweeUnitValues {
 			}
 			return result;
 		};
-		static friend cweeUnitPattern operator*(const unit_value& b, const cweeUnitPattern& a) {
+		friend cweeUnitPattern operator*(const unit_value& b, const cweeUnitPattern& a) {
 			cweeUnitPattern result(a.GetMinTime(), a.GetCurrentValue(0) * b); {
 				result.SetBoundaryType(a.GetBoundaryType());
 				result.SetInterpolationType(a.GetInterpolationType());
@@ -2493,7 +2494,7 @@ namespace cweeUnitValues {
 			}
 			return result;
 		};
-		static friend cweeUnitPattern operator/(const unit_value& b, const cweeUnitPattern& a) {
+		friend cweeUnitPattern operator/(const unit_value& b, const cweeUnitPattern& a) {
 			cweeUnitPattern result(a.GetMinTime(), b/a.GetCurrentValue(0)); {
 				result.SetBoundaryType(a.GetBoundaryType());
 				result.SetInterpolationType(a.GetInterpolationType());

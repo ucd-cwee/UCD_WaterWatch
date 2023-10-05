@@ -1586,8 +1586,6 @@ namespace Excel_WaterWatchLibrary
                 int nCol = (Flow_GPM as Excel.Range).Columns.Count;
                 int nRow = (Flow_GPM as Excel.Range).Rows.Count;
 
-                int progress = 0;
-
                 foreach (Excel.Range cell in (Flow_GPM as Excel.Range).Cells)
                 {
                     if (cell.Value != null)

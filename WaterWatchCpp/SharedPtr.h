@@ -591,14 +591,14 @@ public:
 	{
 		AUTO x = Get();
 		if (x) return x[idx];
-		throw(std::exception("cweeSharedPtr was null with indexed access"));
+		throw(std::runtime_error(std::string("cweeSharedPtr was null with indexed access")));
 	};
 
 	template<typename Q = type> INLINE typename std::enable_if<!std::is_same<Q, void>::value, Q&>::type operator*() const
 	{
 		AUTO x = Get();
 		if (x) return *x;
-		throw(std::exception("cweeSharedPtr was null with reference access"));
+		throw(std::runtime_error(std::string("cweeSharedPtr was null with reference access")));
 	};
 
 	template<typename Q = type> INLINE typename std::enable_if<std::is_same<Q, void>::value, void>::type operator[](std::ptrdiff_t idx) const { throw(std::exception("cweeSharedPtr was null with indexed access")); };

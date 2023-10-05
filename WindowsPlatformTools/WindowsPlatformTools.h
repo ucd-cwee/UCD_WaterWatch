@@ -159,8 +159,8 @@ to maintain a single distribution point for the source code.
 #include <limits>
 
 #if !defined(WINAPI_FAMILY) || (WINAPI_FAMILY == WINAPI_FAMILY_DESKTOP_APP)
-#include <atlbase.h>
-#include <atlstr.h>
+// #include <atlbase.h>
+// #include <atlstr.h>
 #endif
 
 #include <windows.h>

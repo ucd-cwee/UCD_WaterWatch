@@ -671,7 +671,7 @@ class BETTER_ENUMS_CLASS_ATTRIBUTE Enum {                                      \
     BETTER_ENUMS_CONSTEXPR_ _integral _to_integral() const;                    \
     BETTER_ENUMS_IF_EXCEPTIONS(                                                \
     BETTER_ENUMS_CONSTEXPR_ static Enum _from_integral(_integral value);       \
-     BETTER_ENUMS_CONSTEXPR_ operator int();                                   \
+     BETTER_ENUMS_CONSTEXPR_ explicit operator int() const;                    \
     )                                                                          \
     BETTER_ENUMS_CONSTEXPR_ static Enum                                        \
     _from_integral_unchecked(_integral value);                                 \
@@ -855,7 +855,7 @@ BETTER_ENUMS_CONSTEXPR_ inline Enum Enum::_from_integral(_integral value)      \
         ::better_enums::_or_throw(_from_integral_nothrow(value),               \
                                   #Enum "::_from_integral: invalid argument"); \
 }                                                                              \
-BETTER_ENUMS_CONSTEXPR_ inline Enum::operator int(){ return _to_integral(); };                    \
+BETTER_ENUMS_CONSTEXPR_ inline Enum::operator int() const { return _to_integral(); }; \
 )                                                                              \
                                                                                \
 ToStringConstexpr inline const char* Enum::ToString() const                  \

@@ -87,6 +87,7 @@ template<class T> INLINE T	Min(T x, T y) { return (x < y) ? x : y; }
 // CPU usage
 #define BYTES_IN_A_MB 1048576
 
+/*
 class typenames {
 public:
 	class detail {
@@ -126,6 +127,68 @@ public:
 	template <> static constexpr std::string_view sv_type_name<void>() { return "void"; };
 	template <> static constexpr const char* type_name<void>() { return "void"; };
 };
+*/
+
+class typenames {
+public:
+	template<typename T>
+	struct identity { typedef T type; };
+
+	class detail {
+	public:
+		using type_name_prober = void;
+		template <typename T> static constexpr std::string_view wrapped_type_name() {
+#ifdef __clang__
+			return __PRETTY_FUNCTION__;
+#elif defined(__GNUC__)
+			return __PRETTY_FUNCTION__;
+#elif defined(_MSC_VER)
+			return __FUNCSIG__;
+#else
+#error "Unsupported compiler"
+#endif
+		};
+		static constexpr std::size_t wrapped_type_name_prefix_length() { return wrapped_type_name<type_name_prober>().find(sv_type_name<type_name_prober>()); };
+		static constexpr std::size_t wrapped_type_name_suffix_length() { return wrapped_type_name<type_name_prober>().length() - wrapped_type_name_prefix_length() - sv_type_name<type_name_prober>().length(); };
+	};
+
+	template <typename T>
+	static constexpr std::string_view sv_type_name() {
+		return sv_type_name(identity<T>());
+	};
+
+	template <typename T>
+	static constexpr const char* type_name() {
+		return type_name(identity<T>());
+	};
+
+private:
+	template <typename T>
+	static constexpr std::string_view sv_type_name(identity<T>)
+	{
+		constexpr std::string_view wrapped_name = typenames::detail::wrapped_type_name<T>();
+		constexpr auto prefix_length = typenames::detail::wrapped_type_name_prefix_length();
+		constexpr auto suffix_length = typenames::detail::wrapped_type_name_suffix_length();
+		constexpr auto type_name_length = wrapped_name.length() - prefix_length - suffix_length;
+		return wrapped_name.substr(prefix_length, type_name_length);
+	};
+
+	template <typename T>
+	static constexpr const char* type_name(identity<T>)
+	{
+		constexpr std::string_view wrapped_name = typenames::detail::wrapped_type_name<T>();
+		constexpr auto prefix_length = typenames::detail::wrapped_type_name_prefix_length();
+		constexpr auto suffix_length = typenames::detail::wrapped_type_name_suffix_length();
+		constexpr auto type_name_length = wrapped_name.length() - prefix_length - suffix_length;
+		return wrapped_name.substr(prefix_length, type_name_length).data();
+	};
+
+	static constexpr std::string_view sv_type_name(identity<void>) { return "void"; };
+	static constexpr const char* type_name(identity<void>) { return "void";	};
+};
+
+
+
 
 #ifdef max
 #undef max
