@@ -107,8 +107,6 @@ to maintain a single distribution point for the source code.
 #define _AFXDLL
 
 #include <afxwin.h> //MFC core and standard components
-//#include <afxext.h> //MFC extensions
-//#include <afxmt.h> //MFC multi-threading
 #include <string>
 #include <vector>
 #include <winhttp.h>

@@ -122,7 +122,7 @@ namespace epanet {
 
         template<int type>
         cweeSharedPtr<Sasset> FindOrMakeAssetPtr(::epanet::EN_Project const& pr, cweeStr name) {
-            AUTO ptr = pr->network->Asset.Find(Sasset::Hash(type, name));
+            AUTO ptr = pr->network->Asset.Find(Sasset::Hash(asset_t::_from_integral(type), name));
             if (!ptr) {
                 cweeSharedPtr<Sasset> a = make_cwee_shared<Sasset>(type, cweeAssetValueCollection<type>::Values(), name);
                 ptr = pr->network->Asset.Add(a);

@@ -24,7 +24,7 @@ to maintain a single distribution point for the source code.
 #include <libloaderapi.h>
 #include <errhandlingapi.h>
 #include <winerror.h>
-#include <corecrt_malloc.h>
+// #include <corecrt_malloc.h>
 #include <Windows.h>
 #include <winnt.h>
 

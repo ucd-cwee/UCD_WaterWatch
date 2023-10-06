@@ -2885,42 +2885,47 @@ namespace epanet {
         };
 
     private:
-
-        template <int distance = 0>
-        int   NumberOfBoundaryLinksBetweenZones_Impl(cweeSharedPtr<Szone> const& zone) {
+        int   NumberOfBoundaryLinksBetweenZones_Impl(cweeSharedPtr<Szone> const& zone, int distance) {
             constexpr int maxDepth = 5;
             bool found = false;
 
             int minAnswer = maxDepth + 1;
-            if (distance >= maxDepth) return -1;
-            if (zone.Get() == this) { return distance; }
-
-            for (auto& BL : Boundary_Link) {
-                int reply = -1;
-                switch (BL.second) {
-                case direction_t::FLOW_IN_DMA:
-                    reply = BL.first->StartingNode->Zone->NumberOfBoundaryLinksBetweenZones_Impl<distance + 1>(zone);
-                    break;
-                case direction_t::FLOW_OUT_DMA:
-                    reply = BL.first->EndingNode->Zone->NumberOfBoundaryLinksBetweenZones_Impl<distance + 1>(zone);
-                    break;
-                case direction_t::FLOW_WITHIN_DMA:
-                    reply = -1;
-                    break;
-                }
-                if (reply != -1) {
-                    // found it. Is this the shortest distance? Complete the search and keep the shortest answer.
-                    found = true;
-                    if (reply < minAnswer) minAnswer = reply;
-                }
-            }
-
-            if (found)
-                return minAnswer;
-            else
+            if (distance >= maxDepth) {
                 return -1;
+            }
+            else {
+                if (zone.Get() == this) { return distance; }
+
+                for (auto& BL : Boundary_Link) {
+                    int reply = -1;
+                    switch (BL.second) {
+                    case direction_t::FLOW_IN_DMA:
+                        reply = BL.first->StartingNode->Zone->NumberOfBoundaryLinksBetweenZones_Impl(zone, distance + 1);
+                        break;
+                    case direction_t::FLOW_OUT_DMA:
+                        reply = BL.first->EndingNode->Zone->NumberOfBoundaryLinksBetweenZones_Impl(zone, distance + 1);
+                        break;
+                    case direction_t::FLOW_WITHIN_DMA:
+                        reply = -1;
+                        break;
+                    }
+                    if (reply != -1) {
+                        // found it. Is this the shortest distance? Complete the search and keep the shortest answer.
+                        found = true;
+                        if (reply < minAnswer) minAnswer = reply;
+                    }
+                }
+
+                if (found)
+                    return minAnswer;
+                else
+                    return -1;
+            }
         };
-        template<> int   NumberOfBoundaryLinksBetweenZones_Impl<5>(cweeSharedPtr<Szone> const& zone) { return -1; };
+
+        template <int distance = 0> int   NumberOfBoundaryLinksBetweenZones_Impl(cweeSharedPtr<Szone> const& zone) {
+            return NumberOfBoundaryLinksBetweenZones_Impl(zone, distance);
+        };
     };
     using Pzone = cweeSharedPtr<Szone>;
 
@@ -3396,21 +3401,13 @@ namespace epanet {
             return input * cweeMath::Pow(1.0 + rate(), -1 * time());
         };
         static Dollar_t CostOfPRV(centimeter_t diam, scalar_t rate) {
-            return Get_F_Given_P<1 * 12>(
+            return Get_F_Given_P<1 * 12, Dollar_t>(
                 1474.8_USD * std::exp(0.0824 * diam())
                 + 500_USD * std::exp(0.0658 * diam())
                 + (100.5_USD * diam / 1_cm - 300_USD)
                 + (412.2_USD * diam / 1_cm - 512_USD)
                 , rate
                 );
-
-            //return Get_F_Given_P<1 * 12>(
-            //    1474.8_USD * std::exp(0.2094 * diam())
-            //    + 500_USD * std::exp(0.167 * diam())
-            //    + (255.36_USD * diam / 1_in - 300_USD)
-            //    + (1047_USD * diam / 1_in - 512_USD)
-            //    , rate
-            //    );
         };
 
     public:
@@ -3437,8 +3434,8 @@ namespace epanet {
         static constexpr million_gallon_per_month_t  L = 500000.00_gal / 1_yr; // flowrate per leak average(gal / year) / months per year = gal / month
         static constexpr Dollar_t 	Calr = 5340.7; // cost per leak to repair
         static constexpr scalar_t 	Dldr = 1; // true positive rate for leak detection, cannot find for Marin in Amanda's data
-        static constexpr Dollar_per_mile_t M = Get_F_Given_P<1 * 12>(605_USD_p_mi, w_M);
-        static constexpr Dollar_t F = Get_F_Given_P<1 * 12>(Calr / Dldr, w_F); // adjust for one year, 2022 publication
+        /*static constexpr */Dollar_per_mile_t M = Get_F_Given_P<1 * 12, Dollar_per_mile_t>(605_USD_p_mi, w_M);
+        /*static constexpr */Dollar_t F = Get_F_Given_P<1 * 12, Dollar_t>(Calr / Dldr, w_F); // adjust for one year, 2022 publication
     
     public:
         SCALER ICF = 1.3; // # infrastructure condition factor
@@ -3568,7 +3565,7 @@ namespace epanet {
                     indexFollowingSurvey++;                    
                 }
                 for (int t_ind = 0; t_ind < t.size(); t_ind++) { month_t idx = t[t_ind];
-                    Water_Lost_Value[t_ind] = Water_Lost_Volume[t_ind] * Get_F_Given_P(Cvp, g, idx);
+                    Water_Lost_Value[t_ind] = Water_Lost_Volume[t_ind] * Get_F_Given_P<decltype(Cvp)>(Cvp, g, idx);
                 }
             }
 
@@ -3599,7 +3596,7 @@ namespace epanet {
             cweeList<Dollar_t> Water_Saved_Value; Water_Saved_Value.AssureSize(t.size(), 0_USD); {
                 month_t idx_i = 0;
                 for (int t_ind = 0; t_ind < t.size(); t_ind++) { month_t idx = t[t_ind];
-                    Water_Saved_Value[t_ind] = Water_Saved_Volume[t_ind] * Get_F_Given_P(Cvp, g, idx);
+                    Water_Saved_Value[t_ind] = Water_Saved_Volume[t_ind] * Get_F_Given_P<decltype(Cvp)>(Cvp, g, idx);
                 }
             }
             million_gallon_t TotalWaterSaved = 0_MG; for (auto& x : Water_Saved_Volume) TotalWaterSaved += x;
@@ -3614,7 +3611,7 @@ namespace epanet {
                 month_t zeroMonth = 0;
                 for (int t_ind = 0; t_ind < t.size(); t_ind++) { month_t idx = t[t_ind];
                     if (units::math::fmod(idx, surveyFrequency_Months) == zeroMonth) {
-                        SurveyRep[t_ind] = Get_F_Given_P(Cs_0, w_su, idx);
+                        SurveyRep[t_ind] = Get_F_Given_P<decltype(Cs_0)>(Cs_0, w_su, idx);
                     }
                     else { // only take the periods the surveys are actually done
                         SurveyRep[t_ind] = 0_USD;
@@ -3798,7 +3795,7 @@ namespace epanet {
                 Dollar_t C_PAT;
                 if ((avgFlow > 3_lps && avgHeadloss > 3_m && avgFlow < 320_lps && avgHeadloss < 352_m) || (avgFlow > 1_lps && avgHeadloss > 10_m && avgFlow > 62_lps && avgHeadloss > 311_m)) {
                     // good range
-                    C_PAT = Get_F_Given_P<4 * 12>(11913.91_USD * avgFlow() * std::sqrt(avgHeadloss()), w_pat); // # average, inflated from 2019 to 2023 dollars
+                    C_PAT = Get_F_Given_P<4 * 12, decltype(C_PAT)>(11913.91_USD * avgFlow() * std::sqrt(avgHeadloss()), w_pat); // # average, inflated from 2019 to 2023 dollars
                 }
                 else {
                     // bad range
@@ -3812,12 +3809,12 @@ namespace epanet {
                 Ci_T[0] += /*N_PAT * */C_PAT;
 
                 for (int i = 0; i < OM_T.size(); i++) {
-                    OM_T[i] += Get_F_Given_P((0.15 / 12) * C_PAT, w_pat, t[i]);
+                    OM_T[i] += Get_F_Given_P<Dollar_t>((0.15 / 12) * C_PAT, w_pat, t[i]);
                 };
 
                 kilowatt_hour_t E_Production_Monthly = avgEnergy * month_t(1);
                 for (int i = 0; i < EN_T.size(); i++) {
-                    EN_T[i] += E_Production_Monthly * Get_F_Given_P(Ce, w_E, t[i]);
+                    EN_T[i] += E_Production_Monthly * Get_F_Given_P<decltype(Ce)>(Ce, w_E, t[i]);
                 };
             }
             OM_T[0] = 0_USD;
@@ -4002,7 +3999,7 @@ namespace epanet {
                 return (second_t)(double)v;
             }
             else {
-                static_assert(false, "This unit type was not enumerated against");
+                throw std::runtime_error("This unit type was not enumerated against");
                 return (desiredUnit)(double)v;
             }
         };
@@ -4191,7 +4188,9 @@ namespace epanet {
 
     INLINE cweeUnitValues::cweeUnitPattern Szone::TryCalibrateZone(cweeSharedPtr<Project> pr, std::map<std::string, cweeUnitValues::cweeUnitPattern> const& ScadaSources) {
         // if zone is ill-defined, then that must be addressed before calibration
-        if (IsIllDefined()) throw(std::exception(cweeStr::printf("Zone %s is ill-defined (%s). Ill-defined zones cannot be calibrated until after they are declared \"Okay\".", this->Name_p.c_str(), this->IllDefined.ToString()).c_str()));
+        if (IsIllDefined()) {
+            throw(std::runtime_error(cweeStr::printf("Zone %s is ill-defined (%s). Ill-defined zones cannot be calibrated until after they are declared \"Okay\".", this->Name_p.c_str(), this->IllDefined.ToString()).c_str()));
+        }
 
         cweeList< cweeUnion<Passet, direction_t> > massBalanceAssets = GetMassBalanceAssets(pr);
         // for each asset, get the scada source as well as the simulation values

@@ -17,6 +17,8 @@ to maintain a single distribution point for the source code.
 #include "Precompiled.h"
 #include "enum.h"
 #include "Strings.h"
+#include "SharedPtr.h"
+#include "cweeThreadedMap.h"
 
 #include <cstdint>
 #include <type_traits>
@@ -902,213 +904,231 @@ namespace cweeUnitValues {
 				}
 
 			};
-			using namespace std::literals::string_view_literals;
-			
-#define CreateRow(Type) { HashUnitAndRatio(HashUnits(Type::A(), Type::B(), Type::C(), Type::D(), Type::E()), Type::conversion()), { Type::specialized_abbreviation(), #Type } }
-
-#define CreateRowWithMetricPrefixes(Type)\
-			CreateRow(Type), \
-			CreateRow(femto ## Type), \
-			CreateRow(pico ## Type), \
-			CreateRow(nano ## Type), \
-			CreateRow(micro ## Type), \
-			CreateRow(milli ## Type), \
-			CreateRow(centi ## Type), \
-			CreateRow(deci ## Type), \
-			CreateRow(deca ## Type), \
-			CreateRow(hecto ## Type), \
-			CreateRow(kilo ## Type), \
-			CreateRow(mega ## Type), \
-			CreateRow(giga ## Type), \
-			CreateRow(tera ## Type), \
-			CreateRow(peta ## Type)
-			
-			static constexpr size_t unit_types_size{ 558 }; // 558, should be 488?		
-			static constexpr std::array<std::pair<size_t, std::pair< const char*, const char*>>, unit_types_size> unit_types { 
-				{
-					CreateRowWithMetricPrefixes(meter),
-					CreateRow(foot),
-					CreateRow(inch),
-					CreateRow(mile),
-					CreateRow(nauticalMile),
-					CreateRow(astronicalUnit),
-					CreateRow(yard),
-					CreateRowWithMetricPrefixes(gram),
-					CreateRow(metric_ton),
-					CreateRow(pound),
-					CreateRow(long_ton),
-					CreateRow(short_ton),
-					CreateRow(stone),
-					CreateRow(ounce),
-					CreateRow(carat),
-					CreateRow(slug),
-					CreateRowWithMetricPrefixes(second),
-					CreateRow(minute),
-					CreateRow(hour),
-					CreateRow(day),
-					CreateRow(week),
-					CreateRow(year),
-					CreateRow(month),
-					CreateRow(julian_year),
-					CreateRow(gregorian_year),
-					CreateRowWithMetricPrefixes(ampere),
-					CreateRow(Dollar),
-					CreateRow(MillionDollar),
-					CreateRowWithMetricPrefixes(hertz),
-					CreateRow(meters_per_second),
-					CreateRow(feet_per_second),
-					CreateRow(feet_per_minute),
-					CreateRow(feet_per_hour),
-					CreateRow(miles_per_hour),
-					CreateRow(kilometers_per_hour),
-					CreateRow(knot),
-					CreateRow(meters_per_second_squared),
-					CreateRow(feet_per_second_squared),
-					CreateRow(standard_gravity),
-					CreateRowWithMetricPrefixes(newton),
-					CreateRowWithMetricPrefixes(pound_f),
-					CreateRow(dyne),
-					CreateRow(kilopond),
-					CreateRow(poundal),
-					CreateRowWithMetricPrefixes(pascals),
-					CreateRowWithMetricPrefixes(bar),
-					CreateRow(mbar),
-					CreateRow(atmosphere),
-					CreateRow(pounds_per_square_inch),
-					CreateRow(head),
-					CreateRow(torr),
-					CreateRowWithMetricPrefixes(coulomb),
-					CreateRowWithMetricPrefixes(ampere_hour),
-					CreateRowWithMetricPrefixes(watt),
-					CreateRow(horsepower),
-					CreateRowWithMetricPrefixes(joule),
-					CreateRowWithMetricPrefixes(calorie),
-					CreateRowWithMetricPrefixes(watt_minute),
-					CreateRowWithMetricPrefixes(watt_hour),
-					CreateRow(watt_day),
-					CreateRow(british_thermal_unit),
-					CreateRow(british_thermal_unit_iso),
-					CreateRow(british_thermal_unit_59),
-					CreateRow(therm),
-					CreateRow(foot_pound),
-					CreateRowWithMetricPrefixes(volt),
-					CreateRowWithMetricPrefixes(ohm),
-					CreateRowWithMetricPrefixes(siemens),
-					CreateRow(square_meter),
-					CreateRow(square_foot),
-					CreateRow(square_inch),
-					CreateRow(square_mile),
-					CreateRow(square_kilometer),
-					CreateRow(hectare),
-					CreateRow(acre),
-					CreateRow(cubic_meter),
-					CreateRow(cubic_millimeter),
-					CreateRow(cubic_kilometer),
-					CreateRowWithMetricPrefixes(liter),
-					CreateRow(cubic_inch),
-					CreateRow(cubic_foot),
-					CreateRow(cubic_yard),
-					CreateRow(cubic_mile),
-					CreateRowWithMetricPrefixes(gallon),
-					CreateRow(imperial_gallon),
-					CreateRow(million_gallon),
-					CreateRow(imperial_million_gallon),
-					CreateRow(acre_foot),
-					CreateRow(quart),
-					CreateRow(pint),
-					CreateRow(cup),
-					CreateRow(fluid_ounce),
-					CreateRow(barrel),
-					CreateRow(bushel),
-					CreateRow(cord),
-					CreateRow(tablespoon),
-					CreateRow(teaspoon),
-					CreateRow(pinch),
-					CreateRow(dash),
-					CreateRow(drop),
-					CreateRow(fifth),
-					CreateRow(dram),
-					CreateRow(gill),
-					CreateRow(peck),
-					CreateRow(sack),
-					CreateRow(shot),
-					CreateRow(strike),
-					CreateRowWithMetricPrefixes(gram_per_second),
-					CreateRow(metric_ton_per_second),
-					CreateRow(metric_ton_per_minute),
-					CreateRow(metric_ton_per_hour),
-					CreateRow(metric_ton_per_day),
-					CreateRow(metric_ton_per_year),
-					CreateRow(cubic_meter_per_second),
-					CreateRow(cubic_meter_per_hour),
-					CreateRow(cubic_meter_per_day),
-					CreateRow(cubic_millimeter_per_second),
-					CreateRowWithMetricPrefixes(liter_per_second),
-					CreateRow(liter_per_minute),
-					CreateRow(liter_per_day),
-					CreateRow(megaliter_per_day),
-					CreateRow(cubic_inch_per_second),
-					CreateRow(cubic_inch_per_hour),
-					CreateRow(cubic_foot_per_second),
-					CreateRow(cubic_foot_per_hour),
-					CreateRow(gallon_per_second),
-					CreateRow(gallon_per_minute),
-					CreateRow(gallon_per_hour),
-					CreateRow(gallon_per_day),
-					CreateRow(gallon_per_year),
-					CreateRow(million_gallon_per_second),
-					CreateRow(million_gallon_per_minute),
-					CreateRow(million_gallon_per_hour),
-					CreateRow(million_gallon_per_day),
-					CreateRow(million_gallon_per_year),
-					CreateRow(imperial_million_gallon_per_second),
-					CreateRow(imperial_million_gallon_per_minute),
-					CreateRow(imperial_million_gallon_per_hour),
-					CreateRow(imperial_million_gallon_per_day),
-					CreateRow(imperial_million_gallon_per_year),
-					CreateRow(acre_foot_per_second),
-					CreateRow(acre_foot_per_minute),
-					CreateRow(acre_foot_per_hour),
-					CreateRow(acre_foot_per_day),
-					CreateRow(acre_foot_per_year),
-					CreateRow(kilograms_per_cubic_meter),
-					CreateRow(grams_per_milliliter),
-					CreateRow(kilograms_per_liter),
-					CreateRow(ounces_per_cubic_foot),
-					CreateRow(ounces_per_cubic_inch),
-					CreateRow(ounces_per_gallon),
-					CreateRow(pounds_per_cubic_foot),
-					CreateRow(pounds_per_cubic_inch),
-					CreateRow(pounds_per_gallon),
-					CreateRow(slugs_per_cubic_foot),
-					CreateRow(Dollar_per_joule),
-					CreateRow(Dollar_per_kilowatt_hour),
-					CreateRow(Dollar_per_watt),
-					CreateRow(Dollar_per_kilowatt),
-					CreateRow(Dollar_per_cubic_meter),
-					CreateRow(Dollar_per_gallon),
-					CreateRow(kilowatt_hour_per_acre_foot),
-					CreateRow(Dollar_per_mile),
-					CreateRow(Dollar_per_ton),
-					CreateRow(ton_per_kilowatt_hour),
-					CreateRow(per_year)
-				}
-			};
-			
-#undef CreateRowWithMetricPrefixes
-#undef CreateRow
+						
 		}
+
+#define CreateRow(model, Type) model->insert({ HashUnitAndRatio(HashUnits(Type::A(), Type::B(), Type::C(), Type::D(), Type::E()), Type::conversion()), { Type::specialized_abbreviation(), #Type } })
+#define CreateRowWithMetricPrefixes(model, Type)\
+			CreateRow(model, Type); \
+			CreateRow(model, femto ## Type); \
+			CreateRow(model, pico ## Type); \
+			CreateRow(model, nano ## Type); \
+			CreateRow(model, micro ## Type); \
+			CreateRow(model, milli ## Type); \
+			CreateRow(model, centi ## Type); \
+			CreateRow(model, deci ## Type); \
+			CreateRow(model, deca ## Type); \
+			CreateRow(model, hecto ## Type); \
+			CreateRow(model, kilo ## Type); \
+			CreateRow(model, mega ## Type); \
+			CreateRow(model, giga ## Type); \
+			CreateRow(model, tera ## Type); \
+			CreateRow(model, peta ## Type);
+
 		/*! Lookup the abbreviation for the type based on its unique characteristic combination (time/length/mass/etc.) */
 		INLINE std::pair< const char*, const char*> lookup_impl(size_t ull) {
 			using namespace cweeUnitValuesDetails;
-			static constexpr auto map = Map<size_t, std::pair< const char*, const char*>, unit_types.size()>{ {unit_types} }; // constexpr lookup map meaning it's always in memory for the lifetime of the DLL -- keep this small. 
-			try {
-				return map.at(ull);
+			using namespace std::literals::string_view_literals;		
+
+			static cweeSysMutex mut;
+			static cweeSharedPtr<void> Tag;
+
+			cweeSharedPtr<cweeThreadedMap<size_t, std::pair< const char*, const char*>>> model;
+
+			if (!Tag) {
+				mut.Lock();
 			}
-			catch (...) {
+			if (!Tag) {
+				model = make_cwee_shared<cweeThreadedMap<size_t, std::pair< const char*, const char*>>>();
+				{
+					CreateRowWithMetricPrefixes(model, meter);
+					CreateRow(model, foot);
+					CreateRow(model, inch);
+					CreateRow(model, mile);
+					CreateRow(model, nauticalMile);
+					CreateRow(model, astronicalUnit);
+					CreateRow(model, yard);
+					CreateRowWithMetricPrefixes(model, gram);
+					CreateRow(model, metric_ton);
+					CreateRow(model, pound);
+					CreateRow(model, long_ton);
+					CreateRow(model, short_ton);
+					CreateRow(model, stone);
+					CreateRow(model, ounce);
+					CreateRow(model, carat);
+					CreateRow(model, slug);
+					CreateRowWithMetricPrefixes(model, second);
+					CreateRow(model, minute);
+					CreateRow(model, hour);
+					CreateRow(model, day);
+					CreateRow(model, week);
+					CreateRow(model, year);
+					CreateRow(model, month);
+					CreateRow(model, julian_year);
+					CreateRow(model, gregorian_year);
+					CreateRowWithMetricPrefixes(model, ampere);
+					CreateRow(model, Dollar);
+					CreateRow(model, MillionDollar);
+					CreateRowWithMetricPrefixes(model, hertz);
+					CreateRow(model, meters_per_second);
+					CreateRow(model, feet_per_second);
+					CreateRow(model, feet_per_minute);
+					CreateRow(model, feet_per_hour);
+					CreateRow(model, miles_per_hour);
+					CreateRow(model, kilometers_per_hour);
+					CreateRow(model, knot);
+					CreateRow(model, meters_per_second_squared);
+					CreateRow(model, feet_per_second_squared);
+					CreateRow(model, standard_gravity);
+					CreateRowWithMetricPrefixes(model, newton);
+					CreateRowWithMetricPrefixes(model, pound_f);
+					CreateRow(model, dyne);
+					CreateRow(model, kilopond);
+					CreateRow(model, poundal);
+					CreateRowWithMetricPrefixes(model, pascals);
+					CreateRowWithMetricPrefixes(model, bar);
+					CreateRow(model, mbar);
+					CreateRow(model, atmosphere);
+					CreateRow(model, pounds_per_square_inch);
+					CreateRow(model, head);
+					CreateRow(model, torr);
+					CreateRowWithMetricPrefixes(model, coulomb);
+					CreateRowWithMetricPrefixes(model, ampere_hour);
+					CreateRowWithMetricPrefixes(model, watt);
+					CreateRow(model, horsepower);
+					CreateRowWithMetricPrefixes(model, joule);
+					CreateRowWithMetricPrefixes(model, calorie);
+					CreateRowWithMetricPrefixes(model, watt_minute);
+					CreateRowWithMetricPrefixes(model, watt_hour);
+					CreateRow(model, watt_day);
+					CreateRow(model, british_thermal_unit);
+					CreateRow(model, british_thermal_unit_iso);
+					CreateRow(model, british_thermal_unit_59);
+					CreateRow(model, therm);
+					CreateRow(model, foot_pound);
+					CreateRowWithMetricPrefixes(model, volt);
+					CreateRowWithMetricPrefixes(model, ohm);
+					CreateRowWithMetricPrefixes(model, siemens);
+					CreateRow(model, square_meter);
+					CreateRow(model, square_foot);
+					CreateRow(model, square_inch);
+					CreateRow(model, square_mile);
+					CreateRow(model, square_kilometer);
+					CreateRow(model, hectare);
+					CreateRow(model, acre);
+					CreateRow(model, cubic_meter);
+					CreateRow(model, cubic_millimeter);
+					CreateRow(model, cubic_kilometer);
+					CreateRowWithMetricPrefixes(model, liter);
+					CreateRow(model, cubic_inch);
+					CreateRow(model, cubic_foot);
+					CreateRow(model, cubic_yard);
+					CreateRow(model, cubic_mile);
+					CreateRowWithMetricPrefixes(model, gallon);
+					CreateRow(model, imperial_gallon);
+					CreateRow(model, million_gallon);
+					CreateRow(model, imperial_million_gallon);
+					CreateRow(model, acre_foot);
+					CreateRow(model, quart);
+					CreateRow(model, pint);
+					CreateRow(model, cup);
+					CreateRow(model, fluid_ounce);
+					CreateRow(model, barrel);
+					CreateRow(model, bushel);
+					CreateRow(model, cord);
+					CreateRow(model, tablespoon);
+					CreateRow(model, teaspoon);
+					CreateRow(model, pinch);
+					CreateRow(model, dash);
+					CreateRow(model, drop);
+					CreateRow(model, fifth);
+					CreateRow(model, dram);
+					CreateRow(model, gill);
+					CreateRow(model, peck);
+					CreateRow(model, sack);
+					CreateRow(model, shot);
+					CreateRow(model, strike);
+					CreateRowWithMetricPrefixes(model, gram_per_second);
+					CreateRow(model, metric_ton_per_second);
+					CreateRow(model, metric_ton_per_minute);
+					CreateRow(model, metric_ton_per_hour);
+					CreateRow(model, metric_ton_per_day);
+					CreateRow(model, metric_ton_per_year);
+					CreateRow(model, cubic_meter_per_second);
+					CreateRow(model, cubic_meter_per_hour);
+					CreateRow(model, cubic_meter_per_day);
+					CreateRow(model, cubic_millimeter_per_second);
+					CreateRowWithMetricPrefixes(model, liter_per_second);
+					CreateRow(model, liter_per_minute);
+					CreateRow(model, liter_per_day);
+					CreateRow(model, megaliter_per_day);
+					CreateRow(model, cubic_inch_per_second);
+					CreateRow(model, cubic_inch_per_hour);
+					CreateRow(model, cubic_foot_per_second);
+					CreateRow(model, cubic_foot_per_hour);
+					CreateRow(model, gallon_per_second);
+					CreateRow(model, gallon_per_minute);
+					CreateRow(model, gallon_per_hour);
+					CreateRow(model, gallon_per_day);
+					CreateRow(model, gallon_per_year);
+					CreateRow(model, million_gallon_per_second);
+					CreateRow(model, million_gallon_per_minute);
+					CreateRow(model, million_gallon_per_hour);
+					CreateRow(model, million_gallon_per_day);
+					CreateRow(model, million_gallon_per_year);
+					CreateRow(model, imperial_million_gallon_per_second);
+					CreateRow(model, imperial_million_gallon_per_minute);
+					CreateRow(model, imperial_million_gallon_per_hour);
+					CreateRow(model, imperial_million_gallon_per_day);
+					CreateRow(model, imperial_million_gallon_per_year);
+					CreateRow(model, acre_foot_per_second);
+					CreateRow(model, acre_foot_per_minute);
+					CreateRow(model, acre_foot_per_hour);
+					CreateRow(model, acre_foot_per_day);
+					CreateRow(model, acre_foot_per_year);
+					CreateRow(model, kilograms_per_cubic_meter);
+					CreateRow(model, grams_per_milliliter);
+					CreateRow(model, kilograms_per_liter);
+					CreateRow(model, ounces_per_cubic_foot);
+					CreateRow(model, ounces_per_cubic_inch);
+					CreateRow(model, ounces_per_gallon);
+					CreateRow(model, pounds_per_cubic_foot);
+					CreateRow(model, pounds_per_cubic_inch);
+					CreateRow(model, pounds_per_gallon);
+					CreateRow(model, slugs_per_cubic_foot);
+					CreateRow(model, Dollar_per_joule);
+					CreateRow(model, Dollar_per_kilowatt_hour);
+					CreateRow(model, Dollar_per_watt);
+					CreateRow(model, Dollar_per_kilowatt);
+					CreateRow(model, Dollar_per_cubic_meter);
+					CreateRow(model, Dollar_per_gallon);
+					CreateRow(model, kilowatt_hour_per_acre_foot);
+					CreateRow(model, Dollar_per_mile);
+					CreateRow(model, Dollar_per_ton);
+					CreateRow(model, ton_per_kilowatt_hour);
+					CreateRow(model, per_year);
+				}
+				Tag = cweeSharedPtr<void>(model, [](void* p) { return p; });
+				mut.Unlock();
+			}
+			else {
+				model = cweeSharedPtr<cweeThreadedMap<size_t, std::pair< const char*, const char*>>>(
+					Tag, 
+					[](void* p) -> cweeThreadedMap<size_t, std::pair< const char*, const char*>>* { return static_cast<cweeThreadedMap<size_t, std::pair< const char*, const char*>>*>(p); }
+				);
+			}
+
+			AUTO ptr = model->TryGetPtr(ull);
+			if (ptr) {
+				return *ptr;
+			}
+			else {
 				return std::pair< const char*, const char*>("", "");
 			}
 		}
+#undef CreateRowWithMetricPrefixes
+#undef CreateRow
+
 		INLINE const char* lookup_abbreviation(size_t ull) {
 			AUTO p = lookup_impl(std::move(ull));
 			return p.first;

@@ -100,6 +100,27 @@
     <Filter Include="Lib\Implimentations-Only\WaterWatch Chaiscript Module\Excel Interop Module">
       <UniqueIdentifier>{e134db1b-0135-44df-ae26-8be4a187628e}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Lib\Header-Only\Boost">
+      <UniqueIdentifier>{63f6728b-3165-48f0-9c1a-c42436ea1ab5}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Lib\Header-Only\Boost\date_time">
+      <UniqueIdentifier>{3cc4b817-4c23-4674-beb8-3ae34680e50e}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Lib\Header-Only\Boost\date_time\gregorian">
+      <UniqueIdentifier>{e1d8350d-d688-436f-b797-f49f727d1f2c}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Lib\Header-Only\Boost\date_time\local_time">
+      <UniqueIdentifier>{0bd28891-ab1a-4d1f-8fc5-e75547dc11b9}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Lib\Header-Only\Boost\date_time\posix_time">
+      <UniqueIdentifier>{c5777edc-23d1-4ed8-90a6-5b5a4d00e521}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Lib\Header-Only\Boost\lexical_cast">
+      <UniqueIdentifier>{c7b48c40-a3be-4196-8047-f0ee6d69ea84}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Lib\Header-Only\Boost\lexical_cast\detail">
+      <UniqueIdentifier>{4fe67d5f-0f90-4d6d-af1a-57e77e6dcae3}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="$(MSBuildThisFileDirectory)odbc.h">
@@ -420,6 +441,357 @@
     <ClInclude Include="$(MSBuildThisFileDirectory)ExcelInterop_Module.h">
       <Filter>Lib\Implimentations-Only\WaterWatch Chaiscript Module\Excel Interop Module</Filter>
     </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Boost\date_time.hpp">
+      <Filter>Lib\Header-Only\Boost</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Boost\date_time\gregorian\conversion.hpp">
+      <Filter>Lib\Header-Only\Boost\date_time\gregorian</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Boost\date_time\gregorian\formatters.hpp">
+      <Filter>Lib\Header-Only\Boost\date_time\gregorian</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Boost\date_time\gregorian\formatters_limited.hpp">
+      <Filter>Lib\Header-Only\Boost\date_time\gregorian</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Boost\date_time\gregorian\greg_calendar.hpp">
+      <Filter>Lib\Header-Only\Boost\date_time\gregorian</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Boost\date_time\gregorian\greg_date.hpp">
+      <Filter>Lib\Header-Only\Boost\date_time\gregorian</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Boost\date_time\gregorian\greg_day.hpp">
+      <Filter>Lib\Header-Only\Boost\date_time\gregorian</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Boost\date_time\gregorian\greg_day_of_year.hpp">
+      <Filter>Lib\Header-Only\Boost\date_time\gregorian</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Boost\date_time\gregorian\greg_duration.hpp">
+      <Filter>Lib\Header-Only\Boost\date_time\gregorian</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Boost\date_time\gregorian\greg_duration_types.hpp">
+      <Filter>Lib\Header-Only\Boost\date_time\gregorian</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Boost\date_time\gregorian\greg_facet.hpp">
+      <Filter>Lib\Header-Only\Boost\date_time\gregorian</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Boost\date_time\gregorian\greg_month.hpp">
+      <Filter>Lib\Header-Only\Boost\date_time\gregorian</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Boost\date_time\gregorian\greg_serialize.hpp">
+      <Filter>Lib\Header-Only\Boost\date_time\gregorian</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Boost\date_time\gregorian\greg_weekday.hpp">
+      <Filter>Lib\Header-Only\Boost\date_time\gregorian</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Boost\date_time\gregorian\greg_year.hpp">
+      <Filter>Lib\Header-Only\Boost\date_time\gregorian</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Boost\date_time\gregorian\greg_ymd.hpp">
+      <Filter>Lib\Header-Only\Boost\date_time\gregorian</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Boost\date_time\gregorian\gregorian.hpp">
+      <Filter>Lib\Header-Only\Boost\date_time\gregorian</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Boost\date_time\gregorian\gregorian_io.hpp">
+      <Filter>Lib\Header-Only\Boost\date_time\gregorian</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Boost\date_time\gregorian\gregorian_types.hpp">
+      <Filter>Lib\Header-Only\Boost\date_time\gregorian</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Boost\date_time\gregorian\parsers.hpp">
+      <Filter>Lib\Header-Only\Boost\date_time\gregorian</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Boost\date_time\local_time\posix_time_zone.hpp">
+      <Filter>Lib\Header-Only\Boost\date_time\local_time</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Boost\date_time\local_time\tz_database.hpp">
+      <Filter>Lib\Header-Only\Boost\date_time\local_time</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Boost\date_time\local_time\conversion.hpp">
+      <Filter>Lib\Header-Only\Boost\date_time\local_time</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Boost\date_time\local_time\custom_time_zone.hpp">
+      <Filter>Lib\Header-Only\Boost\date_time\local_time</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Boost\date_time\local_time\date_duration_operators.hpp">
+      <Filter>Lib\Header-Only\Boost\date_time\local_time</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Boost\date_time\local_time\dst_transition_day_rules.hpp">
+      <Filter>Lib\Header-Only\Boost\date_time\local_time</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Boost\date_time\local_time\local_date_time.hpp">
+      <Filter>Lib\Header-Only\Boost\date_time\local_time</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Boost\date_time\local_time\local_time.hpp">
+      <Filter>Lib\Header-Only\Boost\date_time\local_time</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Boost\date_time\local_time\local_time_io.hpp">
+      <Filter>Lib\Header-Only\Boost\date_time\local_time</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Boost\date_time\local_time\local_time_types.hpp">
+      <Filter>Lib\Header-Only\Boost\date_time\local_time</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Boost\date_time\posix_time\time_period.hpp">
+      <Filter>Lib\Header-Only\Boost\date_time\posix_time</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Boost\date_time\posix_time\time_serialize.hpp">
+      <Filter>Lib\Header-Only\Boost\date_time\posix_time</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Boost\date_time\posix_time\conversion.hpp">
+      <Filter>Lib\Header-Only\Boost\date_time\posix_time</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Boost\date_time\posix_time\date_duration_operators.hpp">
+      <Filter>Lib\Header-Only\Boost\date_time\posix_time</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Boost\date_time\posix_time\posix_time.hpp">
+      <Filter>Lib\Header-Only\Boost\date_time\posix_time</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Boost\date_time\posix_time\posix_time_config.hpp">
+      <Filter>Lib\Header-Only\Boost\date_time\posix_time</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Boost\date_time\posix_time\posix_time_duration.hpp">
+      <Filter>Lib\Header-Only\Boost\date_time\posix_time</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Boost\date_time\posix_time\posix_time_io.hpp">
+      <Filter>Lib\Header-Only\Boost\date_time\posix_time</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Boost\date_time\posix_time\posix_time_legacy_io.hpp">
+      <Filter>Lib\Header-Only\Boost\date_time\posix_time</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Boost\date_time\posix_time\posix_time_system.hpp">
+      <Filter>Lib\Header-Only\Boost\date_time\posix_time</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Boost\date_time\posix_time\posix_time_types.hpp">
+      <Filter>Lib\Header-Only\Boost\date_time\posix_time</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Boost\date_time\posix_time\ptime.hpp">
+      <Filter>Lib\Header-Only\Boost\date_time\posix_time</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Boost\date_time\posix_time\time_formatters.hpp">
+      <Filter>Lib\Header-Only\Boost\date_time\posix_time</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Boost\date_time\posix_time\time_formatters_limited.hpp">
+      <Filter>Lib\Header-Only\Boost\date_time\posix_time</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Boost\date_time\posix_time\time_parsers.hpp">
+      <Filter>Lib\Header-Only\Boost\date_time\posix_time</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Boost\date_time\wrapping_int.hpp">
+      <Filter>Lib\Header-Only\Boost\date_time</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Boost\date_time\year_month_day.hpp">
+      <Filter>Lib\Header-Only\Boost\date_time</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Boost\date_time\adjust_functors.hpp">
+      <Filter>Lib\Header-Only\Boost\date_time</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Boost\date_time\c_local_time_adjustor.hpp">
+      <Filter>Lib\Header-Only\Boost\date_time</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Boost\date_time\c_time.hpp">
+      <Filter>Lib\Header-Only\Boost\date_time</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Boost\date_time\compiler_config.hpp">
+      <Filter>Lib\Header-Only\Boost\date_time</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Boost\date_time\constrained_value.hpp">
+      <Filter>Lib\Header-Only\Boost\date_time</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Boost\date_time\date.hpp">
+      <Filter>Lib\Header-Only\Boost\date_time</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Boost\date_time\date_clock_device.hpp">
+      <Filter>Lib\Header-Only\Boost\date_time</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Boost\date_time\date_defs.hpp">
+      <Filter>Lib\Header-Only\Boost\date_time</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Boost\date_time\date_duration.hpp">
+      <Filter>Lib\Header-Only\Boost\date_time</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Boost\date_time\date_duration_types.hpp">
+      <Filter>Lib\Header-Only\Boost\date_time</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Boost\date_time\date_facet.hpp">
+      <Filter>Lib\Header-Only\Boost\date_time</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Boost\date_time\date_format_simple.hpp">
+      <Filter>Lib\Header-Only\Boost\date_time</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Boost\date_time\date_formatting.hpp">
+      <Filter>Lib\Header-Only\Boost\date_time</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Boost\date_time\date_formatting_limited.hpp">
+      <Filter>Lib\Header-Only\Boost\date_time</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Boost\date_time\date_formatting_locales.hpp">
+      <Filter>Lib\Header-Only\Boost\date_time</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Boost\date_time\date_generator_formatter.hpp">
+      <Filter>Lib\Header-Only\Boost\date_time</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Boost\date_time\date_generator_parser.hpp">
+      <Filter>Lib\Header-Only\Boost\date_time</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Boost\date_time\date_generators.hpp">
+      <Filter>Lib\Header-Only\Boost\date_time</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Boost\date_time\date_iterator.hpp">
+      <Filter>Lib\Header-Only\Boost\date_time</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Boost\date_time\date_names_put.hpp">
+      <Filter>Lib\Header-Only\Boost\date_time</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Boost\date_time\date_parsing.hpp">
+      <Filter>Lib\Header-Only\Boost\date_time</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Boost\date_time\dst_rules.hpp">
+      <Filter>Lib\Header-Only\Boost\date_time</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Boost\date_time\dst_transition_generators.hpp">
+      <Filter>Lib\Header-Only\Boost\date_time</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Boost\date_time\filetime_functions.hpp">
+      <Filter>Lib\Header-Only\Boost\date_time</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Boost\date_time\find_match.hpp">
+      <Filter>Lib\Header-Only\Boost\date_time</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Boost\date_time\format_date_parser.hpp">
+      <Filter>Lib\Header-Only\Boost\date_time</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Boost\date_time\gregorian_calendar.hpp">
+      <Filter>Lib\Header-Only\Boost\date_time</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Boost\date_time\gregorian_calendar.ipp">
+      <Filter>Lib\Header-Only\Boost\date_time</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Boost\date_time\int_adapter.hpp">
+      <Filter>Lib\Header-Only\Boost\date_time</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Boost\date_time\iso_format.hpp">
+      <Filter>Lib\Header-Only\Boost\date_time</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Boost\date_time\local_time_adjustor.hpp">
+      <Filter>Lib\Header-Only\Boost\date_time</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Boost\date_time\local_timezone_defs.hpp">
+      <Filter>Lib\Header-Only\Boost\date_time</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Boost\date_time\locale_config.hpp">
+      <Filter>Lib\Header-Only\Boost\date_time</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Boost\date_time\microsec_time_clock.hpp">
+      <Filter>Lib\Header-Only\Boost\date_time</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Boost\date_time\parse_format_base.hpp">
+      <Filter>Lib\Header-Only\Boost\date_time</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Boost\date_time\period.hpp">
+      <Filter>Lib\Header-Only\Boost\date_time</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Boost\date_time\period_formatter.hpp">
+      <Filter>Lib\Header-Only\Boost\date_time</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Boost\date_time\period_parser.hpp">
+      <Filter>Lib\Header-Only\Boost\date_time</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Boost\date_time\special_defs.hpp">
+      <Filter>Lib\Header-Only\Boost\date_time</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Boost\date_time\special_values_formatter.hpp">
+      <Filter>Lib\Header-Only\Boost\date_time</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Boost\date_time\special_values_parser.hpp">
+      <Filter>Lib\Header-Only\Boost\date_time</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Boost\date_time\string_convert.hpp">
+      <Filter>Lib\Header-Only\Boost\date_time</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Boost\date_time\string_parse_tree.hpp">
+      <Filter>Lib\Header-Only\Boost\date_time</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Boost\date_time\strings_from_facet.hpp">
+      <Filter>Lib\Header-Only\Boost\date_time</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Boost\date_time\time.hpp">
+      <Filter>Lib\Header-Only\Boost\date_time</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Boost\date_time\time_clock.hpp">
+      <Filter>Lib\Header-Only\Boost\date_time</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Boost\date_time\time_defs.hpp">
+      <Filter>Lib\Header-Only\Boost\date_time</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Boost\date_time\time_duration.hpp">
+      <Filter>Lib\Header-Only\Boost\date_time</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Boost\date_time\time_facet.hpp">
+      <Filter>Lib\Header-Only\Boost\date_time</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Boost\date_time\time_formatting_streams.hpp">
+      <Filter>Lib\Header-Only\Boost\date_time</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Boost\date_time\time_iterator.hpp">
+      <Filter>Lib\Header-Only\Boost\date_time</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Boost\date_time\time_parsing.hpp">
+      <Filter>Lib\Header-Only\Boost\date_time</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Boost\date_time\time_resolution_traits.hpp">
+      <Filter>Lib\Header-Only\Boost\date_time</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Boost\date_time\time_system_counted.hpp">
+      <Filter>Lib\Header-Only\Boost\date_time</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Boost\date_time\time_system_split.hpp">
+      <Filter>Lib\Header-Only\Boost\date_time</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Boost\date_time\time_zone_base.hpp">
+      <Filter>Lib\Header-Only\Boost\date_time</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Boost\date_time\time_zone_names.hpp">
+      <Filter>Lib\Header-Only\Boost\date_time</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Boost\date_time\tz_db_base.hpp">
+      <Filter>Lib\Header-Only\Boost\date_time</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Boost\lexical_cast.hpp">
+      <Filter>Lib\Header-Only\Boost</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Boost\lexical_cast\lexical_cast_old.hpp">
+      <Filter>Lib\Header-Only\Boost\lexical_cast</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Boost\lexical_cast\try_lexical_convert.hpp">
+      <Filter>Lib\Header-Only\Boost\lexical_cast</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Boost\lexical_cast\bad_lexical_cast.hpp">
+      <Filter>Lib\Header-Only\Boost\lexical_cast</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Boost\lexical_cast\detail\converter_lexical_streams.hpp">
+      <Filter>Lib\Header-Only\Boost\lexical_cast\detail</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Boost\lexical_cast\detail\converter_numeric.hpp">
+      <Filter>Lib\Header-Only\Boost\lexical_cast\detail</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Boost\lexical_cast\detail\inf_nan.hpp">
+      <Filter>Lib\Header-Only\Boost\lexical_cast\detail</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Boost\lexical_cast\detail\is_character.hpp">
+      <Filter>Lib\Header-Only\Boost\lexical_cast\detail</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Boost\lexical_cast\detail\lcast_char_constants.hpp">
+      <Filter>Lib\Header-Only\Boost\lexical_cast\detail</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Boost\lexical_cast\detail\lcast_unsigned_converters.hpp">
+      <Filter>Lib\Header-Only\Boost\lexical_cast\detail</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Boost\lexical_cast\detail\widest_char.hpp">
+      <Filter>Lib\Header-Only\Boost\lexical_cast\detail</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Boost\lexical_cast\detail\converter_lexical.hpp">
+      <Filter>Lib\Header-Only\Boost\lexical_cast\detail</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="$(MSBuildThisFileDirectory)odbc.cpp">
@@ -440,7 +812,7 @@
     <ClCompile Include="$(MSBuildThisFileDirectory)Toasts.cpp">
       <Filter>Lib\Implimentations-Only\Toasts</Filter>
     </ClCompile>
-    <ClCompile Include="$(MSBuildThisFileDirectory)AppLayerRequets.cpp">
+    <ClCompile Include="$(MSBuildThisFileDirectory)AppLayerRequests.cpp">
       <Filter>Lib\Implimentations-Only\AppLayerRequests</Filter>
     </ClCompile>
     <ClCompile Include="$(MSBuildThisFileDirectory)DispatchTimer.cpp">

@@ -201,7 +201,7 @@ private:
 #include <windows.h>
 #include <tchar.h> 
 #include <stdio.h>
-#include <strsafe.h>
+// #include <strsafe.h>
 #pragma comment(lib, "User32.lib")
 #include <locale> 
 #include <codecvt>
@@ -229,10 +229,10 @@ private:
 		std::wstring r(buf);
 		delete[] buf;
 		std::wstring thisStr = r;
-		StringCchCopyW(szDir, MAX_PATH, thisStr.c_str());
+		//StringCchCopyW(szDir, MAX_PATH, thisStr.c_str());
 
 		// Find the first file in the directory.
-		hFind = FindFirstFileW(szDir, &ffd);
+		hFind = FindFirstFileW(thisStr.c_str()/*szDir*/, &ffd);
 		do
 		{
 			std::wstring thisString(ffd.cFileName);
