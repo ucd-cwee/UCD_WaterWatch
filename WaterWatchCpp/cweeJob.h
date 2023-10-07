@@ -233,7 +233,7 @@ private:
 			if (GetResult().template IsTypeOf<cweeJob>()) {
 				AUTO r = GetResult();
 				cweeAnyAutoCast auto_r = r.cast();
-				auto_r.operator cweeJob& ();
+				//auto_r.operator cweeJob& ();
 
 				cweeJob& j = GetResult().cast();
 				if (iterationNumber < 20) {
@@ -313,7 +313,7 @@ private:
 			if (GetResult().template IsTypeOf<cweeJob>()) {
 				AUTO r = GetResult();
 				cweeAnyAutoCast auto_r = r.cast();
-				auto_r.operator cweeJob& ();
+				// auto_r.operator cweeJob& ();
 
 				cweeJob& j = GetResult().cast();
 				if (iterationNumber < 20) {

@@ -2252,14 +2252,21 @@ public:
 
 	static cweeStr		printf(const char* fmt, ...) {
 		va_list argptr;
-		char buffer[128000];
+
+		AUTO buffer = new char[128000];		
+		buffer[128000 - 1] = '\0';
+
+		// char buffer[128000];
 
 		va_start(argptr, fmt);
-		cweeStr::vsnPrintf(buffer, sizeof(buffer) - 1, fmt, argptr);
+		cweeStr::vsnPrintf(buffer, 128000 - 1 /*sizeof(buffer) - 1*/, fmt, argptr);
 		va_end(argptr);
-		buffer[sizeof(buffer) - 1] = '\0';
+		buffer[128000 /*sizeof(buffer)*/ - 1] = '\0';
 
-		return cweeStr(buffer);
+		cweeStr out(buffer);
+		
+		delete[] buffer;
+		return out;
 	};
 
 	static cweeStr		print(const char* format) { return format; }
@@ -2479,7 +2486,7 @@ public:
 			ptr[view.length() + 1] = '\0';
 			std::memcpy(ptr, view.c_str(), view.length());
 			u64 out = atof(ptr);
-			delete ptr;
+			delete[] ptr;
 			return out;
 		}
 		else {
@@ -2492,7 +2499,7 @@ public:
 			ptr[view.length() + 1] = '\0';
 			std::memcpy(ptr, view.c_str(), view.length());
 			u64 out = atof(ptr);
-			delete ptr;
+			delete[] ptr;
 			return out;
 		}
 		else {

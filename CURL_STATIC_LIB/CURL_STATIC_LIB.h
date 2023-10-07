@@ -15,7 +15,7 @@ to maintain a single distribution point for the source code.
 
 #pragma once
 #define WIN32_LEAN_AND_MEAN             // Exclude rarely-used stuff from Windows headers
-#define includeZeroMQ
+// #define includeZeroMQ
 
 #include "../WaterWatchCpp/Precompiled.h"
 #include "../WaterWatchCpp/enum.h"

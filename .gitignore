@@ -361,3 +361,5 @@ MigrationBackup/
 
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
+/swigwin-4.1.1/Examples/python/simple/example.vcxproj
+/swigwin-4.1.1/Examples/python/simple/example.vcxproj.filters

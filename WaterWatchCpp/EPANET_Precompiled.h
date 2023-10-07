@@ -2769,7 +2769,7 @@ namespace epanet {
         bool IsIllDefined() const {
             return IllDefined != illDefined_t::Okay;
         };
-        int   NumberOfBoundaryLinksBetweenZones(cweeSharedPtr<Szone> const& zone) { return NumberOfBoundaryLinksBetweenZones_Impl(zone); };
+        int   NumberOfBoundaryLinksBetweenZones(cweeSharedPtr<Szone> const& zone) { return NumberOfBoundaryLinksBetweenZones_Impl(zone, 0); };
         cweeStr Icon() const noexcept override { return ""; };
 
         /* Can we identify the best survey frequency right here? */
@@ -2885,7 +2885,7 @@ namespace epanet {
         };
 
     private:
-        int   NumberOfBoundaryLinksBetweenZones_Impl(cweeSharedPtr<Szone> const& zone, int distance) {
+        INLINE int   NumberOfBoundaryLinksBetweenZones_Impl(cweeSharedPtr<Szone> const& zone, int distance) {
             constexpr int maxDepth = 5;
             bool found = false;
 
@@ -2921,10 +2921,6 @@ namespace epanet {
                 else
                     return -1;
             }
-        };
-
-        template <int distance = 0> int   NumberOfBoundaryLinksBetweenZones_Impl(cweeSharedPtr<Szone> const& zone) {
-            return NumberOfBoundaryLinksBetweenZones_Impl(zone, distance);
         };
     };
     using Pzone = cweeSharedPtr<Szone>;

@@ -18,8 +18,10 @@ to maintain a single distribution point for the source code.
 #include "enum.h"
 #include "Strings.h"
 #include "SharedPtr.h"
-#include "cweeThreadedMap.h"
+#include "Mutex.h"
 
+// #include "cweeThreadedMap.h"
+#include <map>
 #include <cstdint>
 #include <type_traits>
 
@@ -132,8 +134,9 @@ to maintain a single distribution point for the source code.
 		};
 
 		namespace cweeUnitValuesDetail { 
-			const char* lookup_abbreviation(size_t ull);
-			const char* lookup_typename(size_t ull);
+			static std::pair< const char*, const char*> lookup_impl(size_t ull);
+			static const char* lookup_abbreviation(size_t ull);
+			static const char* lookup_typename(size_t ull);
 		};
 
 		class Unit_ID {
@@ -887,25 +890,6 @@ to maintain a single distribution point for the source code.
 
 namespace cweeUnitValues {
 	namespace  cweeUnitValuesDetail {
-		namespace cweeUnitValuesDetails {
-			template <typename Key, typename Value, std::size_t Size> struct Map {
-				std::array<std::pair<Key, Value>, Size> data;
-
-				[[nodiscard]] constexpr Value at(const Key& key) const {
-					const auto itr =
-						std::find_if(begin(data), end(data),
-							[&key](const auto& v) { return v.first == key; });
-					if (itr != end(data)) {
-						return itr->second;
-					}
-					else {
-						throw std::range_error("Not Found");
-					}
-				}
-
-			};
-						
-		}
 
 #define CreateRow(model, Type) model->insert({ HashUnitAndRatio(HashUnits(Type::A(), Type::B(), Type::C(), Type::D(), Type::E()), Type::conversion()), { Type::specialized_abbreviation(), #Type } })
 #define CreateRowWithMetricPrefixes(model, Type)\
@@ -926,20 +910,19 @@ namespace cweeUnitValues {
 			CreateRow(model, peta ## Type);
 
 		/*! Lookup the abbreviation for the type based on its unique characteristic combination (time/length/mass/etc.) */
-		INLINE std::pair< const char*, const char*> lookup_impl(size_t ull) {
-			using namespace cweeUnitValuesDetails;
-			using namespace std::literals::string_view_literals;		
+		INLINE static std::pair< const char*, const char*> lookup_impl(size_t ull) {
+			// using namespace std::literals::string_view_literals;		
 
 			static cweeSysMutex mut;
 			static cweeSharedPtr<void> Tag;
 
-			cweeSharedPtr<cweeThreadedMap<size_t, std::pair< const char*, const char*>>> model;
+			cweeSharedPtr<std::map<size_t, std::pair< const char*, const char*>>> model;
 
 			if (!Tag) {
 				mut.Lock();
 			}
 			if (!Tag) {
-				model = make_cwee_shared<cweeThreadedMap<size_t, std::pair< const char*, const char*>>>();
+				model = make_cwee_shared<std::map<size_t, std::pair< const char*, const char*>>>();
 				{
 					CreateRowWithMetricPrefixes(model, meter);
 					CreateRow(model, foot);
@@ -1112,28 +1095,26 @@ namespace cweeUnitValues {
 				mut.Unlock();
 			}
 			else {
-				model = cweeSharedPtr<cweeThreadedMap<size_t, std::pair< const char*, const char*>>>(
+				model = cweeSharedPtr<std::map<size_t, std::pair< const char*, const char*>>>(
 					Tag, 
-					[](void* p) -> cweeThreadedMap<size_t, std::pair< const char*, const char*>>* { return static_cast<cweeThreadedMap<size_t, std::pair< const char*, const char*>>*>(p); }
+					[](void* p) -> std::map<size_t, std::pair< const char*, const char*>>* { return static_cast<std::map<size_t, std::pair< const char*, const char*>>*>(p); }
 				);
 			}
-
-			AUTO ptr = model->TryGetPtr(ull);
-			if (ptr) {
-				return *ptr;
+			try {
+				return model->at(ull);
 			}
-			else {
+			catch (...) {
 				return std::pair< const char*, const char*>("", "");
 			}
 		}
 #undef CreateRowWithMetricPrefixes
 #undef CreateRow
 
-		INLINE const char* lookup_abbreviation(size_t ull) {
+		INLINE static const char* lookup_abbreviation(size_t ull) {
 			AUTO p = lookup_impl(std::move(ull));
 			return p.first;
 		}
-		INLINE const char* lookup_typename(size_t ull) {
+		INLINE static const char* lookup_typename(size_t ull) {
 			AUTO p = lookup_impl(std::move(ull));
 			return p.second;
 		}
