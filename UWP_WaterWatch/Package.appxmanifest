@@ -9,7 +9,7 @@
   <Identity
     Name="7175e9d8-246b-4b3e-9fcb-1350f0c3ec59"
     Publisher="CN=Robert Good"
-    Version="1.0.3.0" />
+    Version="1.0.4.0" />
 
   <mp:PhoneIdentity PhoneProductId="7175e9d8-246b-4b3e-9fcb-1350f0c3ec59" PhonePublisherId="00000000-0000-0000-0000-000000000000"/>
 

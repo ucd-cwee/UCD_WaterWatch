@@ -419,14 +419,14 @@ public:
 		for (int i = 0; i < n; i++) {
 			// If S[i] is '>', update
 			// start to i+1 and break
-			if (copy[i] == '>') {
+			if (copy.operator [](i) == '>') {
 				start = i + 1;
 				break;
 			}
 		}
 
 		// Remove the blank space
-		while (copy[start] == ' ') {
+		while (copy.operator [](start) == ' ') {
 			start++;
 		}
 
@@ -434,7 +434,7 @@ public:
 		for (int i = start; i < n; i++) {
 			// If S[i] is '<', update
 			// end to i-1 and break
-			if (copy[i] == '<') {
+			if (copy.operator [](i) == '<') {
 				end = i - 1;
 				break;
 			}
@@ -1258,7 +1258,7 @@ public:
 		return *this;
 	};	// if there's no file extension use the default
 	cweeStr&			DefaultPath(const char* basepath) {
-		if (((*this)[0] == '/') || ((*this)[0] == '\\')) {
+		if ((this->operator [](0) == '/') || (this->operator [](0) == '\\')) {
 			// absolute path location
 			return *this;
 		}
@@ -1299,7 +1299,7 @@ public:
 		int pos;
 
 		pos = Length() - 1;
-		while ((pos > 0) && ((*this)[pos] != '/') && ((*this)[pos] != '\\')) {
+		while ((pos > 0) && (this->operator [](pos) != '/') && (this->operator [](pos) != '\\')) {
 			pos--;
 		}
 
@@ -1314,7 +1314,7 @@ public:
 		int pos;
 
 		pos = Length();
-		while ((pos > 0) && ((*this)[pos - 1] != '/') && ((*this)[pos - 1] != '\\')) {
+		while ((pos > 0) && (this->operator [](pos-1) != '/') && (this->operator [](pos-1) != '\\')) {
 			pos--;
 		}
 
@@ -1328,7 +1328,7 @@ public:
 		// back up until a \ or the start
 		//
 		pos = Length();
-		while ((pos > 0) && ((*this)[pos - 1] != '/') && ((*this)[pos - 1] != '\\')) {
+		while ((pos > 0) && (this->operator [](pos - 1) != '/') && (this->operator [](pos - 1) != '\\')) {
 			pos--;
 		}
 
@@ -1341,7 +1341,7 @@ public:
 		// back up until a \ or the start
 		//
 		pos = Length() - 1;
-		while ((pos > 0) && ((*this)[pos - 1] != '/') && ((*this)[pos - 1] != '\\')) {
+		while ((pos > 0) && (this->operator [](pos - 1) != '/') && (this->operator [](pos - 1) != '\\')) {
 			pos--;
 		}
 
@@ -1355,12 +1355,12 @@ public:
 		// back up until a \ or the start
 		//
 		pos = Length() - 1;
-		while ((pos > 0) && ((*this)[pos - 1] != '/') && ((*this)[pos - 1] != '\\')) {
+		while ((pos > 0) && (this->operator [](pos - 1) != '/') && (this->operator [](pos - 1) != '\\')) {
 			pos--;
 		}
 
 		start = pos;
-		while ((pos < (long long)Length()) && ((*this)[pos] != '.')) {
+		while ((pos < (long long)Length()) && (this->operator [](pos) != '.')) {
 			pos++;
 		}
 
@@ -1373,7 +1373,7 @@ public:
 		// back up until a . or the start
 		//
 		pos = Length() - 1;
-		while ((pos > 0) && ((*this)[pos - 1] != '.')) {
+		while ((pos > 0) && (this->operator [](pos - 1) != '.')) {
 			pos--;
 		}
 

@@ -102,9 +102,9 @@ namespace chaiscript {
                 lib->add(chaiscript::fun([](unit_value& a, const unit_value& b) -> unit_value& { a *= b; return a; }), "*=");
                 lib->add(chaiscript::fun([](const unit_value& a, const unit_value& b) { return a / b; }), "/");
                 lib->add(chaiscript::fun([](unit_value& a, const unit_value& b) -> unit_value& { a /= b; return a; }), "/=");
-                lib->add(chaiscript::fun([](const unit_value& a) -> cweeStr { return a.ToString(); }), "to_string");
+                lib->add(chaiscript::fun([](const unit_value& a) -> cweeStr { return a.ToString().c_str(); }), "to_string");
                 lib->add(type_conversion<unit_value, std::string>([](const unit_value& a)->std::string { return a.ToString().c_str(); }, nullptr));
-                lib->add(type_conversion<unit_value, cweeStr>([](const unit_value& a)->cweeStr { return a.ToString(); }, nullptr));
+                lib->add(type_conversion<unit_value, cweeStr>([](const unit_value& a)->cweeStr { return a.ToString().c_str(); }, nullptr));
 
                 // Comparators
                 lib->add(fun([](unit_value& a, const unit_value& b)->bool {return a == b; }), "==");
@@ -138,7 +138,7 @@ namespace chaiscript {
                 // Functions
                 lib->add(fun([](const unit_value& a)->std::string { return a.Abbreviation(); }), "Abbreviation");
                 lib->add(fun([](const unit_value& a)->std::string { return a.UnitName(); }), "UnitName");
-                lib->add(fun([](const unit_value& a)->cweeStr { return a.ToString(); }), "ToString");
+                lib->add(fun([](const unit_value& a)->cweeStr { return a.ToString().c_str(); }), "ToString");
 
                 // cout
                 lib->add(chaiscript::fun([](const unit_value& str) { std::cout << str << std::endl; }), "cout");
@@ -212,12 +212,11 @@ namespace chaiscript {
                     AddUnit(poundal);
                     AddUnitWithMetricPrefixes(pascals);
                     AddUnitWithMetricPrefixes(bar);
-                    AddUnit(mbar);
                     AddUnit(atmosphere);
                     AddUnit(pounds_per_square_inch);
                     AddUnit(head);
                     AddUnit(torr);
-                    AddUnitWithMetricPrefixes(coulomb);
+                    AddUnit(coulomb); // WithMetricPrefixes
                     AddUnitWithMetricPrefixes(ampere_hour);
                     AddUnitWithMetricPrefixes(watt);
                     AddUnit(horsepower);
@@ -233,7 +232,7 @@ namespace chaiscript {
                     AddUnit(foot_pound);
                     AddUnitWithMetricPrefixes(volt);
                     AddUnitWithMetricPrefixes(ohm);
-                    AddUnitWithMetricPrefixes(siemens);
+                    AddUnit(siemens); // WithMetricPrefixes
                     AddUnit(square_meter);
                     AddUnit(square_foot);
                     AddUnit(square_inch);

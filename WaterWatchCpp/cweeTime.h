@@ -19,8 +19,8 @@ to maintain a single distribution point for the source code.
 #include "Strings.h"
 #include "boost/date_time.hpp"
 #include "cweeUnitedValue.h"
-#include "Toasts.h"
-#include <ctime>
+// #include "Toasts.h"
+// #include <ctime>
 
 class cweeTime {
 private:
@@ -374,10 +374,14 @@ public:
 
 	cweeTime& ToEndOfMonth() {		
 		if (tm_mon() >= 11) {
-			*this = make_time(tm_year() + 1901, 1, 1, 0, 0, 0) - 1;			
+			cweeTime out(make_time(tm_year() + 1901, 1, 1, 0, 0, 0));
+			out -= 1;
+			*this = out; //  (make_time(tm_year() + 1901, 1, 1, 0, 0, 0) - 1);
 		}
 		else {
-			*this = make_time(tm_year() + 1900, tm_mon() + 2, 1, 0, 0, 0) - 1;
+			cweeTime out(make_time(tm_year() + 1900, tm_mon() + 2, 1, 0, 0, 0));
+			out -= 1;
+			*this = out; // (make_time(tm_year() + 1900, tm_mon() + 2, 1, 0, 0, 0) - 1);
 		}
 		return *this;
 	};

@@ -1791,7 +1791,7 @@ lib->add(chaiscript::type_conversion<From, To>([](const From& t_bt)->To { return
                     lib->add(chaiscript::fun([](const Type& a)->cweeStr { \
                             using namespace cweeUnitValues; \
                             unit_value t = a; \
-                            return t.ToString(); \
+                            return t.ToString().c_str(); \
                     }), "to_string"); \
                     lib->add(chaiscript::fun([](const Type& a)->std::string { \
                         using namespace cweeUnitValues; \

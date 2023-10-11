@@ -111,13 +111,13 @@ copy "$(OutDir)Conv.dll" "$(ProjectDir)"
   </ItemGroup>
   <ItemGroup>
     <CustomBuild Include="SWIG.i">
-      <Command Condition="'$(Configuration)|$(Platform)'=='Release|x64'">echo Invoking SWIG...
+      <Command>echo Invoking SWIG...
 		echo on
 		del /s/q "$(ProjectDir)\*.cs"
 		"$(SolutionDir)swigwin-4.1.1\swig.exe" -c++ -csharp -DSWIG_CSHARP_NO_WSTRING_HELPER "%(FullPath)"
 		%40echo off
-</Command>
-      <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|x64'">%(Filename)_wrap.cxx;%(Outputs)</Outputs>
+	</Command>
+      <Outputs>%(Filename)_wrap.cxx;%(Outputs)</Outputs>
     </CustomBuild>
   </ItemGroup>
   <ItemGroup>

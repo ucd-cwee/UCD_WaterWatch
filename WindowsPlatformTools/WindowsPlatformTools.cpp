@@ -17,7 +17,7 @@ to maintain a single distribution point for the source code.
 #include "WindowsPlatformTools.h"
 
 #include <minwinbase.h>
-#include <cstdint>
+// #include <cstdint>
 #include <synchapi.h>
 #include <processthreadsapi.h>
 #include <handleapi.h>

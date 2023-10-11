@@ -1,3 +1,8 @@
+#pragma once
+#include <string>
+#include <memory>
+#include <vector>
+#include <utility>
 #include "base.h"
 
 class Foo : public Base {
@@ -10,6 +15,7 @@ class Foo : public Base {
   void B() {
     printf("I'm Foo::B\n");
   }
+  static int Static();
   virtual Base *toBase() {
     return static_cast<Base *>(this);
   }

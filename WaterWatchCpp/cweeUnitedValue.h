@@ -14,15 +14,11 @@ to maintain a single distribution point for the source code.
 */
 
 #pragma once
-#include "Precompiled.h"
-#include "enum.h"
-#include "Strings.h"
-#include "SharedPtr.h"
-#include "Mutex.h"
 
-// #include "cweeThreadedMap.h"
+// #include "Precompiled.h"
+#include "enum.h"
+#include <mutex>
 #include <map>
-#include <cstdint>
 #include <type_traits>
 
 	namespace constexpr_to_string {
@@ -100,7 +96,7 @@ to maintain a single distribution point for the source code.
 	namespace cweeUnitValues {
 		BETTER_ENUM(unit_value_type, uint8_t, METERS, KILOGRAMS, SECONDS, AMPERES, DOLLAR);
 
-		INLINE constexpr size_t HashUnits(double a, double b, double c, double d, double e) noexcept {
+		__forceinline constexpr size_t HashUnits(double a, double b, double c, double d, double e) noexcept {
 			constexpr double OFFSET = 1000;
 			constexpr size_t A = 54059; /* a prime */
 			constexpr double B = 76963; /* another prime */
@@ -117,7 +113,7 @@ to maintain a single distribution point for the source code.
 			AUTO result = h % C;
 			return result;
 		};
-		INLINE constexpr size_t HashUnitAndRatio(double unitHash, double ratio) noexcept {
+		__forceinline constexpr size_t HashUnitAndRatio(double unitHash, double ratio) noexcept {
 			constexpr double OFFSETA = 10000;
 			constexpr double OFFSETB = 1000;
 			constexpr size_t A = 54059; /* a prime */
@@ -180,27 +176,6 @@ to maintain a single distribution point for the source code.
 			double ratio_m;
 		};
 
-		//static constexpr double FUNC() {
-		//	constexpr units::length::foot_t t = 10;
-
-		//	constexpr double length_Ratio = (double)units::length::foot_t::unit_type::base_unit_type::meter_ratio::num / (double)units::length::foot_t::unit_type::base_unit_type::meter_ratio::den;
-		//	constexpr double mass_ratio = (double)units::length::foot_t::unit_type::base_unit_type::kilogram_ratio::num / (double)units::length::foot_t::unit_type::base_unit_type::kilogram_ratio::den;
-		//	constexpr double second_ratio = (double)units::length::foot_t::unit_type::base_unit_type::second_ratio::num / (double)units::length::foot_t::unit_type::base_unit_type::second_ratio::den;
-		//	constexpr double ampere_ratio = (double)units::length::foot_t::unit_type::base_unit_type::ampere_ratio::num / (double)units::length::foot_t::unit_type::base_unit_type::ampere_ratio::den;
-		//	constexpr double dollar_ratio = (double)units::length::foot_t::unit_type::base_unit_type::dollar_ratio::num / (double)units::length::foot_t::unit_type::base_unit_type::dollar_ratio::den;
-		//	
-		//	constexpr double factor = (double)units::length::foot_t::unit_type::conversion_ratio::num / (double)units::length::foot_t::unit_type::conversion_ratio::den;
-
-		//	// units::length::foot_t::_unit_t
-
-		//		
-		//	//  / (double)units::length::foot_t::unit_type::base_unit_type::meter_ratio::den;
-		//	//constexpr double lenRatio = (double)units::length::foot_t::unit_type::base_unit_type::meter_ratio::num / (double)units::length::foot_t::unit_type::base_unit_type::meter_ratio::den;
-		//	//constexpr double lenRatio = (double)units::length::foot_t::unit_type::base_unit_type::meter_ratio::num / (double)units::length::foot_t::unit_type::base_unit_type::meter_ratio::den;
-		//	//constexpr double lenRatio = (double)units::length::foot_t::unit_type::base_unit_type::meter_ratio::num / (double)units::length::foot_t::unit_type::base_unit_type::meter_ratio::den;
-
-		//};
-
 		class unit_value {
 		public:
 			Unit_ID unit_m;
@@ -243,11 +218,107 @@ to maintain a single distribution point for the source code.
 			double operator()() const noexcept { return GetVisibleValue(); };
 
 		public: // Functions
-			const char* Abbreviation() const noexcept {
-				if (cweeStr::Cmp(unit_m.abbreviation_m, "") == 0) {
+
+			const char* UnitName() const noexcept {
+				return cweeUnitValuesDetail::lookup_typename(HashUnitAndRatio(unit_m.HashCategory(), unit_m.ratio_m));
+			};
+			bool AreConvertableTypes(unit_value const& V) const {
+				return unit_value::NormalArithmeticOkay(*this, V);
+			};
+			void Clear() { unit_m = Unit_ID(); value_m = 0.0; };
+
+		private:
+			static void AddToDelimiter(std::string& obj, std::string const& toAdd, std::string const& delim) {
+				if (obj.length() == 0) {
+					obj += toAdd;
+				}
+				else {
+					obj += delim;
+					obj += toAdd;
+				}
+			};
+			static size_t		vsnPrintf(char* dest, size_t size, const char* fmt, va_list argptr) {
+				size_t ret;
+#undef _vsnprintf
+				ret = ::_vsnprintf(dest, size - 1, fmt, argptr);
+				dest[size - 1] = '\0';
+				if (ret < 0 || ret >= size)  ret = -1;
+				return ret;
+			};
+			static std::string	printf(const char* fmt, ...) {
+				va_list argptr;
+
+				AUTO buffer = new char[128000];
+				buffer[128000 - 1] = '\0';
+
+				va_start(argptr, fmt);
+				vsnPrintf(buffer, 128000 - 1 /*sizeof(buffer) - 1*/, fmt, argptr);
+				va_end(argptr);
+				buffer[128000 /*sizeof(buffer)*/ - 1] = '\0';
+
+				std::string out(buffer);
+
+				delete[] buffer;
+				return out;
+			};
+
+		public:
+			std::string CreateAbbreviation() const {
+				std::string out; double v;
+				{
+					v = unit_m.unitType_m[unit_value_type::METERS];
+					if (v != 0) {
+						if (v == 1)
+							AddToDelimiter(out, "m", " ");
+						else
+							AddToDelimiter(out, printf("m^%s", std::to_string((float)v).c_str()), " ");
+					}
+				}
+				{
+					v = unit_m.unitType_m[unit_value_type::KILOGRAMS];
+					if (v != 0) {
+						if (v == 1)
+							AddToDelimiter(out, "kg", " ");
+						else
+							AddToDelimiter(out, printf("kg^%s", std::to_string((float)v).c_str()), " ");
+					}
+				}
+				{
+					v = unit_m.unitType_m[unit_value_type::SECONDS];
+					if (v != 0) {
+						if (v == 1)
+							AddToDelimiter(out, "s", " ");
+						else
+							AddToDelimiter(out, printf("s^%s", std::to_string((float)v).c_str()), " ");
+					}
+				}
+				{
+					v = unit_m.unitType_m[unit_value_type::AMPERES];
+					if (v != 0) {
+						if (v == 1)
+							AddToDelimiter(out, "a", " ");
+						else
+							AddToDelimiter(out, printf("a^%s", std::to_string((float)v).c_str()), " ");
+					}
+				}
+				{
+					v = unit_m.unitType_m[unit_value_type::DOLLAR];
+					if (v != 0) {
+						if (v == 1)
+							AddToDelimiter(out, "$", " ");
+						else
+							AddToDelimiter(out, printf("$^%s", std::to_string((float)v).c_str()), " ");
+					}
+				}
+				return out;
+			};
+
+			std::string Abbreviation() const noexcept {
+				if (std::strcmp(unit_m.abbreviation_m, "") == 0) {
 					unit_m.abbreviation_m = unit_m.LookupAbbreviation();
-					if (cweeStr::Cmp(unit_m.abbreviation_m, "") == 0) {
-						return CreateAbbreviation();
+					if (std::strcmp(unit_m.abbreviation_m, "") == 0) {
+						std::string a(CreateAbbreviation());
+						return a;
 					}
 					else {
 						return unit_m.abbreviation_m;
@@ -257,68 +328,11 @@ to maintain a single distribution point for the source code.
 					return unit_m.abbreviation_m;
 				}
 			};
-			const char* UnitName() const noexcept {
-				return cweeUnitValuesDetail::lookup_typename(HashUnitAndRatio(unit_m.HashCategory(), unit_m.ratio_m));
-			};
-			bool AreConvertableTypes(unit_value const& V) const {
-				return unit_value::NormalArithmeticOkay(*this, V);
-			};
-			void Clear() { unit_m = Unit_ID(); value_m = 0.0; };
 
-		public: // Non-overriden Functions
-			cweeStr ToString() const {
-				cweeStr abbreviation(Abbreviation());
-				if (abbreviation.Length() > 0) return GetValueStr(*this) + " " + abbreviation;
+			std::string ToString() const {
+				std::string abbreviation(Abbreviation());
+				if (abbreviation.length() > 0) return GetValueStr(*this) + " " + abbreviation;
 				else return GetValueStr(*this);
-			};
-			cweeStr CreateAbbreviation() const {
-				cweeStr out; double v;
-				{
-					v = unit_m.unitType_m[unit_value_type::METERS];
-					if (v != 0) {
-						if (v == 1)
-							out.AddToDelimiter("m", " ");
-						else
-							out.AddToDelimiter(cweeStr::printf("m^%s", cweeStr((float)v).c_str()), " ");
-					}
-				}
-				{
-					v = unit_m.unitType_m[unit_value_type::KILOGRAMS];
-					if (v != 0) {
-						if (v == 1)
-							out.AddToDelimiter("kg", " ");
-						else
-							out.AddToDelimiter(cweeStr::printf("kg^%s", cweeStr((float)v).c_str()), " ");
-					}
-				}
-				{
-					v = unit_m.unitType_m[unit_value_type::SECONDS];
-					if (v != 0) {
-						if (v == 1)
-							out.AddToDelimiter("s", " ");
-						else
-							out.AddToDelimiter(cweeStr::printf("s^%s", cweeStr((float)v).c_str()), " ");
-					}
-				}
-				{
-					v = unit_m.unitType_m[unit_value_type::AMPERES];
-					if (v != 0) {
-						if (v == 1)
-							out.AddToDelimiter("a", " ");
-						else
-							out.AddToDelimiter(cweeStr::printf("a^%s", cweeStr((float)v).c_str()), " ");
-					}
-				}
-				{
-					v = unit_m.unitType_m[unit_value_type::DOLLAR];
-					if (v != 0) {
-						if (v == 1)
-							out.AddToDelimiter("$", " ");
-						else
-							out.AddToDelimiter(cweeStr::printf("$^%s", cweeStr((float)v).c_str()), " ");
-					}
-				}
-				return out;
 			};
 
 		public: // Streaming functions (should be specialized per type)
@@ -328,7 +342,7 @@ to maintain a single distribution point for the source code.
 			static bool is_scalar(unit_value const& V) noexcept { return V.unit_m.isScalar_m; };
 
 		private:
-			static cweeStr GetValueStr(unit_value const& V) noexcept { return cweeStr((float)V()); };
+			static std::string GetValueStr(unit_value const& V) noexcept { return std::to_string((float)V()); };
 			static bool NormalArithmeticOkay(unit_value const& LHS, unit_value const& RHS) noexcept {
 				if (is_scalar(LHS) || is_scalar(RHS)) return true;
 				if (IdenticalUnits(LHS, RHS)) return true;
@@ -341,15 +355,15 @@ to maintain a single distribution point for the source code.
 			};
 			static void HandleNormalArithmetic(unit_value const& LHS, unit_value const& RHS) {
 				if (NormalArithmeticOkay(LHS, RHS)) return;
-				throw(std::runtime_error(cweeStr::printf("Normal, dynamic arithmetic failed due to incompatible non-scalar units: '%s' and '%s'", LHS.Abbreviation(), RHS.Abbreviation())));
+				throw(std::runtime_error(printf("Normal, dynamic arithmetic failed due to incompatible non-scalar units: '%s' and '%s'", LHS.Abbreviation().c_str(), RHS.Abbreviation().c_str())));
 			};
 			static void HandleUnaryArithmetic(unit_value const& LHS, unit_value const& RHS) {
 				if (UnaryArithmeticOkay(LHS, RHS)) return;
-				throw(std::runtime_error(cweeStr::printf("Unary (in-place or self-modifying) arithmetic failed due to incompatible units: '%s' and '%s'", LHS.Abbreviation(), RHS.Abbreviation())));
+				throw(std::runtime_error(printf("Unary (in-place or self-modifying) arithmetic failed due to incompatible units: '%s' and '%s'", LHS.Abbreviation().c_str(), RHS.Abbreviation().c_str())));
 			};
 			static void HandleNotScalar(unit_value const& V) {
 				if (is_scalar(V)) return;
-				throw(std::runtime_error(cweeStr::printf("Type must be scalar (was '%s').", V.Abbreviation())));
+				throw(std::runtime_error(printf("Type must be scalar (was '%s').", V.Abbreviation().c_str())));
 			};
 			template <bool multiplication = true>
 			unit_value& CompoundUnits(unit_value const& V) noexcept {
@@ -410,7 +424,7 @@ to maintain a single distribution point for the source code.
 					value_m = V.value_m;
 				}
 				else { // incoming unit AND this unit are different non-scalers of different categories. No exchange is reasonable. 
-					throw(std::runtime_error(cweeStr::printf("Assignment failed due to incompatible non-scalar units: '%s' and '%s'.", this->Abbreviation(), V.Abbreviation())));
+					throw(std::runtime_error(printf("Assignment failed due to incompatible non-scalar units: '%s' and '%s'.", this->Abbreviation().c_str(), V.Abbreviation().c_str())));
 				}
 				return *this;
 			};
@@ -426,7 +440,7 @@ to maintain a single distribution point for the source code.
 					value_m = V.value_m;
 				}
 				else { // incoming unit AND this unit are different non-scalers of different categories. No exchange is reasonable. 
-					throw(std::runtime_error(cweeStr::printf("Assignment failed due to incompatible non-scalar units: '%s' and '%s'.", this->Abbreviation(), V.Abbreviation())));
+					throw(std::runtime_error(printf("Assignment failed due to incompatible non-scalar units: '%s' and '%s'.", this->Abbreviation().c_str(), V.Abbreviation().c_str())));
 				}
 				return *this;
 			};
@@ -609,7 +623,7 @@ to maintain a single distribution point for the source code.
 
 #undef DefineCategoryType
 
-#define DerivedUnitType(type, category, abbreviation, ratio) namespace cweeUnitValues { class type : public category  { public: \
+#define DerivedUnitType(type, category, abbreviation, ratio) namespace cweeUnitValues{ class type : public category  { public: \
 		constexpr static double conversion() noexcept { return ratio; }; \
 		constexpr static const char* specialized_abbreviation() noexcept { return #abbreviation; }; \
 		constexpr static const char* specialized_name() noexcept { return #type; }; \
@@ -625,7 +639,10 @@ to maintain a single distribution point for the source code.
 		static constexpr double lowest() { return std::numeric_limits<double>::lowest(); } \
 		static constexpr bool is_integer = std::numeric_limits<double>::is_integer; \
 		static constexpr bool is_signed = std::numeric_limits<double>::is_signed; }; \
-	};
+	}; namespace cweeUnitValues { namespace literals { \
+		__forceinline type operator""_ ## abbreviation (long double d) { return type(static_cast<double>(d)); }\
+		__forceinline type operator""_ ## abbreviation (unsigned long long d) { return type(static_cast<double>(d)); }\
+	} }
 
 #define CalculateMetricPrefixV(metric) ((double)std::metric::num / (double)std::metric::den)
 #define DerivedUnitTypeWithMetricPrefix(type, category, abbreviation, ratio, prefix, prefix_abbrev) DerivedUnitType(prefix ## type, category, prefix_abbrev ## abbreviation, ratio * CalculateMetricPrefixV(prefix))
@@ -647,9 +664,9 @@ to maintain a single distribution point for the source code.
 	DerivedUnitTypeWithMetricPrefix(type, category, abbreviation, ratio, peta, P)
 
 	namespace cweeUnitValues {
-		template <typename Derived> constexpr INLINE double Conversion(double X) { return Derived::conversion() * X; };
-		constexpr INLINE double SQUARED(double X) { return X * X; };
-		constexpr INLINE double CUBED(double X) { return X * X * X; };
+		template <typename Derived> constexpr __forceinline double Conversion(double X) { return Derived::conversion() * X; };
+		constexpr __forceinline double SQUARED(double X) { return X * X; };
+		constexpr __forceinline double CUBED(double X) { return X * X * X; };
 	};
 
 	/* LENGTH DERIVATIONS */
@@ -717,14 +734,13 @@ to maintain a single distribution point for the source code.
 	// PRESSURE DERIVATIONS
 	DerivedUnitTypeWithMetricPrefixes(pascals, pressure, Pa, 1.0);
 	DerivedUnitTypeWithMetricPrefixes(bar, pressure, bar, Conversion<kilopascals>(100.0));
-	DerivedUnitType(mbar, pressure, mbar, Conversion<millibar>(1.0));
 	DerivedUnitType(atmosphere, pressure, atm, Conversion<pascals>(101325.0));
 	DerivedUnitType(pounds_per_square_inch, pressure, psi, Conversion<pound_f>(1.0) / (Conversion<inch>(1.0) * Conversion<inch>(1.0)));
 	DerivedUnitType(head, pressure, ft_water, Conversion<pound_f>(62.43) / (Conversion<foot>(1.0) * Conversion<foot>(1.0)));
 	DerivedUnitType(torr, pressure, torr, Conversion<atmosphere>(1.0 / 760.0));
 
 	// CHARGE DERIVATIONS
-	DerivedUnitTypeWithMetricPrefixes(coulomb, charge, C, 1.0);
+	DerivedUnitType(coulomb, charge, C, 1.0); /* WithMetricPrefixes */
 	DerivedUnitTypeWithMetricPrefixes(ampere_hour, charge, Ah, Conversion< ampere>(1.0)* Conversion<hour>(1.0));
 
 	// POWER DERIVATIONS
@@ -745,24 +761,12 @@ to maintain a single distribution point for the source code.
 
 	// VOLTAGE DERIVATIONS
 	DerivedUnitTypeWithMetricPrefixes(volt, voltage, V, 1.0);
-	//DerivedUnitType(statvolt, voltage, statV, Conversion<volt>(1000000.0 / 299792458.0));
-	//DerivedUnitType(abvolt, voltage, abV, Conversion<volt>(1.0 / 100000000.0));
-
-	// CAPACITANCE DERIVATIONS
-	// DerivedUnitTypeWithMetricPrefixes(farad, capacitance, F, 1.0);
 
 	// IMPEDANCE DERIVATIONS
 	DerivedUnitTypeWithMetricPrefixes(ohm, impedance, Ohm, 1.0);
 
 	// CONDUCTANCE DERIVATIONS
-	DerivedUnitTypeWithMetricPrefixes(siemens, conductance, S, 1.0);
-
-	// MAGNETIC FLUX
-	//DerivedUnitTypeWithMetricPrefixes(weber, magnetic_flux, Wb, 1.0);
-	//DerivedUnitType(maxwell, magnetic_flux, Mx, Conversion<weber>(1.0 / 100000000.0));
-
-	// INDUCTANCE DERIVATIONS
-	// DerivedUnitTypeWithMetricPrefixes(henry, inductance, H, 1.0);
+	DerivedUnitType(siemens, conductance, S, 1.0); // WithMetricPrefixes
 
 	// TORQUE DERIVATIONS
 	// DerivedUnitType(newton_meter, torque, Nm, 1.0);
@@ -910,19 +914,19 @@ namespace cweeUnitValues {
 			CreateRow(model, peta ## Type);
 
 		/*! Lookup the abbreviation for the type based on its unique characteristic combination (time/length/mass/etc.) */
-		INLINE static std::pair< const char*, const char*> lookup_impl(size_t ull) {
+		__forceinline static std::pair< const char*, const char*> lookup_impl(size_t ull) {
 			// using namespace std::literals::string_view_literals;		
 
-			static cweeSysMutex mut;
-			static cweeSharedPtr<void> Tag;
+			static std::mutex mut;
+			static std::shared_ptr<void> Tag;
 
-			cweeSharedPtr<std::map<size_t, std::pair< const char*, const char*>>> model;
+			std::shared_ptr<std::map<size_t, std::pair< const char*, const char*>>> model;
 
 			if (!Tag) {
-				mut.Lock();
+				mut.lock();
 			}
 			if (!Tag) {
-				model = make_cwee_shared<std::map<size_t, std::pair< const char*, const char*>>>();
+				model = std::make_shared<std::map<size_t, std::pair< const char*, const char*>>>();
 				{
 					CreateRowWithMetricPrefixes(model, meter);
 					CreateRow(model, foot);
@@ -970,12 +974,11 @@ namespace cweeUnitValues {
 					CreateRow(model, poundal);
 					CreateRowWithMetricPrefixes(model, pascals);
 					CreateRowWithMetricPrefixes(model, bar);
-					CreateRow(model, mbar);
 					CreateRow(model, atmosphere);
 					CreateRow(model, pounds_per_square_inch);
 					CreateRow(model, head);
 					CreateRow(model, torr);
-					CreateRowWithMetricPrefixes(model, coulomb);
+					CreateRow(model, coulomb); // WithMetricPrefixes
 					CreateRowWithMetricPrefixes(model, ampere_hour);
 					CreateRowWithMetricPrefixes(model, watt);
 					CreateRow(model, horsepower);
@@ -991,7 +994,7 @@ namespace cweeUnitValues {
 					CreateRow(model, foot_pound);
 					CreateRowWithMetricPrefixes(model, volt);
 					CreateRowWithMetricPrefixes(model, ohm);
-					CreateRowWithMetricPrefixes(model, siemens);
+					CreateRow(model, siemens); // WithMetricPrefixes
 					CreateRow(model, square_meter);
 					CreateRow(model, square_foot);
 					CreateRow(model, square_inch);
@@ -1091,14 +1094,12 @@ namespace cweeUnitValues {
 					CreateRow(model, ton_per_kilowatt_hour);
 					CreateRow(model, per_year);
 				}
-				Tag = cweeSharedPtr<void>(model, [](void* p) { return p; });
-				mut.Unlock();
+
+				Tag = std::static_pointer_cast<void>(model);
+				mut.unlock();
 			}
 			else {
-				model = cweeSharedPtr<std::map<size_t, std::pair< const char*, const char*>>>(
-					Tag, 
-					[](void* p) -> std::map<size_t, std::pair< const char*, const char*>>* { return static_cast<std::map<size_t, std::pair< const char*, const char*>>*>(p); }
-				);
+				model = std::static_pointer_cast<std::map<size_t, std::pair< const char*, const char*>>>(Tag);
 			}
 			try {
 				return model->at(ull);
@@ -1110,11 +1111,11 @@ namespace cweeUnitValues {
 #undef CreateRowWithMetricPrefixes
 #undef CreateRow
 
-		INLINE static const char* lookup_abbreviation(size_t ull) {
+		__forceinline static const char* lookup_abbreviation(size_t ull) {
 			AUTO p = lookup_impl(std::move(ull));
 			return p.first;
 		}
-		INLINE static const char* lookup_typename(size_t ull) {
+		__forceinline static const char* lookup_typename(size_t ull) {
 			AUTO p = lookup_impl(std::move(ull));
 			return p.second;
 		}

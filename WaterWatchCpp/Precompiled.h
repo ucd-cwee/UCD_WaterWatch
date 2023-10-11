@@ -8,7 +8,6 @@ namespace cwee_units {
 	using namespace units::time;
 	using namespace units::area;
 	using namespace units::velocity;
-	using namespace units::literals;
 	using namespace units::volume;
 	using namespace units::flowrate;
 	using namespace units::temperature;
@@ -26,6 +25,10 @@ namespace cwee_units {
 	using namespace units::mass_cost_rate_unit;
 	using namespace units::emission_rate_unit;
 	using namespace units::time_rate_unit;
+
+	using namespace units::literals;
+
+	//constexpr extern auto example_val = 1_ft;
 }
 #pragma endregion
 #pragma region Precompiled STL Headers
@@ -98,7 +101,6 @@ namespace cwee_units {
 #include <string.h>
 #include <assert.h>
 #include <time.h>
-#include <ctime>
 #include <ctype.h>
 #include <typeinfo>
 #include <errno.h>
@@ -108,7 +110,7 @@ namespace cwee_units {
 #include <vector>
 #include <thread>
 #include <atomic>
-#include <ctime>
+//#include <ctime>
 #include <chrono>
 #include <random>
 #include <map>
@@ -122,10 +124,10 @@ namespace cwee_units {
 #include <initializer_list>
 #include <string_view>
 #include <vector>
-#include <cmath>
+//#include <cmath>
 #include <memory>
 #include <string>
-#include <cstdint>
+// #include <cstdint>
 #include <sstream>
 #include <typeinfo>	
 #include <type_traits>
@@ -150,22 +152,21 @@ namespace cwee_units {
 #include <typeinfo>
 #include <utility>
 #include <vector>
-#include <cassert>
+//#include <cassert>
 #include <functional>
 #include <iterator>
 #include <stdexcept>
 #include <type_traits>
 #include <array>
-#include <cstddef>
+//#include <cstddef>
 #include <unordered_set>
-#include <cctype>
-#include <cmath>
+//#include <cctype>
+//#include <cmath>
 #include <initializer_list>
 #include <iostream>
 #include <ostream>
 #include <variant>
-#include <cctype>
-#include <cstring>
+//#include <cstring>
 #include <exception>
 #include <sstream>
 #include <atomic>

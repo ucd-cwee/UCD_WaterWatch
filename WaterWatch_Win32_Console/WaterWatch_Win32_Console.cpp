@@ -201,6 +201,7 @@ static cweeStr GetHeaderString() {
 	auto varNames = cweeStr(#__VA_ARGS__).RemoveBetween("<", ">").ReplaceInline("*", " ").ReplaceInline("&", " ").ReplaceInline("  ", " ").ReplaceInline("  ", " ").ReplaceInline("  ", " ").Split(",").Trim(' ').ReplaceInline("  ", " ").SplitAgain(" ").Trim(' ').GetEveryOtherVar(); \
 	lib->add(fun([](__VA_ARGS__) { todo; }, varNames), #name);	\
 }
+
 int main() {
 	using namespace cwee_units;
 	

@@ -1628,7 +1628,7 @@ namespace chaiscript {
 
                                                 icon.IconPathGeometry = minPressureCustomer->Icon();
                                                 icon.HideOnCollision = false;
-                                                icon.Label = cweeUnitValues::unit_value(minPressure).ToString();
+                                                icon.Label = cweeUnitValues::unit_value(minPressure).ToString().c_str();
                                             }
                                             layer.Children.push_back(var(std::move(icon)));
                                         }
@@ -1902,7 +1902,7 @@ namespace chaiscript {
                                                     }));
                                                 icon.IconPathGeometry = minPressureCustomer->Icon();
                                                 icon.HideOnCollision = false;
-                                                icon.Label = cweeUnitValues::unit_value(minPressure).ToString();
+                                                icon.Label = cweeUnitValues::unit_value(minPressure).ToString().c_str();
                                             }
                                             layer.Children.push_back(var(std::move(icon)));
                                         }
@@ -2152,7 +2152,7 @@ namespace chaiscript {
                                             }));
                                         icon.IconPathGeometry = minPressureCustomer->Icon();
                                         icon.HideOnCollision = false;
-                                        icon.Label = cweeUnitValues::unit_value(minPressure).ToString();
+                                        icon.Label = cweeUnitValues::unit_value(minPressure).ToString().c_str();
                                     }
                                     layer.Children.push_back(var(std::move(icon)));
                                 }
