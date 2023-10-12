@@ -97,7 +97,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "8. Geospatial Data", "8. Ge
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "GDAL", "GDAL\GDAL.vcxproj", "{0FD47813-8575-4E53-90CA-FCFFA5992D31}"
 EndProject
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "foo", "WaterWatch_Python_SWIG\foo.vcxproj", "{6B918E26-9E81-4F36-8C97-91A410B4E8AD}"
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "WaterWatch_Python_SWIG", "WaterWatch_Python_SWIG\WaterWatch_Python_SWIG.vcxproj", "{6B918E26-9E81-4F36-8C97-91A410B4E8AD}"
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "2. Cpp to Python", "2. Cpp to Python", "{3C30B7F9-758C-4031-A7BB-F4D944F52BB6}"
 EndProject
