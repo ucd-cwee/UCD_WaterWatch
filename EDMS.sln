@@ -99,12 +99,15 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "GDAL", "GDAL\GDAL.vcxproj",
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "foo", "WaterWatch_Python_SWIG\foo.vcxproj", "{6B918E26-9E81-4F36-8C97-91A410B4E8AD}"
 EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "2. Cpp to Python", "2. Cpp to Python", "{3C30B7F9-758C-4031-A7BB-F4D944F52BB6}"
+EndProject
 Global
 	GlobalSection(SharedMSBuildProjectFiles) = preSolution
 		WaterWatchCpp\WaterWatchCpp.vcxitems*{00159e40-c6f1-41f4-8b5f-1ec191a27a14}*SharedItemsImports = 4
 		WaterWatchCpp\WaterWatchCpp.vcxitems*{28ade060-7df2-4fba-bc96-9801c7993490}*SharedItemsImports = 4
 		WaterWatchCpp\WaterWatchCpp.vcxitems*{3f1dafbd-9e14-4e38-81e9-db4af4809721}*SharedItemsImports = 4
 		CsFoundation\CsFoundation.projitems*{66b946ed-ab97-4ec5-af0a-fcfeef08e938}*SharedItemsImports = 4
+		WaterWatchCpp\WaterWatchCpp.vcxitems*{6b918e26-9e81-4f36-8c97-91a410b4e8ad}*SharedItemsImports = 4
 		WaterWatchCpp\WaterWatchCpp.vcxitems*{d5e76e23-1c18-4361-816d-03b5c1fd7116}*SharedItemsImports = 9
 		CsFoundation\CsFoundation.projitems*{f680edd0-bb01-48b2-972a-d5fac8766ffa}*SharedItemsImports = 13
 	EndGlobalSection
@@ -145,8 +148,8 @@ Global
 		{00159E40-C6F1-41F4-8B5F-1EC191A27A14}.Release|ARM64.ActiveCfg = Release|Win32
 		{00159E40-C6F1-41F4-8B5F-1EC191A27A14}.Release|iPhone.ActiveCfg = Release|Win32
 		{00159E40-C6F1-41F4-8B5F-1EC191A27A14}.Release|iPhoneSimulator.ActiveCfg = Release|Win32
-		{00159E40-C6F1-41F4-8B5F-1EC191A27A14}.Release|Win32.ActiveCfg = Release|x64
-		{00159E40-C6F1-41F4-8B5F-1EC191A27A14}.Release|Win32.Build.0 = Release|x64
+		{00159E40-C6F1-41F4-8B5F-1EC191A27A14}.Release|Win32.ActiveCfg = Release|Win32
+		{00159E40-C6F1-41F4-8B5F-1EC191A27A14}.Release|Win32.Build.0 = Release|Win32
 		{00159E40-C6F1-41F4-8B5F-1EC191A27A14}.Release|x64.ActiveCfg = Release|x64
 		{00159E40-C6F1-41F4-8B5F-1EC191A27A14}.Release|x64.Build.0 = Release|x64
 		{00159E40-C6F1-41F4-8B5F-1EC191A27A14}.Release|x86.ActiveCfg = Release|Win32
@@ -594,8 +597,8 @@ Global
 		{6B918E26-9E81-4F36-8C97-91A410B4E8AD}.Debug|x64.ActiveCfg = Debug|Win32
 		{6B918E26-9E81-4F36-8C97-91A410B4E8AD}.Debug|x86.ActiveCfg = Debug|Win32
 		{6B918E26-9E81-4F36-8C97-91A410B4E8AD}.Debug|x86.Build.0 = Debug|Win32
-		{6B918E26-9E81-4F36-8C97-91A410B4E8AD}.Release|Any CPU.ActiveCfg = Release|Win32
-		{6B918E26-9E81-4F36-8C97-91A410B4E8AD}.Release|Any CPU.Build.0 = Release|Win32
+		{6B918E26-9E81-4F36-8C97-91A410B4E8AD}.Release|Any CPU.ActiveCfg = Release|x64
+		{6B918E26-9E81-4F36-8C97-91A410B4E8AD}.Release|Any CPU.Build.0 = Release|x64
 		{6B918E26-9E81-4F36-8C97-91A410B4E8AD}.Release|ARM.ActiveCfg = Release|Win32
 		{6B918E26-9E81-4F36-8C97-91A410B4E8AD}.Release|ARM64.ActiveCfg = Release|Win32
 		{6B918E26-9E81-4F36-8C97-91A410B4E8AD}.Release|iPhone.ActiveCfg = Release|Win32
@@ -648,7 +651,8 @@ Global
 		{49AFC513-0FD8-4BF6-8136-EED5E1E306B4} = {00F960F7-FA25-492F-BD11-A173B43D6D12}
 		{DF32A5DF-A28F-4E8B-8162-5B3425977217} = {2CF0C9A6-7CDD-4F5E-98D9-190F88BEA6F3}
 		{0FD47813-8575-4E53-90CA-FCFFA5992D31} = {DF32A5DF-A28F-4E8B-8162-5B3425977217}
-		{6B918E26-9E81-4F36-8C97-91A410B4E8AD} = {446C44D6-C51A-4301-AC7A-D3A734372C92}
+		{6B918E26-9E81-4F36-8C97-91A410B4E8AD} = {3C30B7F9-758C-4031-A7BB-F4D944F52BB6}
+		{3C30B7F9-758C-4031-A7BB-F4D944F52BB6} = {446C44D6-C51A-4301-AC7A-D3A734372C92}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {B59528EA-E859-4397-B830-FB65FBAA4835}

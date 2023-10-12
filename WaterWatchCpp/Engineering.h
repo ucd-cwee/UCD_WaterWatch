@@ -3222,9 +3222,16 @@ namespace cweeEng {
 		}
 	}
 
+	static constexpr AUTO FlowTimesHead(gallon_per_minute_t Flow, foot_t Head) {
+		return Flow * Head;
+	};
+
 	static constexpr kilowatt_t CentrifugalPumpEnergyDemand_kW(gallon_per_minute_t Flow_gpm, foot_t Head_feet, scalar_t Efficiency_percent) {
+		return FlowTimesHead(Flow_gpm, Head_feet) * units::constants::gd * 100.0 / Efficiency_percent;
+
+
 		// return ((cubic_meter_per_hour_t)Flow_gpm) * units::constants::d * units::constants::g * ((meter_t)Head_feet) / (Efficiency_percent / 100.0);
-		return Flow_gpm * units::constants::d * units::constants::g * Head_feet / (Efficiency_percent / 100.0);
+		//return Flow_gpm * units::constants::d * units::constants::g * Head_feet / (Efficiency_percent / 100.0);
 	};
 	static constexpr square_foot_t SurfaceAreaCircle_ft2(foot_t Diameter_feet) {
 		return units::math::cpow<2>(Diameter_feet) * (scalar_t)cweeMath::PI * (scalar_t)0.25;

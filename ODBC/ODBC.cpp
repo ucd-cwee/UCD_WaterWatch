@@ -17,7 +17,7 @@ to maintain a single distribution point for the source code.
 #include "odbc.h"
 #pragma comment (lib, "odbc32.lib")  
 #pragma comment (lib, "nanodbc.lib")  
-#include <cstddef>
+//#include <cstddef>
 #include <functional>
 #include <list>
 #include <memory>
@@ -26,7 +26,7 @@ to maintain a single distribution point for the source code.
 #include <vector>
 
 #ifndef __clang__
-#include <cstdint>
+// #include <cstdint>
 #endif
 
 /// \brief The entirety of nanodbc can be found within this one namespace.
@@ -1906,7 +1906,7 @@ namespace nanodbc
 #include <type_traits>
 
 #ifndef __clang__
-#include <cstdint>
+//#include <cstdint>
 #endif
 
 // User may redefine NANODBC_ASSERT macro in nanodbc/nanodbc.h
@@ -7489,7 +7489,7 @@ cweeStr ODBC::SafeString(const cweeStr& in, nanodbcConnection* optionalConnectio
 
             char a;
             for (int i = 0; i < out.Length(); i++) {
-                a = out[i];
+                a = out.operator [](i);
                 if (a == '(' || a == ')') {
                     break;
                 }
@@ -7517,7 +7517,7 @@ cweeStr ODBC::SafeString(const cweeStr& in, nanodbcConnection* optionalConnectio
 
             char a;
             for (int i = 0; i < out.Length(); i++) {
-                a = out[i];
+                a = out.operator [](i);
                 if (a == '(' || a == ')') {
                     break;
                 }

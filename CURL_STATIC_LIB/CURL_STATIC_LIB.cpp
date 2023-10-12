@@ -15,6 +15,8 @@ to maintain a single distribution point for the source code.
 
 #define WIN32_LEAN_AND_MEAN             // Exclude rarely-used stuff from Windows headers
 #define CURL_STATICLIB
+
+//#ifndef WIN32
 #include "CURL_STATIC_LIB.h"
 
 #include "curl/curl.h"
@@ -847,3 +849,30 @@ INLINE void	DoRouterRequest(cweeRouterRequest* io) {
 };
 #endif
 #endif
+
+
+static void CurlExampleFunctions() {
+	AUTO fileSys_write_data = [](void* ptr, size_t size, size_t nmemb, FILE * stream)->size_t {
+		size_t written = std::fwrite(ptr, size, nmemb, stream);
+		return written;
+	};
+
+	cweeCURL curl;
+	{
+		int result;
+		FILE* fp = fopen("", "wb");
+		result = curl.setopt(cweeCURL::CURLoption::CURLOPT_CUSTOMREQUEST, "GET");
+		result = curl.setopt(cweeCURL::CURLoption::CURLOPT_URL, "https://find-any-ip-address-or-domain-location-world-wide.p.rapidapi.com/iplocation?apikey=873dbe322aea47f89dcf729dcc8f60e8");
+		curl.setopt(cweeCURL::CURLoption::CURLOPT_WRITEFUNCTION, fileSys_write_data);
+		curl.setopt(cweeCURL::CURLoption::CURLOPT_WRITEDATA, fp);
+		cweeThreadedList<cweeStr> headers;
+		headers.Append("X-RapidAPI-Key: 5ad46c78bbmsh509c23a7b43a6d5p1e1963jsn4998d1523143");
+		headers.Append("X-RapidAPI-Host: find-any-ip-address-or-domain-location-world-wide.p.rapidapi.com");
+		result = curl.setopt(cweeCURL::CURLoption::CURLOPT_HTTPHEADER, headers);
+		result = curl.perform();
+		fclose(fp);
+	}
+};
+
+
+//#endif

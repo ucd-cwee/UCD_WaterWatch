@@ -43,6 +43,13 @@
 
 #pragma once
 
+#pragma warning(disable : 4309)				// truncation of constant value
+#pragma push_macro("min")
+#undef min
+#pragma push_macro("max")
+#undef max
+
+
 #ifdef _MSC_VER
 #	pragma push_macro("pascal")
 #	undef pascal
@@ -3739,7 +3746,7 @@ namespace units
 		 * @sa			See unit_t for more information on unit type containers.
 		 */
 #if !defined(DISABLE_PREDEFINED_UNITS) || defined(ENABLE_PREDEFINED_CHARGE_UNITS)
-		UNIT_ADD_WITH_METRIC_PREFIXES(charge, coulomb, coulombs, C, unit<std::ratio<1>, units::category::charge_unit>)
+		UNIT_ADD(charge, coulomb, coulombs, C, unit<std::ratio<1>, units::category::charge_unit>)
 		UNIT_ADD_WITH_METRIC_PREFIXES(charge, ampere_hour, ampere_hours, Ah, compound_unit<current::ampere, time::hours>)
 
 		UNIT_ADD_CATEGORY_TRAIT(charge)
@@ -4312,6 +4319,10 @@ namespace units
 		static constexpr const unit_t<compound_unit<cubed<length::meters>, inverse<mass::kilogram>, inverse<squared<time::seconds>>>>				G(6.67408e-11);									///< Newtonian constant of gravitation.
 		static constexpr const unit_t<compound_unit<length::meters, inverse<squared<time::seconds>>>>												g(9.8067);										///< acceleration of gravity on earth at surface
 		static constexpr const unit_t<compound_unit<mass::kilograms, inverse<cubed<length::meters>>>>												d(998.57);										///< density of water at normal room temperature
+		static constexpr const unit_t<
+			compound_unit<mass::kilograms, inverse<squared<length::meters>>, inverse<squared<time::seconds>>>
+		>																																			gd(9.8067 * 998.57);										///< acceleration of gravity on earth at surface * density of water at normal room temperature
+
 		static constexpr const unit_t<compound_unit<energy::joule, time::seconds>>																	h(6.626070040e-34);								///< Planck constant.
 		static constexpr const unit_t<compound_unit<force::newtons, inverse<squared<current::ampere>>>>												mu0(pi * 4.0e-7 * force::newton_t(1) / units::math::cpow<2>(current::ampere_t(1)));										///< vacuum permeability.
 		static constexpr const unit_t<compound_unit<capacitance::farad, inverse<length::meter>>>													epsilon0(1.0 / (mu0 * math::cpow<2>(c)));		///< vacuum permitivity.
@@ -5030,28 +5041,23 @@ namespace units
 //	std::numeric_limits
 //------------------------------
 
-namespace std
-{
+namespace std {
 	template<class Units, typename T, template<typename> class NonLinearScale>
-	class numeric_limits<units::unit_t<Units, T, NonLinearScale>>
-	{
+	class numeric_limits<units::unit_t<Units, T, NonLinearScale>> {
 	public:
-		static constexpr units::unit_t<Units, T, NonLinearScale> min()
-		{
+		static constexpr units::unit_t<Units, T, NonLinearScale> min() {
 			return units::unit_t<Units, T, NonLinearScale>(std::numeric_limits<T>::min());
-		}
-		static constexpr units::unit_t<Units, T, NonLinearScale> max()
-		{
+		};
+		static constexpr units::unit_t<Units, T, NonLinearScale> max() {
 			return units::unit_t<Units, T, NonLinearScale>(std::numeric_limits<T>::max());
-		}
-		static constexpr units::unit_t<Units, T, NonLinearScale> lowest()
-		{
+		};
+		static constexpr units::unit_t<Units, T, NonLinearScale> lowest() {
 			return units::unit_t<Units, T, NonLinearScale>(std::numeric_limits<T>::lowest());
-		}
+		};
 		static constexpr bool is_integer = std::numeric_limits<T>::is_integer;
 		static constexpr bool is_signed = std::numeric_limits<T>::is_signed;
 	};
-}
+};
 
 #ifdef _MSC_VER
 #	if _MSC_VER <= 1800
@@ -5064,6 +5070,9 @@ namespace std
 #	endif // _MSC_VER < 1800
 #	pragma pop_macro("pascal")
 #endif // _MSC_VER
+
+#pragma pop_macro("min")
+#pragma pop_macro("max")
 
 // For Emacs
 // Local Variables:

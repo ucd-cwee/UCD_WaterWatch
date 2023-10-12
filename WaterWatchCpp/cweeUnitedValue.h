@@ -14,84 +14,18 @@ to maintain a single distribution point for the source code.
 */
 
 #pragma once
-
-// #include "Precompiled.h"
-#include "enum.h"
+#include "Units.h" // stands on it's own anyhow
+#include <cstdarg>
+#include <iostream>
+#include <array>
+#include <cstring>
+#include <string>
+#include <sstream>
 #include <mutex>
 #include <map>
 #include <type_traits>
-
-	namespace constexpr_to_string {
-
-		constexpr char digits[] = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-
-		/**
-		 * @struct to_string_t
-		 * @brief Provides the ability to convert any integral to a string at compile-time.
-		 * @tparam N Number to convert
-		 * @tparam base Desired base, can be from 2 to 36
-		 */
-		template<std::intmax_t N, int base, typename char_type,
-			std::enable_if_t<(base > 1 && base < sizeof(digits)), int> = 0>
-			class to_string_t {
-
-			constexpr static AUTO buflen() noexcept {
-				unsigned int len = N > 0 ? 1 : 2;
-				for (auto n = N; n; len++, n /= base);
-				return len;
-			};
-
-			constexpr static AUTO bufLen = buflen();
-			char_type buf[bufLen] = {};
-
-			public:
-				/**
-				 * Constructs the object, filling `buf` with the string representation of N.
-				 */
-				constexpr to_string_t() noexcept {
-					auto ptr = end();
-					*--ptr = '\0';
-
-					if (N != 0) {
-						for (auto n = N; n; n /= base)
-							*--ptr = digits[(N < 0 ? -1 : 1) * (n % base)];
-						if (N < 0)
-							*--ptr = '-';
-					}
-					else {
-						buf[0] = '0';
-					}
-				}
-
-				// Support implicit casting to `char *` or `const char *`.
-				constexpr operator char_type* () noexcept { return buf; }
-				constexpr operator const char_type* () const noexcept { return buf; }
-
-				constexpr auto size() const noexcept { return sizeof(buf) / sizeof(buf[0]); }
-
-				// Element access
-				constexpr auto data() noexcept { return buf; }
-				constexpr const auto data() const noexcept { return buf; }
-				constexpr auto& operator[](unsigned int i) noexcept { return buf[i]; }
-				constexpr const auto& operator[](unsigned int i) const noexcept { return buf[i]; }
-				constexpr auto& front() noexcept { return buf[0]; }
-				constexpr const auto& front() const noexcept { return buf[0]; }
-				constexpr auto& back() noexcept { return buf[size() - 1]; }
-				constexpr const auto& back() const noexcept { return buf[size() - 1]; }
-
-				// Iterators
-				constexpr auto begin() noexcept { return buf; }
-				constexpr const auto begin() const noexcept { return buf; }
-				constexpr auto end() noexcept { return buf + size(); }
-				constexpr const auto end() const noexcept { return buf + size(); }
-		};
-
-	} // namespace constexpr_to_string
-	template<std::intmax_t N> constexpr const char* ConstexprIntToString() { 
-		/*static constexpr AUTO str = constexpr_to_string::to_string_t<N, 10, char>(); 
-		return str(); */
-		return constexpr_to_string::to_string_t<N, 10, char>().operator();
-	};
+typedef long double				u64;
+#include "enum.h"
 
 	namespace cweeUnitValues {
 		BETTER_ENUM(unit_value_type, uint8_t, METERS, KILOGRAMS, SECONDS, AMPERES, DOLLAR);
@@ -110,7 +44,7 @@ to maintain a single distribution point for the source code.
 			h = (h * A) ^ (size_t)((d + OFFSET) * B * 100.0); 
 			h = (h * A) ^ (size_t)((e + OFFSET) * B * 100.0); 
 
-			AUTO result = h % C;
+			decltype(auto) result = h % C;
 			return result;
 		};
 		__forceinline constexpr size_t HashUnitAndRatio(double unitHash, double ratio) noexcept {
@@ -125,7 +59,7 @@ to maintain a single distribution point for the source code.
 			h = (h * A) ^ (size_t)((unitHash + OFFSETA) * B); 
 			h = (h * A) ^ (size_t)((ratio + OFFSETB) * B * 100000.0); // 10000000.0
 
-			AUTO result = h % C;
+			decltype(auto) result = h % C;
 			return result;
 		};
 
@@ -151,14 +85,11 @@ to maintain a single distribution point for the source code.
 			bool IsSameCategory(Unit_ID const& other) const noexcept {
 				if (isScalar_m && other.isScalar_m) return true;
 				return std::memcmp(&unitType_m, &other.unitType_m, sizeof(unitType_m)) == 0;
-				//for (int i = NumUnits - 1; i >= 0; i--)
-				//	if (unitType_m[i] != other.unitType_m[i]) return false;
-				//return true;
 			};
 			bool IsSameUnit(Unit_ID const& other) const noexcept {
 				return IsSameCategory(other) && (ratio_m == other.ratio_m);
 			};
-			AUTO HashCategory() const noexcept {
+			decltype(auto) HashCategory() const noexcept {
 				return cweeUnitValues::HashUnits(unitType_m[0], unitType_m[1], unitType_m[2], unitType_m[3], unitType_m[4]);
 			};
 			const char* LookupAbbreviation() const {
@@ -200,12 +131,10 @@ to maintain a single distribution point for the source code.
 				constexpr double dollar_ratio = (double)T::unit_type::base_unit_type::dollar_ratio::num / (double)T::unit_type::base_unit_type::dollar_ratio::den;
 				constexpr bool isNotScalar = (length_Ratio != 0) || (mass_ratio != 0) || (second_ratio != 0) || (ampere_ratio != 0) || (dollar_ratio != 0);
 				constexpr double factor = (double)T::unit_type::conversion_ratio::num / (double)T::unit_type::conversion_ratio::den;
-
 				if constexpr (!isNotScalar)
 					unit_m = Unit_ID(length_Ratio, mass_ratio, second_ratio, ampere_ratio, dollar_ratio, true, "", factor);
 				else
 					unit_m = Unit_ID(length_Ratio, mass_ratio, second_ratio, ampere_ratio, dollar_ratio, false, unitTypeObj.abbreviation(), factor);
-
 				value_m = (unitTypeObj() * conversion()); // save it a an SI value
 			};
 			virtual ~unit_value() {};
@@ -248,7 +177,7 @@ to maintain a single distribution point for the source code.
 			static std::string	printf(const char* fmt, ...) {
 				va_list argptr;
 
-				AUTO buffer = new char[128000];
+				decltype(auto) buffer = new char[128000];
 				buffer[128000 - 1] = '\0';
 
 				va_start(argptr, fmt);
@@ -562,7 +491,6 @@ to maintain a single distribution point for the source code.
 			static constexpr bool is_signed = std::numeric_limits<double>::is_signed;
 		};
 	};
-
 
 #define DefineCategoryType(type, a, b, c, d, e) namespace cweeUnitValues { class type : public unit_value { public: \
 		type() noexcept : unit_value(0.0, Unit_ID(a, b, c, d, e, false, "", 1.0)) {}; \
@@ -886,11 +814,13 @@ to maintain a single distribution point for the source code.
 	DerivedUnitType(ton_per_kilowatt_hour, emission_rate, t_p_kWh, Conversion<metric_ton>(1.0) / Conversion<kilowatt_hour>(1.0));
 	DerivedUnitType(per_year, time_rate, p_yr, 1.0 / Conversion<year>(1.0));
 
-
 #undef DerivedUnitTypeWithMetricPrefixes
 #undef DerivedUnitTypeWithMetricPrefix
 #undef CalculateMetricPrefixV
 #undef DerivedUnitType
+
+
+
 
 namespace cweeUnitValues {
 	namespace  cweeUnitValuesDetail {
@@ -1112,11 +1042,11 @@ namespace cweeUnitValues {
 #undef CreateRow
 
 		__forceinline static const char* lookup_abbreviation(size_t ull) {
-			AUTO p = lookup_impl(std::move(ull));
+			decltype(auto) p = lookup_impl(std::move(ull));
 			return p.first;
 		}
 		__forceinline static const char* lookup_typename(size_t ull) {
-			AUTO p = lookup_impl(std::move(ull));
+			decltype(auto) p = lookup_impl(std::move(ull));
 			return p.second;
 		}
 	};
@@ -1133,5 +1063,27 @@ namespace cweeUnitValues {
 			if (V > max) return max;
 			return V;
 		};
+	};
+
+	namespace traits {
+		template<class U1, class U2>
+		struct is_convertible_unit_t {
+			static constexpr const std::intmax_t value = HashUnits(U1::A(), U1::B(), U1::C(), U1::D(), U1::E()) == HashUnits(U2::A(), U2::B(), U2::C(), U2::D(), U2::E());
+		};
+
+		template<class U1>
+		struct is_unit_t {
+			static constexpr const std::intmax_t value = std::is_base_of<unit_value, U1>::value;
+		};
+	};
+
+	
+
+	namespace constants {
+		static const scalar					pi(3.141592653589793238462643383279502884197169399375105820974944); ///< Ratio of a circle's circumference to its diameter.
+		static const meters_per_second		c(299792458.0);		
+		static const unit_value				G(meter(6.67408e-11)* meter(1)* meter(1) / (kilogram(1) * second(1) * second(1)));
+		static const unit_value				g(meter(9.8067) / (second(1) * second(1)));
+		static const unit_value				d(kilogram(998.57) / (meter(1)* meter(1)* meter(1)));
 	};
 };

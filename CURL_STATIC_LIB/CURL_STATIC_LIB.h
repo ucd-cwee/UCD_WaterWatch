@@ -32,6 +32,8 @@ to maintain a single distribution point for the source code.
 #include <stdlib.h>
 #include <stdio.h>
 
+//#ifndef WIN32
+
 // Easy CURL operations
 class cweeCURL {
 public:
@@ -1101,3 +1103,5 @@ public:
 /* Manager for publisher/subscriber and client/router peer-to-peer communications. */
 extern cweeSharedPtr<ZeroMQ> Servers;
 #endif
+
+//#endif
