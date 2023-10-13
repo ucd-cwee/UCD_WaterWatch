@@ -21,6 +21,17 @@ to maintain a single distribution point for the source code.
 #include "../WaterWatchCpp/SharedPtr.h"
 #include "../WaterWatchCpp/Mutex.h"
 #include <Python.h>
+// #undef PyTuple_GET_SIZE
+
+#define _Py_CAST(type, expr) ((type)(expr))
+
+#define _PyTuple_CAST(op) \
+    _Py_CAST(PyTupleObject*, (op))
+
+
+
+
+
 
 #pragma region UTILITY CLASSES
 
@@ -245,6 +256,14 @@ private:
 };
 
 #pragma endregion 
+
+
+class Geocoding {
+public:
+    static std::map<std::string, std::string> Geocode(std::string address);
+
+};
+
 
 
 

@@ -284,6 +284,22 @@
 %define %swig_map_methods(Map...)
   %swig_map_common(Map)
 
+  %pythoncode %{
+    def __str__(self):
+        s = str("{")
+        addedPrevious = False
+        for x in self:
+            if addedPrevious == False:
+                addedPrevious = True
+                s += str(str(x) + ": " + str(self[x]))
+            else:
+                s += str(", " + str(x) + ": " + str(self[x]))         
+        s += "}"
+        return s;
+    def __repr__(self):
+        return self.__str__()
+  %}
+
 #if defined(SWIGPYTHON_BUILTIN)
   %feature("python:slot", "mp_ass_subscript", functype="objobjargproc") __setitem__;
 #endif

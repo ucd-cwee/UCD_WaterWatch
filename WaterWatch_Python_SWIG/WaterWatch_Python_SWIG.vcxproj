@@ -1,17 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Project DefaultTargets="Build" ToolsVersion="15.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup Label="ProjectConfigurations">
-    <ProjectConfiguration Include="Debug|Win32">
-      <Configuration>Debug</Configuration>
-      <Platform>Win32</Platform>
-    </ProjectConfiguration>
     <ProjectConfiguration Include="Debug|x64">
       <Configuration>Debug</Configuration>
       <Platform>x64</Platform>
-    </ProjectConfiguration>
-    <ProjectConfiguration Include="Release|Win32">
-      <Configuration>Release</Configuration>
-      <Platform>Win32</Platform>
     </ProjectConfiguration>
     <ProjectConfiguration Include="Release|x64">
       <Configuration>Release</Configuration>
@@ -26,19 +18,7 @@
     <ProjectName>WaterWatch_Python_SWIG</ProjectName>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="Configuration">
-    <ConfigurationType>DynamicLibrary</ConfigurationType>
-    <PlatformToolset>v142</PlatformToolset>
-    <UseOfMfc>false</UseOfMfc>
-    <CharacterSet>MultiByte</CharacterSet>
-  </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
-    <ConfigurationType>DynamicLibrary</ConfigurationType>
-    <PlatformToolset>v142</PlatformToolset>
-    <UseOfMfc>false</UseOfMfc>
-    <CharacterSet>MultiByte</CharacterSet>
-  </PropertyGroup>
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
     <ConfigurationType>DynamicLibrary</ConfigurationType>
     <PlatformToolset>v142</PlatformToolset>
     <UseOfMfc>false</UseOfMfc>
@@ -56,15 +36,7 @@
   <ImportGroup Label="Shared">
     <Import Project="..\WaterWatchCpp\WaterWatchCpp.vcxitems" Label="Shared" />
   </ImportGroup>
-  <ImportGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="PropertySheets">
-    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
-    <Import Project="$(VCTargetsPath)Microsoft.Cpp.UpgradeFromVC60.props" />
-  </ImportGroup>
   <ImportGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="PropertySheets">
-    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
-    <Import Project="$(VCTargetsPath)Microsoft.Cpp.UpgradeFromVC60.props" />
-  </ImportGroup>
-  <ImportGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="PropertySheets">
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
     <Import Project="$(VCTargetsPath)Microsoft.Cpp.UpgradeFromVC60.props" />
   </ImportGroup>
@@ -73,61 +45,14 @@
     <Import Project="$(VCTargetsPath)Microsoft.Cpp.UpgradeFromVC60.props" />
   </ImportGroup>
   <PropertyGroup Label="UserMacros" />
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
-    <OutDir>.\Debug\</OutDir>
-    <IntDir>.\Debug\</IntDir>
-    <LinkIncremental>true</LinkIncremental>
-  </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <LinkIncremental>true</LinkIncremental>
-  </PropertyGroup>
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
-    <OutDir>$(SolutionDir)$(Platform)\$(Configuration)\</OutDir>
-    <IntDir>$(Platform)\$(Configuration)\</IntDir>
-    <LinkIncremental>false</LinkIncremental>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <OutDir>$(SolutionDir)$(Platform)\$(Configuration)\</OutDir>
     <IntDir>$(Platform)\$(Configuration)\</IntDir>
     <LinkIncremental>false</LinkIncremental>
   </PropertyGroup>
-  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
-    <ClCompile>
-      <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
-      <InlineFunctionExpansion>Default</InlineFunctionExpansion>
-      <FunctionLevelLinking>false</FunctionLevelLinking>
-      <Optimization>Disabled</Optimization>
-      <SuppressStartupBanner>true</SuppressStartupBanner>
-      <WarningLevel>Level3</WarningLevel>
-      <MinimalRebuild>true</MinimalRebuild>
-      <RuntimeTypeInfo>true</RuntimeTypeInfo>
-      <DebugInformationFormat>None</DebugInformationFormat>
-      <AdditionalIncludeDirectories>$(PYTHON_INCLUDE);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>SWIG_PYTHON_INTERPRETER_NO_DEBUG;WIN32;_DEBUG;_WINDOWS;_USRDLL;WaterWatch_Python_SWIG_EXPORTS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <AssemblerListingLocation>.\Debug\</AssemblerListingLocation>
-      <PrecompiledHeaderOutputFile>.\Debug\WaterWatch_Python_SWIG.pch</PrecompiledHeaderOutputFile>
-      <ObjectFileName>.\Debug\</ObjectFileName>
-      <ProgramDataBaseFileName>.\Debug\</ProgramDataBaseFileName>
-      <BasicRuntimeChecks>EnableFastChecks</BasicRuntimeChecks>
-    </ClCompile>
-    <ResourceCompile>
-      <Culture>0x0809</Culture>
-      <PreprocessorDefinitions>_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-    </ResourceCompile>
-    <Bscmake>
-      <SuppressStartupBanner>true</SuppressStartupBanner>
-      <OutputFile>.\Debug\WaterWatch_Python_SWIG.bsc</OutputFile>
-    </Bscmake>
-    <Link>
-      <SuppressStartupBanner>true</SuppressStartupBanner>
-      <LinkDLL>true</LinkDLL>
-      <GenerateDebugInformation>true</GenerateDebugInformation>
-      <SubSystem>Console</SubSystem>
-      <OutputFile>_cwee.pyd</OutputFile>
-      <ImportLibrary>.\Debug\_cwee.lib</ImportLibrary>
-      <AdditionalDependencies>$(PYTHON_LIB);%(AdditionalDependencies)</AdditionalDependencies>
-    </Link>
-  </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <ClCompile>
       <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
@@ -138,8 +63,8 @@
       <WarningLevel>Level3</WarningLevel>
       <RuntimeTypeInfo>true</RuntimeTypeInfo>
       <DebugInformationFormat>None</DebugInformationFormat>
-      <AdditionalIncludeDirectories>$(PYTHON_INCLUDE);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>SWIG_PYTHON_INTERPRETER_NO_DEBUG;WIN32;_DEBUG;_WINDOWS;_USRDLL;WaterWatch_Python_SWIG_EXPORTS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>$(ProjectDir)Python312\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>SWIG_PYTHON_INTERPRETER_NO_DEBUG;_DEBUG;_WINDOWS;_USRDLL;WaterWatch_Python_SWIG_EXPORTS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <AssemblerListingLocation>.\Debug\</AssemblerListingLocation>
       <PrecompiledHeaderOutputFile>.\Debug\WaterWatch_Python_SWIG.pch</PrecompiledHeaderOutputFile>
       <ObjectFileName>.\Debug\</ObjectFileName>
@@ -161,46 +86,31 @@
       <SubSystem>Console</SubSystem>
       <OutputFile>_cwee.pyd</OutputFile>
       <ImportLibrary>.\Debug\_cwee.lib</ImportLibrary>
-      <AdditionalDependencies>$(PYTHON_LIB);%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>$(ProjectDir)Python312\libs\python312.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
-  </ItemDefinitionGroup>
-  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
-    <ClCompile>
-      <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
-      <InlineFunctionExpansion>Default</InlineFunctionExpansion>
-      <StringPooling>true</StringPooling>
-      <FunctionLevelLinking>true</FunctionLevelLinking>
-      <Optimization>MaxSpeed</Optimization>
-      <SuppressStartupBanner>true</SuppressStartupBanner>
-      <WarningLevel>Level3</WarningLevel>
-      <RuntimeTypeInfo>true</RuntimeTypeInfo>
-      <AdditionalIncludeDirectories>$(PYTHON_INCLUDE);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>WIN32;NDEBUG;_WINDOWS;_USRDLL;WaterWatch_Python_SWIG_EXPORTS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <AssemblerListingLocation>$(IntDir)</AssemblerListingLocation>
-      <PrecompiledHeaderOutputFile>$(IntDir)$(TargetName).pch</PrecompiledHeaderOutputFile>
-      <ObjectFileName>$(IntDir)</ObjectFileName>
-      <ProgramDataBaseFileName>$(IntDir)</ProgramDataBaseFileName>
-      <LanguageStandard>stdcpp17</LanguageStandard>
-      <AdditionalOptions>/bigobj %(AdditionalOptions)</AdditionalOptions>
-    </ClCompile>
-    <ResourceCompile>
-      <Culture>0x0809</Culture>
-      <PreprocessorDefinitions>NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-    </ResourceCompile>
-    <Bscmake>
-      <SuppressStartupBanner>true</SuppressStartupBanner>
-      <OutputFile>.\Release\WaterWatch_Python_SWIG.bsc</OutputFile>
-    </Bscmake>
-    <Link>
-      <SuppressStartupBanner>true</SuppressStartupBanner>
-      <LinkDLL>true</LinkDLL>
-      <SubSystem>Console</SubSystem>
-      <OutputFile>_cwee.pyd</OutputFile>
-      <ImportLibrary>
-      </ImportLibrary>
-      <AdditionalDependencies>libmysql.lib;libcurl_a.lib;libcurl_win32.lib;$(PYTHON_LIB);%(AdditionalDependencies)</AdditionalDependencies>
-      <AdditionalLibraryDirectories>$(SolutionDir)epanet;</AdditionalLibraryDirectories>
-    </Link>
+    <PostBuildEvent>
+      <Command>
+		echo on
+		IF NOT EXIST "$(ProjectDir)Python312\Lib\cwee" mkdir "$(ProjectDir)Python312\Lib\cwee"
+		copy "$(ProjectDir)cwee.py" "$(ProjectDir)Python312\Lib\cwee"
+		copy "$(ProjectDir)__init__.py" "$(ProjectDir)Python312\Lib\cwee"
+		copy "$(ProjectDir)_cwee.pyd" "$(ProjectDir)Python312\Lib\cwee"
+
+		IF NOT EXIST "$(ProjectDir)cwee" mkdir "$(ProjectDir)cwee"
+		IF NOT EXIST "$(ProjectDir)cwee\src" mkdir "$(ProjectDir)cwee\src"
+		copy "$(ProjectDir)cwee.py" "$(ProjectDir)cwee\src"
+		copy "$(ProjectDir)__init__.py" "$(ProjectDir)cwee\src"
+		copy "$(ProjectDir)_cwee.pyd" "$(ProjectDir)cwee\src"
+
+		"$(ProjectDir)Python312\Scripts\pip3.exe" -m install build
+
+		cd "$(ProjectDir)cwee"
+		
+		"$(ProjectDir)Python312\python.exe" -m build
+
+		echo off
+	</Command>
+    </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <ClCompile>
@@ -212,8 +122,8 @@
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <WarningLevel>Level3</WarningLevel>
       <RuntimeTypeInfo>true</RuntimeTypeInfo>
-      <AdditionalIncludeDirectories>$(PYTHON_INCLUDE);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>WIN32;NDEBUG;_WINDOWS;_USRDLL;WaterWatch_Python_SWIG_EXPORTS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>$(ProjectDir)Python312\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>NDEBUG;_WINDOWS;_USRDLL;WaterWatch_Python_SWIG_EXPORTS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <AssemblerListingLocation>$(IntDir)</AssemblerListingLocation>
       <PrecompiledHeaderOutputFile>$(IntDir)$(TargetName).pch</PrecompiledHeaderOutputFile>
       <ObjectFileName>$(IntDir)</ObjectFileName>
@@ -236,38 +146,62 @@
       <OutputFile>_cwee.pyd</OutputFile>
       <ImportLibrary>
       </ImportLibrary>
-      <AdditionalDependencies>libmysql.lib;libcurl_a.lib;libcurl_win32.lib;$(PYTHON_LIB);%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>libmysql.lib;libcurl_a.lib;$(ProjectDir)Python312\libs\python312.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalLibraryDirectories>$(SolutionDir)epanet;</AdditionalLibraryDirectories>
     </Link>
+
+    <PostBuildEvent>
+      <Command>
+		echo on
+		IF NOT EXIST "$(ProjectDir)Python312\Lib\cwee" mkdir "$(ProjectDir)Python312\Lib\cwee"
+		copy "$(ProjectDir)cwee.py" "$(ProjectDir)Python312\Lib\cwee"
+		copy "$(ProjectDir)__init__.py" "$(ProjectDir)Python312\Lib\cwee"
+		copy "$(ProjectDir)_cwee.pyd" "$(ProjectDir)Python312\Lib\cwee"
+
+		IF NOT EXIST "$(ProjectDir)cwee" mkdir "$(ProjectDir)cwee"
+		IF NOT EXIST "$(ProjectDir)cwee\src" mkdir "$(ProjectDir)cwee\src"
+		copy "$(ProjectDir)cwee.py" "$(ProjectDir)cwee\src"
+		copy "$(ProjectDir)__init__.py" "$(ProjectDir)cwee\src"
+		copy "$(ProjectDir)_cwee.pyd" "$(ProjectDir)cwee\src"
+
+		"$(ProjectDir)Python312\Scripts\pip3.exe" -m install build
+
+		cd "$(ProjectDir)cwee"
+		
+		"$(ProjectDir)Python312\python.exe" -m build
+
+		echo off
+	</Command>
+    </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClInclude Include="cwee.h" />
   </ItemGroup>
   <ItemGroup>
     <CustomBuild Include="cwee.i">
-      <Command Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">echo In order to function correctly, please ensure the following environment variables are correctly set: 
-	echo PYTHON_INCLUDE: %PYTHON_INCLUDE% 
-	echo PYTHON_LIB: %PYTHON_LIB% 
+      <Command Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">	
 	echo on 
-	"$(SolutionDir)swigwin-4.1.1\swig.exe" -c++ -python "%(FullPath)" </Command>
-      <Command Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">echo In order to function correctly, please ensure the following environment variables are correctly set: 
-	echo PYTHON_INCLUDE: %PYTHON_INCLUDE% 
-	echo PYTHON_LIB: %PYTHON_LIB% 
-	echo on 
-	"$(SolutionDir)swigwin-4.1.1\swig.exe" -c++ -python "%(FullPath)" </Command>
-      <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">$(InputName)_wrap.cxx;%(Outputs)</Outputs>
+	echo Deleting the previously generated python files.
+	del /q "$(ProjectDir)cwee.py"
+	del /q "$(ProjectDir)_cwee.pyd"
+	rd /s /q "$(ProjectDir)Python312\Lib\cwee"
+	rd /s /q "$(ProjectDir)Python312\cwee\dist"
+	echo Calling SWIG to generate the C++ and Python wrapper.
+	"$(SolutionDir)swigwin-4.1.1\swig.exe" -c++ -python "%(FullPath)" 
+	echo off
+      </Command>
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">$(InputName)_wrap.cxx;%(Outputs)</Outputs>
-      <Command Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">echo In order to function correctly, please ensure the following environment variables are correctly set: 
-	echo PYTHON_INCLUDE: %PYTHON_INCLUDE% 
-	echo PYTHON_LIB: %PYTHON_LIB% 
+      <Command Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
 	echo on 
-	"$(SolutionDir)swigwin-4.1.1\swig.exe" -c++ -python "%(FullPath)" </Command>
-      <Command Condition="'$(Configuration)|$(Platform)'=='Release|x64'">echo In order to function correctly, please ensure the following environment variables are correctly set: 
-	echo PYTHON_INCLUDE: %PYTHON_INCLUDE% 
-	echo PYTHON_LIB: %PYTHON_LIB% 
-	echo on 
-	"$(SolutionDir)swigwin-4.1.1\swig.exe" -c++ -python "%(FullPath)" </Command>
-      <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">$(InputName)_wrap.cxx;%(Outputs)</Outputs>
+	echo Deleting the previously generated python files.
+	del /q "$(ProjectDir)cwee.py"
+	del /q "$(ProjectDir)_cwee.pyd"
+	rd /s /q "$(ProjectDir)Python312\Lib\cwee"
+	rd /s /q "$(ProjectDir)cwee\dist"
+	echo Calling SWIG to generate the C++ and Python wrapper.
+	"$(SolutionDir)swigwin-4.1.1\swig.exe" -c++ -python "%(FullPath)" 
+	echo off
+      </Command>
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|x64'">$(InputName)_wrap.cxx;%(Outputs)</Outputs>
     </CustomBuild>
   </ItemGroup>
@@ -303,6 +237,9 @@
     <ProjectReference Include="..\WindowsPlatformTools\WindowsPlatformTools.vcxproj">
       <Project>{6d90b501-45bf-4777-8ee1-be7f74a8d6d1}</Project>
     </ProjectReference>
+  </ItemGroup>
+  <ItemGroup>
+    <Text Include="Read Me.txt" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

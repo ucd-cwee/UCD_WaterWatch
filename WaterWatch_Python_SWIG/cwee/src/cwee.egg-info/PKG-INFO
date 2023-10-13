@@ -1,0 +1,9 @@
+Metadata-Version: 2.1
+Name: cwee
+Version: 0.0.1
+Summary: UC Davis Center for Water-Energy Efficiency WaterWatch Library
+Author-email: Robert Good <rtgood@ucdavis.edu>
+Classifier: Programming Language :: Python :: 3
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Operating System :: OS Independent
+Requires-Python: >=3.7

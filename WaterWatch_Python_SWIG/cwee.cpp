@@ -1353,6 +1353,23 @@ std::vector<float> ScriptEngine::Cast_VectorFloats(std::string command) {
 
 #pragma endregion
 
+#pragma region GEOCOING
+std::map<std::string, std::string> Geocoding::Geocode(std::string address) {
+	std::map<std::string, std::string> out;
+	AUTO long_lat = geocoding->GetLongLat(address.c_str());
+	AUTO corrected_address = geocoding->GetAddress(long_lat);
+	out["longitude"] = std::to_string(long_lat.x);
+	out["latitude"] = std::to_string(long_lat.y);
+	out["elevation (ft)"] = std::to_string(geocoding->GetElevation(long_lat));
+	out["input address"] = address;
+	out["output address"] = std::string(corrected_address.c_str());
+
+	return out;
+};
+#pragma endregion
+
+
+
 #pragma region WATERWATCH
 
 std::vector<double> WaterWatch::half1(const std::vector<double>& v) {

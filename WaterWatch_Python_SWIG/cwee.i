@@ -17,14 +17,18 @@ to maintain a single distribution point for the source code. */
 %}
 
 /* INCLUDE THE SWIG BUILT-IN PYTHON CONVERSION LIBRARIES */
-%include "stl.i"
-%include "std_map.i"
-%include "std_shared_ptr.i"
+%include stl.i
+/* %include std_pair.i
+%include std_map.i */
+
 namespace std {
     %template(StringVector)  vector<string>;
-    %template(IntVector)    vector<int>;
-    %template(FloatVector)  vector<float>;
-    %template(DoubleVector) vector<double>;
+    %template(IntVector)     vector<int>;
+    %template(FloatVector)   vector<float>;
+    %template(DoubleVector)  vector<double>;
+
+    %template(StringPair) pair<std::string, std::string>;
+    %template(StringMap) map<std::string, std::string>;
 }
 
 /* ADD COMMENTS FOR FUNCTIONS ( MUST BE BEFORE THE HEADER FILE THAT DECLARES THE FUNCTIONS ) */
@@ -45,3 +49,6 @@ namespace std {
 %template(vector_pair_timeseries) std::vector<Pair<cweeDateTime, float>>;
 %template(vector_pair_double_double) std::vector<Pair<double, double>>;
 %template(vector_scriptingnode) std::vector<ScriptingNode>;
+
+%template() std::pair<swig::SwigPtr_PyObject, swig::SwigPtr_PyObject>;
+%template(pymap) std::map<swig::SwigPtr_PyObject, swig::SwigPtr_PyObject>;

@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cwee"
+version = "0.0.1"
+authors = [
+  { name="Robert Good", email="rtgood@ucdavis.edu" },
+]
+description = "UC Davis Center for Water-Energy Efficiency WaterWatch Library"
+requires-python = ">=3.7"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
