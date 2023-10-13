@@ -149,7 +149,6 @@
       <AdditionalDependencies>libmysql.lib;libcurl_a.lib;$(ProjectDir)Python312\libs\python312.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalLibraryDirectories>$(SolutionDir)epanet;</AdditionalLibraryDirectories>
     </Link>
-
     <PostBuildEvent>
       <Command>
 		echo on
@@ -237,9 +236,6 @@
     <ProjectReference Include="..\WindowsPlatformTools\WindowsPlatformTools.vcxproj">
       <Project>{6d90b501-45bf-4777-8ee1-be7f74a8d6d1}</Project>
     </ProjectReference>
-  </ItemGroup>
-  <ItemGroup>
-    <Text Include="Read Me.txt" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

@@ -1356,14 +1356,37 @@ std::vector<float> ScriptEngine::Cast_VectorFloats(std::string command) {
 #pragma region GEOCOING
 std::map<std::string, std::string> Geocoding::Geocode(std::string address) {
 	std::map<std::string, std::string> out;
+
 	AUTO long_lat = geocoding->GetLongLat(address.c_str());
 	AUTO corrected_address = geocoding->GetAddress(long_lat);
 	out["longitude"] = std::to_string(long_lat.x);
 	out["latitude"] = std::to_string(long_lat.y);
 	out["elevation (ft)"] = std::to_string(geocoding->GetElevation(long_lat));
 	out["input address"] = address;
-	out["output address"] = std::string(corrected_address.c_str());
+	out["address"] = std::string(corrected_address.c_str());
 
+	return out;
+};
+std::map<std::string, std::string> Geocoding::Geocode(double longitude, double latitude) {
+	std::map<std::string, std::string> out;
+
+	AUTO corrected_address = geocoding->GetAddress(vec2d(longitude, latitude));
+	out["longitude"] = std::to_string(longitude);
+	out["latitude"] = std::to_string(latitude);
+	out["elevation (ft)"] = std::to_string(geocoding->GetElevation(vec2d(longitude, latitude)));
+	out["address"] = std::string(corrected_address.c_str());
+
+	return out;
+};
+
+double Geocoding::Elevation_ft(std::string address) {
+	double out;
+	out = geocoding->GetElevation(geocoding->GetLongLat(address.c_str()));
+	return out;
+};
+double Geocoding::Elevation_ft(double longitude, double latitude) {
+	double out;
+	out = geocoding->GetElevation(vec2d(longitude, latitude));
 	return out;
 };
 #pragma endregion

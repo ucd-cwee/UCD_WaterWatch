@@ -32,9 +32,15 @@ namespace std {
 }
 
 /* ADD COMMENTS FOR FUNCTIONS ( MUST BE BEFORE THE HEADER FILE THAT DECLARES THE FUNCTIONS ) */
+%feature("docstring") Geocoding "Static class (i.e. namespace) that contains geocoding functions."
+%feature("docstring") Geocoding::Geocode "Using an address or decimal longitude/latitude, will perform geocoding with OpenStreetMap and return the best matched location."
+%feature("docstring") Geocoding::Elevation_ft "Using an address or decimal longitude/latitude, will estimate the USGS elevation for the site (feet above sea level)."
+
+
 %feature("docstring") WaterWatch::TestVector "Generates random numbers"
 %feature("docstring") WaterWatch::TestVector2 "Returns the size of the input vector"
 %feature("docstring") WaterWatch "Static class (i.e. namespace) that contains the main functions of the library"
+
 
 /* DECLARE THE FUNCTIONS */
 %include "cwee.h"

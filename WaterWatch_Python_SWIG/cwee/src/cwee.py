@@ -1002,14 +1002,23 @@ class ScriptEngine(object):
 # Register ScriptEngine in _cwee:
 _cwee.ScriptEngine_swigregister(ScriptEngine)
 class Geocoding(object):
+    r"""Static class (i.e. namespace) that contains geocoding functions."""
+
     thisown = property(lambda x: x.this.own(), lambda x, v: x.this.own(v), doc="The membership flag")
     __repr__ = _swig_repr
 
     @staticmethod
-    def Geocode(address):
-        return _cwee.Geocoding_Geocode(address)
+    def Geocode(*args):
+        r"""Using an address or decimal longitude/latitude, will perform geocoding with OpenStreetMap and return the best matched location."""
+        return _cwee.Geocoding_Geocode(*args)
+
+    @staticmethod
+    def Elevation_ft(*args):
+        r"""Using an address or decimal longitude/latitude, will estimate the USGS elevation for the site (feet above sea level)."""
+        return _cwee.Geocoding_Elevation_ft(*args)
 
     def __init__(self):
+        r"""Static class (i.e. namespace) that contains geocoding functions."""
         _cwee.Geocoding_swiginit(self, _cwee.new_Geocoding())
     __swig_destroy__ = _cwee.delete_Geocoding
 

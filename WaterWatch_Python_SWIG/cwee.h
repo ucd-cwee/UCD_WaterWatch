@@ -21,12 +21,8 @@ to maintain a single distribution point for the source code.
 #include "../WaterWatchCpp/SharedPtr.h"
 #include "../WaterWatchCpp/Mutex.h"
 #include <Python.h>
-// #undef PyTuple_GET_SIZE
-
-#define _Py_CAST(type, expr) ((type)(expr))
-
-#define _PyTuple_CAST(op) \
-    _Py_CAST(PyTupleObject*, (op))
+// these are fixes for a bug in the SWIG converter. Seems to originate with STL pairs. 
+#define _PyTuple_CAST(op) _Py_CAST(PyTupleObject*, (op))
 
 
 
@@ -261,7 +257,10 @@ private:
 class Geocoding {
 public:
     static std::map<std::string, std::string> Geocode(std::string address);
-
+    static std::map<std::string, std::string> Geocode(double longitude, double latitude);
+    
+    static double Elevation_ft(std::string address);
+    static double Elevation_ft(double longitude, double latitude);
 };
 
 

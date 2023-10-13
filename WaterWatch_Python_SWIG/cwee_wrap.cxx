@@ -19141,14 +19141,12 @@ SWIGINTERN PyObject *ScriptEngine_swiginit(PyObject *SWIGUNUSEDPARM(self), PyObj
   return SWIG_Python_InitShadowInstance(args);
 }
 
-SWIGINTERN PyObject *_wrap_Geocoding_Geocode(PyObject *self, PyObject *args) {
+SWIGINTERN PyObject *_wrap_Geocoding_Geocode__SWIG_0(PyObject *self, Py_ssize_t nobjs, PyObject **swig_obj) {
   PyObject *resultobj = 0;
   std::string arg1 ;
-  PyObject *swig_obj[1] ;
   std::map< std::string,std::string,std::less< std::string >,std::allocator< std::pair< std::string const,std::string > > > result;
   
-  if (!args) SWIG_fail;
-  swig_obj[0] = args;
+  if ((nobjs < 1) || (nobjs > 1)) SWIG_fail;
   {
     std::string *ptr = (std::string *)0;
     int res = SWIG_AsPtr_std_string(swig_obj[0], &ptr);
@@ -19163,6 +19161,171 @@ SWIGINTERN PyObject *_wrap_Geocoding_Geocode(PyObject *self, PyObject *args) {
   return resultobj;
 fail:
   return NULL;
+}
+
+
+SWIGINTERN PyObject *_wrap_Geocoding_Geocode__SWIG_1(PyObject *self, Py_ssize_t nobjs, PyObject **swig_obj) {
+  PyObject *resultobj = 0;
+  double arg1 ;
+  double arg2 ;
+  double val1 ;
+  int ecode1 = 0 ;
+  double val2 ;
+  int ecode2 = 0 ;
+  std::map< std::string,std::string,std::less< std::string >,std::allocator< std::pair< std::string const,std::string > > > result;
+  
+  if ((nobjs < 2) || (nobjs > 2)) SWIG_fail;
+  ecode1 = SWIG_AsVal_double(swig_obj[0], &val1);
+  if (!SWIG_IsOK(ecode1)) {
+    SWIG_exception_fail(SWIG_ArgError(ecode1), "in method '" "Geocoding_Geocode" "', argument " "1"" of type '" "double""'");
+  } 
+  arg1 = static_cast< double >(val1);
+  ecode2 = SWIG_AsVal_double(swig_obj[1], &val2);
+  if (!SWIG_IsOK(ecode2)) {
+    SWIG_exception_fail(SWIG_ArgError(ecode2), "in method '" "Geocoding_Geocode" "', argument " "2"" of type '" "double""'");
+  } 
+  arg2 = static_cast< double >(val2);
+  result = Geocoding::Geocode(arg1,arg2);
+  resultobj = swig::from(static_cast< std::map< std::string,std::string,std::less< std::string >,std::allocator< std::pair< std::string const,std::string > > > >(result));
+  return resultobj;
+fail:
+  return NULL;
+}
+
+
+SWIGINTERN PyObject *_wrap_Geocoding_Geocode(PyObject *self, PyObject *args) {
+  Py_ssize_t argc;
+  PyObject *argv[3] = {
+    0
+  };
+  
+  if (!(argc = SWIG_Python_UnpackTuple(args, "Geocoding_Geocode", 0, 2, argv))) SWIG_fail;
+  --argc;
+  if (argc == 1) {
+    int _v = 0;
+    int res = SWIG_AsPtr_std_string(argv[0], (std::string**)(0));
+    _v = SWIG_CheckState(res);
+    if (_v) {
+      return _wrap_Geocoding_Geocode__SWIG_0(self, argc, argv);
+    }
+  }
+  if (argc == 2) {
+    int _v = 0;
+    {
+      int res = SWIG_AsVal_double(argv[0], NULL);
+      _v = SWIG_CheckState(res);
+    }
+    if (_v) {
+      {
+        int res = SWIG_AsVal_double(argv[1], NULL);
+        _v = SWIG_CheckState(res);
+      }
+      if (_v) {
+        return _wrap_Geocoding_Geocode__SWIG_1(self, argc, argv);
+      }
+    }
+  }
+  
+fail:
+  SWIG_Python_RaiseOrModifyTypeError("Wrong number or type of arguments for overloaded function 'Geocoding_Geocode'.\n"
+    "  Possible C/C++ prototypes are:\n"
+    "    Geocoding::Geocode(std::string)\n"
+    "    Geocoding::Geocode(double,double)\n");
+  return 0;
+}
+
+
+SWIGINTERN PyObject *_wrap_Geocoding_Elevation_ft__SWIG_0(PyObject *self, Py_ssize_t nobjs, PyObject **swig_obj) {
+  PyObject *resultobj = 0;
+  std::string arg1 ;
+  double result;
+  
+  if ((nobjs < 1) || (nobjs > 1)) SWIG_fail;
+  {
+    std::string *ptr = (std::string *)0;
+    int res = SWIG_AsPtr_std_string(swig_obj[0], &ptr);
+    if (!SWIG_IsOK(res) || !ptr) {
+      SWIG_exception_fail(SWIG_ArgError((ptr ? res : SWIG_TypeError)), "in method '" "Geocoding_Elevation_ft" "', argument " "1"" of type '" "std::string""'"); 
+    }
+    arg1 = *ptr;
+    if (SWIG_IsNewObj(res)) delete ptr;
+  }
+  result = (double)Geocoding::Elevation_ft(SWIG_STD_MOVE(arg1));
+  resultobj = SWIG_From_double(static_cast< double >(result));
+  return resultobj;
+fail:
+  return NULL;
+}
+
+
+SWIGINTERN PyObject *_wrap_Geocoding_Elevation_ft__SWIG_1(PyObject *self, Py_ssize_t nobjs, PyObject **swig_obj) {
+  PyObject *resultobj = 0;
+  double arg1 ;
+  double arg2 ;
+  double val1 ;
+  int ecode1 = 0 ;
+  double val2 ;
+  int ecode2 = 0 ;
+  double result;
+  
+  if ((nobjs < 2) || (nobjs > 2)) SWIG_fail;
+  ecode1 = SWIG_AsVal_double(swig_obj[0], &val1);
+  if (!SWIG_IsOK(ecode1)) {
+    SWIG_exception_fail(SWIG_ArgError(ecode1), "in method '" "Geocoding_Elevation_ft" "', argument " "1"" of type '" "double""'");
+  } 
+  arg1 = static_cast< double >(val1);
+  ecode2 = SWIG_AsVal_double(swig_obj[1], &val2);
+  if (!SWIG_IsOK(ecode2)) {
+    SWIG_exception_fail(SWIG_ArgError(ecode2), "in method '" "Geocoding_Elevation_ft" "', argument " "2"" of type '" "double""'");
+  } 
+  arg2 = static_cast< double >(val2);
+  result = (double)Geocoding::Elevation_ft(arg1,arg2);
+  resultobj = SWIG_From_double(static_cast< double >(result));
+  return resultobj;
+fail:
+  return NULL;
+}
+
+
+SWIGINTERN PyObject *_wrap_Geocoding_Elevation_ft(PyObject *self, PyObject *args) {
+  Py_ssize_t argc;
+  PyObject *argv[3] = {
+    0
+  };
+  
+  if (!(argc = SWIG_Python_UnpackTuple(args, "Geocoding_Elevation_ft", 0, 2, argv))) SWIG_fail;
+  --argc;
+  if (argc == 1) {
+    int _v = 0;
+    int res = SWIG_AsPtr_std_string(argv[0], (std::string**)(0));
+    _v = SWIG_CheckState(res);
+    if (_v) {
+      return _wrap_Geocoding_Elevation_ft__SWIG_0(self, argc, argv);
+    }
+  }
+  if (argc == 2) {
+    int _v = 0;
+    {
+      int res = SWIG_AsVal_double(argv[0], NULL);
+      _v = SWIG_CheckState(res);
+    }
+    if (_v) {
+      {
+        int res = SWIG_AsVal_double(argv[1], NULL);
+        _v = SWIG_CheckState(res);
+      }
+      if (_v) {
+        return _wrap_Geocoding_Elevation_ft__SWIG_1(self, argc, argv);
+      }
+    }
+  }
+  
+fail:
+  SWIG_Python_RaiseOrModifyTypeError("Wrong number or type of arguments for overloaded function 'Geocoding_Elevation_ft'.\n"
+    "  Possible C/C++ prototypes are:\n"
+    "    Geocoding::Elevation_ft(std::string)\n"
+    "    Geocoding::Elevation_ft(double,double)\n");
+  return 0;
 }
 
 
@@ -28952,8 +29115,9 @@ static PyMethodDef SwigMethods[] = {
 	 { "ScriptEngine_Cast_VectorFloats", _wrap_ScriptEngine_Cast_VectorFloats, METH_VARARGS, NULL},
 	 { "ScriptEngine_swigregister", ScriptEngine_swigregister, METH_O, NULL},
 	 { "ScriptEngine_swiginit", ScriptEngine_swiginit, METH_VARARGS, NULL},
-	 { "Geocoding_Geocode", _wrap_Geocoding_Geocode, METH_O, NULL},
-	 { "new_Geocoding", _wrap_new_Geocoding, METH_NOARGS, NULL},
+	 { "Geocoding_Geocode", _wrap_Geocoding_Geocode, METH_VARARGS, "Using an address or decimal longitude/latitude, will perform geocoding with OpenStreetMap and return the best matched location."},
+	 { "Geocoding_Elevation_ft", _wrap_Geocoding_Elevation_ft, METH_VARARGS, "Using an address or decimal longitude/latitude, will estimate the USGS elevation for the site (feet above sea level)."},
+	 { "new_Geocoding", _wrap_new_Geocoding, METH_NOARGS, "Static class (i.e. namespace) that contains geocoding functions."},
 	 { "delete_Geocoding", _wrap_delete_Geocoding, METH_O, NULL},
 	 { "Geocoding_swigregister", Geocoding_swigregister, METH_O, NULL},
 	 { "Geocoding_swiginit", Geocoding_swiginit, METH_VARARGS, NULL},
