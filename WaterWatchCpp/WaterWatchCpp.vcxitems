@@ -134,6 +134,7 @@
     <ClCompile Include="$(MSBuildThisFileDirectory)InteropData.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)MachineLearning.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)odbc.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)RTree.h" />
     <ClCompile Include="$(MSBuildThisFileDirectory)Toasts.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)WaterWatch_Module_EPAnet.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)WaterWatch_Module_P1.cpp" />

@@ -482,6 +482,9 @@
     <ClCompile Include="$(MSBuildThisFileDirectory)ExcelInterop_Module.cpp">
       <Filter>Lib\Implimentations-Only\WaterWatch Chaiscript Module\Excel Interop Module</Filter>
     </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)RTree.h">
+      <Filter>Lib\Header-Only\Containers\Trees</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <Natvis Include="$(MSBuildThisFileDirectory)..\cweeLib\cweeDebugVisualizer.natvis">

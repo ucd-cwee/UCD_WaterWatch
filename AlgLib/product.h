@@ -16,7 +16,7 @@ namespace fastexp {
     struct Recursion<Real, degree, degree> {
         static Real evaluate(Real x) {
             constexpr Real c = 1.0 / static_cast<Real>(1u << degree);
-            x = 1.0 + c * x;
+            x = Real(1.0) + c * x;
             return x;
         }
     };

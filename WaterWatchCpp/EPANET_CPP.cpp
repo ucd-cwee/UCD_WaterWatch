@@ -1975,6 +1975,7 @@ namespace epanet {
             // Replace the existing node ID with the new value
             hashtable_t::hashtable_delete(net->NodeHashTable, net->Node[index]->ID);
             strncpy(net->Node[index]->ID, newid, MAXID);
+            net->Node[index]->Name_p = newid;
             hashtable_t::hashtable_insert(net->NodeHashTable, net->Node[index]->ID, index);
             return 0;
         };
@@ -3263,6 +3264,7 @@ namespace epanet {
             // Replace the existing link ID with the new value
             hashtable_t::hashtable_delete(net->LinkHashTable, net->Link[index]->ID);
             strncpy(net->Link[index]->ID, newid, MAXID);
+            net->Link[index]->Name_p = newid;
             hashtable_t::hashtable_insert(net->LinkHashTable, net->Link[index]->ID, index);
             return 0;
         };

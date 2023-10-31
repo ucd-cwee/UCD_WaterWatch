@@ -96,6 +96,8 @@ namespace chaiscript {
                     DEF_DECLARE_VECTOR_WITH_SCRIPT_ENGINE_AND_MODULE(cweeStr);
                     DEF_DECLARE_VECTOR_WITH_SCRIPT_ENGINE_AND_MODULE(std::string);
                     DEF_DECLARE_VECTOR_WITH_SCRIPT_ENGINE_AND_MODULE(cweeList<cweeStr>);
+                    DEF_DECLARE_VECTOR_WITH_SCRIPT_ENGINE_AND_MODULE(std::vector<cweeStr>);
+                    DEF_DECLARE_VECTOR_WITH_SCRIPT_ENGINE_AND_MODULE(std::vector<std::string>);
                 }
             }
 

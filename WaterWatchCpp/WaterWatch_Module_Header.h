@@ -1873,42 +1873,10 @@ lib->add(chaiscript::type_conversion<From, To>([](const From& t_bt)->To { return
                     lib->add(chaiscript::fun([](const cweePair<ValueTypeAClass, ValueTypeBClass>& b) {	return std::string(cweeStr::printf("%s|%s", cweeStr::ToString<ValueTypeAClass>(b.first).c_str(), cweeStr::ToString<ValueTypeBClass>(b.second).c_str()).c_str()); }), "to_string"); \
                 }
 
-//#define DEF_DECLARE_VECTOR_WITH_SCRIPT_ENGINE_AND_MODULE( ValueTypeClass ) \
-//        if (true) { \
-//            cweeStr vecName = (cweeStr("vector_") + STR_FUNC(ValueTypeClass)).ReplaceInline("std::", "").ReplaceInline("::", "").ReplaceInline(" ", ""); \
-//            cweeStr cweeVecName = (cweeStr("cweevector_") + STR_FUNC(ValueTypeClass)).ReplaceInline("std::", "").ReplaceInline("::", "").ReplaceInline(" ", ""); \
-//            lib->add(chaiscript::vector_conversion<std::vector<chaiscript::Boxed_Value>, std::vector<ValueTypeClass>>(nullptr)); \
-//            lib->add(chaiscript::vector_conversion<std::vector<chaiscript::Boxed_Value>, cweeThreadedList<ValueTypeClass>>(nullptr)); \
-//            lib->add(chaiscript::vector_conversion<cweeThreadedList<chaiscript::Boxed_Value>, std::vector<ValueTypeClass>>(nullptr)); \
-//            lib->add(chaiscript::vector_conversion<cweeThreadedList<chaiscript::Boxed_Value>, cweeThreadedList<ValueTypeClass>>(nullptr)); \
-//            chaiscript::bootstrap::standard_library::vector_type<std::vector<ValueTypeClass>>(vecName.c_str(), *lib);  \
-//            chaiscript::bootstrap::standard_library::vector_type<cweeThreadedList<ValueTypeClass>>(cweeVecName.c_str(), *lib); \
-//            lib->add(chaiscript::constructor<cweeThreadedList<ValueTypeClass>(const std::vector<chaiscript::Boxed_Value>&)>(), cweeVecName.c_str());	\
-//            lib->add(chaiscript::constructor<cweeThreadedList<ValueTypeClass>(const cweeThreadedList<chaiscript::Boxed_Value>&)>(), cweeVecName.c_str());	\
-//            lib->add(chaiscript::constructor<std::vector<ValueTypeClass>(const cweeThreadedList<chaiscript::Boxed_Value>&)>(), vecName.c_str()); \
-//            lib->add(chaiscript::fun([](std::vector<chaiscript::Boxed_Value>& t_ti, const cweeThreadedList<ValueTypeClass>& b) { t_ti = (std::vector<chaiscript::Boxed_Value>)b; return t_ti; }), "=");	\
-//            lib->add(chaiscript::fun([](std::vector<chaiscript::Boxed_Value>& t_ti, const std::vector<ValueTypeClass>& b) { t_ti = (std::vector<chaiscript::Boxed_Value>)(cweeThreadedList<ValueTypeClass>)b; return t_ti; }), "=");	\
-//            lib->add(chaiscript::fun([](std::vector<chaiscript::Boxed_Value>& t_ti, const cweeThreadedList<chaiscript::Boxed_Value>& b) { t_ti = (std::vector<chaiscript::Boxed_Value>)b; return t_ti; }), "=");	\
-//            lib->add(chaiscript::fun([](std::vector<ValueTypeClass>& t_ti, cweeThreadedList<ValueTypeClass>& b) { t_ti = (std::vector<ValueTypeClass>)b; return t_ti; }), "=");	\
-//            lib->add(chaiscript::fun([](cweeThreadedList<chaiscript::Boxed_Value>& t_ti, cweeThreadedList<ValueTypeClass>& b) { t_ti = (cweeThreadedList<chaiscript::Boxed_Value>)b; return t_ti; }), "=");	\
-//            lib->add(chaiscript::fun([](cweeThreadedList<chaiscript::Boxed_Value>& t_ti, std::vector<ValueTypeClass>& b) { t_ti = (cweeThreadedList<chaiscript::Boxed_Value>)b; return t_ti; }), "=");	\
-//            lib->add(chaiscript::fun([](cweeThreadedList<chaiscript::Boxed_Value>& t_ti, std::vector<chaiscript::Boxed_Value>& b) { t_ti = (cweeThreadedList<chaiscript::Boxed_Value>)b; return t_ti; }), "=");	\
-//            lib->add(chaiscript::fun([](cweeThreadedList<ValueTypeClass>& t_ti, std::vector<ValueTypeClass>& b) { t_ti = (cweeThreadedList<ValueTypeClass>)b; return t_ti; }), "=");	\
-//            lib->add(chaiscript::fun([](cweeThreadedList<ValueTypeClass>& t_ti, cweeThreadedList<ValueTypeClass>& b) { t_ti = b; return t_ti; }), "=");	\
-//            lib->add(chaiscript::fun([](std::vector<ValueTypeClass>& t_ti, std::vector<ValueTypeClass>& b) { t_ti = b; return t_ti; }), "=");	\
-//            lib->add(chaiscript::type_conversion<cweeThreadedList<ValueTypeClass>&, std::vector<ValueTypeClass>&>([](const cweeThreadedList<ValueTypeClass>& t_bt) { std::vector<ValueTypeClass> out; out = (std::vector<ValueTypeClass>)t_bt; return out; }, nullptr));	\
-//            lib->add(chaiscript::type_conversion<std::vector<ValueTypeClass>&, cweeThreadedList<ValueTypeClass>&>([](const std::vector<ValueTypeClass>& t_bt) { cweeThreadedList<ValueTypeClass> out; out = (cweeThreadedList<ValueTypeClass>)t_bt; return out; }, nullptr));	\
-//            lib->add(chaiscript::type_conversion<cweeThreadedList<ValueTypeClass>&, cweeThreadedList<chaiscript::Boxed_Value>&>([](const cweeThreadedList<ValueTypeClass>& t_bt) { cweeThreadedList<chaiscript::Boxed_Value> out; out = (cweeThreadedList<chaiscript::Boxed_Value>)t_bt; return out; }, nullptr));	\
-//            lib->add(chaiscript::type_conversion<std::vector<ValueTypeClass>&, cweeThreadedList<chaiscript::Boxed_Value>&>([](const std::vector<ValueTypeClass>& t_bt) { cweeThreadedList<chaiscript::Boxed_Value> out; out = (cweeThreadedList<chaiscript::Boxed_Value>)t_bt; return out; }, nullptr));	\
-//            lib->add(chaiscript::type_conversion<cweeThreadedList<ValueTypeClass>&, std::vector<chaiscript::Boxed_Value>&>([](const cweeThreadedList<ValueTypeClass>& t_bt) { std::vector<chaiscript::Boxed_Value> out; out = (std::vector<chaiscript::Boxed_Value>)t_bt; return out; }, nullptr));	\
-//            lib->add(chaiscript::type_conversion<std::vector<ValueTypeClass>&, std::vector<chaiscript::Boxed_Value>&>([](const std::vector<ValueTypeClass>& t_bt) { std::vector<chaiscript::Boxed_Value> out; out = (std::vector<chaiscript::Boxed_Value>)(cweeThreadedList<chaiscript::Boxed_Value>)t_bt; return out; }, nullptr));	\
-//            lib->add(chaiscript::constructor<cweeThreadedList<chaiscript::Boxed_Value>(const std::vector<ValueTypeClass>&)>(), "cweeVector");	\
-//            lib->add(chaiscript::constructor<cweeThreadedList<chaiscript::Boxed_Value>(const cweeThreadedList<ValueTypeClass>&)>(), "cweeVector");	\
-//        }
 #define MACRO_COMMA ,
 #define DEF_DECLARE_STD_VECTOR_WITH_SCRIPT_ENGINE_AND_MODULE( ValueTypeClass ) \
         if (true) { \
-            cweeStr vecName = (cweeStr("vector_") + STR_FUNC(ValueTypeClass)).ReplaceInline(",", "_").ReplaceInline("<", "_").ReplaceInline(">", "_").ReplaceInline("std::", "").ReplaceInline("::", "").ReplaceInline("__", "_").ReplaceInline(" ", ""); \
+            cweeStr vecName = (cweeStr("vector_") + STR_FUNC(ValueTypeClass)).ReplaceInline(",", "_").ReplaceInline("<", "_").ReplaceInline(">", "_").ReplaceInline("std::", "").ReplaceInline("::", "").ReplaceInline("__", "_").ReplaceInline(" ", "").Strip("_"); \
             /* Decl the type */ chaiscript::bootstrap::standard_library::vector_type<std::vector<ValueTypeClass>>(vecName.c_str(), *lib);  \
             /* Vector -> custom */ lib->add(chaiscript::vector_conversion<std::vector<chaiscript::Boxed_Value>, std::vector<ValueTypeClass>>(nullptr)); \
             /* Vector x = custom(); */ lib->add(chaiscript::fun([](std::vector<chaiscript::Boxed_Value>& t_ti, const std::vector<ValueTypeClass>& b) { t_ti = (std::vector<chaiscript::Boxed_Value>)(cweeThreadedList<chaiscript::Boxed_Value>)(cweeThreadedList<ValueTypeClass>)b; return t_ti; }), "=");	\
@@ -1918,7 +1886,7 @@ lib->add(chaiscript::type_conversion<From, To>([](const From& t_bt)->To { return
         }
 #define DEF_DECLARE_CWEE_VECTOR_WITH_SCRIPT_ENGINE_AND_MODULE( ValueTypeClass ) \
         if (true) { \
-            cweeStr vecName = (cweeStr("cweevector_") + STR_FUNC(ValueTypeClass)).ReplaceInline(",", "_").ReplaceInline("<", "_").ReplaceInline(">", "_").ReplaceInline("std::", "").ReplaceInline("::", "").ReplaceInline("__", "_").ReplaceInline(" ", ""); \
+            cweeStr vecName = (cweeStr("cweevector_") + STR_FUNC(ValueTypeClass)).ReplaceInline(",", "_").ReplaceInline("<", "_").ReplaceInline(">", "_").ReplaceInline("std::", "").ReplaceInline("::", "").ReplaceInline("__", "_").ReplaceInline(" ", "").Strip("_"); \
             /* Decl the type */ chaiscript::bootstrap::standard_library::vector_type<cweeThreadedList<ValueTypeClass>>(vecName.c_str(), *lib);  \
             /* Vector -> custom */ lib->add(chaiscript::vector_conversion<std::vector<chaiscript::Boxed_Value>, cweeThreadedList<ValueTypeClass>>(nullptr)); \
             /* Vector x = custom(); */ lib->add(chaiscript::fun([](std::vector<chaiscript::Boxed_Value>& t_ti, const cweeThreadedList<ValueTypeClass>& b) { t_ti = (std::vector<chaiscript::Boxed_Value>)(cweeThreadedList<chaiscript::Boxed_Value>)b; return t_ti; }), "=");	\
@@ -1952,75 +1920,6 @@ lib->add(chaiscript::type_conversion<From, To>([](const From& t_bt)->To { return
             DEF_DECLARE_VECTOR_WITH_SCRIPT_ENGINE_AND_MODULE(std::pair<ValueTypeAClass MACRO_COMMA ValueTypeBClass>); \
             DEF_DECLARE_VECTOR_WITH_SCRIPT_ENGINE_AND_MODULE(cweePair<ValueTypeAClass MACRO_COMMA ValueTypeBClass>); \
         }
-
-/*
-#define DEF_DECLARE_VECTOR_OF_PAIR_WITH_SCRIPT_ENGINE_AND_MODULE( ValueTypeAClass, ValueTypeBClass )  \
-        if (true) { \
-            cweeStr vecName = (cweeStr("vector_pair_") + STR_FUNC(ValueTypeAClass) + "_" + STR_FUNC(ValueTypeBClass) + "").ReplaceInline("std::", "").ReplaceInline("::", "").ReplaceInline(" ", ""); \
-            cweeStr cweeVecName = (cweeStr("cweevector_pair_") + STR_FUNC(ValueTypeAClass) + "_" + STR_FUNC(ValueTypeBClass) + "").ReplaceInline("std::", "").ReplaceInline("::", "").ReplaceInline(" ", ""); \
-            cweeStr pairName = (cweeStr("pair_") + STR_FUNC(ValueTypeAClass) + "_" + STR_FUNC(ValueTypeBClass) + "_").ReplaceInline("std::", "").ReplaceInline("::", "").ReplaceInline(" ", ""); \
-            lib->add(chaiscript::vector_conversion<std::vector<chaiscript::Boxed_Value>, std::vector<std::pair<ValueTypeAClass, ValueTypeBClass>>>(nullptr)); \
-            lib->add(chaiscript::vector_conversion<std::vector<chaiscript::Boxed_Value>, cweeThreadedList<std::pair<ValueTypeAClass, ValueTypeBClass>>>(nullptr)); \
-            lib->add(chaiscript::vector_conversion<cweeThreadedList<chaiscript::Boxed_Value>, std::vector<std::pair<ValueTypeAClass, ValueTypeBClass>>>(nullptr)); \
-            lib->add(chaiscript::vector_conversion<cweeThreadedList<chaiscript::Boxed_Value>, cweeThreadedList<std::pair<ValueTypeAClass, ValueTypeBClass>>>(nullptr)); \
-            chaiscript::bootstrap::standard_library::vector_type<std::vector<std::pair<ValueTypeAClass, ValueTypeBClass>>>(vecName.c_str(), *lib); \
-            chaiscript::bootstrap::standard_library::pair_type<std::pair<ValueTypeAClass, ValueTypeBClass>>(pairName.c_str(), *lib); \
-            chaiscript::bootstrap::standard_library::vector_type<cweeThreadedList<std::pair<ValueTypeAClass, ValueTypeBClass>>>(cweeVecName.c_str(), *lib); \
-            lib->add(chaiscript::fun([](std::vector<chaiscript::Boxed_Value>& t_ti, cweeThreadedList<std::pair<ValueTypeAClass, ValueTypeBClass>>& b) { t_ti = (std::vector<chaiscript::Boxed_Value>)b; return t_ti; }), "=");	\
-            lib->add(chaiscript::fun([](std::vector<chaiscript::Boxed_Value>& t_ti, std::vector<std::pair<ValueTypeAClass, ValueTypeBClass>>& b) { t_ti = (std::vector<chaiscript::Boxed_Value>)(cweeThreadedList<std::pair<ValueTypeAClass, ValueTypeBClass>>)b; return t_ti; }), "=");	\
-            lib->add(chaiscript::fun([](std::vector<chaiscript::Boxed_Value>& t_ti, cweeThreadedList<chaiscript::Boxed_Value>& b) { t_ti = (std::vector<chaiscript::Boxed_Value>)b; return t_ti; }), "=");	\
-            lib->add(chaiscript::fun([](std::vector<std::pair<ValueTypeAClass, ValueTypeBClass>>& t_ti, cweeThreadedList<std::pair<ValueTypeAClass, ValueTypeBClass>>& b) { t_ti = (std::vector<std::pair<ValueTypeAClass, ValueTypeBClass>>)b; return t_ti; }), "=");	\
-            lib->add(chaiscript::fun([](cweeThreadedList<chaiscript::Boxed_Value>& t_ti, cweeThreadedList<std::pair<ValueTypeAClass, ValueTypeBClass>>& b) { t_ti = (cweeThreadedList<chaiscript::Boxed_Value>)b; return t_ti; }), "=");	\
-            lib->add(chaiscript::fun([](cweeThreadedList<chaiscript::Boxed_Value>& t_ti, std::vector<std::pair<ValueTypeAClass, ValueTypeBClass>>& b) { t_ti = (cweeThreadedList<chaiscript::Boxed_Value>)b; return t_ti; }), "=");	\
-            lib->add(chaiscript::fun([](cweeThreadedList<chaiscript::Boxed_Value>& t_ti, std::vector<chaiscript::Boxed_Value>& b) { t_ti = (cweeThreadedList<chaiscript::Boxed_Value>)b; return t_ti; }), "=");	\
-            lib->add(chaiscript::fun([](cweeThreadedList<std::pair<ValueTypeAClass, ValueTypeBClass>>& t_ti, std::vector<std::pair<ValueTypeAClass, ValueTypeBClass>>& b) { t_ti = (cweeThreadedList<std::pair<ValueTypeAClass, ValueTypeBClass>>)b; return t_ti; }), "=");	\
-            lib->add(chaiscript::fun([](cweeThreadedList<std::pair<ValueTypeAClass, ValueTypeBClass>>& t_ti, cweeThreadedList<std::pair<ValueTypeAClass, ValueTypeBClass>>& b) { t_ti = b; return t_ti; }), "=");	\
-            lib->add(chaiscript::fun([](std::vector<std::pair<ValueTypeAClass, ValueTypeBClass>>& t_ti, std::vector<std::pair<ValueTypeAClass, ValueTypeBClass>>& b) { t_ti = b; return t_ti; }), "=");	\
-            lib->add(chaiscript::type_conversion<cweeThreadedList<std::pair<ValueTypeAClass, ValueTypeBClass>>&, std::vector<std::pair<ValueTypeAClass, ValueTypeBClass>>&>([](const cweeThreadedList<std::pair<ValueTypeAClass, ValueTypeBClass>>& t_bt) { std::vector<std::pair<ValueTypeAClass, ValueTypeBClass>> out; out = (std::vector<std::pair<ValueTypeAClass, ValueTypeBClass>>)t_bt; return out; }, nullptr));	\
-            lib->add(chaiscript::type_conversion<std::vector<std::pair<ValueTypeAClass, ValueTypeBClass>>&, cweeThreadedList<std::pair<ValueTypeAClass, ValueTypeBClass>>&>([](const std::vector<std::pair<ValueTypeAClass, ValueTypeBClass>>& t_bt) { cweeThreadedList<std::pair<ValueTypeAClass, ValueTypeBClass>> out; out = (cweeThreadedList<std::pair<ValueTypeAClass, ValueTypeBClass>>)t_bt; return out; }, nullptr));	\
-            lib->add(chaiscript::type_conversion<cweeThreadedList<std::pair<ValueTypeAClass, ValueTypeBClass>>&, cweeThreadedList<chaiscript::Boxed_Value>&>([](const cweeThreadedList<std::pair<ValueTypeAClass, ValueTypeBClass>>& t_bt) { cweeThreadedList<chaiscript::Boxed_Value> out; out = (cweeThreadedList<chaiscript::Boxed_Value>)t_bt; return out; }, nullptr));	\
-            lib->add(chaiscript::type_conversion<std::vector<std::pair<ValueTypeAClass, ValueTypeBClass>>&, cweeThreadedList<chaiscript::Boxed_Value>&>([](const std::vector<std::pair<ValueTypeAClass, ValueTypeBClass>>& t_bt) { cweeThreadedList<chaiscript::Boxed_Value> out; out = (cweeThreadedList<chaiscript::Boxed_Value>)t_bt; return out; }, nullptr));	\
-            lib->add(chaiscript::type_conversion<cweeThreadedList<std::pair<ValueTypeAClass, ValueTypeBClass>>&, std::vector<chaiscript::Boxed_Value>&>([](const cweeThreadedList<std::pair<ValueTypeAClass, ValueTypeBClass>>& t_bt) { std::vector<chaiscript::Boxed_Value> out; out = (std::vector<chaiscript::Boxed_Value>)t_bt; return out; }, nullptr));	\
-            lib->add(chaiscript::type_conversion<std::vector<std::pair<ValueTypeAClass, ValueTypeBClass>>&, std::vector<chaiscript::Boxed_Value>&>([](const std::vector<std::pair<ValueTypeAClass, ValueTypeBClass>>& t_bt) { std::vector<chaiscript::Boxed_Value> out; out = (std::vector<chaiscript::Boxed_Value>)(cweeThreadedList<chaiscript::Boxed_Value>)t_bt; return out; }, nullptr));	\
-            lib->add(chaiscript::constructor<cweeThreadedList<chaiscript::Boxed_Value>(const std::vector<std::pair<ValueTypeAClass, ValueTypeBClass>>&)>(), "cweeVector");	\
-            lib->add(chaiscript::constructor<cweeThreadedList<chaiscript::Boxed_Value>(const cweeThreadedList<std::pair<ValueTypeAClass, ValueTypeBClass>>&)>(), "cweeVector");	\
-            lib->add(chaiscript::type_conversion<std::pair<ValueTypeAClass, ValueTypeBClass>, std::string>([](const std::pair<ValueTypeAClass, ValueTypeBClass>& t_bt) { return std::string(cweeStr::printf("%s|%s", cweeStr::ToString<ValueTypeAClass>(t_bt.first).c_str(), cweeStr::ToString<ValueTypeBClass>(t_bt.second).c_str()).c_str()); }, nullptr)); \
-            lib->add(chaiscript::fun([](std::string& a, const std::pair<ValueTypeAClass, ValueTypeBClass>& b) {	a = std::string(cweeStr::printf("%s|%s", cweeStr::ToString<ValueTypeAClass>(b.first).c_str(), cweeStr::ToString<ValueTypeBClass>(b.second).c_str()).c_str()); return a; }), "="); \
-            lib->add(chaiscript::fun([](const std::pair<ValueTypeAClass, ValueTypeBClass>& b) {	return std::string(cweeStr::printf("%s|%s", cweeStr::ToString<ValueTypeAClass>(b.first).c_str(), cweeStr::ToString<ValueTypeBClass>(b.second).c_str()).c_str()); }), "to_string"); \
-        } \
-        if (true) { \
-            cweeStr vecName = (cweeStr("vector_cweepair_") + STR_FUNC(ValueTypeAClass) + "_" + STR_FUNC(ValueTypeBClass) + "").ReplaceInline("std::", "").ReplaceInline("::", "").ReplaceInline(" ", ""); \
-            cweeStr cweeVecName = (cweeStr("cweevector_cweepair_") + STR_FUNC(ValueTypeAClass) + "_" + STR_FUNC(ValueTypeBClass) + "").ReplaceInline("std::", "").ReplaceInline("::", "").ReplaceInline(" ", ""); \
-            cweeStr pairName = (cweeStr("cweepair_") + STR_FUNC(ValueTypeAClass) + "_" + STR_FUNC(ValueTypeBClass) + "_").ReplaceInline("std::", "").ReplaceInline("::", "").ReplaceInline(" ", ""); \
-            lib->add(chaiscript::vector_conversion<std::vector<chaiscript::Boxed_Value>, std::vector<cweePair<ValueTypeAClass, ValueTypeBClass>>>(nullptr)); \
-            lib->add(chaiscript::vector_conversion<std::vector<chaiscript::Boxed_Value>, cweeThreadedList<cweePair<ValueTypeAClass, ValueTypeBClass>>>(nullptr)); \
-            lib->add(chaiscript::vector_conversion<cweeThreadedList<chaiscript::Boxed_Value>, std::vector<cweePair<ValueTypeAClass, ValueTypeBClass>>>(nullptr)); \
-            lib->add(chaiscript::vector_conversion<cweeThreadedList<chaiscript::Boxed_Value>, cweeThreadedList<cweePair<ValueTypeAClass, ValueTypeBClass>>>(nullptr)); \
-            chaiscript::bootstrap::standard_library::vector_type<std::vector<cweePair<ValueTypeAClass, ValueTypeBClass>>>(vecName.c_str(), *lib); \
-            chaiscript::bootstrap::standard_library::pair_type<cweePair<ValueTypeAClass, ValueTypeBClass>>(pairName.c_str(), *lib); \
-            chaiscript::bootstrap::standard_library::vector_type<cweeThreadedList<cweePair<ValueTypeAClass, ValueTypeBClass>>>(cweeVecName.c_str(), *lib); \
-            lib->add(chaiscript::fun([](std::vector<chaiscript::Boxed_Value>& t_ti, cweeThreadedList<cweePair<ValueTypeAClass, ValueTypeBClass>>& b) { t_ti = (std::vector<chaiscript::Boxed_Value>)b; return t_ti; }), "=");	\
-            lib->add(chaiscript::fun([](std::vector<chaiscript::Boxed_Value>& t_ti, std::vector<cweePair<ValueTypeAClass, ValueTypeBClass>>& b) { t_ti = (std::vector<chaiscript::Boxed_Value>)(cweeThreadedList<cweePair<ValueTypeAClass, ValueTypeBClass>>)b; return t_ti; }), "=");	\
-            lib->add(chaiscript::fun([](std::vector<chaiscript::Boxed_Value>& t_ti, cweeThreadedList<chaiscript::Boxed_Value>& b) { t_ti = (std::vector<chaiscript::Boxed_Value>)b; return t_ti; }), "=");	\
-            lib->add(chaiscript::fun([](std::vector<cweePair<ValueTypeAClass, ValueTypeBClass>>& t_ti, cweeThreadedList<cweePair<ValueTypeAClass, ValueTypeBClass>>& b) { t_ti = (std::vector<cweePair<ValueTypeAClass, ValueTypeBClass>>)b; return t_ti; }), "=");	\
-            lib->add(chaiscript::fun([](cweeThreadedList<chaiscript::Boxed_Value>& t_ti, cweeThreadedList<cweePair<ValueTypeAClass, ValueTypeBClass>>& b) { t_ti = (cweeThreadedList<chaiscript::Boxed_Value>)b; return t_ti; }), "=");	\
-            lib->add(chaiscript::fun([](cweeThreadedList<chaiscript::Boxed_Value>& t_ti, std::vector<cweePair<ValueTypeAClass, ValueTypeBClass>>& b) { t_ti = (cweeThreadedList<chaiscript::Boxed_Value>)b; return t_ti; }), "=");	\
-            lib->add(chaiscript::fun([](cweeThreadedList<chaiscript::Boxed_Value>& t_ti, std::vector<chaiscript::Boxed_Value>& b) { t_ti = (cweeThreadedList<chaiscript::Boxed_Value>)b; return t_ti; }), "=");	\
-            lib->add(chaiscript::fun([](cweeThreadedList<cweePair<ValueTypeAClass, ValueTypeBClass>>& t_ti, std::vector<cweePair<ValueTypeAClass, ValueTypeBClass>>& b) { t_ti = (cweeThreadedList<cweePair<ValueTypeAClass, ValueTypeBClass>>)b; return t_ti; }), "=");	\
-            lib->add(chaiscript::fun([](cweeThreadedList<cweePair<ValueTypeAClass, ValueTypeBClass>>& t_ti, cweeThreadedList<cweePair<ValueTypeAClass, ValueTypeBClass>>& b) { t_ti = b; return t_ti; }), "=");	\
-            lib->add(chaiscript::fun([](std::vector<cweePair<ValueTypeAClass, ValueTypeBClass>>& t_ti, std::vector<cweePair<ValueTypeAClass, ValueTypeBClass>>& b) { t_ti = b; return t_ti; }), "=");	\
-            lib->add(chaiscript::type_conversion<cweeThreadedList<cweePair<ValueTypeAClass, ValueTypeBClass>>&, std::vector<cweePair<ValueTypeAClass, ValueTypeBClass>>&>([](const cweeThreadedList<cweePair<ValueTypeAClass, ValueTypeBClass>>& t_bt) { std::vector<cweePair<ValueTypeAClass, ValueTypeBClass>> out; out = (std::vector<cweePair<ValueTypeAClass, ValueTypeBClass>>)t_bt; return out; }, nullptr));	\
-            lib->add(chaiscript::type_conversion<std::vector<cweePair<ValueTypeAClass, ValueTypeBClass>>&, cweeThreadedList<cweePair<ValueTypeAClass, ValueTypeBClass>>&>([](const std::vector<cweePair<ValueTypeAClass, ValueTypeBClass>>& t_bt) { cweeThreadedList<cweePair<ValueTypeAClass, ValueTypeBClass>> out; out = (cweeThreadedList<cweePair<ValueTypeAClass, ValueTypeBClass>>)t_bt; return out; }, nullptr));	\
-            lib->add(chaiscript::type_conversion<cweeThreadedList<cweePair<ValueTypeAClass, ValueTypeBClass>>&, cweeThreadedList<chaiscript::Boxed_Value>&>([](const cweeThreadedList<cweePair<ValueTypeAClass, ValueTypeBClass>>& t_bt) { cweeThreadedList<chaiscript::Boxed_Value> out; out = (cweeThreadedList<chaiscript::Boxed_Value>)t_bt; return out; }, nullptr));	\
-            lib->add(chaiscript::type_conversion<std::vector<cweePair<ValueTypeAClass, ValueTypeBClass>>&, cweeThreadedList<chaiscript::Boxed_Value>&>([](const std::vector<cweePair<ValueTypeAClass, ValueTypeBClass>>& t_bt) { cweeThreadedList<chaiscript::Boxed_Value> out; out = (cweeThreadedList<chaiscript::Boxed_Value>)t_bt; return out; }, nullptr));	\
-            lib->add(chaiscript::type_conversion<cweeThreadedList<cweePair<ValueTypeAClass, ValueTypeBClass>>&, std::vector<chaiscript::Boxed_Value>&>([](const cweeThreadedList<cweePair<ValueTypeAClass, ValueTypeBClass>>& t_bt) { std::vector<chaiscript::Boxed_Value> out; out = (std::vector<chaiscript::Boxed_Value>)t_bt; return out; }, nullptr));	\
-            lib->add(chaiscript::type_conversion<std::vector<cweePair<ValueTypeAClass, ValueTypeBClass>>&, std::vector<chaiscript::Boxed_Value>&>([](const std::vector<cweePair<ValueTypeAClass, ValueTypeBClass>>& t_bt) { std::vector<chaiscript::Boxed_Value> out; out = (std::vector<chaiscript::Boxed_Value>)(cweeThreadedList<chaiscript::Boxed_Value>)t_bt; return out; }, nullptr));	\
-            lib->add(chaiscript::constructor<cweeThreadedList<chaiscript::Boxed_Value>(const std::vector<cweePair<ValueTypeAClass, ValueTypeBClass>>&)>(), "cweeVector");	\
-            lib->add(chaiscript::constructor<cweeThreadedList<chaiscript::Boxed_Value>(const cweeThreadedList<cweePair<ValueTypeAClass, ValueTypeBClass>>&)>(), "cweeVector");	\
-            lib->eval(cweeStr::printf(R"(def to_string(%s v){ return "<${v.first}, ${v.second}>"; };)", pairName.c_str()).c_str()); \
-            lib->eval(cweeStr::printf("def `=`(string s, %s v){ s = \"<${v.first}, ${v.second}>\"; return s; };", pairName.c_str()).c_str()); \
-        }
- */
 
 #define AddUnit(Type)\
                     lib->add(chaiscript::fun([]() -> unit_value { static Type F; return F; }), #Type); \

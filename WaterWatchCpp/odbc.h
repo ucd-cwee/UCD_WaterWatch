@@ -43,6 +43,7 @@ public:
     virtual cweeStr GetDatabaseName(nanodbcConnection con, cweeStr tableName) = 0;
     virtual bool TableExists(nanodbcConnection con, cweeStr tableName) = 0;
     virtual void InsertRow(nanodbcConnection const& con, cweeStr const& tableFullPath, const cweeThreadedList<cweeStr>& values) = 0;
+    virtual void InsertRows(nanodbcConnection const& con, cweeStr const& tableFullPath, const cweeThreadedList<cweeThreadedList<cweeStr>>& values) = 0;
 };
 /*!
 geocoding and mapping services

@@ -72,7 +72,7 @@ namespace epanet {
     static constexpr auto   EOFMARK = 0x1A; // Use 0x04 for UNIX systems
     static constexpr auto   MAXTITLE = 3;       // Max. # title lines
     static constexpr auto   TITLELEN = 79;      // Max. # characters in a title line
-    static constexpr auto   MAXID = 31;       // Max. # characters in ID name (this is very short! Want to fix, but would break current co-op with existing EPAnet files)
+    static constexpr auto   MAXID = 51;//31;       // Max. # characters in ID name (this is very short! Want to fix, but would break current co-op with existing EPAnet files)
     static constexpr auto   MAXMSG = 255;      // Max. # characters in message text
     static constexpr auto   MAXLINE = 1024;     // Max. # characters read from input line
     static constexpr auto   MAXFNAME = 259;      // Max. # characters in file name
