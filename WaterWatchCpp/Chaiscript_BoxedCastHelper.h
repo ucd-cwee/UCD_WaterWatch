@@ -307,7 +307,9 @@ namespace chaiscript {
           /// assert(i == 5);
           /// \endcode
         template<typename Type>
-        static decltype(auto) cast(const Boxed_Value& bv, const Type_Conversions_State* t_conversions) { return detail::Cast_Helper::cast<Type>(bv, t_conversions); };
+        static decltype(auto) cast(const Boxed_Value& bv, const Type_Conversions_State* t_conversions) { 
+            return detail::Cast_Helper<Type>::cast(bv, t_conversions);
+        };
     };
 
 }; // namespace chaiscript

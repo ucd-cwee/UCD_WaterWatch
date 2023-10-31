@@ -71,7 +71,7 @@ enum jobType {
 
 template <typename F = void()> class cweeFunction {
 public:
-	typedef typename F Type;
+	typedef F Type;
 	typedef typename std::function<F>::result_type ResultType;
 	typedef typename function_traits<std::function<F>>::arguments Arguments;
 
@@ -86,9 +86,9 @@ public:
 	template <typename... Args>
 	cweeFunction(const std::function<F>& function, Args... Fargs) noexcept
 		: _function(function)
-		, Result()
-		, IsFinished(false)
 		, _data(GetData(Fargs...))
+		, Result()
+		, IsFinished(false)		
 		//, InvokeLock(0)
 	{};
 
@@ -113,7 +113,7 @@ private:
 
 		std::vector<cweeAny> out;
 		AddData(out, Fargs...);
-		return std::move(out);
+		return out;
 	};
 
 public:
@@ -230,10 +230,10 @@ private:
 				DoJob_Internal_16();
 			}
 
-			if (GetResult().IsTypeOf<cweeJob>()) {
+			if (GetResult().template IsTypeOf<cweeJob>()) {
 				AUTO r = GetResult();
 				cweeAnyAutoCast auto_r = r.cast();
-				auto_r.operator cweeJob& ();
+				//auto_r.operator cweeJob& ();
 
 				cweeJob& j = GetResult().cast();
 				if (iterationNumber < 20) {
@@ -310,10 +310,10 @@ private:
 				DoJob_Internal_16();
 			}
 
-			if (GetResult().IsTypeOf<cweeJob>()) {
+			if (GetResult().template IsTypeOf<cweeJob>()) {
 				AUTO r = GetResult();
 				cweeAnyAutoCast auto_r = r.cast();
-				auto_r.operator cweeJob& ();
+				// auto_r.operator cweeJob& ();
 
 				cweeJob& j = GetResult().cast();
 				if (iterationNumber < 20) {
@@ -630,6 +630,11 @@ private:
 private:
 	std::function<F>			_function;
 	std::vector<cweeAny>		_data;
+public:
+	mutable cweeAny				Result;
+	mutable std::atomic<bool>	IsFinished;
+
+private:
 	void						SetAsFinished() {
 		IsFinished.store(true);
 	};
@@ -647,11 +652,6 @@ private:
 	void						InvokeUnlock() const {
 		//InvokeLock.Decrement();
 	};
-
-public:
-	mutable cweeAny				Result;
-	mutable std::atomic<bool>	IsFinished;
-
 };
 class cweeAction_Interface {
 public:
@@ -685,7 +685,7 @@ public:
 		return boost::typeindex::type_id<cweeFunction<ValueType>>().type_info().name();
 	};
 	virtual cweeSharedPtr<cweeAction_Interface> clone() const noexcept final {
-		return make_cwee_shared<cweeAction_Impl<ValueType>>(data).CastReference<cweeAction_Interface>();
+		return make_cwee_shared<cweeAction_Impl<ValueType>>(data).template CastReference<cweeAction_Interface>();
 	};
 	virtual cweeAny& Invoke(int iterationNumber = 0) noexcept final {
 		return data.Invoke(iterationNumber);
@@ -745,8 +745,8 @@ public: // queries
 	const boost::typeindex::type_info& Type() const noexcept { cweeSharedPtr<cweeAction_Interface> c = content; return c ? c->type() : boost::typeindex::type_id<void>().type_info(); };
 
 private:
-	template <class ValueType> static cweeSharedPtr<cweeAction_Interface> ToPtr(const cweeFunction<ValueType>& rhs) noexcept { return make_cwee_shared<cweeAction_Impl<ValueType>>(rhs).CastReference<cweeAction_Interface>(); };
-	template <class ValueType> static cweeSharedPtr<cweeAction_Interface> ToPtr(cweeFunction<ValueType>&& rhs) noexcept { return make_cwee_shared<cweeAction_Impl<ValueType>>(std::forward<cweeFunction<ValueType>>(rhs)).CastReference<cweeAction_Interface>(); };
+	template <class ValueType> static cweeSharedPtr<cweeAction_Interface> ToPtr(const cweeFunction<ValueType>& rhs) noexcept { return make_cwee_shared<cweeAction_Impl<ValueType>>(rhs).template CastReference<cweeAction_Interface>(); };
+	template <class ValueType> static cweeSharedPtr<cweeAction_Interface> ToPtr(cweeFunction<ValueType>&& rhs) noexcept { return make_cwee_shared<cweeAction_Impl<ValueType>>(std::forward<cweeFunction<ValueType>>(rhs)).template CastReference<cweeAction_Interface>(); };
 	static cweeSharedPtr<cweeAction_Interface> BasePtr() noexcept { return ToPtr(cweeFunction<void()>()); };
 
 public:
@@ -894,7 +894,7 @@ public:
 
 		template < typename T, typename... Args, typename = std::enable_if_t<!std::is_same_v<cweeJob_Impl, std::decay_t<T>>>>
 		cweeJob ContinueWith(T function, Args... Fargs) {
-			return ContinueWith(cweeJob_Impl(function, Fargs...));
+			return ContinueWith(cweeJob(cweeJob_Impl(function, Fargs...)));
 		};
 
 		const char* FunctionName() const {
@@ -921,7 +921,7 @@ public:
 
 		return toReturn;
 	};
-	template <typename T> static cweeAction Finished(const T& returnMe) {
+	template <typename T> static cweeJob Finished(const T& returnMe) {
 		AUTO toReturn = cweeJob();
 
 		AUTO ptrp = toReturn.GetImpl();
@@ -1071,9 +1071,9 @@ public:
 		public:
 			class cweeCpuThreadData {
 			private:
+				cweeSysInterlockedInteger														m_Waiting;
 				cweeSysInterlockedInteger														m_Terminate;
 				cweeSysSignal																	m_Signal;
-				cweeSysInterlockedInteger														m_Waiting;
 				cweeSysInterlockedInteger														m_Running;
 				cweeSysInterlockedInteger														m_Working;
 				cweeUnpooledInterlocked<cweeUnion<cweeSysInterlockedPointer<void>>>				m_Content;
@@ -1184,7 +1184,8 @@ public:
 
 		public:
 			cweeCpuThread() : m_Data(nullptr) {};
-			explicit cweeCpuThread(cweeSharedPtr<jobListType> const& p_sharedJobs, cweeSharedPtr<cweeSysInterlockedInteger> numActive) : m_Data(make_cwee_shared<cweeCpuThreadData>(p_sharedJobs, numActive)) {};
+			explicit cweeCpuThread(cweeSharedPtr<jobListType> const& p_sharedJobs, cweeSharedPtr<cweeSysInterlockedInteger> numActive) : 
+				m_Data(make_cwee_shared<cweeCpuThreadData>(p_sharedJobs, numActive)) {};
 			cweeCpuThread(cweeCpuThread const& a) : m_Data(a.m_Data) {};
 			cweeCpuThread(cweeCpuThread&& a) : m_Data(a.m_Data) { a.m_Data = nullptr; };
 			cweeCpuThread& operator=(cweeCpuThread const& a) { m_Data = a.m_Data; return *this; };
@@ -1289,11 +1290,12 @@ public:
 		};
 
 	public:
-		cweeSysInterlockedInteger				m_numJobs;
+		const int								m_numLogicalCpuCores;
 		cweeSharedPtr<jobListType>				m_Jobs;
 		cweeSharedPtr<cweeSysInterlockedInteger> m_NumActiveThreads;
-		const int								m_numLogicalCpuCores;
 		cweeThreadedList<cweeCpuThread>			m_Threads;
+		cweeSysInterlockedInteger				m_numJobs;
+
 	};
 
 private:

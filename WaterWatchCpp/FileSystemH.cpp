@@ -29,7 +29,6 @@ to maintain a single distribution point for the source code.
 #define CURL_STATICLIB
 #include "../CURL_STATIC_LIB/CURL_STATIC_LIB.h"
 
-
 class FileSystemLocal : public FileSystem {
 private:
 	static constexpr long								MAX_ZIPPED_FILE_NAME = 2048;
@@ -937,11 +936,13 @@ cweeList<cweeStr> FileSystemLocal::listFilesWithExtension(const char* directory,
 }
 
 /* Does not work with sandbox environments like UWP. Only works in Win32 environment. */
-void		FileSystemLocal::saveWindowsPassword(cweeStr const& account, cweeStr const& username, cweeStr  const& password) {
-	cweeStr Init = account;		char* acc = (char*)Init.c_str();
-	cweeStr Init2 = username;	char* user = (char*)Init2.c_str();
-	cweeStr Init3 = password;	char* pass = (char*)Init3.c_str();
+void		FileSystemLocal::saveWindowsPassword(cweeStr const& account, cweeStr const& username, cweeStr  const& password) {	
+	AUTO Init = cweeStr(account);		char* acc = (char*)Init.c_str();
+	AUTO Init2 = cweeStr(username);		char* user = (char*)Init2.c_str();
+	AUTO Init3 = cweeStr(password);		char* pass = (char*)Init3.c_str();
+
 #ifdef CredWrite
+#ifdef CREDENTIAL
 	DWORD cbCreds = 1 + strlen(pass);
 	CREDENTIAL cred = { 0 };
 	cred.Type = CRED_TYPE_GENERIC;
@@ -952,6 +953,7 @@ void		FileSystemLocal::saveWindowsPassword(cweeStr const& account, cweeStr const
 	cred.UserName = user;
 	BOOL ok = ::CredWrite((&cred), 0);
 #endif
+#endif
 };
 /* Does not work with sandbox environments like UWP. Only works in Win32 environment. */
 cweeStr		FileSystemLocal::retrieveWindowsPassword(cweeStr const& account, cweeStr const& username) {
@@ -960,6 +962,7 @@ cweeStr		FileSystemLocal::retrieveWindowsPassword(cweeStr const& account, cweeSt
 	cweeStr Init2 = username;
 	char* user = (char*)Init2.c_str();
 #ifdef CredRead
+#ifdef CREDENTIAL
 	PCREDENTIAL pcred;
 	BOOL ok = ::CredRead(acc, CRED_TYPE_GENERIC, 0, &pcred);
 	if (!ok) {
@@ -970,6 +973,7 @@ cweeStr		FileSystemLocal::retrieveWindowsPassword(cweeStr const& account, cweeSt
 		::CredFree(pcred); // free memory				
 		return out;
 	}
+#endif
 #endif
 	return "";
 };
@@ -1104,7 +1108,7 @@ std::map<int, cweeThreadedList<std::pair<u64, float>>> FileSystemLocal::readSCAD
 			if (parser.getNumVars() >= 3) {
 				tagid[n] = (int)parser[0];
 				for (j = 0; j <= 27; j++) {
-					t[j] = parser[1][j];
+					t.operator [](j) = parser[1][j];
 				}
 				datetime[n] = (u64)cweeTime::timeFromString(t);
 				value[n] = (float)parser[2];

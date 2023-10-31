@@ -32,7 +32,7 @@ namespace chaiscript {
         template<typename T, typename _ = void>
         struct is_container {
             static bool const value = false; 
-            using type = typename Unknown_Type; 
+            using type = Unknown_Type; 
         };
 
         template<typename... Ts>
@@ -58,7 +58,11 @@ namespace chaiscript {
 
         template<typename T>
         struct Contained_Type {
-            using type = typename is_container<typename Bare_Type<T>::type>::type; 
+            using bare_type = typename chaiscript::detail::Bare_Type<T>::type;
+            using container_inner_type = typename chaiscript::detail::is_container<bare_type>::type;
+            using type = container_inner_type;
+
+            // using type = typename is_container<typename Bare_Type<T>::type>::type;
         };
     } // namespace detail
 
@@ -255,7 +259,7 @@ namespace chaiscript {
     /// chaiscript::Type_Info ti = chaiscript::user_type(i);
     /// \endcode
     template<typename T>
-    constexpr Type_Info user_type(const T& /*t*/) noexcept {
+    constexpr chaiscript::Type_Info user_type(const T& /*t*/) noexcept {
         return detail::Get_Type_Info<T>::get();
     }
 
@@ -268,7 +272,7 @@ namespace chaiscript {
     /// chaiscript::Type_Info ti = chaiscript::user_type<int>();
     /// \endcode
     template<typename T>
-    constexpr Type_Info user_type() noexcept {
+    constexpr chaiscript::Type_Info user_type() noexcept {
         return detail::Get_Type_Info<T>::get();
     }
 

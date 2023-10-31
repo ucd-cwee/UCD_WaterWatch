@@ -1795,69 +1795,31 @@ const static std::map<Optimization_Comparison, const char*> StringMap_Optimizati
 	{Optimization_Comparison::LessThanOrEqual, "<="}
 };
 
-template<typename enumType>
+
+template <typename enumType>
 const static std::map<enumType, const char*>& StaticStringMap() {
-	throw std::runtime_error("User must provide an explicit (full) template specialization.");
-};
-template<>
-const static std::map<conversion_t, const char*>& StaticStringMap< conversion_t >() {
-	return StringMap_conversion_t;
+	return StaticStringMap(typenames::identity<enumType>());
 };
 
-template<>
-const static std::map<controlGenerationStatus, const char*>& StaticStringMap< controlGenerationStatus >() {
-	return StringMap_controlGenerationStatus;
-};
-template<>
-const static std::map<AssetValueControlType, const char*>& StaticStringMap< AssetValueControlType >() {
-	return StringMap_AssetValueControlType;
-};
-template<>
-const static std::map<ControlGenerationMethod, const char*>& StaticStringMap< ControlGenerationMethod >() {
-	return StringMap_ControlGenerationMethod;
-};
-template<>
-const static std::map<UserInput_InputType, const char*>& StaticStringMap< UserInput_InputType >() {
-	return StringMap_UserInput_InputType;
-};
-template<>
-const static std::map<TrainedModel_ErrorMetric, const char*>& StaticStringMap< TrainedModel_ErrorMetric >() {
-	return StringMap_TrainedModel_ErrorMetric;
-};
-template<>
-const static std::map<TrainedModel_Modifier, const char*>& StaticStringMap< TrainedModel_Modifier >() {
-	return StringMap_TrainedModel_Modifier;
-};
-template<>
-const static std::map<Optimization_SetPoint, const char*>& StaticStringMap< Optimization_SetPoint >() {
-	return StringMap_Optimization_SetPoint;
-};
-template<>
-const static std::map<Optimization_Value, const char*>& StaticStringMap< Optimization_Value >() {
-	return StringMap_Optimization_Value;
-};
-template<>
-const static std::map<Optimization_Aggregation, const char*>& StaticStringMap< Optimization_Aggregation >() {
-	return StringMap_Optimization_Aggregation;
-};
-template<>
-const static std::map<Optimization_Comparison, const char*>& StaticStringMap< Optimization_Comparison >() {
-	return StringMap_Optimization_Comparison;
-};
-template<>
-const static std::map<asset_t, const char*>& StaticStringMap< asset_t >() {
-	return StringMap_asset_t;
-};
-template<>
-const static std::map<value_t, const char*>& StaticStringMap< value_t >() {
-	return StringMap_value_t;
-};
-template<>
-const static std::map<measurement_t, const char*>& StaticStringMap< measurement_t >() {
-	return StringMap_measurement_t;
-};
+template <typename enumType>
+const static std::map<enumType, const char*>& StaticStringMap(typenames::identity<enumType>) { throw std::runtime_error("User must provide an explicit (full) template specialization."); };
+
+#define StaticStringMapDecl(enumType) const static std::map<enumType, const char*>& StaticStringMap(typenames::identity<enumType>) { return StringMap_##enumType; }
+StaticStringMapDecl(conversion_t);
+StaticStringMapDecl(controlGenerationStatus);
+StaticStringMapDecl(AssetValueControlType);
+StaticStringMapDecl(ControlGenerationMethod);
+StaticStringMapDecl(UserInput_InputType);
+StaticStringMapDecl(TrainedModel_ErrorMetric);
+StaticStringMapDecl(TrainedModel_Modifier);
+StaticStringMapDecl(Optimization_SetPoint);
+StaticStringMapDecl(Optimization_Aggregation);
+StaticStringMapDecl(Optimization_Comparison);
+StaticStringMapDecl(asset_t);
+StaticStringMapDecl(value_t);
+StaticStringMapDecl(measurement_t);
+
 template<typename enumType>
-
 static cweeStr GetString(const enumType& object) {
 	return StaticStringMap<enumType>().at(object);
 };

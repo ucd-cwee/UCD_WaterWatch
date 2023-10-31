@@ -38,7 +38,8 @@ template<class T> struct extract_type<const cweeSharedPtr<T>*> { using type = ty
 
 class cweeAnyData {
 public:
-	cweeAnyData(cweeSharedPtr<void> const& t_ptr, const boost::typeindex::type_info& t_type, bool t_const) noexcept : m_ptr(t_ptr), m_type(t_type), m_const(t_const) {};
+	cweeAnyData(cweeSharedPtr<void> const& t_ptr, const boost::typeindex::type_info& t_type, bool t_const) noexcept : 
+		m_ptr(t_ptr), m_type(t_type), m_const(t_const) {};
 	virtual ~cweeAnyData() noexcept {};
 
 public:
@@ -49,9 +50,9 @@ public:
 	};
 
 public:
-	const bool							m_const;
-	const boost::typeindex::type_info& m_type;
 	cweeSharedPtr<void>					m_ptr;
+	const boost::typeindex::type_info& m_type;
+	const bool							m_const;
 
 };
 template<typename T> class cweeAnyData_Impl final : public cweeAnyData {
@@ -72,10 +73,10 @@ public:
 	struct Object_Data {
 		template <template<class> class H, class S, typename = std::enable_if_t<std::is_same_v<H<S>, cweeSharedPtr<S>>>> static AUTO get(const H<S>* obj) { return get(*obj); };
 		template <template<class> class H, class S, typename = std::enable_if_t<std::is_same_v<H<S>, cweeSharedPtr<S>>>> static AUTO get(const H<S>& obj) {
-			return cweeSharedPtrWithSentinel<cweeAnyData_Impl<S>>(new cweeAnyData_Impl<S>(obj)).CastReference<cweeAnyData>();
+			return cweeSharedPtrWithSentinel<cweeAnyData_Impl<S>>(new cweeAnyData_Impl<S>(obj)).template CastReference<cweeAnyData>();
 		};
 		template <template<class> class H, class S, typename = std::enable_if_t<std::is_same_v<H<S>, cweeSharedPtr<S>>>> static AUTO get(H<S>&& obj) {
-			return cweeSharedPtrWithSentinel<cweeAnyData_Impl<S>>(new cweeAnyData_Impl<S>(std::forward<H<S>>(obj))).CastReference<cweeAnyData>();
+			return cweeSharedPtrWithSentinel<cweeAnyData_Impl<S>>(new cweeAnyData_Impl<S>(std::forward<H<S>>(obj))).template CastReference<cweeAnyData>();
 		};
 		template<typename T, typename = std::enable_if_t<!std::is_same_v<cweeAnyAutoCast, T>>> static AUTO get(T* t) { cweeSharedPtr<T> sp = make_cwee_shared<T>(t); return get(sp); };
 		template<typename T, typename = std::enable_if_t<!std::is_same_v<cweeAnyAutoCast, T>>> static AUTO get(const T* t) { return get(*t); };
@@ -222,7 +223,6 @@ public:
 
 		template<typename VType> static decltype(auto) DoCast_Unshared(cweeAny* p) noexcept {
 			constexpr bool is_ptr = std::is_pointer_v<VType>;
-			constexpr bool is_ref = std::is_reference_v<VType>;
 
 			typedef typename std::remove_reference<typename std::remove_pointer<VType>::type>::type desiredT;
 			cweeSharedPtrWithSentinel<cweeAnyData> m = p->container;
@@ -249,7 +249,7 @@ public:
 
 	public:
 		template<typename T> static decltype(auto) DoCast(cweeAny* p) noexcept {
-			typedef is_cweeSharedPtr_class<T>::type isShared;
+			typedef typename is_cweeSharedPtr_class<T>::type isShared;
 			constexpr bool is_cwee_shared_ptr = isShared::value;
 			constexpr bool is_ptr = std::is_pointer_v<T>;
 			constexpr bool is_ref = std::is_reference_v<T>;
@@ -333,23 +333,6 @@ public:
 							return cweeJob([](float R){ return R + 1; }, 100.0f).Invoke().cast(); // without the parentCopy, the cweeAny may go out of scope before the cweeAnyAutoCast and will caush an exception.
 						}
 						*/
-
-	void TESTING()
-	{
-		cweeAnyAutoCast caster = cweeAny().cast();
-		cweeAny any1 = caster;
-		cweeAny& any2 = caster;
-		cweeAny* any3 = caster;
-
-		cweeStr a = caster;
-		cweeStr& b = caster;
-		cweeStr* c = caster;
-
-		cweeSharedPtr<cweeStr> p1 = caster;
-		cweeSharedPtr<cweeAny> p2 = caster;
-		cweeSharedPtr<cweeAny>& p3 = caster;
-		cweeSharedPtr<cweeAny>* p4 = caster;
-	};
 };
 INLINE cweeAnyAutoCast cweeAny::cast() const noexcept { return cweeAnyAutoCast(this); };
 INLINE AUTO cweeAny::Object_Data::get(const cweeAnyAutoCast& obj) { cweeAny* t = const_cast<cweeAny*>(obj.parent); cweeSharedPtrWithSentinel<cweeAnyData> out; if (t) { out = t->container; } return out; };

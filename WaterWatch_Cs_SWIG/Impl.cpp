@@ -61,7 +61,7 @@ SharedMatrix::SharedMatrix() : index_p(external_data->CreateMatrix()), ptr(nullp
 SharedMatrix::SharedMatrix(int index, bool deleteDataWhenScopeEnds) : index_p(index), ptr(nullptr) {
 	// check that this index is valid
 	if (!external_data->CheckMatrix(index_p)) {
-		throw(std::exception(""));
+		throw(std::runtime_error(""));
 	}
 
 	if (deleteDataWhenScopeEnds) {
@@ -102,10 +102,8 @@ std::vector<double> SharedMatrix::GetTimeSeries(double Left, double Top, double 
 		out.resize(numColumns * numRows);
 
 		u64
-			col = Left,
 			columnStep = (Right - Left) / numColumns,
-			rowStep = (Top - Bottom) / numRows,
-			row = Top;
+			rowStep = (Top - Bottom) / numRows;
 
 		cweeInterpolatedMatrix<float> tempMatrix;
 		
@@ -264,10 +262,8 @@ std::vector<double> SharedMatrix::GetTimeSeries(double Left, double Top, double 
 		cweeUnion<double, double>
 			coords(Left, Top);
 		u64
-			col = Left,
 			columnStep = (Right - Left) / numColumns,
-			rowStep = (Top - Bottom) / numRows,
-			row = Top;
+			rowStep = (Top - Bottom) / numRows;
 		int
 			R,
 			C;
@@ -431,7 +427,17 @@ int     SharedString::Index() { return index_p; };
 class ScriptingNodeImpl
 {
 public:
-	ScriptingNodeImpl() : mutex(), startLine(0), startColumn(0), endLine(0), endColumn(0), text(""), type(WaterWatchEnums::ScriptNodeType::Noop), typeHint(""), depth(0) {};
+	ScriptingNodeImpl() : 
+		mutex(), 
+		startLine(0), 
+		startColumn(0),
+		endLine(0), 
+		endColumn(0), 
+		text(""), 
+		type(WaterWatchEnums::ScriptNodeType::Noop), 
+		typeHint(""), 
+		depth(0) 
+	{};
 	~ScriptingNodeImpl() {};
 
 	std::string			text_get() const { 
@@ -501,12 +507,11 @@ public:
 
 private:
 	mutable cweeSysMutex        mutex;
-
-	std::string			text;
 	int			        startLine;
 	int			        startColumn;
 	int			        endLine;
 	int			        endColumn;
+	std::string			text;
 	WaterWatchEnums::ScriptNodeType	    type;
 	std::string			typeHint;
 	int			        depth;
@@ -651,7 +656,7 @@ MapLayer_Interop ScriptObject::Cast_MapLayer() {
 	MapLayer_Interop out2;
 	AUTO val2 = chaiscript::boxed_cast<chaiscript::UI_MapLayer*>(*boxed);
 	if (val2) {
-		for (int i = 0; i < val2->Children.size(); i++) {
+		for (size_t i = 0; i < val2->Children.size(); i++) {
 			auto& bv = val2->Children[i];
 			if (bv.is_type(chaiscript::user_type<chaiscript::UI_MapIcon>())) {
 				AUTO val = chaiscript::boxed_cast<chaiscript::UI_MapIcon*>(bv);
@@ -729,22 +734,22 @@ Awaiter    ScriptEngine::DoScriptAsync(std::string command) {
 						STR = cweeStr("Error: ") + chaiscript::boxed_cast<cweeStr>(str);
 					}
 				}
-				catch (chaiscript::exception::eval_error e) {
+				catch (chaiscript::exception::eval_error const& e) {
 					STR = (cweeStr("Error: ") + cweeStr(e.pretty_print()));
 				}
-				catch (chaiscript::exception::dispatch_error e) {
+				catch (chaiscript::exception::dispatch_error const& e) {
 					STR = (cweeStr("Error: ") + cweeStr(e.what()));
 				}
-				catch (chaiscript::exception::arity_error e) {
+				catch (chaiscript::exception::arity_error const& e) {
 					STR = (cweeStr("Error: ") + cweeStr(e.what()));
 				}
-				catch (chaiscript::exception::arithmetic_error e) {
+				catch (chaiscript::exception::arithmetic_error const& e) {
 					STR = (cweeStr("Error: ") + cweeStr(e.what()));
 				}
-				catch (std::runtime_error e) {
+				catch (std::runtime_error const& e) {
 					STR = (cweeStr("Error: ") + cweeStr(e.what()));
 				}
-				catch (std::exception e) {
+				catch (std::exception const& e) {
 					STR = (cweeStr("Error: ") + cweeStr(e.what()));
 				}
 				catch (...) {
@@ -752,22 +757,22 @@ Awaiter    ScriptEngine::DoScriptAsync(std::string command) {
 				}
 			}
 		}
-		catch (chaiscript::exception::eval_error e) {
+		catch (chaiscript::exception::eval_error const& e) {
 			STR = (cweeStr("Error: ") + cweeStr(e.pretty_print()));
 		}
-		catch (chaiscript::exception::dispatch_error e) {
+		catch (chaiscript::exception::dispatch_error const& e) {
 			STR = (cweeStr("Error: ") + cweeStr(e.what()));
 		}
-		catch (chaiscript::exception::arity_error e) {
+		catch (chaiscript::exception::arity_error const& e) {
 			STR = (cweeStr("Error: ") + cweeStr(e.what()));
 		}
-		catch (chaiscript::exception::arithmetic_error e) {
+		catch (chaiscript::exception::arithmetic_error const& e) {
 			STR = (cweeStr("Error: ") + cweeStr(e.what()));
 		}
-		catch (std::runtime_error e) {
+		catch (std::runtime_error const& e) {
 			STR = (cweeStr("Error: ") + cweeStr(e.what()));
 		}
-		catch (std::exception e) {
+		catch (std::exception const& e) {
 			STR = (cweeStr("Error: ") + cweeStr(e.what()));
 		}
 		catch (...) {}
@@ -849,22 +854,22 @@ std::string    ScriptEngine::DoScript(std::string command) {
 			return STR.c_str();
 		}
 	}
-	catch (chaiscript::exception::eval_error e) {
+	catch (chaiscript::exception::eval_error const& e) {
 		STR = (cweeStr("Error: ") + cweeStr(e.pretty_print()));
 	}
-	catch (chaiscript::exception::dispatch_error e) {
+	catch (chaiscript::exception::dispatch_error const& e) {
 		STR = (cweeStr("Error: ") + cweeStr(e.pretty_print()));
 	}
-	catch (chaiscript::exception::arity_error e) {
+	catch (chaiscript::exception::arity_error const& e) {
 		STR = (cweeStr("Error: ") + cweeStr(e.what()));
 	}
-	catch (chaiscript::exception::arithmetic_error e) {
+	catch (chaiscript::exception::arithmetic_error const& e) {
 		STR = (cweeStr("Error: ") + cweeStr(e.what()));
 	}
-	catch (std::runtime_error e) {
+	catch (std::runtime_error const& e) {
 		STR = (cweeStr("Error: ") + cweeStr(e.what()));
 	}
-	catch (std::exception e) {
+	catch (std::exception const& e) {
 		STR = (cweeStr("Error: ") + cweeStr(e.what()));
 	}
 	catch (...) {}
@@ -1172,22 +1177,22 @@ std::vector< ScriptingNode > ScriptEngine::PreParseScript(std::string command) {
 							STR = cweeStr("Error: ") + chaiscript::boxed_cast<chaiscript::exception::eval_error>(str).pretty_print().c_str();
 						}
 					}
-					catch (chaiscript::exception::eval_error e) {
+					catch (chaiscript::exception::eval_error const& e) {
 						STR = (cweeStr("Error: ") + cweeStr(e.pretty_print()));
 					}
-					catch (chaiscript::exception::dispatch_error e) {
+					catch (chaiscript::exception::dispatch_error const& e) {
 						STR = (cweeStr("Error: ") + cweeStr(e.what()));
 					}
-					catch (chaiscript::exception::arity_error e) {
+					catch (chaiscript::exception::arity_error const& e) {
 						STR = (cweeStr("Error: ") + cweeStr(e.what()));
 					}
-					catch (chaiscript::exception::arithmetic_error e) {
+					catch (chaiscript::exception::arithmetic_error const& e) {
 						STR = (cweeStr("Error: ") + cweeStr(e.what()));
 					}
-					catch (std::runtime_error e) {
+					catch (std::runtime_error const& e) {
 						STR = (cweeStr("Error: ") + cweeStr(e.what()));
 					}
-					catch (std::exception e) {
+					catch (std::exception const& e) {
 						STR = (cweeStr("Error: ") + cweeStr(e.what()));
 					}
 					catch (...) {
@@ -1195,22 +1200,22 @@ std::vector< ScriptingNode > ScriptEngine::PreParseScript(std::string command) {
 					}
 				}
 			}
-			catch (chaiscript::exception::eval_error e) {
+			catch (chaiscript::exception::eval_error const& e) {
 				STR = (cweeStr("Error: ") + cweeStr(e.pretty_print()));
 			}
-			catch (chaiscript::exception::dispatch_error e) {
+			catch (chaiscript::exception::dispatch_error const& e) {
 				STR = (cweeStr("Error: ") + cweeStr(e.what()));
 			}
-			catch (chaiscript::exception::arity_error e) {
+			catch (chaiscript::exception::arity_error const& e) {
 				STR = (cweeStr("Error: ") + cweeStr(e.what()));
 			}
-			catch (chaiscript::exception::arithmetic_error e) {
+			catch (chaiscript::exception::arithmetic_error const& e) {
 				STR = (cweeStr("Error: ") + cweeStr(e.what()));
 			}
-			catch (std::runtime_error e) {
+			catch (std::runtime_error const& e) {
 				STR = (cweeStr("Error: ") + cweeStr(e.what()));
 			}
-			catch (std::exception e) {
+			catch (std::exception const& e) {
 				STR = (cweeStr("Error: ") + cweeStr(e.what()));
 			}
 			catch (...) {
@@ -1256,22 +1261,22 @@ std::vector< ScriptingNode > ScriptEngine::PreParseScript(std::string command) {
 						STR = cweeStr("Error: ") + chaiscript::boxed_cast<chaiscript::exception::eval_error>(str).pretty_print().c_str();
 					}
 				}
-				catch (chaiscript::exception::eval_error e) {
+				catch (chaiscript::exception::eval_error const& e) {
 					STR = (cweeStr("Error: ") + cweeStr(e.pretty_print()));
 				}
-				catch (chaiscript::exception::dispatch_error e) {
+				catch (chaiscript::exception::dispatch_error const& e) {
 					STR = (cweeStr("Error: ") + cweeStr(e.what()));
 				}
-				catch (chaiscript::exception::arity_error e) {
+				catch (chaiscript::exception::arity_error const& e) {
 					STR = (cweeStr("Error: ") + cweeStr(e.what()));
 				}
-				catch (chaiscript::exception::arithmetic_error e) {
+				catch (chaiscript::exception::arithmetic_error const& e) {
 					STR = (cweeStr("Error: ") + cweeStr(e.what()));
 				}
-				catch (std::runtime_error e) {
+				catch (std::runtime_error const& e) {
 					STR = (cweeStr("Error: ") + cweeStr(e.what()));
 				}
-				catch (std::exception e) {
+				catch (std::exception const& e) {
 					STR = (cweeStr("Error: ") + cweeStr(e.what()));
 				}
 				catch (...) {
@@ -1279,22 +1284,22 @@ std::vector< ScriptingNode > ScriptEngine::PreParseScript(std::string command) {
 				}
 			}
 		}
-		catch (chaiscript::exception::eval_error e) {
+		catch (chaiscript::exception::eval_error const& e) {
 			STR = (cweeStr("Error: ") + cweeStr(e.pretty_print()));
 		}
-		catch (chaiscript::exception::dispatch_error e) {
+		catch (chaiscript::exception::dispatch_error const& e) {
 			STR = (cweeStr("Error: ") + cweeStr(e.what()));
 		}
-		catch (chaiscript::exception::arity_error e) {
+		catch (chaiscript::exception::arity_error const& e) {
 			STR = (cweeStr("Error: ") + cweeStr(e.what()));
 		}
-		catch (chaiscript::exception::arithmetic_error e) {
+		catch (chaiscript::exception::arithmetic_error const& e) {
 			STR = (cweeStr("Error: ") + cweeStr(e.what()));
 		}
-		catch (std::runtime_error e) {
+		catch (std::runtime_error const& e) {
 			STR = (cweeStr("Error: ") + cweeStr(e.what()));
 		}
-		catch (std::exception e) {
+		catch (std::exception const& e) {
 			STR = (cweeStr("Error: ") + cweeStr(e.what()));
 		}
 		catch (...) {
@@ -1338,22 +1343,22 @@ std::vector< ScriptingNode > ScriptEngine::PreParseScript(std::string command) {
 					STR = cweeStr("Error: ") + chaiscript::boxed_cast<chaiscript::exception::eval_error>(str).pretty_print().c_str();
 				}
 			}
-			catch (chaiscript::exception::eval_error e) {
+			catch (chaiscript::exception::eval_error const& e) {
 				STR = (cweeStr("Error: ") + cweeStr(e.pretty_print()));
 			}
-			catch (chaiscript::exception::dispatch_error e) {
+			catch (chaiscript::exception::dispatch_error const& e) {
 				STR = (cweeStr("Error: ") + cweeStr(e.what()));
 			}
-			catch (chaiscript::exception::arity_error e) {
+			catch (chaiscript::exception::arity_error const& e) {
 				STR = (cweeStr("Error: ") + cweeStr(e.what()));
 			}
-			catch (chaiscript::exception::arithmetic_error e) {
+			catch (chaiscript::exception::arithmetic_error const& e) {
 				STR = (cweeStr("Error: ") + cweeStr(e.what()));
 			}
-			catch (std::runtime_error e) {
+			catch (std::runtime_error const& e) {
 				STR = (cweeStr("Error: ") + cweeStr(e.what()));
 			}
-			catch (std::exception e) {
+			catch (std::exception const& e) {
 				STR = (cweeStr("Error: ") + cweeStr(e.what()));
 			}
 			catch (...) {
@@ -1361,22 +1366,22 @@ std::vector< ScriptingNode > ScriptEngine::PreParseScript(std::string command) {
 			}
 		}
 	}
-	catch (chaiscript::exception::eval_error e) {
+	catch (chaiscript::exception::eval_error const& e) {
 		STR = (cweeStr("Error: ") + cweeStr(e.pretty_print()));
 	}
-	catch (chaiscript::exception::dispatch_error e) {
+	catch (chaiscript::exception::dispatch_error const& e) {
 		STR = (cweeStr("Error: ") + cweeStr(e.what()));
 	}
-	catch (chaiscript::exception::arity_error e) {
+	catch (chaiscript::exception::arity_error const& e) {
 		STR = (cweeStr("Error: ") + cweeStr(e.what()));
 	}
-	catch (chaiscript::exception::arithmetic_error e) {
+	catch (chaiscript::exception::arithmetic_error const& e) {
 		STR = (cweeStr("Error: ") + cweeStr(e.what()));
 	}
-	catch (std::runtime_error e) {
+	catch (std::runtime_error const& e) {
 		STR = (cweeStr("Error: ") + cweeStr(e.what()));
 	}
-	catch (std::exception e) {
+	catch (std::exception const& e) {
 		STR = (cweeStr("Error: ") + cweeStr(e.what()));
 	}
 	catch (...) {
@@ -1807,8 +1812,8 @@ std::vector<float> WaterWatch::PredictNext(std::vector<double> const& data, int 
 	
 	cweeList<float> labels = data;
 	cweeList<cweeList<float>> features; {
-		features.Append(data);
-		features.Append(data);
+		features.Append((cweeList<float>)data);
+		features.Append((cweeList<float>)data);
 	}
 
 	std::pair<vec2, vec2> fit;
@@ -1877,7 +1882,7 @@ std::string WaterWatch::DoScriptImmediately(std::string command) {
 			}
 		}
 	}
-	catch (std::runtime_error e) {
+	catch (std::runtime_error const& e) {
 		return (cweeStr("Error: ") + cweeStr(e.what())).c_str();
 	}
 	catch (...) {
@@ -1908,7 +1913,7 @@ Awaiter WaterWatch::DoScript(std::string command) {
 				catch (...) {}
 			}
 		}
-		catch (std::runtime_error e) {
+		catch (std::runtime_error const& e) {
 			return (cweeStr("Error: ") + cweeStr(e.what())).c_str();
 		}
 		catch (...) {}

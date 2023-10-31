@@ -47,7 +47,6 @@ namespace chaiscript {
         };
 
     };
-
     class FutureObj {
     public:
         FutureObj() : 
@@ -146,10 +145,10 @@ namespace chaiscript {
 
 // UI Support and interface
 namespace chaiscript {
-#define AddMemberToScriptFromClass(Name) scriptingLanguage.add(chaiscript::fun(static_cast<decltype(Name)(ThisType::*)>(&ThisType::Name)), #Name)
-#define AddFuncToScriptFromClass(Name) scriptingLanguage.add(chaiscript::fun(&ThisType::Name), #Name)
+#define AddMemberToScriptFromClass(ThisType, Name) scriptingLanguage.add(chaiscript::fun(static_cast<decltype(Name)(ThisType::*)>(&ThisType::Name)), #Name)
+#define AddFuncToScriptFromClass(ThisType, Name) scriptingLanguage.add(chaiscript::fun(&ThisType::Name), #Name)
 
-#define AddBasicClassTemplate() { \
+#define AddBasicClassTemplate(ThisType) { \
                         scriptingLanguage.add(chaiscript::user_type<ThisType>(), ThisTypeName()); \
                         scriptingLanguage.add(chaiscript::constructor<ThisType()>(), ThisTypeName()); \
                         scriptingLanguage.add(chaiscript::constructor<ThisType(const ThisType&)>(), ThisTypeName()); \
@@ -158,7 +157,7 @@ namespace chaiscript {
 
     class UI_Color {
     public:
-        using ThisType = typename UI_Color;
+        using ThisType = UI_Color;
         static  std::string	ThisTypeName() { return "UI_Color"; };
 
         UI_Color() : R(128), G(128), B(128), A(255) {};
@@ -178,15 +177,15 @@ namespace chaiscript {
         };
 
         static void		AppendToScriptingLanguage(Module& scriptingLanguage) {
-            AddBasicClassTemplate();
+            AddBasicClassTemplate(ThisType);
             scriptingLanguage.add(chaiscript::constructor<ThisType(float, float, float, float)>(), ThisTypeName());
             scriptingLanguage.add(chaiscript::fun([](UI_Color& a) { return std::string(cweeStr::printf("[%s, %s, %s, %s]", cweeStr(a.R).c_str(), cweeStr(a.G).c_str(), cweeStr(a.B).c_str(), cweeStr(a.A).c_str()).c_str()); }), "to_string");
 
-            AddMemberToScriptFromClass(R);
-            AddMemberToScriptFromClass(G);
-            AddMemberToScriptFromClass(B);
-            AddMemberToScriptFromClass(A);
-            AddFuncToScriptFromClass(Lerp);
+            AddMemberToScriptFromClass(ThisType,R);
+            AddMemberToScriptFromClass(ThisType,G);
+            AddMemberToScriptFromClass(ThisType,B);
+            AddMemberToScriptFromClass(ThisType,A);
+            AddFuncToScriptFromClass(ThisType,Lerp);
 
             scriptingLanguage.eval(R"(
 			    def `=`(UI_Color a, string  b){
@@ -200,7 +199,7 @@ namespace chaiscript {
     };
     class UI_App {
     public:
-        using ThisType = typename UI_App;
+        using ThisType = UI_App;
         static std::string	ThisTypeName() { return "UI_App"; };
 
         static void		AppendToScriptingLanguage(Module& scriptingLanguage) {
@@ -292,31 +291,9 @@ namespace chaiscript {
         };
     };
 
-#define AddFrameworkElementCharacteristicsToScriptFromClass() {\
-    AddMemberToScriptFromClass(Version); \
-    AddMemberToScriptFromClass(UniqueName); \
-    scriptingLanguage.add(chaiscript::fun(&ThisType::Update), "Update"); \
-    scriptingLanguage.add(chaiscript::fun(&ThisType::AddTask), "AddTask"); \
-    scriptingLanguage.add(chaiscript::fun(&ThisType::GetTasks), "GetTasks"); \
-    AddMemberToScriptFromClass(Tasks); \
-    AddMemberToScriptFromClass(Opacity); \
-    AddMemberToScriptFromClass(Width); \
-    AddMemberToScriptFromClass(Height); \
-    AddMemberToScriptFromClass(VerticalAlignment); \
-    AddMemberToScriptFromClass(HorizontalAlignment); \
-    AddMemberToScriptFromClass(Tag); \
-    AddMemberToScriptFromClass(Name); \
-    AddMemberToScriptFromClass(MinWidth); \
-    AddMemberToScriptFromClass(MinHeight); \
-    AddMemberToScriptFromClass(MaxWidth); \
-    AddMemberToScriptFromClass(MaxHeight); \
-    AddMemberToScriptFromClass(Margin); \
-    AddMemberToScriptFromClass(OnLoaded); \
-    AddMemberToScriptFromClass(OnUnloaded); \
-}
     class UI_FrameworkElement {
     public:
-        using ThisType = typename UI_FrameworkElement;
+        using ThisType = UI_FrameworkElement;
         static std::string	ThisTypeName() { return "UI_FrameworkElement"; };
 
         virtual ~UI_FrameworkElement() {};
@@ -351,13 +328,33 @@ namespace chaiscript {
         chaiscript::Boxed_Value OnUnloaded; // function
 
         static void		AppendToScriptingLanguage(Module& scriptingLanguage) {
-            AddBasicClassTemplate();
-            AddFrameworkElementCharacteristicsToScriptFromClass();
+            AddBasicClassTemplate(ThisType);
+
+            AddMemberToScriptFromClass(ThisType, Version); 
+            AddMemberToScriptFromClass(ThisType, UniqueName); 
+            scriptingLanguage.add(chaiscript::fun(&ThisType::Update), "Update"); 
+            scriptingLanguage.add(chaiscript::fun(&ThisType::AddTask), "AddTask"); 
+            scriptingLanguage.add(chaiscript::fun(&ThisType::GetTasks), "GetTasks"); 
+            AddMemberToScriptFromClass(ThisType, Tasks); 
+            AddMemberToScriptFromClass(ThisType, Opacity); 
+            AddMemberToScriptFromClass(ThisType, Width);
+            AddMemberToScriptFromClass(ThisType, Height); 
+            AddMemberToScriptFromClass(ThisType, VerticalAlignment); 
+            AddMemberToScriptFromClass(ThisType, HorizontalAlignment); 
+            AddMemberToScriptFromClass(ThisType, Tag); 
+            AddMemberToScriptFromClass(ThisType, Name); 
+            AddMemberToScriptFromClass(ThisType, MinWidth); 
+            AddMemberToScriptFromClass(ThisType, MinHeight); 
+            AddMemberToScriptFromClass(ThisType, MaxWidth); 
+            AddMemberToScriptFromClass(ThisType, MaxHeight); 
+            AddMemberToScriptFromClass(ThisType, Margin); 
+            AddMemberToScriptFromClass(ThisType, OnLoaded); 
+            AddMemberToScriptFromClass(ThisType, OnUnloaded); 
         };
     };
     class UI_ProgressRing final : public UI_FrameworkElement {
     public:
-        using ThisType = typename UI_ProgressRing;
+        using ThisType = UI_ProgressRing;
         static  std::string	ThisTypeName() { return "UI_ProgressRing"; };
 
         virtual ~UI_ProgressRing() {};
@@ -365,15 +362,15 @@ namespace chaiscript {
         UI_Color 		Foreground;
 
         static void		AppendToScriptingLanguage(Module& scriptingLanguage) {
-            AddBasicClassTemplate();
+            AddBasicClassTemplate(ThisType);
             scriptingLanguage.add(chaiscript::base_class<UI_FrameworkElement, ThisType>());
 
-            AddMemberToScriptFromClass(Foreground);
+            AddMemberToScriptFromClass(ThisType,Foreground);
         };
     };
     class UI_Rectangle final : public UI_FrameworkElement {
     public:
-        using ThisType = typename UI_Rectangle;
+        using ThisType = UI_Rectangle;
         static  std::string	ThisTypeName() { return "UI_Rectangle"; };
 
         virtual ~UI_Rectangle() {};
@@ -389,21 +386,21 @@ namespace chaiscript {
         };
 
         static void		AppendToScriptingLanguage(Module& scriptingLanguage) {
-            AddBasicClassTemplate();
+            AddBasicClassTemplate(ThisType);
             scriptingLanguage.add(chaiscript::base_class<UI_FrameworkElement, ThisType>());
 
-            AddMemberToScriptFromClass(Fill);
-            AddMemberToScriptFromClass(GradientOffsets);
-            AddMemberToScriptFromClass(GradientColors);
-            AddMemberToScriptFromClass(GradientStart);
-            AddMemberToScriptFromClass(GradientEnd);
+            AddMemberToScriptFromClass(ThisType,Fill);
+            AddMemberToScriptFromClass(ThisType,GradientOffsets);
+            AddMemberToScriptFromClass(ThisType,GradientColors);
+            AddMemberToScriptFromClass(ThisType,GradientStart);
+            AddMemberToScriptFromClass(ThisType,GradientEnd);
 
             scriptingLanguage.add(chaiscript::fun(&ThisType::AddGradient), "AddGradient");
         };
     };
     class UI_TextBlock final: public UI_FrameworkElement {
     public:
-        using ThisType = typename UI_TextBlock;
+        using ThisType = UI_TextBlock;
         static  std::string	ThisTypeName() { return "UI_TextBlock"; };
 
         UI_TextBlock() {};
@@ -422,25 +419,23 @@ namespace chaiscript {
         cweeStr 		HorizontalTextAlignment = "Center";
 
         static void		AppendToScriptingLanguage(Module& scriptingLanguage) {
-            AddBasicClassTemplate();
+            AddBasicClassTemplate(ThisType);
             scriptingLanguage.add(chaiscript::constructor<ThisType(const cweeStr&)>(), ThisTypeName());
             scriptingLanguage.add(chaiscript::base_class<UI_FrameworkElement, ThisType>());
 
-            //AddFrameworkElementCharacteristicsToScriptFromClass();
-
-            AddMemberToScriptFromClass(TextWrapping);
-            AddMemberToScriptFromClass(TextTrimming);
-            AddMemberToScriptFromClass(TextAlignment);
-            AddMemberToScriptFromClass(Text);
-            AddMemberToScriptFromClass(Padding);
-            AddMemberToScriptFromClass(Foreground);
-            AddMemberToScriptFromClass(FontSize);
-            AddMemberToScriptFromClass(HorizontalTextAlignment);
+            AddMemberToScriptFromClass(ThisType,TextWrapping);
+            AddMemberToScriptFromClass(ThisType,TextTrimming);
+            AddMemberToScriptFromClass(ThisType,TextAlignment);
+            AddMemberToScriptFromClass(ThisType,Text);
+            AddMemberToScriptFromClass(ThisType,Padding);
+            AddMemberToScriptFromClass(ThisType,Foreground);
+            AddMemberToScriptFromClass(ThisType,FontSize);
+            AddMemberToScriptFromClass(ThisType,HorizontalTextAlignment);
         };
     };
     class UI_Image final : public UI_FrameworkElement {
     public:
-        using ThisType = typename UI_Image;
+        using ThisType = UI_Image;
         static  std::string	ThisTypeName() { return "UI_Image"; };
 
         UI_Image() {};
@@ -456,20 +451,20 @@ namespace chaiscript {
         cweeStr			Stretch = "UniformToFill";
 
         static void		AppendToScriptingLanguage(Module& scriptingLanguage) {
-            AddBasicClassTemplate();
+            AddBasicClassTemplate(ThisType);
             scriptingLanguage.add(chaiscript::constructor<ThisType(const cweeStr&)>(), ThisTypeName());
             scriptingLanguage.add(chaiscript::base_class<UI_FrameworkElement, ThisType>());
 
-            AddMemberToScriptFromClass(ImagePixels);
-            AddMemberToScriptFromClass(ImagePixelsWidth);
-            AddMemberToScriptFromClass(ImagePixelsHeight);
-            AddMemberToScriptFromClass(ImagePath);
-            AddMemberToScriptFromClass(Stretch);
+            AddMemberToScriptFromClass(ThisType,ImagePixels);
+            AddMemberToScriptFromClass(ThisType,ImagePixelsWidth);
+            AddMemberToScriptFromClass(ThisType,ImagePixelsHeight);
+            AddMemberToScriptFromClass(ThisType,ImagePath);
+            AddMemberToScriptFromClass(ThisType,Stretch);
         };
     };
     class UI_WebView final : public UI_FrameworkElement {
     public:
-        using ThisType = typename UI_WebView;
+        using ThisType = UI_WebView;
         static  std::string	ThisTypeName() { return "UI_WebView"; };
 
         UI_WebView() {};
@@ -484,17 +479,15 @@ namespace chaiscript {
         chaiscript::Boxed_Value												NavigationCompleted;
 
         static void		AppendToScriptingLanguage(Module& scriptingLanguage) {
-            AddBasicClassTemplate();
+            AddBasicClassTemplate(ThisType);
             scriptingLanguage.add(chaiscript::constructor<ThisType(const cweeStr&)>(), ThisTypeName());
             scriptingLanguage.add(chaiscript::base_class<UI_FrameworkElement, ThisType>());
 
-            // AddFrameworkElementCharacteristicsToScriptFromClass();
+            AddMemberToScriptFromClass(ThisType,Source);
+            AddMemberToScriptFromClass(ThisType,NavigationCompleted);
 
-            AddMemberToScriptFromClass(Source);
-            AddMemberToScriptFromClass(NavigationCompleted);
-
-            AddMemberToScriptFromClass(ResultQueue);
-            AddMemberToScriptFromClass(NumResultsQueued);
+            AddMemberToScriptFromClass(ThisType,ResultQueue);
+            AddMemberToScriptFromClass(ThisType,NumResultsQueued);
             scriptingLanguage.eval(R"(
 			    def UI_WebView::Navigate(string where) {
 				    this.AddTask("Navigate ${where}");
@@ -511,16 +504,9 @@ namespace chaiscript {
         };
     };
 
-#define AddPanelCharacteristicsToScriptFromClass(){\
-    AddMemberToScriptFromClass(BorderBrush); \
-    AddMemberToScriptFromClass(Background); \
-    AddMemberToScriptFromClass(Children); \
-    AddMemberToScriptFromClass(Padding); \
-    AddMemberToScriptFromClass(BorderThickness); \
-    };
     class UI_Panel : public UI_FrameworkElement {
     public:
-        using ThisType = typename  UI_Panel;
+        using ThisType = UI_Panel;
         static std::string	ThisTypeName() { return "UI_Panel"; };
 
         virtual ~UI_Panel() {};
@@ -531,17 +517,19 @@ namespace chaiscript {
         cweeStr 		BorderThickness = "0,0,0,0";
 
         static void		AppendToScriptingLanguage(Module& scriptingLanguage) {
-            AddBasicClassTemplate();
+            AddBasicClassTemplate(ThisType);
             scriptingLanguage.add(chaiscript::base_class<UI_FrameworkElement, ThisType>());
 
-            //AddFrameworkElementCharacteristicsToScriptFromClass();
-
-            AddPanelCharacteristicsToScriptFromClass();
+            AddMemberToScriptFromClass(ThisType, BorderBrush); 
+            AddMemberToScriptFromClass(ThisType, Background); 
+            AddMemberToScriptFromClass(ThisType, Children); 
+            AddMemberToScriptFromClass(ThisType, Padding); 
+            AddMemberToScriptFromClass(ThisType, BorderThickness); 
         };
     };
     class UI_Grid final : public UI_Panel {
     public:
-        using ThisType = typename  UI_Grid;
+        using ThisType = UI_Grid;
         static  std::string	ThisTypeName() { return "UI_Grid"; };
 
         virtual ~UI_Grid() {};
@@ -558,26 +546,23 @@ namespace chaiscript {
         };
 
         static void		AppendToScriptingLanguage(Module& scriptingLanguage) {
-            AddBasicClassTemplate();
+            AddBasicClassTemplate(ThisType);
 
             scriptingLanguage.add(chaiscript::base_class<UI_Panel, ThisType>());
             scriptingLanguage.add(chaiscript::base_class<UI_FrameworkElement, ThisType>());
 
-            //AddFrameworkElementCharacteristicsToScriptFromClass();
-            //AddPanelCharacteristicsToScriptFromClass();
-
-            AddMemberToScriptFromClass(ColumnDefinitions);
-            AddMemberToScriptFromClass(RowDefinitions);
-            AddMemberToScriptFromClass(ChildPositions);
-            AddMemberToScriptFromClass(ColumnSpacing);
-            AddMemberToScriptFromClass(RowSpacing);
+            AddMemberToScriptFromClass(ThisType,ColumnDefinitions);
+            AddMemberToScriptFromClass(ThisType,RowDefinitions);
+            AddMemberToScriptFromClass(ThisType,ChildPositions);
+            AddMemberToScriptFromClass(ThisType,ColumnSpacing);
+            AddMemberToScriptFromClass(ThisType,RowSpacing);
 
             scriptingLanguage.add(chaiscript::fun(&ThisType::AddChild), "AddChild");
         };
     };
     class UI_StackPanel final : public UI_Panel {
     public:
-        using ThisType = typename  UI_StackPanel;
+        using ThisType = UI_StackPanel;
         static  std::string	ThisTypeName() { return "UI_StackPanel"; };
 
         virtual ~UI_StackPanel() {};
@@ -590,28 +575,20 @@ namespace chaiscript {
         };
 
         static void		AppendToScriptingLanguage(Module& scriptingLanguage) {
-            AddBasicClassTemplate();
+            AddBasicClassTemplate(ThisType);
             scriptingLanguage.add(chaiscript::base_class<UI_Panel, ThisType>());
             scriptingLanguage.add(chaiscript::base_class<UI_FrameworkElement, ThisType>());
 
-            //AddFrameworkElementCharacteristicsToScriptFromClass();
-            //AddPanelCharacteristicsToScriptFromClass();
-
-            AddMemberToScriptFromClass(Orientation);
-            AddMemberToScriptFromClass(Spacing);
+            AddMemberToScriptFromClass(ThisType,Orientation);
+            AddMemberToScriptFromClass(ThisType,Spacing);
 
             scriptingLanguage.add(chaiscript::fun(&ThisType::AddChild), "AddChild");
         };
     };
 
-#define AddControlCharacteristicsToScriptFromClass(){\
-    AddMemberToScriptFromClass(IsEnabled); \
-    AddMemberToScriptFromClass(Padding); \
-    };
-
     class UI_Control : public UI_FrameworkElement {
     public:
-        using ThisType = typename  UI_Control;
+        using ThisType = UI_Control;
         static std::string	ThisTypeName() { return "UI_Control"; };
 
         virtual ~UI_Control() {};
@@ -620,16 +597,16 @@ namespace chaiscript {
         bool			IsEnabled = true;
 
         static void		AppendToScriptingLanguage(Module& scriptingLanguage) {
-            AddBasicClassTemplate();
+            AddBasicClassTemplate(ThisType);
             scriptingLanguage.add(chaiscript::base_class<UI_FrameworkElement, ThisType>());
 
-            //AddFrameworkElementCharacteristicsToScriptFromClass();
-            AddControlCharacteristicsToScriptFromClass();
+            AddMemberToScriptFromClass(ThisType, IsEnabled); 
+            AddMemberToScriptFromClass(ThisType, Padding); 
         };
     };
     class UI_Button final : public UI_Control {
     public:
-        using ThisType = typename  UI_Button;
+        using ThisType = UI_Button;
         static  std::string	ThisTypeName() { return "UI_Button"; };
 
         virtual ~UI_Button() {};
@@ -638,20 +615,17 @@ namespace chaiscript {
         chaiscript::Boxed_Value		Clicked; // Meant to be a lamda function, called when checkbox is unchecked
 
         static void		AppendToScriptingLanguage(Module& scriptingLanguage) {
-            AddBasicClassTemplate();
+            AddBasicClassTemplate(ThisType);
             scriptingLanguage.add(chaiscript::base_class<UI_FrameworkElement, ThisType>());
             scriptingLanguage.add(chaiscript::base_class<UI_Control, ThisType>());
 
-            //AddFrameworkElementCharacteristicsToScriptFromClass();
-            //AddControlCharacteristicsToScriptFromClass();
-
-            AddMemberToScriptFromClass(Content);
-            AddMemberToScriptFromClass(Clicked);
+            AddMemberToScriptFromClass(ThisType,Content);
+            AddMemberToScriptFromClass(ThisType,Clicked);
         };
     };
     class UI_CheckBox final : public UI_Control {
     public:
-        using ThisType = typename   UI_CheckBox;
+        using ThisType = UI_CheckBox;
         static  std::string	ThisTypeName() { return "UI_CheckBox"; };
 
         virtual ~UI_CheckBox() {};
@@ -661,21 +635,18 @@ namespace chaiscript {
         chaiscript::Boxed_Value		Unchecked; // Meant to be a lamda function, called when checkbox is unchecked
 
         static void		AppendToScriptingLanguage(Module& scriptingLanguage) {
-            AddBasicClassTemplate();
+            AddBasicClassTemplate(ThisType);
             scriptingLanguage.add(chaiscript::base_class<UI_Control, ThisType>());
             scriptingLanguage.add(chaiscript::base_class<UI_FrameworkElement, ThisType>());
 
-            //AddFrameworkElementCharacteristicsToScriptFromClass();
-            //AddControlCharacteristicsToScriptFromClass();
-
-            AddMemberToScriptFromClass(IsChecked);
-            AddMemberToScriptFromClass(Checked);
-            AddMemberToScriptFromClass(Unchecked);
+            AddMemberToScriptFromClass(ThisType,IsChecked);
+            AddMemberToScriptFromClass(ThisType,Checked);
+            AddMemberToScriptFromClass(ThisType,Unchecked);
         };
     };
     class UI_Slider final : public UI_Control {
     public:
-        using ThisType = typename   UI_Slider;
+        using ThisType = UI_Slider;
         static  std::string	ThisTypeName() { return "UI_Slider"; };
 
         virtual ~UI_Slider() {};
@@ -690,26 +661,23 @@ namespace chaiscript {
         chaiscript::Boxed_Value		ValueChanged; // Meant to be a lamda function, called when slider value changes
 
         static void		AppendToScriptingLanguage(Module& scriptingLanguage) {
-            AddBasicClassTemplate();
+            AddBasicClassTemplate(ThisType);
             scriptingLanguage.add(chaiscript::base_class<UI_Control, ThisType>());
             scriptingLanguage.add(chaiscript::base_class<UI_FrameworkElement, ThisType>());
 
-            //AddFrameworkElementCharacteristicsToScriptFromClass();
-            //AddControlCharacteristicsToScriptFromClass();
-
-            AddMemberToScriptFromClass(Value);
-            AddMemberToScriptFromClass(SmallChange);
-            AddMemberToScriptFromClass(LargeChange);
-            AddMemberToScriptFromClass(Minimum);
-            AddMemberToScriptFromClass(Maximum);
-            AddMemberToScriptFromClass(StepFrequency);
-            AddMemberToScriptFromClass(TickFrequency);
-            AddMemberToScriptFromClass(ValueChanged);
+            AddMemberToScriptFromClass(ThisType,Value);
+            AddMemberToScriptFromClass(ThisType,SmallChange);
+            AddMemberToScriptFromClass(ThisType,LargeChange);
+            AddMemberToScriptFromClass(ThisType,Minimum);
+            AddMemberToScriptFromClass(ThisType,Maximum);
+            AddMemberToScriptFromClass(ThisType,StepFrequency);
+            AddMemberToScriptFromClass(ThisType,TickFrequency);
+            AddMemberToScriptFromClass(ThisType,ValueChanged);
         };
     };
     class UI_ToggleSwitch final : public UI_Control {
     public:
-        using ThisType = typename   UI_ToggleSwitch;
+        using ThisType = UI_ToggleSwitch;
         static  std::string	ThisTypeName() { return "UI_ToggleSwitch"; };
 
         virtual ~UI_ToggleSwitch() {};
@@ -720,22 +688,19 @@ namespace chaiscript {
         chaiscript::Boxed_Value		Toggled; // Meant to be a lamda function, called when toggleswitch is toggled
 
         static void		AppendToScriptingLanguage(Module& scriptingLanguage) {
-            AddBasicClassTemplate();
+            AddBasicClassTemplate(ThisType);
             scriptingLanguage.add(chaiscript::base_class<UI_Control, ThisType>());
             scriptingLanguage.add(chaiscript::base_class<UI_FrameworkElement, ThisType>());
 
-            //AddFrameworkElementCharacteristicsToScriptFromClass();
-            //AddControlCharacteristicsToScriptFromClass();
-
-            AddMemberToScriptFromClass(IsOn);
-            AddMemberToScriptFromClass(OnContent);
-            AddMemberToScriptFromClass(OffContent);
-            AddMemberToScriptFromClass(Toggled);
+            AddMemberToScriptFromClass(ThisType,IsOn);
+            AddMemberToScriptFromClass(ThisType,OnContent);
+            AddMemberToScriptFromClass(ThisType,OffContent);
+            AddMemberToScriptFromClass(ThisType,Toggled);
         };
     };
     class UI_ListView final : public UI_Control {
     public:
-        using ThisType = typename   UI_ListView;
+        using ThisType = UI_ListView;
         static std::string	ThisTypeName() { return "UI_ListView"; };
 
         UI_ListView() {
@@ -757,25 +722,23 @@ namespace chaiscript {
         };
 
         static void		AppendToScriptingLanguage(Module& scriptingLanguage) {
-            AddBasicClassTemplate();
+            AddBasicClassTemplate(ThisType);
             scriptingLanguage.add(chaiscript::constructor<ThisType(const std::vector<chaiscript::Boxed_Value>&)>(), ThisTypeName());
             scriptingLanguage.add(chaiscript::base_class<UI_FrameworkElement, ThisType>());
             scriptingLanguage.add(chaiscript::base_class<UI_Control, ThisType>());
-            //AddFrameworkElementCharacteristicsToScriptFromClass();
-            //AddControlCharacteristicsToScriptFromClass();
 
-            AddMemberToScriptFromClass(Background);
-            AddMemberToScriptFromClass(CanReorderItems);
-            AddMemberToScriptFromClass(Header);
-            AddMemberToScriptFromClass(Footer);
-            AddMemberToScriptFromClass(Items);
+            AddMemberToScriptFromClass(ThisType,Background);
+            AddMemberToScriptFromClass(ThisType,CanReorderItems);
+            AddMemberToScriptFromClass(ThisType,Header);
+            AddMemberToScriptFromClass(ThisType,Footer);
+            AddMemberToScriptFromClass(ThisType,Items);
 
             scriptingLanguage.add(chaiscript::fun(&ThisType::AddItem), "AddItem");
         };
     };
     class UI_TabView final : public UI_Control {
     public:
-        using ThisType = typename   UI_TabView;
+        using ThisType = UI_TabView;
         static std::string	ThisTypeName() { return "UI_TabView"; };
 
         virtual ~UI_TabView() {};
@@ -792,25 +755,22 @@ namespace chaiscript {
         };
 
         static void		AppendToScriptingLanguage(Module& scriptingLanguage) {
-            AddBasicClassTemplate();
+            AddBasicClassTemplate(ThisType);
             scriptingLanguage.add(chaiscript::base_class<UI_FrameworkElement, ThisType>());
             scriptingLanguage.add(chaiscript::base_class<UI_Control, ThisType>());
 
-            //AddFrameworkElementCharacteristicsToScriptFromClass();
-            //AddControlCharacteristicsToScriptFromClass();
-
-            AddMemberToScriptFromClass(Background);
-            AddMemberToScriptFromClass(CanReorderTabs);
-            AddMemberToScriptFromClass(CanDragTabs);
-            AddMemberToScriptFromClass(TabItems);
-            AddMemberToScriptFromClass(HeaderItems);
+            AddMemberToScriptFromClass(ThisType,Background);
+            AddMemberToScriptFromClass(ThisType,CanReorderTabs);
+            AddMemberToScriptFromClass(ThisType,CanDragTabs);
+            AddMemberToScriptFromClass(ThisType,TabItems);
+            AddMemberToScriptFromClass(ThisType,HeaderItems);
 
             scriptingLanguage.add(chaiscript::fun(&ThisType::AddTab), "AddTab");
         };
     };
     class UI_Expander final : public UI_Control {
     public:
-        using ThisType = typename   UI_Expander;
+        using ThisType = UI_Expander;
         static  std::string	ThisTypeName() { return "UI_Expander"; };
 
         virtual ~UI_Expander() {};
@@ -823,23 +783,20 @@ namespace chaiscript {
         chaiscript::Boxed_Value		Expanding; // Meant to be a lamda function, called when Expander is expanding
 
         static void		AppendToScriptingLanguage(Module& scriptingLanguage) {
-            AddBasicClassTemplate();
+            AddBasicClassTemplate(ThisType);
             scriptingLanguage.add(chaiscript::base_class<UI_Control, ThisType>());
             scriptingLanguage.add(chaiscript::base_class<UI_FrameworkElement, ThisType>());
 
-            //AddFrameworkElementCharacteristicsToScriptFromClass();
-            //AddControlCharacteristicsToScriptFromClass();
-
-            AddMemberToScriptFromClass(IsExpanded);
-            AddMemberToScriptFromClass(ExpandDirection);
-            AddMemberToScriptFromClass(Header);
-            AddMemberToScriptFromClass(Content);
-            AddMemberToScriptFromClass(Expanding);
+            AddMemberToScriptFromClass(ThisType,IsExpanded);
+            AddMemberToScriptFromClass(ThisType,ExpandDirection);
+            AddMemberToScriptFromClass(ThisType,Header);
+            AddMemberToScriptFromClass(ThisType,Content);
+            AddMemberToScriptFromClass(ThisType,Expanding);
         };
     };
     class UI_TextBox final : public UI_Control {
     public:
-        using ThisType = typename UI_TextBox;
+        using ThisType = UI_TextBox;
         static  std::string	ThisTypeName() { return "UI_TextBox"; };
 
         cweeStr						Text;
@@ -853,22 +810,19 @@ namespace chaiscript {
         virtual ~UI_TextBox() {};
 
         static void		AppendToScriptingLanguage(Module& scriptingLanguage) {
-            AddBasicClassTemplate();
+            AddBasicClassTemplate(ThisType);
             scriptingLanguage.add(chaiscript::constructor<ThisType(const cweeStr&)>(), ThisTypeName());
             scriptingLanguage.add(chaiscript::base_class<UI_Control, ThisType>());
             scriptingLanguage.add(chaiscript::base_class<UI_FrameworkElement, ThisType>());
 
-            //AddFrameworkElementCharacteristicsToScriptFromClass();
-            //AddControlCharacteristicsToScriptFromClass();
-
-            AddMemberToScriptFromClass(Text);
-            AddMemberToScriptFromClass(PlaceholderText);
-            AddMemberToScriptFromClass(TextChanged);
+            AddMemberToScriptFromClass(ThisType,Text);
+            AddMemberToScriptFromClass(ThisType,PlaceholderText);
+            AddMemberToScriptFromClass(ThisType,TextChanged);
         };
     };
     class UI_Plot final : public UI_Control {
     public:
-        using ThisType = typename UI_Plot;
+        using ThisType = UI_Plot;
         static  std::string	ThisTypeName() { return "UI_Plot"; };
 
         virtual ~UI_Plot() {};
@@ -888,28 +842,25 @@ namespace chaiscript {
         double										VerticalAxisMax = 0;
 
         static void		AppendToScriptingLanguage(Module& scriptingLanguage) {
-            AddBasicClassTemplate();
+            AddBasicClassTemplate(ThisType);
             scriptingLanguage.add(chaiscript::base_class<UI_Control, ThisType>());
             scriptingLanguage.add(chaiscript::base_class<UI_FrameworkElement, ThisType>());
 
-            //AddFrameworkElementCharacteristicsToScriptFromClass();
-            //AddControlCharacteristicsToScriptFromClass();
+            AddMemberToScriptFromClass(ThisType,Background);
+            AddMemberToScriptFromClass(ThisType,AxisColor);
+            AddMemberToScriptFromClass(ThisType,FontColor);
+            AddMemberToScriptFromClass(ThisType,HorizontalValuesAreDates);
+            AddMemberToScriptFromClass(ThisType,VerticalAxisTitle);
+            AddMemberToScriptFromClass(ThisType,HorizontalAxisTitle);
 
-            AddMemberToScriptFromClass(Background);
-            AddMemberToScriptFromClass(AxisColor);
-            AddMemberToScriptFromClass(FontColor);
-            AddMemberToScriptFromClass(HorizontalValuesAreDates);
-            AddMemberToScriptFromClass(VerticalAxisTitle);
-            AddMemberToScriptFromClass(HorizontalAxisTitle);
+            AddMemberToScriptFromClass(ThisType,HorizontalAxisMax);
+            AddMemberToScriptFromClass(ThisType,HorizontalAxisMin);
+            AddMemberToScriptFromClass(ThisType,VerticalAxisMin);
+            AddMemberToScriptFromClass(ThisType,VerticalAxisMax);
 
-            AddMemberToScriptFromClass(HorizontalAxisMax);
-            AddMemberToScriptFromClass(HorizontalAxisMin);
-            AddMemberToScriptFromClass(VerticalAxisMin);
-            AddMemberToScriptFromClass(VerticalAxisMax);
-
-            AddMemberToScriptFromClass(PlotItems);
-            AddMemberToScriptFromClass(PlotColors);
-            AddMemberToScriptFromClass(PlotModes);
+            AddMemberToScriptFromClass(ThisType,PlotItems);
+            AddMemberToScriptFromClass(ThisType,PlotColors);
+            AddMemberToScriptFromClass(ThisType,PlotModes);
 
             scriptingLanguage.eval(R"(
 			    def UI_Plot::AddPlot(values, UI_Color col, string mode) : (values.type_name() == "Pattern" || values.type_name() == "BalancedPattern") {
@@ -924,19 +875,19 @@ namespace chaiscript {
 
     class UI_MapElement : public UI_FrameworkElement {
     public:
-        using ThisType = typename UI_MapElement;
+        using ThisType = UI_MapElement;
         static  std::string	ThisTypeName() { return "UI_MapElement"; };
         UI_MapElement() {};
         virtual ~UI_MapElement() {};
 
         static void		AppendToScriptingLanguage(Module& scriptingLanguage) {
-            AddBasicClassTemplate();
+            AddBasicClassTemplate(ThisType);
             scriptingLanguage.add(chaiscript::base_class<UI_FrameworkElement, ThisType>());
         };
     };
     class UI_MapIcon final : public UI_MapElement {
     public: 
-        using ThisType = typename UI_MapIcon;
+        using ThisType = UI_MapIcon;
         static  std::string	ThisTypeName() { return "UI_MapIcon"; };
 
         UI_MapIcon() {
@@ -958,23 +909,23 @@ namespace chaiscript {
         cweeStr     Label = "";
 
         static void		AppendToScriptingLanguage(Module& scriptingLanguage) {
-            AddBasicClassTemplate();
+            AddBasicClassTemplate(ThisType);
             scriptingLanguage.add(chaiscript::base_class<UI_FrameworkElement, ThisType>());
             scriptingLanguage.add(chaiscript::base_class<UI_MapElement, ThisType>());
             scriptingLanguage.add(chaiscript::constructor<ThisType(double,double)>(), ThisTypeName());
 
-            AddMemberToScriptFromClass(color);
-            AddMemberToScriptFromClass(size);
-            AddMemberToScriptFromClass(longitude);
-            AddMemberToScriptFromClass(latitude);
-            AddMemberToScriptFromClass(HideOnCollision);
-            AddMemberToScriptFromClass(IconPathGeometry);
-            AddMemberToScriptFromClass(Label);
+            AddMemberToScriptFromClass(ThisType,color);
+            AddMemberToScriptFromClass(ThisType,size);
+            AddMemberToScriptFromClass(ThisType,longitude);
+            AddMemberToScriptFromClass(ThisType,latitude);
+            AddMemberToScriptFromClass(ThisType,HideOnCollision);
+            AddMemberToScriptFromClass(ThisType,IconPathGeometry);
+            AddMemberToScriptFromClass(ThisType,Label);
         };
     };
     class UI_MapPolyline final : public UI_MapElement {
     public:
-        using ThisType = typename UI_MapPolyline;
+        using ThisType = UI_MapPolyline;
         static std::string	ThisTypeName() { return "UI_MapPolyline"; };
 
         UI_MapPolyline() : coordinates(cweeThreadedList<std::pair<double, double>>()), color(UI_Color()), dashed(false), thickness(2) {};
@@ -989,21 +940,21 @@ namespace chaiscript {
         int			thickness;
 
         static void		AppendToScriptingLanguage(Module& scriptingLanguage) {
-            AddBasicClassTemplate();
+            AddBasicClassTemplate(ThisType);
             scriptingLanguage.add(chaiscript::base_class<UI_FrameworkElement, ThisType>());
             scriptingLanguage.add(chaiscript::base_class<UI_MapElement, ThisType>());
 
-            AddMemberToScriptFromClass(color);
-            AddMemberToScriptFromClass(coordinates);
-            AddMemberToScriptFromClass(dashed);
-            AddMemberToScriptFromClass(thickness);
+            AddMemberToScriptFromClass(ThisType,color);
+            AddMemberToScriptFromClass(ThisType,coordinates);
+            AddMemberToScriptFromClass(ThisType,dashed);
+            AddMemberToScriptFromClass(ThisType,thickness);
 
-            AddFuncToScriptFromClass(AddPoint);
+            AddFuncToScriptFromClass(ThisType,AddPoint);
         };
     };
     class UI_MapBackground final : public UI_MapElement {
     public:
-        using ThisType = typename UI_MapBackground;
+        using ThisType = UI_MapBackground;
         static std::string	ThisTypeName() { return "UI_MapBackground"; };
 
         UI_MapBackground() : data(decltype(data)()), minColor(UI_Color()), maxColor(UI_Color()), highQuality(true) {};
@@ -1028,19 +979,19 @@ namespace chaiscript {
         UI_Color maxColor;
 
         static void		AppendToScriptingLanguage(Module& scriptingLanguage) {
-            AddBasicClassTemplate();
+            AddBasicClassTemplate(ThisType);
             scriptingLanguage.add(chaiscript::base_class<UI_FrameworkElement, ThisType>());
             scriptingLanguage.add(chaiscript::base_class<UI_MapElement, ThisType>());
 
-            AddMemberToScriptFromClass(highQuality);
-            AddMemberToScriptFromClass(clipToBounds);
-            AddMemberToScriptFromClass(data);
-            AddMemberToScriptFromClass(minColor);
-            AddMemberToScriptFromClass(maxColor);
-            AddMemberToScriptFromClass(minValue);
-            AddMemberToScriptFromClass(maxValue);
+            AddMemberToScriptFromClass(ThisType,highQuality);
+            AddMemberToScriptFromClass(ThisType,clipToBounds);
+            AddMemberToScriptFromClass(ThisType,data);
+            AddMemberToScriptFromClass(ThisType,minColor);
+            AddMemberToScriptFromClass(ThisType,maxColor);
+            AddMemberToScriptFromClass(ThisType,minValue);
+            AddMemberToScriptFromClass(ThisType,maxValue);
 
-            AddFuncToScriptFromClass(ColorForPosition);
+            AddFuncToScriptFromClass(ThisType,ColorForPosition);
 
             // cast to UI_Image
             {
@@ -1413,7 +1364,7 @@ namespace chaiscript {
     };
     class UI_MapLayer : public UI_MapElement {
     public:
-        using ThisType = typename UI_MapLayer;
+        using ThisType = UI_MapLayer;
         static  std::string	ThisTypeName() { return "UI_MapLayer"; };
         virtual ~UI_MapLayer() {};
 
@@ -1423,12 +1374,12 @@ namespace chaiscript {
         }
 
         static void		AppendToScriptingLanguage(Module& scriptingLanguage) {
-            AddBasicClassTemplate();
+            AddBasicClassTemplate(ThisType);
             scriptingLanguage.add(chaiscript::base_class<UI_FrameworkElement, ThisType>());
             scriptingLanguage.add(chaiscript::base_class<UI_MapElement, ThisType>());
 
-            AddMemberToScriptFromClass(Children);
-            AddFuncToScriptFromClass(SetVisibility);
+            AddMemberToScriptFromClass(ThisType,Children);
+            AddFuncToScriptFromClass(ThisType,SetVisibility);
 
             scriptingLanguage.eval(R"(
 			    def UI_MapLayer::AddChild(child) : child.is_type("UI_MapElement") {
@@ -1439,7 +1390,7 @@ namespace chaiscript {
     };
     class UI_Map : public UI_MapElement {
     public:
-        using ThisType = typename UI_Map;
+        using ThisType = UI_Map;
         static  std::string	ThisTypeName() { return "UI_Map"; };
         virtual ~UI_Map() {};
 
@@ -1447,12 +1398,12 @@ namespace chaiscript {
         std::vector<chaiscript::Boxed_Value> Backgrounds;
 
         static void		AppendToScriptingLanguage(Module& scriptingLanguage) {
-            AddBasicClassTemplate();
+            AddBasicClassTemplate(ThisType);
             scriptingLanguage.add(chaiscript::base_class<UI_FrameworkElement, ThisType>());
             scriptingLanguage.add(chaiscript::base_class<UI_MapElement, ThisType>());
 
-            AddMemberToScriptFromClass(Layers);
-            AddMemberToScriptFromClass(Backgrounds);
+            AddMemberToScriptFromClass(ThisType,Layers);
+            AddMemberToScriptFromClass(ThisType,Backgrounds);
             scriptingLanguage.eval(R"(
 			    def UI_Map::AddLayer(child) : child.is_type("UI_MapLayer") {
 				    this.Layers.push_back_ref(child);
@@ -1464,9 +1415,6 @@ namespace chaiscript {
         };
     };
 
-#undef AddControlCharacteristicsToScriptFromClass
-#undef AddPanelCharacteristicsToScriptFromClass
-#undef AddFrameworkElementCharacteristicsToScriptFromClass
 #undef AddBasicClassTemplate
 #undef AddMemberToScriptFromClass
 #undef AddFuncToScriptFromClass
@@ -1520,7 +1468,7 @@ namespace chaiscript {
             constexpr float eps = 0.000001f;
 
             if (numDimensions <= 0) {
-                throw std::exception("Not enough dimensions for optimization.");
+                throw std::runtime_error("Not enough dimensions for optimization.");
                 // return chaiscript::small_vector< chaiscript::Boxed_Value >();
             }
 
@@ -1843,7 +1791,7 @@ lib->add(chaiscript::type_conversion<From, To>([](const From& t_bt)->To { return
                     lib->add(chaiscript::fun([](const Type& a)->cweeStr { \
                             using namespace cweeUnitValues; \
                             unit_value t = a; \
-                            return t.ToString(); \
+                            return t.ToString().c_str(); \
                     }), "to_string"); \
                     lib->add(chaiscript::fun([](const Type& a)->std::string { \
                         using namespace cweeUnitValues; \

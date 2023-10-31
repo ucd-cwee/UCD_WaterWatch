@@ -244,8 +244,8 @@ public:
 		cweeSysInterlockedPointer<Details_InterfaceWithSentinel>& ptr() const noexcept final { return det; };
 
 	public:
-		std::function<type* (void*)>							m_getter;
 		mutable cweeSysInterlockedPointer<Details_InterfaceWithSentinel>	det;
+		std::function<type* (void*)>							m_getter;
 	};
 #pragma endregion 
 #pragma region Type Defs
@@ -473,18 +473,18 @@ public:
 	friend bool operator<=(const cweeSharedPtrWithSentinel& a, const cweeSharedPtrWithSentinel& b) noexcept { return a.Get() <= b.Get(); };
 	friend bool operator>(const cweeSharedPtrWithSentinel& a, const cweeSharedPtrWithSentinel& b) noexcept { return a.Get() > b.Get(); };
 	friend bool operator>=(const cweeSharedPtrWithSentinel& a, const cweeSharedPtrWithSentinel& b) noexcept { return a.Get() >= b.Get(); };
-	friend bool operator==(const cweeSharedPtrWithSentinel& a, std::nullptr_t) noexcept { return a.m_data.Get() == nullptr; };
-	friend bool operator!=(const cweeSharedPtrWithSentinel& a, std::nullptr_t) noexcept { return a.m_data.Get() != nullptr; };
-	friend bool operator<(const cweeSharedPtrWithSentinel& a, std::nullptr_t) noexcept { return a.m_data.Get() < nullptr; };
-	friend bool operator<=(const cweeSharedPtrWithSentinel& a, std::nullptr_t) noexcept { return a.m_data.Get() <= nullptr; };
-	friend bool operator>(const cweeSharedPtrWithSentinel& a, std::nullptr_t) noexcept { return a.m_data.Get() > nullptr; };
-	friend bool operator>=(const cweeSharedPtrWithSentinel& a, std::nullptr_t) noexcept { return a.m_data.Get() >= nullptr; };
-	friend bool operator==(std::nullptr_t, const cweeSharedPtrWithSentinel& a) noexcept { return nullptr == a.m_data.Get(); };
-	friend bool operator!=(std::nullptr_t, const cweeSharedPtrWithSentinel& a) noexcept { return nullptr != a.m_data.Get(); };
-	friend bool operator<(std::nullptr_t, const cweeSharedPtrWithSentinel& a) noexcept { return nullptr < a.m_data.Get(); };
-	friend bool operator<=(std::nullptr_t, const cweeSharedPtrWithSentinel& a) noexcept { return nullptr <= a.m_data.Get(); };
-	friend bool operator>(std::nullptr_t, const cweeSharedPtrWithSentinel& a) noexcept { return nullptr > a.m_data.Get(); };
-	friend bool operator>=(std::nullptr_t, const cweeSharedPtrWithSentinel& a) noexcept { return nullptr >= a.m_data.Get(); };
+	friend bool operator==(const cweeSharedPtrWithSentinel& a, std::nullptr_t) noexcept { return (void*)a.m_data.Get() == (void*)nullptr; };
+	friend bool operator!=(const cweeSharedPtrWithSentinel& a, std::nullptr_t) noexcept { return (void*)a.m_data.Get() != (void*)nullptr; };
+	friend bool operator<(const cweeSharedPtrWithSentinel& a, std::nullptr_t) noexcept { return (void*)a.m_data.Get() < (void*)nullptr; };
+	friend bool operator<=(const cweeSharedPtrWithSentinel& a, std::nullptr_t) noexcept { return (void*)a.m_data.Get() <= (void*)nullptr; };
+	friend bool operator>(const cweeSharedPtrWithSentinel& a, std::nullptr_t) noexcept { return (void*)a.m_data.Get() > (void*)nullptr; };
+	friend bool operator>=(const cweeSharedPtrWithSentinel& a, std::nullptr_t) noexcept { return (void*)a.m_data.Get() >= (void*)nullptr; };
+	friend bool operator==(std::nullptr_t, const cweeSharedPtrWithSentinel& a) noexcept { return (void*)nullptr == (void*)a.m_data.Get(); };
+	friend bool operator!=(std::nullptr_t, const cweeSharedPtrWithSentinel& a) noexcept { return (void*)nullptr != (void*)a.m_data.Get(); };
+	friend bool operator<(std::nullptr_t, const cweeSharedPtrWithSentinel& a) noexcept { return (void*)nullptr < (void*)a.m_data.Get(); };
+	friend bool operator<=(std::nullptr_t, const cweeSharedPtrWithSentinel& a) noexcept { return (void*)nullptr <= (void*)a.m_data.Get(); };
+	friend bool operator>(std::nullptr_t, const cweeSharedPtrWithSentinel& a) noexcept { return (void*)nullptr > (void*)a.m_data.Get(); };
+	friend bool operator>=(std::nullptr_t, const cweeSharedPtrWithSentinel& a) noexcept { return (void*)nullptr >= (void*)a.m_data.Get(); };
 #pragma endregion
 #pragma region Ptr Casting
 public:

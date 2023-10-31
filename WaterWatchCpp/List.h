@@ -169,12 +169,15 @@ public:
 	typedef int		cmp_t(const _type_*, const _type_*);
 	typedef _type_	new_t();
 
-	constexpr cweeThreadedList() : granularity(16), memTag(_tag_), list(nullptr), _size(0), num(0) {};
-	constexpr cweeThreadedList(int newgranularity) : granularity(newgranularity), memTag(_tag_), list(nullptr), _size(0), num(0) {};
-	cweeThreadedList(const cweeThreadedList& other) : granularity(16), memTag(_tag_), list(nullptr), _size(0), num(0) {
-		*this = other;
-	};
-	cweeThreadedList(const std::vector<_type_>& input) : granularity(16), memTag(_tag_), list(nullptr), _size(0), num(0) {
+	constexpr cweeThreadedList() 
+		: granularity(16), memTag(_tag_), list(nullptr), _size(0), num(0) {};
+	constexpr cweeThreadedList(int newgranularity) 
+		: granularity(newgranularity), memTag(_tag_), list(nullptr), _size(0), num(0) {};
+	cweeThreadedList(const cweeThreadedList& other) 
+		: granularity(16), memTag(_tag_), list(nullptr), _size(0), num(0) { *this = other; };
+	cweeThreadedList(const std::vector<_type_>& input) 
+		: granularity(16), memTag(_tag_), list(nullptr), _size(0), num(0) 
+	{
 		granularity = input.size() + 16;
 		memTag = _tag_;
 		Clear();
@@ -184,7 +187,9 @@ public:
 	};
 
 	template< typename _othertype_, typename = std::enable_if_t<!std::is_same_v<_othertype_, std::decay_t<_type_>>> >
-	cweeThreadedList(const std::vector<_othertype_>& input) : granularity(16), memTag(_tag_), list(nullptr), _size(0), num(0) {
+	cweeThreadedList(const std::vector<_othertype_>& input) 
+		: granularity(16), memTag(_tag_), list(nullptr), _size(0), num(0) 
+	{
 		granularity = input.size() + 16;
 		memTag = _tag_;
 		Clear();
@@ -450,11 +455,11 @@ public:
 	};
 
 	constexpr const _type_& operator[](int index) const {
-		if (index < 0 || index >= num) { throw(std::exception("Bad Index")); }
+		if (index < 0 || index >= num) { throw(std::runtime_error(std::string("Bad Index"))); }
 		return list[index];
 	};
 	constexpr _type_& operator[](int index) {
-		if (index < 0 || index >= num) { throw(std::exception("Bad Index")); }
+		if (index < 0 || index >= num) { throw(std::runtime_error(std::string("Bad Index"))); }
 		return list[index];
 	};
 	void			Condense() {
@@ -1084,13 +1089,13 @@ public:
 #pragma region "STD VECTOR METHODS"
 	// typedef int size_type;
 	typedef _type_ T;
-	typedef std::ptrdiff_t difference_type;
-	typedef size_t size_type;
-	typedef T value_type;
-	typedef T* pointer;
-	typedef const T* const_pointer;
-	typedef T& reference;
-	typedef const T& const_reference;
+	//typedef std::ptrdiff_t difference_type;
+	//typedef size_t size_type;
+	//typedef T value_type;
+	//typedef T* pointer;
+	//typedef const T* const_pointer;
+	//typedef T& reference;
+	//typedef const T& const_reference;
 
 	// access the first element
 	reference front() {
@@ -1256,11 +1261,11 @@ public:
 #pragma endregion
 
 private:
-	mutable int		num;
-	int				_size;
 	int				granularity;
-	_type_* list;
-	unsigned char	memTag; // byte
+	unsigned char	memTag;
+	_type_*			list;
+	int				_size;
+	mutable int		num;
 };
 template <typename type> using cweeList = cweeThreadedList<type>;
 

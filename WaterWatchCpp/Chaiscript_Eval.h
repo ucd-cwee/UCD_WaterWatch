@@ -445,7 +445,7 @@ namespace chaiscript {
                         this->potentialReturnType = ReturnType(user_type<bool>(), AST_Node_Type::Binary, true); break;
                     case Operators::Opers::assign_if_null:
                     case Operators::Opers::assign:
-                        throw std::exception("Something went wrong"); break;
+                        throw std::runtime_error("Something went wrong"); break;
                     }
                 }
             }
@@ -813,7 +813,7 @@ namespace chaiscript {
                         this->potentialReturnType = ReturnType(user_type<bool>(), AST_Node_Type::Equation, true); break;
                     case Operators::Opers::assign_if_null:
                     case Operators::Opers::assign:
-                        throw std::exception("Something went wrong"); break;
+                        throw std::runtime_error("Something went wrong"); break;
                     }
                 }
             }

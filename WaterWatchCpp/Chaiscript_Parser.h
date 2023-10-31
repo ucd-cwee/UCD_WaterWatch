@@ -447,9 +447,10 @@ namespace chaiscript {
 
             Position m_position;
 
-            const chaiscript::detail::Dispatch_Engine* m_engine;
             Tracer m_tracer;
             Optimizer m_optimizer;
+            const chaiscript::detail::Dispatch_Engine* m_engine;
+            
 
             void validate_object_name(std::string_view name) const {
                 if (!Name_Validator::valid_object_name(name)) {

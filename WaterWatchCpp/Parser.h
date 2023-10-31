@@ -285,7 +285,6 @@ private:
 		argV.SetGranularity(1000);
 
 		bool escape(false);
-		int i1(0);
 		int i2(0);
 		cweeStr currentWord(text), remainingWord(text);
 		remainingWord.ReduceSpaces((delimiter == '\n'));
@@ -311,7 +310,6 @@ private:
 		argV.SetGranularity(1000);
 
 		bool escape(false);
-		int i1(0);
 		int i2(0);
 		cweeStr currentWord(text), remainingWord(text);
 		remainingWord.ReduceSpaces();

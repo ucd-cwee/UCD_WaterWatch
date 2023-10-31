@@ -1310,7 +1310,7 @@ namespace UWP_WaterWatch.Custom_Controls
                         ExtensionMethods.TileSystem.TileXYToPixelXY(x_pos, y_pos, out x_pos, out y_pos);
 
                         double mapSize = ExtensionMethods.TileSystem.MapSize(zoom);
-                        double mapX = 0, mapY = 0, v = 0;
+                        double mapX = 0, mapY = 0;
 
                         mapY = 0.5 - (ExtensionMethods.TileSystem.Clip(y_pos, 0, mapSize - 1) / mapSize);
                         ExtensionMethods.TileSystem.PixelYToLat_Fast(ref mapY, out double latitude);

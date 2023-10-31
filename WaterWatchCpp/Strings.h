@@ -18,7 +18,6 @@ to maintain a single distribution point for the source code.
 #include "enum.h"
 #include "StringView.h"
 
-
 #define ASSERT_ENUM_STRING( string, index )		( 1 / (size_t)!( string - index ) ) ? #string : ""
 #define FLOATSIGNBITSET(f)		((*(const unsigned long *)&(f)) >> 31)
 #define FLOATSIGNBITNOTSET(f)	((~(*(const unsigned long *)&(f))) >> 31)
@@ -32,7 +31,7 @@ to maintain a single distribution point for the source code.
 #define DEFAULT_PARTICLE_SIZE 5
 
 
-class cweeParser; 
+class cweeParser;
 class cweeStrView;
 
 const size_t STR_ALLOC_BASE = 20;
@@ -60,7 +59,7 @@ public:
 		size_t l;
 		l = text.Length();
 		EnsureAlloced(l + 1);
-		strcpy(data, text.data);
+		strncpy(data, text.data, l+1);
 		len = l;
 	};
 	cweeStr(const cweeStr& text, size_t start, size_t end) {
@@ -98,7 +97,7 @@ public:
 		if (text != NULL) {
 			l = strlen(text);
 			EnsureAlloced(l + 1);
-			strcpy(data, text);
+			strncpy(data, text, l + 1);
 			len = l;
 		}
 	};
@@ -146,87 +145,46 @@ public:
 		len = 1;
 	};
 	explicit cweeStr(const int i) {
-		int local = 0;
-		local = i;
-
 		Construct();
-		char text[64];
-		size_t l;
-
-		l = sprintf(text, "%d", local);
-		EnsureAlloced(l + 1);
-		strcpy(data, text);
-		len = l;
+		this->operator=(std::to_string(i).c_str());
 	};
 	explicit cweeStr(const unsigned u) {
 		Construct();
-		char text[64];
-		size_t l;
-
-		l = sprintf(text, "%u", u);
-		EnsureAlloced(l + 1);
-		strcpy(data, text);
-		len = l;
+		this->operator=(std::to_string(u).c_str());
 	};
 	explicit cweeStr(const float f) {
-		float local = 0.0f;
-		local = f;
-
 		Construct();
-		char text[64];
-		long long l;
-
-		l = sprintf(text, "%f", local);
-		while (l > 0 && text[l - 1] == '0') text[--l] = '\0';
-		while (l > 0 && text[l - 1] == '.') text[--l] = '\0';
-		EnsureAlloced(l + 1);
-		strcpy(data, text);
-		len = l;
+		this->operator=(std::to_string(f).c_str());
+		if (Find(".") >= 0) {
+			StripTrailing('0');
+			StripTrailing('.'); // if the previous call removed all 0's, this will clean-up the final .
+		}
 	};
 	explicit cweeStr(const double f) {
 		Construct();
 		this->operator=(std::to_string(f).c_str());
+		if (Find(".") >= 0) {
+			StripTrailing('0');
+			StripTrailing('.'); // if the previous call removed all 0's, this will clean-up the final .
+		}
 	};
 	explicit cweeStr(const time_t time) {
 		Construct();
-		size_t l;
 		const char* text = ctime(&time);
-		if (text) {
-			l = strlen(text);
-			EnsureAlloced(l + 1);
-			strcpy(data, text);
-			len = l;
-		}
+		this->operator=(text);
 		ReduceSpaces();
 	};
 	explicit cweeStr(const u64 time) {
 		Construct();
-		size_t l;
-		std::string t = std::to_string(time);
-		const char* text = t.c_str();
-		if (text) {
-			l = strlen(text);
-			EnsureAlloced(l + 1);
-			strcpy(data, text);
-			len = l;
-		}
-		ReduceSpaces();
+		this->operator=(std::to_string(time).c_str());
 		if (Find(".") >= 0) {
 			StripTrailing('0');
-			StripTrailing('.'); // if the previous call removed all 0's, this will clean-up the final 0
+			StripTrailing('.'); // if the previous call removed all 0's, this will clean-up the final .
 		}
 	};
 	explicit cweeStr(const std::string in) {
 		Construct();
-		size_t l;
-		const char* hold = in.c_str();
-
-		if (hold != NULL) {
-			l = strlen(hold);
-			EnsureAlloced(l + 1);
-			strcpy(data, hold);
-			len = l;
-		}
+		this->operator=(in.c_str());
 	};
 	explicit cweeStr(const std::pair<u64, float> in) {
 		auto first = cweeStr((time_t)in.first);
@@ -238,7 +196,7 @@ public:
 		if (text) {
 			l = strlen(text);
 			EnsureAlloced(l + 1);
-			strcpy(data, text);
+			strncpy(data, text, l + 1);
 			len = l;
 		}
 		ReduceSpaces();
@@ -285,69 +243,39 @@ public:
 		l = text.Length();
 		EnsureAlloced(l + 1, false);
 		// std::memcpy(data, text.data, l);
-		strcpy(data, text.data);
+		strncpy(data, text.data, l + 1);
 		data[l] = '\0';
 		len = l;
 	};
 	void				operator=(const char* text) { this->operator=(cweeStr(text)); };
 
 	friend cweeStr		operator+(const cweeStr& a, const cweeStr& b) {
-		cweeStr result(a);
-		result.Append(b);
-		return result;
+		cweeStr out = cweeStr(a); out.Append(cweeStr(b)); return out;
 	};
 	friend cweeStr		operator+(const cweeStr& a, const char* b) {
-		cweeStr result(a);
-		result.Append(b);
-		return result;
+		cweeStr out = cweeStr(a); out.Append(cweeStr(b)); return out;
 	};
 	friend cweeStr		operator+(const char* a, const cweeStr& b) {
-		cweeStr result(a);
-		result.Append(b);
-		return result;
+		cweeStr out = cweeStr(a); out.Append(cweeStr(b)); return out;
 	};
 
 	friend cweeStr		operator+(const cweeStr& a, const float b) {
-		char	text[64];
-		cweeStr	result(a);
-
-		sprintf(text, "%f", b);
-		result.Append(text);
-
-		return result;
+		cweeStr out = cweeStr(a); out.Append(cweeStr(b)); return out;
 	};
 	friend cweeStr		operator+(const cweeStr& a, const double b) {
-		cweeStr	result(a);
-		result.Append(std::to_string(b).c_str());
-		return result;
+		cweeStr out = cweeStr(a); out.Append(cweeStr(b)); return out;
 	};
 	friend cweeStr		operator+(const cweeStr& a, const int b) {
-		char	text[64];
-		cweeStr	result(a);
-
-		sprintf(text, "%d", b);
-		result.Append(text);
-
-		return result;
+		cweeStr out = cweeStr(a); out.Append(cweeStr(b)); return out;
 	};
 	friend cweeStr		operator+(const cweeStr& a, const unsigned b) {
-		char	text[64];
-		cweeStr	result(a);
-
-		sprintf(text, "%u", b);
-		result.Append(text);
-
-		return result;
+		cweeStr out = cweeStr(a); out.Append(cweeStr(b)); return out;
 	};
 	friend cweeStr		operator+(const cweeStr& a, const bool b) {
-		cweeStr result(a);
-		result.Append(b ? "true" : "false");
-		return result;
+		cweeStr out = cweeStr(a); out.Append(cweeStr(b)); return out;
 	};
 	friend cweeStr		operator+(const cweeStr& a, const char b) {
-		cweeStr result(a);
-		result.Append(b);
-		return result;
+		cweeStr out = cweeStr(a); out.Append(cweeStr(b)); return out;
 	};
 
 	friend bool			operator<(const cweeStr& a, const cweeStr& b) {
@@ -355,43 +283,31 @@ public:
 	};
 
 	cweeStr& operator+=(const cweeStr& a) {
-		Append(a);
+		Append(cweeStr(a));
 		return *this;
 	};
 	cweeStr& operator+=(const char* a) {
-		Append(a);
+		Append(cweeStr(a));
 		return *this;
 	};
 	cweeStr& operator+=(const float a) {
-		char text[64];
-
-		sprintf(text, "%f", a);
-		Append(text);
-
+		Append(cweeStr(a));
 		return *this;
 	};
 	cweeStr& operator+=(const double a) {
-		Append(std::to_string(a).c_str());
+		Append(cweeStr(a));
 		return *this;
 	};
 	cweeStr& operator+=(const char a) {
-		Append(a);
+		Append(cweeStr(a));
 		return *this;
 	};
 	cweeStr& operator+=(const int a) {
-		char text[64];
-
-		sprintf(text, "%d", a);
-		Append(text);
-
+		Append(cweeStr(a));
 		return *this;
 	};
 	cweeStr& operator+=(const unsigned a) {
-		char text[64];
-
-		sprintf(text, "%u", a);
-		Append(text);
-
+		Append(cweeStr(a));
 		return *this;
 	};
 	cweeStr& operator+=(const bool a) {
@@ -462,23 +378,33 @@ public:
 		return cweeStr::IcmpnPath(data, text, strlen(text));
 	};
 
-	template <typename T>	static cweeStr			ToString(T any) {
+	template <typename T>
+	static cweeStr ToString(T obj) {
+		return ToString(obj, typenames::identity<T>());
+	};
+
+private:
+	template <typename T>
+	static cweeStr ToString(T any, typenames::identity<T>)
+	{
 		throw(
 			cweeStr(
 				cweeStr("Attempted to cast ") + typeid(any).name() + cweeStr(" to cweeStr.")
 			).c_str()
 		);
 	};
-	template <>				static cweeStr			ToString<bool>(bool any) { return cweeStr(any); };
-	template <>				static cweeStr			ToString<float>(float any) { return cweeStr(any); };
-	template <>				static cweeStr			ToString<double>(double any) { return cweeStr(any); };
-	template <>				static cweeStr			ToString<int>(int any) { return cweeStr(any); };
-	template <>				static cweeStr			ToString<u64>(u64 any) { return cweeStr(any); };
-	template <>				static cweeStr			ToString<time_t>(time_t any) { return cweeStr(any); };
-	template <>				static cweeStr			ToString<const char*>(const char* any) { return any; };
-	template <>				static cweeStr			ToString<char>(char any) { return cweeStr(any); };
-	template <>				static cweeStr			ToString<std::string>(std::string any) { return any.c_str(); };
-	template <>				static cweeStr			ToString<cweeStr>(cweeStr any) { return any; };
+	static cweeStr ToString(bool any, typenames::identity<bool>) { return cweeStr(any); };
+	static cweeStr ToString(float any, typenames::identity<float>) { return cweeStr(any); };
+	static cweeStr ToString(double any, typenames::identity<double>) { return cweeStr(any); };
+	static cweeStr ToString(int any, typenames::identity<int>) { return cweeStr(any); };
+	static cweeStr ToString(u64 any, typenames::identity<u64>) { return cweeStr(any); };
+	static cweeStr ToString(time_t any, typenames::identity<time_t>) { return cweeStr(any); };
+	static cweeStr ToString(const char* any, typenames::identity<const char*>) { return any; };
+	static cweeStr ToString(char any, typenames::identity<char>) { return cweeStr(any); };
+	static cweeStr ToString(std::string any, typenames::identity<std::string>) { return any.c_str(); };
+	static cweeStr ToString(cweeStr any, typenames::identity<cweeStr>) { return any; };
+
+public:
 
 	cweeStr				ParseHtml() const
 	{
@@ -493,14 +419,14 @@ public:
 		for (int i = 0; i < n; i++) {
 			// If S[i] is '>', update
 			// start to i+1 and break
-			if (copy[i] == '>') {
+			if (copy.operator [](i) == '>') {
 				start = i + 1;
 				break;
 			}
 		}
 
 		// Remove the blank space
-		while (copy[start] == ' ') {
+		while (copy.operator [](start) == ' ') {
 			start++;
 		}
 
@@ -508,7 +434,7 @@ public:
 		for (int i = start; i < n; i++) {
 			// If S[i] is '<', update
 			// end to i-1 and break
-			if (copy[i] == '<') {
+			if (copy.operator [](i) == '<') {
 				end = i - 1;
 				break;
 			}
@@ -671,8 +597,8 @@ public:
 		}
 		return *this;
 	};
-	cweeStr&			Append(const char* text, const size_t& l) {
-		long long newLen; long long i;// = long long(l) - 1;
+	cweeStr&			Append(const char* text, long long l) {
+		long long newLen; long long i;
 		if (text && l) {
 			newLen = len + l;
 			EnsureAlloced(newLen + 1);
@@ -695,7 +621,7 @@ public:
 		if (index < 0) {
 			index = 0;
 		}
-		else if (index > len) {
+		else if (index > (long long)len) {
 			index = len;
 		}
 
@@ -713,7 +639,7 @@ public:
 		if (index < 0) {
 			index = 0;
 		}
-		else if (index > len) {
+		else if (index > (long long)len) {
 			index = len;
 		}
 
@@ -812,7 +738,7 @@ public:
 		}
 		return Mid(Length() - len, len, result);
 	};			// store the rightmost 'len' characters in the result
-	const char*			Mid(const size_t& start, long long l, cweeStr& result) const {
+	const char*			Mid(long long start, long long l, cweeStr& result) const {
 		long long i = Length();
 
 		if (i == 0 || l <= 0 || start >= i) {
@@ -837,7 +763,7 @@ public:
 		}
 		return Mid(Length() - len, len);
 	};							// return the rightmost 'len' characters
-	cweeStr				Mid(const size_t& start, long long l) const {
+	cweeStr				Mid(long long start, long long l) const {
 		long long i = Length();
 		cweeStr result;
 
@@ -911,7 +837,7 @@ public:
 
 		l = strlen(string);
 		if (l > 0) {
-			while ((len >= l) && !Cmpn(string, data + len - l, l)) {
+			while (((long long)len >= l) && !Cmpn(string, data + len - l, l)) {
 				len -= l;
 				data[len] = '\0';
 			}
@@ -921,7 +847,7 @@ public:
 		long long l;
 
 		l = strlen(string);
-		if ((l > 0) && (len >= l) && !Cmpn(string, data + len - l, l)) {
+		if ((l > 0) && ((long long)len >= l) && !Cmpn(string, data + len - l, l)) {
 			len -= l;
 			data[len] = '\0';
 			return true;
@@ -998,7 +924,7 @@ public:
 
 				// Replace the old data with the new data
 				size_t j = 0;
-				for (long long i = 0; i < oldString.Length(); i++) {
+				for (long long i = 0; i < (long long)oldString.Length(); i++) {
 					if (cweeStr::Cmpn(&oldString[(size_t)i], old, oldLen) == 0) {
 						memcpy(data + j, nw, newLen);
 						i += oldLen - 1;
@@ -1017,7 +943,7 @@ public:
 		}
 		else {
 
-			size_t capacity = 16;
+			long long capacity = 16;
 			std::vector<long long> found;
 			found.reserve(capacity);
 			long long count = 0;
@@ -1038,11 +964,11 @@ public:
 			if (count) {
 				// inline replace without copying the data. 
 				long long finalLen = len + ((newLen - oldLen) * count);
-				if (finalLen > len)
+				if (finalLen > (long long)len)
 				{
 					EnsureAlloced(finalLen + 2, true); // data[] is now the size of "finalLen + 2"
 					long long diff = finalLen - len;
-					long long i, j, k;
+					long long i, j;
 					for (i = finalLen; i >= diff; i--) data[i] = data[i - diff]; // move all of our data to the right-most edge.
 
 					j = 0; i = 0;
@@ -1077,7 +1003,7 @@ public:
 					long long buffer = ::Max(oldLen, newLen) - ::Min((long long)0.0f, finalLen - (long long)len);
 					EnsureAlloced(finalLen + 2 + buffer, true); // data[] is now the size of "finalLen + 2"					
 					long long diff = (finalLen + buffer) - len;
-					long long i, j, k;
+					long long i, j;
 					for (i = finalLen + buffer; i >= diff; i--) data[i] = data[i - diff]; // move all of our data to the right-most edge. 
 
 					j = 0; i = 0;
@@ -1115,7 +1041,7 @@ public:
 	};
 	bool				ReplaceChar(const char old, const char nw) {
 		bool replaced = false;
-		for (long long i = 0; i < Length(); i++) {
+		for (long long i = 0; i < (long long)Length(); i++) {
 			if (data[i] == old) {
 				data[i] = nw;
 				replaced = true;
@@ -1124,13 +1050,14 @@ public:
 		return replaced;
 	};
 	void				Replace(const std::vector<cweeStr>& olds, const std::vector<cweeStr>& news) {
-		const size_t numOlds = olds.size();
-		std::vector<long long> counts; for (auto& old : olds) counts.push_back(0); size_t overall = 0;
+		long long numOlds = olds.size();
+		std::vector<long long> counts; for (size_t c = 0; c < olds.size(); c++){ counts.push_back(0); } 
+		size_t overall = 0;
 		long long oldLen = 0, newLen = 0;
 		long long i = 0, j = 0, k = 0;
 
 		// Work out how big the new string will be
-		for (i = 0; i < Length(); i++) {
+		for (i = 0; i < (long long)Length(); i++) {
 			for (k = 0; k < numOlds; k++) {
 				if (cweeStr::Cmpn(&data[i], olds[k], olds[k].Length()) == 0) {
 					counts[k]++;
@@ -1307,7 +1234,7 @@ public:
 	cweeStr&			StripAbsoluteFileExtension() {
 		long long i;
 
-		for (i = 0; i < len; i++) {
+		for (i = 0; i < (long long)len; i++) {
 			if (data[i] == '.') {
 				data[i] = '\0';
 				len = i;
@@ -1333,7 +1260,7 @@ public:
 		return *this;
 	};	// if there's no file extension use the default
 	cweeStr&			DefaultPath(const char* basepath) {
-		if (((*this)[0] == '/') || ((*this)[0] == '\\')) {
+		if ((this->operator [](0) == '/') || (this->operator [](0) == '\\')) {
 			// absolute path location
 			return *this;
 		}
@@ -1374,7 +1301,7 @@ public:
 		int pos;
 
 		pos = Length() - 1;
-		while ((pos > 0) && ((*this)[pos] != '/') && ((*this)[pos] != '\\')) {
+		while ((pos > 0) && (this->operator [](pos) != '/') && (this->operator [](pos) != '\\')) {
 			pos--;
 		}
 
@@ -1389,7 +1316,7 @@ public:
 		int pos;
 
 		pos = Length();
-		while ((pos > 0) && ((*this)[pos - 1] != '/') && ((*this)[pos - 1] != '\\')) {
+		while ((pos > 0) && (this->operator [](pos-1) != '/') && (this->operator [](pos-1) != '\\')) {
 			pos--;
 		}
 
@@ -1403,7 +1330,7 @@ public:
 		// back up until a \ or the start
 		//
 		pos = Length();
-		while ((pos > 0) && ((*this)[pos - 1] != '/') && ((*this)[pos - 1] != '\\')) {
+		while ((pos > 0) && (this->operator [](pos - 1) != '/') && (this->operator [](pos - 1) != '\\')) {
 			pos--;
 		}
 
@@ -1416,7 +1343,7 @@ public:
 		// back up until a \ or the start
 		//
 		pos = Length() - 1;
-		while ((pos > 0) && ((*this)[pos - 1] != '/') && ((*this)[pos - 1] != '\\')) {
+		while ((pos > 0) && (this->operator [](pos - 1) != '/') && (this->operator [](pos - 1) != '\\')) {
 			pos--;
 		}
 
@@ -1430,12 +1357,12 @@ public:
 		// back up until a \ or the start
 		//
 		pos = Length() - 1;
-		while ((pos > 0) && ((*this)[pos - 1] != '/') && ((*this)[pos - 1] != '\\')) {
+		while ((pos > 0) && (this->operator [](pos - 1) != '/') && (this->operator [](pos - 1) != '\\')) {
 			pos--;
 		}
 
 		start = pos;
-		while ((pos < Length()) && ((*this)[pos] != '.')) {
+		while ((pos < (long long)Length()) && (this->operator [](pos) != '.')) {
 			pos++;
 		}
 
@@ -1448,7 +1375,7 @@ public:
 		// back up until a . or the start
 		//
 		pos = Length() - 1;
-		while ((pos > 0) && ((*this)[pos - 1] != '.')) {
+		while ((pos > 0) && (this->operator [](pos - 1) != '.')) {
 			pos--;
 		}
 
@@ -1967,7 +1894,6 @@ public:
 	};
 	static size_t		vsnPrintf(char* dest, size_t size, const char* fmt, va_list argptr) {
 		size_t ret;
-
 #undef _vsnprintf
 		ret = _vsnprintf(dest, size - 1, fmt, argptr);
 #define _vsnprintf	use_cweeStr_vsnPrintf
@@ -2326,34 +2252,25 @@ public:
 		return (c == '\t');
 	};
 
-	friend size_t		sprintf(cweeStr& string, const char* fmt, ...) {
-		size_t l;
-		va_list argptr;
-		char buffer[32000];
-
-		va_start(argptr, fmt);
-		l = cweeStr::vsnPrintf(buffer, sizeof(buffer) - 1, fmt, argptr);
-		va_end(argptr);
-		buffer[sizeof(buffer) - 1] = '\0';
-
-		string = buffer;
-		return l;
-	};
 	static cweeStr		printf(const char* fmt, ...) {
-		size_t l;
 		va_list argptr;
-		char buffer[128000];
+
+		AUTO buffer = new char[128000];		
+		buffer[128000 - 1] = '\0';
+
+		// char buffer[128000];
 
 		va_start(argptr, fmt);
-		l = cweeStr::vsnPrintf(buffer, sizeof(buffer) - 1, fmt, argptr);
+		cweeStr::vsnPrintf(buffer, 128000 - 1 /*sizeof(buffer) - 1*/, fmt, argptr);
 		va_end(argptr);
-		buffer[sizeof(buffer) - 1] = '\0';
+		buffer[128000 /*sizeof(buffer)*/ - 1] = '\0';
 
-		return cweeStr(buffer);
+		cweeStr out(buffer);
+		
+		delete[] buffer;
+		return out;
 	};
-	//static constexpr unsigned int hash(const char* s, int off = 0) {
-	//	return !s[off] ? 5381 : (hash(s, off + 1) * 33) ^ s[off];
-	//};
+
 	static cweeStr		print(const char* format) { return format; }
 	template<typename T, typename... Targs> static cweeStr print(const char* format, const T& value, Targs... Fargs) // recursive function
 	{
@@ -2370,17 +2287,6 @@ public:
 
 		return out;
 	}
-
-	friend size_t		vsprintf(cweeStr& string, const char* fmt, va_list argptr) {
-		size_t l;
-		char buffer[32000];
-
-		l = cweeStr::vsnPrintf(buffer, sizeof(buffer) - 1, fmt, argptr);
-		buffer[sizeof(buffer) - 1] = '\0';
-
-		string = buffer;
-		return l;
-	};
 
 	void				ReAllocate(size_t amount, bool keepold) { // main cost when saving to file as cweeStr
 		char* newbuffer;
@@ -2418,7 +2324,6 @@ public:
 			data[len] = '\0';
 			cweeStr::Copynz(newbuffer, data, len + 1);
 			newbuffer[len] = '\0';
-			// strcpy(newbuffer, data);
 		}
 		if (data && data != baseBuffer) {
 #ifdef USE_STRING_DATA_ALLOCATOR
@@ -2583,7 +2488,7 @@ public:
 			ptr[view.length() + 1] = '\0';
 			std::memcpy(ptr, view.c_str(), view.length());
 			u64 out = atof(ptr);
-			delete ptr;
+			delete[] ptr;
 			return out;
 		}
 		else {
@@ -2596,7 +2501,7 @@ public:
 			ptr[view.length() + 1] = '\0';
 			std::memcpy(ptr, view.c_str(), view.length());
 			u64 out = atof(ptr);
-			delete ptr;
+			delete[] ptr;
 			return out;
 		}
 		else {
@@ -2780,8 +2685,8 @@ public:
 
 		l = std::strlen(string);
 		if (l > 0) {
-			while ((view.length() >= l) && !Cmpn(string, view.data() + view.length() - l, l)) {
-				view.mid(0, view.length() - l);
+			while (((long long)view.length() >= l) && !Cmpn(string, view.data() + view.length() - l, l)) {
+				view.mid(0, (long long)view.length() - l);
 			}
 		}
 	};
@@ -2790,7 +2695,7 @@ public:
 
 		l = std::strlen(string);
 		if (l > 0) {
-			while ((view.length() >= l) && !Cmpn(string, view.data() + view.length() - l, l)) {
+			while (((long long)view.length() >= l) && !Cmpn(string, view.data() + view.length() - l, l)) {
 				view.mid(0, view.length() - l);
 				return true;
 			}

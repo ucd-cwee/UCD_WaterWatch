@@ -1277,29 +1277,29 @@ INLINE bool						cweeLinkedList<T, numChildren>::RemoveIndexFast(int index) {
 template <typename T, int numChildren>
 INLINE bool						cweeLinkedList<T, numChildren>::Remove(const T& obj) {
 	int f = FindIndex(obj);
-	if (f >= 0)
-		RemoveIndex(f);
+	if (f >= 0) return RemoveIndex(f);
+	return false;
 };
 
 template <typename T, int numChildren>
 INLINE bool						cweeLinkedList<T, numChildren>::RemoveFast(const T& obj) {
 	int f = FindIndex(obj);
-	if (f >= 0)
-		RemoveIndexFast(f);
+	if (f >= 0) return RemoveIndexFast(f);
+	return false;
 };
 
 template <typename T, int numChildren>
 INLINE bool						cweeLinkedList<T, numChildren>::Remove(const T* obj) {
 	int f = FindIndex(obj);
-	if (f >= 0)
-		RemoveIndex(f);
+	if (f >= 0) return RemoveIndex(f);
+	return false;
 };
 
 template <typename T, int numChildren>
 INLINE bool						cweeLinkedList<T, numChildren>::RemoveFast(const T* obj) {
 	int f = FindIndex(obj);
-	if (f >= 0)
-		RemoveIndexFast(f);
+	if (f >= 0) return RemoveIndexFast(f);
+	return false;
 };
 
 template <typename T, int numChildren>

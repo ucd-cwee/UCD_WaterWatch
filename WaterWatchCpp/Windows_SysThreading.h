@@ -15,14 +15,14 @@ to maintain a single distribution point for the source code.
 
 #pragma once
 #include <minwinbase.h>
-#include <cstdint>
+// #include <cstdint>
 #include <synchapi.h>
 #include <processthreadsapi.h>
 #include <handleapi.h>
 #include <libloaderapi.h>
 #include <errhandlingapi.h>
 #include <winerror.h>
-#include <corecrt_malloc.h>
+// #include <corecrt_malloc.h>
 #include <Windows.h>
 #include <winnt.h>
 
@@ -201,7 +201,7 @@ private:
 #include <windows.h>
 #include <tchar.h> 
 #include <stdio.h>
-#include <strsafe.h>
+// #include <strsafe.h>
 #pragma comment(lib, "User32.lib")
 #include <locale> 
 #include <codecvt>
@@ -215,12 +215,8 @@ public:
 private:
 	std::vector<std::string> files;
 	void Init(const char* directory) {
-		TCHAR argv;
 		WIN32_FIND_DATAW ffd;
-		LARGE_INTEGER filesize;
-		size_t length_of_arg;
 		HANDLE hFind = INVALID_HANDLE_VALUE;
-		DWORD dwError = 0;
 		WCHAR szDir[MAX_PATH];
 
 		std::string s = directory;
@@ -233,10 +229,10 @@ private:
 		std::wstring r(buf);
 		delete[] buf;
 		std::wstring thisStr = r;
-		StringCchCopyW(szDir, MAX_PATH, thisStr.c_str());
+		//StringCchCopyW(szDir, MAX_PATH, thisStr.c_str());
 
 		// Find the first file in the directory.
-		hFind = FindFirstFileW(szDir, &ffd);
+		hFind = FindFirstFileW(thisStr.c_str()/*szDir*/, &ffd);
 		do
 		{
 			std::wstring thisString(ffd.cFileName);

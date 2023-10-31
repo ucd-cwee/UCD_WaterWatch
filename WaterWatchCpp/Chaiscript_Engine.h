@@ -17,6 +17,7 @@ to maintain a single distribution point for the source code.
 
 #pragma once
 #include "chaiscript_wrapper.h"
+#include "Chaiscript_Defines.h"
 
 #include <cassert>
 #include <cstring>
@@ -117,15 +118,15 @@ namespace chaiscript {
 
             // "Functions"
             // "AllFunctions"
-            m_engine.AddFunction(this, FunctionNames, , { return m_engine.FunctionNames_exposed(); });
-            m_engine.AddFunction(this, ObjectNames, , { return m_engine.ObjectNames_exposed(); }); 
-            m_engine.AddFunction(this, dump_system, , { m_engine.dump_system(); }); 
-            m_engine.AddFunction(this, dump_object, , { m_engine.dump_object(t_bv); }, const Boxed_Value& t_bv); 
-            m_engine.AddFunction(this, is_type, , { return m_engine.is_type(t_bv, t_type); }, const Boxed_Value& t_bv, const std::string& t_type); 
-            m_engine.AddFunction(this, is_type, , return m_engine.is_type(t_bv, m_engine.get_type_name(t_ti)), const Boxed_Value& t_bv, const Type_Info& t_ti);             
-            m_engine.AddFunction(this, dynamic_cast, , return m_engine.polymorphic_cast(t_bv, t_type), const Boxed_Value& t_bv, const std::string& t_type);             
-            m_engine.AddFunction(this, type_name, , return m_engine.type_name(t_bv), const Boxed_Value& t_bv);
-            m_engine.AddFunction(this, function_exists, -> bool, return m_engine.function_exists(t_f), const std::string& t_f);
+            AddFunctionTo(m_engine, this, FunctionNames, , { return m_engine.FunctionNames_exposed(); });
+            AddFunctionTo(m_engine, this, ObjectNames, , { return m_engine.ObjectNames_exposed(); }); 
+            AddFunctionTo(m_engine, this, dump_system, , { m_engine.dump_system(); }); 
+            AddFunctionTo(m_engine, this, dump_object, , { m_engine.dump_object(t_bv); }, const Boxed_Value& t_bv); 
+            AddFunctionTo(m_engine, this, is_type, , { return m_engine.is_type(t_bv, t_type); }, const Boxed_Value& t_bv, const std::string& t_type); 
+            AddFunctionTo(m_engine, this, is_type, , return m_engine.is_type(t_bv, m_engine.get_type_name(t_ti)), const Boxed_Value& t_bv, const Type_Info& t_ti);             
+            AddFunctionTo(m_engine, this, dynamic_cast, , return m_engine.polymorphic_cast(t_bv, t_type), const Boxed_Value& t_bv, const std::string& t_type);             
+            AddFunctionTo(m_engine, this, type_name, , return m_engine.type_name(t_bv), const Boxed_Value& t_bv);
+            AddFunctionTo(m_engine, this, function_exists, -> bool, return m_engine.function_exists(t_f), const std::string& t_f);
 
             m_engine.add(fun([this](const dispatch::Proxy_Function_Base* func) { 
                 std::map<std::string, Boxed_Value> out;
@@ -320,15 +321,15 @@ namespace chaiscript {
                 return names;
             }, { "func, className" }), "get_function_param_names");
 
-            m_engine.AddFunction(this, get_functions, , return m_engine.get_function_objects());
-            m_engine.AddFunction(this, get_all_functions, , return m_engine.get_all_function_objects());
-            m_engine.AddFunction(this, get_function_name, , return m_engine.get_function_name(func), const dispatch::Proxy_Function_Base* func);
-            m_engine.AddFunction(this, get_function_description, , return func->get_description(), const dispatch::Proxy_Function_Base* func);
-            m_engine.AddFunction(this, get_objects, , return m_engine.get_scripting_objects());
-            m_engine.AddFunction(this, get_all_objects, , return m_engine.get_all_scripting_objects());
-            m_engine.AddFunction(this, get_global_objects, , return m_engine.get_global_objects());
-            m_engine.AddFunction(this, delete, , m_engine.Delete(t_bv); t_bv.assign(Boxed_Value()); , Boxed_Value& t_bv);
-            m_engine.AddFunction(this, get_conversions, , return m_engine.conversions().get_conversions());
+            AddFunctionTo(m_engine, this, get_functions, , return m_engine.get_function_objects());
+            AddFunctionTo(m_engine, this, get_all_functions, , return m_engine.get_all_function_objects());
+            AddFunctionTo(m_engine, this, get_function_name, , return m_engine.get_function_name(func), const dispatch::Proxy_Function_Base* func);
+            AddFunctionTo(m_engine, this, get_function_description, , return func->get_description(), const dispatch::Proxy_Function_Base* func);
+            AddFunctionTo(m_engine, this, get_objects, , return m_engine.get_scripting_objects());
+            AddFunctionTo(m_engine, this, get_all_objects, , return m_engine.get_all_scripting_objects());
+            AddFunctionTo(m_engine, this, get_global_objects, , return m_engine.get_global_objects());
+            AddFunctionTo(m_engine, this, delete, , m_engine.Delete(t_bv); t_bv.assign(Boxed_Value()); , Boxed_Value& t_bv);
+            AddFunctionTo(m_engine, this, get_conversions, , return m_engine.conversions().get_conversions());
 
             m_engine.add(dispatch::make_dynamic_proxy_function([this](const Function_Params& t_params) { return m_engine.call_exists(t_params); }),
                 "call_exists");
@@ -346,12 +347,12 @@ namespace chaiscript {
                 return t_fun->operator()(Function_Params{ &t_params.front() + 1, &t_params.front() + t_params.size() }, Type_Conversions_State(this->m_engine.conversions(), this->m_engine.conversions().conversion_saves()));
              }), "call_vector");
 
-            m_engine.AddFunction(this, name, , return m_engine.get_type_name(t_ti); , const Type_Info& t_ti);
-            m_engine.AddFunction(this, to_string, , return m_engine.get_type_name(t_ti);, const Type_Info& t_ti);
-            m_engine.AddFunction(this, get_name, , return this->get_eval_engine().get_function_name(func); , const chaiscript::dispatch::Proxy_Function_Base* func);
+            AddFunctionTo(m_engine, this, name, , return m_engine.get_type_name(t_ti); , const Type_Info& t_ti);
+            AddFunctionTo(m_engine, this, to_string, , return m_engine.get_type_name(t_ti);, const Type_Info& t_ti);
+            AddFunctionTo(m_engine, this, get_name, , return this->get_eval_engine().get_function_name(func); , const chaiscript::dispatch::Proxy_Function_Base* func);
 
-            m_engine.AddFunction(this, type, , return m_engine.get_type(t_type_name, t_throw); , const std::string& t_type_name, bool t_throw);
-            m_engine.AddFunction(this, type, , return m_engine.get_type(t_type_name, true);, const std::string& t_type_name);
+            AddFunctionTo(m_engine, this, type, , return m_engine.get_type(t_type_name, t_throw); , const std::string& t_type_name, bool t_throw);
+            AddFunctionTo(m_engine, this, type, , return m_engine.get_type(t_type_name, true);, const std::string& t_type_name);
 
             m_engine.add(fun([this](const Type_Info& t_from, const Type_Info& t_to, const std::function<Boxed_Value(const Boxed_Value&)>& t_func) {
                 m_engine.add(chaiscript::type_conversion(t_from, t_to, t_func));
@@ -378,7 +379,7 @@ namespace chaiscript {
             m_engine.add(fun([this](const std::string& t_str, const bool t_dump) { return this->parse(t_str, t_dump); }), "parse");
             m_engine.add(fun([this](const std::string& t_str) { return this->parse(t_str); }), "parse");
 
-            m_engine.AddFunction(this, ListNodes, , return ListNodes(t_ast), const chaiscript::Boxed_Value& t_ast);
+            AddFunctionTo(m_engine, this, ListNodes, , return ListNodes(t_ast), const chaiscript::Boxed_Value& t_ast);
 
             m_engine.add(fun([this](const Boxed_Value& t_bv, const std::string& t_name) { add_global_const(t_bv, t_name); }), "add_global_const");
             m_engine.add(fun([this](const Boxed_Value& t_bv, const std::string& t_name) { add_global(t_bv, t_name); }), "add_global");

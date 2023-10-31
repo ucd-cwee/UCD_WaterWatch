@@ -14,117 +14,59 @@ to maintain a single distribution point for the source code.
 */
 
 #pragma once
-#include "Precompiled.h"
-#include "enum.h"
-#include "Strings.h"
-
-#include <cstdint>
+#include "Units.h" // stands on it's own anyhow
+#include <cstdarg>
+#include <iostream>
+#include <array>
+#include <cstring>
+#include <string>
+#include <sstream>
+#include <mutex>
+#include <map>
 #include <type_traits>
-
-	namespace constexpr_to_string {
-
-		constexpr char digits[] = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-
-		/**
-		 * @struct to_string_t
-		 * @brief Provides the ability to convert any integral to a string at compile-time.
-		 * @tparam N Number to convert
-		 * @tparam base Desired base, can be from 2 to 36
-		 */
-		template<std::intmax_t N, int base, typename char_type,
-			std::enable_if_t<(base > 1 && base < sizeof(digits)), int> = 0>
-			class to_string_t {
-
-			constexpr static AUTO buflen() noexcept {
-				unsigned int len = N > 0 ? 1 : 2;
-				for (auto n = N; n; len++, n /= base);
-				return len;
-			};
-
-			constexpr static AUTO bufLen = buflen();
-			char_type buf[bufLen] = {};
-
-			public:
-				/**
-				 * Constructs the object, filling `buf` with the string representation of N.
-				 */
-				constexpr to_string_t() noexcept {
-					auto ptr = end();
-					*--ptr = '\0';
-
-					if (N != 0) {
-						for (auto n = N; n; n /= base)
-							*--ptr = digits[(N < 0 ? -1 : 1) * (n % base)];
-						if (N < 0)
-							*--ptr = '-';
-					}
-					else {
-						buf[0] = '0';
-					}
-				}
-
-				// Support implicit casting to `char *` or `const char *`.
-				constexpr operator char_type* () noexcept { return buf; }
-				constexpr operator const char_type* () const noexcept { return buf; }
-
-				constexpr auto size() const noexcept { return sizeof(buf) / sizeof(buf[0]); }
-
-				// Element access
-				constexpr auto data() noexcept { return buf; }
-				constexpr const auto data() const noexcept { return buf; }
-				constexpr auto& operator[](unsigned int i) noexcept { return buf[i]; }
-				constexpr const auto& operator[](unsigned int i) const noexcept { return buf[i]; }
-				constexpr auto& front() noexcept { return buf[0]; }
-				constexpr const auto& front() const noexcept { return buf[0]; }
-				constexpr auto& back() noexcept { return buf[size() - 1]; }
-				constexpr const auto& back() const noexcept { return buf[size() - 1]; }
-
-				// Iterators
-				constexpr auto begin() noexcept { return buf; }
-				constexpr const auto begin() const noexcept { return buf; }
-				constexpr auto end() noexcept { return buf + size(); }
-				constexpr const auto end() const noexcept { return buf + size(); }
-		};
-
-	} // namespace constexpr_to_string
-	template<std::intmax_t N> constexpr const char* ConstexprIntToString() { static constexpr AUTO str = constexpr_to_string::to_string_t<N, 10, char>(); return str(); };
+typedef long double				u64;
+#include "enum.h"
 
 	namespace cweeUnitValues {
 		BETTER_ENUM(unit_value_type, uint8_t, METERS, KILOGRAMS, SECONDS, AMPERES, DOLLAR);
 
-		INLINE constexpr unsigned long long HashUnits(double a, double b, double c, double d, double e) noexcept {
-			constexpr AUTO A = 54059; /* a prime */
-			constexpr AUTO B = 76963; /* another prime */
-			constexpr AUTO C = 86969; /* yet another prime */
-			constexpr AUTO FIRSTH = 37; /* also prime */
+		__forceinline constexpr size_t HashUnits(double a, double b, double c, double d, double e) noexcept {
+			constexpr double OFFSET = 1000;
+			constexpr size_t A = 54059; /* a prime */
+			constexpr double B = 76963; /* another prime */
+			constexpr size_t C = 86969; /* yet another prime */
+			constexpr size_t FIRSTH = 37; /* also prime */
 
 			size_t h = FIRSTH;
-			h = (h * A) ^ (long long)(a * B * 100.0);
-			h = (h * A) ^ (long long)(b * B * 100.0);
-			h = (h * A) ^ (long long)(c * B * 100.0);
-			h = (h * A) ^ (long long)(d * B * 100.0);
-			h = (h * A) ^ (long long)(e * B * 100.0);
+			h = (h * A) ^ (size_t)((a+ OFFSET) * B * 100.0); 
+			h = (h * A) ^ (size_t)((b + OFFSET) * B * 100.0); 
+			h = (h * A) ^ (size_t)((c + OFFSET) * B * 100.0); 
+			h = (h * A) ^ (size_t)((d + OFFSET) * B * 100.0); 
+			h = (h * A) ^ (size_t)((e + OFFSET) * B * 100.0); 
 
-			AUTO result = h % C;
+			decltype(auto) result = h % C;
 			return result;
 		};
-		INLINE constexpr unsigned long long HashUnitAndRatio(unsigned long long unitHash, double ratio) noexcept {
-			constexpr AUTO A = 54059; /* a prime */
-			constexpr AUTO B = 76963; /* another prime */
-			constexpr AUTO C = 86969; /* yet another prime */
-			constexpr AUTO FIRSTH = 37; /* also prime */
+		__forceinline constexpr size_t HashUnitAndRatio(double unitHash, double ratio) noexcept {
+			constexpr double OFFSETA = 10000;
+			constexpr double OFFSETB = 1000;
+			constexpr size_t A = 54059; /* a prime */
+			constexpr double B = 76963; /* another prime */
+			constexpr size_t C = 86969; /* yet another prime */
+			constexpr size_t FIRSTH = 37; /* also prime */
 
 			size_t h = FIRSTH;
-			h = (h * A) ^ (long long)(unitHash * B);
-			h = (h * A) ^ (long long)(ratio * B * 10000000.0);
+			h = (h * A) ^ (size_t)((unitHash + OFFSETA) * B); 
+			h = (h * A) ^ (size_t)((ratio + OFFSETB) * B * 100000.0); // 10000000.0
 
-			AUTO result = h % C;
+			decltype(auto) result = h % C;
 			return result;
 		};
 
 		namespace cweeUnitValuesDetail { 
-			const char* lookup_abbreviation(unsigned long long ull); 
-			const char* lookup_typename(unsigned long long ull);
+			static std::pair< const char*, const char*> lookup_impl(size_t ull);
+			static const char* lookup_abbreviation(size_t ull);
+			static const char* lookup_typename(size_t ull);
 		};
 
 		class Unit_ID {
@@ -143,14 +85,11 @@ to maintain a single distribution point for the source code.
 			bool IsSameCategory(Unit_ID const& other) const noexcept {
 				if (isScalar_m && other.isScalar_m) return true;
 				return std::memcmp(&unitType_m, &other.unitType_m, sizeof(unitType_m)) == 0;
-				//for (int i = NumUnits - 1; i >= 0; i--)
-				//	if (unitType_m[i] != other.unitType_m[i]) return false;
-				//return true;
 			};
 			bool IsSameUnit(Unit_ID const& other) const noexcept {
 				return IsSameCategory(other) && (ratio_m == other.ratio_m);
 			};
-			unsigned long long HashCategory() const noexcept {
+			decltype(auto) HashCategory() const noexcept {
 				return cweeUnitValues::HashUnits(unitType_m[0], unitType_m[1], unitType_m[2], unitType_m[3], unitType_m[4]);
 			};
 			const char* LookupAbbreviation() const {
@@ -167,27 +106,6 @@ to maintain a single distribution point for the source code.
 			mutable const char* abbreviation_m;
 			double ratio_m;
 		};
-
-		//static constexpr double FUNC() {
-		//	constexpr units::length::foot_t t = 10;
-
-		//	constexpr double length_Ratio = (double)units::length::foot_t::unit_type::base_unit_type::meter_ratio::num / (double)units::length::foot_t::unit_type::base_unit_type::meter_ratio::den;
-		//	constexpr double mass_ratio = (double)units::length::foot_t::unit_type::base_unit_type::kilogram_ratio::num / (double)units::length::foot_t::unit_type::base_unit_type::kilogram_ratio::den;
-		//	constexpr double second_ratio = (double)units::length::foot_t::unit_type::base_unit_type::second_ratio::num / (double)units::length::foot_t::unit_type::base_unit_type::second_ratio::den;
-		//	constexpr double ampere_ratio = (double)units::length::foot_t::unit_type::base_unit_type::ampere_ratio::num / (double)units::length::foot_t::unit_type::base_unit_type::ampere_ratio::den;
-		//	constexpr double dollar_ratio = (double)units::length::foot_t::unit_type::base_unit_type::dollar_ratio::num / (double)units::length::foot_t::unit_type::base_unit_type::dollar_ratio::den;
-		//	
-		//	constexpr double factor = (double)units::length::foot_t::unit_type::conversion_ratio::num / (double)units::length::foot_t::unit_type::conversion_ratio::den;
-
-		//	// units::length::foot_t::_unit_t
-
-		//		
-		//	//  / (double)units::length::foot_t::unit_type::base_unit_type::meter_ratio::den;
-		//	//constexpr double lenRatio = (double)units::length::foot_t::unit_type::base_unit_type::meter_ratio::num / (double)units::length::foot_t::unit_type::base_unit_type::meter_ratio::den;
-		//	//constexpr double lenRatio = (double)units::length::foot_t::unit_type::base_unit_type::meter_ratio::num / (double)units::length::foot_t::unit_type::base_unit_type::meter_ratio::den;
-		//	//constexpr double lenRatio = (double)units::length::foot_t::unit_type::base_unit_type::meter_ratio::num / (double)units::length::foot_t::unit_type::base_unit_type::meter_ratio::den;
-
-		//};
 
 		class unit_value {
 		public:
@@ -213,12 +131,10 @@ to maintain a single distribution point for the source code.
 				constexpr double dollar_ratio = (double)T::unit_type::base_unit_type::dollar_ratio::num / (double)T::unit_type::base_unit_type::dollar_ratio::den;
 				constexpr bool isNotScalar = (length_Ratio != 0) || (mass_ratio != 0) || (second_ratio != 0) || (ampere_ratio != 0) || (dollar_ratio != 0);
 				constexpr double factor = (double)T::unit_type::conversion_ratio::num / (double)T::unit_type::conversion_ratio::den;
-
 				if constexpr (!isNotScalar)
 					unit_m = Unit_ID(length_Ratio, mass_ratio, second_ratio, ampere_ratio, dollar_ratio, true, "", factor);
 				else
 					unit_m = Unit_ID(length_Ratio, mass_ratio, second_ratio, ampere_ratio, dollar_ratio, false, unitTypeObj.abbreviation(), factor);
-
 				value_m = (unitTypeObj() * conversion()); // save it a an SI value
 			};
 			virtual ~unit_value() {};
@@ -231,12 +147,107 @@ to maintain a single distribution point for the source code.
 			double operator()() const noexcept { return GetVisibleValue(); };
 
 		public: // Functions
-			const char* Abbreviation() const noexcept {
-				if (unit_m.abbreviation_m == "") {
+
+			const char* UnitName() const noexcept {
+				return cweeUnitValuesDetail::lookup_typename(HashUnitAndRatio(unit_m.HashCategory(), unit_m.ratio_m));
+			};
+			bool AreConvertableTypes(unit_value const& V) const {
+				return unit_value::NormalArithmeticOkay(*this, V);
+			};
+			void Clear() { unit_m = Unit_ID(); value_m = 0.0; };
+
+		private:
+			static void AddToDelimiter(std::string& obj, std::string const& toAdd, std::string const& delim) {
+				if (obj.length() == 0) {
+					obj += toAdd;
+				}
+				else {
+					obj += delim;
+					obj += toAdd;
+				}
+			};
+			static size_t		vsnPrintf(char* dest, size_t size, const char* fmt, va_list argptr) {
+				size_t ret;
+#undef _vsnprintf
+				ret = ::_vsnprintf(dest, size - 1, fmt, argptr);
+				dest[size - 1] = '\0';
+				if (ret < 0 || ret >= size)  ret = -1;
+				return ret;
+			};
+			static std::string	printf(const char* fmt, ...) {
+				va_list argptr;
+
+				decltype(auto) buffer = new char[128000];
+				buffer[128000 - 1] = '\0';
+
+				va_start(argptr, fmt);
+				vsnPrintf(buffer, 128000 - 1 /*sizeof(buffer) - 1*/, fmt, argptr);
+				va_end(argptr);
+				buffer[128000 /*sizeof(buffer)*/ - 1] = '\0';
+
+				std::string out(buffer);
+
+				delete[] buffer;
+				return out;
+			};
+
+		public:
+			std::string CreateAbbreviation() const {
+				std::string out; double v;
+				{
+					v = unit_m.unitType_m[unit_value_type::METERS];
+					if (v != 0) {
+						if (v == 1)
+							AddToDelimiter(out, "m", " ");
+						else
+							AddToDelimiter(out, printf("m^%s", std::to_string((float)v).c_str()), " ");
+					}
+				}
+				{
+					v = unit_m.unitType_m[unit_value_type::KILOGRAMS];
+					if (v != 0) {
+						if (v == 1)
+							AddToDelimiter(out, "kg", " ");
+						else
+							AddToDelimiter(out, printf("kg^%s", std::to_string((float)v).c_str()), " ");
+					}
+				}
+				{
+					v = unit_m.unitType_m[unit_value_type::SECONDS];
+					if (v != 0) {
+						if (v == 1)
+							AddToDelimiter(out, "s", " ");
+						else
+							AddToDelimiter(out, printf("s^%s", std::to_string((float)v).c_str()), " ");
+					}
+				}
+				{
+					v = unit_m.unitType_m[unit_value_type::AMPERES];
+					if (v != 0) {
+						if (v == 1)
+							AddToDelimiter(out, "a", " ");
+						else
+							AddToDelimiter(out, printf("a^%s", std::to_string((float)v).c_str()), " ");
+					}
+				}
+				{
+					v = unit_m.unitType_m[unit_value_type::DOLLAR];
+					if (v != 0) {
+						if (v == 1)
+							AddToDelimiter(out, "$", " ");
+						else
+							AddToDelimiter(out, printf("$^%s", std::to_string((float)v).c_str()), " ");
+					}
+				}
+				return out;
+			};
+
+			std::string Abbreviation() const noexcept {
+				if (std::strcmp(unit_m.abbreviation_m, "") == 0) {
 					unit_m.abbreviation_m = unit_m.LookupAbbreviation();
-					if (unit_m.abbreviation_m == "") {
-						// unit_m.abbreviation_m = CreateAbbreviation();
-						return CreateAbbreviation(); // unit_m.abbreviation_m;
+					if (std::strcmp(unit_m.abbreviation_m, "") == 0) {
+						std::string a(CreateAbbreviation());
+						return a;
 					}
 					else {
 						return unit_m.abbreviation_m;
@@ -246,63 +257,11 @@ to maintain a single distribution point for the source code.
 					return unit_m.abbreviation_m;
 				}
 			};
-			const char* UnitName() const noexcept {
-				return cweeUnitValuesDetail::lookup_typename(HashUnitAndRatio(unit_m.HashCategory(), unit_m.ratio_m));
-			};
-			bool AreConvertableTypes(unit_value const& V) const {
-				return unit_value::NormalArithmeticOkay(*this, V);
-			};
-			void Clear() { unit_m = Unit_ID(); value_m = 0.0; };
 
-		public: // Non-overriden Functions
-			cweeStr ToString() const {
-				cweeStr abbreviation(Abbreviation());
-				if (abbreviation.Length() > 0) return GetValueStr(*this) + " " + abbreviation;
+			std::string ToString() const {
+				std::string abbreviation(Abbreviation());
+				if (abbreviation.length() > 0) return GetValueStr(*this) + " " + abbreviation;
 				else return GetValueStr(*this);
-			};
-			cweeStr CreateAbbreviation() const {
-				cweeStr out; double v;
-				{
-					v = unit_m.unitType_m[unit_value_type::METERS];
-					if (v != 0)
-						if (v == 1)
-							out.AddToDelimiter("m", " ");
-						else
-							out.AddToDelimiter(cweeStr::printf("m^%s", cweeStr((float)v).c_str()), " ");
-				}
-				{
-					v = unit_m.unitType_m[unit_value_type::KILOGRAMS];
-					if (v != 0)
-						if (v == 1)
-							out.AddToDelimiter("kg", " ");
-						else
-							out.AddToDelimiter(cweeStr::printf("kg^%s", cweeStr((float)v).c_str()), " ");
-				}
-				{
-					v = unit_m.unitType_m[unit_value_type::SECONDS];
-					if (v != 0)
-						if (v == 1)
-							out.AddToDelimiter("s", " ");
-						else
-							out.AddToDelimiter(cweeStr::printf("s^%s", cweeStr((float)v).c_str()), " ");
-				}
-				{
-					v = unit_m.unitType_m[unit_value_type::AMPERES];
-					if (v != 0)
-						if (v == 1)
-							out.AddToDelimiter("a", " ");
-						else
-							out.AddToDelimiter(cweeStr::printf("a^%s", cweeStr((float)v).c_str()), " ");
-				}
-				{
-					v = unit_m.unitType_m[unit_value_type::DOLLAR];
-					if (v != 0)
-						if (v == 1)
-							out.AddToDelimiter("$", " ");
-						else
-							out.AddToDelimiter(cweeStr::printf("$^%s", cweeStr((float)v).c_str()), " ");
-				}
-				return out;
 			};
 
 		public: // Streaming functions (should be specialized per type)
@@ -312,7 +271,7 @@ to maintain a single distribution point for the source code.
 			static bool is_scalar(unit_value const& V) noexcept { return V.unit_m.isScalar_m; };
 
 		private:
-			static cweeStr GetValueStr(unit_value const& V) noexcept { return cweeStr((float)V()); };
+			static std::string GetValueStr(unit_value const& V) noexcept { return std::to_string((float)V()); };
 			static bool NormalArithmeticOkay(unit_value const& LHS, unit_value const& RHS) noexcept {
 				if (is_scalar(LHS) || is_scalar(RHS)) return true;
 				if (IdenticalUnits(LHS, RHS)) return true;
@@ -325,15 +284,15 @@ to maintain a single distribution point for the source code.
 			};
 			static void HandleNormalArithmetic(unit_value const& LHS, unit_value const& RHS) {
 				if (NormalArithmeticOkay(LHS, RHS)) return;
-				throw(std::runtime_error(cweeStr::printf("Normal, dynamic arithmetic failed due to incompatible non-scalar units: '%s' and '%s'", LHS.Abbreviation(), RHS.Abbreviation())));
+				throw(std::runtime_error(printf("Normal, dynamic arithmetic failed due to incompatible non-scalar units: '%s' and '%s'", LHS.Abbreviation().c_str(), RHS.Abbreviation().c_str())));
 			};
 			static void HandleUnaryArithmetic(unit_value const& LHS, unit_value const& RHS) {
 				if (UnaryArithmeticOkay(LHS, RHS)) return;
-				throw(std::runtime_error(cweeStr::printf("Unary (in-place or self-modifying) arithmetic failed due to incompatible units: '%s' and '%s'", LHS.Abbreviation(), RHS.Abbreviation())));
+				throw(std::runtime_error(printf("Unary (in-place or self-modifying) arithmetic failed due to incompatible units: '%s' and '%s'", LHS.Abbreviation().c_str(), RHS.Abbreviation().c_str())));
 			};
 			static void HandleNotScalar(unit_value const& V) {
 				if (is_scalar(V)) return;
-				throw(std::runtime_error(cweeStr::printf("Type must be scalar (was '%s').", V.Abbreviation())));
+				throw(std::runtime_error(printf("Type must be scalar (was '%s').", V.Abbreviation().c_str())));
 			};
 			template <bool multiplication = true>
 			unit_value& CompoundUnits(unit_value const& V) noexcept {
@@ -394,7 +353,7 @@ to maintain a single distribution point for the source code.
 					value_m = V.value_m;
 				}
 				else { // incoming unit AND this unit are different non-scalers of different categories. No exchange is reasonable. 
-					throw(std::runtime_error(cweeStr::printf("Assignment failed due to incompatible non-scalar units: '%s' and '%s'.", this->Abbreviation(), V.Abbreviation())));
+					throw(std::runtime_error(printf("Assignment failed due to incompatible non-scalar units: '%s' and '%s'.", this->Abbreviation().c_str(), V.Abbreviation().c_str())));
 				}
 				return *this;
 			};
@@ -410,7 +369,7 @@ to maintain a single distribution point for the source code.
 					value_m = V.value_m;
 				}
 				else { // incoming unit AND this unit are different non-scalers of different categories. No exchange is reasonable. 
-					throw(std::runtime_error(cweeStr::printf("Assignment failed due to incompatible non-scalar units: '%s' and '%s'.", this->Abbreviation(), V.Abbreviation())));
+					throw(std::runtime_error(printf("Assignment failed due to incompatible non-scalar units: '%s' and '%s'.", this->Abbreviation().c_str(), V.Abbreviation().c_str())));
 				}
 				return *this;
 			};
@@ -533,7 +492,6 @@ to maintain a single distribution point for the source code.
 		};
 	};
 
-
 #define DefineCategoryType(type, a, b, c, d, e) namespace cweeUnitValues { class type : public unit_value { public: \
 		type() noexcept : unit_value(0.0, Unit_ID(a, b, c, d, e, false, "", 1.0)) {}; \
 		type(double V) noexcept : unit_value(V, Unit_ID(a, b, c, d, e, false, "", 1.0)) {}; \
@@ -593,7 +551,7 @@ to maintain a single distribution point for the source code.
 
 #undef DefineCategoryType
 
-#define DerivedUnitType(type, category, abbreviation, ratio) namespace cweeUnitValues { class type : public category  { public: \
+#define DerivedUnitType(type, category, abbreviation, ratio) namespace cweeUnitValues{ class type : public category  { public: \
 		constexpr static double conversion() noexcept { return ratio; }; \
 		constexpr static const char* specialized_abbreviation() noexcept { return #abbreviation; }; \
 		constexpr static const char* specialized_name() noexcept { return #type; }; \
@@ -609,12 +567,15 @@ to maintain a single distribution point for the source code.
 		static constexpr double lowest() { return std::numeric_limits<double>::lowest(); } \
 		static constexpr bool is_integer = std::numeric_limits<double>::is_integer; \
 		static constexpr bool is_signed = std::numeric_limits<double>::is_signed; }; \
-	};
+	}; namespace cweeUnitValues { namespace literals { \
+		__forceinline type operator""_ ## abbreviation (long double d) { return type(static_cast<double>(d)); }\
+		__forceinline type operator""_ ## abbreviation (unsigned long long d) { return type(static_cast<double>(d)); }\
+	} }
 
 #define CalculateMetricPrefixV(metric) ((double)std::metric::num / (double)std::metric::den)
-#define DerivedUnitTypeWithMetricPrefix(type, category, abbreviation, ratio, prefix, prefix_abbrev) DerivedUnitType(prefix ## type, category, prefix_abbrev ## abbreviation, (ratio) * CalculateMetricPrefixV(prefix))
+#define DerivedUnitTypeWithMetricPrefix(type, category, abbreviation, ratio, prefix, prefix_abbrev) DerivedUnitType(prefix ## type, category, prefix_abbrev ## abbreviation, ratio * CalculateMetricPrefixV(prefix))
 #define DerivedUnitTypeWithMetricPrefixes(type, category, abbreviation, ratio)\
-	DerivedUnitType(type, category, abbreviation, (ratio));\
+	DerivedUnitType(type, category, abbreviation, ratio);\
 	DerivedUnitTypeWithMetricPrefix(type, category, abbreviation, ratio, femto, f); \
 	DerivedUnitTypeWithMetricPrefix(type, category, abbreviation, ratio, pico, p);\
 	DerivedUnitTypeWithMetricPrefix(type, category, abbreviation, ratio, nano, n);\
@@ -631,9 +592,9 @@ to maintain a single distribution point for the source code.
 	DerivedUnitTypeWithMetricPrefix(type, category, abbreviation, ratio, peta, P)
 
 	namespace cweeUnitValues {
-		template <typename Derived> constexpr INLINE double Conversion(double X) { return Derived::conversion() * X; };
-		constexpr INLINE double SQUARED(double X) { return X * X; };
-		constexpr INLINE double CUBED(double X) { return X * X * X; };
+		template <typename Derived> constexpr __forceinline double Conversion(double X) { return Derived::conversion() * X; };
+		constexpr __forceinline double SQUARED(double X) { return X * X; };
+		constexpr __forceinline double CUBED(double X) { return X * X * X; };
 	};
 
 	/* LENGTH DERIVATIONS */
@@ -701,14 +662,13 @@ to maintain a single distribution point for the source code.
 	// PRESSURE DERIVATIONS
 	DerivedUnitTypeWithMetricPrefixes(pascals, pressure, Pa, 1.0);
 	DerivedUnitTypeWithMetricPrefixes(bar, pressure, bar, Conversion<kilopascals>(100.0));
-	DerivedUnitType(mbar, pressure, mbar, Conversion<millibar>(1.0));
 	DerivedUnitType(atmosphere, pressure, atm, Conversion<pascals>(101325.0));
 	DerivedUnitType(pounds_per_square_inch, pressure, psi, Conversion<pound_f>(1.0) / (Conversion<inch>(1.0) * Conversion<inch>(1.0)));
 	DerivedUnitType(head, pressure, ft_water, Conversion<pound_f>(62.43) / (Conversion<foot>(1.0) * Conversion<foot>(1.0)));
 	DerivedUnitType(torr, pressure, torr, Conversion<atmosphere>(1.0 / 760.0));
 
 	// CHARGE DERIVATIONS
-	DerivedUnitTypeWithMetricPrefixes(coulomb, charge, C, 1.0);
+	DerivedUnitType(coulomb, charge, C, 1.0); /* WithMetricPrefixes */
 	DerivedUnitTypeWithMetricPrefixes(ampere_hour, charge, Ah, Conversion< ampere>(1.0)* Conversion<hour>(1.0));
 
 	// POWER DERIVATIONS
@@ -729,24 +689,12 @@ to maintain a single distribution point for the source code.
 
 	// VOLTAGE DERIVATIONS
 	DerivedUnitTypeWithMetricPrefixes(volt, voltage, V, 1.0);
-	//DerivedUnitType(statvolt, voltage, statV, Conversion<volt>(1000000.0 / 299792458.0));
-	//DerivedUnitType(abvolt, voltage, abV, Conversion<volt>(1.0 / 100000000.0));
-
-	// CAPACITANCE DERIVATIONS
-	// DerivedUnitTypeWithMetricPrefixes(farad, capacitance, F, 1.0);
 
 	// IMPEDANCE DERIVATIONS
 	DerivedUnitTypeWithMetricPrefixes(ohm, impedance, Ohm, 1.0);
 
 	// CONDUCTANCE DERIVATIONS
-	DerivedUnitTypeWithMetricPrefixes(siemens, conductance, S, 1.0);
-
-	// MAGNETIC FLUX
-	//DerivedUnitTypeWithMetricPrefixes(weber, magnetic_flux, Wb, 1.0);
-	//DerivedUnitType(maxwell, magnetic_flux, Mx, Conversion<weber>(1.0 / 100000000.0));
-
-	// INDUCTANCE DERIVATIONS
-	// DerivedUnitTypeWithMetricPrefixes(henry, inductance, H, 1.0);
+	DerivedUnitType(siemens, conductance, S, 1.0); // WithMetricPrefixes
 
 	// TORQUE DERIVATIONS
 	// DerivedUnitType(newton_meter, torque, Nm, 1.0);
@@ -866,249 +814,239 @@ to maintain a single distribution point for the source code.
 	DerivedUnitType(ton_per_kilowatt_hour, emission_rate, t_p_kWh, Conversion<metric_ton>(1.0) / Conversion<kilowatt_hour>(1.0));
 	DerivedUnitType(per_year, time_rate, p_yr, 1.0 / Conversion<year>(1.0));
 
-
 #undef DerivedUnitTypeWithMetricPrefixes
 #undef DerivedUnitTypeWithMetricPrefix
 #undef CalculateMetricPrefixV
 #undef DerivedUnitType
 
+
+
+
 namespace cweeUnitValues {
 	namespace  cweeUnitValuesDetail {
-		namespace cweeUnitValuesDetails {
-			template <typename Key, typename Value, std::size_t Size> struct Map {
-				std::array<std::pair<Key, Value>, Size> data;
 
-				[[nodiscard]] constexpr Value at(const Key& key) const {
-					const auto itr =
-						std::find_if(begin(data), end(data),
-							[&key](const auto& v) { return v.first == key; });
-					if (itr != end(data)) {
-						return itr->second;
-					}
-					else {
-						throw std::range_error("Not Found");
-					}
-				}
+#define CreateRow(model, Type) model->insert({ HashUnitAndRatio(HashUnits(Type::A(), Type::B(), Type::C(), Type::D(), Type::E()), Type::conversion()), { Type::specialized_abbreviation(), #Type } })
+#define CreateRowWithMetricPrefixes(model, Type)\
+			CreateRow(model, Type); \
+			CreateRow(model, femto ## Type); \
+			CreateRow(model, pico ## Type); \
+			CreateRow(model, nano ## Type); \
+			CreateRow(model, micro ## Type); \
+			CreateRow(model, milli ## Type); \
+			CreateRow(model, centi ## Type); \
+			CreateRow(model, deci ## Type); \
+			CreateRow(model, deca ## Type); \
+			CreateRow(model, hecto ## Type); \
+			CreateRow(model, kilo ## Type); \
+			CreateRow(model, mega ## Type); \
+			CreateRow(model, giga ## Type); \
+			CreateRow(model, tera ## Type); \
+			CreateRow(model, peta ## Type);
 
-			};
-			using namespace std::literals::string_view_literals;
-			
-			//template <typename T> static constexpr std::pair<unsigned long long, const char*> CreateRow() {
-			//	constexpr std::pair<unsigned long long, const char*> out { HashUnitAndRatio(HashUnits(T::A(), T::B(), T::C(), T::D(), T::E()), T::conversion()), T::specialized_abbreviation() };
-			//	return out;
-			//};
-
-#define CreateRow(Type) \
-			{ HashUnitAndRatio(HashUnits(Type::A(), Type::B(), Type::C(), Type::D(), Type::E()), Type::conversion()), { Type::specialized_abbreviation(), #Type } }
-
-#define CreateRowWithMetricPrefixes(Type)\
-			CreateRow(Type), \
-			CreateRow(femto ## Type), \
-			CreateRow(pico ## Type), \
-			CreateRow(nano ## Type), \
-			CreateRow(micro ## Type), \
-			CreateRow(milli ## Type), \
-			CreateRow(centi ## Type), \
-			CreateRow(deci ## Type), \
-			CreateRow(deca ## Type), \
-			CreateRow(hecto ## Type), \
-			CreateRow(kilo ## Type), \
-			CreateRow(mega ## Type), \
-			CreateRow(giga ## Type), \
-			CreateRow(tera ## Type), \
-			CreateRow(peta ## Type)
-			
-			static constexpr std::array<std::pair<unsigned long long, std::pair< const char*, const char*>>, 558> unit_types{
-				{
-					CreateRowWithMetricPrefixes(meter),
-					CreateRow(foot),
-					CreateRow(inch),
-					CreateRow(mile),
-					CreateRow(nauticalMile),
-					CreateRow(astronicalUnit),
-					CreateRow(yard),
-					CreateRowWithMetricPrefixes(gram),
-					CreateRow(metric_ton),
-					CreateRow(pound),
-					CreateRow(long_ton),
-					CreateRow(short_ton),
-					CreateRow(stone),
-					CreateRow(ounce),
-					CreateRow(carat),
-					CreateRow(slug),
-					CreateRowWithMetricPrefixes(second),
-					CreateRow(minute),
-					CreateRow(hour),
-					CreateRow(day),
-					CreateRow(week),
-					CreateRow(year),
-					CreateRow(month),
-					CreateRow(julian_year),
-					CreateRow(gregorian_year),
-					CreateRowWithMetricPrefixes(ampere),
-					CreateRow(Dollar),
-					CreateRow(MillionDollar),
-					CreateRowWithMetricPrefixes(hertz),
-					CreateRow(meters_per_second),
-					CreateRow(feet_per_second),
-					CreateRow(feet_per_minute),
-					CreateRow(feet_per_hour),
-					CreateRow(miles_per_hour),
-					CreateRow(kilometers_per_hour),
-					CreateRow(knot),
-					CreateRow(meters_per_second_squared),
-					CreateRow(feet_per_second_squared),
-					CreateRow(standard_gravity),
-					CreateRowWithMetricPrefixes(newton),
-					CreateRowWithMetricPrefixes(pound_f),
-					CreateRow(dyne),
-					CreateRow(kilopond),
-					CreateRow(poundal),
-					CreateRowWithMetricPrefixes(pascals),
-					CreateRowWithMetricPrefixes(bar),
-					CreateRow(mbar),
-					CreateRow(atmosphere),
-					CreateRow(pounds_per_square_inch),
-					CreateRow(head),
-					CreateRow(torr),
-					CreateRowWithMetricPrefixes(coulomb),
-					CreateRowWithMetricPrefixes(ampere_hour),
-					CreateRowWithMetricPrefixes(watt),
-					CreateRow(horsepower),
-					CreateRowWithMetricPrefixes(joule),
-					CreateRowWithMetricPrefixes(calorie),
-					CreateRowWithMetricPrefixes(watt_minute),
-					CreateRowWithMetricPrefixes(watt_hour),
-					CreateRow(watt_day),
-					CreateRow(british_thermal_unit),
-					CreateRow(british_thermal_unit_iso),
-					CreateRow(british_thermal_unit_59),
-					CreateRow(therm),
-					CreateRow(foot_pound),
-					CreateRowWithMetricPrefixes(volt),
-					CreateRowWithMetricPrefixes(ohm),
-					CreateRowWithMetricPrefixes(siemens),
-					CreateRow(square_meter),
-					CreateRow(square_foot),
-					CreateRow(square_inch),
-					CreateRow(square_mile),
-					CreateRow(square_kilometer),
-					CreateRow(hectare),
-					CreateRow(acre),
-					CreateRow(cubic_meter),
-					CreateRow(cubic_millimeter),
-					CreateRow(cubic_kilometer),
-					CreateRowWithMetricPrefixes(liter),
-					CreateRow(cubic_inch),
-					CreateRow(cubic_foot),
-					CreateRow(cubic_yard),
-					CreateRow(cubic_mile),
-					CreateRowWithMetricPrefixes(gallon),
-					CreateRow(imperial_gallon),
-					CreateRow(million_gallon),
-					CreateRow(imperial_million_gallon),
-					CreateRow(acre_foot),
-					CreateRow(quart),
-					CreateRow(pint),
-					CreateRow(cup),
-					CreateRow(fluid_ounce),
-					CreateRow(barrel),
-					CreateRow(bushel),
-					CreateRow(cord),
-					CreateRow(tablespoon),
-					CreateRow(teaspoon),
-					CreateRow(pinch),
-					CreateRow(dash),
-					CreateRow(drop),
-					CreateRow(fifth),
-					CreateRow(dram),
-					CreateRow(gill),
-					CreateRow(peck),
-					CreateRow(sack),
-					CreateRow(shot),
-					CreateRow(strike),
-					CreateRowWithMetricPrefixes(gram_per_second),
-					CreateRow(metric_ton_per_second),
-					CreateRow(metric_ton_per_minute),
-					CreateRow(metric_ton_per_hour),
-					CreateRow(metric_ton_per_day),
-					CreateRow(metric_ton_per_year),
-					CreateRow(cubic_meter_per_second),
-					CreateRow(cubic_meter_per_hour),
-					CreateRow(cubic_meter_per_day),
-					CreateRow(cubic_millimeter_per_second),
-					CreateRowWithMetricPrefixes(liter_per_second),
-					CreateRow(liter_per_minute),
-					CreateRow(liter_per_day),
-					CreateRow(megaliter_per_day),
-					CreateRow(cubic_inch_per_second),
-					CreateRow(cubic_inch_per_hour),
-					CreateRow(cubic_foot_per_second),
-					CreateRow(cubic_foot_per_hour),
-					CreateRow(gallon_per_second),
-					CreateRow(gallon_per_minute),
-					CreateRow(gallon_per_hour),
-					CreateRow(gallon_per_day),
-					CreateRow(gallon_per_year),
-					CreateRow(million_gallon_per_second),
-					CreateRow(million_gallon_per_minute),
-					CreateRow(million_gallon_per_hour),
-					CreateRow(million_gallon_per_day),
-					CreateRow(million_gallon_per_year),
-					CreateRow(imperial_million_gallon_per_second),
-					CreateRow(imperial_million_gallon_per_minute),
-					CreateRow(imperial_million_gallon_per_hour),
-					CreateRow(imperial_million_gallon_per_day),
-					CreateRow(imperial_million_gallon_per_year),
-					CreateRow(acre_foot_per_second),
-					CreateRow(acre_foot_per_minute),
-					CreateRow(acre_foot_per_hour),
-					CreateRow(acre_foot_per_day),
-					CreateRow(acre_foot_per_year),
-					CreateRow(kilograms_per_cubic_meter),
-					CreateRow(grams_per_milliliter),
-					CreateRow(kilograms_per_liter),
-					CreateRow(ounces_per_cubic_foot),
-					CreateRow(ounces_per_cubic_inch),
-					CreateRow(ounces_per_gallon),
-					CreateRow(pounds_per_cubic_foot),
-					CreateRow(pounds_per_cubic_inch),
-					CreateRow(pounds_per_gallon),
-					CreateRow(slugs_per_cubic_foot),
-					CreateRow(Dollar_per_joule),
-					CreateRow(Dollar_per_kilowatt_hour),
-					CreateRow(Dollar_per_watt),
-					CreateRow(Dollar_per_kilowatt),
-					CreateRow(Dollar_per_cubic_meter),
-					CreateRow(Dollar_per_gallon),
-					CreateRow(kilowatt_hour_per_acre_foot),
-					CreateRow(Dollar_per_mile),
-					CreateRow(Dollar_per_ton),
-					CreateRow(ton_per_kilowatt_hour),
-					CreateRow(per_year)
-				}
-			};
-
-#undef CreateRowWithMetricPrefixes
-#undef CreateRow
-		}
 		/*! Lookup the abbreviation for the type based on its unique characteristic combination (time/length/mass/etc.) */
-		INLINE std::pair< const char*, const char*> lookup_impl(unsigned long long ull) {
-			using namespace cweeUnitValuesDetails;
-			static constexpr auto map = Map<unsigned long long, std::pair< const char*, const char*>, unit_types.size()>{ {unit_types} }; // constexpr lookup map meaning it's always in memory for the lifetime of the DLL -- keep this small. 
+		__forceinline static std::pair< const char*, const char*> lookup_impl(size_t ull) {
+			// using namespace std::literals::string_view_literals;		
+
+			static std::mutex mut;
+			static std::shared_ptr<void> Tag;
+
+			std::shared_ptr<std::map<size_t, std::pair< const char*, const char*>>> model;
+
+			if (!Tag) {
+				mut.lock();
+			}
+			if (!Tag) {
+				model = std::make_shared<std::map<size_t, std::pair< const char*, const char*>>>();
+				{
+					CreateRowWithMetricPrefixes(model, meter);
+					CreateRow(model, foot);
+					CreateRow(model, inch);
+					CreateRow(model, mile);
+					CreateRow(model, nauticalMile);
+					CreateRow(model, astronicalUnit);
+					CreateRow(model, yard);
+					CreateRowWithMetricPrefixes(model, gram);
+					CreateRow(model, metric_ton);
+					CreateRow(model, pound);
+					CreateRow(model, long_ton);
+					CreateRow(model, short_ton);
+					CreateRow(model, stone);
+					CreateRow(model, ounce);
+					CreateRow(model, carat);
+					CreateRow(model, slug);
+					CreateRowWithMetricPrefixes(model, second);
+					CreateRow(model, minute);
+					CreateRow(model, hour);
+					CreateRow(model, day);
+					CreateRow(model, week);
+					CreateRow(model, year);
+					CreateRow(model, month);
+					CreateRow(model, julian_year);
+					CreateRow(model, gregorian_year);
+					CreateRowWithMetricPrefixes(model, ampere);
+					CreateRow(model, Dollar);
+					CreateRow(model, MillionDollar);
+					CreateRowWithMetricPrefixes(model, hertz);
+					CreateRow(model, meters_per_second);
+					CreateRow(model, feet_per_second);
+					CreateRow(model, feet_per_minute);
+					CreateRow(model, feet_per_hour);
+					CreateRow(model, miles_per_hour);
+					CreateRow(model, kilometers_per_hour);
+					CreateRow(model, knot);
+					CreateRow(model, meters_per_second_squared);
+					CreateRow(model, feet_per_second_squared);
+					CreateRow(model, standard_gravity);
+					CreateRowWithMetricPrefixes(model, newton);
+					CreateRowWithMetricPrefixes(model, pound_f);
+					CreateRow(model, dyne);
+					CreateRow(model, kilopond);
+					CreateRow(model, poundal);
+					CreateRowWithMetricPrefixes(model, pascals);
+					CreateRowWithMetricPrefixes(model, bar);
+					CreateRow(model, atmosphere);
+					CreateRow(model, pounds_per_square_inch);
+					CreateRow(model, head);
+					CreateRow(model, torr);
+					CreateRow(model, coulomb); // WithMetricPrefixes
+					CreateRowWithMetricPrefixes(model, ampere_hour);
+					CreateRowWithMetricPrefixes(model, watt);
+					CreateRow(model, horsepower);
+					CreateRowWithMetricPrefixes(model, joule);
+					CreateRowWithMetricPrefixes(model, calorie);
+					CreateRowWithMetricPrefixes(model, watt_minute);
+					CreateRowWithMetricPrefixes(model, watt_hour);
+					CreateRow(model, watt_day);
+					CreateRow(model, british_thermal_unit);
+					CreateRow(model, british_thermal_unit_iso);
+					CreateRow(model, british_thermal_unit_59);
+					CreateRow(model, therm);
+					CreateRow(model, foot_pound);
+					CreateRowWithMetricPrefixes(model, volt);
+					CreateRowWithMetricPrefixes(model, ohm);
+					CreateRow(model, siemens); // WithMetricPrefixes
+					CreateRow(model, square_meter);
+					CreateRow(model, square_foot);
+					CreateRow(model, square_inch);
+					CreateRow(model, square_mile);
+					CreateRow(model, square_kilometer);
+					CreateRow(model, hectare);
+					CreateRow(model, acre);
+					CreateRow(model, cubic_meter);
+					CreateRow(model, cubic_millimeter);
+					CreateRow(model, cubic_kilometer);
+					CreateRowWithMetricPrefixes(model, liter);
+					CreateRow(model, cubic_inch);
+					CreateRow(model, cubic_foot);
+					CreateRow(model, cubic_yard);
+					CreateRow(model, cubic_mile);
+					CreateRowWithMetricPrefixes(model, gallon);
+					CreateRow(model, imperial_gallon);
+					CreateRow(model, million_gallon);
+					CreateRow(model, imperial_million_gallon);
+					CreateRow(model, acre_foot);
+					CreateRow(model, quart);
+					CreateRow(model, pint);
+					CreateRow(model, cup);
+					CreateRow(model, fluid_ounce);
+					CreateRow(model, barrel);
+					CreateRow(model, bushel);
+					CreateRow(model, cord);
+					CreateRow(model, tablespoon);
+					CreateRow(model, teaspoon);
+					CreateRow(model, pinch);
+					CreateRow(model, dash);
+					CreateRow(model, drop);
+					CreateRow(model, fifth);
+					CreateRow(model, dram);
+					CreateRow(model, gill);
+					CreateRow(model, peck);
+					CreateRow(model, sack);
+					CreateRow(model, shot);
+					CreateRow(model, strike);
+					CreateRowWithMetricPrefixes(model, gram_per_second);
+					CreateRow(model, metric_ton_per_second);
+					CreateRow(model, metric_ton_per_minute);
+					CreateRow(model, metric_ton_per_hour);
+					CreateRow(model, metric_ton_per_day);
+					CreateRow(model, metric_ton_per_year);
+					CreateRow(model, cubic_meter_per_second);
+					CreateRow(model, cubic_meter_per_hour);
+					CreateRow(model, cubic_meter_per_day);
+					CreateRow(model, cubic_millimeter_per_second);
+					CreateRowWithMetricPrefixes(model, liter_per_second);
+					CreateRow(model, liter_per_minute);
+					CreateRow(model, liter_per_day);
+					CreateRow(model, megaliter_per_day);
+					CreateRow(model, cubic_inch_per_second);
+					CreateRow(model, cubic_inch_per_hour);
+					CreateRow(model, cubic_foot_per_second);
+					CreateRow(model, cubic_foot_per_hour);
+					CreateRow(model, gallon_per_second);
+					CreateRow(model, gallon_per_minute);
+					CreateRow(model, gallon_per_hour);
+					CreateRow(model, gallon_per_day);
+					CreateRow(model, gallon_per_year);
+					CreateRow(model, million_gallon_per_second);
+					CreateRow(model, million_gallon_per_minute);
+					CreateRow(model, million_gallon_per_hour);
+					CreateRow(model, million_gallon_per_day);
+					CreateRow(model, million_gallon_per_year);
+					CreateRow(model, imperial_million_gallon_per_second);
+					CreateRow(model, imperial_million_gallon_per_minute);
+					CreateRow(model, imperial_million_gallon_per_hour);
+					CreateRow(model, imperial_million_gallon_per_day);
+					CreateRow(model, imperial_million_gallon_per_year);
+					CreateRow(model, acre_foot_per_second);
+					CreateRow(model, acre_foot_per_minute);
+					CreateRow(model, acre_foot_per_hour);
+					CreateRow(model, acre_foot_per_day);
+					CreateRow(model, acre_foot_per_year);
+					CreateRow(model, kilograms_per_cubic_meter);
+					CreateRow(model, grams_per_milliliter);
+					CreateRow(model, kilograms_per_liter);
+					CreateRow(model, ounces_per_cubic_foot);
+					CreateRow(model, ounces_per_cubic_inch);
+					CreateRow(model, ounces_per_gallon);
+					CreateRow(model, pounds_per_cubic_foot);
+					CreateRow(model, pounds_per_cubic_inch);
+					CreateRow(model, pounds_per_gallon);
+					CreateRow(model, slugs_per_cubic_foot);
+					CreateRow(model, Dollar_per_joule);
+					CreateRow(model, Dollar_per_kilowatt_hour);
+					CreateRow(model, Dollar_per_watt);
+					CreateRow(model, Dollar_per_kilowatt);
+					CreateRow(model, Dollar_per_cubic_meter);
+					CreateRow(model, Dollar_per_gallon);
+					CreateRow(model, kilowatt_hour_per_acre_foot);
+					CreateRow(model, Dollar_per_mile);
+					CreateRow(model, Dollar_per_ton);
+					CreateRow(model, ton_per_kilowatt_hour);
+					CreateRow(model, per_year);
+				}
+
+				Tag = std::static_pointer_cast<void>(model);
+				mut.unlock();
+			}
+			else {
+				model = std::static_pointer_cast<std::map<size_t, std::pair< const char*, const char*>>>(Tag);
+			}
 			try {
-				return map.at(ull);
+				return model->at(ull);
 			}
 			catch (...) {
 				return std::pair< const char*, const char*>("", "");
 			}
 		}
-		INLINE const char* lookup_abbreviation(unsigned long long ull) { 
-			AUTO p = lookup_impl(std::move(ull));
+#undef CreateRowWithMetricPrefixes
+#undef CreateRow
+
+		__forceinline static const char* lookup_abbreviation(size_t ull) {
+			decltype(auto) p = lookup_impl(std::move(ull));
 			return p.first;
 		}
-		INLINE const char* lookup_typename(unsigned long long ull) {
-			AUTO p = lookup_impl(std::move(ull));
+		__forceinline static const char* lookup_typename(size_t ull) {
+			decltype(auto) p = lookup_impl(std::move(ull));
 			return p.second;
 		}
 	};
@@ -1125,5 +1063,27 @@ namespace cweeUnitValues {
 			if (V > max) return max;
 			return V;
 		};
+	};
+
+	namespace traits {
+		template<class U1, class U2>
+		struct is_convertible_unit_t {
+			static constexpr const std::intmax_t value = HashUnits(U1::A(), U1::B(), U1::C(), U1::D(), U1::E()) == HashUnits(U2::A(), U2::B(), U2::C(), U2::D(), U2::E());
+		};
+
+		template<class U1>
+		struct is_unit_t {
+			static constexpr const std::intmax_t value = std::is_base_of<unit_value, U1>::value;
+		};
+	};
+
+	
+
+	namespace constants {
+		static const scalar					pi(3.141592653589793238462643383279502884197169399375105820974944); ///< Ratio of a circle's circumference to its diameter.
+		static const meters_per_second		c(299792458.0);		
+		static const unit_value				G(meter(6.67408e-11)* meter(1)* meter(1) / (kilogram(1) * second(1) * second(1)));
+		static const unit_value				g(meter(9.8067) / (second(1) * second(1)));
+		static const unit_value				d(kilogram(998.57) / (meter(1)* meter(1)* meter(1)));
 	};
 };

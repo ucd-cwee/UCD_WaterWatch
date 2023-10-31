@@ -4,6 +4,8 @@
 
 // #include "MagicNumberFloorOperation.h"
 
+#pragma warning(disable : 4305)
+#pragma warning(disable : 4244)
 namespace fastexp
 {
     template<typename Real, size_t degree, size_t i = 0> struct PolynomialFit;
@@ -18,7 +20,7 @@ namespace fastexp
 #if 1
 #pragma warning( push )
 #pragma warning( disable : 4244)
-            Real xi = (int)(x + 32768.) - 32768;
+            Real xi = (Real)((int)(x + 32768.) - 32768);
 #pragma warning( pop )
 #else
             Real xi = floor(x);

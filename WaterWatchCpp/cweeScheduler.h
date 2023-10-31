@@ -123,10 +123,12 @@ private:
 		return j.AsyncForceInvoke(); // Async
 	};
 	static cweeJob& Invoke(cweeJob& j) {
-		return j.ForceInvoke(); // Async
+		j.ForceInvoke(); // Async
+		return j;
 	};
 	static cweeJob& Invoke(cweeJob&& j) {
-		return j.ForceInvoke(); // Async
+		j.ForceInvoke(); // Async
+		return j;
 	};
 
 };
@@ -1011,7 +1013,7 @@ namespace cweeOptimizer {
 				}catch(...){}
 				return true;
 			};
-			return cweeScheduler<cweeOptimizerData, policy_data_type>::run_async(make_cwee_shared<cweeOptimizerData>(manager.CastReference<OptimizationManagementTools<>>(), std::move(sharedData)), func1, func2, func3, func4);
+			return cweeScheduler<cweeOptimizerData, policy_data_type>::run_async(make_cwee_shared<cweeOptimizerData>(manager.template CastReference<OptimizationManagementTools<>>(), std::move(sharedData)), func1, func2, func3, func4);
 		};
 
 		/* Actual implimentation of the job queue, utilizing the multi-job scheduler. */

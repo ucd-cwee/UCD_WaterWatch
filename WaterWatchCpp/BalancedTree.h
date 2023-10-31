@@ -88,7 +88,7 @@ public:
 #endif
 		};
 
-		inline long long distance(const it_state& s) const { throw(std::exception("Cannot evaluate distance")); }
+		inline long long distance(const it_state& s) const { throw(std::runtime_error("Cannot evaluate distance")); }
 		// Optional to allow operator--() and reverse iterators:
 		inline void prev(const cweeBalancedTree* ref) {
 			node = ref->GetPrevLeaf(node);
@@ -113,15 +113,14 @@ public:
 		iter.state.begin_at(this, key);
 		return iter;
 	};
-private:
-	// cweeLinkedList< objType, maxChildrenPerNode> objAllocator;
-	cweeAlloc<objType, maxChildrenPerNode>	objAllocator;
-	long long								Num;
-	//cweeLinkedList< cweeBalancedTreeNode, maxChildrenPerNode>			nodeAllocator;
-	cweeAlloc<cweeBalancedTreeNode, maxChildrenPerNode>			nodeAllocator;
+
+private:		
+	long long			  Num;
 	cweeBalancedTreeNode* root;
 	cweeBalancedTreeNode* first;
 	cweeBalancedTreeNode* last;
+	cweeAlloc<objType, maxChildrenPerNode>	objAllocator;
+	cweeAlloc<cweeBalancedTreeNode, maxChildrenPerNode>			nodeAllocator;
 
 public:
 	cweeBalancedTree& operator=(const cweeBalancedTree& obj) {
@@ -170,7 +169,7 @@ public:
 		}
 	};
 	cweeBalancedTreeNode*					Add(objType const& object, keyType const& key, bool addUnique = true) {
-		cweeBalancedTreeNode* node, * child, * newNode; objType* OBJ; long long index;
+		cweeBalancedTreeNode* node, * child, * newNode; objType* OBJ;
 
 		if (root == nullptr) {
 			root = AllocNode();

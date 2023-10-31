@@ -203,15 +203,15 @@ unsigned char *OUTPUT
 %typemap(out) const enum SWIGTYPE & %{ $result = Rf_ScalarInteger((int)*$1); %}
 
 %typemap(memberin) char[] %{
-if ($input) strcpy($1, $input);
+if ($input) ::strncpy($1, $input, ::strlen($input)); // ::strcpy_s($1, sizeof $1, $input);
 else
-strcpy($1, "");
+::strncpy($1, "", 1); // ::strcpy_s($1, sizeof $1, "");
 %}
 
 %typemap(globalin) char[] %{
-if ($input) strcpy($1, $input);
+if ($input) ::strncpy($1, $input, ::strlen($input)); // ::strcpy_s($1, sizeof $1, $input);
 else
-strcpy($1, "");
+::strncpy($1, "", 1); // ::strcpy_s($1, sizeof $1, "");
 %}
 
 %typemap(out,noblock=1) char * 
