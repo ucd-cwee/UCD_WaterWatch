@@ -75,9 +75,9 @@ namespace UWP_WaterWatch.Pages
                 "       var& keys; __LOCK__{ " +
                 "           keys := node.inputs.keys(); " +
                 "       }; " +
-                "       for (x : keys){" +
-                "           if (x != \"\"){" +
-                "              funcHeader = funcHeader.AddToDelimiter(x, \", \");" +
+                "       for (internalLoopVar : keys){" +
+                "           if (internalLoopVar != \"\"){" +
+                "              funcHeader = funcHeader.AddToDelimiter(internalLoopVar, \", \");" +
                 "          }" +
                 "       }" +
                 "       cweeStr uniqueID_copy; __LOCK__{ uniqueID_copy = node.uniqueID; }" +
@@ -85,11 +85,11 @@ namespace UWP_WaterWatch.Pages
                 "       cweeStr scriptCopy; __LOCK__{ scriptCopy = node.script; }" +
                 "       var Inputs = Vector();" +
                 "       Inputs.push_back_ref(scriptCopy); " +
-                "       for (x : keys){ " +
-                "           if (x == \"\") { continue; } " +
+                "       for (internalLoopVar : keys){ " +
+                "           if (internalLoopVar == \"\") { continue; } " +
                 "           var& k; " +
                 "           __LOCK__{ " +
-                "               k := node.inputs[x]; " +
+                "               k := node.inputs[internalLoopVar]; " +
                 "           }; " +
                 "           if (k.is_type(\"ScriptNode\")){ " +
                 "               Inputs.push_back_ref(k.result); " +
@@ -121,10 +121,10 @@ namespace UWP_WaterWatch.Pages
                 "   __LOCK__{ " +
                 "       inputsCopy := Map(node.inputs); " +
                 "   }; " +
-                "   for (x : inputsCopy) { " +
-                "       if (x.second.is_type(\"ScriptNode\")){ " +
+                "   for (internalLoopVar : inputsCopy) { " +
+                "       if (internalLoopVar.second.is_type(\"ScriptNode\")){ " +
                 "           bool wasRecalculated = false; " +
-                "           x.second.result(wasRecalculated); " +
+                "           internalLoopVar.second.result(wasRecalculated); " +
                 "           if (wasRecalculated){ " +
                 "               reCalc = true; " +
                 "           } " +
@@ -135,18 +135,18 @@ namespace UWP_WaterWatch.Pages
                 "           node._inputVersion = Map(); " +
                 "       }; " +
                 "   } " +
-                "   for (x : inputsCopy) { " +
+                "   for (internalLoopVar : inputsCopy) { " +
                 "       __LOCK__{ " +
-                "           if (x.second.is_type(\"ScriptNode\")){ " +
-                "               if (node._inputVersion.contains(x.first)){ " +
-                "                   if (node._inputVersion[x.first] != x.second.version){ " +
+                "           if (internalLoopVar.second.is_type(\"ScriptNode\")){ " +
+                "               if (node._inputVersion.contains(internalLoopVar.first)){ " +
+                "                   if (node._inputVersion[internalLoopVar.first] != internalLoopVar.second.version){ " +
                 "                       reCalc = true; " +
                 "                  } " +
                 "               } " +
                 "               else { " +
                 "                   reCalc = true; " +
                 "              } " +
-                "              node._inputVersion[x.first] = x.second.version; " +
+                "              node._inputVersion[internalLoopVar.first] = internalLoopVar.second.version; " +
                 "           } " +
                 "       }; " +
                 "   } " +
@@ -168,8 +168,8 @@ namespace UWP_WaterWatch.Pages
                 "   } " +
                 "}; " +
                 "def result(ScriptNode node){ " +
-                "   var temp = false; " +
-                "   return result(node, temp); " +
+                "   var b = false;" +
+                "   return result(node, b); " +
                 "}; " +
                 "def invalidate(ScriptNode node){ " +
                 "   __LOCK__{ " +

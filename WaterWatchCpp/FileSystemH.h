@@ -21,6 +21,7 @@ to maintain a single distribution point for the source code.
 #include "SharedPtr.h"
 #include "List.h"
 #include "cweeTime.h"
+#include "DelayedInstantiation.h"
 
 BETTER_ENUM(fileType_t, uint8_t, ANY_EXT, INP, TXT, CSV, EXL, DAT, ZIP, ZIP_7z, sqlDB, EDMS, PK4, PROJECT, PATFILE);
 
@@ -186,4 +187,5 @@ public:
 	virtual std::map<int, cweeThreadedList<std::pair<u64, float>>> readSCADA(const cweeStr& filePath, bool myDataHasHeaders = true) = 0;
 
 };
-extern cweeSharedPtr<FileSystem> fileSystem;
+// extern cweeSharedPtr<FileSystem> fileSystem;
+extern DelayedInstantiation<FileSystem> fileSystem;

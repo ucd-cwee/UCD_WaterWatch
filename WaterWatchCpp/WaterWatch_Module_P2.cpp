@@ -28,6 +28,7 @@ to maintain a single distribution point for the source code.
 #include "ExternData.h"
 #include "AlgLibWrapper.h"
 #include "odbc.h"
+#include "RTree.h"
 
 namespace chaiscript {
     namespace WaterWatch_Lib {
@@ -470,6 +471,150 @@ namespace chaiscript {
                     lib->add(chaiscript::fun([](cweeStr const& directory, cweeStr const& extension) { cweeList<chaiscript::Boxed_Value> bv; for (auto& s : fileSystem->listFilesWithExtension(directory, extension)) { bv.Append(chaiscript::Boxed_Value(s)); } return bv; }), "listFilesWithExtension");
                     lib->add(chaiscript::fun([](cweeStr const& title, cweeStr const& content) { fileSystem->submitToast(title, content); }), "submitToast");
                 }
+            }
+
+            // RTree
+            if (1) {
+                class TempClass {
+                public:
+                    static vec2d GetCoordinates(TempClass const& o) { return o.coordinates; };
+
+                    vec2d coordinates;
+                    cweeStr name;
+                    
+                    TempClass() : coordinates(), name() {};
+                    TempClass(TempClass const& o) : coordinates(o.coordinates), name(o.name) {};
+                    TempClass& operator=(TempClass const& o) {
+                        this->coordinates = o.coordinates;
+                        this->name = o.name;
+                        return *this;
+                    };
+                    bool operator==(TempClass const& b) {
+                        return coordinates == b.coordinates && name == b.name;
+                    };
+                    bool operator!=(TempClass const& b) {
+                        return !operator==(b);
+                    };
+                };
+                
+                lib->add(chaiscript::user_type<vec2d>(), "vec2d");
+                lib->add(chaiscript::constructor<vec2d()>(), "vec2d");
+                lib->add(chaiscript::constructor<vec2d(const vec2d&)>(), "vec2d");
+                lib->add(chaiscript::fun([](vec2d& a, const vec2d& b)->vec2d& { a = b; return a; }), "=");                
+                lib->AddFunction(, first, -> double&, return obj.x, vec2d& obj);
+                lib->AddFunction(, second, -> double&, return obj.y, vec2d& obj);
+
+                lib->add(chaiscript::user_type<TempClass>(), "Point2d");
+                lib->add(chaiscript::constructor<TempClass()>(), "Point2d");
+                lib->add(chaiscript::constructor<TempClass(const TempClass&)>(), "Point2d");
+                lib->add(chaiscript::fun([](TempClass& a, const TempClass& b)->TempClass& { a = b; return a; }), "=");
+                lib->AddFunction(, coordinates, ->vec2d&, return obj.coordinates, TempClass& obj);
+                lib->AddFunction(, name, ->cweeStr&, return obj.name, TempClass& obj);
+
+                using RTreeType = cweeRTree< TempClass, TempClass::GetCoordinates>;
+
+                lib->add(chaiscript::user_type<RTreeType>(), "RTree");
+                lib->add(chaiscript::constructor<RTreeType()>(), "RTree");
+                lib->add(chaiscript::constructor<RTreeType(const RTreeType&)>(), "RTree");
+                lib->add(chaiscript::fun([](RTreeType& a, const RTreeType& b)->RTreeType& { a = b; return a; }), "=");
+                
+                AUTO Add_To_RTree = [](RTreeType& obj, TempClass const& t)-> void {
+                    if (cweeRandomFloat(0.0f,100.0f)>-1.0f) {
+                        obj.Add(t);
+                    }
+                };
+                AUTO Remove_From_RTree = [](RTreeType& obj, TempClass const& t)-> void {
+                    if (cweeRandomFloat(0.0f, 100.0f) > -1.0f) {
+                        obj.RemoveObject(t);
+                    }
+                };
+
+                lib->AddFunction(Add_To_RTree, Add, ,
+                    Add_To_RTree(obj, t);
+                , RTreeType& obj, TempClass const& t);
+                lib->AddFunction(Remove_From_RTree, Remove, ,
+                    Remove_From_RTree(obj, t);
+                , RTreeType& obj, TempClass const& t);
+                lib->AddFunction(, Root, -> RTreeType::TreeNode* ,
+                    return obj.GetRoot();
+                , RTreeType& obj);
+
+                AUTO Boundary_To_Layer = [](RTreeType::cweeBoundary& obj, cweeSharedPtr< TempClass> p)-> UI_MapLayer {
+                    UI_MapLayer out;
+                    UI_Color col(cweeRandomFloat(25, 230), cweeRandomFloat(25, 230), cweeRandomFloat(25, 230), 255);
+
+                    if (obj.bottomLeft != obj.topRight) {
+                        {
+                            UI_MapPolyline line;
+                            line.thickness = 2;
+                            line.AddPoint(obj.bottomLeft.x, obj.topRight.y);
+                            line.AddPoint(obj.topRight.x, obj.topRight.y);
+                            line.color = col;
+                            out.Children.push_back(chaiscript::var(line));
+                        }
+                        {
+                            UI_MapPolyline line;
+                            line.thickness = 2;
+                            line.AddPoint(obj.topRight.x, obj.topRight.y);
+                            line.AddPoint(obj.topRight.x, obj.bottomLeft.y);
+                            line.color = col;
+                            out.Children.push_back(chaiscript::var(line));
+                        }
+                        {
+                            UI_MapPolyline line;
+                            line.thickness = 2;
+                            line.AddPoint(obj.topRight.x, obj.bottomLeft.y);
+                            line.AddPoint(obj.bottomLeft.x, obj.bottomLeft.y);
+                            line.color = col;
+                            out.Children.push_back(chaiscript::var(line));
+                        }
+                        {
+                            UI_MapPolyline line;
+                            line.thickness = 2;
+                            line.AddPoint(obj.bottomLeft.x, obj.bottomLeft.y);
+                            line.AddPoint(obj.bottomLeft.x, obj.topRight.y);
+                            line.color = col;
+                            out.Children.push_back(chaiscript::var(line));
+                        }
+                    }
+                    else {
+                        UI_MapIcon icon;
+                        if (p) {
+                            icon.Label = p->name;
+                        }                        
+                        icon.longitude = obj.bottomLeft.x;
+                        icon.latitude = obj.bottomLeft.y;
+                        icon.HideOnCollision = false;
+                        icon.color = col;
+                        out.Children.push_back(chaiscript::var(icon));
+                    }
+                    return out;
+                };
+
+                AUTO RTreeToMap = [Boundary_To_Layer](RTreeType& obj) {
+                    UI_Map out;
+                    {
+                        AUTO root = obj.GetRoot();
+                        while (root) {
+                            out.Layers.push_back(chaiscript::var(Boundary_To_Layer(root->boundary, root->object)));
+                            root = RTreeType::GetNext(root);
+                            // if (root == obj.GetRoot()) break;
+                        }
+                    }
+                    return out;
+                };
+
+                lib->AddFunction(SINGLE_ARG(RTreeToMap, Boundary_To_Layer), UI_Map, -> UI_Map, {
+                    return RTreeToMap(obj);
+                }, RTreeType& obj);
+
+                lib->add(chaiscript::user_type<RTreeType::cweeBoundary>(), "Boundary");
+                lib->add(chaiscript::constructor<RTreeType::cweeBoundary()>(), "Boundary");
+                lib->add(chaiscript::constructor<RTreeType::cweeBoundary(const RTreeType::cweeBoundary&)>(), "Boundary");
+                lib->add(chaiscript::fun([](RTreeType::cweeBoundary& a, const RTreeType::cweeBoundary& b)->RTreeType::cweeBoundary& { a = b; return a; }), "=");
+                lib->AddFunction(, topRight, ->vec2d& , return obj.topRight; , RTreeType::cweeBoundary& obj);
+                lib->AddFunction(, bottomLeft, ->vec2d& , return obj.bottomLeft;, RTreeType::cweeBoundary& obj);
+                lib->AddFunction(Boundary_To_Layer, UI_MapLayer, -> UI_MapLayer, return Boundary_To_Layer(obj, nullptr), RTreeType::cweeBoundary& obj);
             }
 
             return lib;

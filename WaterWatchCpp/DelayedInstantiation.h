@@ -17,9 +17,10 @@ to maintain a single distribution point for the source code.
 #include "Precompiled.h"
 #include "SharedPtr.h"
 
-template<typename T> class DelayedInstantiation {
+template<typename T > class DelayedInstantiation {
 public:
-	constexpr DelayedInstantiation() : obj(nullptr) {};
+	DelayedInstantiation() : obj(nullptr), createFunc() {};
+	DelayedInstantiation(std::function<T*()> create) : obj(nullptr), createFunc(create) {};
 	~DelayedInstantiation() {};
 
 	T* operator->() { Ensure(); return obj.Get(); };
@@ -30,9 +31,32 @@ private:
 		AUTO g = obj.Guard();
 		auto* p = obj.UnsafeGet();
 		if (!p) {
-			obj.UnsafeSet(new T());
+			obj.UnsafeSet(createFunc());
 		}		
 	};
 	cweeSharedPtr<T> obj;
-
+	std::function< T* () > createFunc;
 };
+
+
+
+//
+//template<typename T> class DelayedInstantiation {
+//public:
+//	constexpr DelayedInstantiation() : obj(nullptr) {};
+//	~DelayedInstantiation() {};
+//
+//	T* operator->() { Ensure(); return obj.Get(); };
+//	T& operator*() { Ensure(); return *obj; };
+//
+//private:
+//	void Ensure() {
+//		AUTO g = obj.Guard();
+//		auto* p = obj.UnsafeGet();
+//		if (!p) {
+//			obj.UnsafeSet(new T());
+//		}
+//	};
+//	cweeSharedPtr<T> obj;
+//
+//};

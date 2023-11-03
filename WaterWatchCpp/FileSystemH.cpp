@@ -1214,5 +1214,5 @@ cweeThreadedList<std::pair<cweeStr, cweeStr>> FileSystem::ParseJson(cweeStr sour
 };;
 
 
-cweeSharedPtr<FileSystem> fileSystem = make_cwee_shared<FileSystemLocal>(new FileSystemLocal()).CastReference<FileSystem>();
-
+// cweeSharedPtr<FileSystem> fileSystem = make_cwee_shared<FileSystemLocal>(new FileSystemLocal()).CastReference<FileSystem>();
+DelayedInstantiation<FileSystem> fileSystem = DelayedInstantiation< FileSystem>([]()->FileSystem* { return new FileSystemLocal(); });
