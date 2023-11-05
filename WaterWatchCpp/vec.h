@@ -50,6 +50,19 @@ public:
 	vec2d& operator/=(const double a);
 	vec2d& operator*=(const double a);
 
+	bool			operator<(const vec2d& a) const {
+		return x < a.x&& y < a.y;
+	};
+	bool			operator<=(const vec2d& a) const {
+		return x <= a.x&& y <= a.y;
+	};
+	bool			operator>(const vec2d& a) const {
+		return x > a.x && y > a.y;
+	};
+	bool			operator>=(const vec2d& a) const {
+		return x >= a.x && y >= a.y;
+	};
+
 	friend vec2d	operator*(const double a, const vec2d b);
 
 	vec2d			Scale(const vec2d& a) const;

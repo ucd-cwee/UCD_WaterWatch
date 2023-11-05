@@ -18,13 +18,20 @@ namespace fastexp
             constexpr unsigned_t shift = static_cast<unsigned_t>(1) << Info<Real>::shift;
             x *= Info<Real>::log2e;
 #if 1
+#pragma warning( push )
+#pragma warning( disable : 4244)
             Real xi = (Real)((int)(x + 32768.) - 32768);
+#pragma warning( pop )
 #else
             Real xi = floor(x);
 #endif
             Real xf = x - xi;
 
+#pragma warning( push )
+#pragma warning( disable : 4244)
             Real k = PolynomialFit<Real, degree, 0>::evaluate(xf) + 1.0;
+#pragma warning( pop )
+
             unsigned_t e = reinterpret_cast<const unsigned_t&>(k);
             e += shift * static_cast<unsigned_t>(xi);
             return reinterpret_cast<Real&>(e);
@@ -60,9 +67,9 @@ namespace fastexp
 
     template<typename Real>
     struct Data<Real, 2> {
-        static constexpr Real coefficients[3] = { 0.00365539,
-                                                 0.64960693,
-                                                 0.34271434 };
+        static constexpr Real coefficients[3] = { Real(0.00365539),
+                                                 Real(0.64960693),
+                                                 Real(0.34271434) };
     };
     template<typename Real> constexpr Real Data<Real, 2>::coefficients[3];
 

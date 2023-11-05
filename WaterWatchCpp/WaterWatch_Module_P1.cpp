@@ -426,7 +426,6 @@ namespace chaiscript {
                     lib->add(chaiscript::fun([](float a) { return cweeMath::roundDownNearest(a, 1); }), "RoundDown");
                     lib->add(chaiscript::fun([](float a, float b) { return cweeMath::roundDownNearest(a, b); }), "RoundDown");
 
-
                     lib->AddFunction(, Lerp, , return cweeMath::Lerp<float>(from, to, by); , float from, float to, float by);
                     lib->AddFunction(, RollingAverage, , cweeMath::rollingAverageRef<double>(currentAverage, newSample, numSamples); return currentAverage; , double& currentAverage, const double& newSample, int& numSamples);
 
@@ -535,6 +534,33 @@ namespace chaiscript {
                 lib->add(chaiscript::fun([](nanodbcConnection const& con, const cweeStr& tableName) { return odbc->GetDatabaseName(con, tableName); }), "GetDatabaseName");
                 lib->add(chaiscript::fun([](nanodbcConnection const& con, const cweeStr& tableName) { return odbc->TableExists(con, tableName); }), "TableExists");
                 lib->add(chaiscript::fun([](nanodbcConnection const& con, const cweeStr& tableFullPath, const cweeThreadedList<cweeStr>& values) { odbc->InsertRow(con, tableFullPath, values); }), "InsertRow");
+                lib->add(chaiscript::fun([](nanodbcConnection const& con, const cweeStr& tableFullPath, const cweeThreadedList<cweeThreadedList<cweeStr>>& values) { odbc->InsertRows(con, tableFullPath, values); }), "InsertRows");
+                lib->add(chaiscript::fun([](nanodbcConnection const& con, const cweeStr& tableFullPath, const std::vector<cweeThreadedList<cweeStr>>& values) { 
+                    cweeThreadedList<cweeThreadedList<cweeStr>> target(values.size()+1); for (auto& x : values) {
+                        target.Append(x);
+                    }
+                    odbc->InsertRows(con, tableFullPath, target);
+                }), "InsertRows");
+                lib->add(chaiscript::fun([](nanodbcConnection const& con, const cweeStr& tableFullPath, const std::vector<std::vector<cweeStr>>& values) { 
+                    cweeThreadedList<cweeThreadedList<cweeStr>> target(values.size() + 1); for (auto& x : values) {
+                        cweeThreadedList<cweeStr> temp(x.size() + 1);
+                        for (auto& y : x) {
+                            temp.Append(y.c_str());
+                        }
+                        target.Append(temp);
+                    }
+                    odbc->InsertRows(con, tableFullPath, target);
+                }), "InsertRows");
+                lib->add(chaiscript::fun([](nanodbcConnection const& con, const cweeStr& tableFullPath, const std::vector<std::vector<std::string>>& values) { 
+                    cweeThreadedList<cweeThreadedList<cweeStr>> target(values.size() + 1); for (auto& x : values) {
+                        cweeThreadedList<cweeStr> temp(x.size()+1);
+                        for (auto& y : x) {
+                            temp.Append(y.c_str());
+                        }
+                        target.Append(temp);
+                    }
+                    odbc->InsertRows(con, tableFullPath, target);
+                }), "InsertRows");
                 lib->add(chaiscript::fun([](nanodbcConnection const& con) { AUTO d = odbc->GetDatabaseNames(con); std::vector<chaiscript::Boxed_Value> out; out.reserve(d.size() + 1); for (auto& x : d) { out.push_back(chaiscript::var(std::string(x.c_str()))); } return out; }), "GetDatabaseNames");
                 lib->add(chaiscript::fun([](nanodbcConnection const& con) { AUTO d = odbc->GetTableNames(con); std::vector<chaiscript::Boxed_Value> out; out.reserve(d.size() + 1); for (auto& x : d) { out.push_back(chaiscript::var(std::string(x.c_str()))); } return out; }), "GetTableNames");
                 lib->add(chaiscript::fun([](nanodbcConnection const& con, const cweeStr& databaseName) { AUTO d = odbc->GetTableNames(con, databaseName); std::vector<chaiscript::Boxed_Value> out; out.reserve(d.size() + 1); for (auto& x : d) { out.push_back(chaiscript::var(std::string(x.c_str()))); } return out; }), "GetTableNames");

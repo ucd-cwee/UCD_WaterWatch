@@ -7037,7 +7037,7 @@ nanodbcConnection ODBC::CreateConnection(cweeStr Server, cweeStr UserID, cweeStr
     AUTO connection = MakeConnection();
     // if the "Server" is actually a file, then the user likely intends for this to be a SQLite connection.
     cweeStr ext; Server.ExtractFileExtension(ext);
-    if (fileSystem->checkFileExists(Server) || ext == "db") {
+    if (fileSystem->checkFileExists(Server) || ext == "db" || Server == ":memory:" || Server == "") {
         int handle = SQLite::openDbDirect(Server);
         Connection(connection).SQLiteHandle(handle);
     }
@@ -7842,5 +7842,50 @@ void ODBC::InsertRow(nanodbcConnection const& con, cweeStr const& tableFullPath,
             }
         }
     }
+};
+void ODBC::InsertRows(nanodbcConnection const& con, cweeStr const& tableFullPath, const cweeThreadedList<cweeThreadedList<cweeStr>>& values) {
+    cweeStr query;
 
+    if (Connection(con).SQLiteHandle() >= 0) {
+        // database name is not used here. 
+        {
+            cweeStr AllValues; for (auto& y : values) {
+                cweeStr Values;
+                for (auto& x : y) {
+                    Values.AddToDelimiter(cweeStr::printf("'%s'", x.c_str()), ",");
+                }
+                AllValues.AddToDelimiter(Values, "), (");
+            }
+            GetResults(con, cweeStr::printf("INSERT INTO %s VALUES (%s);", tableFullPath.c_str(), AllValues.c_str()), 1);
+        }
+    }
+    else {
+        // could be MSSQL or MYSQL
+        if (cweeStr(Connection(con).DriverName().c_str()).Find("MYSQL", false) < 0 && cweeStr(Connection(con).DriverName().c_str()).Find("myodbc", false) < 0) {
+            // likely not a MySQL driver (i.e. MSSQL)
+            {
+                cweeStr AllValues; for (auto& y : values) {
+                    cweeStr Values;
+                    for (auto& x : y) {
+                        Values.AddToDelimiter(cweeStr::printf("'%s'", x.c_str()), ",");
+                    }
+                    AllValues.AddToDelimiter(Values, "), (");
+                }
+                GetResults(con, cweeStr::printf("INSERT INTO %s VALUES (%s);", tableFullPath.c_str(), AllValues.c_str()), 1);
+            }
+        }
+        else {
+            // likely a MySQL driver
+            {
+                cweeStr AllValues; for (auto& y : values) {
+                    cweeStr Values;
+                    for (auto& x : y) {
+                        Values.AddToDelimiter(cweeStr::printf("'%s'", x.c_str()), ",");
+                    }
+                    AllValues.AddToDelimiter(Values, "), (");
+                }
+                GetResults(con, cweeStr::printf("INSERT INTO %s VALUES (%s);", tableFullPath.c_str(), AllValues.c_str()), 1);
+            }
+        }
+    }
 };

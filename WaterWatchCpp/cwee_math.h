@@ -78,7 +78,7 @@ private:
 		return t1;
 	};
 };
-static DelayedInstantiation< cwee_rand > sharedCweeRandomGenerator;
+static DelayedInstantiation< cwee_rand > sharedCweeRandomGenerator = DelayedInstantiation< cwee_rand >( []()-> cwee_rand* { return new cwee_rand(); } );
 
 /*! random float between 0 and 1 */ INLINE float cweeRandomFloat() { return sharedCweeRandomGenerator->Random(0.0f, 1.0f); };
 /*! random float between 0 and max */ INLINE float cweeRandomFloat(float max) { return sharedCweeRandomGenerator->Random(0.0f, max); };

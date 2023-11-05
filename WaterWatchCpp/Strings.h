@@ -854,13 +854,15 @@ public:
 		}
 		return false;
 	};		// strip string from end just once if it occurs
-	void				Strip(const char c) {
+	cweeStr&				Strip(const char c) {
 		StripLeading(c);
 		StripTrailing(c);
+		return *this;
 	};						// strip char from front and end as many times as the char occurs
-	void				Strip(const char* string) {
+	cweeStr&				Strip(const char* string) {
 		StripLeading(string);
 		StripTrailing(string);
+		return *this;
 	};					// strip string from front and end as many times as the string occurs
 	void				StripOnce(const char* string) {
 		StripLeadingOnce(string);
