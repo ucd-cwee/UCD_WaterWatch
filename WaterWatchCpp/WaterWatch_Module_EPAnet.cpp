@@ -1302,7 +1302,7 @@ namespace chaiscript {
                         cweeJob toAwait;
                         cweeSharedPtr<sharedObjType> shared = make_cwee_shared<sharedObjType>();
 
-                        method = method.BestMatch({ "PSO", "Genetic", "Random" });
+                        method = method.BestMatch({ std::string("PSO"), std::string("Genetic"), std::string("Random") });
                         switch (method.Hash()) {
                         default:
                         case cweeStr::Hash("PSO"): {

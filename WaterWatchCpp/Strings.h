@@ -2410,7 +2410,7 @@ public:
 	int					Levenshtein(const cweeStr& other) const {
 		return cweeLevenshteinDistance(*this, other);
 	};;
-	cweeStr				BestMatch(std::vector<cweeStr> list) const {
+	cweeStr				BestMatch(std::vector<cweeStr> const& list) const {
 		cweeStr out;
 		int minL = std::numeric_limits<int>::max();
 		const cweeStr& target = *this;
@@ -2419,6 +2419,20 @@ public:
 			if (i <= minL) {
 				minL = i;
 				out = x;
+				if (i == 0) return out;
+			}
+		}
+		return out;
+	};
+	cweeStr				BestMatch(std::vector<std::string> const& list) const {
+		cweeStr out;
+		int minL = std::numeric_limits<int>::max();
+		const cweeStr& target = *this;
+		for (auto& x : list) {
+			int i = cweeStr(x).Levenshtein(target);
+			if (i <= minL) {
+				minL = i;
+				out = x.c_str();
 				if (i == 0) return out;
 			}
 		}

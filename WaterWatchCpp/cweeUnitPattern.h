@@ -1428,8 +1428,8 @@ namespace cweeUnitValues {
 		mutable cweeSysMutex								lock;
 
 	public:
-		unit_value X_Type() const { AUTO g = lock.Guard();  return container->internal_X_type; };
-		unit_value Y_Type() const { AUTO g = lock.Guard();  return container->internal_Y_type; };
+		unit_value X_Type() const { AUTO g{ lock.Guard() }; return container->internal_X_type; };
+		unit_value Y_Type() const { AUTO g{ lock.Guard() }; return container->internal_Y_type; };
 
 		cweeUnitPattern() : 
 			container(make_cwee_shared<cweeUnitPatternContainer>(cweeUnitPatternContainer(second(), scalar())).CastReference<cweeUnitPatternContainer_t>()),
@@ -1453,8 +1453,8 @@ namespace cweeUnitValues {
 		cweeUnitPattern(cweeUnitPattern const& o) : 
 			container(nullptr),
 			boundaryType(boundary_t::BT_FREE), interpolationType(interpolation_t::LINEAR), lock() {
-			AUTO g = lock.Guard();
-			AUTO g1 = o.lock.Guard();
+			AUTO g{ lock.Guard() };
+			AUTO g1{ o.lock.Guard() };
 			container = o.container->Clone();	
 			boundaryType = o.boundaryType;
 			interpolationType = o.interpolationType;
@@ -1462,8 +1462,8 @@ namespace cweeUnitValues {
 		cweeUnitPattern& operator=(cweeUnitPattern const& o) {
 			if (this == &o) return *this;
 
-			AUTO g = lock.Guard();
-			AUTO g1 = o.lock.Guard();
+			AUTO g{ lock.Guard() };
+			AUTO g1{ o.lock.Guard() };
 			
 			container = container->CopyAnotherContainer(o.container); // gets the values of another, uses my units
 
@@ -1480,41 +1480,41 @@ namespace cweeUnitValues {
 		};
 
 		void												SetBoundaryType(const boundary_t& bt) {
-			AUTO g = lock.Guard();
+			AUTO g{ lock.Guard() };
 			boundaryType = bt;
 		};
 		boundary_t											GetBoundaryType() const {
 			boundary_t out;
-			AUTO g = lock.Guard();
+			AUTO g{ lock.Guard() };
 			out = boundaryType;
 			return out;
 		};
 
 		void												SetInterpolationType(const interpolation_t& it) {
-			AUTO g = lock.Guard();
+			AUTO g{ lock.Guard() };
 			interpolationType = it;
 		};
 		interpolation_t										GetInterpolationType() const {
 			interpolation_t out;
-			AUTO g = lock.Guard();
+			AUTO g{ lock.Guard() };
 			out = interpolationType;
 			return out;
 		};
 
 		void Clear() {
-			AUTO g = lock.Guard();
+			AUTO g{ lock.Guard() };
 			container->Clear();
 			boundaryType = boundary_t::BT_FREE;
 			interpolationType = interpolation_t::LINEAR;
 		};
 		void ClearData() {
-			AUTO g = lock.Guard();
+			AUTO g{ lock.Guard() };
 			container->ClearData();
 		};
 
 		int												GetNumValues() const {
 			int out;
-			AUTO g = lock.Guard();
+			AUTO g{ lock.Guard() };
 			out = container->GetNodeCount();
 			return out;
 		};
@@ -1522,7 +1522,7 @@ namespace cweeUnitValues {
 		unit_value										GetMinValue() const {
 			if (GetNumValues() == 0) return 0;
 			bool skipFirst = true;
-			AUTO g = lock.Guard();
+			AUTO g{ lock.Guard() };
 			auto out = container->internal_Y_type;
 			for (auto& x : *container) {
 				if (x.Y) {
@@ -1540,7 +1540,7 @@ namespace cweeUnitValues {
 		unit_value										GetMaxValue() const {
 			if (GetNumValues() == 0) return 0;
 			bool skipFirst = true;
-			AUTO g = lock.Guard();
+			AUTO g{ lock.Guard() };
 			auto out = container->internal_Y_type;
 			for (auto& x : *container) {
 				if (x.Y) {
@@ -1561,7 +1561,7 @@ namespace cweeUnitValues {
 			int n = GetNumValues();
 			if (n == 0) return out;
 			bool skipFirst = true;
-			AUTO g = lock.Guard();
+			AUTO g{ lock.Guard() };
 			out = (container->internal_Y_type = 0);
 			container->internal_X_type = start; start.Clear(); start = container->internal_X_type;
 			container->internal_X_type = end; end.Clear(); end = container->internal_X_type;
@@ -1589,7 +1589,7 @@ namespace cweeUnitValues {
 			int n = GetNumValues();
 			if (n == 0) return out;
 			bool skipFirst = true;
-			AUTO g = lock.Guard();
+			AUTO g{ lock.Guard() };
 			out = (container->internal_Y_type = 0);
 			container->internal_X_type = start; start.Clear(); start = container->internal_X_type;
 			container->internal_X_type = end; end.Clear(); end = container->internal_X_type;
@@ -1614,40 +1614,40 @@ namespace cweeUnitValues {
 		};
 
 		unit_value										GetMinTime(void) const {
-			AUTO g = lock.Guard();
+			AUTO g{ lock.Guard() };
 			return container->GetMinTime();
 		};
 		unit_value										GetMaxTime(void) const {
-			AUTO g = lock.Guard();
+			AUTO g{ lock.Guard() };
 			return container->GetMaxTime();
 		};
 		unit_value										GetAvgTime(void) const {
-			AUTO g = lock.Guard();
+			AUTO g{ lock.Guard() };
 			return container->GetAvgTime();
 		};
 
 		scalar											GetMinimumDecimals() const {
-			AUTO g = lock.Guard();
+			AUTO g{ lock.Guard() };
 			return container->GetMinimumDecimals();
 		};
 		unit_value										GetMinimumTimeStep() const {
-			AUTO g = lock.Guard();
+			AUTO g{ lock.Guard() };
 			return container->GetMinimumTimeStep();
 		};
 
 		cweeUnitPattern& ShiftTime(const unit_value& deltaTime) {
-			AUTO g = lock.Guard();
+			AUTO g{ lock.Guard() };
 			container->ShiftTime(deltaTime);
 			return *this;
 		};
 		cweeUnitPattern& Translate(const unit_value& translation) {
-			AUTO g = lock.Guard();
+			AUTO g{ lock.Guard() };
 			container->Translate(translation);
 			return *this;
 		};
 
 		cweeUnitPattern& RemoveUnnecessaryKnots(const unit_value& timeStart = -std::numeric_limits < unit_value>::max(), const unit_value& timeEnd = std::numeric_limits < unit_value>::max())  {
-			AUTO g = lock.Guard();
+			AUTO g{ lock.Guard() };
 			container->RemoveUnnecessaryKnots(timeStart, timeEnd);
 			return *this;
 		};
@@ -1655,8 +1655,8 @@ namespace cweeUnitValues {
 		cweeUnitPattern&								Copy(const cweeUnitPattern& o, const unit_value& timeStart = -std::numeric_limits < unit_value>::max(), const unit_value& timeEnd = std::numeric_limits < unit_value>::max()) {
 			if (this == &o) return *this;
 
-			AUTO g = lock.Guard();
-			AUTO g1 = o.lock.Guard();
+			AUTO g{ lock.Guard() };
+			AUTO g1{ o.lock.Guard() };
 
 			container = container->CopyAnotherContainer(o.container); // gets the values of another, uses my units			
 
@@ -1669,7 +1669,7 @@ namespace cweeUnitValues {
 			int numKnots = this->GetNumValues();
 			cweeThreadedList<pairT> toReturn(numKnots + 16);
 
-			AUTO g = lock.Guard();
+			AUTO g{ lock.Guard() };
 			for (auto& x : *container) {
 				if (x.Y) {
 					if (x.X >= (container->internal_X_type = timeStart)()) {
@@ -1689,14 +1689,14 @@ namespace cweeUnitValues {
 		};
 
 		void												ClampValues(const unit_value& min, const unit_value& max) {
-			AUTO g = lock.Guard();
+			AUTO g{ lock.Guard() };
 			for (auto& x : *container) {
 				*x.Y = (container->internal_Y_type = math::clamp((container->internal_Y_type = *x.Y), min, max))();
 			}
 		};
 
 		unit_value											GetValueAtIndex(size_t index) {
-			AUTO g = lock.Guard();
+			AUTO g{ lock.Guard() };
 			int n = 0;
 			for (auto& x : *container) {
 				if (x.Y) {
@@ -1709,7 +1709,7 @@ namespace cweeUnitValues {
 			return unit_value();
 		};
 		unit_value											GetTimeAtIndex(size_t index) {
-			AUTO g = lock.Guard();
+			AUTO g{ lock.Guard() };
 			int n = 0;
 			for (auto& x : *container) {
 				if (x.Y) {
@@ -1723,7 +1723,7 @@ namespace cweeUnitValues {
 		};
 
 		size_t												GetLargestSmallerOrEqualTime(const unit_value& time) const {
-			AUTO g = lock.Guard();
+			AUTO g{ lock.Guard() };
 			size_t n = -1;
 			for (auto& x : *container) {
 				if (x.Y) {
@@ -1757,7 +1757,7 @@ namespace cweeUnitValues {
 				minTime = GetMinTime();
 				maxTime = GetMaxTime();
 				{
-					AUTO g = lock.Guard();
+					AUTO g{ lock.Guard() };
 					container->internal_X_type = t;
 					t.Clear();
 					t = container->internal_X_type;
@@ -1793,7 +1793,7 @@ namespace cweeUnitValues {
 			if (IsClamped()) {
 				unit_value mT = this->GetMinTime();
 				{
-					AUTO g = lock.Guard();
+					AUTO g{ lock.Guard() };
 					container->internal_X_type = t;
 					t.Clear();
 					t = container->internal_X_type;
@@ -1810,24 +1810,24 @@ namespace cweeUnitValues {
 			return t;
 		};
 		void												Basis(const unit_value& t, u64* bvals) const {
-			AUTO g = lock.Guard();
+			AUTO g{ lock.Guard() };
 			UnsafeBasis(t, bvals);
 		};
 		void												UnsafeBasis(const unit_value& t, u64* bvals) const {
-			AUTO g = lock.Guard();
+			AUTO g{ lock.Guard() };
 			return container->UnsafeBasis(t, bvals, interpolationType);
 		};
 
 	public:
 
 		unit_value											GetCurrentValue(unit_value time) const {
-			AUTO g = lock.Guard();
+			AUTO g{ lock.Guard() };
 			return container->GetCurrentValue(LoopedTime(ClampedTime(time)), interpolationType);
 		};
 		/*! Return approximate derivative of spline at time */
 		unit_value											GetCurrentFirstDerivative(unit_value time) const {
 			unit_value step; {
-				AUTO g = lock.Guard();
+				AUTO g{ lock.Guard() };
 				container->internal_X_type = time; time.Clear(); time = container->internal_X_type;
 				step = (container->internal_X_type = 0.01);
 			}			
@@ -1837,7 +1837,7 @@ namespace cweeUnitValues {
 		/*! Return approximate second derivative of spline at time */
 		unit_value											GetCurrentSecondDerivative(unit_value time) const {
 			unit_value step; {
-				AUTO g = lock.Guard();
+				AUTO g{ lock.Guard() };
 				container->internal_X_type = time; time.Clear(); time = container->internal_X_type;
 				step = (container->internal_X_type = 0.01);
 			}
@@ -1901,7 +1901,7 @@ namespace cweeUnitValues {
 			unit_value sum;
 
 			{
-				AUTO g = lock.Guard();
+				AUTO g{ lock.Guard() };
 				sum = ((container->internal_X_type * container->internal_Y_type) = 0);
 
 				step = container->internal_X_type;
@@ -1948,7 +1948,7 @@ namespace cweeUnitValues {
 					}
 
 					{
-						AUTO g = lock.Guard();
+						AUTO g{ lock.Guard() };
 						t = (container->internal_X_type = 0);
 						stepDiv2 = (container->internal_X_type = (step / 2.0));
 						maxT = (container->internal_X_type = (t1 + stepDiv2));
@@ -1993,7 +1993,7 @@ namespace cweeUnitValues {
 					}
 
 					{
-						AUTO g = lock.Guard();
+						AUTO g{ lock.Guard() };
 						t = (container->internal_X_type = 0);
 						stepDiv2 = (container->internal_X_type = (step / 2.0));
 						maxT = (container->internal_X_type = (t1 + stepDiv2));
@@ -2038,7 +2038,7 @@ namespace cweeUnitValues {
 					}
 
 					{
-						AUTO g = lock.Guard();
+						AUTO g{ lock.Guard() };
 						t = (container->internal_X_type = 0);
 						stepDiv2 = (container->internal_X_type = (step / 2.0));
 						maxT = (container->internal_X_type = (t1 + stepDiv2));
@@ -2062,7 +2062,7 @@ namespace cweeUnitValues {
 			unit_value step, sum, t, stepDiv2, maxT;
 			unit_value t0 = GetMinTime(), t1 = GetMaxTime();
 			{
-				AUTO g = lock.Guard();
+				AUTO g{ lock.Guard() };
 				sum = container->internal_X_type * container->internal_Y_type;
 				sum = 0;
 
@@ -2101,7 +2101,7 @@ namespace cweeUnitValues {
 					}
 
 					{
-						AUTO g = lock.Guard();
+						AUTO g{ lock.Guard() };
 						t = (container->internal_X_type = 0);
 						stepDiv2 = (container->internal_X_type = (step / 2.0));
 						maxT = (container->internal_X_type = (t1 + stepDiv2));
@@ -2138,7 +2138,7 @@ namespace cweeUnitValues {
 					}
 
 					{
-						AUTO g = lock.Guard();
+						AUTO g{ lock.Guard() };
 						t = (container->internal_X_type = 0);
 						stepDiv2 = (container->internal_X_type = (step / 2.0));
 						maxT = (container->internal_X_type = (t1 + stepDiv2));
@@ -2175,7 +2175,7 @@ namespace cweeUnitValues {
 					}
 
 					{
-						AUTO g = lock.Guard();
+						AUTO g{ lock.Guard() };
 						t = (container->internal_X_type = 0);
 						stepDiv2 = (container->internal_X_type = (step / 2.0));
 						maxT = (container->internal_X_type = (t1 + stepDiv2));
@@ -2226,7 +2226,7 @@ namespace cweeUnitValues {
 
 			int num(0);
 
-			AUTO g = lock.Guard();
+			AUTO g{ lock.Guard() };
 			out = (container->internal_Y_type = 0);
 
 #if 1
@@ -2251,7 +2251,7 @@ namespace cweeUnitValues {
 			int num(0);
 			int n = GetNumValues();
 			if (n == 0) return out;
-			AUTO g = lock.Guard();
+			AUTO g{ lock.Guard() };
 			out = (container->internal_Y_type = 0);
 			container->internal_X_type = start; start.Clear(); start = container->internal_X_type;
 			container->internal_X_type = end; end.Clear(); end = container->internal_X_type;

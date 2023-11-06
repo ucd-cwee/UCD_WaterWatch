@@ -322,6 +322,12 @@ namespace chaiscript {
                 lib->add(chaiscript::fun([](cweeStr& a) { return cweeStr::Hash(a); }), "Hash");
 
                 lib->add(chaiscript::fun(&cweeStr::Levenshtein), "Levenshtein");
+                lib->add(chaiscript::fun([](cweeStr const& lookFor, std::vector<std::string> const& options)->cweeStr {
+                    return lookFor.BestMatch(options);
+                }), "BestMatch");
+                lib->add(chaiscript::fun([](cweeStr const& lookFor, std::vector<cweeStr> const& options)->cweeStr {
+                    return lookFor.BestMatch(options);
+                }), "BestMatch");                
                 lib->add(chaiscript::fun([](cweeStr const& a) { return std::string(a.c_str()); }), "to_string");
             }
 
