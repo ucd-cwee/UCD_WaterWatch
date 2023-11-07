@@ -1,0 +1,16 @@
+#include "Defines.idl"
+import "EditorWrapper.idl";
+
+namespace MicaEditor
+{
+	[default_interface]
+	[webhosthidden]
+	runtimeclass MicaEditorControl : DUX.Controls.Control
+	{
+		MicaEditorControl();
+		UInt64 Scintilla(ScintillaMessage message, UInt64 wParam, UInt64 lParam);
+		Editor Editor { get; };
+		event Windows.Foundation.EventHandler<Double> DpiChanged;
+		event Windows.Foundation.EventHandler<UInt64> ScintillaNotification;
+	}
+}

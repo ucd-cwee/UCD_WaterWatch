@@ -19,7 +19,7 @@
     <WindowsXamlEnableOverview>true</WindowsXamlEnableOverview>
     <AppxPackageSigningEnabled>True</AppxPackageSigningEnabled>
     <GenerateAppInstallerFile>False</GenerateAppInstallerFile>
-    <PackageCertificateThumbprint>F7FB5E253712ED193F1D4A233373928B4C05F026</PackageCertificateThumbprint>
+    <PackageCertificateThumbprint>58DD647B8FDDA09D23B8FF26009FF26C21D70AB0</PackageCertificateThumbprint>
     <AppxPackageSigningTimestampDigestAlgorithm>SHA256</AppxPackageSigningTimestampDigestAlgorithm>
     <AppxAutoIncrementPackageRevision>True</AppxAutoIncrementPackageRevision>
     <GenerateTestArtifacts>True</GenerateTestArtifacts>
@@ -363,6 +363,10 @@
     </PackageReference>
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\MicaEditor\MicaEditor.vcxproj">
+      <Project>{290647e3-d8cb-46b5-87ce-409f721e441a}</Project>
+      <Name>MicaEditor</Name>
+    </ProjectReference>
     <ProjectReference Include="..\UWP_WaterWatchLibrary\UWP_WaterWatchLibrary.csproj">
       <Project>{5b6e4898-fa84-465b-91d9-e0547e3b3c29}</Project>
       <Name>UWP_WaterWatchLibrary</Name>
