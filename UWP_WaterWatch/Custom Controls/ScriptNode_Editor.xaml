@@ -5,8 +5,13 @@
     xmlns:local="using:UWP_WaterWatch.Custom_Controls"
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-    xmlns:converters="using:UWP_WaterWatchLibrary.Converters" xmlns:floating="using:UWP_WaterWatchLibrary.Floating" xmlns:controls="using:Microsoft.Toolkit.Uwp.UI.Controls" xmlns:behaviors="using:Microsoft.Xaml.Interactivity" xmlns:core="using:Microsoft.Xaml.Interactions.Core"
-    mc:Ignorable="d"
+    xmlns:converters="using:UWP_WaterWatchLibrary.Converters" 
+    xmlns:floating="using:UWP_WaterWatchLibrary.Floating" 
+    xmlns:controls="using:Microsoft.Toolkit.Uwp.UI.Controls" 
+    xmlns:behaviors="using:Microsoft.Xaml.Interactivity" 
+    xmlns:core="using:Microsoft.Xaml.Interactions.Core"
+    mc:Ignorable="d" 
+    xmlns:mica="using:MicaEditor"
     d:DesignHeight="300"
     d:DesignWidth="400">
 
@@ -60,67 +65,12 @@
             </Button>
         </StackPanel>
 
-        <ScrollViewer x:Name="Scroller" Grid.Row="1" Grid.Column="0" VerticalScrollMode="Enabled"
-            VerticalScrollBarVisibility="Auto"  IsVerticalRailEnabled="True" 
-            HorizontalScrollBarVisibility="Auto" HorizontalScrollMode="Enabled" 
-            Padding="0"
-            HorizontalAlignment="Stretch" VerticalAlignment="Stretch" 
-            VerticalContentAlignment="Stretch" HorizontalContentAlignment="Stretch"
-                      
-            IsDeferredScrollingEnabled="False"
-            IsScrollInertiaEnabled="False"
-            IsVerticalScrollChainingEnabled="False"
-            ZoomMode="Disabled"
-            ZoomSnapPointsType="None"
-            IsZoomChainingEnabled="False"
-            IsZoomInertiaEnabled="False"
-                      
-            BringIntoViewRequested="ScrollViewer_BringIntoViewRequested" BringIntoViewOnFocusChange="False"
-            >
-
-            <!--
-            IsDeferredScrollingEnabled="False"
-            IsScrollInertiaEnabled="False"
-            IsVerticalScrollChainingEnabled="False"
-            ZoomMode="Disabled"
-            ZoomSnapPointsType="None"
-            IsZoomChainingEnabled="False"
-            IsZoomInertiaEnabled="False"-->
-
-            <Grid >
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="20" />
-                    <ColumnDefinition Width="*" />
-                </Grid.ColumnDefinitions>
-
-                <StackPanel Margin="0,1,0,1" Orientation="Vertical" Spacing="0" Padding="0" x:Name="LineNumbers" Grid.Row="0" Grid.Column="0"  HorizontalAlignment="Stretch" VerticalAlignment="Stretch" >
-
-                </StackPanel>
-
-                <!-- local:RichEditBoxExtension.PlainText="{x:Bind vm.ParentVM.Script, Mode=TwoWay}"  -->
-                <Grid x:Name="EditorParent" Grid.Row="0" Grid.Column="1">
-                    <RichEditBox x:Name="Editor" Style="{StaticResource cweeRichEditBox}" FontSize="12"
-                    CornerRadius="0"  MinHeight="20" BorderBrush="Transparent" BorderThickness="1" Margin="0" Padding="0"
-                    Loaded="Editor_OnLoaded" local:RichEditBoxExtension.PlainText="{x:Bind vm.ParentVM.Script, Mode=TwoWay}" 
-                    TextChanged="Editor_OnTextChanged"
-                    PlaceholderText="..." TextWrapping="NoWrap" IsTextPredictionEnabled="False" 
-                    ScrollViewer.VerticalScrollMode="Disabled" ScrollViewer.HorizontalScrollMode="Disabled"
-                    ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                    ScrollViewer.VerticalScrollBarVisibility="Disabled"
-                    ScrollViewer.IsScrollInertiaEnabled="False"
-                    ScrollViewer.IsVerticalScrollChainingEnabled="False"
-                    ScrollViewer.ZoomMode="Disabled"
-                    ScrollViewer.IsZoomInertiaEnabled="False"
-                    ScrollViewer.BringIntoViewOnFocusChange="False"
-                />
-                </Grid>
-
-
-                <StackPanel Grid.Row="0" Grid.Column="1" Margin="0,1,0,1" Orientation="Vertical" Spacing="0" Padding="0" x:Name="LineOverlays" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" >
-
-                </StackPanel>
-            </Grid>
-        </ScrollViewer>
+        <Grid x:Name="EditorParent" Grid.Row="1" Margin="-10,0,0,0">
+            <mica:CodeEditorControl x:Name="Editor"
+                    BorderBrush="Transparent" BorderThickness="1" Margin="0" Padding="0"
+                    Loaded="Editor_OnLoaded" local:CodeEditorControlExtension.PlainText="{x:Bind vm.ParentVM.Script, Mode=TwoWay}"                                             
+            />
+        </Grid>
         
     </Grid>
 </UserControl>

@@ -40,6 +40,8 @@ using UWP_WaterWatch;
 using static UWP_WaterWatchLibrary.ObjectExtensions;
 using System.Collections.Concurrent;
 using Microsoft.UI.Xaml.Controls;
+using MicaEditor;
+
 // The User Control item template is documented at https://go.microsoft.com/fwlink/?LinkId=234236
 
 namespace UWP_WaterWatch.Custom_Controls
@@ -264,6 +266,139 @@ namespace UWP_WaterWatch.Custom_Controls
             return (o.GetValue(RichEditChangeStateHelperProperty) as RichEditChangeStateHelper).State;
         }
 #endregion
+    }
+
+    public class CodeEditorControlExtension
+    {
+        // Standard attached property. It mimics the "Text" property of normal text boxes
+        public static readonly DependencyProperty PlainTextProperty =
+          DependencyProperty.RegisterAttached("PlainText", typeof(string),
+          typeof(CodeEditorControlExtension), new PropertyMetadata(null, OnPlainTextChanged));
+
+        // Standard DP infrastructure
+        public static string GetPlainText(DependencyObject o)
+        {
+            return (o.GetValue(PlainTextProperty) as string).Replace("\r", "\n");
+        }
+
+        // Standard DP infrastructure
+        public static void SetPlainText(DependencyObject o, string s)
+        {
+            o.SetValue(PlainTextProperty, s == null ? s : s.Replace("\r", "\n"));
+        }
+
+        private static void OnPlainTextChanged(DependencyObject o,
+          DependencyPropertyChangedEventArgs e)
+        {
+            var source = o as CodeEditorControl;
+            if (o == null || e.NewValue == null)
+                return;
+
+            // This attaches an event handler for the TextChange event in the CodeEditorControl,
+            // ensuring that we're made aware of any changes
+            AttachCodeEditorControlChangingHelper(o);
+
+            // To avoid endless property updates, we make sure we only change the RichText's 
+            // Document if the PlainText was modified (vs. if PlainText is responding to 
+            // Document being modified)
+            var state = GetState(o);
+            switch (state)
+            {
+                case RichEditChangeState.Idle:
+                    var text = (e.NewValue as string).Replace("\r", "\n");
+                    SetState(o, RichEditChangeState.PlainTextChanged);
+
+                    source.Editor.SetText(text);
+                    break;
+
+                case RichEditChangeState.RichTextChanged:
+                    SetState(o, RichEditChangeState.Idle);
+                    break;
+
+                default:
+                    SetState(o, RichEditChangeState.Idle);
+                    break;
+            }
+        }
+
+        #region Glue
+
+        // Trivial state machine to determine who last changed the text properties
+        enum RichEditChangeState
+        {
+            Idle,
+            RichTextChanged,
+            PlainTextChanged,
+            Unknown
+        }
+
+        // Helper class that just stores a state inside a textbox, determining
+        // whether it is already being changed by code or not
+        class RichEditChangeStateHelper
+        {
+            public RichEditChangeState State { get; set; }
+        }
+
+        // Private attached property (never seen in XAML or anywhere else) to attach
+        // the state variable for us. Because this isn't used in XAML, we don't need
+        // the normal GetXXX and SetXXX static methods.
+        static readonly DependencyProperty RichEditChangeStateHelperProperty =
+          DependencyProperty.RegisterAttached("RichEditChangeStateHelper",
+          typeof(RichEditChangeStateHelper), typeof(CodeEditorControlExtension), null);
+
+        // Inject our state into the textbox, and also attach an event-handler
+        // for the TextChanged event.
+        static void AttachCodeEditorControlChangingHelper(DependencyObject o)
+        {
+            if (o.GetValue(RichEditChangeStateHelperProperty) != null)
+                return;
+
+            var richEdit = o as CodeEditorControl;
+            var helper = new RichEditChangeStateHelper();
+            o.SetValue(RichEditChangeStateHelperProperty, helper);
+
+            richEdit.Editor.Modified += (Editor sender, ModifiedEventArgs args) => {
+                EdmsTasks.InsertJob(()=> { 
+                    // To avoid re-entrancy, make sure we're not already changing
+                    var state = GetState(o);
+                    switch (state) {
+                        case RichEditChangeState.Idle:
+                            string text = "";
+                            for (long i = 0; i < sender.LineCount; i++)
+                            {
+                                var line = sender.GetLine(i);
+                                text = text.AddToDelimiter(line, "\n");
+                            }
+
+                            if (text != GetPlainText(o))
+                            {
+                                SetState(o, RichEditChangeState.RichTextChanged);
+                                o.SetValue(PlainTextProperty, text.Replace("\r", "\n"));
+                            }
+                            break;
+                        case RichEditChangeState.PlainTextChanged:
+                            SetState(o, RichEditChangeState.Idle);
+                            break;
+                        default:
+                            SetState(o, RichEditChangeState.Idle);
+                            break;
+                    }
+                }, true);
+            };
+        }
+
+        // Helper to set the state managed by the textbox
+        static void SetState(DependencyObject o, RichEditChangeState state)
+        {
+            (o.GetValue(RichEditChangeStateHelperProperty) as RichEditChangeStateHelper).State = state;
+        }
+
+        // Helper to get the state managed by the textbox
+        static RichEditChangeState GetState(DependencyObject o)
+        {
+            return (o.GetValue(RichEditChangeStateHelperProperty) as RichEditChangeStateHelper).State;
+        }
+        #endregion
     }
 #endif
 
@@ -601,8 +736,6 @@ namespace UWP_WaterWatch.Custom_Controls
         public cweeEvent<ScriptingNodeResult> RunClickedEvent = new cweeEvent<ScriptingNodeResult>();
 
         public ScriptNode_EditorVM vm = new ScriptNode_EditorVM();
-        private ITextParagraphFormat defaultParagraphFormat;
-        private ITextCharacterFormat defaultCharacterFormat;
         const int maxUndos = 30;
         internal LinkedList<string> Undos = new LinkedList<string>();
         internal LinkedList<string> Redos = new LinkedList<string>();
@@ -621,43 +754,18 @@ namespace UWP_WaterWatch.Custom_Controls
 
             this.InitializeComponent();
 
-            Editor.FontSize = ThisFontSize;
-            Editor.TextDocument.AlignmentIncludesTrailingWhitespace = false;
-            defaultParagraphFormat = Editor.TextDocument.GetDefaultParagraphFormat();
-            defaultParagraphFormat.PageBreakBefore = FormatEffect.Off;
-            defaultParagraphFormat.Style = ParagraphStyle.None;
-            defaultParagraphFormat.WidowControl = FormatEffect.Off;
-            // defaultParagraphFormat.SetLineSpacing(LineSpacingRule.Exactly, (float)((double)(ThisFontSize + 3)));
-            defaultParagraphFormat.SetLineSpacing(LineSpacingRule.Exactly, (float)((double)(ThisFontSize + 3)));
-            Editor.TextDocument.SetDefaultParagraphFormat(defaultParagraphFormat);
-
-            defaultCharacterFormat = Editor.TextDocument.GetDefaultCharacterFormat();
+ 
             var cdb = cweeXamlHelper.ThemeColor("cweeDarkBlue");
-            cdb.ContinueWith(()=> {
-                defaultCharacterFormat.ForegroundColor = cdb.Result.Color;
-            }, true);
+
             var cpb = cweeXamlHelper.ThemeColor("cweePageBackground");
-            cpb.ContinueWith(() => {
-                defaultCharacterFormat.BackgroundColor = cpb.Result.Color;
-            }, true);
-            defaultCharacterFormat.FontStyle = FontStyle.Normal;
-            defaultCharacterFormat.Size = (float)ThisFontSize;
-            Editor.TextDocument.SetDefaultCharacterFormat(defaultCharacterFormat);
 
-            Editor.FontSize = ThisFontSize;
-            Editor.FontFamily = new FontFamily("Segoe UI");
-            Editor.FontStretch = FontStretch.Normal;
-            Editor.ClipboardCopyFormat = RichEditClipboardFormat.PlainText;
-            Editor.HorizontalTextAlignment = TextAlignment.Left;
-            Editor.IsHandwritingViewEnabled = false;
-            Editor.IsTextPredictionEnabled = false;
-            Editor.IsTextScaleFactorEnabled = false;
+            //Editor.FontSize = ThisFontSize;
+            //Editor.FontFamily = new FontFamily("Segoe UI");
+            //Editor.FontStretch = FontStretch.Normal;     
+            //Editor.IsTextScaleFactorEnabled = false;
 
-            Editor.PreviewKeyDown += Editor_PreviewKeyDown;
-            Editor.CharacterReceived += Editor_CharacterReceived; ;
-            Editor.IsSpellCheckEnabled = false;
-
-            Editor.Document.UndoLimit = 0;
+            //Editor.PreviewKeyDown += Editor_PreviewKeyDown;
+            //Editor.CharacterReceived += Editor_CharacterReceived; ;
 
             this.PointerEntered += ScriptNode_Editor_PointerEntered;
             this.PointerExited += ScriptNode_Editor_PointerExited;
@@ -904,6 +1012,7 @@ namespace UWP_WaterWatch.Custom_Controls
         public static AtomicInt Is_Processing_KeyDown = new AtomicInt();
         private void Editor_PreviewKeyDown(object sender, KeyRoutedEventArgs e)
         {
+            /*
             Is_Processing_KeyDown.Increment();
             try
             {
@@ -916,7 +1025,7 @@ namespace UWP_WaterWatch.Custom_Controls
                 int keyCode = (int)e.Key;
                 try
                 {
-                    RichEditBox tb = sender as RichEditBox;
+                    CodeEditorControl tb = sender as CodeEditorControl;
                     if (IsPressed(VirtualKey.Up))
                     {
                         var left = vm.ParentVM.Script.Left(tb.TextDocument.Selection.EndPosition);
@@ -1113,6 +1222,7 @@ namespace UWP_WaterWatch.Custom_Controls
             {
                 Is_Processing_KeyDown.Decrement();
             }
+            */
         }
 
         private void Editor_CharacterReceived(UIElement sender, CharacterReceivedRoutedEventArgs args)
@@ -1170,34 +1280,102 @@ namespace UWP_WaterWatch.Custom_Controls
             }
         }
 
+        int defaultZoom;
         private void Editor_OnLoaded(object sender, RoutedEventArgs e)
         {
-            RichEditBox tb = sender as RichEditBox;
+            CodeEditorControl tb = sender as CodeEditorControl;
             tb.Loaded -= Editor_OnLoaded;
 
-            ScrollViewer myScroll = tb.FindVisualChild<ScrollViewer>();
-            if (myScroll != null)
-            {
-                myScroll.BringIntoViewOnFocusChange = false;
-                myScroll.AllowFocusOnInteraction = false;
-                myScroll.VerticalScrollMode = ScrollMode.Disabled;
-                myScroll.HorizontalScrollMode = ScrollMode.Disabled;
-                myScroll.IsScrollInertiaEnabled = false;
-                myScroll.BringIntoViewRequested += (UIElement sender2, BringIntoViewRequestedEventArgs args)=> { args.Handled = true; };
+            tb.Editor.ZoomChanged += Editor_ZoomChanged;
 
-                myScroll.IsDeferredScrollingEnabled = false;
-                myScroll.IsScrollInertiaEnabled = false;
-                myScroll.IsVerticalScrollChainingEnabled = false;
-                myScroll.ZoomMode = ZoomMode.Disabled;
-                myScroll.ZoomSnapPointsType = SnapPointsType.None;
-                myScroll.IsZoomChainingEnabled = false;
-                myScroll.IsZoomInertiaEnabled = false;
+            defaultZoom = tb.Editor.Zoom;
 
-                myScroll.CancelDirectManipulations();
-            }
+            tb.HighlightingLanguage = "cpp";
+
+            tb.Editor.SetDefaultFoldDisplayText("... }");
+            tb.Editor.FoldDisplayTextStyle = MicaEditor.FoldDisplayTextStyle.Boxed;
+            tb.Editor.AutomaticFold = MicaEditor.AutomaticFold.Click;
+            // tb.Editor.SetFoldFlags(MicaEditor.FoldFlag.LineAfterContracted); // GOOD
+            tb.Editor.SetMarginSensitiveN(0, true); // enable user to click on row-number margin
+
+            tb.Editor.SetMarginWidthN(2, 7);
+            tb.Editor.SetMarginTypeN(2, MicaEditor.MarginType.Text);
+            tb.Editor.SetMarginSensitiveN(2, true);
+            tb.Editor.SetMarginMaskN(2, (int)MicaEditor.MarkerSymbol.Arrow);
+
+            tb.Editor.IndicSetStyle(2, MicaEditor.IndicatorStyle.SquigglePixmap); // works good
+            tb.Editor.IndicSetFore(2, 0x0000ff); // (light red)
+
+            tb.Editor.CharAdded += Editor_CharAdded;
+            tb.Editor.MarginClick += (MicaEditor.Editor sender2, MicaEditor.MarginClickEventArgs args2) => {
+                if (args2.Margin == 0 || args2.Margin == 2)
+                {
+                    long line = sender2.LineFromPosition(args2.Position);
+                    sender2.FoldLine(line, MicaEditor.FoldAction.Toggle);
+                    System.Threading.Tasks.Task.Run(() => {
+                        UpdateCollapseMargin(sender2);
+                    });
+                }
+            };
+
+            tb.Editor.SetKeyWords(0, "auto var int float double long bool true false null"); // built-in types
+            tb.Editor.SetKeyWords(1, "auto var for if else return while"); // language functions
+            tb.Editor.SetKeyWords(3, "Vector RTree Point2d UI_Map cweeStr String Map Object"); // user-defined classes
+            tb.Editor.SetKeyWords(6, "push_back name coordinates first second GetAddress longitude latitude to_number rand Remove Add = == + - [] ()"); // user-defined functions
+
+
+
+
+
+
+
             DoTextChanging(true, true, "Created a new node.");
             
         }
+
+        private void Editor_ZoomChanged(Editor sender, ZoomChangedEventArgs args)
+        {
+            if (sender.Zoom != defaultZoom)
+            {
+                sender.Zoom = defaultZoom;
+            }
+        }
+
+        private void Editor_CharAdded(Editor sender, CharAddedEventArgs args)
+        {
+            UpdateCollapseMargin(sender);
+        }
+
+        private void UpdateCollapseMargin(MicaEditor.Editor sender)
+        {
+            System.Collections.Generic.Dictionary<long, int> parents = new System.Collections.Generic.Dictionary<long, int>();
+
+            for (long line = sender.LineCount - 1; line >= 0; line--)
+            {
+                var parent_p = sender.GetFoldParent(line);
+                if (parent_p >= 0)
+                {
+                    if (!parents.ContainsKey(parent_p))
+                    {
+                        parents.Add(parent_p, 0);
+                    }
+                }
+                sender.MarginSetText(line, "");
+            }
+
+            foreach (var parent in parents.Keys)
+            {
+                if (sender.GetFoldExpanded(parent))
+                {
+                    sender.MarginSetText(parent, "⌐");
+                }
+                else
+                {
+                    sender.MarginSetText(parent, "≡");
+                }
+            }
+        }
+
 
         private Grid CreateLineNumber(int num) {
             var toReturn = new Grid() {
@@ -1437,20 +1615,6 @@ namespace UWP_WaterWatch.Custom_Controls
                 string copy = previousScript;
                 copy = copy.Replace("\r", "\n");
                 textJ = copy.Split("\n").ToList();
-
-                for (int i = LineNumbers.Children.Count; i < textJ.Count; i++)
-                {
-                    LineNumbers.Children.Add(CreateLineNumber(i + 1));
-                    var overlay = CreateLineOverlay(i + 1);
-                    overlay.ContinueWith(()=> {
-                        LineOverlays.Children.Add(overlay.Result);
-                    }, true);
-                }
-                for (int i = LineNumbers.Children.Count - 1; i >= textJ.Count; i--)
-                {
-                    LineNumbers.Children.RemoveAt(i);
-                    LineOverlays.Children.RemoveAt(i);
-                }
             }
 
             var toReturn = new EdmsTasks.cweeTask(()=> { }, false, true);
@@ -1790,120 +1954,18 @@ namespace UWP_WaterWatch.Custom_Controls
             return toReturn;
         }
 
-        private EdmsTasks.cweeTask DoFormattingActualImp(string whatGotParsed, List<FormatStrDetails> finalFormat, bool WasWarning, string SuccessfulOutputString, bool wasSuccessful, int position = 0)
-        {
-            if (DateTime.Now < queueTm) return EdmsTasks.cweeTask.CompletedTask(null);
-            else
-            {
-                Editor.TextDocument.GetText(TextGetOptions.NoHidden, out string newV);
-                newV = newV.Replace("\r", "\n");
-                if (newV == whatGotParsed)
-                {
-                    if (position < finalFormat.Count)
-                    {
-                        FormatStrDetails formatter = finalFormat[position];
-
-                        var sel = Editor.TextDocument.Selection;
-                        var startPos = sel.StartPosition;
-                        var endPos = sel.EndPosition;
-
-                        EditorParent.Children.Remove(Editor);
-
-                        {
-                            sel.SetRange(formatter.start, formatter.end);
-                            sel.ParagraphFormat = defaultParagraphFormat;
-                            sel.CharacterFormat = defaultCharacterFormat;
-                            sel.CharacterFormat.ForegroundColor = formatter.details.AvgForegroundColor;
-                            sel.CharacterFormat.BackgroundColor = formatter.details.AvgBackgroundColor;
-                            if (sel.CharacterFormat.Bold != formatter.details.Bold) sel.CharacterFormat.Bold = formatter.details.Bold;
-                            if (sel.CharacterFormat.FontStyle != formatter.details.FontStyle) sel.CharacterFormat.FontStyle = formatter.details.FontStyle;
-                            if (sel.CharacterFormat.Italic != formatter.details.Italic) sel.CharacterFormat.Italic = formatter.details.Italic;
-                            if (sel.CharacterFormat.Underline != formatter.details.Underline) sel.CharacterFormat.Underline = formatter.details.Underline;
-                        }
-
-                        EditorParent.Children.Add(Editor);
-                        Editor.Focus(FocusState.Programmatic);
-
-                        sel.SetRange(startPos, endPos);
-                        sel.ScrollIntoView(PointOptions.Start);
-
-                        
- 
-                        if (DateTime.Now < queueTm) return EdmsTasks.cweeTask.CompletedTask(null);
-
-                        return EdmsTasks.InsertJob(() => DoFormattingActualImp(whatGotParsed, finalFormat, WasWarning, SuccessfulOutputString, wasSuccessful, position + 1), true);
-                    }
-                    else
-                    {
-                        if (!WasWarning)
-                        {
-                            if (vm != null && vm.ParentVM != null)
-                            {
-                                if (SuccessfulOutputString != null)
-                                    vm.ParentVM.outputPanel.vm.StatusString = SuccessfulOutputString;
-                                else
-                                    vm.ParentVM.outputPanel.vm.StatusString = "Successful parse.";
-                            }
-                            vm.errorManager.RemoveWarning(-1);
-                            vm.errorManager.RemoveWarning(-2);
-                        }
-                    }
-                }
-                else
-                {
-                    HandleFormatting(newV, wasSuccessful, SuccessfulOutputString);
-                }
-            }
-            return EdmsTasks.cweeTask.CompletedTask(null);
-        }
-
         private EdmsTasks.cweeTask DoFormattingActual(string whatGotParsed, List<FormatStrDetails> finalFormat, bool WasWarning, string SuccessfulOutputString, bool wasSuccessful)
         {
-#if true
             if (DateTime.Now < queueTm) return EdmsTasks.cweeTask.CompletedTask(null);
             else {
-                Editor.TextDocument.GetText(TextGetOptions.NoHidden, out string newV);
-                newV = newV.Replace("\r", "\n");
+                string newV = "";
+                for (long i = 0; i < Editor.Editor.LineCount; i++)
+                {
+                    var line = Editor.Editor.GetLine(i);
+                    newV = newV.AddToDelimiter(line, "\n");
+                }
                 if (newV == whatGotParsed)
                 {
-                    if (true)
-                    {
-                        var sel = Editor.TextDocument.Selection;
-                        var startPos = sel.StartPosition;
-                        var endPos = sel.EndPosition;
-
-                        EditorParent.Children.Remove(Editor);
-
-                        sel.SetRange(0, startPos); // newV.Length + 1);
-                        sel.ScrollIntoView(PointOptions.NoVerticalScroll);
-                        sel.ParagraphFormat = defaultParagraphFormat;
-                        sel.CharacterFormat = defaultCharacterFormat;
-                        sel.SetRange(startPos, whatGotParsed.Length);
-                        sel.ScrollIntoView(PointOptions.Start);
-                        sel.ParagraphFormat = defaultParagraphFormat;
-                        sel.CharacterFormat = defaultCharacterFormat;
-
-                        foreach (var formatter in finalFormat)
-                        {
-                            if (DateTime.Now < queueTm) break;
-
-                            sel.SetRange(formatter.start, formatter.end);
-                            sel.CharacterFormat.ForegroundColor = formatter.details.AvgForegroundColor;
-                            sel.CharacterFormat.BackgroundColor = formatter.details.AvgBackgroundColor;
-                            if (sel.CharacterFormat.Bold != formatter.details.Bold) sel.CharacterFormat.Bold = formatter.details.Bold;
-                            if (sel.CharacterFormat.FontStyle != formatter.details.FontStyle) sel.CharacterFormat.FontStyle = formatter.details.FontStyle;
-                            if (sel.CharacterFormat.Italic != formatter.details.Italic) sel.CharacterFormat.Italic = formatter.details.Italic;
-                            if (sel.CharacterFormat.Underline != formatter.details.Underline) sel.CharacterFormat.Underline = formatter.details.Underline;
-                        }
-
-                        //sel.SetRange(startPos, endPos);
-                        EditorParent.Children.Add(Editor);
-                        Editor.Focus(FocusState.Programmatic);
-
-                        sel.SetRange(startPos, endPos);
-                        sel.ScrollIntoView(PointOptions.Start);
-                    }
-
                     if (DateTime.Now < queueTm) return EdmsTasks.cweeTask.CompletedTask(null);
 
                     if (!WasWarning)
@@ -1917,7 +1979,6 @@ namespace UWP_WaterWatch.Custom_Controls
                         }
                         vm.errorManager.RemoveWarning(-1);
                         vm.errorManager.RemoveWarning(-2);
-
                     }
                 }
                 else
@@ -1926,12 +1987,6 @@ namespace UWP_WaterWatch.Custom_Controls
                 }
                 return EdmsTasks.cweeTask.CompletedTask(null);
             }
-#else
-            if (DateTime.Now < queueTm) 
-                return EdmsTasks.cweeTask.CompletedTask(null);
-            else
-                return EdmsTasks.InsertJob(() => DoFormattingActualImp(whatGotParsed, finalFormat, WasWarning, SuccessfulOutputString, wasSuccessful), true);
-#endif
         }
         private (bool, int, int) TryParseErrorMessage(string err, List<string> textJ)
         {
@@ -2018,7 +2073,12 @@ namespace UWP_WaterWatch.Custom_Controls
             return (false, 0, 0);
         }
         private void DoTextChanging(bool forceUpdate = false, bool wasSuccessful = false, string SuccessfulOutputString = null) {
-            Editor.TextDocument.GetText(TextGetOptions.NoHidden, out string v);
+            string v = "";
+            for (long i = 0; i < Editor.Editor.LineCount; i++)
+            {
+                var line = Editor.Editor.GetLine(i);
+                v = v.AddToDelimiter(line, "\n");
+            }
             v = v.Replace("\r", "\n");
             try
             {
@@ -2125,212 +2185,8 @@ namespace UWP_WaterWatch.Custom_Controls
             return ResultContainer;
         }
         AtomicInt counter = new AtomicInt(0);
-        internal void TrackPointer()
-        {
-            if (ScriptNode_EditorVM.pointerPosition != prevPosition)
-            {
-                counter.Set(0);
-                prevPosition = ScriptNode_EditorVM.pointerPosition;
-            }
-            else
-            {
-                if (counter.Increment() == 2) {
-                    if (trackPointerLock.TryIncrementTo(1))
-                    {
-                        var shouldR = EdmsTasks.InsertJob(() => { return Editor.ProofingMenuFlyout.IsOpen || Editor.SelectionFlyout.IsOpen; }, true, true);
-                        shouldR.ContinueWith(() =>
-                        {
-                            bool sr = shouldR.Result;
-                            if (!sr)
-                            {
+        internal void TrackPointer() {
 
-                                var args = AppExtension.ApplicationInfo.PointerMovedArgs;//  = args;
-                                if (vm.MostRecentParsedNodes != null && args != null)
-                                {
-                                    EdmsTasks.InsertJob(() => {
-                                        var position = args.GetCurrentPoint(Editor).Position;
-                                        if ((position.X >= 0 && position.X <= Editor.ActualWidth) && (position.Y >= 0 && position.Y <= Editor.ActualHeight))
-                                        {
-                                            return EdmsTasks.InsertJob(() =>
-                                            {
-                                                var range = Editor.Document.GetRangeFromPoint(position, PointOptions.ClientCoordinates);
-                                                int charNum = range.StartPosition;
-                                                {
-                                                    List<ScriptingNode> foundNodes = new List<ScriptingNode>();
-                                                    return EdmsTasks.InsertJob(() =>
-                                                    {
-                                                        for (int i = vm.MostRecentParsedNodes.Count - 1; i >= 0; i--)
-                                                        {
-                                                            var node = vm.MostRecentParsedNodes[i];
-                                                            if (node.startColumn_get() <= charNum && node.endColumn_get() >= charNum)
-                                                            {
-                                                                if (node.type_get() == WaterWatchEnums.ScriptNodeType.File || node.type_get() == WaterWatchEnums.ScriptNodeType.Noop) continue;
-
-                                                                foundNodes.Add(node);
-                                                            }
-                                                        }
-                                                    }, true).ContinueWith(() =>
-                                                    {
-                                                        if (foundNodes.Count > 0)
-                                                        {
-                                                            var tt = new StackPanel() { Orientation = Orientation.Vertical };
-                                                            var row1 = new BreadcrumbBar();
-                                                            var row2 = new StackPanel() { Orientation = Orientation.Vertical, HorizontalAlignment = HorizontalAlignment.Left };
-                                                            tt.Children.Add(row1);
-                                                            tt.Children.Add(row2);
-
-                                                            return EdmsTasks.InsertJob(() =>
-                                                            {
-                                                                List<EdmsTasks.cweeTask> tasks = new List<EdmsTasks.cweeTask>();
-                                                                List<string> BreadcrumbBarContent = new List<string>();
-                                                                foreach (var node in foundNodes)
-                                                                {
-                                                                    if (node.type_get() == WaterWatchEnums.ScriptNodeType.Id) { BreadcrumbBarContent = new List<string>(); }
-                                                                    BreadcrumbBarContent.Add(node.type_get().ToString());
-                                                                }
-                                                                BreadcrumbBarContent.Reverse();
-                                                                tasks.Add(new EdmsTasks.cweeTask(() => { row1.ItemsSource = BreadcrumbBarContent; }, true, true));
-
-                                                                // accum the flyout
-                                                                tasks.Add(new EdmsTasks.cweeTask(() =>
-                                                                {
-                                                                    if (!string.IsNullOrEmpty(foundNodes[0].typeHint_get()))
-                                                                    {
-                                                                        row2.Children.Add(cweeXamlHelper.SimpleTextBlock(foundNodes[0].typeHint_get(), HorizontalAlignment.Left));
-                                                                    }
-
-                                                                    if ((foundNodes.Count > 0) && !string.IsNullOrEmpty(foundNodes[0].text_get()))
-                                                                    {
-                                                                        if (!string.IsNullOrEmpty(foundNodes[0].typeHint_get()))
-                                                                        {
-                                                                            switch (foundNodes[0].typeHint_get())
-                                                                            {
-                                                                                default:
-                                                                                case "Object":
-                                                                                    {
-                                                                                        StackPanel header = new StackPanel() { Orientation = Orientation.Horizontal, Spacing = 10 };
-                                                                                        header.Children.Add(new FontIcon() { FontFamily = new FontFamily("Segoe MDL2 Assets"), Glyph = "\xE8A5" });
-                                                                                        header.Children.Add(cweeXamlHelper.SimpleTextBlock(foundNodes[0].typeHint_get(), HorizontalAlignment.Left));
-                                                                                        header.Children.Add(cweeXamlHelper.SimpleTextBlock(foundNodes[0].text_get(), HorizontalAlignment.Left));
-                                                                                        row2.Children.Add(header);
-
-
-                                                                                        Border ResultContainer = GetQuickVisualization(foundNodes[0].text_get());
-                                                                                        row2.Children.Add(ResultContainer);
-
-                                                                                        break;
-                                                                                    }
-                                                                                case "int":
-                                                                                case "double":
-                                                                                case "float":
-                                                                                    {
-                                                                                        Border ResultContainer = GetQuickVisualization(foundNodes[0].text_get());
-                                                                                        row2.Children.Add(ResultContainer);
-
-                                                                                        break;
-                                                                                    }
-                                                                                case "Function":
-                                                                                    {
-                                                                                        StackPanel header = new StackPanel() { Orientation = Orientation.Horizontal, Spacing = 10 };
-                                                                                        header.Children.Add(new FontIcon() { FontFamily = new FontFamily("Segoe MDL2 Assets"), Glyph = "\xE97B" });
-                                                                                        header.Children.Add(cweeXamlHelper.SimpleTextBlock(foundNodes[0].text_get(), HorizontalAlignment.Left));
-                                                                                        row2.Children.Add(header);
-
-                                                                                        string toGetVectorOfParams =
-                                                                                        "{\n" +
-                                                                                        $"    var& out = Vector();\n" +
-                                                                                        $"    var& funcs = Vector({foundNodes[0].text_get()}.get_contained_functions());\n" +
-                                                                                        "    if (funcs.size == 0) {" +
-                                                                                        $"       funcs.push_back_ref({foundNodes[0].text_get()});\n" +
-                                                                                        "    }" +
-                                                                                        "    for (func : funcs)\n" +
-                                                                                        "    {\n" +
-                                                                                        "        var& funcInfo := func.get()\n" +
-                                                                                        "        cweeStr& params = \"\";\n" +
-                                                                                        "        if (funcInfo.contains(\"params\")){\n" +
-                                                                                        "            for (param : funcInfo[\"params\"]){\n" +
-                                                                                        "                params.AddToDelimiter(param.to_string(), \", \");\n" +
-                                                                                        "            }\n" +
-                                                                                        "        }\n" +
-                                                                                        "        out.push_back_ref(\"${ funcInfo[\"returns\"] } = " + $"{foundNodes[0].text_get()}" + "(${params});\");\n" +
-                                                                                        "    }\n" +
-                                                                                        "    return out;\n" +
-                                                                                        "}";
-
-                                                                                        var vec = vm.ParentVM.ParentVM.engine.DoScript_Cast_VectorStrings(toGetVectorOfParams);
-                                                                                        foreach (var funcT in vec)
-                                                                                        {
-                                                                                            var funcT_text = funcT;
-                                                                                            EdmsTasks.InsertJob(() =>
-                                                                                            {
-                                                                                                row2.Children.Add(cweeXamlHelper.SimpleTextBlock(funcT, HorizontalAlignment.Left));
-                                                                                            }, true);
-                                                                                        }
-                                                                                        break;
-                                                                                    }
-                                                                                case "string":
-                                                                                    {
-                                                                                        Border ResultContainer = GetQuickVisualization("\"" + foundNodes[0].text_get() + "\"");
-                                                                                        row2.Children.Add(ResultContainer);
-                                                                                        break;
-                                                                                    }
-                                                                            }
-                                                                        }
-                                                                        else
-                                                                        {
-                                                                            Border ResultContainer = GetQuickVisualization(foundNodes[0].text_get());
-                                                                            row2.Children.Add(ResultContainer);
-                                                                        }
-                                                                    }
-                                                                }, true, true));
-
-                                                                return EdmsTasks.cweeTask.InsertListAsTask(tasks, false);
-                                                            }, false).ContinueWith(() =>
-                                                            {
-                                                                // set the flyout
-                                                                if (Editor.ContextFlyout == null || !Editor.ContextFlyout.IsOpen)
-                                                                {
-                                                                    var flyout = Editor.SetFlyout(tt, null, Editor, position.Add(new Point(10, 10)), true);
-                                                                    flyout.LightDismissOverlayMode = LightDismissOverlayMode.Auto;
-                                                                    flyout.ShowMode = FlyoutShowMode.TransientWithDismissOnPointerMoveAway;
-                                                                    flyout.Tag = foundNodes[0].type_get();
-                                                                    flyout.Closed += (object sender, object e) =>
-                                                                    {
-                                                                        Editor.ContextFlyout = null;
-                                                                    };
-                                                                }
-                                                            }, true);
-                                                        }
-                                                        else return null;
-                                                    }, true);
-                                                }
-                                            }, true);
-                                        }
-                                        else
-                                        {
-                                            return null;
-                                        }
-                                    }, true).ContinueWith(() => {
-                                        trackPointerLock.Decrement();
-                                    }, false);
-                                }
-                                else
-                                {
-                                    trackPointerLock.Decrement();
-                                }
-                            }
-                            else
-                            {
-                                trackPointerLock.Decrement();
-                            }
-                        }, false);
-                    }
-                }
-            }
-        }
-
-        private void ScrollViewer_BringIntoViewRequested(UIElement sender, BringIntoViewRequestedEventArgs args) {
-            args.Handled = true;
         }
 
         private void Parse_Click(object sender, RoutedEventArgs e) {
