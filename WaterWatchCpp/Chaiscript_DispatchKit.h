@@ -822,6 +822,22 @@ namespace chaiscript {
 #endif        
             }
 
+            chaiscript::small_vector<std::string> get_type_names() const {
+                chaiscript::small_vector<std::string> out;
+                
+                for (const auto& [type_name, type] : get_types()) {
+                    out.push_back(type_name);
+                }
+
+                return out;
+            };
+            decltype(auto) get_type_names_exposed() const {
+                chaiscript::small_vector<Boxed_Value> objs; // list of strings
+                for (auto& x : get_type_names()) {
+                    objs.push_back(const_var(x));
+                }
+                return objs;
+            };
             chaiscript::shared_ptr<chaiscript::small_vector<Proxy_Function>> get_method_missing_functions() const {
                 uint_fast32_t method_missing_loc = m_method_missing_loc;
                 auto method_missing_funs = get_function("method_missing", method_missing_loc);
@@ -1138,12 +1154,12 @@ namespace chaiscript {
             decltype(auto) FunctionNames_exposed() const {
                 AUTO shared_guard = GUARD();
 
-                chaiscript::small_vector<Boxed_Value> objs; // list of strings
+                std::map<std::string, int> strings;
 
                 const auto& funs = get_function_objects_int();
 
                 for (const auto& fun : funs) {
-                    objs.push_back(const_var(fun.first));
+                    strings[fun.first] = 0;
                 }
 
                 const auto& funs2 = get_functions_int();
@@ -1152,20 +1168,28 @@ namespace chaiscript {
                     auto* vec = fun.second->get();
                     if (vec && vec->size() > 0) {
                         auto& func = vec->operator[](0);
-                        objs.push_back(const_var(fun.first));
+                        strings[fun.first] = 0;
                     }
 #else
                     auto* vec = fun.second.get();
                     if (vec && vec->size() > 0) {
                         auto& func = vec->operator[](0);
-                        objs.push_back(const_var(fun.first));
+                        strings[fun.first] = 0;
                     }
 #endif
                 }
 
                 const auto& funs3 = get_boxed_functions_int();
                 for (const auto& fun : funs3) {
-                    objs.push_back(const_var(fun.first));
+                    strings[fun.first] = 0;
+                }
+
+                chaiscript::small_vector<Boxed_Value> objs; // list of strings
+                for (auto& x : strings)
+                {
+                    if (x.first.size() > 0 && x.first[0] >= 'A' && x.first[0] <= 'z') {
+                        objs.push_back(const_var(x.first));
+                    }                    
                 }
 
                 return objs;

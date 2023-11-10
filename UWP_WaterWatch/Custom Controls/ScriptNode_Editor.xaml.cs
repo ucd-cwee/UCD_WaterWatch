@@ -79,6 +79,13 @@ namespace UWP_WaterWatch.Custom_Controls
             Errors.TryRemove(code, out CodeError v);
             OnPropertyChanged("Errors"); OnPropertyChanged("NumWarnings");
         }
+        public string GetWarning(int code)
+        {
+            if (Errors.TryGetValue(code, out CodeError v)) {
+                return v.Error;
+            }
+            return null;
+        }
         public static string GetWarningFromCode(int code)
         {
             if (CodeToWarning.TryGetValue(code, out string v))
@@ -358,22 +365,56 @@ namespace UWP_WaterWatch.Custom_Controls
             o.SetValue(RichEditChangeStateHelperProperty, helper);
 
             richEdit.Editor.Modified += (Editor sender, ModifiedEventArgs args) => {
+                switch (args.ModificationType)
+                {
+                    case (int)MicaEditor.ModificationFlags.Container:
+                    case (int)MicaEditor.ModificationFlags.EventMaskAll:
+                    case (int)MicaEditor.ModificationFlags.ChangeTabStops:
+                    case (int)MicaEditor.ModificationFlags.InsertCheck:
+                    case (int)MicaEditor.ModificationFlags.ChangeEOLAnnotation:
+                    case (int)MicaEditor.ModificationFlags.LexerState:
+                    case (int)MicaEditor.ModificationFlags.ChangeStyle:
+                    case (int)MicaEditor.ModificationFlags.ChangeFold:
+                    case (int)MicaEditor.ModificationFlags.ChangeMarker:
+                    case (int)MicaEditor.ModificationFlags.StartAction:
+                    case (int)MicaEditor.ModificationFlags.ChangeIndicator:
+                    case (int)MicaEditor.ModificationFlags.ChangeLineState:
+                    case (int)MicaEditor.ModificationFlags.ChangeMargin:
+                    case (int)MicaEditor.ModificationFlags.ChangeAnnotation:
+                    case (int)MicaEditor.ModificationFlags.None:
+                        return;
+                    case (int)MicaEditor.ModificationFlags.InsertText:
+                    case (int)MicaEditor.ModificationFlags.DeleteText:
+                    case (int)MicaEditor.ModificationFlags.User:
+                    case (int)MicaEditor.ModificationFlags.Undo:
+                    case (int)MicaEditor.ModificationFlags.Redo:
+                    case (int)MicaEditor.ModificationFlags.MultiStepUndoRedo:
+                    case (int)MicaEditor.ModificationFlags.LastStepInUndoRedo:
+                    case (int)MicaEditor.ModificationFlags.BeforeInsert:
+                    case (int)MicaEditor.ModificationFlags.BeforeDelete:
+                    case (int)MicaEditor.ModificationFlags.MultilineUndoRedo:
+                        break;
+                }
+
+                string text = "";
+                for (long i = 0; i < sender.LineCount; i++)
+                {
+                    var line = sender.GetLine(i);
+                    text = text + line; // .AddToDelimiter(line, "\n");
+                }
+                text = text.Replace("\r", "\n");
+
                 EdmsTasks.InsertJob(()=> { 
                     // To avoid re-entrancy, make sure we're not already changing
                     var state = GetState(o);
                     switch (state) {
                         case RichEditChangeState.Idle:
-                            string text = "";
-                            for (long i = 0; i < sender.LineCount; i++)
                             {
-                                var line = sender.GetLine(i);
-                                text = text.AddToDelimiter(line, "\n");
-                            }
-
-                            if (text != GetPlainText(o))
-                            {
-                                SetState(o, RichEditChangeState.RichTextChanged);
-                                o.SetValue(PlainTextProperty, text.Replace("\r", "\n"));
+                                if (text != GetPlainText(o))
+                                {
+                                    SetState(o, RichEditChangeState.RichTextChanged);
+                                    o.SetValue(PlainTextProperty, text);
+                                }
                             }
                             break;
                         case RichEditChangeState.PlainTextChanged:
@@ -383,7 +424,10 @@ namespace UWP_WaterWatch.Custom_Controls
                             SetState(o, RichEditChangeState.Idle);
                             break;
                     }
+                    
                 }, true);
+
+                ScriptNode_Editor.UpdateCollapseMargin(sender);
             };
         }
 
@@ -760,15 +804,52 @@ namespace UWP_WaterWatch.Custom_Controls
             var cpb = cweeXamlHelper.ThemeColor("cweePageBackground");
 
             //Editor.FontSize = ThisFontSize;
-            //Editor.FontFamily = new FontFamily("Segoe UI");
-            //Editor.FontStretch = FontStretch.Normal;     
-            //Editor.IsTextScaleFactorEnabled = false;
+            Editor.FontFamily = new FontFamily("Segoe UI");
+            Editor.FontStretch = FontStretch.Normal;     
+            Editor.IsTextScaleFactorEnabled = true;
 
-            //Editor.PreviewKeyDown += Editor_PreviewKeyDown;
+            Editor.PreviewKeyDown += Editor_PreviewKeyDown;
             //Editor.CharacterReceived += Editor_CharacterReceived; ;
 
             this.PointerEntered += ScriptNode_Editor_PointerEntered;
             this.PointerExited += ScriptNode_Editor_PointerExited;
+
+
+            Editor.Editor.Modified += (Editor sender, ModifiedEventArgs args) => {
+                switch (args.ModificationType)
+                {
+                    case (int)MicaEditor.ModificationFlags.Container:
+                    case (int)MicaEditor.ModificationFlags.EventMaskAll:
+                    case (int)MicaEditor.ModificationFlags.ChangeTabStops:
+                    case (int)MicaEditor.ModificationFlags.InsertCheck:
+                    case (int)MicaEditor.ModificationFlags.ChangeEOLAnnotation:
+                    case (int)MicaEditor.ModificationFlags.LexerState:
+                    case (int)MicaEditor.ModificationFlags.ChangeStyle:
+                    case (int)MicaEditor.ModificationFlags.ChangeFold:
+                    case (int)MicaEditor.ModificationFlags.ChangeMarker:
+                    case (int)MicaEditor.ModificationFlags.StartAction:
+                    case (int)MicaEditor.ModificationFlags.ChangeIndicator:
+                    case (int)MicaEditor.ModificationFlags.ChangeLineState:
+                    case (int)MicaEditor.ModificationFlags.ChangeMargin:
+                    case (int)MicaEditor.ModificationFlags.ChangeAnnotation:
+                    case (int)MicaEditor.ModificationFlags.None:
+                        return;
+                    case (int)MicaEditor.ModificationFlags.InsertText:
+                    case (int)MicaEditor.ModificationFlags.DeleteText:
+                    case (int)MicaEditor.ModificationFlags.User:
+                    case (int)MicaEditor.ModificationFlags.Undo:
+                    case (int)MicaEditor.ModificationFlags.Redo:
+                    case (int)MicaEditor.ModificationFlags.MultiStepUndoRedo:
+                    case (int)MicaEditor.ModificationFlags.LastStepInUndoRedo:
+                    case (int)MicaEditor.ModificationFlags.BeforeInsert:
+                    case (int)MicaEditor.ModificationFlags.BeforeDelete:
+                    case (int)MicaEditor.ModificationFlags.MultilineUndoRedo:
+                        break;
+                }
+                DoTextChanging();
+            };
+
+
         }
 
         private static void ScriptNode_Editor_PointerExited(object sender, PointerRoutedEventArgs e)
@@ -832,27 +913,6 @@ namespace UWP_WaterWatch.Custom_Controls
         private bool IsPressed(VirtualKey key) {
             return ((Window.Current.CoreWindow.GetKeyState(key) & Windows.UI.Core.CoreVirtualKeyStates.Down) == CoreVirtualKeyStates.Down);
         }    
-        public void Undo() {
-            if (Undos.Count > 0)
-            {
-                Redos.AddLast(vm.ParentVM.Script);
-                vm.ParentVM.Script = Undos.Last.Value;
-                HandleFormatting(vm.ParentVM.Script);
-                Undos.RemoveLast();
-            }
-        }
-        public void Redo() {
-            if (Redos.Count > 0)
-            {
-                //programmaticChange = true;
-                Undos.AddLast(vm.ParentVM.Script);
-                vm.ParentVM.Script = Redos.First.Value;
-                HandleFormatting(vm.ParentVM.Script);
-                Redos.RemoveFirst();
-                //programmaticChange = false;
-            }
-        }
-
         private ScriptingNode FindNodeUnderCarot(int charNum) {
             List<ScriptingNode> foundNodes = new List<ScriptingNode>();
             if (vm.MostRecentParsedNodes != null && charNum >= 0) {
@@ -1012,7 +1072,6 @@ namespace UWP_WaterWatch.Custom_Controls
         public static AtomicInt Is_Processing_KeyDown = new AtomicInt();
         private void Editor_PreviewKeyDown(object sender, KeyRoutedEventArgs e)
         {
-            /*
             Is_Processing_KeyDown.Increment();
             try
             {
@@ -1026,33 +1085,13 @@ namespace UWP_WaterWatch.Custom_Controls
                 try
                 {
                     CodeEditorControl tb = sender as CodeEditorControl;
-                    if (IsPressed(VirtualKey.Up))
-                    {
-                        var left = vm.ParentVM.Script.Left(tb.TextDocument.Selection.EndPosition);
-                        int c = left.Replace("\r", "\n").Count('\n', left.Length);
-                        if (c == 0)
-                        {
-                            e.Handled = true;
-                            return;
-                        }
-                    }
-                    if (IsPressed(VirtualKey.Down))
-                    {
-                        var right = vm.ParentVM.Script.Right(vm.ParentVM.Script.Length - tb.TextDocument.Selection.EndPosition);
-                        int c = right.Replace("\r", "\n").Count('\n', right.Length);
-                        if (c == 0)
-                        {
-                            e.Handled = true;
-                            return;
-                        }
-                    }
 
-                    if (e.Key == VirtualKey.Delete || e.Key == VirtualKey.Back)
-                    {
+
+                    if (e.Key == VirtualKey.Delete || e.Key == VirtualKey.Back) {
                         HideAllFunctionTips();
                     }
-                    if (e.Key == VirtualKey.Enter)
-                    {
+                    if (e.Key == VirtualKey.Enter) {
+#if false
                         if (ftm != null)
                         {
                             List<string> ParamNames = new List<string>();
@@ -1086,81 +1125,25 @@ namespace UWP_WaterWatch.Custom_Controls
                             tb.Document.Selection.TypeText(toWrite);
                             return;
                         }
-
-                        e.Handled = true;
-                        tb.Document.Selection.TypeText("\n");
+#endif
+                    }
+                    if (IsPressed(VirtualKey.Control)) {
+                        if (IsPressed(VirtualKey.Z)) HideAllFunctionTips();                        
+                        if (IsPressed(VirtualKey.Y)) HideAllFunctionTips();                        
+                        if (IsPressed(VirtualKey.V)) HideAllFunctionTips();                        
+                        if (IsPressed(VirtualKey.X)) HideAllFunctionTips();                        
+                        if (IsPressed(VirtualKey.C)) HideAllFunctionTips();
+                    }
+                    if (IsPressed(VirtualKey.Shift)) {   
+                        
+                    }
+                    if (e.Key == VirtualKey.Tab) HideAllFunctionTips();
+                    
+                    if (e.Key == VirtualKey.Decimal || ((int)(0xBE) == keyCode)) {
                         return;
-                    }
-                    if (IsPressed(VirtualKey.Control))
-                    {
-                        if (IsPressed(VirtualKey.Z))
-                        {
-                            HideAllFunctionTips();
-                            Undo();
-                            e.Handled = true;
-                            return;
-                        }
-                        if (IsPressed(VirtualKey.Y))
-                        {
-                            HideAllFunctionTips();
-                            Redo();
-                            e.Handled = true;
-                            return;
-                        }
-                        if (IsPressed(VirtualKey.V))
-                        {
-                            HideAllFunctionTips();
-                            var f = Functions.GetTextFromClipboard();
-                            f.ContinueWith(() =>
-                            {
-                                tb.Document.Selection.TypeText(f.Result);
-                            }, true);
-                            e.Handled = true;
-                            return;
-                        }
-                        if (IsPressed(VirtualKey.X))
-                        {
-                            HideAllFunctionTips();
-                            tb.Document.Selection.GetText(TextGetOptions.NoHidden, out string v);
-                            tb.Document.Selection.TypeText("");
+#if false
 
-                            v = v.Replace("\r", "\n");
-                            Functions.CopyToClipboard(v);
-                            e.Handled = true;
-                            return;
-                        }
-                        if (IsPressed(VirtualKey.C))
-                        {
-                            tb.Document.Selection.GetText(TextGetOptions.NoHidden, out string v);
-                            v = v.Replace("\r", "\n");
-                            Functions.CopyToClipboard(v);
-                            e.Handled = true;
-                            return;
-                        }
-                        return; // was not handled
-                    }
-                    if (IsPressed(VirtualKey.Shift))
-                    {
-                        if (e.Key == VirtualKey.Tab)
-                        {
-                            HideAllFunctionTips();
-                            // TO-DO, actually get the number of tabs in the highlighted region and undo the number of tabs per-line by one.
-                            tb.Document.Selection.TypeText("\t");
-                            e.Handled = true;
-                            return;
-                        }
-                    }
-                    if (e.Key == VirtualKey.Tab)
-                    {
-                        HideAllFunctionTips();
-                        // TO-DO, add a tab to the start of each line in the highlighted region. UNLESS only one line is selected, then insert a single tab like normal.
-                        tb.Document.Selection.TypeText("\t");
-                        e.Handled = true;
-                        return;
-                    }
-                    if (e.Key == VirtualKey.Decimal || ((int)(0xBE) == keyCode))
-                    {
-                        // do we have an existing parse? 
+                        // do we have an existing parse?
                         if (vm.MostRecentParsedNodes != null)
                         {
                             int position = tb.TextDocument.Selection.StartPosition;
@@ -1171,7 +1154,8 @@ namespace UWP_WaterWatch.Custom_Controls
                                 string nodeText = node.text_get();
                                 if (!string.IsNullOrEmpty(typeHint))
                                 {
-                                    EdmsTasks.InsertJob(() => {
+                                    EdmsTasks.InsertJob(() =>
+                                    {
                                         List<string> funcs = vm.ParentVM.ParentVM.engine.CompatibleFunctions(typeHint);
                                         if (funcs.Count > 0)
                                         {
@@ -1209,6 +1193,7 @@ namespace UWP_WaterWatch.Custom_Controls
 
                             }
                         }
+#endif
                     }
                 }
                 catch (Exception) { }
@@ -1222,7 +1207,7 @@ namespace UWP_WaterWatch.Custom_Controls
             {
                 Is_Processing_KeyDown.Decrement();
             }
-            */
+
         }
 
         private void Editor_CharacterReceived(UIElement sender, CharacterReceivedRoutedEventArgs args)
@@ -1280,7 +1265,20 @@ namespace UWP_WaterWatch.Custom_Controls
             }
         }
 
+
+
         int defaultZoom;
+
+        static public string DelineatedString(List<string> list)
+        {
+            string toReturn = "";
+            foreach (var x in list)
+            {
+                toReturn = toReturn.AddToDelimiter(x, " ");
+            }
+            return toReturn;
+        }
+
         private void Editor_OnLoaded(object sender, RoutedEventArgs e)
         {
             CodeEditorControl tb = sender as CodeEditorControl;
@@ -1306,32 +1304,72 @@ namespace UWP_WaterWatch.Custom_Controls
             tb.Editor.IndicSetStyle(2, MicaEditor.IndicatorStyle.SquigglePixmap); // works good
             tb.Editor.IndicSetFore(2, 0x0000ff); // (light red)
 
-            tb.Editor.CharAdded += Editor_CharAdded;
+            tb.Editor.ConvertEOLs(EndOfLine.Lf);
+            tb.Editor.EOLMode = EndOfLine.Lf;
+
+            tb.Editor.IndicSetHoverFore(2, 0xf000ff); // needed to unlock the "click" ability
+            tb.Editor.IndicatorClick += (Editor sender2, IndicatorClickEventArgs args) => {
+                string warning = vm.errorManager.GetWarning(-1);
+                if (!string.IsNullOrEmpty(warning))
+                {
+                    WaterWatch.SubmitToast("Warning", warning);
+                }
+            };
+
+
+
+
             tb.Editor.MarginClick += (MicaEditor.Editor sender2, MicaEditor.MarginClickEventArgs args2) => {
                 if (args2.Margin == 0 || args2.Margin == 2)
                 {
                     long line = sender2.LineFromPosition(args2.Position);
                     sender2.FoldLine(line, MicaEditor.FoldAction.Toggle);
-                    System.Threading.Tasks.Task.Run(() => {
-                        UpdateCollapseMargin(sender2);
-                    });
+                    UpdateCollapseMargin(sender2);
                 }
             };
 
-            tb.Editor.SetKeyWords(0, "auto var int float double long bool true false null"); // built-in types
-            tb.Editor.SetKeyWords(1, "auto var for if else return while"); // language functions
-            tb.Editor.SetKeyWords(3, "Vector RTree Point2d UI_Map cweeStr String Map Object"); // user-defined classes
-            tb.Editor.SetKeyWords(6, "push_back name coordinates first second GetAddress longitude latitude to_number rand Remove Add = == + - [] ()"); // user-defined functions
+            List<string> BuiltInTypes = new List<string>() {
+                "auto", "var", "int", "float",
+                "true", "false", "double", "long",
+                "bool", "null", "global", "_", "__LINE__", 
+                "__FILE__", "__FUNC__", "__CLASS__", "__LOCK__"
+            };
+            List<string> LanguageFunctions = new List<string>() { 
+                "def", "fun", "while", "for", "async", "Async",
+                "if", "else", "return", "break", "class", 
+                "attr", "switch", "case", "continue", "default",
+                "try", "catch", "do", "finally"
+            };
+
+            tb.Editor.SetKeyWords(0, DelineatedString(BuiltInTypes)); // built-in types
+            tb.Editor.SetKeyWords(1, DelineatedString(LanguageFunctions)); // language functions
 
 
+            // vm?.ParentVM?.ParentVM?.engine?.DoScript_Cast_VectorStrings("TypeNames");
+            var function_names = vm?.ParentVM?.ParentVM?.engine?.DoScript_Cast_VectorStrings("FunctionNames()");
+            if (function_names != null) {
+                string delinString = DelineatedString(function_names);
+                foreach (char x in "()[]{}=,:;!%^&*|?~+-") // allowed around function names, so they can't be a part of function names!
+                {
+                    delinString = delinString.Replace(x, ' ');
+                }          
+                tb.Editor.SetKeyWords(6, delinString); // user-defined functions
+            }
 
+            var type_names = vm?.ParentVM?.ParentVM?.engine?.DoScript_Cast_VectorStrings("TypeNames()");
+            if (type_names != null)
+            {
+                string delinString = DelineatedString(type_names);
+                foreach (char x in "()[]{}=,:;!%^&*|?~+-") // allowed around function names, so they can't be a part of function names!
+                {
+                    delinString = delinString.Replace(x, ' ');
+                }
+                tb.Editor.SetKeyWords(3, delinString);  // user-defined classes
+            }
 
-
-
-
-            DoTextChanging(true, true, "Created a new node.");
-            
+            DoTextChanging(true, true, "Created a new node.");            
         }
+
 
         private void Editor_ZoomChanged(Editor sender, ZoomChangedEventArgs args)
         {
@@ -1341,12 +1379,7 @@ namespace UWP_WaterWatch.Custom_Controls
             }
         }
 
-        private void Editor_CharAdded(Editor sender, CharAddedEventArgs args)
-        {
-            UpdateCollapseMargin(sender);
-        }
-
-        private void UpdateCollapseMargin(MicaEditor.Editor sender)
+        static public void UpdateCollapseMargin(MicaEditor.Editor sender)
         {
             System.Collections.Generic.Dictionary<long, int> parents = new System.Collections.Generic.Dictionary<long, int>();
 
@@ -1360,7 +1393,10 @@ namespace UWP_WaterWatch.Custom_Controls
                         parents.Add(parent_p, 0);
                     }
                 }
-                sender.MarginSetText(line, "");
+                if (sender.MarginGetText(line) != "")
+                {
+                    sender.MarginSetText(line, "");
+                }
             }
 
             foreach (var parent in parents.Keys)
@@ -1582,12 +1618,12 @@ namespace UWP_WaterWatch.Custom_Controls
                 default: return DEFAULT;
             }     
         }
-        internal int SumCharactersFromPreviousLines(List<string> textJ, int lineN) {
+        internal int SumCharactersFromPreviousLines(List<string> textJ, int lineN, string delim) {
             int toReturn = 0;
             for (int i = 0; i < lineN && i < textJ.Count; i++)
             {
                 toReturn += textJ[i].Length;
-                toReturn += 1;
+                toReturn += delim.Length;
             }
             return toReturn;
         }
@@ -1616,31 +1652,34 @@ namespace UWP_WaterWatch.Custom_Controls
                 copy = copy.Replace("\r", "\n");
                 textJ = copy.Split("\n").ToList();
             }
+            string delim = "\n";
+
 
             var toReturn = new EdmsTasks.cweeTask(()=> { }, false, true);
 
             queueTm = DateTime.Now.AddSeconds(0.25);
             formatDeq.Dequeue(queueTm, ()=> {
-                if (vm != null && vm.ParentVM != null)
-                {
+                if (vm != null && vm.ParentVM != null) {
                     string whatGotParsed = previousScript;
                     vector_scriptingnode list = vm?.ParentVM?.ParentVM?.engine?.PreParseScript(whatGotParsed);
                     {
-                        //prevScriptLock.Lock();
                         bool earlyExit = (previousScript != whatGotParsed);
-                        //prevScriptLock.Unlock();
-                        if (earlyExit)
-                        {
+                        if (earlyExit) {
                             toReturn.QueueJob();
-
                             return;
                         }
 
-                        List<FormatCharDetails> charColors = new List<FormatCharDetails>(whatGotParsed.Length);
-
+                        bool WasWarning = false;
+                        string warningMessage = "Error: Unknown Parsing Error";
                         // Fix the start/end columns and line numbers. Columns are converted to character positions -- lines are not used after this block.
                         foreach (var node in list)
                         {
+                            if (node.type_get() == WaterWatchEnums.ScriptNodeType.Error) {
+                                warningMessage = node.text_get();
+                                vm.errorManager.AddWarning(-1, warningMessage, ref vm.ParentVM);
+                                WasWarning = true;
+                            }
+
                             int startLine = Math.Max(0, node.startLine_get());
                             int endLine = Math.Max(0, node.endLine_get());
 
@@ -1649,45 +1688,27 @@ namespace UWP_WaterWatch.Custom_Controls
 
                             int offset = startOffsetForType(node.type_get(), textJ[Math.Min(Math.Max(0, startLine), textJ.Count - 1)], node.startColumn_get());
                             node.startColumn_set(node.startColumn_get() - offset);
-                            node.startColumn_set(node.startColumn_get() + SumCharactersFromPreviousLines(textJ, startLine));
-                            node.endColumn_set(node.endColumn_get() + SumCharactersFromPreviousLines(textJ, endLine));
+                            node.startColumn_set(node.startColumn_get() + SumCharactersFromPreviousLines(textJ, startLine, delim));
+                            node.endColumn_set(node.endColumn_get() + SumCharactersFromPreviousLines(textJ, endLine, delim));
 
                             node.startLine_set(startLine);
                             node.endLine_set(endLine);
 
                             if (node.startColumn_get() < 0) node.startColumn_set(0);
                         }
-                        {
-                            for (int i = 0; i < whatGotParsed.Length; i++)
-                            {
-                                var x = new FormatCharDetails();
-                                {
-                                    x.Bold = FormatEffect.Off;
-                                    x.FontStyle = FontStyle.Normal;
-                                    x.Italic = FormatEffect.Off;
-                                    x.Underline = UnderlineType.None;
-                                    x.BackgroundColor.Add(bg);
-                                    x.ForegroundColor.Add(BasicForeground);
-                                }
-                                charColors.Add(x);
-                            }
-                        }
-                        bool WasWarning = false;
-
-                        foreach (var node in list)
-                        {
-                            if (node.type_get() == WaterWatchEnums.ScriptNodeType.Error)
-                            {
-                                WasWarning = true;
-                                break;
-                            }
-                        }
-
+                        
                         if (!WasWarning || vm.MostRecentParsedNodes == null)
                         {
                             vm.MostRecentParsedNodes = list;
                             vm.errorManager.RemoveWarning(-1);
                             if (wasSuccessful) { vm.errorManager.RemoveWarning(-2); }
+                            wasSuccessful = true;
+
+                            EdmsTasks.InsertJob(() => {
+                                return DoFormattingActual(whatGotParsed, WasWarning, SuccessfulOutputString, wasSuccessful);
+                            }, false).ContinueWith(() => {
+                                toReturn.QueueJob();
+                            }, false);
                         }
                         else
                         {
@@ -1701,251 +1722,16 @@ namespace UWP_WaterWatch.Custom_Controls
                             }
                             vm.MostRecentParsedNodes.AddRange(list);
                             list = vm.MostRecentParsedNodes;
-                        }
 
-                        List<EdmsTasks.cweeTask> jobs = new List<EdmsTasks.cweeTask>();
-                        foreach (var node2 in list)
-                        {
-                            var node = node2;
-                            if (node.type_get() == WaterWatchEnums.ScriptNodeType.Error)
-                            {
-                                vm.errorManager.AddWarning(-1, node.text_get().Split('\n')[0], ref vm.ParentVM);
-
-                                WasWarning = true;
-
-                                continue;
-                            }
-                            else
-                            {
-                                cweeTask<SolidColorBrush> brush;
-                                // unique coloring based on the node function
-                                brush = colorForType(node2.type_get(), node.depth_get());
-                                switch (node2.type_get()) {
-                                    // do nothing in terms of formatting
-                                    case WaterWatchEnums.ScriptNodeType.File:
-                                    case WaterWatchEnums.ScriptNodeType.Block:
-                                    case WaterWatchEnums.ScriptNodeType.Scopeless_Block: break; 
-                                    // comments
-                                    case WaterWatchEnums.ScriptNodeType.Noop: {
-                                            jobs.Add(brush.ContinueWith(() =>
-                                            {
-                                                for (int i = node.startColumn_get(); i < node.endColumn_get() && i < charColors.Count; i++)
-                                                {
-                                                    charColors[i].ForegroundColor.Add(brush);
-                                                    charColors[i].Underline = UnderlineType.None;
-                                                    charColors[i].Italic = FormatEffect.On;
-                                                }
-                                            }, false));
-                                            break;
-                                        }
-                                    // Mutex-lock that all threads must capture to progress
-                                    case WaterWatchEnums.ScriptNodeType.ControlBlock: {
-                                            jobs.Add(brush.ContinueWith(() =>
-                                            {
-                                                for (int i = node.startColumn_get(); i < node.endColumn_get() && i < charColors.Count; i++)
-                                                {
-                                                    charColors[i].Italic = FormatEffect.On;
-                                                }
-                                            }, false));
-                                            break;
-                                        }
-                                    // constants built-in to the script (i.e. doubles, strings, etc.)
-                                    case WaterWatchEnums.ScriptNodeType.Constant: {
-                                            jobs.Add(brush.ContinueWith(() =>
-                                            {
-                                                for (int i = node.startColumn_get(); i < node.endColumn_get() && i < charColors.Count; i++)
-                                                {
-                                                    charColors[i].ForegroundColor.Add(brush);
-                                                    charColors[i].Underline = UnderlineType.Single;
-                                                }
-                                            }, false));
-                                            break;
-                                        }
-                                    case WaterWatchEnums.ScriptNodeType.Error: {
-                                            jobs.Add(brush.ContinueWith(() =>
-                                            {
-                                                for (int i = node.startColumn_get(); i < node.endColumn_get() && i < charColors.Count; i++)
-                                                {
-                                                    charColors[i].ForegroundColor = new List<cweeSolidColorBrush>() { brush };
-                                                    charColors[i].Underline = UnderlineType.HeavyWave;
-                                                }
-                                            }, false));
-                                            break;
-                                        }
-                                    case WaterWatchEnums.ScriptNodeType.Id: 
-                                    case WaterWatchEnums.ScriptNodeType.Fun_Call: 
-                                    case WaterWatchEnums.ScriptNodeType.Unused_Return_Fun_Call: 
-                                    case WaterWatchEnums.ScriptNodeType.Arg_List: 
-                                    case WaterWatchEnums.ScriptNodeType.Equation: 
-                                    case WaterWatchEnums.ScriptNodeType.Var_Decl: 
-                                    case WaterWatchEnums.ScriptNodeType.Assign_Decl: 
-                                    case WaterWatchEnums.ScriptNodeType.Array_Call: 
-                                    case WaterWatchEnums.ScriptNodeType.Dot_Access: 
-                                    case WaterWatchEnums.ScriptNodeType.Lambda: 
-                                    case WaterWatchEnums.ScriptNodeType.Def: 
-                                    case WaterWatchEnums.ScriptNodeType.While: 
-                                    case WaterWatchEnums.ScriptNodeType.If: 
-                                    case WaterWatchEnums.ScriptNodeType.For: 
-                                    case WaterWatchEnums.ScriptNodeType.Ranged_For: 
-                                    case WaterWatchEnums.ScriptNodeType.Inline_Array: 
-                                    case WaterWatchEnums.ScriptNodeType.Inline_Map: 
-                                    case WaterWatchEnums.ScriptNodeType.Return: 
-                                    case WaterWatchEnums.ScriptNodeType.Prefix: 
-                                    case WaterWatchEnums.ScriptNodeType.Break: 
-                                    case WaterWatchEnums.ScriptNodeType.Continue: 
-                                    case WaterWatchEnums.ScriptNodeType.Map_Pair: 
-                                    case WaterWatchEnums.ScriptNodeType.Value_Range: 
-                                    case WaterWatchEnums.ScriptNodeType.Inline_Range: 
-                                    case WaterWatchEnums.ScriptNodeType.Do: 
-                                    case WaterWatchEnums.ScriptNodeType.Try: 
-                                    case WaterWatchEnums.ScriptNodeType.Catch: 
-                                    case WaterWatchEnums.ScriptNodeType.Finally: 
-                                    case WaterWatchEnums.ScriptNodeType.Method: 
-                                    case WaterWatchEnums.ScriptNodeType.Attr_Decl: 
-                                    case WaterWatchEnums.ScriptNodeType.Logical_And: 
-                                    case WaterWatchEnums.ScriptNodeType.Logical_Or: 
-                                    case WaterWatchEnums.ScriptNodeType.Reference: 
-                                    case WaterWatchEnums.ScriptNodeType.Switch: 
-                                    case WaterWatchEnums.ScriptNodeType.Case: 
-                                    case WaterWatchEnums.ScriptNodeType.Default: 
-                                    case WaterWatchEnums.ScriptNodeType.Class: 
-                                    case WaterWatchEnums.ScriptNodeType.Binary: 
-                                    case WaterWatchEnums.ScriptNodeType.Arg: 
-                                    case WaterWatchEnums.ScriptNodeType.Global_Decl:
-                                    case WaterWatchEnums.ScriptNodeType.Compiled:
-                                    case WaterWatchEnums.ScriptNodeType.Postfix: 
-                                    case WaterWatchEnums.ScriptNodeType.Assign_Retroactively:                                     
-                                    default: {
-                                            jobs.Add(brush.ContinueWith(() =>
-                                            {
-                                                for (int i = node.startColumn_get(); i < node.endColumn_get() && i < charColors.Count; i++)
-                                                {
-                                                    charColors[i].ForegroundColor.Add(brush);
-                                                }
-                                            }, false));
-                                            break;
-                                        }
-                                }
-
-                                // unique coloring based on the return type of the node
-                                if (!string.IsNullOrEmpty(node.typeHint_get()))
-                                {
-                                    if (node.typeHint_get() == "string" || node.typeHint_get() == "cweeStr")
-                                    {
-                                        brush = scriptContentToColors["Strings"];
-                                        jobs.Add(brush.ContinueWith(() =>
-                                        {
-                                            for (int i = node.startColumn_get(); i < node.endColumn_get() && i < charColors.Count; i++)
-                                            {
-                                                charColors[i].ForegroundColor.Add(brush);
-                                            }
-                                        }, false));
-                                    }
-                                }
-
-                                // background shading to indicate script depth
-                                if (true) {
-                                    var brushJob = bg.Blend(black, 1.0f - Math.Min(1.0f, Math.Max(0.01f, node.depth_get() / 10.0f)));
-                                    jobs.Add(brushJob.ContinueWith(() =>
-                                    {
-                                        for (int i = node.startColumn_get(); i < node.endColumn_get() && i < charColors.Count; i++)
-                                        {
-                                            charColors[i].BackgroundColor.Add(brushJob);
-                                        }
-                                    }, false));
-                                }
-                            }
-                        }
-
-                        EdmsTasks.cweeTask.TrueWhenCompleted(jobs).ContinueWith(() =>
-                        {
-                            jobs.Clear();
-                            var brush = colorForType(WaterWatchEnums.ScriptNodeType.Error);
-                            foreach (int errCode in vm.errorManager.Errors.Keys.ToList())
-                            {
-                                if (vm.errorManager.Errors.TryGetValue(errCode, out CodeError err))
-                                {
-                                    // if (err.ParentVM == this.vm.ParentVM)
-                                    {
-                                        var ErrReply = TryParseErrorMessage(err.Error, textJ);
-                                        if (ErrReply.Item1)
-                                        {
-                                            for (int i = ErrReply.Item2; i < ErrReply.Item3 && i < charColors.Count; i++)
-                                            {
-                                                charColors[i].BackgroundColor.Add(bg);
-                                                charColors[i].ForegroundColor.Clear();
-                                                charColors[i].ForegroundColor.Add(brush);
-                                                charColors[i].Underline = UnderlineType.HeavyWave;
-                                                charColors[i].FontStyle = FontStyle.Italic;
-                                                charColors[i].Bold = FormatEffect.On;
-                                                charColors[i].Italic = FormatEffect.Off;
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-
-                            List<FormatStrDetails> finalFormat = new List<FormatStrDetails>();
-                            {
-                                FormatCharDetails prev = null;
-                                int prevStart = 0;
-                                for (int i = 0; i < charColors.Count; i++)
-                                {
-                                    if (prev == null)
-                                    {
-                                        prevStart = i;
-                                        prev = charColors[i];
-                                        continue;
-                                    }
-
-                                    if (prev != charColors[i])
-                                    {
-                                        finalFormat.Add(new FormatStrDetails(prev, prevStart, i));
-                                        prev = charColors[i];
-                                        prevStart = i;
-                                        continue;
-                                    }
-                                }
-                                if (prev != null)
-                                {
-                                    finalFormat.Add(new FormatStrDetails(prev, prevStart, charColors.Count));
-                                }
-                            }
-
-                            return bg_col.ContinueWith(() =>
-                            {
-                                Color bgc = bg_col.Result;
-                                foreach (var formatter2 in finalFormat)
-                                {
-                                    var formatter = formatter2;
-                                    var abg = cweeSolidColorBrush.AvgColor(formatter.details.BackgroundColor).Lerp(bgc, 0.85f);
-                                    jobs.Add(abg.ContinueWith(() =>
-                                    {
-                                        formatter.details.AvgBackgroundColor = abg.Result;
-                                        var afg = cweeSolidColorBrush.StratifyColor(formatter.details.ForegroundColor).Lerp(formatter.details.AvgBackgroundColor.GetBestContrastingColor(), 0.01f);
-                                        return afg.ContinueWith(() =>
-                                        {
-                                            formatter.details.AvgForegroundColor = afg.Result;
-                                        }, false);
-                                    }, false));
-
-                                    //var afg = cweeSolidColorBrush.StratifyColor(formatter.details.ForegroundColor).Lerp(formatter.details.AvgBackgroundColor.GetBestContrastingColor(), 0.1f);
-                                    //jobs.Add(afg.ContinueWith(() =>
-                                    //{
-                                    //    formatter.details.AvgForegroundColor = afg.Result;
-                                    //}, false));
-                                }
-                                return EdmsTasks.cweeTask.TrueWhenCompleted(jobs).ContinueWith(() => {
-                                    return DoFormattingActual(whatGotParsed, finalFormat, WasWarning, SuccessfulOutputString, wasSuccessful);
-                                }, true);
+                            EdmsTasks.InsertJob(() => {
+                                return DoFormattingActual(whatGotParsed, WasWarning, warningMessage, wasSuccessful);
+                            }, false).ContinueWith(() => {
+                                toReturn.QueueJob();
                             }, false);
-                        }, false).ContinueWith(()=> {
-                            toReturn.QueueJob();
-                        }, false);
+                        }
                     }
                 }
-                else
-                {
+                else {
                     queueTm = DateTime.Now.AddSeconds(0.25);
                     formatDeq.Dequeue(queueTm);
                 }
@@ -1954,7 +1740,7 @@ namespace UWP_WaterWatch.Custom_Controls
             return toReturn;
         }
 
-        private EdmsTasks.cweeTask DoFormattingActual(string whatGotParsed, List<FormatStrDetails> finalFormat, bool WasWarning, string SuccessfulOutputString, bool wasSuccessful)
+        private EdmsTasks.cweeTask DoFormattingActual(string whatGotParsed, bool WasWarning, string SuccessfulOutputString, bool wasSuccessful)
         {
             if (DateTime.Now < queueTm) return EdmsTasks.cweeTask.CompletedTask(null);
             else {
@@ -1962,16 +1748,25 @@ namespace UWP_WaterWatch.Custom_Controls
                 for (long i = 0; i < Editor.Editor.LineCount; i++)
                 {
                     var line = Editor.Editor.GetLine(i);
-                    newV = newV.AddToDelimiter(line, "\n");
+                    newV = newV + line; // .AddToDelimiter(line, "\n");
                 }
+                newV = newV.Replace("\r", "\n");
+
+
                 if (newV == whatGotParsed)
                 {
                     if (DateTime.Now < queueTm) return EdmsTasks.cweeTask.CompletedTask(null);
 
-                    if (!WasWarning)
-                    {
-                        if (vm != null && vm.ParentVM != null)
-                        {
+                    Editor.Editor.IndicatorCurrent = 2;
+                    Editor.Editor.IndicatorClearRange(0, newV.Length - 1);
+                    Editor.Editor.IndicatorClearRange(0, newV.Length - 2);
+                    Editor.Editor.IndicatorClearRange(0, newV.Length - 3);
+                    Editor.Editor.IndicatorClearRange(0, newV.Length - 4);
+                    Editor.Editor.IndicatorClearRange(0, newV.Length - 5);
+                    Editor.Editor.IndicatorClearRange(0, newV.Length - 6);
+
+                    if (!WasWarning) {
+                        if (vm != null && vm.ParentVM != null) {
                             if (SuccessfulOutputString != null)
                                 vm.ParentVM.outputPanel.vm.StatusString = SuccessfulOutputString;
                             else
@@ -1979,6 +1774,26 @@ namespace UWP_WaterWatch.Custom_Controls
                         }
                         vm.errorManager.RemoveWarning(-1);
                         vm.errorManager.RemoveWarning(-2);
+                    }
+                    else {
+                        (bool found, int start, int end) = TryParseErrorMessage(
+                            SuccessfulOutputString, 
+                            newV.Split("\n", StringSplitOptions.None).ToList(),
+                            "\n"
+                            );
+                        if (found && start <= end)
+                        {
+                            if (vm != null && vm.ParentVM != null) {
+                                if (SuccessfulOutputString != null)
+                                    vm.ParentVM.outputPanel.vm.StatusString = SuccessfulOutputString;
+                                else
+                                    vm.ParentVM.outputPanel.vm.StatusString = "Successful parse.";
+                            }
+
+                            Editor.Editor.IndicatorCurrent = 2;
+                            Editor.Editor.IndicatorFillRange(start, end - start);
+
+                        }
                     }
                 }
                 else
@@ -1988,7 +1803,8 @@ namespace UWP_WaterWatch.Custom_Controls
                 return EdmsTasks.cweeTask.CompletedTask(null);
             }
         }
-        private (bool, int, int) TryParseErrorMessage(string err, List<string> textJ)
+
+        private (bool, int, int) TryParseErrorMessage(string err, List<string> textJ, string delim)
         {
             List<(bool, int, int)> errorMentions = new List<(bool, int, int)>();
 
@@ -2007,14 +1823,13 @@ namespace UWP_WaterWatch.Custom_Controls
                         copy = copy.Replace("  ", " ").Trim();
                     }
                     var numberSplit = potential_site.Split(" ");
-                    if (numberSplit.Length >= 2)
-                    {
+                    if (numberSplit.Length >= 2) {
                         if (int.TryParse(numberSplit[0], out int whichLine) && int.TryParse(numberSplit[1], out int whichColumn))
                         {
                             whichLine -= 2;
                             whichColumn -= 1;
 
-                            int startChar = Math.Max(0, (SumCharactersFromPreviousLines(textJ, whichLine) + whichColumn) - 1);
+                            int startChar = Math.Max(0, (SumCharactersFromPreviousLines(textJ, whichLine, delim) + whichColumn) - 1);
                             int endChar = startChar + 2;
 
                             errorMentions.Add((true, startChar, endChar));
@@ -2061,7 +1876,7 @@ namespace UWP_WaterWatch.Custom_Controls
                             --whichLine;
                             --whichColumn;
 
-                            int startChar = Math.Max(0, (SumCharactersFromPreviousLines(textJ, whichLine) + whichColumn) - 1);
+                            int startChar = Math.Max(0, (SumCharactersFromPreviousLines(textJ, whichLine, delim) + whichColumn) - 1);
                             int endChar = startChar + 2;
 
                             return (true, startChar, endChar);
@@ -2077,7 +1892,7 @@ namespace UWP_WaterWatch.Custom_Controls
             for (long i = 0; i < Editor.Editor.LineCount; i++)
             {
                 var line = Editor.Editor.GetLine(i);
-                v = v.AddToDelimiter(line, "\n");
+                v = v + line; // .AddToDelimiter(line, "\n");
             }
             v = v.Replace("\r", "\n");
             try
@@ -2088,10 +1903,6 @@ namespace UWP_WaterWatch.Custom_Controls
                 }
             }
             catch (Exception) { }       
-        }
-        private void Editor_OnTextChanged(object sender, RoutedEventArgs e)
-        {
-            DoTextChanging();
         }
         private void Run_Click(object sender, RoutedEventArgs e)
         {

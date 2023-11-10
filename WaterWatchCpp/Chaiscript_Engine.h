@@ -118,6 +118,7 @@ namespace chaiscript {
 
             // "Functions"
             // "AllFunctions"
+            AddFunctionTo(m_engine, this, TypeNames, , { return m_engine.get_type_names_exposed(); });
             AddFunctionTo(m_engine, this, FunctionNames, , { return m_engine.FunctionNames_exposed(); });
             AddFunctionTo(m_engine, this, ObjectNames, , { return m_engine.ObjectNames_exposed(); }); 
             AddFunctionTo(m_engine, this, dump_system, , { m_engine.dump_system(); }); 
