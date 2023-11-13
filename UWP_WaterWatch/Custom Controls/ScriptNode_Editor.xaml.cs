@@ -1290,7 +1290,7 @@ namespace UWP_WaterWatch.Custom_Controls
 
             tb.HighlightingLanguage = "cpp";
 
-            tb.Editor.SetDefaultFoldDisplayText("... }");
+            tb.Editor.SetDefaultFoldDisplayText("...");
             tb.Editor.FoldDisplayTextStyle = MicaEditor.FoldDisplayTextStyle.Boxed;
             tb.Editor.AutomaticFold = MicaEditor.AutomaticFold.Click;
             // tb.Editor.SetFoldFlags(MicaEditor.FoldFlag.LineAfterContracted); // GOOD
@@ -1307,17 +1307,16 @@ namespace UWP_WaterWatch.Custom_Controls
             tb.Editor.ConvertEOLs(EndOfLine.Lf);
             tb.Editor.EOLMode = EndOfLine.Lf;
 
+            tb.Editor.FontQuality = FontQuality.QualityAntialiased;
+
             tb.Editor.IndicSetHoverFore(2, 0xf000ff); // needed to unlock the "click" ability
-            tb.Editor.IndicatorClick += (Editor sender2, IndicatorClickEventArgs args) => {
-                string warning = vm.errorManager.GetWarning(-1);
-                if (!string.IsNullOrEmpty(warning))
-                {
-                    WaterWatch.SubmitToast("Warning", warning);
-                }
-            };
+            tb.Editor.IndicatorClick += Editor_IndicatorClick;
 
-
-
+            tb.Editor.MouseDwellTime = 500;
+            tb.Editor.DwellStart += Editor_DwellStart;
+            tb.Editor.DwellEnd += Editor_DwellEnd;
+            tb.PointerEntered += Tb_PointerEntered;
+            tb.PointerExited += Tb_PointerExited;
 
             tb.Editor.MarginClick += (MicaEditor.Editor sender2, MicaEditor.MarginClickEventArgs args2) => {
                 if (args2.Margin == 0 || args2.Margin == 2)
@@ -1370,6 +1369,427 @@ namespace UWP_WaterWatch.Custom_Controls
             DoTextChanging(true, true, "Created a new node.");            
         }
 
+        private List<ScriptingNode> FindNodesAtPosition(int charNum)
+        {
+            List<ScriptingNode> foundNodes = new List<ScriptingNode>();
+            var prevNodes = vm.MostRecentParsedNodes;
+            if (prevNodes != null && charNum >= 0)
+            {
+
+                for (int i = prevNodes.Count - 1; i >= 0; i--)
+                {
+                    if (prevNodes[i].startColumn_get() <= charNum && prevNodes[i].endColumn_get() >= charNum)
+                    {
+                        if (
+                        prevNodes[i].type_get() == WaterWatchEnums.ScriptNodeType.File ||
+                        prevNodes[i].type_get() == WaterWatchEnums.ScriptNodeType.Noop)
+                            continue;
+                        if (
+                        prevNodes[i].type_get() == WaterWatchEnums.ScriptNodeType.Id) { foundNodes = new List<ScriptingNode>(); }
+                        foundNodes.Add(prevNodes[i]);
+                    }
+                }
+
+                if (foundNodes.Count > 0)
+                {
+                    return foundNodes;
+                }
+                else return null;
+            }
+            else
+            {
+                return null;
+            }
+        }
+
+        private Grid ReviewNodeList(List<ScriptingNode> nodes) {
+            if (nodes != null && nodes.Count > 0)
+            {
+                Grid toReturn = new Grid(); {
+                    toReturn.RowDefinitions.Add(new RowDefinition() { Height = new GridLength(1, GridUnitType.Auto) });
+                    toReturn.RowDefinitions.Add(new RowDefinition() { Height = new GridLength(1, GridUnitType.Auto) });
+                    toReturn.RowDefinitions.Add(new RowDefinition() { Height = new GridLength(1, GridUnitType.Auto) });
+                }
+                {
+                    BreadcrumbBar bcb = new BreadcrumbBar(); {
+                        List<string> blocks = new List<string>();{
+                            for (int i = nodes.Count - 1; i >= 0; i--) {
+                                blocks.Add(nodes[i].type_get().ToString());
+                            }
+                        }
+                        bcb.ItemsSource = blocks;
+                    }
+                    toReturn.Children.Add(bcb);
+                    Grid.SetRow(bcb, 0);
+                }
+                {
+                    switch (nodes[0].type_get())
+                    {
+                        default:
+                        case WaterWatchEnums.ScriptNodeType.If:
+                        case WaterWatchEnums.ScriptNodeType.For:
+                        case WaterWatchEnums.ScriptNodeType.Assign_Retroactively:
+                        case WaterWatchEnums.ScriptNodeType.Unused_Return_Fun_Call:
+                        case WaterWatchEnums.ScriptNodeType.Arg_List:                            
+                        case WaterWatchEnums.ScriptNodeType.Array_Call:
+                        case WaterWatchEnums.ScriptNodeType.Dot_Access:                            
+                        case WaterWatchEnums.ScriptNodeType.Lambda:
+                        case WaterWatchEnums.ScriptNodeType.Block:
+                        case WaterWatchEnums.ScriptNodeType.Scopeless_Block:
+                        case WaterWatchEnums.ScriptNodeType.Def:
+                        case WaterWatchEnums.ScriptNodeType.While:
+                        case WaterWatchEnums.ScriptNodeType.Ranged_For:
+                        case WaterWatchEnums.ScriptNodeType.Inline_Array:
+                        case WaterWatchEnums.ScriptNodeType.Inline_Map:
+                        case WaterWatchEnums.ScriptNodeType.Return:
+                        case WaterWatchEnums.ScriptNodeType.File:
+                        case WaterWatchEnums.ScriptNodeType.Prefix:
+                        case WaterWatchEnums.ScriptNodeType.Break:
+                        case WaterWatchEnums.ScriptNodeType.Continue:
+                        case WaterWatchEnums.ScriptNodeType.Map_Pair:
+                        case WaterWatchEnums.ScriptNodeType.Value_Range:
+                        case WaterWatchEnums.ScriptNodeType.Inline_Range:
+                        case WaterWatchEnums.ScriptNodeType.Do:
+                        case WaterWatchEnums.ScriptNodeType.Try:
+                        case WaterWatchEnums.ScriptNodeType.Catch:
+                        case WaterWatchEnums.ScriptNodeType.Finally:
+                        case WaterWatchEnums.ScriptNodeType.Method:
+                        case WaterWatchEnums.ScriptNodeType.Attr_Decl:
+                        case WaterWatchEnums.ScriptNodeType.Logical_And:
+                        case WaterWatchEnums.ScriptNodeType.Logical_Or:
+                        case WaterWatchEnums.ScriptNodeType.Reference:
+                        case WaterWatchEnums.ScriptNodeType.Switch:
+                        case WaterWatchEnums.ScriptNodeType.Case:
+                        case WaterWatchEnums.ScriptNodeType.Default:
+                        case WaterWatchEnums.ScriptNodeType.Noop:
+                        case WaterWatchEnums.ScriptNodeType.Class:
+                        case WaterWatchEnums.ScriptNodeType.Binary:
+                        case WaterWatchEnums.ScriptNodeType.Arg:
+                        case WaterWatchEnums.ScriptNodeType.Global_Decl:                                                
+                        case WaterWatchEnums.ScriptNodeType.ControlBlock:
+                        case WaterWatchEnums.ScriptNodeType.Postfix:
+                        case WaterWatchEnums.ScriptNodeType.Fun_Call:
+                        case WaterWatchEnums.ScriptNodeType.Var_Decl:
+                        case WaterWatchEnums.ScriptNodeType.Assign_Decl:
+                            break;
+
+                        case WaterWatchEnums.ScriptNodeType.Constant:
+                            // number, string, etc. 
+                            {
+                                var fgc = cweeXamlHelper.ThemeColor("cweeDarkBlue");
+                                fgc.ContinueWith(()=> {
+                                    StackPanel p = new StackPanel() { Spacing = 5, Orientation = Orientation.Horizontal };
+                                    {
+                                        {
+                                            SymbolIcon i;
+                                            switch (nodes[0].typeHint_get())
+                                            {
+                                                case "string":
+                                                    i = new SymbolIcon() { Symbol = Symbol.Font, Foreground = fgc.Result };
+                                                    break;
+                                                case "long_double":
+                                                case "long":
+                                                case "int64_t":
+                                                case "double":
+                                                case "float":
+                                                case "int":
+                                                    i = new SymbolIcon() { Symbol = Symbol.Calculator, Foreground = fgc.Result };
+                                                    break;
+                                                default:
+                                                    i = new SymbolIcon() { Symbol = Symbol.ViewAll, Foreground = fgc.Result };
+                                                    break;
+                                            }
+                                            p.Children.Add(i);
+                                        }
+                                        if (!string.IsNullOrEmpty(nodes[0].typeHint_get())) {
+                                            TextBlock tb = cweeXamlHelper.SimpleTextBlock(nodes[0].typeHint_get(), HorizontalAlignment.Left);
+                                            tb.FontStyle = FontStyle.Italic;
+                                            p.Children.Add(tb);
+                                        }
+                                        {
+                                            TextBlock tb;
+                                            switch (nodes[0].typeHint_get())
+                                            {
+                                                case "string":
+                                                    tb = cweeXamlHelper.SimpleTextBlock("\""+nodes[0].text_get()+ "\"", HorizontalAlignment.Left);
+                                                    break;
+                                                default:
+                                                    tb = cweeXamlHelper.SimpleTextBlock(nodes[0].text_get(), HorizontalAlignment.Left);
+                                                    break;
+                                            }
+                                            p.Children.Add(tb);
+                                        }
+                                    }
+                                    toReturn.Children.Add(p);
+                                    Grid.SetRow(p, 1);
+                                }, true);
+                            }
+                            break;
+
+                        case WaterWatchEnums.ScriptNodeType.Id:
+                            // class names, function names, variable names, etc.
+                            {
+                                var fgc = cweeXamlHelper.ThemeColor("cweeDarkBlue");
+                                if (nodes.Count > 1)
+                                {
+                                    int w = 1;
+                                    while (nodes[w].type_get() == WaterWatchEnums.ScriptNodeType.Arg_List) w++;
+
+
+                                    switch (nodes[w].type_get()) {
+                                        default:
+                                        case WaterWatchEnums.ScriptNodeType.Assign_Retroactively:
+                                        case WaterWatchEnums.ScriptNodeType.Unused_Return_Fun_Call:
+                                        case WaterWatchEnums.ScriptNodeType.Arg_List:
+                                        case WaterWatchEnums.ScriptNodeType.Array_Call:                                        
+                                        case WaterWatchEnums.ScriptNodeType.Lambda:
+                                        case WaterWatchEnums.ScriptNodeType.Block:
+                                        case WaterWatchEnums.ScriptNodeType.Scopeless_Block:
+                                        case WaterWatchEnums.ScriptNodeType.Def:
+                                        case WaterWatchEnums.ScriptNodeType.While:
+                                        case WaterWatchEnums.ScriptNodeType.Inline_Array:
+                                        case WaterWatchEnums.ScriptNodeType.Inline_Map:
+                                        case WaterWatchEnums.ScriptNodeType.Return:
+                                        case WaterWatchEnums.ScriptNodeType.File:
+                                        case WaterWatchEnums.ScriptNodeType.Prefix:
+                                        case WaterWatchEnums.ScriptNodeType.Break:
+                                        case WaterWatchEnums.ScriptNodeType.Continue:
+                                        case WaterWatchEnums.ScriptNodeType.Map_Pair:
+                                        case WaterWatchEnums.ScriptNodeType.Value_Range:
+                                        case WaterWatchEnums.ScriptNodeType.Inline_Range:
+                                        case WaterWatchEnums.ScriptNodeType.Do:
+                                        case WaterWatchEnums.ScriptNodeType.Try:
+                                        case WaterWatchEnums.ScriptNodeType.Catch:
+                                        case WaterWatchEnums.ScriptNodeType.Finally:
+                                        case WaterWatchEnums.ScriptNodeType.Method:
+                                        case WaterWatchEnums.ScriptNodeType.Attr_Decl:
+                                        case WaterWatchEnums.ScriptNodeType.Logical_And:
+                                        case WaterWatchEnums.ScriptNodeType.Logical_Or:                                        
+                                        case WaterWatchEnums.ScriptNodeType.Switch:
+                                        case WaterWatchEnums.ScriptNodeType.Case:
+                                        case WaterWatchEnums.ScriptNodeType.Default:
+                                        case WaterWatchEnums.ScriptNodeType.Noop:
+                                        case WaterWatchEnums.ScriptNodeType.Class:
+                                        case WaterWatchEnums.ScriptNodeType.Binary:
+                                        case WaterWatchEnums.ScriptNodeType.Arg:                                        
+                                        case WaterWatchEnums.ScriptNodeType.ControlBlock:
+                                        case WaterWatchEnums.ScriptNodeType.Postfix:                                            
+                                            fgc.ContinueWith(() => {
+                                                StackPanel p = new StackPanel() { Spacing = 5, Orientation = Orientation.Horizontal };
+                                                {
+                                                    {
+                                                        SymbolIcon i = new SymbolIcon() { Symbol = Symbol.Preview, Foreground = fgc.Result };
+                                                        p.Children.Add(i);
+                                                    }
+                                                    if (!string.IsNullOrEmpty(nodes[0].typeHint_get()))
+                                                    {
+                                                        TextBlock tb = cweeXamlHelper.SimpleTextBlock(nodes[0].typeHint_get(), HorizontalAlignment.Left);
+                                                        tb.FontStyle = FontStyle.Italic;
+                                                        p.Children.Add(tb);
+                                                    }
+                                                    {
+                                                        TextBlock tb = cweeXamlHelper.SimpleTextBlock(nodes[0].text_get(), HorizontalAlignment.Left);
+                                                        p.Children.Add(tb);
+                                                    }
+                                                }
+                                                toReturn.Children.Add(p);
+                                                Grid.SetRow(p, 1);
+                                            }, true);
+                                            break;
+
+                                        case WaterWatchEnums.ScriptNodeType.Ranged_For:
+                                        case WaterWatchEnums.ScriptNodeType.Global_Decl:
+                                        case WaterWatchEnums.ScriptNodeType.Assign_Decl:
+                                        case WaterWatchEnums.ScriptNodeType.Var_Decl:
+                                        case WaterWatchEnums.ScriptNodeType.Reference:
+                                            // variable / variable name
+                                            fgc.ContinueWith(() => {
+                                                StackPanel p = new StackPanel() { Spacing = 5, Orientation = Orientation.Horizontal };
+                                                {
+                                                    {
+                                                        TextBlock tb = cweeXamlHelper.SimpleTextBlock("(Variable)", HorizontalAlignment.Left);
+                                                        p.Children.Add(tb);
+                                                    }
+                                                    {
+                                                        SymbolIcon i = new SymbolIcon() { Symbol = Symbol.Globe, Foreground = fgc.Result };
+                                                        p.Children.Add(i);
+                                                    }
+                                                    if (!string.IsNullOrEmpty(nodes[0].typeHint_get()))
+                                                    {
+                                                        TextBlock tb = cweeXamlHelper.SimpleTextBlock(nodes[0].typeHint_get(), HorizontalAlignment.Left);
+                                                        tb.FontStyle = FontStyle.Italic;
+                                                        p.Children.Add(tb);
+                                                    }
+                                                    {
+                                                        TextBlock tb = cweeXamlHelper.SimpleTextBlock(nodes[0].text_get(), HorizontalAlignment.Left);
+                                                        p.Children.Add(tb);
+                                                    }
+                                                }
+                                                toReturn.Children.Add(p);
+                                                Grid.SetRow(p, 1);
+                                            }, true);
+                                            break;
+
+                                        case WaterWatchEnums.ScriptNodeType.Fun_Call:
+                                        case WaterWatchEnums.ScriptNodeType.Dot_Access:
+                                            // function call, or type name?
+                                            fgc.ContinueWith(() => {
+                                                StackPanel p = new StackPanel() { Spacing = 5, Orientation = Orientation.Horizontal };
+                                                {
+                                                    {
+                                                        TextBlock tb = cweeXamlHelper.SimpleTextBlock("(Function)", HorizontalAlignment.Left);
+                                                        p.Children.Add(tb);
+                                                    }
+                                                    {
+                                                        SymbolIcon i = new SymbolIcon() { Symbol = Symbol.Library, Foreground = fgc.Result };
+                                                        p.Children.Add(i);
+                                                    }
+                                                    if (!string.IsNullOrEmpty(nodes[0].typeHint_get()))
+                                                    {
+                                                        TextBlock tb = cweeXamlHelper.SimpleTextBlock(nodes[0].typeHint_get(), HorizontalAlignment.Left);
+                                                        tb.FontStyle = FontStyle.Italic;
+                                                        p.Children.Add(tb);
+                                                    }
+                                                    {
+                                                        TextBlock tb = cweeXamlHelper.SimpleTextBlock(nodes[0].text_get(), HorizontalAlignment.Left);
+                                                        p.Children.Add(tb);
+                                                    }
+                                                }
+                                                toReturn.Children.Add(p);
+                                                Grid.SetRow(p, 1);
+
+                                                StackPanel p2 = new StackPanel() { Spacing = 5, Orientation = Orientation.Vertical, Padding=new Thickness(10,0,5,0) };
+                                                EdmsTasks.InsertJob(() => {
+                                                    var compatible_functions = vm?.ParentVM?.ParentVM?.engine?.DoScript_Cast_VectorStrings($"summarize_compatible_functions({nodes[0].text_get()})");
+                                                    if (compatible_functions != null)
+                                                    {
+                                                        foreach (var compatible_function in compatible_functions)
+                                                        {
+                                                            string temp = compatible_function;
+                                                            EdmsTasks.InsertJob(() => {
+                                                                p2.Children.Add(cweeXamlHelper.SimpleTextBlock(temp, HorizontalAlignment.Left));
+                                                            }, true);
+                                                        }
+                                                    }
+                                                }, false);
+                                                toReturn.Children.Add(p2);
+                                                Grid.SetRow(p2, 2);
+                                            }, true);                     
+                                            break;
+                                    }
+                                }
+                                else
+                                {
+                                    fgc.ContinueWith(() => {
+                                        StackPanel p = new StackPanel() { Spacing = 5, Orientation = Orientation.Horizontal };
+                                        {
+                                            {
+                                                SymbolIcon i = new SymbolIcon() { Symbol = Symbol.Preview, Foreground = fgc.Result };
+                                                p.Children.Add(i);
+                                            }
+                                            if (!string.IsNullOrEmpty(nodes[0].typeHint_get()))
+                                            {
+                                                TextBlock tb = cweeXamlHelper.SimpleTextBlock(nodes[0].typeHint_get(), HorizontalAlignment.Left);
+                                                tb.FontStyle = FontStyle.Italic;
+                                                p.Children.Add(tb);
+                                            }
+                                            {
+                                                TextBlock tb = cweeXamlHelper.SimpleTextBlock(nodes[0].text_get(), HorizontalAlignment.Left);
+                                                p.Children.Add(tb);
+                                            }
+                                        }
+                                        toReturn.Children.Add(p);
+                                        Grid.SetRow(p, 1);
+                                    }, true);
+                                }
+
+
+
+
+                            }
+                            break;
+
+                        case WaterWatchEnums.ScriptNodeType.Error:
+                            // an error
+                            {
+                                TextBlock tb = cweeXamlHelper.SimpleTextBlock(nodes[0].text_get(), HorizontalAlignment.Left);
+                                toReturn.Children.Add(tb);
+                                Grid.SetRow(tb, 1);
+                            }
+                            break;
+
+                        case WaterWatchEnums.ScriptNodeType.Compiled:
+                            // explain to the user that this has been compiled to C++
+                            {
+                                TextBlock tb = cweeXamlHelper.SimpleTextBlock("Compiled to C++ for performance. No debug information is available after compilation.", HorizontalAlignment.Left);
+                                toReturn.Children.Add(tb);
+                                Grid.SetRow(tb, 1);
+                            }
+                            break;
+                    }
+                }
+                return toReturn;
+            }
+            return null;
+        }
+
+
+
+        internal static cweeDequeue dwellTimer;
+        internal bool dwellPossible = false;
+        private void Editor_DwellStart(Editor sender, DwellStartEventArgs args) {
+            dwellTimer?.Cancel();
+            if (dwellPossible && args.Position >= 0)
+            {
+                dwellTimer = new cweeDequeue(DateTime.Now.AddSeconds(0.5), () => {
+                    var x = FindNodesAtPosition(args.Position);
+                    if (x != null && x.Count > 0)
+                    {
+                        var tb = cweeXamlHelper.SimpleTextBlock(x[0].text_get());
+
+                        var flyout = Editor.SetFlyout(ReviewNodeList(x), Editor, Editor, new Point(sender.PointXFromPosition(args.Position), 24 + sender.PointYFromPosition(args.Position)), true);
+                        flyout.LightDismissOverlayMode = LightDismissOverlayMode.Off;
+                        flyout.ShowMode = FlyoutShowMode.TransientWithDismissOnPointerMoveAway;
+                        flyout.Placement = FlyoutPlacementMode.BottomEdgeAlignedLeft;
+                        flyout.AllowFocusOnInteraction = false;
+                    }                   
+                }, true);
+            }
+        }
+        private void Editor_DwellEnd(Editor sender, DwellEndEventArgs args) {
+            dwellTimer?.Cancel();
+            dwellTimer = null;
+        }
+        private void Tb_PointerEntered(object sender, PointerRoutedEventArgs e)
+        {
+            dwellPossible = true;
+
+            dwellTimer?.Cancel();
+            dwellTimer = null;
+        }
+        private void Tb_PointerExited(object sender, PointerRoutedEventArgs e) {
+            dwellPossible = false; 
+
+            dwellTimer?.Cancel();
+            dwellTimer = null;
+        }
+
+
+        private void Editor_IndicatorClick(Editor sender, IndicatorClickEventArgs args)
+        {
+            string warning = vm.errorManager.GetWarning(-1);
+            if (!string.IsNullOrEmpty(warning))
+            {
+                var tb = cweeXamlHelper.SimpleTextBlock(warning);
+
+                var flyout = Editor.SetFlyout(tb, Editor, Editor, new Point(sender.PointXFromPosition(args.Position), 24+sender.PointYFromPosition(args.Position)), true);
+                flyout.LightDismissOverlayMode = LightDismissOverlayMode.Off;
+                flyout.ShowMode = FlyoutShowMode.TransientWithDismissOnPointerMoveAway;
+                flyout.Placement = FlyoutPlacementMode.Bottom;
+                flyout.AllowFocusOnInteraction = false;
+            }
+
+        }
 
         private void Editor_ZoomChanged(Editor sender, ZoomChangedEventArgs args)
         {
@@ -1413,33 +1833,6 @@ namespace UWP_WaterWatch.Custom_Controls
         }
 
 
-        private Grid CreateLineNumber(int num) {
-            var toReturn = new Grid() {
-                Height = 20.0 + (ThisFontSize - 12.0) * 1.3, HorizontalAlignment = HorizontalAlignment.Stretch,  VerticalAlignment = VerticalAlignment.Stretch, Padding = new Thickness(0), Margin = new Thickness(0) };
-            toReturn.Children.Add(new TextBlock() { 
-                FontSize= ThisFontSize, Style = cweeXamlHelper.StaticStyleResource("cweeTextBlock"), Text = num.ToString(), Padding = new Thickness(0,0.6,0,0), Margin=new Thickness(0), HorizontalTextAlignment = TextAlignment.Center 
-            });
-            return toReturn;
-        }
-        private cweeTask<Grid> CreateLineOverlay(int num)
-        {
-            var cdb = cweeXamlHelper.ThemeColor("cweeDarkBlue");
-            return cdb.ContinueWith(()=> {
-                var toReturn = new Grid()
-                {
-                    Height = 20.0 + (ThisFontSize - 12.0) * 1.3,
-                    BorderBrush = cdb.Result,
-                    BorderThickness = new Thickness(0, 0, 0, 1),
-                    Opacity = 0.2,
-                    HorizontalAlignment = HorizontalAlignment.Stretch,
-                    VerticalAlignment = VerticalAlignment.Stretch,
-                    Padding = new Thickness(0),
-                    Margin = new Thickness(0)
-                };
-                return toReturn;
-            }, true);
-
-        }
 
         public static int startOffsetForType(WaterWatchEnums.ScriptNodeType type, string line, int start)
         {
@@ -1701,8 +2094,9 @@ namespace UWP_WaterWatch.Custom_Controls
                         {
                             vm.MostRecentParsedNodes = list;
                             vm.errorManager.RemoveWarning(-1);
-                            if (wasSuccessful) { vm.errorManager.RemoveWarning(-2); }
-                            wasSuccessful = true;
+                            if (wasSuccessful) { vm.errorManager.RemoveWarning(-2); }                            
+
+                            // wasSuccessful = true;
 
                             EdmsTasks.InsertJob(() => {
                                 return DoFormattingActual(whatGotParsed, WasWarning, SuccessfulOutputString, wasSuccessful);
@@ -1765,7 +2159,7 @@ namespace UWP_WaterWatch.Custom_Controls
                     Editor.Editor.IndicatorClearRange(0, newV.Length - 5);
                     Editor.Editor.IndicatorClearRange(0, newV.Length - 6);
 
-                    if (!WasWarning) {
+                    if (!WasWarning && wasSuccessful) {
                         if (vm != null && vm.ParentVM != null) {
                             if (SuccessfulOutputString != null)
                                 vm.ParentVM.outputPanel.vm.StatusString = SuccessfulOutputString;
@@ -1781,6 +2175,11 @@ namespace UWP_WaterWatch.Custom_Controls
                             newV.Split("\n", StringSplitOptions.None).ToList(),
                             "\n"
                             );
+
+                        if (!wasSuccessful) {
+                            vm.errorManager.AddWarning(-1, SuccessfulOutputString, ref vm.ParentVM);
+                        }
+
                         if (found && start <= end)
                         {
                             if (vm != null && vm.ParentVM != null) {
@@ -1809,82 +2208,85 @@ namespace UWP_WaterWatch.Custom_Controls
             List<(bool, int, int)> errorMentions = new List<(bool, int, int)>();
 
             string uniqueName = vm?.ParentVM?.uniqueName; // looking for this in the error message. If not found, then the error is from a C++ compiled code or another script object.
-            if (err.Find(uniqueName) >= 0)
+            if (err != null)
             {
-                var splits = err.Split(uniqueName).ToList();
-                // everything before it fails to mention it
-                for (int i = 1; i < splits.Count; i++)
+                if (err.Find(uniqueName) >= 0)
                 {
-                    var potential_site = splits[i];
-                    var copy = potential_site.Replace(")", " ").Replace("(", " ").Replace(",", " ").Replace(".", " ").Replace("  ", " ").Trim();
-                    while (copy != potential_site)
+                    var splits = err.Split(uniqueName).ToList();
+                    // everything before it fails to mention it
+                    for (int i = 1; i < splits.Count; i++)
                     {
-                        potential_site = copy;
-                        copy = copy.Replace("  ", " ").Trim();
-                    }
-                    var numberSplit = potential_site.Split(" ");
-                    if (numberSplit.Length >= 2) {
-                        if (int.TryParse(numberSplit[0], out int whichLine) && int.TryParse(numberSplit[1], out int whichColumn))
+                        var potential_site = splits[i];
+                        var copy = potential_site.Replace(")", " ").Replace("(", " ").Replace(",", " ").Replace(".", " ").Replace("  ", " ").Trim();
+                        while (copy != potential_site)
                         {
-                            whichLine -= 2;
-                            whichColumn -= 1;
+                            potential_site = copy;
+                            copy = copy.Replace("  ", " ").Trim();
+                        }
+                        var numberSplit = potential_site.Split(" ");
+                        if (numberSplit.Length >= 2)
+                        {
+                            if (int.TryParse(numberSplit[0], out int whichLine) && int.TryParse(numberSplit[1], out int whichColumn))
+                            {
+                                whichLine -= 2;
+                                whichColumn -= 1;
 
-                            int startChar = Math.Max(0, (SumCharactersFromPreviousLines(textJ, whichLine, delim) + whichColumn) - 1);
-                            int endChar = startChar + 2;
+                                int startChar = Math.Max(0, (SumCharactersFromPreviousLines(textJ, whichLine, delim) + whichColumn) - 1);
+                                int endChar = startChar + 2;
 
-                            errorMentions.Add((true, startChar, endChar));
+                                errorMentions.Add((true, startChar, endChar));
 
-                            // return (true, startChar, endChar);
+                                // return (true, startChar, endChar);
+                            }
+                        }
+                    }
+
+                    /* example: 
+                    [
+                    (true, 0, 10)
+                    (true, 0, 6)
+                    (true, 0, 1)
+                    ]
+                    */
+                    {
+                        int minStartChar = int.MaxValue;
+                        int maxEndChar = 0;
+                        foreach (var j in errorMentions)
+                        {
+                            if (j.Item2 < minStartChar) minStartChar = j.Item2;
+                            if (j.Item3 > maxEndChar) maxEndChar = j.Item3;
+                        }
+                        return (true, minStartChar, maxEndChar);
+                    }
+
+
+                }
+                else
+                {
+                    // there is an error but we don't know if it belongs to this script or not. Try and parse the old way?
+                    if (err.Find(" at (") >= 0)
+                    {
+                        var start = err.Find(" at (");
+                        var end = err.Find(")", start);
+                        var location = err.Mid(start, end - start).Replace("at (", "").Replace(")", "").Replace(",", " ").Replace("  ", " ").Replace("  ", " ").Replace("  ", " ").Trim();
+                        var line_column = location.Split(' ');
+
+                        if (line_column.Length >= 2)
+                        {
+                            if (int.TryParse(line_column[line_column.Length - 2], out int whichLine) && int.TryParse(line_column[line_column.Length - 1], out int whichColumn))
+                            {
+                                --whichLine;
+                                --whichColumn;
+
+                                int startChar = Math.Max(0, (SumCharactersFromPreviousLines(textJ, whichLine, delim) + whichColumn) - 1);
+                                int endChar = startChar + 2;
+
+                                return (true, startChar, endChar);
+                            }
                         }
                     }
                 }
-
-                /* example: 
-                [
-                (true, 0, 10)
-                (true, 0, 6)
-                (true, 0, 1)
-                ]
-                */
-                {
-                    int minStartChar = int.MaxValue;
-                    int maxEndChar = 0;
-                    foreach (var j in errorMentions)
-                    {
-                        if (j.Item2 < minStartChar) minStartChar = j.Item2;
-                        if (j.Item3 > maxEndChar) maxEndChar = j.Item3;
-                    }
-                    return (true, minStartChar, maxEndChar);
-                }
-                
-
             }
-            else
-            {
-                // there is an error but we don't know if it belongs to this script or not. Try and parse the old way?
-                if (err.Find(" at (") >= 0)
-                {
-                    var start = err.Find(" at (");
-                    var end = err.Find(")", start);
-                    var location = err.Mid(start, end - start).Replace("at (", "").Replace(")", "").Replace(",", " ").Replace("  ", " ").Replace("  ", " ").Replace("  ", " ").Trim();
-                    var line_column = location.Split(' ');
-
-                    if (line_column.Length >= 2)
-                    {
-                        if (int.TryParse(line_column[line_column.Length - 2], out int whichLine) && int.TryParse(line_column[line_column.Length - 1], out int whichColumn))
-                        {
-                            --whichLine;
-                            --whichColumn;
-
-                            int startChar = Math.Max(0, (SumCharactersFromPreviousLines(textJ, whichLine, delim) + whichColumn) - 1);
-                            int endChar = startChar + 2;
-
-                            return (true, startChar, endChar);
-                        }
-                    }
-                }
-            }
-
             return (false, 0, 0);
         }
         private void DoTextChanging(bool forceUpdate = false, bool wasSuccessful = false, string SuccessfulOutputString = null) {

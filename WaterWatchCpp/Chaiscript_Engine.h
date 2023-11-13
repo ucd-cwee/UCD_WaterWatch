@@ -112,29 +112,51 @@ namespace chaiscript {
             }
         }
 
-        /// Builds all the requirements for ChaiScript, including its evaluator and a run of its prelude.
-        void build_eval_system(const std::vector<ModulePtr>& t_libs, const chaiscript::small_vector<Options>& t_opts) {
-            for (auto& t_lib : t_libs) add(t_lib);
 
-            // "Functions"
-            // "AllFunctions"
-            AddFunctionTo(m_engine, this, TypeNames, , { return m_engine.get_type_names_exposed(); });
-            AddFunctionTo(m_engine, this, FunctionNames, , { return m_engine.FunctionNames_exposed(); });
-            AddFunctionTo(m_engine, this, ObjectNames, , { return m_engine.ObjectNames_exposed(); }); 
-            AddFunctionTo(m_engine, this, dump_system, , { m_engine.dump_system(); }); 
-            AddFunctionTo(m_engine, this, dump_object, , { m_engine.dump_object(t_bv); }, const Boxed_Value& t_bv); 
-            AddFunctionTo(m_engine, this, is_type, , { return m_engine.is_type(t_bv, t_type); }, const Boxed_Value& t_bv, const std::string& t_type); 
-            AddFunctionTo(m_engine, this, is_type, , return m_engine.is_type(t_bv, m_engine.get_type_name(t_ti)), const Boxed_Value& t_bv, const Type_Info& t_ti);             
-            AddFunctionTo(m_engine, this, dynamic_cast, , return m_engine.polymorphic_cast(t_bv, t_type), const Boxed_Value& t_bv, const std::string& t_type);             
-            AddFunctionTo(m_engine, this, type_name, , return m_engine.type_name(t_bv), const Boxed_Value& t_bv);
-            AddFunctionTo(m_engine, this, function_exists, -> bool, return m_engine.function_exists(t_f), const std::string& t_f);
+        AUTO get_compatible_functions(const dispatch::Proxy_Function_Base* func) {
+            std::map<std::string, Boxed_Value> out;
 
-            m_engine.add(fun([this](const dispatch::Proxy_Function_Base* func) { 
-                std::map<std::string, Boxed_Value> out;
+            if (func->get_arity() >= 0) {
 
-                if (func->get_arity() >= 0) {
+                const chaiscript::small_vector<Type_Info>& inputFuncTypes = func->get_param_types();
+                if (inputFuncTypes.size() >= 1) {
+                    const Type_Info& TheType = inputFuncTypes[0];
+                    const Type_Conversions_State convs(m_engine.conversions(), m_engine.conversions().conversion_saves());
 
-                    const chaiscript::small_vector<Type_Info>& inputFuncTypes = func->get_param_types();
+                    std::map<std::string, Boxed_Value> functions = m_engine.get_function_objects();
+                    const auto boxed_value_ti = user_type<Boxed_Value>();
+                    for (auto& x : functions) {
+                        auto& funcName = x.first;
+                        AUTO f = chaiscript::boxed_cast<chaiscript::shared_ptr<const dispatch::Proxy_Function_Base>>(x.second);
+                        if (f) {
+                            AUTO funcs = f->get_contained_functions();
+                            funcs.push_back(f);
+                            for (chaiscript::shared_ptr<const dispatch::Proxy_Function_Base> ff : funcs) {
+                                if (ff) {
+                                    const chaiscript::small_vector<Type_Info>& resultFuncTypes = ff->get_param_types();
+                                    if (resultFuncTypes.size() >= 2) {
+                                        const Type_Info& inputParam1 = resultFuncTypes[1];
+                                        if (inputParam1.is_undef() || inputParam1.bare_equal(boxed_value_ti)) { //  || inputParam1.name() == ""
+                                            // anything could match with this... it kinda isn't fair and should be skipped
+                                            continue;
+                                        }
+                                        else {
+                                            if (dispatch::Proxy_Function_Base::compare_type_to_type(inputParam1, TheType, convs)) {
+                                                out[funcName] = chaiscript::var(ff);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+            }
+            else {
+                for (auto& internalFunc : func->get_contained_functions()) {
+
+                    const chaiscript::small_vector<Type_Info>& inputFuncTypes = internalFunc->get_param_types();
                     if (inputFuncTypes.size() >= 1) {
                         const Type_Info& TheType = inputFuncTypes[0];
                         const Type_Conversions_State convs(m_engine.conversions(), m_engine.conversions().conversion_saves());
@@ -168,55 +190,60 @@ namespace chaiscript {
                         }
                     }
 
+
+
+
+
                 }
-                else {
-                    for (auto& internalFunc : func->get_contained_functions()) {
+            }
 
-                        const chaiscript::small_vector<Type_Info>& inputFuncTypes = internalFunc->get_param_types();
-                        if (inputFuncTypes.size() >= 1) {
-                            const Type_Info& TheType = inputFuncTypes[0];
-                            const Type_Conversions_State convs(m_engine.conversions(), m_engine.conversions().conversion_saves());
+            return out;
+        };
 
-                            std::map<std::string, Boxed_Value> functions = m_engine.get_function_objects();
-                            const auto boxed_value_ti = user_type<Boxed_Value>();
-                            for (auto& x : functions) {
-                                auto& funcName = x.first;
-                                AUTO f = chaiscript::boxed_cast<chaiscript::shared_ptr<const dispatch::Proxy_Function_Base>>(x.second);
-                                if (f) {
-                                    AUTO funcs = f->get_contained_functions();
-                                    funcs.push_back(f);
-                                    for (chaiscript::shared_ptr<const dispatch::Proxy_Function_Base> ff : funcs) {
-                                        if (ff) {
-                                            const chaiscript::small_vector<Type_Info>& resultFuncTypes = ff->get_param_types();
-                                            if (resultFuncTypes.size() >= 2) {
-                                                const Type_Info& inputParam1 = resultFuncTypes[1];
-                                                if (inputParam1.is_undef() || inputParam1.bare_equal(boxed_value_ti)) { //  || inputParam1.name() == ""
-                                                    // anything could match with this... it kinda isn't fair and should be skipped
-                                                    continue;
-                                                }
-                                                else {
-                                                    if (dispatch::Proxy_Function_Base::compare_type_to_type(inputParam1, TheType, convs)) {
-                                                        out[funcName] = chaiscript::var(ff);
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
+        /// Builds all the requirements for ChaiScript, including its evaluator and a run of its prelude.
+        void build_eval_system(const std::vector<ModulePtr>& t_libs, const chaiscript::small_vector<Options>& t_opts) {
+            for (auto& t_lib : t_libs) add(t_lib);
+
+            // "Functions"
+            // "AllFunctions"
+            AddFunctionTo(m_engine, this, TypeNames, , { return m_engine.get_type_names_exposed(); });
+            AddFunctionTo(m_engine, this, FunctionNames, , { return m_engine.FunctionNames_exposed(); });
+            AddFunctionTo(m_engine, this, ObjectNames, , { return m_engine.ObjectNames_exposed(); }); 
+            AddFunctionTo(m_engine, this, dump_system, , { m_engine.dump_system(); }); 
+            AddFunctionTo(m_engine, this, dump_object, , { m_engine.dump_object(t_bv); }, const Boxed_Value& t_bv); 
+            AddFunctionTo(m_engine, this, is_type, , { return m_engine.is_type(t_bv, t_type); }, const Boxed_Value& t_bv, const std::string& t_type); 
+            AddFunctionTo(m_engine, this, is_type, , return m_engine.is_type(t_bv, m_engine.get_type_name(t_ti)), const Boxed_Value& t_bv, const Type_Info& t_ti);             
+            AddFunctionTo(m_engine, this, dynamic_cast, , return m_engine.polymorphic_cast(t_bv, t_type), const Boxed_Value& t_bv, const std::string& t_type);             
+            AddFunctionTo(m_engine, this, type_name, , return m_engine.type_name(t_bv), const Boxed_Value& t_bv);
+            AddFunctionTo(m_engine, this, function_exists, -> bool, return m_engine.function_exists(t_f), const std::string& t_f);
+            
+
+            m_engine.add(fun([this](const dispatch::Proxy_Function_Base* func) {
+                std::string returnType = m_engine.get_type_name(func->get_param_types()[0]);
+                std::vector<Boxed_Value> out;
+                for (auto& x : this->get_compatible_functions(func)) {
+                    AUTO f = boxed_cast<const dispatch::Proxy_Function_Base*>(x.second);
+                    if (f) {
+                        AUTO arity = f->get_arity();
+
+                        AUTO paramTypes = f->get_param_types();
+
+                        cweeStr caller;
+                        std::string thisReturnType = m_engine.get_type_name(paramTypes[0]);
+                        for (auto i = 1; i < arity; ++i) {
+                            std::string paramTypeName = m_engine.get_type_name(paramTypes[i]);
+                            std::string paramName = f->get_ParameterName(i);
+
+                            caller.AddToDelimiter(cweeStr::printf("%s %s", paramTypeName.c_str(), paramName.c_str()), ", ");
                         }
-
-
-
-
-
-                    }
+                        out.push_back(var(cweeStr::printf("%s %s.`%s`(%s)", thisReturnType.c_str(), returnType.c_str(), x.first.c_str(), caller.c_str())));
+                    }   
                 }
-
-
-
-                return out;
-                }, { "func" }), "get_compatible_functions"); // returns the functions that could be reasonably accessed by a dot accessor
+                return out; 
+            }, { "func" }), "summarize_compatible_functions"); // returns the functions that could be reasonably accessed by a dot accessor
+            m_engine.add(fun([this](const dispatch::Proxy_Function_Base* func) { 
+                return get_compatible_functions(func);
+            }, { "func" }), "get_compatible_functions"); // returns the functions that could be reasonably accessed by a dot accessor
             m_engine.add(fun([this](std::string const& className) {
                 std::map<std::string, Boxed_Value> out;
 

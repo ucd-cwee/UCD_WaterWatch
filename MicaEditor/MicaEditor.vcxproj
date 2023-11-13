@@ -20,7 +20,7 @@
     <ApplicationTypeRevision>10.0</ApplicationTypeRevision>
     <WindowsTargetPlatformVersion Condition="'$(WindowsTargetPlatformVersion)' == ''">10.0</WindowsTargetPlatformVersion>
     <WindowsTargetPlatformMinVersion Condition="$(MicaEditorUseWinUI3)">10.0.17763.0</WindowsTargetPlatformMinVersion>
-    <WindowsTargetPlatformMinVersion Condition="!$(MicaEditorUseWinUI3)">10.0.15063.0</WindowsTargetPlatformMinVersion>
+    <WindowsTargetPlatformMinVersion Condition="!$(MicaEditorUseWinUI3)">10.0.17763.0</WindowsTargetPlatformMinVersion>
     <DesktopCompatible Condition="$(MicaEditorUseWinUI3)">true</DesktopCompatible>
     <UseWinUI Condition="$(MicaEditorUseWinUI3)">true</UseWinUI>
     <_NoWinAPIFamilyApp Condition="$(MicaEditorUseWinUI3)">true</_NoWinAPIFamilyApp>
@@ -93,7 +93,7 @@
       <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
       <PrecompiledHeaderOutputFile>$(IntDir)pch.pch</PrecompiledHeaderOutputFile>
       <AdditionalIncludeDirectories>..\scintilla\winui;..\scintilla\include;..\scintilla\src;..\lexilla\include\;..\lexilla\lexlib;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <WarningLevel>Level4</WarningLevel>
+      <WarningLevel>Level3</WarningLevel>
       <AdditionalOptions>%(AdditionalOptions) /bigobj</AdditionalOptions>
       <PreprocessorDefinitions>SCI_EMPTYCATALOGUE;_CRT_SECURE_NO_DEPRECATE;_SCL_SECURE_NO_WARNINGS;_USRDLL;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <PreprocessorDefinitions>NOMINMAX;_WINRT_DLL;%(PreprocessorDefinitions)</PreprocessorDefinitions>
