@@ -230,7 +230,7 @@ namespace chaiscript {
 
                         cweeStr caller;
                         std::string thisReturnType = m_engine.get_type_name(paramTypes[0]);
-                        for (auto i = 1; i < arity; ++i) {
+                        for (auto i = 1; i <= arity; ++i) {
                             std::string paramTypeName = m_engine.get_type_name(paramTypes[i]);
                             std::string paramName = f->get_ParameterName(i);
 
@@ -241,6 +241,31 @@ namespace chaiscript {
                 }
                 return out; 
             }, { "func" }), "summarize_compatible_functions"); // returns the functions that could be reasonably accessed by a dot accessor
+
+            m_engine.add(fun([this](const dispatch::Proxy_Function_Base* func) {                
+                std::vector<Boxed_Value> out;
+                for (auto& f : func->get_contained_functions()) {
+                    if (f) {
+                        std::string functionName = m_engine.get_function_name(f.get());
+
+                        AUTO arity = f->get_arity();
+
+                        AUTO paramTypes = f->get_param_types();
+
+                        cweeStr caller;
+                        std::string thisReturnType = m_engine.get_type_name(paramTypes[0]);
+                        for (auto i = 1; i <= arity; ++i) {
+                            std::string paramTypeName = m_engine.get_type_name(paramTypes[i]);
+                            std::string paramName = f->get_ParameterName(i-1);
+
+                            caller.AddToDelimiter(cweeStr::printf("%s %s", paramTypeName.c_str(), paramName.c_str()), ", ");
+                        }
+                        out.push_back(var(cweeStr::printf("%s `%s`(%s)", thisReturnType.c_str(), functionName.c_str(), caller.c_str())));
+                    }
+                }
+                return out;
+                }, { "func" }), "summarize_contained_functions"); // returns the functions that could be reasonably accessed by a dot accessor
+
             m_engine.add(fun([this](const dispatch::Proxy_Function_Base* func) { 
                 return get_compatible_functions(func);
             }, { "func" }), "get_compatible_functions"); // returns the functions that could be reasonably accessed by a dot accessor

@@ -333,6 +333,14 @@ namespace UWP_WaterWatch.Custom_Controls
             RemoveOutboundConnections();
         }
 
+        public static cweeTask<ScriptingNodeResult> RunAsync(ScriptingNodeViewModel VM, string script)
+        {
+            return EdmsTasks.InsertJob(() => {
+                string reply = VM.ParentVM.engine.DoScript($"{script}; return;");
+                if (reply == "") reply = null;
+                return new ScriptingNodeResult(VM, reply);
+            }, false, true);
+        }
         public cweeTask<ScriptingNodeResult> RunAsync()
         {
             return EdmsTasks.InsertJob(() => {

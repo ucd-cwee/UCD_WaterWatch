@@ -1409,6 +1409,9 @@ namespace UWP_WaterWatch.Custom_Controls
                     toReturn.RowDefinitions.Add(new RowDefinition() { Height = new GridLength(1, GridUnitType.Auto) });
                     toReturn.RowDefinitions.Add(new RowDefinition() { Height = new GridLength(1, GridUnitType.Auto) });
                     toReturn.RowDefinitions.Add(new RowDefinition() { Height = new GridLength(1, GridUnitType.Auto) });
+                    toReturn.RowDefinitions.Add(new RowDefinition() { Height = new GridLength(1, GridUnitType.Auto) });
+                    toReturn.RowDefinitions.Add(new RowDefinition() { Height = new GridLength(1, GridUnitType.Auto) });
+                    toReturn.RowDefinitions.Add(new RowDefinition() { Height = new GridLength(1, GridUnitType.Auto) });
                 }
                 {
                     BreadcrumbBar bcb = new BreadcrumbBar(); {
@@ -1581,8 +1584,7 @@ namespace UWP_WaterWatch.Custom_Controls
                                                         SymbolIcon i = new SymbolIcon() { Symbol = Symbol.Preview, Foreground = fgc.Result };
                                                         p.Children.Add(i);
                                                     }
-                                                    if (!string.IsNullOrEmpty(nodes[0].typeHint_get()))
-                                                    {
+                                                    if (!string.IsNullOrEmpty(nodes[0].typeHint_get())) {
                                                         TextBlock tb = cweeXamlHelper.SimpleTextBlock(nodes[0].typeHint_get(), HorizontalAlignment.Left);
                                                         tb.FontStyle = FontStyle.Italic;
                                                         p.Children.Add(tb);
@@ -1632,49 +1634,189 @@ namespace UWP_WaterWatch.Custom_Controls
 
                                         case WaterWatchEnums.ScriptNodeType.Fun_Call:
                                         case WaterWatchEnums.ScriptNodeType.Dot_Access:
-                                            // function call, or type name?
-                                            fgc.ContinueWith(() => {
-                                                StackPanel p = new StackPanel() { Spacing = 5, Orientation = Orientation.Horizontal };
-                                                {
+                                            if (!string.IsNullOrEmpty(nodes[0].typeHint_get()) && nodes[0].typeHint_get() == nodes[0].text_get()) {
+                                                // type name
+                                                fgc.ContinueWith(() => {
                                                     {
-                                                        TextBlock tb = cweeXamlHelper.SimpleTextBlock("(Function)", HorizontalAlignment.Left);
-                                                        p.Children.Add(tb);
-                                                    }
-                                                    {
-                                                        SymbolIcon i = new SymbolIcon() { Symbol = Symbol.Library, Foreground = fgc.Result };
-                                                        p.Children.Add(i);
-                                                    }
-                                                    if (!string.IsNullOrEmpty(nodes[0].typeHint_get()))
-                                                    {
-                                                        TextBlock tb = cweeXamlHelper.SimpleTextBlock(nodes[0].typeHint_get(), HorizontalAlignment.Left);
-                                                        tb.FontStyle = FontStyle.Italic;
-                                                        p.Children.Add(tb);
-                                                    }
-                                                    {
-                                                        TextBlock tb = cweeXamlHelper.SimpleTextBlock(nodes[0].text_get(), HorizontalAlignment.Left);
-                                                        p.Children.Add(tb);
-                                                    }
-                                                }
-                                                toReturn.Children.Add(p);
-                                                Grid.SetRow(p, 1);
-
-                                                StackPanel p2 = new StackPanel() { Spacing = 5, Orientation = Orientation.Vertical, Padding=new Thickness(10,0,5,0) };
-                                                EdmsTasks.InsertJob(() => {
-                                                    var compatible_functions = vm?.ParentVM?.ParentVM?.engine?.DoScript_Cast_VectorStrings($"summarize_compatible_functions({nodes[0].text_get()})");
-                                                    if (compatible_functions != null)
-                                                    {
-                                                        foreach (var compatible_function in compatible_functions)
+                                                        StackPanel p = new StackPanel() { Spacing = 5, Orientation = Orientation.Horizontal };
                                                         {
-                                                            string temp = compatible_function;
-                                                            EdmsTasks.InsertJob(() => {
-                                                                p2.Children.Add(cweeXamlHelper.SimpleTextBlock(temp, HorizontalAlignment.Left));
-                                                            }, true);
+                                                            {
+                                                                TextBlock tb = cweeXamlHelper.SimpleTextBlock("(Typename)", HorizontalAlignment.Left);
+                                                                p.Children.Add(tb);
+                                                            }
+                                                            {
+                                                                SymbolIcon i = new SymbolIcon() { Symbol = Symbol.XboxOneConsole, Foreground = fgc.Result };
+                                                                p.Children.Add(i);
+                                                            }
+                                                            {
+                                                                TextBlock tb = cweeXamlHelper.SimpleTextBlock(nodes[0].typeHint_get(), HorizontalAlignment.Left);
+                                                                tb.FontStyle = FontStyle.Italic;
+                                                                p.Children.Add(tb);
+                                                            }
+                                                        }
+                                                        toReturn.Children.Add(p);
+                                                        Grid.SetRow(p, 1);
+                                                    }
+
+                                                    {
+                                                        ListView p = new ListView() {
+                                                            HorizontalContentAlignment = HorizontalAlignment.Left,
+                                                            VerticalContentAlignment = VerticalAlignment.Center,
+                                                            ItemContainerStyle = cweeXamlHelper.StaticStyleResource("cweeListViewSimpleItemStyle"),
+                                                            HorizontalAlignment = HorizontalAlignment.Left,
+                                                            Padding = new Thickness(10, 0, 5, 0),
+                                                            Margin = new Thickness(0),
+                                                            MaxHeight = 100,
+                                                            MaxWidth = 400,
+                                                            BorderBrush = fgc.Result,
+                                                            BorderThickness = new Thickness(1, 0, 0, 0)
+                                                        };
+                                                        EdmsTasks.InsertJob(() => {
+                                                            var compatible_functions = vm?.ParentVM?.ParentVM?.engine?.DoScript_Cast_VectorStrings($"summarize_contained_functions({nodes[0].text_get()})");
+                                                            if (compatible_functions != null && compatible_functions.Count > 0)
+                                                            {
+                                                                foreach (var compatible_function in compatible_functions)
+                                                                {
+                                                                    string temp = compatible_function;
+                                                                    EdmsTasks.InsertJob(() => {
+                                                                        var x = cweeXamlHelper.SimpleTextBlock(temp, HorizontalAlignment.Left);
+                                                                        x.Margin = new Thickness(5, 0, 5, 0);
+                                                                        x.FontSize = 14;
+                                                                        p.Items.Add(x);
+                                                                    }, true);
+                                                                }
+
+                                                                EdmsTasks.InsertJob(() =>
+                                                                {
+                                                                    {
+                                                                        var p2 = cweeXamlHelper.SimpleTextBlock("Constructors", HorizontalAlignment.Left);
+                                                                        p2.Margin = new Thickness(0, 5, 0, 0);
+                                                                        toReturn.Children.Add(p2);
+                                                                        Grid.SetRow(p2, 2);
+                                                                    }
+                                                                    toReturn.Children.Add(p);
+                                                                    Grid.SetRow(p, 3);
+                                                                }, true);
+                                                            }
+                                                        }, false);
+                                                        
+                                                    }
+                                                    {                                                        
+                                                        ListView p = new ListView() {
+                                                            HorizontalContentAlignment = HorizontalAlignment.Left,
+                                                            VerticalContentAlignment = VerticalAlignment.Center,
+                                                            ItemContainerStyle = cweeXamlHelper.StaticStyleResource("cweeListViewSimpleItemStyle"),
+                                                            HorizontalAlignment = HorizontalAlignment.Left,
+                                                            Padding = new Thickness(10, 0, 5, 0),
+                                                            Margin = new Thickness(0),
+                                                            MaxHeight = 100,
+                                                            MaxWidth = 400,
+                                                            BorderBrush = fgc.Result,
+                                                            BorderThickness = new Thickness(1, 0, 0, 0)
+                                                        };
+                                                        EdmsTasks.InsertJob(() => {
+                                                            var compatible_functions = vm?.ParentVM?.ParentVM?.engine?.DoScript_Cast_VectorStrings($"summarize_compatible_functions({nodes[0].text_get()})");
+                                                            if (compatible_functions != null && compatible_functions.Count > 0)
+                                                            {
+                                                                foreach (var compatible_function in compatible_functions)
+                                                                {
+                                                                    string temp = compatible_function;
+                                                                    EdmsTasks.InsertJob(() => {
+                                                                        var x = cweeXamlHelper.SimpleTextBlock(temp, HorizontalAlignment.Left);
+                                                                        x.Margin = new Thickness(5, 0, 5, 0);
+                                                                        x.FontSize = 14;
+                                                                        p.Items.Add(x);
+                                                                    }, true);
+                                                                }
+
+                                                                EdmsTasks.InsertJob(() =>
+                                                                {
+                                                                    {
+                                                                        var p2 = cweeXamlHelper.SimpleTextBlock("Compatible Class Functions", HorizontalAlignment.Left);
+                                                                        p2.Margin = new Thickness(0, 5, 0, 0);
+                                                                        toReturn.Children.Add(p2);
+                                                                        Grid.SetRow(p2, 4);
+                                                                    }
+                                                                    toReturn.Children.Add(p);
+                                                                    Grid.SetRow(p, 5);
+                                                                }, true);
+                                                            }
+                                                        }, false);
+                                                    }
+                                                }, true);
+                                            }
+                                            else
+                                            {
+                                                // function call
+                                                fgc.ContinueWith(() => {
+                                                    StackPanel p = new StackPanel() { Spacing = 5, Orientation = Orientation.Horizontal };
+                                                    {
+                                                        {
+                                                            TextBlock tb = cweeXamlHelper.SimpleTextBlock("(Function)", HorizontalAlignment.Left);
+                                                            p.Children.Add(tb);
+                                                        }
+                                                        {
+                                                            SymbolIcon i = new SymbolIcon() { Symbol = Symbol.Library, Foreground = fgc.Result };
+                                                            p.Children.Add(i);
+                                                        }
+                                                        if (!string.IsNullOrEmpty(nodes[0].typeHint_get()))
+                                                        {
+                                                            TextBlock tb = cweeXamlHelper.SimpleTextBlock(nodes[0].typeHint_get(), HorizontalAlignment.Left);
+                                                            tb.FontStyle = FontStyle.Italic;
+                                                            p.Children.Add(tb);
+                                                        }
+                                                        {
+                                                            TextBlock tb = cweeXamlHelper.SimpleTextBlock(nodes[0].text_get(), HorizontalAlignment.Left);
+                                                            p.Children.Add(tb);
                                                         }
                                                     }
-                                                }, false);
-                                                toReturn.Children.Add(p2);
-                                                Grid.SetRow(p2, 2);
-                                            }, true);                     
+                                                    toReturn.Children.Add(p);
+                                                    Grid.SetRow(p, 1);
+
+                                                    {
+                                                        ListView p2 = new ListView() {
+                                                            HorizontalContentAlignment = HorizontalAlignment.Left,
+                                                            VerticalContentAlignment = VerticalAlignment.Center,
+                                                            ItemContainerStyle = cweeXamlHelper.StaticStyleResource("cweeListViewSimpleItemStyle"),
+                                                            HorizontalAlignment = HorizontalAlignment.Left,
+                                                            Padding = new Thickness(10, 0, 5, 0),
+                                                            Margin = new Thickness(0),
+                                                            MaxHeight = 100,
+                                                            MaxWidth = 400,
+                                                            BorderBrush = fgc.Result,
+                                                            BorderThickness = new Thickness(1, 0, 0, 0)
+                                                        };
+                                                        EdmsTasks.InsertJob(() => {
+                                                            var compatible_functions = vm?.ParentVM?.ParentVM?.engine?.DoScript_Cast_VectorStrings($"summarize_contained_functions({nodes[0].text_get()})");
+                                                            if (compatible_functions != null && compatible_functions.Count > 0)
+                                                            {
+                                                                foreach (var compatible_function in compatible_functions)
+                                                                {
+                                                                    string temp = compatible_function;
+                                                                    EdmsTasks.InsertJob(() => {
+                                                                        var x = cweeXamlHelper.SimpleTextBlock(temp, HorizontalAlignment.Left);
+                                                                        x.Margin = new Thickness(5, 0, 5, 0);
+                                                                        x.FontSize = 14;
+                                                                        p2.Items.Add(x);
+                                                                    }, true);
+                                                                }
+
+                                                                EdmsTasks.InsertJob(() =>
+                                                                {
+                                                                    {
+                                                                        var p3 = cweeXamlHelper.SimpleTextBlock("Overloads", HorizontalAlignment.Left);
+                                                                        p3.Margin = new Thickness(0,5,0,0);
+                                                                        toReturn.Children.Add(p3);
+                                                                        Grid.SetRow(p3, 2);
+                                                                    }
+                                                                    toReturn.Children.Add(p2);
+                                                                    Grid.SetRow(p2, 3);
+                                                                }, true);
+                                                            }
+                                                        }, false);
+                                                    }
+                                                }, true);
+                                            }                 
                                             break;
                                     }
                                 }
@@ -1687,8 +1829,7 @@ namespace UWP_WaterWatch.Custom_Controls
                                                 SymbolIcon i = new SymbolIcon() { Symbol = Symbol.Preview, Foreground = fgc.Result };
                                                 p.Children.Add(i);
                                             }
-                                            if (!string.IsNullOrEmpty(nodes[0].typeHint_get()))
-                                            {
+                                            if (!string.IsNullOrEmpty(nodes[0].typeHint_get())) {
                                                 TextBlock tb = cweeXamlHelper.SimpleTextBlock(nodes[0].typeHint_get(), HorizontalAlignment.Left);
                                                 tb.FontStyle = FontStyle.Italic;
                                                 p.Children.Add(tb);
@@ -1737,6 +1878,8 @@ namespace UWP_WaterWatch.Custom_Controls
 
         internal static cweeDequeue dwellTimer;
         internal bool dwellPossible = false;
+        internal string prevString = "";
+        internal DateTime dwellCooldownTimer = new DateTime();
         private void Editor_DwellStart(Editor sender, DwellStartEventArgs args) {
             dwellTimer?.Cancel();
             if (dwellPossible && args.Position >= 0)
@@ -1745,13 +1888,14 @@ namespace UWP_WaterWatch.Custom_Controls
                     var x = FindNodesAtPosition(args.Position);
                     if (x != null && x.Count > 0)
                     {
-                        var tb = cweeXamlHelper.SimpleTextBlock(x[0].text_get());
-
-                        var flyout = Editor.SetFlyout(ReviewNodeList(x), Editor, Editor, new Point(sender.PointXFromPosition(args.Position), 24 + sender.PointYFromPosition(args.Position)), true);
-                        flyout.LightDismissOverlayMode = LightDismissOverlayMode.Off;
-                        flyout.ShowMode = FlyoutShowMode.TransientWithDismissOnPointerMoveAway;
-                        flyout.Placement = FlyoutPlacementMode.BottomEdgeAlignedLeft;
-                        flyout.AllowFocusOnInteraction = false;
+                        if ((DateTime.Now - dwellCooldownTimer).TotalSeconds > 2) {
+                            dwellCooldownTimer = DateTime.Now;
+                            var flyout = Editor.SetFlyout(ReviewNodeList(x), Editor, Editor, new Point(sender.PointXFromPosition(args.Position), 24 + sender.PointYFromPosition(args.Position)), true);
+                            flyout.LightDismissOverlayMode = LightDismissOverlayMode.Off;
+                            flyout.ShowMode = FlyoutShowMode.TransientWithDismissOnPointerMoveAway;
+                            flyout.Placement = FlyoutPlacementMode.BottomEdgeAlignedLeft;
+                            flyout.AllowFocusOnInteraction = false;
+                        }
                     }                   
                 }, true);
             }
@@ -1782,10 +1926,10 @@ namespace UWP_WaterWatch.Custom_Controls
             {
                 var tb = cweeXamlHelper.SimpleTextBlock(warning);
 
-                var flyout = Editor.SetFlyout(tb, Editor, Editor, new Point(sender.PointXFromPosition(args.Position), 24+sender.PointYFromPosition(args.Position)), true);
+                var flyout = Editor.SetFlyout(tb, Editor, Editor, new Point(sender.PointXFromPosition(args.Position), 24 + sender.PointYFromPosition(args.Position)), true);
                 flyout.LightDismissOverlayMode = LightDismissOverlayMode.Off;
                 flyout.ShowMode = FlyoutShowMode.TransientWithDismissOnPointerMoveAway;
-                flyout.Placement = FlyoutPlacementMode.Bottom;
+                flyout.Placement = FlyoutPlacementMode.BottomEdgeAlignedLeft;
                 flyout.AllowFocusOnInteraction = false;
             }
 

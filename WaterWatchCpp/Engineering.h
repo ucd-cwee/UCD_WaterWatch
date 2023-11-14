@@ -3459,6 +3459,71 @@ namespace cweeEng {
 
 	};
 
+	/*	// implimentation of "https://www.iogp.org/wp-content/uploads/2019/09/373-07-02.pdf" Lambert Conic Conformal (2SP)
+		var& inputLongLat = Pair(-96, 28.5);
+		var& XY_Feet = Pair(2963503.91_ft, 254759.80_ft);
+		double LatFirstStandardParallel = 0.49538262 / AngRad; // GET DEGREES
+		double LatSecondStandardParallel = 0.52854388 / AngRad; // GET DEGREES
+		double LatOrigin = 0.48578331 / AngRad; // GET DEGREES
+		double LongOrigin = -1.72787596 / AngRad; // GET DEGREES
+		foot FalseNorthing = 0.0_ft;
+		foot FalseEasting = 2000000.00_ft;
+
+		foot a = 20925832.16_ft;                        	// major radius of GRS 1980 ellipsoid, feet
+		double Ec = 0.08227185;                  			// eccentricity of GRD 1980 ellipsoid
+		double Ec2 = Ec ^ 2.0;                          	// eccentricity squared
+		double EcD2 = Ec / 2.0;
+
+		double Pi4 = PI / 4.0;                			// Pi / 4
+		double Pi2 = PI / 2.0;							// Pi / 2
+		double P0 = LatOrigin * AngRad;   						// latitude of origin
+		double P1 = LatFirstStandardParallel * AngRad;			// latitude of first standard parallel
+		double P2 = LatSecondStandardParallel * AngRad;		// latitude of second standard parallel
+		var& Ef = FalseEasting.double;					// False easting of central meridian, map units
+		var& Nf = FalseNorthing.double;					// False northing of central meridian, map units
+		var& E = XY_Feet.first.double;
+		var& N = XY_Feet.second.double;
+
+		double m1 = cos(P1) / ((1.0 - (Ec2 * ((sin(P1))^2)))^0.5); // good
+		double m2 = cos(P2) / ((1.0 - (Ec2 * ((sin(P2))^2)))^0.5); // good
+		double t0 = tan(Pi4 - (P0 / 2.0)) / (((1.0 - Ec * sin(P0)) / (1.0 + Ec * sin(P0)))^EcD2);
+		double t1 = tan(Pi4 - (P1 / 2.0)) / (((1.0 - Ec * sin(P1)) / (1.0 + Ec * sin(P1)))^EcD2);
+		double t2 = tan(Pi4 - (P2 / 2.0)) / (((1.0 - Ec * sin(P2)) / (1.0 + Ec * sin(P2)))^EcD2);
+		double n = log(m1 / m2) / log(t1 / t2); // good
+		double F = m1 / (n * (t1^n));
+
+		double degree = n*(inputLongLat.first*AngRad - LongOrigin*AngRad); // good
+		double t =
+			tan(Pi4 - (inputLongLat.second * AngRad / 2.0)) /
+			((1.0 - Ec * sin(inputLongLat.second * AngRad)) / (1.0 + Ec * sin(inputLongLat.second * AngRad)))^EcD2; // good
+
+		double r = a*F*t^n
+		double r_F = a * F * (t0^n); // good
+
+		return ["Easting":Ef+r*sin(degree), "Northing":Nf+r_F-r*cos(degree)];
+
+		// calc longitude
+		double r_prime = ((E - Ef)^2 + (r_F - (N - Nf))^2)^0.5;
+		r_prime *= (n >= 0 ? 1.0 : -1.0); // taking the sign of n
+
+		double t_prime = (r_prime / (a * F)) ^ (1.0 / n);
+
+		double degree_prime = atan((E - Ef) / (r_F - (N - Nf)));
+
+		double LonR = ((degree_prime/n)/AngRad + LongOrigin) * AngRad
+
+		// Substitute the estimate into the iterative calculation that converges on the correct Latitude value.
+		double LatR = Pi2 - (2.0 * atan(t_prime));
+		for (var j = 0; j < 5; ++j) {
+
+
+			LatR = Pi2 - (2.0 * atan(t_prime * (((1.0 - (Ec * sin(LatR))) / (1.0 + (Ec * sin(LatR))))^EcD2)));
+		}
+		// return Pair(LonR / AngRad, LatR / AngRad); // Convert from radians to degrees
+
+		return ["Longitude (deg)":LonR/AngRad, "Latitude (deg)":LatR/AngRad]; // Convert from radians to degrees	
+	*/
+
 	static vec2d CoordinateConversion_FeetToLongLat(vec2d XY_Feet,
 		double centralMeridian = -120.5000000000000000,
 		double LatFirstStandardParallel = 37.0666666666666666667,

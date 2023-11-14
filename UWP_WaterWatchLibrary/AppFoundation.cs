@@ -1784,9 +1784,9 @@ namespace UWP_WaterWatchLibrary
                 }
                 if (toFly == null)
                 {
-                    toFly = new cweeFlyout();                   
-                    toFly.Placement = Windows.UI.Xaml.Controls.Primitives.FlyoutPlacementMode.Bottom;
-                    toFly.ShowMode = Windows.UI.Xaml.Controls.Primitives.FlyoutShowMode.Transient;
+                    toFly = new cweeFlyout();
+                    toFly.Placement = Windows.UI.Xaml.Controls.Primitives.FlyoutPlacementMode.BottomEdgeAlignedLeft;
+                    toFly.ShowMode = Windows.UI.Xaml.Controls.Primitives.FlyoutShowMode.TransientWithDismissOnPointerMoveAway;
                     toFly.LightDismissOverlayMode = LightDismissOverlayMode.Off;
                     toFly.AllowFocusWhenDisabled = false; // true? 
                     toFly.AllowFocusOnInteraction = false; // disable?
@@ -1811,8 +1811,8 @@ namespace UWP_WaterWatchLibrary
                     if (showFlyout)
                         toFly.ShowAt(relativeTo, new Windows.UI.Xaml.Controls.Primitives.FlyoutShowOptions()
                         {
-                            ShowMode = Windows.UI.Xaml.Controls.Primitives.FlyoutShowMode.Transient,
-                            Placement = Windows.UI.Xaml.Controls.Primitives.FlyoutPlacementMode.Bottom,
+                            ShowMode = Windows.UI.Xaml.Controls.Primitives.FlyoutShowMode.TransientWithDismissOnPointerMoveAway,
+                            Placement = Windows.UI.Xaml.Controls.Primitives.FlyoutPlacementMode.BottomEdgeAlignedLeft,
                             Position = position
                         });
                 }
@@ -1821,8 +1821,8 @@ namespace UWP_WaterWatchLibrary
                     if (showFlyout)
                         toFly.ShowAt(obj, new Windows.UI.Xaml.Controls.Primitives.FlyoutShowOptions()
                         {
-                            ShowMode = Windows.UI.Xaml.Controls.Primitives.FlyoutShowMode.Transient,
-                            Placement = Windows.UI.Xaml.Controls.Primitives.FlyoutPlacementMode.Bottom,
+                            ShowMode = Windows.UI.Xaml.Controls.Primitives.FlyoutShowMode.TransientWithDismissOnPointerMoveAway,
+                            Placement = Windows.UI.Xaml.Controls.Primitives.FlyoutPlacementMode.BottomEdgeAlignedLeft,
                             Position = position
                         });
                 }
