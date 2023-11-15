@@ -110,7 +110,6 @@ namespace UWP_WaterWatch.Custom_Controls
         public NodeErrorManager errorManager;
         public ScriptingNodeViewModel ParentVM = null;
         public cweeTimer hoverProcessor;
-        //private vector_scriptingnode _MostRecentParsedNodes;
 
         public ScriptNode_EditorVM()
         {
@@ -127,14 +126,10 @@ namespace UWP_WaterWatch.Custom_Controls
             errorManager = null;
         }
 
-        public vector_scriptingnode MostRecentParsedNodes;// { 
-        //    get { 
-        //        return _MostRecentParsedNodes; 
-        //    } 
-        //    set { 
-        //        _MostRecentParsedNodes = value; 
-        //    } 
-        //}
+        public vector_scriptingnode MostRecentParsedNodes_NoError;
+        public string MostRecentParsedScript_NoError;
+
+        public vector_scriptingnode MostRecentParsedNodes;
     }
 
 #if true
@@ -798,18 +793,18 @@ namespace UWP_WaterWatch.Custom_Controls
 
             this.InitializeComponent();
 
- 
+
             var cdb = cweeXamlHelper.ThemeColor("cweeDarkBlue");
 
             var cpb = cweeXamlHelper.ThemeColor("cweePageBackground");
 
             //Editor.FontSize = ThisFontSize;
             Editor.FontFamily = new FontFamily("Segoe UI");
-            Editor.FontStretch = FontStretch.Normal;     
+            Editor.FontStretch = FontStretch.Normal;
             Editor.IsTextScaleFactorEnabled = true;
 
             Editor.PreviewKeyDown += Editor_PreviewKeyDown;
-            //Editor.CharacterReceived += Editor_CharacterReceived; ;
+            // Editor.CharacterReceived += Editor_CharacterReceived; ;
 
             this.PointerEntered += ScriptNode_Editor_PointerEntered;
             this.PointerExited += ScriptNode_Editor_PointerExited;
@@ -871,15 +866,15 @@ namespace UWP_WaterWatch.Custom_Controls
             if (ScriptNode_EditorVM.pointerTracker == null || !ScriptNode_EditorVM.pointerTracker.IsActive())
             {
                 ScriptNode_EditorVM.pointerTracker = new cweeTimer(0.1, () => {
-                    Point p = new Point(-1,-1);
+                    Point p = new Point(-1, -1);
                     Rect B = new Rect();
                     if (ScriptNode_EditorVM.pointerPositionLock.TryIncrementTo(1))
                     {
                         var job1 = EdmsTasks.InsertJob(() => {
                             try {
                                 Point? pp = Window.Current?.CoreWindow?.PointerPosition;
-                                if (pp.HasValue) { 
-                                    p.X = pp.Value.X; 
+                                if (pp.HasValue) {
+                                    p.X = pp.Value.X;
                                     p.Y = pp.Value.Y;
                                     B = Window.Current.Bounds;
                                 }
@@ -912,35 +907,6 @@ namespace UWP_WaterWatch.Custom_Controls
 
         private bool IsPressed(VirtualKey key) {
             return ((Window.Current.CoreWindow.GetKeyState(key) & Windows.UI.Core.CoreVirtualKeyStates.Down) == CoreVirtualKeyStates.Down);
-        }    
-        private ScriptingNode FindNodeUnderCarot(int charNum) {
-            List<ScriptingNode> foundNodes = new List<ScriptingNode>();
-            if (vm.MostRecentParsedNodes != null && charNum >= 0) {
-
-                    for (int i = vm.MostRecentParsedNodes.Count - 1; i >= 0; i--)
-                    {
-                        if (vm.MostRecentParsedNodes[i].startColumn_get() <= charNum && vm.MostRecentParsedNodes[i].endColumn_get() >= charNum)
-                        {
-                            if (
-                            vm.MostRecentParsedNodes[i].type_get() == WaterWatchEnums.ScriptNodeType.File ||
-                            vm.MostRecentParsedNodes[i].type_get() == WaterWatchEnums.ScriptNodeType.Noop) 
-                            continue;
-                            if (
-                            vm.MostRecentParsedNodes[i].type_get() == WaterWatchEnums.ScriptNodeType.Id) { foundNodes = new List<ScriptingNode>(); }
-                            foundNodes.Add(vm.MostRecentParsedNodes[i]);
-                        }
-                    }
-
-                    if (foundNodes.Count > 0)
-                    {
-                        return foundNodes[0];
-                    }
-                    else return null;
-            }
-            else
-            {
-                return null;
-            }
         }
 
         class FunctionTipManager
@@ -971,7 +937,7 @@ namespace UWP_WaterWatch.Custom_Controls
                         List<FrameworkElement> elements = new List<FrameworkElement>();
                         bool doOnce = true;
                         _bestMatch = "";
-                        var ordered = orig_functions.OrderBy((string x)=> { string comp = x.ToLower(); if (comp.CompareTo("A") < 0) { comp = "z" + comp; } return comp; });
+                        var ordered = orig_functions.OrderBy((string x) => { string comp = x.ToLower(); if (comp.CompareTo("A") < 0) { comp = "z" + comp; } return comp; });
                         if (ordered != null)
                         {
                             foreach (var func in ordered)
@@ -991,7 +957,7 @@ namespace UWP_WaterWatch.Custom_Controls
                         var where = orig_functions.Where((string f) => { return f.StartsWith(written); });
                         if (where != null)
                         {
-                            var ordered = where.OrderBy((string x) => { string comp = x.ToLower(); if (comp.CompareTo("A")<0) { comp = "z" + comp; } return comp; });
+                            var ordered = where.OrderBy((string x) => { string comp = x.ToLower(); if (comp.CompareTo("A") < 0) { comp = "z" + comp; } return comp; });
                             if (ordered != null)
                             {
 
@@ -1019,79 +985,323 @@ namespace UWP_WaterWatch.Custom_Controls
         }
 
 
-        private void HideAllFunctionTips() {
-            if (thisTip != null) {
-                thisTip.IsOpen = false;
-                thisTip.Target = null;
-                if (
-                    (vm.ParentVM.ParentVM.workspace != null) 
-                    && 
-                    (vm.ParentVM.ParentVM.workspace.vm.canvas.Children.Contains(thisTip))
-                )
-                {
-                    vm.ParentVM.ParentVM.workspace.vm.canvas.Children.Remove(thisTip);
-                }
-            }
-        }
-        private FunctionTipManager GetOpenFunctionTipManager()
-        {
-            if (thisTip != null && thisTip.Tag is FunctionTipManager)
-            {
-                if (thisTip.IsOpen)
-                {
-                    return thisTip.Tag as FunctionTipManager;
-                }
-            }
-            return null;
-        }
-        private TeachingTip CreateFunctionTip(UIElement content, FunctionTipManager ftm, string Title = null, string Subtitle = null) {
-            thisTip.Tag = ftm;
-            thisTip.Target = this; // .Editor;// was this
-            thisTip.PreferredPlacement = TeachingTipPlacementMode.Bottom;
-            thisTip.IsLightDismissEnabled = false;
-            thisTip.AllowFocusOnInteraction = false;
-            thisTip.HeroContent = content;
-            
-            if (!string.IsNullOrEmpty(Title)) { thisTip.Title = Title; }
-            if (!string.IsNullOrEmpty(Subtitle)) { thisTip.Subtitle = Subtitle; }
+        //private void HideAllFunctionTips() {
+        //    if (thisTip != null) {
+        //        thisTip.IsOpen = false;
+        //        thisTip.Target = null;
+        //        if (
+        //            (vm.ParentVM.ParentVM.workspace != null)
+        //            &&
+        //            (vm.ParentVM.ParentVM.workspace.vm.canvas.Children.Contains(thisTip))
+        //        )
+        //        {
+        //            vm.ParentVM.ParentVM.workspace.vm.canvas.Children.Remove(thisTip);
+        //        }
+        //    }
+        //}
+        //private FunctionTipManager GetOpenFunctionTipManager()
+        //{
+        //    if (thisTip != null && thisTip.Tag is FunctionTipManager)
+        //    {
+        //        if (thisTip.IsOpen)
+        //        {
+        //            return thisTip.Tag as FunctionTipManager;
+        //        }
+        //    }
+        //    return null;
+        //}
+        //private TeachingTip CreateFunctionTip(UIElement content, FunctionTipManager ftm, string Title = null, string Subtitle = null) {
+        //    thisTip.Tag = ftm;
+        //    thisTip.Target = this; // .Editor;// was this
+        //    thisTip.PreferredPlacement = TeachingTipPlacementMode.Bottom;
+        //    thisTip.IsLightDismissEnabled = false;
+        //    thisTip.AllowFocusOnInteraction = false;
+        //    thisTip.HeroContent = content;
 
-            if (!vm.ParentVM.ParentVM.workspace.vm.canvas.Children.Contains(thisTip)) {
-                vm.ParentVM.ParentVM.workspace.vm.canvas.Children.Add(thisTip);                
-            }
-            thisTip.Closed += (TeachingTip sender, TeachingTipClosedEventArgs args)=>{
-                sender.Target = null;
-            };
-            thisTip.IsOpen = true;
+        //    if (!string.IsNullOrEmpty(Title)) { thisTip.Title = Title; }
+        //    if (!string.IsNullOrEmpty(Subtitle)) { thisTip.Subtitle = Subtitle; }
 
-            return thisTip;
-        }
+        //    if (!vm.ParentVM.ParentVM.workspace.vm.canvas.Children.Contains(thisTip)) {
+        //        vm.ParentVM.ParentVM.workspace.vm.canvas.Children.Add(thisTip);
+        //    }
+        //    thisTip.Closed += (TeachingTip sender, TeachingTipClosedEventArgs args) => {
+        //        sender.Target = null;
+        //    };
+        //    thisTip.IsOpen = true;
 
-        private TeachingTip thisTip = new TeachingTip();
+        //    return thisTip;
+        //}
+
+        // private TeachingTip thisTip = new TeachingTip();
         // private AtomicInt thisTipLock = new AtomicInt(0);
+
+
+
+
+
+
+
+
+
+        public class cweeTipFlyout : Flyout
+        {
+            public int startingPosition = int.MinValue;
+            public int currentPosition = int.MaxValue;
+
+
+            public bool preventsClosing = false;
+            public object Tag = null;
+
+
+            public List<string> orig_functions;
+
+            private string _bestMatch = "";
+
+            public string written = "";
+            public string TypeHint = "";
+            public ListView tips = new ListView()
+            {
+                AllowFocusOnInteraction = false,
+                MaxHeight = 200,
+                Margin = new Thickness(5)
+            };
+
+            private FrameworkElement CreateFunctionTip(string func)
+            {
+                return cweeXamlHelper.SimpleTextBlock(func, HorizontalAlignment.Left);
+            }
+
+            public void UpdateTips()
+            {
+                if (orig_functions != null)
+                {
+                    if (string.IsNullOrEmpty(written))
+                    {
+                        // display all tips
+                        List<FrameworkElement> elements = new List<FrameworkElement>();
+                        bool doOnce = true;
+                        _bestMatch = "";
+                        var ordered = orig_functions.OrderBy((string x) => { string comp = x.ToLower(); if (comp.CompareTo("A") < 0) { comp = "z" + comp; } return comp; });
+                        if (ordered != null)
+                        {
+                            foreach (var func in ordered)
+                            {
+                                if (doOnce) { _bestMatch = func; doOnce = false; };
+                                elements.Add(CreateFunctionTip(func));
+                            }
+                        }
+                        tips.ItemsSource = elements;
+                    }
+                    else
+                    {
+                        // sort tips based on whats written so far
+                        List<FrameworkElement> elements = new List<FrameworkElement>();
+                        bool doOnce = true;
+                        _bestMatch = "";
+                        var where = orig_functions.Where((string f) => { return f.StartsWith(written); });
+                        if (where != null)
+                        {
+                            var ordered = where.OrderBy((string x) => { string comp = x.ToLower(); if (comp.CompareTo("A") < 0) { comp = "z" + comp; } return comp; });
+                            if (ordered != null)
+                            {
+
+                                foreach (var func in ordered)
+                                {
+                                    if (doOnce) { _bestMatch = func; doOnce = false; };
+                                    elements.Add(CreateFunctionTip(func));
+                                }
+                            }
+                        }
+                        tips.ItemsSource = elements;
+                    }
+                }
+            }
+
+            public bool HasRecommendations()
+            {
+                return tips.Items.Count > 0;
+            }
+
+            public string GetCurrentMatch()
+            {
+                return _bestMatch;
+            }
+        }
+
+
+
+
+
+
+
+
+        public static cweeTipFlyout SetTipFlyout(CodeEditorControl obj, Point? position = null)
+        {
+            cweeTipFlyout toFly = null;
+            if (obj.ContextFlyout != null && obj.ContextFlyout is cweeTipFlyout) {
+                toFly = obj.ContextFlyout as cweeTipFlyout;
+            }
+            if (toFly != null) {
+                if (toFly.startingPosition > (int)obj.Editor.CurrentPos || obj.Editor.CurrentPos > (int)(toFly.currentPosition + 1))
+                {
+                    toFly = null;
+                }
+            } 
+
+            if (toFly == null) {
+                toFly = new cweeTipFlyout();
+                toFly.startingPosition = (int)obj.Editor.CurrentPos;                
+                toFly.Placement = Windows.UI.Xaml.Controls.Primitives.FlyoutPlacementMode.BottomEdgeAlignedLeft;
+                toFly.ShowMode = Windows.UI.Xaml.Controls.Primitives.FlyoutShowMode.TransientWithDismissOnPointerMoveAway;
+                toFly.LightDismissOverlayMode = LightDismissOverlayMode.Off;
+                toFly.AllowFocusWhenDisabled = false;
+                toFly.AllowFocusOnInteraction = false;
+                toFly.OverlayInputPassThroughElement = obj;
+
+                obj.ContextFlyout = toFly;
+            }
+
+            if (!toFly.IsOpen)
+            {
+                UIElement content = null; // WHAT TO DRAW
+                {
+                    // draw it...?
+                    content = new Grid() {
+                        MinHeight = 20
+                        , MinWidth = 20
+                        , Background = new SolidColorBrush(Color.FromArgb(255, (byte)WaterWatch.RandomInt(0,255), (byte)WaterWatch.RandomInt(0, 255), (byte)WaterWatch.RandomInt(0, 255)))
+                        , BorderBrush = new SolidColorBrush(Color.FromArgb(255, 0, 0, 0))
+                        , BorderThickness = new Thickness(1)
+                        , Margin = new Thickness(0)
+                        , Padding = new Thickness(0)
+                    };
+                }
+
+                toFly.Content = content;
+                toFly.ShowAt(obj, new Windows.UI.Xaml.Controls.Primitives.FlyoutShowOptions()
+                {
+                    ShowMode = Windows.UI.Xaml.Controls.Primitives.FlyoutShowMode.TransientWithDismissOnPointerMoveAway,
+                    Placement = Windows.UI.Xaml.Controls.Primitives.FlyoutPlacementMode.BottomEdgeAlignedLeft,
+                    Position = position
+                });
+            }
+            toFly.currentPosition = (int)obj.Editor.CurrentPos;
+            return obj.ContextFlyout as cweeTipFlyout;
+        }
+        public static void CloseTipFlyout(CodeEditorControl obj) {
+            cweeTipFlyout toFly = null;
+            if (obj.ContextFlyout != null && obj.ContextFlyout is cweeTipFlyout)
+            {
+                toFly = obj.ContextFlyout as cweeTipFlyout;
+            }
+            if (toFly != null) {
+                toFly.Hide();
+            }
+        }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
         public static AtomicInt Is_Processing_KeyDown = new AtomicInt();
         private void Editor_PreviewKeyDown(object sender, KeyRoutedEventArgs e)
         {
             Is_Processing_KeyDown.Increment();
             try
-            {
-                var ftm = GetOpenFunctionTipManager();
-                if (ftm != null && ftm.AssociatedScriptNode != vm.ParentVM.uniqueName)
-                {
-                    HideAllFunctionTips();
-                }
-
+            {             
                 int keyCode = (int)e.Key;
                 try
                 {
                     CodeEditorControl tb = sender as CodeEditorControl;
+                    int currentPosition = (int)tb.Editor.CurrentPos;
 
+                    if (currentPosition >= 0)
+                    {
+                        var nodes = FindNodesAtPosition(Math.Max(0, currentPosition - 1), true);
+                        if (nodes != null && nodes.Count > 0)
+                        {
+                            var node = nodes[0];
+                            if (node != null && node.type_get() != WaterWatchEnums.ScriptNodeType.Constant)
+                            {
+                                string typeHint = node.typeHint_get();
+                                string nodeText = node.text_get();
+                                if (!string.IsNullOrEmpty(typeHint))
+                                {
+                                    if (((char)keyCode).IsAlpha())
+                                    { // writing an ID of some type (probably...)
+                                        SetTipFlyout(tb, new Point(tb.Editor.PointXFromPosition(currentPosition), 24 + tb.Editor.PointYFromPosition(currentPosition)));
+                                        return;
+                                    }
+                                    else if (e.Key == VirtualKey.Decimal || ((int)(0xBE) == keyCode))
+                                    { // accessing the functions from the previous ID (probably... could be a number!) // in almost all contexts, this will be a new flyout, and not an extension of a previous one.
+                                        CloseTipFlyout(tb);
+                                        SetTipFlyout(tb, new Point(tb.Editor.PointXFromPosition(currentPosition), 24 + tb.Editor.PointYFromPosition(currentPosition)));
+                                        return;
+                                    }
+                                    else if (e.Key == VirtualKey.Enter)
+                                    { // Accept the function tip if it is open. 
+                                        // ... todo
+                                        CloseTipFlyout(tb);
+                                        return;
+                                    }
+                                    else
+                                    {
+                                        CloseTipFlyout(tb);
+                                        return;
+                                    }
+                                }
+                                else
+                                {
+                                    // SetTipFlyout(tb, new Point(tb.Editor.PointXFromPosition(currentPosition), 24 + tb.Editor.PointYFromPosition(currentPosition)));
+                                    //return;
+                                }
+                            }
+                        }
+                        else
+                        {
+                            if (((char)keyCode).IsAlpha())
+                            { // writing an ID of some type (probably...)
+                                SetTipFlyout(tb, new Point(tb.Editor.PointXFromPosition(currentPosition), 24 + tb.Editor.PointYFromPosition(currentPosition)));
+                                return;
+                            }
+                        }
+                    }
+                    CloseTipFlyout(tb);
+
+
+
+
+
+
+
+
+
+
+
+
+
+                    /*
 
                     if (e.Key == VirtualKey.Delete || e.Key == VirtualKey.Back) {
                         HideAllFunctionTips();
                     }
                     if (e.Key == VirtualKey.Enter) {
-#if false
+#if true
                         if (ftm != null)
                         {
                             List<string> ParamNames = new List<string>();
@@ -1122,7 +1332,11 @@ namespace UWP_WaterWatch.Custom_Controls
 
                             HideAllFunctionTips();
                             e.Handled = true;
-                            tb.Document.Selection.TypeText(toWrite);
+
+                            Editor.Editor.InsertText((int)Editor.Editor.CurrentPos, toWrite);
+
+                            // tb.Document.Selection.TypeText(toWrite);
+
                             return;
                         }
 #endif
@@ -1134,73 +1348,90 @@ namespace UWP_WaterWatch.Custom_Controls
                         if (IsPressed(VirtualKey.X)) HideAllFunctionTips();                        
                         if (IsPressed(VirtualKey.C)) HideAllFunctionTips();
                     }
-                    if (IsPressed(VirtualKey.Shift)) {   
-                        
-                    }
-                    if (e.Key == VirtualKey.Tab) HideAllFunctionTips();
-                    
-                    if (e.Key == VirtualKey.Decimal || ((int)(0xBE) == keyCode)) {
-                        return;
-#if false
+                    if (IsPressed(VirtualKey.Shift)) {}
+                     if (e.Key == VirtualKey.Tab) HideAllFunctionTips();
 
-                        // do we have an existing parse?
-                        if (vm.MostRecentParsedNodes != null)
-                        {
-                            int position = tb.TextDocument.Selection.StartPosition;
-                            var node = FindNodeUnderCarot(position);
-                            if (node != null)
+
+
+
+                    if (e.Key == VirtualKey.Decimal || ((int)(0xBE) == keyCode)) {      
+                        
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                        int currentPosition = (int)Editor.Editor.CurrentPos;
+                        if (currentPosition >= 1) {
+                            var nodes = FindNodesAtPosition(currentPosition - 1, true);
+                            if (nodes != null && nodes.Count > 0)
                             {
-                                string typeHint = node.typeHint_get();
-                                string nodeText = node.text_get();
-                                if (!string.IsNullOrEmpty(typeHint))
+                                var node = nodes[0];
+                                if (node != null && node.type_get() != WaterWatchEnums.ScriptNodeType.Constant && !string.IsNullOrEmpty(node.typeHint_get())) 
                                 {
-                                    EdmsTasks.InsertJob(() =>
-                                    {
-                                        List<string> funcs = vm.ParentVM.ParentVM.engine.CompatibleFunctions(typeHint);
-                                        if (funcs.Count > 0)
-                                        {
-                                            EdmsTasks.InsertJob(() =>
-                                            {
-                                                HideAllFunctionTips();
-                                                ftm = new FunctionTipManager() { orig_functions = funcs, written = "", AssociatedScriptNode = vm.ParentVM.uniqueName, TypeHint = typeHint };
-                                                ftm.UpdateTips();
-                                                var TeachingTip = CreateFunctionTip(ftm.tips, ftm, typeHint);
-                                            }, true, true);
-                                        }
-                                    }, false);
-                                }
-                                else if (!string.IsNullOrEmpty(nodeText))
-                                {
-                                    if (node.type_get() == WaterWatchEnums.ScriptNodeType.Id)
+
+                                    string typeHint = node.typeHint_get();
+                                    string nodeText = node.text_get();
+                                    if (!string.IsNullOrEmpty(typeHint))
                                     {
                                         EdmsTasks.InsertJob(() =>
                                         {
-                                            List<string> funcs = vm.ParentVM.ParentVM.engine.CompatibleFunctions(nodeText);
-
+                                            List<string> funcs = vm.ParentVM.ParentVM.engine.CompatibleFunctions(typeHint);
                                             if (funcs.Count > 0)
                                             {
                                                 EdmsTasks.InsertJob(() =>
                                                 {
                                                     HideAllFunctionTips();
-                                                    ftm = new FunctionTipManager() { orig_functions = funcs, written = "", AssociatedScriptNode = vm.ParentVM.uniqueName, TypeHint = node.text_get() };
+                                                    ftm = new FunctionTipManager() { orig_functions = funcs, written = "", AssociatedScriptNode = vm.ParentVM.uniqueName, TypeHint = typeHint };
                                                     ftm.UpdateTips();
-                                                    var TeachingTip = CreateFunctionTip(ftm.tips, ftm, nodeText);
+                                                    var TeachingTip = CreateFunctionTip(ftm.tips, ftm, typeHint);
                                                 }, true, true);
                                             }
                                         }, false);
                                     }
+                                    else if (!string.IsNullOrEmpty(nodeText))
+                                    {
+                                        if (node.type_get() == WaterWatchEnums.ScriptNodeType.Id)
+                                        {
+                                            EdmsTasks.InsertJob(() =>
+                                            {
+                                                List<string> funcs = vm.ParentVM.ParentVM.engine.CompatibleFunctions(nodeText);
+
+                                                if (funcs.Count > 0)
+                                                {
+                                                    EdmsTasks.InsertJob(() =>
+                                                    {
+                                                        HideAllFunctionTips();
+                                                        ftm = new FunctionTipManager() { orig_functions = funcs, written = "", AssociatedScriptNode = vm.ParentVM.uniqueName, TypeHint = node.text_get() };
+                                                        ftm.UpdateTips();
+                                                        var TeachingTip = CreateFunctionTip(ftm.tips, ftm, nodeText);
+                                                    }, true, true);
+                                                }
+                                            }, false);
+                                        }
+                                    }
+
+
+                                    // WaterWatch.SubmitToast($"Carot: {currentPosition}", node.typeHint_get());
                                 }
 
                             }
                         }
-#endif
                     }
+
+*/
                 }
                 catch (Exception) { }
-                finally
-                {
-                    //prevScriptLock.Decrement();
-                }
+                finally { }
             }
             catch (Exception) { }
             finally
@@ -1210,6 +1441,7 @@ namespace UWP_WaterWatch.Custom_Controls
 
         }
 
+        /*
         private void Editor_CharacterReceived(UIElement sender, CharacterReceivedRoutedEventArgs args)
         {
             Is_Processing_KeyDown.Increment();
@@ -1264,11 +1496,10 @@ namespace UWP_WaterWatch.Custom_Controls
                 Is_Processing_KeyDown.Decrement();
             }
         }
-
+        */
 
 
         int defaultZoom;
-
         static public string DelineatedString(List<string> list)
         {
             string toReturn = "";
@@ -1369,10 +1600,10 @@ namespace UWP_WaterWatch.Custom_Controls
             DoTextChanging(true, true, "Created a new node.");            
         }
 
-        private List<ScriptingNode> FindNodesAtPosition(int charNum)
+        private List<ScriptingNode> FindNodesAtPosition(int charNum, bool NoError = false)
         {
             List<ScriptingNode> foundNodes = new List<ScriptingNode>();
-            var prevNodes = vm.MostRecentParsedNodes;
+            var prevNodes = NoError ? vm.MostRecentParsedNodes_NoError : vm.MostRecentParsedNodes;
             if (prevNodes != null && charNum >= 0)
             {
 
@@ -1400,6 +1631,15 @@ namespace UWP_WaterWatch.Custom_Controls
             {
                 return null;
             }
+        }
+
+        private int FindFirstDeviationBetweenCurrentScriptAndValidScript() {
+            string currentText = CodeEditorControlExtension.GetPlainText(this.Editor);
+            string noErrorText = vm.MostRecentParsedScript_NoError;
+
+            int err = currentText.CompareTo(noErrorText);
+
+            return err;
         }
 
         private Grid ReviewNodeList(List<ScriptingNode> nodes) {
@@ -2237,10 +2477,11 @@ namespace UWP_WaterWatch.Custom_Controls
                         if (!WasWarning || vm.MostRecentParsedNodes == null)
                         {
                             vm.MostRecentParsedNodes = list;
+                            vm.MostRecentParsedNodes_NoError = list;
+                            vm.MostRecentParsedScript_NoError = whatGotParsed;
+
                             vm.errorManager.RemoveWarning(-1);
                             if (wasSuccessful) { vm.errorManager.RemoveWarning(-2); }                            
-
-                            // wasSuccessful = true;
 
                             EdmsTasks.InsertJob(() => {
                                 return DoFormattingActual(whatGotParsed, WasWarning, SuccessfulOutputString, wasSuccessful);
@@ -2250,16 +2491,17 @@ namespace UWP_WaterWatch.Custom_Controls
                         }
                         else
                         {
-                            for (int n = vm.MostRecentParsedNodes.Count - 1; n >= 0; n--)
-                            {
-                                var Node = vm.MostRecentParsedNodes[n];
-                                if (Node.type_get() == WaterWatchEnums.ScriptNodeType.Error)
-                                {
-                                    vm.MostRecentParsedNodes.RemoveAt(n);
-                                }
-                            }
-                            vm.MostRecentParsedNodes.AddRange(list);
-                            list = vm.MostRecentParsedNodes;
+                            var L = vm.MostRecentParsedNodes;
+                            list.InsertRange(0, L);
+                            //for (int n = 0; n < L.Count; n--)
+                            //{
+                            //    var Node = L[n];
+                            //    if (Node.type_get() != WaterWatchEnums.ScriptNodeType.Error)
+                            //    {
+                            //        list.Insert(n, Node);
+                            //    }
+                            //}
+                            vm.MostRecentParsedNodes = list;
 
                             EdmsTasks.InsertJob(() => {
                                 return DoFormattingActual(whatGotParsed, WasWarning, warningMessage, wasSuccessful);
