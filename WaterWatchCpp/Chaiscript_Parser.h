@@ -3198,7 +3198,8 @@ namespace chaiscript {
                                                     node->children[0]->potentialReturnType = node->potentialReturnType;
 
                                                     // node->children[0]->potentialReturnType.ForwardRef(node->potentialReturnType);
-                                                    // node->potentialReturnType = ReturnType(params[0], node->identifier, true);      
+                                                    // node->potentialReturnType = ReturnType(params[0], node->identifier, true);    
+
                                                     successfulParse = true;
                                                     break;
                                                 }
@@ -3385,42 +3386,54 @@ namespace chaiscript {
 
 
                         const chaiscript::detail::Dispatch_Engine* thisEngine = get_engine();
-                        if (thisEngine) {
-                            std::map<std::string, ReturnType> IdsToProbableTypes;
-                            // go through and try to evaluate the unknown items
+                        std::map<std::string, ReturnType> IdsToProbableTypes;
+                        // for (int TryParseIterations = 0; TryParseIterations < 2; TryParseIterations++) 
+                        {
+                            if (thisEngine) {
+                                std::map<std::string, ReturnType> IdsToProbableTypes;
+                                // go through and try to evaluate the unknown items
 
-                            for (auto& node : m_match_stack) {
-                                TryParseReturnType(node, AST_Node_Type::Postfix, thisEngine, &IdsToProbableTypes); // post-fixes are often literals attached with strings that can be processed
-                            }
-                            for (auto& node : m_match_stack) {
-                                // NOTE THAT THESE ARG LISTS CAN BE WRONG DUE TO DOT ACCESS RE-ORDERING (I.e. first arg not being included in arg list)
-                                TryParseReturnType(node, AST_Node_Type::Fun_Call, thisEngine, &IdsToProbableTypes); // function calls are often stand-alone or with an arg_list.
-                            }
-                            for (auto& node : m_match_stack) {
-                                TryParseReturnType(node, AST_Node_Type::Dot_Access, thisEngine, &IdsToProbableTypes); // dot-calls are always second to an previous result
-                                TryParseReturnType(node, AST_Node_Type::Id, thisEngine, &IdsToProbableTypes);
-                                TryParseReturnType(node, AST_Node_Type::Array_Call, thisEngine, &IdsToProbableTypes);
-                            }
+                                for (auto& node : m_match_stack) {
+                                    TryParseReturnType(node, AST_Node_Type::Postfix, thisEngine, &IdsToProbableTypes); // post-fixes are often literals attached with strings that can be processed
+                                }
+                                for (auto& node : m_match_stack) {
+                                    // NOTE THAT THESE ARG LISTS CAN BE WRONG DUE TO DOT ACCESS RE-ORDERING (I.e. first arg not being included in arg list)
+                                    TryParseReturnType(node, AST_Node_Type::Fun_Call, thisEngine, &IdsToProbableTypes); // function calls are often stand-alone or with an arg_list.
+                                }
+                                for (auto& node : m_match_stack) {
+                                    TryParseReturnType(node, AST_Node_Type::Dot_Access, thisEngine, &IdsToProbableTypes); // dot-calls are always second to an previous result
+                                    TryParseReturnType(node, AST_Node_Type::Id, thisEngine, &IdsToProbableTypes);
+                                    TryParseReturnType(node, AST_Node_Type::Array_Call, thisEngine, &IdsToProbableTypes);
+                                }
 
 
 
-                            /*
+                                /*
 
-                            for (auto& node : m_match_stack) {
-                                TryParseReturnType(node, AST_Node_Type::Assign_Retroactively, thisEngine); 
+                                for (auto& node : m_match_stack) {
+                                    TryParseReturnType(node, AST_Node_Type::Assign_Retroactively, thisEngine);
+                                }
+                                for (auto& node : m_match_stack) {
+                                    TryParseReturnType(node, AST_Node_Type::Assign_Decl, thisEngine);
+                                }
+                                std::map<std::string, chaiscript::shared_ptr<chaiscript::shared_ptr<Type_Info>>> IdsToProbableTypes;
+                                for (auto& node : m_match_stack) {
+                                    TryParseReturnType(node, AST_Node_Type::Id, thisEngine, &IdsToProbableTypes);
+                                }
+                                for (auto& node : m_match_stack) {
+                                    TryParseReturnType(node, AST_Node_Type::Array_Call, thisEngine);
+                                }
+                                */
                             }
-                            for (auto& node : m_match_stack) {
-                                TryParseReturnType(node, AST_Node_Type::Assign_Decl, thisEngine);
-                            }
-                            std::map<std::string, chaiscript::shared_ptr<chaiscript::shared_ptr<Type_Info>>> IdsToProbableTypes;
-                            for (auto& node : m_match_stack) {
-                                TryParseReturnType(node, AST_Node_Type::Id, thisEngine, &IdsToProbableTypes);
-                            }
-                            for (auto& node : m_match_stack) {
-                                TryParseReturnType(node, AST_Node_Type::Array_Call, thisEngine);
-                            }
-                            */
                         }
+
+                        // double-check fun_call types after everything to ensure they have their types specified from their IDs
+                        for (auto& node : m_match_stack) {
+                            if (node->identifier == AST_Node_Type::Fun_Call) {
+                                node->potentialReturnType.Set(node->children[0]->potentialReturnType);
+                            }
+                        }
+
 
 
                         auto i = m_comment_stack.rbegin();
