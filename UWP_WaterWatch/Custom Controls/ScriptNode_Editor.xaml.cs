@@ -909,134 +909,6 @@ namespace UWP_WaterWatch.Custom_Controls
             return ((Window.Current.CoreWindow.GetKeyState(key) & Windows.UI.Core.CoreVirtualKeyStates.Down) == CoreVirtualKeyStates.Down);
         }
 
-        class FunctionTipManager
-        {
-            public string AssociatedScriptNode = "";
-            public List<string> orig_functions;
-
-            private string _bestMatch = "";
-
-            public string written = "";
-            public string TypeHint = "";
-            public ListView tips = new ListView() {
-                AllowFocusOnInteraction = false,
-                MaxHeight = 200,
-                Margin = new Thickness(5)
-            };
-
-            private FrameworkElement CreateFunctionTip(string func) {
-                return cweeXamlHelper.SimpleTextBlock(func, HorizontalAlignment.Left);
-            }
-
-            public void UpdateTips() {
-                if (orig_functions != null)
-                {
-                    if (string.IsNullOrEmpty(written))
-                    {
-                        // display all tips
-                        List<FrameworkElement> elements = new List<FrameworkElement>();
-                        bool doOnce = true;
-                        _bestMatch = "";
-                        var ordered = orig_functions.OrderBy((string x) => { string comp = x.ToLower(); if (comp.CompareTo("A") < 0) { comp = "z" + comp; } return comp; });
-                        if (ordered != null)
-                        {
-                            foreach (var func in ordered)
-                            {
-                                if (doOnce) { _bestMatch = func; doOnce = false; };
-                                elements.Add(CreateFunctionTip(func));
-                            }
-                        }
-                        tips.ItemsSource = elements;
-                    }
-                    else
-                    {
-                        // sort tips based on whats written so far
-                        List<FrameworkElement> elements = new List<FrameworkElement>();
-                        bool doOnce = true;
-                        _bestMatch = "";
-                        var where = orig_functions.Where((string f) => { return f.StartsWith(written); });
-                        if (where != null)
-                        {
-                            var ordered = where.OrderBy((string x) => { string comp = x.ToLower(); if (comp.CompareTo("A") < 0) { comp = "z" + comp; } return comp; });
-                            if (ordered != null)
-                            {
-
-                                foreach (var func in ordered)
-                                {
-                                    if (doOnce) { _bestMatch = func; doOnce = false; };
-                                    elements.Add(CreateFunctionTip(func));
-                                }
-                            }
-                        }
-                        tips.ItemsSource = elements;
-                    }
-                }
-            }
-
-            public bool HasRecommendations() {
-                return tips.Items.Count > 0;
-            }
-
-            public string GetCurrentMatch()
-            {
-                return _bestMatch;
-            }
-
-        }
-
-
-        //private void HideAllFunctionTips() {
-        //    if (thisTip != null) {
-        //        thisTip.IsOpen = false;
-        //        thisTip.Target = null;
-        //        if (
-        //            (vm.ParentVM.ParentVM.workspace != null)
-        //            &&
-        //            (vm.ParentVM.ParentVM.workspace.vm.canvas.Children.Contains(thisTip))
-        //        )
-        //        {
-        //            vm.ParentVM.ParentVM.workspace.vm.canvas.Children.Remove(thisTip);
-        //        }
-        //    }
-        //}
-        //private FunctionTipManager GetOpenFunctionTipManager()
-        //{
-        //    if (thisTip != null && thisTip.Tag is FunctionTipManager)
-        //    {
-        //        if (thisTip.IsOpen)
-        //        {
-        //            return thisTip.Tag as FunctionTipManager;
-        //        }
-        //    }
-        //    return null;
-        //}
-        //private TeachingTip CreateFunctionTip(UIElement content, FunctionTipManager ftm, string Title = null, string Subtitle = null) {
-        //    thisTip.Tag = ftm;
-        //    thisTip.Target = this; // .Editor;// was this
-        //    thisTip.PreferredPlacement = TeachingTipPlacementMode.Bottom;
-        //    thisTip.IsLightDismissEnabled = false;
-        //    thisTip.AllowFocusOnInteraction = false;
-        //    thisTip.HeroContent = content;
-
-        //    if (!string.IsNullOrEmpty(Title)) { thisTip.Title = Title; }
-        //    if (!string.IsNullOrEmpty(Subtitle)) { thisTip.Subtitle = Subtitle; }
-
-        //    if (!vm.ParentVM.ParentVM.workspace.vm.canvas.Children.Contains(thisTip)) {
-        //        vm.ParentVM.ParentVM.workspace.vm.canvas.Children.Add(thisTip);
-        //    }
-        //    thisTip.Closed += (TeachingTip sender, TeachingTipClosedEventArgs args) => {
-        //        sender.Target = null;
-        //    };
-        //    thisTip.IsOpen = true;
-
-        //    return thisTip;
-        //}
-
-        // private TeachingTip thisTip = new TeachingTip();
-        // private AtomicInt thisTipLock = new AtomicInt(0);
-
-
-
 
 
 
@@ -1060,95 +932,13 @@ namespace UWP_WaterWatch.Custom_Controls
             }
 
             public string typeHint = "";
+
+            public ObservableCollection<UIElement> tipElements = new ObservableCollection<UIElement>();
+            public List<string> orig_functions;
         }
-
-
         public class cweeTipFlyout : Flyout
         {
             public cweeTipFlyoutViewModel vm = new cweeTipFlyoutViewModel();
-
-
-
-
-
-
-            public bool preventsClosing = false;
-            public object Tag = null;
-
-
-            public List<string> orig_functions;
-
-            private string _bestMatch = "";
-
-            
-            public string TypeHint = "";
-            public ListView tips = new ListView()
-            {
-                AllowFocusOnInteraction = false,
-                MaxHeight = 200,
-                Margin = new Thickness(5)
-            };
-
-            private FrameworkElement CreateFunctionTip(string func)
-            {
-                return cweeXamlHelper.SimpleTextBlock(func, HorizontalAlignment.Left);
-            }
-
-            public void UpdateTips()
-            {
-                if (orig_functions != null)
-                {
-                    if (string.IsNullOrEmpty(vm.written))
-                    {
-                        // display all tips
-                        List<FrameworkElement> elements = new List<FrameworkElement>();
-                        bool doOnce = true;
-                        _bestMatch = "";
-                        var ordered = orig_functions.OrderBy((string x) => { string comp = x.ToLower(); if (comp.CompareTo("A") < 0) { comp = "z" + comp; } return comp; });
-                        if (ordered != null)
-                        {
-                            foreach (var func in ordered)
-                            {
-                                if (doOnce) { _bestMatch = func; doOnce = false; };
-                                elements.Add(CreateFunctionTip(func));
-                            }
-                        }
-                        tips.ItemsSource = elements;
-                    }
-                    else
-                    {
-                        // sort tips based on whats written so far
-                        List<FrameworkElement> elements = new List<FrameworkElement>();
-                        bool doOnce = true;
-                        _bestMatch = "";
-                        var where = orig_functions.Where((string f) => { return f.StartsWith(vm.written); });
-                        if (where != null)
-                        {
-                            var ordered = where.OrderBy((string x) => { string comp = x.ToLower(); if (comp.CompareTo("A") < 0) { comp = "z" + comp; } return comp; });
-                            if (ordered != null)
-                            {
-
-                                foreach (var func in ordered)
-                                {
-                                    if (doOnce) { _bestMatch = func; doOnce = false; };
-                                    elements.Add(CreateFunctionTip(func));
-                                }
-                            }
-                        }
-                        tips.ItemsSource = elements;
-                    }
-                }
-            }
-
-            public bool HasRecommendations()
-            {
-                return tips.Items.Count > 0;
-            }
-
-            public string GetCurrentMatch()
-            {
-                return _bestMatch;
-            }
         }
 
 
@@ -1197,7 +987,7 @@ namespace UWP_WaterWatch.Custom_Controls
 
                 if (string.IsNullOrEmpty(typeHint)) { // NO TYPE KNOWN
                     if (!string.IsNullOrEmpty(currentWritten)) { // USER WROTE SOMETHING
-                        toFly.orig_functions = vm.ParentVM.engine.DoScript_Cast_VectorStrings($"\"{currentWritten}\".get_functions_that_start_with").OrderBy((string Y) => { string comp = Y.ToLower(); if (comp.CompareTo("A") < 0) { comp = "z" + comp; } return comp; }).ToList();
+                        toFly.vm.orig_functions = vm.ParentVM.engine.DoScript_Cast_VectorStrings($"\"{currentWritten}\".get_functions_that_start_with").OrderBy((string Y) => { string comp = Y.ToLower(); if (comp.CompareTo("A") < 0) { comp = "z" + comp; } return comp; }).ToList();
                     }
                     else {
                         // USER WROTE NOTHING
@@ -1206,10 +996,67 @@ namespace UWP_WaterWatch.Custom_Controls
                     }
                 }
                 else { // KNOWN/SUSPECTED TYPE
-                    toFly.orig_functions = vm.ParentVM.engine.DoScript_Cast_VectorStrings($"\"{typeHint}\".get_compatible_functions.keys").OrderBy((string Y) => { string comp = Y.ToLower(); if (comp.CompareTo("A") < 0) { comp = "z" + comp; } return comp; }).ToList();
+                    toFly.vm.orig_functions = vm.ParentVM.engine.DoScript_Cast_VectorStrings($"\"{typeHint}\".get_compatible_functions.keys").OrderBy((string Y) => { string comp = Y.ToLower(); if (comp.CompareTo("A") < 0) { comp = "z" + comp; } return comp; }).ToList();
                 }
 
                 obj.ContextFlyout = toFly;
+
+                toFly.vm.tipElements = new ObservableCollection<UIElement>();
+                foreach (var w in toFly.vm.orig_functions)
+                {
+                    string y = w;
+                    var tb = cweeXamlHelper.SimpleTextBlock(y);
+                    {
+                        tb.Padding = new Thickness(0);
+                        tb.Margin = new Thickness(0);
+                    }
+                    toFly.vm.tipElements.Add(tb);
+                }
+
+
+                Grid content = null;
+                {
+                    content = new Grid()
+                    {
+                        MinHeight = 20
+                        , MinWidth = 20
+                        , BorderBrush = new SolidColorBrush(Color.FromArgb(255, 0, 0, 0))
+                        , BorderThickness = new Thickness(1)
+                        , Margin = new Thickness(0)
+                        , Padding = new Thickness(0)
+                    };
+                }
+                ListView p = new ListView()
+                {
+                    HorizontalContentAlignment = HorizontalAlignment.Left,
+                    VerticalContentAlignment = VerticalAlignment.Center,
+                    ItemContainerStyle = cweeXamlHelper.StaticStyleResource("cweeListViewSimpleItemStyle"),
+                    HorizontalAlignment = HorizontalAlignment.Left,
+                    Padding = new Thickness(0, 0, 0, 0),
+                    Margin = new Thickness(0),
+                    MaxHeight = 500,
+                    MaxWidth = 400
+                };
+                p.ItemsSource = toFly.vm.tipElements;
+                content.Children.Add(p);
+
+                toFly.Content = content;
+
+
+
+
+                for (int i = toFly.vm.tipElements.Count - 1; i >=0; i--)
+                {
+                    UIElement contained = toFly.vm.tipElements[i];
+                    var f = cweeXamlHelper.GetTextFromContainers(contained);
+                    if (f.StartsWith(currentWritten) || string.IsNullOrEmpty(currentWritten)) {
+                        continue;
+                    }
+                    else
+                    {
+                        toFly.vm.tipElements.RemoveAt(i);
+                    }
+                }
             }
             else
             {
@@ -1231,52 +1078,68 @@ namespace UWP_WaterWatch.Custom_Controls
                     CloseTipFlyout(obj);
                     return;
                 }
-            }
 
-            toFly.orig_functions = toFly.orig_functions.Where((string f) => { return f.StartsWith(currentWritten) || string.IsNullOrEmpty(currentWritten); }).ToList();
-
-            Grid content = null;
-            {
-                content = new Grid()
+                if (characterAdded == '\b')
                 {
-                    MinHeight = 20
-                    ,
-                    MinWidth = 20
-                    //, Background = new SolidColorBrush(Color.FromArgb(255, (byte)WaterWatch.RandomInt(0, 255), (byte)WaterWatch.RandomInt(0, 255), (byte)WaterWatch.RandomInt(0, 255)))
-                    ,
-                    BorderBrush = new SolidColorBrush(Color.FromArgb(255, 0, 0, 0))
-                    ,
-                    BorderThickness = new Thickness(1)
-                    ,
-                    Margin = new Thickness(0)
-                    ,
-                    Padding = new Thickness(0)
-                };
+                    // re-make the tipelements
+
+                    toFly.vm.tipElements = new ObservableCollection<UIElement>();
+                    foreach (var w in toFly.vm.orig_functions)
+                    {
+                        string y = w;
+                        var tb = cweeXamlHelper.SimpleTextBlock(y);
+                        {
+                            tb.Padding = new Thickness(0);
+                            tb.Margin = new Thickness(0);
+                        }
+                        toFly.vm.tipElements.Add(tb);
+                    }
+
+
+                    Grid content = null;
+                    {
+                        content = new Grid()
+                        {
+                            MinHeight = 20
+                            , MinWidth = 20
+                            , BorderBrush = new SolidColorBrush(Color.FromArgb(255, 0, 0, 0))
+                            , BorderThickness = new Thickness(1)
+                            , Margin = new Thickness(0)
+                            , Padding = new Thickness(0)
+                        };
+                    }
+                    ListView p = new ListView()
+                    {
+                        HorizontalContentAlignment = HorizontalAlignment.Left,
+                        VerticalContentAlignment = VerticalAlignment.Center,
+                        ItemContainerStyle = cweeXamlHelper.StaticStyleResource("cweeListViewSimpleItemStyle"),
+                        HorizontalAlignment = HorizontalAlignment.Left,
+                        Padding = new Thickness(0, 0, 0, 0),
+                        Margin = new Thickness(0),
+                        MaxHeight = 500,
+                        MaxWidth = 400
+                    };
+                    p.ItemsSource = toFly.vm.tipElements;
+                    content.Children.Add(p);
+
+                    toFly.Content = content;
+
+                }
+
+                for (int i = toFly.vm.tipElements.Count - 1; i >= 0; i--)
+                {
+                    UIElement contained = toFly.vm.tipElements[i];
+                    var f = cweeXamlHelper.GetTextFromContainers(contained);
+                    if (f.StartsWith(currentWritten) || string.IsNullOrEmpty(currentWritten)) {
+                        continue;
+                    }
+                    else {
+                        toFly.vm.tipElements.RemoveAt(i);
+                    }
+                }
             }
 
-            ListView p = new ListView()
-            {
-                HorizontalContentAlignment = HorizontalAlignment.Left,
-                VerticalContentAlignment = VerticalAlignment.Center,
-                ItemContainerStyle = cweeXamlHelper.StaticStyleResource("cweeListViewSimpleItemStyle"),
-                HorizontalAlignment = HorizontalAlignment.Left,
-                Padding = new Thickness(10, 0, 5, 0),
-                Margin = new Thickness(0),
-                MaxHeight = 100,
-                MaxWidth = 400
-            };
-            List<UIElement> elements = new List<UIElement>();
-            foreach (var w in toFly.orig_functions)
-            {
-                string y = w;
-                elements.Add(cweeXamlHelper.SimpleTextBlock(y));
-            }
-            p.ItemsSource = elements;
-            content.Children.Add(p);
-                
-            toFly.Content = content;
-
-            if (elements.Count <= 0)
+            if (toFly.vm.tipElements.Count <= 0)
             {
                 CloseTipFlyout(obj);
                 return;
@@ -1291,6 +1154,19 @@ namespace UWP_WaterWatch.Custom_Controls
                     Position = position
                 });
             }
+        }
+        public static bool TipFlyoutVisible(CodeEditorControl obj)
+        {
+            cweeTipFlyout toFly = null;
+            if (obj.ContextFlyout != null && obj.ContextFlyout is cweeTipFlyout)
+            {
+                toFly = obj.ContextFlyout as cweeTipFlyout;
+            }
+            if (toFly != null)
+            {
+                return toFly.IsOpen;
+            }
+            return false;
         }
         public static void CloseTipFlyout(CodeEditorControl obj) {
             cweeTipFlyout toFly = null;
@@ -1312,19 +1188,18 @@ namespace UWP_WaterWatch.Custom_Controls
             }
             if (toFly != null)
             {
-                if (toFly.orig_functions.Count > 0) {
-                    string recommended = toFly.orig_functions[0];
+                if (toFly.vm.tipElements.Count > 0) {
+                    string recommended = cweeXamlHelper.GetTextFromContainers(toFly.vm.tipElements[0]);
                     if (toFly.vm.currentPosition == toFly.vm.startingPosition)
                     {
                         obj.Editor.InsertText(toFly.vm.startingPosition, recommended);
-                        // obj.Editor.CurrentPos += recommended.Length;
-                        obj.Editor.GotoPos(obj.Editor.CurrentPos + recommended.Length);
+                        obj.Editor.GotoPos(toFly.vm.currentPosition + recommended.Length);
                     }
                     else
                     {
                         obj.Editor.DeleteRange(toFly.vm.startingPosition, 1 + (toFly.vm.currentPosition - toFly.vm.startingPosition));
                         obj.Editor.InsertText(toFly.vm.startingPosition, recommended);
-                        obj.Editor.GotoPos(obj.Editor.CurrentPos + recommended.Length);
+                        obj.Editor.GotoPos(toFly.vm.currentPosition + recommended.Length);
                     }
                     
                     return true;
@@ -1354,6 +1229,15 @@ namespace UWP_WaterWatch.Custom_Controls
                     e.Handled = AcceptTipFlyout(tb);
                     CloseTipFlyout(tb);
                 }
+                if (e.Key == VirtualKey.Back)
+                {
+                    // SPECIAL CASE, IF THE FLYOUT IS VISIBLE
+                    if (TipFlyoutVisible(tb) && tb.Editor.CurrentPos > 0)
+                    {
+                        int currentPosition = (int)tb.Editor.CurrentPos;
+                        SetTipFlyout(tb, vm.ParentVM, currentPosition-1, '\b', null, new Point(tb.Editor.PointXFromPosition(currentPosition-1), 24 + tb.Editor.PointYFromPosition(currentPosition-1)));
+                    }
+                }
                 if (e.Key == VirtualKey.Up)
                 {
                     // HELP
@@ -1362,7 +1246,7 @@ namespace UWP_WaterWatch.Custom_Controls
                 {
                     // HELP
                 }
-                if (e.Key == VirtualKey.Space || e.Key == VirtualKey.Tab || e.Key == VirtualKey.Left || e.Key == VirtualKey.Right || e.Key == VirtualKey.Escape || e.Key == VirtualKey.Back || e.Key == VirtualKey.GoBack || e.Key == VirtualKey.Delete || e.Key == VirtualKey.Home || e.Key == VirtualKey.End)
+                if (e.Key == VirtualKey.Space || e.Key == VirtualKey.Tab || e.Key == VirtualKey.Left || e.Key == VirtualKey.Right || e.Key == VirtualKey.Escape || e.Key == VirtualKey.GoBack || e.Key == VirtualKey.Delete || e.Key == VirtualKey.Home || e.Key == VirtualKey.End)
                 {
                     CloseTipFlyout(tb);
                 }
