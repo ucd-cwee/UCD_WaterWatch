@@ -1974,7 +1974,14 @@ namespace UWP_WaterWatchLibrary
         }
         public static string Mid(this string orig, int startPosition, int length)
         {
-            return orig.Substring(startPosition, length);
+            if ((startPosition + length) >= orig.Length)
+            {
+                return orig.Substring(startPosition, orig.Length - startPosition);
+            }
+            else
+            {
+                return orig.Substring(startPosition, length);
+            }            
         }
         public static string Right(this string value, int maxLength)
         {
