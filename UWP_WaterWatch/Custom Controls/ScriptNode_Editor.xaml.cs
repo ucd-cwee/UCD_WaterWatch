@@ -1043,13 +1043,11 @@ namespace UWP_WaterWatch.Custom_Controls
                 toFly.Content = content;
 
 
-
-
                 for (int i = toFly.vm.tipElements.Count - 1; i >=0; i--)
                 {
                     UIElement contained = toFly.vm.tipElements[i];
                     var f = cweeXamlHelper.GetTextFromContainers(contained);
-                    if (f.StartsWith(currentWritten) || string.IsNullOrEmpty(currentWritten)) {
+                    if (f.StartsWith(currentWritten, StringComparison.InvariantCultureIgnoreCase) || string.IsNullOrEmpty(currentWritten)) {
                         continue;
                     }
                     else
@@ -1130,7 +1128,7 @@ namespace UWP_WaterWatch.Custom_Controls
                 {
                     UIElement contained = toFly.vm.tipElements[i];
                     var f = cweeXamlHelper.GetTextFromContainers(contained);
-                    if (f.StartsWith(currentWritten) || string.IsNullOrEmpty(currentWritten)) {
+                    if (f.StartsWith(currentWritten, StringComparison.InvariantCultureIgnoreCase) || string.IsNullOrEmpty(currentWritten)) {
                         continue;
                     }
                     else {
@@ -1287,18 +1285,35 @@ namespace UWP_WaterWatch.Custom_Controls
                             {
                                 if (node.type_get() != WaterWatchEnums.ScriptNodeType.Constant)
                                 {
-
                                     string typeHint = node.typeHint_get();
                                     if (string.IsNullOrEmpty(typeHint))
                                     {
-                                        // no clue what this is... free function? 
-                                        SetTipFlyout(tb, vm.ParentVM, currentPosition, keyCode, null, new Point(tb.Editor.PointXFromPosition(currentPosition), 24 + tb.Editor.PointYFromPosition(currentPosition)));
+                                        if (keyCode == '.')
+                                        {
+                                            // user entered '.' -- does this previous node at least have text?
+                                            string nodeText = node.text_get();
+                                            if (string.IsNullOrEmpty(nodeText)) {
+                                                // no clue... nothing to do.
+                                                CloseTipFlyout(tb);
+                                            }
+                                            else {
+                                                CloseTipFlyout(tb);
+                                                SetTipFlyout(tb, vm.ParentVM, currentPosition + 1, keyCode, nodeText, new Point(tb.Editor.PointXFromPosition(currentPosition), 24 + tb.Editor.PointYFromPosition(currentPosition)));
+                                            }
+                                        }
+                                        else
+                                        {
+                                            // no clue what this is... free function? 
+                                            SetTipFlyout(tb, vm.ParentVM, currentPosition, keyCode, null, new Point(tb.Editor.PointXFromPosition(currentPosition), 24 + tb.Editor.PointYFromPosition(currentPosition)));
+                                        }
                                     }
                                     else
                                     {
                                         if (keyCode == '.')
                                         { // accessing the functions from the previous ID (probably... could be a number!) // in almost all contexts, this will be a new flyout, and not an extension of a previous one.
                                             CloseTipFlyout(tb);
+                                            
+
                                             SetTipFlyout(tb, vm.ParentVM, currentPosition + 1, keyCode, typeHint, new Point(tb.Editor.PointXFromPosition(currentPosition), 24 + tb.Editor.PointYFromPosition(currentPosition)));
                                         }
                                         if (keyCode.IsAlphaNumeric())

@@ -397,23 +397,23 @@ namespace chaiscript {
 
             // Extern Data
             if(1) {
-                chaiscript::dispatch::Dynamic_Object o;
-                o["CreatePattern"] = chaiscript::var(chaiscript::fun([]() { return external_data->CreatePattern(); }));
-                o["SetPattern"] = chaiscript::var(chaiscript::fun([](int index, cweeUnitValues::cweeUnitPattern const& p) { external_data->SetPattern(index, p); return index; }));
-                o["GetPattern"] = chaiscript::var(chaiscript::fun([](int index) { return external_data->GetPatternRef(index); }));
-                o["DeletePattern"]  = chaiscript::var(chaiscript::fun([](int index) { return external_data->DeletePattern(index); }));
+                lib->add(chaiscript::user_type<cweeData>(), "external_data");
+                lib->add(chaiscript::fun([]()->cweeData* { return external_data.Get(); }), "external_data");
+                                
+                lib->AddFunction(, CreatePattern, , return dataOwner->CreatePattern(), cweeData* dataOwner);
+                lib->AddFunction(, SetPattern, , dataOwner->SetPattern(index, pat); return index; , cweeData* dataOwner, int index, cweeUnitValues::cweeUnitPattern const& pat);
+                lib->AddFunction(, GetPattern, , return dataOwner->GetPatternRef(index), cweeData* dataOwner, int index);
+                lib->AddFunction(, DeletePattern, , return dataOwner->DeletePattern(index), cweeData* dataOwner, int index);
 
-                o["CreateMatrix"] = chaiscript::var(chaiscript::fun([]() { return external_data->CreateMatrix(); }));
-                o["SetMatrix"] = chaiscript::var(chaiscript::fun([](int index, cweeInterpolatedMatrix<float> const& p) { external_data->SetMatrix(index, p); return index; }));
-                o["GetMatrix"] = chaiscript::var(chaiscript::fun([](int index) { return external_data->GetMatrixRef(index); }));
-                o["DeleteMatrix"] = chaiscript::var(chaiscript::fun([](int index) { return external_data->DeleteMatrix(index); }));
+                lib->AddFunction(, CreateMatrix, , return dataOwner->CreateMatrix(), cweeData* dataOwner);
+                lib->AddFunction(, SetMatrix, , dataOwner->SetMatrix(index, matrix); return index;, cweeData* dataOwner, int index, cweeInterpolatedMatrix<float> const& matrix);
+                lib->AddFunction(, GetMatrix, , return dataOwner->GetMatrixRef(index), cweeData* dataOwner, int index);
+                lib->AddFunction(, DeleteMatrix, , return dataOwner->DeleteMatrix(index), cweeData* dataOwner, int index);
 
-                o["CreateString"] = chaiscript::var(chaiscript::fun([]() { return external_data->CreateString(); }));
-                o["SetString"] = chaiscript::var(chaiscript::fun([](int index, cweeStr const& p) { *external_data->GetStringRef(index) = p; return index; }));
-                o["GetString"] = chaiscript::var(chaiscript::fun([](int index) { return external_data->GetStringRef(index); }));
-                o["DeleteString"] = chaiscript::var(chaiscript::fun([](int index) { return external_data->DeleteString(index); }));
-
-                lib->add_global_const(chaiscript::const_var(o), "external_data");
+                lib->AddFunction(, CreateString, , return dataOwner->CreateString(), cweeData* dataOwner);
+                lib->AddFunction(, SetString, , dataOwner->GetStringRef(index)->operator=(str); return index;, cweeData* dataOwner, int index, cweeStr const& str);
+                lib->AddFunction(, GetString, , return dataOwner->GetStringRef(index), cweeData* dataOwner, int index);
+                lib->AddFunction(, DeleteString, , return dataOwner->DeleteString(index), cweeData* dataOwner, int index);
             }
 
             // File System
