@@ -126,6 +126,19 @@
     <EmbeddedResource Include="Properties\UWP_WaterWatchLibrary.rd.xml" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="$(SolutionDir)WaterWatch_Cs_SWIG\*.cs">
+      <Link>WaterWatch_C++\%(RecursiveDir)%(FileName)%(Extension)</Link>
+      <BuildAction>Compile</BuildAction>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Compile>
+  </ItemGroup>
+  <ItemGroup>
+    <Content Include="$(SolutionDir)WaterWatch_Cs_SWIG\Conv.dll">
+      <Link>%(FileName)%(Extension)</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+  <ItemGroup>
     <PackageReference Include="CommunityToolkit.WinUI.Notifications">
       <Version>7.1.2</Version>
     </PackageReference>
@@ -162,6 +175,7 @@
   <Target Name="AfterBuild">
   </Target>
   -->
+
   <ItemGroup>
     <ProjectReference Include="..\WaterWatch_UWP_SWIG\WaterWatch_UWP_SWIG.vcxproj">
       <Project>{28ADE060-7DF2-4FBA-BC96-9801C7993490}</Project>

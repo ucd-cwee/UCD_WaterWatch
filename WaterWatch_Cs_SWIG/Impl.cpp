@@ -1735,6 +1735,9 @@ std::vector<Color_Interop> MapBackground_Interop::GetMatrix(double Left, double 
 #pragma endregion
 
 #pragma region WATERWATCH
+int WaterWatch::LevenshteinDistance(std::string const& a, std::string const& b, bool caseSensitive) {
+	return cweeStr::cweeLevenshteinDistance(a.c_str(), b.c_str(), caseSensitive);
+};
 void WaterWatch::SubmitToast(std::string title, std::string content) {
 	cweeToasts->submitToast(title.c_str(), content.c_str());
 };

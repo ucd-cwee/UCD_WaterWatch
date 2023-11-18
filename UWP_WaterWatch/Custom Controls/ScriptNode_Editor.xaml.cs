@@ -930,10 +930,24 @@ namespace UWP_WaterWatch.Custom_Controls
                     OnPropertyChanged("written");
                 }
             }
-
+            public bool dotAccess = false;
             public string typeHint = "";
+            public string nodeText = "";
 
-            public ObservableCollection<UIElement> tipElements = new ObservableCollection<UIElement>();
+
+            private ObservableCollection<UIElement> _tipElements;
+            public ObservableCollection<UIElement> tipElements
+            {
+                get
+                {
+                    return _tipElements;
+                }
+                set
+                {
+                    _tipElements = value;
+                    OnPropertyChanged("tipElements");
+                }
+            }
             public List<string> orig_functions;
         }
         public class cweeTipFlyout : Flyout
@@ -977,6 +991,7 @@ namespace UWP_WaterWatch.Custom_Controls
                 toFly.vm.currentPosition = carotPosition;
                 currentWritten = (characterAdded.IsAlphaNumeric() ? $"{characterAdded}" : "");
                 toFly.vm.written = currentWritten;
+                toFly.vm.dotAccess = !characterAdded.IsAlphaNumeric();
 
                 if (double.TryParse(toFly.vm.written, out double x))
                 {
@@ -1001,7 +1016,7 @@ namespace UWP_WaterWatch.Custom_Controls
 
                 obj.ContextFlyout = toFly;
 
-                toFly.vm.tipElements = new ObservableCollection<UIElement>();
+                var temp = new ObservableCollection<UIElement>();
                 foreach (var w in toFly.vm.orig_functions)
                 {
                     string y = w;
@@ -1010,9 +1025,9 @@ namespace UWP_WaterWatch.Custom_Controls
                         tb.Padding = new Thickness(0);
                         tb.Margin = new Thickness(0);
                     }
-                    toFly.vm.tipElements.Add(tb);
+                    temp.Add(tb);
                 }
-
+                toFly.vm.tipElements = temp;
 
                 Grid content = null;
                 {
@@ -1037,7 +1052,12 @@ namespace UWP_WaterWatch.Custom_Controls
                     MaxHeight = 500,
                     MaxWidth = 400
                 };
-                p.ItemsSource = toFly.vm.tipElements;
+                p.SetBinding(ListView.ItemsSourceProperty, new Binding() { 
+                    Source = toFly.vm, 
+                    Path = new PropertyPath("tipElements"), 
+                    Mode = BindingMode.TwoWay, 
+                    UpdateSourceTrigger = UpdateSourceTrigger.PropertyChanged 
+                });
                 content.Children.Add(p);
 
                 toFly.Content = content;
@@ -1047,7 +1067,7 @@ namespace UWP_WaterWatch.Custom_Controls
                 {
                     UIElement contained = toFly.vm.tipElements[i];
                     var f = cweeXamlHelper.GetTextFromContainers(contained);
-                    if (f.StartsWith(currentWritten, StringComparison.InvariantCultureIgnoreCase) || string.IsNullOrEmpty(currentWritten)) {
+                    if (!string.IsNullOrEmpty(f) && (f.Contains(currentWritten, StringComparison.InvariantCultureIgnoreCase) || string.IsNullOrEmpty(currentWritten))) { // .StartsWith
                         continue;
                     }
                     else
@@ -1055,6 +1075,15 @@ namespace UWP_WaterWatch.Custom_Controls
                         toFly.vm.tipElements.RemoveAt(i);
                     }
                 }
+
+                //if (!string.IsNullOrEmpty(currentWritten)) {
+                //    toFly.vm.tipElements = new ObservableCollection<UIElement>(toFly.vm.tipElements.OrderBy((contained) => {
+                //        var f = cweeXamlHelper.GetTextFromContainers(contained);
+                //        int distance = WaterWatch.LevenshteinDistance(f, currentWritten, false);
+                //        distance -= (f.StartsWith(currentWritten, StringComparison.InvariantCultureIgnoreCase) ? 1 : 0);
+                //        return distance;
+                //    }));
+                //}
             }
             else
             {
@@ -1081,7 +1110,7 @@ namespace UWP_WaterWatch.Custom_Controls
                 {
                     // re-make the tipelements
 
-                    toFly.vm.tipElements = new ObservableCollection<UIElement>();
+                    var temp = new ObservableCollection<UIElement>();
                     foreach (var w in toFly.vm.orig_functions)
                     {
                         string y = w;
@@ -1092,7 +1121,7 @@ namespace UWP_WaterWatch.Custom_Controls
                         }
                         toFly.vm.tipElements.Add(tb);
                     }
-
+                    toFly.vm.tipElements = temp;
 
                     Grid content = null;
                     {
@@ -1117,7 +1146,12 @@ namespace UWP_WaterWatch.Custom_Controls
                         MaxHeight = 500,
                         MaxWidth = 400
                     };
-                    p.ItemsSource = toFly.vm.tipElements;
+                    p.SetBinding(ListView.ItemsSourceProperty, new Binding() { 
+                        Source = toFly.vm, 
+                        Path = new PropertyPath("tipElements"), 
+                        Mode = BindingMode.TwoWay, 
+                        UpdateSourceTrigger = UpdateSourceTrigger.PropertyChanged 
+                    });  // p.ItemsSource = toFly.vm.tipElements;
                     content.Children.Add(p);
 
                     toFly.Content = content;
@@ -1128,13 +1162,23 @@ namespace UWP_WaterWatch.Custom_Controls
                 {
                     UIElement contained = toFly.vm.tipElements[i];
                     var f = cweeXamlHelper.GetTextFromContainers(contained);
-                    if (f.StartsWith(currentWritten, StringComparison.InvariantCultureIgnoreCase) || string.IsNullOrEmpty(currentWritten)) {
+                    if (!string.IsNullOrEmpty(f) && (f.Contains(currentWritten, StringComparison.InvariantCultureIgnoreCase) || string.IsNullOrEmpty(currentWritten))) { // StartsWith
                         continue;
                     }
                     else {
                         toFly.vm.tipElements.RemoveAt(i);
                     }
                 }
+
+                //if (!string.IsNullOrEmpty(currentWritten))
+                //{
+                //    toFly.vm.tipElements = new ObservableCollection<UIElement>(toFly.vm.tipElements.OrderBy((contained) => {
+                //        var f = cweeXamlHelper.GetTextFromContainers(contained);
+                //        int distance = WaterWatch.LevenshteinDistance(f, currentWritten, false);
+                //        distance -= (f.StartsWith(currentWritten, StringComparison.InvariantCultureIgnoreCase) ? 1 : 0);
+                //        return distance;
+                //    }));
+                //}
             }
 
             if (toFly.vm.tipElements.Count <= 0)
@@ -1177,7 +1221,7 @@ namespace UWP_WaterWatch.Custom_Controls
                 obj.ContextFlyout = null;
             }
         }
-        public static bool AcceptTipFlyout(CodeEditorControl obj)
+        public static bool AcceptTipFlyout(CodeEditorControl obj, ScriptingNodeViewModel vm)
         {
             cweeTipFlyout toFly = null;
             if (obj.ContextFlyout != null && obj.ContextFlyout is cweeTipFlyout)
@@ -1188,18 +1232,141 @@ namespace UWP_WaterWatch.Custom_Controls
             {
                 if (toFly.vm.tipElements.Count > 0) {
                     string recommended = cweeXamlHelper.GetTextFromContainers(toFly.vm.tipElements[0]);
-                    if (toFly.vm.currentPosition == toFly.vm.startingPosition)
-                    {
-                        obj.Editor.InsertText(toFly.vm.startingPosition, recommended);
-                        obj.Editor.GotoPos(toFly.vm.currentPosition + recommended.Length);
-                    }
-                    else
-                    {
-                        obj.Editor.DeleteRange(toFly.vm.startingPosition, 1 + (toFly.vm.currentPosition - toFly.vm.startingPosition));
-                        obj.Editor.InsertText(toFly.vm.startingPosition, recommended);
-                        obj.Editor.GotoPos(toFly.vm.currentPosition + recommended.Length);
-                    }
+                    // do we know if the 'recommendation' is a type or a function? 
+                    bool is_type = recommended == vm.ParentVM.engine.DoScript($"\"{recommended}\".type.to_string");
                     
+                    if (!is_type)
+                    {
+                        string innerContent = "";
+
+                        vector_string param_names;
+                        vector_string param_types = null;
+                        if (toFly.vm.dotAccess && !string.IsNullOrEmpty(toFly.vm.typeHint)) {
+                            param_names = vm.ParentVM.engine.DoScript_Cast_VectorStrings($"{recommended}.get_function_param_names(\"{toFly.vm.typeHint}\").to_string.Replace(\"[\",\"\").Replace(\"]\",\"\").Split(\", \")"); // the names of all the input params.
+
+                            int num = param_names.Count;
+                            for (int i = 0; i < num; i++)
+                            {
+                                try
+                                {
+                                    if (param_names[i] == $"param{i + 1}") {
+                                        if (param_types == null) param_types = vm.ParentVM.engine.DoScript_Cast_VectorStrings($"{recommended}.get_param_types.to_string.Replace(\"[\",\"\").Replace(\"]\",\"\").Split(\", \")"); // includes the return type followed by the input param types.
+                                        int count_params = param_types.Count;
+                                        if (count_params > (i + 2))
+                                        {
+                                            innerContent = innerContent.AddToDelimiter(param_types[i + 2], ", ");
+                                        }
+                                        else
+                                        {
+                                            // we need the "contained" functions and to try from there
+                                            innerContent = innerContent.AddToDelimiter($"param{i + 1}", ", ");
+                                        }
+                                    }
+                                    else {
+                                        innerContent = innerContent.AddToDelimiter(param_names[i], ", ");
+                                    }
+                                }
+                                catch (Exception)
+                                {
+                                    innerContent = innerContent.AddToDelimiter($"param{i + 1}", ", ");
+                                }
+                            }
+                            
+                        }
+                        else {
+                            param_names = vm.ParentVM.engine.DoScript_Cast_VectorStrings($"{recommended}.get_function_param_names"); // the names of all the input params.
+
+                            int num = param_names.Count;
+                            if (toFly.vm.dotAccess)
+                            {
+                                for (int i = 1; i < num; i++)
+                                {
+                                    try
+                                    {
+                                        if (param_names[i] == $"param{i}")
+                                        {
+                                            if (param_types == null) param_types = vm.ParentVM.engine.DoScript_Cast_VectorStrings($"{recommended}.get_param_types.to_string.Replace(\"[\",\"\").Replace(\"]\",\"\").Split(\", \")"); // includes the return type followed by the input param types.
+                                            int count_params = param_types.Count;
+                                            if (count_params > (i + 1))
+                                            {
+                                                innerContent = innerContent.AddToDelimiter(param_types[i + 1], ", ");
+                                            }
+                                            else
+                                            {
+                                                // we need the "contained" functions and to try from there
+
+
+                                                innerContent = innerContent.AddToDelimiter($"param{i}", ", ");
+                                            }
+                                        }
+                                        else
+                                        {
+                                            innerContent = innerContent.AddToDelimiter(param_names[i], ", ");
+                                        }
+                                    }
+                                    catch (Exception)
+                                    {
+                                        innerContent = innerContent.AddToDelimiter($"param{i}", ", ");
+                                    }
+                                }
+                            }
+                            else
+                            {
+                                for (int i = 0; i < num; i++)
+                                {
+                                    try
+                                    {
+                                        if (param_names[i] == $"param{i}")
+                                        {
+                                            if (param_types == null) param_types = vm.ParentVM.engine.DoScript_Cast_VectorStrings($"{recommended}.get_param_types.to_string.Replace(\"[\",\"\").Replace(\"]\",\"\").Split(\", \")"); // includes the return type followed by the input param types.
+                                            int count_params = param_types.Count;
+                                            if (count_params > (i + 1))
+                                            {
+                                                innerContent = innerContent.AddToDelimiter(param_types[i + 1], ", ");
+                                            }
+                                            else
+                                            {
+                                                innerContent = innerContent.AddToDelimiter($"param{i}", ", ");
+                                            }
+                                        }
+                                        else
+                                        {
+                                            innerContent = innerContent.AddToDelimiter(param_names[i], ", ");
+                                        }
+                                    }
+                                    catch (Exception)
+                                    {
+                                        innerContent = innerContent.AddToDelimiter($"param{i}", ", ");
+                                    }
+                                }
+                            }
+                        }
+                        
+                        if (!string.IsNullOrEmpty(innerContent))
+                        {
+                            recommended += $"({innerContent})";
+                        }
+                        else
+                        {
+                            if (!toFly.vm.dotAccess)
+                            {
+                                recommended += "()";
+                            }
+                        }     
+                    }
+
+                    
+
+                    if (toFly.vm.currentPosition != toFly.vm.startingPosition || toFly.vm.written.Length > 0)
+                    {
+                        obj.Editor.DeleteRange(toFly.vm.startingPosition, 
+                            // 1 + (toFly.vm.currentPosition - toFly.vm.startingPosition)
+                            (string.IsNullOrEmpty(toFly.vm.written) ? (1 + (toFly.vm.currentPosition - toFly.vm.startingPosition)) : toFly.vm.written.Length)
+                        );
+                    }
+                    obj.Editor.InsertText(toFly.vm.startingPosition, recommended);
+                    obj.Editor.GotoPos(toFly.vm.startingPosition + recommended.Length);
+
                     return true;
                 }
             }
@@ -1209,10 +1376,9 @@ namespace UWP_WaterWatch.Custom_Controls
 
 
 
-
+        
         public static AtomicInt Is_Processing_KeyDown = new AtomicInt();
-        private void Editor_PreviewKeyDown(object sender, KeyRoutedEventArgs e)
-        {
+        private void Editor_PreviewKeyDown(object sender, KeyRoutedEventArgs e) {
             Is_Processing_KeyDown.Increment();
             try
             {             
@@ -1224,7 +1390,7 @@ namespace UWP_WaterWatch.Custom_Controls
                 if (e.Key == VirtualKey.Enter || e.Key == VirtualKey.Tab)
                 {
                     // accept the input
-                    e.Handled = AcceptTipFlyout(tb);
+                    e.Handled = AcceptTipFlyout(tb, vm.ParentVM);
                     CloseTipFlyout(tb);
                 }
                 if (e.Key == VirtualKey.Back)
@@ -1238,11 +1404,11 @@ namespace UWP_WaterWatch.Custom_Controls
                 }
                 if (e.Key == VirtualKey.Up)
                 {
-                    // HELP
+                    // TODO
                 }
                 if (e.Key == VirtualKey.Down)
                 {
-                    // HELP
+                    // TODO
                 }
                 if (e.Key == VirtualKey.Space || e.Key == VirtualKey.Tab || e.Key == VirtualKey.Left || e.Key == VirtualKey.Right || e.Key == VirtualKey.Escape || e.Key == VirtualKey.GoBack || e.Key == VirtualKey.Delete || e.Key == VirtualKey.Home || e.Key == VirtualKey.End)
                 {
@@ -1278,6 +1444,7 @@ namespace UWP_WaterWatch.Custom_Controls
                     if (currentPosition >= 0)
                     {
                         var nodes = FindNodesAtPosition(Math.Max(0, currentPosition /*- 1*/), true);
+                        char prevChar = (char)tb.Editor.GetCharAt(currentPosition);
                         if (nodes != null && nodes.Count > 0)
                         {
                             var node = nodes[0];
@@ -1286,6 +1453,10 @@ namespace UWP_WaterWatch.Custom_Controls
                                 if (node.type_get() != WaterWatchEnums.ScriptNodeType.Constant)
                                 {
                                     string typeHint = node.typeHint_get();
+                                    if (prevChar == '(' || prevChar == '{') {
+                                        typeHint = "";
+                                    }
+
                                     if (string.IsNullOrEmpty(typeHint))
                                     {
                                         if (keyCode == '.')

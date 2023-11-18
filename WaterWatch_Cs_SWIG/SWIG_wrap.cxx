@@ -3405,6 +3405,32 @@ SWIGEXPORT void * SWIGSTDCALL CSharp_ScriptEngine_Cast_VectorFloats(void * jarg1
 }
 
 
+SWIGEXPORT int SWIGSTDCALL CSharp_WaterWatch_LevenshteinDistance(const char * jarg1, const char * jarg2, unsigned int jarg3) {
+  int jresult ;
+  std::string *arg1 = 0 ;
+  std::string *arg2 = 0 ;
+  bool arg3 ;
+  int result;
+  
+  if (!jarg1) {
+    SWIG_CSharpSetPendingExceptionArgument(SWIG_CSharpArgumentNullException, "null string", 0);
+    return 0;
+  }
+  std::string arg1_str(jarg1);
+  arg1 = &arg1_str; 
+  if (!jarg2) {
+    SWIG_CSharpSetPendingExceptionArgument(SWIG_CSharpArgumentNullException, "null string", 0);
+    return 0;
+  }
+  std::string arg2_str(jarg2);
+  arg2 = &arg2_str; 
+  arg3 = jarg3 ? true : false; 
+  result = (int)WaterWatch::LevenshteinDistance((std::string const &)*arg1,(std::string const &)*arg2,arg3);
+  jresult = result; 
+  return jresult;
+}
+
+
 SWIGEXPORT void SWIGSTDCALL CSharp_WaterWatch_SubmitToast(const char * jarg1, const char * jarg2) {
   std::string arg1 ;
   std::string arg2 ;

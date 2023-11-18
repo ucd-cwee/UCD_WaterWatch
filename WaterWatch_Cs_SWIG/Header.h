@@ -299,7 +299,7 @@ private:
 
 class WaterWatch {
 public:
-
+    static int LevenshteinDistance(std::string const& a, std::string const& b, bool caseSensitive);
 
     static void SubmitToast(std::string title, std::string content);
     static Pair<bool, Pair<std::string, std::string>> TryGetToast();

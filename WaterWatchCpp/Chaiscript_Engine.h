@@ -309,7 +309,8 @@ namespace chaiscript {
                 chaiscript::small_vector< Boxed_Value > out;
                 auto FunctionNames = m_engine.FunctionNames_CweeStr();
                 AUTO selected = FunctionNames.Select([=](const cweeStr& a)->bool {
-                    if (a.StartsWith(startsWith)) {
+                    // if (a.StartsWith(startsWith)) {
+                    if (a.iStartsWith(startsWith)) {
                         return true;
                     }
                     return false;
@@ -322,6 +323,30 @@ namespace chaiscript {
                 }
                 return out;
             }, { "startsWith" }), "get_functions_that_start_with"); // returns the functions that could be reasonably accessed by typing
+/*
+            m_engine.add(fun([this](cweeStr const& startsWith, bool isInvariant) {
+                chaiscript::small_vector< Boxed_Value > out;
+                auto FunctionNames = m_engine.FunctionNames_CweeStr();
+                AUTO selected = FunctionNames.Select([=](const cweeStr& a)->bool {
+                    if (isInvariant) {
+                        if (a.iStartsWith(startsWith)) {
+                            return true;
+                        }
+                    }
+                    else if (a.StartsWith(startsWith)) {
+                        return true;
+                    }      
+                    return false;                                      
+                });
+                out.reserve(selected.size() + 1);
+                for (auto& x : selected) {
+                    if (x) {
+                        out.emplace_back(chaiscript::var(std::string(x->c_str())));
+                    }
+                }
+                return out;
+                }, { "startsWith", "isInvariant"}), "get_functions_that_start_with"); // returns the functions that could be reasonably accessed by typing
+*/
             m_engine.add(fun([this](const dispatch::Proxy_Function_Base* func) {
                 std::vector<Boxed_Value> names;
                 auto DEF = func->get_parameterNames();

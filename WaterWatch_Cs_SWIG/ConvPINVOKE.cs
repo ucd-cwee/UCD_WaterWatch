@@ -711,6 +711,9 @@ class ConvPINVOKE {
   [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_ScriptEngine_Cast_VectorFloats")]
   public static extern global::System.IntPtr ScriptEngine_Cast_VectorFloats(global::System.Runtime.InteropServices.HandleRef jarg1, string jarg2);
 
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_WaterWatch_LevenshteinDistance")]
+  public static extern int WaterWatch_LevenshteinDistance(string jarg1, string jarg2, bool jarg3);
+
   [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_WaterWatch_SubmitToast")]
   public static extern void WaterWatch_SubmitToast(string jarg1, string jarg2);
 

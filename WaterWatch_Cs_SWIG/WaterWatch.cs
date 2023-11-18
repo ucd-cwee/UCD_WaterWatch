@@ -56,6 +56,12 @@ public class WaterWatch : global::System.IDisposable {
     }
   }
 
+  public static int LevenshteinDistance(string a, string b, bool caseSensitive) {
+    int ret = ConvPINVOKE.WaterWatch_LevenshteinDistance(a, b, caseSensitive);
+    if (ConvPINVOKE.SWIGPendingException.Pending) throw ConvPINVOKE.SWIGPendingException.Retrieve();
+    return ret;
+  }
+
   public static void SubmitToast(string title, string content) {
     ConvPINVOKE.WaterWatch_SubmitToast(title, content);
     if (ConvPINVOKE.SWIGPendingException.Pending) throw ConvPINVOKE.SWIGPendingException.Retrieve();
