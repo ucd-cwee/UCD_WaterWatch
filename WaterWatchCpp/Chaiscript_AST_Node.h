@@ -37,7 +37,7 @@ namespace chaiscript {
         Def,
         While,
         If,
-        For,
+        For,        
         Ranged_For,
         Inline_Array,
         Inline_Map,
@@ -71,6 +71,7 @@ namespace chaiscript {
         ControlBlock,
         Postfix,
         Assign_Retroactively,
+        Parallel,
         AST_Node_Type_end
     );
 

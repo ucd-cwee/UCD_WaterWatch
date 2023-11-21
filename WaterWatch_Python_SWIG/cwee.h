@@ -199,7 +199,8 @@ public:
         ControlBlock = 46,
         Postfix = 47,
         Assign_Retroactively = 48,
-        Error = 49
+        Parallel = 49,
+        Error = 50
     };
 };
 

@@ -993,7 +993,7 @@ namespace UWP_WaterWatch.Custom_Controls
                 toFly.vm.written = currentWritten;
                 toFly.vm.dotAccess = !characterAdded.IsAlphaNumeric();
 
-                if (double.TryParse(toFly.vm.written, out double x))
+                if (!string.IsNullOrEmpty(toFly.vm.written) && toFly.vm.written.IsNumeric())
                 {
                     // we parsed this as a number -- it can't be an ID. 
                     CloseTipFlyout(obj);
@@ -1001,8 +1001,8 @@ namespace UWP_WaterWatch.Custom_Controls
                 }
 
                 if (string.IsNullOrEmpty(typeHint)) { // NO TYPE KNOWN
-                    if (!string.IsNullOrEmpty(currentWritten)) { // USER WROTE SOMETHING
-                        toFly.vm.orig_functions = vm.ParentVM.engine.DoScript_Cast_VectorStrings($"\"{currentWritten}\".get_functions_that_start_with").OrderBy((string Y) => { string comp = Y.ToLower(); if (comp.CompareTo("A") < 0) { comp = "z" + comp; } return comp; }).ToList();
+                    if (!string.IsNullOrEmpty(currentWritten)) { // USER WROTE SOMETHING {currentWritten}
+                        toFly.vm.orig_functions = vm.ParentVM.engine.DoScript_Cast_VectorStrings($"\"\".get_functions_that_start_with").OrderBy((string Y) => { string comp = Y.ToLower(); if (comp.CompareTo("A") < 0) { comp = "z" + comp; } return comp; }).ToList();
                     }
                     else {
                         // USER WROTE NOTHING
@@ -1059,7 +1059,6 @@ namespace UWP_WaterWatch.Custom_Controls
                     UpdateSourceTrigger = UpdateSourceTrigger.PropertyChanged 
                 });
                 content.Children.Add(p);
-
                 toFly.Content = content;
 
 
@@ -1076,36 +1075,64 @@ namespace UWP_WaterWatch.Custom_Controls
                     }
                 }
 
-                //if (!string.IsNullOrEmpty(currentWritten)) {
-                //    toFly.vm.tipElements = new ObservableCollection<UIElement>(toFly.vm.tipElements.OrderBy((contained) => {
-                //        var f = cweeXamlHelper.GetTextFromContainers(contained);
-                //        int distance = WaterWatch.LevenshteinDistance(f, currentWritten, false);
-                //        distance -= (f.StartsWith(currentWritten, StringComparison.InvariantCultureIgnoreCase) ? 1 : 0);
-                //        return distance;
-                //    }));
-                //}
+                if (!string.IsNullOrEmpty(currentWritten))
+                {
+                    toFly.vm.tipElements = new ObservableCollection<UIElement>(toFly.vm.tipElements.OrderBy((contained) =>
+                    {
+                        var f = cweeXamlHelper.GetTextFromContainers(contained);
+                        return WaterWatch.LevenshteinDistance(f, currentWritten, false) - (f.StartsWith(currentWritten, StringComparison.InvariantCultureIgnoreCase) ? 10 : 0);
+                    }).ThenBy((contained) => { var Y = cweeXamlHelper.GetTextFromContainers(contained); string comp = Y.ToLower(); if (comp.CompareTo("A") < 0) { comp = "z" + comp; } return comp; }));
+                }
             }
             else
             {
                 toFly.vm.currentPosition = carotPosition;
 
-                string plainText = CodeEditorControlExtension.GetPlainText(obj);
-                try {
-                    currentWritten = plainText.Mid(toFly.vm.startingPosition,
-                        carotPosition - toFly.vm.startingPosition) + (characterAdded.IsAlphaNumeric() ? $"{characterAdded}" : "");
-                }
-                catch (Exception) {
-                    currentWritten = (characterAdded.IsAlphaNumeric() ? $"{characterAdded}" : "");
-                }
-                toFly.vm.written = currentWritten;
-
-                if (double.TryParse(toFly.vm.written, out double x))
+                if (characterAdded == '\b')
                 {
-                    // we parsed this as a number -- it can't be an ID. 
-                    CloseTipFlyout(obj);
-                    return;
+                    try
+                    {
+                        if (toFly.vm.written.Length > 0)
+                        {
+                            toFly.vm.written = toFly.vm.written.Left(toFly.vm.written.Length - 1);
+                            currentWritten = toFly.vm.written;
+                        }
+                        else
+                        {
+                            CloseTipFlyout(obj);
+                            return;
+                        }
+                    }
+                    catch (Exception)
+                    {
+                        toFly.vm.written = "";
+                        currentWritten = toFly.vm.written;
+                    }
                 }
+                else
+                {
+                    string plainText = CodeEditorControlExtension.GetPlainText(obj);
+                    try
+                    {
+                        currentWritten = plainText.Mid(toFly.vm.startingPosition,
+                            carotPosition - toFly.vm.startingPosition) + (characterAdded.IsAlphaNumeric() ? $"{characterAdded}" : "");
+                        toFly.vm.written = currentWritten;
+                    }
+                    catch (Exception e)
+                    {
+                        e.EdmsHandle();
+                        // currentWritten = (characterAdded.IsAlphaNumeric() ? $"{characterAdded}" : "");
+                        currentWritten = toFly.vm.written;
+                    }
+                    // toFly.vm.written = currentWritten;
 
+                    if (!string.IsNullOrEmpty(toFly.vm.written) && toFly.vm.written.IsNumeric())
+                    {
+                        // we parsed this as a number -- it can't be an ID. 
+                        CloseTipFlyout(obj);
+                        return;
+                    }
+                }
                 if (characterAdded == '\b')
                 {
                     // re-make the tipelements
@@ -1119,7 +1146,7 @@ namespace UWP_WaterWatch.Custom_Controls
                             tb.Padding = new Thickness(0);
                             tb.Margin = new Thickness(0);
                         }
-                        toFly.vm.tipElements.Add(tb);
+                        temp.Add(tb);
                     }
                     toFly.vm.tipElements = temp;
 
@@ -1170,15 +1197,14 @@ namespace UWP_WaterWatch.Custom_Controls
                     }
                 }
 
-                //if (!string.IsNullOrEmpty(currentWritten))
-                //{
-                //    toFly.vm.tipElements = new ObservableCollection<UIElement>(toFly.vm.tipElements.OrderBy((contained) => {
-                //        var f = cweeXamlHelper.GetTextFromContainers(contained);
-                //        int distance = WaterWatch.LevenshteinDistance(f, currentWritten, false);
-                //        distance -= (f.StartsWith(currentWritten, StringComparison.InvariantCultureIgnoreCase) ? 1 : 0);
-                //        return distance;
-                //    }));
-                //}
+                if (!string.IsNullOrEmpty(currentWritten))
+                {
+                    toFly.vm.tipElements = new ObservableCollection<UIElement>(toFly.vm.tipElements.OrderBy((contained) =>
+                    {
+                        var f = cweeXamlHelper.GetTextFromContainers(contained);
+                        return WaterWatch.LevenshteinDistance(f, currentWritten, false) - (f.StartsWith(currentWritten, StringComparison.InvariantCultureIgnoreCase) ? 10 : 0);
+                    }).ThenBy((contained) => { var Y = cweeXamlHelper.GetTextFromContainers(contained); string comp = Y.ToLower(); if (comp.CompareTo("A") < 0) { comp = "z" + comp; } return comp; }));
+                }
             }
 
             if (toFly.vm.tipElements.Count <= 0)
@@ -1206,7 +1232,7 @@ namespace UWP_WaterWatch.Custom_Controls
             }
             if (toFly != null)
             {
-                return toFly.IsOpen;
+                return true; //  toFly.IsOpen;
             }
             return false;
         }
@@ -1597,7 +1623,7 @@ namespace UWP_WaterWatch.Custom_Controls
                 "__FILE__", "__FUNC__", "__CLASS__", "__LOCK__"
             };
             List<string> LanguageFunctions = new List<string>() { 
-                "def", "fun", "while", "for", "async", "Async",
+                "def", "fun", "while", "for", "parallel", "delete", "async", "Async",
                 "if", "else", "return", "break", "class", 
                 "attr", "switch", "case", "continue", "default",
                 "try", "catch", "do", "finally"
@@ -1758,6 +1784,7 @@ namespace UWP_WaterWatch.Custom_Controls
                         default:
                         case WaterWatchEnums.ScriptNodeType.If:
                         case WaterWatchEnums.ScriptNodeType.For:
+                        case WaterWatchEnums.ScriptNodeType.Parallel:
                         case WaterWatchEnums.ScriptNodeType.Assign_Retroactively:
                         case WaterWatchEnums.ScriptNodeType.Unused_Return_Fun_Call:
                         case WaterWatchEnums.ScriptNodeType.Arg_List:                            
@@ -2328,6 +2355,7 @@ namespace UWP_WaterWatch.Custom_Controls
                 case WaterWatchEnums.ScriptNodeType.If: { var iF = lineLeft.FindLast("if"); if (iF >= 0) { return lineLeft.Length - iF; } else { return 0; } }
                 case WaterWatchEnums.ScriptNodeType.While: { var iF = lineLeft.FindLast("while"); if (iF >= 0) { return lineLeft.Length - iF; } else { return 0; } }
                 case WaterWatchEnums.ScriptNodeType.For: { var iF = lineLeft.FindLast("for"); if (iF >= 0) { return lineLeft.Length - iF; } else { return 0; } }
+                case WaterWatchEnums.ScriptNodeType.Parallel: { var iF = lineLeft.FindLast("parallel"); if (iF >= 0) { return lineLeft.Length - iF; } else { return 0; } }
                 case WaterWatchEnums.ScriptNodeType.Ranged_For: { var iF = lineLeft.FindLast("for"); if (iF >= 0) { return lineLeft.Length - iF; } else { return 0; } }
                 case WaterWatchEnums.ScriptNodeType.Break: { var iF = lineLeft.FindLast("break"); if (iF >= 0) { return lineLeft.Length - iF; } else { return 0; } }
                 case WaterWatchEnums.ScriptNodeType.Continue: { var iF = lineLeft.FindLast("continue"); if (iF >= 0) { return lineLeft.Length - iF; } else { return 0; } }
@@ -2435,6 +2463,7 @@ namespace UWP_WaterWatch.Custom_Controls
                 case WaterWatchEnums.ScriptNodeType.If: { return scriptContentToColors["Basic Function Names"]; }
                 case WaterWatchEnums.ScriptNodeType.While: { return scriptContentToColors["Basic Function Names"]; }
                 case WaterWatchEnums.ScriptNodeType.For: { return scriptContentToColors["Basic Function Names"]; }
+                case WaterWatchEnums.ScriptNodeType.Parallel: { return scriptContentToColors["Basic Function Names"]; }
                 case WaterWatchEnums.ScriptNodeType.Ranged_For: { return scriptContentToColors["Basic Function Names"]; }
                 case WaterWatchEnums.ScriptNodeType.Break: { return scriptContentToColors["Basic Function Names"]; }
                 case WaterWatchEnums.ScriptNodeType.Continue: { return scriptContentToColors["Basic Function Names"]; }

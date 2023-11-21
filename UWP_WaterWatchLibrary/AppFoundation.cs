@@ -1952,12 +1952,12 @@ namespace UWP_WaterWatchLibrary
             }
         }
 
-        internal static Regex alphanumericregex = new Regex("^[a-zA-Z0-9]*$");
+        internal static Regex alphanumericregex = new Regex("^[a-zA-Z0-9]+$");
         public static bool IsAlphaNumeric(this string value)
         {
             return alphanumericregex.IsMatch(value);
         }
-        internal static Regex numericregex = new Regex("^[0-9]*$");
+        internal static Regex numericregex = new Regex("^[0-9]+(.[0-9]+)*$"); //  new Regex("^[0-9]*$");
         public static bool IsNumeric(this string value)
         {
             return numericregex.IsMatch(value);

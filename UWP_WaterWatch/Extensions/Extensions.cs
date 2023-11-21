@@ -33,17 +33,17 @@ namespace UWP_WaterWatchLibrary
     {
         public static bool isNumeric(this string strToCheck)
         {
-            System.Text.RegularExpressions.Regex rg = new System.Text.RegularExpressions.Regex(@"^[0-9_]*$");
+            System.Text.RegularExpressions.Regex rg = new System.Text.RegularExpressions.Regex(@"^[0-9_]+$");
             return rg.IsMatch(strToCheck);
         }
         public static bool isAlphaNumeric(this string strToCheck)
         {
-            System.Text.RegularExpressions.Regex rg = new System.Text.RegularExpressions.Regex(@"^[a-zA-Z0-9_]*$");
+            System.Text.RegularExpressions.Regex rg = new System.Text.RegularExpressions.Regex(@"^[a-zA-Z0-9_]+$");
             return rg.IsMatch(strToCheck);
         }
         public static bool isAlpha(this string strToCheck)
         {
-            System.Text.RegularExpressions.Regex rg = new System.Text.RegularExpressions.Regex(@"^[a-zA-Z_]*$");
+            System.Text.RegularExpressions.Regex rg = new System.Text.RegularExpressions.Regex(@"^[a-zA-Z_]+$");
             return rg.IsMatch(strToCheck);
         }
 

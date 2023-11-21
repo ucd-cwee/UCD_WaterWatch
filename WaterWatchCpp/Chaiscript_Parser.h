@@ -2233,6 +2233,35 @@ namespace chaiscript {
                         build_match<eval::Ranged_For_AST_Node<Tracer>>(prev_stack_top);
                     }
                 }
+                else if (Keyword("parallel_for")) {
+                    retval = true;
+
+                    SkipWS(true);
+
+                    if (!Char('(')) {
+                        throw exception::eval_error("Incomplete parallel 'for' expression", File_Position(m_position.line, m_position.col), *m_filename);
+                    }
+
+                    SkipWS(true);
+
+                    const bool ranged_for = !(For_Guards() && Char(')'));
+                    if (ranged_for && !(Range_Expression() && Char(')'))) {
+                        throw exception::eval_error("Incomplete parallel 'for' expression", File_Position(m_position.line, m_position.col), *m_filename);
+                    }
+
+                    SkipWS(true);
+
+                    if (!Block()) {
+                        throw exception::eval_error("Incomplete parallel 'for' block", File_Position(m_position.line, m_position.col), *m_filename);
+                    }
+
+                    const auto num_children = m_match_stack.size() - prev_stack_top;
+
+                    if (num_children != 3) {
+                        throw exception::eval_error("Incomplete parallel ranged-for expression", File_Position(m_position.line, m_position.col), *m_filename);
+                    }
+                    build_match<eval::Parallel_AST_Node<Tracer>>(prev_stack_top);                               
+                }
 
                 return retval;
             }
@@ -2372,7 +2401,7 @@ namespace chaiscript {
                 return retval;
             }
 
-            /// Reads a curly-brace C-style block from input
+            /// Reads a C-style type-cast from input (e.g. (int)0.0f )
             bool TypeCastOperation() {
                 Depth_Counter dc{ this };
                 bool retval = false;
