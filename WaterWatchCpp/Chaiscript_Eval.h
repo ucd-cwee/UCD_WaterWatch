@@ -1858,126 +1858,79 @@ namespace chaiscript {
 
                 Boxed_Value range_expression_result = this->children[1]->eval(t_ss); // 0..100 or [0,1,2,3] or vectorObjName, etc.
 
-                std::string loop_var_name = this->children[0]->text;
+                std::string loop_var_name = this->children[0]->text; /* "x", or "var x", or "auto& x" */
+                if (!TryGetVariableName(*this->children[0], loop_var_name)) throw exception::eval_error("Ranged For-Loop Variable Name Could Not Be Resolved.");
 
-                if (!TryGetVariableName(*this->children[0], loop_var_name)) { // "x", or "var x", or "auto& x"
-                    // could not find the variable name anywhere downstream. Throw.
-                    throw exception::eval_error("Ranged For-Loop Variable Name Could Not Be Resolved.");
+                enum class RangedForMode {
+                    ReferenceBasedVar,
+                    AssignmentVar
                 };
+                RangedForMode mode;
+                chaiscript::Boxed_Value rangedObjContainer;
 
-                const auto do_loop = [&loop_var_name, &t_ss, this](const auto& ranged_thing) {
+                switch (this->children[0]->identifier) {
+                default:
+                case AST_Node_Type::Global_Decl: // for (global i : 0..10){} or for (global& i : 0..10){}  
+                    mode = RangedForMode::ReferenceBasedVar;
+                    break;
+                case AST_Node_Type::Var_Decl:    // for (var i : 0..10){}
+                case AST_Node_Type::Reference:   // for (var& i : 0..10){} 
+                    mode = RangedForMode::ReferenceBasedVar;
+                    break;
+                case AST_Node_Type::Assign_Decl: // for (int i : 0..10){} or for (int& i : 0..10){}
+                    mode = RangedForMode::AssignmentVar;
+                    rangedObjContainer = this->children[0]->eval(t_ss);
+                    rangedObjContainer = t_ss.add_get_object(loop_var_name, rangedObjContainer);
+                    break;
+                case AST_Node_Type::Id:          // for (i : 0..10){}
+                    if (t_ss.object_exists(loop_var_name)) {
+                        mode = RangedForMode::AssignmentVar;
+                        rangedObjContainer = t_ss.get_object(loop_var_name);
+                    }
+                    else {
+                        mode = RangedForMode::ReferenceBasedVar;
+                    }
+                    break;
+                }
+
+                if (mode == RangedForMode::AssignmentVar) {
+                    throw exception::eval_error("Parallel ranged-for variable must be a local reference variable");
+                }
+
+                const auto do_loop = [&loop_var_name, &t_ss, &mode, &rangedObjContainer, this](const auto& ranged_thing)->chaiscript::Boxed_Value {
                     try {
-#if 0
-                        //chaiscript::eval::detail::Scope_Push_Pop spp1(t_ss);
+                        switch (mode) {
+                        case RangedForMode::AssignmentVar: break;
+                        case RangedForMode::ReferenceBasedVar: {
+                            for (auto&& loop_var : ranged_thing) {
+                                chaiscript::eval::detail::Scope_Push_Pop spp1(t_ss);
+                                chaiscript::Boxed_Value sharedObj;
+                                if constexpr (!std::is_same<std::decay_t<decltype(loop_var)>, Boxed_Value>::value) sharedObj = Boxed_Value(std::ref(loop_var));                                
+                                else sharedObj = Boxed_Value(loop_var);
+                                
+                                t_ss.add_get_object(loop_var_name, sharedObj);
 
-                        //chaiscript::Boxed_Value rangedObjContainer;
-                        //bool successfulRangedObjContainer = false;
-                        //try {
-                        //    rangedObjContainer = this->children[0]->eval(t_ss);
-                        //    t_ss->add(rangedObjContainer, loop_var_name); // add_get_object
-                        //    successfulRangedObjContainer = true;
-                        //} 
-                        //catch (...) {}
-
-                        for (auto&& loop_var : ranged_thing) {
-                            // This scope push and pop might not be the best thing for perf but we know it's 100% correct
-                            chaiscript::eval::detail::Scope_Push_Pop spp2(t_ss);
-                            if constexpr (!std::is_same<std::decay_t<decltype(loop_var)>, Boxed_Value>::value) {
-                                //if (successfulRangedObjContainer) {
-                                //    t_ss->call_function("=", 0, chaiscript::Function_Params{ std::array<Boxed_Value, 2>{ successfulRangedObjContainer, Boxed_Value(std::ref(loop_var)) } }, t_ss->conversions());
-                                //}
-                                //else {
-                                t_ss.add_get_object(loop_var_name, Boxed_Value(std::ref(loop_var))); // t_ss->add(Boxed_Value(loop_var), loop_var_name);
-                            //}
+                                try {
+                                    this->children[2]->eval(t_ss);
+                                }
+                                catch (detail::Continue_Loop&) {}
+                                catch (detail::Return_Value&) {
+                                    throw exception::eval_error("Parallel ranged-for loops do not support return statements");
+                                }
                             }
-                            else {
-                                //if (successfulRangedObjContainer) {
-                                //    t_ss->call_function("=", 0, chaiscript::Function_Params{ std::array<Boxed_Value, 2>{ successfulRangedObjContainer, Boxed_Value(loop_var) } }, t_ss->conversions());
-                                //}
-                                //else {
-                                t_ss.add_get_object(loop_var_name, Boxed_Value(loop_var)); // t_ss->add(Boxed_Value(loop_var), loop_var_name);
-                            //}
-                            }
-                            try {
-                                this->children[2]->eval(t_ss);
-                            }
-                            catch (detail::Continue_Loop&) {
-                            }
+                        } break;
                         }
-#else
-                        chaiscript::eval::detail::Scope_Push_Pop spp1(t_ss);
-
-                        chaiscript::Boxed_Value rangedObjContainer;
-                        bool successfulRangedObjContainer = false;
-                        try {
-                            rangedObjContainer = this->children[0]->eval(t_ss);
-                            rangedObjContainer = t_ss.add_get_object(loop_var_name, rangedObjContainer); // add_get_object
-                            successfulRangedObjContainer = true;
-                        }
-                        catch (...) {}
-
-                        for (auto&& loop_var : ranged_thing) {
-                            // This scope push and pop might not be the best thing for perf but we know it's 100% correct
-                            chaiscript::eval::detail::Scope_Push_Pop spp2(t_ss);
-                            if constexpr (!std::is_same<std::decay_t<decltype(loop_var)>, Boxed_Value>::value) {
-                                if (successfulRangedObjContainer) {
-                                    std::array<Boxed_Value, 2> p{ rangedObjContainer, Boxed_Value(std::ref(loop_var)) };
-                                    try {
-                                        t_ss->call_function("=", m_array_loc, chaiscript::Function_Params{ p }, t_ss.conversions());
-                                    }
-                                    catch (...) {
-                                        throw exception::eval_error(cweeStr::printf("Could not perform `=` cast from `%s` to `%s` during ranged loop",
-                                            t_ss->get_type_name(Boxed_Value(std::ref(loop_var)).get_type_info()).c_str(),
-                                            t_ss->get_type_name(rangedObjContainer.get_type_info()).c_str(),
-                                            this->location.start, *(this->location.filename)).c_str());
-                                        // throw exception::eval_error("Error with capturing or forwarding the ranged loop object with the given loop object. Consider using generic \"var&\" instead.", this->location.start, *(this->location.filename));
-                                    }
-                                    rangedObjContainer = t_ss.add_get_object(loop_var_name, rangedObjContainer);
-                                }
-                                else {
-                                    t_ss.add_get_object(loop_var_name, Boxed_Value(std::ref(loop_var))); // t_ss->add(Boxed_Value(loop_var), loop_var_name);
-                                }
-                            }
-                            else {
-                                if (successfulRangedObjContainer) {
-                                    std::array<Boxed_Value, 2> p{ rangedObjContainer, Boxed_Value(loop_var) };
-                                    try {
-                                        t_ss->call_function("=", m_array_loc, chaiscript::Function_Params{ p }, t_ss.conversions());
-                                    }
-                                    catch (...) {
-                                        throw exception::eval_error(cweeStr::printf("Could not perform `=` cast from `%s` to `%s` during ranged loop",
-                                            t_ss->get_type_name(Boxed_Value(std::ref(loop_var)).get_type_info()).c_str(),
-                                            t_ss->get_type_name(rangedObjContainer.get_type_info()).c_str(),
-                                            this->location.start, *(this->location.filename)).c_str());
-                                        // throw exception::eval_error("Error with capturing or forwarding the ranged loop object with the given loop object. Consider using generic \"var&\" instead.", this->location.start, *(this->location.filename));
-                                    }
-                                    rangedObjContainer = t_ss.add_get_object(loop_var_name, rangedObjContainer);
-                                }
-                                else {
-                                    t_ss.add_get_object(loop_var_name, Boxed_Value(loop_var)); // t_ss->add(Boxed_Value(loop_var), loop_var_name);
-                                }
-                            }
-                            try {
-                                this->children[2]->eval(t_ss);
-                            }
-                            catch (detail::Continue_Loop&) {
-                            }
-                        }
-
-
-#endif
                     }
                     catch (detail::Break_Loop&) {
-                        // loop broken
+                        throw exception::eval_error("Parallel ranged-for loops do not support break statements");
                     }
                     return void_var();
                 };
-                if (range_expression_result.get_type_info().bare_equal_type_info(typeid(chaiscript::small_vector<Boxed_Value>))) {
+
+                if (range_expression_result.get_type_info().bare_equal_type_info(typeid(chaiscript::small_vector<Boxed_Value>)))
                     return do_loop(boxed_cast<const chaiscript::small_vector<Boxed_Value>&>(range_expression_result));
-                }
-                else if (range_expression_result.get_type_info().bare_equal_type_info(typeid(std::map<std::string, Boxed_Value>))) {
+                else if (range_expression_result.get_type_info().bare_equal_type_info(typeid(std::map<std::string, Boxed_Value>)))
                     return do_loop(boxed_cast<const std::map<std::string, Boxed_Value>&>(range_expression_result));
-                }
                 else {
                     const auto range_funcs = get_function("range", m_range_loc);
                     const auto empty_funcs = get_function("empty", m_empty_loc);
@@ -1987,65 +1940,33 @@ namespace chaiscript {
                     try {
                         const auto range_obj = call_function(range_funcs, range_expression_result);
 
-#if 0
-                        while (!boxed_cast<bool>(call_function(empty_funcs, range_obj))) {
-                            chaiscript::eval::detail::Scope_Push_Pop spp(t_ss);
-                            t_ss.add_get_object(loop_var_name, call_function(front_funcs, range_obj));
-                            try {
-                                this->children[2]->eval(t_ss);
-                            }
-                            catch (detail::Continue_Loop&) {
-                                // continue statement hit
-                            }
-                            call_function(pop_front_funcs, range_obj);
-                        }
-#else
-                        chaiscript::eval::detail::Scope_Push_Pop spp1(t_ss);
+                        switch (mode) {
+                        case RangedForMode::AssignmentVar: break;
+                        case RangedForMode::ReferenceBasedVar: {
+                            while (!boxed_cast<bool>(call_function(empty_funcs, range_obj))) {
+                                chaiscript::eval::detail::Scope_Push_Pop spp1(t_ss);
+                                auto&& loop_var = call_function(front_funcs, range_obj);
+                                chaiscript::Boxed_Value sharedObj;
+                                if constexpr (!std::is_same<std::decay_t<decltype(loop_var)>, Boxed_Value>::value) sharedObj = Boxed_Value(std::ref(loop_var));                                
+                                else sharedObj = Boxed_Value(loop_var);
+                                
+                                t_ss.add_get_object(loop_var_name, sharedObj);
 
-                        chaiscript::Boxed_Value rangedObjContainer;
-                        bool successfulRangedObjContainer = false;
-                        try {
-                            rangedObjContainer = this->children[0]->eval(t_ss);
-                            rangedObjContainer = t_ss.add_get_object(loop_var_name, rangedObjContainer); // add_get_object
-                            successfulRangedObjContainer = true;
-                        }
-                        catch (...) {}
-
-                        while (!boxed_cast<bool>(call_function(empty_funcs, range_obj))) {
-                            chaiscript::eval::detail::Scope_Push_Pop spp(t_ss);
-                            if (successfulRangedObjContainer) {
-                                std::array<Boxed_Value, 2> p{ rangedObjContainer, call_function(front_funcs, range_obj) };
                                 try {
-                                    t_ss->call_function("=", m_array_loc, chaiscript::Function_Params{ p }, t_ss.conversions());
+                                    this->children[2]->eval(t_ss);
                                 }
-                                catch (...) {
-                                    throw exception::eval_error(cweeStr::printf("Could not perform `=` cast from `%s` to `%s` during ranged loop",
-                                        t_ss->get_type_name(call_function(front_funcs, range_obj).get_type_info()).c_str(),
-                                        t_ss->get_type_name(rangedObjContainer.get_type_info()).c_str(),
-                                        this->location.start, *(this->location.filename)).c_str());
-                                    // throw exception::eval_error("Error with capturing or forwarding the ranged loop object with the given loop object. Consider using generic \"var&\" instead.", this->location.start, *(this->location.filename));
+                                catch (detail::Continue_Loop&) {}
+                                catch (detail::Return_Value&) {
+                                    throw exception::eval_error("Parallel ranged-for loops do not support return statements");
                                 }
-                                rangedObjContainer = t_ss.add_get_object(loop_var_name, rangedObjContainer);
-                            }
-                            else {
-                                t_ss.add_get_object(loop_var_name, call_function(front_funcs, range_obj));
-                            }
 
-                            try {
-                                this->children[2]->eval(t_ss);
+                                call_function(pop_front_funcs, range_obj);
                             }
-                            catch (detail::Continue_Loop&) {
-                                // continue statement hit
-                            }
-                            call_function(pop_front_funcs, range_obj);
+                        } break;
                         }
-
-
-#endif
-
                     }
                     catch (detail::Break_Loop&) {
-                        // loop broken
+                        throw exception::eval_error("Parallel ranged-for loops do not support break statements");
                     }
                     return void_var();
                 }

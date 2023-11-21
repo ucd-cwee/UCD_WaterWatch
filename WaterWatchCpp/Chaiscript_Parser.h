@@ -2260,6 +2260,14 @@ namespace chaiscript {
                     if (num_children != 3) {
                         throw exception::eval_error("Incomplete parallel ranged-for expression", File_Position(m_position.line, m_position.col), *m_filename);
                     }
+
+                    if (m_match_stack[0]->identifier != AST_Node_Type::Id 
+                        && m_match_stack[0]->identifier != AST_Node_Type::Var_Decl 
+                        && m_match_stack[0]->identifier != AST_Node_Type::Reference 
+                        && m_match_stack[0]->identifier != AST_Node_Type::Global_Decl) {
+                        throw exception::eval_error("Parallel ranged-for variable must be a local reference variable", File_Position(m_position.line, m_position.col), *m_filename);
+                    }
+
                     build_match<eval::Parallel_AST_Node<Tracer>>(prev_stack_top);                               
                 }
 

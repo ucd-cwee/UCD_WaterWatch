@@ -632,6 +632,27 @@ namespace UWP_WaterWatch.Custom_Controls
                             maxX = Math.Max(maxX, (child as MapIcon).Location.Position.Longitude);
                             maxY = Math.Max(maxY, (child as MapIcon).Location.Position.Latitude);
                         }
+                        else if (child is MapPolyline)
+                        {
+                            var line = child as MapPolyline;
+                            if (line != null)
+                            {
+                                foreach (var p in line.Path.Positions) {
+                                    numSamples++;
+
+                                    centerPoint.Longitude -= centerPoint.Longitude / numSamples;
+                                    centerPoint.Longitude += p.Longitude / numSamples;
+
+                                    centerPoint.Latitude -= centerPoint.Latitude / numSamples;
+                                    centerPoint.Latitude += p.Latitude / numSamples;
+
+                                    minX = Math.Min(minX, p.Longitude);
+                                    minY = Math.Min(minY, p.Latitude);
+                                    maxX = Math.Max(maxX, p.Longitude);
+                                    maxY = Math.Max(maxY, p.Latitude);
+                                }
+                            }
+                        }
                     }
                 }
             }
