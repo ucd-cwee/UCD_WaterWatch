@@ -29,6 +29,7 @@ to maintain a single distribution point for the source code.
 #include "AlgLibWrapper.h"
 #include "odbc.h"
 #include "RTree.h"
+#include "../../GDAL/GDAL.h"
 
 namespace chaiscript {
     namespace WaterWatch_Lib {
@@ -615,6 +616,19 @@ namespace chaiscript {
                 lib->AddFunction(, topRight, ->vec2d& , return obj.topRight; , RTreeType::cweeBoundary& obj);
                 lib->AddFunction(, bottomLeft, ->vec2d& , return obj.bottomLeft;, RTreeType::cweeBoundary& obj);
                 lib->AddFunction(Boundary_To_Layer, UI_MapLayer, -> UI_MapLayer, return Boundary_To_Layer(obj, nullptr), RTreeType::cweeBoundary& obj);
+            }
+
+            // GDAL
+            if (1) {
+                AUTO TestGDAL = [](cweeStr const& filePath) {
+                    return gdal_data->TestGDAL(filePath);
+                };
+
+                lib->AddFunction(TestGDAL, TestGDAL, ,
+                    return TestGDAL(filePath);
+                , cweeStr const& filePath);
+
+
             }
 
             return lib;

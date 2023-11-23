@@ -19,6 +19,22 @@
     </ProjectConfiguration>
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="$(SolutionDir)gdal-3.8.0\*.c">
+      <Link>GDAL C Files\%(RecursiveDir)%(FileName)%(Extension)</Link>
+      <BuildAction>Compile</BuildAction>
+    </Compile>
+    <Compile Include="$(SolutionDir)gdal-3.8.0\*.cpp">
+      <Link>GDAL CPP Files\%(RecursiveDir)%(FileName)%(Extension)</Link>
+      <BuildAction>Compile</BuildAction>
+    </Compile>
+    <Include Include="$(SolutionDir)gdal-3.8.0\*.h">
+      <Link>GDAL H Files\%(RecursiveDir)%(FileName)%(Extension)</Link>
+    </Include>
+    <Include Include="$(SolutionDir)gdal-3.8.0\*.hpp">
+      <Link>GDAL HPP Files\%(RecursiveDir)%(FileName)%(Extension)</Link>
+    </Include>
+  </ItemGroup>
+  <ItemGroup>
     <ClCompile Include="GDAL.cpp" />
   </ItemGroup>
   <ItemGroup>
@@ -154,6 +170,7 @@
       <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <LanguageStandard>stdcpp17</LanguageStandard>
+      <AdditionalIncludeDirectories>$(ProjectDir)include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>
@@ -162,6 +179,12 @@
       <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
     </Link>
+    <Lib>
+      <AdditionalLibraryDirectories>$(ProjectDir)lib</AdditionalLibraryDirectories>
+    </Lib>
+    <ProjectReference>
+      <LinkLibraryDependencies>true</LinkLibraryDependencies>
+    </ProjectReference>
   </ItemDefinitionGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

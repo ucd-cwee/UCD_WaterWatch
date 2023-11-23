@@ -146,7 +146,7 @@
       <PreprocessorDefinitions>NDEBUG;_WINDOWS;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp17</LanguageStandard>
-      <AdditionalIncludeDirectories>$(SolutionDir)EDMS_DLL_Codebase;$(SolutionDir)EDMS_DLL_Codebase\include;$(ProjectDir)include;$(SolutionDir)dlib-19.17\source\</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)EDMS_DLL_Codebase;$(SolutionDir)EDMS_DLL_Codebase\include;$(ProjectDir)include;$(SolutionDir)dlib-19.17\source\;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <ProgramDataBaseFileName>$(IntDir)Symbols\$(ProjectName).pdb</ProgramDataBaseFileName>
       <AdditionalOptions>/bigobj %(AdditionalOptions)</AdditionalOptions>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
@@ -156,8 +156,8 @@
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>DebugFull</GenerateDebugInformation>
-      <AdditionalLibraryDirectories>$(SolutionDir)epanet;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <AdditionalDependencies>libmysql.lib;libcurl_a.lib</AdditionalDependencies>
+      <AdditionalLibraryDirectories>$(SolutionDir)GDAL\lib;$(SolutionDir)epanet;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>libmysql.lib; libcurl_a.lib; apr-1.lib; aprapp-1.lib; aprutil-1.lib; apr_dbd_odbc-1.lib; apr_ldap-1.lib; cairo.lib; cfitsio.lib; fontconfig.lib; freetype.lib; freexl.lib; freexl_i.lib; fribidi.lib; fts5.lib; gdal_i.lib; geos.lib; geos_c.lib; geotiff.lib; giflib.lib; harfbuzz.lib; hdf.lib; hdf5.lib; hdf5_cpp.lib; hdf5_hl.lib; hdf5_hl_cpp.lib; iconv.lib; kmlbase.lib; kmlconvenience.lib; kmldom.lib; kmlengine.lib; kmlregionator.lib; kmlxsd.lib; libapr-1.lib; libaprapp-1.lib; libaprutil-1.lib; libcrypto.lib; libcrypto_static.lib; libcurl_imp.lib; libexpat.lib; libfcgi.lib; libhdf.lib; libhdf5.lib; libhdf5_cpp.lib; libhdf5_hl.lib; libhdf5_hl_cpp.lib; libhttpd.lib; libjpeg.lib; libkea.lib; libmfhdf.lib; libmysql.lib; libpng16.lib; libpng16_static.lib; libpq.lib; libprotobuf-lite.lib; libprotobuf.lib; libprotoc.lib; librttopo.lib; libsharpyuv.lib; libsqlite3.lib; libssl.lib; libssl_static.lib; libsvg-cairo.lib; libsvg.lib; libszip.lib; libwebp.lib; libwebpdecoder.lib; libwebpdemux.lib; libwebpmux.lib; libxdr.lib; libxml2.lib; mapcache.lib; mapserver.lib; mfhdf.lib; minizip.lib; netcdf.lib; ogdi.lib; openjp2.lib; pcre.lib; pcrecpp.lib; pcreposix.lib; pixman-1.lib; poppler.lib; proj.lib; proj9.lib; proj_4_9.lib; proj_i.lib; protobuf-c.lib; spatialite.lib; spatialite_i.lib; sqlite3.lib; sqlite3_i.lib; szip.lib; tiff.lib; tiffxx.lib; uriparser.lib; xdr.lib; xerces-c_3.lib; zlib.lib; zlibstatic.lib; zstd.lib; zstd_static.lib</AdditionalDependencies>
       <ProgramDatabaseFile>$(IntDir)Symbols\$(ProjectName).pdb</ProgramDatabaseFile>
       <Profile>true</Profile>
     </Link>
@@ -167,8 +167,81 @@
     </ProjectReference>
     <PreBuildEvent>
       <Command>xcopy /y /d "$(SolutionDir)$(Platform)\$(Configuration)\WaterWatch_Win32_DLL\WaterWatch_Win32_DLL.lib" "$(OutDir)"
-xcopy /y /d "$(SolutionDir)epanet\libmysql.dll" "$(OutDir)"
-xcopy /y /d "$(SolutionDir)epanet\nanodbc.lib" "$(OutDir)"
+	xcopy /y /d "$(SolutionDir)epanet\libmysql.dll" "$(OutDir)"
+	xcopy /y /d "$(SolutionDir)epanet\nanodbc.lib" "$(OutDir)"
+	xcopy /y /d "$(SolutionDir)GDAL\dll\adrg.dll" "$(OutDir)"
+	xcopy /y /d "$(SolutionDir)GDAL\dll\apr_dbd_odbc-1.dll" "$(OutDir)"
+	xcopy /y /d "$(SolutionDir)GDAL\dll\apr_ldap-1.dll" "$(OutDir)"
+	xcopy /y /d "$(SolutionDir)GDAL\dll\cairo.dll" "$(OutDir)"
+	xcopy /y /d "$(SolutionDir)GDAL\dll\cfitsio.dll" "$(OutDir)"
+	xcopy /y /d "$(SolutionDir)GDAL\dll\concrt140.dll" "$(OutDir)"
+	xcopy /y /d "$(SolutionDir)GDAL\dll\FileGDBAPI.dll" "$(OutDir)"
+	xcopy /y /d "$(SolutionDir)GDAL\dll\freexl.dll" "$(OutDir)"
+	xcopy /y /d "$(SolutionDir)GDAL\dll\fribidi-0.dll" "$(OutDir)"
+	xcopy /y /d "$(SolutionDir)GDAL\dll\fts5.dll" "$(OutDir)"
+	xcopy /y /d "$(SolutionDir)GDAL\dll\gdal.dll" "$(OutDir)"
+	xcopy /y /d "$(SolutionDir)GDAL\dll\geos.dll" "$(OutDir)"
+	xcopy /y /d "$(SolutionDir)GDAL\dll\geos_c.dll" "$(OutDir)"
+	xcopy /y /d "$(SolutionDir)GDAL\dll\hdf.dll" "$(OutDir)"
+	xcopy /y /d "$(SolutionDir)GDAL\dll\hdf5.dll" "$(OutDir)"
+	xcopy /y /d "$(SolutionDir)GDAL\dll\hdf5_cpp.dll" "$(OutDir)"
+	xcopy /y /d "$(SolutionDir)GDAL\dll\hdf5_hl.dll" "$(OutDir)"
+	xcopy /y /d "$(SolutionDir)GDAL\dll\hdf5_hl_cpp.dll" "$(OutDir)"
+	xcopy /y /d "$(SolutionDir)GDAL\dll\iconv-2.dll" "$(OutDir)"
+	xcopy /y /d "$(SolutionDir)GDAL\dll\libapr-1.dll" "$(OutDir)"
+	xcopy /y /d "$(SolutionDir)GDAL\dll\libaprutil-1.dll" "$(OutDir)"
+	xcopy /y /d "$(SolutionDir)GDAL\dll\libcrypto-1_1-x64.dll" "$(OutDir)"
+	xcopy /y /d "$(SolutionDir)GDAL\dll\libcurl.dll" "$(OutDir)"
+	xcopy /y /d "$(SolutionDir)GDAL\dll\libexpat.dll" "$(OutDir)"
+	xcopy /y /d "$(SolutionDir)GDAL\dll\libfcgi.dll" "$(OutDir)"
+	xcopy /y /d "$(SolutionDir)GDAL\dll\libhttpd.dll" "$(OutDir)"
+	xcopy /y /d "$(SolutionDir)GDAL\dll\libkea.dll" "$(OutDir)"
+	xcopy /y /d "$(SolutionDir)GDAL\dll\libmysql.dll" "$(OutDir)"
+	xcopy /y /d "$(SolutionDir)GDAL\dll\libpng16.dll" "$(OutDir)"
+	xcopy /y /d "$(SolutionDir)GDAL\dll\libpq.dll" "$(OutDir)"
+	xcopy /y /d "$(SolutionDir)GDAL\dll\librttopo.dll" "$(OutDir)"
+	xcopy /y /d "$(SolutionDir)GDAL\dll\libssl-1_1-x64.dll" "$(OutDir)"
+	xcopy /y /d "$(SolutionDir)GDAL\dll\libxml2.dll" "$(OutDir)"
+	xcopy /y /d "$(SolutionDir)GDAL\dll\lti_dsdk_9.5.dll" "$(OutDir)"
+	xcopy /y /d "$(SolutionDir)GDAL\dll\lti_lidar_dsdk_1.1.dll" "$(OutDir)"
+	xcopy /y /d "$(SolutionDir)GDAL\dll\mapcache.dll" "$(OutDir)"
+	xcopy /y /d "$(SolutionDir)GDAL\dll\mapserver.dll" "$(OutDir)"
+	xcopy /y /d "$(SolutionDir)GDAL\dll\mfhdf.dll" "$(OutDir)"
+	xcopy /y /d "$(SolutionDir)GDAL\dll\mod_mapcache.dll" "$(OutDir)"
+	xcopy /y /d "$(SolutionDir)GDAL\dll\msplugin_mssql2008.dll" "$(OutDir)"
+	xcopy /y /d "$(SolutionDir)GDAL\dll\msplugin_oracle.dll" "$(OutDir)"
+	xcopy /y /d "$(SolutionDir)GDAL\dll\msvcp140.dll" "$(OutDir)"
+	xcopy /y /d "$(SolutionDir)GDAL\dll\msvcp140_1.dll" "$(OutDir)"
+	xcopy /y /d "$(SolutionDir)GDAL\dll\msvcp140_2.dll" "$(OutDir)"
+	xcopy /y /d "$(SolutionDir)GDAL\dll\msvcp140_atomic_wait.dll" "$(OutDir)"
+	xcopy /y /d "$(SolutionDir)GDAL\dll\msvcp140_codecvt_ids.dll" "$(OutDir)"
+	xcopy /y /d "$(SolutionDir)GDAL\dll\NCSEcw.dll" "$(OutDir)"
+	xcopy /y /d "$(SolutionDir)GDAL\dll\netcdf.dll" "$(OutDir)"
+	xcopy /y /d "$(SolutionDir)GDAL\dll\ogdi.dll" "$(OutDir)"
+	xcopy /y /d "$(SolutionDir)GDAL\dll\openjp2.dll" "$(OutDir)"
+	xcopy /y /d "$(SolutionDir)GDAL\dll\pcre.dll" "$(OutDir)"
+	xcopy /y /d "$(SolutionDir)GDAL\dll\pcrecpp.dll" "$(OutDir)"
+	xcopy /y /d "$(SolutionDir)GDAL\dll\pcreposix.dll" "$(OutDir)"
+	xcopy /y /d "$(SolutionDir)GDAL\dll\proj_4_9.dll" "$(OutDir)"
+	xcopy /y /d "$(SolutionDir)GDAL\dll\proj_7_2.dll" "$(OutDir)"
+	xcopy /y /d "$(SolutionDir)GDAL\dll\proj_9_1.dll" "$(OutDir)"
+	xcopy /y /d "$(SolutionDir)GDAL\dll\proj_9_3.dll" "$(OutDir)"
+	xcopy /y /d "$(SolutionDir)GDAL\dll\remote.dll" "$(OutDir)"
+	xcopy /y /d "$(SolutionDir)GDAL\dll\rpf.dll" "$(OutDir)"
+	xcopy /y /d "$(SolutionDir)GDAL\dll\skeleton.dll" "$(OutDir)"
+	xcopy /y /d "$(SolutionDir)GDAL\dll\spatialite.dll" "$(OutDir)"
+	xcopy /y /d "$(SolutionDir)GDAL\dll\sqlite3.dll" "$(OutDir)"
+	xcopy /y /d "$(SolutionDir)GDAL\dll\szip.dll" "$(OutDir)"
+	xcopy /y /d "$(SolutionDir)GDAL\dll\tbb.dll" "$(OutDir)"
+	xcopy /y /d "$(SolutionDir)GDAL\dll\tiff.dll" "$(OutDir)"
+	xcopy /y /d "$(SolutionDir)GDAL\dll\tiffxx.dll" "$(OutDir)"
+	xcopy /y /d "$(SolutionDir)GDAL\dll\vcruntime140.dll" "$(OutDir)"
+	xcopy /y /d "$(SolutionDir)GDAL\dll\vcruntime140_1.dll" "$(OutDir)"
+	xcopy /y /d "$(SolutionDir)GDAL\dll\vrf.dll" "$(OutDir)"
+	xcopy /y /d "$(SolutionDir)GDAL\dll\xdr.dll" "$(OutDir)"
+	xcopy /y /d "$(SolutionDir)GDAL\dll\xerces-c_3_2.dll" "$(OutDir)"
+	xcopy /y /d "$(SolutionDir)GDAL\dll\zlib.dll" "$(OutDir)"
+	xcopy /y /d "$(SolutionDir)GDAL\dll\zstd.dll" "$(OutDir)"
 </Command>
     </PreBuildEvent>
   </ItemDefinitionGroup>
