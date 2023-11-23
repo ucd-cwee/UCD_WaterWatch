@@ -17,6 +17,7 @@ to maintain a single distribution point for the source code.
 
 #pragma once
 #include "chaiscript_wrapper.h"
+#include "cweeJob.h"
 
 namespace chaiscript::exception {
     class bad_boxed_cast;
@@ -1892,32 +1893,33 @@ namespace chaiscript {
                     }
                     break;
                 }
-
-                if (mode == RangedForMode::AssignmentVar) {
-                    throw exception::eval_error("Parallel ranged-for variable must be a local reference variable");
-                }
-
+                if (mode == RangedForMode::AssignmentVar) throw exception::eval_error("Parallel ranged-for variable must be a local reference variable");
+                
                 const auto do_loop = [&loop_var_name, &t_ss, &mode, &rangedObjContainer, this](const auto& ranged_thing)->chaiscript::Boxed_Value {
                     try {
                         switch (mode) {
                         case RangedForMode::AssignmentVar: break;
                         case RangedForMode::ReferenceBasedVar: {
+                            cweeList<cweeJob> jobs;
                             for (auto&& loop_var : ranged_thing) {
-                                chaiscript::eval::detail::Scope_Push_Pop spp1(t_ss);
                                 chaiscript::Boxed_Value sharedObj;
                                 if constexpr (!std::is_same<std::decay_t<decltype(loop_var)>, Boxed_Value>::value) sharedObj = Boxed_Value(std::ref(loop_var));                                
                                 else sharedObj = Boxed_Value(loop_var);
                                 
-                                t_ss.add_get_object(loop_var_name, sharedObj);
-
-                                try {
-                                    this->children[2]->eval(t_ss);
-                                }
-                                catch (detail::Continue_Loop&) {}
-                                catch (detail::Return_Value&) {
-                                    throw exception::eval_error("Parallel ranged-for loops do not support return statements");
-                                }
+                                cweeJob job = cweeJob([&loop_var_name, &t_ss, &mode, &rangedObjContainer, this](chaiscript::Boxed_Value& o)->void {
+                                    try {
+                                        chaiscript::eval::detail::Scope_Push_Pop spp1(t_ss);
+                                        t_ss.add_get_object(loop_var_name, o);
+                                        this->children[2]->eval(t_ss);
+                                    }
+                                    catch (detail::Continue_Loop&) {}
+                                    catch (detail::Return_Value&) {}
+                                    catch (detail::Break_Loop&) {}
+                                    catch (...) {}
+                                }, chaiscript::Boxed_Value(sharedObj));
+                                jobs.Append(job.AsyncInvoke());
                             }
+                            for (auto& job : jobs) { job.AwaitAll(); }
                         } break;
                         }
                     }
@@ -1980,7 +1982,6 @@ namespace chaiscript {
             mutable std::atomic_uint_fast32_t m_front_loc = { 0 };
             mutable std::atomic_uint_fast32_t m_pop_front_loc = { 0 };
         };
-
 
         template<typename T>
         struct Switch_AST_Node final : AST_Node_Impl<T> {
