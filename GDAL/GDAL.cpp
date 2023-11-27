@@ -22,98 +22,113 @@ public:
 		GDALAllRegister(); // register all drivers
 		CPLPushErrorHandler(CPLQuietErrorHandler); // quiet the errors from GDAL
 	};
-	virtual ~GDAL_Data_Local() {};
-	cweeStr TestGDAL(cweeStr filePath) { // cweeStr filePath = "point.shp";
-		{
-			auto pDS{ cweeSharedPtr< GDALDataset >(
-				(GDALDataset*)GDALOpenEx(
-					filePath,
-					GDAL_OF_READONLY, // GDAL_OF_ALL, // GDAL_OF_VECTOR
-					NULL, NULL, NULL)
-				, [](GDALDataset* ptr) { GDALClose((GDALDatasetH)ptr); }
-			)};
+	virtual ~GDAL_Data_Local() {
+		GDALDestroy();
+	};
+	cweeStr TestGDAL(cweeStr filePath) { // cweeStr filePath = "point.shp";				
+		auto pDS{ cweeSharedPtr< GDALDataset >(
+			(GDALDataset*)GDALOpenEx(
+				filePath,
+				GDAL_OF_READONLY, // GDAL_OF_ALL, // GDAL_OF_VECTOR
+				NULL, NULL, NULL)
+			, [](GDALDataset* ptr) { GDALClose((GDALDatasetH)ptr); }
+		) };
 
-			if (!pDS) return "failure!";
-			
-			for (int i = pDS->GetLayerCount() - 1; i >= 0; i--) {
-				auto layerP{ cweeSharedPtr< OGRLayer >(pDS->GetLayer(i), [pDS](OGRLayer* p) { /* do nothing */ })};
-				if (layerP) {
-					auto sourceSR{ cweeSharedPtr< OGRSpatialReference >(layerP->GetSpatialRef(), [layerP](OGRSpatialReference* p) { /* do nothing */ })};													
-					auto transform{ cweeSharedPtr< OGRCoordinateTransformation >(OGRCreateCoordinateTransformation(sourceSR.get(), WGS84SRS.get())) };
+		if (!pDS) return "failure!";
 
-					if (true) {
-						std::cout << layerP->GetName() << std::endl;
+		for (int i = pDS->GetLayerCount() - 1; i >= 0; i--) {
+			auto layerP{ cweeSharedPtr< OGRLayer >(pDS->GetLayer(i), [pDS](OGRLayer* p) { /* do nothing */ }) };
+			if (layerP) {
+				auto sourceSR{ cweeSharedPtr< OGRSpatialReference >(layerP->GetSpatialRef(), [layerP](OGRSpatialReference* p) { /* do nothing */ }) };
+				auto transform{ cweeSharedPtr< OGRCoordinateTransformation >(OGRCreateCoordinateTransformation(sourceSR.get(), WGS84SRS.get())) };
 
-						// foreach asset / drawn 'thing'		
-						for (int j = layerP->GetFeatureCount() - 1; j >= 0; j--) {
-							auto pFeature{ cweeSharedPtr< OGRFeature >(layerP->GetFeature(j)) }; // for whatever reason, these must be deleted. 
-							if (pFeature) {
-								// foreach column within this row of asset table
-								for (AUTO oField : *pFeature) {
-									if (oField.IsUnset()) {
-										printf("(unset), ");
-										continue;
-									}
-									if (oField.IsNull()) {
-										printf("(null), ");
-										continue;
-									}
-									switch (oField.GetType()) {
-									case OFTInteger:
-										printf("%d, ", oField.GetInteger());
-										break;
-									case OFTInteger64:
-										printf(CPL_FRMT_GIB ",", oField.GetInteger64());
-										break;
-									case OFTReal:
-										printf("%.3f, ", oField.GetDouble());
-										break;
-									case OFTString:
-										// GetString() returns a C string
-										printf("%s, ", oField.GetString());
-										break;
-									default:
-										// Note: we use GetAsString() and not GetString(), since
-										// the later assumes the field type to be OFTString while the
-										// former will do a conversion from the original type to string.
-										printf("%s, ", oField.GetAsString());
-										break;
-									}
+				
+				std::cout << layerP->GetName() << std::endl;
+
+				// foreach asset / drawn 'thing'		
+				for (int j = layerP->GetFeatureCount() - 1; j >= 0; j--) {
+					auto pFeature{ cweeSharedPtr< OGRFeature >(layerP->GetFeature(j), [layerP](OGRFeature* p) { delete p; }) }; // for whatever reason, these must be deleted. 
+					if (pFeature) {
+						// foreach column within this row of asset table
+						for (AUTO oField : *pFeature) {
+							if (oField.IsUnset()) {
+								printf("<unset>, ");
+							}
+							else if (oField.IsNull()) {
+								printf("<null>, ");
+							}
+							else {
+								switch (oField.GetType()) {
+								case OGRFieldType::OFTInteger: // int
+									printf("%d, ", oField.GetInteger());
+									break;
+								case OGRFieldType::OFTInteger64: // big int
+									printf(CPL_FRMT_GIB ",", oField.GetInteger64());
+									break;
+								case OGRFieldType::OFTReal: // double
+									printf("%.3f, ", oField.GetDouble());
+									break;
+								case OGRFieldType::OFTBinary: // bool
+									printf("%d, ", oField.GetAsInteger());
+									break;
+								case OGRFieldType::OFTDateTime: // date&time
+                                    {
+									     int year, month, day, hour, minute, TZ; float second;
+										 oField.GetDateTime(&year, &month, &day, &hour, &minute, &second, &TZ);
+										 cweeTime t = cweeTime::make_time(year, month, day, hour, minute, second);
+										 printf("%s, ", t.c_str());
+								    }									
+									break;
+								case OGRFieldType::OFTDate: // date
+									{
+									     int year, month, day, hour, minute, TZ; float second;
+										 oField.GetDateTime(&year, &month, &day, &hour, &minute, &second, &TZ);
+										 cweeTime t = cweeTime::make_time(year, month, day, 0, 0, 0);
+										 printf("%s, ", t.c_str());
+								    }									
+									break;
+								case OGRFieldType::OFTString: // string
+									// GetString() returns a C string
+									printf("\"%s\", ", oField.GetString());
+									break;
+								default:
+									// Note: we use GetAsString() and not GetString(), since
+									// the later assumes the field type to be OFTString while the
+									// former will do a conversion from the original type to string.
+									printf("%s, ", oField.GetAsString());
+									break;
 								}
+							}							
+						}
 
-								auto poGeometry{ cweeSharedPtr< OGRGeometry >(pFeature->GetGeometryRef(), [pFeature](OGRGeometry* p) { /* do nothing */ }) };
-								if (poGeometry) {
-									poGeometry->transform(transform.get()); // > transformTo(newRef.get());
+						auto poGeometry{ cweeSharedPtr< OGRGeometry >(pFeature->GetGeometryRef(), [pFeature](OGRGeometry* p) { /* do nothing */ }) };
+						if (poGeometry) {
+							poGeometry->transform(transform.get()); // > transformTo(newRef.get());
 
-									printf("GeometryMode == %i, ", static_cast<int>(wkbFlatten(poGeometry->getGeometryType())));
+							printf("GeometryMode == %i, ", static_cast<int>(wkbFlatten(poGeometry->getGeometryType())));
 
-									if (poGeometry != NULL && wkbFlatten(poGeometry->getGeometryType()) == wkbPoint) {
-										OGRPoint* poPoint = poGeometry->toPoint();
-										printf("%.7f,%.7f\n", poPoint->getX(), poPoint->getY());
-									}
-									else if (poGeometry != NULL && wkbFlatten(poGeometry->getGeometryType()) == wkbLineString) {
-										OGRLineString* poPoint = poGeometry->toLineString();
-										int numPoints = poPoint->getNumPoints();
-										for (int i = 0; i < numPoints; i++) {
-											printf("{%.7f,%.7f}", poPoint->getX(i), poPoint->getY(i));
-										}
-										printf("\n");
-									}
-									else {
-										printf("geometry mode `%i` not handled\n", static_cast<int>(wkbFlatten(poGeometry->getGeometryType())));
-									}
+							if (poGeometry != NULL && wkbFlatten(poGeometry->getGeometryType()) == wkbPoint) {
+								OGRPoint* poPoint = poGeometry->toPoint();
+								printf("%.7f,%.7f\n", poPoint->getX(), poPoint->getY());
+							}
+							else if (poGeometry != NULL && wkbFlatten(poGeometry->getGeometryType()) == wkbLineString) {
+								OGRLineString* poPoint = poGeometry->toLineString();
+								int numPoints = poPoint->getNumPoints();
+								for (int i = 0; i < numPoints; i++) {
+									printf("{%.7f,%.7f}", poPoint->getX(i), poPoint->getY(i));
 								}
-								else {
-									printf("no point geometry\n");
-								}
+								printf("\n");
+							}
+							else {
+								printf("geometry mode `%i` not handled\n", static_cast<int>(wkbFlatten(poGeometry->getGeometryType())));
 							}
 						}
+						else printf("no point geometry\n");						
 					}
-				}
+				}				
 			}
-				
-			
 		}
+		
 		return "successful!";
 	};
 };
