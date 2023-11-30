@@ -15,6 +15,13 @@ to maintain a single distribution point for the source code.
 
 #pragma once
 #include "Chaiscript_WaterWatch_Module.h"
+#include "WaterWatch_Module_P1.h"
+#include "WaterWatch_Module_P2.h"
+#include "WaterWatch_Module_P3.h"
+#include "WaterWatch_Module_EPAnet.h"
+#include "WaterWatch_Module_P4.h"
+#include "ExcelInterop_Module.h"
+#include "../GDAL/GDAL.h"
 
 namespace chaiscript {
     WaterWatch_ChaiScript::WaterWatch_ChaiScript(std::vector<std::string> t_modulepaths, std::vector<std::string> t_usepaths, std::vector<Options> t_opts)
@@ -29,7 +36,8 @@ namespace chaiscript {
                 chaiscript::WaterWatch_Lib::library_3p3(),
                 chaiscript::WaterWatch_Lib::library_EPAnet(),
                 chaiscript::WaterWatch_Lib::library_4(),
-                chaiscript::WaterWatch_Lib::library_Excel()
+                chaiscript::WaterWatch_Lib::library_Excel(),
+                chaiscript::WaterWatch_Lib::GDAL_library()
             }
             , chaiscript::make_parser<eval::Noop_Tracer, optimizer::Optimizer_Default>()
             , std::move(t_modulepaths)

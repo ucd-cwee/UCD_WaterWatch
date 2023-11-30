@@ -169,6 +169,7 @@ public:
 	virtual int		listOSFiles(const char* directory, fileType_t extension, cweeThreadedList<cweeStr>& list) = 0;
 	virtual cweeList<cweeStr> listFilesWithExtension(const char* directory, const char* extension) = 0;
 	virtual cweeList<cweeStr> listFilesWithExtension(const char* directory, fileType_t extension) = 0;
+	virtual cweeList<cweeStr> listDirectories(const char* directory, bool includeFileNames = false) = 0;
 
 public:
 	/* Does not work with sandbox environments like UWP. Only works in Win32 environment. */

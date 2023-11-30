@@ -204,15 +204,6 @@
       <DependentUpon>Resources.resx</DependentUpon>
     </Compile>
     <None Include="Excel_WaterWatchLibrary_1_TemporaryKey.pfx" />
-    <Content Include="libcurl_a.lib">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <Content Include="libmysql.lib">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <Content Include="nanodbc.lib">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
     <None Include="Properties\Settings.settings">
       <Generator>SettingsSingleFileGenerator</Generator>
       <LastGenOutput>Settings.Designer.cs</LastGenOutput>
@@ -239,10 +230,19 @@
     </Compile>
   </ItemGroup>
   <ItemGroup>
-    <Content Include="..\WaterWatch_Cs_SWIG\Conv.dll">
-      <Link>Conv.dll</Link>
+    <Content Include="$(SolutionDir)WaterWatch_Cs_SWIG\Conv.dll">
+      <Link>%(FileName)%(Extension)</Link>
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
+    <Content Include="$(SolutionDir)GDAL\dll\*.dll">
+      <Link>%(FileName)%(Extension)</Link>
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="$(SolutionDir)epanet\libmysql.dll">
+      <Link>%(FileName)%(Extension)</Link>
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\WaterWatch_Cs_SWIG\WaterWatch_Cs_SWIG.vcxproj">
@@ -251,11 +251,6 @@
     </ProjectReference>
   </ItemGroup>
   <Import Project="..\CsFoundation\CsFoundation.projitems" Label="Shared" />
-  <ItemGroup>
-    <Content Include="libmysql.dll">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-  </ItemGroup>
   <PropertyGroup>
     <VisualStudioVersion Condition="'$(VisualStudioVersion)' == ''">10.0</VisualStudioVersion>
     <VSToolsPath Condition="'$(VSToolsPath)' == ''">$(MSBuildExtensionsPath32)\Microsoft\VisualStudio\v$(VisualStudioVersion)</VSToolsPath>
@@ -287,10 +282,4 @@
       </FlavorProperties>
     </VisualStudio>
   </ProjectExtensions>
-  <Target Name="PostBuild" AfterTargets="PostBuildEvent">
-    <Exec Command="xcopy /y /d &quot;$(SolutionDir)WaterWatch_Cs_SWIG\Conv.dll&quot; &quot;$(OutDir)&quot;&#xD;&#xA;xcopy /y /d &quot;$(SolutionDir)epanet\libmysql.dll&quot; &quot;$(OutDir)&quot;&#xD;&#xA;xcopy /y /d &quot;$(SolutionDir)epanet\nanodbc.lib&quot; &quot;$(OutDir)&quot;" />
-  </Target>
-  <Target Name="PreBuild" BeforeTargets="PreBuildEvent">
-    <Exec Command="xcopy /y /d &quot;$(SolutionDir)WaterWatch_Cs_SWIG\Conv.dll&quot; &quot;$(OutDir)&quot;&#xD;&#xA;xcopy /y /d &quot;$(SolutionDir)epanet\libmysql.dll&quot; &quot;$(OutDir)&quot;&#xD;&#xA;xcopy /y /d &quot;$(SolutionDir)epanet\nanodbc.lib&quot; &quot;$(OutDir)&quot;" />
-  </Target>
 </Project>

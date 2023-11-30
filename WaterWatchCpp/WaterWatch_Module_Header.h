@@ -1659,6 +1659,7 @@ namespace chaiscript {
                 }
 #define AddBasicClassTemplate(Type) AddBasicClassTemplate_SpecializedName(Type, Type)
 #define AddBasicClassMember(Type, Member) { lib->add(chaiscript::fun(&##Type::##Member), #Member); }
+#define AddBasicClassFunction(Type, Member) { lib->add(chaiscript::fun(&##Type::##Member), #Member); }
 #define AddNamespacedClassTemplate(Namespace, Type) { \
                     lib->add(chaiscript::user_type<##Namespace::##Type>(), #Type); \
                     lib->add(chaiscript::constructor<##Namespace::##Type()>(), #Type); \
@@ -1678,7 +1679,6 @@ namespace chaiscript {
                     lib->add(chaiscript::type_conversion<cweeSharedPtr<##Namespace::##Type>, bool>([](const cweeSharedPtr<##Namespace::##Type>& t_bt)->bool { return (bool)t_bt; }, nullptr)); \
                 }
 
-
 #define AddSharedPtrClass(Namespace, BaseType) { \
                     lib->add(chaiscript::user_type<cweeSharedPtr<##Namespace::##BaseType>>(), #BaseType); \
                     lib->add(chaiscript::fun([]()->cweeSharedPtr<##Namespace::##BaseType> { return make_cwee_shared<##Namespace::##BaseType>(); }), #BaseType); \
@@ -1696,10 +1696,6 @@ namespace chaiscript {
 #define AddSharedPtrClassFunction(Namespace, BaseType, Function) { \
                     lib->add(chaiscript::fun([](cweeSharedPtr<##Namespace::##BaseType>& a) { if (a) return a->Function(); else throw(chaiscript::exception::eval_error("Cannot access a member of a null (empty) shared object.")); }), #Function); \
                 }
-
-
-
-
 
 #define AddNamespacedClassMember(Namespace, Type, Member) { lib->add(chaiscript::fun(&##Namespace::##Type::##Member), #Member); }
 #define AddNamespacedClassMember_SupportSharedPtr(Namespace, Type, Member) {  \
@@ -1748,7 +1744,7 @@ lib->add(chaiscript::type_conversion<From, To>([](const From& t_bt)->To { return
                 nm.ReplaceInline("^", ""); nm.ReplaceInline("?", ""); nm.ReplaceInline("²", "");   \
                 cweeStr addEnumFunc = cweeStr::printf("def %s::%s() { return %s(%i); }", cweeStr(#TypeName).c_str(), nm.c_str(), cweeStr(#TypeName).c_str(), i);   \
                 try { lib->eval(addEnumFunc.c_str()); }   \
-                catch (...) { fileSystem->submitToast(cweeStr("Error adding Enum ") + cweeStr(nm.c_str()), "With Enum class " + cweeStr(#TypeName)); } i++;   \
+                catch (...) { /*fileSystem->submitToast(cweeStr("Error adding Enum ") + cweeStr(nm.c_str()), "With Enum class " + cweeStr(#TypeName));*/ } i++;   \
             }   \
         }
 

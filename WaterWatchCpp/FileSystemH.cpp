@@ -109,6 +109,8 @@ public:
 	int		listOSFiles(const char* directory, fileType_t extension, cweeThreadedList<cweeStr>& list);
 	cweeList<cweeStr> listFilesWithExtension(const char* directory, const char* extension);
 	cweeList<cweeStr> listFilesWithExtension(const char* directory, fileType_t extension);
+	cweeList<cweeStr> listDirectories(const char* directory, bool includeFileNames = false);
+
 public:
 	/* Does not work with sandbox environments like UWP. Only works in Win32 environment. */
 	void		saveWindowsPassword(cweeStr const& account, cweeStr const& username, cweeStr  const& password);
@@ -934,6 +936,17 @@ cweeList<cweeStr> FileSystemLocal::listFilesWithExtension(const char* directory,
 	}
 	return list;
 }
+cweeList<cweeStr> FileSystemLocal::listDirectories(const char* directory, bool includeFileNames) {
+	cweeList<cweeStr> list;
+	std::vector<std::string> in = Directories(directory, includeFileNames).GetDirectories();
+	for (auto& x : in) {
+		cweeStr temp = cweeStr(x.c_str());
+		cweeStr extenI; temp.ExtractFileExtension(extenI);
+		list.push_back(x.c_str());
+	}
+	return list;
+};
+
 
 /* Does not work with sandbox environments like UWP. Only works in Win32 environment. */
 void		FileSystemLocal::saveWindowsPassword(cweeStr const& account, cweeStr const& username, cweeStr  const& password) {	

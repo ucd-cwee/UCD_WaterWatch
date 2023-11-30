@@ -23,12 +23,6 @@ to maintain a single distribution point for the source code.
 #include "Strings.h"
 #include "List.h"
 #include "WaterWatch_Module_Header.h"
-#include "WaterWatch_Module_P1.h"
-#include "WaterWatch_Module_P2.h"
-#include "WaterWatch_Module_P3.h"
-#include "WaterWatch_Module_EPAnet.h"
-#include "WaterWatch_Module_P4.h"
-#include "ExcelInterop_Module.h"
 
 namespace chaiscript {
     class WaterWatch_ChaiScript : public ChaiScript_Basic {

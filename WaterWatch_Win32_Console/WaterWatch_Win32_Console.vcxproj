@@ -165,7 +165,7 @@
       <UseLibraryDependencyInputs>true</UseLibraryDependencyInputs>
       <LinkLibraryDependencies>true</LinkLibraryDependencies>
     </ProjectReference>
-    <PreBuildEvent>
+    <PreBuildEvent> 
       <Command>xcopy /y /d "$(SolutionDir)$(Platform)\$(Configuration)\WaterWatch_Win32_DLL\WaterWatch_Win32_DLL.lib" "$(OutDir)"
 	xcopy /y /d "$(SolutionDir)epanet\libmysql.dll" "$(OutDir)"
 	xcopy /y /d "$(SolutionDir)epanet\nanodbc.lib" "$(OutDir)"

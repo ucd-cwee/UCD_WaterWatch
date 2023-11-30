@@ -1,10 +1,10 @@
-// TODO: This is an example of a library function
 #pragma once
 #include "GDAL.h"
 #include "include/gdal.h"
 #include "include/gdal_priv.h"
 #include "include/ogrsf_frmts.h"
 #include "include/ogr_geos.h"
+#include "../WaterWatchCpp/WaterWatch_Module_Header.h"
 
 template <typename T> INLINE cweeSharedPtr<void> ToVoidPtr(T& ptr) {
 	return cweeSharedPtr<void>(make_cwee_shared<T>(ptr), [](void* p) { return p; });
@@ -13,128 +13,824 @@ template <typename T> INLINE cweeSharedPtr<T> FromVoidPtr(cweeSharedPtr<void> da
 	return cweeSharedPtr<T>(data, [](void* p) { return static_cast<T*>(p); });
 };
 
+
+namespace cweeGeo {
+	Shapefile::Shapefile(cweeStr const& filePath) : 
+		data(cweeSharedPtr<void>(cweeSharedPtr< GDALDataset >(
+			(GDALDataset*)GDALOpenEx(
+				filePath,
+				GDAL_OF_READONLY, // GDAL_OF_ALL, // GDAL_OF_VECTOR
+				NULL, NULL, NULL)
+			, [](GDALDataset* ptr) { GDALClose((GDALDatasetH)ptr); }
+	))){};
+	Layer Shapefile::GetLayer(int LayerId) const {
+		AUTO shapefile{ FromVoidPtr<GDALDataset>(data) };
+		if (shapefile) {
+			auto layerP{ cweeSharedPtr< OGRLayer >(shapefile->GetLayer(LayerId), [shapefile](OGRLayer* p) { /* do nothing */ }) };
+			return cweeGeo::Layer(cweeSharedPtr<void>(layerP));
+		}
+		return Layer();
+	};
+	Layer Shapefile::GetLayer(cweeStr const& name) const {
+		AUTO shapefile{ FromVoidPtr<GDALDataset>(data) };
+		if (shapefile) {
+			auto layerP{ cweeSharedPtr< OGRLayer >(shapefile->GetLayerByName(name), [shapefile](OGRLayer* p) { /* do nothing */ }) };
+			return cweeGeo::Layer(cweeSharedPtr<void>(layerP));
+		}
+		return Layer();
+	};
+	int Shapefile::NumLayers() const {
+		AUTO shapefile{ FromVoidPtr<GDALDataset>(data) };
+		if (shapefile) {
+			return shapefile->GetLayerCount();
+		}
+		return 0;
+	};
+
+	Layer::Layer(decltype(Layer::data) dataSource) : data(dataSource), transform(nullptr) {
+		AUTO layerP{ FromVoidPtr<OGRLayer>(data) };
+		if (layerP) {
+			AUTO WGS84SRS = cweeSharedPtr<OGRSpatialReference>(OGRSpatialReference::GetWGS84SRS(), [](OGRSpatialReference* p) {});
+			auto sourceSR{ cweeSharedPtr< OGRSpatialReference >(layerP->GetSpatialRef(), [layerP, WGS84SRS](OGRSpatialReference* p) { /* do nothing */ }) };
+			this->transform = cweeSharedPtr<void>(cweeSharedPtr< OGRCoordinateTransformation >(OGRCreateCoordinateTransformation(sourceSR.get(), WGS84SRS.get())));
+		}
+	};
+	Layer::Layer(Layer const& other) : data(other.data), transform(other.transform) {};
+	Layer::Layer(Layer&& other) : data(std::forward<decltype(Layer::data)>(other.data)), transform(other.transform) {};
+	Layer& Layer::operator=(Layer const& other) {
+		data = other.data;
+		transform = other.transform;
+		return *this;
+	};
+	Layer& Layer::operator=(Layer&& other) {
+		data = other.data;
+		transform = other.transform;
+		return *this;
+	};
+	int Layer::NumFeatures() const {
+		AUTO ptr{ FromVoidPtr<OGRLayer>(data) };
+		return ptr->GetFeatureCount();
+	};
+	Feature Layer::GetFeature(int Fid) const {
+		AUTO ptr{ FromVoidPtr<OGRLayer>(data) };
+		auto pFeature{ cweeSharedPtr< OGRFeature >(ptr->GetFeature(Fid), [ptr](OGRFeature* p) { delete p; }) };
+
+		auto poGeometry{ cweeSharedPtr< OGRGeometry >(pFeature->GetGeometryRef(), [pFeature](OGRGeometry* p) { /* do nothing */ }) };
+		AUTO Transform{ FromVoidPtr<OGRCoordinateTransformation>(this->transform) };
+		poGeometry->transform(Transform.get());
+
+		return cweeGeo::Feature(cweeSharedPtr<void>(pFeature), *this);
+	};
+	cweeStr Layer::Name() const {
+		AUTO ptr{ FromVoidPtr<OGRLayer>(data) };
+		if (ptr) return ptr->GetName();
+		else return "";
+	};
+
+	int Feature::Fid() const {
+		AUTO ptr{ FromVoidPtr<OGRFeature>(data) };
+		return ptr->GetFID();
+	};
+	int Feature::NumFields() const {
+		AUTO ptr{ FromVoidPtr<OGRFeature>(data) };
+		return ptr->GetFieldCount();
+	};
+	const Layer& Feature::GetLayer() const { return this->layer;	};
+	cweeSharedPtr<void> Feature::Data() const {	return data; };
+	Field Feature::GetField(int n) const { return Field(*this, n); };
+	Field Feature::GetField(cweeStr const& name) const {
+		AUTO ptr{ FromVoidPtr<OGRFeature>(data) };
+		return Field(*this, ptr->GetFieldIndex(name));
+	};
+	Geometry Feature::GetGeometry() const {
+		AUTO ptr{ FromVoidPtr<OGRFeature>(data) };
+		auto poGeometry{ cweeSharedPtr< OGRGeometry >(ptr->GetGeometryRef(), [ptr](OGRGeometry* p) { /* do nothing */ }) };
+		return Geometry(*this, cweeSharedPtr<void>(poGeometry));
+	};
+
+	const cweeGeo::Feature& Field::GetFeature() const { return this->Feature; };
+	cweeStr Field::Name() const {
+		AUTO ptr{ FromVoidPtr<OGRFeature>(this->Feature.Data()) };
+		if (ptr) {
+			AUTO p = ptr->GetFieldDefnRef(fieldNumber);
+			if (p) {
+				return p->GetNameRef();
+			}
+		}
+		return "";
+	};
+	FieldType Field::Type() const {
+		AUTO ptr{ FromVoidPtr<OGRFeature>(this->Feature.Data()) };
+		if (ptr) {
+			AUTO p = ptr->GetFieldDefnRef(fieldNumber);
+			if (p) {
+				return FieldType::_from_integral(static_cast<int>(p->GetType()));
+			}
+		}
+		return FieldType::None;
+	};
+	bool Field::IsUnset() const {
+		AUTO ptr{ FromVoidPtr<OGRFeature>(this->Feature.Data()) };
+		if (ptr) {
+			return !ptr->IsFieldSet(fieldNumber);
+		}
+		return true;
+	};
+	bool Field::IsNull() const {
+		AUTO ptr{ FromVoidPtr<OGRFeature>(this->Feature.Data()) };
+		if (ptr) {
+			return ptr->IsFieldNull(fieldNumber);
+		}
+		return true;
+	};
+	chaiscript::Boxed_Value Field::GetBoxed() const {
+		AUTO ptr{ FromVoidPtr<OGRFeature>(this->Feature.Data()) };
+		if (ptr) {
+			switch (Type()) {
+			case  FieldType::None:
+				return chaiscript::Boxed_Value();
+			case FieldType::Integer: // int
+				return chaiscript::var(ptr->GetFieldAsInteger(fieldNumber));
+			case FieldType::Integer64: // big int
+				return chaiscript::var((int64)ptr->GetFieldAsInteger64(fieldNumber));
+			case FieldType::Real: // double
+				return chaiscript::var(ptr->GetFieldAsDouble(fieldNumber));
+			case FieldType::Binary: // bool
+				return chaiscript::var((bool)ptr->GetFieldAsInteger(fieldNumber));
+			case FieldType::DateTime: { // date & time			
+				int year, month, day, hour, minute, TZ; float second;
+				ptr->GetFieldAsDateTime(fieldNumber, &year, &month, &day, &hour, &minute, &second, &TZ);
+				if (month <= 0 || day <= 0) {
+					return chaiscript::var(cweeTime::Epoch());
+				}
+				return chaiscript::var(cweeTime::make_time(year, month, day, hour, minute, second));
+			}
+			case FieldType::Date: {
+				int year, month, day, hour, minute, TZ; float second;
+				ptr->GetFieldAsDateTime(fieldNumber, &year, &month, &day, &hour, &minute, &second, &TZ);
+				if (month <= 0 || day <= 0) {
+					return chaiscript::var(cweeTime::Epoch());
+				}
+				return chaiscript::var(cweeTime::make_time(year, month, day, 0, 0, 0));
+			}
+			case FieldType::Time: {
+				int year, month, day, hour, minute, TZ; float second;
+				ptr->GetFieldAsDateTime(fieldNumber, &year, &month, &day, &hour, &minute, &second, &TZ);
+				return chaiscript::var(cweeTime::make_time(1970, 1, 1, hour, minute, second));
+			}
+			default:
+			case FieldType::String: // string
+				return chaiscript::var((cweeStr)ptr->GetFieldAsString(fieldNumber));
+			}
+		}
+		return chaiscript::Boxed_Value();
+	};
+	cweeAny Field::GetAny() const {
+		AUTO ptr{ FromVoidPtr<OGRFeature>(this->Feature.Data()) };
+		if (ptr) {
+			switch (Type()) {
+			case  FieldType::None:
+				return cweeAny();
+			case FieldType::Integer: // int
+				return cweeAny(ptr->GetFieldAsInteger(fieldNumber));
+			case FieldType::Integer64: // big int
+				return cweeAny((int64)ptr->GetFieldAsInteger64(fieldNumber));
+			case FieldType::Real: // double
+				return cweeAny(ptr->GetFieldAsDouble(fieldNumber));
+			case FieldType::Binary: // bool
+				return cweeAny((bool)ptr->GetFieldAsInteger(fieldNumber));
+			case FieldType::DateTime: { // date & time			
+				int year, month, day, hour, minute, TZ; float second;
+				ptr->GetFieldAsDateTime(fieldNumber, &year, &month, &day, &hour, &minute, &second, &TZ);
+				if (month <= 0 || day <= 0) {
+					return cweeAny(cweeTime::Epoch());
+				}
+				return cweeAny(cweeTime::make_time(year, month, day, hour, minute, second));
+			}
+			case FieldType::Date: {
+				int year, month, day, hour, minute, TZ; float second;
+				ptr->GetFieldAsDateTime(fieldNumber, &year, &month, &day, &hour, &minute, &second, &TZ);
+				if (month <= 0 || day <= 0) {
+					return cweeAny(cweeTime::Epoch());
+				}
+				return cweeAny(cweeTime::make_time(year, month, day, 0, 0, 0));
+			}
+			case FieldType::Time: {
+				int year, month, day, hour, minute, TZ; float second;
+				ptr->GetFieldAsDateTime(fieldNumber, &year, &month, &day, &hour, &minute, &second, &TZ);
+				return cweeAny(cweeTime::make_time(1970, 1, 1, hour, minute, second));
+			}
+			default:
+			case FieldType::String: // string
+				return cweeAny((cweeStr)ptr->GetFieldAsString(fieldNumber));
+			}
+		}
+		return cweeAny();
+	};
+	cweeStr Field::GetAsString() const {
+		AUTO ptr{ FromVoidPtr<OGRFeature>(this->Feature.Data()) };
+		if (ptr) {
+			switch (Type()) {
+			case  FieldType::None:
+				return cweeStr();
+			case FieldType::Integer: // int
+				return cweeStr(ptr->GetFieldAsInteger(fieldNumber));
+			case FieldType::Integer64: // big int
+				return cweeStr((int64)ptr->GetFieldAsInteger64(fieldNumber));
+			case FieldType::Real: // double
+				return cweeStr(ptr->GetFieldAsDouble(fieldNumber));
+			case FieldType::Binary: // bool
+				return cweeStr((bool)ptr->GetFieldAsInteger(fieldNumber));
+			case FieldType::DateTime: { // date & time	
+				cweeTime t;
+				int year, month, day, hour, minute, TZ; float second;
+				ptr->GetFieldAsDateTime(fieldNumber, &year, &month, &day, &hour, &minute, &second, &TZ);
+				if (month <= 0 || day <= 0) {
+					t = cweeTime::Epoch();
+				}
+				else {
+					t = cweeTime::make_time(year, month, day, hour, minute, second);
+				}
+				return cweeStr(t.c_str());
+			}
+			case FieldType::Date: {
+				cweeTime t; 
+				int year, month, day, hour, minute, TZ; float second;
+				ptr->GetFieldAsDateTime(fieldNumber, &year, &month, &day, &hour, &minute, &second, &TZ);
+				if (month <= 0 || day <= 0) {
+					t = cweeTime::Epoch();
+				}
+				else {
+					t = cweeTime::make_time(year, month, day, 0, 0, 0);
+				}
+				return cweeStr(t.c_str());
+			}
+			case FieldType::Time:
+			default:
+			case FieldType::String: // string
+				return ptr->GetFieldAsString(fieldNumber);
+			}
+		}
+		return cweeStr();
+	};
+	double Field::GetAsDouble() const {
+		AUTO ptr{ FromVoidPtr<OGRFeature>(this->Feature.Data()) };
+		if (ptr) {
+			switch (Type()) {
+			case  FieldType::None:
+				return 0;
+			case FieldType::Integer: // int
+				return (ptr->GetFieldAsInteger(fieldNumber));
+			case FieldType::Integer64: // big int
+				return ((int64)ptr->GetFieldAsInteger64(fieldNumber));
+			case FieldType::Real: // double
+				return (ptr->GetFieldAsDouble(fieldNumber));
+			case FieldType::Binary: // bool
+				return ((bool)ptr->GetFieldAsInteger(fieldNumber));
+			case FieldType::DateTime: { // date & time			
+				int year, month, day, hour, minute, TZ; float second;
+				ptr->GetFieldAsDateTime(fieldNumber, &year, &month, &day, &hour, &minute, &second, &TZ);
+				return (u64)(cweeTime::make_time(year, month, day, hour, minute, second));
+			}
+			case FieldType::Date: {
+				int year, month, day, hour, minute, TZ; float second;
+				ptr->GetFieldAsDateTime(fieldNumber, &year, &month, &day, &hour, &minute, &second, &TZ);
+				return (u64)(cweeTime::make_time(year, month, day, 0, 0, 0));
+			}
+			case FieldType::Time: {
+				int year, month, day, hour, minute, TZ; float second;
+				ptr->GetFieldAsDateTime(fieldNumber, &year, &month, &day, &hour, &minute, &second, &TZ);
+				return (u64)(cweeTime::make_time(0, 0, 0, hour, minute, second));
+			}
+			default:
+			case FieldType::String: // string
+				return cweeStr((cweeStr)ptr->GetFieldAsString(fieldNumber)).ReturnNumericD();
+			}
+		}
+		return 0;
+	};
+	cweeTime Field::GetAsDateTime() const {
+		AUTO ptr{ FromVoidPtr<OGRFeature>(this->Feature.Data()) };
+		if (ptr) {
+			switch (Type()) {
+			case  FieldType::None:
+				return cweeTime();
+			case FieldType::Integer: // int
+				return cweeTime(ptr->GetFieldAsInteger(fieldNumber));
+			case FieldType::Integer64: // big int
+				return cweeTime((int64)ptr->GetFieldAsInteger64(fieldNumber));
+			case FieldType::Real: // double
+				return cweeTime(ptr->GetFieldAsDouble(fieldNumber));
+			case FieldType::Binary: // bool
+				return cweeTime((bool)ptr->GetFieldAsInteger(fieldNumber));
+			case FieldType::DateTime: { // date & time			
+				int year, month, day, hour, minute, TZ; float second;
+				ptr->GetFieldAsDateTime(fieldNumber, &year, &month, &day, &hour, &minute, &second, &TZ);
+				return (cweeTime::make_time(year, month, day, hour, minute, second));
+			}
+			case FieldType::Date: {
+				int year, month, day, hour, minute, TZ; float second;
+				ptr->GetFieldAsDateTime(fieldNumber, &year, &month, &day, &hour, &minute, &second, &TZ);
+				return (cweeTime::make_time(year, month, day, 0, 0, 0));
+			}
+			case FieldType::Time: {
+				int year, month, day, hour, minute, TZ; float second;
+				ptr->GetFieldAsDateTime(fieldNumber, &year, &month, &day, &hour, &minute, &second, &TZ);
+				return (cweeTime::make_time(0, 0, 0, hour, minute, second));
+			}
+			default:
+			case FieldType::String: // string
+				return cweeTime((cweeStr)ptr->GetFieldAsString(fieldNumber));
+			}
+		}
+		return cweeTime();
+	};
+
+	const cweeGeo::Feature& Geometry::GetFeature() const { return this->Feature; };
+	GeometryType Geometry::Type() const {
+		AUTO ptr{ FromVoidPtr<OGRGeometry>(this->geometry) };
+		if (ptr) {
+			return GeometryType::_from_integral(static_cast<int>(wkbFlatten(ptr->getGeometryType())));
+		}
+		return GeometryType::Unknown;
+	};
+	int Geometry::NumPoints() const {
+		AUTO ptr{ FromVoidPtr<OGRGeometry>(this->geometry) };
+		if (ptr) {
+			switch (Type()) {
+			default:
+			case GeometryType::Unknown:
+				return -1;
+			case GeometryType::Point:
+				return 1;
+			case GeometryType::Line: {
+				auto* poPoint = ptr->toLineString();
+				return poPoint->getNumPoints();
+			}
+			case GeometryType::Polygon: {
+				auto* poPoint = ptr->toPolygon();
+				return -1; // TODO
+			}
+			}
+		}
+		return 0;
+	};
+	double Geometry::Longitude(int index) const {
+		AUTO ptr{ FromVoidPtr<OGRGeometry>(this->geometry) };
+		if (ptr) {
+			switch (Type()) {
+			default:
+			case GeometryType::Unknown:
+				return 0;
+			case GeometryType::Point: {
+				auto* poPoint = ptr->toPoint();
+				return poPoint->getX();
+			}
+			case GeometryType::Line: {
+				auto* poPoint = ptr->toLineString();
+				return poPoint->getX(index);
+			}
+			case GeometryType::Polygon: {
+				auto* poPoint = ptr->toPolygon();
+				return -1; // TODO
+			}
+			}
+		}
+		return 0;
+	};
+	double Geometry::Latitude(int index) const {
+		AUTO ptr{ FromVoidPtr<OGRGeometry>(this->geometry) };
+		if (ptr) {
+			switch (Type()) {
+			default:
+			case GeometryType::Unknown:
+				return 0;
+			case GeometryType::Point: {
+				auto* poPoint = ptr->toPoint();
+				return poPoint->getY();
+			}
+			case GeometryType::Line: {
+				auto* poPoint = ptr->toLineString();
+				return poPoint->getY(index);
+			}
+			case GeometryType::Polygon: {
+				auto* poPoint = ptr->toPolygon();
+				return -1; // TODO
+			}
+			}
+		}
+		return 0;
+	};
+	vec2d Geometry::Coordinates(int index) const {
+		AUTO ptr{ FromVoidPtr<OGRGeometry>(this->geometry) };
+		if (ptr) {
+			switch (Type()) {
+			default:
+			case GeometryType::Unknown:
+				return vec2d();
+			case GeometryType::Point: {
+				auto* poPoint = ptr->toPoint();
+				return vec2d(poPoint->getX(), poPoint->getY());
+			}
+			case GeometryType::Line: {
+				auto* poPoint = ptr->toLineString();
+				return vec2d(poPoint->getX(index), poPoint->getY(index));
+			}
+			case GeometryType::Polygon: {
+				auto* poPoint = ptr->toPolygon();
+				return vec2d(-1, -1); // TODO
+			}
+			}
+		}
+		return vec2d();
+	};
+	cweeList<vec2d> Geometry::AllCoordinates() const {
+		int n = NumPoints();
+		cweeList<vec2d> out(n + 1);
+		for (int i = 0; i < n; i++) {
+			out.Append(Coordinates(i));
+		}
+		return out;
+	};
+	cwee_units::foot_t Geometry::Distance(vec2d const& point1, vec2d const& point2) {
+		return geocoding->Distance(point1, point2);
+	};
+	vec2d Geometry::ClosestPoint(vec2d const& pointCoord, cweeList<vec2d> const& lineCoords) {
+		if (lineCoords.Num() == 0) {
+			return pointCoord;
+		}
+		else if (lineCoords.Num() == 1) {
+			return lineCoords[0];
+		}
+		else {
+			cwee_units::foot_t out = std::numeric_limits<cwee_units::foot_t>::max();
+			vec2d toReturn = lineCoords[0];
+			auto closestPointOnLineSegment = [](const vec2d& A, const vec2d& B, const vec2d& P)->vec2d {
+				// Calculate the vector AB (direction of the line segment)
+				double ABx = B[0] - A[0];
+				double ABy = B[1] - A[1];
+
+				// Calculate the vector AP (from point A to point P)
+				double APx = P[0] - A[0];
+				double APy = P[1] - A[1];
+
+				// Calculate the dot product of AB and AP
+				double dotProduct = ABx * APx + ABy * APy;
+
+				// Calculate the squared length of AB
+				double lengthABsq = ABx * ABx + ABy * ABy;
+
+				// Calculate the parameter t (projection of AP onto AB)
+				double t = dotProduct / lengthABsq;
+
+				// If t is outside the segment [0, 1], find the distance to the closest endpoint
+				if (t < 0.0) {
+					return A; // Distance to point A
+				}
+				else if (t > 1.0) {
+					return B; // Distance to point B
+				}
+
+				// Calculate the closest point on the line segment
+				double closestX = A[0] + t * ABx;
+				double closestY = A[1] + t * ABy;
+
+				return vec2d(closestX, closestY);
+			};
+			cwee_units::foot_t dist_start;
+			cwee_units::foot_t dist_end = Distance(pointCoord, lineCoords[0]);
+			cwee_units::foot_t dist_perp;
+
+			for (int i = 1; i < lineCoords.Num(); i += 1) {
+				dist_start = dist_end;
+				dist_end = Distance(pointCoord, lineCoords[i]);
+				auto closest = closestPointOnLineSegment(lineCoords[i - 1], lineCoords[i], pointCoord);
+				dist_perp = Distance(pointCoord, closest);
+
+				if (out > dist_perp) {
+					out = dist_perp;
+					toReturn = closest;
+				}
+				if (out > dist_end) {
+					out = dist_end;
+					toReturn = lineCoords[i];
+				}
+				if (out > dist_start) {
+					out = dist_start;
+					toReturn = lineCoords[i-1];
+				}
+			}
+			return toReturn;
+		}
+	};
+	cwee_units::foot_t Geometry::Distance(vec2d const& pointCoord, cweeList<vec2d> const& lineCoords) {
+		cwee_units::foot_t out = std::numeric_limits<cwee_units::foot_t>::max();
+		if (lineCoords.Num() == 0) {
+			out = std::numeric_limits<decltype(out)>::max();
+		}
+		else if (lineCoords.Num() == 1) {
+			out = Distance(pointCoord, lineCoords[0]);
+		}
+		else {
+			auto closestPointOnLineSegment = [](const vec2d& A, const vec2d& B, const vec2d& P)->vec2d {
+				// Calculate the vector AB (direction of the line segment)
+				double ABx = B[0] - A[0];
+				double ABy = B[1] - A[1];
+
+				// Calculate the vector AP (from point A to point P)
+				double APx = P[0] - A[0];
+				double APy = P[1] - A[1];
+
+				// Calculate the dot product of AB and AP
+				double dotProduct = ABx * APx + ABy * APy;
+
+				// Calculate the squared length of AB
+				double lengthABsq = ABx * ABx + ABy * ABy;
+
+				// Calculate the parameter t (projection of AP onto AB)
+				double t = dotProduct / lengthABsq;
+
+				// If t is outside the segment [0, 1], find the distance to the closest endpoint
+				if (t < 0.0) {
+					return A; // Distance to point A
+				}
+				else if (t > 1.0) {
+					return B; // Distance to point B
+				}
+
+				// Calculate the closest point on the line segment
+				double closestX = A[0] + t * ABx;
+				double closestY = A[1] + t * ABy;
+
+				return vec2d(closestX, closestY);
+			};
+			cwee_units::foot_t dist_start;
+			cwee_units::foot_t dist_end = Distance(pointCoord, lineCoords[0]);
+			cwee_units::foot_t dist_perp;
+
+			for (int i = 1; i < lineCoords.Num(); i += 1) {
+				dist_start = dist_end;
+				dist_end = Distance(pointCoord, lineCoords[i]);				
+				dist_perp = Distance(pointCoord, closestPointOnLineSegment(lineCoords[i - 1], lineCoords[i], pointCoord));
+				out = cwee_units::math::fmin(cwee_units::math::fmin(cwee_units::math::fmin(out, dist_perp), dist_end), dist_start);
+			}
+		}
+		return out;
+	};
+	cwee_units::foot_t Geometry::Distance(cweeList<vec2d> const& coords1, cweeList<vec2d> const& coords2) {
+		using namespace cwee_units;
+
+		cwee_units::foot_t out = std::numeric_limits<cwee_units::foot_t>::max();
+
+		if (coords1.Num() == 0 || coords2.Num() == 0) return out;
+		if (coords1.Num() == 1) return Distance(coords1[0], coords2);		
+		else if (coords2.Num() == 1) return Distance(coords2[0], coords1);
+
+		// intersections of lines (Does not test if end-points overlap)
+		//			.
+		//	........*.....
+		//			.
+		//			.
+		if (true) {
+			// Return true if line segments AB and CD intersect
+			auto ccw = [](vec2d const& A, vec2d const& B, vec2d const& C) {
+				return (C.y - A.y) * (B.x - A.x) > (B.y - A.y) * (C.x - A.x);
+			};
+			auto intersect = [ccw](vec2d const& A, vec2d const& B, vec2d const& C, vec2d const& D) {
+				return ccw(A, C, D) != ccw(B, C, D) and ccw(A, B, C) != ccw(A, B, D);
+			};
+			for (int i = 1; i < coords1.Num(); i++) {
+				for (int j = 1; j < coords2.Num(); j++) {
+					if (intersect(coords1[i - 1], coords1[i], coords2[j - 1], coords2[j])) {
+						return 0_ft;
+					}
+				}
+			}
+		}
+
+		// distance between end-points.
+		//		*..........*
+		//				
+		//				*....*
+		for (int i = 0; i < coords1.Num(); i++) {
+			for (int j = 0; j < coords2.Num(); j++) {
+				if (coords1[i] == coords2[j]) { return 0_ft; }
+				out = cwee_units::math::fmin(out, Distance(coords1[i], coords2[j]));								
+			}
+		}
+
+		// nearest perpendicular points for end-points
+		//		.....*......
+		//			  
+		//			 *				
+		//			.
+		//		   .
+		//        .
+		for (int i = 0; i < coords1.Num(); i++) out = cwee_units::math::fmin(out, Distance(coords1[i], coords2));					
+		for (int i = 0; i < coords2.Num(); i++) out = cwee_units::math::fmin(out, Distance(coords2[i], coords1));
+
+		return out;
+	};
+	cweeStr Geometry::Geocode(vec2d const& point1) {
+		return geocoding->GetAddress(point1);
+	};
+	cwee_units::foot_t Geometry::Elevation(vec2d const& point1) {
+		return geocoding->GetElevation(point1);
+	};
+	cwee_units::foot_t Geometry::Distance(Geometry const& obj1, Geometry const& obj2) {
+		using namespace cwee_units;
+
+		Geometry objA, objB;
+		cwee_units::foot_t out = std::numeric_limits<cwee_units::foot_t>::max();
+		cweeStr mode;
+
+		if (obj1.Type() <= obj2.Type()) {
+			objA = obj1;
+			objB = obj2;
+		}
+		else {
+			objA = obj2;
+			objB = obj1;
+		}
+	
+		mode = cweeStr::printf("%i,%i", (int)objA.Type(), (int)objB.Type());
+		switch (mode.Hash()) {
+		default:		
+			out = std::numeric_limits<decltype(out)>::max();	
+			break;
+		case cweeStr::Hash("1,1"): { // point / point
+			out = Distance(objA.Coordinates(0), objB.Coordinates(0));
+			break;
+		}			
+		case cweeStr::Hash("1,2"): { // point / Line
+			out = Distance(objA.Coordinates(0), objB.AllCoordinates());
+			break;
+		}
+		case cweeStr::Hash("2,2"): { // Line / Line
+			out = Distance(objA.AllCoordinates(), objB.AllCoordinates());
+			break;
+		}
+		}
+		return out;
+	};
+	cwee_units::foot_t Geometry::Distance(Geometry const& obj) const {
+		return Distance(*this, obj);
+	};
+
+	cwee_units::foot_t Geometry::Length(Geometry const& obj) {
+		using namespace cwee_units;
+		cwee_units::foot_t tot = 0_ft;
+		AUTO coords = obj.AllCoordinates();
+		for (int i = 1; i < coords.Num(); i++) {
+			tot += Distance(coords[i - 1], coords[i]);
+		}
+		return tot;
+	};
+	cwee_units::foot_t Geometry::Length() const { return Length(*this); };
+	cweeStr Geometry::Geocode() const { return Geocode(Coordinates(0)); };
+	cwee_units::foot_t Geometry::Elevation() const { return Elevation(Coordinates(0)); };
+
+	cwee_units::foot_t Feature::Distance(Feature const& obj) const{ return this->GetGeometry().Distance(obj.GetGeometry());	};
+	cwee_units::foot_t Feature::Length() const { return this->GetGeometry().Length(); };
+	cweeStr Feature::Geocode() const { return this->GetGeometry().Geocode(); };
+	cwee_units::foot_t Feature::Elevation() const { return this->GetGeometry().Elevation(); };
+}
+
+
 class GDAL_Data_Local final : public GDAL_Data {
 private:
 	cweeSharedPtr<OGRSpatialReference> WGS84SRS;
 
 public:
-	GDAL_Data_Local() : WGS84SRS(OGRSpatialReference::GetWGS84SRS(), [](OGRSpatialReference* p) { /* do nothing */ }) {
+	GDAL_Data_Local() : WGS84SRS(OGRSpatialReference::GetWGS84SRS(), [](OGRSpatialReference* p) {}) {
 		GDALAllRegister(); // register all drivers
 		CPLPushErrorHandler(CPLQuietErrorHandler); // quiet the errors from GDAL
 	};
 	virtual ~GDAL_Data_Local() {
 		GDALDestroy();
 	};
-	cweeStr TestGDAL(cweeStr filePath) { // cweeStr filePath = "point.shp";				
-		auto pDS{ cweeSharedPtr< GDALDataset >(
-			(GDALDataset*)GDALOpenEx(
-				filePath,
-				GDAL_OF_READONLY, // GDAL_OF_ALL, // GDAL_OF_VECTOR
-				NULL, NULL, NULL)
-			, [](GDALDataset* ptr) { GDALClose((GDALDatasetH)ptr); }
-		) };
+	cweeStr TestGDAL(cweeStr filePath) { // cweeStr filePath = "point.shp";		
+		cweeGeo::Field field; 
+		cweeGeo::Layer layer; 
+		cweeGeo::Feature feat; cweeGeo::Feature feat1;
+		cweeGeo::Geometry geometry;
+		cweeGeo::Shapefile shapefile{ filePath };
 
-		if (!pDS) return "failure!";
+		for (int i = shapefile.NumLayers() - 1; i >= 0; i--) {
+			layer = shapefile.GetLayer(i);
 
-		for (int i = pDS->GetLayerCount() - 1; i >= 0; i--) {
-			auto layerP{ cweeSharedPtr< OGRLayer >(pDS->GetLayer(i), [pDS](OGRLayer* p) { /* do nothing */ }) };
-			if (layerP) {
-				auto sourceSR{ cweeSharedPtr< OGRSpatialReference >(layerP->GetSpatialRef(), [layerP](OGRSpatialReference* p) { /* do nothing */ }) };
-				auto transform{ cweeSharedPtr< OGRCoordinateTransformation >(OGRCreateCoordinateTransformation(sourceSR.get(), WGS84SRS.get())) };
+			feat1 = layer.GetFeature(13840);
 
+			for (int Fid = layer.NumFeatures() - 1; Fid >= 0; Fid--) {
+				feat = layer.GetFeature(Fid);
 				
-				std::cout << layerP->GetName() << std::endl;
-
-				// foreach asset / drawn 'thing'		
-				for (int j = layerP->GetFeatureCount() - 1; j >= 0; j--) {
-					auto pFeature{ cweeSharedPtr< OGRFeature >(layerP->GetFeature(j), [layerP](OGRFeature* p) { delete p; }) }; // for whatever reason, these must be deleted. 
-					if (pFeature) {
-						// foreach column within this row of asset table
-						for (AUTO oField : *pFeature) {
-							if (oField.IsUnset()) {
-								printf("<unset>, ");
-							}
-							else if (oField.IsNull()) {
-								printf("<null>, ");
-							}
-							else {
-								switch (oField.GetType()) {
-								case OGRFieldType::OFTInteger: // int
-									printf("%d, ", oField.GetInteger());
-									break;
-								case OGRFieldType::OFTInteger64: // big int
-									printf(CPL_FRMT_GIB ",", oField.GetInteger64());
-									break;
-								case OGRFieldType::OFTReal: // double
-									printf("%.3f, ", oField.GetDouble());
-									break;
-								case OGRFieldType::OFTBinary: // bool
-									printf("%d, ", oField.GetAsInteger());
-									break;
-								case OGRFieldType::OFTDateTime: // date&time
-                                    {
-									     int year, month, day, hour, minute, TZ; float second;
-										 oField.GetDateTime(&year, &month, &day, &hour, &minute, &second, &TZ);
-										 cweeTime t = cweeTime::make_time(year, month, day, hour, minute, second);
-										 printf("%s, ", t.c_str());
-								    }									
-									break;
-								case OGRFieldType::OFTDate: // date
-									{
-									     int year, month, day, hour, minute, TZ; float second;
-										 oField.GetDateTime(&year, &month, &day, &hour, &minute, &second, &TZ);
-										 cweeTime t = cweeTime::make_time(year, month, day, 0, 0, 0);
-										 printf("%s, ", t.c_str());
-								    }									
-									break;
-								case OGRFieldType::OFTString: // string
-									// GetString() returns a C string
-									printf("\"%s\", ", oField.GetString());
-									break;
-								default:
-									// Note: we use GetAsString() and not GetString(), since
-									// the later assumes the field type to be OFTString while the
-									// former will do a conversion from the original type to string.
-									printf("%s, ", oField.GetAsString());
-									break;
-								}
-							}							
+				printf("%d", (int)feat.Fid());
+				for (int i = 0; i < feat.NumFields(); i++) {
+					field = feat.GetField(i);
+					if (field.IsUnset()) printf(", <unset>");
+					else if (field.IsNull()) printf(", <null>");
+					else {
+						switch (field.Type()) {
+						case FieldType::None:
+							printf(", <UNKNOWN>"); break;
+						case FieldType::Integer: // int
+						case FieldType::Integer64: // big int
+							printf(", %d", (int)field.GetAsDouble()); break;
+						case FieldType::Real: // double
+							printf(", %.3f", field.GetAsDouble()); break;
+						case FieldType::Binary: // bool
+							printf(", %d", (int)field.GetAsDouble()); break;
+						case FieldType::DateTime: // date & time			
+							printf(", %s", field.GetAsDateTime().c_str()); break;
+						default:
+						case FieldType::String: // string
+							printf(", %s", field.GetAsString().c_str()); break;
 						}
-
-						auto poGeometry{ cweeSharedPtr< OGRGeometry >(pFeature->GetGeometryRef(), [pFeature](OGRGeometry* p) { /* do nothing */ }) };
-						if (poGeometry) {
-							poGeometry->transform(transform.get()); // > transformTo(newRef.get());
-
-							printf("GeometryMode == %i, ", static_cast<int>(wkbFlatten(poGeometry->getGeometryType())));
-
-							if (poGeometry != NULL && wkbFlatten(poGeometry->getGeometryType()) == wkbPoint) {
-								OGRPoint* poPoint = poGeometry->toPoint();
-								printf("%.7f,%.7f\n", poPoint->getX(), poPoint->getY());
-							}
-							else if (poGeometry != NULL && wkbFlatten(poGeometry->getGeometryType()) == wkbLineString) {
-								OGRLineString* poPoint = poGeometry->toLineString();
-								int numPoints = poPoint->getNumPoints();
-								for (int i = 0; i < numPoints; i++) {
-									printf("{%.7f,%.7f}", poPoint->getX(i), poPoint->getY(i));
-								}
-								printf("\n");
-							}
-							else {
-								printf("geometry mode `%i` not handled\n", static_cast<int>(wkbFlatten(poGeometry->getGeometryType())));
-							}
-						}
-						else printf("no point geometry\n");						
 					}
-				}				
+				}
+
+				printf(", %.3f ft", feat.Length().value());
+
+				printf("\n\t");
+
+				auto distance = feat.Distance(feat1);
+				printf("Distance b/w Fid#%d and Fid#%d: %.3f %s", feat1.Fid(), feat.Fid(), distance.value(), distance.abbreviation());
+
+				printf("\n\n");
 			}
 		}
-		
+
 		return "successful!";
 	};
 };
-cweeSharedPtr<GDAL_Data> gdal_data = make_cwee_shared<GDAL_Data_Local>(new GDAL_Data_Local()).CastReference<GDAL_Data>();
+cweeSharedPtr<GDAL_Data> gdal_data = make_cwee_shared<GDAL_Data_Local>().CastReference<GDAL_Data>(); // DelayedInstantiation< GDAL_Data>([]()->GDAL_Data* { return new GDAL_Data_Local(); });
 
 
+
+
+
+
+
+namespace chaiscript {
+    namespace WaterWatch_Lib {
+        [[nodiscard]] ModulePtr GDAL_library() {
+			using namespace cweeGeo;
+
+            auto lib = chaiscript::make_shared<Module>();
+
+			ADD_BETTER_ENUM_TO_SCRIPT_ENGINE(FieldType, FieldType);
+			ADD_BETTER_ENUM_TO_SCRIPT_ENGINE(GeometryType, GeometryType);
+
+			AddBasicClassTemplate(Geometry);
+			AddBasicClassMember(Geometry, GetFeature);
+			AddBasicClassMember(Geometry, Type);
+			AddBasicClassMember(Geometry, NumPoints);
+			AddBasicClassMember(Geometry, Longitude);
+			AddBasicClassMember(Geometry, Latitude);
+			AddBasicClassMember(Geometry, Coordinates);
+			AddBasicClassMember(Geometry, AllCoordinates); DEF_DECLARE_STD_VECTOR_WITH_SCRIPT_ENGINE_AND_MODULE(vec2d);
+			lib->AddFunction(, Distance, , return a.Distance(b), Geometry const& a, Geometry const& b);
+			lib->AddFunction(, Length, , return o.Length(), Geometry const& o);
+			lib->AddFunction(, Elevation, , return o.Elevation(), Geometry const& o);
+
+			AddBasicClassTemplate(Field);
+			AddBasicClassMember(Field, GetFeature);
+			AddBasicClassMember(Field, Name);
+			AddBasicClassMember(Field, Type);
+			AddBasicClassMember(Field, IsUnset);
+			AddBasicClassMember(Field, IsNull);
+			lib->AddFunction(, Get, , return a.GetBoxed(), Field const& a);
+			AddBasicClassMember(Field, GetAsString);
+			AddBasicClassMember(Field, GetAsDouble);
+			AddBasicClassMember(Field, GetAsDateTime);
+
+			AddBasicClassTemplate(Feature);
+			AddBasicClassMember(Feature, Fid);
+			AddBasicClassMember(Feature, NumFields);
+			AddBasicClassMember(Feature, GetLayer);
+			AddBasicClassMember(Feature, Geocode);
+			lib->AddFunction(, GetField, , return a.GetField(index), Feature const& a, int index);
+			lib->AddFunction(, GetField, , return a.GetField(name), Feature const& a, cweeStr const& name);
+			AddBasicClassMember(Feature, GetGeometry);
+			lib->AddFunction(, Distance, , return a.Distance(b), Feature const& a, Feature const& b);
+			lib->AddFunction(, Length, , return o.Length(), Feature const& o);
+			lib->AddFunction(, Elevation, , return o.Elevation(), Feature const& o);
+
+			AddBasicClassTemplate(Layer);
+			AddBasicClassMember(Layer, GetFeature);
+			AddBasicClassMember(Layer, Name);
+			AddBasicClassMember(Layer, NumFeatures);
+
+			AddBasicClassTemplate(Shapefile);
+			lib->AddFunction(, Shapefile, , return Shapefile(fp), cweeStr const& fp);
+			lib->AddFunction(, GetLayer, , return a.GetLayer(index), Shapefile const& a, int index);
+			lib->AddFunction(, GetLayer, , return a.GetLayer(name), Shapefile const& a, cweeStr const& name);
+			AddBasicClassMember(Shapefile, NumLayers);
+
+            return lib;
+        };
+    };
+}; // namespace chaiscript
 
 
 

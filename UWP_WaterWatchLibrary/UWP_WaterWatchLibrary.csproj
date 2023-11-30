@@ -133,12 +133,6 @@
     </Compile>
   </ItemGroup>
   <ItemGroup>
-    <Content Include="$(SolutionDir)WaterWatch_Cs_SWIG\Conv.dll">
-      <Link>%(FileName)%(Extension)</Link>
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
-  </ItemGroup>
-  <ItemGroup>
     <PackageReference Include="CommunityToolkit.WinUI.Notifications">
       <Version>7.1.2</Version>
     </PackageReference>
@@ -159,9 +153,13 @@
     </Compile>
   </ItemGroup>
   <ItemGroup>
-    <Content Include="..\WaterWatch_UWP_SWIG\Conv.dll">
+    <Content Include="$(SolutionDir)WaterWatch_UWP_SWIG\Conv.dll">
       <Link>Conv.dll</Link>
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="$(SolutionDir)GDAL\dll\*.dll">
+      <Link>%(FileName)%(Extension)</Link>
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
   </ItemGroup>
   <PropertyGroup Condition=" '$(VisualStudioVersion)' == '' or '$(VisualStudioVersion)' &lt; '14.0' ">

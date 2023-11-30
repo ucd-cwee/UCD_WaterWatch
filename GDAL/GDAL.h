@@ -9,38 +9,168 @@
 #include "../WaterWatchCpp/Iterator.h"
 #include "../WaterWatchCpp/DelayedInstantiation.h"
 
+#include "../WaterWatchCpp/chaiscript_wrapper.h"
+#include "../WaterWatchCpp/WaterWatch_Module_Header.h"
+#include "../WaterWatchCpp/Units.h"
+#include "../WaterWatchCpp/Geocoding.h"
+
 class GDAL_Data {
 public:
 	virtual cweeStr TestGDAL(cweeStr filePath) = 0;
 };
 extern cweeSharedPtr<GDAL_Data> gdal_data;
 
+namespace chaiscript {
+	namespace WaterWatch_Lib {
+		[[nodiscard]] ModulePtr GDAL_library();
+	};
+}; // namespace chaiscript
+
+
+
+BETTER_ENUM(FieldType, uint8_t, Integer, IntegerList, Real, RealList, String, StringList, WideString, WideStringList, Binary, Date, Time, DateTime, Integer64, Integer64List, None);
+BETTER_ENUM(GeometryType, uint8_t, Unknown, Point, Line, Polygon, Multipoint, Multiline, MultiPolygon);
+
+
 namespace cweeGeo {
-	class Field {
+	class Layer;
+	class Feature;
+	class Field;
+	class Geometry;
+
+	class Shapefile {
 	protected:
 		cweeSharedPtr<void> data;
 
 	public:
-		Field() : data(nullptr) {};
-		Field(cweeSharedPtr<void> dataSource) : data(dataSource) {};
-		Field(Field const& other) : data(other.data) {};
-		Field(Field&& other) : data(other.data) {};
-		Field& operator=(Field const& other) { data = other.data; return *this; };
-		Field& operator=(Field&& other) { data = other.data; return *this; };
+		Shapefile() : data(nullptr) {};
+		Shapefile(cweeStr const& filePath);
+		Shapefile(decltype(Shapefile::data) dataSource) : data(dataSource) {};
+		Shapefile(Shapefile const& other) : data(other.data) {};
+		Shapefile(Shapefile&& other) : data(std::forward<decltype(Shapefile::data)>(other.data)) {};
+		Shapefile& operator=(Shapefile const& other) { data = other.data;  return *this; };
+		Shapefile& operator=(Shapefile&& other) { data = other.data; return *this; };
 
-
-
+		Layer GetLayer(int LayerId) const;
+		Layer GetLayer(cweeStr const& name) const;
+		int NumLayers() const;
 	};
 
+	class Layer {
+	protected:
+		cweeSharedPtr<void> data;
+		cweeSharedPtr<void> transform;
 
-
-	class ShapeFile {
 	public:
+		Layer() : data(nullptr), transform(nullptr) {};
+		Layer(decltype(Layer::data) dataSource);
+		Layer(Layer const& other);
+		Layer(Layer&& other);
+		Layer& operator=(Layer const& other);
+		Layer& operator=(Layer&& other);
 
-
-
+		int NumFeatures() const;
+		Feature GetFeature(int Fid) const;
+		cweeStr Name() const;
 	};
 
+	class Feature {
+	protected:		
+		cweeSharedPtr<void> data;
+		Layer layer;
 
+	public:
+		Feature() : data(nullptr), layer(nullptr) {};
+		Feature(decltype(Feature::data) dataSource, decltype(Feature::layer) layerSource) : data(dataSource), layer(layerSource) {};
+		Feature(Feature const& other) : data(other.data), layer(other.layer) {};
+		Feature(Feature&& other) : data(std::forward<decltype(Feature::data)>(other.data)), layer(other.layer) {};
+		Feature& operator=(Feature const& other) { data = other.data; layer = other.layer; return *this; };
+		Feature& operator=(Feature&& other) { data = other.data; layer = other.layer; return *this; };
 
+		cweeSharedPtr<void> Data() const;
+		int Fid() const;
+		int NumFields() const;
+		const Layer& GetLayer() const;
+		Field GetField(int n) const;
+		Field GetField(cweeStr const& name) const;
+		Geometry GetGeometry() const;
+		/*! Returns the minimum (closest) distance between this and another feature. */
+		cwee_units::foot_t Distance(Feature const& obj) const;
+		cwee_units::foot_t Length() const;
+		cweeStr Geocode() const;
+		cwee_units::foot_t Elevation() const;
+	};
+
+	class Field {
+	public:
+	protected:
+		cweeGeo::Feature Feature;
+		int fieldNumber;
+
+	public:
+		Field() : Feature(), fieldNumber(-1) {};
+		Field(decltype(Field::Feature) dataSource, decltype(Field::fieldNumber) fieldN) : Feature(dataSource), fieldNumber(fieldN) {};
+		Field(Field const& other) : Feature(other.Feature), fieldNumber(other.fieldNumber) {};
+		Field(Field&& other) : Feature(other.Feature), fieldNumber(other.fieldNumber) {};
+		Field& operator=(Field const& other) { Feature = other.Feature; fieldNumber = other.fieldNumber; return *this; };
+		Field& operator=(Field&& other) { Feature = other.Feature; fieldNumber = other.fieldNumber; return *this; };
+
+		const cweeGeo::Feature& GetFeature() const;
+		cweeStr Name() const;
+		FieldType Type() const;
+		bool IsUnset() const;
+		bool IsNull() const;
+		chaiscript::Boxed_Value GetBoxed() const;
+		cweeAny GetAny() const;
+		cweeStr GetAsString() const;
+		double GetAsDouble() const;
+		cweeTime GetAsDateTime() const;
+	};
+
+	class Geometry {
+	public:
+	protected:
+		cweeGeo::Feature Feature;
+		cweeSharedPtr<void> geometry;
+		
+	public:
+		Geometry() : Feature(), geometry(nullptr) {};
+		Geometry(decltype(Geometry::Feature) dataSource, decltype(Geometry::geometry) geoSource) : Feature(dataSource), geometry(geoSource) {};
+		Geometry(Geometry const& other) : Feature(other.Feature), geometry(other.geometry) {};
+		Geometry(Geometry&& other) : Feature(other.Feature), geometry(other.geometry) {};
+		Geometry& operator=(Geometry const& other) { Feature = other.Feature; geometry = other.geometry; return *this; };
+		Geometry& operator=(Geometry&& other) { Feature = other.Feature; geometry = other.geometry;  return *this; };
+
+		const cweeGeo::Feature& GetFeature() const;
+		GeometryType Type() const;
+		int NumPoints() const;
+		double Longitude(int index) const;
+		double Latitude(int index) const;
+		vec2d Coordinates(int index) const;
+		cweeList<vec2d> AllCoordinates() const;
+
+		/*! Calculates the geodesic distance between two precise decimal coordinates */
+		static cwee_units::foot_t Distance(vec2d const& point1, vec2d const& point2);
+		/*! Calculates the closest point on a line to the input coordinate. */
+		static vec2d ClosestPoint(vec2d const& pointCoord, cweeList<vec2d> const& lineCoords);
+		/*! Calculates the minimum (closest) distance between a point and a series of straight lines. Looks for middle-of-line closeness as well. */
+		static cwee_units::foot_t Distance(vec2d const& pointCoord, cweeList<vec2d> const& lineCoords);
+		/*! Calculates the minimum (closest) distance between two lines. */
+		static cwee_units::foot_t Distance(cweeList<vec2d> const& coords1, cweeList<vec2d> const& coords2);
+		/*! Returns the approximate street address of the coordinate, it known. */
+		static cweeStr Geocode(vec2d const& point1);
+		/*! Returns the approximate elevation of the coordinate, it known. */
+		static cwee_units::foot_t Elevation(vec2d const& point1);
+		/*! Returns the minimum (closest) distance between two geometries. */
+		static cwee_units::foot_t Distance(Geometry const& obj1, Geometry const& obj2);
+		
+		/*! Returns the minimum (closest) distance between this and another geometry. */
+		cwee_units::foot_t Distance(Geometry const& obj) const;
+
+		static cwee_units::foot_t Length(Geometry const& obj);
+		cwee_units::foot_t Length() const;
+
+		cweeStr Geocode() const;
+		cwee_units::foot_t Elevation() const;
+	};
 };

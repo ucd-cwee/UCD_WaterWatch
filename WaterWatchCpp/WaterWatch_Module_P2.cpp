@@ -469,7 +469,37 @@ namespace chaiscript {
                     }), "DownloadFileFromURL");
                     lib->add(chaiscript::fun([](cweeStr const& url) { return fileSystem->QueryHttp(url, ""); }), "QueryHTTP");
                     lib->add(chaiscript::fun([](cweeStr const& url, cweeStr const& params) { return fileSystem->QueryHttp(url, params); }), "QueryHTTP");
-                    lib->add(chaiscript::fun([](cweeStr const& directory, cweeStr const& extension) { cweeList<chaiscript::Boxed_Value> bv; for (auto& s : fileSystem->listFilesWithExtension(directory, extension)) { bv.Append(chaiscript::Boxed_Value(s)); } return bv; }), "listFilesWithExtension");
+                    lib->add(chaiscript::fun([](cweeStr const& directory, cweeStr const& extension) { 
+                        cweeList<chaiscript::Boxed_Value> bv; 
+                        for (auto& s : fileSystem->listFilesWithExtension(directory, extension)) 
+                        { 
+                            bv.Append(chaiscript::Boxed_Value(s)); 
+                        } 
+                        return bv; 
+                    }), "listFilesWithExtension");
+                    lib->add(chaiscript::fun([](cweeStr const& directory, cweeStr const& extension) { 
+                        cweeList<chaiscript::Boxed_Value> bv; 
+                        for (auto& s : fileSystem->listFilesWithExtension(directory, "*")) 
+                        { 
+                            bv.Append(chaiscript::Boxed_Value(s)); 
+                        } 
+                        return bv; 
+                    }), "listFiles");
+                    lib->add(chaiscript::fun([](cweeStr const& directory) {
+                        cweeList<chaiscript::Boxed_Value> bv;
+                        for (auto& s : fileSystem->listDirectories(directory, true)) {
+                            bv.Append(chaiscript::Boxed_Value(s));
+                        }
+                        return bv;
+                    }), "listAllFiles");
+                    lib->add(chaiscript::fun([](cweeStr const& directory) { 
+                        cweeList<chaiscript::Boxed_Value> bv; 
+                        for (auto& s : fileSystem->listDirectories(directory, false)) { 
+                            bv.Append(chaiscript::Boxed_Value(s)); 
+                        } 
+                        return bv; 
+                    }), "listDirectories");
+
                     lib->add(chaiscript::fun([](cweeStr const& title, cweeStr const& content) { fileSystem->submitToast(title, content); }), "submitToast");
                 }
             }
@@ -621,7 +651,7 @@ namespace chaiscript {
             // GDAL
             if (1) {
                 AUTO TestGDAL = [](cweeStr const& filePath) {
-                    return gdal_data->TestGDAL(filePath);
+                    return gdal_data->TestGDAL(filePath.c_str());
                 };
 
                 lib->AddFunction(TestGDAL, TestGDAL, ,

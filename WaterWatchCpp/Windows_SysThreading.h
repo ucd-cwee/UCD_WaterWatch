@@ -205,6 +205,8 @@ private:
 #pragma comment(lib, "User32.lib")
 #include <locale> 
 #include <codecvt>
+#include <iostream>
+#include <filesystem>
 
 class DirectoryFiles {
 public:
@@ -244,5 +246,37 @@ private:
 				files.push_back(converted_str);
 		} while (FindNextFileW(hFind, &ffd) != 0);
 		FindClose(hFind);
+	};
+};
+
+class Directories {
+public:
+	Directories() : directories() {};
+	Directories(const char* directory, bool includeFileNames) : directories() { Init(directory, includeFileNames); };
+	std::vector<std::string> const& GetDirectories() const { return directories; };
+
+private:
+	std::vector<std::string> directories;
+	void Init(const char* directory, bool includeFileNames) {
+		std::map<std::string, int> get;
+
+		using namespace std;
+		using namespace std::filesystem;
+
+		for (recursive_directory_iterator i(directory), end; i != end; ++i) {
+			if (!is_directory(i->path())) {
+				using convert_type = std::codecvt_utf8<wchar_t>;
+				std::wstring_convert<convert_type, wchar_t> converter;
+				std::string converted_str = converter.to_bytes(i->path().native());
+				if (includeFileNames) {
+					get[converted_str] = 0;
+				}
+				else {
+					get[converted_str.substr(0, converted_str.rfind("\\"))] = 0;
+				}				
+			}
+		}
+
+		for (auto& x : get) directories.push_back(x.first);		
 	};
 };

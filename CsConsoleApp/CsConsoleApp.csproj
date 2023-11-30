@@ -17,23 +17,22 @@
     </Compile>
   </ItemGroup>
 
-  <ItemGroup>
+  <ItemGroup> 
     <Content Include="$(SolutionDir)WaterWatch_Cs_SWIG\Conv.dll">
       <Link>%(FileName)%(Extension)</Link>
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="$(SolutionDir)GDAL\dll\*.dll">
+      <Link>%(FileName)%(Extension)</Link>
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="$(SolutionDir)epanet\libmysql.dll">
+      <Link>%(FileName)%(Extension)</Link>
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
   </ItemGroup>
-
   <ItemGroup>
     <ProjectReference Include="..\WaterWatch_Cs_SWIG\WaterWatch_Cs_SWIG.vcxproj" />
   </ItemGroup>
-
-  <Target Name="PostBuild" AfterTargets="PostBuildEvent">
-    <Exec Command="xcopy /y /d &quot;$(SolutionDir)WaterWatch_Cs_SWIG\Conv.dll&quot; &quot;$(OutDir)&quot;&#xD;&#xA;xcopy /y /d &quot;$(SolutionDir)epanet\libmysql.dll&quot; &quot;$(OutDir)&quot;&#xD;&#xA;xcopy /y /d &quot;$(SolutionDir)epanet\nanodbc.lib&quot; &quot;$(OutDir)&quot;" />
-  </Target>
-
-  <Target Name="PreBuild" BeforeTargets="PreBuildEvent">
-    <Exec Command="xcopy /y /d &quot;$(SolutionDir)WaterWatch_Cs_SWIG\Conv.dll&quot; &quot;$(OutDir)&quot;&#xD;&#xA;xcopy /y /d &quot;$(SolutionDir)epanet\libmysql.dll&quot; &quot;$(OutDir)&quot;&#xD;&#xA;xcopy /y /d &quot;$(SolutionDir)epanet\nanodbc.lib&quot; &quot;$(OutDir)&quot;" />
-  </Target>
 
 </Project>
