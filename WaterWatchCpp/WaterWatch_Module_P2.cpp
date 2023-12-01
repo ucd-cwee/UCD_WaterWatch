@@ -95,6 +95,14 @@ namespace chaiscript {
             // Vec2d
             if (1) {
                 DEF_DECLARE_PAIR(double, double);
+                lib->add(chaiscript::user_type<vec2d>(), "vec2d");
+                lib->add(chaiscript::constructor<vec2d()>(), "vec2d");
+                lib->add(chaiscript::constructor<vec2d(const vec2d&)>(), "vec2d");
+                lib->add(chaiscript::fun([](vec2d& a, const vec2d& b)->vec2d& { a = b; return a; }), "=");
+                lib->AddFunction(, first, -> double&, return obj.x, vec2d& obj);
+                lib->AddFunction(, second, -> double&, return obj.y, vec2d& obj);
+                lib->AddFunction(, Pair, , SINGLE_ARG(return std::pair<chaiscript::Boxed_Value, chaiscript::Boxed_Value>(var((double)(obj.x)), var((double)(obj.y)));), vec2d const& obj);
+                lib->AddFunction(, vec2d, , return vec2d(obj.first, obj.second), std::pair<double,double> const& obj);               
             }
 
             // Geocoding
@@ -506,78 +514,57 @@ namespace chaiscript {
 
             // RTree
             if (1) {
-                class TempClass {
+                class RTreeContainer {
                 public:
-                    static vec2d GetCoordinates(TempClass const& o) { return o.coordinates; };
+                    static vec2d GetCoordinates(RTreeContainer const& o) { return o.coordinates; };
 
                     vec2d coordinates;
-                    cweeStr name;
+                    chaiscript::Boxed_Value data;
                     
-                    TempClass() : coordinates(), name() {};
-                    TempClass(TempClass const& o) : coordinates(o.coordinates), name(o.name) {};
-                    TempClass& operator=(TempClass const& o) {
+                    RTreeContainer() : coordinates(), data() {};
+                    RTreeContainer(RTreeContainer const& o) : coordinates(o.coordinates), data(o.data) {};
+                    RTreeContainer& operator=(RTreeContainer const& o) {
                         this->coordinates = o.coordinates;
-                        this->name = o.name;
+                        this->data = o.data;
                         return *this;
                     };
-                    bool operator==(TempClass const& b) {
-                        return coordinates == b.coordinates && name == b.name;
-                    };
-                    bool operator!=(TempClass const& b) {
-                        return !operator==(b);
-                    };
+                    bool operator==(RTreeContainer const& b) { return coordinates == b.coordinates && data.get_ptr() == b.data.get_ptr(); };
+                    bool operator!=(RTreeContainer const& b) { return !operator==(b); };
                 };
                 
-                lib->add(chaiscript::user_type<vec2d>(), "vec2d");
-                lib->add(chaiscript::constructor<vec2d()>(), "vec2d");
-                lib->add(chaiscript::constructor<vec2d(const vec2d&)>(), "vec2d");
-                lib->add(chaiscript::fun([](vec2d& a, const vec2d& b)->vec2d& { a = b; return a; }), "=");                
-                lib->AddFunction(, first, -> double&, return obj.x, vec2d& obj);
-                lib->AddFunction(, second, -> double&, return obj.y, vec2d& obj);
-
-                lib->add(chaiscript::user_type<TempClass>(), "Point2d");
-                lib->add(chaiscript::constructor<TempClass()>(), "Point2d");
-                lib->add(chaiscript::constructor<TempClass(const TempClass&)>(), "Point2d");
-                lib->add(chaiscript::fun([](TempClass& a, const TempClass& b)->TempClass& { a = b; return a; }), "=");
-                lib->AddFunction(, coordinates, ->vec2d&, return obj.coordinates, TempClass& obj);
-                lib->AddFunction(, name, ->cweeStr&, return obj.name, TempClass& obj);
-
-                using RTreeType = cweeRTree< TempClass, TempClass::GetCoordinates>;
+                using RTreeType = cweeRTree< RTreeContainer, RTreeContainer::GetCoordinates>;
 
                 lib->add(chaiscript::user_type<RTreeType>(), "RTree");
                 lib->add(chaiscript::constructor<RTreeType()>(), "RTree");
                 lib->add(chaiscript::constructor<RTreeType(const RTreeType&)>(), "RTree");
                 lib->add(chaiscript::fun([](RTreeType& a, const RTreeType& b)->RTreeType& { a = b; return a; }), "=");
                 
-                AUTO Add_To_RTree = [](RTreeType& obj, TempClass const& t)-> void {
-                    if (cweeRandomFloat(0.0f,100.0f)>-1.0f) {
-                        obj.Add(t);
-                    }
-                };
-                AUTO Remove_From_RTree = [](RTreeType& obj, TempClass const& t)-> void {
-                    if (cweeRandomFloat(0.0f, 100.0f) > -1.0f) {
-                        obj.RemoveObject(t);
-                    }
+                AUTO Remove_From_RTree = [](RTreeType& obj, chaiscript::Boxed_Value const& t)-> void {
+                    auto foundObj = obj.TryFindObject([&](RTreeContainer const& o)->bool {
+                        return o.data.get_ptr() == t.get_ptr();
+                    });
+                    if (foundObj) {
+                        obj.RemoveObject(foundObj);
+                    }                   
                 };
 
-                lib->AddFunction(Add_To_RTree, Add, ,
-                    Add_To_RTree(obj, t);
-                , RTreeType& obj, TempClass const& t);
-                lib->AddFunction(Remove_From_RTree, Remove, ,
+                lib->AddFunction(, Add, ->void ,
+                    RTreeContainer c; c.coordinates = vec2d(longitude, latitude); c.data = t; obj.Add(c);
+                , RTreeType& obj, chaiscript::Boxed_Value const& t, double longitude, double latitude);
+                lib->AddFunction(Remove_From_RTree, Remove,->void ,
                     Remove_From_RTree(obj, t);
-                , RTreeType& obj, TempClass const& t);
-                lib->AddFunction(, Root, -> RTreeType::TreeNode* ,
-                    return obj.GetRoot();
-                , RTreeType& obj);
+                , RTreeType& obj, chaiscript::Boxed_Value const& t);
 
-                AUTO Boundary_To_Layer = [](RTreeType::cweeBoundary& obj, cweeSharedPtr< TempClass> p)-> UI_MapLayer {
+
+                AUTO Boundary_To_Layer = [](RTreeType::cweeBoundary& obj, cweeSharedPtr< RTreeContainer> p)-> UI_MapLayer {
                     UI_MapLayer out;
                     UI_Color col(cweeRandomFloat(25, 230), cweeRandomFloat(25, 230), cweeRandomFloat(25, 230), 255);
 
                     if (obj.bottomLeft != obj.topRight) {
+                        float thickness = cweeRandomFloat(2, 5);
                         {
                             UI_MapPolyline line;
-                            line.thickness = 2;
+                            line.thickness = thickness;
                             line.AddPoint(obj.bottomLeft.x, obj.topRight.y);
                             line.AddPoint(obj.topRight.x, obj.topRight.y);
                             line.color = col;
@@ -585,7 +572,7 @@ namespace chaiscript {
                         }
                         {
                             UI_MapPolyline line;
-                            line.thickness = 2;
+                            line.thickness = thickness;
                             line.AddPoint(obj.topRight.x, obj.topRight.y);
                             line.AddPoint(obj.topRight.x, obj.bottomLeft.y);
                             line.color = col;
@@ -593,7 +580,7 @@ namespace chaiscript {
                         }
                         {
                             UI_MapPolyline line;
-                            line.thickness = 2;
+                            line.thickness = thickness;
                             line.AddPoint(obj.topRight.x, obj.bottomLeft.y);
                             line.AddPoint(obj.bottomLeft.x, obj.bottomLeft.y);
                             line.color = col;
@@ -601,7 +588,7 @@ namespace chaiscript {
                         }
                         {
                             UI_MapPolyline line;
-                            line.thickness = 2;
+                            line.thickness = thickness;
                             line.AddPoint(obj.bottomLeft.x, obj.bottomLeft.y);
                             line.AddPoint(obj.bottomLeft.x, obj.topRight.y);
                             line.color = col;
@@ -609,14 +596,12 @@ namespace chaiscript {
                         }
                     }
                     else {
-                        UI_MapIcon icon;
-                        if (p) {
-                            icon.Label = p->name;
-                        }                        
+                        UI_MapIcon icon;               
                         icon.longitude = obj.bottomLeft.x;
                         icon.latitude = obj.bottomLeft.y;
                         icon.HideOnCollision = false;
                         icon.color = col;
+                        if (p) icon.Tag = p->data;
                         out.Children.push_back(chaiscript::var(icon));
                     }
                     return out;

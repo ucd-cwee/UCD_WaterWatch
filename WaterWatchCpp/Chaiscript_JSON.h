@@ -39,7 +39,7 @@ namespace chaiscript::json {
         };
 
     private:
-        using Data = std::variant<std::nullptr_t, chaiscript::utility::QuickFlatMap<std::string, JSON>, std::vector<JSON>, std::string, double, std::int64_t, bool>;
+        using Data = std::variant<std::nullptr_t, chaiscript::utility::QuickFlatMap<std::string, JSON>, std::vector<JSON>, std::string, double, int, bool>;
 
         struct Internal {
             Internal(std::nullptr_t)
@@ -69,7 +69,7 @@ namespace chaiscript::json {
                 case Class::Floating:
                     return double{};
                 case Class::Integral:
-                    return std::int64_t{};
+                    return int{};
                 case Class::Boolean:
                     return bool{};
                 }
@@ -173,7 +173,7 @@ namespace chaiscript::json {
 
         template<typename T>
         explicit JSON(T i, typename enable_if<is_integral<T>::value && !is_same<T, bool>::value>::type* = nullptr) noexcept
-            : internal(static_cast<std::int64_t>(i)) {
+            : internal(static_cast<int>(i)) {
         }
 
         template<typename T>
@@ -257,8 +257,8 @@ namespace chaiscript::json {
         double to_float() const noexcept {
             return internal.visit_or<Class::Floating>([](const auto& o) { return o; }, []() { return double{}; });
         }
-        std::int64_t to_int() const noexcept {
-            return internal.visit_or<Class::Integral>([](const auto& o) { return o; }, []() { return std::int64_t{}; });
+        int to_int() const noexcept {
+            return internal.visit_or<Class::Integral>([](const auto& o) { return o; }, []() { return int{}; });
         }
         bool to_bool() const noexcept {
             return internal.visit_or<Class::Boolean>([](const auto& o) { return o; }, []() { return false; });
@@ -513,7 +513,7 @@ namespace chaiscript::json {
             char c = '\0';
             bool isDouble = false;
             bool isNegative = false;
-            std::int64_t exp = 0;
+            int exp = 0;
             bool isExpNegative = false;
             if (offset < str.size() && str.at(offset) == '-') {
                 isNegative = true;
@@ -556,7 +556,7 @@ namespace chaiscript::json {
                         break;
                     }
                 }
-                exp = chaiscript::parse_num<std::int64_t>(exp_str) * (isExpNegative ? -1 : 1);
+                exp = chaiscript::parse_num<int>(exp_str) * (isExpNegative ? -1 : 1);
             }
             else if (offset < str.size() && (!isspace(c) && c != ',' && c != ']' && c != '}')) {
                 throw std::runtime_error(std::string("JSON ERROR: Number: unexpected character '") + c + "'");
@@ -568,10 +568,10 @@ namespace chaiscript::json {
             }
             else {
                 if (!exp_str.empty()) {
-                    return JSON((isNegative ? -1 : 1) * static_cast<double>(chaiscript::parse_num<std::int64_t>(val)) * std::pow(10, exp));
+                    return JSON((isNegative ? -1 : 1) * static_cast<double>(chaiscript::parse_num<int>(val)) * std::pow(10, exp));
                 }
                 else {
-                    return JSON((isNegative ? -1 : 1) * chaiscript::parse_num<std::int64_t>(val));
+                    return JSON((isNegative ? -1 : 1) * chaiscript::parse_num<int>(val));
                 }
             }
         }
@@ -734,7 +734,7 @@ namespace chaiscript {
                     return json::JSON(bn.get_as<double>());
                 }
                 else {
-                    return json::JSON(bn.get_as<std::int64_t>());
+                    return json::JSON(bn.get_as<int>());
                 }
             }
             catch (const chaiscript::detail::exception::bad_any_cast&) {

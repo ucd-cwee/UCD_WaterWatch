@@ -145,7 +145,7 @@ namespace cweeGeo {
 	};
 	chaiscript::Boxed_Value Field::GetBoxed() const {
 		AUTO ptr{ FromVoidPtr<OGRFeature>(this->Feature.Data()) };
-		if (ptr) {
+		if (!this->IsNull() && !this->IsUnset() && ptr) {
 			switch (Type()) {
 			case  FieldType::None:
 				return chaiscript::Boxed_Value();
@@ -187,7 +187,7 @@ namespace cweeGeo {
 	};
 	cweeAny Field::GetAny() const {
 		AUTO ptr{ FromVoidPtr<OGRFeature>(this->Feature.Data()) };
-		if (ptr) {
+		if (!this->IsNull() && !this->IsUnset() && ptr) {
 			switch (Type()) {
 			case  FieldType::None:
 				return cweeAny();
@@ -229,7 +229,7 @@ namespace cweeGeo {
 	};
 	cweeStr Field::GetAsString() const {
 		AUTO ptr{ FromVoidPtr<OGRFeature>(this->Feature.Data()) };
-		if (ptr) {
+		if (!this->IsNull() && !this->IsUnset() && ptr) {
 			switch (Type()) {
 			case  FieldType::None:
 				return cweeStr();
@@ -275,7 +275,7 @@ namespace cweeGeo {
 	};
 	double Field::GetAsDouble() const {
 		AUTO ptr{ FromVoidPtr<OGRFeature>(this->Feature.Data()) };
-		if (ptr) {
+		if (!this->IsNull() && !this->IsUnset() && ptr) {
 			switch (Type()) {
 			case  FieldType::None:
 				return 0;
@@ -311,7 +311,7 @@ namespace cweeGeo {
 	};
 	cweeTime Field::GetAsDateTime() const {
 		AUTO ptr{ FromVoidPtr<OGRFeature>(this->Feature.Data()) };
-		if (ptr) {
+		if (!this->IsNull() && !this->IsUnset() && ptr) {
 			switch (Type()) {
 			case  FieldType::None:
 				return cweeTime();
@@ -715,7 +715,7 @@ public:
 		cweeGeo::Feature feat; cweeGeo::Feature feat1;
 		cweeGeo::Geometry geometry;
 		cweeGeo::Shapefile shapefile{ filePath };
-
+		
 		for (int i = shapefile.NumLayers() - 1; i >= 0; i--) {
 			layer = shapefile.GetLayer(i);
 
@@ -826,6 +826,97 @@ namespace chaiscript {
 			lib->AddFunction(, GetLayer, , return a.GetLayer(index), Shapefile const& a, int index);
 			lib->AddFunction(, GetLayer, , return a.GetLayer(name), Shapefile const& a, cweeStr const& name);
 			AddBasicClassMember(Shapefile, NumLayers);
+
+			AUTO ToMapElementFromGeometry = [](Geometry const& geo) -> chaiscript::Boxed_Value {
+				chaiscript::Boxed_Value out;
+				switch (geo.Type()) {
+				case GeometryType::Point: {
+					UI_MapIcon icon; {
+						icon.longitude = geo.Longitude(0);
+						icon.latitude = geo.Latitude(0);
+						icon.HideOnCollision = false;
+					}
+					out = var(std::move(icon));
+					break;
+				}
+				case GeometryType::Line: {
+					UI_MapPolyline line; {
+						line.thickness = 2;
+						line.color.A = 128;
+						for (auto& coord : geo.AllCoordinates()) {
+							line.AddPoint(coord.x, coord.y);
+						}
+					}
+					out = var(std::move(line));
+					break;
+				}
+				case GeometryType::Polygon: {
+					// TBD
+					break;
+				}
+				default:
+					break;
+				}
+				return out;
+			};
+			AUTO ToMapElement = [](Feature const& feature) -> chaiscript::Boxed_Value {
+				chaiscript::Boxed_Value out;
+				auto geo = feature.GetGeometry();
+				switch (geo.Type()) {
+				case GeometryType::Point: {
+					UI_MapIcon icon; {
+						icon.longitude = geo.Longitude(0);
+						icon.latitude = geo.Latitude(0);
+						icon.HideOnCollision = false;
+						icon.Tag = var(Feature(feature));
+					}
+					out = var(std::move(icon));
+					break;
+				}
+				case GeometryType::Line: {
+					UI_MapPolyline line; {
+						line.thickness = 2;
+						line.color.A = 128;
+						for (auto& coord : geo.AllCoordinates()) {
+							line.AddPoint(coord.x, coord.y);
+						}
+						line.Tag = var(Feature(feature));
+					}
+					out = var(std::move(line));
+					break;
+				}
+				case GeometryType::Polygon: {
+					// TBD
+					break;
+				}
+				default:
+					break;
+				}
+				return out;
+			};
+			AUTO ToMapLayer = [ToMapElement](Layer const& layer)-> UI_MapLayer {
+				UI_MapLayer out;				
+				for (int i = 0; i < layer.NumFeatures(); ++i) {
+					out.Children.push_back(ToMapElement(layer.GetFeature(i)));
+				}
+				out.Tag = var(Layer(layer));
+				return out;
+			};
+			AUTO ToMap = [ToMapLayer](Shapefile const& shapefile)-> UI_Map {
+				UI_Map out;
+				for (int i = 0; i < shapefile.NumLayers(); ++i) {
+					out.Layers.push_back(var(ToMapLayer(shapefile.GetLayer(i))));
+				}
+				out.Tag = var(Shapefile(shapefile));
+				return out;
+			};
+
+			lib->AddFunction(ToMap, UI_Map, , return ToMap(obj), Shapefile const& obj);
+			lib->AddFunction(ToMapLayer, UI_MapLayer, , return ToMapLayer(obj), Layer const& obj);
+			lib->AddFunction(ToMapElement, UI_MapIcon, , return ToMapElement(obj), Feature const& obj);
+			lib->AddFunction(ToMapElement, UI_MapPolyline, , return ToMapElement(obj), Feature const& obj);
+			lib->AddFunction(ToMapElementFromGeometry, UI_MapIcon, , return ToMapElementFromGeometry(obj), Geometry const& obj);
+			lib->AddFunction(ToMapElementFromGeometry, UI_MapPolyline, , return ToMapElementFromGeometry(obj), Geometry const& obj);
 
             return lib;
         };

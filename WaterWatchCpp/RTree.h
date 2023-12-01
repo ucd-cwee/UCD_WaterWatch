@@ -522,6 +522,18 @@ public: // Desired Interface
 			child = GetNextLeaf(child);
 		}
 	};
+	cweeSharedPtr<objType> TryFindObject(std::function<bool(objType const&)> search) {
+		auto* child = GetRoot();
+		child = GetNextLeaf(child);
+		while (child) {
+			if (child->object && search(*child->object)) {
+				return child->object;
+			}
+			child = GetNextLeaf(child);
+		}
+		return nullptr;
+	};
+
 	void RemoveObject(cweeSharedPtr<objType> const& toRemoveRef) {
 		auto* child = GetRoot();
 		child = GetNextLeaf(child);
