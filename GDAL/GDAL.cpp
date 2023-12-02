@@ -5,6 +5,7 @@
 #include "include/ogrsf_frmts.h"
 #include "include/ogr_geos.h"
 #include "../WaterWatchCpp/WaterWatch_Module_Header.h"
+#include "../WaterWatchCpp/BalancedPattern.h"
 
 template <typename T> INLINE cweeSharedPtr<void> ToVoidPtr(T& ptr) {
 	return cweeSharedPtr<void>(make_cwee_shared<T>(ptr), [](void* p) { return p; });
@@ -46,6 +47,23 @@ namespace cweeGeo {
 		}
 		return 0;
 	};
+	cweeStr Shapefile::DriverName() const {
+		AUTO shapefile{ FromVoidPtr<GDALDataset>(data) };
+		if (shapefile) {
+			return shapefile->GetDriverName();
+			return shapefile->GetDescription();
+		}
+		return "";
+	};
+	cweeStr Shapefile::Description() const {
+		AUTO shapefile{ FromVoidPtr<GDALDataset>(data) };
+		if (shapefile) {
+			return shapefile->GetDescription();
+		}
+		return "";
+	};
+
+
 
 	Layer::Layer(decltype(Layer::data) dataSource) : data(dataSource), transform(nullptr) {
 		AUTO layerP{ FromVoidPtr<OGRLayer>(data) };
@@ -69,17 +87,23 @@ namespace cweeGeo {
 	};
 	int Layer::NumFeatures() const {
 		AUTO ptr{ FromVoidPtr<OGRLayer>(data) };
-		return ptr->GetFeatureCount();
+		if (ptr) {
+			return ptr->GetFeatureCount();
+		}
+		return 0;
 	};
 	Feature Layer::GetFeature(int Fid) const {
 		AUTO ptr{ FromVoidPtr<OGRLayer>(data) };
-		auto pFeature{ cweeSharedPtr< OGRFeature >(ptr->GetFeature(Fid), [ptr](OGRFeature* p) { delete p; }) };
-
-		auto poGeometry{ cweeSharedPtr< OGRGeometry >(pFeature->GetGeometryRef(), [pFeature](OGRGeometry* p) { /* do nothing */ }) };
-		AUTO Transform{ FromVoidPtr<OGRCoordinateTransformation>(this->transform) };
-		poGeometry->transform(Transform.get());
-
-		return cweeGeo::Feature(cweeSharedPtr<void>(pFeature), *this);
+		if (ptr && Fid < ptr->GetFeatureCount()) {
+			auto pFeature{ cweeSharedPtr< OGRFeature >(ptr->GetFeature(Fid), [ptr](OGRFeature* p) { if (p) { delete p; } }) };
+			if (pFeature) {
+				auto poGeometry{ cweeSharedPtr< OGRGeometry >(pFeature->GetGeometryRef(), [pFeature](OGRGeometry* p) { /* do nothing */ }) };
+				AUTO Transform{ FromVoidPtr<OGRCoordinateTransformation>(this->transform) };
+				poGeometry->transform(Transform.get());
+			}
+			return cweeGeo::Feature(cweeSharedPtr<void>(pFeature), *this);
+		}
+		return cweeGeo::Feature(nullptr, *this);
 	};
 	cweeStr Layer::Name() const {
 		AUTO ptr{ FromVoidPtr<OGRLayer>(data) };
@@ -89,23 +113,38 @@ namespace cweeGeo {
 
 	int Feature::Fid() const {
 		AUTO ptr{ FromVoidPtr<OGRFeature>(data) };
+		if (!ptr) return 0;
 		return ptr->GetFID();
 	};
 	int Feature::NumFields() const {
 		AUTO ptr{ FromVoidPtr<OGRFeature>(data) };
-		return ptr->GetFieldCount();
+		if (ptr) {
+			return ptr->GetFieldCount();
+		}
+		return 0;
 	};
 	const Layer& Feature::GetLayer() const { return this->layer;	};
 	cweeSharedPtr<void> Feature::Data() const {	return data; };
 	Field Feature::GetField(int n) const { return Field(*this, n); };
 	Field Feature::GetField(cweeStr const& name) const {
 		AUTO ptr{ FromVoidPtr<OGRFeature>(data) };
+		if (!ptr) return Field(*this, -1);
 		return Field(*this, ptr->GetFieldIndex(name));
+	};
+	bool Feature::HasField(cweeStr const& name) const {
+		AUTO ptr{ FromVoidPtr<OGRFeature>(data) };
+		if (!ptr) return false;
+		return (ptr->GetFieldIndex(name) >= 0);
 	};
 	Geometry Feature::GetGeometry() const {
 		AUTO ptr{ FromVoidPtr<OGRFeature>(data) };
-		auto poGeometry{ cweeSharedPtr< OGRGeometry >(ptr->GetGeometryRef(), [ptr](OGRGeometry* p) { /* do nothing */ }) };
-		return Geometry(*this, cweeSharedPtr<void>(poGeometry));
+		if (ptr) {
+			auto poGeometry{ cweeSharedPtr< OGRGeometry >(ptr->GetGeometryRef(), [ptr](OGRGeometry* p) { /* do nothing */ }) };
+			return Geometry(*this, cweeSharedPtr<void>(poGeometry));
+		}
+		else {
+			return Geometry(*this, nullptr);
+		}
 	};
 
 	const cweeGeo::Feature& Field::GetFeature() const { return this->Feature; };
@@ -131,17 +170,17 @@ namespace cweeGeo {
 	};
 	bool Field::IsUnset() const {
 		AUTO ptr{ FromVoidPtr<OGRFeature>(this->Feature.Data()) };
-		if (ptr) {
+		if (this->fieldNumber >= 0 && ptr) {
 			return !ptr->IsFieldSet(fieldNumber);
 		}
-		return true;
+		else return true;
 	};
 	bool Field::IsNull() const {
 		AUTO ptr{ FromVoidPtr<OGRFeature>(this->Feature.Data()) };
-		if (ptr) {
+		if (this->fieldNumber >= 0 && ptr) {
 			return ptr->IsFieldNull(fieldNumber);
 		}
-		return true;
+		else return true;
 	};
 	chaiscript::Boxed_Value Field::GetBoxed() const {
 		AUTO ptr{ FromVoidPtr<OGRFeature>(this->Feature.Data()) };
@@ -152,7 +191,7 @@ namespace cweeGeo {
 			case FieldType::Integer: // int
 				return chaiscript::var(ptr->GetFieldAsInteger(fieldNumber));
 			case FieldType::Integer64: // big int
-				return chaiscript::var((int64)ptr->GetFieldAsInteger64(fieldNumber));
+				return chaiscript::var((u64)ptr->GetFieldAsInteger64(fieldNumber));
 			case FieldType::Real: // double
 				return chaiscript::var(ptr->GetFieldAsDouble(fieldNumber));
 			case FieldType::Binary: // bool
@@ -194,7 +233,7 @@ namespace cweeGeo {
 			case FieldType::Integer: // int
 				return cweeAny(ptr->GetFieldAsInteger(fieldNumber));
 			case FieldType::Integer64: // big int
-				return cweeAny((int64)ptr->GetFieldAsInteger64(fieldNumber));
+				return cweeAny((u64)ptr->GetFieldAsInteger64(fieldNumber));
 			case FieldType::Real: // double
 				return cweeAny(ptr->GetFieldAsDouble(fieldNumber));
 			case FieldType::Binary: // bool
@@ -236,7 +275,7 @@ namespace cweeGeo {
 			case FieldType::Integer: // int
 				return cweeStr(ptr->GetFieldAsInteger(fieldNumber));
 			case FieldType::Integer64: // big int
-				return cweeStr((int64)ptr->GetFieldAsInteger64(fieldNumber));
+				return cweeStr((u64)ptr->GetFieldAsInteger64(fieldNumber));
 			case FieldType::Real: // double
 				return cweeStr(ptr->GetFieldAsDouble(fieldNumber));
 			case FieldType::Binary: // bool
@@ -282,7 +321,7 @@ namespace cweeGeo {
 			case FieldType::Integer: // int
 				return (ptr->GetFieldAsInteger(fieldNumber));
 			case FieldType::Integer64: // big int
-				return ((int64)ptr->GetFieldAsInteger64(fieldNumber));
+				return ((u64)ptr->GetFieldAsInteger64(fieldNumber));
 			case FieldType::Real: // double
 				return (ptr->GetFieldAsDouble(fieldNumber));
 			case FieldType::Binary: // bool
@@ -318,7 +357,7 @@ namespace cweeGeo {
 			case FieldType::Integer: // int
 				return cweeTime(ptr->GetFieldAsInteger(fieldNumber));
 			case FieldType::Integer64: // big int
-				return cweeTime((int64)ptr->GetFieldAsInteger64(fieldNumber));
+				return cweeTime((u64)ptr->GetFieldAsInteger64(fieldNumber));
 			case FieldType::Real: // double
 				return cweeTime(ptr->GetFieldAsDouble(fieldNumber));
 			case FieldType::Binary: // bool
@@ -350,14 +389,14 @@ namespace cweeGeo {
 	GeometryType Geometry::Type() const {
 		AUTO ptr{ FromVoidPtr<OGRGeometry>(this->geometry) };
 		if (ptr) {
-			return GeometryType::_from_integral(static_cast<int>(wkbFlatten(ptr->getGeometryType())));
+			return GeometryType::_from_integral_unchecked(static_cast<int>(wkbFlatten(ptr->getGeometryType())));
 		}
 		return GeometryType::Unknown;
 	};
 	int Geometry::NumPoints() const {
 		AUTO ptr{ FromVoidPtr<OGRGeometry>(this->geometry) };
 		if (ptr) {
-			switch (Type()) {
+			switch (GeometryType::_from_integral_unchecked(static_cast<int>(wkbFlatten(ptr->getGeometryType())))) {
 			default:
 			case GeometryType::Unknown:
 				return -1;
@@ -378,7 +417,7 @@ namespace cweeGeo {
 	double Geometry::Longitude(int index) const {
 		AUTO ptr{ FromVoidPtr<OGRGeometry>(this->geometry) };
 		if (ptr) {
-			switch (Type()) {
+			switch (GeometryType::_from_integral_unchecked(static_cast<int>(wkbFlatten(ptr->getGeometryType())))) {
 			default:
 			case GeometryType::Unknown:
 				return 0;
@@ -401,7 +440,7 @@ namespace cweeGeo {
 	double Geometry::Latitude(int index) const {
 		AUTO ptr{ FromVoidPtr<OGRGeometry>(this->geometry) };
 		if (ptr) {
-			switch (Type()) {
+			switch (GeometryType::_from_integral_unchecked(static_cast<int>(wkbFlatten(ptr->getGeometryType())))) {
 			default:
 			case GeometryType::Unknown:
 				return 0;
@@ -424,7 +463,7 @@ namespace cweeGeo {
 	vec2d Geometry::Coordinates(int index) const {
 		AUTO ptr{ FromVoidPtr<OGRGeometry>(this->geometry) };
 		if (ptr) {
-			switch (Type()) {
+			switch (GeometryType::_from_integral_unchecked(static_cast<int>(wkbFlatten(ptr->getGeometryType())))) {
 			default:
 			case GeometryType::Unknown:
 				return vec2d();
@@ -445,12 +484,35 @@ namespace cweeGeo {
 		return vec2d();
 	};
 	cweeList<vec2d> Geometry::AllCoordinates() const {
-		int n = NumPoints();
-		cweeList<vec2d> out(n + 1);
-		for (int i = 0; i < n; i++) {
-			out.Append(Coordinates(i));
+		cweeList<vec2d> out;
+		AUTO ptr{ FromVoidPtr<OGRGeometry>(this->geometry) };
+		if (ptr) {			
+			switch (GeometryType::_from_integral_unchecked(static_cast<int>(wkbFlatten(ptr->getGeometryType())))) {
+			default:
+			case GeometryType::Unknown:
+				break;
+			case GeometryType::Point: {
+				auto* poPoint = ptr->toPoint();
+				out.Append(vec2d(poPoint->getX(), poPoint->getY()));
+				break;
+			}
+			case GeometryType::Line: {
+				auto* poPoint = ptr->toLineString();
+				int n = poPoint->getNumPoints();				
+				out.SetGranularity(n + 1);
+				for (int i = 0; i < n; i++) {
+					out.Append(vec2d(poPoint->getX(i), poPoint->getY(i)));
+				}
+				break;
+			}
+			case GeometryType::Polygon: {
+				auto* poPoint = ptr->toPolygon();
+				// TODO
+				break;
+			}
+			}
 		}
-		return out;
+		return out; 
 	};
 	cwee_units::foot_t Geometry::Distance(vec2d const& point1, vec2d const& point2) {
 		return geocoding->Distance(point1, point2);
@@ -523,6 +585,73 @@ namespace cweeGeo {
 			return toReturn;
 		}
 	};
+
+	cwee_units::foot_t Distance_Point_Line(cweeSharedPtr< OGRGeometry> const& point, cweeSharedPtr< OGRGeometry> const& line) {
+		cwee_units::foot_t out = std::numeric_limits<cwee_units::foot_t>::max(); 
+		
+		auto* p_ptr = point->toPoint();
+		auto* l_ptr = line->toLineString();
+		auto pointCoord{ vec2d(p_ptr->getX(), p_ptr->getY()) };
+		auto numLinePoints = l_ptr->getNumPoints();
+				
+		if (numLinePoints == 0) {
+			out = std::numeric_limits<decltype(out)>::max();
+		}
+		auto lineCoords0{ vec2d(l_ptr->getX(0), l_ptr->getY(0)) };
+
+		if (numLinePoints == 1) {
+			out = Geometry::Distance(pointCoord, lineCoords0);
+		}
+		else {
+			auto closestPointOnLineSegment = [](const vec2d& A, const vec2d& B, const vec2d& P)->vec2d {
+				// Calculate the vector AB (direction of the line segment)
+				double ABx = B[0] - A[0];
+				double ABy = B[1] - A[1];
+
+				// Calculate the vector AP (from point A to point P)
+				double APx = P[0] - A[0];
+				double APy = P[1] - A[1];
+
+				// Calculate the dot product of AB and AP
+				double dotProduct = ABx * APx + ABy * APy;
+
+				// Calculate the squared length of AB
+				double lengthABsq = ABx * ABx + ABy * ABy;
+
+				// Calculate the parameter t (projection of AP onto AB)
+				double t = dotProduct / lengthABsq;
+
+				// If t is outside the segment [0, 1], find the distance to the closest endpoint
+				if (t < 0.0) {
+					return A; // Distance to point A
+				}
+				else if (t > 1.0) {
+					return B; // Distance to point B
+				}
+
+				// Calculate the closest point on the line segment
+				double closestX = A[0] + t * ABx;
+				double closestY = A[1] + t * ABy;
+
+				return vec2d(closestX, closestY);
+			};
+			cwee_units::foot_t dist_start;
+			cwee_units::foot_t dist_end = Geometry::Distance(pointCoord, lineCoords0);
+			cwee_units::foot_t dist_perp;
+			vec2d prevPoint = lineCoords0;
+			vec2d currentPoint;
+			for (int i = 1; i < numLinePoints; i += 1) {
+				currentPoint = vec2d(l_ptr->getX(i), l_ptr->getY(i));
+				dist_start = dist_end;
+				dist_end = Geometry::Distance(pointCoord, currentPoint);
+				dist_perp = Geometry::Distance(pointCoord, closestPointOnLineSegment(prevPoint, currentPoint, pointCoord));
+				out = cwee_units::math::fmin(cwee_units::math::fmin(cwee_units::math::fmin(out, dist_perp), dist_end), dist_start);
+				prevPoint = currentPoint;
+			}
+		}
+		return out;
+	};
+
 	cwee_units::foot_t Geometry::Distance(vec2d const& pointCoord, cweeList<vec2d> const& lineCoords) {
 		cwee_units::foot_t out = std::numeric_limits<cwee_units::foot_t>::max();
 		if (lineCoords.Num() == 0) {
@@ -631,51 +760,179 @@ namespace cweeGeo {
 
 		return out;
 	};
-	cweeStr Geometry::Geocode(vec2d const& point1) {
-		return geocoding->GetAddress(point1);
-	};
-	cwee_units::foot_t Geometry::Elevation(vec2d const& point1) {
-		return geocoding->GetElevation(point1);
-	};
+	cweeStr Geometry::Geocode(vec2d const& point1) { return geocoding->GetAddress(point1); };
+	cwee_units::foot_t Geometry::Elevation(vec2d const& point1) { return geocoding->GetElevation(point1); };
 	cwee_units::foot_t Geometry::Distance(Geometry const& obj1, Geometry const& obj2) {
 		using namespace cwee_units;
-
-		Geometry objA, objB;
 		cwee_units::foot_t out = std::numeric_limits<cwee_units::foot_t>::max();
-		cweeStr mode;
 
-		if (obj1.Type() <= obj2.Type()) {
-			objA = obj1;
-			objB = obj2;
+		AUTO ptr1{ FromVoidPtr<OGRGeometry>(obj1.Data()) };
+		AUTO ptr2{ FromVoidPtr<OGRGeometry>(obj2.Data()) };
+
+		auto type1 = GeometryType::_from_integral_unchecked(static_cast<int>(wkbFlatten(ptr1->getGeometryType())));
+		auto type2 = GeometryType::_from_integral_unchecked(static_cast<int>(wkbFlatten(ptr2->getGeometryType())));
+
+		if (type1 <= type2) {
+			const Geometry& objA = obj1;
+			const Geometry& objB = obj2;
+			if (type1 == GeometryType::Point && type2 == GeometryType::Point) {// point / point
+				out = Distance(objA.Coordinates(0), objB.Coordinates(0));
+			}
+			else if (type1 == GeometryType::Point && type2 == GeometryType::Line) {// point / Line
+#if 1
+				out = Distance_Point_Line(ptr1, ptr2);
+				// out = Distance(objA.Coordinates(0), objB.AllCoordinates());
+#else
+
+				int numLineCoords = objB.NumPoints();
+				auto pointCoord = objA.Coordinates(0);
+
+				cwee_units::foot_t out = std::numeric_limits<cwee_units::foot_t>::max();
+				if (numLineCoords == 0) {
+					out = std::numeric_limits<decltype(out)>::max();
+				}
+				else if (numLineCoords == 1) {
+					out = Distance(pointCoord, objB.Coordinates(0));
+				}
+				else {
+					auto closestPointOnLineSegment = [](const vec2d& A, const vec2d& B, const vec2d& P)->vec2d {
+						// Calculate the vector
+						double
+							ABx = B[0] - A[0],
+							ABy = B[1] - A[1],
+							APx = P[0] - A[0],
+							APy = P[1] - A[1];
+
+						// Calculate the dot product
+						double
+							dotProduct = ABx * APx + ABy * APy,
+							lengthABsq = ABx * ABx + ABy * ABy;
+
+						// Calculate the parameter t (projection of AP onto AB)
+						double
+							t = dotProduct / lengthABsq;
+
+						// If t is outside the segment [0, 1], find the distance to the closest endpoint
+						if (t < 0.0) {
+							return A; // Distance to point A
+						}
+						else if (t > 1.0) {
+							return B; // Distance to point B
+						}
+						else {
+							return vec2d(A[0] + t * ABx, A[1] + t * ABy);
+						}
+					};
+					cwee_units::foot_t dist_start;
+					cwee_units::foot_t dist_end = Distance(pointCoord, objB.Coordinates(0));
+					cwee_units::foot_t dist_perp;
+
+					auto* poPoint = ptr2->toLineString();
+					vec2d prevPosition = vec2d(poPoint->getX(0), poPoint->getY(0));
+					vec2d currentPosition;
+					for (int i = 1; i < numLineCoords; i += 1) {
+						currentPosition = vec2d(poPoint->getX(i), poPoint->getY(i));
+
+						dist_start = dist_end;
+						dist_end = Distance(pointCoord, currentPosition);
+						dist_perp = Distance(pointCoord, closestPointOnLineSegment(prevPosition, currentPosition, pointCoord));
+						out = cwee_units::math::fmin(cwee_units::math::fmin(cwee_units::math::fmin(out, dist_perp), dist_end), dist_start);
+
+						prevPosition = currentPosition;
+					}
+				}
+#endif
+			}
+			else if (type1 == GeometryType::Line && type2 == GeometryType::Line) {// Line / Line
+				out = Distance(objA.AllCoordinates(), objB.AllCoordinates());
+			}
+			else {
+				out = std::numeric_limits<decltype(out)>::max();
+			}
+			return out;
 		}
 		else {
-			objA = obj2;
-			objB = obj1;
+			const Geometry& objA = obj2;
+			const Geometry& objB = obj1;
+			if (type2 == GeometryType::Point && type1 == GeometryType::Point) {// point / point
+				out = Distance(objA.Coordinates(0), objB.Coordinates(0));
+			}
+			else if (type2 == GeometryType::Point && type1 == GeometryType::Line) {// point / Line
+#if 1
+				out = Distance_Point_Line(ptr2, ptr1);
+				// out = Distance(objA.Coordinates(0), objB.AllCoordinates());
+#else
+				int numLineCoords = objB.NumPoints();
+				auto pointCoord = objA.Coordinates(0);
+
+				cwee_units::foot_t out = std::numeric_limits<cwee_units::foot_t>::max();
+				if (numLineCoords == 0) {
+					out = std::numeric_limits<decltype(out)>::max();
+				}
+				else if (numLineCoords == 1) {
+					out = Distance(pointCoord, objB.Coordinates(0));
+				}
+				else {
+					auto closestPointOnLineSegment = [](const vec2d& A, const vec2d& B, const vec2d& P)->vec2d {
+						// Calculate the vector
+						double
+							ABx = B[0] - A[0],
+							ABy = B[1] - A[1],
+							APx = P[0] - A[0],
+							APy = P[1] - A[1];
+
+						// Calculate the dot product
+						double
+							dotProduct = ABx * APx + ABy * APy,
+							lengthABsq = ABx * ABx + ABy * ABy;
+
+						// Calculate the parameter t (projection of AP onto AB)
+						double
+							t = dotProduct / lengthABsq;
+
+						// If t is outside the segment [0, 1], find the distance to the closest endpoint
+						if (t < 0.0) {
+							return A; // Distance to point A
+						}
+						else if (t > 1.0) {
+							return B; // Distance to point B
+						}
+						else {
+							return vec2d(A[0] + t * ABx, A[1] + t * ABy);
+						}
+					};
+					cwee_units::foot_t dist_start;
+					cwee_units::foot_t dist_end = Distance(pointCoord, objB.Coordinates(0));
+					cwee_units::foot_t dist_perp;
+
+					auto* poPoint = ptr1->toLineString();
+					vec2d prevPosition = vec2d(poPoint->getX(0), poPoint->getY(0));
+					vec2d currentPosition;
+					for (int i = 1; i < numLineCoords; i += 1) {
+						currentPosition = vec2d(poPoint->getX(i), poPoint->getY(i));
+
+						dist_start = dist_end;
+						dist_end = Distance(pointCoord, currentPosition);
+						dist_perp = Distance(pointCoord, closestPointOnLineSegment(prevPosition, currentPosition, pointCoord));
+						out = cwee_units::math::fmin(cwee_units::math::fmin(cwee_units::math::fmin(out, dist_perp), dist_end), dist_start);
+
+						prevPosition = currentPosition;
+					}
+				}
+#endif
+			}
+			else if (type2 == GeometryType::Line && type1 == GeometryType::Line) {// Line / Line
+				out = Distance(objA.AllCoordinates(), objB.AllCoordinates());
+			}
+			else {
+				out = std::numeric_limits<decltype(out)>::max();
+			}
+			return out;
 		}
 	
-		mode = cweeStr::printf("%i,%i", (int)objA.Type(), (int)objB.Type());
-		switch (mode.Hash()) {
-		default:		
-			out = std::numeric_limits<decltype(out)>::max();	
-			break;
-		case cweeStr::Hash("1,1"): { // point / point
-			out = Distance(objA.Coordinates(0), objB.Coordinates(0));
-			break;
-		}			
-		case cweeStr::Hash("1,2"): { // point / Line
-			out = Distance(objA.Coordinates(0), objB.AllCoordinates());
-			break;
-		}
-		case cweeStr::Hash("2,2"): { // Line / Line
-			out = Distance(objA.AllCoordinates(), objB.AllCoordinates());
-			break;
-		}
-		}
-		return out;
+
 	};
-	cwee_units::foot_t Geometry::Distance(Geometry const& obj) const {
-		return Distance(*this, obj);
-	};
+	cwee_units::foot_t Geometry::Distance(Geometry const& obj) const { return Distance(*this, obj);	};
 
 	cwee_units::foot_t Geometry::Length(Geometry const& obj) {
 		using namespace cwee_units;
@@ -694,6 +951,45 @@ namespace cweeGeo {
 	cwee_units::foot_t Feature::Length() const { return this->GetGeometry().Length(); };
 	cweeStr Feature::Geocode() const { return this->GetGeometry().Geocode(); };
 	cwee_units::foot_t Feature::Elevation() const { return this->GetGeometry().Elevation(); };
+
+	std::map<int, cweeList<cweePair<int, double>>> Layer::Near(Layer const& layer1, Layer const& layer2, std::function<double(Geometry const&, Geometry const&)> DistanceFunction, int numNearest, std::function<bool(Feature const&)> WhereFunction) {
+		std::map<int, cweeList<cweePair<int, double>>> out;
+		cweeBalancedPattern<cwee_units::scalar_t, u64> distance_to_layer2_Fid; // x-axis is distance, y-axis is Layer2's Fid. 
+		int i, Layer1Fid, Layer2Fid, NumFeatures_Layer2;
+		cweeList<cweePair<int, double>> nearestList;
+
+		std::map<int, Geometry> feat1_List;
+		std::map<int, Geometry > feat2_List;
+
+		for (Layer1Fid = 0; Layer1Fid < layer1.NumFeatures(); Layer1Fid++) {
+			auto feat = layer1.GetFeature(Layer1Fid);
+			if (WhereFunction(feat)) feat1_List[Layer1Fid] = feat.GetGeometry();
+		}
+		for (Layer2Fid = 0; Layer2Fid < layer2.NumFeatures(); Layer2Fid++) {
+			auto feat = layer2.GetFeature(Layer2Fid);
+			if (WhereFunction(feat)) feat2_List[Layer2Fid] = feat.GetGeometry();
+		}
+		for (auto& Layer1Iter : feat1_List) {
+			distance_to_layer2_Fid.ClearData();
+			for (auto& Layer2Iter : feat2_List) {
+				distance_to_layer2_Fid.AddValue(DistanceFunction(Layer1Iter.second, Layer2Iter.second), Layer2Iter.first);
+			}
+
+			nearestList.Clear();
+			distance_to_layer2_Fid.Lock();
+			for (auto& ptr : distance_to_layer2_Fid.UnsafeGetValues()) {
+				if (nearestList.Num() >= numNearest) break;
+				if (ptr.object) {
+					nearestList.Append(cweePair<int, double>(ptr.object->operator()(), ptr.key));
+				}
+			}
+			distance_to_layer2_Fid.Unlock();
+
+			out[Layer1Iter.first] = nearestList;
+		}
+		return out;
+	};
+
 }
 
 
@@ -792,6 +1088,12 @@ namespace chaiscript {
 			lib->AddFunction(, Distance, , return a.Distance(b), Geometry const& a, Geometry const& b);
 			lib->AddFunction(, Length, , return o.Length(), Geometry const& o);
 			lib->AddFunction(, Elevation, , return o.Elevation(), Geometry const& o);
+			lib->AddFunction(, to_string, , 
+				cweeStr out; 
+			    for (auto& x : o.AllCoordinates()) 
+					out.AddToDelimiter(cweeStr::printf("{%.4f, %.4f}", x.x, x.y), ", "); 
+				return out, 
+			Geometry const& o);
 
 			AddBasicClassTemplate(Field);
 			AddBasicClassMember(Field, GetFeature);
@@ -803,6 +1105,11 @@ namespace chaiscript {
 			AddBasicClassMember(Field, GetAsString);
 			AddBasicClassMember(Field, GetAsDouble);
 			AddBasicClassMember(Field, GetAsDateTime);
+			lib->AddFunction(, to_string, ,
+				if (o.IsNull()) return cweeStr::printf("\"%s\": <NULL>", o.Name().c_str());
+			    else if (o.IsUnset()) return cweeStr::printf("\"%s\": <UNSET>", o.Name().c_str());
+				else return cweeStr::printf("\"%s\": %s", o.Name().c_str(), o.GetAsString().c_str())
+			, Field const& o);
 
 			AddBasicClassTemplate(Feature);
 			AddBasicClassMember(Feature, Fid);
@@ -815,17 +1122,31 @@ namespace chaiscript {
 			lib->AddFunction(, Distance, , return a.Distance(b), Feature const& a, Feature const& b);
 			lib->AddFunction(, Length, , return o.Length(), Feature const& o);
 			lib->AddFunction(, Elevation, , return o.Elevation(), Feature const& o);
+			lib->AddFunction(, to_string, ,
+				cweeStr out = cweeStr::printf("[\"Fid\": %i]", o.Fid());
+				for (int i = 0; i < o.NumFields(); i++) {
+					auto field = o.GetField(i);
+					if (field.IsNull()) out.AddToDelimiter(cweeStr::printf("[\"%s\": NULL]", field.Name().c_str()), ", ");
+					else if (field.IsUnset()) out.AddToDelimiter(cweeStr::printf("[\"%s\": UNSET]", field.Name().c_str()), ", ");
+					else out.AddToDelimiter(cweeStr::printf("[\"%s\": \"%s\"]", field.Name().c_str(), field.GetAsString().c_str()), ", ");				
+				}
+				return out;
+			, Feature const& o);
 
 			AddBasicClassTemplate(Layer);
 			AddBasicClassMember(Layer, GetFeature);
 			AddBasicClassMember(Layer, Name);
 			AddBasicClassMember(Layer, NumFeatures);
+			lib->AddFunction(, to_string, , return cweeStr::printf("%i Feature(s): \"%s\"", o.NumFeatures(), o.Name().c_str()), Layer const& o);
 
 			AddBasicClassTemplate(Shapefile);
 			lib->AddFunction(, Shapefile, , return Shapefile(fp), cweeStr const& fp);
 			lib->AddFunction(, GetLayer, , return a.GetLayer(index), Shapefile const& a, int index);
 			lib->AddFunction(, GetLayer, , return a.GetLayer(name), Shapefile const& a, cweeStr const& name);
 			AddBasicClassMember(Shapefile, NumLayers);
+			AddBasicClassMember(Shapefile, DriverName);
+			AddBasicClassMember(Shapefile, Description);
+			lib->AddFunction(, to_string, , return cweeStr::printf("%i Layer(s): \"%s\"", o.NumLayers(), o.Description().c_str()), Shapefile const& o);
 
 			AUTO ToMapElementFromGeometry = [](Geometry const& geo) -> chaiscript::Boxed_Value {
 				chaiscript::Boxed_Value out;
@@ -917,6 +1238,46 @@ namespace chaiscript {
 			lib->AddFunction(ToMapElement, UI_MapPolyline, , return ToMapElement(obj), Feature const& obj);
 			lib->AddFunction(ToMapElementFromGeometry, UI_MapIcon, , return ToMapElementFromGeometry(obj), Geometry const& obj);
 			lib->AddFunction(ToMapElementFromGeometry, UI_MapPolyline, , return ToMapElementFromGeometry(obj), Geometry const& obj);
+
+			AUTO NearestMatchDistanceWhere = [](Layer const& layer1, Layer const& layer2, int numNearest, std::function<double(Geometry const&, Geometry const&)> dist, std::function<bool(Feature const&)> Where) {
+				AUTO nearList = Layer::Near(layer1, layer2, dist, numNearest, Where);
+
+				std::vector<chaiscript::Boxed_Value> out;
+				for (auto& pairing : nearList) {
+					std::vector<chaiscript::Boxed_Value> out2;
+					for (auto& matched : pairing.second) {
+						std::pair<chaiscript::Boxed_Value, chaiscript::Boxed_Value> pair; {
+							pair.first = var(layer1.GetFeature(pairing.first));
+							{
+								std::pair<chaiscript::Boxed_Value, chaiscript::Boxed_Value> match; {
+									match.first = var(layer2.GetFeature(matched.first));
+									match.second = var(cwee_units::foot_t(matched.second));
+								}
+								pair.second = var(std::move(match));
+							}
+						}
+						out2.push_back(var(std::move(pair)));
+					}
+					out.push_back(var(std::move(out2)));
+				}
+				return out;
+			};
+			AUTO NearestMatchDistance = [NearestMatchDistanceWhere](Layer const& layer1, Layer const& layer2, int numNearest, std::function<double(Geometry const&, Geometry const&)> dist) {
+				return NearestMatchDistanceWhere(layer1, layer2, numNearest, dist, [](Feature const& a)->bool { return true; });
+			};
+			AUTO NearestMatch = [NearestMatchDistance](Layer const& layer1, Layer const& layer2, int numNearest) {
+				return NearestMatchDistance(layer1, layer2, numNearest, [](Geometry const& a, Geometry const& b)->double {
+					return a.Distance(b)();
+				});
+			};
+
+			lib->AddFunction(NearestMatch, Near, , return NearestMatch(layer1, layer2, 1), Layer const& layer1, Layer const& layer2);
+			lib->AddFunction(NearestMatch, Near, , return NearestMatch(layer1, layer2, numNearest), Layer const& layer1, Layer const& layer2, int numNearest);
+			lib->AddFunction(NearestMatchDistance, Near, , return NearestMatchDistance(layer1, layer2, numNearest, dist), Layer const& layer1, Layer const& layer2, int numNearest, std::function<double(Geometry const&, Geometry const&)> const& dist);
+			lib->AddFunction(NearestMatchDistanceWhere, Near, , return NearestMatchDistanceWhere(layer1, layer2, numNearest, [](Geometry const& a, Geometry const& b)->double {
+				return a.Distance(b)();
+			}, Where), Layer const& layer1, Layer const& layer2, int numNearest, std::function<bool(Feature const&)> const& Where);
+			lib->AddFunction(NearestMatchDistanceWhere, Near, , return NearestMatchDistanceWhere(layer1, layer2, numNearest, dist, Where), Layer const& layer1, Layer const& layer2, int numNearest, std::function<double(Geometry const&, Geometry const&)> const& dist, std::function<bool(Feature const&)> const& Where);
 
             return lib;
         };

@@ -13,6 +13,7 @@
 #include "../WaterWatchCpp/WaterWatch_Module_Header.h"
 #include "../WaterWatchCpp/Units.h"
 #include "../WaterWatchCpp/Geocoding.h"
+#include "../WaterWatchCpp/RTree.h"
 
 class GDAL_Data {
 public:
@@ -54,6 +55,8 @@ namespace cweeGeo {
 		Layer GetLayer(int LayerId) const;
 		Layer GetLayer(cweeStr const& name) const;
 		int NumLayers() const;
+		cweeStr DriverName() const;
+		cweeStr Description() const;
 	};
 
 	class Layer {
@@ -72,6 +75,9 @@ namespace cweeGeo {
 		int NumFeatures() const;
 		Feature GetFeature(int Fid) const;
 		cweeStr Name() const;
+
+	// private:
+		static std::map<int, cweeList<cweePair<int, double>>> Near(Layer const& layer1, Layer const& layer2, std::function<double(Geometry const&, Geometry const&)> DistanceFunction, int numNearest = 1, std::function<bool(Feature const&)> WhereFunction = [](Feature const&)->bool { return true; });
 	};
 
 	class Feature {
@@ -93,6 +99,7 @@ namespace cweeGeo {
 		const Layer& GetLayer() const;
 		Field GetField(int n) const;
 		Field GetField(cweeStr const& name) const;
+		bool HasField(cweeStr const& name) const;
 		Geometry GetGeometry() const;
 		/*! Returns the minimum (closest) distance between this and another feature. */
 		cwee_units::foot_t Distance(Feature const& obj) const;
@@ -141,6 +148,7 @@ namespace cweeGeo {
 		Geometry& operator=(Geometry const& other) { Feature = other.Feature; geometry = other.geometry; return *this; };
 		Geometry& operator=(Geometry&& other) { Feature = other.Feature; geometry = other.geometry;  return *this; };
 
+		cweeSharedPtr<void> const& Data() const { return geometry; };
 		const cweeGeo::Feature& GetFeature() const;
 		GeometryType Type() const;
 		int NumPoints() const;
@@ -148,7 +156,12 @@ namespace cweeGeo {
 		double Latitude(int index) const;
 		vec2d Coordinates(int index) const;
 		cweeList<vec2d> AllCoordinates() const;
+		cwee_units::foot_t Length() const;
+		cwee_units::foot_t Elevation() const;
+		cwee_units::foot_t Distance(Geometry const& obj) const;
+		cweeStr Geocode() const;
 
+	public:
 		/*! Calculates the geodesic distance between two precise decimal coordinates */
 		static cwee_units::foot_t Distance(vec2d const& point1, vec2d const& point2);
 		/*! Calculates the closest point on a line to the input coordinate. */
@@ -163,14 +176,12 @@ namespace cweeGeo {
 		static cwee_units::foot_t Elevation(vec2d const& point1);
 		/*! Returns the minimum (closest) distance between two geometries. */
 		static cwee_units::foot_t Distance(Geometry const& obj1, Geometry const& obj2);
-		
-		/*! Returns the minimum (closest) distance between this and another geometry. */
-		cwee_units::foot_t Distance(Geometry const& obj) const;
-
+		/*! Returns the length of the geometry */
 		static cwee_units::foot_t Length(Geometry const& obj);
-		cwee_units::foot_t Length() const;
+		
 
-		cweeStr Geocode() const;
-		cwee_units::foot_t Elevation() const;
+		
+		
 	};
+
 };
