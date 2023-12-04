@@ -66,11 +66,20 @@ namespace cweeGeo {
 
 	public:
 		Layer() : data(nullptr), transform(nullptr) {};
-		Layer(decltype(Layer::data) dataSource);
-		Layer(Layer const& other);
-		Layer(Layer&& other);
-		Layer& operator=(Layer const& other);
-		Layer& operator=(Layer&& other);
+		Layer(decltype(Layer::data) const& dataSource);
+		Layer(decltype(Layer::data) const& dataSource, decltype(Layer::transform) const& transformSource) : data(dataSource), transform(transformSource) {};
+		Layer(Layer const& other) : data(other.data), transform(other.transform) {};
+		Layer(Layer&& other) : data(other.data), transform(other.transform) {};
+		Layer& operator=(Layer const& other) {
+			data = other.data;
+			transform = other.transform;
+			return *this;
+		};
+		Layer& operator=(Layer&& other) {
+			data = other.data;
+			transform = other.transform;
+			return *this;
+		};
 
 		int NumFeatures() const;
 		Feature GetFeature(int Fid) const;
@@ -87,7 +96,7 @@ namespace cweeGeo {
 
 	public:
 		Feature() : data(nullptr), layer(nullptr) {};
-		Feature(decltype(Feature::data) dataSource, decltype(Feature::layer) layerSource) : data(dataSource), layer(layerSource) {};
+		Feature(decltype(Feature::data) const& dataSource, decltype(Feature::layer) const& layerSource) : data(dataSource), layer(layerSource) {};
 		Feature(Feature const& other) : data(other.data), layer(other.layer) {};
 		Feature(Feature&& other) : data(std::forward<decltype(Feature::data)>(other.data)), layer(other.layer) {};
 		Feature& operator=(Feature const& other) { data = other.data; layer = other.layer; return *this; };
@@ -116,7 +125,7 @@ namespace cweeGeo {
 
 	public:
 		Field() : Feature(), fieldNumber(-1) {};
-		Field(decltype(Field::Feature) dataSource, decltype(Field::fieldNumber) fieldN) : Feature(dataSource), fieldNumber(fieldN) {};
+		Field(decltype(Field::Feature) const& dataSource, decltype(Field::fieldNumber) const& fieldN) : Feature(dataSource), fieldNumber(fieldN) {};
 		Field(Field const& other) : Feature(other.Feature), fieldNumber(other.fieldNumber) {};
 		Field(Field&& other) : Feature(other.Feature), fieldNumber(other.fieldNumber) {};
 		Field& operator=(Field const& other) { Feature = other.Feature; fieldNumber = other.fieldNumber; return *this; };
@@ -142,7 +151,7 @@ namespace cweeGeo {
 		
 	public:
 		Geometry() : Feature(), geometry(nullptr) {};
-		Geometry(decltype(Geometry::Feature) dataSource, decltype(Geometry::geometry) geoSource) : Feature(dataSource), geometry(geoSource) {};
+		Geometry(decltype(Geometry::Feature) const& dataSource, decltype(Geometry::geometry) const& geoSource) : Feature(dataSource), geometry(geoSource) {};
 		Geometry(Geometry const& other) : Feature(other.Feature), geometry(other.geometry) {};
 		Geometry(Geometry&& other) : Feature(other.Feature), geometry(other.geometry) {};
 		Geometry& operator=(Geometry const& other) { Feature = other.Feature; geometry = other.geometry; return *this; };
