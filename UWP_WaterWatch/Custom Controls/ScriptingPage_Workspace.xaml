@@ -20,7 +20,11 @@
 
     <Grid PointerWheelChanged="CanvasScroll">
         <ScrollViewer x:Name="RenderScroll" BorderThickness="0" Loaded="RenderScroll_Loaded" Background="Transparent"
-                        HorizontalScrollMode="Auto"  VerticalScrollMode="Auto"  HorizontalScrollBarVisibility="Visible"  VerticalScrollBarVisibility="Visible" ZoomMode="Enabled"
+                        HorizontalScrollMode="Auto"  
+                        VerticalScrollMode="Auto"  
+                        HorizontalScrollBarVisibility="Visible"  
+                        VerticalScrollBarVisibility="Visible" 
+                        ZoomMode="Enabled"
                         Margin="0,0,0,0" Padding="0"
                         BringIntoViewOnFocusChange="False"
                         IsDeferredScrollingEnabled="False"

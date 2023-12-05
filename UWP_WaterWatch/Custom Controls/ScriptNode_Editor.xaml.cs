@@ -804,12 +804,11 @@ namespace UWP_WaterWatch.Custom_Controls
             Editor.IsTextScaleFactorEnabled = true;
 
             Editor.PreviewKeyDown += Editor_PreviewKeyDown;
-            Editor.CharacterReceived += Editor_CharacterReceived; ;
+            Editor.CharacterReceived += Editor_CharacterReceived;
 
             this.PointerEntered += ScriptNode_Editor_PointerEntered;
             this.PointerExited += ScriptNode_Editor_PointerExited;
-
-
+            
             Editor.Editor.Modified += (Editor sender, ModifiedEventArgs args) => {
                 switch (args.ModificationType)
                 {
@@ -847,17 +846,29 @@ namespace UWP_WaterWatch.Custom_Controls
 
         }
 
-        private static void ScriptNode_Editor_PointerExited(object sender, PointerRoutedEventArgs e)
-        {
-            ScriptNode_EditorVM.pointerTracker?.Stop();
-            ScriptNode_EditorVM.pointerTracker = null;
+        private static void ScriptNode_Editor_PointerEntered(object sender, PointerRoutedEventArgs e) {
+            var editorVM = (sender as ScriptNode_Editor).vm;
+            if (editorVM != null) {
+                var ParentVM1 = editorVM.ParentVM;
+                if (ParentVM1 != null) {
+                    var ParentVM2 = ParentVM1.ParentVM;
+                    if (ParentVM2 != null) {
+                        var workspace = ParentVM2.workspace;
+                        if (workspace != null) {
+                            var ws_vm = workspace.vm;
+                            if (ws_vm != null) {
+                                var scrollViewer = ws_vm.scrollViewer;
+                                if (scrollViewer != null) {
+                                    scrollViewer.PointerWheelChanged += ScrollViewer_PointerWheelChanged;
+                                    scrollViewer.VerticalScrollMode = ScrollMode.Disabled;
+                                    scrollViewer.HorizontalScrollMode = ScrollMode.Disabled;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
 
-            (sender as ScriptNode_Editor).vm.hoverProcessor?.Stop();
-            (sender as ScriptNode_Editor).vm.hoverProcessor = null;
-        }
-
-        private static void ScriptNode_Editor_PointerEntered(object sender, PointerRoutedEventArgs e)
-        {
             (sender as ScriptNode_Editor).vm.hoverProcessor?.Stop();
             (sender as ScriptNode_Editor).vm.hoverProcessor = new cweeTimer(0.3, () => {
                 (sender as ScriptNode_Editor).TrackPointer();
@@ -892,6 +903,39 @@ namespace UWP_WaterWatch.Custom_Controls
                     }
                 }, false);
             }
+        }
+        private static void ScriptNode_Editor_PointerExited(object sender, PointerRoutedEventArgs e) {
+            var editorVM = (sender as ScriptNode_Editor).vm;
+            if (editorVM != null) {
+                var ParentVM1 = editorVM.ParentVM;
+                if (ParentVM1 != null) {
+                    var ParentVM2 = ParentVM1.ParentVM;
+                    if (ParentVM2 != null) {
+                        var workspace = ParentVM2.workspace;
+                        if (workspace != null) {
+                            var ws_vm = workspace.vm;
+                            if (ws_vm != null) {
+                                var scrollViewer = ws_vm.scrollViewer;
+                                if (scrollViewer != null) {
+                                    scrollViewer.PointerWheelChanged -= ScrollViewer_PointerWheelChanged;
+                                    scrollViewer.VerticalScrollMode = ScrollMode.Auto;
+                                    scrollViewer.HorizontalScrollMode = ScrollMode.Auto;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            ScriptNode_EditorVM.pointerTracker?.Stop();
+            ScriptNode_EditorVM.pointerTracker = null;
+
+            (sender as ScriptNode_Editor).vm.hoverProcessor?.Stop();
+            (sender as ScriptNode_Editor).vm.hoverProcessor = null;
+        }
+
+        private static void ScrollViewer_PointerWheelChanged(object sender, PointerRoutedEventArgs e) {
+            e.Handled = true;
         }
 
         ~ScriptNode_Editor()

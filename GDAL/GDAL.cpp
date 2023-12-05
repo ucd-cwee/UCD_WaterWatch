@@ -948,7 +948,36 @@ namespace cweeGeo {
 		}
 		return out;
 	};
+	cweeList<cweePair<int, double>> Layer::Near(Feature const& layer1, Layer const& layer2, std::function<double(Geometry const&, Geometry const&)> DistanceFunction, int numNearest, std::function<bool(Feature const&)> WhereFunction) {
+		cweeBalancedPattern<cwee_units::scalar_t, u64> distance_to_layer2_Fid; // x-axis is distance, y-axis is Layer2's Fid. 
+		int i, Layer1Fid, Layer2Fid, NumFeatures_Layer2;
+		cweeList<cweePair<int, double>> nearestList;
 
+		std::map<int, Geometry > feat2_List;
+
+		auto feat1Geo = layer1.GetGeometry();
+		for (Layer2Fid = 0; Layer2Fid < layer2.NumFeatures(); Layer2Fid++) {
+			auto feat = layer2.GetFeature(Layer2Fid);
+			if (WhereFunction(feat)) feat2_List[Layer2Fid] = feat.GetGeometry();
+		}
+
+		distance_to_layer2_Fid.ClearData();
+		for (auto& Layer2Iter : feat2_List) {
+			distance_to_layer2_Fid.AddValue(DistanceFunction(feat1Geo, Layer2Iter.second), Layer2Iter.first);
+		}
+
+		nearestList.Clear();
+		distance_to_layer2_Fid.Lock();
+		for (auto& ptr : distance_to_layer2_Fid.UnsafeGetValues()) {
+			if (nearestList.Num() >= numNearest) break;
+			if (ptr.object) {
+				nearestList.Append(cweePair<int, double>(ptr.object->operator()(), ptr.key));
+			}
+		}
+		distance_to_layer2_Fid.Unlock();
+
+		return nearestList;
+	};
 }
 
 
@@ -1200,6 +1229,27 @@ namespace chaiscript {
 			lib->AddFunction(ToMapElementFromGeometry, UI_MapIcon, , return ToMapElementFromGeometry(obj), Geometry const& obj);
 			lib->AddFunction(ToMapElementFromGeometry, UI_MapPolyline, , return ToMapElementFromGeometry(obj), Geometry const& obj);
 
+			AUTO NearestMatchFeatureDistanceWhere = [](Feature const& layer1, Layer const& layer2, int numNearest, std::function<double(Geometry const&, Geometry const&)> dist, std::function<bool(Feature const&)> Where) {
+				AUTO nearList = Layer::Near(layer1, layer2, dist, numNearest, Where);
+				std::vector<chaiscript::Boxed_Value> out;
+				for (auto& pairing : nearList) {											
+					std::pair<chaiscript::Boxed_Value, chaiscript::Boxed_Value> match; {
+						match.first = var(layer2.GetFeature(pairing.first));
+						match.second = var(cwee_units::foot_t(pairing.second));
+					}
+					out.push_back(var(std::move(match)));
+				}
+				return out;
+			};
+			AUTO NearestMatchFeatureDistance = [NearestMatchFeatureDistanceWhere](Feature const& layer1, Layer const& layer2, int numNearest, std::function<double(Geometry const&, Geometry const&)> dist) {
+				return NearestMatchFeatureDistanceWhere(layer1, layer2, numNearest, dist, [](Feature const& a)->bool { return true; });
+			};
+			AUTO NearestMatchFeature = [NearestMatchFeatureDistance](Feature const& layer1, Layer const& layer2, int numNearest) {
+				return NearestMatchFeatureDistance(layer1, layer2, numNearest, [](Geometry const& a, Geometry const& b)->double {
+					return a.Distance(b)();
+				});
+			};
+
 			AUTO NearestMatchDistanceWhere = [](Layer const& layer1, Layer const& layer2, int numNearest, std::function<double(Geometry const&, Geometry const&)> dist, std::function<bool(Feature const&)> Where) {
 				AUTO nearList = Layer::Near(layer1, layer2, dist, numNearest, Where);
 
@@ -1235,10 +1285,14 @@ namespace chaiscript {
 			lib->AddFunction(NearestMatch, Near, , return NearestMatch(layer1, layer2, 1), Layer const& layer1, Layer const& layer2);
 			lib->AddFunction(NearestMatch, Near, , return NearestMatch(layer1, layer2, numNearest), Layer const& layer1, Layer const& layer2, int numNearest);
 			lib->AddFunction(NearestMatchDistance, Near, , return NearestMatchDistance(layer1, layer2, numNearest, dist), Layer const& layer1, Layer const& layer2, int numNearest, std::function<double(Geometry const&, Geometry const&)> const& dist);
-			lib->AddFunction(NearestMatchDistanceWhere, Near, , return NearestMatchDistanceWhere(layer1, layer2, numNearest, [](Geometry const& a, Geometry const& b)->double {
-				return a.Distance(b)();
-			}, Where), Layer const& layer1, Layer const& layer2, int numNearest, std::function<bool(Feature const&)> const& Where);
+			lib->AddFunction(NearestMatchDistanceWhere, Near, , return NearestMatchDistanceWhere(layer1, layer2, numNearest, [](Geometry const& a, Geometry const& b)->double { return a.Distance(b)(); }, Where), Layer const& layer1, Layer const& layer2, int numNearest, std::function<bool(Feature const&)> const& Where);
 			lib->AddFunction(NearestMatchDistanceWhere, Near, , return NearestMatchDistanceWhere(layer1, layer2, numNearest, dist, Where), Layer const& layer1, Layer const& layer2, int numNearest, std::function<double(Geometry const&, Geometry const&)> const& dist, std::function<bool(Feature const&)> const& Where);
+
+			lib->AddFunction(NearestMatchFeature, Near, , return NearestMatchFeature(layer1, layer2, 1), Feature const& layer1, Layer const& layer2);
+			lib->AddFunction(NearestMatchFeature, Near, , return NearestMatchFeature(layer1, layer2, numNearest), Feature const& layer1, Layer const& layer2, int numNearest);
+			lib->AddFunction(NearestMatchFeatureDistance, Near, , return NearestMatchFeatureDistance(layer1, layer2, numNearest, dist), Feature const& layer1, Layer const& layer2, int numNearest, std::function<double(Geometry const&, Geometry const&)> const& dist);
+			lib->AddFunction(NearestMatchFeatureDistanceWhere, Near, , return NearestMatchFeatureDistanceWhere(layer1, layer2, numNearest, [](Geometry const& a, Geometry const& b)->double { return a.Distance(b)(); }, Where), Feature const& layer1, Layer const& layer2, int numNearest, std::function<bool(Feature const&)> const& Where);
+			lib->AddFunction(NearestMatchFeatureDistanceWhere, Near, , return NearestMatchFeatureDistanceWhere(layer1, layer2, numNearest, dist, Where), Feature const& layer1, Layer const& layer2, int numNearest, std::function<double(Geometry const&, Geometry const&)> const& dist, std::function<bool(Feature const&)> const& Where);
 
             return lib;
         };

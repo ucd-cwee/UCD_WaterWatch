@@ -171,6 +171,7 @@ namespace UWP_WaterWatch.Custom_Controls
                 //}, true);
             };
         }
+
         ~ScriptingPage_Workspace()
         {
             ObjCount.Decrement();
@@ -268,20 +269,6 @@ namespace UWP_WaterWatch.Custom_Controls
         private void CanvasScroll(object sender, Windows.UI.Xaml.Input.PointerRoutedEventArgs e)
         {
             // exclusively happens when the viewer is zoomed "out" and there cannot be room to scroll -- only zoom. 
-            //if (e.KeyModifiers != VirtualKeyModifiers.Control)
-            //{
-            //    var pointer = e.GetCurrentPoint(vm.scrollViewer);
-            //    var scroll = pointer.Properties.MouseWheelDelta;
-            //    if (scroll > 0)
-            //    {
-            //        ZoomTo(vm.scrollViewer.ZoomFactor + 0.2f);
-            //    }
-            //    else
-            //    {
-            //        ZoomTo(vm.scrollViewer.ZoomFactor - 0.2f);
-            //    }
-            //}
-            //return;
             var pointer = e.GetCurrentPoint(vm.scrollViewer);
             var scroll = pointer.Properties.MouseWheelDelta;
             var shift = e.KeyModifiers == VirtualKeyModifiers.Shift;
