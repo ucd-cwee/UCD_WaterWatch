@@ -201,6 +201,8 @@ namespace chaiscript {
         Boxed_Value& operator=(Boxed_Value&&) = default;
         Boxed_Value(const Boxed_Value&) = default;
         Boxed_Value& operator=(const Boxed_Value&) = default;
+        bool operator==(const Boxed_Value& a) const { return type_match(*this, a) && this->get_const_ptr() == a.get_const_ptr(); };
+        bool operator!=(const Boxed_Value& a) const { return !operator==(a); };
 
         void swap(Boxed_Value& rhs) noexcept { std::swap(m_data, rhs.m_data); }
 

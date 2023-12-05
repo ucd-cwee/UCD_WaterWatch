@@ -362,6 +362,75 @@ namespace chaiscript {
                 }), "AppendFromSQL");
             }
 
+            // Boxed_Value Curve
+            if (1) {
+                lib->add(chaiscript::user_type<cweeBalancedCurve<Boxed_Value>>(), "Curve");
+                lib->add(chaiscript::constructor<cweeBalancedCurve<Boxed_Value>()>(), "Curve");
+                lib->add(chaiscript::constructor<cweeBalancedCurve<Boxed_Value>(const cweeBalancedCurve<Boxed_Value>&)>(), "Curve");
+                lib->add(chaiscript::fun([](cweeBalancedCurve<Boxed_Value>& a, cweeBalancedCurve<Boxed_Value>& b) { a = b; return a; }), "=");
+                lib->AddFunction(, AddUniqueValue, , return o.AddUniqueValue(t, val), cweeBalancedCurve<Boxed_Value>& o, double t, Boxed_Value const& val);
+                lib->AddFunction(, AddValue, , return o.AddValue(t, val), cweeBalancedCurve<Boxed_Value>& o, double t, Boxed_Value const& val);
+                lib->AddFunction(, RemoveTimes, , return o.RemoveTimes(greaterThan, lessThenEqualTo), cweeBalancedCurve<Boxed_Value>& o, const double& greaterThan, const double& lessThenEqualTo);
+                lib->AddFunction(, Clear, , return o.Clear(), cweeBalancedCurve<Boxed_Value>& o);
+                lib->AddFunction(, GetValueKnotSeries, ,
+                    std::vector<Boxed_Value> out;
+                    for (auto& x : o.GetValueKnotSeries()) {
+                        out.push_back(x);
+                    }
+                    return out;
+                , cweeBalancedCurve<Boxed_Value> const& o);
+                lib->AddFunction(, GetValueKnotSeries, , 
+                    std::vector<Boxed_Value> out;
+                    for (auto& x : o.GetValueKnotSeries(t0)) {
+                        out.push_back(x);
+                    }
+                    return out;
+                , cweeBalancedCurve<Boxed_Value> const& o, double t0);
+                lib->AddFunction(, GetValueKnotSeries, , 
+                    std::vector<Boxed_Value> out;
+                    for (auto& x : o.GetValueKnotSeries(t0, t1)) {
+                        out.push_back(x);
+                    }
+                    return out;
+                , cweeBalancedCurve<Boxed_Value> const& o, double t0, double t1);
+                lib->AddFunction(, GetKnotSeries, , 
+                    std::vector<Boxed_Value> out;
+                    for (auto& x : o.GetKnotSeries()) {
+                        out.push_back(var(std::pair<Boxed_Value, Boxed_Value>(var((double)x.first), x.second)));
+                    }
+                    return out;
+                , cweeBalancedCurve<Boxed_Value> const& o);
+                lib->AddFunction(, GetKnotSeries, , 
+                    std::vector<Boxed_Value> out;
+                    for (auto& x : o.GetKnotSeries(t0)) {
+                        out.push_back(var(std::pair<Boxed_Value, Boxed_Value>(var((double)x.first), x.second)));
+                    }
+                    return out;
+                , cweeBalancedCurve<Boxed_Value> const& o, double t0);
+                lib->AddFunction(, GetKnotSeries, , 
+                    std::vector<Boxed_Value> out;
+                    for (auto& x : o.GetKnotSeries(t0,t1)) {
+                        out.push_back(var(std::pair<Boxed_Value, Boxed_Value>(var((double)x.first), x.second)));
+                    }
+                    return out;
+                , cweeBalancedCurve<Boxed_Value> const& o, double t0, double t1);
+                lib->AddFunction(, GetCurrentValue, , return o.GetCurrentValue(t), cweeBalancedCurve<Boxed_Value> const& o, double t); 
+                lib->AddFunction(, GetMaxTime, , return o.GetMaxTime(), cweeBalancedCurve<Boxed_Value> const& o);
+                lib->AddFunction(, GetMinTime, , return o.GetMinTime(), cweeBalancedCurve<Boxed_Value> const& o);
+                lib->AddFunction(, ShiftTime, , return o.ShiftTime(t), cweeBalancedCurve<Boxed_Value>& o, double t);
+                lib->AddFunction(, Num, , return o.GetNumValues(), cweeBalancedCurve<Boxed_Value> const& o);
+                lib->AddFunction(, size, , return o.GetNumValues(), cweeBalancedCurve<Boxed_Value> const& o);
+                lib->AddFunction(, Reserve, , return o.Reserve(num), cweeBalancedCurve<Boxed_Value>& o, int num);
+                lib->AddFunction(, [], , return o.GetCurrentValue(t), cweeBalancedCurve<Boxed_Value> const& o, double t);
+                lib->AddFunction(, keys, ,
+                    std::vector<Boxed_Value> out; 
+                    for (auto& x : o.GetKnotSeries()) out.push_back(var((double)x.first));
+                    return out;
+                , cweeBalancedCurve<Boxed_Value> const& o);
+                lib->eval("def to_string(Curve c){ to_string(c.GetKnotSeries); }");
+
+            }
+
             // Sparse Matrix
             if (1) {
                 using SparseMatrixT = cweeInterpolatedMatrix<float>;

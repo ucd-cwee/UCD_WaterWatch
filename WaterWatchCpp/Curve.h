@@ -168,15 +168,13 @@ public:
 	int					GetNumValues() const { return knots.Num(); }
 	void				SetValue(const int index, const type& value) { ValueAt(index) = value; changed = true; }
 	type				GetValue(int index) const {
-		type out;
+		type out{};
 		if (index < this->Num() && index >= 0)
 			out = ValueAt(index);
 		else if (index >= this->Num() && this->Num() > 0)
 			out = ValueAt(this->Num() - 1);
 		else if (index < 0 && this->Num() > 0)
 			out = ValueAt(0);
-		else
-			out = 0;
 		return out;
 	}
 	type*				GetValueAddress(int index) {

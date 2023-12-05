@@ -97,7 +97,7 @@ namespace UWP_WaterWatch.Custom_Controls
 
         public enum ValueTypeModes
         {
-            String, cweeStr, Vector, Map, Pattern, Pair, Number, Void, Other, Error, Any, Function, DynamicObject, VectorMapItems, Matrix, MatX, FrameworkElement
+            String, cweeStr, Vector, Map, Pattern, Pair, Number, Void, Other, Error, Any, Function, DynamicObject, VectorMapItems, Matrix, MatX, FrameworkElement, Curve
         }
 
         public static void ToReturn_SizeChanged(object sender, SizeChangedEventArgs e)
@@ -236,6 +236,7 @@ namespace UWP_WaterWatch.Custom_Controls
                     bool _cweeMapIcon = vt.Contains("cweeMapIcon", StringComparison.OrdinalIgnoreCase); // other 
                     bool _pattern = vt.Contains("Pattern", StringComparison.OrdinalIgnoreCase);
                     bool _matrix = vt.Contains("Matrix", StringComparison.OrdinalIgnoreCase);
+                    bool _curve = vt.Contains("Curve", StringComparison.OrdinalIgnoreCase);
                     bool _MatX = vt.Contains("MatX", StringComparison.OrdinalIgnoreCase);
                     bool _string = vt.Contains("string", StringComparison.OrdinalIgnoreCase);
                     bool _cweestring = vt.Contains("cweeStr", StringComparison.OrdinalIgnoreCase);
@@ -359,6 +360,10 @@ namespace UWP_WaterWatch.Custom_Controls
                     else if (_isMap)
                     {
                         return ValueTypeModes.Map;
+                    }
+                    else if (_curve)
+                    {
+                        return ValueTypeModes.Curve;
                     }
                     else if ((_int + _float + _double + _u64) == 1)
                     {
@@ -489,6 +494,8 @@ namespace UWP_WaterWatch.Custom_Controls
                             return GetNodeContent_Function(res);
                         case ValueTypeModes.Map:
                             return GetNodeContent_Map(res);
+                        case ValueTypeModes.Curve:
+                            return GetNodeContent_Curve(res);
                         case ValueTypeModes.Vector:
                             return GetNodeContent_Vector(res);
                         case ValueTypeModes.Void:
@@ -542,6 +549,28 @@ namespace UWP_WaterWatch.Custom_Controls
                 if (int.TryParse(task1.Result, out int n))
                 {
                     var collection = new cweeDeferredIncrementalLoader<MapStreamingSource, FrameworkElement>(5);
+                    collection.Tag = (new SharedNodeResult() { result = res.result, additionalParams = res.additionalParams }, n);
+
+                    return EdmsTasks.InsertJob(() =>
+                    {
+                        var L = new ListView();
+                        L.ItemsSource = collection;
+                        return L;
+                    }, true, true);
+                }
+                else
+                {
+                    return GetDefaultContent(res);
+                }
+            }, false);
+        }
+        private static cweeTask<FrameworkElement> GetNodeContent_Curve(SharedNodeResult res)
+        {
+            cweeTask<string> task1 = res.result.QueryResult(res.additionalParams + ".size();");
+            return task1.ContinueWith(() => {
+                if (int.TryParse(task1.Result, out int n))
+                {
+                    var collection = new cweeDeferredIncrementalLoader<CurveStreamingSource, FrameworkElement>(5);
                     collection.Tag = (new SharedNodeResult() { result = res.result, additionalParams = res.additionalParams }, n);
 
                     return EdmsTasks.InsertJob(() =>
@@ -2157,6 +2186,128 @@ namespace UWP_WaterWatch.Custom_Controls
 
         }
 
+        public class CurveStreamingSource : cweeDeferredIIncrementalSource<FrameworkElement>
+        {
+            // internal static ListView viewer;
+            internal List<FrameworkElement> toReturn = new List<FrameworkElement>();
+            internal List<string> keys = new List<string>();
+
+            public CurveStreamingSource()
+            {
+
+            }
+
+            public cweeTask<IEnumerable<FrameworkElement>> GetPagedItemsAsync(int pageIndex, int pageSize, object Tag = null)
+            {
+                return GetPagedItems(pageIndex, pageSize, Tag);
+            }
+
+            internal cweeTask<IEnumerable<FrameworkElement>> GetPagedItems(int pageIndex, int pageSize, object Tag = null)
+            {
+                return (EdmsTasks.cweeTask)EdmsTasks.InsertJob(() =>
+                {
+                    (SharedNodeResult, int) v = ((SharedNodeResult, int))Tag;
+                    for (int i = toReturn.Count; i < v.Item2; i++)
+                    {
+                        toReturn.Add(null);
+                        keys.Add("");
+                    }
+
+                    int minIndex = pageIndex * pageSize;
+                    int maxIndex = Math.Min(v.Item2, (pageIndex + 1) * pageSize);
+
+                    List<EdmsTasks.cweeTask> tasksToDo = new List<EdmsTasks.cweeTask>();
+                    for (int i = minIndex; i < maxIndex && i < toReturn.Count; i++)
+                    {
+                        //for (int i = toReturn.Count; i < v.Item2; i++)
+                        //{
+                        string j = i.ToString();
+                        tasksToDo.Add(new EdmsTasks.cweeTask(() => {
+                            var t1 = v.Item1.result.CustomizableQueryResult(
+                                "{" +
+                                $"var j = 0;\n for (keyValuePair : __RESULT__.GetKnotSeries)\n" +
+                                "{" +
+                                $"if (j == {j})\n" +
+                                "{ return keyValuePair.first.to_string(); }\n " +
+                                "\n++j;\n}" +
+                                "}",
+                                "__RESULT__", v.Item1.additionalParams
+                            );
+                            return t1.ContinueWith(() => {
+                                keys[int.Parse(j)] = t1.Result;
+                            }, true);
+                        }, false, true));
+                    }
+
+                    return EdmsTasks.cweeTask.InsertListAsTask(tasksToDo).ContinueWith(() => {
+                        var cdb = cweeXamlHelper.ThemeColor("cweeDarkBlue");
+                        return cdb.ContinueWith(() => {
+                            var waitingList = new List<EdmsTasks.cweeTask>();
+
+                            for (int i = minIndex; i < maxIndex && i < toReturn.Count; i++)
+                            {
+                                var key = keys[i];
+
+                                var newC = new SharedNodeResult() { result = v.Item1.result, additionalParams = v.Item1.additionalParams + $"[{key}]" };
+                                var index = $"{i}";
+
+                                var secondTask = new EdmsTasks.cweeTask(() => {
+                                    Border border = new Border() { Padding = new Thickness(0), Margin = new Thickness(0), BorderBrush = cdb.Result, BorderThickness = new Thickness(0, 1, 0, 1), HorizontalAlignment = HorizontalAlignment.Stretch, VerticalAlignment = VerticalAlignment.Stretch, MinWidth = 200, MinHeight = 40, MaxHeight = 200 };
+                                    border.Child = new Microsoft.UI.Xaml.Controls.ProgressRing() { Width = 24, Height = 24, Padding = new Thickness(0), Margin = new Thickness(0), Foreground = cdb.Result, IsIndeterminate = true };
+
+                                    Grid container = new Grid() { Padding = new Thickness(0), Margin = new Thickness(0), HorizontalAlignment = HorizontalAlignment.Stretch, VerticalAlignment = VerticalAlignment.Stretch };
+                                    {
+                                        container.ColumnSpacing = 5;
+
+                                        container.ColumnDefinitions.Add(new ColumnDefinition() { Width = new GridLength(80, GridUnitType.Pixel) });
+                                        container.ColumnDefinitions.Add(new ColumnDefinition() { Width = new GridLength(1, GridUnitType.Pixel) });
+                                        container.ColumnDefinitions.Add(new ColumnDefinition() { Width = new GridLength(1, GridUnitType.Auto) });
+
+                                        container.Children.Add(new TextBlock() { Margin = new Thickness(0), Padding = new Thickness(0), Text = $"{ key }", TextWrapping = TextWrapping.Wrap, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, HorizontalTextAlignment = TextAlignment.Center, Style = cweeXamlHelper.StaticStyleResource("cweeTextBlock") });
+
+                                        var g = new Grid() { /*Background = cweeXamlHelper.ThemeColor("cweePageBackground")*/ };
+                                        container.Children.Add(g);
+                                        Grid.SetColumn(g, 1);
+
+                                        container.Children.Add(border);
+                                        Grid.SetColumn(border, 2);
+                                    }
+                                    toReturn[int.Parse(index)] = container;
+                                    return border;
+                                }, true, true);
+
+                                secondTask.Tag = newC;
+
+                                waitingList.Add(secondTask);
+                            }
+
+                            var waiter = EdmsTasks.cweeTask.InsertListAsTask(waitingList);
+                            var lastTask = waiter.ContinueWith(() => {
+                                var result = (from p in toReturn select p).Skip(pageIndex * pageSize).Take(pageSize);
+                                return result;
+                            }, true);
+
+                            lastTask.ContinueWith(() => {
+                                foreach (var tsk in waitingList)
+                                {
+                                    var Tsk = tsk;
+                                    var mainTsk = GetNodeContent(Tsk.Tag as SharedNodeResult);
+                                    mainTsk.ContinueWith(() => {
+                                        try
+                                        {
+                                            (Tsk.Result as Border).Child = (mainTsk.Result as UIElement);
+                                        }
+                                        catch (Exception) { }
+                                    }, true);
+                                }
+                            }, false);
+
+                            return lastTask;
+                        }, false);
+                    }, false);
+                });
+            }
+        }
         public class MapStreamingSource : cweeDeferredIIncrementalSource<FrameworkElement>
         {
             // internal static ListView viewer;

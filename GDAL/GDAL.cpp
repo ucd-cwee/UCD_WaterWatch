@@ -16,14 +16,21 @@ template <typename T> INLINE cweeSharedPtr<T> FromVoidPtr(cweeSharedPtr<void> da
 
 
 namespace cweeGeo {
-	Shapefile::Shapefile(cweeStr const& filePath) : 
-		data(cweeSharedPtr<void>(cweeSharedPtr< GDALDataset >(
-			(GDALDataset*)GDALOpenEx(
-				filePath,
-				GDAL_OF_READONLY, // GDAL_OF_ALL, // GDAL_OF_VECTOR
-				NULL, NULL, NULL)
-			, [](GDALDataset* ptr) { GDALClose((GDALDatasetH)ptr); }
-	))){};
+	Shapefile::Shapefile(cweeStr const& filePath) : data(nullptr) {
+		auto* proj_ptr = (GDALDataset*)GDALOpenEx(
+			filePath,
+			GDAL_OF_READONLY, // GDAL_OF_ALL, // GDAL_OF_VECTOR
+			NULL, NULL, NULL);
+
+		if (proj_ptr) {
+			data = cweeSharedPtr<void>(
+					cweeSharedPtr< GDALDataset >(
+						proj_ptr,
+						[](GDALDataset* ptr) { GDALClose((GDALDatasetH)ptr); }
+					)
+				);
+		}
+	};
 	Layer Shapefile::GetLayer(int LayerId) const {
 		AUTO shapefile{ FromVoidPtr<GDALDataset>(data) };
 		if (shapefile) {
@@ -62,8 +69,6 @@ namespace cweeGeo {
 		}
 		return "";
 	};
-
-
 
 	Layer::Layer(decltype(Layer::data) const& dataSource) : data(dataSource), transform(nullptr) {
 		AUTO layerP{ FromVoidPtr<OGRLayer>(data) };
@@ -1059,11 +1064,7 @@ namespace chaiscript {
 			AddBasicClassMember(Field, GetAsString);
 			AddBasicClassMember(Field, GetAsDouble);
 			AddBasicClassMember(Field, GetAsDateTime);
-			lib->AddFunction(, to_string, ,
-				if (o.IsNull()) return cweeStr::printf("\"%s\": <NULL>", o.Name().c_str());
-			    else if (o.IsUnset()) return cweeStr::printf("\"%s\": <UNSET>", o.Name().c_str());
-				else return cweeStr::printf("\"%s\": %s", o.Name().c_str(), o.GetAsString().c_str())
-			, Field const& o);
+			lib->AddFunction(, to_string, ,return o.GetAsString(), Field const& o);
 
 			AddBasicClassTemplate(Feature);
 			AddBasicClassMember(Feature, Fid);
@@ -1086,12 +1087,14 @@ namespace chaiscript {
 				}
 				return out;
 			, Feature const& o);
+			lib->AddFunction(, [], ->Field, return o.GetField(fieldName), Feature const& o, cweeStr const& fieldName);
 
 			AddBasicClassTemplate(Layer);
 			AddBasicClassMember(Layer, GetFeature);
 			AddBasicClassMember(Layer, Name);
 			AddBasicClassMember(Layer, NumFeatures);
 			lib->AddFunction(, to_string, , return cweeStr::printf("%i Feature(s): \"%s\"", o.NumFeatures(), o.Name().c_str()), Layer const& o);
+			lib->AddFunction(, [], ->Feature, return o.GetFeature(featureNum), Layer const& o, int featureNum);
 
 			AddBasicClassTemplate(Shapefile);
 			lib->AddFunction(, Shapefile, , return Shapefile(fp), cweeStr const& fp);
@@ -1101,6 +1104,8 @@ namespace chaiscript {
 			AddBasicClassMember(Shapefile, DriverName);
 			AddBasicClassMember(Shapefile, Description);
 			lib->AddFunction(, to_string, , return cweeStr::printf("%i Layer(s): \"%s\"", o.NumLayers(), o.Description().c_str()), Shapefile const& o);
+			lib->AddFunction(, [], ->Layer, return o.GetLayer(layerNum), Shapefile const& o, int layerNum);
+			lib->AddFunction(, [], ->Layer, return o.GetLayer(layerName), Shapefile const& o, cweeStr layerName);
 
 			AUTO ToMapElementFromGeometry = [](Geometry const& geo) -> chaiscript::Boxed_Value {
 				chaiscript::Boxed_Value out;

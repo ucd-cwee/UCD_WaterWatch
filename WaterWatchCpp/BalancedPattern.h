@@ -106,6 +106,17 @@ public:
 		return out;
 	};
 
+	 type GetCurrentValue(const u64& time) const {
+		 type out{};
+		 Lock();
+		 AUTO x = UnsafeGetValues().NodeFindLargestSmallerEqual(time);
+		 if (x && x->object) {
+			 out = *x->object;
+		 }		 
+		 Unlock();
+		 return out;
+	 };
+
 	auto& UnsafeGetValues() const { return container; };
 	AUTO UnsafeGetValue(const u64& time) const { return UnsafeGetValues().NodeFindLargestSmallerEqual(time); };
 	cweeThreadedList<node_type*> UnsafeGetKnotSeries() const {
@@ -131,7 +142,7 @@ public:
 		InsertPair(time, valueIN, true);
 	};
 
-	void				RemoveTimes(const u64& greaterThan, const u64& lessThenEqualTo) {
+	void		RemoveTimes(const u64& greaterThan, const u64& lessThenEqualTo) {
 		int lowerLimit, upperLimit, index; cweeThreadedList<int> indexesToDelete;
 		Lock();
 		{
@@ -174,7 +185,7 @@ public:
 		Unlock();
 	};
 
-	 u64			GetAvgTime() const {
+	 u64		GetAvgTime() const {
 		u64 out(0);
 		int num(0);
 
@@ -195,7 +206,7 @@ public:
 
 		return (u64)out;
 	};;
-	u64					GetMaxTime(void) const {
+	u64			GetMaxTime(void) const {
 		u64 out(0);
 
 		if (GetNumValues() == 0)
@@ -219,7 +230,7 @@ public:
 			return out;
 		}
 	};
-	u64					GetMinTime(void) const {
+	u64			GetMinTime(void) const {
 		u64 out(0);
 
 		if (GetNumValues() == 0)
