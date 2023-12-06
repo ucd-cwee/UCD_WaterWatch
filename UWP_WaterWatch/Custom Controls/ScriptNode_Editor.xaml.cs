@@ -66,7 +66,10 @@ namespace UWP_WaterWatch.Custom_Controls
             CodeToWarning[code] = warning;
             Errors[code] = new CodeError() { Error = GetWarningFromCode(code), ErrorCode = code };
 
-            ParentVM.outputPanel.vm.StatusString = $"Node '{ParentVM.Label}': '{GetWarningFromCode(code)}'";
+            string err = GetWarningFromCode(code);
+            if (!string.IsNullOrEmpty(err)) {
+                ParentVM.outputPanel.vm.StatusString = $"Node '{ParentVM.Label}': '{ err }'";
+            }
 
             OnPropertyChanged("Errors"); OnPropertyChanged("NumWarnings");
         }

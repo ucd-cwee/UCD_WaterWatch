@@ -97,12 +97,14 @@ namespace chaiscript {
                 DEF_DECLARE_PAIR(double, double);
                 lib->add(chaiscript::user_type<vec2d>(), "vec2d");
                 lib->add(chaiscript::constructor<vec2d()>(), "vec2d");
+                lib->add(chaiscript::constructor<vec2d(double const&, double const&)>(), "vec2d");
                 lib->add(chaiscript::constructor<vec2d(const vec2d&)>(), "vec2d");
                 lib->add(chaiscript::fun([](vec2d& a, const vec2d& b)->vec2d& { a = b; return a; }), "=");
                 lib->AddFunction(, first, -> double&, return obj.x, vec2d& obj);
                 lib->AddFunction(, second, -> double&, return obj.y, vec2d& obj);
                 lib->AddFunction(, Pair, , SINGLE_ARG(return std::pair<chaiscript::Boxed_Value, chaiscript::Boxed_Value>(var((double)(obj.x)), var((double)(obj.y)));), vec2d const& obj);
-                lib->AddFunction(, vec2d, , return vec2d(obj.first, obj.second), std::pair<double,double> const& obj);               
+                lib->AddFunction(, vec2d, , return vec2d(chaiscript::boxed_cast<double>(obj.first), chaiscript::boxed_cast<double>(obj.second)), std::pair<chaiscript::Boxed_Value, chaiscript::Boxed_Value> const& obj);
+                lib->AddFunction(, [], -> double&, return obj[i], vec2d& obj, int i);
             }
 
             // Geocoding

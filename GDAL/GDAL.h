@@ -14,6 +14,7 @@
 #include "../WaterWatchCpp/Units.h"
 #include "../WaterWatchCpp/Geocoding.h"
 #include "../WaterWatchCpp/RTree.h"
+#include "../WaterWatchCpp/InterpolatedMatrix.h"
 
 class GDAL_Data {
 public:
@@ -34,11 +35,12 @@ BETTER_ENUM(GeometryType, uint8_t, Unknown, Point, Line, Polygon, Multipoint, Mu
 
 
 namespace cweeGeo {
+	class Raster;
 	class Layer;
 	class Feature;
 	class Field;
 	class Geometry;
-
+	
 	class Shapefile {
 	protected:
 		cweeSharedPtr<void> data;
@@ -52,12 +54,45 @@ namespace cweeGeo {
 		Shapefile& operator=(Shapefile const& other) { data = other.data;  return *this; };
 		Shapefile& operator=(Shapefile&& other) { data = other.data; return *this; };
 
+		Raster GetRaster(int RasterId) const;
+		int NumRasters() const;
 		Layer GetLayer(int LayerId) const;
 		Layer GetLayer(cweeStr const& name) const;
 		int NumLayers() const;
 		cweeStr DriverName() const;
 		cweeStr Description() const;
 	};
+
+	class Raster {
+	protected:
+		cweeSharedPtr<void> data;
+		cweeSharedPtr<void> transform;
+
+	public:
+		Raster() : data(nullptr), transform(nullptr) {};
+		Raster(decltype(Raster::data) const& dataSource, decltype(Raster::transform) const& transformSource) : data(dataSource), transform(transformSource) {};
+		Raster(Raster const& other) : data(other.data), transform(other.transform) {};
+		Raster(Raster&& other) : data(other.data), transform(other.transform) {};
+		Raster& operator=(Raster const& other) {
+			data = other.data;
+			transform = other.transform;
+			return *this;
+		};
+		Raster& operator=(Raster&& other) {
+			data = other.data;
+			transform = other.transform;
+			return *this;
+		};
+
+		int Fid() const;
+		int SizeX() const;
+		int SizeY() const;
+		cweeStr Description() const;
+		double Minimum() const;
+		double Maximum() const;
+		cweeInterpolatedMatrix<float> GetData() const;
+	};
+
 
 	class Layer {
 	protected:
