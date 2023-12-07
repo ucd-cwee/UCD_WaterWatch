@@ -4108,6 +4108,31 @@ namespace cweeEng {
 		}
 		return result;
 	};
+	static bool IsPointInPolygon(const cweeThreadedList<vec2d>& polygon, const vec2d& testPoint)
+	{
+		bool result = false;
+		int j = polygon.Num() - 1;
+		for (int i = 0; i < polygon.Num(); i++)
+		{
+			if (
+				(polygon[i].y < testPoint.y
+					&&
+					polygon[j].y >= testPoint.y)
+				||
+				(polygon[j].y < testPoint.y
+					&&
+					polygon[i].y >= testPoint.y)
+				)
+			{
+				if (polygon[i].x + (testPoint.y - polygon[i].y) / (polygon[j].y - polygon[i].y) * (polygon[j].x - polygon[i].x) < testPoint.x)
+				{
+					result = !result;
+				}
+			}
+			j = i;
+		}
+		return result;
+	};
 
 	static int WhichSide(const cweeThreadedList<vec3>& C, const vec2& D, const vec3& V)
 	{

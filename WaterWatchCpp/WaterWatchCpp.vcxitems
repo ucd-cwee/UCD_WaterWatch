@@ -229,6 +229,7 @@
     <ClInclude Include="$(MSBuildThisFileDirectory)UnorderedList.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)vec.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)VecX.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)Voronoi.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)WaterWatch_Module_EPAnet.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)WaterWatch_Module_Header.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)WaterWatch_Module_P1.h" />

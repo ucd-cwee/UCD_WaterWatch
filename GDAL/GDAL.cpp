@@ -6,6 +6,7 @@
 #include "include/ogr_geos.h"
 #include "../WaterWatchCpp/WaterWatch_Module_Header.h"
 #include "../WaterWatchCpp/BalancedPattern.h"
+#include "../WaterWatchCpp/Voronoi.h"
 
 template <typename T> INLINE cweeSharedPtr<void> ToVoidPtr(T& ptr) {
 	return cweeSharedPtr<void>(make_cwee_shared<T>(ptr), [](void* p) { return p; });
@@ -1608,8 +1609,86 @@ namespace chaiscript {
 				}
 				return out;
 			};
+			AUTO kmeans_cells = [](int k, std::vector<vec2d> const& data)->UI_MapLayer {
+				UI_MapLayer out;
+
+				int m = data.size();
+				int n = 2;
+				int i, j, l;
+				double min_dist, dist;
+				bool converged;
+				int label;
+				std::vector<vec2d> centers(k, vec2d());
+				std::vector<int> labels(m);
+				std::vector<std::vector<double>> new_centers(k, std::vector<double>(n));
+				std::vector<int> counts(k);
+
+				for (i = 0; i < k; ++i) centers[i] = data[i];
+				while (true) {
+					for (i = 0; i < k; ++i) for (j = 0; j < n; ++j) new_centers[i][j] = 0;
+					for (i = 0; i < k; ++i) counts[i] = 0;
+					for (i = 0; i < m; ++i) {
+						min_dist = std::numeric_limits<double>::max();
+						label = -1;
+						for (j = 0; j < k; ++j) {
+							dist = 0;
+							for (l = 0; l < n; ++l) {
+								dist += std::pow(data[i][l] - centers[j][l], 2);
+							}
+							if (dist < min_dist) {
+								min_dist = dist;
+								label = j;
+							}
+						}
+						labels[i] = label;
+						counts[label]++;
+						for (l = 0; l < n; ++l) {
+							new_centers[label][l] += data[i][l];
+						}
+					}
+					converged = true;
+					for (i = 0; i < k; ++i) {
+						if (counts[i] == 0) {
+							continue;
+						}
+						for (l = 0; l < n; ++l) {
+							new_centers[i][l] /= counts[i];
+							if (new_centers[i][l] != centers[i][l]) {
+								converged = false;
+							}
+							centers[i][l] = new_centers[i][l];
+						}
+					}
+					if (converged) {
+						break;
+					}
+				}
+
+				cweeList<vec2d> cweeCenters;
+				cweeCenters = centers;
+
+				auto voronoiParent { Voronoi(cweeCenters) };
+
+				for (auto& cell : voronoiParent.GetCells()) {
+					auto c = UI_Color(cweeRandomFloat(0, 245), cweeRandomFloat(0, 245), cweeRandomFloat(0, 245), 255);
+					auto t = cweeRandomInt(1, 6);
+					for (auto& edge : cell.edges) {
+						UI_MapPolyline line;
+						line.color = c;
+						line.thickness = t;
+						
+						line.AddPoint(edge.first.x, edge.first.y);
+						line.AddPoint(edge.second.x, edge.second.y);
+
+						out.Children.push_back(var((UI_MapPolyline)line));
+					}
+				}
+
+				return out;
+			};
 			lib->AddFunction(kmeans, kmeans, , return kmeans(numCenters, numDim), int numCenters, int numDim);
 			lib->AddFunction(kmeans2, kmeans, , return kmeans2(numCenters, data), int numCenters, std::vector<vec2d> const& data);
+			lib->AddFunction(kmeans_cells, draw_kmeans, , return kmeans_cells(numCenters, data), int numCenters, std::vector<vec2d> const& data);
 
             return lib;
         };

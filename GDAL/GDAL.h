@@ -93,7 +93,6 @@ namespace cweeGeo {
 		cweeInterpolatedMatrix<float> GetData() const;
 	};
 
-
 	class Layer {
 	protected:
 		cweeSharedPtr<void> data;

@@ -121,6 +121,9 @@
     <Filter Include="Lib\Header-Only\Boost\lexical_cast\detail">
       <UniqueIdentifier>{4fe67d5f-0f90-4d6d-af1a-57e77e6dcae3}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Lib\Header-Only\Containers\Voronoi">
+      <UniqueIdentifier>{5e3c666a-15f6-413c-a887-19373a835cdb}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="$(MSBuildThisFileDirectory)odbc.h">
@@ -791,6 +794,9 @@
     </ClInclude>
     <ClInclude Include="$(MSBuildThisFileDirectory)Boost\lexical_cast\detail\converter_lexical.hpp">
       <Filter>Lib\Header-Only\Boost\lexical_cast\detail</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Voronoi.h">
+      <Filter>Lib\Header-Only\Containers\Voronoi</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
