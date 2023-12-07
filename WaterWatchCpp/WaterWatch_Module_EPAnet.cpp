@@ -423,15 +423,16 @@ namespace chaiscript {
                             return out;
                             }), "copyProject");
                     }
-                    if (1) {
+                    if (1) {                        
                         lib->add(chaiscript::user_type<cweeSharedPtr<EPAnetProject>>(), "EPAnetProject");
                         lib->add(fun([]() { return EPAnet->createNewProject(); }), "EPAnetProject");
                         lib->add(constructor<cweeSharedPtr<EPAnetProject>(const cweeSharedPtr<EPAnetProject>&)>(), "EPAnetProject");
                         lib->add(fun([](cweeSharedPtr<EPAnetProject>& a, const cweeSharedPtr<EPAnetProject>& b) { a = b; return a; }), "=");
-
+                        lib->add(constructor<bool(const cweeSharedPtr<EPAnetProject>&)>(), "bool");
                         lib->add(fun([](cweeSharedPtr<EPAnetProject> const& a) { return &*a->epanetProj; }), "project"); // data member as function, accessible as member or function in script. (i.e: "auto proj = EPAnet.createNewProject(); return proj.project.network.Nnodes;")
                         lib->add(fun([](cweeSharedPtr<EPAnetProject> const& a)-> cweeSharedPtr<epanet::Network>&{ return a->epanetProj->network; }), "network"); // easier access to underlying network
-
+                        lib->add(chaiscript::type_conversion<cweeSharedPtr<EPAnetProject>, bool>([](const cweeSharedPtr<EPAnetProject>& t_bt)->bool { return (bool)t_bt; }, nullptr)); 
+                        lib->add(chaiscript::fun([](cweeSharedPtr < EPAnetProject> const& a) -> std::string { if (!a) throw(chaiscript::exception::eval_error("Cannot access a member of a null (empty) shared object.")); return "EPAnetProject"; }), "to_string");
 
                         lib->add(fun([](cweeSharedPtr<EPAnetProject>& proj) { proj->initBuild("", "", 0, 0); }), "initBuild");
                         lib->add(fun([](cweeSharedPtr<EPAnetProject>& proj, cweeStr rptFile) { proj->initBuild(rptFile, "", 0, 0); }), "initBuild");
