@@ -70,6 +70,10 @@ namespace UWP_WaterWatch.Custom_Controls
             if (!string.IsNullOrEmpty(err)) {
                 ParentVM.outputPanel.vm.StatusString = $"Node '{ParentVM.Label}': '{ err }'";
             }
+            else
+            {
+                ParentVM.outputPanel.vm.StatusString = "";
+            }
 
             OnPropertyChanged("Errors"); OnPropertyChanged("NumWarnings");
         }
