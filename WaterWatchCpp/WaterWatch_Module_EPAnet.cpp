@@ -37,12 +37,14 @@ namespace chaiscript {
                 /* Spattern */ {
                     AddSharedPtrClass(::epanet, Spattern);
                     AddSharedPtrClassMember(::epanet, Spattern, Comment);
-                    lib->add(chaiscript::fun([](cweeSharedPtr<::epanet::Spattern> const& a) { if (a) return cweeUnitValues::cweeUnitPattern(a->Pat); else return cweeUnitValues::cweeUnitPattern(); }), "Pat");
+
+                    lib->AddFunction(, Pat, , if (a) return cweeUnitValues::cweeUnitPattern(a->Pat); else return cweeUnitValues::cweeUnitPattern(), cweeSharedPtr<::epanet::Spattern> const& a);
                 }
                 /* Scurve */ {
                     AddSharedPtrClass(::epanet, Scurve);
-                    AddSharedPtrClassMember(::epanet, Scurve, Comment);
-                    lib->add(chaiscript::fun([](cweeSharedPtr<::epanet::Scurve> const& a) { if (a) return cweeUnitValues::cweeUnitPattern(a->Curve); else return cweeUnitValues::cweeUnitPattern(); }), "Pat");
+                    AddSharedPtrClassMember(::epanet, Scurve, Comment);                    
+                    lib->AddFunction(, Pat, , if (a) return cweeUnitValues::cweeUnitPattern(a->Curve); else return cweeUnitValues::cweeUnitPattern(), cweeSharedPtr<::epanet::Scurve> const& a);
+
                 }
                 /* Sdemand */ {
                     AddNamespacedClassTemplate(::epanet, Sdemand);
@@ -1417,9 +1419,9 @@ namespace chaiscript {
 
                         return bv_final;
                     };
-                    lib->add(chaiscript::fun([=](cweeSharedPtr<EPAnetProject>& control_project, int numValves) { return lambda(control_project, numValves, "PSO", 10 + 10 * numValves * numValves); }), "Optimize");
-                    lib->add(chaiscript::fun([=](cweeSharedPtr<EPAnetProject>& control_project, int numValves, cweeStr method) { return lambda(control_project, numValves, method, 10 + 10 * numValves * numValves); }), "Optimize");
-                    lib->add(chaiscript::fun([=](cweeSharedPtr<EPAnetProject>& control_project, int numValves, cweeStr method, int numPolicies) { return lambda(control_project, numValves, method, numPolicies); }), "Optimize");
+                    lib->AddFunction(=, Optimize, , return lambda(control_project, numValves, "PSO", 10 + 10 * numValves * numValves), cweeSharedPtr<EPAnetProject>& control_project, int numValves);
+                    lib->AddFunction(=, Optimize, , return lambda(control_project, numValves, method, 10 + 10 * numValves * numValves), cweeSharedPtr<EPAnetProject>& control_project, int numValves, cweeStr method);
+                    lib->AddFunction(=, Optimize, , return lambda(control_project, numValves, method, numPolicies), cweeSharedPtr<EPAnetProject>& control_project, int numValves, cweeStr method, int numPolicies);
                 }
 
                 /* Easy Map Display */ if (1) {
