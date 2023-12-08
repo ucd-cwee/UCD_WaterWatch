@@ -968,6 +968,8 @@ namespace UWP_WaterWatch.Custom_Controls
             public int startingPosition = int.MinValue;
             public int currentPosition = int.MaxValue;
 
+            public bool dotAccess = false;
+
             private string _written = "";
             public string written
             {
@@ -1028,7 +1030,7 @@ namespace UWP_WaterWatch.Custom_Controls
                 toFly.vm.currentPosition = carotPosition;
                 currentWritten = (characterAdded.IsAlphaNumeric() ? $"{characterAdded}" : "");
                 toFly.vm.written = currentWritten;
-
+                toFly.vm.dotAccess = (characterAdded == '.');
                 if (double.TryParse(toFly.vm.written, out double x))
                 {
                     // we parsed this as a number -- it can't be an ID. 
@@ -1228,7 +1230,7 @@ namespace UWP_WaterWatch.Custom_Controls
                 obj.ContextFlyout = null;
             }
         }
-        public static bool AcceptTipFlyout(CodeEditorControl obj)
+        public static bool AcceptTipFlyout(CodeEditorControl obj, ScriptingNodeViewModel vm)
         {
             cweeTipFlyout toFly = null;
             if (obj.ContextFlyout != null && obj.ContextFlyout is cweeTipFlyout)
@@ -1239,6 +1241,36 @@ namespace UWP_WaterWatch.Custom_Controls
             {
                 if (toFly.vm.tipElements.Count > 0) {
                     string recommended = cweeXamlHelper.GetTextFromContainers(toFly.vm.tipElements[0]);
+                    List<string> typeNames = new List<string>();
+                    var param_names = vm.ParentVM.engine.DoScript_Cast_VectorStrings($"{recommended}.get_function_param_names");
+                    var param_types = vm.ParentVM.engine.DoScript_Cast_VectorStrings($"{recommended}.get_param_types.to_string.Replace(\"[\", \"\").Replace(\"]\", \"\").Split(\", \")");
+                    if (param_types.Count > 0) { param_types.RemoveAt(0); }
+                    
+                    int index = 0;
+                    if (toFly.vm.dotAccess) index = 1;                   
+                    for (; index < Math.Max(param_names.Count, param_types.Count); index++) {
+                        if (param_names.Count > index && param_names[index] != $"param{index}") {
+                            // got the param name, which is preferred.
+                            typeNames.Add(param_names[index]);
+                        }
+                        else if (param_types.Count > index)
+                        {
+                            // got the type
+                            typeNames.Add(param_types[index]);
+                        }
+                        else
+                        {
+                            // unknown
+                            typeNames.Add($"param{index}");
+                        }
+                    }
+
+                    if (typeNames.Count > 0) {
+                        string inner_recommended = "";
+                        foreach (var type in typeNames) inner_recommended = inner_recommended.AddToDelimiter(type, ", ");
+                        recommended += "(" + inner_recommended + ")";
+                    }
+
                     if (toFly.vm.currentPosition == toFly.vm.startingPosition)
                     {
                         obj.Editor.InsertText(toFly.vm.startingPosition, recommended);
@@ -1275,7 +1307,7 @@ namespace UWP_WaterWatch.Custom_Controls
                 if (e.Key == VirtualKey.Enter || e.Key == VirtualKey.Tab)
                 {
                     // accept the input
-                    e.Handled = AcceptTipFlyout(tb);
+                    e.Handled = AcceptTipFlyout(tb, vm.ParentVM);
                     CloseTipFlyout(tb);
                 }
                 if (e.Key == VirtualKey.Back)

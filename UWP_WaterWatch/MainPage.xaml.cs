@@ -58,10 +58,6 @@ namespace UWP_WaterWatch
             coreTitleBar.LayoutMetricsChanged += CoreTitleBar_LayoutMetricsChanged; ;
             Window.Current.SetTitleBar(CustomDragRegion);
 
-
-
-
-
             VM = new MainPageViewModel();
 
             VM.THINGY = WaterWatch.GetDataDirectory();
@@ -110,7 +106,13 @@ namespace UWP_WaterWatch
 
         private void SaveProject_Keyboard(object sender, RoutedEventArgs e)
         {
+            TabViewItem item = ScriptTabs.SelectedItem as TabViewItem;
+            if (item != null)
+            {
+                
 
+
+            }
         }
 
         private void QuitProject_Keyboard(object sender, RoutedEventArgs e)
@@ -173,5 +175,7 @@ namespace UWP_WaterWatch
         {
             ScriptTabs.TabItems.Remove(args.Tab);
         }
+
+
     }
 }

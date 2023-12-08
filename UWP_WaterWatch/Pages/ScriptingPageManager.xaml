@@ -14,20 +14,44 @@
         <converters:VisBoolConverter x:Key="VisBoolConverter"/>
     </Page.Resources>
 
-    <Grid Background="Transparent" MinHeight="200" MinWidth="200">
-        <Grid.RowDefinitions>
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="*" />
-        </Grid.RowDefinitions>
+    <Grid>
+        <Grid x:Name="KeyBoardShortcuts">
+            <AppBarButton 
+                Label="Save" 
+                Click="SaveProject_Keyboard" 
+                AccessKey="S">
+                <AppBarButton.KeyboardAccelerators>
+                    <KeyboardAccelerator 
+                        Modifiers="Control" 
+                        Key="S" />
+                </AppBarButton.KeyboardAccelerators>
+            </AppBarButton>
+            <AppBarButton 
+                Label="CloseWindow" 
+                Click="CloseWindow_Keyboard" 
+                AccessKey="W">
+                <AppBarButton.KeyboardAccelerators>
+                    <KeyboardAccelerator 
+                        Modifiers="Control" 
+                        Key="W" />
+                </AppBarButton.KeyboardAccelerators>
+            </AppBarButton>
+        </Grid>
+        <Grid Background="{ThemeResource SystemColorWindowColor}" />
+        <Grid Background="Transparent" MinHeight="200" MinWidth="200">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
 
-        <Grid Grid.Row="0">
-            <custom_controls:ScriptingManagerCommandBar 
+            <Grid Grid.Row="0">
+                <custom_controls:ScriptingManagerCommandBar  x:Name="ScriptCommandBar"
                 ShowVisualTab="{x:Bind VM.obj.vm.ScriptPageIsInView, Mode=OneWay}" 
                 ShowTextTab="{x:Bind VM.obj.vm.TextScriptPageIsInView, Mode=OneWay}" 
                 TabView="{x:Bind ScriptTabs}" />
-        </Grid>
+            </Grid>
 
-        <muxc:TabView Grid.Row="1" x:Name="ScriptTabs" Background="Transparent"
+            <muxc:TabView Grid.Row="1" x:Name="ScriptTabs" Background="Transparent"
                 HorizontalAlignment="Stretch" VerticalAlignment="Stretch" Margin="0" Padding="0" 
                 CanDrag="False" TabWidthMode="SizeToContent"                      
                 DragOver="ScriptTabs_DragOver"
@@ -37,12 +61,14 @@
                 SelectionChanged="TabView_SelectionChanged" 
                 TabCloseRequested="TabView_TabCloseRequested"                
             >
-            <muxc:TabView.TabStripHeader>
-                <Grid x:Name="ShellTitlebarInset" Background="Transparent" />
-            </muxc:TabView.TabStripHeader>
-            <muxc:TabView.TabStripFooter>
-                <Grid x:Name="CustomDragRegion" Background="Transparent" />
-            </muxc:TabView.TabStripFooter>
-        </muxc:TabView>
+                <muxc:TabView.TabStripHeader>
+                    <Grid x:Name="ShellTitlebarInset" Background="Transparent" />
+                </muxc:TabView.TabStripHeader>
+                <muxc:TabView.TabStripFooter>
+                    <Grid x:Name="CustomDragRegion" Background="Transparent" />
+                </muxc:TabView.TabStripFooter>
+            </muxc:TabView>
+        </Grid>
     </Grid>
+
 </Page>

@@ -14,7 +14,7 @@
             <AppBarButton 
                 Label="Save" 
                 Click="SaveProject_Keyboard" 
-                AccessKey="C">
+                AccessKey="S">
                 <AppBarButton.KeyboardAccelerators>
                     <KeyboardAccelerator 
                         Modifiers="Control" 
@@ -51,6 +51,7 @@
                         Key="P" />
                 </AppBarButton.KeyboardAccelerators>
             </AppBarButton>
+
             <AppBarButton 
                 Label="ContextHelp" 
                 Click="ContextHelp_Keyboard" 

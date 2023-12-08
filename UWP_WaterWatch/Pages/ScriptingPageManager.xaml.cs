@@ -341,5 +341,40 @@ namespace UWP_WaterWatch.Pages
                 }
             }   
         }
+
+        private void SaveProject_Keyboard(object sender, RoutedEventArgs e)
+        {
+            TabViewItem item = ScriptTabs.SelectedItem as TabViewItem;
+            if (item != null)
+            {
+                var tbv_vm = (item.Tag as TabViewItemViewModel);
+                if (tbv_vm.IsScriptPage)
+                {
+                    var sp = (item.Content as ScriptingPage);
+                    if (sp  != null)
+                    {
+                        ScriptCommandBar.VM.SaveScript();
+                    }
+                }
+                else if (tbv_vm.IsTextScriptPage)
+                {
+                    var sp = (item.Content as TextScriptingPage);
+                    if (sp != null)
+                    {
+                        ScriptCommandBar.VM.SaveScript();
+                    }
+                }
+            }
+        }
+
+        private void CloseWindow_Keyboard(object sender, RoutedEventArgs e)
+        {
+            TabViewItem item = ScriptTabs.SelectedItem as TabViewItem;
+            if (item != null)
+            {
+                item.Content = null;
+                ScriptTabs.TabItems.Remove(item);
+            }
+        }
     }
 }

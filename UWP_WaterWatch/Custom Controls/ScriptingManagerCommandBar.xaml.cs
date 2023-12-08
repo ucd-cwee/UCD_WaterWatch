@@ -849,7 +849,7 @@ namespace UWP_WaterWatch.Custom_Controls
     {
         public static string NewScriptNodeName() { return $"WW_{WaterWatch.RandomInt(0, 100)}_{WaterWatch.RandomInt(0, 100)}_{WaterWatch.RandomInt(0, 100)}"; }
 
-        private ScriptingManagerCommandBarViewModel VM = new ScriptingManagerCommandBarViewModel();
+        public ScriptingManagerCommandBarViewModel VM = new ScriptingManagerCommandBarViewModel();
         internal Storyboard storyboard;
 
         public event PropertyChangedEventHandler PropertyChanged;
