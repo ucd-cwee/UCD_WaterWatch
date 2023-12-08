@@ -23,272 +23,7 @@ to maintain a single distribution point for the source code.
 #include "cweeJob.h"
 #include "SharedPtr.h"
 #include "InterpolatedMatrix.h"
-
-#if 0
-
-template< class objType, int maxChildrenPerNode = 10 >
-class cweeRTree {
-public:
-	using keyType = cweeBoundary;
-	class cweeRTreeNode {
-	public:
-		cweeRTreeNode() :
-			key(),
-			object(nullptr),
-			parent(nullptr),
-			next(nullptr),
-			prev(nullptr),
-			numChildren(0),
-			firstChild(nullptr),
-			lastChild(nullptr)
-		{};
-
-		keyType							key;								// key used for sorting
-		objType* object;						// if != NULL pointer to object stored in leaf node
-		cweeRTreeNode* parent;						// parent node
-		cweeRTreeNode* next;							// next sibling
-		cweeRTreeNode* prev;							// prev sibling
-		long long						numChildren;						// number of children
-		cweeRTreeNode* firstChild;					// first child
-		cweeRTreeNode* lastChild;					// last child
-	};
-	INLINE cweeRTreeNode* InitNode(cweeRTreeNode* p) {
-		// static constexpr bool isThisPOD = std::is_pod<cweeRTree<double, u64>::cweeRTreeNode>::value;
-		p->key = keyType();
-		p->object = nullptr;
-		p->parent = nullptr;
-		p->next = nullptr;
-		p->prev = nullptr;
-		p->numChildren = 0;
-		p->firstChild = nullptr;
-		p->lastChild = nullptr;
-		return p;
-	};
-
-public:
-	typedef cweeRTreeNode _iterType;
-	struct it_state {
-		_iterType _node;
-		_iterType* node = &_node;
-		inline void begin(const cweeRTree* ref) {
-			node = ref->GetFirst();
-			if (!node) node = &_node;
-		};
-		inline void begin_at(const cweeRTree* ref, keyType key) {
-			node = ref->NodeFindLargestSmallerEqual(key);
-			if (!node) this->begin(ref);
-		};
-		inline void next(const cweeRTree* ref) {
-			node = ref->GetNextLeaf(node);
-			if (!node) node = &_node;
-		};
-		inline void end(const cweeRTree* ref) {
-			node = &_node;
-		};
-		inline _iterType& get(cweeRTree* ref) {
-			return *node;
-		};
-		inline bool cmp(const it_state& s) const {
-#ifdef useCweeUnorderedListForBalancedTreeObjAlloc
-			return (node->objectIndex == s.node->objectIndex) ? false : true;
-#else
-			return !(!node->object || (node->object == s.node->object));
-			// return ((node->object == s.node->object) || (node->object == nullptr)) ? false : true;
-#endif
-		};
-
-		inline long long distance(const it_state& s) const { throw(std::exception("Cannot evaluate distance")); }
-		// Optional to allow operator--() and reverse iterators:
-		inline void prev(const cweeRTree* ref) {
-			node = ref->GetPrevLeaf(node);
-			if (!node) node = &_node;
-		};
-		// Optional to allow `const_iterator`:
-		inline const _iterType& get(const cweeRTree* ref) const { return *node; }
-	};
-	SETUP_STL_ITERATOR(cweeRTree, _iterType, it_state);
-	iterator begin_at(keyType key) {
-		AUTO iter = this->begin();
-		iter.state.begin_at(this, key);
-		return iter;
-	};
-	const_iterator begin_at(keyType key) const {
-		AUTO iter = this->begin();
-		iter.state.begin_at(this, key);
-		return iter;
-	};
-	const_iterator cbegin_at(keyType key) const {
-		AUTO iter = this->cbegin();
-		iter.state.begin_at(this, key);
-		return iter;
-	};
-
-private:
-	cweeAlloc<objType, maxChildrenPerNode>	objAllocator;
-	long long								Num;
-	cweeAlloc<cweeRTreeNode, maxChildrenPerNode>			nodeAllocator;
-	cweeRTreeNode* root;
-	cweeRTreeNode* first;
-	cweeRTreeNode* last;
-
-public:
-	cweeRTree& operator=(const cweeRTree& obj) {
-		Clear(); // empty out whatever this container had 
-
-		for (auto& x : obj) {
-			Add(*x.object, x.key, false);
-		}
-
-		return *this;
-	};
-	~cweeRTree() {
-		Clear();
-	};
-	bool operator==(const cweeRTree& obj) {
-		return GetFirst() == obj.GetFirst() && GetLast() == obj.GetLast();
-	};
-	bool operator!=(const cweeRTree& obj) { return !operator==(obj); };
-
-	cweeRTree() : Num(0), root(nullptr), first(nullptr), last(nullptr), objAllocator(), nodeAllocator() {
-		static_assert(maxChildrenPerNode >= 4);
-		Init();
-	};
-	cweeRTree(int toReserve) :
-		Num(0),
-		root(nullptr),
-		first(nullptr),
-		last(nullptr),
-		objAllocator(toReserve),
-		nodeAllocator(toReserve * 1.25)
-	{
-		static_assert(maxChildrenPerNode >= 4);
-		Init();
-		//objAllocator.Reserve(toReserve);
-		//nodeAllocator.Reserve(toReserve * 1.25); // approximately 25% more for 'overage'
-	};
-
-
-	void									Reserve(long long num) {
-		objAllocator.Reserve(num);
-		nodeAllocator.Reserve(num * 1.25); // approximately 25% more for 'overage'
-	};
-
-	void									Add(cweeThreadedList<std::pair<keyType, objType>> const& data, bool addUnique = true) {
-		for (auto& source : data) {
-			Add(source.second, source.first, addUnique);
-		}
-	};
-
-
-
-	cweeRTreeNode*							NodeFind(keyType  const& key) const {
-		return NodeFind(key, root);
-	};								// find an object using the given key;
-	cweeRTreeNode*							NodeFindSmallestLargerEqual(keyType const& key) const {
-		return NodeFindSmallestLargerEqual(key, root);
-	};			// find an object with the smallest key larger equal the given key;
-	cweeRTreeNode*							NodeFindLargestSmallerEqual(keyType const& key) const {
-		return NodeFindLargestSmallerEqual(key, root);
-	};			// find an object with the largest key smaller equal the given key;
-
-
-
-
-	static cweeRTreeNode* NodeFind(keyType  const& key, cweeRTreeNode* root) {
-		cweeRTreeNode* node = NodeFindLargestSmallerEqual(key, root);
-		if (node && node->object && node->key == key) return node;
-		return nullptr;
-	};								// find an object using the given key;
-	static cweeRTreeNode* NodeFindSmallestLargerEqual(keyType const& key, cweeRTreeNode* Root) {
-		cweeRTreeNode* node, * smaller;
-
-		if (Root == nullptr) {
-			return nullptr;
-		}
-
-		smaller = nullptr;
-		for (node = Root->lastChild; node != nullptr; node = node->lastChild) {
-			//if (node->lastChild && node->firstChild) {
-			//	if (node->firstChild->key > node->lastChild->key) {
-			//		node = GetPrevLeaf(Root);
-			//		break;
-			//	}
-			//}
-			while (node->prev) {
-				if (node->key <= key) {
-					if (!smaller) {
-						smaller = GetPrevLeaf(Root);
-					}
-					break;
-				}
-				smaller = node;
-				node = node->prev;
-			}
-			if (node->object) {
-				if (node->key >= key) {
-					break;
-				}
-				else if (smaller == nullptr) {
-					return nullptr;
-				}
-				else {
-					node = smaller;
-					if (node->object) {
-						break;
-					}
-				}
-			}
-		}
-
-		return node;
-	};			// find an object with the smallest key larger equal the given key;
-	static cweeRTreeNode* NodeFindLargestSmallerEqual(keyType const& key, cweeRTreeNode* Root) {
-		cweeRTreeNode* node, * smaller;
-
-		if (Root == nullptr) {
-			return nullptr;
-		}
-
-		smaller = nullptr;
-		for (node = Root->firstChild; node != nullptr; node = node->firstChild) {
-			while (node->next) {
-				if (node->key >= key) {
-					if (!smaller) {
-						smaller = GetNextLeaf(Root);
-					}
-					break;
-				}
-				smaller = node;
-				node = node->next;
-			}
-			if (node->object) {
-				if (node->key <= key) {
-					break;
-				}
-				else if (smaller == nullptr) {
-					return nullptr;
-				}
-				else {
-					node = smaller;
-					if (node->object) {
-						break;
-					}
-				}
-			}
-		}
-		return node;
-	};			// find an object with the largest key smaller equal the given key;
-
-
-
-
-
-
-
-
-};
-
-#endif
+#include "Voronoi.h"
 
 template <class objType, vec2d(*coordinateLookupFunctor)(objType const&)>
 class cweeRTree {
@@ -465,34 +200,96 @@ public:
 			p->lastChild = nullptr;
 			return p;
 		};
-		std::vector<std::vector<TreeNode*>> cluster_children() {
-			// split this 2d box into two smaller 2d boxes. 
-			// one fast way to do this is to pick two corners opposite of each other and pair based on distance. 			
-			std::vector<std::vector<TreeNode*>> out(2, std::vector<TreeNode*>());
-			vec2d c;
-			double distance;
-			std::map<double, TreeNode*> sortedByDistance;
-			auto* child = this->firstChild;
-			int childCount = 0;
-			while (child) {
-				childCount++;
-				c = child->boundary.Center();
-				distance = c.Distance(boundary.topRight);
-				while (sortedByDistance.count(distance) > 0) {
-					distance += 1;
+
+		static cweeList<vec2d> kmeans(int k, std::vector<vec2d> const& data) {
+			int m = data.size();
+			int n = 2;
+			int i, j, l;
+			double min_dist, dist;
+			bool converged;
+			int label;
+			std::vector<vec2d> centers(k, vec2d());
+			std::vector<int> labels(m);
+			std::vector<std::vector<double>> new_centers(k, std::vector<double>(n));
+			std::vector<int> counts(k);
+
+			for (i = 0; i < k; ++i) centers[i] = data[i];
+			while (true) {
+				for (i = 0; i < k; ++i) for (j = 0; j < n; ++j) new_centers[i][j] = 0;
+				for (i = 0; i < k; ++i) counts[i] = 0;
+				for (i = 0; i < m; ++i) {
+					min_dist = std::numeric_limits<double>::max();
+					label = -1;
+					for (j = 0; j < k; ++j) {
+						dist = 0;
+						for (l = 0; l < n; ++l) {
+							dist += std::pow(data[i][l] - centers[j][l], 2);
+						}
+						if (dist < min_dist) {
+							min_dist = dist;
+							label = j;
+						}
+					}
+					labels[i] = label;
+					counts[label]++;
+					for (l = 0; l < n; ++l) {
+						new_centers[label][l] += data[i][l];
+					}
 				}
-				sortedByDistance.emplace(distance, child);
-				child = child->next;
+				converged = true;
+				for (i = 0; i < k; ++i) {
+					if (counts[i] == 0) {
+						continue;
+					}
+					for (l = 0; l < n; ++l) {
+						new_centers[i][l] /= counts[i];
+						if (new_centers[i][l] != centers[i][l]) {
+							converged = false;
+						}
+						centers[i][l] = new_centers[i][l];
+					}
+				}
+				if (converged) {
+					break;
+				}
 			}
 
-			childCount /= 2;
-			for (auto& childIter : sortedByDistance) {
-				if (childCount-- > 0) {
-					out[0].push_back(childIter.second);
+			cweeList<vec2d> out;
+			out = centers;
+			return out;
+		};
+
+		std::vector<std::vector<TreeNode*>> cluster_children() {
+			std::vector<std::vector<TreeNode*>> out(2, std::vector<TreeNode*>());
+			{
+				cweeList<vec2d> coord_data;
+				vec2d c;
+				auto* child = this->firstChild;
+				int childCount = 0;
+				while (child) { coord_data.Append(child->boundary.Center()); child = child->next; }
+
+				auto newCenters = kmeans(2, coord_data);
+				auto voronoi{ Voronoi(newCenters) };
+				int cellN = 0;
+				for (auto& cell : voronoi.GetCells()) {
+					if (cellN < out.size()) {
+						child = this->firstChild;
+						while (child) {
+							if (child->boundary.topRight == child->boundary.bottomLeft) {
+								if (cell.overlaps(child->boundary.topRight)) {
+									out[cellN].push_back(child);
+								}
+							}
+							else {
+								if (cell.overlaps(child->boundary.topRight, child->boundary.bottomLeft)) {
+									out[cellN].push_back(child);
+								}
+							}
+							child = child->next;
+						}
+						cellN++;
+					}
 				}
-				else {
-					out[1].push_back(childIter.second);
-				}				
 			}
 			return out;
 		};
