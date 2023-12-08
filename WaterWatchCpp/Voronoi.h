@@ -1802,7 +1802,10 @@ class Voronoi {
 public:
     class Cell {
     public:
-        cweeList<cweePair<vec2d, vec2d>> edges;
+        vec2d center;
+        cweeList<vec2d> points;
+        vec2d bottomLeft = vec2d(cweeMath::INF, cweeMath::INF);
+        vec2d topRight = vec2d(-cweeMath::INF, -cweeMath::INF);
 
     public:
         Cell() = default;
@@ -1810,10 +1813,36 @@ public:
         Cell(Cell&&) = default;
         Cell& operator=(Cell&&) = default;
         Cell& operator=(Cell const&) = default;
+        void AddPoint(vec2d const& p) {
+            points.Append(p);
+            if (bottomLeft.x > p.x) bottomLeft.x = p.x;
+            if (bottomLeft.y > p.y) bottomLeft.y = p.y;
+            if (topRight.x < p.x) topRight.x = p.x;
+            if (topRight.y < p.y) topRight.y = p.y;
+        }
 
-        //bool overlaps(vec2d const& point) {
-            //cweeEng::IsPointInPolygon()
-        //};
+        void Clear() {
+            center = vec2d();
+            points.Clear();
+            bottomLeft = vec2d(cweeMath::INF, cweeMath::INF);
+            topRight = vec2d(-cweeMath::INF, -cweeMath::INF);
+        };
+        bool overlaps(vec2d const& point) const {
+            if (bottomLeft.x <= point.x && topRight.x >= point.x && topRight.y >= point.y && bottomLeft.y <= point.y) {
+                return cweeEng::IsPointInPolygon(points, point);
+            }
+            else {
+                return false;
+            }
+        };
+        bool overlaps(Cell const& cell) const {
+            if (bottomLeft.x <= cell.topRight.x && topRight.x >= cell.bottomLeft.x && topRight.y >= cell.bottomLeft.y && bottomLeft.y <= cell.topRight.y) {
+                return cweeEng::PolygonsOverlap(cell.points, points);
+            }
+            else {
+                return false;
+            }
+        };
     };
 
 private:
@@ -1861,21 +1890,17 @@ public:
     cweeList < Cell > GetCells() const {
         cweeList < Cell > out;
 
-        cweePair<vec2d, vec2d> line;
         Cell cell;
 
         if (Diagram) {
             const jcv_site* sites = jcv_diagram_get_sites(Diagram.get());
             for (int i = 0; i < Diagram->numsites; ++i) {
-                cell.edges.Clear();
+                cell.Clear();
                 const jcv_site* site = &sites[i];                
                 const jcv_graphedge* e = site->edges;
+                cell.center = *((vec2d*)(void*)(&(site->p)));
                 while (e) {
-                    line.first.x = e->pos[0].x;
-                    line.first.y = e->pos[0].y;
-                    line.second.x = e->pos[1].x;
-                    line.second.y = e->pos[1].y;
-                    cell.edges.Append(line);
+                    cell.AddPoint(*((vec2d*)(void*)(&(e->pos[0])))); // casting structs with same contents. Unsafe code but fast.
                     e = e->next;
                 }
                 out.Append(cell);

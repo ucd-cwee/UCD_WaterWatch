@@ -1672,15 +1672,35 @@ namespace chaiscript {
 				for (auto& cell : voronoiParent.GetCells()) {
 					auto c = UI_Color(cweeRandomFloat(0, 245), cweeRandomFloat(0, 245), cweeRandomFloat(0, 245), 255);
 					auto t = cweeRandomInt(1, 6);
-					for (auto& edge : cell.edges) {
-						UI_MapPolyline line;
-						line.color = c;
-						line.thickness = t;
-						
-						line.AddPoint(edge.first.x, edge.first.y);
-						line.AddPoint(edge.second.x, edge.second.y);
+					UI_MapPolyline line;
+					line.color = c;
+					line.thickness = t;					
+					for (auto& point : cell.points) {
+						line.AddPoint(point.x, point.y);						
+					}
+					out.Children.push_back(var(std::move(line)));
+					int count_children = 0;
+					for (auto& inputData : data){
+						if (cell.overlaps(inputData)) {
+							UI_MapIcon icon;
+							icon.color = c;
+							icon.longitude = inputData.x;
+							icon.latitude = inputData.y;
+							icon.HideOnCollision = false;
+							out.Children.push_back(var(std::move(icon)));
+							count_children++;
+						}
+					}
 
-						out.Children.push_back(var((UI_MapPolyline)line));
+					{
+						UI_MapIcon icon;
+						icon.color = UI_Color(0,0,0,1);
+						icon.size = 24;
+						icon.longitude = cell.center.x;
+						icon.latitude = cell.center.y;
+						icon.HideOnCollision = false;
+						icon.Label = cweeStr::printf("%i Items", count_children);
+						out.Children.push_back(var(std::move(icon)));
 					}
 				}
 

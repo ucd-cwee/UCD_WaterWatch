@@ -74,6 +74,49 @@ INLINE void vec3d_quickSort(vec3d* arr, int low, int high) {
 	}
 }
 
+INLINE int vec2d_compare(const void* a, const void* b) {
+	vec2d& aR = *((vec2d*)a);
+	vec2d& bR = *((vec2d*)b);
+	if (aR.x < bR.x) return 1;
+	else return 0;
+}
+INLINE void vec2d_swap(vec2d* a, vec2d* b, vec2d& temp) {
+	temp = *a;
+	*a = *b;
+	*b = temp;
+}
+INLINE int vec2d_partition(vec2d* arr, int low, int high) {
+	auto& pivot = arr[cweeRandomInt(low, high)];    // pivot // was 'high' -- randomizing the pivot should result in lower complexity when the array is already sorted. 
+	int i = (low - 1);			// Index of smaller element
+	vec2d temp;
+	for (int j = low; j <= high - 1; j++)
+	{
+		// If current element is smaller than or
+		// equal to pivot
+		if (vec2d_compare(&arr[j], &pivot) <= 0)
+		{
+			i++;    // increment index of smaller element
+			vec2d_swap(&arr[i], &arr[j], temp);
+		}
+	}
+	vec2d_swap(&arr[i + 1], &arr[high], temp);
+	return (i + 1);
+}
+INLINE void vec2d_quickSort(vec2d* arr, int low, int high) {
+	if (low < high)
+	{
+		/* pi is partitioning index, arr[p] is now
+		   at right place */
+		int pi = vec2d_partition(arr, low, high);
+
+		// Separately sort elements before
+		// partition and after partition
+		vec2d_quickSort(arr, low, pi - 1);
+		vec2d_quickSort(arr, pi + 1, high);
+	}
+}
+
+
 namespace treeNS
 {
 	//	STL-like templated tree class.
@@ -3636,6 +3679,12 @@ namespace cweeEng {
 		angle = ::atan2(middle.x - target.x, target.y - middle.y) * RadianToDegree;
 		return ::fmod(360.0 - angle, 360.0);
 	}
+	static double AngleOffsetFromVerticle(const vec2d& middle, const vec2d& target)
+	{
+		double angle; double RadianToDegree = (360.0 / cweeMath::TWO_PI);
+		angle = ::atan2(middle.x - target.x, target.y - middle.y) * RadianToDegree;
+		return ::fmod(360.0 - angle, 360.0);
+	}
 
 	class pidLogic {
 		/**
@@ -3907,7 +3956,17 @@ namespace cweeEng {
 			// cross product of (AB and AC vectors)
 			return (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
 		}
+		static int testSide(const vec2d& a, const vec2d& b, const vec2d& c) {
+			// cross product of (AB and AC vectors)
+			return (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
+		}
 		static double distvec3dLine(const vec3d& A, const vec3d& B, const vec3d& C) {
+			// dist(line: ax+by+c=0, and vec3d(x0, y0)): (a*x0 + b*y0 + c)/sqrt(a^2+b^2)
+			// line: (y2-y1)*x - (x2-x1)*y + x2*y1 - y2*x1 = 0
+			double a = B.y - A.y, b = B.x - A.x; // was int
+			return abs((a * C.x - b * C.y + B.x * A.y - B.y * A.x) / sqrt(a * a + b * b));
+		}
+		static double distvec2dLine(const vec2d& A, const vec2d& B, const vec2d& C) {
 			// dist(line: ax+by+c=0, and vec3d(x0, y0)): (a*x0 + b*y0 + c)/sqrt(a^2+b^2)
 			// line: (y2-y1)*x - (x2-x1)*y + x2*y1 - y2*x1 = 0
 			double a = B.y - A.y, b = B.x - A.x; // was int
@@ -3946,6 +4005,40 @@ namespace cweeEng {
 			FindHull(T, vec3ds[idx], B, ret);
 			return;
 		}
+		static void FindHull(const cweeThreadedList<vec2d>& vec3ds, const vec2d& A, const vec2d& B, cweeThreadedList<vec2d>& ret) {
+			if (vec3ds.Num() <= 0) return;
+
+			int idx = 0;
+			double dist = distvec2dLine(A, B, vec3ds[0]);
+			double C;
+			for (int i = 1; i < vec3ds.Num(); i++) {
+				C = distvec2dLine(A, B, vec3ds[i]);
+				if (C > dist) {
+					dist = C;
+					idx = i;
+				}
+			}
+			ret.Append(vec3ds[idx]);
+			cweeThreadedList<vec2d> R(vec3ds.Num() + 16);
+			cweeThreadedList<vec2d> T(vec3ds.Num() + 16);
+			int tmp;
+			for (int i = 0; i < vec3ds.Num(); i++) {
+				if (i != idx) {
+					tmp = testSide(A, vec3ds[idx], vec3ds[i]);
+					if (tmp >= 0)
+						R.Append(vec3ds[i]);
+					else {
+						tmp = testSide(vec3ds[idx], B, vec3ds[i]);
+						if (tmp >= 0)
+							T.Append(vec3ds[i]);
+					}
+				}
+			}
+			FindHull(R, A, vec3ds[idx], ret);
+			FindHull(T, vec3ds[idx], B, ret);
+			return;
+		}
+
 		static void outerTrees(cweeThreadedList<vec3d>& vec3ds, cweeThreadedList<vec3d>& ret) {
 			ret.SetGranularity(vec3ds.Num() + 16);
 
@@ -3966,6 +4059,47 @@ namespace cweeEng {
 			cweeThreadedList<vec3d> Left(n + 16);
 			cweeThreadedList<vec3d> Right(n + 16);
 			cweeThreadedList<vec3d> Online(n + 16);
+			int tmp;
+			for (int i = 1; i < n - 1; i++) {
+				tmp = testSide(vec3ds[0], vec3ds[n - 1], vec3ds[i]);
+				if (tmp < 0)
+					Right.Append(vec3ds[i]);
+				else if (tmp > 0)
+					Left.Append(vec3ds[i]);
+				else
+					Online.Append(vec3ds[i]);
+			}
+
+			// if Upper or Down is empty, Online should be pushed into ret
+			if (Left.Num() <= 0 || Right.Num() <= 0)
+				for (int i = 0; i < Online.Num(); i++)
+					ret.Append(Online[i]);
+
+			FindHull(Left, vec3ds[0], vec3ds[n - 1], ret);
+			FindHull(Right, vec3ds[n - 1], vec3ds[0], ret);
+
+			return;
+		}
+		static void outerTrees(cweeThreadedList<vec2d>& vec3ds, cweeThreadedList<vec2d>& ret) {
+			ret.SetGranularity(vec3ds.Num() + 16);
+
+			int n = vec3ds.Num();
+
+			// find the convex hull; use QuickHull algorithm
+			if (n <= 1) {
+				ret = vec3ds;
+				return;
+			}
+
+			// find the left most and right most two vec3ds		
+			vec2d_quickSort(vec3ds.Ptr(), 0, vec3ds.Num() - 1);
+			ret.Append(vec3ds[0]);
+			ret.Append(vec3ds[n - 1]);
+
+			// test whether a vec3d on the left side right side or on the line
+			cweeThreadedList<vec2d> Left(n + 16);
+			cweeThreadedList<vec2d> Right(n + 16);
+			cweeThreadedList<vec2d> Online(n + 16);
 			int tmp;
 			for (int i = 1; i < n - 1; i++) {
 				tmp = testSide(vec3ds[0], vec3ds[n - 1], vec3ds[i]);
@@ -4043,6 +4177,35 @@ namespace cweeEng {
 			middle.z = 0;
 
 			cweeCurve<vec3d> ordered; ordered.SetGranularity(returned.Num() + 16);
+			double key;
+			for (int i = 0; i < returned.Num(); i++)
+			{
+				key = AngleOffsetFromVerticle(middle, returned[i]);
+				key = ::fmod(360.0 - key, 360.0);
+				key += 360.0;
+				ordered.AddUniqueValue(key, returned[i]);
+			}
+
+			int n = ordered.GetNumValues();
+			points.SetNum(n);
+			for (int i = 0; i < n; i++) points[i] = *ordered.GetValueAddress(i);
+		}
+	};
+	static void ReorderConvexHull(cweeThreadedList<vec2d>& points) {
+
+		// get the convex hull
+		cweeThreadedList<vec2d> returned;
+		Solution::outerTrees(points, returned);
+
+		{ // guarrantee the draw order (Clockwise)
+			vec2d middle(0, 0);
+			int numSamplesX = 0; int numSamplesY = 0;
+			for (auto& point : points)
+			{
+				cweeMath::rollingAverageRef(middle.x, point.x, numSamplesX);
+				cweeMath::rollingAverageRef(middle.y, point.y, numSamplesY);
+			}
+			cweeCurve<vec2d> ordered; ordered.SetGranularity(returned.Num() + 16);
 			double key;
 			for (int i = 0; i < returned.Num(); i++)
 			{
@@ -4164,6 +4327,21 @@ namespace cweeEng {
 		}
 		return (positive ? +1 : -1);
 	};
+	static int WhichSide(const cweeThreadedList<vec2d>& C, const vec2d& D, const vec2d& V)
+	{
+		int i; float t;
+		// C vertices are projected to the form V+t*D.
+		// Return value is +1 if all t > 0, -1 if all t < 0, 0 otherwise, in
+		// which case the line splits the polygon.
+		int positive = 0, negative = 0;
+		for (i = 0; i < C.Num(); i++)
+		{
+			t = D.Dot((C[i] - V));
+			if (t > 0) positive++; else if (t < 0) negative++;
+			if (positive && negative) return 0;
+		}
+		return (positive ? +1 : -1);
+	};
 
 	static bool ObjectsIntersect(const cweeThreadedList<vec3>& C0, const cweeThreadedList<vec3>& C1)
 	{
@@ -4227,11 +4405,45 @@ namespace cweeEng {
 		}
 		return true;
 	};
+	static bool ObjectsIntersect(const cweeThreadedList<vec2d>& C0, const cweeThreadedList<vec2d>& C1)
+	{
+		int i0, i1;
+		vec2d E, D;
+
+		// Test edges of C0 for separation. Because of the counterclockwise ordering,
+		// the projection interval for C0 is [m,0] where m <= 0. Only try to determine
+		// if C1 is on the ‘positive’ side of the line.
+		for (i0 = 0, i1 = C0.Num() - 1; i0 < C0.Num(); i1 = i0, i0++)
+		{
+			E = (C0[i0] - C0[i1]); // or precompute edges if desired
+			D = vec2d(E.y, -E.x);
+			if (WhichSide(C1, D, C0[i0]) > 0)
+			{ // C1 is entirely on ‘positive’ side of line C0.V(i0)+t*D
+				return false;
+			}
+		}
+		// Test edges of C1 for separation. Because of the counterclockwise ordering,
+		// the projection interval for C1 is [m,0] where m <= 0. Only try to determine
+		// if C0 is on the ‘positive’ side of the line.
+		for (i0 = 0, i1 = C1.Num() - 1; i0 < C1.Num(); i1 = i0, i0++)
+		{
+			E = (C1[i0] - C1[i1]); // or precompute edges if desired
+			D = vec2d(E.y, -E.x);
+			if (WhichSide(C0, D, C1[i0]) > 0)
+			{ // C0 is entirely on ‘positive’ side of line C1.V(i0)+t*D
+				return false;
+			}
+		}
+		return true;
+	};
 
 	static bool PolygonsOverlap(const cweeThreadedList<vec3>& polygon1, const cweeThreadedList<vec3>& polygon2) {
 		return ObjectsIntersect(polygon1, polygon2);
 	};
 	static bool PolygonsOverlap(const cweeThreadedList<vec3d>& polygon1, const cweeThreadedList<vec3d>& polygon2) {
+		return ObjectsIntersect(polygon1, polygon2);
+	};
+	static bool PolygonsOverlap(const cweeThreadedList<vec2d>& polygon1, const cweeThreadedList<vec2d>& polygon2) {
 		return ObjectsIntersect(polygon1, polygon2);
 	};
 
