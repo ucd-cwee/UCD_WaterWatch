@@ -97,9 +97,6 @@
     <Filter Include="Lib\Header-Only\Containers\Matrix">
       <UniqueIdentifier>{6b3c7ca8-4fa6-4f6f-8399-4d4fe6afcfc0}</UniqueIdentifier>
     </Filter>
-    <Filter Include="Lib\Implimentations-Only\WaterWatch Chaiscript Module\Excel Interop Module">
-      <UniqueIdentifier>{e134db1b-0135-44df-ae26-8be4a187628e}</UniqueIdentifier>
-    </Filter>
     <Filter Include="Lib\Header-Only\Boost">
       <UniqueIdentifier>{63f6728b-3165-48f0-9c1a-c42436ea1ab5}</UniqueIdentifier>
     </Filter>
@@ -440,9 +437,6 @@
     </ClInclude>
     <ClInclude Include="$(MSBuildThisFileDirectory)UnorderedList.h">
       <Filter>Lib\Header-Only\Containers\Lists</Filter>
-    </ClInclude>
-    <ClInclude Include="$(MSBuildThisFileDirectory)ExcelInterop_Module.h">
-      <Filter>Lib\Implimentations-Only\WaterWatch Chaiscript Module\Excel Interop Module</Filter>
     </ClInclude>
     <ClInclude Include="$(MSBuildThisFileDirectory)Boost\date_time.hpp">
       <Filter>Lib\Header-Only\Boost</Filter>
@@ -856,9 +850,6 @@
     </ClCompile>
     <ClCompile Include="$(MSBuildThisFileDirectory)WaterWatch_Module_P3p3.cpp">
       <Filter>Lib\Implimentations-Only\WaterWatch Chaiscript Module\Module 3</Filter>
-    </ClCompile>
-    <ClCompile Include="$(MSBuildThisFileDirectory)ExcelInterop_Module.cpp">
-      <Filter>Lib\Implimentations-Only\WaterWatch Chaiscript Module\Excel Interop Module</Filter>
     </ClCompile>
     <ClCompile Include="$(MSBuildThisFileDirectory)RTree.h">
       <Filter>Lib\Header-Only\Containers\Trees</Filter>

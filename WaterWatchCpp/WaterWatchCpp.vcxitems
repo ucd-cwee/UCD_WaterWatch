@@ -200,7 +200,6 @@
     <ClInclude Include="$(MSBuildThisFileDirectory)DispatchTimer.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)Engineering.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)enum.h" />
-    <ClInclude Include="$(MSBuildThisFileDirectory)ExcelInterop_Module.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)ExternData.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)File.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)FileSystemH.h" />
@@ -245,7 +244,6 @@
     <ClCompile Include="$(MSBuildThisFileDirectory)Chaiscript_WaterWatch_Module.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)cweeJob.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)DispatchTimer.cpp" />
-    <ClCompile Include="$(MSBuildThisFileDirectory)ExcelInterop_Module.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)ExternData.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)FileSystemH.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)Geocoding.cpp" />

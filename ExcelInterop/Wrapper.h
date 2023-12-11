@@ -7,6 +7,8 @@
 #include "../WaterWatchCpp/List.h"
 #include "../WaterWatchCpp/enum.h"
 #include "../WaterWatchCpp/Iterator.h"
+#include "../WaterWatchCpp/chaiscript_wrapper.h"
+#include "../WaterWatchCpp/WaterWatch_Module_Header.h"
 
 BETTER_ENUM(CellType, uint8_t, empty, boolean, date, error, inline_string, number, shared_string, formula_string);
 
@@ -1041,3 +1043,9 @@ public:
 	static cweeSharedPtr<ExcelWorkbook> OpenExcel(cweeStr filePath);
     static cweeSharedPtr<ExcelWorkbook> OpenExcel();
 };
+
+namespace chaiscript {
+    namespace WaterWatch_Lib {
+        [[nodiscard]] ModulePtr Excel_library();
+    };
+}; // namespace chaiscript
