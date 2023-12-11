@@ -138,28 +138,25 @@ std::pair<std::string, row_t> cell_reference::split_reference(
                 throw invalid_cell_reference(reference_string);
             }
         }
-        else if (character == '$')
-        {
-            if (column_part)
-            {
-                if (column_string.empty())
-                {
+        else if (character == '$') {
+            if (column_part) {
+                if (column_string.empty()) {
                     column_string.append(1, upper);
                 }
-                else
-                {
+                else {
                     column_part = false;
                 }
             }
         }
+        else if (character == ':') {
+            break;
+        }
         else
         {
-            if (column_part)
-            {
+            if (column_part) {
                 column_part = false;
             }
-            else if (!std::isdigit(character))
-            {
+            else if (!std::isdigit(character)) {
                 throw invalid_cell_reference(reference_string);
             }
         }
@@ -167,23 +164,29 @@ std::pair<std::string, row_t> cell_reference::split_reference(
 
     std::string row_string = reference_string.substr(column_string.length());
 
-    if (row_string.length() == 0)
-    {
+    if (row_string.length() == 0) {
         throw invalid_cell_reference(reference_string);
     }
 
-    if (column_string[0] == '$')
-    {
+    if (column_string[0] == '$') {
         absolute_column = true;
         column_string = column_string.substr(1);
     }
 
-    if (row_string[0] == '$')
-    {
+    if (row_string[0] == ':') {
+        if (row_string[0] == '$') {
+            absolute_row = true;
+            row_string = row_string.substr(2);
+        }
+        else {
+            row_string = row_string.substr(1);
+        }
+    }
+    else if (row_string[0] == '$') {
         absolute_row = true;
         row_string = row_string.substr(1);
     }
-
+    
     return {column_string, std::stoi(row_string)};
 }
 

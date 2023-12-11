@@ -559,6 +559,12 @@ public:
     cweeSharedPtr<ExcelCell> cell(int column, int row) const;
 
     /// <summary>
+    /// Returns the cell at the given column and row. If the cell doesn't exist, an
+    /// invalid_parameter exception will be thrown.
+    /// </summary>
+    cweeSharedPtr<ExcelCell> cell(cweeStr const& address) const;
+
+    /// <summary>
     /// Returns the range defined by reference string. If reference string is the name of
     /// a previously-defined named range in the sheet, it will be returned.
     /// </summary>

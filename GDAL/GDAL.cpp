@@ -1118,7 +1118,6 @@ namespace cweeGeo {
 	};
 }
 
-
 class GDAL_Data_Local final : public GDAL_Data {
 private:
 	cweeSharedPtr<OGRSpatialReference> WGS84SRS;
@@ -1186,12 +1185,6 @@ public:
 	};
 };
 cweeSharedPtr<GDAL_Data> gdal_data = make_cwee_shared<GDAL_Data_Local>().CastReference<GDAL_Data>(); // DelayedInstantiation< GDAL_Data>([]()->GDAL_Data* { return new GDAL_Data_Local(); });
-
-
-
-
-
-
 
 namespace chaiscript {
     namespace WaterWatch_Lib {
@@ -1714,6 +1707,3 @@ namespace chaiscript {
         };
     };
 }; // namespace chaiscript
-
-
-

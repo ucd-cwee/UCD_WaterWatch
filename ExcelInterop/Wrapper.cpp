@@ -386,7 +386,8 @@ template <> cweeTime ExcelCell::value<cweeTime>() const {
 template <> cweeStr ExcelCell::value<cweeStr>() const {
     using namespace xlnt;
     xlnt::cell& ThisCell = To_Cell(*this);
-    return ThisCell.value<std::string>().c_str();
+    std::string str = ThisCell.value<std::string>();
+    return str.c_str();
 };
 
 #pragma endregion
@@ -569,6 +570,12 @@ cweeSharedPtr<ExcelCell> ExcelWorksheet::cell(int column, int row) const {
     using namespace xlnt;
     xlnt::worksheet& worksheet = To_Worksheet(*this);
     xlnt::cell thisCell = worksheet.cell(column, row);
+    return To_ExcelCell(thisCell);
+};
+cweeSharedPtr<ExcelCell> ExcelWorksheet::cell(cweeStr const& address) const {
+    using namespace xlnt;
+    xlnt::worksheet& worksheet = To_Worksheet(*this);
+    xlnt::cell thisCell = worksheet.cell(address.c_str());
     return To_ExcelCell(thisCell);
 };
 cweeSharedPtr<ExcelRange> ExcelWorksheet::range(cweeStr reference_string) {
@@ -1055,7 +1062,7 @@ namespace chaiscript {
                     AddSharedPtrClassFunction(, ExcelWorksheet, unfreeze_panes);
                     AddSharedPtrClassFunction(, ExcelWorksheet, has_frozen_panes);
                     lib->AddFunction(, cell, , if (a) return a->cell(column, row); else ThrowIfBadAccess;, WorksheetPtr& a, int column, int row);
-                    lib->AddFunction(, cell, , if (a) for (auto& x : *a->range(range)) return x[0]; ThrowIfBadAccess;, WorksheetPtr& a, cweeStr const& range);
+                    lib->AddFunction(, cell, , if (a) return a->cell(range); else ThrowIfBadAccess;, WorksheetPtr& a, cweeStr const& range);
                     lib->AddFunction(, range, , if (a) return a->range(range); else ThrowIfBadAccess;, WorksheetPtr& a, cweeStr const& range);
                     lib->AddFunction(, rows, , if (a) return a->rows(skip_null); else ThrowIfBadAccess;, WorksheetPtr& a, bool skip_null);
                     lib->AddFunction(, rows, , if (a) return a->rows(); else ThrowIfBadAccess;, WorksheetPtr& a);
@@ -1354,7 +1361,7 @@ namespace chaiscript {
                     lib->add(chaiscript::fun([](CellPtr& a) -> chaiscript::Boxed_Value { if (a) {
                         switch (a->data_type()) {
                         case CellType::empty:
-                            return var(nullptr);
+                            return chaiscript::Boxed_Value();
                         case CellType::error:
                             return var(a->error());
                         default:

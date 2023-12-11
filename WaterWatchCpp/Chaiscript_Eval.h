@@ -965,6 +965,10 @@ namespace chaiscript {
             mutable std::atomic_uint_fast32_t m_clone_loc = { 0 };
         };
 
+        /*
+        global x;
+        global& x;
+        */
         template<typename T>
         struct Global_Decl_AST_Node final : AST_Node_Impl<T> {
             Global_Decl_AST_Node(std::string t_ast_node_text, Parse_Location t_loc, chaiscript::small_vector<AST_Node_Impl_Ptr<T>> t_children)
@@ -991,6 +995,10 @@ namespace chaiscript {
             }
         };
 
+        /*
+        var x;
+        var& x;
+        */
         template<typename T>
         struct Var_Decl_AST_Node final : AST_Node_Impl<T> {
             Var_Decl_AST_Node(std::string t_ast_node_text, Parse_Location t_loc, chaiscript::small_vector<AST_Node_Impl_Ptr<T>> t_children)
@@ -1022,6 +1030,11 @@ namespace chaiscript {
             }
         };
 
+        /* 
+        double& x;
+        var x = double();
+        double x;
+        */
         template<typename T>
         struct Assign_Decl_AST_Node final : AST_Node_Impl<T> {
             Assign_Decl_AST_Node(std::string t_ast_node_text, Parse_Location t_loc, chaiscript::small_vector<AST_Node_Impl_Ptr<T>> t_children)
@@ -1053,7 +1066,10 @@ namespace chaiscript {
         private:
             mutable std::atomic_uint_fast32_t m_loc = { 0 };
         };
-        
+
+        /*
+        var x ?= double();
+        */
         template<typename T>
         struct Assign_Decl_IfNotDef_AST_Node final : AST_Node_Impl<T> {
             Assign_Decl_IfNotDef_AST_Node(std::string t_ast_node_text, Parse_Location t_loc, chaiscript::small_vector<AST_Node_Impl_Ptr<T>> t_children)
@@ -1091,6 +1107,9 @@ namespace chaiscript {
             mutable std::atomic_uint_fast32_t m_loc = { 0 };
         };
 
+        /*
+        double x;
+        */
         template<typename T>
         struct Assign_Retroactively_AST_Node final : AST_Node_Impl<T> {
             Assign_Retroactively_AST_Node(std::string t_ast_node_text, Parse_Location t_loc, chaiscript::small_vector<AST_Node_Impl_Ptr<T>> t_children)

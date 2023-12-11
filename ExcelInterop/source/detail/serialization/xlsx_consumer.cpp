@@ -2081,8 +2081,12 @@ void xlsx_consumer::read_office_document(const std::string &content_type) // CT_
                 expect_start_element(qn("spreadsheetml", "definedName"), xml::content::mixed);
 
                 defined_name name;
+
                 name.name = parser().attribute("name");
-                name.sheet_id = parser().attribute<std::size_t>("localSheetId");
+                name.sheet_id = 0;
+                if (parser().attribute_present("localSheetId")) {
+                    name.sheet_id = parser().attribute<std::size_t>("localSheetId");
+                }                    
                 name.hidden = false;
                 if (parser().attribute_present("hidden"))
                 {
