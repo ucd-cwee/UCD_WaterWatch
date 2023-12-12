@@ -153,6 +153,12 @@ const ExcelRange::cell_vector ExcelRange::operator[](std::size_t n) const {
 #pragma endregion
 
 #pragma region ExcelCell
+cweeStr ExcelCell::address() const {
+    using namespace xlnt;
+    xlnt::cell& ThisCell = To_Cell(*this);
+    auto str = ThisCell.reference().to_string();
+    return str.c_str();
+};
 bool ExcelCell::has_value() const {
     using namespace xlnt;
     xlnt::cell& ThisCell = To_Cell(*this);
@@ -846,6 +852,10 @@ bool ExcelWorksheet::is_empty() const {
 #pragma endregion
 
 #pragma region ExcelWorkbook
+void ExcelWorkbook::calculate_now() {
+    using namespace xlnt;
+    xlnt::workbook& workbook = To_Workbook(*this);
+};
 cweeSharedPtr<ExcelWorksheet> ExcelWorkbook::create_sheet() {
     using namespace xlnt;
     xlnt::workbook& workbook = To_Workbook(*this);
@@ -1357,6 +1367,7 @@ namespace chaiscript {
                     ADD_BETTER_ENUM_TO_SCRIPT_ENGINE(CellType, CellType);
                     // DEF_DECLARE_VECTOR_WITH_SCRIPT_ENGINE_AND_MODULE(CellPtr);
 
+                    AddSharedPtrClassFunction(, ExcelCell, address);
                     AddSharedPtrClassFunction(, ExcelCell, has_value);
                     lib->add(chaiscript::fun([](CellPtr& a) -> chaiscript::Boxed_Value { if (a) {
                         switch (a->data_type()) {
@@ -1381,7 +1392,7 @@ namespace chaiscript {
                                 case CellType::boolean:
                                     return var(a->value<bool>());
                                 default:
-                                    return var(nullptr);
+                                    return chaiscript::Boxed_Value();
                                 }
                             }
                         }

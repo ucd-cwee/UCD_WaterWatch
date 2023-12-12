@@ -600,57 +600,6 @@ def Function::IsAttribute(){
 def find(container, value) {
   find(container, value, eq)
 }
-
-//def MapNodes(AST_Node node) { 
-//	var& t := MapNodesImpl(node, 0); 
-//	return t;
-//}
-
-//def FindMapNodesWithDepth(Map node, int depth){
-//    var& x = Vector();
-//    if (node["depth"] == depth){
-//        x.push_back_ref(node);
-//    }else if (node["depth"] < depth){
-//        if (node.contains("children")){
-//            for (j : node["children"]){ try{
-//                for (k : FindMapNodesWithDepth(j, depth)){
-//                    x.push_back_ref(k);
-//                }
-//            }catch(e){} }
-//        }
-//    }
-//    return x;
-//}
-//def ListNodes(AST_Node node){
-//    var& out = Vector();
-//    var& data = MapNodes(node);
-//    var level = 0;
-//    while(true){
-//        var& levelData = FindMapNodesWithDepth(data, level);
-//        for (j : levelData){   
-//            out.push_back_ref(j);
-//        }
-//        if (levelData.size() <= 0){break;}
-//        ++level;
-//    }
-//    for (j : out){
-//	    if (j.contains("children")){ j.erase("children"); }
-//    }
-//    return out;	
-//}
-//def ListNodesToJson(s){
-//	var& x = Vector();		
-//	for (j : s){
-//        var& t = Map();
-//		for (k : j){
-//			t[k.first] := k.second.to_string()
-//		}		
-//		x.push_back_ref(t);
-//	}
-//	return x.to_json();	
-//}
-
-
 def to_string(AST_Node node){
     return "${node.identifier}: \"${node.text}\" (L${node.start.line}|C${node.start.column} - L${node.end.line}|C${node.end.column})";
 }

@@ -585,6 +585,16 @@ namespace chaiscript {
 			    def DoParse(cweeStr command, cweeStr filename){
 				    return ListNodes(parse(command, filename));
 			    };
+                def GetScriptIds(cweeStr code){
+                    Vector out;
+                    for (x : Parse(code)){
+	                    var& t := x["node"];
+	                    if (t.identifier == "Id" && t.text.to_string != ""){
+		                    out.push_back(t.text.to_string);
+	                    }
+                    }
+                    out;
+                };
 			    def Functions(){ 
 				    var& out = Map();
 				    __LOCK__{

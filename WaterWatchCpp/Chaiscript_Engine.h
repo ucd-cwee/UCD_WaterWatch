@@ -750,38 +750,6 @@ namespace chaiscript {
                 if (!node->potentialReturnType.Type().is_undef()) {
                     out["type"] = chaiscript::var(m_engine.get_type_name(node->potentialReturnType.Type()));
                 }
-                else {
-#if 0
-                    if (node->identifier == AST_Node_Type::Constant) {
-                        try {
-                            auto t = m_engine.type_name(eval(cweeStr::printf("%s", node->text.c_str()).c_str()));
-                            out["type"] = chaiscript::var(t);
-                        }
-                        catch (...) {
-                            out["type"] = chaiscript::var(std::string("string"));
-                        }
-                    }
-                    else if (node->identifier == AST_Node_Type::Id) {
-                        if (node->text.size() > 0) {
-                            if (m_engine.function_exists(node->text)) {
-                                out["type"] = chaiscript::var(std::string("Function"));
-                            }
-                            else {
-                                try {
-                                    auto t = eval(cweeStr::printf("%s.type_name()", node->text.c_str()).c_str());
-                                    out["type"] = t;
-                                }
-                                catch (...) {
-                                    out["type"] = chaiscript::var(std::string("Object"));
-                                }
-                            }
-                        }
-                        else {
-                            out["type"] = chaiscript::var(std::string("Object"));
-                        }
-                    }
-#endif
-                }
 
                 final_out.push_back(out);
                 

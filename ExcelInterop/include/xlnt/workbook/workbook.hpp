@@ -170,6 +170,8 @@ public:
 
     // Worksheets
 
+    void calculate_now();
+
     /// <summary>
     /// Creates and returns a sheet after the last sheet in this workbook.
     /// </summary>

@@ -181,6 +181,8 @@ public:
 	ExcelCell(cweeSharedPtr<void> d) : data(d) {};
 	cweeSharedPtr<void> data; // could be anything! represents the worksheet ACTUALLY
 
+    cweeStr address() const;
+
     /// <summary>
     /// Returns true if value has been set and has not been cleared using cell::clear_value().
     /// </summary>
@@ -854,6 +856,11 @@ public:
 	ExcelWorkbook() : data() {};
 	ExcelWorkbook(cweeSharedPtr<void> d) : data(d) {};
 	cweeSharedPtr<void> data; // could be anything! represents the workbook ACTUALLY
+
+    /// <summary>
+    /// Evaluate all sheets and all cells immediately
+    /// </summary>
+    void calculate_now();
 
     /// <summary>
     /// Creates and returns a sheet after the last sheet in this workbook.

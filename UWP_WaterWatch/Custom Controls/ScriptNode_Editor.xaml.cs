@@ -1509,7 +1509,7 @@ namespace UWP_WaterWatch.Custom_Controls
                 "__FILE__", "__FUNC__", "__CLASS__", "__LOCK__"
             };
             List<string> LanguageFunctions = new List<string>() { 
-                "def", "fun", "while", "for", "async", "Async",
+                "def", "fun", "throw", "while", "for", "async", "Async",
                 "if", "else", "return", "break", "class", 
                 "attr", "switch", "case", "continue", "default",
                 "try", "catch", "do", "finally"

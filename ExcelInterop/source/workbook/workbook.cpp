@@ -761,6 +761,12 @@ bool workbook::has_named_range(const std::string &name) const
     return false;
 }
 
+void workbook::calculate_now() {
+    throw(std::runtime_error("Not implemented yet."));
+};
+
+
+
 worksheet workbook::create_sheet()
 {
     std::string title = "Sheet1";
