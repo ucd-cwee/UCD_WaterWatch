@@ -33,8 +33,8 @@ public:
 	vec2d bottomLeft;
 
 	cweeBoundary() : topRight(-cweeMath::INF, -cweeMath::INF), bottomLeft(cweeMath::INF, cweeMath::INF) {};
-	cweeBoundary(cweeBoundary const&) = default;
-	cweeBoundary(cweeBoundary&&) = default;
+	cweeBoundary(cweeBoundary const& a) : topRight(a.topRight), bottomLeft(a.bottomLeft) {  };
+	cweeBoundary(cweeBoundary&& a) : topRight(a.topRight), bottomLeft(a.bottomLeft) {  };
 	cweeBoundary& operator=(cweeBoundary const&) = default;
 	cweeBoundary& operator=(cweeBoundary&&) = default;
 
@@ -166,14 +166,20 @@ public:
 			return out;
 		};
 
-		void AddChild(TreeNode* ptr) {
+		TreeNode* AddChild(TreeNode* ptr) {
 			if (ptr) {
 				children.Append(ptr);
-				if (bound.topRight.x < ptr->bound.topRight.x) bound.topRight.x = ptr->bound.topRight.x;
-				if (bound.topRight.y < ptr->bound.topRight.y) bound.topRight.y = ptr->bound.topRight.y;
-				if (bound.bottomLeft.x > ptr->bound.bottomLeft.x) bound.bottomLeft.x = ptr->bound.bottomLeft.x;
-				if (bound.bottomLeft.y > ptr->bound.bottomLeft.y) bound.bottomLeft.y = ptr->bound.bottomLeft.y;
+
+				for (int i = 0; i < 2; i++) {
+					if (this->bound.topRight[i] < ptr->bound.topRight[i]) {
+						this->bound.topRight[i] = ptr->bound.topRight[i];
+					}
+					if (this->bound.bottomLeft[i] > ptr->bound.bottomLeft[i]) {
+						this->bound.bottomLeft[i] = ptr->bound.bottomLeft[i];
+					}
+				}
 			}
+			return ptr;
 		};
 	};
 	cweeAlloc<TreeNode, 10> 
@@ -249,7 +255,13 @@ public:
 	};
 	static cweeList< cweeList<cweeSharedPtr<objType>> > Cluster(int numClusters, cweeList<cweeSharedPtr<objType>> const& objs) {
 		cweeList< cweeList<cweeSharedPtr<objType>> > out;
-		{
+		if (objs.Num() < numClusters) {
+			for (auto& x : objs) {
+				cweeList<cweeSharedPtr<objType>>& cluster = out.Alloc();
+				cluster.Append(x);
+			}
+		}
+		else {
 			cweeList<vec2d> coord_data;
 			vec2d c;
 			int childCount = 0;
@@ -264,34 +276,51 @@ public:
 				}
 			}
 
-			auto newCenters = kmeans(cweeMath::min(cweeMath::max(1, childCount / 10), numClusters), coord_data);
-			auto voronoi{ Voronoi(newCenters) };
-			int cellN = 0;
-			for (auto& cell : voronoi.GetCells()) {
+			auto newCenters = kmeans(cweeMath::min(cweeMath::max(2, childCount / 10), numClusters), coord_data);			
+			if (newCenters.Num() <= 1) {
 				cweeList<cweeSharedPtr<objType>> cellChildren;
-
 				for (auto& x : objs) {
 					if (x) {
-						cweeBoundary bound = coordinateLookupFunctor(*x);
-						if (cell.overlaps(bound.Center())) {
-							cellChildren.Append(x);
-						}
+						cellChildren.Append(x);						
 					}
 					else {
 						throw(std::runtime_error("RTree object was empty."));
 					}
 				}
-
 				out.Append(cellChildren);
+			}
+			else {
+				auto voronoi{ Voronoi(newCenters) };
+				int cellN = 0;
+				for (auto& cell : voronoi.GetCells()) {
+					cweeList<cweeSharedPtr<objType>> cellChildren;
+
+					for (auto& x : objs) {
+						if (x) {
+							cweeBoundary bound = coordinateLookupFunctor(*x);
+							if (cell.overlaps(bound.Center())) {
+								cellChildren.Append(x);
+							}
+						}
+						else {
+							throw(std::runtime_error("RTree object was empty."));
+						}
+					}
+
+					out.Append(cellChildren);
+				}
 			}
 		}
 		return out;
 	};
 
-	void CreateNode(TreeNode* parent, TreeNode* node, cweeList<cweeSharedPtr<objType>> const& objs) {
+	TreeNode* CreateNode(TreeNode* parent, TreeNode* node, cweeList<cweeSharedPtr<objType>> const& objs) {
 		if (node && objs.Num() > 0) {
 			if (objs.Num() == 1) {
 				node->object = objs[0];
+				if (node->object) {
+					node->bound = coordinateLookupFunctor(*node->object);
+				}
 				node->parent = parent;
 				if (parent) {
 					node->parentsChildIndex = parent->children.Num();
@@ -301,16 +330,14 @@ public:
 				}
 			} 
 			else {
-				cweeList< cweeList<cweeSharedPtr<objType>> > clusters = Cluster(10, objs);
-				for (cweeList<cweeSharedPtr<objType>>& cluster : clusters) {
-					AUTO child_node = nodeAllocator.Alloc();					
-					child_node->parent = parent;
-					CreateNode(node, child_node, cluster);
-					node->AddChild(child_node);
-					child_node->parentsChildIndex = node->children.Num() - 1;
+				node->parent = parent;
+				for (auto& cluster : Cluster(10, objs)) {					
+					int index = node->children.Num();
+					node->AddChild(CreateNode(node, nodeAllocator.Alloc(), cluster))->parentsChildIndex = index;
 				}
 			}
 		}
+		return node;
 	};
 	AUTO ReloadTree() {
 		nodeAllocator.Clear();
