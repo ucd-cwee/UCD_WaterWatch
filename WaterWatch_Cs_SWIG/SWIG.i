@@ -39,5 +39,6 @@ to maintain a single distribution point for the source code. */
 %template(vector_background) std::vector<MapBackground_Interop>;
 %template(vector_colors) std::vector<Color_Interop>;
 %template(map_int_background) std::map<int, MapBackground_Interop>;
+%template(map_int_polygon) std::map<int, MapPolygon_Interop>;
 %template(map_int_polyline) std::map<int, MapPolyline_Interop>;
 %template(map_int_icon) std::map<int, MapIcon_Interop>;

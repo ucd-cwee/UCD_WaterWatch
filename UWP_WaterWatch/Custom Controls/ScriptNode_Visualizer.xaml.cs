@@ -1685,8 +1685,6 @@ namespace UWP_WaterWatch.Custom_Controls
                 cweeTask<List<string>> typeCheck = res.result.CustomizableQueryResult_Cast_VectorString("return [" +
                     "\"${%s.is_type(\"UI_Map\") ? 1 : 0}\"" +
                     ", \"${%s.is_type(\"UI_MapLayer\") ? 1 : 0}\"" +
-                    ", \"${%s.is_type(\"UI_MapPolyline\") ? 1 : 0}\"" +
-                    ", \"${%s.is_type(\"UI_MapIcon\") ? 1 : 0}\"" +
                 "];", "%s", res.additionalParams);
                 return (EdmsTasks.cweeTask)typeCheck.ContinueWith(() => {
                     List<string> result = typeCheck.Result;
@@ -1857,6 +1855,43 @@ namespace UWP_WaterWatch.Custom_Controls
                                                 return L;
                                             }, true, true);
                                             return LAYER.ContinueWith(()=> {
+                                                foreach (var key in layer.polygons.Keys)
+                                                {
+                                                    if (layer.polygons.TryGetValue(key, out MapPolygon_Interop polygon))
+                                                    {
+                                                        var queryTag = new SharedNodeResult() { result = res.result, additionalParams = res.additionalParams + $".Children[{key}].Tag" };
+
+                                                        Color c = new Color() { R = (Byte)polygon.color.R, G = (Byte)polygon.color.G, B = (Byte)polygon.color.B, A = (Byte)polygon.color.A };
+                                                        List<Windows.Devices.Geolocation.BasicGeoposition> path = new List<Windows.Devices.Geolocation.BasicGeoposition>();
+                                                        bool StrokeDashed = polygon.dashed;
+                                                        double StrokeThickness = polygon.thickness;
+                                                        foreach (var coord in polygon.coordinates)
+                                                        {
+                                                            var coords = WaterWatch.ValidateCoordinates(coord.first, coord.second);
+                                                            path.Add(new Windows.Devices.Geolocation.BasicGeoposition()
+                                                            {
+                                                                Longitude = coords.first,
+                                                                Latitude = coords.second
+                                                            });
+                                                        }
+
+                                                        tasks.Add(EdmsTasks.InsertJob(() => {
+                                                            var obj = new MapPolygon();
+                                                            {
+                                                                obj.Visible = true;
+                                                                obj.FillColor = c;
+                                                                obj.StrokeColor = c;
+                                                                obj.StrokeDashed = StrokeDashed;
+                                                                obj.StrokeThickness = StrokeThickness;
+                                                                if (path.Count > 1) {
+                                                                    obj.Path = new Windows.Devices.Geolocation.Geopath(path);
+                                                                }
+                                                                obj.Tag = queryTag;
+                                                            }
+                                                            return obj;
+                                                        }, true, true));
+                                                    }
+                                                }
                                                 foreach (var key in layer.polylines.Keys)
                                                 {
                                                     if (layer.polylines.TryGetValue(key, out MapPolyline_Interop polyline))
@@ -1954,142 +1989,6 @@ namespace UWP_WaterWatch.Custom_Controls
                                             }, false);
                                         }, false);
                                     }
-#if false
-                                case 2: // UI_MapPolyline
-                                    {
-                                        var queryTask = res.result.CustomizableQueryResult_Cast_VectorString(
-                                            "[" +
-                                            "\"${ %s.color.R }\"" +
-                                            ", \"${ %s.color.G }\"" +
-                                            ", \"${ %s.color.B }\"" +
-                                            ", \"${ %s.color.A }\"" +
-                                            ", \"${ %s.dashed ? 1 : 0 }\"" +
-                                            ", \"${ %s.thickness ? 1 : 0 }\"" +
-                                            ", \"${ %s.Opacity }\"" +
-                                            // ", \"${ %s.coordinates.to_string() }\"" + // [], or [<10.0,10.0>], or [<10.0,10.0>, <10.0,10.0>, <10.0,10.0>, <10.0,10.0>, <10.0,10.0>], etc..
-                                            "]", "%s", res.additionalParams);
-                                        return queryTask.ContinueWith(() => {
-                                            var frameworkParms = queryTask.Result;
-
-
-                                            Color c = new Color();
-                                            bool isDashed = false;
-                                            double thickness = 1;
-
-                                            { if (double.TryParse(frameworkParms[0], out double w) && w != -1.0) { c.R = (Byte)w; } }
-                                            { if (double.TryParse(frameworkParms[1], out double w) && w != -1.0) { c.G = (Byte)w; } }
-                                            { if (double.TryParse(frameworkParms[2], out double w) && w != -1.0) { c.B = (Byte)w; } }
-                                            { if (double.TryParse(frameworkParms[3], out double w) && w != -1.0) { c.A = (Byte)w; } }
-                                            { if (double.TryParse(frameworkParms[4], out double w) && w != -1.0) { isDashed = w > 0; } }
-                                            { if (double.TryParse(frameworkParms[5], out double w) && w != -1.0) { thickness = w; } }
-                                            bool isVisible = true;
-                                            { if (double.TryParse(frameworkParms[6], out double w) && w != -1.0) { isVisible = w > 0 ? true : false; } }
-
-                                            int rand = WaterWatch.RandomInt(0, 10000);
-                                            var coordinateTask = res.result.CustomizableQueryResult_Cast_VectorString(
-                                            "{ " +
-                                                $"var& tempVar{rand} = Vector(); " +
-                                                $"for (tempLoopVar{rand} : %s.coordinates)" +
-                                                "{" +
-                                                $"   tempVar{rand}.push_back_ref(tempLoopVar{rand}.first);" +
-                                                $"   tempVar{rand}.push_back_ref(tempLoopVar{rand}.second);" +
-                                                "}" +
-                                                $"return tempVar{rand};" +
-                                            "}", "%s", res.additionalParams);
-                                            return coordinateTask.ContinueWith(() => {
-                                                List<Windows.Devices.Geolocation.BasicGeoposition> path = new List<Windows.Devices.Geolocation.BasicGeoposition>();
-                                                {
-                                                    List<string> coords = coordinateTask.Result;
-                                                    for (int i = 0; i < coords.Count; i += 2)
-                                                    {
-                                                        try
-                                                        {
-                                                            Windows.Devices.Geolocation.BasicGeoposition pos = new Windows.Devices.Geolocation.BasicGeoposition();
-                                                            { if (double.TryParse(coords[i], out double w)) { pos.Longitude = w; } }
-                                                            { if (double.TryParse(coords[i + 1], out double w)) { pos.Latitude = w; } }
-                                                            path.Add(pos);
-                                                        }
-                                                        catch (Exception) { }
-                                                    }
-                                                }
-
-                                                return EdmsTasks.InsertJob(() => {
-                                                    try
-                                                    {
-                                                        var obj = new MapPolyline();
-                                                        {
-                                                            obj.Visible = isVisible;
-                                                            obj.StrokeColor = c;
-                                                            obj.StrokeDashed = isDashed;
-                                                            obj.StrokeThickness = thickness;
-                                                            if (path.Count > 1)
-                                                            {
-                                                                obj.Path = new Windows.Devices.Geolocation.Geopath(path);
-                                                            }
-                                                            obj.Tag = new SharedNodeResult() { result = res.result, additionalParams = res.additionalParams + ".Tag" };
-                                                        }
-                                                        return obj;
-                                                    }
-                                                    catch (Exception)
-                                                    {
-                                                        return null;
-                                                    }
-                                                }, true, true);
-                                            }, false);
-                                        }, false);
-                                    }
-                                case 3: // UI_MapIcon
-                                    {
-                                        var queryTask = res.result.CustomizableQueryResult_Cast_VectorString(
-                                            "[" +
-                                            "\"${ %s.color.R }\"" +
-                                            ", \"${ %s.color.G }\"" +
-                                            ", \"${ %s.color.B }\"" +
-                                            ", \"${ %s.color.A }\"" +
-                                            ", \"${ %s.size }\"" +
-                                            ", \"${ %s.longitude }\"" +
-                                            ", \"${ %s.latitude }\"" +
-                                            ", \"${ %s.Opacity }\"" +
-                                            "]", "%s", res.additionalParams);
-                                        return queryTask.ContinueWith(() => {
-                                            var frameworkParms = queryTask.Result;
-
-                                            Color c = new Color();
-                                            { if (double.TryParse(frameworkParms[0], out double w) && w != -1.0) { c.R = (Byte)w; } }
-                                            { if (double.TryParse(frameworkParms[1], out double w) && w != -1.0) { c.G = (Byte)w; } }
-                                            { if (double.TryParse(frameworkParms[2], out double w) && w != -1.0) { c.B = (Byte)w; } }
-                                            { if (double.TryParse(frameworkParms[3], out double w) && w != -1.0) { c.A = (Byte)w; } }
-                                            double size = 12;
-                                            { if (double.TryParse(frameworkParms[4], out double w) && w != -1.0) { size = w; } }
-
-                                            double longitude = 0, latitude = 0;
-                                            { if (double.TryParse(frameworkParms[5], out double w) && w != -1.0) { longitude = w; } }
-                                            { if (double.TryParse(frameworkParms[6], out double w) && w != -1.0) { latitude = w; } }
-                                            bool isVisible = true;
-                                            { if (double.TryParse(frameworkParms[7], out double w) && w != -1.0) { isVisible = w > 0 ? true : false; } }
-
-                                            var iconTask = cweeMap.GetMapIconImage(c, size);
-                                            return iconTask.ContinueWith(() => {
-                                                try
-                                                {
-                                                    var obj = new MapIcon();
-                                                    {
-                                                        obj.Visible = isVisible;
-                                                        obj.Image = iconTask.Result as Windows.Storage.Streams.RandomAccessStreamReference;
-                                                        obj.CollisionBehaviorDesired = MapElementCollisionBehavior.Hide;
-                                                        obj.Location = new Windows.Devices.Geolocation.Geopoint(new Windows.Devices.Geolocation.BasicGeoposition() { Longitude = longitude, Latitude = latitude });
-                                                        obj.Tag = new SharedNodeResult() { result = res.result, additionalParams = res.additionalParams + ".Tag" };
-                                                    }
-                                                    return obj;
-                                                }
-                                                catch (Exception)
-                                                {
-                                                    return null;
-                                                }
-                                            }, true);
-                                        }, false);
-                                    }
-#endif
                             }
                         }
                     }

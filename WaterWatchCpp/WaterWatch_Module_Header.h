@@ -952,6 +952,35 @@ namespace chaiscript {
             AddFuncToScriptFromClass(ThisType,AddPoint);
         };
     };
+    class UI_MapPolygon final : public UI_MapElement {
+    public:
+        using ThisType = UI_MapPolygon;
+        static std::string	ThisTypeName() { return "UI_MapPolygon"; };
+
+        UI_MapPolygon() : coordinates(cweeThreadedList<std::pair<double, double>>()), color(UI_Color()), dashed(false), thickness(2) {};
+        virtual ~UI_MapPolygon() {};
+        void AddPoint(double X, double Y) {
+            coordinates.Append(std::pair<double, double>(X, Y));
+        };
+
+        cweeThreadedList<std::pair<double, double>> coordinates;
+        UI_Color	color;
+        bool		dashed;
+        int			thickness;
+
+        static void		AppendToScriptingLanguage(Module& scriptingLanguage) {
+            AddBasicClassTemplate(ThisType);
+            scriptingLanguage.add(chaiscript::base_class<UI_FrameworkElement, ThisType>());
+            scriptingLanguage.add(chaiscript::base_class<UI_MapElement, ThisType>());
+
+            AddMemberToScriptFromClass(ThisType, color);
+            AddMemberToScriptFromClass(ThisType, coordinates);
+            AddMemberToScriptFromClass(ThisType, dashed);
+            AddMemberToScriptFromClass(ThisType, thickness);
+
+            AddFuncToScriptFromClass(ThisType, AddPoint);
+        };
+    };
     class UI_MapBackground final : public UI_MapElement {
     public:
         using ThisType = UI_MapBackground;
@@ -1315,7 +1344,7 @@ namespace chaiscript {
                 auto GetMatrixs = [GetMatrix](std::vector<chaiscript::Boxed_Value> const& backgrounds, int width, int height, int Accuracy) -> cweeList<UI_Color> {
                     cweeList<UI_MapBackground*> backgrounds_bgs(backgrounds.size() + 1);                    
                     for (auto& x : backgrounds) {
-                        auto* p = chaiscript::boxed_cast<UI_MapBackground*>(x);
+                        UI_MapBackground* p = chaiscript::boxed_cast<UI_MapBackground*>(x);
                         if (p) {
                             backgrounds_bgs.Append(chaiscript::boxed_cast<UI_MapBackground*>(x));
                         }

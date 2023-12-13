@@ -80,6 +80,11 @@ public class ScriptObject : global::System.IDisposable {
     return ret;
   }
 
+  public MapPolygon_Interop Cast_MapPolygon() {
+    MapPolygon_Interop ret = new MapPolygon_Interop(ConvPINVOKE.ScriptObject_Cast_MapPolygon(swigCPtr), true);
+    return ret;
+  }
+
   public MapLayer_Interop Cast_MapLayer() {
     MapLayer_Interop ret = new MapLayer_Interop(ConvPINVOKE.ScriptObject_Cast_MapLayer(swigCPtr), true);
     return ret;

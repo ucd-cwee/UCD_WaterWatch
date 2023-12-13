@@ -15,7 +15,6 @@ template <typename T> INLINE cweeSharedPtr<T> FromVoidPtr(cweeSharedPtr<void> da
 	return cweeSharedPtr<T>(data, [](void* p) { return static_cast<T*>(p); });
 };
 
-
 namespace cweeGeo {
 	Shapefile::Shapefile(cweeStr const& filePath) : data(nullptr) {
 		auto* proj_ptr = (GDALDataset*)GDALOpenEx(
@@ -523,7 +522,8 @@ namespace cweeGeo {
 				}
 				case GeometryType::Polygon: {
 					auto* poPoint = ptr->toPolygon();
-					return -1; // TODO
+					auto* poPoint2 = poPoint->getExteriorRing();
+					return poPoint2->getNumPoints();
 				}
 				}
 			}
@@ -549,7 +549,8 @@ namespace cweeGeo {
 				}
 				case GeometryType::Polygon: {
 					auto* poPoint = ptr->toPolygon();
-					return -1; // TODO
+					auto* poPoint2 = poPoint->getExteriorRing();
+					return poPoint2->getX(index);
 				}
 				}
 			}
@@ -575,7 +576,8 @@ namespace cweeGeo {
 				}
 				case GeometryType::Polygon: {
 					auto* poPoint = ptr->toPolygon();
-					return -1; // TODO
+					auto* poPoint2 = poPoint->getExteriorRing();
+					return poPoint2->getY(index);
 				}
 				}
 			}
@@ -613,7 +615,8 @@ namespace cweeGeo {
 				}
 				case GeometryType::Polygon: {
 					auto* poPoint = ptr->toPolygon();
-					return vec2d(-1, -1); // TODO
+					auto* poPoint2 = poPoint->getExteriorRing();
+					return vec2d(poPoint2->getX(index), poPoint2->getY(index));
 				}
 				}
 			}
@@ -658,7 +661,12 @@ namespace cweeGeo {
 				}
 				case GeometryType::Polygon: {
 					auto* poPoint = ptr->toPolygon();
-					// TODO
+					auto* poPoint2 = poPoint->getExteriorRing();
+					int n = poPoint2->getNumPoints();
+					out.SetGranularity(n + 1);
+					for (int i = 0; i < n; i++) {
+						out.Append(vec2d(poPoint2->getX(i), poPoint2->getY(i)));
+					}
 					break;
 				}
 				}
@@ -814,7 +822,96 @@ namespace cweeGeo {
 		}
 		return out;
 	};
+	cwee_units::foot_t Distance_Point_Polygon(cweeSharedPtr< OGRGeometry> const& point, cweeSharedPtr< OGRGeometry> const& line) {
+		cwee_units::foot_t out = std::numeric_limits<cwee_units::foot_t>::max();
 
+		auto* p_ptr = point->toPoint();
+		auto* l_ptr = line->toPolygon()->getExteriorRing();
+		auto pointCoord{ vec2d(p_ptr->getX(), p_ptr->getY()) };
+		auto numLinePoints = l_ptr->getNumPoints();
+
+		if (numLinePoints == 0) {
+			out = std::numeric_limits<decltype(out)>::max();
+		}
+		auto lineCoords0{ vec2d(l_ptr->getX(0), l_ptr->getY(0)) };
+
+		if (numLinePoints == 1) {
+			out = Geometry::Distance(pointCoord, lineCoords0);
+		}
+		else {
+			auto closestPointOnLineSegment = [](const vec2d& A, const vec2d& B, const vec2d& P)->vec2d {
+				// Calculate the vector AB (direction of the line segment)
+				double ABx = B[0] - A[0];
+				double ABy = B[1] - A[1];
+
+				// Calculate the vector AP (from point A to point P)
+				double APx = P[0] - A[0];
+				double APy = P[1] - A[1];
+
+				// Calculate the dot product of AB and AP
+				double dotProduct = ABx * APx + ABy * APy;
+
+				// Calculate the squared length of AB
+				double lengthABsq = ABx * ABx + ABy * ABy;
+
+				// Calculate the parameter t (projection of AP onto AB)
+				double t = dotProduct / lengthABsq;
+
+				// If t is outside the segment [0, 1], find the distance to the closest endpoint
+				if (t < 0.0) {
+					return A; // Distance to point A
+				}
+				else if (t > 1.0) {
+					return B; // Distance to point B
+				}
+
+				// Calculate the closest point on the line segment
+				double closestX = A[0] + t * ABx;
+				double closestY = A[1] + t * ABy;
+
+				return vec2d(closestX, closestY);
+			};
+			
+			cwee_units::foot_t dist_start;
+			cwee_units::foot_t dist_end = Geometry::Distance(pointCoord, lineCoords0);
+			cwee_units::foot_t dist_perp;
+			vec2d prevPoint = lineCoords0;
+			vec2d currentPoint;
+			for (int i = 1; i < numLinePoints; i += 1) {
+				currentPoint = vec2d(l_ptr->getX(i), l_ptr->getY(i));
+				dist_start = dist_end;
+				dist_end = Geometry::Distance(pointCoord, currentPoint);
+				dist_perp = Geometry::Distance(pointCoord, closestPointOnLineSegment(prevPoint, currentPoint, pointCoord));
+				out = cwee_units::math::fmin(cwee_units::math::fmin(cwee_units::math::fmin(out, dist_perp), dist_end), dist_start);
+				prevPoint = currentPoint;
+			}
+		}
+		{
+			cweeList<vec2d> coords;
+			coords.SetGranularity(numLinePoints + 1);
+			for (int i = 0; i < numLinePoints; i++) {
+				coords.Append(vec2d(l_ptr->getX(i), l_ptr->getY(i)));
+			}
+			if (cweeEng::IsPointInPolygon(coords, pointCoord)) {
+				out = cwee_units::foot_t(0);
+			}
+		}
+
+		return out;
+	};
+
+	INLINE bool Overlaps(cweeList<vec2d> const& coords1, cweeList<vec2d> const& coords2) {
+		bool out{ false };
+
+		for (auto& coord : coords2) {
+			if (cweeEng::IsPointInPolygon(coords1, coord)) {
+				out = true;
+				break;
+			}
+		}
+
+		return out;
+	};
 	cwee_units::foot_t Geometry::Distance(vec2d const& pointCoord, cweeList<vec2d> const& lineCoords) {
 		cwee_units::foot_t out = std::numeric_limits<cwee_units::foot_t>::max();
 		if (lineCoords.Num() == 0) {
@@ -944,14 +1041,30 @@ namespace cweeGeo {
 				else if (type1 == GeometryType::Point && type2 == GeometryType::Line) {// point / Line
 					out = Distance_Point_Line(ptr1, ptr2);
 				}
+				else if (type1 == GeometryType::Point && type2 == GeometryType::Polygon) {// point / Polygon
+					out = Distance(objA.Coordinates(0), objB.AllCoordinates());
+					if (cweeEng::IsPointInPolygon(objB.AllCoordinates(), objA.Coordinates(0))) out = 0;
+				}
 				else if (type1 == GeometryType::Point && type2 == GeometryType::Multiline) {// point / Multiline
 					out = Distance_Point_MultiLine(ptr1, ptr2);
 				}
 				else if (type1 == GeometryType::Line && type2 == GeometryType::Line) {// Line / Line
 					out = Distance(objA.AllCoordinates(), objB.AllCoordinates());
 				}
+				else if (type1 == GeometryType::Line && type2 == GeometryType::Polygon) {// Line / Polygon
+					out = Distance(objA.AllCoordinates(), objB.AllCoordinates());
+					if (Overlaps(objB.AllCoordinates(), objA.AllCoordinates())) out = 0;
+				}
 				else if (type1 == GeometryType::Line && type2 == GeometryType::Multiline) {// Line / Multiline
 					out = Distance(objA.AllCoordinates(), objB.AllCoordinates());
+				}
+				else if (type1 == GeometryType::Polygon && type2 == GeometryType::Polygon) {// Polygon / Polygon
+					out = Distance(objA.AllCoordinates(), objB.AllCoordinates());
+					if (Overlaps(objA.AllCoordinates(), objB.AllCoordinates())) out = 0;
+				}
+				else if (type1 == GeometryType::Polygon && type2 == GeometryType::Multiline) {// Polygon / Multiline
+					out = Distance(objA.AllCoordinates(), objB.AllCoordinates());
+					if (Overlaps(objA.AllCoordinates(), objB.AllCoordinates())) out = 0;
 				}
 				else if (type1 == GeometryType::Multiline && type2 == GeometryType::Multiline) {// Multiline / Multiline
 					out = Distance(objA.AllCoordinates(), objB.AllCoordinates());
@@ -970,14 +1083,30 @@ namespace cweeGeo {
 				else if (type2 == GeometryType::Point && type1 == GeometryType::Line) {// point / Line
 					out = Distance_Point_Line(ptr2, ptr1);
 				}
+				else if (type2 == GeometryType::Point && type1 == GeometryType::Polygon) {// point / Polygon
+					out = Distance(objA.Coordinates(0), objB.AllCoordinates());
+					if (cweeEng::IsPointInPolygon(objB.AllCoordinates(), objA.Coordinates(0))) out = 0;
+				}
 				else if (type2 == GeometryType::Point && type1 == GeometryType::Multiline) {// point / Multiline
 					out = Distance_Point_MultiLine(ptr2, ptr1);
 				}
 				else if (type2 == GeometryType::Line && type1 == GeometryType::Line) {// Line / Line
 					out = Distance(objA.AllCoordinates(), objB.AllCoordinates());
 				}
+				else if (type2 == GeometryType::Line && type1 == GeometryType::Polygon) {// Line / Polygon
+					out = Distance(objA.AllCoordinates(), objB.AllCoordinates());
+					if (Overlaps(objB.AllCoordinates(), objA.AllCoordinates())) out = 0;
+				}
 				else if (type2 == GeometryType::Line && type1 == GeometryType::Multiline) {// Line / Multiline
 					out = Distance(objA.AllCoordinates(), objB.AllCoordinates());
+				}
+				else if (type2 == GeometryType::Polygon && type1 == GeometryType::Polygon) {// Polygon / Polygon
+					out = Distance(objA.AllCoordinates(), objB.AllCoordinates());
+					if (Overlaps(objA.AllCoordinates(), objB.AllCoordinates())) out = 0;
+				}
+				else if (type2 == GeometryType::Polygon && type1 == GeometryType::Multiline) {// Polygon / Multiline
+					out = Distance(objA.AllCoordinates(), objB.AllCoordinates());
+					if (Overlaps(objA.AllCoordinates(), objB.AllCoordinates())) out = 0;
 				}
 				else if (type2 == GeometryType::Multiline && type1 == GeometryType::Multiline) {// Multiline / Multiline
 					out = Distance(objA.AllCoordinates(), objB.AllCoordinates());
@@ -1303,7 +1432,14 @@ namespace chaiscript {
 					break;
 				}
 				case GeometryType::Polygon: {
-					// TBD
+					UI_MapPolygon polygon; {
+						polygon.thickness = 2;
+						polygon.color.A = 128;
+						for (auto& coord : geo.AllCoordinates()) {
+							polygon.AddPoint(coord.x, coord.y);
+						}
+					}
+					out = var(std::move(polygon));
 					break;
 				}
 				default:
@@ -1339,7 +1475,15 @@ namespace chaiscript {
 					break;
 				}
 				case GeometryType::Polygon: {
-					// TBD
+					UI_MapPolygon polygon; {
+						polygon.thickness = 2;
+						polygon.color.A = 128;
+						for (auto& coord : geo.AllCoordinates()) {
+							polygon.AddPoint(coord.x, coord.y);
+						}
+						polygon.Tag = var(Feature(feature));
+					}
+					out = var(std::move(polygon));
 					break;
 				}
 				default:
@@ -1368,8 +1512,10 @@ namespace chaiscript {
 			lib->AddFunction(ToMapLayer, UI_MapLayer, , return ToMapLayer(obj), Layer const& obj);
 			lib->AddFunction(ToMapElement, UI_MapIcon, , return ToMapElement(obj), Feature const& obj);
 			lib->AddFunction(ToMapElement, UI_MapPolyline, , return ToMapElement(obj), Feature const& obj);
+			lib->AddFunction(ToMapElement, UI_MapPolygon, , return ToMapElement(obj), Feature const& obj);
 			lib->AddFunction(ToMapElementFromGeometry, UI_MapIcon, , return ToMapElementFromGeometry(obj), Geometry const& obj);
 			lib->AddFunction(ToMapElementFromGeometry, UI_MapPolyline, , return ToMapElementFromGeometry(obj), Geometry const& obj);
+			lib->AddFunction(ToMapElementFromGeometry, UI_MapPolygon, , return ToMapElementFromGeometry(obj), Geometry const& obj);
 
 			AUTO NearestMatchFeatureDistanceWhere = [](Feature const& layer1, Layer const& layer2, int numNearest, std::function<double(Geometry const&, Geometry const&)> dist, std::function<bool(Feature const&)> Where) {
 				AUTO nearList = Layer::Near(layer1, layer2, dist, numNearest, Where);

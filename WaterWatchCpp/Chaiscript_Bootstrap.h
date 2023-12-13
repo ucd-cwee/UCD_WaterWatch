@@ -517,10 +517,27 @@ namespace chaiscript::bootstrap {
                                                                     {fun(&File_Position::column), "column"}
                                                                 });
 
+            chaiscript::utility::add_class<ReturnType>(m,
+                "ReturnType",
+                {
+                    fun([]()->ReturnType { return ReturnType(); }), 
+                    fun([](ReturnType const& o)->ReturnType { return ReturnType(o); })
+                },
+                {
+                 {fun(&ReturnType::Type), "Type"},
+                 {fun(&ReturnType::Source), "Source"},
+                 {fun(&ReturnType::Deterministic), "Deterministic"}                
+                }
+            );
+
             chaiscript::utility::add_class<AST_Node>(m,
                 "AST_Node",
                 {},
                 { {fun(&AST_Node::text), "text"},
+                 {fun([](const chaiscript::AST_Node& t_node) -> ReturnType {                    
+                    return t_node.potentialReturnType;
+                  }),
+                  "potentialReturnType"},
                  {fun(&AST_Node::identifier), "identifier"},
                  {fun(&AST_Node::filename), "filename"},
                  {fun(&AST_Node::start), "start"},

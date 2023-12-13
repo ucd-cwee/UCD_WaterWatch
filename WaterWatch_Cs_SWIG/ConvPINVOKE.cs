@@ -570,6 +570,36 @@ class ConvPINVOKE {
   [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_delete_MapPolyline_Interop")]
   public static extern void delete_MapPolyline_Interop(global::System.Runtime.InteropServices.HandleRef jarg1);
 
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_MapPolygon_Interop_color_set")]
+  public static extern void MapPolygon_Interop_color_set(global::System.Runtime.InteropServices.HandleRef jarg1, global::System.Runtime.InteropServices.HandleRef jarg2);
+
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_MapPolygon_Interop_color_get")]
+  public static extern global::System.IntPtr MapPolygon_Interop_color_get(global::System.Runtime.InteropServices.HandleRef jarg1);
+
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_MapPolygon_Interop_thickness_set")]
+  public static extern void MapPolygon_Interop_thickness_set(global::System.Runtime.InteropServices.HandleRef jarg1, double jarg2);
+
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_MapPolygon_Interop_thickness_get")]
+  public static extern double MapPolygon_Interop_thickness_get(global::System.Runtime.InteropServices.HandleRef jarg1);
+
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_MapPolygon_Interop_dashed_set")]
+  public static extern void MapPolygon_Interop_dashed_set(global::System.Runtime.InteropServices.HandleRef jarg1, bool jarg2);
+
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_MapPolygon_Interop_dashed_get")]
+  public static extern bool MapPolygon_Interop_dashed_get(global::System.Runtime.InteropServices.HandleRef jarg1);
+
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_MapPolygon_Interop_coordinates_set")]
+  public static extern void MapPolygon_Interop_coordinates_set(global::System.Runtime.InteropServices.HandleRef jarg1, global::System.Runtime.InteropServices.HandleRef jarg2);
+
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_MapPolygon_Interop_coordinates_get")]
+  public static extern global::System.IntPtr MapPolygon_Interop_coordinates_get(global::System.Runtime.InteropServices.HandleRef jarg1);
+
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_new_MapPolygon_Interop")]
+  public static extern global::System.IntPtr new_MapPolygon_Interop();
+
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_delete_MapPolygon_Interop")]
+  public static extern void delete_MapPolygon_Interop(global::System.Runtime.InteropServices.HandleRef jarg1);
+
   [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_MapBackground_Interop_highQuality_set")]
   public static extern void MapBackground_Interop_highQuality_set(global::System.Runtime.InteropServices.HandleRef jarg1, bool jarg2);
 
@@ -621,6 +651,12 @@ class ConvPINVOKE {
   [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_delete_MapBackground_Interop")]
   public static extern void delete_MapBackground_Interop(global::System.Runtime.InteropServices.HandleRef jarg1);
 
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_MapLayer_Interop_polygons_set")]
+  public static extern void MapLayer_Interop_polygons_set(global::System.Runtime.InteropServices.HandleRef jarg1, global::System.Runtime.InteropServices.HandleRef jarg2);
+
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_MapLayer_Interop_polygons_get")]
+  public static extern global::System.IntPtr MapLayer_Interop_polygons_get(global::System.Runtime.InteropServices.HandleRef jarg1);
+
   [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_MapLayer_Interop_polylines_set")]
   public static extern void MapLayer_Interop_polylines_set(global::System.Runtime.InteropServices.HandleRef jarg1, global::System.Runtime.InteropServices.HandleRef jarg2);
 
@@ -656,6 +692,9 @@ class ConvPINVOKE {
 
   [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_ScriptObject_Cast_MapPolyline")]
   public static extern global::System.IntPtr ScriptObject_Cast_MapPolyline(global::System.Runtime.InteropServices.HandleRef jarg1);
+
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_ScriptObject_Cast_MapPolygon")]
+  public static extern global::System.IntPtr ScriptObject_Cast_MapPolygon(global::System.Runtime.InteropServices.HandleRef jarg1);
 
   [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_ScriptObject_Cast_MapLayer")]
   public static extern global::System.IntPtr ScriptObject_Cast_MapLayer(global::System.Runtime.InteropServices.HandleRef jarg1);
@@ -701,6 +740,9 @@ class ConvPINVOKE {
 
   [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_ScriptEngine_Cast_MapPolyline")]
   public static extern global::System.IntPtr ScriptEngine_Cast_MapPolyline(global::System.Runtime.InteropServices.HandleRef jarg1, string jarg2);
+
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_ScriptEngine_Cast_MapPolygon")]
+  public static extern global::System.IntPtr ScriptEngine_Cast_MapPolygon(global::System.Runtime.InteropServices.HandleRef jarg1, string jarg2);
 
   [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_ScriptEngine_Cast_MapBackground")]
   public static extern global::System.IntPtr ScriptEngine_Cast_MapBackground(global::System.Runtime.InteropServices.HandleRef jarg1, string jarg2);
@@ -1568,6 +1610,48 @@ class ConvPINVOKE {
 
   [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_delete_map_int_background")]
   public static extern void delete_map_int_background(global::System.Runtime.InteropServices.HandleRef jarg1);
+
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_new_map_int_polygon__SWIG_0")]
+  public static extern global::System.IntPtr new_map_int_polygon__SWIG_0();
+
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_new_map_int_polygon__SWIG_1")]
+  public static extern global::System.IntPtr new_map_int_polygon__SWIG_1(global::System.Runtime.InteropServices.HandleRef jarg1);
+
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_map_int_polygon_size")]
+  public static extern uint map_int_polygon_size(global::System.Runtime.InteropServices.HandleRef jarg1);
+
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_map_int_polygon_empty")]
+  public static extern bool map_int_polygon_empty(global::System.Runtime.InteropServices.HandleRef jarg1);
+
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_map_int_polygon_Clear")]
+  public static extern void map_int_polygon_Clear(global::System.Runtime.InteropServices.HandleRef jarg1);
+
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_map_int_polygon_getitem")]
+  public static extern global::System.IntPtr map_int_polygon_getitem(global::System.Runtime.InteropServices.HandleRef jarg1, int jarg2);
+
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_map_int_polygon_setitem")]
+  public static extern void map_int_polygon_setitem(global::System.Runtime.InteropServices.HandleRef jarg1, int jarg2, global::System.Runtime.InteropServices.HandleRef jarg3);
+
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_map_int_polygon_ContainsKey")]
+  public static extern bool map_int_polygon_ContainsKey(global::System.Runtime.InteropServices.HandleRef jarg1, int jarg2);
+
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_map_int_polygon_Add")]
+  public static extern void map_int_polygon_Add(global::System.Runtime.InteropServices.HandleRef jarg1, int jarg2, global::System.Runtime.InteropServices.HandleRef jarg3);
+
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_map_int_polygon_Remove")]
+  public static extern bool map_int_polygon_Remove(global::System.Runtime.InteropServices.HandleRef jarg1, int jarg2);
+
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_map_int_polygon_create_iterator_begin")]
+  public static extern global::System.IntPtr map_int_polygon_create_iterator_begin(global::System.Runtime.InteropServices.HandleRef jarg1);
+
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_map_int_polygon_get_next_key")]
+  public static extern int map_int_polygon_get_next_key(global::System.Runtime.InteropServices.HandleRef jarg1, global::System.IntPtr jarg2);
+
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_map_int_polygon_destroy_iterator")]
+  public static extern void map_int_polygon_destroy_iterator(global::System.Runtime.InteropServices.HandleRef jarg1, global::System.IntPtr jarg2);
+
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_delete_map_int_polygon")]
+  public static extern void delete_map_int_polygon(global::System.Runtime.InteropServices.HandleRef jarg1);
 
   [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_new_map_int_polyline__SWIG_0")]
   public static extern global::System.IntPtr new_map_int_polyline__SWIG_0();

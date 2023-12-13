@@ -1242,6 +1242,45 @@ SWIGINTERN std::map< int,MapBackground_Interop >::key_type const &std_map_Sl_int
 SWIGINTERN void std_map_Sl_int_Sc_MapBackground_Interop_Sg__destroy_iterator(std::map< int,MapBackground_Interop > *self,std::map< int,MapBackground_Interop,std::less< int > >::iterator *swigiterator){
         delete swigiterator;
       }
+SWIGINTERN std::map< int,MapPolygon_Interop >::mapped_type const &std_map_Sl_int_Sc_MapPolygon_Interop_Sg__getitem(std::map< int,MapPolygon_Interop > *self,std::map< int,MapPolygon_Interop >::key_type const &key){
+        std::map< int, MapPolygon_Interop, std::less< int > >::iterator iter = self->find(key);
+        if (iter != self->end())
+          return iter->second;
+        else
+          throw std::out_of_range("key not found");
+      }
+SWIGINTERN void std_map_Sl_int_Sc_MapPolygon_Interop_Sg__setitem(std::map< int,MapPolygon_Interop > *self,std::map< int,MapPolygon_Interop >::key_type const &key,std::map< int,MapPolygon_Interop >::mapped_type const &x){
+        (*self)[key] = x;
+      }
+SWIGINTERN bool std_map_Sl_int_Sc_MapPolygon_Interop_Sg__ContainsKey(std::map< int,MapPolygon_Interop > *self,std::map< int,MapPolygon_Interop >::key_type const &key){
+        std::map< int, MapPolygon_Interop, std::less< int > >::iterator iter = self->find(key);
+        return iter != self->end();
+      }
+SWIGINTERN void std_map_Sl_int_Sc_MapPolygon_Interop_Sg__Add(std::map< int,MapPolygon_Interop > *self,std::map< int,MapPolygon_Interop >::key_type const &key,std::map< int,MapPolygon_Interop >::mapped_type const &value){
+        std::map< int, MapPolygon_Interop, std::less< int > >::iterator iter = self->find(key);
+        if (iter != self->end())
+          throw std::out_of_range("key already exists");
+        self->insert(std::pair< int, MapPolygon_Interop >(key, value));
+      }
+SWIGINTERN bool std_map_Sl_int_Sc_MapPolygon_Interop_Sg__Remove(std::map< int,MapPolygon_Interop > *self,std::map< int,MapPolygon_Interop >::key_type const &key){
+        std::map< int, MapPolygon_Interop, std::less< int > >::iterator iter = self->find(key);
+        if (iter != self->end()) {
+          self->erase(iter);
+          return true;
+        }
+        return false;
+      }
+SWIGINTERN std::map< int,MapPolygon_Interop,std::less< int > >::iterator *std_map_Sl_int_Sc_MapPolygon_Interop_Sg__create_iterator_begin(std::map< int,MapPolygon_Interop > *self){
+        return new std::map< int, MapPolygon_Interop, std::less< int > >::iterator(self->begin());
+      }
+SWIGINTERN std::map< int,MapPolygon_Interop >::key_type const &std_map_Sl_int_Sc_MapPolygon_Interop_Sg__get_next_key(std::map< int,MapPolygon_Interop > *self,std::map< int,MapPolygon_Interop,std::less< int > >::iterator *swigiterator){
+        std::map< int, MapPolygon_Interop, std::less< int > >::iterator iter = *swigiterator;
+        (*swigiterator)++;
+        return (*iter).first;
+      }
+SWIGINTERN void std_map_Sl_int_Sc_MapPolygon_Interop_Sg__destroy_iterator(std::map< int,MapPolygon_Interop > *self,std::map< int,MapPolygon_Interop,std::less< int > >::iterator *swigiterator){
+        delete swigiterator;
+      }
 SWIGINTERN std::map< int,MapPolyline_Interop >::mapped_type const &std_map_Sl_int_Sc_MapPolyline_Interop_Sg__getitem(std::map< int,MapPolyline_Interop > *self,std::map< int,MapPolyline_Interop >::key_type const &key){
         std::map< int, MapPolyline_Interop, std::less< int > >::iterator iter = self->find(key);
         if (iter != self->end())
@@ -2779,6 +2818,112 @@ SWIGEXPORT void SWIGSTDCALL CSharp_delete_MapPolyline_Interop(void * jarg1) {
 }
 
 
+SWIGEXPORT void SWIGSTDCALL CSharp_MapPolygon_Interop_color_set(void * jarg1, void * jarg2) {
+  MapPolygon_Interop *arg1 = (MapPolygon_Interop *) 0 ;
+  Color_Interop *arg2 = (Color_Interop *) 0 ;
+  
+  arg1 = (MapPolygon_Interop *)jarg1; 
+  arg2 = (Color_Interop *)jarg2; 
+  if (arg1) (arg1)->color = *arg2;
+}
+
+
+SWIGEXPORT void * SWIGSTDCALL CSharp_MapPolygon_Interop_color_get(void * jarg1) {
+  void * jresult ;
+  MapPolygon_Interop *arg1 = (MapPolygon_Interop *) 0 ;
+  Color_Interop *result = 0 ;
+  
+  arg1 = (MapPolygon_Interop *)jarg1; 
+  result = (Color_Interop *)& ((arg1)->color);
+  jresult = (void *)result; 
+  return jresult;
+}
+
+
+SWIGEXPORT void SWIGSTDCALL CSharp_MapPolygon_Interop_thickness_set(void * jarg1, double jarg2) {
+  MapPolygon_Interop *arg1 = (MapPolygon_Interop *) 0 ;
+  double arg2 ;
+  
+  arg1 = (MapPolygon_Interop *)jarg1; 
+  arg2 = (double)jarg2; 
+  if (arg1) (arg1)->thickness = arg2;
+}
+
+
+SWIGEXPORT double SWIGSTDCALL CSharp_MapPolygon_Interop_thickness_get(void * jarg1) {
+  double jresult ;
+  MapPolygon_Interop *arg1 = (MapPolygon_Interop *) 0 ;
+  double result;
+  
+  arg1 = (MapPolygon_Interop *)jarg1; 
+  result = (double) ((arg1)->thickness);
+  jresult = result; 
+  return jresult;
+}
+
+
+SWIGEXPORT void SWIGSTDCALL CSharp_MapPolygon_Interop_dashed_set(void * jarg1, unsigned int jarg2) {
+  MapPolygon_Interop *arg1 = (MapPolygon_Interop *) 0 ;
+  bool arg2 ;
+  
+  arg1 = (MapPolygon_Interop *)jarg1; 
+  arg2 = jarg2 ? true : false; 
+  if (arg1) (arg1)->dashed = arg2;
+}
+
+
+SWIGEXPORT unsigned int SWIGSTDCALL CSharp_MapPolygon_Interop_dashed_get(void * jarg1) {
+  unsigned int jresult ;
+  MapPolygon_Interop *arg1 = (MapPolygon_Interop *) 0 ;
+  bool result;
+  
+  arg1 = (MapPolygon_Interop *)jarg1; 
+  result = (bool) ((arg1)->dashed);
+  jresult = result; 
+  return jresult;
+}
+
+
+SWIGEXPORT void SWIGSTDCALL CSharp_MapPolygon_Interop_coordinates_set(void * jarg1, void * jarg2) {
+  MapPolygon_Interop *arg1 = (MapPolygon_Interop *) 0 ;
+  std::vector< Pair< double,double > > *arg2 = (std::vector< Pair< double,double > > *) 0 ;
+  
+  arg1 = (MapPolygon_Interop *)jarg1; 
+  arg2 = (std::vector< Pair< double,double > > *)jarg2; 
+  if (arg1) (arg1)->coordinates = *arg2;
+}
+
+
+SWIGEXPORT void * SWIGSTDCALL CSharp_MapPolygon_Interop_coordinates_get(void * jarg1) {
+  void * jresult ;
+  MapPolygon_Interop *arg1 = (MapPolygon_Interop *) 0 ;
+  std::vector< Pair< double,double > > *result = 0 ;
+  
+  arg1 = (MapPolygon_Interop *)jarg1; 
+  result = (std::vector< Pair< double,double > > *)& ((arg1)->coordinates);
+  jresult = (void *)result; 
+  return jresult;
+}
+
+
+SWIGEXPORT void * SWIGSTDCALL CSharp_new_MapPolygon_Interop() {
+  void * jresult ;
+  MapPolygon_Interop *result = 0 ;
+  
+  result = (MapPolygon_Interop *)new MapPolygon_Interop();
+  jresult = (void *)result; 
+  return jresult;
+}
+
+
+SWIGEXPORT void SWIGSTDCALL CSharp_delete_MapPolygon_Interop(void * jarg1) {
+  MapPolygon_Interop *arg1 = (MapPolygon_Interop *) 0 ;
+  
+  arg1 = (MapPolygon_Interop *)jarg1; 
+  delete arg1;
+}
+
+
 SWIGEXPORT void SWIGSTDCALL CSharp_MapBackground_Interop_highQuality_set(void * jarg1, unsigned int jarg2) {
   MapBackground_Interop *arg1 = (MapBackground_Interop *) 0 ;
   bool arg2 ;
@@ -2979,6 +3124,28 @@ SWIGEXPORT void SWIGSTDCALL CSharp_delete_MapBackground_Interop(void * jarg1) {
 }
 
 
+SWIGEXPORT void SWIGSTDCALL CSharp_MapLayer_Interop_polygons_set(void * jarg1, void * jarg2) {
+  MapLayer_Interop *arg1 = (MapLayer_Interop *) 0 ;
+  std::map< int,MapPolygon_Interop,std::less< int > > *arg2 = (std::map< int,MapPolygon_Interop,std::less< int > > *) 0 ;
+  
+  arg1 = (MapLayer_Interop *)jarg1; 
+  arg2 = (std::map< int,MapPolygon_Interop,std::less< int > > *)jarg2; 
+  if (arg1) (arg1)->polygons = *arg2;
+}
+
+
+SWIGEXPORT void * SWIGSTDCALL CSharp_MapLayer_Interop_polygons_get(void * jarg1) {
+  void * jresult ;
+  MapLayer_Interop *arg1 = (MapLayer_Interop *) 0 ;
+  std::map< int,MapPolygon_Interop,std::less< int > > *result = 0 ;
+  
+  arg1 = (MapLayer_Interop *)jarg1; 
+  result = (std::map< int,MapPolygon_Interop,std::less< int > > *)& ((arg1)->polygons);
+  jresult = (void *)result; 
+  return jresult;
+}
+
+
 SWIGEXPORT void SWIGSTDCALL CSharp_MapLayer_Interop_polylines_set(void * jarg1, void * jarg2) {
   MapLayer_Interop *arg1 = (MapLayer_Interop *) 0 ;
   std::map< int,MapPolyline_Interop,std::less< int > > *arg2 = (std::map< int,MapPolyline_Interop,std::less< int > > *) 0 ;
@@ -3111,6 +3278,18 @@ SWIGEXPORT void * SWIGSTDCALL CSharp_ScriptObject_Cast_MapPolyline(void * jarg1)
   arg1 = (ScriptObject *)jarg1; 
   result = (arg1)->Cast_MapPolyline();
   jresult = new MapPolyline_Interop(result); 
+  return jresult;
+}
+
+
+SWIGEXPORT void * SWIGSTDCALL CSharp_ScriptObject_Cast_MapPolygon(void * jarg1) {
+  void * jresult ;
+  ScriptObject *arg1 = (ScriptObject *) 0 ;
+  MapPolygon_Interop result;
+  
+  arg1 = (ScriptObject *)jarg1; 
+  result = (arg1)->Cast_MapPolygon();
+  jresult = new MapPolygon_Interop(result); 
   return jresult;
 }
 
@@ -3347,6 +3526,24 @@ SWIGEXPORT void * SWIGSTDCALL CSharp_ScriptEngine_Cast_MapPolyline(void * jarg1,
   (&arg2)->assign(jarg2); 
   result = (arg1)->Cast_MapPolyline(arg2);
   jresult = new MapPolyline_Interop(result); 
+  return jresult;
+}
+
+
+SWIGEXPORT void * SWIGSTDCALL CSharp_ScriptEngine_Cast_MapPolygon(void * jarg1, const char * jarg2) {
+  void * jresult ;
+  ScriptEngine *arg1 = (ScriptEngine *) 0 ;
+  std::string arg2 ;
+  MapPolygon_Interop result;
+  
+  arg1 = (ScriptEngine *)jarg1; 
+  if (!jarg2) {
+    SWIG_CSharpSetPendingExceptionArgument(SWIG_CSharpArgumentNullException, "null string", 0);
+    return 0;
+  }
+  (&arg2)->assign(jarg2); 
+  result = (arg1)->Cast_MapPolygon(arg2);
+  jresult = new MapPolygon_Interop(result); 
   return jresult;
 }
 
@@ -7788,6 +7985,202 @@ SWIGEXPORT void SWIGSTDCALL CSharp_delete_map_int_background(void * jarg1) {
   std::map< int,MapBackground_Interop > *arg1 = (std::map< int,MapBackground_Interop > *) 0 ;
   
   arg1 = (std::map< int,MapBackground_Interop > *)jarg1; 
+  delete arg1;
+}
+
+
+SWIGEXPORT void * SWIGSTDCALL CSharp_new_map_int_polygon__SWIG_0() {
+  void * jresult ;
+  std::map< int,MapPolygon_Interop > *result = 0 ;
+  
+  result = (std::map< int,MapPolygon_Interop > *)new std::map< int,MapPolygon_Interop >();
+  jresult = (void *)result; 
+  return jresult;
+}
+
+
+SWIGEXPORT void * SWIGSTDCALL CSharp_new_map_int_polygon__SWIG_1(void * jarg1) {
+  void * jresult ;
+  std::map< int,MapPolygon_Interop > *arg1 = 0 ;
+  std::map< int,MapPolygon_Interop > *result = 0 ;
+  
+  arg1 = (std::map< int,MapPolygon_Interop > *)jarg1;
+  if (!arg1) {
+    SWIG_CSharpSetPendingExceptionArgument(SWIG_CSharpArgumentNullException, "std::map< int,MapPolygon_Interop > const & is null", 0);
+    return 0;
+  } 
+  result = (std::map< int,MapPolygon_Interop > *)new std::map< int,MapPolygon_Interop >((std::map< int,MapPolygon_Interop > const &)*arg1);
+  jresult = (void *)result; 
+  return jresult;
+}
+
+
+SWIGEXPORT unsigned long SWIGSTDCALL CSharp_map_int_polygon_size(void * jarg1) {
+  unsigned long jresult ;
+  std::map< int,MapPolygon_Interop > *arg1 = (std::map< int,MapPolygon_Interop > *) 0 ;
+  std::map< int,MapPolygon_Interop >::size_type result;
+  
+  arg1 = (std::map< int,MapPolygon_Interop > *)jarg1; 
+  result = ((std::map< int,MapPolygon_Interop > const *)arg1)->size();
+  jresult = (unsigned long)result; 
+  return jresult;
+}
+
+
+SWIGEXPORT unsigned int SWIGSTDCALL CSharp_map_int_polygon_empty(void * jarg1) {
+  unsigned int jresult ;
+  std::map< int,MapPolygon_Interop > *arg1 = (std::map< int,MapPolygon_Interop > *) 0 ;
+  bool result;
+  
+  arg1 = (std::map< int,MapPolygon_Interop > *)jarg1; 
+  result = (bool)((std::map< int,MapPolygon_Interop > const *)arg1)->empty();
+  jresult = result; 
+  return jresult;
+}
+
+
+SWIGEXPORT void SWIGSTDCALL CSharp_map_int_polygon_Clear(void * jarg1) {
+  std::map< int,MapPolygon_Interop > *arg1 = (std::map< int,MapPolygon_Interop > *) 0 ;
+  
+  arg1 = (std::map< int,MapPolygon_Interop > *)jarg1; 
+  (arg1)->clear();
+}
+
+
+SWIGEXPORT void * SWIGSTDCALL CSharp_map_int_polygon_getitem(void * jarg1, int jarg2) {
+  void * jresult ;
+  std::map< int,MapPolygon_Interop > *arg1 = (std::map< int,MapPolygon_Interop > *) 0 ;
+  std::map< int,MapPolygon_Interop >::key_type *arg2 = 0 ;
+  std::map< int,MapPolygon_Interop >::key_type temp2 ;
+  std::map< int,MapPolygon_Interop >::mapped_type *result = 0 ;
+  
+  arg1 = (std::map< int,MapPolygon_Interop > *)jarg1; 
+  temp2 = (std::map< int,MapPolygon_Interop >::key_type)jarg2; 
+  arg2 = &temp2; 
+  try {
+    result = (std::map< int,MapPolygon_Interop >::mapped_type *) &std_map_Sl_int_Sc_MapPolygon_Interop_Sg__getitem(arg1,(int const &)*arg2);
+  } catch(std::out_of_range &_e) {
+    SWIG_CSharpSetPendingExceptionArgument(SWIG_CSharpArgumentOutOfRangeException, 0, (&_e)->what());
+    return 0;
+  }
+  jresult = (void *)result; 
+  return jresult;
+}
+
+
+SWIGEXPORT void SWIGSTDCALL CSharp_map_int_polygon_setitem(void * jarg1, int jarg2, void * jarg3) {
+  std::map< int,MapPolygon_Interop > *arg1 = (std::map< int,MapPolygon_Interop > *) 0 ;
+  std::map< int,MapPolygon_Interop >::key_type *arg2 = 0 ;
+  std::map< int,MapPolygon_Interop >::mapped_type *arg3 = 0 ;
+  std::map< int,MapPolygon_Interop >::key_type temp2 ;
+  
+  arg1 = (std::map< int,MapPolygon_Interop > *)jarg1; 
+  temp2 = (std::map< int,MapPolygon_Interop >::key_type)jarg2; 
+  arg2 = &temp2; 
+  arg3 = (std::map< int,MapPolygon_Interop >::mapped_type *)jarg3;
+  if (!arg3) {
+    SWIG_CSharpSetPendingExceptionArgument(SWIG_CSharpArgumentNullException, "std::map< int,MapPolygon_Interop >::mapped_type const & is null", 0);
+    return ;
+  } 
+  std_map_Sl_int_Sc_MapPolygon_Interop_Sg__setitem(arg1,(int const &)*arg2,(MapPolygon_Interop const &)*arg3);
+}
+
+
+SWIGEXPORT unsigned int SWIGSTDCALL CSharp_map_int_polygon_ContainsKey(void * jarg1, int jarg2) {
+  unsigned int jresult ;
+  std::map< int,MapPolygon_Interop > *arg1 = (std::map< int,MapPolygon_Interop > *) 0 ;
+  std::map< int,MapPolygon_Interop >::key_type *arg2 = 0 ;
+  std::map< int,MapPolygon_Interop >::key_type temp2 ;
+  bool result;
+  
+  arg1 = (std::map< int,MapPolygon_Interop > *)jarg1; 
+  temp2 = (std::map< int,MapPolygon_Interop >::key_type)jarg2; 
+  arg2 = &temp2; 
+  result = (bool)std_map_Sl_int_Sc_MapPolygon_Interop_Sg__ContainsKey(arg1,(int const &)*arg2);
+  jresult = result; 
+  return jresult;
+}
+
+
+SWIGEXPORT void SWIGSTDCALL CSharp_map_int_polygon_Add(void * jarg1, int jarg2, void * jarg3) {
+  std::map< int,MapPolygon_Interop > *arg1 = (std::map< int,MapPolygon_Interop > *) 0 ;
+  std::map< int,MapPolygon_Interop >::key_type *arg2 = 0 ;
+  std::map< int,MapPolygon_Interop >::mapped_type *arg3 = 0 ;
+  std::map< int,MapPolygon_Interop >::key_type temp2 ;
+  
+  arg1 = (std::map< int,MapPolygon_Interop > *)jarg1; 
+  temp2 = (std::map< int,MapPolygon_Interop >::key_type)jarg2; 
+  arg2 = &temp2; 
+  arg3 = (std::map< int,MapPolygon_Interop >::mapped_type *)jarg3;
+  if (!arg3) {
+    SWIG_CSharpSetPendingExceptionArgument(SWIG_CSharpArgumentNullException, "std::map< int,MapPolygon_Interop >::mapped_type const & is null", 0);
+    return ;
+  } 
+  try {
+    std_map_Sl_int_Sc_MapPolygon_Interop_Sg__Add(arg1,(int const &)*arg2,(MapPolygon_Interop const &)*arg3);
+  } catch(std::out_of_range &_e) {
+    SWIG_CSharpSetPendingExceptionArgument(SWIG_CSharpArgumentOutOfRangeException, 0, (&_e)->what());
+    return ;
+  }
+}
+
+
+SWIGEXPORT unsigned int SWIGSTDCALL CSharp_map_int_polygon_Remove(void * jarg1, int jarg2) {
+  unsigned int jresult ;
+  std::map< int,MapPolygon_Interop > *arg1 = (std::map< int,MapPolygon_Interop > *) 0 ;
+  std::map< int,MapPolygon_Interop >::key_type *arg2 = 0 ;
+  std::map< int,MapPolygon_Interop >::key_type temp2 ;
+  bool result;
+  
+  arg1 = (std::map< int,MapPolygon_Interop > *)jarg1; 
+  temp2 = (std::map< int,MapPolygon_Interop >::key_type)jarg2; 
+  arg2 = &temp2; 
+  result = (bool)std_map_Sl_int_Sc_MapPolygon_Interop_Sg__Remove(arg1,(int const &)*arg2);
+  jresult = result; 
+  return jresult;
+}
+
+
+SWIGEXPORT void * SWIGSTDCALL CSharp_map_int_polygon_create_iterator_begin(void * jarg1) {
+  void * jresult ;
+  std::map< int,MapPolygon_Interop > *arg1 = (std::map< int,MapPolygon_Interop > *) 0 ;
+  std::map< int,MapPolygon_Interop,std::less< int > >::iterator *result = 0 ;
+  
+  arg1 = (std::map< int,MapPolygon_Interop > *)jarg1; 
+  result = (std::map< int,MapPolygon_Interop,std::less< int > >::iterator *)std_map_Sl_int_Sc_MapPolygon_Interop_Sg__create_iterator_begin(arg1);
+  jresult = (void *)result; 
+  return jresult;
+}
+
+
+SWIGEXPORT int SWIGSTDCALL CSharp_map_int_polygon_get_next_key(void * jarg1, void * jarg2) {
+  int jresult ;
+  std::map< int,MapPolygon_Interop > *arg1 = (std::map< int,MapPolygon_Interop > *) 0 ;
+  std::map< int,MapPolygon_Interop,std::less< int > >::iterator *arg2 = (std::map< int,MapPolygon_Interop,std::less< int > >::iterator *) 0 ;
+  std::map< int,MapPolygon_Interop >::key_type *result = 0 ;
+  
+  arg1 = (std::map< int,MapPolygon_Interop > *)jarg1; 
+  arg2 = (std::map< int,MapPolygon_Interop,std::less< int > >::iterator *)jarg2; 
+  result = (std::map< int,MapPolygon_Interop >::key_type *) &std_map_Sl_int_Sc_MapPolygon_Interop_Sg__get_next_key(arg1,arg2);
+  jresult = *result; 
+  return jresult;
+}
+
+
+SWIGEXPORT void SWIGSTDCALL CSharp_map_int_polygon_destroy_iterator(void * jarg1, void * jarg2) {
+  std::map< int,MapPolygon_Interop > *arg1 = (std::map< int,MapPolygon_Interop > *) 0 ;
+  std::map< int,MapPolygon_Interop,std::less< int > >::iterator *arg2 = (std::map< int,MapPolygon_Interop,std::less< int > >::iterator *) 0 ;
+  
+  arg1 = (std::map< int,MapPolygon_Interop > *)jarg1; 
+  arg2 = (std::map< int,MapPolygon_Interop,std::less< int > >::iterator *)jarg2; 
+  std_map_Sl_int_Sc_MapPolygon_Interop_Sg__destroy_iterator(arg1,arg2);
+}
+
+
+SWIGEXPORT void SWIGSTDCALL CSharp_delete_map_int_polygon(void * jarg1) {
+  std::map< int,MapPolygon_Interop > *arg1 = (std::map< int,MapPolygon_Interop > *) 0 ;
+  
+  arg1 = (std::map< int,MapPolygon_Interop > *)jarg1; 
   delete arg1;
 }
 

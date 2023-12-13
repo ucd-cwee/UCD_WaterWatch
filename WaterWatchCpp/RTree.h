@@ -23,101 +23,354 @@ to maintain a single distribution point for the source code.
 #include "cweeJob.h"
 #include "SharedPtr.h"
 #include "InterpolatedMatrix.h"
+#include "cweeThreadedMap.h"
 #include "Voronoi.h"
+
+
+class cweeBoundary {
+public:
+	vec2d topRight;
+	vec2d bottomLeft;
+
+	cweeBoundary() : topRight(-cweeMath::INF, -cweeMath::INF), bottomLeft(cweeMath::INF, cweeMath::INF) {};
+	cweeBoundary(cweeBoundary const&) = default;
+	cweeBoundary(cweeBoundary&&) = default;
+	cweeBoundary& operator=(cweeBoundary const&) = default;
+	cweeBoundary& operator=(cweeBoundary&&) = default;
+
+	vec2d& operator[](int i) {
+		switch (i) {
+		case 0: return topRight;
+		case 1: return bottomLeft;
+		default: throw(std::runtime_error("Bad Index for Boundary"));
+		}
+	};
+	const vec2d& operator[](int i) const {
+		switch (i) {
+		case 0: return topRight;
+		case 1: return bottomLeft;
+		default: throw(std::runtime_error("Bad Index for Boundary"));
+		}
+	};
+
+	vec2d Center() { return vec2d((topRight.x + bottomLeft.x) / 2.0, (topRight.y + bottomLeft.y) / 2.0); };
+
+	static bool Contains(cweeBoundary const& DoesThis, vec2d const& ContainThis) {
+		return (DoesThis.topRight >= ContainThis) && (DoesThis.bottomLeft <= ContainThis);
+	};
+	static bool Contains(cweeBoundary const& DoesThis, cweeBoundary const& ContainThis) {
+		return (DoesThis.topRight >= ContainThis.topRight) && (DoesThis.bottomLeft <= ContainThis.bottomLeft);
+	};
+	static bool Overlaps(cweeBoundary const& DoesThis, cweeBoundary const& OverlapThis) {
+		// we overlap if we contain any of the corners, OR if the line connecting those corners lie inside. 
+		return ObjectsIntersect(DoesThis, OverlapThis);
+	};
+
+	bool Contains(vec2d const& a) const {
+		return Contains(*this, a);
+	};
+	bool Contains(cweeBoundary const& a) const {
+		return Contains(*this, a);
+	};
+	bool Overlaps(cweeBoundary const& a) const {
+		return Overlaps(*this, a);
+	};
+
+private:
+	static int WhichSide(const cweeBoundary& C, const vec2d& D, const vec2d& V)
+	{
+		int i; float t;
+		// C vertices are projected to the form V+t*D.
+		// Return value is +1 if all t > 0, -1 if all t < 0, 0 otherwise, in
+		// which case the line splits the polygon.
+		int positive = 0, negative = 0;
+		for (i = 0; i < 2; i++)
+		{
+			t = D.Dot(C[i] - V);
+			if (t > 0) positive++; else if (t < 0) negative++;
+			if (positive && negative) return 0;
+		}
+		return (positive ? +1 : -1);
+	};
+	static bool ObjectsIntersect(const cweeBoundary& C0, const cweeBoundary& C1)
+	{
+		int i0, i1;
+		vec2d E, D;
+
+		// Test edges of C0 for separation. Because of the counterclockwise ordering,
+		// the projection interval for C0 is [m,0] where m <= 0. Only try to determine
+		// if C1 is on the ‘positive’ side of the line.
+		for (i0 = 0, i1 = 2 - 1; i0 < 2; i1 = i0, i0++)
+		{
+			E = (C0[i0] - C0[i1]); // or precompute edges if desired
+			D = vec2d(E.y, -E.x);
+			if (WhichSide(C1, D, C0[i0]) > 0)
+			{ // C1 is entirely on ‘positive’ side of line C0.V(i0)+t*D
+				return false;
+			}
+		}
+		// Test edges of C1 for separation. Because of the counterclockwise ordering,
+		// the projection interval for C1 is [m,0] where m <= 0. Only try to determine
+		// if C0 is on the ‘positive’ side of the line.
+		for (i0 = 0, i1 = 2 - 1; i0 < 2; i1 = i0, i0++)
+		{
+			E = (C1[i0] - C1[i1]); // or precompute edges if desired
+			D = vec2d(E.y, -E.x);
+			if (WhichSide(C0, D, C1[i0]) > 0)
+			{ // C0 is entirely on ‘positive’ side of line C1.V(i0)+t*D
+				return false;
+			}
+		}
+		return true;
+	};
+};
+
+template <class objType, cweeBoundary(*coordinateLookupFunctor)(objType const&)>
+class RTree {
+public:
+	class TreeNode {
+	public:
+		cweeList< TreeNode* >
+			children;
+		cweeBoundary
+			bound;
+		cweeSharedPtr<objType> 
+			object;
+		TreeNode*
+			parent;
+		int 
+			parentsChildIndex;
+
+		TreeNode() : children(), bound(), object(nullptr), parent(nullptr), parentsChildIndex(-1) {};
+		TreeNode(TreeNode const&) = default;
+		TreeNode(TreeNode&&) = default;
+		TreeNode& operator=(TreeNode const&) = default;
+		TreeNode& operator=(TreeNode&&) = default;
+
+		TreeNode* Next() {
+			TreeNode* out{ nullptr };
+			if (parent && (parentsChildIndex >= 0)) {
+				if (parent->children.Num() > (parentsChildIndex + 1)) {
+					out = parent->children[parentsChildIndex + 1];
+				}
+			}
+			return out;
+		};
+		TreeNode* Prev() {
+			TreeNode* out{ nullptr };
+			if (parent && (parentsChildIndex >= 1)) {
+				if ((parentsChildIndex - 1) >= 0) {
+					out = parent->children[parentsChildIndex - 1];
+				}
+			}
+			return out;
+		};
+
+		void AddChild(TreeNode* ptr) {
+			if (ptr) {
+				children.Append(ptr);
+				if (bound.topRight.x < ptr->bound.topRight.x) bound.topRight.x = ptr->bound.topRight.x;
+				if (bound.topRight.y < ptr->bound.topRight.y) bound.topRight.y = ptr->bound.topRight.y;
+				if (bound.bottomLeft.x > ptr->bound.bottomLeft.x) bound.bottomLeft.x = ptr->bound.bottomLeft.x;
+				if (bound.bottomLeft.y > ptr->bound.bottomLeft.y) bound.bottomLeft.y = ptr->bound.bottomLeft.y;
+			}
+		};
+	};
+	cweeAlloc<TreeNode, 10> 
+		nodeAllocator;
+	cweeList<cweeSharedPtr<objType>>
+		objects;
+	TreeNode*
+		root;
+
+public:
+	RTree() : nodeAllocator(), objects(), root(nullptr)  { ReloadTree(); };
+	RTree(RTree const& obj) : nodeAllocator(), objects(obj.objects), root(nullptr) { ReloadTree(); };
+	RTree& operator=(const RTree& obj) { objects = obj.objects; ReloadTree(); return *this; };
+	RTree& operator=(RTree&& obj) { objects = obj.objects; ReloadTree(); return *this; };
+	~RTree() { nodeAllocator.Clear(); };
+	
+	static cweeList<vec2d> kmeans(int k, std::vector<vec2d> const& data) {
+		int m = data.size();
+		int n = 2;
+		int i, j, l;
+		double min_dist, dist;
+		bool converged;
+		int label;
+		std::vector<vec2d> centers(k, vec2d());
+		std::vector<int> labels(m);
+		std::vector<std::vector<double>> new_centers(k, std::vector<double>(n));
+		std::vector<int> counts(k);
+
+		for (i = 0; i < k; ++i) centers[i] = data[i];
+		while (true) {
+			for (i = 0; i < k; ++i) for (j = 0; j < n; ++j) new_centers[i][j] = 0;
+			for (i = 0; i < k; ++i) counts[i] = 0;
+			for (i = 0; i < m; ++i) {
+				min_dist = std::numeric_limits<double>::max();
+				label = -1;
+				for (j = 0; j < k; ++j) {
+					dist = 0;
+					for (l = 0; l < n; ++l) {
+						dist += std::pow(data[i][l] - centers[j][l], 2);
+					}
+					if (dist < min_dist) {
+						min_dist = dist;
+						label = j;
+					}
+				}
+				labels[i] = label;
+				counts[label]++;
+				for (l = 0; l < n; ++l) {
+					new_centers[label][l] += data[i][l];
+				}
+			}
+			converged = true;
+			for (i = 0; i < k; ++i) {
+				if (counts[i] == 0) {
+					continue;
+				}
+				for (l = 0; l < n; ++l) {
+					new_centers[i][l] /= counts[i];
+					if (new_centers[i][l] != centers[i][l]) {
+						converged = false;
+					}
+					centers[i][l] = new_centers[i][l];
+				}
+			}
+			if (converged) {
+				break;
+			}
+		}
+
+		cweeList<vec2d> out;
+		out = centers;
+		return out;
+	};
+	static cweeList< cweeList<cweeSharedPtr<objType>> > Cluster(int numClusters, cweeList<cweeSharedPtr<objType>> const& objs) {
+		cweeList< cweeList<cweeSharedPtr<objType>> > out;
+		{
+			cweeList<vec2d> coord_data;
+			vec2d c;
+			int childCount = 0;
+			for (auto& x : objs) {
+				if (x) {
+					cweeBoundary bound = coordinateLookupFunctor(*x);
+					coord_data.Append(bound.Center());
+					childCount++;
+				}
+				else {
+					throw(std::runtime_error("RTree object was empty."));
+				}
+			}
+
+			auto newCenters = kmeans(cweeMath::min(cweeMath::max(1, childCount / 10), numClusters), coord_data);
+			auto voronoi{ Voronoi(newCenters) };
+			int cellN = 0;
+			for (auto& cell : voronoi.GetCells()) {
+				cweeList<cweeSharedPtr<objType>> cellChildren;
+
+				for (auto& x : objs) {
+					if (x) {
+						cweeBoundary bound = coordinateLookupFunctor(*x);
+						if (cell.overlaps(bound.Center())) {
+							cellChildren.Append(x);
+						}
+					}
+					else {
+						throw(std::runtime_error("RTree object was empty."));
+					}
+				}
+
+				out.Append(cellChildren);
+			}
+		}
+		return out;
+	};
+
+	void CreateNode(TreeNode* parent, TreeNode* node, cweeList<cweeSharedPtr<objType>> const& objs) {
+		if (node && objs.Num() > 0) {
+			if (objs.Num() == 1) {
+				node->object = objs[0];
+				node->parent = parent;
+				if (parent) {
+					node->parentsChildIndex = parent->children.Num();
+				}
+				else {
+					node->parentsChildIndex = -1;
+				}
+			} 
+			else {
+				cweeList< cweeList<cweeSharedPtr<objType>> > clusters = Cluster(10, objs);
+				for (cweeList<cweeSharedPtr<objType>>& cluster : clusters) {
+					AUTO child_node = nodeAllocator.Alloc();					
+					child_node->parent = parent;
+					CreateNode(node, child_node, cluster);
+					node->AddChild(child_node);
+					child_node->parentsChildIndex = node->children.Num() - 1;
+				}
+			}
+		}
+	};
+	AUTO ReloadTree() {
+		nodeAllocator.Clear();
+		root = nodeAllocator.Alloc();
+		return CreateNode(nullptr, root, objects);
+	};
+
+	void Add(cweeSharedPtr<objType> const& obj) {
+		objects.Append(obj);
+		root = nullptr;
+	};
+	void Remove(cweeSharedPtr<objType> const& obj) {
+		objects.Remove(obj);
+		root = nullptr; 
+	};
+
+	/* goes through all nodes of the tree */
+	TreeNode* GetRoot() {
+		if (!root) ReloadTree();
+		return root;
+	};
+	static TreeNode* GetNext(TreeNode* node) {
+		if (node) {
+			if (node->children.Num() > 0) {
+				node = node->children[0];
+			}
+			else {
+				while (node && node->Next() == nullptr) {
+					node = node->parent;
+				}
+				if (node) node = node->Next();
+			}
+		}
+		return node;
+	};
+	static TreeNode* GetNextLeaf(TreeNode* node) {
+		node = GetNext(node);
+		while (node && !node->object) {
+			node = GetNext(node);
+		}
+		return node;
+	};
+	cweeSharedPtr<objType> TryFindObject(std::function<bool(objType const&)> search) {
+		TreeNode* child = GetRoot();
+		child = GetNextLeaf(child);
+		while (child) {
+			if (child->object && search(*child->object)) {
+				return child->object;
+			}
+			child = GetNextLeaf(child);
+		}
+		return nullptr;
+	};
+
+
+};
 
 template <class objType, vec2d(*coordinateLookupFunctor)(objType const&)>
 class cweeRTree {
 public:
-	class cweeBoundary {
-	public:
-		vec2d topRight;
-		vec2d bottomLeft;
-		vec2d& operator[](int i) {
-			switch (i) {
-			case 0: return topRight;
-			case 1: return bottomLeft;
-			default: throw(std::runtime_error("Bad Index for Boundary"));
-			}
-		};
-		const vec2d& operator[](int i) const {
-			switch (i) {
-			case 0: return topRight;
-			case 1: return bottomLeft;
-			default: throw(std::runtime_error("Bad Index for Boundary"));
-			}
-		};
-
-		vec2d Center() { return vec2d((topRight.x + bottomLeft.x)/2.0, (topRight.y + bottomLeft.y) / 2.0); };
-		
-		static bool Contains(cweeBoundary const& DoesThis, vec2d const& ContainThis) {
-			return (DoesThis.topRight >= ContainThis) && (DoesThis.bottomLeft <= ContainThis);
-		};
-		static bool Contains(cweeBoundary const& DoesThis, cweeBoundary const& ContainThis) {
-			return (DoesThis.topRight >= ContainThis.topRight) && (DoesThis.bottomLeft <= ContainThis.bottomLeft);
-		};
-		static bool Overlaps(cweeBoundary const& DoesThis, cweeBoundary const& OverlapThis) {
-			// we overlap if we contain any of the corners, OR if the line connecting those corners lie inside. 
-			return ObjectsIntersect(DoesThis, OverlapThis);
-		};
-
-		bool Contains(vec2d const& a) const {
-			return Contains(*this, a);
-		};
-		bool Contains(cweeBoundary const& a) const {
-			return Contains(*this, a);
-		};
-		bool Overlaps(cweeBoundary const& a) const {
-			return Overlaps(*this, a);
-		};
-
-	private:
-		static int WhichSide(const cweeBoundary& C, const vec2d& D, const vec2d& V)
-		{
-			int i; float t;
-			// C vertices are projected to the form V+t*D.
-			// Return value is +1 if all t > 0, -1 if all t < 0, 0 otherwise, in
-			// which case the line splits the polygon.
-			int positive = 0, negative = 0;
-			for (i = 0; i < 2; i++)
-			{
-				t = D.Dot(C[i] - V);
-				if (t > 0) positive++; else if (t < 0) negative++;
-				if (positive && negative) return 0;
-			}
-			return (positive ? +1 : -1);
-		};
-		static bool ObjectsIntersect(const cweeBoundary& C0, const cweeBoundary& C1)
-		{
-			int i0, i1;
-			vec2d E, D;
-
-			// Test edges of C0 for separation. Because of the counterclockwise ordering,
-			// the projection interval for C0 is [m,0] where m <= 0. Only try to determine
-			// if C1 is on the ‘positive’ side of the line.
-			for (i0 = 0, i1 = 2 - 1; i0 < 2; i1 = i0, i0++)
-			{
-				E = (C0[i0] - C0[i1]); // or precompute edges if desired
-				D = vec2d(E.y, -E.x);
-				if (WhichSide(C1, D, C0[i0]) > 0)
-				{ // C1 is entirely on ‘positive’ side of line C0.V(i0)+t*D
-					return false;
-				}
-			}
-			// Test edges of C1 for separation. Because of the counterclockwise ordering,
-			// the projection interval for C1 is [m,0] where m <= 0. Only try to determine
-			// if C0 is on the ‘positive’ side of the line.
-			for (i0 = 0, i1 = 2 - 1; i0 < 2; i1 = i0, i0++)
-			{
-				E = (C1[i0] - C1[i1]); // or precompute edges if desired
-				D = vec2d(E.y, -E.x);
-				if (WhichSide(C0, D, C1[i0]) > 0)
-				{ // C0 is entirely on ‘positive’ side of line C1.V(i0)+t*D
-					return false;
-				}
-			}
-			return true;
-		};
-	};
 	class TreeNode {
 	public:
 		cweeBoundary
@@ -176,18 +429,22 @@ public:
 				}
 			}
 		};
+		
 		// Identify if a point lies within the boundary of this node
 		bool Overlaps(vec2d const& a) {
 			return boundary.Contains(a);
 		};
+
 		// Identify if a boundary overlaps with this node
 		bool Overlaps(cweeBoundary const& a) {
 			return boundary.Overlaps(a);
 		};
+
 		// Identify if a node overlaps with this node
 		bool Overlaps(TreeNode const& a) {
 			return boundary.Overlaps(a.boundary);
 		};
+
 		// Initialize a new node
 		static TreeNode* InitNode(TreeNode* p) {
 			p->boundary = cweeBoundary();
@@ -294,15 +551,15 @@ public:
 			return out;
 		};
 
-
-
 	};
 
 private:
-	long long	Num;
-	TreeNode*	root;
-	cweeAlloc<TreeNode, 10>			
-				nodeAllocator;
+	long long	
+		Num;
+	TreeNode*	
+		root;
+	cweeAlloc<TreeNode, 10> 
+		nodeAllocator;
 
 public: // Desired Interface
 	void AddObject(objType const& toCopy) { Add(make_cwee_shared< objType>(toCopy)); };

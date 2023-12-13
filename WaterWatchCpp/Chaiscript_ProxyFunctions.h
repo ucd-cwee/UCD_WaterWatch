@@ -1238,7 +1238,7 @@ namespace chaiscript {
 
         private:
             template<typename Type>
-            auto do_call_impl(Class* o) const {
+            Boxed_Value do_call_impl(Class* o) const {
                 if constexpr (std::is_pointer<Type>::value) {
                     return detail::Handle_Return<Type>::handle(o->*m_attr);
                 }
@@ -1248,7 +1248,7 @@ namespace chaiscript {
             }
 
             template<typename Type>
-            auto do_call_impl(const Class* o) const {
+            Boxed_Value do_call_impl(const Class* o) const {
                 if constexpr (std::is_pointer<Type>::value) {
                     return detail::Handle_Return<const Type>::handle(o->*m_attr);
                 }

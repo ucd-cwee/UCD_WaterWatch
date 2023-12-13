@@ -444,7 +444,6 @@ namespace chaiscript {
 
     } // namespace exception
 
-#if 1
     class ReturnType_Base {
     public:
         ReturnType_Base() noexcept {};
@@ -567,106 +566,6 @@ namespace chaiscript {
         };
     };
 
-#else
-    class ReturnType {
-    public:
-        class ReturnTypeImpl {
-        public:
-            ReturnTypeImpl() noexcept : deterministic(false), type(), source(AST_Node_Type::Noop) {};
-            ReturnTypeImpl(Type_Info const& p_type, AST_Node_Type const& p_source, bool p_deterministic) noexcept : deterministic(p_deterministic), type(p_type), source(p_source) {};
-
-            bool            deterministic = false; // set to finished to prevent this from changing
-            Type_Info       type;
-            AST_Node_Type   source;
-        };
-
-        class ReturnTypeRef : public ReturnTypeImpl {
-        public:
-            bool reference = false;
-            chaiscript::shared_ptr< ReturnTypeImpl > returnType;
-
-            ReturnTypeRef() noexcept : reference(false), returnType(chaiscript::make_shared<ReturnTypeImpl>()) {};
-            ReturnTypeRef(chaiscript::shared_ptr< ReturnTypeImpl > forward) noexcept : reference(true), returnType(forward) {};
-            ReturnTypeRef(ReturnTypeImpl set) noexcept : reference(false), returnType(chaiscript::make_shared<ReturnTypeImpl>(set)) {};
-        };
-
-    protected:
-        chaiscript::shared_ptr< ReturnTypeRef > returnType;
-    public:
-        ReturnType(Type_Info const& type, AST_Node_Type const& source, bool deterministic) noexcept : returnType(chaiscript::make_shared<ReturnTypeRef>(ReturnTypeImpl(type, source, deterministic))) {};
-        ReturnType() noexcept : returnType(chaiscript::make_shared<ReturnTypeRef>()) {};
-        ReturnType(ReturnType const& other) noexcept : returnType(other.returnType) {};
-        ReturnType& operator=(ReturnType const& other) noexcept {
-            if (!returnType->returnType->deterministic) {
-                if (returnType->reference) {
-                    Type() = other.Type();
-                    Source() = other.Source();
-                    Deterministic() = other.Deterministic();
-                }
-                else {
-                    return ForwardRef(other);
-                }
-            }
-
-            //if (!returnType->returnType->deterministic) {
-            //    Type() = other.Type();
-            //    Source() = other.Source();
-            //    Deterministic() = other.Deterministic();
-            //}
-            
-            //if (returnType->reference && !returnType->returnType->deterministic) {
-            //    // set the "shared source"
-            //    // *returnType->returnType = *other.returnType->returnType;
-            //    Type() = other.Type();
-            //    Source() = other.Source();
-            //    Deterministic() = other.Deterministic();
-            //}
-            //else if (!returnType->reference && !returnType->returnType->deterministic) {
-            //    Type() = other.Type();
-            //    Source() = other.Source();
-            //    Deterministic() = other.Deterministic();
-            //}
-            return *this;
-        };
-        ReturnType& ForwardRef(ReturnType const& other) {
-            if (!Deterministic()) {
-                if (returnType->reference) {
-                    Type() = other.Type();
-                    Source() = other.Source();
-                    Deterministic() = other.Deterministic();
-                    returnType->returnType = other.returnType->returnType;
-                    returnType->reference = true;
-                }
-                else {
-                    returnType->returnType = other.returnType->returnType;
-                    returnType->reference = true;
-                }
-
-
-                returnType->returnType = other.returnType->returnType;
-                returnType->reference = true;
-                //if (other.returnType->reference) {
-                //    returnType->returnType = other.returnType->returnType;
-                //    returnType->reference = true;
-                //}
-                //else {
-                //    returnType = chaiscript::make_shared<ReturnTypeRef>(other.returnType->returnType);
-                //}
-            }
-            return *this;
-        };
-
-        Type_Info& Type() const noexcept {
-            return returnType->returnType->type;
-        };
-        AST_Node_Type& Source() const noexcept {
-            return returnType->returnType->source;
-        };
-        bool& Deterministic() const noexcept {
-            return returnType->returnType->deterministic;
-        };
-    };
-#endif
     /// \brief Struct that doubles as both a parser ast_node and an AST node.
     struct AST_Node {
     public:
@@ -711,7 +610,17 @@ namespace chaiscript {
 
         static bool get_bool_condition(const Boxed_Value& t_bv, const chaiscript::detail::Dispatch_State& t_ss) {
             try {
-                return t_ss->boxed_cast<bool>(t_bv);
+                if (t_bv.is_type(chaiscript::user_type<bool>())) {
+                    return t_ss->boxed_cast<bool>(t_bv);
+                } else if (t_bv.is_type(chaiscript::user_type<int>())) {
+                    return t_ss->boxed_cast<int>(t_bv);
+                } else if (t_bv.is_type(chaiscript::user_type<float>())) {
+                    return t_ss->boxed_cast<float>(t_bv);
+                } else if (t_bv.is_type(chaiscript::user_type<double>())) {
+                    return t_ss->boxed_cast<double>(t_bv);
+                } else {
+                    return t_ss->boxed_cast<bool>(t_bv);
+                }
             }
             catch (const exception::bad_boxed_cast&) {
                 throw exception::eval_error("Condition not boolean");

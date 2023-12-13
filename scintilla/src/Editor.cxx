@@ -4852,9 +4852,12 @@ void Editor::SetHoverIndicatorPosition(Sci::Position position) {
 		return;
 	if (position != Sci::invalidPosition) {
 		for (const IDecoration *deco : pdoc->decorations->View()) {
-			if (vs.indicators[deco->Indicator()].IsDynamic()) {
-				if (pdoc->decorations->ValueAt(deco->Indicator(), position)) {
-					hoverIndicatorPos = position;
+			if (deco) {
+				auto index = deco->Indicator();
+				if (vs.indicators.size() > index && vs.indicators[index].IsDynamic()) {
+					if (pdoc->decorations->ValueAt(deco->Indicator(), position)) {
+						hoverIndicatorPos = position;
+					}
 				}
 			}
 		}

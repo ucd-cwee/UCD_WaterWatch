@@ -56,6 +56,17 @@ public class MapLayer_Interop : global::System.IDisposable {
     }
   }
 
+  public map_int_polygon polygons {
+    set {
+      ConvPINVOKE.MapLayer_Interop_polygons_set(swigCPtr, map_int_polygon.getCPtr(value));
+    } 
+    get {
+      global::System.IntPtr cPtr = ConvPINVOKE.MapLayer_Interop_polygons_get(swigCPtr);
+      map_int_polygon ret = (cPtr == global::System.IntPtr.Zero) ? null : new map_int_polygon(cPtr, false);
+      return ret;
+    } 
+  }
+
   public map_int_polyline polylines {
     set {
       ConvPINVOKE.MapLayer_Interop_polylines_set(swigCPtr, map_int_polyline.getCPtr(value));

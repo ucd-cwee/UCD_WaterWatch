@@ -651,6 +651,23 @@ MapPolyline_Interop ScriptObject::Cast_MapPolyline() {
 	}
 	return out;
 };
+MapPolygon_Interop ScriptObject::Cast_MapPolygon() {
+	cweeSharedPtr<chaiscript::Boxed_Value> boxed(boxedvalue, [](void* p) { return static_cast<chaiscript::Boxed_Value*>(p); });
+	MapPolygon_Interop out;
+	AUTO val = chaiscript::boxed_cast<chaiscript::UI_MapPolygon*>(*boxed);
+	if (val) {
+		out.color.R = val->color.R;
+		out.color.G = val->color.G;
+		out.color.B = val->color.B;
+		out.color.A = val->color.A;
+		out.thickness = val->thickness;
+		out.dashed = val->dashed;
+
+		out.coordinates.reserve(val->coordinates.size() + 1);
+		for (auto& x : val->coordinates) { out.coordinates.push_back(Pair<double, double>(x.first, x.second)); }
+	}
+	return out;
+};
 MapLayer_Interop ScriptObject::Cast_MapLayer() {
 	cweeSharedPtr<chaiscript::Boxed_Value> boxed(boxedvalue, [](void* p) { return static_cast<chaiscript::Boxed_Value*>(p); });
 	MapLayer_Interop out2;
@@ -686,6 +703,20 @@ MapLayer_Interop ScriptObject::Cast_MapLayer() {
 					out.dashed = val->dashed;
 					out.coordinates.reserve(val->coordinates.size() + 1);
 					for (auto& x : val->coordinates) { out.coordinates.push_back(Pair<double, double>(x.first, x.second)); }					
+				}
+			}
+			else if (bv.is_type(chaiscript::user_type<chaiscript::UI_MapPolygon>())) {
+				AUTO val = chaiscript::boxed_cast<chaiscript::UI_MapPolygon*>(bv);
+				if (val) {
+					MapPolygon_Interop& out = out2.polygons[i];
+					out.color.R = val->color.R;
+					out.color.G = val->color.G;
+					out.color.B = val->color.B;
+					out.color.A = val->color.A;
+					out.thickness = val->thickness;
+					out.dashed = val->dashed;
+					out.coordinates.reserve(val->coordinates.size() + 1);
+					for (auto& x : val->coordinates) { out.coordinates.push_back(Pair<double, double>(x.first, x.second)); }
 				}
 			}
 		}
@@ -1490,6 +1521,25 @@ MapPolyline_Interop ScriptEngine::Cast_MapPolyline(std::string command) {
 	}
 	return out;
 };
+MapPolygon_Interop ScriptEngine::Cast_MapPolygon(std::string command) {
+	cweeSharedPtr<chaiscript::WaterWatch_ChaiScript> engine(ptr, [](void* p) { return static_cast<chaiscript::WaterWatch_ChaiScript*>(p); });
+
+	AUTO bv = engine->eval(command.c_str(), chaiscript::Exception_Handler());
+	MapPolygon_Interop out;
+	AUTO val = chaiscript::boxed_cast<chaiscript::UI_MapPolygon*>(bv);
+	if (val) {
+		out.color.R = val->color.R;
+		out.color.G = val->color.G;
+		out.color.B = val->color.B;
+		out.color.A = val->color.A;
+		out.thickness = val->thickness;
+		out.dashed = val->dashed;
+
+		out.coordinates.reserve(val->coordinates.size() + 1);
+		for (auto& x : val->coordinates) { out.coordinates.push_back(Pair<double, double>(x.first, x.second)); }
+	}
+	return out;
+};
 MapBackground_Interop ScriptEngine::Cast_MapBackground(std::string command) {
 	cweeSharedPtr<chaiscript::WaterWatch_ChaiScript> engine(ptr, [](void* p) { return static_cast<chaiscript::WaterWatch_ChaiScript*>(p); });
 
@@ -1540,6 +1590,20 @@ MapLayer_Interop ScriptEngine::Cast_MapLayer(std::string command) {
 				AUTO val = chaiscript::boxed_cast<chaiscript::UI_MapPolyline*>(bv);
 				if (val) {
 					MapPolyline_Interop& out = out2.polylines[i];
+					out.color.R = val->color.R;
+					out.color.G = val->color.G;
+					out.color.B = val->color.B;
+					out.color.A = val->color.A;
+					out.thickness = val->thickness;
+					out.dashed = val->dashed;
+					out.coordinates.reserve(val->coordinates.size() + 1);
+					for (auto& x : val->coordinates) { out.coordinates.push_back(Pair<double, double>(x.first, x.second)); }
+				}
+			}
+			else if (bv.is_type(chaiscript::user_type<chaiscript::UI_MapPolygon>())) {
+				AUTO val = chaiscript::boxed_cast<chaiscript::UI_MapPolygon*>(bv);
+				if (val) {
+					MapPolygon_Interop& out = out2.polygons[i];
 					out.color.R = val->color.R;
 					out.color.G = val->color.G;
 					out.color.B = val->color.B;

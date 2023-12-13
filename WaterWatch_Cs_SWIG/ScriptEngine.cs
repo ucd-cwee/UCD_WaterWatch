@@ -129,6 +129,12 @@ public class ScriptEngine : global::System.IDisposable {
     return ret;
   }
 
+  public MapPolygon_Interop Cast_MapPolygon(string command) {
+    MapPolygon_Interop ret = new MapPolygon_Interop(ConvPINVOKE.ScriptEngine_Cast_MapPolygon(swigCPtr, command), true);
+    if (ConvPINVOKE.SWIGPendingException.Pending) throw ConvPINVOKE.SWIGPendingException.Retrieve();
+    return ret;
+  }
+
   public MapBackground_Interop Cast_MapBackground(string command) {
     MapBackground_Interop ret = new MapBackground_Interop(ConvPINVOKE.ScriptEngine_Cast_MapBackground(swigCPtr, command), true);
     if (ConvPINVOKE.SWIGPendingException.Pending) throw ConvPINVOKE.SWIGPendingException.Retrieve();

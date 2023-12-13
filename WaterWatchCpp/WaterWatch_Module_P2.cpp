@@ -587,7 +587,12 @@ namespace chaiscript {
             if (1) {
                 class RTreeContainer {
                 public:
-                    static vec2d GetCoordinates(RTreeContainer const& o) { return o.coordinates; };
+                    static cweeBoundary GetCoordinates(RTreeContainer const& o) {
+                        cweeBoundary out; 
+                        out.topRight = o.coordinates; 
+                        out.bottomLeft = o.coordinates; 
+                        return out;
+                    };
 
                     vec2d coordinates;
                     chaiscript::Boxed_Value data;
@@ -603,7 +608,7 @@ namespace chaiscript {
                     bool operator!=(RTreeContainer const& b) { return !operator==(b); };
                 };
                 
-                using RTreeType = cweeRTree< RTreeContainer, RTreeContainer::GetCoordinates>;
+                using RTreeType = RTree< RTreeContainer, RTreeContainer::GetCoordinates>;
 
                 lib->add(chaiscript::user_type<RTreeType>(), "RTree");
                 lib->add(chaiscript::constructor<RTreeType()>(), "RTree");
@@ -615,19 +620,22 @@ namespace chaiscript {
                         return o.data.get_ptr() == t.get_ptr();
                     });
                     if (foundObj) {
-                        obj.RemoveObject(foundObj);
+                        obj.Remove(foundObj);
                     }                   
                 };
 
                 lib->AddFunction(, Add, ->void ,
-                    RTreeContainer c; c.coordinates = vec2d(longitude, latitude); c.data = t; obj.Add(c);
+                    RTreeContainer c; 
+                    c.coordinates = vec2d(longitude, latitude); 
+                    c.data = t; 
+                    obj.Add(c);
                 , RTreeType& obj, chaiscript::Boxed_Value const& t, double longitude, double latitude);
                 lib->AddFunction(Remove_From_RTree, Remove,->void ,
                     Remove_From_RTree(obj, t);
                 , RTreeType& obj, chaiscript::Boxed_Value const& t);
 
 
-                AUTO Boundary_To_Layer = [](RTreeType::cweeBoundary& obj, cweeSharedPtr< RTreeContainer> p)-> UI_MapLayer {
+                AUTO Boundary_To_Layer = [](cweeBoundary& obj, cweeSharedPtr< RTreeContainer> p)-> UI_MapLayer {
                     UI_MapLayer out;
                     UI_Color col(cweeRandomFloat(25, 230), cweeRandomFloat(25, 230), cweeRandomFloat(25, 230), 255);
 
@@ -681,11 +689,11 @@ namespace chaiscript {
                 AUTO RTreeToMap = [Boundary_To_Layer](RTreeType& obj) {
                     UI_Map out;
                     {
-                        AUTO root = obj.GetRoot();
+                        auto* root = obj.GetRoot();
                         while (root) {
-                            out.Layers.push_back(chaiscript::var(Boundary_To_Layer(root->boundary, root->object)));
+                            out.Layers.push_back(chaiscript::var(Boundary_To_Layer(root->bound, root->object)));
                             root = RTreeType::GetNext(root);
-                            // if (root == obj.GetRoot()) break;
+                            if (root == obj.GetRoot()) break;
                         }
                     }
                     return out;
@@ -695,13 +703,13 @@ namespace chaiscript {
                     return RTreeToMap(obj);
                 }, RTreeType& obj);
 
-                lib->add(chaiscript::user_type<RTreeType::cweeBoundary>(), "Boundary");
-                lib->add(chaiscript::constructor<RTreeType::cweeBoundary()>(), "Boundary");
-                lib->add(chaiscript::constructor<RTreeType::cweeBoundary(const RTreeType::cweeBoundary&)>(), "Boundary");
-                lib->add(chaiscript::fun([](RTreeType::cweeBoundary& a, const RTreeType::cweeBoundary& b)->RTreeType::cweeBoundary& { a = b; return a; }), "=");
-                lib->AddFunction(, topRight, ->vec2d& , return obj.topRight; , RTreeType::cweeBoundary& obj);
-                lib->AddFunction(, bottomLeft, ->vec2d& , return obj.bottomLeft;, RTreeType::cweeBoundary& obj);
-                lib->AddFunction(Boundary_To_Layer, UI_MapLayer, -> UI_MapLayer, return Boundary_To_Layer(obj, nullptr), RTreeType::cweeBoundary& obj);
+                lib->add(chaiscript::user_type<cweeBoundary>(), "Boundary");
+                lib->add(chaiscript::constructor<cweeBoundary()>(), "Boundary");
+                lib->add(chaiscript::constructor<cweeBoundary(const cweeBoundary&)>(), "Boundary");
+                lib->add(chaiscript::fun([](cweeBoundary& a, const cweeBoundary& b)->cweeBoundary& { a = b; return a; }), "=");
+                lib->AddFunction(, topRight, ->vec2d& , return obj.topRight; , cweeBoundary& obj);
+                lib->AddFunction(, bottomLeft, ->vec2d& , return obj.bottomLeft;, cweeBoundary& obj);
+                lib->AddFunction(Boundary_To_Layer, UI_MapLayer, -> UI_MapLayer, return Boundary_To_Layer(obj, nullptr), cweeBoundary& obj);
             }
 
             // GDAL

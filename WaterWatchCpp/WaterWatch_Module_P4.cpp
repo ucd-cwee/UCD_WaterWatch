@@ -566,7 +566,7 @@ namespace chaiscript {
 						    }
 					    }
 				    }
-				    return out;
+				    out;
 			    }
 			    def GetAllTypes(){ 
 				    var& out = Map();
@@ -577,23 +577,23 @@ namespace chaiscript {
 						    }
 					    }
 				    }
-				    return out;
+				    out;
 			    }
 			    def Parse(string command){
-				    return parse(command).ListNodes();
+				    parse(command).ListNodes();
 			    };
 			    def DoParse(cweeStr command, cweeStr filename){
-				    return ListNodes(parse(command, filename));
+				    ListNodes(parse(command, filename));
 			    };
                 def GetScriptIds(cweeStr code){
-                    Vector out;
+                    Map out;
                     for (x : Parse(code)){
 	                    var& t := x["node"];
 	                    if (t.identifier == "Id" && t.text.to_string != ""){
-		                    out.push_back(t.text.to_string);
+		                    out[t.text.to_string] ?= 0;
 	                    }
                     }
-                    out;
+                    out.keys;
                 };
 			    def Functions(){ 
 				    var& out = Map();

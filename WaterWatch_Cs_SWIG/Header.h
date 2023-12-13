@@ -237,6 +237,13 @@ public:
     bool dashed;
     std::vector<Pair<double, double>> coordinates;
 };
+class MapPolygon_Interop {
+public:
+    Color_Interop color;
+    double thickness;
+    bool dashed;
+    std::vector<Pair<double, double>> coordinates;
+};
 class MapBackground_Interop {
 public:
     bool highQuality;
@@ -251,6 +258,7 @@ public:
 };
 class MapLayer_Interop {
 public:
+    std::map<int, MapPolygon_Interop> polygons; // childIndex : lineDef
     std::map<int, MapPolyline_Interop> polylines; // childIndex : lineDef
     std::map<int, MapIcon_Interop> icons; // childIndex : iconDef
 };
@@ -264,6 +272,7 @@ public:
     Color_Interop Cast_Color();
     MapIcon_Interop Cast_MapIcon();
     MapPolyline_Interop Cast_MapPolyline();
+    MapPolygon_Interop Cast_MapPolygon();
     MapLayer_Interop Cast_MapLayer();
 
 private:
@@ -288,6 +297,7 @@ public:
     Color_Interop Cast_Color(std::string command);
     MapIcon_Interop Cast_MapIcon(std::string command);
     MapPolyline_Interop Cast_MapPolyline(std::string command);
+    MapPolygon_Interop Cast_MapPolygon(std::string command);
     MapBackground_Interop Cast_MapBackground(std::string command);
     MapLayer_Interop Cast_MapLayer(std::string command);
     std::vector<float> Cast_VectorFloats(std::string command);
