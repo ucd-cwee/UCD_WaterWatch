@@ -29,7 +29,6 @@ to maintain a single distribution point for the source code.
 #include "AlgLibWrapper.h"
 #include "odbc.h"
 #include "RTree.h"
-#include "../../GDAL/GDAL.h"
 
 namespace chaiscript {
     namespace WaterWatch_Lib {
@@ -633,6 +632,23 @@ namespace chaiscript {
                 lib->AddFunction(Remove_From_RTree, Remove,->void ,
                     Remove_From_RTree(obj, t);
                 , RTreeType& obj, chaiscript::Boxed_Value const& t);
+                lib->AddFunction(, Near, ,
+                    chaiscript::Boxed_Value out;
+                    auto ptr_list = obj.Near(t, 1);
+                    if (ptr_list.Num() > 0 && ptr_list[0]->object) {
+                        out = ptr_list[0]->object->data;
+                    }
+                    return out;
+                , RTreeType& obj, cweeBoundary const& t);
+                lib->AddFunction(, Near, ,
+                    std::vector<chaiscript::Boxed_Value> out;
+                    for (auto& x : obj.Near(t, numNearest)) {
+                        if (x && x->object) {
+                            out.push_back(x->object->data);
+                        }
+                    }
+                    return out;
+                , RTreeType& obj, cweeBoundary const& t, int numNearest);
 
 
                 AUTO Boundary_To_Layer = [](cweeBoundary& obj, cweeSharedPtr< RTreeContainer> p)-> UI_MapLayer {
@@ -690,19 +706,6 @@ namespace chaiscript {
                 lib->AddFunction(, topRight, ->vec2d& , return obj.topRight; , cweeBoundary& obj);
                 lib->AddFunction(, bottomLeft, ->vec2d& , return obj.bottomLeft;, cweeBoundary& obj);
                 lib->AddFunction(Boundary_To_Layer, UI_MapLayer, -> UI_MapLayer, return Boundary_To_Layer(obj, nullptr), cweeBoundary& obj);
-            }
-
-            // GDAL
-            if (1) {
-                AUTO TestGDAL = [](cweeStr const& filePath) {
-                    return gdal_data->TestGDAL(filePath.c_str());
-                };
-
-                lib->AddFunction(TestGDAL, TestGDAL, ,
-                    return TestGDAL(filePath);
-                , cweeStr const& filePath);
-
-
             }
 
             return lib;

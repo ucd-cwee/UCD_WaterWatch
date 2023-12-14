@@ -1559,5 +1559,8 @@ public:
 
         return out;
     };
-
+    void Clear() {
+        Diagram = nullptr;
+        CoordinateData = nullptr;
+    };
 };

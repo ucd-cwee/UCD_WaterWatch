@@ -402,14 +402,26 @@ public:
 	static bool Contains(cweeBoundary const& DoesThis, cweeBoundary const& ContainThis) {
 		return (DoesThis.topRight >= ContainThis.topRight) && (DoesThis.bottomLeft <= ContainThis.bottomLeft);
 	};
-	static bool Overlaps(cweeBoundary const& DoesThis, cweeBoundary const& OverlapThis) {
-		// we overlap if we contain any of the corners, OR if the line connecting those corners lie inside. 
-		return ObjectsIntersect(DoesThis, OverlapThis);
+	static bool Overlaps(cweeBoundary const& a, cweeBoundary const& b) {
+		cweeList<vec2d> a_list, b_list;
+		
+		a_list.Append(a.topRight);
+		a_list.Append(vec2d(a.topRight.x, a.bottomLeft.y));
+		a_list.Append(a.bottomLeft);
+		a_list.Append(vec2d(a.bottomLeft.x, a.topRight.y));
+		a_list.Append(a.topRight);
+		b_list.Append(b.topRight);
+		b_list.Append(vec2d(b.topRight.x, b.bottomLeft.y));
+		b_list.Append(b.bottomLeft);
+		b_list.Append(vec2d(b.bottomLeft.x, b.topRight.y));
+		b_list.Append(b.topRight);
+
+		if (a.Contains(b) || b.Contains(a)) return true;
+		else return Overlaps(a_list, b_list);
 	};
 	static cwee_units::foot_t Distance(cweeBoundary const& a, cweeBoundary const& b) {
 		cweeList<vec2d> a_list, b_list;
-		if (Overlaps(a, b)) return 0;
-		else {			
+		{			
 			a_list.Append(a.topRight);
 			a_list.Append(vec2d(a.topRight.x, a.bottomLeft.y));
 			a_list.Append(a.bottomLeft);
@@ -421,7 +433,9 @@ public:
 			b_list.Append(vec2d(b.bottomLeft.x, b.topRight.y));
 			b_list.Append(b.topRight);
 
-			return Distance(a_list, b_list);
+			if (a.Contains(b) || b.Contains(a)) return cwee_units::foot_t(0);
+			else if (Overlaps(a_list, b_list)) return cwee_units::foot_t(0);
+			else return Distance(a_list, b_list);
 		}
 	};
 
@@ -438,53 +452,6 @@ public:
 		return Distance(*this, a);
 	};
 
-private:
-	static int WhichSide(const cweeBoundary& C, const vec2d& D, const vec2d& V)
-	{
-		int i; float t;
-		// C vertices are projected to the form V+t*D.
-		// Return value is +1 if all t > 0, -1 if all t < 0, 0 otherwise, in
-		// which case the line splits the polygon.
-		int positive = 0, negative = 0;
-		for (i = 0; i < 2; i++)
-		{
-			t = D.Dot(C[i] - V);
-			if (t > 0) positive++; else if (t < 0) negative++;
-			if (positive && negative) return 0;
-		}
-		return (positive ? +1 : -1);
-	};
-	static bool ObjectsIntersect(const cweeBoundary& C0, const cweeBoundary& C1)
-	{
-		int i0, i1;
-		vec2d E, D;
-
-		// Test edges of C0 for separation. Because of the counterclockwise ordering,
-		// the projection interval for C0 is [m,0] where m <= 0. Only try to determine
-		// if C1 is on the ‘positive’ side of the line.
-		for (i0 = 0, i1 = 2 - 1; i0 < 2; i1 = i0, i0++)
-		{
-			E = (C0[i0] - C0[i1]); // or precompute edges if desired
-			D = vec2d(E.y, -E.x);
-			if (WhichSide(C1, D, C0[i0]) > 0)
-			{ // C1 is entirely on ‘positive’ side of line C0.V(i0)+t*D
-				return false;
-			}
-		}
-		// Test edges of C1 for separation. Because of the counterclockwise ordering,
-		// the projection interval for C1 is [m,0] where m <= 0. Only try to determine
-		// if C0 is on the ‘positive’ side of the line.
-		for (i0 = 0, i1 = 2 - 1; i0 < 2; i1 = i0, i0++)
-		{
-			E = (C1[i0] - C1[i1]); // or precompute edges if desired
-			D = vec2d(E.y, -E.x);
-			if (WhichSide(C0, D, C1[i0]) > 0)
-			{ // C0 is entirely on ‘positive’ side of line C1.V(i0)+t*D
-				return false;
-			}
-		}
-		return true;
-	};
 };
 
 template <class objType, cweeBoundary(*coordinateLookupFunctor)(objType const&)>
@@ -559,13 +526,10 @@ public:
 	~RTree() { nodeAllocator.Clear(); };
 	
 	static cweeList<vec2d> kmeans(int k, std::vector<vec2d> const& data) {
-		int m = data.size();
-		int n = 2;
-		int i, j, l;
+		int m = data.size(), n = 2, i, j, l, label;
 		double min_dist, dist;
 		bool converged;
-		int label;
-		std::vector<vec2d> centers(k, vec2d());
+		cweeList<vec2d> centers; centers.SetNum(k);
 		std::vector<int> labels(m);
 		std::vector<std::vector<double>> new_centers(k, std::vector<double>(n));
 		std::vector<int> counts(k);
@@ -610,10 +574,7 @@ public:
 				break;
 			}
 		}
-
-		cweeList<vec2d> out;
-		out = centers;
-		return out;
+		return centers;
 	};
 	static cweeList< cweeList<cweeSharedPtr<objType>> > Cluster(int numClusters, cweeList<cweeSharedPtr<objType>> const& objs) {
 		cweeList< cweeList<cweeSharedPtr<objType>> > out;
@@ -653,14 +614,14 @@ public:
 			}
 			else {
 				auto voronoi{ Voronoi(newCenters) };
+				auto cells = voronoi.GetCells();
+				voronoi.Clear();
 				int cellN = 0;
-				for (auto& cell : voronoi.GetCells()) {
-					cweeList<cweeSharedPtr<objType>> cellChildren;
-
+				for (auto& cell : cells) {
+					cweeList<cweeSharedPtr<objType>>& cellChildren = out.Alloc();
 					for (auto& x : objs) {
 						if (x) {
-							cweeBoundary bound = coordinateLookupFunctor(*x);
-							if (cell.overlaps(bound.Center())) {
+							if (cell.overlaps(coordinateLookupFunctor(*x).Center())) {
 								cellChildren.Append(x);
 							}
 						}
@@ -668,8 +629,7 @@ public:
 							throw(std::runtime_error("RTree object was empty."));
 						}
 					}
-
-					out.Append(cellChildren);
+					cell.Clear();
 				}
 			}
 		}
@@ -677,6 +637,7 @@ public:
 	};
 
 	TreeNode* CreateNode(TreeNode* parent, TreeNode* node, cweeList<cweeSharedPtr<objType>> const& objs) {
+		int index;
 		if (node && objs.Num() > 0) {
 			if (objs.Num() == 1) {
 				node->object = objs[0];
@@ -694,8 +655,9 @@ public:
 			else {
 				node->parent = parent;
 				for (auto& cluster : Cluster(10, objs)) {					
-					int index = node->children.Num();
+					index = node->children.Num();
 					node->AddChild(CreateNode(node, nodeAllocator.Alloc(), cluster))->parentsChildIndex = index;
+					cluster.Clear();
 				}
 			}
 		}
@@ -785,18 +747,19 @@ public:
 				}
 			}
 			else {
-				search = parent;
+				search = search->parent;
 			}
 		}
 		return out;
 	};
 	
-	static TreeNode* NearestObject(TreeNode* search, cweeBoundary const& point, cwee_units::foot_t& nearest_distance) {
-		if (search) {
+	static TreeNode* NearestObject(TreeNode* &best, TreeNode* search, cweeBoundary const& point, cwee_units::foot_t& nearest_distance) {
+		if (nearest_distance > cwee_units::foot_t(0) && search) {
 			if (search->object) {
 				auto dist = point.Distance(search->bound);
 				if (dist < nearest_distance) {
 					nearest_distance = dist;
+					best = search;
 				}
 				else {
 					search = search->parent;
@@ -808,7 +771,7 @@ public:
 						if (child) {
 							auto dist = point.Distance(child->bound);
 							if (dist <= cwee_units::foot_t(0) || dist < nearest_distance) {
-								search = NearestObject(child, point, nearest_distance);
+								search = NearestObject(best, child, point, nearest_distance);
 							}
 						}
 					}
@@ -816,14 +779,62 @@ public:
 				else {
 					search = nullptr;
 				}
-			}
+			}			
 		}
 		return search;
 	};
 	TreeNode* NearestObject(cweeBoundary const& point) {
-		TreeNode* search = DeepestOverlappingNode(point);		
+		TreeNode* search = DeepestOverlappingNode(point);	
+		if (search->parent) {
+			search = search->parent;
+		}
 		cwee_units::foot_t nearest_distance = std::numeric_limits<cwee_units::foot_t>::max();
-		return NearestObject(search, point, nearest_distance);
+		TreeNode* best = nullptr;
+		NearestObject(best, search, point, nearest_distance);
+		return best;
+	};
+
+	static void Near(cweeCurve< TreeNode* >& sortedNodes, TreeNode* node, cweeBoundary const& point, int numNear, cwee_units::foot_t thisDistance) {
+		if (!node) return;
+
+		if (sortedNodes.Num() >= numNear) {
+			cwee_units::foot_t maxDistance = sortedNodes.TimeForIndex(numNear - 1);
+			if (thisDistance >= maxDistance) {
+				return; // no point
+			}
+		}
+
+		if (node->object) {
+			sortedNodes.AddValue(thisDistance(), node);
+		}
+
+		// sort the children by distance -- do the closest ones first, which reduces likelihood of doing unecessary work later.
+		cweeCurve< TreeNode* > sortedChildren;
+		for (auto& child : node->children) if (child) sortedChildren.AddValue(point.Distance(child->bound)(), child);					
+		for (int i = 0; i < sortedChildren.Num(); i++) {
+			cwee_units::foot_t dist = sortedChildren.knots[i].get<0>();
+			auto* child = sortedChildren.knots[i].get<1>();
+			Near(sortedNodes, child, point, numNear, dist);
+		}
+	};
+	cweeList<TreeNode*> Near(cweeBoundary const& point, int numNear = 1) {
+		cweeCurve< TreeNode* > sortedNodes; // self-sorted vector of arbitrary Y values by numeric X values
+				
+		auto* root = GetRoot();
+		if (root) {
+			Near(sortedNodes, root, point, numNear, point.Distance(root->bound));
+		}
+
+		cweeList<TreeNode*> out;
+
+		for (int i = 0; i < sortedNodes.Num() && out.Num() < numNear; i++) {
+			TreeNode* ptr = sortedNodes.ValueForIndex(i);
+			if (ptr) {
+				out.Append(ptr);
+			}
+		}
+
+		return out;
 	};
 
 	/*
