@@ -2818,23 +2818,45 @@ SWIGEXPORT void SWIGSTDCALL CSharp_delete_MapPolyline_Interop(void * jarg1) {
 }
 
 
-SWIGEXPORT void SWIGSTDCALL CSharp_MapPolygon_Interop_color_set(void * jarg1, void * jarg2) {
+SWIGEXPORT void SWIGSTDCALL CSharp_MapPolygon_Interop_fill_set(void * jarg1, void * jarg2) {
   MapPolygon_Interop *arg1 = (MapPolygon_Interop *) 0 ;
   Color_Interop *arg2 = (Color_Interop *) 0 ;
   
   arg1 = (MapPolygon_Interop *)jarg1; 
   arg2 = (Color_Interop *)jarg2; 
-  if (arg1) (arg1)->color = *arg2;
+  if (arg1) (arg1)->fill = *arg2;
 }
 
 
-SWIGEXPORT void * SWIGSTDCALL CSharp_MapPolygon_Interop_color_get(void * jarg1) {
+SWIGEXPORT void * SWIGSTDCALL CSharp_MapPolygon_Interop_fill_get(void * jarg1) {
   void * jresult ;
   MapPolygon_Interop *arg1 = (MapPolygon_Interop *) 0 ;
   Color_Interop *result = 0 ;
   
   arg1 = (MapPolygon_Interop *)jarg1; 
-  result = (Color_Interop *)& ((arg1)->color);
+  result = (Color_Interop *)& ((arg1)->fill);
+  jresult = (void *)result; 
+  return jresult;
+}
+
+
+SWIGEXPORT void SWIGSTDCALL CSharp_MapPolygon_Interop_stroke_set(void * jarg1, void * jarg2) {
+  MapPolygon_Interop *arg1 = (MapPolygon_Interop *) 0 ;
+  Color_Interop *arg2 = (Color_Interop *) 0 ;
+  
+  arg1 = (MapPolygon_Interop *)jarg1; 
+  arg2 = (Color_Interop *)jarg2; 
+  if (arg1) (arg1)->stroke = *arg2;
+}
+
+
+SWIGEXPORT void * SWIGSTDCALL CSharp_MapPolygon_Interop_stroke_get(void * jarg1) {
+  void * jresult ;
+  MapPolygon_Interop *arg1 = (MapPolygon_Interop *) 0 ;
+  Color_Interop *result = 0 ;
+  
+  arg1 = (MapPolygon_Interop *)jarg1; 
+  result = (Color_Interop *)& ((arg1)->stroke);
   jresult = (void *)result; 
   return jresult;
 }

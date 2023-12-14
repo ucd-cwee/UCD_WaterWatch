@@ -641,38 +641,16 @@ namespace chaiscript {
 
                     if (obj.bottomLeft != obj.topRight) {
                         float thickness = cweeRandomFloat(2, 5);
-                        {
-                            UI_MapPolyline line;
-                            line.thickness = thickness;
-                            line.AddPoint(obj.bottomLeft.x, obj.topRight.y);
-                            line.AddPoint(obj.topRight.x, obj.topRight.y);
-                            line.color = col;
-                            out.Children.push_back(chaiscript::var(line));
-                        }
-                        {
-                            UI_MapPolyline line;
-                            line.thickness = thickness;
-                            line.AddPoint(obj.topRight.x, obj.topRight.y);
-                            line.AddPoint(obj.topRight.x, obj.bottomLeft.y);
-                            line.color = col;
-                            out.Children.push_back(chaiscript::var(line));
-                        }
-                        {
-                            UI_MapPolyline line;
-                            line.thickness = thickness;
-                            line.AddPoint(obj.topRight.x, obj.bottomLeft.y);
-                            line.AddPoint(obj.bottomLeft.x, obj.bottomLeft.y);
-                            line.color = col;
-                            out.Children.push_back(chaiscript::var(line));
-                        }
-                        {
-                            UI_MapPolyline line;
-                            line.thickness = thickness;
-                            line.AddPoint(obj.bottomLeft.x, obj.bottomLeft.y);
-                            line.AddPoint(obj.bottomLeft.x, obj.topRight.y);
-                            line.color = col;
-                            out.Children.push_back(chaiscript::var(line));
-                        }
+                        UI_MapPolygon polygon;
+                        polygon.thickness = thickness;
+                        polygon.fill = UI_Color(0, 0, 0, 0);
+                        polygon.stroke = col;
+                        polygon.AddPoint(obj.bottomLeft.x, obj.topRight.y);
+                        polygon.AddPoint(obj.topRight.x, obj.topRight.y);
+                        polygon.AddPoint(obj.topRight.x, obj.bottomLeft.y);
+                        polygon.AddPoint(obj.bottomLeft.x, obj.bottomLeft.y);
+                        polygon.Tag = chaiscript::var(cweeBoundary(obj));
+                        out.Children.push_back(chaiscript::var((UI_MapPolygon)polygon));
                     }
                     else {
                         UI_MapIcon icon;               
@@ -680,6 +658,7 @@ namespace chaiscript {
                         icon.latitude = obj.bottomLeft.y;
                         icon.HideOnCollision = false;
                         icon.color = col;
+                        icon.Tag = chaiscript::var(cweeBoundary(obj));
                         if (p) icon.Tag = p->data;
                         out.Children.push_back(chaiscript::var(icon));
                     }
@@ -707,6 +686,7 @@ namespace chaiscript {
                 lib->add(chaiscript::constructor<cweeBoundary()>(), "Boundary");
                 lib->add(chaiscript::constructor<cweeBoundary(const cweeBoundary&)>(), "Boundary");
                 lib->add(chaiscript::fun([](cweeBoundary& a, const cweeBoundary& b)->cweeBoundary& { a = b; return a; }), "=");
+                lib->add(chaiscript::fun([](cweeBoundary const& a) -> cweeStr { return cweeStr::printf("[<%f,%f>, <%f,%f>]", a.topRight.x, a.topRight.y, a.bottomLeft.x, a.bottomLeft.y); }), "to_string");
                 lib->AddFunction(, topRight, ->vec2d& , return obj.topRight; , cweeBoundary& obj);
                 lib->AddFunction(, bottomLeft, ->vec2d& , return obj.bottomLeft;, cweeBoundary& obj);
                 lib->AddFunction(Boundary_To_Layer, UI_MapLayer, -> UI_MapLayer, return Boundary_To_Layer(obj, nullptr), cweeBoundary& obj);

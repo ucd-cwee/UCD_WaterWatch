@@ -239,7 +239,8 @@ public:
 };
 class MapPolygon_Interop {
 public:
-    Color_Interop color;
+    Color_Interop fill;
+    Color_Interop stroke;
     double thickness;
     bool dashed;
     std::vector<Pair<double, double>> coordinates;

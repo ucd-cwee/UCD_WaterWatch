@@ -25,9 +25,350 @@ to maintain a single distribution point for the source code.
 #include "InterpolatedMatrix.h"
 #include "cweeThreadedMap.h"
 #include "Voronoi.h"
-
+#include "Geocoding.h"
 
 class cweeBoundary {
+public:
+	static cwee_units::foot_t Distance(vec2d const& LongLat1, vec2d const& LongLat2) {
+		double  lat_old = LongLat1.y * cweeMath::PI / 180.0;
+		double  lat_new = LongLat2.y * cweeMath::PI / 180.0;
+		double  lat_diff = (LongLat2.y - LongLat1.y) * cweeMath::PI / 180.0;
+		double  lng_diff = (LongLat2.x - LongLat1.x) * cweeMath::PI / 180.0;
+
+		double  a = std::sin(lat_diff / 2.0) * std::sin(lat_diff / 2.0) + std::cos(lat_new) * std::cos(lat_old) * std::sin(lng_diff / 2.0) * std::sin(lng_diff / 2.0);
+		double  c = 2.0 * std::atan2(std::sqrt(a), std::sqrt(1.0 - a));
+
+		units::length::meter_t  distance = 6372797.56085 * c;
+
+		return distance;
+	};
+	static vec2d ClosestPoint(vec2d const& pointCoord, cweeList<vec2d> const& lineCoords) {
+		if (lineCoords.Num() == 0) {
+			return pointCoord;
+		}
+		else if (lineCoords.Num() == 1) {
+			return lineCoords[0];
+		}
+		else {
+			cwee_units::foot_t out = std::numeric_limits<cwee_units::foot_t>::max();
+			vec2d toReturn = lineCoords[0];
+			auto closestPointOnLineSegment = [](const vec2d& A, const vec2d& B, const vec2d& P)->vec2d {
+				// Calculate the vector AB (direction of the line segment)
+				double ABx = B[0] - A[0];
+				double ABy = B[1] - A[1];
+
+				// Calculate the vector AP (from point A to point P)
+				double APx = P[0] - A[0];
+				double APy = P[1] - A[1];
+
+				// Calculate the dot product of AB and AP
+				double dotProduct = ABx * APx + ABy * APy;
+
+				// Calculate the squared length of AB
+				double lengthABsq = ABx * ABx + ABy * ABy;
+
+				// Calculate the parameter t (projection of AP onto AB)
+				double t = dotProduct / lengthABsq;
+
+				// If t is outside the segment [0, 1], find the distance to the closest endpoint
+				if (t < 0.0) {
+					return A; // Distance to point A
+				}
+				else if (t > 1.0) {
+					return B; // Distance to point B
+				}
+
+				// Calculate the closest point on the line segment
+				double closestX = A[0] + t * ABx;
+				double closestY = A[1] + t * ABy;
+
+				return vec2d(closestX, closestY);
+			};
+			cwee_units::foot_t dist_start;
+			cwee_units::foot_t dist_end = Distance(pointCoord, lineCoords[0]);
+			cwee_units::foot_t dist_perp;
+
+			for (int i = 1; i < lineCoords.Num(); i += 1) {
+				dist_start = dist_end;
+				dist_end = Distance(pointCoord, lineCoords[i]);
+				auto closest = closestPointOnLineSegment(lineCoords[i - 1], lineCoords[i], pointCoord);
+				dist_perp = Distance(pointCoord, closest);
+
+				if (out > dist_perp) {
+					out = dist_perp;
+					toReturn = closest;
+				}
+				if (out > dist_end) {
+					out = dist_end;
+					toReturn = lineCoords[i];
+				}
+				if (out > dist_start) {
+					out = dist_start;
+					toReturn = lineCoords[i - 1];
+				}
+			}
+			return toReturn;
+		}
+	};
+	static cwee_units::foot_t Distance_Point_Line(vec2d const& pointCoord, cweeList<vec2d> const& line) {
+		cwee_units::foot_t out = std::numeric_limits<cwee_units::foot_t>::max();
+
+		auto numLinePoints = line.Num();
+
+		if (numLinePoints == 0) {
+			out = std::numeric_limits<decltype(out)>::max();
+			return out;
+		}
+		auto lineCoords0{ line[0] };
+
+		if (numLinePoints == 1) {
+			out = Distance(pointCoord, lineCoords0);
+		}
+		else {
+			auto closestPointOnLineSegment = [](const vec2d& A, const vec2d& B, const vec2d& P)->vec2d {
+				// Calculate the vector AB (direction of the line segment)
+				double ABx = B[0] - A[0];
+				double ABy = B[1] - A[1];
+
+				// Calculate the vector AP (from point A to point P)
+				double APx = P[0] - A[0];
+				double APy = P[1] - A[1];
+
+				// Calculate the dot product of AB and AP
+				double dotProduct = ABx * APx + ABy * APy;
+
+				// Calculate the squared length of AB
+				double lengthABsq = ABx * ABx + ABy * ABy;
+
+				// Calculate the parameter t (projection of AP onto AB)
+				double t = dotProduct / lengthABsq;
+
+				// If t is outside the segment [0, 1], find the distance to the closest endpoint
+				if (t < 0.0) {
+					return A; // Distance to point A
+				}
+				else if (t > 1.0) {
+					return B; // Distance to point B
+				}
+
+				// Calculate the closest point on the line segment
+				double closestX = A[0] + t * ABx;
+				double closestY = A[1] + t * ABy;
+
+				return vec2d(closestX, closestY);
+			};
+			cwee_units::foot_t dist_start;
+			cwee_units::foot_t dist_end = Distance(pointCoord, lineCoords0);
+			cwee_units::foot_t dist_perp;
+			vec2d prevPoint = lineCoords0;
+			vec2d currentPoint;
+			for (int i = 1; i < numLinePoints; i += 1) {
+				currentPoint = line[i];
+				dist_start = dist_end;
+				dist_end = Distance(pointCoord, currentPoint);
+				dist_perp = Distance(pointCoord, closestPointOnLineSegment(prevPoint, currentPoint, pointCoord));
+				out = cwee_units::math::fmin(cwee_units::math::fmin(cwee_units::math::fmin(out, dist_perp), dist_end), dist_start);
+				prevPoint = currentPoint;
+			}
+		}
+		return out;
+	};
+	static cwee_units::foot_t Distance_Point_Polygon(vec2d const& pointCoord, cweeList<vec2d> const& line) {
+		cwee_units::foot_t out = std::numeric_limits<cwee_units::foot_t>::max();
+
+		auto numLinePoints = line.Num();
+
+		if (numLinePoints == 0) {
+			out = std::numeric_limits<decltype(out)>::max();
+			return out;
+		}
+		auto lineCoords0{ line[0] };
+
+		if (numLinePoints == 1) {
+			out = Distance(pointCoord, lineCoords0);
+		}
+		else {
+			auto closestPointOnLineSegment = [](const vec2d& A, const vec2d& B, const vec2d& P)->vec2d {
+				// Calculate the vector AB (direction of the line segment)
+				double ABx = B[0] - A[0];
+				double ABy = B[1] - A[1];
+
+				// Calculate the vector AP (from point A to point P)
+				double APx = P[0] - A[0];
+				double APy = P[1] - A[1];
+
+				// Calculate the dot product of AB and AP
+				double dotProduct = ABx * APx + ABy * APy;
+
+				// Calculate the squared length of AB
+				double lengthABsq = ABx * ABx + ABy * ABy;
+
+				// Calculate the parameter t (projection of AP onto AB)
+				double t = dotProduct / lengthABsq;
+
+				// If t is outside the segment [0, 1], find the distance to the closest endpoint
+				if (t < 0.0) {
+					return A; // Distance to point A
+				}
+				else if (t > 1.0) {
+					return B; // Distance to point B
+				}
+
+				// Calculate the closest point on the line segment
+				double closestX = A[0] + t * ABx;
+				double closestY = A[1] + t * ABy;
+
+				return vec2d(closestX, closestY);
+			};
+
+			cwee_units::foot_t dist_start;
+			cwee_units::foot_t dist_end = Distance(pointCoord, lineCoords0);
+			cwee_units::foot_t dist_perp;
+			vec2d prevPoint = lineCoords0;
+			vec2d currentPoint;
+			for (int i = 1; i < numLinePoints; i += 1) {
+				currentPoint = line[i];
+				dist_start = dist_end;
+				dist_end = Distance(pointCoord, currentPoint);
+				dist_perp = Distance(pointCoord, closestPointOnLineSegment(prevPoint, currentPoint, pointCoord));
+				out = cwee_units::math::fmin(cwee_units::math::fmin(cwee_units::math::fmin(out, dist_perp), dist_end), dist_start);
+				prevPoint = currentPoint;
+			}
+		}
+		{
+			cweeList<vec2d> coords;
+			coords.SetGranularity(numLinePoints + 1);
+			for (int i = 0; i < numLinePoints; i++) {
+				coords.Append(line[i]);
+			}
+			if (cweeEng::IsPointInPolygon(coords, pointCoord)) {
+				out = cwee_units::foot_t(0);
+			}
+		}
+
+		return out;
+	};
+	static bool Overlaps(cweeList<vec2d> const& coords1, cweeList<vec2d> const& coords2) {
+		bool out{ false };
+
+		for (auto& coord : coords2) {
+			if (cweeEng::IsPointInPolygon(coords1, coord)) {
+				out = true;
+				break;
+			}
+		}
+
+		return out;
+	};
+	static cwee_units::foot_t Distance(vec2d const& pointCoord, cweeList<vec2d> const& lineCoords) {
+		cwee_units::foot_t out = std::numeric_limits<cwee_units::foot_t>::max();
+		if (lineCoords.Num() == 0) {
+			out = std::numeric_limits<decltype(out)>::max();
+		}
+		else if (lineCoords.Num() == 1) {
+			out = Distance(pointCoord, lineCoords[0]);
+		}
+		else {
+			auto closestPointOnLineSegment = [](const vec2d& A, const vec2d& B, const vec2d& P)->vec2d {
+				// Calculate the vector AB (direction of the line segment)
+				double ABx = B[0] - A[0];
+				double ABy = B[1] - A[1];
+
+				// Calculate the vector AP (from point A to point P)
+				double APx = P[0] - A[0];
+				double APy = P[1] - A[1];
+
+				// Calculate the dot product of AB and AP
+				double dotProduct = ABx * APx + ABy * APy;
+
+				// Calculate the squared length of AB
+				double lengthABsq = ABx * ABx + ABy * ABy;
+
+				// Calculate the parameter t (projection of AP onto AB)
+				double t = dotProduct / lengthABsq;
+
+				// If t is outside the segment [0, 1], find the distance to the closest endpoint
+				if (t < 0.0) {
+					return A; // Distance to point A
+				}
+				else if (t > 1.0) {
+					return B; // Distance to point B
+				}
+
+				// Calculate the closest point on the line segment
+				double closestX = A[0] + t * ABx;
+				double closestY = A[1] + t * ABy;
+
+				return vec2d(closestX, closestY);
+			};
+			cwee_units::foot_t dist_start;
+			cwee_units::foot_t dist_end = Distance(pointCoord, lineCoords[0]);
+			cwee_units::foot_t dist_perp;
+
+			for (int i = 1; i < lineCoords.Num(); i += 1) {
+				dist_start = dist_end;
+				dist_end = Distance(pointCoord, lineCoords[i]);
+				dist_perp = Distance(pointCoord, closestPointOnLineSegment(lineCoords[i - 1], lineCoords[i], pointCoord));
+				out = cwee_units::math::fmin(cwee_units::math::fmin(cwee_units::math::fmin(out, dist_perp), dist_end), dist_start);
+			}
+		}
+		return out;
+	};
+	static cwee_units::foot_t Distance(cweeList<vec2d> const& coords1, cweeList<vec2d> const& coords2) {
+		using namespace cwee_units;
+
+		cwee_units::foot_t out = std::numeric_limits<cwee_units::foot_t>::max();
+
+		if (coords1.Num() == 0 || coords2.Num() == 0) return out;
+		if (coords1.Num() == 1) return Distance(coords1[0], coords2);
+		else if (coords2.Num() == 1) return Distance(coords2[0], coords1);
+
+		// intersections of lines (Does not test if end-points overlap)
+		//			.
+		//	........*.....
+		//			.
+		//			.
+		if (true) {
+			// Return true if line segments AB and CD intersect
+			auto ccw = [](vec2d const& A, vec2d const& B, vec2d const& C) {
+				return (C.y - A.y) * (B.x - A.x) > (B.y - A.y) * (C.x - A.x);
+			};
+			auto intersect = [ccw](vec2d const& A, vec2d const& B, vec2d const& C, vec2d const& D) {
+				return ccw(A, C, D) != ccw(B, C, D) and ccw(A, B, C) != ccw(A, B, D);
+			};
+			for (int i = 1; i < coords1.Num(); i++) {
+				for (int j = 1; j < coords2.Num(); j++) {
+					if (intersect(coords1[i - 1], coords1[i], coords2[j - 1], coords2[j])) {
+						return 0_ft;
+					}
+				}
+			}
+		}
+
+		// distance between end-points.
+		//		*..........*
+		//				
+		//				*....*
+		for (int i = 0; i < coords1.Num(); i++) {
+			for (int j = 0; j < coords2.Num(); j++) {
+				if (coords1[i] == coords2[j]) { return 0_ft; }
+				out = cwee_units::math::fmin(out, Distance(coords1[i], coords2[j]));
+			}
+		}
+
+		// nearest perpendicular points for end-points
+		//		.....*......
+		//			  
+		//			 *				
+		//			.
+		//		   .
+		//        .
+		for (int i = 0; i < coords1.Num(); i++) out = cwee_units::math::fmin(out, Distance(coords1[i], coords2));
+		for (int i = 0; i < coords2.Num(); i++) out = cwee_units::math::fmin(out, Distance(coords2[i], coords1));
+
+		return out;
+	};
+
 public:
 	vec2d topRight;
 	vec2d bottomLeft;
@@ -65,6 +406,24 @@ public:
 		// we overlap if we contain any of the corners, OR if the line connecting those corners lie inside. 
 		return ObjectsIntersect(DoesThis, OverlapThis);
 	};
+	static cwee_units::foot_t Distance(cweeBoundary const& a, cweeBoundary const& b) {
+		cweeList<vec2d> a_list, b_list;
+		if (Overlaps(a, b)) return 0;
+		else {			
+			a_list.Append(a.topRight);
+			a_list.Append(vec2d(a.topRight.x, a.bottomLeft.y));
+			a_list.Append(a.bottomLeft);
+			a_list.Append(vec2d(a.bottomLeft.x, a.topRight.y));
+			a_list.Append(a.topRight);					
+			b_list.Append(b.topRight);
+			b_list.Append(vec2d(b.topRight.x, b.bottomLeft.y));
+			b_list.Append(b.bottomLeft);
+			b_list.Append(vec2d(b.bottomLeft.x, b.topRight.y));
+			b_list.Append(b.topRight);
+
+			return Distance(a_list, b_list);
+		}
+	};
 
 	bool Contains(vec2d const& a) const {
 		return Contains(*this, a);
@@ -74,6 +433,9 @@ public:
 	};
 	bool Overlaps(cweeBoundary const& a) const {
 		return Overlaps(*this, a);
+	};
+	cwee_units::foot_t Distance(cweeBoundary const& a) const {
+		return Distance(*this, a);
 	};
 
 private:
@@ -380,18 +742,103 @@ public:
 		}
 		return node;
 	};
-	cweeSharedPtr<objType> TryFindObject(std::function<bool(objType const&)> search) {
+	TreeNode* TryFindNode(std::function<bool(objType const&)> search) {
 		TreeNode* child = GetRoot();
 		child = GetNextLeaf(child);
 		while (child) {
 			if (child->object && search(*child->object)) {
-				return child->object;
+				return child;
 			}
 			child = GetNextLeaf(child);
 		}
 		return nullptr;
 	};
+	cweeSharedPtr<objType> TryFindObject(std::function<bool(objType const&)> search) {
+		TreeNode* child = TryFindNode(search);
+		if (child) return child->object;
+		return nullptr;
+	};
+	TreeNode* DeepestOverlappingNode(cweeBoundary const& point) {
+		TreeNode* search = GetRoot();
+		TreeNode* out = search;
+		while (search) {
+			if (search->bound.Contains(point)) {
+				bool continueSearch = false;
+				for (AUTO child : search->children) {
+					if (child && child->bound.Contains(point)) {
+						search = child;
+						out = search;
+						continueSearch = true;
+						break;
+					}
+				}
+				if (continueSearch) continue;
+				if (search->object) {
+					// this node must be a perfect overlap 
+					out = search;
+					break;
+				}
+				else {
+					// none of the children of this node actually overlapped with our point of interest -- that can happen.
+					out = search;
+					break;
+				}
+			}
+			else {
+				search = parent;
+			}
+		}
+		return out;
+	};
+	
+	static TreeNode* NearestObject(TreeNode* search, cweeBoundary const& point, cwee_units::foot_t& nearest_distance) {
+		if (search) {
+			if (search->object) {
+				auto dist = point.Distance(search->bound);
+				if (dist < nearest_distance) {
+					nearest_distance = dist;
+				}
+				else {
+					search = search->parent;
+				}
+			}
+			else {
+				if (search->children.Num() > 0) {
+					for (AUTO child : search->children) {
+						if (child) {
+							auto dist = point.Distance(child->bound);
+							if (dist <= cwee_units::foot_t(0) || dist < nearest_distance) {
+								search = NearestObject(child, point, nearest_distance);
+							}
+						}
+					}
+				}
+				else {
+					search = nullptr;
+				}
+			}
+		}
+		return search;
+	};
+	TreeNode* NearestObject(cweeBoundary const& point) {
+		TreeNode* search = DeepestOverlappingNode(point);		
+		cwee_units::foot_t nearest_distance = std::numeric_limits<cwee_units::foot_t>::max();
+		return NearestObject(search, point, nearest_distance);
+	};
 
+	/*
+IpAddressInformation x = GetAddress();
+var& myCoord = vec2d(x.longitude.to_number, x.latitude.to_number);
+
+RTree data;
+for (i : 0..10){
+	vec2d d = myCoord;
+	d.first += rand(-1,1);
+	d.second += rand(-1,1);
+	data.Add(d, d.first, d.second);
+}
+data.UI_Map;
+	*/
 
 };
 

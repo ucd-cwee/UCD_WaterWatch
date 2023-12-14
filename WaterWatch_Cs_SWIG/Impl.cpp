@@ -656,10 +656,16 @@ MapPolygon_Interop ScriptObject::Cast_MapPolygon() {
 	MapPolygon_Interop out;
 	AUTO val = chaiscript::boxed_cast<chaiscript::UI_MapPolygon*>(*boxed);
 	if (val) {
-		out.color.R = val->color.R;
-		out.color.G = val->color.G;
-		out.color.B = val->color.B;
-		out.color.A = val->color.A;
+		out.fill.R = val->fill.R;
+		out.fill.G = val->fill.G;
+		out.fill.B = val->fill.B;
+		out.fill.A = val->fill.A;
+
+		out.stroke.R = val->stroke.R;
+		out.stroke.G = val->stroke.G;
+		out.stroke.B = val->stroke.B;
+		out.stroke.A = val->stroke.A;
+
 		out.thickness = val->thickness;
 		out.dashed = val->dashed;
 
@@ -709,10 +715,16 @@ MapLayer_Interop ScriptObject::Cast_MapLayer() {
 				AUTO val = chaiscript::boxed_cast<chaiscript::UI_MapPolygon*>(bv);
 				if (val) {
 					MapPolygon_Interop& out = out2.polygons[i];
-					out.color.R = val->color.R;
-					out.color.G = val->color.G;
-					out.color.B = val->color.B;
-					out.color.A = val->color.A;
+					out.fill.R = val->fill.R;
+					out.fill.G = val->fill.G;
+					out.fill.B = val->fill.B;
+					out.fill.A = val->fill.A;
+
+					out.stroke.R = val->stroke.R;
+					out.stroke.G = val->stroke.G;
+					out.stroke.B = val->stroke.B;
+					out.stroke.A = val->stroke.A;
+
 					out.thickness = val->thickness;
 					out.dashed = val->dashed;
 					out.coordinates.reserve(val->coordinates.size() + 1);
@@ -1528,10 +1540,16 @@ MapPolygon_Interop ScriptEngine::Cast_MapPolygon(std::string command) {
 	MapPolygon_Interop out;
 	AUTO val = chaiscript::boxed_cast<chaiscript::UI_MapPolygon*>(bv);
 	if (val) {
-		out.color.R = val->color.R;
-		out.color.G = val->color.G;
-		out.color.B = val->color.B;
-		out.color.A = val->color.A;
+		out.fill.R = val->fill.R;
+		out.fill.G = val->fill.G;
+		out.fill.B = val->fill.B;
+		out.fill.A = val->fill.A;
+
+		out.stroke.R = val->stroke.R;
+		out.stroke.G = val->stroke.G;
+		out.stroke.B = val->stroke.B;
+		out.stroke.A = val->stroke.A;
+
 		out.thickness = val->thickness;
 		out.dashed = val->dashed;
 
@@ -1604,10 +1622,16 @@ MapLayer_Interop ScriptEngine::Cast_MapLayer(std::string command) {
 				AUTO val = chaiscript::boxed_cast<chaiscript::UI_MapPolygon*>(bv);
 				if (val) {
 					MapPolygon_Interop& out = out2.polygons[i];
-					out.color.R = val->color.R;
-					out.color.G = val->color.G;
-					out.color.B = val->color.B;
-					out.color.A = val->color.A;
+					out.fill.R = val->fill.R;
+					out.fill.G = val->fill.G;
+					out.fill.B = val->fill.B;
+					out.fill.A = val->fill.A;
+
+					out.stroke.R = val->stroke.R;
+					out.stroke.G = val->stroke.G;
+					out.stroke.B = val->stroke.B;
+					out.stroke.A = val->stroke.A;
+
 					out.thickness = val->thickness;
 					out.dashed = val->dashed;
 					out.coordinates.reserve(val->coordinates.size() + 1);

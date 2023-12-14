@@ -56,12 +56,23 @@ public class MapPolygon_Interop : global::System.IDisposable {
     }
   }
 
-  public Color_Interop color {
+  public Color_Interop fill {
     set {
-      ConvPINVOKE.MapPolygon_Interop_color_set(swigCPtr, Color_Interop.getCPtr(value));
+      ConvPINVOKE.MapPolygon_Interop_fill_set(swigCPtr, Color_Interop.getCPtr(value));
     } 
     get {
-      global::System.IntPtr cPtr = ConvPINVOKE.MapPolygon_Interop_color_get(swigCPtr);
+      global::System.IntPtr cPtr = ConvPINVOKE.MapPolygon_Interop_fill_get(swigCPtr);
+      Color_Interop ret = (cPtr == global::System.IntPtr.Zero) ? null : new Color_Interop(cPtr, false);
+      return ret;
+    } 
+  }
+
+  public Color_Interop stroke {
+    set {
+      ConvPINVOKE.MapPolygon_Interop_stroke_set(swigCPtr, Color_Interop.getCPtr(value));
+    } 
+    get {
+      global::System.IntPtr cPtr = ConvPINVOKE.MapPolygon_Interop_stroke_get(swigCPtr);
       Color_Interop ret = (cPtr == global::System.IntPtr.Zero) ? null : new Color_Interop(cPtr, false);
       return ret;
     } 

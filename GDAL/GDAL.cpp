@@ -756,6 +756,7 @@ namespace cweeGeo {
 				
 		if (numLinePoints == 0) {
 			out = std::numeric_limits<decltype(out)>::max();
+			return out;
 		}
 		auto lineCoords0{ vec2d(l_ptr->getX(0), l_ptr->getY(0)) };
 
@@ -1434,7 +1435,8 @@ namespace chaiscript {
 				case GeometryType::Polygon: {
 					UI_MapPolygon polygon; {
 						polygon.thickness = 2;
-						polygon.color.A = 128;
+						polygon.fill.A = 128;
+						polygon.stroke.A = 128;
 						for (auto& coord : geo.AllCoordinates()) {
 							polygon.AddPoint(coord.x, coord.y);
 						}
@@ -1477,7 +1479,8 @@ namespace chaiscript {
 				case GeometryType::Polygon: {
 					UI_MapPolygon polygon; {
 						polygon.thickness = 2;
-						polygon.color.A = 128;
+						polygon.fill.A = 128;
+						polygon.stroke.A = 128;
 						for (auto& coord : geo.AllCoordinates()) {
 							polygon.AddPoint(coord.x, coord.y);
 						}

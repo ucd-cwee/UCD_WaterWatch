@@ -296,11 +296,18 @@ namespace chaiscript {
         using ThisType = UI_FrameworkElement;
         static std::string	ThisTypeName() { return "UI_FrameworkElement"; };
 
+        UI_FrameworkElement() : 
+            Tasks(), UniqueName(cweeStr::hash(cweeStr::printf("%i_%i", cweeRandomInt(0, 100000), cweeRandomInt(0, 100000)))), 
+            Version(0), Opacity(-1), Width(-1), Height(-1), 
+            VerticalAlignment("Stretch"), HorizontalAlignment("Stretch"),
+            Tag(), Name(), MinWidth(-1), MinHeight(-1), MaxWidth(-1), MaxHeight(-1),
+            Margin("0,0,0,0"), OnLoaded(), OnUnloaded()
+        {};
         virtual ~UI_FrameworkElement() {};
 
         std::vector<chaiscript::Boxed_Value> Tasks;
-        int				UniqueName = cweeStr::hash(cweeStr::printf("%i_%i", cweeRandomInt(0, 100000), cweeRandomInt(0, 100000)));
-        int				Version = 0;
+        int				UniqueName;
+        int				Version;
         int				Update() { return AddTask("Update"); };
         int				AddTask(cweeStr const& task) {
             Tasks.push_back(chaiscript::Boxed_Value(std::string(task.c_str())));
@@ -312,18 +319,18 @@ namespace chaiscript {
             return out;
         };
 
-        double			Opacity = -1;
-        double 			Width = -1;
-        double 			Height = -1;
-        cweeStr 		VerticalAlignment = "Stretch";
-        cweeStr			HorizontalAlignment = "Stretch";
+        double			Opacity;
+        double 			Width;
+        double 			Height;
+        cweeStr 		VerticalAlignment;
+        cweeStr			HorizontalAlignment;
         chaiscript::Boxed_Value Tag;
         cweeStr			Name;
-        double 			MinWidth = -1;
-        double 			MinHeight = -1;
-        double 			MaxWidth = -1;
-        double 			MaxHeight = -1;
-        cweeStr 		Margin = "0,0,0,0";
+        double 			MinWidth;
+        double 			MinHeight;
+        double 			MaxWidth;
+        double 			MaxHeight;
+        cweeStr 		Margin;
         chaiscript::Boxed_Value OnLoaded; // function
         chaiscript::Boxed_Value OnUnloaded; // function
 
@@ -877,7 +884,7 @@ namespace chaiscript {
     public:
         using ThisType = UI_MapElement;
         static  std::string	ThisTypeName() { return "UI_MapElement"; };
-        UI_MapElement() {};
+        UI_MapElement() : UI_FrameworkElement() {};
         virtual ~UI_MapElement() {};
 
         static void		AppendToScriptingLanguage(Module& scriptingLanguage) {
@@ -890,23 +897,17 @@ namespace chaiscript {
         using ThisType = UI_MapIcon;
         static  std::string	ThisTypeName() { return "UI_MapIcon"; };
 
-        UI_MapIcon() {
-            IconPathGeometry = "M 0 0 ZU 0 0 100 100 50 50";
-        };
-        UI_MapIcon(double Long, double Lat) {
-            longitude = Long;
-            latitude = Lat;
-            IconPathGeometry = "M 0 0 ZU 0 0 100 100 50 50";
-        };
+        UI_MapIcon() : UI_MapElement(), color(), size(12), longitude(0), latitude(0), HideOnCollision(true), IconPathGeometry("M 0 0 ZU 0 0 100 100 50 50"), Label() {};
+        UI_MapIcon(double Long, double Lat) : UI_MapElement(), color(), size(12), longitude(Long), latitude(Lat), HideOnCollision(true), IconPathGeometry("M 0 0 ZU 0 0 100 100 50 50"), Label() {};
         virtual ~UI_MapIcon() {};
 
         UI_Color    color;
-        double      size = 12;
-        double      longitude = 0;
-        double      latitude = 0;
-        bool        HideOnCollision = true;
-        cweeStr     IconPathGeometry = "M 0 0 ZU 0 0 100 100 50 50";
-        cweeStr     Label = "";
+        double      size;
+        double      longitude;
+        double      latitude;
+        bool        HideOnCollision;
+        cweeStr     IconPathGeometry;
+        cweeStr     Label;
 
         static void		AppendToScriptingLanguage(Module& scriptingLanguage) {
             AddBasicClassTemplate(ThisType);
@@ -928,7 +929,7 @@ namespace chaiscript {
         using ThisType = UI_MapPolyline;
         static std::string	ThisTypeName() { return "UI_MapPolyline"; };
 
-        UI_MapPolyline() : coordinates(cweeThreadedList<std::pair<double, double>>()), color(UI_Color()), dashed(false), thickness(2) {};
+        UI_MapPolyline() : UI_MapElement(), coordinates(), color(), dashed(false), thickness(2) {};
         virtual ~UI_MapPolyline() {};
         void AddPoint(double X, double Y) {
             coordinates.Append(std::pair<double, double>(X, Y));
@@ -957,14 +958,15 @@ namespace chaiscript {
         using ThisType = UI_MapPolygon;
         static std::string	ThisTypeName() { return "UI_MapPolygon"; };
 
-        UI_MapPolygon() : coordinates(cweeThreadedList<std::pair<double, double>>()), color(UI_Color()), dashed(false), thickness(2) {};
+        UI_MapPolygon() : UI_MapElement(), coordinates(), fill(), stroke(), dashed(false), thickness(2) {};
         virtual ~UI_MapPolygon() {};
         void AddPoint(double X, double Y) {
             coordinates.Append(std::pair<double, double>(X, Y));
         };
 
         cweeThreadedList<std::pair<double, double>> coordinates;
-        UI_Color	color;
+        UI_Color	fill;
+        UI_Color	stroke;
         bool		dashed;
         int			thickness;
 
@@ -973,7 +975,8 @@ namespace chaiscript {
             scriptingLanguage.add(chaiscript::base_class<UI_FrameworkElement, ThisType>());
             scriptingLanguage.add(chaiscript::base_class<UI_MapElement, ThisType>());
 
-            AddMemberToScriptFromClass(ThisType, color);
+            AddMemberToScriptFromClass(ThisType, fill);
+            AddMemberToScriptFromClass(ThisType, stroke);
             AddMemberToScriptFromClass(ThisType, coordinates);
             AddMemberToScriptFromClass(ThisType, dashed);
             AddMemberToScriptFromClass(ThisType, thickness);
@@ -986,7 +989,7 @@ namespace chaiscript {
         using ThisType = UI_MapBackground;
         static std::string	ThisTypeName() { return "UI_MapBackground"; };
 
-        UI_MapBackground() : data(decltype(data)()), minColor(UI_Color()), maxColor(UI_Color()), highQuality(true) {};
+        UI_MapBackground() : UI_MapElement(), data(), minColor(), maxColor(), highQuality(true), clipToBounds(false), minValue(-cweeMath::INF), maxValue(cweeMath::INF) {};
         virtual ~UI_MapBackground() {};
         UI_Color	ColorForPosition(double X, double Y) {
             AUTO maxV = data.GetMaxValue();
@@ -999,13 +1002,15 @@ namespace chaiscript {
             }
         };
         
-        bool     highQuality = true;
-        bool     clipToBounds = false;
-        float     minValue = -cweeMath::INF;
-        float     maxValue = cweeMath::INF;
         cweeInterpolatedMatrix<float> data;
         UI_Color minColor;
         UI_Color maxColor;
+        bool     highQuality;
+        bool     clipToBounds;
+        float     minValue;
+        float     maxValue;
+        
+
 
         static void		AppendToScriptingLanguage(Module& scriptingLanguage) {
             AddBasicClassTemplate(ThisType);
@@ -1395,6 +1400,8 @@ namespace chaiscript {
     public:
         using ThisType = UI_MapLayer;
         static  std::string	ThisTypeName() { return "UI_MapLayer"; };
+        
+        UI_MapLayer() : UI_MapElement(), Children() {};
         virtual ~UI_MapLayer() {};
 
         std::vector<chaiscript::Boxed_Value> Children;
@@ -1421,6 +1428,7 @@ namespace chaiscript {
     public:
         using ThisType = UI_Map;
         static  std::string	ThisTypeName() { return "UI_Map"; };
+        UI_Map() : UI_MapElement(), Layers(), Backgrounds() {};
         virtual ~UI_Map() {};
 
         std::vector<chaiscript::Boxed_Value> Layers;

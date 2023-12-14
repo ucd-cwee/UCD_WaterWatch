@@ -1709,7 +1709,7 @@ namespace UWP_WaterWatch.Custom_Controls
                                                         var queryTask2 = res.result.QueryResult(res.additionalParams + ".Backgrounds.size()");
                                                         return queryTask2.ContinueWith(() =>
                                                         {
-                                                            if (double.TryParse(queryTask2.Result, out double numBackgrounds))
+                                                            if (int.TryParse(queryTask2.Result, out int numBackgrounds))
                                                             {
                                                                 cweeTask<SimpleMap> obj = EdmsTasks.InsertJob(() => {
                                                                     var JJ = new SimpleMap();
@@ -1765,16 +1765,19 @@ namespace UWP_WaterWatch.Custom_Controls
                                                                         }, false, true));
                                                                     }
 
-                                                                    // the backgrounds should be inserted in-order.
-                                                                    tasks.Add(new EdmsTasks.cweeTask(() => {
-                                                                        List<EdmsTasks.cweeTask> results = new List<EdmsTasks.cweeTask>();
-                                                                        for (int bgN = 0; bgN < numBackgrounds; bgN++)
+                                                                    if (numBackgrounds > 0) {
+                                                                        // the backgrounds should be inserted in-order.
+                                                                        tasks.Add(new EdmsTasks.cweeTask(() =>
                                                                         {
-                                                                            var toQuery = new SharedNodeResult() { result = res.result, additionalParams = res.additionalParams + ".Backgrounds[" + bgN.ToString() + "]" };
-                                                                            results.Add((EdmsTasks.cweeTask)(toQuery.result.Query_MapBackground(toQuery.additionalParams)));
-                                                                        }
-                                                                        return EdmsTasks.cweeTask.TrueWhenCompleted(results, results);
-                                                                    }, false, true));
+                                                                            List<EdmsTasks.cweeTask> results = new List<EdmsTasks.cweeTask>();
+                                                                            for (int bgN = 0; bgN < numBackgrounds; bgN++)
+                                                                            {
+                                                                                var toQuery = new SharedNodeResult() { result = res.result, additionalParams = res.additionalParams + ".Backgrounds[" + bgN.ToString() + "]" };
+                                                                                results.Add((EdmsTasks.cweeTask)(toQuery.result.Query_MapBackground(toQuery.additionalParams)));
+                                                                            }
+                                                                            return EdmsTasks.cweeTask.TrueWhenCompleted(results, results);
+                                                                        }, false, true));
+                                                                    }
 
                                                                     return EdmsTasks.cweeTask.InsertListAsTask(tasks, true).ContinueWith(() => {
                                                                         var x = obj.Result.vm.map;
@@ -1861,7 +1864,8 @@ namespace UWP_WaterWatch.Custom_Controls
                                                     {
                                                         var queryTag = new SharedNodeResult() { result = res.result, additionalParams = res.additionalParams + $".Children[{key}].Tag" };
 
-                                                        Color c = new Color() { R = (Byte)polygon.color.R, G = (Byte)polygon.color.G, B = (Byte)polygon.color.B, A = (Byte)polygon.color.A };
+                                                        Color fill = new Color() { R = (Byte)polygon.fill.R, G = (Byte)polygon.fill.G, B = (Byte)polygon.fill.B, A = (Byte)polygon.fill.A };
+                                                        Color stroke = new Color() { R = (Byte)polygon.stroke.R, G = (Byte)polygon.stroke.G, B = (Byte)polygon.stroke.B, A = (Byte)polygon.stroke.A };
                                                         List<Windows.Devices.Geolocation.BasicGeoposition> path = new List<Windows.Devices.Geolocation.BasicGeoposition>();
                                                         bool StrokeDashed = polygon.dashed;
                                                         double StrokeThickness = polygon.thickness;
@@ -1879,8 +1883,8 @@ namespace UWP_WaterWatch.Custom_Controls
                                                             var obj = new MapPolygon();
                                                             {
                                                                 obj.Visible = true;
-                                                                obj.FillColor = c;
-                                                                obj.StrokeColor = c;
+                                                                obj.FillColor = fill;
+                                                                obj.StrokeColor = stroke;
                                                                 obj.StrokeDashed = StrokeDashed;
                                                                 obj.StrokeThickness = StrokeThickness;
                                                                 if (path.Count > 1) {

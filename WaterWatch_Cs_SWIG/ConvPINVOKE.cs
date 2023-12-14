@@ -570,11 +570,17 @@ class ConvPINVOKE {
   [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_delete_MapPolyline_Interop")]
   public static extern void delete_MapPolyline_Interop(global::System.Runtime.InteropServices.HandleRef jarg1);
 
-  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_MapPolygon_Interop_color_set")]
-  public static extern void MapPolygon_Interop_color_set(global::System.Runtime.InteropServices.HandleRef jarg1, global::System.Runtime.InteropServices.HandleRef jarg2);
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_MapPolygon_Interop_fill_set")]
+  public static extern void MapPolygon_Interop_fill_set(global::System.Runtime.InteropServices.HandleRef jarg1, global::System.Runtime.InteropServices.HandleRef jarg2);
 
-  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_MapPolygon_Interop_color_get")]
-  public static extern global::System.IntPtr MapPolygon_Interop_color_get(global::System.Runtime.InteropServices.HandleRef jarg1);
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_MapPolygon_Interop_fill_get")]
+  public static extern global::System.IntPtr MapPolygon_Interop_fill_get(global::System.Runtime.InteropServices.HandleRef jarg1);
+
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_MapPolygon_Interop_stroke_set")]
+  public static extern void MapPolygon_Interop_stroke_set(global::System.Runtime.InteropServices.HandleRef jarg1, global::System.Runtime.InteropServices.HandleRef jarg2);
+
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_MapPolygon_Interop_stroke_get")]
+  public static extern global::System.IntPtr MapPolygon_Interop_stroke_get(global::System.Runtime.InteropServices.HandleRef jarg1);
 
   [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_MapPolygon_Interop_thickness_set")]
   public static extern void MapPolygon_Interop_thickness_set(global::System.Runtime.InteropServices.HandleRef jarg1, double jarg2);
