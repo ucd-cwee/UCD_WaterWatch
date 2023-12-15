@@ -592,6 +592,9 @@ namespace chaiscript {
                         out.bottomLeft = o.coordinates; 
                         return out;
                     };
+                    static cwee_units::foot_t GetDistance(RTreeContainer const& o, cweeBoundary const& b) {
+                        return b.Distance(GetCoordinates(o));
+                    };
 
                     vec2d coordinates;
                     chaiscript::Boxed_Value data;
@@ -607,7 +610,7 @@ namespace chaiscript {
                     bool operator!=(RTreeContainer const& b) { return !operator==(b); };
                 };
                 
-                using RTreeType = RTree< RTreeContainer, RTreeContainer::GetCoordinates>;
+                using RTreeType = RTree< RTreeContainer, RTreeContainer::GetCoordinates, RTreeContainer::GetDistance>;
 
                 lib->add(chaiscript::user_type<RTreeType>(), "RTree");
                 lib->add(chaiscript::constructor<RTreeType()>(), "RTree");

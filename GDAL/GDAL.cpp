@@ -1806,8 +1806,9 @@ namespace chaiscript {
 					}
 				}
 
-				cweeList<vec2d> cweeCenters;
-				cweeCenters = centers;
+				auto cweeCenters = make_cwee_shared<cweeList<vec2d>>();
+				cweeCenters->operator=(centers);
+				centers.clear();
 
 				auto voronoiParent { Voronoi(cweeCenters) };
 

@@ -454,7 +454,7 @@ public:
 
 };
 
-template <class objType, cweeBoundary(*coordinateLookupFunctor)(objType const&)>
+template <class objType, cweeBoundary(*coordinateLookupFunctor)(objType const&), cwee_units::foot_t(*DistanceFunction)(objType const&, cweeBoundary const&)>
 class RTree {
 public:
 	class TreeNode {
@@ -525,11 +525,16 @@ public:
 	RTree& operator=(RTree&& obj) { objects = obj.objects; ReloadTree(); return *this; };
 	~RTree() { nodeAllocator.Clear(); };
 	
-	static cweeList<vec2d> kmeans(int k, std::vector<vec2d> const& data) {
+	static cweeSharedPtr<cweeList<vec2d>> kmeans(int k, std::vector<vec2d> const& data) {
 		int m = data.size(), n = 2, i, j, l, label;
 		double min_dist, dist;
 		bool converged;
-		cweeList<vec2d> centers; centers.SetNum(k);
+
+		auto toReturn = make_cwee_shared<cweeList<vec2d>>();
+
+		cweeList<vec2d>& centers = *toReturn;
+		centers.SetNum(k);
+
 		std::vector<int> labels(m);
 		std::vector<std::vector<double>> new_centers(k, std::vector<double>(n));
 		std::vector<int> counts(k);
@@ -544,7 +549,7 @@ public:
 				for (j = 0; j < k; ++j) {
 					dist = 0;
 					for (l = 0; l < n; ++l) {
-						dist += std::pow(data[i][l] - centers[j][l], 2);
+						dist += (data[i][l] - centers[j][l]) * (data[i][l] - centers[j][l]);
 					}
 					if (dist < min_dist) {
 						min_dist = dist;
@@ -574,9 +579,14 @@ public:
 				break;
 			}
 		}
-		return centers;
+
+		return toReturn;
 	};
 	static cweeList< cweeList<cweeSharedPtr<objType>> > Cluster(int numClusters, cweeList<cweeSharedPtr<objType>> const& objs) {
+		numClusters = cweeMath::max(2, numClusters);
+		while ((objs.Num() / numClusters) > 5000) {
+			numClusters *= 2;
+		}
 		cweeList< cweeList<cweeSharedPtr<objType>> > out;
 		if (objs.Num() < numClusters) {
 			for (auto& x : objs) {
@@ -598,9 +608,8 @@ public:
 					throw(std::runtime_error("RTree object was empty."));
 				}
 			}
-
-			auto newCenters = kmeans(cweeMath::min(cweeMath::max(2, childCount / 10), numClusters), coord_data);			
-			if (newCenters.Num() <= 1) {
+			auto newCenters = kmeans(numClusters, coord_data);
+			if (newCenters->Num() <= 1) {
 				cweeList<cweeSharedPtr<objType>> cellChildren;
 				for (auto& x : objs) {
 					if (x) {
@@ -753,47 +762,6 @@ public:
 		return out;
 	};
 	
-	static TreeNode* NearestObject(TreeNode* &best, TreeNode* search, cweeBoundary const& point, cwee_units::foot_t& nearest_distance) {
-		if (nearest_distance > cwee_units::foot_t(0) && search) {
-			if (search->object) {
-				auto dist = point.Distance(search->bound);
-				if (dist < nearest_distance) {
-					nearest_distance = dist;
-					best = search;
-				}
-				else {
-					search = search->parent;
-				}
-			}
-			else {
-				if (search->children.Num() > 0) {
-					for (AUTO child : search->children) {
-						if (child) {
-							auto dist = point.Distance(child->bound);
-							if (dist <= cwee_units::foot_t(0) || dist < nearest_distance) {
-								search = NearestObject(best, child, point, nearest_distance);
-							}
-						}
-					}
-				}
-				else {
-					search = nullptr;
-				}
-			}			
-		}
-		return search;
-	};
-	TreeNode* NearestObject(cweeBoundary const& point) {
-		TreeNode* search = DeepestOverlappingNode(point);	
-		if (search->parent) {
-			search = search->parent;
-		}
-		cwee_units::foot_t nearest_distance = std::numeric_limits<cwee_units::foot_t>::max();
-		TreeNode* best = nullptr;
-		NearestObject(best, search, point, nearest_distance);
-		return best;
-	};
-
 	static void Near(cweeCurve< TreeNode* >& sortedNodes, TreeNode* node, cweeBoundary const& point, int numNear, cwee_units::foot_t thisDistance) {
 		if (!node) return;
 
@@ -810,11 +778,18 @@ public:
 
 		// sort the children by distance -- do the closest ones first, which reduces likelihood of doing unecessary work later.
 		cweeCurve< TreeNode* > sortedChildren;
-		for (auto& child : node->children) if (child) sortedChildren.AddValue(point.Distance(child->bound)(), child);					
+		for (auto& child : node->children) {
+			if (child) {
+				if (child->object) {
+					sortedChildren.AddValue(DistanceFunction(*child->object, point)(), child);
+				}
+				else {
+					sortedChildren.AddValue(point.Distance(child->bound)(), child);
+				}				
+			}
+		}
 		for (int i = 0; i < sortedChildren.Num(); i++) {
-			cwee_units::foot_t dist = sortedChildren.knots[i].get<0>();
-			auto* child = sortedChildren.knots[i].get<1>();
-			Near(sortedNodes, child, point, numNear, dist);
+			Near(sortedNodes, sortedChildren.knots[i].get<1>(), point, numNear, sortedChildren.knots[i].get<0>());
 		}
 	};
 	cweeList<TreeNode*> Near(cweeBoundary const& point, int numNear = 1) {
@@ -850,634 +825,6 @@ for (i : 0..10){
 }
 data.UI_Map;
 	*/
-
-};
-
-template <class objType, vec2d(*coordinateLookupFunctor)(objType const&)>
-class cweeRTree {
-public:
-	class TreeNode {
-	public:
-		cweeBoundary
-			boundary;					// node's basic, rectangular boundary 
-		long long
-			numChildren;				// number of children
-		cweeSharedPtr<objType> 
-			object;						// if != NULL pointer to object stored in leaf node
-		TreeNode*
-			parent;						// parent node
-		TreeNode*
-			next;						// next sibling
-		TreeNode*
-			prev;						// prev sibling
-		TreeNode*
-			firstChild;					// first child
-		TreeNode*
-			lastChild;					// last child
-
-		// Update Boundary When Any Children Change
-		void UpdateBoundary(bool selfOnly = false) {
-			cweeSharedPtr<objType> o = object;
-			if (o) {
-				// my boundary IS my object.
-				vec2d coord = GetCoordinate(*o);
-				boundary.topRight = coord;
-				boundary.bottomLeft = coord;
-			} 
-			else if (numChildren > 0) {
-				TreeNode* p = this->firstChild;
-				int count = 0;
-				while (p) {
-					if (!selfOnly) p->UpdateBoundary();
-					if (0 == count++) {
-						boundary = p->boundary;
-					} 
-					else {
-						boundary.topRight.x = ::Max(boundary.topRight.x, p->boundary.topRight.x);
-						boundary.topRight.y = ::Max(boundary.topRight.y, p->boundary.topRight.y);
-						boundary.bottomLeft.x = ::Min(boundary.bottomLeft.x, p->boundary.bottomLeft.x);
-						boundary.bottomLeft.y = ::Min(boundary.bottomLeft.y, p->boundary.bottomLeft.y);
-					}					
-					p = p->next;
-				}
-			}
-			else {
-				// empty object with no children and no object -- do nothing
-			}
-
-			// update the parents
-			{
-				TreeNode* p = parent;
-				while (p) {
-					p->UpdateBoundary(true);
-					p = p->parent;
-				}
-			}
-		};
-		
-		// Identify if a point lies within the boundary of this node
-		bool Overlaps(vec2d const& a) {
-			return boundary.Contains(a);
-		};
-
-		// Identify if a boundary overlaps with this node
-		bool Overlaps(cweeBoundary const& a) {
-			return boundary.Overlaps(a);
-		};
-
-		// Identify if a node overlaps with this node
-		bool Overlaps(TreeNode const& a) {
-			return boundary.Overlaps(a.boundary);
-		};
-
-		// Initialize a new node
-		static TreeNode* InitNode(TreeNode* p) {
-			p->boundary = cweeBoundary();
-			p->object = nullptr;
-			p->parent = nullptr;
-			p->next = nullptr;
-			p->prev = nullptr;
-			p->numChildren = 0;
-			p->firstChild = nullptr;
-			p->lastChild = nullptr;
-			return p;
-		};
-
-		static cweeList<vec2d> kmeans(int k, std::vector<vec2d> const& data) {
-			int m = data.size();
-			int n = 2;
-			int i, j, l;
-			double min_dist, dist;
-			bool converged;
-			int label;
-			std::vector<vec2d> centers(k, vec2d());
-			std::vector<int> labels(m);
-			std::vector<std::vector<double>> new_centers(k, std::vector<double>(n));
-			std::vector<int> counts(k);
-
-			for (i = 0; i < k; ++i) centers[i] = data[i];
-			while (true) {
-				for (i = 0; i < k; ++i) for (j = 0; j < n; ++j) new_centers[i][j] = 0;
-				for (i = 0; i < k; ++i) counts[i] = 0;
-				for (i = 0; i < m; ++i) {
-					min_dist = std::numeric_limits<double>::max();
-					label = -1;
-					for (j = 0; j < k; ++j) {
-						dist = 0;
-						for (l = 0; l < n; ++l) {
-							dist += std::pow(data[i][l] - centers[j][l], 2);
-						}
-						if (dist < min_dist) {
-							min_dist = dist;
-							label = j;
-						}
-					}
-					labels[i] = label;
-					counts[label]++;
-					for (l = 0; l < n; ++l) {
-						new_centers[label][l] += data[i][l];
-					}
-				}
-				converged = true;
-				for (i = 0; i < k; ++i) {
-					if (counts[i] == 0) {
-						continue;
-					}
-					for (l = 0; l < n; ++l) {
-						new_centers[i][l] /= counts[i];
-						if (new_centers[i][l] != centers[i][l]) {
-							converged = false;
-						}
-						centers[i][l] = new_centers[i][l];
-					}
-				}
-				if (converged) {
-					break;
-				}
-			}
-
-			cweeList<vec2d> out;
-			out = centers;
-			return out;
-		};
-
-		std::vector<std::vector<TreeNode*>> cluster_children() {
-			std::vector<std::vector<TreeNode*>> out(2, std::vector<TreeNode*>());
-			{
-				cweeList<vec2d> coord_data;
-				vec2d c;
-				auto* child = this->firstChild;
-				int childCount = 0;
-				while (child) { coord_data.Append(child->boundary.Center()); child = child->next; }
-
-				auto newCenters = kmeans(2, coord_data);
-				auto voronoi{ Voronoi(newCenters) };
-				int cellN = 0;
-				for (auto& cell : voronoi.GetCells()) {
-					if (cellN < out.size()) {
-						child = this->firstChild;
-						while (child) {
-							if (child->boundary.topRight == child->boundary.bottomLeft) {
-								if (cell.overlaps(child->boundary.topRight)) {
-									out[cellN].push_back(child);
-								}
-							}
-							else {
-								if (cell.overlaps(child->boundary.topRight, child->boundary.bottomLeft)) {
-									out[cellN].push_back(child);
-								}
-							}
-							child = child->next;
-						}
-						cellN++;
-					}
-				}
-			}
-			return out;
-		};
-
-	};
-
-private:
-	long long	
-		Num;
-	TreeNode*	
-		root;
-	cweeAlloc<TreeNode, 10> 
-		nodeAllocator;
-
-public: // Desired Interface
-	void AddObject(objType const& toCopy) { Add(make_cwee_shared< objType>(toCopy)); };
-	void AddObject(objType&& toMove) { Add(make_cwee_shared< objType>(std::forward<objType>(toMove))); };
-	void AddObject(cweeSharedPtr<objType> const& toCopyRef) { Add(toCopyRef); };
-	void RemoveObject(objType const& toRemove) {
-		auto* child = GetRoot();
-		child = GetNextLeaf(child);
-		while (child) {
-			if (child->object && *child->object == toRemove) {
-				RemoveNode(child);
-				break;
-			}
-			child = GetNextLeaf(child);
-		}
-	};
-	cweeSharedPtr<objType> TryFindObject(std::function<bool(objType const&)> search) {
-		auto* child = GetRoot();
-		child = GetNextLeaf(child);
-		while (child) {
-			if (child->object && search(*child->object)) {
-				return child->object;
-			}
-			child = GetNextLeaf(child);
-		}
-		return nullptr;
-	};
-
-	void RemoveObject(cweeSharedPtr<objType> const& toRemoveRef) {
-		auto* child = GetRoot();
-		child = GetNextLeaf(child);
-		while (child) {
-			if (child->object && child->object == toRemoveRef) {
-				RemoveNode(child);
-				break;
-			}
-			child = GetNextLeaf(child);
-		}
-	};
-	//cweeList<cweeSharedPtr<objType>> FindObjectsAt(vec2d const& location);
-	//cweeList<cweeSharedPtr<objType>> FindObjectsIn(vec2d const& topRight, vec2d const& bottomLeft);
-
-public:
-	cweeRTree() : Num(0), root(nullptr), nodeAllocator() { Init(); };
-	cweeRTree(cweeRTree const& obj) : Num(0), root(nullptr), nodeAllocator() { 
-		Init();
-		for (auto* p = obj.GetRoot(); p; p = GetNextLeaf(p)) {
-			if (p && p->object) {
-				Add(*p->object);
-			}
-		}
-	};
-	cweeRTree& operator=(const cweeRTree& obj) {
-		Clear(); // empty out whatever this container had 
-		
-		for (auto* p = obj.GetRoot(); p; p = GetNextLeaf(p)) {
-			if (p && p->object) {
-				Add(*p->object);
-			}
-		}
-
-		return *this;
-	};
-	~cweeRTree() {
-		Clear();
-	};
-
-public:
-	/* returns the total number of nodes in the tree; */
-	long long GetNodeCount() const {
-		return Num;
-	};
-	/* returns the root node of the tree */
-	TreeNode* GetRoot() const { return root; };
-	/* Clears the tree */
-	void Clear() {
-		nodeAllocator.Clear();
-		root = nullptr;
-		Num = 0;
-		Init();
-	};
-	/*  remove an object node from the tree */
-	void RemoveNode(TreeNode* node) {
-		if (!node) return;
-
-		TreeNode* parent, * oldRoot;
-
-		// unlink the node from it's parent
-		if (node->prev) {
-			node->prev->next = node->next;
-		}
-		else {
-			node->parent->firstChild = node->next;
-		}
-		if (node->next) {
-			node->next->prev = node->prev;
-		}
-		else {
-			node->parent->lastChild = node->prev;
-		}
-		node->parent->numChildren--;
-
-		node->parent->UpdateBoundary(true);
-
-		// make sure there are no parent nodes with a single child
-		for (parent = node->parent; parent != root && parent->numChildren <= 1; parent = parent->parent) {
-
-			if (parent->next) {
-				parent = MergeNodes(parent, parent->next);
-			}
-			else if (parent->prev) {
-				parent = MergeNodes(parent->prev, parent);
-			}
-
-			if (parent->numChildren > 10) {
-				SplitNode(parent);
-				break;
-			}
-		}
-
-		// free the node
-		FreeNode(node);
-
-		// remove the root node if it has a single internal node as child
-		if (root->numChildren == 1 && root->firstChild->object == nullptr) {
-			oldRoot = root;
-			root->firstChild->parent = nullptr;
-			root = root->firstChild;
-			FreeNode(oldRoot);
-		}
-	};
-	/* add an object to the tree */
-	TreeNode* Add(cweeSharedPtr<objType> const& object) {
-		TreeNode* node, * child, * newNode; cweeSharedPtr<objType> OBJ; long long index;
-
-		if (root == nullptr) {
-			root = AllocNode();
-		}
-
-		if (root->numChildren >= 10) {
-			newNode = AllocNode();
-			newNode->firstChild = root;
-			newNode->lastChild = root;
-			newNode->numChildren = 1;
-			root->parent = newNode;
-			SplitNode(root);
-			root = newNode;
-		}
-
-		newNode = AllocNode();
-		newNode->object = object;
-		
-		Num++;
-
-		for (node = root; node->firstChild != nullptr; node = child) {
-			// find the first child that can contain this new node
-			for (child = node->firstChild; child->next; child = child->next) {
-				if (child->boundary.Contains(newNode->boundary)) {
-					break;
-				}
-			}
-
-			if (child->object) {
-				// insert new node before child
-				if (child->prev) {
-					child->prev->next = newNode;
-				}
-				else {
-					node->firstChild = newNode;
-				}
-				newNode->prev = child->prev;
-				newNode->next = child;
-				child->prev = newNode;
-				
-				newNode->parent = node;
-				node->numChildren++;
-
-				newNode->UpdateBoundary(true);
-
-				return newNode;
-			}
-
-			// make sure the child has room to store another node
-			if (child->numChildren >= 10) {
-				SplitNode(child);
-				child = child->prev;				
-			}
-		}
-
-		// we only end up here if the root node is empty
-		newNode->parent = root;
-		root->firstChild = newNode;
-		root->lastChild = newNode;
-		root->numChildren++;
-		newNode->UpdateBoundary(true);
-
-		return newNode;
-	};
-	/* goes through all leaf nodes of the tree */
-	static TreeNode* GetNextLeaf(TreeNode* node) {
-		if (node) {
-			if (node->firstChild) {
-				while (node->firstChild) {
-					node = node->firstChild;
-				}
-			}
-			else {
-				while (node && !node->next) {
-					node = node->parent;
-				}
-				if (node) {
-					node = node->next;
-					while (node->firstChild) {
-						node = node->firstChild;
-					}
-				}
-				else {
-					node = nullptr;
-				}
-			}
-		}
-		return node;
-	};
-	/* goes through all leaf nodes of the tree */
-	static TreeNode* GetPrevLeaf(TreeNode* node) {
-		if (!node) return nullptr;
-		if (node->lastChild) {
-			while (node->lastChild) {
-				node = node->lastChild;
-			}
-			return node;
-		}
-		else {
-			while (node && node->prev == nullptr) {
-				node = node->parent;
-			}
-			if (node) {
-				node = node->prev;
-				while (node->lastChild) {
-					node = node->lastChild;
-				}
-				return node;
-			}
-			else {
-				return nullptr;
-			}
-		}
-	};
-	/* goes through all nodes of the tree */
-	static TreeNode* GetNext(TreeNode* node) {
-		if (node) {
-			if (node->firstChild) {
-				node = node->firstChild;
-			}
-			else {
-				if (node && node->next == nullptr) {
-					while (node && node->next == nullptr) {
-						node = node->parent;
-					}
-					
-				}
-				if (node) node = node->next;
-			}
-		}
-		return node;
-	};
-	
-private:
-	/* Get the coordinate from the stored object, similar to a std::Set */
-	static vec2d GetCoordinate(objType const& obj) { return coordinateLookupFunctor(obj); };
-	/* Initialize the tree */ 
-	void Init() { root = AllocNode(); };
-	/* Shutdown the tree */
-	void Shutdown() {
-		nodeAllocator.Clear();
-		root = nullptr;
-		Num = 0;
-	};
-	/* Clears a node that may have been previously made */ 
-	TreeNode* AllocNode() { return TreeNode::InitNode(nodeAllocator.Alloc()); };
-	void FreeNode(TreeNode* node) {
-		if (node && node->object) {
-			node->object = nullptr;
-			--Num;
-		}
-		nodeAllocator.Free(node);
-	};
-	/* Splits an existing node into two nodes */
-	void SplitNode(TreeNode* node) {
-		long long i;
-		TreeNode* child, * newNode;
-
-		// allocate a new node
-		newNode = AllocNode();
-		newNode->parent = node->parent; // share parents, as this will become a sibling
-
-		// divide the children over the two nodes. 
-		std::vector<std::vector<TreeNode*>> clustered_children = node->cluster_children();
-		int numChildren1 = clustered_children[0].size();
-		int numChildren2 = clustered_children[1].size();
-		clustered_children[0].push_back(nullptr);
-		clustered_children[1].push_back(nullptr);
-
-		// first set -- append and assign
-		for (i = 0; i < numChildren1; i++) {
-			if (i == 0) {
-				newNode->firstChild = clustered_children[0][i];
-				clustered_children[0][i]->prev = nullptr;
-				clustered_children[0][i]->next = clustered_children[0][i+1];
-				newNode->numChildren = 1;
-				clustered_children[0][i]->parent = newNode;
-			}
-			else if (i == numChildren1 - 1) {
-				newNode->lastChild = clustered_children[0][i];
-				clustered_children[0][i]->next = nullptr;
-				clustered_children[0][i]->prev = clustered_children[0][i - 1];
-				newNode->numChildren++;
-				clustered_children[0][i]->parent = newNode;
-			}
-			else {
-				clustered_children[0][i]->next = clustered_children[0][i + 1];
-				clustered_children[0][i]->prev = clustered_children[0][i - 1];
-				newNode->numChildren++;
-				clustered_children[0][i]->parent = newNode;
-			}
-		}
-		// second set -- append and assign
-		for (i = 0; i < numChildren2; i++) {
-			if (i == 0) {
-				node->firstChild = clustered_children[1][i];
-				clustered_children[1][i]->prev = nullptr;
-				clustered_children[1][i]->next = clustered_children[1][i + 1];
-				node->numChildren = 1;
-				clustered_children[1][i]->parent = node;
-			}
-			else if (i == numChildren2 - 1) {
-				node->lastChild = clustered_children[1][i];
-				clustered_children[1][i]->next = nullptr;
-				clustered_children[1][i]->prev = clustered_children[1][i - 1];
-				node->numChildren++;
-				clustered_children[1][i]->parent = node;
-			}
-			else {
-				clustered_children[1][i]->next = clustered_children[1][i + 1];
-				clustered_children[1][i]->prev = clustered_children[1][i - 1];
-				node->numChildren++;
-				clustered_children[1][i]->parent = node;
-			}
-		}
-
-		newNode->UpdateBoundary(true);
-		node->UpdateBoundary(true);
-
-		if (node->prev) {
-			node->prev->next = newNode;
-		}
-		else {
-			node->parent->firstChild = newNode;
-		}
-		newNode->prev = node->prev;
-		newNode->next = node;
-		node->prev = newNode;
-
-		node->parent->numChildren++; // parent boundary should not have changed.
-	};
-	/* Merge two nodes together into a single node */
-	TreeNode* MergeNodes(TreeNode* node1, TreeNode* node2) {
-		TreeNode* child;
-
-		assert(node1->parent == node2->parent);
-		assert(node1->next == node2 && node2->prev == node1);
-		assert(node1->object == nullptr && node2->object == nullptr);
-		assert(node1->numChildren >= 1 && node2->numChildren >= 1);
-
-		for (child = node1->firstChild; child->next; child = child->next) {
-			child->parent = node2;
-		}
-		child->parent = node2;
-		child->next = node2->firstChild;
-		node2->firstChild->prev = child;
-		node2->firstChild = node1->firstChild;
-		node2->numChildren += node1->numChildren;
-
-		// unlink the first node from the parent
-		if (node1->prev) {
-			node1->prev->next = node2;
-		}
-		else {
-			node1->parent->firstChild = node2;
-		}
-		node2->prev = node1->prev;
-		node2->parent->numChildren--;
-
-		FreeNode(node1);
-
-		node2->UpdateBoundary(true); 
-
-		return node2;
-	};
-
-	static TreeNode* NodeFindOverlap(cweeBoundary const& bound, TreeNode* Root) {
-		TreeNode* node, * smaller;
-		if (Root == nullptr) return nullptr;
-		
-		smaller = nullptr;
-		for (node = Root->firstChild; node != nullptr; node = node->firstChild) {
-			while (node->next) {
-				if (!node->boundary.Overlaps(bound)) {
-					if (!smaller) {
-						smaller = GetNextLeaf(Root);
-					}
-					break;
-				}
-				smaller = node;
-				node = node->next;
-			}
-			if (node->object) {
-				if (node->boundary.Overlaps(bound)) {
-					break;
-				}
-				else if (smaller == nullptr) {
-					return nullptr;
-				}
-				else {
-					node = smaller;
-					if (node->object) {
-						break;
-					}
-				}
-			}
-		}
-		return node;
-	};
 
 };
 
