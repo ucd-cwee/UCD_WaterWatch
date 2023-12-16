@@ -630,6 +630,7 @@ public:
 				out.Append(cellChildren);
 			}
 			else {
+				// NOTE TO SELF: THROWS HERE IF THE VORONOI DIAGRAM HAS A SINGLE CELL AND / OR ALL OF THE "CENTERS" ARE IDENTICAL
 				auto voronoi{ Voronoi(newCenters) };
 				newCenters = nullptr;
 				auto cells = voronoi.GetCells(); // straight data copy
