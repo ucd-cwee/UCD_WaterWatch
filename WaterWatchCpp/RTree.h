@@ -457,6 +457,14 @@ public:
 template <class objType, cweeBoundary(*coordinateLookupFunctor)(objType const&), cwee_units::foot_t(*DistanceFunction)(objType const&, cweeBoundary const&)>
 class RTree {
 public:
+	static cweeBoundary GetBoundary(objType const& obj) {
+		// auto offset{ vec2d(cweeRandomFloat(-JCV_RAND_BUFFER, JCV_RAND_BUFFER), cweeRandomFloat(-JCV_RAND_BUFFER, JCV_RAND_BUFFER)) };
+		cweeBoundary b = coordinateLookupFunctor(obj);
+		// b.topRight = b.topRight + offset;
+		// b.bottomLeft = b.bottomLeft + offset;
+
+		return b;
+	};
 	class TreeNode {
 	public:
 		cweeList< TreeNode* >
@@ -584,9 +592,8 @@ public:
 	};
 	static cweeList< cweeList<cweeSharedPtr<objType>> > Cluster(int numClusters, cweeList<cweeSharedPtr<objType>> const& objs) {
 		numClusters = cweeMath::max(2, numClusters);
-		while ((objs.Num() / numClusters) > 5000) {
-			numClusters *= 2;
-		}
+		while ((objs.Num() / numClusters) > 5000) { numClusters += 1; }
+
 		cweeList< cweeList<cweeSharedPtr<objType>> > out;
 		if (objs.Num() < numClusters) {
 			for (auto& x : objs) {
@@ -600,7 +607,7 @@ public:
 			int childCount = 0;
 			for (auto& x : objs) {
 				if (x) {
-					cweeBoundary bound = coordinateLookupFunctor(*x);
+					cweeBoundary bound = GetBoundary(*x);
 					coord_data.Append(bound.Center());
 					childCount++;
 				}
@@ -609,6 +616,7 @@ public:
 				}
 			}
 			auto newCenters = kmeans(numClusters, coord_data);
+			coord_data.Clear();
 			if (newCenters->Num() <= 1) {
 				cweeList<cweeSharedPtr<objType>> cellChildren;
 				for (auto& x : objs) {
@@ -623,14 +631,16 @@ public:
 			}
 			else {
 				auto voronoi{ Voronoi(newCenters) };
-				auto cells = voronoi.GetCells();
-				voronoi.Clear();
+				newCenters = nullptr;
+				auto cells = voronoi.GetCells(); // straight data copy
+				voronoi.Clear(); // safe to clear
 				int cellN = 0;
 				for (auto& cell : cells) {
 					cweeList<cweeSharedPtr<objType>>& cellChildren = out.Alloc();
 					for (auto& x : objs) {
 						if (x) {
-							if (cell.overlaps(coordinateLookupFunctor(*x).Center())) {
+							auto b = coordinateLookupFunctor(*x);
+							if (cell.overlaps(b.Center())) {
 								cellChildren.Append(x);
 							}
 						}
@@ -651,7 +661,7 @@ public:
 			if (objs.Num() == 1) {
 				node->object = objs[0];
 				if (node->object) {
-					node->bound = coordinateLookupFunctor(*node->object);
+					node->bound = GetBoundary(*node->object);
 				}
 				node->parent = parent;
 				if (parent) {
@@ -811,20 +821,6 @@ public:
 
 		return out;
 	};
-
-	/*
-IpAddressInformation x = GetAddress();
-var& myCoord = vec2d(x.longitude.to_number, x.latitude.to_number);
-
-RTree data;
-for (i : 0..10){
-	vec2d d = myCoord;
-	d.first += rand(-1,1);
-	d.second += rand(-1,1);
-	data.Add(d, d.first, d.second);
-}
-data.UI_Map;
-	*/
 
 };
 

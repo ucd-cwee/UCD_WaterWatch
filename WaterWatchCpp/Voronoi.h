@@ -186,12 +186,14 @@ constexpr int JCV_EDGE_LEFT = 1;
 constexpr int JCV_EDGE_RIGHT = 2;
 constexpr int JCV_EDGE_BOTTOM = 4;
 constexpr int JCV_EDGE_TOP = 8;
-constexpr double JCV_EDGE_INTERSECT_THRESHOLD = (double)1.0e-10F;
+constexpr double JCV_EPS = DBL_EPSILON;
+constexpr double JCV_EDGE_INTERSECT_THRESHOLD = JCV_EPS; //  (double)1.0e-10F;
 constexpr int JCV_CORNER_NONE = 0;
 constexpr int JCV_CORNER_TOP_LEFT = 1;
 constexpr int JCV_CORNER_BOTTOM_LEFT = 2;
 constexpr int JCV_CORNER_BOTTOM_RIGHT = 3;
 constexpr int JCV_CORNER_TOP_RIGHT = 4;
+constexpr double JCV_RAND_BUFFER = 10e-4;
 
 class JCV {
 public:
@@ -255,7 +257,7 @@ public:
         const jcv_site* sites[2];
         jcv_point       pos[2];     // the positions of the two sites
     };    
-    class jcv_clipper;
+    struct jcv_clipper;
     class jcv_context_internal;
 
     /// Tests if a point is inside the final shape
@@ -272,21 +274,7 @@ public:
     typedef void* (*FJCVAllocFn)(void* userctx, size_t size);
     typedef void (*FJCVFreeFn)(void* userctx, void* p);
 
-    class jcv_clipper {
-    public:
-        jcv_clipper() :
-            test_fn(),
-            clip_fn(),
-            fill_fn(),
-            min{ 0,0 },
-            max{ 0,0 },
-            ctx(nullptr)
-        {};
-        jcv_clipper(jcv_clipper const&) = default;
-        jcv_clipper(jcv_clipper&&) = default;
-        jcv_clipper& operator=(jcv_clipper const&) = default;
-        jcv_clipper& operator=(jcv_clipper&&) = default;
-
+    struct jcv_clipper {
         jcv_clip_test_point_fn  test_fn;
         jcv_clip_edge_fn        clip_fn;
         jcv_clip_fillgap_fn     fill_fn;
@@ -372,7 +360,7 @@ public:
     };
 
     static double jcv_abs(double v) { return (v < 0) ? -v : v; };
-    static bool double_eq(double a, double b) { return jcv_abs(a - b) < FLT_EPSILON; };
+    static bool double_eq(double a, double b) { return jcv_abs(a - b) < JCV_EPS; };
     static double double_to_int(double v) { return (sizeof(double) == 4) ? (double)(int)v : (double)(long long)v; };
     static double jcv_floor(double v) { double i = double_to_int(v); return (v < i) ? i - 1 : i; };
     static double jcv_ceil(double v) { double i = double_to_int(v); return (v > i) ? i + 1 : i; };
@@ -1373,7 +1361,7 @@ public:
 
         return internal;
     }; 
-    static void jcv_diagram_generate_useralloc(int num_points, const jcv_point* points, const jcv_rect* rect, const jcv_clipper* clipper, void* userallocctx, FJCVAllocFn allocfn, FJCVFreeFn freefn, jcv_diagram* d) {
+    static void jcv_diagram_generate_useralloc(int num_points, const jcv_point* points, jcv_rect* rect, jcv_clipper* clipper, void* userallocctx, FJCVAllocFn allocfn, FJCVFreeFn freefn, jcv_diagram* d) {
         if (d->internal)
             jcv_diagram_free(d);
 
@@ -1402,16 +1390,31 @@ public:
             sites[i].index = i;
         }
 
-        qsort(sites, (size_t)num_points, sizeof(jcv_site), jcv_point_cmp);
-
-        jcv_clipper box_clipper;
-        if (clipper == nullptr) {
-            box_clipper.test_fn = jcv_boxshape_test;
-            box_clipper.clip_fn = jcv_boxshape_clip;
-            box_clipper.fill_fn = jcv_boxshape_fillgaps;
-            clipper = &box_clipper;
+        //cweeThreadedList<_type_>& Sort(std::function<bool(_type_ const&, _type_ const&)> func) {
+        //    if (num >= 2) {
+        //        auto* first = &list[0];
+        //        auto* last = first + num;
+        //        std::sort(first, last, func);
+        //    }
+        //    return *this;
+        //};
+        if (num_points >= 2) {
+            auto* first = &sites[0];
+            auto* last = first + num_points;
+            std::sort(first, last, [](jcv_site const& s1, jcv_site const& s2)-> bool {
+                return (s1.p.y != s2.p.y) ? (s1.p.y < s2.p.y ? true : false) : (s1.p.x < s2.p.x ? true : false);
+            });
         }
-        internal->clipper = *clipper;
+        // qsort(sites, (size_t)num_points, sizeof(jcv_site), jcv_point_cmp);
+
+        if (clipper) {
+            internal->clipper = *clipper;
+        } 
+        else {
+            internal->clipper.test_fn = jcv_boxshape_test;
+            internal->clipper.clip_fn = jcv_boxshape_clip;
+            internal->clipper.fill_fn = jcv_boxshape_fillgaps;
+        }
 
         jcv_rect tmp_rect;
         tmp_rect.min.x = tmp_rect.min.y = DBL_MAX;
@@ -1484,8 +1487,8 @@ public:
 
         jcv_fillgaps(d);
     };
-    static void jcv_diagram_generate(int num_points, const jcv_point* points, const jcv_rect* rect, const jcv_clipper* clipper, jcv_diagram* d) {        
-        jcv_diagram_generate_useralloc(num_points, points, rect, clipper, 0, jcv_alloc_fn, jcv_free_fn, d);
+    static void jcv_diagram_generate(int num_points, const jcv_point* points, jcv_rect* rect, jcv_clipper* clipper, jcv_diagram* d) {        
+        jcv_diagram_generate_useralloc(num_points, points, rect, clipper, nullptr, jcv_alloc_fn, jcv_free_fn, d);
     };
 };
 
@@ -1538,7 +1541,7 @@ public:
             }
         };
 
-        bool overlaps(vec2d const& topRight_p, vec2d bottomLeft_p) const {
+        bool overlaps(vec2d const& topRight_p, vec2d const& bottomLeft_p) const {
             cweeList<vec2d> points_p;
             points_p.Append(bottomLeft_p);
             points_p.Append(vec2d(bottomLeft_p.x, topRight_p.y));
@@ -1561,7 +1564,20 @@ private:
 public:
     Voronoi() = default;
     Voronoi(cweeSharedPtr < cweeList<vec2d>> const& coords_src) {
-        CoordinateData = coords_src;
+        CoordinateData = coords_src; 
+        { // remove duplicates
+            cweeInterpolatedMatrix<double> matrx;
+            for (int i = CoordinateData->Num() - 1; i >= 0; i--) {
+                auto& x = CoordinateData->operator[](i);
+                if (matrx.ContainsPosition(x.x, x.y)) CoordinateData->RemoveIndexFast(i);
+                else matrx.AddValue(x.x, x.y, 0, true);
+            }
+        }
+        // try to reduce likelihood of three points in a line
+        for (auto& x : *CoordinateData) {
+            x.x += cweeRandomFloat(-JCV_RAND_BUFFER, JCV_RAND_BUFFER);
+            x.y += cweeRandomFloat(-JCV_RAND_BUFFER, JCV_RAND_BUFFER);
+        }
         const auto* points = static_cast<const JCV::jcv_point*>((const void*)CoordinateData->Ptr()); // vec2d shares same structure.
         Diagram = cweeSharedPtr<JCV::jcv_diagram>(new JCV::jcv_diagram(), [=](JCV::jcv_diagram* p) {
             JCV::jcv_diagram_free(p); // free children

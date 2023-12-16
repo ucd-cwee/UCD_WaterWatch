@@ -121,7 +121,7 @@ namespace cweeGeo {
 
 	// private:
 		static std::map<int, cweeList<cweePair<int, double>>> Near(Layer const& layer1, Layer const& layer2, std::function<double(Geometry const&, Geometry const&)> DistanceFunction, int numNearest = 1, std::function<bool(Feature const&)> WhereFunction = [](Feature const&)->bool { return true; });
-		static cweeList<cweePair<int, double>> Near(Feature const& layer1, Layer const& layer2, std::function<double(Geometry const&, Geometry const&)> DistanceFunction, int numNearest = 1, std::function<bool(Feature const&)> WhereFunction = [](Feature const&)->bool { return true; });
+		static cweeList<cweePair<int, double>> Near(Feature const& layer1, Layer const& layer2, int numNearest = 1, std::function<bool(Feature const&)> WhereFunction = [](Feature const&)->bool { return true; });
 	};
 
 	class Feature {
@@ -203,6 +203,7 @@ namespace cweeGeo {
 		cwee_units::foot_t Length() const;
 		cwee_units::foot_t Elevation() const;
 		cwee_units::foot_t Distance(Geometry const& obj) const;
+		cwee_units::foot_t Distance(cweeBoundary const& obj) const;
 		cweeStr Geocode() const;
 
 	public:
@@ -220,6 +221,8 @@ namespace cweeGeo {
 		static cwee_units::foot_t Elevation(vec2d const& point1);
 		/*! Returns the minimum (closest) distance between two geometries. */
 		static cwee_units::foot_t Distance(Geometry const& obj1, Geometry const& obj2);
+		/*! Returns the minimum (closest) distance between two geometries. */
+		static cwee_units::foot_t Distance(Geometry const& obj1, cweeBoundary const& obj2);
 		/*! Returns the length of the geometry */
 		static cwee_units::foot_t Length(Geometry const& obj);
 		

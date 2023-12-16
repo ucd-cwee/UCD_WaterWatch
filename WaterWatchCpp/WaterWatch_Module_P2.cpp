@@ -654,8 +654,8 @@ namespace chaiscript {
                 , RTreeType& obj, cweeBoundary const& t, int numNearest);
 
 
-                AUTO Boundary_To_Layer = [](cweeBoundary& obj, cweeSharedPtr< RTreeContainer> p)-> UI_MapLayer {
-                    UI_MapLayer out;
+                AUTO Boundary_To_Layer = [](cweeBoundary& obj, cweeSharedPtr< RTreeContainer> p)-> chaiscript::Boxed_Value {
+                    chaiscript::Boxed_Value out;
                     UI_Color col(cweeRandomFloat(25, 230), cweeRandomFloat(25, 230), cweeRandomFloat(25, 230), 255);
 
                     if (obj.bottomLeft != obj.topRight) {
@@ -669,7 +669,7 @@ namespace chaiscript {
                         polygon.AddPoint(obj.topRight.x, obj.bottomLeft.y);
                         polygon.AddPoint(obj.bottomLeft.x, obj.bottomLeft.y);
                         polygon.Tag = chaiscript::var(cweeBoundary(obj));
-                        out.Children.push_back(chaiscript::var((UI_MapPolygon)polygon));
+                        out = chaiscript::var((UI_MapPolygon)polygon);
                     }
                     else {
                         UI_MapIcon icon;               
@@ -679,25 +679,26 @@ namespace chaiscript {
                         icon.color = col;
                         icon.Tag = chaiscript::var(cweeBoundary(obj));
                         if (p) icon.Tag = p->data;
-                        out.Children.push_back(chaiscript::var(icon));
+                        out = chaiscript::var(icon);
                     }
                     return out;
                 };
 
                 AUTO RTreeToMap = [Boundary_To_Layer](RTreeType& obj) {
-                    UI_Map out;
+                    UI_Map out; UI_MapLayer layer;
                     {
                         auto* root = obj.GetRoot();
                         while (root) {
-                            out.Layers.push_back(chaiscript::var(Boundary_To_Layer(root->bound, root->object)));
+                            layer.Children.push_back(Boundary_To_Layer(root->bound, root->object));
                             root = RTreeType::GetNext(root);
                             if (root == obj.GetRoot()) break;
                         }
                     }
+                    out.Layers.push_back(chaiscript::var((UI_MapLayer)layer));
                     return out;
                 };
 
-                lib->AddFunction(SINGLE_ARG(RTreeToMap, Boundary_To_Layer), UI_Map, -> UI_Map, {
+                lib->AddFunction(RTreeToMap, UI_Map, -> UI_Map, {
                     return RTreeToMap(obj);
                 }, RTreeType& obj);
 
@@ -708,7 +709,6 @@ namespace chaiscript {
                 lib->add(chaiscript::fun([](cweeBoundary const& a) -> cweeStr { return cweeStr::printf("[<%f,%f>, <%f,%f>]", a.topRight.x, a.topRight.y, a.bottomLeft.x, a.bottomLeft.y); }), "to_string");
                 lib->AddFunction(, topRight, ->vec2d& , return obj.topRight; , cweeBoundary& obj);
                 lib->AddFunction(, bottomLeft, ->vec2d& , return obj.bottomLeft;, cweeBoundary& obj);
-                lib->AddFunction(Boundary_To_Layer, UI_MapLayer, -> UI_MapLayer, return Boundary_To_Layer(obj, nullptr), cweeBoundary& obj);
             }
 
             return lib;
