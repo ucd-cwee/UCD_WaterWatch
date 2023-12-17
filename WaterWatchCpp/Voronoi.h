@@ -1573,7 +1573,10 @@ public:
                 else matrx.AddValue(x.x, x.y, 0, true);
             }
         }
-        // try to reduce likelihood of three points in a line
+        if (CoordinateData->Num() <= 1) {
+            throw(std::runtime_error("Voronoi algorithm does not support fewer than 2 unique points."));
+        }
+        // try to reduce likelihood of three points in a line // TODO -- is there a way to check for this?
         for (auto& x : *CoordinateData) {
             x.x += cweeRandomFloat(-JCV_RAND_BUFFER, JCV_RAND_BUFFER);
             x.y += cweeRandomFloat(-JCV_RAND_BUFFER, JCV_RAND_BUFFER);

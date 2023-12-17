@@ -591,66 +591,51 @@ public:
 		return toReturn;
 	};
 	static cweeList< cweeList<cweeSharedPtr<objType>> > Cluster(int numClusters, cweeList<cweeSharedPtr<objType>> const& objs) {
+		if (objs.Num() == 0) throw(std::runtime_error("Cannot cluster zero objects in RTree."));
+
 		numClusters = cweeMath::max(2, numClusters);
 		while ((objs.Num() / numClusters) > 5000) { numClusters += 1; }
 
 		cweeList< cweeList<cweeSharedPtr<objType>> > out;
-		if (objs.Num() < numClusters) {
-			for (auto& x : objs) {
-				cweeList<cweeSharedPtr<objType>>& cluster = out.Alloc();
-				cluster.Append(x);
-			}
-		}
+		if (objs.Num() < numClusters) { for (auto& x : objs) { if (x) out.Alloc().Append(x); } } // less objects than desired clusters -- return objects as-is, w/o clustering
 		else {
 			cweeList<vec2d> coord_data;
-			vec2d c;
-			int childCount = 0;
-			for (auto& x : objs) {
-				if (x) {
-					cweeBoundary bound = GetBoundary(*x);
-					coord_data.Append(bound.Center());
-					childCount++;
-				}
-				else {
-					throw(std::runtime_error("RTree object was empty."));
-				}
-			}
+			for (auto& x : objs) if (x) coord_data.Append(GetBoundary(*x).Center());						
 			auto newCenters = kmeans(numClusters, coord_data);
 			coord_data.Clear();
-			if (newCenters->Num() <= 1) {
-				cweeList<cweeSharedPtr<objType>> cellChildren;
-				for (auto& x : objs) {
-					if (x) {
-						cellChildren.Append(x);						
-					}
-					else {
-						throw(std::runtime_error("RTree object was empty."));
-					}
-				}
-				out.Append(cellChildren);
-			}
+			if (newCenters->Num() <= 1) { for (auto& x : objs) { if (x) out.Alloc().Append(x); } }
 			else {
-				// NOTE TO SELF: THROWS HERE IF THE VORONOI DIAGRAM HAS A SINGLE CELL AND / OR ALL OF THE "CENTERS" ARE IDENTICAL
-				auto voronoi{ Voronoi(newCenters) };
-				newCenters = nullptr;
-				auto cells = voronoi.GetCells(); // straight data copy
-				voronoi.Clear(); // safe to clear
-				int cellN = 0;
-				for (auto& cell : cells) {
-					cweeList<cweeSharedPtr<objType>>& cellChildren = out.Alloc();
-					for (auto& x : objs) {
-						if (x) {
-							auto b = coordinateLookupFunctor(*x);
-							if (cell.overlaps(b.Center())) {
-								cellChildren.Append(x);
+				try {
+					// NOTE TO SELF: THROWS HERE IF THE VORONOI DIAGRAM HAS A SINGLE CELL AND / OR ALL OF THE "CENTERS" ARE IDENTICAL
+					auto voronoi{ Voronoi(newCenters) };
+					newCenters = nullptr;
+					auto cells = voronoi.GetCells(); // straight data copy
+					voronoi.Clear(); // safe to clear
+					int cellN = 0;
+
+					cweeList<cweeSharedPtr<objType>> temp_objs = objs;
+					for (auto& cell : cells) {
+						cweeList<cweeSharedPtr<objType>> cellChildren;
+						for (int i = temp_objs.Num() - 1; i >= 0; i--) {
+							if (temp_objs[i]) {
+								auto b = coordinateLookupFunctor(*temp_objs[i]);
+								if (cell.overlaps(b.Center())) {
+									cellChildren.Append(temp_objs[i]);
+									temp_objs.RemoveIndexFast(i);
+								}
 							}
 						}
-						else {
-							throw(std::runtime_error("RTree object was empty."));
+						if (cellChildren.Num() > 0) {
+							out.Append(cellChildren);
 						}
+						cell.Clear();
 					}
-					cell.Clear();
+				} 
+				catch (std::runtime_error) {
+					out.Clear();
+					if (objs.Num() < numClusters) for (auto& x : objs) if (x) out.Alloc().Append(x);
 				}
+
 			}
 		}
 		return out;
@@ -661,20 +646,14 @@ public:
 		if (node && objs.Num() > 0) {
 			if (objs.Num() == 1) {
 				node->object = objs[0];
-				if (node->object) {
-					node->bound = GetBoundary(*node->object);
-				}
+				if (node->object) { node->bound = GetBoundary(*node->object); }
 				node->parent = parent;
-				if (parent) {
-					node->parentsChildIndex = parent->children.Num();
-				}
-				else {
-					node->parentsChildIndex = -1;
-				}
+				if (parent) node->parentsChildIndex = parent->children.Num();				
+				else node->parentsChildIndex = -1;				
 			} 
 			else {
 				node->parent = parent;
-				for (auto& cluster : Cluster(10, objs)) {					
+				for (auto& cluster : Cluster(10, objs)) {
 					index = node->children.Num();
 					node->AddChild(CreateNode(node, nodeAllocator.Alloc(), cluster))->parentsChildIndex = index;
 					cluster.Clear();
