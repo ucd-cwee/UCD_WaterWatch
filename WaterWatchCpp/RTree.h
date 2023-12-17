@@ -454,15 +454,16 @@ public:
 
 };
 
-template <class objType, cweeBoundary(*coordinateLookupFunctor)(objType const&), cwee_units::foot_t(*DistanceFunction)(objType const&, cweeBoundary const&)>
+template <
+	class objType, 
+	cweeBoundary(*coordinateLookupFunctor)(objType const&), 
+	cwee_units::foot_t(*DistanceFunction)(objType const&, cweeBoundary const&),
+	cwee_units::foot_t(*ObjectDistanceFunction)(objType const&, objType const&) = [](objType const& a, objType const& b)->cwee_units::foot_t { return DistanceFunction(a, coordinateLookupFunctor(b)); }
+>
 class RTree {
 public:
 	static cweeBoundary GetBoundary(objType const& obj) {
-		// auto offset{ vec2d(cweeRandomFloat(-JCV_RAND_BUFFER, JCV_RAND_BUFFER), cweeRandomFloat(-JCV_RAND_BUFFER, JCV_RAND_BUFFER)) };
 		cweeBoundary b = coordinateLookupFunctor(obj);
-		// b.topRight = b.topRight + offset;
-		// b.bottomLeft = b.bottomLeft + offset;
-
 		return b;
 	};
 	class TreeNode {
@@ -782,6 +783,36 @@ public:
 			Near(sortedNodes, sortedChildren.knots[i].get<1>(), point, numNear, sortedChildren.knots[i].get<0>());
 		}
 	};
+	static void Near(cweeCurve< TreeNode* >& sortedNodes, TreeNode* node, objType const& point, int numNear, cwee_units::foot_t thisDistance) {
+		if (!node) return;
+
+		if (sortedNodes.Num() >= numNear) {
+			cwee_units::foot_t maxDistance = sortedNodes.TimeForIndex(numNear - 1);
+			if (thisDistance >= maxDistance) {
+				return; // no point
+			}
+		}
+
+		if (node->object) {
+			sortedNodes.AddValue(thisDistance(), node);
+		}
+
+		// sort the children by distance -- do the closest ones first, which reduces likelihood of doing unecessary work later.
+		cweeCurve< TreeNode* > sortedChildren;
+		for (auto& child : node->children) {
+			if (child) {
+				if (child->object) {
+					sortedChildren.AddValue(ObjectDistanceFunction(*child->object, point)(), child);
+				}
+				else {
+					sortedChildren.AddValue(child->bound.Distance(GetBoundary(point))(), child);
+				}
+			}
+		}
+		for (int i = 0; i < sortedChildren.Num(); i++) {
+			Near(sortedNodes, sortedChildren.knots[i].get<1>(), point, numNear, sortedChildren.knots[i].get<0>());
+		}
+	};
 	cweeList<TreeNode*> Near(cweeBoundary const& point, int numNear = 1) {
 		cweeCurve< TreeNode* > sortedNodes; // self-sorted vector of arbitrary Y values by numeric X values
 				
@@ -801,7 +832,32 @@ public:
 
 		return out;
 	};
+	cweeList<TreeNode*> Near(objType const& point, int numNear = 1) {
+		cweeCurve< TreeNode* > sortedNodes; // self-sorted vector of arbitrary Y values by numeric X values
 
+		auto* root = GetRoot();
+		if (root) {
+			if (root->object) {
+				Near(sortedNodes, root, point, numNear, ObjectDistanceFunction(point, *root->object));
+			}
+			else {
+				Near(sortedNodes, root, point, numNear, DistanceFunction(point, root->bound));
+			}
+
+			
+		}
+
+		cweeList<TreeNode*> out;
+
+		for (int i = 0; i < sortedNodes.Num() && out.Num() < numNear; i++) {
+			TreeNode* ptr = sortedNodes.ValueForIndex(i);
+			if (ptr) {
+				out.Append(ptr);
+			}
+		}
+
+		return out;
+	};
 };
 
 #endif

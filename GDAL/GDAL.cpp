@@ -1276,8 +1276,11 @@ namespace cweeGeo {
 				}
 				return out;
 			};
-			static cwee_units::foot_t GetDistance(RTreeContainer const& o, cweeBoundary const& b) {
-				return o.feature.Distance(b);
+			static cwee_units::foot_t GetDistance(RTreeContainer const& a, cweeBoundary const& b) {
+				return a.feature.Distance(b);
+			};
+			static cwee_units::foot_t GetObjectDistance(RTreeContainer const& a, RTreeContainer const& b) {
+				return a.feature.Distance(b.feature);
 			};
 
 			RTreeContainer() : feature() {};
@@ -1291,19 +1294,22 @@ namespace cweeGeo {
 			bool operator!=(RTreeContainer const& b) { return !operator==(b); };
 		};
 
-		using RTreeType = RTree< RTreeContainer, RTreeContainer::GetBoundary, RTreeContainer::GetDistance>;
+		using RTreeType = RTree< RTreeContainer, RTreeContainer::GetBoundary, RTreeContainer::GetDistance, RTreeContainer::GetObjectDistance>;
 
 		RTreeType tree;
 		int i, Layer1Fid, Layer2Fid, NumFeatures_Layer2;
 		for (Layer2Fid = 0; Layer2Fid < layer2.NumFeatures(); Layer2Fid++) {
 			auto feat = layer2.GetFeature(Layer2Fid);
-			if (WhereFunction(feat)) {
-				tree.Add(make_cwee_shared<RTreeContainer>(feat.GetGeometry()));
+			if (feat.Data() && WhereFunction(feat)) {
+				auto geo = feat.GetGeometry();
+				if (geo.Data()) {
+					tree.Add(make_cwee_shared<RTreeContainer>(geo));
+				}				
 			}
 		}
 
-		auto thisBound = RTreeContainer::GetBoundary(layer1.GetGeometry());
-		AUTO list_tree_nodes = tree.Near(thisBound, numNearest);
+		auto geometryToFind = layer1.GetGeometry();
+		AUTO list_tree_nodes = tree.Near(geometryToFind, numNearest);
 
 		cweeList<cweePair<int, double>> nearestList; nearestList.SetGranularity(list_tree_nodes.Num());
 		for (auto& node : list_tree_nodes) {
@@ -1311,9 +1317,10 @@ namespace cweeGeo {
 				auto& data = nearestList.Alloc();
 				auto feat = node->object->feature.GetFeature();
 				data.first = feat.Fid();
-				data.second = RTreeContainer::GetDistance(*node->object, thisBound)();
+				data.second = node->object->feature.Distance(geometryToFind)();
 			}
 		}
+		
 		return nearestList;		
 	};
 }
