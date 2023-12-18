@@ -2122,20 +2122,9 @@ namespace UWP_WaterWatch.Custom_Controls
                     List<EdmsTasks.cweeTask> tasksToDo = new List<EdmsTasks.cweeTask>();
                     for (int i = minIndex; i < maxIndex && i < toReturn.Count; i++)
                     {
-                        //for (int i = toReturn.Count; i < v.Item2; i++)
-                        //{
                         string j = i.ToString();
                         tasksToDo.Add(new EdmsTasks.cweeTask(() => {
-                            var t1 = v.Item1.result.CustomizableQueryResult(
-                                "{" +
-                                $"var j = 0;\n for (keyValuePair : __RESULT__.GetKnotSeries)\n" +
-                                "{" +
-                                $"if (j == {j})\n" +
-                                "{ return keyValuePair.first.to_string(); }\n " +
-                                "\n++j;\n}" +
-                                "}",
-                                "__RESULT__", v.Item1.additionalParams
-                            );
+                            var t1 = v.Item1.result.CustomizableQueryResult($"__RESULT__.keys[{j}]", "__RESULT__", v.Item1.additionalParams);
                             return t1.ContinueWith(() => {
                                 keys[int.Parse(j)] = t1.Result;
                             }, true);
@@ -2151,7 +2140,7 @@ namespace UWP_WaterWatch.Custom_Controls
                             {
                                 var key = keys[i];
 
-                                var newC = new SharedNodeResult() { result = v.Item1.result, additionalParams = v.Item1.additionalParams + $"[{key}]" };
+                                var newC = new SharedNodeResult() { result = v.Item1.result, additionalParams = v.Item1.additionalParams + $".GetValueKnotSeries()[{i}]" };
                                 var index = $"{i}";
 
                                 var secondTask = new EdmsTasks.cweeTask(() => {

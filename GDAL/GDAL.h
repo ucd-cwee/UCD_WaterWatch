@@ -120,8 +120,8 @@ namespace cweeGeo {
 		cweeStr Name() const;
 
 	// private:
-		static std::map<int, cweeList<cweePair<int, double>>> Near(Layer const& layer1, Layer const& layer2, std::function<double(Geometry const&, Geometry const&)> DistanceFunction, int numNearest = 1, std::function<bool(Feature const&)> WhereFunction = [](Feature const&)->bool { return true; });
-		static cweeList<cweePair<int, double>> Near(Feature const& layer1, Layer const& layer2, int numNearest = 1, std::function<bool(Feature const&)> WhereFunction = [](Feature const&)->bool { return true; });
+		static cweeList<cweeList<cweePair<Feature, cwee_units::foot_t>>> Near(Layer const& layer1, Layer const& layer2, std::function<double(Geometry const&, Geometry const&)> DistanceFunction, int numNearest = 1, std::function<bool(Feature const&)> WhereFunction = [](Feature const&)->bool { return true; });
+		static cweeList<cweePair<Feature, cwee_units::foot_t>> Near(Feature const& layer1, Layer const& layer2, int numNearest = 1, std::function<bool(Feature const&)> WhereFunction = [](Feature const&)->bool { return true; });
 	};
 
 	class Feature {

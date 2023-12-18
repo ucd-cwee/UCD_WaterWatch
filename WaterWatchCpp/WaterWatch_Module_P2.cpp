@@ -428,7 +428,7 @@ namespace chaiscript {
                     for (auto& x : o.GetKnotSeries()) out.push_back(var((double)x.first));
                     return out;
                 , cweeBalancedCurve<Boxed_Value> const& o);
-                lib->eval("def to_string(Curve c){ to_string(c.GetKnotSeries); }");
+                lib->eval("def to_string(Curve c){ return \"Curve\"; /* to_string(c.keys); */ }");
 
             }
 

@@ -1182,84 +1182,88 @@ namespace cweeGeo {
 	cweeStr Feature::Geocode() const { return this->GetGeometry().Geocode(); };
 	cwee_units::foot_t Feature::Elevation() const { return this->GetGeometry().Elevation(); };
 
-	INLINE std::map<int, cweeList<cweePair<int, double>>> Near(std::vector<chaiscript::Boxed_Value> const& layer1, std::vector<chaiscript::Boxed_Value> const& layer2, std::function<double(Geometry const&, Geometry const&)> DistanceFunction, int numNearest, std::function<bool(Feature const&)> WhereFunction) {
-		std::map<int, cweeList<cweePair<int, double>>> out;
-		cweeBalancedPattern<cwee_units::scalar_t, u64> distance_to_layer2_Fid; // x-axis is distance, y-axis is Layer2's Fid. 
+	cweeList<cweeList<cweePair<Feature, cwee_units::foot_t>>> Layer::Near(Layer const& layer1, Layer const& layer2, std::function<double(Geometry const&, Geometry const&)> DistanceFunction, int numNearest, std::function<bool(Feature const&)> WhereFunction) {
+		cweeList<cweeList<cweePair<Feature, cwee_units::foot_t>>> out;
+		out.SetNum(layer1.NumFeatures() + 1);
+
 		int i, Layer1Fid, Layer2Fid, NumFeatures_Layer2;
-		cweeList<cweePair<int, double>> nearestList;
 
-		std::map<int, Geometry> feat1_List;
-		std::map<int, Geometry > feat2_List;
+		class RTreeContainer {
+		public:
+			Geometry feature;
 
-		for (Layer1Fid = 0; Layer1Fid < layer1.size(); Layer1Fid++) {
-			auto& feat = layer1[Layer1Fid];
-			const auto* featPtr = chaiscript::boxed_cast<const Feature*>(feat);
-			if (featPtr && WhereFunction(*featPtr)) feat1_List[Layer1Fid] = featPtr->GetGeometry();
-		}
-		for (Layer2Fid = 0; Layer2Fid < layer2.size(); Layer2Fid++) {
-			auto& feat = layer2[Layer2Fid];
-			const auto* featPtr = chaiscript::boxed_cast<const Feature*>(feat);
-			if (featPtr && WhereFunction(*featPtr)) feat2_List[Layer2Fid] = featPtr->GetGeometry();
-		}
-		for (auto& Layer1Iter : feat1_List) {
-			distance_to_layer2_Fid.ClearData();
-			for (auto& Layer2Iter : feat2_List) {
-				distance_to_layer2_Fid.AddValue(DistanceFunction(Layer1Iter.second, Layer2Iter.second), Layer2Iter.first);
-			}
-
-			nearestList.Clear();
-			distance_to_layer2_Fid.Lock();
-			for (auto& ptr : distance_to_layer2_Fid.UnsafeGetValues()) {
-				if (nearestList.Num() >= numNearest) break;
-				if (ptr.object) {
-					nearestList.Append(cweePair<int, double>(ptr.object->operator()(), ptr.key));
+			static cweeBoundary GetBoundary(RTreeContainer const& o) {
+				cweeBoundary out;
+				out.topRight = vec2d(-cweeMath::INF, -cweeMath::INF);
+				out.bottomLeft = vec2d(cweeMath::INF, cweeMath::INF);
+				for (auto& x : o.feature.AllCoordinates()) {
+					for (int i = 0; i < 2; i++) {
+						if (out.topRight[i] < x[i]) out.topRight[i] = x[i];
+						if (out.bottomLeft[i] > x[i]) out.bottomLeft[i] = x[i];
+					}
 				}
-			}
-			distance_to_layer2_Fid.Unlock();
+				return out;
+			};
+			static cwee_units::foot_t GetDistance(RTreeContainer const& a, cweeBoundary const& b) {
+				return a.feature.Distance(b);
+			};
+			static cwee_units::foot_t GetObjectDistance(RTreeContainer const& a, RTreeContainer const& b) {
+				return a.feature.Distance(b.feature);
+			};
 
-			out[Layer1Iter.first] = nearestList;
-		}
-		return out;
-	};
-	
-	std::map<int, cweeList<cweePair<int, double>>> Layer::Near(Layer const& layer1, Layer const& layer2, std::function<double(Geometry const&, Geometry const&)> DistanceFunction, int numNearest, std::function<bool(Feature const&)> WhereFunction) {
-		std::map<int, cweeList<cweePair<int, double>>> out;
-		cweeBalancedPattern<cwee_units::scalar_t, u64> distance_to_layer2_Fid; // x-axis is distance, y-axis is Layer2's Fid. 
-		int i, Layer1Fid, Layer2Fid, NumFeatures_Layer2;
-		cweeList<cweePair<int, double>> nearestList;
+			RTreeContainer() : feature() {};
+			RTreeContainer(RTreeContainer const& o) : feature(o.feature) {};
+			RTreeContainer(Geometry const& o) : feature(o) {};
+			RTreeContainer& operator=(RTreeContainer const& o) {
+				this->feature = o.feature;
+				return *this;
+			};
+			bool operator==(RTreeContainer const& b) { return feature.Data() == b.feature.Data(); };
+			bool operator!=(RTreeContainer const& b) { return !operator==(b); };
+		};
+		using RTreeType = RTree< RTreeContainer, RTreeContainer::GetBoundary, RTreeContainer::GetDistance, RTreeContainer::GetObjectDistance>;
 
-		std::map<int, Geometry> feat1_List;
-		std::map<int, Geometry > feat2_List;
-
-		for (Layer1Fid = 0; Layer1Fid < layer1.NumFeatures(); Layer1Fid++) {
+		RTreeType tree1;
+		for (Layer1Fid = 0; Layer1Fid <= layer1.NumFeatures(); Layer1Fid++) {
 			auto feat = layer1.GetFeature(Layer1Fid);
-			if (WhereFunction(feat)) feat1_List[Layer1Fid] = feat.GetGeometry();
-		}
-		for (Layer2Fid = 0; Layer2Fid < layer2.NumFeatures(); Layer2Fid++) {
-			auto feat = layer2.GetFeature(Layer2Fid);
-			if (WhereFunction(feat)) feat2_List[Layer2Fid] = feat.GetGeometry();
-		}
-		for (auto& Layer1Iter : feat1_List) {
-			distance_to_layer2_Fid.ClearData();
-			for (auto& Layer2Iter : feat2_List) {
-				distance_to_layer2_Fid.AddValue(DistanceFunction(Layer1Iter.second, Layer2Iter.second), Layer2Iter.first);
-			}
-
-			nearestList.Clear();
-			distance_to_layer2_Fid.Lock();
-			for (auto& ptr : distance_to_layer2_Fid.UnsafeGetValues()) {
-				if (nearestList.Num() >= numNearest) break;
-				if (ptr.object) {
-					nearestList.Append(cweePair<int, double>(ptr.object->operator()(), ptr.key));
+			if (feat.Data() && WhereFunction(feat)) {
+				auto geo = feat.GetGeometry();
+				if (geo.Data()) {
+					tree1.Add(make_cwee_shared<RTreeContainer>(geo));
 				}
 			}
-			distance_to_layer2_Fid.Unlock();
-
-			out[Layer1Iter.first] = nearestList;
+		}
+		RTreeType tree2;
+		for (Layer2Fid = 0; Layer2Fid <= layer2.NumFeatures(); Layer2Fid++) {
+			auto feat = layer2.GetFeature(Layer2Fid);
+			if (feat.Data() && WhereFunction(feat)) {
+				auto geo = feat.GetGeometry();
+				if (geo.Data()) {
+					tree2.Add(make_cwee_shared<RTreeContainer>(geo));
+				}
+			}
+		}
+		
+		tree2.GetRoot();
+		auto* child = tree1.GetRoot();
+		while (child) {
+			if (child->object) {
+				auto nearest = tree2.Near(*child->object, numNearest);
+				auto child_fid = child->object->feature.GetFeature().Fid();				
+				auto& nearestList = out[child_fid];
+				for (auto& ptr : nearest) {
+					if (ptr && ptr->object) {					
+						nearestList.Append(cweePair<Feature, cwee_units::foot_t>(
+							ptr->object->feature.GetFeature(), RTreeContainer::GetObjectDistance(*ptr->object, *child->object))
+						);
+					}
+				}				
+			}
+			child = tree1.GetNextLeaf(child);
 		}
 		return out;
 	};
-	cweeList<cweePair<int, double>> Layer::Near(Feature const& layer1, Layer const& layer2, int numNearest, std::function<bool(Feature const&)> WhereFunction) {
+	cweeList<cweePair<Feature, cwee_units::foot_t>> Layer::Near(Feature const& layer1, Layer const& layer2, int numNearest, std::function<bool(Feature const&)> WhereFunction) {
 		class RTreeContainer {
 		public:
 			Geometry feature;
@@ -1298,7 +1302,7 @@ namespace cweeGeo {
 
 		RTreeType tree;
 		int i, Layer1Fid, Layer2Fid, NumFeatures_Layer2;
-		for (Layer2Fid = 0; Layer2Fid < layer2.NumFeatures(); Layer2Fid++) {
+		for (Layer2Fid = 0; Layer2Fid <= layer2.NumFeatures(); Layer2Fid++) {
 			auto feat = layer2.GetFeature(Layer2Fid);
 			if (feat.Data() && WhereFunction(feat)) {
 				auto geo = feat.GetGeometry();
@@ -1311,13 +1315,13 @@ namespace cweeGeo {
 		auto geometryToFind = layer1.GetGeometry();
 		AUTO list_tree_nodes = tree.Near(geometryToFind, numNearest);
 
-		cweeList<cweePair<int, double>> nearestList; nearestList.SetGranularity(list_tree_nodes.Num());
+		cweeList<cweePair<Feature, cwee_units::foot_t>> nearestList; nearestList.SetGranularity(list_tree_nodes.Num());
 		for (auto& node : list_tree_nodes) {
 			if (node && node->object) {
 				auto& data = nearestList.Alloc();
 				auto feat = node->object->feature.GetFeature();
-				data.first = feat.Fid();
-				data.second = node->object->feature.Distance(geometryToFind)();
+				data.first = feat;
+				data.second = feat.Distance(layer1);
 			}
 		}
 		
@@ -1602,7 +1606,7 @@ namespace chaiscript {
 				std::vector<chaiscript::Boxed_Value> out;
 				for (auto& pairing : nearList) {											
 					std::pair<chaiscript::Boxed_Value, chaiscript::Boxed_Value> match; {
-						match.first = var(layer2.GetFeature(pairing.first));
+						match.first = var(Feature(pairing.first));
 						match.second = var(cwee_units::foot_t(pairing.second));
 					}
 					out.push_back(var(std::move(match)));
@@ -1615,24 +1619,23 @@ namespace chaiscript {
 
 			AUTO NearestMatchDistanceWhere = [](Layer const& layer1, Layer const& layer2, int numNearest, std::function<double(Geometry const&, Geometry const&)> dist, std::function<bool(Feature const&)> Where) {
 				AUTO nearList = Layer::Near(layer1, layer2, dist, numNearest, Where);
-
 				std::vector<chaiscript::Boxed_Value> out;
-				for (auto& pairing : nearList) {
-					std::vector<chaiscript::Boxed_Value> out2;
-					for (auto& matched : pairing.second) {
-						std::pair<chaiscript::Boxed_Value, chaiscript::Boxed_Value> pair; {
-							pair.first = var(layer1.GetFeature(pairing.first));
-							{
-								std::pair<chaiscript::Boxed_Value, chaiscript::Boxed_Value> match; {
-									match.first = var(layer2.GetFeature(matched.first));
-									match.second = var(cwee_units::foot_t(matched.second));
-								}
-								pair.second = var(std::move(match));
+				for (int Fid = 0; Fid < nearList.Num(); Fid++) {
+					auto& nearest = nearList[Fid];
+					if (nearest.Num() > 0) {
+						AUTO feat1 = layer1.GetFeature(Fid);
+						if (feat1.Data()) {
+							cweeBalancedCurve< chaiscript::Boxed_Value > boxedCurve;
+							std::pair<chaiscript::Boxed_Value, chaiscript::Boxed_Value> pair;							
+							for (auto& nearObj : nearest) {
+								boxedCurve.AddValue(nearObj.second(), var(Feature(nearObj.first)));
 							}
+							nearest.Clear();
+							pair.first = var(std::move(feat1));
+							pair.second = var(std::move(boxedCurve));
+							out.push_back(var(std::move(pair)));
 						}
-						out2.push_back(var(std::move(pair)));
 					}
-					out.push_back(var(std::move(out2)));
 				}
 				return out;
 			};
@@ -1641,37 +1644,6 @@ namespace chaiscript {
 			};
 			AUTO NearestMatch = [NearestMatchDistance](Layer const& layer1, Layer const& layer2, int numNearest) {
 				return NearestMatchDistance(layer1, layer2, numNearest, [](Geometry const& a, Geometry const& b)->double {
-					return a.Distance(b)();
-				});
-			};
-
-			AUTO NearestMatchListDistanceWhere = [](std::vector<chaiscript::Boxed_Value> const& layer1, std::vector<chaiscript::Boxed_Value> const& layer2, int numNearest, std::function<double(Geometry const&, Geometry const&)> dist, std::function<bool(Feature const&)> Where) {
-				AUTO nearList = cweeGeo::Near(layer1, layer2, dist, numNearest, Where);
-
-				std::vector<chaiscript::Boxed_Value> out;
-				for (auto& pairing : nearList) {
-					std::vector<chaiscript::Boxed_Value> out2;
-					for (auto& matched : pairing.second) {
-						std::pair<chaiscript::Boxed_Value, chaiscript::Boxed_Value> pair; {
-							pair.first = layer1[pairing.first]; {
-								std::pair<chaiscript::Boxed_Value, chaiscript::Boxed_Value> match; {
-									match.first = layer2[matched.first];
-									match.second = var(cwee_units::foot_t(matched.second));
-								}
-								pair.second = var(std::move(match));
-							}
-						}
-						out2.push_back(var(std::move(pair)));
-					}
-					out.push_back(var(std::move(out2)));
-				}
-				return out;
-			};
-			AUTO NearestMatchListDistance = [NearestMatchListDistanceWhere](std::vector<chaiscript::Boxed_Value> const& layer1, std::vector<chaiscript::Boxed_Value> const& layer2, int numNearest, std::function<double(Geometry const&, Geometry const&)> dist) {
-				return NearestMatchListDistanceWhere(layer1, layer2, numNearest, dist, [](Feature const& a)->bool { return true; });
-			};
-			AUTO NearestMatchList = [NearestMatchListDistance](std::vector<chaiscript::Boxed_Value> const& layer1, std::vector<chaiscript::Boxed_Value> const& layer2, int numNearest) {
-				return NearestMatchListDistance(layer1, layer2, numNearest, [](Geometry const& a, Geometry const& b)->double {
 					return a.Distance(b)();
 				});
 			};
@@ -1685,243 +1657,6 @@ namespace chaiscript {
 			lib->AddFunction(NearestMatchFeature, Near, , return NearestMatchFeature(layer1, layer2, 1), Feature const& layer1, Layer const& layer2);
 			lib->AddFunction(NearestMatchFeature, Near, , return NearestMatchFeature(layer1, layer2, numNearest), Feature const& layer1, Layer const& layer2, int numNearest);
 			lib->AddFunction(NearestMatchFeatureWhere, Near, , return NearestMatchFeatureWhere(layer1, layer2, numNearest, Where), Feature const& layer1, Layer const& layer2, int numNearest, std::function<bool(Feature const&)> const& Where);
-
-			lib->AddFunction(NearestMatchList, Near, , return NearestMatchList(layer1, layer2, 1), std::vector<chaiscript::Boxed_Value> const& layer1, std::vector<chaiscript::Boxed_Value> const& layer2);
-			lib->AddFunction(NearestMatchList, Near, , return NearestMatchList(layer1, layer2, numNearest), std::vector<chaiscript::Boxed_Value> const& layer1, std::vector<chaiscript::Boxed_Value> const& layer2, int numNearest);
-			lib->AddFunction(NearestMatchListDistance, Near, , return NearestMatchListDistance(layer1, layer2, numNearest, dist), std::vector<chaiscript::Boxed_Value> const& layer1, std::vector<chaiscript::Boxed_Value> const& layer2, int numNearest, std::function<double(Geometry const&, Geometry const&)> const& dist);
-			lib->AddFunction(NearestMatchListDistanceWhere, Near, , return NearestMatchListDistanceWhere(layer1, layer2, numNearest, [](Geometry const& a, Geometry const& b)->double { return a.Distance(b)(); }, Where), std::vector<chaiscript::Boxed_Value> const& layer1, std::vector<chaiscript::Boxed_Value> const& layer2, int numNearest, std::function<bool(Feature const&)> const& Where);
-			lib->AddFunction(NearestMatchListDistanceWhere, Near, , return NearestMatchListDistanceWhere(layer1, layer2, numNearest, dist, Where), std::vector<chaiscript::Boxed_Value> const& layer1, std::vector<chaiscript::Boxed_Value> const& layer2, int numNearest, std::function<double(Geometry const&, Geometry const&)> const& dist, std::function<bool(Feature const&)> const& Where);
-
-			AUTO kmeans = [](int k, int n)->std::vector<chaiscript::Boxed_Value> {
-				int m = n * k * 10;
-				std::vector<std::vector<double>> centers(k, std::vector<double>(n));
-				std::vector<std::vector<double>> data(m, std::vector<double>(n));
-				std::vector<int> labels(m);
-				//random_device rd;
-				//mt19937 gen(rd());
-				//uniform_real_distribution<> dis(0.0, 1.0);
-				for (int i = 0; i < m; ++i) {
-					for (int j = 0; j < n; ++j) {
-						data[i][j] = cweeRandomFloat(0, 1); // dis(gen);
-					}
-				}
-				for (int i = 0; i < k; ++i) {
-					centers[i] = data[i];
-				}
-				while (true) {
-					std::vector<std::vector<double>> new_centers(k, std::vector<double>(n));
-					std::vector<int> counts(k);
-					for (int i = 0; i < m; ++i) {
-						double min_dist = std::numeric_limits<double>::max();
-						int label = -1;
-						for (int j = 0; j < k; ++j) {
-							double dist = 0;
-							for (int l = 0; l < n; ++l) {
-								dist += std::pow(data[i][l] - centers[j][l], 2);
-							}
-							if (dist < min_dist) {
-								min_dist = dist;
-								label = j;
-							}
-						}
-						labels[i] = label;
-						counts[label]++;
-						for (int l = 0; l < n; ++l) {
-							new_centers[label][l] += data[i][l];
-						}
-					}
-					bool converged = true;
-					for (int i = 0; i < k; ++i) {
-						if (counts[i] == 0) {
-							continue;
-						}
-						for (int l = 0; l < n; ++l) {
-							new_centers[i][l] /= counts[i];
-							if (new_centers[i][l] != centers[i][l]) {
-								converged = false;
-							}
-							centers[i][l] = new_centers[i][l];
-						}
-					}
-					if (converged) {
-						break;
-					}
-				}
-
-				std::vector<chaiscript::Boxed_Value> out;
-				for (std::vector<double>& x : centers) {
-					std::vector<chaiscript::Boxed_Value> row;
-					for (auto& y : x) {
-						row.push_back(var((double)y));
-					}
-					out.push_back(var(row));
-				}
-				return out;
-			};
-			AUTO kmeans2 = [](int k, std::vector<vec2d> const& data)->std::vector<chaiscript::Boxed_Value> {
-				int m = data.size();
-				int n = 2;
-				int i, j, l;
-				double min_dist, dist;
-				bool converged;
-				int label;
-				std::vector<vec2d> centers(k, vec2d());
-				std::vector<int> labels(m);
-				std::vector<std::vector<double>> new_centers(k, std::vector<double>(n));
-				std::vector<int> counts(k);
-
-				for (i = 0; i < k; ++i) centers[i] = data[i];				
-				while (true) {
-					for (i = 0; i < k; ++i) for (j = 0; j < n; ++j) new_centers[i][j] = 0;										
-					for (i = 0; i < k; ++i) counts[i] = 0;					
-					for (i = 0; i < m; ++i) {
-						min_dist = std::numeric_limits<double>::max();
-						label = -1;
-						for (j = 0; j < k; ++j) {
-							dist = 0;
-							for (l = 0; l < n; ++l) {
-								dist += std::pow(data[i][l] - centers[j][l], 2);
-							}
-							if (dist < min_dist) {
-								min_dist = dist;
-								label = j;
-							}
-						}
-						labels[i] = label;
-						counts[label]++;
-						for (l = 0; l < n; ++l) {
-							new_centers[label][l] += data[i][l];
-						}
-					}
-					converged = true;
-					for (i = 0; i < k; ++i) {
-						if (counts[i] == 0) {
-							continue;
-						}
-						for (l = 0; l < n; ++l) {
-							new_centers[i][l] /= counts[i];
-							if (new_centers[i][l] != centers[i][l]) {
-								converged = false;
-							}
-							centers[i][l] = new_centers[i][l];
-						}
-					}
-					if (converged) {
-						break;
-					}
-				}
-
-				std::vector<chaiscript::Boxed_Value> out;
-				for (auto& x : centers) {
-					std::vector<chaiscript::Boxed_Value> row;
-					for (i = 0; i < n; ++i) {
-						row.push_back(var((double)x[i]));
-					}
-					out.push_back(var(row));
-				}
-				return out;
-			};
-			AUTO kmeans_cells = [](int k, std::vector<vec2d> const& data)->UI_MapLayer {
-				UI_MapLayer out;
-
-				int m = data.size();
-				int n = 2;
-				int i, j, l;
-				double min_dist, dist;
-				bool converged;
-				int label;
-				std::vector<vec2d> centers(k, vec2d());
-				std::vector<int> labels(m);
-				std::vector<std::vector<double>> new_centers(k, std::vector<double>(n));
-				std::vector<int> counts(k);
-
-				for (i = 0; i < k; ++i) centers[i] = data[i];
-				while (true) {
-					for (i = 0; i < k; ++i) for (j = 0; j < n; ++j) new_centers[i][j] = 0;
-					for (i = 0; i < k; ++i) counts[i] = 0;
-					for (i = 0; i < m; ++i) {
-						min_dist = std::numeric_limits<double>::max();
-						label = -1;
-						for (j = 0; j < k; ++j) {
-							dist = 0;
-							for (l = 0; l < n; ++l) {
-								dist += std::pow(data[i][l] - centers[j][l], 2);
-							}
-							if (dist < min_dist) {
-								min_dist = dist;
-								label = j;
-							}
-						}
-						labels[i] = label;
-						counts[label]++;
-						for (l = 0; l < n; ++l) {
-							new_centers[label][l] += data[i][l];
-						}
-					}
-					converged = true;
-					for (i = 0; i < k; ++i) {
-						if (counts[i] == 0) {
-							continue;
-						}
-						for (l = 0; l < n; ++l) {
-							new_centers[i][l] /= counts[i];
-							if (new_centers[i][l] != centers[i][l]) {
-								converged = false;
-							}
-							centers[i][l] = new_centers[i][l];
-						}
-					}
-					if (converged) {
-						break;
-					}
-				}
-
-				auto cweeCenters = make_cwee_shared<cweeList<vec2d>>();
-				cweeCenters->operator=(centers);
-				centers.clear();
-
-				auto voronoiParent { Voronoi(cweeCenters) };
-
-				for (auto& cell : voronoiParent.GetCells()) {
-					auto c = UI_Color(cweeRandomFloat(0, 245), cweeRandomFloat(0, 245), cweeRandomFloat(0, 245), 255);
-					auto t = cweeRandomInt(1, 6);
-					UI_MapPolyline line;
-					line.color = c;
-					line.thickness = t;					
-					for (auto& point : cell.points) {
-						line.AddPoint(point.x, point.y);						
-					}
-					out.Children.push_back(var(std::move(line)));
-					int count_children = 0;
-					for (auto& inputData : data){
-						if (cell.overlaps(inputData)) {
-							UI_MapIcon icon;
-							icon.color = c;
-							icon.longitude = inputData.x;
-							icon.latitude = inputData.y;
-							icon.HideOnCollision = false;
-							out.Children.push_back(var(std::move(icon)));
-							count_children++;
-						}
-					}
-
-					{
-						UI_MapIcon icon;
-						icon.color = UI_Color(0,0,0,1);
-						icon.size = 24;
-						icon.longitude = cell.center.x;
-						icon.latitude = cell.center.y;
-						icon.HideOnCollision = false;
-						icon.Label = cweeStr::printf("%i Items", count_children);
-						out.Children.push_back(var(std::move(icon)));
-					}
-				}
-
-				return out;
-			};
-			lib->AddFunction(kmeans, kmeans, , return kmeans(numCenters, numDim), int numCenters, int numDim);
-			lib->AddFunction(kmeans2, kmeans, , return kmeans2(numCenters, data), int numCenters, std::vector<vec2d> const& data);
-			lib->AddFunction(kmeans_cells, draw_kmeans, , return kmeans_cells(numCenters, data), int numCenters, std::vector<vec2d> const& data);
 
             return lib;
         };
