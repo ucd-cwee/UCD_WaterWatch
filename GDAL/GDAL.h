@@ -97,21 +97,24 @@ namespace cweeGeo {
 	protected:
 		cweeSharedPtr<void> data;
 		cweeSharedPtr<void> transform;
+		cweeSharedPtr<void> rTree;
 
 	public:
-		Layer() : data(nullptr), transform(nullptr) {};
+		Layer() : data(nullptr), transform(nullptr), rTree(nullptr) {};
 		Layer(decltype(Layer::data) const& dataSource);
-		Layer(decltype(Layer::data) const& dataSource, decltype(Layer::transform) const& transformSource) : data(dataSource), transform(transformSource) {};
-		Layer(Layer const& other) : data(other.data), transform(other.transform) {};
-		Layer(Layer&& other) : data(other.data), transform(other.transform) {};
+		Layer(decltype(Layer::data) const& dataSource, decltype(Layer::transform) const& transformSource) : data(dataSource), transform(transformSource), rTree(nullptr) {};
+		Layer(Layer const& other) : data(other.data), transform(other.transform), rTree(other.rTree) {};
+		Layer(Layer&& other) : data(other.data), transform(other.transform), rTree(other.rTree) {};
 		Layer& operator=(Layer const& other) {
 			data = other.data;
 			transform = other.transform;
+			rTree = other.rTree;
 			return *this;
 		};
 		Layer& operator=(Layer&& other) {
 			data = other.data;
 			transform = other.transform;
+			rTree = other.rTree;
 			return *this;
 		};
 
@@ -119,9 +122,10 @@ namespace cweeGeo {
 		Feature GetFeature(int Fid) const;
 		cweeStr Name() const;
 
-	// private:
-		static cweeList<cweeList<cweePair<Feature, cwee_units::foot_t>>> Near(Layer const& layer1, Layer const& layer2, std::function<double(Geometry const&, Geometry const&)> DistanceFunction, int numNearest = 1, std::function<bool(Feature const&)> WhereFunction = [](Feature const&)->bool { return true; });
-		static cweeList<cweePair<Feature, cwee_units::foot_t>> Near(Feature const& layer1, Layer const& layer2, int numNearest = 1, std::function<bool(Feature const&)> WhereFunction = [](Feature const&)->bool { return true; });
+		static cweeList<cweeList<cweePair<Feature, cwee_units::foot_t>>> Near(Layer& layer1, Layer& layer2, std::function<double(Geometry const&, Geometry const&)> DistanceFunction, int numNearest = 1, std::function<bool(Feature const&)> WhereFunction = [](Feature const&)->bool { return true; });
+		static cweeList<cweePair<Feature, cwee_units::foot_t>> Near(Feature const& layer1, Layer& layer2, int numNearest = 1, std::function<bool(Feature const&)> WhereFunction = [](Feature const&)->bool { return true; });
+		static cweeList<cweePair<Feature, cwee_units::foot_t>> Near(cweeBoundary const& layer1, Layer& layer2, int numNearest = 1, std::function<bool(Feature const&)> WhereFunction = [](Feature const&)->bool { return true; });
+
 	};
 
 	class Feature {

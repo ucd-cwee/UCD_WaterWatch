@@ -529,7 +529,7 @@ public:
     /// <summary>
     /// Sets the title of this sheet.
     /// </summary>
-    void title(cweeStr title);
+    void title(cweeStr const& title);
 
     // freeze panes
     /// <summary>

@@ -544,7 +544,7 @@ cweeStr ExcelWorksheet::title() const {
     xlnt::worksheet& worksheet = To_Worksheet(*this);
     return worksheet.title().c_str();
 };
-void ExcelWorksheet::title(cweeStr title) {
+void ExcelWorksheet::title(cweeStr const& title) {
     using namespace xlnt;
     xlnt::worksheet& worksheet = To_Worksheet(*this);
     worksheet.title(title.c_str());
@@ -1064,9 +1064,9 @@ namespace chaiscript {
                 AddSharedPtrClass(, ExcelWorksheet);
                 {
                     lib->AddFunction(, id, , if (a) return a->id(); else ThrowIfBadAccess;, WorksheetPtr& a);
-                    lib->AddFunction(, id, , if (a) return a->id(); else ThrowIfBadAccess;, WorksheetPtr& a, int id);
+                    lib->AddFunction(, id, , if (a) return a->id(id); else ThrowIfBadAccess;, WorksheetPtr& a, int id);
                     lib->AddFunction(, title, , if (a) return a->title(); else ThrowIfBadAccess;, WorksheetPtr& a);
-                    lib->AddFunction(, title, , if (a) return a->title(); else ThrowIfBadAccess;, WorksheetPtr& a, cweeStr const& title);
+                    lib->AddFunction(, title, , if (a) return a->title(title); else ThrowIfBadAccess;, WorksheetPtr& a, cweeStr const& title);
                     lib->AddFunction(, freeze_panes, , if (a) return a->freeze_panes(*cell); else ThrowIfBadAccess;, WorksheetPtr& a, CellPtr cell);
                     AddSharedPtrClassFunction(, ExcelWorksheet, unfreeze_panes);
                     AddSharedPtrClassFunction(, ExcelWorksheet, has_frozen_panes);
