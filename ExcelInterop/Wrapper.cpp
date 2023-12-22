@@ -1369,44 +1369,50 @@ namespace chaiscript {
                     AddSharedPtrClassFunction(, ExcelCell, address);
                     AddSharedPtrClassFunction(, ExcelCell, has_value);
                     lib->add(chaiscript::fun([](CellPtr& a) -> chaiscript::Boxed_Value { if (a) {
-                        switch (a->data_type()) {
-                        case CellType::empty:
-                            return chaiscript::Boxed_Value();
-                        case CellType::error:
-                            return var(a->error());
-                        default:
-                            if (a->is_date()) {
-                                return var(a->value<cweeTime>());
-                            }
-                            else {
-                                switch (a->data_type()) {
-                                case CellType::date:
+                        if (a->has_value()) {
+                            switch (a->data_type()) {
+                            case CellType::empty:
+                                return chaiscript::Boxed_Value();
+                            case CellType::error:
+                                return var(a->error());
+                            default:
+                                if (a->is_date()) {
                                     return var(a->value<cweeTime>());
-                                case CellType::formula_string:
-                                case CellType::inline_string:
-                                case CellType::shared_string:
-                                    return var(a->value<cweeStr>());
-                                case CellType::number:
-                                    return var(a->value<double>());
-                                case CellType::boolean:
-                                    return var(a->value<bool>());
-                                default:
-                                    return chaiscript::Boxed_Value();
+                                }
+                                else {
+                                    switch (a->data_type()) {
+                                    case CellType::date:
+                                        return var(a->value<cweeTime>());
+                                    case CellType::formula_string:
+                                    case CellType::inline_string:
+                                    case CellType::shared_string:
+                                        return var(a->value<cweeStr>());
+                                    case CellType::number:
+                                        return var(a->value<double>());
+                                    case CellType::boolean:
+                                        return var(a->value<bool>());
+                                    default:
+                                        return chaiscript::Boxed_Value();
+                                    }
                                 }
                             }
+                        }
+                        else {
+                            return chaiscript::Boxed_Value();
                         }
                     }
                     else ThrowIfBadAccess; }), "value");
                     AddSharedPtrClassFunction(, ExcelCell, clear_value);
-                    // lib->AddFunction(, value, , if (a) return a->value(v); else ThrowIfBadAccess; , CellPtr& a, bool v);
+                    // lib->AddFunction(, value, , if (a) return a->value(v); else ThrowIfBadAccess; , CellPtr& a, bool v);                    
                     lib->add(chaiscript::fun([](CellPtr& a, bool v) { if (a) a->value(v); else ThrowIfBadAccess; }), "value");
                     lib->add(chaiscript::fun([](CellPtr& a, int v) { if (a) a->value((double)v); else ThrowIfBadAccess; }), "value");
                     lib->add(chaiscript::fun([](CellPtr& a, float v) { if (a) a->value((double)v); else ThrowIfBadAccess; }), "value");
                     lib->add(chaiscript::fun([](CellPtr& a, double v) { if (a) a->value((double)v); else ThrowIfBadAccess; }), "value");
-                    lib->add(chaiscript::fun([](CellPtr& a, cweeTime v) { if (a) a->value(v); else ThrowIfBadAccess; }), "value");
-                    lib->add(chaiscript::fun([](CellPtr& a, cweeStr v) { if (a) a->value(v); else ThrowIfBadAccess; }), "value");
-                    lib->add(chaiscript::fun([](CellPtr& a, CellPtr v) { if (a) a->value(*v); else ThrowIfBadAccess; }), "value");
-                    lib->add(chaiscript::fun([](CellPtr& a, cweeStr v, bool inferType) { if (a) a->value(v, inferType); else ThrowIfBadAccess; }), "value");
+                    lib->add(chaiscript::fun([](CellPtr& a, cweeTime const& v) { if (a) a->value(v); else ThrowIfBadAccess; }), "value");
+                    lib->add(chaiscript::fun([](CellPtr& a, cweeStr const& v) { if (a) a->value(v); else ThrowIfBadAccess; }), "value");
+                    lib->add(chaiscript::fun([](CellPtr& a, CellPtr const& v) { if (a) a->value(*v); else ThrowIfBadAccess; }), "value");
+                    lib->add(chaiscript::fun([](CellPtr& a, cweeStr const& v, bool inferType) { if (a) a->value(v, inferType); else ThrowIfBadAccess; }), "value");                    
+                    lib->eval("def value(ExcelCell cell, v) : v == null { cell.clear_value(); };"); // allows for trying to set the 
                     lib->add(chaiscript::fun([](CellPtr& a) { if (a) return a->data_type(); else ThrowIfBadAccess; }), "data_type");
                     lib->add(chaiscript::fun([](CellPtr& a, CellType type) { if (a) a->data_type(type); else ThrowIfBadAccess; }), "data_type");
                     AddSharedPtrClassFunction(, ExcelCell, is_date);

@@ -623,7 +623,8 @@ namespace chaiscript {
                 }
             }
             catch (const exception::bad_boxed_cast&) {
-                throw exception::eval_error("Condition not boolean");
+                return !t_bv.is_null();
+                // throw exception::eval_error("Condition not boolean");
             }
         }
 

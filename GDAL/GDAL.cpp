@@ -8,9 +8,6 @@
 #include "../WaterWatchCpp/BalancedPattern.h"
 #include "../WaterWatchCpp/Voronoi.h"
 
-template <typename T> INLINE cweeSharedPtr<void> ToVoidPtr(T& ptr) {
-	return cweeSharedPtr<void>(make_cwee_shared<T>(ptr), [](void* p) { return p; });
-};
 template <typename T> INLINE cweeSharedPtr<T> FromVoidPtr(cweeSharedPtr<void> data) {
 	return cweeSharedPtr<T>(data, [](void* p) { return static_cast<T*>(p); });
 };
@@ -745,8 +742,94 @@ namespace cweeGeo {
 			return toReturn;
 		}
 	};
+	vec2d Geometry::CenterOfMass() const {
+		vec2d out;
+		if (this->geometry) {
+			AUTO ptr{ FromVoidPtr<OGRGeometry>(this->geometry) };
+			if (ptr) {
+				auto geoType = GeometryType::_from_integral_unchecked(static_cast<int>(wkbFlatten(ptr->getGeometryType())));
+				switch (geoType) {
+				default:
+				case GeometryType::Unknown:
+					break;
+				case GeometryType::Point: {
+					auto* poPoint = ptr->toPoint();
+					out = vec2d(poPoint->getX(), poPoint->getY());
+					break;
+				}
+				case GeometryType::Line: {
+					auto* poPoint = ptr->toLineString();
+					int n = poPoint->getNumPoints();
 
-	cwee_units::foot_t Distance_Point_Line(cweeSharedPtr< OGRGeometry> const& point, cweeSharedPtr< OGRGeometry> const& line) {
+					if (n > 0) {
+						if (n == 1) {
+							out = vec2d(poPoint->getX(0), poPoint->getY(0));
+						}
+						else {
+							if (n % 2 == 0) { // even == average two points near center
+								out = (vec2d(poPoint->getX(n / 2), poPoint->getY(n / 2)) + vec2d(poPoint->getX((n / 2) - 1), poPoint->getY((n / 2)-1))) / 2.0;
+							} else { // odd == pick single "value" in middle
+								out = vec2d(poPoint->getX(n / 2), poPoint->getY(n / 2));
+							}
+						}
+					}
+					break;
+				}
+				case GeometryType::Multiline: {
+					auto* poPoints = ptr->toMultiLineString();
+					for (int j = 0; j < poPoints->getNumGeometries(); ++j) {
+						auto* poPoint = poPoints->getGeometryRef(j);
+						int n = poPoint->getNumPoints();
+
+						if (n > 0) {
+							if (n == 1) {
+								out = vec2d(poPoint->getX(0), poPoint->getY(0));
+							}
+							else {
+								if (n % 2 == 0) { // even == average two points near center
+									out = (vec2d(poPoint->getX(n / 2), poPoint->getY(n / 2)) + vec2d(poPoint->getX((n / 2) - 1), poPoint->getY((n / 2) - 1))) / 2.0;
+								}
+								else { // odd == pick single "value" in middle
+									out = vec2d(poPoint->getX(n / 2), poPoint->getY(n / 2));
+								}
+							}
+						}
+
+					}
+					break;
+				}
+				case GeometryType::Polygon: {
+					auto* poPoint = ptr->toPolygon();
+					auto* poPoint2 = poPoint->getExteriorRing();
+					cweeList<vec2d> points;
+					int n = poPoint2->getNumPoints();
+					points.SetGranularity(n + 1);
+					for (int i = 0; i < n; i++) {
+						points.Append(vec2d(poPoint2->getX(i), poPoint2->getY(i)));
+					}
+
+					double signedArea = 0;
+					out.x = 0;
+					out.y = 0;
+					for (int i = 0; i < (n - 1); i++) {
+						signedArea += ((points[i].x* points[i + 1].y) - (points[i+1].x * points[i].y));
+
+						out.x += (points[i].x + points[i + 1].x)* ((points[i].x * points[i + 1].y) - (points[i + 1].x * points[i].y));
+						out.y += (points[i].y + points[i + 1].y) * ((points[i].x * points[i + 1].y) - (points[i + 1].x * points[i].y));
+					}
+					signedArea *= 0.5;
+					out.x /= (6.0 * signedArea);
+					out.y /= (6.0 * signedArea);
+
+					break;
+				}
+				}
+			}
+		}
+		return out;
+	};
+
+	INLINE cwee_units::foot_t Distance_Point_Line(cweeSharedPtr< OGRGeometry> const& point, cweeSharedPtr< OGRGeometry> const& line) {
 		cwee_units::foot_t out = std::numeric_limits<cwee_units::foot_t>::max(); 
 		
 		auto* p_ptr = point->toPoint();
@@ -812,7 +895,7 @@ namespace cweeGeo {
 		}
 		return out;
 	};
-	cwee_units::foot_t Distance_Point_MultiLine(cweeSharedPtr< OGRGeometry> const& point, cweeSharedPtr< OGRGeometry> const& line) {
+	INLINE cwee_units::foot_t Distance_Point_MultiLine(cweeSharedPtr< OGRGeometry> const& point, cweeSharedPtr< OGRGeometry> const& line) {
 		cwee_units::foot_t out = std::numeric_limits<cwee_units::foot_t>::max();
 
 		auto* p_ptr = point->toPoint();
@@ -823,7 +906,7 @@ namespace cweeGeo {
 		}
 		return out;
 	};
-	cwee_units::foot_t Distance_Point_Polygon(cweeSharedPtr< OGRGeometry> const& point, cweeSharedPtr< OGRGeometry> const& line) {
+	INLINE cwee_units::foot_t Distance_Point_Polygon(cweeSharedPtr< OGRGeometry> const& point, cweeSharedPtr< OGRGeometry> const& line) {
 		cwee_units::foot_t out = std::numeric_limits<cwee_units::foot_t>::max();
 
 		auto* p_ptr = point->toPoint();
@@ -900,6 +983,84 @@ namespace cweeGeo {
 
 		return out;
 	};
+	INLINE cwee_units::foot_t Distance_Polygon_Polygon(cweeSharedPtr< OGRGeometry> const& point, cweeSharedPtr< OGRGeometry> const& line) {
+		cwee_units::foot_t out = std::numeric_limits<cwee_units::foot_t>::max();
+
+		auto* p_ptr = point->toPoint();
+		auto* l_ptr = line->toPolygon()->getExteriorRing();
+		auto pointCoord{ vec2d(p_ptr->getX(), p_ptr->getY()) };
+		auto numLinePoints = l_ptr->getNumPoints();
+
+		if (numLinePoints == 0) {
+			out = std::numeric_limits<decltype(out)>::max();
+		}
+		auto lineCoords0{ vec2d(l_ptr->getX(0), l_ptr->getY(0)) };
+
+		if (numLinePoints == 1) {
+			out = Geometry::Distance(pointCoord, lineCoords0);
+		}
+		else {
+			auto closestPointOnLineSegment = [](const vec2d& A, const vec2d& B, const vec2d& P)->vec2d {
+				// Calculate the vector AB (direction of the line segment)
+				double ABx = B[0] - A[0];
+				double ABy = B[1] - A[1];
+
+				// Calculate the vector AP (from point A to point P)
+				double APx = P[0] - A[0];
+				double APy = P[1] - A[1];
+
+				// Calculate the dot product of AB and AP
+				double dotProduct = ABx * APx + ABy * APy;
+
+				// Calculate the squared length of AB
+				double lengthABsq = ABx * ABx + ABy * ABy;
+
+				// Calculate the parameter t (projection of AP onto AB)
+				double t = dotProduct / lengthABsq;
+
+				// If t is outside the segment [0, 1], find the distance to the closest endpoint
+				if (t < 0.0) {
+					return A; // Distance to point A
+				}
+				else if (t > 1.0) {
+					return B; // Distance to point B
+				}
+
+				// Calculate the closest point on the line segment
+				double closestX = A[0] + t * ABx;
+				double closestY = A[1] + t * ABy;
+
+				return vec2d(closestX, closestY);
+			};
+
+			cwee_units::foot_t dist_start;
+			cwee_units::foot_t dist_end = Geometry::Distance(pointCoord, lineCoords0);
+			cwee_units::foot_t dist_perp;
+			vec2d prevPoint = lineCoords0;
+			vec2d currentPoint;
+			for (int i = 1; i < numLinePoints; i += 1) {
+				currentPoint = vec2d(l_ptr->getX(i), l_ptr->getY(i));
+				dist_start = dist_end;
+				dist_end = Geometry::Distance(pointCoord, currentPoint);
+				dist_perp = Geometry::Distance(pointCoord, closestPointOnLineSegment(prevPoint, currentPoint, pointCoord));
+				out = cwee_units::math::fmin(cwee_units::math::fmin(cwee_units::math::fmin(out, dist_perp), dist_end), dist_start);
+				prevPoint = currentPoint;
+			}
+		}
+		{
+			cweeList<vec2d> coords;
+			coords.SetGranularity(numLinePoints + 1);
+			for (int i = 0; i < numLinePoints; i++) {
+				coords.Append(vec2d(l_ptr->getX(i), l_ptr->getY(i)));
+			}
+			if (cweeEng::IsPointInPolygon(coords, pointCoord)) {
+				out = cwee_units::foot_t(0);
+			}
+		}
+
+		return out;
+	};
+
 
 	INLINE bool Overlaps(cweeList<vec2d> const& coords1, cweeList<vec2d> const& coords2) {
 		bool out{ false };
@@ -1042,9 +1203,9 @@ namespace cweeGeo {
 				else if (type1 == GeometryType::Point && type2 == GeometryType::Line) {// point / Line
 					out = Distance_Point_Line(ptr1, ptr2);
 				}
-				else if (type1 == GeometryType::Point && type2 == GeometryType::Polygon) {// point / Polygon
-					out = Distance(objA.Coordinates(0), objB.AllCoordinates());
+				else if (type1 == GeometryType::Point && type2 == GeometryType::Polygon) {// point / Polygon					
 					if (cweeEng::IsPointInPolygon(objB.AllCoordinates(), objA.Coordinates(0))) out = 0;
+					else out = Distance(objA.Coordinates(0), objB.AllCoordinates());
 				}
 				else if (type1 == GeometryType::Point && type2 == GeometryType::Multiline) {// point / Multiline
 					out = Distance_Point_MultiLine(ptr1, ptr2);
@@ -1059,9 +1220,9 @@ namespace cweeGeo {
 				else if (type1 == GeometryType::Line && type2 == GeometryType::Multiline) {// Line / Multiline
 					out = Distance(objA.AllCoordinates(), objB.AllCoordinates());
 				}
-				else if (type1 == GeometryType::Polygon && type2 == GeometryType::Polygon) {// Polygon / Polygon
-					out = Distance(objA.AllCoordinates(), objB.AllCoordinates());
-					if (Overlaps(objA.AllCoordinates(), objB.AllCoordinates())) out = 0;
+				else if (type1 == GeometryType::Polygon && type2 == GeometryType::Polygon) {// Polygon / Polygon					
+					if (Overlaps(objA.AllCoordinates(), objB.AllCoordinates())) out = Distance(objA.CenterOfMass(), objB.CenterOfMass());
+					else out = Distance(objA.AllCoordinates(), objB.AllCoordinates());
 				}
 				else if (type1 == GeometryType::Polygon && type2 == GeometryType::Multiline) {// Polygon / Multiline
 					out = Distance(objA.AllCoordinates(), objB.AllCoordinates());
@@ -1084,9 +1245,9 @@ namespace cweeGeo {
 				else if (type2 == GeometryType::Point && type1 == GeometryType::Line) {// point / Line
 					out = Distance_Point_Line(ptr2, ptr1);
 				}
-				else if (type2 == GeometryType::Point && type1 == GeometryType::Polygon) {// point / Polygon
-					out = Distance(objA.Coordinates(0), objB.AllCoordinates());
+				else if (type2 == GeometryType::Point && type1 == GeometryType::Polygon) {// point / Polygon					
 					if (cweeEng::IsPointInPolygon(objB.AllCoordinates(), objA.Coordinates(0))) out = 0;
+					else out = Distance(objA.Coordinates(0), objB.AllCoordinates());
 				}
 				else if (type2 == GeometryType::Point && type1 == GeometryType::Multiline) {// point / Multiline
 					out = Distance_Point_MultiLine(ptr2, ptr1);
@@ -1101,9 +1262,9 @@ namespace cweeGeo {
 				else if (type2 == GeometryType::Line && type1 == GeometryType::Multiline) {// Line / Multiline
 					out = Distance(objA.AllCoordinates(), objB.AllCoordinates());
 				}
-				else if (type2 == GeometryType::Polygon && type1 == GeometryType::Polygon) {// Polygon / Polygon
-					out = Distance(objA.AllCoordinates(), objB.AllCoordinates());
-					if (Overlaps(objA.AllCoordinates(), objB.AllCoordinates())) out = 0;
+				else if (type2 == GeometryType::Polygon && type1 == GeometryType::Polygon) {// Polygon / Polygon				
+					if (Overlaps(objA.AllCoordinates(), objB.AllCoordinates())) out = Distance(objA.CenterOfMass(), objB.CenterOfMass());
+					else out = Distance(objA.AllCoordinates(), objB.AllCoordinates());
 				}
 				else if (type2 == GeometryType::Polygon && type1 == GeometryType::Multiline) {// Polygon / Multiline
 					out = Distance(objA.AllCoordinates(), objB.AllCoordinates());
@@ -1216,6 +1377,34 @@ namespace cweeGeo {
 		bool operator!=(RTreeContainer const& b) { return !operator==(b); };
 	};
 
+	cweeBoundary Layer::Boundary() {
+		using RTreeType = RTree< RTreeContainer, RTreeContainer::GetBoundary, RTreeContainer::GetDistance, RTreeContainer::GetObjectDistance>;
+		
+		int i, Layer1Fid, Layer2Fid, NumFeatures_Layer2;
+		cweeSharedPtr<RTreeType> tree;
+		if (this->rTree) {
+			tree = FromVoidPtr<RTreeType>(this->rTree);
+		}
+		else {
+			tree = make_cwee_shared<RTreeType>();
+			for (Layer2Fid = 0; Layer2Fid <= this->NumFeatures(); Layer2Fid++) {
+				auto feat = this->GetFeature(Layer2Fid);
+				if (feat.Data()) {
+					auto geo = feat.GetGeometry();
+					if (geo.Data()) {
+						tree->Add(make_cwee_shared<RTreeContainer>(geo));
+					}
+				}
+			}
+			this->rTree = cweeSharedPtr<void>(tree);
+		}
+
+		auto* root = tree->GetRoot();
+		if (root) {
+			return root->bound;
+		}
+		return cweeBoundary();
+	};
 	cweeList<cweeList<cweePair<Feature, cwee_units::foot_t>>> Layer::Near(Layer& layer1, Layer& layer2, std::function<double(Geometry const&, Geometry const&)> DistanceFunction, int numNearest, std::function<bool(Feature const&)> WhereFunction) {
 		using RTreeType = RTree< RTreeContainer, RTreeContainer::GetBoundary, RTreeContainer::GetDistance, RTreeContainer::GetObjectDistance>;
 
@@ -1235,8 +1424,8 @@ namespace cweeGeo {
 						tree1->Add(make_cwee_shared<RTreeContainer>(geo));
 					}
 				}
-			}
-			layer1.rTree = ToVoidPtr(tree1);
+			}	
+			layer1.rTree = cweeSharedPtr<void>(tree1);
 		}
 
 		cweeSharedPtr<RTreeType> tree2;
@@ -1254,7 +1443,7 @@ namespace cweeGeo {
 					}
 				}
 			}
-			layer2.rTree = ToVoidPtr(tree2);
+			layer2.rTree = cweeSharedPtr<void>(tree2);
 		}
 
 		cweeList<cweeList<cweePair<Feature, cwee_units::foot_t>>> out;
@@ -1299,7 +1488,7 @@ namespace cweeGeo {
 					}
 				}
 			}
-			layer2.rTree = ToVoidPtr(tree);
+			layer2.rTree = cweeSharedPtr<void>(tree);
 		}
 
 		auto geometryToFind = layer1.GetGeometry();
@@ -1336,7 +1525,7 @@ namespace cweeGeo {
 					}
 				}
 			}
-			layer2.rTree = ToVoidPtr(tree);
+			layer2.rTree = cweeSharedPtr<void>(tree);
 		}
 
 		AUTO list_tree_nodes = tree->Near(layer1, numNearest);
@@ -1440,10 +1629,12 @@ namespace chaiscript {
 			AddBasicClassMember(Geometry, Longitude);
 			AddBasicClassMember(Geometry, Latitude);
 			AddBasicClassMember(Geometry, Coordinates);
-			AddBasicClassMember(Geometry, AllCoordinates); DEF_DECLARE_STD_VECTOR_WITH_SCRIPT_ENGINE_AND_MODULE(vec2d);
+			DEF_DECLARE_STD_VECTOR_WITH_SCRIPT_ENGINE_AND_MODULE(vec2d);
+			AddBasicClassMember(Geometry, AllCoordinates); 			
 			lib->AddFunction(, Distance, , return a.Distance(b), Geometry const& a, Geometry const& b);
 			lib->AddFunction(, Length, , return o.Length(), Geometry const& o);
 			lib->AddFunction(, Elevation, , return o.Elevation(), Geometry const& o);
+			lib->AddFunction(, CenterOfMass, , return o.CenterOfMass(), Geometry const& o);
 			lib->AddFunction(, to_string, , 
 				cweeStr out; 
 			    for (auto& x : o.AllCoordinates()) 
@@ -1474,6 +1665,7 @@ namespace chaiscript {
 			lib->AddFunction(, Distance, , return a.Distance(b), Feature const& a, Feature const& b);
 			lib->AddFunction(, Length, , return o.Length(), Feature const& o);
 			lib->AddFunction(, Elevation, , return o.Elevation(), Feature const& o);
+			lib->AddFunction(, CenterOfMass, , return o.GetGeometry().CenterOfMass(), Feature const& o);
 			lib->AddFunction(, to_string, ,
 				cweeStr out = cweeStr::printf("[\"Fid\": %i]", o.Fid());
 				for (int i = 0; i < o.NumFields(); i++) {
@@ -1492,6 +1684,7 @@ namespace chaiscript {
 			AddBasicClassMember(Layer, NumFeatures);
 			lib->AddFunction(, to_string, , return cweeStr::printf("%i Feature(s): \"%s\"", o.NumFeatures(), o.Name().c_str()), Layer const& o);
 			lib->AddFunction(, [], ->Feature, return o.GetFeature(featureNum), Layer const& o, int featureNum);
+			lib->AddFunction(, Boundary, , return o.Boundary(), Layer& o);
 
 			AddBasicClassTemplate(Raster);
 			AddBasicClassMember(Raster, Fid); 

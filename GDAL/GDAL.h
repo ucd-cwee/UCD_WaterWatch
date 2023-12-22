@@ -121,6 +121,7 @@ namespace cweeGeo {
 		int NumFeatures() const;
 		Feature GetFeature(int Fid) const;
 		cweeStr Name() const;
+		cweeBoundary Boundary();
 
 		static cweeList<cweeList<cweePair<Feature, cwee_units::foot_t>>> Near(Layer& layer1, Layer& layer2, std::function<double(Geometry const&, Geometry const&)> DistanceFunction, int numNearest = 1, std::function<bool(Feature const&)> WhereFunction = [](Feature const&)->bool { return true; });
 		static cweeList<cweePair<Feature, cwee_units::foot_t>> Near(Feature const& layer1, Layer& layer2, int numNearest = 1, std::function<bool(Feature const&)> WhereFunction = [](Feature const&)->bool { return true; });
@@ -202,6 +203,7 @@ namespace cweeGeo {
 		int NumPoints() const;
 		double Longitude(int index) const;
 		double Latitude(int index) const;
+		vec2d CenterOfMass() const;
 		vec2d Coordinates(int index) const;
 		cweeList<vec2d> AllCoordinates() const;
 		cwee_units::foot_t Length() const;
