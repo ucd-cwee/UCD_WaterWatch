@@ -140,10 +140,10 @@ namespace chaiscript {
 
             // allow the user to submit evals in Async.
             lib->eval(R"(
-                    def Async(string r){ return Async(fun[r](){ return eval(r); }); };
-                    def async(string r){ return Async(fun[r](){ return eval(r); }); };
-                    def future::continue_with(string r){ return this.continue_with(Async(fun[r](){ return eval(r); })); };
-                )");
+                def Async(string r){ return Async(fun[r](){ return eval(r); }); };
+                def async(string r){ return Async(fun[r](){ return eval(r); }); };
+                def future::continue_with(string r){ return this.continue_with(Async(fun[r](){ return eval(r); })); };
+            )");
             lib->add(chaiscript::fun([](units::time::second_t const& Seconds) {
                 using namespace cwee_units;
                 if (Seconds > 0_s) {
@@ -290,6 +290,9 @@ namespace chaiscript {
 
                 lib->add(chaiscript::fun([](const cweeStr& a, const cweeStr& b) { return a + b; }), "+");
                 lib->add(chaiscript::fun([](const cweeStr& a, const cweeStr& b) { return a < b; }), "<");
+                lib->add(chaiscript::fun([](const cweeStr& a, const cweeStr& b) { return a > b; }), ">");
+                lib->add(chaiscript::fun([](const cweeStr& a, const cweeStr& b) { return a <= b; }), "<=");
+                lib->add(chaiscript::fun([](const cweeStr& a, const cweeStr& b) { return a >= b; }), ">=");
                 lib->add(chaiscript::fun([](cweeStr& a, const cweeStr& b) { a += b; return a;  }), "+=");
                 lib->add(chaiscript::fun([](const cweeStr& a, const cweeStr& b) { return a == b; }), "==");
                 lib->add(chaiscript::fun([](const cweeStr& a, const cweeStr& b) { return a != b; }), "!=");
@@ -310,6 +313,10 @@ namespace chaiscript {
                 lib->add(chaiscript::fun([](cweeStr& a, cweeStr const& b) { return a.Find(b, false); }), "iFind");
                 lib->add(chaiscript::fun([](cweeStr& a, cweeStr const& b) { return a.rFind(b, true); }), "rFind");
                 lib->add(chaiscript::fun([](cweeStr& a, cweeStr const& b) { return a.rFind(b, false); }), "riFind");
+
+                lib->add(chaiscript::fun([](cweeStr& a, cweeStr const& b)->int { return a.Cmp(b); }), "Cmp");
+                lib->add(chaiscript::fun([](cweeStr& a, cweeStr const& b)->int { return a.Icmp(b); }), "Icmp");
+
                 lib->AddFunction(, Left, , return a.Left(num); return a;, cweeStr& a, int num);
                 lib->AddFunction(, Right, , return a.Right(num); return a; , cweeStr& a, int num);
                 lib->AddFunction(, Mid, , return a.Mid(start, num); return a;, cweeStr& a, int start, int num);
@@ -402,6 +409,9 @@ namespace chaiscript {
                     lib->add(chaiscript::fun([]() { return cweeRandomFloat(); }), "cweeRandomFloat");
                     lib->add(chaiscript::fun([](double a) { return cweeRandomFloat(a); }), "cweeRandomFloat");
                     lib->add(chaiscript::fun([](double a, double b) { return cweeRandomFloat(a, b); }), "cweeRandomFloat");
+                    lib->add(chaiscript::fun([]() { return cweeRandomInt(); }), "cweeRandomInt");
+                    lib->add(chaiscript::fun([](double a) { return cweeRandomInt(a); }), "cweeRandomInt");
+                    lib->add(chaiscript::fun([](double a, double b) { return cweeRandomInt(a, b); }), "cweeRandomInt");
                     lib->add(chaiscript::fun([]() { return cweeRandomFloat(); }), "rand");
                     lib->add(chaiscript::fun([](double a) { return cweeRandomFloat(a); }), "rand");
                     lib->add(chaiscript::fun([](double a, double b) { return cweeRandomFloat(a, b); }), "rand");
@@ -434,6 +444,7 @@ namespace chaiscript {
 
                     lib->AddFunction(, Lerp, , return cweeMath::Lerp<float>(from, to, by); , float from, float to, float by);
                     lib->AddFunction(, RollingAverage, , cweeMath::rollingAverageRef<double>(currentAverage, newSample, numSamples); return currentAverage; , double& currentAverage, const double& newSample, int& numSamples);
+                    lib->eval("def RollingAverage(currentAvg, newSample, numSamples){ ++numSamples; currentAvg = currentAvg - (currentAvg / numSamples); currentAvg = currentAvg + (newSample / numSamples); };");
 
                     lib->add(chaiscript::fun(cweeMath::roundNearest), "roundNearest");
                     lib->add(chaiscript::fun(cweeMath::roundDownNearest), "roundDownNearest");
