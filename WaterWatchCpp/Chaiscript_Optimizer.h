@@ -85,7 +85,22 @@ namespace chaiscript {
                         }
                     }
                 }
-
+                if (p->identifier == AST_Node_Type::File && !p->children.empty()) {
+                    auto& last_child = p->children.back();
+                    if (last_child->identifier == AST_Node_Type::Block) {
+                        auto& block_last_child = last_child->children.back();
+                        if (block_last_child->identifier == AST_Node_Type::Return) {
+                            if (block_last_child->children.size() == 1) {
+                                last_child->children.back() = std::move(block_last_child->children[0]);
+                            }
+                        }
+                    }
+                    else if(last_child->identifier == AST_Node_Type::Return) {
+                        if (last_child->children.size() == 1) {
+                            last_child = std::move(last_child->children[0]);
+                        }                        
+                    }
+                }
                 return p;
             }
         };

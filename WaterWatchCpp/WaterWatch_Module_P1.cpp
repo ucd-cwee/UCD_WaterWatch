@@ -301,7 +301,7 @@ namespace chaiscript {
                 lib->add(chaiscript::fun(&cweeStr::ReplaceBetween), "ReplaceBetween");
                 lib->add(chaiscript::fun(&cweeStr::FindBetween), "FindBetween");
                 lib->add(chaiscript::fun(&cweeStr::FindFirstBetween), "FindFirstBetween");
-                lib->add(chaiscript::fun([](const cweeStr& a) { return a.Length(); }), "Length");
+                lib->add(chaiscript::fun([](const cweeStr& a)->int { return a.Length(); }), "Length");
                 lib->add(chaiscript::fun(&cweeStr::Empty), "Empty");
                 lib->add(chaiscript::fun(&cweeStr::IsEmpty), "IsEmpty");
                 lib->add(chaiscript::fun(&cweeStr::Clear), "Clear");
@@ -328,7 +328,11 @@ namespace chaiscript {
                 lib->AddFunction(, AddToDelimiter, , return a.AddToDelimiter(add, delim); , cweeStr& a, cweeStr const& add, cweeStr const& delim);
                 lib->add(chaiscript::fun([](cweeStr& a) { return cweeStr::Hash(a); }), "Hash");
 
-                lib->add(chaiscript::fun(&cweeStr::Levenshtein), "Levenshtein");
+                lib->add(chaiscript::fun([](cweeStr const& a, cweeStr const& b)->int { return a.Levenshtein(b); }), "Levenshtein");
+                lib->add(chaiscript::fun([](cweeStr const& a, cweeStr const& b, bool caseSensitive)->int { return a.Levenshtein(b, caseSensitive); }), "Levenshtein");
+                lib->add(chaiscript::fun([](cweeStr const& a, cweeStr const& b) -> cweeStr { auto largestFind = a.FindLargestSharedSubstring(b); return largestFind; }), "FindLargestSharedSubstring");
+                lib->add(chaiscript::fun([](cweeStr const& a, cweeStr const& b, bool caseSensitive) -> cweeStr { auto largestFind = a.FindLargestSharedSubstring(b, caseSensitive); return largestFind; }), "FindLargestSharedSubstring");
+
                 lib->add(chaiscript::fun([](cweeStr const& lookFor, std::vector<std::string> const& options)->cweeStr {
                     return lookFor.BestMatch(options);
                 }), "BestMatch");

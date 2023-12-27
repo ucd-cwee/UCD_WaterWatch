@@ -70,8 +70,9 @@ def clone(int x) {
 }
 
 // The original clone function had issues with Guard evaluations, requiring specific usage (i.e. ".. = 100.clone();" instead of ".. = clone(100);" )
-def __clone(x) : function_exists(type_name(x)) && call_exists(eval(type_name(x)), x) { eval(type_name(x))(x).clone_var_attrs(x); };
-def clone(x) { return x.__clone(); };
+def __clone(x) : x==null { return x; };
+def __clone(x) : x!=null && function_exists(type_name(x)) && call_exists(eval(type_name(x)), x) { eval(type_name(x))(x).clone_var_attrs(x); };
+def clone(x) { if (x != null) { return x.__clone(); } else { return x; } };
 
 // This normally does work but returns the 'x' instead of a copy in a fall-back which is not ideal.
 //def clone(x) {

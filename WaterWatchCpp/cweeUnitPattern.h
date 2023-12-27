@@ -221,20 +221,7 @@ namespace cweeUnitValues {
 		cweeUnitPatternContainer_t(unit_value const& Y_type) : internal_X_type(second()), internal_Y_type(Y_type) {};
 		cweeUnitPatternContainer_t(unit_value const& X_type, unit_value const& Y_type) : internal_X_type(X_type), internal_Y_type(Y_type) {};
 		cweeUnitPatternContainer_t(cweeUnitPatternContainer_t const& o) : internal_X_type(o.internal_X_type), internal_Y_type(o.internal_Y_type) {};
-		cweeUnitPatternContainer_t& operator=(cweeUnitPatternContainer_t const& o) = delete; /* {
-			if (!StaticUnits() && CheckCanConvert(internal_X_type, o.internal_X_type) && CheckCanConvert(internal_Y_type, o.internal_Y_type)) {
-				Convert_X(internal_X_type, o.internal_X_type);
-				Convert_Y(internal_Y_type, o.internal_Y_type);
-				internal_X_type = o.internal_X_type;
-				internal_Y_type = o.internal_Y_type;
-			}
-			else {
-				internal_X_type.Clear(); internal_Y_type.Clear();
-				internal_X_type = o.internal_X_type;
-				internal_Y_type = o.internal_Y_type;
-			}
-			return *this;
-		};*/
+		cweeUnitPatternContainer_t& operator=(cweeUnitPatternContainer_t const& o) = delete; 
 		virtual ~cweeUnitPatternContainer_t() {};
 
 		static bool CheckCanConvert(unit_value const& a, unit_value const& b) {
@@ -515,23 +502,7 @@ namespace cweeUnitValues {
 		cweeUnitPatternContainer(unit_value const& Y_type) : cweeUnitPatternContainer_t(Y_type), container(), granularity(16) {};
 		cweeUnitPatternContainer(unit_value const& X_type, unit_value const& Y_type) : cweeUnitPatternContainer_t(X_type, Y_type), container(), granularity(16) {};
 		cweeUnitPatternContainer(cweeUnitPatternContainer const& o) : cweeUnitPatternContainer_t(o.internal_X_type, o.internal_Y_type), container(), granularity(16) { container = o.container; };
-		cweeUnitPatternContainer& operator=(cweeUnitPatternContainer const& o) = delete; /* {
-			if (!StaticUnits() && CheckCanConvert(internal_X_type, o.internal_X_type) && CheckCanConvert(internal_Y_type, o.internal_Y_type)) {
-				container = o.container;
-				Convert_X(internal_X_type, o.internal_X_type);
-				Convert_Y(internal_Y_type, o.internal_Y_type);
-				internal_X_type = o.internal_X_type;
-				internal_Y_type = o.internal_Y_type;
-			}
-			else {
-				internal_X_type.Clear(); internal_Y_type.Clear();
-
-				internal_X_type = o.internal_X_type;
-				internal_Y_type = o.internal_Y_type;
-				container = o.container;
-			}
-			return *this;
-		};*/
+		cweeUnitPatternContainer& operator=(cweeUnitPatternContainer const& o) = delete; 
 		~cweeUnitPatternContainer() {};
 
 		unit_value GetMinTime() const {
@@ -837,7 +808,6 @@ namespace cweeUnitValues {
 				}
 			}
 		};
-		bool StaticUnits() override { return false; };
 		void AddValueActual(unit_value X, unit_value Y, bool isUnique) {
 			if (granularity <= 0) {	// this is a hack to fix our memset classes
 				granularity = 16;

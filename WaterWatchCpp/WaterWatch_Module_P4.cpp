@@ -146,8 +146,8 @@ namespace chaiscript {
                 // Derived unit types
                 {
 #define AddUnit(Type)\
-                    lib->add(chaiscript::fun([]() -> unit_value { static Type F; return F; }), #Type); \
-                    lib->add(chaiscript::fun([](unit_value const& a) -> unit_value { Type F; F = a; return F; }), #Type); \
+                    lib->add(chaiscript::fun([]() -> unit_value { static Type F; return unit_value(F); }), #Type); \
+                    lib->add(chaiscript::fun([](unit_value const& a) -> unit_value { Type F; F = a; return unit_value(F); }), #Type); \
                     lib->add(chaiscript::postfix((cweeStr("_") + cweeStr(Type::specialized_abbreviation())).c_str(), #Type));
 
 #define AddUnitWithMetricPrefixes(Type)\

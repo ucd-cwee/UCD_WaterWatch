@@ -101,7 +101,10 @@ namespace chaiscript {
             }
 
             inline Boxed_Value clone_if_necessary(Boxed_Value incoming, std::atomic_uint_fast32_t& t_loc, const chaiscript::detail::Dispatch_State& t_ss) {
-                if (!incoming.is_return_value()) {
+                if (incoming.is_null()) {
+                    incoming.reset_return_value();
+                    return incoming;
+                } else if (!incoming.is_return_value()) {
                     if (incoming.get_type_info().is_arithmetic()) {
                         return Boxed_Number::clone(incoming);
                     }
@@ -1193,15 +1196,9 @@ namespace chaiscript {
                 
                 this->potentialReturnType = ReturnType(Type_Info(), AST_Node_Type::Dot_Access, false);
                 this->children[1]->potentialReturnType.ForwardRef(this->potentialReturnType);
-                // this->potentialReturnType.ForwardRef(this->children[1]->potentialReturnType);
                 if ((this->children[1]->identifier == AST_Node_Type::Fun_Call) || (this->children[1]->identifier == AST_Node_Type::Array_Call)) {
                     this->children[1]->children[0]->potentialReturnType.ForwardRef(this->potentialReturnType);
                 }
-
-                //this->potentialReturnType.ForwardRef(this->children[1]->potentialReturnType);
-
-                // this->potentialReturnType.ForwardRef(this->children[1]->potentialReturnType);
-                //this->potentialReturnType.ForwardRef(this->children[1]->potentialReturnType);
             }
 
             Boxed_Value eval_internal(const chaiscript::detail::Dispatch_State& t_ss) const override {
@@ -1256,7 +1253,6 @@ namespace chaiscript {
 
                 return retval;
             }
-
             const std::string m_fun_name;
 
         private:

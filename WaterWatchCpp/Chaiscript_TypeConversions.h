@@ -338,6 +338,7 @@ namespace chaiscript {
         Type_Conversions()
             : m_mutex()
             , m_conversions()
+            , m_conversions_cache()
             , m_convertableTypes()
             , m_num_types(0) {
         }
@@ -363,6 +364,7 @@ namespace chaiscript {
                 return; 
                 // throw exception::conversion_error(conversion->to(), conversion->from(), "Trying to re-insert an existing conversion!");
             }
+            m_conversions_cache.Clear();
             m_conversions.insert(conversion);
             m_convertableTypes.insert({ conversion->to().bare_type_info(), conversion->from().bare_type_info() });
             m_num_types = m_convertableTypes.size();
@@ -508,29 +510,70 @@ namespace chaiscript {
         //cweeUnpooledInterlocked<std::set<const std::type_info*, Less_Than>> &thread_cache() const noexcept { return *m_thread_cache; }
 
         std::set<chaiscript::shared_ptr<detail::Type_Conversion_Base>>::const_iterator find_bidir(const Type_Info& to, const Type_Info& from) const {
-            return std::find_if(m_conversions.begin(),
-                m_conversions.end(),
-                [&to, &from](const chaiscript::shared_ptr<detail::Type_Conversion_Base>& conversion) -> bool {
-                    return (conversion->to().bare_equal(to) && conversion->from().bare_equal(from))
-                        || (conversion->bidir() && conversion->from().bare_equal(to) && conversion->to().bare_equal(from));
-                });
+            AUTO map_of_tos = m_conversions_cache.GetPtr(from.bare_type_info());
+            if (map_of_tos) {
+                if (map_of_tos->Check(to.bare_type_info())) {
+                    return *map_of_tos->GetPtr(to.bare_type_info());
+                } else {
+                    AUTO iterator = std::find_if(m_conversions.begin(),
+                        m_conversions.end(),
+                        [&to, &from](const chaiscript::shared_ptr<detail::Type_Conversion_Base>& conversion) -> bool {
+                            return (conversion->to().bare_equal(to) && conversion->from().bare_equal(from))
+                                || (conversion->bidir() && conversion->from().bare_equal(to) && conversion->to().bare_equal(from));
+                        });
+
+                    map_of_tos->Emplace(to.bare_type_info(), iterator);
+                    return iterator;
+                }
+            }
+            else {
+                throw std::out_of_range(std::string("No m_conversions_cache could be created for the conversion from ") + from.bare_name() + " to " + to.bare_name());
+            }
         }
 
         std::set<chaiscript::shared_ptr<detail::Type_Conversion_Base>>::const_iterator find_polymorphic_bidir(const Type_Info& to, const Type_Info& from) const {
-            return std::find_if(m_conversions.begin(),
-                m_conversions.end(),
-                [&to, &from](const chaiscript::shared_ptr<detail::Type_Conversion_Base>& conversion) -> bool {
-                    return (conversion->polymorphic() && conversion->to().bare_equal(to) && conversion->from().bare_equal(from))
-                        || (conversion->polymorphic() && conversion->bidir() && conversion->from().bare_equal(to) && conversion->to().bare_equal(from));
-                });
+            AUTO map_of_tos = m_conversions_cache.GetPtr(from.bare_type_info());
+            if (map_of_tos) {
+                if (map_of_tos->Check(to.bare_type_info())) {
+                    return *map_of_tos->GetPtr(to.bare_type_info());
+                }
+                else {
+                    AUTO iterator = std::find_if(m_conversions.begin(),
+                        m_conversions.end(),
+                        [&to, &from](const chaiscript::shared_ptr<detail::Type_Conversion_Base>& conversion) -> bool {
+                            return (conversion->polymorphic() && conversion->to().bare_equal(to) && conversion->from().bare_equal(from))
+                                || (conversion->polymorphic() && conversion->bidir() && conversion->from().bare_equal(to) && conversion->to().bare_equal(from));
+                        });
+
+                    map_of_tos->Emplace(to.bare_type_info(), iterator);
+                    return iterator;
+                }
+            }
+            else {
+                throw std::out_of_range(std::string("No m_conversions_cache could be created for the conversion from ") + from.bare_name() + " to " + to.bare_name());
+            }
         }
 
         std::set<chaiscript::shared_ptr<detail::Type_Conversion_Base>>::const_iterator find(const Type_Info& to, const Type_Info& from) const {
-            return std::find_if(m_conversions.begin(),
-                m_conversions.end(),
-                [&to, &from](const chaiscript::shared_ptr<detail::Type_Conversion_Base>& conversion) {
-                    return conversion->to().bare_equal(to) && conversion->from().bare_equal(from);
-                });
+            AUTO map_of_tos = m_conversions_cache.GetPtr(from.bare_type_info());
+            if (map_of_tos) {
+                if (map_of_tos->Check(to.bare_type_info())) {
+                    return *map_of_tos->GetPtr(to.bare_type_info());
+                }
+                else {
+                    AUTO iterator = std::find_if(m_conversions.begin(),
+                        m_conversions.end(),
+                        [&to, &from](const chaiscript::shared_ptr<detail::Type_Conversion_Base>& conversion) {
+                            return conversion->to().bare_equal(to) && conversion->from().bare_equal(from);
+                        });
+
+                    map_of_tos->Emplace(to.bare_type_info(), iterator);
+                    return iterator;
+                }
+            }
+            else {
+                throw std::out_of_range(std::string("No m_conversions_cache could be created for the conversion from ") + from.bare_name() + " to " + to.bare_name());
+            }
         }
 
         const std::set<chaiscript::shared_ptr<detail::Type_Conversion_Base>>& get_conversions() const {
@@ -540,6 +583,8 @@ namespace chaiscript {
     private:
         mutable chaiscript::detail::threading::shared_mutex m_mutex;
         std::set<chaiscript::shared_ptr<detail::Type_Conversion_Base>> m_conversions;
+        cweeThreadedMap<const std::type_info*, cweeThreadedMap<const std::type_info*, decltype(Type_Conversions::m_conversions)::const_iterator>> m_conversions_cache;
+
         std::set<const std::type_info*, Less_Than> m_convertableTypes;
         std::atomic_size_t m_num_types;
         mutable chaiscript::detail::threading::Thread_Storage< cweeUnpooledInterlocked<std::set<const std::type_info*, Less_Than>> > m_thread_cache; // thread-safe

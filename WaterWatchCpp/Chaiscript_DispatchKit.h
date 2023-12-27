@@ -164,6 +164,7 @@ namespace chaiscript {
         chaiscript::small_vector<std::string> m_evals;
         chaiscript::small_vector<Type_Conversion> m_conversions;
 
+
         template<typename T, typename InItr>
         static void apply(InItr begin, const InItr end, T& t) {
             for_each(begin, end, [&t](const auto& obj) {

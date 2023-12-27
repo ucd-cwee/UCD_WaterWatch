@@ -799,6 +799,10 @@ namespace bpstd {
             size_type pos)
         const
     {
+#if 0
+        return FindText(*this, v, true, pos);
+#else
+
         // Can't find a substring if the substring is bigger than this
         if (pos > size()) {
             return npos;
@@ -817,6 +821,7 @@ namespace bpstd {
             }
         }
         return npos;
+#endif
     }
 
     template<typename CharT, typename Traits>

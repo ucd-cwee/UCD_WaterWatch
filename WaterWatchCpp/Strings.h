@@ -704,6 +704,14 @@ public:
 
 		return cweeStr::FindText(data, text, casesensitive, start, end);
 	};
+	long long           Find(bpstd::string_view const& viewRef, bool casesensitive = true, long long start = 0, long long end = -1) const {
+		if (end == -1) {
+			end = len;
+		}
+		if (viewRef.length() == 0 || this->Length() == 0) return -1;
+
+		return cweeStr::FindText(data, viewRef, casesensitive, start, end);
+	};
 	long long			rFind(const char* text, bool casesensitive = true, long long start = 0, long long end = -1) const {
 		if (std::strlen(text) == 0 || this->Length() == 0) return -1;
 
@@ -776,6 +784,23 @@ public:
 		}
 
 		return result.Append(&data[start], l);
+	};				// return 'len' characters starting at 'start'
+	bpstd::string_view	Mid_Ref(long long start, long long l) const {
+		long long i = Length();
+
+		// bpstd::string_view out;
+		if (i == 0 || l <= 0 || start >= i) {
+			return bpstd::string_view();
+		}
+
+		if (start + l >= i) {
+			l = i - start;
+		}
+
+		return bpstd::string_view(&data[start], l);
+		// out.mid(0, l);
+
+		// return out;
 	};				// return 'len' characters starting at 'start'
 	bool				StartsWith(const cweeStr& startsWith) const {
 		if (startsWith.Length() <= 0) return true;
@@ -1969,6 +1994,45 @@ public:
 		return -1;
 
 	};
+	static long long	FindText(const char* str, bpstd::string_view const& text, bool casesensitive = true, long long start = 0, long long end = -1) {
+		long long l, j, k;
+		k = text.length();
+		if (end == -1) {
+			end = strlen(str);
+		}
+		l = end - k;
+
+		if (k <= 0 || (l - start) < 0) return -1;
+
+		if (casesensitive) {
+			const char sample = text[0];
+			if (!sample) {
+				return start;
+			}
+			for (; start <= l; start++) { // starting at the search position ... 
+				if (str[start] == sample) { // found a match for the first character ...
+					for (j = 1; ; j++) { // for the remaining parts of the search text ... 
+						if (j >= k) return start;
+						else {
+							if (str[start + j] != text[j]) {
+								break;
+							}
+						}
+					}
+				}
+			}
+		}
+		else {
+			for (; start <= l; start++)
+				for (j = 0;; j++) {
+					if (j >= k) return start;
+					if (::toupper(str[start + j]) != ::toupper(text[j]))
+						break;
+				}
+		}
+		return -1;
+	};
+
 	static bool			Filter(const char* filter, const char* name, bool casesensitive) {
 		cweeStr buf;
 		long long i, found, index;
@@ -2416,9 +2480,51 @@ public:
 
 		return result;
 	}
-	int					Levenshtein(const cweeStr& other) const {
-		return cweeLevenshteinDistance(*this, other);
-	};;
+
+	int					Levenshtein(const cweeStr& other, bool caseSensitive = false) const {
+		return cweeLevenshteinDistance(*this, other, caseSensitive);
+	};
+
+	static cweeStr  FindLargestSharedSubstring(const cweeStr& strA, const cweeStr& strB, bool caseSensitive = true) {
+		cweeStr 
+			str1 = strA, 
+			str2 = strB;
+		bpstd::string_view 
+			largestSubstring, 
+			currentSubstring;
+		int 
+			maxLength{ 0 }, 
+			i{ 0 }, 
+			j{ 0 }, 
+			currentLength{ 0 };
+
+		if (!caseSensitive) {
+			str1.ToUpper();
+			str2.ToUpper();
+		}
+
+		for (i = 0; i < str1.Length(); ++i) {
+			for (j = i + 1; j <= str1.Length(); ++j) {
+				currentSubstring = str1.Mid_Ref(i, j - i); // reference to sub-string, rather than a copy of the underlying text data.
+				if (str2.Find(currentSubstring, true) >= 0) {
+					currentLength = j - i;
+					if (currentLength > maxLength) {
+						maxLength = currentLength;
+						largestSubstring = strA.Mid_Ref(i, j - i);
+					}
+				}
+			}
+		}
+		if (largestSubstring.length() > 0) {
+			return cweeStr(largestSubstring.c_str(), 0, largestSubstring.length());
+		}
+		else {
+			return cweeStr();
+		}
+	};
+	cweeStr  FindLargestSharedSubstring(const cweeStr& str2, bool caseSensitive = true) const {
+		return cweeStr::FindLargestSharedSubstring(*this, str2, caseSensitive);
+	};
 	cweeStr				BestMatch(std::vector<cweeStr> const& list) const {
 		cweeStr out;
 		int minL = std::numeric_limits<int>::max();
@@ -2728,7 +2834,7 @@ public:
 
 	int					Levenshtein(const cweeStr& other) const;
 	cweeStr				BestMatch(std::vector<cweeStr> list) const;
-
+	
 	size_t				Cmp(const char* text) const {
 		return Cmpn(view.c_str(), text, view.length() < std::strlen(text) ? view.length() : std::strlen(text));
 	};
