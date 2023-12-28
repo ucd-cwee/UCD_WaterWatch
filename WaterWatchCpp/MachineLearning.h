@@ -220,3 +220,12 @@ private:
 	*/
 	void Example(void);
 };
+
+#include "chaiscript_wrapper.h"
+#include "WaterWatch_Module_Header.h"
+
+namespace chaiscript {
+	namespace WaterWatch_Lib {
+		[[nodiscard]] ModulePtr MachineLearning_Library();
+	};
+}; // namespace chaiscript

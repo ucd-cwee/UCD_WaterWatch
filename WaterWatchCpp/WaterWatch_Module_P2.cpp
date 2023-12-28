@@ -146,7 +146,7 @@ namespace chaiscript {
             // Patterns
             if (1) {
                 using namespace cweeUnitValues;
-
+                
                 lib->add(chaiscript::user_type<cweeUnitPattern>(), "Pattern");
                 lib->add(chaiscript::constructor<cweeUnitPattern()>(), "Pattern");
                 lib->add(chaiscript::constructor<cweeUnitPattern(const cweeUnitPattern&)>(), "Pattern");

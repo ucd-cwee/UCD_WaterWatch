@@ -28,6 +28,7 @@ to maintain a single distribution point for the source code.
 #include "../dlib-19.17/source/dlib/mlp.h"
 #endif
 
+
 int MachineLearningInput::NumObs() const {
 	float n = labels.Num() == 0 ? cweeMath::INF : labels.Num();
 	for (auto& feat : features) {
@@ -1333,3 +1334,34 @@ void cweeMachineLearning::Example(void) {
 
 	cweeThreadedList<float> forecast = cweeMachineLearning::Forecast(ML_param, features);
 };
+
+#include <cweeUnitPattern.h>
+
+namespace chaiscript {
+	namespace WaterWatch_Lib {
+		[[nodiscard]] ModulePtr MachineLearning_Library() {
+			auto lib = chaiscript::make_shared<Module>();
+
+			lib->add(chaiscript::user_type<MachineLearning_Results>(), "MLResults");
+			lib->add(chaiscript::constructor<MachineLearning_Results()>(), "MLResults");
+			lib->add(chaiscript::constructor<MachineLearning_Results(const MachineLearning_Results&)>(), "MLResults");
+			lib->add(chaiscript::fun([](MachineLearning_Results& a, const MachineLearning_Results& b)->MachineLearning_Results& { a = b; return a; }), "=");
+
+			auto LearnPattern = [](cweeUnitValues::cweeUnitPattern const& labels_input, cweeUnitValues::cweeUnitPattern const& a_input)->MachineLearning_Results {
+				cweeThreadedList<float>	labels; for (auto& x : labels_input.GetKnotSeries()) { labels.Append((double)x.second); }
+				cweeThreadedList < cweeThreadedList<float> >	features; {
+					cweeThreadedList<float>& a = features.Alloc(); for (auto& x : a_input.GetKnotSeries()) { a.Append((double)x.second); }
+				}
+				return cweeMachineLearning::Learn(labels, features, nullptr);
+			};
+
+			lib->AddFunction(LearnPattern, Learn, -> MachineLearning_Results , return LearnPattern(labels, a); , cweeUnitValues::cweeUnitPattern const& labels, cweeUnitValues::cweeUnitPattern const& a);
+			lib->eval("def Learn(MLResults resultContainer, Pattern labels, Pattern feature1){ resultContainer = Learn(labels, feature1); return resultContainer; };");
+
+			// lib->AddFunction(LearnPattern, Forecast, -> double, return LearnPattern(labels, a);, cweeUnitValues::cweeUnitPattern const& labels, cweeUnitValues::cweeUnitPattern const& a);
+
+
+			return lib;
+		};
+	};
+}; // namespace chaiscript
