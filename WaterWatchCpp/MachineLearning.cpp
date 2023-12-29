@@ -28,7 +28,6 @@ to maintain a single distribution point for the source code.
 #include "../dlib-19.17/source/dlib/mlp.h"
 #endif
 
-
 int MachineLearningInput::NumObs() const {
 	float n = labels.Num() == 0 ? cweeMath::INF : labels.Num();
 	for (auto& feat : features) {
@@ -275,8 +274,6 @@ cweeStr MachineLearning_Results::Serialize() {
 		out.AddToDelimiter(svr_results.Serialize(), delim);
 		out.AddToDelimiter(learned, delim);
 		out.AddToDelimiter(performance.Serialize(), delim);
-		out.AddToDelimiter(learnPeriod.Serialize(), delim);
-		out.AddToDelimiter(learnedAdjustment.Serialize(), delim);
 		return out;
 	}
 	else {
@@ -295,8 +292,6 @@ void MachineLearning_Results::Deserialize(cweeStr& in) {
 		svr_results.Deserialize(obj[1]); obj[1].Clear();
 		learned = (bool)(int)obj[2]; obj[2].Clear();
 		performance.Deserialize(obj[3]);
-		if (obj.getNumVars() >= 5) learnPeriod.Deserialize(obj[4]);
-		if (obj.getNumVars() >= 6) learnedAdjustment.Deserialize(obj[5]);
 	}
 };
 
@@ -437,7 +432,6 @@ void MachineLearning_Math::CompileTimeTest() {
 	AUTO ml_result = MachineLearning_Math::Learn(ml_input);
 	std::cout << ml_result.performance.ToString() << std::endl;
 };
-
 
 cweeMachineLearning::cweeLearnedParams cweeMachineLearning::Learn_Opt(cweeSharedPtr<cweeThreadedList<float>> trueLabels, cweeSharedPtr<cweeThreadedList<cweeThreadedList<float>>> trueFeatures) {
 	cweeSharedPtr<cweeLearnedParams> out = new cweeLearnedParams();
@@ -724,38 +718,6 @@ MachineLearning_Results cweeMachineLearning::Learn(const cweeThreadedList<float>
 		vec2 t1 = CalculateError(TrueLabels, ML_result);
 		out.performance.x = t1.x;
 		out.performance.y = t1.y;
-
-		for (int i = 0; i < ML_result.Num() && i < TrueLabels.Num(); i++) {
-			out.learnedAdjustment.AddValue((float)ML_result[i], (float)TrueLabels[i]);
-		}
-		// for each 'x' value, aggregate the 'y' values to their average. 
-		{
-			float vSample = 0; int numSamples = 0; u64 prevT = 0; cweeThreadedList<int> indexesToDelete(out.learnedAdjustment.GetNumValues() + 16);
-			for (int i = 0; i < out.learnedAdjustment.GetNumValues(); i++) {
-				u64 t = out.learnedAdjustment.TimeForIndex(i);
-				if (t == prevT) {
-					if ((i - 1) >= 0) indexesToDelete.Append(i - 1); // remove previous value
-					cweeMath::rollingAverageRef(vSample, out.learnedAdjustment.ValueForIndex(i), numSamples);
-				}
-				else {
-					if ((i - 1) >= 0) out.learnedAdjustment.SetValue(i - 1, vSample);
-					vSample = out.learnedAdjustment.ValueForIndex(i); numSamples = 1;
-				}
-				prevT = t;
-			}
-			out.learnedAdjustment.knots.RemoveIndexes(indexesToDelete);
-			out.learnedAdjustment.RemoveUnnecessaryKnots();
-			out.learnedAdjustment.SetBoundaryType(boundary_t::BT_CLAMPED);
-		}
-
-#ifdef useLearnedAdjustment
-		for (auto& x : ML_result) x = out.learnedAdjustment.GetCurrentValue(x);
-
-		vec2 t2 = CalculateError(TrueLabels, ML_result);
-
-		if (t2.y >= t1.y) out.learnedAdjustment.Clear(); // didn't help, remove it. 
-#endif
-
 	}
 	else {
 		cweeThreadedList<cweeThreadedList<float>> featuresLearn = features;
@@ -779,41 +741,8 @@ MachineLearning_Results cweeMachineLearning::Learn(const cweeThreadedList<float>
 		auto ML_result = Forecast(out, featuresLearn);
 		fit->first = CalculateError(labelsLearn, ML_result);
 
-		for (int i = 0; i < ML_result.Num() && i < labelsLearn.Num(); i++) {
-			out.learnedAdjustment.AddValue((float)ML_result[i], (float)labelsLearn[i]);
-		}
-
 		ML_result = Forecast(out, featuresTest);
 		fit->second = CalculateError(labelsTest, ML_result);
-
-		for (int i = 0; i < ML_result.Num() && i < labelsTest.Num(); i++) {
-			out.learnedAdjustment.AddValue((float)ML_result[i], (float)labelsTest[i]);
-		}
-		// for each 'x' value, aggregate the 'y' values to their average. 
-		{
-			float vSample = 0; int numSamples = 0; u64 prevT = 0; cweeThreadedList<int> indexesToDelete(out.learnedAdjustment.GetNumValues() + 16);
-			for (int i = 0; i < out.learnedAdjustment.Num(); i++) {
-				u64 t = out.learnedAdjustment.TimeForIndex(i);
-				if (t == prevT) {
-					if ((i - 1) >= 0) indexesToDelete.Append(i - 1); // remove previous value
-					cweeMath::rollingAverageRef(vSample, out.learnedAdjustment.ValueForIndex(i), numSamples);
-				}
-				else {
-					if ((i - 1) >= 0) out.learnedAdjustment.SetValue(i - 1, vSample);
-					vSample = out.learnedAdjustment.ValueForIndex(i); numSamples = 1;
-				}
-				prevT = t;
-			}
-			out.learnedAdjustment.knots.RemoveIndexes(indexesToDelete);
-			out.learnedAdjustment.RemoveUnnecessaryKnots();
-			out.learnedAdjustment.SetBoundaryType(boundary_t::BT_CLAMPED);
-		}
-#ifdef useLearnedAdjustment
-		ML_result = Forecast(out, featuresLearn);
-		for (auto& x : ML_result) x = out.learnedAdjustment.GetCurrentValue(x);
-		vec2 t2 = CalculateError(labelsLearn, ML_result);
-		if (t2.y >= fit->first.y) out.learnedAdjustment.Clear(); // didn't help, remove it. 
-#endif
 
 		out.performance.x = fit->first.x;
 		out.performance.y = fit->first.y;
@@ -856,34 +785,6 @@ MachineLearning_Results cweeMachineLearning::Learn(const cweeThreadedList<std::p
 		vec2 t1 = CalculateError(Labels, ML_result);
 		out.performance.x = t1.x;
 		out.performance.y = t1.y;
-
-		for (int i = 0; i < ML_result.Num() && i < Labels.Num(); i++) {
-			out.learnedAdjustment.AddValue((float)ML_result[i], (float)Labels[i]);
-		}
-		// for each 'x' value, aggregate the 'y' values to their average. 
-		{
-			float vSample = 0; int numSamples = 0; u64 prevT = 0; cweeThreadedList<int> indexesToDelete(out.learnedAdjustment.GetNumValues() + 16);
-			for (int i = 0; i < out.learnedAdjustment.Num(); i++) {
-				u64 t = out.learnedAdjustment.TimeForIndex(i);
-				if (t == prevT) {
-					if ((i - 1) >= 0) indexesToDelete.Append(i - 1); // remove previous value
-					cweeMath::rollingAverageRef(vSample, out.learnedAdjustment.ValueForIndex(i), numSamples);
-				}
-				else {
-					if ((i - 1) >= 0) out.learnedAdjustment.SetValue(i - 1, vSample);
-					vSample = out.learnedAdjustment.ValueForIndex(i); numSamples = 1;
-				}
-				prevT = t;
-			}
-			out.learnedAdjustment.knots.RemoveIndexes(indexesToDelete);
-			out.learnedAdjustment.RemoveUnnecessaryKnots();
-			out.learnedAdjustment.SetBoundaryType(boundary_t::BT_CLAMPED);
-		}
-#ifdef useLearnedAdjustment
-		for (auto& x : ML_result) x = out.learnedAdjustment.GetCurrentValue(x);
-		vec2 t2 = CalculateError(Labels, ML_result);
-		if (t2.y >= t1.y) out.learnedAdjustment.Clear(); // didn't help, remove it. 
-#endif
 	}
 	else {
 		cweeThreadedList<cweeThreadedList<std::pair<u64, float>>> featuresLearn = features;
@@ -922,42 +823,8 @@ MachineLearning_Results cweeMachineLearning::Learn(const cweeThreadedList<std::p
 		auto ML_result = Forecast(out, featuresLearn);
 		fit->first = CalculateError(labelsLearn, ML_result);
 
-		for (int i = 0; i < ML_result.Num() && i < labelsLearn.Num(); i++) {
-			out.learnedAdjustment.AddValue((float)ML_result[i].second, (float)labelsLearn[i].second);
-		}
-
 		ML_result = Forecast(out, featuresTest);
 		fit->second = CalculateError(labelsTest, ML_result);
-
-		for (int i = 0; i < ML_result.Num() && i < labelsTest.Num(); i++) {
-			out.learnedAdjustment.AddValue((float)ML_result[i].second, (float)labelsTest[i].second);
-		}
-
-		// for each 'x' value, aggregate the 'y' values to their average. 
-		{
-			float vSample = 0; int numSamples = 0; u64 prevT = 0; cweeThreadedList<int> indexesToDelete(out.learnedAdjustment.GetNumValues() + 16);
-			for (int i = 0; i < out.learnedAdjustment.Num(); i++) {
-				u64 t = out.learnedAdjustment.TimeForIndex(i);
-				if (t == prevT) {
-					if ((i - 1) >= 0) indexesToDelete.Append(i - 1); // remove previous value
-					cweeMath::rollingAverageRef(vSample, out.learnedAdjustment.ValueForIndex(i), numSamples);
-				}
-				else {
-					if ((i - 1) >= 0) out.learnedAdjustment.SetValue(i - 1, vSample);
-					vSample = out.learnedAdjustment.ValueForIndex(i); numSamples = 1;
-				}
-				prevT = t;
-			}
-			out.learnedAdjustment.knots.RemoveIndexes(indexesToDelete);
-			out.learnedAdjustment.RemoveUnnecessaryKnots();
-			out.learnedAdjustment.SetBoundaryType(boundary_t::BT_CLAMPED);
-		}
-#ifdef useLearnedAdjustment
-		ML_result = Forecast(out, featuresLearn);
-		for (auto& x : ML_result) x.second = out.learnedAdjustment.GetCurrentValue(x.second);
-		vec2 t2 = CalculateError(labelsLearn, ML_result);
-		if (t2.y >= fit->first.y) out.learnedAdjustment.Clear(); // didn't help, remove it. 
-#endif
 	}
 	out.learned = true;
 	return out;
@@ -1298,7 +1165,7 @@ void cweeMachineLearning::SplitRandomly(cweeThreadedList<cweeThreadedList<std::p
 	}
 };
 
-void cweeMachineLearning::Example(void) {
+cweeThreadedList<float> cweeMachineLearning::Example(void) {
 	std::vector<float> labels_source = { 0.0f, 1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f, 7.0f, 8.0f, 9.0f, 10.0f, 11.0f, 12.0f, 13.0f, 14.0f };
 	std::vector<float> feature1_source = { 0.4f, 1.3f, 2.1f, 3.3f, 4.4f, 5.4f, 6.3f, 7.4f, 8.4f, 9.2f, 10.2f, 11.4f, 12.2f, 13.4f, 14.4f };
 	std::vector<float> feature2_source = { 0.3f, 1.2f, 2.1f, 3.2f, 4.1f, 5.2f, 6.2f, 7.2f, 8.2f, 9.4f, 10.4f, 11.2f, 12.4f, 13.2f, 14.2f };
@@ -1332,7 +1199,7 @@ void cweeMachineLearning::Example(void) {
 		features.Append(data2);
 	}
 
-	cweeThreadedList<float> forecast = cweeMachineLearning::Forecast(ML_param, features);
+	return cweeMachineLearning::Forecast(ML_param, features);
 };
 
 #include <cweeUnitPattern.h>
@@ -1342,23 +1209,143 @@ namespace chaiscript {
 		[[nodiscard]] ModulePtr MachineLearning_Library() {
 			auto lib = chaiscript::make_shared<Module>();
 
-			lib->add(chaiscript::user_type<MachineLearning_Results>(), "MLResults");
-			lib->add(chaiscript::constructor<MachineLearning_Results()>(), "MLResults");
-			lib->add(chaiscript::constructor<MachineLearning_Results(const MachineLearning_Results&)>(), "MLResults");
-			lib->add(chaiscript::fun([](MachineLearning_Results& a, const MachineLearning_Results& b)->MachineLearning_Results& { a = b; return a; }), "=");
-
-			auto LearnPattern = [](cweeUnitValues::cweeUnitPattern const& labels_input, cweeUnitValues::cweeUnitPattern const& a_input)->MachineLearning_Results {
-				cweeThreadedList<float>	labels; for (auto& x : labels_input.GetKnotSeries()) { labels.Append((double)x.second); }
-				cweeThreadedList < cweeThreadedList<float> >	features; {
-					cweeThreadedList<float>& a = features.Alloc(); for (auto& x : a_input.GetKnotSeries()) { a.Append((double)x.second); }
-				}
-				return cweeMachineLearning::Learn(labels, features, nullptr);
+			class PatternLearner {
+			public:
+				Boxed_Value Features;
+				cweeUnitValues::unit_value Units;
+				std::vector<Boxed_Value> Fit;
+				double R;
 			};
+			lib->add(chaiscript::user_type<PatternLearner>(), "PatternLearner");
+			lib->add(chaiscript::constructor<PatternLearner()>(), "PatternLearner");
+			lib->add(chaiscript::constructor<PatternLearner(const PatternLearner&)>(), "PatternLearner");
+			lib->add(chaiscript::fun([](PatternLearner& a, const PatternLearner& b)->PatternLearner& { a = b; return a; }), "=");
+			lib->add(chaiscript::fun(&PatternLearner::Features), "Features");
+			lib->add(chaiscript::fun(&PatternLearner::Units), "Units");
+			lib->add(chaiscript::fun(&PatternLearner::Fit), "Fit");
+			lib->add(chaiscript::fun(&PatternLearner::R), "R");
 
-			lib->AddFunction(LearnPattern, Learn, -> MachineLearning_Results , return LearnPattern(labels, a); , cweeUnitValues::cweeUnitPattern const& labels, cweeUnitValues::cweeUnitPattern const& a);
-			lib->eval("def Learn(MLResults resultContainer, Pattern labels, Pattern feature1){ resultContainer = Learn(labels, feature1); return resultContainer; };");
+			lib->eval(
+R"chaiscript(
+			def Learn(Pattern labels, Vector features) : features.size <= 0 || features.types != "Pattern" {	
+				throw("Features used for machine learning must include at least one (and nothing other than) Pattern objects.");
+			};
+			def Learn(Pattern labels, Vector features) : features.size > 0 && features.types == "Pattern" {
+				var& Range = (labels.GetMaxValue - labels.GetMinValue).double;
+				var& returnType = labels.Y;
+				Vector minVector = [-(1+Range*Range)];
+				Vector maxVector = [(1+Range*Range)];
+				Vector features_final;
+				for (x : features) {
+					var& V = Pattern(x);{
+						var& rangeV = double(V.GetMaxValue - V.GetMinValue);
+						V -= V.GetMinValue;
+						V /= rangeV;
+					}
+		
+					// test for colinearity;
+					for (y : features_final){
+			
+			
+					}
+		
+		
+					minVector.push_back(-(1+Range*Range));//-max(Range * rangeV, Range + rangeV)); 	
+					maxVector.push_back((1+Range*Range));//max(Range * rangeV, Range + rangeV));	
+					features_final.push_back(V);
+				}
+				PatternLearner out;
+				out.Features := features_final;
+				out.Units = labels.GetAvgValue();
+				var& GetRSQR = fun[labels, features_final](params){	
+					var& v = Pattern(labels.X, labels.Y);
+					int i = 0;
+					for (feature : features_final){ v += feature*params[++i]; }
+					v += params[0];		
+					return labels.R_Squared(v).double;
+				};
+				out.Fit = OptimizeFunction(false, GetRSQR, minVector, maxVector, "Genetic");				
+				out.R = GetRSQR(out.Fit);
+				return out;
+			};
+			def PatternLearner::Forecast(value time) {
+				double out;
+				int i = 0;
+				var& fit = this.Fit;
+				for (x : this.Features){
+					out += double(x.GetCurrentValue(time) * fit[++i]);
+				}
+				out += fit[0];
+				value x = this.Units;
+				x = out;
+				return x;
+			};
+			def PatternLearner::Forecast() {
+				var& out = Pattern(this.Features[0].X, this.Units);
+				int i = 0;
+				var& fit = this.Fit;
+				for (x : this.Features){
+					out += (x * fit[++i]);
+				}
+				out += fit[0];
+				return out;
+			};
+)chaiscript");
 
-			// lib->AddFunction(LearnPattern, Forecast, -> double, return LearnPattern(labels, a);, cweeUnitValues::cweeUnitPattern const& labels, cweeUnitValues::cweeUnitPattern const& a);
+
+
+
+
+
+
+
+
+
+
+
+
+			//lib->AddFunction(, ML_Example, , return cweeMachineLearning::Example());
+
+
+
+
+			//lib->add(chaiscript::user_type<MachineLearning_Results>(), "MLResults");
+			//lib->add(chaiscript::constructor<MachineLearning_Results()>(), "MLResults");
+			//lib->add(chaiscript::constructor<MachineLearning_Results(const MachineLearning_Results&)>(), "MLResults");
+			//lib->add(chaiscript::fun([](MachineLearning_Results& a, const MachineLearning_Results& b)->MachineLearning_Results& { a = b; return a; }), "=");
+			//lib->add(chaiscript::fun(&MachineLearning_Results::learned), "learned");
+			//lib->AddFunction(, performance, , std::vector<chaiscript::Boxed_Value> out; for (int i = 0; i < 4; ++i) { out.push_back(var((float)ML_Result.performance[i])); } return out;, MachineLearning_Results const& ML_Result);
+
+			//auto LearnPattern = [](cweeUnitValues::cweeUnitPattern const& labels_input, cweeUnitValues::cweeUnitPattern const& a_input)->MachineLearning_Results {
+			//	cweeThreadedList<float>	labels; for (auto& x : labels_input.GetKnotSeries()) { labels.Append((double)x.second); }
+			//	cweeThreadedList < cweeThreadedList<float> >	features; {
+			//		cweeThreadedList<float>& a = features.Alloc(); for (auto& x : a_input.GetKnotSeries()) { a.Append((double)x.second); }
+			//	}
+			//	std::pair<vec2, vec2> fit;
+			//	return cweeMachineLearning::Learn(labels, features, &fit);
+			//};
+
+			//auto ForecastPattern = [](MachineLearning_Results const& learned, double value)-> double {
+			//	cweeThreadedList<float> features;
+			//	features.Append(value);
+			//	return cweeMachineLearning::Forecast(learned, features);
+			//};
+			//auto ForecastPattern2 = [](MachineLearning_Results const& learned, cweeUnitValues::cweeUnitPattern const& value) {
+			//	cweeThreadedList<cweeThreadedList<float>> features;
+			//	{
+			//		auto& feature = features.Alloc();
+			//		for (auto& x : value.GetKnotSeries()) {
+			//			feature.Append(x.second());
+			//		}
+			//	}
+			//	return cweeMachineLearning::Forecast(learned, features);
+			//};
+
+			//lib->AddFunction(LearnPattern, Learn, -> MachineLearning_Results , return LearnPattern(labels, a); , cweeUnitValues::cweeUnitPattern const& labels, cweeUnitValues::cweeUnitPattern const& a);
+			//lib->eval("def Learn(MLResults resultContainer, Pattern labels, Pattern feature1){ resultContainer = Learn(labels, feature1); return resultContainer; };");
+
+			//lib->AddFunction(ForecastPattern, Forecast, , return ForecastPattern(learned, value);, MachineLearning_Results const& learned, double value);
+			//lib->AddFunction(ForecastPattern2, Forecast, , return ForecastPattern2(learned, feature); , MachineLearning_Results const& learned, cweeUnitValues::cweeUnitPattern const& feature);
 
 
 			return lib;

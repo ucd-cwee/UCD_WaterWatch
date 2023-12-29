@@ -68,8 +68,6 @@ public:
 	MachineLearning_SVR_Results svr_results;
 	bool learned = false;
 	vec4 performance = vec4(0, cweeMath::INF, 0, cweeMath::INF);
-	vec4 learnPeriod = vec4(0, 0, 0, 0);
-	Curve learnedAdjustment;
 
 	cweeStr Serialize();
 	void Deserialize(cweeStr& in);
@@ -214,11 +212,11 @@ private: // Private Interface for Machine Learning
 	*/
 	static void SplitRandomly(cweeThreadedList<cweeThreadedList<std::pair<u64, float>>>& featuresIn, cweeThreadedList<std::pair<u64, float>>& labelsIn, cweeThreadedList<cweeThreadedList<std::pair<u64, float>>>& featuresOut, cweeThreadedList<std::pair<u64, float>>& labelsOut, float percentSplit);
 
-private:
+public:
 	/*!
 	Example method using the cweeMachineLearning class.
 	*/
-	void Example(void);
+	static cweeThreadedList<float> Example(void);
 };
 
 #include "chaiscript_wrapper.h"

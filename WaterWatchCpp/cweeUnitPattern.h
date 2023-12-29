@@ -1864,6 +1864,25 @@ namespace cweeUnitValues {
 			return out;
 		};
 
+		AUTO												R_Squared(const cweeUnitPattern& other, const unit_value& from, const unit_value& to) const {
+			scalar out;
+			AUTO x0 = this->GetMinTime() < other.GetMinTime() ? other.GetMinTime() : this->GetMinTime();
+			AUTO x1 = this->GetMaxTime() < other.GetMaxTime() ? this->GetMaxTime() : other.GetMaxTime();
+			if (x0 < from) x0 = from;
+			if (x1 > to) x0 = to;
+
+			if (x1 > x0) {
+				double N_steps = cweeMath::max(10, cweeMath::max(this->GetNumValues(), other.GetNumValues())); // at least 10 samples
+				AUTO real = this->GetValueTimeSeries(x0, x1, (x1 - x0) * (1.0 / N_steps));
+				AUTO estimate = other.GetValueTimeSeries(x0, x1, (x1 - x0) * (1.0 / N_steps));
+				out = cweeEng::R_Squared(real, estimate);
+			}
+			else {
+				out = 0;
+			}
+			return out;
+		};
+
 		/*! Request an integration of the time series. The timefactor determines the resulting time component. I.e. A pattern of kilowatt_t and a time factor of hour_t will return a kilowatt_hour_t. */
 		AUTO												RombergIntegral(unit_value t0, unit_value t1) const {
 			using node_type = cweeBalancedTree<double, double, 10>::cweeBalancedTreeNode;

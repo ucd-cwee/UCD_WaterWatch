@@ -569,6 +569,19 @@ def string::trim() {
   ltrim(rtrim(this));
 }
 
+def Vector::types(){
+	var& out;
+	for (x : this){
+		out ?= x.get_type_info;
+		
+		if (out == x.get_type_info){
+			
+		}else{
+			return null.get_type_info.name;
+		}
+	}
+	return out.name;
+};
 
 def find(container, value, Function compare_func) : call_exists(range, container) {
   auto range := range(container);
