@@ -1849,9 +1849,41 @@ namespace cweeUnitValues {
 		};
 
 		AUTO												R_Squared(const cweeUnitPattern& other) const {
-			scalar out;
+			scalar out, out2;
 			AUTO x0 = this->GetMinTime() < other.GetMinTime() ? other.GetMinTime() : this->GetMinTime();
 			AUTO x1 = this->GetMaxTime() < other.GetMaxTime() ? this->GetMaxTime() : other.GetMaxTime();
+			if (x1 > x0) {
+				double N_steps = cweeMath::max(10, cweeMath::max(this->GetNumValues(), other.GetNumValues())); // at least 10 samples
+				AUTO real = this->GetValueTimeSeries(x0, x1, (x1 - x0) * (1.0 / N_steps));
+				AUTO estimate = other.GetValueTimeSeries(x0, x1, (x1 - x0) * (1.0 / N_steps));
+				out = cweeEng::R_Squared(real, estimate);
+				out2 = cweeEng::R_Squared(estimate, real);
+				
+				if (out2 > 1 || out > 1) {
+					if (out2 < out) {
+						out = out2;
+					}
+				}
+				else {
+					if (out2 > out) {
+						out = out2;
+					}
+				}
+
+				// if (out > 1) out = 1;
+				// if (out < 0) out = 0;
+			}
+			else {
+				out = 0;
+			}
+			return out;
+		};
+
+		AUTO												R_Squared(const cweeUnitPattern& other, const unit_value& from, const unit_value& to) const {
+			scalar out;
+			AUTO x0 = from;
+			AUTO x1 = to;
+
 			if (x1 > x0) {
 				double N_steps = cweeMath::max(10, cweeMath::max(this->GetNumValues(), other.GetNumValues())); // at least 10 samples
 				AUTO real = this->GetValueTimeSeries(x0, x1, (x1 - x0) * (1.0 / N_steps));
@@ -1864,23 +1896,24 @@ namespace cweeUnitValues {
 			return out;
 		};
 
-		AUTO												R_Squared(const cweeUnitPattern& other, const unit_value& from, const unit_value& to) const {
-			scalar out;
-			AUTO x0 = this->GetMinTime() < other.GetMinTime() ? other.GetMinTime() : this->GetMinTime();
-			AUTO x1 = this->GetMaxTime() < other.GetMaxTime() ? this->GetMaxTime() : other.GetMaxTime();
-			if (x0 < from) x0 = from;
-			if (x1 > to) x0 = to;
+		// VIF = 1/(1-R^2); VIF <= 2 means no collinearity. VIF > 2 && < 5 means mild collinearity. VIF >= 5 means strong collinearity.
+		bool												Collinear(const cweeUnitPattern& other) const {			
+			AUTO rsqr = this->R_Squared(other);
 
-			if (x1 > x0) {
-				double N_steps = cweeMath::max(10, cweeMath::max(this->GetNumValues(), other.GetNumValues())); // at least 10 samples
-				AUTO real = this->GetValueTimeSeries(x0, x1, (x1 - x0) * (1.0 / N_steps));
-				AUTO estimate = other.GetValueTimeSeries(x0, x1, (x1 - x0) * (1.0 / N_steps));
-				out = cweeEng::R_Squared(real, estimate);
-			}
+			static decltype(rsqr) one{ 1 };
+			static decltype(rsqr) five{ 5 };
+						
+			if (rsqr == one) {
+				return true;
+			} 
 			else {
-				out = 0;
+				if (five <= (one / (one - rsqr))) {
+					return true;
+				}
+				else {
+					return false;
+				}
 			}
-			return out;
 		};
 
 		/*! Request an integration of the time series. The timefactor determines the resulting time component. I.e. A pattern of kilowatt_t and a time factor of hour_t will return a kilowatt_hour_t. */

@@ -1231,42 +1231,94 @@ R"chaiscript(
 				throw("Features used for machine learning must include at least one (and nothing other than) Pattern objects.");
 			};
 			def Learn(Pattern labels, Vector features) : features.size > 0 && features.types == "Pattern" {
-				var& Range = (labels.GetMaxValue - labels.GetMinValue).double;
-				var& returnType = labels.Y;
-				Vector minVector = [-(1+Range*Range)];
-				Vector maxVector = [(1+Range*Range)];
+				var& Label = Pattern(labels);
+				Label.RemoveUnnecessaryKnots;
+
+				var& Range = (Label.GetMaxValue - Label.GetMinValue).double;
+
+				var& avg = Label.GetAvgValue;
+				if (avg < 0){ avg *= -1; }
+
+				Vector minVector = [-(avg + Range).double];
+				Vector maxVector = [(avg + Range).double];
 				Vector features_final;
+				bool shouldSkip;
 				for (x : features) {
-					var& V = Pattern(x);{
+					var& V = Pattern(x); {
 						var& rangeV = double(V.GetMaxValue - V.GetMinValue);
 						V -= V.GetMinValue;
 						V /= rangeV;
+						V.RemoveUnnecessaryKnots;
 					}
 		
 					// test for colinearity;
+					shouldSkip = false;
 					for (y : features_final){
-			
-			
+						if (V.Collinear(y)){
+							shouldSkip = true;	
+							break;
+						}	
 					}
+					if (shouldSkip){ continue; }
 		
-		
-					minVector.push_back(-(1+Range*Range));//-max(Range * rangeV, Range + rangeV)); 	
-					maxVector.push_back((1+Range*Range));//max(Range * rangeV, Range + rangeV));	
+					minVector.push_back(-(avg + Range).double);
+					maxVector.push_back((avg + Range).double);
 					features_final.push_back(V);
 				}
+
 				PatternLearner out;
 				out.Features := features_final;
-				out.Units = labels.GetAvgValue();
-				var& GetRSQR = fun[labels, features_final](params){	
-					var& v = Pattern(labels.X, labels.Y);
+				out.Units = Label.GetAvgValue();
+				var& labelIntegration = Label.Integrate;
+				var& GetRSQR = fun[labelIntegration, Label, features_final](params){	
+					var& v = Pattern(Label.X, Label.Y);
 					int i = 0;
 					for (feature : features_final){ v += feature*params[++i]; }
 					v += params[0];		
-					return labels.R_Squared(v).double;
+					v *= (labelIntegration / v.Integrate);
+					return Label.R_Squared(v).double * 1000000.0;
 				};
-				out.Fit = OptimizeFunction(false, GetRSQR, minVector, maxVector, "Genetic");				
-				out.R = GetRSQR(out.Fit);
+				out.Fit = OptimizeFunction(false /* e.g. maximization problem */, GetRSQR, minVector, maxVector, "Genetic"); // genetic does best for these type of problems
+				out.R = GetRSQR(out.Fit) / 1000000.0;
+
+				// adjust the fit by multiplying all the fit parameters by the ratio
+				var& ratio = labelIntegration / (out.Forecast.Integrate);
+				for (x : out.Fit){ x = x * ratio; }
+
 				return out;
+			};
+			def Learn(Pattern labels, Vector Features, bool AddTimeFeatures) {
+				Vector features; for (int i = 0; i < Features.size; ++i){ features.push_back(Features[i]); };			
+				if (AddTimeFeatures) {
+					if (1){ // month-specific factors
+						for (int i = 0; i < 12; ++i){ 
+							var& x = Pattern(1_s, 1);
+							x.SetInterpolationType("LEFT");
+							cweeTime minT = labels.GetMinTime.second;
+							cweeTime maxT = labels.GetMaxTime.second;
+							for (cweeTime t = minT; t < maxT; t += (1_d).second){
+								x.AddValue(t, t.tm_mon == i ? 1 : 0);
+							}	
+							features.push_back(x);
+						}
+					}
+					if (1) { // over-time gradual growth or decline
+						var& x = Pattern(1_s, 1);
+						x.SetInterpolationType("LINEAR");		
+						var& minT = labels.GetMinTime.second;
+						for (var& t : labels.GetKnotSeries){	
+							x.AddValue(t.first, (t.first - minT).double);
+						}	
+						features.push_back(x);
+					}
+				}					
+				return Learn(labels, features);
+			};
+			def Learn(Pattern labels, bool AddTimeFeatures) {				
+				return Learn(labels, Vector(), AddTimeFeatures);
+			};
+			def Learn(Pattern labels) {				
+				return Learn(labels, Vector(), true);
 			};
 			def PatternLearner::Forecast(value time) {
 				double out;
@@ -1291,62 +1343,6 @@ R"chaiscript(
 				return out;
 			};
 )chaiscript");
-
-
-
-
-
-
-
-
-
-
-
-
-
-			//lib->AddFunction(, ML_Example, , return cweeMachineLearning::Example());
-
-
-
-
-			//lib->add(chaiscript::user_type<MachineLearning_Results>(), "MLResults");
-			//lib->add(chaiscript::constructor<MachineLearning_Results()>(), "MLResults");
-			//lib->add(chaiscript::constructor<MachineLearning_Results(const MachineLearning_Results&)>(), "MLResults");
-			//lib->add(chaiscript::fun([](MachineLearning_Results& a, const MachineLearning_Results& b)->MachineLearning_Results& { a = b; return a; }), "=");
-			//lib->add(chaiscript::fun(&MachineLearning_Results::learned), "learned");
-			//lib->AddFunction(, performance, , std::vector<chaiscript::Boxed_Value> out; for (int i = 0; i < 4; ++i) { out.push_back(var((float)ML_Result.performance[i])); } return out;, MachineLearning_Results const& ML_Result);
-
-			//auto LearnPattern = [](cweeUnitValues::cweeUnitPattern const& labels_input, cweeUnitValues::cweeUnitPattern const& a_input)->MachineLearning_Results {
-			//	cweeThreadedList<float>	labels; for (auto& x : labels_input.GetKnotSeries()) { labels.Append((double)x.second); }
-			//	cweeThreadedList < cweeThreadedList<float> >	features; {
-			//		cweeThreadedList<float>& a = features.Alloc(); for (auto& x : a_input.GetKnotSeries()) { a.Append((double)x.second); }
-			//	}
-			//	std::pair<vec2, vec2> fit;
-			//	return cweeMachineLearning::Learn(labels, features, &fit);
-			//};
-
-			//auto ForecastPattern = [](MachineLearning_Results const& learned, double value)-> double {
-			//	cweeThreadedList<float> features;
-			//	features.Append(value);
-			//	return cweeMachineLearning::Forecast(learned, features);
-			//};
-			//auto ForecastPattern2 = [](MachineLearning_Results const& learned, cweeUnitValues::cweeUnitPattern const& value) {
-			//	cweeThreadedList<cweeThreadedList<float>> features;
-			//	{
-			//		auto& feature = features.Alloc();
-			//		for (auto& x : value.GetKnotSeries()) {
-			//			feature.Append(x.second());
-			//		}
-			//	}
-			//	return cweeMachineLearning::Forecast(learned, features);
-			//};
-
-			//lib->AddFunction(LearnPattern, Learn, -> MachineLearning_Results , return LearnPattern(labels, a); , cweeUnitValues::cweeUnitPattern const& labels, cweeUnitValues::cweeUnitPattern const& a);
-			//lib->eval("def Learn(MLResults resultContainer, Pattern labels, Pattern feature1){ resultContainer = Learn(labels, feature1); return resultContainer; };");
-
-			//lib->AddFunction(ForecastPattern, Forecast, , return ForecastPattern(learned, value);, MachineLearning_Results const& learned, double value);
-			//lib->AddFunction(ForecastPattern2, Forecast, , return ForecastPattern2(learned, feature); , MachineLearning_Results const& learned, cweeUnitValues::cweeUnitPattern const& feature);
-
 
 			return lib;
 		};

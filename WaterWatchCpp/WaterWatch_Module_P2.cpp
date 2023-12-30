@@ -280,13 +280,14 @@ namespace chaiscript {
 
                 lib->add(chaiscript::fun([](cweeUnitPattern& a, const unit_value& from, const unit_value& to) { a.RemoveTimes(from, to); }), "RemoveTimes");
                 lib->add(chaiscript::fun([](const cweeUnitPattern& a, const cweeUnitPattern& b) { return a.R_Squared(b); }), "R_Squared");
+                lib->add(chaiscript::fun([](const cweeUnitPattern& a, const cweeUnitPattern& b) { return a.Collinear(b); }), "Collinear");
                 lib->add(chaiscript::fun([](const cweeUnitPattern& a, const cweeUnitPattern& b, const unit_value& from, const unit_value& to) { return a.R_Squared(b, from, to); }), "R_Squared");
                 lib->add(chaiscript::fun([](const cweeUnitPattern& a) { 
                     return (((a - a.GetAvgValue()).pow(2.0)).GetAvgValue()).pow(0.5);
                 }), "StdDev");
-                AUTO blur_pattern = [](cweeUnitPattern const& a, cweeUnitValues::unit_value desiredNumValues){
+                AUTO blur_pattern = [](cweeUnitPattern const& a, double desiredNumValues){
                     AUTO width = a.GetMaxTime() - a.GetMinTime();                    
-                    if (width() <= 0 || desiredNumValues() <= 0) {
+                    if (width() <= 0 || desiredNumValues <= 0) {
                         return cweeUnitPattern(a);
                     }
                     AUTO out = cweeUnitPattern();
@@ -316,8 +317,8 @@ namespace chaiscript {
                     pat.RemoveUnnecessaryKnots();
                     return pat;
                 }), "Blur");
-                lib->add(chaiscript::fun([=](const cweeUnitPattern& a, const cweeUnitValues::unit_value& scale) {
-                    AUTO pat = blur_pattern(a, scale);
+                lib->add(chaiscript::fun([=](const cweeUnitPattern& a, int desiredNumValues) {
+                    AUTO pat = blur_pattern(a, desiredNumValues);
                     pat.RemoveUnnecessaryKnots();
                     return pat;
                 }), "Blur");

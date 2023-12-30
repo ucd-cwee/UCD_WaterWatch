@@ -4453,21 +4453,50 @@ namespace cweeEng {
 			for (auto& x : Real) cweeMath::rollingAverageRef(avg_real, x, numSamples);
 		}
 
-
 		int N = cweeMath::min(Real.Num(), Estimate.Num());
-		double SumErrReal = 0;
-		double SumErrEstimate = 0;
+		
+		T real_error { 0 };
+		T estimate_error { 0 };
+		AUTO SumErrReal = real_error * real_error;
+		AUTO SumErrEstimate = estimate_error * estimate_error;
 
 		for (int i = 0; i < N; i++) {
-			double real_error = (double)(Real[i] - avg_real);
-			double estimate_error = (double)(Real[i] - Estimate[i]);
+			real_error = Real[i] - avg_real;
+			estimate_error = Real[i] - Estimate[i];
 			SumErrReal += real_error * real_error;
 			SumErrEstimate += estimate_error * estimate_error;
 		};
 
-		AUTO out = avg_real / avg_real; 
-		out = 1.0 - (SumErrEstimate / SumErrReal);
-		return out;
+		if (avg_real != 0) {
+			AUTO out = avg_real / avg_real;
+			if (SumErrReal != 0) {
+				out = 1.0 - (SumErrEstimate / SumErrReal);
+			}
+			else {
+				if (SumErrEstimate == 0) {
+					out = 1.0;
+				}
+				else {
+					out = 0.0;
+				}		
+			}
+			return out;
+		}
+		else {
+			AUTO out = avg_real / (avg_real+1.0);
+			if (SumErrReal != 0) {
+				out = 1.0 - (SumErrEstimate / SumErrReal);
+			}
+			else {
+				if (SumErrEstimate == 0) {
+					out = 1.0;
+				}
+				else {
+					out = 0.0;
+				}
+			}
+			return out;
+		}
 	};
 
 };
