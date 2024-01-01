@@ -23,13 +23,15 @@ to maintain a single distribution point for the source code.
 #include "../GDAL/GDAL.h"
 #include "../ExcelInterop/Wrapper.h"
 #include "MachineLearning.h"
+#include "odbc.h"
 
 namespace chaiscript {
     WaterWatch_ChaiScript::WaterWatch_ChaiScript(std::vector<std::string> t_modulepaths, std::vector<std::string> t_usepaths, std::vector<Options> t_opts)
         : ChaiScript_Basic(
-            { 
-                chaiscript::Std_Lib::library(), 
+            {
+                chaiscript::Std_Lib::library(),
                 chaiscript::WaterWatch_Lib::library_1(),
+                chaiscript::WaterWatch_Lib::ODBC_library(),
                 chaiscript::WaterWatch_Lib::library_2(),
                 chaiscript::WaterWatch_Lib::library_3(),
                 chaiscript::WaterWatch_Lib::library_3p1(),
@@ -39,7 +41,7 @@ namespace chaiscript {
                 chaiscript::WaterWatch_Lib::library_4(),
                 chaiscript::WaterWatch_Lib::Excel_library(),
                 chaiscript::WaterWatch_Lib::GDAL_library(),
-                chaiscript::WaterWatch_Lib::MachineLearning_Library()
+                chaiscript::WaterWatch_Lib::MachineLearning_Library()                
             }
             , chaiscript::make_parser<eval::Noop_Tracer, optimizer::Optimizer_Default>()
             , std::move(t_modulepaths)

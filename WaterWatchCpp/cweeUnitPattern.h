@@ -1595,7 +1595,6 @@ namespace cweeUnitValues {
 			AUTO g{ lock.Guard() };
 			return container->GetAvgTime();
 		};
-
 		scalar											GetMinimumDecimals() const {
 			AUTO g{ lock.Guard() };
 			return container->GetMinimumDecimals();
@@ -2242,6 +2241,43 @@ namespace cweeUnitValues {
 
 			return quantiles;
 		};
+		unit_value											GetAvgTimestep() const {
+			unit_value out;
+
+			int num(0);
+
+			AUTO g{ lock.Guard() };
+			out = (container->internal_X_type = 0);
+
+			AUTO minT = this->GetMinTime(), maxT = this->GetMaxTime();
+			if (minT >= maxT) return out;
+			
+
+			if (this->GetNumValues() > 1) {
+				cweeUnitValues::cweeUnitPatternContainer_t::IterType prevValue;
+				prevValue.Y = nullptr;
+				int numSamples = 0;
+
+				AUTO endIter = const_cast<const cweeUnitPatternContainer_t&>(*this->container).end();
+				for (auto iter = const_cast<const cweeUnitPatternContainer_t&>(*this->container).begin_at(minT); iter != endIter; ++iter) {
+					auto& dataPair = *iter;
+					if (dataPair.Y) {
+						prevValue = dataPair;
+
+						if (dataPair.X >= minT) {
+							if (dataPair.X <= maxT) {
+								if (prevValue.Y) {
+									cweeMath::rollingAverageRef(out, (dataPair.X - prevValue.X), numSamples);
+								}
+								prevValue = dataPair;
+							}
+						}
+					}
+				}
+			}
+
+			return out;
+		};
 
 		unit_value											GetAvgValue() const {
 			unit_value out;
@@ -2251,21 +2287,11 @@ namespace cweeUnitValues {
 			AUTO g{ lock.Guard() };
 			out = (container->internal_Y_type = 0);
 
-#if 1
 			AUTO minT = this->GetMinTime(), maxT = this->GetMaxTime();
 			if (minT >= maxT) return out;
 			out = this->RombergIntegral(minT, maxT) / (maxT - minT);
-#else
-			for (auto& x : *container) {
-				if (x.Y) {
-					num++;
-					out -= (out / num);
-					out += ((container->internal_Y_type = *x.Y) / num);
-				}
-			}
-#endif
-			return out;
 
+			return out;
 		};
 		unit_value											GetAvgValue(unit_value start, unit_value end) const {
 			unit_value out;

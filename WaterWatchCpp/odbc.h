@@ -19,6 +19,8 @@ to maintain a single distribution point for the source code.
 #include "Strings.h"
 #include "SharedPtr.h"
 #include "../ODBC/ODBC.h"
+#include "../WaterWatchCpp/chaiscript_wrapper.h"
+#include "../WaterWatchCpp/WaterWatch_Module_Header.h"
 
 class cweeODBC {
 public:
@@ -49,3 +51,9 @@ public:
 geocoding and mapping services
 */
 extern cweeSharedPtr<cweeODBC> odbc;
+
+namespace chaiscript {
+    namespace WaterWatch_Lib {
+        [[nodiscard]] ModulePtr ODBC_library();
+    };
+}; // namespace chaiscript

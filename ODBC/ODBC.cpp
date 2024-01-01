@@ -7844,25 +7844,39 @@ void ODBC::InsertRow(nanodbcConnection const& con, cweeStr const& tableFullPath,
     }
 };
 void ODBC::InsertRows(nanodbcConnection const& con, cweeStr const& tableFullPath, const cweeThreadedList<cweeThreadedList<cweeStr>>& values) {
-    cweeStr query;
-
-    if (Connection(con).SQLiteHandle() >= 0) {
-        // database name is not used here. 
-        {
-            cweeStr AllValues; for (auto& y : values) {
-                cweeStr Values;
-                for (auto& x : y) {
-                    Values.AddToDelimiter(cweeStr::printf("'%s'", x.c_str()), ",");
-                }
-                AllValues.AddToDelimiter(Values, "), (");
+    int maxRowInsert = 256;
+    if (values.Num() > maxRowInsert) {
+        int maxRow = values.Num();
+        int minRow = 0;
+        int currentMaxRow = cweeMath::min(maxRowInsert, maxRow);
+        int numBreaks = maxRow / maxRowInsert;
+        for (int breakN = 0; breakN < numBreaks; breakN++) {
+            minRow = breakN * maxRowInsert;
+            currentMaxRow = cweeMath::min((breakN+1) * maxRowInsert, maxRow);
+            if (currentMaxRow <= minRow) break;
+            
+            cweeThreadedList<cweeThreadedList<cweeStr>> limitedRowList(maxRowInsert + 1);
+            for (int rowN = minRow; rowN < currentMaxRow; rowN++) {
+                limitedRowList.Alloc() = values[rowN];
             }
-            GetResults(con, cweeStr::printf("INSERT INTO %s VALUES (%s);", tableFullPath.c_str(), AllValues.c_str()), 1);
+
+            InsertRows(con, tableFullPath, limitedRowList);
         }
+        if (currentMaxRow < maxRow) {
+            cweeThreadedList<cweeThreadedList<cweeStr>> limitedRowList(maxRowInsert + 1);
+            for (int rowN = currentMaxRow; rowN < maxRow; rowN++) {
+                limitedRowList.Alloc() = values[rowN];
+            }
+
+            InsertRows(con, tableFullPath, limitedRowList);
+        }
+
     }
     else {
-        // could be MSSQL or MYSQL
-        if (cweeStr(Connection(con).DriverName().c_str()).Find("MYSQL", false) < 0 && cweeStr(Connection(con).DriverName().c_str()).Find("myodbc", false) < 0) {
-            // likely not a MySQL driver (i.e. MSSQL)
+        cweeStr query;
+
+        if (Connection(con).SQLiteHandle() >= 0) {
+            // database name is not used here. 
             {
                 cweeStr AllValues; for (auto& y : values) {
                     cweeStr Values;
@@ -7875,16 +7889,32 @@ void ODBC::InsertRows(nanodbcConnection const& con, cweeStr const& tableFullPath
             }
         }
         else {
-            // likely a MySQL driver
-            {
-                cweeStr AllValues; for (auto& y : values) {
-                    cweeStr Values;
-                    for (auto& x : y) {
-                        Values.AddToDelimiter(cweeStr::printf("'%s'", x.c_str()), ",");
+            // could be MSSQL or MYSQL
+            if (cweeStr(Connection(con).DriverName().c_str()).Find("MYSQL", false) < 0 && cweeStr(Connection(con).DriverName().c_str()).Find("myodbc", false) < 0) {
+                // likely not a MySQL driver (i.e. MSSQL)
+                {
+                    cweeStr AllValues; for (auto& y : values) {
+                        cweeStr Values;
+                        for (auto& x : y) {
+                            Values.AddToDelimiter(cweeStr::printf("'%s'", x.c_str()), ",");
+                        }
+                        AllValues.AddToDelimiter(Values, "), (");
                     }
-                    AllValues.AddToDelimiter(Values, "), (");
+                    GetResults(con, cweeStr::printf("INSERT INTO %s VALUES (%s);", tableFullPath.c_str(), AllValues.c_str()), 1);
                 }
-                GetResults(con, cweeStr::printf("INSERT INTO %s VALUES (%s);", tableFullPath.c_str(), AllValues.c_str()), 1);
+            }
+            else {
+                // likely a MySQL driver
+                {
+                    cweeStr AllValues; for (auto& y : values) {
+                        cweeStr Values;
+                        for (auto& x : y) {
+                            Values.AddToDelimiter(cweeStr::printf("'%s'", x.c_str()), ",");
+                        }
+                        AllValues.AddToDelimiter(Values, "), (");
+                    }
+                    GetResults(con, cweeStr::printf("INSERT INTO %s VALUES (%s);", tableFullPath.c_str(), AllValues.c_str()), 1);
+                }
             }
         }
     }

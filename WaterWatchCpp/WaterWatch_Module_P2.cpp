@@ -234,6 +234,7 @@ namespace chaiscript {
 
                 lib->add(chaiscript::fun([](cweeUnitPattern& a) { return a.GetMinTime(); }), "GetMinTime");
                 lib->add(chaiscript::fun([](cweeUnitPattern& a) { return a.GetAvgTime(); }), "GetAvgTime");
+                lib->add(chaiscript::fun([](cweeUnitPattern& a) { return a.GetAvgTimestep(); }), "GetAvgTimestep");
                 lib->add(chaiscript::fun([](cweeUnitPattern& a) { return a.GetMaxTime(); }), "GetMaxTime");
 
                 lib->add(chaiscript::fun([](cweeUnitPattern& a) { return a.GetKnotSeries(); }), "GetKnotSeries"); // (std::vector<std::pair<u64, float>>)
