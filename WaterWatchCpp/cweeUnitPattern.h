@@ -1803,6 +1803,81 @@ namespace cweeUnitValues {
 			return (GetCurrentValue(time + step) - GetCurrentValue(time - step)) / (step * 2.0);
 		};
 
+		/*! Return approximate derivative of spline */
+		cweeUnitPattern											GetFirstDerivative() const {
+			cweeUnitPattern result(GetMinTime(), GetCurrentValue(0) / GetMinTime()); {
+				result.SetBoundaryType(GetBoundaryType());
+				result.SetInterpolationType(GetInterpolationType());
+			}
+
+			result.AddValue(GetMinTime(), GetCurrentFirstDerivative(GetMinTime()));
+
+
+			cweeUnitValues::cweeUnitPatternContainer_t::IterType prevValue;
+			prevValue.Y = nullptr;
+
+			for (AUTO dataPair : const_cast<const cweeUnitPatternContainer_t&>(*this->container)) {
+				if (dataPair.Y) {
+					if (prevValue.Y) {
+						if (dataPair.X > prevValue.X) {
+							result.AddValue((prevValue.X + dataPair.X) / 2.0, (*dataPair.Y - *prevValue.Y) / (dataPair.X - prevValue.X));
+						}
+					}
+					prevValue = dataPair;
+				}
+			}
+			result.AddValue(GetMaxTime(), GetCurrentFirstDerivative(GetMaxTime()));
+			return result;
+		};
+
+		/*! Return absolute-value of spline */
+		cweeUnitPattern											Abs() const {
+			cweeUnitPattern result(GetMinTime(), GetCurrentValue(0)); {
+				result.SetBoundaryType(GetBoundaryType());
+				result.SetInterpolationType(GetInterpolationType());
+			}
+
+			for (AUTO dataPair : const_cast<const cweeUnitPatternContainer_t&>(*this->container)) {
+				if (dataPair.Y) {
+					result.AddValue(dataPair.X, cweeUnitValues::math::abs(*dataPair.Y));
+				}
+			}
+
+			return result;
+		};
+
+		/*! Return absolute-value of spline */
+		cweeUnitPattern											RoundNearest(float roundToMagnitude) const {
+			cweeUnitPattern result(GetMinTime(), GetCurrentValue(0)); {
+				result.SetBoundaryType(GetBoundaryType());
+				result.SetInterpolationType(GetInterpolationType());
+			}
+
+			for (AUTO dataPair : const_cast<const cweeUnitPatternContainer_t&>(*this->container)) {
+				if (dataPair.Y) {
+					result.AddValue(dataPair.X, cweeUnitValues::math::round(*dataPair.Y, roundToMagnitude));
+				}
+			}
+
+			return result;
+		};
+
+		/*! Return absolute-value of spline */
+		cweeUnitPattern											Floor() const {
+			cweeUnitPattern result(GetMinTime(), GetCurrentValue(0)); {
+				result.SetBoundaryType(GetBoundaryType());
+				result.SetInterpolationType(GetInterpolationType());
+			}
+
+			for (AUTO dataPair : const_cast<const cweeUnitPatternContainer_t&>(*this->container)) {
+				if (dataPair.Y) {
+					result.AddValue(dataPair.X, cweeUnitValues::math::floor(*dataPair.Y));
+				}
+			}
+
+			return result;
+		};
+
 		/*! Return approximate second derivative of spline at time */
 		unit_value											GetCurrentSecondDerivative(unit_value time) const {
 			unit_value step; {
@@ -2278,6 +2353,7 @@ namespace cweeUnitValues {
 
 			return out;
 		};
+
 
 		unit_value											GetAvgValue() const {
 			unit_value out;

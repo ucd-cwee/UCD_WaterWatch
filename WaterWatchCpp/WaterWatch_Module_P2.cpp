@@ -189,9 +189,14 @@ namespace chaiscript {
                 lib->add(chaiscript::fun([](cweeUnitPattern& a, const unit_value& b) { return a.GetCurrentValue(b); }), "GetCurrentValue");
                 lib->add(chaiscript::fun([](cweeUnitPattern& a, const unit_value& b) { return a.GetCurrentFirstDerivative(b); }), "GetCurrentFirstDerivative");
                 lib->add(chaiscript::fun([](cweeUnitPattern& a, const unit_value& b) { return a.GetCurrentSecondDerivative(b); }), "GetCurrentSecondDerivative");
+                lib->add(chaiscript::fun([](cweeUnitPattern& a) { return a.GetFirstDerivative(); }), "GetFirstDerivative");
                 lib->add(chaiscript::fun([](cweeUnitPattern& a) { return a.GetMinValue(); }), "GetMinValue");
                 lib->add(chaiscript::fun([](cweeUnitPattern& a) { return a.GetAvgValue(); }), "GetAvgValue");
                 lib->add(chaiscript::fun([](cweeUnitPattern& a) { return a.GetMaxValue(); }), "GetMaxValue");
+
+                lib->add(chaiscript::fun([](cweeUnitPattern& a) { return a.Floor(); }), "Floor");
+                lib->add(chaiscript::fun([](cweeUnitPattern& a) { return a.Abs(); }), "Abs");
+                lib->add(chaiscript::fun([](cweeUnitPattern& a, float roundToMagnitude) { return a.RoundNearest(roundToMagnitude); }), "RoundNearest");
 
                 lib->add(chaiscript::fun([](cweeUnitPattern& a, const unit_value& b, const unit_value& c) { return a.GetMinValue(b, c); }), "GetMinValue");
                 lib->add(chaiscript::fun([](cweeUnitPattern& a, const unit_value& b, const unit_value& c) { return a.GetAvgValue(b, c); }), "GetAvgValue");

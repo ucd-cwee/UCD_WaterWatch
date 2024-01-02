@@ -476,7 +476,7 @@ typedef long double				u64;
 			};
 			unit_value& pow_value(unit_value const& V) { HandleNotScalar(V); value_m = std::pow(GetVisibleValue(), V.GetVisibleValue()) * conversion(); return *this; };
 			unit_value sqrt() const { unit_value out = *this; out.MultiplyUnits(0.5); out.value_m = std::sqrt(out.value_m); return out; };
-
+			unit_value floor() const { unit_value out = *this; out.value_m = std::floor(GetVisibleValue()) * conversion(); return out; };
 		};
 		using scalar = unit_value;
 	};
@@ -1062,6 +1062,14 @@ namespace cweeUnitValues {
 			if (V < min) return min;
 			if (V > max) return max;
 			return V;
+		};
+		static unit_value floor(const unit_value& f) {
+			return f.floor();
+		};
+		static unit_value round(const unit_value& a, float magnitude) {
+			//auto factor = cweeMath::RSqrt(magnitude);
+			//factor *= factor;
+			return floor((a / magnitude) + 0.5) * magnitude;
 		};
 	};
 
