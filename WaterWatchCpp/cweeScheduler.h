@@ -247,7 +247,7 @@ public: // data access methods
 	auto& iterations_0_primary() { return details->iterations_0_primary; };
 	cweeAny& tag(void* p) { return details->tag(p); };
 	cweeAny& tag() { return details->tag((void*)this); };
-
+	
 public:
 	int num_dimensions()  const noexcept { return num_dimensions_d; };
 	int num_particles()  const noexcept { return num_particles_p; };
@@ -303,6 +303,7 @@ public:
 #endif			
 	};
 	virtual ParticleHistory BestParticle() = 0;
+	virtual bool minimization_problem() = 0;
 	virtual cweeThreadedList<ParticleHistory> BestParticles(int num) = 0;
 	float GetRandomAtDimension(int dimension) { return cweeRandomFloat(lower_constraints()[dimension], upper_constraints()[dimension]); };
 	float GetRecommendedDimensionValue(int dimension, u64 startWith) {
@@ -446,6 +447,7 @@ public:
 	cweeThreadedList<ParticleType> BestParticles(int num) override final {
 		return this->BestParticlesImpl(num, minimize);
 	};
+	bool minimization_problem() { return minimize; };
 };
 
 template <bool minimize = true> class Genetic_OptimizationManagementTool final : public OptimizationManagementTools<> {
@@ -588,6 +590,7 @@ public:
 	cweeThreadedList<ParticleType> BestParticles(int num) override final {
 		return this->BestParticlesImpl(num, minimize);
 	};
+	bool minimization_problem() { return minimize; };
 };
 
 template <bool minimize = true> class ParticleSwarm_OptimizationManagementTool final : public OptimizationManagementTools<> {
@@ -665,8 +668,6 @@ public:
 		}
 		return centers;
 	};
-
-
 
 	class IslandMemory {
 	public:
@@ -857,8 +858,8 @@ public:
 	cweeThreadedList<ParticleType> BestParticles(int num) override final {
 		return this->BestParticlesImpl(num, minimize);
 	};
+	bool minimization_problem() { return minimize; };
 };
-
 
 template <class type1, class type2> class Alternating_OptimizationManagementTool final : public OptimizationManagementTools<> {
 public:
@@ -911,6 +912,20 @@ public:
 		else {
 			return cweeThreadedList<ParticleType>();
 		}
+	};
+	bool minimization_problem() { 
+		if (this->num_iterations() > 0) {
+			if (this->CurrentIteration().iterationNumber % 2 != 0) { // starts odd with iterationNumber == 1
+				return optManagementTool1.minimization_problem();
+			}
+			else
+			{
+				return optManagementTool2.minimization_problem();
+			}
+		}
+		else {
+			return false;
+		}	
 	};
 
 private:
@@ -1012,7 +1027,42 @@ namespace cweeOptimizer {
 			std::function func4 = [=](cweeOptimizerData& shared) -> bool { /* End of iteration */
 				try {
 					AUTO ptr = shared.managementTool->BestParticle();
-					return StopOptimization(*shared.sharedData, ptr.inputs, EvaluatePolicy(ptr.inputs));
+					if (StopOptimization(*shared.sharedData, ptr.inputs, EvaluatePolicy(ptr.inputs))) {
+						// stop optimization
+						if (1) {
+							// Check for integer correctness. 
+							cweeThreadedList<u64> inputs = ptr.inputs; {
+								u64 perf = EvaluatePolicy(inputs), prevInput, newPerf;
+								for (int i = 0; i < inputs.size(); i++) {
+									prevInput = inputs[i];
+									inputs[i] = std::round(prevInput);
+									newPerf = EvaluatePolicy(inputs);
+									if (shared.managementTool->minimization_problem()) {
+										if (newPerf >= perf) { // equal? Prefer to keep less-than-perfect results to help with velocity
+											inputs[i] = prevInput; // undo
+										}
+										else {
+											perf = newPerf; // keep the change
+										}
+									}
+									else {
+										if (newPerf <= perf) { // equal? Prefer to keep less-than-perfect results to help with velocity
+											inputs[i] = prevInput; // undo										
+										}
+										else {
+											perf = newPerf; // keep the change
+										}
+									}
+								}								
+							}
+							return StopOptimization(*shared.sharedData, inputs, EvaluatePolicy(inputs));
+						} else {
+							return true;
+						}
+					} else { 
+						// continue optimization
+						return false;
+					}
 				}catch(...){}
 				return true;
 			};

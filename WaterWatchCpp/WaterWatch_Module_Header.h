@@ -1492,7 +1492,7 @@ namespace chaiscript {
             cweeThreadedList<float> lowerBound, upperBound;
             for (auto& bv : lowBound_Vector) lowerBound.push_back(boxed_cast<double>(bv));
             for (auto& bv : highBound_Vector) upperBound.push_back(boxed_cast<double>(bv));
-            std::function todo = [=](cweeThreadedList<float> const& x)-> float {
+            std::function todo = [=](cweeThreadedList<u64> const& x)-> double {
                 chaiscript::small_vector< chaiscript::Boxed_Value > bv;
                 for (auto& v : x) { bv.push_back(chaiscript::var((double)v)); }
                 AUTO sampleF = per_sample_Function(bv);
@@ -1504,10 +1504,7 @@ namespace chaiscript {
             constexpr int maxIterations = 1000; // 1000 iterations
             constexpr float eps = 0.000001f;
 
-            if (numDimensions <= 0) {
-                throw std::runtime_error("Not enough dimensions for optimization.");
-                // return chaiscript::small_vector< chaiscript::Boxed_Value >();
-            }
+            if (numDimensions <= 0) { throw std::runtime_error("Not enough dimensions for optimization."); }
 
             using sharedObjType = ChaiscriptOptimizationObj; // cweeOptimizer::sharedClass;
 

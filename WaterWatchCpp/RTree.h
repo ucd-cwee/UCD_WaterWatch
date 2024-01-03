@@ -30,17 +30,25 @@ to maintain a single distribution point for the source code.
 class cweeBoundary {
 public:
 	static cwee_units::foot_t Distance(vec2d const& LongLat1, vec2d const& LongLat2) {
-		double  lat_old = LongLat1.y * cweeMath::PI / 180.0;
-		double  lat_new = LongLat2.y * cweeMath::PI / 180.0;
-		double  lat_diff = (LongLat2.y - LongLat1.y) * cweeMath::PI / 180.0;
-		double  lng_diff = (LongLat2.x - LongLat1.x) * cweeMath::PI / 180.0;
+		double  lat_old, lat_new, lat_diff, lng_diff, a, c;
+		units::length::meter_t out;
 
-		double  a = std::sin(lat_diff / 2.0) * std::sin(lat_diff / 2.0) + std::cos(lat_new) * std::cos(lat_old) * std::sin(lng_diff / 2.0) * std::sin(lng_diff / 2.0);
-		double  c = 2.0 * std::atan2(std::sqrt(a), std::sqrt(1.0 - a));
+		if (LongLat1.x >= -180.0 && LongLat1.x <= 180.0 && LongLat1.y >= -90.0 && LongLat1.y <= 90.0 && 
+			LongLat2.x >= -180.0 && LongLat2.x <= 180.0 && LongLat2.y >= -90.0 && LongLat2.y <= 90.0) {
+			lat_old = LongLat1.y * cweeMath::PI / 180.0;
+			lat_new = LongLat2.y * cweeMath::PI / 180.0;
+			lat_diff = (LongLat2.y - LongLat1.y) * cweeMath::PI / 180.0;
+			lng_diff = (LongLat2.x - LongLat1.x) * cweeMath::PI / 180.0;
 
-		units::length::meter_t  distance = 6372797.56085 * c;
+			a = std::sin(lat_diff / 2.0) * std::sin(lat_diff / 2.0) + std::cos(lat_new) * std::cos(lat_old) * std::sin(lng_diff / 2.0) * std::sin(lng_diff / 2.0);
+			c = 2.0 * std::atan2(std::sqrt(a), std::sqrt(1.0 - a));
 
-		return distance;
+			out = units::length::meter_t(6372797.56085 * c);
+		}
+		else {
+			out = units::length::meter_t(LongLat1.Distance(LongLat2));
+		}
+		return out;
 	};
 	static vec2d ClosestPoint(vec2d const& pointCoord, cweeList<vec2d> const& lineCoords) {
 		if (lineCoords.Num() == 0) {

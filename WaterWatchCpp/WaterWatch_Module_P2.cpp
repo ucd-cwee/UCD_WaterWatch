@@ -619,11 +619,83 @@ namespace chaiscript {
                 
                 using RTreeType = RTree< RTreeContainer, RTreeContainer::GetCoordinates, RTreeContainer::GetDistance>;
 
+                class RTreeNode {
+                public:
+                    RTreeType::TreeNode* node{ nullptr };
+
+                    RTreeNode() : node(nullptr) {};
+                    RTreeNode(RTreeType::TreeNode* p) : node(p) {};
+                    RTreeNode(RTreeNode const&) = default;
+                    RTreeNode(RTreeNode&&) = default;
+                    RTreeNode& operator=(RTreeNode const&) = default;
+                    RTreeNode& operator=(RTreeNode&&) = default;
+                    
+                    cweeBoundary boundary() const {
+                        cweeBoundary out;
+                        if (node){
+                            if (node->object) {
+                                out = node->object->boundary;
+                            } 
+                            else {
+                                out = node->bound;
+                            }
+                        }
+                        return out;
+                    };
+                    Boxed_Value object() const {
+                        Boxed_Value out;
+                        if (node && node->object) {
+                            out = node->object->data;
+                        }
+                        return out;
+                    };
+                    std::vector<Boxed_Value> children() const {
+                        std::vector<Boxed_Value> out;
+                        if (node) {
+                            for (auto* x : node->children) {
+                                out.push_back(var(RTreeNode(x)));
+                            }                            
+                        }
+                        return out;
+                    };
+                    int num_children() const {
+                        int out{ 0 };
+                        if (node) {
+                            out = node->children.Num();
+                        }
+                        return out;
+                    };
+                    RTreeNode parent() const {
+                        if (node) return RTreeNode(node->parent);
+                        return RTreeNode();
+                    };
+                    RTreeNode next() const {
+                        return RTreeNode(RTreeType::GetNext(node));
+                    };
+                    RTreeNode next_leaf() const {
+                        return RTreeNode(RTreeType::GetNextLeaf(node));
+                    };
+                };
+                AUTO First_Node_From_Tree = [](RTreeType& obj) {
+                    return RTreeNode(obj.GetRoot());
+                };
+                lib->add(chaiscript::user_type<RTreeNode>(), "RTreeNode");
+                lib->add(chaiscript::constructor<RTreeNode()>(), "RTreeNode");
+                lib->add(chaiscript::constructor<RTreeNode(const RTreeNode&)>(), "RTreeNode");
+                lib->add(chaiscript::fun([](RTreeNode& a, const RTreeNode& b)->RTreeNode& { a = b; return a; }), "=");
+                lib->AddFunction(, children, , return obj.children(), RTreeNode const& obj);
+                lib->AddFunction(, object, , return obj.object(), RTreeNode const& obj);
+                lib->AddFunction(, num_children, , return obj.num_children(), RTreeNode const& obj);
+                lib->AddFunction(, parent, , return obj.parent(), RTreeNode const& obj);
+                lib->AddFunction(, boundary, , return obj.boundary(), RTreeNode const& obj);
+                lib->AddFunction(, next, , return obj.next(), RTreeNode const& obj);
+                lib->AddFunction(, next_leaf, , return obj.next_leaf(), RTreeNode const& obj);
+
                 lib->add(chaiscript::user_type<RTreeType>(), "RTree");
                 lib->add(chaiscript::constructor<RTreeType()>(), "RTree");
                 lib->add(chaiscript::constructor<RTreeType(const RTreeType&)>(), "RTree");
-                lib->add(chaiscript::fun([](RTreeType& a, const RTreeType& b)->RTreeType& { a = b; return a; }), "=");
-                
+                lib->add(chaiscript::fun([](RTreeType& a, const RTreeType& b)->RTreeType& { a = b; return a; }), "=");                
+                lib->AddFunction(, Root, , return RTreeNode(obj.GetRoot());, RTreeType& obj);
                 AUTO Remove_From_RTree = [](RTreeType& obj, chaiscript::Boxed_Value const& t)-> void {
                     auto foundObj = obj.TryFindObject([&](RTreeContainer const& o)->bool {
                         return o.data.get_ptr() == t.get_ptr();
@@ -664,7 +736,7 @@ namespace chaiscript {
                     chaiscript::Boxed_Value out;
                     auto ptr_list = obj.Near(t, 1);
                     if (ptr_list.Num() > 0 && ptr_list[0]->object) {
-                        out = ptr_list[0]->object->data;
+                        out = var(RTreeNode(ptr_list[0]));
                     }
                     return out;
                 , RTreeType& obj, cweeBoundary const& t);
@@ -672,7 +744,7 @@ namespace chaiscript {
                     std::vector<chaiscript::Boxed_Value> out;
                     for (auto& x : obj.Near(t, numNearest)) {
                         if (x && x->object) {
-                            out.push_back(x->object->data);
+                            out.push_back(var(RTreeNode(x)));
                         }
                     }
                     return out;
@@ -697,7 +769,7 @@ namespace chaiscript {
                                 polygon.AddPoint(obj.topRight.x, obj.topRight.y);
                                 polygon.AddPoint(obj.topRight.x, obj.bottomLeft.y);
                                 polygon.AddPoint(obj.bottomLeft.x, obj.bottomLeft.y);
-                                polygon.Tag = p->data;
+                                polygon.Tag = chaiscript::var(RTreeNode(node)); // p->data;
                                 out = chaiscript::var(std::move(polygon));
                             } else {
                                 UI_MapIcon icon;
@@ -705,7 +777,7 @@ namespace chaiscript {
                                 icon.latitude = obj.bottomLeft.y;
                                 icon.HideOnCollision = false;
                                 icon.color = col;
-                                icon.Tag = p->data;
+                                icon.Tag = chaiscript::var(RTreeNode(node)); // p->data;
                                 out = chaiscript::var(std::move(icon));
                             }
                         } 
@@ -719,38 +791,9 @@ namespace chaiscript {
                             polygon.AddPoint(obj.topRight.x, obj.topRight.y);
                             polygon.AddPoint(obj.topRight.x, obj.bottomLeft.y);
                             polygon.AddPoint(obj.bottomLeft.x, obj.bottomLeft.y);
-                            polygon.Tag = chaiscript::var(cweeBoundary(obj));
+                            polygon.Tag = chaiscript::var(RTreeNode(node)); // cweeBoundary(obj)
                             out = chaiscript::var(std::move(polygon));
                         }
-                    }
-                    return out;
-                };
-                AUTO Boundary_To_Layer = [](cweeBoundary& obj, cweeSharedPtr< RTreeContainer> p)-> chaiscript::Boxed_Value {
-                    chaiscript::Boxed_Value out;
-                    UI_Color col(cweeRandomFloat(25, 230), cweeRandomFloat(25, 230), cweeRandomFloat(25, 230), 255);
-
-                    if (obj.bottomLeft != obj.topRight) {
-                        float thickness = cweeRandomFloat(2, 5);
-                        UI_MapPolygon polygon;
-                        polygon.thickness = thickness;
-                        polygon.fill = UI_Color(0, 0, 0, 0);
-                        polygon.stroke = col;
-                        polygon.AddPoint(obj.bottomLeft.x, obj.topRight.y);
-                        polygon.AddPoint(obj.topRight.x, obj.topRight.y);
-                        polygon.AddPoint(obj.topRight.x, obj.bottomLeft.y);
-                        polygon.AddPoint(obj.bottomLeft.x, obj.bottomLeft.y);
-                        polygon.Tag = chaiscript::var(cweeBoundary(obj));
-                        out = chaiscript::var((UI_MapPolygon)polygon);
-                    }
-                    else {
-                        UI_MapIcon icon;               
-                        icon.longitude = obj.bottomLeft.x;
-                        icon.latitude = obj.bottomLeft.y;
-                        icon.HideOnCollision = false;
-                        icon.color = col;
-                        icon.Tag = chaiscript::var(cweeBoundary(obj));
-                        if (p) icon.Tag = p->data;
-                        out = chaiscript::var(icon);
                     }
                     return out;
                 };
@@ -780,6 +823,7 @@ namespace chaiscript {
                 lib->add(chaiscript::fun([](cweeBoundary const& a) -> cweeStr { return cweeStr::printf("[<%f,%f>, <%f,%f>]", a.topRight.x, a.topRight.y, a.bottomLeft.x, a.bottomLeft.y); }), "to_string");
                 lib->AddFunction(, topRight, ->vec2d& , return obj.topRight; , cweeBoundary& obj);
                 lib->AddFunction(, bottomLeft, ->vec2d& , return obj.bottomLeft;, cweeBoundary& obj);
+                lib->AddFunction(, distance, -> cweeUnitValues::unit_value, return cweeUnitValues::foot(cweeBoundary::Distance(obj1, obj2)());, cweeBoundary const& obj1, cweeBoundary const& obj2);
             }
 
             return lib;
