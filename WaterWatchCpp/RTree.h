@@ -275,47 +275,28 @@ public:
 	};
 	static cwee_units::foot_t Distance(vec2d const& pointCoord, cweeList<vec2d> const& lineCoords, bool geographic = true) {
 		cwee_units::foot_t out = std::numeric_limits<cwee_units::foot_t>::max();
-		if (lineCoords.Num() == 0) {
-			out = std::numeric_limits<decltype(out)>::max();
-		}
-		else if (lineCoords.Num() == 1) {
-			out = Distance(pointCoord, lineCoords[0], geographic);
-		}
+		if (lineCoords.Num() == 0) out = std::numeric_limits<decltype(out)>::max();		
+		else if (lineCoords.Num() == 1) out = Distance(pointCoord, lineCoords[0], geographic);		
 		else {
 			auto closestPointOnLineSegment = [](const vec2d& A, const vec2d& B, const vec2d& P)->vec2d {
-				// Calculate the vector AB (direction of the line segment)
-				double ABx = B[0] - A[0];
-				double ABy = B[1] - A[1];
-
-				// Calculate the vector AP (from point A to point P)
-				double APx = P[0] - A[0];
-				double APy = P[1] - A[1];
-
-				// Calculate the dot product of AB and AP
-				double dotProduct = ABx * APx + ABy * APy;
-
-				// Calculate the squared length of AB
-				double lengthABsq = ABx * ABx + ABy * ABy;
-
-				// Calculate the parameter t (projection of AP onto AB)
-				double t = dotProduct / lengthABsq;
-
-				// If t is outside the segment [0, 1], find the distance to the closest endpoint
-				if (t < 0.0) {
-					return A; // Distance to point A
-				}
-				else if (t > 1.0) {
-					return B; // Distance to point B
-				}
-
-				// Calculate the closest point on the line segment
-				double closestX = A[0] + t * ABx;
-				double closestY = A[1] + t * ABy;
-
-				return vec2d(closestX, closestY);
+				double
+					ABx{ B.x - A.x },  // Calculate the vector AB (direction of the line segment)
+					ABy{ B.y - A.y },
+					APx{ P.x - A.x },  // Calculate the vector AP (from point A to point P)
+					APy{ P.y - A.y };							
+				double
+					dotProduct{ ABx * APx + ABy * APy }, // Calculate the dot product of AB and AP
+					lengthABsq{ ABx * ABx + ABy * ABy };  // Calculate the squared length of AB								
+				double 
+					t{ dotProduct / lengthABsq }; // Calculate the parameter t (projection of AP onto AB)
+				
+				if (t < 0.0) return A;				
+				else if (t > 1.0) return B;				
+				else return vec2d(A[0] + t * ABx, A[1] + t * ABy);
 			};
+			
 			cwee_units::foot_t dist_start;
-			cwee_units::foot_t dist_end = Distance(pointCoord, lineCoords[0], geographic);
+			cwee_units::foot_t dist_end{ Distance(pointCoord, lineCoords[0], geographic) };
 			cwee_units::foot_t dist_perp;
 
 			for (int i = 1; i < lineCoords.Num(); i += 1) {
@@ -383,13 +364,14 @@ public:
 	};
 
 public:
+	mutable cweeList<vec2d> coords;
 	bool geographic; 
 	vec2d topRight;
 	vec2d bottomLeft;
 	
-	cweeBoundary() : geographic(true), topRight(-cweeMath::INF, -cweeMath::INF), bottomLeft(cweeMath::INF, cweeMath::INF) {};
-	cweeBoundary(cweeBoundary const& a) : geographic(a.geographic), topRight(a.topRight), bottomLeft(a.bottomLeft) {  };
-	cweeBoundary(cweeBoundary&& a) : geographic(a.geographic), topRight(a.topRight), bottomLeft(a.bottomLeft) {  };
+	cweeBoundary() : coords(), geographic(true), topRight(-cweeMath::INF, -cweeMath::INF), bottomLeft(cweeMath::INF, cweeMath::INF) {};
+	cweeBoundary(cweeBoundary const& a) : coords(a.coords), geographic(a.geographic), topRight(a.topRight), bottomLeft(a.bottomLeft) {  };
+	cweeBoundary(cweeBoundary&& a) : coords(a.coords), geographic(a.geographic), topRight(a.topRight), bottomLeft(a.bottomLeft) {  };
 	cweeBoundary& operator=(cweeBoundary const&) = default;
 	cweeBoundary& operator=(cweeBoundary&&) = default;
 
@@ -407,7 +389,16 @@ public:
 		default: throw(std::runtime_error("Bad Index for Boundary"));
 		}
 	};
-
+	cweeList<vec2d>& GetCoords() const {
+		if (coords.Num() == 0) {
+			coords.Append(topRight);
+			coords.Append(vec2d(topRight.x, bottomLeft.y));
+			coords.Append(bottomLeft);
+			coords.Append(vec2d(bottomLeft.x, topRight.y));
+			coords.Append(topRight);
+		}
+		return coords;
+	};
 	vec2d Center() { return vec2d((topRight.x + bottomLeft.x) / 2.0, (topRight.y + bottomLeft.y) / 2.0); };
 
 	static bool Contains(cweeBoundary const& DoesThis, vec2d const& ContainThis) {
@@ -417,40 +408,16 @@ public:
 		return (DoesThis.topRight >= ContainThis.topRight) && (DoesThis.bottomLeft <= ContainThis.bottomLeft);
 	};
 	static bool Overlaps(cweeBoundary const& a, cweeBoundary const& b) {
-		cweeList<vec2d> a_list, b_list;
-		
-		a_list.Append(a.topRight);
-		a_list.Append(vec2d(a.topRight.x, a.bottomLeft.y));
-		a_list.Append(a.bottomLeft);
-		a_list.Append(vec2d(a.bottomLeft.x, a.topRight.y));
-		a_list.Append(a.topRight);
-		b_list.Append(b.topRight);
-		b_list.Append(vec2d(b.topRight.x, b.bottomLeft.y));
-		b_list.Append(b.bottomLeft);
-		b_list.Append(vec2d(b.bottomLeft.x, b.topRight.y));
-		b_list.Append(b.topRight);
-
 		if (a.Contains(b) || b.Contains(a)) return true;
-		else return Overlaps(a_list, b_list);
+		else if (a.Contains(b.topRight) || b.Contains(a.topRight)) return true;
+		else if (a.Contains(b.bottomLeft) || b.Contains(a.bottomLeft)) return true;
+		else return Overlaps(a.GetCoords(), b.GetCoords());		
 	};
 	static cwee_units::foot_t Distance(cweeBoundary const& a, cweeBoundary const& b) {
-		cweeList<vec2d> a_list, b_list;
-		{			
-			a_list.Append(a.topRight);
-			a_list.Append(vec2d(a.topRight.x, a.bottomLeft.y));
-			a_list.Append(a.bottomLeft);
-			a_list.Append(vec2d(a.bottomLeft.x, a.topRight.y));
-			a_list.Append(a.topRight);					
-			b_list.Append(b.topRight);
-			b_list.Append(vec2d(b.topRight.x, b.bottomLeft.y));
-			b_list.Append(b.bottomLeft);
-			b_list.Append(vec2d(b.bottomLeft.x, b.topRight.y));
-			b_list.Append(b.topRight);
-
-			if (a.Contains(b) || b.Contains(a)) return cwee_units::foot_t(0);
-			else if (Overlaps(a_list, b_list)) return cwee_units::foot_t(0);
-			else return Distance(a_list, b_list, a.geographic && b.geographic);
-		}
+		if (Overlaps(a,b)) 
+			return cwee_units::foot_t(0);
+		else 
+			return Distance(a.GetCoords(), b.GetCoords(), a.geographic && b.geographic);		
 	};
 
 	bool Contains(vec2d const& a) const {
@@ -465,7 +432,6 @@ public:
 	cwee_units::foot_t Distance(cweeBoundary const& a) const {
 		return Distance(*this, a);
 	};
-
 };
 
 template <
@@ -482,6 +448,8 @@ public:
 	};
 	class TreeNode {
 	public:
+		cweeList<cweeSharedPtr<objType>>
+			unhandledObjs;
 		cweeList< TreeNode* >
 			children;
 		cweeBoundary
@@ -542,11 +510,11 @@ public:
 		root;
 
 public:
-	RTree() : nodeAllocator(), objects(), root(nullptr)  { ReloadTree(); };
-	RTree(RTree const& obj) : nodeAllocator(), objects(obj.objects), root(nullptr) { ReloadTree(); };
-	RTree& operator=(const RTree& obj) { objects = obj.objects; ReloadTree(); return *this; };
-	RTree& operator=(RTree&& obj) { objects = obj.objects; ReloadTree(); return *this; };
-	~RTree() { nodeAllocator.Clear(); };
+	RTree() : nodeAllocator(), objects(), root(nullptr)  {};
+	RTree(RTree const& obj) : nodeAllocator(), objects(obj.objects), root(nullptr) {};
+	RTree& operator=(const RTree& obj) { nodeAllocator.Clear(); root = nullptr; objects = obj.objects; return *this; };
+	RTree& operator=(RTree&& obj) { nodeAllocator.Clear(); root = nullptr; objects = obj.objects; return *this; };
+	~RTree() { nodeAllocator.Clear(); root = nullptr; };
 	
 	static cweeSharedPtr<cweeList<vec2d>> kmeans(int k, std::vector<vec2d> const& data) {
 		using namespace concurrency;
@@ -569,26 +537,23 @@ public:
 			for (i = 0; i < k; ++i) for (j = 0; j < n; ++j) new_centers[i][j] = 0;
 			for (i = 0; i < k; ++i) counts[i].SetValue(0);
 
-			std::vector<int> j_parallel(m, 0);
-			std::vector<double> min_dist_parallel(m, std::numeric_limits<double>::max());
-			std::vector<double> dist_parallel(m, 0);
+			{
+				// parallelize the triple loop
+				parallel_for(int(0), m, [&](int i_parallel) {
+					int j_parallel{ 0 };
+					double min_dist_parallel{ std::numeric_limits<double>::max() }, dist_parallel{ 0 };
 
-			// parallelize the triple loop
-			parallel_for(int(0), m, [&](int i_parallel) {				
-				for (; j_parallel[i_parallel] < k; j_parallel[i_parallel]++) {
-					dist_parallel[i_parallel] = (data[i_parallel] - centers[j_parallel[i_parallel]]).LengthSqr();
-					//dist_parallel[i_parallel] = 
-					//	(data[i_parallel].x - centers[j_parallel[i_parallel]].x) * (data[i_parallel].x - centers[j_parallel[i_parallel]].x) +
-					//	(data[i_parallel].y - centers[j_parallel[i_parallel]].y) * (data[i_parallel].y - centers[j_parallel[i_parallel]].y);
+					for (; j_parallel < k; j_parallel++) {
+						dist_parallel = (data[i_parallel] - centers[j_parallel]).LengthSqr();
 
-					if (dist_parallel[i_parallel] < min_dist_parallel[i_parallel]) {
-						min_dist_parallel[i_parallel] = dist_parallel[i_parallel];
-						labels[i_parallel] = j_parallel[i_parallel];
+						if (dist_parallel < min_dist_parallel) {
+							min_dist_parallel = dist_parallel;
+							labels[i_parallel] = j_parallel;
+						}
 					}
-				}
-				counts[labels[i_parallel]].Increment();
-			});
-
+					counts[labels[i_parallel]].Increment();
+				});
+			}
 			// accumulate in-line
 			{
 				int l_parallel; int label_parallel;
@@ -598,26 +563,6 @@ public:
 						new_centers[label_parallel][l_parallel] += data[i][l_parallel];
 				}
 			}
-
-			//for (i = 0; i < m; ++i) {
-			//	min_dist = std::numeric_limits<double>::max();
-			//	label = -1;
-			//	for (j = 0; j < k; ++j) {
-			//		dist = 0;
-			//		for (l = 0; l < n; ++l) {
-			//			dist += (data[i][l] - centers[j][l]) * (data[i][l] - centers[j][l]);
-			//		}
-			//		if (dist < min_dist) {
-			//			min_dist = dist;
-			//			label = j;
-			//		}
-			//	}
-			//	labels[i] = label;
-			//	counts[label]++;
-			//	for (l = 0; l < n; ++l) {
-			//		new_centers[label][l] += data[i][l];
-			//	}
-			//}
 
 			converged = true;
 			for (i = 0; i < k; ++i) {
@@ -690,6 +635,76 @@ public:
 		return out;
 	};
 
+	// Non-Recursive Formula. (Memory is more important than performance) (This is the safer option, if successful).
+	void CreateTree(TreeNode* node, cweeList<cweeSharedPtr<objType>> const& objs) {
+		node->unhandledObjs = objs;
+		node->parent = nullptr;
+
+		while (node) {
+			if (node->unhandledObjs.Num() > 0) {
+				if (node->unhandledObjs.Num() == 1) {
+					node->object = node->unhandledObjs[0];
+					node->unhandledObjs.Clear();
+					if (node->object) { node->bound = GetBoundary(*node->object); }
+				}
+				else {
+					AUTO clusters = Cluster(10, node->unhandledObjs);					
+					if (clusters.Num() > 0) {
+						node->unhandledObjs.Clear();
+						for (auto& cluster : clusters) {
+							int index = node->children.Num();
+							auto* newNode = nodeAllocator.Alloc();
+							newNode->parentsChildIndex = node->children.Num();
+							newNode->unhandledObjs = cluster;
+							cluster.Clear();
+							newNode->parent = node;
+							node->children.Append(newNode);
+						}
+						node = node->children[0];
+					}
+					else {
+						for (auto& obj : node->unhandledObjs) {
+							int index = node->children.Num();
+							auto* newNode = nodeAllocator.Alloc();
+							newNode->parentsChildIndex = node->children.Num();
+							newNode->unhandledObjs.Append(obj);
+							newNode->parent = node;
+							node->children.Append(newNode);
+						}
+						node->unhandledObjs.Clear();
+						node = node->children[0];
+					}
+				}
+			}
+			else {
+				if (node->Next()) {
+					node = node->Next();
+				}
+				else {
+					node = node->parent; // finished all children for this node
+					if (node) {
+						for (auto* ptr : node->children) {
+							for (int i = 0; i < 2; i++) {
+								if (node->bound.topRight[i] < ptr->bound.topRight[i]) {
+									node->bound.topRight[i] = ptr->bound.topRight[i];
+								}
+								if (node->bound.bottomLeft[i] > ptr->bound.bottomLeft[i]) {
+									node->bound.bottomLeft[i] = ptr->bound.bottomLeft[i];
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	
+
+
+	
+	
+	};
+
+	// Recursive Formula. (Performance is more important than memory)
 	TreeNode* CreateNode(TreeNode* parent, TreeNode* node, cweeList<cweeSharedPtr<objType>> const& objs) {
 		int index;
 		if (node && objs.Num() > 0) {
@@ -711,10 +726,11 @@ public:
 		}
 		return node;
 	};
-	AUTO ReloadTree() {
+	void ReloadTree() {
 		nodeAllocator.Clear();
 		root = nodeAllocator.Alloc();
-		return CreateNode(nullptr, root, objects);
+		// CreateNode(nullptr, root, objects);		
+		CreateTree(root, objects);
 	};
 
 	void Add(cweeSharedPtr<objType> const& obj) {
