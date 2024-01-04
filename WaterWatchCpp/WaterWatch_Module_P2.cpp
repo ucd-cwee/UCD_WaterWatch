@@ -190,13 +190,16 @@ namespace chaiscript {
                 lib->add(chaiscript::fun([](cweeUnitPattern& a, const unit_value& b) { return a.GetCurrentFirstDerivative(b); }), "GetCurrentFirstDerivative");
                 lib->add(chaiscript::fun([](cweeUnitPattern& a, const unit_value& b) { return a.GetCurrentSecondDerivative(b); }), "GetCurrentSecondDerivative");
                 lib->add(chaiscript::fun([](cweeUnitPattern& a) { return a.GetFirstDerivative(); }), "GetFirstDerivative");
+                lib->add(chaiscript::fun([](cweeUnitPattern& a) { return a.GetDistances(); }), "GetDistances");
+                lib->add(chaiscript::fun([](cweeUnitPattern& a, bool normalized) { return a.GetDistances(normalized); }), "GetDistances");
                 lib->add(chaiscript::fun([](cweeUnitPattern& a) { return a.GetMinValue(); }), "GetMinValue");
                 lib->add(chaiscript::fun([](cweeUnitPattern& a) { return a.GetAvgValue(); }), "GetAvgValue");
                 lib->add(chaiscript::fun([](cweeUnitPattern& a) { return a.GetMaxValue(); }), "GetMaxValue");
 
-                lib->add(chaiscript::fun([](cweeUnitPattern& a) { return a.Floor(); }), "Floor");
-                lib->add(chaiscript::fun([](cweeUnitPattern& a) { return a.Abs(); }), "Abs");
-                lib->add(chaiscript::fun([](cweeUnitPattern& a, float roundToMagnitude) { return a.RoundNearest(roundToMagnitude); }), "RoundNearest");
+                lib->add(chaiscript::fun([](cweeUnitPattern const& a) { return a.Ceiling(); }), "Ceiling");
+                lib->add(chaiscript::fun([](cweeUnitPattern const& a) { return a.Floor(); }), "Floor");
+                lib->add(chaiscript::fun([](cweeUnitPattern const& a) { return a.Abs(); }), "Abs");
+                lib->add(chaiscript::fun([](cweeUnitPattern const& a, float roundToMagnitude) { return a.RoundNearest(roundToMagnitude); }), "RoundNearest");
 
                 lib->add(chaiscript::fun([](cweeUnitPattern& a, const unit_value& b, const unit_value& c) { return a.GetMinValue(b, c); }), "GetMinValue");
                 lib->add(chaiscript::fun([](cweeUnitPattern& a, const unit_value& b, const unit_value& c) { return a.GetAvgValue(b, c); }), "GetAvgValue");
@@ -285,6 +288,7 @@ namespace chaiscript {
                 lib->add(chaiscript::fun([](const cweeUnitPattern& a, const unit_value& b) { return a.pow(b); }), "^");
 
                 lib->add(chaiscript::fun([](cweeUnitPattern& a, const unit_value& from, const unit_value& to) { a.RemoveTimes(from, to); }), "RemoveTimes");
+                lib->add(chaiscript::fun([](cweeUnitPattern& a, const cweeUnitPattern& mask) { a.RemoveWithMask(mask); }), "RemoveWithMask");
                 lib->add(chaiscript::fun([](const cweeUnitPattern& a, const cweeUnitPattern& b) { return a.R_Squared(b); }), "R_Squared");
                 lib->add(chaiscript::fun([](const cweeUnitPattern& a, const cweeUnitPattern& b) { return a.Collinear(b); }), "Collinear");
                 lib->add(chaiscript::fun([](const cweeUnitPattern& a, const cweeUnitPattern& b, const unit_value& from, const unit_value& to) { return a.R_Squared(b, from, to); }), "R_Squared");
@@ -823,6 +827,7 @@ namespace chaiscript {
                 lib->add(chaiscript::fun([](cweeBoundary const& a) -> cweeStr { return cweeStr::printf("[<%f,%f>, <%f,%f>]", a.topRight.x, a.topRight.y, a.bottomLeft.x, a.bottomLeft.y); }), "to_string");
                 lib->AddFunction(, topRight, ->vec2d& , return obj.topRight; , cweeBoundary& obj);
                 lib->AddFunction(, bottomLeft, ->vec2d& , return obj.bottomLeft;, cweeBoundary& obj);
+                lib->AddFunction(, geographic, ->bool&, return obj.geographic; , cweeBoundary& obj);
                 lib->AddFunction(, distance, -> cweeUnitValues::unit_value, return cweeUnitValues::foot(cweeBoundary::Distance(obj1, obj2)());, cweeBoundary const& obj1, cweeBoundary const& obj2);
             }
 

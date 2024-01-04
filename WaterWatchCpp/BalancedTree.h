@@ -350,7 +350,12 @@ public:
 		Num = 0;
 
 		Init();
-	};;
+	};
+	cweeBalancedTreeNode*                   NodeFindByIndex(int index) const {
+		if (index <= 0) return first;
+		else if (index >= (Num - 1)) return last;
+		else return NodeFindByIndex(index, root);
+	};
 	cweeBalancedTreeNode*					NodeFind(keyType  const& key) const {
 		return NodeFind(key, root);
 	};								// find an object using the given key;
@@ -366,6 +371,34 @@ public:
 		if (node && node->object && node->key == key) return node;
 		return nullptr;
 	};								// find an object using the given key;
+
+
+	static cweeBalancedTreeNode*            NodeFindByIndex(int index, cweeBalancedTreeNode* Root) {
+		int startIndex{ 0 };
+
+		if (Root == nullptr) {
+			return nullptr;
+		}	
+
+		while (Root) {
+			if (index == startIndex && Root->object) { return Root; }
+
+			if (startIndex <= index && (startIndex + Root->numChildren) > index) {
+				// one of my children has this index				
+				Root = Root->firstChild;
+			} 
+			else {
+				// one of my neighbors has this index				
+				if (Root->object) ++startIndex;
+				else startIndex += Root->numChildren;
+
+				Root = Root->next;
+			}
+		}
+
+		return Root;
+	};			// find an object with the largest key smaller equal the given key;
+
 	static cweeBalancedTreeNode*			NodeFindSmallestLargerEqual(keyType const& key, cweeBalancedTreeNode* Root) {
 		cweeBalancedTreeNode *node, *smaller;
 
@@ -476,9 +509,7 @@ public:
 
 	cweeBalancedTreeNode*					GetFirst() const { return first; };
 	cweeBalancedTreeNode*					GetLast() const { return last; };
-	cweeBalancedTreeNode*					GetRoot() const {
-		return root;
-	};											// returns the root node of the tree;
+	cweeBalancedTreeNode*					GetRoot() const { return root; };
 	long long								GetNodeCount() const {
 		return Num;
 	};										// returns the total number of nodes in the tree;

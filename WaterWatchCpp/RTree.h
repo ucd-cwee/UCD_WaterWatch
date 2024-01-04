@@ -26,31 +26,36 @@ to maintain a single distribution point for the source code.
 #include "cweeThreadedMap.h"
 #include "Voronoi.h"
 #include "Geocoding.h"
+#include <ppl.h>
 
 class cweeBoundary {
 public:
-	static cwee_units::foot_t Distance(vec2d const& LongLat1, vec2d const& LongLat2) {
+	static cwee_units::foot_t Distance(vec2d const& LongLat1, vec2d const& LongLat2, bool geographic = true) {
 		double  lat_old, lat_new, lat_diff, lng_diff, a, c;
 		units::length::meter_t out;
 
-		if (LongLat1.x >= -180.0 && LongLat1.x <= 180.0 && LongLat1.y >= -90.0 && LongLat1.y <= 90.0 && 
-			LongLat2.x >= -180.0 && LongLat2.x <= 180.0 && LongLat2.y >= -90.0 && LongLat2.y <= 90.0) {
-			lat_old = LongLat1.y * cweeMath::PI / 180.0;
-			lat_new = LongLat2.y * cweeMath::PI / 180.0;
-			lat_diff = (LongLat2.y - LongLat1.y) * cweeMath::PI / 180.0;
-			lng_diff = (LongLat2.x - LongLat1.x) * cweeMath::PI / 180.0;
+		if (!geographic) {
+			out = units::length::foot_t(LongLat1.Distance(LongLat2));
+		} else {
+			if (LongLat1.x >= -180.0 && LongLat1.x <= 180.0 && LongLat1.y >= -90.0 && LongLat1.y <= 90.0 &&
+				LongLat2.x >= -180.0 && LongLat2.x <= 180.0 && LongLat2.y >= -90.0 && LongLat2.y <= 90.0) {
+				lat_old = LongLat1.y * cweeMath::PI / 180.0;
+				lat_new = LongLat2.y * cweeMath::PI / 180.0;
+				lat_diff = (LongLat2.y - LongLat1.y) * cweeMath::PI / 180.0;
+				lng_diff = (LongLat2.x - LongLat1.x) * cweeMath::PI / 180.0;
 
-			a = std::sin(lat_diff / 2.0) * std::sin(lat_diff / 2.0) + std::cos(lat_new) * std::cos(lat_old) * std::sin(lng_diff / 2.0) * std::sin(lng_diff / 2.0);
-			c = 2.0 * std::atan2(std::sqrt(a), std::sqrt(1.0 - a));
+				a = std::sin(lat_diff / 2.0) * std::sin(lat_diff / 2.0) + std::cos(lat_new) * std::cos(lat_old) * std::sin(lng_diff / 2.0) * std::sin(lng_diff / 2.0);
+				c = 2.0 * std::atan2(std::sqrt(a), std::sqrt(1.0 - a));
 
-			out = units::length::meter_t(6372797.56085 * c);
-		}
-		else {
-			out = units::length::meter_t(LongLat1.Distance(LongLat2));
+				out = units::length::meter_t(6372797.56085 * c);
+			}
+			else {
+				out = units::length::foot_t(LongLat1.Distance(LongLat2));
+			}
 		}
 		return out;
 	};
-	static vec2d ClosestPoint(vec2d const& pointCoord, cweeList<vec2d> const& lineCoords) {
+	static vec2d ClosestPoint(vec2d const& pointCoord, cweeList<vec2d> const& lineCoords, bool geographic = true) {
 		if (lineCoords.Num() == 0) {
 			return pointCoord;
 		}
@@ -93,14 +98,14 @@ public:
 				return vec2d(closestX, closestY);
 			};
 			cwee_units::foot_t dist_start;
-			cwee_units::foot_t dist_end = Distance(pointCoord, lineCoords[0]);
+			cwee_units::foot_t dist_end = Distance(pointCoord, lineCoords[0], geographic);
 			cwee_units::foot_t dist_perp;
 
 			for (int i = 1; i < lineCoords.Num(); i += 1) {
 				dist_start = dist_end;
-				dist_end = Distance(pointCoord, lineCoords[i]);
+				dist_end = Distance(pointCoord, lineCoords[i], geographic);
 				auto closest = closestPointOnLineSegment(lineCoords[i - 1], lineCoords[i], pointCoord);
-				dist_perp = Distance(pointCoord, closest);
+				dist_perp = Distance(pointCoord, closest, geographic);
 
 				if (out > dist_perp) {
 					out = dist_perp;
@@ -118,7 +123,7 @@ public:
 			return toReturn;
 		}
 	};
-	static cwee_units::foot_t Distance_Point_Line(vec2d const& pointCoord, cweeList<vec2d> const& line) {
+	static cwee_units::foot_t Distance_Point_Line(vec2d const& pointCoord, cweeList<vec2d> const& line, bool geographic = true) {
 		cwee_units::foot_t out = std::numeric_limits<cwee_units::foot_t>::max();
 
 		auto numLinePoints = line.Num();
@@ -130,7 +135,7 @@ public:
 		auto lineCoords0{ line[0] };
 
 		if (numLinePoints == 1) {
-			out = Distance(pointCoord, lineCoords0);
+			out = Distance(pointCoord, lineCoords0, geographic);
 		}
 		else {
 			auto closestPointOnLineSegment = [](const vec2d& A, const vec2d& B, const vec2d& P)->vec2d {
@@ -166,22 +171,22 @@ public:
 				return vec2d(closestX, closestY);
 			};
 			cwee_units::foot_t dist_start;
-			cwee_units::foot_t dist_end = Distance(pointCoord, lineCoords0);
+			cwee_units::foot_t dist_end = Distance(pointCoord, lineCoords0, geographic);
 			cwee_units::foot_t dist_perp;
 			vec2d prevPoint = lineCoords0;
 			vec2d currentPoint;
 			for (int i = 1; i < numLinePoints; i += 1) {
 				currentPoint = line[i];
 				dist_start = dist_end;
-				dist_end = Distance(pointCoord, currentPoint);
-				dist_perp = Distance(pointCoord, closestPointOnLineSegment(prevPoint, currentPoint, pointCoord));
+				dist_end = Distance(pointCoord, currentPoint, geographic);
+				dist_perp = Distance(pointCoord, closestPointOnLineSegment(prevPoint, currentPoint, pointCoord), geographic);
 				out = cwee_units::math::fmin(cwee_units::math::fmin(cwee_units::math::fmin(out, dist_perp), dist_end), dist_start);
 				prevPoint = currentPoint;
 			}
 		}
 		return out;
 	};
-	static cwee_units::foot_t Distance_Point_Polygon(vec2d const& pointCoord, cweeList<vec2d> const& line) {
+	static cwee_units::foot_t Distance_Point_Polygon(vec2d const& pointCoord, cweeList<vec2d> const& line, bool geographic = true) {
 		cwee_units::foot_t out = std::numeric_limits<cwee_units::foot_t>::max();
 
 		auto numLinePoints = line.Num();
@@ -193,7 +198,7 @@ public:
 		auto lineCoords0{ line[0] };
 
 		if (numLinePoints == 1) {
-			out = Distance(pointCoord, lineCoords0);
+			out = Distance(pointCoord, lineCoords0, geographic);
 		}
 		else {
 			auto closestPointOnLineSegment = [](const vec2d& A, const vec2d& B, const vec2d& P)->vec2d {
@@ -230,15 +235,15 @@ public:
 			};
 
 			cwee_units::foot_t dist_start;
-			cwee_units::foot_t dist_end = Distance(pointCoord, lineCoords0);
+			cwee_units::foot_t dist_end = Distance(pointCoord, lineCoords0, geographic);
 			cwee_units::foot_t dist_perp;
 			vec2d prevPoint = lineCoords0;
 			vec2d currentPoint;
 			for (int i = 1; i < numLinePoints; i += 1) {
 				currentPoint = line[i];
 				dist_start = dist_end;
-				dist_end = Distance(pointCoord, currentPoint);
-				dist_perp = Distance(pointCoord, closestPointOnLineSegment(prevPoint, currentPoint, pointCoord));
+				dist_end = Distance(pointCoord, currentPoint, geographic);
+				dist_perp = Distance(pointCoord, closestPointOnLineSegment(prevPoint, currentPoint, pointCoord), geographic);
 				out = cwee_units::math::fmin(cwee_units::math::fmin(cwee_units::math::fmin(out, dist_perp), dist_end), dist_start);
 				prevPoint = currentPoint;
 			}
@@ -268,13 +273,13 @@ public:
 
 		return out;
 	};
-	static cwee_units::foot_t Distance(vec2d const& pointCoord, cweeList<vec2d> const& lineCoords) {
+	static cwee_units::foot_t Distance(vec2d const& pointCoord, cweeList<vec2d> const& lineCoords, bool geographic = true) {
 		cwee_units::foot_t out = std::numeric_limits<cwee_units::foot_t>::max();
 		if (lineCoords.Num() == 0) {
 			out = std::numeric_limits<decltype(out)>::max();
 		}
 		else if (lineCoords.Num() == 1) {
-			out = Distance(pointCoord, lineCoords[0]);
+			out = Distance(pointCoord, lineCoords[0], geographic);
 		}
 		else {
 			auto closestPointOnLineSegment = [](const vec2d& A, const vec2d& B, const vec2d& P)->vec2d {
@@ -310,26 +315,26 @@ public:
 				return vec2d(closestX, closestY);
 			};
 			cwee_units::foot_t dist_start;
-			cwee_units::foot_t dist_end = Distance(pointCoord, lineCoords[0]);
+			cwee_units::foot_t dist_end = Distance(pointCoord, lineCoords[0], geographic);
 			cwee_units::foot_t dist_perp;
 
 			for (int i = 1; i < lineCoords.Num(); i += 1) {
 				dist_start = dist_end;
-				dist_end = Distance(pointCoord, lineCoords[i]);
-				dist_perp = Distance(pointCoord, closestPointOnLineSegment(lineCoords[i - 1], lineCoords[i], pointCoord));
+				dist_end = Distance(pointCoord, lineCoords[i], geographic);
+				dist_perp = Distance(pointCoord, closestPointOnLineSegment(lineCoords[i - 1], lineCoords[i], pointCoord), geographic);
 				out = cwee_units::math::fmin(cwee_units::math::fmin(cwee_units::math::fmin(out, dist_perp), dist_end), dist_start);
 			}
 		}
 		return out;
 	};
-	static cwee_units::foot_t Distance(cweeList<vec2d> const& coords1, cweeList<vec2d> const& coords2) {
+	static cwee_units::foot_t Distance(cweeList<vec2d> const& coords1, cweeList<vec2d> const& coords2, bool geographic = true) {
 		using namespace cwee_units;
 
 		cwee_units::foot_t out = std::numeric_limits<cwee_units::foot_t>::max();
 
 		if (coords1.Num() == 0 || coords2.Num() == 0) return out;
-		if (coords1.Num() == 1) return Distance(coords1[0], coords2);
-		else if (coords2.Num() == 1) return Distance(coords2[0], coords1);
+		if (coords1.Num() == 1) return Distance(coords1[0], coords2, geographic);
+		else if (coords2.Num() == 1) return Distance(coords2[0], coords1, geographic);
 
 		// intersections of lines (Does not test if end-points overlap)
 		//			.
@@ -360,7 +365,7 @@ public:
 		for (int i = 0; i < coords1.Num(); i++) {
 			for (int j = 0; j < coords2.Num(); j++) {
 				if (coords1[i] == coords2[j]) { return 0_ft; }
-				out = cwee_units::math::fmin(out, Distance(coords1[i], coords2[j]));
+				out = cwee_units::math::fmin(out, Distance(coords1[i], coords2[j], geographic));
 			}
 		}
 
@@ -371,19 +376,20 @@ public:
 		//			.
 		//		   .
 		//        .
-		for (int i = 0; i < coords1.Num(); i++) out = cwee_units::math::fmin(out, Distance(coords1[i], coords2));
-		for (int i = 0; i < coords2.Num(); i++) out = cwee_units::math::fmin(out, Distance(coords2[i], coords1));
+		for (int i = 0; i < coords1.Num(); i++) out = cwee_units::math::fmin(out, Distance(coords1[i], coords2, geographic));
+		for (int i = 0; i < coords2.Num(); i++) out = cwee_units::math::fmin(out, Distance(coords2[i], coords1, geographic));
 
 		return out;
 	};
 
 public:
+	bool geographic; 
 	vec2d topRight;
 	vec2d bottomLeft;
-
-	cweeBoundary() : topRight(-cweeMath::INF, -cweeMath::INF), bottomLeft(cweeMath::INF, cweeMath::INF) {};
-	cweeBoundary(cweeBoundary const& a) : topRight(a.topRight), bottomLeft(a.bottomLeft) {  };
-	cweeBoundary(cweeBoundary&& a) : topRight(a.topRight), bottomLeft(a.bottomLeft) {  };
+	
+	cweeBoundary() : geographic(true), topRight(-cweeMath::INF, -cweeMath::INF), bottomLeft(cweeMath::INF, cweeMath::INF) {};
+	cweeBoundary(cweeBoundary const& a) : geographic(a.geographic), topRight(a.topRight), bottomLeft(a.bottomLeft) {  };
+	cweeBoundary(cweeBoundary&& a) : geographic(a.geographic), topRight(a.topRight), bottomLeft(a.bottomLeft) {  };
 	cweeBoundary& operator=(cweeBoundary const&) = default;
 	cweeBoundary& operator=(cweeBoundary&&) = default;
 
@@ -443,7 +449,7 @@ public:
 
 			if (a.Contains(b) || b.Contains(a)) return cwee_units::foot_t(0);
 			else if (Overlaps(a_list, b_list)) return cwee_units::foot_t(0);
-			else return Distance(a_list, b_list);
+			else return Distance(a_list, b_list, a.geographic && b.geographic);
 		}
 	};
 
@@ -543,6 +549,8 @@ public:
 	~RTree() { nodeAllocator.Clear(); };
 	
 	static cweeSharedPtr<cweeList<vec2d>> kmeans(int k, std::vector<vec2d> const& data) {
+		using namespace concurrency;
+
 		int m = data.size(), n = 2, i, j, l, label;
 		double min_dist, dist;
 		bool converged;
@@ -552,40 +560,72 @@ public:
 		cweeList<vec2d>& centers = *toReturn;
 		centers.SetNum(k);
 
-		std::vector<int> labels(m);
+		std::vector<int> labels(m, -1);
 		std::vector<std::vector<double>> new_centers(k, std::vector<double>(n));
-		std::vector<int> counts(k);
+		std::vector<cweeSysInterlockedInteger> counts(k);
 
 		for (i = 0; i < k; ++i) centers[i] = data[i];
 		while (true) {
 			for (i = 0; i < k; ++i) for (j = 0; j < n; ++j) new_centers[i][j] = 0;
-			for (i = 0; i < k; ++i) counts[i] = 0;
-			for (i = 0; i < m; ++i) {
-				min_dist = std::numeric_limits<double>::max();
-				label = -1;
-				for (j = 0; j < k; ++j) {
-					dist = 0;
-					for (l = 0; l < n; ++l) {
-						dist += (data[i][l] - centers[j][l]) * (data[i][l] - centers[j][l]);
-					}
-					if (dist < min_dist) {
-						min_dist = dist;
-						label = j;
+			for (i = 0; i < k; ++i) counts[i].SetValue(0);
+
+			std::vector<int> j_parallel(m, 0);
+			std::vector<double> min_dist_parallel(m, std::numeric_limits<double>::max());
+			std::vector<double> dist_parallel(m, 0);
+
+			// parallelize the triple loop
+			parallel_for(int(0), m, [&](int i_parallel) {				
+				for (; j_parallel[i_parallel] < k; j_parallel[i_parallel]++) {
+					dist_parallel[i_parallel] = (data[i_parallel] - centers[j_parallel[i_parallel]]).LengthSqr();
+					//dist_parallel[i_parallel] = 
+					//	(data[i_parallel].x - centers[j_parallel[i_parallel]].x) * (data[i_parallel].x - centers[j_parallel[i_parallel]].x) +
+					//	(data[i_parallel].y - centers[j_parallel[i_parallel]].y) * (data[i_parallel].y - centers[j_parallel[i_parallel]].y);
+
+					if (dist_parallel[i_parallel] < min_dist_parallel[i_parallel]) {
+						min_dist_parallel[i_parallel] = dist_parallel[i_parallel];
+						labels[i_parallel] = j_parallel[i_parallel];
 					}
 				}
-				labels[i] = label;
-				counts[label]++;
-				for (l = 0; l < n; ++l) {
-					new_centers[label][l] += data[i][l];
+				counts[labels[i_parallel]].Increment();
+			});
+
+			// accumulate in-line
+			{
+				int l_parallel; int label_parallel;
+				for (i = 0; i < m; ++i) {
+					label_parallel = labels[i];
+					for (l_parallel = 0; l_parallel < n; ++l_parallel)
+						new_centers[label_parallel][l_parallel] += data[i][l_parallel];
 				}
 			}
+
+			//for (i = 0; i < m; ++i) {
+			//	min_dist = std::numeric_limits<double>::max();
+			//	label = -1;
+			//	for (j = 0; j < k; ++j) {
+			//		dist = 0;
+			//		for (l = 0; l < n; ++l) {
+			//			dist += (data[i][l] - centers[j][l]) * (data[i][l] - centers[j][l]);
+			//		}
+			//		if (dist < min_dist) {
+			//			min_dist = dist;
+			//			label = j;
+			//		}
+			//	}
+			//	labels[i] = label;
+			//	counts[label]++;
+			//	for (l = 0; l < n; ++l) {
+			//		new_centers[label][l] += data[i][l];
+			//	}
+			//}
+
 			converged = true;
 			for (i = 0; i < k; ++i) {
-				if (counts[i] == 0) {
+				if (counts[i].GetValue() == 0) {
 					continue;
 				}
 				for (l = 0; l < n; ++l) {
-					new_centers[i][l] /= counts[i];
+					new_centers[i][l] /= counts[i].GetValue();
 					if (new_centers[i][l] != centers[i][l]) {
 						converged = false;
 					}
@@ -761,11 +801,11 @@ public:
 		return out;
 	};
 	
-	static void Near(cweeCurve< TreeNode* >& sortedNodes, TreeNode* node, cweeBoundary const& point, int numNear, cwee_units::foot_t thisDistance) {
+	static void Near(cweeBalancedCurve< TreeNode* >& sortedNodes, TreeNode* node, cweeBoundary const& point, int numNear, cwee_units::foot_t thisDistance) {
 		if (!node) return;
 
-		if (sortedNodes.Num() >= numNear) {
-			cwee_units::foot_t maxDistance = sortedNodes.TimeForIndex(numNear - 1);
+		if (sortedNodes.GetNumValues() >= numNear) {
+			cwee_units::foot_t maxDistance = sortedNodes.UnsafeKnotForIndex(numNear - 1).first;
 			if (thisDistance >= maxDistance) {
 				return; // no point
 			}
@@ -776,7 +816,7 @@ public:
 		}
 
 		// sort the children by distance -- do the closest ones first, which reduces likelihood of doing unecessary work later.
-		cweeCurve< TreeNode* > sortedChildren;
+		cweeBalancedCurve< TreeNode* > sortedChildren;
 		for (auto& child : node->children) {
 			if (child) {
 				if (child->object) {
@@ -787,15 +827,18 @@ public:
 				}				
 			}
 		}
-		for (int i = 0; i < sortedChildren.Num(); i++) {
-			Near(sortedNodes, sortedChildren.knots[i].get<1>(), point, numNear, sortedChildren.knots[i].get<0>());
+
+		for (auto& x : sortedChildren.UnsafeGetValues()) {
+			if (x.object) {
+				Near(sortedNodes, *x.object, point, numNear, x.key);
+			}
 		}
 	};
-	static void Near(cweeCurve< TreeNode* >& sortedNodes, TreeNode* node, objType const& point, int numNear, cwee_units::foot_t thisDistance) {
+	static void Near(cweeBalancedCurve< TreeNode* >& sortedNodes, TreeNode* node, objType const& point, int numNear, cwee_units::foot_t thisDistance) {
 		if (!node) return;
 
-		if (sortedNodes.Num() >= numNear) {
-			cwee_units::foot_t maxDistance = sortedNodes.TimeForIndex(numNear - 1);
+		if (sortedNodes.GetNumValues() >= numNear) {
+			cwee_units::foot_t maxDistance = sortedNodes.UnsafeKnotForIndex(numNear - 1).first;
 			if (thisDistance >= maxDistance) {
 				return; // no point
 			}
@@ -805,8 +848,8 @@ public:
 			sortedNodes.AddValue(thisDistance(), node);
 		}
 
-		// sort the children by distance -- do the closest ones first, which reduces likelihood of doing unecessary work later.
-		cweeCurve< TreeNode* > sortedChildren;
+		// sort the children by distance -- do the closest ones first, which reduces likelihood of doing unecessary work later.		
+		cweeBalancedCurve< TreeNode* > sortedChildren;
 		for (auto& child : node->children) {
 			if (child) {
 				if (child->object) {
@@ -817,12 +860,18 @@ public:
 				}
 			}
 		}
-		for (int i = 0; i < sortedChildren.Num(); i++) {
-			Near(sortedNodes, sortedChildren.knots[i].get<1>(), point, numNear, sortedChildren.knots[i].get<0>());
+
+		for (auto& x : sortedChildren.UnsafeGetValues()) {
+			if (x.object) {
+				Near(sortedNodes, *x.object, point, numNear, x.key);
+			}
 		}
+
+		//for (int i = 0; i < sortedChildren.Num(); i++) 
+		//	Near(sortedNodes, sortedChildren.knots[i].get<1>(), point, numNear, sortedChildren.knots[i].get<0>());
 	};
 	cweeList<TreeNode*> Near(cweeBoundary const& point, int numNear = 1) {
-		cweeCurve< TreeNode* > sortedNodes; // self-sorted vector of arbitrary Y values by numeric X values
+		cweeBalancedCurve< TreeNode* > sortedNodes; // self-sorted vector of arbitrary Y values by numeric X values
 				
 		auto* root = GetRoot();
 		if (root) {
@@ -831,17 +880,21 @@ public:
 
 		cweeList<TreeNode*> out;
 
-		for (int i = 0; i < sortedNodes.Num() && out.Num() < numNear; i++) {
-			TreeNode* ptr = sortedNodes.ValueForIndex(i);
-			if (ptr) {
-				out.Append(ptr);
+		for (auto& x : sortedNodes.GetValueKnotSeries()) {
+			if (out.Num() < numNear) {
+				if (x) {
+					out.Append(x);
+				}
+			}
+			else {
+				break;
 			}
 		}
 
 		return out;
 	};
 	cweeList<TreeNode*> Near(objType const& point, int numNear = 1) {
-		cweeCurve< TreeNode* > sortedNodes; // self-sorted vector of arbitrary Y values by numeric X values
+		cweeBalancedCurve< TreeNode* > sortedNodes; // self-sorted vector of arbitrary Y values by numeric X values
 
 		auto* root = GetRoot();
 		if (root) {
@@ -857,10 +910,14 @@ public:
 
 		cweeList<TreeNode*> out;
 
-		for (int i = 0; i < sortedNodes.Num() && out.Num() < numNear; i++) {
-			TreeNode* ptr = sortedNodes.ValueForIndex(i);
-			if (ptr) {
-				out.Append(ptr);
+		for (auto& x : sortedNodes.GetValueKnotSeries()) {
+			if (out.Num() < numNear) {
+				if (x) {
+					out.Append(x);
+				}
+			}
+			else {
+				break;
 			}
 		}
 

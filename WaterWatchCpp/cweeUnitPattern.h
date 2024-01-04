@@ -30,6 +30,7 @@ to maintain a single distribution point for the source code.
 #include "cweeUnitedValue.h"
 #include "BalancedPattern.h"
 #include "Iterator.h"
+#include "RTree.h"
 
 namespace cweeUnitValues {
 	class cweeUnitPatternContainer_t {
@@ -262,6 +263,7 @@ namespace cweeUnitValues {
 		virtual void  ClearData() = 0;
 		virtual void  RemoveUnnecessaryKnots(const unit_value& timeStart, const unit_value& timeEnd) = 0;
 		virtual void  RemoveTimes(unit_value greaterThanOrEqual, unit_value LessThan) = 0;
+		virtual void  RemoveWithMask(cweeSharedPtr< cweeUnitPatternContainer_t> other) = 0;
 		void  Clear() {
 			ClearData();
 			internal_X_type.Clear();
@@ -966,6 +968,17 @@ namespace cweeUnitValues {
 				}
 			}
 		};
+		void  RemoveWithMask(cweeSharedPtr< cweeUnitPatternContainer_t> other) {			
+			auto iter = container.GetFirst();
+			if (iter && other) {
+				do {
+					if (other->GetCurrentValue(iter->key, interpolation_t::LINEAR) > 0) {
+						container.Remove(iter);
+					}
+					iter = container.GetNextLeaf(iter);
+				} while (iter);
+			}
+		};
 	};
 
 	template<typename Y_Axis_Type, typename X_Axis_Type>
@@ -1180,6 +1193,13 @@ namespace cweeUnitValues {
 		void  RemoveTimes(unit_value greaterThanOrEqual, unit_value LessThan) {
 			ref->RemoveTimes((internal_X_type = greaterThanOrEqual)(), (internal_X_type = (LessThan - 0.0001))());
 		};
+		void  RemoveWithMask(cweeSharedPtr< cweeUnitPatternContainer_t> other) {
+			if (other) {
+				ref->RemoveWithMask([other](X_Axis_Type T)->bool {
+					return (other->GetCurrentValue(T, interpolation_t::LINEAR) > 0);
+				});
+			}
+		};
 	};
 
 	template<typename Y_Axis_Type>
@@ -1385,6 +1405,14 @@ namespace cweeUnitValues {
 		void  RemoveTimes(unit_value greaterThanOrEqual, unit_value LessThan) {
 			ref->RemoveTimes((internal_X_type = greaterThanOrEqual)(), (internal_X_type = (LessThan - 0.0001))());
 		};
+		void  RemoveWithMask(cweeSharedPtr< cweeUnitPatternContainer_t> other) {
+			if (other) {
+				ref->RemoveWithMask([other](u64 T)->bool {
+					return (other->GetCurrentValue(T, interpolation_t::LINEAR) > 0);
+				});
+			}
+		};
+
 	};
 
 	class cweeUnitPattern {
@@ -1872,6 +1900,22 @@ namespace cweeUnitValues {
 			for (AUTO dataPair : const_cast<const cweeUnitPatternContainer_t&>(*this->container)) {
 				if (dataPair.Y) {
 					result.AddValue(dataPair.X, cweeUnitValues::math::floor(*dataPair.Y));
+				}
+			}
+
+			return result;
+		};
+
+		/*! Return absolute-value of spline */
+		cweeUnitPattern											Ceiling() const {
+			cweeUnitPattern result(GetMinTime(), GetCurrentValue(0)); {
+				result.SetBoundaryType(GetBoundaryType());
+				result.SetInterpolationType(GetInterpolationType());
+			}
+
+			for (AUTO dataPair : const_cast<const cweeUnitPatternContainer_t&>(*this->container)) {
+				if (dataPair.Y) {
+					result.AddValue(dataPair.X, cweeUnitValues::math::ceiling(*dataPair.Y));
 				}
 			}
 
@@ -2401,7 +2445,83 @@ namespace cweeUnitValues {
 		void												RemoveTimes(unit_value greaterThanOrEqual, unit_value LessThan) {
 			container->RemoveTimes(greaterThanOrEqual, LessThan);
 		};
+		void  RemoveWithMask(cweeUnitPattern const& other) {
+			this->container->RemoveWithMask(other.container);
+		};
+		/* returns the approximate distance between each point and its neighbors. */
+		cweeUnitPattern  GetDistances(bool normalized = true) const {
+			AUTO distances = cweeUnitPattern(this->X_Type(), cweeUnitValues::foot(1));
+			if (this->GetNumValues() > 1) {
+				class RTreeContainer {
+				public:
+					static cweeBoundary GetCoordinates(RTreeContainer const& o) {
+						return o.boundary;
+					};
+					static cwee_units::foot_t GetDistance(RTreeContainer const& o, cweeBoundary const& b) {
+						return b.Distance(o.boundary);
+					};
 
+					cweeUnitValues::unit_value data;
+					cweeBoundary boundary;
+
+					RTreeContainer() : data(), boundary() {};
+					RTreeContainer(RTreeContainer const& o) : data(o.data), boundary(o.boundary) {};
+					RTreeContainer& operator=(RTreeContainer const& o) {
+						this->boundary = o.boundary;
+						this->data = o.data;
+						return *this;
+					};
+					bool operator==(RTreeContainer const& b) {
+						return data == b.data;
+					};
+					bool operator!=(RTreeContainer const& b) { return !operator==(b); };
+				};
+
+				using RTreeType = RTree< RTreeContainer, RTreeContainer::GetCoordinates, RTreeContainer::GetDistance>;
+
+				RTreeType out; {
+					AUTO minTime = this->GetMinTime();
+					AUTO maxTime = this->GetMaxTime();
+					AUTO timeRange = maxTime - minTime;
+					AUTO minValue = this->GetMinValue();
+					AUTO maxValue = this->GetMaxValue();
+					AUTO valueRange = maxValue - minValue;
+
+					AUTO endIter = const_cast<const cweeUnitPatternContainer_t&>(*this->container).end();
+					RTreeContainer container;
+					for (auto iter = const_cast<const cweeUnitPatternContainer_t&>(*this->container).begin(); iter != endIter; ++iter) {
+						if (iter->Y) {
+							AUTO container{ make_cwee_shared<RTreeContainer>() };
+							container->data = iter->X;							
+							if (normalized) {
+								container->boundary.bottomLeft.x = (double)((iter->X - minTime) / timeRange);
+								container->boundary.bottomLeft.y = (double)((*iter->Y - minValue) / valueRange);
+							}
+							else {
+								container->boundary.bottomLeft.x = (double)(iter->X);
+								container->boundary.bottomLeft.y = (double)(*iter->Y);
+							}
+							container->boundary.topRight = container->boundary.bottomLeft;
+							container->boundary.geographic = false;
+							out.Add(container);
+						}
+					}
+				}
+				AUTO n = out.GetNextLeaf(out.GetRoot());
+				cweeList<RTreeType::TreeNode*> samples;
+				double distance;
+				int numSamples;
+				int i;
+				while (n && n->object) {
+					numSamples = 0;
+					distance = 0.0;
+					samples = out.Near(n->bound, 2);
+					distances.AddValue(n->object->data, samples[1]->bound.Distance(n->bound)());
+					n = out.GetNextLeaf(n);
+				}
+			}
+			return distances;
+		};
 
 #if 1
 		friend cweeUnitPattern operator+(const cweeUnitPattern& a, const cweeUnitPattern& b) {
@@ -2411,20 +2531,38 @@ namespace cweeUnitValues {
 			}
 			if (true) {
 				if (true) {
-					AUTO knotsA = a.GetKnotSeries();
 					a.lock.Lock();
-					for (auto& x : knotsA) {
-						result.AddUniqueValue((a.container->internal_X_type = x.first), (a.container->internal_Y_type = x.second) + b.GetCurrentValue((a.container->internal_X_type = x.first)));
+					AUTO endIter = const_cast<const cweeUnitPatternContainer_t&>(*a.container).end();
+					for (auto iter = const_cast<const cweeUnitPatternContainer_t&>(*a.container).begin(); iter != endIter; ++iter) {
+						if (iter->Y) {
+							result.AddUniqueValue((a.container->internal_X_type = iter->X), (a.container->internal_Y_type = *iter->Y) + b.GetCurrentValue((a.container->internal_X_type = iter->X)));
+						}
 					}
 					a.lock.Unlock();
+
+					//AUTO knotsA = a.GetKnotSeries();
+					//a.lock.Lock();
+					//for (auto& x : knotsA) {
+					//	result.AddUniqueValue((a.container->internal_X_type = x.first), (a.container->internal_Y_type = x.second) + b.GetCurrentValue((a.container->internal_X_type = x.first)));
+					//}
+					//a.lock.Unlock();
 				}
 				if (true) {
-					AUTO knotsB = b.GetKnotSeries();
 					b.lock.Lock();
-					for (auto& x : knotsB) {
-						result.AddUniqueValue((b.container->internal_X_type = x.first), (b.container->internal_Y_type = x.second) + a.GetCurrentValue((b.container->internal_X_type = x.first)));
+					AUTO endIter = const_cast<const cweeUnitPatternContainer_t&>(*b.container).end();
+					for (auto iter = const_cast<const cweeUnitPatternContainer_t&>(*b.container).begin(); iter != endIter; ++iter) {
+						if (iter->Y) {
+							result.AddUniqueValue((b.container->internal_X_type = iter->X), (b.container->internal_Y_type = *iter->Y) + a.GetCurrentValue((b.container->internal_X_type = iter->X)));
+						}
 					}
 					b.lock.Unlock();
+
+					//AUTO knotsB = b.GetKnotSeries();
+					//b.lock.Lock();
+					//for (auto& x : knotsB) {
+					//	result.AddUniqueValue((b.container->internal_X_type = x.first), (b.container->internal_Y_type = x.second) + a.GetCurrentValue((b.container->internal_X_type = x.first)));
+					//}
+					//b.lock.Unlock();
 				}
 			}
 			return result;
@@ -2500,9 +2638,10 @@ namespace cweeUnitValues {
 			}
 			if (a.GetNumValues() > 0) {
 				a.lock.Lock();
-				for (auto& kn : *a.container) {
-					if (kn.Y) {
-						result.AddValue(kn.X, *kn.Y + b);
+				AUTO endIter = const_cast<const cweeUnitPatternContainer_t&>(*a.container).end();
+				for (auto iter = const_cast<const cweeUnitPatternContainer_t&>(*a.container).begin(); iter != endIter; ++iter) {
+					if (iter->Y) {
+						result.AddValue(iter->X, *iter->Y + b);
 					}
 				}
 				a.lock.Unlock();
@@ -2519,9 +2658,10 @@ namespace cweeUnitValues {
 			}
 			if (a.GetNumValues() > 0) {
 				a.lock.Lock();
-				for (auto& kn : *a.container) {
-					if (kn.Y) {
-						result.AddValue(kn.X, *kn.Y - b);
+				AUTO endIter = const_cast<const cweeUnitPatternContainer_t&>(*a.container).end();
+				for (auto iter = const_cast<const cweeUnitPatternContainer_t&>(*a.container).begin(); iter != endIter; ++iter) {
+					if (iter->Y) {
+						result.AddValue(iter->X, *iter->Y - b);
 					}
 				}
 				a.lock.Unlock();
@@ -2571,9 +2711,10 @@ namespace cweeUnitValues {
 			}
 			if (a.GetNumValues() > 0) {
 				a.lock.Lock();
-				for (auto& kn : *a.container) {
-					if (kn.Y) {
-						result.AddValue(kn.X, b + *kn.Y);
+				AUTO endIter = const_cast<const cweeUnitPatternContainer_t&>(*a.container).end();
+				for (auto iter = const_cast<const cweeUnitPatternContainer_t&>(*a.container).begin(); iter != endIter; ++iter) {
+					if (iter->Y) {
+						result.AddValue(iter->X, b + *iter->Y);
 					}
 				}
 				a.lock.Unlock();
@@ -2590,9 +2731,10 @@ namespace cweeUnitValues {
 			}
 			if (a.GetNumValues() > 0) {
 				a.lock.Lock();
-				for (auto& kn : *a.container) {
-					if (kn.Y) {
-						result.AddValue(kn.X, b - *kn.Y);
+				AUTO endIter = const_cast<const cweeUnitPatternContainer_t&>(*a.container).end();
+				for (auto iter = const_cast<const cweeUnitPatternContainer_t&>(*a.container).begin(); iter != endIter; ++iter) {
+					if (iter->Y) {
+						result.AddValue(iter->X, b - *iter->Y);
 					}
 				}
 				a.lock.Unlock();

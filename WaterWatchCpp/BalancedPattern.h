@@ -403,6 +403,17 @@ public:
 
 		return out;
 	};
+	
+	std::pair<u64, type>		                UnsafeKnotForIndex(int index) const {
+		std::pair<u64, type> out; 
+		auto ptr = container.NodeFindByIndex(index);
+		if (ptr) {
+			out.first = ptr->key;
+			out.second = *ptr->object;
+		}
+		return out;
+	};
+	
 	cweeThreadedList<std::pair<u64, type>>		GetReversedKnotSeries(const u64& timeStart = -std::numeric_limits < u64>::max(), const u64& timeEnd = std::numeric_limits <u64>::max()) const {
 		int numKnots = this->GetNumValues();
 		cweeThreadedList<std::pair<u64, type>> out(numKnots + 16);
@@ -737,6 +748,23 @@ public:
 			}
 		}
 	};
+	 void												RemoveWithMask(std::function<bool(X_Axis_Type)> const& func) {
+		 int lowerLimit, upperLimit, index; cweeThreadedList<int> indexesToDelete;
+		 AUTO g = lock.Write_Guard();
+		 {
+			 auto iter = container.GetFirst();
+			 if (iter) {
+				 do {
+					 if (func(iter->key)) {
+						 container.Remove(iter);
+					 }
+					 iter = container.GetNextLeaf(iter);
+				 } while (iter);
+			 }
+		 }
+	 };
+
+
 	 void												Clear() {
 		 AUTO g = lock.Write_Guard();
 		container.Clear();
