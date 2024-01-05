@@ -2451,7 +2451,7 @@ namespace cweeUnitValues {
 		AUTO GetRTree(bool normalized = true) const {
 			class RTreeContainer {
 			public:
-				static cweeBoundary GetCoordinates(RTreeContainer const& o) {
+				static cweeBoundary const& GetCoordinates(RTreeContainer const& o) {
 					return o.boundary;
 				};
 				static cwee_units::foot_t GetDistance(RTreeContainer const& o, cweeBoundary const& b) {

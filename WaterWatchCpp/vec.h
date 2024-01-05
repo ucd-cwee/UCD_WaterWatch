@@ -103,7 +103,9 @@ public:
 		return ToString();
 	};
 
-	double			Distance(const vec2d& a) const;
+	double			Distance(const vec2d& a) const {
+		return ::sqrt((x - a.x) * (x - a.x) + (y - a.y) * (y - a.y));
+	};
 
 	void			Lerp(const vec2d& v1, const vec2d& v2, const double l);
 };
@@ -119,13 +121,6 @@ INLINE vec2d::vec2d(const double x, const double y) {
 INLINE void vec2d::Set(const double x, const double y) {
 	this->x = x;
 	this->y = y;
-}
-
-INLINE double vec2d::Distance(const vec2d& a) const {
-	double out(0);
-	out += (this->x - a.x) * (this->x - a.x);
-	out += (this->y - a.y) * (this->y - a.y);
-	return ::sqrt(out);
 }
 
 INLINE void vec2d::Zero() {

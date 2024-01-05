@@ -1500,7 +1500,7 @@ public:
 
 public:
 	// WRAPPER
-	static cweeList<vec2d> GetClusters(cweeList<vec2d> const& source, int K) {
+	static cweeSharedPtr<cweeList<vec2d>> GetClusters(cweeList<vec2d> const& source, int K) {
 		struct point* points;
 		int length;
 		int dimension;
@@ -1553,10 +1553,11 @@ public:
 			}
 		}
 
-		cweeList<vec2d> out;
+		auto outP = make_cwee_shared<cweeList<vec2d>>();
+		auto& out = *outP;
 		for (i = 0; i < numberOfCentres; ++i) {
 			out.Append(vec2d(centresStreamingCoreset[i].coordinates[0] / centresStreamingCoreset[i].weight, centresStreamingCoreset[i].coordinates[1] / centresStreamingCoreset[i].weight));
 		}
-		return out;
+		return outP;
 	};
 };

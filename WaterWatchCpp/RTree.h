@@ -31,13 +31,12 @@ to maintain a single distribution point for the source code.
 
 class cweeBoundary {
 public:
-	static cwee_units::foot_t Distance(vec2d const& LongLat1, vec2d const& LongLat2, bool geographic = true) {
-		double  lat_old, lat_new, lat_diff, lng_diff, a, c;
-		units::length::meter_t out;
-
+	static cwee_units::foot_t Distance(vec2d const& LongLat1, vec2d const& LongLat2, bool geographic = true) {		
 		if (!geographic) {
-			out = units::length::foot_t(LongLat1.Distance(LongLat2));
-		} else {
+			return LongLat1.Distance(LongLat2);
+		} 
+		else {
+			double  lat_old, lat_new, lat_diff, lng_diff, a, c;
 			if (LongLat1.x >= -180.0 && LongLat1.x <= 180.0 && LongLat1.y >= -90.0 && LongLat1.y <= 90.0 &&
 				LongLat2.x >= -180.0 && LongLat2.x <= 180.0 && LongLat2.y >= -90.0 && LongLat2.y <= 90.0) {
 				lat_old = LongLat1.y * cweeMath::PI / 180.0;
@@ -48,13 +47,12 @@ public:
 				a = std::sin(lat_diff / 2.0) * std::sin(lat_diff / 2.0) + std::cos(lat_new) * std::cos(lat_old) * std::sin(lng_diff / 2.0) * std::sin(lng_diff / 2.0);
 				c = 2.0 * std::atan2(std::sqrt(a), std::sqrt(1.0 - a));
 
-				out = units::length::meter_t(6372797.56085 * c);
+				return units::length::meter_t(6372797.56085 * c);
 			}
 			else {
-				out = units::length::foot_t(LongLat1.Distance(LongLat2));
+				return LongLat1.Distance(LongLat2);
 			}
 		}
-		return out;
 	};
 	static vec2d ClosestPoint(vec2d const& pointCoord, cweeList<vec2d> const& lineCoords, bool geographic = true) {
 		if (lineCoords.Num() == 0) {
@@ -312,7 +310,9 @@ public:
 	static cwee_units::foot_t Distance(cweeList<vec2d> const& coords1, cweeList<vec2d> const& coords2, bool geographic = true) {
 		using namespace cwee_units;
 
-		cwee_units::foot_t out = std::numeric_limits<cwee_units::foot_t>::max();
+		cwee_units::foot_t 
+			out = std::numeric_limits<cwee_units::foot_t>::max(), 
+			d;
 
 		if (coords1.Num() == 0 || coords2.Num() == 0) return out;
 		if (coords1.Num() == 1) return Distance(coords1[0], coords2, geographic);
@@ -347,7 +347,10 @@ public:
 		for (int i = 0; i < coords1.Num(); i++) {
 			for (int j = 0; j < coords2.Num(); j++) {
 				if (coords1[i] == coords2[j]) { return 0_ft; }
-				out = cwee_units::math::fmin(out, Distance(coords1[i], coords2[j], geographic));
+				d = Distance(coords1[i], coords2[j], geographic);
+				if (d < out) {
+					d = out;
+				}
 			}
 		}
 
@@ -358,10 +361,56 @@ public:
 		//			.
 		//		   .
 		//        .
-		for (int i = 0; i < coords1.Num(); i++) out = cwee_units::math::fmin(out, Distance(coords1[i], coords2, geographic));
-		for (int i = 0; i < coords2.Num(); i++) out = cwee_units::math::fmin(out, Distance(coords2[i], coords1, geographic));
-
+		for (int i = coords1.Num() - 1; i >= 0; --i) {
+			d = Distance(coords1[i], coords2, geographic);
+			if (d < out) {
+				out = d;
+			}
+		}
+		for (int i = coords2.Num() - 1; i >= 0; --i) {
+			d = Distance(coords2[i], coords1, geographic);
+			if (d < out) {
+				out = d;
+			}
+		}
 		return out;
+	};
+	static cwee_units::foot_t Distance(vec2d const& pointCoord, cweeBoundary const& bound, bool geographic = true) {		
+		if (Contains(bound, pointCoord)) {
+			return 0;
+		}
+		else {
+			if (geographic) {
+				// have to deal with curve of the earth
+				return Distance_Point_Polygon(pointCoord, bound.GetCoords(), geographic);
+			} else {
+				if (pointCoord.x < bound.bottomLeft.x) {
+					if (pointCoord.y < bound.bottomLeft.y) // BELOW LEFT						
+						return Distance(pointCoord, bound.bottomLeft, false);
+					else if (pointCoord.y > bound.topRight.y) // ABOVE LEFT						
+						return Distance(pointCoord, vec2d(bound.bottomLeft.x, bound.topRight.y), false);
+					else // CENTER LEFT						
+						return bound.bottomLeft.x - pointCoord.x;
+				}
+				else if (pointCoord.x > bound.topRight.x) {
+					if (pointCoord.y < bound.bottomLeft.y) // BELOW RIGHT						
+						return Distance(pointCoord, vec2d(bound.topRight.x, bound.bottomLeft.y), false);
+					else if (pointCoord.y > bound.topRight.y) // ABOVE RIGHT						
+						return Distance(pointCoord, bound.topRight, false);
+					else // CENTER RIGHT						
+						return pointCoord.x - bound.topRight.x;
+				}
+				else {
+					// point is above or below the boundary. 
+					if (pointCoord.y < bound.bottomLeft.y) // BELOW CENTER						
+						return bound.bottomLeft.y - pointCoord.y;
+					else if (pointCoord.y > bound.topRight.y) // ABOVE CENTER						
+						return pointCoord.y - bound.topRight.y;
+					else // INSIDE						
+						return 0;
+				}
+			}
+		}
 	};
 
 public:
@@ -400,8 +449,8 @@ public:
 		}
 		return coords;
 	};
-	vec2d Center() { return vec2d((topRight.x + bottomLeft.x) / 2.0, (topRight.y + bottomLeft.y) / 2.0); };
-
+	vec2d Center() const { return vec2d((topRight.x + bottomLeft.x) / 2.0, (topRight.y + bottomLeft.y) / 2.0); };
+	bool IsPoint() const { return topRight == bottomLeft; };
 	static bool Contains(cweeBoundary const& DoesThis, vec2d const& ContainThis) {
 		return (DoesThis.topRight >= ContainThis) && (DoesThis.bottomLeft <= ContainThis);
 	};
@@ -415,10 +464,26 @@ public:
 		else return Overlaps(a.GetCoords(), b.GetCoords());		
 	};
 	static cwee_units::foot_t Distance(cweeBoundary const& a, cweeBoundary const& b) {
-		if (Overlaps(a,b)) 
-			return cwee_units::foot_t(0);
-		else 
-			return Distance(a.GetCoords(), b.GetCoords(), a.geographic && b.geographic);		
+		// optimization
+		if (a.IsPoint()) {
+			if (b.IsPoint()) {
+				return Distance(a.bottomLeft, b.bottomLeft, b.geographic && a.geographic);
+			}
+			else {
+				// b is not a point
+				return Distance(a.bottomLeft, b, b.geographic && a.geographic);
+			}
+		}
+		else if (b.IsPoint()) {
+			// a is not a point
+			return Distance(b.bottomLeft, a, b.geographic && a.geographic);
+		}
+		else {
+			if (Overlaps(a, b))
+				return cwee_units::foot_t(0);
+			else
+				return Distance(a.GetCoords(), b.GetCoords(), a.geographic && b.geographic);
+		}
 	};
 
 	bool Contains(vec2d const& a) const {
@@ -437,16 +502,13 @@ public:
 
 template <
 	class objType, 
-	cweeBoundary(*coordinateLookupFunctor)(objType const&), 
+	cweeBoundary const&(*coordinateLookupFunctor)(objType const&),
 	cwee_units::foot_t(*DistanceFunction)(objType const&, cweeBoundary const&),
 	cwee_units::foot_t(*ObjectDistanceFunction)(objType const&, objType const&) = [](objType const& a, objType const& b)->cwee_units::foot_t { return DistanceFunction(a, coordinateLookupFunctor(b)); }
 >
 class RTree {
 public:
-	static cweeBoundary GetBoundary(objType const& obj) {
-		cweeBoundary b = coordinateLookupFunctor(obj);
-		return b;
-	};
+	static cweeBoundary const& GetBoundary(objType const& obj) { return coordinateLookupFunctor(obj); };
 	class TreeNode {
 	public:
 		cweeList<cweeSharedPtr<objType>>
@@ -461,13 +523,29 @@ public:
 			parent;
 		int 
 			parentsChildIndex;
+		cwee_units::foot_t
+			cached_distance;
+		cweeList< TreeNode* >
+			cached_children;
+		int
+			cached_parentsChildIndex;
 
-		TreeNode() : unhandledObjs(), children(), bound(), object(nullptr), parent(nullptr), parentsChildIndex(-1) {};
+
+		TreeNode() : unhandledObjs(), children(), bound(), object(nullptr), parent(nullptr), parentsChildIndex(-1), cached_distance(){};
 		TreeNode(TreeNode const&) = default;
 		TreeNode(TreeNode&&) = default;
 		TreeNode& operator=(TreeNode const&) = default;
 		TreeNode& operator=(TreeNode&&) = default;
 
+		TreeNode* Next_Cached() {
+			TreeNode* out{ nullptr };
+			if (parent && (cached_parentsChildIndex >= 0)) {
+				if (parent->cached_children.Num() > (cached_parentsChildIndex + 1)) {
+					out = parent->cached_children[cached_parentsChildIndex + 1];
+				}
+			}
+			return out;
+		};
 		TreeNode* Next() {
 			TreeNode* out{ nullptr };
 			if (parent && (parentsChildIndex >= 0)) {
@@ -519,74 +597,93 @@ public:
 	
 	static cweeSharedPtr<cweeList<vec2d>> kmeans(int k, cweeList<vec2d> const& data) {
 		using namespace concurrency;
-#if 0
-		int m = data.size(), n = 2, i, j, l, label;
-		double min_dist, dist;
-		bool converged;
+		if (data.size() <= 100) {
+			int m = data.size(), n = 2, i, j, l, label;
+			double min_dist, dist;
+			bool converged;
 
-		auto toReturn = make_cwee_shared<cweeList<vec2d>>();
+			auto toReturn = make_cwee_shared<cweeList<vec2d>>();
 
-		cweeList<vec2d>& centers = *toReturn;
-		centers.SetNum(k);
+			cweeList<vec2d>& centers = *toReturn;
+			centers.SetNum(k);
 
-		std::vector<int> labels(m, -1);
-		std::vector<std::vector<double>> new_centers(k, std::vector<double>(n));
-		std::vector<cweeSysInterlockedInteger> counts(k);
+			std::vector<int> labels(m, -1);
+			std::vector<std::vector<double>> new_centers(k, std::vector<double>(n));
+			std::vector<cweeSysInterlockedInteger> counts(k);
 
-		for (i = 0; i < k; ++i) centers[i] = data[i];
-		while (true) {
-			for (i = 0; i < k; ++i) for (j = 0; j < n; ++j) new_centers[i][j] = 0;
-			for (i = 0; i < k; ++i) counts[i].SetValue(0);
+			for (i = 0; i < k; ++i) centers[i] = data[i];
+			while (true) {
+				for (i = 0; i < k; ++i) for (j = 0; j < n; ++j) new_centers[i][j] = 0;
+				for (i = 0; i < k; ++i) counts[i].SetValue(0);
 
-			{
-				// parallelize the triple loop
-				parallel_for(int(0), m, [&](int i_parallel) {
-					int j_parallel{ 0 };
-					double min_dist_parallel{ std::numeric_limits<double>::max() }, dist_parallel{ 0 };
+				{
+					// parallelize the triple loop
+#if 1
+					int j_parallel, i_parallel; double min_dist_parallel, dist_parallel;
+					for (i_parallel = 0; i_parallel < m; ++i_parallel) {
+						min_dist_parallel = std::numeric_limits<double>::max();
+						for (j_parallel = 0; j_parallel < k; j_parallel++) {
+							dist_parallel = (data[i_parallel] - centers[j_parallel]).LengthSqr();
 
-					for (; j_parallel < k; j_parallel++) {
-						dist_parallel = (data[i_parallel] - centers[j_parallel]).LengthSqr();
-
-						if (dist_parallel < min_dist_parallel) {
-							min_dist_parallel = dist_parallel;
-							labels[i_parallel] = j_parallel;
+							if (dist_parallel < min_dist_parallel) {
+								min_dist_parallel = dist_parallel;
+								labels[i_parallel] = j_parallel;
+							}
 						}
-					}
-					counts[labels[i_parallel]].Increment();
-				});
-			}
-			// accumulate in-line
-			{
-				int l_parallel; int label_parallel;
-				for (i = 0; i < m; ++i) {
-					label_parallel = labels[i];
-					for (l_parallel = 0; l_parallel < n; ++l_parallel)
-						new_centers[label_parallel][l_parallel] += data[i][l_parallel];
-				}
-			}
+						counts[labels[i_parallel]].Increment();
+					};
 
-			converged = true;
-			for (i = 0; i < k; ++i) {
-				if (counts[i].GetValue() == 0) {
-					continue;
-				}
-				for (l = 0; l < n; ++l) {
-					new_centers[i][l] /= counts[i].GetValue();
-					if (new_centers[i][l] != centers[i][l]) {
-						converged = false;
-					}
-					centers[i][l] = new_centers[i][l];
-				}
-			}
-			if (converged) {
-				break;
-			}
-		}
-		return toReturn;
 #else
-		return make_cwee_shared<cweeList<vec2d>>(KMeans::GetClusters(data, k));
+					parallel_for(int(0), m, [&](int i_parallel) {
+						int j_parallel{ 0 };
+						double min_dist_parallel{ std::numeric_limits<double>::max() }, dist_parallel{ 0 };
+
+						for (; j_parallel < k; j_parallel++) {
+							dist_parallel = (data[i_parallel] - centers[j_parallel]).LengthSqr();
+
+							if (dist_parallel < min_dist_parallel) {
+								min_dist_parallel = dist_parallel;
+								labels[i_parallel] = j_parallel;
+							}
+						}
+						counts[labels[i_parallel]].Increment();
+					});
 #endif
+				}
+				// accumulate in-line
+				{
+					int l_parallel; int label_parallel;
+					for (i = 0; i < m; ++i) {
+						label_parallel = labels[i];
+						for (l_parallel = 0; l_parallel < n; ++l_parallel)
+							new_centers[label_parallel][l_parallel] += data[i][l_parallel];
+					}
+				}
+
+				converged = true;
+				for (i = 0; i < k; ++i) {
+					if (counts[i].GetValue() == 0) {
+						continue;
+					}
+					for (l = 0; l < n; ++l) {
+						new_centers[i][l] /= counts[i].GetValue();
+						if (new_centers[i][l] != centers[i][l]) {
+							converged = false;
+						}
+						centers[i][l] = new_centers[i][l];
+					}
+				}
+				if (converged) {
+					break;
+				}
+			}
+			return toReturn;
+		}
+		else {
+			return KMeans::GetClusters(data, k);
+		}
 	};
+
 	static cweeList< cweeList<cweeSharedPtr<objType>> > Cluster(int numClusters, cweeList<cweeSharedPtr<objType>> const& objs) {
 		if (objs.Num() == 0) throw(std::runtime_error("Cannot cluster zero objects in RTree."));
 
@@ -615,7 +712,7 @@ public:
 						cweeList<cweeSharedPtr<objType>> cellChildren;
 						for (int i = temp_objs.Num() - 1; i >= 0; i--) {
 							if (temp_objs[i]) {
-								auto b = coordinateLookupFunctor(*temp_objs[i]);
+								auto& b = coordinateLookupFunctor(*temp_objs[i]);
 								if (cell.overlaps(b.Center())) {
 									cellChildren.Append(temp_objs[i]);
 									temp_objs.RemoveIndexFast(i);
@@ -659,11 +756,13 @@ public:
 							int index = node->children.Num();
 							auto* newNode = nodeAllocator.Alloc();
 							newNode->parentsChildIndex = node->children.Num();
+							newNode->cached_parentsChildIndex = newNode->parentsChildIndex;
 							newNode->unhandledObjs = cluster;
 							cluster.Clear();
 							newNode->parent = node;
 							node->children.Append(newNode);
 						}
+						node->cached_children = node->children;
 						node = node->children[0];
 					}
 					else {
@@ -671,10 +770,12 @@ public:
 							int index = node->children.Num();
 							auto* newNode = nodeAllocator.Alloc();
 							newNode->parentsChildIndex = node->children.Num();
+							newNode->cached_parentsChildIndex = newNode->parentsChildIndex;
 							newNode->unhandledObjs.Append(obj);
 							newNode->parent = node;
 							node->children.Append(newNode);
 						}
+						node->cached_children = node->children;
 						node->unhandledObjs.Clear();
 						node = node->children[0];
 					}
@@ -793,6 +894,56 @@ public:
 		return out;
 	};
 	
+	/* direct method */
+	static cweeBalancedCurve<TreeNode*> Near(TreeNode* node, cweeBoundary const& point, int numNear) {
+		cweeBalancedCurve< TreeNode* > sortedNodes;
+
+		cwee_units::foot_t distance;
+		int i;
+
+		while (node) {
+			if (node->object) {
+				//if (sortedNodes.GetNumValues() < numNear || (distance = DistanceFunction(*node->object, point))() < sortedNodes.UnsafeKnotForIndex(numNear - 1).first) {
+					sortedNodes.AddValue(DistanceFunction(*node->object, point)(), node);
+				//}
+			}
+			else {
+				if (sortedNodes.GetNumValues() < numNear || (distance = point.Distance(node->bound))() < sortedNodes.UnsafeKnotForIndex(numNear - 1).first) {					
+					for (i = node->cached_children.Num() - 1; i >= 0; --i) {
+						node->cached_children[i]->cached_distance = point.Distance(node->cached_children[i]->bound);
+					}
+					node->cached_children.Sort([&point](TreeNode* const& a, TreeNode* const& b)->bool {
+						return a->cached_distance < b->cached_distance;
+					});
+					for (i = node->cached_children.Num() - 1; i >= 0; --i) {
+						node->cached_children[i]->cached_parentsChildIndex = i;
+					}
+				} else {
+					// skip this entire node, including it's children. 					
+					while (node && node->Next_Cached() == nullptr) {
+						node = node->parent;
+					}
+					if (node) node = node->Next_Cached();
+					continue;
+				}
+			}
+			if (node) {
+				if (node->cached_children.Num() > 0) {
+					node = node->cached_children[0];
+				}
+				else {
+					while (node && node->Next_Cached() == nullptr) {
+						node = node->parent;
+					}
+					if (node) node = node->Next_Cached();
+				}
+			}
+		}
+		
+		return sortedNodes;
+	};
+
+	/* recursive method */
 	static void Near(cweeBalancedCurve< TreeNode* >& sortedNodes, TreeNode* node, cweeBoundary const& point, int numNear, cwee_units::foot_t thisDistance) {
 		if (!node) return;
 
@@ -860,6 +1011,19 @@ public:
 		}
 	};
 	cweeList<TreeNode*> Near(cweeBoundary const& point, int numNear = 1) {
+#if 1
+		AUTO sortedNodes = Near(GetRoot(), point, numNear);
+		cweeList<TreeNode*> out; out.SetGranularity(numNear + 1);
+		for (auto& x : sortedNodes.GetValueKnotSeries()) {
+			if (out.Num() < numNear) {
+				out.Append(x);
+			}
+			else {
+				break;
+			}
+		}
+		return out;
+#else
 		cweeBalancedCurve< TreeNode* > sortedNodes; // self-sorted vector of arbitrary Y values by numeric X values
 				
 		auto* root = GetRoot();
@@ -881,6 +1045,7 @@ public:
 		}
 
 		return out;
+#endif
 	};
 	cweeList<TreeNode*> Near(objType const& point, int numNear = 1) {
 		cweeBalancedCurve< TreeNode* > sortedNodes; // self-sorted vector of arbitrary Y values by numeric X values

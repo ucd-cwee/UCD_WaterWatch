@@ -821,38 +821,6 @@ public:
 		return true;
 	};							// remove the element at the given index
 	void			RemoveIndexes(const cweeThreadedList<int>& indexes) {
-#if 0
-
-		if (indexes.Num() <= 0) return; // nothing to remove.
-		std::vector<int> temp = indexes;
-		std::sort(temp.begin(), temp.end());
-		cweeThreadedList<int> temp = removeList;
-
-		int copyIndex = indexes[0] + 1;
-		int findIndex;
-		num -= indexes.Num();
-		if (num <= 0) Clear();
-
-		for (int i = indexes[0]; i < num; i++) {
-			findIndex = indexes.FindIndex(i);
-			if (findIndex >= 0) {
-				indexes.RemoveIndexFast(findIndex);
-				for (;;) {
-					if (indexes.FindIndex(copyIndex) < 0) {
-						indexes.Append(copyIndex);
-						list[i] = list[copyIndex];
-						copyIndex++;
-						break;
-					}
-					else {
-						copyIndex++;
-					}
-				}
-			}
-		}
-
-#elif 1
-
 		if (indexes.Num() <= 0) return; // nothing to remove.
 		std::vector<int> temp = indexes;
 		std::sort(temp.begin(), temp.end());
@@ -879,53 +847,6 @@ public:
 			}
 			i++;
 		}
-#else
-		int sizeRemove = indexes.Num();
-
-		if (sizeRemove <= 0) return; // nothing to remove.
-		else if (sizeRemove == 1) { // only one index to be moved - do it the old fashioned way
-			RemoveIndex(indexes[0]);
-			return;
-		}
-		// at least two indexes to be removes
-
-		if ((num - sizeRemove) <= 0) // we were going to clear this list
-		{
-			Clear();
-			return;
-		}
-		int newNum = num - sizeRemove;
-
-		cweeThreadedList<int> indexesC = indexes;
-
-		indexesC.Sort<int, TAG_LIST>();
-
-		int removalProgress = 1;
-		int currentRemoveIndex = indexesC[0];
-		int copyIndex = currentRemoveIndex + 1;
-		int nextRemoveIndex = indexesC[removalProgress];
-		bool finished = false;
-		for (int i = currentRemoveIndex; i < newNum;) {
-			if (nextRemoveIndex > copyIndex || finished) {
-				list[i] = list[copyIndex];
-				copyIndex++;
-			}
-			else { // the next copy location is actually a removal location
-				copyIndex++;
-				removalProgress++;
-				if (removalProgress >= sizeRemove) {
-					finished = true;
-				}
-				else {
-					nextRemoveIndex = indexesC[removalProgress];
-				}
-				continue;
-			}
-			i++;
-		}
-
-		Resize(newNum);
-#endif
 	};	// remove the elements at the given indexes
 	// removes the element at the given index and places the last element into its spot - DOES NOT PRESERVE LIST ORDER
 	bool			RemoveIndexFast(int index) {

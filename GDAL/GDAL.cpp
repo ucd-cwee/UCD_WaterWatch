@@ -1346,18 +1346,10 @@ namespace cweeGeo {
 	class RTreeContainer {
 	public:
 		Geometry feature;
+		cweeBoundary bound;
 
-		static cweeBoundary GetBoundary(RTreeContainer const& o) {
-			cweeBoundary out;
-			out.topRight = vec2d(-cweeMath::INF, -cweeMath::INF);
-			out.bottomLeft = vec2d(cweeMath::INF, cweeMath::INF);
-			for (auto& x : o.feature.AllCoordinates()) {
-				for (int i = 0; i < 2; i++) {
-					if (out.topRight[i] < x[i]) out.topRight[i] = x[i];
-					if (out.bottomLeft[i] > x[i]) out.bottomLeft[i] = x[i];
-				}
-			}
-			return out;
+		static cweeBoundary const& GetBoundary(RTreeContainer const& o) {
+			return o.bound;
 		};
 		static cwee_units::foot_t GetDistance(RTreeContainer const& a, cweeBoundary const& b) {
 			return a.feature.Distance(b);
@@ -1366,11 +1358,21 @@ namespace cweeGeo {
 			return a.feature.Distance(b.feature);
 		};
 
-		RTreeContainer() : feature() {};
-		RTreeContainer(RTreeContainer const& o) : feature(o.feature) {};
-		RTreeContainer(Geometry const& o) : feature(o) {};
+		RTreeContainer() : feature(), bound() {};
+		RTreeContainer(RTreeContainer const& o) : feature(o.feature), bound(o.bound) {};
+		RTreeContainer(Geometry const& o) : feature(o), bound() {
+			bound.topRight = vec2d(-cweeMath::INF, -cweeMath::INF);
+			bound.bottomLeft = vec2d(cweeMath::INF, cweeMath::INF);
+			for (auto& x : feature.AllCoordinates()) {
+				for (int i = 0; i < 2; i++) {
+					if (bound.topRight[i] < x[i]) bound.topRight[i] = x[i];
+					if (bound.bottomLeft[i] > x[i]) bound.bottomLeft[i] = x[i];
+				}
+			}
+		};
 		RTreeContainer& operator=(RTreeContainer const& o) {
 			this->feature = o.feature;
+			this->bound = o.bound;
 			return *this;
 		};
 		bool operator==(RTreeContainer const& b) { return feature.Data() == b.feature.Data(); };
