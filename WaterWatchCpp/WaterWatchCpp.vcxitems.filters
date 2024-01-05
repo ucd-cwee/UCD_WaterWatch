@@ -121,6 +121,9 @@
     <Filter Include="Lib\Header-Only\Containers\Voronoi">
       <UniqueIdentifier>{5e3c666a-15f6-413c-a887-19373a835cdb}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Lib\Header-Only\Math / Engineering\KMeans">
+      <UniqueIdentifier>{2552f4eb-d66c-45d6-8d7f-2678f8c5ce0a}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="$(MSBuildThisFileDirectory)odbc.h">
@@ -791,6 +794,9 @@
     </ClInclude>
     <ClInclude Include="$(MSBuildThisFileDirectory)Voronoi.h">
       <Filter>Lib\Header-Only\Containers\Voronoi</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)KMeans.h">
+      <Filter>Lib\Header-Only\Math / Engineering\KMeans</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

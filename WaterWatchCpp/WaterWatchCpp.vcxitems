@@ -209,6 +209,7 @@
     <ClInclude Include="$(MSBuildThisFileDirectory)InteropData.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)InterpolatedMatrix.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)Iterator.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)KMeans.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)LinkedList.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)List.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)MachineLearning.h" />

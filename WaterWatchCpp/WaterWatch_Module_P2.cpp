@@ -192,6 +192,8 @@ namespace chaiscript {
                 lib->add(chaiscript::fun([](cweeUnitPattern& a) { return a.GetFirstDerivative(); }), "GetFirstDerivative");
                 lib->add(chaiscript::fun([](cweeUnitPattern& a) { return a.GetDistances(); }), "GetDistances");
                 lib->add(chaiscript::fun([](cweeUnitPattern& a, bool normalized) { return a.GetDistances(normalized); }), "GetDistances");
+                lib->add(chaiscript::fun([](cweeUnitPattern& a) { return a.GetRTree(); }), "RTree");
+                lib->add(chaiscript::fun([](cweeUnitPattern& a, bool normalized) { return a.GetRTree(normalized); }), "RTree");
                 lib->add(chaiscript::fun([](cweeUnitPattern& a) { return a.GetMinValue(); }), "GetMinValue");
                 lib->add(chaiscript::fun([](cweeUnitPattern& a) { return a.GetAvgValue(); }), "GetAvgValue");
                 lib->add(chaiscript::fun([](cweeUnitPattern& a) { return a.GetMaxValue(); }), "GetMaxValue");

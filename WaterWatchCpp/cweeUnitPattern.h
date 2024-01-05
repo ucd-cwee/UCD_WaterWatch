@@ -2448,77 +2448,98 @@ namespace cweeUnitValues {
 		void  RemoveWithMask(cweeUnitPattern const& other) {
 			this->container->RemoveWithMask(other.container);
 		};
+		AUTO GetRTree(bool normalized = true) const {
+			class RTreeContainer {
+			public:
+				static cweeBoundary GetCoordinates(RTreeContainer const& o) {
+					return o.boundary;
+				};
+				static cwee_units::foot_t GetDistance(RTreeContainer const& o, cweeBoundary const& b) {
+					return b.Distance(o.boundary);
+				};
+
+				cweeUnitValues::unit_value data;
+				cweeBoundary boundary;
+
+				RTreeContainer() : data(), boundary() {};
+				RTreeContainer(RTreeContainer const& o) : data(o.data), boundary(o.boundary) {};
+				RTreeContainer& operator=(RTreeContainer const& o) {
+					this->boundary = o.boundary;
+					this->data = o.data;
+					return *this;
+				};
+				bool operator==(RTreeContainer const& b) {
+					return data == b.data;
+				};
+				bool operator!=(RTreeContainer const& b) { return !operator==(b); };
+			};
+
+			using RTreeType = RTree< RTreeContainer, RTreeContainer::GetCoordinates, RTreeContainer::GetDistance>;
+
+			RTreeType out;
+
+			{
+				AUTO minTime = this->GetMinTime();
+				AUTO maxTime = this->GetMaxTime();
+				AUTO timeRange = maxTime - minTime;
+				AUTO minValue = this->GetMinValue();
+				AUTO maxValue = this->GetMaxValue();
+				AUTO valueRange = maxValue - minValue;
+
+				AUTO endIter = const_cast<const cweeUnitPatternContainer_t&>(*this->container).end();
+				RTreeContainer container;
+				for (auto iter = const_cast<const cweeUnitPatternContainer_t&>(*this->container).begin(); iter != endIter; ++iter) {
+					if (iter->Y) {
+						AUTO container{ make_cwee_shared<RTreeContainer>() };
+						container->data = iter->X;
+						if (normalized) {
+							container->boundary.bottomLeft.x = (double)((iter->X - minTime) / timeRange);
+							container->boundary.bottomLeft.y = (double)((*iter->Y - minValue) / valueRange);
+						}
+						else {
+							container->boundary.bottomLeft.x = (double)(iter->X);
+							container->boundary.bottomLeft.y = (double)(*iter->Y);
+						}
+						container->boundary.topRight = container->boundary.bottomLeft;
+						container->boundary.geographic = false;
+						out.Add(container);
+					}
+				}
+			}
+
+			out.GetRoot();
+
+			return out;
+		};
+
 		/* returns the approximate distance between each point and its neighbors. */
 		cweeUnitPattern  GetDistances(bool normalized = true) const {
 			AUTO distances = cweeUnitPattern(this->X_Type(), cweeUnitValues::foot(1));
 			if (this->GetNumValues() > 1) {
-				class RTreeContainer {
-				public:
-					static cweeBoundary GetCoordinates(RTreeContainer const& o) {
-						return o.boundary;
-					};
-					static cwee_units::foot_t GetDistance(RTreeContainer const& o, cweeBoundary const& b) {
-						return b.Distance(o.boundary);
-					};
+				AUTO out = GetRTree(normalized);
 
-					cweeUnitValues::unit_value data;
-					cweeBoundary boundary;
-
-					RTreeContainer() : data(), boundary() {};
-					RTreeContainer(RTreeContainer const& o) : data(o.data), boundary(o.boundary) {};
-					RTreeContainer& operator=(RTreeContainer const& o) {
-						this->boundary = o.boundary;
-						this->data = o.data;
-						return *this;
-					};
-					bool operator==(RTreeContainer const& b) {
-						return data == b.data;
-					};
-					bool operator!=(RTreeContainer const& b) { return !operator==(b); };
-				};
-
-				using RTreeType = RTree< RTreeContainer, RTreeContainer::GetCoordinates, RTreeContainer::GetDistance>;
-
-				RTreeType out; {
-					AUTO minTime = this->GetMinTime();
-					AUTO maxTime = this->GetMaxTime();
-					AUTO timeRange = maxTime - minTime;
-					AUTO minValue = this->GetMinValue();
-					AUTO maxValue = this->GetMaxValue();
-					AUTO valueRange = maxValue - minValue;
-
-					AUTO endIter = const_cast<const cweeUnitPatternContainer_t&>(*this->container).end();
-					RTreeContainer container;
-					for (auto iter = const_cast<const cweeUnitPatternContainer_t&>(*this->container).begin(); iter != endIter; ++iter) {
-						if (iter->Y) {
-							AUTO container{ make_cwee_shared<RTreeContainer>() };
-							container->data = iter->X;							
-							if (normalized) {
-								container->boundary.bottomLeft.x = (double)((iter->X - minTime) / timeRange);
-								container->boundary.bottomLeft.y = (double)((*iter->Y - minValue) / valueRange);
-							}
-							else {
-								container->boundary.bottomLeft.x = (double)(iter->X);
-								container->boundary.bottomLeft.y = (double)(*iter->Y);
-							}
-							container->boundary.topRight = container->boundary.bottomLeft;
-							container->boundary.geographic = false;
-							out.Add(container);
-						}
-					}
-				}
 				AUTO n = out.GetNextLeaf(out.GetRoot());
-				cweeList<RTreeType::TreeNode*> samples;
+
+				cweeList<decltype(out)::TreeNode*> samples;
 				double distance;
 				int numSamples;
-				int i;
+				bool skip;
 				while (n && n->object) {
+					skip = true;
 					numSamples = 0;
 					distance = 0.0;
-					samples = out.Near(n->bound, 2);
-					distances.AddValue(n->object->data, samples[1]->bound.Distance(n->bound)());
+					samples = out.Near(n->bound, 16);
+
+					for (auto& x : samples) {
+						if (skip) skip = false; 
+						else cweeMath::rollingAverageRef(distance, x->bound.Distance(n->bound)(), numSamples);						
+					}
+					distances.AddValue(n->object->data, distance);
+					
 					n = out.GetNextLeaf(n);
 				}
+
+
 			}
 			return distances;
 		};

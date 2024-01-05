@@ -27,6 +27,7 @@ to maintain a single distribution point for the source code.
 #include "Voronoi.h"
 #include "Geocoding.h"
 #include <ppl.h>
+#include "KMeans.h"
 
 class cweeBoundary {
 public:
@@ -461,7 +462,7 @@ public:
 		int 
 			parentsChildIndex;
 
-		TreeNode() : children(), bound(), object(nullptr), parent(nullptr), parentsChildIndex(-1) {};
+		TreeNode() : unhandledObjs(), children(), bound(), object(nullptr), parent(nullptr), parentsChildIndex(-1) {};
 		TreeNode(TreeNode const&) = default;
 		TreeNode(TreeNode&&) = default;
 		TreeNode& operator=(TreeNode const&) = default;
@@ -516,9 +517,9 @@ public:
 	RTree& operator=(RTree&& obj) { nodeAllocator.Clear(); root = nullptr; objects = obj.objects; return *this; };
 	~RTree() { nodeAllocator.Clear(); root = nullptr; };
 	
-	static cweeSharedPtr<cweeList<vec2d>> kmeans(int k, std::vector<vec2d> const& data) {
+	static cweeSharedPtr<cweeList<vec2d>> kmeans(int k, cweeList<vec2d> const& data) {
 		using namespace concurrency;
-
+#if 0
 		int m = data.size(), n = 2, i, j, l, label;
 		double min_dist, dist;
 		bool converged;
@@ -581,8 +582,10 @@ public:
 				break;
 			}
 		}
-
 		return toReturn;
+#else
+		return make_cwee_shared<cweeList<vec2d>>(KMeans::GetClusters(data, k));
+#endif
 	};
 	static cweeList< cweeList<cweeSharedPtr<objType>> > Cluster(int numClusters, cweeList<cweeSharedPtr<objType>> const& objs) {
 		if (objs.Num() == 0) throw(std::runtime_error("Cannot cluster zero objects in RTree."));
@@ -648,7 +651,8 @@ public:
 					if (node->object) { node->bound = GetBoundary(*node->object); }
 				}
 				else {
-					AUTO clusters = Cluster(10, node->unhandledObjs);					
+					AUTO clusters = Cluster(10, node->unhandledObjs);			
+
 					if (clusters.Num() > 0) {
 						node->unhandledObjs.Clear();
 						for (auto& cluster : clusters) {
@@ -697,39 +701,11 @@ public:
 				}
 			}
 		}
-	
-
-
-	
-	
 	};
 
-	// Recursive Formula. (Performance is more important than memory)
-	TreeNode* CreateNode(TreeNode* parent, TreeNode* node, cweeList<cweeSharedPtr<objType>> const& objs) {
-		int index;
-		if (node && objs.Num() > 0) {
-			if (objs.Num() == 1) {
-				node->object = objs[0];
-				if (node->object) { node->bound = GetBoundary(*node->object); }
-				node->parent = parent;
-				if (parent) node->parentsChildIndex = parent->children.Num();				
-				else node->parentsChildIndex = -1;				
-			} 
-			else {
-				node->parent = parent;
-				for (auto& cluster : Cluster(10, objs)) {
-					index = node->children.Num();
-					node->AddChild(CreateNode(node, nodeAllocator.Alloc(), cluster))->parentsChildIndex = index;
-					cluster.Clear();
-				}
-			}
-		}
-		return node;
-	};
 	void ReloadTree() {
 		nodeAllocator.Clear();
 		root = nodeAllocator.Alloc();
-		// CreateNode(nullptr, root, objects);		
 		CreateTree(root, objects);
 	};
 
@@ -882,9 +858,6 @@ public:
 				Near(sortedNodes, *x.object, point, numNear, x.key);
 			}
 		}
-
-		//for (int i = 0; i < sortedChildren.Num(); i++) 
-		//	Near(sortedNodes, sortedChildren.knots[i].get<1>(), point, numNear, sortedChildren.knots[i].get<0>());
 	};
 	cweeList<TreeNode*> Near(cweeBoundary const& point, int numNear = 1) {
 		cweeBalancedCurve< TreeNode* > sortedNodes; // self-sorted vector of arbitrary Y values by numeric X values
