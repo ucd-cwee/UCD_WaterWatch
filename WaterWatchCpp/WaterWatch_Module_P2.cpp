@@ -349,30 +349,25 @@ namespace chaiscript {
                     return out;
                 }), "Cast");
 
-                lib->add(chaiscript::fun([](cweeUnitPattern& a, cweeList<cweeList<cweeStr>> const& data, int TimeColumn, int ValueColumn) {
+                lib->add(chaiscript::fun([](cweeUnitPattern& a, cweeList<cweeList<cweeStr>> const& data, int TimeColumn, int ValueColumn)->cweeUnitPattern& {
                     unit_value X_type = a.X_Type();
                     unit_value Y_type= a.Y_Type();
-
                     for (auto& row : data) {
-                        X_type = row[TimeColumn].ReturnNumeric();
-                        Y_type = row[ValueColumn].ReturnNumeric();
-                        a.AddUniqueValue(X_type, Y_type);
+                        a.AddUniqueValue(X_type = row[TimeColumn].ReturnNumeric(), Y_type = row[ValueColumn].ReturnNumeric());
                     }
-
+                    a.RemoveUnnecessaryKnots();
                     return a;
                 }), "AppendFromSQL");
 
-                lib->add(chaiscript::fun([](cweeUnitPattern& a, nanodbcResult& con, int TimeColumn, int ValueColumn) {
+                lib->add(chaiscript::fun([](cweeUnitPattern& a, nanodbcResult& con, int TimeColumn, int ValueColumn)->cweeUnitPattern& {
                     unit_value X_type = a.X_Type();
                     unit_value Y_type = a.Y_Type();
 
                     cweeList<double> row;
                     while (odbc->GetNextRow(con, row)) {
-                        X_type = row[TimeColumn];
-                        Y_type = row[ValueColumn];
-                        a.AddUniqueValue(X_type, Y_type);
-                    }
-
+                        a.AddUniqueValue(X_type = row[TimeColumn], Y_type = row[ValueColumn]);
+                    }                    
+                    a.RemoveUnnecessaryKnots();
                     return a;
                 }), "AppendFromSQL");
             }

@@ -11,24 +11,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
 #include <time.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <stdio.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
 #include <math.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
 #include <vector>
 #include "vec.h"
 #include "List.h"
@@ -1400,10 +1384,8 @@ public:
 				//copy the bucket	
 				int i;
 				for (i = 0; i < manager->maxBucketsize; i++) {
-
 					copyPointWithoutInit(&(manager->buckets[curbucket].points[i]),
 						&(manager->buckets[nextbucket].points[i]));
-
 				}
 				//bucket is now full
 				manager->buckets[nextbucket].cursize = manager->maxBucketsize;
@@ -1416,10 +1398,8 @@ public:
 				//copy bucket to spillover and continue
 				int i;
 				for (i = 0; i < manager->maxBucketsize; i++) {
-
 					copyPointWithoutInit(&(manager->buckets[curbucket].points[i]),
 						&(manager->buckets[nextbucket].spillover[i]));
-
 				}
 				manager->buckets[0].cursize = 0;
 				cursize = 0;

@@ -820,7 +820,8 @@ public:
 						for (i = obj_indexes.Num() - 1; i >= 0; --i) obj_indexes[i] = i;
 
 						for (auto& cell : cells) {
-							cweeList<cweeSharedPtr<objType>>* cellChildren = &out.Alloc();							
+							cweeList<cweeSharedPtr<objType>>* cellChildren = &out.Alloc();			
+							cellChildren->SetGranularity(1 + ((obj_indexes.Num()) / (cells.Num() + 1)) * 2);
 							for (i = obj_indexes.Num() - 1; i >= 0; i--) {
 								auto& obj = objs[obj_indexes[i]];
 								if (obj) {
