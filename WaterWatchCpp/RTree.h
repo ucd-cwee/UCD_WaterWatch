@@ -523,7 +523,7 @@ public:
 			parent;
 		int 
 			parentsChildIndex;
-		cwee_units::foot_t
+		double
 			cached_distance;
 		cweeList< TreeNode* >
 			cached_children;
@@ -677,11 +677,104 @@ public:
 					break;
 				}
 			}
+			
 			return toReturn;
 		}
 		else {
 			return KMeans::GetClusters(data, k);
 		}
+	};
+	static cweeList< cweeList<cweeSharedPtr<objType> > > kmeans_cluster(int k, cweeList<vec2d> const& data, cweeList<cweeSharedPtr<objType>> const& objs) {
+		using namespace concurrency;
+
+		cweeList< cweeList<cweeSharedPtr<objType>> > out;
+		out.SetNum(k);
+
+		int m = data.size(), n = 2, i, j, l, label;
+		double min_dist, dist;
+		bool converged;
+
+		auto toReturn = make_cwee_shared<cweeList<vec2d>>();
+		cweeList<vec2d>& centers = *toReturn;
+		centers.SetNum(k);
+
+		std::vector<int> labels(m, -1);
+		std::vector<std::vector<double>> new_centers(k, std::vector<double>(n));
+		std::vector<int> counts(k);
+
+		for (i = 0; i < k; ++i) centers[i] = data[i];
+		while (true) {
+			for (i = 0; i < k; ++i) for (j = 0; j < n; ++j) new_centers[i][j] = 0;
+			for (i = 0; i < k; ++i) counts[i] = 0;
+
+#if 0
+			parallel_for(int(0), m, [&](int i_parallel) {
+				int j_parallel{ 0 };
+				double min_dist_parallel{ std::numeric_limits<double>::max() }, dist_parallel{ 0 };
+
+				for (; j_parallel < k; j_parallel++) {
+					dist_parallel = (data[i_parallel] - centers[j_parallel]).LengthSqr();
+
+					if (dist_parallel < min_dist_parallel) {
+						min_dist_parallel = dist_parallel;
+						labels[i_parallel] = j_parallel;
+					}
+				}				
+			});
+			//for (i = 0; i < m; ++i)  counts[labels[i]]++;		
+#else
+			{
+				int j_parallel, i_parallel; double min_dist_parallel, dist_parallel;
+				for (i_parallel = 0; i_parallel < m; ++i_parallel) {
+					min_dist_parallel = std::numeric_limits<double>::max();
+					for (j_parallel = 0; j_parallel < k; j_parallel++) {
+						dist_parallel = (data[i_parallel] - centers[j_parallel]).LengthSqr();
+
+						if (dist_parallel < min_dist_parallel) {
+							min_dist_parallel = dist_parallel;
+							labels[i_parallel] = j_parallel;
+						}
+					}
+					//counts[labels[i_parallel]]++;
+				};
+			}
+#endif
+
+			// accumulate in-line
+			{
+				int l_parallel; int label_parallel;
+				for (i = 0; i < m; ++i) {
+					counts[labels[i]]++; // moved to here
+					label_parallel = labels[i];
+					for (l_parallel = 0; l_parallel < n; ++l_parallel)
+						new_centers[label_parallel][l_parallel] += data[i][l_parallel];
+				}
+			}
+
+			converged = true;
+			for (i = 0; i < k; ++i) {
+				if (counts[i] == 0) {
+					continue;
+				}
+				for (l = 0; l < n; ++l) {
+					new_centers[i][l] /= counts[i];
+					if (new_centers[i][l] != centers[i][l]) {
+						converged = false;
+					}
+					centers[i][l] = new_centers[i][l];
+				}
+			}
+			if (converged) {
+				break;
+			}
+		}
+
+		for (i = 0; i < k; ++i) 
+			out[i].SetGranularity(counts[i] + 1);
+		for (i = 0; i < m; ++i) 
+			out[labels[i]].Append(objs[i]);
+
+		return out;
 	};
 
 	static cweeList< cweeList<cweeSharedPtr<objType>> > Cluster(int numClusters, cweeList<cweeSharedPtr<objType>> const& objs) {
@@ -691,45 +784,60 @@ public:
 		while ((objs.Num() / numClusters) > 5000) { numClusters += 1; }
 
 		cweeList< cweeList<cweeSharedPtr<objType>> > out;
+		out.SetGranularity(numClusters + 1);
+
 		if (objs.Num() < numClusters) { for (auto& x : objs) { if (x) out.Alloc().Append(x); } } // less objects than desired clusters -- return objects as-is, w/o clustering
 		else {
 			cweeList<vec2d> coord_data;
-			for (auto& x : objs) if (x) coord_data.Append(GetBoundary(*x).Center());						
-			auto newCenters = kmeans(numClusters, coord_data);
-			coord_data.Clear();
-			if (newCenters->Num() <= 1) { for (auto& x : objs) { if (x) out.Alloc().Append(x); } }
+			for (auto& x : objs) if (x) coord_data.Append(GetBoundary(*x).Center());
+			if (objs.Num() <= 150) {
+				// explores 100% of datapoints, and assigns them to the center(s) automatically. 
+				out = kmeans_cluster(numClusters, coord_data, objs);
+			}
 			else {
-				try {
-					// NOTE TO SELF: THROWS HERE IF THE VORONOI DIAGRAM HAS A SINGLE CELL AND / OR ALL OF THE "CENTERS" ARE IDENTICAL
-					auto voronoi{ Voronoi(newCenters) };
-					newCenters = nullptr;
-					auto cells = voronoi.GetCells(); // straight data copy
-					voronoi.Clear(); // safe to clear
-					int cellN = 0;
+				// Explores the square root of the number of clusters. Significantly faster for extra large datasets. 
+				// However, because not every node is explored, a follow-up analysis is needed to assign nodes to clusters. 
+				// We do this using the voronoi algorithm, and sample the boundaries to determine "assignment". 
+				auto newCenters = KMeans::GetClusters(coord_data, numClusters);
+				coord_data.Clear();
+				if (newCenters->Num() <= 1) { for (auto& x : objs) { if (x) out.Alloc().Append(x); } }
+				else {
+					
+					try {
+						// NOTE TO SELF: THROWS HERE IF THE VORONOI DIAGRAM HAS A SINGLE CELL AND / OR ANY OF THE "CENTERS" ARE IDENTICAL
+#if 0
+						auto voronoi{ Voronoi(newCenters) };
+						newCenters = nullptr;
+						auto cells = voronoi.GetCells();
+						voronoi.Clear(); // safe to clear, b/c it's mostly shared pointers
+#else
+						auto cells = Voronoi(newCenters).GetCells();
+						newCenters = nullptr;
+#endif
+						int i;
+						cweeList<int> obj_indexes;
+						obj_indexes.SetNum(objs.Num());
+						for (i = obj_indexes.Num() - 1; i >= 0; --i) obj_indexes[i] = i;
 
-					cweeList<cweeSharedPtr<objType>> temp_objs = objs;
-					for (auto& cell : cells) {
-						cweeList<cweeSharedPtr<objType>> cellChildren;
-						for (int i = temp_objs.Num() - 1; i >= 0; i--) {
-							if (temp_objs[i]) {
-								auto& b = coordinateLookupFunctor(*temp_objs[i]);
-								if (cell.overlaps(b.Center())) {
-									cellChildren.Append(temp_objs[i]);
-									temp_objs.RemoveIndexFast(i);
+						for (auto& cell : cells) {
+							cweeList<cweeSharedPtr<objType>>* cellChildren = &out.Alloc();							
+							for (i = obj_indexes.Num() - 1; i >= 0; i--) {
+								auto& obj = objs[obj_indexes[i]];
+								if (obj) {
+									if (cell.overlaps(coordinateLookupFunctor(*obj).Center())) {
+										cellChildren->Append(obj);
+										obj_indexes.RemoveIndexFast(i);
+									}
 								}
 							}
+							if (cellChildren->Num() <= 0) out.RemoveIndexFast(out.Num() - 1);							
 						}
-						if (cellChildren.Num() > 0) {
-							out.Append(cellChildren);
-						}
-						cell.Clear();
 					}
-				} 
-				catch (std::runtime_error) {
-					out.Clear();
-					if (objs.Num() < numClusters) for (auto& x : objs) if (x) out.Alloc().Append(x);
+					catch (std::runtime_error) {
+						out.Clear();
+						if (objs.Num() < numClusters) for (auto& x : objs) if (x) out.Alloc().Append(x);
+					}
 				}
-
 			}
 		}
 		return out;
@@ -740,6 +848,8 @@ public:
 		node->unhandledObjs = objs;
 		node->parent = nullptr;
 
+		TreeNode* newNode;
+		int index;
 		while (node) {
 			if (node->unhandledObjs.Num() > 0) {
 				if (node->unhandledObjs.Num() == 1) {
@@ -753,12 +863,11 @@ public:
 					if (clusters.Num() > 0) {
 						node->unhandledObjs.Clear();
 						for (auto& cluster : clusters) {
-							int index = node->children.Num();
-							auto* newNode = nodeAllocator.Alloc();
+							index = node->children.Num();
+							newNode = nodeAllocator.Alloc();
 							newNode->parentsChildIndex = node->children.Num();
 							newNode->cached_parentsChildIndex = newNode->parentsChildIndex;
 							newNode->unhandledObjs = cluster;
-							cluster.Clear();
 							newNode->parent = node;
 							node->children.Append(newNode);
 						}
@@ -767,8 +876,8 @@ public:
 					}
 					else {
 						for (auto& obj : node->unhandledObjs) {
-							int index = node->children.Num();
-							auto* newNode = nodeAllocator.Alloc();
+							index = node->children.Num();
+							newNode = nodeAllocator.Alloc();
 							newNode->parentsChildIndex = node->children.Num();
 							newNode->cached_parentsChildIndex = newNode->parentsChildIndex;
 							newNode->unhandledObjs.Append(obj);
@@ -895,29 +1004,37 @@ public:
 	};
 	
 	/* direct method */
-	static cweeBalancedCurve<TreeNode*> Near(TreeNode* node, cweeBoundary const& point, int numNear) {
-		cweeBalancedCurve< TreeNode* > sortedNodes;
+	static cweeBalancedCurve< TreeNode* > Near(TreeNode* node, cweeBoundary const& point, int numNear) {
+		cweeBalancedCurve< TreeNode* > sortedNodesActual;
+		auto& sortedNodes = sortedNodesActual.UnsafeGetValues();
 
-		cwee_units::foot_t distance;
+		int manualCount = 0;
+		double distance;
+		double distance_threshold = std::numeric_limits<double>::max();
 		int i;
-
+		
+		if (node) node->cached_distance = point.Distance(node->bound)(); // initiate the cached distance
 		while (node) {
 			if (node->object) {
-				//if (sortedNodes.GetNumValues() < numNear || (distance = DistanceFunction(*node->object, point))() < sortedNodes.UnsafeKnotForIndex(numNear - 1).first) {
-					sortedNodes.AddValue(DistanceFunction(*node->object, point)(), node);
-				//}
+				distance = DistanceFunction(*node->object, point)();
+
+				sortedNodes.Add(node, distance, false);
+
+				manualCount++;
+				if (manualCount >= numNear && distance < distance_threshold) {
+					auto* p = sortedNodes.NodeFindByIndex(numNear - 1);
+					if (p) {
+						distance_threshold = p->key;
+					}
+				}
 			}
 			else {
-				if (sortedNodes.GetNumValues() < numNear || (distance = point.Distance(node->bound))() < sortedNodes.UnsafeKnotForIndex(numNear - 1).first) {					
-					for (i = node->cached_children.Num() - 1; i >= 0; --i) {
-						node->cached_children[i]->cached_distance = point.Distance(node->cached_children[i]->bound);
-					}
+				if (manualCount < numNear || node->cached_distance < distance_threshold) {
+					for (i = node->cached_children.Num() - 1; i >= 0; --i) node->cached_children[i]->cached_distance = point.Distance(node->cached_children[i]->bound)();
 					node->cached_children.Sort([&point](TreeNode* const& a, TreeNode* const& b)->bool {
 						return a->cached_distance < b->cached_distance;
 					});
-					for (i = node->cached_children.Num() - 1; i >= 0; --i) {
-						node->cached_children[i]->cached_parentsChildIndex = i;
-					}
+					for (i = node->cached_children.Num() - 1; i >= 0; --i) node->cached_children[i]->cached_parentsChildIndex = i;					
 				} else {
 					// skip this entire node, including it's children. 					
 					while (node && node->Next_Cached() == nullptr) {
@@ -940,7 +1057,7 @@ public:
 			}
 		}
 		
-		return sortedNodes;
+		return sortedNodesActual;
 	};
 
 	/* recursive method */
@@ -1011,7 +1128,6 @@ public:
 		}
 	};
 	cweeList<TreeNode*> Near(cweeBoundary const& point, int numNear = 1) {
-#if 1
 		AUTO sortedNodes = Near(GetRoot(), point, numNear);
 		cweeList<TreeNode*> out; out.SetGranularity(numNear + 1);
 		for (auto& x : sortedNodes.GetValueKnotSeries()) {
@@ -1023,29 +1139,6 @@ public:
 			}
 		}
 		return out;
-#else
-		cweeBalancedCurve< TreeNode* > sortedNodes; // self-sorted vector of arbitrary Y values by numeric X values
-				
-		auto* root = GetRoot();
-		if (root) {
-			Near(sortedNodes, root, point, numNear, point.Distance(root->bound));
-		}
-
-		cweeList<TreeNode*> out;
-
-		for (auto& x : sortedNodes.GetValueKnotSeries()) {
-			if (out.Num() < numNear) {
-				if (x) {
-					out.Append(x);
-				}
-			}
-			else {
-				break;
-			}
-		}
-
-		return out;
-#endif
 	};
 	cweeList<TreeNode*> Near(objType const& point, int numNear = 1) {
 		cweeBalancedCurve< TreeNode* > sortedNodes; // self-sorted vector of arbitrary Y values by numeric X values

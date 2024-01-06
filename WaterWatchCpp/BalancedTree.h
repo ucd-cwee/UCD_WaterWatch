@@ -21,30 +21,18 @@ to maintain a single distribution point for the source code.
 template< class objType, class keyType, int maxChildrenPerNode = 10 >
 class cweeBalancedTree {
 public:
-	class cweeBalancedTreeNode {
-	public:
-		cweeBalancedTreeNode() : 
-			key(0), 
-			object(nullptr), 
-			parent(nullptr), 
-			next(nullptr), 
-			prev(nullptr), 
-			numChildren(0), 
-			firstChild(nullptr), 
-			lastChild(nullptr) 
-		{};
-
-		keyType							key;								// key used for sorting
-		objType* object;						// if != NULL pointer to object stored in leaf node
+	struct cweeBalancedTreeNode {
+		keyType				  key;							// key used for sorting
+		objType*              object;						// if != NULL pointer to object stored in leaf node
 		cweeBalancedTreeNode* parent;						// parent node
 		cweeBalancedTreeNode* next;							// next sibling
 		cweeBalancedTreeNode* prev;							// prev sibling
-		long long						numChildren;						// number of children
+		long long			  numChildren;					// number of children
 		cweeBalancedTreeNode* firstChild;					// first child
 		cweeBalancedTreeNode* lastChild;					// last child
 	};
+
 	INLINE cweeBalancedTreeNode* InitNode(cweeBalancedTreeNode* p) {
-		// static constexpr bool isThisPOD = std::is_pod<cweeBalancedTree<double, u64>::cweeBalancedTreeNode>::value;
 		p->key = 0;
 		p->object = nullptr;
 		p->parent = nullptr;

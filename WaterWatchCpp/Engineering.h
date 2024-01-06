@@ -4274,9 +4274,9 @@ namespace cweeEng {
 	static bool IsPointInPolygon(const cweeThreadedList<vec2d>& polygon, const vec2d& testPoint)
 	{
 		bool result = false;
-		int j = polygon.Num() - 1;
-		for (int i = 0; i < polygon.Num(); i++)
-		{
+		int n = polygon.Num();
+		int j = n - 1;
+		for (int i = 0; i < n; ++i) {
 			if (
 				(polygon[i].y < testPoint.y
 					&&

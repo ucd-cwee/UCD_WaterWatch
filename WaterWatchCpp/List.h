@@ -454,12 +454,12 @@ public:
 		return *this;
 	};
 
-	constexpr const _type_& operator[](int index) const {
-		if (index < 0 || index >= num) { throw(std::runtime_error(std::string("Bad Index"))); }
+	constexpr const _type_& operator[](int index) const {		
+		if (index < 0 || index >= num) { throw(std::runtime_error(std::string("Bad Index: ") + std::to_string(index) + std::string(" / ") + std::to_string(num))); }
 		return list[index];
 	};
 	constexpr _type_& operator[](int index) {
-		if (index < 0 || index >= num) { throw(std::runtime_error(std::string("Bad Index"))); }
+		if (index < 0 || index >= num) { throw(std::runtime_error(std::string("Bad Index: ") + std::to_string(index) + std::string(" / ") + std::to_string(num))); }
 		return list[index];
 	};
 	void			Condense() {
