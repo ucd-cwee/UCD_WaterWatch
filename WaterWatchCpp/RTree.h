@@ -798,22 +798,15 @@ public:
 				// Explores the square root of the number of clusters. Significantly faster for extra large datasets. 
 				// However, because not every node is explored, a follow-up analysis is needed to assign nodes to clusters. 
 				// We do this using the voronoi algorithm, and sample the boundaries to determine "assignment". 
-				auto newCenters = KMeans::GetClusters(coord_data, numClusters);
+				auto newCenters = KMeans().GetClusters(coord_data, numClusters);
 				coord_data.Clear();
 				if (newCenters->Num() <= 1) { for (auto& x : objs) { if (x) out.Alloc().Append(x); } }
 				else {
-					
 					try {
 						// NOTE TO SELF: THROWS HERE IF THE VORONOI DIAGRAM HAS A SINGLE CELL AND / OR ANY OF THE "CENTERS" ARE IDENTICAL
-#if 0
-						auto voronoi{ Voronoi(newCenters) };
-						newCenters = nullptr;
-						auto cells = voronoi.GetCells();
-						voronoi.Clear(); // safe to clear, b/c it's mostly shared pointers
-#else
 						auto cells = Voronoi(newCenters).GetCells();
 						newCenters = nullptr;
-#endif
+
 						int i;
 						cweeList<int> obj_indexes;
 						obj_indexes.SetNum(objs.Num());

@@ -42,14 +42,6 @@ namespace alglibwrapper {
         static double SparseMatrixInterp(cweeThreadedList<cweeUnion<double, double, double>> const& data, double X, double Y) {
             double out = 0; 
             if (data.Num() > 0) {
-                //cweeDynamicAlloc<double, 16, 8> alloc;
-                //alloc.Init();
-                //double* ptr = alloc.Alloc(data.Num() * 3);
-                //for (int i = 0; i < data.Num(); i++) {
-                //    ptr[(i * 3)] = data[i].get<0>();
-                //    ptr[(i * 3) + 1] = data[i].get<1>();
-                //    ptr[(i * 3) + 2] = data[i].get<2>();
-                //}
                 {
                     alglib::real_2d_array arr;
                     arr.attach_to_ptr(data.Num(), 3, (double*)(void*)data.Ptr()); // ptr);
@@ -63,8 +55,6 @@ namespace alglibwrapper {
                         out = alglib::rbfcalc2(model, X, Y);
                     }
                 }
-                //alloc.Free(ptr);
-                //alloc.Shutdown();
             }
             return out;
         };

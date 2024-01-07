@@ -174,19 +174,8 @@ public:
 	};
 	cweeTime(const char* t) : time(Shared_Epoch_posixTime()) { this->FromString(t); };
 
-	const char* c_str() const { 
+	cweeStr c_str() const { 
 		return ToString();
-
-		//cweeStr out;
-		//out = cweeStr::printf("%i/%i/%i %i:%i:%f",
-		//	tm_year() + 1900, 
-		//	tm_mon() + 1,
-		//	tm_mday(),
-		//	tm_hour(),
-		//	tm_min(),
-		//	(float)tm_sec()
-		//);	
-		//return out;
 	};
 	operator const char* () const { return ToString(); };
 	explicit operator u64() const {

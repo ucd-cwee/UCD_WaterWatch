@@ -192,8 +192,10 @@ namespace chaiscript {
                 lib->add(chaiscript::fun([](cweeUnitPattern& a) { return a.GetFirstDerivative(); }), "GetFirstDerivative");
                 lib->add(chaiscript::fun([](cweeUnitPattern& a) { return a.GetDistances(); }), "GetDistances");
                 lib->add(chaiscript::fun([](cweeUnitPattern& a, bool normalized) { return a.GetDistances(normalized); }), "GetDistances");
-                lib->add(chaiscript::fun([](cweeUnitPattern& a) { return a.GetRTree(); }), "RTree");
-                lib->add(chaiscript::fun([](cweeUnitPattern& a, bool normalized) { return a.GetRTree(normalized); }), "RTree");
+                lib->add(chaiscript::fun([](cweeUnitPattern& a, bool normalized, int numNearest) { return a.GetDistances(normalized, numNearest); }), "GetDistances");
+                lib->add(chaiscript::fun([](cweeUnitPattern& a) { return a.GetApproximateDistances(); }), "GetApproximateDistances");
+                lib->add(chaiscript::fun([](cweeUnitPattern& a, bool normalized) { return a.GetApproximateDistances(normalized); }), "GetApproximateDistances");
+
                 lib->add(chaiscript::fun([](cweeUnitPattern& a) { return a.GetMinValue(); }), "GetMinValue");
                 lib->add(chaiscript::fun([](cweeUnitPattern& a) { return a.GetAvgValue(); }), "GetAvgValue");
                 lib->add(chaiscript::fun([](cweeUnitPattern& a) { return a.GetMaxValue(); }), "GetMaxValue");
@@ -826,6 +828,32 @@ namespace chaiscript {
                 lib->AddFunction(, bottomLeft, ->vec2d& , return obj.bottomLeft;, cweeBoundary& obj);
                 lib->AddFunction(, geographic, ->bool&, return obj.geographic; , cweeBoundary& obj);
                 lib->AddFunction(, distance, -> cweeUnitValues::unit_value, return cweeUnitValues::foot(cweeBoundary::Distance(obj1, obj2)());, cweeBoundary const& obj1, cweeBoundary const& obj2);
+
+                AUTO PatternToRTree = [](cweeUnitValues::cweeUnitPattern const& pat)->RTreeType {
+                    RTreeType out; {
+                        AUTO minTime = pat.GetMinTime();
+                        AUTO maxTime = pat.GetMaxTime();
+                        AUTO timeRange = maxTime - minTime;
+                        AUTO minValue = pat.GetMinValue();
+                        AUTO maxValue = pat.GetMaxValue();
+                        AUTO valueRange = maxValue - minValue;
+
+                        for (auto& iter : pat.GetKnotSeries()) {
+                            AUTO container{ make_cwee_shared<RTreeContainer>() };
+
+                            container->data = var(std::pair<Boxed_Value, Boxed_Value>(var((cweeUnitValues::unit_value)iter.first), var((cweeUnitValues::unit_value)iter.second)));
+
+                            container->boundary.bottomLeft.x = (double)((iter.first - minTime) / timeRange);
+                            container->boundary.bottomLeft.y = (double)((iter.second - minValue) / valueRange);
+
+                            container->boundary.topRight = container->boundary.bottomLeft;
+                            container->boundary.geographic = false;
+                            out.Add(container);
+                        }
+                    }
+                    return out;
+                };
+                lib->add(chaiscript::fun([PatternToRTree](cweeUnitValues::cweeUnitPattern& a) { return PatternToRTree(a); }), "RTree");
             }
 
             return lib;

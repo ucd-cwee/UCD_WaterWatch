@@ -740,6 +740,8 @@ public:
 		return t;
 #endif
 	};
+
+#if 0
 	template <typename T, typename... Fargs>
 	_type_*				Alloc(T arg1, Fargs... Args) {
 #ifdef FORCE_DISCRETE_BLOCK_ALLOCS
@@ -764,6 +766,8 @@ public:
 		return t;
 #endif
 	};
+#endif
+
 	void				Free(_type_* element) {
 #ifdef FORCE_DISCRETE_BLOCK_ALLOCS
 		// for debugging tools
@@ -937,50 +941,6 @@ INLINE void cweeBlockAlloc<_type_, _blockSize_, memTag>::FreeEmptyBlocks() {
 */
 
 template<class _type_, size_t BlockSize = 128>
-class cweeAllocWrapper {
-public:
-	cweeAllocWrapper() : alloc() {
-		alloc.Free(alloc.Alloc());
-	};
-	~cweeAllocWrapper() {};
-
-	_type_* Alloc() {
-		AUTO p = alloc.Alloc();
-		return p;
-	};
-	template <typename T, typename... Fargs>
-	_type_* Alloc(T arg1, Fargs... Args) {
-		AUTO p = alloc.Alloc(arg1, Args...);
-		return p;
-	};
-	void	Free(_type_* element) {
-		alloc.Free(element);
-	};
-	void	Clean() {
-		alloc.FreeEmptyBlocks();
-	};
-	long long	GetTotalCount() {
-		long long out;
-		out = alloc.GetTotalCount();
-		return out;
-	};
-	long long	GetAllocCount() {
-		long long out;
-		out = alloc.GetAllocCount();
-		return out;
-	};
-	void	Clear() {
-		// alloc.Shutdown();
-	};
-	void	Reserve(long long n) {
-		alloc.Reserve(n);
-	};
-
-private:
-	cweeBlockAlloc<_type_, BlockSize> alloc;
-};
-
-template<class _type_, size_t BlockSize = 128>
 class cweeAlloc {
 private:
 	static constexpr bool isPod() { return std::is_pod<_type_>::value; };
@@ -998,6 +958,7 @@ public:
 		lock.unlock();
 		return p;
 	};
+#if 0
 	template <typename T, typename... Fargs>
 	_type_* Alloc(T arg1, Fargs... Args) {
 		lock.lock();
@@ -1008,6 +969,7 @@ public:
 		lock.unlock();
 		return p;
 	};
+#endif
 	void	Free(_type_* element) {
 		lock.lock();
 		if constexpr (!isPod()) {
@@ -1068,125 +1030,6 @@ private:
 	cweeBlockAlloc<_type_, BlockSize> alloc;
 };
 
-
-template<class type, int baseBlockSize, int minBlockSize>
-class cweeDynamicAlloc {
-public:
-	cweeDynamicAlloc();
-	~cweeDynamicAlloc();
-
-	void							Init();
-	void							Shutdown();
-	void							SetFixedBlocks(int numBlocks) {}
-	void							SetLockMemory(bool lock) {}
-	void							FreeEmptyBaseBlocks() {}
-
-	type* Alloc(const int num);
-	type* Resize(type* ptr, const int num);
-	void							Free(type* ptr);
-	const char* CheckMemory(const type* ptr) const;
-
-	int								GetNumBaseBlocks() const { return 0; }
-	int								GetBaseBlockMemory() const { return 0; }
-	int								GetNumUsedBlocks() const { return numUsedBlocks; }
-	int								GetUsedBlockMemory() const { return usedBlockMemory; }
-	int								GetNumFreeBlocks() const { return 0; }
-	int								GetFreeBlockMemory() const { return 0; }
-	int								GetNumEmptyBaseBlocks() const { return 0; }
-
-private:
-	int								numUsedBlocks;			// number of used blocks
-	int								usedBlockMemory;		// total memory in used blocks
-
-	int								numAllocs;
-	int								numResizes;
-	int								numFrees;
-
-	void							Clear();
-};
-
-template<class type, int baseBlockSize, int minBlockSize>
-cweeDynamicAlloc<type, baseBlockSize, minBlockSize>::cweeDynamicAlloc() {
-	Clear();
-}
-
-template<class type, int baseBlockSize, int minBlockSize>
-cweeDynamicAlloc<type, baseBlockSize, minBlockSize>::~cweeDynamicAlloc() {
-	Shutdown();
-}
-
-template<class type, int baseBlockSize, int minBlockSize>
-void cweeDynamicAlloc<type, baseBlockSize, minBlockSize>::Init() {
-}
-
-template<class type, int baseBlockSize, int minBlockSize>
-void cweeDynamicAlloc<type, baseBlockSize, minBlockSize>::Shutdown() {
-	Clear();
-}
-
-template<class type, int baseBlockSize, int minBlockSize>
-type* cweeDynamicAlloc<type, baseBlockSize, minBlockSize>::Alloc(const int num) {
-	numAllocs++;
-	if (num <= 0) {
-		return NULL;
-	}
-	numUsedBlocks++;
-	usedBlockMemory += num * sizeof(type);
-	return static_cast<type*>(Mem_Alloc16((size_t)(num * sizeof(type)), TAG_BLOCKALLOC));
-}
-
-template<class type, int baseBlockSize, int minBlockSize>
-type* cweeDynamicAlloc<type, baseBlockSize, minBlockSize>::Resize(type* ptr, const int num) {
-
-	numResizes++;
-
-	if (ptr == NULL) {
-		return Alloc(num);
-	}
-
-	if (num <= 0) {
-		Free(ptr);
-		return NULL;
-	}
-
-	assert(0);
-	return ptr;
-}
-
-template<class type, int baseBlockSize, int minBlockSize>
-void cweeDynamicAlloc<type, baseBlockSize, minBlockSize>::Free(type* ptr) {
-	numFrees++;
-	if (ptr == NULL) {
-		return;
-	}
-	Mem_Free16(ptr);
-}
-
-template<class type, int baseBlockSize, int minBlockSize>
-const char* cweeDynamicAlloc<type, baseBlockSize, minBlockSize>::CheckMemory(const type* ptr) const {
-	return NULL;
-}
-
-template<class type, int baseBlockSize, int minBlockSize>
-void cweeDynamicAlloc<type, baseBlockSize, minBlockSize>::Clear() {
-	numUsedBlocks = 0;
-	usedBlockMemory = 0;
-	numAllocs = 0;
-	numResizes = 0;
-	numFrees = 0;
-}
-
-/*
-==============================================================================
-
-	Fast dynamic block allocator.
-
-	No constructor is called for the 'type'.
-	Allocated blocks are always 16 byte aligned.
-
-==============================================================================
-*/
-
 #include "BTree.h"
 
 template<class type>
@@ -1205,19 +1048,162 @@ public:
 template<class type, int baseBlockSize, int minBlockSize, memTag_t _tag_ = TAG_BLOCKALLOC>
 class cweeDynamicBlockAlloc {
 public:
-	cweeDynamicBlockAlloc();
-	~cweeDynamicBlockAlloc();
+	cweeDynamicBlockAlloc() { tag = _tag_; Clear(); };
+	~cweeDynamicBlockAlloc() { Shutdown(); };
 
-	void							Init();
-	void							Shutdown();
-	void							SetFixedBlocks(int numBlocks);
-	void							SetLockMemory(bool lock);
-	void							FreeEmptyBaseBlocks();
+	void							Init() { 
+		freeTree.Init();
+		Free(Alloc(2));
+	};
+	void							Shutdown() {
+		Free(Alloc(2));
 
-	type* Alloc(const int num);
-	type* Resize(type* ptr, const int num);
-	void							Free(type* ptr);
-	const char* CheckMemory(const type* ptr) const;
+		cweeDynamicBlock<type>* block;
+
+		for (block = firstBlock; block != NULL; block = block->next) {
+			if (block->node == NULL) {
+				FreeInternal(block);
+			}
+		}
+
+		for (block = firstBlock; block != NULL; block = firstBlock) {
+			firstBlock = block->next;
+			assert(block->IsBaseBlock());
+			Mem_Free16(block);
+		}
+
+		freeTree.Shutdown();
+
+		Clear();
+	};
+	void							SetFixedBlocks(int numBlocks) {
+		cweeDynamicBlock<type>* block;
+
+		for (int i = numBaseBlocks; i < numBlocks; i++) {
+			block = (cweeDynamicBlock<type>*) Mem_Alloc16((size_t)baseBlockSize, _tag_);
+			block->SetSize(baseBlockSize - (int)sizeof(cweeDynamicBlock<type>), true);
+			block->next = NULL;
+			block->prev = lastBlock;
+			if (lastBlock) {
+				lastBlock->next = block;
+			}
+			else {
+				firstBlock = block;
+			}
+			lastBlock = block;
+			block->node = NULL;
+
+			FreeInternal(block);
+
+			numBaseBlocks++;
+			baseBlockMemory += baseBlockSize;
+		}
+
+		allowAllocs = false;
+	};
+	void							SetLockMemory(bool lock) {
+		lockMemory = lock;
+	};
+	void							FreeEmptyBaseBlocks() {
+		cweeDynamicBlock<type>* block, * next;
+
+		for (block = firstBlock; block != NULL; block = next) {
+			next = block->next;
+
+			if (block->IsBaseBlock() && block->node != NULL && (next == NULL || next->IsBaseBlock())) {
+				UnlinkFreeInternal(block);
+				if (block->prev) {
+					block->prev->next = block->next;
+				}
+				else {
+					firstBlock = block->next;
+				}
+				if (block->next) {
+					block->next->prev = block->prev;
+				}
+				else {
+					lastBlock = block->prev;
+				}
+				numBaseBlocks--;
+				baseBlockMemory -= block->GetSize() + (int)sizeof(cweeDynamicBlock<type>);
+				Mem_Free16(block);
+			}
+		}
+
+	};
+
+	type* Alloc(const int num, bool clearMemory = false) {
+		if (num <= 0) {
+			return NULL;
+		}
+		else {
+			cweeDynamicBlock<type>* block;
+			numAllocs++;
+
+			block = AllocInternal(num);
+			if (block == NULL) {
+				return NULL;
+			}
+			block = ResizeInternal(block, num);
+			if (block == NULL) {
+				return NULL;
+			}
+
+			numUsedBlocks++;
+			usedBlockMemory += block->GetSize();
+
+			type* ptr = block->GetMemory();
+			if (clearMemory && std::is_pod<type>::value) {
+				::memset((void*)ptr, 0, sizeof(type) * num);
+			}
+			return ptr;
+		}
+	};
+	type* Resize(type* ptr, const int num, bool clearMemory = false) {
+		numResizes++;
+		if (ptr == NULL) {
+			return Alloc(num, clearMemory);
+		}
+		if (num <= 0) {
+			Free(ptr);
+			return NULL;
+		}
+		cweeDynamicBlock<type>* block = (cweeDynamicBlock<type>*) (((::byte*)ptr) - (int)sizeof(cweeDynamicBlock<type>));
+		usedBlockMemory -= block->GetSize();
+		block = ResizeInternal(block, num);
+		if (block == NULL) {
+			return NULL;
+		}
+		usedBlockMemory += block->GetSize();
+
+		type* p = block->GetMemory();
+		if (clearMemory && std::is_pod<type>::value) {
+			::memset((void*)p, 0, sizeof(type) * num);
+		}
+		return p;
+	};
+	void							Free(type* ptr) {
+		numFrees++;
+		if (!ptr) { return; }
+		cweeDynamicBlock<type>* block = (cweeDynamicBlock<type>*) (((::byte*)ptr) - (int)sizeof(cweeDynamicBlock<type>));
+		numUsedBlocks--;
+		usedBlockMemory -= block->GetSize();
+		FreeInternal(block);
+	};
+	const char* CheckMemory(const type* ptr) const {
+		cweeDynamicBlock<type>* block;
+
+		if (ptr == NULL) {
+			return NULL;
+		}
+
+		block = (cweeDynamicBlock<type>*) (((byte*)ptr) - (int)sizeof(cweeDynamicBlock<type>));
+
+		if (block->node != NULL) {
+			return "memory has been freed";
+		}
+		return NULL;
+	};
 
 	int								GetNumBaseBlocks() const { return numBaseBlocks; }
 	int								GetBaseBlockMemory() const { return baseBlockMemory; }
@@ -1225,7 +1211,18 @@ public:
 	int								GetUsedBlockMemory() const { return usedBlockMemory; }
 	int								GetNumFreeBlocks() const { return numFreeBlocks; }
 	int								GetFreeBlockMemory() const { return freeBlockMemory; }
-	int								GetNumEmptyBaseBlocks() const;
+	int								GetNumEmptyBaseBlocks() const {
+		int numEmptyBaseBlocks;
+		cweeDynamicBlock<type>* block;
+
+		numEmptyBaseBlocks = 0;
+		for (block = firstBlock; block != NULL; block = block->next) {
+			if (block->IsBaseBlock() && block->node != NULL && (block->next == NULL || block->next->IsBaseBlock())) {
+				numEmptyBaseBlocks++;
+			}
+		}
+		return numEmptyBaseBlocks;
+	};
 
 private:
 	cweeDynamicBlock<type>* firstBlock;				// first block in list in order of increasing address
@@ -1246,262 +1243,117 @@ private:
 
 	memTag_t						tag;
 
-	void							Clear();
-	cweeDynamicBlock<type>* AllocInternal(const int num);
-	cweeDynamicBlock<type>* ResizeInternal(cweeDynamicBlock<type>* block, const int num);
-	void							FreeInternal(cweeDynamicBlock<type>* block);
-	void							LinkFreeInternal(cweeDynamicBlock<type>* block);
-	void							UnlinkFreeInternal(cweeDynamicBlock<type>* block);
-	void							CheckMemory() const;
-};
+	void							Clear() {
+		firstBlock = NULL;
+		lastBlock = NULL;
+		allowAllocs = true;
+		lockMemory = false;
+		numBaseBlocks = 0;
+		baseBlockMemory = 0;
+		numUsedBlocks = 0;
+		usedBlockMemory = 0;
+		numFreeBlocks = 0;
+		freeBlockMemory = 0;
+		numAllocs = 0;
+		numResizes = 0;
+		numFrees = 0;
+	};
+	cweeDynamicBlock<type>* AllocInternal(const int num) {
+		cweeDynamicBlock<type>* block;
+		int alignedBytes = (num * sizeof(type) + 15) & ~15;
 
-
-template<class type, int baseBlockSize, int minBlockSize, memTag_t _tag_>
-cweeDynamicBlockAlloc<type, baseBlockSize, minBlockSize, _tag_>::cweeDynamicBlockAlloc() {
-	tag = _tag_;
-	Clear();
-}
-
-template<class type, int baseBlockSize, int minBlockSize, memTag_t _tag_>
-cweeDynamicBlockAlloc<type, baseBlockSize, minBlockSize, _tag_>::~cweeDynamicBlockAlloc() {
-	Shutdown();
-}
-
-template<class type, int baseBlockSize, int minBlockSize, memTag_t _tag_>
-void cweeDynamicBlockAlloc<type, baseBlockSize, minBlockSize, _tag_>::Init() {
-	freeTree.Init();
-}
-
-template<class type, int baseBlockSize, int minBlockSize, memTag_t _tag_>
-void cweeDynamicBlockAlloc<type, baseBlockSize, minBlockSize, _tag_>::Shutdown() {
-	cweeDynamicBlock<type>* block;
-
-	for (block = firstBlock; block != NULL; block = block->next) {
-		if (block->node == NULL) {
-			FreeInternal(block);
-		}
-	}
-
-	for (block = firstBlock; block != NULL; block = firstBlock) {
-		firstBlock = block->next;
-		assert(block->IsBaseBlock());
-		Mem_Free16(block);
-	}
-
-	freeTree.Shutdown();
-
-	Clear();
-}
-
-template<class type, int baseBlockSize, int minBlockSize, memTag_t _tag_>
-void cweeDynamicBlockAlloc<type, baseBlockSize, minBlockSize, _tag_>::SetFixedBlocks(int numBlocks) {
-	cweeDynamicBlock<type>* block;
-
-	for (int i = numBaseBlocks; i < numBlocks; i++) {
-		block = (cweeDynamicBlock<type>*) Mem_Alloc16((size_t)baseBlockSize, _tag_);
-		block->SetSize(baseBlockSize - (int)sizeof(cweeDynamicBlock<type>), true);
-		block->next = NULL;
-		block->prev = lastBlock;
-		if (lastBlock) {
-			lastBlock->next = block;
-		}
-		else {
-			firstBlock = block;
-		}
-		lastBlock = block;
-		block->node = NULL;
-
-		FreeInternal(block);
-
-		numBaseBlocks++;
-		baseBlockMemory += baseBlockSize;
-	}
-
-	allowAllocs = false;
-}
-
-template<class type, int baseBlockSize, int minBlockSize, memTag_t _tag_>
-void cweeDynamicBlockAlloc<type, baseBlockSize, minBlockSize, _tag_>::SetLockMemory(bool lock) {
-	lockMemory = lock;
-}
-
-template<class type, int baseBlockSize, int minBlockSize, memTag_t _tag_>
-void cweeDynamicBlockAlloc<type, baseBlockSize, minBlockSize, _tag_>::FreeEmptyBaseBlocks() {
-	cweeDynamicBlock<type>* block, * next;
-
-	for (block = firstBlock; block != NULL; block = next) {
-		next = block->next;
-
-		if (block->IsBaseBlock() && block->node != NULL && (next == NULL || next->IsBaseBlock())) {
+		block = freeTree.FindSmallestLargerEqual(alignedBytes);
+		if (block && block != NULL && block != nullptr) {
 			UnlinkFreeInternal(block);
-			if (block->prev) {
-				block->prev->next = block->next;
+		}
+		else if (allowAllocs) {
+			int allocSize = Max(baseBlockSize, alignedBytes + (int)sizeof(cweeDynamicBlock<type>));
+			block = (cweeDynamicBlock<type>*) Mem_Alloc16((size_t)allocSize, _tag_);
+			block->SetSize(allocSize - (int)sizeof(cweeDynamicBlock<type>), true);
+			block->next = NULL;
+			block->prev = lastBlock;
+			if (lastBlock) {
+				lastBlock->next = block;
 			}
 			else {
-				firstBlock = block->next;
+				firstBlock = block;
 			}
-			if (block->next) {
-				block->next->prev = block->prev;
+			lastBlock = block;
+			block->node = NULL;
+
+			numBaseBlocks++;
+			baseBlockMemory += allocSize;
+		}
+
+		return block;
+	};
+	cweeDynamicBlock<type>* ResizeInternal(cweeDynamicBlock<type>* block, const int num) {
+		int alignedBytes = (num * sizeof(type) + 15) & ~15;
+		// if the new size is larger
+		if (alignedBytes > block->GetSize()) {
+
+			cweeDynamicBlock<type>* nextBlock = block->next;
+
+			// try to annexate the next block if it's free
+			if (nextBlock && !nextBlock->IsBaseBlock() && nextBlock->node != NULL &&
+				block->GetSize() + (int)sizeof(cweeDynamicBlock<type>) + nextBlock->GetSize() >= alignedBytes) {
+
+				UnlinkFreeInternal(nextBlock);
+				block->SetSize(block->GetSize() + (int)sizeof(cweeDynamicBlock<type>) + nextBlock->GetSize(), block->IsBaseBlock());
+				block->next = nextBlock->next;
+				if (nextBlock->next) {
+					nextBlock->next->prev = block;
+				}
+				else {
+					lastBlock = block;
+				}
 			}
 			else {
-				lastBlock = block->prev;
+				// allocate a new block and copy
+				cweeDynamicBlock<type>* oldBlock = block;
+				block = AllocInternal(num);
+				if (block == NULL) {
+					return NULL;
+				}
+				memcpy(block->GetMemory(), oldBlock->GetMemory(), oldBlock->GetSize());
+				FreeInternal(oldBlock);
 			}
-			numBaseBlocks--;
-			baseBlockMemory -= block->GetSize() + (int)sizeof(cweeDynamicBlock<type>);
-			Mem_Free16(block);
 		}
-	}
 
-}
-
-template<class type, int baseBlockSize, int minBlockSize, memTag_t _tag_>
-int cweeDynamicBlockAlloc<type, baseBlockSize, minBlockSize, _tag_>::GetNumEmptyBaseBlocks() const {
-	int numEmptyBaseBlocks;
-	cweeDynamicBlock<type>* block;
-
-	numEmptyBaseBlocks = 0;
-	for (block = firstBlock; block != NULL; block = block->next) {
-		if (block->IsBaseBlock() && block->node != NULL && (block->next == NULL || block->next->IsBaseBlock())) {
-			numEmptyBaseBlocks++;
+		// if the unused space at the end of this block is large enough to hold a block with at least one element
+		if (block->GetSize() - alignedBytes - (int)sizeof(cweeDynamicBlock<type>) < Max(minBlockSize, (int)sizeof(type))) {
+			return block;
 		}
-	}
-	return numEmptyBaseBlocks;
-}
 
-template<class type, int baseBlockSize, int minBlockSize, memTag_t _tag_>
-type* cweeDynamicBlockAlloc<type, baseBlockSize, minBlockSize, _tag_>::Alloc(const int num) {
-	cweeDynamicBlock<type>* block;
+		cweeDynamicBlock<type>* newBlock;
 
-	numAllocs++;
-
-	if (num <= 0) {
-		return NULL;
-	}
-
-	block = AllocInternal(num);
-	if (block == NULL) {
-		return NULL;
-	}
-	block = ResizeInternal(block, num);
-	if (block == NULL) {
-		return NULL;
-	}
-
-	numUsedBlocks++;
-	usedBlockMemory += block->GetSize();
-
-	return block->GetMemory();
-}
-
-template<class type, int baseBlockSize, int minBlockSize, memTag_t _tag_>
-type* cweeDynamicBlockAlloc<type, baseBlockSize, minBlockSize, _tag_>::Resize(type* ptr, const int num) {
-	numResizes++;
-	if (ptr == NULL) {
-		return Alloc(num);
-	}
-	if (num <= 0) {
-		Free(ptr);
-		return NULL;
-	}
-	cweeDynamicBlock<type>* block = (cweeDynamicBlock<type>*) (((::byte*)ptr) - (int)sizeof(cweeDynamicBlock<type>));
-	usedBlockMemory -= block->GetSize();
-	block = ResizeInternal(block, num);
-	if (block == NULL) {
-		return NULL;
-	}
-	usedBlockMemory += block->GetSize();
-	return block->GetMemory();
-}
-
-template<class type, int baseBlockSize, int minBlockSize, memTag_t _tag_>
-void cweeDynamicBlockAlloc<type, baseBlockSize, minBlockSize, _tag_>::Free(type* ptr) {
-
-	numFrees++;
-	if (ptr == NULL) {
-		return;
-	}
-	cweeDynamicBlock<type>* block = (cweeDynamicBlock<type>*) (((::byte*)ptr) - (int)sizeof(cweeDynamicBlock<type>));
-	numUsedBlocks--;
-	usedBlockMemory -= block->GetSize();
-	FreeInternal(block);
-}
-
-template<class type, int baseBlockSize, int minBlockSize, memTag_t _tag_>
-const char* cweeDynamicBlockAlloc<type, baseBlockSize, minBlockSize, _tag_>::CheckMemory(const type* ptr) const {
-	cweeDynamicBlock<type>* block;
-
-	if (ptr == NULL) {
-		return NULL;
-	}
-
-	block = (cweeDynamicBlock<type>*) (((byte*)ptr) - (int)sizeof(cweeDynamicBlock<type>));
-
-	if (block->node != NULL) {
-		return "memory has been freed";
-	}
-	return NULL;
-}
-
-template<class type, int baseBlockSize, int minBlockSize, memTag_t _tag_>
-void cweeDynamicBlockAlloc<type, baseBlockSize, minBlockSize, _tag_>::Clear() {
-	firstBlock = NULL;
-	lastBlock = NULL;
-	allowAllocs = true;
-	lockMemory = false;
-	numBaseBlocks = 0;
-	baseBlockMemory = 0;
-	numUsedBlocks = 0;
-	usedBlockMemory = 0;
-	numFreeBlocks = 0;
-	freeBlockMemory = 0;
-	numAllocs = 0;
-	numResizes = 0;
-	numFrees = 0;
-}
-
-template<class type, int baseBlockSize, int minBlockSize, memTag_t _tag_>
-cweeDynamicBlock<type>* cweeDynamicBlockAlloc<type, baseBlockSize, minBlockSize, _tag_>::AllocInternal(const int num) {
-	cweeDynamicBlock<type>* block;
-	int alignedBytes = (num * sizeof(type) + 15) & ~15;
-
-	block = freeTree.FindSmallestLargerEqual(alignedBytes);
-	if (block && block != NULL && block != nullptr) {
-		UnlinkFreeInternal(block);
-	}
-	else if (allowAllocs) {
-		int allocSize = Max(baseBlockSize, alignedBytes + (int)sizeof(cweeDynamicBlock<type>));
-		block = (cweeDynamicBlock<type>*) Mem_Alloc16((size_t)allocSize, _tag_);
-		block->SetSize(allocSize - (int)sizeof(cweeDynamicBlock<type>), true);
-		block->next = NULL;
-		block->prev = lastBlock;
-		if (lastBlock) {
-			lastBlock->next = block;
+		newBlock = (cweeDynamicBlock<type>*) (((::byte*)block) + (int)sizeof(cweeDynamicBlock<type>) + alignedBytes);
+		try {
+			newBlock->SetSize(block->GetSize() - alignedBytes - (int)sizeof(cweeDynamicBlock<type>), false);
+		}
+		catch (...) {}
+		newBlock->next = block->next;
+		newBlock->prev = block;
+		if (newBlock->next != NULL) {
+			newBlock->next->prev = newBlock;
 		}
 		else {
-			firstBlock = block;
+			lastBlock = newBlock;
 		}
-		lastBlock = block;
-		block->node = NULL;
+		newBlock->node = NULL;
+		block->next = newBlock;
+		block->SetSize(alignedBytes, block->IsBaseBlock());
 
-		numBaseBlocks++;
-		baseBlockMemory += allocSize;
-	}
+		FreeInternal(newBlock);
 
-	return block;
-}
+		return block;
+	};
+	void							FreeInternal(cweeDynamicBlock<type>* block) {
 
-template<class type, int baseBlockSize, int minBlockSize, memTag_t _tag_>
-cweeDynamicBlock<type>* cweeDynamicBlockAlloc<type, baseBlockSize, minBlockSize, _tag_>::ResizeInternal(cweeDynamicBlock<type>* block, const int num) {
-	int alignedBytes = (num * sizeof(type) + 15) & ~15;
-	// if the new size is larger
-	if (alignedBytes > block->GetSize()) {
-
+		assert(block->node == NULL);
+		// try to merge with a next free block
 		cweeDynamicBlock<type>* nextBlock = block->next;
-
-		// try to annexate the next block if it's free
-		if (nextBlock && !nextBlock->IsBaseBlock() && nextBlock->node != NULL &&
-			block->GetSize() + (int)sizeof(cweeDynamicBlock<type>) + nextBlock->GetSize() >= alignedBytes) {
-
+		if (nextBlock && !nextBlock->IsBaseBlock() && nextBlock->node != NULL) {
 			UnlinkFreeInternal(nextBlock);
 			block->SetSize(block->GetSize() + (int)sizeof(cweeDynamicBlock<type>) + nextBlock->GetSize(), block->IsBaseBlock());
 			block->next = nextBlock->next;
@@ -1512,117 +1364,108 @@ cweeDynamicBlock<type>* cweeDynamicBlockAlloc<type, baseBlockSize, minBlockSize,
 				lastBlock = block;
 			}
 		}
-		else {
-			// allocate a new block and copy
-			cweeDynamicBlock<type>* oldBlock = block;
-			block = AllocInternal(num);
-			if (block == NULL) {
-				return NULL;
+
+		// try to merge with a previous free block
+		cweeDynamicBlock<type>* prevBlock = block->prev;
+		//if (prevBlock && !block->IsBaseBlock() && prevBlock->node != NULL) {
+		if (prevBlock && !prevBlock->IsBaseBlock() && prevBlock->node != NULL) {
+			UnlinkFreeInternal(prevBlock);
+			prevBlock->SetSize(prevBlock->GetSize() + (int)sizeof(cweeDynamicBlock<type>) + block->GetSize(), prevBlock->IsBaseBlock());
+			prevBlock->next = block->next;
+			if (block->next) {
+				block->next->prev = prevBlock;
 			}
-			memcpy(block->GetMemory(), oldBlock->GetMemory(), oldBlock->GetSize());
-			FreeInternal(oldBlock);
-		}
-	}
-
-	// if the unused space at the end of this block is large enough to hold a block with at least one element
-	if (block->GetSize() - alignedBytes - (int)sizeof(cweeDynamicBlock<type>) < Max(minBlockSize, (int)sizeof(type))) {
-		return block;
-	}
-
-	cweeDynamicBlock<type>* newBlock;
-
-	newBlock = (cweeDynamicBlock<type>*) (((::byte*)block) + (int)sizeof(cweeDynamicBlock<type>) + alignedBytes);
-	try {
-		newBlock->SetSize(block->GetSize() - alignedBytes - (int)sizeof(cweeDynamicBlock<type>), false);
-	}
-	catch (...) {}
-	newBlock->next = block->next;
-	newBlock->prev = block;
-	if (newBlock->next != NULL) {
-		newBlock->next->prev = newBlock;
-	}
-	else {
-		lastBlock = newBlock;
-	}
-	newBlock->node = NULL;
-	block->next = newBlock;
-	block->SetSize(alignedBytes, block->IsBaseBlock());
-
-	FreeInternal(newBlock);
-
-	return block;
-}
-
-template<class type, int baseBlockSize, int minBlockSize, memTag_t _tag_>
-void cweeDynamicBlockAlloc<type, baseBlockSize, minBlockSize, _tag_>::FreeInternal(cweeDynamicBlock<type>* block) {
-
-	assert(block->node == NULL);
-	// try to merge with a next free block
-	cweeDynamicBlock<type>* nextBlock = block->next;
-	if (nextBlock && !nextBlock->IsBaseBlock() && nextBlock->node != NULL) {
-		UnlinkFreeInternal(nextBlock);
-		block->SetSize(block->GetSize() + (int)sizeof(cweeDynamicBlock<type>) + nextBlock->GetSize(), block->IsBaseBlock());
-		block->next = nextBlock->next;
-		if (nextBlock->next) {
-			nextBlock->next->prev = block;
+			else {
+				lastBlock = prevBlock;
+			}
+			LinkFreeInternal(prevBlock);
 		}
 		else {
-			lastBlock = block;
+			LinkFreeInternal(block);
 		}
-	}
+	};
+	void							LinkFreeInternal(cweeDynamicBlock<type>* block) {
+		block->node = freeTree.Add(block, block->GetSize());
+		numFreeBlocks++;
+		freeBlockMemory += block->GetSize();
+	};
+	void							UnlinkFreeInternal(cweeDynamicBlock<type>* block) {
+		freeTree.Remove(block->node);
+		block->node = NULL;
+		numFreeBlocks--;
+		freeBlockMemory -= block->GetSize();
+	};
+	void							CheckMemory() const {
+		cweeDynamicBlock<type>* block;
 
-	// try to merge with a previous free block
-	cweeDynamicBlock<type>* prevBlock = block->prev;
-	//if (prevBlock && !block->IsBaseBlock() && prevBlock->node != NULL) {
-	if (prevBlock && !prevBlock->IsBaseBlock() && prevBlock->node != NULL) {
-		UnlinkFreeInternal(prevBlock);
-		prevBlock->SetSize(prevBlock->GetSize() + (int)sizeof(cweeDynamicBlock<type>) + block->GetSize(), prevBlock->IsBaseBlock());
-		prevBlock->next = block->next;
-		if (block->next) {
-			block->next->prev = prevBlock;
+		for (block = firstBlock; block != NULL; block = block->next) {
+			// make sure the block is properly linked
+			if (block->prev == NULL) {
+				assert(firstBlock == block);
+			}
+			else {
+				assert(block->prev->next == block);
+			}
+			if (block->next == NULL) {
+				assert(lastBlock == block);
+			}
+			else {
+				assert(block->next->prev == block);
+			}
 		}
-		else {
-			lastBlock = prevBlock;
-		}
-		LinkFreeInternal(prevBlock);
-	}
-	else {
-		LinkFreeInternal(block);
-	}
-}
+	};
+};
 
-template<class type, int baseBlockSize, int minBlockSize, memTag_t _tag_>
-INLINE void cweeDynamicBlockAlloc<type, baseBlockSize, minBlockSize, _tag_>::LinkFreeInternal(cweeDynamicBlock<type>* block) {
-	block->node = freeTree.Add(block, block->GetSize());
-	numFreeBlocks++;
-	freeBlockMemory += block->GetSize();
-}
+template<class _type_, size_t BlockSize = 1 << 18>
+class cweeDynamicAlloc {
+private:
+	static constexpr bool isPod() { return std::is_pod<_type_>::value; };
 
-template<class type, int baseBlockSize, int minBlockSize, memTag_t _tag_>
-INLINE void cweeDynamicBlockAlloc<type, baseBlockSize, minBlockSize, _tag_>::UnlinkFreeInternal(cweeDynamicBlock<type>* block) {
-	freeTree.Remove(block->node);
-	block->node = NULL;
-	numFreeBlocks--;
-	freeBlockMemory -= block->GetSize();
-}
+public:
+	cweeDynamicAlloc() : lock(), ptrs(), alloc() { alloc.Init(); };
+	cweeDynamicAlloc(int toReserve) : lock(), ptrs(), alloc(toReserve) {};
+	~cweeDynamicAlloc() { Clear(); alloc.Shutdown(); };
 
-template<class type, int baseBlockSize, int minBlockSize, memTag_t _tag_>
-void cweeDynamicBlockAlloc<type, baseBlockSize, minBlockSize, _tag_>::CheckMemory() const {
-	cweeDynamicBlock<type>* block;
+	_type_* Alloc(int num = 1, bool clearMemory = false) {
+		lock.lock();
+		AUTO p = alloc.Alloc(num, clearMemory);
+		ptrs.insert(p);
+		lock.unlock();
+		return p;
+	};
+	void	Free(_type_* element) {
+		lock.lock();
 
-	for (block = firstBlock; block != NULL; block = block->next) {
-		// make sure the block is properly linked
-		if (block->prev == NULL) {
-			assert(firstBlock == block);
+		ptrs.erase(element);		
+		alloc.Free(element);
+		lock.unlock();
+	};
+	void	Clean() {
+		lock.lock();
+		alloc.FreeEmptyBaseBlocks();
+		lock.unlock();
+	};
+	void	Clear() {
+		lock.lock();
+
+		for (auto& x : ptrs) {
+			if (x != nullptr) {
+				alloc.Free(x);
+			}
 		}
-		else {
-			assert(block->prev->next == block);
-		}
-		if (block->next == NULL) {
-			assert(lastBlock == block);
-		}
-		else {
-			assert(block->next->prev == block);
-		}
-	}
-}
+		ptrs.clear();
+
+		alloc.Free(alloc.Alloc(1));
+		lock.unlock();
+	};
+	void	Reserve(long long n) {
+		lock.lock();
+		alloc.Reserve(n);
+		lock.unlock();
+	};
+
+private:
+	mutable std::mutex lock;
+	std::set<_type_*> ptrs;
+	cweeDynamicBlockAlloc<_type_, BlockSize, sizeof(_type_)> alloc;
+};

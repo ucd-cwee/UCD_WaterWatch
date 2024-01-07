@@ -17,32 +17,18 @@
 #include "vec.h"
 #include "List.h"
 
-static int KMeans_mti = 624 + 1;
-static std::vector<unsigned long> KMeans_mt = std::vector<unsigned long>(624, 0.0); /* the array for the state vector  */
 class KMeans {
-public:
-	static constexpr decltype(auto) N = 624;
-	static constexpr decltype(auto) M = 397;
-	static constexpr decltype(auto) MATRIX_A = 0x9908b0dfUL; /* constant vector a */
-	static constexpr decltype(auto) UPPER_MASK = 0x80000000UL; /* most significant w-r bits */
-	static constexpr decltype(auto) LOWER_MASK = 0x7fffffffUL; /* least significant r bits */
-	static constexpr decltype(auto) THRESHOLD = 1.000; /* Determines when Lloyd terminates (should be between 0 and 1) */	
-
 public:
 	/** struct representing a single point **/
 	struct point {
-		//dimension
-		int dimension;
-
 		//Clustering Features (weight, squareSum, linearSum)
 		double weight;
 		double squareSum;
-		float* coordinates;
+		float coordinates[2]; 
 
 		//cost and index of the centre, the point is currently assigned to
 		double curCost;
 		int centreIndex;
-
 
 		//id and class (if there is class information in the file)
 		int id;
@@ -88,30 +74,44 @@ public:
 	};
 
 public:
+	static constexpr decltype(auto) N = 624;
+	static constexpr decltype(auto) M = 397;
+	static constexpr decltype(auto) MATRIX_A = 0x9908b0dfUL; /* constant vector a */
+	static constexpr decltype(auto) UPPER_MASK = 0x80000000UL; /* most significant w-r bits */
+	static constexpr decltype(auto) LOWER_MASK = 0x7fffffffUL; /* least significant r bits */
+	static constexpr decltype(auto) THRESHOLD = 1.000; /* Determines when Lloyd terminates (should be between 0 and 1) */
+
+private:
+	int KMeans_mti;
+	std::vector<unsigned long> KMeans_mt; /* the array for the state vector */
+
+public:
+	KMeans() : 
+		KMeans_mt{ std::vector<unsigned long>(N, 0.0) }, 
+		KMeans_mti{ N + 1 }
+	{};
+	KMeans(KMeans const&) = default;
+	KMeans(KMeans&&) = default;
+	KMeans& operator=(KMeans const&) = default;
+	KMeans& operator=(KMeans&&) = default;
+	~KMeans() {}
+
+private:
 	/** initializes a point **/
-	static void initPoint(struct point* point, int dimension) {
+	void initPoint(struct point* point) {
 		point->weight = 1.0;
 		point->squareSum = 0.0;
-		point->dimension = dimension;
-		point->coordinates = (float*)malloc(dimension * sizeof(float));
+		point->coordinates[0] = 0;
+		point->coordinates[1] = 0;
 		point->id = -1;
 		point->cl = -1;
 		point->curCost = 0;
 		point->centreIndex = -1;
-		int l = 0;
-		for (l = 0; l < dimension; l++) {
-			point->coordinates[l] = 0.0;
-		}
-	};
-
-	/** deletes a point **/
-	static void freePoint(struct point* point) {
-		free(point->coordinates);
 	};
 
 	/** copys the data of the first point to the address of the second point **/
-	static void copyPoint(struct point* firstPoint, struct  point* secondPoint) {
-		initPoint(secondPoint, firstPoint->dimension);
+	void copyPoint(struct point* firstPoint, struct  point* secondPoint) {
+		initPoint(secondPoint);
 		secondPoint->id = firstPoint->id;
 		secondPoint->weight = firstPoint->weight;
 		secondPoint->cl = firstPoint->cl;
@@ -119,7 +119,7 @@ public:
 		secondPoint->curCost = firstPoint->curCost;
 		secondPoint->centreIndex = firstPoint->centreIndex;
 		int l;
-		for (l = 0; l < firstPoint->dimension; l++) {
+		for (l = 0; l < 2; l++) {
 			secondPoint->coordinates[l] = firstPoint->coordinates[l];
 		}
 	};
@@ -136,7 +136,7 @@ public:
 		secondPoint->curCost = firstPoint->curCost;
 		secondPoint->centreIndex = firstPoint->centreIndex;
 		int l;
-		for (l = 0; l < firstPoint->dimension; l++) {
+		for (l = 0; l < 2; l++) {
 			secondPoint->coordinates[l] = firstPoint->coordinates[l];
 		}
 	};
@@ -175,72 +175,41 @@ public:
 	};
 
 	/** returns the next point of a file (Gereons format) **/
-	static void getNextPointGereon(FILE* file, struct point* p, int dimension) {
+	static void getNextPointGereon(FILE* file, struct point& p) {
 		int l;
-		for (l = 0; l < dimension; l++) {
+		for (l = 0; l < 2; l++) {
 			float nextNumber;
 			char nextLine[256];
 			fgets(nextLine, 256, file);
 			sscanf(nextLine, "%f", &nextNumber);
-			p->coordinates[l] = nextNumber;
-			p->squareSum += nextNumber * nextNumber;
+			p.coordinates[l] = nextNumber;
+			p.squareSum += nextNumber * nextNumber;
 		}
-		p->weight = 1.0;
+		p.weight = 1.0;
 	};
 	/* Returns the next point of a file (Liadan format) */
-	static void getNextPointLiadan(FILE* file, struct point* p, int dimension) {
+	static void getNextPointLiadan(FILE* file, struct point& p) {
 
 		// skip first number
 		readDouble(file);
 
-		for (int l = 0; l < dimension; l++) {
+		for (int l = 0; l < 2; l++) {
 			// read next number
 			float nextNumber = readDouble(file);
 
-			p->coordinates[l] = nextNumber;
-			p->squareSum += nextNumber * nextNumber;
+			p.coordinates[l] = nextNumber;
+			p.squareSum += nextNumber * nextNumber;
 
 		}
 
-		p->weight = 1.0;
+		p.weight = 1.0;
 	};
 
 	/* saves the centers to a file with the separator ',' */
-	static void saveCentersOldFormat(FILE* out, int numberOfCenters, struct point* centers, int dimension) {
-		for (int i = 0; i < numberOfCenters; i++) {
-			int l;
-			for (l = 0; l < dimension - 1; l++) {
-				// fprintf(out, "%f,", centers[i].coordinates[l] / centers[i].weight);
-			}
-			// fprintf(out, "%f", centers[i].coordinates[dimension - 1] / centers[i].weight);
-			// fprintf(out, "\n");
-		}
-	};
+	static void saveCentersOldFormat(FILE* out, int numberOfCenters, struct point* centers) {};
 
 	/* saves the centers to a file with the separator ' ' and a the weight as the first row */
-	static void saveCentersLiadanFormat(FILE* out, int numberOfCenters, struct point* centers, int dimension) {
-
-		for (int i = 0; i < numberOfCenters; i++) {
-			int l;
-			// fprintf(out, "%f ", centers[i].weight);
-			for (l = 0; l < dimension - 1; l++) {
-				if (centers[i].weight != 0.0) {
-					// fprintf(out, "%f ", centers[i].coordinates[l] / centers[i].weight);
-				}
-				else {
-					// fprintf(out, "%f ", centers[i].coordinates[l]);
-				}
-			}
-			if (centers[i].weight != 0.0) {
-				// fprintf(out, "%f", centers[i].coordinates[dimension - 1] / centers[i].weight);
-			}
-			else {
-				// fprintf(out, "%f", centers[i].coordinates[dimension - 1]);
-			}
-			// fprintf(out, "\n");
-		}
-
-	};
+	static void saveCentersLiadanFormat(FILE* out, int numberOfCenters, struct point* centers) {};
 
 	static int readArg(char* s, FILE* fp) {
 
@@ -350,15 +319,10 @@ public:
 	};
 
 	/** debug function to print a set of points **/
-	static void printPoints(int n, struct point* points) {
-		int i;
-		for (i = 0; i < n; i++) {
-			// printf("ID %d,Dimension %d, Weight %f \n", points[i].id, points[i].dimension, points[i].weight);
-		}
-	};
+	static void printPoints(int n, struct point* points) {};
 
-	/** computes the target function for the given pointarray points[] (of size n) with the given array of centres centres[] (of size k) **/
-	static double targetFunctionValue(int k, int n, struct point centres[], struct point points[]) {
+	/** computes the target function for the given pointarray points (of size n) with the given array of centres centres (of size k) **/
+	static double targetFunctionValue(int k, int n, struct point* centres, struct point* points) {
 		int i = 0;
 		double sum = 0.0;
 		for (i = 0; i < n; i++) {
@@ -367,7 +331,7 @@ public:
 			for (j = 0; j < k; j++) {
 				double distance = 0.0;
 				int l = 0;
-				for (l = 0; l < points[i].dimension; l++) {
+				for (l = 0; l < 2; l++) {
 					//Centroid coordinate of the point
 					double centroidCoordinatePoint;
 					if (points[i].weight != 0.0) {
@@ -397,8 +361,8 @@ public:
 		return sum;
 	};
 
-	/** computes the target function for the union of the given pointarrays setA[] (of size n_1) and setB[] (of size n_2) with the given array of centres centres[] (of size k) **/
-	static double unionTargetFunctionValue(int k, int n_1, int n_2, struct point centres[], struct point setA[], struct point setB[]) {
+	/** computes the target function for the union of the given pointarrays setA (of size n_1) and setB (of size n_2) with the given array of centres centres (of size k) **/
+	static double unionTargetFunctionValue(int k, int n_1, int n_2, struct point* centres, struct point* setA, struct point* setB) {
 		int n = n_1 + n_2;
 		int i = 0;
 		double sum = 0.0;
@@ -409,7 +373,7 @@ public:
 				for (j = 0; j < k; j++) {
 					double distance = 0.0;
 					int l = 0;
-					for (l = 0; l < setA[i].dimension; l++) {
+					for (l = 0; l < 2; l++) {
 						//Centroid coordinate of the point
 						double centroidCoordinatePoint;
 						if (setA[i].weight != 0.0) {
@@ -442,7 +406,7 @@ public:
 				for (j = 0; j < k; j++) {
 					double distance = 0.0;
 					int l = 0;
-					for (l = 0; l < setB[i - n_1].dimension; l++) {
+					for (l = 0; l < 2; l++) {
 						//Centroid coordinate of the point
 						double centroidCoordinatePoint;
 						if (setB[i - n_1].weight != 0.0) {
@@ -476,14 +440,14 @@ public:
 
 	};
 
-	/** Computes the cost of point p with the given array of centres centres[] (of size k) **/
-	static double costOfPoint(int k, struct point centres[], struct point p) {
+	/** Computes the cost of point p with the given array of centres centres (of size k) **/
+	static double costOfPoint(int k, struct point* centres, struct point const& p) {
 		double nearestCost = -1.0;
 		int j = 0;
 		for (j = 0; j < k; j++) {
 			double distance = 0.0;
 			int l = 0;
-			for (l = 0; l < p.dimension; l++) {
+			for (l = 0; l < 2; l++) {
 				//Centroid coordinate of the point
 				double centroidCoordinatePoint;
 				if (p.weight != 0.0) {
@@ -511,15 +475,15 @@ public:
 		return p.weight * nearestCost;
 	};
 
-	/** Computes the index of the centre nearest to p with the given array of centres centres[] (of size k) **/
-	static int determineClusterCentreKMeans(int k, struct point p, struct point centres[]) {
+	/** Computes the index of the centre nearest to p with the given array of centres centres (of size k) **/
+	static int determineClusterCentreKMeans(int k, struct point const& p, struct point* centres) {
 		int centre = 0;
 		double nearestCost = -1.0;
 		int j = 0;
 		for (j = 0; j < k; j++) {
 			double distance = 0.0;
 			int l = 0;
-			for (l = 0; l < p.dimension; l++) {
+			for (l = 0; l < 2; l++) {
 				//Centroid coordinate of the point
 				double centroidCoordinatePoint;
 				if (p.weight != 0.0) {
@@ -549,8 +513,8 @@ public:
 	};
 
 	/** Computes the cost of point p with centre centre **/
-	static double costOfPointToCenter(struct point* p, struct point* centre) {
-		if (p->weight == 0.0) {
+	static double costOfPointToCenter(struct point const& p, struct point const& centre) {
+		if (p.weight == 0.0) {
 			return 0.0;
 		}
 
@@ -560,44 +524,45 @@ public:
 		//loop counter
 		int l;
 
-		for (l = 0; l < p->dimension; l++) {
+		for (l = 0; l < 2; l++) {
 			//Centroid coordinate of the point
 			double centroidCoordinatePoint;
-			if (p->weight != 0.0) {
-				centroidCoordinatePoint = p->coordinates[l] / p->weight;
+			if (p.weight != 0.0) {
+				centroidCoordinatePoint = p.coordinates[l] / p.weight;
 			}
 			else {
-				centroidCoordinatePoint = p->coordinates[l];
+				centroidCoordinatePoint = p.coordinates[l];
 			}
 			//Centroid coordinate of the centre
 			double centroidCoordinateCentre;
-			if (centre->weight != 0.0) {
-				centroidCoordinateCentre = centre->coordinates[l] / centre->weight;
+			if (centre.weight != 0.0) {
+				centroidCoordinateCentre = centre.coordinates[l] / centre.weight;
 			}
 			else {
-				centroidCoordinateCentre = centre->coordinates[l];
+				centroidCoordinateCentre = centre.coordinates[l];
 			}
 			distance += (centroidCoordinatePoint - centroidCoordinateCentre) *
 				(centroidCoordinatePoint - centroidCoordinateCentre);
 
 		}
-		return distance * p->weight;
+		return distance * p.weight;
 	};
 
-	static void init_genrand(unsigned long s){
+private:
+	void init_genrand(unsigned long s){
 		KMeans_mt[0] = s & 0xffffffffUL;
 		for (KMeans_mti = 1; KMeans_mti < N; KMeans_mti++) {
 			KMeans_mt[KMeans_mti] =
 				(1812433253UL * (KMeans_mt[KMeans_mti - 1] ^ (KMeans_mt[KMeans_mti - 1] >> 30)) + KMeans_mti);
 			/* See Knuth TAOCP Vol2. 3rd Ed. P.106 for multiplier. */
 			/* In the previous versions, MSBs of the seed affect   */
-			/* only MSBs of the array mt[].                        */
+			/* only MSBs of the array mt.                        */
 			/* 2002/01/09 modified by Makoto Matsumoto             */
 			KMeans_mt[KMeans_mti] &= 0xffffffffUL;
 			/* for >32 bit machines */
 		}
 	};
-	static unsigned long genrand_int32(void) {
+	unsigned long genrand_int32(void) {
 		unsigned long y;
 		static unsigned long mag01[2] = { 0x0UL, MATRIX_A };
 		/* mag01[x] = x * MATRIX_A  for x=0,1 */
@@ -632,11 +597,11 @@ public:
 
 		return y;
 	};
-	static long genrand_int31(void) { return (long)(genrand_int32() >> 1); };
-	static double genrand_real3(void) { return (((double)genrand_int32()) + 0.5) * (1.0 / 4294967296.0); /* divided by 2^32 */	};
+	long genrand_int31(void) { return (long)(genrand_int32() >> 1); };
+	double genrand_real3(void) { return (((double)genrand_int32()) + 0.5) * (1.0 / 4294967296.0); /* divided by 2^32 */	};
 
 	/** Randomly chooses k centres with kMeans++ distribution **/
-	static struct point* chooseRandomCentres(int k, int n, int d, struct point points[]) {
+	struct point* chooseRandomCentres(int k, int n, struct point* points) {
 
 		//array to store the choosen centres
 		struct point* centres = (struct point*)malloc(k * sizeof(struct point));
@@ -661,7 +626,7 @@ public:
 		//set the current centre for all points to the choosen centre
 		for (i = 0; i < n; i++) {
 			points[i].centreIndex = 0;
-			points[i].curCost = costOfPointToCenter(&points[i], &centres[0]);
+			points[i].curCost = costOfPointToCenter(points[i], centres[0]);
 
 		}
 		//choose centre 1 to k-1 with the kMeans++ distribution
@@ -695,7 +660,7 @@ public:
 			copyPoint(&points[pos], &centres[i]);
 			//check which points are closest to the new centre
 			for (j = 0; j < n; j++) {
-				double newCost = costOfPointToCenter(&points[j], &centres[i]);
+				double newCost = costOfPointToCenter(points[j], centres[i]);
 				if (points[j].curCost > newCost) {
 					points[j].curCost = newCost;
 					points[j].centreIndex = i;
@@ -708,7 +673,7 @@ public:
 		for (i = 0; i < k; i++) {
 			// printf("%d: (", i);
 			int l = 0;
-			for (l = 0; l < centres[i].dimension; l++) {
+			for (l = 0; l < 2; l++) {
 				// printf("%f,", centres[i].coordinates[l] / centres[i].weight);
 			}
 			// printf(")\n");
@@ -717,11 +682,11 @@ public:
 		return centres;
 	};
 
-	/** kMeans++ algorithm for n points of dimension d with k centres **/
-	static struct point* lloydPlusPlus(int k, int n, int d, struct point points[], double* resultCost) {
+	/** kMeans++ algorithm for n 2d points with k centres **/
+	struct point* lloydPlusPlus(int k, int n, struct point* points, double* resultCost) {
 		// printf("starting kMeans++\n");
 		//choose random centres
-		struct point* centres = chooseRandomCentres(k, n, d, &points[0]);
+		struct point* centres = chooseRandomCentres(k, n, &points[0]);
 		double cost = targetFunctionValue(k, n, &centres[0], &points[0]);
 		double newCost = cost;
 
@@ -734,14 +699,14 @@ public:
 			int i = 0;
 			for (i = 0; i < k; i++) {
 
-				initPoint(&massCentres[i], d);
+				initPoint(&massCentres[i]);
 				numberOfPoints[i] = 0.0;
 			}
 			//compute centres of mass
 			for (i = 0; i < n; i++) {
 				int centre = determineClusterCentreKMeans(k, points[i], &centres[0]);
 				int l = 0;
-				for (l = 0; l < massCentres[centre].dimension; l++) {
+				for (l = 0; l < 2; l++) {
 					if (points[i].weight != 0.0)
 						massCentres[centre].coordinates[l] += points[i].coordinates[l];
 				}
@@ -752,7 +717,7 @@ public:
 			//move centres
 			for (i = 0; i < k; i++) {
 				int l = 0;
-				for (l = 0; l < centres[i].dimension; l++) {
+				for (l = 0; l < 2; l++) {
 					centres[i].coordinates[l] = massCentres[i].coordinates[l];
 					centres[i].weight = numberOfPoints[i];
 				}
@@ -769,7 +734,7 @@ public:
 		for (i = 0; i < k; i++) {
 			// printf("(");
 			int l = 0;
-			for (l = 0; l < centres[i].dimension; l++) {
+			for (l = 0; l < 2; l++) {
 				// printf("%f,", centres[i].coordinates[l] / centres[i].weight);
 			}
 			// printf(")\n");
@@ -779,8 +744,9 @@ public:
 		return centres;
 	};
 
+public:
 	/** computes the hypothetical cost if the node would be split with new centers centreA, centreB **/
-	static double treeNodeSplitCost(struct treeNode* node, struct point* centreA, struct point* centreB) {
+	static double treeNodeSplitCost(struct treeNode* node, struct point const& centreA, struct point const& centreB) {
 		//loop counter variable
 		int i, l;
 
@@ -796,16 +762,16 @@ public:
 		for (i = node->n - 1; i >= 0; --i) {
 			distanceA = 0.0;
 			distanceB = 0.0;
-			for (l = node->points[i]->dimension - 1; l >= 0; --l) {
+			for (l = 2 - 1; l >= 0; --l) {
 				if (node->points[i]->weight) centroidCoordinatePoint = node->points[i]->coordinates[l] / node->points[i]->weight;				
 				else centroidCoordinatePoint = node->points[i]->coordinates[l];				
 				
-				if (centreA->weight) centroidCoordinateCentre = centreA->coordinates[l] / centreA->weight;				
-				else centroidCoordinateCentre = centreA->coordinates[l];				
+				if (centreA.weight) centroidCoordinateCentre = centreA.coordinates[l] / centreA.weight;				
+				else centroidCoordinateCentre = centreA.coordinates[l];				
 				distanceA += (centroidCoordinatePoint - centroidCoordinateCentre) * (centroidCoordinatePoint - centroidCoordinateCentre);
 
-				if (centreB->weight) centroidCoordinateCentre = centreB->coordinates[l] / centreB->weight;
-				else centroidCoordinateCentre = centreB->coordinates[l];
+				if (centreB.weight) centroidCoordinateCentre = centreB.coordinates[l] / centreB.weight;
+				else centroidCoordinateCentre = centreB.coordinates[l];
 				distanceB += (centroidCoordinatePoint - centroidCoordinateCentre) * (centroidCoordinatePoint - centroidCoordinateCentre);
 			}
 
@@ -820,8 +786,8 @@ public:
 	};
 
 	/** computes the cost of point p with the centre of treenode node **/
-	static double treeNodeCostOfPoint(struct treeNode* node, struct point* p) {
-		if (p->weight == 0.0) {
+	static double treeNodeCostOfPoint(struct treeNode* node, struct point const& p) {
+		if (p.weight == 0.0) {
 			return 0.0;
 		}
 
@@ -831,14 +797,14 @@ public:
 		//loop counter variable
 		int l;
 
-		for (l = 0; l < p->dimension; l++) {
+		for (l = 0; l < 2; l++) {
 			//centroid coordinate of the point
 			double centroidCoordinatePoint;
-			if (p->weight != 0.0) {
-				centroidCoordinatePoint = p->coordinates[l] / p->weight;
+			if (p.weight != 0.0) {
+				centroidCoordinatePoint = p.coordinates[l] / p.weight;
 			}
 			else {
-				centroidCoordinatePoint = p->coordinates[l];
+				centroidCoordinatePoint = p.coordinates[l];
 			}
 			//centroid coordinate of the centre
 			double centroidCoordinateCentre;
@@ -852,7 +818,7 @@ public:
 				(centroidCoordinatePoint - centroidCoordinateCentre);
 
 		}
-		return distance * p->weight;
+		return distance * p.weight;
 	};
 
 	/**
@@ -878,7 +844,7 @@ public:
 			//loop counter variable
 			int l;
 
-			for (l = 0; l < node->points[i]->dimension; l++) {
+			for (l = 0; l < 2; l++) {
 				//centroid coordinate of the point
 				double centroidCoordinatePoint;
 				if (node->points[i]->weight != 0.0) {
@@ -908,7 +874,7 @@ public:
 	};
 
 	/** initalizes root as a treenode with the union of setA and setB as pointset and centre as centre **/
-	static void constructRoot(struct treeNode* root, struct point* setA, struct point* setB, int n_1, int n_2, struct point* centre, int centreIndex) {
+	void constructRoot(struct treeNode* root, struct point* setA, struct point* setB, int n_1, int n_2, struct point* centre, int centreIndex) {
 		//loop counter variable
 		int i;
 
@@ -941,7 +907,6 @@ public:
 
 	/** tests if a node is a leaf **/
 	static bool isLeaf(struct treeNode* node) {
-
 		if (node->lc == NULL && node->rc == NULL) {
 			return true;
 		}
@@ -950,8 +915,9 @@ public:
 		}
 	};
 
+private:
 	/** selects a leaf node (using the kMeans++ distribution) **/
-	static struct treeNode* selectNode(struct treeNode* root) {
+	struct treeNode* selectNode(struct treeNode* root) {
 
 		//random number between 0 and 1
 		double random = genrand_real3();
@@ -992,7 +958,7 @@ public:
 	/**
 	selects a new centre from the treenode (using the kMeans++ distribution)
 	**/
-	static struct point* chooseCentre(struct treeNode* node) {
+	struct point* chooseCentre(struct treeNode* node) {
 
 		//How many times should we try to choose a centre ??
 		int times = 3;
@@ -1011,13 +977,12 @@ public:
 			random = genrand_real3();
 
 			for (i = 0; i < node->n; i++) {
-				sum += treeNodeCostOfPoint(node, node->points[i]) / node->cost;
+				sum += treeNodeCostOfPoint(node, *node->points[i]) / node->cost;
 				if (sum >= random) {
 					if (node->points[i]->weight == 0.0) {
-						// printf("ERROR: CHOOSEN DUMMY NODE THOUGH OTHER AVAILABLE \n");
 						return NULL;
 					}
-					curCost = treeNodeSplitCost(node, node->centre, node->points[i]);
+					curCost = treeNodeSplitCost(node, *node->centre, *node->points[i]);
 					if (curCost < minCost) {
 						bestCentre = node->points[i];
 						minCost = curCost;
@@ -1034,26 +999,27 @@ public:
 		}
 	};
 
+public:
 	/**
 	returns the next centre
 	**/
-	static struct point* determineClosestCentre(struct point* p, struct point* centreA, struct point* centreB) {		
+	static struct point& determineClosestCentre(struct point const& p, struct point& centreA, struct point& centreB) {
 		int l; //loop counter variable		
 		double distanceA = 0.0; //stores the distance between p and centreA
 		double centroidCoordinatePoint; //centroid coordinate of the point
 		double centroidCoordinateCentre; //centroid coordinate of the centre
 		double distanceB = 0.0; //stores the distance between p and centreB
 
-		for (l = p->dimension - 1; l >= 0; --l) {
-			if (p->weight) centroidCoordinatePoint = p->coordinates[l] / p->weight;			
-			else centroidCoordinatePoint = p->coordinates[l];	
+		for (l = 2 - 1; l >= 0; --l) {
+			if (p.weight) centroidCoordinatePoint = p.coordinates[l] / p.weight;			
+			else centroidCoordinatePoint = p.coordinates[l];	
 
-			if (centreA->weight) centroidCoordinateCentre = centreA->coordinates[l] / centreA->weight;			
-			else centroidCoordinateCentre = centreA->coordinates[l];		
+			if (centreA.weight) centroidCoordinateCentre = centreA.coordinates[l] / centreA.weight;			
+			else centroidCoordinateCentre = centreA.coordinates[l];		
 			distanceA += (centroidCoordinatePoint - centroidCoordinateCentre) * (centroidCoordinatePoint - centroidCoordinateCentre);
 
-			if (centreB->weight != 0.0) centroidCoordinateCentre = centreB->coordinates[l] / centreB->weight;
-			else centroidCoordinateCentre = centreB->coordinates[l];
+			if (centreB.weight != 0.0) centroidCoordinateCentre = centreB.coordinates[l] / centreB.weight;
+			else centroidCoordinateCentre = centreB.coordinates[l];
 			distanceB += (centroidCoordinatePoint - centroidCoordinateCentre) * (centroidCoordinatePoint - centroidCoordinateCentre);
 		}
 
@@ -1065,7 +1031,7 @@ public:
 	/**
 	splits the parent node and creates two child nodes (one with the old centre and one with the new one)
 	**/
-	static void split(struct treeNode* parent, struct point* newCentre, int newCentreIndex) {
+	void split(struct treeNode* parent, struct point* newCentre, int newCentreIndex) {
 		//loop counter variable
 		int i;
 
@@ -1074,7 +1040,7 @@ public:
 		int nNew = 0;
 		struct point* centre;
 		for (i = 0; i < parent->n; i++) {
-			centre = determineClosestCentre(parent->points[i], parent->centre, newCentre);
+			centre = &determineClosestCentre(*parent->points[i], *parent->centre, *newCentre);
 			if (centre == newCentre) nNew++;			
 			else nOld++;			
 		}
@@ -1091,7 +1057,7 @@ public:
 		int indexNew = 0;
 
 		for (i = 0; i < parent->n; i++) {
-			centre = determineClosestCentre(parent->points[i], parent->centre, newCentre);
+			centre = &determineClosestCentre(*parent->points[i], *parent->centre, *newCentre);
 			if (centre == newCentre) {
 				newPoints[indexNew] = parent->points[i];
 				newPoints[indexNew]->centreIndex = newCentreIndex;
@@ -1140,7 +1106,7 @@ public:
 	};
 
 	/**
-	Checks if the storage is completly freed
+	Checks if the storage is completly Freed
 	**/
 	static bool treeFinished(struct treeNode* root) {
 		if (root->parent == NULL && root->lc == NULL && root->rc == NULL) {
@@ -1152,10 +1118,8 @@ public:
 
 	};
 
-	/**
-	frees a tree of its storage
-	**/
-	static void freeTree(struct treeNode* root) {
+	/** Frees a tree of its storage **/
+	void freeTree(struct treeNode* root) {
 		while (!treeFinished(root)) {
 			if (root->lc == NULL && root->rc == NULL) {
 				root = root->parent;
@@ -1188,8 +1152,9 @@ public:
 		free(root);
 	};
 
+private:
 	/** Constructs a coreset of size k from the union of setA and setB **/
-	static void unionTreeCoreset(int k, int n_1, int n_2, int d, struct point* setA, struct point* setB, struct point* centres) {
+	void unionTreeCoreset(int k, int n_1, int n_2, struct point* setA, struct point* setB, struct point* centres) {
 		// printf("Computing coreset...\n");
 		//total number of points
 		int n = n_1 + n_2;
@@ -1228,7 +1193,7 @@ public:
 				//create a dummy point
 				copyPointWithoutInit(root->centre, &centres[choosenPoints]);
 				int l;
-				for (l = 0; l < root->centre->dimension; l++) {
+				for (l = 0; l < 2; l++) {
 					centres[choosenPoints].coordinates[l] = -1 * 1000000;
 				}
 				centres[choosenPoints].id = -1;
@@ -1252,7 +1217,7 @@ public:
 					centres[index].weight += setA[i].weight;
 					centres[index].squareSum += setA[i].squareSum;
 					int l;
-					for (l = 0; l < centres[index].dimension; l++) {
+					for (l = 0; l < 2; l++) {
 						if (setA[i].weight != 0.0) {
 							centres[index].coordinates[l] += setA[i].coordinates[l];
 						}
@@ -1265,7 +1230,7 @@ public:
 					centres[index].weight += setB[i - n_1].weight;
 					centres[index].squareSum += setB[i - n_1].squareSum;
 					int l;
-					for (l = 0; l < centres[index].dimension; l++) {
+					for (l = 0; l < 2; l++) {
 						if (setB[i - n_1].weight != 0.0) {
 							centres[index].coordinates[l] += setB[i - n_1].coordinates[l];
 						}
@@ -1275,164 +1240,174 @@ public:
 		}
 	};
 
+public:
 	/** initializes a bucket **/
-	static void initBucket(struct Bucket* bucket, int d, int maxsize) {
+	void initBucket(struct Bucket* bucket, int maxsize) {
 		bucket->cursize = 0;
 		bucket->points = (point*)malloc(maxsize * sizeof(struct point));
 		bucket->spillover = (point*)malloc(maxsize * sizeof(struct point));
 		int i;
 		for (i = 0; i < maxsize; i++) {
-			initPoint(&(bucket->points[i]), d);
-			initPoint(&(bucket->spillover[i]), d);
+			initPoint(&(bucket->points[i]));
+			initPoint(&(bucket->spillover[i]));
 		}
 	};
+	void freeBucket(struct Bucket* bucket, int maxsize) {
+		free(bucket->points);
+		free(bucket->spillover);
+	};
 
-	/** initializes a bucketmanager for n points with bucketsize maxsize and dimension d **/
-	static void initManager(struct Bucketmanager* manager, int n, int d, int maxsize) {
-		manager->numberOfBuckets = ceil(log((double)n / (double)maxsize) / log(2)) + 2;
-		manager->maxBucketsize = maxsize;
-		manager->buckets = (Bucket*)malloc(manager->numberOfBuckets * sizeof(struct Bucket));
+	/** initializes a bucketmanager for n 2d points with bucketsize maxsize **/
+	void initManager(Bucketmanager& manager, int n, int maxsize) {
+		manager.numberOfBuckets = ceil(log((double)n / (double)maxsize) / log(2)) + 2;
+		manager.maxBucketsize = maxsize;
+		manager.buckets = (Bucket*)malloc(manager.numberOfBuckets * sizeof(struct Bucket));
 		int i;
-		for (i = 0; i < manager->numberOfBuckets; i++) {
-			initBucket(&(manager->buckets[i]), d, maxsize);
+		for (i = 0; i < manager.numberOfBuckets; i++) {
+			initBucket(&(manager.buckets[i]), maxsize);
 		}
-		// printf("Created manager with %d buckets of dimension %d \n", manager->numberOfBuckets, d);
 	};
-
+	void freeManager(Bucketmanager& manager) {
+		for (int i = 0; i < manager.numberOfBuckets; i++) {
+			freeBucket(&(manager.buckets[i]), manager.maxBucketsize);
+		}
+		free(manager.buckets);
+		manager.buckets = nullptr;
+	};
+private:
 	/** inserts a single point into the bucketmanager **/
-	static void insertPoint(struct point* p, struct Bucketmanager* manager) {
+	void insertPoint(struct point* p, Bucketmanager& manager) {
 
 		//check if there is enough space in the first bucket
-		int cursize = manager->buckets[0].cursize;
-		if (cursize >= manager->maxBucketsize) {
+		int cursize = manager.buckets[0].cursize;
+		if (cursize >= manager.maxBucketsize) {
 			// printf("Bucket 0 full \n");
 			//start spillover process
 			int curbucket = 0;
 			int nextbucket = 1;
 
 			//check if the next bucket is empty
-			if (manager->buckets[nextbucket].cursize == 0) {
+			if (manager.buckets[nextbucket].cursize == 0) {
 				//copy the bucket	
 				int i;
-				for (i = 0; i < manager->maxBucketsize; i++) {
+				for (i = 0; i < manager.maxBucketsize; i++) {
 
-					copyPointWithoutInit(&(manager->buckets[curbucket].points[i]),
-						&(manager->buckets[nextbucket].points[i]));
+					copyPointWithoutInit(&(manager.buckets[curbucket].points[i]),
+						&(manager.buckets[nextbucket].points[i]));
 
 				}
 				//bucket is now full
-				manager->buckets[nextbucket].cursize = manager->maxBucketsize;
+				manager.buckets[nextbucket].cursize = manager.maxBucketsize;
 				//first bucket is now empty
-				manager->buckets[curbucket].cursize = 0;
+				manager.buckets[curbucket].cursize = 0;
 				cursize = 0;
 			}
 			else {
 				// printf("Bucket %d full \n", nextbucket);
 				//copy bucket to spillover and continue
 				int i;
-				for (i = 0; i < manager->maxBucketsize; i++) {
+				for (i = 0; i < manager.maxBucketsize; i++) {
 
-					copyPointWithoutInit(&(manager->buckets[curbucket].points[i]),
-						&(manager->buckets[nextbucket].spillover[i]));
+					copyPointWithoutInit(&(manager.buckets[curbucket].points[i]),
+						&(manager.buckets[nextbucket].spillover[i]));
 
 				}
-				manager->buckets[0].cursize = 0;
+				manager.buckets[0].cursize = 0;
 				cursize = 0;
 				curbucket++;
 				nextbucket++;
 				/*
 				as long as the next bucket is full output the coreset to the spillover of the next bucket
 				*/
-				while (manager->buckets[nextbucket].cursize == manager->maxBucketsize) {
+				while (manager.buckets[nextbucket].cursize == manager.maxBucketsize) {
 					// printf("Bucket %d full \n", nextbucket);
-					unionTreeCoreset(manager->maxBucketsize, manager->maxBucketsize,
-						manager->maxBucketsize, p->dimension,
-						manager->buckets[curbucket].points, manager->buckets[curbucket].spillover,
-						manager->buckets[nextbucket].spillover);
+					unionTreeCoreset(manager.maxBucketsize, manager.maxBucketsize,
+						manager.maxBucketsize,
+						manager.buckets[curbucket].points, manager.buckets[curbucket].spillover,
+						manager.buckets[nextbucket].spillover);
 					//bucket now empty
-					manager->buckets[curbucket].cursize = 0;
+					manager.buckets[curbucket].cursize = 0;
 					curbucket++;
 					nextbucket++;
 				}
-				unionTreeCoreset(manager->maxBucketsize, manager->maxBucketsize,
-					manager->maxBucketsize, p->dimension,
-					manager->buckets[curbucket].points, manager->buckets[curbucket].spillover,
-					manager->buckets[nextbucket].points);
-				manager->buckets[curbucket].cursize = 0;
-				manager->buckets[nextbucket].cursize = manager->maxBucketsize;
+				unionTreeCoreset(manager.maxBucketsize, manager.maxBucketsize,
+					manager.maxBucketsize,
+					manager.buckets[curbucket].points, manager.buckets[curbucket].spillover,
+					manager.buckets[nextbucket].points);
+				manager.buckets[curbucket].cursize = 0;
+				manager.buckets[nextbucket].cursize = manager.maxBucketsize;
 			}
 
 		}
 		//insert point into the first bucket
-		copyPointWithoutInit(p, &(manager->buckets[0].points[cursize]));
-		manager->buckets[0].cursize++;
+		copyPointWithoutInit(p, &(manager.buckets[0].points[cursize]));
+		manager.buckets[0].cursize++;
 	};
 
 	/** inserts a single point into the bucketmanager **/
-	static void insertPoint(vec2d const& p, int index, struct Bucketmanager* manager) {
+	void insertPoint(vec2d const& p, int index, Bucketmanager& manager) {
 
 		//check if there is enough space in the first bucket
-		int cursize = manager->buckets[0].cursize;
-		if (cursize >= manager->maxBucketsize) {
+		int cursize = manager.buckets[0].cursize;
+		if (cursize >= manager.maxBucketsize) {
 			// printf("Bucket 0 full \n");
 			//start spillover process
 			int curbucket = 0;
 			int nextbucket = 1;
 
 			//check if the next bucket is empty
-			if (manager->buckets[nextbucket].cursize == 0) {
+			if (manager.buckets[nextbucket].cursize == 0) {
 				//copy the bucket	
 				int i;
-				for (i = 0; i < manager->maxBucketsize; i++) {
-					copyPointWithoutInit(&(manager->buckets[curbucket].points[i]),
-						&(manager->buckets[nextbucket].points[i]));
+				for (i = 0; i < manager.maxBucketsize; i++) {
+					copyPointWithoutInit(&(manager.buckets[curbucket].points[i]),
+						&(manager.buckets[nextbucket].points[i]));
 				}
 				//bucket is now full
-				manager->buckets[nextbucket].cursize = manager->maxBucketsize;
+				manager.buckets[nextbucket].cursize = manager.maxBucketsize;
 				//first bucket is now empty
-				manager->buckets[curbucket].cursize = 0;
+				manager.buckets[curbucket].cursize = 0;
 				cursize = 0;
 			}
 			else {
 				// printf("Bucket %d full \n", nextbucket);
 				//copy bucket to spillover and continue
 				int i;
-				for (i = 0; i < manager->maxBucketsize; i++) {
-					copyPointWithoutInit(&(manager->buckets[curbucket].points[i]),
-						&(manager->buckets[nextbucket].spillover[i]));
+				for (i = 0; i < manager.maxBucketsize; i++) {
+					copyPointWithoutInit(&(manager.buckets[curbucket].points[i]),
+						&(manager.buckets[nextbucket].spillover[i]));
 				}
-				manager->buckets[0].cursize = 0;
+				manager.buckets[0].cursize = 0;
 				cursize = 0;
 				curbucket++;
 				nextbucket++;
 				/*
 				as long as the next bucket is full output the coreset to the spillover of the next bucket
 				*/
-				while (manager->buckets[nextbucket].cursize == manager->maxBucketsize) {
+				while (manager.buckets[nextbucket].cursize == manager.maxBucketsize) {
 					// printf("Bucket %d full \n", nextbucket);
-					unionTreeCoreset(manager->maxBucketsize, manager->maxBucketsize,
-						manager->maxBucketsize, 2,
-						manager->buckets[curbucket].points, manager->buckets[curbucket].spillover,
-						manager->buckets[nextbucket].spillover);
+					unionTreeCoreset(manager.maxBucketsize, manager.maxBucketsize,
+						manager.maxBucketsize,
+						manager.buckets[curbucket].points, manager.buckets[curbucket].spillover,
+						manager.buckets[nextbucket].spillover);
 					//bucket now empty
-					manager->buckets[curbucket].cursize = 0;
+					manager.buckets[curbucket].cursize = 0;
 					curbucket++;
 					nextbucket++;
 				}
-				unionTreeCoreset(manager->maxBucketsize, manager->maxBucketsize,
-					manager->maxBucketsize, 2,
-					manager->buckets[curbucket].points, manager->buckets[curbucket].spillover,
-					manager->buckets[nextbucket].points);
-				manager->buckets[curbucket].cursize = 0;
-				manager->buckets[nextbucket].cursize = manager->maxBucketsize;
+				unionTreeCoreset(manager.maxBucketsize, manager.maxBucketsize,
+					manager.maxBucketsize,
+					manager.buckets[curbucket].points, manager.buckets[curbucket].spillover,
+					manager.buckets[nextbucket].points);
+				manager.buckets[curbucket].cursize = 0;
+				manager.buckets[nextbucket].cursize = manager.maxBucketsize;
 			}
 
 		}
 		//insert point into the first bucket
-		copyPointWithoutInit(p, index, &(manager->buckets[0].points[cursize]));
-		manager->buckets[0].cursize++;
+		copyPointWithoutInit(p, index, &(manager.buckets[0].points[cursize]));
+		manager.buckets[0].cursize++;
 	};
-
 
 	/**
 	It may happen that the manager is not full (since n is not always a power of 2). In this case we extract the coreset
@@ -1446,31 +1421,31 @@ public:
 
 	this operation should only be called after the streaming process is finished
 	**/
-	static struct point* getCoresetFromManager(struct Bucketmanager* manager, int d) {
+	struct point* getCoresetFromManager(Bucketmanager& manager) {
 		struct point* coreset = nullptr;
 		int i = 0;
-		if (manager->buckets[manager->numberOfBuckets - 1].cursize == manager->maxBucketsize) {
-			coreset = manager->buckets[manager->numberOfBuckets - 1].points;
+		if (manager.buckets[manager.numberOfBuckets - 1].cursize == manager.maxBucketsize) {
+			coreset = manager.buckets[manager.numberOfBuckets - 1].points;
 
 		}
 		else {
 			//find the first nonempty bucket
-			for (i = 0; i < manager->numberOfBuckets; i++) {
-				if (manager->buckets[i].cursize != 0) {
-					coreset = manager->buckets[i].points;
+			for (i = 0; i < manager.numberOfBuckets; i++) {
+				if (manager.buckets[i].cursize != 0) {
+					coreset = manager.buckets[i].points;
 					break;
 				}
 			}
 			//as long as there is a nonempty bucket compute a coreset
 			int j;
-			for (j = i + 1; j < manager->numberOfBuckets; j++) {
-				if (manager->buckets[j].cursize != 0) {
+			for (j = i + 1; j < manager.numberOfBuckets; j++) {
+				if (manager.buckets[j].cursize != 0) {
 					//output the coreset into the spillover of bucket j
-					unionTreeCoreset(manager->maxBucketsize, manager->maxBucketsize,
-						manager->maxBucketsize, d,
-						manager->buckets[j].points, coreset,
-						manager->buckets[j].spillover);
-					coreset = manager->buckets[j].spillover;
+					unionTreeCoreset(manager.maxBucketsize, manager.maxBucketsize,
+						manager.maxBucketsize,
+						manager.buckets[j].points, coreset,
+						manager.buckets[j].spillover);
+					coreset = manager.buckets[j].spillover;
 				}
 			}
 		}
@@ -1479,61 +1454,40 @@ public:
 
 public:
 	// Gets the approximate K-Means centers. Does not evaluate all points, and is only useful for large datasets. 
-	static cweeSharedPtr<cweeList<vec2d>> GetClusters(cweeList<vec2d> const& source, int K) {
-		struct point* points;
-		int length;
-		int dimension;
-		int numberOfCentres;
-		int coresetsize;
-		int seed;
+	cweeSharedPtr<cweeList<vec2d>> GetClusters(cweeList<vec2d> const& source, int K) {
+		int length, numberOfCentres, coresetsize, seed;
 
 		length = source.Num();
 		numberOfCentres = K;
-		dimension = 2;
 		coresetsize = std::sqrt(length);
 		seed = 555;
 
 		//compute a coreset with the streaming algorithm
-		struct Bucketmanager* manager = (Bucketmanager*)malloc(sizeof(struct Bucketmanager));
-		initManager(manager, length, dimension, coresetsize);
+		Bucketmanager manager;
+		initManager(manager, length, coresetsize);
 
 		//insert the points one by one
 		int i; int l; {
-
 			for (i = 0; i < length; i++) {					
-#if 1
 				insertPoint(source[i], i, manager);
-#else
-				struct point* p = (point*)malloc(sizeof(struct point));
-				initPoint(p, dimension);
-				p->weight = 1.0;
-
-				decltype(auto) nextRow = source[i];
-
-				p->coordinates[0] = nextRow.x;
-				p->coordinates[1] = nextRow.y;
-				p->squareSum = nextRow.LengthSqr();				
-				p->id = i;
-
-				insertPoint(p, manager);
-
-				freePoint(p);
-				free(p);
-#endif
 			}
 		}
-		struct point* streamingCoreset = getCoresetFromManager(manager, dimension);
+		struct point* streamingCoreset = getCoresetFromManager(manager); // lifetime managed by manager
 
 		//compute 5 clusterings of the coreset with kMeans++ and take the best
 		double minCost = 0.0;
 		double curCost = 0.0;
-		struct point* centresStreamingCoreset = lloydPlusPlus(numberOfCentres, coresetsize, dimension, streamingCoreset, &minCost);
+		// lifetime is not managed! 
+		struct point* centresStreamingCoreset = lloydPlusPlus(numberOfCentres, coresetsize, streamingCoreset, &minCost);
 		curCost = minCost;
 		for (i = 1; i < 5; i++) {
-			struct point* tmpCentresStreamingCoreset = lloydPlusPlus(numberOfCentres, coresetsize, dimension, streamingCoreset, &curCost);
+			struct point* tmpCentresStreamingCoreset = lloydPlusPlus(numberOfCentres, coresetsize, streamingCoreset, &curCost);
 			if (curCost < minCost) {
 				minCost = curCost;
+				free(centresStreamingCoreset);
 				centresStreamingCoreset = tmpCentresStreamingCoreset;
+			} else {
+				free(tmpCentresStreamingCoreset);
 			}
 		}
 		
@@ -1542,6 +1496,10 @@ public:
 		for (i = 0; i < numberOfCentres; ++i) {
 			out.Append(vec2d(centresStreamingCoreset[i].coordinates[0] / centresStreamingCoreset[i].weight, centresStreamingCoreset[i].coordinates[1] / centresStreamingCoreset[i].weight));
 		}
+		
+		free(centresStreamingCoreset);
+		freeManager(manager);		
+		
 		return outP;
 	};
 

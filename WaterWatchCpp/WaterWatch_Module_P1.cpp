@@ -353,7 +353,7 @@ namespace chaiscript {
                 lib->add(fun([](float a)->cweeTime { return cweeTime(a); }), "cweeTime");
                 lib->add(fun([](long a)->cweeTime { return cweeTime(a); }), "cweeTime");
                 lib->add(chaiscript::constructor<cweeTime(const cweeStr&)>(), "cweeTime");
-                lib->add(chaiscript::fun([](const cweeTime& a) { return cweeStr(a.c_str()); }), "c_str");
+                lib->add(chaiscript::fun([](const cweeTime& a) -> cweeStr { return a.c_str(); }), "c_str");
                 lib->add(chaiscript::constructor<u64(cweeTime)>(), "u64");
                 lib->add(chaiscript::type_conversion<cweeTime, u64>([](const cweeTime& t_bt)->u64 { return (u64)t_bt; }, nullptr));
 
