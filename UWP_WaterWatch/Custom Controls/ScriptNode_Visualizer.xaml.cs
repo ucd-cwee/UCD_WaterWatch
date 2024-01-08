@@ -680,7 +680,7 @@ namespace UWP_WaterWatch.Custom_Controls
                     var sharedPattern = new SharedTimeSeriesPattern(); // will self-delete some time after scope ends (required GC) -- including the C++ objects. 
                     {
                         loadingProgress.Set(10);
-                        var setupTask = res.result.CustomizableQueryResult($"external_data.SetPattern({sharedPattern.Index()}, %s)", "%s", res.additionalParams); // .Blur({screenWidth}).RemoveUnnecessaryKnots();
+                        var setupTask = res.result.CustomizableQueryResult($"external_data.SetPattern({sharedPattern.Index()}, %s)", "%s", res.additionalParams); // Blur(%s, {screenWidth})
                         return setupTask.ContinueWith(() => {
                             var numValues = sharedPattern.GetNumValues();
 #if false

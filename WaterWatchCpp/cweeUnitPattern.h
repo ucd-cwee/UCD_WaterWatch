@@ -58,7 +58,7 @@ namespace cweeUnitValues {
 				unit_value X;
 				cweeSharedPtr<unit_value> Y;
 			};
-
+			
 			cweeSharedPtr<DataContainer> thisContainer;
 
 			GenericIterator() : thisContainer() {};
@@ -74,25 +74,72 @@ namespace cweeUnitValues {
 			virtual void prev(const cweeUnitPatternContainer_t* ref) = 0;
 			virtual const DataContainer& get(const cweeUnitPatternContainer_t* ref) const = 0;
 		};
+		class GenericConstIterator {
+		public:
+			class DataContainer {
+			public:
+				DataContainer() : X(), Y_actual(), Y(nullptr) {};
+				DataContainer(unit_value x) : X(x), Y_actual(), Y(nullptr) {};
+				DataContainer(unit_value x, unit_value y) : X(x), Y_actual(y), Y(&Y_actual) {};
+
+				DataContainer(DataContainer const& other) : X(other.X), Y_actual(other.Y_actual), Y(nullptr)  {
+					if (other.Y) { Y = &Y_actual; }
+				};
+				DataContainer(DataContainer&& other) : X(std::forward<decltype(X)>(other.X)), Y_actual(other.Y_actual), Y(nullptr)  {
+					if (other.Y) { Y = &Y_actual; }
+				};
+
+				DataContainer& operator=(DataContainer const& other) {
+					this->X = other.X;					
+					this->Y_actual = other.Y_actual; 
+
+					if (other.Y) this->Y = &Y_actual;
+
+					return *this;
+				};
+
+				unit_value X;
+				unit_value* Y;
+				unit_value Y_actual;
+			};
+
+			cweeSharedPtr<DataContainer> thisContainer;
+
+			GenericConstIterator() : thisContainer() {};
+			virtual ~GenericConstIterator() {};
+			virtual void begin(cweeUnitPatternContainer_t const* ref) = 0;
+			virtual void begin_at(cweeUnitPatternContainer_t const* ref, unit_value x) = 0;
+			virtual void next(cweeUnitPatternContainer_t const* ref) = 0;
+			virtual void end(cweeUnitPatternContainer_t const* ref) = 0;
+			virtual DataContainer& get(cweeUnitPatternContainer_t const* ref) = 0;
+			virtual const DataContainer& cget(cweeUnitPatternContainer_t const* ref) const = 0;
+			virtual bool cmp(const cweeSharedPtr<GenericConstIterator>& s) const = 0;
+			virtual long long distance(const cweeSharedPtr<GenericConstIterator>& s) const = 0;
+			virtual void prev(const cweeUnitPatternContainer_t* ref) = 0;
+			virtual const DataContainer& get(const cweeUnitPatternContainer_t* ref) const = 0;
+		};
+
 		virtual cweeSharedPtr<GenericIterator> CreateIterationState() const = 0;
+		virtual cweeSharedPtr<GenericConstIterator> CreateConstIterationState() const = 0;
 
 		using ParentClass = cweeUnitPatternContainer_t;
 		using IterType = GenericIterator::DataContainer;
-		using StateType = GenericIterator;
+		using ConstIterType = GenericConstIterator::DataContainer;
 
 		typedef std::ptrdiff_t difference_type;											
 		typedef size_t size_type; 
 		typedef IterType value_type; 
 		typedef IterType* pointer; 
-		typedef const IterType* const_pointer;					
+		typedef const IterType* const_pointer;
 		typedef IterType& reference;																												
-		typedef const IterType& const_reference;																									
+		typedef const IterType& const_reference;
+		
 		class iterator : public std::iterator<std::random_access_iterator_tag, value_type, difference_type, pointer, reference> {
 		public: 
 			const ParentClass* ref;	
-			cweeSharedPtr<StateType> state;
+			cweeSharedPtr<GenericIterator> state;
 			iterator() : ref(nullptr), state(nullptr) {};																									
-			iterator(const ParentClass* parent, cweeSharedPtr<StateType> State) : ref(parent), state(State) {};
+			iterator(const ParentClass* parent, cweeSharedPtr<GenericIterator> State) : ref(parent), state(State) {};
 			iterator& operator+=(difference_type n) { for (int i = 0; i < n; i++) if (state) state->next(ref); return *this; };									
 			iterator& operator-=(difference_type n) { for (int i = 0; i < n; i++) if (state) state->prev(ref); return *this; };
 			difference_type operator-(iterator const& other) { if (state) return state->distance(other.state); return 0; };
@@ -106,18 +153,23 @@ namespace cweeUnitValues {
 			bool operator!=(iterator const& other) const { if (state) return (ref != other.ref || state->cmp(other.state)); return false; };
 			reference operator*() { return const_cast<reference>(state->get(ref)); };																
 			pointer operator->() { return const_cast<pointer>(&state->get(ref)); };																	
-			const_reference operator*() const { return state->cget(ref); };																			
-			const_pointer operator->() const { return &state->cget(ref); };																			
+			auto& operator*() const { return state->cget(ref); };																			
+			auto* operator->() const { return &state->cget(ref); };
 			iterator& begin() { if (state) state->begin(ref); return *this; };
 			iterator& begin_at(unit_value x) { if (state) state->begin_at(ref, x); return *this; };
 			iterator& end() { if (state) state->end(ref); return *this; };
 		};				
-		class const_iterator : public std::iterator<std::random_access_iterator_tag, value_type, difference_type, const_pointer, const_reference> {
+		class const_iterator : public std::iterator<std::random_access_iterator_tag, 
+			GenericConstIterator::DataContainer, 
+			difference_type, 
+			const GenericConstIterator::DataContainer*, 
+			const GenericConstIterator::DataContainer&
+		> {
 		public:
 			const ParentClass* ref;
-			cweeSharedPtr<StateType> state;
+			cweeSharedPtr<GenericConstIterator> state;
 			const_iterator() : ref(nullptr), state(nullptr) {};
-			const_iterator(const ParentClass* parent, cweeSharedPtr<StateType> State) : ref(parent), state(State) {};
+			const_iterator(const ParentClass* parent, cweeSharedPtr<GenericConstIterator> State) : ref(parent), state(State) {};
 			const_iterator& operator+=(difference_type n) { for (int i = 0; i < n; i++) if (state) state->next(ref); return *this; };
 			const_iterator& operator-=(difference_type n) { for (int i = 0; i < n; i++) if (state) state->prev(ref); return *this; };
 			difference_type operator-(const_iterator const& other) { if (state) return state->distance(other.state); return 0; };
@@ -129,21 +181,22 @@ namespace cweeUnitValues {
 			const_iterator operator++(int) { const_iterator retval = *this; ++(retval); return retval; };
 			bool operator==(const_iterator const& other) const { return !(operator!=(other)); };
 			bool operator!=(const_iterator const& other) const { if (state) return (ref != other.ref || state->cmp(other.state)); return false; };
-			const_reference operator*() const { return state->cget(ref); };
-			const_pointer operator->() const { return &state->cget(ref); };
+			auto& operator*() const { return state->cget(ref); };
+			auto* operator->() const { return &state->cget(ref); };
 			const_iterator& begin() { if (state) state->begin(ref); return *this; };
 			const_iterator& begin_at(unit_value x) { if (state) state->begin_at(ref, x); return *this; };
 			const_iterator& end() { if (state) state->end(ref); return *this; };
 		};
+		
 		iterator begin() { return iterator(this, this->CreateIterationState()).begin(); };		
 		iterator begin_at(unit_value x) { return iterator(this, this->CreateIterationState()).begin_at(x); };
 		iterator end() { return iterator(this, this->CreateIterationState()).end(); };
-		const_iterator begin() const { return const_iterator(this, this->CreateIterationState()).begin(); };
-		const_iterator begin_at(unit_value x) const { return const_iterator(this, this->CreateIterationState()).begin_at(x); };
-		const_iterator end() const { return const_iterator(this, this->CreateIterationState()).end(); };
-		const_iterator cbegin() const { return const_iterator(this, this->CreateIterationState()).begin(); };
-		const_iterator cbegin_at(unit_value x) const { return const_iterator(this, this->CreateIterationState()).begin_at(x); };
-		const_iterator cend() const { return const_iterator(this, this->CreateIterationState()).end(); };
+		const_iterator begin() const { return const_iterator(this, this->CreateConstIterationState()).begin(); };
+		const_iterator begin_at(unit_value x) const { return const_iterator(this, this->CreateConstIterationState()).begin_at(x); };
+		const_iterator end() const { return const_iterator(this, this->CreateConstIterationState()).end(); };
+		const_iterator cbegin() const { return const_iterator(this, this->CreateConstIterationState()).begin(); };
+		const_iterator cbegin_at(unit_value x) const { return const_iterator(this, this->CreateConstIterationState()).begin_at(x); };
+		const_iterator cend() const { return const_iterator(this, this->CreateConstIterationState()).end(); };
 
 	protected:
 		virtual void AddValueActual(unit_value X, unit_value Y, bool isUnique) = 0;
@@ -275,6 +328,7 @@ namespace cweeUnitValues {
 	public:
 		cweeBalancedTree<double, double, 10>						container;
 		cweeSysInterlockedInteger									granularity;
+		
 		class SpecializedIterator final : public GenericIterator {
 		public:
 			SpecializedIterator() : GenericIterator() {};
@@ -492,8 +546,144 @@ namespace cweeUnitValues {
 				return *thisContainer;
 			};
 		};
+		class SpecializedConstIterator final : public GenericConstIterator {
+		public:
+			SpecializedConstIterator() : GenericConstIterator() {};
+			~SpecializedConstIterator() {};
+
+			decltype(container)::const_iterator iter;
+			decltype(container)::const_iterator iter_end;
+			mutable unit_value x_type;
+			mutable unit_value y_type;
+
+			void begin(cweeUnitPatternContainer_t const* ref) {
+				auto* p = dynamic_cast<cweeUnitPatternContainer const*>(ref);
+				if (p) {
+					iter = p->container.begin();
+					iter_end = p->container.end();
+
+					x_type = p->internal_X_type;
+					y_type = p->internal_Y_type;
+				}
+			};
+			void begin_at(cweeUnitPatternContainer_t const* ref, unit_value x) {
+				auto* p = dynamic_cast<cweeUnitPatternContainer const*>(ref);
+				if (p) {
+					iter = p->container.begin_at(x());
+					iter_end = p->container.end();
+
+					x_type = p->internal_X_type;
+					y_type = p->internal_Y_type;
+				}
+			};
+			void next(cweeUnitPatternContainer_t const* ref) {
+				++iter;
+			};
+			void end(cweeUnitPatternContainer_t const* ref) {
+				auto* p = dynamic_cast<cweeUnitPatternContainer const*>(ref);
+				if (p) {
+					iter = p->container.end();
+					iter_end = p->container.end();
+				}
+			};
+			DataContainer& get(cweeUnitPatternContainer_t const* ref) {
+				auto* p = const_cast<cweeUnitPatternContainer*>(dynamic_cast<cweeUnitPatternContainer const*>(ref));
+				if (p) {
+					unit_value x_0 = (p->internal_X_type = iter->key);
+					unit_value y_0;
+					DataContainer* new_ptr;
+					if (iter->object) {
+						y_0 = (p->internal_Y_type = *iter->object);
+						new_ptr = new DataContainer(x_0, y_0);
+					}
+					else {
+						new_ptr = new DataContainer(x_0);
+					}
+
+					thisContainer = cweeSharedPtr< DataContainer >(new_ptr, [x_0, y_0, p](DataContainer* ptr) {	delete ptr; });
+				}
+				return *thisContainer;
+			};
+			const DataContainer& cget(cweeUnitPatternContainer_t const* ref) const {
+				if (thisContainer) {
+					auto& x = thisContainer->X;
+					auto& y = thisContainer->Y;
+
+					if (unit_value::IdenticalUnits(x, x_type)) {
+						x.value_m = iter->key;
+					}
+					else {
+						x = (x_type = iter->key);
+					}
+
+					if (iter->object) {
+						thisContainer->Y_actual = (y_type = *iter->object);
+						y = &thisContainer->Y_actual;
+					}
+					else {
+						y = nullptr;
+					}
+				}
+				else {
+					DataContainer* new_ptr;
+					if (iter->object) {
+						new_ptr = new DataContainer((x_type = iter->key), (y_type = *iter->object));
+					}
+					else {
+						new_ptr = new DataContainer((x_type = iter->key));
+					}
+					const_cast<cweeSharedPtr<DataContainer>&>(thisContainer) = cweeSharedPtr< DataContainer >(new_ptr);
+				}
+				return *thisContainer;
+			};
+			bool cmp(const cweeSharedPtr<GenericConstIterator>& s) const {
+				if (!s) return 0;
+				auto* p = dynamic_cast<SpecializedConstIterator*>(s.Get()); // auto p = s.CastReference<SpecializedIterator>();				
+				if (p) {
+					return iter.state.cmp(p->iter.state);
+				}
+				return true;
+			};
+			long long distance(const cweeSharedPtr<GenericConstIterator>& s) const {
+				if (!s) return 0;
+				auto p = s.CastReference<SpecializedConstIterator>();
+				if (p) {
+					return iter.state.distance(p->iter.state);
+				}
+				return 0;
+			};
+			void prev(const cweeUnitPatternContainer_t* ref) {
+				auto* p = dynamic_cast<cweeUnitPatternContainer const*>(ref);
+				if (p) {
+					--iter;
+					while (iter != (p->container.begin()--) && !iter->object) --iter;
+				}
+			};
+			const DataContainer& get(const cweeUnitPatternContainer_t* ref) const {
+				auto* p = const_cast<cweeUnitPatternContainer*>(dynamic_cast<cweeUnitPatternContainer const*>(ref));
+				if (p) {
+					unit_value x_0 = (p->internal_X_type = iter->key);
+					unit_value y_0;
+					DataContainer* new_ptr;
+					if (iter->object) {
+						y_0 = (p->internal_Y_type = *iter->object);
+						new_ptr = new DataContainer(x_0, y_0);
+					}
+					else {
+						new_ptr = new DataContainer(x_0);
+					}
+
+					const_cast<cweeSharedPtr<DataContainer>&>(thisContainer) = cweeSharedPtr< DataContainer >(new_ptr, [x_0, y_0, p](DataContainer* ptr) { delete ptr;  });
+				}
+				return *thisContainer;
+			};
+		};
+
 		virtual cweeSharedPtr<GenericIterator> CreateIterationState() const {
 			return make_cwee_shared<SpecializedIterator>().CastReference<GenericIterator>();
+		};
+		virtual cweeSharedPtr<GenericConstIterator> CreateConstIterationState() const {
+			return make_cwee_shared<SpecializedConstIterator>().CastReference<GenericConstIterator>();
 		};
 	public:
 		cweeSharedPtr< cweeUnitPatternContainer_t> Clone() {
@@ -1110,8 +1300,135 @@ namespace cweeUnitValues {
 				return *thisContainer;
 			};
 		};
+		class SpecializedConstIterator final : public GenericConstIterator {
+		public:
+			SpecializedConstIterator() : GenericConstIterator(), pos(0), numVars(0) {};
+			~SpecializedConstIterator() {};
+
+			int pos;
+			int numVars;
+
+			void begin(cweeUnitPatternContainer_t const* ref) {
+				auto* p = dynamic_cast<cweeBalancedPatternReferenceContainer const*>(ref);
+				if (p) {
+					pos = 0;
+					numVars = p->ref->GetNumValues();
+				}
+			};
+			void begin_at(cweeUnitPatternContainer_t const* ref, unit_value x) {
+				auto* p = dynamic_cast<cweeBalancedPatternReferenceContainer const*>(ref);
+				if (p) {
+					pos = 0;
+					numVars = p->ref->GetNumValues();
+				}
+			};
+			void next(cweeUnitPatternContainer_t const* ref) {
+				auto* p = dynamic_cast<cweeBalancedPatternReferenceContainer const*>(ref);
+				if (p) {
+					pos++;
+				}
+			};
+			void end(cweeUnitPatternContainer_t const* ref) {
+				auto* p = dynamic_cast<cweeBalancedPatternReferenceContainer const*>(ref);
+				if (p) {
+					numVars = p->ref->GetNumValues();
+					pos = numVars;
+				}
+			};
+			DataContainer& get(cweeUnitPatternContainer_t const* ref) {
+				auto* p = const_cast<cweeBalancedPatternReferenceContainer*>(dynamic_cast<cweeBalancedPatternReferenceContainer const*>(ref));
+				if (p) {
+					AUTO t = p->ref->GetTimeAtIndex(pos);
+					p->ref->Lock();
+					auto* node = p->ref->UnsafeGetValue(t);
+
+					unit_value x_0 = (p->internal_X_type = t);
+					unit_value y_0;
+					DataContainer* new_ptr;
+					if (node && node->object) {
+						y_0 = (p->internal_Y_type = *node->object);
+						new_ptr = new DataContainer(x_0, y_0);
+					}
+					else {
+						new_ptr = new DataContainer(x_0);
+					}
+					p->ref->Unlock();
+					this->thisContainer = cweeSharedPtr< DataContainer >(new_ptr);
+				}
+				return *thisContainer;
+			};
+			const DataContainer& cget(cweeUnitPatternContainer_t const* ref) const {
+				auto* p = const_cast<cweeBalancedPatternReferenceContainer*>(dynamic_cast<cweeBalancedPatternReferenceContainer const*>(ref));
+				if (p) {
+					AUTO t = p->ref->GetTimeAtIndex(pos);
+					p->ref->Lock();
+					auto* node = p->ref->UnsafeGetValue(t);
+
+					unit_value x_0 = (p->internal_X_type = t);
+					unit_value y_0;
+					DataContainer* new_ptr;
+					if (node && node->object) {
+						y_0 = (p->internal_Y_type = *node->object);
+						new_ptr = new DataContainer(x_0, y_0);
+					}
+					else {
+						new_ptr = new DataContainer(x_0);
+					}
+					p->ref->Unlock();
+					const_cast<cweeSharedPtr<DataContainer>&>(this->thisContainer) = cweeSharedPtr< DataContainer >(new_ptr);
+				}
+				return *thisContainer;
+			};
+			bool cmp(const cweeSharedPtr<GenericConstIterator>& s) const {
+				if (!s) return 0;
+				auto p = s.CastReference<SpecializedConstIterator>();
+				if (p) {
+					return pos == p->pos;
+				}
+				return true;
+			};
+			long long distance(const cweeSharedPtr<GenericConstIterator>& s) const {
+				if (!s) return 0;
+				auto p = s.CastReference<SpecializedConstIterator>();
+				if (p) {
+					return pos - p->pos;
+				}
+				return 0;
+			};
+			void prev(const cweeUnitPatternContainer_t* ref) {
+				auto* p = const_cast<cweeBalancedPatternReferenceContainer*>(dynamic_cast<cweeBalancedPatternReferenceContainer const*>(ref));
+				if (p) {
+					pos--;
+				}
+			};
+			const DataContainer& get(const cweeUnitPatternContainer_t* ref) const {
+				auto* p = const_cast<cweeBalancedPatternReferenceContainer*>(dynamic_cast<cweeBalancedPatternReferenceContainer const*>(ref));
+				if (p) {
+					AUTO t = p->ref->GetTimeAtIndex(pos);
+					p->ref->Lock();
+					auto* node = p->ref->UnsafeGetValue(t);
+
+					unit_value x_0 = (p->internal_X_type = t);
+					unit_value y_0;
+					DataContainer* new_ptr;
+					if (node && node->object) {
+						y_0 = (p->internal_Y_type = *node->object);
+						new_ptr = new DataContainer(x_0, y_0);
+					}
+					else {
+						new_ptr = new DataContainer(x_0);
+					}
+					p->ref->Unlock();
+					const_cast<cweeSharedPtr<DataContainer>&>(this->thisContainer) = cweeSharedPtr< DataContainer >(new_ptr);
+				}
+				return *thisContainer;
+			};
+		};
 		virtual cweeSharedPtr<GenericIterator> CreateIterationState() const {
 			return make_cwee_shared<SpecializedIterator>().template CastReference<GenericIterator>();
+		};
+		virtual cweeSharedPtr<GenericConstIterator> CreateConstIterationState() const {
+			return make_cwee_shared<SpecializedConstIterator>().CastReference<GenericConstIterator>();
 		};
 
 	public:
@@ -1332,10 +1649,136 @@ namespace cweeUnitValues {
 				return *thisContainer;
 			};
 		};
+		class SpecializedConstIterator final : public GenericConstIterator {
+		public:
+			SpecializedConstIterator() : GenericConstIterator(), pos(0), numVars(0) {};
+			~SpecializedConstIterator() {};
+
+			int pos;
+			int numVars;
+
+			void begin(cweeUnitPatternContainer_t const* ref) {
+				auto* p = dynamic_cast<cweeBalancedPatternReferencePartialContainer const*>(ref);
+				if (p) {
+					pos = 0;
+					numVars = p->ref->GetNumValues();
+				}
+			};
+			void begin_at(cweeUnitPatternContainer_t const* ref, unit_value x) {
+				auto* p = dynamic_cast<cweeBalancedPatternReferencePartialContainer const*>(ref);
+				if (p) {
+					pos = 0;
+					numVars = p->ref->GetNumValues();
+				}
+			};
+			void next(cweeUnitPatternContainer_t const* ref) {
+				auto* p = dynamic_cast<cweeBalancedPatternReferencePartialContainer const*>(ref);
+				if (p) {
+					pos++;
+				}
+			};
+			void end(cweeUnitPatternContainer_t const* ref) {
+				auto* p = dynamic_cast<cweeBalancedPatternReferencePartialContainer const*>(ref);
+				if (p) {
+					numVars = p->ref->GetNumValues();
+					pos = numVars;
+				}
+			};
+			DataContainer& get(cweeUnitPatternContainer_t const* ref) {
+				auto* p = const_cast<cweeBalancedPatternReferencePartialContainer*>(dynamic_cast<cweeBalancedPatternReferencePartialContainer const*>(ref));
+				if (p) {
+					AUTO t = p->ref->GetTimeAtIndex(pos);
+					p->ref->Lock();
+					auto* node = p->ref->UnsafeGetValue(t);
+
+					unit_value x_0 = (p->internal_X_type = t);
+					unit_value y_0;
+					DataContainer* new_ptr;
+					if (node && node->object) {
+						y_0 = (p->internal_Y_type = *node->object);
+						new_ptr = new DataContainer(x_0, y_0);
+					}
+					else {
+						new_ptr = new DataContainer(x_0);
+					}
+					p->ref->Unlock();
+					this->thisContainer = cweeSharedPtr< DataContainer >(new_ptr);
+				}
+				return *thisContainer;
+			};
+			const DataContainer& cget(cweeUnitPatternContainer_t const* ref) const {
+				auto* p = const_cast<cweeBalancedPatternReferencePartialContainer*>(dynamic_cast<cweeBalancedPatternReferencePartialContainer const*>(ref));
+				if (p) {
+					AUTO t = p->ref->GetTimeAtIndex(pos);
+					p->ref->Lock();
+					auto* node = p->ref->UnsafeGetValue(t);
+
+					unit_value x_0 = (p->internal_X_type = t);
+					unit_value y_0;
+					DataContainer* new_ptr;
+					if (node && node->object) {
+						y_0 = (p->internal_Y_type = *node->object);
+						new_ptr = new DataContainer(x_0, y_0);
+					}
+					else {
+						new_ptr = new DataContainer(x_0);
+					}
+					p->ref->Unlock();
+					const_cast<cweeSharedPtr<DataContainer>&>(this->thisContainer) = cweeSharedPtr< DataContainer >(new_ptr);
+				}
+				return *thisContainer;
+			};
+			bool cmp(const cweeSharedPtr<GenericConstIterator>& s) const {
+				if (!s) return 0;
+				auto p = s.CastReference<SpecializedConstIterator>();
+				if (p) {
+					return pos != p->pos;
+				}
+				return true;
+			};
+			long long distance(const cweeSharedPtr<GenericConstIterator>& s) const {
+				if (!s) return 0;
+				auto p = s.CastReference<SpecializedConstIterator>();
+				if (p) {
+					return pos - p->pos;
+				}
+				return 0;
+			};
+			void prev(const cweeUnitPatternContainer_t* ref) {
+				auto* p = const_cast<cweeBalancedPatternReferencePartialContainer*>(dynamic_cast<cweeBalancedPatternReferencePartialContainer const*>(ref));
+				if (p) {
+					pos--;
+				}
+			};
+			const DataContainer& get(const cweeUnitPatternContainer_t* ref) const {
+				auto* p = const_cast<cweeBalancedPatternReferencePartialContainer*>(dynamic_cast<cweeBalancedPatternReferencePartialContainer const*>(ref));
+				if (p) {
+					AUTO t = p->ref->GetTimeAtIndex(pos);
+					p->ref->Lock();
+					auto* node = p->ref->UnsafeGetValue(t);
+
+					unit_value x_0 = (p->internal_X_type = t);
+					unit_value y_0;
+					DataContainer* new_ptr;
+					if (node && node->object) {
+						y_0 = (p->internal_Y_type = *node->object);
+						new_ptr = new DataContainer(x_0, y_0);
+					}
+					else {
+						new_ptr = new DataContainer(x_0);
+					}
+					p->ref->Unlock();
+					const_cast<cweeSharedPtr<DataContainer>&>(this->thisContainer) = cweeSharedPtr< DataContainer >(new_ptr);
+				}
+				return *thisContainer;
+			};
+		};
 		virtual cweeSharedPtr<GenericIterator> CreateIterationState() const {
 			return make_cwee_shared<SpecializedIterator>().template CastReference<GenericIterator>();
 		};
-
+		virtual cweeSharedPtr<GenericConstIterator> CreateConstIterationState() const {
+			return make_cwee_shared<SpecializedConstIterator>().CastReference<GenericConstIterator>();
+		};
 	public:
 		cweeSharedPtr< cweeUnitPatternContainer_t> Clone() {
 			cweeSharedPtr< cweeBalancedPatternReferencePartialContainer> out = make_cwee_shared<cweeBalancedPatternReferencePartialContainer>(*this);
@@ -1841,7 +2284,7 @@ namespace cweeUnitValues {
 			result.AddValue(GetMinTime(), GetCurrentFirstDerivative(GetMinTime()));
 
 
-			cweeUnitValues::cweeUnitPatternContainer_t::IterType prevValue;
+			cweeUnitValues::cweeUnitPatternContainer_t::ConstIterType prevValue;
 			prevValue.Y = nullptr;
 
 			for (AUTO dataPair : const_cast<const cweeUnitPatternContainer_t&>(*this->container)) {
@@ -2062,7 +2505,7 @@ namespace cweeUnitValues {
 					unit_value minGot = t1, maxGot = t1;
 					if (true) {
 
-						cweeUnitValues::cweeUnitPatternContainer_t::IterType prevValue; 
+						cweeUnitValues::cweeUnitPatternContainer_t::ConstIterType prevValue;
 						prevValue.Y = nullptr;
 						AUTO endIter = const_cast<const cweeUnitPatternContainer_t&>(*this->container).end();
 						for (auto iter = const_cast<const cweeUnitPatternContainer_t&>(*this->container).begin_at(t0); iter != endIter; ++iter) {
@@ -2107,7 +2550,7 @@ namespace cweeUnitValues {
 					step = this->GetMinimumTimeStep();
 					unit_value minGot = t1, maxGot = t1;
 					if (true) {
-						cweeUnitValues::cweeUnitPatternContainer_t::IterType prevValue;
+						cweeUnitValues::cweeUnitPatternContainer_t::ConstIterType prevValue;
 						prevValue.Y = nullptr;
 						AUTO endIter = const_cast<const cweeUnitPatternContainer_t&>(*this->container).end();
 						for (auto iter = const_cast<const cweeUnitPatternContainer_t&>(*this->container).begin_at(t0); iter != endIter; ++iter) {
@@ -2152,7 +2595,7 @@ namespace cweeUnitValues {
 					step = this->GetMinimumTimeStep();
 					unit_value minGot = t1, maxGot = t1;
 					if (true) {
-						cweeUnitValues::cweeUnitPatternContainer_t::IterType prevValue;
+						cweeUnitValues::cweeUnitPatternContainer_t::ConstIterType prevValue;
 						prevValue.Y = nullptr;
 						AUTO endIter = const_cast<const cweeUnitPatternContainer_t&>(*this->container).end();
 						for (auto iter = const_cast<const cweeUnitPatternContainer_t&>(*this->container).begin_at(t0); iter != endIter; ++iter) {
@@ -2223,7 +2666,7 @@ namespace cweeUnitValues {
 					step = this->GetMinimumTimeStep();
 					unit_value minGot = t1, maxGot = t1;
 					if (true) {
-						cweeUnitValues::cweeUnitPatternContainer_t::IterType prevValue;
+						cweeUnitValues::cweeUnitPatternContainer_t::ConstIterType prevValue;
 						for (auto& dataPair : const_cast<const cweeUnitPatternContainer_t&>(*this->container)) {
 							if (dataPair.Y) {
 								if (prevValue.Y) {
@@ -2260,7 +2703,7 @@ namespace cweeUnitValues {
 					step = this->GetMinimumTimeStep();
 					unit_value minGot = t1, maxGot = t1;
 					if (true) {
-						cweeUnitValues::cweeUnitPatternContainer_t::IterType prevValue;
+						cweeUnitValues::cweeUnitPatternContainer_t::ConstIterType prevValue;
 						for (auto& dataPair : const_cast<const cweeUnitPatternContainer_t&>(*this->container)) {
 							if (dataPair.Y) {
 								if (prevValue.Y) {
@@ -2297,7 +2740,7 @@ namespace cweeUnitValues {
 					step = this->GetMinimumTimeStep();
 					unit_value minGot = t1, maxGot = t1;
 					if (true) {
-						cweeUnitValues::cweeUnitPatternContainer_t::IterType prevValue;
+						cweeUnitValues::cweeUnitPatternContainer_t::ConstIterType prevValue;
 						for (auto& dataPair : const_cast<const cweeUnitPatternContainer_t&>(*this->container)) {
 							if (dataPair.Y) {
 								if (prevValue.Y) {
@@ -2336,30 +2779,97 @@ namespace cweeUnitValues {
 
 		cweeList<unit_value>								GetValueQuantiles(cweeList<double> const& probs) const {
 			cweeList<unit_value> quantiles;
-			cweeUnitValues::scalar poi;
-			size_t left, right;
+			if (probs.Num() > 0) {
+				quantiles.SetNum(probs.Num());
 
-			cweeList<unit_value> data(this->GetNumValues() + 16);
-			for (auto& x : const_cast<const cweeUnitPatternContainer_t&>(*this->container)) {
-				if (x.Y) data.Append(*x.Y);				
+				cweeUnitValues::scalar poi;
+				size_t left, right;
+
+				cweeList<unit_value> data(this->GetNumValues() + 16);
+				for (auto& iter : const_cast<const cweeUnitPatternContainer_t&>(*this->container)) {
+					if (iter.Y) {
+						data.Append(*iter.Y);
+					}
+				}
+
+				if (data.Num() < probs.Num()) {
+					data.AssureSize(probs.Num());
+				}
+				if (data.Num() <= 1) return quantiles;
+
+				data.Sort(); // sort data
+
+				for (size_t i = 0; i < probs.Num(); ++i) {
+					poi = (1.0f - probs[i]) * -0.5f + probs[i] * ((float)data.Num() - 0.5f);
+					left = std::max(int64_t(std::floor((double)poi)), int64_t(0));
+					right = std::min(int64_t(std::ceil((double)poi)), int64_t((float)data.Num() - 1.0f));
+					quantiles[i] = (((cweeUnitValues::scalar)1.0f - (poi - (cweeUnitValues::scalar)left)) * data[left]) + ((poi - (cweeUnitValues::scalar)left) * data[right]);
+				}
 			}
-
-			if (data.Num() < probs.Num()) {
-				data.AssureSize(probs.Num());
-			}
-			if (data.Num() <= 1) return data;
-
-			data.Sort(); // sort data
-
-			for (size_t i = 0; i < probs.Num(); ++i) {
-				poi = (1.0f - probs[i]) * -0.5f + probs[i] * ((float)data.Num() - 0.5f);
-				left = std::max(int64_t(std::floor((double)poi)), int64_t(0));
-				right = std::min(int64_t(std::ceil((double)poi)), int64_t((float)data.Num() - 1.0f));
-				quantiles.Append((((cweeUnitValues::scalar)1.0f - (poi - (cweeUnitValues::scalar)left)) * data[left]) + ((poi - (cweeUnitValues::scalar)left) * data[right]));
-			}
-
 			return quantiles;
 		};
+		cweeList<unit_value>								GetValueQuantiles(cweeList<double> const& probs, unit_value start, unit_value end) const {
+			cweeList<unit_value> quantiles;
+			if (probs.Num() > 0) {
+				quantiles.SetNum(probs.Num());
+
+				cweeUnitValues::scalar poi;
+				size_t left, right;
+
+				cweeList<unit_value> data(this->GetNumValues() + 16);
+				AUTO EndIter = const_cast<const cweeUnitPatternContainer_t&>(*this->container).end();
+				for (AUTO iter = const_cast<const cweeUnitPatternContainer_t&>(*this->container).begin_at(start); iter != EndIter; ++iter) {
+					if (iter->X >= start && iter->Y) {
+						if (iter->X > end) break;
+						data.Append(*iter->Y);
+					}
+				}
+
+				if (data.Num() < probs.Num()) {
+					data.AssureSize(probs.Num());
+				}
+				if (data.Num() <= 1) return quantiles;
+
+				data.Sort(); // sort data
+
+				for (size_t i = 0; i < probs.Num(); ++i) {
+					poi = (1.0f - probs[i]) * -0.5f + probs[i] * ((float)data.Num() - 0.5f);
+					left = std::max(int64_t(std::floor((double)poi)), int64_t(0));
+					right = std::min(int64_t(std::ceil((double)poi)), int64_t((float)data.Num() - 1.0f));
+					quantiles[i] = (((cweeUnitValues::scalar)1.0f - (poi - (cweeUnitValues::scalar)left)) * data[left]) + ((poi - (cweeUnitValues::scalar)left) * data[right]);
+				}
+			}
+			return quantiles;
+		};
+		unit_value								            GetValueQuantile(double prob, unit_value start, unit_value end) const {
+			unit_value quantiles;
+			{
+				cweeUnitValues::scalar poi;
+				size_t left, right;
+
+				cweeList<unit_value> data(this->GetNumValues() + 16);
+				AUTO EndIter = const_cast<const cweeUnitPatternContainer_t&>(*this->container).end();
+				for (AUTO iter = const_cast<const cweeUnitPatternContainer_t&>(*this->container).begin_at(start); iter != EndIter; ++iter) {
+					if (iter->X >= start && iter->Y) {
+						if (iter->X > end) break;
+						data.Append(*iter->Y);
+					}
+				}
+
+				if (data.Num() <= 1) return quantiles;
+
+				data.Sort(); // sort data
+
+				{
+					poi = (1.0f - prob) * -0.5f + prob * ((float)data.Num() - 0.5f);
+					left = std::max(int64_t(std::floor((double)poi)), int64_t(0));
+					right = std::min(int64_t(std::ceil((double)poi)), int64_t((float)data.Num() - 1.0f));
+					quantiles = (((cweeUnitValues::scalar)1.0f - (poi - (cweeUnitValues::scalar)left)) * data[left]) + ((poi - (cweeUnitValues::scalar)left) * data[right]);
+				}
+			}
+			return quantiles;
+		};
+
 		unit_value											GetAvgTimestep() const {
 			unit_value out;
 
@@ -2373,7 +2883,7 @@ namespace cweeUnitValues {
 			
 
 			if (this->GetNumValues() > 1) {
-				cweeUnitValues::cweeUnitPatternContainer_t::IterType prevValue;
+				cweeUnitValues::cweeUnitPatternContainer_t::ConstIterType prevValue;
 				prevValue.Y = nullptr;
 				int numSamples = 0;
 
@@ -2441,6 +2951,7 @@ namespace cweeUnitValues {
 #endif
 			return out;
 		};
+
 
 		void												RemoveTimes(unit_value greaterThanOrEqual, unit_value LessThan) {
 			container->RemoveTimes(greaterThanOrEqual, LessThan);
@@ -2512,8 +3023,8 @@ namespace cweeUnitValues {
 			return out;
 		};
 
-		/* returns the approximate distance between each point and its neighbors. */
-		cweeUnitPattern  GetDistances(bool normalized = true) const {
+		/* returns the distance between each point and its neighbors. */
+		cweeUnitPattern  GetDistances(bool normalized = true, int numNearest = 1) const {
 			AUTO distances = cweeUnitPattern(this->X_Type(), cweeUnitValues::foot(1));
 			if (this->GetNumValues() > 1) {
 				AUTO out = GetRTree(normalized);
@@ -2528,7 +3039,7 @@ namespace cweeUnitValues {
 					skip = true;
 					numSamples = 0;
 					distance = 0.0;
-					samples = out.Near(n->bound, 16);
+					samples = out.Near(n->bound, numNearest + 1);
 
 					for (auto& x : samples) {
 						if (skip) skip = false; 
@@ -2540,6 +3051,83 @@ namespace cweeUnitValues {
 				}
 
 
+			}
+			return distances;
+		};
+		cweeUnitPattern  GetApproximateDistances(bool normalized = true, bool xAxisOnly = true) const {
+			AUTO distances = cweeUnitPattern(this->X_Type(), cweeUnitValues::foot(1));
+			if (this->GetNumValues() > 1) {
+				AUTO minTime = this->GetMinTime();
+				AUTO maxTime = this->GetMaxTime();
+				AUTO timeRange = maxTime - minTime;
+				AUTO minValue = this->GetMinValue();
+				AUTO maxValue = this->GetMaxValue();
+				AUTO valueRange = maxValue - minValue;
+
+				cweeUnitValues::cweeUnitPatternContainer_t::ConstIterType prevValue1;
+				prevValue1.Y = nullptr;
+
+				cweeUnitValues::cweeUnitPatternContainer_t::ConstIterType prevValue2;
+				prevValue2.Y = nullptr;
+
+				for (auto& iter : const_cast<const cweeUnitPatternContainer_t&>(*container)) {
+					if (iter.Y) {
+						if (prevValue1.Y && prevValue2.Y) {
+							if (xAxisOnly) {
+								if (normalized) {
+									vec2d coord1(
+										((prevValue1.X - minTime) / (timeRange))(),
+										0
+									);
+									vec2d coord2(
+										((prevValue2.X - minTime) / (timeRange))(),
+										0
+									);
+									vec2d coord3(
+										((iter.X - minTime) / (timeRange))(),
+										0
+									);
+									distances.AddValue(prevValue2.X, cweeMath::Fmax(coord2.Distance(coord1), coord2.Distance(coord3)));
+								}
+								else {
+									vec2d coord1(prevValue1.X.operator()(), 0);
+									vec2d coord2(prevValue2.X.operator()(), 0);
+									vec2d coord3(iter.X.operator()(), 0);
+
+									distances.AddValue(prevValue2.X, cweeMath::Fmax(coord2.Distance(coord1), coord2.Distance(coord3)));
+								}
+							}
+							else {
+								if (normalized) {
+									vec2d coord1(
+										((prevValue1.X - minTime) / (timeRange))(),
+										((*prevValue1.Y - minValue) / (valueRange))()
+									);
+									vec2d coord2(
+										((prevValue2.X - minTime) / (timeRange))(),
+										((*prevValue2.Y - minValue) / (valueRange))()
+									);
+									vec2d coord3(
+										((iter.X - minTime) / (timeRange))(),
+										((*iter.Y - minValue) / (valueRange))()
+									);
+									distances.AddValue(prevValue2.X, cweeMath::Fmax(coord2.Distance(coord1), coord2.Distance(coord3)));
+								}
+								else {
+									vec2d coord1(prevValue1.X.operator()(), prevValue1.Y->operator()());
+									vec2d coord2(prevValue2.X.operator()(), prevValue2.Y->operator()());
+									vec2d coord3(iter.X.operator()(), iter.Y->operator()());
+
+									distances.AddValue(prevValue2.X, cweeMath::Fmax(coord2.Distance(coord1), coord2.Distance(coord3)));
+								}
+							}
+
+
+						}
+						prevValue1 = prevValue2;
+						prevValue2 = iter;
+					}
+				}
 			}
 			return distances;
 		};

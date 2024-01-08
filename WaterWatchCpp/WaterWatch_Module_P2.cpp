@@ -195,6 +195,7 @@ namespace chaiscript {
                 lib->add(chaiscript::fun([](cweeUnitPattern& a, bool normalized, int numNearest) { return a.GetDistances(normalized, numNearest); }), "GetDistances");
                 lib->add(chaiscript::fun([](cweeUnitPattern& a) { return a.GetApproximateDistances(); }), "GetApproximateDistances");
                 lib->add(chaiscript::fun([](cweeUnitPattern& a, bool normalized) { return a.GetApproximateDistances(normalized); }), "GetApproximateDistances");
+                lib->add(chaiscript::fun([](cweeUnitPattern& a, bool normalized, bool xAxisOnly) { return a.GetApproximateDistances(normalized, xAxisOnly); }), "GetApproximateDistances");
 
                 lib->add(chaiscript::fun([](cweeUnitPattern& a) { return a.GetMinValue(); }), "GetMinValue");
                 lib->add(chaiscript::fun([](cweeUnitPattern& a) { return a.GetAvgValue(); }), "GetAvgValue");
@@ -213,7 +214,7 @@ namespace chaiscript {
                 lib->add(chaiscript::fun([](cweeUnitPattern& a, const unit_value& b) { a.ShiftTime(b); return a; }), "ShiftTime");
                 lib->add(chaiscript::fun([](cweeUnitPattern& a, const unit_value& b) { a.Translate(b); return a; }), "Translate");
 
-                lib->add(chaiscript::fun([](cweeUnitPattern& a)->cweeUnitPattern& { a.RemoveUnnecessaryKnots(); return a; }), "RemoveUnnecessaryKnots");
+                lib->add(chaiscript::fun([](cweeUnitPattern& a)->cweeUnitPattern& { return a.RemoveUnnecessaryKnots(); }), "RemoveUnnecessaryKnots");
                 lib->add(chaiscript::fun([](cweeUnitPattern& a, const unit_value& min, const unit_value& max) { a.ClampValues(min, max); }), "ClampValues");
 
                 lib->AddFunction(, GetValueQuantiles, ->std::vector<chaiscript::Boxed_Value>, SINGLE_ARG(
@@ -299,33 +300,101 @@ namespace chaiscript {
                 lib->add(chaiscript::fun([](const cweeUnitPattern& a) { 
                     return (((a - a.GetAvgValue()).pow(2.0)).GetAvgValue()).pow(0.5);
                 }), "StdDev");
+
                 AUTO blur_pattern = [](cweeUnitPattern const& a, double desiredNumValues){
                     AUTO width = a.GetMaxTime() - a.GetMinTime();                    
                     if (width() <= 0 || desiredNumValues <= 0) {
                         return cweeUnitPattern(a);
                     }
-                    AUTO out = cweeUnitPattern();
+                    AUTO out = cweeUnitPattern(a.X_Type(), a.Y_Type());
 
                     AUTO scale = width / desiredNumValues;
                     
-                    out.AddValue(a.GetMinTime(), a.GetCurrentValue(a.GetMinTime()));
-                    for (auto time = a.GetMinTime(); time < a.GetMaxTime(); time += scale) 
-                        out.AddValue(time + scale / 2.0, a.GetAvgValue(time, time + scale));                    
-                    out.AddValue(a.GetMaxTime(), a.GetCurrentValue(a.GetMaxTime()));
+
+                    unit_value prevV = a.Y_Type();
+                    AUTO minT = a.GetMinTime();
+                    AUTO maxT = a.GetMaxTime();
+#if 0
+                    AUTO scale_bigStep = (scale * 0.99 > scale - 1) ? (scale * 0.99) : (scale - 1);
+                    for (auto time = minT; time < maxT; time += scale) {
+                        prevV = a.GetAvgValue(time, time + scale);
+                        out.AddValue(time, prevV);
+                        out.AddValue(time + scale_bigStep, prevV);
+                    }
+                    out.AddValue(maxT, prevV);
+#else
+                    AUTO scale_half = scale / 2.0;
+                    for (auto time = minT; time < maxT; time += scale) {
+                        prevV = a.GetAvgValue(time, time + scale);
+                        if (out.GetNumValues() == 0)
+                            out.AddValue(minT, prevV);
+                        out.AddValue(time + scale_half, prevV);
+                    }
+                    out.AddValue(maxT, prevV);
+#endif
                     out.RemoveUnnecessaryKnots();
-                    
 
                     { // Correct the avg/integral
-                        AUTO t1 = a.RombergIntegral(a.GetMinTime(), a.GetMaxTime());
-                        AUTO t2 = out.RombergIntegral(a.GetMinTime(), a.GetMaxTime());
+                        AUTO t1 = a.RombergIntegral(minT, maxT);
+                        AUTO t2 = out.RombergIntegral(minT, maxT);
                         if (t2 != 0) {
                             out *= t1 / t2;
                         }
                     }
+                    return out;
+                };
+
+                AUTO quantile_pattern = [](cweeUnitPattern const& a, double quantile, double desiredNumValues) {
+                    AUTO width = a.GetMaxTime() - a.GetMinTime();
+                    if (width() <= 0 || desiredNumValues <= 0) {
+                        return cweeUnitPattern(a);
+                    }
+                    AUTO out = cweeUnitPattern(a.X_Type(), a.Y_Type());
+
+                    AUTO scale = width / desiredNumValues;
+
+
+                    unit_value prevV = a.Y_Type();
+                    AUTO minT = a.GetMinTime();
+                    AUTO maxT = a.GetMaxTime();
+
+                    AUTO scale_half = scale / 2.0;
+                    for (auto time = minT; time < maxT; time += scale) {
+                        prevV = a.GetValueQuantile(quantile, time, time + scale);
+                        if (out.GetNumValues() == 0)
+                            out.AddValue(minT, prevV);
+                        out.AddValue(time + scale_half, prevV);
+                    }
+                    out.AddValue(maxT, prevV);
+
+                    out.RemoveUnnecessaryKnots();
 
                     return out;
                 };
-                
+
+                lib->add(chaiscript::fun([blur_pattern](const cweeUnitPattern& a) {
+                    auto n = a.GetNumValues();
+                    auto numSamples = n / 1024; // (((year)(second)(a.GetMaxTime() - a.GetMinTime())) * 52)();
+                    auto avg = blur_pattern(a, numSamples);
+                    auto diff_sqr = (a - avg).pow(2);
+                    auto diff_sqr_avg = blur_pattern(diff_sqr, numSamples);
+                    return diff_sqr_avg.pow(0.5);
+                }), "GetCurrentStdDev");
+                lib->add(chaiscript::fun([blur_pattern](const cweeUnitPattern& a, int numSamples) {
+                    auto avg = blur_pattern(a, numSamples);
+                    auto diff_sqr = (a - avg).pow(2);
+                    auto diff_sqr_avg = blur_pattern(diff_sqr, numSamples);
+                    return diff_sqr_avg.pow(0.5);
+                }), "GetCurrentStdDev");
+                lib->add(chaiscript::fun([quantile_pattern](const cweeUnitPattern& a, double quantile) {
+                    auto n = a.GetNumValues();
+                    auto numSamples = n / 1024; // (((year)(second)(a.GetMaxTime() - a.GetMinTime())) * 52)();                    
+                    return quantile_pattern(a, quantile, numSamples);
+                }), "GetCurrentValueQuantile");
+                lib->add(chaiscript::fun([quantile_pattern](const cweeUnitPattern& a, double quantile, int numSamples) {                 
+                    return quantile_pattern(a, quantile, numSamples);
+                }), "GetCurrentValueQuantile");
+
                 lib->add(chaiscript::fun([=](const cweeUnitPattern& a) {
                     AUTO pat = blur_pattern(a, (a.GetNumValues() / 32) + 1);
                     pat.RemoveUnnecessaryKnots();
