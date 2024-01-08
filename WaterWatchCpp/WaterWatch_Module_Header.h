@@ -963,6 +963,39 @@ namespace chaiscript {
         void AddPoint(double X, double Y) {
             coordinates.Append(std::pair<double, double>(X, Y));
         };
+        void MakeConvex() {
+            // take the list of coordinates and remove / reorder as necessary to be drawn as a convex polygon.
+            cweeThreadedList<vec2d> coords;
+            for (auto& x : coordinates) {
+                coords.Append(vec2d(x.first, x.second));
+            }
+
+            cweeEng::ReorderConvexHull(coords);
+
+            // iteratively remove points from the hull such we use the 
+            // fewest points necessary (This expands the hull conservatively).
+            bool finished;
+            while (true) {
+                finished = true;
+                cweeThreadedList<vec2d> coords2 = coords;
+                for (int i = coords.Num() - 1; i >= 0; --i) {
+                    coords2.RemoveIndex(i);
+                    if (!cweeEng::IsPointInPolygon(coords2, coords[i])) {
+                        coords2.Insert(coords[i], i);
+                    }
+                    else {
+                        finished = false;
+                    }
+                }
+                coords = coords2;
+                if (finished) break;
+            }
+            
+            coordinates.Clear();
+            for (auto& x : coords) {
+                coordinates.Append({x.x, x.y});
+            }
+        };
 
         cweeThreadedList<std::pair<double, double>> coordinates;
         UI_Color	fill;
@@ -982,6 +1015,7 @@ namespace chaiscript {
             AddMemberToScriptFromClass(ThisType, thickness);
 
             AddFuncToScriptFromClass(ThisType, AddPoint);
+            AddFuncToScriptFromClass(ThisType, MakeConvex);
         };
     };
     class UI_MapBackground final : public UI_MapElement {
@@ -1010,8 +1044,6 @@ namespace chaiscript {
         float     minValue;
         float     maxValue;
         
-
-
         static void		AppendToScriptingLanguage(Module& scriptingLanguage) {
             AddBasicClassTemplate(ThisType);
             scriptingLanguage.add(chaiscript::base_class<UI_FrameworkElement, ThisType>());

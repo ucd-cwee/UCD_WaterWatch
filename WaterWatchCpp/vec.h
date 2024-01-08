@@ -124,7 +124,7 @@ INLINE void vec2d::Set(const double x, const double y) {
 }
 
 INLINE void vec2d::Zero() {
-	x = y = 0.0f;
+	x = y = 0.0;
 }
 
 INLINE bool vec2d::Compare(const vec2d& a) const {
