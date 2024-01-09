@@ -343,6 +343,11 @@ public:
 
 	// split based on a delimiter
 	cweeParser			Split(const cweeStr& delim) const;
+	/* 
+	split based on a delimiter, specialized for:
+	"a,b,c", "123", 123,, "a,b,c"
+	*/ 
+	cweeParser			SplitQuotes(const cweeStr& delim) const;
 	INLINE cweeStrView	View() const;
 
 	// case sensitive compare
@@ -534,6 +539,7 @@ public:
 			return Mid(first + left.Length(), last - (first + left.Length()));
 		}
 	};
+
 	size_t				Length() const {
 		return len;
 	};

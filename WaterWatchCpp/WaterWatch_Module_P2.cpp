@@ -575,6 +575,119 @@ namespace chaiscript {
                 lib->AddFunction(, DeleteString, , return dataOwner->DeleteString(index), cweeData* dataOwner, int index);
             }
 
+
+            // Extern Data
+            if (1) {
+                class NOAA {
+                public:
+                    static void AppendWeatherStationData(cweeUnitValues::cweeUnitPattern& temperature, cweeUnitValues::cweeUnitPattern& precipitation, cweeStr const& HourlyDataCSV) {
+                        cweeTime tm; double temp_F; bool SkipHeader = true;
+                        for (auto& row : HourlyDataCSV.Split("\n")) {
+                            if (SkipHeader) { SkipHeader = false; continue; }
+                            auto RowParsed = row.SplitQuotes(",");
+                            tm = cweeTime::make_time(
+                                RowParsed[1].Mid(0, 4).ReturnNumeric(), RowParsed[1].Mid(5, 2).ReturnNumeric(), RowParsed[1].Mid(8, 2).ReturnNumeric(),
+                                RowParsed[1].Mid(11, 2).ReturnNumeric(), RowParsed[1].Mid(14, 2).ReturnNumeric(), RowParsed[1].Mid(17, 2).ReturnNumeric());
+                            
+                            if (RowParsed[13][0] == '-') {
+                                temp_F = -1 * (RowParsed[13].Mid(1, RowParsed[13].Length()).ReplaceInline(",", ".").ReturnNumeric() / 10.0) * 1.8 + 32;
+                            }
+                            else {
+                                temp_F = -1 * (RowParsed[13].Mid(1, RowParsed[13].Length()).ReplaceInline(",", ".").ReturnNumeric() / 10.0) * 1.8 + 32;
+                            }
+
+                            temperature.AddValue((u64)tm, temp_F);
+                        }
+                    };
+                };
+                lib->add(chaiscript::user_type<NOAA>(), "NOAA");
+                lib->add(chaiscript::fun([]()->NOAA { return NOAA(); }), "NOAA");
+
+                class NOAA_Station {
+                public:
+                    cweeStr station;
+                    cweeStr awsban;
+                    cweeTime beg_date;
+                    cweeTime end_date;
+                    double longitude;
+                    double latitude;
+
+                    cweeUnitValues::cweeUnitPattern Temperature;
+                    cweeUnitValues::cweeUnitPattern Precipitation;
+                    
+                    void AppendYear(int year) {
+                        if (awsban != "" && beg_date.tm_year() + 1900 <= year && end_date.tm_year() + 1900 >= year) {
+                            if (years.count(year) <= 0) {
+                                years.insert(year);
+                                cweeStr data = DownloadData(year);
+                                NOAA::AppendWeatherStationData(Temperature, Precipitation, data);
+                            }
+                        }
+                    };
+
+                private:
+                    std::set<int> years;
+                    cweeStr DownloadData(int year) const {
+                        return fileSystem->DownloadCweeStrFromURL(cweeStr::printf("https://www.ncei.noaa.gov/data/global-hourly/access/%i/%s.csv", year, awsban.c_str()));
+                    };
+                };
+                lib->add(chaiscript::user_type<NOAA_Station>(), "NOAA_Station");
+                lib->add(chaiscript::constructor<NOAA_Station()>(), "NOAA_Station");
+                lib->add(chaiscript::constructor<NOAA_Station(const NOAA_Station&)>(), "NOAA_Station");
+                lib->add(chaiscript::fun([](NOAA_Station& a, const NOAA_Station& b)->NOAA_Station& { a = b; return a; }), "=");
+
+                lib->add(chaiscript::fun(&NOAA_Station::station), "station");
+                lib->add(chaiscript::fun(&NOAA_Station::awsban), "awsban");
+                lib->add(chaiscript::fun(&NOAA_Station::beg_date), "beg_date");
+                lib->add(chaiscript::fun(&NOAA_Station::end_date), "end_date");
+                lib->add(chaiscript::fun(&NOAA_Station::longitude), "longitude");
+                lib->add(chaiscript::fun(&NOAA_Station::latitude), "latitude");
+                lib->add(chaiscript::fun(&NOAA_Station::latitude), "Temperature");
+                lib->add(chaiscript::fun(&NOAA_Station::latitude), "Precipitation");
+                lib->add(chaiscript::fun(&NOAA_Station::AppendYear), "AppendYear");
+
+                lib->eval(R"chai(
+                    def NOAA::NearbyStations(double x, double y, int numNear){
+	                    var& input = DownloadCweeStrFromURL("https://www.ncei.noaa.gov/ords/stations/isd/${x}/${y}/${numNear}");
+	                    var& asJson = from_json(input);
+	                    var& stations = asJson["items"];
+	                    var& out = Vector();
+                        var& StrToCweeTime = fun[](str){
+                            return cweeTime(
+			                    str.Mid(0,4).to_number, 
+			                    str.Mid(4,2).to_number, 
+			                    str.Mid(6,2).to_number, 
+			                    0, 
+			                    0, 
+			                    0
+		                    );
+                        };
+	                    for (station : stations){
+		                    var& stationData = Map();
+		                    for (data : station) { 
+                                stationData[data.first.to_string()] := data.second;
+                            }
+                            NOAA_Station noaa_loc;{
+                                noaa_loc.station = stationData["station"];
+                                noaa_loc.awsban = stationData["awsban"];
+                                noaa_loc.beg_date = StrToCweeTime(stationData["beg_date"]);
+                                noaa_loc.end_date = StrToCweeTime(stationData["end_date"]);
+                                noaa_loc.longitude = stationData["longitude"];
+                                noaa_loc.latitude = stationData["latitude"];
+                            }
+		                    out.push_back(noaa_loc);
+	                    }
+	                    return out;
+                    };
+                    def NOAA_Station(double longitude, double latitude) {
+                        return NOAA.NearbyStations(longitude, latitude, 1)[0];
+                    };
+                    def NOAA_Station(vec2d coordinates) {
+                        return NOAA_Station(coordinates.first, coordinates.second);
+                    };
+                )chai");
+            }
+
             // File System
             if (1) {
                 // IP Address Information

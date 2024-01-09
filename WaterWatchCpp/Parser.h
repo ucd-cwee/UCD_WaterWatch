@@ -36,11 +36,7 @@ public:
 	};
 	SETUP_STL_ITERATOR(cweeParser, cweeStr, it_state);
 
-
 	void Clear() { argV.Clear(); };
-
-
-
 
 	cweeParser() {};
 	~cweeParser() {};
@@ -137,6 +133,8 @@ public:
 	cweeStr getVar(int i) const { return argV[i]; }
 
 	cweeThreadedList<cweeStr>& getVars() { return argV; }
+	const cweeThreadedList<cweeStr>& getVars() const { return argV; }
+
 private:
 	void			processTextFast_FirstDelimiterOnly(const cweeStr& text, const cweeStr& delimiter) { // used for complex delimiters like ':cweeJunctionDelimiter:'
 		argV.Clear();
@@ -501,7 +499,46 @@ private:
 
 };
 
+// split based on a delimiter
 INLINE cweeParser cweeStr::Split(const cweeStr& delim) const {
 	cweeParser out(*this, delim, true);
 	return out;
+};
+
+
+/* 
+split based on a delimiter, specialized for: 
+"a,b,c", "123", 123,, "a,b,c" 
+*/
+INLINE cweeParser cweeStr::SplitQuotes(const cweeStr& delim) const {
+	cweeStr x = *this;
+	cweeStr identifier = "\"";
+
+	cweeList<cweeStr> storage;
+	while (true) {
+		auto First = x.Find(identifier, true);
+		auto Last = x.Mid(First + 1, x.Length() - (First + 1)).Find(identifier, true);
+
+		if (First == -1 || Last == -1) { break; }
+
+		auto isolated = x.Mid(First + 1, Last);
+		storage.push_back(isolated); {
+			x = x.Left(First) + cweeStr("[({})]") + x.Mid(First + 1 + isolated.Length() + 1, x.Length());
+		}
+	}
+
+	auto split{ x.Split(",") };
+	int progress = 0;
+	for (auto& y : split) {
+		while (true) {
+			int findMe = y.Find("[({})]", true);
+			if (findMe != -1) {
+				y = y.Left(findMe) + storage[progress++] + y.Mid(findMe + 6, x.Length());
+			}
+			else {
+				break;
+			}
+		}
+	}
+	return split;	
 };

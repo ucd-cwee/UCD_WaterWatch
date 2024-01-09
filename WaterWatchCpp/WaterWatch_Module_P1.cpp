@@ -405,34 +405,56 @@ namespace chaiscript {
             // cweeParser
             if (1) {
                 lib->add(chaiscript::fun([](const cweeStr& a, const cweeStr& b) { auto c = a.Split(b); cweeList<Boxed_Value> out; for (auto& x : c) { out.Append(Boxed_Value(cweeStr(x))); } return out; }), "Split");
-                lib->add(chaiscript::fun([](const cweeStr& a, const cweeStr& rowSplit, const cweeStr& columnSplit) {
+                lib->add(chaiscript::fun([](const cweeStr& a, const cweeStr& b) { auto c = a.SplitQuotes(b); cweeList<Boxed_Value> out; for (auto& x : c) { out.Append(Boxed_Value(cweeStr(x))); } return out; }), "SplitQuotes");
+                lib->add(chaiscript::fun([](const cweeStr& a, const cweeStr& rowSplit, const cweeStr& columnSplit, bool handleQuotes) {
                     cweeList<Boxed_Value> out; 
                     for (auto& x : a.Split(rowSplit)) {
                         cweeList<Boxed_Value> row;
-                        for (auto& y : x.Split(columnSplit)) {
-                            row.Append(var(cweeStr(y)));
+                        if (handleQuotes) {
+                            for (auto& y : x.SplitQuotes(columnSplit)) {
+                                row.Append(var(cweeStr(y)));
+                            }
+                        }
+                        else {
+                            for (auto& y : x.Split(columnSplit)) {
+                                row.Append(var(cweeStr(y)));
+                            }
+                        }                        
+                        out.Append(var(std::move(row)));
+                    } 
+                    return out; 
+                }), "ParseCSV");
+                lib->add(chaiscript::fun([](const cweeStr& a, const cweeStr& rowSplit, bool handleQuotes) {
+                    cweeList<Boxed_Value> out; 
+                    for (auto& x : a.Split(rowSplit)) {
+                        cweeList<Boxed_Value> row;
+                        if (handleQuotes) {
+                            for (auto& y : x.SplitQuotes(",")) {
+                                row.Append(var(cweeStr(y)));
+                            }
+                        }
+                        else {
+                            for (auto& y : x.Split(",")) {
+                                row.Append(var(cweeStr(y)));
+                            }
                         }
                         out.Append(var(std::move(row)));
                     } 
                     return out; 
                 }), "ParseCSV");
-                lib->add(chaiscript::fun([](const cweeStr& a, const cweeStr& rowSplit) {
-                    cweeList<Boxed_Value> out; 
-                    for (auto& x : a.Split(rowSplit)) {
-                        cweeList<Boxed_Value> row;
-                        for (auto& y : x.Split(",")) {
-                            row.Append(var(cweeStr(y)));
-                        }
-                        out.Append(var(std::move(row)));
-                    } 
-                    return out; 
-                }), "ParseCSV");
-                lib->add(chaiscript::fun([](const cweeStr& a) {
+                lib->add(chaiscript::fun([](const cweeStr& a, bool handleQuotes) {
                     cweeList<Boxed_Value> out; 
                     for (auto& x : a.Split("\n")) {
                         cweeList<Boxed_Value> row;
-                        for (auto& y : x.Split(",")) {
-                            row.Append(var(cweeStr(y)));
+                        if (handleQuotes) {
+                            for (auto& y : x.SplitQuotes(",")) {
+                                row.Append(var(cweeStr(y)));
+                            }
+                        }
+                        else {
+                            for (auto& y : x.Split(",")) {
+                                row.Append(var(cweeStr(y)));
+                            }
                         }
                         out.Append(var(std::move(row)));
                     } 
