@@ -603,12 +603,12 @@ namespace chaiscript {
                                 return false;
                             }
                         };
-
-                    private:
-                        std::map<int, bool> years;
                         cweeStr DownloadData(int year) const {
                             return fileSystem->DownloadCweeStrFromURL(cweeStr::printf("https://www.ncei.noaa.gov/data/global-hourly/access/%i/%s.csv", year, awsban.c_str()));
                         };
+                    private:
+                        std::map<int, bool> years;
+
                     };
 
                     static bool AppendWeatherStationData(cweeUnitValues::cweeUnitPattern& temperature, cweeUnitValues::cweeUnitPattern& precipitation, cweeStr const& HourlyDataCSV) {
@@ -639,36 +639,42 @@ namespace chaiscript {
                         }
                         return DataAdded > 0;
                     };
-                    static cweeUnitValues::cweeUnitPattern GetTemperature(int year, vec2d const& coordinates, std::vector<chaiscript::Boxed_Value> const& stations) {                        
-                        auto out{ cweeUnitValues::cweeUnitPattern(cweeUnitValues::second(), 1.0) };
-                                                
-                        cweeBalancedCurve< Station* > sorted_stations;
+                    static cweeUnitValues::cweeUnitPattern GetTemperature(int year, vec2d const& coordinates, std::vector<chaiscript::Boxed_Value> const& stations) {
+                        auto temperature{ cweeUnitValues::cweeUnitPattern(cweeUnitValues::second(), 1.0) };
+                        auto precipitation{ cweeUnitValues::cweeUnitPattern(cweeUnitValues::second(), 1.0) };
+
+                        cweeBalancedCurve< Station* > init_sorted_stations;
                         
                         for (auto& stn_boxed : stations) {
                             Station* stn = chaiscript::boxed_cast<Station*>(stn_boxed);
                             if (stn) {
-                                if (stn->AppendYear(year)) {
-                                    sorted_stations.AddValue(geocoding->Distance(coordinates, vec2d(stn->longitude, stn->latitude))(), stn);
+                                init_sorted_stations.AddValue(geocoding->Distance(coordinates, vec2d(stn->longitude, stn->latitude))(), stn);                                
+                            }
+                        }
+
+                        for (auto& stn_boxed : init_sorted_stations.GetKnotSeries()) {
+                            Station* stn = stn_boxed.second;
+                            if (stn) {
+                                if (AppendWeatherStationData(temperature, precipitation, stn->DownloadData(year))) {
+                                    if (temperature.GetMinTime() <= (u64)cweeTime::make_time(year, 1, 2, 0, 0, 0)) {
+                                        if (temperature.GetMaxTime() >= (u64)cweeTime::make_time(year, 12, 30, 23, 59, 59)) {
+                                            // we're done!
+                                            return temperature;
+                                        }
+                                    }
                                 }
                             }
                         }
 
-                        Station* nearestStation = sorted_stations.GetCurrentValue(-1);
-                        if (nearestStation) {
-                            for (auto& x : nearestStation->Temperature.GetKnotSeries((u64)(cweeTime::make_time(year, 1, 1, 0, 0, 0)), (u64)(cweeTime::make_time(year, 12, 31, 23, 59, 59)))) {
-                                out.AddUniqueValue(x.first, x.second);
-                            }
-                        }
-
-                        return out;
+                        return temperature;
                     };                    
 
                 };
+                
                 lib->add(chaiscript::user_type<NOAA>(), "NOAA");
                 lib->add(chaiscript::fun([]()->NOAA { return NOAA(); }), "NOAA");
                 lib->add(chaiscript::fun([](NOAA const& a, int year, vec2d const& coordinates, std::vector<chaiscript::Boxed_Value> const& stations) { return NOAA::GetTemperature(year, coordinates, stations); }), "GetTemperature");
-                
-                
+                                
                 lib->add(chaiscript::user_type<NOAA::Station>(), "NOAA_Station");
                 lib->add(chaiscript::constructor<NOAA::Station()>(), "NOAA_Station");
                 lib->add(chaiscript::constructor<NOAA::Station(const NOAA::Station&)>(), "NOAA_Station");
