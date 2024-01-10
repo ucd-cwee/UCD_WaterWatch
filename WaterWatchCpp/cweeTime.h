@@ -434,12 +434,14 @@ public:
 	static int			getNumDaysInSameMonth(cweeTime const& in) {
 		return (int)std::floor((((u64)(cweeTime(in).ToEndOfMonth() - cweeTime(in).ToStartOfMonth())) / (24.0 * 60.0 * 60.0)) + 0.5);
 	};
-	static cweeTime		make_time(int year = 1970, int month = 1, int day = 1, int hour = 0, int minute = 0, float second = 0) {
+	static cweeTime		make_time(int year = 1970, int month = 1, int day = 1, int hour = 0, int minute = 0, float second = 0, bool useLocalTime = true) {
 		cweeTime t = cweeTime::timeFromString(cweeStr::printf("%i/%i/%i %i:%i:%f", year, month, day, hour, minute, second));
-		t -= getUtcOffset(t.time)();
+		if (useLocalTime) { t -= getUtcOffset(t.time)(); }
 		return t;
 	};
-
+	static cweeUnitValues::second GetUtcOffset(cweeTime const& in) {
+		return getUtcOffset(in.time);
+	};
 private:
 	cweeStr	ToString() const {
 		cweeTime temp = *this + getUtcOffset(this->time)();

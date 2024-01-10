@@ -576,79 +576,113 @@ namespace chaiscript {
             }
 
 
-            // Extern Data
+            // NOAA Weather Data
             if (1) {
                 class NOAA {
                 public:
+                    class Station {
+                    public:
+                        cweeStr station;
+                        cweeStr awsban;
+                        cweeTime beg_date;
+                        cweeTime end_date;
+                        double longitude;
+                        double latitude;
+
+                        cweeUnitValues::cweeUnitPattern Temperature;
+                        cweeUnitValues::cweeUnitPattern Precipitation;
+
+                        bool AppendYear(int year) {
+                            if (awsban != "" && ((beg_date.tm_year() + 1900) <= year) && ((end_date.tm_year() + 1900) >= year)) {
+                                if (years.count(year) <= 0) {
+                                    years[year] = NOAA::AppendWeatherStationData(Temperature, Precipitation, DownloadData(year));
+                                }
+                                return years[year];
+                            }
+                            else {
+                                return false;
+                            }
+                        };
+
+                    private:
+                        std::map<int, bool> years;
+                        cweeStr DownloadData(int year) const {
+                            return fileSystem->DownloadCweeStrFromURL(cweeStr::printf("https://www.ncei.noaa.gov/data/global-hourly/access/%i/%s.csv", year, awsban.c_str()));
+                        };
+                    };
+
                     static bool AppendWeatherStationData(cweeUnitValues::cweeUnitPattern& temperature, cweeUnitValues::cweeUnitPattern& precipitation, cweeStr const& HourlyDataCSV) {
-                        cweeTime tm; double temp_F; bool SkipHeader = true; bool addedData = false;
+                        cweeTime tm; double temp_F; bool SkipHeader = true; int DataAdded = 0;
                         for (auto& row : HourlyDataCSV.Split("\n")) {
                             if (SkipHeader) { SkipHeader = false; continue; }
                             auto RowParsed = row.SplitQuotes(",");
                             tm = cweeTime::make_time(
-                                RowParsed[1].Mid(0, 4).ReturnNumeric(), RowParsed[1].Mid(5, 2).ReturnNumeric(), RowParsed[1].Mid(8, 2).ReturnNumeric(),
-                                RowParsed[1].Mid(11, 2).ReturnNumeric(), RowParsed[1].Mid(14, 2).ReturnNumeric(), RowParsed[1].Mid(17, 2).ReturnNumeric());
+                                RowParsed[1].Mid(0, 4).ReturnNumeric(), 
+                                RowParsed[1].Mid(5, 2).ReturnNumeric(), 
+                                RowParsed[1].Mid(8, 2).ReturnNumeric(),
+                                RowParsed[1].Mid(11, 2).ReturnNumeric(), 
+                                RowParsed[1].Mid(14, 2).ReturnNumeric(), 
+                                RowParsed[1].Mid(17, 2).ReturnNumeric(), 
+                                false // Uses UTC time
+                            );
                             
                             temp_F = (RowParsed[13].Mid(1, RowParsed[13].Length()).ReplaceInline(",", ".").ReturnNumeric() / 10.0) * 1.8 + 32.0;
                             if (RowParsed[13][0] == '-') temp_F *= -1.0;
 
-                            if (temp_F < -130 || temp_F > 140) { // -120F to 130F re highest ever recorded
+                            if (temp_F < -130 || temp_F > 140) { // -120F to 130F are the highest ever recorded -- beyond that is unlikely to be good data for an almanac.
                                 continue;
                             }
                             else {
-                                temperature.AddValue((u64)tm, temp_F);
-                                addedData = true;
+                                temperature.AddUniqueValue((u64)tm, temp_F);
+                                DataAdded++;
                             }
                         }
-                        return addedData;
+                        return DataAdded > 0;
                     };
+                    static cweeUnitValues::cweeUnitPattern GetTemperature(int year, vec2d const& coordinates, std::vector<chaiscript::Boxed_Value> const& stations) {                        
+                        auto out{ cweeUnitValues::cweeUnitPattern(cweeUnitValues::second(), 1.0) };
+                                                
+                        cweeBalancedCurve< Station* > sorted_stations;
+                        
+                        for (auto& stn_boxed : stations) {
+                            Station* stn = chaiscript::boxed_cast<Station*>(stn_boxed);
+                            if (stn) {
+                                if (stn->AppendYear(year)) {
+                                    sorted_stations.AddValue(geocoding->Distance(coordinates, vec2d(stn->longitude, stn->latitude))(), stn);
+                                }
+                            }
+                        }
+
+                        Station* nearestStation = sorted_stations.GetCurrentValue(-1);
+                        if (nearestStation) {
+                            for (auto& x : nearestStation->Temperature.GetKnotSeries((u64)(cweeTime::make_time(year, 1, 1, 0, 0, 0)), (u64)(cweeTime::make_time(year, 12, 31, 23, 59, 59)))) {
+                                out.AddUniqueValue(x.first, x.second);
+                            }
+                        }
+
+                        return out;
+                    };                    
+
                 };
                 lib->add(chaiscript::user_type<NOAA>(), "NOAA");
                 lib->add(chaiscript::fun([]()->NOAA { return NOAA(); }), "NOAA");
+                lib->add(chaiscript::fun([](NOAA const& a, int year, vec2d const& coordinates, std::vector<chaiscript::Boxed_Value> const& stations) { return NOAA::GetTemperature(year, coordinates, stations); }), "GetTemperature");
+                
+                
+                lib->add(chaiscript::user_type<NOAA::Station>(), "NOAA_Station");
+                lib->add(chaiscript::constructor<NOAA::Station()>(), "NOAA_Station");
+                lib->add(chaiscript::constructor<NOAA::Station(const NOAA::Station&)>(), "NOAA_Station");
+                lib->add(chaiscript::fun([](NOAA::Station& a, const NOAA::Station& b)->NOAA::Station& { a = b; return a; }), "=");
 
-                class NOAA_Station {
-                public:
-                    cweeStr station;
-                    cweeStr awsban;
-                    cweeTime beg_date;
-                    cweeTime end_date;
-                    double longitude;
-                    double latitude;
-
-                    cweeUnitValues::cweeUnitPattern Temperature;
-                    cweeUnitValues::cweeUnitPattern Precipitation;
-                    
-                    bool AppendYear(int year) {
-                        if (awsban != "" && beg_date.tm_year() + 1900 <= year && end_date.tm_year() + 1900 >= year) {
-                            if (years.count(year) <= 0) {
-                                cweeStr data = DownloadData(year);
-                                years[year] = NOAA::AppendWeatherStationData(Temperature, Precipitation, data);
-                            } else {
-                                return years[year];
-                            }
-                        }
-                    };
-
-                private:
-                    std::map<int, bool> years;
-                    cweeStr DownloadData(int year) const {
-                        return fileSystem->DownloadCweeStrFromURL(cweeStr::printf("https://www.ncei.noaa.gov/data/global-hourly/access/%i/%s.csv", year, awsban.c_str()));
-                    };
-                };
-                lib->add(chaiscript::user_type<NOAA_Station>(), "NOAA_Station");
-                lib->add(chaiscript::constructor<NOAA_Station()>(), "NOAA_Station");
-                lib->add(chaiscript::constructor<NOAA_Station(const NOAA_Station&)>(), "NOAA_Station");
-                lib->add(chaiscript::fun([](NOAA_Station& a, const NOAA_Station& b)->NOAA_Station& { a = b; return a; }), "=");
-
-                lib->add(chaiscript::fun(&NOAA_Station::station), "station");
-                lib->add(chaiscript::fun(&NOAA_Station::awsban), "awsban");
-                lib->add(chaiscript::fun(&NOAA_Station::beg_date), "beg_date");
-                lib->add(chaiscript::fun(&NOAA_Station::end_date), "end_date");
-                lib->add(chaiscript::fun(&NOAA_Station::longitude), "longitude");
-                lib->add(chaiscript::fun(&NOAA_Station::latitude), "latitude");
-                lib->add(chaiscript::fun(&NOAA_Station::Temperature), "Temperature");
-                lib->add(chaiscript::fun(&NOAA_Station::Precipitation), "Precipitation");
-                lib->add(chaiscript::fun(&NOAA_Station::AppendYear), "AppendYear");
+                lib->add(chaiscript::fun(&NOAA::Station::station), "station");
+                lib->add(chaiscript::fun(&NOAA::Station::awsban), "awsban");
+                lib->add(chaiscript::fun(&NOAA::Station::beg_date), "beg_date");
+                lib->add(chaiscript::fun(&NOAA::Station::end_date), "end_date");
+                lib->add(chaiscript::fun(&NOAA::Station::longitude), "longitude");
+                lib->add(chaiscript::fun(&NOAA::Station::latitude), "latitude");
+                lib->add(chaiscript::fun(&NOAA::Station::Temperature), "Temperature");
+                lib->add(chaiscript::fun(&NOAA::Station::Precipitation), "Precipitation");
+                lib->add(chaiscript::fun(&NOAA::Station::AppendYear), "AppendYear");
 
                 lib->eval(R"chai(
                     def NOAA::NearbyStations(double x, double y, int numNear){
@@ -663,7 +697,8 @@ namespace chaiscript {
 			                    str.Mid(6,2).to_number, 
 			                    0, 
 			                    0, 
-			                    0
+			                    0, 
+                                false
 		                    );
                         };
 	                    for (station : stations){

@@ -392,11 +392,14 @@ namespace chaiscript {
                 lib->add(chaiscript::fun(&cweeTime::tm_yday), "tm_yday");
                 lib->add(chaiscript::fun(&cweeTime::getNumDaysInSameMonth), "getNumDaysInSameMonth");
                 lib->add(chaiscript::fun(&cweeTime::make_time), "make_time");
+                lib->add(chaiscript::fun([](cweeTime const& T)-> cweeUnitValues::unit_value { return cweeUnitValues::second(cweeTime::GetUtcOffset(T)()); }), "GetUtcOffset");
+                lib->add(chaiscript::fun([]()-> cweeUnitValues::unit_value { return cweeUnitValues::second(cweeTime::GetUtcOffset(cweeTime())()); }), "GetUtcOffset");
 
                 lib->add(chaiscript::fun([](int year, int month, int day) { return cweeTime::make_time(year, month, day); }), "cweeTime");
                 lib->add(chaiscript::fun([](int year, int month, int day, int hour) { return cweeTime::make_time(year, month, day, hour); }), "cweeTime");
                 lib->add(chaiscript::fun([](int year, int month, int day, int hour, int minute) { return cweeTime::make_time(year, month, day, hour, minute); }), "cweeTime");
                 lib->add(chaiscript::fun([](int year, int month, int day, int hour, int minute, int second) {return cweeTime::make_time(year, month, day, hour, minute, second); }), "cweeTime");
+                lib->add(chaiscript::fun([](int year, int month, int day, int hour, int minute, int second, bool useLocalTime) {return cweeTime::make_time(year, month, day, hour, minute, second, useLocalTime); }), "cweeTime");
 
                 lib->add(chaiscript::fun([](cweeTime const& a) { return std::string(a.c_str()); }), "to_string");
                 lib->add(chaiscript::fun([]() { return cweeTime::Epoch(); }), "Epoch");
