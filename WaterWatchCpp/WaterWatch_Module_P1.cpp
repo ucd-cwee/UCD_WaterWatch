@@ -15,35 +15,12 @@ to maintain a single distribution point for the source code.
 
 #pragma once
 #include "WaterWatch_Module_P1.h"
-
-//#include "cweeScheduler.h"
-//#include "EPAnetWrapper.h" 
-//#include "MachineLearning.h"
-//#include "SQLITE.h"
-//#include "odbc.h"
 #include "FileSystemH.h"
-//#include "Geocoding.h"
-//#include "Toasts.h" // queue for "toasts" or messages from anywhere in the app. Acts as a message repo. 
-//#include "AppLayerRequests.h" // queue for job-requests for processing by another system
-//#include "InteropData.h"
-#include "DispatchTimer.h" // Queue a job every 'X' milliseconds.
-//#include "BalancedPattern.h"
-//#include "Pattern.h"
-//#include "cweeSet.h"
-//#include "cweeThreadedMap.h"
-//#include "Curve.h"
-//#include "BasicUnits.h"
-//#include "vec.h"
+#include "DispatchTimer.h" 
 #include "Parser.h"
-//#include "List.h"
 #include "cweeTime.h"
-//#include "cweeUnitedValue.h"
-//#include "cweeInterlocked.h"
-//#include "Mutex.h"
-//#include "InterlockedValues.h"
 #include "Clock.h" 
 #include "enum.h"
-//#include "cweeUnitPattern.h"
 #include "odbc.h"
 #include "cweeJob.h"
 
