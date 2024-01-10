@@ -580,8 +580,8 @@ namespace chaiscript {
             if (1) {
                 class NOAA {
                 public:
-                    static void AppendWeatherStationData(cweeUnitValues::cweeUnitPattern& temperature, cweeUnitValues::cweeUnitPattern& precipitation, cweeStr const& HourlyDataCSV) {
-                        cweeTime tm; double temp_F; bool SkipHeader = true;
+                    static bool AppendWeatherStationData(cweeUnitValues::cweeUnitPattern& temperature, cweeUnitValues::cweeUnitPattern& precipitation, cweeStr const& HourlyDataCSV) {
+                        cweeTime tm; double temp_F; bool SkipHeader = true; bool addedData = false;
                         for (auto& row : HourlyDataCSV.Split("\n")) {
                             if (SkipHeader) { SkipHeader = false; continue; }
                             auto RowParsed = row.SplitQuotes(",");
@@ -589,15 +589,18 @@ namespace chaiscript {
                                 RowParsed[1].Mid(0, 4).ReturnNumeric(), RowParsed[1].Mid(5, 2).ReturnNumeric(), RowParsed[1].Mid(8, 2).ReturnNumeric(),
                                 RowParsed[1].Mid(11, 2).ReturnNumeric(), RowParsed[1].Mid(14, 2).ReturnNumeric(), RowParsed[1].Mid(17, 2).ReturnNumeric());
                             
-                            if (RowParsed[13][0] == '-') {
-                                temp_F = -1 * (RowParsed[13].Mid(1, RowParsed[13].Length()).ReplaceInline(",", ".").ReturnNumeric() / 10.0) * 1.8 + 32;
+                            temp_F = (RowParsed[13].Mid(1, RowParsed[13].Length()).ReplaceInline(",", ".").ReturnNumeric() / 10.0) * 1.8 + 32.0;
+                            if (RowParsed[13][0] == '-') temp_F *= -1.0;
+
+                            if (temp_F < -130 || temp_F > 140) { // -120F to 130F re highest ever recorded
+                                continue;
                             }
                             else {
-                                temp_F = -1 * (RowParsed[13].Mid(1, RowParsed[13].Length()).ReplaceInline(",", ".").ReturnNumeric() / 10.0) * 1.8 + 32;
+                                temperature.AddValue((u64)tm, temp_F);
+                                addedData = true;
                             }
-
-                            temperature.AddValue((u64)tm, temp_F);
                         }
+                        return addedData;
                     };
                 };
                 lib->add(chaiscript::user_type<NOAA>(), "NOAA");
@@ -615,18 +618,19 @@ namespace chaiscript {
                     cweeUnitValues::cweeUnitPattern Temperature;
                     cweeUnitValues::cweeUnitPattern Precipitation;
                     
-                    void AppendYear(int year) {
+                    bool AppendYear(int year) {
                         if (awsban != "" && beg_date.tm_year() + 1900 <= year && end_date.tm_year() + 1900 >= year) {
                             if (years.count(year) <= 0) {
-                                years.insert(year);
                                 cweeStr data = DownloadData(year);
-                                NOAA::AppendWeatherStationData(Temperature, Precipitation, data);
+                                years[year] = NOAA::AppendWeatherStationData(Temperature, Precipitation, data);
+                            } else {
+                                return years[year];
                             }
                         }
                     };
 
                 private:
-                    std::set<int> years;
+                    std::map<int, bool> years;
                     cweeStr DownloadData(int year) const {
                         return fileSystem->DownloadCweeStrFromURL(cweeStr::printf("https://www.ncei.noaa.gov/data/global-hourly/access/%i/%s.csv", year, awsban.c_str()));
                     };
@@ -642,8 +646,8 @@ namespace chaiscript {
                 lib->add(chaiscript::fun(&NOAA_Station::end_date), "end_date");
                 lib->add(chaiscript::fun(&NOAA_Station::longitude), "longitude");
                 lib->add(chaiscript::fun(&NOAA_Station::latitude), "latitude");
-                lib->add(chaiscript::fun(&NOAA_Station::latitude), "Temperature");
-                lib->add(chaiscript::fun(&NOAA_Station::latitude), "Precipitation");
+                lib->add(chaiscript::fun(&NOAA_Station::Temperature), "Temperature");
+                lib->add(chaiscript::fun(&NOAA_Station::Precipitation), "Precipitation");
                 lib->add(chaiscript::fun(&NOAA_Station::AppendYear), "AppendYear");
 
                 lib->eval(R"chai(
