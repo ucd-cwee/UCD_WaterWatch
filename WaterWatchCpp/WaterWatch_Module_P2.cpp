@@ -582,6 +582,22 @@ namespace chaiscript {
                 public:
                     class Station {
                     public:
+                        Station() : 
+                            station(),
+                            awsban(),
+                            beg_date(),
+                            end_date(),
+                            longitude(),
+                            latitude(),
+                            Temperature(cweeUnitValues::cweeUnitPattern(cweeUnitValues::second(), 1.0)),
+                            Precipitation(cweeUnitValues::cweeUnitPattern(cweeUnitValues::second(), cweeUnitValues::feet_per_hour())),
+                            years()
+                        {};
+                        Station(Station const&) = default;
+                        Station(Station&&) = default;
+                        Station& operator=(Station const&) = default;
+                        Station& operator=(Station&&) = default;
+
                         cweeStr station;
                         cweeStr awsban;
                         cweeTime beg_date;
@@ -612,7 +628,7 @@ namespace chaiscript {
                     };
 
                     static bool AppendWeatherStationData(cweeUnitValues::cweeUnitPattern& temperature, cweeUnitValues::cweeUnitPattern& precipitation, cweeStr const& HourlyDataCSV) {
-                        cweeTime tm; double temp_F; bool SkipHeader = true; int DataAdded = 0;
+                        cweeTime tm; double temp_F; bool SkipHeader = true; int DataAdded = 0; double period;  cweeUnitValues::feet_per_hour fph;
                         for (auto& row : HourlyDataCSV.Split("\n")) {
                             if (SkipHeader) { SkipHeader = false; continue; }
                             auto RowParsed = row.SplitQuotes(",");
@@ -629,19 +645,23 @@ namespace chaiscript {
                             temp_F = (RowParsed[13].Mid(1, RowParsed[13].Length()).ReplaceInline(",", ".").ReturnNumeric() / 10.0) * 1.8 + 32.0;
                             if (RowParsed[13][0] == '-') temp_F *= -1.0;
 
-                            if (temp_F < -130 || temp_F > 140) { // -120F to 130F are the highest ever recorded -- beyond that is unlikely to be good data for an almanac.
-                                continue;
-                            }
-                            else {
+                            if (temp_F >= -130 && temp_F <= 140) {
+                                // -120F to 130F are the highest ever recorded -- beyond that is unlikely to be good data for an almanac.
                                 temperature.AddUniqueValue((u64)tm, temp_F);
                                 DataAdded++;
+
+                                period = RowParsed[16].Mid(0, 2).ReturnNumeric(); // 01 -> period quantity
+                                if (period == 1) { // otherwise, we have to back-distribute the rain over the last hour? Not what we are looking for...
+                                    fph = cwee_units::feet_per_hour_t(cwee_units::length::millimeter_t(RowParsed[16].Mid(3, 4).ReturnNumeric() / 10.0) / cwee_units::time::hour_t(1.0))();
+                                    precipitation.AddUniqueValue((u64)tm, fph);
+                                }
                             }
                         }
                         return DataAdded > 0;
                     };
                     static cweeUnitValues::cweeUnitPattern GetTemperature(int year, vec2d const& coordinates, std::vector<chaiscript::Boxed_Value> const& stations) {
                         auto temperature{ cweeUnitValues::cweeUnitPattern(cweeUnitValues::second(), 1.0) };
-                        auto precipitation{ cweeUnitValues::cweeUnitPattern(cweeUnitValues::second(), 1.0) };
+                        auto precipitation{ cweeUnitValues::cweeUnitPattern(cweeUnitValues::second(), cweeUnitValues::feet_per_hour()) };
 
                         cweeBalancedCurve< Station* > init_sorted_stations;
                         
@@ -658,8 +678,12 @@ namespace chaiscript {
                                 if (AppendWeatherStationData(temperature, precipitation, stn->DownloadData(year))) {
                                     if (temperature.GetMinTime() <= (u64)cweeTime::make_time(year, 1, 2, 0, 0, 0)) {
                                         if (temperature.GetMaxTime() >= (u64)cweeTime::make_time(year, 12, 30, 23, 59, 59)) {
-                                            // we're done!
-                                            return temperature;
+                                            if (precipitation.GetMinTime() <= (u64)cweeTime::make_time(year, 1, 2, 0, 0, 0)) {
+                                                if (precipitation.GetMaxTime() >= (u64)cweeTime::make_time(year, 12, 30, 23, 59, 59)) {
+                                                    // we're done!
+                                                    return temperature;
+                                                }
+                                            }
                                         }
                                     }
                                 }
@@ -668,13 +692,50 @@ namespace chaiscript {
 
                         return temperature;
                     };                    
+                    static cweeUnitValues::cweeUnitPattern GetPrecipitation(int year, vec2d const& coordinates, std::vector<chaiscript::Boxed_Value> const& stations) {
+                        auto temperature{ cweeUnitValues::cweeUnitPattern(cweeUnitValues::second(), 1.0) };
+                        auto precipitation{ cweeUnitValues::cweeUnitPattern(cweeUnitValues::second(), cweeUnitValues::feet_per_hour()) };
 
+                        cweeBalancedCurve< Station* > init_sorted_stations;
+
+                        for (auto& stn_boxed : stations) {
+                            Station* stn = chaiscript::boxed_cast<Station*>(stn_boxed);
+                            if (stn) {
+                                init_sorted_stations.AddValue(geocoding->Distance(coordinates, vec2d(stn->longitude, stn->latitude))(), stn);
+                            }
+                        }
+
+                        for (auto& stn_boxed : init_sorted_stations.GetKnotSeries()) {
+                            Station* stn = stn_boxed.second;
+                            if (stn) {
+                                if (AppendWeatherStationData(temperature, precipitation, stn->DownloadData(year))) {
+                                    if (temperature.GetMinTime() <= (u64)cweeTime::make_time(year, 1, 2, 0, 0, 0)) {
+                                        if (temperature.GetMaxTime() >= (u64)cweeTime::make_time(year, 12, 30, 23, 59, 59)) {
+                                            if (precipitation.GetMinTime() <= (u64)cweeTime::make_time(year, 1, 2, 0, 0, 0)) {
+                                                if (precipitation.GetMaxTime() >= (u64)cweeTime::make_time(year, 12, 30, 23, 59, 59)) {
+                                                    // we're done!
+                                                    return precipitation;
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        return precipitation;
+                    };
                 };
                 
                 lib->add(chaiscript::user_type<NOAA>(), "NOAA");
                 lib->add(chaiscript::fun([]()->NOAA { return NOAA(); }), "NOAA");
-                lib->add(chaiscript::fun([](NOAA const& a, int year, vec2d const& coordinates, std::vector<chaiscript::Boxed_Value> const& stations) { return NOAA::GetTemperature(year, coordinates, stations); }), "GetTemperature");
-                                
+                lib->add(chaiscript::fun([](NOAA const& a, int year, vec2d const& coordinates, std::vector<chaiscript::Boxed_Value> const& stations) { 
+                    return NOAA::GetTemperature(year, coordinates, stations);
+                }), "GetTemperature");
+                lib->add(chaiscript::fun([](NOAA const& a, int year, vec2d const& coordinates, std::vector<chaiscript::Boxed_Value> const& stations) {
+                    return NOAA::GetPrecipitation(year, coordinates, stations);
+                }), "GetPrecipitation");
+
                 lib->add(chaiscript::user_type<NOAA::Station>(), "NOAA_Station");
                 lib->add(chaiscript::constructor<NOAA::Station()>(), "NOAA_Station");
                 lib->add(chaiscript::constructor<NOAA::Station(const NOAA::Station&)>(), "NOAA_Station");

@@ -83,15 +83,15 @@ namespace chaiscript {
 
                     lib->add(chaiscript::fun([](cweeSharedPtr < ::epanet::Sasset> const& a) -> std::string { if (!a) throw(chaiscript::exception::eval_error("Cannot access a member of a null (empty) shared object.")); return (cweeStr(a->Type_p.ToString()) + " " + a->Name_p).c_str(); }), "to_string");
 
-                    lib->add(chaiscript::fun([](cweeSharedPtr < ::epanet::Sasset> const& a) { AUTO p = a->GetValue<_HEAD_>(); if (p) return cweeUnitValues::cweeUnitPattern(*p); else return cweeUnitValues::cweeUnitPattern((units::time::second_t)(1), (typename ::epanet::DefaultUnits<_HEAD_>::unit)(1)); }), "Head");
-                    lib->add(chaiscript::fun([](cweeSharedPtr < ::epanet::Sasset> const& a) { AUTO p = a->GetValue<_DEMAND_>(); if (p) return cweeUnitValues::cweeUnitPattern(*p); else return cweeUnitValues::cweeUnitPattern((units::time::second_t)(1), (typename ::epanet::DefaultUnits<_DEMAND_>::unit)(1)); }), "Demand");
-                    lib->add(chaiscript::fun([](cweeSharedPtr < ::epanet::Sasset> const& a) { AUTO p = a->GetValue<_FLOW_>(); if (p) return cweeUnitValues::cweeUnitPattern(*p); else return cweeUnitValues::cweeUnitPattern((units::time::second_t)(1), (typename ::epanet::DefaultUnits<_FLOW_>::unit)(1)); }), "Flow");
-                    lib->add(chaiscript::fun([](cweeSharedPtr < ::epanet::Sasset> const& a) { AUTO p = a->GetValue<_ENERGY_>(); if (p) return cweeUnitValues::cweeUnitPattern(*p); else return cweeUnitValues::cweeUnitPattern((units::time::second_t)(1), (typename ::epanet::DefaultUnits<_ENERGY_>::unit)(1)); }), "Energy");
-                    lib->add(chaiscript::fun([](cweeSharedPtr < ::epanet::Sasset> const& a) { AUTO p = a->GetValue<_HEADLOSS_>(); if (p) return cweeUnitValues::cweeUnitPattern(*p); else return cweeUnitValues::cweeUnitPattern((units::time::second_t)(1), (typename ::epanet::DefaultUnits<_HEADLOSS_>::unit)(1)); }), "Headloss");
-                    lib->add(chaiscript::fun([](cweeSharedPtr < ::epanet::Sasset> const& a) { AUTO p = a->GetValue<_VELOCITY_>(); if (p) return cweeUnitValues::cweeUnitPattern(*p); else return cweeUnitValues::cweeUnitPattern((units::time::second_t)(1), (typename ::epanet::DefaultUnits<_VELOCITY_>::unit)(1)); }), "Velocity");
-                    lib->add(chaiscript::fun([](cweeSharedPtr < ::epanet::Sasset> const& a) { AUTO p = a->GetValue<_SETTING_>(); if (p) return cweeUnitValues::cweeUnitPattern(*p); else return cweeUnitValues::cweeUnitPattern((units::time::second_t)(1), (typename ::epanet::DefaultUnits<_SETTING_>::unit)(1)); }), "Setting");
-                    lib->add(chaiscript::fun([](cweeSharedPtr < ::epanet::Sasset> const& a) { AUTO p = a->GetValue<_STATUS_>(); if (p) return cweeUnitValues::cweeUnitPattern(*p); else return cweeUnitValues::cweeUnitPattern((units::time::second_t)(1), (typename ::epanet::DefaultUnits<_STATUS_>::unit)(1)); }), "Status");
-                    lib->add(chaiscript::fun([](cweeSharedPtr < ::epanet::Sasset> const& a) { AUTO p = a->GetValue<_QUALITY_>(); if (p) return cweeUnitValues::cweeUnitPattern(*p); else return cweeUnitValues::cweeUnitPattern((units::time::second_t)(1), (typename ::epanet::DefaultUnits<_QUALITY_>::unit)(1)); }), "Quality");
+                    lib->add(chaiscript::fun([](cweeSharedPtr < ::epanet::Sasset> const& a) { AUTO p = a->GetValue<_HEAD_>(); if (p) return cweeUnitValues::cweeUnitPattern(*p); else return cweeUnitValues::cweeUnitPattern(cweeUnitValues::second(1), cweeUnitValues::unit_value::from_unit_t((typename ::epanet::DefaultUnits<_HEAD_>::unit)(1))); }), "Head");
+                    lib->add(chaiscript::fun([](cweeSharedPtr < ::epanet::Sasset> const& a) { AUTO p = a->GetValue<_DEMAND_>(); if (p) return cweeUnitValues::cweeUnitPattern(*p); else return cweeUnitValues::cweeUnitPattern(cweeUnitValues::second(1), cweeUnitValues::unit_value::from_unit_t((typename ::epanet::DefaultUnits<_DEMAND_>::unit)(1))); }), "Demand");
+                    lib->add(chaiscript::fun([](cweeSharedPtr < ::epanet::Sasset> const& a) { AUTO p = a->GetValue<_FLOW_>(); if (p) return cweeUnitValues::cweeUnitPattern(*p); else return cweeUnitValues::cweeUnitPattern(cweeUnitValues::second(1), cweeUnitValues::unit_value::from_unit_t((typename ::epanet::DefaultUnits<_FLOW_>::unit)(1))); }), "Flow");
+                    lib->add(chaiscript::fun([](cweeSharedPtr < ::epanet::Sasset> const& a) { AUTO p = a->GetValue<_ENERGY_>(); if (p) return cweeUnitValues::cweeUnitPattern(*p); else return cweeUnitValues::cweeUnitPattern(cweeUnitValues::second(1), cweeUnitValues::unit_value::from_unit_t((typename ::epanet::DefaultUnits<_ENERGY_>::unit)(1))); }), "Energy");
+                    lib->add(chaiscript::fun([](cweeSharedPtr < ::epanet::Sasset> const& a) { AUTO p = a->GetValue<_HEADLOSS_>(); if (p) return cweeUnitValues::cweeUnitPattern(*p); else return cweeUnitValues::cweeUnitPattern(cweeUnitValues::second(1), cweeUnitValues::unit_value::from_unit_t((typename ::epanet::DefaultUnits<_HEADLOSS_>::unit)(1))); }), "Headloss");
+                    lib->add(chaiscript::fun([](cweeSharedPtr < ::epanet::Sasset> const& a) { AUTO p = a->GetValue<_VELOCITY_>(); if (p) return cweeUnitValues::cweeUnitPattern(*p); else return cweeUnitValues::cweeUnitPattern(cweeUnitValues::second(1), cweeUnitValues::unit_value::from_unit_t((typename ::epanet::DefaultUnits<_VELOCITY_>::unit)(1))); }), "Velocity");
+                    lib->add(chaiscript::fun([](cweeSharedPtr < ::epanet::Sasset> const& a) { AUTO p = a->GetValue<_SETTING_>(); if (p) return cweeUnitValues::cweeUnitPattern(*p); else return cweeUnitValues::cweeUnitPattern(cweeUnitValues::second(1), cweeUnitValues::unit_value::from_unit_t((typename ::epanet::DefaultUnits<_SETTING_>::unit)(1))); }), "Setting");
+                    lib->add(chaiscript::fun([](cweeSharedPtr < ::epanet::Sasset> const& a) { AUTO p = a->GetValue<_STATUS_>(); if (p) return cweeUnitValues::cweeUnitPattern(*p); else return cweeUnitValues::cweeUnitPattern(cweeUnitValues::second(1), cweeUnitValues::unit_value::from_unit_t((typename ::epanet::DefaultUnits<_STATUS_>::unit)(1))); }), "Status");
+                    lib->add(chaiscript::fun([](cweeSharedPtr < ::epanet::Sasset> const& a) { AUTO p = a->GetValue<_QUALITY_>(); if (p) return cweeUnitValues::cweeUnitPattern(*p); else return cweeUnitValues::cweeUnitPattern(cweeUnitValues::second(1), cweeUnitValues::unit_value::from_unit_t((typename ::epanet::DefaultUnits<_QUALITY_>::unit)(1))); }), "Quality");
                 }
                 /* Snode */ {
                     AddSharedPtrClass(::epanet, Snode);
@@ -810,13 +810,13 @@ namespace chaiscript {
                         }
 
                         cweeThreadedMap<std::string, cweeUnitValues::unit_value> results;
-                        results.Emplace("Penalty", penalty);
-                        results.Emplace("Customer Pressure", customerPressure);
-                        results.Emplace("Performance", performance);
-                        results.Emplace("Net Pump Costs", totalEnergyDemandCost);
-                        results.Emplace("Net Benefits (Zones)", NPV_zones);
-                        results.Emplace("Net Benefits (Valves)", NPV_valves);
-                        results.Emplace("Net Benefits", NPV_zones + NPV_valves - totalEnergyDemandCost);
+                        results.Emplace("Penalty", cweeUnitValues::unit_value::from_unit_t(penalty));
+                        results.Emplace("Customer Pressure", cweeUnitValues::unit_value::from_unit_t(customerPressure));
+                        results.Emplace("Performance", cweeUnitValues::unit_value::from_unit_t(performance));
+                        results.Emplace("Net Pump Costs", cweeUnitValues::unit_value::from_unit_t(totalEnergyDemandCost));
+                        results.Emplace("Net Benefits (Zones)", cweeUnitValues::unit_value::from_unit_t(NPV_zones));
+                        results.Emplace("Net Benefits (Valves)", cweeUnitValues::unit_value::from_unit_t(NPV_valves));
+                        results.Emplace("Net Benefits", cweeUnitValues::unit_value::from_unit_t(NPV_zones + NPV_valves - totalEnergyDemandCost));
 
                         return results;
                     };
@@ -1372,9 +1372,9 @@ namespace chaiscript {
                                     }
                                 }
 
-                                bv_final["Avg Pressure"] = chaiscript::var(cweeUnitValues::unit_value(cweeUnitValues::pounds_per_square_inch(this_avgCustomerPSI)));
-                                bv_final["Min Pressure"] = chaiscript::var(cweeUnitValues::unit_value(cweeUnitValues::pounds_per_square_inch(this_minCustomerPSI)));
-                                bv_final["Avg Pressure Reduction"] = chaiscript::var(cweeUnitValues::unit_value(cweeUnitValues::pounds_per_square_inch(avgCustomerPSI - this_avgCustomerPSI)));
+                                bv_final["Avg Pressure"] = chaiscript::var(cweeUnitValues::unit_value(cweeUnitValues::pounds_per_square_inch(cweeUnitValues::unit_value::from_unit_t(this_avgCustomerPSI))));
+                                bv_final["Min Pressure"] = chaiscript::var(cweeUnitValues::unit_value(cweeUnitValues::pounds_per_square_inch(cweeUnitValues::unit_value::from_unit_t(this_minCustomerPSI))));
+                                bv_final["Avg Pressure Reduction"] = chaiscript::var(cweeUnitValues::unit_value(cweeUnitValues::pounds_per_square_inch(cweeUnitValues::unit_value::from_unit_t(avgCustomerPSI - this_avgCustomerPSI))));
                                 bv_final["Project"] = chaiscript::var(cweeSharedPtr<EPAnetProject>(p));
                             }
 
@@ -1482,7 +1482,7 @@ namespace chaiscript {
                                                                         UI_StackPanel patContainer; patContainer.MinHeight = 180; patContainer.MinWidth = 400;
                                                                         {
                                                                             patContainer.AddChild(var(cweeStr("Level")));
-                                                                            patContainer.AddChild(var(cweeUnitValues::cweeUnitPattern(*headPat) - node->El));
+                                                                            patContainer.AddChild(var(cweeUnitValues::cweeUnitPattern(*headPat) - cweeUnitValues::unit_value::from_unit_t(node->El)));
                                                                         }
                                                                         iconTagContent->AddChild(var(std::move(patContainer)));
                                                                     }
@@ -1499,10 +1499,10 @@ namespace chaiscript {
                                                                 {
                                                                     UI_StackPanel patContainer; patContainer.MinHeight = 180; patContainer.MinWidth = 400;
                                                                     {
-                                                                        AUTO pat = cweeUnitValues::cweeUnitPattern(*headPat) - node->El;
-                                                                        AUTO pat1 = cweeUnitValues::cweeUnitPattern(1_s, 1_ft_water);
+                                                                        AUTO pat = cweeUnitValues::cweeUnitPattern(*headPat) - cweeUnitValues::unit_value::from_unit_t(node->El);
+                                                                        AUTO pat1 = cweeUnitValues::cweeUnitPattern(cweeUnitValues::second(), cweeUnitValues::head());
                                                                         pat1 = pat;
-                                                                        AUTO pat2 = cweeUnitValues::cweeUnitPattern(1_s, 1_psi);
+                                                                        AUTO pat2 = cweeUnitValues::cweeUnitPattern(cweeUnitValues::second(), cweeUnitValues::pounds_per_square_inch());
                                                                         pat2 = pat1;
 
                                                                         patContainer.AddChild(var(cweeStr("Pressure")));
@@ -1519,7 +1519,7 @@ namespace chaiscript {
                                                                     UI_StackPanel patContainer; patContainer.MinHeight = 180; patContainer.MinWidth = 400;
                                                                     {
                                                                         patContainer.AddChild(var(cweeStr("Demand")));
-                                                                        AUTO pat1 = cweeUnitValues::cweeUnitPattern(1_s, 1_gpm);
+                                                                        AUTO pat1 = cweeUnitValues::cweeUnitPattern(cweeUnitValues::second(), cweeUnitValues::gallon_per_minute());
                                                                         pat1 = cweeUnitValues::cweeUnitPattern(*demandPat);
                                                                         patContainer.AddChild(var(std::move(pat1)));
                                                                     }
@@ -1577,7 +1577,7 @@ namespace chaiscript {
                                                                         UI_StackPanel patContainer; patContainer.MinHeight = 180; patContainer.MinWidth = 400;
                                                                         {
                                                                             patContainer.AddChild(var(cweeStr("Level")));
-                                                                            patContainer.AddChild(var(cweeUnitValues::cweeUnitPattern(*headPat) - minPressureCustomer->El));
+                                                                            patContainer.AddChild(var(cweeUnitValues::cweeUnitPattern(*headPat) - cweeUnitValues::unit_value::from_unit_t(minPressureCustomer->El)));
                                                                         }
                                                                         iconTagContent->AddChild(var(std::move(patContainer)));
                                                                     }
@@ -1594,10 +1594,10 @@ namespace chaiscript {
                                                                 {
                                                                     UI_StackPanel patContainer; patContainer.MinHeight = 180; patContainer.MinWidth = 400;
                                                                     {
-                                                                        AUTO pat = cweeUnitValues::cweeUnitPattern(*headPat) - minPressureCustomer->El;
-                                                                        AUTO pat1 = cweeUnitValues::cweeUnitPattern(1_s, 1_ft_water);
+                                                                        AUTO pat = cweeUnitValues::cweeUnitPattern(*headPat) - cweeUnitValues::unit_value::from_unit_t(minPressureCustomer->El);
+                                                                        AUTO pat1 = cweeUnitValues::cweeUnitPattern(cweeUnitValues::second(), cweeUnitValues::head());
                                                                         pat1 = pat;
-                                                                        AUTO pat2 = cweeUnitValues::cweeUnitPattern(1_s, 1_psi);
+                                                                        AUTO pat2 = cweeUnitValues::cweeUnitPattern(cweeUnitValues::second(), cweeUnitValues::pounds_per_square_inch());
                                                                         pat2 = pat1;
 
                                                                         patContainer.AddChild(var(cweeStr("Pressure")));
@@ -1615,7 +1615,7 @@ namespace chaiscript {
                                                                     {
                                                                         patContainer.AddChild(var(cweeStr("Demand")));
 
-                                                                        AUTO pat1 = cweeUnitValues::cweeUnitPattern(1_s, 1_gpm);
+                                                                        AUTO pat1 = cweeUnitValues::cweeUnitPattern(cweeUnitValues::second(), cweeUnitValues::gallon_per_minute());
                                                                         pat1 = cweeUnitValues::cweeUnitPattern(*demandPat);
                                                                         patContainer.AddChild(var(std::move(pat1)));
                                                                     }
@@ -1631,7 +1631,7 @@ namespace chaiscript {
 
                                                 icon.IconPathGeometry = minPressureCustomer->Icon();
                                                 icon.HideOnCollision = false;
-                                                icon.Label = cweeUnitValues::unit_value(minPressure).ToString().c_str();
+                                                icon.Label = cweeUnitValues::unit_value::from_unit_t(minPressure).ToString().c_str();
                                             }
                                             layer.Children.push_back(var(std::move(icon)));
                                         }
@@ -1680,7 +1680,7 @@ namespace chaiscript {
                                                                     {
                                                                         patContainer.AddChild(var(cweeStr("Flow")));
 
-                                                                        AUTO pat1 = cweeUnitValues::cweeUnitPattern(1_s, 1_gpm);
+                                                                        AUTO pat1 = cweeUnitValues::cweeUnitPattern(cweeUnitValues::second(), cweeUnitValues::gallon_per_minute());
                                                                         pat1 = cweeUnitValues::cweeUnitPattern(*pat);
 
                                                                         AUTO pattern = pat1;
@@ -1782,7 +1782,7 @@ namespace chaiscript {
                                                                         {
                                                                             patContainer.AddChild(var(cweeStr("Flow")));
 
-                                                                            AUTO pat1 = cweeUnitValues::cweeUnitPattern(1_s, 1_gpm);
+                                                                            AUTO pat1 = cweeUnitValues::cweeUnitPattern(cweeUnitValues::second(), cweeUnitValues::gallon_per_minute());
                                                                             pat1 = cweeUnitValues::cweeUnitPattern(*pat);
 
                                                                             AUTO pattern = pat1;
@@ -1905,7 +1905,7 @@ namespace chaiscript {
                                                     }));
                                                 icon.IconPathGeometry = minPressureCustomer->Icon();
                                                 icon.HideOnCollision = false;
-                                                icon.Label = cweeUnitValues::unit_value(minPressure).ToString().c_str();
+                                                icon.Label = cweeUnitValues::unit_value::from_unit_t(minPressure).ToString().c_str();
                                             }
                                             layer.Children.push_back(var(std::move(icon)));
                                         }
@@ -2155,7 +2155,7 @@ namespace chaiscript {
                                             }));
                                         icon.IconPathGeometry = minPressureCustomer->Icon();
                                         icon.HideOnCollision = false;
-                                        icon.Label = cweeUnitValues::unit_value(minPressure).ToString().c_str();
+                                        icon.Label = cweeUnitValues::unit_value::from_unit_t(minPressure).ToString().c_str();
                                     }
                                     layer.Children.push_back(var(std::move(icon)));
                                 }

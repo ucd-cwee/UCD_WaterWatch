@@ -1218,11 +1218,11 @@ namespace cweeUnitValues {
 					p->ref->Lock();
 					auto* node = p->ref->UnsafeGetValue(t);
 
-					unit_value x_0 = (p->internal_X_type = t);
+					unit_value x_0 = (p->internal_X_type = unit_value::from_unit_t(t));
 					unit_value y_0;
 					DataContainer* new_ptr;
 					if (node && node->object) {
-						y_0 = (p->internal_Y_type = *node->object);
+						y_0 = (p->internal_Y_type = unit_value::from_unit_t(*node->object));
 						new_ptr = new DataContainer(x_0, y_0);
 					}
 					else {
@@ -1240,11 +1240,11 @@ namespace cweeUnitValues {
 					p->ref->Lock();
 					auto* node = p->ref->UnsafeGetValue(t);
 
-					unit_value x_0 = (p->internal_X_type = t);
+					unit_value x_0 = (p->internal_X_type = unit_value::from_unit_t(t));
 					unit_value y_0;
 					DataContainer* new_ptr;
 					if (node && node->object) {
-						y_0 = (p->internal_Y_type = *node->object);
+						y_0 = (p->internal_Y_type = unit_value::from_unit_t(*node->object));
 						new_ptr = new DataContainer(x_0, y_0);
 					}
 					else {
@@ -1284,11 +1284,11 @@ namespace cweeUnitValues {
 					p->ref->Lock();
 					auto* node = p->ref->UnsafeGetValue(t);
 
-					unit_value x_0 = (p->internal_X_type = t);
+					unit_value x_0 = (p->internal_X_type = unit_value::from_unit_t(t));
 					unit_value y_0;
 					DataContainer* new_ptr;
 					if (node && node->object) {
-						y_0 = (p->internal_Y_type = *node->object);
+						y_0 = (p->internal_Y_type = unit_value::from_unit_t(*node->object));
 						new_ptr = new DataContainer(x_0, y_0);
 					}
 					else {
@@ -1342,11 +1342,11 @@ namespace cweeUnitValues {
 					p->ref->Lock();
 					auto* node = p->ref->UnsafeGetValue(t);
 
-					unit_value x_0 = (p->internal_X_type = t);
+					unit_value x_0 = (p->internal_X_type = unit_value::from_unit_t(t));
 					unit_value y_0;
 					DataContainer* new_ptr;
 					if (node && node->object) {
-						y_0 = (p->internal_Y_type = *node->object);
+						y_0 = (p->internal_Y_type = unit_value::from_unit_t(*node->object));
 						new_ptr = new DataContainer(x_0, y_0);
 					}
 					else {
@@ -1364,11 +1364,11 @@ namespace cweeUnitValues {
 					p->ref->Lock();
 					auto* node = p->ref->UnsafeGetValue(t);
 
-					unit_value x_0 = (p->internal_X_type = t);
+					unit_value x_0 = (p->internal_X_type = unit_value::from_unit_t(t));
 					unit_value y_0;
 					DataContainer* new_ptr;
 					if (node && node->object) {
-						y_0 = (p->internal_Y_type = *node->object);
+						y_0 = (p->internal_Y_type = unit_value::from_unit_t(*node->object));
 						new_ptr = new DataContainer(x_0, y_0);
 					}
 					else {
@@ -1408,11 +1408,11 @@ namespace cweeUnitValues {
 					p->ref->Lock();
 					auto* node = p->ref->UnsafeGetValue(t);
 
-					unit_value x_0 = (p->internal_X_type = t);
+					unit_value x_0 = (p->internal_X_type = unit_value::from_unit_t(t));
 					unit_value y_0;
 					DataContainer* new_ptr;
 					if (node && node->object) {
-						y_0 = (p->internal_Y_type = *node->object);
+						y_0 = (p->internal_Y_type = unit_value::from_unit_t(*node->object));
 						new_ptr = new DataContainer(x_0, y_0);
 					}
 					else {
@@ -1437,7 +1437,7 @@ namespace cweeUnitValues {
 			return out.template CastReference< cweeUnitPatternContainer_t>();
 		};
 		cweeBalancedPatternReferenceContainer() : cweeUnitPatternContainer_t(), ref(nullptr) {};
-		cweeBalancedPatternReferenceContainer(cweeBalancedPattern<Y_Axis_Type, X_Axis_Type>* Ref) : cweeUnitPatternContainer_t(unit_value(X_Axis_Type(0)), unit_value(Y_Axis_Type(0))), ref(Ref) {};
+		cweeBalancedPatternReferenceContainer(cweeBalancedPattern<Y_Axis_Type, X_Axis_Type>* Ref) : cweeUnitPatternContainer_t(unit_value::from_unit_t(X_Axis_Type(0)), unit_value::from_unit_t(Y_Axis_Type(0))), ref(Ref) {};
 		cweeBalancedPatternReferenceContainer(cweeBalancedPatternReferenceContainer const& o) : cweeUnitPatternContainer_t(o.internal_X_type, o.internal_Y_type), ref(o.ref) {};
 		cweeBalancedPatternReferenceContainer& operator=(cweeBalancedPatternReferenceContainer const& o) = delete; /* {
 
@@ -1453,20 +1453,20 @@ namespace cweeUnitValues {
 		~cweeBalancedPatternReferenceContainer() {};
 
 		unit_value GetMinTime() const {
-			return internal_X_type = ref->GetMinTime();
+			return internal_X_type = unit_value::from_unit_t(ref->GetMinTime());
 		};
 		unit_value GetMaxTime() const {
-			return internal_X_type = ref->GetMaxTime();
+			return internal_X_type = unit_value::from_unit_t(ref->GetMaxTime());
 		};
 		unit_value GetAvgTime(void) const {
-			return internal_X_type = ref->GetAvgTime();
+			return internal_X_type = unit_value::from_unit_t(ref->GetAvgTime());
 		};
 
 		scalar											GetMinimumDecimals() const {
-			return ref->GetMinimumDecimals();
+			return unit_value::from_unit_t(ref->GetMinimumDecimals());
 		};
 		unit_value										GetMinimumTimeStep() const {
-			return ref->GetMinimumTimeStep();
+			return unit_value::from_unit_t(ref->GetMinimumTimeStep());
 		};
 
 		void											ShiftTime(const unit_value& deltaTime) {
@@ -1482,7 +1482,7 @@ namespace cweeUnitValues {
 			ref->SetInterpolationType(interpolationType);
 			AUTO answer = ref->GetCurrentValue((internal_X_type = time)());
 			ref->SetInterpolationType(prevIT);
-			return answer;
+			return cweeUnitValues::unit_value::from_unit_t(answer);
 		};
 
 		int  GetNodeCount() const { return ref->GetNumValues(); };
@@ -1513,7 +1513,7 @@ namespace cweeUnitValues {
 		void  RemoveWithMask(cweeSharedPtr< cweeUnitPatternContainer_t> other) {
 			if (other) {
 				ref->RemoveWithMask([other](X_Axis_Type T)->bool {
-					return (other->GetCurrentValue(T, interpolation_t::LINEAR) > 0);
+					return (other->GetCurrentValue(cweeUnitValues::unit_value::from_unit_t(T), interpolation_t::LINEAR) > 0);
 				});
 			}
 		};
@@ -1571,7 +1571,7 @@ namespace cweeUnitValues {
 					unit_value y_0;
 					DataContainer* new_ptr;
 					if (node && node->object) {
-						y_0 = (p->internal_Y_type = *node->object);
+						y_0 = (p->internal_Y_type = unit_value::from_unit_t(*node->object));
 						new_ptr = new DataContainer(x_0, y_0);
 					}
 					else {
@@ -1593,7 +1593,7 @@ namespace cweeUnitValues {
 					unit_value y_0;
 					DataContainer* new_ptr;
 					if (node && node->object) {
-						y_0 = (p->internal_Y_type = *node->object);
+						y_0 = (p->internal_Y_type = unit_value::from_unit_t(*node->object));
 						new_ptr = new DataContainer(x_0, y_0);
 					}
 					else {
@@ -1637,7 +1637,7 @@ namespace cweeUnitValues {
 					unit_value y_0;
 					DataContainer* new_ptr;
 					if (node && node->object) {
-						y_0 = (p->internal_Y_type = *node->object);
+						y_0 = (p->internal_Y_type = unit_value::from_unit_t(*node->object));
 						new_ptr = new DataContainer(x_0, y_0);
 					}
 					else {
@@ -1695,7 +1695,7 @@ namespace cweeUnitValues {
 					unit_value y_0;
 					DataContainer* new_ptr;
 					if (node && node->object) {
-						y_0 = (p->internal_Y_type = *node->object);
+						y_0 = (p->internal_Y_type = unit_value::from_unit_t(*node->object));
 						new_ptr = new DataContainer(x_0, y_0);
 					}
 					else {
@@ -1717,7 +1717,7 @@ namespace cweeUnitValues {
 					unit_value y_0;
 					DataContainer* new_ptr;
 					if (node && node->object) {
-						y_0 = (p->internal_Y_type = *node->object);
+						y_0 = (p->internal_Y_type = unit_value::from_unit_t(*node->object));
 						new_ptr = new DataContainer(x_0, y_0);
 					}
 					else {
@@ -1761,7 +1761,7 @@ namespace cweeUnitValues {
 					unit_value y_0;
 					DataContainer* new_ptr;
 					if (node && node->object) {
-						y_0 = (p->internal_Y_type = *node->object);
+						y_0 = (p->internal_Y_type = unit_value::from_unit_t(*node->object));
 						new_ptr = new DataContainer(x_0, y_0);
 					}
 					else {
@@ -1785,7 +1785,7 @@ namespace cweeUnitValues {
 			return out.template CastReference< cweeUnitPatternContainer_t>();
 		};
 		cweeBalancedPatternReferencePartialContainer() : cweeUnitPatternContainer_t(), ref(nullptr) {};
-		cweeBalancedPatternReferencePartialContainer(cweeBalancedPattern<Y_Axis_Type, u64>* Ref) : cweeUnitPatternContainer_t(unit_value(X_Axis_Type(0)), unit_value(Y_Axis_Type(0))), ref(Ref) {};
+		cweeBalancedPatternReferencePartialContainer(cweeBalancedPattern<Y_Axis_Type, u64>* Ref) : cweeUnitPatternContainer_t(unit_value(X_Axis_Type(0)), unit_value::from_unit_t(Y_Axis_Type(0))), ref(Ref) {};
 		cweeBalancedPatternReferencePartialContainer(cweeBalancedPatternReferencePartialContainer const& o) : cweeUnitPatternContainer_t(o.internal_X_type, o.internal_Y_type), ref(o.ref) {};
 		cweeBalancedPatternReferencePartialContainer& operator=(cweeBalancedPatternReferencePartialContainer const& o) = delete; /* {
 			internal_X_type.Clear(); internal_Y_type.Clear();
@@ -1801,10 +1801,14 @@ namespace cweeUnitValues {
 		unit_value GetAvgTime(void) const { return internal_X_type = ref->GetAvgTime(); };
 
 		scalar											GetMinimumDecimals() const {
-			return ref->GetMinimumDecimals();
+
+			return unit_value::from_unit_t(ref->GetMinimumDecimals());
+
 		};
 		unit_value										GetMinimumTimeStep() const {
-			return ref->GetMinimumTimeStep();
+
+			return unit_value::from_unit_t(ref->GetMinimumTimeStep());
+
 		};
 
 		void											ShiftTime(const unit_value& deltaTime) {
@@ -1820,7 +1824,7 @@ namespace cweeUnitValues {
 			ref->SetInterpolationType(interpolationType);
 			AUTO answer = ref->GetCurrentValue((internal_X_type = time)());
 			ref->SetInterpolationType(prevIT);
-			return answer;
+			return cweeUnitValues::unit_value::from_unit_t(answer);
 		};
 
 		int  GetNodeCount() const { return ref->GetNumValues(); };

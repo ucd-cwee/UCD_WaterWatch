@@ -121,7 +121,9 @@ typedef long double				u64;
 			unit_value(Unit_ID const& unit_p) noexcept : unit_m(unit_p), value_m(0.0) {};
 			unit_value(double V, Unit_ID const& unit_p) noexcept : unit_m(unit_p), value_m(V* conversion()) {};
 			unit_value(unit_value const& V) noexcept : unit_m(V.unit_m), value_m(V.value_m) {};
-			unit_value(unit_value&& V) noexcept : unit_m(std::move(V.unit_m)), value_m(std::move(V.value_m)) {};
+			// unit_value(unit_value&& V) noexcept : unit_m(std::move(V.unit_m)), value_m(std::move(V.value_m)) {};
+
+#if 0
 			template<typename T, class = std::enable_if_t<units::traits::is_unit_t<T>::value>>
 			unit_value(T const& unitTypeObj) noexcept : unit_m(), value_m(0.0) {
 				constexpr double length_Ratio = (double)T::unit_type::base_unit_type::meter_ratio::num / (double)T::unit_type::base_unit_type::meter_ratio::den;
@@ -137,6 +139,32 @@ typedef long double				u64;
 					unit_m = Unit_ID(length_Ratio, mass_ratio, second_ratio, ampere_ratio, dollar_ratio, false, unitTypeObj.abbreviation(), factor);
 				value_m = (unitTypeObj() * conversion()); // save it a an SI value
 			};
+#endif
+			template<typename T, class = std::enable_if_t<units::traits::is_unit_t<T>::value>>
+			static unit_value from_unit_t(T const& unitTypeObj) {
+				unit_value out;
+
+				constexpr double length_Ratio = (double)T::unit_type::base_unit_type::meter_ratio::num / (double)T::unit_type::base_unit_type::meter_ratio::den;
+				constexpr double mass_ratio = (double)T::unit_type::base_unit_type::kilogram_ratio::num / (double)T::unit_type::base_unit_type::kilogram_ratio::den;
+				constexpr double second_ratio = (double)T::unit_type::base_unit_type::second_ratio::num / (double)T::unit_type::base_unit_type::second_ratio::den;
+				constexpr double ampere_ratio = (double)T::unit_type::base_unit_type::ampere_ratio::num / (double)T::unit_type::base_unit_type::ampere_ratio::den;
+				constexpr double dollar_ratio = (double)T::unit_type::base_unit_type::dollar_ratio::num / (double)T::unit_type::base_unit_type::dollar_ratio::den;
+				constexpr bool isNotScalar = (length_Ratio != 0) || (mass_ratio != 0) || (second_ratio != 0) || (ampere_ratio != 0) || (dollar_ratio != 0);
+				constexpr double factor = (double)T::unit_type::conversion_ratio::num / (double)T::unit_type::conversion_ratio::den;
+				if constexpr (!isNotScalar)
+					out.unit_m = Unit_ID(length_Ratio, mass_ratio, second_ratio, ampere_ratio, dollar_ratio, true, "", factor);
+				else
+					out.unit_m = Unit_ID(length_Ratio, mass_ratio, second_ratio, ampere_ratio, dollar_ratio, false, unitTypeObj.abbreviation(), factor);
+				
+				out.value_m = (unitTypeObj() * out.conversion()); // save it a an SI value
+
+				return out;
+			};
+			static unit_value from_unit_t(u64 const& x) {				
+				return x;
+			};
+
+
 			virtual ~unit_value() {};
 		private:
 			double GetVisibleValue() const noexcept { return value_m / conversion(); };
@@ -353,26 +381,26 @@ typedef long double				u64;
 					value_m = V.value_m;
 				}
 				else { // incoming unit AND this unit are different non-scalers of different categories. No exchange is reasonable. 
-					throw(std::runtime_error(printf("Assignment failed due to incompatible non-scalar units: '%s' and '%s'.", this->Abbreviation().c_str(), V.Abbreviation().c_str())));
+					throw(std::runtime_error(printf("Assignment(const&) failed due to incompatible non-scalar units: '%s' and '%s'.", this->Abbreviation().c_str(), V.Abbreviation().c_str())));
 				}
 				return *this;
 			};
-			unit_value& operator=(unit_value&& V) {
-				if (this->unit_m.IsSameCategory(V.unit_m)) { //same category, but perhaps different conversion factor. That's OK. 
-					value_m = V.value_m;
-				}
-				else if (is_scalar(V)) { // incoming is a scaler and this unit is not. Use this unit's conversion factor.
-					value_m = V.GetVisibleValue() * conversion();
-				}
-				else if (is_scalar(*this)) { // I am a scaler but the incoming unit is not. Simply copy the incoming unit entirely.
-					unit_m = V.unit_m;
-					value_m = V.value_m;
-				}
-				else { // incoming unit AND this unit are different non-scalers of different categories. No exchange is reasonable. 
-					throw(std::runtime_error(printf("Assignment failed due to incompatible non-scalar units: '%s' and '%s'.", this->Abbreviation().c_str(), V.Abbreviation().c_str())));
-				}
-				return *this;
-			};
+			//unit_value& operator=(unit_value&& V) {
+			//	if (this->unit_m.IsSameCategory(V.unit_m)) { //same category, but perhaps different conversion factor. That's OK. 
+			//		value_m = V.value_m;
+			//	}
+			//	else if (is_scalar(V)) { // incoming is a scaler and this unit is not. Use this unit's conversion factor.
+			//		value_m = V.GetVisibleValue() * conversion();
+			//	}
+			//	else if (is_scalar(*this)) { // I am a scaler but the incoming unit is not. Simply copy the incoming unit entirely.
+			//		unit_m = V.unit_m;
+			//		value_m = V.value_m;
+			//	}
+			//	else { // incoming unit AND this unit are different non-scalers of different categories. No exchange is reasonable. 
+			//		throw(std::runtime_error(printf("Assignment(&&) failed due to incompatible non-scalar units: '%s' and '%s'.", this->Abbreviation().c_str(), V.Abbreviation().c_str())));
+			//	}
+			//	return *this;
+			//};
 
 		public: // Comparison operators
 			// friend bool operator==(unit_value const& A, unit_value const& V) noexcept { if (NormalArithmeticOkay(A, V) && A.GetVisibleValue() == V.GetVisibleValue()) { return true; } else { return false; } };
@@ -499,7 +527,7 @@ typedef long double				u64;
 		type(double V, const char* abbreviation) noexcept : unit_value(V, Unit_ID(a, b, c, d, e, false, abbreviation, 1.0)) {}; \
 		type(double V, const char* abbreviation, double ratio) noexcept : unit_value(V, Unit_ID(a, b, c, d, e, false, abbreviation, ratio)) {}; \
 		type(unit_value const& V) noexcept : unit_value(V) {}; \
-		type(unit_value&& V) noexcept : unit_value(std::forward<unit_value>(V)) {}; \
+        virtual ~type() {}; \
 		friend inline std::ostream& operator<<(std::ostream& os, type const& obj) { os << obj.ToString(); return os; }; \
 		friend inline std::stringstream& operator>>(std::stringstream& os, type& obj) { double v = 0; os >> v; obj = v; return os; }; \
 		constexpr static double A() noexcept { return a; } \
@@ -552,14 +580,14 @@ typedef long double				u64;
 
 #undef DefineCategoryType
 
-#define DerivedUnitType(type, category, abbreviation, ratio) namespace cweeUnitValues{ class type : public category  { public: \
+#define DerivedUnitType(type, category, abbreviation, ratio) namespace cweeUnitValues{ class type final : public category  { public: \
 		constexpr static double conversion() noexcept { return ratio; }; \
 		constexpr static const char* specialized_abbreviation() noexcept { return #abbreviation; }; \
 		constexpr static const char* specialized_name() noexcept { return #type; }; \
 		type() noexcept : category(0.0, specialized_abbreviation(), ratio) {}; \
 		type(double V) noexcept : category(V, specialized_abbreviation(), ratio) {}; \
 		type(unit_value const& V) noexcept : category(V) {}; \
-		type(unit_value&& V) noexcept : category(std::forward<unit_value>(V)) {}; \
+        virtual ~type() {}; \
 		friend inline std::ostream& operator<<(std::ostream& os, type const& obj) { os << obj.ToString(); return os; }; \
 		friend inline std::stringstream& operator>>(std::stringstream& os, type& obj) { double v = 0; os >> v; obj = v; return os; }; \
 	}; }; namespace std { template<> class numeric_limits<cweeUnitValues::type> { public: \

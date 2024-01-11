@@ -1590,7 +1590,7 @@ public:
 						case FieldType::Binary: // bool
 							printf(", %d", (int)field.GetAsDouble()); break;
 						case FieldType::DateTime: // date & time			
-							printf(", %s", field.GetAsDateTime().c_str()); break;
+							printf(", %s", field.GetAsDateTime().c_str().c_str()); break;
 						default:
 						case FieldType::String: // string
 							printf(", %s", field.GetAsString().c_str()); break;

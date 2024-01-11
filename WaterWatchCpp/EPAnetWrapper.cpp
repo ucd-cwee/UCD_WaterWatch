@@ -2400,9 +2400,9 @@ bool EPAnetProject::DemandRedistribution(::epanet::Pzone const& zone, cweeStr co
 			if (node->Type_p == asset_t::JUNCTION) {
 				AUTO headPat = node->GetValue<_HEAD_>();
 				if (headPat) {
-					AUTO pressurePat = cweeUnitValues::cweeUnitPattern(1_s, 1_psi); {
-						AUTO waterHeadPat = cweeUnitValues::cweeUnitPattern(1_s, 1_ft_water);
-						waterHeadPat = (cweeUnitValues::cweeUnitPattern(*headPat) - node->El);
+					AUTO pressurePat = cweeUnitValues::cweeUnitPattern(cweeUnitValues::second(), cweeUnitValues::pounds_per_square_inch()); {
+						AUTO waterHeadPat = cweeUnitValues::cweeUnitPattern(cweeUnitValues::second(), cweeUnitValues::head());
+						waterHeadPat = (cweeUnitValues::cweeUnitPattern(*headPat) - cweeUnitValues::foot(node->El()));
 						pressurePat = waterHeadPat;
 					}
 					pressurePatterns[node->Name_p.c_str()] = pressurePat;
@@ -2417,7 +2417,7 @@ bool EPAnetProject::DemandRedistribution(::epanet::Pzone const& zone, cweeStr co
 			if ((node->Type_p == asset_t::JUNCTION) && (pressurePatterns.count(node->Name_p.c_str()) > 0)) {
 				if (node->HasWaterDemand()) {
 					auto& pressurePat = pressurePatterns[node->Name_p.c_str()];
-					if (pressurePat.GetAvgValue() <= psiTarget) {
+					if (pressurePat.GetAvgValue() <= cweeUnitValues::pounds_per_square_inch(val)) {
 						bad_nodes.Append(node);						
 					}
 					else {
