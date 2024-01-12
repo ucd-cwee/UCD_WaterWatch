@@ -47,8 +47,8 @@ namespace chaiscript {
             DEF_DECLARE_VECTOR_WITH_SCRIPT_ENGINE_AND_MODULE(FlowDirection);
 
             {
-                using namespace cweeUnitValues;
-                DEF_DECLARE_VECTOR_OF_PAIR_WITH_SCRIPT_ENGINE_AND_MODULE(unit_value, unit_value);                
+                using unit_value = cweeUnitValues::unit_value;
+                DEF_DECLARE_VECTOR_OF_PAIR_WITH_SCRIPT_ENGINE_AND_MODULE(unit_value, unit_value);   
             }
         };
     };

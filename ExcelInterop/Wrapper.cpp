@@ -1144,7 +1144,7 @@ namespace chaiscript {
 
                             AUTO timeHash = timeLocation.Hash();
 
-                            cweeThreadedMap<cweeStr, cweeUnitValues::cweeUnitPattern> patterns;
+                            cweeThreadedMap<cweeStr, cweeUnitPattern> patterns;
 
                             bool LeftToRight = false;
                             {
@@ -1353,7 +1353,7 @@ namespace chaiscript {
 
                             std::map<std::string, chaiscript::Boxed_Value> out;
                             for (auto& site : patterns) {
-                                out.emplace(std::string(site.first.c_str()), var(cweeUnitValues::cweeUnitPattern(*site.second)));
+                                out.emplace(std::string(site.first.c_str()), var(cweeUnitPattern(*site.second)));
                             }
                             return out;
                         }
@@ -1440,7 +1440,7 @@ namespace chaiscript {
                 lib->add(chaiscript::fun([](cweeStr filePathToData, cweeStr filePathToCoordinates) {
                     // This is the script code called from C# to C++, that requests the underlying data to be used to draw into C#. 
 
-                    using TimeSeriesType = cweeUnitValues::cweeUnitPattern; // Time to Measurement .. setting measurement units to "dimensionless" for now.
+                    using TimeSeriesType = cweeUnitPattern; // Time to Measurement .. setting measurement units to "dimensionless" for now.
                     using SiteMeasurementType = cweeThreadedMap<cweeStr, TimeSeriesType>; // AL to TimeSeries
                     using SiteCollectionType = cweeThreadedMap<cweeStr, SiteMeasurementType>; // AA-01 to SiteMeasurementType
 

@@ -42,7 +42,7 @@ namespace chaiscript {
             // unit_value?
             if (1) {
                 // attempt 2
-                using namespace cweeUnitValues;
+                using unit_value = cweeUnitValues::unit_value;
                 using namespace chaiscript;
 
                 lib->add(user_type<unit_value>(), "value");
@@ -148,18 +148,18 @@ namespace chaiscript {
 #define AddUnit(Type)\
                     lib->add(chaiscript::fun([]() -> unit_value { \
                         unit_value toReturn; \
-                        Type out; \
+                        cweeUnitValues::Type out; \
                         toReturn = out; \
                         return toReturn; \
                     }), #Type); \
                     lib->add(chaiscript::fun([](unit_value const& a) -> unit_value {  \
                         unit_value toReturn; \
-                        Type F; \
+                        cweeUnitValues::Type F; \
                         F = a; \
                         toReturn = F; \
                         return toReturn; \
                     }), #Type); \
-                    lib->add(chaiscript::postfix((cweeStr("_") + cweeStr(Type::specialized_abbreviation())).c_str(), #Type));
+                    lib->add(chaiscript::postfix((cweeStr("_") + cweeStr(cweeUnitValues::Type::specialized_abbreviation())).c_str(), #Type));
 
 #define AddUnitWithMetricPrefixes(Type)\
 	                AddUnit(Type); \
@@ -340,12 +340,12 @@ namespace chaiscript {
                 }
 
                 // support for castingto/from cweeTime
-                lib->add(type_conversion<unit_value, cweeTime>([](const unit_value& a)->cweeTime { return cweeTime((u64)(double)(second)a); }, nullptr));
-                lib->add(type_conversion<cweeTime, unit_value>([](const cweeTime& a)->unit_value { return (second)(u64)a; }, nullptr));
-                lib->add(fun([](unit_value& a, const cweeTime& b) { a = (second)(u64)b; return a; }), "=");
-                lib->add(fun([](cweeTime& a, const unit_value& b) { a = cweeTime((u64)(double)(second)b); return a; }), "=");
-                lib->add(chaiscript::fun([](cweeTime const& a) -> unit_value { return (second)(u64)a; }), "value");
-                lib->add(chaiscript::fun([](unit_value const& a) -> cweeTime { return cweeTime((u64)(double)(second)a); }), "cweeTime");
+                lib->add(type_conversion<unit_value, cweeTime>([](const unit_value& a)->cweeTime { return cweeTime((u64)(double)(cweeUnitValues::second)a); }, nullptr));
+                lib->add(type_conversion<cweeTime, unit_value>([](const cweeTime& a)->unit_value { return (cweeUnitValues::second)(u64)a; }, nullptr));
+                lib->add(fun([](unit_value& a, const cweeTime& b) { a = (cweeUnitValues::second)(u64)b; return a; }), "=");
+                lib->add(fun([](cweeTime& a, const unit_value& b) { a = cweeTime((u64)(double)(cweeUnitValues::second)b); return a; }), "=");
+                lib->add(chaiscript::fun([](cweeTime const& a) -> unit_value { return (cweeUnitValues::second)(u64)a; }), "value");
+                lib->add(chaiscript::fun([](unit_value const& a) -> cweeTime { return cweeTime((u64)(double)(cweeUnitValues::second)a); }), "cweeTime");
                 lib->eval(R"(
                     def `-`(value o){ return o * -1.0; };
                 )");

@@ -27,7 +27,7 @@ to maintain a single distribution point for the source code.
 class cweeData {
 private:
 	cweeThreadedMap<int, cweeStr> strings; cweeSysInterlockedInteger nStrings;
-	cweeThreadedMap<int, cweeUnitValues::cweeUnitPattern> patterns; cweeSysInterlockedInteger nPatterns;
+	cweeThreadedMap<int, cweeUnitPattern> patterns; cweeSysInterlockedInteger nPatterns;
 	cweeThreadedMap<int, cweeInterpolatedMatrix<float>> matrixes; cweeSysInterlockedInteger nMatrixes;
 
 	AUTO GetStringPtr(int index) { return strings.GetPtr(index); };
@@ -42,7 +42,7 @@ public:
 	};
 	int CreatePattern() {
 		int index = nPatterns.Increment();
-		patterns.Emplace(index, cweeUnitValues::cweeUnitPattern());
+		patterns.Emplace(index, cweeUnitPattern());
 		return index;
 	};
 	int CreateMatrix() {
@@ -98,7 +98,7 @@ public:
 		return GetMatrixPtr(index)->GetValue(column, row);
 	};
 
-	cweeUnitValues::cweeUnitPattern* GetPatternRef(int index) {
+	cweeUnitPattern* GetPatternRef(int index) {
 		return GetPatternPtr(index).Get();
 	};
 	cweeInterpolatedMatrix<float>* GetMatrixRef(int index) {
@@ -125,7 +125,7 @@ public:
 	void SetMatrix(int index, const cweeInterpolatedMatrix<float>& other) {
 		GetMatrixPtr(index)->operator=(other);
 	};
-	void SetPattern(int index, const cweeUnitValues::cweeUnitPattern& other) {
+	void SetPattern(int index, const cweeUnitPattern& other) {
 		AUTO safeContainer = GetPatternPtr(index);
 		if (safeContainer) {
 			safeContainer->Clear();

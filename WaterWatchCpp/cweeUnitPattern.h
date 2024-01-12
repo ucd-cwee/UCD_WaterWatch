@@ -32,19 +32,19 @@ to maintain a single distribution point for the source code.
 #include "Iterator.h"
 #include "RTree.h"
 
-namespace cweeUnitValues {
+//namespace cweeUnitValues {
 	class cweeUnitPatternContainer_t {
 	public:
-		mutable unit_value											internal_X_type;
-		mutable unit_value											internal_Y_type;
+		mutable cweeUnitValues::unit_value											internal_X_type;
+		mutable cweeUnitValues::unit_value											internal_Y_type;
 
 		class GenericIterator {
 		public:
 			class DataContainer {
 			public:
 				DataContainer() : X(), Y(nullptr) {};
-				DataContainer(unit_value x) : X(x), Y(nullptr) {};
-				DataContainer(unit_value x, unit_value y) : X(x), Y(y) {};
+				DataContainer(cweeUnitValues::unit_value x) : X(x), Y(nullptr) {};
+				DataContainer(cweeUnitValues::unit_value x, cweeUnitValues::unit_value y) : X(x), Y(y) {};
 
 				DataContainer(DataContainer const& other) : X(other.X), Y(other.Y) {};
 				DataContainer(DataContainer&& other) : X(std::forward<decltype(X)>(other.X)), Y(std::forward<decltype(Y)>(other.Y)) {};
@@ -55,8 +55,8 @@ namespace cweeUnitValues {
 					return *this;
 				};
 
-				unit_value X;
-				cweeSharedPtr<unit_value> Y;
+				cweeUnitValues::unit_value X;
+				cweeSharedPtr<cweeUnitValues::unit_value> Y;
 			};
 			
 			cweeSharedPtr<DataContainer> thisContainer;
@@ -64,7 +64,7 @@ namespace cweeUnitValues {
 			GenericIterator() : thisContainer() {};
 			virtual ~GenericIterator() {};
 			virtual void begin(cweeUnitPatternContainer_t const* ref) = 0;
-			virtual void begin_at(cweeUnitPatternContainer_t const* ref, unit_value x) = 0;
+			virtual void begin_at(cweeUnitPatternContainer_t const* ref, cweeUnitValues::unit_value x) = 0;
 			virtual void next(cweeUnitPatternContainer_t const* ref) = 0;
 			virtual void end(cweeUnitPatternContainer_t const* ref) = 0;
 			virtual DataContainer& get(cweeUnitPatternContainer_t const* ref) = 0;
@@ -79,8 +79,8 @@ namespace cweeUnitValues {
 			class DataContainer {
 			public:
 				DataContainer() : X(), Y_actual(), Y(nullptr) {};
-				DataContainer(unit_value x) : X(x), Y_actual(), Y(nullptr) {};
-				DataContainer(unit_value x, unit_value y) : X(x), Y_actual(y), Y(&Y_actual) {};
+				DataContainer(cweeUnitValues::unit_value x) : X(x), Y_actual(), Y(nullptr) {};
+				DataContainer(cweeUnitValues::unit_value x, cweeUnitValues::unit_value y) : X(x), Y_actual(y), Y(&Y_actual) {};
 
 				DataContainer(DataContainer const& other) : X(other.X), Y_actual(other.Y_actual), Y(nullptr)  {
 					if (other.Y) { Y = &Y_actual; }
@@ -98,9 +98,9 @@ namespace cweeUnitValues {
 					return *this;
 				};
 
-				unit_value X;
-				unit_value* Y;
-				unit_value Y_actual;
+				cweeUnitValues::unit_value X;
+				cweeUnitValues::unit_value* Y;
+				cweeUnitValues::unit_value Y_actual;
 			};
 
 			cweeSharedPtr<DataContainer> thisContainer;
@@ -108,7 +108,7 @@ namespace cweeUnitValues {
 			GenericConstIterator() : thisContainer() {};
 			virtual ~GenericConstIterator() {};
 			virtual void begin(cweeUnitPatternContainer_t const* ref) = 0;
-			virtual void begin_at(cweeUnitPatternContainer_t const* ref, unit_value x) = 0;
+			virtual void begin_at(cweeUnitPatternContainer_t const* ref, cweeUnitValues::unit_value x) = 0;
 			virtual void next(cweeUnitPatternContainer_t const* ref) = 0;
 			virtual void end(cweeUnitPatternContainer_t const* ref) = 0;
 			virtual DataContainer& get(cweeUnitPatternContainer_t const* ref) = 0;
@@ -156,7 +156,7 @@ namespace cweeUnitValues {
 			auto& operator*() const { return state->cget(ref); };																			
 			auto* operator->() const { return &state->cget(ref); };
 			iterator& begin() { if (state) state->begin(ref); return *this; };
-			iterator& begin_at(unit_value x) { if (state) state->begin_at(ref, x); return *this; };
+			iterator& begin_at(cweeUnitValues::unit_value x) { if (state) state->begin_at(ref, x); return *this; };
 			iterator& end() { if (state) state->end(ref); return *this; };
 		};				
 		class const_iterator : public std::iterator<std::random_access_iterator_tag, 
@@ -184,24 +184,24 @@ namespace cweeUnitValues {
 			auto& operator*() const { return state->cget(ref); };
 			auto* operator->() const { return &state->cget(ref); };
 			const_iterator& begin() { if (state) state->begin(ref); return *this; };
-			const_iterator& begin_at(unit_value x) { if (state) state->begin_at(ref, x); return *this; };
+			const_iterator& begin_at(cweeUnitValues::unit_value x) { if (state) state->begin_at(ref, x); return *this; };
 			const_iterator& end() { if (state) state->end(ref); return *this; };
 		};
 		
 		iterator begin() { return iterator(this, this->CreateIterationState()).begin(); };		
-		iterator begin_at(unit_value x) { return iterator(this, this->CreateIterationState()).begin_at(x); };
+		iterator begin_at(cweeUnitValues::unit_value x) { return iterator(this, this->CreateIterationState()).begin_at(x); };
 		iterator end() { return iterator(this, this->CreateIterationState()).end(); };
 		const_iterator begin() const { return const_iterator(this, this->CreateConstIterationState()).begin(); };
-		const_iterator begin_at(unit_value x) const { return const_iterator(this, this->CreateConstIterationState()).begin_at(x); };
+		const_iterator begin_at(cweeUnitValues::unit_value x) const { return const_iterator(this, this->CreateConstIterationState()).begin_at(x); };
 		const_iterator end() const { return const_iterator(this, this->CreateConstIterationState()).end(); };
 		const_iterator cbegin() const { return const_iterator(this, this->CreateConstIterationState()).begin(); };
-		const_iterator cbegin_at(unit_value x) const { return const_iterator(this, this->CreateConstIterationState()).begin_at(x); };
+		const_iterator cbegin_at(cweeUnitValues::unit_value x) const { return const_iterator(this, this->CreateConstIterationState()).begin_at(x); };
 		const_iterator cend() const { return const_iterator(this, this->CreateConstIterationState()).end(); };
 
 	protected:
-		virtual void AddValueActual(unit_value X, unit_value Y, bool isUnique) = 0;
-		virtual void Convert_X(unit_value old_unit, unit_value new_unit) = 0;
-		virtual void Convert_Y(unit_value old_unit, unit_value new_unit) = 0;
+		virtual void AddValueActual(cweeUnitValues::unit_value X, cweeUnitValues::unit_value Y, bool isUnique) = 0;
+		virtual void Convert_X(cweeUnitValues::unit_value old_unit, cweeUnitValues::unit_value new_unit) = 0;
+		virtual void Convert_Y(cweeUnitValues::unit_value old_unit, cweeUnitValues::unit_value new_unit) = 0;
 		virtual bool StaticUnits() { return false; };
 
 	public:
@@ -271,33 +271,33 @@ namespace cweeUnitValues {
 
 		};
 		virtual cweeSharedPtr< cweeUnitPatternContainer_t> Clone() = 0;
-		cweeUnitPatternContainer_t() : internal_X_type(second()), internal_Y_type(scalar()) {};
-		cweeUnitPatternContainer_t(unit_value const& Y_type) : internal_X_type(second()), internal_Y_type(Y_type) {};
-		cweeUnitPatternContainer_t(unit_value const& X_type, unit_value const& Y_type) : internal_X_type(X_type), internal_Y_type(Y_type) {};
+		cweeUnitPatternContainer_t() : internal_X_type(cweeUnitValues::second()), internal_Y_type(cweeUnitValues::scalar()) {};
+		cweeUnitPatternContainer_t(cweeUnitValues::unit_value const& Y_type) : internal_X_type(cweeUnitValues::second()), internal_Y_type(Y_type) {};
+		cweeUnitPatternContainer_t(cweeUnitValues::unit_value const& X_type, cweeUnitValues::unit_value const& Y_type) : internal_X_type(X_type), internal_Y_type(Y_type) {};
 		cweeUnitPatternContainer_t(cweeUnitPatternContainer_t const& o) : internal_X_type(o.internal_X_type), internal_Y_type(o.internal_Y_type) {};
 		cweeUnitPatternContainer_t& operator=(cweeUnitPatternContainer_t const& o) = delete; 
 		virtual ~cweeUnitPatternContainer_t() {};
 
-		static bool CheckCanConvert(unit_value const& a, unit_value const& b) {
+		static bool CheckCanConvert(cweeUnitValues::unit_value const& a, cweeUnitValues::unit_value const& b) {
 			return a.AreConvertableTypes(b);
 		};
-		static void RequireCanConvert(unit_value const& a, unit_value const& b) {
+		static void RequireCanConvert(cweeUnitValues::unit_value const& a, cweeUnitValues::unit_value const& b) {
 			if (!CheckCanConvert(a, b)) {
 				throw(std::runtime_error(cweeStr::printf("Could not convert from '%s' to '%s' due to unit types.", a.ToString().c_str(), b.ToString().c_str()).c_str()));
 			};
 		};
 
-		virtual unit_value GetMinTime() const = 0;
-		virtual unit_value GetMaxTime() const = 0;
-		virtual unit_value GetAvgTime(void) const = 0;
-		virtual scalar											GetMinimumDecimals() const = 0;
-		virtual unit_value										GetMinimumTimeStep() const = 0;
-		virtual void											Translate(const unit_value& translation) = 0;
-		virtual void											ShiftTime(const unit_value& deltaTime) = 0;
-		virtual void											UnsafeBasis(const unit_value& t, u64* bvals, interpolation_t interpolationType) const = 0;
-		virtual unit_value										GetCurrentValue(unit_value time, interpolation_t interpolationType) const = 0;
+		virtual cweeUnitValues::unit_value GetMinTime() const = 0;
+		virtual cweeUnitValues::unit_value GetMaxTime() const = 0;
+		virtual cweeUnitValues::unit_value GetAvgTime(void) const = 0;
+		virtual cweeUnitValues::scalar											GetMinimumDecimals() const = 0;
+		virtual cweeUnitValues::unit_value										GetMinimumTimeStep() const = 0;
+		virtual void											Translate(const cweeUnitValues::unit_value& translation) = 0;
+		virtual void											ShiftTime(const cweeUnitValues::unit_value& deltaTime) = 0;
+		virtual void											UnsafeBasis(const cweeUnitValues::unit_value& t, u64* bvals, interpolation_t interpolationType) const = 0;
+		virtual cweeUnitValues::unit_value										GetCurrentValue(cweeUnitValues::unit_value time, interpolation_t interpolationType) const = 0;
 		virtual int GetNodeCount() const = 0;
-		void AddValue(unit_value const& X, unit_value const& Y) {
+		void AddValue(cweeUnitValues::unit_value const& X, cweeUnitValues::unit_value const& Y) {
 			RequireCanConvert(X, internal_X_type); RequireCanConvert(Y, internal_Y_type);
 
 			internal_Y_type = Y;
@@ -305,7 +305,7 @@ namespace cweeUnitValues {
 
 			AddValueActual(internal_X_type, internal_Y_type, false);
 		};
-		void AddUniqueValue(unit_value const& X, unit_value const& Y) {
+		void AddUniqueValue(cweeUnitValues::unit_value const& X, cweeUnitValues::unit_value const& Y) {
 			RequireCanConvert(X, internal_X_type); RequireCanConvert(Y, internal_Y_type);
 
 			internal_Y_type = Y;
@@ -314,8 +314,8 @@ namespace cweeUnitValues {
 			AddValueActual(internal_X_type, internal_Y_type, true);
 		};
 		virtual void  ClearData() = 0;
-		virtual void  RemoveUnnecessaryKnots(const unit_value& timeStart, const unit_value& timeEnd) = 0;
-		virtual void  RemoveTimes(unit_value greaterThanOrEqual, unit_value LessThan) = 0;
+		virtual void  RemoveUnnecessaryKnots(const cweeUnitValues::unit_value& timeStart, const cweeUnitValues::unit_value& timeEnd) = 0;
+		virtual void  RemoveTimes(cweeUnitValues::unit_value greaterThanOrEqual, cweeUnitValues::unit_value LessThan) = 0;
 		virtual void  RemoveWithMask(cweeSharedPtr< cweeUnitPatternContainer_t> other) = 0;
 		void  Clear() {
 			ClearData();
@@ -336,8 +336,8 @@ namespace cweeUnitValues {
 
 			decltype(container)::const_iterator iter;
 			decltype(container)::const_iterator iter_end;
-			mutable unit_value x_type;
-			mutable unit_value y_type;
+			mutable cweeUnitValues::unit_value x_type;
+			mutable cweeUnitValues::unit_value y_type;
 
 			void begin(cweeUnitPatternContainer_t const* ref) {
 				auto* p = dynamic_cast<cweeUnitPatternContainer const*>(ref);
@@ -349,7 +349,7 @@ namespace cweeUnitValues {
 					y_type = p->internal_Y_type;
 				}
 			};
-			void begin_at(cweeUnitPatternContainer_t const* ref, unit_value x) {
+			void begin_at(cweeUnitPatternContainer_t const* ref, cweeUnitValues::unit_value x) {
 				auto* p = dynamic_cast<cweeUnitPatternContainer const*>(ref);
 				if (p) {
 					iter = p->container.begin_at(x());
@@ -378,8 +378,8 @@ namespace cweeUnitValues {
 			DataContainer& get(cweeUnitPatternContainer_t const* ref) {
 				auto* p = const_cast<cweeUnitPatternContainer*>(dynamic_cast<cweeUnitPatternContainer const*>(ref));
 				if (p) {
-					unit_value x_0 = (p->internal_X_type = iter->key);
-					unit_value y_0;
+					cweeUnitValues::unit_value x_0 = (p->internal_X_type = iter->key);
+					cweeUnitValues::unit_value y_0;
 					DataContainer* new_ptr;
 					if (iter->object) {
 						y_0 = (p->internal_Y_type = *iter->object);
@@ -432,7 +432,7 @@ namespace cweeUnitValues {
 						auto& x = thisContainer->X;
 						auto& y = thisContainer->Y;
 
-						if (unit_value::IdenticalUnits(x, x_type)) {
+						if (cweeUnitValues::unit_value::IdenticalUnits(x, x_type)) {
 							x.value_m = iter->key;
 						}
 						else {
@@ -440,11 +440,11 @@ namespace cweeUnitValues {
 						}
 						
 						if (iter->object) {
-							y = make_cwee_shared<unit_value>(y_type = *iter->object);
+							y = make_cwee_shared<cweeUnitValues::unit_value>(y_type = *iter->object);
 
 							//if (y) {	
 							//	auto& z = *y;
-							//	if (unit_value::IdenticalUnits(z, y_type)) {
+							//	if (cweeUnitValues::unit_value::IdenticalUnits(z, y_type)) {
 							//		z = *iter->object;
 							//	}
 							//	else {
@@ -452,7 +452,7 @@ namespace cweeUnitValues {
 							//	}
 							//}
 							//else {
-							//	y = make_cwee_shared<unit_value>(y_type = *iter->object);
+							//	y = make_cwee_shared<cweeUnitValues::unit_value>(y_type = *iter->object);
 							//}
 						}
 						else {
@@ -498,8 +498,8 @@ namespace cweeUnitValues {
 			const DataContainer& get(const cweeUnitPatternContainer_t* ref) const {
 				auto* p = const_cast<cweeUnitPatternContainer*>(dynamic_cast<cweeUnitPatternContainer const*>(ref));
 				if (p) {
-					unit_value x_0 = (p->internal_X_type = iter->key);
-					unit_value y_0;
+					cweeUnitValues::unit_value x_0 = (p->internal_X_type = iter->key);
+					cweeUnitValues::unit_value y_0;
 					DataContainer* new_ptr;
 					if (iter->object) {
 						y_0 = (p->internal_Y_type = *iter->object);
@@ -553,8 +553,8 @@ namespace cweeUnitValues {
 
 			decltype(container)::const_iterator iter;
 			decltype(container)::const_iterator iter_end;
-			mutable unit_value x_type;
-			mutable unit_value y_type;
+			mutable cweeUnitValues::unit_value x_type;
+			mutable cweeUnitValues::unit_value y_type;
 
 			void begin(cweeUnitPatternContainer_t const* ref) {
 				auto* p = dynamic_cast<cweeUnitPatternContainer const*>(ref);
@@ -566,7 +566,7 @@ namespace cweeUnitValues {
 					y_type = p->internal_Y_type;
 				}
 			};
-			void begin_at(cweeUnitPatternContainer_t const* ref, unit_value x) {
+			void begin_at(cweeUnitPatternContainer_t const* ref, cweeUnitValues::unit_value x) {
 				auto* p = dynamic_cast<cweeUnitPatternContainer const*>(ref);
 				if (p) {
 					iter = p->container.begin_at(x());
@@ -589,8 +589,8 @@ namespace cweeUnitValues {
 			DataContainer& get(cweeUnitPatternContainer_t const* ref) {
 				auto* p = const_cast<cweeUnitPatternContainer*>(dynamic_cast<cweeUnitPatternContainer const*>(ref));
 				if (p) {
-					unit_value x_0 = (p->internal_X_type = iter->key);
-					unit_value y_0;
+					cweeUnitValues::unit_value x_0 = (p->internal_X_type = iter->key);
+					cweeUnitValues::unit_value y_0;
 					DataContainer* new_ptr;
 					if (iter->object) {
 						y_0 = (p->internal_Y_type = *iter->object);
@@ -609,7 +609,7 @@ namespace cweeUnitValues {
 					auto& x = thisContainer->X;
 					auto& y = thisContainer->Y;
 
-					if (unit_value::IdenticalUnits(x, x_type)) {
+					if (cweeUnitValues::unit_value::IdenticalUnits(x, x_type)) {
 						x.value_m = iter->key;
 					}
 					else {
@@ -662,8 +662,8 @@ namespace cweeUnitValues {
 			const DataContainer& get(const cweeUnitPatternContainer_t* ref) const {
 				auto* p = const_cast<cweeUnitPatternContainer*>(dynamic_cast<cweeUnitPatternContainer const*>(ref));
 				if (p) {
-					unit_value x_0 = (p->internal_X_type = iter->key);
-					unit_value y_0;
+					cweeUnitValues::unit_value x_0 = (p->internal_X_type = iter->key);
+					cweeUnitValues::unit_value y_0;
 					DataContainer* new_ptr;
 					if (iter->object) {
 						y_0 = (p->internal_Y_type = *iter->object);
@@ -691,14 +691,14 @@ namespace cweeUnitValues {
 			return out.CastReference< cweeUnitPatternContainer_t>();
 		};
 		cweeUnitPatternContainer() : cweeUnitPatternContainer_t(), container(), granularity(16) {};
-		cweeUnitPatternContainer(unit_value const& Y_type) : cweeUnitPatternContainer_t(Y_type), container(), granularity(16) {};
-		cweeUnitPatternContainer(unit_value const& X_type, unit_value const& Y_type) : cweeUnitPatternContainer_t(X_type, Y_type), container(), granularity(16) {};
+		cweeUnitPatternContainer(cweeUnitValues::unit_value const& Y_type) : cweeUnitPatternContainer_t(Y_type), container(), granularity(16) {};
+		cweeUnitPatternContainer(cweeUnitValues::unit_value const& X_type, cweeUnitValues::unit_value const& Y_type) : cweeUnitPatternContainer_t(X_type, Y_type), container(), granularity(16) {};
 		cweeUnitPatternContainer(cweeUnitPatternContainer const& o) : cweeUnitPatternContainer_t(o.internal_X_type, o.internal_Y_type), container(), granularity(16) { container = o.container; };
 		cweeUnitPatternContainer& operator=(cweeUnitPatternContainer const& o) = delete; 
 		~cweeUnitPatternContainer() {};
 
-		unit_value GetMinTime() const {
-			unit_value out(0);
+		cweeUnitValues::unit_value GetMinTime() const {
+			cweeUnitValues::unit_value out(0);
 
 			if (container.GetNodeCount() > 0) {
 				auto ptr = container.GetFirst();
@@ -708,8 +708,8 @@ namespace cweeUnitValues {
 			}
 			return out;
 		};
-		unit_value GetMaxTime() const {
-			unit_value out(0);
+		cweeUnitValues::unit_value GetMaxTime() const {
+			cweeUnitValues::unit_value out(0);
 
 			if (container.GetNodeCount() > 0) {
 				auto ptr = container.GetLast();
@@ -719,8 +719,8 @@ namespace cweeUnitValues {
 			}
 			return out;
 		};
-		unit_value GetAvgTime(void) const {
-			unit_value out;
+		cweeUnitValues::unit_value GetAvgTime(void) const {
+			cweeUnitValues::unit_value out;
 
 			int num(0);
 
@@ -735,11 +735,11 @@ namespace cweeUnitValues {
 			return out;
 		};
 
-		scalar											GetMinimumDecimals() const {
-			scalar decimal = 1.0f;
+		cweeUnitValues::scalar											GetMinimumDecimals() const {
+			cweeUnitValues::scalar decimal = 1.0f;
 			int numbs = GetNodeCount();
 			if (numbs == 0) return 0.0001f;
-			scalar F;
+			cweeUnitValues::scalar F;
 			int numSuccess = 0;
 
 			for (auto& x : container) {
@@ -764,8 +764,8 @@ namespace cweeUnitValues {
 			}
 			return decimal;
 		};
-		unit_value										GetMinimumTimeStep() const {
-			unit_value out, prevTime, t;
+		cweeUnitValues::unit_value										GetMinimumTimeStep() const {
+			cweeUnitValues::unit_value out, prevTime, t;
 			int numFailures, numbs;
 
 			numbs = GetNodeCount();
@@ -773,12 +773,12 @@ namespace cweeUnitValues {
 
 			out = GetMaxTime() - GetMinTime();
 			prevTime = out;
-			prevTime = std::numeric_limits<unit_value>::max();
+			prevTime = std::numeric_limits<cweeUnitValues::unit_value>::max();
 			numFailures = 100;
 
 			for (auto& x : container) {
 				if (x.object) {
-					t = math::abs(prevTime - x.key);
+					t = cweeUnitValues::math::abs(prevTime - x.key);
 					prevTime = x.key;
 					if (t < out && t > 0) {
 						out = t;
@@ -795,12 +795,12 @@ namespace cweeUnitValues {
 			return out;
 		};
 
-		void											ShiftTime(const unit_value& deltaTime) {
+		void											ShiftTime(const cweeUnitValues::unit_value& deltaTime) {
 			for (auto& x : container) {
 				x.key = ((internal_X_type = deltaTime) + x.key)();
 			}
 		};
-		void											Translate(const unit_value& translation) {
+		void											Translate(const cweeUnitValues::unit_value& translation) {
 			for (auto& x : container) {
 				if (x.object) {
 					*x.object = ((internal_Y_type = translation) + *x.object)();
@@ -808,7 +808,7 @@ namespace cweeUnitValues {
 			}
 		};
 
-		void											UnsafeBasis(const unit_value& t, u64* bvals, interpolation_t interpolationType) const {
+		void											UnsafeBasis(const cweeUnitValues::unit_value& t, u64* bvals, interpolation_t interpolationType) const {
 			using node_type = cweeBalancedTree<double, double, 10>::cweeBalancedTreeNode;
 
 			//const float x = cweeMath::min(cweeMath::max((float)((t - this->TimeForIndex(index)) / (this->TimeForIndex(index + 1) - this->TimeForIndex(index))), 0), 1);
@@ -925,12 +925,12 @@ namespace cweeUnitValues {
 			}
 		};
 
-		unit_value										GetCurrentValue(unit_value time, interpolation_t interpolationType) const {
+		cweeUnitValues::unit_value										GetCurrentValue(cweeUnitValues::unit_value time, interpolation_t interpolationType) const {
 			using node_type = cweeBalancedTree<double, double, 10>::cweeBalancedTreeNode;
 
 			int j;
 			u64 bvals[4];
-			unit_value v;
+			cweeUnitValues::unit_value v;
 			v = (internal_Y_type = 0);
 			internal_X_type = time; time.Clear(); time = internal_X_type;
 			j = container.GetNodeCount();
@@ -984,14 +984,14 @@ namespace cweeUnitValues {
 		};
 
 		int GetNodeCount() const { return container.GetNodeCount(); };
-		void Convert_X(unit_value old_unit, unit_value new_unit) {
+		void Convert_X(cweeUnitValues::unit_value old_unit, cweeUnitValues::unit_value new_unit) {
 			for (auto& x : container) {
 				old_unit = x.key;
 				new_unit = old_unit;
 				x.key = new_unit();
 			}
 		};
-		void Convert_Y(unit_value old_unit, unit_value new_unit) {
+		void Convert_Y(cweeUnitValues::unit_value old_unit, cweeUnitValues::unit_value new_unit) {
 			for (auto& x : container) {
 				if (x.object) {
 					old_unit = *x.object;
@@ -1000,7 +1000,7 @@ namespace cweeUnitValues {
 				}
 			}
 		};
-		void AddValueActual(unit_value X, unit_value Y, bool isUnique) {
+		void AddValueActual(cweeUnitValues::unit_value X, cweeUnitValues::unit_value Y, bool isUnique) {
 			if (granularity <= 0) {	// this is a hack to fix our memset classes
 				granularity = 16;
 			}
@@ -1022,7 +1022,7 @@ namespace cweeUnitValues {
 			out = GetNodeCount();
 			return out;
 		};
-		unit_value										GetMinValue() const {
+		cweeUnitValues::unit_value										GetMinValue() const {
 			if (GetNumValues() == 0) return 0;
 			bool skipFirst = true;
 			auto out = internal_Y_type;
@@ -1039,7 +1039,7 @@ namespace cweeUnitValues {
 			}
 			return out;
 		};
-		unit_value										GetMaxValue() const {
+		cweeUnitValues::unit_value										GetMaxValue() const {
 			if (GetNumValues() == 0) return 0;
 			bool skipFirst = true;
 			auto out = internal_Y_type;
@@ -1057,7 +1057,7 @@ namespace cweeUnitValues {
 			return out;
 		};
 
-		void RemoveUnnecessaryKnots(const unit_value& start, const unit_value& end) {
+		void RemoveUnnecessaryKnots(const cweeUnitValues::unit_value& start, const cweeUnitValues::unit_value& end) {
 
 			if (start >= end) return;
 			int num, index; cweeThreadedList<double> keysToDelete;
@@ -1137,7 +1137,7 @@ namespace cweeUnitValues {
 				for (auto& key : keysToDelete) { _values.Remove(_values.NodeFind(key)); }
 			}
 		};
-		void  RemoveTimes(unit_value greaterThanOrEqual, unit_value LessThan) {
+		void  RemoveTimes(cweeUnitValues::unit_value greaterThanOrEqual, cweeUnitValues::unit_value LessThan) {
 			cweeThreadedList<int> indexesToDelete;
 			{
 				double greaterThan = (internal_X_type = greaterThanOrEqual)();
@@ -1191,7 +1191,7 @@ namespace cweeUnitValues {
 					numVars = p->ref->GetNumValues();
 				}
 			};
-			void begin_at(cweeUnitPatternContainer_t const* ref, unit_value x) {
+			void begin_at(cweeUnitPatternContainer_t const* ref, cweeUnitValues::unit_value x) {
 				auto* p = dynamic_cast<cweeBalancedPatternReferenceContainer const*>(ref);
 				if (p) {
 					pos = 0;
@@ -1218,11 +1218,11 @@ namespace cweeUnitValues {
 					p->ref->Lock();
 					auto* node = p->ref->UnsafeGetValue(t);
 
-					unit_value x_0 = (p->internal_X_type = unit_value::from_unit_t(t));
-					unit_value y_0;
+					cweeUnitValues::unit_value x_0 = (p->internal_X_type = cweeUnitValues::unit_value::from_unit_t(t));
+					cweeUnitValues::unit_value y_0;
 					DataContainer* new_ptr;
 					if (node && node->object) {
-						y_0 = (p->internal_Y_type = unit_value::from_unit_t(*node->object));
+						y_0 = (p->internal_Y_type = cweeUnitValues::unit_value::from_unit_t(*node->object));
 						new_ptr = new DataContainer(x_0, y_0);
 					}
 					else {
@@ -1240,11 +1240,11 @@ namespace cweeUnitValues {
 					p->ref->Lock();
 					auto* node = p->ref->UnsafeGetValue(t);
 
-					unit_value x_0 = (p->internal_X_type = unit_value::from_unit_t(t));
-					unit_value y_0;
+					cweeUnitValues::unit_value x_0 = (p->internal_X_type = cweeUnitValues::unit_value::from_unit_t(t));
+					cweeUnitValues::unit_value y_0;
 					DataContainer* new_ptr;
 					if (node && node->object) {
-						y_0 = (p->internal_Y_type = unit_value::from_unit_t(*node->object));
+						y_0 = (p->internal_Y_type = cweeUnitValues::unit_value::from_unit_t(*node->object));
 						new_ptr = new DataContainer(x_0, y_0);
 					}
 					else {
@@ -1284,11 +1284,11 @@ namespace cweeUnitValues {
 					p->ref->Lock();
 					auto* node = p->ref->UnsafeGetValue(t);
 
-					unit_value x_0 = (p->internal_X_type = unit_value::from_unit_t(t));
-					unit_value y_0;
+					cweeUnitValues::unit_value x_0 = (p->internal_X_type = cweeUnitValues::unit_value::from_unit_t(t));
+					cweeUnitValues::unit_value y_0;
 					DataContainer* new_ptr;
 					if (node && node->object) {
-						y_0 = (p->internal_Y_type = unit_value::from_unit_t(*node->object));
+						y_0 = (p->internal_Y_type = cweeUnitValues::unit_value::from_unit_t(*node->object));
 						new_ptr = new DataContainer(x_0, y_0);
 					}
 					else {
@@ -1315,7 +1315,7 @@ namespace cweeUnitValues {
 					numVars = p->ref->GetNumValues();
 				}
 			};
-			void begin_at(cweeUnitPatternContainer_t const* ref, unit_value x) {
+			void begin_at(cweeUnitPatternContainer_t const* ref, cweeUnitValues::unit_value x) {
 				auto* p = dynamic_cast<cweeBalancedPatternReferenceContainer const*>(ref);
 				if (p) {
 					pos = 0;
@@ -1342,11 +1342,11 @@ namespace cweeUnitValues {
 					p->ref->Lock();
 					auto* node = p->ref->UnsafeGetValue(t);
 
-					unit_value x_0 = (p->internal_X_type = unit_value::from_unit_t(t));
-					unit_value y_0;
+					cweeUnitValues::unit_value x_0 = (p->internal_X_type = cweeUnitValues::unit_value::from_unit_t(t));
+					cweeUnitValues::unit_value y_0;
 					DataContainer* new_ptr;
 					if (node && node->object) {
-						y_0 = (p->internal_Y_type = unit_value::from_unit_t(*node->object));
+						y_0 = (p->internal_Y_type = cweeUnitValues::unit_value::from_unit_t(*node->object));
 						new_ptr = new DataContainer(x_0, y_0);
 					}
 					else {
@@ -1364,11 +1364,11 @@ namespace cweeUnitValues {
 					p->ref->Lock();
 					auto* node = p->ref->UnsafeGetValue(t);
 
-					unit_value x_0 = (p->internal_X_type = unit_value::from_unit_t(t));
-					unit_value y_0;
+					cweeUnitValues::unit_value x_0 = (p->internal_X_type = cweeUnitValues::unit_value::from_unit_t(t));
+					cweeUnitValues::unit_value y_0;
 					DataContainer* new_ptr;
 					if (node && node->object) {
-						y_0 = (p->internal_Y_type = unit_value::from_unit_t(*node->object));
+						y_0 = (p->internal_Y_type = cweeUnitValues::unit_value::from_unit_t(*node->object));
 						new_ptr = new DataContainer(x_0, y_0);
 					}
 					else {
@@ -1408,11 +1408,11 @@ namespace cweeUnitValues {
 					p->ref->Lock();
 					auto* node = p->ref->UnsafeGetValue(t);
 
-					unit_value x_0 = (p->internal_X_type = unit_value::from_unit_t(t));
-					unit_value y_0;
+					cweeUnitValues::unit_value x_0 = (p->internal_X_type = cweeUnitValues::unit_value::from_unit_t(t));
+					cweeUnitValues::unit_value y_0;
 					DataContainer* new_ptr;
 					if (node && node->object) {
-						y_0 = (p->internal_Y_type = unit_value::from_unit_t(*node->object));
+						y_0 = (p->internal_Y_type = cweeUnitValues::unit_value::from_unit_t(*node->object));
 						new_ptr = new DataContainer(x_0, y_0);
 					}
 					else {
@@ -1437,7 +1437,7 @@ namespace cweeUnitValues {
 			return out.template CastReference< cweeUnitPatternContainer_t>();
 		};
 		cweeBalancedPatternReferenceContainer() : cweeUnitPatternContainer_t(), ref(nullptr) {};
-		cweeBalancedPatternReferenceContainer(cweeBalancedPattern<Y_Axis_Type, X_Axis_Type>* Ref) : cweeUnitPatternContainer_t(unit_value::from_unit_t(X_Axis_Type(0)), unit_value::from_unit_t(Y_Axis_Type(0))), ref(Ref) {};
+		cweeBalancedPatternReferenceContainer(cweeBalancedPattern<Y_Axis_Type, X_Axis_Type>* Ref) : cweeUnitPatternContainer_t(cweeUnitValues::unit_value::from_unit_t(X_Axis_Type(0)), cweeUnitValues::unit_value::from_unit_t(Y_Axis_Type(0))), ref(Ref) {};
 		cweeBalancedPatternReferenceContainer(cweeBalancedPatternReferenceContainer const& o) : cweeUnitPatternContainer_t(o.internal_X_type, o.internal_Y_type), ref(o.ref) {};
 		cweeBalancedPatternReferenceContainer& operator=(cweeBalancedPatternReferenceContainer const& o) = delete; /* {
 
@@ -1452,48 +1452,48 @@ namespace cweeUnitValues {
 		};*/
 		~cweeBalancedPatternReferenceContainer() {};
 
-		unit_value GetMinTime() const {
-			return internal_X_type = unit_value::from_unit_t(ref->GetMinTime());
+		cweeUnitValues::unit_value GetMinTime() const {
+			return internal_X_type = cweeUnitValues::unit_value::from_unit_t(ref->GetMinTime());
 		};
-		unit_value GetMaxTime() const {
-			return internal_X_type = unit_value::from_unit_t(ref->GetMaxTime());
+		cweeUnitValues::unit_value GetMaxTime() const {
+			return internal_X_type = cweeUnitValues::unit_value::from_unit_t(ref->GetMaxTime());
 		};
-		unit_value GetAvgTime(void) const {
-			return internal_X_type = unit_value::from_unit_t(ref->GetAvgTime());
-		};
-
-		scalar											GetMinimumDecimals() const {
-			return unit_value::from_unit_t(ref->GetMinimumDecimals());
-		};
-		unit_value										GetMinimumTimeStep() const {
-			return unit_value::from_unit_t(ref->GetMinimumTimeStep());
+		cweeUnitValues::unit_value GetAvgTime(void) const {
+			return internal_X_type = cweeUnitValues::unit_value::from_unit_t(ref->GetAvgTime());
 		};
 
-		void											ShiftTime(const unit_value& deltaTime) {
+		cweeUnitValues::scalar											GetMinimumDecimals() const {
+			return cweeUnitValues::unit_value::from_unit_t(ref->GetMinimumDecimals());
+		};
+		cweeUnitValues::unit_value										GetMinimumTimeStep() const {
+			return cweeUnitValues::unit_value::from_unit_t(ref->GetMinimumTimeStep());
+		};
+
+		void											ShiftTime(const cweeUnitValues::unit_value& deltaTime) {
 			ref->ShiftTime((internal_X_type = deltaTime)());
 		};
-		void											Translate(const unit_value& translation) {
+		void											Translate(const cweeUnitValues::unit_value& translation) {
 			ref->Translate((internal_Y_type = translation)());
 		};
 
-		void											UnsafeBasis(const unit_value& t, u64* bvals, interpolation_t interpolationType) const {};
-		unit_value										GetCurrentValue(unit_value time, interpolation_t interpolationType) const {
+		void											UnsafeBasis(const cweeUnitValues::unit_value& t, u64* bvals, interpolation_t interpolationType) const {};
+		cweeUnitValues::unit_value										GetCurrentValue(cweeUnitValues::unit_value time, interpolation_t interpolationType) const {
 			AUTO prevIT = ref->GetInterpolationType();
 			ref->SetInterpolationType(interpolationType);
 			AUTO answer = ref->GetCurrentValue((internal_X_type = time)());
 			ref->SetInterpolationType(prevIT);
-			return cweeUnitValues::unit_value::from_unit_t(answer);
+			return cweeUnitValues::cweeUnitValues::unit_value::from_unit_t(answer);
 		};
 
 		int  GetNodeCount() const { return ref->GetNumValues(); };
-		void Convert_X(unit_value old_unit, unit_value new_unit) {
+		void Convert_X(cweeUnitValues::unit_value old_unit, cweeUnitValues::unit_value new_unit) {
 			// we cannot do this -- cweeBalancedPattern is statically typed
 		};
-		void Convert_Y(unit_value old_unit, unit_value new_unit) {
+		void Convert_Y(cweeUnitValues::unit_value old_unit, cweeUnitValues::unit_value new_unit) {
 			// we cannot do this -- cweeBalancedPattern is statically typed
 		};
 		bool StaticUnits() override { return true; };
-		void AddValueActual(unit_value X, unit_value Y, bool isUnique) {
+		void AddValueActual(cweeUnitValues::unit_value X, cweeUnitValues::unit_value Y, bool isUnique) {
 			if (isUnique) {
 				ref->AddUniqueValue((internal_X_type = X)(),(internal_Y_type = Y)());
 			}
@@ -1504,16 +1504,16 @@ namespace cweeUnitValues {
 		void ClearData() {
 			ref->Clear();
 		};
-		void RemoveUnnecessaryKnots(const unit_value& timeStart, const unit_value& timeEnd) {
+		void RemoveUnnecessaryKnots(const cweeUnitValues::unit_value& timeStart, const cweeUnitValues::unit_value& timeEnd) {
 			ref->RemoveUnnecessaryKnots((internal_X_type = timeStart)(), (internal_X_type = timeEnd)());
 		};
-		void  RemoveTimes(unit_value greaterThanOrEqual, unit_value LessThan) {
+		void  RemoveTimes(cweeUnitValues::unit_value greaterThanOrEqual, cweeUnitValues::unit_value LessThan) {
 			ref->RemoveTimes((internal_X_type = greaterThanOrEqual)(), (internal_X_type = (LessThan - 0.0001))());
 		};
 		void  RemoveWithMask(cweeSharedPtr< cweeUnitPatternContainer_t> other) {
 			if (other) {
 				ref->RemoveWithMask([other](X_Axis_Type T)->bool {
-					return (other->GetCurrentValue(cweeUnitValues::unit_value::from_unit_t(T), interpolation_t::LINEAR) > 0);
+					return (other->GetCurrentValue(cweeUnitValues::cweeUnitValues::unit_value::from_unit_t(T), interpolation_t::LINEAR) > 0);
 				});
 			}
 		};
@@ -1522,7 +1522,7 @@ namespace cweeUnitValues {
 	template<typename Y_Axis_Type>
 	class cweeBalancedPatternReferencePartialContainer final : public cweeUnitPatternContainer_t {
 	public:
-		using X_Axis_Type = typename cweeUnitValues::second;
+		using X_Axis_Type = typename cweeUnitValues::cweeUnitValues::second;
 		cweeBalancedPattern<Y_Axis_Type, u64>* ref;
 
 		class SpecializedIterator final : public GenericIterator {
@@ -1540,7 +1540,7 @@ namespace cweeUnitValues {
 					numVars = p->ref->GetNumValues();
 				}
 			};
-			void begin_at(cweeUnitPatternContainer_t const* ref, unit_value x) {
+			void begin_at(cweeUnitPatternContainer_t const* ref, cweeUnitValues::unit_value x) {
 				auto* p = dynamic_cast<cweeBalancedPatternReferencePartialContainer const*>(ref);
 				if (p) {
 					pos = 0;
@@ -1567,11 +1567,11 @@ namespace cweeUnitValues {
 					p->ref->Lock();
 					auto* node = p->ref->UnsafeGetValue(t);
 
-					unit_value x_0 = (p->internal_X_type = t);
-					unit_value y_0;
+					cweeUnitValues::unit_value x_0 = (p->internal_X_type = t);
+					cweeUnitValues::unit_value y_0;
 					DataContainer* new_ptr;
 					if (node && node->object) {
-						y_0 = (p->internal_Y_type = unit_value::from_unit_t(*node->object));
+						y_0 = (p->internal_Y_type = cweeUnitValues::unit_value::from_unit_t(*node->object));
 						new_ptr = new DataContainer(x_0, y_0);
 					}
 					else {
@@ -1589,11 +1589,11 @@ namespace cweeUnitValues {
 					p->ref->Lock();
 					auto* node = p->ref->UnsafeGetValue(t);
 
-					unit_value x_0 = (p->internal_X_type = t);
-					unit_value y_0;
+					cweeUnitValues::unit_value x_0 = (p->internal_X_type = t);
+					cweeUnitValues::unit_value y_0;
 					DataContainer* new_ptr;
 					if (node && node->object) {
-						y_0 = (p->internal_Y_type = unit_value::from_unit_t(*node->object));
+						y_0 = (p->internal_Y_type = cweeUnitValues::unit_value::from_unit_t(*node->object));
 						new_ptr = new DataContainer(x_0, y_0);
 					}
 					else {
@@ -1633,11 +1633,11 @@ namespace cweeUnitValues {
 					p->ref->Lock();
 					auto* node = p->ref->UnsafeGetValue(t);
 
-					unit_value x_0 = (p->internal_X_type = t);
-					unit_value y_0;
+					cweeUnitValues::unit_value x_0 = (p->internal_X_type = t);
+					cweeUnitValues::unit_value y_0;
 					DataContainer* new_ptr;
 					if (node && node->object) {
-						y_0 = (p->internal_Y_type = unit_value::from_unit_t(*node->object));
+						y_0 = (p->internal_Y_type = cweeUnitValues::unit_value::from_unit_t(*node->object));
 						new_ptr = new DataContainer(x_0, y_0);
 					}
 					else {
@@ -1664,7 +1664,7 @@ namespace cweeUnitValues {
 					numVars = p->ref->GetNumValues();
 				}
 			};
-			void begin_at(cweeUnitPatternContainer_t const* ref, unit_value x) {
+			void begin_at(cweeUnitPatternContainer_t const* ref, cweeUnitValues::unit_value x) {
 				auto* p = dynamic_cast<cweeBalancedPatternReferencePartialContainer const*>(ref);
 				if (p) {
 					pos = 0;
@@ -1691,11 +1691,11 @@ namespace cweeUnitValues {
 					p->ref->Lock();
 					auto* node = p->ref->UnsafeGetValue(t);
 
-					unit_value x_0 = (p->internal_X_type = t);
-					unit_value y_0;
+					cweeUnitValues::unit_value x_0 = (p->internal_X_type = t);
+					cweeUnitValues::unit_value y_0;
 					DataContainer* new_ptr;
 					if (node && node->object) {
-						y_0 = (p->internal_Y_type = unit_value::from_unit_t(*node->object));
+						y_0 = (p->internal_Y_type = cweeUnitValues::unit_value::from_unit_t(*node->object));
 						new_ptr = new DataContainer(x_0, y_0);
 					}
 					else {
@@ -1713,11 +1713,11 @@ namespace cweeUnitValues {
 					p->ref->Lock();
 					auto* node = p->ref->UnsafeGetValue(t);
 
-					unit_value x_0 = (p->internal_X_type = t);
-					unit_value y_0;
+					cweeUnitValues::unit_value x_0 = (p->internal_X_type = t);
+					cweeUnitValues::unit_value y_0;
 					DataContainer* new_ptr;
 					if (node && node->object) {
-						y_0 = (p->internal_Y_type = unit_value::from_unit_t(*node->object));
+						y_0 = (p->internal_Y_type = cweeUnitValues::unit_value::from_unit_t(*node->object));
 						new_ptr = new DataContainer(x_0, y_0);
 					}
 					else {
@@ -1757,11 +1757,11 @@ namespace cweeUnitValues {
 					p->ref->Lock();
 					auto* node = p->ref->UnsafeGetValue(t);
 
-					unit_value x_0 = (p->internal_X_type = t);
-					unit_value y_0;
+					cweeUnitValues::unit_value x_0 = (p->internal_X_type = t);
+					cweeUnitValues::unit_value y_0;
 					DataContainer* new_ptr;
 					if (node && node->object) {
-						y_0 = (p->internal_Y_type = unit_value::from_unit_t(*node->object));
+						y_0 = (p->internal_Y_type = cweeUnitValues::unit_value::from_unit_t(*node->object));
 						new_ptr = new DataContainer(x_0, y_0);
 					}
 					else {
@@ -1785,7 +1785,7 @@ namespace cweeUnitValues {
 			return out.template CastReference< cweeUnitPatternContainer_t>();
 		};
 		cweeBalancedPatternReferencePartialContainer() : cweeUnitPatternContainer_t(), ref(nullptr) {};
-		cweeBalancedPatternReferencePartialContainer(cweeBalancedPattern<Y_Axis_Type, u64>* Ref) : cweeUnitPatternContainer_t(unit_value(X_Axis_Type(0)), unit_value::from_unit_t(Y_Axis_Type(0))), ref(Ref) {};
+		cweeBalancedPatternReferencePartialContainer(cweeBalancedPattern<Y_Axis_Type, u64>* Ref) : cweeUnitPatternContainer_t(cweeUnitValues::unit_value(X_Axis_Type(0)), cweeUnitValues::unit_value::from_unit_t(Y_Axis_Type(0))), ref(Ref) {};
 		cweeBalancedPatternReferencePartialContainer(cweeBalancedPatternReferencePartialContainer const& o) : cweeUnitPatternContainer_t(o.internal_X_type, o.internal_Y_type), ref(o.ref) {};
 		cweeBalancedPatternReferencePartialContainer& operator=(cweeBalancedPatternReferencePartialContainer const& o) = delete; /* {
 			internal_X_type.Clear(); internal_Y_type.Clear();
@@ -1796,46 +1796,46 @@ namespace cweeUnitValues {
 		};*/
 		~cweeBalancedPatternReferencePartialContainer() {};
 
-		unit_value GetMinTime() const { return internal_X_type = ref->GetMinTime(); };
-		unit_value GetMaxTime() const { return internal_X_type = ref->GetMaxTime(); };
-		unit_value GetAvgTime(void) const { return internal_X_type = ref->GetAvgTime(); };
+		cweeUnitValues::unit_value GetMinTime() const { return internal_X_type = ref->GetMinTime(); };
+		cweeUnitValues::unit_value GetMaxTime() const { return internal_X_type = ref->GetMaxTime(); };
+		cweeUnitValues::unit_value GetAvgTime(void) const { return internal_X_type = ref->GetAvgTime(); };
 
-		scalar											GetMinimumDecimals() const {
+		cweeUnitValues::scalar											GetMinimumDecimals() const {
 
-			return unit_value::from_unit_t(ref->GetMinimumDecimals());
-
-		};
-		unit_value										GetMinimumTimeStep() const {
-
-			return unit_value::from_unit_t(ref->GetMinimumTimeStep());
+			return cweeUnitValues::unit_value::from_unit_t(ref->GetMinimumDecimals());
 
 		};
+		cweeUnitValues::unit_value										GetMinimumTimeStep() const {
 
-		void											ShiftTime(const unit_value& deltaTime) {
+			return cweeUnitValues::unit_value::from_unit_t(ref->GetMinimumTimeStep());
+
+		};
+
+		void											ShiftTime(const cweeUnitValues::unit_value& deltaTime) {
 			ref->ShiftTime((internal_X_type = deltaTime)());
 	};
-		void											Translate(const unit_value& translation) {
+		void											Translate(const cweeUnitValues::unit_value& translation) {
 			ref->Translate((internal_Y_type = translation)());
 		};
 
-		void											UnsafeBasis(const unit_value& t, u64* bvals, interpolation_t interpolationType) const {};
-		unit_value										GetCurrentValue(unit_value time, interpolation_t interpolationType) const {
+		void											UnsafeBasis(const cweeUnitValues::unit_value& t, u64* bvals, interpolation_t interpolationType) const {};
+		cweeUnitValues::unit_value										GetCurrentValue(cweeUnitValues::unit_value time, interpolation_t interpolationType) const {
 			AUTO prevIT = ref->GetInterpolationType();
 			ref->SetInterpolationType(interpolationType);
 			AUTO answer = ref->GetCurrentValue((internal_X_type = time)());
 			ref->SetInterpolationType(prevIT);
-			return cweeUnitValues::unit_value::from_unit_t(answer);
+			return cweeUnitValues::cweeUnitValues::unit_value::from_unit_t(answer);
 		};
 
 		int  GetNodeCount() const { return ref->GetNumValues(); };
-		void Convert_X(unit_value old_unit, unit_value new_unit) {
+		void Convert_X(cweeUnitValues::unit_value old_unit, cweeUnitValues::unit_value new_unit) {
 			// we cannot do this -- cweeBalancedPattern is statically typed
 		};
-		void Convert_Y(unit_value old_unit, unit_value new_unit) {
+		void Convert_Y(cweeUnitValues::unit_value old_unit, cweeUnitValues::unit_value new_unit) {
 			// we cannot do this -- cweeBalancedPattern is statically typed
 		};
 		bool StaticUnits() override { return true; };
-		void AddValueActual(unit_value X, unit_value Y, bool isUnique) {
+		void AddValueActual(cweeUnitValues::unit_value X, cweeUnitValues::unit_value Y, bool isUnique) {
 			if (isUnique) {
 				ref->AddUniqueValue((internal_X_type = X)(), (internal_Y_type = Y)());
 			}
@@ -1846,10 +1846,10 @@ namespace cweeUnitValues {
 		void ClearData() {
 			ref->Clear();
 		};
-		void RemoveUnnecessaryKnots(const unit_value& timeStart, const unit_value& timeEnd) {
+		void RemoveUnnecessaryKnots(const cweeUnitValues::unit_value& timeStart, const cweeUnitValues::unit_value& timeEnd) {
 			ref->RemoveUnnecessaryKnots((internal_X_type = timeStart)(), (internal_X_type = timeEnd)());
 		};
-		void  RemoveTimes(unit_value greaterThanOrEqual, unit_value LessThan) {
+		void  RemoveTimes(cweeUnitValues::unit_value greaterThanOrEqual, cweeUnitValues::unit_value LessThan) {
 			ref->RemoveTimes((internal_X_type = greaterThanOrEqual)(), (internal_X_type = (LessThan - 0.0001))());
 		};
 		void  RemoveWithMask(cweeSharedPtr< cweeUnitPatternContainer_t> other) {
@@ -1864,7 +1864,7 @@ namespace cweeUnitValues {
 
 	class cweeUnitPattern {
 	public:
-		using pairT = cweePair< unit_value, unit_value >;
+		using pairT = cweePair< cweeUnitValues::unit_value, cweeUnitValues::unit_value >;
 
 	protected:
 		cweeSharedPtr<cweeUnitPatternContainer_t>			container;
@@ -1873,13 +1873,13 @@ namespace cweeUnitValues {
 		mutable cweeSysMutex								lock;
 
 	public:
-		unit_value X_Type() const { AUTO g{ lock.Guard() }; return container->internal_X_type; };
-		unit_value Y_Type() const { AUTO g{ lock.Guard() }; return container->internal_Y_type; };
+		cweeUnitValues::unit_value X_Type() const { AUTO g{ lock.Guard() }; return container->internal_X_type; };
+		cweeUnitValues::unit_value Y_Type() const { AUTO g{ lock.Guard() }; return container->internal_Y_type; };
 
 		cweeUnitPattern() : 
-			container(make_cwee_shared<cweeUnitPatternContainer>(cweeUnitPatternContainer(second(), scalar())).CastReference<cweeUnitPatternContainer_t>()),
+			container(make_cwee_shared<cweeUnitPatternContainer>(cweeUnitPatternContainer(cweeUnitValues::second(), cweeUnitValues::scalar())).CastReference<cweeUnitPatternContainer_t>()),
 			boundaryType(boundary_t::BT_FREE), interpolationType(interpolation_t::LINEAR), lock() {};
-		cweeUnitPattern(unit_value const& X_type, unit_value const& Y_type) : 
+		cweeUnitPattern(cweeUnitValues::unit_value const& X_type, cweeUnitValues::unit_value const& Y_type) : 
 			container(make_cwee_shared<cweeUnitPatternContainer>(cweeUnitPatternContainer(X_type, Y_type)).CastReference<cweeUnitPatternContainer_t>()),
 			boundaryType(boundary_t::BT_FREE), interpolationType(interpolation_t::LINEAR), lock() {};
 
@@ -1917,10 +1917,10 @@ namespace cweeUnitValues {
 			return *this;
 		};
 
-		void AddValue(unit_value const& X, unit_value const& Y) {
+		void AddValue(cweeUnitValues::unit_value const& X, cweeUnitValues::unit_value const& Y) {
 			container->AddValue(X, Y);
 		};
-		void AddUniqueValue(unit_value const& X, unit_value const& Y) {
+		void AddUniqueValue(cweeUnitValues::unit_value const& X, cweeUnitValues::unit_value const& Y) {
 			container->AddUniqueValue(X, Y);
 		};
 
@@ -1964,7 +1964,7 @@ namespace cweeUnitValues {
 			return out;
 		};
 
-		unit_value										GetMinValue() const {
+		cweeUnitValues::unit_value										GetMinValue() const {
 			if (GetNumValues() == 0) return 0;
 			bool skipFirst = true;
 			AUTO g{ lock.Guard() };
@@ -1982,7 +1982,7 @@ namespace cweeUnitValues {
 			}
 			return out;
 		};
-		unit_value										GetMaxValue() const {
+		cweeUnitValues::unit_value										GetMaxValue() const {
 			if (GetNumValues() == 0) return 0;
 			bool skipFirst = true;
 			AUTO g{ lock.Guard() };
@@ -2001,8 +2001,8 @@ namespace cweeUnitValues {
 			return out;
 		};
 
-		unit_value										GetMinValue(unit_value start, unit_value end) const {
-			unit_value out;
+		cweeUnitValues::unit_value										GetMinValue(cweeUnitValues::unit_value start, cweeUnitValues::unit_value end) const {
+			cweeUnitValues::unit_value out;
 			int n = GetNumValues();
 			if (n == 0) return out;
 			bool skipFirst = true;
@@ -2028,8 +2028,8 @@ namespace cweeUnitValues {
 
 			return out;
 		};
-		unit_value										GetMaxValue(unit_value start, unit_value end) const {
-			unit_value out;
+		cweeUnitValues::unit_value										GetMaxValue(cweeUnitValues::unit_value start, cweeUnitValues::unit_value end) const {
+			cweeUnitValues::unit_value out;
 			
 			int n = GetNumValues();
 			if (n == 0) return out;
@@ -2058,45 +2058,45 @@ namespace cweeUnitValues {
 			return out;
 		};
 
-		unit_value										GetMinTime(void) const {
+		cweeUnitValues::unit_value										GetMinTime(void) const {
 			AUTO g{ lock.Guard() };
 			return container->GetMinTime();
 		};
-		unit_value										GetMaxTime(void) const {
+		cweeUnitValues::unit_value										GetMaxTime(void) const {
 			AUTO g{ lock.Guard() };
 			return container->GetMaxTime();
 		};
-		unit_value										GetAvgTime(void) const {
+		cweeUnitValues::unit_value										GetAvgTime(void) const {
 			AUTO g{ lock.Guard() };
 			return container->GetAvgTime();
 		};
-		scalar											GetMinimumDecimals() const {
+		cweeUnitValues::scalar											GetMinimumDecimals() const {
 			AUTO g{ lock.Guard() };
 			return container->GetMinimumDecimals();
 		};
-		unit_value										GetMinimumTimeStep() const {
+		cweeUnitValues::unit_value										GetMinimumTimeStep() const {
 			AUTO g{ lock.Guard() };
 			return container->GetMinimumTimeStep();
 		};
 
-		cweeUnitPattern& ShiftTime(const unit_value& deltaTime) {
+		cweeUnitPattern& ShiftTime(const cweeUnitValues::unit_value& deltaTime) {
 			AUTO g{ lock.Guard() };
 			container->ShiftTime(deltaTime);
 			return *this;
 		};
-		cweeUnitPattern& Translate(const unit_value& translation) {
+		cweeUnitPattern& Translate(const cweeUnitValues::unit_value& translation) {
 			AUTO g{ lock.Guard() };
 			container->Translate(translation);
 			return *this;
 		};
 
-		cweeUnitPattern& RemoveUnnecessaryKnots(const unit_value& timeStart = -std::numeric_limits < unit_value>::max(), const unit_value& timeEnd = std::numeric_limits < unit_value>::max())  {
+		cweeUnitPattern& RemoveUnnecessaryKnots(const cweeUnitValues::unit_value& timeStart = -std::numeric_limits < cweeUnitValues::unit_value>::max(), const cweeUnitValues::unit_value& timeEnd = std::numeric_limits < cweeUnitValues::unit_value>::max())  {
 			AUTO g{ lock.Guard() };
 			container->RemoveUnnecessaryKnots(timeStart, timeEnd);
 			return *this;
 		};
 
-		cweeUnitPattern&								Copy(const cweeUnitPattern& o, const unit_value& timeStart = -std::numeric_limits < unit_value>::max(), const unit_value& timeEnd = std::numeric_limits < unit_value>::max()) {
+		cweeUnitPattern&								Copy(const cweeUnitPattern& o, const cweeUnitValues::unit_value& timeStart = -std::numeric_limits < cweeUnitValues::unit_value>::max(), const cweeUnitValues::unit_value& timeEnd = std::numeric_limits < cweeUnitValues::unit_value>::max()) {
 			if (this == &o) return *this;
 
 			AUTO g{ lock.Guard() };
@@ -2109,7 +2109,7 @@ namespace cweeUnitValues {
 			return *this;
 		};
 
-		cweeThreadedList<pairT>								GetKnotSeries(const unit_value& timeStart = -std::numeric_limits < unit_value>::max(), const unit_value& timeEnd = std::numeric_limits <unit_value>::max()) const {
+		cweeThreadedList<pairT>								GetKnotSeries(const cweeUnitValues::unit_value& timeStart = -std::numeric_limits < cweeUnitValues::unit_value>::max(), const cweeUnitValues::unit_value& timeEnd = std::numeric_limits <cweeUnitValues::unit_value>::max()) const {
 			int numKnots = this->GetNumValues();
 			cweeThreadedList<pairT> toReturn(numKnots + 16);
 
@@ -2132,14 +2132,14 @@ namespace cweeUnitValues {
 			return toReturn;
 		};
 
-		void												ClampValues(const unit_value& min, const unit_value& max) {
+		void												ClampValues(const cweeUnitValues::unit_value& min, const cweeUnitValues::unit_value& max) {
 			AUTO g{ lock.Guard() };
 			for (auto& x : *container) {
-				*x.Y = (container->internal_Y_type = math::clamp((container->internal_Y_type = *x.Y), min, max))();
+				*x.Y = (container->internal_Y_type = cweeUnitValues::math::clamp((container->internal_Y_type = *x.Y), min, max))();
 			}
 		};
 
-		unit_value											GetValueAtIndex(size_t index) {
+		cweeUnitValues::unit_value											GetValueAtIndex(size_t index) {
 			AUTO g{ lock.Guard() };
 			int n = 0;
 			for (auto& x : *container) {
@@ -2150,9 +2150,9 @@ namespace cweeUnitValues {
 					n++;
 				}
 			}
-			return unit_value();
+			return cweeUnitValues::unit_value();
 		};
-		unit_value											GetTimeAtIndex(size_t index) {
+		cweeUnitValues::unit_value											GetTimeAtIndex(size_t index) {
 			AUTO g{ lock.Guard() };
 			int n = 0;
 			for (auto& x : *container) {
@@ -2163,10 +2163,10 @@ namespace cweeUnitValues {
 					n++;
 				}
 			}
-			return unit_value();
+			return cweeUnitValues::unit_value();
 		};
 
-		size_t												GetLargestSmallerOrEqualTime(const unit_value& time) const {
+		size_t												GetLargestSmallerOrEqualTime(const cweeUnitValues::unit_value& time) const {
 			AUTO g{ lock.Guard() };
 			size_t n = -1;
 			for (auto& x : *container) {
@@ -2195,9 +2195,9 @@ namespace cweeUnitValues {
 			lock.Unlock();
 			return out;
 		};
-		unit_value											LoopedTime(unit_value t, bool forceLoop = false) const {
+		cweeUnitValues::unit_value											LoopedTime(cweeUnitValues::unit_value t, bool forceLoop = false) const {
 			if (forceLoop || IsLooped()) {
-				unit_value minTime, maxTime, len, currentTime, avgStep;
+				cweeUnitValues::unit_value minTime, maxTime, len, currentTime, avgStep;
 				minTime = GetMinTime();
 				maxTime = GetMaxTime();
 				{
@@ -2233,9 +2233,9 @@ namespace cweeUnitValues {
 			}
 			return t;
 		};
-		unit_value											ClampedTime(unit_value t) const {
+		cweeUnitValues::unit_value											ClampedTime(cweeUnitValues::unit_value t) const {
 			if (IsClamped()) {
-				unit_value mT = this->GetMinTime();
+				cweeUnitValues::unit_value mT = this->GetMinTime();
 				{
 					AUTO g{ lock.Guard() };
 					container->internal_X_type = t;
@@ -2253,24 +2253,24 @@ namespace cweeUnitValues {
 			}
 			return t;
 		};
-		void												Basis(const unit_value& t, u64* bvals) const {
+		void												Basis(const cweeUnitValues::unit_value& t, u64* bvals) const {
 			AUTO g{ lock.Guard() };
 			UnsafeBasis(t, bvals);
 		};
-		void												UnsafeBasis(const unit_value& t, u64* bvals) const {
+		void												UnsafeBasis(const cweeUnitValues::unit_value& t, u64* bvals) const {
 			AUTO g{ lock.Guard() };
 			return container->UnsafeBasis(t, bvals, interpolationType);
 		};
 
 	public:
 
-		unit_value											GetCurrentValue(unit_value time) const {
+		cweeUnitValues::unit_value											GetCurrentValue(cweeUnitValues::unit_value time) const {
 			AUTO g{ lock.Guard() };
 			return container->GetCurrentValue(LoopedTime(ClampedTime(time)), interpolationType);
 		};
 		/*! Return approximate derivative of spline at time */
-		unit_value											GetCurrentFirstDerivative(unit_value time) const {
-			unit_value step; {
+		cweeUnitValues::unit_value											GetCurrentFirstDerivative(cweeUnitValues::unit_value time) const {
+			cweeUnitValues::unit_value step; {
 				AUTO g{ lock.Guard() };
 				container->internal_X_type = time; time.Clear(); time = container->internal_X_type;
 				step = (container->internal_X_type = 0.01);
@@ -2288,7 +2288,7 @@ namespace cweeUnitValues {
 			result.AddValue(GetMinTime(), GetCurrentFirstDerivative(GetMinTime()));
 
 
-			cweeUnitValues::cweeUnitPatternContainer_t::ConstIterType prevValue;
+			cweeUnitPatternContainer_t::ConstIterType prevValue;
 			prevValue.Y = nullptr;
 
 			for (AUTO dataPair : const_cast<const cweeUnitPatternContainer_t&>(*this->container)) {
@@ -2369,9 +2369,9 @@ namespace cweeUnitValues {
 			return result;
 		};
 
-		/*! Return approximate second derivative of spline at time */
-		unit_value											GetCurrentSecondDerivative(unit_value time) const {
-			unit_value step; {
+		/*! Return approximate cweeUnitValues::second derivative of spline at time */
+		cweeUnitValues::unit_value											GetCurrentSecondDerivative(cweeUnitValues::unit_value time) const {
+			cweeUnitValues::unit_value step; {
 				AUTO g{ lock.Guard() };
 				container->internal_X_type = time; time.Clear(); time = container->internal_X_type;
 				step = (container->internal_X_type = 0.01);
@@ -2380,9 +2380,9 @@ namespace cweeUnitValues {
 		};
 
 		/*! Get list of spline samples at a specified Timestep */
-		cweeThreadedList<pairT>								GetTimeSeries(const unit_value& timeStart, const unit_value& timeEnd, const unit_value& timeStep) const {
+		cweeThreadedList<pairT>								GetTimeSeries(const cweeUnitValues::unit_value& timeStart, const cweeUnitValues::unit_value& timeEnd, const cweeUnitValues::unit_value& timeStep) const {
 			pairT v;
-			unit_value realTimestep = (container->internal_X_type = timeStep); if (realTimestep < (container->internal_X_type = 1)) realTimestep = (container->internal_X_type = 1);
+			cweeUnitValues::unit_value realTimestep = (container->internal_X_type = timeStep); if (realTimestep < (container->internal_X_type = 1)) realTimestep = (container->internal_X_type = 1);
 
 			cweeThreadedList<pairT> out(cweeMath::max(cweeMath::min(((u64)(timeEnd - timeStart) / (u64)(realTimestep)), 100000), 1000) + 16);
 
@@ -2400,12 +2400,12 @@ namespace cweeUnitValues {
 			return out;
 		};
 
-		cweeThreadedList<unit_value>						GetValueTimeSeries(const unit_value& timeStart, const unit_value& timeEnd, const unit_value& timeStep) const {
-			unit_value realTimestep = timeStep; if (realTimestep < 1) realTimestep = 1;
-			cweeThreadedList<unit_value> out(cweeMath::max(cweeMath::min((u64)((u64)(timeEnd - timeStart) / (u64)(realTimestep)), 100000), 1000) + 16);
+		cweeThreadedList<cweeUnitValues::unit_value>						GetValueTimeSeries(const cweeUnitValues::unit_value& timeStart, const cweeUnitValues::unit_value& timeEnd, const cweeUnitValues::unit_value& timeStep) const {
+			cweeUnitValues::unit_value realTimestep = timeStep; if (realTimestep < 1) realTimestep = 1;
+			cweeThreadedList<cweeUnitValues::unit_value> out(cweeMath::max(cweeMath::min((u64)((u64)(timeEnd - timeStart) / (u64)(realTimestep)), 100000), 1000) + 16);
 
 			out.Append(GetCurrentValue(timeStart)); // ensure pattern always has a starter? 
-			for (unit_value t = timeStart + realTimestep; t < timeEnd; t += realTimestep) {
+			for (cweeUnitValues::unit_value t = timeStart + realTimestep; t < timeEnd; t += realTimestep) {
 				out.Append(GetCurrentValue(t));
 			}
 			out.Append(GetCurrentValue(timeEnd)); // ensure pattern always has a closure? 
@@ -2414,7 +2414,7 @@ namespace cweeUnitValues {
 		};
 
 		AUTO												R_Squared(const cweeUnitPattern& other) const {
-			scalar out, out2;
+			cweeUnitValues::scalar out, out2;
 			AUTO x0 = this->GetMinTime() < other.GetMinTime() ? other.GetMinTime() : this->GetMinTime();
 			AUTO x1 = this->GetMaxTime() < other.GetMaxTime() ? this->GetMaxTime() : other.GetMaxTime();
 			if (x1 > x0) {
@@ -2444,8 +2444,8 @@ namespace cweeUnitValues {
 			return out;
 		};
 
-		AUTO												R_Squared(const cweeUnitPattern& other, const unit_value& from, const unit_value& to) const {
-			scalar out;
+		AUTO												R_Squared(const cweeUnitPattern& other, const cweeUnitValues::unit_value& from, const cweeUnitValues::unit_value& to) const {
+			cweeUnitValues::scalar out;
 			AUTO x0 = from;
 			AUTO x1 = to;
 
@@ -2482,10 +2482,10 @@ namespace cweeUnitValues {
 		};
 
 		/*! Request an integration of the time series. The timefactor determines the resulting time component. I.e. A pattern of kilowatt_t and a time factor of hour_t will return a kilowatt_hour_t. */
-		AUTO												RombergIntegral(unit_value t0, unit_value t1) const {
+		AUTO												RombergIntegral(cweeUnitValues::unit_value t0, cweeUnitValues::unit_value t1) const {
 			using node_type = cweeBalancedTree<double, double, 10>::cweeBalancedTreeNode;
-			unit_value step, t, stepDiv2, maxT;
-			unit_value sum;
+			cweeUnitValues::unit_value step, t, stepDiv2, maxT;
+			cweeUnitValues::unit_value sum;
 
 			{
 				AUTO g{ lock.Guard() };
@@ -2506,10 +2506,10 @@ namespace cweeUnitValues {
 			case interpolation_t::LEFT: {
 				if (this->GetNumValues() > 1) {
 					step = this->GetMinimumTimeStep();
-					unit_value minGot = t1, maxGot = t1;
+					cweeUnitValues::unit_value minGot = t1, maxGot = t1;
 					if (true) {
 
-						cweeUnitValues::cweeUnitPatternContainer_t::ConstIterType prevValue;
+						cweeUnitPatternContainer_t::ConstIterType prevValue;
 						prevValue.Y = nullptr;
 						AUTO endIter = const_cast<const cweeUnitPatternContainer_t&>(*this->container).end();
 						for (auto iter = const_cast<const cweeUnitPatternContainer_t&>(*this->container).begin_at(t0); iter != endIter; ++iter) {
@@ -2552,9 +2552,9 @@ namespace cweeUnitValues {
 			case interpolation_t::RIGHT: {
 				if (this->GetNumValues() > 1) {
 					step = this->GetMinimumTimeStep();
-					unit_value minGot = t1, maxGot = t1;
+					cweeUnitValues::unit_value minGot = t1, maxGot = t1;
 					if (true) {
-						cweeUnitValues::cweeUnitPatternContainer_t::ConstIterType prevValue;
+						cweeUnitPatternContainer_t::ConstIterType prevValue;
 						prevValue.Y = nullptr;
 						AUTO endIter = const_cast<const cweeUnitPatternContainer_t&>(*this->container).end();
 						for (auto iter = const_cast<const cweeUnitPatternContainer_t&>(*this->container).begin_at(t0); iter != endIter; ++iter) {
@@ -2597,9 +2597,9 @@ namespace cweeUnitValues {
 			default: {
 				if (this->GetNumValues() > 1) {
 					step = this->GetMinimumTimeStep();
-					unit_value minGot = t1, maxGot = t1;
+					cweeUnitValues::unit_value minGot = t1, maxGot = t1;
 					if (true) {
-						cweeUnitValues::cweeUnitPatternContainer_t::ConstIterType prevValue;
+						cweeUnitPatternContainer_t::ConstIterType prevValue;
 						prevValue.Y = nullptr;
 						AUTO endIter = const_cast<const cweeUnitPatternContainer_t&>(*this->container).end();
 						for (auto iter = const_cast<const cweeUnitPatternContainer_t&>(*this->container).begin_at(t0); iter != endIter; ++iter) {
@@ -2646,8 +2646,8 @@ namespace cweeUnitValues {
 		/*! Request an integration of the time series. The timefactor determines the resulting time component. I.e. A pattern of kilowatt_t and a time factor of hour_t will return a kilowatt_hour_t. */
 		AUTO												RombergIntegral() const {
 			using node_type = cweeBalancedTree<double, double, 10>::cweeBalancedTreeNode;
-			unit_value step, sum, t, stepDiv2, maxT;
-			unit_value t0 = GetMinTime(), t1 = GetMaxTime();
+			cweeUnitValues::unit_value step, sum, t, stepDiv2, maxT;
+			cweeUnitValues::unit_value t0 = GetMinTime(), t1 = GetMaxTime();
 			{
 				AUTO g{ lock.Guard() };
 				sum = container->internal_X_type * container->internal_Y_type;
@@ -2668,9 +2668,9 @@ namespace cweeUnitValues {
 			case interpolation_t::LEFT: {
 				if (this->GetNumValues() > 1) {
 					step = this->GetMinimumTimeStep();
-					unit_value minGot = t1, maxGot = t1;
+					cweeUnitValues::unit_value minGot = t1, maxGot = t1;
 					if (true) {
-						cweeUnitValues::cweeUnitPatternContainer_t::ConstIterType prevValue;
+						cweeUnitPatternContainer_t::ConstIterType prevValue;
 						for (auto& dataPair : const_cast<const cweeUnitPatternContainer_t&>(*this->container)) {
 							if (dataPair.Y) {
 								if (prevValue.Y) {
@@ -2705,9 +2705,9 @@ namespace cweeUnitValues {
 			case interpolation_t::RIGHT: {
 				if (this->GetNumValues() > 1) {
 					step = this->GetMinimumTimeStep();
-					unit_value minGot = t1, maxGot = t1;
+					cweeUnitValues::unit_value minGot = t1, maxGot = t1;
 					if (true) {
-						cweeUnitValues::cweeUnitPatternContainer_t::ConstIterType prevValue;
+						cweeUnitPatternContainer_t::ConstIterType prevValue;
 						for (auto& dataPair : const_cast<const cweeUnitPatternContainer_t&>(*this->container)) {
 							if (dataPair.Y) {
 								if (prevValue.Y) {
@@ -2742,9 +2742,9 @@ namespace cweeUnitValues {
 			default: {
 				if (this->GetNumValues() > 1) {
 					step = this->GetMinimumTimeStep();
-					unit_value minGot = t1, maxGot = t1;
+					cweeUnitValues::unit_value minGot = t1, maxGot = t1;
 					if (true) {
-						cweeUnitValues::cweeUnitPatternContainer_t::ConstIterType prevValue;
+						cweeUnitPatternContainer_t::ConstIterType prevValue;
 						for (auto& dataPair : const_cast<const cweeUnitPatternContainer_t&>(*this->container)) {
 							if (dataPair.Y) {
 								if (prevValue.Y) {
@@ -2781,15 +2781,15 @@ namespace cweeUnitValues {
 			return sum;
 		};
 
-		cweeList<unit_value>								GetValueQuantiles(cweeList<double> const& probs) const {
-			cweeList<unit_value> quantiles;
+		cweeList<cweeUnitValues::unit_value>								GetValueQuantiles(cweeList<double> const& probs) const {
+			cweeList<cweeUnitValues::unit_value> quantiles;
 			if (probs.Num() > 0) {
 				quantiles.SetNum(probs.Num());
 
-				cweeUnitValues::scalar poi;
+				cweeUnitValues::cweeUnitValues::scalar poi;
 				size_t left, right;
 
-				cweeList<unit_value> data(this->GetNumValues() + 16);
+				cweeList<cweeUnitValues::unit_value> data(this->GetNumValues() + 16);
 				for (auto& iter : const_cast<const cweeUnitPatternContainer_t&>(*this->container)) {
 					if (iter.Y) {
 						data.Append(*iter.Y);
@@ -2807,20 +2807,20 @@ namespace cweeUnitValues {
 					poi = (1.0f - probs[i]) * -0.5f + probs[i] * ((float)data.Num() - 0.5f);
 					left = std::max(int64_t(std::floor((double)poi)), int64_t(0));
 					right = std::min(int64_t(std::ceil((double)poi)), int64_t((float)data.Num() - 1.0f));
-					quantiles[i] = (((cweeUnitValues::scalar)1.0f - (poi - (cweeUnitValues::scalar)left)) * data[left]) + ((poi - (cweeUnitValues::scalar)left) * data[right]);
+					quantiles[i] = (((cweeUnitValues::cweeUnitValues::scalar)1.0f - (poi - (cweeUnitValues::cweeUnitValues::scalar)left)) * data[left]) + ((poi - (cweeUnitValues::cweeUnitValues::scalar)left) * data[right]);
 				}
 			}
 			return quantiles;
 		};
-		cweeList<unit_value>								GetValueQuantiles(cweeList<double> const& probs, unit_value start, unit_value end) const {
-			cweeList<unit_value> quantiles;
+		cweeList<cweeUnitValues::unit_value>								GetValueQuantiles(cweeList<double> const& probs, cweeUnitValues::unit_value start, cweeUnitValues::unit_value end) const {
+			cweeList<cweeUnitValues::unit_value> quantiles;
 			if (probs.Num() > 0) {
 				quantiles.SetNum(probs.Num());
 
-				cweeUnitValues::scalar poi;
+				cweeUnitValues::cweeUnitValues::scalar poi;
 				size_t left, right;
 
-				cweeList<unit_value> data(this->GetNumValues() + 16);
+				cweeList<cweeUnitValues::unit_value> data(this->GetNumValues() + 16);
 				AUTO EndIter = const_cast<const cweeUnitPatternContainer_t&>(*this->container).end();
 				for (AUTO iter = const_cast<const cweeUnitPatternContainer_t&>(*this->container).begin_at(start); iter != EndIter; ++iter) {
 					if (iter->X >= start && iter->Y) {
@@ -2840,18 +2840,18 @@ namespace cweeUnitValues {
 					poi = (1.0f - probs[i]) * -0.5f + probs[i] * ((float)data.Num() - 0.5f);
 					left = std::max(int64_t(std::floor((double)poi)), int64_t(0));
 					right = std::min(int64_t(std::ceil((double)poi)), int64_t((float)data.Num() - 1.0f));
-					quantiles[i] = (((cweeUnitValues::scalar)1.0f - (poi - (cweeUnitValues::scalar)left)) * data[left]) + ((poi - (cweeUnitValues::scalar)left) * data[right]);
+					quantiles[i] = (((cweeUnitValues::cweeUnitValues::scalar)1.0f - (poi - (cweeUnitValues::cweeUnitValues::scalar)left)) * data[left]) + ((poi - (cweeUnitValues::cweeUnitValues::scalar)left) * data[right]);
 				}
 			}
 			return quantiles;
 		};
-		unit_value								            GetValueQuantile(double prob, unit_value start, unit_value end) const {
-			unit_value quantiles;
+		cweeUnitValues::unit_value								            GetValueQuantile(double prob, cweeUnitValues::unit_value start, cweeUnitValues::unit_value end) const {
+			cweeUnitValues::unit_value quantiles;
 			{
-				cweeUnitValues::scalar poi;
+				cweeUnitValues::cweeUnitValues::scalar poi;
 				size_t left, right;
 
-				cweeList<unit_value> data(this->GetNumValues() + 16);
+				cweeList<cweeUnitValues::unit_value> data(this->GetNumValues() + 16);
 				AUTO EndIter = const_cast<const cweeUnitPatternContainer_t&>(*this->container).end();
 				for (AUTO iter = const_cast<const cweeUnitPatternContainer_t&>(*this->container).begin_at(start); iter != EndIter; ++iter) {
 					if (iter->X >= start && iter->Y) {
@@ -2868,14 +2868,14 @@ namespace cweeUnitValues {
 					poi = (1.0f - prob) * -0.5f + prob * ((float)data.Num() - 0.5f);
 					left = std::max(int64_t(std::floor((double)poi)), int64_t(0));
 					right = std::min(int64_t(std::ceil((double)poi)), int64_t((float)data.Num() - 1.0f));
-					quantiles = (((cweeUnitValues::scalar)1.0f - (poi - (cweeUnitValues::scalar)left)) * data[left]) + ((poi - (cweeUnitValues::scalar)left) * data[right]);
+					quantiles = (((cweeUnitValues::cweeUnitValues::scalar)1.0f - (poi - (cweeUnitValues::cweeUnitValues::scalar)left)) * data[left]) + ((poi - (cweeUnitValues::cweeUnitValues::scalar)left) * data[right]);
 				}
 			}
 			return quantiles;
 		};
 
-		unit_value											GetAvgTimestep() const {
-			unit_value out;
+		cweeUnitValues::unit_value											GetAvgTimestep() const {
+			cweeUnitValues::unit_value out;
 
 			int num(0);
 
@@ -2887,7 +2887,7 @@ namespace cweeUnitValues {
 			
 
 			if (this->GetNumValues() > 1) {
-				cweeUnitValues::cweeUnitPatternContainer_t::ConstIterType prevValue;
+				cweeUnitPatternContainer_t::ConstIterType prevValue;
 				prevValue.Y = nullptr;
 				int numSamples = 0;
 
@@ -2913,8 +2913,8 @@ namespace cweeUnitValues {
 		};
 
 
-		unit_value											GetAvgValue() const {
-			unit_value out;
+		cweeUnitValues::unit_value											GetAvgValue() const {
+			cweeUnitValues::unit_value out;
 
 			int num(0);
 
@@ -2927,8 +2927,8 @@ namespace cweeUnitValues {
 
 			return out;
 		};
-		unit_value											GetAvgValue(unit_value start, unit_value end) const {
-			unit_value out;
+		cweeUnitValues::unit_value											GetAvgValue(cweeUnitValues::unit_value start, cweeUnitValues::unit_value end) const {
+			cweeUnitValues::unit_value out;
 
 			int num(0);
 			int n = GetNumValues();
@@ -2957,7 +2957,7 @@ namespace cweeUnitValues {
 		};
 
 
-		void												RemoveTimes(unit_value greaterThanOrEqual, unit_value LessThan) {
+		void												RemoveTimes(cweeUnitValues::unit_value greaterThanOrEqual, cweeUnitValues::unit_value LessThan) {
 			container->RemoveTimes(greaterThanOrEqual, LessThan);
 		};
 		void  RemoveWithMask(cweeUnitPattern const& other) {
@@ -2973,7 +2973,7 @@ namespace cweeUnitValues {
 					return b.Distance(o.boundary);
 				};
 
-				cweeUnitValues::unit_value data;
+				cweeUnitValues::cweeUnitValues::unit_value data;
 				cweeBoundary boundary;
 
 				RTreeContainer() : data(), boundary() {};
@@ -3068,10 +3068,10 @@ namespace cweeUnitValues {
 				AUTO maxValue = this->GetMaxValue();
 				AUTO valueRange = maxValue - minValue;
 
-				cweeUnitValues::cweeUnitPatternContainer_t::ConstIterType prevValue1;
+				cweeUnitPatternContainer_t::ConstIterType prevValue1;
 				prevValue1.Y = nullptr;
 
-				cweeUnitValues::cweeUnitPatternContainer_t::ConstIterType prevValue2;
+				cweeUnitPatternContainer_t::ConstIterType prevValue2;
 				prevValue2.Y = nullptr;
 
 				for (auto& iter : const_cast<const cweeUnitPatternContainer_t&>(*container)) {
@@ -3156,7 +3156,7 @@ namespace cweeUnitValues {
 					//AUTO knotsA = a.GetKnotSeries();
 					//a.lock.Lock();
 					//for (auto& x : knotsA) {
-					//	result.AddUniqueValue((a.container->internal_X_type = x.first), (a.container->internal_Y_type = x.second) + b.GetCurrentValue((a.container->internal_X_type = x.first)));
+					//	result.AddUniqueValue((a.container->internal_X_type = x.first), (a.container->internal_Y_type = x.cweeUnitValues::second) + b.GetCurrentValue((a.container->internal_X_type = x.first)));
 					//}
 					//a.lock.Unlock();
 				}
@@ -3173,7 +3173,7 @@ namespace cweeUnitValues {
 					//AUTO knotsB = b.GetKnotSeries();
 					//b.lock.Lock();
 					//for (auto& x : knotsB) {
-					//	result.AddUniqueValue((b.container->internal_X_type = x.first), (b.container->internal_Y_type = x.second) + a.GetCurrentValue((b.container->internal_X_type = x.first)));
+					//	result.AddUniqueValue((b.container->internal_X_type = x.first), (b.container->internal_Y_type = x.cweeUnitValues::second) + a.GetCurrentValue((b.container->internal_X_type = x.first)));
 					//}
 					//b.lock.Unlock();
 				}
@@ -3244,7 +3244,7 @@ namespace cweeUnitValues {
 			return result;
 		};
 
-		friend cweeUnitPattern operator+(const cweeUnitPattern& a, const unit_value& b) {
+		friend cweeUnitPattern operator+(const cweeUnitPattern& a, const cweeUnitValues::unit_value& b) {
 			cweeUnitPattern result(a.GetMinTime(), a.GetCurrentValue(0) + b); {
 				result.SetBoundaryType(a.GetBoundaryType());
 				result.SetInterpolationType(a.GetInterpolationType());
@@ -3264,7 +3264,7 @@ namespace cweeUnitValues {
 			}
 			return result;
 		};
-		friend cweeUnitPattern operator-(const cweeUnitPattern& a, const unit_value& b) {
+		friend cweeUnitPattern operator-(const cweeUnitPattern& a, const cweeUnitValues::unit_value& b) {
 			cweeUnitPattern result(a.GetMinTime(), a.GetCurrentValue(0) - b); {
 				result.SetBoundaryType(a.GetBoundaryType());
 				result.SetInterpolationType(a.GetInterpolationType());
@@ -3284,7 +3284,7 @@ namespace cweeUnitValues {
 			}
 			return result;
 		};
-		friend cweeUnitPattern operator*(const cweeUnitPattern& a, const unit_value& b) {
+		friend cweeUnitPattern operator*(const cweeUnitPattern& a, const cweeUnitValues::unit_value& b) {
 			cweeUnitPattern result(a.GetMinTime(), a.GetCurrentValue(0) * b); {
 				result.SetBoundaryType(a.GetBoundaryType());
 				result.SetInterpolationType(a.GetInterpolationType());
@@ -3300,7 +3300,7 @@ namespace cweeUnitValues {
 			}
 			return result;
 		};
-		friend cweeUnitPattern operator/(const cweeUnitPattern& a, const unit_value& b) {
+		friend cweeUnitPattern operator/(const cweeUnitPattern& a, const cweeUnitValues::unit_value& b) {
 			cweeUnitPattern result(a.GetMinTime(), a.GetCurrentValue(0) / b); {
 				result.SetBoundaryType(a.GetBoundaryType());
 				result.SetInterpolationType(a.GetInterpolationType());
@@ -3317,7 +3317,7 @@ namespace cweeUnitValues {
 			return result;
 		};
 
-		friend cweeUnitPattern operator+(const unit_value& b, const cweeUnitPattern& a) {
+		friend cweeUnitPattern operator+(const cweeUnitValues::unit_value& b, const cweeUnitPattern& a) {
 			cweeUnitPattern result(a.GetMinTime(), a.GetCurrentValue(0) + b); {
 				result.SetBoundaryType(a.GetBoundaryType());
 				result.SetInterpolationType(a.GetInterpolationType());
@@ -3337,7 +3337,7 @@ namespace cweeUnitValues {
 			}
 			return result;
 		};
-		friend cweeUnitPattern operator-(const unit_value& b, const cweeUnitPattern& a) {
+		friend cweeUnitPattern operator-(const cweeUnitValues::unit_value& b, const cweeUnitPattern& a) {
 			cweeUnitPattern result(a.GetMinTime(), b - a.GetCurrentValue(0)); {
 				result.SetBoundaryType(a.GetBoundaryType());
 				result.SetInterpolationType(a.GetInterpolationType());
@@ -3357,7 +3357,7 @@ namespace cweeUnitValues {
 			}
 			return result;
 		};
-		friend cweeUnitPattern operator*(const unit_value& b, const cweeUnitPattern& a) {
+		friend cweeUnitPattern operator*(const cweeUnitValues::unit_value& b, const cweeUnitPattern& a) {
 			cweeUnitPattern result(a.GetMinTime(), a.GetCurrentValue(0) * b); {
 				result.SetBoundaryType(a.GetBoundaryType());
 				result.SetInterpolationType(a.GetInterpolationType());
@@ -3373,7 +3373,7 @@ namespace cweeUnitValues {
 			}
 			return result;
 		};
-		friend cweeUnitPattern operator/(const unit_value& b, const cweeUnitPattern& a) {
+		friend cweeUnitPattern operator/(const cweeUnitValues::unit_value& b, const cweeUnitPattern& a) {
 			cweeUnitPattern result(a.GetMinTime(), b/a.GetCurrentValue(0)); {
 				result.SetBoundaryType(a.GetBoundaryType());
 				result.SetInterpolationType(a.GetInterpolationType());
@@ -3392,7 +3392,7 @@ namespace cweeUnitValues {
 
 		cweeUnitPattern& operator+=(const cweeUnitPattern& b) { 
 			cweeUnitPattern pat = *this;
-			unit_value val = this->Y_Type();
+			cweeUnitValues::unit_value val = this->Y_Type();
 			{
 				auto thisKnotSeries = pat.GetKnotSeries();
 				for (auto& x : thisKnotSeries) {
@@ -3416,10 +3416,10 @@ namespace cweeUnitValues {
 		cweeUnitPattern& operator*=(const cweeUnitPattern& b) { *this = (*this * b); return *this; };
 		cweeUnitPattern& operator/=(const cweeUnitPattern& b) { *this = (*this / b); return *this; };
 
-		cweeUnitPattern& operator+=(const unit_value& b) { *this = (*this + b); return *this; };
-		cweeUnitPattern& operator-=(const unit_value& b) { *this = (*this - b); return *this; };
-		cweeUnitPattern& operator*=(const unit_value& b) { *this = (*this * b); return *this; };
-		cweeUnitPattern& operator/=(const unit_value& b) { *this = (*this / b); return *this; };
+		cweeUnitPattern& operator+=(const cweeUnitValues::unit_value& b) { *this = (*this + b); return *this; };
+		cweeUnitPattern& operator-=(const cweeUnitValues::unit_value& b) { *this = (*this - b); return *this; };
+		cweeUnitPattern& operator*=(const cweeUnitValues::unit_value& b) { *this = (*this * b); return *this; };
+		cweeUnitPattern& operator/=(const cweeUnitValues::unit_value& b) { *this = (*this / b); return *this; };
 
 		cweeUnitPattern pow(const cweeUnitPattern& b)const {
 			auto x = cweeUnitPattern(GetMinTime(), GetCurrentValue(0).pow(b.GetCurrentValue(0)));
@@ -3432,7 +3432,7 @@ namespace cweeUnitValues {
 			lock.Unlock();
 			return x;
 		};
-		cweeUnitPattern pow(const unit_value& b)const {
+		cweeUnitPattern pow(const cweeUnitValues::unit_value& b)const {
 			auto x = cweeUnitPattern(GetMinTime(), GetCurrentValue(0).pow(b));
 			AUTO knotSeries = GetKnotSeries();
 			lock.Lock();
@@ -3461,4 +3461,4 @@ namespace cweeUnitValues {
 
 	};
 
-};
+//};

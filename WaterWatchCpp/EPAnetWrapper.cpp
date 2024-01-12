@@ -2393,16 +2393,16 @@ bool EPAnetProject::DemandRedistribution(::epanet::Pzone const& zone, cweeStr co
 		// Goal: Re-distribute demands from customers with low pressure to customers with acceptable pressure. 		
 		// Intended to be used after demand allocation, to help "move" demands placed on nodes with higher elevations that is actually served
 		pounds_per_square_inch_t psiTarget = val;
-		std::map<std::string, cweeUnitValues::cweeUnitPattern> pressurePatterns;
+		std::map<std::string, cweeUnitPattern> pressurePatterns;
 
 		// STEP 1: Get the pressure patterns for all of our nodes.
 		for (auto& node : zone->Node) {
 			if (node->Type_p == asset_t::JUNCTION) {
 				AUTO headPat = node->GetValue<_HEAD_>();
 				if (headPat) {
-					AUTO pressurePat = cweeUnitValues::cweeUnitPattern(cweeUnitValues::second(), cweeUnitValues::pounds_per_square_inch()); {
-						AUTO waterHeadPat = cweeUnitValues::cweeUnitPattern(cweeUnitValues::second(), cweeUnitValues::head());
-						waterHeadPat = (cweeUnitValues::cweeUnitPattern(*headPat) - cweeUnitValues::foot(node->El()));
+					AUTO pressurePat = cweeUnitPattern(cweeUnitValues::second(), cweeUnitValues::pounds_per_square_inch()); {
+						AUTO waterHeadPat = cweeUnitPattern(cweeUnitValues::second(), cweeUnitValues::head());
+						waterHeadPat = (cweeUnitPattern(*headPat) - cweeUnitValues::foot(node->El()));
 						pressurePat = waterHeadPat;
 					}
 					pressurePatterns[node->Name_p.c_str()] = pressurePat;

@@ -1814,7 +1814,7 @@ lib->add(chaiscript::type_conversion<From, To>([](const From& t_bt)->To { return
             }   \
         }
 
-#define AddUnit_t(Type)     { using namespace cwee_units; using namespace cweeUnitValues;  \
+#define AddUnit_t(Type)     { using namespace cwee_units; \
                     lib->add(chaiscript::user_type<Type>(), #Type);  \
                     lib->add(chaiscript::constructor<Type()>(), #Type);  \
                     lib->add(chaiscript::constructor<Type(const Type&)>(), #Type);   \
@@ -1842,10 +1842,10 @@ lib->add(chaiscript::type_conversion<From, To>([](const From& t_bt)->To { return
                     lib->add(fun([](float& a, const Type& b)->float& { a = b(); return a; }), "=");   \
                     lib->add(fun([](u64& a, const Type& b)->u64& { a = b(); return a; }), "=");   \
                     lib->add(fun([](long& a, const Type& b)->long& { a = b(); return a; }), "=");   \
-                    lib->add(type_conversion<Type, unit_value>([](const Type& a)->unit_value { return cweeUnitValues::unit_value::from_unit_t(a); }, nullptr)); \
-                    lib->add(type_conversion<unit_value, Type>([](const unit_value& a)->Type { unit_value temp = cweeUnitValues::unit_value::from_unit_t(Type()); temp = a; Type out = temp(); return out; }, nullptr)); \
-                    lib->add(chaiscript::fun([](Type& a, const unit_value& b)->Type& { unit_value temp = cweeUnitValues::unit_value::from_unit_t(Type()); temp = b; a = temp(); return a; }), "=");   \
-                    lib->add(chaiscript::fun([](unit_value& a, const Type& b)->unit_value& { a = cweeUnitValues::unit_value::from_unit_t(b); return a; }), "=");   \
+                    lib->add(type_conversion<Type, cweeUnitValues::unit_value>([](const Type& a)->cweeUnitValues::unit_value { return cweeUnitValues::unit_value::from_unit_t(a); }, nullptr)); \
+                    lib->add(type_conversion<cweeUnitValues::unit_value, Type>([](const cweeUnitValues::unit_value& a)->Type { cweeUnitValues::unit_value temp = cweeUnitValues::unit_value::from_unit_t(Type()); temp = a; Type out = temp(); return out; }, nullptr)); \
+                    lib->add(chaiscript::fun([](Type& a, const cweeUnitValues::unit_value& b)->Type& { cweeUnitValues::unit_value temp = cweeUnitValues::unit_value::from_unit_t(Type()); temp = b; a = temp(); return a; }), "=");   \
+                    lib->add(chaiscript::fun([](cweeUnitValues::unit_value& a, const Type& b)->cweeUnitValues::unit_value& { a = cweeUnitValues::unit_value::from_unit_t(b); return a; }), "=");   \
                     lib->add(chaiscript::fun([](const Type& a, const Type& b) { return a + b; }), "+");   \
                     lib->add(chaiscript::fun([](const Type& a, const Type& b) { return a - b; }), "-");   \
                     lib->add(chaiscript::fun([](Type& a, const Type& b) -> Type& { a += b; return a; }), "+=");   \
@@ -1930,8 +1930,8 @@ lib->add(chaiscript::type_conversion<From, To>([](const From& t_bt)->To { return
         }
 
 #define AddUnit(Type)\
-                    lib->add(chaiscript::fun([]() -> unit_value { static Type F; return F; }), #Type); \
-                    lib->add(chaiscript::fun([](unit_value const& a) -> unit_value { Type F; F = a; return F; }), #Type); \
+                    lib->add(chaiscript::fun([]() -> cweeUnitValues::unit_value { static Type F; return F; }), #Type); \
+                    lib->add(chaiscript::fun([](cweeUnitValues::unit_value const& a) -> cweeUnitValues::unit_value { Type F; F = a; return F; }), #Type); \
                     lib->add(chaiscript::postfix((cweeStr("_") + cweeStr(Type::specialized_abbreviation())).c_str(), #Type));
 
 #define AddUnitWithMetricPrefixes(Type)\
