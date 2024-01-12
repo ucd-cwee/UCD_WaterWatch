@@ -1,4 +1,4 @@
-/*
+﻿/*
 WaterWatch, Energy Demand Management System for Water Systems. For further information on WaterWatch, please see https://cwee.ucdavis.edu/waterwatch.
 
 Copyright (c) 2019 - 2023 by Robert Good, Erin Musabandesu, and David Linz. (Email: rtgood@ucdavis.edu). All rights reserved.
@@ -33,7 +33,7 @@ typedef long double				u64;
 	type(double V) noexcept : unit_value(V, Unit_ID(a, b, c, d, e, false, "", 1.0)) {}; \
 	type(double V, const char* abbreviation) noexcept : unit_value(V, Unit_ID(a, b, c, d, e, false, abbreviation, 1.0)) {}; \
 	type(double V, const char* abbreviation, double ratio) noexcept : unit_value(V, Unit_ID(a, b, c, d, e, false, abbreviation, ratio)) {}; \
-	type(unit_value const& V) noexcept : unit_value(V) {}; \
+    type(unit_value const& V) noexcept = delete; \
     virtual ~type() {}; \
 	friend inline std::ostream& operator<<(std::ostream& os, type const& obj) { os << obj.ToString(); return os; }; \
 	friend inline std::stringstream& operator>>(std::stringstream& os, type& obj) { double v = 0; os >> v; obj = v; return os; }; \
@@ -57,7 +57,13 @@ typedef long double				u64;
 	constexpr static const char* specialized_name() noexcept { return #type; }; \
 	type() noexcept : category(0.0, specialized_abbreviation(), ratio) {}; \
 	type(double V) noexcept : category(V, specialized_abbreviation(), ratio) {}; \
-	type(unit_value const& V) noexcept : category(V) {}; \
+	type(unit_value const& V) : category(0.0, specialized_abbreviation(), ratio) { \
+		if (this->unit_m.IsSameCategory(V.unit_m)) { this->value_m = V.value_m; } \
+		else if (unit_value::is_scalar(V)) { this->value_m = V() * ratio; } \
+		else if (unit_value::is_scalar(*this)) { this->unit_m = V.unit_m; this->value_m = V.value_m; } \
+		else { throw(std::runtime_error(cweeUnitValues::Unit_ID::printf("Assignment(const&) failed due to incompatible non-scalar units: '%s' and '%s'.", specialized_abbreviation(), V.Abbreviation().c_str()))); } \
+    }; \
+    virtual bool IsStaticType() const { return true; }; \
     virtual ~type() {}; \
 	friend inline std::ostream& operator<<(std::ostream& os, type const& obj) { os << obj.ToString(); return os; }; \
 	friend inline std::stringstream& operator>>(std::stringstream& os, type& obj) { double v = 0; os >> v; obj = v; return os; }; \
@@ -199,19 +205,145 @@ public:
 		decltype(auto) HashCategory() const noexcept {
 			return cweeUnitValues::HashUnits(unitType_m[0], unitType_m[1], unitType_m[2], unitType_m[3], unitType_m[4]);
 		};
-		const char* LookupAbbreviation() const noexcept {
-			// abbreviation_m = cweeUnitValuesDetail::lookup_abbreviation(HashUnitAndRatio(HashCategory(), ratio_m));
-			abbreviation_m = cweeUnitValuesDetail::lookup_abbreviation(HashCategory(), ratio_m);			
-			if (StrCmp(abbreviation_m, "") == 0) {
-				ratio_m = 1;
+		const char* LookupAbbreviation(bool isStatic) const noexcept {
+			if (!isStatic) {
+				abbreviation_m = cweeUnitValuesDetail::lookup_abbreviation(HashCategory(), ratio_m);
+				if (StrCmp(abbreviation_m, "") == 0) {
+					ratio_m = 1;
+				}
 			}
 			return abbreviation_m;
 		};
 		const char* LookupTypeName() const noexcept {
-			// return cweeUnitValuesDetail::lookup_typename(HashUnitAndRatio(HashCategory(), ratio_m));
 			return cweeUnitValuesDetail::lookup_typename(HashCategory(), ratio_m);
 		};
+	
+	private:
+		/*
+		static const char* GetSuperScript(char& v) {
+			switch (v) {
+			case '0': return "⁰";
+			case '1': return "¹";
+			case '2': return "²";
+			case '3': return "³";
+			case '4': return "⁴";
+			case '5': return "⁵";
+			case '6': return "⁶";
+			case '7': return "⁷";
+			case '8': return "⁸";
+			case '9': return "⁹";
+			case '-': return "⁻";
+			case '.': return "˙";
+			default: return nullptr;
+			}
+		};
+		static std::string GetSuperScript(std::string v) {
+			for (int i = v.length() - 1; i >= 0; --i) {
+				AUTO replacement = GetSuperScript(v[i]);
+				if (replacement) {
+					v = v.erase(i, 1).insert(i, replacement);
+				}
+			}
+			return v;
+		};
+		*/
+		
+		static void AddToDelimiter(std::string& obj, std::string const& toAdd, std::string const& delim) {
+			if (obj.length() == 0) {
+				obj += toAdd;
+			}
+			else {
+				obj += delim;
+				obj += toAdd;
+			}
+		};
+		static size_t		vsnPrintf(char* dest, size_t size, const char* fmt, va_list argptr) {
+			size_t ret;
+#undef _vsnprintf
+			ret = ::_vsnprintf(dest, size - 1, fmt, argptr);
+			dest[size - 1] = '\0';
+			if (ret < 0 || ret >= size)  ret = -1;
+			return ret;
+		};
+	
 	public:
+		static std::string	printf(const char* fmt, ...) {
+			va_list argptr;
+
+			decltype(auto) buffer = new char[128000];
+			buffer[128000 - 1] = '\0';
+
+			va_start(argptr, fmt);
+			vsnPrintf(buffer, 128000 - 1 /*sizeof(buffer) - 1*/, fmt, argptr);
+			va_end(argptr);
+			buffer[128000 /*sizeof(buffer)*/ - 1] = '\0';
+
+			std::string out(buffer);
+
+			delete[] buffer;
+			return out;
+		};
+		static bool IsInteger(double value) {
+			double intpart;
+			return modf(value, &intpart) == 0.0;
+		};
+
+	public:
+		std::string CreateAbbreviation(bool isStatic) const noexcept {
+			std::string out = LookupAbbreviation(isStatic);
+			if (!isScalar_m && out.empty()) {
+				std::array< const char*, NumUnits> unitBases{ "m", "kg", "s", "A", "$" };
+
+				bool anyNegatives = false;
+				for (int i = NumUnits - 1; i >= 0; i--) {
+					AUTO unitBase = unitBases[i];
+					AUTO v = unitType_m[i];
+
+					if (v > 0) {
+						if (v == 1)
+							AddToDelimiter(out, unitBase, " ");
+						else {
+							std::string Num;
+							if (IsInteger(v)) {
+								Num = std::to_string((int)v);
+							}
+							else {
+								Num = std::to_string((float)v);
+							}
+							AddToDelimiter(out, printf("%s^%s", unitBase, Num.c_str()), " ");
+						}
+					}
+					else if (v < 0) {
+						anyNegatives = true;
+					}
+				}
+				if (anyNegatives) {
+					out += " /";
+					for (int i = NumUnits - 1; i >= 0; i--) {
+						AUTO unitBase = unitBases[i];
+						AUTO v = unitType_m[i];
+
+						if (v < 0) {
+							if (v == -1)
+								AddToDelimiter(out, unitBase, " ");
+							else {
+								std::string Num;
+								if (IsInteger(v)) {
+									Num = std::to_string((int)(-1.0 * v));
+								}
+								else {
+									Num = std::to_string((float)(-1.0 * v));
+								}
+								AddToDelimiter(out, printf("%s^%s", unitBase, Num.c_str()), " ");
+							}
+						}
+					}
+				}
+			}
+			return out;
+		};
+	
+    public:
 		std::array< double, NumUnits> unitType_m;
 		bool isScalar_m;
 		mutable const char* abbreviation_m;
@@ -228,7 +360,7 @@ public:
 
 	public: // constructors
 		unit_value() noexcept : unit_m(), value_m(0.0) {};
-		unit_value(double V) noexcept : unit_m(), value_m(V* conversion()) {};
+		unit_value(double V) noexcept : unit_m(), value_m(V * conversion()) {};
 		unit_value(Unit_ID const& unit_p) noexcept : unit_m(unit_p), value_m(0.0) {};
 		unit_value(double V, Unit_ID const& unit_p) noexcept : unit_m(unit_p), value_m(V* conversion()) {};
 		unit_value(unit_value const& V) noexcept : unit_m(V.unit_m), value_m(V.value_m) {};
@@ -274,10 +406,11 @@ public:
 			value_m = (unitTypeObj() * conversion()); // save it a an SI value?
 		};
 
+		virtual bool IsStaticType() const { return false; };
 		virtual ~unit_value() {};
 	private:
 		double GetVisibleValue() const noexcept {
-			unit_m.LookupAbbreviation();
+			unit_m.LookupAbbreviation(IsStaticType());
 			return value_m / conversion();
 		};
 	public: // value operator
@@ -288,7 +421,7 @@ public:
 
 	public: // Functions
 		const char* UnitName() const noexcept {
-			unit_m.LookupAbbreviation();
+			unit_m.LookupAbbreviation(IsStaticType());
 			return unit_m.LookupTypeName();
 		};
 		bool AreConvertableTypes(unit_value const& V) const {
@@ -296,95 +429,9 @@ public:
 		};
 		void Clear() { unit_m = Unit_ID(); value_m = 0.0; };
 
-	private:
-		static void AddToDelimiter(std::string& obj, std::string const& toAdd, std::string const& delim) {
-			if (obj.length() == 0) {
-				obj += toAdd;
-			}
-			else {
-				obj += delim;
-				obj += toAdd;
-			}
-		};
-		static size_t		vsnPrintf(char* dest, size_t size, const char* fmt, va_list argptr) {
-			size_t ret;
-#undef _vsnprintf
-			ret = ::_vsnprintf(dest, size - 1, fmt, argptr);
-			dest[size - 1] = '\0';
-			if (ret < 0 || ret >= size)  ret = -1;
-			return ret;
-		};
-		static std::string	printf(const char* fmt, ...) {
-			va_list argptr;
-
-			decltype(auto) buffer = new char[128000];
-			buffer[128000 - 1] = '\0';
-
-			va_start(argptr, fmt);
-			vsnPrintf(buffer, 128000 - 1 /*sizeof(buffer) - 1*/, fmt, argptr);
-			va_end(argptr);
-			buffer[128000 /*sizeof(buffer)*/ - 1] = '\0';
-
-			std::string out(buffer);
-
-			delete[] buffer;
-			return out;
-		};
-
-	public:
-		std::string CreateAbbreviation() const noexcept {
-			unit_m.LookupAbbreviation();
-
-			std::string out; double v;
-			{
-				v = unit_m.unitType_m[unit_value_type::METERS];
-				if (v != 0) {
-					if (v == 1)
-						AddToDelimiter(out, "m", " ");
-					else
-						AddToDelimiter(out, printf("m^%s", std::to_string((float)v).c_str()), " ");
-				}
-			}
-			{
-				v = unit_m.unitType_m[unit_value_type::KILOGRAMS];
-				if (v != 0) {
-					if (v == 1)
-						AddToDelimiter(out, "kg", " ");
-					else
-						AddToDelimiter(out, printf("kg^%s", std::to_string((float)v).c_str()), " ");
-				}
-			}
-			{
-				v = unit_m.unitType_m[unit_value_type::SECONDS];
-				if (v != 0) {
-					if (v == 1)
-						AddToDelimiter(out, "s", " ");
-					else
-						AddToDelimiter(out, printf("s^%s", std::to_string((float)v).c_str()), " ");
-				}
-			}
-			{
-				v = unit_m.unitType_m[unit_value_type::AMPERES];
-				if (v != 0) {
-					if (v == 1)
-						AddToDelimiter(out, "a", " ");
-					else
-						AddToDelimiter(out, printf("a^%s", std::to_string((float)v).c_str()), " ");
-				}
-			}
-			{
-				v = unit_m.unitType_m[unit_value_type::DOLLAR];
-				if (v != 0) {
-					if (v == 1)
-						AddToDelimiter(out, "$", " ");
-					else
-						AddToDelimiter(out, printf("$^%s", std::to_string((float)v).c_str()), " ");
-				}
-			}
-			return out;
-		};
+	public:		
 		std::string Abbreviation() const noexcept {
-			return unit_m.LookupAbbreviation();
+			return unit_m.CreateAbbreviation(IsStaticType());
 		};
 		std::string ToString() const {
 			std::string abbreviation{ Abbreviation() };
@@ -412,15 +459,15 @@ public:
 		};
 		static void HandleNormalArithmetic(unit_value const& LHS, unit_value const& RHS) {
 			if (NormalArithmeticOkay(LHS, RHS)) return;
-			throw(std::runtime_error(printf("Normal, dynamic arithmetic failed due to incompatible non-scalar units: '%s' and '%s'", LHS.Abbreviation().c_str(), RHS.Abbreviation().c_str())));
+			throw(std::runtime_error(cweeUnitValues::Unit_ID::printf("Normal, dynamic arithmetic failed due to incompatible non-scalar units: '%s' and '%s'", LHS.Abbreviation().c_str(), RHS.Abbreviation().c_str())));
 		};
 		static void HandleUnaryArithmetic(unit_value const& LHS, unit_value const& RHS) {
 			if (UnaryArithmeticOkay(LHS, RHS)) return;
-			throw(std::runtime_error(printf("Unary (in-place or self-modifying) arithmetic failed due to incompatible units: '%s' and '%s'", LHS.Abbreviation().c_str(), RHS.Abbreviation().c_str())));
+			throw(std::runtime_error(cweeUnitValues::Unit_ID::printf("Unary (in-place or self-modifying) arithmetic failed due to incompatible units: '%s' and '%s'", LHS.Abbreviation().c_str(), RHS.Abbreviation().c_str())));
 		};
 		static void HandleNotScalar(unit_value const& V) {
 			if (is_scalar(V)) return;
-			throw(std::runtime_error(printf("Type must be scalar (was '%s').", V.Abbreviation().c_str())));
+			throw(std::runtime_error(cweeUnitValues::Unit_ID::printf("Type must be scalar (was '%s').", V.Abbreviation().c_str())));
 		};
 		/* Used for multiplication or division operations */
 		template <bool multiplication = true> unit_value& CompoundUnits(unit_value const& V) noexcept {
@@ -448,8 +495,6 @@ public:
 			else {
 				unit_m.ratio_m /= V.unit_m.ratio_m;
 			}
-			unit_m.abbreviation_m = "";
-
 			return *this;
 		};
 		/* Used for exponential operations */
@@ -460,7 +505,6 @@ public:
 
 			// now that we have modified the units, the conversion ratio makes no sense anymore and must be reset. 
 			unit_m.ratio_m = std::pow(unit_m.ratio_m, V);
-			unit_m.abbreviation_m = "";
 
 			return *this;
 		};
@@ -478,7 +522,7 @@ public:
 				value_m = V.value_m;
 			}
 			else { // incoming unit AND this unit are different non-scalers of different categories. No exchange is reasonable. 
-				throw(std::runtime_error(printf("Assignment(const&) failed due to incompatible non-scalar units: '%s' and '%s'.", this->Abbreviation().c_str(), V.Abbreviation().c_str())));
+				throw(std::runtime_error(cweeUnitValues::Unit_ID::printf("Assignment(const&) failed due to incompatible non-scalar units: '%s' and '%s'.", this->Abbreviation().c_str(), V.Abbreviation().c_str())));
 			}
 			return *this;
 		};
@@ -589,6 +633,7 @@ public:
 	};
 	using scalar = unit_value;
 
+private:
 	// Base classes
 	DefineCategoryType(length, 1, 0, 0, 0, 0);
 	DefineCategoryType(mass, 0, 1, 0, 0, 0);
@@ -621,6 +666,7 @@ public:
 	DefineCategoryType(emission_rate, -2, 0, 2, 0, 1);
 	DefineCategoryType(time_rate, 0, 0, -1, 0, 1);
 
+public:
 	/* LENGTH DERIVATIONS */
 	DerivedUnitTypeWithMetricPrefixes(meter, length, m, 1.0);
 	DerivedUnitType(foot, length, ft, 381.0 / 1250.0);

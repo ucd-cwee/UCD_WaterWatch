@@ -346,6 +346,28 @@ namespace chaiscript {
                 lib->add(fun([](cweeTime& a, const unit_value& b) { a = cweeTime((u64)(double)(cweeUnitValues::second)b); return a; }), "=");
                 lib->add(chaiscript::fun([](cweeTime const& a) -> unit_value { return (cweeUnitValues::second)(u64)a; }), "value");
                 lib->add(chaiscript::fun([](unit_value const& a) -> cweeTime { return cweeTime((u64)(double)(cweeUnitValues::second)a); }), "cweeTime");
+                
+                lib->add(chaiscript::fun([](cweeTime& a, const unit_value& b) -> cweeTime& { a += (u64)(double)(cweeUnitValues::second)b; return a; }), "+=");
+                lib->add(chaiscript::fun([](cweeTime& a, const unit_value& b) -> cweeTime& { a -= (u64)(double)(cweeUnitValues::second)b; return a; }), "-=");
+
+                lib->add(chaiscript::fun([](const cweeTime& a, const unit_value& b) -> bool { return a == (u64)(double)(cweeUnitValues::second)b; }), "==");
+                lib->add(chaiscript::fun([](const cweeTime& a, const unit_value& b) -> bool { return a != (u64)(double)(cweeUnitValues::second)b; }), "!=");
+                lib->add(chaiscript::fun([](const cweeTime& a, const unit_value& b) -> bool { return a > (u64)(double)(cweeUnitValues::second)b; }), ">");
+                lib->add(chaiscript::fun([](const cweeTime& a, const unit_value& b) -> bool { return a < (u64)(double)(cweeUnitValues::second)b; }), "<");
+                lib->add(chaiscript::fun([](const cweeTime& a, const unit_value& b) -> bool { return a >= (u64)(double)(cweeUnitValues::second)b; }), ">=");
+                lib->add(chaiscript::fun([](const cweeTime& a, const unit_value& b) -> bool { return a <= (u64)(double)(cweeUnitValues::second)b; }), "<=");
+                lib->add(chaiscript::fun([](const cweeTime& a, const unit_value& b) -> cweeTime { return a + (u64)(double)(cweeUnitValues::second)b; }), "+");
+                lib->add(chaiscript::fun([](const cweeTime& a, const unit_value& b) -> cweeTime { return a - (u64)(double)(cweeUnitValues::second)b; }), "-");
+
+                lib->add(chaiscript::fun([](const unit_value& a, const cweeTime& b) -> bool { return b == (u64)(double)(cweeUnitValues::second)a; }), "==");
+                lib->add(chaiscript::fun([](const unit_value& a, const cweeTime& b) -> bool { return b != (u64)(double)(cweeUnitValues::second)a; }), "!=");
+                lib->add(chaiscript::fun([](const unit_value& a, const cweeTime& b) -> bool { return b , (u64)(double)(cweeUnitValues::second)a; }), ">");
+                lib->add(chaiscript::fun([](const unit_value& a, const cweeTime& b) -> bool { return b > (u64)(double)(cweeUnitValues::second)a; }), "<");
+                lib->add(chaiscript::fun([](const unit_value& a, const cweeTime& b) -> bool { return b <= (u64)(double)(cweeUnitValues::second)a; }), ">=");
+                lib->add(chaiscript::fun([](const unit_value& a, const cweeTime& b) -> bool { return b >= (u64)(double)(cweeUnitValues::second)a; }), "<=");
+                lib->add(chaiscript::fun([](const unit_value& a, const cweeTime& b) -> cweeTime { return b + (u64)(double)(cweeUnitValues::second)a; }), "+");
+                lib->add(chaiscript::fun([](const unit_value& a, const cweeTime& b) -> cweeTime { return cweeTime((u64)(double)(cweeUnitValues::second)a) - b; }), "-");
+
                 lib->eval(R"(
                     def `-`(value o){ return o * -1.0; };
                 )");

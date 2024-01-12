@@ -325,11 +325,13 @@ namespace chaiscript {
                 lib->add(chaiscript::user_type<cweeTime>(), "cweeTime");
                 lib->add(chaiscript::constructor<cweeTime()>(), "cweeTime");
                 lib->add(chaiscript::constructor<cweeTime(const cweeTime&)>(), "cweeTime");
-                lib->add(chaiscript::constructor<cweeTime(const u64&)>(), "cweeTime");
-                lib->add(fun([](double a)->cweeTime { return cweeTime(a);  }), "cweeTime");
-                lib->add(fun([](int a)->cweeTime { return cweeTime(a); }), "cweeTime");
-                lib->add(fun([](float a)->cweeTime { return cweeTime(a); }), "cweeTime");
-                lib->add(fun([](long a)->cweeTime { return cweeTime(a); }), "cweeTime");
+                lib->add(chaiscript::constructor<cweeTime(const cweeUnitValues::unit_value&)>(), "cweeTime");
+                //lib->add(chaiscript::constructor<cweeTime(const u64&)>(), "cweeTime");
+                //lib->add(fun([](double a)->cweeTime { return cweeTime(a);  }), "cweeTime");
+                //lib->add(fun([](int a)->cweeTime { return cweeTime(a); }), "cweeTime");
+                //lib->add(fun([](float a)->cweeTime { return cweeTime(a); }), "cweeTime");
+                //lib->add(fun([](long a)->cweeTime { return cweeTime(a); }), "cweeTime");
+                lib->add(fun([](cweeUnitValues::unit_value const& a)->cweeTime { return cweeTime(a); }), "cweeTime");
                 lib->add(chaiscript::constructor<cweeTime(const cweeStr&)>(), "cweeTime");
                 lib->add(chaiscript::fun([](const cweeTime& a) -> cweeStr { return a.c_str(); }), "c_str");
                 lib->add(chaiscript::constructor<u64(cweeTime)>(), "u64");
@@ -380,6 +382,7 @@ namespace chaiscript {
 
                 lib->add(chaiscript::fun([](cweeTime const& a) { return std::string(a.c_str()); }), "to_string");
                 lib->add(chaiscript::fun([]() { return cweeTime::Epoch(); }), "Epoch");
+                lib->add(chaiscript::fun([]() { return cweeTime::Now(); }), "Now");
             }
 
             // cweeParser

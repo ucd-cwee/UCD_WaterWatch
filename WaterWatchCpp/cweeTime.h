@@ -173,7 +173,15 @@ public:
 		}
 	};
 	cweeTime(const char* t) : time(Shared_Epoch_posixTime()) { this->FromString(t); };
-
+	cweeTime(const cweeUnitValues::unit_value& t) : time(Shared_Epoch_posixTime()) {
+		*this = Shared_Epoch();
+		if (t > 0) {
+			time += boost::posix_time::seconds((long long)cweeUnitValues::second(t)());
+		}
+		else {
+			time -= boost::posix_time::seconds((long long)(-cweeUnitValues::second(t)()));
+		}
+	};
 	cweeStr c_str() const { 
 		return ToString();
 	};
