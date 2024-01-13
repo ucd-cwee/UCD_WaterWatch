@@ -878,15 +878,20 @@ to maintain a single distribution point for the source code.
 					s = (u64)index1->key;
 					index1 = container.GetNextLeaf(index1);
 					if (index1) {
-						if (s <= (u64)t && index1->key >= t) {
-							s = (u64)((u64)t - s) / ((u64)index1->key - s);
-							if (!::isfinite(s)) s = 0;
-
-							bvals[0] = 0;
-							bvals[1] = (u64)(1.0f - s);
-							bvals[2] = s;
-							bvals[3] = 0;
-
+						if (s <= t && index1->key >= t) {
+							if (index1->key == s) {
+								bvals[0] = 0;
+								bvals[1] = 1;
+								bvals[2] = 0;
+								bvals[3] = 0;
+							}
+							else {
+								s = (u64)((t - s) / (index1->key - s));
+								bvals[0] = 0;
+								bvals[1] = 1.0f - s;
+								bvals[2] = s;
+								bvals[3] = 0;
+							}
 						}
 						else {
 							// something went wrong - snap left. 
@@ -1969,7 +1974,7 @@ to maintain a single distribution point for the source code.
 			bool skipFirst = true;
 			AUTO g{ lock.Guard() };
 			auto out = container->internal_Y_type;
-			for (auto& x : *container) {
+			for (auto& x : const_cast<const cweeUnitPatternContainer_t&>(*container)) {
 				if (x.Y) {
 					if (skipFirst) {
 						skipFirst = false;
@@ -1987,7 +1992,7 @@ to maintain a single distribution point for the source code.
 			bool skipFirst = true;
 			AUTO g{ lock.Guard() };
 			auto out = container->internal_Y_type;
-			for (auto& x : *container) {
+			for (auto& x : const_cast<const cweeUnitPatternContainer_t&>(*container)) {
 				if (x.Y) {
 					if (skipFirst) {
 						skipFirst = false;
@@ -2011,7 +2016,7 @@ to maintain a single distribution point for the source code.
 			container->internal_X_type = start; start.Clear(); start = container->internal_X_type;
 			container->internal_X_type = end; end.Clear(); end = container->internal_X_type;
 
-			for (auto& x : *container) {
+			for (auto& x : const_cast<const cweeUnitPatternContainer_t&>(*container)) {
 				if (x.X > start) {
 					if (x.X <= end) {
 						if (skipFirst) {
@@ -2039,7 +2044,7 @@ to maintain a single distribution point for the source code.
 			container->internal_X_type = start; start.Clear(); start = container->internal_X_type;
 			container->internal_X_type = end; end.Clear(); end = container->internal_X_type;
 
-			for (auto& x : *container) {
+			for (auto& x : const_cast<const cweeUnitPatternContainer_t&>(*container)) {
 				if (x.X > start) {
 					if (x.X <= end) {
 						if (skipFirst) {
@@ -2113,11 +2118,14 @@ to maintain a single distribution point for the source code.
 			int numKnots = this->GetNumValues();
 			cweeThreadedList<pairT> toReturn(numKnots + 16);
 
+			auto t0 = (container->internal_X_type = timeStart);
+			auto t1 = (container->internal_X_type = timeEnd);
+
 			AUTO g{ lock.Guard() };
-			for (auto& x : *container) {
+			for (auto& x : const_cast<const cweeUnitPatternContainer_t&>(*container)) {
 				if (x.Y) {
-					if (x.X >= (container->internal_X_type = timeStart)()) {
-						if (x.X < (container->internal_X_type = timeEnd)()) {
+					if (x.X >= t0) {
+						if (x.X < t1) {
 							auto& set = toReturn.Alloc();
 							set.first = (container->internal_X_type = x.X);
 							set.second = (container->internal_Y_type = *x.Y);
@@ -2142,7 +2150,7 @@ to maintain a single distribution point for the source code.
 		cweeUnitValues::unit_value											GetValueAtIndex(size_t index) {
 			AUTO g{ lock.Guard() };
 			int n = 0;
-			for (auto& x : *container) {
+			for (auto& x : const_cast<const cweeUnitPatternContainer_t&>(*container)) {
 				if (x.Y) {
 					if (n >= index) {
 						return (container->internal_Y_type = *x.Y);
@@ -2155,7 +2163,7 @@ to maintain a single distribution point for the source code.
 		cweeUnitValues::unit_value											GetTimeAtIndex(size_t index) {
 			AUTO g{ lock.Guard() };
 			int n = 0;
-			for (auto& x : *container) {
+			for (auto& x : const_cast<const cweeUnitPatternContainer_t&>(*container)) {
 				if (x.Y) {
 					if (n >= index) {
 						return (container->internal_X_type = x.X);
@@ -2169,7 +2177,7 @@ to maintain a single distribution point for the source code.
 		size_t												GetLargestSmallerOrEqualTime(const cweeUnitValues::unit_value& time) const {
 			AUTO g{ lock.Guard() };
 			size_t n = -1;
-			for (auto& x : *container) {
+			for (auto& x : const_cast<const cweeUnitPatternContainer_t&>(*container)) {
 				if (x.Y) {
 					if (x.X > (container->internal_X_type = time)) {
 						return n;
@@ -2938,21 +2946,9 @@ to maintain a single distribution point for the source code.
 			container->internal_X_type = start; start.Clear(); start = container->internal_X_type;
 			container->internal_X_type = end; end.Clear(); end = container->internal_X_type;
 
-#if 1
 			if (start >= end) return out;
 			out = this->RombergIntegral(start, end) / (end - start);
-#else
-			for (auto& x : *container) {
-				if (x.X > start) {
-					if (x.X <= end) {
-						num++;
-						out -= (out / num);
-						out += ((container->internal_Y_type = *x.Y) / num);
-					}
-					else { break; }
-				}
-			}
-#endif
+
 			return out;
 		};
 
@@ -3394,17 +3390,17 @@ to maintain a single distribution point for the source code.
 			cweeUnitPattern pat = *this;
 			cweeUnitValues::unit_value val = this->Y_Type();
 			{
-				auto thisKnotSeries = pat.GetKnotSeries();
-				for (auto& x : thisKnotSeries) {
-					val = x.second + b.GetCurrentValue(x.first);
-					this->AddUniqueValue(x.first, val);
+				for (auto& x : const_cast<const cweeUnitPatternContainer_t&>(*pat.container)) {
+					if (x.Y) {
+						this->AddUniqueValue(x.X, val = *x.Y + b.GetCurrentValue(x.X));
+					}
 				}
 			}
 			{
-				auto thatKnotSeries = b.GetKnotSeries();
-				for (auto& x : thatKnotSeries) {
-					val = pat.GetCurrentValue(x.first) + x.second;
-					this->AddUniqueValue(x.first, val);
+				for (auto& x : const_cast<const cweeUnitPatternContainer_t&>(*b.container)) {
+					if (x.Y) {
+						this->AddUniqueValue(x.X, val = pat.GetCurrentValue(x.X) + *x.Y);
+					}
 				}
 			}
 			RemoveUnnecessaryKnots();

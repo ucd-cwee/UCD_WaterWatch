@@ -184,17 +184,19 @@ public:
 
 	class Unit_ID {
 		static constexpr size_t NumUnits = unit_value_type::_size_constant;
-
+	private:
+		constexpr double abs(double x) { return x > 0 ? x : -x; };
 	public:
 		constexpr Unit_ID() noexcept :
-			unitType_m{ 0.0, 0.0, 0.0, 0.0, 0.0 }, isScalar_m(true), abbreviation_m(""), ratio_m(1.)
+			unitType_m{ 0.0, 0.0, 0.0, 0.0, 0.0 }, isScalar_m(true), isSI_m(false), abbreviation_m(""), ratio_m(1.)
 		{};
 		constexpr Unit_ID(double a, double b, double c, double d, double e, double isScalar_p, const char* abbreviation_p, double ratio_p) noexcept :
-			unitType_m{ a, b, c, d, e }, isScalar_m(isScalar_p), abbreviation_m(abbreviation_p), ratio_m(ratio_p)
+			unitType_m{ a, b, c, d, e }, isScalar_m(isScalar_p), isSI_m((abs(a) + abs(b) + abs(c) + abs(d) + abs(e)) == 1.0 && abs(ratio_p) == 1.0), abbreviation_m(abbreviation_p), ratio_m(ratio_p)
 		{};
 		~Unit_ID() {};
 
 	public:
+
 		bool IsSameCategory(Unit_ID const& other) const noexcept {
 			if (isScalar_m && other.isScalar_m) return true;
 			return std::memcmp(&unitType_m, &other.unitType_m, sizeof(unitType_m)) == 0;
@@ -206,7 +208,7 @@ public:
 			return cweeUnitValues::HashUnits(unitType_m[0], unitType_m[1], unitType_m[2], unitType_m[3], unitType_m[4]);
 		};
 		const char* LookupAbbreviation(bool isStatic) const noexcept {
-			if (!isStatic) {
+			if (!isStatic && !isScalar_m) {
 				abbreviation_m = cweeUnitValuesDetail::lookup_abbreviation(HashCategory(), ratio_m);
 				if (StrCmp(abbreviation_m, "") == 0) {
 					ratio_m = 1;
@@ -346,6 +348,7 @@ public:
     public:
 		std::array< double, NumUnits> unitType_m;
 		bool isScalar_m;
+		bool isSI_m;
 		mutable const char* abbreviation_m;
 		mutable double ratio_m;
 	};
@@ -410,7 +413,13 @@ public:
 		virtual ~unit_value() {};
 	private:
 		double GetVisibleValue() const noexcept {
-			unit_m.LookupAbbreviation(IsStaticType());
+			if (unit_m.isSI_m && unit_m.ratio_m == 1.0) {
+				return value_m;
+			}
+			else {
+				unit_m.LookupAbbreviation(IsStaticType());
+				return value_m / conversion();
+			}
 			return value_m / conversion();
 		};
 	public: // value operator
@@ -871,11 +880,12 @@ public:
 	DerivedUnitType(Dollar_per_cubic_meter, volume_cost_rate, USD_per_cm, Conversion<Dollar>(1.0) / Conversion<cubic_meter>(1.0));
 	DerivedUnitType(Dollar_per_gallon, volume_cost_rate, USD_per_gal, Conversion<Dollar>(1.0) / Conversion<gallon>(1.0));
 
+	// Rates
 	DerivedUnitType(kilowatt_hour_per_acre_foot, energy_intensity, kWh_p_ac_ft, Conversion<kilowatt_hour>(1.0) / Conversion<acre_foot>(1.0));
 	DerivedUnitType(Dollar_per_mile, length_cost_rate, USD_p_mi, Conversion<Dollar>(1.0) / Conversion<mile>(1.0));
 	DerivedUnitType(Dollar_per_ton, mass_cost_rate, USD_p_t, Conversion<Dollar>(1.0) / Conversion<metric_ton>(1.0));
 	DerivedUnitType(ton_per_kilowatt_hour, emission_rate, t_p_kWh, Conversion<metric_ton>(1.0) / Conversion<kilowatt_hour>(1.0));
-	DerivedUnitType(per_year, time_rate, p_yr, 1.0 / Conversion<year>(1.0));
+	// DerivedUnitType(per_year, time_rate, p_yr, 1.0 / Conversion<year>(1.0));
 
 	class cweeUnitValuesDetail {
 	public:
@@ -1075,7 +1085,7 @@ public:
 					CreateRow(model, Dollar_per_mile);
 					CreateRow(model, Dollar_per_ton);
 					CreateRow(model, ton_per_kilowatt_hour);
-					CreateRow(model, per_year);
+					// CreateRow(model, per_year);
 				}
 
 				Tag = std::static_pointer_cast<void>(model);
@@ -1290,7 +1300,7 @@ public:
 					CreateRow(model, Dollar_per_mile);
 					CreateRow(model, Dollar_per_ton);
 					CreateRow(model, ton_per_kilowatt_hour);
-					CreateRow(model, per_year);
+					// CreateRow(model, per_year);
 				}
 
 				Tag = std::static_pointer_cast<void>(model);
@@ -1610,11 +1620,12 @@ DerivedUnitStd(Dollar_per_kilowatt, power_cost_rate, USD_per_kW, Conversion<Doll
 DerivedUnitStd(Dollar_per_cubic_meter, volume_cost_rate, USD_per_cm, Conversion<Dollar>(1.0) / Conversion<cubic_meter>(1.0));
 DerivedUnitStd(Dollar_per_gallon, volume_cost_rate, USD_per_gal, Conversion<Dollar>(1.0) / Conversion<gallon>(1.0));
 
+// Rates
 DerivedUnitStd(kilowatt_hour_per_acre_foot, energy_intensity, kWh_p_ac_ft, Conversion<kilowatt_hour>(1.0) / Conversion<acre_foot>(1.0));
 DerivedUnitStd(Dollar_per_mile, length_cost_rate, USD_p_mi, Conversion<Dollar>(1.0) / Conversion<mile>(1.0));
 DerivedUnitStd(Dollar_per_ton, mass_cost_rate, USD_p_t, Conversion<Dollar>(1.0) / Conversion<metric_ton>(1.0));
 DerivedUnitStd(ton_per_kilowatt_hour, emission_rate, t_p_kWh, Conversion<metric_ton>(1.0) / Conversion<kilowatt_hour>(1.0));
-DerivedUnitStd(per_year, time_rate, p_yr, 1.0 / Conversion<year>(1.0));
+// DerivedUnitStd(per_year, time_rate, p_yr, 1.0 / Conversion<year>(1.0));
 
 namespace std {
 	template<> class numeric_limits<cweeUnitValues::unit_value> {
