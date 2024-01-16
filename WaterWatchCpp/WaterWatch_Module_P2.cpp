@@ -197,15 +197,21 @@ namespace chaiscript {
 
                 lib->add(chaiscript::fun([](cweeUnitPattern& a) { return a.GetMinValue(); }), "GetMinValue");
                 lib->add(chaiscript::fun([](cweeUnitPattern& a) { return a.GetAvgValue(); }), "GetAvgValue");
+                lib->add(chaiscript::fun([](cweeUnitPattern& a) { return a.GetNumericalAvgValue(); }), "GetNumericalAvgValue");
+                lib->add(chaiscript::fun([](cweeUnitPattern& a, cweeUnitPattern const& mask) { return a.GetNumericalAvgValue(mask); }), "GetNumericalAvgValue");
+                lib->add(chaiscript::fun([](cweeUnitPattern& a, cweeUnitPattern const& mask) { return a.GetAvgValue(a.GetMinTime(), a.GetMaxTime(), mask); }), "GetAvgValue");
                 lib->add(chaiscript::fun([](cweeUnitPattern& a) { return a.GetMaxValue(); }), "GetMaxValue");
 
                 lib->add(chaiscript::fun([](cweeUnitPattern const& a) { return a.Ceiling(); }), "Ceiling");
                 lib->add(chaiscript::fun([](cweeUnitPattern const& a) { return a.Floor(); }), "Floor");
                 lib->add(chaiscript::fun([](cweeUnitPattern const& a) { return a.Abs(); }), "Abs");
+                lib->add(chaiscript::fun([](cweeUnitPattern const& a, cweeUnitPattern const& b) { return a.Min(b); }), "Min");
+                lib->add(chaiscript::fun([](cweeUnitPattern const& a, cweeUnitPattern const& b) { return a.Max(b); }), "Max");
                 lib->add(chaiscript::fun([](cweeUnitPattern const& a, float roundToMagnitude) { return a.RoundNearest(roundToMagnitude); }), "RoundNearest");
 
                 lib->add(chaiscript::fun([](cweeUnitPattern& a, const cweeUnitValues::unit_value& b, const cweeUnitValues::unit_value& c) { return a.GetMinValue(b, c); }), "GetMinValue");
                 lib->add(chaiscript::fun([](cweeUnitPattern& a, const cweeUnitValues::unit_value& b, const cweeUnitValues::unit_value& c) { return a.GetAvgValue(b, c); }), "GetAvgValue");
+                lib->add(chaiscript::fun([](cweeUnitPattern& a, const cweeUnitValues::unit_value& b, const cweeUnitValues::unit_value& c, cweeUnitPattern const& mask) { return a.GetAvgValue(b, c, mask); }), "GetAvgValue");
                 lib->add(chaiscript::fun([](cweeUnitPattern& a, const cweeUnitValues::unit_value& b, const cweeUnitValues::unit_value& c) { return a.GetMaxValue(b, c); }), "GetMaxValue");
 
                 lib->add(chaiscript::fun([](cweeUnitPattern& a) { return a.GetMinimumTimeStep(); }), "GetMinimumTimeStep");
@@ -215,9 +221,6 @@ namespace chaiscript {
                 lib->add(chaiscript::fun([](cweeUnitPattern& a)->cweeUnitPattern& { return a.RemoveUnnecessaryKnots(); }), "RemoveUnnecessaryKnots");
                 lib->add(chaiscript::fun([](cweeUnitPattern& a, const cweeUnitValues::unit_value& min, const cweeUnitValues::unit_value& max) { a.ClampValues(min, max); }), "ClampValues");
 
-                lib->AddFunction(, GetValueQuantiles, ->std::vector<chaiscript::Boxed_Value>, SINGLE_ARG(
-                    std::vector<chaiscript::Boxed_Value> out; for (auto& x : a.GetValueQuantiles(std::vector<double>({ 0.01, 0.05, 0.5, 0.95, 0.99 }))) { out.push_back(var(cweeUnitValues::unit_value(x))); } return out;
-                ), cweeUnitPattern const& a);
                 lib->AddFunction(, GetValueQuantiles, ->std::vector<chaiscript::Boxed_Value>, SINGLE_ARG(
                     std::vector<chaiscript::Boxed_Value> out; for (auto& x : a.GetValueQuantiles(std::vector<double>({ q1 }))) { out.push_back(var(cweeUnitValues::unit_value(x))); } return out;
                 ), cweeUnitPattern const& a, const double& q1);
@@ -243,6 +246,32 @@ namespace chaiscript {
                     std::vector<chaiscript::Boxed_Value> out; for (auto& x : a.GetValueQuantiles(std::vector<double>({ q1, q2, q3, q4, q5, q6, q7, q8 }))) { out.push_back(var(cweeUnitValues::unit_value(x))); } return out;
                 ), cweeUnitPattern const& a, const double& q1, const double& q2, const double& q3, const double& q4, const double& q5, const double& q6, const double& q7, const double& q8);
 
+                lib->AddFunction(, GetValueQuantiles, ->std::vector<chaiscript::Boxed_Value>, SINGLE_ARG(
+                    std::vector<chaiscript::Boxed_Value> out; for (auto& x : a.GetValueQuantiles(std::vector<double>({ q1 }), mask)) { out.push_back(var(cweeUnitValues::unit_value(x))); } return out;
+                ), cweeUnitPattern const& a, const double& q1, cweeUnitPattern const& mask);
+                lib->AddFunction(, GetValueQuantiles, ->std::vector<chaiscript::Boxed_Value>, SINGLE_ARG(
+                    std::vector<chaiscript::Boxed_Value> out; for (auto& x : a.GetValueQuantiles(std::vector<double>({ q1, q2 }), mask)) { out.push_back(var(cweeUnitValues::unit_value(x))); } return out;
+                ), cweeUnitPattern const& a, const double& q1, const double& q2, cweeUnitPattern const& mask);
+                lib->AddFunction(, GetValueQuantiles, ->std::vector<chaiscript::Boxed_Value>, SINGLE_ARG(
+                    std::vector<chaiscript::Boxed_Value> out; for (auto& x : a.GetValueQuantiles(std::vector<double>({ q1, q2, q3 }), mask)) { out.push_back(var(cweeUnitValues::unit_value(x))); } return out;
+                ), cweeUnitPattern const& a, const double& q1, const double& q2, const double& q3, cweeUnitPattern const& mask);
+                lib->AddFunction(, GetValueQuantiles, ->std::vector<chaiscript::Boxed_Value>, SINGLE_ARG(
+                    std::vector<chaiscript::Boxed_Value> out; for (auto& x : a.GetValueQuantiles(std::vector<double>({ q1, q2, q3, q4 }), mask)) { out.push_back(var(cweeUnitValues::unit_value(x))); } return out;
+                ), cweeUnitPattern const& a, const double& q1, const double& q2, const double& q3, const double& q4, cweeUnitPattern const& mask);
+                lib->AddFunction(, GetValueQuantiles, ->std::vector<chaiscript::Boxed_Value>, SINGLE_ARG(
+                    std::vector<chaiscript::Boxed_Value> out; for (auto& x : a.GetValueQuantiles(std::vector<double>({ q1, q2, q3, q4, q5 }), mask)) { out.push_back(var(cweeUnitValues::unit_value(x))); } return out;
+                ), cweeUnitPattern const& a, const double& q1, const double& q2, const double& q3, const double& q4, const double& q5, cweeUnitPattern const& mask);
+                lib->AddFunction(, GetValueQuantiles, ->std::vector<chaiscript::Boxed_Value>, SINGLE_ARG(
+                    std::vector<chaiscript::Boxed_Value> out; for (auto& x : a.GetValueQuantiles(std::vector<double>({ q1, q2, q3, q4, q5, q6 }), mask)) { out.push_back(var(cweeUnitValues::unit_value(x))); } return out;
+                ), cweeUnitPattern const& a, const double& q1, const double& q2, const double& q3, const double& q4, const double& q5, const double& q6, cweeUnitPattern const& mask);
+                lib->AddFunction(, GetValueQuantiles, ->std::vector<chaiscript::Boxed_Value>, SINGLE_ARG(
+                    std::vector<chaiscript::Boxed_Value> out; for (auto& x : a.GetValueQuantiles(std::vector<double>({ q1, q2, q3, q4, q5, q6, q7 }), mask)) { out.push_back(var(cweeUnitValues::unit_value(x))); } return out;
+                ), cweeUnitPattern const& a, const double& q1, const double& q2, const double& q3, const double& q4, const double& q5, const double& q6, const double& q7, cweeUnitPattern const& mask);
+                lib->AddFunction(, GetValueQuantiles, ->std::vector<chaiscript::Boxed_Value>, SINGLE_ARG(
+                    std::vector<chaiscript::Boxed_Value> out; for (auto& x : a.GetValueQuantiles(std::vector<double>({ q1, q2, q3, q4, q5, q6, q7, q8 }), mask)) { out.push_back(var(cweeUnitValues::unit_value(x))); } return out;
+                ), cweeUnitPattern const& a, const double& q1, const double& q2, const double& q3, const double& q4, const double& q5, const double& q6, const double& q7, const double& q8, cweeUnitPattern const& mask);
+
+
                 lib->add(chaiscript::fun([](cweeUnitPattern& a) { return a.GetMinTime(); }), "GetMinTime");
                 lib->add(chaiscript::fun([](cweeUnitPattern& a) { return a.GetAvgTime(); }), "GetAvgTime");
                 lib->add(chaiscript::fun([](cweeUnitPattern& a) { return a.GetAvgTimestep(); }), "GetAvgTimestep");
@@ -262,6 +291,8 @@ namespace chaiscript {
 
                 lib->add(chaiscript::fun([](cweeUnitPattern& a) { return a.RombergIntegral(a.GetMinTime(), a.GetMaxTime()); }), "Integrate");
                 lib->add(chaiscript::fun([](cweeUnitPattern& a, const cweeUnitValues::unit_value& from, const cweeUnitValues::unit_value& to) { return a.RombergIntegral(from, to); }), "Integrate");
+                lib->add(chaiscript::fun([](cweeUnitPattern& a, const cweeUnitValues::unit_value& from, const cweeUnitValues::unit_value& to, cweeUnitPattern const& mask) { return a.RombergIntegral(from, to, mask); }), "Integrate");
+                lib->add(chaiscript::fun([](cweeUnitPattern& a, cweeUnitPattern const& mask) { return a.RombergIntegral(a.GetMinTime(), a.GetMaxTime(), mask); }), "Integrate");
 
                 lib->add(chaiscript::fun([](cweeUnitPattern& a, cweeUnitValues::unit_value b) { a += b; return a; }), "+=");
                 lib->add(chaiscript::fun([](cweeUnitPattern& a, cweeUnitValues::unit_value b) { a -= b; return a; }), "-=");
@@ -295,53 +326,18 @@ namespace chaiscript {
                 lib->add(chaiscript::fun([](const cweeUnitPattern& a, const cweeUnitPattern& b) { return a.R_Squared(b); }), "R_Squared");
                 lib->add(chaiscript::fun([](const cweeUnitPattern& a, const cweeUnitPattern& b) { return a.Collinear(b); }), "Collinear");
                 lib->add(chaiscript::fun([](const cweeUnitPattern& a, const cweeUnitPattern& b, const cweeUnitValues::unit_value& from, const cweeUnitValues::unit_value& to) { return a.R_Squared(b, from, to); }), "R_Squared");
+                lib->add(chaiscript::fun([](const cweeUnitPattern& a) {
+                    return a.GetOutlierMask();
+                }), "GetOutlierMask");
+                lib->add(chaiscript::fun([](cweeUnitPattern const& WhenOne, cweeUnitPattern const& WhenZero, cweeUnitPattern const& LerpBy) {
+                    return cweeUnitPattern::Lerp(WhenOne, WhenZero, LerpBy);
+                }), "Lerp");
                 lib->add(chaiscript::fun([](const cweeUnitPattern& a) { 
-                    return (((a - a.GetAvgValue()).pow(2.0)).GetAvgValue()).pow(0.5);
+                    return a.StdDev();
                 }), "StdDev");
-
-                AUTO blur_pattern = [](cweeUnitPattern const& a, double desiredNumValues){
-                    AUTO width = a.GetMaxTime() - a.GetMinTime();                    
-                    if (width() <= 0 || desiredNumValues <= 0) {
-                        return cweeUnitPattern(a);
-                    }
-                    AUTO out = cweeUnitPattern(a.X_Type(), a.Y_Type());
-
-                    AUTO scale = width / desiredNumValues;
-                    
-
-                    cweeUnitValues::unit_value prevV = a.Y_Type();
-                    AUTO minT = a.GetMinTime();
-                    AUTO maxT = a.GetMaxTime();
-#if 0
-                    AUTO scale_bigStep = (scale * 0.99 > scale - 1) ? (scale * 0.99) : (scale - 1);
-                    for (auto time = minT; time < maxT; time += scale) {
-                        prevV = a.GetAvgValue(time, time + scale);
-                        out.AddValue(time, prevV);
-                        out.AddValue(time + scale_bigStep, prevV);
-                    }
-                    out.AddValue(maxT, prevV);
-#else
-                    AUTO scale_half = scale / 2.0;
-                    for (auto time = minT; time < maxT; time += scale) {
-                        prevV = a.GetAvgValue(time, time + scale);
-                        if (out.GetNumValues() == 0)
-                            out.AddValue(minT, prevV);
-                        out.AddValue(time + scale_half, prevV);
-                    }
-                    out.AddValue(maxT, prevV);
-#endif
-                    out.RemoveUnnecessaryKnots();
-
-                    { // Correct the avg/integral
-                        AUTO t1 = a.RombergIntegral(minT, maxT);
-                        AUTO t2 = out.RombergIntegral(minT, maxT);
-                        if (t2 != 0) {
-                            out *= t1 / t2;
-                        }
-                    }
-                    return out;
-                };
-
+                lib->add(chaiscript::fun([](const cweeUnitPattern& a, const cweeUnitPattern& mask) {
+                    return (((a - a.GetAvgValue(a.GetMinTime(), a.GetMaxTime(), mask)).pow(2.0)).GetAvgValue(a.GetMinTime(), a.GetMaxTime(), mask)).pow(0.5);
+                }), "StdDev");
                 AUTO quantile_pattern = [](cweeUnitPattern const& a, double quantile, double desiredNumValues) {
                     AUTO width = a.GetMaxTime() - a.GetMinTime();
                     if (width() <= 0 || desiredNumValues <= 0) {
@@ -370,18 +366,18 @@ namespace chaiscript {
                     return out;
                 };
 
-                lib->add(chaiscript::fun([blur_pattern](const cweeUnitPattern& a) {
+                lib->add(chaiscript::fun([](const cweeUnitPattern& a) {
                     auto n = a.GetNumValues();
                     auto numSamples = n / 1024; // (((year)(second)(a.GetMaxTime() - a.GetMinTime())) * 52)();
-                    auto avg = blur_pattern(a, numSamples);
+                    auto avg = a.Blur(numSamples);
                     auto diff_sqr = (a - avg).pow(2);
-                    auto diff_sqr_avg = blur_pattern(diff_sqr, numSamples);
+                    auto diff_sqr_avg = diff_sqr.Blur(numSamples);
                     return diff_sqr_avg.pow(0.5);
                 }), "GetCurrentStdDev");
-                lib->add(chaiscript::fun([blur_pattern](const cweeUnitPattern& a, int numSamples) {
-                    auto avg = blur_pattern(a, numSamples);
+                lib->add(chaiscript::fun([](const cweeUnitPattern& a, int numSamples) {
+                    auto avg = a.Blur(numSamples);
                     auto diff_sqr = (a - avg).pow(2);
-                    auto diff_sqr_avg = blur_pattern(diff_sqr, numSamples);
+                    auto diff_sqr_avg = diff_sqr.Blur(numSamples);
                     return diff_sqr_avg.pow(0.5);
                 }), "GetCurrentStdDev");
                 lib->add(chaiscript::fun([quantile_pattern](const cweeUnitPattern& a, double quantile) {
@@ -394,14 +390,13 @@ namespace chaiscript {
                 }), "GetCurrentValueQuantile");
 
                 lib->add(chaiscript::fun([=](const cweeUnitPattern& a) {
-                    AUTO pat = blur_pattern(a, (a.GetNumValues() / 32) + 1);
-                    pat.RemoveUnnecessaryKnots();
-                    return pat;
+                    return a.Blur((a.GetNumValues() / 32) + 1);
                 }), "Blur");
                 lib->add(chaiscript::fun([=](const cweeUnitPattern& a, int desiredNumValues) {
-                    AUTO pat = blur_pattern(a, desiredNumValues);
-                    pat.RemoveUnnecessaryKnots();
-                    return pat;
+                    return a.Blur(desiredNumValues);
+                }), "Blur");
+                lib->add(chaiscript::fun([=](const cweeUnitPattern& a, int desiredNumValues, const cweeUnitPattern& mask) {
+                    return a.Blur(desiredNumValues, mask);
                 }), "Blur");
 
                 lib->add(chaiscript::fun([](cweeUnitPattern const& a) { return a.X_Type(); }), "X");
@@ -788,6 +783,52 @@ namespace chaiscript {
                     };
                     def NOAA_Station(vec2d coordinates) {
                         return NOAA_Station(coordinates.first, coordinates.second);
+                    };
+                    def NOAA::GetTemperature(int minYear, int maxYear, vec2d coord){
+                        Vector stations := NOAA.NearbyStations(coord.first, coord.second, 50);
+                        var& temperature := Pattern(second(1), 1);
+                        {
+	                        for (int YR = minYear; YR <= maxYear; YR++){
+		                        var& temp := NOAA.GetTemperature(YR, coord, stations);
+		                        for (x : temp.GetKnotSeries){
+			                        temperature.AddValue(x.first, x.second);
+		                        }
+	                        }
+                        }
+                        return temperature;
+                    };
+                    def NOAA::GetPrecipitation(int minYear, int maxYear, vec2d coord){
+                        Vector stations := NOAA.NearbyStations(coord.first, coord.second, 50);
+                        var& precipitation := Pattern(second(1), feet_per_hour(1));
+                        {
+	                        for (int YR = minYear; YR <= maxYear; YR++){
+		                        var& temp := NOAA.GetPrecipitation(YR, coord, stations);
+		                        for (x : temp.GetKnotSeries){
+			                        precipitation.AddValue(x.first, x.second);
+		                        }
+	                        }
+                        }
+                        return temperature;
+                    };
+                    def NOAA::GetTemperatureAndPrecipitation(int minYear, int maxYear, vec2d coord){
+                        Vector stations := NOAA.NearbyStations(coord.first, coord.second, 50);
+                        var& temperature := Pattern(second(1), 1);
+                        var& precipitation := Pattern(second(1), feet_per_hour(1));
+                        {
+	                        for (int YR = minYear; YR <= maxYear; YR++){
+		                        var& temp := NOAA.GetTemperature(YR, coord, stations);
+		                        for (x : temp.GetKnotSeries){
+			                        temperature.AddValue(x.first, x.second);
+		                        }
+	                        }
+	                        for (int YR = minYear; YR <= maxYear; YR++){
+		                        var& temp := NOAA.GetPrecipitation(YR, coord, stations);
+		                        for (x : temp.GetKnotSeries){
+			                        precipitation.AddValue(x.first, x.second);
+		                        }
+	                        }
+                        }
+                        return [temperature, precipitation];
                     };
                 )chai");
             }

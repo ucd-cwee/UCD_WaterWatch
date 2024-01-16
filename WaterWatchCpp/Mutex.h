@@ -54,6 +54,69 @@ protected:
 
 };
 
+#if 0
+class cweeSharedMutex {
+public:
+	class cweeSharedMutexLifetimeGuard {
+	public:
+		constexpr explicit operator bool() const { return (bool)owner; };
+		explicit cweeSharedMutexLifetimeGuard(const cweeSharedPtr<std::shared_mutex>& mut) noexcept : owner(mut), shared_guard(*mut) {};
+		~cweeSharedMutexLifetimeGuard() noexcept {  };
+		explicit cweeSharedMutexLifetimeGuard() = delete;
+		explicit cweeSharedMutexLifetimeGuard(const cweeSharedMutexLifetimeGuard& other) = delete;
+		explicit cweeSharedMutexLifetimeGuard(cweeSharedMutexLifetimeGuard&& other) = delete;
+		cweeSharedMutexLifetimeGuard& operator=(const cweeSharedMutexLifetimeGuard&) = delete;
+		cweeSharedMutexLifetimeGuard& operator=(cweeSharedMutexLifetimeGuard&&) = delete;
+	protected:
+		cweeSharedPtr<std::shared_mutex> owner;
+		std::unique_lock<std::shared_mutex> shared_guard;
+	};
+	class cweeSharedMutexSharedLifetimeGuard {
+	public:
+		constexpr explicit operator bool() const { return (bool)owner; };
+		explicit cweeSharedMutexSharedLifetimeGuard(const cweeSharedPtr<std::shared_mutex>& mut) noexcept : owner(mut), shared_guard(*mut) {};
+		~cweeSharedMutexSharedLifetimeGuard() noexcept {  };
+		explicit cweeSharedMutexSharedLifetimeGuard() = delete;
+		explicit cweeSharedMutexSharedLifetimeGuard(const cweeSharedMutexSharedLifetimeGuard& other) = delete;
+		explicit cweeSharedMutexSharedLifetimeGuard(cweeSharedMutexSharedLifetimeGuard&& other) = delete;
+		cweeSharedMutexSharedLifetimeGuard& operator=(const cweeSharedMutexSharedLifetimeGuard&) = delete;
+		cweeSharedMutexSharedLifetimeGuard& operator=(cweeSharedMutexSharedLifetimeGuard&&) = delete;
+	protected:
+		cweeSharedPtr<std::shared_mutex> owner;
+		std::shared_lock<std::shared_mutex> shared_guard;
+	};
+
+public:
+	cweeSharedMutex() : Handle(new std::shared_mutex()) {};
+	cweeSharedMutex(const cweeSharedMutex& other) : Handle(new std::shared_mutex()) {};
+	cweeSharedMutex(cweeSharedMutex&& other) : Handle(new std::shared_mutex()) {};
+	cweeSharedMutex& operator=(const cweeSharedMutex& s) { return *this; };
+	cweeSharedMutex& operator=(cweeSharedMutex&& s) { return *this; };
+	~cweeSharedMutex() {};
+
+	NODISCARD cweeSharedMutexLifetimeGuard	Guard() const { return cweeSharedMutexLifetimeGuard(Handle); };
+	NODISCARD cweeSharedMutexSharedLifetimeGuard SharedGuard() const { return cweeSharedMutexSharedLifetimeGuard(Handle); };
+	bool			Lock() const { 
+		Handle->lock();
+		return true;
+	};
+	void			Unlock() const { 
+		Handle->unlock();
+	};
+	bool			SharedLock() const {
+		Handle->lock_shared();
+		return true;
+	};
+	void			SharedUnlock() const {
+		Handle->unlock_shared();
+	};
+
+protected:
+	cweeSharedPtr<std::shared_mutex> Handle;
+
+};
+#endif
+
 class cweeReadWriteMutex {
 public:
 	using Handle_t = std::shared_mutex;

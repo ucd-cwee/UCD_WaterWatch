@@ -40,16 +40,19 @@ public:
 	class cweeThreadedMap_Impl {
 	public:
 		/*! prevent multi-thread access to the list while alive. Will automatically unlock the list once out of scope. */
-		auto			Guard(void) const { // assumes unlocked!
-			return lock.Guard();
+		NODISCARD auto	Guard(void) const { // assumes unlocked!
+			return lock.Write_Guard();
 		}
-		/*! Prevent multi-thread access to the list. Only the "Unsafe*" operations and "Unlock" are valid after this call or else the app will deadlock. A "Unlock" must be called to re-enable access to the list. */
+		NODISCARD auto	SharedGuard(void) const { // assumes unlocked!
+			return lock.Read_Guard();
+		}
+		/*! Prevent multi-thread access to the list. Only the "Unsafe*" operations and "Unlock" are valid after this call or else the app will deadlock -- A "Unlock" must be called to re-enable access to the list. */
 		void			Lock(void) const { // assumes unlocked!
-			lock.Lock();
+			lock.Write_Lock();
 		}
 		/*! Only call this after calling "Lock". Multiple unlocks in a row is undefined behavior. */
 		void			Unlock(void) const { // assumes already locked! 
-			lock.Unlock();
+			lock.Write_Unlock();
 		};
 		/*! After calling "Lock", this will allow access to directly edit the specified object on the heap without swapping. */
 		PtrType			UnsafeRead(Key index) const { // was non-const			
@@ -114,9 +117,10 @@ public:
 		/*! Mutex Lock to prevent race conditions. cweeSysMutex uses C++ CriticalSection */
 		// mutable cweeConstexprLock													lock;
 		/*! Mutex Lock to prevent race conditions. cweeSysMutex uses C++ CriticalSection */
-		mutable cweeSysMutex														lock;
+		mutable cweeReadWriteMutex													lock; // cweeSysMutex
 		/* Map between key and heap ptr. Cannot use PTR directly to allow for multithread-safe instant deletes, using the keys to control race conditions. */
 		mutable tsl::robin_map<Key, PtrType, robin_hood::hash<Key>, std::equal_to<Key>, std::allocator<_iterType>, true>	list;
+		// mutable std::unordered_map<Key, PtrType>	                                list;
 		/* Optimized search parameters */
 		mutable cweeThreadedList<Key>												indexList;
 		/* Optimized search parameters */
@@ -124,7 +128,7 @@ public:
 		/* Optimized search parameters */
 		mutable Key																	lastSearchID;
 		/* Optimized search parameters */
-		mutable typename tsl::robin_map<Key, PtrType, robin_hood::hash<Key>, std::equal_to<Key>, std::allocator<_iterType>, true>::iterator		lastResult; //  = list.end();
+		mutable typename decltype(list)::iterator		                            lastResult;
 		/* Optimized search parameters */
 		mutable cweeSysInterlockedInteger											lastVersion;
 		/* Optimized search parameters */
@@ -284,44 +288,37 @@ public:
 	};
 	/*!  Gets a pointer (or null) to the underlyding data. This is a managed object, meaning its lifetime must end before the udnerlying cweeThreadedMap lifetime does.   */
 	PtrType			GetPtr(Key index) const {
-		PtrType out;
-		Lock();
-		out = UnsafeGetPtr(std::move(index));
-		Unlock();
+		PtrType out{ TryGetPtr(index) };
+		if (!out) {
+			Lock();
+			out = UnsafeAppendAt(index);
+			Unlock();
+		}
 		return out;
 	};
 	/*! Gets a pointer (or null) to the underlyding data. This is a managed object, meaning its lifetime must end before the udnerlying cweeThreadedMap lifetime does. */
 	PtrType			TryGetPtr(Key index) const {
-		PtrType out;
-		Lock();
-		if (impl->list.count(index) > 0) {
-			out = impl->list[index];
+		auto* p = impl.UnsafeGet();
+		if (p) {
+			AUTO g{ p->lock.Read_Guard() };
+			if (p->list.count(index) > 0) {
+				return p->list.at(index);
+			}
 		}
-		Unlock();
-		return out;
+		return nullptr;
 	};
 	/*! Gets a pointer (or null) to the underlyding data. This is a managed object, meaning its lifetime must end before the udnerlying cweeThreadedMap lifetime does. */
 	_iterType		GetIterator(Key index) const {
-		PtrType out;
-		Lock();
-		if (impl->list.count(index) <= 0) {
-			out = UnsafeAppendAt(index);
-		}
-		else
-		{
-			out = impl->list[index];
-		}
-		Unlock();
-		return _iterType(index, out);
+		return _iterType(index, GetPtr(index));
 	};
 	/*! Gets a pointer (or null) to the underlyding data. This is a managed object, meaning its lifetime must end before the udnerlying cweeThreadedMap lifetime does. */
 	_iterType		TryGetIterator(Key index) const {
 		_iterType out;
-		Lock();
+		SharedLock();
 		if (impl->list.count(index) > 0) {
 			out = _iterType(index, impl->list[index]);
 		}
-		Unlock();
+		SharedUnlock();
 		return out;
 	};
 	/*! True/False if the index exists on the heap */
@@ -441,7 +438,7 @@ public:
 		}
 		int size = Num();
 
-		SharedLock();
+		Lock();
 		impl->indexList.Clear();
 		impl->indexList.SetGranularity(size + 16);
 		for (auto& kv : impl->list) {
@@ -451,7 +448,7 @@ public:
 
 		out = impl->indexList;
 
-		SharedUnlock();
+		Unlock();
 		return out;
 	};
 	/*! Erase the indexed object from the heap and free the memory for the list to re-use. */
@@ -470,7 +467,7 @@ public:
 		impl->Clear();
 	};
 	/*!
-	prevent multi-thread access to the list. Only the "Unsafe*" operations and "Unlock" are valid after this call or else the app will deadlock.
+	prevent multi-thread access to the list. Only the "Unsafe*" operations and "Unlock" are valid after this call or else the app will deadlock
 	A "Unlock" must be called to re-enable access to the list.
 	*/
 	void			Lock(void) const {
@@ -485,7 +482,7 @@ public:
 	/*!
 	prevent multi-thread access to the list while alive. Will automatically unlock the list once out of scope.
 	*/
-	[[nodiscard]] auto	Guard(void) const { // assumes unlocked!
+	NODISCARD auto	Guard(void) const { // assumes unlocked!
 		return impl->Guard();
 	}
 	/*!
@@ -527,11 +524,11 @@ public:
 		PtrType x;
 		for (auto& i : GetList()) {
 			x = this->GetPtr(i);
-			Lock();
+			//Lock();
 			if (x && predicate(x.Ptr())) {
 				out.Append(_iterType(i, x));
 			}
-			Unlock();
+			//Unlock();
 		}
 		return out;
 	};
@@ -551,11 +548,11 @@ public:
 		PtrType x;
 		for (auto& i : GetList()) {
 			x = this->GetPtr(i);
-			Lock();
+			//Lock();
 			if (x && predicate(x.Ptr())) {
 				out.Append(_iterType(i, x));
 			}
-			Unlock();
+			//Unlock();
 		}
 		return out;
 	};
@@ -574,11 +571,11 @@ public:
 		_iterType x;
 		for (auto& i : GetList()) {
 			x = this->GetPtr(i);
-			Lock();
+			//SharedLock();
 			if (x && predicate(x.Ptr())) {
 				out.Append(i);
 			}
-			Unlock();
+			//SharedUnlock();
 		}
 		return out;
 	};
@@ -791,11 +788,11 @@ public: // Compatability functions
 private:
 	/*! Duplicate method to allow for advanced locking mechanisms. */
 	void			SharedLock(void) const {
-		impl->lock.Lock();
+		impl->lock.Read_Lock();
 	};
 	/*! Duplicate method to allow for advanced locking mechanisms. */
 	void			SharedUnlock(void) const {
-		impl->lock.Unlock();
+		impl->lock.Read_Unlock();
 	};
 
 	ImplType impl;

@@ -156,6 +156,7 @@ public: // Public Interface for Generalized Machine Learning
 	std::pair<vec2, vec2>  -->  [ [ train_R^2 , train_MSE ] , [ test_R^2 , test_MSE ] ]
 	*/
 	static MachineLearning_Results Learn(const cweeThreadedList<float>& trueLabels, const cweeThreadedList<cweeThreadedList<float>>& features, std::pair<vec2, vec2>* fit = nullptr, const float percentSplit = 10);
+	static MachineLearning_Results LearnFast(const cweeThreadedList<float>& trueLabels, const cweeThreadedList<cweeThreadedList<float>>& features, std::pair<vec2, vec2>* fit = nullptr, const float percentSplit = 10);
 
 	/*!
 	Generate the machine learned parameters. Optionally, automatically perform a random split of the dataset and generate fit performance utilizing it.
@@ -201,6 +202,7 @@ private: // Private Interface for Machine Learning
 	Use a support vector to calculate the machine learning parameters.
 	*/
 	static MachineLearning_Results LearnSVR(const cweeThreadedList<float>& trueLabels, const cweeThreadedList<cweeThreadedList<float>>& features, const cweeThreadedList<float>& testLabels = cweeThreadedList<float>(), const cweeThreadedList<cweeThreadedList<float>>& testfeatures = cweeThreadedList<cweeThreadedList<float>>());
+	static MachineLearning_Results LearnSVRFast(const cweeThreadedList<float>& trueLabels, const cweeThreadedList<cweeThreadedList<float>>& features, const cweeThreadedList<float>& testLabels = cweeThreadedList<float>(), const cweeThreadedList<cweeThreadedList<float>>& testfeatures = cweeThreadedList<cweeThreadedList<float>>());
 
 	/*!
 	Split the incoming features/labels randomly into outgoing features/labels.

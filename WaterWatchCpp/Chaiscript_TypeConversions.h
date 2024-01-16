@@ -382,21 +382,29 @@ namespace chaiscript {
         }
 
         bool converts(const Type_Info& to, const Type_Info& from) const noexcept {
-            AUTO types = thread_cache().GetExclusive();
+            auto& threadCasheRef = thread_cache();
+            threadCasheRef.Lock();
+            auto* types = threadCasheRef.UnsafeRead();
             if (types->count(to.bare_type_info()) != 0 && types->count(from.bare_type_info()) != 0) {
+                threadCasheRef.Unlock();
                 return has_conversion(to, from);
             }
             else {
+                threadCasheRef.Unlock();
                 return false;
             }
         }
 
         bool converts_polymorphic(const Type_Info& to, const Type_Info& from) const noexcept {
-            AUTO types = thread_cache().GetExclusive();
+            auto& threadCasheRef = thread_cache();
+            threadCasheRef.Lock();
+            auto* types = threadCasheRef.UnsafeRead();
             if (types->count(to.bare_type_info()) != 0 && types->count(from.bare_type_info()) != 0) {
+                threadCasheRef.Unlock();
                 return can_polymorphic_cast(to, from);
             }
             else {
+                threadCasheRef.Unlock();
                 return false;
             }
         };
@@ -512,16 +520,15 @@ namespace chaiscript {
         std::set<chaiscript::shared_ptr<detail::Type_Conversion_Base>>::const_iterator find_bidir(const Type_Info& to, const Type_Info& from) const {
             AUTO map_of_tos = m_conversions_cache.GetPtr(from.bare_type_info());
             if (map_of_tos) {
-                if (map_of_tos->Check(to.bare_type_info())) {
-                    return *map_of_tos->GetPtr(to.bare_type_info());
-                } else {
+                AUTO p{ map_of_tos->TryGetPtr(to.bare_type_info()) };
+                if (p) return *p;
+                else {
                     AUTO iterator = std::find_if(m_conversions.begin(),
                         m_conversions.end(),
                         [&to, &from](const chaiscript::shared_ptr<detail::Type_Conversion_Base>& conversion) -> bool {
                             return (conversion->to().bare_equal(to) && conversion->from().bare_equal(from))
                                 || (conversion->bidir() && conversion->from().bare_equal(to) && conversion->to().bare_equal(from));
                         });
-
                     map_of_tos->Emplace(to.bare_type_info(), iterator);
                     return iterator;
                 }
@@ -534,9 +541,8 @@ namespace chaiscript {
         std::set<chaiscript::shared_ptr<detail::Type_Conversion_Base>>::const_iterator find_polymorphic_bidir(const Type_Info& to, const Type_Info& from) const {
             AUTO map_of_tos = m_conversions_cache.GetPtr(from.bare_type_info());
             if (map_of_tos) {
-                if (map_of_tos->Check(to.bare_type_info())) {
-                    return *map_of_tos->GetPtr(to.bare_type_info());
-                }
+                AUTO p{ map_of_tos->TryGetPtr(to.bare_type_info()) };
+                if (p) return *p;
                 else {
                     AUTO iterator = std::find_if(m_conversions.begin(),
                         m_conversions.end(),
@@ -544,7 +550,6 @@ namespace chaiscript {
                             return (conversion->polymorphic() && conversion->to().bare_equal(to) && conversion->from().bare_equal(from))
                                 || (conversion->polymorphic() && conversion->bidir() && conversion->from().bare_equal(to) && conversion->to().bare_equal(from));
                         });
-
                     map_of_tos->Emplace(to.bare_type_info(), iterator);
                     return iterator;
                 }
@@ -557,9 +562,8 @@ namespace chaiscript {
         std::set<chaiscript::shared_ptr<detail::Type_Conversion_Base>>::const_iterator find(const Type_Info& to, const Type_Info& from) const {
             AUTO map_of_tos = m_conversions_cache.GetPtr(from.bare_type_info());
             if (map_of_tos) {
-                if (map_of_tos->Check(to.bare_type_info())) {
-                    return *map_of_tos->GetPtr(to.bare_type_info());
-                }
+                AUTO p{ map_of_tos->TryGetPtr(to.bare_type_info()) };
+                if (p) return *p;
                 else {
                     AUTO iterator = std::find_if(m_conversions.begin(),
                         m_conversions.end(),

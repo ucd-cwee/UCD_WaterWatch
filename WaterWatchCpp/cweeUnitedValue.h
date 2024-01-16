@@ -1362,6 +1362,19 @@ public:
 		static unit_value round(const unit_value& a, float magnitude) {
 			return floor((a / magnitude) + 0.5) * magnitude;
 		};
+		static unit_value max(const unit_value& a, const unit_value& b) {
+			return a > b ? a : b;
+		};
+		static unit_value min(const unit_value& a, const unit_value& b) {
+			return a < b ? a : b;
+		};
+		static void max_ref(unit_value* a, const unit_value& b) {
+			if (b > *a) *a = b;
+			
+		};
+		static void min_ref(unit_value* a, const unit_value& b) {
+			if (b < *a) *a = b;
+		};
 	};
 
 	class traits {

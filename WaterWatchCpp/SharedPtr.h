@@ -304,8 +304,8 @@ public:
 	INLINE cweeSharedPtr(std::function<PtrType()> create, std::function<void(PtrType)> destroy) noexcept : mutex(0), m_data(InitData(std::move(create), std::move(destroy))) {};
 
 	/*! instantiate from another ptr */
-	INLINE cweeSharedPtr(cweeSharedPtr const& samePtr) noexcept : mutex(0), m_data(InitDataFromAnotherPtr(samePtr)) {};
-	INLINE cweeSharedPtr(cweeSharedPtr&& other) noexcept : mutex(0), m_data(InitDataFromAnotherPtr(std::forward<cweeSharedPtr>(other))) {};
+	cweeSharedPtr(cweeSharedPtr const& samePtr) noexcept : mutex(0), m_data(InitDataFromAnotherPtr(samePtr)) {};
+	cweeSharedPtr(cweeSharedPtr&& other) noexcept : mutex(0), m_data(InitDataFromAnotherPtr(std::forward<cweeSharedPtr>(other))) {};
 
 	/*! instantiate from another ptr with complex "get" instructions */
 	INLINE cweeSharedPtr(cweeSharedPtr const& samePtr, std::function<PtrType(void*)> _getter) noexcept : mutex(0), m_data(InitDataFromAnotherPtr(samePtr, std::move(_getter))) {};
@@ -380,7 +380,7 @@ public:
 	INLINE PtrType Get() const {
 		PtrType out { nullptr };
 		Lock();
-		if (m_data /*&& m_data.Get()->source()*/) {
+		if (m_data) {
 			out = m_data->m_ptr;
 		}
 		Unlock();
@@ -390,15 +390,15 @@ public:
 public:
 	INLINE void Lock() const noexcept { while (mutex.Increment() != 1) mutex.Decrement(); };
 	INLINE void Unlock() const noexcept { mutex.Decrement(); };
-	INLINE PtrType UnsafeGet() const noexcept {
-		if (m_data /*&& m_data.Get()->source()*/) {
+	PtrType UnsafeGet() const noexcept {
+		if (m_data) {
 			return m_data->m_ptr;
 		}
 		return nullptr;
 	};
 	template <typename... Args> void UnsafeSet(Args... Fargs) { UnsafeSetData(cweeSharedPtr<type>::InitData(Fargs...)); };
 protected:
-	template <typename T> INLINE static cweeSharedPtr_DataImpl* InitDataFromAnotherPtr(cweeSharedPtr<T> const& Ptr) noexcept {
+	template <typename T> static cweeSharedPtr_DataImpl* InitDataFromAnotherPtr(cweeSharedPtr<T> const& Ptr) noexcept {
 		cweeSharedPtr<type>::cweeSharedPtr_DataImpl* out = nullptr;
 		Ptr.Lock();
 		typename cweeSharedPtr<T>::cweeSharedPtr_DataImpl* p = Ptr.m_data.Get();
@@ -433,14 +433,16 @@ protected:
 		Ptr.Unlock();
 		return nullptr;
 	};
-	INLINE static cweeSharedPtr_DataImpl* InitDataFromAnotherPtr(cweeSharedPtr&& Ptr) noexcept {
-		cweeSharedPtr_DataImpl* p;
-		Ptr.Lock();
-		p = Ptr.m_data.Set(nullptr);
-		Ptr.Unlock();
-		return p;
+	
+	
+	static cweeSharedPtr_DataImpl* InitDataFromAnotherPtr(cweeSharedPtr&& Ptr) noexcept {
+		//cweeSharedPtr_DataImpl* p;
+		// Ptr.Lock(); // lock is unecessary since no other resource should be able to access this pointer
+		return /* p = */ Ptr.m_data.Set(nullptr);
+		// Ptr.Unlock();
+		// return p;
 	};
-	INLINE static cweeSharedPtr_DataImpl* InitDataFromAnotherPtr(cweeSharedPtr&& Ptr, std::function<type* (void*)> from) noexcept {
+	static cweeSharedPtr_DataImpl* InitDataFromAnotherPtr(cweeSharedPtr&& Ptr, std::function<type* (void*)> from) noexcept {
 		Ptr.Lock();
 		typename cweeSharedPtr<type>::cweeSharedPtr_DataImpl* p = Ptr.m_data.Set(nullptr);
 		if (p) {

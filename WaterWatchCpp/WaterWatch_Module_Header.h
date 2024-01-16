@@ -1659,6 +1659,153 @@ namespace chaiscript {
 #endif
         };
 
+        static chaiscript::small_vector<double> OptimizeFunction_Internal(
+            bool minimize,
+            std::function<double(chaiscript::small_vector<double>)> const& per_sample_Function,
+            chaiscript::small_vector<double> const& lowBound_Vector,
+            chaiscript::small_vector<double> const& highBound_Vector,
+            cweeStr optimizationType = "Genetic"
+        ) {
+            optimizationType = optimizationType.BestMatch({ cweeStr("Random"), cweeStr("Genetic"), cweeStr("PSO") });
+
+            cweeThreadedList<float> lowerBound, upperBound;
+            for (auto& bv : lowBound_Vector) lowerBound.push_back(bv);
+            for (auto& bv : highBound_Vector) upperBound.push_back(bv);
+            std::function todo = [=](cweeThreadedList<u64> const& x)-> double {
+                chaiscript::small_vector< double > bv;
+                for (auto& v : x) { bv.push_back(v); }
+                return per_sample_Function(bv);
+            };
+
+            int numDimensions = cweeMath::min(lowerBound.Num(), upperBound.Num());
+            constexpr int maxIterations = 1000; // 1000 iterations
+            constexpr float eps = 0.000001f;
+
+            if (numDimensions <= 0) { throw std::runtime_error("Not enough dimensions for optimization."); }
+
+            using sharedObjType = ChaiscriptOptimizationObj; // cweeOptimizer::sharedClass;
+
+            std::function objFunc = [=](cweeThreadedList<u64>& policy) -> u64 {
+                return todo(policy);
+            };
+            std::function isFinishedFunc = [=](sharedObjType& shared, cweeThreadedList<u64>& bestPolicy, u64 bestPerformance) -> bool {
+                auto& i = shared.results.Alloc();
+                i.bestPolicy = bestPolicy;
+                i.bestPerformance = bestPerformance;
+                if (shared.results.Num() <= 10) return false; // guarrantee at least 10 iterations
+                else {
+                    // ensure the most recent 5 iterations are better than the 5 before them.
+                    int i = shared.results.Num() - 1;
+                    float perf_new = 0;
+                    float perf_old = 0;
+                    int count = 0;
+                    for (; i >= (shared.results.Num() - 5); i--) {
+                        cweeMath::rollingAverageRef(perf_new, shared.results[i].bestPerformance, count);
+                    }
+                    count = 0;
+                    for (; i >= 0 && i >= (shared.results.Num() - 10); i--) {
+                        cweeMath::rollingAverageRef(perf_old, shared.results[i].bestPerformance, count);
+                    }
+
+                    // ensure that we are improving. 
+                    if (cweeMath::Fabs(perf_new - perf_old) <= cweeMath::Fabs(bestPerformance * eps)) {
+                        shared.numIterationsFailedImprovement++;
+                        if (shared.numIterationsFailedImprovement > (maxIterations / 10)) // (maxIterations / 10)) // 20 iterations processed and we saw no further improvement. Unlikely to see improvement with another 20.                         
+                            return true;
+                        else
+                            return false;
+                    }
+                    shared.numIterationsFailedImprovement = 0;
+                    return false; // we have not flat-lined. continue.
+                }
+            };
+
+            cweeSharedPtr<sharedObjType> shared = make_cwee_shared<sharedObjType>();
+            cweeJob toAwait;
+            if (minimize) {
+                switch (optimizationType.Hash()) {
+                case cweeStr::Hash("Random"): {
+                    Random_OptimizationManagementTool<true> ramt(numDimensions, ::Min<int>(128, numDimensions * 16));
+                    ramt.lower_constraints() = lowerBound;
+                    ramt.upper_constraints() = upperBound;
+                    toAwait = cweeOptimizer::run_optimization(shared, ramt, objFunc, isFinishedFunc, maxIterations);
+                    break;
+                }
+                case cweeStr::Hash("Genetic"): {
+                    Genetic_OptimizationManagementTool<true> ramt(numDimensions, ::Min<int>(128, numDimensions * 16));
+                    ramt.lower_constraints() = lowerBound;
+                    ramt.upper_constraints() = upperBound;
+                    toAwait = cweeOptimizer::run_optimization(shared, ramt, objFunc, isFinishedFunc, maxIterations);
+                    break;
+                }
+                case cweeStr::Hash("PSO"): {
+                    ParticleSwarm_OptimizationManagementTool<true> ramt(numDimensions, ::Min<int>(128, numDimensions * 16));
+                    ramt.lower_constraints() = lowerBound;
+                    ramt.upper_constraints() = upperBound;
+                    toAwait = cweeOptimizer::run_optimization(shared, ramt, objFunc, isFinishedFunc, maxIterations);
+                    break;
+                }
+                }
+            }
+            else {
+                switch (optimizationType.Hash()) {
+                case cweeStr::Hash("Random"): {
+                    Random_OptimizationManagementTool<false> ramt(numDimensions, ::Min<int>(128, numDimensions * 16));
+                    ramt.lower_constraints() = lowerBound;
+                    ramt.upper_constraints() = upperBound;
+                    toAwait = cweeOptimizer::run_optimization(shared, ramt, objFunc, isFinishedFunc, maxIterations);
+                    break;
+                }
+                case cweeStr::Hash("Genetic"): {
+                    Genetic_OptimizationManagementTool<false> ramt(numDimensions, ::Min<int>(128, numDimensions * 16));
+                    ramt.lower_constraints() = lowerBound;
+                    ramt.upper_constraints() = upperBound;
+                    toAwait = cweeOptimizer::run_optimization(shared, ramt, objFunc, isFinishedFunc, maxIterations);
+                    break;
+                }
+                case cweeStr::Hash("PSO"): {
+                    ParticleSwarm_OptimizationManagementTool<false> ramt(numDimensions, ::Min<int>(128, numDimensions * 16));
+                    ramt.lower_constraints() = lowerBound;
+                    ramt.upper_constraints() = upperBound;
+                    toAwait = cweeOptimizer::run_optimization(shared, ramt, objFunc, isFinishedFunc, maxIterations);
+                    break;
+                }
+                }
+            }
+#ifdef ReturnFutureObjFromOptimizations
+            cweeAny p = make_cwee_shared<std::promise<chaiscript::Boxed_Value>>(new std::promise<chaiscript::Boxed_Value>());
+            auto awaiter = toAwait.ContinueWith(cweeJob([](std::promise<chaiscript::Boxed_Value>& promise, sharedObjType* results) {
+                chaiscript::Boxed_Value toReturn;
+                try {
+                    chaiscript::small_vector< chaiscript::Boxed_Value > bv_final;
+                    {
+                        auto& bestPolicy = results->results[results->results.Num() - 1].bestPolicy;
+                        for (auto& v_final : bestPolicy) { bv_final.push_back(chaiscript::var((double)v_final)); }
+                    }
+                    toReturn = chaiscript::var(bv_final);
+                }
+                catch (...) {}
+                promise.set_value(toReturn);
+                }, p, shared));
+
+            return FutureObj(
+                p, /* promise container */
+                p.cast< std::promise<chaiscript::Boxed_Value>& >().get_future(), /* future container */
+                awaiter /* job task */
+            );
+#else
+            toAwait.AwaitAll();
+            chaiscript::small_vector< double > bv_final;
+            try {
+                auto& bestPolicy = shared->results[shared->results.Num() - 1].bestPolicy;
+                for (auto& v_final : bestPolicy) { bv_final.push_back(v_final); }
+            }
+            catch (...) {}
+            return bv_final;
+#endif
+        };
+
+
         static void		AppendToScriptingLanguage(Module& scriptingLanguage) {
             scriptingLanguage.add(chaiscript::fun(&ChaiscriptOptimizations::OptimizeFunction, {"minimize", "per_sample_func", "lowBoundVector", "highBoundVector", "OptimizationType" }), "OptimizeFunction");
 
