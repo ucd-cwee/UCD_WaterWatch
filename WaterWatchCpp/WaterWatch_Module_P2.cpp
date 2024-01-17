@@ -718,6 +718,44 @@ namespace chaiscript {
 
                         return precipitation;
                     };
+                    static void GetTemperatureAndPrecipitation(cweeUnitPattern& tempFinal, cweeUnitPattern& precipFinal, int year, vec2d const& coordinates, std::vector<chaiscript::Boxed_Value> const& stations) {
+                        auto temperature{ cweeUnitPattern(cweeUnitValues::second(), 1.0) };
+                        auto precipitation{ cweeUnitPattern(cweeUnitValues::second(), cweeUnitValues::feet_per_hour()) };
+
+                        cweeBalancedCurve< Station* > init_sorted_stations;
+
+                        for (auto& stn_boxed : stations) {
+                            Station* stn = chaiscript::boxed_cast<Station*>(stn_boxed);
+                            if (stn) {
+                                init_sorted_stations.AddValue(geocoding->Distance(coordinates, vec2d(stn->longitude, stn->latitude))(), stn);
+                            }
+                        }
+
+                        for (auto& stn_boxed : init_sorted_stations.GetKnotSeries()) {
+                            Station* stn = stn_boxed.second;
+                            if (stn) {
+                                if (AppendWeatherStationData(temperature, precipitation, stn->DownloadData(year))) {
+                                    if (temperature.GetMinTime() <= (u64)cweeTime::make_time(year, 1, 2, 0, 0, 0)) {
+                                        if (temperature.GetMaxTime() >= (u64)cweeTime::make_time(year, 12, 30, 23, 59, 59)) {
+                                            if (precipitation.GetMinTime() <= (u64)cweeTime::make_time(year, 1, 2, 0, 0, 0)) {
+                                                if (precipitation.GetMaxTime() >= (u64)cweeTime::make_time(year, 12, 30, 23, 59, 59)) {
+                                                    break;
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        for (auto& x : temperature.GetKnotSeries()) {
+                            tempFinal.AddUniqueValue(x.first, x.second);
+                        }
+                        for (auto& x : precipitation.GetKnotSeries()) {
+                            precipFinal.AddUniqueValue(x.first, x.second);
+                        }
+                    };
+
                 };
                 
                 lib->add(chaiscript::user_type<NOAA>(), "NOAA");
@@ -728,6 +766,9 @@ namespace chaiscript {
                 lib->add(chaiscript::fun([](NOAA const& a, int year, vec2d const& coordinates, std::vector<chaiscript::Boxed_Value> const& stations) {
                     return NOAA::GetPrecipitation(year, coordinates, stations);
                 }), "GetPrecipitation");
+                lib->add(chaiscript::fun([](NOAA const& a, cweeUnitPattern& temp, cweeUnitPattern& precip, int year, vec2d const& coordinates, std::vector<chaiscript::Boxed_Value> const& stations) {
+                    NOAA::GetTemperatureAndPrecipitation(temp, precip, year, coordinates, stations);
+                }), "GetTemperatureAndPrecipitation");
 
                 lib->add(chaiscript::user_type<NOAA::Station>(), "NOAA_Station");
                 lib->add(chaiscript::constructor<NOAA::Station()>(), "NOAA_Station");
@@ -811,24 +852,21 @@ namespace chaiscript {
                         return temperature;
                     };
                     def NOAA::GetTemperatureAndPrecipitation(int minYear, int maxYear, vec2d coord){
-                        Vector stations := NOAA.NearbyStations(coord.first, coord.second, 50);
-                        var& temperature := Pattern(second(1), 1);
-                        var& precipitation := Pattern(second(1), feet_per_hour(1));
-                        {
-	                        for (int YR = minYear; YR <= maxYear; YR++){
-		                        var& temp := NOAA.GetTemperature(YR, coord, stations);
-		                        for (x : temp.GetKnotSeries){
-			                        temperature.AddValue(x.first, x.second);
-		                        }
-	                        }
-	                        for (int YR = minYear; YR <= maxYear; YR++){
-		                        var& temp := NOAA.GetPrecipitation(YR, coord, stations);
-		                        for (x : temp.GetKnotSeries){
-			                        precipitation.AddValue(x.first, x.second);
-		                        }
-	                        }
-                        }
-                        return [temperature, precipitation];
+	                    Vector stations := NOAA.NearbyStations(coord.first, coord.second, 50);
+	                    var& temperature := Pattern(second(1), 1);
+	                    var& precipitation := Pattern(second(1), feet_per_hour(1));
+	                    Vector jobs;
+	                    for (int YR = minYear; YR <= maxYear; YR++){
+		                    int YR_now = YR;
+		                    jobs.push_back(Async(fun[temperature, precipitation, YR_now, coord, stations](){
+			                    NOAA.GetTemperatureAndPrecipitation(temperature, precipitation, YR_now, coord, stations);
+		                    }));		
+	                    }
+		
+	                    for (job : jobs){
+		                    job.await();
+	                    }
+	                    return [temperature, precipitation];
                     };
                 )chai");
             }
