@@ -1527,7 +1527,7 @@ public:
 		if (other) {
 			ref->RemoveWithMask([other](X_Axis_Type T)->bool {
 				return (other->GetCurrentValue(cweeUnitValues::cweeUnitValues::unit_value::from_unit_t(T), interpolation_t::LINEAR) > 0);
-				});
+			});
 		}
 	};
 };
@@ -1878,7 +1878,7 @@ public:
 		if (other) {
 			ref->RemoveWithMask([other](u64 T)->bool {
 				return (other->GetCurrentValue(T, interpolation_t::LINEAR) > 0);
-				});
+			});
 		}
 	};
 
@@ -2520,11 +2520,11 @@ public:
 		cweeUnitValues::unit_value realTimestep = timeStep; if (realTimestep < 1) realTimestep = 1;
 		cweeThreadedList<cweeUnitValues::unit_value> out(cweeMath::max(cweeMath::min((u64)((u64)(timeEnd - timeStart) / (u64)(realTimestep)), 100000), 1000) + 16);
 
-		if (mask.GetCurrentValue(timeStart) < 1) out.Append(GetCurrentValue(timeStart)); // ensure pattern always has a starter? 
+		if (mask.GetCurrentValue(timeStart) <= 0) out.Append(GetCurrentValue(timeStart)); // ensure pattern always has a starter? 
 		for (cweeUnitValues::unit_value t = timeStart + realTimestep; t < timeEnd; t += realTimestep) {
-			if (mask.GetCurrentValue(t) < 1) out.Append(GetCurrentValue(t));
+			if (mask.GetCurrentValue(t) <= 0) out.Append(GetCurrentValue(t));
 		}
-		if (mask.GetCurrentValue(timeEnd) < 1) out.Append(GetCurrentValue(timeEnd)); // ensure pattern always has a closure? 
+		if (mask.GetCurrentValue(timeEnd) <= 0) out.Append(GetCurrentValue(timeEnd)); // ensure pattern always has a closure? 
 
 		return out;
 	};
@@ -2598,7 +2598,19 @@ public:
 			}
 			return out;
 		};
-		return GetOutlierMask(*this).Ceiling().ClampValues(0, 1);
+		
+		AUTO init = GetOutlierMask(*this).Ceiling();
+		init.ClampValues(0, 1);
+
+		cweeUnitPattern out(this->X_Type(), 1);
+		
+		for (auto& x : init.GetTimeSeries(init.GetMinTime(), init.GetMaxTime(), init.GetMinimumTimeStep())) 
+			out.AddValue(x.first, x.second);
+		
+		cweeUnitPattern out2 = (out + init).Ceiling();
+		out2.ClampValues(0, 1);
+		out2.RemoveUnnecessaryKnots();
+		return out2;
 	};
 
 
@@ -3116,7 +3128,7 @@ public:
 
 			cweeList<cweeUnitValues::unit_value> data(this->GetNumValues() + 16);
 			for (auto& iter : const_cast<const cweeUnitPatternContainer_t&>(*this->container)) {
-				if (iter.Y && !(mask.GetCurrentValue(iter.X) >= 1)) {
+				if (iter.Y && !(mask.GetCurrentValue(iter.X) > 0)) {
 					data.Append(*iter.Y);
 				}
 			}
@@ -3299,7 +3311,7 @@ public:
 		AUTO endIter = const_cast<const cweeUnitPatternContainer_t&>(*this->container).end();
 		for (auto iter = const_cast<const cweeUnitPatternContainer_t&>(*this->container).begin(); iter != endIter; ++iter) {
 			auto& dataPair = *iter;
-			if (mask.GetCurrentValue(dataPair.X) >= 1) continue;
+			if (mask.GetCurrentValue(dataPair.X) > 0) continue;
 			if (dataPair.Y) {
 				numSamples++;
 				currentAverage -= (currentAverage / (double)numSamples);
