@@ -57,9 +57,12 @@ public:
 	MachineLearning_SVR_Results();
 
 	cweeSharedPtr<cweeAny>	df2;
-	// typedef dlib::matrix<float, 0, 1>								sample_type;
-	// typedef dlib::radial_basis_kernel<sample_type>					kernel_type;
-	// dlib::decision_function<kernel_type>							df2;
+
+	MachineLearning_SVR_Results(MachineLearning_SVR_Results const&) = default;
+	MachineLearning_SVR_Results(MachineLearning_SVR_Results&&) = default;
+	MachineLearning_SVR_Results& operator=(MachineLearning_SVR_Results const&) = default;
+	MachineLearning_SVR_Results& operator=(MachineLearning_SVR_Results&&) = default;
+
 	cweeStr Serialize();
 	void Deserialize(cweeStr& in);
 };
@@ -68,6 +71,12 @@ public:
 	MachineLearning_SVR_Results svr_results;
 	bool learned = false;
 	vec4 performance = vec4(0, cweeMath::INF, 0, cweeMath::INF);
+
+	MachineLearning_Results() = default;
+	MachineLearning_Results(MachineLearning_Results const&) = default;
+	MachineLearning_Results(MachineLearning_Results&&) = default;
+	MachineLearning_Results& operator=(MachineLearning_Results const&) = default;
+	MachineLearning_Results& operator=(MachineLearning_Results&&) = default;
 
 	cweeStr Serialize();
 	void Deserialize(cweeStr& in);

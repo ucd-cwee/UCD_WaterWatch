@@ -2516,7 +2516,19 @@ public:
 
 		return out;
 	};
+	cweeThreadedList<cweeUnitValues::unit_value>						GetValueTimeSeries(const cweeUnitValues::unit_value& timeStart, const cweeUnitValues::unit_value& timeEnd, const cweeUnitValues::unit_value& timeStep, const cweeUnitPattern& mask) const {
+		cweeUnitValues::unit_value realTimestep = timeStep; if (realTimestep < 1) realTimestep = 1;
+		cweeThreadedList<cweeUnitValues::unit_value> out(cweeMath::max(cweeMath::min((u64)((u64)(timeEnd - timeStart) / (u64)(realTimestep)), 100000), 1000) + 16);
 
+		if (mask.GetCurrentValue(timeStart) < 1) out.Append(GetCurrentValue(timeStart)); // ensure pattern always has a starter? 
+		for (cweeUnitValues::unit_value t = timeStart + realTimestep; t < timeEnd; t += realTimestep) {
+			if (mask.GetCurrentValue(t) < 1) out.Append(GetCurrentValue(t));
+		}
+		if (mask.GetCurrentValue(timeEnd) < 1) out.Append(GetCurrentValue(timeEnd)); // ensure pattern always has a closure? 
+
+		return out;
+	};
+	
 	cweeUnitValues::unit_value StdDev() const {
 		AUTO out = cweeUnitPattern(this->X_Type(), 1);
 		out = *this;
@@ -2682,7 +2694,35 @@ public:
 		}
 		return out;
 	};
+	AUTO												R_Squared(const cweeUnitPattern& other, const cweeUnitPattern& mask) const {
+		cweeUnitValues::scalar out, out2;
+		AUTO x0 = cweeUnitValues::math::max(other.GetMinTime(), this->GetMinTime());
+		AUTO x1 = cweeUnitValues::math::min(other.GetMaxTime(), this->GetMaxTime());
+		if (x1 > x0) {
+			double N_steps = cweeMath::max(10, cweeMath::max(this->GetNumValues(), other.GetNumValues())); // at least 10 samples
 
+			AUTO real = this->GetValueTimeSeries(x0, x1, (x1 - x0) * (1.0 / N_steps), mask);
+			AUTO estimate = other.GetValueTimeSeries(x0, x1, (x1 - x0) * (1.0 / N_steps), mask);
+			
+			out = cweeEng::R_Squared(real, estimate);
+			out2 = cweeEng::R_Squared(estimate, real);
+
+			if (out2 > 1 || out > 1) {
+				if (out2 < out) {
+					out = out2;
+				}
+			}
+			else {
+				if (out2 > out) {
+					out = out2;
+				}
+			}
+		}
+		else {
+			out = 0;
+		}
+		return out;
+	};
 	AUTO												R_Squared(double N_steps, cweeThreadedList<cweeUnitValues::unit_value> const& estimate, const cweeUnitValues::unit_value& from, const cweeUnitValues::unit_value& to) const {
 		cweeUnitValues::scalar out;
 		AUTO x0 = from;
@@ -2718,6 +2758,24 @@ public:
 	// VIF = 1/(1-R^2); VIF <= 2 means no collinearity. VIF > 2 && < 5 means mild collinearity. VIF >= 5 means strong collinearity.
 	bool												Collinear(const cweeUnitPattern& other) const {
 		AUTO rsqr = this->R_Squared(other);
+
+		static decltype(rsqr) one{ 1 };
+		static decltype(rsqr) five{ 5 };
+
+		if (rsqr == one) {
+			return true;
+		}
+		else {
+			if (five <= (one / (one - rsqr))) {
+				return true;
+			}
+			else {
+				return false;
+			}
+		}
+	};
+	bool												Collinear(const cweeUnitPattern& other, const cweeUnitPattern& mask) const {
+		AUTO rsqr = this->R_Squared(other, mask);
 
 		static decltype(rsqr) one{ 1 };
 		static decltype(rsqr) five{ 5 };

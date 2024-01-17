@@ -1286,6 +1286,7 @@ namespace chaiscript {
 #if 1
 			class PatternLearner {
 			public:
+				bool overfit = false;
 				bool annualEffect = true;
 				bool monthlyEffect = true;
 				bool weekdayEffect = false;
@@ -1294,7 +1295,9 @@ namespace chaiscript {
 				cweeUnitPattern Labels;
 				cweeList< cweeUnitPattern > AdditionalFeatures;
 				double R;
-				
+				bool Learned() const {
+					return DLIB.learned;
+				};
 			private:
 				class PatternSummary {
 				public:
@@ -1314,10 +1317,16 @@ namespace chaiscript {
 					bool include;
 				};
 
-				cweeAny DLIB;
+				MachineLearning_Results DLIB;
 				PatternSummary LabelSummary;
 				cweeList<PatternSummary> AdditionalFeatureSummary;
 
+				cweeUnitValues::unit_value OverfitEstimate(cweeUnitValues::unit_value time) const {
+					cweeTime t0(LabelSummary.minTime);
+					cweeTime t(time);
+
+					return (double)(u64)(t - t0);
+				};
 				cweeUnitValues::unit_value AnnualEstimate(cweeUnitValues::unit_value time) const {
 					cweeTime t0(LabelSummary.minTime);
 					cweeTime t(time);
@@ -1363,8 +1372,8 @@ namespace chaiscript {
 
 					// Clear history
 					AdditionalFeatureSummary.Clear();
-					this->R = 0;
-					this->DLIB.Clear();
+					this->R = -std::numeric_limits<double>::max();
+					this->DLIB = MachineLearning_Results();
 
 					// Create summaries
 					LabelSummary = PatternSummary(Labels);
@@ -1372,6 +1381,14 @@ namespace chaiscript {
 					// Create the feature list to learn with
 					cweeList<std::pair<PatternSummary*, int>> considerRemovalIndexes;
 					cweeList<cweeUnitPattern> features_final; /* 0-1 normalized patterns */ {
+						if (overfit) {
+							auto feature_raw = cweeUnitPattern(LabelSummary.minTime, 1);
+							for (auto& x : Labels.GetKnotSeries()) {
+								feature_raw.AddUniqueValue(x.first, OverfitEstimate(x.first));
+							}
+							feature_raw.RemoveUnnecessaryKnots();
+							features_final.Append(feature_raw);
+						}
 						if (LabelSummary.minTime.AreConvertableTypes(cweeUnitValues::second())) { // X-units are time or unitless
 							if (annualEffect) {
 								auto feature_raw = cweeUnitPattern(LabelSummary.minTime, 1);
@@ -1497,11 +1514,11 @@ namespace chaiscript {
 
 
 					Stopwatch sw; sw.Start();
-					if (label_list.Num() <= 1000) {
-						do {
+					if (label_list.Num() <= 5000) {
+						
 							// Initial machine-learning effort
 							std::pair<vec2, vec2> fit;
-							this->DLIB = cweeMachineLearning::LearnFast(label_list, feature_list, &fit, 10.0);
+							this->DLIB = cweeMachineLearning::LearnFast(label_list, feature_list, &fit, 1.0);
 							this->R = fit.second.x;
 
 							cweeList<int> actualRemovalList_Best;
@@ -1535,34 +1552,35 @@ namespace chaiscript {
 								}
 							}
 							for (auto& x : actualRemovalList_Best) feature_list.RemoveIndex(x);
-
-							AUTO ML = cweeMachineLearning::Learn(label_list, feature_list, &fit, 10.0);
-							if (this->R <= fit.first.x) {
-								this->DLIB = ML;
-								this->R = fit.first.x;
-							}
-
-							ML = cweeMachineLearning::Learn(label_list, feature_list, &fit, 10.0);
-							if (this->R <= fit.first.x) {
-								this->DLIB = ML;
-								this->R = fit.first.x;
-							}
-						} while (cweeUnitValues::second(sw.Stop() / 1000000000.0) < learningBudget);
-					}
-					else if (label_list.Num() <= 5000) {
+						
 						do {
-							std::pair<vec2, vec2> fit;
-							AUTO ML = cweeMachineLearning::Learn(label_list, feature_list, &fit, 10.0);
+							AUTO ML = cweeMachineLearning::Learn(label_list, feature_list, &fit, 1.0);
 							if (this->R <= fit.first.x) {
 								this->DLIB = ML;
 								this->R = fit.first.x;
 							}
+
+							//ML = cweeMachineLearning::Learn(label_list, feature_list, &fit, 10.0);
+							//if (this->R <= fit.first.x) {
+							//	this->DLIB = ML;
+							//	this->R = fit.first.x;
+							//}
 						} while (cweeUnitValues::second(sw.Stop() / 1000000000.0) < learningBudget);
 					}
+					//else if (label_list.Num() <= 5000) {
+					//	do {
+					//		std::pair<vec2, vec2> fit;
+					//		AUTO ML = cweeMachineLearning::Learn(label_list, feature_list, &fit, 1.0);
+					//		if (this->R <= fit.first.x) {
+					//			this->DLIB = ML;
+					//			this->R = fit.first.x;
+					//		}
+					//	} while (cweeUnitValues::second(sw.Stop() / 1000000000.0) < learningBudget);
+					//}
 					else {
 						do {
 							std::pair<vec2, vec2> fit;
-							AUTO ML = cweeMachineLearning::LearnFast(label_list, feature_list, &fit, 1.0);
+							AUTO ML = cweeMachineLearning::Learn(label_list, feature_list, &fit, 1.0);
 							if (this->R <= fit.first.x) {
 								this->DLIB = ML;
 								this->R = fit.first.x;
@@ -1593,50 +1611,60 @@ namespace chaiscript {
 				cweeUnitValues::unit_value Forecast(cweeUnitValues::unit_value time, const cweeUnitPattern* builder = nullptr) const {
 					cweeUnitValues::unit_value out = LabelSummary.average;
 
-					MachineLearning_Results& ML_param = this->DLIB.cast();
-					AUTO df2 = *GetDf2(ML_param.svr_results.df2);
+					const MachineLearning_Results& ML_param = this->DLIB;
+					if (ML_param.learned) {
+						AUTO df2Ptr = GetDf2(ML_param.svr_results.df2);
+						if (df2Ptr) {
+							AUTO df2 = *df2Ptr;
 
-					std::vector<float> sample; {
-						if (LabelSummary.minTime.AreConvertableTypes(cweeUnitValues::second())) { // X-units are time or unitless
-							if (annualEffect) {
-								sample.push_back(AnnualEstimate(time)());
-							}
-							if (monthlyEffect && (cweeUnitValues::month(LabelSummary.maxTime - LabelSummary.minTime) > cweeUnitValues::month(1))) {
-								for (int month = 1; month <= 12; month++) {
-									sample.push_back(MonthEstimate(time, month)());
+							std::vector<float> sample; {
+								if (overfit) {
+									sample.push_back(OverfitEstimate(time)());
+								}
+								if (LabelSummary.minTime.AreConvertableTypes(cweeUnitValues::second())) { // X-units are time or unitless
+									if (annualEffect) {
+										sample.push_back(AnnualEstimate(time)());
+									}
+									if (monthlyEffect && (cweeUnitValues::month(LabelSummary.maxTime - LabelSummary.minTime) > cweeUnitValues::month(1))) {
+										for (int month = 1; month <= 12; month++) {
+											sample.push_back(MonthEstimate(time, month)());
+										}
+									}
+									if (weekdayEffect && (cweeUnitValues::day(LabelSummary.maxTime - LabelSummary.minTime) > cweeUnitValues::day(7)) && (LabelSummary.minTimestep <= cweeUnitValues::day(7))) {
+										{ // weekdays
+											sample.push_back(WeekdayEstimate(time)());
+										}
+										{ // weekends
+											sample.push_back((cweeUnitValues::unit_value(1.0) - WeekdayEstimate(time))());
+										}
+									}
+									if (hourlyEffect && (cweeUnitValues::hour(LabelSummary.maxTime - LabelSummary.minTime) > cweeUnitValues::hour(24)) && (LabelSummary.minTimestep <= cweeUnitValues::hour(1))) {
+										for (int hour = 0; hour <= 23; hour++) {
+											sample.push_back(HourEstimate(time, hour)());
+										}
+									}
+								}
+								if (autoregressive) {
+									if (builder && builder->GetNumValues() > 0) {
+										sample.push_back(AutoregressiveEstimate(time, *builder)());
+									}
+									else {
+										sample.push_back(AutoregressiveEstimate(time, Labels)());
+									}
+								}
+								for (int i = 0; i < AdditionalFeatures.Num(); i++) {
+									auto& AdditionalFeature = AdditionalFeatures[i];
+									auto& summary = AdditionalFeatureSummary[i];
+									if (summary.include) {
+										sample.push_back(((AdditionalFeature.GetCurrentValue(time) - summary.minimum) / (summary.maximum - summary.minimum))() /* 0-1 range */);
+									}
 								}
 							}
-							if (weekdayEffect && (cweeUnitValues::day(LabelSummary.maxTime - LabelSummary.minTime) > cweeUnitValues::day(7)) && (LabelSummary.minTimestep <= cweeUnitValues::day(7))) {
-								{ // weekdays
-									sample.push_back(WeekdayEstimate(time)());
-								}
-								{ // weekends
-									sample.push_back((cweeUnitValues::unit_value(1.0) - WeekdayEstimate(time))());
-								}
-							}
-							if (hourlyEffect && (cweeUnitValues::hour(LabelSummary.maxTime - LabelSummary.minTime) > cweeUnitValues::hour(24)) && (LabelSummary.minTimestep <= cweeUnitValues::hour(1))) {
-								for (int hour = 0; hour <= 23; hour++) {
-									sample.push_back(HourEstimate(time, hour)());
-								}
-							}
-						}
-						if (autoregressive) {
-							if (builder && builder->GetNumValues() > 0) {
-								sample.push_back(AutoregressiveEstimate(time, *builder)());
-							}
-							else {
-								sample.push_back(AutoregressiveEstimate(time, Labels)());
-							}
-						}
-						for (int i = 0; i < AdditionalFeatures.Num(); i++) {
-							auto& AdditionalFeature = AdditionalFeatures[i];
-							auto& summary = AdditionalFeatureSummary[i];
-							if (summary.include) {
-								sample.push_back(((AdditionalFeature.GetCurrentValue(time) - summary.minimum) / (summary.maximum - summary.minimum))() /* 0-1 range */);
-							}
+							
+							out = df2(dlib::mat(sample));
 						}
 					}
-					out = df2(dlib::mat(sample));
+					
 					return out;
 				};
 				cweeUnitPattern Forecast(cweeUnitValues::unit_value time1, cweeUnitValues::unit_value time2, cweeUnitValues::unit_value timestep) const {
@@ -1728,74 +1756,99 @@ namespace chaiscript {
 			lib->AddFunction(, Forecast, -> cweeUnitPattern, return learned.Forecast(), PatternLearner const& learned);
 			lib->AddFunction(, Forecast, -> cweeUnitPattern, return learned.Forecast(time1, time2, timestep), PatternLearner const& learned, cweeUnitValues::unit_value const& time1, cweeUnitValues::unit_value const& time2, cweeUnitValues::unit_value const& timestep);
 			lib->AddFunction(, Forecast, -> cweeUnitValues::unit_value, return learned.Forecast(sampleTime), PatternLearner const& learned, cweeUnitValues::unit_value const& sampleTime);
-			lib->AddFunction(, Clean, -> cweeUnitPattern, SINGLE_ARG(
-			    AUTO mask{ pat.GetOutlierMask() };
+			
+			AUTO todo2 = [](cweeUnitPattern const& pat, std::vector<Boxed_Value> const& features) {
+				AUTO mask{ pat.GetOutlierMask() };
 				AUTO blurred{ cweeUnitPattern(pat.X_Type(), pat.Y_Type()) }; {
-					if (pat.Y_Type().AreConvertableTypes(cweeUnitValues::year())) {
-						blurred = pat.Blur((cweeUnitValues::year(pat.GetMaxTime() - pat.GetMinTime()))() * 52.0 * 7.0, mask);
-					}
-					else {
-						blurred = pat.Blur(6.0*52.0*7.0, mask);
-					}
-				}
-				AUTO ML{ cweeUnitPattern(pat.X_Type(), pat.Y_Type()) }; {
-					PatternLearner learn; {
-						learn.Labels = blurred;
-						learn.annualEffect = true;
-						learn.monthlyEffect = true;
-						learn.weekdayEffect = true;
-						learn.hourlyEffect = false;
-						learn.autoregressive = false;
-						for (auto& x : features) { auto* p = chaiscript::boxed_cast<cweeUnitPattern*>(x); if (p) learn.AdditionalFeatures.Append(*p); }
-						learn.Learn(mask, cweeUnitValues::second(5));
-					}
-					if (features.size() > 0 && learn.R < 0.8) {
-						PatternLearner learn2; {
-							learn2.Labels = blurred;
-							learn2.annualEffect = true;
-							learn2.monthlyEffect = true;
-							learn2.weekdayEffect = true;
-							learn2.hourlyEffect = false;
-							learn2.autoregressive = false;
-							learn2.Learn(mask, cweeUnitValues::second(5));
-						}
-						if (learn2.R > learn.R) {
-							ML = learn2.Forecast();
-						}
-						else {
-							ML = learn.Forecast();
-						}
-					}
-					else {
-						ML = learn.Forecast();
-					}					
-				}
-				return cweeUnitPattern::Lerp(ML, pat, mask);
-			), cweeUnitPattern const& pat, std::vector<Boxed_Value> const& features);
-			lib->AddFunction(, Clean, -> cweeUnitPattern, SINGLE_ARG(
-			    AUTO mask{ pat.GetOutlierMask() };
-				AUTO blurred{ cweeUnitPattern(pat.X_Type(), pat.Y_Type()) }; {
-					if (pat.Y_Type().AreConvertableTypes(cweeUnitValues::year())) {
+					if (pat.X_Type().AreConvertableTypes(cweeUnitValues::year())) {
 						blurred = pat.Blur((cweeUnitValues::year(pat.GetMaxTime() - pat.GetMinTime()))() * 52.0 * 7.0, mask);
 					}
 					else {
 						blurred = pat.Blur(6.0 * 52.0 * 7.0, mask);
 					}
 				}
-				AUTO ML{ cweeUnitPattern(pat.X_Type(), pat.Y_Type()) }; {
-					PatternLearner learn; {
-						learn.Labels = blurred;
-						learn.annualEffect = true;
-						learn.monthlyEffect = true;
-						learn.weekdayEffect = true;
-						learn.hourlyEffect = false;
-						learn.autoregressive = false;
-						learn.Learn(mask, cweeUnitValues::second(5));
-					}					
-					ML = learn.Forecast();
+				PatternLearner learn; {
+					learn.Labels = blurred;
+					learn.annualEffect = false;
+					learn.monthlyEffect = true;
+					learn.weekdayEffect = true;
+					learn.hourlyEffect = false;
+					learn.autoregressive = false;
+					for (auto& x : features) { auto* p = chaiscript::boxed_cast<cweeUnitPattern*>(x); if (p) learn.AdditionalFeatures.Append(*p); }
+					learn.Learn(mask, cweeUnitValues::second(5));
 				}
-				return cweeUnitPattern::Lerp(ML, pat, mask);
-			), cweeUnitPattern const& pat);
+				if (learn.Learned()) { //  && learn.R > 0.45
+					AUTO ML{ learn.Forecast() };
+					//if (ML.Collinear(blurred, mask)) {
+						return cweeUnitPattern::Lerp(ML, pat, mask);
+					//}
+				}
+				{
+					PatternLearner learn2; {
+						learn2.Labels = blurred;
+						learn2.overfit = true;
+						learn2.annualEffect = false;
+						learn2.monthlyEffect = false;
+						learn2.weekdayEffect = false;
+						learn2.hourlyEffect = false;
+						learn2.autoregressive = false;
+						for (auto& x : features) { auto* p = chaiscript::boxed_cast<cweeUnitPattern*>(x); if (p) learn2.AdditionalFeatures.Append(*p); }
+						learn2.Learn(mask, cweeUnitValues::second(5));
+					}
+					if (learn2.Learned()) {
+						return cweeUnitPattern::Lerp(learn2.Forecast(), pat, mask);
+					}
+				}
+				return cweeUnitPattern::Lerp(blurred, pat, mask);
+			};
+
+			lib->AddFunction(todo2, Clean, -> cweeUnitPattern, return todo2(pat, features), cweeUnitPattern const& pat, std::vector<Boxed_Value> const& features);
+
+			AUTO todo = [](cweeUnitPattern const& pat) {
+				AUTO mask{ pat.GetOutlierMask() };
+				AUTO blurred{ cweeUnitPattern(pat.X_Type(), pat.Y_Type()) }; {
+					if (pat.X_Type().AreConvertableTypes(cweeUnitValues::year())) {
+						blurred = pat.Blur((cweeUnitValues::year(pat.GetMaxTime() - pat.GetMinTime()))() * 52.0 * 7.0, mask);
+					}
+					else {
+						blurred = pat.Blur(6.0 * 52.0 * 7.0, mask);
+					}
+				}
+				PatternLearner learn; {
+					learn.Labels = blurred;
+					learn.overfit = false;
+					learn.annualEffect = false;
+					learn.monthlyEffect = true;
+					learn.weekdayEffect = true;
+					learn.hourlyEffect = false;
+					learn.autoregressive = false;
+					learn.Learn(mask, cweeUnitValues::second(5));
+				}
+				if (learn.Learned()) { //  && learn.R > 0.45
+					AUTO ML{ learn.Forecast() };
+					//if (ML.Collinear(blurred, mask)) {
+						return cweeUnitPattern::Lerp(ML, pat, mask);
+					//}
+				}
+				{
+					PatternLearner learn2; {
+						learn2.Labels = blurred;
+						learn2.overfit = true;
+						learn2.annualEffect = false;
+						learn2.monthlyEffect = false;
+						learn2.weekdayEffect = false;
+						learn2.hourlyEffect = false;
+						learn2.autoregressive = false;
+						learn2.Learn(mask, cweeUnitValues::second(5));
+					}
+					if (learn2.Learned()) {
+						return cweeUnitPattern::Lerp(learn2.Forecast(), pat, mask);
+					}
+				}
+				return cweeUnitPattern::Lerp(blurred, pat, mask);
+			};
+
+			lib->AddFunction(todo, Clean, -> cweeUnitPattern, return todo(pat), cweeUnitPattern const& pat);
 
 #else
 			class PatternLearner {
