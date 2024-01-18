@@ -4499,6 +4499,41 @@ namespace cweeEng {
 		}
 	};
 
+	template<typename X, typename Y>
+	static AUTO LineOfBestFit(const cweeList<std::pair<X, Y>>& Real) {
+		AUTO Slope{ Real[0].second / Real[0].first };
+		AUTO toReturn{ std::pair<Y, decltype(Slope)>() };
+		AUTO MSE_x{ Real[0].first * Real[0].first };
+		MSE_x = 0;
+		Slope = 0;
+
+		X avgX{ 0 };
+		Y avgY{ 0 }; {
+			int countX = 0;
+			int countY = 0;
+			for (auto& xy : Real) {
+				cweeMath::rollingAverageRef(avgX, xy.first, countX);
+				cweeMath::rollingAverageRef(avgY, xy.second, countY);
+			}
+		}
+
+		for (auto& xy : Real) {
+			auto& x = xy.first;
+			MSE_x += (x - avgX) * (x - avgX);
+		}
+
+		for (auto& xy : Real) {
+			auto& x = xy.first;
+			auto& y = xy.second;
+
+			Slope += (x - avgX) * (y - avgY) / MSE_x;
+		}
+
+		toReturn.first = avgY - Slope * avgX;
+		toReturn.second = Slope;
+
+		return toReturn;
+	};
 };
 
 

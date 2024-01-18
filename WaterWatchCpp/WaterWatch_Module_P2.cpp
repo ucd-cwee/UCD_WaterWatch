@@ -389,6 +389,9 @@ namespace chaiscript {
                     return quantile_pattern(a, quantile, numSamples);
                 }), "GetCurrentValueQuantile");
 
+                lib->AddFunction(, LineOfBestFit, , return o.LineOfBestFit(), cweeUnitPattern const& o);
+                lib->AddFunction(, LineOfBestFit, , return o.LineOfBestFit(mask), cweeUnitPattern const& o, cweeUnitPattern const& mask);
+
                 lib->add(chaiscript::fun([=](const cweeUnitPattern& a) {
                     return a.Blur((a.GetNumValues() / 32) + 1);
                 }), "Blur");

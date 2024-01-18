@@ -3633,6 +3633,37 @@ public:
 		}
 		return distances;
 	};
+	cweeUnitPattern  LineOfBestFit() const {
+		AUTO out{ cweeUnitPattern(this->X_Type(), this->Y_Type()) };
+
+		cweeList<std::pair<cweeUnitValues::unit_value, cweeUnitValues::unit_value>> knots;
+		for (auto& x : GetKnotSeries()) {
+			knots.Append({ x.first, x.second });
+		}
+		AUTO Intersept_Slope = cweeEng::LineOfBestFit(knots);
+
+		for (auto& knot : knots) {
+			out.AddValue(knot.first, Intersept_Slope.first + knot.first * Intersept_Slope.second);
+		}
+
+		return out;
+	};
+	cweeUnitPattern  LineOfBestFit(cweeUnitPattern const& mask) const {
+		AUTO out{ cweeUnitPattern(this->X_Type(), this->Y_Type()) };
+
+		cweeList<std::pair<cweeUnitValues::unit_value, cweeUnitValues::unit_value>> knots;
+		for (auto& x : GetKnotSeries()) {
+			if (mask.GetCurrentValue(x.first) > 0) continue;
+			knots.Append({x.first, x.second});
+		}
+		AUTO Intersept_Slope = cweeEng::LineOfBestFit(knots);
+
+		for (auto& knot : knots) {
+			out.AddValue(knot.first, Intersept_Slope.first + knot.first * Intersept_Slope.second);
+		}
+
+		return out;
+	};
 
 #if 1
 	friend cweeUnitPattern operator+(const cweeUnitPattern& a, const cweeUnitPattern& b) {
