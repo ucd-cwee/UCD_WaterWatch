@@ -3380,6 +3380,7 @@ public:
 		AUTO scale = width / desiredNumValues;
 
 		AUTO mask2{ cweeUnitPattern(mask).ClampValues(0,1).Ceiling() };
+		mask2.SetInterpolationType(interpolation_t::LEFT);
 		AUTO scaledPat = (*this * (1.0 - mask2));
 
 		AUTO getScaledAvg = [&mask2, &scaledPat, this](cweeUnitValues::unit_value const& start, cweeUnitValues::unit_value const& end)->cweeUnitValues::unit_value {
@@ -3642,9 +3643,12 @@ public:
 		}
 		AUTO Intersept_Slope = cweeEng::LineOfBestFit(knots);
 
-		for (auto& knot : knots) {
-			out.AddValue(knot.first, Intersept_Slope.first + knot.first * Intersept_Slope.second);
+		out.AddUniqueValue(GetMinTime(), Intersept_Slope.first + GetMinTime() * Intersept_Slope.second);
+		for (auto& knot : GetTimeSeries(GetMinTime(), GetMaxTime(), (GetMaxTime() - GetMinTime()) / 4)) {
+			out.AddUniqueValue(knot.first, Intersept_Slope.first + knot.first * Intersept_Slope.second);
 		}
+		out.AddUniqueValue(GetMaxTime(), Intersept_Slope.first + GetMaxTime() * Intersept_Slope.second);
+
 
 		return out;
 	};
@@ -3658,9 +3662,11 @@ public:
 		}
 		AUTO Intersept_Slope = cweeEng::LineOfBestFit(knots);
 
-		for (auto& knot : knots) {
-			out.AddValue(knot.first, Intersept_Slope.first + knot.first * Intersept_Slope.second);
+		out.AddUniqueValue(GetMinTime(), Intersept_Slope.first + GetMinTime() * Intersept_Slope.second);
+		for (auto& knot : GetTimeSeries(GetMinTime(), GetMaxTime(), (GetMaxTime() - GetMinTime()) / 4)) {
+			out.AddUniqueValue(knot.first, Intersept_Slope.first + knot.first * Intersept_Slope.second);
 		}
+		out.AddUniqueValue(GetMaxTime(), Intersept_Slope.first + GetMaxTime() * Intersept_Slope.second);
 
 		return out;
 	};

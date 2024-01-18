@@ -326,12 +326,12 @@ namespace dlib
                 // now perform the actual optimization of alpha
                 long i = 0, j = 0;
                 scalar_type orig_eps = eps;
-                std::vector<scalar_type> eps_history;
-                scalar_type prev_avg_eps = std::numeric_limits<float>::max();
-                int numFails = 0;
+                //std::vector<scalar_type> eps_history;
+                //scalar_type prev_avg_eps = std::numeric_limits<float>::max();
+                //int numFails = 0;
                 while (find_working_group_early_exit(y, alpha, Q, df, Cp, Cn, tau, eps, i, j, orig_eps))
                 {
-
+#if 0
                     // allow for early exit if the performance (eps) is not satisfactorily improving. 
                     // It is allowed to stuggle then improve again, which will eventually reset the fail counter. 
                     // But too many failures vs. number of improvements may result in an early exit as it appears to be spinning its wheels. 
@@ -358,6 +358,7 @@ namespace dlib
 
                         if (numFails > 10) return count;
                     }
+#endif
 
                     ++count;
                     const scalar_type old_alpha_i = alpha(i);

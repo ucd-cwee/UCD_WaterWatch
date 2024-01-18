@@ -74,6 +74,7 @@ cweeList<float> MachineLearningInput::GetLabels() const {
 #ifndef hideMachineLearning
 using sample_type = dlib::matrix<float, 0, 1>;
 using kernel_type = dlib::radial_basis_kernel<sample_type>;
+// using kernel_type = dlib::linear_kernel<sample_type>;
 using df2_t = dlib::decision_function<kernel_type>;
 INLINE df2_t* GetDf2(cweeSharedPtr<cweeAny> const& p) {
 	if (p && p->IsTypeOf<df2_t>()) {
@@ -91,215 +92,10 @@ MachineLearning_SVR_Results::MachineLearning_SVR_Results() : df2(
 #endif
 	)
 ) {};
-cweeStr MachineLearning_SVR_Results::Serialize() {
-	cweeStr delim = ":cweeML_parameters_SVR_regression_DELIM:";
-	cweeStr out;
-#ifndef hideMachineLearning
-	auto ptr = GetDf2(df2);
-	if (ptr) {
-		{
-			cweeStr listOut;
-			for (auto& x : ptr->alpha) {
-				if (x == 0.0f) {
-					if (listOut.IsEmpty()) {
-						listOut = " ";
-					}
-					else {
-						listOut.AddToDelimiter("", ",");
-					}
-				}
-				else {
-					listOut.AddToDelimiter(x, ",");
-				}
-			}
-			if (listOut.IsEmpty()) {
-				out.AddToDelimiter(" ", delim);
-			}
-			else {
-				out.AddToDelimiter(listOut, delim);
-			}
-		}
-		{
-			// often nr = 2, nc = 1, size = 2;
-			int nr = ptr->basis_vectors.nr();
-			int nc = ptr->basis_vectors.nc();
-			int nrTimesNc = nr * nc;
-			int size = ptr->basis_vectors.size();
-			int sizeDif = size - nrTimesNc;
-
-			cweeStr matri; cweeStr listOut;
-			int sizeOfVector = 0;
-			for (auto& x : ptr->basis_vectors) {
-				listOut.Clear();
-				sizeOfVector = x.size();
-
-				//if (sizeOfVector == nr) {
-				//	int ijk = 0;
-				//	// column major. i.e. 
-				//	// for (auto& column : df2.basis)
-				//	//		for (auto& row : column)...
-				//	submitToast("Machine Learning Debug", cweeStr::printf("Column Major: nr%i nc%i size%i", nr, nc, size));
-				//}
-				//else if (sizeOfVector == nc) {
-				//	int ijk = 0;
-				//	// row major. i.e. 
-				//	// for (auto& row : df2.basis)
-				//	//		for (auto& column : row)...
-				//	submitToast("Machine Learning Debug", cweeStr::printf("Row Major: nr%i nc%i size%i", nr, nc, size));
-				//}
-				//else {
-				//	int ijk = 0;
-				//	// no idea what is happening
-				//	submitToast("Machine Learning Debug", cweeStr::printf("Unknown Major: nr%i nc%i size%i", nr, nc, size));
-				//}
-
-				// often n_subR = 192, nc = 1, size = 192
-
-				//int n_subR = x.nr();
-				//int n_subC = x.nc();
-				//int subSize = x.size();
-				//submitToast("Machine Learning Debug2", cweeStr::printf("Unknown Major: nr%i nc%i size%i", n_subR, n_subC, subSize));
-
-				for (auto& y : x) {
-					if (y == 0.0f) {
-						if (listOut.IsEmpty()) {
-							listOut = " ";
-						}
-						else {
-							listOut.AddToDelimiter("", ",");
-						}
-					}
-					else {
-						listOut.AddToDelimiter(y, ",");
-					}
-				}
-
-				if (1) {
-					// reduce string size
-					listOut.Replace(",,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,", "_");
-					listOut.Replace(",,,,,", "?");
-				}
-
-				matri.AddToDelimiter(listOut, ":SVR_basis_vector:");
-			}
-			if (out.IsEmpty()) out = delim + matri;
-			else out.AddToDelimiter(matri, delim);
-		}
-		out.AddToDelimiter(ptr->b, delim);
-		out.AddToDelimiter(ptr->kernel_function.gamma, delim);
-	}
-#endif
-	return out;
-};
-void MachineLearning_SVR_Results::Deserialize(cweeStr& in) {
-	cweeParser obj(in, ":cweeML_parameters_SVR_regression_DELIM:", true);
-	in.Clear();
-
-	std::vector<float> alpha_vec;
-	std::vector < std::vector <float> > basis_vector;
-	float b_scalar, gamma;
-	cweeParser knots, vals;
-	int i, j;
-	std::vector <float> row;
-	{
-		if (!obj.getVar(0).IsEmpty()) {
-			knots.Parse(obj.getVar(0), ",", true);
-			if (knots.getNumVars() >= 2) {
-				alpha_vec.reserve(cweeMath::max(1, knots.getNumVars()));
-				for (i = 0; i < knots.getNumVars(); i++) {
-					alpha_vec.push_back((float)knots.getVar(i));
-				}
-			}
-		}
-	}
-	{
-		if (!obj.getVar(1).IsEmpty()) {
-			cweeParser rows(obj.getVar(1), ":SVR_basis_vector:", true);
-			basis_vector.reserve(cweeMath::max(1, rows.getNumVars()));
-			for (i = 0; i < rows.getNumVars(); i++) {
-				row.clear(); row.reserve(cweeMath::max(1, vals.getNumVars()));
-
-				if (1) {
-					// increase string size
-					rows.getVar(i).Replace("?", ",,,,,");
-					rows.getVar(i).Replace("_", ",,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,");
-				}
-
-				vals.Parse(rows.getVar(i), ",", true);
-				for (j = 0; j < vals.getNumVars(); j++) {
-					if (vals[j].IsEmpty())
-						row.push_back(0.0f);
-					else
-						row.push_back((float)vals[j]);
-				}
-				basis_vector.push_back(row);
-			}
-		}
-	}
-	b_scalar = (float)obj.getVar(2);
-	gamma = obj.getVar(3).IsEmpty() ? 0.1f : (float)obj.getVar(3);
-	{
-#ifndef hideMachineLearning
-		auto ptr = GetDf2(df2);
-		if (ptr) {
-			*ptr = dlib::decision_function<kernel_type>(); //  alpha_vec, b_scalar, kernel_type(), basis_vector);
-			ptr->basis_vectors.set_size(basis_vector.size(), 1);
-			ptr->alpha.set_size(alpha_vec.size(), 1);
-
-			for (int index_i = 0; index_i < basis_vector.size(); index_i++) {
-				auto& content = basis_vector[index_i];
-				ptr->basis_vectors(index_i).set_size(content.size(), 1);
-				for (int index_j = 0; index_j < content.size(); index_j++) {
-					ptr->basis_vectors(index_i)(index_j) = content[index_j];
-				}
-			}
-
-			for (int index_i = 0; index_i < alpha_vec.size(); index_i++) {
-				ptr->alpha(index_i) = alpha_vec[index_i];
-			}
-
-			ptr->b = b_scalar;
-			ptr->kernel_function = kernel_type(gamma);
-		}
-#endif
-	}
-};
-
-cweeStr MachineLearning_Results::Serialize() {
-	cweeStr delim = ":cweeML_learned_parameters_in_DELIM:";
-	cweeStr out;
-
-	if (learned) {
-		out += " ";
-		out.AddToDelimiter(svr_results.Serialize(), delim);
-		out.AddToDelimiter(learned, delim);
-		out.AddToDelimiter(performance.Serialize(), delim);
-		return out;
-	}
-	else {
-		return "";
-	}
-
-};
-void MachineLearning_Results::Deserialize(cweeStr& in) {
-	if (in.IsEmpty()) {
-		*this = MachineLearning_Results(); // make new
-	}
-	else {
-		cweeParser obj(in, ":cweeML_learned_parameters_in_DELIM:", true);
-		in.Clear();
-
-		svr_results.Deserialize(obj[1]); obj[1].Clear();
-		learned = (bool)(int)obj[2]; obj[2].Clear();
-		performance.Deserialize(obj[3]);
-	}
-};
 
 MachineLearning_Results		MachineLearning_Math::Learn(const MachineLearningInput& input) {
 	MachineLearning_Results output_parameters;
 #ifndef hideMachineLearning
-	typedef dlib::matrix<float, 0, 1> sample_type;
-	typedef dlib::radial_basis_kernel<sample_type> kernel_type;
 	AUTO labels = input.GetLabels();
 
 	std::vector<sample_type> samples;
@@ -322,7 +118,7 @@ MachineLearning_Results		MachineLearning_Math::Learn(const MachineLearningInput&
 	dlib::svr_trainer<kernel_type> trainer;
 	{
 		trainer.set_kernel(input.gamma);													//	"0.1"	//	kernal		// 1 / n features (i.e. 1/4 for auto self-regression)
-		trainer.set_c(input.c);																//	"1"		//	c value		// higher = higher accuracy, lower = reduced accuracy. 
+		trainer.set_c(1.0 / input.gamma);																//	"1"		//	c value		// higher = higher accuracy, lower = reduced accuracy. 
 		{
 			// CPU_DATA this_cpu;
 			Computer_Usage this_ram;
@@ -347,7 +143,7 @@ MachineLearning_Results		MachineLearning_Math::Learn(const MachineLearningInput&
 				diff = maxLabel - minLabel;  // i.e. 23, 0.01, 0
 				// our desired accuracy is within 0.1% of this difference. If the range of this timeseries is 1, it results in an eps. of 1 / 1000 = 0.001;
 			}
-			trainer.set_epsilon(diff / 1000.0f); // i.e. 0.1% of the range of the dataset	
+			trainer.set_epsilon(diff / 10000.0f); // i.e. 0.01% of the range of the dataset	
 			// trainer.set_epsilon(0.001); //	"0.01"	//	epsilon		// maximum error. smaller - longer learning
 		}
 	}
@@ -359,8 +155,6 @@ MachineLearning_Results		MachineLearning_Math::Learn(const MachineLearningInput&
 MachineLearning_Results		MachineLearning_Math::LearnFast(const MachineLearningInput& input) {
 	MachineLearning_Results output_parameters;
 #ifndef hideMachineLearning
-	typedef dlib::matrix<float, 0, 1> sample_type;
-	typedef dlib::radial_basis_kernel<sample_type> kernel_type;
 	AUTO labels = input.GetLabels();
 
 	std::vector<sample_type> samples;
@@ -383,7 +177,7 @@ MachineLearning_Results		MachineLearning_Math::LearnFast(const MachineLearningIn
 	dlib::svr_trainer<kernel_type> trainer;
 	{
 		trainer.set_kernel(input.gamma);													//	"0.1"	//	kernal		// 1 / n features (i.e. 1/4 for auto self-regression)
-		trainer.set_c(input.c);																//	"1"		//	c value		// higher = higher accuracy, lower = reduced accuracy. 
+		trainer.set_c(1.0 / input.gamma);																//	"1"		//	c value		// higher = higher accuracy, lower = reduced accuracy. 
 		{
 			// CPU_DATA this_cpu;
 			Computer_Usage this_ram;
@@ -410,7 +204,7 @@ MachineLearning_Results		MachineLearning_Math::LearnFast(const MachineLearningIn
 				diff = maxLabel - minLabel;  // i.e. 23, 0.01, 0
 				// our desired accuracy is within 1% of this difference. If the range of this timeseries is 1, it results in an eps. of 1 / 100 = 0.01;
 			}
-			trainer.set_epsilon(diff / 100.0f); // i.e. 1% of the range of the dataset
+			trainer.set_epsilon(diff / 1000.0f); // i.e. 0.1% of the range of the dataset
 		}
 	}
 
@@ -433,267 +227,6 @@ void MachineLearning_Math::CompileTimeTest() {
 	std::cout << ml_result.performance.ToString() << std::endl;
 };
 
-cweeMachineLearning::cweeLearnedParams cweeMachineLearning::Learn_Opt(cweeSharedPtr<cweeThreadedList<float>> trueLabels, cweeSharedPtr<cweeThreadedList<cweeThreadedList<float>>> trueFeatures) {
-	cweeSharedPtr<cweeLearnedParams> out = new cweeLearnedParams();
-	{
-		// the constant is the average value
-		out->labelSummary = SummarizeFeature(*trueLabels);
-		for (auto& x : *trueFeatures) out->featureSummaries.Append(SummarizeFeature(x));
-
-		// solve for the multiplier per feature.
-
-		// predict the normalized labels using the normalized features
-		{
-			cweeThreadedList<float> lowerBound, upperBound;
-			for (auto& bv : *trueFeatures) { lowerBound.push_back(-10000); }
-			for (auto& bv : *trueFeatures) { upperBound.push_back(10000); }
-
-			// MINIMIZE THE ERROR
-			AUTO todo = [=](cweeThreadedList<float> const& x) -> float {
-				cweeThreadedList<float> result;
-				float prediction = out->labelSummary.min;
-				int x_n;
-				for (int obs_i = 0; obs_i < trueLabels->Num(); obs_i++) {
-					prediction = out->labelSummary.min;
-					x_n = 0;
-					for (int feature_n = 0; feature_n < trueFeatures->Num(); feature_n++) {
-						prediction += (
-							x[x_n++] * (
-								trueFeatures->at(feature_n)[obs_i] - (out->featureSummaries[feature_n].min)
-								)
-							);
-					}
-					result.push_back(prediction);
-				}
-				float err = 0;
-				for (int i = 0; i < result.Num(); i++) { err += cweeMath::Pow(trueLabels->at(i) - result[i], 2.0); }
-				err = cweeMath::Pow(err, 0.5);
-				return err;
-			};
-			int numDimensions = cweeMath::min(lowerBound.Num(), upperBound.Num());
-
-			constexpr int maxIterations = 1000;
-			constexpr float eps = 0.000001f;
-			static std::function objFunc = [=](cweeThreadedList<u64>& policy) -> u64 {
-				return todo(policy);
-			};
-			static std::function isFinishedFunc = [=](OptimizationObj& shared, cweeThreadedList<u64>& bestPolicy, u64 bestPerformance) -> bool {
-				auto& i = shared.results.Alloc();
-				i.bestPolicy = bestPolicy;
-				i.bestPerformance = bestPerformance;
-				if (shared.results.Num() <= 10) return false; // guarrantee at least 10 iterations
-				else {
-					// ensure the most recent 5 iterations are better than the 5 before them.
-					int i = shared.results.Num() - 1;
-					float perf_new = 0;
-					float perf_old = 0;
-					int count = 0;
-					for (; i >= (shared.results.Num() - 5); i--) {
-						cweeMath::rollingAverageRef(perf_new, shared.results[i].bestPerformance, count);
-					}
-					count = 0;
-					for (; i >= 0 && i >= (shared.results.Num() - 10); i--) {
-						cweeMath::rollingAverageRef(perf_old, shared.results[i].bestPerformance, count);
-					}
-
-					// ensure that we are improving. 
-					if (cweeMath::Fabs(perf_new - perf_old) < cweeMath::Fabs(bestPerformance * eps)) {
-						shared.numIterationsFailedImprovement++;
-						if (shared.numIterationsFailedImprovement > (maxIterations / 10)) {
-							return true;
-						}
-						else {
-							return false;
-						}
-					}
-					shared.numIterationsFailedImprovement = 0;
-					return false; // we have not flat-lined. continue.
-				}
-			};
-			cweeSharedPtr<OptimizationObj> shared = make_cwee_shared<OptimizationObj>();
-
-			cweeJob toAwait;
-#define OPT_FUNC_DIM(NUMDIM, NUMPOLICIES, _min_) case (NUMDIM) : { \
-		Genetic_OptimizationManagementTool<_min_> ramt = Genetic_OptimizationManagementTool<_min_>(NUMDIM, NUMPOLICIES); \
-		ramt.lower_constraints() = lowerBound; \
-		ramt.upper_constraints() = upperBound; \
-		toAwait = cweeOptimizer::run_optimization(shared, ramt, objFunc, isFinishedFunc, maxIterations); \
-		break; \
-	}
-			switch (numDimensions) {
-				OPT_FUNC_DIM(1, 10, true)
-				OPT_FUNC_DIM(2, 10, true)
-				OPT_FUNC_DIM(3, 10, true)
-				OPT_FUNC_DIM(4, 10, true)
-				OPT_FUNC_DIM(5, 10, true)
-				OPT_FUNC_DIM(6, 10, true)
-				OPT_FUNC_DIM(7, 10, true)
-				OPT_FUNC_DIM(8, 10, true)
-				OPT_FUNC_DIM(9, 10, true)
-				OPT_FUNC_DIM(10, 10, true)
-				OPT_FUNC_DIM(11, 10, true)
-				OPT_FUNC_DIM(12, 10, true)
-				OPT_FUNC_DIM(13, 10, true)
-				OPT_FUNC_DIM(14, 10, true)
-				OPT_FUNC_DIM(15, 10, true)
-				OPT_FUNC_DIM(16, 10, true)
-				OPT_FUNC_DIM(17, 10, true)
-				OPT_FUNC_DIM(18, 10, true)
-				OPT_FUNC_DIM(19, 10, true)
-				OPT_FUNC_DIM(20, 10, true)
-			}
-			toAwait.AwaitAll();
-
-			auto& bestPolicy = shared->results[shared->results.Num() - 1].bestPolicy;
-			out->fit = bestPolicy;
-		}
-	}
-	return *out;
-};
-float cweeMachineLearning::Forecast_Opt(const cweeMachineLearning::cweeLearnedParams& out, const cweeThreadedList<float>& features) {
-	float prediction = 0;
-	int x_n;
-
-	prediction = out.labelSummary.min;
-	x_n = 0;
-	for (int feature_n = 0; feature_n < features.Num(); feature_n++) {
-		prediction += (
-			out.fit[x_n++] * (
-				features.at(feature_n) - (out.featureSummaries[feature_n].min)
-				)
-			);
-	}
-	return prediction;
-};
-cweeThreadedList<float> cweeMachineLearning::Forecast_Opt(const cweeMachineLearning::cweeLearnedParams& out, const cweeThreadedList<cweeThreadedList<float>>& features) {
-	cweeThreadedList<float> result;
-	float prediction = out.labelSummary.min;
-	int x_n;
-	if (features.Num() > 0 && features[0].Num() > 0) {
-		for (int obs_i = 0; obs_i < features[0].Num(); obs_i++) {
-			prediction = out.labelSummary.min;
-			x_n = 0;
-			for (int feature_n = 0; feature_n < features.Num(); feature_n++) {
-				prediction += (
-					out.fit[x_n++] * (
-						features.at(feature_n)[obs_i] - (out.featureSummaries[feature_n].min)
-						)
-					);
-			}
-			result.push_back(prediction);
-		}
-	}
-	return result;
-};
-
-cweeMachineLearning::dlibLearnedParams cweeMachineLearning::Learn_Dlib(cweeThreadedList<float> const& trueLabels, cweeThreadedList<cweeThreadedList<float>> const& trueFeatures) {
-	dlibLearnedParams out;
-	/* Summarize the inputs */
-	{
-		out.labelSummary = SummarizeFeature(trueLabels);
-		for (auto& x : trueFeatures) out.featureSummaries.Append(SummarizeFeature(x));
-	}
-	/* Meta-optimization of the machine-learning */
-	{
-		MachineLearningInput input;
-		input.labels = trueLabels;
-		for (auto& feat : trueFeatures) { input.addFeature(feat); }
-		if (input.NumObs() > 0 && input.NumFeatures() > 0) {
-			/* Discover optimum selection for gamma and C */
-			float gamma = 1.0f, C = 1.0f; {
-				cweeThreadedList<float> lowerBound({ 0.1f, 0.1f }), upperBound({ 1250.0f, 1250.0f });
-
-				// MINIMIZE THE ERROR
-				AUTO todo = [=](cweeThreadedList<float> const& x) -> float {
-					MachineLearningInput temp_input = input;
-					temp_input.gamma = x[0];
-					temp_input.c = x[1];
-					AUTO result = MachineLearning_Math::LearnFast(temp_input);
-					return result.performance.x;
-				};
-				int numDimensions = cweeMath::min(lowerBound.Num(), upperBound.Num());
-
-				constexpr int maxIterations = 1000;
-				constexpr float eps = 0.000001f;
-				static std::function objFunc = [=](cweeThreadedList<u64>& policy) -> u64 {
-					return todo(policy);
-				};
-				static std::function isFinishedFunc = [=](OptimizationObj& shared, cweeThreadedList<u64>& bestPolicy, u64 bestPerformance) -> bool {
-					auto& i = shared.results.Alloc();
-					i.bestPolicy = bestPolicy;
-					i.bestPerformance = bestPerformance;
-					if (shared.results.Num() <= 10) return false; // guarrantee at least 10 iterations
-					else {
-						// ensure the most recent 5 iterations are better than the 5 before them.
-						int i = shared.results.Num() - 1;
-						float perf_new = 0;
-						float perf_old = 0;
-						int count = 0;
-						for (; i >= (shared.results.Num() - 5); i--) {
-							cweeMath::rollingAverageRef(perf_new, shared.results[i].bestPerformance, count);
-						}
-						count = 0;
-						for (; i >= 0 && i >= (shared.results.Num() - 10); i--) {
-							cweeMath::rollingAverageRef(perf_old, shared.results[i].bestPerformance, count);
-						}
-
-						// ensure that we are improving. 
-						if (cweeMath::Fabs(perf_new - perf_old) < cweeMath::Fabs(bestPerformance * eps)) {
-							shared.numIterationsFailedImprovement++;
-							if (shared.numIterationsFailedImprovement > (maxIterations / 10)) { // 10% processed and we saw no further improvement. Unlikely to see improvement with another 10%.
-								return true;
-							}
-							else {
-								return false;
-							}
-						}
-						shared.numIterationsFailedImprovement = 0;
-						return false; // we have not flat-lined. continue.
-					}
-				};
-				cweeSharedPtr<OptimizationObj> shared = make_cwee_shared<OptimizationObj>();
-
-				Genetic_OptimizationManagementTool<true> ramt(2,10); // 2 dimensions, 10 policies per iteration, minimize
-				ramt.lower_constraints() = lowerBound; ramt.upper_constraints() = upperBound;
-				cweeOptimizer::run_optimization(shared, ramt, objFunc, isFinishedFunc, maxIterations, cweeThreadedList<float>({ gamma, C })).AwaitAll();
-
-				auto& bestPolicy = shared->results[shared->results.Num() - 1].bestPolicy;
-				gamma = bestPolicy[0];
-				C = bestPolicy[1];
-			}
-			input.gamma = gamma;
-			input.c = C;
-			AUTO result = MachineLearning_Math::Learn(input); // using the 'best' version, do the best learn we can do. 
-			out.fit = result.svr_results;
-		}
-	}
-	return out;
-};
-float cweeMachineLearning::Forecast_Dlib(const cweeMachineLearning::dlibLearnedParams& out, const cweeThreadedList<float>& features) {
-#ifndef hideMachineLearning
-	auto mat = dlib::mat(std::vector<float>(features));
-	AUTO ptr = GetDf2(out.fit.df2);
-	if (ptr) {
-		return ptr->operator()(mat);
-	}
-#endif
-	return 0;
-};
-cweeThreadedList<float> cweeMachineLearning::Forecast_Dlib(const cweeMachineLearning::dlibLearnedParams& out, const cweeThreadedList<cweeThreadedList<float>>& features) {
-	cweeThreadedList<float> results;
-	if (features.Num() > 0) {
-		results.SetGranularity(features[0].Num() + 16);
-#ifndef hideMachineLearning
-		AUTO ptr = GetDf2(out.fit.df2);
-		if (ptr) {
-			for (auto& x : MachineLearningInput::GetInvertedFeatures(features)) results.Append(
-				ptr->operator()(dlib::mat(std::vector<float>(x)))
-			);
-		}
-#endif
-	}
-	return results;
-};
 
 MachineLearning_Results cweeMachineLearning::Learn(const cweeThreadedList<float>& trueLabels, const cweeThreadedList<cweeThreadedList<float>>& features, std::pair<vec2, vec2>* fit, const float percentSplit) {
 	cweeThreadedList<cweeThreadedList<float>> Features;
@@ -701,23 +234,13 @@ MachineLearning_Results cweeMachineLearning::Learn(const cweeThreadedList<float>
 	Features.SetGranularity(cweeMath::max(100, features.Num()));
 
 	if (fit == nullptr) {
-		//Features = features;
-		for (auto& x : features) {
-			cweeThreadedList<float> saver;
-			saver.SetGranularity(cweeMath::max(100, x.Num()));
-			for (auto& y : x) {
-				saver.Append((float)y);
-			}
-			Features.Append(saver);
+		out = LearnSVR(trueLabels, features);
+		if (percentSplit > 0) {
+			auto ML_result = Forecast(out, features);
+			vec2 t1 = CalculateError(trueLabels, ML_result);
+			out.performance.x = t1.x;
+			out.performance.y = t1.y;
 		}
-		cweeThreadedList<float> TrueLabels;
-		TrueLabels = trueLabels;
-
-		out = LearnSVR(TrueLabels, Features); // to-do, switch statement.
-		auto ML_result = Forecast(out, Features);
-		vec2 t1 = CalculateError(TrueLabels, ML_result);
-		out.performance.x = t1.x;
-		out.performance.y = t1.y;
 	}
 	else {
 		cweeThreadedList<cweeThreadedList<float>> featuresLearn = features;
@@ -1094,80 +617,28 @@ MachineLearning_Results cweeMachineLearning::LearnSVR(const cweeThreadedList<flo
 	}
 
 	if (input.NumObs() > 0 && input.NumFeatures() > 0) {
-		// temp. Stupid hard-coded grid search - single elite from several attempts.  
-		constexpr int max_i = 1;
-		constexpr int max_j = 1;
+		float previousPerformance = cweeMath::INF, perf;
 
-		float minGamma = 0.1f;
-		float maxGamma = 1250.0f;
-
-		float minC = 0.1f;
-		float maxC = 1250.0f;
-
-		float previousPerformance = cweeMath::INF;
-
-		float bestGamma;
-		float bestC;
 		cweeThreadedList<float> forecasted;
 		MachineLearning_Results temp;
-		float Gamma; float C; vec2 fit1; vec2 fit2; float perf;
-		for (int k = 0; k < 2; k++) { // Gamma and C refinement over time
-			for (int i = 0; i < (max_i + 1); i++) { // Gamma
-				for (int j = 0; j < (max_j + 1); j++) { // C
-					Gamma = minGamma + ((maxGamma - minGamma) / max_i) * (((float)i));
-					C = minC + ((maxC - minC) / max_j) * (((float)j));
+		vec2 fit1;
 
-					input.gamma = Gamma;
-					input.c = C;
+		for (double exponent = -2; exponent <= 2; exponent += 0.5) {
+			input.gamma = std::pow(10.0, exponent);
 
-					temp = MachineLearning_Math::LearnFast(input);
+			temp = MachineLearning_Math::Learn(input);
 
-					forecasted = Forecast(temp, features);
-					fit1 = CalculateError(trueLabels, forecasted);
+			forecasted = Forecast(temp, features);
+			fit1 = CalculateError(trueLabels, forecasted);
 
-					if (testLabels.Num() > 0) {
-						forecasted = Forecast(temp, testfeatures);
-						fit2 = CalculateError(testLabels, forecasted);
-					}
-					else {
-						fit2 = vec2(1, 0);
-					}
+			perf = fit1.y;
 
-					perf = cweeMath::Fmax(fit1.y, fit2.y);
-
-					if (perf < previousPerformance) {
-						previousPerformance = perf;
-						out = temp;
-						bestGamma = Gamma;
-						bestC = C;
-
-						if (perf <= 0) return out; // early exit because... it's good enough. 
-					}
-				}
-			}
-
-			if (bestC >= ((maxC + minC) / 2.0f)) {
-				minC += ((maxC + minC) / 2.0f);
-				maxC *= 2.0f;
-			}
-			else {
-				maxC -= ((maxC + minC) / 2.0f);
-				minC *= 0.5f;
-			}
-
-			if (bestGamma >= ((maxGamma + minGamma) / 2.0f)) {
-				minGamma += ((maxGamma + minGamma) / 2.0f);
-				maxGamma *= 2.0f;
-			}
-			else {
-				maxGamma -= ((maxGamma + minGamma) / 2.0f);
-				minGamma *= 0.5f;
+			if (perf < previousPerformance) {
+				previousPerformance = perf;
+				out = temp;
+				if (perf <= 0) return out; // early exit because... it's good enough. 
 			}
 		}
-
-		input.gamma = bestGamma;
-		input.c = bestC;
-		out = MachineLearning_Math::Learn(input); // using the 'best' version, do the best learn we can do. 
 	}
 
 	return out;
@@ -1184,7 +655,7 @@ MachineLearning_Results cweeMachineLearning::LearnSVRFast(const cweeThreadedList
 	}
 
 	if (input.NumObs() > 0 && input.NumFeatures() > 0) {
-		out = MachineLearning_Math::LearnFast(input); // using the 'best' version, do the best learn we can do. 
+		out = MachineLearning_Math::Learn(input); // using the 'best' version, do the best learn we can do. 
 	}
 
 	return out;
@@ -1286,6 +757,362 @@ namespace chaiscript {
 #if 1
 			class PatternLearner {
 			public:
+				cweeUnitPattern Labels;
+				bool annualEffect = true;
+				bool monthlyEffect = true;
+				bool weekdayEffect = false;
+				bool hourlyEffect = false;
+
+			private:
+				cweeUnitPattern LineOfBestFit;
+				MachineLearning_Results seasonal; // 0 || 1, summer & winter
+				MachineLearning_Results monthly; // 0 || 1 x 12, january through december
+				MachineLearning_Results weekday; // 0 || 1, M-F vs Sa-Su
+				MachineLearning_Results daily; // 0.0 through 1.0, daily time-seconds. 
+
+			private:
+				class PatternSummary {
+				public:
+					PatternSummary() : average(), minimum(), maximum(), minTime(), maxTime(), minTimestep(), include(true) {};
+					PatternSummary(cweeUnitPattern const& obj) : average(obj.GetAvgValue()), minimum(obj.GetMinValue()), maximum(obj.GetMaxValue()), minTime(obj.GetMinTime()), maxTime(obj.GetMaxTime()), minTimestep(obj.GetMinimumTimeStep()), include(true) {};
+					PatternSummary(PatternSummary const&) = default;
+					PatternSummary(PatternSummary&&) = default;
+					PatternSummary& operator=(PatternSummary const&) = default;
+					PatternSummary& operator=(PatternSummary&&) = default;
+
+					cweeUnitValues::unit_value average;
+					cweeUnitValues::unit_value minimum;
+					cweeUnitValues::unit_value maximum;
+					cweeUnitValues::unit_value minTime;
+					cweeUnitValues::unit_value maxTime;
+					cweeUnitValues::unit_value minTimestep;
+					bool include;
+				};
+
+				PatternSummary LabelSummary;
+
+				cweeUnitValues::unit_value SeasonalEstimate(cweeUnitValues::unit_value const& time) const {
+					cweeTime t(time);
+
+					if (t.tm_mon() >= 4 && t.tm_mon() <= 10) {
+						return 1.0;
+					}
+					else {
+						return 0.0;
+					}
+				};
+				cweeUnitValues::unit_value MonthlyEstimate(cweeUnitValues::unit_value const& time, int month) const {
+					cweeTime t(time);
+
+					if ((t.tm_mon() + 1) == month) {
+						return 1;
+					}
+					else {
+						return 0;
+					}
+				};
+				cweeUnitValues::unit_value WeekdayEstimate(cweeUnitValues::unit_value const& time, int dayOfWeek) const {
+					cweeTime t(time);
+
+					if (t.tm_wday() == dayOfWeek) {
+						return 1;
+					}
+					else {
+						return 0;
+					}
+				};
+				cweeUnitValues::unit_value DailyEstimate(cweeUnitValues::unit_value const& time) const {
+					cweeTime t(time);
+					return  cweeUnitValues::second((t.tm_hour() * 3600.0) + (t.tm_min() * 60.0) + (t.tm_sec())) / cweeUnitValues::second(cweeUnitValues::day(1));
+				};
+
+				void LearnSeasonal(cweeUnitPattern const& mask, cweeUnitPattern const& prevBest) {
+					AUTO ToPredict = (Labels - prevBest).Blur(cweeUnitValues::year(LabelSummary.maxTime - LabelSummary.minTime)() * 2.0, mask);
+					cweeThreadedList<float>							label_list;
+					cweeThreadedList < cweeThreadedList<float> >	feature_list; 
+
+					feature_list.Alloc(); // is summer
+					feature_list.Alloc(); // is winter
+					
+					{
+						int i; cweeUnitValues::unit_value est;
+						for (auto& x : (ToPredict + mask).GetKnotSeries()) {
+							if (mask.GetCurrentValue(x.first) > 0) continue;
+							
+							label_list.Append(ToPredict.GetCurrentValue(x.first)());
+							
+							est = SeasonalEstimate(x.first);
+
+							feature_list[0].Append(est());
+							feature_list[1].Append(1.0 - est());
+						}
+					}
+
+					seasonal = cweeMachineLearning::LearnFast(label_list, feature_list, nullptr, 0);
+				};
+				cweeUnitPattern ForecastSeasonal(cweeUnitPattern const& prevBest) const {
+					auto out{ cweeUnitPattern(cweeUnitValues::second(), 1) };
+					if (seasonal.learned) {
+						AUTO df2Ptr = GetDf2(seasonal.svr_results.df2);
+						if (df2Ptr) {
+							AUTO df2 = *df2Ptr;
+							std::vector<float> sampleVec = {0.0f, 0.0f};
+
+							auto step{ cweeUnitValues::day(1) };
+							for (cweeUnitValues::second t = LabelSummary.minTime; t < LabelSummary.maxTime; t += step) {
+								sampleVec[0] = SeasonalEstimate(t)();
+								sampleVec[1] = 1.0f - sampleVec[0];
+
+								out.AddValue(t, df2(dlib::mat(sampleVec)));
+							}
+						}
+					}
+					return out + prevBest;
+				};
+								
+				void LearnMonthly(cweeUnitPattern const& mask, cweeUnitPattern const& prevBest) {
+					AUTO ToPredict = (Labels - prevBest).Blur(cweeUnitValues::year(LabelSummary.maxTime - LabelSummary.minTime)() * 12.0, mask);
+					cweeThreadedList<float>							label_list;
+					cweeThreadedList < cweeThreadedList<float> >	feature_list;
+
+					for (int i = 0; i < 12; i++) {
+						feature_list.Alloc();
+					}
+
+					{
+						int i; cweeUnitValues::unit_value est;
+						for (auto& x : (ToPredict + mask).GetKnotSeries()) {
+							if (mask.GetCurrentValue(x.first) > 0) continue;
+
+							label_list.Append(ToPredict.GetCurrentValue(x.first)());
+
+							for (int i = 0; i < 12; i++) {
+								feature_list[i].Append(MonthlyEstimate(x.first, i)());
+							}
+						}
+					}
+
+					monthly = cweeMachineLearning::LearnFast(label_list, feature_list, nullptr, 0);
+				};
+				cweeUnitPattern ForecastMonthly(cweeUnitPattern const& prevBest) const {
+					auto out{ cweeUnitPattern(cweeUnitValues::second(), 1) };
+					if (monthly.learned) {
+						AUTO df2Ptr = GetDf2(monthly.svr_results.df2);
+						if (df2Ptr) {
+							AUTO df2 = *df2Ptr;
+							std::vector<float> sampleVec = { 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f };
+
+							auto step{ cweeUnitValues::day(1) };
+							int i;
+							for (cweeUnitValues::second t = LabelSummary.minTime; t < LabelSummary.maxTime; t += step) {
+								for (i = 0; i < 12; i++) {
+									sampleVec[i] = MonthlyEstimate(t, i)();
+								}
+								out.AddValue(t, df2(dlib::mat(sampleVec)));
+							}
+						}
+					}
+					return out + prevBest;
+				};
+
+				void LearnWeekday(cweeUnitPattern const& mask, cweeUnitPattern const& prevBest) {
+					AUTO ToPredict = (Labels - prevBest).Blur(cweeUnitValues::year(LabelSummary.maxTime - LabelSummary.minTime)() * 365, mask);
+					cweeThreadedList<float>							label_list;
+					cweeThreadedList < cweeThreadedList<float> >	feature_list;
+
+					for (int i = 0; i <= 6; i++) {
+						feature_list.Alloc();
+					}
+
+					{
+						int i; 
+						for (auto& x : (ToPredict + mask).GetKnotSeries()) {
+							if (mask.GetCurrentValue(x.first) > 0) continue;
+							
+							label_list.Append(ToPredict.GetCurrentValue(x.first)());
+
+							for (int i = 0; i <= 6; i++) {
+								feature_list[i].Append(WeekdayEstimate(x.first, i)());
+							}
+						}
+					}
+
+					weekday = cweeMachineLearning::LearnFast(label_list, feature_list, nullptr, 0);
+				};
+				cweeUnitPattern ForecastWeekday(cweeUnitPattern const& prevBest) const {
+					auto out{ cweeUnitPattern(cweeUnitValues::second(), 1) };
+					if (weekday.learned) {
+						AUTO df2Ptr = GetDf2(weekday.svr_results.df2);
+						if (df2Ptr) {
+							AUTO df2 = *df2Ptr;
+							std::vector<float> sampleVec = { 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f };
+
+							auto step{ cweeUnitValues::day(1) };
+							int i;
+							for (cweeUnitValues::second t = LabelSummary.minTime; t < LabelSummary.maxTime; t += step) {
+								for (i = 0; i <= 6; i++) {
+									sampleVec[i] = WeekdayEstimate(t, i)();
+								}
+								out.AddValue(t, df2(dlib::mat(sampleVec)));
+							}
+						}
+					}
+					return out + prevBest;
+				};
+
+				void LearnDaily(cweeUnitPattern const& mask, cweeUnitPattern const& prevBest) {
+					AUTO ToPredict = Labels - prevBest;
+					cweeThreadedList<float>							label_list;
+					cweeThreadedList < cweeThreadedList<float> >	feature_list;
+
+					feature_list.Alloc(); // is weekday
+
+					{
+						int i; cweeUnitValues::unit_value est;
+						auto step{ cweeUnitValues::hour(1) };
+						for (cweeUnitValues::second t = LabelSummary.minTime; t <= LabelSummary.maxTime; t += step) {
+							if (mask.GetCurrentValue(t) > 0) continue;
+
+							label_list.Append(ToPredict.GetCurrentValue(t)());
+
+							est = DailyEstimate(t);
+
+							feature_list[0].Append(est());
+						}
+					}
+
+					daily = cweeMachineLearning::LearnFast(label_list, feature_list, nullptr, 0);
+				};
+				cweeUnitPattern ForecastDaily(cweeUnitPattern const& prevBest) const {
+					auto out{ cweeUnitPattern(cweeUnitValues::second(), 1) };
+					if (daily.learned) {
+						AUTO df2Ptr = GetDf2(daily.svr_results.df2);
+						if (df2Ptr) {
+							AUTO df2 = *df2Ptr;
+							std::vector<float> sampleVec = { 0.0f };
+
+							auto step{ cweeUnitValues::hour(1) };
+							int i;
+							for (cweeUnitValues::second t = LabelSummary.minTime; t <= LabelSummary.maxTime; t += step) {
+								sampleVec[0] = DailyEstimate(t)();
+								out.AddValue(t, df2(dlib::mat(sampleVec)));
+							}
+						}
+					}
+					return out + prevBest;
+				};
+
+			public:
+				cweeUnitValues::second Learn(cweeUnitPattern const& mask) {
+					if (Labels.GetNumValues() <= 2) throw std::runtime_error("Machine learning labels (to be predicted) must have more values for learning.");
+
+					this->LineOfBestFit = Labels.LineOfBestFit(mask);
+					this->LabelSummary = PatternSummary(Labels);
+					if (!LabelSummary.minTime.AreConvertableTypes(cweeUnitValues::second())) throw std::runtime_error("Machine learning labels (to be predicted) X-axis must be a time-type unit (seconds, minutes, etc) convertable to date-times.");
+
+					Stopwatch sw; sw.Start();
+
+					if (hourlyEffect || weekdayEffect || monthlyEffect || annualEffect) {
+						LearnSeasonal(mask, LineOfBestFit);
+						if (hourlyEffect || weekdayEffect || monthlyEffect) {
+							AUTO seasonalFore = ForecastSeasonal(LineOfBestFit);
+							LearnMonthly(mask, seasonalFore);
+
+							if (hourlyEffect || weekdayEffect) {
+								AUTO monthlyFore = ForecastMonthly(seasonalFore);
+								LearnWeekday(mask, monthlyFore);
+
+								if (hourlyEffect) {
+									AUTO weekdayFore = ForecastWeekday(monthlyFore);
+									LearnDaily(mask, weekdayFore);
+								}
+							}
+						}
+					}
+
+					sw.Stop();
+
+					return cweeUnitValues::second(sw.Seconds_Passed());
+				};
+				cweeUnitValues::second Learn() {
+					// Early exit for bad inputs
+					if (Labels.GetNumValues() <= 2) throw std::runtime_error("Machine learning labels (to be predicted) must have more values for learning.");
+
+					// Create summaries
+					LabelSummary = PatternSummary(Labels);
+
+					// Create temporary mask
+					auto mask = cweeUnitPattern(LabelSummary.minTime, 1); {
+						mask.AddValue(LabelSummary.minTime, 0);
+						mask.AddValue(LabelSummary.maxTime, 0);
+					}
+
+					// Perform 'learn'
+					return Learn(mask);
+				};
+
+				cweeUnitPattern Forecast() const {
+					if (hourlyEffect) return ForecastDaily(ForecastWeekday(ForecastMonthly(ForecastSeasonal(LineOfBestFit))));
+					else if (weekdayEffect) return ForecastWeekday(ForecastMonthly(ForecastSeasonal(LineOfBestFit)));
+					else if (monthlyEffect) return ForecastMonthly(ForecastSeasonal(LineOfBestFit));
+					else if (annualEffect) return ForecastSeasonal(LineOfBestFit);
+					else return LineOfBestFit;
+				};
+            };
+
+			lib->add(chaiscript::user_type<PatternLearner>(), "PatternLearner");
+			lib->add(chaiscript::constructor<PatternLearner()>(), "PatternLearner");
+			lib->add(chaiscript::constructor<PatternLearner(const PatternLearner&)>(), "PatternLearner");
+			lib->add(chaiscript::fun([](PatternLearner& a, const PatternLearner& b)->PatternLearner& { a = b; return a; }), "=");
+			lib->add(chaiscript::fun(&PatternLearner::annualEffect), "annualEffect");
+			lib->add(chaiscript::fun(&PatternLearner::monthlyEffect), "monthlyEffect");
+			lib->add(chaiscript::fun(&PatternLearner::weekdayEffect), "weekdayEffect");
+			lib->add(chaiscript::fun(&PatternLearner::hourlyEffect), "hourlyEffect");
+			lib->add(chaiscript::fun(&PatternLearner::Labels), "Labels");
+			
+			lib->AddFunction(, Learn, -> PatternLearner, SINGLE_ARG(
+				PatternLearner learn;
+				learn.Labels = pat;
+				learn.annualEffect = true;
+				learn.monthlyEffect = true;
+				learn.weekdayEffect = true;
+				learn.hourlyEffect = true;
+				learn.Learn();
+				return learn;
+			), cweeUnitPattern const& pat);
+			lib->AddFunction(, Learn, -> PatternLearner, SINGLE_ARG(
+				PatternLearner learn;
+				learn.Labels = pat;
+				learn.annualEffect = true;
+				learn.monthlyEffect = true;
+				learn.weekdayEffect = true;
+				learn.hourlyEffect = true;
+				learn.Learn(mask);
+				return learn;
+			), cweeUnitPattern const& pat, cweeUnitPattern const& mask);
+			lib->AddFunction(, Learn, -> cweeUnitValues::unit_value, return learned.Learn(), PatternLearner& learned);
+			lib->AddFunction(, Learn, -> cweeUnitValues::unit_value, return learned.Learn(mask), PatternLearner& learned, cweeUnitPattern const& mask);
+			lib->AddFunction(, Forecast, -> cweeUnitPattern, return learned.Forecast(), PatternLearner const& learned);
+			
+			AUTO todo = [](cweeUnitPattern const& pat) {
+				AUTO mask{ pat.GetOutlierMask() };
+
+				PatternLearner learn; {
+					learn.Labels = pat;
+					learn.annualEffect = true;
+					learn.monthlyEffect = true;
+					learn.weekdayEffect = true;
+					learn.hourlyEffect = true;
+					learn.Learn(mask);
+				}
+				return cweeUnitPattern::Lerp(learn.Forecast(), pat, mask);				
+			};
+
+			lib->AddFunction(todo, Clean, -> cweeUnitPattern, return todo(pat), cweeUnitPattern const& pat);
+
+#else
+			class PatternLearner {
+			public:
 				bool overfit = false;
 				bool annualEffect = true;
 				bool monthlyEffect = true;
@@ -1358,9 +1185,10 @@ namespace chaiscript {
 						return 0;
 					}
 				};
-				cweeUnitValues::unit_value HourEstimate(cweeUnitValues::unit_value time, int hour) const {
+				cweeUnitValues::unit_value HourEstimate(cweeUnitValues::unit_value time) const {
 					cweeTime t(time);
-					if ((t.tm_hour()) == hour) {
+
+					if (t.tm_hour() > 6 && t.tm_hour() < 18) {
 						return 1;
 					}
 					else {
@@ -1438,10 +1266,18 @@ namespace chaiscript {
 								}
 							}
 							if (hourlyEffect && (cweeUnitValues::hour(LabelSummary.maxTime - LabelSummary.minTime) > cweeUnitValues::hour(24)) && (LabelSummary.minTimestep <= cweeUnitValues::hour(1))) {
-								for (int hour = 0; hour <= 23; hour++) {
+								{ // daytime
 									auto feature_raw = cweeUnitPattern(LabelSummary.minTime, 1);
 									for (cweeTime t = LabelSummary.minTime; t < maxT; t += cweeUnitValues::hour(1)) {
-										feature_raw.AddValue(t, HourEstimate(t, hour));
+										feature_raw.AddValue(t, HourEstimate(t));
+									}
+									feature_raw.RemoveUnnecessaryKnots();
+									features_final.Append(feature_raw);
+								}
+								{ // nighttime
+									auto feature_raw = cweeUnitPattern(LabelSummary.minTime, 1);
+									for (cweeTime t = LabelSummary.minTime; t < maxT; t += cweeUnitValues::hour(1)) {
+										feature_raw.AddValue(t, cweeUnitValues::unit_value(1.0) - HourEstimate(t));
 									}
 									feature_raw.RemoveUnnecessaryKnots();
 									features_final.Append(feature_raw);
@@ -1482,8 +1318,19 @@ namespace chaiscript {
 					// Create a pattern that will be used to determine the "ideal" knot sample points; 
 					cweeUnitPattern samplePointTracker; {
 						if (LabelSummary.minTime.AreConvertableTypes(cweeUnitValues::second())) {
-							AUTO LabelsBlurred = ToPredict.Blur(cweeUnitValues::year(LabelSummary.maxTime - LabelSummary.minTime)() * 52.0 * 7.0, mask);
-							samplePointTracker = LabelsBlurred * features_final[0];
+							AUTO basicTimestep = cweeUnitPattern(LabelSummary.minTime, LabelSummary.minimum);
+							cweeUnitValues::unit_value timestep =
+								hourlyEffect ? cweeUnitValues::hour(1) : (
+									weekdayEffect ? cweeUnitValues::day(1) : (
+										monthlyEffect ? cweeUnitValues::day(7) : (
+											LabelSummary.minTimestep
+										)
+									)
+								);
+							for (cweeUnitValues::unit_value time = LabelSummary.minTime; time <= LabelSummary.maxTime; time += timestep) {
+								basicTimestep.AddValue(time, ToPredict.GetCurrentValue(time));
+							}
+							samplePointTracker = basicTimestep * features_final[0];
 							for (int i = 1; i < features_final.Num(); i++) {
 								cweeUnitPattern samplePointTracker2 = (samplePointTracker * features_final[i]);
 								samplePointTracker.Clear();
@@ -1583,50 +1430,6 @@ namespace chaiscript {
 						}
 					}
 
-#if 0
-					// Learn the hourly effect, if requested
-					considerRemovalIndexes.Clear(); features_final.Clear(); label_list.Clear(); feature_list.Clear();
-					if (hourlyEffect && (cweeUnitValues::hour(LabelSummary.maxTime - LabelSummary.minTime) > cweeUnitValues::hour(24)) && (LabelSummary.minTimestep <= cweeUnitValues::hour(1))) {
-						AUTO toPredict = Labels - Forecast();
-						AUTO labelList = toPredict.GetTimeSeries(LabelSummary.minTime, LabelSummary.maxTime, cweeUnitValues::hour(1));
-						for (int hour = 0; hour <= 23; hour++) {
-							auto feature_raw = cweeUnitPattern(LabelSummary.minTime, 1);
-							for (auto& x : labelList) {
-								feature_raw.AddValue(x.first, HourEstimate(x.first, hour));
-							}
-							feature_raw.RemoveUnnecessaryKnots();
-							features_final.Append(feature_raw);
-						}
-						if (0) {
-							auto feature_raw = cweeUnitPattern(LabelSummary.minTime, LabelSummary.minimum);
-							for (auto& x : labelList) {
-								feature_raw.AddValue(x.first, Forecast(x.first));
-							}
-							feature_raw.RemoveUnnecessaryKnots();
-							this->DLIBSummary = PatternSummary(feature_raw);
-							if (DLIBSummary.maximum != DLIBSummary.minimum) {
-								features_final.Append((feature_raw - DLIBSummary.minimum) / (DLIBSummary.maximum - DLIBSummary.minimum));
-							}
-						}
-
-						for (auto& x : features_final) { feature_list.Alloc(); }
-						int i;
-						for (auto& x : labelList) {
-							if (mask.GetCurrentValue(x.first) > 0) {
-								continue;
-							}
-							label_list.Append(toPredict.GetCurrentValue(x.first)());
-							i = 0;
-							for (auto& y : features_final) {
-								feature_list[i++].Append(y.GetCurrentValue(x.first)());
-							}
-						}
-					
-						std::pair<vec2, vec2> fit;
-						this->DLIB_Hourly = cweeMachineLearning::Learn(label_list, feature_list, &fit, 1.0);	
-					}
-#endif
-
 					return cweeUnitValues::second(sw.Seconds_Passed());
 				};
 				cweeUnitValues::second Learn() {
@@ -1646,81 +1449,12 @@ namespace chaiscript {
 					return Learn(mask);
 				};
 
-				cweeUnitValues::unit_value Forecast(cweeUnitValues::unit_value const& time) const {
-					cweeUnitValues::unit_value out = LabelsAvg.GetCurrentValue(time);
-					if (DLIB.learned) {
-						AUTO df2Ptr = GetDf2(DLIB.svr_results.df2);
-						if (df2Ptr) {
-							AUTO df2 = *df2Ptr;
-
-							std::vector<float> sample; {
-								if (overfit) {
-									sample.push_back(OverfitEstimate(time)());
-								}
-								if (LabelSummary.minTime.AreConvertableTypes(cweeUnitValues::second())) { // X-units are time or unitless
-									if (annualEffect) {
-										sample.push_back(AnnualEstimate(time)());
-									}
-									if (monthlyEffect && (cweeUnitValues::month(LabelSummary.maxTime - LabelSummary.minTime) > cweeUnitValues::month(1))) {
-										for (int month = 1; month <= 12; month++) {
-											sample.push_back(MonthEstimate(time, month)());
-										}
-									}
-									if (weekdayEffect && (cweeUnitValues::day(LabelSummary.maxTime - LabelSummary.minTime) > cweeUnitValues::day(7)) && (LabelSummary.minTimestep <= cweeUnitValues::day(7))) {
-										{ // weekdays
-											sample.push_back(WeekdayEstimate(time)());
-										}
-										{ // weekends
-											sample.push_back((cweeUnitValues::unit_value(1.0) - WeekdayEstimate(time))());
-										}
-									}
-									if (hourlyEffect && (cweeUnitValues::hour(LabelSummary.maxTime - LabelSummary.minTime) > cweeUnitValues::hour(24)) && (LabelSummary.minTimestep <= cweeUnitValues::hour(1))) {
-										for (int hour = 0; hour <= 23; hour++) {
-											sample.push_back(HourEstimate(time, hour)());
-										}
-									}
-								}
-								for (int i = 0; i < AdditionalFeatures.Num(); i++) {
-									auto& AdditionalFeature = AdditionalFeatures[i];
-									auto& summary = AdditionalFeatureSummary[i];
-									if (summary.include) {
-										sample.push_back(((AdditionalFeature.GetCurrentValue(time) - summary.minimum) / (summary.maximum - summary.minimum))() /* 0-1 range */);
-									}
-								}
-							}
-							
-							out += df2(dlib::mat(sample));
-						}
-					}
-					if (0 && DLIB_Hourly.learned) {
-						AUTO df2Ptr = GetDf2(DLIB_Hourly.svr_results.df2);
-						if (df2Ptr) {
-							AUTO df2 = *df2Ptr;
-
-							std::vector<float> sample; {
-								if (LabelSummary.minTime.AreConvertableTypes(cweeUnitValues::second())) { // X-units are time or unitless
-									if (hourlyEffect && (cweeUnitValues::hour(LabelSummary.maxTime - LabelSummary.minTime) > cweeUnitValues::hour(24)) && (LabelSummary.minTimestep <= cweeUnitValues::hour(1))) {
-										for (int hour = 0; hour <= 23; hour++) {
-											sample.push_back(HourEstimate(time, hour)());
-										}
-									}
-									if (0) {
-										if (this->DLIBSummary.maximum != this->DLIBSummary.minimum) {
-											sample.push_back(((out - DLIBSummary.minimum) / (DLIBSummary.maximum - DLIBSummary.minimum))());
-										}
-									}
-								}
-							}
-							
-							out += df2(dlib::mat(sample));
-						}
-					}
-					return out;
-				};
 				cweeUnitPattern Forecast(cweeUnitValues::unit_value time1, cweeUnitValues::unit_value time2, cweeUnitValues::unit_value timestep) const {
 					auto out{ cweeUnitPattern(LabelSummary.minTime, LabelSummary.average) };
-
+					std::vector<float> prevSample;
 					std::vector<float> sample;
+
+					cweeUnitValues::unit_value prevValue;
 					cweeUnitValues::unit_value value;
 					int i; int month; int hour;
 
@@ -1730,7 +1464,7 @@ namespace chaiscript {
 							AUTO df2 = *df2Ptr;
 
 							value = LabelsAvg.GetCurrentValue(0);
-							for (cweeUnitValues::unit_value time = time1; time <= time2; time += timestep) {
+							for (cweeUnitValues::unit_value time = time1; time <= time2; time += timestep) {								
 								sample.resize(0);
 								{
 									if (overfit) {
@@ -1754,8 +1488,11 @@ namespace chaiscript {
 											}
 										}
 										if (hourlyEffect && (cweeUnitValues::hour(LabelSummary.maxTime - LabelSummary.minTime) > cweeUnitValues::hour(24)) && (LabelSummary.minTimestep <= cweeUnitValues::hour(1))) {
-											for (hour = 0; hour <= 23; hour++) {
-												sample.push_back(HourEstimate(time, hour)());
+											{ // daytime
+												sample.push_back(HourEstimate(time)());
+											}
+											{ // nightime
+												sample.push_back((cweeUnitValues::unit_value(1.0) - HourEstimate(time))());
 											}
 										}
 									}
@@ -1768,15 +1505,24 @@ namespace chaiscript {
 									}
 								}
 
-								value = df2(dlib::mat(sample));								
+								if (prevSample != sample) {
+									prevSample = sample;
+									value = df2(dlib::mat(sample));
+								}
 								out.AddValue(time, value + LabelsAvg.GetCurrentValue(time));
+								prevValue = value;
 							}
 						}
 					}
 					return out;
 				};
 				cweeUnitPattern Forecast() const {
-					return Forecast(LabelSummary.minTime, LabelSummary.maxTime, LabelSummary.minTimestep);
+					if (LabelSummary.minTime.AreConvertableTypes(cweeUnitValues::second())) {
+						return Forecast(LabelSummary.minTime, LabelSummary.maxTime, hourlyEffect ? cweeUnitValues::hour(1) : (weekdayEffect ? cweeUnitValues::day(1) : (monthlyEffect ? cweeUnitValues::day(7) : LabelSummary.minTimestep)));
+					}
+					else {
+						return Forecast(LabelSummary.minTime, LabelSummary.maxTime, LabelSummary.minTimestep);
+					}					
 				};
             };
 
@@ -1796,7 +1542,8 @@ namespace chaiscript {
 			lib->AddFunction(, Learn, -> PatternLearner, SINGLE_ARG(
 				PatternLearner learn;
 				learn.Labels = pat;
-				learn.annualEffect = true;
+				learn.overfit = false;
+				learn.annualEffect = false;
 				learn.monthlyEffect = true;
 				learn.weekdayEffect = true;
 				learn.hourlyEffect = false;
@@ -1806,7 +1553,8 @@ namespace chaiscript {
 			lib->AddFunction(, Learn, -> PatternLearner, SINGLE_ARG(
 				PatternLearner learn;
 				learn.Labels = pat;
-				learn.annualEffect = true;
+				learn.overfit = false;
+				learn.annualEffect = false;
 				learn.monthlyEffect = true;
 				learn.weekdayEffect = true;
 				learn.hourlyEffect = false;
@@ -1820,7 +1568,8 @@ namespace chaiscript {
 			lib->AddFunction(, Learn, -> PatternLearner, SINGLE_ARG(
 				PatternLearner learn;
 				learn.Labels = pat;
-				learn.annualEffect = true;
+				learn.overfit = false;
+				learn.annualEffect = false;
 				learn.monthlyEffect = true;
 				learn.weekdayEffect = true;
 				learn.hourlyEffect = false;
@@ -1834,7 +1583,8 @@ namespace chaiscript {
 			lib->AddFunction(, Learn, -> PatternLearner, SINGLE_ARG(
 				PatternLearner learn;
 				learn.Labels = pat;
-				learn.annualEffect = true;
+				learn.overfit = false;
+				learn.annualEffect = false;
 				learn.monthlyEffect = true;
 				learn.weekdayEffect = true;
 				learn.hourlyEffect = false;
@@ -1849,20 +1599,12 @@ namespace chaiscript {
 			lib->AddFunction(, Learn, -> cweeUnitValues::unit_value, return learned.Learn(mask), PatternLearner& learned, cweeUnitPattern const& mask);
 			lib->AddFunction(, Forecast, -> cweeUnitPattern, return learned.Forecast(), PatternLearner const& learned);
 			lib->AddFunction(, Forecast, -> cweeUnitPattern, return learned.Forecast(time1, time2, timestep), PatternLearner const& learned, cweeUnitValues::unit_value const& time1, cweeUnitValues::unit_value const& time2, cweeUnitValues::unit_value const& timestep);
-			lib->AddFunction(, Forecast, -> cweeUnitValues::unit_value, return learned.Forecast(sampleTime), PatternLearner const& learned, cweeUnitValues::unit_value const& sampleTime);
 			
 			AUTO todo2 = [](cweeUnitPattern const& pat, std::vector<Boxed_Value> const& features) {
 				AUTO mask{ pat.GetOutlierMask() };
-				AUTO blurred{ cweeUnitPattern(pat.X_Type(), pat.Y_Type()) }; {
-					if (pat.X_Type().AreConvertableTypes(cweeUnitValues::year())) {
-						blurred = pat.Blur((cweeUnitValues::year(pat.GetMaxTime() - pat.GetMinTime()))() * 52.0 * 7.0, mask);
-					}
-					else {
-						blurred = pat.Blur(6.0 * 52.0 * 7.0, mask);
-					}
-				}
 				PatternLearner learn; {
-					learn.Labels = blurred;
+					learn.Labels = pat;
+					learn.overfit = false;
 					learn.annualEffect = false;
 					learn.monthlyEffect = true;
 					learn.weekdayEffect = true;
@@ -1870,28 +1612,19 @@ namespace chaiscript {
 					for (auto& x : features) { auto* p = chaiscript::boxed_cast<cweeUnitPattern*>(x); if (p) learn.AdditionalFeatures.Append(*p); }
 					learn.Learn(mask, cweeUnitValues::second(5));
 				}
-				if (learn.Learned()) { //  && learn.R > 0.45
-					AUTO ML{ learn.Forecast() };
-					//if (ML.Collinear(blurred, mask)) {
-						return cweeUnitPattern::Lerp(ML, pat, mask);
-					//}
-				}
-				{
-					PatternLearner learn2; {
-						learn2.Labels = blurred;
-						learn2.overfit = true;
-						learn2.annualEffect = false;
-						learn2.monthlyEffect = false;
-						learn2.weekdayEffect = false;
-						learn2.hourlyEffect = false;
-						for (auto& x : features) { auto* p = chaiscript::boxed_cast<cweeUnitPattern*>(x); if (p) learn2.AdditionalFeatures.Append(*p); }
-						learn2.Learn(mask, cweeUnitValues::second(5));
+				if (learn.Learned()) { 
+					return cweeUnitPattern::Lerp(learn.Forecast(), pat, mask);
+				}else {
+					AUTO blurred{ cweeUnitPattern(pat.X_Type(), pat.Y_Type()) }; {
+						if (pat.X_Type().AreConvertableTypes(cweeUnitValues::year())) {
+							blurred = pat.Blur((cweeUnitValues::year(pat.GetMaxTime() - pat.GetMinTime()))() * 52.0 * 7.0, mask);
+						}
+						else {
+							blurred = pat.Blur(6.0 * 52.0 * 7.0, mask);
+						}
 					}
-					if (learn2.Learned()) {
-						return cweeUnitPattern::Lerp(learn2.Forecast(), pat, mask);
-					}
+					return cweeUnitPattern::Lerp(blurred, pat, mask);
 				}
-				return cweeUnitPattern::Lerp(blurred, pat, mask);
 			};
 
 			lib->AddFunction(todo2, Clean, -> cweeUnitPattern, return todo2(pat, features), cweeUnitPattern const& pat, std::vector<Boxed_Value> const& features);
@@ -1902,447 +1635,34 @@ namespace chaiscript {
 				PatternLearner learn; {
 					learn.Labels = pat;
 					learn.overfit = false;
-					learn.annualEffect = true;
+					learn.annualEffect = false;
 					learn.monthlyEffect = true;
 					learn.weekdayEffect = true;
-					learn.hourlyEffect = true;
+					learn.hourlyEffect = false;
 					learn.Learn(mask, cweeUnitValues::second(5));
 				}
-				if (learn.Learned()) { //  && learn.R > 0.45
-					AUTO ML{ learn.Forecast() };
-					//if (ML.Collinear(blurred, mask)) {
-						return cweeUnitPattern::Lerp(ML, pat, mask);
-					//}
+				if (learn.Learned()) {
+					return cweeUnitPattern::Lerp(learn.Forecast(), pat, mask);
 				}
-				//{
-				//	PatternLearner learn2; {
-				//		learn2.Labels = blurred;
-				//		learn2.overfit = true;
-				//		learn2.annualEffect = false;
-				//		learn2.monthlyEffect = false;
-				//		learn2.weekdayEffect = false;
-				//		learn2.hourlyEffect = false;
-				//		learn2.Learn(mask, cweeUnitValues::second(5));
-				//	}
-				//	if (learn2.Learned()) {
-				//		return cweeUnitPattern::Lerp(learn2.Forecast(), pat, mask);
-				//	}
-				//}
-
-				AUTO blurred{ cweeUnitPattern(pat.X_Type(), pat.Y_Type()) }; {
-					if (pat.X_Type().AreConvertableTypes(cweeUnitValues::year())) {
-						blurred = pat.Blur((cweeUnitValues::year(pat.GetMaxTime() - pat.GetMinTime()))() * 52.0 * 7.0, mask);
+				else {
+					AUTO blurred{ cweeUnitPattern(pat.X_Type(), pat.Y_Type()) }; {
+						if (pat.X_Type().AreConvertableTypes(cweeUnitValues::year())) {
+							blurred = pat.Blur((cweeUnitValues::year(pat.GetMaxTime() - pat.GetMinTime()))() * 52.0 * 7.0, mask);
+						}
+						else {
+							blurred = pat.Blur(6.0 * 52.0 * 7.0, mask);
+						}
 					}
-					else {
-						blurred = pat.Blur(6.0 * 52.0 * 7.0, mask);
-					}
+					return cweeUnitPattern::Lerp(blurred, pat, mask);
 				}
-
-				return cweeUnitPattern::Lerp(blurred, pat, mask);
 			};
 
 			lib->AddFunction(todo, Clean, -> cweeUnitPattern, return todo(pat), cweeUnitPattern const& pat);
 
-#else
-			class PatternLearner {
-			public:
-				cweeAny DLIB;
-				Boxed_Value Features;
-				cweeUnitValues::unit_value Units;
-				std::vector<Boxed_Value> Fit;
-				double R;
-
-				cweeUnitPattern Forecast() const {
-					cweeUnitPattern out;
-					std::vector<Boxed_Value>* features = chaiscript::boxed_cast<std::vector<Boxed_Value>*>(Features);
-					if (features) {
-						cweeUnitPattern* pat = chaiscript::boxed_cast<cweeUnitPattern*>(features->operator[](0));
-						if (pat) {
-							out = cweeUnitPattern(pat->X_Type(), Units);
-						}
-					}
-					int i = 0;
-					for (auto& xPtr : *features) {
-						cweeUnitPattern* x = chaiscript::boxed_cast<cweeUnitPattern*>(xPtr);
-						if (x) {
-							double* FitRatio = chaiscript::boxed_cast<double*>(Fit[++i]);
-							if (FitRatio) {
-								out += ((*x) * (*FitRatio));
-							}
-						}
-					}
-					double* FitRatioFinal = chaiscript::boxed_cast<double*>(Fit[0]);
-					if (FitRatioFinal) out += *FitRatioFinal;
-					
-					return out;
-				};
-				cweeUnitPattern ForecastDLib() const {
-					MachineLearning_Results& ML_param = DLIB.cast();
-					AUTO df2 = *GetDf2(ML_param.svr_results.df2);
-					
-					cweeUnitPattern out;
-					cweeUnitValues::unit_value minT = 0, maxT = 0, step = 1;
-					std::vector<Boxed_Value>* features = chaiscript::boxed_cast<std::vector<Boxed_Value>*>(Features);
-					if (features) {
-						cweeUnitPattern* pat = chaiscript::boxed_cast<cweeUnitPattern*>(features->operator[](0));
-						if (pat) {
-							out = cweeUnitPattern(pat->X_Type(), Units);
-							minT = pat->GetMinTime();
-							maxT = pat->GetMaxTime();
-							step = pat->GetMinimumTimeStep();
-						}
-					}
-					
-					std::vector<float> sample;
-					AUTO type = out.Y_Type();
-					for (cweeUnitValues::unit_value t = minT; t <= maxT; t += step) {
-						sample.clear();
-						for (auto& xPtr : *features) {
-							cweeUnitPattern* x = chaiscript::boxed_cast<cweeUnitPattern*>(xPtr);
-							if (x) {
-								sample.push_back(x->GetCurrentValue(t)());
-							}
-						}
-						out.AddValue(t, (type = df2(dlib::mat(sample))));
-					}
-
-					return out;
-				};
-			};
-			lib->add(chaiscript::user_type<PatternLearner>(), "PatternLearner");
-			lib->add(chaiscript::constructor<PatternLearner()>(), "PatternLearner");
-			lib->add(chaiscript::constructor<PatternLearner(const PatternLearner&)>(), "PatternLearner");
-			lib->add(chaiscript::fun([](PatternLearner& a, const PatternLearner& b)->PatternLearner& { a = b; return a; }), "=");
-			lib->add(chaiscript::fun(&PatternLearner::Features), "Features");
-			lib->add(chaiscript::fun(&PatternLearner::Units), "Units");
-			lib->add(chaiscript::fun(&PatternLearner::Fit), "Fit");
-			lib->add(chaiscript::fun(&PatternLearner::R), "R");
-			lib->add(chaiscript::fun(&PatternLearner::Forecast), "Forecast");
-
-			auto LearnPatternsDLib = [](cweeUnitPattern const& labels, std::vector<Boxed_Value> const& features) {
-				if (features.size() <= 0) { throw std::runtime_error("Features used for machine learning must include at least one (and nothing other than) Pattern objects."); }
-				AUTO Range{ labels.GetMaxValue() - labels.GetMinValue() };
-				AUTO avg{ labels.GetAvgValue() };
-				if (avg < 0) { avg *= -1; }
-				std::vector<double> minVector{ { -1.0 * cweeUnitValues::math::abs(avg + Range)() } };
-				std::vector<double> maxVector{ { cweeUnitValues::math::abs(avg + Range)() } };
-				cweeList<cweeUnitPattern> features_final;
-				bool shouldSkip;
-				for (auto& x : features) {
-					AUTO VPtr{ chaiscript::boxed_cast<cweeUnitPattern*>(x) };
-					if (VPtr) {
-						AUTO V{ cweeUnitPattern(*VPtr) };
-
-						AUTO rangeV{ V.GetMaxValue() - V.GetMinValue() };
-						V -= V.GetMinValue();
-						V /= rangeV;
-						V.RemoveUnnecessaryKnots();
-
-						// test for colinearity;
-						shouldSkip = false;
-						for (auto& y : features_final) {
-							if (V.Collinear(y)) {
-								shouldSkip = true;
-								break;
-							}
-						}
-						if (shouldSkip) { continue; }
-
-						minVector.push_back(-1.0 * cweeUnitValues::math::abs(avg + Range)());
-						maxVector.push_back(cweeUnitValues::math::abs(avg + Range)());
-						features_final.push_back(V);
-					}
-					else {
-						throw std::runtime_error("Features used for machine learning must include at least one (and nothing other than) Pattern objects.");
-					}
-				}
-
-				auto maxT = labels.GetMaxTime();
-				auto minT = labels.GetMinTime();
-
-				for (auto& x : features_final) {
-					maxT = cweeUnitValues::math::min(maxT, x.GetMaxTime());
-					minT = cweeUnitValues::math::max(minT, x.GetMinTime());
-				}
-
-				cweeUnitValues::second timestep = cweeUnitValues::math::max(labels.GetMinimumTimeStep(), (maxT - minT) / 5000);
-
-				double numSteps = ((maxT - minT) / timestep)();
-
-				cweeThreadedList<float>							label_list;
-				cweeThreadedList < cweeThreadedList<float> >	feature_list;
-
-#if 0
-				{
-					AUTO labels_blurred = labels.Blur(numSteps);
-					cweeThreadedList < cweeUnitPattern > features_blurred;
-					for (auto& x : features_final) {
-						features_blurred.Append(x.Blur(numSteps));
-						feature_list.Alloc();
-					}
-
-					int i;
-					for (cweeUnitValues::unit_value t = minT; t <= maxT; t += timestep) {
-						label_list.Append(labels_blurred.GetCurrentValue(t)());
-						i = 0;
-						for (auto& x : features_blurred) {
-							feature_list[i++].Append(x.GetCurrentValue(t)());
-						}
-					}
-				}
-#else
-				{
-					for (auto& x : features_final) {
-						feature_list.Alloc();
-					}
-
-					int i;
-					for (auto& x : labels.GetTimeSeries(minT, maxT, timestep)) {
-						label_list.Append(x.second());
-						i = 0;
-						for (auto& y : features_final) {
-							feature_list[i++].Append(y.GetCurrentValue(x.first)());
-						}
-					}
-				}
-#endif
-				double R_SQR_PERF = 0;
-				
-				std::vector<int> includeList_Best(feature_list.Num(), 1);
-
-				std::pair<vec2, vec2> fit;
-				MachineLearning_Results ML_param = cweeMachineLearning::Learn(label_list, feature_list, &fit, 10);
-				R_SQR_PERF = fit.second.x;
-
-				while (true) {
-					bool anyImprovement = false;
-					int tryRemoveWho = 0;
-					for (int removeWho = 0; removeWho < feature_list.Num(); removeWho++) {
-						std::vector<int> includeList = includeList_Best;
-						includeList[removeWho] = 0;
-
-						cweeThreadedList < cweeThreadedList<float> >	feature_list2;
-						for (int i = 0; i < feature_list.Num(); i++) {
-							if (includeList[i] > 0) {
-								feature_list2.push_back(feature_list[i]);
-							}
-						}
-						ML_param = cweeMachineLearning::LearnFast(label_list, feature_list2, &fit, 10);
-						if (R_SQR_PERF <= fit.second.x) {
-							R_SQR_PERF = fit.second.x;
-							includeList_Best = includeList;
-							anyImprovement = true;
-						}
-					}
-					if (!anyImprovement) break;
-				}
-
-				for (int i = includeList_Best.size() - 1; i >= 0; i--) {
-					if (includeList_Best[i] <= 0) {
-						feature_list.RemoveIndex(i);
-						features_final.RemoveIndex(i);
-					}
-				}
-				
-				ML_param = cweeMachineLearning::Learn(label_list, feature_list, &fit, 0.05);
-
-				AUTO ptr = GetDf2(ML_param.svr_results.df2);
-
-				PatternLearner out;
-				out.DLIB = ML_param;
-				out.Fit.push_back(var((double)(ptr->b * -1)));
-				for (auto& x : ptr->alpha) {
-					out.Fit.push_back(var((double)(x)));
-				}
-				std::vector<Boxed_Value> FeaturesBV; for (auto& x : features_final) { FeaturesBV.push_back(var((cweeUnitPattern)x)); }; out.Features = var(std::move(FeaturesBV));
-				out.Units = avg;
-				out.R = labels.R_Squared(out.ForecastDLib())();
-
-				return out;
-			};
-
-
-			auto LearnPatterns = [](cweeUnitPattern const& labels, std::vector<Boxed_Value> const& features)->PatternLearner {
-				if (features.size() <= 0) {
-					throw std::runtime_error("Features used for machine learning must include at least one (and nothing other than) Pattern objects.");
-				}
-
-				AUTO Label{ cweeUnitPattern(labels) };
-				Label.RemoveUnnecessaryKnots();
-
-				AUTO Range{ Label.GetMaxValue() - Label.GetMinValue() };
-
-				AUTO avg{ Label.GetAvgValue() };
-				if (avg < 0) { avg *= -1; }
-
-				std::vector<double> minVector{ { -1.0 * cweeUnitValues::math::abs(avg + Range)() } };
-				std::vector<double> maxVector{ { cweeUnitValues::math::abs(avg + Range)() } };
-				std::vector<cweeUnitPattern> features_final;
-				bool shouldSkip;
-				for (auto& x : features) {
-					AUTO VPtr{ chaiscript::boxed_cast<cweeUnitPattern*>(x) };
-					if (VPtr) {
-						AUTO V{ cweeUnitPattern(*VPtr) };
-
-						AUTO rangeV{ V.GetMaxValue() - V.GetMinValue() };
-						V -= V.GetMinValue();
-						V /= rangeV;
-						V.RemoveUnnecessaryKnots();
-
-
-						// test for colinearity;
-						shouldSkip = false;
-						for (auto& y : features_final) {
-							if (V.Collinear(y)) {
-								shouldSkip = true;
-								break;
-							}
-						}
-						if (shouldSkip) { continue; }
-
-						minVector.push_back(-1.0 * cweeUnitValues::math::abs(avg + Range)());
-						maxVector.push_back(cweeUnitValues::math::abs(avg + Range)());
-						features_final.push_back(V);
-					}
-					else {
-						throw std::runtime_error("Features used for machine learning must include at least one (and nothing other than) Pattern objects.");
-					}
-				}
-
-				auto maxT = Label.GetMaxTime();
-				auto minT = Label.GetMinTime();
-				AUTO labelIntegration{ Label.RombergIntegral(minT, maxT) };
-
-				double N_steps = cweeMath::max(10, Label.GetNumValues());
-				AUTO realLabels = Label.GetValueTimeSeries(minT, maxT, (maxT - minT) * (1.0 / N_steps));
-
-				AUTO GetRSQR = [&labelIntegration, &features_final, &Label, &minT, &maxT, &avg, &N_steps, &realLabels](std::vector<double> const& params)->double {
-					AUTO v{ cweeUnitPattern(minT, avg) };
-					int i = 0;
-					std::vector<std::pair<cweeUnitPattern*, double>> features_ref; {
-						for (i = 0; i < features_final.size(); i++) { features_ref.push_back({ &features_final[i] , params[i + 1] }); };
-						std::shuffle(features_ref.begin(), features_ref.end(), std::mt19937{ std::random_device{}() }); // order of addition does not matter, so the shuffle helps reduce competition between threads.
-					}
-
-					for (auto& feature : features_ref) { v += *feature.first * feature.second; } 
-					v += params[0];
-					v *= (labelIntegration / v.RombergIntegral(minT, maxT));
-
-					// return Label.R_Squared(v, minT, maxT)() * 1000000.0; 
-					return v.R_Squared(N_steps, realLabels, minT, maxT)() * 1000000.0;
-				};
-
-				AUTO bestFit = ChaiscriptOptimizations::OptimizeFunction_Internal(false, GetRSQR, minVector, maxVector, "Genetic");
-
-				PatternLearner out;
-				for (auto& x : bestFit) { out.Fit.push_back(var((double)x)); };
-				std::vector<Boxed_Value> FeaturesBV; for (auto& x : features_final) { FeaturesBV.push_back(var((cweeUnitPattern)x)); }; out.Features = var(std::move(FeaturesBV));
-				out.Units = avg;
-				out.R = GetRSQR(bestFit) / 1000000.0;
-
-				// adjust the fit by multiplying all the fit parameters by the ratio
-				AUTO ratio{ labelIntegration / (out.Forecast().RombergIntegral()) };
-				for (auto& x : out.Fit) {
-					auto* xBV = chaiscript::boxed_cast<double*>(x);
-					if (xBV) {
-						*xBV *= ratio();
-					}					
-				}
-				return out;
-			};
-			lib->add(chaiscript::fun(LearnPatterns), "Learn");
-			lib->add(chaiscript::fun(LearnPatternsDLib), "LearnDLib");
-			lib->add(chaiscript::fun(&PatternLearner::ForecastDLib), "ForecastDLib");
-
-			lib->eval(
-R"chaiscript(
-			def Learn(Pattern labels, Vector Features, bool AddTimeFeatures) {
-				Vector features; for (int i = 0; i < Features.size; ++i){ features.push_back(Features[i]); };			
-				if (AddTimeFeatures) {
-					if (1){ // month-specific factors
-						for (int i = 0; i < 12; ++i){ 
-							var& x = Pattern(1_s, 1);
-							x.SetInterpolationType("LEFT");
-							cweeTime minT = labels.GetMinTime.second;
-							cweeTime maxT = labels.GetMaxTime.second;
-							for (cweeTime t = minT; t <= maxT; t += 1_d){
-								x.AddValue(t, t.tm_mon == i ? 1 : 0);
-							}	
-							x.RemoveUnnecessaryKnots();
-							features.push_back(x);
-						}
-					}
-					if (1) { // over-time gradual growth or decline
-						var& x = Pattern(1_s, 1);
-						x.SetInterpolationType("LINEAR");		
-						cweeTime minT = labels.GetMinTime.second;
-						cweeTime maxT = labels.GetMaxTime.second;						
-						for (cweeTime t = minT; t <= maxT; t += ((maxT - minT) / 10)){
-							x.AddValue(t.second, (t.second - minT).double);
-						}
-						features.push_back(x);
-					}
-				}					
-				return Learn(labels, features);
-			};
-			def Learn(Pattern labels, bool AddTimeFeatures) {				
-				return Learn(labels, Vector(), AddTimeFeatures);
-			};
-			def Learn(Pattern labels) {				
-				return Learn(labels, Vector(), true);
-			};
-			def PatternLearner::Forecast(value time) {
-				double out;
-				int i = 0;
-				var& fit = this.Fit;
-				for (x : this.Features){
-					out += double(x.GetCurrentValue(time) * fit[++i]);
-				}
-				out += fit[0];
-				value x = this.Units;
-				x = out;
-				return x;
-			};
-
-            def LearnDLib(Pattern labels, Vector Features, bool AddTimeFeatures) {
-				Vector features; for (int i = 0; i < Features.size; ++i){ features.push_back(Features[i]); };			
-				if (AddTimeFeatures) {
-					if (1){ // month-specific factors
-						for (int i = 0; i < 12; ++i){ 
-							var& x = Pattern(1_s, 1);
-							x.SetInterpolationType("LEFT");
-							cweeTime minT = labels.GetMinTime.second;
-							cweeTime maxT = labels.GetMaxTime.second;
-							for (cweeTime t = minT; t <= maxT; t += 1_d){
-								x.AddValue(t, t.tm_mon == i ? 1 : 0);
-							}	
-							x.RemoveUnnecessaryKnots();
-							features.push_back(x);
-						}
-					}
-					if (1) { // over-time gradual growth or decline
-						var& x = Pattern(1_s, 1);
-						x.SetInterpolationType("LINEAR");		
-						cweeTime minT = labels.GetMinTime.second;
-						cweeTime maxT = labels.GetMaxTime.second;						
-						for (cweeTime t = minT; t <= maxT; t += ((maxT - minT) / 10)){
-							x.AddValue(t.second, (t.second - minT).double);
-						}
-						features.push_back(x);
-					}
-				}					
-				return LearnDLib(labels, features);
-			};
-			def LearnDLib(Pattern labels, bool AddTimeFeatures) {				
-				return LearnDLib(labels, Vector(), AddTimeFeatures);
-			};
-			def LearnDLib(Pattern labels) {				
-				return LearnDLib(labels, Vector(), true);
-			};
 
 
 
-)chaiscript");
+
 #endif
 			return lib;
 		};

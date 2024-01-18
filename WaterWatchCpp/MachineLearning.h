@@ -40,9 +40,7 @@ public:
 	/* values to predict in the future; (i.e. water usage) */
 	cweeList<float> labels;
 	/* Gamma for the fit function */
-	float gamma = 0.1f;
-	/* Constant for the fit function */
-	float c = 1.0f;
+	float gamma = 1.0f;
 	/* Number of Features */
 	int NumFeatures() const { return features.Num(); };
 	/* Minimum number of Observations */
@@ -62,9 +60,6 @@ public:
 	MachineLearning_SVR_Results(MachineLearning_SVR_Results&&) = default;
 	MachineLearning_SVR_Results& operator=(MachineLearning_SVR_Results const&) = default;
 	MachineLearning_SVR_Results& operator=(MachineLearning_SVR_Results&&) = default;
-
-	cweeStr Serialize();
-	void Deserialize(cweeStr& in);
 };
 class MachineLearning_Results {
 public:
@@ -77,9 +72,6 @@ public:
 	MachineLearning_Results(MachineLearning_Results&&) = default;
 	MachineLearning_Results& operator=(MachineLearning_Results const&) = default;
 	MachineLearning_Results& operator=(MachineLearning_Results&&) = default;
-
-	cweeStr Serialize();
-	void Deserialize(cweeStr& in);
 };
 class MachineLearning_Math {
 public:
@@ -143,21 +135,6 @@ public:
 	public:
 		int numIterationsFailedImprovement = 0;
 	};
-
-	static cweeLearnedParams Learn_Opt(cweeSharedPtr<cweeThreadedList<float>> trueLabels, cweeSharedPtr<cweeThreadedList<cweeThreadedList<float>>> trueFeatures);
-	static float Forecast_Opt(const cweeLearnedParams& out, const cweeThreadedList<float>& features);
-	static cweeThreadedList<float> Forecast_Opt(const cweeLearnedParams& out, const cweeThreadedList<cweeThreadedList<float>>& features);
-
-public:
-	class dlibLearnedParams {
-	public:
-		cweeThreadedList< SummarizeFeature > featureSummaries;
-		SummarizeFeature labelSummary;
-		MachineLearning_SVR_Results fit;
-	};
-	static dlibLearnedParams Learn_Dlib(cweeThreadedList<float> const& trueLabels, cweeThreadedList<cweeThreadedList<float>> const& trueFeatures);
-	static float Forecast_Dlib(const dlibLearnedParams& out, const cweeThreadedList<float>& features);
-	static cweeThreadedList<float> Forecast_Dlib(const dlibLearnedParams& out, const cweeThreadedList<cweeThreadedList<float>>& features);
 
 public: // Public Interface for Generalized Machine Learning
 	/*!
