@@ -165,7 +165,7 @@
       <UseLibraryDependencyInputs>true</UseLibraryDependencyInputs>
       <LinkLibraryDependencies>true</LinkLibraryDependencies>
     </ProjectReference>
-    <PreBuildEvent> 
+    <PreBuildEvent>
       <Command>xcopy /y /d "$(SolutionDir)$(Platform)\$(Configuration)\WaterWatch_Win32_DLL\WaterWatch_Win32_DLL.lib" "$(OutDir)"
 	xcopy /y /d "$(SolutionDir)epanet\libmysql.dll" "$(OutDir)"
 	xcopy /y /d "$(SolutionDir)epanet\nanodbc.lib" "$(OutDir)"
@@ -278,6 +278,9 @@
     </ProjectReference>
     <ProjectReference Include="..\WindowsPlatformTools\WindowsPlatformTools.vcxproj">
       <Project>{6d90b501-45bf-4777-8ee1-be7f74a8d6d1}</Project>
+    </ProjectReference>
+    <ProjectReference Include="..\WordInterop\WordInterop.vcxproj">
+      <Project>{dc865d27-43be-4d4f-9339-17cd5248c7f6}</Project>
     </ProjectReference>
   </ItemGroup>
   <ItemGroup>

@@ -22,6 +22,7 @@ to maintain a single distribution point for the source code.
 #include "WaterWatch_Module_P4.h"
 #include "../GDAL/GDAL.h"
 #include "../ExcelInterop/Wrapper.h"
+#include "../WordInterop/Wrapper.h"
 #include "MachineLearning.h"
 #include "odbc.h"
 
@@ -40,6 +41,7 @@ namespace chaiscript {
                 chaiscript::WaterWatch_Lib::library_EPAnet(),
                 chaiscript::WaterWatch_Lib::library_4(),
                 chaiscript::WaterWatch_Lib::Excel_library(),
+                chaiscript::WaterWatch_Lib::MSWord_library(),
                 chaiscript::WaterWatch_Lib::GDAL_library(),
                 chaiscript::WaterWatch_Lib::MachineLearning_Library()                
             }

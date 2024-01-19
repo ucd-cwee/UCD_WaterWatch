@@ -19,6 +19,7 @@ TO-DO; Add encryptio and unencryption leveraging password protection
 #include <sstream>
 #include "Precompiled.h"
 #include "Strings.h"
+#include "SharedPtr.h"
 
 #ifndef ZLIB_H
 #define ZLIB_H
@@ -3569,7 +3570,42 @@ public:
 
 	// Stream operator for dumping data from an input stream to the 
 	// currently open zip entry.
-	zipper& operator<<(const char* content);
+	zipper& operator<<(const char* content) {
+		std::string is(content);
+		std::istringstream iss(is);
+
+		int err = ZIP_OK;
+		char buf[ziblib_BUFSIZE];
+		unsigned long nRead = 0;
+
+		if (isOpenEntry())
+		{
+			while (err == ZIP_OK && iss.good())
+			{
+				iss.read(buf, ziblib_BUFSIZE);
+				unsigned int nRead = (unsigned int)iss.gcount();
+
+				if (nRead)
+				{
+					err = zipWriteInFileInZip(zipFile_, buf, nRead);
+				}
+				else
+				{
+					break;
+				}
+			}
+		}
+		return *this;
+	};
+
+	bool setEntry(cweeSharedPtr<char> const& ptr, unsigned int bufsize) {
+		void* p = (void*)(char*)(ptr.Get());
+		int err = ZIP_OK;
+		if (p && isOpenEntry()) {
+			err = zipWriteInFileInZip(zipFile_, p, bufsize);
+		}
+		return (err == ZIP_OK);
+	};
 
 private:
 	// Fill the zip time structure
@@ -3763,6 +3799,21 @@ public:
 
 		}
 		return out;
+	};
+
+	bool ReadEntry(cweeSharedPtr<char>* ptr, unsigned int* bufsize) {
+		if (isOpenEntry())
+		{
+			*bufsize = getEntrySize();
+			char* buf = new char[*bufsize];
+			*ptr = cweeSharedPtr<char>(buf, [](char* p) { delete[] p; });
+
+			*bufsize = unzReadCurrentFile(zipFile_, buf, *bufsize);
+
+			if (*bufsize > 0)
+				return true;
+		}
+		return false;
 	};
 
 private:

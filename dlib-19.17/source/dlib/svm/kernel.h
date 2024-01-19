@@ -11,15 +11,6 @@
 #include "../algs.h"
 #include "../serialize.h"
 
-#include "../AlgLib/fastexp.h"
-double   ae_exp_fast(double x) {
-    using fastexp::IEEE;
-    using fastexp::Product;
-    if (x < -709) return 0.0;
-    else if (x > 709) return std::numeric_limits<double>::max();
-    else return fastexp::exp(x);
-};
-
 namespace dlib
 {
 
@@ -56,7 +47,7 @@ namespace dlib
         ) const
         { 
             const scalar_type d = trans(a-b)*(a-b);
-            return ae_exp_fast(-gamma * d); // std::exp(-gamma * d);
+            return std::exp(-gamma * d);
         }
 
         radial_basis_kernel& operator= (

@@ -182,7 +182,7 @@ public:
 			StripTrailing('.'); // if the previous call removed all 0's, this will clean-up the final .
 		}
 	};
-	explicit cweeStr(const std::string in) {
+	explicit cweeStr(const std::string& in) {
 		Construct();
 		this->operator=(in.c_str());
 	};

@@ -1,0 +1,50 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="Source Files">
+      <UniqueIdentifier>{4FC737F1-C7A5-4376-A066-2A32D752A2FF}</UniqueIdentifier>
+      <Extensions>cpp;c;cc;cxx;c++;cppm;ixx;def;odl;idl;hpj;bat;asm;asmx</Extensions>
+    </Filter>
+    <Filter Include="Header Files">
+      <UniqueIdentifier>{93995380-89BD-4b04-88EB-625FBE52EBFB}</UniqueIdentifier>
+      <Extensions>h;hh;hpp;hxx;h++;hm;inl;inc;ipp;xsd</Extensions>
+    </Filter>
+    <Filter Include="Include">
+      <UniqueIdentifier>{229aebc7-f15d-4431-b891-c5acbfb9894c}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="DuckX">
+      <UniqueIdentifier>{1ecf3eb5-c014-4cad-b88b-22c10c0aa4f4}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="Wrapper.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="include\pugixml.cpp">
+      <Filter>Include</Filter>
+    </ClCompile>
+    <ClCompile Include="duckx.cpp">
+      <Filter>DuckX</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="Wrapper.h">
+      <Filter>Source Files</Filter>
+    </ClInclude>
+    <ClInclude Include="include\pugiconfig.hpp">
+      <Filter>Include</Filter>
+    </ClInclude>
+    <ClInclude Include="include\pugixml.hpp">
+      <Filter>Include</Filter>
+    </ClInclude>
+    <ClInclude Include="constants.hpp">
+      <Filter>DuckX</Filter>
+    </ClInclude>
+    <ClInclude Include="duckxiterator.hpp">
+      <Filter>DuckX</Filter>
+    </ClInclude>
+    <ClInclude Include="duckx.hpp">
+      <Filter>DuckX</Filter>
+    </ClInclude>
+  </ItemGroup>
+</Project>

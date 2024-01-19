@@ -1077,7 +1077,7 @@ namespace chaiscript {
 				learn.monthlyEffect = true;
 				learn.weekdayEffect = true;
 				learn.hourlyEffect = true;
-				learn.Learn();
+				learn.Learn(pat.GetOutlierMask());
 				return learn;
 			), cweeUnitPattern const& pat);
 			lib->AddFunction(, Learn, -> PatternLearner, SINGLE_ARG(

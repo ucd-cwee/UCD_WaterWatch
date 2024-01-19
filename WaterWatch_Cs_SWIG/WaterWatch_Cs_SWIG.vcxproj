@@ -152,6 +152,9 @@ copy "$(OutDir)Conv.dll" "$(ProjectDir)"
     <ProjectReference Include="..\ExcelInterop\ExcelInterop.vcxproj">
       <Project>{3dabaf53-08be-41ce-aca1-bbd6b36fc7ae}</Project>
     </ProjectReference>
+    <ProjectReference Include="..\WordInterop\WordInterop.vcxproj">
+      <Project>{dc865d27-43be-4d4f-9339-17cd5248c7f6}</Project>
+    </ProjectReference>
   </ItemGroup>
   <ItemGroup>
     <Natvis Update="C:\Users\14154\source\repos\WaterWatch2\WaterWatchCpp\..\cweeLib\cweeDebugVisualizer.natvis">

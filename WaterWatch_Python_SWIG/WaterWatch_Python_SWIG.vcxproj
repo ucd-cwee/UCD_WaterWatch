@@ -228,6 +228,9 @@
     <ProjectReference Include="..\ExcelInterop\ExcelInterop.vcxproj">
       <Project>{3dabaf53-08be-41ce-aca1-bbd6b36fc7ae}</Project>
     </ProjectReference>
+    <ProjectReference Include="..\WordInterop\WordInterop.vcxproj">
+      <Project>{dc865d27-43be-4d4f-9339-17cd5248c7f6}</Project>
+    </ProjectReference>
     <ProjectReference Include="..\GDAL\GDAL.vcxproj">
       <Project>{0fd47813-8575-4e53-90ca-fcffa5992d31}</Project>
     </ProjectReference>
