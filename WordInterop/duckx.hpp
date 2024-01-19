@@ -7,6 +7,7 @@
 #include <vector>
 #include "include/pugixml.hpp"
 #include "../WaterWatchCpp/enum.h"
+#include "../WaterWatchCpp/SharedPtr.h"
 
 #if 0
 /*
@@ -259,7 +260,7 @@ namespace docx {
     class Table;
     class TableCell;
     class TextFrame;
-
+    class TextFormat;
 
     class Box
     {
@@ -274,6 +275,14 @@ namespace docx {
     };
     using Row = std::vector<Cell>;
     using Grid = std::vector<Row>;
+    using FontStyle = unsigned int;
+    enum : FontStyle
+    {
+        Bold = 1,
+        Italic = 2,
+        Underline = 4,
+        Strikethrough = 8
+    };
 
     class TableCell
     {
@@ -301,7 +310,8 @@ namespace docx {
 
     private:
         struct Impl;
-        Impl* impl_ = nullptr;
+        struct Impl* impl_() const { return static_cast<struct Impl*>(impl.Get()); };
+        cweeSharedPtr< void > impl;
 
         // constructs a table from existing xml node
         TableCell(Impl* impl);
@@ -322,8 +332,8 @@ namespace docx {
 
         TableCell GetCell(const int row, const int col);
         TableCell GetCell_(const int row, const int col);
+        bool MergeRow(int row);
         bool MergeCells(TableCell tc1, TableCell tc2);
-
         void RemoveCell_(TableCell tc);
 
         // units: 
@@ -366,11 +376,20 @@ namespace docx {
 
     private:
         struct Impl;
-        Impl* impl_ = nullptr;
+        struct Impl* impl_() const { return static_cast<struct Impl*>(impl.Get()); };
+        cweeSharedPtr< void > impl;
 
         // constructs a table from existing xml node
         Table(Impl* impl);
     }; // class Table
+
+    class TextFormat {
+    public:
+        double fontSize = 12;
+        std::string fontFamily = "Ariel";
+        FontStyle fontStyle = 0;
+        int characterSpacing = 0;
+    };
 
     class Run
     {
@@ -388,21 +407,13 @@ namespace docx {
         Run Next();
 
         // text
+        void SetText(const ::std::string& text);
         void AppendText(const std::string& text);
         std::string GetText();
         void ClearText();
         void AppendLineBreak();
 
         // text formatting
-        using FontStyle = unsigned int;
-        enum : FontStyle
-        {
-            Bold = 1,
-            Italic = 2,
-            Underline = 4,
-            Strikethrough = 8
-        };
-        
         void SetFontSize(const double fontSize);
         double GetFontSize();
 
@@ -421,12 +432,12 @@ namespace docx {
 
     private:
         struct Impl;
-        Impl* impl_ = nullptr;
+        struct Impl* impl_() const { return static_cast<struct Impl*>(impl.Get()); };
+        cweeSharedPtr< void > impl;
 
         // constructs run from existing xml node
         Run(Impl* impl);
     }; // class Run
-
 
     class Section
     {
@@ -493,13 +504,13 @@ namespace docx {
 
     private:
         struct Impl;
-        Impl* impl_ = nullptr;
+        struct Impl* impl_() const { return static_cast<struct Impl*>(impl.Get()); };
+        cweeSharedPtr< void > impl;
 
         // constructs section from existing xml node
         Section(Impl* impl);
         void FindSectionProperties();
     }; // class Section
-
 
     class Paragraph : public Box
     {
@@ -569,9 +580,10 @@ namespace docx {
         // helper
         void SetFontSize(const double fontSize);
         void SetFont(const std::string& fontAscii, const std::string& fontEastAsia = "");
-        void SetFontStyle(const Run::FontStyle fontStyle);
+        void SetFontStyle(const FontStyle fontStyle);
         void SetCharacterSpacing(const int characterSpacing);
         std::string GetText();
+        TextFormat* Format();
 
         // section
         Section GetSection();
@@ -581,12 +593,12 @@ namespace docx {
 
     protected:
         struct Impl;
-        Impl* impl_ = nullptr;
+        struct Impl* impl_() const { return static_cast<struct Impl*>(impl.Get()); };
+        cweeSharedPtr< void > impl;
 
         // constructs paragraph from existing xml node
         Paragraph(Impl* impl);
     }; // class Paragraph
-
 
     class TextFrame : public Paragraph
     {
@@ -616,12 +628,12 @@ namespace docx {
 
     private:
         struct Impl;
-        Impl* impl_ = nullptr;
+        struct Impl* impl_() const { return static_cast<struct Impl*>(impl.Get()); };
+        cweeSharedPtr< void > impl;
 
         // constructs text frame from existing xml node
         TextFrame(Impl* impl, Paragraph::Impl* p_impl);
     }; // class TextFrame
-
 
     class Document
     {
@@ -629,11 +641,15 @@ namespace docx {
 
     public:
         // constructs an empty document
+        Document();
+        Document(Document const&);
+        Document& operator=(Document const&);
         Document(const std::string& path);
         ~Document();
 
         // save document to file
         bool Save();
+        bool Save(const std::string& path);
         bool Open(const std::string& path);
 
         // get paragraph
@@ -667,12 +683,21 @@ namespace docx {
         Table AppendTable(const int rows, const int cols);
         void RemoveTable(Table& tbl);
 
+        // helper
+        void SetFontSize(const double fontSize);
+        void SetFont(const std::string& fontAscii, const std::string& fontEastAsia = "");
+        void SetFontStyle(const FontStyle fontStyle);
+        void SetCharacterSpacing(const int characterSpacing);
+        std::string GetText();
+        TextFormat* Format();
+
         // add text frame
         TextFrame AppendTextFrame(const int w, const int h);
 
-    private:
+    protected:
         struct Impl;
-        Impl* impl_ = nullptr;
+        struct Impl* impl_() const;
+        cweeSharedPtr< void > doc_impl_;
     }; // class Document
 
 }; // namespace docx
