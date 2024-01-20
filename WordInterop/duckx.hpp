@@ -9,155 +9,6 @@
 #include "../WaterWatchCpp/enum.h"
 #include "../WaterWatchCpp/SharedPtr.h"
 
-#if 0
-/*
- * Under MIT license
- * Author: Amir Mohamadi (@amiremohamadi)
- * DuckX is a free library to work with docx files.
- */
-
-#include "constants.hpp"
-#include "duckxiterator.hpp"
-
-namespace pugi {
-    class xml_node;
-    class xml_document;
-};
-
-namespace duckx {
-    // Run contains runs in a paragraph
-    class Run {
-    private:
-        friend class IteratorHelper;
-        pugi::xml_node parent; // Store the parent node (a paragraph)
-        pugi::xml_node current; // And store current node also 
-
-    public:
-        Run();
-        Run(pugi::xml_node, pugi::xml_node);
-        void set_parent(pugi::xml_node);
-        void set_current(pugi::xml_node);
-
-        std::string get_text() const;
-        bool set_text(const std::string&) const;
-        bool set_text(const char*) const;
-
-        Run& next();
-        bool has_next() const;
-    };
-
-    // Paragraph contains a paragraph and stores runs
-    class Paragraph {
-    private:
-        friend class IteratorHelper;
-        // Store parent node (usually the body node)
-        pugi::xml_node parent;
-        // And store current node also
-        pugi::xml_node current;
-        // A paragraph consists of runs
-        Run run;
-
-    public:
-        Paragraph();
-        Paragraph(pugi::xml_node, pugi::xml_node);
-        void set_parent(pugi::xml_node);
-        void set_current(pugi::xml_node);
-
-        Paragraph& next();
-        bool has_next() const;
-
-        Run& runs();
-        Run add_run(const std::string&, duckx::formatting_flag = duckx::none);
-        Run add_run(const char*, duckx::formatting_flag = duckx::none);
-        Paragraph insert_paragraph_after(const std::string&, duckx::formatting_flag = duckx::none);
-    };
-
-    // TableCell contains one or more paragraphs
-    class TableCell {
-    private:
-        friend class IteratorHelper;
-        pugi::xml_node parent;
-        pugi::xml_node current;
-
-        Paragraph paragraph;
-
-    public:
-        TableCell();
-        TableCell(pugi::xml_node, pugi::xml_node);
-
-        void set_parent(pugi::xml_node);
-        void set_current(pugi::xml_node);
-
-        Paragraph& paragraphs();
-
-        TableCell& next();
-        bool has_next() const;
-    };
-
-    // TableRow consists of one or more TableCells
-    class TableRow {
-        friend class IteratorHelper;
-        pugi::xml_node parent;
-        pugi::xml_node current;
-
-        TableCell cell;
-
-    public:
-        TableRow();
-        TableRow(pugi::xml_node, pugi::xml_node);
-        void set_parent(pugi::xml_node);
-        void set_current(pugi::xml_node);
-
-        TableCell& cells();
-
-        bool has_next() const;
-        TableRow& next();
-    };
-
-    // Table consists of one or more TableRow objects
-    class Table {
-    private:
-        friend class IteratorHelper;
-        pugi::xml_node parent;
-        pugi::xml_node current;
-
-        TableRow row;
-
-    public:
-        Table();
-        Table(pugi::xml_node, pugi::xml_node);
-        void set_parent(pugi::xml_node);
-        void set_current(pugi::xml_node);
-
-        Table& next();
-        bool has_next() const;
-
-        TableRow& rows();
-    };
-
-    // Document contains whole the docx file and stores paragraphs
-    class Document {
-    private:
-        friend class IteratorHelper;
-        std::string directory;
-        Paragraph paragraph;
-        Table table;
-        pugi::xml_document document;
-
-    public:
-        Document();
-        Document(std::string);
-        void file(std::string);
-        void open();
-        void save() const;
-
-        Paragraph& paragraphs();
-        Table& tables();
-    };
-}; // namespace duckx
-
-#else
-
 /* 
  minidocx 0.5.0 - C++ library for creating Microsoft Word Document (.docx).
  * --------------------------------------------------------
@@ -298,7 +149,7 @@ namespace docx {
         operator bool() const;
         bool empty() const;
 
-        void SetWidth(const int w, const char* units = "dxa");
+        void SetWidth(const int w, std::string const& units = "dxa");
 
         enum class Alignment { Top, Center, Bottom };
         void SetVerticalAlignment(const Alignment align);
@@ -309,8 +160,8 @@ namespace docx {
         Paragraph FirstParagraph();
 
     private:
-        struct Impl;
-        struct Impl* impl_() const { return static_cast<struct Impl*>(impl.Get()); };
+        class Impl;
+        Impl* impl_() const { return static_cast<Impl*>(impl.Get()); };
         cweeSharedPtr< void > impl;
 
         // constructs a table from existing xml node
@@ -343,14 +194,14 @@ namespace docx {
         //   pct  - Specifies a value as a percent of the table width.
         void SetWidthAuto();
         void SetWidthPercent(const double w); // 0-100
-        void SetWidth(const int w, const char* units = "dxa");
+        void SetWidth(const int w, std::string const& units = "dxa");
 
         // the distance between the cell contents and the cell borders
-        void SetCellMarginTop(const int w, const char* units = "dxa");
-        void SetCellMarginBottom(const int w, const char* units = "dxa");
-        void SetCellMarginLeft(const int w, const char* units = "dxa");
-        void SetCellMarginRight(const int w, const char* units = "dxa");
-        void SetCellMargin(const char* elemName, const int w, const char* units = "dxa");
+        void SetCellMarginTop(const int w, std::string const& units = "dxa");
+        void SetCellMarginBottom(const int w, std::string const& units = "dxa");
+        void SetCellMarginLeft(const int w, std::string const& units = "dxa");
+        void SetCellMarginRight(const int w, std::string const& units = "dxa");
+        void SetCellMargin(std::string const& elemName, const int w, std::string const& units = "dxa");
 
         // table formatting
         enum class Alignment { Left, Centered, Right };
@@ -363,20 +214,20 @@ namespace docx {
         //         No #, unlike hex values in HTML/CSS. E.g., color="FFFF00". 
         //         A value of auto is also permitted and will allow the 
         //         consuming word processor to determine the color.
-        void SetTopBorders(const BorderStyle style = BorderStyle::Single, const double width = 0.5, const char* color = "auto");
-        void SetBottomBorders(const BorderStyle style = BorderStyle::Single, const double width = 0.5, const char* color = "auto");
-        void SetLeftBorders(const BorderStyle style = BorderStyle::Single, const double width = 0.5, const char* color = "auto");
-        void SetRightBorders(const BorderStyle style = BorderStyle::Single, const double width = 0.5, const char* color = "auto");
-        void SetInsideHBorders(const BorderStyle style = BorderStyle::Single, const double width = 0.5, const char* color = "auto");
-        void SetInsideVBorders(const BorderStyle style = BorderStyle::Single, const double width = 0.5, const char* color = "auto");
-        void SetInsideBorders(const BorderStyle style = BorderStyle::Single, const double width = 0.5, const char* color = "auto");
-        void SetOutsideBorders(const BorderStyle style = BorderStyle::Single, const double width = 0.5, const char* color = "auto");
-        void SetAllBorders(const BorderStyle style = BorderStyle::Single, const double width = 0.5, const char* color = "auto");
-        void SetBorders_(const char* elemName, const BorderStyle style, const double width, const char* color);
+        void SetTopBorders(const BorderStyle style = BorderStyle::Single, const double width = 0.5, std::string const& color = "auto");
+        void SetBottomBorders(const BorderStyle style = BorderStyle::Single, const double width = 0.5, std::string const& color = "auto");
+        void SetLeftBorders(const BorderStyle style = BorderStyle::Single, const double width = 0.5, std::string const& color = "auto");
+        void SetRightBorders(const BorderStyle style = BorderStyle::Single, const double width = 0.5, std::string const& color = "auto");
+        void SetInsideHBorders(const BorderStyle style = BorderStyle::Single, const double width = 0.5, std::string const& color = "auto");
+        void SetInsideVBorders(const BorderStyle style = BorderStyle::Single, const double width = 0.5, std::string const& color = "auto");
+        void SetInsideBorders(const BorderStyle style = BorderStyle::Single, const double width = 0.5, std::string const& color = "auto");
+        void SetOutsideBorders(const BorderStyle style = BorderStyle::Single, const double width = 0.5, std::string const& color = "auto");
+        void SetAllBorders(const BorderStyle style = BorderStyle::Single, const double width = 0.5, std::string const& color = "auto");
+        void SetBorders_(std::string const& elemName, const BorderStyle style, const double width, std::string const& color);
 
     private:
-        struct Impl;
-        struct Impl* impl_() const { return static_cast<struct Impl*>(impl.Get()); };
+        class Impl;
+        Impl* impl_() const { return static_cast<Impl*>(impl.Get()); };
         cweeSharedPtr< void > impl;
 
         // constructs a table from existing xml node
@@ -390,6 +241,8 @@ namespace docx {
         FontStyle fontStyle = 0;
         int characterSpacing = 0;
     };
+
+
 
     class Run
     {
@@ -431,8 +284,8 @@ namespace docx {
         bool IsPageBreak();
 
     private:
-        struct Impl;
-        struct Impl* impl_() const { return static_cast<struct Impl*>(impl.Get()); };
+        class Impl;
+        Impl* impl_() const { return static_cast<Impl*>(impl.Get()); };
         cweeSharedPtr< void > impl;
 
         // constructs run from existing xml node
@@ -503,8 +356,8 @@ namespace docx {
         Paragraph LastParagraph();
 
     private:
-        struct Impl;
-        struct Impl* impl_() const { return static_cast<struct Impl*>(impl.Get()); };
+        class Impl;
+        Impl* impl_() const { return static_cast<Impl*>(impl.Get()); };
         cweeSharedPtr< void > impl;
 
         // constructs section from existing xml node
@@ -545,20 +398,23 @@ namespace docx {
         enum class Alignment { Left, Centered, Right, Justified, Distributed };
         void SetAlignment(const Alignment alignment);
 
+        enum class BulletType { Bullet, Number, Alpha };
+        void SetNumberedList(const int level, const int indentLevel, BulletType type = BulletType::Bullet);
+
         void SetLineSpacingSingle();               // Single
         void SetLineSpacingLines(const double at); // 1.5 lines, Double (2 lines), Multiple (3 lines)
         void SetLineSpacingAtLeast(const int at);  // At Least
         void SetLineSpacingExactly(const int at);  // Exactly
-        void SetLineSpacing(const int at, const char* lineRule);
+        void SetLineSpacing(const int at, std::string const& lineRule);
 
         void SetBeforeSpacingAuto();
         void SetAfterSpacingAuto();
-        void SetSpacingAuto(const char* attrNameAuto);
+        void SetSpacingAuto(std::string const& attrNameAuto);
         void SetBeforeSpacingLines(const double beforeSpacing);
         void SetAfterSpacingLines(const double afterSpacing);
         void SetBeforeSpacing(const int beforeSpacing);
         void SetAfterSpacing(const int afterSpacing);
-        void SetSpacing(const int twip, const char* attrNameAuto, const char* attrName);
+        void SetSpacing(const int twip, std::string const& attrNameAuto, std::string const& attrName);
 
         void SetLeftIndentChars(const double leftIndent);
         void SetRightIndentChars(const double rightIndent);
@@ -568,14 +424,14 @@ namespace docx {
         void SetHangingChars(const double indent);
         void SetFirstLine(const int indent);
         void SetHanging(const int indent);
-        void SetIndent(const int indent, const char* attrName);
+        void SetIndent(const int indent, std::string const& attrName);
 
-        void SetTopBorder(const BorderStyle style = BorderStyle::Single, const double width = 0.5, const char* color = "auto");
-        void SetBottomBorder(const BorderStyle style = BorderStyle::Single, const double width = 0.5, const char* color = "auto");
-        void SetLeftBorder(const BorderStyle style = BorderStyle::Single, const double width = 0.5, const char* color = "auto");
-        void SetRightBorder(const BorderStyle style = BorderStyle::Single, const double width = 0.5, const char* color = "auto");
-        void SetBorders(const BorderStyle style = BorderStyle::Single, const double width = 0.5, const char* color = "auto");
-        void SetBorders_(const char* elemName, const BorderStyle style, const double width, const char* color);
+        void SetTopBorder(const BorderStyle style = BorderStyle::Single, const double width = 0.5, std::string const& color = "auto");
+        void SetBottomBorder(const BorderStyle style = BorderStyle::Single, const double width = 0.5, std::string const& color = "auto");
+        void SetLeftBorder(const BorderStyle style = BorderStyle::Single, const double width = 0.5, std::string const& color = "auto");
+        void SetRightBorder(const BorderStyle style = BorderStyle::Single, const double width = 0.5, std::string const& color = "auto");
+        void SetBorders(const BorderStyle style = BorderStyle::Single, const double width = 0.5, std::string const& color = "auto");
+        void SetBorders_(std::string const& elemName, const BorderStyle style, const double width, std::string const& color);
 
         // helper
         void SetFontSize(const double fontSize);
@@ -592,8 +448,8 @@ namespace docx {
         bool HasSectionBreak();
 
     protected:
-        struct Impl;
-        struct Impl* impl_() const { return static_cast<struct Impl*>(impl.Get()); };
+        class Impl;
+        Impl* impl_() const { return static_cast<Impl*>(impl.Get()); };
         cweeSharedPtr< void > impl;
 
         // constructs paragraph from existing xml node
@@ -614,9 +470,9 @@ namespace docx {
 
         enum class Anchor { Page, Margin };
         enum class Position { Left, Center, Right, Top, Bottom };
-        void SetAnchor_(const char* attrName, const Anchor anchor);
-        void SetPosition_(const char* attrName, const Position align);
-        void SetPosition_(const char* attrName, const int twip);
+        void SetAnchor_(std::string const& attrName, const Anchor anchor);
+        void SetPosition_(std::string const& attrName, const Position align);
+        void SetPosition_(std::string const& attrName, const int twip);
 
         void SetPositionX(const Position align, const Anchor ralativeTo);
         void SetPositionY(const Position align, const Anchor ralativeTo);
@@ -627,8 +483,8 @@ namespace docx {
         void SetTextWrapping(const Wrapping wrapping);
 
     private:
-        struct Impl;
-        struct Impl* impl_() const { return static_cast<struct Impl*>(impl.Get()); };
+        class Impl;
+        Impl* impl_() const { return static_cast<Impl*>(impl.Get()); };
         cweeSharedPtr< void > impl;
 
         // constructs text frame from existing xml node
@@ -677,7 +533,7 @@ namespace docx {
         Section LastSection();
 
         // add section
-        Paragraph AppendSectionBreak();
+        Section AppendSectionBreak();
 
         // add table
         Table AppendTable(const int rows, const int cols);
@@ -691,15 +547,38 @@ namespace docx {
         std::string GetText();
         TextFormat* Format();
 
+        // paragraph formatting
+        void SetAlignment(const Paragraph::Alignment alignment);
+        void SetLineSpacingSingle();               // Single
+        void SetLineSpacingLines(const double at); // 1.5 lines, Double (2 lines), Multiple (3 lines)
+        void SetLineSpacingAtLeast(const int at);  // At Least
+        void SetLineSpacingExactly(const int at);  // Exactly
+        void SetLineSpacing(const int at, std::string const& lineRule);
+        void SetBeforeSpacingAuto();
+        void SetAfterSpacingAuto();
+        void SetSpacingAuto(std::string const& attrNameAuto);
+        void SetBeforeSpacingLines(const double beforeSpacing);
+        void SetAfterSpacingLines(const double afterSpacing);
+        void SetBeforeSpacing(const int beforeSpacing);
+        void SetAfterSpacing(const int afterSpacing);
+        void SetSpacing(const int twip, std::string const& attrNameAuto, std::string const& attrName);
+        void SetLeftIndentChars(const double leftIndent);
+        void SetRightIndentChars(const double rightIndent);
+        void SetLeftIndent(const int leftIndent);
+        void SetRightIndent(const int rightIndent);
+        void SetFirstLineChars(const double indent);
+        void SetHangingChars(const double indent);
+        void SetFirstLine(const int indent);
+        void SetHanging(const int indent);
+        void SetIndent(const int indent, std::string const& attrName);
+
         // add text frame
         TextFrame AppendTextFrame(const int w, const int h);
 
     protected:
-        struct Impl;
-        struct Impl* impl_() const;
+        class Impl;
+        Impl* impl_() const;
         cweeSharedPtr< void > doc_impl_;
     }; // class Document
 
 }; // namespace docx
-
-#endif

@@ -68,6 +68,8 @@ BETTER_ENUM(VerticalAlignment, int, Top, Center, Bottom);
 BETTER_ENUM(HorizontalAlignment, int, Left, Center, Right, Justified, Distributed);
 BETTER_ENUM(BorderStyle, int, Single, Dotted, Dashed, DotDash, Double, Wave, None);
 BETTER_ENUM(FontStyle, int, a, Bold, Italic,d, Underline,f,g,h, Strikethrough,j,l);
+BETTER_ENUM(PageNumberFormat, int, Decimal, NumberInDash, CardinalText, OrdinalText, LowerLetter, UpperLetter, LowerRoman, UpperRoman);
+BETTER_ENUM(BulletType, int, Bullet, Number, Alpha);
 
 namespace chaiscript {
     namespace WaterWatch_Lib {
@@ -75,8 +77,6 @@ namespace chaiscript {
             auto lib = chaiscript::make_shared<Module>();
 
             using namespace docx;
-
-
 
             lib->add(chaiscript::user_type<Cell>(), "DocxCell");
             lib->add(chaiscript::constructor<Cell()>(), "DocxCell");
@@ -143,6 +143,9 @@ namespace chaiscript {
             lib->AddFunction(, SetFont, , return o.SetFont(font.c_str()); , Run& o, cweeStr const& font);
             lib->AddFunction(, GetFont, , std::string fontAscii; std::string fontEastAsia; o.GetFont(fontAscii, fontEastAsia); return fontAscii, Run& o);
             lib->AddFunction(, SetFontStyle, , return o.SetFontStyle(static_cast<docx::FontStyle>(GetBetterEnum<::FontStyle>(input)._to_integral())); , Run& o, cweeStr const& input);
+            lib->AddFunction(, SetFontStyle, , return o.SetFontStyle(static_cast<docx::FontStyle>(GetBetterEnum<::FontStyle>(input1)._to_integral()) | static_cast<docx::FontStyle>(GetBetterEnum<::FontStyle>(input2)._to_integral())); , Run& o, cweeStr const& input1, cweeStr const& input2);
+            lib->AddFunction(, SetFontStyle, , return o.SetFontStyle(static_cast<docx::FontStyle>(GetBetterEnum<::FontStyle>(input1)._to_integral()) | static_cast<docx::FontStyle>(GetBetterEnum<::FontStyle>(input2)._to_integral()) | static_cast<docx::FontStyle>(GetBetterEnum<::FontStyle>(input3)._to_integral())); , Run& o, cweeStr const& input1, cweeStr const& input2, cweeStr const& input3);
+            lib->AddFunction(, SetFontStyle, , return o.SetFontStyle(static_cast<docx::FontStyle>(GetBetterEnum<::FontStyle>(input1)._to_integral()) | static_cast<docx::FontStyle>(GetBetterEnum<::FontStyle>(input2)._to_integral()) | static_cast<docx::FontStyle>(GetBetterEnum<::FontStyle>(input3)._to_integral()) | static_cast<docx::FontStyle>(GetBetterEnum<::FontStyle>(input4)._to_integral()));, Run& o, cweeStr const& input1, cweeStr const& input2, cweeStr const& input3, cweeStr const& input4);
             lib->AddFunction(, GetFontStyle, ->cweeStr , return ::FontStyle::_from_integral(static_cast<int>(o.GetFontStyle())).ToString();, Run& o, cweeStr const& input);
             lib->add(chaiscript::fun(&Run::SetCharacterSpacing), "SetCharacterSpacing");
             lib->add(chaiscript::fun(&Run::GetCharacterSpacing), "GetCharacterSpacing");
@@ -162,6 +165,9 @@ namespace chaiscript {
             lib->add(chaiscript::fun(&Section::LastParagraph), "LastParagraph");
             lib->AddFunction(, SetPageMargin, , return o.SetPageMargin(top, bottom, left, right);, Section& o, int top, int bottom, int left, int right);
             lib->AddFunction(, SetPageMargin, , return o.SetPageMargin(header, footer); , Section& o, int header, int footer);
+            lib->AddFunction(, SetPageNumber, , return o.SetPageNumber(static_cast<Section::PageNumberFormat>(GetBetterEnum<::PageNumberFormat>(input)._to_integral()));, Section& o, cweeStr const& input);
+            lib->AddFunction(, SetPageNumber, , return o.SetPageNumber(static_cast<Section::PageNumberFormat>(GetBetterEnum<::PageNumberFormat>(input)._to_integral()), start); , Section& o, cweeStr const& input, int start);
+            lib->add(chaiscript::fun(&Section::RemovePageNumber), "RemovePageNumber");
 
             lib->add(chaiscript::user_type<Paragraph>(), "DocxParagraph");
             lib->add(chaiscript::constructor<Paragraph()>(), "DocxParagraph");
@@ -176,6 +182,8 @@ namespace chaiscript {
             lib->AddFunction(, AppendRun, , return o.AppendRun(text, fontSize); , Paragraph& o, const std::string& text, const double fontSize);
             lib->AddFunction(, AppendRun, , return o.AppendRun(text, fontSize, fontAscii); , Paragraph& o, const std::string& text, const double fontSize, const std::string& fontAscii);
             lib->add(chaiscript::fun(&Paragraph::AppendPageBreak), "AppendPageBreak");
+            lib->AddFunction(, SetNumberedList, , return o.SetNumberedList(listNumber, indentLevel);, Paragraph& o, int listNumber, int indentLevel);
+            lib->AddFunction(, SetNumberedList, , return o.SetNumberedList(listNumber, indentLevel, static_cast<Paragraph::BulletType>(GetBetterEnum<BulletType>(bulletType)._to_integral())); , Paragraph& o, int listNumber, int indentLevel, cweeStr const& bulletType);
             lib->AddFunction(, SetHorizontalAlignment, , return o.SetAlignment(static_cast<Paragraph::Alignment>(GetBetterEnum<HorizontalAlignment>(input)._to_integral())); , Paragraph& o, cweeStr const& input);
             lib->add(chaiscript::fun(&Paragraph::SetLineSpacingSingle), "SetLineSpacingSingle");
             lib->add(chaiscript::fun(&Paragraph::SetLineSpacingLines), "SetLineSpacingLines");
@@ -205,6 +213,9 @@ namespace chaiscript {
             lib->add(chaiscript::fun(&Paragraph::SetFontSize), "SetFontSize");
             lib->AddFunction(, SetFont, , return o.SetFont(font.c_str());, Paragraph& o, cweeStr const& font);
             lib->AddFunction(, SetFontStyle, , return o.SetFontStyle(static_cast<docx::FontStyle>(GetBetterEnum<::FontStyle>(input)._to_integral()));, Paragraph& o, cweeStr const& input);
+            lib->AddFunction(, SetFontStyle, , return o.SetFontStyle(static_cast<docx::FontStyle>(GetBetterEnum<::FontStyle>(input1)._to_integral()) | static_cast<docx::FontStyle>(GetBetterEnum<::FontStyle>(input2)._to_integral()));, Paragraph& o, cweeStr const& input1, cweeStr const& input2);
+            lib->AddFunction(, SetFontStyle, , return o.SetFontStyle(static_cast<docx::FontStyle>(GetBetterEnum<::FontStyle>(input1)._to_integral()) | static_cast<docx::FontStyle>(GetBetterEnum<::FontStyle>(input2)._to_integral()) | static_cast<docx::FontStyle>(GetBetterEnum<::FontStyle>(input3)._to_integral()));, Paragraph& o, cweeStr const& input1, cweeStr const& input2, cweeStr const& input3);
+            lib->AddFunction(, SetFontStyle, , return o.SetFontStyle(static_cast<docx::FontStyle>(GetBetterEnum<::FontStyle>(input1)._to_integral()) | static_cast<docx::FontStyle>(GetBetterEnum<::FontStyle>(input2)._to_integral()) | static_cast<docx::FontStyle>(GetBetterEnum<::FontStyle>(input3)._to_integral()) | static_cast<docx::FontStyle>(GetBetterEnum<::FontStyle>(input4)._to_integral())); , Paragraph& o, cweeStr const& input1, cweeStr const& input2, cweeStr const& input3, cweeStr const& input4);
             lib->add(chaiscript::fun(&Paragraph::SetCharacterSpacing), "SetCharacterSpacing");
             lib->add(chaiscript::fun(&Paragraph::GetText), "GetText");
             lib->add(chaiscript::fun(&Paragraph::GetSection), "GetSection");
@@ -240,8 +251,33 @@ namespace chaiscript {
             lib->add(chaiscript::fun(&Document::AppendTable), "AppendTable");
             lib->add(chaiscript::fun(&Document::RemoveTable), "RemoveTable");
             lib->add(chaiscript::fun(&Document::SetFontSize), "SetFontSize");
+            lib->AddFunction(, SetHorizontalAlignment, , return o.SetAlignment(static_cast<Paragraph::Alignment>(GetBetterEnum<HorizontalAlignment>(input)._to_integral()));, Document& o, cweeStr const& input);
+            lib->add(chaiscript::fun(&Document::SetLineSpacingSingle), "SetLineSpacingSingle");
+            lib->add(chaiscript::fun(&Document::SetLineSpacingLines), "SetLineSpacingLines");
+            lib->add(chaiscript::fun(&Document::SetLineSpacingAtLeast), "SetLineSpacingAtLeast");
+            lib->add(chaiscript::fun(&Document::SetLineSpacingExactly), "SetLineSpacingExactly");
+            lib->add(chaiscript::fun(&Document::SetBeforeSpacingAuto), "SetBeforeSpacingAuto");
+            lib->add(chaiscript::fun(&Document::SetAfterSpacingAuto), "SetAfterSpacingAuto");
+            lib->add(chaiscript::fun(&Document::SetSpacingAuto), "SetSpacingAuto");
+            lib->add(chaiscript::fun(&Document::SetBeforeSpacingLines), "SetBeforeSpacingLines");
+            lib->add(chaiscript::fun(&Document::SetAfterSpacingLines), "SetAfterSpacingLines");
+            lib->add(chaiscript::fun(&Document::SetBeforeSpacing), "SetBeforeSpacing");
+            lib->add(chaiscript::fun(&Document::SetAfterSpacing), "SetAfterSpacing");
+            lib->add(chaiscript::fun(&Document::SetLeftIndentChars), "SetLeftIndentChars");
+            lib->add(chaiscript::fun(&Document::SetRightIndentChars), "SetRightIndentChars");
+            lib->add(chaiscript::fun(&Document::SetLeftIndent), "SetLeftIndent");
+            lib->add(chaiscript::fun(&Document::SetRightIndent), "SetRightIndent");
+            lib->add(chaiscript::fun(&Document::SetFirstLineChars), "SetFirstLineChars");
+            lib->add(chaiscript::fun(&Document::SetHangingChars), "SetHangingChars");
+            lib->add(chaiscript::fun(&Document::SetFirstLine), "SetFirstLine");
+            lib->add(chaiscript::fun(&Document::SetHanging), "SetHanging");
+            lib->add(chaiscript::fun(&Document::SetIndent), "SetIndent");
+
             lib->AddFunction(, SetFont, , return o.SetFont(font.c_str()); , Document& o, cweeStr const& font);
             lib->AddFunction(, SetFontStyle, , return o.SetFontStyle(static_cast<docx::FontStyle>(GetBetterEnum<::FontStyle>(input)._to_integral())); , Document& o, cweeStr const& input);
+            lib->AddFunction(, SetFontStyle, , return o.SetFontStyle(static_cast<docx::FontStyle>(GetBetterEnum<::FontStyle>(input1)._to_integral()) | static_cast<docx::FontStyle>(GetBetterEnum<::FontStyle>(input2)._to_integral())); , Document& o, cweeStr const& input1, cweeStr const& input2);
+            lib->AddFunction(, SetFontStyle, , return o.SetFontStyle(static_cast<docx::FontStyle>(GetBetterEnum<::FontStyle>(input1)._to_integral()) | static_cast<docx::FontStyle>(GetBetterEnum<::FontStyle>(input2)._to_integral()) | static_cast<docx::FontStyle>(GetBetterEnum<::FontStyle>(input3)._to_integral())); , Document& o, cweeStr const& input1, cweeStr const& input2, cweeStr const& input3);
+            lib->AddFunction(, SetFontStyle, , return o.SetFontStyle(static_cast<docx::FontStyle>(GetBetterEnum<::FontStyle>(input1)._to_integral()) | static_cast<docx::FontStyle>(GetBetterEnum<::FontStyle>(input2)._to_integral()) | static_cast<docx::FontStyle>(GetBetterEnum<::FontStyle>(input3)._to_integral()) | static_cast<docx::FontStyle>(GetBetterEnum<::FontStyle>(input4)._to_integral()));, Document& o, cweeStr const& input1, cweeStr const& input2, cweeStr const& input3, cweeStr const& input4);
             lib->add(chaiscript::fun(&Document::SetCharacterSpacing), "SetCharacterSpacing");
             lib->add(chaiscript::fun(&Document::GetText), "GetText");
 
