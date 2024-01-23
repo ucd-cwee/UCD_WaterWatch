@@ -401,7 +401,8 @@ namespace docx {
         void SetAlignment(const Alignment alignment);
 
         enum class BulletType { Alpha, Number, Bullet };
-        void SetNumberedList(const int level, const int indentLevel, BulletType type = BulletType::Number);
+        void SetNumberedList(const int listNumber, const int indentLevel, BulletType type);
+        void SetNumberedList(const int listNumber, const int indentLevel);
 
         void SetLineSpacingSingle();               // Single
         void SetLineSpacingLines(const double at); // 1.5 lines, Double (2 lines), Multiple (3 lines)

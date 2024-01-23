@@ -998,7 +998,96 @@ namespace docx {
 
         return out;
     }    
-    
+ 
+    void SetLvlNode(pugi::xml_node& w_lvl, int level, Paragraph::BulletType type) {
+        w_lvl.emplace_attribute("w:ilvl").set_value(level);
+        w_lvl.emplace_child("w:start").emplace_attribute("w:val").set_value(1);
+
+        double indent = 360.0;
+        double hanging = 360.0;
+
+        if (type == Paragraph::BulletType::Number) {
+            if (level == 1) {
+                w_lvl.emplace_attribute("w:tplc").set_value("0409000F");
+                w_lvl.emplace_child("w:numFmt").emplace_attribute("w:val").set_value("lowerLetter");
+            }
+            else {
+                w_lvl.emplace_attribute("w:tplc").set_value("04090019");
+                w_lvl.emplace_child("w:numFmt").emplace_attribute("w:val").set_value("decimal");
+            }
+            cweeStr w_lvltext = cweeStr("%") + cweeStr::printf("%i.", level + 1);
+            w_lvl.emplace_child("w:lvlText").emplace_attribute("w:val").set_value(w_lvltext.c_str());
+
+            w_lvl.emplace_child("w:lvlJc").emplace_attribute("w:val").set_value("left");
+
+            auto w_ind = w_lvl.emplace_child("w:pPr").emplace_child("w:ind");
+            w_ind.emplace_attribute("w:left").set_value(indent + (level * indent));
+            w_ind.emplace_attribute("w:hanging").set_value(hanging);
+        }
+        else if (type == Paragraph::BulletType::Bullet) {
+            w_lvl.emplace_child("w:numFmt").emplace_attribute("w:val").set_value("bullet");
+            w_lvl.emplace_child("w:lvlJc").emplace_attribute("w:val").set_value("left");
+
+            if ((level == 0) || level % 3 == 0) {
+                w_lvl.emplace_child("w:lvlText").emplace_attribute("w:val").set_value("●");
+                w_lvl.emplace_attribute("w:tplc").set_value("04090005");
+            }
+            else if (level % 2 == 0) {
+                w_lvl.emplace_child("w:lvlText").emplace_attribute("w:val").set_value("-");
+                w_lvl.emplace_attribute("w:tplc").set_value("04090003");
+            }
+            else {
+                w_lvl.emplace_child("w:lvlText").emplace_attribute("w:val").set_value("o");
+                w_lvl.emplace_attribute("w:tplc").set_value("04090001");
+            }
+
+            auto w_ind = w_lvl.emplace_child("w:pPr").emplace_child("w:ind");
+            w_ind.emplace_attribute("w:left").set_value(indent + (level * indent));
+            w_ind.emplace_attribute("w:hanging").set_value(hanging);
+        }
+        else if (type == Paragraph::BulletType::Alpha) {
+            if (level == 0) {
+                w_lvl.emplace_attribute("w:tplc").set_value("04090015");
+                w_lvl.emplace_child("w:numFmt").emplace_attribute("w:val").set_value("upperLetter");
+                w_lvl.emplace_child("w:lvlJc").emplace_attribute("w:val").set_value("left");
+
+                auto w_ind = w_lvl.emplace_child("w:pPr").emplace_child("w:ind");
+                w_ind.emplace_attribute("w:left").set_value(indent + (level * indent));
+                w_ind.emplace_attribute("w:hanging").set_value(hanging);
+            }
+            else {
+                if (level % 3 == 0) { // decimal
+                    w_lvl.emplace_attribute("w:tplc").set_value("04090019");
+                    w_lvl.emplace_child("w:numFmt").emplace_attribute("w:val").set_value("decimal");
+                    w_lvl.emplace_child("w:lvlJc").emplace_attribute("w:val").set_value("left");
+
+                    auto w_ind = w_lvl.emplace_child("w:pPr").emplace_child("w:ind");
+                    w_ind.emplace_attribute("w:left").set_value(indent + (level * indent));
+                    w_ind.emplace_attribute("w:hanging").set_value(hanging);
+                }
+                else if (level % 2 == 0) { // lowerRoman
+                    w_lvl.emplace_attribute("w:tplc").set_value("0409001B");
+                    w_lvl.emplace_child("w:numFmt").emplace_attribute("w:val").set_value("lowerRoman");
+                    w_lvl.emplace_child("w:lvlJc").emplace_attribute("w:val").set_value("right");
+
+                    auto w_ind = w_lvl.emplace_child("w:pPr").emplace_child("w:ind");
+                    w_ind.emplace_attribute("w:left").set_value(indent + (level * indent));
+                    w_ind.emplace_attribute("w:hanging").set_value(180);
+                }
+                else { // lowerLetter
+                    w_lvl.emplace_attribute("w:tplc").set_value("0409000F");
+                    w_lvl.emplace_child("w:numFmt").emplace_attribute("w:val").set_value("lowerLetter");
+                    w_lvl.emplace_child("w:lvlJc").emplace_attribute("w:val").set_value("left");
+
+                    auto w_ind = w_lvl.emplace_child("w:pPr").emplace_child("w:ind");
+                    w_ind.emplace_attribute("w:left").set_value(indent + (level * indent));
+                    w_ind.emplace_attribute("w:hanging").set_value(hanging);
+                }
+            }
+            cweeStr w_lvltext = cweeStr("%") + cweeStr::printf("%i.", level + 1);
+            w_lvl.emplace_child("w:lvlText").emplace_attribute("w:val").set_value(w_lvltext.c_str());
+        }
+    };
 
     pugi::xml_node AppendAbstractNumList(pugi::xml_node& w_numbering, const int listNumber, const int indentLevel, Paragraph::BulletType type, cweeStr NSID) {
         int newAbstractNum = -1;
@@ -1013,13 +1102,9 @@ namespace docx {
 
         auto type_str = std::to_string(static_cast<int>(type));
 
-        bool prevExists = false; 
-        if (w_numbering.find_child_by_attribute("w:BulletType", type_str.c_str())) prevExists = true; 
-
         auto w_abstractNum = w_numbering.prepend_child("w:abstractNum");
         w_abstractNum.append_attribute("w:abstractNumId").set_value(newAbstractNum);
         w_abstractNum.append_attribute("w15:restartNumberingAfterBreak").set_value(0);
-        w_abstractNum.append_attribute("w15:BulletType").set_value(type_str.c_str());
 
         w_abstractNum.append_child("w:multiLevelType").append_attribute("w:val").set_value("hybridMultilevel");
 
@@ -1027,353 +1112,15 @@ namespace docx {
         w_abstractNum.append_child("w:tmpl").append_attribute("w:val").set_value("E164460E");
 
         for (int level = 0; level <= 8; level++) {
-            auto w_lvl = w_abstractNum.append_child("w:lvl");
-            
-            w_lvl.append_attribute("w:ilvl").set_value(level);
-            w_lvl.append_child("w:start").append_attribute("w:val").set_value(1);
-
-            if (level == 1) {
-                w_lvl.append_attribute("w:tplc").set_value("0409000F");                
-                w_lvl.append_child("w:numFmt").append_attribute("w:val").set_value("lowerLetter");
-            } else {
-                w_lvl.append_attribute("w:tplc").set_value("04090019");            
-                w_lvl.append_child("w:numFmt").append_attribute("w:val").set_value("decimal");
-            }
-
-            cweeStr w_lvltext = cweeStr("%") + cweeStr::printf("%i.", level+1);
-            w_lvl.append_child("w:lvlText").append_attribute("w:val").set_value(w_lvltext.c_str());
-
-            w_lvl.append_child("w:lvlJc").append_attribute("w:val").set_value("left");
-
-            auto w_ind = w_lvl.append_child("w:pPr").append_child("w:ind");
-            w_ind.append_attribute("w:left").set_value(720 + (level * 720));
-            w_ind.append_attribute("w:hanging").set_value(360);
-
-#if 0
-            switch (type) {
-            case (Paragraph::BulletType::Alpha): 
-                switch (level) {
-                default:
-                case 0:
-                    w_lvl.append_child("w:numFmt").append_attribute("w:val").set_value("upperLetter");
-                    w_lvl.append_child("w:lvlText").append_attribute("w:val").set_value("%1.");
-                    w_lvl.append_child("w:lvlJc").append_attribute("w:val").set_value("left");
-                    break;
-                case 1:
-                    w_lvl.append_child("w:numFmt").append_attribute("w:val").set_value("lowerLetter");
-                    w_lvl.append_child("w:lvlText").append_attribute("w:val").set_value("%2.");
-                    w_lvl.append_child("w:lvlJc").append_attribute("w:val").set_value("left");
-                    break;
-                case 2:
-                    w_lvl.append_child("w:numFmt").append_attribute("w:val").set_value("lowerRoman");
-                    w_lvl.append_child("w:lvlText").append_attribute("w:val").set_value("%3.");
-                    w_lvl.append_child("w:lvlJc").append_attribute("w:val").set_value("right");
-                    break;
-                case 3:
-                    w_lvl.append_child("w:numFmt").append_attribute("w:val").set_value("decimal");
-                    w_lvl.append_child("w:lvlText").append_attribute("w:val").set_value("%4.");
-                    w_lvl.append_child("w:lvlJc").append_attribute("w:val").set_value("left");
-                    break;
-                case 4:
-                    w_lvl.append_child("w:numFmt").append_attribute("w:val").set_value("lowerLetter");
-                    w_lvl.append_child("w:lvlText").append_attribute("w:val").set_value("%5.");
-                    w_lvl.append_child("w:lvlJc").append_attribute("w:val").set_value("left");
-                    break;
-                case 5:
-                    w_lvl.append_child("w:numFmt").append_attribute("w:val").set_value("lowerRoman");
-                    w_lvl.append_child("w:lvlText").append_attribute("w:val").set_value("%6.");
-                    w_lvl.append_child("w:lvlJc").append_attribute("w:val").set_value("right");
-                    break;
-                case 6:
-                    w_lvl.append_child("w:numFmt").append_attribute("w:val").set_value("decimal");
-                    w_lvl.append_child("w:lvlText").append_attribute("w:val").set_value("%7.");
-                    w_lvl.append_child("w:lvlJc").append_attribute("w:val").set_value("left");
-                    break;
-                case 7:
-                    w_lvl.append_child("w:numFmt").append_attribute("w:val").set_value("lowerLetter");
-                    w_lvl.append_child("w:lvlText").append_attribute("w:val").set_value("%8.");
-                    w_lvl.append_child("w:lvlJc").append_attribute("w:val").set_value("left");
-                    break;
-                case 8:
-                    w_lvl.append_child("w:numFmt").append_attribute("w:val").set_value("lowerRoman");
-                    w_lvl.append_child("w:lvlText").append_attribute("w:val").set_value("%9.");
-                    w_lvl.append_child("w:lvlJc").append_attribute("w:val").set_value("right");
-                    break;
-                };
-                break;
-            case (Paragraph::BulletType::Number): 
-                w_lvl.append_child("w:numFmt").append_attribute("w:val").set_value("decimal");
-                w_lvl.append_child("w:lvlJc").append_attribute("w:val").set_value("left");
-                switch (level) {
-                default:
-                case 0:
-                    w_lvl.append_child("w:lvlText").append_attribute("w:val").set_value("%1.");
-                    break;
-                case 1:
-                    w_lvl.append_child("w:lvlText").append_attribute("w:val").set_value("%2.");
-                    break;
-                case 2:
-                    w_lvl.append_child("w:lvlText").append_attribute("w:val").set_value("%3.");
-                    break;
-                case 3:
-                    w_lvl.append_child("w:lvlText").append_attribute("w:val").set_value("%4.");
-                    break;
-                case 4:
-                    w_lvl.append_child("w:lvlText").append_attribute("w:val").set_value("%5.");
-                    break;
-                case 5:
-                    w_lvl.append_child("w:lvlText").append_attribute("w:val").set_value("%6.");
-                    break;
-                case 6:
-                    w_lvl.append_child("w:lvlText").append_attribute("w:val").set_value("%7.");
-                    break;
-                case 7:
-                    w_lvl.append_child("w:lvlText").append_attribute("w:val").set_value("%8.");
-                    break;
-                case 8:
-                    w_lvl.append_child("w:lvlText").append_attribute("w:val").set_value("%9.");
-                    break;
-                };
-                break;
-            case (Paragraph::BulletType::Bullet): 
-                w_lvl.append_child("w:numFmt").append_attribute("w:val").set_value("bullet");
-                w_lvl.append_child("w:lvlJc").append_attribute("w:val").set_value("left");
-                switch (level) {
-                default:
-                case 0:
-                    w_lvl.append_child("w:lvlText").append_attribute("w:val").set_value("·");
-                    break;
-                case 1:
-                    w_lvl.append_child("w:lvlText").append_attribute("w:val").set_value("o");
-                    break;
-                case 2:
-                    w_lvl.append_child("w:lvlText").append_attribute("w:val").set_value("§");
-                    break;
-                case 3:
-                    w_lvl.append_child("w:lvlText").append_attribute("w:val").set_value("·");
-                    break;
-                case 4:
-                    w_lvl.append_child("w:lvlText").append_attribute("w:val").set_value("o");
-                    break;
-                case 5:
-                    w_lvl.append_child("w:lvlText").append_attribute("w:val").set_value("§");
-                    break;
-                case 6:
-                    w_lvl.append_child("w:lvlText").append_attribute("w:val").set_value("·");
-                    break;
-                case 7:
-                    w_lvl.append_child("w:lvlText").append_attribute("w:val").set_value("o");
-                    break;
-                case 8:
-                    w_lvl.append_child("w:lvlText").append_attribute("w:val").set_value("§");
-                    break;
-                };
-                break;
-            };
-#endif
+            pugi::xml_node w_lvl = w_abstractNum.append_child("w:lvl");            
+            SetLvlNode(w_lvl, level, type);
         }
 
         return w_abstractNum;
-    };
-    
-#if 0
-    int UpdateAbstractNumList(
-        pugi::xml_node& AbstractChild,
-        const int indentLevel,
-        Paragraph::BulletType type) {
-        auto indentLvlStr{ std::to_string(indentLevel) };
-        auto w_lvl = AbstractChild.find_child_by_attribute("w:ilvl", indentLvlStr.c_str());
-        if (w_lvl) {
-            auto w_numFmt_val = w_lvl.child("w:numFmt").attribute("w:val");
-            auto w_lvlText_val = w_lvl.child("w:lvlText").attribute("w:val");
-            auto w_lvlJc_val = w_lvl.child("w:lvlText").attribute("w:val");
+    };      
 
-            switch (type) {
-            case (Paragraph::BulletType::Alpha):
-                switch (indentLevel) {
-                default:
-                case 0:
-                    w_numFmt_val.set_value("upperLetter");
-                    w_lvlText_val.set_value("%1.");
-                    w_lvlJc_val.set_value("left");
-                    break;
-                case 1:
-                    w_numFmt_val.set_value("lowerLetter");
-                    w_lvlText_val.set_value("%2.");
-                    w_lvlJc_val.set_value("left");
-                    break;
-                case 2:
-                    w_numFmt_val.set_value("lowerRoman");
-                    w_lvlText_val.set_value("%3.");
-                    w_lvlJc_val.set_value("right");
-                    break;
-                case 3:
-                    w_numFmt_val.set_value("decimal");
-                    w_lvlText_val.set_value("%4.");
-                    w_lvlJc_val.set_value("left");
-                    break;
-                case 4:
-                    w_numFmt_val.set_value("lowerLetter");
-                    w_lvlText_val.set_value("%5.");
-                    w_lvlJc_val.set_value("left");
-                    break;
-                case 5:
-                    w_numFmt_val.set_value("lowerRoman");
-                    w_lvlText_val.set_value("%6.");
-                    w_lvlJc_val.set_value("right");
-                    break;
-                case 6:
-                    w_numFmt_val.set_value("decimal");
-                    w_lvlText_val.set_value("%7.");
-                    w_lvlJc_val.set_value("left");
-                    break;
-                case 7:
-                    w_numFmt_val.set_value("lowerLetter");
-                    w_lvlText_val.set_value("%8.");
-                    w_lvlJc_val.set_value("left");
-                    break;
-                case 8:
-                    w_numFmt_val.set_value("lowerRoman");
-                    w_lvlText_val.set_value("%9.");
-                    w_lvlJc_val.set_value("right");
-                    break;
-                };
-                break;
-            case (Paragraph::BulletType::Number):
-                w_numFmt_val.set_value("decimal");
-                w_lvlJc_val.set_value("left");
-                switch (indentLevel) {
-                default:
-                case 0:
-                    w_lvlText_val.set_value("%1.");
-                    break;
-                case 1:
-                    w_lvlText_val.set_value("%2.");
-                    break;
-                case 2:
-                    w_lvlText_val.set_value("%3.");
-                    break;
-                case 3:
-                    w_lvlText_val.set_value("%4.");
-                    break;
-                case 4:
-                    w_lvlText_val.set_value("%5.");
-                    break;
-                case 5:
-                    w_lvlText_val.set_value("%6.");
-                    break;
-                case 6:
-                    w_lvlText_val.set_value("%7.");
-                    break;
-                case 7:
-                    w_lvlText_val.set_value("%8.");
-                    break;
-                case 8:
-                    w_lvlText_val.set_value("%9.");
-                    break;
-                };
-                break;
-            case (Paragraph::BulletType::Bullet):
-                w_numFmt_val.set_value("bullet");
-                w_lvlJc_val.set_value("left");
-                switch (indentLevel) {
-                default:
-                case 0:
-                    w_lvlText_val.set_value("·");
-                    break;
-                case 1:
-                    w_lvlText_val.set_value("o");
-                    break;
-                case 2:
-                    w_lvlText_val.set_value("§");
-                    break;
-                case 3:
-                    w_lvlText_val.set_value("·");
-                    break;
-                case 4:
-                    w_lvlText_val.set_value("o");
-                    break;
-                case 5:
-                    w_lvlText_val.set_value("§");
-                    break;
-                case 6:
-                    w_lvlText_val.set_value("·");
-                    break;
-                case 7:
-                    w_lvlText_val.set_value("o");
-                    break;
-                case 8:
-                    w_lvlText_val.set_value("§");
-                    break;
-                };
-                break;
-            };
-        }
-    };
-#endif
-    
     void Paragraph::SetNumberedList(const int listNumber, const int indentLevel, Paragraph::BulletType type) {
         if (!impl) return;
-#if 0
-        if (listNumber < 0) {
-            auto elemNumPr = impl_()->w_pPr_.child("w:numPr");
-            if (elemNumPr) {
-                impl_()->w_pPr_.remove_child("w:numPr");
-            }
-        }
-        else {
-            auto elemNumPr = impl_()->w_pPr_.child("w:numPr");
-            if (!elemNumPr) {
-                elemNumPr = impl_()->w_pPr_.append_child("w:numPr");
-            }
-            {
-                auto wilvl = elemNumPr.child("w:ilvl");
-                if (!wilvl) {
-                    wilvl = elemNumPr.append_child("w:ilvl");
-                } {
-                    auto styleVal = wilvl.attribute("w:val");
-                    if (!styleVal) {
-                        styleVal = wilvl.append_attribute("w:val");
-                    }
-                    styleVal.set_value(indentLevel);
-                }
-                
-                auto wiNum = elemNumPr.child("w:numId");
-                if (!wiNum) {
-                    wiNum = elemNumPr.append_child("w:numId");
-                } {
-                    auto styleVal = wiNum.attribute("w:val");
-                    if (!styleVal) {
-                        styleVal = wiNum.append_attribute("w:val");
-                    }
-                    styleVal.set_value(listNumber);
-                }
-            }
-        }
-    
-        if (impl_()->Document && impl_()->Document->numbers_) {
-            auto listNumberStr = std::to_string(listNumber);
-            auto numbers = impl_()->Document->numbers_.child("w:numbering");
-            if (numbers) {
-                auto nonAbstractChild = numbers.find_child_by_attribute("w:numId", listNumberStr.c_str());
-                if (!nonAbstractChild) {
-                    nonAbstractChild = numbers.append_child("w:num");
-                    auto attr = nonAbstractChild.append_attribute("w:numId");
-                    attr.set_value(listNumber);
-                }
-                auto abstractNumId = nonAbstractChild.child("w:abstractNumId");
-                if (!abstractNumId) {
-                    abstractNumId = nonAbstractChild.append_child("w:abstractNumId");
-                }
-                auto attrNumId = abstractNumId.attribute("w:val");
-                if (!attrNumId) {
-                    attrNumId = abstractNumId.append_attribute("w:val");
-                    attrNumId.set_value(static_cast<int>(type));
-                }                
-            }
-        }
-
-#else
         if (impl_()->Document && impl_()->Document->numbers_) {
             auto numbers = impl_()->Document->numbers_.child("w:numbering");
             if (numbers) { // add new nodes
@@ -1395,12 +1142,23 @@ namespace docx {
                 if (!abstractChild) {
                     abstractChild = AppendAbstractNumList(numbers, listNumber, indentLevel, type, desiredNSID);
                 }
-                AUTO nonAbstractChild = numbers.append_child("w:num"); {
-                    nonAbstractChild.append_attribute("w:numId").set_value(listNumber);
-                    nonAbstractChild.append_child("w:abstractNumId").append_attribute("w:val").set_value(abstractChild.attribute("w:abstractNumId").value());
+                
+                auto toFind = std::to_string(listNumber);
+                auto nonAbstractChild = numbers.find_child_by_attribute("w:numId", toFind.c_str());
+                if (!nonAbstractChild) {
+                    nonAbstractChild = numbers.append_child("w:num"); {
+                        nonAbstractChild.append_attribute("w:numId").set_value(listNumber);
+                        nonAbstractChild.append_child("w:abstractNumId").append_attribute("w:val").set_value(abstractChild.attribute("w:abstractNumId").value());
+                    }
+                }
+                else {
+                    toFind = std::to_string(indentLevel);
+                    pugi::xml_node w_lvl = abstractChild.find_child_by_attribute("w:ilvl", toFind.c_str());
+                    SetLvlNode(w_lvl, indentLevel, type);
                 }
             }
         }
+
         auto elemNumPr = impl_()->w_pPr_.child("w:numPr");
         if (!elemNumPr) elemNumPr = impl_()->w_pPr_.append_child("w:numPr");        
         {
@@ -1422,10 +1180,66 @@ namespace docx {
                 styleVal.set_value(listNumber);
             }
         }
-#endif
     };
-    void Paragraph::SetAlignment(const Alignment alignment)
-    {
+
+    void Paragraph::SetNumberedList(const int listNumber, const int indentLevel) {
+        if (!impl) return;
+        if (impl_()->Document && impl_()->Document->numbers_) {
+            auto numbers = impl_()->Document->numbers_.child("w:numbering");
+            if (numbers) { // add new nodes
+                cweeStr desiredNSID = cweeStr::printf("%08d", listNumber);                
+                pugi::xml_node abstractChild;
+                Paragraph::BulletType type = Paragraph::BulletType::Number;
+
+                for (auto& child : numbers.children("w:abstractNum")) {
+                    if (child) {
+                        auto w_nsid = child.child("w:nsid");
+                        if (w_nsid) {
+                            AUTO nsid = w_nsid.attribute("w:val").value();
+                            if (desiredNSID.Right(7) == cweeStr(nsid).Right(7)) {
+                                abstractChild = child;
+                                type = static_cast<decltype(type)>((int)(cweeStr((char)(nsid[0])).ReturnNumeric()));
+                                break;
+                            }
+                        }
+                    }
+                }
+                
+                desiredNSID[0] = '0' + static_cast<int>(type);
+
+                if (!abstractChild) {
+                    abstractChild = AppendAbstractNumList(numbers, listNumber, indentLevel, type, desiredNSID);
+                }
+                AUTO nonAbstractChild = numbers.append_child("w:num"); {
+                    nonAbstractChild.append_attribute("w:numId").set_value(listNumber);
+                    nonAbstractChild.append_child("w:abstractNumId").append_attribute("w:val").set_value(abstractChild.attribute("w:abstractNumId").value());
+                }
+            }
+        }
+        auto elemNumPr = impl_()->w_pPr_.child("w:numPr");
+        if (!elemNumPr) elemNumPr = impl_()->w_pPr_.append_child("w:numPr");
+        {
+            auto wilvl = elemNumPr.child("w:ilvl");
+            if (!wilvl) wilvl = elemNumPr.append_child("w:ilvl");
+            {
+                auto styleVal = wilvl.attribute("w:val");
+                if (!styleVal) {
+                    styleVal = wilvl.append_attribute("w:val");
+                }
+                styleVal.set_value(indentLevel);
+            }
+
+            auto wiNum = elemNumPr.child("w:numId");
+            if (!wiNum) wiNum = elemNumPr.append_child("w:numId");
+            {
+                auto styleVal = wiNum.attribute("w:val");
+                if (!styleVal) styleVal = wiNum.append_attribute("w:val");
+                styleVal.set_value(listNumber);
+            }
+        }
+    };
+
+    void Paragraph::SetAlignment(const Alignment alignment) {
         if (!impl) return;
 
         const char* val{ nullptr };

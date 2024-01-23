@@ -5662,7 +5662,6 @@ namespace pugi
 
 		return xml_node();
 	}
-
 	PUGI_IMPL_FN xml_attribute xml_node::attribute(const char_t* name_) const
 	{
 		if (!_root) return xml_attribute();
@@ -6104,6 +6103,21 @@ namespace pugi
 		result.set_name(name_);
 
 		return result;
+	}
+
+	PUGI_IMPL_FN xml_node xml_node::emplace_child(const char_t* name_) {
+		auto x = child(name_);
+		if (!x) {
+			x = append_child(name_);
+		}
+		return x;
+	}
+	PUGI_IMPL_FN xml_attribute xml_node::emplace_attribute(const char_t* name_) {
+		auto x = attribute(name_);
+		if (!x) {
+			x = append_attribute(name_);
+		}
+		return x;
 	}
 
 	PUGI_IMPL_FN xml_node xml_node::append_copy(const xml_node& proto)

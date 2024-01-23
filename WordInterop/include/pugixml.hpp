@@ -542,8 +542,8 @@ namespace pugi
 		xml_text text() const;
 
 		// Get child, attribute or next/previous sibling with the specified name
-		xml_node child(const char_t* name) const;
-		xml_attribute attribute(const char_t* name) const;
+		xml_node child(const char_t* name) const;		
+		xml_attribute attribute(const char_t* name) const;		
 		xml_node next_sibling(const char_t* name) const;
 		xml_node previous_sibling(const char_t* name) const;
 
@@ -585,6 +585,8 @@ namespace pugi
 		xml_node prepend_child(const char_t* name);
 		xml_node insert_child_after(const char_t* name, const xml_node& node);
 		xml_node insert_child_before(const char_t* name, const xml_node& node);
+		xml_attribute emplace_attribute(const char_t* name);
+		xml_node emplace_child(const char_t* name);
 
 		// Add a copy of the specified node as a child. Returns added node, or empty node on errors.
 		xml_node append_copy(const xml_node& proto);
