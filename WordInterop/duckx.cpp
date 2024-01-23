@@ -1000,7 +1000,7 @@ namespace docx {
     }    
     
 
-    int AppendAbstractNumList(pugi::xml_node& w_numbering, const int listNumber, const int indentLevel, Paragraph::BulletType type) {
+    pugi::xml_node AppendAbstractNumList(pugi::xml_node& w_numbering, const int listNumber, const int indentLevel, Paragraph::BulletType type, cweeStr NSID) {
         int newAbstractNum = -1;
         for (auto& child : w_numbering.children("w:abstractNum")) {
             auto w_abstractNumId = child.attribute("w:abstractNumId");
@@ -1013,35 +1013,17 @@ namespace docx {
 
         auto type_str = std::to_string(static_cast<int>(type));
 
-        bool prevExists = false;
-        if (w_numbering.find_child_by_attribute("w15:BulletType", type_str.c_str())) {
-            prevExists = true;
-        }
+        bool prevExists = false; 
+        if (w_numbering.find_child_by_attribute("w:BulletType", type_str.c_str())) prevExists = true; 
 
-        auto w_abstractNum = w_numbering.append_child("w:abstractNum");
+        auto w_abstractNum = w_numbering.prepend_child("w:abstractNum");
         w_abstractNum.append_attribute("w:abstractNumId").set_value(newAbstractNum);
         w_abstractNum.append_attribute("w15:restartNumberingAfterBreak").set_value(0);
         w_abstractNum.append_attribute("w15:BulletType").set_value(type_str.c_str());
 
-
-
-
         w_abstractNum.append_child("w:multiLevelType").append_attribute("w:val").set_value("hybridMultilevel");
 
-        cweeStr randomNSID = "325E017B";
-        randomNSID[0] = '0' + cweeRandomInt(0, 8);
-        randomNSID[1] = '0' + cweeRandomInt(0, 8);
-        randomNSID[2] = '0' + cweeRandomInt(0, 8);
-        //for (int i = 0; i < 8; i++) {
-        //    char randomNum = '0' + cweeRandomInt(0, 8);
-        //    char randomChar = 'A' + cweeRandomInt(0, 25);
-        //    if (cweeRandomFloat(0, 100) <= 75) 
-        //        randomNSID[i] = randomNum;            
-        //    else 
-        //        randomNSID[i] = randomChar;            
-        //}
-
-        w_abstractNum.append_child("w:nsid").append_attribute("w:val").set_value(randomNSID.c_str());
+        w_abstractNum.append_child("w:nsid").append_attribute("w:val").set_value(NSID.c_str());
         w_abstractNum.append_child("w:tmpl").append_attribute("w:val").set_value("E164460E");
 
         for (int level = 0; level <= 8; level++) {
@@ -1051,21 +1033,10 @@ namespace docx {
             w_lvl.append_child("w:start").append_attribute("w:val").set_value(1);
 
             if (level == 1) {
-                if (prevExists) {
-                    w_lvl.append_attribute("w:tplc").set_value("FFFFFFFF"); // 0409000F
-                }
-                else {
-                    w_lvl.append_attribute("w:tplc").set_value("0409000F"); // 0409000F
-                }
+                w_lvl.append_attribute("w:tplc").set_value("0409000F");                
                 w_lvl.append_child("w:numFmt").append_attribute("w:val").set_value("lowerLetter");
-            }
-            else {
-                if (prevExists) {
-                    w_lvl.append_attribute("w:tplc").set_value("FFFFFFFF"); // 0409000F
-                }
-                else {
-                    w_lvl.append_attribute("w:tplc").set_value("04090019"); // 0409000F
-                }
+            } else {
+                w_lvl.append_attribute("w:tplc").set_value("04090019");            
                 w_lvl.append_child("w:numFmt").append_attribute("w:val").set_value("decimal");
             }
 
@@ -1202,7 +1173,7 @@ namespace docx {
 #endif
         }
 
-        return newAbstractNum;
+        return w_abstractNum;
     };
     
 #if 0
@@ -1403,40 +1374,39 @@ namespace docx {
         }
 
 #else
-       
         if (impl_()->Document && impl_()->Document->numbers_) {
             auto numbers = impl_()->Document->numbers_.child("w:numbering");
-            if (numbers) {
-                pugi::xml_node nonAbstractChild; {
-                    auto listNumberStr = std::to_string(listNumber);
-                    nonAbstractChild = numbers.find_child_by_attribute("w:numId", listNumberStr.c_str());
+            if (numbers) { // add new nodes
+                cweeStr desiredNSID = cweeStr::printf("%08d", listNumber);                
+                desiredNSID[0] = '0' + static_cast<int>(type);                
+                pugi::xml_node abstractChild;
+                for (auto& child : numbers.children("w:abstractNum")) {
+                    if (child) {
+                        auto w_nsid = child.child("w:nsid");
+                        if (w_nsid) {
+                            AUTO nsid = w_nsid.attribute("w:val").value();
+                            if (desiredNSID == nsid) {
+                                abstractChild = child;
+                                break;
+                            }
+                        }
+                    }
                 }
-                if (nonAbstractChild) { // exists but we may need to change the bullet type                    
-                    //auto abstractNumId{ nonAbstractChild.child("abstractNumId").attribute("w:val").value() };
-                    //auto AbstractChild = numbers.find_child_by_attribute("w:abstractNumId", abstractNumId);
-                    //if (AbstractChild) {
-                    //    UpdateAbstractNumList(AbstractChild, indentLevel, type);
-                    //}
+                if (!abstractChild) {
+                    abstractChild = AppendAbstractNumList(numbers, listNumber, indentLevel, type, desiredNSID);
                 }
-                else {
-                    int abstractNum = AppendAbstractNumList(numbers, listNumber, indentLevel, type);
-
-                    nonAbstractChild = numbers.append_child("w:num");
+                AUTO nonAbstractChild = numbers.append_child("w:num"); {
                     nonAbstractChild.append_attribute("w:numId").set_value(listNumber);
-                    nonAbstractChild.append_child("w:abstractNumId").append_attribute("w:val").set_value(abstractNum);
+                    nonAbstractChild.append_child("w:abstractNumId").append_attribute("w:val").set_value(abstractChild.attribute("w:abstractNumId").value());
                 }
             }
         }
-
         auto elemNumPr = impl_()->w_pPr_.child("w:numPr");
-        if (!elemNumPr) {
-            elemNumPr = impl_()->w_pPr_.append_child("w:numPr");
-        }
+        if (!elemNumPr) elemNumPr = impl_()->w_pPr_.append_child("w:numPr");        
         {
             auto wilvl = elemNumPr.child("w:ilvl");
-            if (!wilvl) {
-                wilvl = elemNumPr.append_child("w:ilvl");
-            } {
+            if (!wilvl) wilvl = elemNumPr.append_child("w:ilvl");            
+            {
                 auto styleVal = wilvl.attribute("w:val");
                 if (!styleVal) {
                     styleVal = wilvl.append_attribute("w:val");
@@ -1445,19 +1415,13 @@ namespace docx {
             }
 
             auto wiNum = elemNumPr.child("w:numId");
-            if (!wiNum) {
-                wiNum = elemNumPr.append_child("w:numId");
-            } {
+            if (!wiNum) wiNum = elemNumPr.append_child("w:numId");
+            {
                 auto styleVal = wiNum.attribute("w:val");
-                if (!styleVal) {
-                    styleVal = wiNum.append_attribute("w:val");
-                }
+                if (!styleVal) styleVal = wiNum.append_attribute("w:val");                
                 styleVal.set_value(listNumber);
             }
         }
-
-
-
 #endif
     };
     void Paragraph::SetAlignment(const Alignment alignment)

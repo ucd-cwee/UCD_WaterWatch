@@ -183,6 +183,7 @@ namespace chaiscript {
             lib->AddFunction(, AppendRun, , return o.AppendRun(text, fontSize); , Paragraph& o, const std::string& text, const double fontSize);
             lib->AddFunction(, AppendRun, , return o.AppendRun(text, fontSize, fontAscii); , Paragraph& o, const std::string& text, const double fontSize, const std::string& fontAscii);
             lib->add(chaiscript::fun(&Paragraph::AppendPageBreak), "AppendPageBreak");
+            lib->AddFunction(, SetNumberedList, , return o.SetNumberedList(listNumber, 0); , Paragraph& o, int listNumber);
             lib->AddFunction(, SetNumberedList, , return o.SetNumberedList(listNumber, indentLevel);, Paragraph& o, int listNumber, int indentLevel);
             lib->AddFunction(, SetNumberedList, , return o.SetNumberedList(listNumber, indentLevel, static_cast<Paragraph::BulletType>(GetBetterEnum<BulletType>(bulletType)._to_integral())); , Paragraph& o, int listNumber, int indentLevel, cweeStr const& bulletType);
             lib->AddFunction(, SetHorizontalAlignment, , return o.SetAlignment(static_cast<Paragraph::Alignment>(GetBetterEnum<HorizontalAlignment>(input)._to_integral())); , Paragraph& o, cweeStr const& input);
