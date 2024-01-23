@@ -1334,6 +1334,10 @@ INLINE void cweeStr::Insert(const char* text, long long index) {
 	len += l;
 }
 
+INLINE bool cweeStr::CharIsLower(size_t c) {
+	return (c >= 'a' && c <= 'z') || (c >= 0xE0 && c <= 0xFF);
+}
+
 INLINE void cweeStr::ToLower() {
 	for (size_t i = 0; data[i]; i++) {
 		if (CharIsUpper(data[i])) {
@@ -1348,6 +1352,19 @@ INLINE void cweeStr::ToUpper() {
 			data[i] -= ('a' - 'A');
 		}
 	}
+}
+
+INLINE bool cweeStr::CharIsNewLine(char c) {
+	return (c == '\n' || c == '\r' || c == '\v');
+}
+
+INLINE bool cweeStr::CharIsTab(char c) {
+	return (c == '\t');
+}
+
+INLINE bool cweeStr::CharIsAlpha(size_t c) {
+	return ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+		(c >= 0xC0 && c <= 0xFF));
 }
 
 INLINE bool cweeStr::IsNumeric() const {
@@ -1596,30 +1613,18 @@ INLINE bool cweeStr::CharIsPrsize_table(size_t c) {
 	return (c >= 0x20 && c <= 0x7E) || (c >= 0xA1 && c <= 0xFF);
 }
 
-INLINE bool cweeStr::CharIsLower(size_t c) {
-	return (c >= 'a' && c <= 'z') || (c >= 0xE0 && c <= 0xFF);
-}
+
 
 INLINE bool cweeStr::CharIsUpper(size_t c) {
 	return (c <= 'Z' && c >= 'A') || (c >= 0xC0 && c <= 0xDF);
 }
 
-INLINE bool cweeStr::CharIsAlpha(size_t c) {
-	return ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
-		(c >= 0xC0 && c <= 0xFF));
-}
+
 
 INLINE bool cweeStr::CharIsNumeric(size_t c) {
 	return (c <= '9' && c >= '0');
 }
 
-INLINE bool cweeStr::CharIsNewLine(char c) {
-	return (c == '\n' || c == '\r' || c == '\v');
-}
-
-INLINE bool cweeStr::CharIsTab(char c) {
-	return (c == '\t');
-}
 
 INLINE size_t cweeStr::DynamicMemoryUsed() const {
 	return (data == baseBuffer) ? 0 : GetAlloced();

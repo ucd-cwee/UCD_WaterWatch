@@ -255,31 +255,6 @@ namespace dlib
 
             return count;
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 #else
 
             if (1) {
@@ -302,8 +277,6 @@ namespace dlib
                     << "\n\t Cn:                         " << Cn
                     << "\n\t eps:                        " << eps
                 );
-
-
 
                 set_initial_alpha(y, B, Cp, Cn, alpha);
 
@@ -359,6 +332,7 @@ namespace dlib
                         if (numFails > 10) return count;
                     }
 #endif
+                    orig_eps *= 1.001; // 1.0001 is nearly an exact match, but is slow
 
                     ++count;
                     const scalar_type old_alpha_i = alpha(i);

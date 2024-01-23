@@ -294,10 +294,10 @@ MachineLearning_Results cweeMachineLearning::LearnFast(const cweeThreadedList<fl
 		TrueLabels = trueLabels;
 
 		out = LearnSVRFast(TrueLabels, Features); // to-do, switch statement.
-		auto ML_result = Forecast(out, Features);
-		vec2 t1 = CalculateError(TrueLabels, ML_result);
-		out.performance.x = t1.x;
-		out.performance.y = t1.y;
+		//auto ML_result = Forecast(out, Features);
+		//vec2 t1 = CalculateError(TrueLabels, ML_result);
+		//out.performance.x = t1.x;
+		//out.performance.y = t1.y;
 	}
 	else {
 		cweeThreadedList<cweeThreadedList<float>> featuresLearn = features;
@@ -1107,8 +1107,20 @@ namespace chaiscript {
 				}
 				return cweeUnitPattern::Lerp(learn.Forecast(), pat, mask);				
 			};
-
 			lib->AddFunction(todo, Clean, -> cweeUnitPattern, return todo(pat), cweeUnitPattern const& pat);
+
+			AUTO todo2 = [](cweeUnitPattern const& pat, cweeUnitPattern const& mask) {
+				PatternLearner learn; {
+					learn.Labels = pat;
+					learn.annualEffect = true;
+					learn.monthlyEffect = true;
+					learn.weekdayEffect = true;
+					learn.hourlyEffect = true;
+					learn.Learn(mask);
+				}
+				return cweeUnitPattern::Lerp(learn.Forecast(), pat, mask);
+			};
+			lib->AddFunction(todo2, Clean, -> cweeUnitPattern, return todo2(pat, mask), cweeUnitPattern const& pat, cweeUnitPattern const& mask);
 
 #else
 			class PatternLearner {

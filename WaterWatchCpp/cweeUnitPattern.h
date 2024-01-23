@@ -2600,17 +2600,43 @@ public:
 		};
 		
 		AUTO init = GetOutlierMask(*this).Ceiling();
+
+#if 1
 		init.ClampValues(0, 1);
 
 		cweeUnitPattern out(this->X_Type(), 1);
-		
-		for (auto& x : init.GetTimeSeries(init.GetMinTime(), init.GetMaxTime(), init.GetMinimumTimeStep())) 
+
+		for (auto& x : init.GetTimeSeries(init.GetMinTime(), init.GetMaxTime(), init.GetMinimumTimeStep()))
 			out.AddValue(x.first, x.second);
-		
+
 		cweeUnitPattern out2 = (out + init).Ceiling();
 		out2.ClampValues(0, 1);
 		out2.RemoveUnnecessaryKnots();
 		return out2;
+#else
+		init.RemoveUnnecessaryKnots();
+
+		cweeUnitPattern out(this->X_Type(), 1);
+		
+		cweeUnitValues::unit_value tempV{ cweeMath::INF };
+		cweeUnitValues::unit_value tempV2{ cweeMath::INF };
+		auto iter_maxT = init.GetMaxTime();
+		auto iter_stepT = init.GetMinimumTimeStep();
+		for (auto iter_t = init.GetMinTime(); iter_t <= iter_maxT; iter_t += iter_stepT) {
+			tempV = init.GetCurrentValue(iter_t);
+			if (tempV != tempV2) {
+				tempV2 = tempV;
+				out.AddValue(iter_t, tempV);
+			}
+		}
+		out.RemoveUnnecessaryKnots();
+
+		cweeUnitPattern out2 = (out + init).Ceiling();
+		out2.ClampValues(0, 1);
+		out2.RemoveUnnecessaryKnots();
+
+		return out2;
+#endif
 	};
 
 
@@ -2872,9 +2898,10 @@ public:
 					maxT = (container->internal_X_type = (t1 + stepDiv2));
 				}
 
-				for (t = t0; (t + step) < minGot; t += step) sum += step * GetCurrentValue(t + stepDiv2);
+				
+				t = t0; //for (t = t0; (t + step) < minGot; t += step) sum += step * GetCurrentValue(t + stepDiv2);
 				if (minGot > t) sum += (minGot - t) * GetCurrentValue(t + ((minGot - t) / 2.0));
-				for (t = maxGot; (t + step) < t1; t += step) sum += step * GetCurrentValue(t + stepDiv2);
+				t = maxGot; //for (t = maxGot; (t + step) < t1; t += step) sum += step * GetCurrentValue(t + stepDiv2);				
 				if (t1 > t)  sum += (t1 - t) * GetCurrentValue(t + ((t1 - t) / 2.0));
 			}
 
@@ -2920,9 +2947,9 @@ public:
 					maxT = (container->internal_X_type = (t1 + stepDiv2));
 				}
 
-				for (t = t0; (t + step) < minGot; t += step) sum += step * GetCurrentValue(t + stepDiv2);
+				t = t0;//for (t = t0; (t + step) < minGot; t += step) sum += step * GetCurrentValue(t + stepDiv2);
 				if (minGot > t) sum += (minGot - t) * GetCurrentValue(t + ((minGot - t) / 2.0));
-				for (t = maxGot; (t + step) < t1; t += step) sum += step * GetCurrentValue(t + stepDiv2);
+				t = maxGot;// for (t = maxGot; (t + step) < t1; t += step) sum += step * GetCurrentValue(t + stepDiv2);
 				if (t1 > t)  sum += (t1 - t) * GetCurrentValue(t + ((t1 - t) / 2.0));
 			}
 
@@ -2968,9 +2995,9 @@ public:
 					maxT = (container->internal_X_type = (t1 + stepDiv2));
 				}
 
-				for (t = t0; (t + step) < minGot; t += step) sum += step * GetCurrentValue(t + stepDiv2);
+				t = t0;//  for (t = t0; (t + step) < minGot; t += step) sum += step * GetCurrentValue(t + stepDiv2);
 				if (minGot > t) sum += (minGot - t) * GetCurrentValue(t + ((minGot - t) / 2.0));
-				for (t = maxGot; (t + step) < t1; t += step) sum += step * GetCurrentValue(t + stepDiv2);
+				t = maxGot;// for (t = maxGot; (t + step) < t1; t += step) sum += step * GetCurrentValue(t + stepDiv2);
 				if (t1 > t)  sum += (t1 - t) * GetCurrentValue(t + ((t1 - t) / 2.0));
 			}
 
@@ -3683,34 +3710,22 @@ public:
 				AUTO endIter = const_cast<const cweeUnitPatternContainer_t&>(*a.container).end();
 				for (auto iter = const_cast<const cweeUnitPatternContainer_t&>(*a.container).begin(); iter != endIter; ++iter) {
 					if (iter->Y) {
-						result.AddUniqueValue((a.container->internal_X_type = iter->X), (a.container->internal_Y_type = *iter->Y) + b.GetCurrentValue((a.container->internal_X_type = iter->X)));
+						// result.AddUniqueValue((a.container->internal_X_type = iter->X), (a.container->internal_Y_type = *iter->Y) + b.GetCurrentValue((a.container->internal_X_type = iter->X)));
+						result.AddValue(iter->X, *iter->Y + b.GetCurrentValue(iter->X));
 					}
 				}
 				a.lock.Unlock();
-
-				//AUTO knotsA = a.GetKnotSeries();
-				//a.lock.Lock();
-				//for (auto& x : knotsA) {
-				//	result.AddUniqueValue((a.container->internal_X_type = x.first), (a.container->internal_Y_type = x.cweeUnitValues::second) + b.GetCurrentValue((a.container->internal_X_type = x.first)));
-				//}
-				//a.lock.Unlock();
 			}
 			if (true) {
 				b.lock.Lock();
 				AUTO endIter = const_cast<const cweeUnitPatternContainer_t&>(*b.container).end();
 				for (auto iter = const_cast<const cweeUnitPatternContainer_t&>(*b.container).begin(); iter != endIter; ++iter) {
 					if (iter->Y) {
-						result.AddUniqueValue((b.container->internal_X_type = iter->X), (b.container->internal_Y_type = *iter->Y) + a.GetCurrentValue((b.container->internal_X_type = iter->X)));
+						// result.AddUniqueValue((b.container->internal_X_type = iter->X), (b.container->internal_Y_type = *iter->Y) + a.GetCurrentValue((b.container->internal_X_type = iter->X)));
+						result.AddValue(iter->X, *iter->Y + a.GetCurrentValue(iter->X));
 					}
 				}
 				b.lock.Unlock();
-
-				//AUTO knotsB = b.GetKnotSeries();
-				//b.lock.Lock();
-				//for (auto& x : knotsB) {
-				//	result.AddUniqueValue((b.container->internal_X_type = x.first), (b.container->internal_Y_type = x.cweeUnitValues::second) + a.GetCurrentValue((b.container->internal_X_type = x.first)));
-				//}
-				//b.lock.Unlock();
 			}
 		}
 		return result;

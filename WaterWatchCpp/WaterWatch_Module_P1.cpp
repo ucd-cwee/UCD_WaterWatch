@@ -283,9 +283,27 @@ namespace chaiscript {
                 lib->add(chaiscript::fun(&cweeStr::IsEmpty), "IsEmpty");
                 lib->add(chaiscript::fun(&cweeStr::Clear), "Clear");
                 
-
                 lib->AddFunction(, ToLower, , a.ToLower(); return a;, cweeStr& a);
                 lib->AddFunction(, ToUpper, , a.ToUpper(); return a; , cweeStr& a);
+                lib->add(chaiscript::fun([](cweeStr& a) -> cweeStr {
+                    bool newWord = true;
+                    for (size_t i = 0; a[i]; i++) {
+                        if (newWord) {
+                            if (cweeStr::CharIsAlpha(a[i])) {
+                                if (cweeStr::CharIsLower(a[i])) {
+                                    a[i] -= ('a' - 'A');
+                                }
+                                newWord = false;
+                            }
+                        }
+                        else {
+                            if ((a[i] == ' ') || cweeStr::CharIsNewLine(a[i]) || cweeStr::CharIsTab(a[i])) {
+                                newWord = true;
+                            }
+                        }
+                    }
+                    return a;
+                }), "ToWordCase");
                 lib->add(chaiscript::fun([](cweeStr& a) { return a.IsNumeric(); }), "IsNumeric");
                 lib->add(chaiscript::fun([](cweeStr& a, cweeStr const& b) { return a.Find(b, true); }), "Find");
                 lib->add(chaiscript::fun([](cweeStr& a, cweeStr const& b) { return a.Find(b, false); }), "iFind");

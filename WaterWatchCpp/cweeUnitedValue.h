@@ -455,7 +455,14 @@ public:
 		static bool is_scalar(unit_value const& V) noexcept { return V.unit_m.isScalar_m; };
 
 	private:
-		static std::string GetValueStr(unit_value const& V) noexcept { return std::to_string((float)V()); };
+		static std::string GetValueStr(unit_value const& V) noexcept { 
+			float v = V();
+			if (std::fmod(v, 1.0) == 0.0) { // integer?
+				return cweeUnitValues::Unit_ID::printf("%i", (int)v);
+			} else { // floating-point
+				return cweeUnitValues::Unit_ID::printf("%.4f", (float)v);
+			}
+		};
 		static bool NormalArithmeticOkay(unit_value const& LHS, unit_value const& RHS) noexcept {
 			if (is_scalar(LHS) || is_scalar(RHS)) return true;
 			if (IdenticalUnits(LHS, RHS)) return true;

@@ -225,6 +225,8 @@ namespace docx {
         void SetAllBorders(const BorderStyle style = BorderStyle::Single, const double width = 0.5, std::string const& color = "auto");
         void SetBorders_(std::string const& elemName, const BorderStyle style, const double width, std::string const& color);
 
+        void SetLeftIndent(const int leftIndent);
+
     private:
         class Impl;
         Impl* impl_() const { return static_cast<Impl*>(impl.Get()); };
@@ -398,8 +400,8 @@ namespace docx {
         enum class Alignment { Left, Centered, Right, Justified, Distributed };
         void SetAlignment(const Alignment alignment);
 
-        enum class BulletType { Bullet, Number, Alpha };
-        void SetNumberedList(const int level, const int indentLevel, BulletType type = BulletType::Bullet);
+        enum class BulletType { Alpha, Number, Bullet };
+        void SetNumberedList(const int level, const int indentLevel, BulletType type = BulletType::Number);
 
         void SetLineSpacingSingle();               // Single
         void SetLineSpacingLines(const double at); // 1.5 lines, Double (2 lines), Multiple (3 lines)

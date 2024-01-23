@@ -69,7 +69,7 @@ BETTER_ENUM(HorizontalAlignment, int, Left, Center, Right, Justified, Distribute
 BETTER_ENUM(BorderStyle, int, Single, Dotted, Dashed, DotDash, Double, Wave, None);
 BETTER_ENUM(FontStyle, int, a, Bold, Italic,d, Underline,f,g,h, Strikethrough,j,l);
 BETTER_ENUM(PageNumberFormat, int, Decimal, NumberInDash, CardinalText, OrdinalText, LowerLetter, UpperLetter, LowerRoman, UpperRoman);
-BETTER_ENUM(BulletType, int, Bullet, Number, Alpha);
+BETTER_ENUM(BulletType, int, Alpha, Number, Bullet);
 
 namespace chaiscript {
     namespace WaterWatch_Lib {
@@ -111,6 +111,7 @@ namespace chaiscript {
             lib->add(chaiscript::fun(&Table::RemoveCell_), "RemoveCell_");
             lib->add(chaiscript::fun(&Table::SetWidthAuto), "SetWidthAuto");
             lib->add(chaiscript::fun(&Table::SetWidthPercent), "SetWidthPercent");
+            lib->AddFunction(, SetLeftIndent, , return o.SetLeftIndent(leftIndent); , Table& o, double leftIndent);
             lib->AddFunction(, SetWidth, , return o.SetWidth(w);, Table& o, int w);            
             lib->AddFunction(, SetCellMarginTop, , return o.SetCellMarginTop(w); , Table& o, int w);
             lib->AddFunction(, SetCellMarginBottom, , return o.SetCellMarginBottom(w); , Table& o, int w);
