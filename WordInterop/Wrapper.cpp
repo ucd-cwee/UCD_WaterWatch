@@ -178,6 +178,8 @@ namespace chaiscript {
             lib->add(chaiscript::fun(&Paragraph::Next), "Next");
             lib->add(chaiscript::fun(&Paragraph::Prev), "Prev");
             lib->add(chaiscript::fun(&Paragraph::FirstRun), "FirstRun");
+            lib->AddFunction(, AppendField, , return o.AppendField(); , Paragraph& o);
+            lib->AddFunction(, AppendField, , return o.AppendField(text); , Paragraph& o, const std::string& text);
             lib->AddFunction(, AppendRun, , return o.AppendRun();, Paragraph& o);
             lib->AddFunction(, AppendRun, , return o.AppendRun(text);, Paragraph& o, const std::string& text);
             lib->AddFunction(, AppendRun, , return o.AppendRun(text, fontSize); , Paragraph& o, const std::string& text, const double fontSize);

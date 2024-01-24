@@ -389,6 +389,9 @@ namespace docx {
         // get run
         Run FirstRun();
 
+        // add field
+        Run AppendField(const std::string& category = " SEQ Table \\* ARABIC ");
+
         // add run
         Run AppendRun();
         Run AppendRun(const std::string& text);

@@ -929,6 +929,30 @@ namespace docx {
 
         return out;
     }
+    Run Paragraph::AppendField(const std::string& category) {
+        if (!impl) return Run();
+        {
+            auto w_r = impl_()->w_p_.append_child("w:r");
+            w_r.append_child("w:fldChar").append_attribute("w:fldCharType").set_value("begin");
+        }
+        {
+            auto w_r = impl_()->w_p_.append_child("w:r");
+            auto w_instrText = w_r.append_child("w:instrText");
+            w_instrText.append_attribute("xml:space").set_value("preserve");
+            w_instrText.text().set(category.c_str());
+        }
+        {
+            auto w_r = impl_()->w_p_.append_child("w:r");
+            w_r.append_child("w:fldChar").append_attribute("w:fldCharType").set_value("separate");
+        }
+        {
+            auto w_r = impl_()->w_p_.append_child("w:r");
+        }
+        {
+            auto w_r = impl_()->w_p_.append_child("w:r");
+            w_r.append_child("w:fldChar").append_attribute("w:fldCharType").set_value("end");
+        }
+    }
     Run Paragraph::AppendRun()
     {
         if (!impl) return Run();
