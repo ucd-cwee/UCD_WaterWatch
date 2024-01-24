@@ -70,6 +70,7 @@ BETTER_ENUM(BorderStyle, int, Single, Dotted, Dashed, DotDash, Double, Wave, Non
 BETTER_ENUM(FontStyle, int, a, Bold, Italic,d, Underline,f,g,h, Strikethrough,j,l);
 BETTER_ENUM(PageNumberFormat, int, Decimal, NumberInDash, CardinalText, OrdinalText, LowerLetter, UpperLetter, LowerRoman, UpperRoman);
 BETTER_ENUM(BulletType, int, Alpha, Number, Bullet);
+BETTER_ENUM(DocxFieldType, int, Table, Figure);
 
 namespace chaiscript {
     namespace WaterWatch_Lib {
@@ -178,8 +179,8 @@ namespace chaiscript {
             lib->add(chaiscript::fun(&Paragraph::Next), "Next");
             lib->add(chaiscript::fun(&Paragraph::Prev), "Prev");
             lib->add(chaiscript::fun(&Paragraph::FirstRun), "FirstRun");
-            lib->AddFunction(, AppendField, , return o.AppendField(); , Paragraph& o);
-            lib->AddFunction(, AppendField, , return o.AppendField(text); , Paragraph& o, const std::string& text);
+            lib->AddFunction(, AppendField, , return o.AppendField(static_cast<Paragraph::Field>(GetBetterEnum<DocxFieldType>(tableOrFigure)._to_integral())); , Paragraph& o, cweeStr const& tableOrFigure);
+            lib->AddFunction(, SetHeading, , return o.SetHeading(headingLevel);, Paragraph& o, int headingLevel);
             lib->AddFunction(, AppendRun, , return o.AppendRun();, Paragraph& o);
             lib->AddFunction(, AppendRun, , return o.AppendRun(text);, Paragraph& o, const std::string& text);
             lib->AddFunction(, AppendRun, , return o.AppendRun(text, fontSize); , Paragraph& o, const std::string& text, const double fontSize);

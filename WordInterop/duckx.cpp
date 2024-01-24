@@ -11,7 +11,7 @@
 #define _RELS R"(<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>)"
 #define DOCUMENT_XML R"(<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document xmlns:wpc="http://schemas.microsoft.com/office/word/2010/wordprocessingCanvas" xmlns:cx="http://schemas.microsoft.com/office/drawing/2014/chartex" xmlns:cx1="http://schemas.microsoft.com/office/drawing/2015/9/8/chartex" xmlns:cx2="http://schemas.microsoft.com/office/drawing/2015/10/21/chartex" xmlns:cx3="http://schemas.microsoft.com/office/drawing/2016/5/9/chartex" xmlns:cx4="http://schemas.microsoft.com/office/drawing/2016/5/10/chartex" xmlns:cx5="http://schemas.microsoft.com/office/drawing/2016/5/11/chartex" xmlns:cx6="http://schemas.microsoft.com/office/drawing/2016/5/12/chartex" xmlns:cx7="http://schemas.microsoft.com/office/drawing/2016/5/13/chartex" xmlns:cx8="http://schemas.microsoft.com/office/drawing/2016/5/14/chartex" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" xmlns:aink="http://schemas.microsoft.com/office/drawing/2016/ink" xmlns:am3d="http://schemas.microsoft.com/office/drawing/2017/model3d" xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:oel="http://schemas.microsoft.com/office/2019/extlst" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math" xmlns:v="urn:schemas-microsoft-com:vml" xmlns:wp14="http://schemas.microsoft.com/office/word/2010/wordprocessingDrawing" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:w10="urn:schemas-microsoft-com:office:word" xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml" xmlns:w15="http://schemas.microsoft.com/office/word/2012/wordml" xmlns:w16cex="http://schemas.microsoft.com/office/word/2018/wordml/cex" xmlns:w16cid="http://schemas.microsoft.com/office/word/2016/wordml/cid" xmlns:w16="http://schemas.microsoft.com/office/word/2018/wordml" xmlns:w16sdtdh="http://schemas.microsoft.com/office/word/2020/wordml/sdtdatahash" xmlns:w16se="http://schemas.microsoft.com/office/word/2015/wordml/symex" xmlns:wpg="http://schemas.microsoft.com/office/word/2010/wordprocessingGroup" xmlns:wpi="http://schemas.microsoft.com/office/word/2010/wordprocessingInk" xmlns:wne="http://schemas.microsoft.com/office/word/2006/wordml" xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape" mc:Ignorable="w14 w15 w16se w16cid w16 w16cex w16sdtdh wp14"><w:body><w:sectPr><w:pgSz w:w="11906" w:h="16838" /><w:pgMar w:top="1440" w:right="1800" w:bottom="1440" w:left="1800" w:header="851" w:footer="992" w:gutter="0" /><w:cols w:space="425" /><w:docGrid w:type="lines" w:linePitch="312" /></w:sectPr></w:body></w:document>)"
 #define CONTENT_TYPES_XML R"(<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/footer1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml"/><Override PartName="/word/numbering.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml"/><Override PartName="/word/settings.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/><Override PartName="/word/theme/theme1.xml" ContentType="application/vnd.openxmlformats-officedocument.theme+xml"/></Types>)"
-#define DOCUMENT_XML_RELS R"(<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/settings" Target="settings.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/numbering" Target="numbering.xml"/><Relationship Id="rId6" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme" Target="theme/theme1.xml"/></Relationships>)"
+#define DOCUMENT_XML_RELS R"(<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/settings" Target="settings.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/numbering" Target="numbering.xml"/><Relationship Id="rId6" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme" Target="theme/theme1.xml"/><Relationship Id="rId4" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/chart" Target="charts/chart1.xml"/></Relationships>)"
 #define FOOTER1_XML R"(<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:ftr xmlns:wpc="http://schemas.microsoft.com/office/word/2010/wordprocessingCanvas" xmlns:cx="http://schemas.microsoft.com/office/drawing/2014/chartex" xmlns:cx1="http://schemas.microsoft.com/office/drawing/2015/9/8/chartex" xmlns:cx2="http://schemas.microsoft.com/office/drawing/2015/10/21/chartex" xmlns:cx3="http://schemas.microsoft.com/office/drawing/2016/5/9/chartex" xmlns:cx4="http://schemas.microsoft.com/office/drawing/2016/5/10/chartex" xmlns:cx5="http://schemas.microsoft.com/office/drawing/2016/5/11/chartex" xmlns:cx6="http://schemas.microsoft.com/office/drawing/2016/5/12/chartex" xmlns:cx7="http://schemas.microsoft.com/office/drawing/2016/5/13/chartex" xmlns:cx8="http://schemas.microsoft.com/office/drawing/2016/5/14/chartex" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" xmlns:aink="http://schemas.microsoft.com/office/drawing/2016/ink" xmlns:am3d="http://schemas.microsoft.com/office/drawing/2017/model3d" xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:oel="http://schemas.microsoft.com/office/2019/extlst" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math" xmlns:v="urn:schemas-microsoft-com:vml" xmlns:wp14="http://schemas.microsoft.com/office/word/2010/wordprocessingDrawing" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:w10="urn:schemas-microsoft-com:office:word" xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml" xmlns:w15="http://schemas.microsoft.com/office/word/2012/wordml" xmlns:w16cex="http://schemas.microsoft.com/office/word/2018/wordml/cex" xmlns:w16cid="http://schemas.microsoft.com/office/word/2016/wordml/cid" xmlns:w16="http://schemas.microsoft.com/office/word/2018/wordml" xmlns:w16du="http://schemas.microsoft.com/office/word/2023/wordml/word16du" xmlns:w16sdtdh="http://schemas.microsoft.com/office/word/2020/wordml/sdtdatahash" xmlns:w16se="http://schemas.microsoft.com/office/word/2015/wordml/symex" xmlns:wpg="http://schemas.microsoft.com/office/word/2010/wordprocessingGroup" xmlns:wpi="http://schemas.microsoft.com/office/word/2010/wordprocessingInk" xmlns:wne="http://schemas.microsoft.com/office/word/2006/wordml" xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape" mc:Ignorable="w14 w15 w16se w16cid w16 w16cex w16sdtdh wp14"><w:p><w:pPr><w:jc w:val="center" /></w:pPr><w:r><w:fldChar w:fldCharType="begin" /></w:r><w:r><w:instrText>PAGE \* MERGEFORMAT</w:instrText></w:r><w:r><w:fldChar w:fldCharType="end" /></w:r></w:p></w:ftr>)"
 // #define NUMBERING_XML R"(<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:numbering xmlns:wpc="http://schemas.microsoft.com/office/word/2010/wordprocessingCanvas" xmlns:cx="http://schemas.microsoft.com/office/drawing/2014/chartex" xmlns:cx1="http://schemas.microsoft.com/office/drawing/2015/9/8/chartex" xmlns:cx2="http://schemas.microsoft.com/office/drawing/2015/10/21/chartex" xmlns:cx3="http://schemas.microsoft.com/office/drawing/2016/5/9/chartex" xmlns:cx4="http://schemas.microsoft.com/office/drawing/2016/5/10/chartex" xmlns:cx5="http://schemas.microsoft.com/office/drawing/2016/5/11/chartex" xmlns:cx6="http://schemas.microsoft.com/office/drawing/2016/5/12/chartex" xmlns:cx7="http://schemas.microsoft.com/office/drawing/2016/5/13/chartex" xmlns:cx8="http://schemas.microsoft.com/office/drawing/2016/5/14/chartex" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" xmlns:aink="http://schemas.microsoft.com/office/drawing/2016/ink" xmlns:am3d="http://schemas.microsoft.com/office/drawing/2017/model3d" xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math" xmlns:v="urn:schemas-microsoft-com:vml" xmlns:wp14="http://schemas.microsoft.com/office/word/2010/wordprocessingDrawing" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:w10="urn:schemas-microsoft-com:office:word" xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml" xmlns:w15="http://schemas.microsoft.com/office/word/2012/wordml" xmlns:w16cid="http://schemas.microsoft.com/office/word/2016/wordml/cid" xmlns:w16se="http://schemas.microsoft.com/office/word/2015/wordml/symex" xmlns:wpg="http://schemas.microsoft.com/office/word/2010/wordprocessingGroup" xmlns:wpi="http://schemas.microsoft.com/office/word/2010/wordprocessingInk" xmlns:wne="http://schemas.microsoft.com/office/word/2006/wordml" xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape" mc:Ignorable="w14 w15 w16se w16cid wp14"><w:abstractNum w:abstractNumId="0" w15:restartNumberingAfterBreak="0"><w:nsid w:val="316E7BC8"/><w:multiLevelType w:val="hybridMultilevel"/><w:tmpl w:val="F4EA5848"/><w:lvl w:ilvl="0" w:tplc="04090001"><w:start w:val="1"/><w:numFmt w:val="bullet"/><w:lvlText w:val=""/><w:lvlJc w:val="left"/><w:pPr><w:ind w:left="720" w:hanging="360"/></w:pPr><w:rPr><w:rFonts w:ascii="Symbol" w:hAnsi="Symbol" w:hint="default"/></w:rPr></w:lvl><w:lvl w:ilvl="1" w:tplc="04090003"><w:start w:val="1"/><w:numFmt w:val="bullet"/><w:lvlText w:val="o"/><w:lvlJc w:val="left"/><w:pPr><w:ind w:left="1440" w:hanging="360"/></w:pPr><w:rPr><w:rFonts w:ascii="Courier New" w:hAnsi="Courier New" w:cs="Courier New" w:hint="default"/></w:rPr></w:lvl><w:lvl w:ilvl="2" w:tplc="04090005" w:tentative="1"><w:start w:val="1"/><w:numFmt w:val="bullet"/><w:lvlText w:val=""/><w:lvlJc w:val="left"/><w:pPr><w:ind w:left="2160" w:hanging="360"/></w:pPr><w:rPr><w:rFonts w:ascii="Wingdings" w:hAnsi="Wingdings" w:hint="default"/></w:rPr></w:lvl><w:lvl w:ilvl="3" w:tplc="04090001" w:tentative="1"><w:start w:val="1"/><w:numFmt w:val="bullet"/><w:lvlText w:val=""/><w:lvlJc w:val="left"/><w:pPr><w:ind w:left="2880" w:hanging="360"/></w:pPr><w:rPr><w:rFonts w:ascii="Symbol" w:hAnsi="Symbol" w:hint="default"/></w:rPr></w:lvl><w:lvl w:ilvl="4" w:tplc="04090003" w:tentative="1"><w:start w:val="1"/><w:numFmt w:val="bullet"/><w:lvlText w:val="o"/><w:lvlJc w:val="left"/><w:pPr><w:ind w:left="3600" w:hanging="360"/></w:pPr><w:rPr><w:rFonts w:ascii="Courier New" w:hAnsi="Courier New" w:cs="Courier New" w:hint="default"/></w:rPr></w:lvl><w:lvl w:ilvl="5" w:tplc="04090005" w:tentative="1"><w:start w:val="1"/><w:numFmt w:val="bullet"/><w:lvlText w:val=""/><w:lvlJc w:val="left"/><w:pPr><w:ind w:left="4320" w:hanging="360"/></w:pPr><w:rPr><w:rFonts w:ascii="Wingdings" w:hAnsi="Wingdings" w:hint="default"/></w:rPr></w:lvl><w:lvl w:ilvl="6" w:tplc="04090001" w:tentative="1"><w:start w:val="1"/><w:numFmt w:val="bullet"/><w:lvlText w:val=""/><w:lvlJc w:val="left"/><w:pPr><w:ind w:left="5040" w:hanging="360"/></w:pPr><w:rPr><w:rFonts w:ascii="Symbol" w:hAnsi="Symbol" w:hint="default"/></w:rPr></w:lvl><w:lvl w:ilvl="7" w:tplc="04090003" w:tentative="1"><w:start w:val="1"/><w:numFmt w:val="bullet"/><w:lvlText w:val="o"/><w:lvlJc w:val="left"/><w:pPr><w:ind w:left="5760" w:hanging="360"/></w:pPr><w:rPr><w:rFonts w:ascii="Courier New" w:hAnsi="Courier New" w:cs="Courier New" w:hint="default"/></w:rPr></w:lvl><w:lvl w:ilvl="8" w:tplc="04090005" w:tentative="1"><w:start w:val="1"/><w:numFmt w:val="bullet"/><w:lvlText w:val=""/><w:lvlJc w:val="left"/><w:pPr><w:ind w:left="6480" w:hanging="360"/></w:pPr><w:rPr><w:rFonts w:ascii="Wingdings" w:hAnsi="Wingdings" w:hint="default"/></w:rPr></w:lvl></w:abstractNum><w:abstractNum w:abstractNumId="1" w15:restartNumberingAfterBreak="0"><w:nsid w:val="325E017B"/><w:multiLevelType w:val="hybridMultilevel"/><w:tmpl w:val="E164460E"/><w:lvl w:ilvl="0" w:tplc="0409000F"><w:start w:val="1"/><w:numFmt w:val="decimal"/><w:lvlText w:val="%1."/><w:lvlJc w:val="left"/><w:pPr><w:ind w:left="720" w:hanging="360"/></w:pPr></w:lvl><w:lvl w:ilvl="1" w:tplc="04090019"><w:start w:val="1"/><w:numFmt w:val="lowerLetter"/><w:lvlText w:val="%2."/><w:lvlJc w:val="left"/><w:pPr><w:ind w:left="1440" w:hanging="360"/></w:pPr></w:lvl><w:lvl w:ilvl="2" w:tplc="0409001B" w:tentative="1"><w:start w:val="1"/><w:numFmt w:val="lowerRoman"/><w:lvlText w:val="%3."/><w:lvlJc w:val="right"/><w:pPr><w:ind w:left="2160" w:hanging="180"/></w:pPr></w:lvl><w:lvl w:ilvl="3" w:tplc="0409000F" w:tentative="1"><w:start w:val="1"/><w:numFmt w:val="decimal"/><w:lvlText w:val="%4."/><w:lvlJc w:val="left"/><w:pPr><w:ind w:left="2880" w:hanging="360"/></w:pPr></w:lvl><w:lvl w:ilvl="4" w:tplc="04090019" w:tentative="1"><w:start w:val="1"/><w:numFmt w:val="lowerLetter"/><w:lvlText w:val="%5."/><w:lvlJc w:val="left"/><w:pPr><w:ind w:left="3600" w:hanging="360"/></w:pPr></w:lvl><w:lvl w:ilvl="5" w:tplc="0409001B" w:tentative="1"><w:start w:val="1"/><w:numFmt w:val="lowerRoman"/><w:lvlText w:val="%6."/><w:lvlJc w:val="right"/><w:pPr><w:ind w:left="4320" w:hanging="180"/></w:pPr></w:lvl><w:lvl w:ilvl="6" w:tplc="0409000F" w:tentative="1"><w:start w:val="1"/><w:numFmt w:val="decimal"/><w:lvlText w:val="%7."/><w:lvlJc w:val="left"/><w:pPr><w:ind w:left="5040" w:hanging="360"/></w:pPr></w:lvl><w:lvl w:ilvl="7" w:tplc="04090019" w:tentative="1"><w:start w:val="1"/><w:numFmt w:val="lowerLetter"/><w:lvlText w:val="%8."/><w:lvlJc w:val="left"/><w:pPr><w:ind w:left="5760" w:hanging="360"/></w:pPr></w:lvl><w:lvl w:ilvl="8" w:tplc="0409001B" w:tentative="1"><w:start w:val="1"/><w:numFmt w:val="lowerRoman"/><w:lvlText w:val="%9."/><w:lvlJc w:val="right"/><w:pPr><w:ind w:left="6480" w:hanging="180"/></w:pPr></w:lvl></w:abstractNum><w:abstractNum w:abstractNumId="2" w15:restartNumberingAfterBreak="0"><w:nsid w:val="34CC2ED3"/><w:multiLevelType w:val="hybridMultilevel"/><w:tmpl w:val="2A4AA970"/><w:lvl w:ilvl="0" w:tplc="0409000F"><w:start w:val="1"/><w:numFmt w:val="decimal"/><w:lvlText w:val="%1."/><w:lvlJc w:val="left"/><w:pPr><w:ind w:left="720" w:hanging="360"/></w:pPr></w:lvl><w:lvl w:ilvl="1" w:tplc="04090019"><w:start w:val="1"/><w:numFmt w:val="lowerLetter"/><w:lvlText w:val="%2."/><w:lvlJc w:val="left"/><w:pPr><w:ind w:left="1440" w:hanging="360"/></w:pPr></w:lvl><w:lvl w:ilvl="2" w:tplc="0409001B" w:tentative="1"><w:start w:val="1"/><w:numFmt w:val="lowerRoman"/><w:lvlText w:val="%3."/><w:lvlJc w:val="right"/><w:pPr><w:ind w:left="2160" w:hanging="180"/></w:pPr></w:lvl><w:lvl w:ilvl="3" w:tplc="0409000F" w:tentative="1"><w:start w:val="1"/><w:numFmt w:val="decimal"/><w:lvlText w:val="%4."/><w:lvlJc w:val="left"/><w:pPr><w:ind w:left="2880" w:hanging="360"/></w:pPr></w:lvl><w:lvl w:ilvl="4" w:tplc="04090019" w:tentative="1"><w:start w:val="1"/><w:numFmt w:val="lowerLetter"/><w:lvlText w:val="%5."/><w:lvlJc w:val="left"/><w:pPr><w:ind w:left="3600" w:hanging="360"/></w:pPr></w:lvl><w:lvl w:ilvl="5" w:tplc="0409001B" w:tentative="1"><w:start w:val="1"/><w:numFmt w:val="lowerRoman"/><w:lvlText w:val="%6."/><w:lvlJc w:val="right"/><w:pPr><w:ind w:left="4320" w:hanging="180"/></w:pPr></w:lvl><w:lvl w:ilvl="6" w:tplc="0409000F" w:tentative="1"><w:start w:val="1"/><w:numFmt w:val="decimal"/><w:lvlText w:val="%7."/><w:lvlJc w:val="left"/><w:pPr><w:ind w:left="5040" w:hanging="360"/></w:pPr></w:lvl><w:lvl w:ilvl="7" w:tplc="04090019" w:tentative="1"><w:start w:val="1"/><w:numFmt w:val="lowerLetter"/><w:lvlText w:val="%8."/><w:lvlJc w:val="left"/><w:pPr><w:ind w:left="5760" w:hanging="360"/></w:pPr></w:lvl><w:lvl w:ilvl="8" w:tplc="0409001B" w:tentative="1"><w:start w:val="1"/><w:numFmt w:val="lowerRoman"/><w:lvlText w:val="%9."/><w:lvlJc w:val="right"/><w:pPr><w:ind w:left="6480" w:hanging="180"/></w:pPr></w:lvl></w:abstractNum></w:numbering>)"
 #define NUMBERING_XML R"(<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:numbering xmlns:wpc="http://schemas.microsoft.com/office/word/2010/wordprocessingCanvas" xmlns:cx="http://schemas.microsoft.com/office/drawing/2014/chartex" xmlns:cx1="http://schemas.microsoft.com/office/drawing/2015/9/8/chartex" xmlns:cx2="http://schemas.microsoft.com/office/drawing/2015/10/21/chartex" xmlns:cx3="http://schemas.microsoft.com/office/drawing/2016/5/9/chartex" xmlns:cx4="http://schemas.microsoft.com/office/drawing/2016/5/10/chartex" xmlns:cx5="http://schemas.microsoft.com/office/drawing/2016/5/11/chartex" xmlns:cx6="http://schemas.microsoft.com/office/drawing/2016/5/12/chartex" xmlns:cx7="http://schemas.microsoft.com/office/drawing/2016/5/13/chartex" xmlns:cx8="http://schemas.microsoft.com/office/drawing/2016/5/14/chartex" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" xmlns:aink="http://schemas.microsoft.com/office/drawing/2016/ink" xmlns:am3d="http://schemas.microsoft.com/office/drawing/2017/model3d" xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:oel="http://schemas.microsoft.com/office/2019/extlst" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math" xmlns:v="urn:schemas-microsoft-com:vml" xmlns:wp14="http://schemas.microsoft.com/office/word/2010/wordprocessingDrawing" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:w10="urn:schemas-microsoft-com:office:word" xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml" xmlns:w15="http://schemas.microsoft.com/office/word/2012/wordml" xmlns:w16cex="http://schemas.microsoft.com/office/word/2018/wordml/cex" xmlns:w16cid="http://schemas.microsoft.com/office/word/2016/wordml/cid" xmlns:w16="http://schemas.microsoft.com/office/word/2018/wordml" xmlns:w16sdtdh="http://schemas.microsoft.com/office/word/2020/wordml/sdtdatahash" xmlns:w16se="http://schemas.microsoft.com/office/word/2015/wordml/symex" xmlns:wpg="http://schemas.microsoft.com/office/word/2010/wordprocessingGroup" xmlns:wpi="http://schemas.microsoft.com/office/word/2010/wordprocessingInk" xmlns:wne="http://schemas.microsoft.com/office/word/2006/wordml" xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape" mc:Ignorable="w14 w15 w16se w16cid w16 w16cex w16sdtdh wp14"/>)"
@@ -22,6 +22,12 @@
 #define STYLES_XML_5 R"( Colorful Accent 1" w:uiPriority="51"/><w:lsdException w:name="List Table 7 Colorful Accent 1" w:uiPriority="52"/><w:lsdException w:name="List Table 1 Light Accent 2" w:uiPriority="46"/><w:lsdException w:name="List Table 2 Accent 2" w:uiPriority="47"/><w:lsdException w:name="List Table 3 Accent 2" w:uiPriority="48"/><w:lsdException w:name="List Table 4 Accent 2" w:uiPriority="49"/><w:lsdException w:name="List Table 5 Dark Accent 2" w:uiPriority="50"/><w:lsdException w:name="List Table 6 Colorful Accent 2" w:uiPriority="51"/><w:lsdException w:name="List Table 7 Colorful Accent 2" w:uiPriority="52"/><w:lsdException w:name="List Table 1 Light Accent 3" w:uiPriority="46"/><w:lsdException w:name="List Table 2 Accent 3" w:uiPriority="47"/><w:lsdException w:name="List Table 3 Accent 3" w:uiPriority="48"/><w:lsdException w:name="List Table 4 Accent 3" w:uiPriority="49"/><w:lsdException w:name="List Table 5 Dark Accent 3" w:uiPriority="50"/><w:lsdException w:name="List Table 6 Colorful Accent 3" w:uiPriority="51"/><w:lsdException w:name="List Table 7 Colorful Accent 3" w:uiPriority="52"/><w:lsdException w:name="List Table 1 Light Accent 4" w:uiPriority="46"/><w:lsdException w:name="List Table 2 Accent 4" w:uiPriority="47"/><w:lsdException w:name="List Table 3 Accent 4" w:uiPriority="48"/><w:lsdException w:name="List Table 4 Accent 4" w:uiPriority="49"/><w:lsdException w:name="List Table 5 Dark Accent 4" w:uiPriority="50"/><w:lsdException w:name="List Table 6 Colorful Accent 4" w:uiPriority="51"/><w:lsdException w:name="List Table 7 Colorful Accent 4" w:uiPriority="52"/><w:lsdException w:name="List Table 1 Light Accent 5" w:uiPriority="46"/><w:lsdException w:name="List Table 2 Accent 5" w:uiPriority="47"/><w:lsdException w:name="List Table 3 Accent 5" w:uiPriority="48"/><w:lsdException w:name="List Table 4 Accent 5" w:uiPriority="49"/><w:lsdException w:name="List Table 5 Dark Accent 5" w:uiPriority="50"/><w:lsdException w:name="List Table 6 Colorful Accent 5" w:uiPriority="51"/><w:lsdException w:name="List Table 7 Colorful Accent 5" w:uiPriority="52"/><w:lsdException w:name="List Table 1 Light Accent 6" w:uiPriority="46"/><w:lsdException w:name="List Table 2 Accent 6" w:uiPriority="47"/><w:lsdException w:name="List Table 3 Accent 6" w:uiPriority="48"/><w:lsdException w:name="List Table 4 Accent 6" w:uiPriority="49"/><w:lsdException w:name="List Table 5 Dark Accent 6" w:uiPriority="50"/><w:lsdException w:name="List Table 6 Colorful Accent 6" w:uiPriority="51"/><w:lsdException w:name="List Table 7 Colorful Accent 6" w:uiPriority="52"/><w:lsdException w:name="Mention" w:semiHidden="1" w:unhideWhenUsed="1"/><w:lsdException w:name="Smart Hyperlink" w:semiHidden="1" w:unhideWhenUsed="1"/><w:lsdException w:name="Hashtag" w:semiHidden="1" w:unhideWhenUsed="1"/><w:lsdException w:name="Unresolved Mention" w:semiHidden="1" w:unhideWhenUsed="1"/><w:lsdException w:name="Smart Link" w:semiHidden="1" w:unhideWhenUsed="1"/></w:latentStyles><w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/><w:qFormat/></w:style><w:style w:type="character" w:default="1" w:styleId="DefaultParagraphFont"><w:name w:val="Default Paragraph Font"/><w:uiPriority w:val="1"/><w:semiHidden/><w:unhideWhenUsed/></w:style><w:style w:type="table" w:default="1" w:styleId="TableNormal"><w:name w:val="Normal Table"/><w:uiPriority w:val="99"/><w:semiHidden/><w:unhideWhenUsed/><w:tblPr><w:tblInd w:w="0" w:type="dxa"/><w:tblCellMar><w:top w:w="0" w:type="dxa"/><w:left w:w="108" w:type="dxa"/><w:bottom w:w="0" w:type="dxa"/><w:right w:w="108" w:type="dxa"/></w:tblCellMar></w:tblPr></w:style><w:style w:type="numbering" w:default="1" w:styleId="NoList"><w:name w:val="No List"/><w:uiPriority w:val="99"/><w:semiHidden/><w:unhideWhenUsed/></w:style></w:styles>)"
 #define SETTINGS_XML R"(<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:settings xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math" xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w10="urn:schemas-microsoft-com:office:word" xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml" xmlns:w15="http://schemas.microsoft.com/office/word/2012/wordml" xmlns:w16cex="http://schemas.microsoft.com/office/word/2018/wordml/cex" xmlns:w16cid="http://schemas.microsoft.com/office/word/2016/wordml/cid" xmlns:w16="http://schemas.microsoft.com/office/word/2018/wordml" xmlns:w16sdtdh="http://schemas.microsoft.com/office/word/2020/wordml/sdtdatahash" xmlns:w16se="http://schemas.microsoft.com/office/word/2015/wordml/symex" xmlns:sl="http://schemas.openxmlformats.org/schemaLibrary/2006/main" mc:Ignorable="w14 w15 w16se w16cid w16 w16cex w16sdtdh"><w:zoom w:percent="100"/><w:proofState w:spelling="clean" w:grammar="clean"/><w:defaultTabStop w:val="720"/><w:characterSpacingControl w:val="doNotCompress"/><w:compat><w:useFELayout/><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="12"/><w:compatSetting w:name="useWord2013TrackBottomHyphenation" w:uri="http://schemas.microsoft.com/office/word" w:val="1"/></w:compat><w:rsids><w:rsidRoot w:val="00711754"/><w:rsid w:val="005A16A0"/><w:rsid w:val="00711754"/></w:rsids><m:mathPr><m:mathFont m:val="Cambria Math"/><m:brkBin m:val="before"/><m:brkBinSub m:val="--"/><m:smallFrac m:val="0"/><m:dispDef/><m:lMargin m:val="0"/><m:rMargin m:val="0"/><m:defJc m:val="centerGroup"/><m:wrapIndent m:val="1440"/><m:intLim m:val="subSup"/><m:naryLim m:val="undOvr"/></m:mathPr><w:themeFontLang w:val="en-US"/><w:clrSchemeMapping w:bg1="light1" w:t1="dark1" w:bg2="light2" w:t2="dark2" w:accent1="accent1" w:accent2="accent2" w:accent3="accent3" w:accent4="accent4" w:accent5="accent5" w:accent6="accent6" w:hyperlink="hyperlink" w:followedHyperlink="followedHyperlink"/><w:shapeDefaults><o:shapedefaults v:ext="edit" spidmax="1026"/><o:shapelayout v:ext="edit"><o:idmap v:ext="edit" data="1"/></o:shapelayout></w:shapeDefaults><w:decimalSymbol w:val="."/><w:listSeparator w:val=","/><w14:docId w14:val="13A67980"/><w15:docId w15:val="{329DCD25-C76C-4DF3-A865-B9F3B644E005}"/></w:settings>)"
 #define THEME_XML R"(<?xml version="1.0" encoding="UTF-8" standalone="yes"?><a:theme xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" name="Office Theme"><a:themeElements><a:clrScheme name="Office"><a:dk1><a:sysClr val="windowText" lastClr="000000"/></a:dk1><a:lt1><a:sysClr val="window" lastClr="FFFFFF"/></a:lt1><a:dk2><a:srgbClr val="44546A"/></a:dk2><a:lt2><a:srgbClr val="E7E6E6"/></a:lt2><a:accent1><a:srgbClr val="4472C4"/></a:accent1><a:accent2><a:srgbClr val="ED7D31"/></a:accent2><a:accent3><a:srgbClr val="A5A5A5"/></a:accent3><a:accent4><a:srgbClr val="FFC000"/></a:accent4><a:accent5><a:srgbClr val="5B9BD5"/></a:accent5><a:accent6><a:srgbClr val="70AD47"/></a:accent6><a:hlink><a:srgbClr val="0563C1"/></a:hlink><a:folHlink><a:srgbClr val="954F72"/></a:folHlink></a:clrScheme><a:fontScheme name="Office"><a:majorFont><a:latin typeface="Calibri Light" panose="020F0302020204030204"/><a:ea typeface=""/><a:cs typeface=""/><a:font script="Jpan" typeface="游ゴシック Light"/><a:font script="Hang" typeface="맑은 고딕"/><a:font script="Hans" typeface="等线 Light"/><a:font script="Hant" typeface="新細明體"/><a:font script="Arab" typeface="Times New Roman"/><a:font script="Hebr" typeface="Times New Roman"/><a:font script="Thai" typeface="Angsana New"/><a:font script="Ethi" typeface="Nyala"/><a:font script="Beng" typeface="Vrinda"/><a:font script="Gujr" typeface="Shruti"/><a:font script="Khmr" typeface="MoolBoran"/><a:font script="Knda" typeface="Tunga"/><a:font script="Guru" typeface="Raavi"/><a:font script="Cans" typeface="Euphemia"/><a:font script="Cher" typeface="Plantagenet Cherokee"/><a:font script="Yiii" typeface="Microsoft Yi Baiti"/><a:font script="Tibt" typeface="Microsoft Himalaya"/><a:font script="Thaa" typeface="MV Boli"/><a:font script="Deva" typeface="Mangal"/><a:font script="Telu" typeface="Gautami"/><a:font script="Taml" typeface="Latha"/><a:font script="Syrc" typeface="Estrangelo Edessa"/><a:font script="Orya" typeface="Kalinga"/><a:font script="Mlym" typeface="Kartika"/><a:font script="Laoo" typeface="DokChampa"/><a:font script="Sinh" typeface="Iskoola Pota"/><a:font script="Mong" typeface="Mongolian Baiti"/><a:font script="Viet" typeface="Times New Roman"/><a:font script="Uigh" typeface="Microsoft Uighur"/><a:font script="Geor" typeface="Sylfaen"/><a:font script="Armn" typeface="Arial"/><a:font script="Bugi" typeface="Leelawadee UI"/><a:font script="Bopo" typeface="Microsoft JhengHei"/><a:font script="Java" typeface="Javanese Text"/><a:font script="Lisu" typeface="Segoe UI"/><a:font script="Mymr" typeface="Myanmar Text"/><a:font script="Nkoo" typeface="Ebrima"/><a:font script="Olck" typeface="Nirmala UI"/><a:font script="Osma" typeface="Ebrima"/><a:font script="Phag" typeface="Phagspa"/><a:font script="Syrn" typeface="Estrangelo Edessa"/><a:font script="Syrj" typeface="Estrangelo Edessa"/><a:font script="Syre" typeface="Estrangelo Edessa"/><a:font script="Sora" typeface="Nirmala UI"/><a:font script="Tale" typeface="Microsoft Tai Le"/><a:font script="Talu" typeface="Microsoft New Tai Lue"/><a:font script="Tfng" typeface="Ebrima"/></a:majorFont><a:minorFont><a:latin typeface="Calibri" panose="020F0502020204030204"/><a:ea typeface=""/><a:cs typeface=""/><a:font script="Jpan" typeface="游明朝"/><a:font script="Hang" typeface="맑은 고딕"/><a:font script="Hans" typeface="等线"/><a:font script="Hant" typeface="新細明體"/><a:font script="Arab" typeface="Arial"/><a:font script="Hebr" typeface="Arial"/><a:font script="Thai" typeface="Cordia New"/><a:font script="Ethi" typeface="Nyala"/><a:font script="Beng" typeface="Vrinda"/><a:font script="Gujr" typeface="Shruti"/><a:font script="Khmr" typeface="DaunPenh"/><a:font script="Knda" typeface="Tunga"/><a:font script="Guru" typeface="Raavi"/><a:font script="Cans" typeface="Euphemia"/><a:font script="Cher" typeface="Plantagenet Cherokee"/><a:font script="Yiii" typeface="Microsoft Yi Baiti"/><a:font script="Tibt" typeface="Microsoft Himalaya"/><a:font script="Thaa" typeface="MV Boli"/><a:font script="Deva" typeface="Mangal"/><a:font script="Telu" typeface="Gautami"/><a:font script="Taml" typeface="Latha"/><a:font script="Syrc" typeface="Estrangelo Edessa"/><a:font script="Orya" typeface="Kalinga"/><a:font script="Mlym" typeface="Kartika"/><a:font script="Laoo" typeface="DokChampa"/><a:font script="Sinh" typeface="Iskoola Pota"/><a:font script="Mong" typeface="Mongolian Baiti"/><a:font script="Viet" typeface="Arial"/><a:font script="Uigh" typeface="Microsoft Uighur"/><a:font script="Geor" typeface="Sylfaen"/><a:font script="Armn" typeface="Arial"/><a:font script="Bugi" typeface="Leelawadee UI"/><a:font script="Bopo" typeface="Microsoft JhengHei"/><a:font script="Java" typeface="Javanese Text"/><a:font script="Lisu" typeface="Segoe UI"/><a:font script="Mymr" typeface="Myanmar Text"/><a:font script="Nkoo" typeface="Ebrima"/><a:font script="Olck" typeface="Nirmala UI"/><a:font script="Osma" typeface="Ebrima"/><a:font script="Phag" typeface="Phagspa"/><a:font script="Syrn" typeface="Estrangelo Edessa"/><a:font script="Syrj" typeface="Estrangelo Edessa"/><a:font script="Syre" typeface="Estrangelo Edessa"/><a:font script="Sora" typeface="Nirmala UI"/><a:font script="Tale" typeface="Microsoft Tai Le"/><a:font script="Talu" typeface="Microsoft New Tai Lue"/><a:font script="Tfng" typeface="Ebrima"/></a:minorFont></a:fontScheme><a:fmtScheme name="Office"><a:fillStyleLst><a:solidFill><a:schemeClr val="phClr"/></a:solidFill><a:gradFill rotWithShape="1"><a:gsLst><a:gs pos="0"><a:schemeClr val="phClr"><a:lumMod val="110000"/><a:satMod val="105000"/><a:tint val="67000"/></a:schemeClr></a:gs><a:gs pos="50000"><a:schemeClr val="phClr"><a:lumMod val="105000"/><a:satMod val="103000"/><a:tint val="73000"/></a:schemeClr></a:gs><a:gs pos="100000"><a:schemeClr val="phClr"><a:lumMod val="105000"/><a:satMod val="109000"/><a:tint val="81000"/></a:schemeClr></a:gs></a:gsLst><a:lin ang="5400000" scaled="0"/></a:gradFill><a:gradFill rotWithShape="1"><a:gsLst><a:gs pos="0"><a:schemeClr val="phClr"><a:satMod val="103000"/><a:lumMod val="102000"/><a:tint val="94000"/></a:schemeClr></a:gs><a:gs pos="50000"><a:schemeClr val="phClr"><a:satMod val="110000"/><a:lumMod val="100000"/><a:shade val="100000"/></a:schemeClr></a:gs><a:gs pos="100000"><a:schemeClr val="phClr"><a:lumMod val="99000"/><a:satMod val="120000"/><a:shade val="78000"/></a:schemeClr></a:gs></a:gsLst><a:lin ang="5400000" scaled="0"/></a:gradFill></a:fillStyleLst><a:lnStyleLst><a:ln w="6350" cap="flat" cmpd="sng" algn="ctr"><a:solidFill><a:schemeClr val="phClr"/></a:solidFill><a:prstDash val="solid"/><a:miter lim="800000"/></a:ln><a:ln w="12700" cap="flat" cmpd="sng" algn="ctr"><a:solidFill><a:schemeClr val="phClr"/></a:solidFill><a:prstDash val="solid"/><a:miter lim="800000"/></a:ln><a:ln w="19050" cap="flat" cmpd="sng" algn="ctr"><a:solidFill><a:schemeClr val="phClr"/></a:solidFill><a:prstDash val="solid"/><a:miter lim="800000"/></a:ln></a:lnStyleLst><a:effectStyleLst><a:effectStyle><a:effectLst/></a:effectStyle><a:effectStyle><a:effectLst/></a:effectStyle><a:effectStyle><a:effectLst><a:outerShdw blurRad="57150" dist="19050" dir="5400000" algn="ctr" rotWithShape="0"><a:srgbClr val="000000"><a:alpha val="63000"/></a:srgbClr></a:outerShdw></a:effectLst></a:effectStyle></a:effectStyleLst><a:bgFillStyleLst><a:solidFill><a:schemeClr val="phClr"/></a:solidFill><a:solidFill><a:schemeClr val="phClr"><a:tint val="95000"/><a:satMod val="170000"/></a:schemeClr></a:solidFill><a:gradFill rotWithShape="1"><a:gsLst><a:gs pos="0"><a:schemeClr val="phClr"><a:tint val="93000"/><a:satMod val="150000"/><a:shade val="98000"/><a:lumMod val="102000"/></a:schemeClr></a:gs><a:gs pos="50000"><a:schemeClr val="phClr"><a:tint val="98000"/><a:satMod val="130000"/><a:shade val="90000"/><a:lumMod val="103000"/></a:schemeClr></a:gs><a:gs pos="100000"><a:schemeClr val="phClr"><a:shade val="63000"/><a:satMod val="120000"/></a:schemeClr></a:gs></a:gsLst><a:lin ang="5400000" scaled="0"/></a:gradFill></a:bgFillStyleLst></a:fmtScheme></a:themeElements><a:objectDefaults/><a:extraClrSchemeLst/><a:extLst><a:ext uri="{05A4C25C-085E-4340-85A3-A5531E510DB2}"><thm15:themeFamily xmlns:thm15="http://schemas.microsoft.com/office/thememl/2012/main" name="Office Theme" id="{62F939B6-93AF-4DB8-9C6B-D6C7DFDC589F}" vid="{4A3C46E8-61CC-4603-A589-7422A47A8E4A}"/></a:ext></a:extLst></a:theme>)"
+#define BASIC_CHART_XML R"(<?xml version="1.0" encoding="UTF-8" standalone="yes"?><c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:c16r2="http://schemas.microsoft.com/office/drawing/2015/06/chart"></c:chartSpace>)"
+
+
+
+
+
 
 // #define NUMBERING_ALPHA_XML R"(<w:abstractNum w:abstractNumId="0" w15:restartNumberingAfterBreak="0"> <w:nsid w:val="0E4350D6"/> <w:multiLevelType w:val="hybridMultilevel"/> <w:tmpl w:val="C9D0A764"/> <w:lvl w:ilvl="0" w:tplc="04090015"> <w:start w:val="1"/> <w:numFmt w:val="upperLetter"/> <w:lvlText w:val="%1."/> <w:lvlJc w:val="left"/> <w:pPr> <w:ind w:left="720" w:hanging="360"/> </w:pPr> </w:lvl> <w:lvl w:ilvl="1" w:tplc="04090019" w:tentative="1"> <w:start w:val="1"/> <w:numFmt w:val="lowerLetter"/> <w:lvlText w:val="%2."/> <w:lvlJc w:val="left"/> <w:pPr> <w:ind w:left="1440" w:hanging="360"/> </w:pPr> </w:lvl> <w:lvl w:ilvl="2" w:tplc="0409001B" w:tentative="1"> <w:start w:val="1"/> <w:numFmt w:val="lowerRoman"/> <w:lvlText w:val="%3."/> <w:lvlJc w:val="right"/> <w:pPr> <w:ind w:left="2160" w:hanging="180"/> </w:pPr> </w:lvl> <w:lvl w:ilvl="3" w:tplc="0409000F" w:tentative="1"> <w:start w:val="1"/> <w:numFmt w:val="decimal"/> <w:lvlText w:val="%4."/> <w:lvlJc w:val="left"/> <w:pPr> <w:ind w:left="2880" w:hanging="360"/> </w:pPr> </w:lvl> <w:lvl w:ilvl="4" w:tplc="04090019" w:tentative="1"> <w:start w:val="1"/> <w:numFmt w:val="lowerLetter"/> <w:lvlText w:val="%5."/> <w:lvlJc w:val="left"/> <w:pPr> <w:ind w:left="3600" w:hanging="360"/> </w:pPr> </w:lvl> <w:lvl w:ilvl="5" w:tplc="0409001B" w:tentative="1"> <w:start w:val="1"/> <w:numFmt w:val="lowerRoman"/> <w:lvlText w:val="%6."/> <w:lvlJc w:val="right"/> <w:pPr> <w:ind w:left="4320" w:hanging="180"/> </w:pPr> </w:lvl> <w:lvl w:ilvl="6" w:tplc="0409000F" w:tentative="1"> <w:start w:val="1"/> <w:numFmt w:val="decimal"/> <w:lvlText w:val="%7."/> <w:lvlJc w:val="left"/> <w:pPr> <w:ind w:left="5040" w:hanging="360"/> </w:pPr> </w:lvl> <w:lvl w:ilvl="7" w:tplc="04090019" w:tentative="1"> <w:start w:val="1"/> <w:numFmt w:val="lowerLetter"/> <w:lvlText w:val="%8."/> <w:lvlJc w:val="left"/> <w:pPr> <w:ind w:left="5760" w:hanging="360"/> </w:pPr> </w:lvl> <w:lvl w:ilvl="8" w:tplc="0409001B" w:tentative="1"> <w:start w:val="1"/> <w:numFmt w:val="lowerRoman"/> <w:lvlText w:val="%9."/> <w:lvlJc w:val="right"/> <w:pPr> <w:ind w:left="6480" w:hanging="180"/> </w:pPr> </w:lvl> </w:abstractNum>)"
 // #define NUMBERING_DECIMAL_XML R"(<w:abstractNum w:abstractNumId="1" w15:restartNumberingAfterBreak="0"> <w:nsid w:val="4ADE7E68"/> <w:multiLevelType w:val="multilevel"/> <w:tmpl w:val="4F34F910"/> <w:lvl w:ilvl="0"> <w:start w:val="1"/> <w:numFmt w:val="decimal"/> <w:lvlText w:val="%1."/> <w:lvlJc w:val="left"/> <w:pPr> <w:tabs> <w:tab w:val="num" w:pos="720"/> </w:tabs> <w:ind w:left="720" w:hanging="720"/> </w:pPr> </w:lvl> <w:lvl w:ilvl="1"> <w:start w:val="1"/> <w:numFmt w:val="lowerLetter"/> <w:lvlText w:val="%2."/> <w:lvlJc w:val="left"/> <w:pPr> <w:ind w:left="1080" w:hanging="360"/> </w:pPr> </w:lvl> <w:lvl w:ilvl="2"> <w:start w:val="1"/> <w:numFmt w:val="decimal"/> <w:lvlText w:val="%3."/> <w:lvlJc w:val="left"/> <w:pPr> <w:tabs> <w:tab w:val="num" w:pos="2160"/> </w:tabs> <w:ind w:left="2160" w:hanging="720"/> </w:pPr> </w:lvl> <w:lvl w:ilvl="3"> <w:start w:val="1"/> <w:numFmt w:val="decimal"/> <w:lvlText w:val="%4."/> <w:lvlJc w:val="left"/> <w:pPr> <w:tabs> <w:tab w:val="num" w:pos="2880"/> </w:tabs> <w:ind w:left="2880" w:hanging="720"/> </w:pPr> </w:lvl> <w:lvl w:ilvl="4"> <w:start w:val="1"/> <w:numFmt w:val="decimal"/> <w:lvlText w:val="%5."/> <w:lvlJc w:val="left"/> <w:pPr> <w:tabs> <w:tab w:val="num" w:pos="3600"/> </w:tabs> <w:ind w:left="3600" w:hanging="720"/> </w:pPr> </w:lvl> <w:lvl w:ilvl="5"> <w:start w:val="1"/> <w:numFmt w:val="decimal"/> <w:lvlText w:val="%6."/> <w:lvlJc w:val="left"/> <w:pPr> <w:tabs> <w:tab w:val="num" w:pos="4320"/> </w:tabs> <w:ind w:left="4320" w:hanging="720"/> </w:pPr> </w:lvl> <w:lvl w:ilvl="6"> <w:start w:val="1"/> <w:numFmt w:val="decimal"/> <w:lvlText w:val="%7."/> <w:lvlJc w:val="left"/> <w:pPr> <w:tabs> <w:tab w:val="num" w:pos="5040"/> </w:tabs> <w:ind w:left="5040" w:hanging="720"/> </w:pPr> </w:lvl> <w:lvl w:ilvl="7"> <w:start w:val="1"/> <w:numFmt w:val="decimal"/> <w:lvlText w:val="%8."/> <w:lvlJc w:val="left"/> <w:pPr> <w:tabs> <w:tab w:val="num" w:pos="5760"/> </w:tabs> <w:ind w:left="5760" w:hanging="720"/> </w:pPr> </w:lvl> <w:lvl w:ilvl="8"> <w:start w:val="1"/> <w:numFmt w:val="decimal"/> <w:lvlText w:val="%9."/> <w:lvlJc w:val="left"/> <w:pPr> <w:tabs> <w:tab w:val="num" w:pos="6480"/> </w:tabs> <w:ind w:left="6480" w:hanging="720"/> </w:pPr> </w:lvl> </w:abstractNum>)"
@@ -82,10 +88,14 @@ namespace docx {
     class Document::Impl {
     public:
         ::std::string      path_;
+        pugi::xml_document documentRelationships_;
         pugi::xml_document numbers_;
         pugi::xml_document doc_;
         pugi::xml_node     w_body_;
         pugi::xml_node     w_sectPr_;
+
+        cweeList< cweeSharedPtr<ExcelWorkbook> > embeddedWorkbooks;
+        cweeList< pugi::xml_document > embeddedCharts; 
 
         TextFormat format;
     };
@@ -133,6 +143,7 @@ namespace docx {
         pugi::xml_node w_rPr_;
 
         TextFormat format;
+        cweeSharedPtr<class Paragraph::Impl> Paragraph;
     };
     class TableCell::Impl {
     public:
@@ -257,6 +268,7 @@ namespace docx {
 
         AUTO fp{ fileSystem->createRandomFile(".docx") }; // creates the file itself and returns the path. this will be an un-initialized file, however, and it must be initialized before it's able to be used as a docx format (atypical for most file formats). 
         
+        impl_()->documentRelationships_.load_buffer(DOCUMENT_XML_RELS, ::strlen(DOCUMENT_XML_RELS), pugi::parse_declaration);
         impl_()->numbers_.load_buffer(NUMBERING_XML, ::std::strlen(NUMBERING_XML), pugi::parse_declaration);
         impl_()->doc_.load_buffer(DOCUMENT_XML, ::std::strlen(DOCUMENT_XML), pugi::parse_declaration);
         impl_()->w_body_ = impl_()->doc_.child("w:document").child("w:body");
@@ -272,6 +284,8 @@ namespace docx {
     };
     Document::Document(const ::std::string& path) {
         doc_impl_ = cweeSharedPtr<void>(cweeSharedPtr<Document::Impl>(new Document::Impl(), [](void* p) { return p; }));
+
+        impl_()->documentRelationships_.load_buffer(DOCUMENT_XML_RELS, ::strlen(DOCUMENT_XML_RELS), pugi::parse_declaration);
         impl_()->numbers_.load_buffer(NUMBERING_XML, ::std::strlen(NUMBERING_XML), pugi::parse_declaration);
         impl_()->doc_.load_buffer(DOCUMENT_XML, ::std::strlen(DOCUMENT_XML), pugi::parse_declaration);
         impl_()->w_body_ = impl_()->doc_.child("w:document").child("w:body");
@@ -284,125 +298,12 @@ namespace docx {
        return static_cast<Document::Impl*>(doc_impl_.Get());
     };
     Document::~Document() {};
-    bool Document::Save() {
-        if (!doc_impl_) return false;
-
-        ::std::string original_file = impl_()->path_;
-        ::std::string temp_file = impl_()->path_ + ".tmp";
-
-        zipper new_zip;
-        // Create the file
-        if (new_zip.open(temp_file.c_str(), false)) {
-            if (new_zip.addEntry("_rels/.rels")) {
-                new_zip << _RELS;
-                new_zip.closeEntry();
-            }
-
-            if (new_zip.addEntry("word/document.xml")) {
-                xml_string_writer writer;
-                impl_()->doc_.save(writer, "", pugi::format_raw);
-                const char* buf = writer.result.c_str();
-
-                new_zip << buf;
-                new_zip.closeEntry();
-            }
-
-            if (new_zip.addEntry("word/numbering.xml")) {
-                xml_string_writer writer;
-                impl_()->numbers_.save(writer, "", pugi::format_raw);
-                const char* buf = writer.result.c_str();
-
-                new_zip << buf;
-                new_zip.closeEntry();
-            }
-
-            if (new_zip.addEntry("word/_rels/document.xml.rels")) {
-                new_zip << DOCUMENT_XML_RELS;
-                new_zip.closeEntry();
-            }
-
-            if (new_zip.addEntry("word/footer1.xml")) {
-                new_zip << FOOTER1_XML;
-                new_zip.closeEntry();
-            }
-
-            if (new_zip.addEntry("word/settings.xml")) {
-                new_zip << SETTINGS_XML;
-                new_zip.closeEntry();
-            }            
-
-            if (new_zip.addEntry("word/theme/theme1.xml")) {
-                new_zip << THEME_XML;
-                new_zip.closeEntry();
-            }            
-
-            if (new_zip.addEntry("word/styles.xml")) {
-                new_zip << STYLES_XML_1;
-                new_zip << STYLES_XML_2;
-                new_zip << STYLES_XML_3;
-                new_zip << STYLES_XML_4;
-                new_zip << STYLES_XML_5;
-                new_zip.closeEntry();
-            }
-
-            if (new_zip.addEntry("[Content_Types].xml")) {
-                new_zip << CONTENT_TYPES_XML;
-                new_zip.closeEntry();
-            }
-
-
-
-            unzipper orig_zip;
-            // Open the original zip and copy all files which are not replaced by duckX
-            if (orig_zip.open(original_file.c_str())) {
-                // Loop & copy each relevant entry in the original zip
-                for (auto& name : orig_zip.getFilenames()) {
-                    if (name == "_rels/.rels") continue;
-                    if (name == "word/document.xml") continue;
-                    if (name == "word/numbering.xml") continue;
-                    if (name == "word/_rels/document.xml.rels") continue;
-                    if (name == "word/footer1.xml") continue;
-                    if (name == "word/styles.xml") continue;
-                    if (name == "word/theme/theme1.xml") continue;
-                    if (name == "word/settings.xml") continue;
-                    if (name == "[Content_Types].xml") continue;
-
-                    // Skip copying the original file
-                    if (orig_zip.openEntry(name.c_str())) {
-                        // Read the old content
-                        cweeSharedPtr<char> ptr; unsigned int bufSize;
-                        if (orig_zip.ReadEntry(&ptr, &bufSize)) {
-                            if (new_zip.addEntry(name.c_str())) {
-                                new_zip.setEntry(ptr, bufSize);
-                                new_zip.closeEntry();
-                            }
-                        }
-                        orig_zip.closeEntry();
-                    }
-
-                }
-                orig_zip.close();
-            }
-
-            new_zip.close();
-        }
-
-        // Remove original zip, rename to correct name
-        remove(original_file.c_str());
-        rename(temp_file.c_str(), original_file.c_str());
-
-        return true;
-    };
     bool Document::Save(const std::string& path) {
         if (!doc_impl_) return false;
 
         ::std::string original_file = impl_()->path_;
         ::std::string temp_file = impl_()->path_ + ".tmp";
 
-        xml_string_writer writer;
-        impl_()->doc_.save(writer, "", pugi::format_raw);
-        const char* buf = writer.result.c_str();
-
         zipper new_zip;
         // Create the file
         if (new_zip.open(temp_file.c_str(), false)) {
@@ -430,7 +331,11 @@ namespace docx {
             }
 
             if (new_zip.addEntry("word/_rels/document.xml.rels")) {
-                new_zip << DOCUMENT_XML_RELS;
+                xml_string_writer writer;
+                impl_()->documentRelationships_.save(writer, "", pugi::format_raw);
+                const char* buf = writer.result.c_str();
+
+                new_zip << buf;
                 new_zip.closeEntry();
             }
 
@@ -463,6 +368,8 @@ namespace docx {
                 new_zip.closeEntry();
             }
 
+            // TODO: save the embeddedWorkbooks
+            // TODO: save the embeddedCharts
 
             unzipper orig_zip;
             // Open the original zip and copy all files which are not replaced by duckX
@@ -507,6 +414,11 @@ namespace docx {
 
         return true;
     };
+    bool Document::Save() { 
+        if (!doc_impl_) return false;
+        return Save(impl_()->path_);
+    };
+
     bool Document::Open(const ::std::string& path) {
         if (!doc_impl_) return false;
 
@@ -539,6 +451,20 @@ namespace docx {
                 }
                 unzip.closeEntry();
             }
+            if (unzip.openEntry("word/_rels/document.xml.rels")) {
+                cweeSharedPtr<char> ptr;
+                unsigned int bufSize;
+                if (unzip.ReadEntry(&ptr, &bufSize)) {
+                    buf = (void*)(char*)(ptr.Get());
+                    bufsize = bufSize;
+
+                    impl_()->documentRelationships_.load_buffer(buf, bufsize, pugi::parse_declaration);
+                }
+                unzip.closeEntry();
+            }
+            
+            // TODO: load embedded excel workbooks
+
             unzip.close();
         }
 
@@ -920,6 +846,7 @@ namespace docx {
         impl->w_r_ = w_r;
         impl->w_rPr_ = w_r.child("w:rPr");
         impl->format = impl_()->format;
+        impl->Paragraph = this->impl;
         auto out{ Run(impl) };
 
         out.SetCharacterSpacing(impl_()->format.characterSpacing);
@@ -929,30 +856,63 @@ namespace docx {
 
         return out;
     }
-    Run Paragraph::AppendField(const std::string& category) {
-        if (!impl) return Run();
+    Paragraph Paragraph::AppendField(Paragraph::Field field) {
+        if (!impl) return *this;
         {
             auto w_r = impl_()->w_p_.append_child("w:r");
-            w_r.append_child("w:fldChar").append_attribute("w:fldCharType").set_value("begin");
+            w_r.append_child("w:fldChar").append_attribute("w:fldCharType") = "begin";
         }
         {
             auto w_r = impl_()->w_p_.append_child("w:r");
-            auto w_instrText = w_r.append_child("w:instrText");
-            w_instrText.append_attribute("xml:space").set_value("preserve");
-            w_instrText.text().set(category.c_str());
+            auto w_rPr = w_r.append_child("w:rPr");
+
+            Run::Impl* impl = new Run::Impl;
+            impl->w_p_ = impl_()->w_p_;
+            impl->w_r_ = w_r;
+            impl->w_rPr_ = w_rPr;
+            impl->format = impl_()->format;
+            impl->Paragraph = this->impl;
+            auto out{ Run(impl) };
+
+            out.SetCharacterSpacing(impl_()->format.characterSpacing);
+            out.SetFont(impl_()->format.fontFamily, "");
+            out.SetFontSize(impl_()->format.fontSize);
+            out.SetFontStyle(impl_()->format.fontStyle);
+
+            auto t = w_r.append_child("w:instrText");
+            t.append_attribute("xml:space") = "preserve";
+            
+            switch (field) {
+            case Field::Table: t.text().set(" SEQ Table \\* ARABIC "); break;
+            case Field::Figure: t.text().set(" SEQ Figure \\* ARABIC "); break;
+            }            
         }
         {
             auto w_r = impl_()->w_p_.append_child("w:r");
-            w_r.append_child("w:fldChar").append_attribute("w:fldCharType").set_value("separate");
+            w_r.append_child("w:fldChar").append_attribute("w:fldCharType") = "separate";
         }
         {
             auto w_r = impl_()->w_p_.append_child("w:r");
+            auto t = w_r.append_child("w:t");
+            t.text().set("1");
         }
         {
             auto w_r = impl_()->w_p_.append_child("w:r");
-            w_r.append_child("w:fldChar").append_attribute("w:fldCharType").set_value("end");
+            w_r.append_child("w:fldChar").append_attribute("w:fldCharType") = "end";
         }
+        return *this;
     }
+    Paragraph Paragraph::SetHeading(int level) {
+        if (!impl) return *this;
+
+        impl_()->w_pPr_.emplace_child("w:outlineLvl").emplace_attribute("w:val").set_value(level);
+
+        // cweeStr heading = cweeStr::printf("Heading%i", level);
+        // impl_()->w_p_.emplace_child("w:pPr").emplace_child("w:pStyle").emplace_attribute("w:val").set_value(heading.c_str());
+
+        return *this;
+    };
+
     Run Paragraph::AppendRun()
     {
         if (!impl) return Run();
@@ -964,6 +924,7 @@ namespace docx {
         impl->w_r_ = w_r;
         impl->w_rPr_ = w_rPr;
         impl->format = impl_()->format;
+        impl->Paragraph = this->impl;
         auto out{ Run(impl) };
 
         out.SetCharacterSpacing(impl_()->format.characterSpacing);
@@ -1013,6 +974,7 @@ namespace docx {
         impl->w_p_ = impl_()->w_p_;
         impl->w_r_ = w_r;
         impl->w_rPr_ = w_br;
+        impl->Paragraph = this->impl;
         auto out{ Run(impl) };
 
         out.SetCharacterSpacing(impl_()->format.characterSpacing);
@@ -1992,6 +1954,171 @@ namespace docx {
         if (!impl) return;
         impl_()->w_r_.append_child("w:br");
     }
+
+#if 0
+    void /*Run::*/InsertPicture(const std::string& filepath) {
+        // TODO: load the file into the media directory of the zip file
+
+        // TODO: Figure out the source of the inner details / numbers for this algorithm from the input picture.
+        auto wp_inline = impl_()->w_r_.emplace_child("w:drawing").emplace_child("wp:inline");
+        {
+            wp_inline.emplace_attribute("distT") = 0;
+            wp_inline.emplace_attribute("distB") = 0;
+            wp_inline.emplace_attribute("distL") = 0;
+            wp_inline.emplace_attribute("distR") = 0;
+        }
+        {
+            auto wp_extent = wp_inline.emplace_child("wp:extent");
+            wp_extent.emplace_attribute("cx") = 5274310; // width ... how to determine?
+            wp_extent.emplace_attribute("cy") = 5274310; // height ... how to determine?
+        }
+        {
+            auto wp_effectExtent = wp_inline.emplace_child("wp:effectExtent");
+            wp_effectExtent.emplace_attribute("l") = 0;
+            wp_effectExtent.emplace_attribute("r") = 0;
+            wp_effectExtent.emplace_attribute("t") = 0;
+            wp_effectExtent.emplace_attribute("b") = 0;
+        }
+        {
+            auto wp_docPr = wp_inline.emplace_child("wp:docPr");
+            wp_docPr.emplace_attribute("id") = 1092416022;
+            wp_docPr.emplace_attribute("name") = "Picture 1";
+            wp_docPr.emplace_attribute("descr") = "A bridge with towers over water. Description automatically generated.";
+        }
+        {
+            auto a_graphicFrameLocks = wp_inline.emplace_child("wp:cNvGraphicFramePr").emplace_child("a:graphicFrameLocks");
+            a_graphicFrameLocks.emplace_attribute("xmlns:a") = "http://schemas.openxmlformats.org/drawingml/2006/main";
+            a_graphicFrameLocks.emplace_attribute("noChangeAspect") = 1;
+        }
+        {
+            auto a_graphic = wp_inline.emplace_child("a:graphic"); {
+
+                a_graphic.emplace_attribute("xmlns:a") = "http://schemas.openxmlformats.org/drawingml/2006/main";
+                auto a_graphicData = a_graphic.emplace_child("a:graphicData"); {
+                    a_graphicData.emplace_attribute("uri") = "http://schemas.openxmlformats.org/drawingml/2006/picture";
+                    auto pic_pic = a_graphicData.emplace_child("pic:pic"); {
+                        pic_pic.emplace_attribute("xmlns:pic") = "http://schemas.openxmlformats.org/drawingml/2006/picture";
+                        auto pic_nvPicPr = pic_pic.emplace_child("pic:nvPicPr"); {
+                            auto pic_cNvPr = pic_nvPicPr.emplace_child("pic:cNvPr"); {
+                                pic_cNvPr.emplace_attribute("id") = 1092416022;
+                                pic_cNvPr.emplace_attribute("name") = "Picture 1";
+                                pic_cNvPr.emplace_attribute("descr") = "A bridge with towers over water. Description automatically generated.";
+                            }
+                            auto pic_cNvPicPr = pic_nvPicPr.emplace_child("pic:cNvPicPr"); {
+                                auto a_picLocks = pic_cNvPicPr.emplace_child("a:picLocks"); {
+                                    a_picLocks.emplace_attribute("noChangeAspect") = 1;
+                                    a_picLocks.emplace_attribute("noChangeArrowheads") = 1;
+                                }
+                            }
+                        }
+                        auto pic_blipFill = pic_pic.emplace_child("pic:blipFill"); {
+                            auto a_blip = pic_blipFill.emplace_child("a:blip"); {
+                                a_blip.emplace_attribute("r:embed") = "rId4";
+                                auto a_extLst = a_blip.emplace_child("a:extLst"); {
+                                    auto a_ext = a_extLst.append_child("a:ext"); {
+                                        a_ext.emplace_attribute("uri") = "{28A0092B-C50C-407E-A947-70E740481C1C}";
+                                        auto a14_useLocalDpi = a_ext.emplace_child("a14:useLocalDpi"); {
+                                            a14_useLocalDpi.emplace_attribute("xmlns:a14") = "http://schemas.microsoft.com/office/drawing/2010/main";
+                                            a14_useLocalDpi.emplace_attribute("val") = 0;
+                                        }
+                                    }
+
+                                }
+
+                            }
+                            auto a_srcRect = pic_blipFill.emplace_child("a:srcRect");
+                            auto a_stretch = pic_blipFill.emplace_child("a:stretch"); {
+                                auto a_fillRect = a_stretch.emplace_child("a:fillRect");
+                            }
+                        }
+                        auto pic_spPr = pic_pic.emplace_child("pic:spPr"); {
+                            pic_spPr.emplace_attribute("bwMode") = "auto";
+                            auto a_xfrm = pic_spPr.emplace_child("a:xfrm"); {
+                                auto a_off = a_xfrm.emplace_child("a:off"); {
+                                    a_off.emplace_attribute("x") = 0;
+                                    a_off.emplace_attribute("y") = 0;
+                                }
+                                auto a_ext = a_xfrm.emplace_child("a:ext"); {
+                                    a_ext.emplace_attribute("cx") = 5274310;
+                                    a_ext.emplace_attribute("cy") = 3520440;
+                                }
+                            }
+                            auto a_prstGeom = pic_spPr.emplace_child("a:prstGeom"); {
+                                auto a_avLst = a_prstGeom.emplace_child("a:avLst");
+                            }
+                            pic_spPr.emplace_child("a:noFill");                            
+                            auto a_ln = pic_spPr.emplace_child("a:ln"); {
+                                a_ln.emplace_child("a:noFill");
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    };
+    void /*Run::*/InsertChart(cweeSharedPtr<ExcelWorkbook> workbook) {
+        cweeStr rid = "rId3";
+
+        pugi::xml_document xmlChart; {
+            xmlChart.load_buffer(BASIC_CHART_XML, ::std::strlen(BASIC_CHART_XML), pugi::parse_declaration);
+            xmlChart.append_child("c:date1904").append_attribute("val") = 0;
+            xmlChart.append_child("c:lang").append_attribute("val") = "en-US";
+            xmlChart.append_child("c:roundedCorners").append_attribute("val") = 0;
+            auto mc_AlternateContent = xmlChart.append_child("mc:AlternateContent"); {
+
+            }
+            auto c_chart = xmlChart.append_child("c:chart"); {
+
+            }
+            auto c_spPr = xmlChart.append_child("c:spPr"); {
+                auto a_solidFill = c_spPr.append_child("a:solidFill"); {
+
+                }
+                auto a_ln = c_spPr.append_child("a:ln"); {
+                    a_ln.append_attribute("w") = 9525;
+                    a_ln.append_attribute("cap") = "flat";
+                    a_ln.append_attribute("cmpd") = "sng";
+                    a_ln.append_attribute("algn") = "ctr";
+                    auto a_solidFill = a_ln.append_child("a:solidFill"); {
+                        auto a_schemeClr = a_solidFill.append_child("a:schemeClr");
+
+                    }
+                    a_ln.append_child("a:round");
+                }
+                auto a_effectLst = c_spPr.append_child("a:effectLst");
+            }
+            auto c_txPr = xmlChart.append_child("c:txPr"); {
+                c_txPr.append_child("a:bodyPr");
+                c_txPr.append_child("a:lstStyle");
+                auto a_p = c_txPr.append_child("a:p");
+                a_p.append_child("a:pPr").append_child("a:defRPr");
+                a_p.append_child("a:endParaRPr").append_attribute("lang") = "en-US";
+            }
+            auto c_externalData = xmlChart.append_child("c:externalData"); {
+                c_externalData.append_attribute("r:id") = rid.c_str();
+                c_externalData.append_child("c:autoUpdate").append_attribute("val") = 0;
+            }
+        }
+
+        // embed the workbook
+        this->impl_()->Paragraph->Document->embeddedWorkbooks.Append(workbook);
+
+        // Create and embed a chart?
+        // this->impl_()->Paragraph->Document->embeddedCharts;
+
+        // append the "relationship"
+        auto relationship = this->impl_()->Paragraph->Document->documentRelationships_.child("Relationships").append_child("Relationship");
+        relationship.append_attribute("Id") = "rId5"; // TODO: need to find the largest ID and add one...
+        relationship.append_attribute("Type") = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/chart";
+        relationship.append_attribute("Target") = "charts/chart2.xml"; // TODO: change the target...
+
+
+
+
+
+    }
+#endif
+
     void Run::SetFontSize(const double fontSize)
     {
         if (!impl) return;
@@ -2141,6 +2268,7 @@ namespace docx {
         impl->w_r_ = w_r;
         impl->w_rPr_ = w_r.child("w:rPr");
         impl->format = impl_()->format;
+        impl->Paragraph = this->impl_()->Paragraph;
         auto out{ Run(impl) };
 
         out.SetCharacterSpacing(impl_()->format.characterSpacing);

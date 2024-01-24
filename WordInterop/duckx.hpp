@@ -8,6 +8,7 @@
 #include "include/pugixml.hpp"
 #include "../WaterWatchCpp/enum.h"
 #include "../WaterWatchCpp/SharedPtr.h"
+#include "../ExcelInterop/Wrapper.h"
 
 /* 
  minidocx 0.5.0 - C++ library for creating Microsoft Word Document (.docx).
@@ -267,6 +268,8 @@ namespace docx {
         std::string GetText();
         void ClearText();
         void AppendLineBreak();
+        //void InsertPicture(const std::string& filepath);
+        //void InsertChart(cweeSharedPtr<ExcelWorkbook> workbook);
 
         // text formatting
         void SetFontSize(const double fontSize);
@@ -390,7 +393,11 @@ namespace docx {
         Run FirstRun();
 
         // add field
-        Run AppendField(const std::string& category = " SEQ Table \\* ARABIC ");
+        enum class Field { Table, Figure };
+        Paragraph AppendField(Field field);// const std::string& category = " SEQ Table \\* ARABIC ");
+
+        // Set as Heading
+        Paragraph SetHeading(int level);
 
         // add run
         Run AppendRun();
