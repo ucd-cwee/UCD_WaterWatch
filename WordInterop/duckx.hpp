@@ -248,7 +248,7 @@ namespace docx {
     class ExcelPlot {
         friend class Run;
         friend class Document;
-
+    public:
         ExcelPlot();
         ExcelPlot(ExcelPlot const& p);
         ~ExcelPlot();
