@@ -246,9 +246,36 @@ namespace docx {
         int characterSpacing = 0;
     };
 
+    class Axis {
+        friend class Document;
+        friend class ExcelPlot;
+    public:
+        Axis();
+        Axis(Axis const& p);
+        ~Axis();
+        void operator=(Axis const& right);
+        operator bool() const;
+
+        void SetTitle(cweeStr const& title);
+        enum class TickMarkType { in, out, cross, none };
+        void SetMajorTickMark(TickMarkType type);
+        void SetMinorTickMark(TickMarkType type);
+        void SetNumFmt(const cweeStr& fmt);
+
+    private:
+        class Impl;
+        Impl* impl_() const { return static_cast<Impl*>(impl.Get()); };
+        cweeSharedPtr< void > impl;
+
+        // constructs from xml node
+        Axis(Impl* impl);
+    };
+
+
     class ExcelPlot {
         friend class Run;
         friend class Document;
+        friend class Axis;
 
     public:
         ExcelPlot();
@@ -263,8 +290,8 @@ namespace docx {
         void SetXValues(cweeSharedPtr<ExcelRange> const& range);
         void SetYValues(cweeSharedPtr<ExcelRange> const& range);
 
-        void SetXTitle(cweeStr const& title);
-        void SetYTitle(cweeStr const& title);
+        Axis xAxis();
+        Axis yAxis();
 
         void SetWidth(cweeUnitValues::inch width);
         void SetHeight(cweeUnitValues::inch height);

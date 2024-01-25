@@ -71,6 +71,7 @@ BETTER_ENUM(FontStyle, int, a, Bold, Italic,d, Underline,f,g,h, Strikethrough,j,
 BETTER_ENUM(PageNumberFormat, int, Decimal, NumberInDash, CardinalText, OrdinalText, LowerLetter, UpperLetter, LowerRoman, UpperRoman);
 BETTER_ENUM(BulletType, int, Alpha, Number, Bullet);
 BETTER_ENUM(DocxFieldType, int, Table, Figure);
+BETTER_ENUM(DocxTickMarkType, int, In, Out, Cross, None);
 
 namespace chaiscript {
     namespace WaterWatch_Lib {
@@ -129,6 +130,16 @@ namespace chaiscript {
             lib->AddFunction(, SetOutsideBorders, , return o.SetOutsideBorders(static_cast<Box::BorderStyle>(GetBetterEnum<BorderStyle>(input)._to_integral()));, Table& o, cweeStr const& input);
             lib->AddFunction(, SetAllBorders, , return o.SetAllBorders(static_cast<Box::BorderStyle>(GetBetterEnum<BorderStyle>(input)._to_integral())); , Table& o, cweeStr const& input);
 
+            lib->add(chaiscript::user_type<Axis>(), "DocxChartAxis");
+            lib->add(chaiscript::constructor<Axis()>(), "DocxChartAxis");
+            lib->add(chaiscript::constructor<Axis(const Axis&)>(), "DocxChartAxis");
+            lib->add(chaiscript::constructor<bool(const Axis&)>(), "bool");
+            lib->add(chaiscript::fun([](Axis& a, Axis& b) { a = b; return a; }), "=");
+            lib->AddFunction(, SetTitle, , o.SetTitle(title); , Axis & o, cweeStr const& title);
+            lib->AddFunction(, SetMajorTickMark, , o.SetMajorTickMark(static_cast<docx::Axis::TickMarkType>(GetBetterEnum<::DocxTickMarkType>(input)._to_integral()));, Axis & o, cweeStr const& input);
+            lib->AddFunction(, SetMinorTickMark, , o.SetMinorTickMark(static_cast<docx::Axis::TickMarkType>(GetBetterEnum<::DocxTickMarkType>(input)._to_integral()));, Axis & o, cweeStr const& input);
+            lib->add(chaiscript::fun(&Axis::SetNumFmt), "SetNumFmt");
+
             lib->add(chaiscript::user_type<ExcelPlot>(), "DocxChart");
             lib->add(chaiscript::constructor<ExcelPlot()>(), "DocxChart");
             lib->add(chaiscript::constructor<ExcelPlot(const ExcelPlot&)>(), "DocxChart");
@@ -140,6 +151,8 @@ namespace chaiscript {
             lib->AddFunction(, SetYValues, , o.SetYValues(range); , ExcelPlot & o, cweeSharedPtr<ExcelRange> const& range);
             lib->AddFunction(, SetWidth, , o.SetWidth(width);, ExcelPlot & o, cweeUnitValues::unit_value const& width);
             lib->AddFunction(, SetHeight, , o.SetHeight(height);, ExcelPlot & o, cweeUnitValues::unit_value const& height);
+            lib->add(chaiscript::fun(&ExcelPlot::xAxis), "xAxis");
+            lib->add(chaiscript::fun(&ExcelPlot::yAxis), "yAxis");
 
             lib->add(chaiscript::user_type<Run>(), "DocxRun");
             lib->add(chaiscript::constructor<Run()>(), "DocxRun");

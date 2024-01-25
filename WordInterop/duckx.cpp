@@ -25,8 +25,8 @@
 #define BASIC_CHART_XML R"(<?xml version="1.0" encoding="UTF-8" standalone="yes"?><c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:c16r2="http://schemas.microsoft.com/office/drawing/2015/06/chart"></c:chartSpace>)"
 
 
-
-#define CHART_XML R"(<?xml version="1.0" encoding="UTF-8" standalone="yes"?><c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:c16r2="http://schemas.microsoft.com/office/drawing/2015/06/chart"><c:date1904 val="0"/><c:lang val="en-US"/><c:roundedCorners val="0"/><mc:AlternateContent xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"><mc:Choice Requires="c14" xmlns:c14="http://schemas.microsoft.com/office/drawing/2007/8/2/chart"><c14:style val="102"/></mc:Choice><mc:Fallback><c:style val="2"/></mc:Fallback></mc:AlternateContent><c:chart><c:title><c:overlay val="0"/><c:spPr><a:noFill/><a:ln><a:noFill/></a:ln><a:effectLst/></c:spPr><c:txPr><a:bodyPr rot="0" spcFirstLastPara="1" vertOverflow="ellipsis" vert="horz" wrap="square" anchor="ctr" anchorCtr="1"/><a:lstStyle/><a:p><a:pPr><a:defRPr sz="1400" b="0" i="0" u="none" strike="noStrike" kern="1200" spc="0" baseline="0"><a:solidFill><a:schemeClr val="tx1"><a:lumMod val="65000"/><a:lumOff val="35000"/></a:schemeClr></a:solidFill><a:latin typeface="+mn-lt"/><a:ea typeface="+mn-ea"/><a:cs typeface="+mn-cs"/></a:defRPr></a:pPr><a:endParaRPr lang="en-US"/></a:p></c:txPr></c:title><c:autoTitleDeleted val="0"/><c:plotArea><c:layout/><c:lineChart><c:grouping val="standard"/><c:varyColors val="0"/><c:ser><c:idx val="0"/><c:order val="0"/><c:tx><c:strRef><c:f>Sheet1!$B$1</c:f><c:strCache><c:ptCount val="1"/><c:pt idx="0"><c:v>ValueName</c:v></c:pt></c:strCache></c:strRef></c:tx><c:spPr><a:ln w="28575" cap="rnd"><a:solidFill><a:schemeClr val="accent1"/></a:solidFill><a:round/></a:ln><a:effectLst/></c:spPr><c:marker><c:symbol val="none"/></c:marker><c:cat><c:numRef><c:f>Sheet1!$A$2:$A$13</c:f><c:numCache><c:formatCode>m/d/yyyy</c:formatCode><c:ptCount val="12"/><c:pt idx="0"><c:v>43466</c:v></c:pt><c:pt idx="1"><c:v>43467</c:v></c:pt><c:pt idx="2"><c:v>43468</c:v></c:pt><c:pt idx="3"><c:v>43469</c:v></c:pt><c:pt idx="4"><c:v>43470</c:v></c:pt><c:pt idx="5"><c:v>43471</c:v></c:pt><c:pt idx="6"><c:v>43472</c:v></c:pt><c:pt idx="7"><c:v>43473</c:v></c:pt><c:pt idx="8"><c:v>43474</c:v></c:pt><c:pt idx="9"><c:v>43475</c:v></c:pt><c:pt idx="10"><c:v>43476</c:v></c:pt><c:pt idx="11"><c:v>43477</c:v></c:pt></c:numCache></c:numRef></c:cat><c:val><c:numRef><c:f>Sheet1!$B$2:$B$13</c:f><c:numCache><c:formatCode>General</c:formatCode><c:ptCount val="12"/><c:pt idx="0"><c:v>1</c:v></c:pt><c:pt idx="1"><c:v>2</c:v></c:pt><c:pt idx="2"><c:v>3</c:v></c:pt><c:pt idx="3"><c:v>1</c:v></c:pt><c:pt idx="4"><c:v>2</c:v></c:pt><c:pt idx="5"><c:v>3</c:v></c:pt><c:pt idx="6"><c:v>1</c:v></c:pt><c:pt idx="7"><c:v>2</c:v></c:pt><c:pt idx="8"><c:v>3</c:v></c:pt><c:pt idx="9"><c:v>1</c:v></c:pt><c:pt idx="10"><c:v>2</c:v></c:pt><c:pt idx="11"><c:v>3</c:v></c:pt></c:numCache></c:numRef></c:val><c:smooth val="0"/><c:extLst><c:ext uri="{C3380CC4-5D6E-409C-BE32-E72D297353CC}" xmlns:c16="http://schemas.microsoft.com/office/drawing/2014/chart"><c16:uniqueId val="{00000000-95D5-43C6-8DC3-51FB62361325}"/></c:ext></c:extLst></c:ser><c:dLbls><c:showLegendKey val="0"/><c:showVal val="0"/><c:showCatName val="0"/><c:showSerName val="0"/><c:showPercent val="0"/><c:showBubbleSize val="0"/></c:dLbls><c:smooth val="0"/><c:axId val="858600144"/><c:axId val="1533984704"/></c:lineChart><c:dateAx><c:axId val="858600144"/><c:scaling><c:orientation val="minMax"/></c:scaling><c:delete val="0"/><c:axPos val="b"/><c:numFmt formatCode="m/d/yyyy" sourceLinked="1"/><c:majorTickMark val="out"/><c:minorTickMark val="none"/><c:tickLblPos val="nextTo"/><c:spPr><a:noFill/><a:ln w="9525" cap="flat" cmpd="sng" algn="ctr"><a:solidFill><a:schemeClr val="tx1"><a:lumMod val="15000"/><a:lumOff val="85000"/></a:schemeClr></a:solidFill><a:round/></a:ln><a:effectLst/></c:spPr><c:txPr><a:bodyPr rot="-60000000" spcFirstLastPara="1" vertOverflow="ellipsis" vert="horz" wrap="square" anchor="ctr" anchorCtr="1"/><a:lstStyle/><a:p><a:pPr><a:defRPr sz="900" b="0" i="0" u="none" strike="noStrike" kern="1200" baseline="0"><a:solidFill><a:schemeClr val="tx1"><a:lumMod val="65000"/><a:lumOff val="35000"/></a:schemeClr></a:solidFill><a:latin typeface="+mn-lt"/><a:ea typeface="+mn-ea"/><a:cs typeface="+mn-cs"/></a:defRPr></a:pPr><a:endParaRPr lang="en-US"/></a:p></c:txPr><c:crossAx val="1533984704"/><c:crosses val="autoZero"/><c:auto val="1"/><c:lblOffset val="100"/><c:baseTimeUnit val="days"/></c:dateAx><c:valAx><c:axId val="1533984704"/><c:scaling><c:orientation val="minMax"/></c:scaling><c:delete val="0"/><c:axPos val="l"/><c:majorGridlines><c:spPr><a:ln w="9525" cap="flat" cmpd="sng" algn="ctr"><a:solidFill><a:schemeClr val="tx1"><a:lumMod val="15000"/><a:lumOff val="85000"/></a:schemeClr></a:solidFill><a:round/></a:ln><a:effectLst/></c:spPr></c:majorGridlines><c:numFmt formatCode="General" sourceLinked="1"/><c:majorTickMark val="none"/><c:minorTickMark val="none"/><c:tickLblPos val="nextTo"/><c:spPr><a:noFill/><a:ln><a:noFill/></a:ln><a:effectLst/></c:spPr><c:txPr><a:bodyPr rot="-60000000" spcFirstLastPara="1" vertOverflow="ellipsis" vert="horz" wrap="square" anchor="ctr" anchorCtr="1"/><a:lstStyle/><a:p><a:pPr><a:defRPr sz="900" b="0" i="0" u="none" strike="noStrike" kern="1200" baseline="0"><a:solidFill><a:schemeClr val="tx1"><a:lumMod val="65000"/><a:lumOff val="35000"/></a:schemeClr></a:solidFill><a:latin typeface="+mn-lt"/><a:ea typeface="+mn-ea"/><a:cs typeface="+mn-cs"/></a:defRPr></a:pPr><a:endParaRPr lang="en-US"/></a:p></c:txPr><c:crossAx val="858600144"/><c:crosses val="autoZero"/><c:crossBetween val="between"/></c:valAx><c:spPr><a:noFill/><a:ln><a:noFill/></a:ln><a:effectLst/></c:spPr></c:plotArea><c:plotVisOnly val="1"/><c:dispBlanksAs val="gap"/><c:extLst><c:ext uri="{56B9EC1D-385E-4148-901F-78D8002777C0}" xmlns:c16r3="http://schemas.microsoft.com/office/drawing/2017/03/chart"><c16r3:dataDisplayOptions16><c16r3:dispNaAsBlank val="1"/></c16r3:dataDisplayOptions16></c:ext></c:extLst><c:showDLblsOverMax val="0"/></c:chart><c:spPr><a:solidFill><a:schemeClr val="bg1"/></a:solidFill><a:ln w="9525" cap="flat" cmpd="sng" algn="ctr"><a:solidFill><a:schemeClr val="tx1"><a:lumMod val="15000"/><a:lumOff val="85000"/></a:schemeClr></a:solidFill><a:round/></a:ln><a:effectLst/></c:spPr><c:txPr><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr/></a:pPr><a:endParaRPr lang="en-US"/></a:p></c:txPr><c:externalData r:id="rId3"><c:autoUpdate val="0"/></c:externalData></c:chartSpace>)"
+#define CHART_XML R"(<?xml version="1.0" encoding="UTF-8" standalone="yes"?><c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:c16r2="http://schemas.microsoft.com/office/drawing/2015/06/chart"><c:date1904 val="0"/><c:lang val="en-US"/><c:roundedCorners val="0"/><mc:AlternateContent xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"><mc:Choice Requires="c14" xmlns:c14="http://schemas.microsoft.com/office/drawing/2007/8/2/chart"><c14:style val="102"/></mc:Choice><mc:Fallback><c:style val="2"/></mc:Fallback></mc:AlternateContent><c:chart><c:title><c:tx><c:rich><a:bodyPr rot="0" spcFirstLastPara="1" vertOverflow="ellipsis" vert="horz" wrap="square" anchor="ctr" anchorCtr="1"/><a:lstStyle/><a:p><a:pPr><a:defRPr sz="1400" b="0" i="0" u="none" strike="noStrike" kern="1200" spc="0" baseline="0"><a:solidFill><a:schemeClr val="tx1"><a:lumMod val="65000"/><a:lumOff val="35000"/></a:schemeClr></a:solidFill><a:latin typeface="+mn-lt"/><a:ea typeface="+mn-ea"/><a:cs typeface="+mn-cs"/></a:defRPr></a:pPr><a:r><a:rPr lang="en-US"/><a:t>Series Title</a:t></a:r></a:p></c:rich></c:tx><c:overlay val="0"/><c:spPr><a:noFill/><a:ln><a:noFill/></a:ln><a:effectLst/></c:spPr><c:txPr><a:bodyPr rot="0" spcFirstLastPara="1" vertOverflow="ellipsis" vert="horz" wrap="square" anchor="ctr" anchorCtr="1"/><a:lstStyle/><a:p><a:pPr><a:defRPr sz="1400" b="0" i="0" u="none" strike="noStrike" kern="1200" spc="0" baseline="0"><a:solidFill><a:schemeClr val="tx1"><a:lumMod val="65000"/><a:lumOff val="35000"/></a:schemeClr></a:solidFill><a:latin typeface="+mn-lt"/><a:ea typeface="+mn-ea"/><a:cs typeface="+mn-cs"/></a:defRPr></a:pPr><a:endParaRPr lang="en-US"/></a:p></c:txPr></c:title><c:autoTitleDeleted val="0"/><c:plotArea><c:layout/><c:lineChart><c:grouping val="standard"/><c:varyColors val="0"/><c:ser><c:idx val="0"/><c:order val="0"/><c:tx><c:strRef><c:f>Sheet1!$B$1</c:f><c:strCache><c:ptCount val="1"/><c:pt idx="0"><c:v>Series 1</c:v></c:pt></c:strCache></c:strRef></c:tx><c:spPr><a:ln w="28575" cap="rnd"><a:solidFill><a:schemeClr val="accent1"/></a:solidFill><a:round/></a:ln><a:effectLst/></c:spPr><c:marker><c:symbol val="none"/></c:marker><c:cat><c:strRef><c:f>Sheet1!$A:$A</c:f></c:strRef></c:cat><c:val><c:numRef><c:f>Sheet1!$B:$B</c:f></c:numRef></c:val><c:smooth val="0"/><c:extLst><c:ext uri="{C3380CC4-5D6E-409C-BE32-E72D297353CC}" xmlns:c16="http://schemas.microsoft.com/office/drawing/2014/chart"><c16:uniqueId val="{00000000-E90E-4B64-AF08-FD38DC5E64F1}"/></c:ext></c:extLst></c:ser><c:dLbls><c:showLegendKey val="0"/><c:showVal val="0"/><c:showCatName val="0"/><c:showSerName val="0"/><c:showPercent val="0"/><c:showBubbleSize val="0"/></c:dLbls><c:smooth val="0"/><c:axId val="194242304"/><c:axId val="200940784"/></c:lineChart><c:catAx><c:axId val="194242304"/><c:scaling><c:orientation val="minMax"/></c:scaling><c:delete val="0"/><c:axPos val="b"/><c:title><c:tx><c:rich><a:bodyPr rot="0" spcFirstLastPara="1" vertOverflow="ellipsis" vert="horz" wrap="square" anchor="ctr" anchorCtr="1"/><a:lstStyle/><a:p><a:pPr><a:defRPr sz="1000" b="0" i="0" u="none" strike="noStrike" kern="1200" baseline="0"><a:solidFill><a:schemeClr val="tx1"><a:lumMod val="65000"/><a:lumOff val="35000"/></a:schemeClr></a:solidFill><a:latin typeface="+mn-lt"/><a:ea typeface="+mn-ea"/><a:cs typeface="+mn-cs"/></a:defRPr></a:pPr><a:r><a:rPr lang="en-US"/><a:t>X Axis Title</a:t></a:r></a:p></c:rich></c:tx><c:overlay val="0"/><c:spPr><a:noFill/><a:ln><a:noFill/></a:ln><a:effectLst/></c:spPr><c:txPr><a:bodyPr rot="0" spcFirstLastPara="1" vertOverflow="ellipsis" vert="horz" wrap="square" anchor="ctr" anchorCtr="1"/><a:lstStyle/><a:p><a:pPr><a:defRPr sz="1000" b="0" i="0" u="none" strike="noStrike" kern="1200" baseline="0"><a:solidFill><a:schemeClr val="tx1"><a:lumMod val="65000"/><a:lumOff val="35000"/></a:schemeClr></a:solidFill><a:latin typeface="+mn-lt"/><a:ea typeface="+mn-ea"/><a:cs typeface="+mn-cs"/></a:defRPr></a:pPr><a:endParaRPr lang="en-US"/></a:p></c:txPr></c:title><c:numFmt formatCode="General" sourceLinked="1"/><c:majorTickMark val="none"/><c:minorTickMark val="none"/><c:tickLblPos val="nextTo"/><c:spPr><a:noFill/><a:ln w="9525" cap="flat" cmpd="sng" algn="ctr"><a:solidFill><a:schemeClr val="tx1"><a:lumMod val="15000"/><a:lumOff val="85000"/></a:schemeClr></a:solidFill><a:round/></a:ln><a:effectLst/></c:spPr><c:txPr><a:bodyPr rot="-60000000" spcFirstLastPara="1" vertOverflow="ellipsis" vert="horz" wrap="square" anchor="ctr" anchorCtr="1"/><a:lstStyle/><a:p><a:pPr><a:defRPr sz="900" b="0" i="0" u="none" strike="noStrike" kern="1200" baseline="0"><a:solidFill><a:schemeClr val="tx1"><a:lumMod val="65000"/><a:lumOff val="35000"/></a:schemeClr></a:solidFill><a:latin typeface="+mn-lt"/><a:ea typeface="+mn-ea"/><a:cs typeface="+mn-cs"/></a:defRPr></a:pPr><a:endParaRPr lang="en-US"/></a:p></c:txPr><c:crossAx val="200940784"/><c:crosses val="autoZero"/><c:auto val="1"/><c:lblAlgn val="ctr"/><c:lblOffset val="100"/><c:noMultiLvlLbl val="0"/></c:catAx><c:valAx><c:axId val="200940784"/><c:scaling><c:orientation val="minMax"/></c:scaling><c:delete val="0"/><c:axPos val="l"/><c:majorGridlines><c:spPr><a:ln w="9525" cap="flat" cmpd="sng" algn="ctr"><a:solidFill><a:schemeClr val="tx1"><a:lumMod val="15000"/><a:lumOff val="85000"/></a:schemeClr></a:solidFill><a:round/></a:ln><a:effectLst/></c:spPr></c:majorGridlines><c:title><c:tx><c:rich><a:bodyPr rot="-5400000" spcFirstLastPara="1" vertOverflow="ellipsis" vert="horz" wrap="square" anchor="ctr" anchorCtr="1"/><a:lstStyle/><a:p><a:pPr><a:defRPr sz="1000" b="0" i="0" u="none" strike="noStrike" kern="1200" baseline="0"><a:solidFill><a:schemeClr val="tx1"><a:lumMod val="65000"/><a:lumOff val="35000"/></a:schemeClr></a:solidFill><a:latin typeface="+mn-lt"/><a:ea typeface="+mn-ea"/><a:cs typeface="+mn-cs"/></a:defRPr></a:pPr><a:r><a:rPr lang="en-US"/><a:t>Y Axis Title</a:t></a:r></a:p></c:rich></c:tx><c:overlay val="0"/><c:spPr><a:noFill/><a:ln><a:noFill/></a:ln><a:effectLst/></c:spPr><c:txPr><a:bodyPr rot="-5400000" spcFirstLastPara="1" vertOverflow="ellipsis" vert="horz" wrap="square" anchor="ctr" anchorCtr="1"/><a:lstStyle/><a:p><a:pPr><a:defRPr sz="1000" b="0" i="0" u="none" strike="noStrike" kern="1200" baseline="0"><a:solidFill><a:schemeClr val="tx1"><a:lumMod val="65000"/><a:lumOff val="35000"/></a:schemeClr></a:solidFill><a:latin typeface="+mn-lt"/><a:ea typeface="+mn-ea"/><a:cs typeface="+mn-cs"/></a:defRPr></a:pPr><a:endParaRPr lang="en-US"/></a:p></c:txPr></c:title><c:numFmt formatCode="General" sourceLinked="1"/><c:majorTickMark val="none"/><c:minorTickMark val="none"/><c:tickLblPos val="nextTo"/><c:spPr><a:noFill/><a:ln><a:noFill/></a:ln><a:effectLst/></c:spPr><c:txPr><a:bodyPr rot="-60000000" spcFirstLastPara="1" vertOverflow="ellipsis" vert="horz" wrap="square" anchor="ctr" anchorCtr="1"/><a:lstStyle/><a:p><a:pPr><a:defRPr sz="900" b="0" i="0" u="none" strike="noStrike" kern="1200" baseline="0"><a:solidFill><a:schemeClr val="tx1"><a:lumMod val="65000"/><a:lumOff val="35000"/></a:schemeClr></a:solidFill><a:latin typeface="+mn-lt"/><a:ea typeface="+mn-ea"/><a:cs typeface="+mn-cs"/></a:defRPr></a:pPr><a:endParaRPr lang="en-US"/></a:p></c:txPr><c:crossAx val="194242304"/><c:crosses val="autoZero"/><c:crossBetween val="between"/></c:valAx><c:spPr><a:noFill/><a:ln><a:noFill/></a:ln><a:effectLst/></c:spPr></c:plotArea><c:plotVisOnly val="1"/><c:dispBlanksAs val="gap"/><c:extLst><c:ext uri="{56B9EC1D-385E-4148-901F-78D8002777C0}" xmlns:c16r3="http://schemas.microsoft.com/office/drawing/2017/03/chart"><c16r3:dataDisplayOptions16><c16r3:dispNaAsBlank val="1"/></c16r3:dataDisplayOptions16></c:ext></c:extLst><c:showDLblsOverMax val="0"/></c:chart><c:spPr><a:solidFill><a:schemeClr val="bg1"/></a:solidFill><a:ln w="6350" cap="flat" cmpd="sng" algn="ctr"><a:solidFill><a:schemeClr val="tx1"/></a:solidFill><a:round/></a:ln><a:effectLst/></c:spPr><c:txPr><a:bodyPr/><a:lstStyle/><a:p><a:pPr algn="l"><a:defRPr/></a:pPr><a:endParaRPr lang="en-US"/></a:p></c:txPr><c:externalData r:id="rId3"><c:autoUpdate val="0"/></c:externalData></c:chartSpace>)"
+//#define CHART_XML R"(<?xml version="1.0" encoding="UTF-8" standalone="yes"?><c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:c16r2="http://schemas.microsoft.com/office/drawing/2015/06/chart"><c:date1904 val="0"/><c:lang val="en-US"/><c:roundedCorners val="0"/><mc:AlternateContent xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"><mc:Choice Requires="c14" xmlns:c14="http://schemas.microsoft.com/office/drawing/2007/8/2/chart"><c14:style val="102"/></mc:Choice><mc:Fallback><c:style val="2"/></mc:Fallback></mc:AlternateContent><c:chart><c:title><c:overlay val="0"/><c:spPr><a:noFill/><a:ln><a:noFill/></a:ln><a:effectLst/></c:spPr><c:txPr><a:bodyPr rot="0" spcFirstLastPara="1" vertOverflow="ellipsis" vert="horz" wrap="square" anchor="ctr" anchorCtr="1"/><a:lstStyle/><a:p><a:pPr><a:defRPr sz="1400" b="0" i="0" u="none" strike="noStrike" kern="1200" spc="0" baseline="0"><a:solidFill><a:schemeClr val="tx1"><a:lumMod val="65000"/><a:lumOff val="35000"/></a:schemeClr></a:solidFill><a:latin typeface="+mn-lt"/><a:ea typeface="+mn-ea"/><a:cs typeface="+mn-cs"/></a:defRPr></a:pPr><a:endParaRPr lang="en-US"/></a:p></c:txPr></c:title><c:autoTitleDeleted val="0"/><c:plotArea><c:layout/><c:lineChart><c:grouping val="standard"/><c:varyColors val="0"/><c:ser><c:idx val="0"/><c:order val="0"/><c:tx><c:strRef><c:f>Sheet1!$B$1</c:f><c:strCache><c:ptCount val="1"/><c:pt idx="0"><c:v>ValueName</c:v></c:pt></c:strCache></c:strRef></c:tx><c:spPr><a:ln w="28575" cap="rnd"><a:solidFill><a:schemeClr val="accent1"/></a:solidFill><a:round/></a:ln><a:effectLst/></c:spPr><c:marker><c:symbol val="none"/></c:marker><c:cat><c:numRef><c:f>Sheet1!$A$2:$A$13</c:f><c:numCache><c:formatCode>m/d/yyyy</c:formatCode><c:ptCount val="12"/><c:pt idx="0"><c:v>43466</c:v></c:pt><c:pt idx="1"><c:v>43467</c:v></c:pt><c:pt idx="2"><c:v>43468</c:v></c:pt><c:pt idx="3"><c:v>43469</c:v></c:pt><c:pt idx="4"><c:v>43470</c:v></c:pt><c:pt idx="5"><c:v>43471</c:v></c:pt><c:pt idx="6"><c:v>43472</c:v></c:pt><c:pt idx="7"><c:v>43473</c:v></c:pt><c:pt idx="8"><c:v>43474</c:v></c:pt><c:pt idx="9"><c:v>43475</c:v></c:pt><c:pt idx="10"><c:v>43476</c:v></c:pt><c:pt idx="11"><c:v>43477</c:v></c:pt></c:numCache></c:numRef></c:cat><c:val><c:numRef><c:f>Sheet1!$B$2:$B$13</c:f><c:numCache><c:formatCode>General</c:formatCode><c:ptCount val="12"/><c:pt idx="0"><c:v>1</c:v></c:pt><c:pt idx="1"><c:v>2</c:v></c:pt><c:pt idx="2"><c:v>3</c:v></c:pt><c:pt idx="3"><c:v>1</c:v></c:pt><c:pt idx="4"><c:v>2</c:v></c:pt><c:pt idx="5"><c:v>3</c:v></c:pt><c:pt idx="6"><c:v>1</c:v></c:pt><c:pt idx="7"><c:v>2</c:v></c:pt><c:pt idx="8"><c:v>3</c:v></c:pt><c:pt idx="9"><c:v>1</c:v></c:pt><c:pt idx="10"><c:v>2</c:v></c:pt><c:pt idx="11"><c:v>3</c:v></c:pt></c:numCache></c:numRef></c:val><c:smooth val="0"/><c:extLst><c:ext uri="{C3380CC4-5D6E-409C-BE32-E72D297353CC}" xmlns:c16="http://schemas.microsoft.com/office/drawing/2014/chart"><c16:uniqueId val="{00000000-95D5-43C6-8DC3-51FB62361325}"/></c:ext></c:extLst></c:ser><c:dLbls><c:showLegendKey val="0"/><c:showVal val="0"/><c:showCatName val="0"/><c:showSerName val="0"/><c:showPercent val="0"/><c:showBubbleSize val="0"/></c:dLbls><c:smooth val="0"/><c:axId val="858600144"/><c:axId val="1533984704"/></c:lineChart><c:dateAx><c:axId val="858600144"/><c:scaling><c:orientation val="minMax"/></c:scaling><c:delete val="0"/><c:axPos val="b"/><c:numFmt formatCode="m/d/yyyy" sourceLinked="1"/><c:majorTickMark val="out"/><c:minorTickMark val="none"/><c:tickLblPos val="nextTo"/><c:spPr><a:noFill/><a:ln w="9525" cap="flat" cmpd="sng" algn="ctr"><a:solidFill><a:schemeClr val="tx1"><a:lumMod val="15000"/><a:lumOff val="85000"/></a:schemeClr></a:solidFill><a:round/></a:ln><a:effectLst/></c:spPr><c:txPr><a:bodyPr rot="-60000000" spcFirstLastPara="1" vertOverflow="ellipsis" vert="horz" wrap="square" anchor="ctr" anchorCtr="1"/><a:lstStyle/><a:p><a:pPr><a:defRPr sz="900" b="0" i="0" u="none" strike="noStrike" kern="1200" baseline="0"><a:solidFill><a:schemeClr val="tx1"><a:lumMod val="65000"/><a:lumOff val="35000"/></a:schemeClr></a:solidFill><a:latin typeface="+mn-lt"/><a:ea typeface="+mn-ea"/><a:cs typeface="+mn-cs"/></a:defRPr></a:pPr><a:endParaRPr lang="en-US"/></a:p></c:txPr><c:crossAx val="1533984704"/><c:crosses val="autoZero"/><c:auto val="1"/><c:lblOffset val="100"/><c:baseTimeUnit val="days"/></c:dateAx><c:valAx><c:axId val="1533984704"/><c:scaling><c:orientation val="minMax"/></c:scaling><c:delete val="0"/><c:axPos val="l"/><c:majorGridlines><c:spPr><a:ln w="9525" cap="flat" cmpd="sng" algn="ctr"><a:solidFill><a:schemeClr val="tx1"><a:lumMod val="15000"/><a:lumOff val="85000"/></a:schemeClr></a:solidFill><a:round/></a:ln><a:effectLst/></c:spPr></c:majorGridlines><c:numFmt formatCode="General" sourceLinked="1"/><c:majorTickMark val="none"/><c:minorTickMark val="none"/><c:tickLblPos val="nextTo"/><c:spPr><a:noFill/><a:ln><a:noFill/></a:ln><a:effectLst/></c:spPr><c:txPr><a:bodyPr rot="-60000000" spcFirstLastPara="1" vertOverflow="ellipsis" vert="horz" wrap="square" anchor="ctr" anchorCtr="1"/><a:lstStyle/><a:p><a:pPr><a:defRPr sz="900" b="0" i="0" u="none" strike="noStrike" kern="1200" baseline="0"><a:solidFill><a:schemeClr val="tx1"><a:lumMod val="65000"/><a:lumOff val="35000"/></a:schemeClr></a:solidFill><a:latin typeface="+mn-lt"/><a:ea typeface="+mn-ea"/><a:cs typeface="+mn-cs"/></a:defRPr></a:pPr><a:endParaRPr lang="en-US"/></a:p></c:txPr><c:crossAx val="858600144"/><c:crosses val="autoZero"/><c:crossBetween val="between"/></c:valAx><c:spPr><a:noFill/><a:ln><a:noFill/></a:ln><a:effectLst/></c:spPr></c:plotArea><c:plotVisOnly val="1"/><c:dispBlanksAs val="gap"/><c:extLst><c:ext uri="{56B9EC1D-385E-4148-901F-78D8002777C0}" xmlns:c16r3="http://schemas.microsoft.com/office/drawing/2017/03/chart"><c16r3:dataDisplayOptions16><c16r3:dispNaAsBlank val="1"/></c16r3:dataDisplayOptions16></c:ext></c:extLst><c:showDLblsOverMax val="0"/></c:chart><c:spPr><a:solidFill><a:schemeClr val="bg1"/></a:solidFill><a:ln w="9525" cap="flat" cmpd="sng" algn="ctr"><a:solidFill><a:schemeClr val="tx1"><a:lumMod val="15000"/><a:lumOff val="85000"/></a:schemeClr></a:solidFill><a:round/></a:ln><a:effectLst/></c:spPr><c:txPr><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr/></a:pPr><a:endParaRPr lang="en-US"/></a:p></c:txPr><c:externalData r:id="rId3"><c:autoUpdate val="0"/></c:externalData></c:chartSpace>)"
 #define CHART_COLOR_XML R"(<cs:colorStyle xmlns:cs="http://schemas.microsoft.com/office/drawing/2012/chartStyle" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" meth="cycle" id="10"><a:schemeClr val="accent1"/><a:schemeClr val="accent2"/><a:schemeClr val="accent3"/><a:schemeClr val="accent4"/><a:schemeClr val="accent5"/><a:schemeClr val="accent6"/><cs:variation/><cs:variation><a:lumMod val="60000"/></cs:variation><cs:variation><a:lumMod val="80000"/><a:lumOff val="20000"/></cs:variation><cs:variation><a:lumMod val="80000"/></cs:variation><cs:variation><a:lumMod val="60000"/><a:lumOff val="40000"/></cs:variation><cs:variation><a:lumMod val="50000"/></cs:variation><cs:variation><a:lumMod val="70000"/><a:lumOff val="30000"/></cs:variation><cs:variation><a:lumMod val="70000"/></cs:variation><cs:variation><a:lumMod val="50000"/><a:lumOff val="50000"/></cs:variation></cs:colorStyle>)"
 #define CHART_STYLE_XML1 R"(<cs:chartStyle xmlns:cs="http://schemas.microsoft.com/office/drawing/2012/chartStyle" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" id="227"><cs:axisTitle><cs:lnRef idx="0"/><cs:fillRef idx="0"/><cs:effectRef idx="0"/><cs:fontRef idx="minor"><a:schemeClr val="tx1"><a:lumMod val="65000"/><a:lumOff val="35000"/></a:schemeClr></cs:fontRef><cs:defRPr sz="1000" kern="1200"/></cs:axisTitle><cs:categoryAxis><cs:lnRef idx="0"/><cs:fillRef idx="0"/><cs:effectRef idx="0"/><cs:fontRef idx="minor"><a:schemeClr val="tx1"><a:lumMod val="65000"/><a:lumOff val="35000"/></a:schemeClr></cs:fontRef><cs:spPr><a:ln w="9525" cap="flat" cmpd="sng" algn="ctr"><a:solidFill><a:schemeClr val="tx1"><a:lumMod val="15000"/><a:lumOff val="85000"/></a:schemeClr></a:solidFill><a:round/></a:ln></cs:spPr><cs:defRPr sz="900" kern="1200"/></cs:categoryAxis><cs:chartArea mods="allowNoFillOverride allowNoLineOverride"><cs:lnRef idx="0"/><cs:fillRef idx="0"/><cs:effectRef idx="0"/><cs:fontRef idx="minor"><a:schemeClr val="tx1"/></cs:fontRef><cs:spPr><a:solidFill><a:schemeClr val="bg1"/></a:solidFill><a:ln w="9525" cap="flat" cmpd="sng" algn="ctr"><a:solidFill><a:schemeClr val="tx1"><a:lumMod val="15000"/><a:lumOff val="85000"/></a:schemeClr></a:solidFill><a:round/></a:ln></cs:spPr><cs:defRPr sz="1000" kern="1200"/></cs:chartArea><cs:dataLabel><cs:lnRef idx="0"/><cs:fillRef idx="0"/><cs:effectRef idx="0"/><cs:fontRef idx="minor"><a:schemeClr val="tx1"><a:lumMod val="75000"/><a:lumOff val="25000"/></a:schemeClr></cs:fontRef><cs:defRPr sz="900" kern="1200"/></cs:dataLabel><cs:dataLabelCallout><cs:lnRef idx="0"/><cs:fillRef idx="0"/><cs:effectRef idx="0"/><cs:fontRef idx="minor"><a:schemeClr val="dk1"><a:lumMod val="65000"/><a:lumOff val="35000"/></a:schemeClr></cs:fontRef><cs:spPr><a:solidFill><a:schemeClr val="lt1"/></a:solidFill><a:ln><a:solidFill><a:schemeClr val="dk1"><a:lumMod val="25000"/><a:lumOff val="75000"/></a:schemeClr></a:solidFill></a:ln></cs:spPr><cs:defRPr sz="900" kern="1200"/><cs:bodyPr rot="0" spcFirstLastPara="1" vertOverflow="clip" horzOverflow="clip" vert="horz" wrap="square" lIns="36576" tIns="18288" rIns="36576" bIns="18288" anchor="ctr" anchorCtr="1"><a:spAutoFit/></cs:bodyPr></cs:dataLabelCallout><cs:dataPoint><cs:lnRef idx="0"/><cs:fillRef idx="1"><cs:styleClr val="auto"/></cs:fillRef><cs:effectRef idx="0"/><cs:fontRef idx="minor"><a:schemeClr val="tx1"/></cs:fontRef><cs:spPr><a:solidFill><a:schemeClr val="phClr"/></a:solidFill></cs:spPr></cs:dataPoint><cs:dataPoint3D><cs:lnRef idx="0"/><cs:fillRef idx="1"><cs:styleClr val="auto"/></cs:fillRef><cs:effectRef idx="0"/><cs:fontRef idx="minor"><a:schemeClr val="tx1"/></cs:fontRef><cs:spPr><a:solidFill><a:schemeClr val="phClr"/></a:solidFill></cs:spPr></cs:dataPoint3D><cs:dataPointLine><cs:lnRef idx="0"><cs:styleClr val="auto"/></cs:lnRef><cs:fillRef idx="1"/><cs:effectRef idx="0"/><cs:fontRef idx="minor"><a:schemeClr val="tx1"/></cs:fontRef><cs:spPr><a:ln w="28575" cap="rnd"><a:solidFill><a:schemeClr val="phClr"/></a:solidFill><a:round/></a:ln></cs:spPr></cs:dataPointLine><cs:dataPointMarker><cs:lnRef idx="0"><cs:styleClr val="auto"/></cs:lnRef><cs:fillRef idx="1"><cs:styleClr val="auto"/></cs:fillRef><cs:effectRef idx="0"/><cs:fontRef idx="minor"><a:schemeClr val="tx1"/></cs:fontRef><cs:spPr><a:solidFill><a:schemeClr val="phClr"/></a:solidFill><a:ln w="9525"><a:solidFill><a:schemeClr val="phClr"/></a:solidFill></a:ln></cs:spPr></cs:dataPointMarker><cs:dataPointMarkerLayout symbol="circle" size="5"/><cs:dataPointWireframe><cs:lnRef idx="0"><cs:styleClr val="auto"/></cs:lnRef><cs:fillRef idx="1"/><cs:effectRef idx="0"/><cs:fontRef idx="minor"><a:schemeClr val="tx1"/></cs:fontRef><cs:spPr><a:ln w="9525" cap="rnd"><a:solidFill><a:schemeClr val="phClr"/></a:solidFill><a:round/></a:ln></cs:spPr></cs:dataPointWireframe><cs:dataTable><cs:lnRef idx="0"/><cs:fillRef idx="0"/><cs:effectRef idx="0"/><cs:fontRef idx="minor"><a:schemeClr val="tx1"><a:lumMod val="65000"/><a:lumOff val="35000"/></a:schemeClr></cs:fontRef><cs:spPr><a:noFill/><a:ln w="9525" cap="flat" cmpd="sng" algn="ctr"><a:solidFill><a:schemeClr val="tx1"><a:lumMod val="15000"/><a:lumOff val="85000"/></a:schemeClr></a:solidFill><a:round/></a:ln></cs:spPr><cs:defRPr sz="900" kern="1200"/></cs:dataTable><cs:downBar><cs:lnRef idx="0"/><cs:fillRef idx="0"/><cs:effectRef idx="0"/><cs:fontRef idx="minor"><a:schemeClr val="dk1"/></cs:fontRef><cs:spPr><a:solidFill><a:schemeClr val="dk1"><a:lumMod val="65000"/><a:lumOff val="35000"/></a:schemeClr></a:solidFill><a:ln w="9525"><a:solidFill><a:schemeClr val="tx1"><a:lumMod val="65000"/><a:lumOff val="35000"/></a:schemeClr></a:solidFill></a:ln></cs:spPr></cs:downBar><cs:dropLine><cs:lnRef idx="0"/><cs:fillRef idx="0"/><cs:effectRef idx="0"/><cs:fontRef idx="minor"><a:schemeClr val="tx1"/></cs:fontRef><cs:spPr><a:ln w="9525" cap="flat" cmpd="sng" algn="ctr"><a:solidFill><a:schemeClr val="tx1"><a:lumMod val="35000"/><a:lumOff val="65000"/></a:schemeClr></a:solidFill><a:round/></a:ln></cs:spPr></cs:dropLine><cs:errorBar><cs:lnRef idx="0"/><cs:fillRef idx="0"/><cs:effectRef idx="0"/><cs:fontRef idx="minor"><a:schemeClr val="tx1"/></cs:fontRef><cs:spPr><a:ln w="9525" cap="flat" cmpd="sng" algn="ctr"><a:solidFill><a:schemeClr val="tx1"><a:lumMod val="65000"/><a:lumOff val="35000"/></a:schemeClr></a:solidFill><a:round/></a:ln></cs:spPr></cs:errorBar><cs:floor><cs:lnRef idx="0"/><cs:fillRef idx="0"/><cs:effectRef idx="0"/><cs:fontRef idx="minor"><a:schemeClr val="tx1"/></cs:fontRef><cs:spPr><a:noFill/><a:ln><a:noFill/></a:ln></cs:spPr></cs:floor><cs:gridlineMajor><cs:lnRef idx="0"/><cs:fillRef idx="0"/><cs:effectRef idx="0"/><cs:fontRef idx="minor"><a:schemeClr val="tx1"/></cs:fontRef><cs:spPr><a:ln w="9525" cap="flat" cmpd="sng" algn="ctr"><a:solidFill><a:schemeClr val="tx1"><a:lumMod val="15000"/><a:lumOff val="85000"/>)"
 #define CHART_STYLE_XML2 R"(</a:schemeClr></a:solidFill><a:round/></a:ln></cs:spPr></cs:gridlineMajor><cs:gridlineMinor><cs:lnRef idx="0"/><cs:fillRef idx="0"/><cs:effectRef idx="0"/><cs:fontRef idx="minor"><a:schemeClr val="tx1"/></cs:fontRef><cs:spPr><a:ln w="9525" cap="flat" cmpd="sng" algn="ctr"><a:solidFill><a:schemeClr val="tx1"><a:lumMod val="5000"/><a:lumOff val="95000"/></a:schemeClr></a:solidFill><a:round/></a:ln></cs:spPr></cs:gridlineMinor><cs:hiLoLine><cs:lnRef idx="0"/><cs:fillRef idx="0"/><cs:effectRef idx="0"/><cs:fontRef idx="minor"><a:schemeClr val="tx1"/></cs:fontRef><cs:spPr><a:ln w="9525" cap="flat" cmpd="sng" algn="ctr"><a:solidFill><a:schemeClr val="tx1"><a:lumMod val="75000"/><a:lumOff val="25000"/></a:schemeClr></a:solidFill><a:round/></a:ln></cs:spPr></cs:hiLoLine><cs:leaderLine><cs:lnRef idx="0"/><cs:fillRef idx="0"/><cs:effectRef idx="0"/><cs:fontRef idx="minor"><a:schemeClr val="tx1"/></cs:fontRef><cs:spPr><a:ln w="9525" cap="flat" cmpd="sng" algn="ctr"><a:solidFill><a:schemeClr val="tx1"><a:lumMod val="35000"/><a:lumOff val="65000"/></a:schemeClr></a:solidFill><a:round/></a:ln></cs:spPr></cs:leaderLine><cs:legend><cs:lnRef idx="0"/><cs:fillRef idx="0"/><cs:effectRef idx="0"/><cs:fontRef idx="minor"><a:schemeClr val="tx1"><a:lumMod val="65000"/><a:lumOff val="35000"/></a:schemeClr></cs:fontRef><cs:defRPr sz="900" kern="1200"/></cs:legend><cs:plotArea mods="allowNoFillOverride allowNoLineOverride"><cs:lnRef idx="0"/><cs:fillRef idx="0"/><cs:effectRef idx="0"/><cs:fontRef idx="minor"><a:schemeClr val="tx1"/></cs:fontRef></cs:plotArea><cs:plotArea3D mods="allowNoFillOverride allowNoLineOverride"><cs:lnRef idx="0"/><cs:fillRef idx="0"/><cs:effectRef idx="0"/><cs:fontRef idx="minor"><a:schemeClr val="tx1"/></cs:fontRef></cs:plotArea3D><cs:seriesAxis><cs:lnRef idx="0"/><cs:fillRef idx="0"/><cs:effectRef idx="0"/><cs:fontRef idx="minor"><a:schemeClr val="tx1"><a:lumMod val="65000"/><a:lumOff val="35000"/></a:schemeClr></cs:fontRef><cs:defRPr sz="900" kern="1200"/></cs:seriesAxis><cs:seriesLine><cs:lnRef idx="0"/><cs:fillRef idx="0"/><cs:effectRef idx="0"/><cs:fontRef idx="minor"><a:schemeClr val="tx1"/></cs:fontRef><cs:spPr><a:ln w="9525" cap="flat" cmpd="sng" algn="ctr"><a:solidFill><a:schemeClr val="tx1"><a:lumMod val="35000"/><a:lumOff val="65000"/></a:schemeClr></a:solidFill><a:round/></a:ln></cs:spPr></cs:seriesLine><cs:title><cs:lnRef idx="0"/><cs:fillRef idx="0"/><cs:effectRef idx="0"/><cs:fontRef idx="minor"><a:schemeClr val="tx1"><a:lumMod val="65000"/><a:lumOff val="35000"/></a:schemeClr></cs:fontRef><cs:defRPr sz="1400" b="0" kern="1200" spc="0" baseline="0"/></cs:title><cs:trendline><cs:lnRef idx="0"><cs:styleClr val="auto"/></cs:lnRef><cs:fillRef idx="0"/><cs:effectRef idx="0"/><cs:fontRef idx="minor"><a:schemeClr val="tx1"/></cs:fontRef><cs:spPr><a:ln w="19050" cap="rnd"><a:solidFill><a:schemeClr val="phClr"/></a:solidFill><a:prstDash val="sysDot"/></a:ln></cs:spPr></cs:trendline><cs:trendlineLabel><cs:lnRef idx="0"/><cs:fillRef idx="0"/><cs:effectRef idx="0"/><cs:fontRef idx="minor"><a:schemeClr val="tx1"><a:lumMod val="65000"/><a:lumOff val="35000"/></a:schemeClr></cs:fontRef><cs:defRPr sz="900" kern="1200"/></cs:trendlineLabel><cs:upBar><cs:lnRef idx="0"/><cs:fillRef idx="0"/><cs:effectRef idx="0"/><cs:fontRef idx="minor"><a:schemeClr val="dk1"/></cs:fontRef><cs:spPr><a:solidFill><a:schemeClr val="lt1"/></a:solidFill><a:ln w="9525"><a:solidFill><a:schemeClr val="tx1"><a:lumMod val="15000"/><a:lumOff val="85000"/></a:schemeClr></a:solidFill></a:ln></cs:spPr></cs:upBar><cs:valueAxis><cs:lnRef idx="0"/><cs:fillRef idx="0"/><cs:effectRef idx="0"/><cs:fontRef idx="minor"><a:schemeClr val="tx1"><a:lumMod val="65000"/><a:lumOff val="35000"/></a:schemeClr></cs:fontRef><cs:defRPr sz="900" kern="1200"/></cs:valueAxis><cs:wall><cs:lnRef idx="0"/><cs:fillRef idx="0"/><cs:effectRef idx="0"/><cs:fontRef idx="minor"><a:schemeClr val="tx1"/></cs:fontRef><cs:spPr><a:noFill/><a:ln><a:noFill/></a:ln></cs:spPr></cs:wall></cs:chartStyle>)"
@@ -145,6 +145,13 @@ namespace docx {
         cweeSharedPtr<class Document::Impl> Document;
     };
 
+    class Axis::Impl {
+    public:
+        pugi::xml_node c_Ax_;
+
+        cweeSharedPtr<class Document::Impl> Document;
+        cweeSharedPtr<class ExcelPlot::Impl> Plot;
+    };
     class ExcelPlot::Impl {
     public:
         pugi::xml_document chart_xml;   // word\charts\chart1.xml
@@ -2009,6 +2016,160 @@ namespace docx {
     };
     void Section::operator=(const Section& right) { impl = right.impl; };
 
+    // Axis
+    Axis::Axis() : impl(nullptr) {};
+    Axis::Axis(Axis::Impl* implP) : impl(cweeSharedPtr<void>(cweeSharedPtr<Impl>(implP, [](void* p) { return p; }))) {};
+    Axis::Axis(Axis const& r) : impl(r.impl) {};
+    Axis::~Axis() {};
+    void Axis::operator=(Axis const& right) {
+        impl = right.impl;
+    };
+    Axis::operator bool() const {
+        return (bool)impl;
+    };
+    void Axis::SetTitle(cweeStr const& title) {
+        if (!impl) return;
+
+        /* content is a nearly exact match, but perhaps it does not likle the order? */
+#if 0
+        auto c_title = impl_()->c_Ax_.emplace_child("c:title"); {
+            auto c_tx = c_title.emplace_child("c:tx"); {
+                auto c_rich = c_tx.emplace_child("c:rich"); {
+                    auto a_bodyPr = c_rich.emplace_child("a:bodyPr"); {
+                        a_bodyPr.emplace_attribute("rot") = 0;
+                        a_bodyPr.emplace_attribute("spcFirstLastPara") = 1;
+                        a_bodyPr.emplace_attribute("vertOverflow") = "ellipsis";
+                        a_bodyPr.emplace_attribute("vert") = "horz";
+                        a_bodyPr.emplace_attribute("wrap") = "square";
+                        a_bodyPr.emplace_attribute("anchor") = "ctr";
+                        a_bodyPr.emplace_attribute("anchorCtr") = 1;
+                    }
+                    c_rich.emplace_child("a:lstStyle");
+                    auto a_p = c_rich.emplace_child("a:p"); {
+                        auto a_pPr = a_p.emplace_child("a:pPr"); {
+                            auto a_defRPr = a_pPr.emplace_child("a:defRPr"); {
+                                a_defRPr.emplace_attribute("sz") = 1000;
+                                a_defRPr.emplace_attribute("b") = 0;
+                                a_defRPr.emplace_attribute("i") = 0;
+                                a_defRPr.emplace_attribute("u") = "none";
+                                a_defRPr.emplace_attribute("strike") = "noStrike";
+                                a_defRPr.emplace_attribute("kern") = 1200;
+                                a_defRPr.emplace_attribute("baseline") = 0;
+                                auto a_solidFill = a_defRPr.emplace_child("a:solidFill"); {
+                                    auto a_schemeClr = a_solidFill.emplace_child("a:schemeClr"); {
+                                        a_schemeClr.emplace_attribute("val") = "txt1";
+                                        a_schemeClr.emplace_child("a:lumMod").emplace_attribute("val") = 65000;
+                                        a_schemeClr.emplace_child("a:lumOff").emplace_attribute("val") = 35000;
+                                    }
+                                }
+                                a_defRPr.emplace_child("a:latin").emplace_attribute("typeface") = "+mn-lt";
+                                a_defRPr.emplace_child("a:ea").emplace_attribute("typeface") = "+mn-ea";
+                                a_defRPr.emplace_child("a:cs").emplace_attribute("typeface") = "+mn-cs";
+
+
+                            }
+                        }
+                        auto a_r = a_p.emplace_child("a:r"); {
+                            a_r.emplace_child("a:rPr").emplace_attribute("lang") = "en-US";
+                            a_r.emplace_child("a:t").text() = title;
+                        }
+                    }
+                }
+            }
+            c_title.emplace_child("c:overlay").emplace_attribute("val") = 0;
+            auto c_spPr = c_title.emplace_child("c:spPr"); {
+                c_spPr.emplace_child("a:noFill");
+                c_spPr.emplace_child("a:ln").emplace_child("a:noFill");
+                c_spPr.emplace_child("a:effectLst");
+            }
+            auto c_txPr = c_title.emplace_child("c:txPr"); {
+                auto a_bodyPr = c_txPr.emplace_child("a:bodyPr"); {
+                    a_bodyPr.emplace_attribute("rot") = 0;
+                    a_bodyPr.emplace_attribute("spcFirstLastPara") = 1;
+                    a_bodyPr.emplace_attribute("vertOverflow") = "ellipsis";
+                    a_bodyPr.emplace_attribute("vert") = "horz";
+                    a_bodyPr.emplace_attribute("wrap") = "square";
+                    a_bodyPr.emplace_attribute("anchor") = "ctr";
+                    a_bodyPr.emplace_attribute("anchorCtr") = 1;
+                }
+                c_txPr.emplace_child("a:lstStyle");
+                auto a_p = c_txPr.emplace_child("a:p"); {
+                    auto a_pPr = a_p.emplace_child("a:pPr"); {
+                        auto a_defRPr = a_pPr.emplace_child("a:defRPr"); {
+                            a_defRPr.emplace_attribute("sz") = 1000;
+                            a_defRPr.emplace_attribute("b") = 0;
+                            a_defRPr.emplace_attribute("i") = 0;
+                            a_defRPr.emplace_attribute("u") = "none";
+                            a_defRPr.emplace_attribute("strike") = "noStrike";
+                            a_defRPr.emplace_attribute("kern") = 1200;
+                            a_defRPr.emplace_attribute("baseline") = 0;
+                            auto a_solidFill = a_defRPr.emplace_child("a:solidFill"); {
+                                auto a_schemeClr = a_solidFill.emplace_child("a:schemeClr"); {
+                                    a_schemeClr.emplace_attribute("val") = "txt1";
+                                    a_schemeClr.emplace_child("a:lumMod").emplace_attribute("val") = 65000;
+                                    a_schemeClr.emplace_child("a:lumOff").emplace_attribute("val") = 35000;
+                                }
+                            }
+                            a_defRPr.emplace_child("a:latin").emplace_attribute("typeface") = "+mn-lt";
+                            a_defRPr.emplace_child("a:ea").emplace_attribute("typeface") = "+mn-ea";
+                            a_defRPr.emplace_child("a:cs").emplace_attribute("typeface") = "+mn-cs";
+
+
+                        }
+                    }
+                    a_p.emplace_child("a:endParaRPr").emplace_attribute("lang") = "en-US";
+                }
+
+
+            }
+        }
+#else
+        impl_()->c_Ax_.
+            emplace_child("c:title").emplace_child("c:tx").
+            emplace_child("c:rich").emplace_child("a:p").
+            emplace_child("a:r").emplace_child("a:t").text() = title;
+#endif
+    };
+    void Axis::SetMajorTickMark(Axis::TickMarkType type) {
+        if (!impl) return;
+        cweeStr sel;
+        switch (type) {
+        default:
+        case (decltype(type)::none): sel = "none";
+            break;
+        case (decltype(type)::in): sel = "in";
+            break;
+        case (decltype(type)::out): sel = "out";
+            break;
+        case (decltype(type)::cross):  sel = "cross";
+            break;
+        }
+
+        impl_()->c_Ax_.emplace_child("c:majorTickMark").emplace_attribute("val") = sel;
+    };
+    void Axis::SetMinorTickMark(Axis::TickMarkType type) {
+        if (!impl) return;
+        cweeStr sel;
+        switch (type) {
+        default:
+        case (decltype(type)::none): sel = "none";
+            break;
+        case (decltype(type)::in): sel = "in";
+            break;
+        case (decltype(type)::out): sel = "out";
+            break;
+        case (decltype(type)::cross):  sel = "cross";
+            break;
+        }
+
+        impl_()->c_Ax_.emplace_child("c:minorTickMark").emplace_attribute("val") = sel;
+    };
+    void Axis::SetNumFmt(const cweeStr& fmt) {
+        auto c_numFmt = impl_()->c_Ax_.emplace_child("c:numFmt");
+        c_numFmt.emplace_attribute("formatCode") = fmt;
+        c_numFmt.emplace_attribute("sourceLinked") = 0;
+    };
+
     // ExcelPlot
     ExcelPlot::ExcelPlot() : impl(nullptr) {};
     ExcelPlot::ExcelPlot(ExcelPlot::Impl* implP) : impl(cweeSharedPtr<void>(cweeSharedPtr<Impl>(implP, [](void* p) { return p; }))) {};
@@ -2019,6 +2180,32 @@ namespace docx {
     };
     ExcelPlot::operator bool() const {
         return (bool)impl;
+    };
+    Axis ExcelPlot::xAxis() {
+        if (!impl) return Axis();
+        auto aImpl = new Axis::Impl();
+        aImpl->Document = impl_()->Document;
+        aImpl->Plot = impl;
+
+        auto c_plotArea = impl_()->chart_xml.emplace_child("c:chartSpace").emplace_child("c:chart").emplace_child("c:plotArea");
+        auto catX = c_plotArea.child("c:catAx");
+        auto dateX = c_plotArea.child("c:dateAx");
+        if (catX) aImpl->c_Ax_ = catX;
+        if (dateX) aImpl->c_Ax_ = dateX;
+
+        return Axis(aImpl);
+    };
+    Axis ExcelPlot::yAxis() {
+        if (!impl) return Axis();
+        auto aImpl = new Axis::Impl();
+        aImpl->Document = impl_()->Document;
+        aImpl->Plot = impl;
+
+        auto c_plotArea = impl_()->chart_xml.emplace_child("c:chartSpace").emplace_child("c:chart").emplace_child("c:plotArea");
+        auto valY = c_plotArea.child("c:valAx");
+        if (valY) aImpl->c_Ax_ = valY;
+
+        return Axis(aImpl);
     };
     void ExcelPlot::SetTitle(cweeSharedPtr<ExcelCell> const& cell) {
         if (!impl || !cell) return;
@@ -2037,67 +2224,67 @@ namespace docx {
         if (!impl || !range) return;
 
         auto c_ser = impl_()->chart_xml.emplace_child("c:chartSpace").emplace_child("c:chart").emplace_child("c:plotArea").emplace_child("c:lineChart").emplace_child("c:ser");
-        auto c_numRef = c_ser.emplace_child("c:cat").emplace_child("c:numRef");
+        auto c_cat = c_ser.child("c:cat");
+        if (c_cat) {
+            c_cat.remove_child("c:strRef");
+            c_cat.remove_child("c:numRef");
 
-        c_numRef.emplace_child("c:f").text() = (range->target_worksheet()->title() + "!" + cweeStr(range->ref()->top_left()->to_string() + ":" + range->ref()->bottom_right()->to_string()));
-
-        c_numRef.remove_child("c:numCache");
-        auto c_numCache = c_numRef.emplace_child("c:numCache");
-        if (c_numCache) {
-            // c_numCache.emplace_child("c:formatCode").text() = "m/d/yyyy";
-            c_numCache.emplace_child("c:ptCount").emplace_attribute("val") = range->length();
-            int n = 0;
-            for (auto& cell_vector : *range) {
-                for (auto& cell : cell_vector) {
-                    auto c_pt = c_numCache.append_child("c:pt");
-                    c_pt.emplace_attribute("idx") = n++;
-                    c_pt.emplace_child("c:v").text() = cell->to_string();
+            auto c_numRef = c_cat.emplace_child("c:numRef");
+            c_numRef.emplace_child("c:f").text() = (range->target_worksheet()->title() + "!" + cweeStr(range->ref()->top_left()->to_string() + ":" + range->ref()->bottom_right()->to_string()));
+            auto c_numCache = c_numRef.emplace_child("c:numCache");
+            if (c_numCache) {
+                // c_numCache.emplace_child("c:formatCode").text() = "m/d/yyyy";
+                c_numCache.emplace_child("c:ptCount").emplace_attribute("val") = range->length();
+                int n = 0;
+                for (auto& cell_vector : *range) {
+                    for (auto& cell : cell_vector) {
+                        auto c_pt = c_numCache.append_child("c:pt");
+                        c_pt.emplace_attribute("idx") = n++;
+                        c_pt.emplace_child("c:v").text() = cell->to_string();
+                    }
                 }
             }
         }
+        else {
+            throw(std::runtime_error("c:cat category not found"));
+        }        
     };
     void ExcelPlot::SetYValues(cweeSharedPtr<ExcelRange> const& range) {
         if (!impl || !range) return;
 
         auto c_ser = impl_()->chart_xml.emplace_child("c:chartSpace").emplace_child("c:chart").emplace_child("c:plotArea").emplace_child("c:lineChart").emplace_child("c:ser");
-        auto c_numRef = c_ser.emplace_child("c:val").emplace_child("c:numRef");
+        auto c_cat = c_ser.child("c:val");
+        if (c_cat) {
+            c_cat.remove_child("c:strRef");
+            c_cat.remove_child("c:numRef");
 
-        c_numRef.emplace_child("c:f").text() = (range->target_worksheet()->title() + "!" + cweeStr(range->ref()->top_left()->to_string() + ":" + range->ref()->bottom_right()->to_string()));
-
-        c_numRef.remove_child("c:numCache");
-        auto c_numCache = c_numRef.emplace_child("c:numCache");
-        if (c_numCache) {
-            // c_numCache.emplace_child("c:formatCode").text() = "m/d/yyyy";
-            c_numCache.emplace_child("c:ptCount").emplace_attribute("val") = range->length();
-            int n = 0;
-            for (auto& cell_vector : *range) {
-                for (auto& cell : cell_vector) {
-                    auto c_pt = c_numCache.append_child("c:pt");
-                    c_pt.emplace_attribute("idx") = n++;
-                    c_pt.emplace_child("c:v").text() = cell->to_string();
+            auto c_numRef = c_cat.emplace_child("c:numRef");
+            c_numRef.emplace_child("c:f").text() = (range->target_worksheet()->title() + "!" + cweeStr(range->ref()->top_left()->to_string() + ":" + range->ref()->bottom_right()->to_string()));
+            auto c_numCache = c_numRef.emplace_child("c:numCache");
+            if (c_numCache) {
+                // c_numCache.emplace_child("c:formatCode").text() = "m/d/yyyy";
+                c_numCache.emplace_child("c:ptCount").emplace_attribute("val") = range->length();
+                int n = 0;
+                for (auto& cell_vector : *range) {
+                    for (auto& cell : cell_vector) {
+                        auto c_pt = c_numCache.append_child("c:pt");
+                        c_pt.emplace_attribute("idx") = n++;
+                        c_pt.emplace_child("c:v").text() = cell->to_string();
+                    }
                 }
             }
         }
-    };
-    void ExcelPlot::SetXTitle(cweeStr const& title) {
-        if (!impl) return;
-        impl_()->chart_xml.emplace_child("c:chartSpace").emplace_child("c:chart").emplace_child(
-            "c:plotArea").emplace_child("c:catAx").emplace_child("c:title").emplace_child(
-                "c:tx").emplace_child("c:rich").emplace_child("a:p").emplace_child("a:r").emplace_child("a:t").text() = title;
-    };
-    void ExcelPlot::SetYTitle(cweeStr const& title) {
-        if (!impl) return;
-        impl_()->chart_xml.emplace_child("c:chartSpace").emplace_child("c:chart").emplace_child(
-            "c:plotArea").emplace_child("c:valAx").emplace_child("c:title").emplace_child(
-                "c:tx").emplace_child("c:rich").emplace_child("a:p").emplace_child("a:r").emplace_child("a:t").text() = title;
+        else {
+            throw(std::runtime_error("c:cat category not found"));
+        }
     };
     void ExcelPlot::SetWidth(cweeUnitValues::inch width) {
         if (!impl) return;
-        impl_()->w_drawing_.emplace_child("w:drawing").emplace_child("wp:inline").emplace_child("wp:extent").emplace_attribute("cx") = width() * 914400.0;
+        impl_()->w_drawing_.emplace_child("wp:inline").emplace_child("wp:extent").emplace_attribute("cx") = (int)(width() * 914400.0);
     };
     void ExcelPlot::SetHeight(cweeUnitValues::inch height) {
         if (!impl) return;
-        impl_()->w_drawing_.emplace_child("w:drawing").emplace_child("wp:inline").emplace_child("wp:extent").emplace_attribute("cy") = height() * 914400.0;
+        impl_()->w_drawing_.emplace_child("wp:inline").emplace_child("wp:extent").emplace_attribute("cy") = (int)(height() * 914400.0);
     };
 
     // Run
