@@ -9,6 +9,7 @@
 #include "../WaterWatchCpp/enum.h"
 #include "../WaterWatchCpp/SharedPtr.h"
 #include "../ExcelInterop/Wrapper.h"
+#include "../WaterWatchCpp/cweeUnitedValue.h"
 
 /* 
  minidocx 0.5.0 - C++ library for creating Microsoft Word Document (.docx).
@@ -248,12 +249,25 @@ namespace docx {
     class ExcelPlot {
         friend class Run;
         friend class Document;
+
     public:
         ExcelPlot();
         ExcelPlot(ExcelPlot const& p);
         ~ExcelPlot();
         void operator=(ExcelPlot const& right);
         operator bool() const;
+
+        void SetTitle(cweeSharedPtr<ExcelCell> const& cell);        
+        void SetTitle(cweeStr const& title);
+
+        void SetXValues(cweeSharedPtr<ExcelRange> const& range);
+        void SetYValues(cweeSharedPtr<ExcelRange> const& range);
+
+        void SetXTitle(cweeStr const& title);
+        void SetYTitle(cweeStr const& title);
+
+        void SetWidth(cweeUnitValues::inch width);
+        void SetHeight(cweeUnitValues::inch height);
 
     private:
         class Impl;
@@ -266,8 +280,8 @@ namespace docx {
 
 
 
-    class Run
-    {
+    class Run {
+        friend class ExcelPlot;
         friend class Paragraph;
         friend std::ostream& operator<<(std::ostream& out, const Run& r);
 

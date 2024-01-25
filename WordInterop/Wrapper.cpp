@@ -129,6 +129,18 @@ namespace chaiscript {
             lib->AddFunction(, SetOutsideBorders, , return o.SetOutsideBorders(static_cast<Box::BorderStyle>(GetBetterEnum<BorderStyle>(input)._to_integral()));, Table& o, cweeStr const& input);
             lib->AddFunction(, SetAllBorders, , return o.SetAllBorders(static_cast<Box::BorderStyle>(GetBetterEnum<BorderStyle>(input)._to_integral())); , Table& o, cweeStr const& input);
 
+            lib->add(chaiscript::user_type<ExcelPlot>(), "DocxChart");
+            lib->add(chaiscript::constructor<ExcelPlot()>(), "DocxChart");
+            lib->add(chaiscript::constructor<ExcelPlot(const ExcelPlot&)>(), "DocxChart");
+            lib->add(chaiscript::constructor<bool(const ExcelPlot&)>(), "bool");
+            lib->add(chaiscript::fun([](ExcelPlot& a, ExcelPlot& b) { a = b; return a; }), "=");
+            lib->AddFunction(, SetTitle, , o.SetTitle(cell);, ExcelPlot& o, cweeSharedPtr<ExcelCell> const& cell);
+            lib->AddFunction(, SetTitle, , o.SetTitle(title);, ExcelPlot& o, cweeStr const& title);
+            lib->AddFunction(, SetXValues, , o.SetXValues(range); , ExcelPlot & o, cweeSharedPtr<ExcelRange> const& range);
+            lib->AddFunction(, SetYValues, , o.SetYValues(range); , ExcelPlot & o, cweeSharedPtr<ExcelRange> const& range);
+            lib->AddFunction(, SetWidth, , o.SetWidth(width);, ExcelPlot & o, cweeUnitValues::unit_value const& width);
+            lib->AddFunction(, SetHeight, , o.SetHeight(height);, ExcelPlot & o, cweeUnitValues::unit_value const& height);
+
             lib->add(chaiscript::user_type<Run>(), "DocxRun");
             lib->add(chaiscript::constructor<Run()>(), "DocxRun");
             lib->add(chaiscript::constructor<Run(const Run&)>(), "DocxRun");
