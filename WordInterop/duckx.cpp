@@ -2163,7 +2163,7 @@ namespace docx {
 #endif
 #if 1
     ExcelPlot Run::InsertChart(cweeSharedPtr<ExcelWorkbook> const& workbook) {
-        if (!impl) return;
+        if (!impl) return ExcelPlot();
 
         auto plot_impl = new ExcelPlot::Impl(); {
             {
