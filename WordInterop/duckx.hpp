@@ -245,6 +245,25 @@ namespace docx {
         int characterSpacing = 0;
     };
 
+    class ExcelPlot {
+        friend class Run;
+        friend class Document;
+
+        ExcelPlot();
+        ExcelPlot(ExcelPlot const& p);
+        ~ExcelPlot();
+        void operator=(ExcelPlot const& right);
+        operator bool() const;
+
+    private:
+        class Impl;
+        Impl* impl_() const { return static_cast<Impl*>(impl.Get()); };
+        cweeSharedPtr< void > impl;
+
+        // constructs from xml node
+        ExcelPlot(Impl* impl);
+    };
+
 
 
     class Run
@@ -269,7 +288,7 @@ namespace docx {
         void ClearText();
         void AppendLineBreak();
         //void InsertPicture(const std::string& filepath);
-        //void InsertChart(cweeSharedPtr<ExcelWorkbook> workbook);
+        ExcelPlot InsertChart(cweeSharedPtr<ExcelWorkbook> const& workbook);
 
         // text formatting
         void SetFontSize(const double fontSize);

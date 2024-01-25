@@ -142,6 +142,7 @@ namespace chaiscript {
             lib->add(chaiscript::fun(&Run::AppendLineBreak), "AppendLineBreak");            
             lib->add(chaiscript::fun(&Run::SetFontSize), "SetFontSize");
             lib->add(chaiscript::fun(&Run::GetFontSize), "GetFontSize");
+            lib->add(chaiscript::fun(&Run::InsertChart), "InsertChart");
             lib->AddFunction(, SetFont, , return o.SetFont(font.c_str()); , Run& o, cweeStr const& font);
             lib->AddFunction(, GetFont, , std::string fontAscii; std::string fontEastAsia; o.GetFont(fontAscii, fontEastAsia); return fontAscii, Run& o);
             lib->AddFunction(, SetFontStyle, , return o.SetFontStyle(static_cast<docx::FontStyle>(GetBetterEnum<::FontStyle>(input)._to_integral())); , Run& o, cweeStr const& input);

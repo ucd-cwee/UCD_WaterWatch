@@ -3492,6 +3492,33 @@ public:
 		}
 		return *this;
 	};
+	zipper& operator<<(std::stringstream const& is) {
+		int err = ZIP_OK;
+		char buf[ziblib_BUFSIZE];
+		unsigned long nRead = 0;
+
+		if (isOpenEntry())
+		{
+			while (err == ZIP_OK && is.good())
+			{
+				is.
+
+
+				is.read(buf, ziblib_BUFSIZE);
+				unsigned int nRead = (unsigned int)is.gcount();
+
+				if (nRead)
+				{
+					err = zipWriteInFileInZip(zipFile_, buf, nRead);
+				}
+				else
+				{
+					break;
+				}
+			}
+		}
+		return *this;
+	};
 
 	// Stream operator for dumping data from an input stream to the 
 	// currently open zip entry.
@@ -3597,6 +3624,8 @@ public:
 		}
 		return *this;
 	};
+
+
 
 	bool setEntry(cweeSharedPtr<char> const& ptr, unsigned int bufsize) {
 		void* p = (void*)(char*)(ptr.Get());
