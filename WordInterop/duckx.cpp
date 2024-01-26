@@ -2147,6 +2147,7 @@ namespace docx {
             impl_()->chart_xml.emplace_child("c:chartSpace").emplace_child("c:chart").prepend_child("c:autoTitleDeleted").emplace_attribute("val") = 1;
 
             impl_()->chart_xml.emplace_child("c:chartSpace").emplace_child("c:chart").emplace_child("c:title").emplace_child("c:tx").emplace_child("c:rich").emplace_child("a:p").emplace_child("a:r").emplace_child("a:t").text() = "";
+            impl_()->chart_xml.emplace_child("c:chartSpace").emplace_child("c:chart").remove_child("c:title");
         }
         else {
             impl_()->chart_xml.emplace_child("c:chartSpace").emplace_child("c:chart").remove_child("c:autoTitleDeleted");
