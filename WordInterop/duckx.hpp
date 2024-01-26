@@ -261,6 +261,7 @@ namespace docx {
         void SetMajorTickMark(TickMarkType type);
         void SetMinorTickMark(TickMarkType type);
         void SetNumFmt(const cweeStr& fmt);
+        void SetMajorGridLine(double weight);
 
     private:
         class Impl;
@@ -270,7 +271,6 @@ namespace docx {
         // constructs from xml node
         Axis(Impl* impl);
     };
-
 
     class ExcelPlot {
         friend class Run;
@@ -283,12 +283,15 @@ namespace docx {
         ~ExcelPlot();
         void operator=(ExcelPlot const& right);
         operator bool() const;
-
-        void SetTitle(cweeSharedPtr<ExcelCell> const& cell);        
+       
         void SetTitle(cweeStr const& title);
 
         void SetXValues(cweeSharedPtr<ExcelRange> const& range);
         void SetYValues(cweeSharedPtr<ExcelRange> const& range);
+
+        void SetPlotVisOnly(bool shouldPlotVisOnly);
+        enum class BlankDisplayMode { gap, zero, span };
+        void SetDispBlanksAs(BlankDisplayMode mode);
 
         Axis xAxis();
         Axis yAxis();

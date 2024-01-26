@@ -72,6 +72,7 @@ BETTER_ENUM(PageNumberFormat, int, Decimal, NumberInDash, CardinalText, OrdinalT
 BETTER_ENUM(BulletType, int, Alpha, Number, Bullet);
 BETTER_ENUM(DocxFieldType, int, Table, Figure);
 BETTER_ENUM(DocxTickMarkType, int, In, Out, Cross, None);
+BETTER_ENUM(DocxBlankDisplayMode, int, gap, zero, span);
 
 namespace chaiscript {
     namespace WaterWatch_Lib {
@@ -139,13 +140,13 @@ namespace chaiscript {
             lib->AddFunction(, SetMajorTickMark, , o.SetMajorTickMark(static_cast<docx::Axis::TickMarkType>(GetBetterEnum<::DocxTickMarkType>(input)._to_integral()));, Axis & o, cweeStr const& input);
             lib->AddFunction(, SetMinorTickMark, , o.SetMinorTickMark(static_cast<docx::Axis::TickMarkType>(GetBetterEnum<::DocxTickMarkType>(input)._to_integral()));, Axis & o, cweeStr const& input);
             lib->add(chaiscript::fun(&Axis::SetNumFmt), "SetNumFmt");
+            lib->add(chaiscript::fun(&Axis::SetMajorGridLine), "SetMajorGridLine");
 
             lib->add(chaiscript::user_type<ExcelPlot>(), "DocxChart");
             lib->add(chaiscript::constructor<ExcelPlot()>(), "DocxChart");
             lib->add(chaiscript::constructor<ExcelPlot(const ExcelPlot&)>(), "DocxChart");
             lib->add(chaiscript::constructor<bool(const ExcelPlot&)>(), "bool");
             lib->add(chaiscript::fun([](ExcelPlot& a, ExcelPlot& b) { a = b; return a; }), "=");
-            lib->AddFunction(, SetTitle, , o.SetTitle(cell);, ExcelPlot& o, cweeSharedPtr<ExcelCell> const& cell);
             lib->AddFunction(, SetTitle, , o.SetTitle(title);, ExcelPlot& o, cweeStr const& title);
             lib->AddFunction(, SetXValues, , o.SetXValues(range); , ExcelPlot & o, cweeSharedPtr<ExcelRange> const& range);
             lib->AddFunction(, SetYValues, , o.SetYValues(range); , ExcelPlot & o, cweeSharedPtr<ExcelRange> const& range);
@@ -153,6 +154,8 @@ namespace chaiscript {
             lib->AddFunction(, SetHeight, , o.SetHeight(height);, ExcelPlot & o, cweeUnitValues::unit_value const& height);
             lib->add(chaiscript::fun(&ExcelPlot::xAxis), "xAxis");
             lib->add(chaiscript::fun(&ExcelPlot::yAxis), "yAxis");
+            lib->add(chaiscript::fun(&ExcelPlot::SetPlotVisOnly), "SetPlotVisOnly");
+            lib->AddFunction(, SetDispBlanksAs, , o.SetDispBlanksAs(static_cast<docx::ExcelPlot::BlankDisplayMode>(GetBetterEnum<::DocxBlankDisplayMode>(input)._to_integral())); , ExcelPlot& o, cweeStr const& input);
 
             lib->add(chaiscript::user_type<Run>(), "DocxRun");
             lib->add(chaiscript::constructor<Run()>(), "DocxRun");
