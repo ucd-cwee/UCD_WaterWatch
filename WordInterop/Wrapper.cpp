@@ -142,18 +142,24 @@ namespace chaiscript {
             lib->add(chaiscript::fun(&Axis::SetNumFmt), "SetNumFmt");
             lib->add(chaiscript::fun(&Axis::SetMajorGridLine), "SetMajorGridLine");
 
-            lib->add(chaiscript::user_type<ExcelPlot>(), "DocxChart");
-            lib->add(chaiscript::constructor<ExcelPlot()>(), "DocxChart");
-            lib->add(chaiscript::constructor<ExcelPlot(const ExcelPlot&)>(), "DocxChart");
+            lib->add(chaiscript::user_type<Chart>(), "DocxChart");
+            lib->add(chaiscript::constructor<Chart()>(), "DocxChart");
+            lib->add(chaiscript::constructor<Chart(const Chart&)>(), "DocxChart");
+            lib->add(chaiscript::constructor<bool(const Chart&)>(), "bool");
+            lib->add(chaiscript::fun([](Chart& a, Chart& b) { a = b; return a; }), "=");
+            lib->add(chaiscript::fun(&Chart::xAxis), "xAxis");
+            lib->add(chaiscript::fun(&Chart::yAxis), "yAxis");
+            
+            lib->add(chaiscript::user_type<ExcelPlot>(), "DocxPlot");
+            lib->add(chaiscript::constructor<ExcelPlot()>(), "DocxPlot");
+            lib->add(chaiscript::constructor<ExcelPlot(const ExcelPlot&)>(), "DocxPlot");
             lib->add(chaiscript::constructor<bool(const ExcelPlot&)>(), "bool");
             lib->add(chaiscript::fun([](ExcelPlot& a, ExcelPlot& b) { a = b; return a; }), "=");
             lib->AddFunction(, SetTitle, , o.SetTitle(title);, ExcelPlot& o, cweeStr const& title);
-            lib->AddFunction(, SetXValues, , o.SetXValues(range); , ExcelPlot & o, cweeSharedPtr<ExcelRange> const& range);
-            lib->AddFunction(, SetYValues, , o.SetYValues(range); , ExcelPlot & o, cweeSharedPtr<ExcelRange> const& range);
             lib->AddFunction(, SetWidth, , o.SetWidth(width);, ExcelPlot & o, cweeUnitValues::unit_value const& width);
             lib->AddFunction(, SetHeight, , o.SetHeight(height);, ExcelPlot & o, cweeUnitValues::unit_value const& height);
-            lib->add(chaiscript::fun(&ExcelPlot::xAxis), "xAxis");
-            lib->add(chaiscript::fun(&ExcelPlot::yAxis), "yAxis");
+            lib->add(chaiscript::fun(&ExcelPlot::AppendLineChart), "AppendLineChart");
+            lib->add(chaiscript::fun(&ExcelPlot::AppendAreaChart), "AppendAreaChart");
             lib->add(chaiscript::fun(&ExcelPlot::SetPlotVisOnly), "SetPlotVisOnly");
             lib->AddFunction(, SetDispBlanksAs, , o.SetDispBlanksAs(static_cast<docx::ExcelPlot::BlankDisplayMode>(GetBetterEnum<::DocxBlankDisplayMode>(input)._to_integral())); , ExcelPlot& o, cweeStr const& input);
 

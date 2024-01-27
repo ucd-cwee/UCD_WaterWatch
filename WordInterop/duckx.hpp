@@ -249,6 +249,8 @@ namespace docx {
     class Axis {
         friend class Document;
         friend class ExcelPlot;
+        friend class Chart;
+
     public:
         Axis();
         Axis(Axis const& p);
@@ -272,6 +274,55 @@ namespace docx {
         Axis(Impl* impl);
     };
 
+    class Chart {
+        friend class ExcelPlot;
+
+    public:
+        Chart();
+        Chart(Chart const& p);
+        virtual ~Chart();
+        void operator=(Chart const& right);
+        operator bool() const;
+
+        Axis xAxis();
+        Axis yAxis();
+
+    protected:
+        class Impl;
+        Impl* impl_() const { return static_cast<Impl*>(impl.Get()); };
+        Chart(Chart::Impl* impl, cweeSharedPtr<ExcelRange> const& xrange, cweeSharedPtr<ExcelRange> const& yrange);  // constructs from xml node
+
+        cweeSharedPtr< void > impl;
+    };
+    /*
+    class LineChart final : public Chart {
+        friend class ExcelPlot;
+
+    public:
+        LineChart();
+        LineChart(LineChart const& p);
+        virtual ~LineChart();
+        void operator=(LineChart const& right);
+
+    private:
+        LineChart(Chart::Impl* impl, cweeSharedPtr<ExcelRange> const& xrange, cweeSharedPtr<ExcelRange> const& yrange);  // constructs from xml node
+
+    };
+    class AreaChart final : public Chart {
+        friend class ExcelPlot;
+
+    public:
+        AreaChart();
+        AreaChart(AreaChart const& p);
+        virtual ~AreaChart();
+        void operator=(AreaChart const& right);
+
+    private:
+        AreaChart(Chart::Impl* impl, cweeSharedPtr<ExcelRange> const& xrange, cweeSharedPtr<ExcelRange> const& yrange); // constructs from xml node
+
+    };
+    */
+
     class ExcelPlot {
         friend class Run;
         friend class Document;
@@ -282,20 +333,13 @@ namespace docx {
         ExcelPlot(ExcelPlot const& p);
         ~ExcelPlot();
         void operator=(ExcelPlot const& right);
-        operator bool() const;
-       
+        operator bool() const;       
         void SetTitle(cweeStr const& title);
-
-        void SetXValues(cweeSharedPtr<ExcelRange> const& range);
-        void SetYValues(cweeSharedPtr<ExcelRange> const& range);
-
         void SetPlotVisOnly(bool shouldPlotVisOnly);
         enum class BlankDisplayMode { gap, zero, span };
         void SetDispBlanksAs(BlankDisplayMode mode);
-
-        Axis xAxis();
-        Axis yAxis();
-
+        Chart AppendLineChart(cweeSharedPtr<ExcelRange> const& xrange, cweeSharedPtr<ExcelRange> const& yrange);
+        Chart AppendAreaChart(cweeSharedPtr<ExcelRange> const& xrange, cweeSharedPtr<ExcelRange> const& yrange);
         void SetWidth(cweeUnitValues::inch width);
         void SetHeight(cweeUnitValues::inch height);
 

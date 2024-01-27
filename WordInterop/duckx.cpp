@@ -25,7 +25,7 @@
 #define BASIC_CHART_XML R"(<?xml version="1.0" encoding="UTF-8" standalone="yes"?><c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:c16r2="http://schemas.microsoft.com/office/drawing/2015/06/chart"></c:chartSpace>)"
 
 
-#define CHART_XML R"(<?xml version="1.0" encoding="UTF-8" standalone="yes"?><c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:c16r2="http://schemas.microsoft.com/office/drawing/2015/06/chart"><c:date1904 val="0"/><c:lang val="en-US"/><c:roundedCorners val="0"/><mc:AlternateContent xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"><mc:Choice Requires="c14" xmlns:c14="http://schemas.microsoft.com/office/drawing/2007/8/2/chart"><c14:style val="102"/></mc:Choice><mc:Fallback><c:style val="2"/></mc:Fallback></mc:AlternateContent><c:chart><c:autoTitleDeleted val="1"/><c:title><c:tx><c:rich><a:bodyPr rot="0" spcFirstLastPara="1" vertOverflow="ellipsis" vert="horz" wrap="square" anchor="ctr" anchorCtr="1"/><a:lstStyle/><a:p><a:pPr><a:defRPr sz="1000" b="0" i="0" u="none" strike="noStrike" kern="1200" spc="0" baseline="0"><a:solidFill><a:schemeClr val="tx1"/></a:solidFill><a:latin typeface="+mn-lt"/><a:ea typeface="+mn-ea"/><a:cs typeface="+mn-cs"/></a:defRPr></a:pPr><a:r><a:rPr lang="en-US"><a:solidFill><a:schemeClr val="tx1"/></a:solidFill></a:rPr><a:t>Series Title</a:t></a:r></a:p></c:rich></c:tx><c:overlay val="0"/><c:spPr><a:noFill/><a:ln><a:noFill/></a:ln><a:effectLst/></c:spPr><c:txPr><a:bodyPr rot="0" spcFirstLastPara="1" vertOverflow="ellipsis" vert="horz" wrap="square" anchor="ctr" anchorCtr="1"/><a:lstStyle/><a:p><a:pPr><a:defRPr sz="1400" b="0" i="0" u="none" strike="noStrike" kern="1200" spc="0" baseline="0"><a:solidFill><a:schemeClr val="tx1"/></a:solidFill><a:latin typeface="+mn-lt"/><a:ea typeface="+mn-ea"/><a:cs typeface="+mn-cs"/></a:defRPr></a:pPr><a:endParaRPr lang="en-US"/></a:p></c:txPr></c:title><c:plotArea><c:layout/><c:lineChart><c:grouping val="standard"/><c:varyColors val="0"/><c:ser><c:idx val="0"/><c:order val="0"/><c:tx><c:strRef><c:f>Sheet1!$B$1</c:f><c:strCache><c:ptCount val="1"/><c:pt idx="0"><c:v>Series 1</c:v></c:pt></c:strCache></c:strRef></c:tx><c:spPr><a:ln w="25400" cap="rnd"><a:solidFill><a:schemeClr val="tx1"/></a:solidFill><a:round/></a:ln><a:effectLst/></c:spPr><c:marker><c:symbol val="none"/></c:marker><c:cat><c:strRef><c:f>Sheet1!$A:$A</c:f></c:strRef></c:cat><c:val><c:numRef><c:f>Sheet1!$B:$B</c:f></c:numRef></c:val><c:smooth val="0"/><c:extLst><c:ext uri="{C3380CC4-5D6E-409C-BE32-E72D297353CC}" xmlns:c16="http://schemas.microsoft.com/office/drawing/2014/chart"><c16:uniqueId val="{00000000-E90E-4B64-AF08-FD38DC5E64F1}"/></c:ext></c:extLst></c:ser><c:dLbls><c:showLegendKey val="0"/><c:showVal val="0"/><c:showCatName val="0"/><c:showSerName val="0"/><c:showPercent val="0"/><c:showBubbleSize val="0"/></c:dLbls><c:smooth val="0"/><c:axId val="194242304"/><c:axId val="200940784"/></c:lineChart><c:catAx><c:axId val="194242304"/><c:scaling><c:orientation val="minMax"/></c:scaling><c:delete val="0"/><c:axPos val="b"/><c:title><c:tx><c:rich><a:bodyPr rot="0" spcFirstLastPara="1" vertOverflow="ellipsis" vert="horz" wrap="square" anchor="ctr" anchorCtr="1"/><a:lstStyle/><a:p><a:pPr><a:defRPr sz="1000" b="0" i="0" u="none" strike="noStrike" kern="1200" baseline="0"><a:solidFill><a:schemeClr val="tx1"/></a:solidFill><a:latin typeface="+mn-lt"/><a:ea typeface="+mn-ea"/><a:cs typeface="+mn-cs"/></a:defRPr></a:pPr><a:r><a:rPr lang="en-US"><a:solidFill><a:schemeClr val="tx1"/></a:solidFill></a:rPr><a:t>X Axis Title</a:t></a:r></a:p></c:rich></c:tx><c:overlay val="0"/><c:spPr><a:noFill/><a:ln><a:noFill/></a:ln><a:effectLst/></c:spPr><c:txPr><a:bodyPr rot="0" spcFirstLastPara="1" vertOverflow="ellipsis" vert="horz" wrap="square" anchor="ctr" anchorCtr="1"/><a:lstStyle/><a:p><a:pPr><a:defRPr sz="1000" b="0" i="0" u="none" strike="noStrike" kern="1200" baseline="0"><a:solidFill><a:schemeClr val="tx1"/></a:solidFill><a:latin typeface="+mn-lt"/><a:ea typeface="+mn-ea"/><a:cs typeface="+mn-cs"/></a:defRPr></a:pPr><a:endParaRPr lang="en-US"/></a:p></c:txPr></c:title><c:numFmt formatCode="General" sourceLinked="1"/><c:majorTickMark val="out"/><c:minorTickMark val="none"/><c:tickLblPos val="nextTo"/><c:spPr><a:noFill/><a:ln w="6350" cap="flat" cmpd="sng" algn="ctr"><a:solidFill><a:schemeClr val="tx1"/></a:solidFill><a:round/></a:ln><a:effectLst/></c:spPr><c:txPr><a:bodyPr rot="-60000000" spcFirstLastPara="1" vertOverflow="ellipsis" vert="horz" wrap="square" anchor="ctr" anchorCtr="1"/><a:lstStyle/><a:p><a:pPr><a:defRPr sz="1000" b="0" i="0" u="none" strike="noStrike" kern="1200" baseline="0"><a:solidFill><a:schemeClr val="tx1"/></a:solidFill><a:latin typeface="+mn-lt"/><a:ea typeface="+mn-ea"/><a:cs typeface="+mn-cs"/></a:defRPr></a:pPr><a:endParaRPr lang="en-US"/></a:p></c:txPr><c:crossAx val="200940784"/><c:crosses val="autoZero"/><c:auto val="1"/><c:lblAlgn val="ctr"/><c:lblOffset val="100"/><c:noMultiLvlLbl val="0"/></c:catAx><c:valAx><c:axId val="200940784"/><c:scaling><c:orientation val="minMax"/></c:scaling><c:delete val="0"/><c:axPos val="l"/><c:title><c:tx><c:rich><a:bodyPr rot="-5400000" spcFirstLastPara="1" vertOverflow="ellipsis" vert="horz" wrap="square" anchor="ctr" anchorCtr="1"/><a:lstStyle/><a:p><a:pPr><a:defRPr sz="1000" b="0" i="0" u="none" strike="noStrike" kern="1200" baseline="0"><a:solidFill><a:schemeClr val="tx1"/></a:solidFill><a:latin typeface="+mn-lt"/><a:ea typeface="+mn-ea"/><a:cs typeface="+mn-cs"/></a:defRPr></a:pPr><a:r><a:rPr lang="en-US"><a:solidFill><a:schemeClr val="tx1"/></a:solidFill></a:rPr><a:t>Y Axis Title</a:t></a:r></a:p></c:rich></c:tx><c:overlay val="0"/><c:spPr><a:noFill/><a:ln><a:noFill/></a:ln><a:effectLst/></c:spPr><c:txPr><a:bodyPr rot="-5400000" spcFirstLastPara="1" vertOverflow="ellipsis" vert="horz" wrap="square" anchor="ctr" anchorCtr="1"/><a:lstStyle/><a:p><a:pPr><a:defRPr sz="1000" b="0" i="0" u="none" strike="noStrike" kern="1200" baseline="0"><a:solidFill><a:schemeClr val="tx1"/></a:solidFill><a:latin typeface="+mn-lt"/><a:ea typeface="+mn-ea"/><a:cs typeface="+mn-cs"/></a:defRPr></a:pPr><a:endParaRPr lang="en-US"/></a:p></c:txPr></c:title><c:numFmt formatCode="General" sourceLinked="1"/><c:majorTickMark val="out"/><c:minorTickMark val="none"/><c:tickLblPos val="nextTo"/><c:spPr><a:noFill/><a:ln w="6350"><a:solidFill><a:schemeClr val="tx1"/></a:solidFill></a:ln><a:effectLst/></c:spPr><c:txPr><a:bodyPr rot="-60000000" spcFirstLastPara="1" vertOverflow="ellipsis" vert="horz" wrap="square" anchor="ctr" anchorCtr="1"/><a:lstStyle/><a:p><a:pPr><a:defRPr sz="1000" b="0" i="0" u="none" strike="noStrike" kern="1200" baseline="0"><a:solidFill><a:schemeClr val="tx1"/></a:solidFill><a:latin typeface="+mn-lt"/><a:ea typeface="+mn-ea"/><a:cs typeface="+mn-cs"/></a:defRPr></a:pPr><a:endParaRPr lang="en-US"/></a:p></c:txPr><c:crossAx val="194242304"/><c:crosses val="autoZero"/><c:crossBetween val="between"/></c:valAx><c:spPr><a:noFill/><a:ln w="6350"><a:solidFill><a:schemeClr val="tx1"/></a:solidFill></a:ln><a:effectLst/></c:spPr></c:plotArea><c:plotVisOnly val="1"/><c:dispBlanksAs val="gap"/><c:extLst><c:ext uri="{56B9EC1D-385E-4148-901F-78D8002777C0}" xmlns:c16r3="http://schemas.microsoft.com/office/drawing/2017/03/chart"><c16r3:dataDisplayOptions16><c16r3:dispNaAsBlank val="1"/></c16r3:dataDisplayOptions16></c:ext></c:extLst><c:showDLblsOverMax val="0"/></c:chart><c:spPr><a:solidFill><a:schemeClr val="bg1"/></a:solidFill><a:ln w="6350" cap="flat" cmpd="sng" algn="ctr"><a:solidFill><a:schemeClr val="tx1"/></a:solidFill><a:round/></a:ln><a:effectLst/></c:spPr><c:txPr><a:bodyPr/><a:lstStyle/><a:p><a:pPr algn="l"><a:defRPr/></a:pPr><a:endParaRPr lang="en-US"/></a:p></c:txPr><c:externalData r:id="rId3"><c:autoUpdate val="0"/></c:externalData></c:chartSpace>)"
+#define CHART_XML R"(<?xml version="1.0" encoding="UTF-8" standalone="yes"?><c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:c16r2="http://schemas.microsoft.com/office/drawing/2015/06/chart"><c:date1904 val="0"/><c:lang val="en-US"/><c:roundedCorners val="0"/><mc:AlternateContent xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"><mc:Choice Requires="c14" xmlns:c14="http://schemas.microsoft.com/office/drawing/2007/8/2/chart"><c14:style val="102"/></mc:Choice><mc:Fallback><c:style val="2"/></mc:Fallback></mc:AlternateContent><c:chart><c:autoTitleDeleted val="1"/><c:title><c:tx><c:rich><a:bodyPr rot="0" spcFirstLastPara="1" vertOverflow="ellipsis" vert="horz" wrap="square" anchor="ctr" anchorCtr="1"/><a:lstStyle/><a:p><a:pPr><a:defRPr sz="1000" b="0" i="0" u="none" strike="noStrike" kern="1200" spc="0" baseline="0"><a:solidFill><a:schemeClr val="tx1"/></a:solidFill><a:latin typeface="+mn-lt"/><a:ea typeface="+mn-ea"/><a:cs typeface="+mn-cs"/></a:defRPr></a:pPr><a:r><a:rPr lang="en-US"><a:solidFill><a:schemeClr val="tx1"/></a:solidFill></a:rPr><a:t>Series Title</a:t></a:r></a:p></c:rich></c:tx><c:overlay val="0"/><c:spPr><a:noFill/><a:ln><a:noFill/></a:ln><a:effectLst/></c:spPr><c:txPr><a:bodyPr rot="0" spcFirstLastPara="1" vertOverflow="ellipsis" vert="horz" wrap="square" anchor="ctr" anchorCtr="1"/><a:lstStyle/><a:p><a:pPr><a:defRPr sz="1400" b="0" i="0" u="none" strike="noStrike" kern="1200" spc="0" baseline="0"><a:solidFill><a:schemeClr val="tx1"/></a:solidFill><a:latin typeface="+mn-lt"/><a:ea typeface="+mn-ea"/><a:cs typeface="+mn-cs"/></a:defRPr></a:pPr><a:endParaRPr lang="en-US"/></a:p></c:txPr></c:title><c:plotArea><c:layout/><c:spPr><a:noFill/><a:ln w="6350"><a:solidFill><a:schemeClr val="tx1"/></a:solidFill></a:ln><a:effectLst/></c:spPr></c:plotArea><c:plotVisOnly val="1"/><c:dispBlanksAs val="gap"/><c:extLst><c:ext uri="{56B9EC1D-385E-4148-901F-78D8002777C0}" xmlns:c16r3="http://schemas.microsoft.com/office/drawing/2017/03/chart"><c16r3:dataDisplayOptions16><c16r3:dispNaAsBlank val="1"/></c16r3:dataDisplayOptions16></c:ext></c:extLst><c:showDLblsOverMax val="0"/></c:chart><c:spPr><a:solidFill><a:schemeClr val="bg1"/></a:solidFill><a:ln w="6350" cap="flat" cmpd="sng" algn="ctr"><a:solidFill><a:schemeClr val="tx1"/></a:solidFill><a:round/></a:ln><a:effectLst/></c:spPr><c:txPr><a:bodyPr/><a:lstStyle/><a:p><a:pPr algn="l"><a:defRPr/></a:pPr><a:endParaRPr lang="en-US"/></a:p></c:txPr><c:externalData r:id="rId3"><c:autoUpdate val="0"/></c:externalData></c:chartSpace>)"
 
 #define CHART_COLOR_XML R"(<cs:colorStyle xmlns:cs="http://schemas.microsoft.com/office/drawing/2012/chartStyle" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" meth="cycle" id="10"><a:schemeClr val="accent1"/><a:schemeClr val="accent2"/><a:schemeClr val="accent3"/><a:schemeClr val="accent4"/><a:schemeClr val="accent5"/><a:schemeClr val="accent6"/><cs:variation/><cs:variation><a:lumMod val="60000"/></cs:variation><cs:variation><a:lumMod val="80000"/><a:lumOff val="20000"/></cs:variation><cs:variation><a:lumMod val="80000"/></cs:variation><cs:variation><a:lumMod val="60000"/><a:lumOff val="40000"/></cs:variation><cs:variation><a:lumMod val="50000"/></cs:variation><cs:variation><a:lumMod val="70000"/><a:lumOff val="30000"/></cs:variation><cs:variation><a:lumMod val="70000"/></cs:variation><cs:variation><a:lumMod val="50000"/><a:lumOff val="50000"/></cs:variation></cs:colorStyle>)"
 #define CHART_STYLE_XML1 R"(<cs:chartStyle xmlns:cs="http://schemas.microsoft.com/office/drawing/2012/chartStyle" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" id="227"><cs:axisTitle><cs:lnRef idx="0"/><cs:fillRef idx="0"/><cs:effectRef idx="0"/><cs:fontRef idx="minor"><a:schemeClr val="tx1"><a:lumMod val="65000"/><a:lumOff val="35000"/></a:schemeClr></cs:fontRef><cs:defRPr sz="1000" kern="1200"/></cs:axisTitle><cs:categoryAxis><cs:lnRef idx="0"/><cs:fillRef idx="0"/><cs:effectRef idx="0"/><cs:fontRef idx="minor"><a:schemeClr val="tx1"><a:lumMod val="65000"/><a:lumOff val="35000"/></a:schemeClr></cs:fontRef><cs:spPr><a:ln w="9525" cap="flat" cmpd="sng" algn="ctr"><a:solidFill><a:schemeClr val="tx1"><a:lumMod val="15000"/><a:lumOff val="85000"/></a:schemeClr></a:solidFill><a:round/></a:ln></cs:spPr><cs:defRPr sz="900" kern="1200"/></cs:categoryAxis><cs:chartArea mods="allowNoFillOverride allowNoLineOverride"><cs:lnRef idx="0"/><cs:fillRef idx="0"/><cs:effectRef idx="0"/><cs:fontRef idx="minor"><a:schemeClr val="tx1"/></cs:fontRef><cs:spPr><a:solidFill><a:schemeClr val="bg1"/></a:solidFill><a:ln w="9525" cap="flat" cmpd="sng" algn="ctr"><a:solidFill><a:schemeClr val="tx1"><a:lumMod val="15000"/><a:lumOff val="85000"/></a:schemeClr></a:solidFill><a:round/></a:ln></cs:spPr><cs:defRPr sz="1000" kern="1200"/></cs:chartArea><cs:dataLabel><cs:lnRef idx="0"/><cs:fillRef idx="0"/><cs:effectRef idx="0"/><cs:fontRef idx="minor"><a:schemeClr val="tx1"><a:lumMod val="75000"/><a:lumOff val="25000"/></a:schemeClr></cs:fontRef><cs:defRPr sz="900" kern="1200"/></cs:dataLabel><cs:dataLabelCallout><cs:lnRef idx="0"/><cs:fillRef idx="0"/><cs:effectRef idx="0"/><cs:fontRef idx="minor"><a:schemeClr val="dk1"><a:lumMod val="65000"/><a:lumOff val="35000"/></a:schemeClr></cs:fontRef><cs:spPr><a:solidFill><a:schemeClr val="lt1"/></a:solidFill><a:ln><a:solidFill><a:schemeClr val="dk1"><a:lumMod val="25000"/><a:lumOff val="75000"/></a:schemeClr></a:solidFill></a:ln></cs:spPr><cs:defRPr sz="900" kern="1200"/><cs:bodyPr rot="0" spcFirstLastPara="1" vertOverflow="clip" horzOverflow="clip" vert="horz" wrap="square" lIns="36576" tIns="18288" rIns="36576" bIns="18288" anchor="ctr" anchorCtr="1"><a:spAutoFit/></cs:bodyPr></cs:dataLabelCallout><cs:dataPoint><cs:lnRef idx="0"/><cs:fillRef idx="1"><cs:styleClr val="auto"/></cs:fillRef><cs:effectRef idx="0"/><cs:fontRef idx="minor"><a:schemeClr val="tx1"/></cs:fontRef><cs:spPr><a:solidFill><a:schemeClr val="phClr"/></a:solidFill></cs:spPr></cs:dataPoint><cs:dataPoint3D><cs:lnRef idx="0"/><cs:fillRef idx="1"><cs:styleClr val="auto"/></cs:fillRef><cs:effectRef idx="0"/><cs:fontRef idx="minor"><a:schemeClr val="tx1"/></cs:fontRef><cs:spPr><a:solidFill><a:schemeClr val="phClr"/></a:solidFill></cs:spPr></cs:dataPoint3D><cs:dataPointLine><cs:lnRef idx="0"><cs:styleClr val="auto"/></cs:lnRef><cs:fillRef idx="1"/><cs:effectRef idx="0"/><cs:fontRef idx="minor"><a:schemeClr val="tx1"/></cs:fontRef><cs:spPr><a:ln w="28575" cap="rnd"><a:solidFill><a:schemeClr val="phClr"/></a:solidFill><a:round/></a:ln></cs:spPr></cs:dataPointLine><cs:dataPointMarker><cs:lnRef idx="0"><cs:styleClr val="auto"/></cs:lnRef><cs:fillRef idx="1"><cs:styleClr val="auto"/></cs:fillRef><cs:effectRef idx="0"/><cs:fontRef idx="minor"><a:schemeClr val="tx1"/></cs:fontRef><cs:spPr><a:solidFill><a:schemeClr val="phClr"/></a:solidFill><a:ln w="9525"><a:solidFill><a:schemeClr val="phClr"/></a:solidFill></a:ln></cs:spPr></cs:dataPointMarker><cs:dataPointMarkerLayout symbol="circle" size="5"/><cs:dataPointWireframe><cs:lnRef idx="0"><cs:styleClr val="auto"/></cs:lnRef><cs:fillRef idx="1"/><cs:effectRef idx="0"/><cs:fontRef idx="minor"><a:schemeClr val="tx1"/></cs:fontRef><cs:spPr><a:ln w="9525" cap="rnd"><a:solidFill><a:schemeClr val="phClr"/></a:solidFill><a:round/></a:ln></cs:spPr></cs:dataPointWireframe><cs:dataTable><cs:lnRef idx="0"/><cs:fillRef idx="0"/><cs:effectRef idx="0"/><cs:fontRef idx="minor"><a:schemeClr val="tx1"><a:lumMod val="65000"/><a:lumOff val="35000"/></a:schemeClr></cs:fontRef><cs:spPr><a:noFill/><a:ln w="9525" cap="flat" cmpd="sng" algn="ctr"><a:solidFill><a:schemeClr val="tx1"><a:lumMod val="15000"/><a:lumOff val="85000"/></a:schemeClr></a:solidFill><a:round/></a:ln></cs:spPr><cs:defRPr sz="900" kern="1200"/></cs:dataTable><cs:downBar><cs:lnRef idx="0"/><cs:fillRef idx="0"/><cs:effectRef idx="0"/><cs:fontRef idx="minor"><a:schemeClr val="dk1"/></cs:fontRef><cs:spPr><a:solidFill><a:schemeClr val="dk1"><a:lumMod val="65000"/><a:lumOff val="35000"/></a:schemeClr></a:solidFill><a:ln w="9525"><a:solidFill><a:schemeClr val="tx1"><a:lumMod val="65000"/><a:lumOff val="35000"/></a:schemeClr></a:solidFill></a:ln></cs:spPr></cs:downBar><cs:dropLine><cs:lnRef idx="0"/><cs:fillRef idx="0"/><cs:effectRef idx="0"/><cs:fontRef idx="minor"><a:schemeClr val="tx1"/></cs:fontRef><cs:spPr><a:ln w="9525" cap="flat" cmpd="sng" algn="ctr"><a:solidFill><a:schemeClr val="tx1"><a:lumMod val="35000"/><a:lumOff val="65000"/></a:schemeClr></a:solidFill><a:round/></a:ln></cs:spPr></cs:dropLine><cs:errorBar><cs:lnRef idx="0"/><cs:fillRef idx="0"/><cs:effectRef idx="0"/><cs:fontRef idx="minor"><a:schemeClr val="tx1"/></cs:fontRef><cs:spPr><a:ln w="9525" cap="flat" cmpd="sng" algn="ctr"><a:solidFill><a:schemeClr val="tx1"><a:lumMod val="65000"/><a:lumOff val="35000"/></a:schemeClr></a:solidFill><a:round/></a:ln></cs:spPr></cs:errorBar><cs:floor><cs:lnRef idx="0"/><cs:fillRef idx="0"/><cs:effectRef idx="0"/><cs:fontRef idx="minor"><a:schemeClr val="tx1"/></cs:fontRef><cs:spPr><a:noFill/><a:ln><a:noFill/></a:ln></cs:spPr></cs:floor><cs:gridlineMajor><cs:lnRef idx="0"/><cs:fillRef idx="0"/><cs:effectRef idx="0"/><cs:fontRef idx="minor"><a:schemeClr val="tx1"/></cs:fontRef><cs:spPr><a:ln w="9525" cap="flat" cmpd="sng" algn="ctr"><a:solidFill><a:schemeClr val="tx1"><a:lumMod val="15000"/><a:lumOff val="85000"/>)"
@@ -150,9 +150,19 @@ namespace docx {
     public:
         pugi::xml_node c_Ax_;
 
-        cweeSharedPtr<class Document::Impl> Document;
         cweeSharedPtr<class ExcelPlot::Impl> Plot;
     };
+
+    class Chart::Impl {
+    public:
+        pugi::xml_node c_Chart_; // c:LineChart, c:AreaChart, etc.
+        pugi::xml_node c_X_Ax_; // X axis node
+        pugi::xml_node c_Y_Ax_; // Y axis node
+        int chartNum;
+
+        cweeSharedPtr<class ExcelPlot::Impl> Plot;
+    };
+
     class ExcelPlot::Impl {
     public:
         pugi::xml_document chart_xml;   // word\charts\chart1.xml
@@ -162,6 +172,7 @@ namespace docx {
         int plotNumber;
 
         cweeSharedPtr<ExcelWorkbook> workbook; 
+        cweeList< cweeSharedPtr<class Chart::Impl>> Charts;
 
         pugi::xml_node w_r_;
         pugi::xml_node w_drawing_;
@@ -2017,6 +2028,269 @@ namespace docx {
     };
     void Section::operator=(const Section& right) { impl = right.impl; };
 
+    // Chart
+    Chart::Chart() : impl(nullptr) {};
+    Chart::Chart(Chart::Impl* implP, cweeSharedPtr<ExcelRange> const& xrange, cweeSharedPtr<ExcelRange> const& yrange) : impl(cweeSharedPtr<void>(cweeSharedPtr<Impl>(implP, [](void* p) { return p; }))) {
+        cweeStr x_axis_id = cweeStr::printf("%i%i%i", cweeRandomInt(100, 999), cweeRandomInt(100, 999), cweeRandomInt(100, 999)); // "194242304";
+        cweeStr y_axis_id = cweeStr::printf("%i%i%i", cweeRandomInt(100, 999), cweeRandomInt(100, 999), cweeRandomInt(100, 999)); // "200940784";
+
+        /* c:lineChart */ {
+            implP->c_Chart_.append_child("c:grouping").append_attribute("val") = "standard";
+            implP->c_Chart_.append_child("c:varyColors").append_attribute("val") = 0;
+            auto c_ser = implP->c_Chart_.append_child("c:ser"); {
+                c_ser.append_child("c:idx").append_attribute("val") = impl_()->chartNum; 
+                c_ser.append_child("c:order").append_attribute("val") = impl_()->chartNum;
+                auto c_tx = c_ser.append_child("c:tx"); {
+                    auto c_strRef = c_tx.append_child("c:strRef"); {
+                        c_strRef.append_child("c:f").text() = "Sheet1!$B$1";
+                        auto c_strCache = c_strRef.append_child("c:strCache"); {
+                            c_strCache.append_child("c:ptCount").append_attribute("val") = 1;
+                            auto c_pt = c_strCache.append_child("c:pt"); {
+                                c_pt.append_attribute("idx") = 0;
+                                c_pt.append_child("c:v").text() = "Series";
+                            }
+                        }
+                    }
+                }
+                auto c_spPr = c_ser.append_child("c:spPr"); {
+                    auto a_ln = c_spPr.append_child("a:ln"); {
+                        a_ln.append_attribute("w") = 25400;
+                        a_ln.append_attribute("cap") = "rnd";
+                        a_ln.append_child("a:solidFill").append_child("a:schemeClr").append_attribute("val") = "tx1";
+                        a_ln.append_child("a:round");
+                    }
+                    c_spPr.append_child("a:effectLst");
+                }
+                auto c_marker = c_ser.append_child("c:marker"); {
+                    c_marker.append_child("c:symbol").append_attribute("val") = "none";
+                }
+                auto c_cat = c_ser.append_child("c:cat"); {
+                    auto c_numRef = c_cat.append_child("c:numRef"); {
+                        c_numRef.append_child("c:f").text() = (xrange->target_worksheet()->title() + "!" + cweeStr(xrange->ref()->top_left()->to_string() + ":" + xrange->ref()->bottom_right()->to_string()));
+                        auto c_numCache = c_numRef.emplace_child("c:numCache");
+                        if (c_numCache) {
+                            c_numCache.emplace_child("c:formatCode").text() = "General";
+                            c_numCache.emplace_child("c:ptCount").emplace_attribute("val") = xrange->length();
+                            int n = 0;
+                            for (auto& cell_vector : *xrange) {
+                                for (auto& cell : cell_vector) {
+                                    auto c_pt = c_numCache.append_child("c:pt");
+                                    c_pt.emplace_attribute("idx") = n++;
+                                    c_pt.emplace_child("c:v").text() = cell->to_string();
+                                }
+                            }
+                        }
+                    }
+                }
+                auto c_val = c_ser.append_child("c:val"); {
+                    auto c_numRef = c_val.append_child("c:numRef"); {
+                        c_numRef.append_child("c:f").text() = (yrange->target_worksheet()->title() + "!" + cweeStr(yrange->ref()->top_left()->to_string() + ":" + yrange->ref()->bottom_right()->to_string()));
+                        auto c_numCache = c_numRef.emplace_child("c:numCache");
+                        if (c_numCache) {
+                            c_numCache.emplace_child("c:ptCount").emplace_attribute("val") = yrange->length();
+                            int n = 0;
+                            for (auto& cell_vector : *yrange) {
+                                for (auto& cell : cell_vector) {
+                                    auto c_pt = c_numCache.append_child("c:pt");
+                                    c_pt.emplace_attribute("idx") = n++;
+                                    c_pt.emplace_child("c:v").text() = cell->to_string();
+                                }
+                            }
+                        }
+                    }
+                }
+                c_ser.append_child("c:smooth").append_attribute("val") = 0;
+                /*auto c_extLst = c_ser.append_child("c:extLst"); {
+                    auto c_ext = c_extLst.append_child("c:ext"); {
+                        c_ext.append_attribute("xmlns:c16") = "http://schemas.microsoft.com/office/drawing/2014/chart";
+                        c_ext.append_attribute("uri") = "{C3380CC4-5D6E-409C-BE32-E72D297353CC}";
+                        c_ext.append_child("c16:uniqueId").append_attribute("val") = "{00000000-E90E-4B64-AF08-FD38DC5E64F1}";
+                    }
+                }*/
+            }
+            auto c_dLbls = implP->c_Chart_.append_child("c:dLbls"); {
+                c_dLbls.append_child("c:showLegendKey").append_attribute("val") = 0;
+                c_dLbls.append_child("c:showVal").append_attribute("val") = 0;
+                c_dLbls.append_child("c:showCatName").append_attribute("val") = 0;
+                c_dLbls.append_child("c:showSerName").append_attribute("val") = 0;
+                c_dLbls.append_child("c:showPercent").append_attribute("val") = 0;
+                c_dLbls.append_child("c:showBubbleSize").append_attribute("val") = 0;
+            }
+            implP->c_Chart_.append_child("c:marker").append_attribute("val") = 1;
+            implP->c_Chart_.append_child("c:smooth").append_attribute("val") = 0;
+            implP->c_Chart_.append_child("c:axId").append_attribute("val") = x_axis_id;
+            implP->c_Chart_.append_child("c:axId").append_attribute("val") = y_axis_id;
+        }        
+        auto plotArea = implP->Plot->chart_xml.emplace_child("c:chartSpace").emplace_child("c:chart").emplace_child("c:plotArea");        
+        /* catAx */ {
+            implP->c_X_Ax_ = plotArea.append_child("c:catAx"); {
+                implP->c_X_Ax_.append_child("c:axId").append_attribute("val") = x_axis_id;
+                auto c_scaling = implP->c_X_Ax_.append_child("c:scaling"); {
+                    c_scaling.append_child("c:orientation").append_attribute("val") = "minMax";
+                }
+                implP->c_X_Ax_.append_child("c:delete").append_attribute("val") = 0;
+                implP->c_X_Ax_.append_child("c:axPos").append_attribute("val") = "b";
+                /*NOT REQUIRED TO COMPILE*/ // auto c_title = implP->c_X_Ax_.append_child("c:title"); {/* TODO */ }
+                auto c_numFmt = implP->c_X_Ax_.append_child("c:numFmt"); {
+                    c_numFmt.append_attribute("formatCode") = "General";
+                    c_numFmt.append_attribute("sourceLinked") = 1;
+                }
+                implP->c_X_Ax_.append_child("c:majorTickMark").append_attribute("val") = "out";
+                implP->c_X_Ax_.append_child("c:minorTickMark").append_attribute("val") = "none";
+                implP->c_X_Ax_.append_child("c:tickLblPos").append_attribute("val") = "nextTo";
+                auto c_spPr = implP->c_X_Ax_.append_child("c:spPr"); {
+                    c_spPr.append_child("a:noFill");
+                    auto line = c_spPr.append_child("a:ln"); {
+                        line.emplace_attribute("w") = (int)(0.5 * (6350.0 * 2.0));
+                        line.emplace_attribute("cap") = "flat";
+                        line.emplace_attribute("cmpd") = "sng";
+                        line.emplace_attribute("algn") = "ctr";
+                        line.emplace_child("a:solidFill").emplace_child("a:schemeClr").emplace_attribute("val") = "tx1";
+                        line.emplace_child("a:round");
+                    }
+                    c_spPr.append_child("a:effectLst");
+                }
+                auto c_txPr = implP->c_X_Ax_.append_child("c:txPr"); {
+                    auto a_bodyPr = c_txPr.append_child("a:bodyPr"); {
+                        a_bodyPr.append_attribute("rot") = -60000000;
+                        a_bodyPr.append_attribute("spcFirstLastPara") = 1;
+                        a_bodyPr.append_attribute("vertOverflow") = "ellipsis";
+                        a_bodyPr.append_attribute("vert") = "horz";
+                        a_bodyPr.append_attribute("wrap") = "square";
+                        a_bodyPr.append_attribute("anchor") = "ctr";
+                        a_bodyPr.append_attribute("anchorCtr") = 1;
+                    }
+                    c_txPr.append_child("a:lstStyle");
+                    auto a_p = c_txPr.append_child("a:p"); {
+                        auto a_defRPr = a_p.append_child("a:pPr").append_child("a:defRPr"); {
+                            a_defRPr.append_attribute("sz") = 1000;
+                            a_defRPr.append_attribute("b") = 0;
+                            a_defRPr.append_attribute("i") = 0;
+                            a_defRPr.append_attribute("u") = "none";
+                            a_defRPr.append_attribute("strike") = "noStrike";
+                            a_defRPr.append_attribute("kern") = 1200;
+                            a_defRPr.append_attribute("baseline") = 0;
+                            auto a_solidFill = a_defRPr.append_child("a:solidFill"); {
+                                a_solidFill.append_child("a:schemeClr").append_attribute("val") = "tx1";
+                            }
+                            a_defRPr.append_child("a:latin").append_attribute("typeface") = "+mn-lt";
+                            a_defRPr.append_child("a:ea").append_attribute("typeface") = "+mn-ea";
+                            a_defRPr.append_child("a:cd").append_attribute("typeface") = "+mn-cs";
+                        }
+                        a_p.append_child("a:endParaRPr").append_attribute("lang") = "en-US";
+                    }
+                }
+                implP->c_X_Ax_.append_child("c:crossAx").append_attribute("val") = y_axis_id;
+                implP->c_X_Ax_.append_child("c:crosses").append_attribute("val") = "autoZero";
+                implP->c_X_Ax_.append_child("c:auto").append_attribute("val") = 1;
+                implP->c_X_Ax_.append_child("c:lblAlgn").append_attribute("val") = "ctr";
+                implP->c_X_Ax_.append_child("c:lblOffset").append_attribute("val") = 100;
+                implP->c_X_Ax_.append_child("c:noMultiLvlLbl").append_attribute("val") = 0;
+            }
+        }
+        /* valAx */ {
+            implP->c_Y_Ax_ = plotArea.append_child("c:valAx"); {
+                implP->c_Y_Ax_.append_child("c:axId").append_attribute("val") = y_axis_id;
+                auto c_scaling = implP->c_Y_Ax_.append_child("c:scaling"); {
+                    c_scaling.append_child("c:orientation").append_attribute("val") = "minMax";
+                }
+                implP->c_Y_Ax_.append_child("c:delete").append_attribute("val") = 0;
+                implP->c_Y_Ax_.append_child("c:axPos").append_attribute("val") = "l";
+                /*NOT REQUIRED TO COMPILE*/ // auto c_title = implP->c_Y_Ax_.append_child("c:title"); {/* TODO */ }
+                auto c_numFmt = implP->c_Y_Ax_.append_child("c:numFmt"); {
+                    c_numFmt.append_attribute("formatCode") = "General";
+                    c_numFmt.append_attribute("sourceLinked") = 1;
+                }
+                implP->c_Y_Ax_.append_child("c:majorTickMark").append_attribute("val") = "out";
+                implP->c_Y_Ax_.append_child("c:minorTickMark").append_attribute("val") = "none";
+                implP->c_Y_Ax_.append_child("c:tickLblPos").append_attribute("val") = "nextTo";
+                auto c_spPr = implP->c_Y_Ax_.append_child("c:spPr"); {
+                    c_spPr.append_child("a:noFill");
+                    auto line = c_spPr.append_child("a:ln"); {
+                        line.emplace_attribute("w") = (int)(0.5 * (6350.0 * 2.0));
+                        line.emplace_attribute("cap") = "flat";
+                        line.emplace_attribute("cmpd") = "sng";
+                        line.emplace_attribute("algn") = "ctr";
+                        line.emplace_child("a:solidFill").emplace_child("a:schemeClr").emplace_attribute("val") = "tx1";
+                        line.emplace_child("a:round");
+                    }
+                    c_spPr.append_child("a:effectLst");
+                }
+                auto c_txPr = implP->c_Y_Ax_.append_child("c:txPr"); {
+                    auto a_bodyPr = c_txPr.append_child("a:bodyPr"); {
+                        a_bodyPr.append_attribute("rot") = -60000000;
+                        a_bodyPr.append_attribute("spcFirstLastPara") = 1;
+                        a_bodyPr.append_attribute("vertOverflow") = "ellipsis";
+                        a_bodyPr.append_attribute("vert") = "horz";
+                        a_bodyPr.append_attribute("wrap") = "square";
+                        a_bodyPr.append_attribute("anchor") = "ctr";
+                        a_bodyPr.append_attribute("anchorCtr") = 1;
+                    }
+                    c_txPr.append_child("a:lstStyle");
+                    auto a_p = c_txPr.append_child("a:p"); {
+                        auto a_defRPr = a_p.append_child("a:pPr").append_child("a:defRPr"); {
+                            a_defRPr.append_attribute("sz") = 1000;
+                            a_defRPr.append_attribute("b") = 0;
+                            a_defRPr.append_attribute("i") = 0;
+                            a_defRPr.append_attribute("u") = "none";
+                            a_defRPr.append_attribute("strike") = "noStrike";
+                            a_defRPr.append_attribute("kern") = 1200;
+                            a_defRPr.append_attribute("baseline") = 0;
+                            auto a_solidFill = a_defRPr.append_child("a:solidFill"); {
+                                a_solidFill.append_child("a:schemeClr").append_attribute("val") = "tx1";
+                            }
+                            a_defRPr.append_child("a:latin").append_attribute("typeface") = "+mn-lt";
+                            a_defRPr.append_child("a:ea").append_attribute("typeface") = "+mn-ea";
+                            a_defRPr.append_child("a:cd").append_attribute("typeface") = "+mn-cs";
+                        }
+                        a_p.append_child("a:endParaRPr").append_attribute("lang") = "en-US";
+                    }
+                }
+                implP->c_Y_Ax_.append_child("c:crossAx").append_attribute("val") = x_axis_id;
+                implP->c_Y_Ax_.append_child("c:crosses").append_attribute("val") = "autoZero";
+                implP->c_Y_Ax_.append_child("c:crossBetween").append_attribute("val") = "between";
+            }
+        }
+    };
+    Chart::Chart(Chart const& r) : impl(r.impl) {};
+    Chart::~Chart() {};
+    void Chart::operator=(Chart const& right) {
+        impl = right.impl;
+    };
+    Chart::operator bool() const { return (bool)impl; };
+    Axis Chart::xAxis() {
+        if (!impl) return Axis();
+
+        auto aImpl = new Axis::Impl();
+        aImpl->Plot = impl_()->Plot;
+        aImpl->c_Ax_ = impl_()->c_X_Ax_;
+        return Axis(aImpl);
+    };
+    Axis Chart::yAxis() {
+        if (!impl) return Axis();
+
+        auto aImpl = new Axis::Impl();
+        aImpl->Plot = impl_()->Plot;
+        aImpl->c_Ax_ = impl_()->c_Y_Ax_;
+        return Axis(aImpl);
+    };
+
+    /*
+    // LineChart
+    LineChart::LineChart() : Chart() {};
+    LineChart::LineChart(Chart::Impl* implP, cweeSharedPtr<ExcelRange> const& xrange, cweeSharedPtr<ExcelRange> const& yrange) : Chart(implP, xrange, yrange) {};
+    LineChart::LineChart(LineChart const& r) : Chart(r) {};
+    LineChart::~LineChart() {};
+    void LineChart::operator=(LineChart const& right) { impl = right.impl; };
+
+    // AreaChart
+    AreaChart::AreaChart() : Chart() {};
+    AreaChart::AreaChart(Chart::Impl* implP, cweeSharedPtr<ExcelRange> const& xrange, cweeSharedPtr<ExcelRange> const& yrange) : Chart(implP, xrange, yrange) {};
+    AreaChart::AreaChart(AreaChart const& r) : Chart(r) {};
+    AreaChart::~AreaChart() {};
+    void AreaChart::operator=(AreaChart const& right) { impl = right.impl; };
+    */
+
     // Axis
     Axis::Axis() : impl(nullptr) {};
     Axis::Axis(Axis::Impl* implP) : impl(cweeSharedPtr<void>(cweeSharedPtr<Impl>(implP, [](void* p) { return p; }))) {};
@@ -2113,32 +2387,6 @@ namespace docx {
     ExcelPlot::operator bool() const {
         return (bool)impl;
     };
-    Axis ExcelPlot::xAxis() {
-        if (!impl) return Axis();
-        auto aImpl = new Axis::Impl();
-        aImpl->Document = impl_()->Document;
-        aImpl->Plot = impl;
-
-        auto c_plotArea = impl_()->chart_xml.emplace_child("c:chartSpace").emplace_child("c:chart").emplace_child("c:plotArea");
-        auto catX = c_plotArea.child("c:catAx");
-        auto dateX = c_plotArea.child("c:dateAx");
-        if (catX) aImpl->c_Ax_ = catX;
-        if (dateX) aImpl->c_Ax_ = dateX;
-
-        return Axis(aImpl);
-    };
-    Axis ExcelPlot::yAxis() {
-        if (!impl) return Axis();
-        auto aImpl = new Axis::Impl();
-        aImpl->Document = impl_()->Document;
-        aImpl->Plot = impl;
-
-        auto c_plotArea = impl_()->chart_xml.emplace_child("c:chartSpace").emplace_child("c:chart").emplace_child("c:plotArea");
-        auto valY = c_plotArea.child("c:valAx");
-        if (valY) aImpl->c_Ax_ = valY;
-
-        return Axis(aImpl);
-    };
     void ExcelPlot::SetTitle(cweeStr const& title) {
         if (!impl) return;
 
@@ -2156,64 +2404,33 @@ namespace docx {
             impl_()->chart_xml.emplace_child("c:chartSpace").emplace_child("c:chart").emplace_child("c:title").emplace_child("c:tx").emplace_child("c:rich").emplace_child("a:p").emplace_child("a:r").emplace_child("a:t").text() = title;
         }
     };
+    Chart ExcelPlot::AppendLineChart(cweeSharedPtr<ExcelRange> const& xrange, cweeSharedPtr<ExcelRange> const& yrange) {
+        if (!impl) return Chart();
+        auto c_plotArea = impl_()->chart_xml.emplace_child("c:chartSpace").emplace_child("c:chart").emplace_child("c:plotArea");
 
-    void ExcelPlot::SetXValues(cweeSharedPtr<ExcelRange> const& range) {
-        if (!impl || !range) return;
+        auto aImpl = new Chart::Impl();
+        aImpl->Plot = impl;
+        aImpl->c_Chart_ = c_plotArea.prepend_child("c:lineChart");
+        aImpl->chartNum = impl_()->Charts.Num();
+        AUTO out{ Chart(aImpl, xrange, yrange) };
 
-        auto c_ser = impl_()->chart_xml.emplace_child("c:chartSpace").emplace_child("c:chart").emplace_child("c:plotArea").emplace_child("c:lineChart").emplace_child("c:ser");
-        auto c_cat = c_ser.child("c:cat");
-        if (c_cat) {
-            c_cat.remove_child("c:strRef");
-            c_cat.remove_child("c:numRef");
+        impl_()->Charts.Append(out.impl);
 
-            auto c_numRef = c_cat.emplace_child("c:numRef");
-            c_numRef.emplace_child("c:f").text() = (range->target_worksheet()->title() + "!" + cweeStr(range->ref()->top_left()->to_string() + ":" + range->ref()->bottom_right()->to_string()));
-            auto c_numCache = c_numRef.emplace_child("c:numCache");
-            if (c_numCache) {
-                // c_numCache.emplace_child("c:formatCode").text() = "m/d/yyyy";
-                c_numCache.emplace_child("c:ptCount").emplace_attribute("val") = range->length();
-                int n = 0;
-                for (auto& cell_vector : *range) {
-                    for (auto& cell : cell_vector) {
-                        auto c_pt = c_numCache.append_child("c:pt");
-                        c_pt.emplace_attribute("idx") = n++;
-                        c_pt.emplace_child("c:v").text() = cell->to_string();
-                    }
-                }
-            }
-        }
-        else {
-            throw(std::runtime_error("c:cat category not found"));
-        }        
+        return out;
     };
-    void ExcelPlot::SetYValues(cweeSharedPtr<ExcelRange> const& range) {
-        if (!impl || !range) return;
+    Chart ExcelPlot::AppendAreaChart(cweeSharedPtr<ExcelRange> const& xrange, cweeSharedPtr<ExcelRange> const& yrange) {
+        if (!impl) return Chart();
+        auto c_plotArea = impl_()->chart_xml.emplace_child("c:chartSpace").emplace_child("c:chart").emplace_child("c:plotArea");
 
-        auto c_ser = impl_()->chart_xml.emplace_child("c:chartSpace").emplace_child("c:chart").emplace_child("c:plotArea").emplace_child("c:lineChart").emplace_child("c:ser");
-        auto c_cat = c_ser.child("c:val");
-        if (c_cat) {
-            c_cat.remove_child("c:strRef");
-            c_cat.remove_child("c:numRef");
+        auto aImpl = new Chart::Impl();
+        aImpl->Plot = impl;
+        aImpl->c_Chart_ = c_plotArea.prepend_child("c:areaChart");
+        aImpl->chartNum = impl_()->Charts.Num();
+        AUTO out{ Chart(aImpl, xrange, yrange) };
 
-            auto c_numRef = c_cat.emplace_child("c:numRef");
-            c_numRef.emplace_child("c:f").text() = (range->target_worksheet()->title() + "!" + cweeStr(range->ref()->top_left()->to_string() + ":" + range->ref()->bottom_right()->to_string()));
-            auto c_numCache = c_numRef.emplace_child("c:numCache");
-            if (c_numCache) {
-                // c_numCache.emplace_child("c:formatCode").text() = "m/d/yyyy";
-                c_numCache.emplace_child("c:ptCount").emplace_attribute("val") = range->length();
-                int n = 0;
-                for (auto& cell_vector : *range) {
-                    for (auto& cell : cell_vector) {
-                        auto c_pt = c_numCache.append_child("c:pt");
-                        c_pt.emplace_attribute("idx") = n++;
-                        c_pt.emplace_child("c:v").text() = cell->to_string();
-                    }
-                }
-            }
-        }
-        else {
-            throw(std::runtime_error("c:cat category not found"));
-        }
+        impl_()->Charts.Append(out.impl);
+
+        return out;
     };
     void ExcelPlot::SetWidth(cweeUnitValues::inch width) {
         if (!impl) return;
