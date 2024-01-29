@@ -129,16 +129,9 @@ namespace docx {
     using Row = std::vector<Cell>;
     using Grid = std::vector<Row>;
     using FontStyle = unsigned int;
-    enum : FontStyle
-    {
-        Bold = 1,
-        Italic = 2,
-        Underline = 4,
-        Strikethrough = 8
-    };
+    enum : FontStyle { Bold = 1, Italic = 2, Underline = 4, Strikethrough = 8 };
 
-    class TableCell
-    {
+    class TableCell {
         friend class Table;
 
     public:
@@ -170,8 +163,7 @@ namespace docx {
         TableCell(Impl* impl);
     }; // class TableCell
 
-    class Table : public Box
-    {
+    class Table : public Box {
         friend class Document;
 
     public:
@@ -261,9 +253,19 @@ namespace docx {
         void SetTitle(cweeStr const& title);
         enum class TickMarkType { in, out, cross, none };
         void SetMajorTickMark(TickMarkType type);
+        void SetMajorStep(double majorstep);
         void SetMinorTickMark(TickMarkType type);
+        enum class TickLabelPosition { High, Low, NextTo };
+        void SetTickLabelPosition(TickLabelPosition pos);
         void SetNumFmt(const cweeStr& fmt);
         void SetMajorGridLine(double weight);
+        enum class AxisSide { left,right,top,bottom };
+        void SetPosition(AxisSide side);
+        void SetTextRotation(int degrees);
+        void SetTitleRotation(int degrees);
+        enum class AxisStyle { Value, Category, Date, None };
+        void SetAxisStyle(AxisStyle style);
+        void SetAxisScale(double min, double max);
 
     private:
         class Impl;
@@ -286,6 +288,8 @@ namespace docx {
 
         Axis xAxis();
         Axis yAxis();
+        void SetColor(chaiscript::UI_Color const& col);
+        void SetLineThickness(double weight);
 
     protected:
         class Impl;
@@ -294,7 +298,7 @@ namespace docx {
 
         cweeSharedPtr< void > impl;
     };
-    /*
+    
     class LineChart final : public Chart {
         friend class ExcelPlot;
 
@@ -302,7 +306,6 @@ namespace docx {
         LineChart();
         LineChart(LineChart const& p);
         virtual ~LineChart();
-        void operator=(LineChart const& right);
 
     private:
         LineChart(Chart::Impl* impl, cweeSharedPtr<ExcelRange> const& xrange, cweeSharedPtr<ExcelRange> const& yrange);  // constructs from xml node
@@ -315,13 +318,11 @@ namespace docx {
         AreaChart();
         AreaChart(AreaChart const& p);
         virtual ~AreaChart();
-        void operator=(AreaChart const& right);
 
     private:
         AreaChart(Chart::Impl* impl, cweeSharedPtr<ExcelRange> const& xrange, cweeSharedPtr<ExcelRange> const& yrange); // constructs from xml node
 
     };
-    */
 
     class ExcelPlot {
         friend class Run;

@@ -73,6 +73,9 @@ BETTER_ENUM(BulletType, int, Alpha, Number, Bullet);
 BETTER_ENUM(DocxFieldType, int, Table, Figure);
 BETTER_ENUM(DocxTickMarkType, int, In, Out, Cross, None);
 BETTER_ENUM(DocxBlankDisplayMode, int, gap, zero, span);
+BETTER_ENUM(DocxAxisSide, int, left, right, top, bottom);
+BETTER_ENUM(DocxAxisStyle, int, Value, Category, Date, None);
+BETTER_ENUM(DocxTickLabelPosition, int, High, Low, NextTo);
 
 namespace chaiscript {
     namespace WaterWatch_Lib {
@@ -141,6 +144,13 @@ namespace chaiscript {
             lib->AddFunction(, SetMinorTickMark, , o.SetMinorTickMark(static_cast<docx::Axis::TickMarkType>(GetBetterEnum<::DocxTickMarkType>(input)._to_integral()));, Axis & o, cweeStr const& input);
             lib->add(chaiscript::fun(&Axis::SetNumFmt), "SetNumFmt");
             lib->add(chaiscript::fun(&Axis::SetMajorGridLine), "SetMajorGridLine");
+            lib->AddFunction(, SetPosition, , o.SetPosition(static_cast<docx::Axis::AxisSide>(GetBetterEnum<::DocxAxisSide>(input)._to_integral())); , Axis& o, cweeStr const& input);
+            lib->add(chaiscript::fun(&Axis::SetTextRotation), "SetTextRotation");
+            lib->add(chaiscript::fun(&Axis::SetTitleRotation), "SetTitleRotation");
+            lib->AddFunction(, SetAxisStyle, , o.SetAxisStyle(static_cast<docx::Axis::AxisStyle>(GetBetterEnum<::DocxAxisStyle>(input)._to_integral()));, Axis & o, cweeStr const& input);
+            lib->AddFunction(, SetAxisScale, , o.SetAxisScale(min,max); , Axis & o, double min, double max);
+            lib->add(chaiscript::fun(&Axis::SetMajorStep), "SetMajorStep");
+            lib->AddFunction(, SetTickLabelPosition, , o.SetTickLabelPosition(static_cast<docx::Axis::TickLabelPosition>(GetBetterEnum<::DocxTickLabelPosition>(input)._to_integral())); , Axis & o, cweeStr const& input);
 
             lib->add(chaiscript::user_type<Chart>(), "DocxChart");
             lib->add(chaiscript::constructor<Chart()>(), "DocxChart");
@@ -149,6 +159,8 @@ namespace chaiscript {
             lib->add(chaiscript::fun([](Chart& a, Chart& b) { a = b; return a; }), "=");
             lib->add(chaiscript::fun(&Chart::xAxis), "xAxis");
             lib->add(chaiscript::fun(&Chart::yAxis), "yAxis");
+            lib->add(chaiscript::fun(&Chart::SetColor), "SetColor");
+            lib->add(chaiscript::fun(&Chart::SetLineThickness), "SetLineThickness");
             
             lib->add(chaiscript::user_type<ExcelPlot>(), "DocxPlot");
             lib->add(chaiscript::constructor<ExcelPlot()>(), "DocxPlot");

@@ -3398,6 +3398,11 @@ public:
 	};
 
 	cweeUnitPattern                                                     Blur(double desiredNumValues, cweeUnitPattern const& mask) const {
+#if 1
+		cweeUnitPattern toReturn{ *this };
+		toReturn.RemoveWithMask(mask);
+		return toReturn.Blur(desiredNumValues);
+#else
 		AUTO width = this->GetMaxTime() - this->GetMinTime();
 		if (width() <= 0 || desiredNumValues <= 0) {
 			return cweeUnitPattern(*this);
@@ -3443,6 +3448,7 @@ public:
 		}
 
 		return out;
+#endif
 	};
 	cweeUnitPattern                                                     Blur(double desiredNumValues) const {
 		AUTO width = this->GetMaxTime() - this->GetMinTime();
