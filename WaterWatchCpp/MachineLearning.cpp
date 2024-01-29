@@ -1002,6 +1002,38 @@ namespace chaiscript {
 				};
 
 			public:
+				//cweeUnitValues::second LearnBasic(cweeUnitPattern const& mask) {
+				//	
+				//	this->LabelSummary = PatternSummary(Labels);
+
+				//	Stopwatch sw; sw.Start();
+
+				//	cweeUnitPattern finalLabels;
+				//	//cweeUnitPattern finalMask;
+				//	if (hourlyEffect) {
+				//		//finalMask = mask.Blur((cweeUnitValues::hour(mask.GetMaxTime() - mask.GetMinTime()))());
+				//		finalLabels = Labels.Blur((cweeUnitValues::hour(Labels.GetMaxTime() - Labels.GetMinTime()))(), mask);
+				//	}
+				//	else if (weekdayEffect) {
+				//		//finalMask = mask.Blur((cweeUnitValues::day(mask.GetMaxTime() - mask.GetMinTime()))());
+				//		finalLabels = Labels.Blur((cweeUnitValues::day(Labels.GetMaxTime() - Labels.GetMinTime()))(), mask);
+				//	}
+				//	else if (monthlyEffect) {
+				//		//finalMask = mask.Blur((cweeUnitValues::month(mask.GetMaxTime() - mask.GetMinTime()))());
+				//		finalLabels = Labels.Blur((cweeUnitValues::month(Labels.GetMaxTime() - Labels.GetMinTime()))(), mask);
+				//	}
+				//	else if (annualEffect) {
+				//		//finalMask = mask.Blur((cweeUnitValues::year(mask.GetMaxTime() - mask.GetMinTime()))() * 2);
+				//		finalLabels = Labels.Blur((cweeUnitValues::year(Labels.GetMaxTime() - Labels.GetMinTime()))() * 2, mask);
+				//	}
+
+				//	this->LineOfBestFit = finalLabels.LineOfBestFit(mask);
+
+				//	sw.Stop();
+
+				//	return cweeUnitValues::second(sw.Seconds_Passed());
+				//};
+
 				cweeUnitValues::second Learn(cweeUnitPattern const& mask) {
 					this->LineOfBestFit = Labels.LineOfBestFit(mask);
 					this->LabelSummary = PatternSummary(Labels);
@@ -1052,6 +1084,43 @@ namespace chaiscript {
 					else if (annualEffect) return ForecastSeasonal(LineOfBestFit);
 					else return LineOfBestFit;
 				};
+
+				/* Takes the average forecast, and attempts to augment it with additional data from the past or future of this timeseries */
+				cweeUnitPattern ForecastAdvanced(cweeUnitPattern const& mask) const {
+					AUTO averageForecast = Forecast();
+					AUTO maxT = averageForecast.GetMaxTime();
+					AUTO minT = averageForecast.GetMinTime();
+					AUTO out = cweeUnitPattern(Labels.X_Type(), Labels.Y_Type());
+					bool wasSuccessful;
+
+					auto step{ cweeUnitValues::year(1) }; // { cweeUnitValues::day(7) };
+					auto val{ Labels.Y_Type() }; int count = 0; cweeUnitValues::unit_value t2;
+					for (cweeUnitValues::unit_value t = minT; t <= maxT; t += cweeUnitValues::hour(1)) {
+						AUTO currAvg = averageForecast.GetCurrentValue(t);
+						val = 0; // currAvg;
+						count = 0; // 1;
+
+						// try to get the value locally if we can, working backwards. 
+						wasSuccessful = false;
+						for (t2 = t - step; t2 >= minT && count < 1; t2 -= step) {
+							if (mask.GetCurrentValue(t2) <= 0) {
+								cweeMath::rollingAverageRef(val, (currAvg - averageForecast.GetCurrentValue(t2)) + Labels.GetCurrentValue(t2), count);
+							}
+						}
+						for (t2 = t + step; t2 <= maxT && count < 2; t2 += step) {
+							if (mask.GetCurrentValue(t2) <= 0) {
+								cweeMath::rollingAverageRef(val, (currAvg - averageForecast.GetCurrentValue(t2)) + Labels.GetCurrentValue(t2), count);
+							}
+						}
+
+						if (count > 0) out.AddValue(t, val);
+						else out.AddValue(t, currAvg);
+					}
+
+					return out;
+				};
+
+
             };
 
 			lib->add(chaiscript::user_type<PatternLearner>(), "PatternLearner");
@@ -1087,6 +1156,7 @@ namespace chaiscript {
 			lib->AddFunction(, Learn, -> cweeUnitValues::unit_value, return learned.Learn(), PatternLearner& learned);
 			lib->AddFunction(, Learn, -> cweeUnitValues::unit_value, return learned.Learn(mask), PatternLearner& learned, cweeUnitPattern const& mask);
 			lib->AddFunction(, Forecast, -> cweeUnitPattern, return learned.Forecast(), PatternLearner const& learned);
+			lib->AddFunction(, ForecastAdvanced, -> cweeUnitPattern, return learned.ForecastAdvanced(mask), PatternLearner const& learned, cweeUnitPattern const& mask);
 			
 			AUTO todo = [](cweeUnitPattern const& pat) {
 				AUTO mask{ pat.GetOutlierMask() };

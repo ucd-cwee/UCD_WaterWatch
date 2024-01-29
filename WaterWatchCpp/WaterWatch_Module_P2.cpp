@@ -324,7 +324,9 @@ namespace chaiscript {
                 lib->add(chaiscript::fun([](cweeUnitPattern& a, const cweeUnitValues::unit_value& from, const cweeUnitValues::unit_value& to) { a.RemoveTimes(from, to); }), "RemoveTimes");
                 lib->add(chaiscript::fun([](cweeUnitPattern& a, const cweeUnitPattern& mask) { a.RemoveWithMask(mask); }), "RemoveWithMask");
                 lib->add(chaiscript::fun([](const cweeUnitPattern& a, const cweeUnitPattern& b) { return a.R_Squared(b); }), "R_Squared");
+                lib->add(chaiscript::fun([](const cweeUnitPattern& a, const cweeUnitPattern& b, const cweeUnitPattern& mask) { return a.R_Squared(b, mask); }), "R_Squared");
                 lib->add(chaiscript::fun([](const cweeUnitPattern& a, const cweeUnitPattern& b) { return a.Collinear(b); }), "Collinear");
+                lib->add(chaiscript::fun([](const cweeUnitPattern& a, const cweeUnitPattern& b, const cweeUnitPattern& mask) { return a.Collinear(b, mask); }), "Collinear");
                 lib->add(chaiscript::fun([](const cweeUnitPattern& a, const cweeUnitPattern& b, const cweeUnitValues::unit_value& from, const cweeUnitValues::unit_value& to) { return a.R_Squared(b, from, to); }), "R_Squared");
                 lib->add(chaiscript::fun([](const cweeUnitPattern& a) {
                     return a.GetOutlierMask();

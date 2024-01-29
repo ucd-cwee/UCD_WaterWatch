@@ -2538,7 +2538,7 @@ public:
 	cweeUnitPattern GetOutlierMask() const {
 		AUTO GetOutlierMask = [](cweeUnitPattern const& data)->cweeUnitPattern {
 			AUTO out{ cweeUnitPattern(data.X_Type(), 1) };
-			cweeList<double> quantileSearch; quantileSearch.Append(0.25); quantileSearch.Append(0.75); quantileSearch.Append(0.95);
+			cweeList<double> quantileSearch; quantileSearch.Append(0.25); quantileSearch.Append(0.75); quantileSearch.Append(0.95); 
 			if (1) { // Conventional Outlier Removal (Y-Value)
 				AUTO quantiles{ data.GetValueQuantiles(quantileSearch) };
 				AUTO stddev = data.StdDev();
@@ -2588,8 +2588,11 @@ public:
 			out = out.Ceiling().ClampValues(0, 1);
 			if (1) { // Next-Nearest Distance-Based Outlier Removal (Big Gap Discovery)
 				AUTO removeExceptionalPeriods = [&quantileSearch](cweeUnitPattern data) {
-					AUTO p = data.GetApproximateDistances();
-				    AUTO p2 = (p - (p.GetValueQuantiles(quantileSearch)[2] + 1.5 * p.StdDev()));
+					AUTO p = data.GetApproximateDistances(false, false);
+					cweeList<double> quantilesToSearch; quantilesToSearch.Append(0.5); quantilesToSearch.Append(0.999);
+					auto quantiles = p.GetValueQuantiles(quantilesToSearch);
+					AUTO p2 = p - (quantiles[0] + 1.5 * quantiles[1]); 
+					// AUTO p2 = (p - (quantiles[0] + 1.5 * cweeUnitValues::math::max(quantiles[1], p.StdDev())));
 				    AUTO p3 = p2.ClampValues(0, 1).Ceiling();
 					p3.RemoveUnnecessaryKnots();
 					return p3;
