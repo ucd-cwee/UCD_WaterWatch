@@ -2797,9 +2797,9 @@ public:
 	double                                              PearsonCorrelation(const cweeUnitPattern& populationSet, const cweeUnitPattern& mask) const {
 		auto patAvg = populationSet.GetAvgValue(populationSet.GetMinTime(), populationSet.GetMaxTime(), mask);
 		auto finalAvg = this->GetAvgValue(GetMinTime(), GetMaxTime(), mask);
-		double sum1;
-		double sum2;
-		double sum3;
+		double sum1 = 0;
+		double sum2 = 0;
+		double sum3 = 0;
 		for (auto& x : populationSet.GetKnotSeries()) {
 			sum1 += ((x.second - patAvg)() * (GetCurrentValue(x.first) - finalAvg)());
 			sum2 += (x.second - patAvg)() * (x.second - patAvg)();
@@ -2808,8 +2808,10 @@ public:
 		return sum1 / std::pow(sum2 * sum3, 0.5);
 	};
 	double                                              StudentsT(const cweeUnitPattern& populationSet, const cweeUnitPattern& mask) const {
-		auto r12 = PearsonCorrelation(populationSet, mask);
-		return r12 * (std::pow((this->GetNumValues() - 2.0), 0.5) / std::pow((1.0 - std::pow(r12, 2.0)), 0.5));
+		return ((GetAvgValue(GetMinTime(), GetMaxTime(), mask) - populationSet.GetAvgValue(populationSet.GetMinTime(), populationSet.GetMaxTime(), mask)) / ((StdDev()) / std::pow(populationSet.GetNumValues(), 0.5)))();
+
+		//auto r12 = 1.0 - PearsonCorrelation(populationSet, mask);
+		//return r12 * (std::pow((this->GetNumValues() - 2.0), 0.5) / std::pow((1.0 - std::pow(r12, 2.0)), 0.5));
 	};
 
 	/*Assumes the degrees of freedom is sufficiently large to assume Z table for look-up*/
