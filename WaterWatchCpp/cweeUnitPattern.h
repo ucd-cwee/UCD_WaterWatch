@@ -2778,7 +2778,6 @@ public:
 		}
 		return out;
 	};
-
 	AUTO												R_Squared(const cweeUnitPattern& other, const cweeUnitValues::unit_value& from, const cweeUnitValues::unit_value& to) const {
 		cweeUnitValues::scalar out;
 		AUTO x0 = from;
@@ -2794,6 +2793,45 @@ public:
 			out = 0;
 		}
 		return out;
+	};
+	double                                              PearsonCorrelation(const cweeUnitPattern& populationSet, const cweeUnitPattern& mask) const {
+		auto patAvg = populationSet.GetAvgValue(populationSet.GetMinTime(), populationSet.GetMaxTime(), mask);
+		auto finalAvg = this->GetAvgValue(GetMinTime(), GetMaxTime(), mask);
+		double sum1;
+		double sum2;
+		double sum3;
+		for (auto& x : populationSet.GetKnotSeries()) {
+			sum1 += ((x.second - patAvg)() * (GetCurrentValue(x.first) - finalAvg)());
+			sum2 += (x.second - patAvg)() * (x.second - patAvg)();
+			sum3 += (GetCurrentValue(x.first) - finalAvg)() * (GetCurrentValue(x.first) - finalAvg)();
+		}
+		return sum1 / std::pow(sum2 * sum3, 0.5);
+	};
+	double                                              StudentsT(const cweeUnitPattern& populationSet, const cweeUnitPattern& mask) const {
+		auto r12 = PearsonCorrelation(populationSet, mask);
+		return r12 * (std::pow((this->GetNumValues() - 2.0), 0.5) / std::pow((1.0 - std::pow(r12, 2.0)), 0.5));
+	};
+
+	/*Assumes the degrees of freedom is sufficiently large to assume Z table for look-up*/
+	double                                              PValue(const cweeUnitPattern& populationSet, const cweeUnitPattern& mask) const {
+		auto students_t = StudentsT(populationSet, mask);
+
+		AUTO zTest = cweeUnitPattern(1, 1);
+		zTest.SetInterpolationType(interpolation_t::SPLINE);
+		zTest.SetBoundaryType(boundary_t::BT_FREE);
+		zTest.AddValue(0.0, 1.0);
+		zTest.AddValue(0.674, 0.5);
+		zTest.AddValue(0.842, 0.4);
+		zTest.AddValue(1.036, 0.3);
+		zTest.AddValue(1.282, 0.2);
+		zTest.AddValue(1.645, 0.1);
+		zTest.AddValue(1.960, 0.05);
+		zTest.AddValue(2.326, 0.02);
+		zTest.AddValue(2.576, 0.01);
+		zTest.AddValue(3.090, 0.002);
+		zTest.AddValue(3.291, 0.001);
+
+		return zTest.GetCurrentValue(students_t)();
 	};
 
 	// VIF = 1/(1-R^2); VIF <= 2 means no collinearity. VIF > 2 && < 5 means mild collinearity. VIF >= 5 means strong collinearity.
@@ -3559,6 +3597,15 @@ public:
 
 		out.GetRoot();
 
+		return out;
+	};
+
+	cweeUnitPattern Subdivide(cweeUnitValues::unit_value step) const {
+		AUTO out = cweeUnitPattern(this->X_Type(), this->Y_Type());
+		auto maxT{ this->GetMaxTime() };
+		for (auto t = this->GetMinTime(); t <= maxT; t += step) {
+			out.AddValue(t, this->GetCurrentValue(t));
+		}
 		return out;
 	};
 

@@ -202,6 +202,9 @@ namespace chaiscript {
                 lib->add(chaiscript::fun([](cweeUnitPattern& a, cweeUnitPattern const& mask) { return a.GetAvgValue(a.GetMinTime(), a.GetMaxTime(), mask); }), "GetAvgValue");
                 lib->add(chaiscript::fun([](cweeUnitPattern& a) { return a.GetMaxValue(); }), "GetMaxValue");
 
+                lib->AddFunction(, P_Value, , return o.PValue(population, mask), cweeUnitPattern const& o, cweeUnitPattern const& population, cweeUnitPattern const& mask);
+                lib->AddFunction(, T_Value, , return o.StudentsT(population, mask), cweeUnitPattern const& o, cweeUnitPattern const& population, cweeUnitPattern const& mask);                
+
                 lib->add(chaiscript::fun([](cweeUnitPattern const& a) { return a.Ceiling(); }), "Ceiling");
                 lib->add(chaiscript::fun([](cweeUnitPattern const& a) { return a.Floor(); }), "Floor");
                 lib->add(chaiscript::fun([](cweeUnitPattern const& a) { return a.Abs(); }), "Abs");
@@ -404,6 +407,9 @@ namespace chaiscript {
                     return a.Blur(desiredNumValues, mask);
                 }), "Blur");
 
+
+                lib->AddFunction(, Subdivide, , return o.Subdivide(step), const cweeUnitPattern& o, const cweeUnitValues::unit_value& step);
+                
                 lib->add(chaiscript::fun([](cweeUnitPattern const& a) { return a.X_Type(); }), "X");
                 lib->add(chaiscript::fun([](cweeUnitPattern const& a) { return a.Y_Type(); }), "Y");
 
