@@ -2562,7 +2562,7 @@ public:
 				out += findOutlierPeriods(data);
 			}
 		    out = out.Ceiling().ClampValues(0,1);
-			if (1) { // Distance-Based Outlier Removal (Odd-Man-Out)
+			if (0) { // Distance-Based Outlier Removal (Odd-Man-Out)
 				AUTO removeExceptionalPeriods = [&quantileSearch](cweeUnitPattern data) {
 					AUTO distances = data.GetDistances(true);
 					AUTO quantiles = distances.GetValueQuantiles(quantileSearch);
@@ -2589,7 +2589,7 @@ public:
 			if (1) { // Next-Nearest Distance-Based Outlier Removal (Big Gap Discovery)
 				AUTO removeExceptionalPeriods = [&quantileSearch](cweeUnitPattern data) {
 					AUTO p = data.GetApproximateDistances(false, false);
-					cweeList<double> quantilesToSearch; quantilesToSearch.Append(0.5); quantilesToSearch.Append(0.999);
+					cweeList<double> quantilesToSearch; quantilesToSearch.Append(0.5); quantilesToSearch.Append(0.9999);
 					auto quantiles = p.GetValueQuantiles(quantilesToSearch);
 					AUTO p2 = p - (quantiles[0] + 1.5 * quantiles[1]); 
 					// AUTO p2 = (p - (quantiles[0] + 1.5 * cweeUnitValues::math::max(quantiles[1], p.StdDev())));
@@ -2794,54 +2794,84 @@ public:
 		}
 		return out;
 	};
-	double                                              PearsonCorrelation(const cweeUnitPattern& populationSet, const cweeUnitPattern& mask) const {
-		auto patAvg = populationSet.GetAvgValue(populationSet.GetMinTime(), populationSet.GetMaxTime(), mask);
-		auto finalAvg = this->GetAvgValue(GetMinTime(), GetMaxTime(), mask);
-		double sum1 = 0;
-		double sum2 = 0;
-		double sum3 = 0;
-		for (auto& x : populationSet.GetKnotSeries()) {
-			sum1 += ((x.second - patAvg)() * (GetCurrentValue(x.first) - finalAvg)());
-			sum2 += (x.second - patAvg)() * (x.second - patAvg)();
-			sum3 += (GetCurrentValue(x.first) - finalAvg)() * (GetCurrentValue(x.first) - finalAvg)();
+	AUTO                                                StandardError() const {
+		return StdDev() / std::pow(GetNumValues(), 0.5);
+	};
+	std::pair<double, double>                           PearsonCorrelation(const cweeUnitPattern& populationSet, const cweeUnitPattern& mask) const {
+		std::pair<double, double> out; // Pearson's R, and the approximate p-value for the Pearson's R
+		{
+			auto patAvg = populationSet.GetAvgValue(populationSet.GetMinTime(), populationSet.GetMaxTime(), mask);
+			auto finalAvg = this->GetAvgValue(GetMinTime(), GetMaxTime(), mask);
+			double sum1 = 0;
+			double sum2 = 0;
+			double sum3 = 0;
+			for (auto& x : populationSet.GetKnotSeries()) {
+				sum1 += ((x.second - patAvg)() * (GetCurrentValue(x.first) - finalAvg)());
+				sum2 += (x.second - patAvg)() * (x.second - patAvg)();
+				sum3 += (GetCurrentValue(x.first) - finalAvg)() * (GetCurrentValue(x.first) - finalAvg)();
+			}
+			out.first = sum1 / std::pow(sum2 * sum3, 0.5);
 		}
-		return sum1 / std::pow(sum2 * sum3, 0.5);
+		{
+			auto n = GetNumValues();
+			auto df = n - 2;
+			auto t = out.first / std::pow((1 - std::pow(out.first, 2.0)) / (n - 2.0), 0.5);
+
+			AUTO zTest = cweeUnitPattern(1, 1);
+			zTest.SetInterpolationType(interpolation_t::SPLINE);
+			zTest.SetBoundaryType(boundary_t::BT_FREE);
+			zTest.AddValue(0.0, 1.0);
+			zTest.AddValue(0.674, 0.5);
+			zTest.AddValue(0.842, 0.4);
+			zTest.AddValue(1.036, 0.3);
+			zTest.AddValue(1.282, 0.2);
+			zTest.AddValue(1.645, 0.1);
+			zTest.AddValue(1.960, 0.05);
+			zTest.AddValue(2.326, 0.02);
+			zTest.AddValue(2.576, 0.01);
+			zTest.AddValue(3.090, 0.002);
+			zTest.AddValue(3.291, 0.001);
+			zTest.AddValue(6, 0.000);
+			zTest.AddValue(100, 0.000);
+			zTest.AddValue(1000, 0.000);
+			
+			out.second = std::min(1.0, std::max(0.0, zTest.RombergIntegral(t, 1000.0)() * 2.0));
+			// out.second = zTest.GetCurrentValue(t)();
+		}
+		return out;
 	};
-	double                                              StudentsT(const cweeUnitPattern& populationSet, const cweeUnitPattern& mask) const {
-		return ((GetAvgValue(GetMinTime(), GetMaxTime(), mask) - populationSet.GetAvgValue(populationSet.GetMinTime(), populationSet.GetMaxTime(), mask)) / ((StdDev()) / std::pow(populationSet.GetNumValues(), 0.5)))();
-
-		//auto r12 = 1.0 - PearsonCorrelation(populationSet, mask);
-		//return r12 * (std::pow((this->GetNumValues() - 2.0), 0.5) / std::pow((1.0 - std::pow(r12, 2.0)), 0.5));
-	};
-
-	/*Assumes the degrees of freedom is sufficiently large to assume Z table for look-up*/
-	double                                              PValue(const cweeUnitPattern& populationSet, const cweeUnitPattern& mask) const {
-		auto students_t = StudentsT(populationSet, mask);
-
-		AUTO zTest = cweeUnitPattern(1, 1);
-		zTest.SetInterpolationType(interpolation_t::SPLINE);
-		zTest.SetBoundaryType(boundary_t::BT_FREE);
-		zTest.AddValue(0.0, 1.0);
-		zTest.AddValue(0.674, 0.5);
-		zTest.AddValue(0.842, 0.4);
-		zTest.AddValue(1.036, 0.3);
-		zTest.AddValue(1.282, 0.2);
-		zTest.AddValue(1.645, 0.1);
-		zTest.AddValue(1.960, 0.05);
-		zTest.AddValue(2.326, 0.02);
-		zTest.AddValue(2.576, 0.01);
-		zTest.AddValue(3.090, 0.002);
-		zTest.AddValue(3.291, 0.001);
-
-		return zTest.GetCurrentValue(students_t)();
-	};
+	
+	//double                                              StudentsT(const cweeUnitPattern& populationSet, const cweeUnitPattern& mask) const {
+	//	return ((GetAvgValue(GetMinTime(), GetMaxTime(), mask) - populationSet.GetAvgValue(populationSet.GetMinTime(), populationSet.GetMaxTime(), mask)) / ((StdDev()) / std::pow(populationSet.GetNumValues(), 0.5)))();
+	//	//auto r12 = 1.0 - PearsonCorrelation(populationSet, mask);
+	//	//return r12 * (std::pow((this->GetNumValues() - 2.0), 0.5) / std::pow((1.0 - std::pow(r12, 2.0)), 0.5));
+	//};
+	///*Assumes the degrees of freedom is sufficiently large to assume Z table for look-up*/
+	//double                                              PValue(const cweeUnitPattern& populationSet, const cweeUnitPattern& mask) const {
+	//	auto students_t = std::abs(StudentsT(populationSet, mask));
+	//	AUTO zTest = cweeUnitPattern(1, 1);
+	//	zTest.SetInterpolationType(interpolation_t::SPLINE);
+	//	zTest.SetBoundaryType(boundary_t::BT_FREE);
+	//	zTest.AddValue(0.0, 1.0);
+	//	zTest.AddValue(0.674, 0.5);
+	//	zTest.AddValue(0.842, 0.4);
+	//	zTest.AddValue(1.036, 0.3);
+	//	zTest.AddValue(1.282, 0.2);
+	//	zTest.AddValue(1.645, 0.1);
+	//	zTest.AddValue(1.960, 0.05);
+	//	zTest.AddValue(2.326, 0.02);
+	//	zTest.AddValue(2.576, 0.01);
+	//	zTest.AddValue(3.090, 0.002);
+	//	zTest.AddValue(3.291, 0.001);
+	//	return zTest.GetCurrentValue(students_t)();
+	//};
 
 	// VIF = 1/(1-R^2); VIF <= 2 means no collinearity. VIF > 2 && < 5 means mild collinearity. VIF >= 5 means strong collinearity.
 	bool												Collinear(const cweeUnitPattern& other) const {
 		AUTO rsqr = this->R_Squared(other);
 
-		static decltype(rsqr) one{ 1 };
-		static decltype(rsqr) five{ 5 };
+		decltype(rsqr) one{ 1 };
+		decltype(rsqr) five{ 5 };
 
 		if (rsqr == one) {
 			return true;

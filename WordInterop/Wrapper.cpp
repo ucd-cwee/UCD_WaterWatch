@@ -76,13 +76,20 @@ BETTER_ENUM(DocxBlankDisplayMode, int, gap, zero, span);
 BETTER_ENUM(DocxAxisSide, int, left, right, top, bottom);
 BETTER_ENUM(DocxAxisStyle, int, Value, Category, Date, None);
 BETTER_ENUM(DocxTickLabelPosition, int, High, Low, NextTo);
-
+BETTER_ENUM(DocxVertAlign, int, none, superscript);
+BETTER_ENUM(DocxLegendPos, int, l, r, t, b);
 namespace chaiscript {
     namespace WaterWatch_Lib {
         [[nodiscard]] ModulePtr MSWord_library() {
             auto lib = chaiscript::make_shared<Module>();
 
             using namespace docx;
+
+            lib->AddFunction(, format, , SINGLE_ARG(
+                auto numDigitsStr{ std::to_string(numDigits) };
+                auto x = cweeStr("%0.") + cweeStr(numDigitsStr.c_str()) + "f";
+                return cweeStr::printf(x.c_str(), number);
+            ), double number, int numDigits);
 
             lib->add(chaiscript::user_type<Cell>(), "DocxCell");
             lib->add(chaiscript::constructor<Cell()>(), "DocxCell");
@@ -151,16 +158,20 @@ namespace chaiscript {
             lib->AddFunction(, SetAxisScale, , o.SetAxisScale(min,max); , Axis & o, double min, double max);
             lib->add(chaiscript::fun(&Axis::SetMajorStep), "SetMajorStep");
             lib->AddFunction(, SetTickLabelPosition, , o.SetTickLabelPosition(static_cast<docx::Axis::TickLabelPosition>(GetBetterEnum<::DocxTickLabelPosition>(input)._to_integral())); , Axis & o, cweeStr const& input);
+            lib->AddFunction(, GetAxisId, , o.GetAxisId();, Axis & o);
 
             lib->add(chaiscript::user_type<Chart>(), "DocxChart");
             lib->add(chaiscript::constructor<Chart()>(), "DocxChart");
             lib->add(chaiscript::constructor<Chart(const Chart&)>(), "DocxChart");
             lib->add(chaiscript::constructor<bool(const Chart&)>(), "bool");
             lib->add(chaiscript::fun([](Chart& a, Chart& b) { a = b; return a; }), "=");
-            lib->add(chaiscript::fun(&Chart::xAxis), "xAxis");
-            lib->add(chaiscript::fun(&Chart::yAxis), "yAxis");
+            lib->AddFunction(, xAxis, , return o.xAxis();, Chart& o);
+            lib->AddFunction(, yAxis, , return o.yAxis(); , Chart& o);
+            lib->AddFunction(, xAxis, , o.xAxis(axis); , Chart& o, Axis& axis);
+            lib->AddFunction(, yAxis, , o.yAxis(axis); , Chart& o, Axis& axis);
             lib->add(chaiscript::fun(&Chart::SetColor), "SetColor");
             lib->add(chaiscript::fun(&Chart::SetLineThickness), "SetLineThickness");
+            lib->add(chaiscript::fun(&Chart::SetName), "SetName");
             
             lib->add(chaiscript::user_type<ExcelPlot>(), "DocxPlot");
             lib->add(chaiscript::constructor<ExcelPlot()>(), "DocxPlot");
@@ -173,7 +184,11 @@ namespace chaiscript {
             lib->add(chaiscript::fun(&ExcelPlot::AppendLineChart), "AppendLineChart");
             lib->add(chaiscript::fun(&ExcelPlot::AppendAreaChart), "AppendAreaChart");
             lib->add(chaiscript::fun(&ExcelPlot::SetPlotVisOnly), "SetPlotVisOnly");
-            lib->AddFunction(, SetDispBlanksAs, , o.SetDispBlanksAs(static_cast<docx::ExcelPlot::BlankDisplayMode>(GetBetterEnum<::DocxBlankDisplayMode>(input)._to_integral())); , ExcelPlot& o, cweeStr const& input);
+            lib->AddFunction(, SetDispBlanksAs, , o.SetDispBlanksAs(static_cast<docx::ExcelPlot::BlankDisplayMode>(GetBetterEnum<::DocxBlankDisplayMode>(input)._to_integral())); , ExcelPlot& o, cweeStr const& input);            
+            lib->AddFunction(, SetLayout, , o.SetLayout(x,y,w,h); , ExcelPlot & o, cweeUnitValues::unit_value const& x, cweeUnitValues::unit_value const& y, cweeUnitValues::unit_value const& w, cweeUnitValues::unit_value const& h);
+            lib->AddFunction(, SetLayout, , o.SetLayout();, ExcelPlot & o);            
+            lib->AddFunction(, AppendLegend, , o.AppendLegend(static_cast<docx::ExcelPlot::LegendPos>(GetBetterEnum<::DocxLegendPos>(input)._to_integral()), x, y, w, h);, ExcelPlot & o, cweeStr const& input, cweeUnitValues::unit_value const& x, cweeUnitValues::unit_value const& y, cweeUnitValues::unit_value const& w, cweeUnitValues::unit_value const& h);
+            lib->AddFunction(, AppendLegend, , o.AppendLegend(static_cast<docx::ExcelPlot::LegendPos>(GetBetterEnum<::DocxLegendPos>(input)._to_integral())); , ExcelPlot & o, cweeStr const& input);
 
             lib->add(chaiscript::user_type<Run>(), "DocxRun");
             lib->add(chaiscript::constructor<Run()>(), "DocxRun");
@@ -198,6 +213,7 @@ namespace chaiscript {
             lib->AddFunction(, GetFontStyle, ->cweeStr , return ::FontStyle::_from_integral(static_cast<int>(o.GetFontStyle())).ToString();, Run& o, cweeStr const& input);
             lib->add(chaiscript::fun(&Run::SetCharacterSpacing), "SetCharacterSpacing");
             lib->add(chaiscript::fun(&Run::GetCharacterSpacing), "GetCharacterSpacing");
+            lib->AddFunction(, SetVerticalAlignment, , return o.SetVerticalAlignment(static_cast<docx::Run::vertAlign>(GetBetterEnum<::DocxVertAlign>(input)._to_integral()));, Run& o, cweeStr const& input);
             lib->add(chaiscript::fun(&Run::Remove), "Remove");
             lib->add(chaiscript::fun(&Run::IsPageBreak), "IsPageBreak");
 

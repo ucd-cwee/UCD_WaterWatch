@@ -266,6 +266,7 @@ namespace docx {
         enum class AxisStyle { Value, Category, Date, None };
         void SetAxisStyle(AxisStyle style);
         void SetAxisScale(double min, double max);
+        cweeStr GetAxisId();
 
     private:
         class Impl;
@@ -286,10 +287,13 @@ namespace docx {
         void operator=(Chart const& right);
         operator bool() const;
 
+        void xAxis(Axis& axis);
+        void yAxis(Axis& axis);
         Axis xAxis();
         Axis yAxis();
         void SetColor(chaiscript::UI_Color const& col);
         void SetLineThickness(double weight);
+        void SetName(cweeStr const& name);
 
     protected:
         class Impl;
@@ -343,6 +347,10 @@ namespace docx {
         Chart AppendAreaChart(cweeSharedPtr<ExcelRange> const& xrange, cweeSharedPtr<ExcelRange> const& yrange);
         void SetWidth(cweeUnitValues::inch width);
         void SetHeight(cweeUnitValues::inch height);
+        void SetLayout(cweeUnitValues::inch x = 0.13780757733712981, cweeUnitValues::inch y = 9.8103417785904798E-2, cweeUnitValues::inch w = 0.81542477392173396, cweeUnitValues::inch h = 0.68267880615409293);
+        enum class LegendPos { l, r, t, b };
+        void AppendLegend(LegendPos pos, cweeUnitValues::inch x, cweeUnitValues::inch y, cweeUnitValues::inch w, cweeUnitValues::inch h);
+        void AppendLegend(LegendPos pos);
 
     private:
         class Impl;
@@ -391,6 +399,9 @@ namespace docx {
 
         void SetCharacterSpacing(const int characterSpacing);
         int GetCharacterSpacing();
+
+        enum class vertAlign { none, superscript };
+        void SetVerticalAlignment(vertAlign alignment);
 
         // Run
         void Remove();

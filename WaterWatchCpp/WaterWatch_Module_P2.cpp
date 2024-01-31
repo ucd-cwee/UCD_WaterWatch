@@ -202,9 +202,8 @@ namespace chaiscript {
                 lib->add(chaiscript::fun([](cweeUnitPattern& a, cweeUnitPattern const& mask) { return a.GetAvgValue(a.GetMinTime(), a.GetMaxTime(), mask); }), "GetAvgValue");
                 lib->add(chaiscript::fun([](cweeUnitPattern& a) { return a.GetMaxValue(); }), "GetMaxValue");
 
-                lib->AddFunction(, P_Value, , return o.PValue(population, mask), cweeUnitPattern const& o, cweeUnitPattern const& population, cweeUnitPattern const& mask);
-                lib->AddFunction(, T_Value, , return o.StudentsT(population, mask), cweeUnitPattern const& o, cweeUnitPattern const& population, cweeUnitPattern const& mask);                
                 lib->AddFunction(, PearsonCorrelation, , return o.PearsonCorrelation(population, mask), cweeUnitPattern const& o, cweeUnitPattern const& population, cweeUnitPattern const& mask);
+                lib->AddFunction(, StandardError, , return o.StandardError(), cweeUnitPattern const& o);
 
                 lib->add(chaiscript::fun([](cweeUnitPattern const& a) { return a.Ceiling(); }), "Ceiling");
                 lib->add(chaiscript::fun([](cweeUnitPattern const& a) { return a.Floor(); }), "Floor");

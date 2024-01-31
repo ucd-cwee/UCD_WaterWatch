@@ -2043,141 +2043,149 @@ namespace docx {
         cweeStr y_axis_id = cweeStr::printf("%i%i%i", cweeRandomInt(100, 999), cweeRandomInt(100, 999), cweeRandomInt(100, 999)); // "200940784";
 
         auto plotArea = implP->Plot->chart_xml.emplace_child("c:chartSpace").emplace_child("c:chart").emplace_child("c:plotArea");
-        /* catAx */ {
-            bool anotherX_Exists = false;
-            implP->c_X_Ax_ = plotArea.child("c:catAx"); if (implP->c_X_Ax_) anotherX_Exists = true;
+        
+        if (implP->Plot->Charts.Num() < 2) {
+            /* catAx */ {
+                bool anotherX_Exists = false;
+                implP->c_X_Ax_ = plotArea.child("c:catAx"); if (implP->c_X_Ax_) anotherX_Exists = true;
 
-            {
-                x_axis_id = cweeStr::printf("%i%i%i", cweeRandomInt(100, 999), cweeRandomInt(100, 999), cweeRandomInt(100, 999));
+                {
+                    x_axis_id = cweeStr::printf("%i%i%i", cweeRandomInt(100, 999), cweeRandomInt(100, 999), cweeRandomInt(100, 999));
 
-                implP->c_X_Ax_ = plotArea.append_child("c:catAx");
-                implP->c_X_Ax_.append_child("c:axId").append_attribute("val") = x_axis_id;
-                auto c_scaling = implP->c_X_Ax_.append_child("c:scaling"); {
-                    c_scaling.append_child("c:orientation").append_attribute("val") = "minMax";
-                }
-                implP->c_X_Ax_.append_child("c:delete").append_attribute("val") = (int)anotherX_Exists;
-                implP->c_X_Ax_.append_child("c:axPos").append_attribute("val") = "b";
-                /*NOT REQUIRED TO COMPILE*/ // auto c_title = implP->c_X_Ax_.append_child("c:title"); {/* TODO */ }
-                auto c_numFmt = implP->c_X_Ax_.append_child("c:numFmt"); {
-                    c_numFmt.append_attribute("formatCode") = "General";
-                    c_numFmt.append_attribute("sourceLinked") = 1;
-                }
-                implP->c_X_Ax_.append_child("c:majorTickMark").append_attribute("val") = "out";
-                implP->c_X_Ax_.append_child("c:minorTickMark").append_attribute("val") = "none";
-                implP->c_X_Ax_.append_child("c:tickLblPos").append_attribute("val") = "low";
-                auto c_spPr = implP->c_X_Ax_.append_child("c:spPr"); {
-                    c_spPr.append_child("a:noFill");
-                    auto line = c_spPr.append_child("a:ln"); {
-                        line.emplace_attribute("w") = (int)(0.5 * (6350.0 * 2.0));
-                        line.emplace_attribute("cap") = "flat";
-                        line.emplace_attribute("cmpd") = "sng";
-                        line.emplace_attribute("algn") = "ctr";
-                        line.emplace_child("a:solidFill").emplace_child("a:schemeClr").emplace_attribute("val") = "tx1";
-                        line.emplace_child("a:round");
+                    implP->c_X_Ax_ = plotArea.append_child("c:catAx");
+                    implP->c_X_Ax_.append_child("c:axId").append_attribute("val") = x_axis_id;
+                    auto c_scaling = implP->c_X_Ax_.append_child("c:scaling"); {
+                        c_scaling.append_child("c:orientation").append_attribute("val") = "minMax";
                     }
-                    c_spPr.append_child("a:effectLst");
-                }
-                auto c_txPr = implP->c_X_Ax_.append_child("c:txPr"); {
-                    auto a_bodyPr = c_txPr.append_child("a:bodyPr"); if (0) {
-                        a_bodyPr.append_attribute("rot") = -60000000;
-                        a_bodyPr.append_attribute("spcFirstLastPara") = 1;
-                        a_bodyPr.append_attribute("vertOverflow") = "ellipsis";
-                        a_bodyPr.append_attribute("vert") = "horz";
-                        a_bodyPr.append_attribute("wrap") = "square";
-                        a_bodyPr.append_attribute("anchor") = "ctr";
-                        a_bodyPr.append_attribute("anchorCtr") = 1;
+                    implP->c_X_Ax_.append_child("c:delete").append_attribute("val") = (int)anotherX_Exists;
+                    implP->c_X_Ax_.append_child("c:axPos").append_attribute("val") = "b";
+                    /*NOT REQUIRED TO COMPILE*/ // auto c_title = implP->c_X_Ax_.append_child("c:title"); {/* TODO */ }
+                    auto c_numFmt = implP->c_X_Ax_.append_child("c:numFmt"); {
+                        c_numFmt.append_attribute("formatCode") = "General";
+                        c_numFmt.append_attribute("sourceLinked") = 1;
                     }
-                    c_txPr.append_child("a:lstStyle");
-                    auto a_p = c_txPr.append_child("a:p"); {
-                        auto a_defRPr = a_p.append_child("a:pPr").append_child("a:defRPr"); {
-                            a_defRPr.append_attribute("sz") = 1000;
-                            a_defRPr.append_attribute("b") = 0;
-                            a_defRPr.append_attribute("i") = 0;
-                            a_defRPr.append_attribute("u") = "none";
-                            a_defRPr.append_attribute("strike") = "noStrike";
-                            a_defRPr.append_attribute("kern") = 1200;
-                            a_defRPr.append_attribute("baseline") = 0;
-                            auto a_solidFill = a_defRPr.append_child("a:solidFill"); {
-                                a_solidFill.append_child("a:schemeClr").append_attribute("val") = "tx1";
-                            }
-                            a_defRPr.append_child("a:latin").append_attribute("typeface") = "+mn-lt";
-                            a_defRPr.append_child("a:ea").append_attribute("typeface") = "+mn-ea";
-                            a_defRPr.append_child("a:cd").append_attribute("typeface") = "+mn-cs";
+                    implP->c_X_Ax_.append_child("c:majorTickMark").append_attribute("val") = "out";
+                    implP->c_X_Ax_.append_child("c:minorTickMark").append_attribute("val") = "none";
+                    implP->c_X_Ax_.append_child("c:tickLblPos").append_attribute("val") = "low";
+                    auto c_spPr = implP->c_X_Ax_.append_child("c:spPr"); {
+                        c_spPr.append_child("a:noFill");
+                        auto line = c_spPr.append_child("a:ln"); {
+                            line.emplace_attribute("w") = (int)(0.5 * (6350.0 * 2.0));
+                            line.emplace_attribute("cap") = "flat";
+                            line.emplace_attribute("cmpd") = "sng";
+                            line.emplace_attribute("algn") = "ctr";
+                            line.emplace_child("a:solidFill").emplace_child("a:schemeClr").emplace_attribute("val") = "tx1";
+                            line.emplace_child("a:round");
                         }
-                        a_p.append_child("a:endParaRPr").append_attribute("lang") = "en-US";
+                        c_spPr.append_child("a:effectLst");
                     }
+                    auto c_txPr = implP->c_X_Ax_.append_child("c:txPr"); {
+                        auto a_bodyPr = c_txPr.append_child("a:bodyPr"); if (0) {
+                            a_bodyPr.append_attribute("rot") = -60000000;
+                            a_bodyPr.append_attribute("spcFirstLastPara") = 1;
+                            a_bodyPr.append_attribute("vertOverflow") = "ellipsis";
+                            a_bodyPr.append_attribute("vert") = "horz";
+                            a_bodyPr.append_attribute("wrap") = "square";
+                            a_bodyPr.append_attribute("anchor") = "ctr";
+                            a_bodyPr.append_attribute("anchorCtr") = 1;
+                        }
+                        c_txPr.append_child("a:lstStyle");
+                        auto a_p = c_txPr.append_child("a:p"); {
+                            auto a_defRPr = a_p.append_child("a:pPr").append_child("a:defRPr"); {
+                                a_defRPr.append_attribute("sz") = 1000;
+                                a_defRPr.append_attribute("b") = 0;
+                                a_defRPr.append_attribute("i") = 0;
+                                a_defRPr.append_attribute("u") = "none";
+                                a_defRPr.append_attribute("strike") = "noStrike";
+                                a_defRPr.append_attribute("kern") = 1200;
+                                a_defRPr.append_attribute("baseline") = 0;
+                                auto a_solidFill = a_defRPr.append_child("a:solidFill"); {
+                                    a_solidFill.append_child("a:schemeClr").append_attribute("val") = "tx1";
+                                }
+                                a_defRPr.append_child("a:latin").append_attribute("typeface") = "+mn-lt";
+                                a_defRPr.append_child("a:ea").append_attribute("typeface") = "+mn-ea";
+                                a_defRPr.append_child("a:cd").append_attribute("typeface") = "+mn-cs";
+                            }
+                            a_p.append_child("a:endParaRPr").append_attribute("lang") = "en-US";
+                        }
+                    }
+                    implP->c_X_Ax_.append_child("c:crossAx").append_attribute("val") = y_axis_id;
+                    implP->c_X_Ax_.append_child("c:crosses").append_attribute("val") = "autoZero";
+                    implP->c_X_Ax_.append_child("c:auto").append_attribute("val") = 1;
+                    implP->c_X_Ax_.append_child("c:lblAlgn").append_attribute("val") = "ctr";
+                    implP->c_X_Ax_.append_child("c:lblOffset").append_attribute("val") = 100;
+                    implP->c_X_Ax_.append_child("c:noMultiLvlLbl").append_attribute("val") = 0;
                 }
-                implP->c_X_Ax_.append_child("c:crossAx").append_attribute("val") = y_axis_id;
-                implP->c_X_Ax_.append_child("c:crosses").append_attribute("val") = "autoZero";
-                implP->c_X_Ax_.append_child("c:auto").append_attribute("val") = 1;
-                implP->c_X_Ax_.append_child("c:lblAlgn").append_attribute("val") = "ctr";
-                implP->c_X_Ax_.append_child("c:lblOffset").append_attribute("val") = 100;
-                implP->c_X_Ax_.append_child("c:noMultiLvlLbl").append_attribute("val") = 0;
+            }
+            /* valAx */ {
+                implP->c_Y_Ax_ = plotArea.append_child("c:valAx"); {
+                    implP->c_Y_Ax_.append_child("c:axId").append_attribute("val") = y_axis_id;
+                    auto c_scaling = implP->c_Y_Ax_.append_child("c:scaling"); {
+                        c_scaling.append_child("c:orientation").append_attribute("val") = "minMax";
+                    }
+                    implP->c_Y_Ax_.append_child("c:delete").append_attribute("val") = 0;
+                    implP->c_Y_Ax_.append_child("c:axPos").append_attribute("val") = "l";
+                    /*NOT REQUIRED TO COMPILE*/ // auto c_title = implP->c_Y_Ax_.append_child("c:title"); {/* TODO */ }
+                    auto c_numFmt = implP->c_Y_Ax_.append_child("c:numFmt"); {
+                        c_numFmt.append_attribute("formatCode") = "General";
+                        c_numFmt.append_attribute("sourceLinked") = 1;
+                    }
+                    implP->c_Y_Ax_.append_child("c:majorTickMark").append_attribute("val") = "out";
+                    implP->c_Y_Ax_.append_child("c:minorTickMark").append_attribute("val") = "none";
+                    implP->c_Y_Ax_.append_child("c:tickLblPos").append_attribute("val") = "low";
+                    auto c_spPr = implP->c_Y_Ax_.append_child("c:spPr"); {
+                        c_spPr.append_child("a:noFill");
+                        auto line = c_spPr.append_child("a:ln"); {
+                            line.emplace_attribute("w") = (int)(0.5 * (6350.0 * 2.0));
+                            line.emplace_attribute("cap") = "flat";
+                            line.emplace_attribute("cmpd") = "sng";
+                            line.emplace_attribute("algn") = "ctr";
+                            line.emplace_child("a:solidFill").emplace_child("a:schemeClr").emplace_attribute("val") = "tx1";
+                            line.emplace_child("a:round");
+                        }
+                        c_spPr.append_child("a:effectLst");
+                    }
+                    auto c_txPr = implP->c_Y_Ax_.append_child("c:txPr"); {
+                        auto a_bodyPr = c_txPr.append_child("a:bodyPr"); if (0) {
+                            a_bodyPr.append_attribute("rot") = -60000000;
+                            a_bodyPr.append_attribute("spcFirstLastPara") = 1;
+                            a_bodyPr.append_attribute("vertOverflow") = "ellipsis";
+                            a_bodyPr.append_attribute("vert") = "horz";
+                            a_bodyPr.append_attribute("wrap") = "square";
+                            a_bodyPr.append_attribute("anchor") = "ctr";
+                            a_bodyPr.append_attribute("anchorCtr") = 1;
+                        }
+                        c_txPr.append_child("a:lstStyle");
+                        auto a_p = c_txPr.append_child("a:p"); {
+                            auto a_defRPr = a_p.append_child("a:pPr").append_child("a:defRPr"); {
+                                a_defRPr.append_attribute("sz") = 1000;
+                                a_defRPr.append_attribute("b") = 0;
+                                a_defRPr.append_attribute("i") = 0;
+                                a_defRPr.append_attribute("u") = "none";
+                                a_defRPr.append_attribute("strike") = "noStrike";
+                                a_defRPr.append_attribute("kern") = 1200;
+                                a_defRPr.append_attribute("baseline") = 0;
+                                auto a_solidFill = a_defRPr.append_child("a:solidFill"); {
+                                    a_solidFill.append_child("a:schemeClr").append_attribute("val") = "tx1";
+                                }
+                                a_defRPr.append_child("a:latin").append_attribute("typeface") = "+mn-lt";
+                                a_defRPr.append_child("a:ea").append_attribute("typeface") = "+mn-ea";
+                                a_defRPr.append_child("a:cd").append_attribute("typeface") = "+mn-cs";
+                            }
+                            a_p.append_child("a:endParaRPr").append_attribute("lang") = "en-US";
+                        }
+                    }
+                    implP->c_Y_Ax_.append_child("c:crossAx").append_attribute("val") = x_axis_id;
+                    implP->c_Y_Ax_.append_child("c:crosses").append_attribute("val") = "autoZero";
+                    implP->c_Y_Ax_.append_child("c:crossBetween").append_attribute("val") = "between";
+                }
             }
         }
-        /* valAx */ {
-            implP->c_Y_Ax_ = plotArea.append_child("c:valAx"); {
-                implP->c_Y_Ax_.append_child("c:axId").append_attribute("val") = y_axis_id;
-                auto c_scaling = implP->c_Y_Ax_.append_child("c:scaling"); {
-                    c_scaling.append_child("c:orientation").append_attribute("val") = "minMax";
-                }
-                implP->c_Y_Ax_.append_child("c:delete").append_attribute("val") = 0;
-                implP->c_Y_Ax_.append_child("c:axPos").append_attribute("val") = "l";
-                /*NOT REQUIRED TO COMPILE*/ // auto c_title = implP->c_Y_Ax_.append_child("c:title"); {/* TODO */ }
-                auto c_numFmt = implP->c_Y_Ax_.append_child("c:numFmt"); {
-                    c_numFmt.append_attribute("formatCode") = "General";
-                    c_numFmt.append_attribute("sourceLinked") = 1;
-                }
-                implP->c_Y_Ax_.append_child("c:majorTickMark").append_attribute("val") = "out";
-                implP->c_Y_Ax_.append_child("c:minorTickMark").append_attribute("val") = "none";
-                implP->c_Y_Ax_.append_child("c:tickLblPos").append_attribute("val") = "low";
-                auto c_spPr = implP->c_Y_Ax_.append_child("c:spPr"); {
-                    c_spPr.append_child("a:noFill");
-                    auto line = c_spPr.append_child("a:ln"); {
-                        line.emplace_attribute("w") = (int)(0.5 * (6350.0 * 2.0));
-                        line.emplace_attribute("cap") = "flat";
-                        line.emplace_attribute("cmpd") = "sng";
-                        line.emplace_attribute("algn") = "ctr";
-                        line.emplace_child("a:solidFill").emplace_child("a:schemeClr").emplace_attribute("val") = "tx1";
-                        line.emplace_child("a:round");
-                    }
-                    c_spPr.append_child("a:effectLst");
-                }
-                auto c_txPr = implP->c_Y_Ax_.append_child("c:txPr"); {
-                    auto a_bodyPr = c_txPr.append_child("a:bodyPr"); if (0) {
-                        a_bodyPr.append_attribute("rot") = -60000000;
-                        a_bodyPr.append_attribute("spcFirstLastPara") = 1;
-                        a_bodyPr.append_attribute("vertOverflow") = "ellipsis";
-                        a_bodyPr.append_attribute("vert") = "horz";
-                        a_bodyPr.append_attribute("wrap") = "square";
-                        a_bodyPr.append_attribute("anchor") = "ctr";
-                        a_bodyPr.append_attribute("anchorCtr") = 1;
-                    }
-                    c_txPr.append_child("a:lstStyle");
-                    auto a_p = c_txPr.append_child("a:p"); {
-                        auto a_defRPr = a_p.append_child("a:pPr").append_child("a:defRPr"); {
-                            a_defRPr.append_attribute("sz") = 1000;
-                            a_defRPr.append_attribute("b") = 0;
-                            a_defRPr.append_attribute("i") = 0;
-                            a_defRPr.append_attribute("u") = "none";
-                            a_defRPr.append_attribute("strike") = "noStrike";
-                            a_defRPr.append_attribute("kern") = 1200;
-                            a_defRPr.append_attribute("baseline") = 0;
-                            auto a_solidFill = a_defRPr.append_child("a:solidFill"); {
-                                a_solidFill.append_child("a:schemeClr").append_attribute("val") = "tx1";
-                            }
-                            a_defRPr.append_child("a:latin").append_attribute("typeface") = "+mn-lt";
-                            a_defRPr.append_child("a:ea").append_attribute("typeface") = "+mn-ea";
-                            a_defRPr.append_child("a:cd").append_attribute("typeface") = "+mn-cs";
-                        }
-                        a_p.append_child("a:endParaRPr").append_attribute("lang") = "en-US";
-                    }
-                }
-                implP->c_Y_Ax_.append_child("c:crossAx").append_attribute("val") = x_axis_id;
-                implP->c_Y_Ax_.append_child("c:crosses").append_attribute("val") = "autoZero";
-                implP->c_Y_Ax_.append_child("c:crossBetween").append_attribute("val") = "between";
-            }
+        else {
+            x_axis_id = implP->Plot->Charts[0]->c_X_Ax_.emplace_child("c:axId").emplace_attribute("val").value();
+            y_axis_id = implP->Plot->Charts[0]->c_Y_Ax_.emplace_child("c:axId").emplace_attribute("val").value();
         }
+
         /* c:lineChart */ {
             implP->c_Chart_.append_child("c:grouping").append_attribute("val") = "standard";
             implP->c_Chart_.append_child("c:varyColors").append_attribute("val") = 0;
@@ -2265,6 +2273,18 @@ namespace docx {
         impl = right.impl;
     };
     Chart::operator bool() const { return (bool)impl; };
+    void Chart::xAxis(Axis& axis) {
+        if (!impl) return;
+        auto newAxisId = axis.GetAxisId();
+        auto oldAxisId = xAxis().GetAxisId();
+        impl_()->c_Chart_.find_child_by_attribute("val", oldAxisId).emplace_attribute("val") = newAxisId;
+    };
+    void Chart::yAxis(Axis& axis) {
+        if (!impl) return;
+        auto newAxisId = axis.GetAxisId();
+        auto oldAxisId = yAxis().GetAxisId();
+        impl_()->c_Chart_.find_child_by_attribute("val", oldAxisId).emplace_attribute("val") = newAxisId;
+    };
     Axis Chart::xAxis() {
         if (!impl) return Axis();
 
@@ -2308,6 +2328,10 @@ namespace docx {
     void Chart::SetLineThickness(double weight) {
         if (!impl) return;
         impl_()->c_Chart_.emplace_child("c:ser").emplace_child("c:spPr").emplace_child("a:ln").emplace_attribute("w") = (int)(weight * 6350.0 * 2.0);;
+    };
+    void Chart::SetName(cweeStr const& name) {
+        if (!impl) return;
+        impl_()->c_Chart_.emplace_child("c:ser").emplace_child("c:tx").emplace_child("c:strRef").emplace_child("c:strCache").emplace_child("c:pt").emplace_child("c:v").text() = name;
     };
 
     // LineChart
@@ -2583,6 +2607,10 @@ namespace docx {
         impl_()->c_Ax_.emplace_child("c:scaling").emplace_child("c:max").emplace_attribute("val") = max;
         impl_()->c_Ax_.emplace_child("c:scaling").emplace_child("c:min").emplace_attribute("val") = min;
     };
+    cweeStr Axis::GetAxisId() {
+        if (!impl) return "";
+        return impl_()->c_Ax_.emplace_child("c:axId").emplace_attribute("val").value();
+    };
     void Axis::SetTickLabelPosition(Axis::TickLabelPosition pos) {
         if (!impl) return;
         cweeStr sel;
@@ -2632,8 +2660,10 @@ namespace docx {
         aImpl->c_Chart_ = c_plotArea.prepend_child("c:lineChart");
         aImpl->chartNum = impl_()->Charts.Num();
         AUTO out{ LineChart(aImpl, xrange, yrange) };
-
+        
+        // auto layout = c_plotArea.child("c:layout");
         c_plotArea.remove_child("c:layout");
+        // c_plotArea.prepend_move(layout); 
         c_plotArea.prepend_child("c:layout");
 
         impl_()->Charts.Append(out.impl);
@@ -2664,6 +2694,56 @@ namespace docx {
     void ExcelPlot::SetHeight(cweeUnitValues::inch height) {
         if (!impl) return;
         impl_()->w_drawing_.emplace_child("wp:inline").emplace_child("wp:extent").emplace_attribute("cy") = (int)(height() * 914400.0);
+    };
+    void ExcelPlot::SetLayout(cweeUnitValues::inch x, cweeUnitValues::inch y, cweeUnitValues::inch w, cweeUnitValues::inch h) {
+        if (!impl) return;
+        auto plotArea = impl_()->chart_xml.emplace_child("c:chartSpace").emplace_child("c:chart").emplace_child("c:plotArea");
+        plotArea.remove_child("c:layout");
+        auto manualLayout = plotArea.prepend_child("c:layout").emplace_child("c:manualLayout"); {
+            manualLayout.emplace_child("c:layoutTarget").emplace_attribute("val") = "inner";
+            manualLayout.emplace_child("c:xMode").emplace_attribute("val") = "edge";
+            manualLayout.emplace_child("c:yMode").emplace_attribute("val") = "edge";
+            manualLayout.emplace_child("c:x").emplace_attribute("val") = x();
+            manualLayout.emplace_child("c:y").emplace_attribute("val") = y();
+            manualLayout.emplace_child("c:w").emplace_attribute("val") = w();
+            manualLayout.emplace_child("c:h").emplace_attribute("val") = h();
+        }
+    };
+    void ExcelPlot::AppendLegend(LegendPos pos, cweeUnitValues::inch x, cweeUnitValues::inch y, cweeUnitValues::inch w, cweeUnitValues::inch h) {
+        if (!impl) return;
+
+        auto legend = impl_()->chart_xml.emplace_child("c:chartSpace").emplace_child("c:chart").emplace_child("c:legend");
+        switch (pos) {
+        case decltype(pos)::l: legend.emplace_child("c:legendPos").emplace_attribute("val") = "l"; break;
+        case decltype(pos)::r: legend.emplace_child("c:legendPos").emplace_attribute("val") = "r"; break;
+        case decltype(pos)::t: legend.emplace_child("c:legendPos").emplace_attribute("val") = "t"; break;
+        case decltype(pos)::b: legend.emplace_child("c:legendPos").emplace_attribute("val") = "b"; break;
+        }
+        auto layout = legend.emplace_child("c:layout"); {
+            auto manualLayout = layout.emplace_child("c:manualLayout");
+            manualLayout.emplace_child("c:xMode").emplace_attribute("val") = "edge";
+            manualLayout.emplace_child("c:yMode").emplace_attribute("val") = "edge";
+            manualLayout.emplace_child("c:x").emplace_attribute("val") = x();
+            manualLayout.emplace_child("c:y").emplace_attribute("val") = y();
+            manualLayout.emplace_child("c:w").emplace_attribute("val") = w();
+            manualLayout.emplace_child("c:h").emplace_attribute("val") = h();
+        }
+        legend.emplace_child("c:overlay").emplace_attribute("val") = 0;
+
+
+    };
+    void ExcelPlot::AppendLegend(LegendPos pos) {
+        if (!impl) return;
+
+        auto legend = impl_()->chart_xml.emplace_child("c:chartSpace").emplace_child("c:chart").emplace_child("c:legend");
+        switch (pos) {
+        case decltype(pos)::l: legend.emplace_child("c:legendPos").emplace_attribute("val") = "l"; break;
+        case decltype(pos)::r: legend.emplace_child("c:legendPos").emplace_attribute("val") = "r"; break;
+        case decltype(pos)::t: legend.emplace_child("c:legendPos").emplace_attribute("val") = "t"; break;
+        case decltype(pos)::b: legend.emplace_child("c:legendPos").emplace_attribute("val") = "b"; break;
+        }
+        auto layout = legend.emplace_child("c:layout"); 
+        legend.emplace_child("c:overlay").emplace_attribute("val") = 0;
     };
     void ExcelPlot::SetPlotVisOnly(bool shouldPlotVisOnly) {
         if (!impl) return;
@@ -3050,6 +3130,16 @@ namespace docx {
     {
         if (!impl) return false;
         return impl_()->w_r_.find_child_by_attribute("w:br", "w:type", "page");
+    }
+    void Run::SetVerticalAlignment(vertAlign alignment) {
+        if (!impl) return;
+
+        switch (alignment) {
+        case vertAlign::none: impl_()->w_rPr_.remove_child("w:vertAlign");
+            break;
+        case vertAlign::superscript: impl_()->w_rPr_.emplace_child("w:vertAlign").emplace_attribute("w:val") = "superscript";
+            break;
+        }
     }
     void Run::Remove()
     {
