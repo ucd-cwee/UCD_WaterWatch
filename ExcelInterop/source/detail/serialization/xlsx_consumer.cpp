@@ -426,7 +426,10 @@ void xlsx_consumer::read(std::istream &source)
     archive_.reset(new izstream(source));
     populate_workbook(false);
 }
-
+void xlsx_consumer::read_limited(std::istream& source, const std::string& SheetName) {
+    archive_.reset(new izstream(source));
+    populate_workbook_limited(false, SheetName);
+};
 void xlsx_consumer::open(std::istream &source)
 {
     archive_.reset(new izstream(source));
@@ -1619,8 +1622,7 @@ std::vector<relationship> xlsx_consumer::read_relationships(const path &part)
     return relationships;
 }
 
-void xlsx_consumer::read_part(const std::vector<relationship> &rel_chain)
-{
+void xlsx_consumer::read_part(const std::vector<relationship> &rel_chain) {
     const auto &manifest = target_.manifest();
     const auto part_path = manifest.canonicalize(rel_chain);
     auto part_streambuf = archive_->open(part_path);
@@ -1644,6 +1646,145 @@ void xlsx_consumer::read_part(const std::vector<relationship> &rel_chain)
 
     case relationship_type::office_document:
         read_office_document(manifest.content_type(part_path));
+        break;
+
+    case relationship_type::connections:
+        read_connections();
+        break;
+
+    case relationship_type::custom_xml_mappings:
+        read_custom_xml_mappings();
+        break;
+
+    case relationship_type::external_workbook_references:
+        read_external_workbook_references();
+        break;
+
+    case relationship_type::pivot_table:
+        read_pivot_table();
+        break;
+
+    case relationship_type::shared_workbook_revision_headers:
+        read_shared_workbook_revision_headers();
+        break;
+
+    case relationship_type::volatile_dependencies:
+        read_volatile_dependencies();
+        break;
+
+    case relationship_type::shared_string_table:
+        read_shared_string_table();
+        break;
+
+    case relationship_type::stylesheet:
+        read_stylesheet();
+        break;
+
+    case relationship_type::theme:
+        read_theme();
+        break;
+
+    case relationship_type::chartsheet:
+        read_chartsheet(rel_chain.back().id());
+        break;
+
+    case relationship_type::dialogsheet:
+        read_dialogsheet(rel_chain.back().id());
+        break;
+
+    case relationship_type::worksheet:
+        read_worksheet(rel_chain.back().id());
+        break;
+
+    case relationship_type::thumbnail:
+        read_image(part_path);
+        break;
+
+    case relationship_type::calculation_chain:
+        read_calculation_chain();
+        break;
+
+    case relationship_type::hyperlink:
+        break;
+
+    case relationship_type::comments:
+        break;
+
+    case relationship_type::vml_drawing:
+        break;
+
+    case relationship_type::unknown:
+        break;
+
+    case relationship_type::printer_settings:
+        read_binary(part_path);
+        break;
+
+    case relationship_type::custom_property:
+        break;
+
+    case relationship_type::drawings:
+        break;
+
+    case relationship_type::pivot_table_cache_definition:
+        break;
+
+    case relationship_type::pivot_table_cache_records:
+        break;
+
+    case relationship_type::query_table:
+        break;
+
+    case relationship_type::shared_workbook:
+        break;
+
+    case relationship_type::revision_log:
+        break;
+
+    case relationship_type::shared_workbook_user_data:
+        break;
+
+    case relationship_type::single_cell_table_definitions:
+        break;
+
+    case relationship_type::table_definition:
+        break;
+
+    case relationship_type::vbaproject:
+        read_binary(part_path);
+        break;
+
+    case relationship_type::image:
+        read_image(part_path);
+        break;
+    }
+
+    parser_ = nullptr;
+}
+void xlsx_consumer::read_part(const std::vector<relationship>& rel_chain, const std::string& SheetName) {
+    const auto& manifest = target_.manifest();
+    const auto part_path = manifest.canonicalize(rel_chain);
+    auto part_streambuf = archive_->open(part_path);
+    std::istream part_stream(part_streambuf.get());
+    xml::parser parser(part_stream, part_path.string());
+    parser_ = &parser;
+
+    switch (rel_chain.back().type())
+    {
+    case relationship_type::core_properties:
+        read_core_properties();
+        break;
+
+    case relationship_type::extended_properties:
+        read_extended_properties();
+        break;
+
+    case relationship_type::custom_properties:
+        read_custom_properties();
+        break;
+
+    case relationship_type::office_document:
+        read_office_document(manifest.content_type(part_path), SheetName);
         break;
 
     case relationship_type::connections:
@@ -1796,6 +1937,41 @@ void xlsx_consumer::populate_workbook(bool streaming)
     read_part({manifest().relationship(root_path,
         relationship_type::office_document)});
 }
+void xlsx_consumer::populate_workbook_limited(bool streaming, const std::string& SheetName)
+{
+    streaming_ = streaming;
+
+    target_.clear();
+
+    read_content_types();
+    const auto root_path = path("/");
+
+    for (const auto& package_rel : read_relationships(root_path))
+    {
+        manifest().register_relationship(package_rel);
+    }
+
+    for (auto package_rel : manifest().relationships(root_path))
+    {
+        if (package_rel.type() == relationship_type::office_document)
+        {
+            // Read the workbook after all the other package parts
+            continue;
+        }
+
+        read_part({ package_rel });
+    }
+
+    for (const auto& relationship_source_string : archive_->files())
+    {
+        for (const auto& part_rel : read_relationships(path(relationship_source_string)))
+        {
+            manifest().register_relationship(part_rel);
+        }
+    }
+
+    read_part({ manifest().relationship(root_path, relationship_type::office_document) }, SheetName);
+};
 
 // Package Parts
 
@@ -2225,7 +2401,349 @@ void xlsx_consumer::read_office_document(const std::string &content_type) // CT_
         }
     }
 }
+void xlsx_consumer::read_office_document(const std::string& content_type, const std::string& SheetName)  // CT_Workbook
+{
+    if (content_type !=
+        "application/vnd."
+        "openxmlformats-officedocument.spreadsheetml.sheet.main+xml"
+        && content_type !=
+        "application/vnd."
+        "openxmlformats-officedocument.spreadsheetml.template.main+xml"
+        && content_type !=
+        "application/vnd."
+        "ms-excel.sheet.macroEnabled.main+xml")
+    {
+        throw xlnt::invalid_file(content_type);
+    }
 
+    target_.d_->calculation_properties_.clear();
+
+    expect_start_element(qn("workbook", "workbook"), xml::content::complex);
+    skip_attribute(qn("mc", "Ignorable"));
+
+    while (in_element(qn("workbook", "workbook")))
+    {
+        auto current_workbook_element = expect_start_element(xml::content::complex);
+
+        if (current_workbook_element == qn("workbook", "fileVersion")) // CT_FileVersion 0-1
+        {
+            detail::workbook_impl::file_version_t file_version;
+
+            if (parser().attribute_present("appName"))
+            {
+                file_version.app_name = parser().attribute("appName");
+            }
+
+            if (parser().attribute_present("lastEdited"))
+            {
+                file_version.last_edited = parser().attribute<std::size_t>("lastEdited");
+            }
+
+            if (parser().attribute_present("lowestEdited"))
+            {
+                file_version.lowest_edited = parser().attribute<std::size_t>("lowestEdited");
+            }
+
+            if (parser().attribute_present("lowestEdited"))
+            {
+                file_version.rup_build = parser().attribute<std::size_t>("rupBuild");
+            }
+
+            skip_attribute("codeName");
+
+            target_.d_->file_version_ = file_version;
+        }
+        else if (current_workbook_element == qn("workbook", "fileSharing")) // CT_FileSharing 0-1
+        {
+            skip_remaining_content(current_workbook_element);
+        }
+        else if (current_workbook_element == qn("mc", "AlternateContent"))
+        {
+            while (in_element(qn("mc", "AlternateContent")))
+            {
+                auto alternate_content_element = expect_start_element(xml::content::complex);
+
+                if (alternate_content_element == qn("mc", "Choice")
+                    && parser().attribute_present("Requires")
+                    && parser().attribute("Requires") == "x15")
+                {
+                    auto x15_element = expect_start_element(xml::content::simple);
+
+                    if (x15_element == qn("x15ac", "absPath"))
+                    {
+                        target_.d_->abs_path_ = parser().attribute("url");
+                    }
+
+                    skip_remaining_content(x15_element);
+                    expect_end_element(x15_element);
+                }
+
+                skip_remaining_content(alternate_content_element);
+                expect_end_element(alternate_content_element);
+            }
+        }
+        else if (current_workbook_element == qn("workbook", "workbookPr")) // CT_WorkbookPr 0-1
+        {
+            target_.base_date(parser().attribute_present("date1904") // optional, bool=false
+                && is_true(parser().attribute("date1904"))
+                ? calendar::mac_1904
+                : calendar::windows_1900);
+            skip_attribute("showObjects"); // optional, ST_Objects="all"
+            skip_attribute("showBorderUnselectedTables"); // optional, bool=true
+            skip_attribute("filterPrivacy"); // optional, bool=false
+            skip_attribute("promptedSolutions"); // optional, bool=false
+            skip_attribute("showInkAnnotation"); // optional, bool=true
+            skip_attribute("backupFile"); // optional, bool=false
+            skip_attribute("saveExternalLinkValues"); // optional, bool=true
+            skip_attribute("updateLinks"); // optional, ST_UpdateLinks="userSet"
+            skip_attribute("codeName"); // optional, string
+            skip_attribute("hidePivotFieldList"); // optional, bool=false
+            skip_attribute("showPivotChartFilter"); // optional, bool=false
+            skip_attribute("allowRefreshQuery"); // optional, bool=false
+            skip_attribute("publishItems"); // optional, bool=false
+            skip_attribute("checkCompatibility"); // optional, bool=false
+            skip_attribute("autoCompressPictures"); // optional, bool=true
+            skip_attribute("refreshAllConnections"); // optional, bool=false
+            skip_attribute("defaultThemeVersion"); // optional, uint
+            skip_attribute("dateCompatibility"); // optional, bool (undocumented)
+        }
+        else if (current_workbook_element == qn("workbook", "workbookProtection")) // CT_WorkbookProtection 0-1
+        {
+            skip_remaining_content(current_workbook_element);
+        }
+        else if (current_workbook_element == qn("workbook", "bookViews")) // CT_BookViews 0-1
+        {
+            while (in_element(qn("workbook", "bookViews")))
+            {
+                expect_start_element(qn("workbook", "workbookView"), xml::content::simple);
+                skip_attributes({ "firstSheet", "showHorizontalScroll",
+                    "showSheetTabs", "showVerticalScroll" });
+
+                workbook_view view;
+
+                if (parser().attribute_present("xWindow"))
+                {
+                    view.x_window = parser().attribute<int>("xWindow");
+                }
+
+                if (parser().attribute_present("yWindow"))
+                {
+                    view.y_window = parser().attribute<int>("yWindow");
+                }
+
+                if (parser().attribute_present("windowWidth"))
+                {
+                    view.window_width = parser().attribute<std::size_t>("windowWidth");
+                }
+
+                if (parser().attribute_present("windowHeight"))
+                {
+                    view.window_height = parser().attribute<std::size_t>("windowHeight");
+                }
+
+                if (parser().attribute_present("tabRatio"))
+                {
+                    view.tab_ratio = parser().attribute<std::size_t>("tabRatio");
+                }
+
+                if (parser().attribute_present("activeTab"))
+                {
+                    view.active_tab = parser().attribute<std::size_t>("activeTab");
+                    target_.d_->active_sheet_index_.set(view.active_tab.get());
+                }
+
+                target_.view(view);
+
+                skip_attributes();
+                expect_end_element(qn("workbook", "workbookView"));
+            }
+        }
+        else if (current_workbook_element == qn("workbook", "sheets")) // CT_Sheets 1
+        {
+            std::size_t index = 0;
+
+            while (in_element(qn("workbook", "sheets")))
+            {
+                expect_start_element(qn("spreadsheetml", "sheet"), xml::content::simple);
+
+                auto title = parser().attribute("name");
+                if (title == SheetName) {
+                    sheet_title_index_map_[title] = index++;
+                    sheet_title_id_map_[title] = parser().attribute<std::size_t>("sheetId");
+                    target_.d_->sheet_title_rel_id_map_[title] = parser().attribute(qn("r", "id"));
+
+                    bool hidden = parser().attribute<std::string>("state", "") == "hidden";
+                    target_.d_->sheet_hidden_.push_back(hidden);
+                }
+                expect_end_element(qn("spreadsheetml", "sheet"));
+            }
+        }
+        else if (current_workbook_element == qn("workbook", "functionGroups")) // CT_FunctionGroups 0-1
+        {
+            skip_remaining_content(current_workbook_element);
+        }
+        else if (current_workbook_element == qn("workbook", "externalReferences")) // CT_ExternalReferences 0-1
+        {
+            skip_remaining_content(current_workbook_element);
+        }
+        else if (current_workbook_element == qn("workbook", "definedNames")) // CT_DefinedNames 0-1
+        {
+            while (in_element(qn("workbook", "definedNames")))
+            {
+                expect_start_element(qn("spreadsheetml", "definedName"), xml::content::mixed);
+
+                defined_name name;
+
+                name.name = parser().attribute("name");
+                name.sheet_id = 0;
+                if (parser().attribute_present("localSheetId")) {
+                    name.sheet_id = parser().attribute<std::size_t>("localSheetId");
+                }
+                name.hidden = false;
+                if (parser().attribute_present("hidden"))
+                {
+                    name.hidden = is_true(parser().attribute("hidden"));
+                }
+                parser().attribute_map(); // skip remaining attributes
+                name.value = read_text();
+                defined_names_.push_back(name);
+
+                expect_end_element(qn("spreadsheetml", "definedName"));
+            }
+        }
+        else if (current_workbook_element == qn("workbook", "calcPr")) // CT_CalcPr 0-1
+        {
+            xlnt::calculation_properties calc_props;
+            if (parser().attribute_present("calcId"))
+            {
+                calc_props.calc_id = parser().attribute<std::size_t>("calcId");
+            }
+            if (parser().attribute_present("concurrentCalc"))
+            {
+                calc_props.concurrent_calc = is_true(parser().attribute("concurrentCalc"));
+            }
+            target_.calculation_properties(calc_props);
+            parser().attribute_map(); // skip remaining
+        }
+        else if (current_workbook_element == qn("workbook", "oleSize")) // CT_OleSize 0-1
+        {
+            skip_remaining_content(current_workbook_element);
+        }
+        else if (current_workbook_element == qn("workbook", "customWorkbookViews")) // CT_CustomWorkbookViews 0-1
+        {
+            skip_remaining_content(current_workbook_element);
+        }
+        else if (current_workbook_element == qn("workbook", "pivotCaches")) // CT_PivotCaches 0-1
+        {
+            skip_remaining_content(current_workbook_element);
+        }
+        else if (current_workbook_element == qn("workbook", "smartTagPr")) // CT_SmartTagPr 0-1
+        {
+            skip_remaining_content(current_workbook_element);
+        }
+        else if (current_workbook_element == qn("workbook", "smartTagTypes")) // CT_SmartTagTypes 0-1
+        {
+            skip_remaining_content(current_workbook_element);
+        }
+        else if (current_workbook_element == qn("workbook", "webPublishing")) // CT_WebPublishing 0-1
+        {
+            skip_remaining_content(current_workbook_element);
+        }
+        else if (current_workbook_element == qn("workbook", "fileRecoveryPr")) // CT_FileRecoveryPr 0+
+        {
+            skip_remaining_content(current_workbook_element);
+        }
+        else if (current_workbook_element == qn("workbook", "webPublishObjects")) // CT_WebPublishObjects 0-1
+        {
+            skip_remaining_content(current_workbook_element);
+        }
+        else if (current_workbook_element == qn("workbook", "extLst")) // CT_ExtensionList 0-1
+        {
+            while (in_element(qn("workbook", "extLst")))
+            {
+                auto extension_element = expect_start_element(xml::content::complex);
+
+                if (extension_element == qn("workbook", "ext")
+                    && parser().attribute_present("uri")
+                    && parser().attribute("uri") == "{7523E5D3-25F3-A5E0-1632-64F254C22452}")
+                {
+                    auto arch_id_extension_element = expect_start_element(xml::content::simple);
+
+                    if (arch_id_extension_element == qn("mx", "ArchID"))
+                    {
+                        target_.d_->arch_id_flags_ = parser().attribute<std::size_t>("Flags");
+                    }
+
+                    skip_remaining_content(arch_id_extension_element);
+                    expect_end_element(arch_id_extension_element);
+                }
+
+                skip_remaining_content(extension_element);
+                expect_end_element(extension_element);
+            }
+        }
+        else
+        {
+            unexpected_element(current_workbook_element);
+        }
+
+        expect_end_element(current_workbook_element);
+    }
+
+    expect_end_element(qn("workbook", "workbook"));
+
+    auto workbook_rel = manifest().relationship(path("/"), relationship_type::office_document);
+    auto workbook_path = workbook_rel.target().path();
+
+    const auto rel_types = {
+        relationship_type::shared_string_table,
+        relationship_type::stylesheet,
+        relationship_type::theme,
+        relationship_type::vbaproject,
+    };
+
+    for (auto rel_type : rel_types)
+    {
+        if (manifest().has_relationship(workbook_path, rel_type))
+        {
+            read_part({ workbook_rel,
+                manifest().relationship(workbook_path, rel_type) });
+        }
+    }
+
+    for (auto worksheet_rel : manifest().relationships(workbook_path, relationship_type::worksheet))
+    {
+        auto title = std::find_if(target_.d_->sheet_title_rel_id_map_.begin(),
+            target_.d_->sheet_title_rel_id_map_.end(),
+            [&](const std::pair<std::string, std::string>& p) {
+                return p.second == worksheet_rel.id();
+            })->first;
+
+        //if (SheetName == title) {
+            auto id = sheet_title_id_map_[title];
+            auto index = sheet_title_index_map_[title];
+
+            auto insertion_iter = target_.d_->worksheets_.begin();
+            while (insertion_iter != target_.d_->worksheets_.end()
+                && sheet_title_index_map_[insertion_iter->title_] < index)
+            {
+                ++insertion_iter;
+            }
+
+            current_worksheet_ = &*target_.d_->worksheets_.emplace(insertion_iter, &target_, id, title);
+
+            if (!streaming_)
+            {
+                read_part({ workbook_rel, worksheet_rel });
+            }
+        //}
+        //else {
+        //    target_.d_->sheet_title_rel_id_map_.erase(title);
+        //    sheet_title_id_map_.erase(title);
+        //    sheet_title_index_map_.erase(title);
+        //}
+    }
+}
 // Write Workbook Relationship Target Parts
 
 void xlsx_consumer::read_calculation_chain()

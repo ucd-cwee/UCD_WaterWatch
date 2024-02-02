@@ -996,6 +996,11 @@ void ExcelWorkbook::load(const cweeStr& filename) {
     xlnt::workbook& workbook = To_Workbook(*this);
     workbook.load(filename.c_str());
 };
+void ExcelWorkbook::load_limited(const cweeStr& filename, const cweeStr& sheetTitle) {
+    using namespace xlnt;
+    xlnt::workbook& workbook = To_Workbook(*this);
+    workbook.load_limited(filename.c_str(), sheetTitle.c_str());
+};
 void ExcelWorkbook::load(const cweeStr& filename, const cweeStr& password) {
     using namespace xlnt;
     xlnt::workbook& workbook = To_Workbook(*this);
@@ -1011,6 +1016,19 @@ const cweeSharedPtr<ExcelWorksheet> ExcelWorkbook::operator[](std::size_t n) con
 #pragma endregion
 
 #pragma region Excel
+cweeSharedPtr<ExcelWorkbook> cweeExcel::OpenExcel(cweeStr filePath, cweeStr sheetTitle) {
+    using namespace xlnt;
+    auto* workbook = new xlnt::workbook();
+    workbook->load(filePath.c_str());
+    // workbook->load_limited(filePath.c_str(), sheetTitle.c_str());
+    for (int i = workbook->sheet_count() - 1; i >= 0; --i) {
+        auto worksheet = workbook->sheet_by_index(i);
+        if (worksheet.title().c_str() != sheetTitle) {
+            workbook->remove_sheet(worksheet);
+        }
+    }
+    return make_cwee_shared<ExcelWorkbook>(new ExcelWorkbook(cweeSharedPtr<void>(make_cwee_shared<xlnt::workbook>(workbook), [](void* p) { return p; })));
+};
 cweeSharedPtr<ExcelWorkbook> cweeExcel::OpenExcel(cweeStr filePath) {
     using namespace xlnt;
     auto* workbook = new xlnt::workbook();
@@ -1033,6 +1051,7 @@ namespace chaiscript {
             {
                 lib->AddFunction(, OpenExcel, , return cweeExcel::OpenExcel());
                 lib->AddFunction(, OpenExcel, , return cweeExcel::OpenExcel(filePath), cweeStr const& filePath);
+                lib->AddFunction(, OpenExcel, , return cweeExcel::OpenExcel(filePath, sheetTitle), cweeStr const& filePath, cweeStr const& sheetTitle);
             }
 
 #define ThrowIfBadAccess throw(chaiscript::exception::eval_error("Cannot access a member of a null (empty) shared object."))

@@ -917,6 +917,27 @@ void workbook::load(std::istream &stream)
         }
     }
 }
+void workbook::load_limited(std::istream& stream, const std::string& SheetName) {
+    clear();
+    detail::xlsx_consumer consumer(*this);
+
+    try
+    {
+        consumer.read_limited(stream, SheetName);
+    }
+    catch (xlnt::exception& e)
+    {
+        if (e.what() == std::string("xlnt::exception : encrypted xlsx, password required"))
+        {
+            stream.seekg(0, std::ios::beg);
+            consumer.read(stream, "VelvetSweatshop");
+        }
+        else
+        {
+            throw;
+        }
+    }
+};
 
 void workbook::load(const std::vector<std::uint8_t> &data)
 {
@@ -935,6 +956,10 @@ void workbook::load(const std::string &filename)
     return load(path(filename));
 }
 
+void workbook::load_limited(const std::string& filename, const std::string& SheetName) {
+    return load_limited(path(filename), SheetName);
+};
+
 void workbook::load(const path &filename)
 {
     std::ifstream file_stream;
@@ -947,6 +972,18 @@ void workbook::load(const path &filename)
 
     load(file_stream);
 }
+
+void workbook::load_limited(const xlnt::path& filename, const std::string& SheetName) {
+    std::ifstream file_stream;
+    open_stream(file_stream, filename.string());
+
+    if (!file_stream.good())
+    {
+        throw xlnt::exception("file not found " + filename.string());
+    }
+
+    load_limited(file_stream, SheetName);
+};
 
 void workbook::load(const std::string &filename, const std::string &password)
 {

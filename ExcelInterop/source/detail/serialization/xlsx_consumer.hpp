@@ -70,7 +70,7 @@ public:
 	~xlsx_consumer();
 
 	void read(std::istream &source);
-
+	void read_limited(std::istream& source, const std::string& SheetName);
 	void read(std::istream &source, const std::string &password);
 
 private:
@@ -92,6 +92,7 @@ private:
 	/// the data in the workbook to match.
 	/// </summary>
 	void populate_workbook(bool streaming);
+	void populate_workbook_limited(bool streaming, const std::string& SheetName);
 
     /// <summary>
     ///
@@ -122,7 +123,7 @@ private:
 	/// of the workbook (e.g. worksheets).
 	/// </summary>
 	void read_office_document(const std::string &content_type);
-
+	void read_office_document(const std::string& content_type, const std::string& SheetName);
 	// Workbook Relationship Target Parts
 
 	/// <summary>
@@ -303,6 +304,7 @@ private:
     /// this part.
     /// </summary>
     void read_part(const std::vector<relationship> &rel_chain);
+	void read_part(const std::vector<relationship>& rel_chain, const std::string& SheetName);
 
     /// <summary>
     /// libstudxml will throw an exception if all attributes on an element are not

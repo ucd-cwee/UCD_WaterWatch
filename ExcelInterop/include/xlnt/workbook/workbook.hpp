@@ -550,6 +550,12 @@ public:
     void load(const std::string &filename);
 
     /// <summary>
+    /// Interprets file with the given filename as an XLSX file and sets
+    /// the content of this workbook to match that file.
+    /// </summary>
+    void load_limited(const std::string& filename, const std::string& SheetName);
+
+    /// <summary>
     /// Interprets file with the given filename as an XLSX file encrypted with the
     /// given password and sets the content of this workbook to match that file.
     /// </summary>
@@ -576,6 +582,12 @@ public:
     void load(const xlnt::path &filename);
 
     /// <summary>
+    /// Interprets file with the given filename as an XLSX file and sets the
+    /// content of this workbook to match that file.
+    /// </summary>
+    void load_limited(const xlnt::path& filename, const std::string& SheetName);
+
+    /// <summary>
     /// Interprets file with the given filename as an XLSX file encrypted with the
     /// given password and sets the content of this workbook to match that file.
     /// </summary>
@@ -586,6 +598,7 @@ public:
     /// workbook to match that file.
     /// </summary>
     void load(std::istream &stream);
+    void load_limited(std::istream& stream, const std::string& SheetName);
 
     /// <summary>
     /// Interprets data in stream as an XLSX file encrypted with the given password

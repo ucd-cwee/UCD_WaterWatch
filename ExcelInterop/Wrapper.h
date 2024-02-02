@@ -1019,6 +1019,12 @@ public:
     void load(const cweeStr& filename);
 
     /// <summary>
+    /// Interprets file with the given filename as an XLSX file and sets
+    /// the content of this workbook to match that file.
+    /// </summary>
+    void load_limited(const cweeStr& filename, const cweeStr& sheetTitle);
+
+    /// <summary>
     /// Interprets file with the given filename as an XLSX file encrypted with the
     /// given password and sets the content of this workbook to match that file.
     /// </summary>
@@ -1054,6 +1060,7 @@ public:
 
 class cweeExcel {
 public:
+    static cweeSharedPtr<ExcelWorkbook> OpenExcel(cweeStr filePath, cweeStr sheetTitle);
 	static cweeSharedPtr<ExcelWorkbook> OpenExcel(cweeStr filePath);
     static cweeSharedPtr<ExcelWorkbook> OpenExcel();
 };
