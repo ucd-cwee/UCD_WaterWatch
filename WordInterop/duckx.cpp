@@ -153,14 +153,22 @@ namespace docx {
         cweeSharedPtr<class ExcelPlot::Impl> Plot;
     };
 
+    class Series::Impl {
+    public:
+        pugi::xml_node c_ser_;
+        int seriesIdx = 0;
+        cweeSharedPtr<class Chart::Impl> Chart;
+    };
+
     class Chart::Impl {
     public:
         pugi::xml_node c_Chart_; // c:LineChart, c:AreaChart, etc.
         pugi::xml_node c_X_Ax_; // X axis node
         pugi::xml_node c_Y_Ax_; // Y axis node
         int chartNum;
-
+        
         cweeSharedPtr<class ExcelPlot::Impl> Plot;
+        cweeList< Series > Series;
     };
 
     class ExcelPlot::Impl {
@@ -173,6 +181,7 @@ namespace docx {
 
         cweeSharedPtr<ExcelWorkbook> workbook; 
         cweeList< cweeSharedPtr<class Chart::Impl>> Charts;
+        cweeList< cweeSharedPtr<class Series::Impl>> Series;
 
         pugi::xml_node w_r_;
         pugi::xml_node w_drawing_;
@@ -341,7 +350,21 @@ namespace docx {
     Document::Impl* Document::impl_() const {
        return static_cast<Document::Impl*>(doc_impl_.Get());
     };
-    Document::~Document() {};
+    Document::~Document() {
+        for (auto& plot : impl_()->embeddedPlots) {
+            plot.impl_()->Document = nullptr;
+            for (auto& chart : plot.impl_()->Charts) {
+                chart->Plot = nullptr;
+                for (auto& series : chart->Series) {
+                    series.impl_()->Chart = nullptr;
+                }
+            }
+            for (auto& series : plot.impl_()->Series) {
+                series->Chart = nullptr;
+            }
+            plot.impl_()->workbook = nullptr;
+        }
+    };
     bool Document::Save(const std::string& path) {
         if (!doc_impl_) return false;
 
@@ -2036,6 +2059,171 @@ namespace docx {
     };
     void Section::operator=(const Section& right) { impl = right.impl; };
 
+    // Series
+    Series::Series() : impl(nullptr) {};
+    Series::Series(Series::Impl* implP, cweeSharedPtr<ExcelRange> const& xrange, cweeSharedPtr<ExcelRange> const& yrange) : impl(cweeSharedPtr<void>(cweeSharedPtr<Impl>(implP, [](void* p) { return p; }))) {
+        auto c_ser = implP->c_ser_; {
+            implP->seriesIdx = impl_()->Chart->Plot->Series.Num();
+            c_ser.append_child("c:idx").append_attribute("val") = implP->seriesIdx;
+            c_ser.append_child("c:order").append_attribute("val") = implP->seriesIdx;
+            auto c_tx = c_ser.append_child("c:tx"); {
+                auto c_strRef = c_tx.append_child("c:strRef"); {
+                    c_strRef.append_child("c:f").text() = "Sheet1!$B$1";
+                    auto c_strCache = c_strRef.append_child("c:strCache"); {
+                        c_strCache.append_child("c:ptCount").append_attribute("val") = 1;
+                        auto c_pt = c_strCache.append_child("c:pt"); {
+                            c_pt.append_attribute("idx") = 0;
+                            c_pt.append_child("c:v").text() = "Series";
+                        }
+                    }
+                }
+            }
+            auto c_spPr = c_ser.append_child("c:spPr"); {
+                auto a_ln = c_spPr.append_child("a:ln"); {
+                    a_ln.append_attribute("w") = 25400;
+                    a_ln.append_attribute("cap") = "rnd";
+                    a_ln.append_child("a:solidFill").append_child("a:schemeClr").append_attribute("val") = "tx1";
+                    a_ln.append_child("a:round");
+                }
+                c_spPr.append_child("a:effectLst");
+            }
+            auto c_marker = c_ser.append_child("c:marker"); {
+                c_marker.append_child("c:symbol").append_attribute("val") = "none";
+            }
+            auto c_cat = c_ser.append_child("c:cat"); {
+                auto c_numRef = c_cat.append_child("c:numRef"); {
+                    c_numRef.append_child("c:f").text() = (xrange->target_worksheet()->title() + "!" + cweeStr(xrange->ref()->top_left()->to_string() + ":" + xrange->ref()->bottom_right()->to_string()));
+                    auto c_numCache = c_numRef.emplace_child("c:numCache");
+                    if (c_numCache) {
+                        c_numCache.emplace_child("c:formatCode").text() = "General";
+                        c_numCache.emplace_child("c:ptCount").emplace_attribute("val") = xrange->length();
+                        int n = 0;
+                        for (auto& cell_vector : *xrange) {
+                            for (auto& cell : cell_vector) {
+                                auto c_pt = c_numCache.append_child("c:pt");
+                                c_pt.emplace_attribute("idx") = n++;
+                                c_pt.emplace_child("c:v").text() = cell->to_string();
+                            }
+                        }
+                    }
+                }
+            }
+            auto c_val = c_ser.append_child("c:val"); {
+                auto c_numRef = c_val.append_child("c:numRef"); {
+                    c_numRef.append_child("c:f").text() = (yrange->target_worksheet()->title() + "!" + cweeStr(yrange->ref()->top_left()->to_string() + ":" + yrange->ref()->bottom_right()->to_string()));
+                    auto c_numCache = c_numRef.emplace_child("c:numCache");
+                    if (c_numCache) {
+                        c_numCache.emplace_child("c:ptCount").emplace_attribute("val") = yrange->length();
+                        int n = 0;
+                        for (auto& cell_vector : *yrange) {
+                            for (auto& cell : cell_vector) {
+                                auto c_pt = c_numCache.append_child("c:pt");
+                                c_pt.emplace_attribute("idx") = n++;
+                                c_pt.emplace_child("c:v").text() = cell->to_string();
+                            }
+                        }
+                    }
+                }
+            }
+            c_ser.append_child("c:smooth").append_attribute("val") = 0;
+        }
+    };
+    Series::Series(Series const& r) : impl(r.impl) {};
+    Series::~Series() {};
+    void Series::operator=(Series const& right) {
+        impl = right.impl;
+    };
+    Series::operator bool() const { return (bool)impl; };
+    void Series::SetColor(chaiscript::UI_Color const& col) {
+        if (!impl) return;
+
+
+        {
+            auto a_solidFill = impl_()->c_ser_.emplace_child("c:spPr").emplace_child("a:ln").emplace_child("a:solidFill");
+            a_solidFill.remove_children();
+            auto a_scrgbClr = a_solidFill.emplace_child("a:scrgbClr");
+            a_scrgbClr.emplace_attribute("r") = cweeStr::printf("%i", (int)(100000.0 * col.R / 255.0));
+            a_scrgbClr.emplace_attribute("g") = cweeStr::printf("%i", (int)(100000.0 * col.G / 255.0));
+            a_scrgbClr.emplace_attribute("b") = cweeStr::printf("%i", (int)(100000.0 * col.B / 255.0));
+            a_scrgbClr.emplace_child("a:alpha").emplace_attribute("val") = cweeStr::printf("%i", (int)(100000.0 * col.A / 255.0));
+        }
+        {
+            auto a_solidFill = impl_()->c_ser_.emplace_child("c:spPr").child("a:solidFill");
+            if (a_solidFill) {
+                a_solidFill.remove_children();
+                auto a_scrgbClr = a_solidFill.emplace_child("a:scrgbClr");
+                a_scrgbClr.emplace_attribute("r") = cweeStr::printf("%i", (int)(100000.0 * col.R / 255.0));
+                a_scrgbClr.emplace_attribute("g") = cweeStr::printf("%i", (int)(100000.0 * col.G / 255.0));
+                a_scrgbClr.emplace_attribute("b") = cweeStr::printf("%i", (int)(100000.0 * col.B / 255.0));
+                a_scrgbClr.emplace_child("a:alpha").emplace_attribute("val") = cweeStr::printf("%i", (int)(100000.0 * col.A / 255.0));
+            }
+        }
+    };
+    void Series::SetLineThickness(double weight) {
+        if (!impl) return;
+        impl_()->c_ser_.emplace_child("c:spPr").emplace_child("a:ln").emplace_attribute("w") = (int)(weight * 6350.0 * 2.0);;
+    };
+    void Series::SetName(cweeStr const& name) {
+        if (!impl) return;
+
+        if (name == "") {
+            AUTO legendEntry = impl_()->Chart->Plot->chart_xml.emplace_child("c:chartSpace").emplace_child("c:chart").emplace_child("c:legend").emplace_child("c:legendEntry");
+            legendEntry.emplace_child("c:idx").emplace_attribute("val") = impl_()->seriesIdx;
+            legendEntry.emplace_child("c:delete").emplace_attribute("val") = 1;
+        }
+
+        impl_()->c_ser_.emplace_child("c:tx").emplace_child("c:strRef").emplace_child("c:strCache").emplace_child("c:pt").emplace_child("c:v").text() = name;
+    };
+    //void Series::HideFromLegend() {
+    //    if (!impl) return; 
+    //    
+    //    AUTO legendEntry = impl_()->Chart->c_Chart_.emplace_child("c:legend").emplace_child("c:legendEntry");
+    //    legendEntry.emplace_child("c:idx").emplace_attribute("val") = impl_()->seriesIdx;
+    //    legendEntry.emplace_child("c:delete").emplace_attribute("val") = 1;
+    //};
+    void Series::SetOrder(int order) {
+        if (!impl) return;
+        impl_()->c_ser_.emplace_child("c:order").emplace_attribute("val") = order;
+    };
+    void Series::SetPatternFill(chaiscript::UI_Color const& foreground, chaiscript::UI_Color const& background, cweeStr const& pattern) {
+        if (!impl) return;
+        
+
+        auto c_spPr_ = impl_()->c_ser_.emplace_child("c:spPr");
+        c_spPr_.remove_child("a:solidFill");
+        c_spPr_.remove_child("a:pattFill");
+
+        auto a_ln_ = c_spPr_.emplace_child("a:ln"); {
+            a_ln_.remove_children();
+            a_ln_.emplace_child("a:noFill");
+        }
+
+        auto a_pattFill = c_spPr_.prepend_child("a:pattFill");
+        a_pattFill.append_attribute("prst") = pattern;
+        {
+            auto a_solidFill = a_pattFill.emplace_child("a:fgClr");
+            if (a_solidFill) {
+                a_solidFill.remove_children();
+                auto a_scrgbClr = a_solidFill.emplace_child("a:scrgbClr");
+                a_scrgbClr.emplace_attribute("r") = cweeStr::printf("%i", (int)(100000.0 * foreground.R / 255.0));
+                a_scrgbClr.emplace_attribute("g") = cweeStr::printf("%i", (int)(100000.0 * foreground.G / 255.0));
+                a_scrgbClr.emplace_attribute("b") = cweeStr::printf("%i", (int)(100000.0 * foreground.B / 255.0));
+                a_scrgbClr.emplace_child("a:alpha").emplace_attribute("val") = cweeStr::printf("%i", (int)(100000.0 * foreground.A / 255.0));
+            }
+        }
+        {
+            auto a_solidFill = a_pattFill.emplace_child("a:bgClr");
+            if (a_solidFill) {
+                a_solidFill.remove_children();
+                auto a_scrgbClr = a_solidFill.emplace_child("a:scrgbClr");
+                a_scrgbClr.emplace_attribute("r") = cweeStr::printf("%i", (int)(100000.0 * background.R / 255.0));
+                a_scrgbClr.emplace_attribute("g") = cweeStr::printf("%i", (int)(100000.0 * background.G / 255.0));
+                a_scrgbClr.emplace_attribute("b") = cweeStr::printf("%i", (int)(100000.0 * background.B / 255.0));
+                a_scrgbClr.emplace_child("a:alpha").emplace_attribute("val") = cweeStr::printf("%i", (int)(100000.0 * background.A / 255.0));
+            }
+        }
+    };
+
     // Chart
     Chart::Chart() : impl(nullptr) {};
     Chart::Chart(Chart::Impl* implP, cweeSharedPtr<ExcelRange> const& xrange, cweeSharedPtr<ExcelRange> const& yrange) : impl(cweeSharedPtr<void>(cweeSharedPtr<Impl>(implP, [](void* p) { return p; }))) {
@@ -2182,77 +2370,24 @@ namespace docx {
             }
         }
         else {
-            x_axis_id = implP->Plot->Charts[0]->c_X_Ax_.emplace_child("c:axId").emplace_attribute("val").value();
-            y_axis_id = implP->Plot->Charts[0]->c_Y_Ax_.emplace_child("c:axId").emplace_attribute("val").value();
+            implP->c_X_Ax_ = implP->Plot->Charts[0]->c_X_Ax_;
+            implP->c_Y_Ax_ = implP->Plot->Charts[0]->c_Y_Ax_;
+
+            x_axis_id = implP->c_X_Ax_.emplace_child("c:axId").emplace_attribute("val").value();
+            y_axis_id = implP->c_Y_Ax_.emplace_child("c:axId").emplace_attribute("val").value();
         }
 
         /* c:lineChart */ {
             implP->c_Chart_.append_child("c:grouping").append_attribute("val") = "standard";
             implP->c_Chart_.append_child("c:varyColors").append_attribute("val") = 0;
-            auto c_ser = implP->c_Chart_.append_child("c:ser"); {
-                c_ser.append_child("c:idx").append_attribute("val") = impl_()->chartNum; 
-                c_ser.append_child("c:order").append_attribute("val") = impl_()->chartNum;
-                auto c_tx = c_ser.append_child("c:tx"); {
-                    auto c_strRef = c_tx.append_child("c:strRef"); {
-                        c_strRef.append_child("c:f").text() = "Sheet1!$B$1";
-                        auto c_strCache = c_strRef.append_child("c:strCache"); {
-                            c_strCache.append_child("c:ptCount").append_attribute("val") = 1;
-                            auto c_pt = c_strCache.append_child("c:pt"); {
-                                c_pt.append_attribute("idx") = 0;
-                                c_pt.append_child("c:v").text() = "Series";
-                            }
-                        }
-                    }
-                }
-                auto c_spPr = c_ser.append_child("c:spPr"); {
-                    auto a_ln = c_spPr.append_child("a:ln"); {
-                        a_ln.append_attribute("w") = 25400;
-                        a_ln.append_attribute("cap") = "rnd";
-                        a_ln.append_child("a:solidFill").append_child("a:schemeClr").append_attribute("val") = "tx1";
-                        a_ln.append_child("a:round");
-                    }
-                    c_spPr.append_child("a:effectLst");
-                }
-                auto c_marker = c_ser.append_child("c:marker"); {
-                    c_marker.append_child("c:symbol").append_attribute("val") = "none";
-                }
-                auto c_cat = c_ser.append_child("c:cat"); {
-                    auto c_numRef = c_cat.append_child("c:numRef"); {
-                        c_numRef.append_child("c:f").text() = (xrange->target_worksheet()->title() + "!" + cweeStr(xrange->ref()->top_left()->to_string() + ":" + xrange->ref()->bottom_right()->to_string()));
-                        auto c_numCache = c_numRef.emplace_child("c:numCache");
-                        if (c_numCache) {
-                            c_numCache.emplace_child("c:formatCode").text() = "General";
-                            c_numCache.emplace_child("c:ptCount").emplace_attribute("val") = xrange->length();
-                            int n = 0;
-                            for (auto& cell_vector : *xrange) {
-                                for (auto& cell : cell_vector) {
-                                    auto c_pt = c_numCache.append_child("c:pt");
-                                    c_pt.emplace_attribute("idx") = n++;
-                                    c_pt.emplace_child("c:v").text() = cell->to_string();
-                                }
-                            }
-                        }
-                    }
-                }
-                auto c_val = c_ser.append_child("c:val"); {
-                    auto c_numRef = c_val.append_child("c:numRef"); {
-                        c_numRef.append_child("c:f").text() = (yrange->target_worksheet()->title() + "!" + cweeStr(yrange->ref()->top_left()->to_string() + ":" + yrange->ref()->bottom_right()->to_string()));
-                        auto c_numCache = c_numRef.emplace_child("c:numCache");
-                        if (c_numCache) {
-                            c_numCache.emplace_child("c:ptCount").emplace_attribute("val") = yrange->length();
-                            int n = 0;
-                            for (auto& cell_vector : *yrange) {
-                                for (auto& cell : cell_vector) {
-                                    auto c_pt = c_numCache.append_child("c:pt");
-                                    c_pt.emplace_attribute("idx") = n++;
-                                    c_pt.emplace_child("c:v").text() = cell->to_string();
-                                }
-                            }
-                        }
-                    }
-                }
-                c_ser.append_child("c:smooth").append_attribute("val") = 0;
-            }
+
+            AUTO seriesImpl = new Series::Impl();
+            seriesImpl->c_ser_ = implP->c_Chart_.append_child("c:ser");
+            seriesImpl->Chart = impl;
+            auto series = Series(seriesImpl, xrange, yrange);
+            implP->Plot->Series.Append(series.impl);
+            implP->Series.Append(series);
+
             auto c_dLbls = implP->c_Chart_.append_child("c:dLbls"); {
                 c_dLbls.append_child("c:showLegendKey").append_attribute("val") = 0;
                 c_dLbls.append_child("c:showVal").append_attribute("val") = 0;
@@ -2278,12 +2413,30 @@ namespace docx {
         auto newAxisId = axis.GetAxisId();
         auto oldAxisId = xAxis().GetAxisId();
         impl_()->c_Chart_.find_child_by_attribute("val", oldAxisId).emplace_attribute("val") = newAxisId;
+
+        AUTO c_chart = impl_()->Plot->chart_xml.emplace_child("c:chartSpace").emplace_child("c:chart");
+        for (auto child : c_chart.emplace_child("c:plotArea").children()) {
+            if (cweeStr(child.name()).Right(2) == "Ax") {
+                if (child.child("c:axId") && child.child("c:axId").attribute("val") && child.child("c:axId").attribute("val").value() == newAxisId) {
+                    impl_()->c_X_Ax_ = child;
+                }
+            }
+        }
     };
     void Chart::yAxis(Axis& axis) {
         if (!impl) return;
         auto newAxisId = axis.GetAxisId();
         auto oldAxisId = yAxis().GetAxisId();
         impl_()->c_Chart_.find_child_by_attribute("val", oldAxisId).emplace_attribute("val") = newAxisId;
+
+        AUTO c_chart = impl_()->Plot->chart_xml.emplace_child("c:chartSpace").emplace_child("c:chart");
+        for (auto child : c_chart.emplace_child("c:plotArea").children()) {
+            if (cweeStr(child.name()).Right(2) == "Ax") {
+                if (child.child("c:axId") && child.child("c:axId").attribute("val") && child.child("c:axId").attribute("val").value() == newAxisId) {
+                    impl_()->c_Y_Ax_ = child;
+                }
+            }
+        }
     };
     Axis Chart::xAxis() {
         if (!impl) return Axis();
@@ -2301,39 +2454,34 @@ namespace docx {
         aImpl->c_Ax_ = impl_()->c_Y_Ax_;
         return Axis(aImpl);
     };
-    void Chart::SetColor(chaiscript::UI_Color const& col) {
+    Series Chart::GetSeries(int i) {
+        if (!impl) return Series();
+        return impl_()->Series[i];
+    };
+    Series Chart::AddSeries(cweeSharedPtr<ExcelRange> const& xrange, cweeSharedPtr<ExcelRange> const& yrange) {
+        if (!impl) return Series();
+        
+        AUTO seriesImpl = new Series::Impl();
+        seriesImpl->c_ser_ = impl_()->c_Chart_.append_child("c:ser");
+        seriesImpl->Chart = impl;
+        auto series = Series(seriesImpl, xrange, yrange);
+        impl_()->Plot->Series.Append(series.impl);
+        impl_()->Series.Append(series); 
+        return series;
+    };
+    void Chart::SetGrouping(ChartSeriesGrouping grouping) {
         if (!impl) return;
-
-        {        
-            auto a_solidFill = impl_()->c_Chart_.emplace_child("c:ser").emplace_child("c:spPr").emplace_child("a:ln").emplace_child("a:solidFill");
-            a_solidFill.remove_children();
-            auto a_scrgbClr = a_solidFill.emplace_child("a:scrgbClr");
-            a_scrgbClr.emplace_attribute("r") = cweeStr::printf("%i", (int)(100000.0 * col.R / 255.0));
-            a_scrgbClr.emplace_attribute("g") = cweeStr::printf("%i", (int)(100000.0 * col.G / 255.0));
-            a_scrgbClr.emplace_attribute("b") = cweeStr::printf("%i", (int)(100000.0 * col.B / 255.0));
-            a_scrgbClr.emplace_child("a:alpha").emplace_attribute("val") = cweeStr::printf("%i", (int)(100000.0 * col.A / 255.0));
+        switch (grouping) {
+        case (decltype(grouping)::Stacked): 
+            impl_()->c_Chart_.emplace_child("c:grouping").emplace_attribute("val") = "stacked";
+            break;
+        case (decltype(grouping)::Standard):
+            impl_()->c_Chart_.emplace_child("c:grouping").emplace_attribute("val") = "standard";
+            break;
         }
-        {
-            auto a_solidFill = impl_()->c_Chart_.emplace_child("c:ser").emplace_child("c:spPr").child("a:solidFill");
-            if (a_solidFill) {
-                a_solidFill.remove_children();
-                auto a_scrgbClr = a_solidFill.emplace_child("a:scrgbClr");
-                a_scrgbClr.emplace_attribute("r") = cweeStr::printf("%i", (int)(100000.0 * col.R / 255.0));
-                a_scrgbClr.emplace_attribute("g") = cweeStr::printf("%i", (int)(100000.0 * col.G / 255.0));
-                a_scrgbClr.emplace_attribute("b") = cweeStr::printf("%i", (int)(100000.0 * col.B / 255.0));
-                a_scrgbClr.emplace_child("a:alpha").emplace_attribute("val") = cweeStr::printf("%i", (int)(100000.0 * col.A / 255.0));
-            }
-        }
+        
     };
-    void Chart::SetLineThickness(double weight) {
-        if (!impl) return;
-        impl_()->c_Chart_.emplace_child("c:ser").emplace_child("c:spPr").emplace_child("a:ln").emplace_attribute("w") = (int)(weight * 6350.0 * 2.0);;
-    };
-    void Chart::SetName(cweeStr const& name) {
-        if (!impl) return;
-        impl_()->c_Chart_.emplace_child("c:ser").emplace_child("c:tx").emplace_child("c:strRef").emplace_child("c:strCache").emplace_child("c:pt").emplace_child("c:v").text() = name;
-    };
-
+    
     // LineChart
     LineChart::LineChart() : Chart() {};
     LineChart::LineChart(Chart::Impl* implP, cweeSharedPtr<ExcelRange> const& xrange, cweeSharedPtr<ExcelRange> const& yrange) : Chart(implP, xrange, yrange) {};
@@ -2343,11 +2491,13 @@ namespace docx {
     // AreaChart
     AreaChart::AreaChart() : Chart() {};
     AreaChart::AreaChart(Chart::Impl* implP, cweeSharedPtr<ExcelRange> const& xrange, cweeSharedPtr<ExcelRange> const& yrange) : Chart(implP, xrange, yrange) {
-        implP->c_Chart_.emplace_child("c:ser").remove_child("c:marker");
-        implP->c_Chart_.emplace_child("c:ser").remove_child("c:smooth");
+        for (auto& serNode : implP->c_Chart_.children("c:ser")) {
+            serNode.remove_child("c:marker");
+            serNode.remove_child("c:smooth");
+            serNode.emplace_child("c:spPr").prepend_child("a:solidFill").emplace_child("a:schemeClr").emplace_attribute("val") = "tx1";
+        }
         implP->c_Chart_.remove_child("c:marker");
         implP->c_Chart_.remove_child("c:smooth");
-        implP->c_Chart_.emplace_child("c:ser").emplace_child("c:spPr").prepend_child("a:solidFill").emplace_child("a:schemeClr").emplace_attribute("val") = "tx1";
     };
     AreaChart::AreaChart(AreaChart const& r) : Chart(r) {};
     AreaChart::~AreaChart() {};

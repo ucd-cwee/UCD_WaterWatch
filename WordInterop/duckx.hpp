@@ -277,8 +277,35 @@ namespace docx {
         Axis(Impl* impl);
     };
 
+    class Series {
+        friend class Chart;
+        friend class Document;
+
+    public:
+        Series();
+        Series(Series const& p);
+        ~Series();
+        void operator=(Series const& right);
+        operator bool() const;
+
+        void SetPatternFill(chaiscript::UI_Color const& foreground, chaiscript::UI_Color const& background, cweeStr const& pattern = "pct75");
+        void SetColor(chaiscript::UI_Color const& col);
+        void SetLineThickness(double weight);
+        void SetName(cweeStr const& name);
+        void SetOrder(int order);
+        // void HideFromLegend();
+
+    protected:
+        class Impl;
+        Impl* impl_() const { return static_cast<Impl*>(impl.Get()); };
+        Series(Series::Impl* impl, cweeSharedPtr<ExcelRange> const& xrange, cweeSharedPtr<ExcelRange> const& yrange);  // constructs from xml node
+
+        cweeSharedPtr< void > impl;
+    };
+
     class Chart {
         friend class ExcelPlot;
+        friend class Document;
 
     public:
         Chart();
@@ -291,9 +318,12 @@ namespace docx {
         void yAxis(Axis& axis);
         Axis xAxis();
         Axis yAxis();
-        void SetColor(chaiscript::UI_Color const& col);
-        void SetLineThickness(double weight);
-        void SetName(cweeStr const& name);
+
+        Series GetSeries(int i);
+        Series AddSeries(cweeSharedPtr<ExcelRange> const& xrange, cweeSharedPtr<ExcelRange> const& yrange);
+
+        enum class ChartSeriesGrouping { Standard, Stacked };
+        void SetGrouping(ChartSeriesGrouping grouping);
 
     protected:
         class Impl;

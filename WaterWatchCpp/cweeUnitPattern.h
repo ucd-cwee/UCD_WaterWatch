@@ -2053,18 +2053,24 @@ public:
 		container->internal_X_type = start; start.Clear(); start = container->internal_X_type;
 		container->internal_X_type = end; end.Clear(); end = container->internal_X_type;
 
-		for (auto& x : const_cast<const cweeUnitPatternContainer_t&>(*container)) {
-			if (x.X > start) {
-				if (x.X <= end) {
-					if (skipFirst) {
-						skipFirst = false;
-						out = *x.Y;
+		AUTO endIter = const_cast<const cweeUnitPatternContainer_t&>(*this->container).end();
+		for (auto iter = const_cast<const cweeUnitPatternContainer_t&>(*this->container).begin_at(start); iter != endIter; ++iter) {
+			auto& dataPair = *iter;
+			if (dataPair.Y) {
+				if (dataPair.X >= start) {
+					if (dataPair.X <= end) {
+						if (skipFirst) {
+							skipFirst = false;
+							out = *dataPair.Y;
+						}
+						else {
+							if ((container->internal_Y_type = *dataPair.Y) < out) out = (container->internal_Y_type = *dataPair.Y);
+						}
 					}
 					else {
-						if ((container->internal_Y_type = *x.Y) < out) out = container->internal_Y_type;
+						break;
 					}
 				}
-				else { break; }
 			}
 		}
 
@@ -2081,21 +2087,26 @@ public:
 		container->internal_X_type = start; start.Clear(); start = container->internal_X_type;
 		container->internal_X_type = end; end.Clear(); end = container->internal_X_type;
 
-		for (auto& x : const_cast<const cweeUnitPatternContainer_t&>(*container)) {
-			if (x.X > start) {
-				if (x.X <= end) {
-					if (skipFirst) {
-						skipFirst = false;
-						out = *x.Y;
+		AUTO endIter = const_cast<const cweeUnitPatternContainer_t&>(*this->container).end();
+		for (auto iter = const_cast<const cweeUnitPatternContainer_t&>(*this->container).begin_at(start); iter != endIter; ++iter) {
+			auto& dataPair = *iter;
+			if (dataPair.Y) {
+				if (dataPair.X >= start) {
+					if (dataPair.X <= end) {
+						if (skipFirst) {
+							skipFirst = false;
+							out = *dataPair.Y;
+						}
+						else {
+							if ((container->internal_Y_type = *dataPair.Y) > out) out = (container->internal_Y_type = *dataPair.Y);
+						}
 					}
 					else {
-						if ((container->internal_Y_type = *x.Y) > out) out = container->internal_Y_type;
+						break;
 					}
 				}
-				else { break; }
 			}
 		}
-
 
 		return out;
 	};
@@ -2589,7 +2600,7 @@ public:
 			if (1) { // Next-Nearest Distance-Based Outlier Removal (Big Gap Discovery)
 				AUTO removeExceptionalPeriods = [&quantileSearch](cweeUnitPattern data) {
 					AUTO p = data.GetApproximateDistances(false, false);
-					cweeList<double> quantilesToSearch; quantilesToSearch.Append(0.5); quantilesToSearch.Append(0.9999);
+					cweeList<double> quantilesToSearch; quantilesToSearch.Append(0.5); quantilesToSearch.Append(0.99875); // 0.9999
 					auto quantiles = p.GetValueQuantiles(quantilesToSearch);
 					AUTO p2 = p - (quantiles[0] + 1.5 * quantiles[1]); 
 					// AUTO p2 = (p - (quantiles[0] + 1.5 * cweeUnitValues::math::max(quantiles[1], p.StdDev())));

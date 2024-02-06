@@ -78,6 +78,8 @@ BETTER_ENUM(DocxAxisStyle, int, Value, Category, Date, None);
 BETTER_ENUM(DocxTickLabelPosition, int, High, Low, NextTo);
 BETTER_ENUM(DocxVertAlign, int, none, superscript);
 BETTER_ENUM(DocxLegendPos, int, l, r, t, b);
+BETTER_ENUM(DocxChartSeriesGrouping, int, Standard, Stacked);
+
 namespace chaiscript {
     namespace WaterWatch_Lib {
         [[nodiscard]] ModulePtr MSWord_library() {
@@ -160,6 +162,19 @@ namespace chaiscript {
             lib->AddFunction(, SetTickLabelPosition, , o.SetTickLabelPosition(static_cast<docx::Axis::TickLabelPosition>(GetBetterEnum<::DocxTickLabelPosition>(input)._to_integral())); , Axis & o, cweeStr const& input);
             lib->AddFunction(, GetAxisId, , o.GetAxisId();, Axis & o);
 
+            lib->add(chaiscript::user_type<Series>(), "DocxSeries");
+            lib->add(chaiscript::constructor<Series()>(), "DocxSeries");
+            lib->add(chaiscript::constructor<Series(const Series&)>(), "DocxSeries");
+            lib->add(chaiscript::constructor<bool(const Series&)>(), "bool");
+            lib->add(chaiscript::fun([](Series& a, Series& b) { a = b; return a; }), "=");
+            lib->add(chaiscript::fun(&Series::SetColor), "SetColor");
+            lib->add(chaiscript::fun(&Series::SetLineThickness), "SetLineThickness");
+            lib->add(chaiscript::fun(&Series::SetName), "SetName");
+            lib->add(chaiscript::fun(&Series::SetOrder), "SetOrder");
+            lib->add(chaiscript::fun(&Series::SetPatternFill), "SetPatternFill");
+            lib->AddFunction(, SetPatternFill, , o.SetPatternFill(fg,bg);, Series & o, UI_Color const& fg, UI_Color const& bg);
+            lib->AddFunction(, SetPatternFill, , o.SetPatternFill(fg, bg,pat);, Series & o, UI_Color const& fg, UI_Color const& bg, cweeStr const& pat);
+
             lib->add(chaiscript::user_type<Chart>(), "DocxChart");
             lib->add(chaiscript::constructor<Chart()>(), "DocxChart");
             lib->add(chaiscript::constructor<Chart(const Chart&)>(), "DocxChart");
@@ -169,10 +184,10 @@ namespace chaiscript {
             lib->AddFunction(, yAxis, , return o.yAxis(); , Chart& o);
             lib->AddFunction(, xAxis, , o.xAxis(axis); , Chart& o, Axis& axis);
             lib->AddFunction(, yAxis, , o.yAxis(axis); , Chart& o, Axis& axis);
-            lib->add(chaiscript::fun(&Chart::SetColor), "SetColor");
-            lib->add(chaiscript::fun(&Chart::SetLineThickness), "SetLineThickness");
-            lib->add(chaiscript::fun(&Chart::SetName), "SetName");
-            
+            lib->add(chaiscript::fun(&Chart::GetSeries), "GetSeries");
+            lib->add(chaiscript::fun(&Chart::AddSeries), "AddSeries");
+            lib->AddFunction(, SetGrouping, , o.SetGrouping(static_cast<docx::Chart::ChartSeriesGrouping>(GetBetterEnum<::DocxChartSeriesGrouping>(input)._to_integral()));, Chart & o, cweeStr const& input);
+
             lib->add(chaiscript::user_type<ExcelPlot>(), "DocxPlot");
             lib->add(chaiscript::constructor<ExcelPlot()>(), "DocxPlot");
             lib->add(chaiscript::constructor<ExcelPlot(const ExcelPlot&)>(), "DocxPlot");
