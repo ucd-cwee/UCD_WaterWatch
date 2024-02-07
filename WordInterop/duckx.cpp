@@ -2772,6 +2772,22 @@ namespace docx {
         }
         impl_()->c_Ax_.emplace_child("c:tickLblPos").emplace_attribute("val") = sel;
     };
+    void Axis::CrossesAxis(Axis& other) {
+        if (!impl) return;
+
+        auto c_txPr = impl_()->c_Ax_.emplace_child("c:txPr");
+
+        c_txPr.emplace_child("c:crossAx").emplace_attribute("val") = other.GetAxisId();
+    };
+    void Axis::CrossesAxisAt(float v) {
+        if (!impl) return;
+
+        auto c_txPr = impl_()->c_Ax_.emplace_child("c:txPr");
+
+        c_txPr.remove_child("c:crosses");
+        c_txPr.remove_child("c:crossBetween");
+        c_txPr.emplace_child("c:crossesAt").emplace_attribute("val") = v;
+    };
 
     // ExcelPlot
     ExcelPlot::ExcelPlot() : impl(nullptr) {};

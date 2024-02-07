@@ -161,6 +161,8 @@ namespace chaiscript {
             lib->add(chaiscript::fun(&Axis::SetMajorStep), "SetMajorStep");
             lib->AddFunction(, SetTickLabelPosition, , o.SetTickLabelPosition(static_cast<docx::Axis::TickLabelPosition>(GetBetterEnum<::DocxTickLabelPosition>(input)._to_integral())); , Axis & o, cweeStr const& input);
             lib->AddFunction(, GetAxisId, , o.GetAxisId();, Axis & o);
+            lib->AddFunction(, CrossesAxis, , o.CrossesAxis(other); , Axis & o, Axis& other);
+            lib->AddFunction(, CrossesAxisAt, , o.CrossesAxisAt(v); , Axis & o, float v);
 
             lib->add(chaiscript::user_type<Series>(), "DocxSeries");
             lib->add(chaiscript::constructor<Series()>(), "DocxSeries");

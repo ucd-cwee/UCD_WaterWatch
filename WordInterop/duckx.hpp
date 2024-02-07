@@ -267,6 +267,8 @@ namespace docx {
         void SetAxisStyle(AxisStyle style);
         void SetAxisScale(double min, double max);
         cweeStr GetAxisId();
+        void CrossesAxis(Axis& other);
+        void CrossesAxisAt(float v);
 
     private:
         class Impl;
