@@ -341,7 +341,7 @@ namespace chaiscript {
                     return a.StdDev();
                 }), "StdDev");
                 lib->add(chaiscript::fun([](const cweeUnitPattern& a, const cweeUnitPattern& mask) {
-                    return (((a - a.GetAvgValue(a.GetMinTime(), a.GetMaxTime(), mask)).pow(2.0)).GetAvgValue(a.GetMinTime(), a.GetMaxTime(), mask)).pow(0.5);
+                    return a.StdDev(mask);
                 }), "StdDev");
                 AUTO quantile_pattern = [](cweeUnitPattern const& a, double quantile, double desiredNumValues) {
                     AUTO width = a.GetMaxTime() - a.GetMinTime();

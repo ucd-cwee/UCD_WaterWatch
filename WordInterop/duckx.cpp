@@ -2782,11 +2782,11 @@ namespace docx {
     void Axis::CrossesAxisAt(float v) {
         if (!impl) return;
 
-        auto c_txPr = impl_()->c_Ax_.emplace_child("c:txPr");
+        // auto c_txPr = impl_()->c_Ax_.emplace_child("c:txPr");
 
-        c_txPr.remove_child("c:crosses");
-        c_txPr.remove_child("c:crossBetween");
-        c_txPr.emplace_child("c:crossesAt").emplace_attribute("val") = v;
+        impl_()->c_Ax_.remove_child("c:crosses");
+        impl_()->c_Ax_.remove_child("c:crossBetween");
+        impl_()->c_Ax_.emplace_child("c:crossesAt").emplace_attribute("val") = v;
     };
 
     // ExcelPlot

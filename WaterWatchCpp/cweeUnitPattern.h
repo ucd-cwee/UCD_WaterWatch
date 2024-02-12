@@ -2545,7 +2545,13 @@ public:
 		out = *this;
 		return (this->Y_Type() = ((((out - out.GetAvgValue()).pow(2.0)).GetAvgValue()).pow(0.5)));
 	};
-
+	cweeUnitValues::unit_value StdDev(const cweeUnitPattern& mask) const {
+		AUTO out = cweeUnitPattern(this->X_Type(), 1);
+		out = *this;
+		auto minT = out.GetMinTime();
+		auto maxT = out.GetMaxTime();
+		return (this->Y_Type() = (out - out.GetAvgValue(minT, maxT, mask)).pow(2.0).GetAvgValue(minT, maxT, mask).pow(0.5));
+	};
 	cweeUnitPattern GetOutlierMask() const {
 		AUTO GetOutlierMask = [](cweeUnitPattern const& data)->cweeUnitPattern {
 			AUTO out{ cweeUnitPattern(data.X_Type(), 1) };

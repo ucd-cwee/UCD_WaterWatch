@@ -1147,15 +1147,48 @@ namespace chaiscript {
                     DEF_DECLARE_VECTOR_WITH_SCRIPT_ENGINE_AND_MODULE(CellPtr);
 
                     AddSharedPtrClassFunction(, ExcelRange, clear_cells);
-                    lib->AddFunction(, vector, , if (a) return a->vector(n); else ThrowIfBadAccess; , RangePtr& a, int n);
+                    //lib->AddFunction(, vector, , if (a) return a->vector(n); else ThrowIfBadAccess; , RangePtr& a, int n);
                     lib->AddFunction(, cell, , if (a) return a->cell(cell->reference()); else ThrowIfBadAccess; , RangePtr& a, CellPtr cell);
                     AddSharedPtrClassFunction(, ExcelRange, target_worksheet);
                     AddSharedPtrClassFunction(, ExcelRange, length);
                     lib->AddFunction(, contains, , if (a) return a->contains(cell->reference()); else ThrowIfBadAccess;, RangePtr& a, CellPtr cell);
-                    AddSharedPtrClassFunction(, ExcelRange, front);
-                    AddSharedPtrClassFunction(, ExcelRange, back);
-                    lib->AddFunction(, [], , if (a) return a->operator[](n); else ThrowIfBadAccess;, RangePtr& a, int n);
+                    //AddSharedPtrClassFunction(, ExcelRange, front);
+                    //AddSharedPtrClassFunction(, ExcelRange, back);
+                    lib->AddFunction(, [], , SINGLE_ARG(
+                        if (a) {
+                            std::vector<Boxed_Value> boxed_vec;
+                            for (auto& cell : a->operator[](n)) {
+                                if (cell) {
+                                    boxed_vec.push_back(var((CellPtr)cell));
+                                }
+                                else {
+                                    boxed_vec.push_back(Boxed_Value());
+                                }
+                            }
+                            return boxed_vec;
+                        }
+                        else ThrowIfBadAccess;
+                    ), RangePtr& a, int n);
                     lib->AddFunction(, apply, , if (a) a->apply(f); else ThrowIfBadAccess;, RangePtr& a, std::function<void(cweeSharedPtr<ExcelCell>)> f);
+                   
+                    lib->AddFunction(, Vector, , SINGLE_ARG(
+                        std::vector<Boxed_Value> boxed_vec; 
+                        if (a) {
+                            for (auto& row : *a) {
+                                for (auto& cell : row) {
+                                    if (cell) {
+                                        boxed_vec.push_back(var((CellPtr)cell));
+                                    }
+                                    else {
+                                        boxed_vec.push_back(Boxed_Value());
+                                    }
+                                }
+                            }
+                        }
+                        else ThrowIfBadAccess;
+                        return boxed_vec;
+                    ), RangePtr& a);
+
                     lib->AddFunction(, to_patterns, , SINGLE_ARG(
                         if (a) {
                             cweeList<cweeStr> positions; positions = { cweeStr("Top"), cweeStr("Left"), cweeStr("") };
