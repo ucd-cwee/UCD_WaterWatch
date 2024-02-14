@@ -46,19 +46,19 @@ namespace epanet {
     using Pfloat = REAL4*;
 #pragma endregion
 #pragma region Constexpr
-    static constexpr cubic_foot_per_second_t 
-                            QZERO = 1.e-6;  // Equivalent to zero flow in cfs
-    // Constants used for computing Darcy-Weisbach friction factor
-    static constexpr SCALER PI = cweeMath::PI; 
-    static constexpr SCALER A1 = 1000.0 * PI; 
-    static constexpr SCALER A2 = 500.0 * PI; 
-    static constexpr SCALER A3 = 16.0 * PI; 
-    static constexpr SCALER A4 = 2.0 * PI; 
+    static constexpr cubic_foot_per_second_t
+        QZERO = 1.e-6;  // Equivalent to zero flow in cfs
+// Constants used for computing Darcy-Weisbach friction factor
+    static constexpr SCALER PI = cweeMath::PI;
+    static constexpr SCALER A1 = 1000.0 * PI;
+    static constexpr SCALER A2 = 500.0 * PI;
+    static constexpr SCALER A3 = 16.0 * PI;
+    static constexpr SCALER A4 = 2.0 * PI;
     static constexpr SCALER A8 = 4.61841319859066668690e+00;   // 5.74*(PI/4)^.9
     static constexpr SCALER A9 = -8.68588963806503655300e-01;  // -2/ln(10)
     static constexpr SCALER AA = -1.5634601348517065795e+00;   // -2*.9*2/ln(10)
     static constexpr SCALER AB = 3.28895476345399058690e-03;   // 5.74/(4000^.9)
-    static constexpr SCALER AC = AA * AB; 
+    static constexpr SCALER AC = AA * AB;
     static constexpr SCALER CSMALL = 1.e-6;
     static constexpr SCALER CBIG = 1.e8;
     static constexpr auto   MAXERRS = 10;      // Max. input errors reported
@@ -90,9 +90,9 @@ namespace epanet {
     static constexpr SCALER TINY = 1.E-6;
     static constexpr SCALER MISSING = -1.E-7;     // Missing value indicator // was -1.E-10, but was too small for constexpr math
     static constexpr squared_foot_per_second_t
-                            DIFFUS = 1.3E-8;     // Diffusivity of chlorine (sq ft/sec)
-    static constexpr squared_foot_per_second_t 
-                            VISCOS = 1.1E-5;     // Kinematic viscosity of water @ 20 deg C (sq ft/sec)
+        DIFFUS = 1.3E-8;     // Diffusivity of chlorine (sq ft/sec)
+    static constexpr squared_foot_per_second_t
+        VISCOS = 1.1E-5;     // Kinematic viscosity of water @ 20 deg C (sq ft/sec)
     static constexpr SCALER MINPDIFF = 0.1;        // PDA min. pressure difference (psi or m?)
     static constexpr ceSS   SEPSTR = ceSS(" \t\n\r");  // Token separator characters (space, tab, new line, carriage return)
     static constexpr SCALER GPMperCFS = ((SCALER)1.0) / ((gallon_per_minute_t)(1) / (cubic_foot_per_second_t)(1));
@@ -116,7 +116,7 @@ namespace epanet {
     static constexpr SCALER HACC = 0.001;    // Default hydraulics convergence ratio
     static constexpr foot_t HTOL = 0.0005;   // Default hydraulic head tolerance (ft)
     static constexpr cubic_foot_per_second_t
-                            QTOL = 0.0001;   // Default flow rate tolerance (cfs)
+        QTOL = 0.0001;   // Default flow rate tolerance (cfs)
     static constexpr SCALER AGETOL = 0.01;   // Default water age tolerance (hrs)
     static constexpr SCALER CHEMTOL = 0.01;  // Default concentration tolerance
     static constexpr SCALER PAGESIZE = 0;    // Default uses no page breaks
@@ -127,25 +127,25 @@ namespace epanet {
     static constexpr SCALER CHECKFREQ = 2;   // Default status check frequency
     static constexpr SCALER MAXCHECK = 10;   // Default # iterations for status checks
     static constexpr SCALER DAMPLIMIT = 0;   // Default damping threshold
-    static constexpr cubic_foot_per_second_t 
-                            Q_STAGNANT = 0.005_gpm;     // 0.005 gpm = 1.114e-5 cfs
+    static constexpr cubic_foot_per_second_t
+        Q_STAGNANT = 0.005_gpm;     // 0.005 gpm = 1.114e-5 cfs
 #pragma endregion
 #pragma region DEFINES
 #define ERRCODE(x) (errcode = ((errcode>100) ? (errcode) : (x)))
 #pragma endregion
 #pragma region inline templated functions
-    template<typename T> INLINE AUTO MEMCHECK(T x) { return x == NULL ? 101 : 0; }; 
-    template<typename T> INLINE void FREE(T x) { free(x); x = NULL; }; 
+    template<typename T> INLINE AUTO MEMCHECK(T x) { return x == NULL ? 101 : 0; };
+    template<typename T> INLINE void FREE(T x) { free(x); x = NULL; };
     template<typename T> INLINE AUTO INT(T x) { return (T)(int)(double)x; }; // integer portion of x
     template<typename T> INLINE AUTO FRAC(T x) { return x - INT(x); }; // // fractional part of x
     template<typename T> INLINE AUTO ABS(T x) { return x < (T)0 ? -x : x; }; // absolute value of x
     template<typename T, typename Z> INLINE T fMIN(T x, Z y) { return (T)(x < y ? (T)x : (T)y); }; // minimum of x and y
     template<typename T, typename Z> INLINE T fMAX(T x, Z y) { return (T)(x < y ? (T)y : (T)x); }; // maximum of x and y
-    template<typename T> INLINE AUTO ROUND(T x) { return (T)cweeMath::Rint((double)x); }; 
+    template<typename T> INLINE AUTO ROUND(T x) { return (T)cweeMath::Rint((double)x); };
     template<typename T, typename Z> INLINE AUTO MOD(T x, Z y) { return x % y; }; // x modulus y
     template<typename T> INLINE AUTO SQR(T x) { return x * x; }; // x-squared
     template<typename T> INLINE AUTO SGN(T x) { return x < (T)0 ? (SCALER)-1 : (SCALER)1; }; // sign of x
-    template<typename T> INLINE AUTO UCHAR(T x) { return (x >= 'a' && x <= 'z') ? (x & ~32) : x; }; 
+    template<typename T> INLINE AUTO UCHAR(T x) { return (x >= 'a' && x <= 'z') ? (x & ~32) : x; };
     template<typename T> INLINE AUTO log(T x) { return units::math::log((SCALER)(double)x); };
     template<typename T, typename Z> INLINE AUTO pow(T x, Z i) { return (T)cweeMath::Pow((double)x, (double)i); };
     template<typename T> INLINE AUTO sqrt(T x) { return units::math::sqrt(x); };
@@ -789,7 +789,7 @@ namespace epanet {
         PDA            // pressure driven analysis
     } DemandModelType;
 
-    typedef enum  {
+    typedef enum {
         r_RULE,
         r_IF,
         r_AND,
@@ -800,7 +800,7 @@ namespace epanet {
         r_ERROR
     } Rulewords;
 
-    typedef enum  {
+    typedef enum {
         r_DEMAND,
         r_HEAD,
         r_GRADE,
@@ -816,7 +816,7 @@ namespace epanet {
         r_DRAINTIME
     } Varwords;
 
-    typedef enum  {
+    typedef enum {
         r_JUNC,
         r_RESERV,
         r_TANK,
@@ -828,7 +828,7 @@ namespace epanet {
         r_SYSTEM
     } Objects;
 
-    typedef enum  { EQ, NE, LE, GE, LT, GT, IS, NOT, BELOW, ABOVE } Operators;
+    typedef enum { EQ, NE, LE, GE, LT, GT, IS, NOT, BELOW, ABOVE } Operators;
 
     typedef enum { IS_NUMBER, IS_OPEN, IS_CLOSED, IS_ACTIVE } Values;
 
@@ -2081,14 +2081,14 @@ namespace epanet {
         hour_t TimeOnLine;       // hours pump is online
         SCALER Efficiency;       // total time wtd. efficiency
         SCALER KwHrsPerFlow;     // total kw-hrs per unit of flow
-        kilowatt_hour_t 
-               KwHrs;            // total kw-hrs consumed
-        kilowatt_t 
-               MaxKwatts;        // max. kw consumed
-        Dollar_t 
-               TotalCost;        // total pumping cost
+        kilowatt_hour_t
+            KwHrs;            // total kw-hrs consumed
         kilowatt_t
-               CurrentPower;     // current pump power (kw)
+            MaxKwatts;        // max. kw consumed
+        Dollar_t
+            TotalCost;        // total pumping cost
+        kilowatt_t
+            CurrentPower;     // current pump power (kw)
         SCALER CurrentEffic;     // current pump efficiency
     };
 
@@ -2130,20 +2130,20 @@ namespace epanet {
     template<> struct DefaultUnits<value_t::_EMISSION_INTENSITY_> { using unit = metric_ton_per_day_t; };
 
 #define AddValueType(v, INTERP) { cweeBalancedPattern<typename DefaultUnits<v>::unit> pat; pat.SetInterpolationType(interpolation_t::INTERP); pat.SetBoundaryType(boundary_t::BT_CLAMPED); out->Add(cweeUnion<int, cweeAny>(static_cast<int>(v), pat)); }
-    using ValuesContainerType = cweeThreadedSet<cweeUnion<int, cweeAny>, int>; 
+    using ValuesContainerType = cweeThreadedSet<cweeUnion<int, cweeAny>, int>;
     template <int type> class cweeAssetValueCollection {
     public:
         cweeAssetValueCollection() = delete;
         static cweeSharedPtr<ValuesContainerType> Values() {
             cweeSharedPtr<ValuesContainerType> out = make_cwee_shared<ValuesContainerType>(std::function<int(const cweeUnion<int, cweeAny>&)>([](const cweeUnion<int, cweeAny>& v)->int { return v.get<0>(); }));
-            
+
             if constexpr (type == asset_t::ANY) {
                 // AddValueType(_DEMAND_);
 
-                { 
+                {
                     cweeBalancedPattern<typename DefaultUnits<_DEMAND_>::unit> pat;
-                    pat.SetInterpolationType(interpolation_t::LEFT); 
-                    pat.SetBoundaryType(boundary_t::BT_CLAMPED); 
+                    pat.SetInterpolationType(interpolation_t::LEFT);
+                    pat.SetBoundaryType(boundary_t::BT_CLAMPED);
                     out->Add(cweeUnion<int, cweeAny>(static_cast<int>(_DEMAND_), pat));
                 }
 
@@ -2200,10 +2200,10 @@ namespace epanet {
 
     class Sasset {
     public: // construction or destruction
-        Sasset() : 
-            Type_p(asset_t::ANY), 
-            Values_p( new ValuesContainerType(std::function<int(const cweeUnion<int, cweeAny>&)>([](const cweeUnion<int, cweeAny>& v)->int { return v.get<0>(); })) ),
-            Name_p() 
+        Sasset() :
+            Type_p(asset_t::ANY),
+            Values_p(new ValuesContainerType(std::function<int(const cweeUnion<int, cweeAny>&)>([](const cweeUnion<int, cweeAny>& v)->int { return v.get<0>(); }))),
+            Name_p()
         {};
         Sasset(asset_t type_m, cweeSharedPtr<ValuesContainerType> values) : Type_p(type_m), Values_p(values), Name_p() {};
         Sasset(asset_t type_m, cweeSharedPtr<ValuesContainerType> values, const cweeStr& name) : Type_p(type_m), Values_p(values), Name_p(name) {};
@@ -2227,7 +2227,7 @@ namespace epanet {
             }
             return out;
         };
-        template<value_t v> cweeSharedPtr<cweeBalancedPattern<typename DefaultUnits<v>::unit>>		GetValue() const {            
+        template<value_t v> cweeSharedPtr<cweeBalancedPattern<typename DefaultUnits<v>::unit>>		GetValue() const {
             AUTO anyP = Values_p->FindFast(static_cast<int>(v));
             if (anyP) {
                 auto& p = anyP->get<1>();
@@ -2298,10 +2298,11 @@ namespace epanet {
                 if (in_d.Base != 0_gpm) { // valid                    
                     AUTO matches = D.Select([&](Sdemand const& thisD)->bool {
                         return thisD.TimePat == in_d.TimePat;
-                    });
+                        });
                     if (matches.Num() > 0) {
                         matches[0]->Base += in_d.Base;
-                    } else {
+                    }
+                    else {
                         D.Append(in_d);
                     }
                 }
@@ -2346,14 +2347,14 @@ namespace epanet {
         foot_t   El;             // elevation
         cweeList<Sdemand>  D;              // demand pointer list
         Psource  S;              // source pointer
-        SCALER&  C0(cweeTime t) {
+        SCALER& C0(cweeTime t) {
             AUTO ptr = this->GetValue<_QUALITY_>();
             ptr->AddUniqueValue((u64)t, ptr->GetCurrentValue((u64)t)); // ensure the value exists
 
             AUTO g = ptr->Guard();
             AUTO p = ptr->UnsafeGetValue((u64)t);
             if (p && p->object) return *p->object;
-            else return C0_internal; 
+            else return C0_internal;
         };             // initial quality
         SCALER   Ke;             // emitter coeff.
         int      Rpt = 0;            // reporting flag
@@ -2394,7 +2395,7 @@ namespace epanet {
         SCALER   R_FlowResistance;              // flow resistance
         SCALER   Rc;             // reaction coeff.
         LinkType Type;           // link type
-        SCALER&  Status(cweeTime t) {
+        SCALER& Status(cweeTime t) {
             AUTO ptr = this->GetValue<_STATUS_>();
             ptr->AddUniqueValue((u64)t, ptr->GetCurrentValue((u64)t)); // ensure the value exists
 
@@ -2421,7 +2422,8 @@ namespace epanet {
                         out = Vertices->Array[middlePoint].first;
                         out += Vertices->Array[middlePoint - 1].first;
                         out /= 2.0;
-                    }catch(...){}
+                    }
+                    catch (...) {}
                 }
                 else {
                     // the "middle" is the isolated vertex
@@ -2430,7 +2432,7 @@ namespace epanet {
             }
             else {
                 // middle of start and end
-                if (StartingNode) out = StartingNode->X; 
+                if (StartingNode) out = StartingNode->X;
                 if (EndingNode) out += EndingNode->X;
                 out /= 2.0;
             }
@@ -2497,7 +2499,7 @@ namespace epanet {
             }
             return StartingNode;
         };
-        virtual cweeStr Icon() const noexcept override { 
+        virtual cweeStr Icon() const noexcept override {
             if (Type == LinkType::CVPIPE) {
                 return "M 32.925818,54.016869 H 0.81084386 v 8.549385 H 32.597001 l 0.10962,44.939056 h 8.549378 V 41.302406 28.259118 24.751685 c 0,-0.40193 -0.115856,-1.037877 0.112664,-1.39169 0.256042,-0.396564 1.006415,-0.426812 1.421842,-0.550663 1.026466,-0.30581 2.031668,-0.680885 2.959391,-1.222788 0.396228,-0.231378 0.857034,-0.854936 1.315287,-0.903269 0.441949,-0.04658 0.98943,0.549681 1.315287,0.7941 1.128423,0.84628 2.269426,1.674588 3.397849,2.520972 4.442386,3.331742 8.885986,6.67115 13.372092,9.94381 12.054633,8.793692 24.014119,17.739311 35.951259,26.69205 3.74968,2.81263 7.53879,5.573315 11.28957,8.384964 1.81948,1.364393 3.82639,3.404081 5.91881,4.288614 -3.1556,4.638147 -6.91735,9.130079 -9.64547,14.029749 15.19158,4.279081 30.39085,8.532941 45.59671,12.760506 3.40113,0.9459 6.79238,1.92142 10.19348,2.86732 0.82975,0.23018 3.12274,0.45049 3.61376,1.18815 0.48446,0.7267 0.1129,2.70402 0.1129,3.57101 h 8.00135 V 73.965429 65.525655 c 0,-0.650194 -0.3069,-2.410379 0.17537,-2.893313 0.40993,-0.410038 1.69563,-0.175699 2.23598,-0.175699 h 6.24765 24.99047 v -8.549378 h -25.42891 -6.35724 c -0.54038,0 -1.82605,0.234339 -2.23598,-0.175699 -0.49434,-0.494768 -0.17537,-2.334645 -0.17537,-3.002916 V 42.069661 7.3240975 h -5.59 l -2.01676,0.1126764 -0.17537,1.4218272 0.10959,4.2746909 v 17.537195 l 0.21922,73.217773 h -0.10962 l -4.27468,-6.466839 -8.87821,-13.262503 -15.34176,-22.907952 -6.03168,-8.987814 c -0.98538,0.755526 -1.65617,2.078488 -2.39711,3.069012 -1.7625,2.354693 -3.44717,4.767815 -5.20637,7.124479 -0.62257,0.833568 -1.2265,1.680613 -1.8392,2.520971 -0.2006,0.274025 -0.49325,0.846176 -0.8703,0.889795 -0.45815,0.05294 -1.07195,-0.623341 -1.41503,-0.873238 -1.27801,-0.932545 -2.5681,-1.850947 -3.83627,-2.797732 -4.86655,-3.634582 -9.78026,-7.213704 -14.68739,-10.793597 C 91.824372,43.036067 80.414687,34.58709 68.986675,26.163865 64.928022,23.172349 60.854575,20.19936 56.820251,17.174844 55.021274,15.826234 53.007018,14.599513 51.346673,13.082435 50.569672,12.372397 50.865496,10.214556 50.635657,9.1874238 50.116336,6.8669238 48.883253,4.5462072 47.065183,2.9867105 40.408841,-2.723069 30.118128,1.0853511 28.25919,9.5162465 c -0.687241,3.1173455 0.0049,6.2945335 1.863748,8.8782075 0.638135,0.886938 2.621272,2.033436 2.78666,3.070645 0.177563,1.113506 0.01618,2.377829 0.01618,3.5058 v 7.124487 z";
             }
@@ -2509,7 +2511,7 @@ namespace epanet {
                     }
                 }
                 return "";
-            }                       
+            }
         };
     };
     using Plink = cweeSharedPtr<Slink>;
@@ -2531,7 +2533,7 @@ namespace epanet {
         square_foot_t  Area() const { return PI * Diameter * Diameter / 4.0; };        // tank area
         foot_t  Hmin;            // minimum water elev
         foot_t  Hmax;            // maximum water elev
-        foot_t& InitialHead(cweeTime t) { 
+        foot_t& InitialHead(cweeTime t) {
             AUTO ptr = this->GetValue<_HEAD_>();
             ptr->AddUniqueValue((u64)t, ptr->GetCurrentValue((u64)t)); // ensure the value exists
 
@@ -2554,7 +2556,7 @@ namespace epanet {
         SCALER  V1frac;          // mixing compartment fraction
         int     CanOverflow = 0;     // tank can overflow or not
 
-        cweeStr Icon() const noexcept override { 
+        cweeStr Icon() const noexcept override {
             if (Diameter == 0.0_ft) {
                 return "m 39.341154,101.23625 -3.78972,-0.24746 C 29.405532,100.58746 23.926794,96.923635 21.366022,91.502472 19.491674,87.534446 -0.18700597,3.461092 0.50076346,2.3596532 0.78884858,1.8982785 1.6481906,1.1679649 2.4104044,0.73672166 3.6439334,0.03882562 3.9522613,0.03991172 5.2157251,0.74706546 6.3796914,1.3981661 6.876452,2.386092 7.9755523,6.2356178 l 1.3403588,4.6945302 4.4162429,1.768614 c 7.760331,3.107846 12.614717,2.819699 21.165883,-1.256399 6.633261,-3.161881 10.172019,-4.100218 15.420214,-4.0888502 5.373293,0.011688 7.615249,0.5878274 14.252461,3.6628302 10.78163,4.995113 15.7992,5.039654 25.374506,0.225298 5.801164,-2.9167737 9.509859,-3.8977582 14.735812,-3.8977582 5.34963,0 8.68628,0.9117224 16.35677,4.4693982 8.9842,4.166999 14.55647,4.077949 23.39661,-0.373877 5.9133,-2.9778848 9.69095,-4.0346377 14.60941,-4.0868014 5.62344,-0.059684 8.82053,0.7277479 15.68158,3.8620824 3.01871,1.379046 6.42945,2.759953 7.57943,3.068695 4.79537,1.28741 11.13573,0.39023 16.52384,-2.338154 l 2.41041,-1.220568 0.93644,-4.4623015 c 0.54494,-2.5967573 1.31968,-4.8091303 1.85312,-5.29189603 1.42068,-1.28569269 4.21162,-0.7952829 5.16263,0.90715103 0.73767,1.3205104 0.19648,3.8980076 -9.3291,44.4311295 -6.43145,27.36697 -10.56341,43.926698 -11.3518,45.494735 -2.75473,5.478861 -8.78894,9.294544 -14.69973,9.295284 l -3.267,4.3e-4 c -22.89283,0.29804 -0.0378,-0.007 -22.8243,0.26135 l -42.61546,-0.13371 -42.615426,-0.13373 c -23.229751,0.21676 -10.742324,0.21864 -23.1473,0.14315 z M 82.261679,52.780804 c 1.900373,-0.402818 5.398253,-1.709344 7.773064,-2.90337 10.845577,-5.453053 18.546307,-5.456788 30.257307,-0.01469 10.18106,4.73114 14.50301,4.742673 24.56776,0.06558 9.33119,-4.336203 14.73341,-5.123987 22.14277,-3.228993 2.16933,0.554821 5.57295,1.82897 7.56359,2.831439 5.25056,2.644144 8.82695,3.551906 13.28109,3.371003 l 3.80419,-0.154495 1.45516,-5.749911 c 0.80034,-3.16245 1.46124,-5.873467 1.46865,-6.024476 0.007,-0.151019 -2.39757,-0.186685 -5.34441,-0.07923 -6.41583,0.233862 -9.7382,-0.510695 -17.15695,-3.844956 -9.39711,-4.223393 -15.32398,-4.119986 -24.30578,0.424075 -4.74154,2.398841 -9.35528,3.513354 -14.54413,3.513354 -5.8344,0 -9.20175,-0.830648 -16.00003,-3.946862 -9.40797,-4.312464 -14.09647,-4.30029 -23.637746,0.06134 -6.612831,3.022965 -10.085989,3.888338 -15.542984,3.872718 -5.868689,-0.01676 -8.044051,-0.563954 -14.918354,-3.752357 -9.911034,-4.596867 -14.506742,-4.569911 -24.981338,0.14654 -6.370735,2.868594 -10.896819,3.79785 -16.75446,3.439903 -4.551892,-0.278155 -4.618723,-0.264925 -4.360325,0.862859 0.144327,0.629948 0.779716,3.465121 1.41198,6.300397 l 1.149579,5.155049 5.040264,-0.216454 c 4.83855,-0.207786 5.291308,-0.334539 11.312898,-3.167323 11.434842,-5.379365 18.244816,-5.371576 29.606837,0.03393 5.183463,2.466034 8.460906,3.452501 12.210699,3.675265 0.574991,0.03424 2.600296,-0.26747 4.500669,-0.670288 z M 30.261957,32.877609 c 2.151479,-0.722225 5.032423,-1.881009 6.402129,-2.575089 5.64973,-2.862935 14.282302,-3.880538 20.449513,-2.410549 1.581236,0.376886 5.109588,1.693269 7.840795,2.925288 6.174689,2.785347 8.314563,3.370278 12.283902,3.357793 4.223301,-0.01324 6.999452,-0.714146 12.325091,-3.111569 6.379206,-2.871718 10.044186,-3.818817 14.856273,-3.839122 5.2205,-0.02203 8.50004,0.757776 15.23493,3.622564 2.91678,1.240707 6.40409,2.53302 7.74956,2.871811 3.70761,0.933589 9.91832,0.330091 13.91247,-1.351873 12.21097,-5.142129 15.79943,-5.932354 22.42935,-4.939215 3.66373,0.548821 6.23438,1.418579 14.56728,4.928737 2.07425,0.873761 4.73071,1.507205 7.05671,1.682698 3.56003,0.268597 8.67326,-0.416917 10.1915,-1.366354 0.59689,-0.373266 3.39421,-12.059338 2.98504,-12.470307 -0.0746,-0.07499 -1.17206,0.245738 -2.43875,0.712636 -1.2667,0.466888 -4.65683,0.968128 -7.5336,1.113872 -6.38197,0.323316 -9.85442,-0.457186 -17.12008,-3.848069 -9.41328,-4.393166 -14.43671,-4.340071 -24.32967,0.257188 -6.66752,3.098392 -9.41017,3.818651 -14.73926,3.870722 -5.19223,0.05079 -8.55476,-0.801717 -15.15885,-3.843 -6.56203,-3.02192 -10.05956,-3.852496 -14.48319,-3.439406 -3.210113,0.299763 -4.807195,0.856352 -13.482269,4.698577 -5.181178,2.294772 -10.58063,3.128347 -15.630979,2.413136 -3.533028,-0.500351 -5.216947,-1.101149 -13.755918,-4.907957 -7.608184,-3.391866 -12.989545,-3.102136 -22.113375,1.190551 -6.635515,3.121955 -10.227482,3.908114 -16.453218,3.601069 -2.874955,-0.141782 -6.226894,-0.626845 -7.448755,-1.077917 -1.827853,-0.674778 -2.221558,-0.693427 -2.221558,-0.105238 0,1.09004 2.466406,11.288332 2.814123,11.636049 0.705396,0.705385 5.525068,1.648078 8.593535,1.680836 2.222385,0.02369 4.587288,-0.395009 7.217271,-1.277862 z";
             }
@@ -2590,7 +2592,7 @@ namespace epanet {
         };              // initial water elev
 
         cubic_foot_per_second_t
-                Qmax;            // maximum flow
+            Qmax;            // maximum flow
         foot_t  Hmax;            // maximum head
         foot_t  H0;              // shutoff head .. unused for custom head curve
         SCALER  R;               // flow coeffic. .. unused for custom head curve
@@ -2605,7 +2607,7 @@ namespace epanet {
         int     Epat = 0;            // energy cost pattern index
 
         Dollar_per_kilowatt_hour_t
-                Ecost;           // unit energy cost
+            Ecost;           // unit energy cost
         Senergy Energy;          // energy usage statistics
 
         cweeStr Icon() const noexcept override { return "M 31.539821,15.32081 18.2742,16.218286 v 9.87226 h 43.481761 v -9.87226 H 49.22732 c 0,-3.669784 1.104728,-10.7831946 -0.8689,-13.8181093 -1.689893,-2.59864173 -15.052063,-2.86681095 -16.561395,0 C 30.421823,5.0119317 31.26124,12.281948 31.539821,15.32081 M 18.2742,29.680459 c 0,12.29724 4.380454,10.769731 13.265621,10.769731 l -1.181379,14.71595 -5.743718,3.519013 -0.444693,19.459118 C 16.849693,78.433259 12.402764,85.898486 12.378366,94.298875 H 1.3236835 c 0,4.361737 -1.81901234,17.722505 1.1816739,20.616865 2.1719483,2.09471 7.2458284,0.9226 9.8730086,0.9226 0.07569,7.80536 5.144555,15.54432 11.791665,16.15461 v 20.642 H 55.86013 v -73.5932 c 0,-9.034022 3.118895,-22.394769 -6.63281,-22.436954 V 40.45019 c 8.730986,0 12.528641,1.123647 12.528641,-10.769731 H 18.2742 m 84.0156,23.334426 h 55.27343 l -1.28381,-16.129472 -11.24483,-0.922607 h -29.47916 l -11.98181,0.922607 -1.28382,16.129472 m 74.1423,-7.154698 c -1.7341,1.672004 -1.18063,5.703474 -1.18137,8.052174 v 21.53947 59.233549 c 0,8.02346 -1.64125,19.09834 0.23436,26.79151 1.05167,4.31329 16.57023,4.45777 19.21966,1.90265 2.33624,-2.25355 0.52327,-7.39162 2.36055,-10.28329 13.97092,-21.9945 16.58203,-56.508806 8.05962,-83.029281 -1.87267,-5.828224 -5.20456,-8.852722 -8.05741,-13.717954 -1.70904,-2.915904 -0.4208,-6.349654 -1.62577,-9.33108 -1.43489,-3.549521 -7.95348,-2.080352 -10.61029,-2.080352 -2.30085,0 -6.46993,-0.938759 -8.39935,0.922604 M 86.813249,91.606435 h 37.585921 33.16406 c 3.79471,0 10.31623,1.527515 13.76825,-0.541174 2.16671,-1.298647 1.7039,-5.109342 1.70831,-7.536128 0.008,-5.234091 2.25074,-22.519513 -1.28381,-26.001728 -3.37758,-3.327848 -14.36815,-0.922609 -18.61462,-0.922609 h -47.90363 c -4.02907,0 -13.995981,-2.20959 -17.243105,0.922609 -1.857923,1.792265 -1.181376,6.434016 -1.181376,8.949651 v 25.129379 m -16.950517,2.69244 H 58.808045 v 21.539465 h 11.054687 c 0,14.18644 0.01767,27.82004 14.739577,27.82183 V 65.579579 C 69.512665,65.592118 69.862732,80.007427 69.862732,94.298875 M 51.438255,70.964448 v 2.69244 H 27.854927 v -2.69244 h 23.583328 m 0,8.974782 v 3.589903 c -6.755149,-1.958286 -16.0912,-1.958286 -22.846353,0 L 27.854927,80.836694 51.438255,79.93923 m 0,9.872246 v 2.692439 c -5.36226,0 -20.496126,3.107073 -23.583328,-2.692439 h 23.583328 m 35.374994,4.487399 v 8.974785 H 173.03979 V 94.298875 H 86.813249 M 51.438255,98.786257 V 101.4787 H 27.854927 v -2.692443 h 23.583328 m 35.374994,7.179843 v 8.97476 H 173.03979 V 105.9661 H 86.813249 m -35.374994,1.79494 v 2.69244 H 27.854927 c 3.087202,-5.7995 18.221068,-2.69244 23.583328,-2.69244 m 0,8.97478 v 3.58992 l -23.583328,-0.8975 v -1.79494 l 23.583328,-0.89748 m 35.374994,1.79496 v 34.10417 H 173.03979 V 118.53078 H 86.813249 m -35.374994,8.0773 v 2.69243 H 27.854927 v -2.69243 h 23.583328 m 0,8.97478 v 2.69243 H 27.854927 v -2.69243 h 23.583328 m -19.898434,20.64199 c -0.634538,8.57809 -5.50376,14.50414 -12.528641,15.25712 v 11.66722 c -8.023713,0 -12.2562545,3.55221 -16.950516,11.66721 H 204.72989 c -9.16434,-15.84228 -23.3534,-11.66721 -37.58593,-11.66721 0,-2.91681 0.73993,-7.78294 -0.75762,-10.26445 -4.12782,-6.83969 -10.95372,-5.60924 -11.77103,-16.65989 h -49.37758 c -0.81731,11.05065 -7.643221,9.8202 -11.771038,16.65989 -1.49754,2.48151 -0.757612,7.34764 -0.757612,10.26445 H 61.018982 C 63.9271,168.24298 49.704881,170.66796 48.490335,156.22485 H 31.539821 m -29.479157,43.07895 1.181669,10.7446 9.873012,0.9226 h 26.531244 122.338521 30.21613 l 11.34726,-0.9226 1.18139,-10.7446 z"; };
@@ -2653,7 +2655,7 @@ namespace epanet {
         cweeThreadedList< Pnode > Node; // this contains all 'within' junctions or reservoirs/tanks
         cweeThreadedList<std::pair<Plink, direction_t>> Boundary_Link; // note that this only inludes the 'critical' links that determine inflow or outflow or can be controlled. 
         cweeThreadedList < Plink > Within_Link; // includes only the completely contained links
-        
+
         Pnode FindMinPressureCustomer() const {
             Pnode out;
             pounds_per_square_inch_t avgPressure = std::numeric_limits<pounds_per_square_inch_t>::max(); int count = 0;
@@ -2747,7 +2749,7 @@ namespace epanet {
             pounds_per_square_inch_t avgPressure = std::numeric_limits<pounds_per_square_inch_t>::max(); int count = 0;
             for (auto& node : Node) {
                 if (!node) continue;
-                if (!node->HasWaterDemand()) continue; 
+                if (!node->HasWaterDemand()) continue;
                 AUTO head = node->GetValue<_HEAD_>();
                 if (!head) continue;
                 head_t headV = (head->GetMinValue() - node->El)();
@@ -2791,15 +2793,14 @@ namespace epanet {
                         AUTO asset_ptr = linkP.CastReference<Sasset>();
                         if (!exclusions.Find(asset_ptr)) {
                             AUTO asset_ptr = linkP.CastReference<Sasset>();
-                            cweeThreadedList<Passet> toAdd;
+                            auto& toAdd = connections[asset_ptr];
                             toAdd.Append(linkP->StartingNode.CastReference<Sasset>());
                             toAdd.Append(linkP->EndingNode.CastReference<Sasset>());
-                            connections[asset_ptr] = toAdd;                            
                         }
                     }
                     for (auto& nodeP : Node) {
                         AUTO asset_ptr = nodeP.CastReference<Sasset>();
-                        cweeThreadedList<Passet> toAdd;
+                        auto& toAdd = connections[asset_ptr];
 
                         auto stop = connections.end();
                         for (auto a_idS = connections.begin(); a_idS != stop; a_idS++) {
@@ -2809,8 +2810,6 @@ namespace epanet {
                                 }
                             }
                         }
-
-                        connections[asset_ptr] = toAdd;
                     }
                 }
 
@@ -2842,8 +2841,7 @@ namespace epanet {
                 }
 
                 // build tree
-                decltype(data)::pre_order_iterator ptr, owner;
-                {
+                decltype(data)::pre_order_iterator ptr, owner; {
                     ptr = data.insert(data.begin(), center);
                     for (int i = 1; i < treeConstructionOrder.Num(); i++) {
                         owner = std::find(data.begin(), data.end(), treeConstructionOrder[i].first);
@@ -2860,11 +2858,11 @@ namespace epanet {
             cweeList<Passet> out;
             if (Within_Link.Find(link)) {
                 // Want to find the (ideally, shortest) path that connects the start and end node of this link WITHOUT using this link. 
-                cweeList< Passet > exclusions; 
-                
+                cweeList< Passet > exclusions;
+
                 exclusions.Append(link.CastReference<Sasset>());
                 AUTO tree = BuildAssetTree(link->StartingNode.CastReference<Sasset>(), exclusions);
-                
+
                 Passet toFind = link->EndingNode.CastReference<Sasset>();
                 for (auto itr = tree.begin(); itr != tree.end(); itr++) {
                     AUTO this_asset = itr.node->data;
@@ -2875,7 +2873,7 @@ namespace epanet {
                             if (currentNode->data->Type_p != asset_t::JUNCTION && currentNode->data->Type_p != asset_t::RESERVOIR) {
                                 out.Append(currentNode->data);
                             }
-                            currentNode = currentNode->parent;                        
+                            currentNode = currentNode->parent;
                         }
                         return out;
                     }
@@ -3022,7 +3020,7 @@ namespace epanet {
             * Tok[MAXTOKS],           // Array of token strings
             Comment[MAXMSG + 1],     // Comment text
             LineComment[MAXMSG + 1]; // Full line comment
-        
+
         UnitsType Unitsflag;             // Unit system flag
         FlowUnitsType Flowflag;          // Flow units flag
         PressureUnitsType Pressflag;     // Pressure units flag
@@ -3056,14 +3054,14 @@ namespace epanet {
         cweeTime SimulationStartTime;
 
     public:
-        Times() { 
-            CalibrationDate = cweeTime::Now().ToStartOfDay(); 
+        Times() {
+            CalibrationDate = cweeTime::Now().ToStartOfDay();
             SimulationStartTime = CalibrationDate;
         };
 
         void SetCalibrationDateTime(cweeTime t) {
             auto t2 = cweeTime(t).ToStartOfDay();
-            Tstart = ((u64)(t) - (u64)(t2));
+            Tstart = ((u64)(t)-(u64)(t2));
             CalibrationDate = t2;
         };
         cweeTime GetCalibrationDateTime() const {
@@ -3191,8 +3189,8 @@ namespace epanet {
             temp;       // Array used by linear eqn. solver
 
         int Ncoeffs;     // Number of non-zero matrix coeffs
-        
-        cweeList<int> 
+
+        cweeList<int>
             Order,      // Node-to-row of re-ordered matrix
             Row,        // Row-to-node of re-ordered matrix
             Ndx,        // Index of link's coeff. in Aij
@@ -3351,7 +3349,7 @@ namespace epanet {
             Climit;                // Limiting potential quality
         SCALER
             SourceQual;            // External source quality
-           
+
         cweeList<SCALER>
             TankConcentration;           // Tank current volume
         cweeList<SCALER>
@@ -3359,7 +3357,7 @@ namespace epanet {
         cweeList<SCALER>
             PipeRateCoeff;         // Pipe reaction rate coeffs.
 
-        struct Mempool * SegPool;  // Memory pool for water quality segments
+        struct Mempool* SegPool;  // Memory pool for water quality segments
 
         Pseg
             FreeSeg,               // Pointer to unused segment
@@ -3432,24 +3430,24 @@ namespace epanet {
         static constexpr scalar_t 	Dldr = 1; // true positive rate for leak detection, cannot find for Marin in Amanda's data
         /*static constexpr */Dollar_per_mile_t M = Get_F_Given_P<1 * 12, Dollar_per_mile_t>(605_USD_p_mi, w_M);
         /*static constexpr */Dollar_t F = Get_F_Given_P<1 * 12, Dollar_t>(Calr / Dldr, w_F); // adjust for one year, 2022 publication
-    
+
     public:
         SCALER ICF = 1.3; // # infrastructure condition factor
         SCALER ILI = 1.1; // # infrastructure leakage index
 
         // evaluate the leak model on a network, assuming leak rates on pipe lengths, as a function of zone pressures and zone pipes.
-        
+
 
         std::map<std::string, cweeUnion<cweeUnitValues::unit_value, cweeUnitPattern>> LeakModelResults(
             mile_t MilesMains,
             year_t surveyFrequency,
-            cweeList<Pzone> new_zones, 
+            cweeList<Pzone> new_zones,
             pounds_per_square_inch_t avgPressure_old,
             pounds_per_square_inch_t avgPressure_new
         ) {
             // compare this zone to all of the zones, and determine what this zone's weighted responsibility is for the net leakage            
             scalar_t N1 = 1.5 - (1.0 - (2.0 / 3.0) * (ICF / ILI)) * PercRigid;
-            
+
             AUTO LeakRatePerMile = connectionLeakRate * ((92950900.0 / 4.0) / 365.0) / 852.95_mi;
             rateOfRise_t R = LeakRatePerMile * MilesMains / 365_d;
             million_gallon_per_day_t totalWaterDemand = 0;
@@ -3459,8 +3457,8 @@ namespace epanet {
             scalar_t numJunctions = 0;
             scalar_t numCustomers = 0;
             inch_t avgPipeDiameter = 0; int pipeCount = 0;
-            if (new_zones.Num () > 0) {
-                pounds_per_square_inch_t avgSystemPressure = 0;                
+            if (new_zones.Num() > 0) {
+                pounds_per_square_inch_t avgSystemPressure = 0;
                 double totalSysRatio = 0;
                 million_gallon_per_month_t totalSystemLeakage = 0;
                 cweeList< pounds_per_square_inch_t > pressures;
@@ -3482,7 +3480,7 @@ namespace epanet {
                                             numValves++;
                                         }
                                     }
-                                }                                
+                                }
                             }
                             pressures.Append(zone->AverageNodePressure());
                             for (auto& node : zone->Node) {
@@ -3492,14 +3490,14 @@ namespace epanet {
                                         totalWaterDemand += node->GetValue<_DEMAND_>()->GetAvgValue();
                                         numCustomers += 1;
                                     }
-                                    
+
                                 }
                             }
                         }
                     }
                     int Pcount = 0;
                     for (auto& pressure : pressures) cweeMath::rollingAverageRef<pounds_per_square_inch_t>(avgSystemPressure, pressure, Pcount);
-                    totalSystemLeakage = totalSystemLength * SystemLeakRatePerMile;                    
+                    totalSystemLeakage = totalSystemLength * SystemLeakRatePerMile;
                     Pcount = 0;
                     avgSystemPressure += 0.00001_psi;
                     for (auto& zone : new_zones) {
@@ -3515,7 +3513,7 @@ namespace epanet {
             }
 
             // SYSTEM CHARACTERISTICS / ANALYSIS VARIABLES
-            month_t surveyFrequency_Months = surveyFrequency; 
+            month_t surveyFrequency_Months = surveyFrequency;
             surveyFrequency_Months = units::math::round(surveyFrequency_Months); // must be in increments of months to be valid
             surveyFrequency_Months = units::math::max(surveyFrequency_Months, (month_t)1);
 
@@ -3540,7 +3538,8 @@ namespace epanet {
                 bool firstPass = true;
                 month_t zeroMonth = 0;
                 int indexFollowingSurvey = 0;
-                for (int t_ind = 0; t_ind < t.size(); t_ind++) { month_t idx = t[t_ind];                    
+                for (int t_ind = 0; t_ind < t.size(); t_ind++) {
+                    month_t idx = t[t_ind];
                     if (idx == zeroMonth || units::math::round(units::math::fmod(idx, surveyFrequency_Months)) == zeroMonth) {
                         if (firstPass) {
                             Water_Lost_Volume[t_ind] = 0;
@@ -3554,13 +3553,14 @@ namespace epanet {
                         indexFollowingSurvey = 0;
                     }
                     else {
-                        Water_Lost_Volume[t_ind] = 
+                        Water_Lost_Volume[t_ind] =
                             Vol_Lost_At_t(t[indexFollowingSurvey], gamma, R, init, leak_reduction_eta) -
-                            Vol_Lost_At_t(t[indexFollowingSurvey-1], gamma, R, init, leak_reduction_eta);
+                            Vol_Lost_At_t(t[indexFollowingSurvey - 1], gamma, R, init, leak_reduction_eta);
                     }
-                    indexFollowingSurvey++;                    
+                    indexFollowingSurvey++;
                 }
-                for (int t_ind = 0; t_ind < t.size(); t_ind++) { month_t idx = t[t_ind];
+                for (int t_ind = 0; t_ind < t.size(); t_ind++) {
+                    month_t idx = t[t_ind];
                     Water_Lost_Value[t_ind] = Water_Lost_Volume[t_ind] * Get_F_Given_P<decltype(Cvp)>(Cvp, g, idx);
                 }
             }
@@ -3570,7 +3570,8 @@ namespace epanet {
                 month_t idx_i = 0;
                 bool firstPass = true;
                 month_t zeroMonth = 0;
-                for (int t_ind = 0; t_ind < t.size(); t_ind++) { month_t idx = t[t_ind];
+                for (int t_ind = 0; t_ind < t.size(); t_ind++) {
+                    month_t idx = t[t_ind];
                     if (firstPass) {
                         Water_Lost_Do_Nothing[t_ind] = 0;
                         firstPass = false;
@@ -3591,7 +3592,8 @@ namespace epanet {
             }
             cweeList<Dollar_t> Water_Saved_Value; Water_Saved_Value.AssureSize(t.size(), 0_USD); {
                 month_t idx_i = 0;
-                for (int t_ind = 0; t_ind < t.size(); t_ind++) { month_t idx = t[t_ind];
+                for (int t_ind = 0; t_ind < t.size(); t_ind++) {
+                    month_t idx = t[t_ind];
                     Water_Saved_Value[t_ind] = Water_Saved_Volume[t_ind] * Get_F_Given_P<decltype(Cvp)>(Cvp, g, idx);
                 }
             }
@@ -3605,7 +3607,8 @@ namespace epanet {
             cweeList<Dollar_t> SurveyRep; SurveyRep.AssureSize(t.size(), 0_USD); {
                 month_t idx_i = 0;
                 month_t zeroMonth = 0;
-                for (int t_ind = 0; t_ind < t.size(); t_ind++) { month_t idx = t[t_ind];
+                for (int t_ind = 0; t_ind < t.size(); t_ind++) {
+                    month_t idx = t[t_ind];
                     if (units::math::fmod(idx, surveyFrequency_Months) == zeroMonth) {
                         SurveyRep[t_ind] = Get_F_Given_P<decltype(Cs_0)>(Cs_0, w_su, idx);
                     }
@@ -3626,7 +3629,8 @@ namespace epanet {
             // calculate net present values, smarter ways to do this, not worrying about it now
             Dollar_t NPV_costs = 0;
             {
-                for (int t_ind = 0; t_ind < t.size(); t_ind++) { month_t idx = t[t_ind];
+                for (int t_ind = 0; t_ind < t.size(); t_ind++) {
+                    month_t idx = t[t_ind];
                     try {
                         NPV_costs += Get_P_Given_F(SurveyRep[t_ind], dis, idx);
                         NPV_costs += Get_P_Given_F(Water_Lost_Value[t_ind], dis, idx);
@@ -3638,7 +3642,8 @@ namespace epanet {
             Dollar_t NPV_benefits = 0;
             {
                 month_t idx_i = 0;
-                for (int t_ind = 0; t_ind < t.size(); t_ind++) { month_t idx = t[t_ind];
+                for (int t_ind = 0; t_ind < t.size(); t_ind++) {
+                    month_t idx = t[t_ind];
                     NPV_benefits += Get_P_Given_F(Water_Saved_Value[t_ind], dis, idx);
                 }
             }
@@ -3658,7 +3663,7 @@ namespace epanet {
                         cweeTime t = cweeTime::Now().ToStartOfMonth() + second_t(idx)();
 
                         pat.AddValue(cweeUnitValues::second((u64)t), cweeUnitValues::million_gallon(cweeUnitValues::unit_value::from_unit_t(Water_Lost_Do_Nothing[t_ind])));
-                    }  
+                    }
 
                     results["Water_Lost_Do_Nothing"] = cweeUnion<cweeUnitValues::unit_value, cweeUnitPattern>(cweeUnitValues::unit_value(0), cweeUnitPattern(pat));
                 }
@@ -3711,10 +3716,10 @@ namespace epanet {
 
             // Dial-in to local 3-year period
             month_t bestMonthPrev = bestMonth;
-            for (month_t S = units::math::max(month_t(1), (bestMonthPrev - month_t(18))); S <= units::math::min(30_yr, (bestMonthPrev + month_t(18))); S += month_t(2)) {                
-                if (cache.count(S) > 0) { 
+            for (month_t S = units::math::max(month_t(1), (bestMonthPrev - month_t(18))); S <= units::math::min(30_yr, (bestMonthPrev + month_t(18))); S += month_t(2)) {
+                if (cache.count(S) > 0) {
                     thisV = cache[S];
-                } 
+                }
                 else {
                     cache[S] = LeakModelResults(MilesMains, S, new_zones, avgPressure_old, avgPressure_new)["Net Benefits"].get<0>()();
                     thisV = cache[S];
@@ -3798,9 +3803,9 @@ namespace epanet {
                     C_PAT = ::Max<Dollar_t>(
                         CostOfPRV(valve->Diam, w_pat),
                         Get_F_Given_P<4 * 12>(11913.91_USD * avgFlow() * std::sqrt(avgHeadloss()), w_pat)
-                    ) * 10; // # average, inflated from 2019 to 2023 dollars, increased 10x for a hypothetical "custom" installation
+                        ) * 10; // # average, inflated from 2019 to 2023 dollars, increased 10x for a hypothetical "custom" installation
                 }
-                                
+
                 C_PAT += (1.0 - 0.26) * C_PAT / 0.26;
                 Ci_T[0] += /*N_PAT * */C_PAT;
 
@@ -3823,8 +3828,8 @@ namespace epanet {
                     NPV_costs += Get_P_Given_F(OM_T[idx], dis, t[idx]);
                 }
                 catch (...) {}
-            }            
-            
+            }
+
             // Benefits
             Dollar_t NPV_benefits = 0;
             for (month_t idx = 0; idx < ((month_t)(t.size())); idx++) {
@@ -3841,7 +3846,7 @@ namespace epanet {
     class Network {
     public:
         Network() :
-            Asset(std::function<size_t(cweeSharedPtr<Sasset> const&)>([](const cweeSharedPtr<Sasset>& v)->size_t { if (v) { return v->Hash(); } return 0; })), 
+            Asset(std::function<size_t(cweeSharedPtr<Sasset> const&)>([](const cweeSharedPtr<Sasset>& v)->size_t { if (v) { return v->Hash(); } return 0; })),
             System(make_cwee_shared<Sasset>(asset_t::ANY, cweeAssetValueCollection<asset_t::ANY>::Values(), "System"))
         {
             Asset.AddOrReplace(System);
@@ -3940,7 +3945,7 @@ namespace epanet {
                 }
                 else { // SI units
                     return (square_meter_t)(double)v;
-                }                
+                }
             }
             else if constexpr (units::traits::is_energy_cost_rate_unit< desiredUnit >()) {
                 return (Dollar_per_kilowatt_hour_t)(double)v;
@@ -4058,7 +4063,7 @@ namespace epanet {
                     }
                 }
             }
-            
+
             return false;
         };
 
@@ -4081,9 +4086,9 @@ namespace epanet {
                 }
                 adj = adj->next;
             }
-            
+
             return out;
-        };        
+        };
         cweeList<Pnode>    findDeadEnds();
     };
     using EN_Project = cweeSharedPtr<Project>;
@@ -4123,13 +4128,13 @@ namespace epanet {
                 AUTO connectedLinks = pr->getConnectedLinks(node_index);
                 if (connectedLinks.size() <= 1) {  // dead-end or isolated
                     // is this link used by any rules?
-                    if (connectedLinks.size() >= 1){
+                    if (connectedLinks.size() >= 1) {
                         AUTO link_index = hashtable_t::hashtable_find(pr->network->LinkHashTable, (char*)(connectedLinks[0]->Name_p.c_str()));
                         if (pr->incontrols(LINK, link_index)) { // cannot use this
                             continue;
                         }
                     }
-                    
+
                     // is this junction referenced by any rules?
                     if (pr->incontrols(NODE, node_index)) { // cannot use this
                         continue;
@@ -4208,14 +4213,14 @@ namespace epanet {
                     else if (pat.Y_Type().AreConvertableTypes(cweeUnitValues::foot(1))) { // level
                         // convert level to demand.
                         // when level increases, positive demand. 
-                        
+
                         AUTO pat1 = cweeUnitPattern(pat);
                         pat1.ShiftTime(cweeUnitValues::hour(-1));
 
-                        
+
                         AUTO pat2 = cweeUnitPattern(pat1.X_Type(), cweeUnitValues::gallon());
                         pat2 = ((pat1 - cweeUnitPattern(pat)) * cweeUnitValues::square_foot(resPtr->Diameter() * resPtr->Diameter()) * cweeMath::PI / 4.0); // correct conversion to gallons
-                        
+
                         AUTO pat3 = cweeUnitPattern(pat1.X_Type(), cweeUnitValues::gallon_per_hour()); // force-cast to account for the 1-hour adjustment
                         pat3 = pat2;
 
@@ -4233,7 +4238,7 @@ namespace epanet {
                     contributions.Append(cweeUnitPattern(*asset->GetValue<_DEMAND_>()) * -1);
 
                     // positive demand = filling. Negative tank demand = positive customer demand.
-                }                
+                }
                 break;
             case asset_t::PUMP:
             case asset_t::VALVE:
@@ -4262,7 +4267,7 @@ namespace epanet {
                 break;
             }
         }
-       
+
         cweeUnitPattern sumDemands = cweeUnitPattern(cweeUnitValues::second(), cweeUnitValues::gallon_per_minute());
         for (auto& pat : contributions) {
             sumDemands += pat;
@@ -4270,7 +4275,7 @@ namespace epanet {
 
         if (sumDemands.GetMinValue() <= cweeUnitValues::gallon_per_minute(-1)) {
             // we have a problem! What is the potential solution? 
-            
+
 
 
 
@@ -4281,7 +4286,7 @@ namespace epanet {
 
         }
 
-        return sumDemands;    
+        return sumDemands;
     };
     INLINE std::map<std::string, cweeUnion<cweeUnitValues::unit_value, cweeUnitPattern>> Szone::LeakModelResults(cweeSharedPtr<Project> pr, year_t surveyFrequency, pounds_per_square_inch_t oldPressure) const {
         mile_t MilesMains = 0;
@@ -4330,9 +4335,9 @@ namespace epanet {
         }
 
         results["Average Water Demand"] = cweeUnion<cweeUnitValues::unit_value, cweeUnitPattern>(cweeUnitValues::million_gallon_per_day(cweeUnitValues::unit_value::from_unit_t(totalWaterDemand)), cweeUnitPattern());
-        results["Number of Valves"] = cweeUnion<cweeUnitValues::unit_value, cweeUnitPattern>(cweeUnitValues::scalar(numValves), cweeUnitPattern()); 
-        results["Number of ERTs"] = cweeUnion<cweeUnitValues::unit_value, cweeUnitPattern>(cweeUnitValues::scalar(numERTs), cweeUnitPattern()); 
-        results["Number of Junctions"] = cweeUnion<cweeUnitValues::unit_value, cweeUnitPattern>(cweeUnitValues::scalar(numJunctions), cweeUnitPattern()); 
+        results["Number of Valves"] = cweeUnion<cweeUnitValues::unit_value, cweeUnitPattern>(cweeUnitValues::scalar(numValves), cweeUnitPattern());
+        results["Number of ERTs"] = cweeUnion<cweeUnitValues::unit_value, cweeUnitPattern>(cweeUnitValues::scalar(numERTs), cweeUnitPattern());
+        results["Number of Junctions"] = cweeUnion<cweeUnitValues::unit_value, cweeUnitPattern>(cweeUnitValues::scalar(numJunctions), cweeUnitPattern());
         results["Number of Customer Nodes"] = cweeUnion<cweeUnitValues::unit_value, cweeUnitPattern>(cweeUnitValues::scalar(numCustomers), cweeUnitPattern());
         results["Average Pipe Diameter"] = cweeUnion<cweeUnitValues::unit_value, cweeUnitPattern>(cweeUnitValues::inch(cweeUnitValues::unit_value::from_unit_t(avgPipeDiameter)), cweeUnitPattern());
 
@@ -4347,7 +4352,7 @@ namespace epanet {
         }
         for (auto& node : this->Node) {
             avgPressure += node->GetAvgPressure();
-        } 
+        }
         if (this->Node.Num() > 0) avgPressure /= this->Node.Num();
 
         return pr->network->Leakage.BestSurveyFrequency(MilesMains, pr->network->Zone, oldPressure, avgPressure);
@@ -5439,7 +5444,7 @@ namespace epanet {
             // Open zones are added last
             if (!success) {
                 for (auto& p : ZonesProcessing) {
-                    if (p->Type == zoneType_t::Open) {                        
+                    if (p->Type == zoneType_t::Open) {
                         success = true;
                         out.Append(p);
                         ZonesProcessing.Remove(p);
@@ -5465,8 +5470,8 @@ namespace epanet {
     typedef struct {
         foot_t maxheaderror;
         SCALER maxflowerror;
-        cubic_foot_per_second_t 
-               maxflowchange;
+        cubic_foot_per_second_t
+            maxflowchange;
         int    maxheadlink;
         int    maxflownode;
         int    maxflowlink;
@@ -5501,7 +5506,7 @@ namespace epanet {
     static constexpr ceSS   w_TCV = ceSS("TCV");
     static constexpr ceSS   w_GPV = ceSS("GPV");
     static constexpr ceSS   w_PAT = ceSS("PAT"); // pump as turbine
-    
+
     static constexpr ceSS   w_OPEN = ceSS("OPEN");
     static constexpr ceSS   w_CLOSED = ceSS("CLOSED");
     static constexpr ceSS   w_ACTIVE = ceSS("ACTIVE");
@@ -6095,7 +6100,7 @@ namespace epanet {
         }
         return (y[m]); // xx off high end of curve
     };
-    static char*    geterrmsg(int errcode, char* msg)
+    static char* geterrmsg(int errcode, char* msg)
         /*----------------------------------------------------------------
         **  Input:   errcode = error code
         **  Output:  none
@@ -6129,7 +6134,7 @@ namespace epanet {
             vp(progmsg);
         }
     };
-    static char*    xstrcpy(char** s1, const char* s2, const size_t n)
+    static char* xstrcpy(char** s1, const char* s2, const size_t n)
         //----------------------------------------------------------------
         //  Input:   s1 = destination string
         //           s2 = source string
@@ -6442,7 +6447,7 @@ namespace epanet {
         if (*b >= 0.0) return 0;
         return 1;
     };
-    static char*    clocktime(char* atime, units::time::second_t seconds)
+    static char* clocktime(char* atime, units::time::second_t seconds)
         /*
         **--------------------------------------------------------------
         **   Input:   seconds = time in seconds
@@ -6462,7 +6467,7 @@ namespace epanet {
         t1 = t0 + (u64)seconds;
 
         seconds = (units::time::second_t)(u64)(t1 - t0);
-        
+
         // extract the hour component(s)
         h = seconds;
         fractional_h = units::math::modf(scalar_t(h()), &intPart)();
@@ -6520,7 +6525,7 @@ namespace epanet {
             sprintf(timetxt, "%d:%02d:%02d", hours, minutes, seconds);
         }
     };
-    static char*    fillstr(char* s, char ch, int n)
+    static char* fillstr(char* s, char ch, int n)
         /*
         **---------------------------------------------------------
         **  Fills n bytes of s to character ch.

@@ -29,6 +29,7 @@ to maintain a single distribution point for the source code.
 #include "AlgLibWrapper.h"
 #include "odbc.h"
 #include "RTree.h"
+#include "NameOf.hpp"
 
 namespace chaiscript {
     namespace WaterWatch_Lib {
@@ -46,7 +47,7 @@ namespace chaiscript {
                 AddUnit_t(square_foot_t);
                 AddUnit_t(gallon_t);
                 AddUnit_t(gallon_per_minute_t);
-                AddUnit_t(gallon_per_year_t);                
+                AddUnit_t(gallon_per_year_t);
                 AddUnit_t(feet_per_second_t);
                 AddUnit_t(feet_per_hour_t);
                 AddUnit_t(pounds_per_square_inch_t);
@@ -84,8 +85,8 @@ namespace chaiscript {
 
                 lib->AddFunction(, ReynoldsNumberInPipe, , return cweeEng::ReynoldsNumberInPipe(velocity_ftPerSec, diameter_inches, kinematicViscosity_ft2PerSec), feet_per_second_t velocity_ftPerSec, inch_t diameter_inches, float kinematicViscosity_ft2PerSec);
                 lib->AddFunction(, EquivalentPipeRoughness, , return cweeEng::Cylinder_Volume_to_Level_f(volume, Diameter_feet), cubic_foot_t volume, foot_t Diameter_feet);
-                
-                lib->add(chaiscript::fun(&cweeEng::EquivalentPipeRoughness, 
+
+                lib->add(chaiscript::fun(&cweeEng::EquivalentPipeRoughness,
                     { "desiredDiameter", "pipe1_length", "pipe2_length", "pipe1_diameter", "pipe2_diameter", "pipe1_roughness", "pipe2_roughness" }
                 ), "EquivalentPipeRoughness");
 
@@ -108,10 +109,10 @@ namespace chaiscript {
 
             // Geocoding
             if (1) {
-                lib->add(chaiscript::fun([](double X, double Y) { return cwee_units::length::foot_t(geocoding->GetElevation(vec2d(X, Y))); }, {"Longitude", "Latitude"}), "GetElevation");
+                lib->add(chaiscript::fun([](double X, double Y) { return cwee_units::length::foot_t(geocoding->GetElevation(vec2d(X, Y))); }, { "Longitude", "Latitude" }), "GetElevation");
                 lib->add(chaiscript::fun([](cweeStr const& address) { auto v = geocoding->GetLongLat(address); return cweePair<double, double>(v.x, v.y); }, { "Address" }), "GetLongLat");
-               
-                lib->AddFunction(, GetLongLat, SINGLE_ARG(->cweePair<double, double>) , SINGLE_ARG(if (true) {
+
+                lib->AddFunction(, GetLongLat, SINGLE_ARG(->cweePair<double, double>), SINGLE_ARG(if (true) {
                     auto v = geocoding->GetLongLat(easting(), northing(), centralMeridian, LatFirstStandardParallel, LatSecondStandardParallel, LatOrigin, FalseNorthing, FalseEasting); return cweePair<double, double>(v.x, v.y);
                 }), cwee_units::length::foot_t easting, cwee_units::length::foot_t northing, double centralMeridian, double LatFirstStandardParallel, double LatSecondStandardParallel, double LatOrigin, double FalseNorthing, double FalseEasting);
 
@@ -144,7 +145,21 @@ namespace chaiscript {
             }
 
             // Patterns
-            if (1) {               
+            if (1) {
+                cweeUnitPattern patTest;
+                patTest.Abs();
+                constexpr auto varN = NAMEOF(patTest);
+
+                constexpr auto typeN = ::nameof::nameof_type<decltype(patTest)>();
+                constexpr auto typeN2 = nameof::nameof_full_type<decltype(patTest)>();
+                constexpr auto xyzw = nameof::nameof_short_type<decltype(patTest)>();
+
+                constexpr auto abs_n = NAMEOF(&cweeUnitPattern::Abs);
+                constexpr auto z = NAMEOF(&decltype(patTest)::Abs);
+
+
+
+
                 lib->add(chaiscript::user_type<cweeUnitPattern>(), "Pattern");
                 lib->add(chaiscript::constructor<cweeUnitPattern()>(), "Pattern");
                 lib->add(chaiscript::constructor<cweeUnitPattern(const cweeUnitPattern&)>(), "Pattern");
@@ -173,7 +188,7 @@ namespace chaiscript {
                     }), "=");
 
                 ADD_BETTER_ENUM_TO_SCRIPT_ENGINE(interpolation_t, interpolation_t);
-                lib->AddFunction(, SetInterpolationType, , a.SetInterpolationType(interpType); , cweeUnitPattern& a, const interpolation_t& interpType);
+                lib->AddFunction(, SetInterpolationType, , a.SetInterpolationType(interpType);, cweeUnitPattern & a, const interpolation_t & interpType);
                 lib->add(chaiscript::fun([](cweeUnitPattern& a) { return a.GetInterpolationType(); }), "GetInterpolationType");
 
                 ADD_BETTER_ENUM_TO_SCRIPT_ENGINE(boundary_t, boundary_t);
@@ -333,16 +348,16 @@ namespace chaiscript {
                 lib->add(chaiscript::fun([](const cweeUnitPattern& a, const cweeUnitPattern& b, const cweeUnitValues::unit_value& from, const cweeUnitValues::unit_value& to) { return a.R_Squared(b, from, to); }), "R_Squared");
                 lib->add(chaiscript::fun([](const cweeUnitPattern& a) {
                     return a.GetOutlierMask();
-                }), "GetOutlierMask");
+                    }), "GetOutlierMask");
                 lib->add(chaiscript::fun([](cweeUnitPattern const& WhenOne, cweeUnitPattern const& WhenZero, cweeUnitPattern const& LerpBy) {
                     return cweeUnitPattern::Lerp(WhenOne, WhenZero, LerpBy);
-                }), "Lerp");
-                lib->add(chaiscript::fun([](const cweeUnitPattern& a) { 
+                    }), "Lerp");
+                lib->add(chaiscript::fun([](const cweeUnitPattern& a) {
                     return a.StdDev();
-                }), "StdDev");
+                    }), "StdDev");
                 lib->add(chaiscript::fun([](const cweeUnitPattern& a, const cweeUnitPattern& mask) {
-                    return a.StdDev(mask);
-                }), "StdDev");
+                    return (((a - a.GetAvgValue(a.GetMinTime(), a.GetMaxTime(), mask)).pow(2.0)).GetAvgValue(a.GetMinTime(), a.GetMaxTime(), mask)).pow(0.5);
+                    }), "StdDev");
                 AUTO quantile_pattern = [](cweeUnitPattern const& a, double quantile, double desiredNumValues) {
                     AUTO width = a.GetMaxTime() - a.GetMinTime();
                     if (width() <= 0 || desiredNumValues <= 0) {
@@ -378,61 +393,61 @@ namespace chaiscript {
                     auto diff_sqr = (a - avg).pow(2);
                     auto diff_sqr_avg = diff_sqr.Blur(numSamples);
                     return diff_sqr_avg.pow(0.5);
-                }), "GetCurrentStdDev");
+                    }), "GetCurrentStdDev");
                 lib->add(chaiscript::fun([](const cweeUnitPattern& a, int numSamples) {
                     auto avg = a.Blur(numSamples);
                     auto diff_sqr = (a - avg).pow(2);
                     auto diff_sqr_avg = diff_sqr.Blur(numSamples);
                     return diff_sqr_avg.pow(0.5);
-                }), "GetCurrentStdDev");
+                    }), "GetCurrentStdDev");
                 lib->add(chaiscript::fun([quantile_pattern](const cweeUnitPattern& a, double quantile) {
                     auto n = a.GetNumValues();
                     auto numSamples = n / 1024; // (((year)(second)(a.GetMaxTime() - a.GetMinTime())) * 52)();                    
                     return quantile_pattern(a, quantile, numSamples);
-                }), "GetCurrentValueQuantile");
-                lib->add(chaiscript::fun([quantile_pattern](const cweeUnitPattern& a, double quantile, int numSamples) {                 
+                    }), "GetCurrentValueQuantile");
+                lib->add(chaiscript::fun([quantile_pattern](const cweeUnitPattern& a, double quantile, int numSamples) {
                     return quantile_pattern(a, quantile, numSamples);
-                }), "GetCurrentValueQuantile");
+                    }), "GetCurrentValueQuantile");
 
                 lib->AddFunction(, LineOfBestFit, , return o.LineOfBestFit(), cweeUnitPattern const& o);
                 lib->AddFunction(, LineOfBestFit, , return o.LineOfBestFit(mask), cweeUnitPattern const& o, cweeUnitPattern const& mask);
 
                 lib->add(chaiscript::fun([=](const cweeUnitPattern& a) {
                     return a.Blur((a.GetNumValues() / 32) + 1);
-                }), "Blur");
+                    }), "Blur");
                 lib->add(chaiscript::fun([=](const cweeUnitPattern& a, int desiredNumValues) {
                     return a.Blur(desiredNumValues);
-                }), "Blur");
+                    }), "Blur");
                 lib->add(chaiscript::fun([=](const cweeUnitPattern& a, int desiredNumValues, const cweeUnitPattern& mask) {
                     return a.Blur(desiredNumValues, mask);
-                }), "Blur");
+                    }), "Blur");
 
 
                 lib->AddFunction(, Subdivide, , return o.Subdivide(step), const cweeUnitPattern& o, const cweeUnitValues::unit_value& step);
-                
+
                 lib->add(chaiscript::fun([](cweeUnitPattern const& a) { return a.X_Type(); }), "X");
                 lib->add(chaiscript::fun([](cweeUnitPattern const& a) { return a.Y_Type(); }), "Y");
 
-                lib->add(chaiscript::fun([](cweeUnitPattern const& a, const cweeUnitValues::unit_value& Y_type) { 
+                lib->add(chaiscript::fun([](cweeUnitPattern const& a, const cweeUnitValues::unit_value& Y_type) {
                     AUTO out = cweeUnitPattern(a.X_Type(), Y_type);
                     out = a;
                     return out;
-                }), "Cast");
-                lib->add(chaiscript::fun([](cweeUnitPattern const& a, const cweeUnitValues::unit_value& X_type, const cweeUnitValues::unit_value& Y_type) { 
+                    }), "Cast");
+                lib->add(chaiscript::fun([](cweeUnitPattern const& a, const cweeUnitValues::unit_value& X_type, const cweeUnitValues::unit_value& Y_type) {
                     AUTO out = cweeUnitPattern(X_type, Y_type);
                     out = a;
                     return out;
-                }), "Cast");
+                    }), "Cast");
 
                 lib->add(chaiscript::fun([](cweeUnitPattern& a, cweeList<cweeList<cweeStr>> const& data, int TimeColumn, int ValueColumn)->cweeUnitPattern& {
                     cweeUnitValues::unit_value X_type = a.X_Type();
-                    cweeUnitValues::unit_value Y_type= a.Y_Type();
+                    cweeUnitValues::unit_value Y_type = a.Y_Type();
                     for (auto& row : data) {
                         a.AddUniqueValue(X_type = row[TimeColumn].ReturnNumeric(), Y_type = row[ValueColumn].ReturnNumeric());
                     }
                     a.RemoveUnnecessaryKnots();
                     return a;
-                }), "AppendFromSQL");
+                    }), "AppendFromSQL");
 
                 lib->add(chaiscript::fun([](cweeUnitPattern& a, nanodbcResult& con, int TimeColumn, int ValueColumn)->cweeUnitPattern& {
                     cweeUnitValues::unit_value X_type = a.X_Type();
@@ -441,10 +456,10 @@ namespace chaiscript {
                     cweeList<double> row;
                     while (odbc->GetNextRow(con, row)) {
                         a.AddUniqueValue(X_type = row[TimeColumn], Y_type = row[ValueColumn]);
-                    }                    
+                    }
                     a.RemoveUnnecessaryKnots();
                     return a;
-                }), "AppendFromSQL");
+                    }), "AppendFromSQL");
             }
 
             // Boxed_Value Curve
@@ -459,47 +474,47 @@ namespace chaiscript {
                 lib->AddFunction(, Clear, , return o.Clear(), cweeBalancedCurve<Boxed_Value>& o);
                 lib->AddFunction(, GetValueKnotSeries, ,
                     std::vector<Boxed_Value> out;
-                    for (auto& x : o.GetValueKnotSeries()) {
-                        out.push_back(x);
-                    }
-                    return out;
+                for (auto& x : o.GetValueKnotSeries()) {
+                    out.push_back(x);
+                }
+                return out;
                 , cweeBalancedCurve<Boxed_Value> const& o);
-                lib->AddFunction(, GetValueKnotSeries, , 
+                lib->AddFunction(, GetValueKnotSeries, ,
                     std::vector<Boxed_Value> out;
-                    for (auto& x : o.GetValueKnotSeries(t0)) {
-                        out.push_back(x);
-                    }
-                    return out;
+                for (auto& x : o.GetValueKnotSeries(t0)) {
+                    out.push_back(x);
+                }
+                return out;
                 , cweeBalancedCurve<Boxed_Value> const& o, double t0);
-                lib->AddFunction(, GetValueKnotSeries, , 
+                lib->AddFunction(, GetValueKnotSeries, ,
                     std::vector<Boxed_Value> out;
-                    for (auto& x : o.GetValueKnotSeries(t0, t1)) {
-                        out.push_back(x);
-                    }
-                    return out;
+                for (auto& x : o.GetValueKnotSeries(t0, t1)) {
+                    out.push_back(x);
+                }
+                return out;
                 , cweeBalancedCurve<Boxed_Value> const& o, double t0, double t1);
-                lib->AddFunction(, GetKnotSeries, , 
+                lib->AddFunction(, GetKnotSeries, ,
                     std::vector<Boxed_Value> out;
-                    for (auto& x : o.GetKnotSeries()) {
-                        out.push_back(var(std::pair<Boxed_Value, Boxed_Value>(var((double)x.first), x.second)));
-                    }
-                    return out;
+                for (auto& x : o.GetKnotSeries()) {
+                    out.push_back(var(std::pair<Boxed_Value, Boxed_Value>(var((double)x.first), x.second)));
+                }
+                return out;
                 , cweeBalancedCurve<Boxed_Value> const& o);
-                lib->AddFunction(, GetKnotSeries, , 
+                lib->AddFunction(, GetKnotSeries, ,
                     std::vector<Boxed_Value> out;
-                    for (auto& x : o.GetKnotSeries(t0)) {
-                        out.push_back(var(std::pair<Boxed_Value, Boxed_Value>(var((double)x.first), x.second)));
-                    }
-                    return out;
+                for (auto& x : o.GetKnotSeries(t0)) {
+                    out.push_back(var(std::pair<Boxed_Value, Boxed_Value>(var((double)x.first), x.second)));
+                }
+                return out;
                 , cweeBalancedCurve<Boxed_Value> const& o, double t0);
-                lib->AddFunction(, GetKnotSeries, , 
+                lib->AddFunction(, GetKnotSeries, ,
                     std::vector<Boxed_Value> out;
-                    for (auto& x : o.GetKnotSeries(t0,t1)) {
-                        out.push_back(var(std::pair<Boxed_Value, Boxed_Value>(var((double)x.first), x.second)));
-                    }
-                    return out;
+                for (auto& x : o.GetKnotSeries(t0, t1)) {
+                    out.push_back(var(std::pair<Boxed_Value, Boxed_Value>(var((double)x.first), x.second)));
+                }
+                return out;
                 , cweeBalancedCurve<Boxed_Value> const& o, double t0, double t1);
-                lib->AddFunction(, GetCurrentValue, , return o.GetCurrentValue(t), cweeBalancedCurve<Boxed_Value> const& o, double t); 
+                lib->AddFunction(, GetCurrentValue, , return o.GetCurrentValue(t), cweeBalancedCurve<Boxed_Value> const& o, double t);
                 lib->AddFunction(, GetMaxTime, , return o.GetMaxTime(), cweeBalancedCurve<Boxed_Value> const& o);
                 lib->AddFunction(, GetMinTime, , return o.GetMinTime(), cweeBalancedCurve<Boxed_Value> const& o);
                 lib->AddFunction(, ShiftTime, , return o.ShiftTime(t), cweeBalancedCurve<Boxed_Value>& o, double t);
@@ -508,9 +523,9 @@ namespace chaiscript {
                 lib->AddFunction(, Reserve, , return o.Reserve(num), cweeBalancedCurve<Boxed_Value>& o, int num);
                 lib->AddFunction(, [], , return o.GetCurrentValue(t), cweeBalancedCurve<Boxed_Value> const& o, double t);
                 lib->AddFunction(, keys, ,
-                    std::vector<Boxed_Value> out; 
-                    for (auto& x : o.GetKnotSeries()) out.push_back(var((double)x.first));
-                    return out;
+                    std::vector<Boxed_Value> out;
+                for (auto& x : o.GetKnotSeries()) out.push_back(var((double)x.first));
+                return out;
                 , cweeBalancedCurve<Boxed_Value> const& o);
                 lib->eval("def to_string(Curve c){ return \"Curve\"; /* to_string(c.keys); */ }");
 
@@ -526,24 +541,24 @@ namespace chaiscript {
 
                 lib->AddFunction(, =, ->SparseMatrixT&, matrix1 = matrix2; return matrix1, SparseMatrixT& matrix1, SparseMatrixT const& matrix2);
 
-                lib->AddFunction(, GetMinX, ->double , return matrix.GetMinX(), SparseMatrixT const& matrix);
-                lib->AddFunction(, GetMaxX, ->double , return matrix.GetMaxX(), SparseMatrixT const& matrix);
-                lib->AddFunction(, GetMinY, ->double , return matrix.GetMinY(), SparseMatrixT const& matrix);
-                lib->AddFunction(, GetMaxY, ->double , return matrix.GetMaxY(), SparseMatrixT const& matrix);
+                lib->AddFunction(, GetMinX, ->double, return matrix.GetMinX(), SparseMatrixT const& matrix);
+                lib->AddFunction(, GetMaxX, ->double, return matrix.GetMaxX(), SparseMatrixT const& matrix);
+                lib->AddFunction(, GetMinY, ->double, return matrix.GetMinY(), SparseMatrixT const& matrix);
+                lib->AddFunction(, GetMaxY, ->double, return matrix.GetMaxY(), SparseMatrixT const& matrix);
                 lib->AddFunction(, GetMinValue, , return matrix.GetMinValue(), SparseMatrixT const& matrix);
                 lib->AddFunction(, GetMaxValue, , return matrix.GetMaxValue(), SparseMatrixT const& matrix);
 
-                lib->AddFunction(, RemoveUnnecessaryKnots, , matrix.RemoveUnnecessaryKnots(), SparseMatrixT& matrix);
+                lib->AddFunction(, RemoveUnnecessaryKnots, , matrix.RemoveUnnecessaryKnots(), SparseMatrixT & matrix);
 
-                lib->AddFunction(, GetValue, , return matrix.GetValue(X,Y), SparseMatrixT const& matrix, double X, double Y);
+                lib->AddFunction(, GetValue, , return matrix.GetValue(X, Y), SparseMatrixT const& matrix, double X, double Y);
                 lib->AddFunction(, GetCurrentValue, , return matrix.GetCurrentValue(X, Y), SparseMatrixT const& matrix, double X, double Y);
 
-                lib->AddFunction(, InsertValue, , matrix.InsertValue(X, Y, V), SparseMatrixT& matrix, double X, double Y, float V);
-                lib->AddFunction(, AddValue, , matrix.AddValue(X, Y, V), SparseMatrixT& matrix, double X, double Y, float V);
+                lib->AddFunction(, InsertValue, , matrix.InsertValue(X, Y, V), SparseMatrixT & matrix, double X, double Y, float V);
+                lib->AddFunction(, AddValue, , matrix.AddValue(X, Y, V), SparseMatrixT & matrix, double X, double Y, float V);
 
-                lib->AddFunction(, Clear, , matrix.Clear(), SparseMatrixT& matrix);
+                lib->AddFunction(, Clear, , matrix.Clear(), SparseMatrixT & matrix);
 
-                lib->AddFunction(, to_string, ->std::string , return matrix.ToString().c_str(), SparseMatrixT const& matrix);
+                lib->AddFunction(, to_string, ->std::string, return matrix.ToString().c_str(), SparseMatrixT const& matrix);
                 lib->AddFunction(, from_string, , return matrix.FromString(str), SparseMatrixT& matrix, cweeStr const& str);
 
                 lib->AddFunction(, Num, , return matrix.Num(), SparseMatrixT& matrix);
@@ -554,27 +569,27 @@ namespace chaiscript {
                 lib->AddFunction(, HilbertPositionToValue, , return matrix.HilbertPositionToValue(position), SparseMatrixT const& matrix, double position);
                 lib->AddFunction(, HilbertPositionToXY, , SINGLE_ARG(
                     AUTO x = matrix.HilbertPositionToXY(position);
-                    return std::pair<Boxed_Value, Boxed_Value>(var((double)(x.first)), var((double)(x.second)));
+                return std::pair<Boxed_Value, Boxed_Value>(var((double)(x.first)), var((double)(x.second)));
                 ), SparseMatrixT const& matrix, double position);
             }
 
             // Extern Data
-            if(1) {
+            if (1) {
                 lib->add(chaiscript::user_type<cweeData>(), "external_data");
                 lib->add(chaiscript::fun([]()->cweeData* { return external_data.Get(); }), "external_data");
-                                
+
                 lib->AddFunction(, CreatePattern, , return dataOwner->CreatePattern(), cweeData* dataOwner);
-                lib->AddFunction(, SetPattern, , dataOwner->SetPattern(index, pat); return index; , cweeData* dataOwner, int index, cweeUnitPattern const& pat);
+                lib->AddFunction(, SetPattern, , dataOwner->SetPattern(index, pat); return index;, cweeData* dataOwner, int index, cweeUnitPattern const& pat);
                 lib->AddFunction(, GetPattern, , return dataOwner->GetPatternRef(index), cweeData* dataOwner, int index);
                 lib->AddFunction(, DeletePattern, , return dataOwner->DeletePattern(index), cweeData* dataOwner, int index);
 
                 lib->AddFunction(, CreateMatrix, , return dataOwner->CreateMatrix(), cweeData* dataOwner);
-                lib->AddFunction(, SetMatrix, , dataOwner->SetMatrix(index, matrix); return index;, cweeData* dataOwner, int index, cweeInterpolatedMatrix<float> const& matrix);
+                lib->AddFunction(, SetMatrix, , dataOwner->SetMatrix(index, matrix); return index; , cweeData* dataOwner, int index, cweeInterpolatedMatrix<float> const& matrix);
                 lib->AddFunction(, GetMatrix, , return dataOwner->GetMatrixRef(index), cweeData* dataOwner, int index);
                 lib->AddFunction(, DeleteMatrix, , return dataOwner->DeleteMatrix(index), cweeData* dataOwner, int index);
 
                 lib->AddFunction(, CreateString, , return dataOwner->CreateString(), cweeData* dataOwner);
-                lib->AddFunction(, SetString, , dataOwner->GetStringRef(index)->operator=(str); return index;, cweeData* dataOwner, int index, cweeStr const& str);
+                lib->AddFunction(, SetString, , dataOwner->GetStringRef(index)->operator=(str); return index; , cweeData* dataOwner, int index, cweeStr const& str);
                 lib->AddFunction(, GetString, , return dataOwner->GetStringRef(index), cweeData* dataOwner, int index);
                 lib->AddFunction(, DeleteString, , return dataOwner->DeleteString(index), cweeData* dataOwner, int index);
             }
@@ -586,7 +601,7 @@ namespace chaiscript {
                 public:
                     class Station {
                     public:
-                        Station() : 
+                        Station() :
                             station(),
                             awsban(),
                             beg_date(),
@@ -637,15 +652,15 @@ namespace chaiscript {
                             if (SkipHeader) { SkipHeader = false; continue; }
                             auto RowParsed = row.SplitQuotes(",");
                             tm = cweeTime::make_time(
-                                RowParsed[1].Mid(0, 4).ReturnNumeric(), 
-                                RowParsed[1].Mid(5, 2).ReturnNumeric(), 
+                                RowParsed[1].Mid(0, 4).ReturnNumeric(),
+                                RowParsed[1].Mid(5, 2).ReturnNumeric(),
                                 RowParsed[1].Mid(8, 2).ReturnNumeric(),
-                                RowParsed[1].Mid(11, 2).ReturnNumeric(), 
-                                RowParsed[1].Mid(14, 2).ReturnNumeric(), 
-                                RowParsed[1].Mid(17, 2).ReturnNumeric(), 
+                                RowParsed[1].Mid(11, 2).ReturnNumeric(),
+                                RowParsed[1].Mid(14, 2).ReturnNumeric(),
+                                RowParsed[1].Mid(17, 2).ReturnNumeric(),
                                 false // Uses UTC time
                             );
-                            
+
                             temp_F = (RowParsed[13].Mid(1, RowParsed[13].Length()).ReplaceInline(",", ".").ReturnNumeric() / 10.0) * 1.8 + 32.0;
                             if (RowParsed[13][0] == '-') temp_F *= -1.0;
 
@@ -668,11 +683,11 @@ namespace chaiscript {
                         auto precipitation{ cweeUnitPattern(cweeUnitValues::second(), cweeUnitValues::feet_per_hour()) };
 
                         cweeBalancedCurve< Station* > init_sorted_stations;
-                        
+
                         for (auto& stn_boxed : stations) {
                             Station* stn = chaiscript::boxed_cast<Station*>(stn_boxed);
                             if (stn) {
-                                init_sorted_stations.AddValue(geocoding->Distance(coordinates, vec2d(stn->longitude, stn->latitude))(), stn);                                
+                                init_sorted_stations.AddValue(geocoding->Distance(coordinates, vec2d(stn->longitude, stn->latitude))(), stn);
                             }
                         }
 
@@ -695,7 +710,7 @@ namespace chaiscript {
                         }
 
                         return temperature;
-                    };                    
+                    };
                     static cweeUnitPattern GetPrecipitation(int year, vec2d const& coordinates, std::vector<chaiscript::Boxed_Value> const& stations) {
                         auto temperature{ cweeUnitPattern(cweeUnitValues::second(), 1.0) };
                         auto precipitation{ cweeUnitPattern(cweeUnitValues::second(), cweeUnitValues::feet_per_hour()) };
@@ -768,18 +783,18 @@ namespace chaiscript {
                     };
 
                 };
-                
+
                 lib->add(chaiscript::user_type<NOAA>(), "NOAA");
                 lib->add(chaiscript::fun([]()->NOAA { return NOAA(); }), "NOAA");
-                lib->add(chaiscript::fun([](NOAA const& a, int year, vec2d const& coordinates, std::vector<chaiscript::Boxed_Value> const& stations) { 
+                lib->add(chaiscript::fun([](NOAA const& a, int year, vec2d const& coordinates, std::vector<chaiscript::Boxed_Value> const& stations) {
                     return NOAA::GetTemperature(year, coordinates, stations);
-                }), "GetTemperature");
+                    }), "GetTemperature");
                 lib->add(chaiscript::fun([](NOAA const& a, int year, vec2d const& coordinates, std::vector<chaiscript::Boxed_Value> const& stations) {
                     return NOAA::GetPrecipitation(year, coordinates, stations);
-                }), "GetPrecipitation");
+                    }), "GetPrecipitation");
                 lib->add(chaiscript::fun([](NOAA const& a, cweeUnitPattern& temp, cweeUnitPattern& precip, int year, vec2d const& coordinates, std::vector<chaiscript::Boxed_Value> const& stations) {
                     NOAA::GetTemperatureAndPrecipitation(temp, precip, year, coordinates, stations);
-                }), "GetTemperatureAndPrecipitation");
+                    }), "GetTemperatureAndPrecipitation");
 
                 lib->add(chaiscript::user_type<NOAA::Station>(), "NOAA_Station");
                 lib->add(chaiscript::constructor<NOAA::Station()>(), "NOAA_Station");
@@ -896,9 +911,9 @@ namespace chaiscript {
                     AddBasicClassMember(IpAddressInformation, time_zone);
                     AddBasicClassMember(IpAddressInformation, zip_code);
                     lib->add(chaiscript::fun([](IpAddressInformation& a) -> cwee_units::length::foot_t { return cwee_units::length::foot_t(a.coordinates.z); }), "elevation");
-                    lib->add(chaiscript::fun([](IpAddressInformation const& a) -> std::string { 
+                    lib->add(chaiscript::fun([](IpAddressInformation const& a) -> std::string {
                         return cweeStr::printf("%s, %s %s, %s", a.city.c_str(), a.region_name.c_str(), a.zip_code.c_str(), a.country_name.c_str()).c_str();
-                    }), "to_string");
+                        }), "to_string");
                 }
                 lib->add(chaiscript::fun([](const cweeStr& Directory) { return fileSystem->ensureDirectoryExists(Directory); }), "ensureDirectoryExists");
                 lib->add(chaiscript::fun([](const cweeStr& oldFilePath, const cweeStr& newFilePath) { return fileSystem->renameFile(oldFilePath, newFilePath); }), "renameFile");
@@ -926,44 +941,44 @@ namespace chaiscript {
                     lib->add(chaiscript::fun([](cweeStr const& url) {
                         AUTO filePath_dwnl = fileSystem->QueryHttpToFile(url, "");
                         return filePath_dwnl;
-                    }), "DownloadFileFromURL");
+                        }), "DownloadFileFromURL");
                     lib->add(chaiscript::fun([](cweeStr const& url, cweeStr const& filePath) {
                         AUTO filePath_dwnl = fileSystem->QueryHttpToFile(url, "");
                         fileSystem->renameFile(filePath_dwnl, filePath);
                         return filePath;
-                    }), "DownloadFileFromURL");
+                        }), "DownloadFileFromURL");
                     lib->add(chaiscript::fun([](cweeStr const& url) { return fileSystem->QueryHttp(url, ""); }), "QueryHTTP");
                     lib->add(chaiscript::fun([](cweeStr const& url, cweeStr const& params) { return fileSystem->QueryHttp(url, params); }), "QueryHTTP");
-                    lib->add(chaiscript::fun([](cweeStr const& directory, cweeStr const& extension) { 
-                        cweeList<chaiscript::Boxed_Value> bv; 
-                        for (auto& s : fileSystem->listFilesWithExtension(directory, extension)) 
-                        { 
-                            bv.Append(chaiscript::Boxed_Value(s)); 
-                        } 
-                        return bv; 
-                    }), "listFilesWithExtension");
-                    lib->add(chaiscript::fun([](cweeStr const& directory, cweeStr const& extension) { 
-                        cweeList<chaiscript::Boxed_Value> bv; 
-                        for (auto& s : fileSystem->listFilesWithExtension(directory, "*")) 
-                        { 
-                            bv.Append(chaiscript::Boxed_Value(s)); 
-                        } 
-                        return bv; 
-                    }), "listFiles");
+                    lib->add(chaiscript::fun([](cweeStr const& directory, cweeStr const& extension) {
+                        cweeList<chaiscript::Boxed_Value> bv;
+                        for (auto& s : fileSystem->listFilesWithExtension(directory, extension))
+                        {
+                            bv.Append(chaiscript::Boxed_Value(s));
+                        }
+                        return bv;
+                        }), "listFilesWithExtension");
+                    lib->add(chaiscript::fun([](cweeStr const& directory, cweeStr const& extension) {
+                        cweeList<chaiscript::Boxed_Value> bv;
+                        for (auto& s : fileSystem->listFilesWithExtension(directory, "*"))
+                        {
+                            bv.Append(chaiscript::Boxed_Value(s));
+                        }
+                        return bv;
+                        }), "listFiles");
                     lib->add(chaiscript::fun([](cweeStr const& directory) {
                         cweeList<chaiscript::Boxed_Value> bv;
                         for (auto& s : fileSystem->listDirectories(directory, true)) {
                             bv.Append(chaiscript::Boxed_Value(s));
                         }
                         return bv;
-                    }), "listAllFiles");
-                    lib->add(chaiscript::fun([](cweeStr const& directory) { 
-                        cweeList<chaiscript::Boxed_Value> bv; 
-                        for (auto& s : fileSystem->listDirectories(directory, false)) { 
-                            bv.Append(chaiscript::Boxed_Value(s)); 
-                        } 
-                        return bv; 
-                    }), "listDirectories");
+                        }), "listAllFiles");
+                    lib->add(chaiscript::fun([](cweeStr const& directory) {
+                        cweeList<chaiscript::Boxed_Value> bv;
+                        for (auto& s : fileSystem->listDirectories(directory, false)) {
+                            bv.Append(chaiscript::Boxed_Value(s));
+                        }
+                        return bv;
+                        }), "listDirectories");
 
                     lib->add(chaiscript::fun([](cweeStr const& title, cweeStr const& content) { fileSystem->submitToast(title, content); }), "submitToast");
                 }
@@ -990,12 +1005,12 @@ namespace chaiscript {
                         this->data = o.data;
                         return *this;
                     };
-                    bool operator==(RTreeContainer const& b) { 
+                    bool operator==(RTreeContainer const& b) {
                         return data.get_ptr() == b.data.get_ptr();
                     };
                     bool operator!=(RTreeContainer const& b) { return !operator==(b); };
                 };
-                
+
                 using RTreeType = RTree< RTreeContainer, RTreeContainer::GetCoordinates, RTreeContainer::GetDistance>;
 
                 class RTreeNode {
@@ -1008,13 +1023,13 @@ namespace chaiscript {
                     RTreeNode(RTreeNode&&) = default;
                     RTreeNode& operator=(RTreeNode const&) = default;
                     RTreeNode& operator=(RTreeNode&&) = default;
-                    
+
                     cweeBoundary boundary() const {
                         cweeBoundary out;
-                        if (node){
+                        if (node) {
                             if (node->object) {
                                 out = node->object->boundary;
-                            } 
+                            }
                             else {
                                 out = node->bound;
                             }
@@ -1033,7 +1048,7 @@ namespace chaiscript {
                         if (node) {
                             for (auto* x : node->children) {
                                 out.push_back(var(RTreeNode(x)));
-                            }                            
+                            }
                         }
                         return out;
                     };
@@ -1073,62 +1088,62 @@ namespace chaiscript {
                 lib->add(chaiscript::user_type<RTreeType>(), "RTree");
                 lib->add(chaiscript::constructor<RTreeType()>(), "RTree");
                 lib->add(chaiscript::constructor<RTreeType(const RTreeType&)>(), "RTree");
-                lib->add(chaiscript::fun([](RTreeType& a, const RTreeType& b)->RTreeType& { a = b; return a; }), "=");                
-                lib->AddFunction(, Root, , return RTreeNode(obj.GetRoot());, RTreeType& obj);
+                lib->add(chaiscript::fun([](RTreeType& a, const RTreeType& b)->RTreeType& { a = b; return a; }), "=");
+                lib->AddFunction(, Root, , return RTreeNode(obj.GetRoot()); , RTreeType& obj);
                 AUTO Remove_From_RTree = [](RTreeType& obj, chaiscript::Boxed_Value const& t)-> void {
                     auto foundObj = obj.TryFindObject([&](RTreeContainer const& o)->bool {
                         return o.data.get_ptr() == t.get_ptr();
-                    });
+                        });
                     if (foundObj) {
                         obj.Remove(foundObj);
-                    }                   
+                    }
                 };
 
-                lib->AddFunction(, Add, ->void ,
-                    RTreeContainer c; 
-                    cweeBoundary bound;
-                    bound.bottomLeft = vec2d(longitude, latitude);
-                    bound.topRight = vec2d(longitude, latitude);
-                    c.boundary = bound;
-                    c.data = t; 
-                    obj.Add(c);
-                , RTreeType& obj, chaiscript::Boxed_Value const& t, double longitude, double latitude);
                 lib->AddFunction(, Add, ->void,
                     RTreeContainer c;
-                    cweeBoundary bound;
-                    bound.bottomLeft = coordinate;
-                    bound.topRight = coordinate;
-                    c.boundary;
-                    c.data = t;
-                    obj.Add(c);
-                , RTreeType& obj, chaiscript::Boxed_Value const& t, vec2d const& coordinate);
+                cweeBoundary bound;
+                bound.bottomLeft = vec2d(longitude, latitude);
+                bound.topRight = vec2d(longitude, latitude);
+                c.boundary = bound;
+                c.data = t;
+                obj.Add(c);
+                , RTreeType & obj, chaiscript::Boxed_Value const& t, double longitude, double latitude);
                 lib->AddFunction(, Add, ->void,
                     RTreeContainer c;
-                    c.boundary = coordinateFunction(t);                    
-                    c.data = t;
-                    obj.Add(c);
-                , RTreeType& obj, chaiscript::Boxed_Value const& t, std::function<cweeBoundary(chaiscript::Boxed_Value const&)> const& coordinateFunction);
-                lib->AddFunction(Remove_From_RTree, Remove,->void ,
+                cweeBoundary bound;
+                bound.bottomLeft = coordinate;
+                bound.topRight = coordinate;
+                c.boundary;
+                c.data = t;
+                obj.Add(c);
+                , RTreeType & obj, chaiscript::Boxed_Value const& t, vec2d const& coordinate);
+                lib->AddFunction(, Add, ->void,
+                    RTreeContainer c;
+                c.boundary = coordinateFunction(t);
+                c.data = t;
+                obj.Add(c);
+                , RTreeType & obj, chaiscript::Boxed_Value const& t, std::function<cweeBoundary(chaiscript::Boxed_Value const&)> const& coordinateFunction);
+                lib->AddFunction(Remove_From_RTree, Remove, ->void,
                     Remove_From_RTree(obj, t);
-                , RTreeType& obj, chaiscript::Boxed_Value const& t);
+                , RTreeType & obj, chaiscript::Boxed_Value const& t);
                 lib->AddFunction(, Near, ,
                     chaiscript::Boxed_Value out;
-                    auto ptr_list = obj.Near(t, 1);
-                    if (ptr_list.Num() > 0 && ptr_list[0]->object) {
-                        out = var(RTreeNode(ptr_list[0]));
-                    }
-                    return out;
+                auto ptr_list = obj.Near(t, 1);
+                if (ptr_list.Num() > 0 && ptr_list[0]->object) {
+                    out = var(RTreeNode(ptr_list[0]));
+                }
+                return out;
                 , RTreeType& obj, cweeBoundary const& t);
                 lib->AddFunction(, Near, ,
                     std::vector<chaiscript::Boxed_Value> out;
-                    for (auto& x : obj.Near(t, numNearest)) {
-                        if (x && x->object) {
-                            out.push_back(var(RTreeNode(x)));
-                        }
+                for (auto& x : obj.Near(t, numNearest)) {
+                    if (x && x->object) {
+                        out.push_back(var(RTreeNode(x)));
                     }
-                    return out;
+                }
+                return out;
                 , RTreeType& obj, cweeBoundary const& t, int numNearest);
-                
+
                 AUTO Node_To_Layer = [](RTreeType::TreeNode* node)-> chaiscript::Boxed_Value {
                     chaiscript::Boxed_Value out;
                     if (node) {
@@ -1150,7 +1165,8 @@ namespace chaiscript {
                                 polygon.AddPoint(obj.bottomLeft.x, obj.bottomLeft.y);
                                 polygon.Tag = chaiscript::var(RTreeNode(node)); // p->data;
                                 out = chaiscript::var(std::move(polygon));
-                            } else {
+                            }
+                            else {
                                 UI_MapIcon icon;
                                 icon.longitude = obj.bottomLeft.x;
                                 icon.latitude = obj.bottomLeft.y;
@@ -1159,7 +1175,7 @@ namespace chaiscript {
                                 icon.Tag = chaiscript::var(RTreeNode(node)); // p->data;
                                 out = chaiscript::var(std::move(icon));
                             }
-                        } 
+                        }
                         else {
                             // tree with children
                             UI_MapPolygon polygon;
@@ -1200,10 +1216,10 @@ namespace chaiscript {
                 lib->add(chaiscript::constructor<cweeBoundary(const cweeBoundary&)>(), "Boundary");
                 lib->add(chaiscript::fun([](cweeBoundary& a, const cweeBoundary& b)->cweeBoundary& { a = b; return a; }), "=");
                 lib->add(chaiscript::fun([](cweeBoundary const& a) -> cweeStr { return cweeStr::printf("[<%f,%f>, <%f,%f>]", a.topRight.x, a.topRight.y, a.bottomLeft.x, a.bottomLeft.y); }), "to_string");
-                lib->AddFunction(, topRight, ->vec2d& , return obj.topRight; , cweeBoundary& obj);
-                lib->AddFunction(, bottomLeft, ->vec2d& , return obj.bottomLeft;, cweeBoundary& obj);
-                lib->AddFunction(, geographic, ->bool&, return obj.geographic; , cweeBoundary& obj);
-                lib->AddFunction(, distance, -> cweeUnitValues::unit_value, return cweeUnitValues::foot(cweeBoundary::Distance(obj1, obj2)());, cweeBoundary const& obj1, cweeBoundary const& obj2);
+                lib->AddFunction(, topRight, ->vec2d&, return obj.topRight;, cweeBoundary& obj);
+                lib->AddFunction(, bottomLeft, ->vec2d&, return obj.bottomLeft; , cweeBoundary& obj);
+                lib->AddFunction(, geographic, ->bool&, return obj.geographic;, cweeBoundary& obj);
+                lib->AddFunction(, distance, -> cweeUnitValues::unit_value, return cweeUnitValues::foot(cweeBoundary::Distance(obj1, obj2)()); , cweeBoundary const& obj1, cweeBoundary const& obj2);
 
                 AUTO PatternToRTree = [](cweeUnitPattern const& pat)->RTreeType {
                     RTreeType out; {

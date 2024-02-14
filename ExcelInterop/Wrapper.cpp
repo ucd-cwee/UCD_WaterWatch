@@ -1147,13 +1147,12 @@ namespace chaiscript {
                     DEF_DECLARE_VECTOR_WITH_SCRIPT_ENGINE_AND_MODULE(CellPtr);
 
                     AddSharedPtrClassFunction(, ExcelRange, clear_cells);
-                    //lib->AddFunction(, vector, , if (a) return a->vector(n); else ThrowIfBadAccess; , RangePtr& a, int n);
+
                     lib->AddFunction(, cell, , if (a) return a->cell(cell->reference()); else ThrowIfBadAccess; , RangePtr& a, CellPtr cell);
                     AddSharedPtrClassFunction(, ExcelRange, target_worksheet);
                     AddSharedPtrClassFunction(, ExcelRange, length);
                     lib->AddFunction(, contains, , if (a) return a->contains(cell->reference()); else ThrowIfBadAccess;, RangePtr& a, CellPtr cell);
-                    //AddSharedPtrClassFunction(, ExcelRange, front);
-                    //AddSharedPtrClassFunction(, ExcelRange, back);
+
                     lib->AddFunction(, [], , SINGLE_ARG(
                         if (a) {
                             std::vector<Boxed_Value> boxed_vec;
@@ -1181,6 +1180,56 @@ namespace chaiscript {
                                     }
                                     else {
                                         boxed_vec.push_back(Boxed_Value());
+                                    }
+                                }
+                            }
+                        }
+                        else ThrowIfBadAccess;
+                        return boxed_vec;
+                    ), RangePtr& a);
+
+                    lib->AddFunction(, Values, , SINGLE_ARG(
+                        std::vector<Boxed_Value> boxed_vec;
+                        int n = 0; for (auto& row : *a) for (auto& cell : row) ++n;
+                        boxed_vec.reserve(n+16);
+                        if (a) {
+                            for (auto& row : *a) {
+                                for (auto& cell : row) {
+                                    if (cell->has_value()) {
+                                        switch (cell->data_type()) {
+                                        case CellType::empty:
+                                            boxed_vec.push_back(chaiscript::Boxed_Value());
+                                        case CellType::error:
+                                            boxed_vec.push_back(var(cell->error()));
+                                        default:
+                                            if (cell->is_date()) {
+                                                boxed_vec.push_back(var(cell->value<cweeTime>()));
+                                            }
+                                            else {
+                                                switch (cell->data_type()) {
+                                                case CellType::date:
+                                                    boxed_vec.push_back(var(cell->value<cweeTime>()));
+                                                    break;
+                                                case CellType::formula_string:
+                                                case CellType::inline_string:
+                                                case CellType::shared_string:
+                                                    boxed_vec.push_back(var(cell->value<cweeStr>()));
+                                                    break;
+                                                case CellType::number:
+                                                    boxed_vec.push_back(var(cell->value<double>()));
+                                                    break;
+                                                case CellType::boolean:
+                                                    boxed_vec.push_back(var(cell->value<bool>()));
+                                                    break;
+                                                default:
+                                                    boxed_vec.push_back(chaiscript::Boxed_Value());
+                                                    break;
+                                                }
+                                            }
+                                        }
+                                    }
+                                    else {
+                                        boxed_vec.push_back(chaiscript::Boxed_Value());
                                     }
                                 }
                             }
