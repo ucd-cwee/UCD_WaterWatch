@@ -15,6 +15,7 @@ to maintain a single distribution point for the source code.
 
 #include "WaterWatch_Win32_Console.h"
 #include "../ExcelInterop/Wrapper.h"
+#include "../FiberTasks/FiberTasks.h"
 
 class Win32ConsoleSupport {
 public:
@@ -179,6 +180,29 @@ static DispatchTimer AppLayerRequestProcessor = DispatchTimer(100, cweeJob([]() 
 			break;
 		case static_cast<size_t>(cweeStr::Hash("OS_GetSetting")):
 			result = "TBD";
+			break;
+		case static_cast<size_t>(cweeStr::Hash("Fiber")): 
+			result = std::to_string(FTL::fnFiberTasks()).c_str();
+			break;
+		case static_cast<size_t>(cweeStr::Hash("Fiber2a")):
+			if (args.Num() >= 1) result = std::to_string(FTL::fnFiberTasks2a(args[0].ReturnNumeric())).c_str();
+			else result = "Arguments required: 'num_tasks'";
+			break;
+		case static_cast<size_t>(cweeStr::Hash("Fiber2b")):
+			if (args.Num() >= 1) result = std::to_string(FTL::fnFiberTasks2b(args[0].ReturnNumeric())).c_str();
+			else result = "Arguments required: 'num_tasks'";
+			break;
+		case static_cast<size_t>(cweeStr::Hash("Fiber2c")):
+			if (args.Num() >= 1) result = std::to_string(FTL::fnFiberTasks2c(args[0].ReturnNumeric())).c_str();
+			else result = "Arguments required: 'num_tasks'";
+			break;
+		case static_cast<size_t>(cweeStr::Hash("Fiber3")):
+			if (args.Num() >= 2) result = std::to_string(FTL::fnFiberTasks3(args[0].ReturnNumeric(), args[1].ReturnNumeric())).c_str();
+			else result = "Arguments required: 'num_tasks', 'num_subtasks'";
+			break;
+		case static_cast<size_t>(cweeStr::Hash("Fiber4")):
+			if (args.Num() >= 2) result = std::to_string(FTL::fnFiberTasks4(args[0].ReturnNumeric(), args[1].ReturnNumeric())).c_str();
+			else result = "Arguments required: 'num_tasks', 'num_subtasks'";
 			break;
 		default:
 			// unknown function.

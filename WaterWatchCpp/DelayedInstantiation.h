@@ -28,35 +28,15 @@ public:
 
 private:
 	void Ensure() {
-		AUTO g = obj.Guard();
-		auto* p = obj.UnsafeGet();
-		if (!p) {
-			obj.UnsafeSet(createFunc());
-		}		
+		//if (!obj) {
+			obj.Lock();
+			auto* p = obj.UnsafeGet();
+			if (!p) {
+				obj.UnsafeSet(createFunc());
+			}
+			obj.Unlock();
+		//}
 	};
 	cweeSharedPtr<T> obj;
 	std::function< T* () > createFunc;
 };
-
-
-
-//
-//template<typename T> class DelayedInstantiation {
-//public:
-//	constexpr DelayedInstantiation() : obj(nullptr) {};
-//	~DelayedInstantiation() {};
-//
-//	T* operator->() { Ensure(); return obj.Get(); };
-//	T& operator*() { Ensure(); return *obj; };
-//
-//private:
-//	void Ensure() {
-//		AUTO g = obj.Guard();
-//		auto* p = obj.UnsafeGet();
-//		if (!p) {
-//			obj.UnsafeSet(new T());
-//		}
-//	};
-//	cweeSharedPtr<T> obj;
-//
-//};
