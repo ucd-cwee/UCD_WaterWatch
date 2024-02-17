@@ -653,6 +653,7 @@ private:
 		//InvokeLock.Decrement();
 	};
 };
+
 class cweeAction_Interface {
 public:
 	explicit cweeAction_Interface() {};
