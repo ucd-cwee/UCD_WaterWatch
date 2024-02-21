@@ -225,7 +225,8 @@ public:
 	void			Unlock() const noexcept {
 		Handle.Decrement();
 	};
-
+	void            lock() const { Lock(); }
+	void            unlock() const { Unlock(); }
 protected:
 	mutable cweeSysInterlockedInteger Handle;
 

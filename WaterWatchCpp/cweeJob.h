@@ -80,7 +80,20 @@ public:
 		, _data()
 		, Result()
 		, IsFinished(false)
-		//, InvokeLock(0)
+	{};
+
+	cweeFunction(const cweeFunction& copy) noexcept
+		: _function(copy._function)
+		, _data(copy._data)
+		, Result(copy.Result)
+		, IsFinished(copy.IsFinished.load())
+	{};
+
+	cweeFunction(cweeFunction&& copy) noexcept
+		: _function(std::move(copy._function))
+		, _data(std::move(copy._data))
+		, Result(std::move(copy.Result))
+		, IsFinished(copy.IsFinished.load())
 	{};
 
 	template <typename... Args>
@@ -89,7 +102,6 @@ public:
 		, _data(GetData(Fargs...))
 		, Result()
 		, IsFinished(false)		
-		//, InvokeLock(0)
 	{};
 
 private:
@@ -117,14 +129,6 @@ private:
 	};
 
 public:
-	cweeFunction(const cweeFunction& copy) noexcept
-		: _function(copy._function)
-		, _data(copy._data)
-		, Result(copy.Result)
-		, IsFinished(copy.IsFinished.load())
-		//, InvokeLock(0)
-	{};
-
 	static cweeFunction Finished() {
 		cweeFunction to_return;
 

@@ -5,15 +5,60 @@
       <UniqueIdentifier>{93995380-89BD-4b04-88EB-625FBE52EBFB}</UniqueIdentifier>
       <Extensions>h;hh;hpp;hxx;h++;hm;inl;inc;ipp;xsd</Extensions>
     </Filter>
+    <Filter Include="Source">
+      <UniqueIdentifier>{aa06af7a-60e7-41ca-a46f-5b442d1b7a4c}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="FiberTasks.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="ftl\alloc.h">
+      <Filter>Source</Filter>
+    </ClInclude>
+    <ClInclude Include="ftl\fiber.h">
+      <Filter>Source</Filter>
+    </ClInclude>
+    <ClInclude Include="ftl\fibtex.h">
+      <Filter>Source</Filter>
+    </ClInclude>
+    <ClInclude Include="ftl\task_scheduler.h">
+      <Filter>Source</Filter>
+    </ClInclude>
+    <ClInclude Include="ftl\task_scheduler_internal.h">
+      <Filter>Source</Filter>
+    </ClInclude>
+    <ClInclude Include="ftl\thread_abstraction.h">
+      <Filter>Source</Filter>
+    </ClInclude>
+    <ClInclude Include="ftl\wait_group.h">
+      <Filter>Source</Filter>
+    </ClInclude>
+    <ClInclude Include="FiberContainers.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="FiberTasks.cpp">
       <Filter>Header Files</Filter>
+    </ClCompile>
+    <ClCompile Include="ftl\alloc.cpp">
+      <Filter>Source</Filter>
+    </ClCompile>
+    <ClCompile Include="ftl\fiber.cpp">
+      <Filter>Source</Filter>
+    </ClCompile>
+    <ClCompile Include="ftl\fibtex.cpp">
+      <Filter>Source</Filter>
+    </ClCompile>
+    <ClCompile Include="ftl\task_scheduler.cpp">
+      <Filter>Source</Filter>
+    </ClCompile>
+    <ClCompile Include="ftl\thread_abstraction.cpp">
+      <Filter>Source</Filter>
+    </ClCompile>
+    <ClCompile Include="ftl\wait_group.cpp">
+      <Filter>Source</Filter>
     </ClCompile>
   </ItemGroup>
 </Project>

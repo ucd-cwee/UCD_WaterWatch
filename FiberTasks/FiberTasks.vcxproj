@@ -171,10 +171,24 @@
     </Lib>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClInclude Include="FiberContainers.h" />
     <ClInclude Include="FiberTasks.h" />
+    <ClInclude Include="ftl\alloc.h" />
+    <ClInclude Include="ftl\fiber.h" />
+    <ClInclude Include="ftl\fibtex.h" />
+    <ClInclude Include="ftl\task_scheduler.h" />
+    <ClInclude Include="ftl\task_scheduler_internal.h" />
+    <ClInclude Include="ftl\thread_abstraction.h" />
+    <ClInclude Include="ftl\wait_group.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="FiberTasks.cpp" />
+    <ClCompile Include="ftl\alloc.cpp" />
+    <ClCompile Include="ftl\fiber.cpp" />
+    <ClCompile Include="ftl\fibtex.cpp" />
+    <ClCompile Include="ftl\task_scheduler.cpp" />
+    <ClCompile Include="ftl\thread_abstraction.cpp" />
+    <ClCompile Include="ftl\wait_group.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

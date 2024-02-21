@@ -200,8 +200,8 @@ static DispatchTimer AppLayerRequestProcessor = DispatchTimer(100, cweeJob([]() 
 			else result = "Arguments required: 'num_tasks'";
 			break;
 		case static_cast<size_t>(cweeStr::Hash("Fiber2d")):
-			if (args.Num() >= 1) result = std::to_string(FTL::fnFiberTasks2d(args[0].ReturnNumeric())).c_str();
-			else result = "Arguments required: 'num_tasks'";
+			if (args.Num() >= 1) result = std::to_string(FTL::fnFiberTasks2d(args[0].ReturnNumeric(), args[1].ReturnNumeric())).c_str();
+			else result = "Arguments required: 'num_tasks', 'num_subtasks'";
 			break;
 		case static_cast<size_t>(cweeStr::Hash("Fiber3")):
 			if (args.Num() >= 2) result = std::to_string(FTL::fnFiberTasks3(args[0].ReturnNumeric(), args[1].ReturnNumeric())).c_str();

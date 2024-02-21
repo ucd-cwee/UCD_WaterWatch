@@ -25,11 +25,11 @@
 #pragma once
 
 #include "ftl/callbacks.h"
-#include "ftl/fiber.h"
+#include "fiber.h"
 #include "ftl/task.h"
-#include "ftl/thread_abstraction.h"
+#include "thread_abstraction.h"
 #include "ftl/wait_free_queue.h"
-#include "ftl/wait_group.h"
+#include "wait_group.h"
 
 #include <atomic>
 #include <condition_variable>
