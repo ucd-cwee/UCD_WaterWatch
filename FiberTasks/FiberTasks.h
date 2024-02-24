@@ -1,5 +1,6 @@
 #pragma once
 
+
 class FTL {
 public:
 	//static uint64_t fnBoostFiber();

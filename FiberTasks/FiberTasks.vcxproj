@@ -171,7 +171,6 @@
     </Lib>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClInclude Include="FiberContainers.h" />
     <ClInclude Include="FiberTasks.h" />
     <ClInclude Include="ftl\alloc.h" />
     <ClInclude Include="ftl\fiber.h" />

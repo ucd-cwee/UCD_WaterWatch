@@ -21,6 +21,7 @@ to maintain a single distribution point for the source code.
 #include "Strings.h"
 #include "List.h"
 #include "cweeJob.h"
+#include "DelayedInstantiation.h"
 
 /*! Class that allows backend to push requests or jobs forwards to the UI or user-layer to process asynchronously. */
 class appLayerRequests {
@@ -48,4 +49,7 @@ public:
 	// for the backend layer to hard - wait for the app layer to perform the requested job
 	cweeStr Query(method_type const& methodName, arguments_type const& arguments = arguments_type());
 };
-extern cweeSharedPtr<appLayerRequests> AppLayerRequests;
+extern DelayedInstantiation< appLayerRequests > AppLayerRequests;
+
+// extern appLayerRequests* AppLayerRequests;
+// extern cweeSharedPtr<appLayerRequests> AppLayerRequests;

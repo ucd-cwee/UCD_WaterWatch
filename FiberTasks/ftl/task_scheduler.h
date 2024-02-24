@@ -70,6 +70,7 @@ struct WaitingFiberBundle;
 class TaskScheduler {
 public:
 	TaskScheduler();
+	TaskScheduler(TaskSchedulerInitOptions options);
 
 	TaskScheduler(TaskScheduler const &) = delete;
 	TaskScheduler(TaskScheduler &&) noexcept = delete;

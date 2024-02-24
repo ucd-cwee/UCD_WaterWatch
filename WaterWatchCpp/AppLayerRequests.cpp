@@ -73,4 +73,9 @@ cweeStr appLayerRequests::Query(method_type const& methodName, arguments_type co
 
 	return out;
 };
-cweeSharedPtr<appLayerRequests> AppLayerRequests = make_cwee_shared<appLayerRequests>();
+
+DelayedInstantiation< appLayerRequests > AppLayerRequests = DelayedInstantiation< appLayerRequests >([]()-> appLayerRequests* {
+	return new appLayerRequests();
+});
+// appLayerRequests* AppLayerRequests = new appLayerRequests();
+// cweeSharedPtr<appLayerRequests> AppLayerRequests = make_cwee_shared<appLayerRequests>();

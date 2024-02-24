@@ -34,9 +34,6 @@
     <ClInclude Include="ftl\wait_group.h">
       <Filter>Source</Filter>
     </ClInclude>
-    <ClInclude Include="FiberContainers.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="FiberTasks.cpp">

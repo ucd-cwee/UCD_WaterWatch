@@ -20,7 +20,7 @@ to maintain a single distribution point for the source code.
 #include "FileSystemH.h"
 #include "InterlockedValues.h"
 #include "cweeInterlocked.h"
-#include "DispatchTimer.h"
+// #include "DispatchTimer.h"
 #include "cweeThreadedMap.h"
 #include "Mutex.h"
 #include "Toasts.h"
@@ -42,8 +42,8 @@ private:
 	const cweeStr 										appFolder;
 	const cweeStr										appName;
 	cweeUnpooledInterlocked < cweeStr >					dataFolder;
-	cweeSharedPtr < cweeTime >							currentRealTime; // updated automatically by currentRealTimeUpdater.
-	DispatchTimer										currentRealTimeUpdater; // updates within the accuracy of 'currentRealTimeAccuracyMilliseconds' ... thread will automatically die with this class instance.
+	std::shared_ptr < std::atomic_int64_t >				currentRealTime; // updated automatically by currentRealTimeUpdater.
+	Timer										        currentRealTimeUpdater; // updates within the accuracy of 'currentRealTimeAccuracyMilliseconds' ... thread will automatically die with this class instance.
 	cweeThreadedMap<cweeStr, cweeSysMutex>				fileLocks;
 	cweeThreadedMap < cweeStr, bool>					tempFiles;
 
@@ -135,8 +135,8 @@ FileSystemLocal::FileSystemLocal() : FileSystem(),
 	, appFolder(getApplicationPath())
 	, appName(getApplicationName())
 	, dataFolder(setDataFolder(appFolder + cweeStr("data\\")))
-	, currentRealTime(new cweeTime())
-	, currentRealTimeUpdater(currentRealTimeAccuracyMilliseconds, cweeJob([](cweeSharedPtr<cweeTime> ptr) { u64 t = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count() / 1000.0; AUTO g = ptr.Guard(); *ptr.UnsafeGet() = t; }, currentRealTime))
+	, currentRealTime(std::make_shared<std::atomic_int64_t>())
+	, currentRealTimeUpdater(currentRealTimeAccuracyMilliseconds / 1000.0, Action([](std::shared_ptr<std::atomic_int64_t> ptr) { u64 t = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count() / 1000.0; std::atomic_store(&*ptr, t); }, currentRealTime))
 	, fileLocks()
 	, ip_address(make_cwee_shared<cweeStr>())
 	, ip_address_info(make_cwee_shared<IpAddressInformation>())
@@ -313,10 +313,7 @@ cweeStr			FileSystemLocal::createRandomFile(cweeStr const& fileType) {
 	return filePath;
 };
 u64				FileSystemLocal::getCurrentTime() {
-	u64 out(0);
-	AUTO g = currentRealTime.Guard();
-	out = currentRealTime.UnsafeGet()->operator u64();
-	return out;
+	return std::atomic_load(&*currentRealTime);
 };
 
 cweeStr  FileSystemLocal::QueryHttp(const cweeStr& mainAddress, const cweeStr& requestParameters, const cweeStr& UniqueSessionName) {

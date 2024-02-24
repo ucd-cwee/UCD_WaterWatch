@@ -280,3 +280,357 @@ private:
 		for (auto& x : get) directories.push_back(x.first);		
 	};
 };
+
+/* thread-safe and fiber-safe integer-style number values (Does not support doubles, floats, etc.) */
+template <typename type> class cweeSysInterlockedValue {
+public:
+	cweeSysInterlockedValue() : value(static_cast<type>(0)) {};
+	cweeSysInterlockedValue(const type& a) : value(a) {};
+	cweeSysInterlockedValue(const cweeSysInterlockedValue& other) : value(other.GetValue()) {};
+	cweeSysInterlockedValue& operator=(const cweeSysInterlockedValue& other) { SetValue(other.GetValue()); return *this; };
+	cweeSysInterlockedValue& operator=(const type& newSource) { SetValue(newSource); return *this; };
+
+	operator type() { return GetValue(); };
+	operator type() const { return GetValue(); };
+
+	friend cweeSysInterlockedValue operator+(const type& i, const cweeSysInterlockedValue& b) { cweeSysInterlockedValue out(b); out.Add(i); return out; };
+	friend cweeSysInterlockedValue operator+(const cweeSysInterlockedValue& b, const type& i) { cweeSysInterlockedValue out(b); out.Add(i); return out; };
+	friend cweeSysInterlockedValue operator-(const type& i, const cweeSysInterlockedValue& b) { cweeSysInterlockedValue out(i); out.Add(-b.GetValue()); return out; };
+	friend cweeSysInterlockedValue operator-(const cweeSysInterlockedValue& b, const type& i) { cweeSysInterlockedValue out(b); out.Add(-i); return out; };
+	friend cweeSysInterlockedValue operator/(const type& i, const cweeSysInterlockedValue& b) { return i / b.GetValue(); };
+	friend cweeSysInterlockedValue operator/(const cweeSysInterlockedValue& b, const type& i) { return b.GetValue() / i; };
+
+	cweeSysInterlockedValue& operator+=(int i) { Add(i); return *this; };
+	cweeSysInterlockedValue& operator-=(int i) { Add(-i); return *this; };
+
+	cweeSysInterlockedValue& operator+=(const cweeSysInterlockedValue& i) { Add(i.GetValue()); return *this; };
+	cweeSysInterlockedValue& operator-=(const cweeSysInterlockedValue& i) { Add(-i.GetValue()); return *this; };
+
+	bool operator==(const type& i) { return i == GetValue(); };
+	bool operator!=(const type& i) { return i != GetValue(); };
+	bool operator==(const cweeSysInterlockedValue& i) { return i.GetValue() == GetValue(); };
+	bool operator!=(const cweeSysInterlockedValue& i) { return i.GetValue() != GetValue(); };
+
+	friend bool operator<=(const type& i, const cweeSysInterlockedValue& b) { return i <= b.GetValue(); };
+	friend bool operator<=(const cweeSysInterlockedValue& b, const type& i) { return i > b.GetValue(); };
+	friend bool operator>=(const type& i, const cweeSysInterlockedValue& b) { return i >= b.GetValue(); };
+	friend bool operator>=(const cweeSysInterlockedValue& b, const type& i) { return i < b.GetValue(); };
+	friend bool operator>(const type& i, const cweeSysInterlockedValue& b) { return i > b.GetValue(); };
+	friend bool operator>(const cweeSysInterlockedValue& b, const type& i) { return i <= b.GetValue(); };
+	friend bool operator<(const type& i, const cweeSysInterlockedValue& b) { return i < b.GetValue(); };
+	friend bool operator<(const cweeSysInterlockedValue& b, const type& i) { return i >= b.GetValue(); };
+
+	friend bool operator<=(const cweeSysInterlockedValue& i, const cweeSysInterlockedValue& b) { return i.GetValue() <= b.GetValue(); };
+	friend bool operator>=(const cweeSysInterlockedValue& i, const cweeSysInterlockedValue& b) { return i.GetValue() >= b.GetValue(); };
+	friend bool operator>(const cweeSysInterlockedValue& i, const cweeSysInterlockedValue& b) { return i.GetValue() > b.GetValue(); };
+	friend bool operator<(const cweeSysInterlockedValue& i, const cweeSysInterlockedValue& b) { return i.GetValue() < b.GetValue(); };
+
+	type					Increment() { return cweeSysThreadTools::Sys_InterlockedIncrementV(value); } // atomically increments the integer and returns the new value
+	type					Decrement() { return cweeSysThreadTools::Sys_InterlockedDecrementV(value); } // atomically decrements the integer and returns the new value
+	type					Add(const type& v) { return cweeSysThreadTools::Sys_InterlockedAddV(value, (type)v); } // atomically adds a value to the integer and returns the new value
+	type					Sub(const type& v) { return cweeSysThreadTools::Sys_InterlockedSubV(value, (type)v); } // atomically subtracts a value from the integer and returns the new value
+	type					GetValue() const { return value; } // returns the current value of the integer
+	void				    SetValue(const type& v) { value = v; };
+
+private:
+	type	            value;
+};
+
+/* thread-safe and fiber-safe integer (atomic swapping of integers) */
+class cweeSysInterlockedInteger {
+public:
+	constexpr cweeSysInterlockedInteger() noexcept : value(0) {};
+	constexpr cweeSysInterlockedInteger(int a) noexcept : value(a) {};
+	cweeSysInterlockedInteger(const cweeSysInterlockedInteger& other) : value(other.GetValue()) {};
+	cweeSysInterlockedInteger& operator=(const cweeSysInterlockedInteger& other) { SetValue(other.GetValue()); return *this; };
+	cweeSysInterlockedInteger& operator=(int newSource) { SetValue(newSource); return *this; };
+
+	explicit operator int() { return GetValue(); };
+	explicit operator int() const { return GetValue(); };
+
+	explicit operator bool() { if (GetValue() == 0) return false; else return true; };
+	explicit operator bool() const { if (GetValue() == 0) return false; else return true; };
+
+	friend cweeSysInterlockedInteger operator+(int i, const cweeSysInterlockedInteger& b) { cweeSysInterlockedInteger out(b); out.Add(i); return out; };
+	friend cweeSysInterlockedInteger operator+(const cweeSysInterlockedInteger& b, int i) { cweeSysInterlockedInteger out(b); out.Add(i); return out; };
+	friend cweeSysInterlockedInteger operator-(int i, const cweeSysInterlockedInteger& b) { cweeSysInterlockedInteger out(i); out.Add(-b.GetValue()); return out; };
+	friend cweeSysInterlockedInteger operator-(const cweeSysInterlockedInteger& b, int i) { cweeSysInterlockedInteger out(b); out.Add(-i); return out; };
+	friend cweeSysInterlockedInteger operator/(int i, const cweeSysInterlockedInteger& b) { return i / b.GetValue(); };
+	friend cweeSysInterlockedInteger operator/(const cweeSysInterlockedInteger& b, int i) { return b.GetValue() / i; };
+
+	friend bool operator<=(int i, const cweeSysInterlockedInteger& b) { return i <= b.GetValue(); };
+	friend bool operator<=(const cweeSysInterlockedInteger& b, int i) { return i > b.GetValue(); };
+	friend bool operator>=(int i, const cweeSysInterlockedInteger& b) { return i >= b.GetValue(); };
+	friend bool operator>=(const cweeSysInterlockedInteger& b, int i) { return i < b.GetValue(); };
+	friend bool operator>(int i, const cweeSysInterlockedInteger& b) { return i > b.GetValue(); };
+	friend bool operator>(const cweeSysInterlockedInteger& b, int i) { return i <= b.GetValue(); };
+	friend bool operator<(int i, const cweeSysInterlockedInteger& b) { return i < b.GetValue(); };
+	friend bool operator<(const cweeSysInterlockedInteger& b, int i) { return i >= b.GetValue(); };
+
+	friend bool operator<=(const cweeSysInterlockedInteger& i, const cweeSysInterlockedInteger& b) { return i.GetValue() <= b.GetValue(); };
+	friend bool operator>=(const cweeSysInterlockedInteger& i, const cweeSysInterlockedInteger& b) { return i.GetValue() >= b.GetValue(); };
+	friend bool operator>(const cweeSysInterlockedInteger& i, const cweeSysInterlockedInteger& b) { return i.GetValue() > b.GetValue(); };
+	friend bool operator<(const cweeSysInterlockedInteger& i, const cweeSysInterlockedInteger& b) { return i.GetValue() < b.GetValue(); };
+
+	cweeSysInterlockedInteger& operator+=(int i) { Add(i); return *this; };
+	cweeSysInterlockedInteger& operator-=(int i) { Add(-i); return *this; };
+
+	cweeSysInterlockedInteger& operator+=(const cweeSysInterlockedInteger& i) { Add(i.GetValue()); return *this; };
+	cweeSysInterlockedInteger& operator-=(const cweeSysInterlockedInteger& i) { Add(-i.GetValue()); return *this; };
+
+	bool operator==(int i) { return i == GetValue(); };
+	bool operator!=(int i) { return i != GetValue(); };
+	bool operator==(const cweeSysInterlockedInteger& i) { return i.GetValue() == GetValue(); };
+	bool operator!=(const cweeSysInterlockedInteger& i) { return i.GetValue() != GetValue(); };
+
+	int					Increment() { return cweeSysThreadTools::Sys_InterlockedIncrement(value); } // atomically increments the integer and returns the new value
+	int					Decrement() { return cweeSysThreadTools::Sys_InterlockedDecrement(value); } // atomically decrements the integer and returns the new value
+	int					Add(int v) { return cweeSysThreadTools::Sys_InterlockedAdd(value, (interlockedInt_t)v); } // atomically adds a value to the integer and returns the new value
+	int					Sub(int v) { return cweeSysThreadTools::Sys_InterlockedSub(value, (interlockedInt_t)v); } // atomically subtracts a value from the integer and returns the new value
+	int					GetValue() const { return cweeSysThreadTools::Sys_InterlockedAdd(const_cast<interlockedInt_t&>(value), 0); } // returns the current value of the integer
+	void				SetValue(int v) { cweeSysThreadTools::Sys_InterlockedAdd(value, (interlockedInt_t)(v - GetValue())); };
+
+	bool				TryIncrementTo(int n) {
+		if (Increment() == n) {
+			return true;
+		}
+		Decrement();
+		return false;
+	};
+
+private:
+	interlockedInt_t	value;
+};
+
+/* thread-safe and fiber-safe pointer (atomic swapping of pointers) */
+template< typename T > class cweeSysInterlockedPointer {
+public:
+	constexpr cweeSysInterlockedPointer() noexcept : ptr(nullptr) {}
+	constexpr cweeSysInterlockedPointer(std::nullptr_t) noexcept : ptr(nullptr) {}
+	constexpr cweeSysInterlockedPointer(T* newSource) noexcept : ptr(newSource) {}
+	constexpr cweeSysInterlockedPointer(const cweeSysInterlockedPointer& other) : ptr(other.Get()) {};
+	cweeSysInterlockedPointer& operator=(const cweeSysInterlockedPointer& other) { Set(other.Get()); return *this; };
+	cweeSysInterlockedPointer& operator=(T* newSource) { Set(newSource); return *this; };
+	~cweeSysInterlockedPointer() { ptr = nullptr; };
+
+	explicit operator bool() { return ptr; };
+	explicit operator bool() const { return ptr; };
+
+	constexpr operator T* () noexcept { return ptr; };
+	constexpr operator const T* () const noexcept { return ptr; };
+
+	/* atomically sets the pointerand returns the previous pointer value */
+	T* Set(T* newPtr) { return (T*)cweeSysThreadTools::Sys_InterlockedExchangePointer((void*&)ptr, (void*)newPtr); };
+	/* atomically sets the pointer to 'newPtr' only if the previous pointer is equal to 'comparePtr' */
+	T* CompareExchange(T* comparePtr, T* newPtr) { return (T*)cweeSysThreadTools::Sys_InterlockedCompareExchangePointer((void*&)ptr, (void*)comparePtr, (void*)newPtr); };
+
+	constexpr T* operator->() noexcept { return Get(); };
+	constexpr const T* operator->() const noexcept { return Get(); };
+	constexpr T* Get() noexcept { return ptr; };
+	constexpr T* Get() const noexcept { return ptr; };
+
+private:
+	T* ptr;
+};
+
+class cweeConstexprLock {
+public:
+	class cweeConstexprLockLifetimeGuard {
+	public:
+		constexpr explicit operator bool() const noexcept { return true; };
+		explicit cweeConstexprLockLifetimeGuard(cweeSysInterlockedInteger& mut) noexcept : owner(mut) { while (owner.Increment() != 1) { owner.Decrement(); } };
+		~cweeConstexprLockLifetimeGuard() noexcept { owner.Decrement(); };
+		explicit cweeConstexprLockLifetimeGuard() = delete;
+		explicit cweeConstexprLockLifetimeGuard(const cweeSysInterlockedInteger& other) = delete;
+		explicit cweeConstexprLockLifetimeGuard(cweeSysInterlockedInteger&& other) = delete;
+		cweeConstexprLockLifetimeGuard& operator=(const cweeSysInterlockedInteger&) = delete;
+		cweeConstexprLockLifetimeGuard& operator=(cweeSysInterlockedInteger&&) = delete;
+	protected:
+		cweeSysInterlockedInteger& owner;
+	};
+
+public:
+	constexpr cweeConstexprLock() noexcept : Handle(0) {};
+	constexpr cweeConstexprLock(const cweeConstexprLock& other) noexcept : Handle(0) {};
+	constexpr cweeConstexprLock(cweeConstexprLock&& other) noexcept : Handle(0) {};
+	constexpr cweeConstexprLock& operator=(const cweeConstexprLock& s) noexcept { return *this; };
+	constexpr cweeConstexprLock& operator=(cweeConstexprLock&& s) noexcept { return *this; };
+	~cweeConstexprLock() {};
+
+	NODISCARD		cweeConstexprLockLifetimeGuard	Guard() const noexcept { return cweeConstexprLockLifetimeGuard(Handle); };
+	bool			Lock(bool blocking = true) const noexcept {
+		if (blocking) {
+			while (Handle.Increment() != 1) {
+				Handle.Decrement();
+				_mm_pause();
+			}
+
+			return true;
+		}
+		else {
+			if (Handle.Increment() != 1) {
+				Handle.Decrement();
+				return false;
+			}
+			return true;
+		}
+	};
+	void			Unlock() const noexcept {
+		Handle.Decrement();
+	};
+	void            lock() const { Lock(); }
+	void            unlock() const { Unlock(); }
+protected:
+	mutable cweeSysInterlockedInteger Handle;
+
+};
+
+
+template< typename type>
+class Interlocked {
+public:
+	class ExclusiveObject {
+	public:
+		constexpr ExclusiveObject(const Interlocked<type>& mut) : owner(const_cast<Interlocked<type>&>(mut)) { this->owner.Lock(); };
+		~ExclusiveObject() { this->owner.Unlock(); };
+
+		ExclusiveObject() = delete;
+		ExclusiveObject(const ExclusiveObject& other) = delete; 
+		ExclusiveObject(ExclusiveObject&& other) = delete; 
+		ExclusiveObject& operator=(const ExclusiveObject& other) = delete;
+		ExclusiveObject& operator=(ExclusiveObject&& other) = delete;
+
+		type& operator=(const type& a) { data() = a; return data(); };
+		type& operator=(type&& a) { data() = a; return data(); };
+		type& operator*() const { return data(); };
+		type* operator->() const { return &data(); };
+
+	protected:
+		type& data() const { return owner.UnsafeRead(); };
+		Interlocked<type>& owner;
+	};
+
+public: // construction and destruction
+	typedef type Type;
+
+	Interlocked() : data() {};
+	Interlocked(const type& other) : data(other) {};
+	Interlocked(type&& other) : data(std::forward<type>(other)) {};
+	Interlocked(const Interlocked& other) : data() { this->Copy(other); };
+	Interlocked(Interlocked&& other) : data() { this->Copy(std::forward<Interlocked>(other)); };
+	~Interlocked() {};
+
+public: // copy and clear
+	Interlocked<type>& operator=(const Interlocked<type>& other) {
+		this->Copy(other);
+		return *this;
+	};
+	Interlocked<type>& operator=(Interlocked<type>&& other) {
+		this->Copy(std::forward<Interlocked<type>>(other));
+		return *this;
+	};
+	void Copy(const Interlocked<type>& copy) {
+		if (&copy == this) return;
+		lock.Lock();
+		copy.Lock();
+		data = copy.data;
+		copy.Unlock(); 
+		lock.Unlock();
+	};
+	void Copy(Interlocked<type>&& copy) {
+		if (&copy == this) return;
+		lock.Lock();
+		copy.Lock();
+		data = copy.data;
+		copy.Unlock();
+		lock.Unlock();
+	};
+	void Clear() {
+		lock.Lock();
+		data = type();
+		lock.Unlock();
+	};
+
+public: // read and swap
+	type Read() const {
+		AUTO g = Guard();
+		return data;
+	};
+	void Swap(const type& replacement) {
+		AUTO g = Guard();
+		data = replacement;
+	};
+	Interlocked<type>& operator=(const type& other) {
+		Swap(other);
+		return *this;
+	};
+
+	operator type() const { return Read(); };
+	type* operator->() const { return &data; };
+
+public: // lock, unlock, and direct edit
+	ExclusiveObject GetExclusive() const { return ExclusiveObject(*this); };
+
+	NODISCARD AUTO Guard() const { return lock.Guard(); };
+	void Lock() const { lock.Lock(); };
+	void Unlock() const { lock.Unlock(); };
+	type& UnsafeRead() const { return data; };
+
+private:
+	mutable type data;
+	cweeConstexprLock lock;
+
+};
+
+/* A standard thread timer that self-cleans after going out-of-scope, including when an app closes. Note that the last timer "sleep" must wake-up before the timer can close-out, which can delay closing of apps. */
+class Timer {
+private:
+	class TimerImpl {
+	public:
+		TimerImpl(double secondsBetweenDispatch, Action const& queuedActivity) : handle(), stop(new cweeSysInterlockedInteger(0)) {
+			std::tuple<double, Action, std::shared_ptr<cweeSysInterlockedInteger>>* data = new std::tuple<double, Action, std::shared_ptr<cweeSysInterlockedInteger>>(secondsBetweenDispatch, queuedActivity, stop);
+			handle = cweeSysThreadTools::Sys_CreateThread((xthread_t)([](void* _anon_ptr) -> unsigned int {
+				if (_anon_ptr != nullptr) {
+					std::tuple<double, Action, std::shared_ptr<cweeSysInterlockedInteger>>* T = static_cast<std::tuple< double, Action, std::shared_ptr<cweeSysInterlockedInteger>>*>(_anon_ptr);
+					while (1) {
+						if (std::get<2>(*T)->GetValue() >= 1) { break; }
+#if 1
+						::Sleep(std::get<0>(*T) * 1000.0);
+#else
+						Stopwatch sw; sw.Start();
+						while (cweeUnitValues::nanosecond(sw.Stop()) < cweeUnitValues::millisecond(T->get<0>()) && T->get<2>()->GetValue() < 1) {
+							ftl::YieldThread();
+						}
+#endif
+						if (std::get<2>(*T)->GetValue() >= 1) { break; }
+
+						std::get<1>(*T).ForceInvoke();
+					}
+					delete T;
+				}
+				return 0;
+				}), (void*)data, 1024);
+		};
+		~TimerImpl() {
+			stop->Increment();
+			cweeSysThreadTools::Sys_DestroyThread(handle);
+		};
+
+	private:
+		std::shared_ptr<cweeSysInterlockedInteger> stop;
+		uintptr_t handle;
+	};
+
+public:
+	Timer() : data(nullptr) {};
+	Timer(Timer const&) = default;
+	Timer(Timer&&) = default;
+	Timer& operator=(Timer const&) = default;
+	Timer& operator=(Timer&&) = default;
+	Timer(double secondsBetweenDispatch, Action const& queuedActivity) : data(std::static_pointer_cast<void>(std::make_shared<TimerImpl>(secondsBetweenDispatch, queuedActivity))) {};
+	~Timer() {};
+
+private:
+	std::shared_ptr<void> data;
+
+};

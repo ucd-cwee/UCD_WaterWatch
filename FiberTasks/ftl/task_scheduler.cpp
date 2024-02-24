@@ -292,7 +292,8 @@ int TaskScheduler::Init(TaskSchedulerInitOptions options) {
 	if (options.ThreadPoolSize == 0) {
 		// 1 thread for each logical processor
 		m_numThreads = GetNumHardwareThreads();
-	} else {
+	}
+	else {
 		m_numThreads = options.ThreadPoolSize;
 	}
 
@@ -334,7 +335,7 @@ int TaskScheduler::Init(TaskSchedulerInitOptions options) {
 	}
 
 	// Set the properties for the main thread
-	
+
 	SetCurrentThreadAffinity(0);
 
 	m_threads[0] = GetCurrentThread();
@@ -353,7 +354,7 @@ int TaskScheduler::Init(TaskSchedulerInitOptions options) {
 
 	// Create the worker threads
 	for (unsigned i = 1; i < m_numThreads; ++i) {
-		auto *const threadArgs = new ThreadStartArgs();
+		auto* const threadArgs = new ThreadStartArgs();
 		threadArgs->Scheduler = this;
 		threadArgs->ThreadIndex = i;
 
@@ -375,6 +376,11 @@ int TaskScheduler::Init(TaskSchedulerInitOptions options) {
 
 	return 0;
 }
+
+TaskScheduler::TaskScheduler(TaskSchedulerInitOptions options) {
+	Init(options);
+};
+
 
 TaskScheduler::~TaskScheduler() {
 	// Create the quit fibers

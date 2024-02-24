@@ -23,20 +23,28 @@ public:
 	DelayedInstantiation(std::function<T*()> create) : obj(nullptr), createFunc(create) {};
 	~DelayedInstantiation() {};
 
-	T* operator->() { Ensure(); return obj.Get(); };
+	//T* operator->() { Ensure(); return obj.Get(); };
+	T* operator->() { Ensure(); return obj.get(); };
 	T& operator*() { Ensure(); return *obj; };
 
+	void lock() {
+		Lock.lock();
+	};
+	void unlock() {
+		Lock.unlock();
+	};
 private:
 	void Ensure() {
-		//if (!obj) {
-			obj.Lock();
-			auto* p = obj.UnsafeGet();
+		if (!obj.get()) {
+			Lock.lock();
+			auto* p = obj.get();
 			if (!p) {
-				obj.UnsafeSet(createFunc());
+				obj = std::shared_ptr<T>(createFunc());
 			}
-			obj.Unlock();
-		//}
+			Lock.unlock();
+		}
 	};
-	cweeSharedPtr<T> obj;
-	std::function< T* () > createFunc;
+	std::shared_ptr<T> obj;
+	cweeConstexprLock Lock;
+	std::function<T*()> createFunc;
 };

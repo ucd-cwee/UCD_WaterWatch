@@ -49,7 +49,9 @@ static cweeJob GetUserInput() {
 			Win32ConsoleSupport::clearLine();
 			Win32ConsoleSupport::clearLine();
 			std::cout << "\r" << temp; // print the current text here, so that it doesn't appear to flash on screen.
-			while (!_kbhit()) {}
+			while (!_kbhit()) {
+				cweeSysThreadTools::Sys_Yield();
+			}
 			unsigned char character = _getch(); // grab user key press. 	
 			// bool shift_pressed = GetAsyncKeyState(VK_SHIFT);
 
@@ -125,12 +127,12 @@ static cweeStr UserMustSelectFile(cweeStr fileType) {
 };
 
 /* Parallel thread to occasionally look for and process toast messages. Sleeps most of the time and wakes up to check for toasts. */
-static DispatchTimer parallel_toast_manager = DispatchTimer(100, cweeJob([](cweeStr& title, cweeStr& content) { 
+static Timer parallel_toast_manager = Timer(0.1, Action([](cweeStr& title, cweeStr& content) { 
 	while (cweeToasts->tryGetToast(title, content)) std::cout << cweeStr::printf("\n/* WaterWatch Toast: \t\"%s\": \t\"%s\" */\n\n", title.c_str(), content.c_str());
 }, cweeStr(), cweeStr()));
 
 // Handle async or scripted AppRequests. 
-static DispatchTimer AppLayerRequestProcessor = DispatchTimer(100, cweeJob([]() {
+static Timer AppLayerRequestProcessor = Timer(0.01, Action([]() {
 	std::pair<
 		int, // ID
 		cweeUnion<
@@ -236,7 +238,7 @@ int main() {
 
 	cweeStr prevLine = "";
 	cweeStr command = "";
-	cweeSharedPtr<chaiscript::WaterWatch_ChaiScript> engine = make_cwee_shared<chaiscript::WaterWatch_ChaiScript>();
+	std::shared_ptr<chaiscript::WaterWatch_ChaiScript> engine = std::make_shared<chaiscript::WaterWatch_ChaiScript>();
 	while (true) {
 		AUTO input = GetUserInput();
 		cweeStr str = input.Await().cast();
@@ -246,7 +248,7 @@ int main() {
 			return 0;
 		}
 		if (str == "Reset") { 
-			engine = make_cwee_shared<chaiscript::WaterWatch_ChaiScript>();
+			engine = std::make_shared<chaiscript::WaterWatch_ChaiScript>();
 			command = ""; 
 			continue; 
 		} 
