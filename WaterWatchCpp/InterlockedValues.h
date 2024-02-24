@@ -210,7 +210,10 @@ public:
 	NODISCARD		cweeConstexprLockLifetimeGuard	Guard() const noexcept { return cweeConstexprLockLifetimeGuard(Handle); };
 	bool			Lock(bool blocking = true) const noexcept {
 		if (blocking) {
-			while (Handle.Increment() != 1) Handle.Decrement();
+			while (Handle.Increment() != 1) {
+				Handle.Decrement();
+				_mm_pause();
+			}
 
 			return true;
 		}

@@ -288,7 +288,7 @@ private:
 	 * @param taskBuffer    An empty buffer the function can use
 	 * @return              True: Successfully popped a task out of the queue
 	 */
-	bool GetNextHiPriTask(TaskBundle *nextTask, std::vector<TaskBundle> *taskBuffer);
+	bool GetNextHiPriTask(TaskBundle *nextTask, std::vector<TaskBundle> *taskBuffer, unsigned* currentThreadIndex_p = nullptr);
 	/**
 	 * Pops the next task off the low priority queue into nextTask. If there are no tasks in the
 	 * the queue, it will return false.

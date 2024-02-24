@@ -1245,32 +1245,97 @@ public:
 
 };
 #else
-template <typename T> class WaitFreeQueue {
-private:
-    ::atomic_queue::AtomicQueueB2<T> queue;
+
+template <typename T> class queue_container {
+public:
+    queue_container(int n = 1000) : queue(n), prev(nullptr) {};
 
 public:
-    WaitFreeQueue() : queue(1000) {};
+    ::atomic_queue::AtomicQueueB2<T> queue;
+    cweeSysInterlockedPointer<queue_container<T>> prev;
+};
+
+template <typename T> class WaitFreeQueue {
+protected:
+    cweeSysInterlockedPointer<queue_container<T>> last;
+    // ::atomic_queue::TicketSpinlock lock;
+    cweeConstexprLock lock;
+
+    void AddNewQueue(int n = 1000) {
+        auto* prevL1 = last.Get();
+        lock.lock();
+        {
+            auto* prevL2 = last.Get();
+            if (prevL1 == prevL2) {
+                queue_container<T>* newPtr = new queue_container<T>(std::max(1000, n));
+                queue_container<T>* prevLast = last.Set(newPtr);
+                newPtr->prev.Set(prevLast);
+            }
+        }
+        lock.unlock();
+    };
+
+public:
+    WaitFreeQueue() : last(new queue_container<T>()) {};
     WaitFreeQueue(WaitFreeQueue const&) = delete;
     WaitFreeQueue(WaitFreeQueue&&) noexcept = delete;
     WaitFreeQueue& operator=(WaitFreeQueue const&) = delete;
     WaitFreeQueue& operator=(WaitFreeQueue&&) noexcept = delete;
     ~WaitFreeQueue() {
-
+        for (auto* queue = last.Get(); queue; ) {
+            auto* queue_copy = queue;
+            queue = queue->prev.Get();
+            if (queue_copy) {
+                delete queue_copy;
+            }
+        }
     };
 
 public:
-    void Push(T const& value) {
-        queue.push(value);
+    template<typename T_o>
+    void Push(T_o* values, long long n, std::function<T(T_o const&)> converter) {
+        long long pos = 0;
+        while (pos < n) {
+            bool satisfied = false;
+            while (!satisfied) {
+                for (auto* queue = last.Get(); queue; queue = queue->prev.Get()) {
+                    if (queue->queue.try_push(converter(values[pos]))) {
+                        satisfied = true;
+                        break;
+                    }
+                }
+                if (!satisfied) {
+                    AddNewQueue(16 + (n - pos));
+                }
+            }
+            ++pos;
+        }
     };
-    void Push(T&& value) {
-        queue.push(std::forward<T>(value));
+    void Push(T const& value) {
+        while (true) {
+            for (auto* queue = last.Get(); queue; queue = queue->prev.Get()) {
+                if (queue->queue.try_push(value)) {
+                    return;
+                }
+            }
+            AddNewQueue();
+        }
     };
     bool Pop(T* value) {
-        return queue.try_pop(*value);        
+        for (auto* queue = last.Get(); queue; queue = queue->prev.Get()) {
+            if (queue->queue.try_pop(*value)) {
+                return true;
+            }
+        }     
+        return false;
     };
     bool Steal(T* const value) {
-        return queue.try_pop(*value);
+        for (auto* queue = last.Get(); queue; queue = queue->prev.Get()) {
+            if (queue->queue.try_pop(*value)) {
+                return true;
+            }
+        }
+        return false;
     };
 
 };

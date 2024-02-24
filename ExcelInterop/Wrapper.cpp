@@ -1193,45 +1193,64 @@ namespace chaiscript {
                         int n = 0; for (auto& row : *a) for (auto& cell : row) ++n;
                         boxed_vec.reserve(n+16);
                         if (a) {
-                            for (auto& row : *a) {
-                                for (auto& cell : row) {
-                                    if (cell->has_value()) {
-                                        switch (cell->data_type()) {
-                                        case CellType::empty:
-                                            boxed_vec.push_back(chaiscript::Boxed_Value());
-                                        case CellType::error:
-                                            boxed_vec.push_back(var(cell->error()));
-                                        default:
-                                            if (cell->is_date()) {
-                                                boxed_vec.push_back(var(cell->value<cweeTime>()));
-                                            }
-                                            else {
-                                                switch (cell->data_type()) {
-                                                case CellType::date:
-                                                    boxed_vec.push_back(var(cell->value<cweeTime>()));
-                                                    break;
-                                                case CellType::formula_string:
-                                                case CellType::inline_string:
-                                                case CellType::shared_string:
-                                                    boxed_vec.push_back(var(cell->value<cweeStr>()));
-                                                    break;
-                                                case CellType::number:
-                                                    boxed_vec.push_back(var(cell->value<double>()));
-                                                    break;
-                                                case CellType::boolean:
-                                                    boxed_vec.push_back(var(cell->value<bool>()));
-                                                    break;
-                                                default:
-                                                    boxed_vec.push_back(chaiscript::Boxed_Value());
-                                                    break;
+                            try {
+                                for (auto& row : *a) {
+                                    int numC = row.Num();
+                                    try {
+                                        for (auto& cell : row) {
+                                            try {
+                                                if (cell->has_value()) {
+                                                    switch (cell->data_type()) {
+                                                    case CellType::empty:
+                                                        boxed_vec.push_back(chaiscript::Boxed_Value());
+                                                    case CellType::error:
+                                                        boxed_vec.push_back(var(cell->error()));
+                                                    default:
+                                                        if (cell->is_date()) {
+                                                            boxed_vec.push_back(var(cell->value<cweeTime>()));
+                                                        }
+                                                        else {
+                                                            switch (cell->data_type()) {
+                                                            case CellType::date:
+                                                                boxed_vec.push_back(var(cell->value<cweeTime>()));
+                                                                break;
+                                                            case CellType::formula_string:
+                                                            case CellType::inline_string:
+                                                            case CellType::shared_string:
+                                                                boxed_vec.push_back(var(cell->value<cweeStr>()));
+                                                                break;
+                                                            case CellType::number:
+                                                                boxed_vec.push_back(var(cell->value<double>()));
+                                                                break;
+                                                            case CellType::boolean:
+                                                                boxed_vec.push_back(var(cell->value<bool>()));
+                                                                break;
+                                                            default:
+                                                                boxed_vec.push_back(chaiscript::Boxed_Value());
+                                                                break;
+                                                            }
+                                                        }
+                                                    }
                                                 }
+                                                else {
+                                                    boxed_vec.push_back(chaiscript::Boxed_Value());
+                                                }
+                                                numC--;
+                                            }
+                                            catch (...) {
+                                                boxed_vec.push_back(chaiscript::Boxed_Value()); // bad cell value
                                             }
                                         }
                                     }
-                                    else {
-                                        boxed_vec.push_back(chaiscript::Boxed_Value());
+                                    catch (...) {
+                                        for (; numC > 0; --numC) {
+                                            boxed_vec.push_back(chaiscript::Boxed_Value()); // bad column values
+                                        }
                                     }
                                 }
+                            }
+                            catch (...) {
+                                // bad row(s) -- do nothing. 
                             }
                         }
                         else ThrowIfBadAccess;

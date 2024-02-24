@@ -112,7 +112,8 @@ void TaskScheduler::FiberStartFunc(void *const arg) {
 	// Process tasks infinitely, until quit
 	while (!taskScheduler->m_quit.load(std::memory_order_acquire)) {
 		unsigned waitingFiberIndex = kInvalidIndex;
-		ThreadLocalStorage *tls = &taskScheduler->m_tls[taskScheduler->GetCurrentThreadIndex()];
+		decltype(auto) threadIndex = taskScheduler->GetCurrentThreadIndex();
+		ThreadLocalStorage *tls = &taskScheduler->m_tls[threadIndex];
 
 		bool readyWaitingFibers = false;
 
@@ -140,7 +141,7 @@ void TaskScheduler::FiberStartFunc(void *const arg) {
 
 		// If nothing was found, check if there is a high priority task to run
 		if (waitingFiberIndex == kInvalidIndex) {
-			foundTask = taskScheduler->GetNextHiPriTask(&nextTask, &taskBuffer);
+			foundTask = taskScheduler->GetNextHiPriTask(&nextTask, &taskBuffer, &threadIndex);
 
 			// Check if the found task is a ReadyFiber dummy task
 			if (foundTask && nextTask.TaskToExecute.Function == ReadyFiberDummyTask) {
@@ -452,11 +453,16 @@ void TaskScheduler::AddTasks(uint32_t numTasks, Task *tasks, TaskPriority priori
 		FTL_ASSERT("Unknown task priority", false);
 		return;
 	}
+
+#if 0
 	for (unsigned i = 0; i < numTasks; ++i) {
 		FTL_ASSERT("Task given to TaskScheduler:AddTasks has a nullptr Function", tasks[i].Function != nullptr);
-		const TaskBundle bundle = { tasks[i], waitGroup };
+		const TaskBundle bundle = { tasks[i], waitGroup };	
 		queue->Push(bundle);
 	}
+#else
+	queue->Push<Task>(tasks, numTasks, std::function([&waitGroup](Task const& t)->TaskBundle { return { t, waitGroup }; }));
+#endif
 
 	const EmptyQueueBehavior behavior = m_emptyQueueBehavior.load(std::memory_order_relaxed);
 	if (behavior == EmptyQueueBehavior::Sleep) {
@@ -469,6 +475,7 @@ void TaskScheduler::AddTasks(uint32_t numTasks, Task *tasks, TaskPriority priori
 
 FTL_NOINLINE unsigned TaskScheduler::GetCurrentThreadIndex() const {
 	DWORD const threadId = ::GetCurrentThreadId();
+
 	for (unsigned i = 0; i < m_numThreads; ++i) {
 		if (m_threads[i].Id == threadId) {
 			return i;
@@ -509,8 +516,8 @@ inline bool TaskScheduler::TaskIsReadyToExecute(TaskBundle *bundle) const {
 	return waitingFiberBundle->FiberIsSwitched.load(std::memory_order_acquire);
 }
 
-bool TaskScheduler::GetNextHiPriTask(TaskBundle *nextTask, std::vector<TaskBundle> *taskBuffer) {
-	unsigned const currentThreadIndex = GetCurrentThreadIndex();
+bool TaskScheduler::GetNextHiPriTask(TaskBundle *nextTask, std::vector<TaskBundle> *taskBuffer, unsigned* currentThreadIndex_p) {
+	unsigned const currentThreadIndex = currentThreadIndex_p ? *currentThreadIndex_p : GetCurrentThreadIndex();
 	ThreadLocalStorage &tls = m_tls[currentThreadIndex];
 
 	bool result = false;
