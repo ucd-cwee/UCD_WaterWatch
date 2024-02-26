@@ -664,8 +664,10 @@ bool TaskScheduler::GetNextLoPriTask(TaskBundle *nextTask) {
 }
 
 unsigned TaskScheduler::GetNextFreeFiberIndex() const {
-	unsigned i;
-	for (;;) {
+	unsigned i, j;  
+	bool expected;
+
+	for (j = 0; ; ++j) {
 		for (i = 0; i < m_fiberPoolSize; ++i) {
 			// Double lock
 			if (!m_freeFibers[i].load(std::memory_order_relaxed)) {
@@ -676,15 +678,16 @@ unsigned TaskScheduler::GetNextFreeFiberIndex() const {
 				continue;
 			}
 
-			bool expected = true;
+			expected = true;
 			if (std::atomic_compare_exchange_weak_explicit(&m_freeFibers[i], &expected, false, std::memory_order_release, std::memory_order_relaxed)) {
 				return i;
 			}
 		}
 
-		//if (j > 10) {
-		//	printf("No free fibers in the pool. Possible deadlock");
-		//}
+		if (j > 10) {
+			// printf("No free fibers in the pool. Possible deadlock");
+			YieldThread();
+		}
 	}
 }
 

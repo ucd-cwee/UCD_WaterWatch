@@ -17,21 +17,7 @@ to maintain a single distribution point for the source code.
 #include "Precompiled.h"
 
 
-class cweeSysMutexImpl {
-public:
-	cweeSysMutexImpl() noexcept { cweeSysThreadTools::Sys_MutexCreate(Handle); };
-	~cweeSysMutexImpl()	noexcept { cweeSysThreadTools::Sys_MutexDestroy(Handle); };
-	bool Lock(bool blocking = true) noexcept { return cweeSysThreadTools::Sys_MutexLock(Handle, blocking); };
-	void Unlock() noexcept { cweeSysThreadTools::Sys_MutexUnlock(Handle); };
 
-	cweeSysMutexImpl(const cweeSysMutexImpl&) = delete;
-	cweeSysMutexImpl(cweeSysMutexImpl&&) = delete;
-	cweeSysMutexImpl& operator=(cweeSysMutexImpl const&) = delete;
-	cweeSysMutexImpl& operator=(cweeSysMutexImpl&&) = delete;
-
-protected:
-	mutexHandle_t Handle;
-};
 
 template <typename T>
 class LockedObject {

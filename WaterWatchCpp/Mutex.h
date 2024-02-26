@@ -18,42 +18,6 @@ to maintain a single distribution point for the source code.
 #include "InterlockedValues.h"
 #include "SharedPtr.h"
 
-class cweeSysMutex {
-public:
-	using Handle_t = cweeSysMutexImpl;
-	using Phandle = cweeSharedPtr<Handle_t>;
-	
-	class cweeSysMutexLifetimeGuard {
-	public:
-		constexpr explicit operator bool() const { return (bool)owner; };
-		explicit cweeSysMutexLifetimeGuard(const Phandle& mut) noexcept : owner(mut) { owner->Lock(); };
-		~cweeSysMutexLifetimeGuard() noexcept { owner->Unlock(); };
-		explicit cweeSysMutexLifetimeGuard() = delete;
-		explicit cweeSysMutexLifetimeGuard(const cweeSysMutexLifetimeGuard& other) = delete;
-		explicit cweeSysMutexLifetimeGuard(cweeSysMutexLifetimeGuard&& other) = delete;
-		cweeSysMutexLifetimeGuard& operator=(const cweeSysMutexLifetimeGuard&) = delete;
-		cweeSysMutexLifetimeGuard& operator=(cweeSysMutexLifetimeGuard&&) = delete;
-	protected:
-		Phandle owner;
-	};
-
-public:
-	cweeSysMutex() : Handle(new Handle_t()) {};
-	cweeSysMutex(const cweeSysMutex& other) : Handle(new Handle_t()) {};
-	cweeSysMutex(cweeSysMutex&& other) : Handle(new Handle_t()) {};
-	cweeSysMutex& operator=(const cweeSysMutex& s) { return *this; };
-	cweeSysMutex& operator=(cweeSysMutex&& s) { return *this; };
-	~cweeSysMutex() {};
-
-	NODISCARD cweeSysMutexLifetimeGuard	Guard() const { return cweeSysMutexLifetimeGuard(Handle); };
-	bool			Lock(bool blocking = true) const { return Handle->Lock(blocking); };
-	void			Unlock() const { Handle->Unlock(); };
-
-protected:
-	Phandle Handle;
-
-};
-
 #if 0
 class cweeSharedMutex {
 public:
@@ -116,59 +80,6 @@ protected:
 
 };
 #endif
-
-class cweeReadWriteMutex {
-public:
-	using Handle_t = std::shared_mutex;
-	using Phandle = cweeSharedPtr<Handle_t>;
-
-	class cweeReadWriteMutexLifetime_ReadGuard {
-	public:
-		constexpr explicit operator bool() const { return (bool)owner; };
-		explicit cweeReadWriteMutexLifetime_ReadGuard(const Phandle& mut) noexcept : owner(mut) { owner->lock_shared(); };
-		~cweeReadWriteMutexLifetime_ReadGuard() noexcept { owner->unlock_shared(); };
-		explicit cweeReadWriteMutexLifetime_ReadGuard() = delete;
-		explicit cweeReadWriteMutexLifetime_ReadGuard(const cweeReadWriteMutexLifetime_ReadGuard& other) = delete;
-		explicit cweeReadWriteMutexLifetime_ReadGuard(cweeReadWriteMutexLifetime_ReadGuard&& other) = delete;
-		cweeReadWriteMutexLifetime_ReadGuard& operator=(const cweeReadWriteMutexLifetime_ReadGuard&) = delete;
-		cweeReadWriteMutexLifetime_ReadGuard& operator=(cweeReadWriteMutexLifetime_ReadGuard&&) = delete;
-	protected:
-		Phandle owner;
-	};
-
-	class cweeReadWriteMutexLifetime_WriteGuard {
-	public:
-		constexpr explicit operator bool() const { return (bool)owner; };
-		explicit cweeReadWriteMutexLifetime_WriteGuard(const Phandle& mut) noexcept : owner(mut) { owner->lock(); };
-		~cweeReadWriteMutexLifetime_WriteGuard() noexcept { owner->unlock(); };
-		explicit cweeReadWriteMutexLifetime_WriteGuard() = delete;
-		explicit cweeReadWriteMutexLifetime_WriteGuard(const cweeReadWriteMutexLifetime_WriteGuard& other) = delete;
-		explicit cweeReadWriteMutexLifetime_WriteGuard(cweeReadWriteMutexLifetime_WriteGuard&& other) = delete;
-		cweeReadWriteMutexLifetime_WriteGuard& operator=(const cweeReadWriteMutexLifetime_WriteGuard&) = delete;
-		cweeReadWriteMutexLifetime_WriteGuard& operator=(cweeReadWriteMutexLifetime_WriteGuard&&) = delete;
-	protected:
-		Phandle owner;
-	};
-
-public:
-	cweeReadWriteMutex() : Handle(new Handle_t()) {};
-	cweeReadWriteMutex(const cweeReadWriteMutex& other) : Handle(new Handle_t()) {};
-	cweeReadWriteMutex(cweeReadWriteMutex&& other) : Handle(new Handle_t()) {};
-	cweeReadWriteMutex& operator=(const cweeReadWriteMutex& s) { return *this; };
-	cweeReadWriteMutex& operator=(cweeReadWriteMutex&& s) { return *this; };
-	~cweeReadWriteMutex() {};
-
-	NODISCARD cweeReadWriteMutexLifetime_ReadGuard	Read_Guard() const { return cweeReadWriteMutexLifetime_ReadGuard(Handle); };
-	NODISCARD cweeReadWriteMutexLifetime_WriteGuard	Write_Guard() const { return cweeReadWriteMutexLifetime_WriteGuard(Handle); };
-	void			Read_Lock() const { Handle->lock_shared(); };
-	void			Read_Unlock() const { Handle->unlock_shared(); };
-	void			Write_Lock() const { Handle->lock(); };
-	void			Write_Unlock() const { Handle->unlock(); };
-
-protected:
-	Phandle Handle;
-
-};
 
 class cweeSysSignalImpl {
 public:

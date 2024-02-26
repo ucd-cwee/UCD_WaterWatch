@@ -722,13 +722,9 @@ static void DoAnyFuncStruct(ftl::TaskScheduler* taskScheduler, void* arg) {
 };
 
 
-#include <concurrent_vector.h>
 namespace fibers {
-	class Job; // forward decl
 	class JobGroup;
-
-	class Job {
-		friend JobGroup;
+	class Job { friend JobGroup;
 	protected:
 		mutable Action impl;
 
@@ -811,41 +807,49 @@ namespace fibers {
 		bool IsFinished() const {
 			return impl.IsFinished();
 		};
-	};
 
-	class JobGroup {
-		friend Job;
-	public:
-		JobGroup() : waitGroup(new ftl::WaitGroup(&*Fibers)), jobs() {};
-		JobGroup(JobGroup const&) = default;
-		JobGroup(JobGroup&&) = default;
-		JobGroup& operator=(JobGroup const&) = default;
-		JobGroup& operator=(JobGroup&&) = default;
-		~JobGroup() {
-			auto* wg = waitGroup.Set(nullptr);
-			if (wg) {
-				wg->Wait();
-				delete wg;
-			}
+	};
+	class JobGroup { friend Job;
+	private:
+		class JobGroupImpl {
+		public:
+			ftl::WaitGroup waitGroup;
+			Interlocked<std::vector<Job>> jobs;
+
+			JobGroupImpl() : waitGroup(&*Fibers), jobs() {};
+			JobGroupImpl(JobGroupImpl const&) = delete;
+			JobGroupImpl(JobGroupImpl&&) = delete;
+			JobGroupImpl& operator=(JobGroupImpl const&) = delete;
+			JobGroupImpl& operator=(JobGroupImpl&&) = delete;
+			~JobGroupImpl() {};
 		};
 
+	public:
+		JobGroup() : impl(new JobGroupImpl()) {};
+		JobGroup(Job const& job) : impl(new JobGroupImpl()) { Queue(job); };
+		JobGroup(JobGroup const&) = delete;
+		JobGroup(JobGroup&&) = delete;
+		JobGroup& operator=(JobGroup const&) = delete;
+		JobGroup& operator=(JobGroup&&) = delete;
+		~JobGroup() {};
+
 		JobGroup& Queue(Job const& job) {
-			Fibers->AddTask({ DoAnyFuncStruct, new AnyFunctionStruct({ job.impl, nullptr, false }) }, ftl::TaskPriority::Normal, &*waitGroup);
-			jobs.GetExclusive()->push_back(job);
+			Fibers->AddTask({ DoAnyFuncStruct, new AnyFunctionStruct({ job.impl, nullptr, false }) }, ftl::TaskPriority::Normal, &impl->waitGroup);
+			impl->jobs.GetExclusive()->push_back(job);
 			return *this;
 		};
 		JobGroup& ForceQueue(Job const& job) {
-			Fibers->AddTask({ DoAnyFuncStruct, new AnyFunctionStruct({ job.impl, nullptr, true }) }, ftl::TaskPriority::Normal, &*waitGroup);
-			jobs.GetExclusive()->push_back(job);
+			Fibers->AddTask({ DoAnyFuncStruct, new AnyFunctionStruct({ job.impl, nullptr, true }) }, ftl::TaskPriority::Normal, &impl->waitGroup);
+			impl->jobs.GetExclusive()->push_back(job);
 			return *this;
 		};
 		JobGroup& Queue(std::vector<Job> const& listOfJobs) {
 			std::vector<ftl::Task> tasks;
 			for (auto& job : listOfJobs) {
 				tasks.push_back({ DoAnyFuncStruct, new AnyFunctionStruct({ job.impl, nullptr, false }) });
-				jobs.GetExclusive()->push_back(job);
+				impl->jobs.GetExclusive()->push_back(job);
 			}
-			Fibers->AddTasks(tasks.size(), &tasks[0], ftl::TaskPriority::Normal, &*waitGroup);
+			Fibers->AddTasks(tasks.size(), &tasks[0], ftl::TaskPriority::Normal, &impl->waitGroup);
 
 			return *this;
 		};
@@ -853,40 +857,32 @@ namespace fibers {
 			std::vector<ftl::Task> tasks;
 			for (auto& job : listOfJobs) {
 				tasks.push_back({ DoAnyFuncStruct, new AnyFunctionStruct({ job.impl, nullptr, true }) });
-				jobs.GetExclusive()->push_back(job);
+				impl->jobs.GetExclusive()->push_back(job);
 			}
-			Fibers->AddTasks(tasks.size(), &tasks[0], ftl::TaskPriority::Normal, &*waitGroup);
+			Fibers->AddTasks(tasks.size(), &tasks[0], ftl::TaskPriority::Normal, &impl->waitGroup);
 
 			return *this;
 		};
-
 		std::vector<Job> Wait() {
-			auto* wg = waitGroup.Set(new ftl::WaitGroup(&*Fibers));
-			if (wg) {
-				wg->Wait();
-				delete wg;
-			}
-			jobs.Lock();
-			auto out = std::vector< Job >(jobs->begin(), jobs->end());
-			jobs.Unlock();
+			impl->waitGroup.Wait();
+
+			impl->jobs.Lock();
+			auto out = std::vector< Job >(impl->jobs->begin(), impl->jobs->end());
+			impl->jobs.Unlock();
+
 			return out;
 		};
 
 	private:
-		cweeSysInterlockedPointer< ftl::WaitGroup > waitGroup;
-		Interlocked<std::vector<Job>> jobs;
+		std::unique_ptr<JobGroupImpl> impl;
 
 	};
 
 	JobGroup Job::AsyncInvoke() { 
-		JobGroup out;
-		out.Queue(*this);
-		return out;
+		return JobGroup(*this);
 	};
 	JobGroup Job::AsyncForceInvoke() { 
-		JobGroup out;
-		out.ForceQueue(*this);
-		return out;
+		return JobGroup(*this);
 	};
 	uintptr_t Job::AsyncDelayedInvoke(u64 milliseconds_delay) {
 		cweeUnion< u64, Job >* data = new cweeUnion<u64, Job>(milliseconds_delay, *this);
@@ -914,7 +910,6 @@ namespace fibers {
 			return 0;
 		}), (void*)data, 1024);
 	};
-
 };
 
 class ExampleOptimization {
@@ -1050,7 +1045,7 @@ uint64_t FTL::fnFiberTasks2b(int numTasks) {
 
 
 
-
+#if 1
 class cweeFiberMutex {
 public:
 	using Handle_t = ftl::Fibtex;
@@ -1086,6 +1081,9 @@ protected:
 	Phandle Handle;
 
 };
+#else
+using cweeFiberMutex = cweeReadWriteMutex; // cweeSysMutex;
+#endif
 
 uint64_t FTL::fnFiberTasks2c(int numTasks) {
 	//ftl::TaskScheduler& taskScheduler = *Fibers;
@@ -1223,6 +1221,7 @@ public:
 			return (xorshifted >> rot) | (xorshifted << ((-rot) & 31));
 		};
 		void discard(unsigned long long n) const noexcept { unsigned long long i; i = 0;  for (; i < n; ++i) operator()(); };
+
 	private:
 		mutable cweeFiberMutex mut;
 		mutable uint64_t m_state;
@@ -1259,6 +1258,7 @@ extern DelayedInstantiation< fiber_rand > FiberRandomGenerator = DelayedInstanti
 /*! random int between min and max */ INLINE int fiberRandomInt(int min, int max) { return FiberRandomGenerator->Random(min, max); };
 
 /*! Thread-safe list that performs garbage collection and manages read/write/create/delete operations on data. Intended to act as a multi-threaded database. */
+#if 1
 template< typename Key, typename Value>
 class fiberMap {
 public:
@@ -2017,50 +2017,46 @@ private:
 
 	ImplType impl;
 };
-
+#endif
 extern void DoJob(ftl::TaskScheduler* taskScheduler, void* arg) {
 	AUTO job = std::shared_ptr<Action>(static_cast<Action*>(arg));
 	job->Invoke();
 };
 uint64_t FTL::fnFiberTasks3(int numTasks, int numSubTasks) {
 	auto* fibers = &*Fibers; 
-	std::shared_ptr<cweeFiberMutex> fibersLock = std::make_shared<cweeFiberMutex>();
 
-	fiberMap<int, fiberMap <int, double>> lists;
-	ftl::WaitGroup wg(fibers);
+	Interlocked<std::unordered_map<int, std::shared_ptr<Interlocked<std::unordered_map<int, double>>>>> lists;
+	// fiberMap <int, fiberMap <int, double>> lists;
 
-	std::vector<ftl::Task> tasks;
+	std::vector<fibers::Job> jobs;
 	for (int i = 0; i < numTasks; ++i) {	
-		tasks.push_back({ DoJob, new Action([&lists, &numSubTasks, &fibers, fibersLock](int j) {
-			AUTO list = lists[j];
+		jobs.push_back(fibers::Job([&lists, &numSubTasks, &fibers](int j) {
+			auto list = (lists.GetExclusive()->operator[](j) = std::make_shared<Interlocked<std::unordered_map<int, double>>>());
 			if (numSubTasks <= 1) {
-				*list->operator[](0) = fiberRandomFloat(0, 100);
+				list->GetExclusive()->operator[](0) = fiberRandomFloat(0, 100);
 			}
 			else {
-				std::vector<ftl::Task> tasks;
-
-				ftl::WaitGroup wg(fibers);
+				std::vector<fibers::Job> jobs;
 				for (int k = 0; k < numSubTasks; ++k) {
-					tasks.push_back({ DoJob, new Action([list](int index) {
-					  *list->operator[](index) = fiberRandomFloat(0,100);
-				  }, int(k)) });
+					jobs.push_back(fibers::Job([=](int index) { list->GetExclusive()->operator[](index) = fiberRandomFloat(0, 100); }, (int)k));
 				}
-				// fibersLock->Lock();
-				fibers->AddTasks(numSubTasks, &tasks[0], ftl::TaskPriority::Normal, &wg);
-				// fibersLock->Unlock();
-				wg.Wait();
-			}
-		}, int(i)) });
-	}
-	//fibersLock->Lock();
-	fibers->AddTasks(numTasks, &tasks[0], ftl::TaskPriority::Normal, &wg);
-	//fibersLock->Unlock();
 
-	wg.Wait();
+				fibers::JobGroup awaiter;
+				awaiter.Queue(jobs);
+				awaiter.Wait();
+			}
+		}, int(i)));
+	}
+	
+	fibers::JobGroup awaiter;
+	awaiter.Queue(jobs);
+	awaiter.Wait();
 
 	int n = 0; 
-	for (auto& x : lists) {
-		for (auto& y : *x.second) {
+	auto listAccess = lists.GetExclusive();
+	for (auto& x : *listAccess) {
+		auto access2 = x.second->GetExclusive();
+		for (auto& y : *access2) {
 			n++;
 		}
 	}
