@@ -2,483 +2,93 @@
 // http://roar11.com/2016/01/a-platform-independent-thread-pool-using-c14/
 #pragma once
 #include "../WaterWatchCpp/Precompiled.h"
-#if 0
-
-#include <optional>
-#include <boost/fiber/all.hpp> 
-namespace FiberPool
-{
-
-	inline auto
-		no_of_defualt_threads()
-	{
-		return std::max(std::thread::hardware_concurrency(), 2u) - 1u;
-	}
-
-	/**
-	 * A wrapper primarly for boost::fibers::buffered_channel
-	 * The buffered_channel has non-virtual member functions
-	 * thus cant inherit from it and use it polyformically.
-	 * This makes it diffuclt to mock its behaviour in unit tests
-	 * The wrapper solves this (see tests for example mock channel)
-	 */
-	template <typename BaseChannel>
-	class TaskQueue
-	{
-	public:
-		using value_type = typename BaseChannel::value_type;
-
-		explicit TaskQueue(std::size_t capacity)
-			: m_base_channel{ capacity }
-		{}
-
-		TaskQueue(const TaskQueue& rhs) = delete;
-		TaskQueue& operator=(TaskQueue const& rhs) = delete;
-
-		TaskQueue(TaskQueue&& other) = default;
-		TaskQueue& operator=(TaskQueue&& other) = default;
-
-		virtual ~TaskQueue() = default;
-
-		boost::fibers::channel_op_status
-			push(typename BaseChannel::value_type const& value)
-		{
-			return m_base_channel.push(value);
-		}
-
-		boost::fibers::channel_op_status
-			push(typename BaseChannel::value_type&& value)
-		{
-			return m_base_channel.push(std::move(value));
-		}
-
-		boost::fibers::channel_op_status
-			pop(typename BaseChannel::value_type& value)
-		{
-			return m_base_channel.pop(value);
-		}
-
-		void close() noexcept
-		{
-			m_base_channel.close();
-		}
-
-	private:
-		BaseChannel m_base_channel;
-	};
-
-	/**
-	 * All tasks executed by the FiberPool are
-	 * automatically wrapped to use the
-	 * following interface
-	 */
-	class IFiberTask
-	{
-	public:
-
-		// how many running fibers there are
-		inline static std::atomic<size_t> no_of_fibers{ 0 };
-
-		IFiberTask(void) = default;
-
-		virtual ~IFiberTask(void) = default;
-		IFiberTask(const IFiberTask& rhs) = delete;
-		IFiberTask& operator=(const IFiberTask& rhs) = delete;
-		IFiberTask(IFiberTask&& other) = default;
-		IFiberTask& operator=(IFiberTask&& other) = default;
-
-		/**
-		 * Run the task.
-		 */
-		virtual void execute() = 0;
-	};
-
-
-	template<
-		bool use_work_steal = false,
-		template<typename> typename task_queue_t
-		= boost::fibers::buffered_channel,
-		typename work_task_t = std::tuple<boost::fibers::launch,
-		std::unique_ptr<IFiberTask>>
-		>
-		class FiberPool
-	{
-	private:
-
-		/**
-		 * A wrapper for packaged fiber task
-		 */
-		template <typename Func>
-		class FiberTask : public IFiberTask
-		{
-		public:
-			FiberTask(Func&& func)
-				:m_func{ std::move(func) }
-			{}
-
-			~FiberTask(void) override = default;
-			FiberTask(const FiberTask& rhs) = delete;
-			FiberTask& operator=(const FiberTask& rhs) = delete;
-			FiberTask(FiberTask&& other) = default;
-			FiberTask& operator=(FiberTask&& other) = default;
-
-			/**
-			 * Run the task.
-			 */
-			void execute() override
-			{
-				++no_of_fibers;
-				m_func();
-				--no_of_fibers;
-			}
-
-		private:
-			Func m_func;
-		};
-
-	public:
-
-		static constexpr bool work_stealing
-			= use_work_steal;
-
-		FiberPool()
-			: FiberPool{ no_of_defualt_threads() }
-		{}
-
-		FiberPool(
-			size_t no_of_threads,
-			size_t work_queue_size = 32)
-			: m_threads_no{ no_of_threads },
-			m_work_queue{ work_queue_size }
-		{
-			try
-			{
-				for (std::uint32_t i = 0; i < m_threads_no; ++i)
-				{
-					m_threads.emplace_back(
-						&FiberPool::worker, this);
-				}
-			}
-			catch (...)
-			{
-				close_queue();
-				throw;
-			}
-		}
-
-		/**
-		 * Submit a task to be executed as fiber by worker threads
-		 */
-		template<typename Func, typename... Args>
-		auto submit(boost::fibers::launch launch_policy,
-			Func&& func, Args&&... args)
-		{
-			// capature our task into lambda with all its parameters
-			auto capture = [func = std::forward<Func>(func),
-				args = std::make_tuple(std::forward<Args>(args)...)]()
-				mutable
-			{
-				// run the tesk with the parameters provided
-				// this will be what our fibers execute
-				return std::apply(std::move(func), std::move(args));
-			};
-
-			// get return type of our task
-			using task_result_t = std::invoke_result_t<decltype(capture)>;
-
-			// create fiber package_task
-			using packaged_task_t
-				= boost::fibers::packaged_task<task_result_t()>;
-
-			packaged_task_t task{ std::move(capture) };
-
-			using task_t = FiberTask<packaged_task_t>;
-
-			// get future for obtaining future result when 
-			// the fiber completes
-			auto result_future = task.get_future();
-
-			// finally submit the packaged task into work queue
-			auto status = m_work_queue.push(
-				std::make_tuple(launch_policy,
-					std::make_unique<task_t>(
-						std::move(task))));
-
-			if (status != boost::fibers::channel_op_status::success)
-			{
-				return std::optional<std::decay_t<decltype(result_future)>> {};
-			}
-
-			// return the future to the caller so that 
-			// we can get the result when the fiber with our task 
-			// completes
-			return std::make_optional(std::move(result_future));
-		}
-
-
-		/**
-		 * Use boost::fibers:launch::post as
-		 * default lanuch strategy for fibers
-		 */
-		template<typename Func, typename... Args>
-		auto submit(Func&& func, Args&&... args)
-		{
-			return submit(boost::fibers::launch::post,
-				std::forward<Func>(func),
-				std::forward<Args>(args)...);
-		}
-
-		/**
-		 * Non-copyable.
-		 */
-		FiberPool(FiberPool const& rhs) = delete;
-
-		/**
-		 * Non-assignable.
-		 */
-		FiberPool& operator=(FiberPool const& rhs) = delete;
-
-		void close_queue() noexcept
-		{
-			m_work_queue.close();
-		}
-
-		auto threads_no() const noexcept
-		{
-			return m_threads.size();
-		}
-
-		auto fibers_no() const noexcept
-		{
-			return IFiberTask::no_of_fibers.load();
-		}
-
-		~FiberPool()
-		{
-			for (auto& thread : m_threads)
-			{
-				if (thread.joinable())
-				{
-					thread.join();
-				}
-			}
-		}
-
-	private:
-
-		/**
-		 * worker thread method. It participates with
-		 * shared_work sheduler of fibers.
-		 *
-		 * It takes packaged taskes from the work_queue
-		 * and launches fibers executing the tasks
-		 */
-		void worker()
-		{
-			// make this thread participate in shared_work 
-			// fiber sharing
-			//
-
-
-			if constexpr (work_stealing)
-			{
-				// work_stealing sheduling is much faster
-				// than work_shearing, but it does not 
-				// allow for modifying number of threads
-				// at runtime. Therefore if one uses
-				// DefaultFiberPool, no other instance 
-				// of the fiber pool can be created
-				// as this would change the number of
-				// worker threads
-				boost::fibers::use_scheduling_algorithm<
-					boost::fibers::algo::work_stealing>(
-						m_threads_no, true);
-			}
-			else
-			{
-				// it is slower but, can vary number of 
-				// worker threads at runtime. So you can
-				// use DefaultFiberPool in one part of 
-				// you application, and custom instance
-				// of the fiber pool in other part. 
-				boost::fibers::use_scheduling_algorithm<
-					boost::fibers::algo::shared_work>(true);
-			}
-
-			// create a placeholder for packaged task for 
-			// to-be-created fiber to execute
-			auto task_tuple
-				= typename decltype(m_work_queue)::value_type{};
-
-			// fetch a packaged task from the work queue.
-			// if there is nothing, we are just going to wait
-			// here till we get some task
-			while (boost::fibers::channel_op_status::success
-				== m_work_queue.pop(task_tuple))
-			{
-				// creates a fiber from the pacakged task.
-				//
-				// the fiber is immedietly detached so that we
-				// fetch next task from the queue without blocking
-				// the thread and waiting here for the fiber to 
-				// complete
-
-				// the task is tuple with launch policy and
-				// accutal packaged_task to run 
-				auto& [launch_policy, task_to_run] = task_tuple;
-
-				// earlier we already got future for the fiber
-				// so we can get the result of our task if we want
-				boost::fibers::fiber(launch_policy,
-					[task = std::move(task_to_run)]()
-				{
-					// execute our task in the newly created
-					// fiber
-					task->execute();
-				}).detach();
-			}
-		}
-
-		size_t m_threads_no{ 1 };
-
-		// worker threads. these are the threads which will 
-		// be executing our fibers. Since we use work_shearing scheduling
-		// algorithm, the fibers should be shared evenly
-		// between these threads
-		std::vector<std::thread> m_threads;
-
-		// use buffered_channel (by default) so that we dont block when 
-		// there is no  reciver for the fiber. we are only 
-		// going to block when the buffered_channel is full. 
-		// Otherwise, tasks will be just waiting in the 
-		// queue till some fiber picks them up.
-		TaskQueue<task_queue_t<work_task_t>> m_work_queue;
-	};
-
-
-	template<
-		template<typename> typename task_queue_t
-		= boost::fibers::buffered_channel,
-		typename work_task_t = std::tuple<boost::fibers::launch,
-		std::unique_ptr<IFiberTask>>
-		>
-		using FiberPoolStealing = FiberPool<true, task_queue_t, work_task_t>;
-
-
-	template<
-		template<typename> typename task_queue_t
-		= boost::fibers::buffered_channel,
-		typename work_task_t = std::tuple<boost::fibers::launch,
-		std::unique_ptr<IFiberTask>>
-		>
-		using FiberPoolSharing = FiberPool<false, task_queue_t, work_task_t>;
-
-}
-/**
- * A static default FiberPool in which
- * number of threads is set automatically based
- * on your hardware
- */
-namespace DefaultFiberPool
-{
-
-	inline auto&
-		get_pool()
-	{
-		static FiberPool::FiberPool<true> default_fp{};
-		return default_fp;
-	};
-
-
-	template <typename Func, typename... Args>
-	inline auto
-		submit_job(boost::fibers::launch launch_policy,
-			Func&& func, Args&&... args)
-	{
-		return get_pool().submit(
-			launch_policy,
-			std::forward<Func>(func),
-			std::forward<Args>(args)...);
-	}
-
-	template <typename Func, typename... Args>
-	inline auto
-		submit_job(Func&& func, Args&&... args)
-	{
-		return get_pool().submit(
-			std::forward<Func>(func),
-			std::forward<Args>(args)...);
-	}
-
-	inline void
-		close()
-	{
-		get_pool().close_queue();
-	}
-
-}
-
-#endif
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 #include "FiberTasks.h"
-#if 0
-#include "../WaterWatchCpp/cweeJob.h"
-#include "../WaterWatchCpp/SharedPtr.h"
-#include "../WaterWatchCpp/Clock.h"
-
-uint64_t FTL::fnBoostFiber() {
-	// Define the constants to test
-	constexpr uint64_t triangleNum = 47593243ULL;
-	constexpr uint64_t numAdditionsPerTask = 10000ULL;
-	constexpr uint64_t numTasks = (triangleNum + numAdditionsPerTask - 1ULL) / numAdditionsPerTask;
-
-	// Create the tasks
-	uint64_t nextNumber = 1ULL;
-
-	cweeSharedPtr<uint64_t> total = make_cwee_shared<uint64_t>();
-	*total = 0;
-
-	cweeSharedPtr<boost::fibers::mutex> mut = make_cwee_shared<boost::fibers::mutex>();
-
-	cweeList<boost::fibers::shared_future<cweeAny>> tasks;
-	for (uint64_t i = 0ULL; i < numTasks; ++i) {
-		cweeJob job([](uint64_t start, uint64_t const& end, uint64_t& total, boost::fibers::mutex& mut) {
-			Stopwatch sw;
-			sw.Start();
-
-			uint64_t subtotal = 0;
-
-			while (start != end) {
-				subtotal += start;
-				++start;
-			}
-			subtotal += end;
-
-			mut.lock();
-			total += subtotal;
-			mut.unlock();
-
-			sw.Stop();
-			return sw.Seconds_Passed();
-		}, (uint64_t)nextNumber, (uint64_t)(nextNumber + numAdditionsPerTask - 1ULL), total, mut);
-
-		std::optional<boost::fibers::future<cweeAny>> task = DefaultFiberPool::submit_job([job]() {
-			return cweeJob(job).Invoke();
-		});
-
-		tasks.Append(task->share());
-	}
-
-	for (auto& task : tasks) {
-		task.wait();
-	}
-
-	return *total;
-};
-
-
-
-
-#else
 
 // FiberTasks.cpp : Defines the functions for the static library.
 
@@ -676,55 +286,26 @@ uint64_t FTL::fnFiberTasks2a(int numTasks) {
 #include "../WaterWatchCpp/Clock.h"
 
 
-// Original implemtation could not re-use previous ring buffers after increasing the size of the ring buffer, due to concerns of race conditions.
-// I fixed those issues by introducing a reverse-linked list of ring buffers that is thread-safe and allows ring buffer re-use. 
-// extern ftl::TaskScheduler* Fibers = new ftl::TaskScheduler({ ftl::GetNumHardwareThreads() * 100, 0, ftl::EmptyQueueBehavior::Sleep, {} });
-extern DelayedInstantiation< ftl::TaskScheduler > Fibers = DelayedInstantiation< ftl::TaskScheduler >([]()-> ftl::TaskScheduler* {
-	auto* p = new ftl::TaskScheduler();
-	p->Init({ ftl::GetNumHardwareThreads() * 50, 0, ftl::EmptyQueueBehavior::Sleep, {} });
-	p->SetEmptyQueueBehavior(ftl::EmptyQueueBehavior::Sleep);
-	return p;
-});
-struct FunctionStruct {
-	Action job;
-};
-static void DoFuncStruct(ftl::TaskScheduler* taskScheduler, void* arg) {
-	std::unique_ptr<FunctionStruct> data(static_cast<FunctionStruct*>(arg));
-	data->job.Invoke();
-};
 
 
-struct AnyFunctionStruct {
-	std::shared_ptr<Action> job;
-	Any* destination;
-	bool force;
-};
-static void DoAnyFuncStruct(ftl::TaskScheduler* taskScheduler, void* arg) {
-	std::unique_ptr<AnyFunctionStruct> data(static_cast<AnyFunctionStruct*>(arg));
-	if (data && data->job) {
-		if (data->force) {
-			if (data->destination) {
-				auto* p = data->job->ForceInvoke();
-				if (p) *data->destination = *p;
-			}
-			else {
-				data->job->ForceInvoke();
-			}
-		}
-		else {
-			if (data->destination) {
-				auto* p = data->job->Invoke();
-				if (p) *data->destination = *p;
-			}
-			else {
-				data->job->Invoke();
-			}
-		}
-	}
-};
+
+#include <ppl.h>
+#include <concurrent_vector.h>
+#include <concurrent_unordered_map.h>
+#include <concurrent_queue.h>
+#include <concurrent_unordered_set.h>
 
 
 namespace fibers {
+	// Original implemtation could not re-use previous ring buffers after increasing the size of the ring buffer, due to concerns of race conditions.
+    // I fixed those issues by introducing a reverse-linked list of ring buffers that is thread-safe and allows ring buffer re-use. 
+	extern DelayedInstantiation< ftl::TaskScheduler > Fibers = DelayedInstantiation< ftl::TaskScheduler >([]()-> ftl::TaskScheduler* {
+		auto* p = new ftl::TaskScheduler();
+		p->Init({ ftl::GetNumHardwareThreads() * 50, 0, ftl::EmptyQueueBehavior::Sleep, {} });
+		p->SetEmptyQueueBehavior(ftl::EmptyQueueBehavior::Sleep);
+		return p;
+	});
+
 	namespace {
 		template<typename T> struct count_arg;
 		template<typename R, typename ...Args> struct count_arg<std::function<R(Args...)>> { static constexpr const size_t value = sizeof...(Args); };
@@ -732,6 +313,38 @@ namespace fibers {
 		template<class R> struct function_traits { using result_type = R; using arguments = std::tuple<>; };
 		template<class R> struct function_traits<std::function<R(void)>> { using result_type = R; using arguments = std::tuple<>; };
 		template<class R, class... Args> struct function_traits<std::function<R(Args...)>> { using result_type = R; using arguments = std::tuple<Args...>; };
+
+		struct AnyFunctionStruct {
+			std::shared_ptr<Action> job;
+			Any* destination;
+			bool force;
+		};
+		static void DoAnyFuncStruct(ftl::TaskScheduler* taskScheduler, void* arg) {
+			std::unique_ptr<AnyFunctionStruct> data(static_cast<AnyFunctionStruct*>(arg));
+			if (data && data->job) {
+				if (data->force) {
+					if (data->destination) {
+						auto* p = data->job->ForceInvoke();
+						if (p) *data->destination = *p;
+					}
+					else {
+						data->job->ForceInvoke();
+					}
+				}
+				else {
+					if (data->destination) {
+						auto* p = data->job->Invoke();
+						if (p) *data->destination = *p;
+					}
+					else {
+						data->job->Invoke();
+					}
+				}
+			}
+		};
+	
+
+	
 	}
 
 	/*! Class used to queue and await one or multiple jobs submitted to a concurrent fiber manager. */
@@ -992,7 +605,7 @@ namespace fibers {
 	/* parallel_for (auto i = start; i < end; i++){ todo(i); } */
 	template<typename iteratorType, typename F>
 	AUTO For(iteratorType start, iteratorType end, F&& ToDo) {
-		auto todo = std::function(ToDo);
+		auto todo = std::function(std::forward<F>(ToDo));
 		constexpr bool retNo = std::is_same<typename function_traits<decltype(todo)>::result_type, void>::value;
 
 		std::vector<fibers::Job> jobs;
@@ -1007,9 +620,9 @@ namespace fibers {
 	};
 
 	/* parallel_for (auto i = start; i < end; i += step){ todo(i); } */
-	template<typename iteratorType, typename endType, typename stepType, typename F>
-	AUTO For(iteratorType start, endType end, stepType step, F&& ToDo) {
-		auto todo = std::function(ToDo);
+	template<typename iteratorType, typename F>
+	AUTO For(iteratorType start, iteratorType end, iteratorType step, F&& ToDo) {
+		auto todo = std::function(std::forward<F>(ToDo));
 		constexpr bool retNo = std::is_same<typename function_traits<decltype(todo)>::result_type, void>::value;
 
 		std::vector<fibers::Job> jobs;
@@ -1027,7 +640,7 @@ namespace fibers {
 	/* parallel_for (auto i = container.begin(); i != container.end(); i++){ todo(*i); } */
 	template<typename containerType, typename F>
 	AUTO ForEach(containerType const& container, F&& ToDo) {
-		AUTO todo = std::function(ToDo);
+		AUTO todo = std::function(std::forward<F>(ToDo));
 		constexpr bool retNo = std::is_same<typename function_traits<decltype(todo)>::result_type, void>::value;
 
 		std::vector<fibers::Job> jobs;
@@ -1043,10 +656,10 @@ namespace fibers {
 		else return group.Wait_Get();
 	};
 	
-	/* parallel_for (auto i = container.begin(); i != container.end(); i++){ todo(*i); } */
+	/* parallel_for (auto i = container.cbegin(); i != container.cend(); i++){ todo(*i); } */
 	template<typename containerType, typename F>
 	AUTO ForEach(containerType& container, F&& ToDo) {
-		AUTO todo = std::function(ToDo);
+		AUTO todo = std::function(std::forward<F>(ToDo));
 		constexpr bool retNo = std::is_same<typename function_traits<decltype(todo)>::result_type, void>::value;
 
 		std::vector<fibers::Job> jobs;
@@ -1061,6 +674,94 @@ namespace fibers {
 		if constexpr (retNo) group.Wait();
 		else return group.Wait_Get();
 	};
+
+	class mutex {
+	public:
+		using Handle_t = ftl::Fibtex;
+		using Phandle = std::shared_ptr<Handle_t>;
+
+	public:
+		mutex() : Handle(new Handle_t(&*Fibers)) {};
+		mutex(const mutex& other) : Handle(new Handle_t(&*Fibers)) {};
+		mutex(mutex&& other) : Handle(new Handle_t(&*Fibers)) {};
+		mutex& operator=(const mutex& s) { return *this; };
+		mutex& operator=(mutex&& s) { return *this; };
+		~mutex() {};
+
+		NODISCARD AUTO	Guard() const { return std::lock_guard<mutex>(const_cast<mutex&>(*this)); };
+		bool			Lock(bool blocking = true) const { Handle->lock(); return true; };
+		void			Unlock() const { Handle->unlock(); };
+		void			lock() const { Lock(); };
+		void			unlock() const { Unlock(); };
+
+	protected:
+		Phandle Handle;
+
+	};
+
+
+
+
+
+
+
+
+
+
+
+
+
+	template<typename _Value_type> using vector = concurrency::concurrent_vector<_Value_type>;
+	template<typename _Key_type, typename _Value_type> using unordered_map = concurrency::concurrent_unordered_map<_Key_type, _Value_type>;
+	template<typename _Key_type> using unordered_set = concurrency::concurrent_unordered_set<_Key_type>;
+	template<typename _Value_type> using queue = concurrency::concurrent_queue<_Value_type>;
+
+#if 0
+	template<typename _Ty>
+	class vector {
+	private:
+		concurrency::concurrent_vector<_Ty> data;
+
+	public:
+		using _Alloc = std::allocator<_Ty>;
+		using _Alty = std::_Rebind_alloc_t<_Alloc, _Ty>;
+		using _Alty_traits = std::allocator_traits<_Alty>;
+
+		using value_type = _Ty;
+		using pointer = typename _Alty_traits::pointer;
+		using const_pointer = typename _Alty_traits::const_pointer;
+		using reference = _Ty&;
+		using const_reference = const _Ty&;
+		using size_type = typename _Alty_traits::size_type;
+		using difference_type = typename _Alty_traits::difference_type;
+
+		AUTO begin() { return data.begin(); };
+		AUTO end() { return data.end(); };
+		AUTO rbegin() { return data.rbegin(); };
+		AUTO rend() { return data.rend(); };
+		AUTO cbegin() const { return data.cbegin(); };
+		AUTO cend() const { return data.cend(); };
+		AUTO crbegin() const { return data.crbegin(); };
+		AUTO crend() const { return data.crend(); };
+
+		AUTO size() const { return data.size(); };
+		AUTO max_size() const { return data.max_size(); };
+		AUTO resize(size_type newSize) { return data.resize(newSize); };
+		AUTO capacity() const { return data.capacity(); };
+		AUTO empty() { return data.empty(); };
+		AUTO reserve(size_type newSize) { return data.reserve(newSize); };
+		AUTO shrink_to_fit() { return data.shrink_to_fit(); };
+
+
+
+
+
+
+
+
+	};
+#endif
+
 
 };
 
@@ -1095,28 +796,6 @@ public:
 		}
 		return std::vector<double>();
 	}
-	static std::vector<double> Iteration2(int numTasks, std::shared_ptr<ftl::TaskScheduler> taskScheduler, std::shared_ptr<cweeSysInterlockedInteger> count) {
-		if (numTasks == 1 || numTasks == -1) {
-			Action(ExampleOptimization::Evaluation, ExampleOptimization::Create(), count).Invoke();
-		}
-		else {
-			if (numTasks < 0) numTasks *= -1;
-
-			ftl::WaitGroup wg(&*taskScheduler);
-
-			std::vector<ftl::Task> tasks;
-
-			for (int i = 0; i < numTasks; ++i) {
-				Action todo = Action(ExampleOptimization::Evaluation, ExampleOptimization::Create(), count);
-				tasks.push_back({ DoFuncStruct, new FunctionStruct({ std::move(todo) }) });
-			}
-
-			taskScheduler->AddTasks(numTasks, &tasks[0], ftl::TaskPriority::Normal, &wg);
-
-			wg.Wait();
-		}
-		return std::vector<double>();
-	}
 	static std::vector<double> Solve(int numIterations, int numPolicies, std::shared_ptr<cweeSysInterlockedInteger> count) {
 		if (numIterations == 1 || numIterations == -1) {
 			Action todo(ExampleOptimization::Iteration, numPolicies, count);
@@ -1130,46 +809,14 @@ public:
 		}
 		return std::vector<double>();
 	}
-	static std::vector<double> Solve2(int numIterations, int numPolicies, std::shared_ptr<ftl::TaskScheduler> taskScheduler, std::shared_ptr<cweeSysInterlockedInteger> count) {
-		if (numIterations == 1 || numIterations == -1) {
-			Action(ExampleOptimization::Iteration2, numPolicies, taskScheduler, count).Invoke();
-		} 
-		else {
-			if (numIterations < 0) numIterations *= -1;
-			for (int i = 0; i < numIterations; ++i) {
-				std::vector<ftl::Task> tasks;
-				ftl::WaitGroup wg(&*taskScheduler);
-				Action todo = Action(ExampleOptimization::Iteration2, numPolicies, taskScheduler, count);
-				taskScheduler->AddTask({ DoFuncStruct, new FunctionStruct({ std::move(todo) }) }, ftl::TaskPriority::Normal, &wg);
-				wg.Wait();
-			}
-		}
-		return std::vector<double>();
-	}
 };
 
 uint64_t FTL::fnFiberTasks2d(int numTasks, int numSubTasks) {
 	std::shared_ptr<cweeSysInterlockedInteger> count = std::make_shared<cweeSysInterlockedInteger>();
-	if (numSubTasks < 0 || numTasks < 0) {
-		std::shared_ptr<ftl::TaskScheduler> taskScheduler = std::make_shared<ftl::TaskScheduler>();
 
-		taskScheduler->Init({ ftl::GetNumHardwareThreads() * 100, 0, ftl::EmptyQueueBehavior::Spin, 0 }); 
-
-		ftl::WaitGroup wg(&*taskScheduler);
-		taskScheduler->AddTask({
-			DoFuncStruct,
-			new FunctionStruct({ Action(ExampleOptimization::Solve2, (int)numTasks, (int)numSubTasks, taskScheduler, count) }) },
-			ftl::TaskPriority::Normal,
-			&wg
-		);
-
-		wg.Wait();
-	}
-	else {
-		auto awaiter = fibers::Job(ExampleOptimization::Solve, (int)numTasks, (int)numSubTasks, count).AsyncInvoke();
-		awaiter.Wait();
-	}
-
+	auto awaiter = fibers::Job(ExampleOptimization::Solve, (int)numTasks, (int)numSubTasks, count).AsyncInvoke();
+	awaiter.Wait();
+	
 	return count->GetValue();
 };
 uint64_t FTL::fnFiberTasks2b(int numTasks) {
@@ -1221,43 +868,9 @@ uint64_t FTL::fnFiberTasks2b(int numTasks) {
 };
 
 #if 1
-class cweeFiberMutex {
-public:
-	using Handle_t = ftl::Fibtex;
-	using Phandle = std::shared_ptr<Handle_t>;
 
-	class cweeSysMutexLifetimeGuard {
-	public:
-		explicit operator bool() const { return (bool)owner; };
-		explicit cweeSysMutexLifetimeGuard(const Phandle& mut) noexcept : owner(mut) { owner->lock(); };
-		~cweeSysMutexLifetimeGuard() noexcept { owner->unlock(); };
-		explicit cweeSysMutexLifetimeGuard() = delete;
-		explicit cweeSysMutexLifetimeGuard(const cweeSysMutexLifetimeGuard& other) = delete;
-		explicit cweeSysMutexLifetimeGuard(cweeSysMutexLifetimeGuard&& other) = delete;
-		cweeSysMutexLifetimeGuard& operator=(const cweeSysMutexLifetimeGuard&) = delete;
-		cweeSysMutexLifetimeGuard& operator=(cweeSysMutexLifetimeGuard&&) = delete;
-	protected:
-		Phandle owner;
-	};
-
-public:
-	cweeFiberMutex() : Handle(new Handle_t(&*Fibers)) {};
-	cweeFiberMutex(const cweeFiberMutex& other) : Handle(new Handle_t(&*Fibers)) {};
-	cweeFiberMutex(cweeFiberMutex&& other) : Handle(new Handle_t(&*Fibers)) {};
-	cweeFiberMutex& operator=(const cweeFiberMutex& s) { return *this; };
-	cweeFiberMutex& operator=(cweeFiberMutex&& s) { return *this; };
-	~cweeFiberMutex() {};
-
-	NODISCARD cweeSysMutexLifetimeGuard	Guard() const { return cweeSysMutexLifetimeGuard(Handle); };
-	bool			Lock(bool blocking = true) const { Handle->lock(); return true; };
-	void			Unlock() const { Handle->unlock(); };
-
-protected:
-	Phandle Handle;
-
-};
 #else
-using cweeFiberMutex = cweeReadWriteMutex; // cweeSysMutex;
+using mutex = cweeReadWriteMutex; // cweeSysMutex;
 #endif
 
 uint64_t FTL::fnFiberTasks2c(int numTasks) {
@@ -1275,11 +888,23 @@ uint64_t FTL::fnFiberTasks2c(int numTasks) {
 		return v.first;
 	});
 
-
-
-
-
 	if (numTasks > 0) {
+		cweeList<int> intList; 
+		for (int i = 0; i < numTasks; i++) intList.push_back(i);
+#if 1
+		fibers::ForEach(intList, [&numParallel, &maxParallel](int& j) {
+			int n; Stopwatch sw; auto maxT = cweeUnitValues::millisecond(1);
+
+			sw.Start();
+
+			n = numParallel.Increment();
+			if (n > maxParallel.GetValue()) maxParallel.SetValue(n);
+
+			while (cweeUnitValues::nanosecond(sw.Stop()) < maxT) { ftl::YieldThread(); }
+
+			numParallel.Decrement();
+		});
+#else
 		fibers::For(0, numTasks, [&numParallel, &maxParallel](int j) {
 			int n; Stopwatch sw; auto maxT = cweeUnitValues::millisecond(1);
 
@@ -1292,7 +917,7 @@ uint64_t FTL::fnFiberTasks2c(int numTasks) {
 
 			numParallel.Decrement();
 		});
-
+#endif
 		return maxParallel.GetValue();
 	}
 	else {
@@ -1424,7 +1049,7 @@ public:
 		void discard(unsigned long long n) const noexcept { unsigned long long i; i = 0;  for (; i < n; ++i) operator()(); };
 
 	private:
-		mutable cweeFiberMutex mut;
+		mutable fibers::mutex mut;
 		mutable uint64_t m_state;
 		uint64_t m_inc;
 		std::random_device rd;
@@ -1541,7 +1166,7 @@ public:
 		};
 
 		/*! Mutex Lock to prevent race conditions. cweeSysMutex uses C++ CriticalSection */
-		mutable cweeFiberMutex													    lock; // cweeSysMutex
+		mutable fibers::mutex											    lock; // cweeSysMutex
 		/* Map between key and heap ptr. Cannot use PTR directly to allow for multithread-safe instant deletes, using the keys to control race conditions. */
 		mutable tsl::robin_map<Key, PtrType, robin_hood::hash<Key>, std::equal_to<Key>, std::allocator<_iterType>, true>	list;
 		/* Optimized search parameters */
@@ -2224,40 +1849,48 @@ extern void DoJob(ftl::TaskScheduler* taskScheduler, void* arg) {
 	job->Invoke();
 };
 uint64_t FTL::fnFiberTasks3(int numTasks, int numSubTasks) {
-	auto* fibers = &*Fibers; 
+	fibers::unordered_map<int, fibers::unordered_map<int, double>> lists;
 
-	Interlocked<std::unordered_map<int, std::shared_ptr<Interlocked<std::unordered_map<int, double>>>>> lists;
-	// fiberMap <int, fiberMap <int, double>> lists;
+	fibers::For(0, numTasks, [&lists, &numSubTasks](int j) {
+		auto& list = lists[j];
+		if (numSubTasks <= 1) {
+			list[0] = fiberRandomFloat(0, 100);
+		}
+		else {
+			fibers::For(0, numSubTasks, [&list, &numSubTasks](int index) {
+				list[index] = fiberRandomFloat(0, 100);
+			});
+		}
+	});
 
-	std::vector<fibers::Job> jobs;
-	for (int i = 0; i < numTasks; ++i) {	
-		jobs.push_back(fibers::Job([&lists, &numSubTasks, &fibers](int j) {
-			auto list = (lists.GetExclusive()->operator[](j) = std::make_shared<Interlocked<std::unordered_map<int, double>>>());
-			if (numSubTasks <= 1) {
-				list->GetExclusive()->operator[](0) = fiberRandomFloat(0, 100);
-			}
-			else {
-				std::vector<fibers::Job> jobs;
-				for (int k = 0; k < numSubTasks; ++k) {
-					jobs.push_back(fibers::Job([=](int index) { list->GetExclusive()->operator[](index) = fiberRandomFloat(0, 100); }, (int)k));
-				}
+	//std::vector<fibers::Job> jobs;
+	//for (int i = 0; i < numTasks; ++i) {	
+	//	jobs.push_back(fibers::Job([&lists, &numSubTasks, &fibers](int j) {
+	//		auto list = (lists.GetExclusive()->operator[](j) = std::make_shared<Interlocked<std::unordered_map<int, double>>>());
+	//		if (numSubTasks <= 1) {
+	//			list->GetExclusive()->operator[](0) = fiberRandomFloat(0, 100);
+	//		}
+	//		else {
+	//			std::vector<fibers::Job> jobs;
+	//			for (int k = 0; k < numSubTasks; ++k) {
+	//				jobs.push_back(fibers::Job([=](int index) { list->GetExclusive()->operator[](index) = fiberRandomFloat(0, 100); }, (int)k));
+	//			}
+	//			fibers::JobGroup awaiter;
+	//			awaiter.Queue(jobs);
+	//			awaiter.Wait();
+	//		}
+	//	}, int(i)));
+	//}
+	//
+	//fibers::JobGroup awaiter;
+	//awaiter.Queue(jobs);
+	//awaiter.Wait();
 
-				fibers::JobGroup awaiter;
-				awaiter.Queue(jobs);
-				awaiter.Wait();
-			}
-		}, int(i)));
-	}
-	
-	fibers::JobGroup awaiter;
-	awaiter.Queue(jobs);
-	awaiter.Wait();
+
 
 	int n = 0; 
-	auto listAccess = lists.GetExclusive();
-	for (auto& x : *listAccess) {
-		auto access2 = x.second->GetExclusive();
-		for (auto& y : *access2) {
+	for (auto& x : lists) {
+		for (auto& y : x.second) {
 			n++;
 		}
 	}
@@ -2267,5 +1900,5 @@ uint64_t FTL::fnFiberTasks3(int numTasks, int numSubTasks) {
 
 
 
-#endif
+
 
