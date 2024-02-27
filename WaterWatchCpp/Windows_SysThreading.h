@@ -484,7 +484,6 @@ protected:
 	mutable cweeSysInterlockedInteger Handle;
 
 };
-
 class cweeSysMutexImpl {
 public:
 	cweeSysMutexImpl() noexcept { cweeSysThreadTools::Sys_MutexCreate(Handle); };
@@ -500,7 +499,6 @@ public:
 protected:
 	mutexHandle_t Handle;
 };
-
 class cweeSysMutex {
 public:
 	using Handle_t = cweeSysMutexImpl;
@@ -536,7 +534,6 @@ protected:
 	Phandle Handle;
 
 };
-
 class cweeReadWriteMutex {
 public:
 	using Handle_t = std::shared_mutex;
@@ -593,9 +590,6 @@ protected:
 	Phandle Handle;
 
 };
-
-
-
 
 template< typename type>
 class Interlocked {

@@ -695,79 +695,102 @@ static void DoFuncStruct(ftl::TaskScheduler* taskScheduler, void* arg) {
 
 
 struct AnyFunctionStruct {
-	Action job;
+	std::shared_ptr<Action> job;
 	Any* destination;
 	bool force;
 };
 static void DoAnyFuncStruct(ftl::TaskScheduler* taskScheduler, void* arg) {
 	std::unique_ptr<AnyFunctionStruct> data(static_cast<AnyFunctionStruct*>(arg));
-	if (data->force) {
-		if (data->destination) {
-			auto* p = data->job.ForceInvoke();
-			if (p) *data->destination = *p;
+	if (data && data->job) {
+		if (data->force) {
+			if (data->destination) {
+				auto* p = data->job->ForceInvoke();
+				if (p) *data->destination = *p;
+			}
+			else {
+				data->job->ForceInvoke();
+			}
 		}
 		else {
-			data->job.ForceInvoke();
-		}
-	}
-	else {
-		if (data->destination) {
-			auto* p = data->job.Invoke();
-			if (p) *data->destination = *p;
-		}
-		else {
-			data->job.Invoke();
+			if (data->destination) {
+				auto* p = data->job->Invoke();
+				if (p) *data->destination = *p;
+			}
+			else {
+				data->job->Invoke();
+			}
 		}
 	}
 };
 
 
 namespace fibers {
+	namespace {
+		template<typename T> struct count_arg;
+		template<typename R, typename ...Args> struct count_arg<std::function<R(Args...)>> { static constexpr const size_t value = sizeof...(Args); };
+		template <typename... Args> constexpr size_t sizeOfParameterPack(Args... Fargs) { return sizeof...(Args); }
+		template<class R> struct function_traits { using result_type = R; using arguments = std::tuple<>; };
+		template<class R> struct function_traits<std::function<R(void)>> { using result_type = R; using arguments = std::tuple<>; };
+		template<class R, class... Args> struct function_traits<std::function<R(Args...)>> { using result_type = R; using arguments = std::tuple<Args...>; };
+	}
+
+	/*! Class used to queue and await one or multiple jobs submitted to a concurrent fiber manager. */
 	class JobGroup;
+
+	/*! 
+	Class used to define and easily shared work that can be performed concurrently on in-line. e.g:
+	int result1 = Job(&cweeMath::Ceil, 10.0f).Invoke().cast(); // Job takes function and up to 16 inputs. Invoke returns "Any" wraper. Any.cast() does the cast to the target destination, if the conversion makes sense.
+	float result2 = Job([](float& x)->float{ return x - 10.0f; }, 55.0f).Invoke().cast(); // Can also use lambdas instead of static function pointers.
+	Job([](){ return cweeStr("HELLO"); }).AsyncInvoke(); // Queues the job to take place on a fiber/thread, allowing you to continue work on this thread.
+	*/
 	class Job { friend JobGroup;
 	protected:
-		mutable Action impl;
+		mutable std::shared_ptr<Action> impl;
 
 	public:
 		static Job Finished() {
 			AUTO toReturn = Job();
-			toReturn.impl = Action::Finished();
+			toReturn.impl = std::make_shared<Action>(Action::Finished());
 			return toReturn;
 		};
 		template <typename T> static Job Finished(const T& returnMe) {
 			AUTO toReturn = Job();
-			toReturn.impl = Action::Finished(returnMe);
+			toReturn.impl = std::make_shared<Action>(Action::Finished(returnMe));
 			return toReturn;
 		};
-		Job() : impl() {};
+		
+		Job() : impl(std::make_shared<Action>()) {};
 		Job(const Job& other) = default;
 		Job(Job && other) = default;
 		Job& operator=(const Job & other) = default;
 		Job& operator=(Job && other) = default;
 		template < typename T, typename... Args, typename = std::enable_if_t< !std::is_same_v<Job, std::decay_t<T>> && !std::is_same_v<Any, std::decay_t<T>> >>
-		explicit Job(T function, Args... Fargs) : impl(function, Fargs...) {};
+		explicit Job(T function, Args... Fargs) : impl(new Action(function, Fargs...)) {};
 
 	public:
-		/* Do the task immediately, without using any thread/fiber tools */
+		/* Do the task immediately, without using any thread/fiber tools. Does not do the task if it has been previously performed. */
 		Any Invoke() noexcept {
 			Any out;
-			auto* p = impl.Invoke();
+			auto* p = impl->Invoke();
 			if (p) out = *p;
 			return out;
 		};
-		/* Do the task immediately, without using any thread/fiber tools */
+
+		/* Do the task immediately, without using any thread/fiber tools, whether or not it has been performed before. */
 		Any ForceInvoke() noexcept {
 			Any out;
-			auto* p = impl.ForceInvoke();
+			auto* p = impl->ForceInvoke();
 			if (p) out = *p;
 			return out;
 		};
 
-		/* Add the task to a thread / fiber, and retrieve an awaiter group */
+		/* Add the task to a thread / fiber, and retrieve an awaiter group. Does not do the task if it has been previously performed. */
 		JobGroup AsyncInvoke();
-		/* Add the task to a thread / fiber, and retrieve an awaiter group */
+
+		/* Add the task to a thread / fiber, and retrieve an awaiter group, whether or not it has been performed before. */
 		JobGroup AsyncForceInvoke();
 
+		/* Queue job, and return tool to await the result */
 		uintptr_t DelayedInvoke(u64 milliseconds_delay) {
 			cweeUnion< u64, Job >* data = new cweeUnion<u64, Job>(milliseconds_delay, *this);
 			return cweeSysThreadTools::Sys_CreateThread((xthread_t)([](void* _anon_ptr) -> unsigned int {
@@ -780,6 +803,8 @@ namespace fibers {
 				return 0;
 				}), (void*)data, 1024);
 		};
+		
+		/* Queue job, and return tool to await the result */
 		uintptr_t DelayedForceInvoke(u64 milliseconds_delay) {
 			cweeUnion< u64, Job >* data = new cweeUnion<u64, Job>(milliseconds_delay, *this);
 			return cweeSysThreadTools::Sys_CreateThread((xthread_t)([](void* _anon_ptr) -> unsigned int {
@@ -792,23 +817,40 @@ namespace fibers {
 				return 0;
 				}), (void*)data, 1024);
 		};
+		
+		/* Queues the job onto a new thread to take place in the future */
 		uintptr_t AsyncDelayedInvoke(u64 milliseconds_delay);
+		
+		/* Queues the job onto a new thread to take place in the future */
 		uintptr_t AsyncDelayedForceInvoke(u64 milliseconds_delay);
 
+		/* Returns the potential name of the static function, if one was provided. */
 		const char* FunctionName() const {
-			return impl.FunctionName();
+			return impl->FunctionName();
 		};
+
+		/* Returns the result of the job, if any. If the job has not been previously completed, it will perform the job. */
 		Any GetResult() {
 			return Invoke();
 		};
+
+		/* Returns the result of the job, if any. If the job has not been previously completed, it will perform the job. */
 		Any operator()() {
 			return Invoke();
 		};
+
+		/* Checks if the job has been completed before */
 		bool IsFinished() const {
-			return impl.IsFinished();
+			return impl->IsFinished();
+		};
+
+		bool ReturnsNothing() const {
+			return impl->ReturnsNothing();
 		};
 
 	};
+
+	/*! Class used to queue and await one or multiple jobs submitted to a concurrent fiber manager. */
 	class JobGroup { friend Job;
 	private:
 		class JobGroupImpl {
@@ -833,16 +875,21 @@ namespace fibers {
 		JobGroup& operator=(JobGroup&&) = delete;
 		~JobGroup() {};
 
+		/* Queue job, and return tool to await the result */
 		JobGroup& Queue(Job const& job) {
 			Fibers->AddTask({ DoAnyFuncStruct, new AnyFunctionStruct({ job.impl, nullptr, false }) }, ftl::TaskPriority::Normal, &impl->waitGroup);
 			impl->jobs.GetExclusive()->push_back(job);
 			return *this;
 		};
+		
+		/* Queue job, and return tool to await the result */
 		JobGroup& ForceQueue(Job const& job) {
 			Fibers->AddTask({ DoAnyFuncStruct, new AnyFunctionStruct({ job.impl, nullptr, true }) }, ftl::TaskPriority::Normal, &impl->waitGroup);
 			impl->jobs.GetExclusive()->push_back(job);
 			return *this;
 		};
+		
+		/* Queue jobs, and return tool to await the results */
 		JobGroup& Queue(std::vector<Job> const& listOfJobs) {
 			std::vector<ftl::Task> tasks;
 			for (auto& job : listOfJobs) {
@@ -853,6 +900,8 @@ namespace fibers {
 
 			return *this;
 		};
+		
+		/* Queue jobs, and return tool to await the results */
 		JobGroup& ForceQueue(std::vector<Job> const& listOfJobs) {
 			std::vector<ftl::Task> tasks;
 			for (auto& job : listOfJobs) {
@@ -863,14 +912,29 @@ namespace fibers {
 
 			return *this;
 		};
-		std::vector<Job> Wait() {
+		
+		/* Await all jobs in this group, and get the return values (which may be empty) for each job */
+		std::vector<Any> Wait_Get() {
 			impl->waitGroup.Wait();
 
 			impl->jobs.Lock();
 			auto out = std::vector< Job >(impl->jobs->begin(), impl->jobs->end());
 			impl->jobs.Unlock();
+			if (out.size() > 0) {
+				std::vector<Any> any(out.size(), Any());
+				for (auto& job : out) {
+					any.push_back(job.GetResult());
+				}
+				return any;
+			}
+			else {
+				return std::vector<Any>();
+			}
+		};
 
-			return out;
+		/* Await all jobs in this group */
+		void Wait() {
+			impl->waitGroup.Wait();
 		};
 
 	private:
@@ -878,12 +942,17 @@ namespace fibers {
 
 	};
 
+	/* Queue job, and return tool to await the result */
 	JobGroup Job::AsyncInvoke() { 
 		return JobGroup(*this);
 	};
+	
+	/* Queue job, and return tool to await the result */
 	JobGroup Job::AsyncForceInvoke() { 
 		return JobGroup(*this);
 	};
+	
+	/* Queues the job onto a new thread to take place in the future */
 	uintptr_t Job::AsyncDelayedInvoke(u64 milliseconds_delay) {
 		cweeUnion< u64, Job >* data = new cweeUnion<u64, Job>(milliseconds_delay, *this);
 		return cweeSysThreadTools::Sys_CreateThread((xthread_t)([](void* _anon_ptr) -> unsigned int {
@@ -897,6 +966,8 @@ namespace fibers {
 			return 0;
 		}), (void*)data, 1024);
 	};
+	
+	/* Queues the job onto a new thread to take place in the future */
 	uintptr_t Job::AsyncDelayedForceInvoke(u64 milliseconds_delay) {
 		cweeUnion< u64, Job >* data = new cweeUnion<u64, Job>(milliseconds_delay, *this);
 		return cweeSysThreadTools::Sys_CreateThread((xthread_t)([](void* _anon_ptr) -> unsigned int {
@@ -910,6 +981,87 @@ namespace fibers {
 			return 0;
 		}), (void*)data, 1024);
 	};
+
+	/* Queue all jobs and await all results */
+	AUTO Do(std::vector<fibers::Job> const& jobs) {
+		JobGroup group;
+		group.Queue(jobs);
+		return group.Wait_Get();
+	};
+
+	/* parallel_for (auto i = start; i < end; i++){ todo(i); } */
+	template<typename iteratorType, typename F>
+	AUTO For(iteratorType start, iteratorType end, F&& ToDo) {
+		auto todo = std::function(ToDo);
+		constexpr bool retNo = std::is_same<typename function_traits<decltype(todo)>::result_type, void>::value;
+
+		std::vector<fibers::Job> jobs;
+		for (iteratorType iter = start; iter < end; iter++) {
+			jobs.push_back(fibers::Job([todo](iteratorType const& T) { return todo(T); }, (iteratorType)iter));
+		}
+		JobGroup group;
+		group.Queue(jobs);
+
+		if constexpr (retNo) group.Wait();
+		else return group.Wait_Get();
+	};
+
+	/* parallel_for (auto i = start; i < end; i += step){ todo(i); } */
+	template<typename iteratorType, typename endType, typename stepType, typename F>
+	AUTO For(iteratorType start, endType end, stepType step, F&& ToDo) {
+		auto todo = std::function(ToDo);
+		constexpr bool retNo = std::is_same<typename function_traits<decltype(todo)>::result_type, void>::value;
+
+		std::vector<fibers::Job> jobs;
+		for (iteratorType iter = start; iter < end; iter += step) {
+			jobs.push_back(fibers::Job([todo](iteratorType const& T) { return todo(T); }, (iteratorType)iter));
+		}
+
+		JobGroup group;
+		group.Queue(jobs);
+
+		if constexpr (retNo) group.Wait();
+		else return group.Wait_Get();
+	};
+
+	/* parallel_for (auto i = container.begin(); i != container.end(); i++){ todo(*i); } */
+	template<typename containerType, typename F>
+	AUTO ForEach(containerType const& container, F&& ToDo) {
+		AUTO todo = std::function(ToDo);
+		constexpr bool retNo = std::is_same<typename function_traits<decltype(todo)>::result_type, void>::value;
+
+		std::vector<fibers::Job> jobs;
+
+		for (auto iter = container.begin(); iter != container.end(); iter++) {
+			jobs.push_back(fibers::Job([todo](typename containerType::const_iterator& T) { return todo(Any(std::shared_ptr<typename containerType::value_type>(const_cast<typename containerType::value_type*>(&*T), [](typename containerType::value_type*) {})).cast()); }, (typename containerType::const_iterator)(iter)));
+		}
+
+		JobGroup group;
+		group.Queue(jobs);
+
+		if constexpr (retNo) group.Wait();
+		else return group.Wait_Get();
+	};
+	
+	/* parallel_for (auto i = container.begin(); i != container.end(); i++){ todo(*i); } */
+	template<typename containerType, typename F>
+	AUTO ForEach(containerType& container, F&& ToDo) {
+		AUTO todo = std::function(ToDo);
+		constexpr bool retNo = std::is_same<typename function_traits<decltype(todo)>::result_type, void>::value;
+
+		std::vector<fibers::Job> jobs;
+
+		for (auto iter = container.begin(); iter != container.end(); iter++) {
+			jobs.push_back(fibers::Job([todo](typename containerType::iterator& T) { return todo(Any(std::shared_ptr<typename containerType::value_type>(&*T, [](typename containerType::value_type*) {})).cast()); }, (typename containerType::iterator)(iter)));
+		}
+
+		JobGroup group;
+		group.Queue(jobs);
+
+		if constexpr (retNo) group.Wait();
+		else return group.Wait_Get();
+	};
+
 };
 
 class ExampleOptimization {
@@ -930,18 +1082,16 @@ public:
 	}
 	static std::vector<double> Iteration(int numTasks, std::shared_ptr<cweeSysInterlockedInteger> count) {
 		if (numTasks == 1 || numTasks == -1) {
-			Action(ExampleOptimization::Evaluation, ExampleOptimization::Create(), count).Invoke();
+			Action todo(ExampleOptimization::Evaluation, ExampleOptimization::Create(), count);
+			todo.Invoke();
 		}
 		else {
 			if (numTasks < 0) numTasks *= -1;
 
-			std::vector<fibers::Job> tasks;
-			for (int i = 0; i < numTasks; ++i) {
-				tasks.push_back(fibers::Job(ExampleOptimization::Evaluation, ExampleOptimization::Create(), count));
-			}
-			fibers::JobGroup awaiter;
-			awaiter.Queue(tasks);
-			awaiter.Wait();
+			fibers::For(0, numTasks, [=](int i) {
+				ExampleOptimization::Evaluation(ExampleOptimization::Create(), count);
+				return;
+			});
 		}
 		return std::vector<double>();
 	}
@@ -969,13 +1119,13 @@ public:
 	}
 	static std::vector<double> Solve(int numIterations, int numPolicies, std::shared_ptr<cweeSysInterlockedInteger> count) {
 		if (numIterations == 1 || numIterations == -1) {
-			Action(ExampleOptimization::Iteration, numPolicies, count).Invoke();
+			Action todo(ExampleOptimization::Iteration, numPolicies, count);
+			todo.Invoke();
 		}
 		else {
 			if (numIterations < 0) numIterations *= -1;
 			for (int i = 0; i < numIterations; ++i) {
-				auto awaiter = fibers::Job(ExampleOptimization::Iteration, numPolicies, count).AsyncInvoke();
-				awaiter.Wait();
+				fibers::Job(ExampleOptimization::Iteration, numPolicies, count).AsyncInvoke().Wait();
 			}
 		}
 		return std::vector<double>();
@@ -997,7 +1147,6 @@ public:
 		return std::vector<double>();
 	}
 };
-
 
 uint64_t FTL::fnFiberTasks2d(int numTasks, int numSubTasks) {
 	std::shared_ptr<cweeSysInterlockedInteger> count = std::make_shared<cweeSysInterlockedInteger>();
@@ -1023,8 +1172,36 @@ uint64_t FTL::fnFiberTasks2d(int numTasks, int numSubTasks) {
 
 	return count->GetValue();
 };
-
 uint64_t FTL::fnFiberTasks2b(int numTasks) {
+	cweeSysInterlockedInteger numParallel = 0;
+	cweeSysInterlockedInteger maxParallel = 0;
+
+	fibers::For(0, numTasks, [&numParallel, &maxParallel](int j) {
+		int n; Stopwatch sw; auto maxT = cweeUnitValues::millisecond(1);
+
+		sw.Start();
+
+		n = numParallel.Increment();
+		if (n > maxParallel.GetValue()) maxParallel.SetValue(n);
+
+		while (cweeUnitValues::nanosecond(sw.Stop()) < maxT) { ftl::YieldThread(); }
+
+		numParallel.Decrement();
+
+		return cweeUnitValues::nanosecond(sw.Stop());
+	});
+
+
+
+
+
+
+
+
+
+
+
+
 	Stopwatch sw; sw.Start();
 	AUTO timer = Timer(
 		1.0, 
@@ -1042,8 +1219,6 @@ uint64_t FTL::fnFiberTasks2b(int numTasks) {
 
 	return 0;
 };
-
-
 
 #if 1
 class cweeFiberMutex {
@@ -1086,100 +1261,126 @@ using cweeFiberMutex = cweeReadWriteMutex; // cweeSysMutex;
 #endif
 
 uint64_t FTL::fnFiberTasks2c(int numTasks) {
-	//ftl::TaskScheduler& taskScheduler = *Fibers;
-
 	cweeSysInterlockedInteger numParallel = 0;
 	cweeSysInterlockedInteger maxParallel = 0;
 	
-	//ftl::WaitGroup wg(&taskScheduler);
 
-	std::vector<fibers::Job> tasks;
+	std::map<int, double> x;
+	for (int i = 0; i < 10; i++) { x[i] = 0; }
 
-	for (int i = 0; i < numTasks; ++i) {
-		Action todo;
-		switch (cweeRandomInt(1, 4)) {
-		default:
-		case 1:
-			todo = Action([&numParallel, &maxParallel](double& j) -> std::remove_reference_t<decltype(j)> {
-				Stopwatch sw; sw.Start(); 
-				
-				int n = numParallel.Increment();
-				if (n > maxParallel.GetValue()) maxParallel.SetValue(n);
+	fibers::ForEach(x, [](std::pair<const int, double> const& v) {
+		return v.second;
+	});
+	fibers::ForEach(const_cast<const std::map<int, double>&>(x), [](std::pair<const int, double>& v) {
+		return v.first;
+	});
 
-				while (cweeUnitValues::nanosecond(sw.Stop()) < cweeUnitValues::millisecond(1)) {
-					ftl::YieldThread();
-				}
 
-				//auto t = cweeTime::Now(); while ((cweeUnitValues::second)(cweeTime::Now() - t) <= cweeUnitValues::millisecond(5)) { /* wasted work */ }
-				numParallel.Decrement();
 
-				return j + 100.0f;
-			}, double(i));
-			break;
-		case 2:
-			todo = Action([&numParallel, &maxParallel](float j) -> std::remove_reference_t<decltype(j)> {
-				Stopwatch sw; sw.Start(); 
-				
-				int n = numParallel.Increment();
-				if (n > maxParallel.GetValue()) maxParallel.SetValue(n);
 
-				while (cweeUnitValues::nanosecond(sw.Stop()) < cweeUnitValues::millisecond(1)) {
-					ftl::YieldThread();
-				}
 
-				numParallel.Decrement();
+	if (numTasks > 0) {
+		fibers::For(0, numTasks, [&numParallel, &maxParallel](int j) {
+			int n; Stopwatch sw; auto maxT = cweeUnitValues::millisecond(1);
 
-				return j + 100.0f;
-			}, float(i));
-			break;
-		case 3:
-			todo = Action([&numParallel, &maxParallel](cweeStr* j) -> std::remove_pointer_t<std::remove_reference_t<decltype(j)>> {
-				Stopwatch sw; sw.Start();
-				
-				int n = numParallel.Increment();
-				if (n > maxParallel.GetValue()) maxParallel.SetValue(n);
+			sw.Start();
 
-				while (cweeUnitValues::nanosecond(sw.Stop()) < cweeUnitValues::millisecond(1)) {
-					ftl::YieldThread();
-				}
+			n = numParallel.Increment();
+			if (n > maxParallel.GetValue()) maxParallel.SetValue(n);
 
-				numParallel.Decrement();
+			while (cweeUnitValues::nanosecond(sw.Stop()) < maxT) { ftl::YieldThread(); }
 
-				j->ToUpper();
-				return *j;
-			}, cweeStr(i));
-			break;
-		case 4:
-			todo = Action([&numParallel, &maxParallel](std::string const& j) -> std::remove_reference_t<decltype(j)> {
-				Stopwatch sw; sw.Start();
+			numParallel.Decrement();
+		});
 
-				int n = numParallel.Increment();
-				if (n > maxParallel.GetValue()) maxParallel.SetValue(n);
+		return maxParallel.GetValue();
+	}
+	else {
+		numTasks *= -1;
 
-				while (cweeUnitValues::nanosecond(sw.Stop()) < cweeUnitValues::millisecond(1)) {
-					ftl::YieldThread();
-				}
+		std::vector<fibers::Job> tasks;
 
-				numParallel.Decrement();
+		for (int i = 0; i < numTasks; ++i) {
+			Action todo;
+			switch (cweeRandomInt(1, 4)) {
+			default:
+			case 1:
+				todo = Action([&numParallel, &maxParallel](double& j) -> std::remove_reference_t<decltype(j)> {
+					Stopwatch sw; sw.Start();
 
-				return j + ": TEST";
-			}, std::to_string(i));
-			break;
+					int n = numParallel.Increment();
+					if (n > maxParallel.GetValue()) maxParallel.SetValue(n);
+
+					while (cweeUnitValues::nanosecond(sw.Stop()) < cweeUnitValues::millisecond(1)) {
+						ftl::YieldThread();
+					}
+
+					//auto t = cweeTime::Now(); while ((cweeUnitValues::second)(cweeTime::Now() - t) <= cweeUnitValues::millisecond(5)) { /* wasted work */ }
+					numParallel.Decrement();
+
+					return j + 100.0f;
+					}, double(i));
+				break;
+			case 2:
+				todo = Action([&numParallel, &maxParallel](float j) -> std::remove_reference_t<decltype(j)> {
+					Stopwatch sw; sw.Start();
+
+					int n = numParallel.Increment();
+					if (n > maxParallel.GetValue()) maxParallel.SetValue(n);
+
+					while (cweeUnitValues::nanosecond(sw.Stop()) < cweeUnitValues::millisecond(1)) {
+						ftl::YieldThread();
+					}
+
+					numParallel.Decrement();
+
+					return j + 100.0f;
+					}, float(i));
+				break;
+			case 3:
+				todo = Action([&numParallel, &maxParallel](cweeStr* j) -> std::remove_pointer_t<std::remove_reference_t<decltype(j)>> {
+					Stopwatch sw; sw.Start();
+
+					int n = numParallel.Increment();
+					if (n > maxParallel.GetValue()) maxParallel.SetValue(n);
+
+					while (cweeUnitValues::nanosecond(sw.Stop()) < cweeUnitValues::millisecond(1)) {
+						ftl::YieldThread();
+					}
+
+					numParallel.Decrement();
+
+					j->ToUpper();
+					return *j;
+					}, cweeStr(i));
+				break;
+			case 4:
+				todo = Action([&numParallel, &maxParallel](std::string const& j) -> std::remove_reference_t<decltype(j)> {
+					Stopwatch sw; sw.Start();
+
+					int n = numParallel.Increment();
+					if (n > maxParallel.GetValue()) maxParallel.SetValue(n);
+
+					while (cweeUnitValues::nanosecond(sw.Stop()) < cweeUnitValues::millisecond(1)) {
+						ftl::YieldThread();
+					}
+
+					numParallel.Decrement();
+
+					return j + ": TEST";
+					}, std::to_string(i));
+				break;
+			}
+
+			tasks.push_back(fibers::Job([](Action& todo) { todo.Invoke(); }, (Action)todo));
 		}
 
-		
-		// taskScheduler.AddTask({ DoFuncStruct, new FunctionStruct({ std::move(todo) }) }, ftl::TaskPriority::Normal, &wg);
-		tasks.push_back(fibers::Job([](Action& todo) { todo.Invoke(); }, (Action)todo));
+		fibers::JobGroup awaiter;
+		awaiter.Queue(tasks);
+		awaiter.Wait();
+
+		return maxParallel.GetValue();
 	}
-	
-	fibers::JobGroup awaiter;
-	awaiter.Queue(tasks);
-	awaiter.Wait();
-	// taskScheduler.AddTasks(numTasks, &tasks[0], ftl::TaskPriority::Normal, &wg);
-
-	//wg.Wait();
-
-	return maxParallel.GetValue();
 };
 
 

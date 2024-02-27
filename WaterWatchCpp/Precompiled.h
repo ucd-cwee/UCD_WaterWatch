@@ -505,7 +505,7 @@ public:
 		: _function()
 		, _data()
 		, Result()
-		, IsFinished(false)
+		, IsFinished(0)
 	{};
 
 	template <typename... Args>
@@ -513,7 +513,7 @@ public:
 		: _function(function)
 		, _data(GetData(Fargs...))
 		, Result()
-		, IsFinished(false)
+		, IsFinished(0)
 	{};
 
 private:
@@ -545,13 +545,13 @@ public:
 		: _function(copy._function)
 		, _data(copy._data)
 		, Result(copy.Result)
-		, IsFinished(copy.IsFinished.load())
+		, IsFinished(copy.IsFinished)
 	{};
 
 	static Function Finished() {
 		Function to_return;
 
-		to_return.IsFinished.store(true);
+		InterlockedIncrementAcquire(&to_return.IsFinished);
 
 		return to_return;
 	};
@@ -559,7 +559,7 @@ public:
 		Function to_return;
 
 		to_return.Result = returnMe;
-		to_return.IsFinished.store(true);
+		InterlockedIncrementAcquire(&to_return.IsFinished);
 
 		return to_return;
 	};
@@ -596,7 +596,7 @@ private:
 	void						DoJob() {
 		static_assert(NumInputs() <= 16, "Cannot have more than 16 inputs for a Function without further specialization.");
 
-		if (!IsFinished.load()) {
+		if (InterlockedIncrementAcquire(&IsFinished) == 1) {
 			if constexpr (NumInputs() == 0) {
 				DoJob_Internal_0();
 			}
@@ -648,13 +648,15 @@ private:
 			else if constexpr (NumInputs() == 16) {
 				DoJob_Internal_16();
 			}
-
-			SetAsFinished();
+		}
+		else {
+			InterlockedDecrementAcquire(&IsFinished);
 		}
 	};
 	void						ForceDoJob() {
 		static_assert(NumInputs() <= 16, "Cannot have more than 16 inputs for a Function without further specialization.");
 
+		InterlockedIncrementAcquire(&IsFinished);
 		if (true) {
 			if constexpr (NumInputs() == 0) {
 				DoJob_Internal_0();
@@ -707,8 +709,6 @@ private:
 			else if constexpr (NumInputs() == 16) {
 				DoJob_Internal_16();
 			}
-
-			SetAsFinished();
 		}
 	};
 
@@ -889,12 +889,7 @@ private:
 
 public:
 	mutable Any				Result;
-	mutable std::atomic<bool>	IsFinished;
-
-private:
-	void						SetAsFinished() {
-		IsFinished.store(true);
-	};
+	mutable long IsFinished;
 
 };
 class Action_Interface {
@@ -914,6 +909,7 @@ public:
 	virtual const char* FunctionName() const noexcept = 0;
 	virtual Any& Result() const noexcept = 0;
 	virtual bool IsFinished() const noexcept = 0;
+	virtual bool ReturnsNothing() const noexcept = 0;
 };
 template<typename ValueType> class Action_Impl final : public Action_Interface {
 public:
@@ -944,7 +940,10 @@ public:
 		return data.GetResult();
 	};
 	virtual bool IsFinished() const noexcept final {
-		return data.IsFinished.load();
+		return data.IsFinished > 0;
+	};
+	virtual bool ReturnsNothing()  const noexcept final {
+		return data.ReturnsNothing();
 	};
 
 	Function<ValueType> data;
@@ -1017,12 +1016,20 @@ public:
 		}
 		return false;
 	};
+	bool     ReturnsNothing() const {
+		std::shared_ptr<Action_Interface> c = content;
+		if (c)
+		{
+			return c->ReturnsNothing();
+		}
+		return true;
+	};
+
 	Any* Result() const { std::shared_ptr<Action_Interface> c = content; if (c) { return &c->Result(); } return nullptr; };
 	static Action Finished() { return Action(Function<void()>::Finished()); };
 	template <typename T> static Action Finished(const T& returnMe) { return Action(Function<T()>::Finished(returnMe)); };
 
 };
-
 
 #pragma endregion
 
