@@ -479,6 +479,9 @@ namespace fibers {
 			vector out;
 			data.swap(out.data);
 		};
+		AUTO swap(vector& r) {
+			data.swap(r.data);
+		};
 	};
 
 	/*! Class used to queue and await one or multiple jobs submitted to a concurrent fiber manager. */
@@ -603,7 +606,7 @@ namespace fibers {
 		class JobGroupImpl {
 		public:
 			ftl::WaitGroup waitGroup;
-			interlocked<std::vector<Job>> jobs;
+			interlocked<fibers::vector<Job>> jobs;
 
 			JobGroupImpl() : waitGroup(&*Fibers), jobs() {};
 			JobGroupImpl(JobGroupImpl const&) = delete;
@@ -627,15 +630,13 @@ namespace fibers {
 			Fibers->AddTask({ DoAnyFuncStruct, new AnyFunctionStruct({ job.impl, nullptr, false }) }, ftl::TaskPriority::Normal, &impl->waitGroup);
 			impl->jobs.GetExclusive()->push_back(job);
 			return *this;
-		};
-		
+		};		
 		/* Queue job, and return tool to await the result */
 		JobGroup& ForceQueue(Job const& job) {
 			Fibers->AddTask({ DoAnyFuncStruct, new AnyFunctionStruct({ job.impl, nullptr, true }) }, ftl::TaskPriority::Normal, &impl->waitGroup);
 			impl->jobs.GetExclusive()->push_back(job);
 			return *this;
-		};
-		
+		};		
 		/* Queue jobs, and return tool to await the results */
 		JobGroup& Queue(std::vector<Job> const& listOfJobs) {
 			std::vector<ftl::Task> tasks;
@@ -657,7 +658,6 @@ namespace fibers {
 
 			return *this;
 		};
-
 		/* Queue jobs, and return tool to await the results */
 		JobGroup& ForceQueue(std::vector<Job> const& listOfJobs) {
 			std::vector<ftl::Task> tasks;
@@ -669,15 +669,26 @@ namespace fibers {
 
 			return *this;
 		};
-		
+		JobGroup& ForceQueue(fibers::vector<Job> const& listOfJobs) {
+			std::vector<ftl::Task> tasks;
+			for (auto& job : listOfJobs) {
+				tasks.push_back({ DoAnyFuncStruct, new AnyFunctionStruct({ job.impl, nullptr, true }) });
+				impl->jobs.GetExclusive()->push_back(job);
+			}
+			Fibers->AddTasks(tasks.size(), &tasks[0], ftl::TaskPriority::Normal, &impl->waitGroup);
+
+			return *this;
+		};
+
 		/* Await all jobs in this group, and get the return values (which may be empty) for each job */
 		std::vector<Any> Wait_Get() {
 			impl->waitGroup.Wait();
 
+			typename decltype(JobGroupImpl::jobs)::Type out;
 			impl->jobs.Lock();
-			auto out = std::vector< Job >(impl->jobs.UnsafeRead());
-			impl->jobs->clear();
+			out.swap(impl->jobs.UnsafeRead());
 			impl->jobs.Unlock();
+
 			if (out.size() > 0) {
 				std::vector<Any> any(out.size(), Any());
 				for (auto& job : out) {
