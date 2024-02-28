@@ -219,6 +219,19 @@ public:
 	 *                    completes, it will be decremented.
 	 */
 	void AddTask(Task task, TaskPriority priority, WaitGroup *waitGroup = nullptr);
+
+	/**
+	 * Adds a task to the internal queue.
+	 *
+	 * NOTE: This can *only* be called from the main thread or inside tasks on the worker threads
+	 *
+	 * @param task        The task to queue
+	 * @param priority    Which priority queue to put the task in
+	 * @param counter     An atomic counter corresponding to this task. Initially it will be incremented by 1. When the task
+	 *                    completes, it will be decremented.
+	 */
+	void AddTask_NoWaitIncrement(Task task, TaskPriority priority, WaitGroup* waitGroup = nullptr);
+
 	/**
 	 * Adds a group of tasks to the internal queue
 	 *
@@ -230,6 +243,7 @@ public:
 	 * @param counter     An atomic counter corresponding to the task group as a whole. Initially it will be incremented by
 	 *                    numTasks. When each task completes, it will be decremented.
 	 */
+
 	void AddTasks(uint32_t numTasks, Task *tasks, TaskPriority priority, WaitGroup *waitGroup = nullptr);
 
 	/**

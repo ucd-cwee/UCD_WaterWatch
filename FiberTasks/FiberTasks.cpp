@@ -300,477 +300,12 @@ namespace fibers {
 		void			Unlock() const noexcept { Handle->unlock(); };
 		void			lock() const noexcept { Lock(); };
 		void			unlock() const noexcept { Unlock(); };
+		bool            try_lock() const noexcept { return Handle->try_lock(); };
 
 	protected:
 		Phandle Handle;
 
 	};
-
-	class signal {
-	public:
-		signal(bool manualReset = false) : Handle(CreateEvent(NULL, manualReset, FALSE, NULL)), wg(&*Fibers) {};
-		signal(const signal&) = delete;
-		signal(signal&& that) = delete;
-		signal& operator=(const signal&) = delete;
-		signal& operator=(signal&& that) = delete;
-		~signal() {
-			CloseHandle(Handle);
-		};
-
-	public:
-		void	Raise() noexcept {
-			SetEvent(Handle);
-		};
-		void	Clear() noexcept {
-			ResetEvent(Handle);
-		};
-		void	Wait(bool pinToCurrentThread = false) noexcept {
-			if (TryWait()) return;
-
-			wg.Add(1);
-			
-			//const ftl::TaskBundle bundle = { task, waitGroup };
-			//m_tls[GetCurrentThreadIndex()].LoPriTaskQueue.Push(bundle);
-			//
-			//const EmptyQueueBehavior behavior = m_emptyQueueBehavior.load(std::memory_order_relaxed);
-			//if (behavior == EmptyQueueBehavior::Sleep) {
-			//	// Wake a sleeping thread
-			//	ThreadSleepCV.notify_one();
-			//}
-
-			std::tuple<void*, ftl::WaitGroup*>* data = new std::tuple<void*, ftl::WaitGroup*>(Handle, &wg);
-			auto handle = cweeSysThreadTools::Sys_CreateThread((xthread_t)([](void* ptr) -> unsigned int {
-				std::tuple<void*, ftl::WaitGroup*>* Handle = static_cast<std::tuple<void*, ftl::WaitGroup*>*>(ptr);
-				if (Handle != nullptr) {
-					WaitForSingleObject(std::get<0>(*Handle), 0xFFFFFFFF);
-					std::get<1>(*Handle)->Done();
-				}
-				return 0;
-			}), (void*)data, 1024);
-
-			wg.Wait(pinToCurrentThread);
-			
-			cweeSysThreadTools::Sys_DestroyThread(handle);
-			delete data;
-		};
-		bool	TryWait() noexcept {
-			return WaitForSingleObject(Handle, 1) == ((((DWORD)0x00000000L)) + 0);
-		};
-
-	protected:
-		void* Handle;
-		ftl::WaitGroup wg;
-
-	};
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-	
-
-#if 0
-#if 0
-	class shared_mutex {
-		static constexpr unsigned MaxN = 64;
-
-		// purpose of this structure is to hold
-		// status of each individual bucket-mutex
-		// object
-		// Ideally each thread should be mapped to
-		// one entry only of 'el_' during its
-		// lifetime
-		struct entry_lock {
-			const static uint64_t	W_MASK = 0x8000000000000000,
-				R_MASK = ~W_MASK;
-
-			// purpose ot this variable is to hold
-			// in the first bit (W_MASK) if we're locking
-			// in exclusive mode, otherwise use the
-			// reamining 63 bits to count how many R/O
-			// locks we share in this very bucket
-			std::atomic<uint64_t>	wr_lock;
-
-			entry_lock() : wr_lock(0) {
-			}
-		};
-		// array holding all the buckets
-		std::array<entry_lock, MaxN> el_;
-		unsigned N;
-
-		// atomic variable used to initialize thread
-		// ids so that they should evenly spread
-		// across all the buckets
-		static std::atomic<size_t>	idx_hint_;
-		// lock-free function to return a 'unique' id
-		static uint64_t get_hint_idx(void) {
-			while (true) {
-				size_t cur_hint = idx_hint_.load();
-				if (idx_hint_.compare_exchange_weak(cur_hint, cur_hint + 1))
-					return cur_hint;
-			}
-		}
-		// get index for given thread
-		// could hav used something like std::hash<std::thread::id>()(std::this_thread::get_id())
-		// but honestly using a controlled idx_hint_
-		// seems to be better in terms of putting threads
-		// into buckets evenly
-		// note - thread_local is supposed to be static...
-		inline static size_t get_thread_idx(unsigned N) {
-			// return ftl::GetCurrentThread().Id;
-			const thread_local size_t rv = get_hint_idx() % N;
-			return rv;
-		}
-		
-	public:
-		shared_mutex() : N(std::min<unsigned>(MaxN, ftl::GetNumHardwareThreads())) {}
-
-		void lock_shared(void) {
-			// try to replace the wr_lock with current value incremented by one
-			while (true) {
-				size_t	cur_rw_lock = el_[get_thread_idx(N)].wr_lock.load();
-				if (entry_lock::W_MASK & cur_rw_lock) {
-					// if someone has got W access yield and retry...
-					ftl::YieldThread();
-					continue;
-				}
-				if (el_[get_thread_idx(N)].wr_lock.compare_exchange_weak(cur_rw_lock, cur_rw_lock + 1))
-					break;
-			}
-		}
-
-		void unlock_shared(void) {
-			// try to decrement the count
-			while (true) {
-				size_t	cur_rw_lock = el_[get_thread_idx(N)].wr_lock.load();
-
-				if (entry_lock::W_MASK & cur_rw_lock)
-					throw std::runtime_error("Fatal: unlock_shared but apparently this entry is W_MASK locked!");
-
-				if (el_[get_thread_idx(N)].wr_lock.compare_exchange_weak(cur_rw_lock, cur_rw_lock - 1))
-					break;
-			}
-		}
-
-		void lock(void) {
-			for (size_t i = 0; i < N; ++i) {
-				// acquire all locks from all buckets
-				while (true) {
-					size_t	cur_rw_lock = el_[i].wr_lock.load();
-					if (cur_rw_lock != 0) {
-						ftl::YieldThread();
-						continue;
-					}
-					// if cur_rw_lock is 0 then proceed
-					if (el_[i].wr_lock.compare_exchange_weak(cur_rw_lock, entry_lock::W_MASK))
-						break;
-				}
-			}
-		}
-
-		void unlock(void) {
-			for (size_t i = 0; i < N; ++i) {
-				// release all locks
-				while (true) {
-					size_t	cur_rw_lock = el_[i].wr_lock.load();
-
-					if (cur_rw_lock != entry_lock::W_MASK)
-						throw std::runtime_error("Fatal: unlock but apparently this entry is shared locked or uninitialized!");
-
-					// then proceed resetting to 0
-					if (el_[i].wr_lock.compare_exchange_weak(cur_rw_lock, 0))
-						break;
-				}
-			}
-		}
-
-		~shared_mutex() {
-		}
-	};
-	std::atomic<size_t> shared_mutex::idx_hint_{ 0 };
-#else
-
-	class condition_variable { // class for waiting for conditions
-	public:
-		enum class cv_status { // names for wait returns
-			no_timeout,
-			timeout
-		};
-
-		using native_handle_type = _Cnd_t;
-
-		condition_variable() {
-			_Cnd_init_in_situ(_Mycnd());
-		}
-
-		~condition_variable() noexcept {
-			_Cnd_destroy_in_situ(_Mycnd());
-		}
-
-		condition_variable(const condition_variable&) = delete;
-		condition_variable& operator=(const condition_variable&) = delete;
-
-		void notify_one() noexcept { // wake up one waiter
-			_Cnd_signal(_Mycnd());
-		}
-
-		void notify_all() noexcept { // wake up all waiters
-			_Cnd_broadcast(_Mycnd());
-		}
-
-		void wait(std::unique_lock<mutex>& _Lck) { // wait for signal
-			// Nothing to do to comply with LWG-2135 because std::mutex lock/unlock are nothrow
-			_Cnd_wait(_Mycnd(), _Lck.mutex()->_Mymtx());
-		}
-
-		template <class _Predicate>
-		void wait(std::unique_lock<mutex>& _Lck, _Predicate _Pred) { // wait for signal and test predicate
-			while (!_Pred()) {
-				wait(_Lck);
-			}
-		}
-
-		template <class _Rep, class _Period>
-		cv_status wait_for(std::unique_lock<mutex>& _Lck, const chrono::duration<_Rep, _Period>& _Rel_time) {
-			// wait for duration
-			if (_Rel_time <= chrono::duration<_Rep, _Period>::zero()) {
-				return cv_status::timeout;
-			}
-
-			// TRANSITION, ABI: The standard says that we should use a steady clock,
-			// but unfortunately our ABI speaks struct xtime, which is relative to the system clock.
-			_CSTD xtime _Tgt;
-			const bool _Clamped = _To_xtime_10_day_clamped(_Tgt, _Rel_time);
-			const cv_status _Result = wait_until(_Lck, &_Tgt);
-			if (_Clamped) {
-				return cv_status::no_timeout;
-			}
-
-			return _Result;
-		}
-
-		template <class _Rep, class _Period, class _Predicate>
-		bool wait_for(std::unique_lock<mutex>& _Lck, const chrono::duration<_Rep, _Period>& _Rel_time, _Predicate _Pred) {
-			// wait for signal with timeout and check predicate
-			return _Wait_until1(_Lck, _To_absolute_time(_Rel_time), _Pred);
-		}
-
-		template <class _Clock, class _Duration>
-		cv_status wait_until(std::unique_lock<mutex>& _Lck, const chrono::time_point<_Clock, _Duration>& _Abs_time) {
-			// wait until time point
-	#if _HAS_CXX20
-			static_assert(chrono::is_clock_v<_Clock>, "Clock type required");
-	#endif // _HAS_CXX20
-			for (;;) {
-				const auto _Now = _Clock::now();
-				if (_Abs_time <= _Now) {
-					return cv_status::timeout;
-				}
-
-				_CSTD xtime _Tgt;
-				(void)_To_xtime_10_day_clamped(_Tgt, _Abs_time - _Now);
-				const cv_status _Result = wait_until(_Lck, &_Tgt);
-				if (_Result == cv_status::no_timeout) {
-					return cv_status::no_timeout;
-				}
-			}
-		}
-
-		_NODISCARD native_handle_type native_handle() {
-			return _Mycnd();
-		}
-
-		void _Register(std::unique_lock<mutex>& _Lck, int* _Ready) { // register this object for release at thread exit
-			_Cnd_register_at_thread_exit(_Mycnd(), _Lck.release()->_Mymtx(), _Ready);
-		}
-
-		void _Unregister(mutex& _Mtx) { // unregister this object for release at thread exit
-			_Cnd_unregister_at_thread_exit(_Mtx._Mymtx());
-		}
-
-	private:
-		std::aligned_storage_t<_Cnd_internal_imp_size, _Cnd_internal_imp_alignment> _Cnd_storage;
-		_Cnd_t _Mycnd() noexcept { // get pointer to _Cnd_internal_imp_t inside _Cnd_storage
-			return reinterpret_cast<_Cnd_t>(&_Cnd_storage);
-		}
-	};
-
- 	class shared_mutex
-	{
-		mutex    mut_;
-		std::condition_variable gate1_;
-		std::condition_variable gate2_;
-		unsigned state_;
-
-		static const unsigned write_entered_ = 1U << (sizeof(unsigned) * CHAR_BIT - 1);
-		static const unsigned n_readers_ = ~write_entered_;
-
-	public:
-
-		shared_mutex() : state_(0) {}
-
-		// Exclusive ownership
-		void lock();
-		bool try_lock();
-		void unlock();
-
-		// Shared ownership
-		void lock_shared();
-		bool try_lock_shared();
-		void unlock_shared();
-	};
-
-	// Exclusive ownership
-	void shared_mutex::lock() {
-		std::unique_lock<mutex> lk(mut_);
-
-		
-
-
-
-
-
-
-		// std::this_thread::disable_interruption _;
-		
-		while (state_ & write_entered_)
-			gate1_.wait(lk);
-		state_ |= write_entered_;
-		while (state_ & n_readers_)
-			gate2_.wait(lk);
-	}
-	bool shared_mutex::try_lock()
-	{
-		unique_lock<mutex> lk(mut_, try_to_lock);
-		if (lk.owns_lock() && state_ == 0)
-		{
-			state_ = write_entered_;
-			return true;
-		}
-		return false;
-	}
-	void shared_mutex::unlock()
-	{
-		{
-			scoped_lock<mutex> _(mut_);
-			state_ = 0;
-		}
-		gate1_.notify_all();
-	}
-
-	// Shared ownership
-	void shared_mutex::lock_shared()
-	{
-		std::this_thread::disable_interruption _;
-		unique_lock<mutex> lk(mut_);
-		while ((state_ & write_entered_) || (state_ & n_readers_) == n_readers_)
-			gate1_.wait(lk);
-		unsigned num_readers = (state_ & n_readers_) + 1;
-		state_ &= ~n_readers_;
-		state_ |= num_readers;
-	}
-	bool shared_mutex::try_lock_shared()
-	{
-		unique_lock<mutex> lk(mut_, try_to_lock);
-		unsigned num_readers = state_ & n_readers_;
-		if (lk.owns_lock() && !(state_ & write_entered_) && num_readers != n_readers_)
-		{
-			++num_readers;
-			state_ &= ~n_readers_;
-			state_ |= num_readers;
-			return true;
-		}
-		return false;
-	}
-	void shared_mutex::unlock_shared()
-	{
-		scoped_lock<mutex> _(mut_);
-		unsigned num_readers = (state_ & n_readers_) - 1;
-		state_ &= ~n_readers_;
-		state_ |= num_readers;
-		if (state_ & write_entered_)
-		{
-			if (num_readers == 0)
-				gate2_.notify_one();
-		}
-		else
-		{
-			if (num_readers == n_readers_ - 1)
-				gate1_.notify_one();
-		}
-	}
-
-
-#endif
-#endif
-
-
-
-
-
-#if 0
-	class shared_mutex { // class for mutual exclusion shared across threads
-	public:
-		using native_handle_type = _Smtx_t*;
-
-		shared_mutex() noexcept // strengthened
-			: _Myhandle(nullptr) {}
-
-		~shared_mutex() noexcept {}
-
-		void lock() noexcept /* strengthened */ { // lock exclusive
-			_Smtx_lock_exclusive(&_Myhandle);
-		}
-
-		_NODISCARD bool try_lock() noexcept /* strengthened */ { // try to lock exclusive
-			return _Smtx_try_lock_exclusive(&_Myhandle) != 0;
-		}
-
-		void unlock() noexcept /* strengthened */ { // unlock exclusive
-			_Smtx_unlock_exclusive(&_Myhandle);
-		}
-
-		void lock_shared() noexcept /* strengthened */ { // lock non-exclusive
-			_Smtx_lock_shared(&_Myhandle);
-		}
-
-		_NODISCARD bool try_lock_shared() noexcept /* strengthened */ { // try to lock non-exclusive
-			return _Smtx_try_lock_shared(&_Myhandle) != 0;
-		}
-
-		void unlock_shared() noexcept /* strengthened */ { // unlock non-exclusive
-			_Smtx_unlock_shared(&_Myhandle);
-		}
-
-		_NODISCARD native_handle_type native_handle() noexcept /* strengthened */ { // get native handle
-			return &_Myhandle;
-		}
-
-		shared_mutex(const shared_mutex&) = delete;
-		shared_mutex& operator=(const shared_mutex&) = delete;
-
-	private:
-		_Smtx_t _Myhandle;
-	};
-#endif
-
-
-
-
-
 
 	template< typename type>
 	class interlocked {
@@ -1053,6 +588,7 @@ namespace fibers {
 
 			impl->jobs.Lock();
 			auto out = std::vector< Job >(impl->jobs->begin(), impl->jobs->end());
+			impl->jobs->clear();
 			impl->jobs.Unlock();
 			if (out.size() > 0) {
 				std::vector<Any> any(out.size(), Any());
@@ -1069,6 +605,10 @@ namespace fibers {
 		/* Await all jobs in this group */
 		void Wait() {
 			impl->waitGroup.Wait();
+			impl->jobs.Lock();
+			auto out = std::vector< Job >(impl->jobs->begin(), impl->jobs->end());
+			impl->jobs->clear();
+			impl->jobs.Unlock();
 		};
 
 	private:
@@ -1114,6 +654,152 @@ namespace fibers {
 			}
 			return 0;
 		}), (void*)data, 1024);
+	};
+
+	class signal {
+	public:
+		class impl {
+		public:
+			impl(bool manualReset = true) : Handle(CreateEvent(NULL, manualReset, FALSE, NULL), [](void* p) { CloseHandle(p); }), wg() {};
+			impl(const impl&) = delete;
+			impl(impl&& that) = delete;
+			impl& operator=(const impl&) = delete;
+			impl& operator=(impl&& that) = delete;
+			~impl() {};
+
+		public:
+			void	Raise() noexcept {
+				SetEvent(Handle.get());
+			};
+			void	Clear() noexcept {
+				ResetEvent(Handle.get());
+			};
+			void	Wait() noexcept {
+				Job job([this]()->bool {
+					ftl::YieldThread();
+					return TryWait();
+				});
+
+				for (; !TryWait(); ) {
+					wg.ForceQueue(job);
+					auto reply = wg.Wait_Get();
+					bool passed = reply[0].cast();
+					if (passed) break;
+				}
+			};
+			bool	TryWait() noexcept {
+				return WaitForSingleObject(Handle.get(), 1) == ((((DWORD)0x00000000L)) + 0);
+			};
+
+		protected:
+			std::shared_ptr<void> Handle;
+			JobGroup wg;
+		};
+	
+	public:
+		signal(bool manualReset = true) : signal_impl(new impl(manualReset)) {};
+		signal(const signal&) = default;
+		signal(signal&& that) = default;
+		signal& operator=(const signal&) = default;
+		signal& operator=(signal&& that) = default;
+		~signal() {};
+
+	public:
+		/* Raise (set to one) the signal. Free & fast. */
+		void	Raise() noexcept { signal_impl->Raise(); };
+		/* Clear (zero-out) the signal. Free & fast. */
+		void	Clear() noexcept { signal_impl->Clear(); };
+		/* Busy-waits for the signal to be raised. */
+		void	Wait() noexcept { signal_impl->Wait(); };
+		/* Tests if the signal has been raised. Free & fast. */
+		bool	TryWait() noexcept { return signal_impl->TryWait(); };
+
+	private:
+		std::shared_ptr<impl> signal_impl;
+
+	};
+
+	class shared_mutex {
+	private:
+		mutex    mut_;
+		std::condition_variable_any gate1_;
+		std::condition_variable_any gate2_;
+		unsigned state_;
+
+		static const unsigned write_entered_ = 1U << (sizeof(unsigned) * CHAR_BIT - 1);
+		static const unsigned n_readers_ = ~write_entered_;
+
+	public:
+
+		shared_mutex() : state_(0) {}
+
+		// Exclusive ownership
+		void lock() {
+			std::unique_lock<mutex> lk(mut_);
+
+			while (state_ & write_entered_)
+				gate1_.wait(lk);
+			state_ |= write_entered_;
+			while (state_ & n_readers_)
+				gate2_.wait(lk);
+		};
+		bool try_lock() {
+			std::unique_lock<mutex> lk(mut_, std::try_to_lock);
+			if (lk.owns_lock() && state_ == 0)
+			{
+				state_ = write_entered_;
+				return true;
+			}
+			return false;
+		};
+		void unlock() {
+			{
+				std::scoped_lock<mutex> _(mut_);
+				state_ = 0;
+			}
+			gate1_.notify_all();
+		};
+
+		// Shared ownership
+		void lock_shared() {
+			std::unique_lock<mutex> lk(mut_);
+			while ((state_ & write_entered_) || (state_ & n_readers_) == n_readers_)
+				gate1_.wait(lk);
+			unsigned num_readers = (state_ & n_readers_) + 1;
+			state_ &= ~n_readers_;
+			state_ |= num_readers;
+		};
+		bool try_lock_shared() {
+			std::unique_lock<mutex> lk(mut_, std::try_to_lock);
+			unsigned num_readers = state_ & n_readers_;
+			if (lk.owns_lock() && !(state_ & write_entered_) && num_readers != n_readers_)
+			{
+				++num_readers;
+				state_ &= ~n_readers_;
+				state_ |= num_readers;
+				return true;
+			}
+			return false;
+		};
+		void unlock_shared() {
+			std::scoped_lock<mutex> _(mut_);
+			unsigned num_readers = (state_ & n_readers_) - 1;
+			state_ &= ~n_readers_;
+			state_ |= num_readers;
+			if (state_ & write_entered_)
+			{
+				if (num_readers == 0)
+					gate2_.notify_one();
+			}
+			else
+			{
+				if (num_readers == n_readers_ - 1)
+					gate1_.notify_one();
+			}
+		};
+
+		NODISCARD AUTO Write_Guard() noexcept { return std::lock_guard(*this); };
+		NODISCARD AUTO Read_Guard() noexcept { return std::shared_lock(*this); };
 	};
 
 	/* Queue all jobs and await all results */
@@ -1266,6 +952,10 @@ namespace fibers {
 			}
 			data.swap(out.data);
 		};
+		AUTO clear() {
+			vector out;
+			data.swap(out.data);
+		};
 	};
 
 	template<typename _Key_type, typename _Element_type>
@@ -1359,32 +1049,46 @@ namespace fibers {
 		AUTO unsafe_erase(const key_type& _Keyval) {
 			data->unsafe_erase(_Keyval);
 		};
+
+		AUTO count(const key_type& _Keyval) const { return data->count(_Keyval); };
+		AUTO emplace(const key_type& _Keyval, const _Element_type& _Value) { return insert(value_type(_Keyval, _Value)); };
+		AUTO emplace(const key_type& _Keyval, _Element_type&& _Value) { return insert(value_type(_Keyval, std::forward<_Element_type>(_Value))); };
+		AUTO clear() {
+			unordered_map out;			
+			data.swap(out.data);
+		};
 	};
 
 	template<typename _Key_type> using unordered_set = concurrency::concurrent_unordered_set<_Key_type>;
 	template<typename _Value_type> using queue = concurrency::concurrent_queue<_Value_type>;
 
-
-
-
-
+	/*!
+	Thread-safe list that performs garbage collection and manages read/write/create/delete operations on data. Intended to act as a multi-threaded database.
+	*/
 	template< typename Key, typename Value>
 	class fiberMap {
 	public:
 		typedef Value						Type;
-		typedef std::shared_ptr < Type >	PtrType;
+		typedef std::shared_ptr < Type >		PtrType;
 		typedef std::pair<Key, PtrType>		_iterType;
 		typedef long long					IdxType;
 
 		class fiberMap_Impl {
 		public:
+			/*! prevent multi-thread access to the list while alive. Will automatically unlock the list once out of scope. */
+			NODISCARD auto	Guard(void) const { // assumes unlocked!
+				return lock.Write_Guard();
+			}
+			NODISCARD auto	SharedGuard(void) const { // assumes unlocked!
+				return lock.Read_Guard();
+			}
 			/*! Prevent multi-thread access to the list. Only the "Unsafe*" operations and "Unlock" are valid after this call or else the app will deadlock -- A "Unlock" must be called to re-enable access to the list. */
 			void			Lock(void) const { // assumes unlocked!
-				lock.Lock();
+				lock.lock();
 			}
 			/*! Only call this after calling "Lock". Multiple unlocks in a row is undefined behavior. */
 			void			Unlock(void) const { // assumes already locked! 
-				lock.Unlock();
+				lock.unlock();
 			};
 			/*! After calling "Lock", this will allow access to directly edit the specified object on the heap without swapping. */
 			PtrType			UnsafeRead(Key index) const { // was non-const			
@@ -1395,19 +1099,20 @@ namespace fibers {
 				return nullptr;
 			}
 			/*! After calling "Lock", this will allow access to get a list of all valid indexes on the heap managed by this list. */
-			cweeThreadedList<Key> UnsafeList(void) const {
-				cweeThreadedList<Key> out;
+			vector<Key> UnsafeList(void) const {
+				vector<Key> out;
 
 				if (lastCreatedListVersion == CreatedListVersion) {
 					out = indexList;
-
 					return out;
 				}
 				int size = list.size();
 
-				indexList.Clear();
-				indexList.SetGranularity(size + 16);
-				for (auto& kv : list) indexList.Append(kv.first);
+				indexList.clear();
+				fibers::ForEach(list, [this](typename decltype(list)::value_type& kv) {
+					this->indexList.push_back(kv.first);
+				});
+
 				lastCreatedListVersion = CreatedListVersion;
 
 				out = indexList;
@@ -1420,40 +1125,39 @@ namespace fibers {
 
 			/* Clear the list */
 			void Clear() {
-				Lock();
+				AUTO g = Guard();
 
 				list_version = 0;
 				CreatedListVersion = 0;
 
-				for (auto& kv : list) {
+				fibers::ForEach(list, [](typename decltype(list)::value_type& kv) {
 					PtrType& p = const_cast<PtrType&>(kv.second); // need to access the underlying thing
 					p = nullptr;
-				}
+				});
+
 				list.clear();
 
-				indexList.Clear();
+				indexList.clear();
 				lastSearchID = Key();
 				lastResult = list.end();
 				lastVersion = -1;
 				lastCreatedListVersion = -1;
-
-				Unlock();
 			};
 
 			fiberMap_Impl() : lock(), list(), indexList(), list_version(0), lastSearchID(), lastResult(list.end()), lastVersion(-1), CreatedListVersion(0), lastCreatedListVersion(-1) {
-				list.reserve(16);
-				indexList.SetGranularity(16);
+				//list.reserve(16);
+				//indexList.SetGranularity(16);
 			};
 			~fiberMap_Impl() {
 				Clear();
 			};
 
 			/*! Mutex Lock to prevent race conditions. cweeSysMutex uses C++ CriticalSection */
-			mutable fibers::mutex											            lock; // cweeSysMutex
+			mutable shared_mutex													    lock;
 			/* Map between key and heap ptr. Cannot use PTR directly to allow for multithread-safe instant deletes, using the keys to control race conditions. */
-			mutable tsl::robin_map<Key, PtrType, robin_hood::hash<Key>, std::equal_to<Key>, std::allocator<_iterType>, true>	list;
+			mutable unordered_map< Key, PtrType>                                        list;
 			/* Optimized search parameters */
-			mutable cweeThreadedList<Key>												indexList;
+			mutable vector<Key>												            indexList;
 			/* Optimized search parameters */
 			mutable cweeSysInterlockedInteger											list_version;
 			/* Optimized search parameters */
@@ -1498,7 +1202,7 @@ namespace fibers {
 				}
 				idx = n;
 			};
-			mutable cweeThreadedList<Key>	listOfIndexes;
+			mutable vector<Key>	listOfIndexes;
 			mutable IdxType idx;
 			mutable _iterType iter;
 			inline void begin(const fiberMap* ref) {
@@ -1551,7 +1255,7 @@ namespace fibers {
 			impl = nullptr;
 		};
 		/*! Convert UnorderedMap to a list of keys */
-		operator cweeThreadedList<Key>() const {
+		operator vector<Key>() const {
 			return GetList();
 		};
 		/*! Get a read-only copy of the object from the heap. if the object does not exist on the heap, an empty object will be made on the stack. */
@@ -1629,16 +1333,14 @@ namespace fibers {
 		};
 		/*! Gets a pointer (or null) to the underlyding data. This is a managed object, meaning its lifetime must end before the udnerlying fiberMap lifetime does. */
 		PtrType			TryGetPtr(Key index) const {
-			PtrType out{ nullptr };
 			auto* p = impl.get();
 			if (p) {
-				Lock();
+				AUTO g{ p->lock.Read_Guard() };
 				if (p->list.count(index) > 0) {
-					out = p->list.at(index);
+					return p->list.at(index);
 				}
-				Unlock();
 			}
-			return out;
+			return nullptr;
 		};
 		/*! Gets a pointer (or null) to the underlyding data. This is a managed object, meaning its lifetime must end before the udnerlying fiberMap lifetime does. */
 		_iterType		GetIterator(Key index) const {
@@ -1685,8 +1387,8 @@ namespace fibers {
 			AUTO List = copy.GetList();
 
 			if (threadSafePtr) {
-				// Go through and perform swaps					
-				for (int i = 0; i < List.Num(); i++) {
+				// Go through and perform swaps		
+				fibers::For(0, List.Num(), [&](int i) {
 					copy.Lock();
 					auto readCopy = copy.UnsafeRead(List[i]);
 					copy.Unlock();
@@ -1699,11 +1401,10 @@ namespace fibers {
 
 						if (access) *access = *readCopy;
 					}
-				}
+				});
 			}
 			else {
-				// Go through and perform swaps		
-				for (int i = 0; i < List.Num(); i++) {
+				fibers::For(0, List.Num(), [&](int i) {
 					copy.Lock();
 					auto readCopy = copy.UnsafeRead(List[i]);
 					if (readCopy) {
@@ -1714,7 +1415,7 @@ namespace fibers {
 						Unlock();
 					}
 					copy.Unlock();
-				}
+				});
 			}
 		};
 		/*! Copy the Value object from the stack into the heap at the index specified. If the index does not exist on the heap, nothing happens. */
@@ -1760,8 +1461,8 @@ namespace fibers {
 			return impl->UnsafeIndexForKey(std::move(index));
 		};
 		/*! get a list of all indexes currently on the heap that are currently valid */
-		cweeThreadedList<Key> GetList(void) const {
-			cweeThreadedList<Key> out;
+		vector<Key> GetList(void) const {
+			vector<Key> out;
 
 			if (impl->lastCreatedListVersion == impl->CreatedListVersion) {
 				SharedLock();
@@ -1774,9 +1475,9 @@ namespace fibers {
 			Lock();
 			impl->indexList.Clear();
 			impl->indexList.SetGranularity(size + 16);
-			for (auto& kv : impl->list) {
+			fibers::ForEach(impl->list, [&](typename decltype(impl->list)::value_type& kv) {
 				impl->indexList.Append(kv.first);
-			}
+			});
 			impl->lastCreatedListVersion = impl->CreatedListVersion;
 
 			out = impl->indexList;
@@ -1813,6 +1514,12 @@ namespace fibers {
 			impl->Unlock();
 		};
 		/*!
+		prevent multi-thread access to the list while alive. Will automatically unlock the list once out of scope.
+		*/
+		NODISCARD auto	Guard(void) const { // assumes unlocked!
+			return impl->Guard();
+		}
+		/*!
 		After calling "Lock", this will allow access to directly edit the specified object on the heap without swapping.
 		*/
 		PtrType			UnsafeRead(Key index) const {
@@ -1833,77 +1540,76 @@ namespace fibers {
 		/*!
 		After calling "Lock", this will allow access to get a list of all valid indexes on the heap managed by this list.
 		*/
-		cweeThreadedList<Key> UnsafeList(void) const {
+		vector<Key> UnsafeList(void) const {
 			return impl->UnsafeList();
 		};
 		/*
 		Lambda-based select function that provides the pointers to underlying data that meets the required lambda function
 
-		cweeThreadedList<int> obj;
+		vector<int> obj;
 		obj = { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 };
-		cweeThreadedList<int*> ptrsWithValuesGreaterThanFive = obj.Select([](int x){ return (x > 5); });
+		vector<int*> ptrsWithValuesGreaterThanFive = obj.Select([](int x){ return (x > 5); });
 		for (auto& z : ptrsWithValuesGreaterThanFive){
 			std::cout << *z << std::endl;
 		}
 		*/
-		cweeThreadedList<_iterType> Select(std::function<bool(const Value*)> predicate) const {
-			cweeThreadedList<_iterType> out;
+		vector<_iterType> Select(std::function<bool(const Value*)> predicate) const {
+			vector<_iterType> out;
 			PtrType x;
-			for (auto& i : GetList()) {
+			auto thisList = GetList();
+
+			fibers::ForEach(thisList, [&](typename decltype(thisList)::value_type& i) {
 				x = this->GetPtr(i);
-				//Lock();
-				if (x && predicate(x.Ptr())) {
-					out.Append(_iterType(i, x));
+				if (x && predicate(x.get())) {
+					out.push_back(_iterType(i, x));
 				}
-				//Unlock();
-			}
+			});
+
 			return out;
 		};
 		/*
 		Lambda-based select function that provides the pointers to underlying data that meets the required lambda function
 
-		cweeThreadedList<int> obj;
+		vector<int> obj;
 		obj = { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 };
-		cweeThreadedList<int*> ptrsWithValuesGreaterThanFive = obj.Select([](int x){ return (x > 5); });
+		vector<int*> ptrsWithValuesGreaterThanFive = obj.Select([](int x){ return (x > 5); });
 		for (auto& z : ptrsWithValuesGreaterThanFive){
 			std::cout << *z << std::endl;
 			*z = -1; // modifies the original list
 		}
 		*/
-		cweeThreadedList<_iterType> Select(std::function<bool(const Value*)> predicate) {
-			cweeThreadedList<_iterType> out;
+		vector<_iterType> Select(std::function<bool(const Value*)> predicate) {
+			vector<_iterType> out;
 			PtrType x;
-			for (auto& i : GetList()) {
+			auto thisList = GetList();
+			fibers::ForEach(thisList, [&](typename decltype(thisList)::value_type& i) {
 				x = this->GetPtr(i);
-				//Lock();
-				if (x && predicate(x.Ptr())) {
-					out.Append(_iterType(i, x));
+				if (x && predicate(x.get())) {
+					out.push_back(_iterType(i, x));
 				}
-				//Unlock();
-			}
+			});
 			return out;
 		};
 		/*
 		Lambda-based select function that provides the indexes to underlying data that meets the required lambda function
 
-		cweeThreadedList<int> obj;
+		vector<int> obj;
 		obj = { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 };
-		cweeThreadedList<int> indexesWithValuesGreaterThanFive = obj.SelectIndexes([](int x){ return (x > 5); });
+		vector<int> indexesWithValuesGreaterThanFive = obj.SelectIndexes([](int x){ return (x > 5); });
 		for (auto& z : indexesWithValuesGreaterThanFive){
 			std::cout << obj[z] << std::endl;
 		}
 		*/
-		cweeThreadedList<Key> SelectIndexes(std::function<bool(const Value*)> predicate) const {
-			cweeThreadedList<Key> out;
+		vector<Key> SelectIndexes(std::function<bool(const Value*)> predicate) const {
+			vector<Key> out;
 			_iterType x;
-			for (auto& i : GetList()) {
+			auto thisList = GetList();
+			fibers::ForEach(thisList, [&](typename decltype(thisList)::value_type& i) {
 				x = this->GetPtr(i);
-				//SharedLock();
-				if (x && predicate(x.Ptr())) {
-					out.Append(i);
+				if (x && predicate(x.get())) {
+					out.push_back(i);
 				}
-				//SharedUnlock();
-			}
+			});
 			return out;
 		};
 		/*!
@@ -1979,9 +1685,8 @@ namespace fibers {
 		};
 		bool	Extract(Key index, PtrType& out) {
 			bool result = false;
-			Lock();
+			AUTO G = Guard();
 			result = UnsafeExtract(std::move(index), out);
-			Unlock();
 			return result;
 		};
 		/*!
@@ -2001,11 +1706,11 @@ namespace fibers {
 		*/
 		bool	ExtractIndex(IdxType idx, PtrType& out) {
 			bool result = false;
-			Lock();
+			AUTO G = Guard();
 			result = UnsafeExtractIndex(std::move(idx), out);
-			Unlock();
 			return result;
 		};
+
 	public: // Compatability functions
 		PtrType			at(Key index) const { return GetPtr(index); };
 		PtrType			unsafe_at_index(IdxType idx) const {
@@ -2117,15 +1822,16 @@ namespace fibers {
 	private:
 		/*! Duplicate method to allow for advanced locking mechanisms. */
 		void			SharedLock(void) const {
-			impl->lock.Lock();
+			impl->lock.shared_lock();
 		};
 		/*! Duplicate method to allow for advanced locking mechanisms. */
 		void			SharedUnlock(void) const {
-			impl->lock.Unlock();
+			impl->lock.shared_unlock();
 		};
 
 		ImplType impl;
 	};
+
 
 
 
@@ -2447,38 +2153,63 @@ extern void DoJob(ftl::TaskScheduler* taskScheduler, void* arg) {
 	job->Invoke();
 };
 uint64_t FTL::fnFiberTasks3(int numTasks, int numSubTasks) {
-	fibers::unordered_map<int, fibers::unordered_map<int, double>> lists;
-	fibers::For(0, numTasks, [&lists, &numSubTasks](int j) {
-		auto& list = lists[j];
-		if (numSubTasks <= 1) {
-			list[0] = fiberRandomFloat(0, 100);
-		}
-		else {
-			fibers::For(0, numSubTasks, [&list, &numSubTasks](int index) {
-				list[index] = fiberRandomFloat(0, 100);
-			});
-		}
-	});
+	{
+		fibers::unordered_map<int, fibers::unordered_map<int, double>> lists;
+		fibers::For(0, numTasks, [&lists, &numSubTasks](int j) {
+			auto& list = lists[j];
+			if (numSubTasks <= 1) {
+				list[0] = fiberRandomFloat(0, 100);
+			}
+			else {
+				fibers::For(0, numSubTasks, [&list, &numSubTasks](int index) {
+					list[index] = fiberRandomFloat(0, 100);
+				});
+			}
+		});
+	}
 
+	{
+		fibers::vector<fibers::vector<double>> vectors;
+		fibers::For(0, numTasks, [&vectors, &numSubTasks](int j) {
+			fibers::vector<double> list;
 
-	fibers::vector<fibers::vector<double>> vectors;
-	fibers::For(0, numTasks, [&vectors, &numSubTasks](int j) {
-		fibers::vector<double> list;
-
-		if (numSubTasks <= 1) {
-			list.push_back(fiberRandomFloat(0, 100));
-		}
-		else {
-			fibers::For(0, numSubTasks, [&list, &numSubTasks](int index) {
+			if (numSubTasks <= 1) {
 				list.push_back(fiberRandomFloat(0, 100));
-			});
+			}
+			else {
+				fibers::For(0, numSubTasks, [&list, &numSubTasks](int index) {
+					list.push_back(fiberRandomFloat(0, 100));
+				});
+			}
+
+			vectors.push_back(std::move(list));
+		});
+	}
+
+	{
+		fibers::fiberMap<int, fibers::fiberMap<int, double>> lists;
+		// set-up the list in-line
+		for (int i = 0; i < numTasks; i++) {
+			auto list = lists[i];
+			for (int j = 0; j < numSubTasks; j++) {
+				*list->operator[](j) = fiberRandomFloat(0, 100);
+			}
 		}
 
-		vectors.push_back(std::move(list));
-	});
+		fibers::For(0, numTasks, [&lists, &numSubTasks](int j) {
+			auto list = lists[j];
+			if (numSubTasks <= 1) {
+				*list->operator[](0) = fiberRandomFloat(0, 100);
+			}
+			else {
+				fibers::For(0, numSubTasks, [&list, &numSubTasks](int index) {
+					*list->operator[](index) = fiberRandomFloat(0, 100);
+				});
+			}
+		});
+	}
 
-
-
+	return 0;
 
 
 
@@ -2506,16 +2237,14 @@ uint64_t FTL::fnFiberTasks3(int numTasks, int numSubTasks) {
 	//awaiter.Queue(jobs);
 	//awaiter.Wait();
 
+	//int n = 0; 
+	//for (auto& x : lists) {
+	//	for (auto& y : x.second) {
+	//		n++;
+	//	}
+	//}
 
-
-	int n = 0; 
-	for (auto& x : lists) {
-		for (auto& y : x.second) {
-			n++;
-		}
-	}
-
-	return n;
+	//return n;
 };
 
 

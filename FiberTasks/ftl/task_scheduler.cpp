@@ -445,6 +445,24 @@ void TaskScheduler::AddTask(Task task, TaskPriority priority, WaitGroup *waitGro
 	}
 }
 
+void TaskScheduler::AddTask_NoWaitIncrement(Task task, TaskPriority priority, WaitGroup* waitGroup) {
+	FTL_ASSERT("Task given to TaskScheduler:AddTask has a nullptr Function", task.Function != nullptr);
+
+	const TaskBundle bundle = { task, waitGroup };
+	if (priority == TaskPriority::High) {
+		m_tls[GetCurrentThreadIndex()].HiPriTaskQueue.Push(bundle);
+	}
+	else if (priority == TaskPriority::Normal) {
+		m_tls[GetCurrentThreadIndex()].LoPriTaskQueue.Push(bundle);
+	}
+
+	const EmptyQueueBehavior behavior = m_emptyQueueBehavior.load(std::memory_order_relaxed);
+	if (behavior == EmptyQueueBehavior::Sleep) {
+		// Wake a sleeping thread
+		ThreadSleepCV.notify_one();
+	}
+}
+
 void TaskScheduler::AddTasks(uint32_t numTasks, Task *tasks, TaskPriority priority, WaitGroup *waitGroup) {
 	if (waitGroup != nullptr) {
 		waitGroup->Add(static_cast<int32_t>(numTasks));
