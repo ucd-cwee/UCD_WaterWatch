@@ -403,6 +403,84 @@ namespace fibers {
 
 	};
 
+	template<typename _Ty>
+	class vector {
+	protected:
+		std::shared_ptr< concurrency::concurrent_vector<_Ty> > data;
+
+	public:
+		struct it_state {
+			std::shared_ptr< concurrency::concurrent_vector<_Ty> > lifetime;
+			typename concurrency::concurrent_vector<_Ty>::iterator pos;
+			inline void begin(const vector* ref) { lifetime = ref->data; pos = lifetime->begin(); }
+			inline void next(const vector* ref) { ++pos; }
+			inline void end(const vector* ref) { lifetime = ref->data; pos = lifetime->end(); }
+			inline _Ty& get(vector* ref) { return *pos; }
+			inline bool cmp(const it_state& s) const { return (pos == s.pos) ? false : true; }
+			inline long long distance(const it_state& s) const { return pos - s.pos; };
+			// Optional to allow operator--() and reverse iterators:
+			inline void prev(const vector* ref) { --pos; }
+			// Optional to allow `const_iterator`:
+			inline const _Ty& get(const vector* ref) const { return *pos; }
+		};
+		SETUP_STL_ITERATOR(vector, _Ty, it_state);
+
+		vector() : data(new concurrency::concurrent_vector<_Ty>()) {};
+		explicit vector(size_type _N) : data(new concurrency::concurrent_vector<_Ty>(_N)) {};
+		vector(size_type _N, const_reference _Item) : data(new concurrency::concurrent_vector<_Ty>(_N, _Item)) {};
+		vector(vector const& r) : data(new concurrency::concurrent_vector<_Ty>()) {
+			operator=(r);
+		}
+		vector(vector&& r) = default;
+		vector& operator=(vector const& r) {
+			if (static_cast<void*>(this) != static_cast<const void*>(&r)) {
+				vector out;
+				for (auto& x : r)
+					out->push_back(x);
+				out.data.swap(data);
+			}
+			return *this;
+		};
+		vector& operator=(vector&& r) = default;
+		~vector() {};
+
+		AUTO grow_by(size_type _Delta) { return data->grow_by(_Delta); };
+		AUTO grow_by(size_type _Delta, const_reference _Item) { return data->grow_by(_Delta, _Item); };
+		AUTO grow_to_at_least(size_type _N) { return data->grow_to_at_least(_N); };
+		AUTO push_back(const_reference _Item) { return data->push_back(_Item); };
+		AUTO push_back(_Ty&& _Item) { return data->push_back(std::forward<_Ty>(_Item)); };
+		AUTO operator[](size_type _Index) { return data->operator[](_Index); };
+		AUTO operator[](size_type _Index) const { return data->operator[](_Index); };
+		AUTO at(size_type _Index) { return data->at(_Index); };
+		AUTO at(size_type _Index) const { return data->at(_Index); };
+		AUTO size() const { return data->size(); };
+		AUTO empty() const { return data->empty(); };
+		AUTO capacity() const { return data->capacity(); };
+		AUTO max_size() const { return data->max_size(); };
+		AUTO erase(const_iterator _Where) {
+			vector out;
+			auto endIter = end();
+			for (auto iter = begin(); iter != endIter; iter++) {
+				if (iter == _Where) continue;
+				out.push_back(*iter);
+			}
+			data.swap(out.data);
+		};
+		AUTO erase(const_iterator _First, const_iterator _Last) {
+			vector out;
+			auto endIter = end();
+			for (auto iter = begin(); iter != endIter; iter++) {
+				if (iter >= _First && iter <= _Last) continue;
+				out.push_back(*iter);
+			}
+			data.swap(out.data);
+		};
+		AUTO clear() {
+			vector out;
+			data.swap(out.data);
+		};
+	};
+
 	/*! Class used to queue and await one or multiple jobs submitted to a concurrent fiber manager. */
 	class JobGroup;
 
@@ -569,7 +647,17 @@ namespace fibers {
 
 			return *this;
 		};
-		
+		JobGroup& Queue(fibers::vector<Job> const& listOfJobs) {
+			std::vector<ftl::Task> tasks;
+			for (auto& job : listOfJobs) {
+				tasks.push_back({ DoAnyFuncStruct, new AnyFunctionStruct({ job.impl, nullptr, false }) });
+				impl->jobs.GetExclusive()->push_back(job);
+			}
+			Fibers->AddTasks(tasks.size(), &tasks[0], ftl::TaskPriority::Normal, &impl->waitGroup);
+
+			return *this;
+		};
+
 		/* Queue jobs, and return tool to await the results */
 		JobGroup& ForceQueue(std::vector<Job> const& listOfJobs) {
 			std::vector<ftl::Task> tasks;
@@ -587,7 +675,7 @@ namespace fibers {
 			impl->waitGroup.Wait();
 
 			impl->jobs.Lock();
-			auto out = std::vector< Job >(impl->jobs->begin(), impl->jobs->end());
+			auto out = std::vector< Job >(impl->jobs.UnsafeRead());
 			impl->jobs->clear();
 			impl->jobs.Unlock();
 			if (out.size() > 0) {
@@ -605,10 +693,7 @@ namespace fibers {
 		/* Await all jobs in this group */
 		void Wait() {
 			impl->waitGroup.Wait();
-			impl->jobs.Lock();
-			auto out = std::vector< Job >(impl->jobs->begin(), impl->jobs->end());
-			impl->jobs->clear();
-			impl->jobs.Unlock();
+			impl->jobs.Clear();
 		};
 
 	private:
@@ -882,81 +967,6 @@ namespace fibers {
 		else return group.Wait_Get();
 	};
 
-	template<typename _Ty>
-	class vector {
-	protected:
-		std::shared_ptr< concurrency::concurrent_vector<_Ty> > data;
-
-	public:
-		struct it_state {
-			std::shared_ptr< concurrency::concurrent_vector<_Ty> > lifetime;
-			typename concurrency::concurrent_vector<_Ty>::iterator pos;
-			inline void begin(const vector* ref) { lifetime = ref->data; pos = lifetime->begin(); }
-			inline void next(const vector* ref) { ++pos; }
-			inline void end(const vector* ref) { lifetime = ref->data; pos = lifetime->end(); }
-			inline _Ty& get(vector* ref) { return *pos;	}
-			inline bool cmp(const it_state& s) const { return (pos == s.pos) ? false : true; }
-			inline long long distance(const it_state& s) const { return pos - s.pos; };
-			// Optional to allow operator--() and reverse iterators:
-			inline void prev(const vector* ref) { --pos; }
-			// Optional to allow `const_iterator`:
-			inline const _Ty& get(const vector* ref) const { return *pos; }
-		};
-		SETUP_STL_ITERATOR(vector, _Ty, it_state);
-
-		vector() : data(std::make_shared<concurrency::concurrent_vector<_Ty>>()) {};
-		explicit vector(size_type _N) : data(std::make_shared<concurrency::concurrent_vector<_Ty>>(_N)) {};
-		vector(size_type _N, const_reference _Item) : data(std::make_shared<concurrency::concurrent_vector<_Ty>>(_N, _Item)) {};
-		template<class _InputIterator> vector(_InputIterator _Begin, _InputIterator _End) : data(std::make_shared<concurrency::concurrent_vector<_Ty>>(_Begin, _End)) {};
-		vector(vector const& r) : data(std::make_shared<concurrency::concurrent_vector<_Ty>>()) {
-			this->operator=(r);
-		};
-		vector(vector&& r) : data(std::move(r.data)) {};
-		vector& operator=(vector const& r) {
-			if (static_cast<void*>(this) != static_cast<const void*>(&r)) for (_Ty& x : *r.data) data->push_back(x);
-			return *this;
-		};
-		vector& operator=(vector&& r) {
-			if (static_cast<void*>(this) != static_cast<const void*>(&r)) for (_Ty& x : *r.data) data->push_back(x);
-			return *this;
-		};
-		
-		AUTO grow_by(size_type _Delta) { return data->grow_by(_Delta); };
-		AUTO grow_by(size_type _Delta, const_reference _Item) { return data->grow_by(_Delta, _Item); };
-		AUTO grow_to_at_least(size_type _N) { return data->grow_to_at_least(_N); };
-		AUTO push_back(const_reference _Item) { return data->push_back(_Item); };
-		AUTO push_back(_Ty&& _Item) { return data->push_back(std::forward<_Ty>(_Item)); };
-		AUTO operator[](size_type _Index) { return data->operator[](_Index); };
-		AUTO operator[](size_type _Index) const { return data->operator[](_Index); };
-		AUTO at(size_type _Index) { return data->at(_Index); };
-		AUTO at(size_type _Index) const { return data->at(_Index); };
-		AUTO size() const { return data->size(); };
-		AUTO empty() const { return data->empty(); };
-		AUTO capacity() const { return data->capacity(); };
-		AUTO max_size() const { return data->max_size(); };
-		AUTO erase(const_iterator _Where) {
-			vector out;
-			auto endIter = end();
-			for (auto iter = begin(); iter != endIter; iter++) {
-				if (iter == _Where) continue;
-				out.push_back(*iter);
-			}
-			data.swap(out.data);
-		};
-		AUTO erase(const_iterator _First, const_iterator _Last) {
-			vector out;
-			auto endIter = end();
-			for (auto iter = begin(); iter != endIter; iter++) {
-				if (iter >= _First && iter <= _Last) continue;
-				out.push_back(*iter);
-			}
-			data.swap(out.data);
-		};
-		AUTO clear() {
-			vector out;
-			data.swap(out.data);
-		};
-	};
 
 	template<typename _Key_type, typename _Element_type>
 	class unordered_map {
@@ -987,22 +997,23 @@ namespace fibers {
 		typedef iterator local_iterator;
 		typedef const_iterator const_local_iterator;
 
-		unordered_map() : data(std::make_shared<underlying>()) {};
-		explicit unordered_map(size_type _N) : data(std::make_shared<underlying>(_N)) {};
-		unordered_map(size_type _N, const_reference _Item) : data(std::make_shared<underlying>(_N, _Item)) {};
-		template<class _InputIterator> unordered_map(_InputIterator _Begin, _InputIterator _End) : data(std::make_shared<underlying>(_Begin, _End)) {};
-		unordered_map(unordered_map const& r) : data(std::make_shared<underlying>()) {
+		unordered_map() : data(new underlying()) {};
+		explicit unordered_map(size_type _N) : data(new underlying(_N)) {};
+		unordered_map(size_type _N, const_reference _Item) : data(new underlying(_N, _Item)) {};
+		template<class _InputIterator> unordered_map(_InputIterator _Begin, _InputIterator _End) : data(new underlying(_Begin, _End)) {};
+		unordered_map(unordered_map const& r) : data(new underlying()) {
 			this->operator=(r);
 		};
-		unordered_map(unordered_map&& r) : data(std::move(r.data)) {};
+		unordered_map(unordered_map&& r) = default;
 		unordered_map& operator=(unordered_map const& r) {
-			if (static_cast<void*>(this) != static_cast<const void*>(&r)) for (auto& x : *r.data) data->operator[](x.first) = x.second;				
+			if (static_cast<void*>(this) != static_cast<const void*>(&r)) {
+				unordered_map out;
+				for (auto& x : *r.data) out[x.first] = x.second;
+				out.data.swap(data);
+			}
 			return *this;
 		};
-		unordered_map& operator=(unordered_map&& r) {
-			if (static_cast<void*>(this) != static_cast<const void*>(&r)) for (auto& x : *r.data) data->operator[](x.first) = x.second;
-			return *this;
-		};
+		unordered_map& operator=(unordered_map&& r) = default;
 
 		AUTO insert(const value_type& _Value) { return data->insert(_Value); };
 		AUTO insert(const_iterator _Where, const value_type& _Value) { return data->insert(_Where, _Value); };
@@ -1981,14 +1992,14 @@ uint64_t FTL::fnFiberTasks2c(int numTasks) {
 	else {
 		numTasks *= -1;
 
-		std::vector<fibers::Job> tasks;
+		fibers::vector<fibers::Job> tasks;
 
 		for (int i = 0; i < numTasks; ++i) {
-			Action todo;
+			fibers::Job todo;
 			switch (cweeRandomInt(1, 4)) {
 			default:
 			case 1:
-				todo = Action([&numParallel, &maxParallel](double& j) -> std::remove_reference_t<decltype(j)> {
+				todo = fibers::Job([&numParallel, &maxParallel](double& j) -> std::remove_reference_t<decltype(j)> {
 					Stopwatch sw; sw.Start();
 
 					int n = numParallel.Increment();
@@ -2005,7 +2016,7 @@ uint64_t FTL::fnFiberTasks2c(int numTasks) {
 					}, double(i));
 				break;
 			case 2:
-				todo = Action([&numParallel, &maxParallel](float j) -> std::remove_reference_t<decltype(j)> {
+				todo = fibers::Job([&numParallel, &maxParallel](float j) -> std::remove_reference_t<decltype(j)> {
 					Stopwatch sw; sw.Start();
 
 					int n = numParallel.Increment();
@@ -2021,7 +2032,7 @@ uint64_t FTL::fnFiberTasks2c(int numTasks) {
 					}, float(i));
 				break;
 			case 3:
-				todo = Action([&numParallel, &maxParallel](cweeStr* j) -> std::remove_pointer_t<std::remove_reference_t<decltype(j)>> {
+				todo = fibers::Job([&numParallel, &maxParallel](cweeStr* j) -> std::remove_pointer_t<std::remove_reference_t<decltype(j)>> {
 					Stopwatch sw; sw.Start();
 
 					int n = numParallel.Increment();
@@ -2038,7 +2049,7 @@ uint64_t FTL::fnFiberTasks2c(int numTasks) {
 					}, cweeStr(i));
 				break;
 			case 4:
-				todo = Action([&numParallel, &maxParallel](std::string const& j) -> std::remove_reference_t<decltype(j)> {
+				todo = fibers::Job([&numParallel, &maxParallel](std::string const& j) -> std::remove_reference_t<decltype(j)> {
 					Stopwatch sw; sw.Start();
 
 					int n = numParallel.Increment();
@@ -2055,7 +2066,7 @@ uint64_t FTL::fnFiberTasks2c(int numTasks) {
 				break;
 			}
 
-			tasks.push_back(fibers::Job([](Action& todo) { todo.Invoke(); }, (Action)todo));
+			tasks.push_back(todo);
 		}
 
 		fibers::JobGroup awaiter;

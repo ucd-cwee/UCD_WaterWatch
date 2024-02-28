@@ -192,7 +192,9 @@ void TaskScheduler::FiberStartFunc(void *const arg) {
 					tls->FailedQueuePopAttempts = 0;
 				}
 
-				nextTask.TaskToExecute.Function(taskScheduler, nextTask.TaskToExecute.ArgData);
+				if (nextTask.TaskToExecute.Function != nullptr) {
+					nextTask.TaskToExecute.Function(taskScheduler, nextTask.TaskToExecute.ArgData);
+				}
 				if (nextTask.WG != nullptr) {
 					nextTask.WG->Done();
 				}
