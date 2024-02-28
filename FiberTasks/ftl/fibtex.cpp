@@ -246,4 +246,85 @@ void Fibtex::UnlockSlow() {
 	// The old queue head can now contend for the lock again. We're done!
 }
 
+#if 0
+Signal::Signal(TaskScheduler* taskScheduler, bool manualReset)
+	: m_ableToSpin(taskScheduler->GetThreadCount() > 1),
+	m_taskScheduler(taskScheduler),
+	m_word(0), Handle(CreateEvent(NULL, manualReset, FALSE, NULL))
+{}
+void Signal::WaitSlow(bool pinToCurrentThread) {
+	while (true) {
+		uintptr_t currentWordValue = m_word.load();
+
+		if (TryWait()) return;
+
+		// Need to put ourselves on the queue. Create the queue if one does not exist. This requries
+        // owning the queue for a little bit. The lock that controls the queue is itself a spinlock.
+
+		// We proceed only if the queue lock is not held, the WordLock is held, and we succeed in acquiring the queue lock.
+		if ((currentWordValue & kIsQueueLockedBit) == kIsQueueLockedBit || !std::atomic_compare_exchange_weak(&m_word, &currentWordValue, currentWordValue | kIsQueueLockedBit)) {
+			YieldThread();
+			continue;
+		}
+
+		// We own the queue. Nobody can enqueue or dequeue until we're done. Also, it's not possible
+		// to release the Fibtex while we hold the queue lock.
+
+		WaitingFiberBundle currentFiber{};
+		m_taskScheduler->InitWaitingFiberBundle(&currentFiber, pinToCurrentThread);
+
+		WaitingFiberBundle* queueHead = reinterpret_cast<WaitingFiberBundle*>(currentWordValue & ~kQueueHeadMask);
+		if (queueHead != nullptr) {
+			// Put this fiber at the end of the queue.
+			queueHead->QueueTail->Next = &currentFiber;
+			queueHead->QueueTail = &currentFiber;
+
+			// Release the queue lock.
+			currentWordValue = m_word.load();
+			FTL_ASSERT("there should already be a head pointer", (currentWordValue & ~kQueueHeadMask) != 0);
+			FTL_ASSERT("we should still hold everything", (currentWordValue & kIsQueueLockedBit) == kIsQueueLockedBit);
+			m_word.store(currentWordValue & ~kIsQueueLockedBit);
+		}
+		else {
+			// Make this fiber be the queue-head.
+			queueHead = &currentFiber;
+			currentFiber.QueueTail = &currentFiber;
+
+			// Release the queue lock and install ourselves as the head. No need for a CAS loop, since
+			// we own the queue lock.
+			currentWordValue = m_word.load();
+			FTL_ASSERT("there shouldn't be any head pointer", (currentWordValue & ~kQueueHeadMask) == 0);
+			FTL_ASSERT("we should still hold everything", (currentWordValue & kIsQueueLockedBit) == kIsQueueLockedBit);
+			uintptr_t newWordValue = currentWordValue;
+			newWordValue |= reinterpret_cast<uintptr_t>(queueHead);
+			newWordValue &= ~kIsQueueLockedBit;
+			m_word.store(newWordValue);
+		}
+
+		// At this point everyone who acquires the queue lock will see `currentFiber` on the queue.
+		// `currentFiber.FiberIsSwitched` will still be false though, so any any other threads trying
+		// to resume this thread will wait for the current fiber to switch away below
+
+		// Now switch
+		m_taskScheduler->SwitchToFreeFiber(&currentFiber.FiberIsSwitched);
+
+		FTL_ASSERT("pointers should be nulled after de-queue", currentFiber.Next == nullptr);
+		FTL_ASSERT("pointers should be nulled after de-queue", currentFiber.QueueTail == nullptr);
+
+		// We're back
+		// Now we can loop around and try to acquire the signal
+	}
+};
+#endif
+
+
+
+
+
+
+
+
+
+
+
 } // End of namespace ftl

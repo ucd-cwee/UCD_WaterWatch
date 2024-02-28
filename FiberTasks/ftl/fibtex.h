@@ -137,6 +137,50 @@ private:
 	void UnlockSlow();
 };
 
+#if 0
+class Signal {
+public:
+	Signal(TaskScheduler* taskScheduler, bool manualReset = false);
+	Signal(const Signal&) = delete;
+	Signal(Signal&& that) = delete;
+	Signal& operator=(const Signal&) = delete;
+	Signal& operator=(Signal&& that) = delete;
+	~Signal() {
+		CloseHandle(Handle);
+	};
+
+public:
+	void	Raise() noexcept {
+		SetEvent(Handle);
+	};
+	void	Clear() noexcept {
+		ResetEvent(Handle);
+	};
+	void	Wait(bool pinToCurrentThread = false) noexcept {
+		if (TryWait()) return;
+		WaitSlow(pinToCurrentThread);
+	};
+	bool	TryWait() noexcept {
+		return WaitForSingleObject(Handle, 1) == ((((DWORD)0x00000000L)) + 0);
+	};
+	void    WaitSlow(bool pinToCurrentThread = false);
+
+protected:
+	void*                      Handle;
+
+	/** If the task scheduler only has 1 thread, there's no point of doing any spin waiting */
+	const bool                 m_ableToSpin;
+	TaskScheduler*             m_taskScheduler;
+
+	/* We store the general lock, the queue lock, and the queue all in a single uintptr_t */
+	std::atomic<uintptr_t>     m_word;
+
+	static constexpr uintptr_t kIsLockedBit = 1;
+	static constexpr uintptr_t kIsQueueLockedBit = 2;
+	static constexpr uintptr_t kQueueHeadMask = 3;
+};
+#endif
+
 /**
  * A wrapper class that encapsulates pinToThread, and the various spin behaviors
  */
