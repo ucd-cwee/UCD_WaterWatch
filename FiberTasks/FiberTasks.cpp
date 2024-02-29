@@ -1,14 +1,11 @@
 // FiberPool based on:
 // http://roar11.com/2016/01/a-platform-independent-thread-pool-using-c14/
 #pragma once
-#include "../WaterWatchCpp/Precompiled.h"
 
 #include "FiberTasks.h"
 
-// FiberTasks.cpp : Defines the functions for the static library.
-
 #undef FTL_FIBER_CANARY_BYTES
-#define FTL_NUM_WAITING_FIBER_SLOTS 4
+#define FTL_NUM_WAITING_FIBER_SLOTS 16
 #undef FTL_VALGRIND
 #undef FTL_FIBER_STACK_GUARD_PAGES
 #define FTL_CPP_17
@@ -18,24 +15,7 @@
 #include "ftl/task_scheduler.h"
 #include "ftl/wait_group.h"
 #include "ftl/fibtex.h"
-#include <assert.h>
-#include <stdint.h>
-#include "../WaterWatchCpp/Precompiled.h"
-#include "../WaterWatchCpp/cweeInterlocked.h"
-#include "../WaterWatchCpp/cwee_math.h"
 #include "../WaterWatchCpp/Toasts.h"
-#include "../WaterWatchCpp/cweeJob.h"
-#include "../WaterWatchCpp/cweeTime.h"
-#include "../WaterWatchCpp/Clock.h"
-#include "../WaterWatchCpp/Iterator.h"
-#include <atomic>
-#include <array>
-#include <thread>
-#include <ppl.h>
-#include <concurrent_vector.h>
-#include <concurrent_unordered_map.h>
-#include <concurrent_queue.h>
-#include <concurrent_unordered_set.h>
 
 namespace fibers {
 	extern DelayedInstantiation< ftl::TaskScheduler > Fibers = DelayedInstantiation< ftl::TaskScheduler >([]()-> ftl::TaskScheduler* {
@@ -648,7 +628,7 @@ namespace fibers {
 		template<typename iteratorType, typename F>
 		AUTO For(iteratorType start, iteratorType end, F&& ToDo) {
 			auto todo = std::function(std::forward<F>(ToDo));
-			constexpr bool retNo = std::is_same<typename function_traits<decltype(todo)>::result_type, void>::value;
+			constexpr bool retNo = std::is_same<typename utilities::function_traits<decltype(todo)>::result_type, void>::value;
 
 			std::vector<fibers::Job> jobs;
 			for (iteratorType iter = start; iter < end; iter++) {
@@ -681,7 +661,7 @@ namespace fibers {
 		template<typename containerType, typename F>
 		AUTO ForEach(containerType const& container, F&& ToDo) {
 			AUTO todo = std::function(std::forward<F>(ToDo));
-			constexpr bool retNo = std::is_same<typename function_traits<decltype(todo)>::result_type, void>::value;
+			constexpr bool retNo = std::is_same<typename utilities::function_traits<decltype(todo)>::result_type, void>::value;
 
 			std::vector<fibers::Job> jobs;
 
@@ -699,7 +679,7 @@ namespace fibers {
 		template<typename containerType, typename F>
 		AUTO ForEach(containerType& container, F&& ToDo) {
 			AUTO todo = std::function(std::forward<F>(ToDo));
-			constexpr bool retNo = std::is_same<typename function_traits<decltype(todo)>::result_type, void>::value;
+			constexpr bool retNo = std::is_same<typename utilities::function_traits<decltype(todo)>::result_type, void>::value;
 
 			std::vector<fibers::Job> jobs;
 
@@ -989,6 +969,7 @@ namespace fibers {
 		template<typename _Value_type> using queue = concurrency::concurrent_queue<_Value_type>; /* Wrapper To-Do */
 	};
 };
+
 
 
 
