@@ -18,186 +18,14 @@
 #include "ftl/task_scheduler.h"
 #include "ftl/wait_group.h"
 #include "ftl/fibtex.h"
-
 #include <assert.h>
 #include <stdint.h>
-
-
-struct NumberSubset {
-	uint64_t start;
-	uint64_t end;
-
-	uint64_t total;
-};
-void AddNumberSubset(ftl::TaskScheduler* taskScheduler, void* arg) {
-	(void)taskScheduler;
-	NumberSubset* subset = static_cast<NumberSubset*>(arg);
-
-	subset->total = 0;
-
-	while (subset->start != subset->end) {
-		subset->total += subset->start;
-		++subset->start;
-	}
-
-	subset->total += subset->end;
-}
-
-uint64_t FTL::fnFiberTasks() {
-	//if constexpr (true) {
-		// Create the task scheduler and bind the main thread to it
-		ftl::TaskScheduler taskScheduler;
-		taskScheduler.Init();
-
-		// Define the constants to test
-		constexpr uint64_t triangleNum = 47593243ULL;
-		constexpr uint64_t numAdditionsPerTask = 10000ULL;
-		constexpr uint64_t numTasks = (triangleNum + numAdditionsPerTask - 1ULL) / numAdditionsPerTask;
-
-		// Create the tasks
-		// FTL allows you to create Tasks on the stack.
-		// However, in this case, that would cause a stack overflow
-		decltype(auto) tasks = std::shared_ptr< ftl::Task[]>(new ftl::Task[numTasks]);
-		decltype(auto) subsets = std::shared_ptr< NumberSubset[]>(new NumberSubset[numTasks]);
-
-		uint64_t nextNumber = 1ULL;
-
-		for (uint64_t i = 0ULL; i < numTasks; ++i) {
-			decltype(auto) subset = &subsets[i];
-
-			subset->start = nextNumber;
-			subset->end = nextNumber + numAdditionsPerTask - 1ULL;
-			if (subset->end > triangleNum) {
-				subset->end = triangleNum;
-			}
-
-			tasks[i] = { AddNumberSubset, subset };
-
-			nextNumber = subset->end + 1;
-		}
-
-		// Schedule the tasks
-		ftl::WaitGroup wg(&taskScheduler);
-		taskScheduler.AddTasks(numTasks, tasks.get(), ftl::TaskPriority::Normal, &wg);
-
-		// FTL creates its own copies of the tasks, so we can safely delete the memory
-		//delete[] tasks;
-
-		// Wait for the tasks to complete
-		wg.Wait();
-
-		// Add the results
-		uint64_t result = 0ULL;
-		for (uint64_t i = 0; i < numTasks; ++i) {
-			result += subsets[i].total;
-		}
-
-		// Test
-		assert(triangleNum * (triangleNum + 1ULL) / 2ULL == result);
-
-		// Cleanup
-		//delete[] subsets;
-
-		// The destructor of TaskScheduler will shut down all the worker threads
-		// and unbind the main thread
-		return result;
-	//}
-};
-
 #include "../WaterWatchCpp/Precompiled.h"
 #include "../WaterWatchCpp/cweeInterlocked.h"
 #include "../WaterWatchCpp/cwee_math.h"
 #include "../WaterWatchCpp/Toasts.h"
 #include "../WaterWatchCpp/cweeJob.h"
 #include "../WaterWatchCpp/cweeTime.h"
-
-uint64_t FTL::fnFiberTasks2a(int numTasks) {
-	ftl::TaskScheduler taskScheduler;
-	taskScheduler.Init();
-
-	struct FuncStruct {
-		cweeAction job;
-		ftl::WaitGroup* wg;
-	};
-	auto lambda = [](ftl::TaskScheduler* taskScheduler, void* arg) {
-		std::shared_ptr< FuncStruct > data(static_cast<FuncStruct*>(arg));
-		auto* anyType = data->job.Invoke();
-		if (anyType) {
-			if (anyType->IsTypeOf<double>()) {
-				double* v = anyType->cast();
-			}
-			else if (anyType->IsTypeOf<float>()) {
-				float* v = anyType->cast();
-			}
-			else if (anyType->IsTypeOf<cweeStr>()) {
-				cweeStr* v = anyType->cast();
-			}
-			else if (anyType->IsTypeOf<std::string>()) {
-				std::string* v = anyType->cast();
-			}
-			else {
-				throw(std::runtime_error("ERROR!"));
-			}
-		}
-
-
-	};
-
-	cweeSysInterlockedInteger numParallel = 0;
-	cweeSysInterlockedInteger maxParallel = 0;
-
-	ftl::WaitGroup wg(&taskScheduler);
-	for (int i = 0; i < numTasks; ++i) {
-		cweeAction todo;
-		switch (cweeRandomInt(1, 4)) {
-		case 1:
-			todo = cweeAction(cweeFunction(std::function([&numParallel, &maxParallel](double& j) -> std::remove_reference_t<decltype(j)> {
-				int n = numParallel.Increment(); 
-				if (n > maxParallel.GetValue()) maxParallel.SetValue(n);
-				//auto t = cweeTime::Now(); while ((cweeUnitValues::second)(cweeTime::Now() - t) < cweeUnitValues::millisecond(5)) { /* wasted work */ }
-				numParallel.Decrement();
-
-				return j;
-			}), double(i)));
-			break;
-		case 2:
-			todo = cweeAction(cweeFunction(std::function([&numParallel, &maxParallel](float j) -> std::remove_reference_t<decltype(j)> {
-				int n = numParallel.Increment();
-				if (n > maxParallel.GetValue()) maxParallel.SetValue(n);
-				//auto t = cweeTime::Now(); while ((cweeUnitValues::second)(cweeTime::Now() - t) < cweeUnitValues::millisecond(5)) { /* wasted work */ }
-				numParallel.Decrement();
-
-				return j;
-			}), float(i)));
-			break;
-		case 3:
-			todo = cweeAction(cweeFunction(std::function([&numParallel, &maxParallel](cweeStr* j) -> std::remove_pointer_t<std::remove_reference_t<decltype(j)>> {
-				int n = numParallel.Increment();
-				if (n > maxParallel.GetValue()) maxParallel.SetValue(n);
-				//auto t = cweeTime::Now(); while ((cweeUnitValues::second)(cweeTime::Now() - t) < cweeUnitValues::millisecond(5)) { /* wasted work */ }
-				numParallel.Decrement();
-
-				return *j;
-			}), cweeStr(i)));
-			break;
-		case 4:
-			todo = cweeAction(cweeFunction(std::function([&numParallel, &maxParallel](std::string const& j) -> std::remove_reference_t<decltype(j)> {
-				int n = numParallel.Increment();
-				if (n > maxParallel.GetValue()) maxParallel.SetValue(n);
-				//auto t = cweeTime::Now(); while ((cweeUnitValues::second)(cweeTime::Now() - t) < cweeUnitValues::millisecond(5)) { /* wasted work */ }
-				numParallel.Decrement();
-
-				return j;
-			}), std::to_string(i)));
-			break;
-		}
-		taskScheduler.AddTask({ lambda, new FuncStruct({ todo, &wg }) }, ftl::TaskPriority::Normal, &wg);
-	}
-	wg.Wait();
-
-	return maxParallel.GetValue();
-};
-
 #include "../WaterWatchCpp/Clock.h"
 #include "../WaterWatchCpp/Iterator.h"
 #include <atomic>
@@ -209,10 +37,7 @@ uint64_t FTL::fnFiberTasks2a(int numTasks) {
 #include <concurrent_queue.h>
 #include <concurrent_unordered_set.h>
 
-
 namespace fibers {
-	// Original implemtation could not re-use previous ring buffers after increasing the size of the ring buffer, due to concerns of race conditions.
-    // I fixed those issues by introducing a reverse-linked list of ring buffers that is thread-safe and allows ring buffer re-use. 
 	extern DelayedInstantiation< ftl::TaskScheduler > Fibers = DelayedInstantiation< ftl::TaskScheduler >([]()-> ftl::TaskScheduler* {
 		auto* p = new ftl::TaskScheduler();
 		p->Init({ ftl::GetNumHardwareThreads() * 50, 0, ftl::EmptyQueueBehavior::Sleep, {} });
@@ -220,7 +45,7 @@ namespace fibers {
 		return p;
 	});
 
-	namespace {
+	namespace utilities {
 		template<typename T> struct count_arg;
 		template<typename R, typename ...Args> struct count_arg<std::function<R(Args...)>> { static constexpr const size_t value = sizeof...(Args); };
 		template <typename... Args> constexpr size_t sizeOfParameterPack(Args... Fargs) { return sizeof...(Args); }
@@ -256,213 +81,276 @@ namespace fibers {
 				}
 			}
 		};
-	
-
-	
-	}
-
-	class mutex {
-	public:
-		using Handle_t = ftl::Fibtex;
-		using Phandle = std::shared_ptr<Handle_t>;
-
-	public:
-		mutex() : Handle(new Handle_t(&*Fibers)) {};
-		mutex(const mutex& other) : Handle(new Handle_t(&*Fibers)) {};
-		mutex(mutex&& other) : Handle(new Handle_t(&*Fibers)) {};
-		mutex& operator=(const mutex& s) { return *this; };
-		mutex& operator=(mutex&& s) { return *this; };
-		~mutex() {};
-
-		NODISCARD AUTO	Guard() const noexcept { return std::lock_guard<mutex>(const_cast<mutex&>(*this)); };
-		bool			Lock(bool blocking = true) const noexcept { Handle->lock(); return true; };
-		void			Unlock() const noexcept { Handle->unlock(); };
-		void			lock() const noexcept { Lock(); };
-		void			unlock() const noexcept { Unlock(); };
-		bool            try_lock() const noexcept { return Handle->try_lock(); };
-
-	protected:
-		Phandle Handle;
-
 	};
 
-	template< typename type>
-	class interlocked {
-	public:
-		class ExclusiveObject {
+	namespace synchronization {
+		/* Fiber mutex */
+		class mutex {
 		public:
-			constexpr ExclusiveObject(const interlocked<type>& mut) : owner(const_cast<interlocked<type>&>(mut)) { this->owner.Lock(); };
-			~ExclusiveObject() { this->owner.Unlock(); };
+			using Handle_t = ftl::Fibtex;
+			using Phandle = std::shared_ptr<Handle_t>;
 
-			ExclusiveObject() = delete;
-			ExclusiveObject(const ExclusiveObject& other) = delete;
-			ExclusiveObject(ExclusiveObject&& other) = delete;
-			ExclusiveObject& operator=(const ExclusiveObject& other) = delete;
-			ExclusiveObject& operator=(ExclusiveObject&& other) = delete;
+		public:
+			mutex() : Handle(new Handle_t(&*Fibers)) {};
+			mutex(const mutex& other) : Handle(new Handle_t(&*Fibers)) {};
+			mutex(mutex&& other) : Handle(new Handle_t(&*Fibers)) {};
+			mutex& operator=(const mutex& s) { return *this; };
+			mutex& operator=(mutex&& s) { return *this; };
+			~mutex() {};
 
-			type& operator=(const type& a) { data() = a; return data(); };
-			type& operator=(type&& a) { data() = a; return data(); };
-			type& operator*() const { return data(); };
-			type* operator->() const { return &data(); };
+			NODISCARD AUTO	Guard() const noexcept { return std::lock_guard<mutex>(const_cast<mutex&>(*this)); };
+			bool			Lock(bool blocking = true) const noexcept { Handle->lock(); return true; };
+			void			Unlock() const noexcept { Handle->unlock(); };
+			void			lock() const noexcept { Lock(); };
+			void			unlock() const noexcept { Unlock(); };
+			bool            try_lock() const noexcept { return Handle->try_lock(); };
 
 		protected:
-			type& data() const { return owner.UnsafeRead(); };
-			interlocked<type>& owner;
-		};
+			Phandle Handle;
 
-	public: // construction and destruction
-		typedef type Type;
-
-		interlocked() : data() {};
-		interlocked(const type& other) : data(other) {};
-		interlocked(type&& other) : data(std::forward<type>(other)) {};
-		interlocked(const interlocked& other) : data() { this->Copy(other); };
-		interlocked(interlocked&& other) : data() { this->Copy(std::forward<interlocked>(other)); };
-		~interlocked() {};
-
-	public: // copy and clear
-		interlocked<type>& operator=(const interlocked<type>& other) {
-			this->Copy(other);
-			return *this;
 		};
-		interlocked<type>& operator=(interlocked<type>&& other) {
-			this->Copy(std::forward<interlocked<type>>(other));
-			return *this;
-		};
-		void Copy(const interlocked<type>& copy) {
-			if (&copy == this) return;
-			lock.Lock();
-			copy.Lock();
-			data = copy.data;
-			copy.Unlock();
-			lock.Unlock();
-		};
-		void Copy(interlocked<type>&& copy) {
-			if (&copy == this) return;
-			lock.Lock();
-			copy.Lock();
-			data = copy.data;
-			copy.Unlock();
-			lock.Unlock();
-		};
-		void Clear() {
-			lock.Lock();
-			data = type();
-			lock.Unlock();
-		};
+			
+		/* Wrapper for non-atomic objects to allow for threads to lock them for exclusive access */
+		template< typename type>
+		class interlocked {
+		public:
+			class ExclusiveObject {
+			public:
+				constexpr ExclusiveObject(const interlocked<type>& mut) : owner(const_cast<interlocked<type>&>(mut)) { this->owner.Lock(); };
+				~ExclusiveObject() { this->owner.Unlock(); };
 
-	public: // read and swap
-		type Read() const {
-			AUTO g = Guard();
-			return data;
+				ExclusiveObject() = delete;
+				ExclusiveObject(const ExclusiveObject& other) = delete;
+				ExclusiveObject(ExclusiveObject&& other) = delete;
+				ExclusiveObject& operator=(const ExclusiveObject& other) = delete;
+				ExclusiveObject& operator=(ExclusiveObject&& other) = delete;
+
+				type& operator=(const type& a) { data() = a; return data(); };
+				type& operator=(type&& a) { data() = a; return data(); };
+				type& operator*() const { return data(); };
+				type* operator->() const { return &data(); };
+
+			protected:
+				type& data() const { return owner.UnsafeRead(); };
+				interlocked<type>& owner;
+			};
+
+		public: // construction and destruction
+			typedef type Type;
+
+			interlocked() : data() {};
+			interlocked(const type& other) : data(other) {};
+			interlocked(type&& other) : data(std::forward<type>(other)) {};
+			interlocked(const interlocked& other) : data() { this->Copy(other); };
+			interlocked(interlocked&& other) : data() { this->Copy(std::forward<interlocked>(other)); };
+			~interlocked() {};
+
+		public: // copy and clear
+			interlocked<type>& operator=(const interlocked<type>& other) {
+				this->Copy(other);
+				return *this;
+			};
+			interlocked<type>& operator=(interlocked<type>&& other) {
+				this->Copy(std::forward<interlocked<type>>(other));
+				return *this;
+			};
+			void Copy(const interlocked<type>& copy) {
+				if (&copy == this) return;
+				lock.Lock();
+				copy.Lock();
+				data = copy.data;
+				copy.Unlock();
+				lock.Unlock();
+			};
+			void Copy(interlocked<type>&& copy) {
+				if (&copy == this) return;
+				lock.Lock();
+				copy.Lock();
+				data = copy.data;
+				copy.Unlock();
+				lock.Unlock();
+			};
+			void Clear() {
+				lock.Lock();
+				data = type();
+				lock.Unlock();
+			};
+
+		public: // read and swap
+			type Read() const {
+				AUTO g = Guard();
+				return data;
+			};
+			void Swap(const type& replacement) {
+				AUTO g = Guard();
+				data = replacement;
+			};
+			interlocked<type>& operator=(const type& other) {
+				Swap(other);
+				return *this;
+			};
+
+			operator type() const { return Read(); };
+			type* operator->() const { return &data; };
+
+		public: // lock, unlock, and direct edit
+			ExclusiveObject GetExclusive() const { return ExclusiveObject(*this); };
+
+			NODISCARD AUTO Guard() const { return lock.Guard(); };
+			void Lock() const { lock.Lock(); };
+			void Unlock() const { lock.Unlock(); };
+			type& UnsafeRead() const { return data; };
+
+		private:
+			mutable type data;
+			mutex lock;
+
 		};
-		void Swap(const type& replacement) {
-			AUTO g = Guard();
-			data = replacement;
-		};
-		interlocked<type>& operator=(const type& other) {
-			Swap(other);
-			return *this;
-		};
-
-		operator type() const { return Read(); };
-		type* operator->() const { return &data; };
-
-	public: // lock, unlock, and direct edit
-		ExclusiveObject GetExclusive() const { return ExclusiveObject(*this); };
-
-		NODISCARD AUTO Guard() const { return lock.Guard(); };
-		void Lock() const { lock.Lock(); };
-		void Unlock() const { lock.Unlock(); };
-		type& UnsafeRead() const { return data; };
-
-	private:
-		mutable type data;
-		mutex lock;
-
 	};
 
-	template<typename _Ty>
-	class vector {
-	protected:
-		using underlying = typename concurrency::concurrent_vector<std::shared_ptr<_Ty>>;
-		std::shared_ptr< underlying > data;
+	namespace containers {
+		/* Fiber- and thread-safe vector. Objects are stored and returned as std::shared_ptr. Growth, iterations, and push_back operations are concurrent, while erasing and clearing are non-concurrent and will replace the entire vector. */
+		template<typename _Ty>
+		class vector {
+		protected:
+			using underlying = typename concurrency::concurrent_vector<std::shared_ptr<_Ty>>;
+			std::shared_ptr< underlying > data;
 
-	public:
-		struct it_state {
-			std::shared_ptr< underlying > lifetime;
-			typename underlying::iterator pos;
-			inline void begin(const vector* ref) { lifetime = ref->data; pos = lifetime->begin(); }
-			inline void next(const vector* ref) { ++pos; }
-			inline void end(const vector* ref) { lifetime = ref->data; pos = lifetime->end(); }
-			inline typename underlying::value_type& get(vector* ref) { return *pos; }
-			inline bool cmp(const it_state& s) const { return (pos == s.pos) ? false : true; }
-			inline long long distance(const it_state& s) const { return pos - s.pos; };
-			// Optional to allow operator--() and reverse iterators:
-			inline void prev(const vector* ref) { --pos; }
-			// Optional to allow `const_iterator`:
-			inline const typename underlying::value_type& get(const vector* ref) const { return *pos; }
-		};
-		SETUP_STL_ITERATOR(vector, typename underlying::value_type, it_state);
+		public:
+			struct it_state {
+				std::shared_ptr< underlying > lifetime;
+				typename underlying::iterator pos;
+				inline void begin(const vector* ref) { lifetime = ref->data; pos = lifetime->begin(); }
+				inline void next(const vector* ref) { ++pos; }
+				inline void end(const vector* ref) { lifetime = ref->data; pos = lifetime->end(); }
+				inline typename underlying::value_type& get(vector* ref) { return *pos; }
+				inline bool cmp(const it_state& s) const { return (pos == s.pos) ? false : true; }
+				inline long long distance(const it_state& s) const { return pos - s.pos; };
+				// Optional to allow operator--() and reverse iterators:
+				inline void prev(const vector* ref) { --pos; }
+				// Optional to allow `const_iterator`:
+				inline const typename underlying::value_type& get(const vector* ref) const { return *pos; }
+			};
+			SETUP_STL_ITERATOR(vector, typename underlying::value_type, it_state);
 
-		vector() : data(new underlying()) {};
-		explicit vector(size_type _N) : data(new underlying(_N)) {};
-		vector(size_type _N, const_reference _Item) : data(new underlying(_N, _Item)) {};
-		vector(vector const& r) : data(new underlying()) {
-			operator=(r);
-		}
-		vector(vector&& r) = default;
-		vector& operator=(vector const& r) {
-			if (static_cast<void*>(this) != static_cast<const void*>(&r)) {
+			vector() : data(new underlying()) {};
+			explicit vector(size_type _N) : data(new underlying(_N)) {};
+			vector(size_type _N, const_reference _Item) : data(new underlying(_N, _Item)) {};
+			vector(vector const& r) : data(new underlying()) {
+				operator=(r);
+			}
+			vector(vector&& r) = default;
+			vector& operator=(vector const& r) {
+				if (static_cast<void*>(this) != static_cast<const void*>(&r)) {
+					vector out;
+					for (auto& x : r)
+						out->push_back(x);
+					out.data.swap(data);
+				}
+				return *this;
+			};
+			vector& operator=(vector&& r) = default;
+			~vector() {};
+
+			AUTO grow_by(size_type _Delta) { return data->grow_by(_Delta); };
+			AUTO grow_by(size_type _Delta, const_reference _Item) { return data->grow_by(_Delta, _Item); };
+			AUTO grow_to_at_least(size_type _N) { return data->grow_to_at_least(_N); };
+			AUTO push_back(_Ty const& _Item) { return data->push_back(std::make_shared<_Ty>(_Item)); };
+			AUTO push_back(_Ty&& _Item) { return data->push_back(std::make_shared<_Ty>(std::forward<_Ty>(_Item))); };
+			AUTO push_back(std::shared_ptr<_Ty> const& _Item) { return data->push_back(_Item); };
+			AUTO push_back(std::shared_ptr<_Ty>&& _Item) { return data->push_back(std::forward<_Ty>(_Item)); };
+			std::shared_ptr<_Ty> operator[](size_type _Index) { return data->operator[](_Index); };
+			std::shared_ptr<_Ty> operator[](size_type _Index) const { return data->operator[](_Index); };
+			std::shared_ptr<_Ty> at(size_type _Index) { return data->at(_Index); };
+			std::shared_ptr<_Ty> at(size_type _Index) const { return data->at(_Index); };
+			AUTO size() const { return data->size(); };
+			AUTO empty() const { return data->empty(); };
+			AUTO capacity() const { return data->capacity(); };
+			AUTO max_size() const { return data->max_size(); };
+			AUTO erase(const_iterator _Where) {
 				vector out;
-				for (auto& x : r)
-					out->push_back(x);
-				out.data.swap(data);
-			}
-			return *this;
+				auto endIter = end();
+				for (auto iter = begin(); iter != endIter; iter++) {
+					if (iter == _Where) continue;
+					out.push_back(*iter);
+				}
+				data.swap(out.data);
+			};
+			AUTO erase(const_iterator _First, const_iterator _Last) {
+				vector out;
+				auto endIter = end();
+				for (auto iter = begin(); iter != endIter; iter++) {
+					if (iter >= _First && iter <= _Last) continue;
+					out.push_back(*iter);
+				}
+				data.swap(out.data);
+			};
+			AUTO clear() {
+				vector out;
+				data.swap(out.data);
+			};
+			AUTO swap(vector& r) {
+				data.swap(r.data);
+			};
 		};
-		vector& operator=(vector&& r) = default;
-		~vector() {};
 
-		AUTO grow_by(size_type _Delta) { return data->grow_by(_Delta); };
-		AUTO grow_by(size_type _Delta, const_reference _Item) { return data->grow_by(_Delta, _Item); };
-		AUTO grow_to_at_least(size_type _N) { return data->grow_to_at_least(_N); };
-		AUTO push_back(_Ty const& _Item) { return data->push_back(std::make_shared<_Ty>(_Item)); };
-		AUTO push_back(_Ty&& _Item) { return data->push_back(std::make_shared<_Ty>(std::forward<_Ty>(_Item))); };
-		AUTO push_back(std::shared_ptr<_Ty> const& _Item) { return data->push_back(_Item); };
-		AUTO push_back(std::shared_ptr<_Ty>&& _Item) { return data->push_back(std::forward<_Ty>(_Item)); };
-		std::shared_ptr<_Ty> operator[](size_type _Index) { return data->operator[](_Index); };
-		std::shared_ptr<_Ty> operator[](size_type _Index) const { return data->operator[](_Index); };
-		std::shared_ptr<_Ty> at(size_type _Index) { return data->at(_Index); };
-		std::shared_ptr<_Ty> at(size_type _Index) const { return data->at(_Index); };
-		AUTO size() const { return data->size(); };
-		AUTO empty() const { return data->empty(); };
-		AUTO capacity() const { return data->capacity(); };
-		AUTO max_size() const { return data->max_size(); };
-		AUTO erase(const_iterator _Where) {
-			vector out;
-			auto endIter = end();
-			for (auto iter = begin(); iter != endIter; iter++) {
-				if (iter == _Where) continue;
-				out.push_back(*iter);
+		/* Fiber- and thread-safe vector that cannot erase elements. Objects are stored as-is, and therefore the array must outlive the underlying objects. All operations are concurrent except for 'operator=(array)'.
+		Higher performance is expected with the array than the vector, but the user needs to be slighly more careful with their timing to ensure the array remaings alive until access is complete. */
+		template<typename _Ty>
+		class array {
+		protected:
+			using underlying = typename concurrency::concurrent_vector<_Ty>;
+			std::shared_ptr< underlying > data;
+
+		public:
+			struct it_state {
+				std::shared_ptr< underlying > lifetime;
+				typename underlying::iterator pos;
+				inline void begin(const array* ref) { lifetime = ref->data; pos = lifetime->begin(); }
+				inline void next(const array* ref) { ++pos; }
+				inline void end(const array* ref) { lifetime = ref->data; pos = lifetime->end(); }
+				inline typename underlying::value_type& get(array* ref) { return *pos; }
+				inline bool cmp(const it_state& s) const { return (pos == s.pos) ? false : true; }
+				inline long long distance(const it_state& s) const { return pos - s.pos; };
+				// Optional to allow operator--() and reverse iterators:
+				inline void prev(const array* ref) { --pos; }
+				// Optional to allow `const_iterator`:
+				inline const typename underlying::value_type& get(const array* ref) const { return *pos; }
+			};
+			SETUP_STL_ITERATOR(array, typename underlying::value_type, it_state);
+
+			array() : data(new underlying()) {};
+			explicit array(size_type _N) : data(new underlying(_N)) {};
+			array(size_type _N, const_reference _Item) : data(new underlying(_N, _Item)) {};
+			array(array const& r) : data(new underlying()) {
+				operator=(r);
 			}
-			data.swap(out.data);
-		};
-		AUTO erase(const_iterator _First, const_iterator _Last) {
-			vector out;
-			auto endIter = end();
-			for (auto iter = begin(); iter != endIter; iter++) {
-				if (iter >= _First && iter <= _Last) continue;
-				out.push_back(*iter);
-			}
-			data.swap(out.data);
-		};
-		AUTO clear() {
-			vector out;
-			data.swap(out.data);
-		};
-		AUTO swap(vector& r) {
-			data.swap(r.data);
+			array(array&& r) = default;
+			array& operator=(array const& r) {
+				if (static_cast<void*>(this) != static_cast<const void*>(&r)) {
+					array out;
+					for (auto& x : r)
+						out->push_back(x);
+					out.data.swap(data);
+				}
+				return *this;
+			};
+			array& operator=(array&& r) = default;
+			~array() {};
+
+			AUTO grow_by(size_type _Delta) { return data->grow_by(_Delta); };
+			AUTO grow_by(size_type _Delta, const_reference _Item) { return data->grow_by(_Delta, _Item); };
+			AUTO grow_to_at_least(size_type _N) { return data->grow_to_at_least(_N); };
+			AUTO push_back(_Ty const& _Item) { return data->push_back(_Item); };
+			AUTO push_back(_Ty&& _Item) { return data->push_back(std::forward<_Ty>(_Item)); };
+			AUTO operator[](size_type _Index) { return data->operator[](_Index); };
+			AUTO operator[](size_type _Index) const { return data->operator[](_Index); };
+			AUTO at(size_type _Index) { return data->at(_Index); };
+			AUTO at(size_type _Index) const { return data->at(_Index); };
+			AUTO size() const { return data->size(); };
+			AUTO empty() const { return data->empty(); };
+			AUTO capacity() const { return data->capacity(); };
+			AUTO max_size() const { return data->max_size(); };
 		};
 	};
 
@@ -588,20 +476,25 @@ namespace fibers {
 		class JobGroupImpl {
 		public:
 			ftl::WaitGroup waitGroup;
-			fibers::vector<Job> jobs;
+			fibers::containers::vector<Job> jobs;
 
 			JobGroupImpl() : waitGroup(&*Fibers), jobs() {};
 			JobGroupImpl(JobGroupImpl const&) = delete;
 			JobGroupImpl(JobGroupImpl&&) = delete;
 			JobGroupImpl& operator=(JobGroupImpl const&) = delete;
 			JobGroupImpl& operator=(JobGroupImpl&&) = delete;
-			~JobGroupImpl() {};
+			~JobGroupImpl() {
+				waitGroup.Wait(); // any jobs queued with this waiter will want to talk w/it when finished -- we must wait to ensure they go out of scope before we do.
+			};
 		};
 
 	public:
 		JobGroup() : impl(new JobGroupImpl()) {};
 		JobGroup(Job const& job) : impl(new JobGroupImpl()) { Queue(job); };
-		JobGroup(JobGroup const&) = delete;
+
+		// The waiter should not be passed around. Ideally we want to follow Fiber job logic, e.g. splitting jobs quickly and 
+		// then finishing them in the same job that started them, continuing like the split never happened.
+		JobGroup(JobGroup const&) = delete; 
 		JobGroup(JobGroup&&) = delete;
 		JobGroup& operator=(JobGroup const&) = delete;
 		JobGroup& operator=(JobGroup&&) = delete;
@@ -609,13 +502,13 @@ namespace fibers {
 
 		/* Queue job, and return tool to await the result */
 		JobGroup& Queue(Job const& job) {
-			Fibers->AddTask({ DoAnyFuncStruct, new AnyFunctionStruct({ job.impl, nullptr, false }) }, ftl::TaskPriority::Normal, &impl->waitGroup);
+			Fibers->AddTask({ utilities::DoAnyFuncStruct, new utilities::AnyFunctionStruct({ job.impl, nullptr, false }) }, ftl::TaskPriority::Normal, &impl->waitGroup);
 			impl->jobs.push_back(job);
 			return *this;
 		};		
 		/* Queue job, and return tool to await the result */
 		JobGroup& ForceQueue(Job const& job) {
-			Fibers->AddTask({ DoAnyFuncStruct, new AnyFunctionStruct({ job.impl, nullptr, true }) }, ftl::TaskPriority::Normal, &impl->waitGroup);
+			Fibers->AddTask({ utilities::DoAnyFuncStruct, new utilities::AnyFunctionStruct({ job.impl, nullptr, true }) }, ftl::TaskPriority::Normal, &impl->waitGroup);
 			impl->jobs.push_back(job);
 			return *this;
 		};		
@@ -623,18 +516,18 @@ namespace fibers {
 		JobGroup& Queue(std::vector<Job> const& listOfJobs) {
 			std::vector<ftl::Task> tasks;
 			for (auto& job : listOfJobs) {
-				tasks.push_back({ DoAnyFuncStruct, new AnyFunctionStruct({ job.impl, nullptr, false }) });
+				tasks.push_back({ utilities::DoAnyFuncStruct, new utilities::AnyFunctionStruct({ job.impl, nullptr, false }) });
 				impl->jobs.push_back(job);
 			}
 			Fibers->AddTasks(tasks.size(), &tasks[0], ftl::TaskPriority::Normal, &impl->waitGroup);
 
 			return *this;
 		};
-		JobGroup& Queue(fibers::vector<Job> const& listOfJobs) {
+		JobGroup& Queue(fibers::containers::vector<Job> const& listOfJobs) {
 			std::vector<ftl::Task> tasks;
 			for (auto& job : listOfJobs) {
 				if (job) {
-					tasks.push_back({ DoAnyFuncStruct, new AnyFunctionStruct({ job->impl, nullptr, false }) });
+					tasks.push_back({ utilities::DoAnyFuncStruct, new utilities::AnyFunctionStruct({ job->impl, nullptr, false }) });
 					impl->jobs.push_back(job);
 				}
 			}
@@ -646,18 +539,18 @@ namespace fibers {
 		JobGroup& ForceQueue(std::vector<Job> const& listOfJobs) {
 			std::vector<ftl::Task> tasks;
 			for (auto& job : listOfJobs) {
-				tasks.push_back({ DoAnyFuncStruct, new AnyFunctionStruct({ job.impl, nullptr, true }) });
+				tasks.push_back({ utilities::DoAnyFuncStruct, new utilities::AnyFunctionStruct({ job.impl, nullptr, true }) });
 				impl->jobs.push_back(job);
 			}
 			Fibers->AddTasks(tasks.size(), &tasks[0], ftl::TaskPriority::Normal, &impl->waitGroup);
 
 			return *this;
 		};
-		JobGroup& ForceQueue(fibers::vector<Job> const& listOfJobs) {
+		JobGroup& ForceQueue(fibers::containers::vector<Job> const& listOfJobs) {
 			std::vector<ftl::Task> tasks;
 			for (auto& job : listOfJobs) {
 				if (job) {
-					tasks.push_back({ DoAnyFuncStruct, new AnyFunctionStruct({ job->impl, nullptr, true }) });
+					tasks.push_back({ utilities::DoAnyFuncStruct, new utilities::AnyFunctionStruct({ job->impl, nullptr, true }) });
 					impl->jobs.push_back(job);
 				}
 			}
@@ -674,7 +567,7 @@ namespace fibers {
 			out.swap(impl->jobs);
 
 			if (out.size() > 0) {
-				std::vector<Any> any(out.size(), Any());
+				std::vector<Any> any(out.size());
 				for (auto& job : out) {
 					if (job) {
 						any.push_back(job->GetResult());
@@ -738,344 +631,378 @@ namespace fibers {
 		}), (void*)data, 1024);
 	};
 
-	class signal {
-	public:
-		class impl {
-		public:
-			impl(bool manualReset = true) : Handle(CreateEvent(NULL, manualReset, FALSE, NULL), [](void* p) { CloseHandle(p); }), wg() {};
-			impl(const impl&) = delete;
-			impl(impl&& that) = delete;
-			impl& operator=(const impl&) = delete;
-			impl& operator=(impl&& that) = delete;
-			~impl() {};
-
-		public:
-			void	Raise() noexcept {
-				SetEvent(Handle.get());
-			};
-			void	Clear() noexcept {
-				ResetEvent(Handle.get());
-			};
-			void	Wait() noexcept {
-				Job job([this]()->bool {
-					ftl::YieldThread();
-					return TryWait();
-				});
-
-				for (; !TryWait(); ) {
-					wg.ForceQueue(job);
-					auto reply = wg.Wait_Get();
-					bool passed = reply[0].cast();
-					if (passed) break;
-				}
-			};
-			bool	TryWait() noexcept {
-				return WaitForSingleObject(Handle.get(), 1) == ((((DWORD)0x00000000L)) + 0);
-			};
-
-		protected:
-			std::shared_ptr<void> Handle;
-			JobGroup wg;
+	namespace parallel {
+		/* Queue all jobs and await all results */
+		AUTO Do(std::vector<fibers::Job> const& jobs) {
+			JobGroup group;
+			group.Queue(jobs);
+			return group.Wait_Get();
 		};
-	
-	public:
-		signal(bool manualReset = true) : signal_impl(new impl(manualReset)) {};
-		signal(const signal&) = default;
-		signal(signal&& that) = default;
-		signal& operator=(const signal&) = default;
-		signal& operator=(signal&& that) = default;
-		~signal() {};
+		/* Queue all jobs and await all results */
+		AUTO Do(fibers::containers::vector<fibers::Job> const& jobs) {
+			JobGroup group;
+			group.Queue(jobs);
+			return group.Wait_Get();
+		};
+		/* parallel_for (auto i = start; i < end; i++){ todo(i); } */
+		template<typename iteratorType, typename F>
+		AUTO For(iteratorType start, iteratorType end, F&& ToDo) {
+			auto todo = std::function(std::forward<F>(ToDo));
+			constexpr bool retNo = std::is_same<typename function_traits<decltype(todo)>::result_type, void>::value;
 
-	public:
-		/* Raise (set to one) the signal. Free & fast. */
-		void	Raise() noexcept { signal_impl->Raise(); };
-		/* Clear (zero-out) the signal. Free & fast. */
-		void	Clear() noexcept { signal_impl->Clear(); };
-		/* Busy-waits for the signal to be raised. */
-		void	Wait() noexcept { signal_impl->Wait(); };
-		/* Tests if the signal has been raised. Free & fast. */
-		bool	TryWait() noexcept { return signal_impl->TryWait(); };
+			std::vector<fibers::Job> jobs;
+			for (iteratorType iter = start; iter < end; iter++) {
+				jobs.push_back(fibers::Job([todo](iteratorType const& T) { return todo(T); }, (iteratorType)iter));
+			}
+			JobGroup group;
+			group.Queue(jobs);
 
-	private:
-		std::shared_ptr<impl> signal_impl;
+			if constexpr (retNo) group.Wait();
+			else return group.Wait_Get();
+		};
+		/* parallel_for (auto i = start; i < end; i += step){ todo(i); } */
+		template<typename iteratorType, typename F>
+		AUTO For(iteratorType start, iteratorType end, iteratorType step, F&& ToDo) {
+			auto todo = std::function(std::forward<F>(ToDo));
+			constexpr bool retNo = std::is_same<typename function_traits<decltype(todo)>::result_type, void>::value;
 
+			std::vector<fibers::Job> jobs;
+			for (iteratorType iter = start; iter < end; iter += step) {
+				jobs.push_back(fibers::Job([todo](iteratorType const& T) { return todo(T); }, (iteratorType)iter));
+			}
+
+			JobGroup group;
+			group.Queue(jobs);
+
+			if constexpr (retNo) group.Wait();
+			else return group.Wait_Get();
+		};
+		/* parallel_for (auto i = container.begin(); i != container.end(); i++){ todo(*i); } */
+		template<typename containerType, typename F>
+		AUTO ForEach(containerType const& container, F&& ToDo) {
+			AUTO todo = std::function(std::forward<F>(ToDo));
+			constexpr bool retNo = std::is_same<typename function_traits<decltype(todo)>::result_type, void>::value;
+
+			std::vector<fibers::Job> jobs;
+
+			for (auto iter = container.begin(); iter != container.end(); iter++) {
+				jobs.push_back(fibers::Job([todo](typename containerType::const_iterator& T) { return todo(Any(std::shared_ptr<typename containerType::value_type>(const_cast<typename containerType::value_type*>(&*T), [](typename containerType::value_type*) {})).cast()); }, (typename containerType::const_iterator)(iter)));
+			}
+
+			JobGroup group;
+			group.Queue(jobs);
+
+			if constexpr (retNo) group.Wait();
+			else return group.Wait_Get();
+		};
+		/* parallel_for (auto i = container.cbegin(); i != container.cend(); i++){ todo(*i); } */
+		template<typename containerType, typename F>
+		AUTO ForEach(containerType& container, F&& ToDo) {
+			AUTO todo = std::function(std::forward<F>(ToDo));
+			constexpr bool retNo = std::is_same<typename function_traits<decltype(todo)>::result_type, void>::value;
+
+			std::vector<fibers::Job> jobs;
+
+			for (auto iter = container.begin(); iter != container.end(); iter++) {
+				jobs.push_back(fibers::Job([todo](typename containerType::iterator& T) { return todo(Any(std::shared_ptr<typename containerType::value_type>(&*T, [](typename containerType::value_type*) {})).cast()); }, (typename containerType::iterator)(iter)));
+			}
+
+			JobGroup group;
+			group.Queue(jobs);
+
+			if constexpr (retNo) group.Wait();
+			else return group.Wait_Get();
+		};
 	};
 
-	class shared_mutex {
-	private:
-		mutex    mut_;
-		std::condition_variable_any gate1_;
-		std::condition_variable_any gate2_;
-		unsigned state_;
+	namespace synchronization {
+		/* Tool that allows fibers to busy-work until a signla is raised by another fiber or thread. */
+		class signal {
+		public:
+			class impl {
+			public:
+				impl(bool manualReset = true) : Handle(CreateEvent(NULL, manualReset, FALSE, NULL), [](void* p) { CloseHandle(p); }), wg() {};
+				impl(const impl&) = delete;
+				impl(impl&& that) = delete;
+				impl& operator=(const impl&) = delete;
+				impl& operator=(impl&& that) = delete;
+				~impl() {};
 
-		static const unsigned write_entered_ = 1U << (sizeof(unsigned) * CHAR_BIT - 1);
-		static const unsigned n_readers_ = ~write_entered_;
+			public:
+				void	Raise() noexcept {
+					SetEvent(Handle.get());
+				};
+				void	Clear() noexcept {
+					ResetEvent(Handle.get());
+				};
+				void	Wait() noexcept {
+					Job job([this]()->bool {
+						ftl::YieldThread();
+						return TryWait();
+						});
 
-	public:
+					for (; !TryWait(); ) {
+						wg.ForceQueue(job);
+						auto reply = wg.Wait_Get(); /* Busy-waits. May do the job we just posted, but also may do other jobs on the queue. */
+						bool passed = reply[0].cast();
+						if (passed) break;
+					}
+				};
+				bool	TryWait() noexcept {
+					return WaitForSingleObject(Handle.get(), 1) == ((((DWORD)0x00000000L)) + 0);
+				};
 
-		shared_mutex() : state_(0) {}
+			protected:
+				std::shared_ptr<void> Handle;
+				JobGroup wg;
+			};
 
-		// Exclusive ownership
-		void lock() {
-			std::unique_lock<mutex> lk(mut_);
+		public:
+			signal(bool manualReset = true) : signal_impl(new impl(manualReset)) {};
+			signal(const signal&) = default;
+			signal(signal&& that) = default;
+			signal& operator=(const signal&) = default;
+			signal& operator=(signal&& that) = default;
+			~signal() {};
 
-			while (state_ & write_entered_)
-				gate1_.wait(lk);
-			state_ |= write_entered_;
-			while (state_ & n_readers_)
-				gate2_.wait(lk);
+		public:
+			/* Raise (set to one) the signal. Free & fast. */
+			void	Raise() noexcept { signal_impl->Raise(); };
+			/* Clear (zero-out) the signal. Free & fast. */
+			void	Clear() noexcept { signal_impl->Clear(); };
+			/* Busy-waits for the signal to be raised. */
+			void	Wait() noexcept { signal_impl->Wait(); };
+			/* Tests if the signal has been raised. Free & fast. */
+			bool	TryWait() noexcept { return signal_impl->TryWait(); };
+
+		private:
+			std::shared_ptr<impl> signal_impl;
+
 		};
-		bool try_lock() {
-			std::unique_lock<mutex> lk(mut_, std::try_to_lock);
-			if (lk.owns_lock() && state_ == 0)
-			{
-				state_ = write_entered_;
-				return true;
-			}
-			return false;
-		};
-		void unlock() {
-			{
-				std::scoped_lock<mutex> _(mut_);
-				state_ = 0;
-			}
-			gate1_.notify_all();
-		};
 
-		// Shared ownership
-		void lock_shared() {
-			std::unique_lock<mutex> lk(mut_);
-			while ((state_ & write_entered_) || (state_ & n_readers_) == n_readers_)
-				gate1_.wait(lk);
-			unsigned num_readers = (state_ & n_readers_) + 1;
-			state_ &= ~n_readers_;
-			state_ |= num_readers;
-		};
-		bool try_lock_shared() {
-			std::unique_lock<mutex> lk(mut_, std::try_to_lock);
-			unsigned num_readers = state_ & n_readers_;
-			if (lk.owns_lock() && !(state_ & write_entered_) && num_readers != n_readers_)
-			{
-				++num_readers;
+		/* Read-Write mutex that allows multiple readers and one writer to cooperatively access an underlying object. Very fast for 100% reading operations, as (effectively) no locking actually happens. */
+		class shared_mutex {
+		private:
+			mutex    mut_;
+			std::condition_variable_any gate1_;
+			std::condition_variable_any gate2_;
+			unsigned state_;
+
+			static const unsigned write_entered_ = 1U << (sizeof(unsigned) * CHAR_BIT - 1);
+			static const unsigned n_readers_ = ~write_entered_;
+
+		public:
+
+			shared_mutex() : state_(0) {}
+
+			// Exclusive/Writer ownership
+			void lock() {
+				std::unique_lock<mutex> lk(mut_);
+				while (state_ & write_entered_) gate1_.wait(lk);
+				state_ |= write_entered_;
+				while (state_ & n_readers_) gate2_.wait(lk);
+			};
+			// Exclusive/Writer ownership
+			bool try_lock() {
+				std::unique_lock<mutex> lk(mut_, std::try_to_lock);
+				if (lk.owns_lock() && state_ == 0)
+				{
+					state_ = write_entered_;
+					return true;
+				}
+				return false;
+			};
+			// Exclusive/Writer ownership
+			void unlock() {
+				{
+					std::scoped_lock<mutex> _(mut_);
+					state_ = 0;
+				}
+				gate1_.notify_all();
+			};
+
+			// Shared/Reader ownership
+			void lock_shared() {
+				std::unique_lock<mutex> lk(mut_);
+				while ((state_ & write_entered_) || (state_ & n_readers_) == n_readers_)
+					gate1_.wait(lk);
+				unsigned num_readers = (state_ & n_readers_) + 1;
 				state_ &= ~n_readers_;
 				state_ |= num_readers;
-				return true;
-			}
-			return false;
+			};
+			// Shared/Reader ownership
+			bool try_lock_shared() {
+				std::unique_lock<mutex> lk(mut_, std::try_to_lock);
+				unsigned num_readers = state_ & n_readers_;
+				if (lk.owns_lock() && !(state_ & write_entered_) && num_readers != n_readers_)
+				{
+					++num_readers;
+					state_ &= ~n_readers_;
+					state_ |= num_readers;
+					return true;
+				}
+				return false;
+			};
+			// Shared/Reader ownership
+			void unlock_shared() {
+				std::scoped_lock<mutex> _(mut_);
+				unsigned num_readers = (state_ & n_readers_) - 1;
+				state_ &= ~n_readers_;
+				state_ |= num_readers;
+				if (state_ & write_entered_)
+				{
+					if (num_readers == 0)
+						gate2_.notify_one();
+				}
+				else
+				{
+					if (num_readers == n_readers_ - 1)
+						gate1_.notify_one();
+				}
+			};
+
+			NODISCARD AUTO Write_Guard() noexcept { return std::lock_guard(*this); };
+			NODISCARD AUTO Read_Guard() noexcept { return std::shared_lock(*this); };
 		};
-		void unlock_shared() {
-			std::scoped_lock<mutex> _(mut_);
-			unsigned num_readers = (state_ & n_readers_) - 1;
-			state_ &= ~n_readers_;
-			state_ |= num_readers;
-			if (state_ & write_entered_)
-			{
-				if (num_readers == 0)
-					gate2_.notify_one();
-			}
-			else
-			{
-				if (num_readers == n_readers_ - 1)
-					gate1_.notify_one();
-			}
-		};
-
-		NODISCARD AUTO Write_Guard() noexcept { return std::lock_guard(*this); };
-		NODISCARD AUTO Read_Guard() noexcept { return std::shared_lock(*this); };
 	};
 
-	/* Queue all jobs and await all results */
-	AUTO Do(std::vector<fibers::Job> const& jobs) {
-		JobGroup group;
-		group.Queue(jobs);
-		return group.Wait_Get();
-	};
-	AUTO Do(fibers::vector<fibers::Job> const& jobs) {
-		JobGroup group;
-		group.Queue(jobs);
-		return group.Wait_Get();
-	};
+	namespace containers {
+		/* Fiber- and thread-safe map / dictionary. Objects are stored and returned as std::shared_ptr. Growth, iterations, and insert/emplace operations are concurrent, while erasing and clearing are non-concurrent and will replace the entire map. */
+		template<typename _Key_type, typename _Element_type>
+		class unordered_map {
+		protected:
+			using underlying = typename concurrency::concurrent_unordered_map<_Key_type, std::shared_ptr<_Element_type>>;
+			std::shared_ptr< underlying > data;
 
-	/* parallel_for (auto i = start; i < end; i++){ todo(i); } */
-	template<typename iteratorType, typename F>
-	AUTO For(iteratorType start, iteratorType end, F&& ToDo) {
-		auto todo = std::function(std::forward<F>(ToDo));
-		constexpr bool retNo = std::is_same<typename function_traits<decltype(todo)>::result_type, void>::value;
+		public:
+			struct it_state {
+				std::shared_ptr< underlying > lifetime;
+				typename underlying::iterator pos;
 
-		std::vector<fibers::Job> jobs;
-		for (iteratorType iter = start; iter < end; iter++) {
-			jobs.push_back(fibers::Job([todo](iteratorType const& T) { return todo(T); }, (iteratorType)iter));
-		}
-		JobGroup group;
-		group.Queue(jobs);
+				inline void begin(const unordered_map* ref) { lifetime = ref->data; pos = lifetime->begin(); }
+				inline void next(const unordered_map* ref) { ++pos; }
+				inline void end(const unordered_map* ref) { lifetime = ref->data; pos = lifetime->end(); }
+				inline typename underlying::value_type& get(unordered_map* ref) { return *pos; }
+				inline bool cmp(const it_state& s) const { return (pos == s.pos) ? false : true; }
+				inline long long distance(const it_state& s) const { return pos - s.pos; };
+				inline void prev(const unordered_map* ref) { --pos; }
+				inline const typename underlying::value_type& get(const unordered_map* ref) const { return *pos; }
+			};
+			SETUP_STL_ITERATOR(unordered_map, typename underlying::value_type, it_state);
 
-		if constexpr (retNo) group.Wait();
-		else return group.Wait_Get();
-	};
+			typedef typename underlying::key_type key_type;
+			typedef typename underlying::mapped_type mapped_type;
+			typedef typename underlying::key_equal key_equal;
+			typedef typename underlying::hasher hasher;
+			typedef iterator local_iterator;
+			typedef const_iterator const_local_iterator;
 
-	/* parallel_for (auto i = start; i < end; i += step){ todo(i); } */
-	template<typename iteratorType, typename F>
-	AUTO For(iteratorType start, iteratorType end, iteratorType step, F&& ToDo) {
-		auto todo = std::function(std::forward<F>(ToDo));
-		constexpr bool retNo = std::is_same<typename function_traits<decltype(todo)>::result_type, void>::value;
+			unordered_map() : data(new underlying()) {};
+			explicit unordered_map(size_type _N) : data(new underlying(_N)) {};
+			unordered_map(size_type _N, const_reference _Item) : data(new underlying(_N, _Item)) {};
+			template<class _InputIterator> unordered_map(_InputIterator _Begin, _InputIterator _End) : data(new underlying(_Begin, _End)) {};
+			unordered_map(unordered_map const& r) : data(new underlying()) {
+				this->operator=(r);
+			};
+			unordered_map(unordered_map&& r) = default;
+			unordered_map& operator=(unordered_map const& r) {
+				if (static_cast<void*>(this) != static_cast<const void*>(&r)) {
+					unordered_map out;
+					for (auto& x : *r.data) out[x.first] = x.second;
+					out.data.swap(data);
+				}
+				return *this;
+			};
+			unordered_map& operator=(unordered_map&& r) = default;
 
-		std::vector<fibers::Job> jobs;
-		for (iteratorType iter = start; iter < end; iter += step) {
-			jobs.push_back(fibers::Job([todo](iteratorType const& T) { return todo(T); }, (iteratorType)iter));
-		}
-
-		JobGroup group;
-		group.Queue(jobs);
-
-		if constexpr (retNo) group.Wait();
-		else return group.Wait_Get();
-	};
-
-	/* parallel_for (auto i = container.begin(); i != container.end(); i++){ todo(*i); } */
-	template<typename containerType, typename F>
-	AUTO ForEach(containerType const& container, F&& ToDo) {
-		AUTO todo = std::function(std::forward<F>(ToDo));
-		constexpr bool retNo = std::is_same<typename function_traits<decltype(todo)>::result_type, void>::value;
-
-		std::vector<fibers::Job> jobs;
-
-		for (auto iter = container.begin(); iter != container.end(); iter++) {
-			jobs.push_back(fibers::Job([todo](typename containerType::const_iterator& T) { return todo(Any(std::shared_ptr<typename containerType::value_type>(const_cast<typename containerType::value_type*>(&*T), [](typename containerType::value_type*) {})).cast()); }, (typename containerType::const_iterator)(iter)));
-		}
-
-		JobGroup group;
-		group.Queue(jobs);
-
-		if constexpr (retNo) group.Wait();
-		else return group.Wait_Get();
-	};
-	
-	/* parallel_for (auto i = container.cbegin(); i != container.cend(); i++){ todo(*i); } */
-	template<typename containerType, typename F>
-	AUTO ForEach(containerType& container, F&& ToDo) {
-		AUTO todo = std::function(std::forward<F>(ToDo));
-		constexpr bool retNo = std::is_same<typename function_traits<decltype(todo)>::result_type, void>::value;
-
-		std::vector<fibers::Job> jobs;
-
-		for (auto iter = container.begin(); iter != container.end(); iter++) {
-			jobs.push_back(fibers::Job([todo](typename containerType::iterator& T) { return todo(Any(std::shared_ptr<typename containerType::value_type>(&*T, [](typename containerType::value_type*) {})).cast()); }, (typename containerType::iterator)(iter)));
-		}
-
-		JobGroup group;
-		group.Queue(jobs);
-
-		if constexpr (retNo) group.Wait();
-		else return group.Wait_Get();
-	};
-
-	template<typename _Key_type, typename _Element_type>
-	class unordered_map {
-	protected:
-		using underlying = typename concurrency::concurrent_unordered_map<_Key_type, std::shared_ptr<_Element_type>>;
-		std::shared_ptr< underlying > data;
-
-	public:
-		struct it_state {
-			std::shared_ptr< underlying > lifetime;
-			typename underlying::iterator pos;
-
-			inline void begin(const unordered_map* ref) { lifetime = ref->data; pos = lifetime->begin(); }
-			inline void next(const unordered_map* ref) { ++pos; }
-			inline void end(const unordered_map* ref) { lifetime = ref->data; pos = lifetime->end(); }
-			inline typename underlying::value_type& get(unordered_map* ref) { return *pos; }
-			inline bool cmp(const it_state& s) const { return (pos == s.pos) ? false : true; }
-			inline long long distance(const it_state& s) const { return pos - s.pos; };
-			inline void prev(const unordered_map* ref) { --pos; }
-			inline const typename underlying::value_type& get(const unordered_map* ref) const { return *pos; }
-		};
-		SETUP_STL_ITERATOR(unordered_map, typename underlying::value_type, it_state);
-
-		typedef typename underlying::key_type key_type;
-		typedef typename underlying::mapped_type mapped_type;
-		typedef typename underlying::key_equal key_equal;
-		typedef typename underlying::hasher hasher;
-		typedef iterator local_iterator;
-		typedef const_iterator const_local_iterator;
-
-		unordered_map() : data(new underlying()) {};
-		explicit unordered_map(size_type _N) : data(new underlying(_N)) {};
-		unordered_map(size_type _N, const_reference _Item) : data(new underlying(_N, _Item)) {};
-		template<class _InputIterator> unordered_map(_InputIterator _Begin, _InputIterator _End) : data(new underlying(_Begin, _End)) {};
-		unordered_map(unordered_map const& r) : data(new underlying()) {
-			this->operator=(r);
-		};
-		unordered_map(unordered_map&& r) = default;
-		unordered_map& operator=(unordered_map const& r) {
-			if (static_cast<void*>(this) != static_cast<const void*>(&r)) {
+			AUTO insert(const value_type& _Value) { return data->insert(_Value); };
+			AUTO insert(const_iterator _Where, const value_type& _Value) { return data->insert(_Where, _Value); };
+			template<class _Iterator> AUTO insert(_Iterator _First, _Iterator _Last) { return data->insert(_First, _Last); };
+			template<class _Valty> AUTO insert(_Valty&& _Value) { return data->insert(_Value); };
+			template<class _Valty> AUTO insert(const_iterator _Where, _Valty&& _Value) { return data->insert(_Where, _Value); };
+			AUTO hash_function() const { return data->hash_function(); };
+			AUTO key_eq() const { return data->key_eq(); };
+			std::shared_ptr<_Element_type> operator[](const key_type& _Keyval) {
+				std::shared_ptr<_Element_type> out = data->operator[](_Keyval);
+				if (!out) {
+					out = std::make_shared<_Element_type>();
+					data->operator[](_Keyval) = out;
+				}
+				return out;
+			};
+			std::shared_ptr<_Element_type> operator[](const key_type& _Keyval) const {
+				std::shared_ptr<_Element_type> out = data->operator[](_Keyval);
+				if (!out) {
+					out = std::make_shared<_Element_type>();
+					data->operator[](_Keyval) = out;
+				}
+				return out;
+			};
+			std::shared_ptr<_Element_type> at(const key_type& _Keyval) { return data->at(_Keyval); };
+			std::shared_ptr<_Element_type> at(const key_type& _Keyval) const { return data->at(_Keyval); };
+			AUTO front() { return data->front(); };
+			AUTO front() const { return data->front(); };
+			AUTO back() { return data->back(); };
+			AUTO back() const { return data->back(); };
+			AUTO erase(const_iterator _Where) {
 				unordered_map out;
-				for (auto& x : *r.data) out[x.first] = x.second;
-				out.data.swap(data);
-			}
-			return *this;
+				auto endIter = end();
+				for (auto iter = begin(); iter != endIter; iter++) {
+					if (iter == _Where) continue;
+					out.insert(*iter);
+				}
+				data.swap(out.data);
+			};
+			AUTO erase(const_iterator _First, const_iterator _Last) {
+				unordered_map out;
+				auto endIter = end();
+				for (auto iter = begin(); iter != endIter; iter++) {
+					if (iter >= _First && iter <= _Last) continue;
+					out.insert(*iter);
+				}
+				data.swap(out.data);
+			};
+			AUTO erase(const key_type& _Keyval) {
+				unordered_map out;
+				auto endIter = end();
+				for (auto iter = begin(); iter != endIter; iter++) {
+					if (iter->first == _Keyval) continue;
+					out.insert(*iter);
+				}
+				data.swap(out.data);
+			};
+			AUTO unsafe_erase(const key_type& _Keyval) {
+				data->unsafe_erase(_Keyval);
+			};
+			AUTO count(const key_type& _Keyval) const { return data->count(_Keyval); };
+			AUTO emplace(const key_type& _Keyval, const std::shared_ptr<_Element_type>& _Value) { return insert(value_type(_Keyval, _Value)); };
+			AUTO emplace(const key_type& _Keyval, std::shared_ptr<_Element_type>&& _Value) { return insert(value_type(_Keyval, std::forward<typename underlying::value_type>(_Value))); };
+			AUTO emplace(const key_type& _Keyval, const _Element_type& _Value) { return insert(value_type(_Keyval, std::make_shared<_Element_type>(_Value))); };
+			AUTO emplace(const key_type& _Keyval, _Element_type&& _Value) { return insert(value_type(_Keyval, std::make_shared<_Element_type>(std::forward<typename underlying::value_type>(_Value)))); };
+			AUTO clear() {
+				unordered_map out;
+				data.swap(out.data);
+			};
 		};
-		unordered_map& operator=(unordered_map&& r) = default;
 
-		AUTO insert(const value_type& _Value) { return data->insert(_Value); };
-		AUTO insert(const_iterator _Where, const value_type& _Value) { return data->insert(_Where, _Value); };
-		template<class _Iterator> AUTO insert(_Iterator _First, _Iterator _Last) { return data->insert(_First, _Last); };
-		template<class _Valty> AUTO insert(_Valty&& _Value) { return data->insert(_Value); };
-		template<class _Valty> AUTO insert(const_iterator _Where, _Valty&& _Value) { return data->insert(_Where, _Value); };
-		AUTO hash_function() const { return data->hash_function(); };
-		AUTO key_eq() const { return data->key_eq(); };
-		std::shared_ptr<_Element_type> operator[](const key_type& _Keyval) { return data->operator[](_Keyval); };
-		std::shared_ptr<_Element_type> operator[](const key_type& _Keyval) const { return data->operator[](_Keyval); };
-		std::shared_ptr<_Element_type> at(const key_type& _Keyval) { return data->at(_Keyval); };
-		std::shared_ptr<_Element_type> at(const key_type& _Keyval) const { return data->at(_Keyval); };
-		AUTO front() { return data->front(); };
-		AUTO front() const { return data->front(); };
-		AUTO back() { return data->back(); };
-		AUTO back() const { return data->back(); };
-		AUTO erase(const_iterator _Where) {
-			unordered_map out;
-			auto endIter = end();
-			for (auto iter = begin(); iter != endIter; iter++) {
-				if (iter == _Where) continue;
-				out.insert(*iter);
-			}
-			data.swap(out.data);
-		};
-		AUTO erase(const_iterator _First, const_iterator _Last) {
-			unordered_map out;
-			auto endIter = end();
-			for (auto iter = begin(); iter != endIter; iter++){
-				if (iter >= _First && iter <= _Last) continue;
-				out.insert(*iter);
-			}
-			data.swap(out.data);
-		};
-		AUTO erase(const key_type& _Keyval) {
-			unordered_map out;
-			auto endIter = end();
-			for (auto iter = begin(); iter != endIter; iter++) {
-				if (iter->first == _Keyval) continue;
-				out.insert(*iter);
-			}
-			data.swap(out.data);
-		};	
-		AUTO unsafe_erase(const key_type& _Keyval) {
-			data->unsafe_erase(_Keyval);
-		};
-		AUTO count(const key_type& _Keyval) const { return data->count(_Keyval); };
-		AUTO emplace(const key_type& _Keyval, const std::shared_ptr<_Element_type>& _Value) { return insert(value_type(_Keyval, _Value)); };
-		AUTO emplace(const key_type& _Keyval, std::shared_ptr<_Element_type>&& _Value) { return insert(value_type(_Keyval, std::forward<typename underlying::value_type>(_Value))); };
-		AUTO emplace(const key_type& _Keyval, const _Element_type& _Value) { return insert(value_type(_Keyval, std::make_shared<_Element_type>(_Value))); };
-		AUTO emplace(const key_type& _Keyval, _Element_type&& _Value) { return insert(value_type(_Keyval, std::make_shared<_Element_type>(std::forward<typename underlying::value_type>(_Value)))); };
-		AUTO clear() {
-			unordered_map out;			
-			data.swap(out.data);
-		};
+		template<typename _Key_type> using unordered_set = concurrency::concurrent_unordered_set<_Key_type>; /* Wrapper To-Do */
+		template<typename _Value_type> using queue = concurrency::concurrent_queue<_Value_type>; /* Wrapper To-Do */
 	};
-
-	template<typename _Key_type> using unordered_set = concurrency::concurrent_unordered_set<_Key_type>;
-	template<typename _Value_type> using queue = concurrency::concurrent_queue<_Value_type>;
-
 };
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 class ExampleOptimization {
 public:
@@ -1098,7 +1025,8 @@ public:
 		else {
 			if (numTasks < 0) numTasks *= -1;
 
-			fibers::For(0, numTasks, [=](int i) {
+			
+			fibers::parallel::For(0, numTasks, [=](int i) {
 				ExampleOptimization::Evaluation(ExampleOptimization::Create(), count);
 				return;
 			});
@@ -1121,17 +1049,34 @@ public:
 };
 
 uint64_t FTL::fnFiberTasks2d(int numTasks, int numSubTasks) {
-	std::shared_ptr<cweeSysInterlockedInteger> count = std::make_shared<cweeSysInterlockedInteger>();
+// These are nearly equivalent implementations of the same optimization example. 
+// The first inlines the functions, while the second uses static function pointers. 
+#if 1 
+	cweeSysInterlockedInteger counter;
+	if (numTasks < 0) numTasks *= -1;
+	if (numSubTasks < 0) numSubTasks *= -1;
+	fibers::Job([&]() { // not required to be a job
+		for (int i = 0; i < numTasks; ++i) { // iterations are actually in series
+			fibers::Job([&numSubTasks, &counter]() { // not required to be a job
+				fibers::parallel::For(0, numSubTasks, [&counter](int j) {  // policies / particles are done simultanously using the fibers::For or fibers::ForEach loops
+					counter.Increment(); // do work
+				});
+			}).AsyncInvoke().Wait();
+		}
+	}).AsyncInvoke().Wait();
 
+	return counter.GetValue();
+#else
+	std::shared_ptr<cweeSysInterlockedInteger> count = std::make_shared<cweeSysInterlockedInteger>();
 	fibers::Job(ExampleOptimization::Solve, (int)numTasks, (int)numSubTasks, count).AsyncInvoke().Wait();
-	
 	return count->GetValue();
+#endif
 };
 uint64_t FTL::fnFiberTasks2b(int numTasks) {
 	cweeSysInterlockedInteger numParallel = 0;
 	cweeSysInterlockedInteger maxParallel = 0;
 
-	std::shared_ptr<fibers::signal> Signal = std::make_shared< fibers::signal>();
+	std::shared_ptr<fibers::synchronization::signal> Signal = std::make_shared< fibers::synchronization::signal>();
 	
 	Stopwatch sw; sw.Start();
 	AUTO timer = Timer(
@@ -1158,13 +1103,6 @@ uint64_t FTL::fnFiberTasks2b(int numTasks) {
 
 	return 0;
 };
-
-#if 1
-
-#else
-using mutex = cweeReadWriteMutex; // cweeSysMutex;
-#endif
-
 uint64_t FTL::fnFiberTasks2c(int numTasks) {
 	cweeSysInterlockedInteger numParallel = 0;
 	cweeSysInterlockedInteger maxParallel = 0;
@@ -1173,10 +1111,10 @@ uint64_t FTL::fnFiberTasks2c(int numTasks) {
 	std::map<int, double> x;
 	for (int i = 0; i < 10; i++) { x[i] = 0; }
 
-	fibers::ForEach(x, [](std::pair<const int, double> const& v) {
+	fibers::parallel::ForEach(x, [](std::pair<const int, double> const& v) {
 		return v.second;
 	});
-	fibers::ForEach(const_cast<const std::map<int, double>&>(x), [](std::pair<const int, double>& v) {
+	fibers::parallel::ForEach(const_cast<const std::map<int, double>&>(x), [](std::pair<const int, double>& v) {
 		return v.first;
 	});
 
@@ -1184,7 +1122,7 @@ uint64_t FTL::fnFiberTasks2c(int numTasks) {
 		cweeList<int> intList; 
 		for (int i = 0; i < numTasks; i++) intList.push_back(i);
 #if 1
-		fibers::ForEach(intList, [&numParallel, &maxParallel](int& j) {
+		fibers::parallel::ForEach(intList, [&numParallel, &maxParallel](int& j) {
 			int n; Stopwatch sw; auto maxT = cweeUnitValues::millisecond(1);
 
 			sw.Start();
@@ -1215,7 +1153,7 @@ uint64_t FTL::fnFiberTasks2c(int numTasks) {
 	else {
 		numTasks *= -1;
 
-		fibers::vector<fibers::Job> tasks;
+		fibers::containers::vector<fibers::Job> tasks;
 
 		for (int i = 0; i < numTasks; ++i) {
 			fibers::Job todo;
@@ -1300,15 +1238,6 @@ uint64_t FTL::fnFiberTasks2c(int numTasks) {
 	}
 };
 
-
-
-
-
-
-
-
-
-
 #include <random>
 class fiber_rand {
 public:
@@ -1318,7 +1247,7 @@ public:
 		static constexpr result_type(min)() { return 0; }
 		static constexpr result_type(max)() { return UINT32_MAX; }
 
-		cwee_pcg() noexcept : mut(), m_state(0), m_inc(0), rd() { seed(); };
+		cwee_pcg() noexcept : m_state(0), m_inc(0), rd() { seed(); };
 		void seed() noexcept {
 			uint64_t s0 = uint64_t(rd()) << 31 | uint64_t(rd());
 			uint64_t s1 = uint64_t(rd()) << 31 | uint64_t(rd());
@@ -1329,11 +1258,8 @@ public:
 			(void)operator()();
 		};
 		result_type operator()() const noexcept {
-			uint64_t oldstate;
-			mut.Lock(); {
-				oldstate = m_state;
-				m_state = oldstate * 6364136223846793005ULL + m_inc;
-			} mut.Unlock();
+			uint64_t oldstate = m_state.load();
+			m_state.store(oldstate * 6364136223846793005ULL + m_inc);
 			uint32_t xorshifted = uint32_t(((oldstate >> 18u) ^ oldstate) >> 27u);
 			int rot = oldstate >> 59u;
 			return (xorshifted >> rot) | (xorshifted << ((-rot) & 31));
@@ -1341,20 +1267,23 @@ public:
 		void discard(unsigned long long n) const noexcept { unsigned long long i; i = 0;  for (; i < n; ++i) operator()(); };
 
 	private:
-		mutable fibers::mutex mut;
-		mutable uint64_t m_state;
+		mutable std::atomic_int64_t m_state;
 		uint64_t m_inc;
 		std::random_device rd;
+
 	};
+
 private:
 	mutable cwee_pcg rand;
 	mutable std::uniform_real_distribution<u64> u;
+
 public:
 	fiber_rand() noexcept : /*mut(), */rand(), u(0.0, 1.0) { Random_Impl(); /*Instantiate the range*/ };
 	u64 Random(u64 t1 = 0.0, u64 t2 = 1.0) const noexcept { return Random_HighRes(std::move(t1), std::move(t2)); };
 	double Random(double t1 = 0.0, double t2 = 1.0) const noexcept { return Random_HighRes(t1, t2); };
 	float Random(float t1 = 0.0, float t2 = 1.0) const noexcept { return Random_HighRes(t1, t2); };
 	int Random(int t1 = 0, int t2 = std::numeric_limits<int>::max()) const noexcept { return std::floor(Random_HighRes(t1, t2) + 0.5); };
+
 private:
 	u64 Random_Impl() const noexcept {
 		return u(rand);
@@ -1365,6 +1294,7 @@ private:
 		t1 += t2;
 		return t1;
 	};
+
 };
 extern DelayedInstantiation< fiber_rand > FiberRandomGenerator = DelayedInstantiation< fiber_rand >([]()-> fiber_rand* { return new fiber_rand(); });
 
@@ -1375,43 +1305,38 @@ extern DelayedInstantiation< fiber_rand > FiberRandomGenerator = DelayedInstanti
 /*! random int between 0 and max */ INLINE int fiberRandomInt(int max) { return FiberRandomGenerator->Random(0, max); };
 /*! random int between min and max */ INLINE int fiberRandomInt(int min, int max) { return FiberRandomGenerator->Random(min, max); };
 
-/*! Thread-safe list that performs garbage collection and manages read/write/create/delete operations on data. Intended to act as a multi-threaded database. */
-
-
-
-
-
-
 extern void DoJob(ftl::TaskScheduler* taskScheduler, void* arg) {
 	AUTO job = std::shared_ptr<Action>(static_cast<Action*>(arg));
 	job->Invoke();
 };
 uint64_t FTL::fnFiberTasks3(int numTasks, int numSubTasks) {
 	{
-		fibers::unordered_map<int, fibers::unordered_map<int, double>> lists;
-		fibers::For(0, numTasks, [&lists, &numSubTasks](int j) {
+		fibers::containers::unordered_map<int, fibers::containers::unordered_map<int, double>> lists;
+		fibers::parallel::For(0, numTasks, [&lists, &numSubTasks](int j) {
 			auto list = lists[j];
-			if (numSubTasks <= 1) {
-				*list->operator[](0) = fiberRandomFloat(0, 100);
-			}
-			else {
-				fibers::For(0, numSubTasks, [&list, &numSubTasks](int index) {
-					*list->operator[](index) = fiberRandomFloat(0, 100);
-				});
+			{
+				if (numSubTasks <= 1) {
+					*list->operator[](0) = fiberRandomFloat(0, 100);
+				}
+				else {
+					fibers::parallel::For(0, numSubTasks, [&list, &numSubTasks](int index) {
+						*list->operator[](index) = fiberRandomFloat(0, 100);
+					});
+				}
 			}
 		});
 	}
 
 	{
-		fibers::vector<fibers::vector<double>> vectors;
-		fibers::For(0, numTasks, [&vectors, &numSubTasks](int j) {
-			fibers::vector<double> list;
+		fibers::containers::vector<fibers::containers::vector<double>> vectors;
+		fibers::parallel::For(0, numTasks, [&vectors, &numSubTasks](int j) {
+			fibers::containers::vector<double> list;
 
 			if (numSubTasks <= 1) {
 				list.push_back(fiberRandomFloat(0, 100));
 			}
 			else {
-				fibers::For(0, numSubTasks, [&list, &numSubTasks](int index) {
+				fibers::parallel::For(0, numSubTasks, [&list, &numSubTasks](int index) {
 					list.push_back(fiberRandomFloat(0, 100));
 				});
 			}
@@ -1420,42 +1345,25 @@ uint64_t FTL::fnFiberTasks3(int numTasks, int numSubTasks) {
 		});
 	}
 
+	{
+		fibers::containers::array<fibers::containers::array<double>> arrays;
+		fibers::parallel::For(0, numTasks, [&arrays, &numSubTasks](int j) {
+			fibers::containers::array<double> arr;
+
+			if (numSubTasks <= 1) {
+				arr.push_back(fiberRandomFloat(0, 100));
+			}
+			else {
+				fibers::parallel::For(0, numSubTasks, [&arr, &numSubTasks](int index) {
+					arr.push_back(fiberRandomFloat(0, 100));
+				});
+			}
+
+			arrays.push_back(std::move(arr));
+		});
+	}
+
 	return 0;
-
-
-
-
-	//std::vector<fibers::Job> jobs;
-	//for (int i = 0; i < numTasks; ++i) {	
-	//	jobs.push_back(fibers::Job([&lists, &numSubTasks, &fibers](int j) {
-	//		auto list = (lists.GetExclusive()->operator[](j) = std::make_shared<Interlocked<std::unordered_map<int, double>>>());
-	//		if (numSubTasks <= 1) {
-	//			list->GetExclusive()->operator[](0) = fiberRandomFloat(0, 100);
-	//		}
-	//		else {
-	//			std::vector<fibers::Job> jobs;
-	//			for (int k = 0; k < numSubTasks; ++k) {
-	//				jobs.push_back(fibers::Job([=](int index) { list->GetExclusive()->operator[](index) = fiberRandomFloat(0, 100); }, (int)k));
-	//			}
-	//			fibers::JobGroup awaiter;
-	//			awaiter.Queue(jobs);
-	//			awaiter.Wait();
-	//		}
-	//	}, int(i)));
-	//}
-	//
-	//fibers::JobGroup awaiter;
-	//awaiter.Queue(jobs);
-	//awaiter.Wait();
-
-	//int n = 0; 
-	//for (auto& x : lists) {
-	//	for (auto& y : x.second) {
-	//		n++;
-	//	}
-	//}
-
-	//return n;
 };
 
 

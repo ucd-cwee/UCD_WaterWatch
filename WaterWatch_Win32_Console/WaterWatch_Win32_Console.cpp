@@ -183,16 +183,6 @@ static Timer AppLayerRequestProcessor = Timer(0.01, Action([]() {
 		case static_cast<size_t>(cweeStr::Hash("OS_GetSetting")):
 			result = "TBD";
 			break;
-		//case static_cast<size_t>(cweeStr::Hash("BoostFiber")):
-			//result = std::to_string(FTL::fnBoostFiber()).c_str();
-			//break;
-		case static_cast<size_t>(cweeStr::Hash("Fiber")): 
-			result = std::to_string(FTL::fnFiberTasks()).c_str();
-			break;
-		case static_cast<size_t>(cweeStr::Hash("Fiber2a")):
-			if (args.Num() >= 1) result = std::to_string(FTL::fnFiberTasks2a(args[0].ReturnNumeric())).c_str();
-			else result = "Arguments required: 'num_tasks'";
-			break;
 		case static_cast<size_t>(cweeStr::Hash("Fiber2b")):
 			if (args.Num() >= 1) result = std::to_string(FTL::fnFiberTasks2b(args[0].ReturnNumeric())).c_str();
 			else result = "Arguments required: 'num_tasks'";

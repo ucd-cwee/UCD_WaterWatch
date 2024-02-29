@@ -31,7 +31,7 @@ public:
 		static constexpr result_type(max)() { return UINT32_MAX; }
 
 		cwee_pcg() noexcept : m_state(0), m_inc(0), rd() { seed(); };
-		void seed() const noexcept {
+		void seed() noexcept {
 			uint64_t s0 = uint64_t(rd()) << 31 | uint64_t(rd());
 			uint64_t s1 = uint64_t(rd()) << 31 | uint64_t(rd());
 			m_state = 0;
@@ -41,28 +41,32 @@ public:
 			(void)operator()();
 		};
 		result_type operator()() const noexcept {
-			uint64_t oldstate = m_state;
-			m_state = oldstate * 6364136223846793005ULL + m_inc;
+			uint64_t oldstate = m_state.load();
+			m_state.store(oldstate * 6364136223846793005ULL + m_inc);
 			uint32_t xorshifted = uint32_t(((oldstate >> 18u) ^ oldstate) >> 27u);
 			int rot = oldstate >> 59u;
 			return (xorshifted >> rot) | (xorshifted << ((-rot) & 31));
 		};
 		void discard(unsigned long long n) const noexcept { unsigned long long i; i = 0;  for (; i < n; ++i) operator()(); };
+
 	private:
-		mutable uint64_t m_state;
-		mutable uint64_t m_inc;
-		mutable std::random_device rd;
+		mutable std::atomic_int64_t m_state;
+		uint64_t m_inc;
+		std::random_device rd;
 	};
+
 private:
 	mutable cweeSysMutex mut;
 	mutable cwee_pcg rand;
 	mutable std::uniform_real_distribution<u64> u;
+
 public:
 	cwee_rand() noexcept : mut(), rand(), u(0.0, 1.0) { Random_Impl(); /*Instantiate the range*/ };
 	u64 Random(u64 t1 = 0.0, u64 t2 = 1.0) const noexcept { return Random_HighRes(std::move(t1), std::move(t2)); };
 	double Random(double t1 = 0.0, double t2 = 1.0) const noexcept { return Random_HighRes(t1, t2); };
 	float Random(float t1 = 0.0, float t2 = 1.0) const noexcept { return Random_HighRes(t1, t2); };
 	int Random(int t1 = 0, int t2 = std::numeric_limits<int>::max()) const noexcept { return std::floor(Random_HighRes(t1, t2) + 0.5); };
+
 private:
 	u64 Random_Impl() const noexcept {
 		u64 out(0);
