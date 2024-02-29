@@ -644,7 +644,7 @@ namespace fibers {
 		template<typename iteratorType, typename F>
 		AUTO For(iteratorType start, iteratorType end, iteratorType step, F&& ToDo) {
 			auto todo = std::function(std::forward<F>(ToDo));
-			constexpr bool retNo = std::is_same<typename function_traits<decltype(todo)>::result_type, void>::value;
+			constexpr bool retNo = std::is_same<typename utilities::function_traits<decltype(todo)>::result_type, void>::value;
 
 			std::vector<fibers::Job> jobs;
 			for (iteratorType iter = start; iter < end; iter += step) {
