@@ -200,30 +200,9 @@ uint64_t FTL::fnFiberTasks2a(int numTasks) {
 
 #include "../WaterWatchCpp/Clock.h"
 #include "../WaterWatchCpp/Iterator.h"
-
 #include <atomic>
 #include <array>
 #include <thread>
-/*
-*	shared_mutex (C) 2017 E. Oriani, ema <AT> fastwebnet <DOT> it
-*
-*	This file is part of shared_mutex.
-*
-*	shared_mutex is free software: you can redistribute it and/or modify
-*	it under the terms of the GNU Lesser General Public License as published by
-*	the Free Software Foundation, either version 3 of the License, or
-*	(at your option) any later version.
-*
-*	shared_mutex is distributed in the hope that it will be useful,
-*	but WITHOUT ANY WARRANTY; without even the implied warranty of
-*	MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-*	GNU General Public License for more details.
-*
-*	You should have received a copy of the GNU General Public License
-*	along with nettop.  If not, see <http://www.gnu.org/licenses/>.
-*/
-
-
 #include <ppl.h>
 #include <concurrent_vector.h>
 #include <concurrent_unordered_map.h>
@@ -406,29 +385,30 @@ namespace fibers {
 	template<typename _Ty>
 	class vector {
 	protected:
-		std::shared_ptr< concurrency::concurrent_vector<_Ty> > data;
+		using underlying = typename concurrency::concurrent_vector<std::shared_ptr<_Ty>>;
+		std::shared_ptr< underlying > data;
 
 	public:
 		struct it_state {
-			std::shared_ptr< concurrency::concurrent_vector<_Ty> > lifetime;
-			typename concurrency::concurrent_vector<_Ty>::iterator pos;
+			std::shared_ptr< underlying > lifetime;
+			typename underlying::iterator pos;
 			inline void begin(const vector* ref) { lifetime = ref->data; pos = lifetime->begin(); }
 			inline void next(const vector* ref) { ++pos; }
 			inline void end(const vector* ref) { lifetime = ref->data; pos = lifetime->end(); }
-			inline _Ty& get(vector* ref) { return *pos; }
+			inline typename underlying::value_type& get(vector* ref) { return *pos; }
 			inline bool cmp(const it_state& s) const { return (pos == s.pos) ? false : true; }
 			inline long long distance(const it_state& s) const { return pos - s.pos; };
 			// Optional to allow operator--() and reverse iterators:
 			inline void prev(const vector* ref) { --pos; }
 			// Optional to allow `const_iterator`:
-			inline const _Ty& get(const vector* ref) const { return *pos; }
+			inline const typename underlying::value_type& get(const vector* ref) const { return *pos; }
 		};
-		SETUP_STL_ITERATOR(vector, _Ty, it_state);
+		SETUP_STL_ITERATOR(vector, typename underlying::value_type, it_state);
 
-		vector() : data(new concurrency::concurrent_vector<_Ty>()) {};
-		explicit vector(size_type _N) : data(new concurrency::concurrent_vector<_Ty>(_N)) {};
-		vector(size_type _N, const_reference _Item) : data(new concurrency::concurrent_vector<_Ty>(_N, _Item)) {};
-		vector(vector const& r) : data(new concurrency::concurrent_vector<_Ty>()) {
+		vector() : data(new underlying()) {};
+		explicit vector(size_type _N) : data(new underlying(_N)) {};
+		vector(size_type _N, const_reference _Item) : data(new underlying(_N, _Item)) {};
+		vector(vector const& r) : data(new underlying()) {
 			operator=(r);
 		}
 		vector(vector&& r) = default;
@@ -447,12 +427,14 @@ namespace fibers {
 		AUTO grow_by(size_type _Delta) { return data->grow_by(_Delta); };
 		AUTO grow_by(size_type _Delta, const_reference _Item) { return data->grow_by(_Delta, _Item); };
 		AUTO grow_to_at_least(size_type _N) { return data->grow_to_at_least(_N); };
-		AUTO push_back(const_reference _Item) { return data->push_back(_Item); };
-		AUTO push_back(_Ty&& _Item) { return data->push_back(std::forward<_Ty>(_Item)); };
-		AUTO operator[](size_type _Index) { return data->operator[](_Index); };
-		AUTO operator[](size_type _Index) const { return data->operator[](_Index); };
-		AUTO at(size_type _Index) { return data->at(_Index); };
-		AUTO at(size_type _Index) const { return data->at(_Index); };
+		AUTO push_back(_Ty const& _Item) { return data->push_back(std::make_shared<_Ty>(_Item)); };
+		AUTO push_back(_Ty&& _Item) { return data->push_back(std::make_shared<_Ty>(std::forward<_Ty>(_Item))); };
+		AUTO push_back(std::shared_ptr<_Ty> const& _Item) { return data->push_back(_Item); };
+		AUTO push_back(std::shared_ptr<_Ty>&& _Item) { return data->push_back(std::forward<_Ty>(_Item)); };
+		std::shared_ptr<_Ty> operator[](size_type _Index) { return data->operator[](_Index); };
+		std::shared_ptr<_Ty> operator[](size_type _Index) const { return data->operator[](_Index); };
+		std::shared_ptr<_Ty> at(size_type _Index) { return data->at(_Index); };
+		std::shared_ptr<_Ty> at(size_type _Index) const { return data->at(_Index); };
 		AUTO size() const { return data->size(); };
 		AUTO empty() const { return data->empty(); };
 		AUTO capacity() const { return data->capacity(); };
@@ -606,7 +588,7 @@ namespace fibers {
 		class JobGroupImpl {
 		public:
 			ftl::WaitGroup waitGroup;
-			interlocked<fibers::vector<Job>> jobs;
+			fibers::vector<Job> jobs;
 
 			JobGroupImpl() : waitGroup(&*Fibers), jobs() {};
 			JobGroupImpl(JobGroupImpl const&) = delete;
@@ -628,13 +610,13 @@ namespace fibers {
 		/* Queue job, and return tool to await the result */
 		JobGroup& Queue(Job const& job) {
 			Fibers->AddTask({ DoAnyFuncStruct, new AnyFunctionStruct({ job.impl, nullptr, false }) }, ftl::TaskPriority::Normal, &impl->waitGroup);
-			impl->jobs.GetExclusive()->push_back(job);
+			impl->jobs.push_back(job);
 			return *this;
 		};		
 		/* Queue job, and return tool to await the result */
 		JobGroup& ForceQueue(Job const& job) {
 			Fibers->AddTask({ DoAnyFuncStruct, new AnyFunctionStruct({ job.impl, nullptr, true }) }, ftl::TaskPriority::Normal, &impl->waitGroup);
-			impl->jobs.GetExclusive()->push_back(job);
+			impl->jobs.push_back(job);
 			return *this;
 		};		
 		/* Queue jobs, and return tool to await the results */
@@ -642,7 +624,7 @@ namespace fibers {
 			std::vector<ftl::Task> tasks;
 			for (auto& job : listOfJobs) {
 				tasks.push_back({ DoAnyFuncStruct, new AnyFunctionStruct({ job.impl, nullptr, false }) });
-				impl->jobs.GetExclusive()->push_back(job);
+				impl->jobs.push_back(job);
 			}
 			Fibers->AddTasks(tasks.size(), &tasks[0], ftl::TaskPriority::Normal, &impl->waitGroup);
 
@@ -651,8 +633,10 @@ namespace fibers {
 		JobGroup& Queue(fibers::vector<Job> const& listOfJobs) {
 			std::vector<ftl::Task> tasks;
 			for (auto& job : listOfJobs) {
-				tasks.push_back({ DoAnyFuncStruct, new AnyFunctionStruct({ job.impl, nullptr, false }) });
-				impl->jobs.GetExclusive()->push_back(job);
+				if (job) {
+					tasks.push_back({ DoAnyFuncStruct, new AnyFunctionStruct({ job->impl, nullptr, false }) });
+					impl->jobs.push_back(job);
+				}
 			}
 			Fibers->AddTasks(tasks.size(), &tasks[0], ftl::TaskPriority::Normal, &impl->waitGroup);
 
@@ -663,7 +647,7 @@ namespace fibers {
 			std::vector<ftl::Task> tasks;
 			for (auto& job : listOfJobs) {
 				tasks.push_back({ DoAnyFuncStruct, new AnyFunctionStruct({ job.impl, nullptr, true }) });
-				impl->jobs.GetExclusive()->push_back(job);
+				impl->jobs.push_back(job);
 			}
 			Fibers->AddTasks(tasks.size(), &tasks[0], ftl::TaskPriority::Normal, &impl->waitGroup);
 
@@ -672,8 +656,10 @@ namespace fibers {
 		JobGroup& ForceQueue(fibers::vector<Job> const& listOfJobs) {
 			std::vector<ftl::Task> tasks;
 			for (auto& job : listOfJobs) {
-				tasks.push_back({ DoAnyFuncStruct, new AnyFunctionStruct({ job.impl, nullptr, true }) });
-				impl->jobs.GetExclusive()->push_back(job);
+				if (job) {
+					tasks.push_back({ DoAnyFuncStruct, new AnyFunctionStruct({ job->impl, nullptr, true }) });
+					impl->jobs.push_back(job);
+				}
 			}
 			Fibers->AddTasks(tasks.size(), &tasks[0], ftl::TaskPriority::Normal, &impl->waitGroup);
 
@@ -684,15 +670,15 @@ namespace fibers {
 		std::vector<Any> Wait_Get() {
 			impl->waitGroup.Wait();
 
-			typename decltype(JobGroupImpl::jobs)::Type out;
-			impl->jobs.Lock();
-			out.swap(impl->jobs.UnsafeRead());
-			impl->jobs.Unlock();
+			typename decltype(JobGroupImpl::jobs) out;
+			out.swap(impl->jobs);
 
 			if (out.size() > 0) {
 				std::vector<Any> any(out.size(), Any());
 				for (auto& job : out) {
-					any.push_back(job.GetResult());
+					if (job) {
+						any.push_back(job->GetResult());
+					}
 				}
 				return any;
 			}
@@ -704,7 +690,7 @@ namespace fibers {
 		/* Await all jobs in this group */
 		void Wait() {
 			impl->waitGroup.Wait();
-			impl->jobs.Clear();
+			impl->jobs.clear();
 		};
 
 	private:
@@ -904,6 +890,11 @@ namespace fibers {
 		group.Queue(jobs);
 		return group.Wait_Get();
 	};
+	AUTO Do(fibers::vector<fibers::Job> const& jobs) {
+		JobGroup group;
+		group.Queue(jobs);
+		return group.Wait_Get();
+	};
 
 	/* parallel_for (auto i = start; i < end; i++){ todo(i); } */
 	template<typename iteratorType, typename F>
@@ -978,11 +969,10 @@ namespace fibers {
 		else return group.Wait_Get();
 	};
 
-
 	template<typename _Key_type, typename _Element_type>
 	class unordered_map {
 	protected:
-		using underlying = typename concurrency::concurrent_unordered_map<_Key_type, _Element_type>;
+		using underlying = typename concurrency::concurrent_unordered_map<_Key_type, std::shared_ptr<_Element_type>>;
 		std::shared_ptr< underlying > data;
 
 	public:
@@ -1033,10 +1023,10 @@ namespace fibers {
 		template<class _Valty> AUTO insert(const_iterator _Where, _Valty&& _Value) { return data->insert(_Where, _Value); };
 		AUTO hash_function() const { return data->hash_function(); };
 		AUTO key_eq() const { return data->key_eq(); };
-		AUTO operator[](const key_type& _Keyval) { return data->operator[](_Keyval); };
-		AUTO operator[](const key_type& _Keyval) const { return data->operator[](_Keyval); };
-		AUTO at(const key_type& _Keyval) { return data->at(_Keyval); };
-		AUTO at(const key_type& _Keyval) const { return data->at(_Keyval); };
+		std::shared_ptr<_Element_type> operator[](const key_type& _Keyval) { return data->operator[](_Keyval); };
+		std::shared_ptr<_Element_type> operator[](const key_type& _Keyval) const { return data->operator[](_Keyval); };
+		std::shared_ptr<_Element_type> at(const key_type& _Keyval) { return data->at(_Keyval); };
+		std::shared_ptr<_Element_type> at(const key_type& _Keyval) const { return data->at(_Keyval); };
 		AUTO front() { return data->front(); };
 		AUTO front() const { return data->front(); };
 		AUTO back() { return data->back(); };
@@ -1071,10 +1061,11 @@ namespace fibers {
 		AUTO unsafe_erase(const key_type& _Keyval) {
 			data->unsafe_erase(_Keyval);
 		};
-
 		AUTO count(const key_type& _Keyval) const { return data->count(_Keyval); };
-		AUTO emplace(const key_type& _Keyval, const _Element_type& _Value) { return insert(value_type(_Keyval, _Value)); };
-		AUTO emplace(const key_type& _Keyval, _Element_type&& _Value) { return insert(value_type(_Keyval, std::forward<_Element_type>(_Value))); };
+		AUTO emplace(const key_type& _Keyval, const std::shared_ptr<_Element_type>& _Value) { return insert(value_type(_Keyval, _Value)); };
+		AUTO emplace(const key_type& _Keyval, std::shared_ptr<_Element_type>&& _Value) { return insert(value_type(_Keyval, std::forward<typename underlying::value_type>(_Value))); };
+		AUTO emplace(const key_type& _Keyval, const _Element_type& _Value) { return insert(value_type(_Keyval, std::make_shared<_Element_type>(_Value))); };
+		AUTO emplace(const key_type& _Keyval, _Element_type&& _Value) { return insert(value_type(_Keyval, std::make_shared<_Element_type>(std::forward<typename underlying::value_type>(_Value)))); };
 		AUTO clear() {
 			unordered_map out;			
 			data.swap(out.data);
@@ -1084,795 +1075,17 @@ namespace fibers {
 	template<typename _Key_type> using unordered_set = concurrency::concurrent_unordered_set<_Key_type>;
 	template<typename _Value_type> using queue = concurrency::concurrent_queue<_Value_type>;
 
-	/*!
-	Thread-safe list that performs garbage collection and manages read/write/create/delete operations on data. Intended to act as a multi-threaded database.
-	*/
-	template< typename Key, typename Value>
-	class fiberMap {
-	public:
-		typedef Value						Type;
-		typedef std::shared_ptr < Type >		PtrType;
-		typedef std::pair<Key, PtrType>		_iterType;
-		typedef long long					IdxType;
-
-		class fiberMap_Impl {
-		public:
-			/*! prevent multi-thread access to the list while alive. Will automatically unlock the list once out of scope. */
-			NODISCARD auto	Guard(void) const { // assumes unlocked!
-				return lock.Write_Guard();
-			}
-			NODISCARD auto	SharedGuard(void) const { // assumes unlocked!
-				return lock.Read_Guard();
-			}
-			/*! Prevent multi-thread access to the list. Only the "Unsafe*" operations and "Unlock" are valid after this call or else the app will deadlock -- A "Unlock" must be called to re-enable access to the list. */
-			void			Lock(void) const { // assumes unlocked!
-				lock.lock();
-			}
-			/*! Only call this after calling "Lock". Multiple unlocks in a row is undefined behavior. */
-			void			Unlock(void) const { // assumes already locked! 
-				lock.unlock();
-			};
-			/*! After calling "Lock", this will allow access to directly edit the specified object on the heap without swapping. */
-			PtrType			UnsafeRead(Key index) const { // was non-const			
-				auto it = list.find(index);
-				if (it != list.end()) {
-					return it->second;
-				}
-				return nullptr;
-			}
-			/*! After calling "Lock", this will allow access to get a list of all valid indexes on the heap managed by this list. */
-			vector<Key> UnsafeList(void) const {
-				vector<Key> out;
-
-				if (lastCreatedListVersion == CreatedListVersion) {
-					out = indexList;
-					return out;
-				}
-				int size = list.size();
-
-				indexList.clear();
-				fibers::ForEach(list, [this](typename decltype(list)::value_type& kv) {
-					this->indexList.push_back(kv.first);
-				});
-
-				lastCreatedListVersion = CreatedListVersion;
-
-				out = indexList;
-
-				return out;
-			};
-			AUTO			UnsafeIndexForKey(Key index) const {
-				return std::distance(list.begin(), list.find(index));
-			};
-
-			/* Clear the list */
-			void Clear() {
-				AUTO g = Guard();
-
-				list_version = 0;
-				CreatedListVersion = 0;
-
-				fibers::ForEach(list, [](typename decltype(list)::value_type& kv) {
-					PtrType& p = const_cast<PtrType&>(kv.second); // need to access the underlying thing
-					p = nullptr;
-				});
-
-				list.clear();
-
-				indexList.clear();
-				lastSearchID = Key();
-				lastResult = list.end();
-				lastVersion = -1;
-				lastCreatedListVersion = -1;
-			};
-
-			fiberMap_Impl() : lock(), list(), indexList(), list_version(0), lastSearchID(), lastResult(list.end()), lastVersion(-1), CreatedListVersion(0), lastCreatedListVersion(-1) {
-				//list.reserve(16);
-				//indexList.SetGranularity(16);
-			};
-			~fiberMap_Impl() {
-				Clear();
-			};
-
-			/*! Mutex Lock to prevent race conditions. cweeSysMutex uses C++ CriticalSection */
-			mutable shared_mutex													    lock;
-			/* Map between key and heap ptr. Cannot use PTR directly to allow for multithread-safe instant deletes, using the keys to control race conditions. */
-			mutable unordered_map< Key, PtrType>                                        list;
-			/* Optimized search parameters */
-			mutable vector<Key>												            indexList;
-			/* Optimized search parameters */
-			mutable cweeSysInterlockedInteger											list_version;
-			/* Optimized search parameters */
-			mutable Key																	lastSearchID;
-			/* Optimized search parameters */
-			mutable typename decltype(list)::iterator		                            lastResult;
-			/* Optimized search parameters */
-			mutable cweeSysInterlockedInteger											lastVersion;
-			/* Optimized search parameters */
-			mutable cweeSysInterlockedInteger											CreatedListVersion;
-			/* Optimized search parameters */
-			mutable cweeSysInterlockedInteger											lastCreatedListVersion;
-		};
-
-		typedef std::shared_ptr<fiberMap_Impl>		ImplType;
-
-		struct it_state {
-			inline void at(const fiberMap* ref, Key index) {
-				ref->Lock();
-				AUTO h = ref->UnsafeIndexForKey(index);
-				ref->Unlock();
-				at(ref, index, h);
-			};
-			inline void at(const fiberMap* ref, Key index, const IdxType t_hint) {
-				listOfIndexes = ref->GetList();
-				idx = 0;
-				IdxType n = listOfIndexes.Num();
-
-
-				//idx = t_hint <= n ? t_hint : n;
-				//return;
-
-				for (idx = t_hint; idx < n; ++idx) {
-					if (listOfIndexes[idx] == index) {
-						return;
-					}
-				}
-				for (idx = 0; idx < n && idx < t_hint; ++idx) {
-					if (listOfIndexes[idx] == index) {
-						return;
-					}
-				}
-				idx = n;
-			};
-			mutable vector<Key>	listOfIndexes;
-			mutable IdxType idx;
-			mutable _iterType iter;
-			inline void begin(const fiberMap* ref) {
-				listOfIndexes = ref->GetList();
-				idx = 0;
-			}
-			inline void next(const fiberMap* ref) {
-				++idx;
-				while (idx < listOfIndexes.Num() && !ref->Check(listOfIndexes[idx])) {
-					++idx;
-				}
-			}
-			inline void end(const fiberMap* ref) {
-				listOfIndexes = ref->GetList();
-				idx = listOfIndexes.Num();
-			}
-			inline _iterType& get(fiberMap* ref) {
-				iter = ref->GetIterator(listOfIndexes[idx]);
-				return iter;
-			}
-			inline bool cmp(const it_state& s) const { return (idx == s.idx) ? false : true; }
-			inline IdxType distance(const it_state& s) const { return idx - s.idx; }
-
-			// Optional to allow operator--() and reverse iterators:
-			inline void prev(const fiberMap* ref) {
-				--idx;
-				while (idx >= 0 && !ref->Check(listOfIndexes[idx])) {
-					--idx;
-				}
-			}
-			// Optional to allow `const_iterator`:
-			inline const _iterType& get(const fiberMap* ref) const { iter = ref->GetIterator(listOfIndexes[idx]); return iter; }
-		};
-
-		SETUP_STL_ITERATOR(fiberMap, _iterType, it_state);
-
-		/*! Default constructor */
-		fiberMap() : impl(new fiberMap_Impl()) {};
-		/*! Default copy */
-		fiberMap(const fiberMap& other) : impl(new fiberMap_Impl()) { this->Copy(other); };
-		/*! Take reference to underlying data */
-		fiberMap(fiberMap&& other) : impl(other.impl) {};
-		/*! Default copy */
-		fiberMap& operator=(const fiberMap& other) {
-			this->Copy(other);
-			return *this;
-		};
-		/*! Default destructor */
-		~fiberMap() {
-			impl = nullptr;
-		};
-		/*! Convert UnorderedMap to a list of keys */
-		operator vector<Key>() const {
-			return GetList();
-		};
-		/*! Get a read-only copy of the object from the heap. if the object does not exist on the heap, an empty object will be made on the stack. */
-		PtrType			operator[](Key index) const { return GetPtr(index); };
-		/*! Swap if the object exists, otherwise append at the index and then swap. */
-		bool			Emplace(Key index, const Value& obj) {
-			bool out;
-			Lock();
-			out = UnsafeEmplace(index, obj);
-			Unlock();
-			return out;
-		};
-		/*! Swap if the object exists, otherwise append at the index and then swap. */
-		bool			Emplace(Key index, Value&& obj) {
-			bool out;
-			Lock();
-			out = UnsafeEmplace(index, std::forward<Value>(obj));
-			Unlock();
-			return out;
-		};
-		/*! Swap if the object exists, otherwise append at the index and then swap. */
-		bool			UnsafeEmplace(Key index, const Value& obj) {
-			bool out;
-			auto ptr = UnsafeRead(index);
-			if (ptr) {
-				// already exists
-				*ptr = obj;
-				out = false;
-			}
-			else {
-				// does not yet exist
-				ptr = UnsafeAppendAt(index);
-				if (ptr) {
-					*ptr = obj;
-				}
-				out = true;
-			}
-			return out;
-		};
-		/*! Swap if the object exists, otherwise append at the index and then swap. */
-		bool			UnsafeEmplace(Key index, Value&& obj) {
-			bool out;
-			auto ptr = UnsafeRead(index);
-			if (ptr) {
-				// already exists
-				*ptr = std::forward<Value>(obj);
-				out = false;
-			}
-			else {
-				// does not yet exist
-				ptr = UnsafeAppendAt(index);
-				if (ptr) {
-					*ptr = std::forward<Value>(obj);
-				}
-				out = true;
-			}
-			return out;
-		};
-		/*!  Gets a pointer (or null) to the underlyding data. This is a managed object, meaning its lifetime must end before the udnerlying fiberMap lifetime does.   */
-		PtrType			UnsafeGetPtr(Key index) const {
-			if (impl->list.count(index) <= 0)
-				return UnsafeAppendAt(index);
-			else
-				return impl->list[index];
-		};
-		/*!  Gets a pointer (or null) to the underlyding data. This is a managed object, meaning its lifetime must end before the udnerlying fiberMap lifetime does.   */
-		PtrType			GetPtr(Key index) const {
-			PtrType out{ TryGetPtr(index) };
-			if (!out) {
-				Lock();
-				out = UnsafeAppendAt(index);
-				Unlock();
-			}
-			return out;
-		};
-		/*! Gets a pointer (or null) to the underlyding data. This is a managed object, meaning its lifetime must end before the udnerlying fiberMap lifetime does. */
-		PtrType			TryGetPtr(Key index) const {
-			auto* p = impl.get();
-			if (p) {
-				AUTO g{ p->lock.Read_Guard() };
-				if (p->list.count(index) > 0) {
-					return p->list.at(index);
-				}
-			}
-			return nullptr;
-		};
-		/*! Gets a pointer (or null) to the underlyding data. This is a managed object, meaning its lifetime must end before the udnerlying fiberMap lifetime does. */
-		_iterType		GetIterator(Key index) const {
-			return _iterType(index, GetPtr(index));
-		};
-		/*! Gets a pointer (or null) to the underlyding data. This is a managed object, meaning its lifetime must end before the udnerlying fiberMap lifetime does. */
-		_iterType		TryGetIterator(Key index) const {
-			_iterType out;
-			SharedLock();
-			if (impl->list.count(index) > 0) {
-				out = _iterType(index, impl->list[index]);
-			}
-			SharedUnlock();
-			return out;
-		};
-		/*! True/False if the index exists on the heap */
-		bool			Check(Key index) const {
-			bool result = true;
-			if (impl->lastCreatedListVersion == impl->CreatedListVersion) {
-				SharedLock();
-				result = (impl->indexList.FindIndex(index) != -1);
-				SharedUnlock();
-				return result;
-			}
-			SharedLock();
-			result = (impl->list.count(index) != 0);
-			SharedUnlock();
-			return result;
-		};
-		/*! True/False if the index exists on the heap */
-		bool			UnsafeCheck(Key index) const {
-			bool result = true;
-			if (impl->lastCreatedListVersion == impl->CreatedListVersion) {
-				result = (impl->indexList.FindIndex(index) != -1);
-				return result;
-			}
-			result = (impl->list.count(index) != 0);
-			return result;
-		};
-		/*! Clear the current list and create a copy of the incoming list. */
-		void			Copy(const fiberMap& copy, const bool threadSafePtr = false) {
-			Clear();
-
-			AUTO List = copy.GetList();
-
-			if (threadSafePtr) {
-				// Go through and perform swaps		
-				fibers::For(0, List.Num(), [&](int i) {
-					copy.Lock();
-					auto readCopy = copy.UnsafeRead(List[i]);
-					copy.Unlock();
-
-					if (readCopy) {
-						Lock();
-						UnsafeAppendAt(List[i]);
-						auto access = UnsafeRead(List[i]);
-						Unlock();
-
-						if (access) *access = *readCopy;
-					}
-				});
-			}
-			else {
-				fibers::For(0, List.Num(), [&](int i) {
-					copy.Lock();
-					auto readCopy = copy.UnsafeRead(List[i]);
-					if (readCopy) {
-						Lock();
-						UnsafeAppendAt(List[i]);
-						auto access = UnsafeRead(List[i]);
-						if (access) *access = *readCopy;
-						Unlock();
-					}
-					copy.Unlock();
-				});
-			}
-		};
-		/*! Copy the Value object from the stack into the heap at the index specified. If the index does not exist on the heap, nothing happens. */
-		void			Swap(Key index, const Value& replacement) {
-			if (Check(index)) {
-				while (!CheckCanDeleteIndex(index)) {};
-				Lock();
-				AUTO it = impl->lastResult;
-				if (impl->lastSearchID == index && impl->list.count(impl->lastSearchID) != 0 && impl->lastVersion == impl->list_version)	it = impl->lastResult;
-				else { it = impl->list.find(index); impl->lastSearchID = index; impl->lastResult = it; impl->lastVersion = impl->list_version; }
-				impl->list_version.Increment();
-				if (it != impl->list.end()) *it->second = replacement;
-				Unlock();
-			}
-		};
-		/*! get the number of objects on the heap managed by this list */
-		int				Num(void) const {
-			int i = 0;
-			if (impl->lastCreatedListVersion == impl->CreatedListVersion) {
-				SharedLock();
-				i = impl->indexList.Num();
-				SharedUnlock();
-				return i;
-			}
-
-			SharedLock();
-			i = impl->list.size();
-			SharedUnlock();
-			return i;
-		};
-		/*! get the number of objects on the heap managed by this list */
-		int				UnsafeNum(void) const {
-			int i = 0;
-			if (impl->lastCreatedListVersion == impl->CreatedListVersion) {
-				i = impl->indexList.Num();
-				return i;
-			}
-			i = impl->list.size();
-			return i;
-		};
-		/*! get the index position of the key */
-		AUTO			UnsafeIndexForKey(Key index) const {
-			return impl->UnsafeIndexForKey(std::move(index));
-		};
-		/*! get a list of all indexes currently on the heap that are currently valid */
-		vector<Key> GetList(void) const {
-			vector<Key> out;
-
-			if (impl->lastCreatedListVersion == impl->CreatedListVersion) {
-				SharedLock();
-				out = impl->indexList;
-				SharedUnlock();
-				return out;
-			}
-			int size = Num();
-
-			Lock();
-			impl->indexList.Clear();
-			impl->indexList.SetGranularity(size + 16);
-			fibers::ForEach(impl->list, [&](typename decltype(impl->list)::value_type& kv) {
-				impl->indexList.Append(kv.first);
-			});
-			impl->lastCreatedListVersion = impl->CreatedListVersion;
-
-			out = impl->indexList;
-
-			Unlock();
-			return out;
-		};
-		/*! Erase the indexed object from the heap and free the memory for the list to re-use. */
-		void			Erase(Key index) {
-			Lock();
-			if (impl->list.count(index) > 0) {
-				impl->list[index] = nullptr;
-				impl->list.erase(index);
-			}
-			impl->list_version.Increment();
-			impl->CreatedListVersion.Increment();
-			Unlock();
-		};
-		/*! Clear the current list and free all memory back to the operating system */
-		void			Clear(void) {
-			impl->Clear();
-		};
-		/*!
-		prevent multi-thread access to the list. Only the "Unsafe*" operations and "Unlock" are valid after this call or else the app will deadlock
-		A "Unlock" must be called to re-enable access to the list.
-		*/
-		void			Lock(void) const {
-			impl->Lock();
-		};
-		/*!
-		Only call this after calling "Lock". Multiple unlocks in a row is undefined behavior.
-		*/
-		void			Unlock(void) const {
-			impl->Unlock();
-		};
-		/*!
-		prevent multi-thread access to the list while alive. Will automatically unlock the list once out of scope.
-		*/
-		NODISCARD auto	Guard(void) const { // assumes unlocked!
-			return impl->Guard();
-		}
-		/*!
-		After calling "Lock", this will allow access to directly edit the specified object on the heap without swapping.
-		*/
-		PtrType			UnsafeRead(Key index) const {
-			return impl->UnsafeRead(index);
-		};
-		/*! Gets a pointer (or null) to the underlyding data. This is a managed object, meaning its lifetime must end before the udnerlying fiberMap lifetime does. */
-		_iterType		UnsafeIterator(Key index) const {
-			PtrType out;
-			if (impl->list.count(index) <= 0) {
-				out = UnsafeAppendAt(index);
-			}
-			else
-			{
-				out = impl->list[index];
-			}
-			return _iterType(index, out);
-		};
-		/*!
-		After calling "Lock", this will allow access to get a list of all valid indexes on the heap managed by this list.
-		*/
-		vector<Key> UnsafeList(void) const {
-			return impl->UnsafeList();
-		};
-		/*
-		Lambda-based select function that provides the pointers to underlying data that meets the required lambda function
-
-		vector<int> obj;
-		obj = { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 };
-		vector<int*> ptrsWithValuesGreaterThanFive = obj.Select([](int x){ return (x > 5); });
-		for (auto& z : ptrsWithValuesGreaterThanFive){
-			std::cout << *z << std::endl;
-		}
-		*/
-		vector<_iterType> Select(std::function<bool(const Value*)> predicate) const {
-			vector<_iterType> out;
-			PtrType x;
-			auto thisList = GetList();
-
-			fibers::ForEach(thisList, [&](typename decltype(thisList)::value_type& i) {
-				x = this->GetPtr(i);
-				if (x && predicate(x.get())) {
-					out.push_back(_iterType(i, x));
-				}
-			});
-
-			return out;
-		};
-		/*
-		Lambda-based select function that provides the pointers to underlying data that meets the required lambda function
-
-		vector<int> obj;
-		obj = { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 };
-		vector<int*> ptrsWithValuesGreaterThanFive = obj.Select([](int x){ return (x > 5); });
-		for (auto& z : ptrsWithValuesGreaterThanFive){
-			std::cout << *z << std::endl;
-			*z = -1; // modifies the original list
-		}
-		*/
-		vector<_iterType> Select(std::function<bool(const Value*)> predicate) {
-			vector<_iterType> out;
-			PtrType x;
-			auto thisList = GetList();
-			fibers::ForEach(thisList, [&](typename decltype(thisList)::value_type& i) {
-				x = this->GetPtr(i);
-				if (x && predicate(x.get())) {
-					out.push_back(_iterType(i, x));
-				}
-			});
-			return out;
-		};
-		/*
-		Lambda-based select function that provides the indexes to underlying data that meets the required lambda function
-
-		vector<int> obj;
-		obj = { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 };
-		vector<int> indexesWithValuesGreaterThanFive = obj.SelectIndexes([](int x){ return (x > 5); });
-		for (auto& z : indexesWithValuesGreaterThanFive){
-			std::cout << obj[z] << std::endl;
-		}
-		*/
-		vector<Key> SelectIndexes(std::function<bool(const Value*)> predicate) const {
-			vector<Key> out;
-			_iterType x;
-			auto thisList = GetList();
-			fibers::ForEach(thisList, [&](typename decltype(thisList)::value_type& i) {
-				x = this->GetPtr(i);
-				if (x && predicate(x.get())) {
-					out.push_back(i);
-				}
-			});
-			return out;
-		};
-		/*!
-		After calling "Lock", Append new data at a specified key location, regardless of the counter.
-		*/
-		PtrType			UnsafeAppendAt(Key index) const {
-			if (impl->list.count(index) != 0) { return impl->list[index]; }
-
-			impl->list_version.Increment();
-			impl->CreatedListVersion.Increment();
-			/* Allocate a _type_ and store at specified index */
-			AUTO newPtr = std::make_shared<Value>();
-			impl->list.emplace(index, newPtr);
-			return newPtr;
-		};
-		/*!
-		After calling "Lock", this will allow access to directly erase the specified object on the heap without interuption or chance for mid-erase viewing.
-		*/
-		void			UnsafeErase(Key index) {
-			if (impl->list.count(index) > 0) {
-				impl->list.erase(index);
-			}
-			impl->list_version.Increment();
-			impl->CreatedListVersion.Increment();
-		};
-		/*!
-		After calling "Lock", this will allow access to directly erase the specified object on the heap without interuption or chance for mid-erase viewing, and return a copy of the object
-		*/
-		bool	UnsafeExtract(Key index, PtrType& out) {
-			bool result = false;
-			if (impl->list.count(index) > 0) {
-				out = impl->list[index];
-				impl->list.erase(index);
-				result = true;
-			}
-			impl->list_version.Increment();
-			impl->CreatedListVersion.Increment();
-			return result;
-		};
-		/*!
-		After calling "Lock", this will allow access to directly erase the specified object on the heap without interuption or chance for mid-erase viewing, and return a copy of the object
-		*/
-		bool	UnsafeExtractAny(PtrType& out) {
-			bool result = false;
-			for (auto& x : impl->list) {
-				out = x.second;
-				impl->list.erase(x.first);
-				impl->list_version.Increment();
-				impl->CreatedListVersion.Increment();
-				return true;
-			}
-			return false;
-		};
-		/*!
-		After calling "Lock", this will allow access to directly erase the specified object on the heap without interuption or chance for mid-erase viewing, and return a copy of the object
-		*/
-		/*!
-		After calling "Lock", this will allow access to directly erase the specified object on the heap without interuption or chance for mid-erase viewing, and return a copy of the object
-		*/
-		bool	ExtractAny(Type& out) {
-			bool res(false);
-			Lock();
-			AUTO bg = impl->list.cbegin();
-			if (bg != impl->list.cend()) {
-				if (bg->second) out = *bg->second;
-				impl->list.erase(bg->first);
-				impl->list_version.Increment();
-				impl->CreatedListVersion.Increment();
-				res = true;
-			}
-			Unlock();
-			return res;
-		};
-		bool	Extract(Key index, PtrType& out) {
-			bool result = false;
-			AUTO G = Guard();
-			result = UnsafeExtract(std::move(index), out);
-			return result;
-		};
-		/*!
-		After calling "Lock", this will allow access to directly erase the specified object on the heap without interuption or chance for mid-erase viewing, and return a copy of the object
-		*/
-		bool	UnsafeExtractIndex(IdxType idx, PtrType& out) {
-			_iterType p = unsafe_pair_at_index(idx);
-			if (p.second) {
-				UnsafeErase(p.first);
-				out = p.second;
-				return true;
-			}
-			return false;
-		};
-		/*!
-		After calling "Lock", this will allow access to directly erase the specified object on the heap without interuption or chance for mid-erase viewing, and return a copy of the object
-		*/
-		bool	ExtractIndex(IdxType idx, PtrType& out) {
-			bool result = false;
-			AUTO G = Guard();
-			result = UnsafeExtractIndex(std::move(idx), out);
-			return result;
-		};
-
-	public: // Compatability functions
-		PtrType			at(Key index) const { return GetPtr(index); };
-		PtrType			unsafe_at_index(IdxType idx) const {
-			return unsafe_pair_at_index(idx).second;
-		};
-		_iterType		unsafe_pair_at_index(IdxType idx) const {
-			_iterType out(-1, nullptr);
-			bool foundKey = false;
-			if (impl->lastCreatedListVersion == impl->CreatedListVersion) {
-				if (impl->indexList.Num() > idx) {
-					out.first = impl->indexList[idx];
-					foundKey = true;
-				}
-			}
-			if (!foundKey) {
-				auto _keys = UnsafeList();
-				if (_keys.Num() > idx) {
-					out.first = _keys[idx];
-					foundKey = true;
-				}
-			}
-			if (foundKey) {
-				out.second = UnsafeGetPtr(out.first);
-			}
-			return out;
-		};
-		PtrType			at_index(IdxType idx) const {
-			PtrType out;
-			Lock();
-			out = unsafe_pair_at_index(std::move(idx)).second;
-			Unlock();
-			return out;
-		};
-		_iterType		pair_at_index(IdxType idx) const {
-			_iterType out;
-			Lock();
-			out = unsafe_pair_at_index(std::move(idx));
-			Unlock();
-			return out;
-		};
-		void			erase_at(IdxType idx) {
-			AUTO p = pair_at_index(idx);
-			if (p.second) {
-				Erase(p.first);
-			}
-		};
-		void			erase(Key index) {
-			Erase(index);
-		};
-		bool			empty() const {
-			return (size() == 0);
-		};
-		void			clear() {
-			Clear();
-		};
-		_iterType		back() const {
-			return pair_at_index(Num() - 1);
-		};
-		iterator		find(Key s) noexcept {
-			iterator itr = iterator(this);
-			itr.state.at(this, s);
-			return itr;
-		}
-		iterator		find(Key s, const IdxType t_hint) noexcept {
-			iterator itr = iterator(this);
-			itr.state.at(this, s, t_hint);
-			return itr;
-		}
-		const_iterator	find(Key s) const noexcept {
-			const_iterator itr = const_iterator(this);
-			itr.state.at(this, s);
-			return itr;
-		}
-		const_iterator	find(Key s, const IdxType t_hint) const noexcept {
-			const_iterator itr = const_iterator(this);
-			itr.state.at(this, s, t_hint);
-			return itr;
-		}
-		AUTO			size() const noexcept { return Num(); }
-		template<typename M> AUTO insert_or_assign(Key&& key, M&& m) {
-			Emplace(key, m);
-			return GetPtr(key);
-		};
-		template<typename M> AUTO insert_or_assign(const Key& key, M&& m) {
-			Emplace(key, m);
-			return GetPtr(key);
-		};
-		IdxType count(const Key& s) const noexcept {
-			return Check(s) ? 1 : 0;
-			// return (find(s) != end()) ? 1 : 0;
-		}
-		std::pair<iterator, bool> insert(std::pair<Key, Value>&& value) {
-			iterator out = iterator(this);
-			Lock();
-			bool didNotExist = UnsafeEmplace(value.first, value.second);
-			Unlock();
-			out.state.at(this, value.first);
-			return std::pair(out, didNotExist);
-		};
-		template<typename M> AUTO insert(Key&& key, M&& m) {
-			Emplace(key, m);
-			return GetPtr(key);
-		};
-		template<typename M> AUTO insert(const Key& key, M&& m) {
-			Emplace(key, m);
-			return GetPtr(key);
-		};
-
-	private:
-		/*! Duplicate method to allow for advanced locking mechanisms. */
-		void			SharedLock(void) const {
-			impl->lock.shared_lock();
-		};
-		/*! Duplicate method to allow for advanced locking mechanisms. */
-		void			SharedUnlock(void) const {
-			impl->lock.shared_unlock();
-		};
-
-		ImplType impl;
-	};
-
-
-
-
-
-
 };
 
 class ExampleOptimization {
 public:
 	static double Evaluation(std::vector<double> const& params, std::shared_ptr<cweeSysInterlockedInteger> count) {
-		Stopwatch sw; 
-		sw.Start(); 
+		Stopwatch sw;
+		sw.Start();
+		
+		count->Increment();
 
-		return count->Increment();
-
-		//while (cweeUnitValues::nanosecond(sw.Stop()) < cweeUnitValues::millisecond(5)) {
-			//ftl::YieldThread();
-		//};
-		return 0.0;
+		return sw.Stop();
 	}
 	static std::vector<double> Create() {
 		return std::vector<double>();
@@ -1899,7 +1112,7 @@ public:
 		}
 		else {
 			if (numIterations < 0) numIterations *= -1;
-			for (int i = 0; i < numIterations; ++i) {
+			for (int i = 0; i < numIterations; ++i) { // iterations are in series so we can adapt the logic as it goes
 				fibers::Job(ExampleOptimization::Iteration, numPolicies, count).AsyncInvoke().Wait();
 			}
 		}
@@ -1910,8 +1123,7 @@ public:
 uint64_t FTL::fnFiberTasks2d(int numTasks, int numSubTasks) {
 	std::shared_ptr<cweeSysInterlockedInteger> count = std::make_shared<cweeSysInterlockedInteger>();
 
-	auto awaiter = fibers::Job(ExampleOptimization::Solve, (int)numTasks, (int)numSubTasks, count).AsyncInvoke();
-	awaiter.Wait();
+	fibers::Job(ExampleOptimization::Solve, (int)numTasks, (int)numSubTasks, count).AsyncInvoke().Wait();
 	
 	return count->GetValue();
 };
@@ -2178,13 +1390,13 @@ uint64_t FTL::fnFiberTasks3(int numTasks, int numSubTasks) {
 	{
 		fibers::unordered_map<int, fibers::unordered_map<int, double>> lists;
 		fibers::For(0, numTasks, [&lists, &numSubTasks](int j) {
-			auto& list = lists[j];
+			auto list = lists[j];
 			if (numSubTasks <= 1) {
-				list[0] = fiberRandomFloat(0, 100);
+				*list->operator[](0) = fiberRandomFloat(0, 100);
 			}
 			else {
 				fibers::For(0, numSubTasks, [&list, &numSubTasks](int index) {
-					list[index] = fiberRandomFloat(0, 100);
+					*list->operator[](index) = fiberRandomFloat(0, 100);
 				});
 			}
 		});
@@ -2205,29 +1417,6 @@ uint64_t FTL::fnFiberTasks3(int numTasks, int numSubTasks) {
 			}
 
 			vectors.push_back(std::move(list));
-		});
-	}
-
-	{
-		fibers::fiberMap<int, fibers::fiberMap<int, double>> lists;
-		// set-up the list in-line
-		for (int i = 0; i < numTasks; i++) {
-			auto list = lists[i];
-			for (int j = 0; j < numSubTasks; j++) {
-				*list->operator[](j) = fiberRandomFloat(0, 100);
-			}
-		}
-
-		fibers::For(0, numTasks, [&lists, &numSubTasks](int j) {
-			auto list = lists[j];
-			if (numSubTasks <= 1) {
-				*list->operator[](0) = fiberRandomFloat(0, 100);
-			}
-			else {
-				fibers::For(0, numSubTasks, [&list, &numSubTasks](int index) {
-					*list->operator[](index) = fiberRandomFloat(0, 100);
-				});
-			}
 		});
 	}
 
