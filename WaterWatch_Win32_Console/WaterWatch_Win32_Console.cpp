@@ -184,19 +184,19 @@ static Timer AppLayerRequestProcessor = Timer(0.01, Action([]() {
 			result = "TBD";
 			break;
 		case static_cast<size_t>(cweeStr::Hash("Fiber2b")):
-			if (args.Num() >= 1) result = std::to_string(FTL::fnFiberTasks2b(args[0].ReturnNumeric())).c_str();
+			if (args.Num() >= 1) result = std::to_string(FTL::fnFiberTasks2b(args[0].ReturnNumeric()).AsyncInvoke().Wait_Get()[0].cast<int>()).c_str();
 			else result = "Arguments required: 'num_tasks'";
 			break;
 		case static_cast<size_t>(cweeStr::Hash("Fiber2c")):
-			if (args.Num() >= 1) result = std::to_string(FTL::fnFiberTasks2c(args[0].ReturnNumeric())).c_str();
+			if (args.Num() >= 1) result = std::to_string(FTL::fnFiberTasks2c(args[0].ReturnNumeric()).AsyncInvoke().Wait_Get()[0].cast<int>()).c_str();
 			else result = "Arguments required: 'num_tasks'";
 			break;
 		case static_cast<size_t>(cweeStr::Hash("Fiber2d")):
-			if (args.Num() >= 1) result = std::to_string(FTL::fnFiberTasks2d(args[0].ReturnNumeric(), args[1].ReturnNumeric())).c_str();
+			if (args.Num() >= 1) result = std::to_string(FTL::fnFiberTasks2d(args[0].ReturnNumeric(), args[1].ReturnNumeric()).AsyncInvoke().Wait_Get()[0].cast<int>()).c_str();
 			else result = "Arguments required: 'num_tasks', 'num_subtasks'";
 			break;
 		case static_cast<size_t>(cweeStr::Hash("Fiber3")):
-			if (args.Num() >= 2) result = std::to_string(FTL::fnFiberTasks3(args[0].ReturnNumeric(), args[1].ReturnNumeric())).c_str();
+			if (args.Num() >= 2) result = std::to_string(FTL::fnFiberTasks3(args[0].ReturnNumeric(), args[1].ReturnNumeric()).AsyncInvoke().Wait_Get()[0].cast<int>()).c_str();
 			else result = "Arguments required: 'num_tasks', 'num_subtasks'";
 			break;
 		default:
