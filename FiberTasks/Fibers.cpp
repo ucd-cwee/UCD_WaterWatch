@@ -2,7 +2,7 @@
 // http://roar11.com/2016/01/a-platform-independent-thread-pool-using-c14/
 #pragma once
 
-#include "FiberTasks.h"
+#include "Fibers.h"
 
 #include "../WaterWatchCpp/cwee_math.h"
 #include "../WaterWatchCpp/cweeTime.h"
@@ -79,7 +79,7 @@ namespace fibers {
 
 				void			lock() noexcept { m_lock.lock(); };
 				void			unlock() noexcept { m_lock.unlock(); };
-				AUTO            try_lock() noexcept { return m_lock.try_lock(); };
+				decltype(auto)            try_lock() noexcept { return m_lock.try_lock(); };
 
 			private:
 				ftl::Fibtex m_lock;
@@ -91,7 +91,7 @@ namespace fibers {
 		mutex::mutex(const mutex& other) : Handle(std::static_pointer_cast<void>(std::shared_ptr<mutex_impl>(new mutex_impl()))) {};
 		mutex::mutex(mutex&& other) : Handle(std::static_pointer_cast<void>(std::shared_ptr<mutex_impl>(new mutex_impl()))) {};
 
-		NODISCARD std::lock_guard<mutex>	mutex::guard() noexcept { return std::lock_guard<mutex>(const_cast<mutex&>(*this)); };
+		[[nodiscard]] std::lock_guard<mutex>	mutex::guard() noexcept { return std::lock_guard<mutex>(const_cast<mutex&>(*this)); };
 		void			mutex::lock() noexcept { std::static_pointer_cast<mutex_impl>(Handle)->lock(); };
 		void			mutex::unlock() noexcept { std::static_pointer_cast<mutex_impl>(Handle)->unlock(); };
 		bool            mutex::try_lock() noexcept { return std::static_pointer_cast<mutex_impl>(Handle)->try_lock(); };
@@ -305,7 +305,7 @@ fibers::Job FTL::fnFiberTasks2b(int numTasks) {
 		std::shared_ptr<fibers::synchronization::signal> Signal = std::make_shared< fibers::synchronization::signal>();
 	
 		Stopwatch sw; sw.Start();
-		AUTO timer = Timer(
+		decltype(auto) timer = Timer(
 			2.0, 
 			[&sw, &Signal]() {
 				cweeToasts->submitToast(
@@ -527,15 +527,15 @@ private:
 };
 extern DelayedInstantiation< fiber_rand > FiberRandomGenerator = DelayedInstantiation< fiber_rand >([]()-> fiber_rand* { return new fiber_rand(); });
 
-/*! random float between 0 and 1 */ INLINE float fiberRandomFloat() { return FiberRandomGenerator->Random(0.0f, 1.0f); };
-/*! random float between 0 and max */ INLINE float fiberRandomFloat(float max) { return FiberRandomGenerator->Random(0.0f, max); };
-/*! random float between min and max */ INLINE float fiberRandomFloat(float min, float max) { return FiberRandomGenerator->Random(min, max); };
-/*! random int between 0 and cweeMath::INF */ INLINE int fiberRandomInt() { return FiberRandomGenerator->Random(0, std::numeric_limits<int>::max()); };
-/*! random int between 0 and max */ INLINE int fiberRandomInt(int max) { return FiberRandomGenerator->Random(0, max); };
-/*! random int between min and max */ INLINE int fiberRandomInt(int min, int max) { return FiberRandomGenerator->Random(min, max); };
+/*! random float between 0 and 1 */ __forceinline float fiberRandomFloat() { return FiberRandomGenerator->Random(0.0f, 1.0f); };
+/*! random float between 0 and max */ __forceinline float fiberRandomFloat(float max) { return FiberRandomGenerator->Random(0.0f, max); };
+/*! random float between min and max */ __forceinline float fiberRandomFloat(float min, float max) { return FiberRandomGenerator->Random(min, max); };
+/*! random int between 0 and cweeMath::INF */ __forceinline int fiberRandomInt() { return FiberRandomGenerator->Random(0, std::numeric_limits<int>::max()); };
+/*! random int between 0 and max */ __forceinline int fiberRandomInt(int max) { return FiberRandomGenerator->Random(0, max); };
+/*! random int between min and max */ __forceinline int fiberRandomInt(int min, int max) { return FiberRandomGenerator->Random(min, max); };
 
 extern void DoJob(ftl::TaskScheduler* taskScheduler, void* arg) {
-	AUTO job = std::shared_ptr<Action>(static_cast<Action*>(arg));
+	decltype(auto) job = std::shared_ptr<Action>(static_cast<Action*>(arg));
 	job->Invoke();
 };
 fibers::Job FTL::fnFiberTasks3(int numTasks, int numSubTasks) {

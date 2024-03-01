@@ -1,7 +1,6 @@
 #pragma once
 
 #include "../WaterWatchCpp/Precompiled.h"
-#include "../WaterWatchCpp/cweeInterlocked.h"
 #include "../WaterWatchCpp/Iterator.h"
 #include <ppl.h>
 #include <concurrent_vector.h>
@@ -9,10 +8,9 @@
 #include <concurrent_queue.h>
 #include <concurrent_unordered_set.h>
 
-
-
 namespace fibers {
 	namespace utilities {
+
 		template<typename T> struct count_arg;
 		template<typename R, typename ...Args> struct count_arg<std::function<R(Args...)>> { static constexpr const size_t value = sizeof...(Args); };
 		template <typename... Args> constexpr size_t sizeOfParameterPack(Args... Fargs) { return sizeof...(Args); }
@@ -65,22 +63,22 @@ namespace fibers {
 			vector& operator=(vector&& r) = default;
 			~vector() {};
 
-			AUTO grow_by(size_type _Delta) { return data->grow_by(_Delta); };
-			AUTO grow_by(size_type _Delta, const_reference _Item) { return data->grow_by(_Delta, _Item); };
-			AUTO grow_to_at_least(size_type _N) { return data->grow_to_at_least(_N); };
-			AUTO push_back(_Ty const& _Item) { return data->push_back(std::make_shared<_Ty>(_Item)); };
-			AUTO push_back(_Ty&& _Item) { return data->push_back(std::make_shared<_Ty>(std::forward<_Ty>(_Item))); };
-			AUTO push_back(std::shared_ptr<_Ty> const& _Item) { return data->push_back(_Item); };
-			AUTO push_back(std::shared_ptr<_Ty>&& _Item) { return data->push_back(std::forward<_Ty>(_Item)); };
+			decltype(auto) grow_by(size_type _Delta) { return data->grow_by(_Delta); };
+			decltype(auto) grow_by(size_type _Delta, const_reference _Item) { return data->grow_by(_Delta, _Item); };
+			decltype(auto) grow_to_at_least(size_type _N) { return data->grow_to_at_least(_N); };
+			decltype(auto) push_back(_Ty const& _Item) { return data->push_back(std::make_shared<_Ty>(_Item)); };
+			decltype(auto) push_back(_Ty&& _Item) { return data->push_back(std::make_shared<_Ty>(std::forward<_Ty>(_Item))); };
+			decltype(auto) push_back(std::shared_ptr<_Ty> const& _Item) { return data->push_back(_Item); };
+			decltype(auto) push_back(std::shared_ptr<_Ty>&& _Item) { return data->push_back(std::forward<_Ty>(_Item)); };
 			std::shared_ptr<_Ty> operator[](size_type _Index) { return data->operator[](_Index); };
 			std::shared_ptr<_Ty> operator[](size_type _Index) const { return data->operator[](_Index); };
 			std::shared_ptr<_Ty> at(size_type _Index) { return data->at(_Index); };
 			std::shared_ptr<_Ty> at(size_type _Index) const { return data->at(_Index); };
-			AUTO size() const { return data->size(); };
-			AUTO empty() const { return data->empty(); };
-			AUTO capacity() const { return data->capacity(); };
-			AUTO max_size() const { return data->max_size(); };
-			AUTO erase(const_iterator _Where) {
+			decltype(auto) size() const { return data->size(); };
+			decltype(auto) empty() const { return data->empty(); };
+			decltype(auto) capacity() const { return data->capacity(); };
+			decltype(auto) max_size() const { return data->max_size(); };
+			decltype(auto) erase(const_iterator _Where) {
 				vector out;
 				auto endIter = end();
 				for (auto iter = begin(); iter != endIter; iter++) {
@@ -89,7 +87,7 @@ namespace fibers {
 				}
 				data.swap(out.data);
 			};
-			AUTO erase(const_iterator _First, const_iterator _Last) {
+			decltype(auto) erase(const_iterator _First, const_iterator _Last) {
 				vector out;
 				auto endIter = end();
 				for (auto iter = begin(); iter != endIter; iter++) {
@@ -98,11 +96,11 @@ namespace fibers {
 				}
 				data.swap(out.data);
 			};
-			AUTO clear() {
+			decltype(auto) clear() {
 				vector out;
 				data.swap(out.data);
 			};
-			AUTO swap(vector& r) {
+			decltype(auto) swap(vector& r) {
 				data.swap(r.data);
 			};
 		};
@@ -151,19 +149,19 @@ namespace fibers {
 			array& operator=(array&& r) = default;
 			~array() {};
 
-			AUTO grow_by(size_type _Delta) { return data->grow_by(_Delta); };
-			AUTO grow_by(size_type _Delta, const_reference _Item) { return data->grow_by(_Delta, _Item); };
-			AUTO grow_to_at_least(size_type _N) { return data->grow_to_at_least(_N); };
-			AUTO push_back(_Ty const& _Item) { return data->push_back(_Item); };
-			AUTO push_back(_Ty&& _Item) { return data->push_back(std::forward<_Ty>(_Item)); };
-			AUTO operator[](size_type _Index) { return data->operator[](_Index); };
-			AUTO operator[](size_type _Index) const { return data->operator[](_Index); };
-			AUTO at(size_type _Index) { return data->at(_Index); };
-			AUTO at(size_type _Index) const { return data->at(_Index); };
-			AUTO size() const { return data->size(); };
-			AUTO empty() const { return data->empty(); };
-			AUTO capacity() const { return data->capacity(); };
-			AUTO max_size() const { return data->max_size(); };
+			decltype(auto) grow_by(size_type _Delta) { return data->grow_by(_Delta); };
+			decltype(auto) grow_by(size_type _Delta, const_reference _Item) { return data->grow_by(_Delta, _Item); };
+			decltype(auto) grow_to_at_least(size_type _N) { return data->grow_to_at_least(_N); };
+			decltype(auto) push_back(_Ty const& _Item) { return data->push_back(_Item); };
+			decltype(auto) push_back(_Ty&& _Item) { return data->push_back(std::forward<_Ty>(_Item)); };
+			decltype(auto) operator[](size_type _Index) { return data->operator[](_Index); };
+			decltype(auto) operator[](size_type _Index) const { return data->operator[](_Index); };
+			decltype(auto) at(size_type _Index) { return data->at(_Index); };
+			decltype(auto) at(size_type _Index) const { return data->at(_Index); };
+			decltype(auto) size() const { return data->size(); };
+			decltype(auto) empty() const { return data->empty(); };
+			decltype(auto) capacity() const { return data->capacity(); };
+			decltype(auto) max_size() const { return data->max_size(); };
 		};
 
 		/* Fiber- and thread-safe map / dictionary. Objects are stored and returned as std::shared_ptr. Growth, iterations, and insert/emplace operations are concurrent, while erasing and clearing are non-concurrent and will replace the entire map. */
@@ -214,13 +212,13 @@ namespace fibers {
 			};
 			unordered_map& operator=(unordered_map&& r) = default;
 
-			AUTO insert(const value_type& _Value) { return data->insert(_Value); };
-			AUTO insert(const_iterator _Where, const value_type& _Value) { return data->insert(_Where, _Value); };
-			template<class _Iterator> AUTO insert(_Iterator _First, _Iterator _Last) { return data->insert(_First, _Last); };
-			template<class _Valty> AUTO insert(_Valty&& _Value) { return data->insert(_Value); };
-			template<class _Valty> AUTO insert(const_iterator _Where, _Valty&& _Value) { return data->insert(_Where, _Value); };
-			AUTO hash_function() const { return data->hash_function(); };
-			AUTO key_eq() const { return data->key_eq(); };
+			decltype(auto) insert(const value_type& _Value) { return data->insert(_Value); };
+			decltype(auto) insert(const_iterator _Where, const value_type& _Value) { return data->insert(_Where, _Value); };
+			template<class _Iterator> decltype(auto) insert(_Iterator _First, _Iterator _Last) { return data->insert(_First, _Last); };
+			template<class _Valty> decltype(auto) insert(_Valty&& _Value) { return data->insert(_Value); };
+			template<class _Valty> decltype(auto) insert(const_iterator _Where, _Valty&& _Value) { return data->insert(_Where, _Value); };
+			decltype(auto) hash_function() const { return data->hash_function(); };
+			decltype(auto) key_eq() const { return data->key_eq(); };
 			std::shared_ptr<_Element_type> operator[](const key_type& _Keyval) {
 				std::shared_ptr<_Element_type> out = data->operator[](_Keyval);
 				if (!out) {
@@ -239,11 +237,11 @@ namespace fibers {
 			};
 			std::shared_ptr<_Element_type> at(const key_type& _Keyval) { return data->at(_Keyval); };
 			std::shared_ptr<_Element_type> at(const key_type& _Keyval) const { return data->at(_Keyval); };
-			AUTO front() { return data->front(); };
-			AUTO front() const { return data->front(); };
-			AUTO back() { return data->back(); };
-			AUTO back() const { return data->back(); };
-			AUTO erase(const_iterator _Where) {
+			decltype(auto) front() { return data->front(); };
+			decltype(auto) front() const { return data->front(); };
+			decltype(auto) back() { return data->back(); };
+			decltype(auto) back() const { return data->back(); };
+			decltype(auto) erase(const_iterator _Where) {
 				unordered_map out;
 				auto endIter = end();
 				for (auto iter = begin(); iter != endIter; iter++) {
@@ -252,7 +250,7 @@ namespace fibers {
 				}
 				data.swap(out.data);
 			};
-			AUTO erase(const_iterator _First, const_iterator _Last) {
+			decltype(auto) erase(const_iterator _First, const_iterator _Last) {
 				unordered_map out;
 				auto endIter = end();
 				for (auto iter = begin(); iter != endIter; iter++) {
@@ -261,7 +259,7 @@ namespace fibers {
 				}
 				data.swap(out.data);
 			};
-			AUTO erase(const key_type& _Keyval) {
+			decltype(auto) erase(const key_type& _Keyval) {
 				unordered_map out;
 				auto endIter = end();
 				for (auto iter = begin(); iter != endIter; iter++) {
@@ -270,15 +268,15 @@ namespace fibers {
 				}
 				data.swap(out.data);
 			};
-			AUTO unsafe_erase(const key_type& _Keyval) {
+			decltype(auto) unsafe_erase(const key_type& _Keyval) {
 				data->unsafe_erase(_Keyval);
 			};
-			AUTO count(const key_type& _Keyval) const { return data->count(_Keyval); };
-			AUTO emplace(const key_type& _Keyval, const std::shared_ptr<_Element_type>& _Value) { return insert(value_type(_Keyval, _Value)); };
-			AUTO emplace(const key_type& _Keyval, std::shared_ptr<_Element_type>&& _Value) { return insert(value_type(_Keyval, std::forward<typename underlying::value_type>(_Value))); };
-			AUTO emplace(const key_type& _Keyval, const _Element_type& _Value) { return insert(value_type(_Keyval, std::make_shared<_Element_type>(_Value))); };
-			AUTO emplace(const key_type& _Keyval, _Element_type&& _Value) { return insert(value_type(_Keyval, std::make_shared<_Element_type>(std::forward<typename underlying::value_type>(_Value)))); };
-			AUTO clear() {
+			decltype(auto) count(const key_type& _Keyval) const { return data->count(_Keyval); };
+			decltype(auto) emplace(const key_type& _Keyval, const std::shared_ptr<_Element_type>& _Value) { return insert(value_type(_Keyval, _Value)); };
+			decltype(auto) emplace(const key_type& _Keyval, std::shared_ptr<_Element_type>&& _Value) { return insert(value_type(_Keyval, std::forward<typename underlying::value_type>(_Value))); };
+			decltype(auto) emplace(const key_type& _Keyval, const _Element_type& _Value) { return insert(value_type(_Keyval, std::make_shared<_Element_type>(_Value))); };
+			decltype(auto) emplace(const key_type& _Keyval, _Element_type&& _Value) { return insert(value_type(_Keyval, std::make_shared<_Element_type>(std::forward<typename underlying::value_type>(_Value)))); };
+			decltype(auto) clear() {
 				unordered_map out;
 				data.swap(out.data);
 			};
@@ -286,7 +284,7 @@ namespace fibers {
 
 		template<typename _Key_type> using unordered_set = concurrency::concurrent_unordered_set<_Key_type>; /* Wrapper To-Do */
 		template<typename _Value_type> using queue = concurrency::concurrent_queue<_Value_type>; /* Wrapper To-Do */
-	};
+    };
 
 	/*! Class used to queue and await one or multiple jobs submitted to a concurrent fiber manager. */
 	class JobGroup;
@@ -304,12 +302,12 @@ namespace fibers {
 
 	public:
 		static Job Finished() {
-			AUTO toReturn = Job();
+			decltype(auto) toReturn = Job();
 			toReturn.impl = std::make_shared<Action>(Action::Finished());
 			return toReturn;
 		};
 		template <typename T> static Job Finished(const T& returnMe) {
-			AUTO toReturn = Job();
+			decltype(auto) toReturn = Job();
 			toReturn.impl = std::make_shared<Action>(Action::Finished(returnMe));
 			return toReturn;
 		};
@@ -506,7 +504,7 @@ namespace fibers {
 			mutex& operator=(mutex&& s) { return *this; };
 			~mutex() {};
 
-			NODISCARD std::lock_guard<mutex>	guard() noexcept;
+			[[nodiscard]] std::lock_guard<mutex>	guard() noexcept;
 			void			lock() noexcept;
 			void			unlock() noexcept;
 			bool            try_lock() noexcept;
@@ -584,11 +582,11 @@ namespace fibers {
 
 		public: // read and swap
 			type Read() const {
-				AUTO g = Guard();
+				decltype(auto) g = Guard();
 				return data;
 			};
 			void Swap(const type& replacement) {
-				AUTO g = Guard();
+				decltype(auto) g = Guard();
 				data = replacement;
 			};
 			interlocked<type>& operator=(const type& other) {
@@ -602,7 +600,7 @@ namespace fibers {
 		public: // lock, unlock, and direct edit
 			ExclusiveObject GetExclusive() const { return ExclusiveObject(*this); };
 
-			NODISCARD AUTO Guard() const { return lock.Guard(); };
+			[[nodiscard]] decltype(auto) Guard() const { return lock.Guard(); };
 			void Lock() const { lock.Lock(); };
 			void Unlock() const { lock.Unlock(); };
 			type& UnsafeRead() const { return data; };
@@ -719,15 +717,15 @@ namespace fibers {
 				}
 			};
 
-			NODISCARD AUTO Write_Guard() noexcept { return std::lock_guard(*this); };
-			NODISCARD AUTO Read_Guard() noexcept { return std::shared_lock(*this); };
+			[[nodiscard]] decltype(auto) Write_Guard() noexcept { return std::lock_guard(*this); };
+			[[nodiscard]] decltype(auto) Read_Guard() noexcept { return std::shared_lock(*this); };
 		};
 	};
 
 	namespace parallel {
 		/* parallel_for (auto i = start; i < end; i++){ todo(i); } */
 		template<typename iteratorType, typename F>
-		AUTO For(iteratorType start, iteratorType end, F&& ToDo) {
+		decltype(auto) For(iteratorType start, iteratorType end, F&& ToDo) {
 			auto todo = std::function(std::forward<F>(ToDo));
 			constexpr bool retNo = std::is_same<typename utilities::function_traits<decltype(todo)>::result_type, void>::value;
 
@@ -744,7 +742,7 @@ namespace fibers {
 
 		/* parallel_for (auto i = start; i < end; i += step){ todo(i); } */
 		template<typename iteratorType, typename F>
-		AUTO For(iteratorType start, iteratorType end, iteratorType step, F&& ToDo) {
+		decltype(auto) For(iteratorType start, iteratorType end, iteratorType step, F&& ToDo) {
 			auto todo = std::function(std::forward<F>(ToDo));
 			constexpr bool retNo = std::is_same<typename utilities::function_traits<decltype(todo)>::result_type, void>::value;
 
@@ -762,8 +760,8 @@ namespace fibers {
 
 		/* parallel_for (auto i = container.begin(); i != container.end(); i++){ todo(*i); } */
 		template<typename containerType, typename F>
-		AUTO ForEach(containerType const& container, F&& ToDo) {
-			AUTO todo = std::function(std::forward<F>(ToDo));
+		decltype(auto) ForEach(containerType const& container, F&& ToDo) {
+			decltype(auto) todo = std::function(std::forward<F>(ToDo));
 			constexpr bool retNo = std::is_same<typename utilities::function_traits<decltype(todo)>::result_type, void>::value;
 
 			std::vector<fibers::Job> jobs;
@@ -781,8 +779,8 @@ namespace fibers {
 
 		/* parallel_for (auto i = container.cbegin(); i != container.cend(); i++){ todo(*i); } */
 		template<typename containerType, typename F>
-		AUTO ForEach(containerType& container, F&& ToDo) {
-			AUTO todo = std::function(std::forward<F>(ToDo));
+		decltype(auto) ForEach(containerType& container, F&& ToDo) {
+			decltype(auto) todo = std::function(std::forward<F>(ToDo));
 			constexpr bool retNo = std::is_same<typename utilities::function_traits<decltype(todo)>::result_type, void>::value;
 
 			std::vector<fibers::Job> jobs;

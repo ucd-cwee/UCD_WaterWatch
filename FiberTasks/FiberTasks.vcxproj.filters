@@ -10,7 +10,7 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="FiberTasks.h">
+    <ClInclude Include="Fibers.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="ftl\alloc.h">
@@ -36,7 +36,7 @@
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="FiberTasks.cpp">
+    <ClCompile Include="Fibers.cpp">
       <Filter>Header Files</Filter>
     </ClCompile>
     <ClCompile Include="ftl\alloc.cpp">

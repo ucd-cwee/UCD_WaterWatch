@@ -24,6 +24,7 @@
     <ProjectGuid>{a79e05b0-3b4e-4242-a0c8-177f4548db0d}</ProjectGuid>
     <RootNamespace>FiberTasks</RootNamespace>
     <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+    <ProjectName>Fibers</ProjectName>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
@@ -171,7 +172,7 @@
     </Lib>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClInclude Include="FiberTasks.h" />
+    <ClInclude Include="Fibers.h" />
     <ClInclude Include="ftl\alloc.h" />
     <ClInclude Include="ftl\fiber.h" />
     <ClInclude Include="ftl\fibtex.h" />
@@ -181,7 +182,7 @@
     <ClInclude Include="ftl\wait_group.h" />
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="FiberTasks.cpp" />
+    <ClCompile Include="Fibers.cpp" />
     <ClCompile Include="ftl\alloc.cpp" />
     <ClCompile Include="ftl\fiber.cpp" />
     <ClCompile Include="ftl\fibtex.cpp" />
