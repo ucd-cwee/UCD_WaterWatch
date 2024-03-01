@@ -14,8 +14,36 @@ to maintain a single distribution point for the source code.
 */
 
 #include "WaterWatch_Win32_Console.h"
+
+fibers::Job Example::ExampleF(int numTasks, int numSubTasks) {
+	return fibers::Job([](int numTasks, int numSubTasks) {
+		cweeSysInterlockedInteger counter;
+		if (numTasks < 0) numTasks *= -1;
+		if (numSubTasks < 0) numSubTasks *= -1;
+		fibers::Job([&]() { // not required to be a job
+			for (int i = 0; i < numTasks; ++i) { // iterations are actually in series
+				fibers::Job([&numSubTasks, &counter]() { // not required to be a job
+					fibers::parallel::For(0, numSubTasks, [&counter](int j) {  // policies / particles are done simultanously using the fibers::For or fibers::ForEach loops
+						counter.Increment(); // do work
+					});
+				}).AsyncInvoke().Wait();
+			}
+		}).AsyncInvoke().Wait();
+		return counter.GetValue();
+	}, (int)numTasks, (int)numSubTasks);
+};
+
+
+
+
+
+
+
+
+
+
+
 #include "../ExcelInterop/Wrapper.h"
-#include "../FiberTasks/FiberTasks.h"
 
 class Win32ConsoleSupport {
 public:

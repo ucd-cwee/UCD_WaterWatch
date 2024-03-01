@@ -12,6 +12,15 @@
 
 
 namespace fibers {
+	namespace utilities {
+		template<typename T> struct count_arg;
+		template<typename R, typename ...Args> struct count_arg<std::function<R(Args...)>> { static constexpr const size_t value = sizeof...(Args); };
+		template <typename... Args> constexpr size_t sizeOfParameterPack(Args... Fargs) { return sizeof...(Args); }
+		template<class R> struct function_traits { using result_type = R; using arguments = std::tuple<>; };
+		template<class R> struct function_traits<std::function<R(void)>> { using result_type = R; using arguments = std::tuple<>; };
+		template<class R, class... Args> struct function_traits<std::function<R(Args...)>> { using result_type = R; using arguments = std::tuple<Args...>; };
+	};
+
 	namespace containers {
 		/* Fiber- and thread-safe vector. Objects are stored and returned as std::shared_ptr. Growth, iterations, and push_back operations are concurrent, while erasing and clearing are non-concurrent and will replace the entire vector. */
 		template<typename _Ty>
@@ -156,6 +165,127 @@ namespace fibers {
 			AUTO capacity() const { return data->capacity(); };
 			AUTO max_size() const { return data->max_size(); };
 		};
+
+		/* Fiber- and thread-safe map / dictionary. Objects are stored and returned as std::shared_ptr. Growth, iterations, and insert/emplace operations are concurrent, while erasing and clearing are non-concurrent and will replace the entire map. */
+		template<typename _Key_type, typename _Element_type>
+		class unordered_map {
+		protected:
+			using underlying = typename concurrency::concurrent_unordered_map<_Key_type, std::shared_ptr<_Element_type>>;
+			std::shared_ptr< underlying > data;
+
+		public:
+			struct it_state {
+				std::shared_ptr< underlying > lifetime;
+				typename underlying::iterator pos;
+
+				inline void begin(const unordered_map* ref) { lifetime = ref->data; pos = lifetime->begin(); }
+				inline void next(const unordered_map* ref) { ++pos; }
+				inline void end(const unordered_map* ref) { lifetime = ref->data; pos = lifetime->end(); }
+				inline typename underlying::value_type& get(unordered_map* ref) { return *pos; }
+				inline bool cmp(const it_state& s) const { return (pos == s.pos) ? false : true; }
+				inline long long distance(const it_state& s) const { return pos - s.pos; };
+				inline void prev(const unordered_map* ref) { --pos; }
+				inline const typename underlying::value_type& get(const unordered_map* ref) const { return *pos; }
+			};
+			SETUP_STL_ITERATOR(unordered_map, typename underlying::value_type, it_state);
+
+			typedef typename underlying::key_type key_type;
+			typedef typename underlying::mapped_type mapped_type;
+			typedef typename underlying::key_equal key_equal;
+			typedef typename underlying::hasher hasher;
+			typedef iterator local_iterator;
+			typedef const_iterator const_local_iterator;
+
+			unordered_map() : data(new underlying()) {};
+			explicit unordered_map(size_type _N) : data(new underlying(_N)) {};
+			unordered_map(size_type _N, const_reference _Item) : data(new underlying(_N, _Item)) {};
+			template<class _InputIterator> unordered_map(_InputIterator _Begin, _InputIterator _End) : data(new underlying(_Begin, _End)) {};
+			unordered_map(unordered_map const& r) : data(new underlying()) {
+				this->operator=(r);
+			};
+			unordered_map(unordered_map&& r) = default;
+			unordered_map& operator=(unordered_map const& r) {
+				if (static_cast<void*>(this) != static_cast<const void*>(&r)) {
+					unordered_map out;
+					for (auto& x : *r.data) out[x.first] = x.second;
+					out.data.swap(data);
+				}
+				return *this;
+			};
+			unordered_map& operator=(unordered_map&& r) = default;
+
+			AUTO insert(const value_type& _Value) { return data->insert(_Value); };
+			AUTO insert(const_iterator _Where, const value_type& _Value) { return data->insert(_Where, _Value); };
+			template<class _Iterator> AUTO insert(_Iterator _First, _Iterator _Last) { return data->insert(_First, _Last); };
+			template<class _Valty> AUTO insert(_Valty&& _Value) { return data->insert(_Value); };
+			template<class _Valty> AUTO insert(const_iterator _Where, _Valty&& _Value) { return data->insert(_Where, _Value); };
+			AUTO hash_function() const { return data->hash_function(); };
+			AUTO key_eq() const { return data->key_eq(); };
+			std::shared_ptr<_Element_type> operator[](const key_type& _Keyval) {
+				std::shared_ptr<_Element_type> out = data->operator[](_Keyval);
+				if (!out) {
+					out = std::make_shared<_Element_type>();
+					data->operator[](_Keyval) = out;
+				}
+				return out;
+			};
+			std::shared_ptr<_Element_type> operator[](const key_type& _Keyval) const {
+				std::shared_ptr<_Element_type> out = data->operator[](_Keyval);
+				if (!out) {
+					out = std::make_shared<_Element_type>();
+					data->operator[](_Keyval) = out;
+				}
+				return out;
+			};
+			std::shared_ptr<_Element_type> at(const key_type& _Keyval) { return data->at(_Keyval); };
+			std::shared_ptr<_Element_type> at(const key_type& _Keyval) const { return data->at(_Keyval); };
+			AUTO front() { return data->front(); };
+			AUTO front() const { return data->front(); };
+			AUTO back() { return data->back(); };
+			AUTO back() const { return data->back(); };
+			AUTO erase(const_iterator _Where) {
+				unordered_map out;
+				auto endIter = end();
+				for (auto iter = begin(); iter != endIter; iter++) {
+					if (iter == _Where) continue;
+					out.insert(*iter);
+				}
+				data.swap(out.data);
+			};
+			AUTO erase(const_iterator _First, const_iterator _Last) {
+				unordered_map out;
+				auto endIter = end();
+				for (auto iter = begin(); iter != endIter; iter++) {
+					if (iter >= _First && iter <= _Last) continue;
+					out.insert(*iter);
+				}
+				data.swap(out.data);
+			};
+			AUTO erase(const key_type& _Keyval) {
+				unordered_map out;
+				auto endIter = end();
+				for (auto iter = begin(); iter != endIter; iter++) {
+					if (iter->first == _Keyval) continue;
+					out.insert(*iter);
+				}
+				data.swap(out.data);
+			};
+			AUTO unsafe_erase(const key_type& _Keyval) {
+				data->unsafe_erase(_Keyval);
+			};
+			AUTO count(const key_type& _Keyval) const { return data->count(_Keyval); };
+			AUTO emplace(const key_type& _Keyval, const std::shared_ptr<_Element_type>& _Value) { return insert(value_type(_Keyval, _Value)); };
+			AUTO emplace(const key_type& _Keyval, std::shared_ptr<_Element_type>&& _Value) { return insert(value_type(_Keyval, std::forward<typename underlying::value_type>(_Value))); };
+			AUTO emplace(const key_type& _Keyval, const _Element_type& _Value) { return insert(value_type(_Keyval, std::make_shared<_Element_type>(_Value))); };
+			AUTO emplace(const key_type& _Keyval, _Element_type&& _Value) { return insert(value_type(_Keyval, std::make_shared<_Element_type>(std::forward<typename underlying::value_type>(_Value)))); };
+			AUTO clear() {
+				unordered_map out;
+				data.swap(out.data);
+			};
+		};
+
+		template<typename _Key_type> using unordered_set = concurrency::concurrent_unordered_set<_Key_type>; /* Wrapper To-Do */
+		template<typename _Value_type> using queue = concurrency::concurrent_queue<_Value_type>; /* Wrapper To-Do */
 	};
 
 	/*! Class used to queue and await one or multiple jobs submitted to a concurrent fiber manager. */
@@ -365,127 +495,308 @@ namespace fibers {
 
 	};
 
-	namespace containers {
-		/* Fiber- and thread-safe map / dictionary. Objects are stored and returned as std::shared_ptr. Growth, iterations, and insert/emplace operations are concurrent, while erasing and clearing are non-concurrent and will replace the entire map. */
-		template<typename _Key_type, typename _Element_type>
-		class unordered_map {
-		protected:
-			using underlying = typename concurrency::concurrent_unordered_map<_Key_type, std::shared_ptr<_Element_type>>;
-			std::shared_ptr< underlying > data;
-
+	namespace synchronization {
+		/* Fiber mutex */
+		class mutex {
 		public:
-			struct it_state {
-				std::shared_ptr< underlying > lifetime;
-				typename underlying::iterator pos;
+			mutex();
+			mutex(const mutex& other);
+			mutex(mutex&& other);
+			mutex& operator=(const mutex& s) { return *this; };
+			mutex& operator=(mutex&& s) { return *this; };
+			~mutex() {};
 
-				inline void begin(const unordered_map* ref) { lifetime = ref->data; pos = lifetime->begin(); }
-				inline void next(const unordered_map* ref) { ++pos; }
-				inline void end(const unordered_map* ref) { lifetime = ref->data; pos = lifetime->end(); }
-				inline typename underlying::value_type& get(unordered_map* ref) { return *pos; }
-				inline bool cmp(const it_state& s) const { return (pos == s.pos) ? false : true; }
-				inline long long distance(const it_state& s) const { return pos - s.pos; };
-				inline void prev(const unordered_map* ref) { --pos; }
-				inline const typename underlying::value_type& get(const unordered_map* ref) const { return *pos; }
-			};
-			SETUP_STL_ITERATOR(unordered_map, typename underlying::value_type, it_state);
+			NODISCARD std::lock_guard<mutex>	guard() noexcept;
+			void			lock() noexcept;
+			void			unlock() noexcept;
+			bool            try_lock() noexcept;
 
-			typedef typename underlying::key_type key_type;
-			typedef typename underlying::mapped_type mapped_type;
-			typedef typename underlying::key_equal key_equal;
-			typedef typename underlying::hasher hasher;
-			typedef iterator local_iterator;
-			typedef const_iterator const_local_iterator;
+		protected:
+			std::shared_ptr<void> Handle;
 
-			unordered_map() : data(new underlying()) {};
-			explicit unordered_map(size_type _N) : data(new underlying(_N)) {};
-			unordered_map(size_type _N, const_reference _Item) : data(new underlying(_N, _Item)) {};
-			template<class _InputIterator> unordered_map(_InputIterator _Begin, _InputIterator _End) : data(new underlying(_Begin, _End)) {};
-			unordered_map(unordered_map const& r) : data(new underlying()) {
-				this->operator=(r);
-			};
-			unordered_map(unordered_map&& r) = default;
-			unordered_map& operator=(unordered_map const& r) {
-				if (static_cast<void*>(this) != static_cast<const void*>(&r)) {
-					unordered_map out;
-					for (auto& x : *r.data) out[x.first] = x.second;
-					out.data.swap(data);
-				}
-				return *this;
-			};
-			unordered_map& operator=(unordered_map&& r) = default;
-
-			AUTO insert(const value_type& _Value) { return data->insert(_Value); };
-			AUTO insert(const_iterator _Where, const value_type& _Value) { return data->insert(_Where, _Value); };
-			template<class _Iterator> AUTO insert(_Iterator _First, _Iterator _Last) { return data->insert(_First, _Last); };
-			template<class _Valty> AUTO insert(_Valty&& _Value) { return data->insert(_Value); };
-			template<class _Valty> AUTO insert(const_iterator _Where, _Valty&& _Value) { return data->insert(_Where, _Value); };
-			AUTO hash_function() const { return data->hash_function(); };
-			AUTO key_eq() const { return data->key_eq(); };
-			std::shared_ptr<_Element_type> operator[](const key_type& _Keyval) {
-				std::shared_ptr<_Element_type> out = data->operator[](_Keyval);
-				if (!out) {
-					out = std::make_shared<_Element_type>();
-					data->operator[](_Keyval) = out;
-				}
-				return out;
-			};
-			std::shared_ptr<_Element_type> operator[](const key_type& _Keyval) const {
-				std::shared_ptr<_Element_type> out = data->operator[](_Keyval);
-				if (!out) {
-					out = std::make_shared<_Element_type>();
-					data->operator[](_Keyval) = out;
-				}
-				return out;
-			};
-			std::shared_ptr<_Element_type> at(const key_type& _Keyval) { return data->at(_Keyval); };
-			std::shared_ptr<_Element_type> at(const key_type& _Keyval) const { return data->at(_Keyval); };
-			AUTO front() { return data->front(); };
-			AUTO front() const { return data->front(); };
-			AUTO back() { return data->back(); };
-			AUTO back() const { return data->back(); };
-			AUTO erase(const_iterator _Where) {
-				unordered_map out;
-				auto endIter = end();
-				for (auto iter = begin(); iter != endIter; iter++) {
-					if (iter == _Where) continue;
-					out.insert(*iter);
-				}
-				data.swap(out.data);
-			};
-			AUTO erase(const_iterator _First, const_iterator _Last) {
-				unordered_map out;
-				auto endIter = end();
-				for (auto iter = begin(); iter != endIter; iter++) {
-					if (iter >= _First && iter <= _Last) continue;
-					out.insert(*iter);
-				}
-				data.swap(out.data);
-			};
-			AUTO erase(const key_type& _Keyval) {
-				unordered_map out;
-				auto endIter = end();
-				for (auto iter = begin(); iter != endIter; iter++) {
-					if (iter->first == _Keyval) continue;
-					out.insert(*iter);
-				}
-				data.swap(out.data);
-			};
-			AUTO unsafe_erase(const key_type& _Keyval) {
-				data->unsafe_erase(_Keyval);
-			};
-			AUTO count(const key_type& _Keyval) const { return data->count(_Keyval); };
-			AUTO emplace(const key_type& _Keyval, const std::shared_ptr<_Element_type>& _Value) { return insert(value_type(_Keyval, _Value)); };
-			AUTO emplace(const key_type& _Keyval, std::shared_ptr<_Element_type>&& _Value) { return insert(value_type(_Keyval, std::forward<typename underlying::value_type>(_Value))); };
-			AUTO emplace(const key_type& _Keyval, const _Element_type& _Value) { return insert(value_type(_Keyval, std::make_shared<_Element_type>(_Value))); };
-			AUTO emplace(const key_type& _Keyval, _Element_type&& _Value) { return insert(value_type(_Keyval, std::make_shared<_Element_type>(std::forward<typename underlying::value_type>(_Value)))); };
-			AUTO clear() {
-				unordered_map out;
-				data.swap(out.data);
-			};
 		};
 
-		template<typename _Key_type> using unordered_set = concurrency::concurrent_unordered_set<_Key_type>; /* Wrapper To-Do */
-		template<typename _Value_type> using queue = concurrency::concurrent_queue<_Value_type>; /* Wrapper To-Do */
+		/* Wrapper for non-atomic objects to allow for threads to lock them for exclusive access */
+		template< typename type, typename MutexType = fibers::synchronization::mutex>
+		class interlocked {
+		public:
+			class ExclusiveObject {
+			public:
+				constexpr ExclusiveObject(const interlocked<type>& mut) : owner(const_cast<interlocked<type>&>(mut)) { this->owner.Lock(); };
+				~ExclusiveObject() { this->owner.Unlock(); };
+
+				ExclusiveObject() = delete;
+				ExclusiveObject(const ExclusiveObject& other) = delete;
+				ExclusiveObject(ExclusiveObject&& other) = delete;
+				ExclusiveObject& operator=(const ExclusiveObject& other) = delete;
+				ExclusiveObject& operator=(ExclusiveObject&& other) = delete;
+
+				type& operator=(const type& a) { data() = a; return data(); };
+				type& operator=(type&& a) { data() = a; return data(); };
+				type& operator*() const { return data(); };
+				type* operator->() const { return &data(); };
+
+			protected:
+				type& data() const { return owner.UnsafeRead(); };
+				interlocked<type>& owner;
+			};
+
+		public: // construction and destruction
+			typedef type Type;
+
+			interlocked() : data() {};
+			interlocked(const type& other) : data(other) {};
+			interlocked(type&& other) : data(std::forward<type>(other)) {};
+			interlocked(const interlocked& other) : data() { this->Copy(other); };
+			interlocked(interlocked&& other) : data() { this->Copy(std::forward<interlocked>(other)); };
+			~interlocked() {};
+
+		public: // copy and clear
+			interlocked<type>& operator=(const interlocked<type>& other) {
+				this->Copy(other);
+				return *this;
+			};
+			interlocked<type>& operator=(interlocked<type>&& other) {
+				this->Copy(std::forward<interlocked<type>>(other));
+				return *this;
+			};
+			void Copy(const interlocked<type>& copy) {
+				if (&copy == this) return;
+				lock.Lock();
+				copy.Lock();
+				data = copy.data;
+				copy.Unlock();
+				lock.Unlock();
+			};
+			void Copy(interlocked<type>&& copy) {
+				if (&copy == this) return;
+				lock.Lock();
+				copy.Lock();
+				data = copy.data;
+				copy.Unlock();
+				lock.Unlock();
+			};
+			void Clear() {
+				lock.Lock();
+				data = type();
+				lock.Unlock();
+			};
+
+		public: // read and swap
+			type Read() const {
+				AUTO g = Guard();
+				return data;
+			};
+			void Swap(const type& replacement) {
+				AUTO g = Guard();
+				data = replacement;
+			};
+			interlocked<type>& operator=(const type& other) {
+				Swap(other);
+				return *this;
+			};
+
+			operator type() const { return Read(); };
+			type* operator->() const { return &data; };
+
+		public: // lock, unlock, and direct edit
+			ExclusiveObject GetExclusive() const { return ExclusiveObject(*this); };
+
+			NODISCARD AUTO Guard() const { return lock.Guard(); };
+			void Lock() const { lock.Lock(); };
+			void Unlock() const { lock.Unlock(); };
+			type& UnsafeRead() const { return data; };
+
+		private:
+			mutable type data;
+			MutexType lock;
+
+		};
+
+		/* Tool that allows fibers to busy-work until a signla is raised by another fiber or thread. */
+		class signal {
+		public:
+			signal(bool manualReset = true);
+			signal(const signal&) = default;
+			signal(signal&&) = default;
+			signal& operator=(const signal&) = default;
+			signal& operator=(signal&&) = default;
+			~signal() {};
+
+		public:
+			/* Raise (set to one) the signal. Free & fast. */
+			void	Raise() noexcept;
+			/* Clear (zero-out) the signal. Free & fast. */
+			void	Clear() noexcept;
+			/* Busy-waits for the signal to be raised. */
+			void	Wait() noexcept;
+			/* Tests if the signal has been raised. Free & fast. */
+			bool	TryWait() noexcept;
+
+		private:
+			std::shared_ptr<void> impl;
+
+		};
+
+		/* Read-Write mutex that allows multiple readers and one writer to cooperatively access an underlying object. Very fast for 100% reading operations, as (effectively) no locking actually happens. */
+		class shared_mutex {
+		private:
+			mutex    mut_;
+			std::condition_variable_any gate1_;
+			std::condition_variable_any gate2_;
+			unsigned state_;
+
+			static const unsigned write_entered_ = 1U << (sizeof(unsigned) * CHAR_BIT - 1);
+			static const unsigned n_readers_ = ~write_entered_;
+
+		public:
+
+			shared_mutex() : state_(0) {}
+
+			// Exclusive/Writer ownership
+			void lock() {
+				std::unique_lock<mutex> lk(mut_);
+				while (state_ & write_entered_) gate1_.wait(lk);
+				state_ |= write_entered_;
+				while (state_ & n_readers_) gate2_.wait(lk);
+			};
+			// Exclusive/Writer ownership
+			bool try_lock() {
+				std::unique_lock<mutex> lk(mut_, std::try_to_lock);
+				if (lk.owns_lock() && state_ == 0)
+				{
+					state_ = write_entered_;
+					return true;
+				}
+				return false;
+			};
+			// Exclusive/Writer ownership
+			void unlock() {
+				{
+					std::scoped_lock<mutex> _(mut_);
+					state_ = 0;
+				}
+				gate1_.notify_all();
+			};
+
+			// Shared/Reader ownership
+			void lock_shared() {
+				std::unique_lock<mutex> lk(mut_);
+				while ((state_ & write_entered_) || (state_ & n_readers_) == n_readers_)
+					gate1_.wait(lk);
+				unsigned num_readers = (state_ & n_readers_) + 1;
+				state_ &= ~n_readers_;
+				state_ |= num_readers;
+			};
+			// Shared/Reader ownership
+			bool try_lock_shared() {
+				std::unique_lock<mutex> lk(mut_, std::try_to_lock);
+				unsigned num_readers = state_ & n_readers_;
+				if (lk.owns_lock() && !(state_ & write_entered_) && num_readers != n_readers_)
+				{
+					++num_readers;
+					state_ &= ~n_readers_;
+					state_ |= num_readers;
+					return true;
+				}
+				return false;
+			};
+			// Shared/Reader ownership
+			void unlock_shared() {
+				std::scoped_lock<mutex> _(mut_);
+				unsigned num_readers = (state_ & n_readers_) - 1;
+				state_ &= ~n_readers_;
+				state_ |= num_readers;
+				if (state_ & write_entered_)
+				{
+					if (num_readers == 0)
+						gate2_.notify_one();
+				}
+				else
+				{
+					if (num_readers == n_readers_ - 1)
+						gate1_.notify_one();
+				}
+			};
+
+			NODISCARD AUTO Write_Guard() noexcept { return std::lock_guard(*this); };
+			NODISCARD AUTO Read_Guard() noexcept { return std::shared_lock(*this); };
+		};
+	};
+
+	namespace parallel {
+		/* parallel_for (auto i = start; i < end; i++){ todo(i); } */
+		template<typename iteratorType, typename F>
+		AUTO For(iteratorType start, iteratorType end, F&& ToDo) {
+			auto todo = std::function(std::forward<F>(ToDo));
+			constexpr bool retNo = std::is_same<typename utilities::function_traits<decltype(todo)>::result_type, void>::value;
+
+			std::vector<fibers::Job> jobs;
+			for (iteratorType iter = start; iter < end; iter++) {
+				jobs.push_back(fibers::Job([todo](iteratorType const& T) { return todo(T); }, (iteratorType)iter));
+			}
+			JobGroup group;
+			group.Queue(jobs);
+
+			if constexpr (retNo) group.Wait();
+			else return group.Wait_Get();
+		};
+
+		/* parallel_for (auto i = start; i < end; i += step){ todo(i); } */
+		template<typename iteratorType, typename F>
+		AUTO For(iteratorType start, iteratorType end, iteratorType step, F&& ToDo) {
+			auto todo = std::function(std::forward<F>(ToDo));
+			constexpr bool retNo = std::is_same<typename utilities::function_traits<decltype(todo)>::result_type, void>::value;
+
+			std::vector<fibers::Job> jobs;
+			for (iteratorType iter = start; iter < end; iter += step) {
+				jobs.push_back(fibers::Job([todo](iteratorType const& T) { return todo(T); }, (iteratorType)iter));
+			}
+
+			JobGroup group;
+			group.Queue(jobs);
+
+			if constexpr (retNo) group.Wait();
+			else return group.Wait_Get();
+		};
+
+		/* parallel_for (auto i = container.begin(); i != container.end(); i++){ todo(*i); } */
+		template<typename containerType, typename F>
+		AUTO ForEach(containerType const& container, F&& ToDo) {
+			AUTO todo = std::function(std::forward<F>(ToDo));
+			constexpr bool retNo = std::is_same<typename utilities::function_traits<decltype(todo)>::result_type, void>::value;
+
+			std::vector<fibers::Job> jobs;
+
+			for (auto iter = container.begin(); iter != container.end(); iter++) {
+				jobs.push_back(fibers::Job([todo](typename containerType::const_iterator& T) { return todo(Any(std::shared_ptr<typename containerType::value_type>(const_cast<typename containerType::value_type*>(&*T), [](typename containerType::value_type*) {})).cast()); }, (typename containerType::const_iterator)(iter)));
+			}
+
+			JobGroup group;
+			group.Queue(jobs);
+
+			if constexpr (retNo) group.Wait();
+			else return group.Wait_Get();
+		};
+
+		/* parallel_for (auto i = container.cbegin(); i != container.cend(); i++){ todo(*i); } */
+		template<typename containerType, typename F>
+		AUTO ForEach(containerType& container, F&& ToDo) {
+			AUTO todo = std::function(std::forward<F>(ToDo));
+			constexpr bool retNo = std::is_same<typename utilities::function_traits<decltype(todo)>::result_type, void>::value;
+
+			std::vector<fibers::Job> jobs;
+
+			for (auto iter = container.begin(); iter != container.end(); iter++) {
+				jobs.push_back(fibers::Job([todo](typename containerType::iterator& T) { return todo(Any(std::shared_ptr<typename containerType::value_type>(&*T, [](typename containerType::value_type*) {})).cast()); }, (typename containerType::iterator)(iter)));
+			}
+
+			JobGroup group;
+			group.Queue(jobs);
+
+			if constexpr (retNo) group.Wait();
+			else return group.Wait_Get();
+		};
 	};
 };
 

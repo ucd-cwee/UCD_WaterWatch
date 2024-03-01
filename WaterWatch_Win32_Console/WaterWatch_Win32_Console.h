@@ -33,3 +33,12 @@ to maintain a single distribution point for the source code.
 #include "../WaterWatchCpp/DispatchTimer.h"
 #include "../WaterWatchCpp/EPAnetWrapper.h" 
 #include <conio.h> // Enable real-time keystroke collection without pausing console. NOTE: THIS IS NOT UWP APP SAFE, DO NOT INCLUDE ELSEWHERE IN DLL OR LIB.
+
+
+
+#include "../FiberTasks/FiberTasks.h"
+
+
+class Example {
+	static fibers::Job ExampleF(int numTasks, int numSubTasks);
+};

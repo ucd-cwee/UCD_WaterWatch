@@ -35,14 +35,8 @@ namespace fibers {
 		p->SetEmptyQueueBehavior(ftl::EmptyQueueBehavior::Sleep);
 		return p;
 	});
-	namespace utilities {
-		template<typename T> struct count_arg;
-		template<typename R, typename ...Args> struct count_arg<std::function<R(Args...)>> { static constexpr const size_t value = sizeof...(Args); };
-		template <typename... Args> constexpr size_t sizeOfParameterPack(Args... Fargs) { return sizeof...(Args); }
-		template<class R> struct function_traits { using result_type = R; using arguments = std::tuple<>; };
-		template<class R> struct function_traits<std::function<R(void)>> { using result_type = R; using arguments = std::tuple<>; };
-		template<class R, class... Args> struct function_traits<std::function<R(Args...)>> { using result_type = R; using arguments = std::tuple<Args...>; };
-
+	
+	namespace {
 		struct AnyFunctionStruct {
 			std::shared_ptr<Action> job;
 			Any* destination;
@@ -73,128 +67,34 @@ namespace fibers {
 		};
 	};
 	namespace synchronization {
-		/* Fiber mutex */
-		class mutex {
-		public:
-			using Handle_t = ftl::Fibtex;
-			using Phandle = std::shared_ptr<Handle_t>;
-
-		public:
-			mutex() : Handle(new Handle_t(&*Fibers)) {};
-			mutex(const mutex& other) : Handle(new Handle_t(&*Fibers)) {};
-			mutex(mutex&& other) : Handle(new Handle_t(&*Fibers)) {};
-			mutex& operator=(const mutex& s) { return *this; };
-			mutex& operator=(mutex&& s) { return *this; };
-			~mutex() {};
-
-			NODISCARD AUTO	Guard() const noexcept { return std::lock_guard<mutex>(const_cast<mutex&>(*this)); };
-			bool			Lock(bool blocking = true) const noexcept { Handle->lock(); return true; };
-			void			Unlock() const noexcept { Handle->unlock(); };
-			void			lock() const noexcept { Lock(); };
-			void			unlock() const noexcept { Unlock(); };
-			bool            try_lock() const noexcept { return Handle->try_lock(); };
-
-		protected:
-			Phandle Handle;
-
-		};
-			
-		/* Wrapper for non-atomic objects to allow for threads to lock them for exclusive access */
-		template< typename type>
-		class interlocked {
-		public:
-			class ExclusiveObject {
+		namespace {
+			class mutex_impl {
 			public:
-				constexpr ExclusiveObject(const interlocked<type>& mut) : owner(const_cast<interlocked<type>&>(mut)) { this->owner.Lock(); };
-				~ExclusiveObject() { this->owner.Unlock(); };
+				mutex_impl() : m_lock(&*Fibers) {};
+				mutex_impl(const mutex_impl&) = delete;
+				mutex_impl(mutex_impl&&) = delete;
+				mutex_impl& operator=(const mutex_impl&) = delete;
+				mutex_impl& operator=(mutex_impl&&) = delete;
+				~mutex_impl() {};
 
-				ExclusiveObject() = delete;
-				ExclusiveObject(const ExclusiveObject& other) = delete;
-				ExclusiveObject(ExclusiveObject&& other) = delete;
-				ExclusiveObject& operator=(const ExclusiveObject& other) = delete;
-				ExclusiveObject& operator=(ExclusiveObject&& other) = delete;
+				void			lock() noexcept { m_lock.lock(); };
+				void			unlock() noexcept { m_lock.unlock(); };
+				AUTO            try_lock() noexcept { return m_lock.try_lock(); };
 
-				type& operator=(const type& a) { data() = a; return data(); };
-				type& operator=(type&& a) { data() = a; return data(); };
-				type& operator*() const { return data(); };
-				type* operator->() const { return &data(); };
+			private:
+				ftl::Fibtex m_lock;
 
-			protected:
-				type& data() const { return owner.UnsafeRead(); };
-				interlocked<type>& owner;
 			};
+		}
 
-		public: // construction and destruction
-			typedef type Type;
+		mutex::mutex() : Handle(std::static_pointer_cast<void>(std::shared_ptr<mutex_impl>(new mutex_impl()))) {};
+		mutex::mutex(const mutex& other) : Handle(std::static_pointer_cast<void>(std::shared_ptr<mutex_impl>(new mutex_impl()))) {};
+		mutex::mutex(mutex&& other) : Handle(std::static_pointer_cast<void>(std::shared_ptr<mutex_impl>(new mutex_impl()))) {};
 
-			interlocked() : data() {};
-			interlocked(const type& other) : data(other) {};
-			interlocked(type&& other) : data(std::forward<type>(other)) {};
-			interlocked(const interlocked& other) : data() { this->Copy(other); };
-			interlocked(interlocked&& other) : data() { this->Copy(std::forward<interlocked>(other)); };
-			~interlocked() {};
-
-		public: // copy and clear
-			interlocked<type>& operator=(const interlocked<type>& other) {
-				this->Copy(other);
-				return *this;
-			};
-			interlocked<type>& operator=(interlocked<type>&& other) {
-				this->Copy(std::forward<interlocked<type>>(other));
-				return *this;
-			};
-			void Copy(const interlocked<type>& copy) {
-				if (&copy == this) return;
-				lock.Lock();
-				copy.Lock();
-				data = copy.data;
-				copy.Unlock();
-				lock.Unlock();
-			};
-			void Copy(interlocked<type>&& copy) {
-				if (&copy == this) return;
-				lock.Lock();
-				copy.Lock();
-				data = copy.data;
-				copy.Unlock();
-				lock.Unlock();
-			};
-			void Clear() {
-				lock.Lock();
-				data = type();
-				lock.Unlock();
-			};
-
-		public: // read and swap
-			type Read() const {
-				AUTO g = Guard();
-				return data;
-			};
-			void Swap(const type& replacement) {
-				AUTO g = Guard();
-				data = replacement;
-			};
-			interlocked<type>& operator=(const type& other) {
-				Swap(other);
-				return *this;
-			};
-
-			operator type() const { return Read(); };
-			type* operator->() const { return &data; };
-
-		public: // lock, unlock, and direct edit
-			ExclusiveObject GetExclusive() const { return ExclusiveObject(*this); };
-
-			NODISCARD AUTO Guard() const { return lock.Guard(); };
-			void Lock() const { lock.Lock(); };
-			void Unlock() const { lock.Unlock(); };
-			type& UnsafeRead() const { return data; };
-
-		private:
-			mutable type data;
-			mutex lock;
-
-		};
+		NODISCARD std::lock_guard<mutex>	mutex::guard() noexcept { return std::lock_guard<mutex>(const_cast<mutex&>(*this)); };
+		void			mutex::lock() noexcept { std::static_pointer_cast<mutex_impl>(Handle)->lock(); };
+		void			mutex::unlock() noexcept { std::static_pointer_cast<mutex_impl>(Handle)->unlock(); };
+		bool            mutex::try_lock() noexcept { return std::static_pointer_cast<mutex_impl>(Handle)->try_lock(); };
 	};
 
 	JobGroup::JobGroup() : impl(new JobGroup::JobGroupImpl(std::static_pointer_cast<void>(std::shared_ptr<ftl::WaitGroup>(new ftl::WaitGroup(&*Fibers))))) {};
@@ -202,13 +102,13 @@ namespace fibers {
 	void JobGroup::JobGroupImpl::Queue(Job const& job) {
 		std::shared_ptr<ftl::WaitGroup> wg = std::static_pointer_cast<ftl::WaitGroup>(waitGroup);
 		if (!wg) throw(std::runtime_error("Job Group was empty.")); 
-		Fibers->AddTask({ utilities::DoAnyFuncStruct, new utilities::AnyFunctionStruct({ job.impl, nullptr, false }) }, ftl::TaskPriority::Normal, wg.get());
+		Fibers->AddTask({ DoAnyFuncStruct, new AnyFunctionStruct({ job.impl, nullptr, false }) }, ftl::TaskPriority::Normal, wg.get());
 		jobs.push_back(job);
 	};
 	void JobGroup::JobGroupImpl::ForceQueue(Job const& job) {
 		std::shared_ptr<ftl::WaitGroup> wg = std::static_pointer_cast<ftl::WaitGroup>(waitGroup);
 		if (!wg) throw(std::runtime_error("Job Group was empty.")); 
-		Fibers->AddTask({ utilities::DoAnyFuncStruct, new utilities::AnyFunctionStruct({ job.impl, nullptr, true }) }, ftl::TaskPriority::Normal, wg.get());
+		Fibers->AddTask({ DoAnyFuncStruct, new AnyFunctionStruct({ job.impl, nullptr, true }) }, ftl::TaskPriority::Normal, wg.get());
 		jobs.push_back(job);
 	};
 	void JobGroup::JobGroupImpl::Queue(std::vector<Job> const& listOfJobs) {
@@ -216,7 +116,7 @@ namespace fibers {
 		if (!wg) throw(std::runtime_error("Job Group was empty.")); 
 		std::vector<ftl::Task> tasks;
 		for (auto& job : listOfJobs) {
-			tasks.push_back({ utilities::DoAnyFuncStruct, new utilities::AnyFunctionStruct({ job.impl, nullptr, false }) });
+			tasks.push_back({ DoAnyFuncStruct, new AnyFunctionStruct({ job.impl, nullptr, false }) });
 			jobs.push_back(job);
 		}
 		Fibers->AddTasks(tasks.size(), &tasks[0], ftl::TaskPriority::Normal, wg.get());
@@ -226,7 +126,7 @@ namespace fibers {
 		if (!wg) throw(std::runtime_error("Job Group was empty."));
 		std::vector<ftl::Task> tasks;
 		for (auto& job : listOfJobs) {
-			tasks.push_back({ utilities::DoAnyFuncStruct, new utilities::AnyFunctionStruct({ job.impl, nullptr, true }) });
+			tasks.push_back({ DoAnyFuncStruct, new AnyFunctionStruct({ job.impl, nullptr, true }) });
 			jobs.push_back(job);
 		}
 		Fibers->AddTasks(tasks.size(), &tasks[0], ftl::TaskPriority::Normal, wg.get());
@@ -269,99 +169,16 @@ namespace fibers {
 		}), (void*)data, 1024));
 	};
 
-	namespace parallel {
-		/* Queue all jobs and await all results */
-		AUTO Do(std::vector<fibers::Job> const& jobs) {
-			JobGroup group;
-			group.Queue(jobs);
-			return group.Wait_Get();
-		};
-		
-		/* parallel_for (auto i = start; i < end; i++){ todo(i); } */
-		template<typename iteratorType, typename F>
-		AUTO For(iteratorType start, iteratorType end, F&& ToDo) {
-			auto todo = std::function(std::forward<F>(ToDo));
-			constexpr bool retNo = std::is_same<typename utilities::function_traits<decltype(todo)>::result_type, void>::value;
-
-			std::vector<fibers::Job> jobs;
-			for (iteratorType iter = start; iter < end; iter++) {
-				jobs.push_back(fibers::Job([todo](iteratorType const& T) { return todo(T); }, (iteratorType)iter));
-			}
-			JobGroup group;
-			group.Queue(jobs);
-
-			if constexpr (retNo) group.Wait();
-			else return group.Wait_Get();
-		};
-		
-		/* parallel_for (auto i = start; i < end; i += step){ todo(i); } */
-		template<typename iteratorType, typename F>
-		AUTO For(iteratorType start, iteratorType end, iteratorType step, F&& ToDo) {
-			auto todo = std::function(std::forward<F>(ToDo));
-			constexpr bool retNo = std::is_same<typename utilities::function_traits<decltype(todo)>::result_type, void>::value;
-
-			std::vector<fibers::Job> jobs;
-			for (iteratorType iter = start; iter < end; iter += step) {
-				jobs.push_back(fibers::Job([todo](iteratorType const& T) { return todo(T); }, (iteratorType)iter));
-			}
-
-			JobGroup group;
-			group.Queue(jobs);
-
-			if constexpr (retNo) group.Wait();
-			else return group.Wait_Get();
-		};
-		
-		/* parallel_for (auto i = container.begin(); i != container.end(); i++){ todo(*i); } */
-		template<typename containerType, typename F>
-		AUTO ForEach(containerType const& container, F&& ToDo) {
-			AUTO todo = std::function(std::forward<F>(ToDo));
-			constexpr bool retNo = std::is_same<typename utilities::function_traits<decltype(todo)>::result_type, void>::value;
-
-			std::vector<fibers::Job> jobs;
-
-			for (auto iter = container.begin(); iter != container.end(); iter++) {
-				jobs.push_back(fibers::Job([todo](typename containerType::const_iterator& T) { return todo(Any(std::shared_ptr<typename containerType::value_type>(const_cast<typename containerType::value_type*>(&*T), [](typename containerType::value_type*) {})).cast()); }, (typename containerType::const_iterator)(iter)));
-			}
-
-			JobGroup group;
-			group.Queue(jobs);
-
-			if constexpr (retNo) group.Wait();
-			else return group.Wait_Get();
-		};
-		
-		/* parallel_for (auto i = container.cbegin(); i != container.cend(); i++){ todo(*i); } */
-		template<typename containerType, typename F>
-		AUTO ForEach(containerType& container, F&& ToDo) {
-			AUTO todo = std::function(std::forward<F>(ToDo));
-			constexpr bool retNo = std::is_same<typename utilities::function_traits<decltype(todo)>::result_type, void>::value;
-
-			std::vector<fibers::Job> jobs;
-
-			for (auto iter = container.begin(); iter != container.end(); iter++) {
-				jobs.push_back(fibers::Job([todo](typename containerType::iterator& T) { return todo(Any(std::shared_ptr<typename containerType::value_type>(&*T, [](typename containerType::value_type*) {})).cast()); }, (typename containerType::iterator)(iter)));
-			}
-
-			JobGroup group;
-			group.Queue(jobs);
-
-			if constexpr (retNo) group.Wait();
-			else return group.Wait_Get();
-		};
-	};
 	namespace synchronization {
-		/* Tool that allows fibers to busy-work until a signla is raised by another fiber or thread. */
-		class signal {
-		public:
-			class impl {
+		namespace {
+			class signal_impl {
 			public:
-				impl(bool manualReset = true) : Handle(CreateEvent(NULL, manualReset, FALSE, NULL), [](void* p) { CloseHandle(p); }), wg() {};
-				impl(const impl&) = delete;
-				impl(impl&& that) = delete;
-				impl& operator=(const impl&) = delete;
-				impl& operator=(impl&& that) = delete;
-				~impl() {};
+				signal_impl(bool manualReset = true) : Handle(CreateEvent(NULL, manualReset, FALSE, NULL), [](void* p) { CloseHandle(p); }), wg() {};
+				signal_impl(const signal_impl&) = delete;
+				signal_impl(signal_impl&& that) = delete;
+				signal_impl& operator=(const signal_impl&) = delete;
+				signal_impl& operator=(signal_impl&& that) = delete;
+				~signal_impl() {};
 
 			public:
 				void	Raise() noexcept {
@@ -391,114 +208,13 @@ namespace fibers {
 				std::shared_ptr<void> Handle;
 				JobGroup wg;
 			};
-
-		public:
-			signal(bool manualReset = true) : signal_impl(new impl(manualReset)) {};
-			signal(const signal&) = default;
-			signal(signal&& that) = default;
-			signal& operator=(const signal&) = default;
-			signal& operator=(signal&& that) = default;
-			~signal() {};
-
-		public:
-			/* Raise (set to one) the signal. Free & fast. */
-			void	Raise() noexcept { signal_impl->Raise(); };
-			/* Clear (zero-out) the signal. Free & fast. */
-			void	Clear() noexcept { signal_impl->Clear(); };
-			/* Busy-waits for the signal to be raised. */
-			void	Wait() noexcept { signal_impl->Wait(); };
-			/* Tests if the signal has been raised. Free & fast. */
-			bool	TryWait() noexcept { return signal_impl->TryWait(); };
-
-		private:
-			std::shared_ptr<impl> signal_impl;
-
 		};
+		signal::signal(bool manualReset) : impl(std::static_pointer_cast<void>(std::shared_ptr<signal_impl>(new signal_impl(manualReset)))) {};
+		void signal::Raise() noexcept { std::static_pointer_cast<signal_impl>(impl)->Raise(); };
+		void signal::Clear() noexcept { std::static_pointer_cast<signal_impl>(impl)->Clear(); };
+		void signal::Wait() noexcept { std::static_pointer_cast<signal_impl>(impl)->Wait(); };
+		bool signal::TryWait() noexcept { return std::static_pointer_cast<signal_impl>(impl)->TryWait(); };
 
-		/* Read-Write mutex that allows multiple readers and one writer to cooperatively access an underlying object. Very fast for 100% reading operations, as (effectively) no locking actually happens. */
-		class shared_mutex {
-		private:
-			mutex    mut_;
-			std::condition_variable_any gate1_;
-			std::condition_variable_any gate2_;
-			unsigned state_;
-
-			static const unsigned write_entered_ = 1U << (sizeof(unsigned) * CHAR_BIT - 1);
-			static const unsigned n_readers_ = ~write_entered_;
-
-		public:
-
-			shared_mutex() : state_(0) {}
-
-			// Exclusive/Writer ownership
-			void lock() {
-				std::unique_lock<mutex> lk(mut_);
-				while (state_ & write_entered_) gate1_.wait(lk);
-				state_ |= write_entered_;
-				while (state_ & n_readers_) gate2_.wait(lk);
-			};
-			// Exclusive/Writer ownership
-			bool try_lock() {
-				std::unique_lock<mutex> lk(mut_, std::try_to_lock);
-				if (lk.owns_lock() && state_ == 0)
-				{
-					state_ = write_entered_;
-					return true;
-				}
-				return false;
-			};
-			// Exclusive/Writer ownership
-			void unlock() {
-				{
-					std::scoped_lock<mutex> _(mut_);
-					state_ = 0;
-				}
-				gate1_.notify_all();
-			};
-
-			// Shared/Reader ownership
-			void lock_shared() {
-				std::unique_lock<mutex> lk(mut_);
-				while ((state_ & write_entered_) || (state_ & n_readers_) == n_readers_)
-					gate1_.wait(lk);
-				unsigned num_readers = (state_ & n_readers_) + 1;
-				state_ &= ~n_readers_;
-				state_ |= num_readers;
-			};
-			// Shared/Reader ownership
-			bool try_lock_shared() {
-				std::unique_lock<mutex> lk(mut_, std::try_to_lock);
-				unsigned num_readers = state_ & n_readers_;
-				if (lk.owns_lock() && !(state_ & write_entered_) && num_readers != n_readers_)
-				{
-					++num_readers;
-					state_ &= ~n_readers_;
-					state_ |= num_readers;
-					return true;
-				}
-				return false;
-			};
-			// Shared/Reader ownership
-			void unlock_shared() {
-				std::scoped_lock<mutex> _(mut_);
-				unsigned num_readers = (state_ & n_readers_) - 1;
-				state_ &= ~n_readers_;
-				state_ |= num_readers;
-				if (state_ & write_entered_)
-				{
-					if (num_readers == 0)
-						gate2_.notify_one();
-				}
-				else
-				{
-					if (num_readers == n_readers_ - 1)
-						gate1_.notify_one();
-				}
-			};
-
-			NODISCARD AUTO Write_Guard() noexcept { return std::lock_guard(*this); };
-			NODISCARD AUTO Read_Guard() noexcept { return std::shared_lock(*this); };
-		};
 	};
 };
 
