@@ -40,5 +40,6 @@ to maintain a single distribution point for the source code.
 
 #include "../FiberTasks/Fibers.h"
 class Example {
-	static fibers::Job ExampleF(int numTasks, int numSubTasks);
+public:
+	static int /*fibers::Job*/ ExampleF(int numTasks, int numSubTasks);
 };

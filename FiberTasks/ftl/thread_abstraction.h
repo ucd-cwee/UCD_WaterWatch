@@ -144,4 +144,14 @@ void YieldThread();
  */
 unsigned GetNumHardwareThreads();
 
+/**
+ * Get the number of hardware threads. This should take Hyperthreading, etc. into account
+ *
+ * @return    The number of hardware threads
+ */
+unsigned GetNumHardwareThreads();
+
+/* Get the CPU % load for the current computer. 0 to 100. Returns -1 if error. Consistently timed requested are necessary for good results. */
+float GetCpuLoad();
+
 } // namespace ftl

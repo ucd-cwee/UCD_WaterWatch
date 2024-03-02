@@ -22,6 +22,7 @@ to maintain a single distribution point for the source code.
 #include "List.h"
 #include "cweeJob.h"
 #include "DelayedInstantiation.h"
+#include "../FiberTasks/Fibers.h"
 
 /*! Class that allows backend to push requests or jobs forwards to the UI or user-layer to process asynchronously. */
 class appLayerRequests {
@@ -33,7 +34,7 @@ public:
 	appLayerRequests() : requests(), jobs(), jobNums(0) {};
 
 private:
-	cweeThreadedMap< int, container_type >									requests;
+	fibers::containers::queue<std::pair<int, container_type>>               requests;
 	cweeThreadedMap< int, cweeUnion<cweeJob, cweeSharedPtr<cweeStr>> >		jobs;
 	cweeSysInterlockedInteger												jobNums;
 

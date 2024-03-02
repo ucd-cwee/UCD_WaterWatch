@@ -20,7 +20,7 @@ to maintain a single distribution point for the source code.
 std::pair<int, cweeJob> appLayerRequests::AddRequest(method_type const& methodName, arguments_type const& arguments) {
 	int n = jobNums.Increment();
 	AUTO result = container_type(methodName, arguments, cweeSharedPtr<cweeStr>(cweeStr("")));
-	requests.Emplace(n, result);
+	requests.push(std::pair<int, container_type>(n, result));
 
 	cweeJob out([this](int num, cweeStr& get) -> cweeStr { return get; }, n, result.get<2>());
 
@@ -30,17 +30,15 @@ std::pair<int, cweeJob> appLayerRequests::AddRequest(method_type const& methodNa
 };
 /* for the app layer to dequeue from */
 std::pair<int, appLayerRequests::container_type> appLayerRequests::DequeueRequest() {
-	AUTO g = requests.Guard();
-	AUTO pair = requests.unsafe_pair_at_index(0);
-	if (pair.first >= 0) {
-		requests.UnsafeErase(pair.first);
-		return std::pair<int, container_type>(pair.first, *pair.second);
+	std::pair<int, container_type> out;
+	if (requests.try_pop(out)) {
+		return out;
 	}
 	return std::pair<int, container_type>(-1, container_type());
 };
 /* for the app layer to check that there's work to be done */
 int	appLayerRequests::Num() {
-	return requests.Num();
+	return requests.unsafe_size();
 };
 // for the app layer to respond to
 void appLayerRequests::FinishRequest(int index, cweeStr const& reply) {

@@ -15,22 +15,23 @@ to maintain a single distribution point for the source code.
 
 #include "WaterWatch_Win32_Console.h"
 
-fibers::Job Example::ExampleF(int numTasks, int numSubTasks) {
-	return fibers::Job([](int numTasks, int numSubTasks) {
-		cweeSysInterlockedInteger counter;
+int /*fibers::Job*/ Example::ExampleF(int numTasks, int numSubTasks) {
+	//return fibers::Job([](int numTasks, int numSubTasks) {
+		std::atomic<int> counter(0);
 		if (numTasks < 0) numTasks *= -1;
 		if (numSubTasks < 0) numSubTasks *= -1;
-		fibers::Job([&]() { // not required to be a job
+		//fibers::Job([&]() { // not required to be a job
 			for (int i = 0; i < numTasks; ++i) { // iterations are actually in series
-				fibers::Job([&numSubTasks, &counter]() { // not required to be a job
+				//fibers::Job([&numSubTasks, &counter]() { // not required to be a job
 					fibers::parallel::For(0, numSubTasks, [&counter](int j) {  // policies / particles are done simultanously using the fibers::For or fibers::ForEach loops
-						counter.Increment(); // do work
+						::Sleep(0.1);
+						counter.fetch_add(1); // do work
 					});
-				}).AsyncInvoke().Wait();
+				//}).AsyncInvoke().Wait();
 			}
-		}).AsyncInvoke().Wait();
-		return counter.GetValue();
-	}, (int)numTasks, (int)numSubTasks);
+		//}).AsyncInvoke().Wait();
+		return counter.load();
+	//}, (int)numTasks, (int)numSubTasks);
 };
 
 
@@ -160,7 +161,7 @@ static Timer parallel_toast_manager = Timer(0.1, Action([](cweeStr& title, cweeS
 }, cweeStr(), cweeStr()));
 
 // Handle async or scripted AppRequests. 
-static Timer AppLayerRequestProcessor = Timer(0.01, Action([]() {
+static fibers::parallel::Timer AppLayerRequestProcessor = fibers::parallel::Timer(0.01, fibers::Job([]() {
 	std::pair<
 		int, // ID
 		cweeUnion<
@@ -211,20 +212,9 @@ static Timer AppLayerRequestProcessor = Timer(0.01, Action([]() {
 		case static_cast<size_t>(cweeStr::Hash("OS_GetSetting")):
 			result = "TBD";
 			break;
-		case static_cast<size_t>(cweeStr::Hash("Fiber2b")):
-			if (args.Num() >= 1) result = std::to_string(FTL::fnFiberTasks2b(args[0].ReturnNumeric()).AsyncInvoke().Wait_Get()[0].cast<int>()).c_str();
-			else result = "Arguments required: 'num_tasks'";
-			break;
-		case static_cast<size_t>(cweeStr::Hash("Fiber2c")):
-			if (args.Num() >= 1) result = std::to_string(FTL::fnFiberTasks2c(args[0].ReturnNumeric()).AsyncInvoke().Wait_Get()[0].cast<int>()).c_str();
-			else result = "Arguments required: 'num_tasks'";
-			break;
-		case static_cast<size_t>(cweeStr::Hash("Fiber2d")):
-			if (args.Num() >= 1) result = std::to_string(FTL::fnFiberTasks2d(args[0].ReturnNumeric(), args[1].ReturnNumeric()).AsyncInvoke().Wait_Get()[0].cast<int>()).c_str();
-			else result = "Arguments required: 'num_tasks', 'num_subtasks'";
-			break;
-		case static_cast<size_t>(cweeStr::Hash("Fiber3")):
-			if (args.Num() >= 2) result = std::to_string(FTL::fnFiberTasks3(args[0].ReturnNumeric(), args[1].ReturnNumeric()).AsyncInvoke().Wait_Get()[0].cast<int>()).c_str();
+		case static_cast<size_t>(cweeStr::Hash("Fiber")):
+			// if (args.Num() >= 2) result = std::to_string(Example::ExampleF(args[0].ReturnNumeric(), args[1].ReturnNumeric()).AsyncInvoke().Wait_Get()[0].cast<int>()).c_str();
+			if (args.Num() >= 2) result = std::to_string(Example::ExampleF(args[0].ReturnNumeric(), args[1].ReturnNumeric())).c_str();
 			else result = "Arguments required: 'num_tasks', 'num_subtasks'";
 			break;
 		default:

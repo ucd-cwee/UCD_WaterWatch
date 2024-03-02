@@ -23,7 +23,6 @@
  */
 
 #include "task_scheduler.h"
-
 #include "ftl/callbacks.h"
 #include "thread_abstraction.h"
 #include "task_scheduler_internal.h"
@@ -480,15 +479,7 @@ void TaskScheduler::AddTasks(uint32_t numTasks, Task *tasks, TaskPriority priori
 		return;
 	}
 
-#if 0
-	for (unsigned i = 0; i < numTasks; ++i) {
-		FTL_ASSERT("Task given to TaskScheduler:AddTasks has a nullptr Function", tasks[i].Function != nullptr);
-		const TaskBundle bundle = { tasks[i], waitGroup };	
-		queue->Push(bundle);
-	}
-#else
 	queue->Push<Task>(tasks, numTasks, std::function([&waitGroup](Task const& t)->TaskBundle { return { t, waitGroup }; }));
-#endif
 
 	const EmptyQueueBehavior behavior = m_emptyQueueBehavior.load(std::memory_order_relaxed);
 	if (behavior == EmptyQueueBehavior::Sleep) {

@@ -30,7 +30,8 @@
 
 #pragma once
 
-#include "../../WaterWatchCpp/cweeInterlocked.h"
+#include <functional>
+
 #include "ftl/assert.h"
 
 #include <atomic>
@@ -157,12 +158,12 @@ namespace atomic_queue {
     ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
     class Spinlock {
-        cweeConstexprLock _s;
+        std::atomic<long> _s;
 
     public:
         using scoped_lock = std::lock_guard<Spinlock>;
 
-        Spinlock() noexcept {}
+        Spinlock() noexcept : _s(0) {}
 
         Spinlock(Spinlock const&) = delete;
         Spinlock& operator=(Spinlock const&) = delete;
@@ -170,11 +171,13 @@ namespace atomic_queue {
         ~Spinlock() noexcept {}
 
         void lock() noexcept {
-            _s.Lock();
+            while (_s.fetch_add(1) != 1) {
+                _s.fetch_sub(1);
+            }
         }
 
         void unlock() noexcept {
-            _s.Unlock();
+            _s.fetch_sub(1);
         }
     };
 
@@ -1019,7 +1022,6 @@ namespace atomic_queue {
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 namespace atomic_queue {
-
     ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
     template<typename M>
@@ -1090,8 +1092,7 @@ namespace atomic_queue {
     // using AtomicQueueSpinlockHle = AtomicQueueMutexT<T, SpinlockHle, SIZE, MINIMIZE_CONTENTION>;
 
     ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-} // namespace atomic_queue
+}; // namespace atomic_queue
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -1099,249 +1100,98 @@ namespace atomic_queue {
 #pragma endregion
 
 namespace ftl {
+    template <typename T> class queue_container {
+    public:
+        queue_container(long long n = 1000) : queue(static_cast<int>(n)), prev(nullptr) {};
 
-    
-#if 0
-template <typename T> class WaitFreeQueue {
-private:
-	constexpr static size_t kStartingCircularArraySize = 32;
-
-public:
-	WaitFreeQueue()
-		: m_top(1),    // m_top and m_bottom must start at 1
-		  m_bottom(1), // Otherwise, the first Pop on an empty queue will underflow m_bottom
-		  m_array(new CircularArray(kStartingCircularArraySize)) {
-		FTL_VALGRIND_HG_DISABLE_CHECKING(&m_top, sizeof(m_top));
-		FTL_VALGRIND_HG_DISABLE_CHECKING(&m_bottom, sizeof(m_bottom));
-		FTL_VALGRIND_HG_DISABLE_CHECKING(&m_array, sizeof(m_array));
-	};
-	WaitFreeQueue(WaitFreeQueue const &) = delete;
-	WaitFreeQueue(WaitFreeQueue &&) noexcept = delete;
-	WaitFreeQueue &operator=(WaitFreeQueue const &) = delete;
-	WaitFreeQueue &operator=(WaitFreeQueue &&) noexcept = delete;
-	~WaitFreeQueue() { 
-		auto* p = m_array.Set(nullptr);
-		while (p) {
-			p = CircularArray::Delete(p);
-		}
-
-		// delete m_array.load(std::memory_order_relaxed); 
-	};
-
-private:
-	class CircularArray {
-	public:
-		explicit CircularArray(size_t const n) : m_items(n), m_previous(nullptr) { FTL_ASSERT("n must be a power of 2", (n & (n - 1)) == 0); };
-
-	protected:
-		std::vector<T> m_items;
-		cweeSysInterlockedPointer<CircularArray> m_previous;
-
-	public:
-		size_t Size() const { return m_items.size(); };
-
-		const T& Get(size_t const index) const { return m_items[index & (Size() - 1)]; };
-		T& Get(size_t const index) { return m_items[index & (Size() - 1)]; };
-		
-		void Put(size_t const index, T const& x) { m_items[index & (Size() - 1)] = x; };
-		void Put(size_t const index, T&& x) { m_items[index & (Size() - 1)] = std::forward<T>(x); };
-
-		// Growing the array returns a new circular_array object and keeps a linked list of all previous arrays. This is done because other threads could still be accessing elements from the smaller arrays.
-		CircularArray* Grow(size_t const top, size_t const bottom) {
-			auto* const newArray = new CircularArray(Size() * 2);
-			auto* prevPrev = newArray->m_previous.Set(this);
-			while (prevPrev) {
-				prevPrev = CircularArray::Delete(prevPrev);
-			}
-
-			for (size_t i = top; i != bottom; i++) {
-				newArray->Put(i, Get(i));
-			}
-			return newArray;
-		};
-
-		static CircularArray* Delete(CircularArray* p) {
-			if (p) {
-				auto* out = p->m_previous.Set(nullptr);
-				delete p;
-				return out;
-			}
-			return nullptr;
-		}
-	};
-
-
-
-#pragma warning(push)
-#pragma warning(disable : 4324) // MSVC warning C4324: structure was padded due to alignment specifier
-	alignas(kCacheLineSize) std::atomic<uint64_t> m_top;
-	alignas(kCacheLineSize) std::atomic<uint64_t> m_bottom;
-	// alignas(kCacheLineSize) std::atomic<CircularArray *> m_array;
-	alignas(kCacheLineSize) cweeSysInterlockedPointer<CircularArray> m_array;
-
-#pragma warning(pop)
-
-public:
-	void Push(T value) {
-		uint64_t b = m_bottom.load(std::memory_order_relaxed);
-		uint64_t t = m_top.load(std::memory_order_acquire);
-		CircularArray* array = m_array.Get(); // .load(std::memory_order_relaxed);
-
-		if (b - t > array->Size() - 1) {
-			/* Full queue. */
-			array = array->Grow(static_cast<size_t>(t), static_cast<size_t>(b));
-			m_array.Set(array); // , std::memory_order_release);
-		}
-		array->Put(static_cast<size_t>(b), value);
-
-		std::atomic_thread_fence(std::memory_order_release);
-
-		m_bottom.store(b + 1, std::memory_order_relaxed);
-	};
-	bool Pop(T* value) {
-		uint64_t b = m_bottom.load(std::memory_order_relaxed) - 1;
-		CircularArray* const array = m_array.Get(); // .load(std::memory_order_relaxed);
-		m_bottom.store(b, std::memory_order_relaxed);
-
-		std::atomic_thread_fence(std::memory_order_seq_cst);
-
-		uint64_t t = m_top.load(std::memory_order_relaxed);
-		bool result = true;
-		if (t <= b) {
-			/* Non-empty queue. */
-			*value = array->Get(static_cast<size_t>(b));
-			if (t == b) {
-				/* Single last element in queue. */
-				if (!std::atomic_compare_exchange_strong_explicit(&m_top, &t, t + 1, std::memory_order_seq_cst, std::memory_order_relaxed)) {
-					/* Failed race. */
-					result = false;
-				}
-				m_bottom.store(b + 1, std::memory_order_relaxed);
-			}
-		}
-		else {
-			/* Empty queue. */
-			result = false;
-			m_bottom.store(b + 1, std::memory_order_relaxed);
-		}
-
-		return result;
-	};
-	bool Steal(T* const value) {
-		uint64_t t = m_top.load(std::memory_order_acquire);
-
-		std::atomic_thread_fence(std::memory_order_seq_cst);
-
-		uint64_t const b = m_bottom.load(std::memory_order_acquire);
-		if (t < b) {
-			/* Non-empty queue. */
-			CircularArray* const array = m_array.Get();// .load(std::memory_order_consume);
-			*value = array->Get(static_cast<size_t>(t));
-			return std::atomic_compare_exchange_strong_explicit(&m_top, &t, t + 1, std::memory_order_seq_cst, std::memory_order_relaxed);
-		}
-
-		return false;
-	};
-
-};
-#else
-
-template <typename T> class queue_container {
-public:
-    queue_container(int n = 1000) : queue(n), prev(nullptr) {};
-
-public:
-    ::atomic_queue::AtomicQueueB2<T> queue;
-    cweeSysInterlockedPointer<queue_container<T>> prev;
-};
-
-template <typename T> class WaitFreeQueue {
-protected:
-    cweeSysInterlockedPointer<queue_container<T>> last;
-    // ::atomic_queue::TicketSpinlock lock;
-    cweeConstexprLock lock;
-
-    void AddNewQueue(int n = 1000) {
-        auto* prevL1 = last.Get();
-        lock.lock();
-        {
-            auto* prevL2 = last.Get();
-            if (prevL1 == prevL2) {
-                queue_container<T>* newPtr = new queue_container<T>(std::max(1000, n));
-                queue_container<T>* prevLast = last.Set(newPtr);
-                newPtr->prev.Set(prevLast);
-            }
-        }
-        lock.unlock();
+    public:
+        ::atomic_queue::AtomicQueueB2<T> queue;
+        std::atomic< queue_container<T>* > prev;
     };
+    template <typename T> class WaitFreeQueue {
+    protected:
+        std::atomic< queue_container<T>* > last;
+        // ::atomic_queue::TicketSpinlock lock;
+        std::atomic<int> lock;
 
-public:
-    WaitFreeQueue() : last(new queue_container<T>()) {};
-    WaitFreeQueue(WaitFreeQueue const&) = delete;
-    WaitFreeQueue(WaitFreeQueue&&) noexcept = delete;
-    WaitFreeQueue& operator=(WaitFreeQueue const&) = delete;
-    WaitFreeQueue& operator=(WaitFreeQueue&&) noexcept = delete;
-    ~WaitFreeQueue() {
-        for (auto* queue = last.Get(); queue; ) {
-            auto* queue_copy = queue;
-            queue = queue->prev.Get();
-            if (queue_copy) {
-                delete queue_copy;
+        void AddNewQueue(long long n = 1000) {
+            auto* prevL1 = last.load();
+            while ((lock.fetch_add(1)+1) != 1) lock.fetch_sub(1);
+            {
+                auto* prevL2 = last.load();
+                if (prevL1 == prevL2) {
+                    queue_container<T>* newPtr = new queue_container<T>(std::max(1000ll, n));
+                    queue_container<T>* prevLast = last.exchange(newPtr);
+                    newPtr->prev.store(prevLast);
+                }
             }
-        }
-    };
+            lock.fetch_sub(1);
+        };
 
-public:
-    template<typename T_o>
-    void Push(T_o* values, long long n, std::function<T(T_o const&)> converter) {
-        long long pos = 0;
-        while (pos < n) {
-            bool satisfied = false;
-            while (!satisfied) {
-                for (auto* queue = last.Get(); queue; queue = queue->prev.Get()) {
-                    if (queue->queue.try_push(converter(values[pos]))) {
-                        satisfied = true;
-                        break;
+    public:
+        WaitFreeQueue() : last(new queue_container<T>()), lock(0) {};
+        WaitFreeQueue(WaitFreeQueue const&) = delete;
+        WaitFreeQueue(WaitFreeQueue&&) noexcept = delete;
+        WaitFreeQueue& operator=(WaitFreeQueue const&) = delete;
+        WaitFreeQueue& operator=(WaitFreeQueue&&) noexcept = delete;
+        ~WaitFreeQueue() {
+            for (auto* queue = last.load(); queue; ) {
+                auto* queue_copy = queue;
+                queue = queue->prev.load();
+                if (queue_copy) {
+                    delete queue_copy;
+                }
+            }
+        };
+
+    public:
+        template<typename T_o>
+        void Push(T_o* values, long long n, std::function<T(T_o const&)> converter) {
+            long long pos = 0;
+            while (pos < n) {
+                bool satisfied = false;
+                while (!satisfied) {
+                    for (auto* queue = last.load(); queue; queue = queue->prev.load()) {
+                        if (queue->queue.try_push(converter(values[pos]))) {
+                            satisfied = true;
+                            break;
+                        }
+                    }
+                    if (!satisfied) {
+                        AddNewQueue(16ll + (n - pos));
                     }
                 }
-                if (!satisfied) {
-                    AddNewQueue(16 + (n - pos));
+                ++pos;
+            }
+        };
+        void Push(T const& value) {
+            while (true) {
+                for (auto* queue = last.load(); queue; queue = queue->prev.load()) {
+                    if (queue->queue.try_push(value)) {
+                        return;
+                    }
+                }
+                AddNewQueue();
+            }
+        };
+        bool Pop(T* value) {
+            for (auto* queue = last.load(); queue; queue = queue->prev.load()) {
+                if (queue->queue.try_pop(*value)) {
+                    return true;
+                }
+            }     
+            return false;
+        };
+        bool Steal(T* const value) {
+            for (auto* queue = last.load(); queue; queue = queue->prev.load()) {
+                if (queue->queue.try_pop(*value)) {
+                    return true;
                 }
             }
-            ++pos;
-        }
-    };
-    void Push(T const& value) {
-        while (true) {
-            for (auto* queue = last.Get(); queue; queue = queue->prev.Get()) {
-                if (queue->queue.try_push(value)) {
-                    return;
-                }
-            }
-            AddNewQueue();
-        }
-    };
-    bool Pop(T* value) {
-        for (auto* queue = last.Get(); queue; queue = queue->prev.Get()) {
-            if (queue->queue.try_pop(*value)) {
-                return true;
-            }
-        }     
-        return false;
-    };
-    bool Steal(T* const value) {
-        for (auto* queue = last.Get(); queue; queue = queue->prev.Get()) {
-            if (queue->queue.try_pop(*value)) {
-                return true;
-            }
-        }
-        return false;
-    };
+            return false;
+        };
 
-};
-
-
-#endif
+    };
 } // End of namespace ftl
 
 
