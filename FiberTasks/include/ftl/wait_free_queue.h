@@ -1099,7 +1099,12 @@ namespace atomic_queue {
 #endif // ATOMIC_QUEUE_ATOMIC_QUEUE_SPIN_LOCK_H_INCLUDED
 #pragma endregion
 
+#include <ppl.h>
+#include <concurrent_queue.h>
+#include <concurrent_priority_queue.h>
+
 namespace ftl {
+#if 0
     template <typename T> class queue_container {
     public:
         queue_container(long long n = 1000) : queue(static_cast<int>(n)), prev(nullptr) {};
@@ -1111,7 +1116,6 @@ namespace ftl {
     template <typename T> class WaitFreeQueue {
     protected:
         std::atomic< queue_container<T>* > last;
-        // ::atomic_queue::TicketSpinlock lock;
         std::atomic<int> lock;
 
         void AddNewQueue(long long n = 1000) {
@@ -1192,6 +1196,39 @@ namespace ftl {
         };
 
     };
+#else
+    template <typename T> class WaitFreeQueue {
+    protected:
+        concurrency::concurrent_queue<T> queue;
+
+    public:
+        WaitFreeQueue() = default;
+        WaitFreeQueue(WaitFreeQueue const&) = delete;
+        WaitFreeQueue(WaitFreeQueue&&) noexcept = delete;
+        WaitFreeQueue& operator=(WaitFreeQueue const&) = delete;
+        WaitFreeQueue& operator=(WaitFreeQueue&&) noexcept = delete;
+        ~WaitFreeQueue() = default;
+
+    public:
+        template<typename T_o>
+        void Push(T_o* values, long long n, std::function<T(T_o const&)> converter) {
+            for (int i = 0; i < n; i++) {
+                queue.push(converter(values[i]));
+            }
+        };
+        void Push(T const& value) {
+            queue.push(value);
+        };
+        bool Pop(T* value) {
+            return queue.try_pop(*value);
+        };
+        bool Steal(T* const value) {
+            return queue.try_pop(*value);
+        };
+
+    };
+#endif
+
 } // End of namespace ftl
 
 

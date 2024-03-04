@@ -69,11 +69,11 @@ public:
 
 private:
 	u64 Random_Impl() const noexcept {
-		u64 out(0);
-		mut.Lock();
-		out = u(rand);
-		mut.Unlock();
-		return std::move(out);
+		// u64 out(0);
+		//mut.Lock();
+		return u(rand);
+		//mut.Unlock();
+		// return std::move(out);
 	};
 	u64 Random_HighRes(u64 t1, u64 t2) const noexcept {
 		t2 -= t1;

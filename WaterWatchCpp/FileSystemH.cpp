@@ -25,6 +25,7 @@ to maintain a single distribution point for the source code.
 #include "Mutex.h"
 #include "Toasts.h"
 #include "chaiscript_wrapper.h"
+// #include "../FiberTasks/Fibers.h"
 
 #define CURL_STATICLIB
 #include "../CURL_STATIC_LIB/CURL_STATIC_LIB.h"
@@ -207,7 +208,7 @@ void FileSystemLocal::tryGetIpAddress(int numAttempts) {
 				this->tryGetIpAddress(NumAttempts + 1);
 			}
 		}
-	}, ip_address, numAttempts, ip_address_info).DelayedAsyncForceInvoke(1000);
+	}, (cweeSharedPtr<cweeStr>)ip_address, (int)numAttempts, (cweeSharedPtr<IpAddressInformation>)ip_address_info).DelayedAsyncForceInvoke(1000);
 };
 
 FileSystemLocal::~FileSystemLocal() {

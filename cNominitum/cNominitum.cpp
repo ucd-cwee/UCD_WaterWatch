@@ -20,7 +20,7 @@ to maintain a single distribution point for the source code.
 #include "cNominitum.h"
 #include "../WaterWatchCpp/InterlockedValues.h"
 #include "../WaterWatchCpp/cweeInterlocked.h"
-#include "../WaterWatchCpp/DispatchTimer.h"
+// #include "../WaterWatchCpp/DispatchTimer.h"
 #include "../WaterWatchCpp/cweeThreadedMap.h"
 #include "../WaterWatchCpp/Mutex.h"
 #include "../WaterWatchCpp/Engineering.h"

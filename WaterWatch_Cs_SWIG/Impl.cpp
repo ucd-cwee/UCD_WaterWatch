@@ -29,6 +29,8 @@ to maintain a single distribution point for the source code.
 #include "../WaterWatchCpp/Chaiscript_WaterWatch_Module.h"
 #include "../WaterWatchCpp/ExternData.h"
 #include "../WaterWatchCpp/AlgLibWrapper.h"
+#include "../FiberTasks/Fibers.h"
+
 #include "Header.h"
 
 #pragma region cweeDateTime
@@ -99,6 +101,150 @@ std::vector<double> SharedMatrix::GetTimeSeries(double Left, double Top, double 
 
 	constexpr bool Multithreaded = true;
 	if constexpr (Multithreaded) {
+#if 1
+		out.resize(numColumns * numRows);
+
+		u64
+			columnStep = (Right - Left) / numColumns,
+			rowStep = (Top - Bottom) / numRows;
+
+		cweeInterpolatedMatrix<float> tempMatrix;
+
+		auto* knots = external_data->GetMatrixRef(index_p);
+
+		// Get or create the underlying interpolation model
+		cweeSharedPtr<alglib::rbfmodel> model;
+		double avgDistanceBetweenKnots = 1.0;
+		if (!knots->Tag) {
+			avgDistanceBetweenKnots = knots->EstimateDistanceBetweenKnots();
+			knots->Lock();
+		}
+		if (!knots->Tag) {
+			model = make_cwee_shared<alglib::rbfmodel>();
+			{
+				alglib::real_2d_array arr;
+				cweeThreadedList<cweeUnion<double, double, double>> data;
+				auto& knotSeries = knots->UnsafeGetSource();
+				knotSeries.Lock();
+				for (auto& knot : knotSeries.UnsafeGetValues()) {
+					if (knot.object) {
+						data.Append(cweeUnion<double, double, double>(knot.object->x, knot.object->y, knot.object->z));
+					}
+				}
+				knotSeries.Unlock();
+
+				{
+					arr.attach_to_ptr(data.Num(), 3, (double*)(void*)data.Ptr());
+					{
+						alglib::rbfcreate(2, 1, *model);
+						rbfsetpoints(*model, arr);
+						alglib::rbfreport rep;
+						alglib::rbfsetalgohierarchical(*model, avgDistanceBetweenKnots * 10.0, 4, 0.0); // (*model, avgDistanceBetweenKnots * 10.0, 4, 0.0);
+						alglib::rbfbuildmodel(*model, rep, alglib::parallel);
+					}
+				}
+			}
+			knots->Tag = cweeSharedPtr<void>(model, [](void* p) { return p; });
+			knots->Unlock();
+		}
+		else {
+			model = cweeSharedPtr<alglib::rbfmodel>(knots->Tag, [](void* p) -> alglib::rbfmodel* { return static_cast<alglib::rbfmodel*>(p); });
+		}
+
+		std::vector<fibers::Job> jobs;
+		tempMatrix.Reserve(numColumns * numRows + 12);
+		int AsyncRows = ::Max<double>(0, numRows); // 2/3 resulted in no waiting
+
+		for (int r = 0; r < AsyncRows; r++) {
+			jobs.push_back(fibers::Job([&](cweeSharedPtr<alglib::rbfmodel> Model, int R, alglib::real_1d_array& results) {
+				static thread_local alglib::rbfcalcbuffer buf;
+				static thread_local fibers::synchronization::shared_mutex mut;
+
+				// attach pointers for arrays for the interpolation
+				mut.lock();
+				alglib::rbfcreatecalcbuffer(*Model, buf, alglib::parallel);
+				mut.unlock();
+
+				alglib::real_1d_array arr;
+				cweeUnion<double, double> coords;
+				arr.attach_to_ptr(2, (double*)(void*)(&coords));
+
+				cweeList< cweeUnion<double, double, double> > out(numColumns + 1);
+
+				int C;
+				for (
+					coords.get<0>() = Left,
+					coords.get<1>() = Top - R * rowStep,
+					C = 0;
+					C < numColumns;
+					C++,
+					coords.get<0>() += columnStep)
+				{
+					if ((::Max(R, C) - ::Min(R, C)) % reductionRatio == 0) {
+						// get "real" interpolated results for 1/3 of the requested pixels using a slow, complex model, distributed diagonally along the grid	
+						mut.lock_shared();
+						alglib::rbftscalcbuf(*Model, buf, arr, results, alglib::parallel);
+						mut.unlock_shared();
+
+						out.Append(cweeUnion<double, double, double>((double)C, (double)R, (double)results[0]));
+					}
+					else {
+						out.Append(cweeUnion<double, double, double>(std::numeric_limits<double>::max(), std::numeric_limits<double>::max(), std::numeric_limits<double>::max()));
+					}
+				}
+
+				return out;
+			}, model, (int)r, alglib::real_1d_array()));
+		}
+
+		fibers::JobGroup awaiter;
+
+		awaiter.Queue(jobs);
+
+		awaiter.Wait();
+
+
+
+
+
+
+
+		for (auto& job : jobs) {
+			auto any = job.GetResult();
+			cweeList< cweeUnion<double, double, double> >* coords = any.cast();
+			if (coords) {
+				for (auto& coord : *coords) {
+					if (coord.get<0>() != std::numeric_limits<double>::max()
+						&& coord.get<1>() != std::numeric_limits<double>::max()
+						&& coord.get<2>() != std::numeric_limits<double>::max()) {
+						tempMatrix.AddValue(coord.get<0>(), coord.get<1>(), coord.get<2>(), false);
+						out[numColumns * coord.get<1>() + coord.get<0>()] = coord.get<2>();
+					}
+				}
+			}
+		}
+
+		// do a faster, local interpolation of those results using the Hilbert curve for the last 2/3 components. 
+		if (true) {
+			double R, C;
+			for (R = 0; R < numRows; R++) {
+				for (C = 0; C < numColumns; C++) {
+					// out.push_back(tempMatrix.GetCurrentValue(C, R)); // tempMatrix.GetCurrentValue(C, R));
+
+					if (((int)(::Max(R, C) - ::Min(R, C))) % reductionRatio != 0) {
+						out[numColumns * R + C] = tempMatrix.GetCurrentValue(C, R);
+					}
+				}
+			}
+		}
+
+
+
+
+
+
+
+#else
 		out.resize(numColumns * numRows);
 
 		u64
@@ -255,6 +401,7 @@ std::vector<double> SharedMatrix::GetTimeSeries(double Left, double Top, double 
 				}
 			}
 		}
+#endif
 	}
 	else {
 		out.resize(numColumns* numRows);
@@ -1666,25 +1813,103 @@ std::vector<Color_Interop> MapBackground_Interop::GetMatrix(double Left, double 
 		auto& bg = backgrounds[i];
 		auto& shared_matrix = matrixes[i];
 
-		if (shared_matrix.GetMaxX() < Left || shared_matrix.GetMinX() > Right || shared_matrix.GetMaxY() < Bottom || shared_matrix.GetMinY() > Top) continue;
+		if (shared_matrix.GetMaxX() < Left || shared_matrix.GetMinX() > Right || shared_matrix.GetMaxY() < Bottom || shared_matrix.GetMinY() > Top) {
+		}
+		else {
+			auto& minCol = bg.min_color;
+			auto& maxCol = bg.max_color;
+			double minValue = bg.minValue;
+			double maxValue = bg.maxValue;
+			double alpha_foreground = 0;
+			double alpha_background = 0;
+			int pixelWidth = numColumns;
+			int pixelHeight = numRows;
+			int x, y, byteIndex;
+			double v;
 
-		auto& minCol = bg.min_color;
-		auto& maxCol = bg.max_color;
-		double minValue = bg.minValue;
-		double maxValue = bg.maxValue;
-		double alpha_foreground = 0;
-		double alpha_background = 0;
-		int pixelWidth = numColumns;
-		int pixelHeight = numRows;
-		int x, y, byteIndex;
-		double v;
+			if (shared_matrix.GetNumValues() > 0 && maxValue > minValue) {
+				if (minCol.A == maxCol.A && minCol.R == maxCol.R && minCol.G == maxCol.G && minCol.B == maxCol.B) {
+					// there is no gradient within this range -- are they using bounds clipping?
+					if (bg.clipToBounds)
+					{
+						// got to do the analysis, but we can skip blending the colors
+						std::vector<double> values;
+						if (bg.highQuality)
+						{
+							values = shared_matrix.GetTimeSeries(Left, Top, Right, Bottom, numColumns, numRows);
+						}
+						else
+						{
+							values = shared_matrix.GetKnotSeries(Left, Top, Right, Bottom, numColumns, numRows);
+						}
+						int n = values.size();
+						alpha_foreground = minCol.A / 255.0;
 
-		if (shared_matrix.GetNumValues() > 0 && maxValue > minValue) {						
-			if (minCol.A == maxCol.A && minCol.R == maxCol.R && minCol.G == maxCol.G && minCol.B == maxCol.B) {
-				// there is no gradient within this range -- are they using bounds clipping?
-				if (bg.clipToBounds)
-				{
-					// got to do the analysis, but we can skip blending the colors
+#if 0
+						fibers::parallel::For(0, n, [&values, &minValue, &maxValue, &out, &alpha_foreground, &minCol](int byteIndex) {
+							double v = values[byteIndex];
+							if (v >= minValue && v <= maxValue)
+							{
+								auto& pixel = out[byteIndex];
+								double alpha_background = pixel.A / 255.0;
+
+								pixel.R = alpha_foreground * minCol.R + alpha_background * pixel.R * (1.0 - alpha_foreground);
+								pixel.G = alpha_foreground * minCol.G + alpha_background * pixel.G * (1.0 - alpha_foreground);
+								pixel.B = alpha_foreground * minCol.B + alpha_background * pixel.B * (1.0 - alpha_foreground);
+								pixel.A = (1.0 - (1.0 - alpha_foreground) * (1.0 - alpha_background)) * 255.0;
+							}
+						});
+#else
+						for (byteIndex = 0; byteIndex < n; byteIndex++)
+						{
+							v = values[byteIndex];
+							if (v >= minValue && v <= maxValue)
+							{
+								auto& pixel = out[byteIndex];
+								alpha_background = pixel.A / 255.0;
+
+								pixel.R = alpha_foreground * minCol.R + alpha_background * pixel.R * (1.0 - alpha_foreground);
+								pixel.G = alpha_foreground * minCol.G + alpha_background * pixel.G * (1.0 - alpha_foreground);
+								pixel.B = alpha_foreground * minCol.B + alpha_background * pixel.B * (1.0 - alpha_foreground);
+								pixel.A = (1.0 - (1.0 - alpha_foreground) * (1.0 - alpha_background)) * 255.0;
+							}
+						}
+#endif
+					}
+					else
+					{
+						// no point in doing the analysis -- there is no "clip to bounds" and there will be no color transitions. 
+						alpha_foreground = minCol.A / 255.0;
+#if 0
+						fibers::parallel::ForEach(out, [&alpha_foreground, &minCol](Color_Interop& pixel) {
+							double alpha_background = pixel.A / 255.0;
+
+							pixel.R = alpha_foreground * minCol.R + alpha_background * pixel.R * (1.0 - alpha_foreground);
+							pixel.G = alpha_foreground * minCol.G + alpha_background * pixel.G * (1.0 - alpha_foreground);
+							pixel.B = alpha_foreground * minCol.B + alpha_background * pixel.B * (1.0 - alpha_foreground);
+							pixel.A = (1.0 - (1.0 - alpha_foreground) * (1.0 - alpha_background)) * 255.0;
+						});
+#else
+						for (int y = 0; y < pixelHeight; y++)
+						{
+							for (x = 0; x < pixelWidth; x++)
+							{
+								byteIndex = (y * pixelWidth + x);
+								auto& pixel = out[byteIndex];
+
+								alpha_background = pixel.A / 255.0;
+
+								pixel.R = alpha_foreground * minCol.R + alpha_background * pixel.R * (1.0 - alpha_foreground);
+								pixel.G = alpha_foreground * minCol.G + alpha_background * pixel.G * (1.0 - alpha_foreground);
+								pixel.B = alpha_foreground * minCol.B + alpha_background * pixel.B * (1.0 - alpha_foreground);
+								pixel.A = (1.0 - (1.0 - alpha_foreground) * (1.0 - alpha_background)) * 255.0;
+							}
+						}
+#endif
+					}
+				}
+				else {
+					// traditional, full analysis
 					std::vector<double> values;
 					if (bg.highQuality)
 					{
@@ -1695,128 +1920,181 @@ std::vector<Color_Interop> MapBackground_Interop::GetMatrix(double Left, double 
 						values = shared_matrix.GetKnotSeries(Left, Top, Right, Bottom, numColumns, numRows);
 					}
 					int n = values.size();
-					alpha_foreground = minCol.A / 255.0;
+#if 0
+					fibers::parallel::For(0, n, [&values, &minValue, &maxValue, &out, &bg, &minCol, &maxCol](int byteIndex) {
+						double v = (values[byteIndex] - minValue) / (maxValue - minValue); // 0 - 1 between the min and max for this value
+						auto& pixel = out[byteIndex];
+
+						if (v < 0)
+						{
+							if (!bg.clipToBounds)
+							{
+								double alpha_foreground = minCol.A / 255.0;
+								double alpha_background = pixel.A / 255.0;
+
+								pixel.R = alpha_foreground * minCol.R + alpha_background * pixel.R * (1.0 - alpha_foreground);
+								pixel.G = alpha_foreground * minCol.G + alpha_background * pixel.G * (1.0 - alpha_foreground);
+								pixel.B = alpha_foreground * minCol.B + alpha_background * pixel.B * (1.0 - alpha_foreground);
+								pixel.A = (1.0 - (1.0 - alpha_foreground) * (1.0 - alpha_background)) * 255.0;
+							}
+						}
+						else if (v > 1)
+						{
+							if (!bg.clipToBounds)
+							{
+								double alpha_foreground = maxCol.A / 255.0;
+								double alpha_background = pixel.A / 255.0;
+
+								pixel.R = alpha_foreground * maxCol.R + alpha_background * pixel.R * (1.0 - alpha_foreground);
+								pixel.G = alpha_foreground * maxCol.G + alpha_background * pixel.G * (1.0 - alpha_foreground);
+								pixel.B = alpha_foreground * maxCol.B + alpha_background * pixel.B * (1.0 - alpha_foreground);
+								pixel.A = (1.0 - (1.0 - alpha_foreground) * (1.0 - alpha_background)) * 255.0;
+							}
+						}
+						else
+						{
+							double alpha_foreground = cweeMath::Lerp(minCol.A, maxCol.A, v) / 255.0;
+							double alpha_background = pixel.A / 255.0;
+
+							pixel.R = alpha_foreground * cweeMath::Lerp(minCol.R, maxCol.R, v) + alpha_background * pixel.R * (1.0 - alpha_foreground);
+							pixel.G = alpha_foreground * cweeMath::Lerp(minCol.G, maxCol.G, v) + alpha_background * pixel.G * (1.0 - alpha_foreground);
+							pixel.B = alpha_foreground * cweeMath::Lerp(minCol.B, maxCol.B, v) + alpha_background * pixel.B * (1.0 - alpha_foreground);
+							pixel.A = (1.0 - (1.0 - alpha_foreground) * (1.0 - alpha_background)) * 255.0;
+						}
+					});
+#else
 					for (byteIndex = 0; byteIndex < n; byteIndex++)
 					{
-						v = values[byteIndex];
-						if (v >= minValue && v <= maxValue)
+						v = (values[byteIndex] - minValue) / (maxValue - minValue); // 0 - 1 between the min and max for this value
+						auto& pixel = out[byteIndex];
+
+						if (v < 0)
 						{
-							auto& pixel = out[byteIndex];
+							if (!bg.clipToBounds)
+							{
+								alpha_foreground = minCol.A / 255.0;
+								alpha_background = pixel.A / 255.0;
+
+								pixel.R = alpha_foreground * minCol.R + alpha_background * pixel.R * (1.0 - alpha_foreground);
+								pixel.G = alpha_foreground * minCol.G + alpha_background * pixel.G * (1.0 - alpha_foreground);
+								pixel.B = alpha_foreground * minCol.B + alpha_background * pixel.B * (1.0 - alpha_foreground);
+								pixel.A = (1.0 - (1.0 - alpha_foreground) * (1.0 - alpha_background)) * 255.0;
+							}
+						}
+						else if (v > 1)
+						{
+							if (!bg.clipToBounds)
+							{
+								alpha_foreground = maxCol.A / 255.0;
+								alpha_background = pixel.A / 255.0;
+
+								pixel.R = alpha_foreground * maxCol.R + alpha_background * pixel.R * (1.0 - alpha_foreground);
+								pixel.G = alpha_foreground * maxCol.G + alpha_background * pixel.G * (1.0 - alpha_foreground);
+								pixel.B = alpha_foreground * maxCol.B + alpha_background * pixel.B * (1.0 - alpha_foreground);
+								pixel.A = (1.0 - (1.0 - alpha_foreground) * (1.0 - alpha_background)) * 255.0;
+							}
+						}
+						else
+						{
+							alpha_foreground = cweeMath::Lerp(minCol.A, maxCol.A, v) / 255.0;
 							alpha_background = pixel.A / 255.0;
 
-							pixel.R = alpha_foreground * minCol.R + alpha_background * pixel.R * (1.0 - alpha_foreground);
-							pixel.G = alpha_foreground * minCol.G + alpha_background * pixel.G * (1.0 - alpha_foreground);
-							pixel.B = alpha_foreground * minCol.B + alpha_background * pixel.B * (1.0 - alpha_foreground);
+							pixel.R = alpha_foreground * cweeMath::Lerp(minCol.R, maxCol.R, v) + alpha_background * pixel.R * (1.0 - alpha_foreground);
+							pixel.G = alpha_foreground * cweeMath::Lerp(minCol.G, maxCol.G, v) + alpha_background * pixel.G * (1.0 - alpha_foreground);
+							pixel.B = alpha_foreground * cweeMath::Lerp(minCol.B, maxCol.B, v) + alpha_background * pixel.B * (1.0 - alpha_foreground);
 							pixel.A = (1.0 - (1.0 - alpha_foreground) * (1.0 - alpha_background)) * 255.0;
 						}
 					}
-
-				}
-				else
-				{
-					// no point in doing the analysis -- there is no "clip to bounds" and there will be no color transitions. 
-					alpha_foreground = minCol.A / 255.0;
-
-					for (int y = 0; y < pixelHeight; y++)
-					{
-						for (x = 0; x < pixelWidth; x++)
-						{
-							byteIndex = (y * pixelWidth + x);
-							auto& pixel = out[byteIndex];
-
-							alpha_background = pixel.A / 255.0;
-
-							pixel.R = alpha_foreground * minCol.R + alpha_background * pixel.R * (1.0 - alpha_foreground);
-							pixel.G = alpha_foreground * minCol.G + alpha_background * pixel.G * (1.0 - alpha_foreground);
-							pixel.B = alpha_foreground * minCol.B + alpha_background * pixel.B * (1.0 - alpha_foreground);
-							pixel.A = (1.0 - (1.0 - alpha_foreground) * (1.0 - alpha_background)) * 255.0;
-						}
-					}
+#endif
 				}
 			}
 			else {
-				// traditional, full analysis
-				std::vector<double> values;
-				if (bg.highQuality)
-				{
-					values = shared_matrix.GetTimeSeries(Left, Top, Right, Bottom, numColumns, numRows);
-				}
-				else
-				{
-					values = shared_matrix.GetKnotSeries(Left, Top, Right, Bottom, numColumns, numRows);
-				}
-				int n = values.size();
-				for (byteIndex = 0; byteIndex < n; byteIndex++)
-				{
-					v = (values[byteIndex] - minValue) / (maxValue - minValue); // 0 - 1 between the min and max for this value
-					auto& pixel = out[byteIndex];
-
-					if (v < 0)
-					{
-						if (!bg.clipToBounds)
-						{
-							alpha_foreground = minCol.A / 255.0;
-							alpha_background = pixel.A / 255.0;
-
-							pixel.R = alpha_foreground * minCol.R + alpha_background * pixel.R * (1.0 - alpha_foreground);
-							pixel.G = alpha_foreground * minCol.G + alpha_background * pixel.G * (1.0 - alpha_foreground);
-							pixel.B = alpha_foreground * minCol.B + alpha_background * pixel.B * (1.0 - alpha_foreground);
-							pixel.A = (1.0 - (1.0 - alpha_foreground) * (1.0 - alpha_background)) * 255.0;
-						}
-					}
-					else if (v > 1)
-					{
-						if (!bg.clipToBounds)
-						{
-							alpha_foreground = maxCol.A / 255.0;
-							alpha_background = pixel.A / 255.0;
-
-							pixel.R = alpha_foreground * maxCol.R + alpha_background * pixel.R * (1.0 - alpha_foreground);
-							pixel.G = alpha_foreground * maxCol.G + alpha_background * pixel.G * (1.0 - alpha_foreground);
-							pixel.B = alpha_foreground * maxCol.B + alpha_background * pixel.B * (1.0 - alpha_foreground);
-							pixel.A = (1.0 - (1.0 - alpha_foreground) * (1.0 - alpha_background)) * 255.0;
-						}
-					}
-					else
-					{
-						alpha_foreground = cweeMath::Lerp(minCol.A, maxCol.A, v) / 255.0;
-						alpha_background = pixel.A / 255.0;
-
-						pixel.R = alpha_foreground * cweeMath::Lerp(minCol.R, maxCol.R, v) + alpha_background * pixel.R * (1.0 - alpha_foreground);
-						pixel.G = alpha_foreground * cweeMath::Lerp(minCol.G, maxCol.G, v) + alpha_background * pixel.G * (1.0 - alpha_foreground);
-						pixel.B = alpha_foreground * cweeMath::Lerp(minCol.B, maxCol.B, v) + alpha_background * pixel.B * (1.0 - alpha_foreground);
-						pixel.A = (1.0 - (1.0 - alpha_foreground) * (1.0 - alpha_background)) * 255.0;
-					}
-				}
-			}						
-		}
-		else {
-			alpha_foreground = minCol.A / 255.0;
-			for (y = 0; y < pixelHeight; y++)
-			{
-				for (x = 0; x < pixelWidth; x++)
-				{
-					byteIndex = (y * pixelWidth + x);
-					auto& pixel = out[byteIndex];
-
-					alpha_background = pixel.A / 255.0;		
+				alpha_foreground = minCol.A / 255.0;
+#if 0
+#if 1
+#if 1
+				fibers::parallel::ForEach(out, [&alpha_foreground, &minCol](Color_Interop& pixel) {
+					double alpha_background = pixel.A / 255.0;
 					pixel.R = alpha_foreground * minCol.R + alpha_background * pixel.R * (1.0 - alpha_foreground);
 					pixel.G = alpha_foreground * minCol.G + alpha_background * pixel.G * (1.0 - alpha_foreground);
 					pixel.B = alpha_foreground * minCol.B + alpha_background * pixel.B * (1.0 - alpha_foreground);
 					pixel.A = (1.0 - (1.0 - alpha_foreground) * (1.0 - alpha_background)) * 255.0;
+				});
+#else
+				fibers::parallel::For(0, pixelHeight * pixelWidth + pixelWidth, [&out, &alpha_foreground, &minCol](int byteIndex) {
+					auto& pixel = out[byteIndex];
+
+					double alpha_background = pixel.A / 255.0;
+					pixel.R = alpha_foreground * minCol.R + alpha_background * pixel.R * (1.0 - alpha_foreground);
+					pixel.G = alpha_foreground * minCol.G + alpha_background * pixel.G * (1.0 - alpha_foreground);
+					pixel.B = alpha_foreground * minCol.B + alpha_background * pixel.B * (1.0 - alpha_foreground);
+					pixel.A = (1.0 - (1.0 - alpha_foreground) * (1.0 - alpha_background)) * 255.0;
+					});
+#endif
+#else
+				fibers::parallel::For(0, pixelHeight, [&minCol, &alpha_foreground, &out, &pixelWidth](int y) {
+					fibers::parallel::For(0, pixelWidth, [&minCol, &alpha_foreground, &out, &y, &pixelWidth](int x) {
+						int byteIndex = (y * pixelWidth + x);
+						auto& pixel = out[byteIndex];
+
+						double alpha_background = pixel.A / 255.0;
+						pixel.R = alpha_foreground * minCol.R + alpha_background * pixel.R * (1.0 - alpha_foreground);
+						pixel.G = alpha_foreground * minCol.G + alpha_background * pixel.G * (1.0 - alpha_foreground);
+						pixel.B = alpha_foreground * minCol.B + alpha_background * pixel.B * (1.0 - alpha_foreground);
+						pixel.A = (1.0 - (1.0 - alpha_foreground) * (1.0 - alpha_background)) * 255.0;
+						});
+					});
+#endif
+#else
+				for (y = 0; y < pixelHeight; y++)
+				{
+#if 0
+					fibers::parallel::For(0, pixelWidth, [&minCol, &alpha_foreground, &out, &y, &pixelWidth](int x) {
+						int byteIndex = (y * pixelWidth + x);
+						auto& pixel = out[byteIndex];
+
+						double alpha_background = pixel.A / 255.0;
+						pixel.R = alpha_foreground * minCol.R + alpha_background * pixel.R * (1.0 - alpha_foreground);
+						pixel.G = alpha_foreground * minCol.G + alpha_background * pixel.G * (1.0 - alpha_foreground);
+						pixel.B = alpha_foreground * minCol.B + alpha_background * pixel.B * (1.0 - alpha_foreground);
+						pixel.A = (1.0 - (1.0 - alpha_foreground) * (1.0 - alpha_background)) * 255.0;
+						});
+#else
+					for (x = 0; x < pixelWidth; x++)
+					{
+						byteIndex = (y * pixelWidth + x);
+						auto& pixel = out[byteIndex];
+
+						alpha_background = pixel.A / 255.0;
+						pixel.R = alpha_foreground * minCol.R + alpha_background * pixel.R * (1.0 - alpha_foreground);
+						pixel.G = alpha_foreground * minCol.G + alpha_background * pixel.G * (1.0 - alpha_foreground);
+						pixel.B = alpha_foreground * minCol.B + alpha_background * pixel.B * (1.0 - alpha_foreground);
+						pixel.A = (1.0 - (1.0 - alpha_foreground) * (1.0 - alpha_background)) * 255.0;
+					}
+#endif
 				}
+#endif
+
 			}
 		}
 	}
 
 	// add random sub-byte noise to break up the visible "banding" in color gradients, typically seen in shadows (like white-to-grey gradients)
+#if 0
+	fibers::parallel::For((int)0, (int)out.size(), [&out](int i) {
+		auto& pixel = out[i];
+		pixel.R = ::Min(255.0, ::Max<double>(0.0, pixel.R));// +cweeRandomFloat(-0.5, 0.5)));
+		pixel.G = ::Min(255.0, ::Max<double>(0.0, pixel.G));// + cweeRandomFloat(-0.5, 0.5)));
+		pixel.B = ::Min(255.0, ::Max<double>(0.0, pixel.B));// + cweeRandomFloat(-0.5, 0.5)));
+	});
+#else
 	for (int i = out.size() - 1; i >= 0; i--) {
 		auto& pixel = out[i];
 		pixel.R = ::Min(255.0, ::Max<double>(0.0, pixel.R + cweeRandomFloat(-0.5, 0.5)));
 		pixel.G = ::Min(255.0, ::Max<double>(0.0, pixel.G + cweeRandomFloat(-0.5, 0.5)));
 		pixel.B = ::Min(255.0, ::Max<double>(0.0, pixel.B + cweeRandomFloat(-0.5, 0.5)));
 	}
-
+#endif
 	return out;
 };
 
@@ -1929,19 +2207,25 @@ std::string WaterWatch::GetBestMatch(std::string const& input, std::vector<std::
 };
 
 int WaterWatch::GetNumMultithreadingCores() {
-	return WindowsPlatform::GetCPUInfo().logicalProcessorCount;
+	return fibers::utilities::Hardware::GetNumCpuCores();
+
+	// return WindowsPlatform::GetCPUInfo().logicalProcessorCount;
 };
 int WaterWatch::GetNumLogicalCoresOnMachine() {
-	return WindowsPlatform::GetCPUInfo().logicalProcessorCount;
+	return fibers::utilities::Hardware::GetNumCpuCores();
+
+	// return WindowsPlatform::GetCPUInfo().logicalProcessorCount;
 };
 int WaterWatch::GetNumPhysicalCoresOnMachine() {
-	return WindowsPlatform::GetCPUInfo().processorCoreCount;
+	return fibers::utilities::Hardware::GetNumCpuCores();
+	// return WindowsPlatform::GetCPUInfo().processorCoreCount;
 };
 float WaterWatch::GetPercentMemoryUsedOfMachine() {
 	return Computer_Usage().PercentMemoryUsed();
 };
 float WaterWatch::GetPercentCpuUsedOfMachine() {
-	return WindowsPlatform::GetCPULoad();
+	return fibers::utilities::Hardware::GetPercentCpuLoad();
+	// return WindowsPlatform::GetCPULoad();
 };
 
 void WaterWatch::AddToLog(std::string filePath, std::string content) {

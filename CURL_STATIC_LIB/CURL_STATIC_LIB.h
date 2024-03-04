@@ -25,7 +25,7 @@ to maintain a single distribution point for the source code.
 #include "../WaterWatchCpp/List.h"
 #include "../WaterWatchCpp/cweeTime.h"
 #include "../WaterWatchCpp/UnorderedList.h"
-#include "../WaterWatchCpp/DispatchTimer.h"
+// #include "../WaterWatchCpp/DispatchTimer.h"
 #include "../WaterWatchCpp/cweeJob.h"
 
 #include <time.h>

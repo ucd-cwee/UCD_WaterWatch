@@ -15,24 +15,25 @@ to maintain a single distribution point for the source code.
 
 #include "WaterWatch_Win32_Console.h"
 
-int /*fibers::Job*/ Example::ExampleF(int numTasks, int numSubTasks) {
-	//return fibers::Job([](int numTasks, int numSubTasks) {
-		std::atomic<int> counter(0);
+int Example::ExampleF(int numTasks, int numSubTasks) {
+	fibers::containers::vector<int> list;
+	return fibers::parallel::async([&]() {
+		std::shared_ptr<std::atomic<int>> counter(new std::atomic<int>(0));
 		if (numTasks < 0) numTasks *= -1;
 		if (numSubTasks < 0) numSubTasks *= -1;
-		//fibers::Job([&]() { // not required to be a job
-			for (int i = 0; i < numTasks; ++i) { // iterations are actually in series
-				//fibers::Job([&numSubTasks, &counter]() { // not required to be a job
-					fibers::parallel::For(0, numSubTasks, [&counter](int j) {  // policies / particles are done simultanously using the fibers::For or fibers::ForEach loops
-						::Sleep(0.1);
-						counter.fetch_add(1); // do work
-					});
-				//}).AsyncInvoke().Wait();
-			}
-		//}).AsyncInvoke().Wait();
-		return counter.load();
-	//}, (int)numTasks, (int)numSubTasks);
+		for (int i = 0; i < numTasks; ++i) { // iterations are actually in series
+			fibers::parallel::For(0, numSubTasks, [&list, &counter](int j) {  // policies / particles are done simultanously using the fibers::For or fibers::ForEach loops
+				list.push_back(
+					counter->fetch_add(1)
+				); // do work
+			});
+		}
+		return fibers::parallel::async([=]()->int {
+			return counter->load();
+		});		
+	}).wait_get().wait_get();
 };
+
 
 
 
@@ -69,8 +70,8 @@ public:
 };
 
 /* Linux style terminal for multithread friendly processing. */
-static cweeJob GetUserInput() {
-	cweeJob out([]() {
+static auto GetUserInput() {
+	return fibers::parallel::async([]() {
 		std::cout << std::endl; // new line, since we'll be refreshing constantly on the current line, then using carriage return to reset the origin.
 		cweeStr temp;
 		while (1) {
@@ -119,8 +120,7 @@ static cweeJob GetUserInput() {
 			temp += (char)character; // all other keys, record to temp repo
 		}
 		return temp;
-		});
-	return out.AsyncInvoke();
+	});
 };
 static cweeStr UserMustSelectFile(fileType_t fileType = fileType_t::ANY_EXT) {
 	AUTO files = fileSystem->listFilesWithExtension(fileSystem->getDataFolder(), fileType);
@@ -130,7 +130,7 @@ static cweeStr UserMustSelectFile(fileType_t fileType = fileType_t::ANY_EXT) {
 		std::cout << cweeStr::printf("\t(%i) \"%s\"\n", n++, x.c_str());
 	}
 	std::cout << std::endl;
-	cweeStr reply = GetUserInput().Await().cast();
+	cweeStr reply = GetUserInput().wait_get();// Await().cast();
 	if (reply.IsNumeric() && (int)reply < files.Num()) {
 		return fileSystem->getDataFolder() + "\\" + files[(int)reply];
 	}
@@ -146,7 +146,7 @@ static cweeStr UserMustSelectFile(cweeStr fileType) {
 		std::cout << cweeStr::printf("\t(%i) \"%s\"\n", n++, x.c_str());
 	}
 	std::cout << std::endl;
-	cweeStr reply = GetUserInput().Await().cast();
+	cweeStr reply = GetUserInput().wait_get();//Await().cast();
 	if (reply.IsNumeric() && (int)reply < files.Num()) {
 		return files[(int)reply];
 	}
@@ -156,9 +156,11 @@ static cweeStr UserMustSelectFile(cweeStr fileType) {
 };
 
 /* Parallel thread to occasionally look for and process toast messages. Sleeps most of the time and wakes up to check for toasts. */
-static Timer parallel_toast_manager = Timer(0.1, Action([](cweeStr& title, cweeStr& content) { 
+
+static fibers::parallel::Timer parallel_toast_manager = fibers::parallel::Timer(0.1, fibers::Job([](cweeStr& title, cweeStr& content) {
 	while (cweeToasts->tryGetToast(title, content)) std::cout << cweeStr::printf("\n/* WaterWatch Toast: \t\"%s\": \t\"%s\" */\n\n", title.c_str(), content.c_str());
 }, cweeStr(), cweeStr()));
+
 
 // Handle async or scripted AppRequests. 
 static fibers::parallel::Timer AppLayerRequestProcessor = fibers::parallel::Timer(0.01, fibers::Job([]() {
@@ -212,10 +214,12 @@ static fibers::parallel::Timer AppLayerRequestProcessor = fibers::parallel::Time
 		case static_cast<size_t>(cweeStr::Hash("OS_GetSetting")):
 			result = "TBD";
 			break;
-		case static_cast<size_t>(cweeStr::Hash("Fiber")):
-			// if (args.Num() >= 2) result = std::to_string(Example::ExampleF(args[0].ReturnNumeric(), args[1].ReturnNumeric()).AsyncInvoke().Wait_Get()[0].cast<int>()).c_str();
-			if (args.Num() >= 2) result = std::to_string(Example::ExampleF(args[0].ReturnNumeric(), args[1].ReturnNumeric())).c_str();
-			else result = "Arguments required: 'num_tasks', 'num_subtasks'";
+		case static_cast<size_t>(cweeStr::Hash("Fiber")): 
+		    {
+				if (args.Num() >= 2) result = std::to_string(Example::ExampleF(args[0].ReturnNumeric(), args[1].ReturnNumeric())).c_str();
+				//if (args.Num() >= 2) result = std::to_string(Example::ExampleF(args[0].ReturnNumeric(), args[1].ReturnNumeric())).c_str();
+				else result = "Arguments required: 'num_tasks', 'num_subtasks'";
+			}
 			break;
 		default:
 			// unknown function.
@@ -249,8 +253,20 @@ int main() {
 	std::shared_ptr<chaiscript::WaterWatch_ChaiScript> engine = std::make_shared<chaiscript::WaterWatch_ChaiScript>();
 	while (true) {
 		AUTO input = GetUserInput();
-		cweeStr str = input.Await().cast();
+		cweeStr str = input.wait_get();//Await().cast();
 
+		if (str == "Fiber") {
+			int x = 1000000;
+			int y = 10;
+			int z;
+			while (true) {
+				z = Example::ExampleF(y, x);
+				if (y * x != z) {
+					cweeStr err = cweeStr::printf("Something went wrong with the job system and a job returned %i instead of %i", z, y * x);
+					throw(std::runtime_error(err.c_str()));
+				}
+			}
+		}
 		if (str == "Exit")
 		{
 			return 0;

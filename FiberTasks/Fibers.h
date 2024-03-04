@@ -1,5 +1,4 @@
 #pragma once
-#define NOMINMAX
 
 #pragma region Precompiled STL Headers
 #pragma warning(disable : 4005)				// macro redefinition
@@ -43,10 +42,24 @@
 #pragma warning(disable : 26812)			// prefer enum class to enum
 #pragma warning(disable : 28182)			// Dereferencing NULL pointer
 #pragma warning(disable : 28251)			// Inconsistent annotation for 'new'
+#define NOMINMAX
 #define _CRT_FUNCTIONS_REQUIRED 1
 #define _SILENCE_CXX17_ITERATOR_BASE_CLASS_DEPRECATION_WARNING
+#include <ShlDisp.h>
+#include <mutex>
+#include <shared_mutex>
+#include <synchapi.h>
+#include <handleapi.h>
+#include <ppl.h>
+#include <concurrent_vector.h>
+#include <concurrent_unordered_map.h>
+#include <concurrent_queue.h>
+#include <concurrent_unordered_set.h>
+#include <boost/any.hpp>
 #pragma endregion
 #pragma region iterator_definition
+#ifdef SETUP_STL_ITERATOR
+#else
 #define SETUP_STL_ITERATOR(ParentClass, IterType, StateType) typedef std::ptrdiff_t difference_type;											\
 	typedef size_t size_type; typedef IterType value_type; typedef IterType* pointer; typedef const IterType* const_pointer;					\
 	typedef IterType& reference;																												\
@@ -151,19 +164,8 @@
 	const_reverse_iterator rend() const { return const_reverse_iterator(this).end(); };															\
 	const_reverse_iterator crbegin() const { return rbegin(); };																				\
 	const_reverse_iterator crend() const { return rend(); };
+#endif
 #pragma endregion 
-
-#include <ShlDisp.h>
-#include <mutex>
-#include <shared_mutex>
-#include <synchapi.h>
-#include <handleapi.h>
-#include <ppl.h>
-#include <concurrent_vector.h>
-#include <concurrent_unordered_map.h>
-#include <concurrent_queue.h>
-#include <concurrent_unordered_set.h>
-#include <boost/any.hpp>
 
 namespace fibers{
 	namespace utilities {
@@ -224,6 +226,14 @@ namespace fibers{
 			static constexpr std::string_view sv_type_name(identity<void>) { return "void"; };
 			static constexpr const char* type_name(identity<void>) { return "void"; };
 		};
+
+		class Hardware {
+		public:
+			static int GetNumCpuCores();
+			static float GetPercentCpuLoad();
+		};
+
+
 	};
 
 	namespace {
@@ -1874,5 +1884,168 @@ namespace fibers{
 			if constexpr (retNo) group.Wait();
 			else return group.Wait_Get();
 		};
+
+		/* Generic form of a future<T>, which can be used to wait on and get the results of any job. */
+		class promise {
+		protected:
+			std::shared_ptr< std::atomic<JobGroup*>> shared_state;
+			std::shared_ptr<std::atomic<Any*>> result;
+
+		public:
+			promise() : shared_state(nullptr), result(nullptr) {};
+			promise(Job const& job) :
+				shared_state(std::shared_ptr<std::atomic<JobGroup*>>(new std::atomic<JobGroup*>(new JobGroup(job)), [](std::atomic<JobGroup*>* anyP) { if (anyP) { auto* p = anyP->exchange(nullptr); if (p) { delete p; } delete anyP; } })),
+				result(std::shared_ptr<std::atomic<Any*>>(new std::atomic<Any*>(), [](std::atomic<Any*>* anyP) { if (anyP) { auto* p = anyP->exchange(nullptr); if (p) { delete p; } delete anyP; } })) {};
+			promise(promise const&) = default;
+			promise(promise&&) = default;
+			promise& operator=(promise const&) = default;
+			promise& operator=(promise&&) = default;
+			virtual ~promise() {};
+
+			bool valid() const noexcept {
+				return (bool)shared_state;
+			};
+			void wait() {
+				if (shared_state) {
+					auto p = shared_state->exchange(nullptr);
+					if (p) {
+						Any* p2 = result->exchange(new Any(p->Wait_Get()[0]));
+						if (p2) {
+							delete p2;
+						}
+						delete p;
+					}
+				}
+				while (result && !result->load()) {
+					YieldProcessor();
+				}
+			};
+
+			Any get_any() const noexcept {
+				if (result) {
+					Any* p = result->load();
+					if (p) {
+						return Any(*p);
+					}
+				}
+				return Any();
+			};
+			Any wait_get_any() {
+				wait();
+				return get_any();
+			};
+		};
+
+		/* A secondary type tag used to identify if a template type is a future<T> type. */
+		class future_type {
+		public:
+			virtual ~future_type() {};
+		};
+
+		/* Specialized form of a promise, which can be used to handle type-casting for lambdas automatically, while still being useful for waiting on and getting the results of any job. 
+		Note: Only the first thread that "waits" on a future<T> assists the thread pool. More waiters != more jobs, and therefore additional waiters are spin-locking.
+		Recommended that only the thread (or consuming thread) that scheduled the future<T> object should wait for it. */
+		template <typename T> class future final : public promise/*, public future_type*/ {
+		public:
+			future() : promise()/*, future_type()*/ {};
+			future(Job const& job) : promise(job)/*, future_type()*/ {};
+			future(promise const& p_promise) : promise(p_promise)/*, future_type()*/ {};
+			future(future const&) = default;
+			future(future&&) = default;
+			future& operator=(future const&) = default;
+			future& operator=(future&&) = default;
+			virtual ~future() {};
+
+			/* Cast-down to a generic promise that erases the information on the return type. Useful for sharing tasks between libraries where type info itself cannot be shared. */
+			promise as_promise() const { return promise(reinterpret_cast<const promise&>(*this)); };
+
+			/* get a copy of the result of the task. must have already waited. */
+			decltype(auto) get() {
+				if (result) {
+					Any* p = result->load();
+					if (p) {
+						if constexpr (std::is_same<void, T>()) {
+							return;
+						} else {
+							// if the return type is itself a future_type, then we should "wait_get" it as well.
+							//if constexpr (std::is_base_of_v<future_type, T>) {
+							//	return static_cast<T>(p->cast<T>()).wait_get();
+							//}
+							//else {
+								return static_cast<T>(p->cast<T>());
+							//}
+						}						
+					}
+				}
+				throw(std::runtime_error("future was empty"));
+			};
+			/* get a reference to the result of the task. Note: lifetime of return reference must not outlive the future<T> object. must have already waited. */
+			decltype(auto) get_ref() {
+				if (result) {
+					Any* p = result->load();
+					if (p) {
+						if constexpr (std::is_same<void, T>()) {
+							return;
+						}
+						else {
+							// if the return type is itself a future_type, then we should "wait_get" it as well.
+							//if constexpr (std::is_base_of_v<future_type, T>) {
+							//	return static_cast<T>(p->cast<T>()).wait_get_ref();
+							//}
+							//else {
+								return static_cast<T&>(p->cast<T&>());
+							//}
+						}
+					}
+				}
+				throw(std::runtime_error("future was empty"));
+			};
+			/* get a shared_pointer of the result of the task. must have already waited. */
+			decltype(auto) get_shared() {
+				if (result) {
+					Any* p = result->load();
+					if (p) {
+						if constexpr (std::is_same<void, T>()) {
+							return;
+						}
+						else {
+							// if the return type is itself a future_type, then we should "wait_get" it as well.
+							//if constexpr (std::is_base_of_v<future_type, T>) {
+							//	return static_cast<T>(p->cast<T>()).wait_get_shared();
+							//}
+							//else {
+								return static_cast<std::shared_ptr<T>>(p->cast<std::shared_ptr<T>>());
+							//}
+						}
+					}
+				}
+				throw(std::runtime_error("future was empty"));
+			};
+
+			/* wait to get a copy of the result of the task. Repeated waiting is OK. */
+			decltype(auto) wait_get() {
+				wait();
+				return get();
+			};
+			/* wait to get a reference to the result of the task. Note: lifetime of return reference must not outlive the future<T> object. Repeated waiting is OK. */
+			decltype(auto) wait_get_ref() {
+				wait();
+				return get_ref();
+			};
+			/* wait to get a shared_pointer of the result of the task. Repeated waiting is OK. */
+			decltype(auto) wait_get_shared() {
+				wait();
+				return get_shared();
+			};
+		};
+		
+		/* returns a future<T> object for awaiting the results of the job. */
+		template < typename F, typename... Args, typename = std::enable_if_t< !std::is_same_v<Job, std::decay_t<F>> && !std::is_same_v<Any, std::decay_t<F>> >>
+		__forceinline static decltype(auto) async(F function, Args... Fargs) {
+			return future<typename utilities::function_traits<decltype(std::function(function))>::result_type>(Job(function, Fargs...));
+		};
 	};
+
+
+
 };

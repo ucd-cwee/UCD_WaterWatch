@@ -27,7 +27,34 @@ namespace fibers {
 		p->Init({ ftl::GetNumHardwareThreads() * 50, 0, ftl::EmptyQueueBehavior::Sleep, {} });
 		return p;		
 	});
+	namespace utilities {
+		int Hardware::GetNumCpuCores() {
+			return static_cast<int>(ftl::GetNumHardwareThreads());
+		};
+		float Hardware::GetPercentCpuLoad() {
+			auto CalculateCPULoad = [](unsigned long long idleTicks, unsigned long long totalTicks)->float
+			{
+				static unsigned long long _previousTotalTicks = 0;
+				static unsigned long long _previousIdleTicks = 0;
 
+				unsigned long long totalTicksSinceLastTime = totalTicks - _previousTotalTicks;
+				unsigned long long idleTicksSinceLastTime = idleTicks - _previousIdleTicks;
+
+				float ret = 1.0f - ((totalTicksSinceLastTime > 0) ? ((float)idleTicksSinceLastTime) / totalTicksSinceLastTime : 0);
+
+				_previousTotalTicks = totalTicks;
+				_previousIdleTicks = idleTicks;
+				return ret;
+			};
+			auto FileTimeToInt64 = [](const FILETIME& ft)->unsigned long long
+			{
+				return (((unsigned long long)(ft.dwHighDateTime)) << 32) | ((unsigned long long)ft.dwLowDateTime);
+			};
+
+			FILETIME idleTime, kernelTime, userTime;
+			return GetSystemTimes(&idleTime, &kernelTime, &userTime) ? 100.0f * CalculateCPULoad(FileTimeToInt64(idleTime), FileTimeToInt64(kernelTime) + FileTimeToInt64(userTime)) : -1.0f;
+		};
+	};
 	namespace {
 		struct AnyFunctionStruct {
 			std::shared_ptr<Action> job;
@@ -104,6 +131,9 @@ namespace fibers {
 		jobs.push_back(job);
 	};
 	void JobGroup::JobGroupImpl::Queue(std::vector<Job> const& listOfJobs) {
+#if 1
+		for (Job const& j : listOfJobs) Queue(j);		
+#else
 		std::shared_ptr<ftl::WaitGroup> wg = std::static_pointer_cast<ftl::WaitGroup>(waitGroup);
 		if (!wg) throw(std::runtime_error("Job Group was empty.")); 
 		std::vector<ftl::Task> tasks;
@@ -112,8 +142,12 @@ namespace fibers {
 			jobs.push_back(job);
 		}
 		Fibers->AddTasks(tasks.size(), &tasks[0], ftl::TaskPriority::Normal, wg.get());
+#endif
 	};
 	void JobGroup::JobGroupImpl::ForceQueue(std::vector<Job> const& listOfJobs) {
+#if 1
+		for (Job const& j : listOfJobs) ForceQueue(j);
+#else
 		std::shared_ptr<ftl::WaitGroup> wg = std::static_pointer_cast<ftl::WaitGroup>(waitGroup);
 		if (!wg) throw(std::runtime_error("Job Group was empty."));
 		std::vector<ftl::Task> tasks;
@@ -122,6 +156,7 @@ namespace fibers {
 			jobs.push_back(job);
 		}
 		Fibers->AddTasks(tasks.size(), &tasks[0], ftl::TaskPriority::Normal, wg.get());
+#endif
 	};
 	void JobGroup::JobGroupImpl::Wait() {
 		std::shared_ptr<ftl::WaitGroup> wg = std::static_pointer_cast<ftl::WaitGroup>(waitGroup);
