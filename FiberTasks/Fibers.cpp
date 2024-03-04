@@ -17,19 +17,19 @@
 #undef FTL_WERROR
 #undef FTL_DISABLE_ITERATOR_DEBUG
 
-#include "ftl/task_scheduler.h"
-#include "ftl/wait_group.h"
-#include "ftl/fibtex.h"
+#include "TaskScheduler.h"
+#include "WaitGroup.h"
+#include "Fibtex_H.h"
 
 namespace fibers {
-	extern containers::DelayedInstantiation< ftl::TaskScheduler > Fibers = containers::DelayedInstantiation<::ftl::TaskScheduler>([]()-> ftl::TaskScheduler* {
-		auto* p = new ftl::TaskScheduler();
-		p->Init({ ftl::GetNumHardwareThreads() * 50, 0, ftl::EmptyQueueBehavior::Sleep, {} });
+	extern containers::DelayedInstantiation< TaskScheduler > Fibers = containers::DelayedInstantiation<TaskScheduler>([]()-> TaskScheduler* {
+		auto* p = new TaskScheduler();
+		p->Init({ GetNumHardwareThreads() * 50, 0, EmptyQueueBehavior::Sleep, {} });
 		return p;		
 	});
 	namespace utilities {
 		int Hardware::GetNumCpuCores() {
-			return static_cast<int>(ftl::GetNumHardwareThreads());
+			return static_cast<int>(GetNumHardwareThreads());
 		};
 		float Hardware::GetPercentCpuLoad() {
 			auto CalculateCPULoad = [](unsigned long long idleTicks, unsigned long long totalTicks)->float
@@ -61,7 +61,7 @@ namespace fibers {
 			Any* destination;
 			bool force;
 		};
-		static void DoAnyFuncStruct(ftl::TaskScheduler* taskScheduler, void* arg) {
+		static void DoAnyFuncStruct(TaskScheduler* taskScheduler, void* arg) {
 			std::unique_ptr<AnyFunctionStruct> data(static_cast<AnyFunctionStruct*>(arg));
 			if (data && data->job) {
 				if (data->force) {
@@ -101,7 +101,7 @@ namespace fibers {
 				decltype(auto)            try_lock() noexcept { return m_lock.try_lock(); };
 
 			private:
-				ftl::Fibtex m_lock;
+				Fibtex m_lock;
 
 			};
 		}
@@ -116,50 +116,28 @@ namespace fibers {
 		bool            mutex::try_lock() noexcept { return std::static_pointer_cast<mutex_impl>(Handle)->try_lock(); };
 	};
 
-	JobGroup::JobGroup() : impl(new JobGroup::JobGroupImpl(std::static_pointer_cast<void>(std::shared_ptr<ftl::WaitGroup>(new ftl::WaitGroup(&*Fibers))))) {};
-	JobGroup::JobGroup(Job const& job) : impl(new JobGroup::JobGroupImpl(std::static_pointer_cast<void>(std::shared_ptr<ftl::WaitGroup>(new ftl::WaitGroup(&*Fibers))))) { Queue(job); };
+	JobGroup::JobGroup() : impl(new JobGroup::JobGroupImpl(std::static_pointer_cast<void>(std::shared_ptr<WaitGroup>(new WaitGroup(&*Fibers))))) {};
+	JobGroup::JobGroup(Job const& job) : impl(new JobGroup::JobGroupImpl(std::static_pointer_cast<void>(std::shared_ptr<WaitGroup>(new WaitGroup(&*Fibers))))) { Queue(job); };
 	void JobGroup::JobGroupImpl::Queue(Job const& job) {
-		std::shared_ptr<ftl::WaitGroup> wg = std::static_pointer_cast<ftl::WaitGroup>(waitGroup);
+		std::shared_ptr<WaitGroup> wg = std::static_pointer_cast<WaitGroup>(waitGroup);
 		if (!wg) throw(std::runtime_error("Job Group was empty.")); 
-		Fibers->AddTask({ DoAnyFuncStruct, new AnyFunctionStruct({ job.impl, nullptr, false }) }, ftl::TaskPriority::Normal, wg.get());
+		Fibers->AddTask({ DoAnyFuncStruct, new AnyFunctionStruct({ job.impl, nullptr, false }) }, TaskPriority::Normal, wg.get());
 		jobs.push_back(job);
 	};
 	void JobGroup::JobGroupImpl::ForceQueue(Job const& job) {
-		std::shared_ptr<ftl::WaitGroup> wg = std::static_pointer_cast<ftl::WaitGroup>(waitGroup);
+		std::shared_ptr<WaitGroup> wg = std::static_pointer_cast<WaitGroup>(waitGroup);
 		if (!wg) throw(std::runtime_error("Job Group was empty.")); 
-		Fibers->AddTask({ DoAnyFuncStruct, new AnyFunctionStruct({ job.impl, nullptr, true }) }, ftl::TaskPriority::Normal, wg.get());
+		Fibers->AddTask({ DoAnyFuncStruct, new AnyFunctionStruct({ job.impl, nullptr, true }) }, TaskPriority::Normal, wg.get());
 		jobs.push_back(job);
 	};
 	void JobGroup::JobGroupImpl::Queue(std::vector<Job> const& listOfJobs) {
-#if 1
 		for (Job const& j : listOfJobs) Queue(j);		
-#else
-		std::shared_ptr<ftl::WaitGroup> wg = std::static_pointer_cast<ftl::WaitGroup>(waitGroup);
-		if (!wg) throw(std::runtime_error("Job Group was empty.")); 
-		std::vector<ftl::Task> tasks;
-		for (auto& job : listOfJobs) {
-			tasks.push_back({ DoAnyFuncStruct, new AnyFunctionStruct({ job.impl, nullptr, false }) });
-			jobs.push_back(job);
-		}
-		Fibers->AddTasks(tasks.size(), &tasks[0], ftl::TaskPriority::Normal, wg.get());
-#endif
 	};
 	void JobGroup::JobGroupImpl::ForceQueue(std::vector<Job> const& listOfJobs) {
-#if 1
 		for (Job const& j : listOfJobs) ForceQueue(j);
-#else
-		std::shared_ptr<ftl::WaitGroup> wg = std::static_pointer_cast<ftl::WaitGroup>(waitGroup);
-		if (!wg) throw(std::runtime_error("Job Group was empty."));
-		std::vector<ftl::Task> tasks;
-		for (auto& job : listOfJobs) {
-			tasks.push_back({ DoAnyFuncStruct, new AnyFunctionStruct({ job.impl, nullptr, true }) });
-			jobs.push_back(job);
-		}
-		Fibers->AddTasks(tasks.size(), &tasks[0], ftl::TaskPriority::Normal, wg.get());
-#endif
 	};
 	void JobGroup::JobGroupImpl::Wait() {
-		std::shared_ptr<ftl::WaitGroup> wg = std::static_pointer_cast<ftl::WaitGroup>(waitGroup);
+		std::shared_ptr<WaitGroup> wg = std::static_pointer_cast<WaitGroup>(waitGroup);
 		if (!wg) throw(std::runtime_error("Job Group was empty."));
 		wg->Wait();
 	};
@@ -173,8 +151,8 @@ namespace fibers {
 	void Job::DelayedInvoke(double milliseconds_delay) {
 		std::tuple< double, Job >* data = new std::tuple<double, Job>(milliseconds_delay, *this);
 
-		ftl::ThreadType type;
-		bool success = ftl::CreateThread(1024, ([](void* _anon_ptr) -> unsigned int {
+		ThreadType type;
+		bool success = CreateThread(1024, ([](void* _anon_ptr) -> unsigned int {
 			if (_anon_ptr != nullptr) {
 				std::tuple< double, Job >* T = static_cast<std::tuple< double, Job>*>(_anon_ptr);
 				::Sleep(std::get<0>(*T));
@@ -188,8 +166,8 @@ namespace fibers {
 	/* Queue job, and return tool to await the result */
 	void Job::DelayedForceInvoke(double milliseconds_delay) {
 		std::tuple< double, Job >* data = new std::tuple<double, Job>(milliseconds_delay, *this);
-		ftl::ThreadType type;
-		bool success = ftl::CreateThread(1024, ([](void* _anon_ptr) -> unsigned int {
+		ThreadType type;
+		bool success = CreateThread(1024, ([](void* _anon_ptr) -> unsigned int {
 			if (_anon_ptr != nullptr) {
 				std::tuple< double, Job >* T = static_cast<std::tuple< double, Job>*>(_anon_ptr);
 				::Sleep(std::get<0>(*T));
@@ -202,8 +180,8 @@ namespace fibers {
 	};
 	void Job::AsyncDelayedInvoke(double milliseconds_delay) {
 		std::tuple< double, Job >* data = new std::tuple<double, Job>(milliseconds_delay, *this);
-		ftl::ThreadType type;
-		bool success = ftl::CreateThread(1024, ([](void* _anon_ptr) -> unsigned int {
+		ThreadType type;
+		bool success = CreateThread(1024, ([](void* _anon_ptr) -> unsigned int {
 			if (_anon_ptr != nullptr) {
 				std::tuple< double, Job >* T = static_cast<std::tuple< double, Job>*>(_anon_ptr);
 				::Sleep(std::get<0>(*T));
@@ -217,8 +195,8 @@ namespace fibers {
 	};
 	void Job::AsyncDelayedForceInvoke(double milliseconds_delay) {
 		std::tuple< double, Job >* data = new std::tuple<double, Job>(milliseconds_delay, *this);
-		ftl::ThreadType type;
-		bool success = ftl::CreateThread(1024, ([](void* _anon_ptr) -> unsigned int {
+		ThreadType type;
+		bool success = CreateThread(1024, ([](void* _anon_ptr) -> unsigned int {
 			if (_anon_ptr != nullptr) {
 				std::tuple< double, Job >* T = static_cast<std::tuple< double, Job>*>(_anon_ptr);
 				::Sleep(std::get<0>(*T));
@@ -253,7 +231,7 @@ namespace fibers {
 					std::shared_ptr<void> _handle = Handle;
 
 					Job job([_handle]()->bool {
-						ftl::YieldThread();
+						YieldThread();
 						return WaitForSingleObject(_handle.get(), 1) == ((((DWORD)0x00000000L)) + 0);
 					});
 
@@ -285,7 +263,7 @@ namespace fibers {
 				std::shared_ptr<Job> job;
 				bool force;
 			};
-			static void DoAnyJobStruct(ftl::TaskScheduler* taskScheduler, void* arg) {
+			static void DoAnyJobStruct(fibers::TaskScheduler* taskScheduler, void* arg) {
 				std::unique_ptr<AnyJobStruct> data(static_cast<AnyJobStruct*>(arg));
 				if (data && data->job) {
 					if (data->force) {
@@ -298,18 +276,18 @@ namespace fibers {
 			};
 		};
 		TaskScheduler::TaskScheduler() : m_TaskScheduler(), m_WaitGroup() {
-			auto* p = new ftl::TaskScheduler(ftl::TaskSchedulerInitOptions());
-			m_TaskScheduler = std::static_pointer_cast<void>(std::shared_ptr<ftl::TaskScheduler>(p));
-			m_WaitGroup = std::static_pointer_cast<void>(std::shared_ptr<ftl::WaitGroup>(new ftl::WaitGroup(p)));
+			auto* p = new fibers::TaskScheduler(TaskSchedulerInitOptions());
+			m_TaskScheduler = std::static_pointer_cast<void>(std::shared_ptr<fibers::TaskScheduler>(p));
+			m_WaitGroup = std::static_pointer_cast<void>(std::shared_ptr<WaitGroup>(new WaitGroup(p)));
 		};
 		void TaskScheduler::AddTask(Job const& task) {
-			auto ts = std::static_pointer_cast<ftl::TaskScheduler>(m_TaskScheduler);
-			auto wg = std::static_pointer_cast<ftl::WaitGroup>(m_WaitGroup);
-			ts->AddTask({ DoAnyJobStruct, new AnyJobStruct({ std::make_shared<Job>(task), false }) }, ftl::TaskPriority::Normal, wg.get());
+			auto ts = std::static_pointer_cast<fibers::TaskScheduler>(m_TaskScheduler);
+			auto wg = std::static_pointer_cast<WaitGroup>(m_WaitGroup);
+			ts->AddTask({ DoAnyJobStruct, new AnyJobStruct({ std::make_shared<Job>(task), false }) }, TaskPriority::Normal, wg.get());
 		};
 		void TaskScheduler::Wait() {
-			auto ts = std::static_pointer_cast<ftl::TaskScheduler>(m_TaskScheduler);
-			auto wg = std::static_pointer_cast<ftl::WaitGroup>(m_WaitGroup);
+			auto ts = std::static_pointer_cast<fibers::TaskScheduler>(m_TaskScheduler);
+			auto wg = std::static_pointer_cast<WaitGroup>(m_WaitGroup);
 			wg->Wait();
 		};
 	};
@@ -320,7 +298,7 @@ namespace fibers {
 			public:
 				DispatchTimerImpl(long double millisecondsBetweenDispatch, Job const& queuedActivity) : handle(), stop(new std::atomic<long>(0)) {
 					std::tuple< long double, Job, std::shared_ptr<std::atomic<long>>>* data = new std::tuple<long double, Job, std::shared_ptr<std::atomic<long>>>(millisecondsBetweenDispatch, queuedActivity, stop);
-					bool success = ftl::CreateThread(1024, ([](void* _anon_ptr) -> unsigned int {
+					bool success = CreateThread(1024, ([](void* _anon_ptr) -> unsigned int {
 						if (_anon_ptr != nullptr) {
 							std::tuple< long double, Job, std::shared_ptr<std::atomic<long>>>* T = static_cast<std::tuple< long double, Job, std::shared_ptr<std::atomic<long>>>*>(_anon_ptr);
 							while (1) {
@@ -341,7 +319,7 @@ namespace fibers {
 
 			private:
 				std::shared_ptr<std::atomic<long>> stop;
-				ftl::ThreadType handle;
+				ThreadType handle;
 
 			};
 		};

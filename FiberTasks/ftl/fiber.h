@@ -25,9 +25,6 @@
 #pragma once
 
 #include "ftl/ftl_valgrind.h"
-
-#include "boost_context/fcontext.h"
-
 #include <stddef.h>
 
 namespace ftl {
@@ -95,7 +92,7 @@ private:
 	void *m_stack{ nullptr };
 	size_t m_systemPageSize{ 0 };
 	size_t m_stackSize{ 0 };
-	boost_context::fcontext_t m_context{ nullptr };
+	void* m_context{ nullptr };
 	void *m_arg{ nullptr };
 	FTL_VALGRIND_ID
 
@@ -106,9 +103,7 @@ public:
 	 *
 	 * @param fiber    The fiber to switch to
 	 */
-	void SwitchToFiber(Fiber *const fiber) {
-		boost_context::jump_fcontext(&m_context, fiber->m_context, fiber->m_arg);
-	}
+	void SwitchToFiber(Fiber* const fiber);
 
 	/**
 	 * Re-initializes the stack with a new startRoutine and arg
@@ -121,10 +116,7 @@ public:
 	 *
 	 * @return
 	 */
-	void Reset(FiberStartRoutine const startRoutine, void *const arg) {
-		m_context = boost_context::make_fcontext(static_cast<char *>(m_stack) + m_stackSize, m_stackSize, startRoutine);
-		m_arg = arg;
-	}
+	void Reset(FiberStartRoutine const startRoutine, void* const arg);
 
 private:
 	/**

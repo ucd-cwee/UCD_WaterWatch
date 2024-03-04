@@ -153,7 +153,7 @@
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
       <PrecompiledHeaderFile>
       </PrecompiledHeaderFile>
-      <AdditionalIncludeDirectories>$(ProjectDir)third_party\catch2\third_party;$(ProjectDir)third_party\boost_context\include;$(ProjectDir)third_party;$(ProjectDir)include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir)third_party\catch2\third_party;$(ProjectDir)third_party\boost_context\include;$(ProjectDir)third_party;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
       <LanguageStandard>stdcpp17</LanguageStandard>
       <StringPooling>true</StringPooling>
@@ -172,23 +172,27 @@
     </Lib>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClInclude Include="Alloc_H.h" />
+    <ClInclude Include="Callbacks_H.h" />
+    <ClInclude Include="Config_H.h" />
+    <ClInclude Include="Fiber_H.h" />
     <ClInclude Include="Fibers.h" />
-    <ClInclude Include="ftl\alloc.h" />
-    <ClInclude Include="ftl\fiber.h" />
-    <ClInclude Include="ftl\fibtex.h" />
-    <ClInclude Include="ftl\task_scheduler.h" />
-    <ClInclude Include="ftl\task_scheduler_internal.h" />
-    <ClInclude Include="ftl\thread_abstraction.h" />
-    <ClInclude Include="ftl\wait_group.h" />
+    <ClInclude Include="Fibtex_H.h" />
+    <ClInclude Include="Job.h" />
+    <ClInclude Include="Tasks.h" />
+    <ClInclude Include="TaskScheduler.h" />
+    <ClInclude Include="TaskSchedulerInternal.h" />
+    <ClInclude Include="ThreadAbstraction_H.h" />
+    <ClInclude Include="WaitGroup.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="Alloc_H.cpp" />
+    <ClCompile Include="Fiber_H.cpp" />
     <ClCompile Include="Fibers.cpp" />
-    <ClCompile Include="ftl\alloc.cpp" />
-    <ClCompile Include="ftl\fiber.cpp" />
-    <ClCompile Include="ftl\fibtex.cpp" />
-    <ClCompile Include="ftl\task_scheduler.cpp" />
-    <ClCompile Include="ftl\thread_abstraction.cpp" />
-    <ClCompile Include="ftl\wait_group.cpp" />
+    <ClCompile Include="Fibtex_H.cpp" />
+    <ClCompile Include="TaskScheduler.cpp" />
+    <ClCompile Include="ThreadAbstraction_H.cpp" />
+    <ClCompile Include="WaitGroup.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

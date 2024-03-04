@@ -23,12 +23,11 @@
  */
 
 #include "fiber.h"
-
 #include "alloc.h"
 #include "ftl/assert.h"
 #include "ftl/config.h"
-
 #include <algorithm>
+#include "boost_context/fcontext.h"
 
 namespace ftl {
 
@@ -67,6 +66,15 @@ Fiber::~Fiber() {
 		AlignedFree(m_stack);
 	}
 }
+
+void Fiber::SwitchToFiber(Fiber* const fiber) {
+	boost_context::jump_fcontext(&m_context, fiber->m_context, fiber->m_arg);
+};
+
+void Fiber::Reset(FiberStartRoutine const startRoutine, void* const arg) {
+	m_context = boost_context::make_fcontext(static_cast<char*>(m_stack) + m_stackSize, m_stackSize, startRoutine);
+	m_arg = arg;
+};
 
 void Fiber::Swap(Fiber &first, Fiber &second) noexcept {
 	std::swap(first.m_stack, second.m_stack);
