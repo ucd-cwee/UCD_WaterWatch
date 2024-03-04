@@ -35,6 +35,7 @@
 #	endif
 #	include <windows.h>
 #endif
+#include <string>
 
 namespace fibers {
 
@@ -73,6 +74,7 @@ namespace fibers {
 		// Initialize tls
 		taskScheduler->m_tls[index].CurrentFiberIndex = freeFiberIndex;
 		// Switch
+		if (freeFiberIndex >= taskScheduler->GetFiberCount() || freeFiberIndex < 0) throw(std::runtime_error(std::string("BAD FIBER INDEX (") + std::to_string(freeFiberIndex) + std::string(")")));
 		taskScheduler->m_tls[index].ThreadFiber.SwitchToFiber(&taskScheduler->m_fibers[freeFiberIndex]);
 
 		// And we've returned
@@ -162,6 +164,8 @@ namespace fibers {
 				}
 
 				// Switch
+				if (tls->OldFiberIndex >= taskScheduler->GetFiberCount() || tls->OldFiberIndex < 0) throw(std::runtime_error(std::string("BAD FIBER INDEX (") + std::to_string(tls->OldFiberIndex) + std::string(")")));
+				if (tls->CurrentFiberIndex >= taskScheduler->GetFiberCount() || tls->CurrentFiberIndex < 0) throw(std::runtime_error(std::string("BAD FIBER INDEX (") + std::to_string(tls->CurrentFiberIndex) + std::string(")")));
 				taskScheduler->m_fibers[tls->OldFiberIndex].SwitchToFiber(&taskScheduler->m_fibers[tls->CurrentFiberIndex]);
 
 				if (callbacks.OnFiberAttached != nullptr) {
@@ -245,6 +249,7 @@ namespace fibers {
 		}
 
 		unsigned index = taskScheduler->GetCurrentThreadIndex();
+		if (index >= taskScheduler->GetFiberCount() || index < 0) throw(std::runtime_error(std::string("BAD FIBER INDEX (") + std::to_string(index) + std::string(")")));
 		taskScheduler->m_fibers[taskScheduler->m_tls[index].CurrentFiberIndex].SwitchToFiber(&taskScheduler->m_quitFibers[index]);
 
 		// We should never get here
@@ -275,11 +280,7 @@ namespace fibers {
 		printf("Error: ThreadEndFunc should never return");
 	}
 
-	TaskScheduler::TaskScheduler() {
-		FTL_VALGRIND_HG_DISABLE_CHECKING(&m_initialized, sizeof(m_initialized));
-		FTL_VALGRIND_HG_DISABLE_CHECKING(&m_quit, sizeof(m_quit));
-		FTL_VALGRIND_HG_DISABLE_CHECKING(&m_quitCount, sizeof(m_quitCount));
-	}
+	TaskScheduler::TaskScheduler() {};
 
 	int TaskScheduler::Init(TaskSchedulerInitOptions options) {
 		// Sanity check to make sure the user doesn't double init
@@ -304,7 +305,6 @@ namespace fibers {
 		m_fiberPoolSize = options.FiberPoolSize;
 		m_fibers = new Fiber[options.FiberPoolSize];
 		m_freeFibers = new std::atomic<bool>[options.FiberPoolSize];
-		FTL_VALGRIND_HG_DISABLE_CHECKING(m_freeFibers, sizeof(std::atomic<bool>) * m_fiberPoolSize);
 
 		// Leave the first slot for the bound main thread
 		for (unsigned i = 1; i < options.FiberPoolSize; ++i) {
@@ -544,9 +544,6 @@ namespace fibers {
 			if (TaskIsReadyToExecute(nextTask)) {
 				result = true;
 				// Break to cleanup
-#if 0
-				goto cleanup; // NOLINT(cppcoreguidelines-avoid-goto)
-#else
 				if (!taskBuffer->empty()) {
 					// Re-push all the tasks we found that we're ready to execute
 					// We (or another thread) will get them next round
@@ -567,7 +564,6 @@ namespace fibers {
 				}
 
 				return result;
-#endif
 			}
 
 			// It's a ReadyTask whose fiber hasn't switched away yet
@@ -592,9 +588,6 @@ namespace fibers {
 					if (TaskIsReadyToExecute(nextTask)) {
 						result = true;
 						// Break to cleanup
-#if 0
-						goto cleanup;
-#else
 						if (!taskBuffer->empty()) {
 							// Re-push all the tasks we found that we're ready to execute
 							// We (or another thread) will get them next round
@@ -613,9 +606,7 @@ namespace fibers {
 								ThreadSleepCV.notify_all();
 							}
 						}
-
 						return result;
-#endif
 					}
 
 					// It's a ReadyTask whose fiber hasn't switched away yet

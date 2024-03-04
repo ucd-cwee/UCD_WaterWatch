@@ -30,6 +30,7 @@
 #include "ThreadAbstraction_H.h"
 #include <ppl.h>
 #include <concurrent_queue.h>
+#include <concurrent_unordered_map.h>
 #include "WaitGroup.h"
 #include <atomic>
 #include <condition_variable>
@@ -179,6 +180,8 @@ namespace fibers {
 		 * into their storage using m_tls[GetCurrentThreadIndex()]
 		 */
 		ThreadLocalStorage* m_tls{ nullptr };
+		// concurrency::concurrent_unordered_map<int, ThreadLocalStorage*> m_tls;
+
 
 		/**
 		 * We friend WaitGroup and Fibtex so we can keep InitWaitingFiberBundle() and SwitchToFreeFiber() private

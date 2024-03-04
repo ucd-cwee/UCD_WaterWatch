@@ -19,7 +19,7 @@ to maintain a single distribution point for the source code.
 #include "../FiberTasks/WaitGroup.h"
 int Example::ExampleF(int numTasks, int numSubTasks) {
 	fibers::containers::vector<int> list;
-	return fibers::parallel::async([&]() {
+	//return fibers::parallel::async([&]() {
 		std::shared_ptr<std::atomic<int>> counter(new std::atomic<int>(0));
 		if (numTasks < 0) numTasks *= -1;
 		if (numSubTasks < 0) numSubTasks *= -1;
@@ -30,10 +30,10 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 				); // do work
 			});
 		}
-		return fibers::parallel::async([=]()->int {
+		//return fibers::parallel::async([=]()->int {
 			return counter->load();
-		});		
-	}).wait_get().wait_get();
+		//});		
+	//}).wait_get().wait_get();
 };
 
 
