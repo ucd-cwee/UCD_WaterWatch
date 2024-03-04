@@ -36,17 +36,12 @@
 #include <vector>
 
 namespace ftl {
-
-	enum class EmptyQueueBehavior {
-		// Spin in a loop, actively searching for tasks
-		Spin,
-		// Same as spin, except yields to the OS after each round of searching
-		Yield,
-		// Puts the thread to sleep. Will be woken when more tasks are added to the remaining awake threads.
-		Sleep
+	enum class EmptyQueueBehavior {		
+		Spin, // Spin in a loop, actively searching for tasks		
+		Yield, // Same as spin, except yields to the OS after each round of searching		
+		Sleep // Puts the thread to sleep. Will be woken when more tasks are added to the remaining awake threads.
 		// ReSharper restore CppInconsistentNaming
 	};
-
 	struct TaskSchedulerInitOptions {
 		/* The size of the fiber pool.The fiber pool is used to run new tasks when the current task is waiting on a counter */
 		unsigned FiberPoolSize = 400;
@@ -57,7 +52,6 @@ namespace ftl {
 		/* Callbacks to run at various points to allow for e.g. hooking a profiler to fiber states */
 		EventCallbacks Callbacks;
 	};
-
 	struct WaitingFiberBundle;
 
 	/**
@@ -70,7 +64,6 @@ namespace ftl {
 	public:
 		TaskScheduler();
 		TaskScheduler(TaskSchedulerInitOptions options);
-
 		TaskScheduler(TaskScheduler const&) = delete;
 		TaskScheduler(TaskScheduler&&) noexcept = delete;
 		TaskScheduler& operator=(TaskScheduler const&) = delete;
@@ -79,7 +72,6 @@ namespace ftl {
 
 	private:
 		// Inner struct definitions
-
 		enum class FiberDestination {
 			None = 0,
 			ToPool = 1,

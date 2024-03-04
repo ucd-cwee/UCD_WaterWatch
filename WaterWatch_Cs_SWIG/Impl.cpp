@@ -151,63 +151,57 @@ std::vector<double> SharedMatrix::GetTimeSeries(double Left, double Top, double 
 			model = cweeSharedPtr<alglib::rbfmodel>(knots->Tag, [](void* p) -> alglib::rbfmodel* { return static_cast<alglib::rbfmodel*>(p); });
 		}
 
-		std::vector<fibers::Job> jobs;
+		fibers::containers::queue< std::shared_ptr<alglib::rbfcalcbuffer> > buffer_queue;
+		for (int i = 0; i < fibers::utilities::Hardware::GetNumCpuCores() * 2; i++) {
+			alglib::rbfcalcbuffer* p = new alglib::rbfcalcbuffer();
+			alglib::rbfcreatecalcbuffer(*model, *p, alglib::parallel);
+			buffer_queue.push(std::shared_ptr<alglib::rbfcalcbuffer>(p));
+		}
+
+		fibers::ftl_wrapper::TaskScheduler scheduler;
+
+		std::vector< fibers::Job > jobs;
 		tempMatrix.Reserve(numColumns * numRows + 12);
-		int AsyncRows = ::Max<double>(0, numRows); // 2/3 resulted in no waiting
+		int AsyncRows = ::Max<double>(0, numRows); 
 
 		for (int r = 0; r < AsyncRows; r++) {
-			jobs.push_back(fibers::Job([&](cweeSharedPtr<alglib::rbfmodel> Model, int R, alglib::real_1d_array& results) {
-				static thread_local alglib::rbfcalcbuffer buf;
-				static thread_local fibers::synchronization::shared_mutex mut;
+			auto job = fibers::Job([&buffer_queue, &numColumns, &Left, &Top, &rowStep, &columnStep, &reductionRatio](cweeSharedPtr<alglib::rbfmodel> Model, int R, alglib::real_1d_array& results) {
+				std::shared_ptr<alglib::rbfcalcbuffer> buf;
 
-				// attach pointers for arrays for the interpolation
-				mut.lock();
-				alglib::rbfcreatecalcbuffer(*Model, buf, alglib::parallel);
-				mut.unlock();
-
-				alglib::real_1d_array arr;
-				cweeUnion<double, double> coords;
-				arr.attach_to_ptr(2, (double*)(void*)(&coords));
+				while (!buffer_queue.try_pop(buf)) { cweeSysThreadTools::Sys_Yield(); }
 
 				cweeList< cweeUnion<double, double, double> > out(numColumns + 1);
 
-				int C;
-				for (
-					coords.get<0>() = Left,
-					coords.get<1>() = Top - R * rowStep,
-					C = 0;
-					C < numColumns;
-					C++,
-					coords.get<0>() += columnStep)
 				{
-					if ((::Max(R, C) - ::Min(R, C)) % reductionRatio == 0) {
-						// get "real" interpolated results for 1/3 of the requested pixels using a slow, complex model, distributed diagonally along the grid	
-						mut.lock_shared();
-						alglib::rbftscalcbuf(*Model, buf, arr, results, alglib::parallel);
-						mut.unlock_shared();
+					alglib::real_1d_array arr;
+					cweeUnion<double, double> coords;
+					arr.attach_to_ptr(2, (double*)(void*)(&coords));
 
-						out.Append(cweeUnion<double, double, double>((double)C, (double)R, (double)results[0]));
-					}
-					else {
-						out.Append(cweeUnion<double, double, double>(std::numeric_limits<double>::max(), std::numeric_limits<double>::max(), std::numeric_limits<double>::max()));
+					int C;
+					for (coords.get<0>() = Left, coords.get<1>() = Top - R * rowStep, C = 0; C < numColumns; C++, coords.get<0>() += columnStep) {
+						if ((::Max(R, C) - ::Min(R, C)) % reductionRatio == 0) {
+							// get "real" interpolated results for 1/3 of the requested pixels using a slow, complex model, distributed diagonally along the grid								
+							alglib::rbftscalcbuf(*Model, *buf, arr, results, alglib::parallel);
+
+							// add it to the matrix
+							out.Append(cweeUnion<double, double, double>((double)C, (double)R, (double)results[0]));
+						}
+						else {
+							out.Append(cweeUnion<double, double, double>(std::numeric_limits<double>::max(), std::numeric_limits<double>::max(), std::numeric_limits<double>::max()));
+						}
 					}
 				}
 
+				buffer_queue.push(buf);
+
 				return out;
-			}, model, (int)r, alglib::real_1d_array()));
+			}, (cweeSharedPtr<alglib::rbfmodel>)model, (int)r, alglib::real_1d_array());
+			
+			scheduler.AddTask(job);
+			jobs.push_back(job);
 		}
 
-		fibers::JobGroup awaiter;
-
-		awaiter.Queue(jobs);
-
-		awaiter.Wait();
-
-
-
-
-
-
+		scheduler.Wait();
 
 		for (auto& job : jobs) {
 			auto any = job.GetResult();
@@ -227,6 +221,15 @@ std::vector<double> SharedMatrix::GetTimeSeries(double Left, double Top, double 
 		// do a faster, local interpolation of those results using the Hilbert curve for the last 2/3 components. 
 		if (true) {
 			double R, C;
+#if 1
+			fibers::parallel::For(0, numRows, [&numColumns, &tempMatrix, &out, &reductionRatio](int R) {
+				for (int C = 0; C < numColumns; C++) {
+					if (((int)(::Max(R, C) - ::Min(R, C))) % reductionRatio != 0) {
+						out[numColumns * R + C] = tempMatrix.GetCurrentValue(C, R);
+					}
+				}
+			});
+#else
 			for (R = 0; R < numRows; R++) {
 				for (C = 0; C < numColumns; C++) {
 					// out.push_back(tempMatrix.GetCurrentValue(C, R)); // tempMatrix.GetCurrentValue(C, R));
@@ -236,13 +239,8 @@ std::vector<double> SharedMatrix::GetTimeSeries(double Left, double Top, double 
 					}
 				}
 			}
+#endif
 		}
-
-
-
-
-
-
 
 #else
 		out.resize(numColumns * numRows);
@@ -1844,8 +1842,7 @@ std::vector<Color_Interop> MapBackground_Interop::GetMatrix(double Left, double 
 						}
 						int n = values.size();
 						alpha_foreground = minCol.A / 255.0;
-
-#if 0
+#if 1
 						fibers::parallel::For(0, n, [&values, &minValue, &maxValue, &out, &alpha_foreground, &minCol](int byteIndex) {
 							double v = values[byteIndex];
 							if (v >= minValue && v <= maxValue)
@@ -1880,15 +1877,16 @@ std::vector<Color_Interop> MapBackground_Interop::GetMatrix(double Left, double 
 					{
 						// no point in doing the analysis -- there is no "clip to bounds" and there will be no color transitions. 
 						alpha_foreground = minCol.A / 255.0;
-#if 0
-						fibers::parallel::ForEach(out, [&alpha_foreground, &minCol](Color_Interop& pixel) {
-							double alpha_background = pixel.A / 255.0;
+#if 1
+						fibers::parallel::For(0, pixelHeight * pixelWidth + pixelWidth, [&out, &alpha_foreground, &minCol](int byteIndex) {
+							auto& pixel = out[byteIndex];
 
+							double alpha_background = pixel.A / 255.0;
 							pixel.R = alpha_foreground * minCol.R + alpha_background * pixel.R * (1.0 - alpha_foreground);
 							pixel.G = alpha_foreground * minCol.G + alpha_background * pixel.G * (1.0 - alpha_foreground);
 							pixel.B = alpha_foreground * minCol.B + alpha_background * pixel.B * (1.0 - alpha_foreground);
 							pixel.A = (1.0 - (1.0 - alpha_foreground) * (1.0 - alpha_background)) * 255.0;
-						});
+					    });
 #else
 						for (int y = 0; y < pixelHeight; y++)
 						{
@@ -1920,7 +1918,7 @@ std::vector<Color_Interop> MapBackground_Interop::GetMatrix(double Left, double 
 						values = shared_matrix.GetKnotSeries(Left, Top, Right, Bottom, numColumns, numRows);
 					}
 					int n = values.size();
-#if 0
+#if 1
 					fibers::parallel::For(0, n, [&values, &minValue, &maxValue, &out, &bg, &minCol, &maxCol](int byteIndex) {
 						double v = (values[byteIndex] - minValue) / (maxValue - minValue); // 0 - 1 between the min and max for this value
 						auto& pixel = out[byteIndex];
@@ -2010,9 +2008,9 @@ std::vector<Color_Interop> MapBackground_Interop::GetMatrix(double Left, double 
 			}
 			else {
 				alpha_foreground = minCol.A / 255.0;
+#if 1
+#if 1
 #if 0
-#if 1
-#if 1
 				fibers::parallel::ForEach(out, [&alpha_foreground, &minCol](Color_Interop& pixel) {
 					double alpha_background = pixel.A / 255.0;
 					pixel.R = alpha_foreground * minCol.R + alpha_background * pixel.R * (1.0 - alpha_foreground);
@@ -2029,7 +2027,7 @@ std::vector<Color_Interop> MapBackground_Interop::GetMatrix(double Left, double 
 					pixel.G = alpha_foreground * minCol.G + alpha_background * pixel.G * (1.0 - alpha_foreground);
 					pixel.B = alpha_foreground * minCol.B + alpha_background * pixel.B * (1.0 - alpha_foreground);
 					pixel.A = (1.0 - (1.0 - alpha_foreground) * (1.0 - alpha_background)) * 255.0;
-					});
+				});
 #endif
 #else
 				fibers::parallel::For(0, pixelHeight, [&minCol, &alpha_foreground, &out, &pixelWidth](int y) {
@@ -2080,7 +2078,7 @@ std::vector<Color_Interop> MapBackground_Interop::GetMatrix(double Left, double 
 	}
 
 	// add random sub-byte noise to break up the visible "banding" in color gradients, typically seen in shadows (like white-to-grey gradients)
-#if 0
+#if 1
 	fibers::parallel::For((int)0, (int)out.size(), [&out](int i) {
 		auto& pixel = out[i];
 		pixel.R = ::Min(255.0, ::Max<double>(0.0, pixel.R));// +cweeRandomFloat(-0.5, 0.5)));

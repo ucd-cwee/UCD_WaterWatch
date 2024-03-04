@@ -34,8 +34,7 @@ namespace ftl {
 
 size_t RoundUp(size_t numToRound, size_t multiple);
 
-Fiber::Fiber(size_t stackSize, FiberStartRoutine startRoutine, void *arg)
-        : m_arg(arg) {
+Fiber::Fiber(size_t stackSize, FiberStartRoutine startRoutine, void *arg) : m_arg(arg) {
 #if defined(FTL_FIBER_STACK_GUARD_PAGES)
 	m_systemPageSize = SystemPageSize();
 	const size_t alignment = SystemPageSize();

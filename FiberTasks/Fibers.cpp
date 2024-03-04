@@ -254,7 +254,7 @@ namespace fibers {
 
 					Job job([_handle]()->bool {
 						ftl::YieldThread();
-						return signal_impl::TryWait(_handle);
+						return WaitForSingleObject(_handle.get(), 1) == ((((DWORD)0x00000000L)) + 0);
 					});
 
 					for (; !signal_impl::TryWait(_handle); ) {
@@ -277,6 +277,41 @@ namespace fibers {
 		void signal::Clear() noexcept { std::static_pointer_cast<signal_impl>(impl)->Clear(); };
 		void signal::Wait() noexcept { std::static_pointer_cast<signal_impl>(impl)->Wait(); };
 		bool signal::TryWait() noexcept { return std::static_pointer_cast<signal_impl>(impl)->TryWait(); };
+	};
+
+	namespace ftl_wrapper {
+		namespace {
+			struct AnyJobStruct {
+				std::shared_ptr<Job> job;
+				bool force;
+			};
+			static void DoAnyJobStruct(ftl::TaskScheduler* taskScheduler, void* arg) {
+				std::unique_ptr<AnyJobStruct> data(static_cast<AnyJobStruct*>(arg));
+				if (data && data->job) {
+					if (data->force) {
+						data->job->ForceInvoke();
+					}
+					else {
+						data->job->Invoke();
+					}
+				}
+			};
+		};
+		TaskScheduler::TaskScheduler() : m_TaskScheduler(), m_WaitGroup() {
+			auto* p = new ftl::TaskScheduler(ftl::TaskSchedulerInitOptions());
+			m_TaskScheduler = std::static_pointer_cast<void>(std::shared_ptr<ftl::TaskScheduler>(p));
+			m_WaitGroup = std::static_pointer_cast<void>(std::shared_ptr<ftl::WaitGroup>(new ftl::WaitGroup(p)));
+		};
+		void TaskScheduler::AddTask(Job const& task) {
+			auto ts = std::static_pointer_cast<ftl::TaskScheduler>(m_TaskScheduler);
+			auto wg = std::static_pointer_cast<ftl::WaitGroup>(m_WaitGroup);
+			ts->AddTask({ DoAnyJobStruct, new AnyJobStruct({ std::make_shared<Job>(task), false }) }, ftl::TaskPriority::Normal, wg.get());
+		};
+		void TaskScheduler::Wait() {
+			auto ts = std::static_pointer_cast<ftl::TaskScheduler>(m_TaskScheduler);
+			auto wg = std::static_pointer_cast<ftl::WaitGroup>(m_WaitGroup);
+			wg->Wait();
+		};
 	};
 
 	namespace parallel {

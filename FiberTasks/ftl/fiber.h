@@ -41,6 +41,7 @@ public:
 	 * Nothing is allocated. This can be used as a thread fiber.
 	 */
 	Fiber() = default;
+
 	/**
 	 * Allocates a stack and sets it up to start executing 'startRoutine' when first switched to
 	 *
@@ -56,6 +57,7 @@ public:
 	 * It makes no sense to copy a stack and its corresponding context. Therefore, we explicitly forbid it.
 	 */
 	Fiber(Fiber const &other) = delete;
+	
 	/**
 	 * Deleted copy assignment operator
 	 * It makes no sense to copy a stack and its corresponding context. Therefore, we explicitly forbid it.
@@ -86,6 +88,7 @@ public:
 
 		return *this;
 	}
+	
 	~Fiber();
 
 private:
@@ -106,6 +109,7 @@ public:
 	void SwitchToFiber(Fiber *const fiber) {
 		boost_context::jump_fcontext(&m_context, fiber->m_context, fiber->m_arg);
 	}
+
 	/**
 	 * Re-initializes the stack with a new startRoutine and arg
 	 *
