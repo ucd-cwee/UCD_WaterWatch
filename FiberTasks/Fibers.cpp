@@ -19,7 +19,7 @@
 
 #include "TaskScheduler.h"
 #include "WaitGroup.h"
-#include "Fibtex_H.h"
+#include "Fibtex.h"
 
 namespace fibers {
 	extern containers::DelayedInstantiation< TaskScheduler > Fibers = containers::DelayedInstantiation<TaskScheduler>([]()-> TaskScheduler* {

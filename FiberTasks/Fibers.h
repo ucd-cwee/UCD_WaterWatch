@@ -898,13 +898,31 @@ namespace fibers{
 			std::shared_ptr<void> data;
 		};
 
-
-
 		/* parallel_for (auto i = start; i < end; i++){ todo(i); } */
 		template<typename iteratorType, typename F>
 		std::vector<Any> For(iteratorType start, iteratorType end, F&& ToDo) {
 			ftl_wrapper::TaskScheduler scheduler;
 
+			auto todo = std::function(std::forward<F>(ToDo));
+			constexpr bool retNo = std::is_same<typename utilities::function_traits<decltype(todo)>::result_type, void>::value;
+
+			std::vector<fibers::Job> jobs;
+			for (iteratorType iter = start; iter < end; iter++) {
+				scheduler.AddTask(fibers::Job([todo](iteratorType const& T) { return todo(T); }, (iteratorType)iter));
+
+				// jobs.push_back(fibers::Job([todo](iteratorType const& T) { return todo(T); }, (iteratorType)iter));
+			}
+			//JobGroup group;
+			//group.Queue(jobs);
+
+			//if constexpr (retNo) { group.Wait(); return std::vector<Any>(); }
+			//else return group.Wait_Get();
+
+			scheduler.Wait();
+			return std::vector<Any>();
+		};
+		template<typename iteratorType, typename F>
+		std::vector<Any> For(ftl_wrapper::TaskScheduler& scheduler, iteratorType start, iteratorType end, F&& ToDo) {
 			auto todo = std::function(std::forward<F>(ToDo));
 			constexpr bool retNo = std::is_same<typename utilities::function_traits<decltype(todo)>::result_type, void>::value;
 

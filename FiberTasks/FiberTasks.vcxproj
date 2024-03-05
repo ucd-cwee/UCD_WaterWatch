@@ -18,6 +18,29 @@
       <Platform>x64</Platform>
     </ProjectConfiguration>
   </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="Alloc.cpp" />
+    <ClCompile Include="Fibers.cpp" />
+    <ClCompile Include="Fiber.cpp" />
+    <ClCompile Include="Fibtex.cpp" />
+    <ClCompile Include="TaskScheduler.cpp" />
+    <ClCompile Include="ThreadAbstraction.cpp" />
+    <ClCompile Include="WaitGroup.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="Alloc.h" />
+    <ClInclude Include="Callbacks.h" />
+    <ClInclude Include="Config.h" />
+    <ClInclude Include="Fibers.h" />
+    <ClInclude Include="Fiber.h" />
+    <ClInclude Include="Fibtex.h" />
+    <ClInclude Include="Job.h" />
+    <ClInclude Include="Tasks.h" />
+    <ClInclude Include="TaskScheduler.h" />
+    <ClInclude Include="TaskSchedulerInternal.h" />
+    <ClInclude Include="ThreadAbstraction.h" />
+    <ClInclude Include="WaitGroup.h" />
+  </ItemGroup>
   <PropertyGroup Label="Globals">
     <VCProjectVersion>16.0</VCProjectVersion>
     <Keyword>Win32Proj</Keyword>
@@ -171,29 +194,6 @@
       <AdditionalLibraryDirectories>${ProjectDir)include;</AdditionalLibraryDirectories>
     </Lib>
   </ItemDefinitionGroup>
-  <ItemGroup>
-    <ClInclude Include="Alloc_H.h" />
-    <ClInclude Include="Callbacks_H.h" />
-    <ClInclude Include="Config_H.h" />
-    <ClInclude Include="Fiber_H.h" />
-    <ClInclude Include="Fibers.h" />
-    <ClInclude Include="Fibtex_H.h" />
-    <ClInclude Include="Job.h" />
-    <ClInclude Include="Tasks.h" />
-    <ClInclude Include="TaskScheduler.h" />
-    <ClInclude Include="TaskSchedulerInternal.h" />
-    <ClInclude Include="ThreadAbstraction_H.h" />
-    <ClInclude Include="WaitGroup.h" />
-  </ItemGroup>
-  <ItemGroup>
-    <ClCompile Include="Alloc_H.cpp" />
-    <ClCompile Include="Fiber_H.cpp" />
-    <ClCompile Include="Fibers.cpp" />
-    <ClCompile Include="Fibtex_H.cpp" />
-    <ClCompile Include="TaskScheduler.cpp" />
-    <ClCompile Include="ThreadAbstraction_H.cpp" />
-    <ClCompile Include="WaitGroup.cpp" />
-  </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
     <Import Project="$(VCTargetsPath)\BuildCustomizations\masm.targets" />

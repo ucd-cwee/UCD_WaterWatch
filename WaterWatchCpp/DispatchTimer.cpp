@@ -38,7 +38,7 @@ namespace {
 					delete T;
 				}
 				return 0;
-				}), (void*)data, 1024);
+			}), (void*)data, 1024);
 		};
 		~DispatchTimerImpl() { stop->Increment(); cweeSysThreadTools::Sys_DestroyThread(handle); };
 

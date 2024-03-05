@@ -24,19 +24,18 @@
  */
 #pragma once
 
-#include "Callbacks_H.h"
-#include "Fiber_H.h"
+#include "Config.h"
+#include "Callbacks.h"
+#include "Fiber.h"
 #include "Tasks.h"
-#include "ThreadAbstraction_H.h"
+#include "ThreadAbstraction.h"
 #include <ppl.h>
 #include <concurrent_queue.h>
-#include <concurrent_unordered_map.h>
 #include "WaitGroup.h"
 #include <atomic>
 #include <condition_variable>
 #include <mutex>
 #include <vector>
-#include "Job.h"
 
 namespace fibers {
 	enum class EmptyQueueBehavior {
@@ -73,14 +72,14 @@ namespace fibers {
 		TaskScheduler& operator=(TaskScheduler&&) noexcept = delete;
 		~TaskScheduler();
 
-	private:
+	public:
 		// Inner struct definitions
 		enum class FiberDestination {
 			None = 0,
 			ToPool = 1,
 			ToWaiting = 2,
 		};
-
+	private:
 		/**
 		 * Holds a task that is ready to to be executed by the worker threads
 		 * Counter is the counter for the task(group). It will be decremented when the task completes
@@ -90,22 +89,10 @@ namespace fibers {
 			WaitGroup* WG;
 		};
 
-		class alignas(kCacheLineSize) ThreadLocalStorage {
-		public:
-			ThreadLocalStorage() : 
-				HiPriTaskQueue(), 
-				LoPriTaskQueue(),
-				OldFiberStoredFlag(nullptr),
-				PinnedReadyFibers(), 
-				ThreadFiber(),
-				PinnedReadyFibersLock(),
-				CurrentFiberIndex(kInvalidIndex), 
-				OldFiberIndex(kInvalidIndex) ,
-				OldFiberDestination(FiberDestination::None),
-				HiPriLastSuccessfulSteal(1),
-				LoPriLastSuccessfulSteal(1),
-				FailedQueuePopAttempts(0)
-			{}
+		struct alignas(kCacheLineSize) ThreadLocalStorage {
+			ThreadLocalStorage()
+				: CurrentFiberIndex(kInvalidIndex), OldFiberIndex(kInvalidIndex) {
+			}
 
 		public:
 			// NOTE: The order of these variables may seem odd / jumbled. However, it is to optimize the padding required
@@ -115,7 +102,7 @@ namespace fibers {
 			/* The queue of high priority waiting tasks */
 			concurrency::concurrent_queue<TaskBundle> LoPriTaskQueue;
 
-			std::atomic<bool>* OldFiberStoredFlag;
+			std::atomic<bool>* OldFiberStoredFlag{ nullptr };
 
 			/* The queue of ready waiting Fibers that were pinned to this thread */
 			std::vector<WaitingFiberBundle*> PinnedReadyFibers;
@@ -139,14 +126,14 @@ namespace fibers {
 			/* The index of the previously executed fiber in m_fibers */
 			unsigned OldFiberIndex;
 			/* Where OldFiber should be stored when we call CleanUpPoolAndWaiting() */
-			FiberDestination OldFiberDestination;
+			FiberDestination OldFiberDestination{ FiberDestination::None };
 
 			/* The last high priority queue that we successfully stole from. This is an offset index from the current thread index */
-			unsigned HiPriLastSuccessfulSteal;
+			unsigned HiPriLastSuccessfulSteal{ 1 };
 			/* The last low priority queue that we successfully stole from. This is an offset index from the current thread index */
-			unsigned LoPriLastSuccessfulSteal;
+			unsigned LoPriLastSuccessfulSteal{ 1 };
 
-			unsigned FailedQueuePopAttempts;
+			unsigned FailedQueuePopAttempts{ 0 };
 		};
 
 	private:
@@ -158,12 +145,17 @@ namespace fibers {
 		EventCallbacks m_callbacks;
 
 		unsigned m_numThreads{ 0 };
-		mutable concurrency::concurrent_unordered_map<int, containers::DelayedInstantiation<ThreadType>> m_threads;
-		// ThreadType* m_threads{ nullptr };
+		ThreadType* m_threads{ nullptr };
 
-		mutable std::atomic<int> m_fiberPoolSize{ 0 };
+		unsigned m_fiberPoolSize{ 0 };
 		/* The backing storage for the fiber pool */
-		mutable concurrency::concurrent_unordered_map<int, containers::DelayedInstantiation<std::tuple<Fiber, std::atomic<bool>>>> m_fibers;
+		Fiber* m_fibers{ nullptr };
+		/**
+		 * An array of atomics, which signify if a fiber is available to be used. The indices of m_waitingFibers
+		 * correspond 1 to 1 with m_fibers. So, if m_freeFibers[i] == true, then m_fibers[i] can be used.
+		 * Each atomic acts as a lock to ensure that threads do not try to use the same fiber at the same time
+		 */
+		std::atomic<bool>* m_freeFibers{ nullptr };
 
 		Fiber* m_quitFibers{ nullptr };
 
@@ -187,8 +179,7 @@ namespace fibers {
 		 * During initialization of the TaskScheduler, we create one ThreadLocalStorage instance per thread. Threads index
 		 * into their storage using m_tls[GetCurrentThreadIndex()]
 		 */
-		// ThreadLocalStorage* m_tls{ nullptr };
-		mutable concurrency::concurrent_unordered_map<int, containers::DelayedInstantiation<ThreadLocalStorage>> m_tls;
+		ThreadLocalStorage* m_tls{ nullptr };
 
 		/**
 		 * We friend WaitGroup and Fibtex so we can keep InitWaitingFiberBundle() and SwitchToFreeFiber() private

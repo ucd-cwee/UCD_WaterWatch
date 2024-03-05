@@ -1,100 +1,76 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup>
-    <Filter Include="Header Files">
+    <Filter Include="Files">
       <UniqueIdentifier>{93995380-89BD-4b04-88EB-625FBE52EBFB}</UniqueIdentifier>
       <Extensions>h;hh;hpp;hxx;h++;hm;inl;inc;ipp;xsd</Extensions>
     </Filter>
-    <Filter Include="Header Files\thread_abstraction">
-      <UniqueIdentifier>{4cc3cd5d-fb03-4fc8-a70a-74df24c325ea}</UniqueIdentifier>
+    <Filter Include="Files\H">
+      <UniqueIdentifier>{b1e6b651-dc3b-4344-982c-3c9c4c3da414}</UniqueIdentifier>
     </Filter>
-    <Filter Include="Header Files\fiber">
-      <UniqueIdentifier>{57d10ab8-dd53-4283-b1c3-84fd5af837c3}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Header Files\alloc">
-      <UniqueIdentifier>{17ea025d-a3c1-454d-8157-a1661ac8e694}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Header Files\task_scheduler">
-      <UniqueIdentifier>{390c2932-e93b-47d9-9e4b-ccaf35e1018c}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Header Files\callback">
-      <UniqueIdentifier>{fdbe708f-bfdd-4893-9f45-2cf96269901b}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Header Files\tasks">
-      <UniqueIdentifier>{6dc9e59b-e6f1-4739-9934-4d621184e8c2}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Header Files\wait_group">
-      <UniqueIdentifier>{a1d4fdbf-28d9-4038-b822-085e4ea6ddf2}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Header Files\fibtex">
-      <UniqueIdentifier>{04009915-a704-4c09-b0bb-be591dc3180e}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Header Files\config">
-      <UniqueIdentifier>{06873de6-91b6-4caf-b320-7e9cbb9f144e}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Header Files\jobs">
-      <UniqueIdentifier>{fa727172-9b80-418d-bfb3-6451b0587d3a}</UniqueIdentifier>
+    <Filter Include="Files\CPP">
+      <UniqueIdentifier>{7076985f-7151-4ec2-a8c3-617092eee3ac}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="Fibers.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="ThreadAbstraction_H.h">
-      <Filter>Header Files\thread_abstraction</Filter>
-    </ClInclude>
-    <ClInclude Include="Fiber_H.h">
-      <Filter>Header Files\fiber</Filter>
-    </ClInclude>
-    <ClInclude Include="Alloc_H.h">
-      <Filter>Header Files\alloc</Filter>
-    </ClInclude>
-    <ClInclude Include="TaskSchedulerInternal.h">
-      <Filter>Header Files\task_scheduler</Filter>
-    </ClInclude>
-    <ClInclude Include="TaskScheduler.h">
-      <Filter>Header Files\task_scheduler</Filter>
-    </ClInclude>
-    <ClInclude Include="Callbacks_H.h">
-      <Filter>Header Files\callback</Filter>
-    </ClInclude>
-    <ClInclude Include="Tasks.h">
-      <Filter>Header Files\tasks</Filter>
-    </ClInclude>
-    <ClInclude Include="WaitGroup.h">
-      <Filter>Header Files\wait_group</Filter>
-    </ClInclude>
-    <ClInclude Include="Fibtex_H.h">
-      <Filter>Header Files\fibtex</Filter>
-    </ClInclude>
-    <ClInclude Include="Config_H.h">
-      <Filter>Header Files\config</Filter>
-    </ClInclude>
-    <ClInclude Include="Job.h">
-      <Filter>Header Files\jobs</Filter>
-    </ClInclude>
-  </ItemGroup>
-  <ItemGroup>
-    <ClCompile Include="Fibers.cpp">
-      <Filter>Header Files</Filter>
+    <ClCompile Include="Alloc.cpp">
+      <Filter>Files\CPP</Filter>
     </ClCompile>
-    <ClCompile Include="ThreadAbstraction_H.cpp">
-      <Filter>Header Files\thread_abstraction</Filter>
+    <ClCompile Include="Fiber.cpp">
+      <Filter>Files\CPP</Filter>
     </ClCompile>
-    <ClCompile Include="Fiber_H.cpp">
-      <Filter>Header Files\fiber</Filter>
-    </ClCompile>
-    <ClCompile Include="Alloc_H.cpp">
-      <Filter>Header Files\alloc</Filter>
+    <ClCompile Include="Fibtex.cpp">
+      <Filter>Files\CPP</Filter>
     </ClCompile>
     <ClCompile Include="TaskScheduler.cpp">
-      <Filter>Header Files\task_scheduler</Filter>
+      <Filter>Files\CPP</Filter>
+    </ClCompile>
+    <ClCompile Include="ThreadAbstraction.cpp">
+      <Filter>Files\CPP</Filter>
     </ClCompile>
     <ClCompile Include="WaitGroup.cpp">
-      <Filter>Header Files\wait_group</Filter>
+      <Filter>Files\CPP</Filter>
     </ClCompile>
-    <ClCompile Include="Fibtex_H.cpp">
-      <Filter>Header Files\fibtex</Filter>
+    <ClCompile Include="Fibers.cpp">
+      <Filter>Files</Filter>
     </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="Alloc.h">
+      <Filter>Files\H</Filter>
+    </ClInclude>
+    <ClInclude Include="Callbacks.h">
+      <Filter>Files\H</Filter>
+    </ClInclude>
+    <ClInclude Include="Config.h">
+      <Filter>Files\H</Filter>
+    </ClInclude>
+    <ClInclude Include="Fiber.h">
+      <Filter>Files\H</Filter>
+    </ClInclude>
+    <ClInclude Include="Fibtex.h">
+      <Filter>Files\H</Filter>
+    </ClInclude>
+    <ClInclude Include="Job.h">
+      <Filter>Files\H</Filter>
+    </ClInclude>
+    <ClInclude Include="Tasks.h">
+      <Filter>Files\H</Filter>
+    </ClInclude>
+    <ClInclude Include="WaitGroup.h">
+      <Filter>Files\H</Filter>
+    </ClInclude>
+    <ClInclude Include="ThreadAbstraction.h">
+      <Filter>Files\H</Filter>
+    </ClInclude>
+    <ClInclude Include="TaskSchedulerInternal.h">
+      <Filter>Files\H</Filter>
+    </ClInclude>
+    <ClInclude Include="TaskScheduler.h">
+      <Filter>Files\H</Filter>
+    </ClInclude>
+    <ClInclude Include="Fibers.h">
+      <Filter>Files</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>
