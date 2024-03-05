@@ -258,7 +258,7 @@ int main() {
 		cweeStr str = input.wait_get();//Await().cast();
 
 		if (str == "Fiber") {
-			int x = 1000000;
+			int x = 100000;
 			int y = 10;
 			int z;
 			while (true) {

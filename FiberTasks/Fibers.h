@@ -179,39 +179,6 @@ namespace fibers{
 	};
 
 	namespace containers {
-		template<typename T > class DelayedInstantiation {
-		public:
-			DelayedInstantiation() : obj(nullptr), Lock(0), createFunc() {};
-			DelayedInstantiation(std::function<T* ()> create) : obj(nullptr), createFunc(create) {};
-			~DelayedInstantiation() {};
-
-			//T* operator->() { Ensure(); return obj.Get(); };
-			T* operator->() { Ensure(); return obj.get(); };
-			T& operator*() { Ensure(); return *obj; };
-
-		private:
-			void Ensure() {
-				if (!obj.get()) {
-					lock();
-					auto* p = obj.get();
-					if (!p) {
-						obj = std::shared_ptr<T>(createFunc());
-					}
-					unlock();
-				}
-			};
-			void lock() {
-				while ((Lock.fetch_add(1) + 1) != 1) Lock.fetch_sub(1);
-			};
-			void unlock() {
-				Lock.fetch_sub(1);
-			};
-			std::shared_ptr<T> obj;
-			std::atomic<long> Lock;
-			std::function<T* ()> createFunc;
-		};
-
-
 		/* Fiber- and thread-safe vector. Objects are stored and returned as std::shared_ptr. Growth, iterations, and push_back operations are concurrent, while erasing and clearing are non-concurrent and will replace the entire vector. */
 		template<typename _Ty>
 		class vector {

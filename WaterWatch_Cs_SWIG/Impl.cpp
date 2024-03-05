@@ -158,7 +158,7 @@ std::vector<double> SharedMatrix::GetTimeSeries(double Left, double Top, double 
 			buffer_queue.push(std::shared_ptr<alglib::rbfcalcbuffer>(p));
 		}
 
-		fibers::ftl_wrapper::TaskScheduler scheduler;
+		// fibers::ftl_wrapper::TaskScheduler scheduler;
 
 		std::vector< fibers::Job > jobs;
 		tempMatrix.Reserve(numColumns * numRows + 12);
@@ -197,11 +197,14 @@ std::vector<double> SharedMatrix::GetTimeSeries(double Left, double Top, double 
 				return out;
 			}, (cweeSharedPtr<alglib::rbfmodel>)model, (int)r, alglib::real_1d_array());
 			
-			scheduler.AddTask(job);
+			//scheduler.AddTask(job);
 			jobs.push_back(job);
 		}
 
-		scheduler.Wait();
+		fibers::JobGroup g;
+		g.Queue(jobs);
+		g.Wait();
+		// scheduler.Wait();
 
 		for (auto& job : jobs) {
 			auto any = job.GetResult();

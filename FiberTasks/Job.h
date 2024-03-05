@@ -168,6 +168,41 @@
 #pragma endregion 
 
 namespace fibers {
+	namespace containers {
+		template<typename T > class DelayedInstantiation {
+		public:
+			DelayedInstantiation(std::shared_ptr<T> const& o) : obj(o), Lock(std::make_shared<std::atomic<long>>()), createFunc([]()->T* { return new T(); }) {};
+			DelayedInstantiation() : obj(nullptr), Lock(std::make_shared<std::atomic<long>>()), createFunc([]()->T* { return new T(); }) {};
+			DelayedInstantiation(std::function<T* ()> create) : obj(nullptr), Lock(std::make_shared<std::atomic<long>>()), createFunc(create) {};
+			~DelayedInstantiation() {};
+
+			//T* operator->() { Ensure(); return obj.Get(); };
+			T* operator->() { Ensure(); return obj.get(); };
+			T& operator*() { Ensure(); return *obj; };
+
+		private:
+			void Ensure() {
+				if (!obj.get()) {
+					lock();
+					auto* p = obj.get();
+					if (!p) {
+						obj = std::shared_ptr<T>(createFunc());
+					}
+					unlock();
+				}
+			};
+			void lock() {
+				while ((Lock->fetch_add(1) + 1) != 1) Lock->fetch_sub(1);
+			};
+			void unlock() {
+				Lock->fetch_sub(1);
+			};
+			std::shared_ptr<T> obj;
+			std::shared_ptr<std::atomic<long>> Lock;
+			std::function<T* ()> createFunc;
+		};
+	};
+
 	namespace utilities {
 		class typenames {
 		public:
