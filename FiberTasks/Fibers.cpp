@@ -131,10 +131,30 @@ namespace fibers {
 		jobs.push_back(job);
 	};
 	void JobGroup::JobGroupImpl::Queue(std::vector<Job> const& listOfJobs) {
-		for (Job const& j : listOfJobs) Queue(j);		
+		std::shared_ptr<WaitGroup> wg = std::static_pointer_cast<WaitGroup>(waitGroup);
+		if (!wg) throw(std::runtime_error("Job Group was empty."));
+
+		std::vector<Task> tasks;
+		for (Job const& j : listOfJobs) {
+			tasks.push_back({ DoAnyFuncStruct, new AnyFunctionStruct({ j.impl, nullptr, false }) });
+		}
+		Fibers->AddTasks(listOfJobs.size(), &tasks[0], TaskPriority::Normal, wg.get());	
+		for (Job const& j : listOfJobs) {
+			jobs.push_back(j);
+		}
 	};
 	void JobGroup::JobGroupImpl::ForceQueue(std::vector<Job> const& listOfJobs) {
-		for (Job const& j : listOfJobs) ForceQueue(j);
+		std::shared_ptr<WaitGroup> wg = std::static_pointer_cast<WaitGroup>(waitGroup);
+		if (!wg) throw(std::runtime_error("Job Group was empty."));
+
+		std::vector<Task> tasks;
+		for (Job const& j : listOfJobs) {
+			tasks.push_back({ DoAnyFuncStruct, new AnyFunctionStruct({ j.impl, nullptr, true }) });
+		}
+		Fibers->AddTasks(listOfJobs.size(), &tasks[0], TaskPriority::Normal, wg.get());
+		for (Job const& j : listOfJobs) {
+			jobs.push_back(j);
+		}
 	};
 	void JobGroup::JobGroupImpl::Wait() {
 		std::shared_ptr<WaitGroup> wg = std::static_pointer_cast<WaitGroup>(waitGroup);
@@ -250,11 +270,6 @@ namespace fibers {
 				};
 			};
 		};
-		signal::signal(bool manualReset) : impl(std::static_pointer_cast<void>(std::shared_ptr<signal_impl>(new signal_impl(manualReset)))) {};
-		void signal::Raise() noexcept { std::static_pointer_cast<signal_impl>(impl)->Raise(); };
-		void signal::Clear() noexcept { std::static_pointer_cast<signal_impl>(impl)->Clear(); };
-		void signal::Wait() noexcept { std::static_pointer_cast<signal_impl>(impl)->Wait(); };
-		bool signal::TryWait() noexcept { return std::static_pointer_cast<signal_impl>(impl)->TryWait(); };
 	};
 
 	namespace ftl_wrapper {
@@ -290,40 +305,6 @@ namespace fibers {
 			auto wg = std::static_pointer_cast<WaitGroup>(m_WaitGroup);
 			wg->Wait();
 		};
-	};
-
-	namespace parallel {
-		namespace {
-			class DispatchTimerImpl {
-			public:
-				DispatchTimerImpl(long double millisecondsBetweenDispatch, Job const& queuedActivity) : handle(), stop(new std::atomic<long>(0)) {
-					std::tuple< long double, Job, std::shared_ptr<std::atomic<long>>>* data = new std::tuple<long double, Job, std::shared_ptr<std::atomic<long>>>(millisecondsBetweenDispatch, queuedActivity, stop);
-					bool success = CreateThread(1024, ([](void* _anon_ptr) -> unsigned int {
-						if (_anon_ptr != nullptr) {
-							std::tuple< long double, Job, std::shared_ptr<std::atomic<long>>>* T = static_cast<std::tuple< long double, Job, std::shared_ptr<std::atomic<long>>>*>(_anon_ptr);
-							while (1) {
-								if (std::get<2>(*T)->load() >= 1) { break; }
-
-								::Sleep(std::get<0>(*T));
-
-								if (std::get<2>(*T)->load() >= 1) { break; }
-
-								std::get<1>(*T).ForceInvoke();
-							}
-							delete T;
-						}
-						return 0;
-					}), (void*)data, "DelayedTask", &handle);
-				};
-				~DispatchTimerImpl() { stop->fetch_add(1); WaitForSingleObject(handle.Handle, INFINITE); CloseHandle(handle.Handle); };
-
-			private:
-				std::shared_ptr<std::atomic<long>> stop;
-				ThreadType handle;
-
-			};
-		};
-		Timer::Timer(long double millisecondsBetweenDispatch, Job const& queuedActivity) : data(std::static_pointer_cast<void>(std::shared_ptr<DispatchTimerImpl>(new DispatchTimerImpl(millisecondsBetweenDispatch, queuedActivity)))) {};
 	};
 
 };

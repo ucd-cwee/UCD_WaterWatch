@@ -1809,7 +1809,7 @@ std::vector<Color_Interop> MapBackground_Interop::GetMatrix(double Left, double 
 		matrixes.push_back(SharedMatrix(bg.matrix, false));
 	}
 
-	fibers::ftl_wrapper::TaskScheduler scheduler;
+	// fibers::ftl_wrapper::TaskScheduler scheduler;
 
 	// second, do the queries on each matrix, taking care to reduce workload where the matrix problem can be simplified. 
 	for (int i = 0; i < backgrounds.size(); i++) {
@@ -1849,7 +1849,7 @@ std::vector<Color_Interop> MapBackground_Interop::GetMatrix(double Left, double 
 						int n = values.size();
 						alpha_foreground = minCol.A / 255.0;
 #if 1
-						fibers::parallel::For(scheduler, 0, n, [&values, &minValue, &maxValue, &out, &alpha_foreground, &minCol](int byteIndex) {
+						fibers::parallel::For(0, n, [&values, &minValue, &maxValue, &out, &alpha_foreground, &minCol](int byteIndex) {
 							double v = values[byteIndex];
 							if (v >= minValue && v <= maxValue)
 							{
@@ -1884,7 +1884,7 @@ std::vector<Color_Interop> MapBackground_Interop::GetMatrix(double Left, double 
 						// no point in doing the analysis -- there is no "clip to bounds" and there will be no color transitions. 
 						alpha_foreground = minCol.A / 255.0;
 #if 1
-						fibers::parallel::For(scheduler, 0, pixelHeight * pixelWidth + pixelWidth, [&out, &alpha_foreground, &minCol](int byteIndex) {
+						fibers::parallel::For(0, pixelHeight * pixelWidth + pixelWidth, [&out, &alpha_foreground, &minCol](int byteIndex) {
 							auto& pixel = out[byteIndex];
 
 							double alpha_background = pixel.A / 255.0;
@@ -1925,7 +1925,7 @@ std::vector<Color_Interop> MapBackground_Interop::GetMatrix(double Left, double 
 					}
 					int n = values.size();
 #if 1
-					fibers::parallel::For(scheduler, 0, n, [&values, &minValue, &maxValue, &out, &bg, &minCol, &maxCol](int byteIndex) {
+					fibers::parallel::For(0, n, [&values, &minValue, &maxValue, &out, &bg, &minCol, &maxCol](int byteIndex) {
 						double v = (values[byteIndex] - minValue) / (maxValue - minValue); // 0 - 1 between the min and max for this value
 						auto& pixel = out[byteIndex];
 
@@ -2025,7 +2025,7 @@ std::vector<Color_Interop> MapBackground_Interop::GetMatrix(double Left, double 
 					pixel.A = (1.0 - (1.0 - alpha_foreground) * (1.0 - alpha_background)) * 255.0;
 				});
 #else
-				fibers::parallel::For(scheduler, 0, pixelHeight * pixelWidth + pixelWidth, [&out, &alpha_foreground, &minCol](int byteIndex) {
+				fibers::parallel::For(0, pixelHeight * pixelWidth + pixelWidth, [&out, &alpha_foreground, &minCol](int byteIndex) {
 					auto& pixel = out[byteIndex];
 
 					double alpha_background = pixel.A / 255.0;
@@ -2085,7 +2085,7 @@ std::vector<Color_Interop> MapBackground_Interop::GetMatrix(double Left, double 
 
 	// add random sub-byte noise to break up the visible "banding" in color gradients, typically seen in shadows (like white-to-grey gradients)
 #if 1
-	fibers::parallel::For(scheduler, (int)0, (int)out.size(), [&out](int i) {
+	fibers::parallel::For((int)0, (int)out.size(), [&out](int i) {
 		auto& pixel = out[i];
 		pixel.R = ::Min(255.0, ::Max<double>(0.0, pixel.R));// +cweeRandomFloat(-0.5, 0.5)));
 		pixel.G = ::Min(255.0, ::Max<double>(0.0, pixel.G));// + cweeRandomFloat(-0.5, 0.5)));

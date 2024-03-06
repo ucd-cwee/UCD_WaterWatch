@@ -16,28 +16,29 @@ to maintain a single distribution point for the source code.
 #pragma once 
 #include "Toasts.h"
 #include "LinkedList.h"
+#include <ppl.h>
+#include <concurrent_queue.h>
 
 class cweeToastsLocal final : public detail::cweeToasts_t {
 private:
-	cweeSharedPtr<cweeLinkedList<cweeUnion<cweeStr, cweeStr>>> Toasts;
+	mutable concurrency::concurrent_queue< cweeUnion<cweeStr, cweeStr> > Toasts;
+	// cweeSharedPtr<cweeLinkedList<cweeUnion<cweeStr, cweeStr>>> Toasts;
 
 public:
-	cweeToastsLocal() : detail::cweeToasts_t(), Toasts(make_cwee_shared<cweeLinkedList<cweeUnion<cweeStr, cweeStr>>>()) {};
+	cweeToastsLocal() : detail::cweeToasts_t(), Toasts() {};
 	void submitToast(cweeStr const& title, cweeStr const& content) const {
-		AUTO g = Toasts.Guard();
-		Toasts.UnsafeGet()->Append(cweeUnion<cweeStr, cweeStr>(title, content));
+		Toasts.push(cweeUnion<cweeStr, cweeStr>(title, content));
 	};
 	bool tryGetToast(cweeStr& title, cweeStr& content) const {
-		AUTO g = Toasts.Guard();
-		AUTO p = Toasts.UnsafeGet();
-		if (p && p->Num() > 0) {
-			AUTO toast = p->operator[](p->Num() - 1);
-			title = toast.get<0>();
-			content = toast.get<1>();
-			p->RemoveIndexFast(p->Num() - 1);
+		cweeUnion<cweeStr, cweeStr> out;
+		if (Toasts.try_pop(out)) {
+			title = out.get<0>();
+			content = out.get<1>();
 			return true;
 		}
-		return false;
+		else {
+			return false;
+		}
 	};
 };
 cweeSharedPtr<detail::cweeToasts_t> cweeToasts = make_cwee_shared<cweeToastsLocal>(new cweeToastsLocal()).CastReference<detail::cweeToasts_t>();

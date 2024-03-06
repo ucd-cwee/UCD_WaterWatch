@@ -111,7 +111,7 @@ namespace fibers {
 		// Process tasks infinitely, until quit
 		while (!taskScheduler->m_quit.load(std::memory_order_acquire)) {
 			unsigned waitingFiberIndex = kInvalidIndex;
-			decltype(auto) threadIndex = taskScheduler->GetCurrentThreadIndex();
+			decltype(auto) threadIndex = taskScheduler->GetCurrentThreadIndex_NoFail();
 			ThreadLocalStorage* tls = &taskScheduler->m_tls[threadIndex];
 
 			bool readyWaitingFibers = false;
@@ -173,7 +173,7 @@ namespace fibers {
 				taskScheduler->CleanUpOldFiber();
 
 				// Get a fresh instance of TLS, since we could be on a new thread now
-				tls = &taskScheduler->m_tls[taskScheduler->GetCurrentThreadIndex()];
+				tls = &taskScheduler->m_tls[taskScheduler->GetCurrentThreadIndex_NoFail()];
 
 				if (taskScheduler->m_emptyQueueBehavior.load(std::memory_order_relaxed) == EmptyQueueBehavior::Sleep) {
 					tls->FailedQueuePopAttempts = 0;
@@ -245,7 +245,7 @@ namespace fibers {
 			taskScheduler->m_callbacks.OnFiberDetached(taskScheduler->m_callbacks.Context, taskScheduler->GetCurrentFiberIndex(), false);
 		}
 
-		unsigned index = taskScheduler->GetCurrentThreadIndex();
+		unsigned index = taskScheduler->GetCurrentThreadIndex_NoFail();
 		taskScheduler->m_fibers[taskScheduler->m_tls[index].CurrentFiberIndex].SwitchToFiber(&taskScheduler->m_quitFibers[index]);
 
 		// We should never get here
@@ -262,7 +262,7 @@ namespace fibers {
 		}
 
 		// Jump to the thread fibers
-		unsigned threadIndex = taskScheduler->GetCurrentThreadIndex();
+		unsigned threadIndex = taskScheduler->GetCurrentThreadIndex_NoFail();
 
 		if (threadIndex == 0) {
 			// Special case for the main thread fiber
@@ -408,7 +408,7 @@ namespace fibers {
 				m_callbacks.OnFiberDetached(m_callbacks.Context, GetCurrentFiberIndex(), false);
 			}
 
-			unsigned index = GetCurrentThreadIndex();
+			unsigned index = GetCurrentThreadIndex_NoFail();
 			m_fibers[m_tls[index].CurrentFiberIndex].SwitchToFiber(&m_quitFibers[index]);
 		}
 
@@ -435,10 +435,10 @@ namespace fibers {
 
 		const TaskBundle bundle = { task, waitGroup };
 		if (priority == TaskPriority::High) {
-			m_tls[GetCurrentThreadIndex()].HiPriTaskQueue.push(bundle);
+			m_tls[GetCurrentThreadIndex_NoFail()].HiPriTaskQueue.push(bundle);
 		}
 		else if (priority == TaskPriority::Normal) {
-			m_tls[GetCurrentThreadIndex()].LoPriTaskQueue.push(bundle);
+			m_tls[GetCurrentThreadIndex_NoFail()].LoPriTaskQueue.push(bundle);
 		}
 
 		const EmptyQueueBehavior behavior = m_emptyQueueBehavior.load(std::memory_order_relaxed);
@@ -451,10 +451,10 @@ namespace fibers {
 	void TaskScheduler::AddTask_NoWaitIncrement(Task task, TaskPriority priority, WaitGroup* waitGroup) {
 		const TaskBundle bundle = { task, waitGroup };
 		if (priority == TaskPriority::High) {
-			m_tls[GetCurrentThreadIndex()].HiPriTaskQueue.push(bundle);
+			m_tls[GetCurrentThreadIndex_NoFail()].HiPriTaskQueue.push(bundle);
 		}
 		else if (priority == TaskPriority::Normal) {
-			m_tls[GetCurrentThreadIndex()].LoPriTaskQueue.push(bundle);
+			m_tls[GetCurrentThreadIndex_NoFail()].LoPriTaskQueue.push(bundle);
 		}
 
 		const EmptyQueueBehavior behavior = m_emptyQueueBehavior.load(std::memory_order_relaxed);
@@ -471,10 +471,10 @@ namespace fibers {
 
 		concurrency::concurrent_queue<TaskBundle>* queue = nullptr;
 		if (priority == TaskPriority::High) {
-			queue = &m_tls[GetCurrentThreadIndex()].HiPriTaskQueue;
+			queue = &m_tls[GetCurrentThreadIndex_NoFail()].HiPriTaskQueue;
 		}
 		else if (priority == TaskPriority::Normal) {
-			queue = &m_tls[GetCurrentThreadIndex()].LoPriTaskQueue;
+			queue = &m_tls[GetCurrentThreadIndex_NoFail()].LoPriTaskQueue;
 		}
 		else {
 			return;
@@ -503,6 +503,17 @@ namespace fibers {
 
 		return kInvalidIndex;
 	}
+	FTL_NOINLINE unsigned TaskScheduler::GetCurrentThreadIndex_NoFail() const {
+		DWORD const threadId = ::GetCurrentThreadId();
+
+		for (unsigned i = 0; i < m_numThreads; ++i) {
+			if (m_threads[i].Id == threadId) {
+				return i;
+			}
+		}
+
+		return 0;
+	};
 
 #elif defined(FTL_POSIX_THREADS)
 
@@ -516,11 +527,21 @@ namespace fibers {
 
 		return kInvalidIndex;
 	}
+	FTL_NOINLINE unsigned TaskScheduler::GetCurrentThreadIndex_NoFail() const {
+		pthread_t const currentThread = pthread_self();
+		for (unsigned i = 0; i < m_numThreads; ++i) {
+			if (pthread_equal(currentThread, m_threads[i]) != 0) {
+				return i;
+			}
+		}
+
+		return 0;
+	}
 
 #endif
 
 	unsigned TaskScheduler::GetCurrentFiberIndex() const {
-		ThreadLocalStorage& tls = m_tls[GetCurrentThreadIndex()];
+		ThreadLocalStorage& tls = m_tls[GetCurrentThreadIndex_NoFail()];
 		return tls.CurrentFiberIndex;
 	}
 
@@ -536,7 +557,7 @@ namespace fibers {
 	}
 
 	bool TaskScheduler::GetNextHiPriTask(TaskBundle* nextTask, std::vector<TaskBundle>* taskBuffer, unsigned* currentThreadIndex_p) {
-		unsigned const currentThreadIndex = currentThreadIndex_p ? *currentThreadIndex_p : GetCurrentThreadIndex();
+		unsigned const currentThreadIndex = currentThreadIndex_p ? *currentThreadIndex_p : GetCurrentThreadIndex_NoFail();
 		ThreadLocalStorage& tls = m_tls[currentThreadIndex];
 
 		bool result = false;
@@ -651,7 +672,7 @@ namespace fibers {
 	}
 
 	bool TaskScheduler::GetNextLoPriTask(TaskBundle* nextTask) {
-		unsigned const currentThreadIndex = GetCurrentThreadIndex();
+		unsigned const currentThreadIndex = GetCurrentThreadIndex_NoFail();
 		ThreadLocalStorage& tls = m_tls[currentThreadIndex];
 
 		// Try to pop from our own queue
@@ -747,7 +768,7 @@ namespace fibers {
 		// Here, we call CleanUpOldFiber()
 		// QED
 
-		ThreadLocalStorage& tls = m_tls[GetCurrentThreadIndex()];
+		ThreadLocalStorage& tls = m_tls[GetCurrentThreadIndex_NoFail()];
 		switch (tls.OldFiberDestination) {
 		case FiberDestination::ToPool:
 			// In this specific implementation, the fiber pool is a flat array signaled by atomics
@@ -774,7 +795,7 @@ namespace fibers {
 		unsigned const pinnedThreadIndex = bundle->PinnedThreadIndex;
 
 		if (pinnedThreadIndex == kNoThreadPinning) {
-			ThreadLocalStorage* tls = &m_tls[GetCurrentThreadIndex()];
+			ThreadLocalStorage* tls = &m_tls[GetCurrentThreadIndex_NoFail()];
 
 			// Push a dummy task to the high priority queue
 			Task task{};
@@ -819,11 +840,11 @@ namespace fibers {
 	}
 
 	void TaskScheduler::InitWaitingFiberBundle(WaitingFiberBundle* bundle, bool pinToCurrentThread) {
-		ThreadLocalStorage& tls = m_tls[GetCurrentThreadIndex()];
+		ThreadLocalStorage& tls = m_tls[GetCurrentThreadIndex_NoFail()];
 		unsigned const currentFiberIndex = tls.CurrentFiberIndex;
 
 		unsigned pinnedThreadIndex;
-		if (pinToCurrentThread) {
+		if (pinToCurrentThread && GetCurrentThreadIndex() != kInvalidIndex) {
 			pinnedThreadIndex = GetCurrentThreadIndex();
 		}
 		else {
@@ -837,7 +858,7 @@ namespace fibers {
 	}
 
 	void TaskScheduler::SwitchToFreeFiber(std::atomic<bool>* fiberIsSwitched) {
-		ThreadLocalStorage& tls = m_tls[GetCurrentThreadIndex()];
+		ThreadLocalStorage& tls = m_tls[GetCurrentThreadIndex_NoFail()];
 		unsigned const currentFiberIndex = tls.CurrentFiberIndex;
 
 		// Get a free fiber

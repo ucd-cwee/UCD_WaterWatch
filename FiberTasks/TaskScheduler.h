@@ -251,6 +251,18 @@ namespace fibers {
 		 * @return    The index of the current thread
 		 */
 		FTL_NOINLINE unsigned GetCurrentThreadIndex() const;
+		/**
+		 * Gets the 0-based index of the current thread
+		 * This is useful for m_tls[GetCurrentThreadIndex()]
+		 *
+		 * NOTE: This can *only* be called from the main thread or inside tasks on the worker threads
+		 *
+		 * We force no-inline because inlining seems to cause some tls-type caching on max optimization levels
+		 * Discovered by @cwfitzgerald. Documented in issue #57
+		 *
+		 * @return    The index of the current thread
+		 */
+		FTL_NOINLINE unsigned GetCurrentThreadIndex_NoFail() const;
 
 		/**
 		 * Gets the 0-based index of the current fiber.
