@@ -91,10 +91,10 @@ enum class FiberDestination {
 struct alignas(fibers::kCacheLineSize) ThreadLocalStorage {
 	ThreadLocalStorage() : CurrentFiber(nullptr), OldFiber(nullptr) { };
 
-public: // NOTE: The order of these variables may seem odd / jumbled. However, it is to optimize the padding required
-	/* The queue of high priority waiting tasks. This also contains the ready waiting fibers, which are differentiated by the Task function == ReadyFiberDummyTask */
-	concurrency::concurrent_queue<TaskBundle> HiPriTaskQueue;
-	/* The queue of high priority waiting tasks */
+public:
+	/* The queue of thread-specific high priority waiting tasks. This also contains the ready waiting fibers, which are differentiated by the argData and TaskToExecute being a nullptr. */
+	concurrency::concurrent_queue<TaskBundle> HiPriTaskQueue; 
+	/* The queue of shared low priority waiting tasks. All threads / fibers will pull from this shared queue at runtime. */
 	concurrency::concurrent_queue<TaskBundle>* LoPriTaskQueue;
 
 	std::atomic<bool>* OldFiberStoredFlag{ nullptr }; // someone is waiting on us
@@ -160,7 +160,7 @@ private:
 	constexpr static unsigned kFailedPopAttemptsHeuristic = 5;
 	constexpr static int kInitErrorDoubleCall = -30;
 	constexpr static int kInitErrorFailedToCreateWorkerThread = -60;
-
+	
 	std::vector<ThreadWrapper> threadPool;
 	std::vector<FiberWrapper> fiberPool;
 	concurrency::concurrent_queue<TaskBundle> LoPriTaskQueue;
@@ -331,6 +331,9 @@ private:
 
 };
 
+
+
+
 FTL_NOINLINE ThreadWrapper* TaskScheduler::GetCurrentThread() {
 	DWORD const threadId = ::GetCurrentThreadId();
 	for (auto& thread : threadPool) {
@@ -340,12 +343,11 @@ FTL_NOINLINE ThreadWrapper* TaskScheduler::GetCurrentThread() {
 	}
 	return nullptr;
 };
-
 FTL_THREAD_FUNC_RETURN_TYPE TaskScheduler::ThreadStartFunc(void* const arg) {
 	auto* const threadArgs = reinterpret_cast<ThreadStartArgs*>(arg);
 	TaskScheduler* taskScheduler = threadArgs->Scheduler;
 	ThreadWrapper* thread = threadArgs->Thread;
-	fibers::SetCurrentThreadAffinity(thread->threadAffinity);
+	if (thread->threadAffinity >= 0) { fibers::SetCurrentThreadAffinity(thread->threadAffinity); }
 	delete threadArgs;
 
 	// Spin wait until everything is initialized
@@ -483,6 +485,7 @@ void TaskScheduler::FiberStartFunc(void* const arg) {
 	fiber->fiber->SwitchToFiber(&*fiber->currentThread->quitFiber);
 
 	// We should never get here
+	printf("Fibers cannot return anything -- they simply do not have the mechanism for it, despite C++ not knowing this.");
 	throw(std::runtime_error("Fibers cannot return anything -- they simply do not have the mechanism for it, despite C++ not knowing this."));
 };
 void TaskScheduler::ThreadEndFunc(void* arg) {
@@ -497,9 +500,10 @@ void TaskScheduler::ThreadEndFunc(void* arg) {
 		fibers::SleepThread(50);
 	}
 
-	thread->quitFiber->SwitchToFiber(&*thread->tls->CurrentFiber->fiber);
+	thread->quitFiber->SwitchToFiber(&thread->tls->ThreadFiber);//->CurrentFiber->fiber);
 
 	// We should never get here
+	printf("ThreadEndFunc should not return anything, and instead should exit silently after the previous context switch.");
 	throw(std::runtime_error("ThreadEndFunc should not return anything, and instead should exit silently after the previous context switch."));
 }
 TaskScheduler::TaskScheduler() {};
@@ -718,7 +722,6 @@ bool TaskScheduler::GetNextHiPriTask(TaskBundle* nextTask, std::vector<TaskBundl
 
 	return result;
 }
-
 bool TaskScheduler::GetNextLoPriTask(TaskBundle* nextTask, ThreadWrapper* currentThread) {
 	ThreadLocalStorage& tls = *currentThread->tls;
 
@@ -738,7 +741,6 @@ bool TaskScheduler::GetNextLoPriTask(TaskBundle* nextTask, ThreadWrapper* curren
 
 	return false;
 }
-
 FiberWrapper* TaskScheduler::GetNextFreeFiber() {
 	unsigned i, j;
 	bool expected;
@@ -763,7 +765,6 @@ FiberWrapper* TaskScheduler::GetNextFreeFiber() {
 		}
 	}
 }
-
 void TaskScheduler::CleanUpOldFiber(ThreadWrapper* currentThread) {
 	// Clean up from the last Fiber to run on this thread
 	//
@@ -830,7 +831,6 @@ void TaskScheduler::CleanUpOldFiber(ThreadWrapper* currentThread) {
 		break;
 	}
 }
-
 void TaskScheduler::AddReadyFiber(WaitingFiberBundle* bundle) {
 	ThreadLocalStorage* tls = &*bundle->Fiber->currentThread->tls;
 
@@ -845,7 +845,6 @@ void TaskScheduler::AddReadyFiber(WaitingFiberBundle* bundle) {
 		ThreadSleepCV.notify_one();
 	}
 };
-
 void TaskScheduler::InitWaitingFiberBundle(WaitingFiberBundle* bundle, ThreadWrapper* currentThread) {
 	ThreadLocalStorage& tls = *currentThread->tls;
 
@@ -853,7 +852,6 @@ void TaskScheduler::InitWaitingFiberBundle(WaitingFiberBundle* bundle, ThreadWra
 	bundle->FiberIsSwitched.store(false);
 	bundle->Next = nullptr;
 };
-
 void TaskScheduler::SwitchToFreeFiber(std::atomic<bool>* fiberIsSwitched, ThreadWrapper* currentThread) {
 	ThreadLocalStorage& tls = *currentThread->tls;
 
@@ -879,7 +877,6 @@ WaitGroup::WaitGroup(TaskScheduler* taskScheduler)
 	m_counter(0),
 	m_word(0)
 {}
-
 void WaitGroup::Add(int32_t delta) {
 	int32_t prev = m_counter.fetch_add(delta);
 	int32_t newValue = prev + delta;
@@ -950,16 +947,28 @@ void WaitGroup::Add(int32_t delta) {
 	// Reset the lock and the queue
 	m_word.store(0);
 }
-
 void WaitGroup::Wait() {
-	// if this thread does not exist (as far as the scheduler is concerned) then we must spin-wait.
+	// if this thread does not exist (as far as the scheduler is concerned) then we must handle it differently.
 	auto* currentThread = m_taskScheduler->GetCurrentThread();
-
+	ThreadWrapper thisThread; // temp, in case we need it
 	if (currentThread == nullptr) {
+#if 0
+		thisThread.tls = std::shared_ptr<ThreadLocalStorage>(new ThreadLocalStorage());
+		thisThread.tls->LoPriTaskQueue = &m_taskScheduler->LoPriTaskQueue;
+		thisThread.threadAffinity = -1;
+
+		auto* freeFiber = m_taskScheduler->GetNextFreeFiber();
+
+		thisThread.tls->CurrentFiber = freeFiber;
+		freeFiber->currentThread = &thisThread;
+
+		currentThread = &thisThread;
+#else
 		while (m_counter.load(std::memory_order_relaxed) != 0) {
 			fibers::YieldThread();
 		}
 		return;
+#endif
 	}
 
 	while (true) {
@@ -1043,20 +1052,77 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 		cweeBalancedPattern pat;
 		TaskScheduler scheduler;
 		scheduler.Init();
-		WaitGroup wg(&scheduler);
+		
 
-		for (int i = 0; i < numTasks * numSubTasks; i++) {
-			scheduler.AddTask(fibers::Action([&pat](int j) {
-				//if (cweeRandomFloat(0, 100) > 50) {
-					pat.AddUniqueValue(j, j);
-				//}
+
+
+
+		for (int i = 0; i < numTasks; i++) {
+			WaitGroup wg(&scheduler);
+			for (int j = 0; j < numSubTasks; j++) {
+				scheduler.AddTask(fibers::Action([&pat](int j) {
+					pat.AddValue(j, j);
+				}, (int)((i* numSubTasks)+j)), &wg);
+			}
+			wg.Wait(); // spin waiter
+		}
+		
+		int sizeIs = pat.GetNumValues();
+		if (sizeIs != numTasks * numSubTasks) {
+			throw(std::runtime_error("Something went wrong -- not all tasks executed"));
+		}
+
+		
+
+
+
+
+		
+		for (int i = 0; i < numTasks; i++) {
+			std::vector<fibers::Action> actions;
+			for (int j = 0; j < numSubTasks; j++) {
+				actions.push_back(
+					fibers::Action([&pat](int j) {
+						pat.AddValue(j, j);
+					}, (int)((i* numSubTasks) + j))
+				);
+			}
+
+			if (actions.size() > 0) {
+				WaitGroup wg(&scheduler);
+				scheduler.AddTasks(actions.size(), &actions[0], &wg);
+				wg.Wait(); // spin waiter
+			}
+		}
+
+
+
+		WaitGroup wg(&scheduler);
+		for (int i = 0; i < numTasks; i++) {
+			scheduler.AddTask(fibers::Action([&numSubTasks, &pat, &scheduler](int i) {
+				std::vector<fibers::Action> actions;
+				for (int j = 0; j < numSubTasks; j++) {
+					actions.push_back(
+						fibers::Action([&pat](int j) {
+							pat.AddValue(j, j);
+						}, (int)((i * numSubTasks) + j))
+					);
+				}
+
+				if (actions.size() > 0) {
+					WaitGroup wg(&scheduler);
+					scheduler.AddTasks(actions.size(), &actions[0], &wg);
+					wg.Wait(); // actual waiter
+				}
 			}, (int)i), &wg);
 		}
-		wg.Wait();
+		wg.Wait(); // spin waiter
 
 
-		int sizeIs = pat.GetNumValues();
-		if (sizeIs == 0) throw(std::runtime_error("Something went wrong"));
+
+
+
+
 	}
 
 
