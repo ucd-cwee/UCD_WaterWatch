@@ -45,12 +45,10 @@ namespace fibers {
 		 * @param taskScheduler    The TaskScheduler to use with this WaitGroup
 		 */
 		explicit WaitGroup(TaskScheduler* taskScheduler);
-
 		WaitGroup(WaitGroup const&) = delete;
 		WaitGroup(WaitGroup&&) noexcept = delete;
 		WaitGroup& operator=(WaitGroup const&) = delete;
 		WaitGroup& operator=(WaitGroup&&) noexcept = delete;
-
 		~WaitGroup() = default;
 
 	private:

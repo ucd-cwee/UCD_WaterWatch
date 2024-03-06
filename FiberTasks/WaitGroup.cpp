@@ -116,8 +116,8 @@ namespace fibers {
 	WaitGroup::WaitGroup(TaskScheduler* taskScheduler)
 		: m_taskScheduler(taskScheduler),
 		m_counter(0),
-		m_word(0) {
-	}
+		m_word(0)
+	{}
 
 	void WaitGroup::Add(int32_t delta) {
 		int32_t prev = m_counter.fetch_add(delta);
