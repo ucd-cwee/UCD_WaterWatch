@@ -18,7 +18,7 @@ to maintain a single distribution point for the source code.
 #include "../FiberTasks/TaskScheduler.h"
 #include "../FiberTasks/WaitGroup.h"
 
-
+#pragma region newFiberTools
 class FiberWrapper;
 class WaitingFiberBundle {
 public:
@@ -74,7 +74,7 @@ struct TaskSchedulerInitOptions {
 	/* The size of the thread pool to run. 0 corresponds to NumHardwareThreads() */
 	unsigned ThreadPoolSize = 0;
 	/* The behavior of the threads after they have no work to do */
-	fibers::EmptyQueueBehavior Behavior = fibers::EmptyQueueBehavior::Sleep;
+	fibers::EmptyQueueBehavior Behavior = fibers::EmptyQueueBehavior::Yield;
 };
 struct TaskBundle {
 	std::shared_ptr<fibers::Action> TaskToExecute;
@@ -158,6 +158,7 @@ private:
 	constexpr static unsigned kInvalidIndex = std::numeric_limits<unsigned>::max();
 	constexpr static unsigned kNoThreadPinning = std::numeric_limits<unsigned>::max();
 	constexpr static unsigned kFailedPopAttemptsHeuristic = 5;
+	constexpr static unsigned kFailedPopAttemptsHeuristic2 = 50;
 	constexpr static int kInitErrorDoubleCall = -30;
 	constexpr static int kInitErrorFailedToCreateWorkerThread = -60;
 	
@@ -447,31 +448,10 @@ void TaskScheduler::FiberStartFunc(void* const arg) {
 				// We failed to find a Task from any of the queues
 				// What we do now depends on m_emptyQueueBehavior, which we loaded above
 				switch (behavior) {
+				case fibers::EmptyQueueBehavior::Sleep: // something went wrong with the sleep behavior without the pinned fiber mechanic
 				case fibers::EmptyQueueBehavior::Yield:
 					fibers::YieldThread();
 					break;
-
-				case fibers::EmptyQueueBehavior::Sleep: {
-					// If we have a ready waiting fiber, prevent sleep
-					if (!readyWaitingFibers) {
-						++tls->FailedQueuePopAttempts;
-						// Go to sleep if we've failed to find a task kFailedPopAttemptsHeuristic times
-						if (tls->FailedQueuePopAttempts >= kFailedPopAttemptsHeuristic) {
-							std::unique_lock<std::mutex> lock(taskScheduler->ThreadSleepLock);
-							// Acquire the pinned ready fibers lock here and check if there are any pinned fibers ready
-							// Acquiring the lock here prevents a race between readying a pinned fiber (on another thread) and going to sleep
-							// Either this thread wins, then notify_*() will wake it
-							// Or the other thread wins, then this thread will observe the pinned fiber, and will not go to sleep
-							{
-								// Unlock before going to sleep (the other lock is released by the CV wait)
-								taskScheduler->ThreadSleepCV.wait(lock);
-							}
-							tls->FailedQueuePopAttempts = 0;
-						}
-					}
-
-					break;
-				}
 				case fibers::EmptyQueueBehavior::Spin:
 				default:
 					// Just fall through and continue the next loop
@@ -728,15 +708,6 @@ bool TaskScheduler::GetNextLoPriTask(TaskBundle* nextTask, ThreadWrapper* curren
 	// Try to pop from our own queue
 	if (tls.LoPriTaskQueue->try_pop(*nextTask)) {
 		return true;
-	}
-
-	for (auto& thread : this->threadPool) {
-		if (&thread != currentThread) {
-			ThreadLocalStorage& otherTLS = *currentThread->tls;
-			if (otherTLS.LoPriTaskQueue->try_pop(*nextTask)) {
-				return true;
-			}
-		}
 	}
 
 	return false;
@@ -1038,91 +1009,194 @@ void WaitGroup::Wait() {
 
 	// We're back
 };
+#pragma endregion
 
 
-
-
-
-
-
-
-
+namespace {
+	struct AnyJobStruct {
+		std::shared_ptr<fibers::Action> job;
+		bool force;
+	};
+	static void DoAnyJobStruct(fibers::TaskScheduler* taskScheduler, void* arg) {
+		std::unique_ptr<AnyJobStruct> data(static_cast<AnyJobStruct*>(arg));
+		if (data && data->job) {
+			if (data->force) {
+				data->job->ForceInvoke();
+			}
+			else {
+				data->job->Invoke();
+			}
+		}
+	};
+};
 int Example::ExampleF(int numTasks, int numSubTasks) {
-	{
-		cweeBalancedPattern pat;
-		TaskScheduler scheduler;
+
+
+	if (true) {
+		int count = 0;
+		fibers::TaskScheduler scheduler;
 		scheduler.Init();
-		
+		while (true) {
+			cweeBalancedPattern pat;
 
-
-
-
-		for (int i = 0; i < numTasks; i++) {
-			WaitGroup wg(&scheduler);
-			for (int j = 0; j < numSubTasks; j++) {
-				scheduler.AddTask(fibers::Action([&pat](int j) {
-					pat.AddValue(j, j);
-				}, (int)((i* numSubTasks)+j)), &wg);
-			}
-			wg.Wait(); // spin waiter
-		}
-		
-		int sizeIs = pat.GetNumValues();
-		if (sizeIs != numTasks * numSubTasks) {
-			throw(std::runtime_error("Something went wrong -- not all tasks executed"));
-		}
-
-		
-
-
-
-
-		
-		for (int i = 0; i < numTasks; i++) {
-			std::vector<fibers::Action> actions;
-			for (int j = 0; j < numSubTasks; j++) {
-				actions.push_back(
-					fibers::Action([&pat](int j) {
+			for (int i = 0; i < numTasks; i++) {
+				fibers::WaitGroup wg(&scheduler);
+				for (int j = 0; j < numSubTasks; j++) {
+					auto action = fibers::Action([&pat](int j) {
 						pat.AddValue(j, j);
-					}, (int)((i* numSubTasks) + j))
-				);
-			}
+					}, (int)((i * numSubTasks) + j));
 
-			if (actions.size() > 0) {
-				WaitGroup wg(&scheduler);
-				scheduler.AddTasks(actions.size(), &actions[0], &wg);
+					scheduler.AddTask({ DoAnyJobStruct, new AnyJobStruct({ std::make_shared<fibers::Action>(action), false }) }, fibers::TaskPriority::Normal, &wg);
+				}
 				wg.Wait(); // spin waiter
 			}
+
+			int sizeIs = pat.GetNumValues();
+			if (sizeIs != numTasks * numSubTasks) {
+				printf("Something went wrong -- not all tasks executed");
+			}
+
+			for (int i = 0; i < numTasks; i++) {
+				std::vector<fibers::Task> actions;
+				for (int j = 0; j < numSubTasks; j++) {
+					auto todo = fibers::Action([&pat](int j) {
+						pat.AddValue(j, j);
+					}, (int)((i * numSubTasks) + j));
+
+
+					actions.push_back(
+						{ DoAnyJobStruct, new AnyJobStruct({ std::make_shared<fibers::Action>(todo), false }) }
+					);
+				}
+
+				if (actions.size() > 0) {
+					fibers::WaitGroup wg(&scheduler);
+					scheduler.AddTasks(actions.size(), &actions[0], fibers::TaskPriority::Normal, &wg);
+					wg.Wait(); // spin waiter
+				}
+			}
+
+			fibers::WaitGroup wg(&scheduler);
+			for (int i = 0; i < numTasks; i++) {
+				auto todo = fibers::Action([&numSubTasks, &pat, &scheduler](int i) {
+					std::vector<fibers::Task> actions;
+					for (int j = 0; j < numSubTasks; j++) {
+						auto todo = fibers::Action([&pat](int j) {
+							pat.AddValue(j, j);
+						}, (int)((i * numSubTasks) + j));
+						actions.push_back(
+							{ DoAnyJobStruct, new AnyJobStruct({ std::make_shared<fibers::Action>(todo), false }) }
+						);
+					}
+
+					if (actions.size() > 0) {
+						fibers::WaitGroup wg(&scheduler);
+						scheduler.AddTasks(actions.size(), &actions[0], fibers::TaskPriority::Normal, &wg);
+						wg.Wait(); // actual waiter
+					}
+				}, (int)i);
+
+				scheduler.AddTask({ DoAnyJobStruct, new AnyJobStruct({ std::make_shared<fibers::Action>(todo), false }) }, fibers::TaskPriority::Normal, &wg);
+			}
+			wg.Wait(); // spin waiter
+
 		}
+	}
 
 
 
-		WaitGroup wg(&scheduler);
-		for (int i = 0; i < numTasks; i++) {
-			scheduler.AddTask(fibers::Action([&numSubTasks, &pat, &scheduler](int i) {
+
+
+
+
+
+
+
+
+
+
+	if (true) {
+		int count = 0;
+		TaskScheduler scheduler;
+		scheduler.Init();
+		while (true) {			
+			cweeBalancedPattern pat;
+
+			count++;
+			if (count == 30) {
+				pat.Clear();				
+			}
+			else if (count == 40) {
+				pat.Clear();
+			}
+			else if (count == 50) {
+				pat.Clear();
+			}
+			else if (count == 51) {
+				pat.Clear();
+			}
+			else if (count == 52) {
+				pat.Clear();
+			}
+			else if (count == 53) {
+				pat.Clear();
+			}
+
+
+			for (int i = 0; i < numTasks; i++) {
+				WaitGroup wg(&scheduler);
+				for (int j = 0; j < numSubTasks; j++) {
+					scheduler.AddTask(fibers::Action([&pat](int j) {
+						pat.AddValue(j, j);
+						}, (int)((i * numSubTasks) + j)), &wg);
+				}
+				wg.Wait(); // spin waiter
+			}
+
+			int sizeIs = pat.GetNumValues();
+			if (sizeIs != numTasks * numSubTasks) {
+				printf("Something went wrong -- not all tasks executed");
+			}
+
+			for (int i = 0; i < numTasks; i++) {
 				std::vector<fibers::Action> actions;
 				for (int j = 0; j < numSubTasks; j++) {
 					actions.push_back(
 						fibers::Action([&pat](int j) {
 							pat.AddValue(j, j);
-						}, (int)((i * numSubTasks) + j))
+							}, (int)((i * numSubTasks) + j))
 					);
 				}
 
 				if (actions.size() > 0) {
 					WaitGroup wg(&scheduler);
 					scheduler.AddTasks(actions.size(), &actions[0], &wg);
-					wg.Wait(); // actual waiter
+					wg.Wait(); // spin waiter
 				}
-			}, (int)i), &wg);
+			}
+
+			WaitGroup wg(&scheduler);
+			for (int i = 0; i < numTasks; i++) {
+				scheduler.AddTask(fibers::Action([&numSubTasks, &pat, &scheduler](int i) {
+					std::vector<fibers::Action> actions;
+					for (int j = 0; j < numSubTasks; j++) {
+						actions.push_back(
+							fibers::Action([&pat](int j) {
+								pat.AddValue(j, j);
+								}, (int)((i * numSubTasks) + j))
+						);
+					}
+
+					if (actions.size() > 0) {
+						WaitGroup wg(&scheduler);
+						scheduler.AddTasks(actions.size(), &actions[0], &wg);
+						wg.Wait(); // actual waiter
+					}
+					}, (int)i), &wg);
+			}
+			wg.Wait(); // spin waiter
+
 		}
-		wg.Wait(); // spin waiter
-
-
-
-
-
-
 	}
 
 
@@ -1140,14 +1214,20 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 
 
 
-	{
+
+
+
+
+
+
+	if (true) {
 		fibers::parallel::For(0, numTasks * numSubTasks, [](int j) {
 			Stopwatch sw;
 			sw.Start();
 			while (sw.Stop() < 1000) {}
 		});
 	}
-	{
+	if (true) {
 		cweeBalancedPattern pat;
 		fibers::ftl_wrapper::TaskScheduler scheduler;
 		for (int i = 0; i < numTasks * numSubTasks; i++) {
@@ -1162,25 +1242,13 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 		if (sizeIs == 0) throw(std::runtime_error("Something went wrong"));
 	}
 
-	{
+	if (true) {
 		fibers::parallel::For(0, numTasks * numSubTasks * 2, [](int j) {
 			Stopwatch sw;
 			sw.Start();
 			while (sw.Stop() < 1000) {}
 		});
 	}
-
-
-
-
-
-
-
-
-
-
-
-
 
 	if (true) {
 		for (int i = 0; i < numTasks; i++) {
