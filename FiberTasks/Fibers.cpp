@@ -24,7 +24,7 @@
 namespace fibers {
 	extern containers::DelayedInstantiation< TaskScheduler > Fibers = containers::DelayedInstantiation<TaskScheduler>([]()-> TaskScheduler* {
 		auto* p = new TaskScheduler();
-		p->Init({ GetNumHardwareThreads() * 50, 0, EmptyQueueBehavior::Sleep, {} });
+		p->Init({ GetNumHardwareThreads() * 50, 0, EmptyQueueBehavior::Sleep });
 		return p;		
 	});
 	namespace utilities {
@@ -295,6 +295,11 @@ namespace fibers {
 		TaskScheduler::TaskScheduler() : m_TaskScheduler(), m_WaitGroup() {
 			auto* p = new fibers::TaskScheduler(TaskSchedulerInitOptions());
 			m_TaskScheduler = std::static_pointer_cast<void>(std::shared_ptr<fibers::TaskScheduler>(p));
+			m_WaitGroup = std::static_pointer_cast<void>(std::shared_ptr<WaitGroup>(new WaitGroup(p)));
+		};
+		TaskScheduler::TaskScheduler(TaskScheduler const& other) : m_TaskScheduler(other.m_TaskScheduler), m_WaitGroup() {
+			auto ts = std::static_pointer_cast<fibers::TaskScheduler>(m_TaskScheduler);
+			auto* p = ts.get();
 			m_WaitGroup = std::static_pointer_cast<void>(std::shared_ptr<WaitGroup>(new WaitGroup(p)));
 		};
 		void TaskScheduler::AddTask(Job const& task) {

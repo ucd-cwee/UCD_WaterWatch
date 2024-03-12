@@ -19,6 +19,82 @@ to maintain a single distribution point for the source code.
 #include "../FiberTasks/WaitGroup.h"
 
 #pragma region newFiberTools
+
+
+
+
+
+
+
+class basic_cached_allocator {
+public:
+	struct basic_cached_allocator_memoryblock {
+		size_t sizefree;
+		basic_cached_allocator_memoryblock* next;
+		char* memory;
+	};
+
+public:
+	basic_cached_allocator() :
+		mem(nullptr),
+		memblocks(nullptr)
+	{}
+	basic_cached_allocator(basic_cached_allocator const&) = delete;
+	basic_cached_allocator(basic_cached_allocator&&) = delete;
+	basic_cached_allocator& operator=(basic_cached_allocator const&) = delete;
+	basic_cached_allocator& operator=(basic_cached_allocator&&) = delete;
+	~basic_cached_allocator(){
+		free_internal(this);
+	}
+
+	template<typename T> T* alloc() {
+		size_t size = sizeof(T);
+		while (!memblocks || memblocks->sizefree < (size + sizeof(void*))) {
+			size_t blocksize = 16 * 1024;
+			basic_cached_allocator_memoryblock* block = (basic_cached_allocator_memoryblock*)ClearedAlloc(blocksize, memTag_t::TAG_TEMP); // zero's out
+			size_t offset = sizeof(basic_cached_allocator_memoryblock);
+			block->sizefree = blocksize - offset;
+			block->next = memblocks;
+			block->memory = ((char*)block) + offset;
+			memblocks = block;
+		}
+		void* p_raw = memblocks->memory;
+		void* p_aligned = p_raw;
+		size += (uintptr_t)p_aligned - (uintptr_t)p_raw;
+		memblocks->memory += size;
+		memblocks->sizefree -= size;
+		return static_cast<T*>(p_aligned);
+	};
+
+private:
+
+	void*               mem;
+	basic_cached_allocator_memoryblock*    memblocks;
+
+private:
+	static void free_internal(basic_cached_allocator* allocator) {
+		while (allocator->memblocks) {
+			basic_cached_allocator_memoryblock* p = allocator->memblocks;
+			allocator->memblocks = allocator->memblocks->next;
+			if (p) ::_aligned_free((void*)p);
+		}
+		if (allocator->mem) ::_aligned_free(allocator->mem);
+	};
+	static void* Alloc16(const size_t& size, const memTag_t& tag) { if (!size) return nullptr; const size_t paddedSize = (size + 15) & ~15; return ::_aligned_malloc(paddedSize, 16); };
+	static void* ClearedAlloc(const size_t& size, const memTag_t& tag) { void* memP = Alloc16(size, tag); ::memset(memP, 0, size); return memP; };
+};
+
+
+
+
+
+
+
+
+
+
+
+
 class FiberWrapper;
 class WaitingFiberBundle {
 public:
@@ -1031,8 +1107,7 @@ namespace {
 };
 int Example::ExampleF(int numTasks, int numSubTasks) {
 
-
-	if (true) {
+	if (false) {
 		int count = 0;
 		fibers::TaskScheduler scheduler;
 		scheduler.Init();
@@ -1044,7 +1119,7 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 				for (int j = 0; j < numSubTasks; j++) {
 					auto action = fibers::Action([&pat](int j) {
 						pat.AddValue(j, j);
-					}, (int)((i * numSubTasks) + j));
+						}, (int)((i * numSubTasks) + j));
 
 					scheduler.AddTask({ DoAnyJobStruct, new AnyJobStruct({ std::make_shared<fibers::Action>(action), false }) }, fibers::TaskPriority::Normal, &wg);
 				}
@@ -1061,7 +1136,7 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 				for (int j = 0; j < numSubTasks; j++) {
 					auto todo = fibers::Action([&pat](int j) {
 						pat.AddValue(j, j);
-					}, (int)((i * numSubTasks) + j));
+						}, (int)((i * numSubTasks) + j));
 
 
 					actions.push_back(
@@ -1083,7 +1158,7 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 					for (int j = 0; j < numSubTasks; j++) {
 						auto todo = fibers::Action([&pat](int j) {
 							pat.AddValue(j, j);
-						}, (int)((i * numSubTasks) + j));
+							}, (int)((i * numSubTasks) + j));
 						actions.push_back(
 							{ DoAnyJobStruct, new AnyJobStruct({ std::make_shared<fibers::Action>(todo), false }) }
 						);
@@ -1094,7 +1169,7 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 						scheduler.AddTasks(actions.size(), &actions[0], fibers::TaskPriority::Normal, &wg);
 						wg.Wait(); // actual waiter
 					}
-				}, (int)i);
+					}, (int)i);
 
 				scheduler.AddTask({ DoAnyJobStruct, new AnyJobStruct({ std::make_shared<fibers::Action>(todo), false }) }, fibers::TaskPriority::Normal, &wg);
 			}
@@ -1103,19 +1178,7 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 		}
 	}
 
-
-
-
-
-
-
-
-
-
-
-
-
-	if (true) {
+	if (false) {
 		int count = 0;
 		TaskScheduler scheduler;
 		scheduler.Init();
@@ -1201,27 +1264,9 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 	if (true) {
-		fibers::parallel::For(0, numTasks * numSubTasks, [](int j) {
+		fibers::ftl_wrapper::TaskScheduler scheduler;
+		fibers::parallel::For(scheduler, 0, numTasks * numSubTasks, [](int j) {
 			Stopwatch sw;
 			sw.Start();
 			while (sw.Stop() < 1000) {}
@@ -1243,7 +1288,8 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 	}
 
 	if (true) {
-		fibers::parallel::For(0, numTasks * numSubTasks * 2, [](int j) {
+		fibers::ftl_wrapper::TaskScheduler scheduler;
+		fibers::parallel::For(scheduler, 0, numTasks * numSubTasks * 2, [](int j) {
 			Stopwatch sw;
 			sw.Start();
 			while (sw.Stop() < 1000) {}
@@ -1251,6 +1297,7 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 	}
 
 	if (true) {
+		fibers::ftl_wrapper::TaskScheduler scheduler;
 		for (int i = 0; i < numTasks; i++) {
 			auto job = fibers::Job([]() {
 				Stopwatch sw;
@@ -1258,27 +1305,15 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 				while (sw.Stop() < 1000) {}
 			});
 
-			auto awaiter = job.AsyncInvoke();
-
-			awaiter.Wait();
+			scheduler.AddTask(job);
 		}
+		scheduler.Wait();
 	}
 
 	if (true) {
-		for (int i = 0; i < numTasks; i++) {
-			fibers::Job([numSubTasks]() {
-				fibers::parallel::For(0, numSubTasks, 1, [](int j) {
-					Stopwatch sw;
-					sw.Start();
-					while (sw.Stop() < 1000) {}
-				});
-			}).AsyncInvoke().Wait();
-		}
-	}
-
-	if (true) {
-		fibers::parallel::For(0, numTasks, 1, [numSubTasks](int i) {
-			fibers::parallel::For(0, numSubTasks, 1, [](int j) {
+		fibers::ftl_wrapper::TaskScheduler scheduler;
+		fibers::parallel::For(scheduler, 0, numTasks, 1, [&scheduler, numSubTasks](int i) {
+			fibers::parallel::For(scheduler, 0, numSubTasks, 1, [](int j) {
 				Stopwatch sw;
 				sw.Start();
 				while (sw.Stop() < 1000) {}
@@ -1286,22 +1321,35 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 		});
 	}
 
-	fibers::containers::vector<int> list;
-	return fibers::parallel::async([&]() {
+	if (true) {
+		cweeBalancedPattern pat;
+		fibers::ftl_wrapper::TaskScheduler scheduler;
+		fibers::parallel::For(scheduler, 0, numTasks, [&scheduler, &numSubTasks, &pat](int i) {
+			fibers::parallel::For(scheduler, 0, numSubTasks, [&pat, &i, &numSubTasks](int j) {
+				pat.AddUniqueValue(i*numSubTasks + j, i* numSubTasks + j);
+			});
+		});
+		if (pat.GetNumValues() != numSubTasks * numTasks) {
+			auto err = cweeStr::printf("Pattern had %i values instead of %i", pat.GetNumValues(), numSubTasks * numTasks);
+			printf(err);
+		}
+	}
+
+	if (true) {
 		std::shared_ptr<std::atomic<int>> counter(new std::atomic<int>(0));
-		if (numTasks < 0) numTasks *= -1;
-		if (numSubTasks < 0) numSubTasks *= -1;
-		for (int i = 0; i < numTasks; ++i) { // iterations are actually in series
-			fibers::parallel::For(0, numSubTasks, [&list, &counter](int j) {  // policies / particles are done simultanously using the fibers::For or fibers::ForEach loops
+		fibers::containers::vector<int> list;
+
+		fibers::ftl_wrapper::TaskScheduler scheduler;
+		fibers::parallel::For(scheduler, 0, numTasks, 1, [&counter, &list, &scheduler, numSubTasks](int i) {
+			fibers::parallel::For(scheduler, 0, numSubTasks, 1, [&counter, &list](int j) {
 				list.push_back(
 					counter->fetch_add(1)
 				); // do work
 			});
-		}
-		return fibers::parallel::async([=]()->int {
-			return counter->load();
 		});
-	}).wait_get().wait_get();
+
+		return counter->load();
+	}
 };
 
 

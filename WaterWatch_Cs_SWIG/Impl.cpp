@@ -151,14 +151,11 @@ std::vector<double> SharedMatrix::GetTimeSeries(double Left, double Top, double 
 			model = cweeSharedPtr<alglib::rbfmodel>(knots->Tag, [](void* p) -> alglib::rbfmodel* { return static_cast<alglib::rbfmodel*>(p); });
 		}
 
-		fibers::containers::queue< std::shared_ptr<alglib::rbfcalcbuffer> > buffer_queue;
-		for (int i = 0; i < fibers::utilities::Hardware::GetNumCpuCores() * 2; i++) {
-			alglib::rbfcalcbuffer* p = new alglib::rbfcalcbuffer();
-			alglib::rbfcreatecalcbuffer(*model, *p, alglib::parallel);
-			buffer_queue.push(std::shared_ptr<alglib::rbfcalcbuffer>(p));
-		}
 
-		// fibers::ftl_wrapper::TaskScheduler scheduler;
+
+#if 0
+
+		fibers::ftl_wrapper::TaskScheduler scheduler;
 
 		std::vector< fibers::Job > jobs;
 		tempMatrix.Reserve(numColumns * numRows + 12);
@@ -197,14 +194,10 @@ std::vector<double> SharedMatrix::GetTimeSeries(double Left, double Top, double 
 				return out;
 			}, (cweeSharedPtr<alglib::rbfmodel>)model, (int)r, alglib::real_1d_array());
 			
-			//scheduler.AddTask(job);
+			scheduler.AddTask(job);
 			jobs.push_back(job);
 		}
-
-		fibers::JobGroup g;
-		g.Queue(jobs);
-		g.Wait();
-		// scheduler.Wait();
+		scheduler.Wait();
 
 		for (auto& job : jobs) {
 			auto any = job.GetResult();
@@ -221,16 +214,70 @@ std::vector<double> SharedMatrix::GetTimeSeries(double Left, double Top, double 
 			}
 		}
 
+#else
+		fibers::ftl_wrapper::TaskScheduler scheduler;
+
+		fibers::containers::queue< std::shared_ptr<alglib::rbfcalcbuffer> > buffer_queue;
+		fibers::parallel::For(scheduler, 0, fibers::utilities::Hardware::GetNumCpuCores() * 2, [&buffer_queue, &model](int i) {
+			alglib::rbfcalcbuffer* p = new alglib::rbfcalcbuffer();
+			alglib::rbfcreatecalcbuffer(*model, *p, alglib::parallel);
+			buffer_queue.push(std::shared_ptr<alglib::rbfcalcbuffer>(p));
+		});
+
+		std::vector< fibers::Job > jobs;
+		tempMatrix.Reserve(numColumns* numRows + 12);
+
+		fibers::parallel::For(scheduler, 0, numRows, [&tempMatrix , &out, &scheduler, &buffer_queue, &numColumns, &Left, &Top, &rowStep, &columnStep, &reductionRatio, &model](int R) {
+			alglib::real_1d_array results;
+			std::shared_ptr<alglib::rbfcalcbuffer> buf;
+			while (!buffer_queue.try_pop(buf)) { cweeSysThreadTools::Sys_Yield(); }
+
+			cweeList< cweeUnion<double, double, double> > out_internal(numColumns + 1);
+
+			{
+				alglib::real_1d_array arr;
+				cweeUnion<double, double> coords;
+				arr.attach_to_ptr(2, (double*)(void*)(&coords));
+
+				int C;
+				for (coords.get<0>() = Left, coords.get<1>() = Top - R * rowStep, C = 0; C < numColumns; C++, coords.get<0>() += columnStep) {
+					if ((::Max(R, C) - ::Min(R, C)) % reductionRatio == 0) {
+						// get "real" interpolated results for 1/3 of the requested pixels using a slow, complex model, distributed diagonally along the grid								
+						alglib::rbftscalcbuf(*model, *buf, arr, results, alglib::parallel);
+
+						// add it to the matrix
+						out_internal.Append(cweeUnion<double, double, double>((double)C, (double)R, (double)results[0]));
+					}
+					else {
+						out_internal.Append(cweeUnion<double, double, double>(std::numeric_limits<double>::max(), std::numeric_limits<double>::max(), std::numeric_limits<double>::max()));
+					}
+				}
+			}
+
+			buffer_queue.push(buf);
+
+			fibers::parallel::ForEach(scheduler, out_internal, [&tempMatrix, &out, &numColumns](cweeUnion<double, double, double>& coord) {
+				if (coord.get<0>() != std::numeric_limits<double>::max()
+					&& coord.get<1>() != std::numeric_limits<double>::max()
+					&& coord.get<2>() != std::numeric_limits<double>::max()) {
+					tempMatrix.AddValue(coord.get<0>(), coord.get<1>(), coord.get<2>(), false);
+					out[numColumns * coord.get<1>() + coord.get<0>()] = coord.get<2>();
+				}
+			});
+		});
+		scheduler.Wait();
+#endif
+
 		// do a faster, local interpolation of those results using the Hilbert curve for the last 2/3 components. 
 		if (true) {
 			double R, C;
 #if 1
-			fibers::parallel::For(0, numRows, [&numColumns, &tempMatrix, &out, &reductionRatio](int R) {
-				for (int C = 0; C < numColumns; C++) {
+			fibers::parallel::For(scheduler, 0, numRows, [&scheduler, &numColumns, &out, &tempMatrix, &reductionRatio](int R) {
+				fibers::parallel::For(scheduler, 0, numColumns, [&R, &numColumns, &out, &tempMatrix, &reductionRatio](int C) {
 					if (((int)(::Max(R, C) - ::Min(R, C))) % reductionRatio != 0) {
 						out[numColumns * R + C] = tempMatrix.GetCurrentValue(C, R);
 					}
-				}
+				});
 			});
 #else
 			for (R = 0; R < numRows; R++) {
@@ -1809,14 +1856,12 @@ std::vector<Color_Interop> MapBackground_Interop::GetMatrix(double Left, double 
 		matrixes.push_back(SharedMatrix(bg.matrix, false));
 	}
 
-	// fibers::ftl_wrapper::TaskScheduler scheduler;
+	fibers::ftl_wrapper::TaskScheduler scheduler;
 
 	// second, do the queries on each matrix, taking care to reduce workload where the matrix problem can be simplified. 
 	for (int i = 0; i < backgrounds.size(); i++) {
 		auto& bg = backgrounds[i];
 		auto& shared_matrix = matrixes[i];
-
-		
 
 		if (shared_matrix.GetMaxX() < Left || shared_matrix.GetMinX() > Right || shared_matrix.GetMaxY() < Bottom || shared_matrix.GetMinY() > Top) { }
 		else {
@@ -1849,7 +1894,7 @@ std::vector<Color_Interop> MapBackground_Interop::GetMatrix(double Left, double 
 						int n = values.size();
 						alpha_foreground = minCol.A / 255.0;
 #if 1
-						fibers::parallel::For(0, n, [&values, &minValue, &maxValue, &out, &alpha_foreground, &minCol](int byteIndex) {
+						fibers::parallel::For(scheduler, 0, n, [&values, &minValue, &maxValue, &out, &alpha_foreground, &minCol](int byteIndex) {
 							double v = values[byteIndex];
 							if (v >= minValue && v <= maxValue)
 							{
@@ -1884,7 +1929,7 @@ std::vector<Color_Interop> MapBackground_Interop::GetMatrix(double Left, double 
 						// no point in doing the analysis -- there is no "clip to bounds" and there will be no color transitions. 
 						alpha_foreground = minCol.A / 255.0;
 #if 1
-						fibers::parallel::For(0, pixelHeight * pixelWidth + pixelWidth, [&out, &alpha_foreground, &minCol](int byteIndex) {
+						fibers::parallel::For(scheduler, 0, pixelHeight * pixelWidth + pixelWidth, [&out, &alpha_foreground, &minCol](int byteIndex) {
 							auto& pixel = out[byteIndex];
 
 							double alpha_background = pixel.A / 255.0;
@@ -1925,7 +1970,7 @@ std::vector<Color_Interop> MapBackground_Interop::GetMatrix(double Left, double 
 					}
 					int n = values.size();
 #if 1
-					fibers::parallel::For(0, n, [&values, &minValue, &maxValue, &out, &bg, &minCol, &maxCol](int byteIndex) {
+					fibers::parallel::For(scheduler, 0, n, [&values, &minValue, &maxValue, &out, &bg, &minCol, &maxCol](int byteIndex) {
 						double v = (values[byteIndex] - minValue) / (maxValue - minValue); // 0 - 1 between the min and max for this value
 						auto& pixel = out[byteIndex];
 
@@ -2025,7 +2070,7 @@ std::vector<Color_Interop> MapBackground_Interop::GetMatrix(double Left, double 
 					pixel.A = (1.0 - (1.0 - alpha_foreground) * (1.0 - alpha_background)) * 255.0;
 				});
 #else
-				fibers::parallel::For(0, pixelHeight * pixelWidth + pixelWidth, [&out, &alpha_foreground, &minCol](int byteIndex) {
+				fibers::parallel::For(scheduler, 0, pixelHeight * pixelWidth + pixelWidth, [&out, &alpha_foreground, &minCol](int byteIndex) {
 					auto& pixel = out[byteIndex];
 
 					double alpha_background = pixel.A / 255.0;
@@ -2085,7 +2130,7 @@ std::vector<Color_Interop> MapBackground_Interop::GetMatrix(double Left, double 
 
 	// add random sub-byte noise to break up the visible "banding" in color gradients, typically seen in shadows (like white-to-grey gradients)
 #if 1
-	fibers::parallel::For((int)0, (int)out.size(), [&out](int i) {
+	fibers::parallel::For(scheduler, (int)0, (int)out.size(), [&out](int i) {
 		auto& pixel = out[i];
 		pixel.R = ::Min(255.0, ::Max<double>(0.0, pixel.R));// +cweeRandomFloat(-0.5, 0.5)));
 		pixel.G = ::Min(255.0, ::Max<double>(0.0, pixel.G));// + cweeRandomFloat(-0.5, 0.5)));

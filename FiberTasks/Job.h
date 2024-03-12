@@ -1031,7 +1031,7 @@ namespace fibers {
 		/*! Data Assignment */ template<typename ValueType> explicit Action(const Function<ValueType>& value) : content(ToPtr<ValueType>(value)) {};
 		// /*! Direct instantiation */ template <typename F, typename... Args> Action(const std::function<F>& function, Args... Fargs) : Action(Function(function, Fargs...)) {};
 		/*! Direct instantiation2 */ template <typename F, typename... Args> Action(const F& function, Args... Fargs) : Action(Function(std::function(function), Fargs...)) {};
-		~Action() noexcept { content = nullptr; };
+		~Action() = default;
 
 	public: // modifiers
 		/*! Swap Data */ Action& swap(Action& rhs) noexcept {
@@ -1074,8 +1074,8 @@ namespace fibers {
 		std::shared_ptr<Action_Interface> content;
 
 	public:
-		Any* Invoke() noexcept { std::shared_ptr<Action_Interface> c = content; if (c) { return &c->Invoke(); } return nullptr; };
-		Any* ForceInvoke() noexcept { std::shared_ptr<Action_Interface> c = content; if (c) { return &c->ForceInvoke(); } return nullptr; };
+		Any* Invoke() noexcept { if (this) { std::shared_ptr<Action_Interface> c = content; if (c) { return &c->Invoke(); } } return nullptr; };
+		Any* ForceInvoke() noexcept { if (this) { std::shared_ptr<Action_Interface> c = content; if (c) { return &c->ForceInvoke(); } } return nullptr; };
 		const char* FunctionName() const {
 			std::shared_ptr<Action_Interface> c = content;
 			if (c)
@@ -1101,7 +1101,7 @@ namespace fibers {
 			return true;
 		};
 
-		Any* Result() const { std::shared_ptr<Action_Interface> c = content; if (c) { return &c->Result(); } return nullptr; };
+		Any* Result() const { if (this) { std::shared_ptr<Action_Interface> c = content; if (c) { return &c->Result(); } } return nullptr; };
 		static Action Finished() { return Action(Function<void()>::Finished()); };
 		template <typename T> static Action Finished(const T& returnMe) { return Action(Function<T()>::Finished(returnMe)); };
 

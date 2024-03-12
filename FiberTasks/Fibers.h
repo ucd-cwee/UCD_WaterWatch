@@ -472,27 +472,32 @@ namespace fibers{
 		};
 
 		Job() : impl(std::make_shared<Action>()) {};
-		Job(const Job& other) = default;
-		Job(Job&& other) = default;
-		Job& operator=(const Job& other) = default;
-		Job& operator=(Job&& other) = default;
+		Job(const Job& other) : impl(other.impl) {};
+		Job(Job&& other) : impl(other.impl) {};
+		Job& operator=(const Job& other) { impl = other.impl; };
+		Job& operator=(Job&& other) { impl = other.impl; };
 		template < typename T, typename... Args, typename = std::enable_if_t< !std::is_same_v<Job, std::decay_t<T>> && !std::is_same_v<Any, std::decay_t<T>> >>
 		explicit Job(T function, Args... Fargs) : impl(new Action(function, Fargs...)) {};
+		~Job() = default;
 
 	public:
 		/* Do the task immediately, without using any thread/fiber tools. Does not do the task if it has been previously performed. */
 		Any Invoke() noexcept {
 			Any out;
-			auto* p = impl->Invoke();
-			if (p) out = *p;
+			if (impl) {
+				auto* p = impl->Invoke();
+				if (p) out = *p;
+			}
 			return out;
 		};
 
 		/* Do the task immediately, without using any thread/fiber tools, whether or not it has been performed before. */
 		Any ForceInvoke() noexcept {
 			Any out;
-			auto* p = impl->ForceInvoke();
-			if (p) out = *p;
+			if (impl) {
+				auto* p = impl->ForceInvoke();
+				if (p) out = *p;
+			}
 			return out;
 		};
 
@@ -516,7 +521,10 @@ namespace fibers{
 
 		/* Returns the potential name of the static function, if one was provided. */
 		const char* FunctionName() const {
-			return impl->FunctionName();
+			if (impl) {
+				return impl->FunctionName();
+			}
+			return "";
 		};
 
 		/* Returns the result of the job, if any. If the job has not been previously completed, it will perform the job. */
@@ -531,11 +539,17 @@ namespace fibers{
 
 		/* Checks if the job has been completed before */
 		bool IsFinished() const {
-			return impl->IsFinished();
+			if (impl) {
+				return impl->IsFinished();
+			}
+			return true;
 		};
 
 		bool ReturnsNothing() const {
-			return impl->ReturnsNothing();
+			if (impl) {
+				return impl->ReturnsNothing();
+			}
+			return true;
 		};
 	};
 
@@ -839,8 +853,8 @@ namespace fibers{
 		class TaskScheduler {
 		public:
 			TaskScheduler();
-			TaskScheduler(TaskScheduler const&) = delete;
-			TaskScheduler(TaskScheduler&&) noexcept = delete;
+			TaskScheduler(TaskScheduler const&);
+			TaskScheduler(TaskScheduler&&) noexcept = default;
 			TaskScheduler& operator=(TaskScheduler const&) = delete;
 			TaskScheduler& operator=(TaskScheduler&&) noexcept = delete;
 			~TaskScheduler() = default;
@@ -861,75 +875,84 @@ namespace fibers{
 	namespace parallel {
 		/* parallel_for (auto i = start; i < end; i++){ todo(i); } */
 		template<typename iteratorType, typename F>
-		decltype(auto) For(iteratorType start, iteratorType end, F&& ToDo) {
+		decltype(auto) For(ftl_wrapper::TaskScheduler& targetScheduler, iteratorType start, iteratorType end, F&& ToDo) {
+			ftl_wrapper::TaskScheduler scheduler(targetScheduler);
+
 			auto todo = std::function(std::forward<F>(ToDo));
 			constexpr bool retNo = std::is_same<typename utilities::function_traits<decltype(todo)>::result_type, void>::value;
 
-			std::vector<fibers::Job> jobs;
 			for (iteratorType iter = start; iter < end; iter++) {
-				jobs.push_back(fibers::Job([todo](iteratorType const& T) { return todo(T); }, (iteratorType)iter));
+				scheduler.AddTask(fibers::Job([todo](iteratorType const& T) { return todo(T); }, (iteratorType)iter));
 			}
-			JobGroup group;
-			group.Queue(jobs);
-
-			if constexpr (retNo) group.Wait(); 
-		    else return group.Wait_Get();
+			scheduler.Wait();
+		};
+		/* parallel_for (auto i = start; i < end; i++){ todo(i); } */
+		template<typename iteratorType, typename F>
+		decltype(auto) For(iteratorType start, iteratorType end, F&& ToDo) {
+			ftl_wrapper::TaskScheduler scheduler;
+			return For(scheduler, start, end, std::forward<F>(ToDo));
 		};
 
 		/* parallel_for (auto i = start; i < end; i += step){ todo(i); } */
 		template<typename iteratorType, typename F>
-		decltype(auto) For(iteratorType start, iteratorType end, iteratorType step, F&& ToDo) {
+		decltype(auto) For(ftl_wrapper::TaskScheduler& targetScheduler, iteratorType start, iteratorType end, iteratorType step, F&& ToDo) {
+			ftl_wrapper::TaskScheduler scheduler(targetScheduler);
+
 			auto todo = std::function(std::forward<F>(ToDo));
 			constexpr bool retNo = std::is_same<typename utilities::function_traits<decltype(todo)>::result_type, void>::value;
 
-			std::vector<fibers::Job> jobs;
 			for (iteratorType iter = start; iter < end; iter += step) {
-				jobs.push_back(fibers::Job([todo](iteratorType const& T) { return todo(T); }, (iteratorType)iter));
+				scheduler.AddTask(fibers::Job([todo](iteratorType const& T) { return todo(T); }, (iteratorType)iter));
 			}
-
-			JobGroup group;
-			group.Queue(jobs);
-
-			if constexpr (retNo) group.Wait();
-			else return group.Wait_Get();
+			scheduler.Wait();
+		};
+		/* parallel_for (auto i = start; i < end; i += step){ todo(i); } */
+		template<typename iteratorType, typename F>
+		decltype(auto) For(iteratorType start, iteratorType end, iteratorType step, F&& ToDo) {
+			ftl_wrapper::TaskScheduler scheduler;
+			return For(scheduler, start, end, step, std::forward<F>(ToDo));
 		};
 
 		/* parallel_for (auto i = container.begin(); i != container.end(); i++){ todo(*i); } */
 		template<typename containerType, typename F>
-		decltype(auto) ForEach(containerType const& container, F&& ToDo) {
+		decltype(auto) ForEach(ftl_wrapper::TaskScheduler& targetScheduler, containerType const& container, F&& ToDo) {
+			ftl_wrapper::TaskScheduler scheduler(targetScheduler);
+
 			decltype(auto) todo = std::function(std::forward<F>(ToDo));
 			constexpr bool retNo = std::is_same<typename utilities::function_traits<decltype(todo)>::result_type, void>::value;
 
 			std::vector<fibers::Job> jobs;
 
 			for (auto iter = container.begin(); iter != container.end(); iter++) {
-				jobs.push_back(fibers::Job([todo](typename containerType::const_iterator& T) { return todo(Any(std::shared_ptr<typename containerType::value_type>(const_cast<typename containerType::value_type*>(&*T), [](typename containerType::value_type*) {})).cast()); }, (typename containerType::const_iterator)(iter)));
+				scheduler.AddTask(fibers::Job([todo](typename containerType::const_iterator& T) { return todo(Any(std::shared_ptr<typename containerType::value_type>(const_cast<typename containerType::value_type*>(&*T), [](typename containerType::value_type*) {})).cast()); }, (typename containerType::const_iterator)(iter)));
 			}
-
-			JobGroup group;
-			group.Queue(jobs);
-
-			if constexpr (retNo) group.Wait();
-			else return group.Wait_Get();
+			scheduler.Wait();
+		};
+		/* parallel_for (auto i = container.begin(); i != container.end(); i++){ todo(*i); } */
+		template<typename containerType, typename F>
+		decltype(auto) ForEach(containerType const& container, F&& ToDo) {
+			ftl_wrapper::TaskScheduler scheduler;
+			return ForEach(scheduler, container, std::forward<F>(ToDo));
 		};
 
 		/* parallel_for (auto i = container.cbegin(); i != container.cend(); i++){ todo(*i); } */
 		template<typename containerType, typename F>
-		decltype(auto) ForEach(containerType& container, F&& ToDo) {
+		decltype(auto) ForEach(ftl_wrapper::TaskScheduler& targetScheduler, containerType& container, F&& ToDo) {
+			ftl_wrapper::TaskScheduler scheduler(targetScheduler);
+
 			decltype(auto) todo = std::function(std::forward<F>(ToDo));
 			constexpr bool retNo = std::is_same<typename utilities::function_traits<decltype(todo)>::result_type, void>::value;
 
-			std::vector<fibers::Job> jobs;
-
 			for (auto iter = container.begin(); iter != container.end(); iter++) {
-				jobs.push_back(fibers::Job([todo](typename containerType::iterator& T) { return todo(Any(std::shared_ptr<typename containerType::value_type>(&*T, [](typename containerType::value_type*) {})).cast()); }, (typename containerType::iterator)(iter)));
+				scheduler.AddTask(fibers::Job([todo](typename containerType::iterator& T) { return todo(Any(std::shared_ptr<typename containerType::value_type>(&*T, [](typename containerType::value_type*) {})).cast()); }, (typename containerType::iterator)(iter)));
 			}
-
-			JobGroup group;
-			group.Queue(jobs);
-
-			if constexpr (retNo) group.Wait();
-			else return group.Wait_Get();
+			scheduler.Wait();
+		};
+		/* parallel_for (auto i = container.cbegin(); i != container.cend(); i++){ todo(*i); } */
+		template<typename containerType, typename F>
+		decltype(auto) ForEach(containerType& container, F&& ToDo) {
+			ftl_wrapper::TaskScheduler scheduler;
+			return ForEach(scheduler, container, std::forward<F>(ToDo));
 		};
 
 		/* Generic form of a future<T>, which can be used to wait on and get the results of any job. */

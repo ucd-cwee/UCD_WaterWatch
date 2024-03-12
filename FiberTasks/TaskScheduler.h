@@ -25,12 +25,12 @@
 #pragma once
 
 #include "Config.h"
-#include "Callbacks.h"
 #include "Fiber.h"
 #include "Tasks.h"
 #include "ThreadAbstraction.h"
 #include <ppl.h>
 #include <concurrent_queue.h>
+#include <concurrent_vector.h>
 #include "WaitGroup.h"
 #include <atomic>
 #include <condition_variable>
@@ -38,11 +38,70 @@
 #include <vector>
 
 namespace fibers {
+#if 0
+	class basic_cached_allocator {
+	public:
+		struct basic_cached_allocator_memoryblock {
+			size_t sizefree;
+			basic_cached_allocator_memoryblock* next;
+			char* memory;
+		};
+
+	public:
+		basic_cached_allocator() :
+			mem(nullptr),
+			memblocks(nullptr)
+		{}
+		basic_cached_allocator(basic_cached_allocator const&) = delete;
+		basic_cached_allocator(basic_cached_allocator&&) = delete;
+		basic_cached_allocator& operator=(basic_cached_allocator const&) = delete;
+		basic_cached_allocator& operator=(basic_cached_allocator&&) = delete;
+		~basic_cached_allocator() {
+			free_internal(this);
+		}
+
+		template<typename T> T* alloc() {
+			size_t size = sizeof(T);
+			while (!memblocks || memblocks->sizefree < (size + sizeof(void*))) {
+				size_t blocksize = 16 * 1024;
+				basic_cached_allocator_memoryblock* block = (basic_cached_allocator_memoryblock*)ClearedAlloc(blocksize); // zero's out
+				size_t offset = sizeof(basic_cached_allocator_memoryblock);
+				block->sizefree = blocksize - offset;
+				block->next = memblocks;
+				block->memory = ((char*)block) + offset;
+				memblocks = block;
+			}
+			void* p_raw = memblocks->memory;
+			void* p_aligned = p_raw;
+			size += (uintptr_t)p_aligned - (uintptr_t)p_raw;
+			memblocks->memory += size;
+			memblocks->sizefree -= size;
+			return static_cast<T*>(p_aligned);
+		};
+
+	private:
+
+		void* mem;
+		basic_cached_allocator_memoryblock* memblocks;
+
+	private:
+		static void free_internal(basic_cached_allocator* allocator) {
+			while (allocator->memblocks) {
+				basic_cached_allocator_memoryblock* p = allocator->memblocks;
+				allocator->memblocks = allocator->memblocks->next;
+				if (p) ::_aligned_free((void*)p);
+			}
+			if (allocator->mem) ::_aligned_free(allocator->mem);
+		};
+		static void* Alloc16(const size_t& size) { if (!size) return nullptr; const size_t paddedSize = (size + 15) & ~15; return ::_aligned_malloc(paddedSize, 16); };
+		static void* ClearedAlloc(const size_t& size) { void* memP = Alloc16(size); ::memset(memP, 0, size); return memP; };
+	};
+#endif
+
 	enum class EmptyQueueBehavior {
 		Spin, // Spin in a loop, actively searching for tasks		
 		Yield, // Same as spin, except yields to the OS after each round of searching		
 		Sleep // Puts the thread to sleep. Will be woken when more tasks are added to the remaining awake threads.
-		// ReSharper restore CppInconsistentNaming
 	};
 	struct TaskSchedulerInitOptions {
 		/* The size of the fiber pool.The fiber pool is used to run new tasks when the current task is waiting on a counter */
@@ -50,9 +109,9 @@ namespace fibers {
 		/* The size of the thread pool to run. 0 corresponds to NumHardwareThreads() */
 		unsigned ThreadPoolSize = 0;
 		/* The behavior of the threads after they have no work to do */
-		EmptyQueueBehavior Behavior = EmptyQueueBehavior::Spin;
-		/* Callbacks to run at various points to allow for e.g. hooking a profiler to fiber states */
-		EventCallbacks Callbacks;
+		EmptyQueueBehavior Behavior = EmptyQueueBehavior::Sleep;
+		/* Should use the main thread for processing and calculations */
+		bool useMainThread = true;
 	};
 	struct WaitingFiberBundle;
 
@@ -79,6 +138,20 @@ namespace fibers {
 			ToPool = 1,
 			ToWaiting = 2,
 		};
+
+		class FiberWrapper {
+		public:
+			FiberWrapper() = default;
+			~FiberWrapper() = default;
+			FiberWrapper(FiberWrapper const&) = delete;
+			FiberWrapper(FiberWrapper&&) = delete;
+			FiberWrapper& operator=(FiberWrapper const&) = delete;
+			FiberWrapper& operator=(FiberWrapper&&) = delete;
+
+			Fiber fiber;
+			std::atomic<bool> freeFiber;
+		};
+
 	private:
 		/**
 		 * Holds a task that is ready to to be executed by the worker threads
@@ -128,7 +201,7 @@ namespace fibers {
 			Fiber ThreadFiber;
 
 			/* Lock protecting access to PinnedReadyFibers */
-			std::shared_ptr<std::mutex> PinnedReadyFibersLock;
+			std::mutex PinnedReadyFibersLock;
 
 			/* The index of the current fiber in m_fibers */
 			unsigned CurrentFiberIndex;
@@ -142,34 +215,38 @@ namespace fibers {
 
 			unsigned FailedQueuePopAttempts;
 		};
-		struct FiberWrapper {
-			Fiber fiber;
-			std::shared_ptr<std::atomic<bool>> freeFiber;
-		};
 
+		class ThreadWrapper {
+		public:
+			ThreadWrapper() = default;
+			~ThreadWrapper() = default;
+			ThreadWrapper(ThreadWrapper const&) = delete;
+			ThreadWrapper(ThreadWrapper&&) = delete;
+			ThreadWrapper& operator=(ThreadWrapper const&) = delete;
+			ThreadWrapper& operator=(ThreadWrapper&&) = delete;
+
+			ThreadType type;
+			ThreadLocalStorage tls;
+		};
 	private:
 		// Member variables
 
 		constexpr static unsigned kInvalidIndex = std::numeric_limits<unsigned>::max();
 		constexpr static unsigned kNoThreadPinning = std::numeric_limits<unsigned>::max();
 
-		EventCallbacks m_callbacks;
-
 		concurrency::concurrent_queue<TaskBundle> LoPriTaskQueue;
 
-		unsigned m_numThreads{ 0 };
-		ThreadType* m_threads{ nullptr };
+		concurrency::concurrent_vector < std::shared_ptr<ThreadWrapper> > m_threads;
+		std::unordered_map<DWORD, unsigned> m_threadsHandleToIndex;
 
-		unsigned m_fiberPoolSize{ 0 };
+		// std::atomic<int> m_fiberPoolSize{ 0 };
 
 		/* The backing storage for the fiber pool */
-		Fiber* m_fibers{ nullptr };
-		/**
-		 * An array of atomics, which signify if a fiber is available to be used. The indices of m_waitingFibers
-		 * correspond 1 to 1 with m_fibers. So, if m_freeFibers[i] == true, then m_fibers[i] can be used.
-		 * Each atomic acts as a lock to ensure that threads do not try to use the same fiber at the same time
-		 */
-		std::atomic<bool>* m_freeFibers{ nullptr };
+		concurrency::concurrent_vector < std::shared_ptr<FiberWrapper> > m_fibers;
+		// FiberWrapper instanceFiber;
+
+		/* Should use the main thread for processing and calculations */
+		bool useMainThread = true;
 
 		Fiber* m_quitFibers{ nullptr };
 
@@ -184,16 +261,6 @@ namespace fibers {
 		 */
 		std::mutex ThreadSleepLock;
 		std::condition_variable ThreadSleepCV;
-
-		/**
-		 * c++ Thread Local Storage is, by definition, static/global. This poses some problems, such as multiple
-		 * TaskScheduler instances. In addition, with the current fiber implementation, we have no way of telling the
-		 * compiler to disable TLS optimizations, so we have to fake TLS anyhow.
-		 *
-		 * During initialization of the TaskScheduler, we create one ThreadLocalStorage instance per thread. Threads index
-		 * into their storage using m_tls[GetCurrentThreadIndex()]
-		 */
-		std::vector<std::shared_ptr<ThreadLocalStorage>> m_tls;
 
 		/**
 		 * We friend WaitGroup and Fibtex so we can keep InitWaitingFiberBundle() and SwitchToFreeFiber() private
@@ -291,7 +358,7 @@ namespace fibers {
 		 * @return    Backing thread count
 		 */
 		unsigned GetThreadCount() const noexcept {
-			return m_numThreads;
+			return static_cast<unsigned>(m_threads.size());
 		}
 
 		/**
@@ -300,7 +367,7 @@ namespace fibers {
 		 * @return    Fiber pool size
 		 */
 		unsigned GetFiberCount() const noexcept {
-			return m_fiberPoolSize;
+			return static_cast<unsigned>(m_fibers.size());
 		}
 
 		/**

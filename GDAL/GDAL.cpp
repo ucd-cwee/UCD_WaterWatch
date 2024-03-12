@@ -117,8 +117,9 @@ namespace cweeGeo {
 			if (pFeatureActual) {
 				auto pFeature{ cweeSharedPtr< OGRFeature >(pFeatureActual, [ptr](OGRFeature* p) { if (p) { delete p; } }) };
 				if (pFeature) {
-					auto poGeometry{ cweeSharedPtr< OGRGeometry >(pFeature->GetGeometryRef(), [pFeature](OGRGeometry* p) { /* do nothing */ }) };
-					if (this->transform) {
+					auto* geoPtr = pFeature->GetGeometryRef();
+					auto poGeometry{ cweeSharedPtr< OGRGeometry >(geoPtr, [pFeature](OGRGeometry* p) { /* do nothing */ }) };
+					if (geoPtr && poGeometry && this->transform) {
 						AUTO Transform{ FromVoidPtr<OGRCoordinateTransformation>(this->transform) };
 						poGeometry->transform(Transform.get());
 					}
