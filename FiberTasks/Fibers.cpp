@@ -124,6 +124,7 @@ namespace fibers {
 		Fibers->AddTask({ DoAnyFuncStruct, new AnyFunctionStruct({ job.impl, nullptr, false }) }, TaskPriority::Normal, wg.get());
 		jobs.push_back(job);
 	};
+
 	void JobGroup::JobGroupImpl::ForceQueue(Job const& job) {
 		std::shared_ptr<WaitGroup> wg = std::static_pointer_cast<WaitGroup>(waitGroup);
 		if (!wg) throw(std::runtime_error("Job Group was empty.")); 

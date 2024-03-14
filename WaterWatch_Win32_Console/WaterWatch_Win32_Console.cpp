@@ -49,8 +49,7 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 
 	printf("Job 1\n");
 	if (true) {
-		fibers::ftl_wrapper::TaskScheduler scheduler;
-		fibers::parallel::For(scheduler, 0, numTasks * numSubTasks, [](int j) {
+		fibers::parallel::For(0, numTasks * numSubTasks, [](int j) {
 			Stopwatch sw;
 			sw.Start();
 			while (sw.Stop() < 1000) {}
@@ -105,8 +104,7 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 	}
 	printf("Job 3\n");
 	if (true) {
-		fibers::ftl_wrapper::TaskScheduler scheduler;
-		fibers::parallel::For(scheduler, 0, numTasks * numSubTasks * 2, [](int j) {
+		fibers::parallel::For(0, numTasks * numSubTasks * 2, [](int j) {
 			Stopwatch sw;
 			sw.Start();
 			while (sw.Stop() < 1000) {}
@@ -114,26 +112,25 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 	}
 	printf("Job 4\n");
 	if (true) {
-		//fibers::JobGroup group;
-		fibers::ftl_wrapper::TaskScheduler scheduler;
+		fibers::JobGroup group;
+		//fibers::ftl_wrapper::TaskScheduler scheduler;
 		for (int i = 0; i < numTasks; i++) {
 			auto job = fibers::Job([]() {
 				Stopwatch sw;
 				sw.Start();
 				while (sw.Stop() < 1000) {}
 			});
-			//group.Queue(job);
-			scheduler.AddTask(job);
+			group.Queue(job);
+			//scheduler.AddTask(job);
 		}
-		//group.Wait();
-		scheduler.Wait();
+		group.Wait();
+		//scheduler.Wait();
 	}
 	printf("Job 5\n");
 	if (true) {
-		fibers::ftl_wrapper::TaskScheduler scheduler;
 		std::atomic<int> numJobsDone;
-		fibers::parallel::For(scheduler, 0, numTasks, [&scheduler, &numSubTasks, &numJobsDone](int i) {
-			fibers::parallel::For(scheduler, 0, numSubTasks, [&numJobsDone](int j) {
+		fibers::parallel::For(0, numTasks, [&numSubTasks, &numJobsDone](int i) {
+			fibers::parallel::For(0, numSubTasks, [&numJobsDone](int j) {
 				Stopwatch sw;
 				sw.Start();
 				while (sw.Stop() < 1000) {}
@@ -148,9 +145,8 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 	printf("Job 6\n");
 	if (true) {
 		cweeBalancedPattern pat;
-		fibers::ftl_wrapper::TaskScheduler scheduler;
-		fibers::parallel::For(scheduler, 0, numTasks, [&scheduler, &numSubTasks, &pat](int i) {
-			fibers::parallel::For(scheduler, 0, numSubTasks, [&pat, &i, &numSubTasks](int j) {
+		fibers::parallel::For(0, numTasks, [&numSubTasks, &pat](int i) {
+			fibers::parallel::For(0, numSubTasks, [&pat, &i, &numSubTasks](int j) {
 				pat.AddUniqueValue(i*numSubTasks + j, i* numSubTasks + j);
 			});
 		});
@@ -164,16 +160,13 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 		std::shared_ptr<std::atomic<int>> counter(new std::atomic<int>(0));
 		fibers::containers::vector<int> list;
 
-		fibers::ftl_wrapper::TaskScheduler scheduler;
-		fibers::parallel::For(scheduler, 0, numTasks, [&counter, &list, &scheduler, numSubTasks](int i) {
-			fibers::parallel::For(scheduler, 0, numSubTasks, [&counter, &list](int j) {
+		fibers::parallel::For(0, numTasks, [&counter, &list, numSubTasks](int i) {
+			fibers::parallel::For(0, numSubTasks, [&counter, &list](int j) {
 				list.push_back(
 					counter->fetch_add(1)
 				); // do work
 			});
 		});
-
-		//return counter->load();
 	}
 	printf("Job 7b\n");
 	if (true) {
@@ -192,8 +185,6 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 			}, (int)i));
 		};
 		group.Wait();
-
-		//return counter->load();
 	}
 	printf("Job 7c\n");
 	if (true) {
@@ -206,16 +197,31 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 					for (int j = 0; j < numSubTasks; ++j) {
 						group.Queue(fibers::Job([&counter](int j) {
 							counter->fetch_add(1);
-							}, (int)j));
+						}, (int)j));
 					}
 					group.Wait();
-					}, (int)i));
+				}, (int)i));
 			};
 			group.Wait();
 		});
 		job.AsyncInvoke();
 		job.Await();
-
+	}
+	printf("Job 7d\n");
+	if (true) {
+		std::shared_ptr<std::atomic<int>> counter(new std::atomic<int>(0));
+		fibers::containers::vector<int> list;
+		auto job = cweeJob([&counter, &numTasks, &numSubTasks, &list]() {
+			fibers::parallel::For(0, numTasks, [&counter, &list, numSubTasks](int i) {
+				fibers::parallel::For(0, numSubTasks, [&counter, &list](int j) {
+					list.push_back(
+						counter->fetch_add(1)
+					); // do work
+				});
+			});
+		});
+		job.AsyncInvoke();
+		job.Await();
 		return counter->load();
 	}
 
