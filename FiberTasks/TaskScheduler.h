@@ -168,7 +168,7 @@ namespace fibers {
 				HiPriTaskQueue(), LoPriTaskQueue(nullptr), OldFiberStoredFlag(nullptr), PinnedReadyFibers(),
 				ThreadFiber(), PinnedReadyFibersLock(),
 				CurrentFiberIndex(kInvalidIndex), OldFiberIndex(kInvalidIndex),
-				OldFiberDestination(FiberDestination::None), HiPriLastSuccessfulSteal(1), FailedQueuePopAttempts(0)
+				OldFiberDestination(FiberDestination::None), HiPriLastSuccessfulSteal(1), FailedQueuePopAttempts(0), workingOnTask(false), quitting(false)
 			{ }
 			ThreadLocalStorage(ThreadLocalStorage const&) = default;
 			ThreadLocalStorage(ThreadLocalStorage&&) = default;
@@ -214,6 +214,10 @@ namespace fibers {
 			unsigned HiPriLastSuccessfulSteal;
 
 			unsigned FailedQueuePopAttempts;
+
+			std::atomic<bool> workingOnTask;
+			std::atomic<bool> quitting;
+			std::atomic<int> fiberState;
 		};
 
 		class ThreadWrapper {
@@ -228,7 +232,7 @@ namespace fibers {
 			ThreadType type;
 			ThreadLocalStorage tls;
 		};
-	private:
+	protected:
 		// Member variables
 
 		constexpr static unsigned kInvalidIndex = std::numeric_limits<unsigned>::max();
@@ -270,6 +274,8 @@ namespace fibers {
 		friend class Fibtex;
 
 	public:
+		bool quitting() const { return m_quit.load(); };
+
 		/**
 		 * Initializes the TaskScheduler and binds the current thread as the "main" thread
 		 *

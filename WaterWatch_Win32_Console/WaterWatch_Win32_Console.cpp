@@ -553,7 +553,10 @@ void TaskScheduler::ThreadEndFunc(void* arg) {
 	// Wait for all other threads to quit
 	taskScheduler->m_quitCount.fetch_add(1, std::memory_order_seq_cst);
 	while (taskScheduler->m_quitCount.load(std::memory_order_seq_cst) != taskScheduler->threadPool.size()) {
-		fibers::SleepThread(50);
+		fibers::YieldThread(); // fibers::SleepThread(50);
+		if (taskScheduler->m_emptyQueueBehavior.load(std::memory_order_relaxed) == fibers::EmptyQueueBehavior::Sleep) {
+			taskScheduler->ThreadSleepCV.notify_all();
+		}
 	}
 
 	thread->quitFiber->SwitchToFiber(&thread->tls->ThreadFiber);//->CurrentFiber->fiber);
@@ -1263,7 +1266,7 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 	}
 
 
-
+	printf("Job 1\n");
 	if (true) {
 		fibers::ftl_wrapper::TaskScheduler scheduler;
 		fibers::parallel::For(scheduler, 0, numTasks * numSubTasks, [](int j) {
@@ -1272,6 +1275,7 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 			while (sw.Stop() < 1000) {}
 		});
 	}
+	printf("Job 2\n");
 	if (true) {
 		cweeBalancedPattern pat;
 		fibers::ftl_wrapper::TaskScheduler scheduler;
@@ -1286,7 +1290,7 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 		int sizeIs = pat.GetNumValues();
 		if (sizeIs == 0) throw(std::runtime_error("Something went wrong"));
 	}
-
+	printf("Job 3\n");
 	if (true) {
 		fibers::ftl_wrapper::TaskScheduler scheduler;
 		fibers::parallel::For(scheduler, 0, numTasks * numSubTasks * 2, [](int j) {
@@ -1295,7 +1299,7 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 			while (sw.Stop() < 1000) {}
 		});
 	}
-
+	printf("Job 4\n");
 	if (true) {
 		fibers::ftl_wrapper::TaskScheduler scheduler;
 		for (int i = 0; i < numTasks; i++) {
@@ -1309,18 +1313,24 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 		}
 		scheduler.Wait();
 	}
-
+	printf("Job 5\n");
 	if (true) {
 		fibers::ftl_wrapper::TaskScheduler scheduler;
-		fibers::parallel::For(scheduler, 0, numTasks, 1, [&scheduler, numSubTasks](int i) {
-			fibers::parallel::For(scheduler, 0, numSubTasks, 1, [](int j) {
+		std::atomic<int> numJobsDone;
+		fibers::parallel::For(scheduler, 0, numTasks, [&scheduler, &numSubTasks, &numJobsDone](int i) {
+			fibers::parallel::For(scheduler, 0, numSubTasks, [&numJobsDone](int j) {
 				Stopwatch sw;
 				sw.Start();
 				while (sw.Stop() < 1000) {}
+
+				numJobsDone.fetch_add(1);
 			});
 		});
+		if (numJobsDone.load() != numTasks * numSubTasks) {
+			printf("Job 5 failed");
+		}
 	}
-
+	printf("Job 6\n");
 	if (true) {
 		cweeBalancedPattern pat;
 		fibers::ftl_wrapper::TaskScheduler scheduler;
@@ -1334,14 +1344,14 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 			printf(err);
 		}
 	}
-
+	printf("Job 7\n");
 	if (true) {
 		std::shared_ptr<std::atomic<int>> counter(new std::atomic<int>(0));
 		fibers::containers::vector<int> list;
 
 		fibers::ftl_wrapper::TaskScheduler scheduler;
-		fibers::parallel::For(scheduler, 0, numTasks, 1, [&counter, &list, &scheduler, numSubTasks](int i) {
-			fibers::parallel::For(scheduler, 0, numSubTasks, 1, [&counter, &list](int j) {
+		fibers::parallel::For(scheduler, 0, numTasks, [&counter, &list, &scheduler, numSubTasks](int i) {
+			fibers::parallel::For(scheduler, 0, numSubTasks, [&counter, &list](int j) {
 				list.push_back(
 					counter->fetch_add(1)
 				); // do work
@@ -1350,6 +1360,7 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 
 		return counter->load();
 	}
+	printf("Loop done\n");
 };
 
 
@@ -1474,12 +1485,14 @@ static cweeStr UserMustSelectFile(cweeStr fileType) {
 };
 
 /* Parallel thread to occasionally look for and process toast messages. Sleeps most of the time and wakes up to check for toasts. */
-
+#if 0
 static Timer parallel_toast_manager = Timer(0.1, Action(std::function([](cweeStr& title, cweeStr& content) {
 	while (cweeToasts->tryGetToast(title, content)) std::cout << cweeStr::printf("\n/* WaterWatch Toast: \t\"%s\": \t\"%s\" */\n\n", title.c_str(), content.c_str());
 }), cweeStr(), cweeStr()));
+#endif
 
 // Handle async or scripted AppRequests. 
+#if 0
 static Timer AppLayerRequestProcessor = Timer(0.01, Action(std::function([]() {
 	std::pair<
 		int, // ID
@@ -1547,6 +1560,7 @@ static Timer AppLayerRequestProcessor = Timer(0.01, Action(std::function([]() {
 #pragma warning(default : 4573)	
 	}
 })));
+#endif
 
 static cweeStr GetHeaderString() {
 	cweeStr toRet = "Welcome to the WaterWatch Sample App.\n";

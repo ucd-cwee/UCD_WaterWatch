@@ -196,7 +196,7 @@ namespace fibers {
 	void WaitGroup::Wait(bool pinToCurrentThread) {
 		// if this thread does not exist (as far as the scheduler is concerned) then we must spin-wait.
 		if (m_taskScheduler->GetCurrentThreadIndex() == TaskScheduler::kInvalidIndex) {
-			while (m_counter.load(std::memory_order_relaxed) != 0) {
+			while (m_counter.load(std::memory_order_relaxed) != 0 && !m_taskScheduler->quitting()) {
 				YieldThread();
 			}
 			return;

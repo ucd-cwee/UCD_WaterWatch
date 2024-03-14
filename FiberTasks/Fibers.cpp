@@ -310,7 +310,10 @@ namespace fibers {
 		void TaskScheduler::Wait() {
 			auto ts = std::static_pointer_cast<fibers::TaskScheduler>(m_TaskScheduler);
 			auto wg = std::static_pointer_cast<WaitGroup>(m_WaitGroup);
-			wg->Wait();
+
+			if (ts->GetCurrentThreadIndex_NoFail() == 0) wg->Wait(true); else 
+				wg->Wait(false);
+			
 		};
 	};
 

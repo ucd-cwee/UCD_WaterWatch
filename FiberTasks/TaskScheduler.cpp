@@ -26,6 +26,7 @@
 #include "Callbacks.h"
 #include "ThreadAbstraction.h"
 #include "TaskSchedulerInternal.h"
+#include "../WaterWatchCpp/Clock.h"
 
 #if defined(FTL_OS_WINDOWS)
 #	ifndef WIN32_LEAN_AND_MEAN
@@ -38,7 +39,6 @@
 #endif
 
 namespace fibers {
-
 	constexpr static unsigned kFailedPopAttemptsHeuristic = 5;
 	constexpr static int kInitErrorDoubleCall = -30;
 	constexpr static int kInitErrorFailedToCreateWorkerThread = -60;
@@ -71,6 +71,7 @@ namespace fibers {
 		taskScheduler->m_threads[index]->tls.LoPriTaskQueue = &taskScheduler->LoPriTaskQueue;
 
 		// Switch
+		
 		taskScheduler->m_threads[index]->tls.ThreadFiber.SwitchToFiber(&taskScheduler->m_fibers[freeFiberIndex]->fiber);
 
 		// And we've returned
@@ -111,6 +112,7 @@ namespace fibers {
 			threadIndex = taskScheduler->GetCurrentThreadIndex_NoFail();
 			tls = &taskScheduler->m_threads[threadIndex]->tls;
 			readyWaitingFibers = false;
+			tls->fiberState.store(1); // STATE
 
 			// Check if there is a ready pinned waiting fiber
 			{
@@ -131,6 +133,8 @@ namespace fibers {
 				}
 			}
 
+			tls->fiberState.store(2); // STATE
+
 			TaskBundle nextTask{};
 			foundTask = false;
 
@@ -148,8 +152,12 @@ namespace fibers {
 				}
 			}
 
+			tls->fiberState.store(3); // STATE
+
 			if (waitingFiberIndex != kInvalidIndex) {
 				// Found a waiting task that is ready to continue
+
+				tls->fiberState.store(4); // STATE
 
 				tls->OldFiberIndex = tls->CurrentFiberIndex;
 				tls->CurrentFiberIndex = waitingFiberIndex;
@@ -164,6 +172,8 @@ namespace fibers {
 				// Get a fresh instance of TLS, since we could be on a new thread now
 				tls = &taskScheduler->m_threads[taskScheduler->GetCurrentThreadIndex_NoFail()]->tls;
 
+				tls->fiberState.store(5); // STATE
+
 				if (taskScheduler->m_emptyQueueBehavior.load(std::memory_order_relaxed) == EmptyQueueBehavior::Sleep) {
 					tls->FailedQueuePopAttempts = 0;
 				}
@@ -176,17 +186,28 @@ namespace fibers {
 
 				behavior = taskScheduler->m_emptyQueueBehavior.load(std::memory_order_relaxed);
 
+				tls->fiberState.store(6); // STATE
+
 				if (foundTask) {
 					if (behavior == EmptyQueueBehavior::Sleep) {
 						tls->FailedQueuePopAttempts = 0;
 					}
 
+					tls->fiberState.store(7); // STATE
+
 					if (nextTask.TaskToExecute.Function != nullptr) {
-						nextTask.TaskToExecute.Function(taskScheduler, nextTask.TaskToExecute.ArgData);
+						tls->workingOnTask.store(true);
+						nextTask.TaskToExecute.Function(taskScheduler, nextTask.TaskToExecute.ArgData); // does the task
+						tls->workingOnTask.store(false);
 					}
+
+					tls->fiberState.store(8); // STATE
+
 					if (nextTask.WG != nullptr) {
 						nextTask.WG->Done();
 					}
+
+					tls->fiberState.store(9); // STATE
 				}
 				else {
 					// We failed to find a Task from any of the queues
@@ -194,9 +215,13 @@ namespace fibers {
 					switch (behavior) {
 					case EmptyQueueBehavior::Yield:
 						YieldThread();
+
 						break;
 
 					case EmptyQueueBehavior::Sleep: {
+
+						tls->fiberState.store(10); // STATE
+
 						// If we have a ready waiting fiber, prevent sleep
 						if (!readyWaitingFibers) {
 							++tls->FailedQueuePopAttempts;
@@ -211,7 +236,10 @@ namespace fibers {
 								if (tls->PinnedReadyFibers.empty()) {
 									// Unlock before going to sleep (the other lock is released by the CV wait)
 									readyfiberslock.unlock();
-									taskScheduler->ThreadSleepCV.wait(lock);
+
+									tls->fiberState.store(11); // STATE
+
+									taskScheduler->ThreadSleepCV.wait(lock); // mutex lock == puts the thread to sleep until the condition is tripped
 								}
 								tls->FailedQueuePopAttempts = 0;
 							}
@@ -230,6 +258,7 @@ namespace fibers {
 
 		// Switch to the quit fibers
 		index = taskScheduler->GetCurrentThreadIndex_NoFail();
+		taskScheduler->m_threads[index]->tls.fiberState.store(-1); // STATE
 		taskScheduler->m_fibers[taskScheduler->m_threads[index]->tls.CurrentFiberIndex]->fiber.SwitchToFiber(&taskScheduler->m_quitFibers[index]);
 
 		// We should never get here
@@ -239,18 +268,61 @@ namespace fibers {
 	void TaskScheduler::ThreadEndFunc(void* arg) {
 		TaskScheduler* taskScheduler = reinterpret_cast<TaskScheduler*>(arg);
 
-		// Wait for all other threads to quit
-		taskScheduler->m_quitCount.fetch_add(1, std::memory_order_seq_cst);
-		while (taskScheduler->m_quitCount.load(std::memory_order_seq_cst) != taskScheduler->m_threads.size()) {
-			SleepThread(50);
-		}
-
 		// Jump to the thread fibers
 		unsigned threadIndex = taskScheduler->GetCurrentThreadIndex_NoFail();
+		size_t currentThreadIndex = static_cast<size_t>(taskScheduler->GetCurrentThreadIndex());
 
-		if (threadIndex == 0) {
+		// Wait for all other threads to quit
+		std::atomic<unsigned>* quitCount(nullptr);
+		quitCount = &taskScheduler->m_quitCount;
+		quitCount->fetch_add(1, std::memory_order_seq_cst);
+		size_t numThreads = taskScheduler->m_threads.size();
+		unsigned numThreadsStopped = 0;
+		Stopwatch sw; sw.Start();
+		bool printOnce = true;
+
+		taskScheduler->m_threads[threadIndex]->tls.quitting.store(true);
+		while (quitCount->load(std::memory_order_seq_cst) < static_cast<unsigned int>(numThreads)) {
+			if (taskScheduler->m_emptyQueueBehavior.load(std::memory_order_relaxed) == EmptyQueueBehavior::Sleep) {
+				taskScheduler->ThreadSleepCV.notify_all();
+			}
+			YieldThread();
+
+			numThreadsStopped = static_cast<unsigned>(quitCount->load(std::memory_order_seq_cst));
+			if (numThreadsStopped >= static_cast<unsigned>(numThreads)) break;
+			if (sw.Stop() < 100000000.0 && (numThreadsStopped < static_cast<unsigned>(numThreads))) {
+				YieldThread();
+			}
+			else {
+				if (printOnce) {
+					printOnce = false;
+					// something is wrong -- we need to evaluate why
+					printf("Deadlock on exit (%i ready): Thread %i is waiting.\n", (int)numThreadsStopped, (int)threadIndex);
+					if (currentThreadIndex == 0) {
+						int index = 0;
+						for (auto& thread : taskScheduler->m_threads) {
+							if (thread->tls.workingOnTask.load()) {
+								printf("Deadlock on exit (%i ready): Thread %i is working.\n", (int)numThreadsStopped, (int)index);
+							}
+							if (!thread->tls.quitting.load()) {
+								int fiberState = thread->tls.fiberState.load();
+								printf("Deadlock on exit (%i ready): Thread %i is NOT quitting (state %i).\n", (int)numThreadsStopped, (int)index, (int)fiberState);
+							}
+							index++;
+						}
+					}
+				}
+				if (taskScheduler->m_emptyQueueBehavior.load(std::memory_order_relaxed) == EmptyQueueBehavior::Sleep) {
+					taskScheduler->ThreadSleepCV.notify_all();
+				}
+				YieldThread();
+				SleepThread(50);
+			}
+		}
+
+		if (threadIndex == 0 && taskScheduler->useMainThread) {
 			// Special case for the main thread fiber
-			taskScheduler->m_quitFibers[threadIndex].SwitchToFiber(&taskScheduler->m_fibers[0]->fiber); // taskScheduler->instanceFiber.fiber); // taskScheduler->m_fibers[0]->fiber);
+			taskScheduler->m_quitFibers[0].SwitchToFiber(&taskScheduler->m_fibers[0]->fiber); // taskScheduler->instanceFiber.fiber); // taskScheduler->m_fibers[0]->fiber);
 		}
 		else {
 			taskScheduler->m_quitFibers[threadIndex].SwitchToFiber(&taskScheduler->m_threads[threadIndex]->tls.ThreadFiber);
@@ -258,13 +330,13 @@ namespace fibers {
 
 		// We should never get here
 		printf("Error: ThreadEndFunc should never return");
-	}
+	};
 
 	TaskScheduler::TaskScheduler() {
 		FTL_VALGRIND_HG_DISABLE_CHECKING(&m_initialized, sizeof(m_initialized));
 		FTL_VALGRIND_HG_DISABLE_CHECKING(&m_quit, sizeof(m_quit));
 		FTL_VALGRIND_HG_DISABLE_CHECKING(&m_quitCount, sizeof(m_quitCount));
-	}
+	};
 
 	int TaskScheduler::Init(TaskSchedulerInitOptions options) {
 		// Sanity check to make sure the user doesn't double init
@@ -288,79 +360,92 @@ namespace fibers {
 			m_fibers.push_back(wrapper);
 		}
 
-		// Leave the first slot for the bound main thread
-		for (unsigned i = 1; i < options.FiberPoolSize; ++i) {
-			m_fibers[i]->fiber = Fiber(524288, FiberStartFunc, this);
-			m_fibers[i]->freeFiber.store(true, std::memory_order_release);
+		if (useMainThread) {
+			// Leave the first slot for the bound main thread
+			for (unsigned i = 1; i < options.FiberPoolSize; ++i) {
+				m_fibers[i]->fiber = Fiber(524288, FiberStartFunc, this);
+				m_fibers[i]->freeFiber.store(true, std::memory_order_release);
+			}
+			m_fibers[0]->freeFiber.store(false, std::memory_order_release);
 		}
-		m_fibers[0]->freeFiber.store(false, std::memory_order_release);
-		//instanceFiber.freeFiber.store(false, std::memory_order_release);
+		else {
+			for (unsigned i = 0; i < options.FiberPoolSize; ++i) {
+				m_fibers[i]->fiber = Fiber(524288, FiberStartFunc, this);
+				m_fibers[i]->freeFiber.store(true, std::memory_order_release);
+			}
+		}
 
 		// Initialize threads and TLS
 		for (unsigned i = 0; i < static_cast<unsigned>(options.ThreadPoolSize); i++) {
 			auto wrapper = std::make_shared<ThreadWrapper>();
 			m_threads.push_back(wrapper);
 		}
-
-#ifdef _MSC_VER
-#	pragma warning(push)
-#	pragma warning(disable : 4316) // I know this won't be allocated to the right alignment, this is okay as we're using alignment for padding.
-#endif                              // _MSC_VER
-
-
-
-
-#ifdef _MSC_VER
-#	pragma warning(pop)
-#endif // _MSC_VER
+        
+		if (useMainThread) {
+#if defined(FTL_WIN32_THREADS)
+			// Temporarily set the main thread ID to -1, so when the worker threads start up, they don't accidentally use it
+			// I don't know if Windows thread id's can ever be 0, but just in case.
+			m_threads[0]->type.Id = static_cast<DWORD>(-1);
+#endif
+			// Set the properties for the main thread
+			SetCurrentThreadAffinity(0);
+			m_threads[0]->type = GetCurrentThread();
+			m_threadsHandleToIndex[m_threads[0]->type.Id] = 0;
 
 #if defined(FTL_WIN32_THREADS)
-		// Temporarily set the main thread ID to -1, so when the worker threads start up, they don't accidentally use it
-		// I don't know if Windows thread id's can ever be 0, but just in case.
-		m_threads[0]->type.Id = static_cast<DWORD>(-1);
+			// Set the thread handle to INVALID_HANDLE_VALUE
+			// ::GetCurrentThread is a pseudo handle, that always references the current thread.
+			// Aka, if we tried to use this handle from another thread to reference the main thread,
+			// it would instead reference the other thread. We don't currently use the handle anywhere.
+			// Therefore, we set this to INVALID_HANDLE_VALUE, so any future usages can take this into account
+			// Reported by @rtj
+			m_threads[0]->type.Handle = INVALID_HANDLE_VALUE;
 #endif
 
-		// Set the properties for the main thread
-
-		SetCurrentThreadAffinity(0);
-
-		m_threads[0]->type = GetCurrentThread();
-		m_threadsHandleToIndex[m_threads[0]->type.Id] = 0;
-#if defined(FTL_WIN32_THREADS)
-		// Set the thread handle to INVALID_HANDLE_VALUE
-		// ::GetCurrentThread is a pseudo handle, that always references the current thread.
-		// Aka, if we tried to use this handle from another thread to reference the main thread,
-		// it would instead reference the other thread. We don't currently use the handle anywhere.
-		// Therefore, we set this to INVALID_HANDLE_VALUE, so any future usages can take this into account
-		// Reported by @rtj
-		m_threads[0]->type.Handle = INVALID_HANDLE_VALUE;
-#endif
-
-		// Set the fiber index
-		m_threads[0]->tls.CurrentFiberIndex = 0;
-		m_threads[0]->tls.LoPriTaskQueue = &this->LoPriTaskQueue;
+			// Set the fiber index
+			m_threads[0]->tls.CurrentFiberIndex = 0;
+			m_threads[0]->tls.LoPriTaskQueue = &this->LoPriTaskQueue;
+		};
 
 		// Create the worker threads
-		for (unsigned i = 1; i < options.ThreadPoolSize; ++i) {
-			auto* const threadArgs = new ThreadStartArgs();
-			threadArgs->Scheduler = this;
-			threadArgs->ThreadIndex = i;
+		if (useMainThread) {
+			for (unsigned i = 1; i < options.ThreadPoolSize; ++i) {
+				auto* const threadArgs = new ThreadStartArgs();
+				threadArgs->Scheduler = this;
+				threadArgs->ThreadIndex = i;
 
-			char threadName[256];
-			snprintf(threadName, sizeof(threadName), "FTL Worker Thread %u", i);
+				char threadName[256];
+				snprintf(threadName, sizeof(threadName), "FTL Worker Thread %u", i);
 
-			if (!CreateThread(524288, ThreadStartFunc, threadArgs, threadName, &m_threads[i]->type)) {
-				return kInitErrorFailedToCreateWorkerThread;
+				if (!CreateThread(524288, ThreadStartFunc, threadArgs, threadName, &m_threads[i]->type)) {
+					return kInitErrorFailedToCreateWorkerThread;
+				}
+
+				m_threadsHandleToIndex[m_threads[i]->type.Id] = i;
 			}
+		}
+		else {
+			for (unsigned i = 0; i < options.ThreadPoolSize; ++i) {
+				auto* const threadArgs = new ThreadStartArgs();
+				threadArgs->Scheduler = this;
+				threadArgs->ThreadIndex = i;
 
-			m_threadsHandleToIndex[m_threads[i]->type.Id] = i;
+				char threadName[256];
+				snprintf(threadName, sizeof(threadName), "FTL Worker Thread %u", i);
+
+				if (!CreateThread(524288, ThreadStartFunc, threadArgs, threadName, &m_threads[i]->type)) {
+					return kInitErrorFailedToCreateWorkerThread;
+				}
+
+				m_threadsHandleToIndex[m_threads[i]->type.Id] = i;
+			}
 		}
 
 		// Signal the worker threads that we're fully initialized
 		m_initialized.store(true, std::memory_order_release);
 
 		return 0;
-	}
+	};
 
 	TaskScheduler::TaskScheduler(TaskSchedulerInitOptions options) {
 		Init(options);
@@ -368,6 +453,27 @@ namespace fibers {
 
 
 	TaskScheduler::~TaskScheduler() {
+		// Signal any waiting threads so they can finish
+		if (m_emptyQueueBehavior.load(std::memory_order_relaxed) == EmptyQueueBehavior::Sleep) {
+			ThreadSleepCV.notify_all();
+		}
+
+		// Wait on all jobs
+		while (this->LoPriTaskQueue.unsafe_size() != 0) {
+			YieldThread();
+		};
+		while (true) {
+			bool finished = true;
+			for (auto& thread : m_threads) {
+				if (thread->tls.workingOnTask.load()) {
+					finished = true;
+					YieldThread();
+					break;
+				}
+			}
+			if (finished) break;
+		};
+
 		// Create the quit fibers
 		m_quitFibers = new Fiber[m_threads.size()];
 		for (unsigned i = 0; i < m_threads.size(); ++i) {
@@ -384,12 +490,23 @@ namespace fibers {
 
 		// Jump to the quit fiber
 		// Create a scope so index isn't used after we come back from the switch. It will be wrong if we started on a non-main thread
-		{
-			unsigned index = GetCurrentThreadIndex_NoFail();
-			m_fibers[m_threads[index]->tls.CurrentFiberIndex]->fiber.SwitchToFiber(&m_quitFibers[index]);
+		unsigned index;
+		if (useMainThread) {
+			index = GetCurrentThreadIndex(); // should be 0
+			if (index == kInvalidIndex) {
+				printf("Exit thread was empty or not found\n");
+				m_quitCount.fetch_add(1, std::memory_order_seq_cst);
+			}
+			else {
+				m_fibers[m_threads[index]->tls.CurrentFiberIndex]->fiber.SwitchToFiber(&m_quitFibers[index]);
+			}
 		}
 
 		// We're back. We should be on the main thread now
+		index = GetCurrentThreadIndex();
+		if (index != 0) {
+			printf("Exit thread was not 0: %i\n", (int)index);
+		}
 
 		// Wait for the worker threads to finish
 		for (unsigned i = 1; i < m_threads.size(); ++i) {
@@ -410,7 +527,7 @@ namespace fibers {
 			m_threads[GetCurrentThreadIndex_NoFail()]->tls.HiPriTaskQueue.push(bundle);
 		}
 		else if (priority == TaskPriority::Normal) {
-			m_threads[GetCurrentThreadIndex_NoFail()]->tls.LoPriTaskQueue->push(bundle);
+			LoPriTaskQueue.push(bundle);
 		}
 
 		const EmptyQueueBehavior behavior = m_emptyQueueBehavior.load(std::memory_order_relaxed);
@@ -419,23 +536,21 @@ namespace fibers {
 			ThreadSleepCV.notify_one();
 		}
 	}
-
 	void TaskScheduler::AddTask_NoWaitIncrement(Task task, TaskPriority priority, WaitGroup* waitGroup) {
 		const TaskBundle bundle = { task, waitGroup };
 		if (priority == TaskPriority::High) {
 			m_threads[GetCurrentThreadIndex_NoFail()]->tls.HiPriTaskQueue.push(bundle);
 		}
 		else if (priority == TaskPriority::Normal) {
-			m_threads[GetCurrentThreadIndex_NoFail()]->tls.LoPriTaskQueue->push(bundle);
+			LoPriTaskQueue.push(bundle);
 		}
 
 		const EmptyQueueBehavior behavior = m_emptyQueueBehavior.load(std::memory_order_relaxed);
 		if (behavior == EmptyQueueBehavior::Sleep) {
 			// Wake a sleeping thread
-			ThreadSleepCV.notify_one();
+			 ThreadSleepCV.notify_one();
 		}
 	}
-
 	void TaskScheduler::AddTasks(uint32_t numTasks, Task* tasks, TaskPriority priority, WaitGroup* waitGroup) {
 		if (waitGroup != nullptr) {
 			waitGroup->Add(static_cast<int32_t>(numTasks));
@@ -446,7 +561,7 @@ namespace fibers {
 			queue = &m_threads[GetCurrentThreadIndex_NoFail()]->tls.HiPriTaskQueue;
 		}
 		else if (priority == TaskPriority::Normal) {
-			queue = m_threads[GetCurrentThreadIndex_NoFail()]->tls.LoPriTaskQueue;
+			queue = &LoPriTaskQueue;
 		}
 		else {
 			return;
