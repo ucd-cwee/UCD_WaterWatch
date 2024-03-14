@@ -265,7 +265,6 @@ std::vector<double> SharedMatrix::GetTimeSeries(double Left, double Top, double 
 				}
 			});
 		});
-		scheduler.Wait();
 #endif
 
 		// do a faster, local interpolation of those results using the Hilbert curve for the last 2/3 components. 

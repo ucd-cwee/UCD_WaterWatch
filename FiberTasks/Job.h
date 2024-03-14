@@ -1028,6 +1028,7 @@ namespace fibers {
 	public: // structors
 		/*! Init */ Action() noexcept : content(BasePtr()) {};
 		/*! Copy */ Action(const Action& other) noexcept : content(BasePtr()) { std::shared_ptr<Action_Interface> c = other.content; content = c->clone(); };
+		/*! Perfect forwarding */ Action(Action&& other) noexcept : content(std::move(other.content)) {};
 		/*! Data Assignment */ template<typename ValueType> explicit Action(const Function<ValueType>& value) : content(ToPtr<ValueType>(value)) {};
 		// /*! Direct instantiation */ template <typename F, typename... Args> Action(const std::function<F>& function, Args... Fargs) : Action(Function(function, Fargs...)) {};
 		/*! Direct instantiation2 */ template <typename F, typename... Args> Action(const F& function, Args... Fargs) : Action(Function(std::function(function), Fargs...)) {};

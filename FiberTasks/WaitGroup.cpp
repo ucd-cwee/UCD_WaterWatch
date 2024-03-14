@@ -202,6 +202,13 @@ namespace fibers {
 			return;
 		}
 
+		if (!m_taskScheduler->useMainThread && m_taskScheduler->GetCurrentThreadIndex() == 0) {
+			while (m_counter.load(std::memory_order_relaxed) != 0 && !m_taskScheduler->quitting()) {
+				YieldThread();
+			}
+			return;
+		}
+
 		while (true) {
 			// Fast path
 			// Counter is zero. No need to wait

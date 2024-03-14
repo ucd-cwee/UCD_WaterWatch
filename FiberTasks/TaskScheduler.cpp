@@ -320,7 +320,7 @@ namespace fibers {
 			}
 		}
 
-		if (threadIndex == 0 && taskScheduler->useMainThread) {
+		if (threadIndex == 0) {
 			// Special case for the main thread fiber
 			taskScheduler->m_quitFibers[0].SwitchToFiber(&taskScheduler->m_fibers[0]->fiber); // taskScheduler->instanceFiber.fiber); // taskScheduler->m_fibers[0]->fiber);
 		}
@@ -360,20 +360,13 @@ namespace fibers {
 			m_fibers.push_back(wrapper);
 		}
 
-		if (useMainThread) {
-			// Leave the first slot for the bound main thread
-			for (unsigned i = 1; i < options.FiberPoolSize; ++i) {
-				m_fibers[i]->fiber = Fiber(524288, FiberStartFunc, this);
-				m_fibers[i]->freeFiber.store(true, std::memory_order_release);
-			}
-			m_fibers[0]->freeFiber.store(false, std::memory_order_release);
+		// Leave the first slot for the bound main thread
+		for (unsigned i = 1; i < options.FiberPoolSize; ++i) {
+			m_fibers[i]->fiber = Fiber(524288, FiberStartFunc, this);
+			m_fibers[i]->freeFiber.store(true, std::memory_order_release);
 		}
-		else {
-			for (unsigned i = 0; i < options.FiberPoolSize; ++i) {
-				m_fibers[i]->fiber = Fiber(524288, FiberStartFunc, this);
-				m_fibers[i]->freeFiber.store(true, std::memory_order_release);
-			}
-		}
+		m_fibers[0]->freeFiber.store(false, std::memory_order_release);
+
 
 		// Initialize threads and TLS
 		for (unsigned i = 0; i < static_cast<unsigned>(options.ThreadPoolSize); i++) {
@@ -381,64 +374,43 @@ namespace fibers {
 			m_threads.push_back(wrapper);
 		}
         
-		if (useMainThread) {
 #if defined(FTL_WIN32_THREADS)
-			// Temporarily set the main thread ID to -1, so when the worker threads start up, they don't accidentally use it
-			// I don't know if Windows thread id's can ever be 0, but just in case.
-			m_threads[0]->type.Id = static_cast<DWORD>(-1);
+		// Temporarily set the main thread ID to -1, so when the worker threads start up, they don't accidentally use it
+		// I don't know if Windows thread id's can ever be 0, but just in case.
+		m_threads[0]->type.Id = static_cast<DWORD>(-1);
 #endif
-			// Set the properties for the main thread
-			SetCurrentThreadAffinity(0);
-			m_threads[0]->type = GetCurrentThread();
-			m_threadsHandleToIndex[m_threads[0]->type.Id] = 0;
-
+		// Set the properties for the main thread
+		SetCurrentThreadAffinity(0);
+		m_threads[0]->type = GetCurrentThread();
+		m_threadsHandleToIndex[m_threads[0]->type.Id] = 0;
 #if defined(FTL_WIN32_THREADS)
-			// Set the thread handle to INVALID_HANDLE_VALUE
-			// ::GetCurrentThread is a pseudo handle, that always references the current thread.
-			// Aka, if we tried to use this handle from another thread to reference the main thread,
-			// it would instead reference the other thread. We don't currently use the handle anywhere.
-			// Therefore, we set this to INVALID_HANDLE_VALUE, so any future usages can take this into account
-			// Reported by @rtj
-			m_threads[0]->type.Handle = INVALID_HANDLE_VALUE;
+		// Set the thread handle to INVALID_HANDLE_VALUE
+		// ::GetCurrentThread is a pseudo handle, that always references the current thread.
+		// Aka, if we tried to use this handle from another thread to reference the main thread,
+		// it would instead reference the other thread. We don't currently use the handle anywhere.
+		// Therefore, we set this to INVALID_HANDLE_VALUE, so any future usages can take this into account
+		// Reported by @rtj
+		m_threads[0]->type.Handle = INVALID_HANDLE_VALUE;
 #endif
-
-			// Set the fiber index
-			m_threads[0]->tls.CurrentFiberIndex = 0;
-			m_threads[0]->tls.LoPriTaskQueue = &this->LoPriTaskQueue;
-		};
+		// Set the fiber index
+		m_threads[0]->tls.CurrentFiberIndex = 0;
+		m_threads[0]->tls.LoPriTaskQueue = &this->LoPriTaskQueue;
+		
 
 		// Create the worker threads
-		if (useMainThread) {
-			for (unsigned i = 1; i < options.ThreadPoolSize; ++i) {
-				auto* const threadArgs = new ThreadStartArgs();
-				threadArgs->Scheduler = this;
-				threadArgs->ThreadIndex = i;
+		for (unsigned i = 1; i < options.ThreadPoolSize; ++i) {
+			auto* const threadArgs = new ThreadStartArgs();
+			threadArgs->Scheduler = this;
+			threadArgs->ThreadIndex = i;
 
-				char threadName[256];
-				snprintf(threadName, sizeof(threadName), "FTL Worker Thread %u", i);
+			char threadName[256];
+			snprintf(threadName, sizeof(threadName), "FTL Worker Thread %u", i);
 
-				if (!CreateThread(524288, ThreadStartFunc, threadArgs, threadName, &m_threads[i]->type)) {
-					return kInitErrorFailedToCreateWorkerThread;
-				}
-
-				m_threadsHandleToIndex[m_threads[i]->type.Id] = i;
+			if (!CreateThread(524288, ThreadStartFunc, threadArgs, threadName, &m_threads[i]->type)) {
+				return kInitErrorFailedToCreateWorkerThread;
 			}
-		}
-		else {
-			for (unsigned i = 0; i < options.ThreadPoolSize; ++i) {
-				auto* const threadArgs = new ThreadStartArgs();
-				threadArgs->Scheduler = this;
-				threadArgs->ThreadIndex = i;
 
-				char threadName[256];
-				snprintf(threadName, sizeof(threadName), "FTL Worker Thread %u", i);
-
-				if (!CreateThread(524288, ThreadStartFunc, threadArgs, threadName, &m_threads[i]->type)) {
-					return kInitErrorFailedToCreateWorkerThread;
-				}
-
-				m_threadsHandleToIndex[m_threads[i]->type.Id] = i;
-			}
+			m_threadsHandleToIndex[m_threads[i]->type.Id] = i;
 		}
 
 		// Signal the worker threads that we're fully initialized
@@ -491,16 +463,14 @@ namespace fibers {
 		// Jump to the quit fiber
 		// Create a scope so index isn't used after we come back from the switch. It will be wrong if we started on a non-main thread
 		unsigned index;
-		if (useMainThread) {
-			index = GetCurrentThreadIndex(); // should be 0
-			if (index == kInvalidIndex) {
-				printf("Exit thread was empty or not found\n");
-				m_quitCount.fetch_add(1, std::memory_order_seq_cst);
-			}
-			else {
-				m_fibers[m_threads[index]->tls.CurrentFiberIndex]->fiber.SwitchToFiber(&m_quitFibers[index]);
-			}
+		index = GetCurrentThreadIndex(); // should be 0
+		if (index == kInvalidIndex) {
+			printf("Exit thread was empty or not found\n");
+			m_quitCount.fetch_add(1, std::memory_order_seq_cst);
 		}
+		else {
+			m_fibers[m_threads[index]->tls.CurrentFiberIndex]->fiber.SwitchToFiber(&m_quitFibers[index]);
+		}		
 
 		// We're back. We should be on the main thread now
 		index = GetCurrentThreadIndex();

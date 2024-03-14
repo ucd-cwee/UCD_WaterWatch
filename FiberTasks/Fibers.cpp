@@ -24,7 +24,7 @@
 namespace fibers {
 	extern containers::DelayedInstantiation< TaskScheduler > Fibers = containers::DelayedInstantiation<TaskScheduler>([]()-> TaskScheduler* {
 		auto* p = new TaskScheduler();
-		p->Init({ GetNumHardwareThreads() * 50, 0, EmptyQueueBehavior::Sleep });
+		p->Init({ GetNumHardwareThreads() * 50, 0, EmptyQueueBehavior::Sleep, false });
 		return p;		
 	});
 	namespace utilities {
@@ -159,7 +159,8 @@ namespace fibers {
 	void JobGroup::JobGroupImpl::Wait() {
 		std::shared_ptr<WaitGroup> wg = std::static_pointer_cast<WaitGroup>(waitGroup);
 		if (!wg) throw(std::runtime_error("Job Group was empty."));
-		wg->Wait();
+		if (Fibers->GetCurrentThreadIndex_NoFail() == 0) wg->Wait(true); else
+			wg->Wait(false);
 	};
 	JobGroup Job::AsyncInvoke() {
 		return JobGroup(*this);
@@ -276,22 +277,59 @@ namespace fibers {
 
 
 		namespace {
-			struct AnyJobStruct {
-				std::shared_ptr<Job> job;
+			class AnyJobStruct {
+			public:
+				Job job;
 				bool force;
+
+				AnyJobStruct() = default;
+				AnyJobStruct(Job&& a, bool&& b) : job(std::forward<Job>(a)), force(std::forward<bool>(b)) {};
+				AnyJobStruct(Job const& a, bool&& b) : job(a), force(std::forward<bool>(b)) {};
+
+				AnyJobStruct(AnyJobStruct&&) = delete;
+				AnyJobStruct(AnyJobStruct const&) = delete;
+				AnyJobStruct& operator=(AnyJobStruct const&) = delete;
+				AnyJobStruct& operator=(AnyJobStruct&&) = delete;
+				~AnyJobStruct() = default;
 			};
 			static void DoAnyJobStruct(fibers::TaskScheduler* taskScheduler, void* arg) {
 				std::unique_ptr<AnyJobStruct> data(static_cast<AnyJobStruct*>(arg));
-				if (data && data->job) {
+				if (data) {
 					if (data->force) {
-						data->job->ForceInvoke();
+						data->job.ForceInvoke();
 					}
 					else {
-						data->job->Invoke();
+						data->job.Invoke();
+					}
+				}
+			};
+			class AnyActionStruct {
+			public:
+				Action job;
+				bool force;
+
+				AnyActionStruct() = default;
+				AnyActionStruct(Action&& a, bool&& b) : job(std::forward<Action>(a)), force(std::forward<bool>(b)) {};
+
+				AnyActionStruct(AnyActionStruct&&) = delete;
+				AnyActionStruct(AnyActionStruct const&) = delete;
+				AnyActionStruct& operator=(AnyActionStruct const&) = delete;
+				AnyActionStruct& operator=(AnyActionStruct&&) = delete;
+				~AnyActionStruct() = default;
+			};
+			static void DoAnyActionStruct(fibers::TaskScheduler* taskScheduler, void* arg) {
+				std::unique_ptr<AnyActionStruct> data(static_cast<AnyActionStruct*>(arg));
+				if (data) {
+					if (data->force) {
+						data->job.ForceInvoke();
+					}
+					else {
+						data->job.Invoke();
 					}
 				}
 			};
 		};
+
 		TaskScheduler::TaskScheduler() : m_TaskScheduler(), m_WaitGroup() {
 			auto* p = new fibers::TaskScheduler(TaskSchedulerInitOptions());
 			m_TaskScheduler = std::static_pointer_cast<void>(std::shared_ptr<fibers::TaskScheduler>(p));
@@ -305,7 +343,12 @@ namespace fibers {
 		void TaskScheduler::AddTask(Job const& task) {
 			auto ts = std::static_pointer_cast<fibers::TaskScheduler>(m_TaskScheduler);
 			auto wg = std::static_pointer_cast<WaitGroup>(m_WaitGroup);
-			ts->AddTask({ DoAnyJobStruct, new AnyJobStruct({ std::make_shared<Job>(task), false }) }, TaskPriority::Normal, wg.get());
+			ts->AddTask({ DoAnyJobStruct, new AnyJobStruct(task, false) }, TaskPriority::Normal, wg.get());
+		};
+		void TaskScheduler::AddTask(Action&& task) {
+			auto ts = std::static_pointer_cast<fibers::TaskScheduler>(m_TaskScheduler);
+			auto wg = std::static_pointer_cast<WaitGroup>(m_WaitGroup);
+			ts->AddTask({ DoAnyActionStruct, new AnyActionStruct(std::forward<Action>(task), false) }, TaskPriority::Normal, wg.get());
 		};
 		void TaskScheduler::Wait() {
 			auto ts = std::static_pointer_cast<fibers::TaskScheduler>(m_TaskScheduler);

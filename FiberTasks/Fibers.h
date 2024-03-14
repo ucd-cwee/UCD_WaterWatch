@@ -865,6 +865,7 @@ namespace fibers{
 
 		public:
 			void AddTask(Job const& task);
+			void AddTask(Action&& task);
 			void Wait();
 
 		};
@@ -878,11 +879,12 @@ namespace fibers{
 		decltype(auto) For(ftl_wrapper::TaskScheduler& targetScheduler, iteratorType start, iteratorType end, F&& ToDo) {
 			ftl_wrapper::TaskScheduler scheduler(targetScheduler);
 
-			auto todo = std::function(std::forward<F>(ToDo));
-			constexpr bool retNo = std::is_same<typename utilities::function_traits<decltype(todo)>::result_type, void>::value;
+			//auto todo = std::function(std::forward<F>(ToDo));
+			//constexpr bool retNo = std::is_same<typename utilities::function_traits<decltype(todo)>::result_type, void>::value;
 
 			for (iteratorType iter = start; iter < end; iter++) {
-				scheduler.AddTask(fibers::Job([todo](iteratorType const& T) { return todo(T); }, (iteratorType)iter));
+				scheduler.AddTask(Action(ToDo, (typename std::tuple_element<0, typename utilities::function_traits<decltype(std::function(ToDo))>::arguments>::type)(iter)));
+				//scheduler.AddTask(fibers::Job([todo](iteratorType const& T) { return todo(T); }, (iteratorType)iter));
 			}
 			scheduler.Wait();
 		};
@@ -898,11 +900,13 @@ namespace fibers{
 		decltype(auto) For(ftl_wrapper::TaskScheduler& targetScheduler, iteratorType start, iteratorType end, iteratorType step, F&& ToDo) {
 			ftl_wrapper::TaskScheduler scheduler(targetScheduler);
 
-			auto todo = std::function(std::forward<F>(ToDo));
-			constexpr bool retNo = std::is_same<typename utilities::function_traits<decltype(todo)>::result_type, void>::value;
+			// auto todo = std::function(std::forward<F>(ToDo));
+			// constexpr bool retNo = std::is_same<typename utilities::function_traits<decltype(todo)>::result_type, void>::value;
 
 			for (iteratorType iter = start; iter < end; iter += step) {
-				scheduler.AddTask(fibers::Job([todo](iteratorType const& T) { return todo(T); }, (iteratorType)iter));
+				scheduler.AddTask(Action(ToDo, (typename std::tuple_element<0, typename utilities::function_traits<decltype(std::function(ToDo))>::arguments>::type)(iter)));
+
+				// scheduler.AddTask(fibers::Job([todo](iteratorType const& T) { return todo(T); }, (iteratorType)iter));
 			}
 			scheduler.Wait();
 		};
