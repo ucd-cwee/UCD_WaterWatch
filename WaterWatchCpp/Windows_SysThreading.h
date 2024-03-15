@@ -739,7 +739,7 @@ private:
 
 };
 
-#if 0
+#if 1
 /* A standard thread timer that self-cleans after going out-of-scope, including when an app closes. Note that the last timer "sleep" must wake-up before the timer can close-out, which can delay closing of apps. */
 class Timer {
 private:

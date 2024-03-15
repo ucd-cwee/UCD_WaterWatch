@@ -111,6 +111,40 @@ namespace fibers {
 				continue;
 			}
 
+			// if this thread does not exist (as far as the scheduler is concerned) then we must spin-wait.
+			if (m_taskScheduler->GetCurrentThreadIndex() == TaskScheduler::kInvalidIndex) {
+				while (true) {
+					if ((currentWordValue & kIsLockedBit) == 0) {
+						// It's not possible for someone to hold the queue lock while the lock itself is no longer
+						// held, since we will only attempt to acquire the queue lock when the lock is held and
+						// the queue lock prevents unlock.
+						FTL_ASSERT("queue lock should not be held while overall lock is *not* held", (currentWordValue & kIsQueueLockedBit) == 0);
+
+						if (std::atomic_compare_exchange_weak(&m_word, &currentWordValue, currentWordValue | kIsLockedBit)) {
+							// Success! We acquired the lock.
+							return;
+						}
+					}
+				}
+				return;
+			}
+			if (!m_taskScheduler->useMainThread && m_taskScheduler->GetCurrentThreadIndex() == 0) {
+				while (true) {
+					if ((currentWordValue & kIsLockedBit) == 0) {
+						// It's not possible for someone to hold the queue lock while the lock itself is no longer
+						// held, since we will only attempt to acquire the queue lock when the lock is held and
+						// the queue lock prevents unlock.
+						FTL_ASSERT("queue lock should not be held while overall lock is *not* held", (currentWordValue & kIsQueueLockedBit) == 0);
+
+						if (std::atomic_compare_exchange_weak(&m_word, &currentWordValue, currentWordValue | kIsLockedBit)) {
+							// Success! We acquired the lock.
+							return;
+						}
+					}
+				}
+				return;
+			}
+
 			// Need to put ourselves on the queue. Create the queue if one does not exist. This requries
 			// owning the queue for a little bit. The lock that controls the queue is itself a spinlock.
 

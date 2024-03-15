@@ -292,14 +292,14 @@ static cweeStr UserMustSelectFile(cweeStr fileType) {
 };
 
 /* Parallel thread to occasionally look for and process toast messages. Sleeps most of the time and wakes up to check for toasts. */
-#if 0
+#if 1
 static Timer parallel_toast_manager = Timer(0.1, Action(std::function([](cweeStr& title, cweeStr& content) {
 	while (cweeToasts->tryGetToast(title, content)) std::cout << cweeStr::printf("\n/* WaterWatch Toast: \t\"%s\": \t\"%s\" */\n\n", title.c_str(), content.c_str());
 }), cweeStr(), cweeStr()));
 #endif
 
 // Handle async or scripted AppRequests. 
-#if 0
+#if 1
 static Timer AppLayerRequestProcessor = Timer(0.01, Action(std::function([]() {
 	std::pair<
 		int, // ID

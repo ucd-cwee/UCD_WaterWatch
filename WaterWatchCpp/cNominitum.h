@@ -1979,8 +1979,7 @@ namespace WinHTTPWrappers
 
 
     //Wrapper for a simple WinHttp sync download
-    class CWINHTTPWRAPPERS_EXT_CLASS CSyncDownloader : public CAsyncDownloader
-    {
+    class CWINHTTPWRAPPERS_EXT_CLASS CSyncDownloader : public CAsyncDownloader {
     public:
         //Methods
 #pragma warning(suppress: 26477)

@@ -242,11 +242,9 @@ namespace fibers {
 		concurrency::concurrent_vector < std::shared_ptr<ThreadWrapper> > m_threads;
 		std::unordered_map<DWORD, unsigned> m_threadsHandleToIndex;
 
-		// std::atomic<int> m_fiberPoolSize{ 0 };
-
 		/* The backing storage for the fiber pool */
 		concurrency::concurrent_vector < std::shared_ptr<FiberWrapper> > m_fibers;
-		// FiberWrapper instanceFiber;
+		mutable concurrency::concurrent_queue< int > freeFiberQueue;
 
 		/* Should use the main thread for processing and calculations */
 		bool useMainThread = true;

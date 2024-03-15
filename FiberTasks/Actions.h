@@ -318,7 +318,9 @@ namespace fibers {
 			template<typename ToType> std::shared_ptr<ToType> cast() const {
 				return std::static_pointer_cast<ToType>(m_ptr);
 			};
-
+			void* ptr() const {
+				return m_ptr.get();
+			};
 		public:
 			std::shared_ptr<void>					m_ptr;
 			const boost::typeindex::type_info& m_type;
@@ -476,23 +478,20 @@ namespace fibers {
 					return q;
 				}
 			};
-
 			template <class VType> static decltype(auto) DoCast_Shared_Sentinel(Any* p) noexcept {
 				throw("Casting Any to  std::shared_ptr<T>* or  std::shared_ptr<T>& is not recommended due to lifetime management concerns. Suggest changing cast to std::shared_ptr<T>.");
 			};
-
 			template<typename VType> static decltype(auto) DoCast_Unshared(Any* p) noexcept {
 				constexpr bool is_ptr = std::is_pointer_v<VType>;
 
 				typedef typename std::remove_reference<typename std::remove_pointer<VType>::type>::type desiredT;
 				std::shared_ptr<AnyData> m = p->container;
 				if (m) {
-					std::shared_ptr<desiredT> ptr = m->cast<desiredT>();
 					if constexpr (is_ptr) {
-						return ptr.get();
+						return static_cast<desiredT*>(m->ptr());
 					}
 					else {
-						return *ptr.get();
+						return *static_cast<desiredT*>(m->ptr());
 					}
 				}
 				else {

@@ -2069,9 +2069,9 @@ std::vector<Color_Interop> MapBackground_Interop::GetMatrix(double Left, double 
 #if 1
 	fibers::parallel::For((int)0, (int)out.size(), [&out](int i) {
 		auto& pixel = out[i];
-		pixel.R = ::Min(255.0, ::Max<double>(0.0, pixel.R + cweeRandomFloat(-0.5, 0.5)));
-		pixel.G = ::Min(255.0, ::Max<double>(0.0, pixel.G + cweeRandomFloat(-0.5, 0.5)));
-		pixel.B = ::Min(255.0, ::Max<double>(0.0, pixel.B + cweeRandomFloat(-0.5, 0.5)));
+		pixel.R = ::Min(255.0, ::Max<double>(0.0, pixel.R));
+		pixel.G = ::Min(255.0, ::Max<double>(0.0, pixel.G));
+		pixel.B = ::Min(255.0, ::Max<double>(0.0, pixel.B));
 	});
 #else
 	for (int i = out.size() - 1; i >= 0; i--) {

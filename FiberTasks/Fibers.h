@@ -473,8 +473,8 @@ namespace fibers{
 		Job() : impl(std::make_shared<Action>()) {};
 		Job(const Job& other) : impl(other.impl) {};
 		Job(Job&& other) : impl(other.impl) {};
-		Job& operator=(const Job& other) { impl = other.impl; };
-		Job& operator=(Job&& other) { impl = std::move(other.impl); };
+		Job& operator=(const Job& other) { impl = other.impl; return *this; };
+		Job& operator=(Job&& other) { impl = std::move(other.impl); return *this; };
 		template < typename T, typename... Args, typename = std::enable_if_t< !std::is_same_v<Job, std::decay_t<T>> && !std::is_same_v<Any, std::decay_t<T>> >>
 		explicit Job(T function, Args && ... Fargs) : impl(new Action(function, std::forward<Args>(Fargs)...)) {};
 		~Job() = default;
@@ -790,34 +790,29 @@ namespace fibers{
 			~interlocked() {};
 
 		public: // copy and clear
-			interlocked<type>& operator=(const interlocked<type>& other) {
+			interlocked& operator=(const interlocked& other) {
 				this->Copy(other);
 				return *this;
 			};
-			interlocked<type>& operator=(interlocked<type>&& other) {
+			interlocked& operator=(interlocked&& other) {
 				this->Copy(std::forward<interlocked<type>>(other));
 				return *this;
 			};
 			void Copy(const interlocked<type>& copy) {
 				if (&copy == this) return;
-				lock.Lock();
-				copy.Lock();
+				decltype(auto) g1 = Guard();
+				decltype(auto) g2 = copy.Guard();
 				data = copy.data;
-				copy.Unlock();
-				lock.Unlock();
 			};
 			void Copy(interlocked<type>&& copy) {
 				if (&copy == this) return;
-				lock.Lock();
-				copy.Lock();
+				decltype(auto) g1 = Guard();
+				decltype(auto) g2 = copy.Guard();
 				data = copy.data;
-				copy.Unlock();
-				lock.Unlock();
 			};
 			void Clear() {
-				lock.Lock();
+				decltype(auto) g = Guard();
 				data = type();
-				lock.Unlock();
 			};
 
 		public: // read and swap
@@ -829,25 +824,24 @@ namespace fibers{
 				decltype(auto) g = Guard();
 				data = replacement;
 			};
-			interlocked<type>& operator=(const type& other) {
+			interlocked& operator=(const type& other) {
 				Swap(other);
 				return *this;
 			};
 
-			operator type() const { return Read(); };
 			type* operator->() const { return &data; };
 
 		public: // lock, unlock, and direct edit
 			ExclusiveObject GetExclusive() const { return ExclusiveObject(*this); };
 
-			[[nodiscard]] decltype(auto) Guard() const { return lock.Guard(); };
-			void Lock() const { lock.Lock(); };
-			void Unlock() const { lock.Unlock(); };
+			[[nodiscard]] decltype(auto) Guard() const { return lock.guard(); };
+			void Lock() const { lock.lock(); };
+			void Unlock() const { lock.unlock(); };
 			type& UnsafeRead() const { return data; };
 
 		private:
 			mutable type data;
-			MutexType lock;
+			mutable MutexType lock;
 
 		};
 	};

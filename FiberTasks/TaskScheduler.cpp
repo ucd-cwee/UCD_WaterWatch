@@ -305,6 +305,7 @@ namespace fibers {
 		// Leave the first slot for the bound main thread
 		for (unsigned i = 1; i < options.FiberPoolSize; ++i) {
 			m_fibers[i]->fiber = Fiber(524288, FiberStartFunc, this);
+			freeFiberQueue.push(i);
 			m_fibers[i]->freeFiber.store(true, std::memory_order_release);
 		}
 		m_fibers[0]->freeFiber.store(false, std::memory_order_release);
@@ -593,9 +594,38 @@ namespace fibers {
 	};
 
 	unsigned TaskScheduler::GetNextFreeFiberIndex() const {
-		unsigned i, j;
+		unsigned j;
 		bool expected;
 
+#if 1
+		int freeFiberIndex{ 0 };
+		for (j = 0; ; ++j) {
+			if (freeFiberQueue.try_pop(freeFiberIndex)) {
+				// Double lock
+				if (!m_fibers[freeFiberIndex]->freeFiber.load(std::memory_order_relaxed)) {
+					freeFiberQueue.push(freeFiberIndex);
+					continue;
+				}
+
+				if (!m_fibers[freeFiberIndex]->freeFiber.load(std::memory_order_acquire)) {
+					freeFiberQueue.push(freeFiberIndex);
+					continue;
+				}
+
+				expected = true;
+				if (std::atomic_compare_exchange_weak_explicit(&m_fibers[freeFiberIndex]->freeFiber, &expected, false, std::memory_order_release, std::memory_order_relaxed)) {
+					return freeFiberIndex;
+				}
+			}
+
+			if (j > 100) {
+				// printf("No free fibers in the pool. Possible deadlock");
+				YieldThread();
+				j = 0;
+			}
+		}
+#else
+		unsigned i;
 		for (j = 0; ; ++j) {
 			for (i = 0; i < m_fibers.size(); ++i) {
 				// Double lock
@@ -627,6 +657,7 @@ namespace fibers {
 				j = 0;
 			}
 		}
+#endif
 	};
 
 	void TaskScheduler::CleanUpOldFiber() {
@@ -678,6 +709,7 @@ namespace fibers {
 			// In this specific implementation, the fiber pool is a flat array signaled by atomics
 			// So in order to "Push" the fiber to the fiber pool, we just set its corresponding atomic to true
 			m_fibers[tls.OldFiberIndex]->freeFiber.store(true, std::memory_order_release);
+			freeFiberQueue.push(tls.OldFiberIndex);
 			tls.OldFiberDestination = FiberDestination::None;
 			tls.OldFiberIndex = kInvalidIndex;
 			break;
