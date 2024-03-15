@@ -112,15 +112,17 @@ std::vector<double> SharedMatrix::GetTimeSeries(double Left, double Top, double 
 
 		auto* knots = external_data->GetMatrixRef(index_p);
 
+		using rbfmodelContainer = cweeUnion<alglib::rbfmodel, fibers::containers::queue< std::shared_ptr<alglib::rbfcalcbuffer> >>;
+
 		// Get or create the underlying interpolation model
-		cweeSharedPtr<alglib::rbfmodel> model;
+		cweeSharedPtr<rbfmodelContainer> model;
 		double avgDistanceBetweenKnots = 1.0;
 		if (!knots->Tag) {
 			avgDistanceBetweenKnots = knots->EstimateDistanceBetweenKnots();
 			knots->Lock();
 		}
 		if (!knots->Tag) {
-			model = make_cwee_shared<alglib::rbfmodel>();
+			model = make_cwee_shared<rbfmodelContainer>();
 			{
 				alglib::real_2d_array arr;
 				cweeThreadedList<cweeUnion<double, double, double>> data;
@@ -136,99 +138,35 @@ std::vector<double> SharedMatrix::GetTimeSeries(double Left, double Top, double 
 				{
 					arr.attach_to_ptr(data.Num(), 3, (double*)(void*)data.Ptr());
 					{
-						alglib::rbfcreate(2, 1, *model);
-						rbfsetpoints(*model, arr);
+						alglib::rbfcreate(2, 1, model->get<0>());
+						rbfsetpoints(model->get<0>(), arr);
 						alglib::rbfreport rep;
-						alglib::rbfsetalgohierarchical(*model, avgDistanceBetweenKnots * 10.0, 4, 0.0); // (*model, avgDistanceBetweenKnots * 10.0, 4, 0.0);
-						alglib::rbfbuildmodel(*model, rep, alglib::parallel);
+						alglib::rbfsetalgohierarchical(model->get<0>(), avgDistanceBetweenKnots * 10.0, 4, 0.0); // (*model, avgDistanceBetweenKnots * 10.0, 4, 0.0);
+						alglib::rbfbuildmodel(model->get<0>(), rep, alglib::parallel);
 					}
 				}
+
+				fibers::containers::queue< std::shared_ptr<alglib::rbfcalcbuffer> >& buffer_queue = model->get<1>();
+				fibers::parallel::For(0, fibers::utilities::Hardware::GetNumCpuCores() * 2, [&buffer_queue, &model](int i) {
+					alglib::rbfcalcbuffer* p = new alglib::rbfcalcbuffer();
+					alglib::rbfcreatecalcbuffer(model->get<0>(), *p, alglib::parallel);
+					buffer_queue.push(std::shared_ptr<alglib::rbfcalcbuffer>(p));
+				});
 			}
 			knots->Tag = cweeSharedPtr<void>(model, [](void* p) { return p; });
 			knots->Unlock();
 		}
 		else {
-			model = cweeSharedPtr<alglib::rbfmodel>(knots->Tag, [](void* p) -> alglib::rbfmodel* { return static_cast<alglib::rbfmodel*>(p); });
+			model = cweeSharedPtr<rbfmodelContainer>(knots->Tag, [](void* p) -> rbfmodelContainer* { return static_cast<rbfmodelContainer*>(p); });
 		}
 
+		fibers::containers::queue< std::shared_ptr<alglib::rbfcalcbuffer> >& buffer_queue = model->get<1>();		
 
-
-#if 0
-
-		fibers::ftl_wrapper::TaskScheduler scheduler;
-
-		std::vector< fibers::Job > jobs;
-		tempMatrix.Reserve(numColumns * numRows + 12);
-		int AsyncRows = ::Max<double>(0, numRows); 
-
-		for (int r = 0; r < AsyncRows; r++) {
-			auto job = fibers::Job([&buffer_queue, &numColumns, &Left, &Top, &rowStep, &columnStep, &reductionRatio](cweeSharedPtr<alglib::rbfmodel> Model, int R, alglib::real_1d_array& results) {
-				std::shared_ptr<alglib::rbfcalcbuffer> buf;
-
-				while (!buffer_queue.try_pop(buf)) { cweeSysThreadTools::Sys_Yield(); }
-
-				cweeList< cweeUnion<double, double, double> > out(numColumns + 1);
-
-				{
-					alglib::real_1d_array arr;
-					cweeUnion<double, double> coords;
-					arr.attach_to_ptr(2, (double*)(void*)(&coords));
-
-					int C;
-					for (coords.get<0>() = Left, coords.get<1>() = Top - R * rowStep, C = 0; C < numColumns; C++, coords.get<0>() += columnStep) {
-						if ((::Max(R, C) - ::Min(R, C)) % reductionRatio == 0) {
-							// get "real" interpolated results for 1/3 of the requested pixels using a slow, complex model, distributed diagonally along the grid								
-							alglib::rbftscalcbuf(*Model, *buf, arr, results, alglib::parallel);
-
-							// add it to the matrix
-							out.Append(cweeUnion<double, double, double>((double)C, (double)R, (double)results[0]));
-						}
-						else {
-							out.Append(cweeUnion<double, double, double>(std::numeric_limits<double>::max(), std::numeric_limits<double>::max(), std::numeric_limits<double>::max()));
-						}
-					}
-				}
-
-				buffer_queue.push(buf);
-
-				return out;
-			}, (cweeSharedPtr<alglib::rbfmodel>)model, (int)r, alglib::real_1d_array());
-			
-			scheduler.AddTask(job);
-			jobs.push_back(job);
-		}
-		scheduler.Wait();
-
-		for (auto& job : jobs) {
-			auto any = job.GetResult();
-			cweeList< cweeUnion<double, double, double> >* coords = any.cast();
-			if (coords) {
-				for (auto& coord : *coords) {
-					if (coord.get<0>() != std::numeric_limits<double>::max()
-						&& coord.get<1>() != std::numeric_limits<double>::max()
-						&& coord.get<2>() != std::numeric_limits<double>::max()) {
-						tempMatrix.AddValue(coord.get<0>(), coord.get<1>(), coord.get<2>(), false);
-						out[numColumns * coord.get<1>() + coord.get<0>()] = coord.get<2>();
-					}
-				}
-			}
-		}
-
-#else
-		fibers::containers::queue< std::shared_ptr<alglib::rbfcalcbuffer> > buffer_queue;
-		fibers::parallel::For(0, fibers::utilities::Hardware::GetNumCpuCores() * 2, [&buffer_queue, &model](int i) {
-			alglib::rbfcalcbuffer* p = new alglib::rbfcalcbuffer();
-			alglib::rbfcreatecalcbuffer(*model, *p, alglib::parallel);
-			buffer_queue.push(std::shared_ptr<alglib::rbfcalcbuffer>(p));
-		});
-
-		std::vector< fibers::Job > jobs;
 		tempMatrix.Reserve(numColumns* numRows + 12);
-
 		fibers::parallel::For(0, numRows, [&tempMatrix , &out, &buffer_queue, &numColumns, &Left, &Top, &rowStep, &columnStep, &reductionRatio, &model](int R) {
 			alglib::real_1d_array results;
 			std::shared_ptr<alglib::rbfcalcbuffer> buf;
-			while (!buffer_queue.try_pop(buf)) { cweeSysThreadTools::Sys_Yield(); }
+			while (!buffer_queue.try_pop(buf)) {}
 
 			cweeList< cweeUnion<double, double, double> > out_internal(numColumns + 1);
 
@@ -241,7 +179,7 @@ std::vector<double> SharedMatrix::GetTimeSeries(double Left, double Top, double 
 				for (coords.get<0>() = Left, coords.get<1>() = Top - R * rowStep, C = 0; C < numColumns; C++, coords.get<0>() += columnStep) {
 					if ((::Max(R, C) - ::Min(R, C)) % reductionRatio == 0) {
 						// get "real" interpolated results for 1/3 of the requested pixels using a slow, complex model, distributed diagonally along the grid								
-						alglib::rbftscalcbuf(*model, *buf, arr, results, alglib::parallel);
+						alglib::rbftscalcbuf(model->get<0>(), *buf, arr, results, alglib::parallel);
 
 						// add it to the matrix
 						out_internal.Append(cweeUnion<double, double, double>((double)C, (double)R, (double)results[0]));
@@ -254,6 +192,16 @@ std::vector<double> SharedMatrix::GetTimeSeries(double Left, double Top, double 
 
 			buffer_queue.push(buf);
 
+#if 1
+			for (cweeUnion<double, double, double>& coord : out_internal) {
+				if (coord.get<0>() != std::numeric_limits<double>::max()
+					&& coord.get<1>() != std::numeric_limits<double>::max()
+					&& coord.get<2>() != std::numeric_limits<double>::max()) {
+					tempMatrix.AddValue(coord.get<0>(), coord.get<1>(), coord.get<2>(), false);
+					out[numColumns * coord.get<1>() + coord.get<0>()] = coord.get<2>();
+				}
+			}
+#else
 			fibers::parallel::ForEach(out_internal, [&tempMatrix, &out, &numColumns](cweeUnion<double, double, double>& coord) {
 				if (coord.get<0>() != std::numeric_limits<double>::max()
 					&& coord.get<1>() != std::numeric_limits<double>::max()
@@ -262,8 +210,8 @@ std::vector<double> SharedMatrix::GetTimeSeries(double Left, double Top, double 
 					out[numColumns * coord.get<1>() + coord.get<0>()] = coord.get<2>();
 				}
 			});
-		});
 #endif
+		});
 
 		// do a faster, local interpolation of those results using the Hilbert curve for the last 2/3 components. 
 		if (true) {
@@ -2125,9 +2073,9 @@ std::vector<Color_Interop> MapBackground_Interop::GetMatrix(double Left, double 
 #if 1
 	fibers::parallel::For((int)0, (int)out.size(), [&out](int i) {
 		auto& pixel = out[i];
-		pixel.R = ::Min(255.0, ::Max<double>(0.0, pixel.R));// +cweeRandomFloat(-0.5, 0.5)));
-		pixel.G = ::Min(255.0, ::Max<double>(0.0, pixel.G));// + cweeRandomFloat(-0.5, 0.5)));
-		pixel.B = ::Min(255.0, ::Max<double>(0.0, pixel.B));// + cweeRandomFloat(-0.5, 0.5)));
+		pixel.R = ::Min(255.0, ::Max<double>(0.0, pixel.R + cweeRandomFloat(-0.5, 0.5)));
+		pixel.G = ::Min(255.0, ::Max<double>(0.0, pixel.G + cweeRandomFloat(-0.5, 0.5)));
+		pixel.B = ::Min(255.0, ::Max<double>(0.0, pixel.B + cweeRandomFloat(-0.5, 0.5)));
 	});
 #else
 	for (int i = out.size() - 1; i >= 0; i--) {

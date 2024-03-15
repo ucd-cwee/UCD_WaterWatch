@@ -273,13 +273,9 @@ namespace fibers {
 		size_t currentThreadIndex = static_cast<size_t>(taskScheduler->GetCurrentThreadIndex());
 
 		// Wait for all other threads to quit
-		std::atomic<unsigned>* quitCount(nullptr);
-		quitCount = &taskScheduler->m_quitCount;
+		std::atomic<unsigned>* quitCount(&taskScheduler->m_quitCount);
 		quitCount->fetch_add(1, std::memory_order_seq_cst);
 		size_t numThreads = taskScheduler->m_threads.size();
-		unsigned numThreadsStopped = 0;
-		Stopwatch sw; sw.Start();
-		bool printOnce = true;
 
 		taskScheduler->m_threads[threadIndex]->tls.quitting.store(true);
 		while (quitCount->load(std::memory_order_seq_cst) < static_cast<unsigned int>(numThreads)) {
@@ -287,37 +283,6 @@ namespace fibers {
 				taskScheduler->ThreadSleepCV.notify_all();
 			}
 			YieldThread();
-
-			numThreadsStopped = static_cast<unsigned>(quitCount->load(std::memory_order_seq_cst));
-			if (numThreadsStopped >= static_cast<unsigned>(numThreads)) break;
-			if (sw.Stop() < 100000000.0 && (numThreadsStopped < static_cast<unsigned>(numThreads))) {
-				YieldThread();
-			}
-			else {
-				if (printOnce) {
-					printOnce = false;
-					// something is wrong -- we need to evaluate why
-					printf("Deadlock on exit (%i ready): Thread %i is waiting.\n", (int)numThreadsStopped, (int)threadIndex);
-					if (currentThreadIndex == 0) {
-						int index = 0;
-						for (auto& thread : taskScheduler->m_threads) {
-							if (thread->tls.workingOnTask.load()) {
-								printf("Deadlock on exit (%i ready): Thread %i is working.\n", (int)numThreadsStopped, (int)index);
-							}
-							if (!thread->tls.quitting.load()) {
-								int fiberState = thread->tls.fiberState.load();
-								printf("Deadlock on exit (%i ready): Thread %i is NOT quitting (state %i).\n", (int)numThreadsStopped, (int)index, (int)fiberState);
-							}
-							index++;
-						}
-					}
-				}
-				if (taskScheduler->m_emptyQueueBehavior.load(std::memory_order_relaxed) == EmptyQueueBehavior::Sleep) {
-					taskScheduler->ThreadSleepCV.notify_all();
-				}
-				YieldThread();
-				SleepThread(50);
-			}
 		}
 
 		if (threadIndex == 0) {
@@ -430,21 +395,19 @@ namespace fibers {
 			ThreadSleepCV.notify_all();
 		}
 
-		// Wait on all jobs
-		while (this->LoPriTaskQueue.unsafe_size() != 0) {
-			YieldThread();
-		};
-		while (true) {
-			bool finished = true;
-			for (auto& thread : m_threads) {
-				if (thread->tls.workingOnTask.load()) {
-					finished = true;
-					YieldThread();
-					break;
-				}
-			}
-			if (finished) break;
-		};
+		/* Wait on all jobs */
+		//while (this->LoPriTaskQueue.unsafe_size() != 0) YieldThread();		
+		//while (true) {
+		//	bool finished = true;
+		//	for (auto& thread : m_threads) {
+		//		if (thread->tls.workingOnTask.load()) {
+		//			finished = true;
+		//			YieldThread();
+		//			break;
+		//		}
+		//	}
+		//	if (finished) break;
+		//};
 
 		// Create the quit fibers
 		m_quitFibers = new Fiber[m_threads.size()];
@@ -464,19 +427,10 @@ namespace fibers {
 		// Create a scope so index isn't used after we come back from the switch. It will be wrong if we started on a non-main thread
 		unsigned index;
 		index = GetCurrentThreadIndex(); // should be 0
-		if (index == kInvalidIndex) {
-			printf("Exit thread was empty or not found\n");
-			m_quitCount.fetch_add(1, std::memory_order_seq_cst);
-		}
-		else {
-			m_fibers[m_threads[index]->tls.CurrentFiberIndex]->fiber.SwitchToFiber(&m_quitFibers[index]);
-		}		
-
+		m_fibers[m_threads[index]->tls.CurrentFiberIndex]->fiber.SwitchToFiber(&m_quitFibers[index]);
+				
 		// We're back. We should be on the main thread now
 		index = GetCurrentThreadIndex();
-		if (index != 0) {
-			printf("Exit thread was not 0: %i\n", (int)index);
-		}
 
 		// Wait for the worker threads to finish
 		for (unsigned i = 1; i < m_threads.size(); ++i) {
@@ -506,21 +460,7 @@ namespace fibers {
 			ThreadSleepCV.notify_one();
 		}
 	}
-	void TaskScheduler::AddTask_NoWaitIncrement(Task task, TaskPriority priority, WaitGroup* waitGroup) {
-		const TaskBundle bundle = { task, waitGroup };
-		if (priority == TaskPriority::High) {
-			m_threads[GetCurrentThreadIndex_NoFail()]->tls.HiPriTaskQueue.push(bundle);
-		}
-		else if (priority == TaskPriority::Normal) {
-			LoPriTaskQueue.push(bundle);
-		}
 
-		const EmptyQueueBehavior behavior = m_emptyQueueBehavior.load(std::memory_order_relaxed);
-		if (behavior == EmptyQueueBehavior::Sleep) {
-			// Wake a sleeping thread
-			 ThreadSleepCV.notify_one();
-		}
-	}
 	void TaskScheduler::AddTasks(uint32_t numTasks, Task* tasks, TaskPriority priority, WaitGroup* waitGroup) {
 		if (waitGroup != nullptr) {
 			waitGroup->Add(static_cast<int32_t>(numTasks));

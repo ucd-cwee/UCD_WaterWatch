@@ -56,12 +56,11 @@ public:
 	};
 
 private:
-	mutable cweeSysMutex mut;
 	mutable cwee_pcg rand;
 	mutable std::uniform_real_distribution<u64> u;
 
 public:
-	cwee_rand() noexcept : mut(), rand(), u(0.0, 1.0) { Random_Impl(); /*Instantiate the range*/ };
+	cwee_rand() noexcept : rand(), u(0.0, 1.0) { Random_Impl(); /*Instantiate the range*/ };
 	u64 Random(u64 t1 = 0.0, u64 t2 = 1.0) const noexcept { return Random_HighRes(std::move(t1), std::move(t2)); };
 	double Random(double t1 = 0.0, double t2 = 1.0) const noexcept { return Random_HighRes(t1, t2); };
 	float Random(float t1 = 0.0, float t2 = 1.0) const noexcept { return Random_HighRes(t1, t2); };
@@ -69,11 +68,7 @@ public:
 
 private:
 	u64 Random_Impl() const noexcept {
-		// u64 out(0);
-		//mut.Lock();
 		return u(rand);
-		//mut.Unlock();
-		// return std::move(out);
 	};
 	u64 Random_HighRes(u64 t1, u64 t2) const noexcept {
 		t2 -= t1;

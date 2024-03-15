@@ -14,39 +14,9 @@ to maintain a single distribution point for the source code.
 */
 
 #include "WaterWatch_Win32_Console.h"
-#include "../FiberTasks/TaskScheduler.h"
-#include "../FiberTasks/WaitGroup.h"
 
-namespace {
-	class AnyJobStruct {
-	public:
-		fibers::Job job;
-		bool force;
-
-		AnyJobStruct() = default;
-		AnyJobStruct(fibers::Job&& a, bool&& b) : job(std::forward<fibers::Job>(a)), force(std::forward<bool>(b)) {};
-		AnyJobStruct(fibers::Job const& a, bool&& b) : job(a), force(std::forward<bool>(b)) {};
-
-		AnyJobStruct(AnyJobStruct&&) = delete;
-		AnyJobStruct(AnyJobStruct const&) = delete;
-		AnyJobStruct& operator=(AnyJobStruct const&) = delete;
-		AnyJobStruct& operator=(AnyJobStruct&&) = delete;
-		~AnyJobStruct() = default;
-	};
-	static void DoAnyJobStruct(fibers::TaskScheduler* taskScheduler, void* arg) {
-		std::unique_ptr<AnyJobStruct> data(static_cast<AnyJobStruct*>(arg));
-		if (data) {
-			if (data->force) {
-				data->job.ForceInvoke();
-			}
-			else {
-				data->job.Invoke();
-			}
-		}
-	};
-};
+#include "../FiberTasks/Fibers.h"
 int Example::ExampleF(int numTasks, int numSubTasks) {
-
 	printf("Job 1\n");
 	if (true) {
 		fibers::parallel::For(0, numTasks * numSubTasks, [](int j) {
@@ -55,39 +25,7 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 			while (sw.Stop() < 1000) {}
 		});
 	}
-	printf("Job 2a\n");
-	if (true) {
-		cweeBalancedPattern pat;
-		fibers::ftl_wrapper::TaskScheduler scheduler;
-		for (int i = 0; i < numTasks * numSubTasks; i++) {
-			auto job = fibers::Job([&pat](int j) {
-				pat.AddUniqueValue(j, j);
-			}, (int)i);
-			scheduler.AddTask(job);
-		}
-		scheduler.Wait();
-
-		int sizeIs = pat.GetNumValues();
-		if (sizeIs == 0) throw(std::runtime_error("Something went wrong"));
-	}
-	printf("Job 2b\n");
-	if (true) {
-		cweeBalancedPattern pat;
-		fibers::TaskScheduler scheduler;
-		scheduler.Init({400, 0, fibers::EmptyQueueBehavior::Sleep, false });
-		fibers::WaitGroup wg(&scheduler);
-		for (int i = 0; i < numTasks * numSubTasks; i++) {
-			auto job = fibers::Job([&pat](int j) {
-				pat.AddUniqueValue(j, j);
-			}, (int)i);
-			scheduler.AddTask({ DoAnyJobStruct, new AnyJobStruct(job, false) }, fibers::TaskPriority::Normal, &wg);
-		}
-		wg.Wait(true);
-
-		int sizeIs = pat.GetNumValues();
-		if (sizeIs == 0) throw(std::runtime_error("Something went wrong"));
-	}
-	printf("Job 2c\n");
+	printf("Job 2\n");
 	if (true) {
 		cweeBalancedPattern pat;
 		fibers::JobGroup group;
@@ -224,6 +162,10 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 		job.Await();
 		return counter->load();
 	}
+
+	auto x = fibers::parallel::async([](int x) { return 100.0f; }, 10).wait_get(); // returns 100.0f
+	size_t t = fibers::parallel::For(0, 10, [](int i) { return i; }).size(); // returns 10
+	
 
 	printf("Loop done\n");
 };

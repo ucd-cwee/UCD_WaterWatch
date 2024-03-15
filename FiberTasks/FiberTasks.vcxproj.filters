@@ -51,7 +51,7 @@
     <ClInclude Include="Fibtex.h">
       <Filter>Files\H</Filter>
     </ClInclude>
-    <ClInclude Include="Job.h">
+    <ClInclude Include="Actions.h">
       <Filter>Files\H</Filter>
     </ClInclude>
     <ClInclude Include="Tasks.h">

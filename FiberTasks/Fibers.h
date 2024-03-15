@@ -167,8 +167,7 @@
 #endif
 #pragma endregion 
 
-#include "Job.h"
-
+#include "Actions.h"
 namespace fibers{
 	namespace utilities {
 		class Hardware {
@@ -653,7 +652,7 @@ namespace fibers{
 			mutex(mutex&& other);
 			mutex& operator=(const mutex& s) { return *this; };
 			mutex& operator=(mutex&& s) { return *this; };
-			~mutex() {};
+			~mutex() = default;
 
 			[[nodiscard]] std::lock_guard<mutex>	guard() noexcept;
 			void			lock() noexcept;
@@ -663,6 +662,96 @@ namespace fibers{
 		protected:
 			std::shared_ptr<void> Handle;
 
+		};
+
+		/* Read-Write mutex that allows multiple readers and one writer to cooperatively access an underlying object. Very fast for 100% reading operations, as (effectively) no locking actually happens. */
+		template <class MutexType = fibers::synchronization::mutex>
+		class shared_mutex {
+		private:
+			MutexType    mut_;
+			std::condition_variable_any gate1_;
+			std::condition_variable_any gate2_;
+			unsigned state_;
+
+			static const unsigned write_entered_ = 1U << (sizeof(unsigned) * CHAR_BIT - 1);
+			static const unsigned n_readers_ = ~write_entered_;
+
+		public:
+			shared_mutex() : state_(0) {}
+			shared_mutex(shared_mutex const&) = default;
+			shared_mutex(shared_mutex&&) = default;
+			shared_mutex& operator=(shared_mutex const&) = default;
+			shared_mutex& operator=(shared_mutex&&) = default;
+			~shared_mutex() = default;
+
+			// Exclusive/Writer ownership
+			void lock() {
+				std::unique_lock<MutexType> lk(mut_);
+				while (state_ & write_entered_) gate1_.wait(lk);
+				state_ |= write_entered_;
+				while (state_ & n_readers_) gate2_.wait(lk);
+			};
+			// Exclusive/Writer ownership
+			bool try_lock() {
+				std::unique_lock<MutexType> lk(mut_, std::try_to_lock);
+				if (lk.owns_lock() && state_ == 0)
+				{
+					state_ = write_entered_;
+					return true;
+				}
+				return false;
+			};
+			// Exclusive/Writer ownership
+			void unlock() {
+				{
+					std::scoped_lock<MutexType> _(mut_);
+					state_ = 0;
+				}
+				gate1_.notify_all();
+			};
+
+			// Shared/Reader ownership
+			void lock_shared() {
+				std::unique_lock<MutexType> lk(mut_);
+				while ((state_ & write_entered_) || (state_ & n_readers_) == n_readers_)
+					gate1_.wait(lk);
+				unsigned num_readers = (state_ & n_readers_) + 1;
+				state_ &= ~n_readers_;
+				state_ |= num_readers;
+			};
+			// Shared/Reader ownership
+			bool try_lock_shared() {
+				std::unique_lock<MutexType> lk(mut_, std::try_to_lock);
+				unsigned num_readers = state_ & n_readers_;
+				if (lk.owns_lock() && !(state_ & write_entered_) && num_readers != n_readers_)
+				{
+					++num_readers;
+					state_ &= ~n_readers_;
+					state_ |= num_readers;
+					return true;
+				}
+				return false;
+			};
+			// Shared/Reader ownership
+			void unlock_shared() {
+				std::scoped_lock<MutexType> _(mut_);
+				unsigned num_readers = (state_ & n_readers_) - 1;
+				state_ &= ~n_readers_;
+				state_ |= num_readers;
+				if (state_ & write_entered_)
+				{
+					if (num_readers == 0)
+						gate2_.notify_one();
+				}
+				else
+				{
+					if (num_readers == n_readers_ - 1)
+						gate1_.notify_one();
+				}
+			};
+
+			[[nodiscard]] decltype(auto) Write_Guard() noexcept { return std::lock_guard(*this); };
+			[[nodiscard]] decltype(auto) Read_Guard() noexcept { return std::shared_lock(*this); };
 		};
 
 		/* Wrapper for non-atomic objects to allow for threads to lock them for exclusive access */
@@ -761,125 +850,19 @@ namespace fibers{
 			MutexType lock;
 
 		};
-
-		/* Read-Write mutex that allows multiple readers and one writer to cooperatively access an underlying object. Very fast for 100% reading operations, as (effectively) no locking actually happens. */
-		class shared_mutex {
-		private:
-			mutex    mut_;
-			std::condition_variable_any gate1_;
-			std::condition_variable_any gate2_;
-			unsigned state_;
-
-			static const unsigned write_entered_ = 1U << (sizeof(unsigned) * CHAR_BIT - 1);
-			static const unsigned n_readers_ = ~write_entered_;
-
-		public:
-
-			shared_mutex() : state_(0) {}
-
-			// Exclusive/Writer ownership
-			void lock() {
-				std::unique_lock<mutex> lk(mut_);
-				while (state_ & write_entered_) gate1_.wait(lk);
-				state_ |= write_entered_;
-				while (state_ & n_readers_) gate2_.wait(lk);
-			};
-			// Exclusive/Writer ownership
-			bool try_lock() {
-				std::unique_lock<mutex> lk(mut_, std::try_to_lock);
-				if (lk.owns_lock() && state_ == 0)
-				{
-					state_ = write_entered_;
-					return true;
-				}
-				return false;
-			};
-			// Exclusive/Writer ownership
-			void unlock() {
-				{
-					std::scoped_lock<mutex> _(mut_);
-					state_ = 0;
-				}
-				gate1_.notify_all();
-			};
-
-			// Shared/Reader ownership
-			void lock_shared() {
-				std::unique_lock<mutex> lk(mut_);
-				while ((state_ & write_entered_) || (state_ & n_readers_) == n_readers_)
-					gate1_.wait(lk);
-				unsigned num_readers = (state_ & n_readers_) + 1;
-				state_ &= ~n_readers_;
-				state_ |= num_readers;
-			};
-			// Shared/Reader ownership
-			bool try_lock_shared() {
-				std::unique_lock<mutex> lk(mut_, std::try_to_lock);
-				unsigned num_readers = state_ & n_readers_;
-				if (lk.owns_lock() && !(state_ & write_entered_) && num_readers != n_readers_)
-				{
-					++num_readers;
-					state_ &= ~n_readers_;
-					state_ |= num_readers;
-					return true;
-				}
-				return false;
-			};
-			// Shared/Reader ownership
-			void unlock_shared() {
-				std::scoped_lock<mutex> _(mut_);
-				unsigned num_readers = (state_ & n_readers_) - 1;
-				state_ &= ~n_readers_;
-				state_ |= num_readers;
-				if (state_ & write_entered_)
-				{
-					if (num_readers == 0)
-						gate2_.notify_one();
-				}
-				else
-				{
-					if (num_readers == n_readers_ - 1)
-						gate1_.notify_one();
-				}
-			};
-
-			[[nodiscard]] decltype(auto) Write_Guard() noexcept { return std::lock_guard(*this); };
-			[[nodiscard]] decltype(auto) Read_Guard() noexcept { return std::shared_lock(*this); };
-		};
 	};
-
-
-	namespace ftl_wrapper {
-		class TaskScheduler {
-		public:
-			TaskScheduler();
-			TaskScheduler(TaskScheduler const&);
-			TaskScheduler(TaskScheduler&&) noexcept = default;
-			TaskScheduler& operator=(TaskScheduler const&) = delete;
-			TaskScheduler& operator=(TaskScheduler&&) noexcept = delete;
-			~TaskScheduler() = default;
-
-		private:
-			std::shared_ptr<void> m_TaskScheduler;
-			std::shared_ptr<void> m_WaitGroup;
-
-		public:
-			void AddTask(Job const& task);
-			void AddTask(Action&& task);
-			void Wait();
-		};
-
-	};
-
 	namespace parallel {
-		/* parallel_for (auto i = start; i < end; i++){ todo(i); } */
+		/* 
+		parallel_for (auto i = start; i < end; i++){ todo(i); }
+		If the todo(i) returns anything, it will be collected into a vector at the end.
+		*/
 		template<typename iteratorType, typename F>
 		decltype(auto) For(iteratorType start, iteratorType end, F&& ToDo) {
 			fibers::JobGroup group;
 
 			decltype(auto) todo = std::function(std::forward<F>(ToDo));
 			constexpr bool retNo = std::is_same<typename utilities::function_traits<decltype(todo)>::result_type, void>::value;
-
+			//  typename std::tuple_element<0, typename utilities::function_traits<decltype(todo)>::arguments>::type;
 			std::vector< fibers::Job> jobs;
 			for (iteratorType iter = start; iter < end; iter++) {
 				jobs.push_back(fibers::Job([todo](iteratorType const& T) { return todo(T); }, (iteratorType)iter));
@@ -890,11 +873,17 @@ namespace fibers{
 				group.Wait();
 			}
 			else {
-				return group.Wait_Get();
+				using outputType = typename utilities::function_traits<decltype(todo)>::result_type; 
+				std::vector<std::shared_ptr<outputType>> toReturn;
+				for (auto& anyO : group.Wait_Get()) toReturn.push_back(anyO.cast<std::shared_ptr<outputType>>());
+				return toReturn;
 			}
 		};
 
-		/* parallel_for (auto i = start; i < end; i += step){ todo(i); } */
+		/* 
+		parallel_for (auto i = start; i < end; i += step){ todo(i); }
+		If the todo(i) returns anything, it will be collected into a vector at the end.
+		*/
 		template<typename iteratorType, typename F>
 		decltype(auto) For(iteratorType start, iteratorType end, iteratorType step, F&& ToDo) {
 			fibers::JobGroup group;
@@ -912,11 +901,17 @@ namespace fibers{
 				group.Wait();
 			}
 			else {
-				return group.Wait_Get();
+				using outputType = typename utilities::function_traits<decltype(todo)>::result_type;
+				std::vector<std::shared_ptr<outputType>> toReturn;
+				for (auto& anyO : group.Wait_Get()) toReturn.push_back(anyO.cast<std::shared_ptr<outputType>>());
+				return toReturn;
 			}
 		};
 
-		/* parallel_for (auto i = container.begin(); i != container.end(); i++){ todo(*i); } */
+		/* 
+		parallel_for (auto i = container.begin(); i != container.end(); i++){ todo(*i); }
+		If the todo(*i) returns anything, it will be collected into a vector at the end. 
+		*/
 		template<typename containerType, typename F>
 		decltype(auto) ForEach(containerType const& container, F&& ToDo) {
 			fibers::JobGroup group;
@@ -934,11 +929,17 @@ namespace fibers{
 				group.Wait();
 			}
 			else {
-				return group.Wait_Get();
+				using outputType = typename utilities::function_traits<decltype(todo)>::result_type;
+				std::vector<std::shared_ptr<outputType>> toReturn;
+				for (auto& anyO : group.Wait_Get()) toReturn.push_back(anyO.cast<std::shared_ptr<outputType>>());
+				return toReturn;
 			}
 		};
 
-		/* parallel_for (auto i = container.cbegin(); i != container.cend(); i++){ todo(*i); } */
+		/* 
+		parallel_for (auto i = container.cbegin(); i != container.cend(); i++){ todo(*i); }
+		If the todo(*i) returns anything, it will be collected into a vector at the end. 
+		*/
 		template<typename containerType, typename F>
 		decltype(auto) ForEach(containerType& container, F&& ToDo) {
 			fibers::JobGroup group;
@@ -956,7 +957,10 @@ namespace fibers{
 				group.Wait();
 			}
 			else {
-				return group.Wait_Get();
+				using outputType = typename utilities::function_traits<decltype(todo)>::result_type;
+				std::vector<std::shared_ptr<outputType>> toReturn;
+				for (auto& anyO : group.Wait_Get()) toReturn.push_back(anyO.cast<std::shared_ptr<outputType>>());
+				return toReturn;
 			}
 		};
 
@@ -1120,7 +1124,5 @@ namespace fibers{
 			return future<typename utilities::function_traits<decltype(std::function(function))>::result_type>(Job(function, Fargs...));
 		};
 	};
-
-
 
 };

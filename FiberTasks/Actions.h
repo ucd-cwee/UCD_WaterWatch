@@ -168,12 +168,40 @@
 #pragma endregion 
 
 namespace fibers {
+	namespace synchronization {
+		/* Simple atomic spin-lock that fairly synchronizes threads or fibers based on a ticket-queue system. */
+		class TicketSpinLock {
+		private:
+			std::atomic<unsigned long> ticket;
+			std::atomic<unsigned long> serving;
+
+		public:
+			TicketSpinLock() : ticket(0), serving(0) {};
+			TicketSpinLock(TicketSpinLock const&) = default;
+			TicketSpinLock(TicketSpinLock&&) = default;
+			TicketSpinLock& operator=(TicketSpinLock const&) = default;
+			TicketSpinLock& operator=(TicketSpinLock&&) = default;
+			~TicketSpinLock() = default;
+
+			void lock() {
+				auto my_ticket = ticket.fetch_add(1, std::memory_order::memory_order_relaxed);
+				while (my_ticket != serving.load(std::memory_order::memory_order_acquire)) {
+					::SwitchToThread();
+				}
+			};
+			void unlock() {
+				serving.fetch_add(1, std::memory_order::memory_order_release);
+			};
+		};
+
+	};
 	namespace containers {
+		/* Generic container that does not instantiate an object until actually needed. Useful for seperating consumption from creation. Once made, the container is nearly "free" in terms of speed. */
 		template<typename T > class DelayedInstantiation {
 		public:
-			DelayedInstantiation(std::shared_ptr<T> const& o) : obj(o), Lock(std::make_shared<std::atomic<long>>()), createFunc([]()->T* { return new T(); }) {};
-			DelayedInstantiation() : obj(nullptr), Lock(std::make_shared<std::atomic<long>>()), createFunc([]()->T* { return new T(); }) {};
-			DelayedInstantiation(std::function<T* ()> create) : obj(nullptr), Lock(std::make_shared<std::atomic<long>>()), createFunc(create) {};
+			DelayedInstantiation(std::shared_ptr<T> const& o) : obj(o), Lock(std::make_shared<synchronization::TicketSpinLock>()), createFunc([]()->T* { return new T(); }) {};
+			DelayedInstantiation() : obj(nullptr), Lock(std::make_shared<synchronization::TicketSpinLock>()), createFunc([]()->T* { return new T(); }) {};
+			DelayedInstantiation(std::function<T* ()> create) : obj(nullptr), Lock(std::make_shared<synchronization::TicketSpinLock>()), createFunc(create) {};
 			~DelayedInstantiation() {};
 
 			//T* operator->() { Ensure(); return obj.Get(); };
@@ -192,17 +220,17 @@ namespace fibers {
 				}
 			};
 			void lock() {
-				while ((Lock->fetch_add(1) + 1) != 1) Lock->fetch_sub(1);
+				Lock->lock();
 			};
 			void unlock() {
-				Lock->fetch_sub(1);
+				Lock->unlock();
 			};
 			std::shared_ptr<T> obj;
-			std::shared_ptr<std::atomic<long>> Lock;
+			std::shared_ptr<synchronization::TicketSpinLock> Lock;
 			std::function<T* ()> createFunc;
 		};
-	};
 
+	};
 	namespace utilities {
 		class typenames {
 		public:
@@ -268,7 +296,6 @@ namespace fibers {
 		template<class R> struct function_traits<std::function<R(void)>> { using result_type = R; using arguments = std::tuple<>; };
 		template<class R, class... Args> struct function_traits<std::function<R(Args...)>> { using result_type = R; using arguments = std::tuple<Args...>; };
 	};
-
 	namespace {
 		template<class T> struct get_type { using type = T; };
 		template<class T> struct get_type<std::shared_ptr<T>> { using type = typename get_type<T>::type; };
@@ -318,8 +345,9 @@ namespace fibers {
 			};
 		};
 	}
-
-	class AnyAutoCast; /* forward */
+	
+	/*! Supports forward-declaring a "cast" from an Any to the desired destination type. e.g: int& ref_int = any_obj.cast(); ... std::string str = any_obj.cast(); */
+	class AnyAutoCast; /* forward decl */
 
 	/*! Generic container that enables the containment and sharing of any data type to/from std::shared_ptrs */
 	class Any {
@@ -559,10 +587,17 @@ namespace fibers {
 		Any parentCopy;
 	};
 
+	/*! Casts to whatever is on the left-hand-side, with specializations for references, pointers, values, and std::shared_ptrs. References and pointers are lifetime-sensitive. */
 	__forceinline AnyAutoCast Any::cast() const noexcept { return AnyAutoCast(this); };
 	__forceinline decltype(auto) Any::Object_Data::get(const AnyAutoCast& obj) { Any* t = const_cast<Any*>(obj.parent); std::shared_ptr<AnyData> out; if (t) { out = t->container; } return out; };
 	__forceinline decltype(auto) Any::Object_Data::get(const AnyAutoCast* t) { return get(*t); };
 
+	/* 
+	Wrapper for std::function that can capture input parameters for later evaluation. e.g: 
+	. auto f = Function(std::function([](int i, double x)->int{ return i+x; }), 10, 0.0); 
+	. int value = f.Invoke().cast(); 
+	. assert(value == 10);
+	*/
 	template <typename F = void()> class Function {
 	public:
 		template<typename T> struct count_arg;
@@ -967,63 +1002,69 @@ namespace fibers {
 		mutable std::atomic<long> IsFinished;
 
 	};
-	class Action_Interface {
-	public:
-		explicit Action_Interface() {};
-		explicit Action_Interface(Action_Interface const&) = delete;
-		explicit Action_Interface(Action_Interface&&) = delete;
-		Action_Interface& operator=(Action_Interface const&) = delete;
-		Action_Interface& operator=(Action_Interface&&) = delete;
-		virtual ~Action_Interface() noexcept {};
+	namespace {
+		class Action_Interface {
+		public:
+			explicit Action_Interface() {};
+			explicit Action_Interface(Action_Interface const&) = delete;
+			explicit Action_Interface(Action_Interface&&) = delete;
+			Action_Interface& operator=(Action_Interface const&) = delete;
+			Action_Interface& operator=(Action_Interface&&) = delete;
+			virtual ~Action_Interface() noexcept {};
 
-		virtual boost::typeindex::type_info const& type() const noexcept = 0;
-		virtual const char* typeName() const noexcept = 0;
-		virtual std::shared_ptr<Action_Interface> clone() const noexcept = 0;
-		virtual Any& Invoke() noexcept = 0;
-		virtual Any& ForceInvoke() noexcept = 0;
-		virtual const char* FunctionName() const noexcept = 0;
-		virtual Any& Result() const noexcept = 0;
-		virtual bool IsFinished() const noexcept = 0;
-		virtual bool ReturnsNothing() const noexcept = 0;
+			virtual boost::typeindex::type_info const& type() const noexcept = 0;
+			virtual const char* typeName() const noexcept = 0;
+			virtual std::shared_ptr<Action_Interface> clone() const noexcept = 0;
+			virtual Any& Invoke() noexcept = 0;
+			virtual Any& ForceInvoke() noexcept = 0;
+			virtual const char* FunctionName() const noexcept = 0;
+			virtual Any& Result() const noexcept = 0;
+			virtual bool IsFinished() const noexcept = 0;
+			virtual bool ReturnsNothing() const noexcept = 0;
+		};
+		template<typename ValueType> class Action_Impl final : public Action_Interface {
+		public:
+			explicit Action_Impl() = delete;
+			explicit Action_Impl(Function<ValueType> const& f) noexcept : data(f) {};
+			explicit Action_Impl(Function<ValueType>&& f) noexcept : data(std::forward<Function<ValueType>>(f)) {};
+			virtual ~Action_Impl() noexcept {};
+
+			virtual boost::typeindex::type_info const& type() const noexcept final {
+				return boost::typeindex::type_id<Function<ValueType>>().type_info();
+			};
+			virtual const char* typeName() const noexcept final {
+				return boost::typeindex::type_id<Function<ValueType>>().type_info().name();
+			};
+			virtual std::shared_ptr<Action_Interface> clone() const noexcept final {
+				return std::static_pointer_cast<Action_Interface>(std::make_shared<Action_Impl<ValueType>>(data));
+			};
+			virtual Any& Invoke() noexcept final {
+				return data.Invoke();
+			};
+			virtual Any& ForceInvoke() noexcept final {
+				return data.ForceInvoke();
+			};
+			virtual const char* FunctionName() const noexcept final {
+				return data.FunctionName();
+			};
+			virtual Any& Result() const noexcept final {
+				return data.GetResult();
+			};
+			virtual bool IsFinished() const noexcept final {
+				return data.IsFinished.load() > 0;
+			};
+			virtual bool ReturnsNothing()  const noexcept final {
+				return data.ReturnsNothing();
+			};
+
+			Function<ValueType> data;
+		};
 	};
-	template<typename ValueType> class Action_Impl final : public Action_Interface {
-	public:
-		explicit Action_Impl() = delete;
-		explicit Action_Impl(Function<ValueType> const& f) noexcept : data(f) {};
-		explicit Action_Impl(Function<ValueType>&& f) noexcept : data(std::forward<Function<ValueType>>(f)) {};
-		virtual ~Action_Impl() noexcept {};
 
-		virtual boost::typeindex::type_info const& type() const noexcept final {
-			return boost::typeindex::type_id<Function<ValueType>>().type_info();
-		};
-		virtual const char* typeName() const noexcept final {
-			return boost::typeindex::type_id<Function<ValueType>>().type_info().name();
-		};
-		virtual std::shared_ptr<Action_Interface> clone() const noexcept final {
-			return std::static_pointer_cast<Action_Interface>(std::make_shared<Action_Impl<ValueType>>(data));
-		};
-		virtual Any& Invoke() noexcept final {
-			return data.Invoke();
-		};
-		virtual Any& ForceInvoke() noexcept final {
-			return data.ForceInvoke();
-		};
-		virtual const char* FunctionName() const noexcept final {
-			return data.FunctionName();
-		};
-		virtual Any& Result() const noexcept final {
-			return data.GetResult();
-		};
-		virtual bool IsFinished() const noexcept final {
-			return data.IsFinished.load() > 0;
-		};
-		virtual bool ReturnsNothing()  const noexcept final {
-			return data.ReturnsNothing();
-		};
-
-		Function<ValueType> data;
-	};
-
+	/* Wrapper for Function<> which allows for sharing and capture of lambdas, functions, etc. that can be evaluated at later times/date/threads/fibers. e.g:
+	. auto f = Action([](int i, double x)->int{ return i+x; }, 10, 0.0);
+	. int value = f.Invoke().cast();
+	. assert(value == 10); */
 	class Action {
 	public: // structors
 		/*! Init */ Action() noexcept : content(BasePtr()) {};
@@ -1075,6 +1116,9 @@ namespace fibers {
 		std::shared_ptr<Action_Interface> content;
 
 	public:
+		Any* operator()() noexcept {
+			return Invoke();
+		};
 		Any* Invoke() noexcept { if (this) { std::shared_ptr<Action_Interface> c = content; if (c) { return &c->Invoke(); } } return nullptr; };
 		Any* ForceInvoke() noexcept { if (this) { std::shared_ptr<Action_Interface> c = content; if (c) { return &c->ForceInvoke(); } } return nullptr; };
 		const char* FunctionName() const {
