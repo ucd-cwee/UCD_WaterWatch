@@ -56,31 +56,27 @@ namespace fibers {
 		};
 	};
 	namespace {
-		struct AnyFunctionStruct {
+		class AnyFunctionStruct {
+		public:
+			AnyFunctionStruct() = default;
+			AnyFunctionStruct(std::shared_ptr<Action> const& j, bool&& f) : job(j), force(std::forward<bool>(f)) {};
+			AnyFunctionStruct(AnyFunctionStruct const&) = default;
+			AnyFunctionStruct(AnyFunctionStruct &&) = default;
+			AnyFunctionStruct& operator=(AnyFunctionStruct const&) = default;
+			AnyFunctionStruct& operator=(AnyFunctionStruct&&) = default;
+			~AnyFunctionStruct() = default;
+
 			std::shared_ptr<Action> job;
-			Any* destination;
 			bool force;
 		};
 		static void DoAnyFuncStruct(TaskScheduler* taskScheduler, void* arg) {
 			std::unique_ptr<AnyFunctionStruct> data(static_cast<AnyFunctionStruct*>(arg));
 			if (data && data->job) {
 				if (data->force) {
-					if (data->destination) {
-						auto* p = data->job->ForceInvoke();
-						if (p) *data->destination = *p;
-					}
-					else {
-						data->job->ForceInvoke();
-					}
+					data->job->ForceInvoke();
 				}
 				else {
-					if (data->destination) {
-						auto* p = data->job->Invoke();
-						if (p) *data->destination = *p;
-					}
-					else {
-						data->job->Invoke();
-					}
+					data->job->Invoke();
 				}
 			}
 		};
@@ -121,14 +117,14 @@ namespace fibers {
 	void JobGroup::JobGroupImpl::Queue(Job const& job) {
 		std::shared_ptr<WaitGroup> wg = std::static_pointer_cast<WaitGroup>(waitGroup);
 		if (!wg) throw(std::runtime_error("Job Group was empty.")); 
-		Fibers->AddTask({ DoAnyFuncStruct, new AnyFunctionStruct({ job.impl, nullptr, false }) }, TaskPriority::Normal, wg.get());
+		Fibers->AddTask({ DoAnyFuncStruct, new AnyFunctionStruct(job.impl, false) }, wg.get());
 		jobs.push_back(job);
 	};
 
 	void JobGroup::JobGroupImpl::ForceQueue(Job const& job) {
 		std::shared_ptr<WaitGroup> wg = std::static_pointer_cast<WaitGroup>(waitGroup);
 		if (!wg) throw(std::runtime_error("Job Group was empty.")); 
-		Fibers->AddTask({ DoAnyFuncStruct, new AnyFunctionStruct({ job.impl, nullptr, true }) }, TaskPriority::Normal, wg.get());
+		Fibers->AddTask({ DoAnyFuncStruct, new AnyFunctionStruct(job.impl, true) }, wg.get());
 		jobs.push_back(job);
 	};
 	void JobGroup::JobGroupImpl::Queue(std::vector<Job> const& listOfJobs) {
@@ -137,9 +133,9 @@ namespace fibers {
 
 		std::vector<Task> tasks;
 		for (Job const& j : listOfJobs) {
-			tasks.push_back({ DoAnyFuncStruct, new AnyFunctionStruct({ j.impl, nullptr, false }) });
+			tasks.push_back({ DoAnyFuncStruct, new AnyFunctionStruct(j.impl, false) });
 		}
-		Fibers->AddTasks(listOfJobs.size(), &tasks[0], TaskPriority::Normal, wg.get());	
+		Fibers->AddTasks(listOfJobs.size(), &tasks[0], wg.get());	
 		for (Job const& j : listOfJobs) {
 			jobs.push_back(j);
 		}
@@ -150,9 +146,9 @@ namespace fibers {
 
 		std::vector<Task> tasks;
 		for (Job const& j : listOfJobs) {
-			tasks.push_back({ DoAnyFuncStruct, new AnyFunctionStruct({ j.impl, nullptr, true }) });
+			tasks.push_back({ DoAnyFuncStruct, new AnyFunctionStruct(j.impl, true) });
 		}
-		Fibers->AddTasks(listOfJobs.size(), &tasks[0], TaskPriority::Normal, wg.get());
+		Fibers->AddTasks(listOfJobs.size(), &tasks[0], wg.get());
 		for (Job const& j : listOfJobs) {
 			jobs.push_back(j);
 		}

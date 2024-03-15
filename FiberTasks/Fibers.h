@@ -474,9 +474,9 @@ namespace fibers{
 		Job(const Job& other) : impl(other.impl) {};
 		Job(Job&& other) : impl(other.impl) {};
 		Job& operator=(const Job& other) { impl = other.impl; };
-		Job& operator=(Job&& other) { impl = other.impl; };
+		Job& operator=(Job&& other) { impl = std::move(other.impl); };
 		template < typename T, typename... Args, typename = std::enable_if_t< !std::is_same_v<Job, std::decay_t<T>> && !std::is_same_v<Any, std::decay_t<T>> >>
-		explicit Job(T function, Args... Fargs) : impl(new Action(function, Fargs...)) {};
+		explicit Job(T function, Args && ... Fargs) : impl(new Action(function, std::forward<Args>(Fargs)...)) {};
 		~Job() = default;
 
 	public:
@@ -863,9 +863,12 @@ namespace fibers{
 			decltype(auto) todo = std::function(std::forward<F>(ToDo));
 			constexpr bool retNo = std::is_same<typename utilities::function_traits<decltype(todo)>::result_type, void>::value;
 			//  typename std::tuple_element<0, typename utilities::function_traits<decltype(todo)>::arguments>::type;
-			std::vector< fibers::Job> jobs;
+
+			int n = (end - start); 
+			std::vector< fibers::Job > jobs(n, fibers::Job());
+			n = 0;
 			for (iteratorType iter = start; iter < end; iter++) {
-				jobs.push_back(fibers::Job([todo](iteratorType const& T) { return todo(T); }, (iteratorType)iter));
+				jobs[n++] = fibers::Job([todo](iteratorType const& T) { return todo(T); }, (iteratorType)iter);
 			}
 			group.Queue(jobs);
 
@@ -891,9 +894,11 @@ namespace fibers{
 			decltype(auto) todo = std::function(std::forward<F>(ToDo));
 			constexpr bool retNo = std::is_same<typename utilities::function_traits<decltype(todo)>::result_type, void>::value;
 
-			std::vector< fibers::Job> jobs;
+			int n = (end - start) / step;
+			std::vector< fibers::Job > jobs(n, fibers::Job());
+			n = 0;
 			for (iteratorType iter = start; iter < end; iter += step) {
-				jobs.push_back(fibers::Job([todo](iteratorType const& T) { return todo(T); }, (iteratorType)iter));
+				jobs[n++] = fibers::Job([todo](iteratorType const& T) { return todo(T); }, (iteratorType)iter);
 			}
 			group.Queue(jobs);
 
@@ -919,9 +924,12 @@ namespace fibers{
 			decltype(auto) todo = std::function(std::forward<F>(ToDo));
 			constexpr bool retNo = std::is_same<typename utilities::function_traits<decltype(todo)>::result_type, void>::value;
 
-			std::vector< fibers::Job> jobs;
+			int n = 0;
+			for (auto iter = container.begin(); iter != container.end(); iter++) n++;
+			std::vector< fibers::Job > jobs(n, fibers::Job());
+			n = 0;
 			for (auto iter = container.begin(); iter != container.end(); iter++) {
-				jobs.push_back(fibers::Job([todo](typename containerType::const_iterator& T) { return todo(Any(std::shared_ptr<typename containerType::value_type>(const_cast<typename containerType::value_type*>(&*T), [](typename containerType::value_type*) {})).cast()); }, (typename containerType::const_iterator)(iter)));
+				jobs[n++] = fibers::Job([todo](typename containerType::const_iterator& T) { return todo(Any(std::shared_ptr<typename containerType::value_type>(const_cast<typename containerType::value_type*>(&*T), [](typename containerType::value_type*) {})).cast()); }, (typename containerType::const_iterator)(iter));
 			}
 			group.Queue(jobs);
 
@@ -947,9 +955,13 @@ namespace fibers{
 			decltype(auto) todo = std::function(std::forward<F>(ToDo));
 			constexpr bool retNo = std::is_same<typename utilities::function_traits<decltype(todo)>::result_type, void>::value;
 
-			std::vector< fibers::Job> jobs;
+			int n = 0;
+			for (auto iter = container.begin(); iter != container.end(); iter++) n++;
+			std::vector< fibers::Job > jobs(n, fibers::Job());
+			n = 0;
+
 			for (auto iter = container.begin(); iter != container.end(); iter++) {
-				jobs.push_back(fibers::Job([todo](typename containerType::iterator& T) { return todo(Any(std::shared_ptr<typename containerType::value_type>(&*T, [](typename containerType::value_type*) {})).cast()); }, (typename containerType::iterator)(iter)));
+				jobs[n++] = fibers::Job([todo](typename containerType::iterator& T) { return todo(Any(std::shared_ptr<typename containerType::value_type>(&*T, [](typename containerType::value_type*) {})).cast()); }, (typename containerType::iterator)(iter));
 			}
 			group.Queue(jobs);
 

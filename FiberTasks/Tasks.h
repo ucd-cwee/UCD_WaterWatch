@@ -35,9 +35,4 @@ namespace fibers {
 		void* ArgData;
 	};
 
-	enum class TaskPriority {
-		High,
-		Normal,
-	};
-
 } // End of namespace ftl

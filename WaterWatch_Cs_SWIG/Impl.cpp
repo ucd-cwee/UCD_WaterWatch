@@ -164,35 +164,31 @@ std::vector<double> SharedMatrix::GetTimeSeries(double Left, double Top, double 
 
 		tempMatrix.Reserve(numColumns* numRows + 12);
 		fibers::parallel::For(0, numRows, [&tempMatrix , &out, &buffer_queue, &numColumns, &Left, &Top, &rowStep, &columnStep, &reductionRatio, &model](int R) {
-			alglib::real_1d_array results;
-			std::shared_ptr<alglib::rbfcalcbuffer> buf;
-			while (!buffer_queue.try_pop(buf)) {}
+			std::vector< cweeUnion<double, double, double> > out_internal(numColumns, cweeUnion<double, double, double>()); {
+				fibers::parallel::For(0, numColumns, [&reductionRatio , &out_internal, &buffer_queue, &model, &Left, &columnStep, &R, &rowStep, &Top](int C) {
+					alglib::real_1d_array results;
+					std::shared_ptr<alglib::rbfcalcbuffer> buf;
+					while (!buffer_queue.try_pop(buf)) {}
 
-			cweeList< cweeUnion<double, double, double> > out_internal(numColumns + 1);
+					alglib::real_1d_array arr;
+					cweeUnion<double, double> coords(double(Left + C * columnStep), double(Top - R * rowStep));
+					arr.attach_to_ptr(2, (double*)(void*)(&coords));
 
-			{
-				alglib::real_1d_array arr;
-				cweeUnion<double, double> coords;
-				arr.attach_to_ptr(2, (double*)(void*)(&coords));
-
-				int C;
-				for (coords.get<0>() = Left, coords.get<1>() = Top - R * rowStep, C = 0; C < numColumns; C++, coords.get<0>() += columnStep) {
 					if ((::Max(R, C) - ::Min(R, C)) % reductionRatio == 0) {
-						// get "real" interpolated results for 1/3 of the requested pixels using a slow, complex model, distributed diagonally along the grid								
+						// get "real" interpolated results for 1/3 of the requested pixels using a slow, complex model, distributed diagonally along the grid
 						alglib::rbftscalcbuf(model->get<0>(), *buf, arr, results, alglib::parallel);
-
 						// add it to the matrix
-						out_internal.Append(cweeUnion<double, double, double>((double)C, (double)R, (double)results[0]));
+						out_internal[C] = cweeUnion<double, double, double>((double)C, (double)R, (double)results[0]);
 					}
 					else {
-						out_internal.Append(cweeUnion<double, double, double>(std::numeric_limits<double>::max(), std::numeric_limits<double>::max(), std::numeric_limits<double>::max()));
+						out_internal[C] = cweeUnion<double, double, double>(std::numeric_limits<double>::max(), std::numeric_limits<double>::max(), std::numeric_limits<double>::max());
 					}
-				}
+
+					buffer_queue.push(buf);
+				});
 			}
 
-			buffer_queue.push(buf);
-
-#if 1
+#if 0
 			for (cweeUnion<double, double, double>& coord : out_internal) {
 				if (coord.get<0>() != std::numeric_limits<double>::max()
 					&& coord.get<1>() != std::numeric_limits<double>::max()
@@ -216,7 +212,7 @@ std::vector<double> SharedMatrix::GetTimeSeries(double Left, double Top, double 
 		// do a faster, local interpolation of those results using the Hilbert curve for the last 2/3 components. 
 		if (true) {
 			double R, C;
-#if 0
+#if 1
 			fibers::parallel::For(0, numRows, [&numColumns, &out, &tempMatrix, &reductionRatio](int R) {
 				fibers::parallel::For(0, numColumns, [&R, &numColumns, &out, &tempMatrix, &reductionRatio](int C) {
 					if (((int)(::Max(R, C) - ::Min(R, C))) % reductionRatio != 0) {

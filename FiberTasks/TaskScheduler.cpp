@@ -112,7 +112,6 @@ namespace fibers {
 			threadIndex = taskScheduler->GetCurrentThreadIndex_NoFail();
 			tls = &taskScheduler->m_threads[threadIndex]->tls;
 			readyWaitingFibers = false;
-			tls->fiberState.store(1); // STATE
 
 			// Check if there is a ready pinned waiting fiber
 			{
@@ -133,8 +132,6 @@ namespace fibers {
 				}
 			}
 
-			tls->fiberState.store(2); // STATE
-
 			TaskBundle nextTask{};
 			foundTask = false;
 
@@ -152,13 +149,8 @@ namespace fibers {
 				}
 			}
 
-			tls->fiberState.store(3); // STATE
-
 			if (waitingFiberIndex != kInvalidIndex) {
 				// Found a waiting task that is ready to continue
-
-				tls->fiberState.store(4); // STATE
-
 				tls->OldFiberIndex = tls->CurrentFiberIndex;
 				tls->CurrentFiberIndex = waitingFiberIndex;
 				tls->OldFiberDestination = FiberDestination::ToPool;
@@ -172,8 +164,6 @@ namespace fibers {
 				// Get a fresh instance of TLS, since we could be on a new thread now
 				tls = &taskScheduler->m_threads[taskScheduler->GetCurrentThreadIndex_NoFail()]->tls;
 
-				tls->fiberState.store(5); // STATE
-
 				if (taskScheduler->m_emptyQueueBehavior.load(std::memory_order_relaxed) == EmptyQueueBehavior::Sleep) {
 					tls->FailedQueuePopAttempts = 0;
 				}
@@ -186,14 +176,10 @@ namespace fibers {
 
 				behavior = taskScheduler->m_emptyQueueBehavior.load(std::memory_order_relaxed);
 
-				tls->fiberState.store(6); // STATE
-
 				if (foundTask) {
 					if (behavior == EmptyQueueBehavior::Sleep) {
 						tls->FailedQueuePopAttempts = 0;
 					}
-
-					tls->fiberState.store(7); // STATE
 
 					if (nextTask.TaskToExecute.Function != nullptr) {
 						tls->workingOnTask.store(true);
@@ -201,13 +187,9 @@ namespace fibers {
 						tls->workingOnTask.store(false);
 					}
 
-					tls->fiberState.store(8); // STATE
-
 					if (nextTask.WG != nullptr) {
 						nextTask.WG->Done();
 					}
-
-					tls->fiberState.store(9); // STATE
 				}
 				else {
 					// We failed to find a Task from any of the queues
@@ -219,8 +201,6 @@ namespace fibers {
 						break;
 
 					case EmptyQueueBehavior::Sleep: {
-
-						tls->fiberState.store(10); // STATE
 
 						// If we have a ready waiting fiber, prevent sleep
 						if (!readyWaitingFibers) {
@@ -236,8 +216,6 @@ namespace fibers {
 								if (tls->PinnedReadyFibers.empty()) {
 									// Unlock before going to sleep (the other lock is released by the CV wait)
 									readyfiberslock.unlock();
-
-									tls->fiberState.store(11); // STATE
 
 									taskScheduler->ThreadSleepCV.wait(lock); // mutex lock == puts the thread to sleep until the condition is tripped
 								}
@@ -258,7 +236,6 @@ namespace fibers {
 
 		// Switch to the quit fibers
 		index = taskScheduler->GetCurrentThreadIndex_NoFail();
-		taskScheduler->m_threads[index]->tls.fiberState.store(-1); // STATE
 		taskScheduler->m_fibers[taskScheduler->m_threads[index]->tls.CurrentFiberIndex]->fiber.SwitchToFiber(&taskScheduler->m_quitFibers[index]);
 
 		// We should never get here
@@ -441,44 +418,27 @@ namespace fibers {
 		delete[] m_quitFibers;
 	}
 
-	void TaskScheduler::AddTask(Task task, TaskPriority priority, WaitGroup* waitGroup) {
+	void TaskScheduler::AddTask(Task task, WaitGroup* waitGroup) {
 		if (waitGroup != nullptr) {
 			waitGroup->Add(1);
 		}
 
 		const TaskBundle bundle = { task, waitGroup };
-		if (priority == TaskPriority::High) {
-			m_threads[GetCurrentThreadIndex_NoFail()]->tls.HiPriTaskQueue.push(bundle);
-		}
-		else if (priority == TaskPriority::Normal) {
-			LoPriTaskQueue.push(bundle);
-		}
-
+		LoPriTaskQueue.push(bundle);
+		
 		const EmptyQueueBehavior behavior = m_emptyQueueBehavior.load(std::memory_order_relaxed);
 		if (behavior == EmptyQueueBehavior::Sleep) {
 			// Wake a sleeping thread
 			ThreadSleepCV.notify_one();
 		}
 	}
-
-	void TaskScheduler::AddTasks(uint32_t numTasks, Task* tasks, TaskPriority priority, WaitGroup* waitGroup) {
+	void TaskScheduler::AddTasks(uint32_t numTasks, Task* tasks, WaitGroup* waitGroup) {
 		if (waitGroup != nullptr) {
 			waitGroup->Add(static_cast<int32_t>(numTasks));
 		}
 
-		concurrency::concurrent_queue<TaskBundle>* queue = nullptr;
-		if (priority == TaskPriority::High) {
-			queue = &m_threads[GetCurrentThreadIndex_NoFail()]->tls.HiPriTaskQueue;
-		}
-		else if (priority == TaskPriority::Normal) {
-			queue = &LoPriTaskQueue;
-		}
-		else {
-			return;
-		}
-
 		for (uint32_t i = 0; i < numTasks; i++)
-			queue->push({ tasks[i], waitGroup });
+			LoPriTaskQueue.push({ tasks[i], waitGroup });
 
 		const EmptyQueueBehavior behavior = m_emptyQueueBehavior.load(std::memory_order_relaxed);
 		if (behavior == EmptyQueueBehavior::Sleep) {
@@ -603,52 +563,6 @@ namespace fibers {
 			taskBuffer->emplace_back(*nextTask);
 		}
 
-		// Force a scope so the `goto cleanup` above doesn't skip initialization
-		{
-			// Ours is empty, try to steal from the others'
-			const unsigned threadIndex = tls.HiPriLastSuccessfulSteal;
-			for (unsigned i = 0; i < static_cast<unsigned>(m_threads.size()); ++i) {
-				const unsigned threadIndexToStealFrom = (threadIndex + i) % static_cast<unsigned>(m_threads.size());
-				if (threadIndexToStealFrom == currentThreadIndex) {
-					continue;
-				}
-				ThreadLocalStorage& otherTLS = m_threads[threadIndexToStealFrom]->tls;
-
-				while (otherTLS.HiPriTaskQueue.try_pop(*nextTask)) {
-					tls.HiPriLastSuccessfulSteal = threadIndexToStealFrom;
-
-					if (TaskIsReadyToExecute(nextTask)) {
-						result = true;
-						// Break to cleanup
-
-						if (!taskBuffer->empty()) {
-							// Re-push all the tasks we found that we're ready to execute
-							// We (or another thread) will get them next round
-							do {
-								// Push them in the opposite order we popped them, to restore the order
-								tls.HiPriTaskQueue.push(taskBuffer->back());
-								taskBuffer->pop_back();
-							} while (!taskBuffer->empty());
-
-							// If we're using Sleep mode, we need to wake up the other threads
-							// They may have looked for tasks while we had them all in our temp buffer and thus not
-							// found anything and gone to sleep.
-							EmptyQueueBehavior const behavior = m_emptyQueueBehavior.load(std::memory_order_relaxed);
-							if (behavior == EmptyQueueBehavior::Sleep) {
-								// Wake all the threads
-								ThreadSleepCV.notify_all();
-							}
-						}
-						return result;
-					}
-
-					// It's a ReadyTask whose fiber hasn't switched away yet
-					// Add it to the buffer
-					taskBuffer->emplace_back(*nextTask);
-				}
-			}
-		}
-
 		// cleanup:
 		if (!taskBuffer->empty()) {
 			// Re-push all the tasks we found that we're ready to execute
@@ -707,7 +621,8 @@ namespace fibers {
 
 
 				// printf("No free fibers in the pool. Possible deadlock");
-				YieldThread();
+				
+				//YieldThread();
 
 				j = 0;
 			}

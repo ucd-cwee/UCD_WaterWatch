@@ -360,9 +360,9 @@ namespace fibers {
 			template <template<class> class H, class S, typename = std::enable_if_t<std::is_same_v<H<S>, std::shared_ptr<S>>>> static decltype(auto) get(H<S>&& obj) {
 				return std::static_pointer_cast<AnyData>(std::shared_ptr<AnyData_Impl<S>>(new AnyData_Impl<S>(std::forward<H<S>>(obj))));
 			};
-			template<typename T, typename = std::enable_if_t<!std::is_same_v<AnyAutoCast, T>>> static decltype(auto) get(T* t) { std::shared_ptr<T> sp = std::make_shared<T>(t); return get(sp); };
+			template<typename T, typename = std::enable_if_t<!std::is_same_v<AnyAutoCast, T>>> static decltype(auto) get(T* t) { return get(std::make_shared<T>(t)); };
 			template<typename T, typename = std::enable_if_t<!std::is_same_v<AnyAutoCast, T>>> static decltype(auto) get(const T* t) { return get(*t); };
-			template<typename T, typename = std::enable_if_t<!std::is_same_v<AnyAutoCast, T>>> static decltype(auto) get(const T& obj) { std::shared_ptr<T> sp = std::make_shared<T>(obj); return get(sp); };
+			template<typename T, typename = std::enable_if_t<!std::is_same_v<AnyAutoCast, T>>> static decltype(auto) get(const T& obj) { return get(std::make_shared<T>(obj)); };
 			static decltype(auto) get(const AnyAutoCast& obj);
 			static decltype(auto) get(const AnyAutoCast* t);
 		};
@@ -619,34 +619,55 @@ namespace fibers {
 		{};
 
 		template <typename... Args>
-		Function(const std::function<F>& function, Args... Fargs) noexcept
+		Function(const std::function<F>& function, Args && ... Fargs) noexcept
 			: _function(function)
-			, _data(GetData(Fargs...))
+			, _data(GetData(std::forward<Args>(Fargs)...))
+			, Result()
+			, IsFinished(0)
+		{};
+
+		template <typename... Args>
+		Function(std::function<F> && function, Args && ... Fargs) noexcept
+			: _function(std::forward<std::function<F>>(function))
+			, _data(GetData(std::forward<Args>(Fargs)...))
 			, Result()
 			, IsFinished(0)
 		{};
 
 	private:
 		static void AddData(std::vector<Any>& d) { return; };
-		template<typename T, typename... Targs> static void AddData(std::vector<Any>& d, const T& value, Targs... Fargs) // recursive function
+		template<typename T, typename... Targs> static void AddData(std::vector<Any>& d, T&& value, Targs && ... Fargs) // recursive function
 		{
 			if constexpr (std::is_same<T, void>::value) {
-				AddData(d, Fargs...);
+				AddData(d, std::forward<Targs>(Fargs)...);
+				return;
+			}
+			else {
+				d.push_back(std::forward<T>(value));
+				AddData(d, std::forward<Targs>(Fargs)...);
+				return;
+			}
+		};
+		template<typename T, typename... Targs> static void AddData(std::vector<Any>& d, T const& value, Targs && ... Fargs) // recursive function
+		{
+			if constexpr (std::is_same<T, void>::value) {
+				AddData(d, std::forward<Targs>(Fargs)...);
 				return;
 			}
 			else {
 				d.push_back(value);
-				AddData(d, Fargs...);
+				AddData(d, std::forward<Targs>(Fargs)...);
 				return;
 			}
 		};
-		template <typename... Args> std::vector<Any> GetData(Args... Fargs) {
+		template <typename... Args> std::vector<Any> GetData(Args && ... Fargs) {
 			constexpr size_t NumNeededInputs = NumInputs();
 			constexpr size_t NumProvidedInputs = sizeof...(Args);
 			static_assert(NumNeededInputs <= NumProvidedInputs, "Providing fewer inputs than required is unsupported. C++ Lambdas cannot support default arguments and therefore all arguments must be provided for.");
 
 			std::vector<Any> out;
-			AddData(out, Fargs...);
+			out.reserve(NumProvidedInputs);
+			AddData(out, std::forward<Args>(Fargs)...);
 			return out;
 		};
 
@@ -1072,7 +1093,7 @@ namespace fibers {
 		/*! Perfect forwarding */ Action(Action&& other) noexcept : content(std::move(other.content)) {};
 		/*! Data Assignment */ template<typename ValueType> explicit Action(const Function<ValueType>& value) : content(ToPtr<ValueType>(value)) {};
 		// /*! Direct instantiation */ template <typename F, typename... Args> Action(const std::function<F>& function, Args... Fargs) : Action(Function(function, Fargs...)) {};
-		/*! Direct instantiation2 */ template <typename F, typename... Args> Action(const F& function, Args... Fargs) : Action(Function(std::function(function), Fargs...)) {};
+		/*! Direct instantiation2 */ template <typename F, typename... Args> Action(const F& function, Args &&... Fargs) : Action(Function(std::function(function), std::forward<Args>(Fargs)...)) {};
 		~Action() = default;
 
 	public: // modifiers
@@ -1110,7 +1131,10 @@ namespace fibers {
 	private:
 		template <class ValueType> static std::shared_ptr<Action_Interface> ToPtr(const Function<ValueType>& rhs) noexcept { return std::static_pointer_cast<Action_Interface>(std::make_shared<Action_Impl<ValueType>>(rhs)); };
 		template <class ValueType> static std::shared_ptr<Action_Interface> ToPtr(Function<ValueType>&& rhs) noexcept { return std::static_pointer_cast<Action_Interface>(std::make_shared<Action_Impl<ValueType>>(std::forward<Function<ValueType>>(rhs))); };
-		static std::shared_ptr<Action_Interface> BasePtr() noexcept { return ToPtr(Function<void()>()); };
+		static std::shared_ptr<Action_Interface> BasePtr() noexcept { 
+			static thread_local auto base_ptr{ ToPtr(Function<void()>()) };
+			return base_ptr; // ToPtr(Function<void()>());
+		};
 
 	public:
 		std::shared_ptr<Action_Interface> content;
@@ -1119,8 +1143,14 @@ namespace fibers {
 		Any* operator()() noexcept {
 			return Invoke();
 		};
-		Any* Invoke() noexcept { if (this) { std::shared_ptr<Action_Interface> c = content; if (c) { return &c->Invoke(); } } return nullptr; };
-		Any* ForceInvoke() noexcept { if (this) { std::shared_ptr<Action_Interface> c = content; if (c) { return &c->ForceInvoke(); } } return nullptr; };
+		Any* Invoke() noexcept { 
+			std::shared_ptr<Action_Interface> c = content; if (c) { return &c->Invoke(); }
+			return nullptr; 
+		};
+		Any* ForceInvoke() noexcept { 
+			std::shared_ptr<Action_Interface> c = content; if (c) { return &c->ForceInvoke(); } 
+			return nullptr; 
+		};
 		const char* FunctionName() const {
 			std::shared_ptr<Action_Interface> c = content;
 			if (c)

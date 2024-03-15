@@ -217,7 +217,6 @@ namespace fibers {
 
 			std::atomic<bool> workingOnTask;
 			std::atomic<bool> quitting;
-			std::atomic<int> fiberState;
 		};
 
 		class ThreadWrapper {
@@ -298,7 +297,7 @@ namespace fibers {
 		 * @param counter     An atomic counter corresponding to this task. Initially it will be incremented by 1. When the task
 		 *                    completes, it will be decremented.
 		 */
-		void AddTask(Task task, TaskPriority priority, WaitGroup* waitGroup = nullptr);
+		void AddTask(Task task, WaitGroup* waitGroup = nullptr);
 
 		/**
 		 * Adds a group of tasks to the internal queue
@@ -312,7 +311,7 @@ namespace fibers {
 		 *                    numTasks. When each task completes, it will be decremented.
 		 */
 
-		void AddTasks(uint32_t numTasks, Task* tasks, TaskPriority priority, WaitGroup* waitGroup = nullptr);
+		void AddTasks(uint32_t numTasks, Task* tasks, WaitGroup* waitGroup = nullptr);
 
 		/**
 		 * Gets the 0-based index of the current thread
