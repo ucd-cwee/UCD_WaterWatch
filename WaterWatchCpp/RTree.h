@@ -510,8 +510,23 @@ template <
 class RTree {
 public:
 	static cweeBoundary const& GetBoundary(objType const& obj) { return coordinateLookupFunctor(obj); };
+
+	
 	class TreeNode {
 	public:
+		class TreeNodeCache {
+		public:
+			double
+				cached_distance; // instanced at the start of the "Near" function.
+			cweeList< TreeNode* >
+				cached_children; // created when the tree was created, by copying the "children", to be later sorted during the "Near" function.
+			int
+				cached_parentsChildIndex; // created when the tree was created, by copying the "parentsChildIndex", to be later updated during the "Near" function.
+		};
+
+	public:
+
+
 		cweeList<cweeSharedPtr<objType>>
 			unhandledObjs;
 		cweeList< TreeNode* >
@@ -524,25 +539,18 @@ public:
 			parent;
 		int 
 			parentsChildIndex;
-		double
-			cached_distance;
-		cweeList< TreeNode* >
-			cached_children;
-		int
-			cached_parentsChildIndex;
 
-
-		TreeNode() : unhandledObjs(), children(), bound(), object(nullptr), parent(nullptr), parentsChildIndex(-1), cached_distance(){};
+		TreeNode() : unhandledObjs(), children(), bound(), object(nullptr), parent(nullptr), parentsChildIndex(-1) {};
 		TreeNode(TreeNode const&) = default;
 		TreeNode(TreeNode&&) = default;
 		TreeNode& operator=(TreeNode const&) = default;
 		TreeNode& operator=(TreeNode&&) = default;
 
-		TreeNode* Next_Cached() {
+		TreeNode* Next_Cached(std::unordered_map< TreeNode*, TreeNodeCache> const& cache) {
 			TreeNode* out{ nullptr };
-			if (parent && (cached_parentsChildIndex >= 0)) {
-				if (parent->cached_children.Num() > (cached_parentsChildIndex + 1)) {
-					out = parent->cached_children[cached_parentsChildIndex + 1];
+			if (parent && (cache.at(this).cached_parentsChildIndex >= 0)) {
+				if (cache.at(parent).cached_children.Num() > (cache.at(this).cached_parentsChildIndex + 1)) {
+					out = cache.at(parent).cached_children[cache.at(this).cached_parentsChildIndex + 1];
 				}
 			}
 			return out;
@@ -582,6 +590,7 @@ public:
 			return ptr;
 		};
 	};
+
 	cweeAlloc<TreeNode, 10> 
 		nodeAllocator;
 	cweeList<cweeSharedPtr<objType>>
@@ -762,12 +771,10 @@ public:
 							index = node->children.Num();
 							newNode = nodeAllocator.Alloc();
 							newNode->parentsChildIndex = node->children.Num();
-							newNode->cached_parentsChildIndex = newNode->parentsChildIndex;
 							newNode->unhandledObjs = cluster;
 							newNode->parent = node;
 							node->children.Append(newNode);
 						}
-						node->cached_children = node->children;
 						node = node->children[0];
 					}
 					else {
@@ -775,12 +782,10 @@ public:
 							index = node->children.Num();
 							newNode = nodeAllocator.Alloc();
 							newNode->parentsChildIndex = node->children.Num();
-							newNode->cached_parentsChildIndex = newNode->parentsChildIndex;
 							newNode->unhandledObjs.Append(obj);
 							newNode->parent = node;
 							node->children.Append(newNode);
 						}
-						node->cached_children = node->children;
 						node->unhandledObjs.Clear();
 						node = node->children[0];
 					}
@@ -807,15 +812,6 @@ public:
 				}
 			}
 		}
-	
-		/* After completion, clear the cache at all nodes */
-		//node = root;
-		//while (node) {
-		//	node->cached_parentsChildIndex = -1;
-		//	node->cached_children.Clear();
-		//	node->cached_distance = 0;
-		//	node = GetNext(node);
-		//}
 	};
 	/* Recreates and caches the tree structure. Tree structure is invalidated if any objects are added or removed. Called automatically when traversing the tree. */
 	void ReloadTree() {
@@ -914,6 +910,20 @@ public:
 	};	
 	/* Main benefit / point of the RTree structure. Quickly finds the X nearest objects to a point in space. */
 	static cweeBalancedCurve< TreeNode* > Near(TreeNode* node, cweeBoundary const& point, int numNear) {
+		std::unordered_map< TreeNode*, TreeNode::TreeNodeCache> cache;
+
+		// instantiate the cache for each node
+		TreeNode* loopNode = node;
+		while (loopNode) {
+			auto& cached = cache[loopNode];
+
+			cached.cached_distance = 0;
+			cached.cached_children = loopNode->children;
+			cached.cached_parentsChildIndex = loopNode->parentsChildIndex;
+
+			loopNode = GetNext(loopNode);
+		}
+
 		cweeBalancedCurve< TreeNode* > sortedNodesActual;
 		auto& sortedNodes = sortedNodesActual.UnsafeGetValues();
 
@@ -922,7 +932,7 @@ public:
 		double distance_threshold = std::numeric_limits<double>::max();
 		int i;
 		
-		if (node) node->cached_distance = point.Distance(node->bound)(); // initiate the cached distance
+		if (node) cache.at(node).cached_distance = point.Distance(node->bound)(); // initiate the cached distance
 		while (node) {
 			if (node->object) {
 				distance = DistanceFunction(*node->object, point)();
@@ -938,30 +948,30 @@ public:
 				}
 			}
 			else {
-				if (manualCount < numNear || node->cached_distance < distance_threshold) {
-					for (i = node->cached_children.Num() - 1; i >= 0; --i) node->cached_children[i]->cached_distance = point.Distance(node->cached_children[i]->bound)();
-					node->cached_children.Sort([&point](TreeNode* const& a, TreeNode* const& b)->bool {
-						return a->cached_distance < b->cached_distance;
+				if (manualCount < numNear || cache.at(node).cached_distance < distance_threshold) {
+					for (i = cache.at(node).cached_children.Num() - 1; i >= 0; --i) cache.at(cache.at(node).cached_children[i]).cached_distance = point.Distance(cache.at(node).cached_children[i]->bound)();
+					cache.at(node).cached_children.Sort([&point, &cache](TreeNode* const& a, TreeNode* const& b)->bool {
+						return cache.at(a).cached_distance < cache.at(b).cached_distance;
 					});
-					for (i = node->cached_children.Num() - 1; i >= 0; --i) node->cached_children[i]->cached_parentsChildIndex = i;					
+					for (i = cache.at(node).cached_children.Num() - 1; i >= 0; --i) cache.at(cache.at(node).cached_children[i]).cached_parentsChildIndex = i;
 				} else {
 					// skip this entire node, including it's children. 					
-					while (node && node->Next_Cached() == nullptr) {
+					while (node && node->Next_Cached(cache) == nullptr) {
 						node = node->parent;
 					}
-					if (node) node = node->Next_Cached();
+					if (node) node = node->Next_Cached(cache);
 					continue;
 				}
 			}
 			if (node) {
-				if (node->cached_children.Num() > 0) {
-					node = node->cached_children[0];
+				if (cache.at(node).cached_children.Num() > 0) {
+					node = cache.at(node).cached_children[0];
 				}
 				else {
-					while (node && node->Next_Cached() == nullptr) {
+					while (node && node->Next_Cached(cache) == nullptr) {
 						node = node->parent;
 					}
-					if (node) node = node->Next_Cached();
+					if (node) node = node->Next_Cached(cache);
 				}
 			}
 		}

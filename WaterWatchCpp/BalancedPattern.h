@@ -108,12 +108,12 @@ public:
 
 	 type GetCurrentValue(const u64& time) const {
 		 type out{};
-		 Lock();
+		 ReadLock();
 		 AUTO x = UnsafeGetValues().NodeFindLargestSmallerEqual(time);
 		 if (x && x->object) {
 			 out = *x->object;
 		 }		 
-		 Unlock();
+		 ReadUnlock();
 		 return out;
 	 };
 
@@ -129,9 +129,9 @@ public:
 	bool		ValueExists(const u64& time) const {
 		bool out; 
 
-		Lock();
+		ReadLock();
 		out = container.NodeFind(time) != nullptr;
-		Unlock();
+		ReadUnlock();
 
 		return out;
 	};
@@ -189,7 +189,7 @@ public:
 		u64 out(0);
 		int num(0);
 
-		Lock();
+		ReadLock();
 		for (auto& x : container) {
 			if (x.object) {
 				num++;
@@ -202,7 +202,7 @@ public:
 			}
 
 		}
-		Unlock();
+		ReadUnlock();
 
 		return (u64)out;
 	};;
@@ -213,7 +213,7 @@ public:
 			return out;
 		else
 		{
-			Lock();
+			ReadLock();
 #ifndef  usePhmapBtree
 			auto ptr = container.NodeFindLargestSmallerEqual(std::numeric_limits<u64>::max());
 			if (ptr) {
@@ -225,7 +225,7 @@ public:
 				out = ptr->first;
 			}
 #endif
-			Unlock();
+			ReadUnlock();
 
 			return out;
 		}
@@ -237,7 +237,7 @@ public:
 			return out;
 		else
 		{
-			Lock();
+			ReadLock();
 #ifndef  usePhmapBtree
 			auto ptr = container.NodeFindSmallestLargerEqual(-std::numeric_limits<u64>::max());
 			if (ptr) {
@@ -250,7 +250,7 @@ public:
 				out = ptr->first;
 			}
 #endif
-			Unlock();
+			ReadUnlock();
 
 			return out;
 		}
@@ -259,13 +259,13 @@ public:
 
 	int					GetNumValues() const {
 		int out;
-		Lock();
+		ReadLock();
 #ifndef  usePhmapBtree
 		out = container.GetNodeCount();
 #else
 		out = container.size();
 #endif
-		Unlock();
+		ReadUnlock();
 		return out;
 	};
 
@@ -322,7 +322,7 @@ public:
 	*/
 	friend bool									operator==(const cweeBalancedCurve<type>& a, const cweeBalancedCurve<type>& b) {
 		bool out = true;
-		a.Lock();
+		a.ReadLock();
 		for (auto& x : a.UnsafeGetValues()) {
 #ifdef  usePhmapBtree
 			if (x.second != b.GetCurrentValue(x.first)) {
@@ -336,11 +336,11 @@ public:
 			}
 #endif
 		}
-		a.Unlock();
+		a.ReadUnlock();
 
 		if (!out) return out;
 
-		b.Lock();
+		b.ReadLock();
 		for (auto& x : b.UnsafeGetValues()) {
 #ifdef  usePhmapBtree
 			if (x.second != a.GetCurrentValue(x.first)) {
@@ -354,7 +354,7 @@ public:
 			}
 #endif
 		}
-		b.Unlock();
+		b.ReadUnlock();
 
 		return out;
 	};;
@@ -365,7 +365,7 @@ public:
 
 
 		std::pair<u64, type> set;
-		Lock();
+		ReadLock();
 #ifdef  usePhmapBtree
 
 		auto End = container.end();
@@ -399,7 +399,7 @@ public:
 			}
 		}
 #endif
-		Unlock();
+		ReadUnlock();
 
 		return out;
 	};
@@ -420,7 +420,7 @@ public:
 
 		std::pair<u64, type> set;
 
-		Lock();
+		ReadLock();
 #ifdef  usePhmapBtree
 
 		auto End = container.end(); auto f = container.upper_bound(timeEnd); f--;
@@ -450,7 +450,7 @@ public:
 			}
 		}
 #endif
-		Unlock();
+		ReadUnlock();
 
 		return out;
 	};
@@ -459,7 +459,7 @@ public:
 		int numKnots = this->GetNumValues();
 		cweeThreadedList<type> out(numKnots + 16);
 
-		Lock();
+		ReadLock();
 #ifdef  usePhmapBtree
 
 		auto End = container.end();
@@ -489,7 +489,7 @@ public:
 			}
 		}
 #endif
-		Unlock();
+		ReadUnlock();
 
 		return out;
 	};
@@ -499,6 +499,12 @@ public:
 	};
 	void										Unlock() const {
 		this->lock.Unlock();
+	};
+	void										ReadLock() const {
+		this->lock.Read_Lock();
+	};
+	void										ReadUnlock() const {
+		this->lock.Read_Unlock();
 	};
 
 protected:
@@ -536,7 +542,9 @@ private:
 #endif
 	int											granularity = 16;
 	// mutable cweeConstexprLock					lock; 
-	mutable cweeSysMutex						lock;
+
+	mutable cweeReadWriteMutex                  lock;
+	// mutable cweeSysMutex						lock;
 
 };
 #endif
@@ -1175,8 +1183,8 @@ public:
 		this->lock.Read_Lock();
 		j = container.GetNodeCount();		
 		if (j < 1) {
-			v = 0;
 			this->lock.Read_Unlock();
+			v = 0;
 			return v;
 		}
 		else if (j == 1) {
@@ -1198,9 +1206,7 @@ public:
 					break;
 				}
 				case interpolation_t::SPLINE: {
-					this->lock.Read_Unlock();
-					Basis(clampedTime, bvals);
-					this->lock.Read_Lock();
+					this->UnsafeBasis(clampedTime, bvals);
 					node_type* x1 = container.NodeFindLargestSmallerEqual(clampedTime);
 					node_type* x0 = x1 == nullptr ? (node_type*)nullptr : container.GetPrevLeaf(x1);
 					node_type* x2 = x1 == nullptr ? (node_type*)nullptr : container.GetNextLeaf(x1);
@@ -1212,9 +1218,7 @@ public:
 					break;
 				}
 				case interpolation_t::LINEAR: {
-					this->lock.Read_Unlock();
-					Basis(clampedTime, bvals);
-					this->lock.Read_Lock();
+					this->UnsafeBasis(clampedTime, bvals);
 					node_type* x1 = container.NodeFindLargestSmallerEqual(clampedTime);
 					node_type* x2 = x1 == nullptr ? (node_type*)nullptr : container.GetNextLeaf(x1);
 					if (x1) v += (*x1->object * (scalarT)(u64)bvals[1]);

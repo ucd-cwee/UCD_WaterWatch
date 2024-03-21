@@ -1303,6 +1303,7 @@ namespace UWP_WaterWatch.Custom_Controls
             public AtomicInt StopStreaming;
             public static void QueueBitMapStream(CustomMapTileDataSource sender, MapTileBitmapRequestedEventArgs args)
             {
+
                 if ((sender as CustomMapTileDataSourceWithTag).StopStreaming.Get() != 0)
                 {
                     return;
@@ -1314,6 +1315,91 @@ namespace UWP_WaterWatch.Custom_Controls
             // Create the custom tiles.
             private static void CreateBitmapAsStreamAsync(MapTileBitmapRequestedEventArgs args, int pixelSize, List<TemporaryMapTileDataSourceContainer> cweeMapBackgrounds)
             {
+#if true
+                try
+                {
+                    int x_pos = args.X;
+                    int y_pos = args.Y;
+                    int zoom = args.ZoomLevel;
+
+                    int pixelHeight = pixelSize;
+                    int pixelWidth = pixelSize;
+                    int bpp = 4;
+                    int byteIndex;
+
+                    byte[] bytes = new byte[pixelHeight * pixelWidth * bpp];
+
+                    {
+                        ExtensionMethods.TileSystem.TileXYToPixelXY(x_pos, y_pos, out x_pos, out y_pos);
+
+                        double mapSize = ExtensionMethods.TileSystem.MapSize(zoom);
+                        double mapX = 0, mapY = 0;
+
+                        mapY = 0.5 - (ExtensionMethods.TileSystem.Clip(y_pos, 0, mapSize - 1) / mapSize);
+                        ExtensionMethods.TileSystem.PixelYToLat_Fast(ref mapY, out double latitude);
+
+                        mapX = (ExtensionMethods.TileSystem.Clip(x_pos, 0, mapSize - 1) / mapSize) - 0.5;
+                        ExtensionMethods.TileSystem.PixelXToLong_Fast(ref mapX, out double longitude);
+
+                        mapY = 0.5 - (ExtensionMethods.TileSystem.Clip(y_pos + pixelHeight - 1, 0, mapSize - 1) / mapSize);
+                        ExtensionMethods.TileSystem.PixelYToLat_Fast(ref mapY, out double latitudeBottom);
+
+                        mapX = (ExtensionMethods.TileSystem.Clip(x_pos + pixelWidth - 1, 0, mapSize - 1) / mapSize) - 0.5;
+                        ExtensionMethods.TileSystem.PixelXToLong_Fast(ref mapX, out double longitudeRight);
+
+                        {
+                            try {
+                                List<MapBackground_Interop> bgs = new List<MapBackground_Interop>(cweeMapBackgrounds.Count);
+                                foreach (var bg in cweeMapBackgrounds) bgs.Add(bg.Source);
+
+                                var result = MapBackground_Interop.GetMatrix(longitude, latitude, longitudeRight, latitudeBottom, pixelWidth, pixelHeight, bgs);
+
+                                int n = result.Count();
+                                Color_Interop c;
+                                for (int i = 0; i < n; i++)
+                                {
+                                    byteIndex = i * bpp;
+                                    c = result[i];
+                                    bytes[byteIndex + 0] = (byte)c.R;
+                                    bytes[byteIndex + 1] = (byte)c.G;
+                                    bytes[byteIndex + 2] = (byte)c.B;
+                                    bytes[byteIndex + 3] = (byte)c.A;
+                                }
+                            }
+                            catch (Exception) { }
+                        }
+                        {
+                            // Create RandomAccessStream from byte array.
+                            InMemoryRandomAccessStream randomAccessStream = new InMemoryRandomAccessStream();
+                            IOutputStream outputStream = randomAccessStream.GetOutputStreamAt(0);
+
+                            var writer = new DataWriter(outputStream);
+                            {
+                                writer.WriteBytes(bytes);
+                                args.Request.PixelData = RandomAccessStreamReference.CreateFromStream(randomAccessStream);
+
+                                writer.StoreAsync().AsTask().ContinueWith((System.Threading.Tasks.Task<uint> a) => {
+                                    writer.FlushAsync().AsTask().ContinueWith((System.Threading.Tasks.Task<bool> b) => {
+                                        try
+                                        {
+                                            writer.DetachStream();
+                                            writer.Dispose();
+                                        }
+                                        catch (Exception) { }
+                                        finally { }
+                                    });
+                                });
+                            }
+                        }
+                    }
+                }
+                catch (Exception e)
+                {
+                    e.EdmsHandle();
+                }
+                finally { }
+#else
+
                 MapTileBitmapRequestDeferral _deferral = args.Request.GetDeferral();
                 try {
                     int x_pos = args.X;
@@ -1397,6 +1483,7 @@ namespace UWP_WaterWatch.Custom_Controls
                     e.EdmsHandle();
                     _deferral.Complete();
                 } finally { }
+#endif
             }
         }
 

@@ -168,6 +168,7 @@
 #pragma endregion 
 
 #include "Actions.h"
+#include "Concurrent_Queue.h"
 namespace fibers{
 	namespace utilities {
 		class Hardware {
@@ -441,7 +442,7 @@ namespace fibers{
 		};
 
 		template<typename _Key_type> using unordered_set = concurrency::concurrent_unordered_set<_Key_type>; /* Wrapper To-Do */
-		template<typename _Value_type> using queue = concurrency::concurrent_queue<_Value_type>; /* Wrapper To-Do */
+		template<typename _Value_type> using queue = moodycamel::ConcurrentQueue<_Value_type>; //  concurrency::concurrent_queue<_Value_type>; /* Wrapper To-Do */
     };
 
 	/*! Class used to queue and await one or multiple jobs submitted to a concurrent fiber manager. */
@@ -846,6 +847,22 @@ namespace fibers{
 		};
 	};
 	namespace parallel {
+		/*
+		outputType x; 
+		for (auto& v : resultList){ x += v; } 
+		return x;
+		*/
+		template<typename outputType>
+		decltype(auto) Accumulate(std::vector<std::shared_ptr<outputType>> const& resultList) {
+			outputType out{ 0 };
+			for (auto& v : resultList) {
+				if (v) {
+					out += *v;
+				}
+			}
+			return out;
+		};
+
 		/* 
 		parallel_for (auto i = start; i < end; i++){ todo(i); }
 		If the todo(i) returns anything, it will be collected into a vector at the end.

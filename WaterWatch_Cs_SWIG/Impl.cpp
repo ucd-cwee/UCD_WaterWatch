@@ -30,7 +30,7 @@ to maintain a single distribution point for the source code.
 #include "../WaterWatchCpp/ExternData.h"
 #include "../WaterWatchCpp/AlgLibWrapper.h"
 #include "../FiberTasks/Fibers.h"
-
+#include "../WaterWatchCpp/RTree.h"
 #include "Header.h"
 
 #pragma region cweeDateTime
@@ -89,9 +89,16 @@ std::vector<double> SharedMatrix::GetKnotSeries(double Left, double Top, double 
 	for (auto& x : v) out.push_back(x);
 	return out;
 };
+INLINE cweeBoundary const& GetBoundary_Timeseries(cweeUnion<vec3d, cweeBoundary> const& a) {
+	return a.get<1>();
+};
+INLINE units::length::foot_t DistanceFunction_Timeseries(cweeUnion<vec3d, cweeBoundary> const& a, cweeBoundary const& b) {
+	return a.get<1>().Distance(b);
+};
+
 std::vector<double> SharedMatrix::GetTimeSeries(double Left, double Top, double Right, double Bottom, int numColumns, int numRows) {
 	constexpr int
-		reductionRatio = 4;
+		reductionRatio = 8;
 	std::vector<double>
 		out;
 	out.reserve(numColumns * numRows + 12);
@@ -102,17 +109,153 @@ std::vector<double> SharedMatrix::GetTimeSeries(double Left, double Top, double 
 	constexpr bool Multithreaded = true;
 	if constexpr (Multithreaded) {
 #if 1
+#if 0
+#define useCachedMatrix
 		out.resize(numColumns * numRows);
 
 		u64
 			columnStep = (Right - Left) / numColumns,
 			rowStep = (Top - Bottom) / numRows;
 
+		auto* knots = external_data->GetMatrixRef(index_p);
+
+		using treeType = RTree<cweeUnion<vec3d, cweeBoundary>, GetBoundary_Timeseries, DistanceFunction_Timeseries>;
+		using rbfmodelContainer = cweeUnion<
+			treeType,
+			bool
+#ifdef useCachedMatrix
+			, cweeInterpolatedMatrix<float>
+#endif
+		>;
+
+		// Get or create the underlying interpolation model
+		cweeSharedPtr<rbfmodelContainer> model;
+		double avgDistanceBetweenKnots = 1.0;
+		if (!knots->Tag) {
+			avgDistanceBetweenKnots = knots->EstimateDistanceBetweenKnots();
+			knots->Lock();
+		}
+		if (!knots->Tag) {
+			model = make_cwee_shared<rbfmodelContainer>(); {
+				auto& tree = model->get<0>();
+
+				auto& knotSeries = knots->UnsafeGetSource();
+				knotSeries.Lock();
+				for (auto& knot : knotSeries.UnsafeGetValues()) {
+					if (knot.object) {
+						cweeBoundary bound; {
+							bound.bottomLeft = vec2d(knot.object->x, knot.object->y);
+							bound.topRight = vec2d(knot.object->x, knot.object->y);
+						}
+						vec3d coords(knot.object->x, knot.object->y, knot.object->z);
+						tree.Add(cweeUnion<vec3d, cweeBoundary>(coords, bound));
+					}
+				}
+				knotSeries.Unlock();
+
+				tree.ReloadTree();
+			}
+			knots->Tag = cweeSharedPtr<void>(model, [](void* p) { return p; });
+			knots->Unlock();
+		}
+		else {
+			model = cweeSharedPtr<rbfmodelContainer>(knots->Tag, [](void* p) -> rbfmodelContainer* { return static_cast<rbfmodelContainer*>(p); });
+		}
+
+#ifdef useCachedMatrix
+		cweeInterpolatedMatrix<float>& tempMatrix = model->get<2>();
+#else
 		cweeInterpolatedMatrix<float> tempMatrix;
+		tempMatrix.Reserve(numColumns * numRows + 2);
+#endif
+		auto& tree = model->get<0>();
+
+
+		fibers::parallel::For(0, numRows, [&tree, &tempMatrix, &out, &numColumns, &Left, &Top, &rowStep, &columnStep, &reductionRatio, &model](int R) {
+			fibers::parallel::For(0, numColumns, [&R, &tree, &tempMatrix, &out, &numColumns, &Left, &Top, &rowStep, &columnStep, &reductionRatio, &model](int C) {
+				cweeUnion<double, double> coords;
+				coords.get<1>() = double(Top - R * rowStep);
+
+				if ((::Max(R, C) - ::Min(R, C)) % reductionRatio == 0) {
+					coords.get<0>() = double(Left + C * columnStep);
+#ifdef useCachedMatrix
+					if (!tempMatrix.ContainsPosition(coords.get<0>(), coords.get<1>())) {
+#endif
+						cweeBoundary b; {
+							b.bottomLeft = vec2d(coords.get<0>(), coords.get<1>());
+							b.topRight = b.bottomLeft;
+						}
+
+						auto near_sorted = treeType::Near(tree.GetRoot(), b, 10);
+						double totalWeightedSum{ 0 };
+						double totalWeight{ 0 };
+						double final_v = { 0 };
+						for (auto& knot : near_sorted.UnsafeGetValues()) {
+							if (knot.object && *knot.object) {
+								auto& distance = knot.key;
+								vec3d& coords = (*knot.object)->object->get<0>();
+								if (distance <= 0) {
+									final_v = coords.z;
+									totalWeight = 0;
+									break;
+								}
+								else {
+									totalWeightedSum += coords.z / distance;
+									totalWeight += 1.0 / distance;
+								}
+							}
+						}
+						if (totalWeight != 0) final_v = totalWeightedSum / totalWeight;
+
+						// get "real" interpolated results for sub-portion of the requested pixels using a slow, complex model, distributed diagonally along the grid						
+						tempMatrix.AddValue(
+#ifdef useCachedMatrix
+							coords.get<0>(), coords.get<1>()
+#else
+							C, R
+#endif
+							, final_v, true);
+#ifdef useCachedMatrix
+					}
+#endif
+				}			
+			});
+		});
+
+		// do a faster, local interpolation of those results using the Hilbert curve for the last 2/3 components. 
+		if (true) {
+			fibers::parallel::For(0, numRows, [&numColumns, &out, &tempMatrix, &reductionRatio, &Left, &Top, &columnStep, &rowStep](int R) {
+				for (int C = 0; C < numColumns; C++) {
+					//if (((int)(::Max(R, C) - ::Min(R, C))) % reductionRatio != 0) {
+					out[numColumns * R + C] = tempMatrix.GetCurrentValue(
+#ifdef useCachedMatrix
+						Left + C * columnStep, Top - R * rowStep
+#else
+						C, R
+#endif
+					);
+					//}
+				}
+				});
+		}
+#undef useCachedMatrix
+#else
+// #define useCachedMatrix
+		out.resize(numColumns * numRows);
+
+		u64
+			columnStep = (Right - Left) / numColumns,
+			rowStep = (Top - Bottom) / numRows;
 
 		auto* knots = external_data->GetMatrixRef(index_p);
 
-		using rbfmodelContainer = cweeUnion<alglib::rbfmodel, fibers::containers::queue< std::shared_ptr<alglib::rbfcalcbuffer> >>;
+		using rbfmodelContainer = cweeUnion<
+			alglib::rbfmodel, 
+			fibers::containers::queue< std::shared_ptr<alglib::rbfcalcbuffer> >
+#ifdef useCachedMatrix
+			,  cweeInterpolatedMatrix<float>
+#endif
+		>;
 
 		// Get or create the underlying interpolation model
 		cweeSharedPtr<rbfmodelContainer> model;
@@ -147,7 +290,7 @@ std::vector<double> SharedMatrix::GetTimeSeries(double Left, double Top, double 
 				}
 
 				fibers::containers::queue< std::shared_ptr<alglib::rbfcalcbuffer> >& buffer_queue = model->get<1>();
-				fibers::parallel::For(0, fibers::utilities::Hardware::GetNumCpuCores() * 2, [&buffer_queue, &model](int i) {
+				fibers::parallel::For(0, std::max(20, fibers::utilities::Hardware::GetNumCpuCores() * 2), [&buffer_queue, &model](int i) {
 					alglib::rbfcalcbuffer* p = new alglib::rbfcalcbuffer();
 					alglib::rbfcreatecalcbuffer(model->get<0>(), *p, alglib::parallel);
 					buffer_queue.push(std::shared_ptr<alglib::rbfcalcbuffer>(p));
@@ -161,76 +304,68 @@ std::vector<double> SharedMatrix::GetTimeSeries(double Left, double Top, double 
 		}
 
 		fibers::containers::queue< std::shared_ptr<alglib::rbfcalcbuffer> >& buffer_queue = model->get<1>();		
-
-		tempMatrix.Reserve(numColumns* numRows + 12);
-		fibers::parallel::For(0, numRows, [&tempMatrix , &out, &buffer_queue, &numColumns, &Left, &Top, &rowStep, &columnStep, &reductionRatio, &model](int R) {
-			std::vector< cweeUnion<double, double, double> > out_internal(numColumns, cweeUnion<double, double, double>()); {
-				fibers::parallel::For(0, numColumns, [&reductionRatio , &out_internal, &buffer_queue, &model, &Left, &columnStep, &R, &rowStep, &Top](int C) {
-					alglib::real_1d_array results;
-					std::shared_ptr<alglib::rbfcalcbuffer> buf;
-					while (!buffer_queue.try_pop(buf)) {}
-
-					alglib::real_1d_array arr;
-					cweeUnion<double, double> coords(double(Left + C * columnStep), double(Top - R * rowStep));
-					arr.attach_to_ptr(2, (double*)(void*)(&coords));
-
-					if ((::Max(R, C) - ::Min(R, C)) % reductionRatio == 0) {
-						// get "real" interpolated results for 1/3 of the requested pixels using a slow, complex model, distributed diagonally along the grid
-						alglib::rbftscalcbuf(model->get<0>(), *buf, arr, results, alglib::parallel);
-						// add it to the matrix
-						out_internal[C] = cweeUnion<double, double, double>((double)C, (double)R, (double)results[0]);
-					}
-					else {
-						out_internal[C] = cweeUnion<double, double, double>(std::numeric_limits<double>::max(), std::numeric_limits<double>::max(), std::numeric_limits<double>::max());
-					}
-
-					buffer_queue.push(buf);
-				});
-			}
-
-#if 0
-			for (cweeUnion<double, double, double>& coord : out_internal) {
-				if (coord.get<0>() != std::numeric_limits<double>::max()
-					&& coord.get<1>() != std::numeric_limits<double>::max()
-					&& coord.get<2>() != std::numeric_limits<double>::max()) {
-					tempMatrix.AddValue(coord.get<0>(), coord.get<1>(), coord.get<2>(), false);
-					out[numColumns * coord.get<1>() + coord.get<0>()] = coord.get<2>();
-				}
-			}
+#ifdef useCachedMatrix
+		cweeInterpolatedMatrix<float>& tempMatrix  = model->get<2>();
 #else
-			fibers::parallel::ForEach(out_internal, [&tempMatrix, &out, &numColumns](cweeUnion<double, double, double>& coord) {
-				if (coord.get<0>() != std::numeric_limits<double>::max()
-					&& coord.get<1>() != std::numeric_limits<double>::max()
-					&& coord.get<2>() != std::numeric_limits<double>::max()) {
-					tempMatrix.AddValue(coord.get<0>(), coord.get<1>(), coord.get<2>(), false);
-					out[numColumns * coord.get<1>() + coord.get<0>()] = coord.get<2>();
-				}
-			});
+		cweeInterpolatedMatrix<float> tempMatrix;
+		tempMatrix.Reserve(numColumns * numRows + 2);
 #endif
+		
+		fibers::parallel::For(0, numRows, [&tempMatrix , &out, &buffer_queue, &numColumns, &Left, &Top, &rowStep, &columnStep, &reductionRatio, &model](int R) {
+			//std::vector< cweeUnion<double, double, double> > out_internal(numColumns, cweeUnion<double, double, double>(std::numeric_limits<double>::max(), std::numeric_limits<double>::max(), std::numeric_limits<double>::max()));
+			cweeUnion<double, double> coords;
+			alglib::real_1d_array results;
+			std::shared_ptr<alglib::rbfcalcbuffer> buf;
+			if (!buffer_queue.try_pop(buf)) {
+				alglib::rbfcalcbuffer* p = new alglib::rbfcalcbuffer();
+				alglib::rbfcreatecalcbuffer(model->get<0>(), *p, alglib::parallel);
+				buf = std::shared_ptr<alglib::rbfcalcbuffer>(p);
+			}
+			alglib::real_1d_array arr;
+			arr.attach_to_ptr(2, (double*)(void*)(&coords));
+
+			coords.get<1>() = double(Top - R * rowStep);
+			for (int C = 0; C < numColumns; C++){
+				if ((::Max(R, C) - ::Min(R, C)) % reductionRatio == 0) {
+					coords.get<0>() = double(Left + C * columnStep);
+#ifdef useCachedMatrix
+					if (!tempMatrix.ContainsPosition(coords.get<0>(), coords.get<1>())) {
+#endif
+						// get "real" interpolated results for sub-portion of the requested pixels using a slow, complex model, distributed diagonally along the grid
+						alglib::rbftscalcbuf(model->get<0>(), *buf, arr, results, alglib::parallel);
+						tempMatrix.AddValue(
+#ifdef useCachedMatrix
+							coords.get<0>(), coords.get<1>()
+#else
+							C, R
+#endif
+						, results[0], true);
+#ifdef useCachedMatrix
+					}
+#endif
+				}
+			}
+			buffer_queue.push(buf);
 		});
 
 		// do a faster, local interpolation of those results using the Hilbert curve for the last 2/3 components. 
 		if (true) {
-			double R, C;
-#if 1
-			fibers::parallel::For(0, numRows, [&numColumns, &out, &tempMatrix, &reductionRatio](int R) {
-				fibers::parallel::For(0, numColumns, [&R, &numColumns, &out, &tempMatrix, &reductionRatio](int C) {
-					if (((int)(::Max(R, C) - ::Min(R, C))) % reductionRatio != 0) {
-						out[numColumns * R + C] = tempMatrix.GetCurrentValue(C, R);
-					}
+			fibers::parallel::For(0, numRows, [&numColumns, &out, &tempMatrix, &reductionRatio, &Left, &Top, &columnStep, &rowStep](int R) {
+				fibers::parallel::For(0, numColumns, [&R, &numColumns, &out, &tempMatrix, &reductionRatio, &Left, &Top, &columnStep, &rowStep](int C) {
+					//if (((int)(::Max(R, C) - ::Min(R, C))) % reductionRatio != 0) {
+					out[numColumns * R + C] = tempMatrix.GetCurrentValue(
+#ifdef useCachedMatrix
+						Left + C * columnStep, Top - R * rowStep
+#else
+						C, R
+#endif
+					);
+					//}
 				});
 			});
-#else
-			for (R = 0; R < numRows; R++) {
-				for (C = 0; C < numColumns; C++) {
-					if (((int)(::Max(R, C) - ::Min(R, C))) % reductionRatio != 0) {
-						out[numColumns * R + C] = tempMatrix.GetCurrentValue(C, R);
-					}
-				}
-			}
-#endif
 		}
-
+#undef useCachedMatrix
+#endif
 #else
 		out.resize(numColumns * numRows);
 
@@ -2069,9 +2204,9 @@ std::vector<Color_Interop> MapBackground_Interop::GetMatrix(double Left, double 
 #if 1
 	fibers::parallel::For((int)0, (int)out.size(), [&out](int i) {
 		auto& pixel = out[i];
-		pixel.R = ::Min(255.0, ::Max<double>(0.0, pixel.R));
-		pixel.G = ::Min(255.0, ::Max<double>(0.0, pixel.G));
-		pixel.B = ::Min(255.0, ::Max<double>(0.0, pixel.B));
+		pixel.R = ::Min(255.0, ::Max<double>(0.0, pixel.R + random_fast(-0.5, 0.5))); // rand_fast since the rand is for visual polish, not numerical use. This random_fast is only pseudo-random
+		pixel.G = ::Min(255.0, ::Max<double>(0.0, pixel.G + random_fast(-0.5, 0.5)));
+		pixel.B = ::Min(255.0, ::Max<double>(0.0, pixel.B + random_fast(-0.5, 0.5)));
 	});
 #else
 	for (int i = out.size() - 1; i >= 0; i--) {

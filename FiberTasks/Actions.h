@@ -199,9 +199,10 @@ namespace fibers {
 		/* Generic container that does not instantiate an object until actually needed. Useful for seperating consumption from creation. Once made, the container is nearly "free" in terms of speed. */
 		template<typename T > class DelayedInstantiation {
 		public:
-			DelayedInstantiation(std::shared_ptr<T> const& o) : obj(o), Lock(std::make_shared<synchronization::TicketSpinLock>()), createFunc([]()->T* { return new T(); }) {};
-			DelayedInstantiation() : obj(nullptr), Lock(std::make_shared<synchronization::TicketSpinLock>()), createFunc([]()->T* { return new T(); }) {};
-			DelayedInstantiation(std::function<T* ()> create) : obj(nullptr), Lock(std::make_shared<synchronization::TicketSpinLock>()), createFunc(create) {};
+			DelayedInstantiation(std::shared_ptr<T> const& o) : obj(o), Lock(std::make_shared<synchronization::TicketSpinLock>()), createFunc([]()->T* { return new T(); }), deleteFunc([](T* p)->void { delete p; }) {};
+			DelayedInstantiation() : obj(nullptr), Lock(std::make_shared<synchronization::TicketSpinLock>()), createFunc([]()->T* { return new T(); }), deleteFunc([](T* p)->void { delete p; }) {};
+			DelayedInstantiation(std::function<T* ()> create) : obj(nullptr), Lock(std::make_shared<synchronization::TicketSpinLock>()), createFunc(create), deleteFunc([](T* p)->void { delete p; }) {};
+			DelayedInstantiation(std::function<T* ()> create, std::function<void(T*)> destroyFunc) : obj(nullptr), Lock(std::make_shared<synchronization::TicketSpinLock>()), createFunc(create), deleteFunc(destroyFunc) {};
 			~DelayedInstantiation() {};
 
 			//T* operator->() { Ensure(); return obj.Get(); };
@@ -214,7 +215,7 @@ namespace fibers {
 					lock();
 					auto* p = obj.get();
 					if (!p) {
-						obj = std::shared_ptr<T>(createFunc());
+						obj = std::shared_ptr<T>(createFunc(), deleteFunc);
 					}
 					unlock();
 				}
@@ -228,6 +229,7 @@ namespace fibers {
 			std::shared_ptr<T> obj;
 			std::shared_ptr<synchronization::TicketSpinLock> Lock;
 			std::function<T* ()> createFunc;
+			std::function<void(T*)> deleteFunc;
 		};
 
 	};
@@ -708,7 +710,8 @@ namespace fibers {
 			return numArgs;
 		};
 		static constexpr bool ReturnsNothing() {
-			return  std::is_same<typename std::function<F>::result_type, void>::value;
+			constexpr bool returnsNothing = std::is_same<typename std::function<F>::result_type, void>::value;
+			return returnsNothing;
 		};
 
 		const char* FunctionName() const {
@@ -846,7 +849,7 @@ namespace fibers {
 			if constexpr (ReturnsNothing())
 			{
 				/*    */ _function(_data[0].cast(), _data[1].cast(), _data[2].cast(), _data[3].cast(), _data[4].cast(), _data[5].cast(), _data[6].cast(), _data[7].cast(), _data[8].cast(), _data[9].cast(), _data[10].cast(), _data[11].cast(), _data[12].cast(), _data[13].cast(), _data[14].cast(), _data[15].cast());
-				Any().swap(Result);
+				// Any().swap(Result);
 			}
 			else {
 				Result = _function(_data[0].cast(), _data[1].cast(), _data[2].cast(), _data[3].cast(), _data[4].cast(), _data[5].cast(), _data[6].cast(), _data[7].cast(), _data[8].cast(), _data[9].cast(), _data[10].cast(), _data[11].cast(), _data[12].cast(), _data[13].cast(), _data[14].cast(), _data[15].cast());
@@ -856,7 +859,7 @@ namespace fibers {
 			if constexpr (ReturnsNothing())
 			{
 				/*    */ _function(_data[0].cast(), _data[1].cast(), _data[2].cast(), _data[3].cast(), _data[4].cast(), _data[5].cast(), _data[6].cast(), _data[7].cast(), _data[8].cast(), _data[9].cast(), _data[10].cast(), _data[11].cast(), _data[12].cast(), _data[13].cast(), _data[14].cast());
-				Any().swap(Result);
+				// Any().swap(Result);
 			}
 			else {
 				Result = _function(_data[0].cast(), _data[1].cast(), _data[2].cast(), _data[3].cast(), _data[4].cast(), _data[5].cast(), _data[6].cast(), _data[7].cast(), _data[8].cast(), _data[9].cast(), _data[10].cast(), _data[11].cast(), _data[12].cast(), _data[13].cast(), _data[14].cast());
@@ -866,7 +869,7 @@ namespace fibers {
 			if constexpr (ReturnsNothing())
 			{
 				/*    */ _function(_data[0].cast(), _data[1].cast(), _data[2].cast(), _data[3].cast(), _data[4].cast(), _data[5].cast(), _data[6].cast(), _data[7].cast(), _data[8].cast(), _data[9].cast(), _data[10].cast(), _data[11].cast(), _data[12].cast(), _data[13].cast());
-				Any().swap(Result);
+				// Any().swap(Result);
 			}
 			else {
 				Result = _function(_data[0].cast(), _data[1].cast(), _data[2].cast(), _data[3].cast(), _data[4].cast(), _data[5].cast(), _data[6].cast(), _data[7].cast(), _data[8].cast(), _data[9].cast(), _data[10].cast(), _data[11].cast(), _data[12].cast(), _data[13].cast());
@@ -876,7 +879,7 @@ namespace fibers {
 			if constexpr (ReturnsNothing())
 			{
 				/*    */ _function(_data[0].cast(), _data[1].cast(), _data[2].cast(), _data[3].cast(), _data[4].cast(), _data[5].cast(), _data[6].cast(), _data[7].cast(), _data[8].cast(), _data[9].cast(), _data[10].cast(), _data[11].cast(), _data[12].cast());
-				Any().swap(Result);
+				// Any().swap(Result);
 			}
 			else {
 				Result = _function(_data[0].cast(), _data[1].cast(), _data[2].cast(), _data[3].cast(), _data[4].cast(), _data[5].cast(), _data[6].cast(), _data[7].cast(), _data[8].cast(), _data[9].cast(), _data[10].cast(), _data[11].cast(), _data[12].cast());
@@ -886,7 +889,7 @@ namespace fibers {
 			if constexpr (ReturnsNothing())
 			{
 				/*    */ _function(_data[0].cast(), _data[1].cast(), _data[2].cast(), _data[3].cast(), _data[4].cast(), _data[5].cast(), _data[6].cast(), _data[7].cast(), _data[8].cast(), _data[9].cast(), _data[10].cast(), _data[11].cast());
-				Any().swap(Result);
+				// Any().swap(Result);
 			}
 			else {
 				Result = _function(_data[0].cast(), _data[1].cast(), _data[2].cast(), _data[3].cast(), _data[4].cast(), _data[5].cast(), _data[6].cast(), _data[7].cast(), _data[8].cast(), _data[9].cast(), _data[10].cast(), _data[11].cast());
@@ -896,7 +899,7 @@ namespace fibers {
 			if constexpr (ReturnsNothing())
 			{
 				/*    */ _function(_data[0].cast(), _data[1].cast(), _data[2].cast(), _data[3].cast(), _data[4].cast(), _data[5].cast(), _data[6].cast(), _data[7].cast(), _data[8].cast(), _data[9].cast(), _data[10].cast());
-				Any().swap(Result);
+				// Any().swap(Result);
 			}
 			else {
 				Result = _function(_data[0].cast(), _data[1].cast(), _data[2].cast(), _data[3].cast(), _data[4].cast(), _data[5].cast(), _data[6].cast(), _data[7].cast(), _data[8].cast(), _data[9].cast(), _data[10].cast());
@@ -906,7 +909,7 @@ namespace fibers {
 			if constexpr (ReturnsNothing())
 			{
 				/*    */ _function(_data[0].cast(), _data[1].cast(), _data[2].cast(), _data[3].cast(), _data[4].cast(), _data[5].cast(), _data[6].cast(), _data[7].cast(), _data[8].cast(), _data[9].cast());
-				Any().swap(Result);
+				// Any().swap(Result);
 			}
 			else {
 				Result = _function(_data[0].cast(), _data[1].cast(), _data[2].cast(), _data[3].cast(), _data[4].cast(), _data[5].cast(), _data[6].cast(), _data[7].cast(), _data[8].cast(), _data[9].cast());
@@ -916,7 +919,7 @@ namespace fibers {
 			if constexpr (ReturnsNothing())
 			{
 				/*    */ _function(_data[0].cast(), _data[1].cast(), _data[2].cast(), _data[3].cast(), _data[4].cast(), _data[5].cast(), _data[6].cast(), _data[7].cast(), _data[8].cast());
-				Any().swap(Result);
+				// Any().swap(Result);
 			}
 			else {
 				Result = _function(_data[0].cast(), _data[1].cast(), _data[2].cast(), _data[3].cast(), _data[4].cast(), _data[5].cast(), _data[6].cast(), _data[7].cast(), _data[8].cast());
@@ -926,7 +929,7 @@ namespace fibers {
 			if constexpr (ReturnsNothing())
 			{
 				/*    */ _function(_data[0].cast(), _data[1].cast(), _data[2].cast(), _data[3].cast(), _data[4].cast(), _data[5].cast(), _data[6].cast(), _data[7].cast());
-				Any().swap(Result);
+				// Any().swap(Result);
 			}
 			else {
 				Result = _function(_data[0].cast(), _data[1].cast(), _data[2].cast(), _data[3].cast(), _data[4].cast(), _data[5].cast(), _data[6].cast(), _data[7].cast());
@@ -936,7 +939,7 @@ namespace fibers {
 			if constexpr (ReturnsNothing())
 			{
 				/*    */ _function(_data[0].cast(), _data[1].cast(), _data[2].cast(), _data[3].cast(), _data[4].cast(), _data[5].cast(), _data[6].cast());
-				Any().swap(Result);
+				// Any().swap(Result);
 			}
 			else {
 				Result = _function(_data[0].cast(), _data[1].cast(), _data[2].cast(), _data[3].cast(), _data[4].cast(), _data[5].cast(), _data[6].cast());
@@ -946,7 +949,7 @@ namespace fibers {
 			if constexpr (ReturnsNothing())
 			{
 				/*    */ _function(_data[0].cast(), _data[1].cast(), _data[2].cast(), _data[3].cast(), _data[4].cast(), _data[5].cast());
-				Any().swap(Result);
+				// Any().swap(Result);
 			}
 			else {
 				Result = _function(_data[0].cast(), _data[1].cast(), _data[2].cast(), _data[3].cast(), _data[4].cast(), _data[5].cast());
@@ -956,7 +959,7 @@ namespace fibers {
 			if constexpr (ReturnsNothing())
 			{
 				/*    */ _function(_data[0].cast(), _data[1].cast(), _data[2].cast(), _data[3].cast(), _data[4].cast());
-				Any().swap(Result);
+				// Any().swap(Result);
 			}
 			else {
 				Result = _function(_data[0].cast(), _data[1].cast(), _data[2].cast(), _data[3].cast(), _data[4].cast());
@@ -966,7 +969,7 @@ namespace fibers {
 			if constexpr (ReturnsNothing())
 			{
 				/*    */ _function(_data[0].cast(), _data[1].cast(), _data[2].cast(), _data[3].cast());
-				Any().swap(Result);
+				// Any().swap(Result);
 			}
 			else {
 				Result = _function(_data[0].cast(), _data[1].cast(), _data[2].cast(), _data[3].cast());
@@ -976,7 +979,7 @@ namespace fibers {
 			if constexpr (ReturnsNothing())
 			{
 				/*    */ _function(_data[0].cast(), _data[1].cast(), _data[2].cast());
-				Any().swap(Result);
+				// Any().swap(Result);
 			}
 			else {
 				Result = _function(_data[0].cast(), _data[1].cast(), _data[2].cast());
@@ -986,7 +989,7 @@ namespace fibers {
 			if constexpr (ReturnsNothing())
 			{
 				/*    */ _function(_data[0].cast(), _data[1].cast());
-				Any().swap(Result);
+				// Any().swap(Result);
 			}
 			else {
 				Result = _function(_data[0].cast(), _data[1].cast());
@@ -996,7 +999,7 @@ namespace fibers {
 			if constexpr (ReturnsNothing())
 			{
 				/*    */ _function(_data[0].cast());
-				Any().swap(Result);
+				// Any().swap(Result);
 			}
 			else {
 				Result = _function(_data[0].cast());
@@ -1006,7 +1009,7 @@ namespace fibers {
 			if constexpr (ReturnsNothing())
 			{
 				/*    */ _function();
-				Any().swap(Result);
+				// Any().swap(Result);
 			}
 			else {
 				Result = _function();

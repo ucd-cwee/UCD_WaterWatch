@@ -306,9 +306,7 @@ namespace fibers {
 		for (unsigned i = 1; i < options.FiberPoolSize; ++i) {
 			m_fibers[i]->fiber = Fiber(524288, FiberStartFunc, this);
 			freeFiberQueue.push(i);
-			m_fibers[i]->freeFiber.store(true, std::memory_order_release);
 		}
-		m_fibers[0]->freeFiber.store(false, std::memory_order_release);
 
 
 		// Initialize threads and TLS
@@ -426,27 +424,46 @@ namespace fibers {
 
 		const TaskBundle bundle = { task, waitGroup };
 		LoPriTaskQueue.push(bundle);
-		
+
 		const EmptyQueueBehavior behavior = m_emptyQueueBehavior.load(std::memory_order_relaxed);
 		if (behavior == EmptyQueueBehavior::Sleep) {
 			// Wake a sleeping thread
 			ThreadSleepCV.notify_one();
 		}
-	}
+	};
+
 	void TaskScheduler::AddTasks(uint32_t numTasks, Task* tasks, WaitGroup* waitGroup) {
 		if (waitGroup != nullptr) {
 			waitGroup->Add(static_cast<int32_t>(numTasks));
 		}
 
+		TaskBundle* items = new TaskBundle[numTasks];
 		for (uint32_t i = 0; i < numTasks; i++)
-			LoPriTaskQueue.push({ tasks[i], waitGroup });
+			items[i] = { tasks[i], waitGroup };
+		LoPriTaskQueue.push_bulk(items, numTasks);
+
+		delete[] items;
 
 		const EmptyQueueBehavior behavior = m_emptyQueueBehavior.load(std::memory_order_relaxed);
 		if (behavior == EmptyQueueBehavior::Sleep) {
 			// Wake all the threads
 			ThreadSleepCV.notify_all();
 		}
-	}
+	};
+
+	void TaskScheduler::AddTasks(uint32_t numTasks, TaskBundle* tasks, WaitGroup* waitGroup) {
+		if (waitGroup != nullptr) {
+			waitGroup->Add(static_cast<int32_t>(numTasks));
+		}
+
+		LoPriTaskQueue.push_bulk(std::make_move_iterator(tasks), numTasks);
+
+		const EmptyQueueBehavior behavior = m_emptyQueueBehavior.load(std::memory_order_relaxed);
+		if (behavior == EmptyQueueBehavior::Sleep) {
+			// Wake all the threads
+			ThreadSleepCV.notify_all();
+		}
+	};
 
 #if defined(FTL_WIN32_THREADS)
 
@@ -594,37 +611,20 @@ namespace fibers {
 	};
 
 	unsigned TaskScheduler::GetNextFreeFiberIndex() const {
-		unsigned j;
-		bool expected;
-
+		unsigned j{ 0 };
 #if 1
 		int freeFiberIndex{ 0 };
-		for (j = 0; ; ++j) {
-			if (freeFiberQueue.try_pop(freeFiberIndex)) {
-				// Double lock
-				if (!m_fibers[freeFiberIndex]->freeFiber.load(std::memory_order_relaxed)) {
-					freeFiberQueue.push(freeFiberIndex);
-					continue;
-				}
-
-				if (!m_fibers[freeFiberIndex]->freeFiber.load(std::memory_order_acquire)) {
-					freeFiberQueue.push(freeFiberIndex);
-					continue;
-				}
-
-				expected = true;
-				if (std::atomic_compare_exchange_weak_explicit(&m_fibers[freeFiberIndex]->freeFiber, &expected, false, std::memory_order_release, std::memory_order_relaxed)) {
-					return freeFiberIndex;
-				}
-			}
-
-			if (j > 100) {
+		while (!freeFiberQueue.try_pop(freeFiberIndex)) {
+			if (++j > 100) {
 				// printf("No free fibers in the pool. Possible deadlock");
 				YieldThread();
 				j = 0;
 			}
 		}
+		return freeFiberIndex;
+
 #else
+		bool expected;
 		unsigned i;
 		for (j = 0; ; ++j) {
 			for (i = 0; i < m_fibers.size(); ++i) {
@@ -708,7 +708,6 @@ namespace fibers {
 		case FiberDestination::ToPool:
 			// In this specific implementation, the fiber pool is a flat array signaled by atomics
 			// So in order to "Push" the fiber to the fiber pool, we just set its corresponding atomic to true
-			m_fibers[tls.OldFiberIndex]->freeFiber.store(true, std::memory_order_release);
 			freeFiberQueue.push(tls.OldFiberIndex);
 			tls.OldFiberDestination = FiberDestination::None;
 			tls.OldFiberIndex = kInvalidIndex;
@@ -730,7 +729,7 @@ namespace fibers {
 	void TaskScheduler::AddReadyFiber(WaitingFiberBundle* bundle) {
 		unsigned const pinnedThreadIndex = bundle->PinnedThreadIndex;
 
-		if (pinnedThreadIndex == kNoThreadPinning) {
+		if (pinnedThreadIndex == kNoThreadPinning || pinnedThreadIndex >= m_threads.size()) {
 			ThreadLocalStorage* tls = &m_threads[GetCurrentThreadIndex_NoFail()]->tls;
 
 			// Push a dummy task to the high priority queue

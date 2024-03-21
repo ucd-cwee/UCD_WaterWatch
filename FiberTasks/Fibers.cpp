@@ -61,7 +61,7 @@ namespace fibers {
 			AnyFunctionStruct() = default;
 			AnyFunctionStruct(std::shared_ptr<Action> const& j, bool&& f) : job(j), force(std::forward<bool>(f)) {};
 			AnyFunctionStruct(AnyFunctionStruct const&) = default;
-			AnyFunctionStruct(AnyFunctionStruct &&) = default;
+			AnyFunctionStruct(AnyFunctionStruct&&) = default;
 			AnyFunctionStruct& operator=(AnyFunctionStruct const&) = default;
 			AnyFunctionStruct& operator=(AnyFunctionStruct&&) = default;
 			~AnyFunctionStruct() = default;
@@ -69,8 +69,32 @@ namespace fibers {
 			std::shared_ptr<Action> job;
 			bool force;
 		};
+		extern containers::DelayedInstantiation< containers::queue<AnyFunctionStruct*> > AnyFunctionStructCache = containers::DelayedInstantiation<containers::queue<AnyFunctionStruct*>>([]()-> containers::queue<AnyFunctionStruct*>* {
+			return new containers::queue<AnyFunctionStruct*>(1024);
+		}, [](containers::queue<AnyFunctionStruct*>* p) { 
+			AnyFunctionStruct* p2; 
+			while (p->try_pop(p2)) { delete p2; } 
+			delete p; 
+		});
+		static AnyFunctionStruct* getFunctionArgPtr(std::shared_ptr<Action> const& job, bool&& force) {
+			AnyFunctionStruct* out;
+			if (!AnyFunctionStructCache->try_pop(out)) {
+				out = new AnyFunctionStruct(job, std::forward<bool>(force));
+			}
+			else {
+				out->job = job;
+				out->force = std::forward<bool>(force);
+			}
+			return out;
+		};
+		static void recycleFunctionArgPtr(AnyFunctionStruct* p) {
+			if (p) {
+				p->job = nullptr;
+				AnyFunctionStructCache->push(std::move(p));
+			}
+		};
 		static void DoAnyFuncStruct(TaskScheduler* taskScheduler, void* arg) {
-			std::unique_ptr<AnyFunctionStruct> data(static_cast<AnyFunctionStruct*>(arg));
+			AnyFunctionStruct* data(static_cast<AnyFunctionStruct*>(arg));
 			if (data && data->job) {
 				if (data->force) {
 					data->job->ForceInvoke();
@@ -79,6 +103,7 @@ namespace fibers {
 					data->job->Invoke();
 				}
 			}
+			recycleFunctionArgPtr(data);
 		};
 	};
 	namespace synchronization {
@@ -117,25 +142,25 @@ namespace fibers {
 	void JobGroup::JobGroupImpl::Queue(Job const& job) {
 		std::shared_ptr<WaitGroup> wg = std::static_pointer_cast<WaitGroup>(waitGroup);
 		if (!wg) throw(std::runtime_error("Job Group was empty.")); 
-		Fibers->AddTask({ DoAnyFuncStruct, new AnyFunctionStruct(job.impl, false) }, wg.get());
+		Fibers->AddTask({ DoAnyFuncStruct, getFunctionArgPtr(job.impl, false) }, wg.get());
 		jobs.push_back(job);
 	};
 
 	void JobGroup::JobGroupImpl::ForceQueue(Job const& job) {
 		std::shared_ptr<WaitGroup> wg = std::static_pointer_cast<WaitGroup>(waitGroup);
 		if (!wg) throw(std::runtime_error("Job Group was empty.")); 
-		Fibers->AddTask({ DoAnyFuncStruct, new AnyFunctionStruct(job.impl, true) }, wg.get());
+		Fibers->AddTask({ DoAnyFuncStruct, getFunctionArgPtr(job.impl, true) }, wg.get());
 		jobs.push_back(job);
 	};
 	void JobGroup::JobGroupImpl::Queue(std::vector<Job> const& listOfJobs) {
 		std::shared_ptr<WaitGroup> wg = std::static_pointer_cast<WaitGroup>(waitGroup);
 		if (!wg) throw(std::runtime_error("Job Group was empty."));
 
-		std::vector<Task> tasks;
-		for (Job const& j : listOfJobs) {
-			tasks.push_back({ DoAnyFuncStruct, new AnyFunctionStruct(j.impl, false) });
-		}
-		Fibers->AddTasks(listOfJobs.size(), &tasks[0], wg.get());	
+		std::vector<fibers::TaskScheduler::TaskBundle> taskbundles;
+		taskbundles.reserve(listOfJobs.size()+1);
+		for (Job const& j : listOfJobs) taskbundles.push_back({ { DoAnyFuncStruct, getFunctionArgPtr(j.impl, false) }, wg.get() });
+		Fibers->AddTasks(listOfJobs.size(), &taskbundles[0], wg.get());
+
 		for (Job const& j : listOfJobs) {
 			jobs.push_back(j);
 		}
@@ -144,11 +169,11 @@ namespace fibers {
 		std::shared_ptr<WaitGroup> wg = std::static_pointer_cast<WaitGroup>(waitGroup);
 		if (!wg) throw(std::runtime_error("Job Group was empty."));
 
-		std::vector<Task> tasks;
-		for (Job const& j : listOfJobs) {
-			tasks.push_back({ DoAnyFuncStruct, new AnyFunctionStruct(j.impl, true) });
-		}
-		Fibers->AddTasks(listOfJobs.size(), &tasks[0], wg.get());
+		std::vector<fibers::TaskScheduler::TaskBundle> taskbundles;
+		taskbundles.reserve(listOfJobs.size() + 1);
+		for (Job const& j : listOfJobs)  taskbundles.push_back({ { DoAnyFuncStruct, getFunctionArgPtr(j.impl, true) }, wg.get() });
+		Fibers->AddTasks(listOfJobs.size(), &taskbundles[0], wg.get());
+
 		for (Job const& j : listOfJobs) {
 			jobs.push_back(j);
 		}

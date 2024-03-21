@@ -30,6 +30,7 @@
   <ItemGroup>
     <ClInclude Include="Alloc.h" />
     <ClInclude Include="Callbacks.h" />
+    <ClInclude Include="Concurrent_Queue.h" />
     <ClInclude Include="Config.h" />
     <ClInclude Include="Fibers.h" />
     <ClInclude Include="Fiber.h" />

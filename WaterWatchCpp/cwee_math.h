@@ -20,10 +20,104 @@ to maintain a single distribution point for the source code.
 #include "List.h"
 #include "Mutex.h"
 #include "enum.h"
-
+#include <stdint.h>
 #include <random>
+
 class cwee_rand {
 public:
+	class fast_rand {
+	public:
+		fast_rand() : m_state() {};
+		using result_type = uint32_t;
+		static constexpr result_type(min)() { return 0; }
+		static constexpr result_type(max)() { return UINT32_MAX; }
+
+		result_type operator()() noexcept {
+			return xorshift32(&m_state);
+			// return xorshift128(&m_state);
+		};
+		void discard(unsigned long long n) noexcept { unsigned long long i; i = 0;  for (; i < n; ++i) operator()(); };
+
+	private:
+		class xorshift32_state {
+		public:
+			xorshift32_state() {
+				cwee_pcg rand;
+				rand();
+				a = rand();
+			};
+			xorshift32_state(xorshift32_state const&) = delete;
+			xorshift32_state(xorshift32_state&&) = delete;
+			xorshift32_state& operator=(xorshift32_state const&) = delete;
+			xorshift32_state& operator=(xorshift32_state&&) = delete;
+			~xorshift32_state() = default;
+
+			std::atomic<uint32_t> a;
+		}; /* The state must be initialized to non-zero */
+		static uint32_t xorshift32(xorshift32_state* state) {
+			/* Algorithm "xor" from p. 4 of Marsaglia, "Xorshift RNGs" */
+			uint32_t x = state->a;
+			x ^= x << 13;
+			x ^= x >> 17;
+			x ^= x << 5;
+			return state->a = x;
+		};
+
+		class xorshift64_state {
+		public:
+			xorshift64_state() {
+				cwee_pcg rand;
+				rand();
+				a = rand();
+			};
+			xorshift64_state(xorshift64_state const&) = delete;
+			xorshift64_state(xorshift64_state&&) = delete;
+			xorshift64_state& operator=(xorshift64_state const&) = delete;
+			xorshift64_state& operator=(xorshift64_state&&) = delete;
+			~xorshift64_state() = default;
+
+			std::atomic < uint64_t> a;
+		};
+		static uint64_t xorshift64(xorshift64_state* state) {
+			uint64_t x = state->a;
+			x ^= x << 13;
+			x ^= x >> 7;
+			x ^= x << 17;
+			return state->a = x;
+		};
+
+		class xorshift128_state {
+			/* struct xorshift128_state can alternatively be defined as a pair of uint64_t or a uint128_t where supported */
+		public:
+			xorshift128_state() {
+				cwee_pcg rand;
+				rand();
+
+				x[0] = rand();
+				x[1] = rand();
+				x[2] = rand();
+				x[3] = rand();
+			};
+			xorshift128_state(xorshift128_state const&) = delete;
+			xorshift128_state(xorshift128_state&&) = delete;
+			xorshift128_state& operator=(xorshift128_state const&) = delete;
+			xorshift128_state& operator=(xorshift128_state&&) = delete;
+			~xorshift128_state() = default;
+
+			std::atomic<uint32_t> x[4];
+		}; /* The state must be initialized to non-zero */
+		static uint32_t xorshift128(xorshift128_state* state) {
+			/* Algorithm "xor128" from p. 5 of Marsaglia, "Xorshift RNGs" */
+			uint32_t s = state->x[0];
+			uint32_t t = state->x[3].exchange(state->x[2].exchange(state->x[1].exchange(s)));
+			t ^= t << 11;
+			t ^= t >> 8;
+			return state->x[0] = t ^ s ^ (s >> 19);
+		};
+
+		xorshift32_state m_state;
+		// xorshift128_state m_state;
+	};
 	class cwee_pcg {
 	public:
 		using result_type = uint32_t;
@@ -57,22 +151,37 @@ public:
 
 private:
 	mutable cwee_pcg rand;
-	mutable std::uniform_real_distribution<u64> u;
+	mutable std::uniform_real_distribution<long double> u;
+
+	mutable std::unique_ptr<fast_rand> randFast;
+	mutable std::uniform_real_distribution<float> u_fast;
 
 public:
-	cwee_rand() noexcept : rand(), u(0.0, 1.0) { Random_Impl(); /*Instantiate the range*/ };
-	u64 Random(u64 t1 = 0.0, u64 t2 = 1.0) const noexcept { return Random_HighRes(std::move(t1), std::move(t2)); };
+	cwee_rand() noexcept : rand(), u(0.0, 1.0), randFast(new fast_rand()), u_fast(0.0, 1.0) {
+		Random_Impl();
+	};
+	long double Random(long double t1 = 0.0, long double t2 = 1.0) const noexcept { return Random_HighRes(std::move(t1), std::move(t2)); };
 	double Random(double t1 = 0.0, double t2 = 1.0) const noexcept { return Random_HighRes(t1, t2); };
 	float Random(float t1 = 0.0, float t2 = 1.0) const noexcept { return Random_HighRes(t1, t2); };
 	int Random(int t1 = 0, int t2 = std::numeric_limits<int>::max()) const noexcept { return std::floor(Random_HighRes(t1, t2) + 0.5); };
 
+	float FastRandom(float t1 = 0.0, float t2 = 1.0) const noexcept { return FastRandom_HighRes(t1, t2); };
 private:
-	u64 Random_Impl() const noexcept {
+	long double Random_Impl() const noexcept {
 		return u(rand);
 	};
-	u64 Random_HighRes(u64 t1, u64 t2) const noexcept {
+	float FastRandom_Impl() const noexcept {
+		return u_fast.operator()(*randFast);
+	};
+	long double Random_HighRes(long double t1, long double t2) const noexcept {
 		t2 -= t1;
 		t2 *= Random_Impl();
+		t1 += t2;
+		return t1;
+	};
+	float FastRandom_HighRes(float t1, float t2) const noexcept {
+		t2 -= t1;
+		t2 *= FastRandom_Impl();
 		t1 += t2;
 		return t1;
 	};
@@ -85,6 +194,13 @@ static DelayedInstantiation< cwee_rand > sharedCweeRandomGenerator = DelayedInst
 /*! random int between 0 and cweeMath::INF */ INLINE int cweeRandomInt() { return sharedCweeRandomGenerator->Random(0, std::numeric_limits<int>::max()); };
 /*! random int between 0 and max */ INLINE int cweeRandomInt(int max) { return sharedCweeRandomGenerator->Random(0, max); };
 /*! random int between min and max */ INLINE int cweeRandomInt(int min, int max) { return sharedCweeRandomGenerator->Random(min, max); };
+
+/*! random float between 0 and 1 */ INLINE float random() { return sharedCweeRandomGenerator->Random(0.0f, 1.0f); };
+/*! random float between 0 and max */ INLINE float random(float max) { return sharedCweeRandomGenerator->Random(0.0f, max); };
+/*! random float between min and max */ INLINE float random(float min, float max) { return sharedCweeRandomGenerator->Random(min, max); };
+/*! random float between 0 and 1 */ INLINE float random_fast() { return sharedCweeRandomGenerator->FastRandom(0.0f, 1.0f); };
+/*! random float between 0 and max */ INLINE float random_fast(float max) { return sharedCweeRandomGenerator->FastRandom(0.0f, max); };
+/*! random float between min and max */ INLINE float random_fast(float min, float max) { return sharedCweeRandomGenerator->FastRandom(min, max); };
 
 /*! cweeMath is a collection of various math functions for use throughout the EDMS */
 class cweeMath {

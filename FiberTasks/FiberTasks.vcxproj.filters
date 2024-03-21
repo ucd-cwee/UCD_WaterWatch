@@ -72,5 +72,8 @@
     <ClInclude Include="Fibers.h">
       <Filter>Files</Filter>
     </ClInclude>
+    <ClInclude Include="Concurrent_Queue.h">
+      <Filter>Files\H</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>

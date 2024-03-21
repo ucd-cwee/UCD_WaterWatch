@@ -36,68 +36,9 @@
 #include <condition_variable>
 #include <mutex>
 #include <vector>
+#include "Concurrent_Queue.h"
 
 namespace fibers {
-#if 0
-	class basic_cached_allocator {
-	public:
-		struct basic_cached_allocator_memoryblock {
-			size_t sizefree;
-			basic_cached_allocator_memoryblock* next;
-			char* memory;
-		};
-
-	public:
-		basic_cached_allocator() :
-			mem(nullptr),
-			memblocks(nullptr)
-		{}
-		basic_cached_allocator(basic_cached_allocator const&) = delete;
-		basic_cached_allocator(basic_cached_allocator&&) = delete;
-		basic_cached_allocator& operator=(basic_cached_allocator const&) = delete;
-		basic_cached_allocator& operator=(basic_cached_allocator&&) = delete;
-		~basic_cached_allocator() {
-			free_internal(this);
-		}
-
-		template<typename T> T* alloc() {
-			size_t size = sizeof(T);
-			while (!memblocks || memblocks->sizefree < (size + sizeof(void*))) {
-				size_t blocksize = 16 * 1024;
-				basic_cached_allocator_memoryblock* block = (basic_cached_allocator_memoryblock*)ClearedAlloc(blocksize); // zero's out
-				size_t offset = sizeof(basic_cached_allocator_memoryblock);
-				block->sizefree = blocksize - offset;
-				block->next = memblocks;
-				block->memory = ((char*)block) + offset;
-				memblocks = block;
-			}
-			void* p_raw = memblocks->memory;
-			void* p_aligned = p_raw;
-			size += (uintptr_t)p_aligned - (uintptr_t)p_raw;
-			memblocks->memory += size;
-			memblocks->sizefree -= size;
-			return static_cast<T*>(p_aligned);
-		};
-
-	private:
-
-		void* mem;
-		basic_cached_allocator_memoryblock* memblocks;
-
-	private:
-		static void free_internal(basic_cached_allocator* allocator) {
-			while (allocator->memblocks) {
-				basic_cached_allocator_memoryblock* p = allocator->memblocks;
-				allocator->memblocks = allocator->memblocks->next;
-				if (p) ::_aligned_free((void*)p);
-			}
-			if (allocator->mem) ::_aligned_free(allocator->mem);
-		};
-		static void* Alloc16(const size_t& size) { if (!size) return nullptr; const size_t paddedSize = (size + 15) & ~15; return ::_aligned_malloc(paddedSize, 16); };
-		static void* ClearedAlloc(const size_t& size) { void* memP = Alloc16(size); ::memset(memP, 0, size); return memP; };
-	};
-#endif
-
 	enum class EmptyQueueBehavior {
 		Spin, // Spin in a loop, actively searching for tasks		
 		Yield, // Same as spin, except yields to the OS after each round of searching		
@@ -149,10 +90,8 @@ namespace fibers {
 			FiberWrapper& operator=(FiberWrapper&&) = delete;
 
 			Fiber fiber;
-			std::atomic<bool> freeFiber;
 		};
 
-	private:
 		/**
 		 * Holds a task that is ready to to be executed by the worker threads
 		 * Counter is the counter for the task(group). It will be decremented when the task completes
@@ -162,6 +101,8 @@ namespace fibers {
 			WaitGroup* WG;
 		};
 
+	private:
+		
 		class alignas(kCacheLineSize) ThreadLocalStorage {
 		public:
 			ThreadLocalStorage() : 
@@ -180,9 +121,10 @@ namespace fibers {
 			// NOTE: The order of these variables may seem odd / jumbled. However, it is to optimize the padding required
 
 			/* The queue of high priority waiting tasks. This also contains the ready waiting fibers, which are differentiated by the Task function == ReadyFiberDummyTask */
-			concurrency::concurrent_queue<TaskBundle> HiPriTaskQueue;
+			moodycamel::ConcurrentQueue<TaskBundle> HiPriTaskQueue; // concurrency::concurrent_queue<TaskBundle> HiPriTaskQueue;
+
 			/* The queue of high priority waiting tasks */
-			concurrency::concurrent_queue<TaskBundle>* LoPriTaskQueue;
+			moodycamel::ConcurrentQueue<TaskBundle>* LoPriTaskQueue; // concurrency::concurrent_queue<TaskBundle>* LoPriTaskQueue;
 
 			std::atomic<bool>* OldFiberStoredFlag;
 
@@ -237,14 +179,15 @@ namespace fibers {
 		constexpr static unsigned kInvalidIndex = std::numeric_limits<unsigned>::max();
 		constexpr static unsigned kNoThreadPinning = std::numeric_limits<unsigned>::max();
 
-		concurrency::concurrent_queue<TaskBundle> LoPriTaskQueue;
+		moodycamel::ConcurrentQueue<TaskBundle> LoPriTaskQueue; // concurrency::concurrent_queue<TaskBundle> LoPriTaskQueue;
 
 		concurrency::concurrent_vector < std::shared_ptr<ThreadWrapper> > m_threads;
 		std::unordered_map<DWORD, unsigned> m_threadsHandleToIndex;
 
 		/* The backing storage for the fiber pool */
 		concurrency::concurrent_vector < std::shared_ptr<FiberWrapper> > m_fibers;
-		mutable concurrency::concurrent_queue< int > freeFiberQueue;
+
+		mutable moodycamel::ConcurrentQueue<int> freeFiberQueue; // mutable concurrency::concurrent_queue< int > freeFiberQueue;
 
 		/* Should use the main thread for processing and calculations */
 		bool useMainThread = true;
@@ -308,8 +251,20 @@ namespace fibers {
 		 * @param counter     An atomic counter corresponding to the task group as a whole. Initially it will be incremented by
 		 *                    numTasks. When each task completes, it will be decremented.
 		 */
-
 		void AddTasks(uint32_t numTasks, Task* tasks, WaitGroup* waitGroup = nullptr);
+
+		/**
+		 * Adds a group of tasks to the internal queue
+		 *
+		 * NOTE: This can *only* be called from the main thread or inside tasks on the worker threads
+		 *
+		 * @param numTasks    The number of tasks
+		 * @param tasks       The tasks to queue
+		 * @param priority    Which priority queue to put the tasks in
+		 * @param counter     An atomic counter corresponding to the task group as a whole. Initially it will be incremented by
+		 *                    numTasks. When each task completes, it will be decremented.
+		 */
+		void AddTasks(uint32_t numTasks, TaskBundle* tasks, WaitGroup* waitGroup = nullptr);
 
 		/**
 		 * Gets the 0-based index of the current thread

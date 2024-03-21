@@ -107,7 +107,7 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 		});
 	}
 	printf("Job 7b\n");
-	if (true) {
+	if (false) {
 		std::shared_ptr<std::atomic<int>> counter(new std::atomic<int>(0));
 
 		fibers::JobGroup group;
@@ -125,7 +125,7 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 		group.Wait();
 	}
 	printf("Job 7c\n");
-	if (true) {
+	if (false) {
 		std::shared_ptr<std::atomic<int>> counter(new std::atomic<int>(0));
 		auto job = cweeJob([&counter, &numTasks, &numSubTasks]() {
 			fibers::JobGroup group;
@@ -146,7 +146,7 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 		job.Await();
 	}
 	printf("Job 7d\n");
-	if (true) {
+	if (false) {
 		std::shared_ptr<std::atomic<int>> counter(new std::atomic<int>(0));
 		fibers::containers::vector<int> list;
 		auto job = cweeJob([&counter, &numTasks, &numSubTasks, &list]() {
@@ -164,10 +164,11 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 	}
 
 	auto x = fibers::parallel::async([](int x) { return 100.0f; }, 10).wait_get(); // returns 100.0f
-	size_t t = fibers::parallel::For(0, 10, [](int i) { return i; }).size(); // returns 10
-	
+	size_t t = fibers::parallel::For(0, numTasks * numSubTasks, [](int i) { return i; }).size();
 
 	printf("Loop done\n");
+
+	return t;
 };
 
 

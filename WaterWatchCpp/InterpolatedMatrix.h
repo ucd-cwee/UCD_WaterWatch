@@ -639,7 +639,7 @@ protected: // protected member methods
 
 				long long x, y;
 
-				source.Lock();
+				source.ReadLock();
 				for (auto& ptr : source.UnsafeGetValues()) {
 					if (ptr.object) {
 						auto& value = ptr.object->z;
@@ -660,7 +660,7 @@ protected: // protected member methods
 						}
 					}
 				}
-				source.Unlock();
+				source.ReadUnlock();
 
 				long long width = next_pow2(maxX - minX); // i.e. 1,2,4,16,128,256,1024
 				long long height = next_pow2(maxY - minY); // i.e. 1,2,4,16,128,256,1024
@@ -671,7 +671,7 @@ protected: // protected member methods
 				hilbertContainer.SetInterpolationType(interpolation_t::LINEAR);
 				hilbertContainer.SetGranularity(source.GetNumValues() + 12);
 
-				source.Lock();
+				source.ReadLock();
 				for (auto* ptr : source.UnsafeGetKnotSeries()) {
 					if (ptr && ptr->object) {
 						hilbertContainer.AddUniqueValue(
@@ -684,7 +684,7 @@ protected: // protected member methods
 						);
 					}
 				}
-				source.Unlock();
+				source.ReadUnlock();
 
 				invalidated.store(false);
 			}
