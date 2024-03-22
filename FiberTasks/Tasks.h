@@ -28,7 +28,7 @@ namespace fibers {
 
 	class TaskScheduler;
 
-	using TaskFunction = void (*)(TaskScheduler* taskScheduler, void* arg);
+	using TaskFunction = void (*)(void* arg);
 
 	struct Task {
 		TaskFunction Function;

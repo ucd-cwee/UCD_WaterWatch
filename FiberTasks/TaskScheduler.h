@@ -238,7 +238,8 @@ namespace fibers {
 		 * @param counter     An atomic counter corresponding to this task. Initially it will be incremented by 1. When the task
 		 *                    completes, it will be decremented.
 		 */
-		void AddTask(Task task, WaitGroup* waitGroup = nullptr);
+		void AddTask(Task&& task, WaitGroup* waitGroup = nullptr);
+		void AddTask(Task const& task, WaitGroup* waitGroup = nullptr);
 
 		/**
 		 * Adds a group of tasks to the internal queue

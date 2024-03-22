@@ -876,12 +876,21 @@ namespace fibers{
 			//  typename std::tuple_element<0, typename utilities::function_traits<decltype(todo)>::arguments>::type;
 
 			int n = (end - start); 
-			std::vector< fibers::Job > jobs(n, fibers::Job());
-			n = 0;
-			for (iteratorType iter = start; iter < end; iter++) {
-				jobs[n++] = fibers::Job([todo](iteratorType const& T) { return todo(T); }, (iteratorType)iter);
+
+			if (n > 0) {
+				if (n == 1) {
+					auto job = fibers::Job([todo](iteratorType const& T) { return todo(T); }, (iteratorType)start);
+					group.Queue(job);
+				}
+				else {
+					std::vector< fibers::Job > jobs(n, fibers::Job());
+					n = 0;
+					for (iteratorType iter = start; iter < end; iter++) {
+						jobs[n++] = fibers::Job([todo](iteratorType const& T) { return todo(T); }, (iteratorType)iter);
+					}
+					group.Queue(jobs);
+				}
 			}
-			group.Queue(jobs);
 
 			if constexpr (retNo) {
 				group.Wait();

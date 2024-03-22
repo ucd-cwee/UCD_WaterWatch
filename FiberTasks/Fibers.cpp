@@ -93,7 +93,7 @@ namespace fibers {
 				AnyFunctionStructCache->push(std::move(p));
 			}
 		};
-		static void DoAnyFuncStruct(TaskScheduler* taskScheduler, void* arg) {
+		static void DoAnyFuncStruct(void* arg) {
 			AnyFunctionStruct* data(static_cast<AnyFunctionStruct*>(arg));
 			if (data && data->job) {
 				if (data->force) {
@@ -181,7 +181,9 @@ namespace fibers {
 	void JobGroup::JobGroupImpl::Wait() {
 		std::shared_ptr<WaitGroup> wg = std::static_pointer_cast<WaitGroup>(waitGroup);
 		if (!wg) throw(std::runtime_error("Job Group was empty."));
-		if (Fibers->GetCurrentThreadIndex_NoFail() == 0) wg->Wait(true); else
+		//if (Fibers->GetCurrentThreadIndex_NoFail() == 0) 
+		//	wg->Wait(true); 
+		//else
 			wg->Wait(false);
 	};
 	JobGroup Job::AsyncInvoke() {

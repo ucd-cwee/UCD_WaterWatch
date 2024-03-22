@@ -84,8 +84,7 @@ namespace fibers {
 	// This Task is never used directly
 	// However, a function pointer to it is the signal that the task is a Ready fiber, not a "real" task
 	// See @FiberStartFunc() for more details
-	static void ReadyFiberDummyTask(TaskScheduler* taskScheduler, void* arg) {
-		(void)taskScheduler;
+	static void ReadyFiberDummyTask(void* arg) {
 		(void)arg;
 	}
 
@@ -177,19 +176,15 @@ namespace fibers {
 				behavior = taskScheduler->m_emptyQueueBehavior.load(std::memory_order_relaxed);
 
 				if (foundTask) {
-					if (behavior == EmptyQueueBehavior::Sleep) {
-						tls->FailedQueuePopAttempts = 0;
-					}
-
+					if (behavior == EmptyQueueBehavior::Sleep) tls->FailedQueuePopAttempts = 0;
+					
 					if (nextTask.TaskToExecute.Function != nullptr) {
 						tls->workingOnTask.store(true);
-						nextTask.TaskToExecute.Function(taskScheduler, nextTask.TaskToExecute.ArgData); // does the task
+						nextTask.TaskToExecute.Function(nextTask.TaskToExecute.ArgData); // does the task
 						tls->workingOnTask.store(false);
 					}
 
-					if (nextTask.WG != nullptr) {
-						nextTask.WG->Done();
-					}
+					if (nextTask.WG) nextTask.WG->Done();
 				}
 				else {
 					// We failed to find a Task from any of the queues
@@ -197,7 +192,6 @@ namespace fibers {
 					switch (behavior) {
 					case EmptyQueueBehavior::Yield:
 						YieldThread();
-
 						break;
 
 					case EmptyQueueBehavior::Sleep: {
@@ -417,13 +411,25 @@ namespace fibers {
 		delete[] m_quitFibers;
 	}
 
-	void TaskScheduler::AddTask(Task task, WaitGroup* waitGroup) {
+	void TaskScheduler::AddTask(Task&& task, WaitGroup* waitGroup) {
 		if (waitGroup != nullptr) {
 			waitGroup->Add(1);
 		}
 
-		const TaskBundle bundle = { task, waitGroup };
-		LoPriTaskQueue.push(bundle);
+		LoPriTaskQueue.push({ std::forward<Task>(task), waitGroup });
+
+		const EmptyQueueBehavior behavior = m_emptyQueueBehavior.load(std::memory_order_relaxed);
+		if (behavior == EmptyQueueBehavior::Sleep) {
+			// Wake a sleeping thread
+			ThreadSleepCV.notify_one();
+		}
+	};
+	void TaskScheduler::AddTask(Task const& task, WaitGroup* waitGroup) {
+		if (waitGroup != nullptr) {
+			waitGroup->Add(1);
+		}
+
+		LoPriTaskQueue.push({ task, waitGroup });
 
 		const EmptyQueueBehavior behavior = m_emptyQueueBehavior.load(std::memory_order_relaxed);
 		if (behavior == EmptyQueueBehavior::Sleep) {

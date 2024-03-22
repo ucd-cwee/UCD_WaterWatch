@@ -8369,7 +8369,7 @@ namespace epanet {
                             width += widthD10;
                             height += heightD10;
 
-                            fprintf(f, "%s", cweeStr::printf("DIMENSIONS %f %f %f %f", 
+                            fprintf(f, "%s", cweeStr::printf("DIMENSIONS %f %f %f %f",
                                 (float)minX,
                                 (float)minY,
                                 (float)minX + width,
@@ -8421,7 +8421,7 @@ namespace epanet {
 
             // Guard the new text file (prevent multiple threads from writing to the same filepath... which may result in a deadlock or bad writes)
             AUTO fileGuard = fileSystem->GuardFile(fname);
-            
+
             // Open the new text file
             if ((f = fopen(fname, "wt")) == NULL) return 302;
 
@@ -8596,9 +8596,9 @@ namespace epanet {
                     link->ID,
                     net->Node[link->N1]->ID,
                     net->Node[link->N2]->ID,
-                    (double)(d* pr->Ucf[DIAM]),
+                    (double)(d * pr->Ucf[DIAM]),
                     LinkTxt[link->Type]);
-                
+
                 // For GPV, setting = head curve index
                 if (link->Type == GPV && (j = ROUND(link->Kc)) > 0)
                 {
@@ -8656,9 +8656,9 @@ namespace epanet {
                     // pipes's and check valve's initial status is written in the pipe section, not here. 
                     // Also, by this design, check valves can not be initially closed, ever? Interesting oversight.
                 }
-                else if (link->Type == PUMP) 
+                else if (link->Type == PUMP)
                 {
-                    
+
                     if ((StatusType)(double)link->Status(pr->times.GetSimStartTime()) == CLOSED)
                     {
                         fprintf(f, "\n %-31s %s", link->ID, "Closed");
@@ -8694,7 +8694,7 @@ namespace epanet {
             // Write [PATTERNS] section
             // (Use 6 pattern factors per line)
             fprintf(f, "\n\n");
-            fprintf(f, s_PATTERNS);            
+            fprintf(f, s_PATTERNS);
             for (i = 1; i <= net->Npats; i++) {
                 if (net->Pattern[i]->Comment.Length() > 0) fprintf(f, "\n;%s", net->Pattern[i]->Comment.c_str());
                 else fprintf(f, "\n;%s", " ");
@@ -8712,7 +8712,7 @@ namespace epanet {
 
                             fprintf(f, "\n %s", line.c_str());
 
-                            line.Clear(); 
+                            line.Clear();
                         }
                     }
                     if ((j % 6) != 0) { // there is some value left

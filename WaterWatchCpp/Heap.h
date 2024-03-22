@@ -251,10 +251,10 @@ public:
 	constexpr NthTypeOf<N>& get() const noexcept {
 		static_assert(N < num_parameters && N >= 0, "Cannot access parameters beyond the allocated buffer.");
 		constexpr size_t index = SizeOfFirstN<N>();
-		return *((NthTypeOf<N>*)(void*)(&data[index]));
+		return *static_cast<NthTypeOf<N>*>(static_cast<void*>(&data[index]));
 
-		// constexpr NthTypeOf<N>* out = static_cast<NthTypeOf<N>*>(static_cast<void*>((static_cast<byte*>(&const_cast<byte&>(data[SizeOfFirstN<N>()])))));
-		// return *out;
+		//constexpr NthTypeOf<N>* out = static_cast<NthTypeOf<N>*>(static_cast<void*>((static_cast<byte*>(&const_cast<byte&>(data[SizeOfFirstN<N>()])))));
+		//return *out;
 	};
 	/* GET THE SIZE (in bytes) OF THE ENTIRE UNION */ 
 	static constexpr size_t size() noexcept { return SizeOfAll(); };
