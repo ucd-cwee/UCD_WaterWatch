@@ -1173,6 +1173,61 @@ namespace chaiscript {
 
                 std::array<Boxed_Value, 2> params{ this->children[0]->eval(t_ss), this->children[1]->eval(t_ss) };
 
+                if (params[0].is_type(user_type<std::vector<Boxed_Value>>())) {
+                    auto* vecP = t_ss->boxed_cast<std::vector<Boxed_Value>*>(params[0]);
+                    if (vecP) {
+                        if (params[1].is_type(user_type<int>())) {
+                            auto index = t_ss->boxed_cast<int>(params[1]);
+                            return vecP->operator[](index);
+                        }
+                        else if (params[1].is_type(user_type<size_t>())) {
+                            auto index = t_ss->boxed_cast<size_t>(params[1]);
+                            return vecP->operator[](index);
+                        }
+                        else if (params[1].is_type(user_type<float>())) {
+                            auto index = t_ss->boxed_cast<float>(params[1]);
+                            return vecP->operator[](index);
+                        }
+                        else if (params[1].is_type(user_type<double>())) {
+                            auto index = t_ss->boxed_cast<double>(params[1]);
+                            return vecP->operator[](index);
+                        }
+                    }
+                }
+                else if (params[0].is_type(user_type<cweeList<Boxed_Value>>())) {
+                    auto* vecP = t_ss->boxed_cast<cweeList<Boxed_Value>*>(params[0]);
+                    if (vecP) {
+                        if (params[1].is_type(user_type<int>())) {
+                            auto index = t_ss->boxed_cast<int>(params[1]);
+                            return vecP->operator[](index);
+                        }
+                        else if (params[1].is_type(user_type<size_t>())) {
+                            auto index = t_ss->boxed_cast<size_t>(params[1]);
+                            return vecP->operator[](index);
+                        }
+                        else if (params[1].is_type(user_type<float>())) {
+                            auto index = t_ss->boxed_cast<float>(params[1]);
+                            return vecP->operator[](index);
+                        }
+                        else if (params[1].is_type(user_type<double>())) {
+                            auto index = t_ss->boxed_cast<double>(params[1]);
+                            return vecP->operator[](index);
+                        }
+                    }
+                } else if (params[0].is_type(user_type<std::map<std::string, Boxed_Value>>())) {
+                    auto* vecP = t_ss->boxed_cast<std::map<std::string, Boxed_Value>*>(params[0]);
+                    if (vecP) {
+                        if (params[1].is_type(user_type<std::string>())) {
+                            auto index = t_ss->boxed_cast<std::string>(params[1]);
+                            return vecP->operator[](index);
+                        }
+                        else if (params[1].is_type(user_type<cweeStr>())) {
+                            auto index = t_ss->boxed_cast<cweeStr>(params[1]);
+                            return vecP->operator[](index.c_str());
+                        }
+                    }
+                }
+
                 try {
                     fpp.save_params(Function_Params{ params });
                     return t_ss->call_function("[]", m_loc, Function_Params{ params }, t_ss.conversions());

@@ -7135,29 +7135,34 @@ bool ODBC::GetNextRow(nanodbcResult& results, cweeThreadedList<cweeStr>& out) {
     }
     else {
         int columns = Result(results).columns();
-        cweeStr nullV;
-        if (out.Num() == columns) {
-            if (Result(results).next()) {
-                for (int col = 0; col < columns; ++col)
-                {
-                    out[col] = Result(results).get<nanodbc::string>(col, nullV.c_str()).c_str();
-                    out[col].ReduceSpaces();
+        if (columns <= 0 || columns > 4096) {
+            out.Clear();
+        }
+        else {
+            cweeStr nullV;
+            if (out.Num() == columns) {
+                if (Result(results).next()) {
+                    for (int col = 0; col < columns; ++col)
+                    {
+                        out[col] = Result(results).get<nanodbc::string>(col, nullV.c_str()).c_str();
+                        out[col].ReduceSpaces();
+                    }
+                }
+                else {
+                    out.Clear();
                 }
             }
             else {
                 out.Clear();
-            }
-        }
-        else {
-            out.Clear();
-            out.SetGranularity(cweeMath::max(columns + 16, out.GetGranularity()));
-            if (Result(results).next()) {
-                cweeStr value;
-                for (int col = 0; col < columns; ++col)
-                {
-                    out.Append(Result(results).get<nanodbc::string>(col, nullV.c_str()).c_str());
+                out.SetGranularity(cweeMath::max(columns + 16, out.GetGranularity()));
+                if (Result(results).next()) {
+                    cweeStr value;
+                    for (int col = 0; col < columns; ++col)
+                    {
+                        out.Append(Result(results).get<nanodbc::string>(col, nullV.c_str()).c_str());
+                    }
+                    for (auto& x : out) x.ReduceSpaces();
                 }
-                for (auto& x : out) x.ReduceSpaces();
             }
         }
         return (out.Num() > 0);
