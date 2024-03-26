@@ -19,8 +19,6 @@ to maintain a single distribution point for the source code.
 #include "../FiberTasks/TaskScheduler.h"
 #include "../FiberTasks/WaitGroup.h"
 
-
-
 namespace testing {
 	namespace utilities {
 		class typenames {
@@ -554,22 +552,27 @@ namespace testing {
 	namespace {
 		class Action_Interface {
 		public:
-			explicit Action_Interface() {};
-			explicit Action_Interface(Action_Interface const&) = delete;
-			explicit Action_Interface(Action_Interface&&) = delete;
-			Action_Interface& operator=(Action_Interface const&) = delete;
-			Action_Interface& operator=(Action_Interface&&) = delete;
-			virtual ~Action_Interface() noexcept {};
+			virtual ~Action_Interface() = default;
 
-			virtual boost::typeindex::type_info const& type() const noexcept = 0;
-			virtual const char* typeName() const noexcept = 0;
-			virtual std::shared_ptr<Action_Interface> clone() const noexcept = 0;
-			virtual Any& Invoke() noexcept = 0;
-			virtual Any& ForceInvoke() noexcept = 0;
-			virtual const char* FunctionName() const noexcept = 0;
-			virtual const Any& Result() const noexcept = 0;
-			virtual bool IsFinished() const noexcept = 0;
-			virtual bool ReturnsNothing() const noexcept = 0;
+			virtual boost::typeindex::type_info const& type() const noexcept { return boost::typeindex::type_id<void>().type_info(); };
+			virtual const char* typeName() const noexcept { return ""; };
+			virtual Action_Interface* clone() const noexcept {
+				return new Action_Interface();
+			};
+			virtual fibers::Any& Invoke() noexcept { static fibers::Any staticTemp{}; return staticTemp; };
+			virtual fibers::Any& ForceInvoke() noexcept { static fibers::Any staticTemp{}; return staticTemp; };
+			virtual const char* FunctionName() const noexcept { return ""; };
+			virtual const fibers::Any& Result() const noexcept { static fibers::Any staticTemp{}; return staticTemp; };
+			virtual bool IsFinished() const noexcept { return true; };
+			virtual bool ReturnsNothing() const noexcept { return true; };
+			virtual std::function<void(Action_Interface*)>& deleter() const noexcept {
+				static auto deleteFunc{ std::function<void(Action_Interface*)>([](Action_Interface* p) {
+					if (p) {
+						delete p;
+					}
+				}) };
+				return deleteFunc;
+			};
 		};
 		template<typename ValueType> class Action_Impl final : public Action_Interface {
 		private:
@@ -577,29 +580,30 @@ namespace testing {
 			static constexpr bool returnsNothing{ std::is_same<ReturnType, void>::value };
 
 		public:
-			explicit Action_Impl() = delete;
-			explicit Action_Impl(Function<ValueType> const& f) noexcept : data(f), result(), running(false), finished(false) {};
-			explicit Action_Impl(Function<ValueType>&& f) noexcept : data(std::forward<Function<ValueType>>(f)), result(), running(false), finished(false) {};
-			virtual ~Action_Impl() noexcept {};
+			Action_Impl() : Action_Interface() {};
+			Action_Impl(Function<ValueType> const& f) noexcept : Action_Interface(), data(f), result(), running(false), finished(false) {};
+			Action_Impl(Function<ValueType>&& f) noexcept : Action_Interface(), data(std::forward<Function<ValueType>>(f)), result(), running(false), finished(false) {};
 
-			virtual boost::typeindex::type_info const& type() const noexcept final {
+			boost::typeindex::type_info const& type() const noexcept override final {
 				return boost::typeindex::type_id<Function<ValueType>>().type_info();
 			};
-			virtual const char* typeName() const noexcept final {
+			const char* typeName() const noexcept final {
 				return boost::typeindex::type_id<Function<ValueType>>().type_info().name();
 			};
-			virtual std::shared_ptr<Action_Interface> clone() const noexcept final {
-				return std::static_pointer_cast<Action_Interface>(std::make_shared<Action_Impl<ValueType>>(data));
+			Action_Interface* clone() const noexcept override final {
+				return dynamic_cast<Action_Interface*>(new Action_Impl<ValueType>(data));
 			};
-			virtual Any& Invoke() noexcept final {
+			fibers::Any& Invoke() noexcept override final {
 				if (finished.load()) return result;
 				bool compare(false);
 				if (running.compare_exchange_strong(compare, true)) {
+					if (finished.load()) return result;
+
 					if constexpr (returnsNothing) {
 						data();
 					}
 					else {
-						result = Any(data());
+						result.container = fibers::Any::CreateContainer(data());
 					}
 					finished.store(true);
 					running.store(false);
@@ -609,30 +613,44 @@ namespace testing {
 				}
 				return result;
 			};
-			virtual Any& ForceInvoke() noexcept final {
+			fibers::Any& ForceInvoke() noexcept override final {
 				if constexpr (returnsNothing) {
 					data();
 				}
 				else {
-					result = Any(data());
+					result.container = fibers::Any::CreateContainer(data());
 				}
 				return result;
 			};
-			virtual const char* FunctionName() const noexcept final {
+			const char* FunctionName() const noexcept override final {
 				return data.FunctionName();
 			};
-			virtual const Any& Result() const noexcept final {
+			const fibers::Any& Result() const noexcept override final {
 				return result;
 			};
-			virtual bool IsFinished() const noexcept final {
+			bool IsFinished() const noexcept override final {
 				return finished.load();
 			};
-			virtual bool ReturnsNothing()  const noexcept final {
+			bool ReturnsNothing() const noexcept override final {
 				return data.ReturnsNothing();
+			};
+			std::function<void(Action_Interface*)>& deleter() const noexcept override final {
+				static auto deleteFunc{ std::function<void(Action_Interface*)>([](Action_Interface* p) {
+					if (p) {
+						auto* p2 = dynamic_cast<Action_Impl<ValueType>*>(p);
+						if (p2) {
+							delete p2;
+						}
+						else {
+							delete p;
+						}
+					}
+				}) };
+				return deleteFunc;
 			};
 
 			Function<ValueType> data;
-			Any result;
+			fibers::Any result;
 			std::atomic<bool> running;
 			std::atomic<bool> finished;
 		};
@@ -644,277 +662,265 @@ namespace testing {
 	. assert(value == 10); */
 	class Action {
 	public: // structors
-		/*! Init */ Action() noexcept : content(BasePtr()) {};
-		/*! Copy */ Action(const Action& other) noexcept : content(BasePtr()) { std::shared_ptr<Action_Interface> c = other.content; content = c->clone(); };
+		/*! Init */ Action() noexcept : content(nullptr) {};
+		/*! Copy */ Action(const Action& other) noexcept : content(other.content ? other.content->clone() : nullptr) {};
 		/*! Perfect forwarding */ Action(Action&& other) noexcept : content(std::move(other.content)) {};
 		/*! Data Assignment */ template<typename ValueType> explicit Action(Function<ValueType>&& value) : content(ToPtr<ValueType>(std::forward< Function<ValueType>>(value))) {};
 		/*! Direct instantiation2 */ template <typename F, typename... Args> Action(F&& function, Args &&... Fargs) : Action(Function(std::function(std::forward<F>(function)), std::forward<Args>(Fargs)...)) {};
-		~Action() = default;
+		~Action() {
+			if (content) {
+				auto& deleter = content->deleter();
+				deleter(content);
+			}
+		};
 
 	public: // modifiers
-		/*! Swap Data */ Action& swap(Action& rhs) noexcept {
-			std::shared_ptr<Action_Interface> c1 = this->content;
-			std::shared_ptr<Action_Interface> c2 = rhs.content;
-
-			auto copy1 = c1->clone();
-			auto copy2 = c2->clone();
-
-			rhs.content = copy1;
-			content = copy2;
-
-			return *this;
-		}
-		/*! Copy Data */ Action& operator=(const Action& rhs) noexcept { Action(rhs).swap(*this); return *this; };
-		/* Perfect forwarding of ValueType */ template <class ValueType> Action& operator=(const Function<ValueType>& rhs) noexcept { Action(rhs).swap(*this); return *this; };
+		/*! Copy Data */ Action& operator=(const Action& rhs) = delete;
+		/*! Move Data */ Action& operator=(Action&& rhs) = delete;
 
 	public: // queries
 		explicit operator bool() { return !IsEmpty(); };
 		explicit operator bool() const { return !IsEmpty(); };
 
 		/*! Checks if the Action has been assigned something */
-		bool IsEmpty() const noexcept { decltype(auto) c = content; return !c; };
-
-		/*! Empties the Action and frees the memory. */
-		void Clear() noexcept { Action().swap(*this); };
+		bool IsEmpty() const noexcept { return !content; };
 
 		template <typename ValueT> static constexpr const char* TypeNameOf() { return utilities::typenames::type_name<ValueT>(); };
 		template <typename ValueT> static const boost::typeindex::type_info& TypeOf() { return boost::typeindex::type_id<ValueT>().type_info(); };
 
-		const char* TypeName() const noexcept { std::shared_ptr<Action_Interface> c = content; if (c) return c->typeName(); return utilities::typenames::type_name<void>(); };
-		const boost::typeindex::type_info& Type() const noexcept { std::shared_ptr<Action_Interface> c = content; return c ? c->type() : boost::typeindex::type_id<void>().type_info(); };
+		const char* TypeName() const noexcept { 
+			static const char* staticVal{""};
+			if (content) return content->typeName();
+			return staticVal;
+		};
+		const boost::typeindex::type_info& Type() const noexcept {
+			static const boost::typeindex::type_info& staticVal{ boost::typeindex::type_id<void>().type_info() };
+			if (content) return content->type();
+			return staticVal;
+		};
 
-	private:
-		template <class ValueType> static std::shared_ptr<Action_Interface> ToPtr(const Function<ValueType>& rhs) noexcept { return std::static_pointer_cast<Action_Interface>(std::make_shared<Action_Impl<ValueType>>(rhs)); };
-		template <class ValueType> static std::shared_ptr<Action_Interface> ToPtr(Function<ValueType>&& rhs) noexcept { return std::static_pointer_cast<Action_Interface>(std::make_shared<Action_Impl<ValueType>>(std::forward<Function<ValueType>>(rhs))); };
-		static std::shared_ptr<Action_Interface> BasePtr() noexcept {
-			static thread_local auto base_ptr{ ToPtr(Function(std::function([]() {}))) };
-			return base_ptr;
+	private:		
+		template <class ValueType> static Action_Interface* ToPtr(Function<ValueType>&& rhs) noexcept {
+			return dynamic_cast<Action_Interface*>(new Action_Impl<ValueType>(std::forward<Function<ValueType>>(rhs)));			
 		};
 
 	public:
-		std::shared_ptr<Action_Interface> content;
+		Action_Interface* content;
 
 	public:
-		Any* operator()() noexcept {
+		fibers::Any& operator()() {
 			return Invoke();
 		};
-		Any* Invoke() noexcept {
-			std::shared_ptr<Action_Interface> c = content; if (c) { return &c->Invoke(); }
-			return nullptr;
+		fibers::Any& Invoke() {
+			static fibers::Any staticVal{};
+			if (content) return content->Invoke();
+			return staticVal;
 		};
-		Any* ForceInvoke() noexcept {
-			std::shared_ptr<Action_Interface> c = content; if (c) { return &c->ForceInvoke(); }
-			return nullptr;
+		fibers::Any& ForceInvoke() {
+			static fibers::Any staticVal{};
+			if (content) return content->ForceInvoke();
+			return staticVal;
 		};
 		const char* FunctionName() const {
-			std::shared_ptr<Action_Interface> c = content;
-			if (c)
-			{
-				return c->FunctionName();
-			}
-			return "No Function";
+			static const char* staticVal{""};
+			if (content) return content->FunctionName();
+			return staticVal;
 		};
 		bool     IsFinished() const {
-			std::shared_ptr<Action_Interface> c = content;
-			if (c)
-			{
-				return c->IsFinished();
-			}
-			return false;
-		};
-		bool     ReturnsNothing() const {
-			std::shared_ptr<Action_Interface> c = content;
-			if (c)
-			{
-				return c->ReturnsNothing();
-			}
+			if (content) return content->IsFinished();
 			return true;
 		};
-		const Any* Result() const { if (this) { std::shared_ptr<Action_Interface> c = content; if (c) { return &c->Result(); } } return nullptr; };
+		bool     ReturnsNothing() const {
+			if (content) return content->ReturnsNothing();
+			return true;
+		};
+		const fibers::Any& Result() const {
+			static fibers::Any staticVal{};
+			if (content) return content->Result();
+			return staticVal;
+		};
 	};
 };
 
 
 int Example::ExampleF(int numTasks, int numSubTasks) {
 	// need a MUCH faster and lighter-weight job / action tool.
+	//while (true) 
 	{
-		printf("SpeedTest (New Functions): ");
+		{
+			printf("SpeedTest (New Functions): ");
 
-		Stopwatch sw; sw.Start();
-		for (int i = 0; i < 1000; i++) {
-			static auto f1 = [](int const& i, int const& j = 0)->double {
-				return j + i;
-			};
-			static auto f2 = [](std::shared_ptr<cweeStr> i)->cweeStr {
-				return *i;
-			};
-			static auto f3 = [](cweeStr& i)->cweeStr {
-				return i;
-			};
+			Stopwatch sw; sw.Start();
+			for (int i = 0; i < 1000; i++) {
+				static auto f1 = [](int const& i, int const& j = 0)->double {
+					return j + i;
+				};
+				static auto f2 = [](std::shared_ptr<cweeStr> i)->cweeStr {
+					return *i;
+				};
+				static auto f3 = [](cweeStr& i)->cweeStr {
+					return i;
+				};
 
-			auto x1 = testing::Function(std::function(f1), 2, 2);
-			auto x2 = testing::Function(std::function(f1), 4, 0);
-			auto x3 = testing::Function(std::function(f1), 8, 0);
-			if (x1() == x2() && x2() != x3()) {}
-			else {
-				throw(std::runtime_error("Something went wrong 1"));
+				auto x1 = testing::Function(std::function(f1), 2, 2);
+				auto x2 = testing::Function(std::function(f1), 4, 0);
+				auto x3 = testing::Function(std::function(f1), 8, 0);
+				if (x1() == x2() && x2() != x3()) {}
+				else {
+					throw(std::runtime_error("Something went wrong 1"));
+				}
+
+				auto y1 = testing::Function(std::function(f2), cweeStr("TEST"));
+				auto y2 = testing::Function(std::function(f2), std::make_shared<cweeStr>("TEST"));
+				auto y3 = testing::Function(std::function(f2), std::make_shared<cweeStr>("TESTING"));
+				if (y1() == y2() && y2() != y3()) {}
+				else {
+					throw(std::runtime_error("Something went wrong 2"));
+				}
+
+				auto w1 = testing::Function(std::function(f3), cweeStr("TEST"));
+				auto w2 = testing::Function(std::function(f3), std::make_shared<cweeStr>("TEST"));
+				auto w3 = testing::Function(std::function(f3), std::make_shared<cweeStr>("TESTING"));
+				if (w1() == w2() && w2() != w3()) {}
+				else {
+					throw(std::runtime_error("Something went wrong 2"));
+				}
 			}
 
-			auto y1 = testing::Function(std::function(f2), cweeStr("TEST"));
-			auto y2 = testing::Function(std::function(f2), std::make_shared<cweeStr>("TEST"));
-			auto y3 = testing::Function(std::function(f2), std::make_shared<cweeStr>("TESTING"));
-			if (y1() == y2() && y2() != y3()) {}
-			else {
-				throw(std::runtime_error("Something went wrong 2"));
+			cweeUnitValues::second timePassed = sw.Stop() / 1000000000.0;
+			std::cout << timePassed.ToString() << std::endl;
+		}
+		{
+			printf("SpeedTest (Old Functions): ");
+
+			Stopwatch sw; sw.Start();
+			for (int i = 0; i < 1000; i++) {
+				static auto f1 = [](int const& i, int const& j = 0)->double {
+					return j + i;
+				};
+				static auto f2 = [](std::shared_ptr<cweeStr> i)->cweeStr {
+					return *i;
+				};
+				static auto f3 = [](cweeStr& i)->cweeStr {
+					return i;
+				};
+
+				auto x1 = fibers::Function(std::function(f1), 2, 2);
+				auto x2 = fibers::Function(std::function(f1), 4, 0);
+				auto x3 = fibers::Function(std::function(f1), 8, 0);
+				if (x1() == x2() && x2() != x3()) {}
+				else {
+					throw(std::runtime_error("Something went wrong 1"));
+				};
+
+				auto y1 = fibers::Function(std::function(f2), cweeStr("TEST"));
+				auto y2 = fibers::Function(std::function(f2), std::make_shared<cweeStr>("TEST"));
+				auto y3 = fibers::Function(std::function(f2), std::make_shared<cweeStr>("TESTING"));
+				if (y1() == y2() && y2() != y3()) {}
+				else {
+					throw(std::runtime_error("Something went wrong 2"));
+				};
+
+				auto w1 = fibers::Function(std::function(f3), cweeStr("TEST"));
+				auto w2 = fibers::Function(std::function(f3), std::make_shared<cweeStr>("TEST"));
+				auto w3 = fibers::Function(std::function(f3), std::make_shared<cweeStr>("TESTING"));
+				if (w1() == w2() && w2() != w3()) {}
+				else {
+					throw(std::runtime_error("Something went wrong 2"));
+				};
 			}
 
-			auto w1 = testing::Function(std::function(f3), cweeStr("TEST"));
-			auto w2 = testing::Function(std::function(f3), std::make_shared<cweeStr>("TEST"));
-			auto w3 = testing::Function(std::function(f3), std::make_shared<cweeStr>("TESTING"));
-			if (w1() == w2() && w2() != w3()) {}
-			else {
-				throw(std::runtime_error("Something went wrong 2"));
+			cweeUnitValues::second timePassed = sw.Stop() / 1000000000.0;
+			std::cout << timePassed.ToString() << std::endl;
+		}
+
+		{
+			printf("SpeedTest (New Actions): ");
+
+			Stopwatch sw; sw.Start();
+			for (int i = 0; i < 1000; i++) {
+				static auto f1 = [](int const& i, int const& j = 0)->double {
+					return j + i;
+				};
+				static auto f2 = [](std::shared_ptr<cweeStr> i)->cweeStr {
+					return *i;
+				};
+				static auto f3 = [](cweeStr& i)->cweeStr {
+					return i;
+				};
+
+				auto x1{ testing::Action(f1, 2, 2) };
+				auto x2{ testing::Action(f1, 4, 0) };
+				auto x3{ testing::Action(f1, 8, 0) };
+				if (x1.ForceInvoke().cast<double>() == x2.ForceInvoke().cast<double>() && x2.ForceInvoke().cast<double>() != x3.ForceInvoke().cast<double>()) {}
+				else {
+					throw(std::runtime_error("Something went wrong 1"));
+				};
+
+				auto y1{ testing::Action(f2, cweeStr("TEST")) };
+				auto y2{ testing::Action(f2, std::make_shared<cweeStr>("TEST")) };
+				auto y3{ testing::Action(f2, std::make_shared<cweeStr>("TESTING")) };
+				if (y1.ForceInvoke().cast<cweeStr>() == y2.ForceInvoke().cast<cweeStr>() && y2.ForceInvoke().cast<cweeStr>() != y3.ForceInvoke().cast<cweeStr>()) {}
+				else {
+					throw(std::runtime_error("Something went wrong 2"));
+				};
+
+				auto w1{ testing::Action(f3, cweeStr("TEST")) };
+				auto w2{ testing::Action(f3, std::make_shared<cweeStr>("TEST")) };
+				auto w3{ testing::Action(f3, std::make_shared<cweeStr>("TESTING")) };
+				if (w1.ForceInvoke().cast<cweeStr>() == w2.ForceInvoke().cast<cweeStr>() && w2.ForceInvoke().cast<cweeStr>() != w3.ForceInvoke().cast<cweeStr>()) {}
+				else {
+					throw(std::runtime_error("Something went wrong 2"));
+				};
 			}
+
+			cweeUnitValues::second timePassed = sw.Stop() / 1000000000.0;
+			std::cout << timePassed.ToString() << std::endl;
 		}
+		{
+			printf("SpeedTest (Old Actions): ");
 
-		cweeUnitValues::second timePassed = sw.Stop() / 1000000000.0;
-		std::cout << timePassed.ToString() << std::endl;
-	}
-	{
-		printf("SpeedTest (Old Functions): ");
+			Stopwatch sw; sw.Start();
+			for (int i = 0; i < 1000; i++) {
+				static auto f1 = [](int const& i, int const& j = 0)->double {
+					return j + i;
+				};
+				static auto f2 = [](std::shared_ptr<cweeStr> i)->cweeStr {
+					return *i;
+				};
+				static auto f3 = [](cweeStr& i)->cweeStr {
+					return i;
+				};
 
-		Stopwatch sw; sw.Start();
-		for (int i = 0; i < 1000; i++) {
-			static auto f1 = [](int const& i, int const& j = 0)->double {
-				return j + i;
-			};
-			static auto f2 = [](std::shared_ptr<cweeStr> i)->cweeStr {
-				return *i;
-			};
-			static auto f3 = [](cweeStr& i)->cweeStr {
-				return i;
-			};
+				auto x1 = fibers::Action(f1, 2, 2);
+				auto x2 = fibers::Action(f1, 4, 0);
+				auto x3 = fibers::Action(f1, 8, 0);
+				if (x1.ForceInvoke().cast<double>() == x2.ForceInvoke().cast<double>() && x2.ForceInvoke().cast<double>() != x3.ForceInvoke().cast<double>()) {}
+				else {
+					throw(std::runtime_error("Something went wrong 1"));
+				};
 
-			auto x1 = Function(std::function(f1), 2, 2);
-			auto x2 = Function(std::function(f1), 4, 0);
-			auto x3 = Function(std::function(f1), 8, 0);
-			if (x1.ForceInvoke().cast<double>() == x2.ForceInvoke().cast<double>() && x2.ForceInvoke().cast<double>() != x3.ForceInvoke().cast<double>()) {}
-			else {
-				throw(std::runtime_error("Something went wrong 1"));
-			};
+				auto y1 = fibers::Action(f2, cweeStr("TEST"));
+				auto y2 = fibers::Action(f2, std::make_shared<cweeStr>("TEST"));
+				auto y3 = fibers::Action(f2, std::make_shared<cweeStr>("TESTING"));
+				if (y1.ForceInvoke().cast<cweeStr>() == y2.ForceInvoke().cast<cweeStr>() && y2.ForceInvoke().cast<cweeStr>() != y3.ForceInvoke().cast<cweeStr>()) {}
+				else {
+					throw(std::runtime_error("Something went wrong 2"));
+				};
 
-			auto y1 = Function(std::function(f2), cweeStr("TEST"));
-			auto y2 = Function(std::function(f2), std::make_shared<cweeStr>("TEST"));
-			auto y3 = Function(std::function(f2), std::make_shared<cweeStr>("TESTING"));
-			if (y1.ForceInvoke().cast<cweeStr>() == y2.ForceInvoke().cast<cweeStr>() && y2.ForceInvoke().cast<cweeStr>() != y3.ForceInvoke().cast<cweeStr>()) {}
-			else {
-				throw(std::runtime_error("Something went wrong 2"));
-			};
+				auto w1 = fibers::Action(f3, cweeStr("TEST"));
+				auto w2 = fibers::Action(f3, std::make_shared<cweeStr>("TEST"));
+				auto w3 = fibers::Action(f3, std::make_shared<cweeStr>("TESTING"));
+				if (w1.ForceInvoke().cast<cweeStr>() == w2.ForceInvoke().cast<cweeStr>() && w2.ForceInvoke().cast<cweeStr>() != w3.ForceInvoke().cast<cweeStr>()) {}
+				else {
+					throw(std::runtime_error("Something went wrong 2"));
+				};
+			}
 
-			auto w1 = Function(std::function(f3), cweeStr("TEST"));
-			auto w2 = Function(std::function(f3), std::make_shared<cweeStr>("TEST"));
-			auto w3 = Function(std::function(f3), std::make_shared<cweeStr>("TESTING"));
-			if (w1.ForceInvoke().cast<cweeStr>() == w2.ForceInvoke().cast<cweeStr>() && w2.ForceInvoke().cast<cweeStr>() != w3.ForceInvoke().cast<cweeStr>()) {}
-			else {
-				throw(std::runtime_error("Something went wrong 2"));
-			};
+			cweeUnitValues::second timePassed = sw.Stop() / 1000000000.0;
+			std::cout << timePassed.ToString() << std::endl;
 		}
-
-		cweeUnitValues::second timePassed = sw.Stop() / 1000000000.0;
-		std::cout << timePassed.ToString() << std::endl;
 	}
-
-	{
-		printf("SpeedTest (New Actions): ");
-
-		Stopwatch sw; sw.Start();
-		for (int i = 0; i < 1000; i++) {
-			static auto f1 = [](int const& i, int const& j = 0)->double {
-				return j + i;
-			};
-			static auto f2 = [](std::shared_ptr<cweeStr> i)->cweeStr {
-				return *i;
-			};
-			static auto f3 = [](cweeStr& i)->cweeStr {
-				return i;
-			};
-
-			auto x1 = testing::Action(f1, 2, 2);
-			auto x2 = testing::Action(f1, 4, 0);
-			auto x3 = testing::Action(f1, 8, 0);
-			if (x1.ForceInvoke()->cast<double>() == x2.ForceInvoke()->cast<double>() && x2.ForceInvoke()->cast<double>() != x3.ForceInvoke()->cast<double>()) {}
-			else {
-				throw(std::runtime_error("Something went wrong 1"));
-			};
-
-			auto y1 = testing::Action(f2, cweeStr("TEST"));
-			auto y2 = testing::Action(f2, std::make_shared<cweeStr>("TEST"));
-			auto y3 = testing::Action(f2, std::make_shared<cweeStr>("TESTING"));
-			if (y1.ForceInvoke()->cast<cweeStr>() == y2.ForceInvoke()->cast<cweeStr>() && y2.ForceInvoke()->cast<cweeStr>() != y3.ForceInvoke()->cast<cweeStr>()) {}
-			else {
-				throw(std::runtime_error("Something went wrong 2"));
-			};
-
-			auto w1 = testing::Action(f3, cweeStr("TEST"));
-			auto w2 = testing::Action(f3, std::make_shared<cweeStr>("TEST"));
-			auto w3 = testing::Action(f3, std::make_shared<cweeStr>("TESTING"));
-			if (w1.ForceInvoke()->cast<cweeStr>() == w2.ForceInvoke()->cast<cweeStr>() && w2.ForceInvoke()->cast<cweeStr>() != w3.ForceInvoke()->cast<cweeStr>()) {}
-			else {
-				throw(std::runtime_error("Something went wrong 2"));
-			};
-		}
-
-		cweeUnitValues::second timePassed = sw.Stop() / 1000000000.0;
-		std::cout << timePassed.ToString() << std::endl;
-	}
-	{
-		printf("SpeedTest (Old Actions): ");
-
-		Stopwatch sw; sw.Start();
-		for (int i = 0; i < 1000; i++) {
-			static auto f1 = [](int const& i, int const& j = 0)->double {
-				return j + i;
-			};
-			static auto f2 = [](std::shared_ptr<cweeStr> i)->cweeStr {
-				return *i;
-			};
-			static auto f3 = [](cweeStr& i)->cweeStr {
-				return i;
-			};
-
-			auto x1 = Action(f1, 2, 2);
-			auto x2 = Action(f1, 4, 0);
-			auto x3 = Action(f1, 8, 0);
-			if (x1.ForceInvoke()->cast<double>() == x2.ForceInvoke()->cast<double>() && x2.ForceInvoke()->cast<double>() != x3.ForceInvoke()->cast<double>()) {}
-			else {
-				throw(std::runtime_error("Something went wrong 1"));
-			};
-
-			auto y1 = Action(f2, cweeStr("TEST"));
-			auto y2 = Action(f2, std::make_shared<cweeStr>("TEST"));
-			auto y3 = Action(f2, std::make_shared<cweeStr>("TESTING"));
-			if (y1.ForceInvoke()->cast<cweeStr>() == y2.ForceInvoke()->cast<cweeStr>() && y2.ForceInvoke()->cast<cweeStr>() != y3.ForceInvoke()->cast<cweeStr>()) {}
-			else {
-				throw(std::runtime_error("Something went wrong 2"));
-			};
-
-			auto w1 = Action(f3, cweeStr("TEST"));
-			auto w2 = Action(f3, std::make_shared<cweeStr>("TEST"));
-			auto w3 = Action(f3, std::make_shared<cweeStr>("TESTING"));
-			if (w1.ForceInvoke()->cast<cweeStr>() == w2.ForceInvoke()->cast<cweeStr>() && w2.ForceInvoke()->cast<cweeStr>() != w3.ForceInvoke()->cast<cweeStr>()) {}
-			else {
-				throw(std::runtime_error("Something went wrong 2"));
-			};
-		}
-
-		cweeUnitValues::second timePassed = sw.Stop() / 1000000000.0;
-		std::cout << timePassed.ToString() << std::endl;
-	}
-
-
-
-
-
 
 
 
@@ -957,7 +963,7 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 				cweeUnitValues::second timePassed = sw.Stop() / 1000000000.0;
 				std::cout << timePassed.ToString() << std::endl;
 			}
-
+			
 			printf("SpeedTest (Pattern) ");
 			std::cout << j;
 			printf(" (Fibers, Idealized) : ");

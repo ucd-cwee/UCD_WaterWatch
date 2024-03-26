@@ -69,9 +69,10 @@ namespace fibers {
 		// Initialize tls
 		taskScheduler->m_threads[index]->tls.CurrentFiberIndex = freeFiberIndex;
 		taskScheduler->m_threads[index]->tls.LoPriTaskQueue = &taskScheduler->LoPriTaskQueue;
+		taskScheduler->m_threads[index]->tls.LoPriToken = std::make_unique<moodycamel::ConsumerToken>(taskScheduler->LoPriTaskQueue);
+		taskScheduler->m_threads[index]->tls.ProducerToken = std::make_unique<moodycamel::ProducerToken>(taskScheduler->LoPriTaskQueue);
 
 		// Switch
-		
 		taskScheduler->m_threads[index]->tls.ThreadFiber.SwitchToFiber(&taskScheduler->m_fibers[freeFiberIndex]->fiber);
 
 		// And we've returned
@@ -292,8 +293,7 @@ namespace fibers {
 
 		// Create and populate the fiber pool
 		for (unsigned i = 0; i < static_cast<unsigned>(options.FiberPoolSize); i++) {
-			auto wrapper = std::make_shared<FiberWrapper>();
-			m_fibers.push_back(wrapper);
+			m_fibers.push_back(std::make_unique<FiberWrapper>());
 		}
 
 		// Leave the first slot for the bound main thread
@@ -305,8 +305,7 @@ namespace fibers {
 
 		// Initialize threads and TLS
 		for (unsigned i = 0; i < static_cast<unsigned>(options.ThreadPoolSize); i++) {
-			auto wrapper = std::make_shared<ThreadWrapper>();
-			m_threads.push_back(wrapper);
+			m_threads.push_back(std::make_unique<ThreadWrapper>());
 		}
         
 #if defined(FTL_WIN32_THREADS)
@@ -330,7 +329,8 @@ namespace fibers {
 		// Set the fiber index
 		m_threads[0]->tls.CurrentFiberIndex = 0;
 		m_threads[0]->tls.LoPriTaskQueue = &this->LoPriTaskQueue;
-		
+		m_threads[0]->tls.LoPriToken = std::make_unique<moodycamel::ConsumerToken>(LoPriTaskQueue);
+		m_threads[0]->tls.ProducerToken = std::make_unique<moodycamel::ProducerToken>(LoPriTaskQueue);
 
 		// Create the worker threads
 		for (unsigned i = 1; i < options.ThreadPoolSize; ++i) {
@@ -412,62 +412,29 @@ namespace fibers {
 	}
 
 	void TaskScheduler::AddTask(Task&& task, WaitGroup* waitGroup) {
-		if (waitGroup != nullptr) {
-			waitGroup->Add(1);
-		}
-
-		LoPriTaskQueue.push({ std::forward<Task>(task), waitGroup });
-
-		const EmptyQueueBehavior behavior = m_emptyQueueBehavior.load(std::memory_order_relaxed);
-		if (behavior == EmptyQueueBehavior::Sleep) {
-			// Wake a sleeping thread
-			ThreadSleepCV.notify_one();
-		}
+		if (waitGroup != nullptr) { waitGroup->Add(1); }
+		LoPriTaskQueue.push(*m_threads[GetCurrentThreadIndex_NoFail()]->tls.ProducerToken, { std::forward<Task>(task), waitGroup });
+		if (m_emptyQueueBehavior.load(std::memory_order_relaxed) == EmptyQueueBehavior::Sleep) { ThreadSleepCV.notify_one(); }
 	};
 	void TaskScheduler::AddTask(Task const& task, WaitGroup* waitGroup) {
-		if (waitGroup != nullptr) {
-			waitGroup->Add(1);
-		}
-
-		LoPriTaskQueue.push({ task, waitGroup });
-
-		const EmptyQueueBehavior behavior = m_emptyQueueBehavior.load(std::memory_order_relaxed);
-		if (behavior == EmptyQueueBehavior::Sleep) {
-			// Wake a sleeping thread
-			ThreadSleepCV.notify_one();
-		}
+		if (waitGroup != nullptr) { waitGroup->Add(1); }
+		LoPriTaskQueue.push(*m_threads[GetCurrentThreadIndex_NoFail()]->tls.ProducerToken, { task, waitGroup });
+		if (m_emptyQueueBehavior.load(std::memory_order_relaxed) == EmptyQueueBehavior::Sleep) { ThreadSleepCV.notify_one();  }
 	};
-
 	void TaskScheduler::AddTasks(uint32_t numTasks, Task* tasks, WaitGroup* waitGroup) {
-		if (waitGroup != nullptr) {
-			waitGroup->Add(static_cast<int32_t>(numTasks));
-		}
-
-		TaskBundle* items = new TaskBundle[numTasks];
-		for (uint32_t i = 0; i < numTasks; i++)
-			items[i] = { tasks[i], waitGroup };
-		LoPriTaskQueue.push_bulk(items, numTasks);
-
-		delete[] items;
-
-		const EmptyQueueBehavior behavior = m_emptyQueueBehavior.load(std::memory_order_relaxed);
-		if (behavior == EmptyQueueBehavior::Sleep) {
-			// Wake all the threads
-			ThreadSleepCV.notify_all();
+		if (numTasks > 0) {
+			auto items{ std::vector<TaskBundle>(numTasks, { Task(), waitGroup }) };
+			for (uint32_t i = 0; i < numTasks; i++) items[i].TaskToExecute = tasks[i];
+			AddTasks(numTasks, &items[0], waitGroup);
 		}
 	};
-
-	void TaskScheduler::AddTasks(uint32_t numTasks, TaskBundle* tasks, WaitGroup* waitGroup) {
-		if (waitGroup != nullptr) {
-			waitGroup->Add(static_cast<int32_t>(numTasks));
-		}
-
-		LoPriTaskQueue.push_bulk(std::make_move_iterator(tasks), numTasks);
-
-		const EmptyQueueBehavior behavior = m_emptyQueueBehavior.load(std::memory_order_relaxed);
-		if (behavior == EmptyQueueBehavior::Sleep) {
-			// Wake all the threads
-			ThreadSleepCV.notify_all();
+	void TaskScheduler::AddTasks(uint32_t numTasks, TaskBundle* items, WaitGroup* waitGroup) {
+		if (numTasks > 0) {
+			if (waitGroup != nullptr) { waitGroup->Add(static_cast<int32_t>(numTasks)); }
+			LoPriTaskQueue.push_bulk(*m_threads[GetCurrentThreadIndex_NoFail()]->tls.ProducerToken, items, numTasks);
+			if (m_emptyQueueBehavior.load(std::memory_order_relaxed) == EmptyQueueBehavior::Sleep) {
+				ThreadSleepCV.notify_all(); // Wake all the threads
+			}
 		}
 	};
 
@@ -613,7 +580,30 @@ namespace fibers {
 	bool TaskScheduler::GetNextLoPriTask(TaskBundle* nextTask) {
 		unsigned const currentThreadIndex = GetCurrentThreadIndex_NoFail();
 		ThreadLocalStorage& tls = m_threads[currentThreadIndex]->tls;
-		return tls.LoPriTaskQueue->try_pop(*nextTask);
+
+		return LoPriTaskQueue.try_pop(*tls.LoPriToken, *nextTask);
+
+		//if (tls.LoPriTaskQueue_local.try_pop(*nextTask)) {
+		//	return true; // Try to pop from our local, private queue (fastest)
+		//}
+		//
+		//if (tls.LoPriTaskQueue->try_pop(*nextTask)) {
+		//	return true; // Try to pop the global queue (high contention)
+		//}
+		//
+		//const unsigned threadIndex = tls.LoPriLastSuccessfulSteal;
+		//auto m_numThreads = m_threads.size(); // Try to pop from the others' local, private queues (moderate contention, slow loop)
+		//for (unsigned i = 0; i < m_numThreads; ++i) {
+		//	const unsigned threadIndexToStealFrom = (threadIndex + i) % m_numThreads;
+		//	if (threadIndexToStealFrom == currentThreadIndex) { continue; }
+
+		//	ThreadLocalStorage& otherTLS = m_threads[threadIndexToStealFrom]->tls;
+		//	if (otherTLS.LoPriTaskQueue_local.try_pop(*nextTask)) {
+		//		tls.LoPriLastSuccessfulSteal = threadIndexToStealFrom;
+		//		return true;
+		//	}
+		//}
+		// return false;
 	};
 
 	unsigned TaskScheduler::GetNextFreeFiberIndex() const {

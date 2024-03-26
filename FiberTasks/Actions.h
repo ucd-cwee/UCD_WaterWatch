@@ -298,6 +298,7 @@ namespace fibers {
 		template<class R> struct function_traits<std::function<R(void)>> { using result_type = R; using arguments = std::tuple<>; };
 		template<class R, class... Args> struct function_traits<std::function<R(Args...)>> { using result_type = R; using arguments = std::tuple<Args...>; };
 	};
+
 	namespace {
 		template<class T> struct get_type { using type = T; };
 		template<class T> struct get_type<std::shared_ptr<T>> { using type = typename get_type<T>::type; };
@@ -309,34 +310,18 @@ namespace fibers {
 
 		class AnyData {
 		public:
-			AnyData(std::shared_ptr<void> const& t_ptr, const boost::typeindex::type_info& t_type, bool t_const) noexcept :
-				m_ptr(t_ptr),
-				m_type(t_type),
-				m_const(t_const)
-			{};
-			virtual ~AnyData() noexcept {};
+			AnyData(std::shared_ptr<void> const& t_ptr, const boost::typeindex::type_info& t_type, const bool t_const) noexcept : m_ptr(t_ptr), m_type(t_type), m_const(t_const) {};
+			AnyData(AnyData const&) = default;
+			AnyData(AnyData&&) = default;
+			AnyData& operator=(AnyData const&) = default;
+			AnyData& operator=(AnyData&&) = default;
+			~AnyData() = default;
 
 		public:
-			template<typename ToType> std::shared_ptr<ToType> cast() const {
-				return std::static_pointer_cast<ToType>(m_ptr);
-			};
-			void* ptr() const {
-				return m_ptr.get();
-			};
-		public:
-			std::shared_ptr<void>					m_ptr;
-			const boost::typeindex::type_info& m_type;
-			const bool							m_const;
+			template<typename ToType> std::shared_ptr<ToType> cast() const { return std::static_pointer_cast<ToType>(m_ptr); };
+			void* ptr() const { return m_ptr.get(); };
 
-		};
-		template<typename T> class AnyData_Impl final : public AnyData {
-		public:
-			AnyData_Impl() noexcept : AnyData(nullptr, boost::typeindex::type_id<T>().type_info(), std::is_const_v<T>) {};
-			AnyData_Impl(std::shared_ptr<T> const& d) noexcept : AnyData(AnyData_Impl<T>::get_data(d), boost::typeindex::type_id<T>().type_info(), std::is_const_v<T>) {};
-			AnyData_Impl(std::shared_ptr<T>&& d) noexcept : AnyData(AnyData_Impl<T>::get_data(std::forward<std::shared_ptr<T>>(d)), boost::typeindex::type_id<T>().type_info(), std::is_const_v<T>) {};
-			~AnyData_Impl() noexcept {};
-
-			static std::shared_ptr<void> get_data(const std::shared_ptr<T>& data) {
+			template<typename T> static std::shared_ptr<void> get_data(const std::shared_ptr<T>& data) {
 				if constexpr (std::is_const< T >::value) {
 					return std::const_pointer_cast<void>(std::static_pointer_cast<const void>(data));
 				}
@@ -344,12 +329,492 @@ namespace fibers {
 					return std::static_pointer_cast<void>(data);
 				}
 			};
-			static std::shared_ptr<void> get_data(std::shared_ptr<T>&& data) {
+			template<typename T> static std::shared_ptr<void> get_data(std::shared_ptr<T>&& data) {
 				return std::static_pointer_cast<void>(std::forward<std::shared_ptr<T>>(data));
 			};
+
+		public:
+			std::shared_ptr<void>					m_ptr; // underlying shared ptr for the provided object. (e.g. std::shared_ptr<int>, etc.)
+			const boost::typeindex::type_info&      m_type; // type information of the saved object
+			const bool						        m_const; // whether or not the saved object is const
+
 		};
 	}
 	
+	class FunctionBase {
+	public:
+		virtual ~FunctionBase() = default;
+		virtual void Invoke() = 0;
+	};
+
+	/*
+	Wrapper for std::function that can capture input parameters for later evaluation. e.g:
+	. auto f = Function(std::function([](int i, double x)->int{ return i+x; }), 10, 0.0);
+	. int value = f.Invoke().cast();
+	. assert(value == 10);
+	*/
+	template <typename F = void()> class Function final : public FunctionBase {
+	public:
+		template<typename T> struct count_arg;
+		template<typename R, typename ...Args> struct count_arg<std::function<R(Args...)>> { static constexpr const size_t value = sizeof...(Args); };
+		template <typename... Args> constexpr size_t sizeOfParameterPack(Args... Fargs) { return sizeof...(Args); }
+		template<class R> struct function_traits { using result_type = R; using arguments = std::tuple<>; static constexpr const size_t num_arguments = 0; };
+		template<class R> struct function_traits<std::function<R(void)>> { using result_type = R; using arguments = std::tuple<>; static constexpr const size_t num_arguments = 0; };
+		template<class R, class... Args> struct function_traits<std::function<R(Args...)>> { using result_type = R; using arguments = std::tuple<Args...>; static constexpr const size_t num_arguments = sizeof...(Args); };
+
+		using Type = typename F;
+		using ResultType = typename function_traits<std::function<Type>>::result_type;
+		using Arguments = typename function_traits<std::function<Type>>::arguments;
+		static constexpr const size_t NumArguments = function_traits<std::function<Type>>::num_arguments;
+
+	private:
+		template<int N, bool badIndex> struct function_destination_impl {
+			using type = typename std::tuple_element<N, typename Arguments>::type;
+		};
+		template<int N> struct function_destination_impl<N, true> {
+			using type = int;
+		};
+
+		template<int N> struct ArgumentType {
+			static constexpr bool is_bad_index = N >= NumArguments;
+
+			struct function_destination {
+				using type = typename function_destination_impl<N, is_bad_index>::type;
+				using underlying_type = typename get_type<typename type>::type;
+
+				static constexpr bool is_shared_ptr = !std::is_same<typename get_type<type>::type, type>::value;
+				static constexpr bool is_reference = std::is_reference<underlying_type>::value;
+				static constexpr bool is_pointer = std::is_pointer<underlying_type>::value;
+				static constexpr bool is_const = std::is_const<typename std::remove_pointer<typename std::remove_reference<underlying_type>::type>::type>::value;
+			};
+			struct parameter_pack {
+			private:
+				template<bool is_shared_ptr> struct underlying_type_impl {
+					using type = typename std::remove_pointer<typename std::decay<typename function_destination::underlying_type>::type>::type;
+					using package_type = type;
+				};
+				template<> struct underlying_type_impl<true> {
+					using type = typename function_destination::underlying_type;
+					using package_type = std::shared_ptr<type>;
+				};
+
+			public:
+				using underlying_type = typename underlying_type_impl<function_destination::is_shared_ptr>::type;
+				using shared_ptr_type = std::shared_ptr<underlying_type>;
+				using unique_ptr_type = std::unique_ptr<underlying_type>;
+				using type = typename underlying_type_impl<function_destination::is_shared_ptr>::package_type;
+
+				static constexpr bool is_trivial = std::is_trivial<underlying_type>::value;
+				static constexpr bool is_move_constructible = std::is_move_constructible<underlying_type>::value;
+				static constexpr bool is_copy_constructible = std::is_copy_constructible<underlying_type>::value;
+			};
+		};
+#define parameterPackFoundation std::tuple
+#define getParam(N, O) std::get<N>(O)
+		//#define parameterPackFoundation cweeUnion
+		//#define getParam(N, O) O.get<N>()
+		template <int N> struct ParameterPackImpl {
+			using type = parameterPackFoundation<>;
+		};
+		template <> struct ParameterPackImpl<0> {
+			using type = parameterPackFoundation<>;
+		};
+		template <> struct ParameterPackImpl<1> {
+			using type = parameterPackFoundation<
+				typename ArgumentType<0>::parameter_pack::type
+			>;
+		};
+		template <> struct ParameterPackImpl<2> {
+			using type = parameterPackFoundation<
+				typename ArgumentType<0>::parameter_pack::type,
+				typename ArgumentType<1>::parameter_pack::type
+			>;
+		};
+		template <> struct ParameterPackImpl<3> {
+			using type = parameterPackFoundation<
+				typename ArgumentType<0>::parameter_pack::type,
+				typename ArgumentType<1>::parameter_pack::type,
+				typename ArgumentType<2>::parameter_pack::type
+			>;
+		};
+		template <> struct ParameterPackImpl<4> {
+			using type = parameterPackFoundation<
+				typename ArgumentType<0>::parameter_pack::type,
+				typename ArgumentType<1>::parameter_pack::type,
+				typename ArgumentType<2>::parameter_pack::type,
+				typename ArgumentType<3>::parameter_pack::type
+			>;
+		};
+		template <> struct ParameterPackImpl<5> {
+			using type = parameterPackFoundation<
+				typename ArgumentType<0>::parameter_pack::type,
+				typename ArgumentType<1>::parameter_pack::type,
+				typename ArgumentType<2>::parameter_pack::type,
+				typename ArgumentType<3>::parameter_pack::type,
+				typename ArgumentType<4>::parameter_pack::type
+			>;
+		};
+		template <> struct ParameterPackImpl<6> {
+			using type = parameterPackFoundation<
+				typename ArgumentType<0>::parameter_pack::type,
+				typename ArgumentType<1>::parameter_pack::type,
+				typename ArgumentType<2>::parameter_pack::type,
+				typename ArgumentType<3>::parameter_pack::type,
+				typename ArgumentType<4>::parameter_pack::type,
+				typename ArgumentType<5>::parameter_pack::type
+			>;
+		};
+		template <> struct ParameterPackImpl<7> {
+			using type = parameterPackFoundation<
+				typename ArgumentType<0>::parameter_pack::type,
+				typename ArgumentType<1>::parameter_pack::type,
+				typename ArgumentType<2>::parameter_pack::type,
+				typename ArgumentType<3>::parameter_pack::type,
+				typename ArgumentType<4>::parameter_pack::type,
+				typename ArgumentType<5>::parameter_pack::type,
+				typename ArgumentType<6>::parameter_pack::type
+			>;
+		};
+		template <> struct ParameterPackImpl<8> {
+			using type = parameterPackFoundation<
+				typename ArgumentType<0>::parameter_pack::type,
+				typename ArgumentType<1>::parameter_pack::type,
+				typename ArgumentType<2>::parameter_pack::type,
+				typename ArgumentType<3>::parameter_pack::type,
+				typename ArgumentType<4>::parameter_pack::type,
+				typename ArgumentType<5>::parameter_pack::type,
+				typename ArgumentType<6>::parameter_pack::type,
+				typename ArgumentType<7>::parameter_pack::type
+			>;
+		};
+		template <> struct ParameterPackImpl<9> {
+			using type = parameterPackFoundation<
+				typename ArgumentType<0>::parameter_pack::type,
+				typename ArgumentType<1>::parameter_pack::type,
+				typename ArgumentType<2>::parameter_pack::type,
+				typename ArgumentType<3>::parameter_pack::type,
+				typename ArgumentType<4>::parameter_pack::type,
+				typename ArgumentType<5>::parameter_pack::type,
+				typename ArgumentType<6>::parameter_pack::type,
+				typename ArgumentType<7>::parameter_pack::type,
+				typename ArgumentType<8>::parameter_pack::type
+			>;
+		};
+		template <> struct ParameterPackImpl<10> {
+			using type = parameterPackFoundation<
+				typename ArgumentType<0>::parameter_pack::type,
+				typename ArgumentType<1>::parameter_pack::type,
+				typename ArgumentType<2>::parameter_pack::type,
+				typename ArgumentType<3>::parameter_pack::type,
+				typename ArgumentType<4>::parameter_pack::type,
+				typename ArgumentType<5>::parameter_pack::type,
+				typename ArgumentType<6>::parameter_pack::type,
+				typename ArgumentType<7>::parameter_pack::type,
+				typename ArgumentType<8>::parameter_pack::type,
+				typename ArgumentType<9>::parameter_pack::type
+			>;
+		};
+		template <> struct ParameterPackImpl<11> {
+			using type = parameterPackFoundation<
+				typename ArgumentType<0>::parameter_pack::type,
+				typename ArgumentType<1>::parameter_pack::type,
+				typename ArgumentType<2>::parameter_pack::type,
+				typename ArgumentType<3>::parameter_pack::type,
+				typename ArgumentType<4>::parameter_pack::type,
+				typename ArgumentType<5>::parameter_pack::type,
+				typename ArgumentType<6>::parameter_pack::type,
+				typename ArgumentType<7>::parameter_pack::type,
+				typename ArgumentType<8>::parameter_pack::type,
+				typename ArgumentType<9>::parameter_pack::type,
+				typename ArgumentType<10>::parameter_pack::type
+			>;
+		};
+		template <> struct ParameterPackImpl<12> {
+			using type = parameterPackFoundation<
+				typename ArgumentType<0>::parameter_pack::type,
+				typename ArgumentType<1>::parameter_pack::type,
+				typename ArgumentType<2>::parameter_pack::type,
+				typename ArgumentType<3>::parameter_pack::type,
+				typename ArgumentType<4>::parameter_pack::type,
+				typename ArgumentType<5>::parameter_pack::type,
+				typename ArgumentType<6>::parameter_pack::type,
+				typename ArgumentType<7>::parameter_pack::type,
+				typename ArgumentType<8>::parameter_pack::type,
+				typename ArgumentType<9>::parameter_pack::type,
+				typename ArgumentType<10>::parameter_pack::type,
+				typename ArgumentType<11>::parameter_pack::type
+			>;
+		};
+		template <> struct ParameterPackImpl<13> {
+			using type = parameterPackFoundation<
+				typename ArgumentType<0>::parameter_pack::type,
+				typename ArgumentType<1>::parameter_pack::type,
+				typename ArgumentType<2>::parameter_pack::type,
+				typename ArgumentType<3>::parameter_pack::type,
+				typename ArgumentType<4>::parameter_pack::type,
+				typename ArgumentType<5>::parameter_pack::type,
+				typename ArgumentType<6>::parameter_pack::type,
+				typename ArgumentType<7>::parameter_pack::type,
+				typename ArgumentType<8>::parameter_pack::type,
+				typename ArgumentType<9>::parameter_pack::type,
+				typename ArgumentType<10>::parameter_pack::type,
+				typename ArgumentType<11>::parameter_pack::type,
+				typename ArgumentType<12>::parameter_pack::type
+			>;
+		};
+		template <> struct ParameterPackImpl<14> {
+			using type = parameterPackFoundation<
+				typename ArgumentType<0>::parameter_pack::type,
+				typename ArgumentType<1>::parameter_pack::type,
+				typename ArgumentType<2>::parameter_pack::type,
+				typename ArgumentType<3>::parameter_pack::type,
+				typename ArgumentType<4>::parameter_pack::type,
+				typename ArgumentType<5>::parameter_pack::type,
+				typename ArgumentType<6>::parameter_pack::type,
+				typename ArgumentType<7>::parameter_pack::type,
+				typename ArgumentType<8>::parameter_pack::type,
+				typename ArgumentType<9>::parameter_pack::type,
+				typename ArgumentType<10>::parameter_pack::type,
+				typename ArgumentType<11>::parameter_pack::type,
+				typename ArgumentType<12>::parameter_pack::type,
+				typename ArgumentType<13>::parameter_pack::type
+			>;
+		};
+		template <> struct ParameterPackImpl<15> {
+			using type = parameterPackFoundation<
+				typename ArgumentType<0>::parameter_pack::type,
+				typename ArgumentType<1>::parameter_pack::type,
+				typename ArgumentType<2>::parameter_pack::type,
+				typename ArgumentType<3>::parameter_pack::type,
+				typename ArgumentType<4>::parameter_pack::type,
+				typename ArgumentType<5>::parameter_pack::type,
+				typename ArgumentType<6>::parameter_pack::type,
+				typename ArgumentType<7>::parameter_pack::type,
+				typename ArgumentType<8>::parameter_pack::type,
+				typename ArgumentType<9>::parameter_pack::type,
+				typename ArgumentType<10>::parameter_pack::type,
+				typename ArgumentType<11>::parameter_pack::type,
+				typename ArgumentType<12>::parameter_pack::type,
+				typename ArgumentType<13>::parameter_pack::type,
+				typename ArgumentType<14>::parameter_pack::type
+			>;
+		};
+		template <> struct ParameterPackImpl<16> {
+			using type = parameterPackFoundation<
+				typename ArgumentType<0>::parameter_pack::type,
+				typename ArgumentType<1>::parameter_pack::type,
+				typename ArgumentType<2>::parameter_pack::type,
+				typename ArgumentType<3>::parameter_pack::type,
+				typename ArgumentType<4>::parameter_pack::type,
+				typename ArgumentType<5>::parameter_pack::type,
+				typename ArgumentType<6>::parameter_pack::type,
+				typename ArgumentType<7>::parameter_pack::type,
+				typename ArgumentType<8>::parameter_pack::type,
+				typename ArgumentType<9>::parameter_pack::type,
+				typename ArgumentType<10>::parameter_pack::type,
+				typename ArgumentType<11>::parameter_pack::type,
+				typename ArgumentType<12>::parameter_pack::type,
+				typename ArgumentType<13>::parameter_pack::type,
+				typename ArgumentType<14>::parameter_pack::type,
+				typename ArgumentType<15>::parameter_pack::type
+			>;
+		};
+#undef parameterPackFoundation
+	public:
+		std::function<typename F> function;
+		typename ParameterPackImpl<NumArguments>::type parameter_pack;
+
+		template<int N> auto& GetParameter() noexcept {
+			return getParam(N, parameter_pack);
+		};
+		template<int N> const auto& GetParameter() const noexcept {
+			return getParam(N, parameter_pack);
+		};
+
+	private:
+		template <int N = 0> static void AddData(typename ParameterPackImpl<NumArguments>::type& d) {};
+		template<int N = 0, typename T, typename... Targs> static void AddData(typename ParameterPackImpl<NumArguments>::type& d, T&& value, Targs && ... Fargs) {// recursive function		
+			if constexpr (std::is_same<T, void>::value) {
+				AddData<N + 1>(d, std::forward<Targs>(Fargs)...);
+			}
+			else {
+				static constexpr bool desire_shared_ptr = !std::is_same<typename get_type<typename ArgumentType<N>::parameter_pack::type>::type, typename ArgumentType<N>::parameter_pack::type>::value;
+				static constexpr bool got_shared_ptr = !std::is_same<typename get_type<T>::type, T>::value;
+
+				if constexpr (desire_shared_ptr) {
+					// we WANT a shared ptr. Did we get one? 
+					if constexpr (got_shared_ptr) {
+						getParam(N, d) = std::forward<T>(value);
+					}
+					else {
+						getParam(N, d) = std::make_shared<typename ArgumentType<N>::parameter_pack::underlying_type>(std::forward<T>(value));
+					}
+				}
+				else {
+					// we DO NOT want a shared ptr. Did we get one?
+					if constexpr (got_shared_ptr) {
+						getParam(N, d) = *value;
+					}
+					else {
+						getParam(N, d) = std::forward<T>(value);
+					}
+				}
+
+				if constexpr (N + 1 < NumArguments) {
+					AddData<N + 1>(d, std::forward<Targs>(Fargs)...);
+				}
+			}
+		};
+#undef getParam
+
+	public:
+		template <typename... Args>
+		Function(std::function<F>&& function, Args && ... Fargs) noexcept : FunctionBase(), function(std::forward<std::function<F>>(function)), parameter_pack() {
+			AddData(parameter_pack, std::forward<Args>(Fargs)...);
+		};
+		Function() = default;
+		Function(Function const&) = default;
+		Function(Function&&) = default;
+		Function& operator=(Function const&) = default;
+		Function& operator=(Function&&) = default;
+		~Function() = default;
+
+		ResultType operator()() {
+			if constexpr (NumArguments == 16) {
+				return function(
+					GetParameter<0>(), GetParameter<1>(), GetParameter<2>(),
+					GetParameter<3>(), GetParameter<4>(), GetParameter<5>(),
+					GetParameter<6>(), GetParameter<7>(), GetParameter<8>(),
+					GetParameter<9>(), GetParameter<10>(), GetParameter<11>(),
+					GetParameter<12>(), GetParameter<13>(), GetParameter<14>(),
+					GetParameter<15>()
+				);
+			}
+			else if constexpr (NumArguments == 15) {
+				return function(
+					GetParameter<0>(), GetParameter<1>(), GetParameter<2>(),
+					GetParameter<3>(), GetParameter<4>(), GetParameter<5>(),
+					GetParameter<6>(), GetParameter<7>(), GetParameter<8>(),
+					GetParameter<9>(), GetParameter<10>(), GetParameter<11>(),
+					GetParameter<12>(), GetParameter<13>(), GetParameter<14>()
+				);
+			}
+			else if constexpr (NumArguments == 14) {
+				return function(
+					GetParameter<0>(), GetParameter<1>(), GetParameter<2>(),
+					GetParameter<3>(), GetParameter<4>(), GetParameter<5>(),
+					GetParameter<6>(), GetParameter<7>(), GetParameter<8>(),
+					GetParameter<9>(), GetParameter<10>(), GetParameter<11>(),
+					GetParameter<12>(), GetParameter<13>()
+				);
+			}
+			else if constexpr (NumArguments == 13) {
+				return function(
+					GetParameter<0>(), GetParameter<1>(), GetParameter<2>(),
+					GetParameter<3>(), GetParameter<4>(), GetParameter<5>(),
+					GetParameter<6>(), GetParameter<7>(), GetParameter<8>(),
+					GetParameter<9>(), GetParameter<10>(), GetParameter<11>(),
+					GetParameter<12>()
+				);
+			}
+			else if constexpr (NumArguments == 12) {
+				return function(
+					GetParameter<0>(), GetParameter<1>(), GetParameter<2>(),
+					GetParameter<3>(), GetParameter<4>(), GetParameter<5>(),
+					GetParameter<6>(), GetParameter<7>(), GetParameter<8>(),
+					GetParameter<9>(), GetParameter<10>(), GetParameter<11>()
+				);
+			}
+			else if constexpr (NumArguments == 11) {
+				return function(
+					GetParameter<0>(), GetParameter<1>(), GetParameter<2>(),
+					GetParameter<3>(), GetParameter<4>(), GetParameter<5>(),
+					GetParameter<6>(), GetParameter<7>(), GetParameter<8>(),
+					GetParameter<9>(), GetParameter<10>()
+				);
+			}
+			else if constexpr (NumArguments == 10) {
+				return function(
+					GetParameter<0>(), GetParameter<1>(), GetParameter<2>(),
+					GetParameter<3>(), GetParameter<4>(), GetParameter<5>(),
+					GetParameter<6>(), GetParameter<7>(), GetParameter<8>(),
+					GetParameter<9>()
+				);
+			}
+			else if constexpr (NumArguments == 9) {
+				return function(
+					GetParameter<0>(), GetParameter<1>(), GetParameter<2>(),
+					GetParameter<3>(), GetParameter<4>(), GetParameter<5>(),
+					GetParameter<6>(), GetParameter<7>(), GetParameter<8>()
+				);
+			}
+			else if constexpr (NumArguments == 8) {
+				return function(
+					GetParameter<0>(), GetParameter<1>(), GetParameter<2>(),
+					GetParameter<3>(), GetParameter<4>(), GetParameter<5>(),
+					GetParameter<6>(), GetParameter<7>()
+				);
+			}
+			else if constexpr (NumArguments == 7) {
+				return function(
+					GetParameter<0>(), GetParameter<1>(), GetParameter<2>(),
+					GetParameter<3>(), GetParameter<4>(), GetParameter<5>(),
+					GetParameter<6>()
+				);
+			}
+			else if constexpr (NumArguments == 6) {
+				return function(
+					GetParameter<0>(), GetParameter<1>(), GetParameter<2>(),
+					GetParameter<3>(), GetParameter<4>(), GetParameter<5>()
+				);
+			}
+			else if constexpr (NumArguments == 5) {
+				return function(
+					GetParameter<0>(), GetParameter<1>(), GetParameter<2>(),
+					GetParameter<3>(), GetParameter<4>()
+				);
+			}
+			else if constexpr (NumArguments == 4) {
+				return function(
+					GetParameter<0>(), GetParameter<1>(), GetParameter<2>(),
+					GetParameter<3>()
+				);
+			}
+			else if constexpr (NumArguments == 3) {
+				return function(
+					GetParameter<0>(), GetParameter<1>(), GetParameter<2>()
+				);
+			}
+			else if constexpr (NumArguments == 2) {
+				return function(
+					GetParameter<0>(), GetParameter<1>()
+				);
+			}
+			else if constexpr (NumArguments == 1) {
+				return function(
+					GetParameter<0>()
+				);
+			}
+			else if constexpr (NumArguments == 0) {
+				return function();
+			}
+			else {
+				throw(std::runtime_error("The number of arguments and number of parameters did not match"));
+			}
+		}
+		void Invoke() override final { operator()(); };
+
+		static constexpr size_t NumInputs() noexcept { return NumArguments; };
+		static constexpr bool ReturnsNothing() {
+			static constexpr bool returnsNothing = std::is_same<ResultType, void>::value;
+			return returnsNothing;
+		};
+		const char* FunctionName() const {
+			return function.target_type().name();
+		};
+
+	};
+
 	/*! Supports forward-declaring a "cast" from an Any to the desired destination type. e.g: int& ref_int = any_obj.cast(); ... std::string str = any_obj.cast(); */
 	class AnyAutoCast; /* forward decl */
 
@@ -359,16 +824,16 @@ namespace fibers {
 		struct Object_Data {
 			template <template<class> class H, class S, typename = std::enable_if_t<std::is_same_v<H<S>, std::shared_ptr<S>>>> static decltype(auto) get(const H<S>* obj) { return get(*obj); };
 			template <template<class> class H, class S, typename = std::enable_if_t<std::is_same_v<H<S>, std::shared_ptr<S>>>> static decltype(auto) get(const H<S>& obj) {
-				return std::static_pointer_cast<AnyData>(std::shared_ptr<AnyData_Impl<S>>(new AnyData_Impl<S>(obj)));
+				return std::shared_ptr<AnyData>(new AnyData(AnyData::get_data<S>(obj), boost::typeindex::type_id<S>().type_info(), std::is_const_v<S>));
 			};
 			template <template<class> class H, class S, typename = std::enable_if_t<std::is_same_v<H<S>, std::shared_ptr<S>>>> static decltype(auto) get(H<S>&& obj) {
-				return std::static_pointer_cast<AnyData>(std::shared_ptr<AnyData_Impl<S>>(new AnyData_Impl<S>(std::forward<H<S>>(obj))));
+				return std::shared_ptr<AnyData>(new AnyData(AnyData::get_data<S>(std::forward<H<S>>(obj)), boost::typeindex::type_id<S>().type_info(), std::is_const_v<S>));
 			};
-			template<typename T, typename = std::enable_if_t<!std::is_same_v<AnyAutoCast, T>>> static decltype(auto) get(T* t) { return get(std::make_shared<T>(t)); };
-			template<typename T, typename = std::enable_if_t<!std::is_same_v<AnyAutoCast, T>>> static decltype(auto) get(const T* t) { return get(*t); };
-			template<typename T, typename = std::enable_if_t<!std::is_same_v<AnyAutoCast, T>>> static decltype(auto) get(const T& obj) { return get(std::make_shared<T>(obj)); };
-			static decltype(auto) get(const AnyAutoCast& obj);
-			static decltype(auto) get(const AnyAutoCast* t);
+			template<typename T, typename = std::enable_if_t<!std::is_same_v<fibers::AnyAutoCast, T>>> static decltype(auto) get(T* t) { return get(std::make_shared<T>(t)); };
+			template<typename T, typename = std::enable_if_t<!std::is_same_v<fibers::AnyAutoCast, T>>> static decltype(auto) get(const T* t) { return get(*t); };
+			template<typename T, typename = std::enable_if_t<!std::is_same_v<fibers::AnyAutoCast, T>>> static decltype(auto) get(const T& obj) { return get(std::make_shared<T>(obj)); };
+			static decltype(auto) get(const fibers::AnyAutoCast& obj);
+			static decltype(auto) get(const fibers::AnyAutoCast* t);
 		};
 		template<typename ValueType> static std::shared_ptr<AnyData> CreateContainer(const ValueType& r) { return Object_Data::get(r); };
 		template<typename ValueType> static std::shared_ptr<AnyData> CreateContainer(ValueType&& r) { return Object_Data::get(std::forward<ValueType>(r)); };
@@ -377,7 +842,7 @@ namespace fibers {
 		constexpr Any() noexcept : container(nullptr) {};
 		constexpr Any(std::nullptr_t) noexcept : container(nullptr) {};
 		Any(const Any& rhs) noexcept : container(rhs.container) {};
-		Any(Any&& rhs) noexcept : container(rhs.container) { rhs.container = nullptr; };
+		Any(Any&& rhs) noexcept : container(std::move(rhs.container)) {};
 
 	public: /*! Init w/ DATA ASSIGNMENT */
 		template<typename ValueType, typename = std::enable_if_t<!std::is_same_v<Any, std::decay_t<ValueType>>>> Any(const ValueType& value) noexcept : container(CreateContainer(value)) {};
@@ -386,7 +851,7 @@ namespace fibers {
 		template<typename ValueType, typename = std::enable_if_t<!std::is_same_v<Any, std::decay_t<ValueType>>>> Any(ValueType&& value) noexcept : container(CreateContainer(std::forward<ValueType>(value))) {};
 
 	public: /*! Destroy */
-		~Any() noexcept { container = nullptr; };
+		~Any() = default;
 
 	public: /*! Data Assignment AFTER INIT */
 		Any& swap(Any& rhs) noexcept {
@@ -395,15 +860,15 @@ namespace fibers {
 			return *this;
 		};
 		Any& operator=(const Any& rhs) noexcept {
-			Any(rhs).swap(*this);
+			container = rhs.container;
 			return *this;
 		};
 		Any& operator=(Any&& rhs) noexcept {
-			Any(std::forward<Any>(rhs)).swap(*this);
+			rhs.container.swap(container);
 			return *this;
 		};
-
 		Any& operator=(std::nullptr_t) noexcept { Clear(); return *this; };
+
 		template <class ValueType, typename = std::enable_if_t<!std::is_same_v<Any, std::decay_t<ValueType>>>> Any& operator=(const ValueType& rhs) noexcept { CreateContainer(rhs).swap(container); return *this; };
 		template <class ValueType, typename = std::enable_if_t<!std::is_same_v<Any, std::decay_t<ValueType>>>> Any& operator=(const ValueType* rhs) noexcept { CreateContainer(rhs).swap(container); return *this; };
 		template <class ValueType, typename = std::enable_if_t<!std::is_same_v<Any, std::decay_t<ValueType>>>> Any& operator=(ValueType* rhs) noexcept { CreateContainer(rhs).swap(container); return *this; };
@@ -414,7 +879,7 @@ namespace fibers {
 		bool IsEmpty() const noexcept { return (bool)container; };
 
 		/*! Empties the Any and frees the memory. */
-		void Clear() noexcept { Any().swap(*this); };
+		void Clear() noexcept { container = nullptr; };
 
 		template <typename ValueT> static const char* TypeNameOf() { return TypeOf<ValueT>().name(); };
 		template <typename ValueT> static const boost::typeindex::type_info& TypeOf() { return boost::typeindex::type_id<ValueT>().type_info(); };
@@ -469,13 +934,12 @@ namespace fibers {
 
 		private:
 			template <class VType> static decltype(auto) DoCast_Shared(Any* p) noexcept {
-				std::shared_ptr<AnyData> m = p->container;
-				decltype(auto) ptr = m.get();
+				auto* ptr = p->container.get();
 				if (ptr) {
 					return ptr->cast<VType>();
 				}
 				else {
-					decltype(auto) q = std::make_shared<VType>();
+					decltype(auto) q{ std::make_shared<VType>() };
 					p->container = Any::CreateContainer(q);
 					return q;
 				}
@@ -487,17 +951,17 @@ namespace fibers {
 				constexpr bool is_ptr = std::is_pointer_v<VType>;
 
 				typedef typename std::remove_reference<typename std::remove_pointer<VType>::type>::type desiredT;
-				std::shared_ptr<AnyData> m = p->container;
-				if (m) {
+				auto* ptr = p->container.get();
+				if (ptr) {
 					if constexpr (is_ptr) {
-						return static_cast<desiredT*>(m->ptr());
+						return static_cast<desiredT*>(ptr->ptr());
 					}
 					else {
-						return *static_cast<desiredT*>(m->ptr());
+						return *static_cast<desiredT*>(ptr->ptr());
 					}
 				}
 				else {
-					std::shared_ptr<desiredT> q = std::make_shared<desiredT>();
+					decltype(auto) q{ std::make_shared<desiredT>() };
 					p->container = Any::CreateContainer(q);
 					if constexpr (is_ptr) {
 						return q.get();
@@ -593,494 +1057,108 @@ namespace fibers {
 	__forceinline decltype(auto) Any::Object_Data::get(const AnyAutoCast& obj) { Any* t = const_cast<Any*>(obj.parent); std::shared_ptr<AnyData> out; if (t) { out = t->container; } return out; };
 	__forceinline decltype(auto) Any::Object_Data::get(const AnyAutoCast* t) { return get(*t); };
 
-	/* 
-	Wrapper for std::function that can capture input parameters for later evaluation. e.g: 
-	. auto f = Function(std::function([](int i, double x)->int{ return i+x; }), 10, 0.0); 
-	. int value = f.Invoke().cast(); 
-	. assert(value == 10);
-	*/
-	template <typename F = void()> class Function {
-	public:
-		template<typename T> struct count_arg;
-		template<typename R, typename ...Args> struct count_arg<std::function<R(Args...)>> { static constexpr const size_t value = sizeof...(Args); };
-		template <typename... Args> constexpr size_t sizeOfParameterPack(Args... Fargs) { return sizeof...(Args); }
-		template<class R> struct function_traits { using result_type = R; using arguments = std::tuple<>; };
-		template<class R> struct function_traits<std::function<R(void)>> { using result_type = R; using arguments = std::tuple<>; };
-		template<class R, class... Args> struct function_traits<std::function<R(Args...)>> { using result_type = R; using arguments = std::tuple<Args...>; };
-
-		typedef F Type;
-		typedef typename std::function<F>::result_type ResultType;
-		typedef typename function_traits<std::function<F>>::arguments Arguments;
-
-		Function() noexcept
-			: _function()
-			, _data()
-			, Result()
-			, IsFinished(0)
-		{};
-
-		template <typename... Args>
-		Function(const std::function<F>& function, Args && ... Fargs) noexcept
-			: _function(function)
-			, _data(GetData(std::forward<Args>(Fargs)...))
-			, Result()
-			, IsFinished(0)
-		{};
-
-		template <typename... Args>
-		Function(std::function<F> && function, Args && ... Fargs) noexcept
-			: _function(std::forward<std::function<F>>(function))
-			, _data(GetData(std::forward<Args>(Fargs)...))
-			, Result()
-			, IsFinished(0)
-		{};
-
-	private:
-		static void AddData(std::vector<Any>& d) { return; };
-		template<typename T, typename... Targs> static void AddData(std::vector<Any>& d, T&& value, Targs && ... Fargs) // recursive function
-		{
-			if constexpr (std::is_same<T, void>::value) {
-				AddData(d, std::forward<Targs>(Fargs)...);
-				return;
-			}
-			else {
-				d.push_back(std::forward<T>(value));
-				AddData(d, std::forward<Targs>(Fargs)...);
-				return;
-			}
-		};
-		template<typename T, typename... Targs> static void AddData(std::vector<Any>& d, T const& value, Targs && ... Fargs) // recursive function
-		{
-			if constexpr (std::is_same<T, void>::value) {
-				AddData(d, std::forward<Targs>(Fargs)...);
-				return;
-			}
-			else {
-				d.push_back(value);
-				AddData(d, std::forward<Targs>(Fargs)...);
-				return;
-			}
-		};
-		template <typename... Args> std::vector<Any> GetData(Args && ... Fargs) {
-			constexpr size_t NumNeededInputs = NumInputs();
-			constexpr size_t NumProvidedInputs = sizeof...(Args);
-			static_assert(NumNeededInputs <= NumProvidedInputs, "Providing fewer inputs than required is unsupported. C++ Lambdas cannot support default arguments and therefore all arguments must be provided for.");
-
-			std::vector<Any> out;
-			out.reserve(NumProvidedInputs);
-			AddData(out, std::forward<Args>(Fargs)...);
-			return out;
-		};
-
-	public:
-		Function(const Function& copy) noexcept
-			: _function(copy._function)
-			, _data(copy._data)
-			, Result(copy.Result)
-			, IsFinished(copy.IsFinished.load())
-		{};
-
-		static Function Finished() {
-			Function to_return;
-
-			to_return.IsFinished.fetch_add(1);
-
-			return to_return;
-		};
-		template <typename T> static Function Finished(const T& returnMe) {
-			Function to_return;
-
-			to_return.Result = returnMe;
-			to_return.IsFinished.fetch_add(1);
-
-			return to_return;
-		};
-
-		Any& Invoke() {
-			DoJob();
-			return Result;
-		};
-		Any& ForceInvoke() {
-			ForceDoJob();
-			return Result;
-		};
-
-		static constexpr size_t NumInputs() noexcept {
-			constexpr size_t numArgs = count_arg<std::function<F>>::value;
-			return numArgs;
-		};
-		static constexpr bool ReturnsNothing() {
-			constexpr bool returnsNothing = std::is_same<typename std::function<F>::result_type, void>::value;
-			return returnsNothing;
-		};
-
-		const char* FunctionName() const {
-			return _function.target_type().name();
-		};
-
-		Any& GetResult() {
-			return Result;
-		};
-		Any& GetResult() const {
-			return Result;
-		};
-
-	private:
-		void						DoJob() {
-			static_assert(NumInputs() <= 16, "Cannot have more than 16 inputs for a Function without further specialization.");
-
-			if ((IsFinished.fetch_add(1) + 1) == 1) {
-				if constexpr (NumInputs() == 0) {
-					DoJob_Internal_0();
-				}
-				else if constexpr (NumInputs() == 1) {
-					DoJob_Internal_1();
-				}
-				else if constexpr (NumInputs() == 2) {
-					DoJob_Internal_2();
-				}
-				else if constexpr (NumInputs() == 3) {
-					DoJob_Internal_3();
-				}
-				else if constexpr (NumInputs() == 4) {
-					DoJob_Internal_4();
-				}
-				else if constexpr (NumInputs() == 5) {
-					DoJob_Internal_5();
-				}
-				else if constexpr (NumInputs() == 6) {
-					DoJob_Internal_6();
-				}
-				else if constexpr (NumInputs() == 7) {
-					DoJob_Internal_7();
-				}
-				else if constexpr (NumInputs() == 8) {
-					DoJob_Internal_8();
-				}
-				else if constexpr (NumInputs() == 9) {
-					DoJob_Internal_9();
-				}
-				else if constexpr (NumInputs() == 10) {
-					DoJob_Internal_10();
-				}
-				else if constexpr (NumInputs() == 11) {
-					DoJob_Internal_11();
-				}
-				else if constexpr (NumInputs() == 12) {
-					DoJob_Internal_12();
-				}
-				else if constexpr (NumInputs() == 13) {
-					DoJob_Internal_13();
-				}
-				else if constexpr (NumInputs() == 14) {
-					DoJob_Internal_14();
-				}
-				else if constexpr (NumInputs() == 15) {
-					DoJob_Internal_15();
-				}
-				else if constexpr (NumInputs() == 16) {
-					DoJob_Internal_16();
-				}
-			}
-			else {
-				IsFinished.fetch_sub(1);
-			}
-		};
-		void						ForceDoJob() {
-			static_assert(NumInputs() <= 16, "Cannot have more than 16 inputs for a Function without further specialization.");
-
-			IsFinished.fetch_add(1);
-			if (true) {
-				if constexpr (NumInputs() == 0) {
-					DoJob_Internal_0();
-				}
-				else if constexpr (NumInputs() == 1) {
-					DoJob_Internal_1();
-				}
-				else if constexpr (NumInputs() == 2) {
-					DoJob_Internal_2();
-				}
-				else if constexpr (NumInputs() == 3) {
-					DoJob_Internal_3();
-				}
-				else if constexpr (NumInputs() == 4) {
-					DoJob_Internal_4();
-				}
-				else if constexpr (NumInputs() == 5) {
-					DoJob_Internal_5();
-				}
-				else if constexpr (NumInputs() == 6) {
-					DoJob_Internal_6();
-				}
-				else if constexpr (NumInputs() == 7) {
-					DoJob_Internal_7();
-				}
-				else if constexpr (NumInputs() == 8) {
-					DoJob_Internal_8();
-				}
-				else if constexpr (NumInputs() == 9) {
-					DoJob_Internal_9();
-				}
-				else if constexpr (NumInputs() == 10) {
-					DoJob_Internal_10();
-				}
-				else if constexpr (NumInputs() == 11) {
-					DoJob_Internal_11();
-				}
-				else if constexpr (NumInputs() == 12) {
-					DoJob_Internal_12();
-				}
-				else if constexpr (NumInputs() == 13) {
-					DoJob_Internal_13();
-				}
-				else if constexpr (NumInputs() == 14) {
-					DoJob_Internal_14();
-				}
-				else if constexpr (NumInputs() == 15) {
-					DoJob_Internal_15();
-				}
-				else if constexpr (NumInputs() == 16) {
-					DoJob_Internal_16();
-				}
-			}
-		};
-
-		void						DoJob_Internal_16() {
-			if constexpr (ReturnsNothing())
-			{
-				/*    */ _function(_data[0].cast(), _data[1].cast(), _data[2].cast(), _data[3].cast(), _data[4].cast(), _data[5].cast(), _data[6].cast(), _data[7].cast(), _data[8].cast(), _data[9].cast(), _data[10].cast(), _data[11].cast(), _data[12].cast(), _data[13].cast(), _data[14].cast(), _data[15].cast());
-				// Any().swap(Result);
-			}
-			else {
-				Result = _function(_data[0].cast(), _data[1].cast(), _data[2].cast(), _data[3].cast(), _data[4].cast(), _data[5].cast(), _data[6].cast(), _data[7].cast(), _data[8].cast(), _data[9].cast(), _data[10].cast(), _data[11].cast(), _data[12].cast(), _data[13].cast(), _data[14].cast(), _data[15].cast());
-			}
-		};
-		void						DoJob_Internal_15() {
-			if constexpr (ReturnsNothing())
-			{
-				/*    */ _function(_data[0].cast(), _data[1].cast(), _data[2].cast(), _data[3].cast(), _data[4].cast(), _data[5].cast(), _data[6].cast(), _data[7].cast(), _data[8].cast(), _data[9].cast(), _data[10].cast(), _data[11].cast(), _data[12].cast(), _data[13].cast(), _data[14].cast());
-				// Any().swap(Result);
-			}
-			else {
-				Result = _function(_data[0].cast(), _data[1].cast(), _data[2].cast(), _data[3].cast(), _data[4].cast(), _data[5].cast(), _data[6].cast(), _data[7].cast(), _data[8].cast(), _data[9].cast(), _data[10].cast(), _data[11].cast(), _data[12].cast(), _data[13].cast(), _data[14].cast());
-			}
-		};
-		void						DoJob_Internal_14() {
-			if constexpr (ReturnsNothing())
-			{
-				/*    */ _function(_data[0].cast(), _data[1].cast(), _data[2].cast(), _data[3].cast(), _data[4].cast(), _data[5].cast(), _data[6].cast(), _data[7].cast(), _data[8].cast(), _data[9].cast(), _data[10].cast(), _data[11].cast(), _data[12].cast(), _data[13].cast());
-				// Any().swap(Result);
-			}
-			else {
-				Result = _function(_data[0].cast(), _data[1].cast(), _data[2].cast(), _data[3].cast(), _data[4].cast(), _data[5].cast(), _data[6].cast(), _data[7].cast(), _data[8].cast(), _data[9].cast(), _data[10].cast(), _data[11].cast(), _data[12].cast(), _data[13].cast());
-			}
-		};
-		void						DoJob_Internal_13() {
-			if constexpr (ReturnsNothing())
-			{
-				/*    */ _function(_data[0].cast(), _data[1].cast(), _data[2].cast(), _data[3].cast(), _data[4].cast(), _data[5].cast(), _data[6].cast(), _data[7].cast(), _data[8].cast(), _data[9].cast(), _data[10].cast(), _data[11].cast(), _data[12].cast());
-				// Any().swap(Result);
-			}
-			else {
-				Result = _function(_data[0].cast(), _data[1].cast(), _data[2].cast(), _data[3].cast(), _data[4].cast(), _data[5].cast(), _data[6].cast(), _data[7].cast(), _data[8].cast(), _data[9].cast(), _data[10].cast(), _data[11].cast(), _data[12].cast());
-			}
-		};
-		void						DoJob_Internal_12() {
-			if constexpr (ReturnsNothing())
-			{
-				/*    */ _function(_data[0].cast(), _data[1].cast(), _data[2].cast(), _data[3].cast(), _data[4].cast(), _data[5].cast(), _data[6].cast(), _data[7].cast(), _data[8].cast(), _data[9].cast(), _data[10].cast(), _data[11].cast());
-				// Any().swap(Result);
-			}
-			else {
-				Result = _function(_data[0].cast(), _data[1].cast(), _data[2].cast(), _data[3].cast(), _data[4].cast(), _data[5].cast(), _data[6].cast(), _data[7].cast(), _data[8].cast(), _data[9].cast(), _data[10].cast(), _data[11].cast());
-			}
-		};
-		void						DoJob_Internal_11() {
-			if constexpr (ReturnsNothing())
-			{
-				/*    */ _function(_data[0].cast(), _data[1].cast(), _data[2].cast(), _data[3].cast(), _data[4].cast(), _data[5].cast(), _data[6].cast(), _data[7].cast(), _data[8].cast(), _data[9].cast(), _data[10].cast());
-				// Any().swap(Result);
-			}
-			else {
-				Result = _function(_data[0].cast(), _data[1].cast(), _data[2].cast(), _data[3].cast(), _data[4].cast(), _data[5].cast(), _data[6].cast(), _data[7].cast(), _data[8].cast(), _data[9].cast(), _data[10].cast());
-			}
-		};
-		void						DoJob_Internal_10() {
-			if constexpr (ReturnsNothing())
-			{
-				/*    */ _function(_data[0].cast(), _data[1].cast(), _data[2].cast(), _data[3].cast(), _data[4].cast(), _data[5].cast(), _data[6].cast(), _data[7].cast(), _data[8].cast(), _data[9].cast());
-				// Any().swap(Result);
-			}
-			else {
-				Result = _function(_data[0].cast(), _data[1].cast(), _data[2].cast(), _data[3].cast(), _data[4].cast(), _data[5].cast(), _data[6].cast(), _data[7].cast(), _data[8].cast(), _data[9].cast());
-			}
-		};
-		void						DoJob_Internal_9() {
-			if constexpr (ReturnsNothing())
-			{
-				/*    */ _function(_data[0].cast(), _data[1].cast(), _data[2].cast(), _data[3].cast(), _data[4].cast(), _data[5].cast(), _data[6].cast(), _data[7].cast(), _data[8].cast());
-				// Any().swap(Result);
-			}
-			else {
-				Result = _function(_data[0].cast(), _data[1].cast(), _data[2].cast(), _data[3].cast(), _data[4].cast(), _data[5].cast(), _data[6].cast(), _data[7].cast(), _data[8].cast());
-			}
-		};
-		void						DoJob_Internal_8() {
-			if constexpr (ReturnsNothing())
-			{
-				/*    */ _function(_data[0].cast(), _data[1].cast(), _data[2].cast(), _data[3].cast(), _data[4].cast(), _data[5].cast(), _data[6].cast(), _data[7].cast());
-				// Any().swap(Result);
-			}
-			else {
-				Result = _function(_data[0].cast(), _data[1].cast(), _data[2].cast(), _data[3].cast(), _data[4].cast(), _data[5].cast(), _data[6].cast(), _data[7].cast());
-			}
-		};
-		void						DoJob_Internal_7() {
-			if constexpr (ReturnsNothing())
-			{
-				/*    */ _function(_data[0].cast(), _data[1].cast(), _data[2].cast(), _data[3].cast(), _data[4].cast(), _data[5].cast(), _data[6].cast());
-				// Any().swap(Result);
-			}
-			else {
-				Result = _function(_data[0].cast(), _data[1].cast(), _data[2].cast(), _data[3].cast(), _data[4].cast(), _data[5].cast(), _data[6].cast());
-			}
-		};
-		void						DoJob_Internal_6() {
-			if constexpr (ReturnsNothing())
-			{
-				/*    */ _function(_data[0].cast(), _data[1].cast(), _data[2].cast(), _data[3].cast(), _data[4].cast(), _data[5].cast());
-				// Any().swap(Result);
-			}
-			else {
-				Result = _function(_data[0].cast(), _data[1].cast(), _data[2].cast(), _data[3].cast(), _data[4].cast(), _data[5].cast());
-			}
-		};
-		void						DoJob_Internal_5() {
-			if constexpr (ReturnsNothing())
-			{
-				/*    */ _function(_data[0].cast(), _data[1].cast(), _data[2].cast(), _data[3].cast(), _data[4].cast());
-				// Any().swap(Result);
-			}
-			else {
-				Result = _function(_data[0].cast(), _data[1].cast(), _data[2].cast(), _data[3].cast(), _data[4].cast());
-			}
-		};
-		void						DoJob_Internal_4() {
-			if constexpr (ReturnsNothing())
-			{
-				/*    */ _function(_data[0].cast(), _data[1].cast(), _data[2].cast(), _data[3].cast());
-				// Any().swap(Result);
-			}
-			else {
-				Result = _function(_data[0].cast(), _data[1].cast(), _data[2].cast(), _data[3].cast());
-			}
-		};
-		void						DoJob_Internal_3() {
-			if constexpr (ReturnsNothing())
-			{
-				/*    */ _function(_data[0].cast(), _data[1].cast(), _data[2].cast());
-				// Any().swap(Result);
-			}
-			else {
-				Result = _function(_data[0].cast(), _data[1].cast(), _data[2].cast());
-			}
-		};
-		void						DoJob_Internal_2() {
-			if constexpr (ReturnsNothing())
-			{
-				/*    */ _function(_data[0].cast(), _data[1].cast());
-				// Any().swap(Result);
-			}
-			else {
-				Result = _function(_data[0].cast(), _data[1].cast());
-			}
-		};
-		void						DoJob_Internal_1() {
-			if constexpr (ReturnsNothing())
-			{
-				/*    */ _function(_data[0].cast());
-				// Any().swap(Result);
-			}
-			else {
-				Result = _function(_data[0].cast());
-			}
-		};
-		void						DoJob_Internal_0() {
-			if constexpr (ReturnsNothing())
-			{
-				/*    */ _function();
-				// Any().swap(Result);
-			}
-			else {
-				Result = _function();
-			}
-		};
-
-	private:
-		std::function<F>			_function;
-		std::vector<Any>		_data;
-
-	public:
-		mutable Any				  Result;
-		mutable std::atomic<long> IsFinished;
-
-	};
 	namespace {
 		class Action_Interface {
 		public:
-			explicit Action_Interface() {};
-			explicit Action_Interface(Action_Interface const&) = delete;
-			explicit Action_Interface(Action_Interface&&) = delete;
-			Action_Interface& operator=(Action_Interface const&) = delete;
-			Action_Interface& operator=(Action_Interface&&) = delete;
-			virtual ~Action_Interface() noexcept {};
+			virtual ~Action_Interface() = default;
 
-			virtual boost::typeindex::type_info const& type() const noexcept = 0;
-			virtual const char* typeName() const noexcept = 0;
-			virtual std::shared_ptr<Action_Interface> clone() const noexcept = 0;
-			virtual Any& Invoke() noexcept = 0;
-			virtual Any& ForceInvoke() noexcept = 0;
-			virtual const char* FunctionName() const noexcept = 0;
-			virtual Any& Result() const noexcept = 0;
-			virtual bool IsFinished() const noexcept = 0;
-			virtual bool ReturnsNothing() const noexcept = 0;
+			virtual boost::typeindex::type_info const& type() const noexcept { return boost::typeindex::type_id<void>().type_info(); };
+			virtual const char* typeName() const noexcept { return ""; };
+			virtual Action_Interface* clone() const noexcept {
+				return new Action_Interface();
+			};
+			virtual fibers::Any& Invoke() noexcept { static fibers::Any staticTemp{}; return staticTemp; };
+			virtual fibers::Any& ForceInvoke() noexcept { static fibers::Any staticTemp{}; return staticTemp; };
+			virtual const char* FunctionName() const noexcept { return ""; };
+			virtual const fibers::Any& Result() const noexcept { static fibers::Any staticTemp{}; return staticTemp; };
+			virtual bool IsFinished() const noexcept { return true; };
+			virtual bool ReturnsNothing() const noexcept { return true; };
+			virtual std::function<void(Action_Interface*)>& deleter() const noexcept {
+				static auto deleteFunc{ std::function<void(Action_Interface*)>([](Action_Interface* p) {
+					if (p) {
+						delete p;
+					}
+				}) };
+				return deleteFunc;
+			};
 		};
 		template<typename ValueType> class Action_Impl final : public Action_Interface {
-		public:
-			explicit Action_Impl() = delete;
-			explicit Action_Impl(Function<ValueType> const& f) noexcept : data(f) {};
-			explicit Action_Impl(Function<ValueType>&& f) noexcept : data(std::forward<Function<ValueType>>(f)) {};
-			virtual ~Action_Impl() noexcept {};
+		private:
+			using ReturnType = typename Function<ValueType>::ResultType;
+			static constexpr bool returnsNothing{ std::is_same<ReturnType, void>::value };
 
-			virtual boost::typeindex::type_info const& type() const noexcept final {
+		public:
+			Action_Impl() : Action_Interface() {};
+			Action_Impl(Function<ValueType> const& f) noexcept : Action_Interface(), data(f), result(), running(false), finished(false) {};
+			Action_Impl(Function<ValueType>&& f) noexcept : Action_Interface(), data(std::forward<Function<ValueType>>(f)), result(), running(false), finished(false) {};
+
+			boost::typeindex::type_info const& type() const noexcept override final {
 				return boost::typeindex::type_id<Function<ValueType>>().type_info();
 			};
-			virtual const char* typeName() const noexcept final {
+			const char* typeName() const noexcept final {
 				return boost::typeindex::type_id<Function<ValueType>>().type_info().name();
 			};
-			virtual std::shared_ptr<Action_Interface> clone() const noexcept final {
-				return std::static_pointer_cast<Action_Interface>(std::make_shared<Action_Impl<ValueType>>(data));
+			Action_Interface* clone() const noexcept override final {
+				return dynamic_cast<Action_Interface*>(new Action_Impl<ValueType>(data));
 			};
-			virtual Any& Invoke() noexcept final {
-				return data.Invoke();
+			fibers::Any& Invoke() noexcept override final {
+				if (finished.load()) return result;
+				bool compare(false);
+				if (running.compare_exchange_strong(compare, true)) {
+					if constexpr (returnsNothing) {
+						data();
+					}
+					else {
+						result = fibers::Any(data());
+					}
+					finished.store(true);
+					running.store(false);
+				}
+				else {
+					while (running.load()) {}
+				}
+				return result;
 			};
-			virtual Any& ForceInvoke() noexcept final {
-				return data.ForceInvoke();
+			fibers::Any& ForceInvoke() noexcept override final {
+				if constexpr (returnsNothing) {
+					data();
+				}
+				else {
+					result = fibers::Any(data());
+				}
+				return result;
 			};
-			virtual const char* FunctionName() const noexcept final {
+			const char* FunctionName() const noexcept override final {
 				return data.FunctionName();
 			};
-			virtual Any& Result() const noexcept final {
-				return data.GetResult();
+			const fibers::Any& Result() const noexcept override final {
+				return result;
 			};
-			virtual bool IsFinished() const noexcept final {
-				return data.IsFinished.load() > 0;
+			bool IsFinished() const noexcept override final {
+				return finished.load();
 			};
-			virtual bool ReturnsNothing()  const noexcept final {
+			bool ReturnsNothing() const noexcept override final {
 				return data.ReturnsNothing();
+			};
+			std::function<void(Action_Interface*)>& deleter() const noexcept override final {
+				static auto deleteFunc{ std::function<void(Action_Interface*)>([](Action_Interface* p) {
+					if (p) {
+						auto* p2 = dynamic_cast<Action_Impl<ValueType>*>(p);
+						if (p2) {
+							delete p2;
+						}
+						else {
+							delete p;
+						}
+					}
+				}) };
+				return deleteFunc;
 			};
 
 			Function<ValueType> data;
+			fibers::Any result;
+			std::atomic<bool> running;
+			std::atomic<bool> finished;
 		};
 	};
 
@@ -1090,97 +1168,83 @@ namespace fibers {
 	. assert(value == 10); */
 	class Action {
 	public: // structors
-		/*! Init */ Action() noexcept : content(BasePtr()) {};
-		/*! Copy */ Action(const Action& other) noexcept : content(BasePtr()) { std::shared_ptr<Action_Interface> c = other.content; content = c->clone(); };
+		/*! Init */ Action() noexcept : content(nullptr) {};
+		/*! Copy */ Action(const Action& other) noexcept : content(other.content ? other.content->clone() : nullptr) {};
 		/*! Perfect forwarding */ Action(Action&& other) noexcept : content(std::move(other.content)) {};
-		/*! Data Assignment */ template<typename ValueType> explicit Action(const Function<ValueType>& value) : content(ToPtr<ValueType>(value)) {};
-		// /*! Direct instantiation */ template <typename F, typename... Args> Action(const std::function<F>& function, Args... Fargs) : Action(Function(function, Fargs...)) {};
-		/*! Direct instantiation2 */ template <typename F, typename... Args> Action(const F& function, Args &&... Fargs) : Action(Function(std::function(function), std::forward<Args>(Fargs)...)) {};
-		~Action() = default;
+		/*! Data Assignment */ template<typename ValueType> explicit Action(Function<ValueType>&& value) : content(ToPtr<ValueType>(std::forward< Function<ValueType>>(value))) {};
+		/*! Direct instantiation2 */ template <typename F, typename... Args> Action(F&& function, Args &&... Fargs) : Action(Function(std::function(std::forward<F>(function)), std::forward<Args>(Fargs)...)) {};
+		~Action() {
+			if (content) {
+				auto& deleter = content->deleter();
+				deleter(content);
+			}
+		};
 
 	public: // modifiers
-		/*! Swap Data */ Action& swap(Action& rhs) noexcept {
-			std::shared_ptr<Action_Interface> c1 = this->content;
-			std::shared_ptr<Action_Interface> c2 = rhs.content;
-
-			auto copy1 = c1->clone();
-			auto copy2 = c2->clone();
-
-			rhs.content = copy1;
-			content = copy2;
-
-			return *this;
-		}
-		/*! Copy Data */ Action& operator=(const Action& rhs) noexcept { Action(rhs).swap(*this); return *this; };
-		/* Perfect forwarding of ValueType */ template <class ValueType> Action& operator=(const Function<ValueType>& rhs) noexcept { Action(rhs).swap(*this); return *this; };
+		/*! Copy Data */ Action& operator=(const Action& rhs) = delete;
+		/*! Move Data */ Action& operator=(Action&& rhs) = delete;
 
 	public: // queries
 		explicit operator bool() { return !IsEmpty(); };
 		explicit operator bool() const { return !IsEmpty(); };
 
 		/*! Checks if the Action has been assigned something */
-		bool IsEmpty() const noexcept { decltype(auto) c = content; return !c; };
-
-		/*! Empties the Action and frees the memory. */
-		void Clear() noexcept { Action().swap(*this); };
+		bool IsEmpty() const noexcept { return !content; };
 
 		template <typename ValueT> static constexpr const char* TypeNameOf() { return utilities::typenames::type_name<ValueT>(); };
 		template <typename ValueT> static const boost::typeindex::type_info& TypeOf() { return boost::typeindex::type_id<ValueT>().type_info(); };
 
-		const char* TypeName() const noexcept { std::shared_ptr<Action_Interface> c = content; if (c) return c->typeName(); return utilities::typenames::type_name<void>(); };
-		const boost::typeindex::type_info& Type() const noexcept { std::shared_ptr<Action_Interface> c = content; return c ? c->type() : boost::typeindex::type_id<void>().type_info(); };
+		const char* TypeName() const noexcept {
+			static const char* staticVal{ "" };
+			if (content) return content->typeName();
+			return staticVal;
+		};
+		const boost::typeindex::type_info& Type() const noexcept {
+			static const boost::typeindex::type_info& staticVal{ boost::typeindex::type_id<void>().type_info() };
+			if (content) return content->type();
+			return staticVal;
+		};
 
 	private:
-		template <class ValueType> static std::shared_ptr<Action_Interface> ToPtr(const Function<ValueType>& rhs) noexcept { return std::static_pointer_cast<Action_Interface>(std::make_shared<Action_Impl<ValueType>>(rhs)); };
-		template <class ValueType> static std::shared_ptr<Action_Interface> ToPtr(Function<ValueType>&& rhs) noexcept { return std::static_pointer_cast<Action_Interface>(std::make_shared<Action_Impl<ValueType>>(std::forward<Function<ValueType>>(rhs))); };
-		static std::shared_ptr<Action_Interface> BasePtr() noexcept { 
-			static thread_local auto base_ptr{ ToPtr(Function<void()>()) };
-			return base_ptr; // ToPtr(Function<void()>());
+		template <class ValueType> static Action_Interface* ToPtr(Function<ValueType>&& rhs) noexcept {
+			return dynamic_cast<Action_Interface*>(new Action_Impl<ValueType>(std::forward<Function<ValueType>>(rhs)));
 		};
 
 	public:
-		std::shared_ptr<Action_Interface> content;
+		Action_Interface* content;
 
 	public:
-		Any* operator()() noexcept {
+		fibers::Any& operator()() {
 			return Invoke();
 		};
-		Any* Invoke() noexcept { 
-			std::shared_ptr<Action_Interface> c = content; if (c) { return &c->Invoke(); }
-			return nullptr; 
+		fibers::Any& Invoke() {
+			static fibers::Any staticVal{};
+			if (content) return content->Invoke();
+			return staticVal;
 		};
-		Any* ForceInvoke() noexcept { 
-			std::shared_ptr<Action_Interface> c = content; if (c) { return &c->ForceInvoke(); } 
-			return nullptr; 
+		fibers::Any& ForceInvoke() {
+			static fibers::Any staticVal{};
+			if (content) return content->ForceInvoke();
+			return staticVal;
 		};
 		const char* FunctionName() const {
-			std::shared_ptr<Action_Interface> c = content;
-			if (c)
-			{
-				return c->FunctionName();
-			}
-			return "No Function";
+			static const char* staticVal{ "" };
+			if (content) return content->FunctionName();
+			return staticVal;
 		};
 		bool     IsFinished() const {
-			std::shared_ptr<Action_Interface> c = content;
-			if (c)
-			{
-				return c->IsFinished();
-			}
-			return false;
-		};
-		bool     ReturnsNothing() const {
-			std::shared_ptr<Action_Interface> c = content;
-			if (c)
-			{
-				return c->ReturnsNothing();
-			}
+			if (content) return content->IsFinished();
 			return true;
 		};
-
-		Any* Result() const { if (this) { std::shared_ptr<Action_Interface> c = content; if (c) { return &c->Result(); } } return nullptr; };
-		static Action Finished() { return Action(Function<void()>::Finished()); };
-		template <typename T> static Action Finished(const T& returnMe) { return Action(Function<T()>::Finished(returnMe)); };
-
+		bool     ReturnsNothing() const {
+			if (content) return content->ReturnsNothing();
+			return true;
+		};
+		const fibers::Any& Result() const {
+			static fibers::Any staticVal{};
+			if (content) return content->Result();
+			return staticVal;
+		};
 	};
+
 };

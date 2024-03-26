@@ -106,7 +106,7 @@ namespace fibers {
 		class alignas(kCacheLineSize) ThreadLocalStorage {
 		public:
 			ThreadLocalStorage() : 
-				HiPriTaskQueue(), LoPriTaskQueue(nullptr), OldFiberStoredFlag(nullptr), PinnedReadyFibers(),
+				HiPriTaskQueue(), LoPriLastSuccessfulSteal(0), /*LoPriTaskQueue_local(), */LoPriToken(), ProducerToken(), LoPriTaskQueue(nullptr), OldFiberStoredFlag(nullptr), PinnedReadyFibers(),
 				ThreadFiber(), PinnedReadyFibersLock(),
 				CurrentFiberIndex(kInvalidIndex), OldFiberIndex(kInvalidIndex),
 				OldFiberDestination(FiberDestination::None), HiPriLastSuccessfulSteal(1), FailedQueuePopAttempts(0), workingOnTask(false), quitting(false)
@@ -121,10 +121,14 @@ namespace fibers {
 			// NOTE: The order of these variables may seem odd / jumbled. However, it is to optimize the padding required
 
 			/* The queue of high priority waiting tasks. This also contains the ready waiting fibers, which are differentiated by the Task function == ReadyFiberDummyTask */
-			moodycamel::ConcurrentQueue<TaskBundle> HiPriTaskQueue; // concurrency::concurrent_queue<TaskBundle> HiPriTaskQueue;
+			moodycamel::ConcurrentQueue<TaskBundle> HiPriTaskQueue;
 
-			/* The queue of high priority waiting tasks */
-			moodycamel::ConcurrentQueue<TaskBundle>* LoPriTaskQueue; // concurrency::concurrent_queue<TaskBundle>* LoPriTaskQueue;
+			/* The queue of low priority waiting tasks */
+			unsigned int LoPriLastSuccessfulSteal;
+			std::unique_ptr<moodycamel::ConsumerToken> LoPriToken;
+			std::unique_ptr<moodycamel::ProducerToken> ProducerToken;
+			// moodycamel::ConcurrentQueue<TaskBundle> LoPriTaskQueue_local; 
+			moodycamel::ConcurrentQueue<TaskBundle>* LoPriTaskQueue; 
 
 			std::atomic<bool>* OldFiberStoredFlag;
 
@@ -181,11 +185,11 @@ namespace fibers {
 
 		moodycamel::ConcurrentQueue<TaskBundle> LoPriTaskQueue; // concurrency::concurrent_queue<TaskBundle> LoPriTaskQueue;
 
-		concurrency::concurrent_vector < std::shared_ptr<ThreadWrapper> > m_threads;
+		concurrency::concurrent_vector < std::unique_ptr<ThreadWrapper> > m_threads;
 		std::unordered_map<DWORD, unsigned> m_threadsHandleToIndex;
 
 		/* The backing storage for the fiber pool */
-		concurrency::concurrent_vector < std::shared_ptr<FiberWrapper> > m_fibers;
+		concurrency::concurrent_vector < std::unique_ptr<FiberWrapper> > m_fibers;
 
 		mutable moodycamel::ConcurrentQueue<int> freeFiberQueue; // mutable concurrency::concurrent_queue< int > freeFiberQueue;
 

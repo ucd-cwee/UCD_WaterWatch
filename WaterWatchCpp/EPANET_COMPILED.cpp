@@ -20,6 +20,7 @@ to maintain a single distribution point for the source code.
 #include "EPANET_COMPILED.h"
 #include "InterpolatedMatrix.h"
 #include "FileSystemH.h"
+#include "../FiberTasks/Fibers.h"
 
 namespace epanet {
     namespace epanet_shared {
@@ -4342,6 +4343,111 @@ namespace epanet {
                 }
             }
             numN = net->Nlinks;
+            
+#if 0
+            fibers::parallel::For(1, numN, [&links, &currentTime, &hyd, &t, &pr, &net](int i) {
+                auto& obj = links[i];
+                if (obj) {
+                    auto& A_t = obj->Type_p;
+                    if (A_t == asset_t::PIPE || A_t == asset_t::PUMP || A_t == asset_t::VALVE) {
+                        if ((t == 0_s) || A_t != asset_t::PIPE) {
+                            AUTO pat = obj->GetValue<_FLOW_>();
+                            if (pat) {
+                                pat->AddUniqueValue(currentTime, hyd->LinkFlow[i]);
+                                pat->CompressLastValueAdded();
+                            }
+                        }
+                        if ((t == 0_s) || A_t != asset_t::PIPE) {
+                            AUTO pat = obj->GetValue<_VELOCITY_>();
+                            if (pat) {
+                                if (hyd->LinkStatus[i] <= CLOSED) {
+                                    pat->AddUniqueValue(currentTime, 0_fps);
+                                }
+                                else {
+                                    pat->AddUniqueValue(currentTime, hyd->LinkFlow[i] / obj->Area());
+                                }
+                                pat->CompressLastValueAdded();
+                            }
+                        }
+                        if ((t == 0_s) || A_t != asset_t::PIPE) {
+                            AUTO pat = obj->GetValue<_HEADLOSS_>();
+                            if (pat) {
+                                auto h = hyd->NodeHead[obj->N1] - hyd->NodeHead[obj->N2];
+                                if (obj->Type != PUMP) h = ABS(h);
+                                pat->AddUniqueValue(currentTime, h);
+                                pat->CompressLastValueAdded();
+                            }
+                        }
+                        if ((t == 0_s) || A_t != asset_t::PIPE) {
+                            AUTO pat = obj->GetValue<_STATUS_>();
+                            if (pat) {
+                                pat->AddUniqueValue(currentTime, (double)hyd->LinkStatus[i]);
+                                pat->CompressLastValueAdded();
+                            }
+                        }
+                    }
+                    if (A_t == asset_t::PUMP || A_t == asset_t::VALVE) {
+                        {
+                            AUTO pat = obj->GetValue<_SETTING_>();
+                            if (pat) {
+                                if (hyd->LinkSetting[i] == MISSING) pat->AddUniqueValue(currentTime, 0);
+                                else {
+                                    switch (obj->Type)
+                                    {
+                                    case PRV:
+                                    case PSV:
+                                    case PBV:
+                                        // pressure setting, internally set as 'head' above elevation
+                                        pat->AddUniqueValue(currentTime, (double)(pounds_per_square_inch_t)(head_t)(double)hyd->LinkSetting[i]);
+                                        break;
+                                    case FCV:
+                                        // flow setting - internally set as cfs
+                                        pat->AddUniqueValue(currentTime, (double)(cubic_foot_per_second_t)(double)hyd->LinkSetting[i]);
+                                        break;
+                                    default:
+                                        pat->AddUniqueValue(currentTime, (double)hyd->LinkSetting[i]);
+                                        break;
+                                    }
+                                }
+                                pat->CompressLastValueAdded();
+                            }
+                        }
+                    }
+                    if (A_t == asset_t::PUMP) {
+                        {
+                            AUTO pat = obj->GetValue<_ENERGY_>();
+                            if (pat) {
+                                kilowatt_t kw;
+                                SCALER eff;
+
+                                getenergy(pr, i, &kw, &eff);
+                                pat->AddUniqueValue(currentTime, kw);
+                                pat->CompressLastValueAdded();
+                            }
+                        }
+                    }
+                    if (A_t == asset_t::VALVE) {
+                        {
+                            if (AUTO valve = net->Valve[findvalve(net, i)]) {
+                                AUTO pat = obj->GetValue<_ENERGY_>();
+                                if (valve->ProducesElectricity) {
+                                    kilowatt_t kw;
+                                    SCALER eff;
+                                    getenergy(pr, i, &kw, &eff);
+                                    pat->AddUniqueValue(currentTime, -kw);
+
+                                    // pat->AddUniqueValue(currentTime, -1.0 * valve->energy_generation_potential(hyd->LinkFlow[i], obj->GetCurrentValue<_HEADLOSS_>(currentTime)));
+                                }
+                                else {
+                                    pat->AddUniqueValue(currentTime, 0_kW);
+                                }
+                                pat->CompressLastValueAdded();
+                            }
+                        }
+                    }
+                }
+            });
+#else
             for (auto i = 1; i <= numN; i++) {
                 auto& obj = links[i];
                 if (obj) {
@@ -4444,7 +4550,7 @@ namespace epanet {
                     }
                 }
             }
-
+#endif
             // on the reporting timestep, evaluate the pressure zones: 
             if (t == 0_s) {
                 for (auto& obj : net->Zone) {

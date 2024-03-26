@@ -460,17 +460,6 @@ namespace fibers{
 		mutable std::shared_ptr<Action> impl;
 
 	public:
-		static Job Finished() {
-			decltype(auto) toReturn = Job();
-			toReturn.impl = std::make_shared<Action>(Action::Finished());
-			return toReturn;
-		};
-		template <typename T> static Job Finished(const T& returnMe) {
-			decltype(auto) toReturn = Job();
-			toReturn.impl = std::make_shared<Action>(Action::Finished(returnMe));
-			return toReturn;
-		};
-
 		Job() : impl(std::make_shared<Action>()) {};
 		Job(const Job& other) : impl(other.impl) {};
 		Job(Job&& other) : impl(other.impl) {};
@@ -485,8 +474,7 @@ namespace fibers{
 		Any Invoke() noexcept {
 			Any out;
 			if (impl) {
-				auto* p = impl->Invoke();
-				if (p) out = *p;
+				out = impl->Invoke();
 			}
 			return out;
 		};
@@ -495,8 +483,7 @@ namespace fibers{
 		Any ForceInvoke() noexcept {
 			Any out;
 			if (impl) {
-				auto* p = impl->ForceInvoke();
-				if (p) out = *p;
+				out = impl->ForceInvoke();
 			}
 			return out;
 		};
@@ -562,12 +549,16 @@ namespace fibers{
 			std::shared_ptr<void> waitGroup;
 			fibers::containers::vector<Job> jobs;
 
+
 			JobGroupImpl() : waitGroup(nullptr), jobs() {};
 			JobGroupImpl(std::shared_ptr<void> wg) : waitGroup(wg), jobs() {};
 			JobGroupImpl(JobGroupImpl const&) = delete;
 			JobGroupImpl(JobGroupImpl&&) = delete;
 			JobGroupImpl& operator=(JobGroupImpl const&) = delete;
 			JobGroupImpl& operator=(JobGroupImpl&&) = delete;
+
+			void Queue(FunctionBase* basicjob);
+			void Queue(std::vector< FunctionBase* > const& listOfJobs);
 
 			void Queue(Job const& job);
 			void ForceQueue(Job const& job); 
@@ -591,6 +582,16 @@ namespace fibers{
 		JobGroup& operator=(JobGroup&&) = delete;
 		~JobGroup() {};
 
+		/* Queue job, and return tool to await the result */
+		JobGroup& Queue(FunctionBase* basicjob) {
+			impl->Queue(basicjob);
+			return *this;
+		};
+		/* Queue job, and return tool to await the result */
+		JobGroup& Queue(std::vector< FunctionBase* > const& listOfJobs) {
+			impl->Queue(listOfJobs);
+			return *this;
+		};
 		/* Queue job, and return tool to await the result */
 		JobGroup& Queue(Job const& job) {
 			impl->Queue(job);
@@ -869,34 +870,53 @@ namespace fibers{
 		*/
 		template<typename iteratorType, typename F>
 		decltype(auto) For(iteratorType start, iteratorType end, F&& ToDo) {
-			fibers::JobGroup group;
-
 			decltype(auto) todo = std::function(std::forward<F>(ToDo));
 			constexpr bool retNo = std::is_same<typename utilities::function_traits<decltype(todo)>::result_type, void>::value;
-			//  typename std::tuple_element<0, typename utilities::function_traits<decltype(todo)>::arguments>::type;
 
-			int n = (end - start); 
-
-			if (n > 0) {
-				if (n == 1) {
-					auto job = fibers::Job([todo](iteratorType const& T) { return todo(T); }, (iteratorType)start);
-					group.Queue(job);
-				}
-				else {
-					std::vector< fibers::Job > jobs(n, fibers::Job());
-					n = 0;
-					for (iteratorType iter = start; iter < end; iter++) {
-						jobs[n++] = fibers::Job([todo](iteratorType const& T) { return todo(T); }, (iteratorType)iter);
-					}
-					group.Queue(jobs);
-				}
-			}
-
+			fibers::JobGroup group;
 			if constexpr (retNo) {
-				group.Wait();
+				iteratorType n = (end - start);
+				if (n > 0) {
+					if (n == 1) {
+						decltype(auto) f{ Function(std::function([todo](iteratorType const& T) { todo(T); }), (iteratorType)start) };
+						group.Queue(dynamic_cast<FunctionBase*>(&f));
+						group.Wait();
+						return;
+					}
+					else {
+						auto f{ Function(std::move(todo), (iteratorType)0) };
+						decltype(auto) jobs{ std::vector<decltype(f)>(n, std::move(f)) };
+						std::vector<FunctionBase*> jobPtrs(n, nullptr);
+						n = 0;
+						for (iteratorType iter = start; iter < end; iter++) {
+							jobPtrs[n] = dynamic_cast<FunctionBase*>(&jobs[n]);
+							jobs[n++].GetParameter<0>() = iter;							
+						}
+						group.Queue(jobPtrs);
+						group.Wait();
+						return;
+					}
+				}
 			}
 			else {
-				using outputType = typename utilities::function_traits<decltype(todo)>::result_type; 
+				//  typename std::tuple_element<0, typename utilities::function_traits<decltype(todo)>::arguments>::type;
+				iteratorType n = (end - start);
+				if (n > 0) {
+					if (n == 1) {
+						auto job = fibers::Job([todo](iteratorType const& T) { return todo(T); }, (iteratorType)start);
+						group.Queue(job);
+					}
+					else {
+						std::vector< fibers::Job > jobs(n, fibers::Job());
+						n = 0;
+						for (iteratorType iter = start; iter < end; iter++) {
+							jobs[n++] = fibers::Job([todo](iteratorType const& T) { return todo(T); }, (iteratorType)iter);
+						}
+						group.Queue(jobs);
+					}
+				}
+
+				using outputType = typename utilities::function_traits<decltype(todo)>::result_type;
 				std::vector<std::shared_ptr<outputType>> toReturn;
 				for (auto& anyO : group.Wait_Get()) toReturn.push_back(anyO.cast<std::shared_ptr<outputType>>());
 				return toReturn;

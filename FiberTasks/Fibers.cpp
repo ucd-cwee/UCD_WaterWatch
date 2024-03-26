@@ -105,6 +105,14 @@ namespace fibers {
 			}
 			recycleFunctionArgPtr(data);
 		};
+
+
+		static void DoFunctionBase(void* arg) {
+			FunctionBase* data(static_cast<FunctionBase*>(arg));
+			if (data) {
+				data->Invoke();
+			}
+		};
 	};
 	namespace synchronization {
 		namespace {
@@ -139,6 +147,23 @@ namespace fibers {
 
 	JobGroup::JobGroup() : impl(new JobGroup::JobGroupImpl(std::static_pointer_cast<void>(std::shared_ptr<WaitGroup>(new WaitGroup(&*Fibers))))) {};
 	JobGroup::JobGroup(Job const& job) : impl(new JobGroup::JobGroupImpl(std::static_pointer_cast<void>(std::shared_ptr<WaitGroup>(new WaitGroup(&*Fibers))))) { Queue(job); };
+	
+	void JobGroup::JobGroupImpl::Queue(FunctionBase* basicjob) {
+		std::shared_ptr<WaitGroup> wg = std::static_pointer_cast<WaitGroup>(waitGroup);
+		if (!wg) throw(std::runtime_error("Job Group was empty."));
+		Fibers->AddTask({ DoFunctionBase, static_cast<void*>(basicjob) }, wg.get());
+	};
+	void JobGroup::JobGroupImpl::Queue(std::vector< FunctionBase* > const& basicjobs) {
+		std::shared_ptr<WaitGroup> wg = std::static_pointer_cast<WaitGroup>(waitGroup);
+		if (!wg) throw(std::runtime_error("Job Group was empty."));
+
+		std::vector<fibers::TaskScheduler::TaskBundle> taskbundles;
+		taskbundles.reserve(basicjobs.size() + 1);
+		for (FunctionBase* j : basicjobs) taskbundles.push_back({ { DoFunctionBase, static_cast<void*>(j) }, wg.get() });
+		Fibers->AddTasks(basicjobs.size(), &taskbundles[0], wg.get());
+	};
+
+
 	void JobGroup::JobGroupImpl::Queue(Job const& job) {
 		std::shared_ptr<WaitGroup> wg = std::static_pointer_cast<WaitGroup>(waitGroup);
 		if (!wg) throw(std::runtime_error("Job Group was empty.")); 
