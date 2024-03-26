@@ -19,6 +19,886 @@ to maintain a single distribution point for the source code.
 #include "../FiberTasks/TaskScheduler.h"
 #include "../FiberTasks/WaitGroup.h"
 
+#pragma region WickedJob
+
+#pragma once
+
+#include <functional>
+#include <atomic>
+
+namespace wi::jobsystem
+{
+	void Initialize(uint32_t maxThreadCount = ~0u);
+	void ShutDown();
+
+	struct JobArgs
+	{
+		uint32_t jobIndex;		// job index relative to dispatch (like SV_DispatchThreadID in HLSL)
+		uint32_t groupID;		// group index relative to dispatch (like SV_GroupID in HLSL)
+		uint32_t groupIndex;	// job index relative to group (like SV_GroupIndex in HLSL)
+		bool isFirstJobInGroup;	// is the current job the first one in the group?
+		bool isLastJobInGroup;	// is the current job the last one in the group?
+		void* sharedmemory;		// stack memory shared within the current group (jobs within a group execute serially)
+	};
+
+	uint32_t GetThreadCount();
+
+	// Defines a state of execution, can be waited on
+	struct context
+	{
+		std::atomic<uint32_t> counter{ 0 };
+	};
+
+	// Add a task to execute asynchronously. Any idle thread will execute this.
+	void Execute(context& ctx, const std::function<void(JobArgs)>& task);
+
+	// Divide a task onto multiple jobs and execute in parallel.
+	//	jobCount	: how many jobs to generate for this task.
+	//	groupSize	: how many jobs to execute per thread. Jobs inside a group execute serially. It might be worth to increase for small jobs
+	//	task		: receives a JobArgs as parameter
+	void Dispatch(context& ctx, uint32_t jobCount, uint32_t groupSize, const std::function<void(JobArgs)>& task, size_t sharedmemory_size = 0);
+
+	// Returns the amount of job groups that will be created for a set number of jobs and group size
+	uint32_t DispatchGroupCount(uint32_t jobCount, uint32_t groupSize);
+
+	// Check if any threads are working currently or not
+	bool IsBusy(const context& ctx);
+
+	// Wait until all threads become idle
+	//	Current thread will become a worker thread, executing jobs
+	void Wait(const context& ctx);
+}
+
+#pragma once
+#include <atomic>
+#include <thread>
+#include <emmintrin.h> // _mm_pause()
+namespace wi
+{
+	class SpinLock
+	{
+	private:
+		std::atomic_flag lck = ATOMIC_FLAG_INIT;
+	public:
+		inline void lock()
+		{
+			int spin = 0;
+			while (!try_lock())
+			{
+				if (spin < 10)
+				{
+					_mm_pause(); // SMT thread swap can occur here
+				}
+				else
+				{
+					std::this_thread::yield(); // OS thread swap can occur here. It is important to keep it as fallback, to avoid any chance of lockup by busy wait
+				}
+				spin++;
+			}
+		}
+		inline bool try_lock()
+		{
+			return !lck.test_and_set(std::memory_order_acquire);
+		}
+
+		inline void unlock()
+		{
+			lck.clear(std::memory_order_release);
+		}
+	};
+}
+
+#pragma once
+#ifndef WICKEDENGINE_COMMONINCLUDE_H
+#define WICKEDENGINE_COMMONINCLUDE_H
+
+// This is a helper include file pasted into all engine headers, try to keep it minimal!
+// Do not include engine features in this file!
+
+#include <cstdint>
+#include <type_traits>
+
+#define arraysize(a) (sizeof(a) / sizeof(a[0]))
+
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif // NOMINMAX
+
+// CPU intrinsics:
+#if defined(_WIN32)
+// Windows, Xbox:
+#include <intrin.h>
+inline long AtomicAnd(volatile long* ptr, long mask)
+{
+	return _InterlockedAnd(ptr, mask);
+}
+inline long long AtomicAnd(volatile long long* ptr, long long mask)
+{
+	return _InterlockedAnd64(ptr, mask);
+}
+inline long AtomicOr(volatile long* ptr, long mask)
+{
+	return _InterlockedOr(ptr, mask);
+}
+inline long long AtomicOr(volatile long long* ptr, long long mask)
+{
+	return _InterlockedOr64(ptr, mask);
+}
+inline long AtomicXor(volatile long* ptr, long mask)
+{
+	return _InterlockedXor(ptr, mask);
+}
+inline long long AtomicXor(volatile long long* ptr, long long mask)
+{
+	return _InterlockedXor64(ptr, mask);
+}
+inline long AtomicAdd(volatile long* ptr, long val)
+{
+	return _InterlockedExchangeAdd(ptr, val);
+}
+inline long long AtomicAdd(volatile long long* ptr, long long val)
+{
+	return _InterlockedExchangeAdd64(ptr, val);
+}
+inline unsigned int countbits(unsigned int value)
+{
+	return __popcnt(value);
+}
+inline unsigned long long countbits(unsigned long long value)
+{
+	return __popcnt64(value);
+}
+inline unsigned long firstbithigh(unsigned long value)
+{
+	unsigned long bit_index;
+	if (_BitScanReverse(&bit_index, value))
+	{
+		return 31ul - bit_index;
+	}
+	return 0;
+}
+inline unsigned long firstbithigh(unsigned long long value)
+{
+	unsigned long bit_index;
+	if (_BitScanReverse64(&bit_index, value))
+	{
+		return 31ull - bit_index;
+	}
+	return 0;
+}
+inline unsigned long firstbitlow(unsigned long value)
+{
+	unsigned long bit_index;
+	if (_BitScanForward(&bit_index, value))
+	{
+		return bit_index;
+	}
+	return 0;
+}
+inline unsigned long firstbitlow(unsigned long long value)
+{
+	unsigned long bit_index;
+	if (_BitScanForward64(&bit_index, value))
+	{
+		return bit_index;
+	}
+	return 0;
+}
+#else
+// Linux, PlayStation:
+inline long AtomicAnd(volatile long* ptr, long mask)
+{
+	return __atomic_fetch_and(ptr, mask, __ATOMIC_SEQ_CST);
+}
+inline long long AtomicAnd(volatile long long* ptr, long long mask)
+{
+	return __atomic_fetch_and(ptr, mask, __ATOMIC_SEQ_CST);
+}
+inline long AtomicOr(volatile long* ptr, long mask)
+{
+	return __atomic_fetch_or(ptr, mask, __ATOMIC_SEQ_CST);
+}
+inline long long AtomicOr(volatile long long* ptr, long long mask)
+{
+	return __atomic_fetch_or(ptr, mask, __ATOMIC_SEQ_CST);
+}
+inline long AtomicXor(volatile long* ptr, long mask)
+{
+	return __atomic_fetch_xor(ptr, mask, __ATOMIC_SEQ_CST);
+}
+inline long long AtomicXor(volatile long long* ptr, long long mask)
+{
+	return __atomic_fetch_xor(ptr, mask, __ATOMIC_SEQ_CST);
+}
+inline long AtomicAdd(volatile long* ptr, long val)
+{
+	return __atomic_fetch_add(ptr, val, __ATOMIC_SEQ_CST);
+}
+inline long long AtomicAdd(volatile long long* ptr, long long val)
+{
+	return __atomic_fetch_add(ptr, val, __ATOMIC_SEQ_CST);
+}
+inline unsigned int countbits(unsigned int value)
+{
+	return __builtin_popcount(value);
+}
+inline unsigned long long countbits(unsigned long value)
+{
+	return __builtin_popcountl(value);
+}
+inline unsigned long long countbits(unsigned long long value)
+{
+	return __builtin_popcountll(value);
+}
+inline unsigned long firstbithigh(unsigned int value)
+{
+	if (value == 0)
+	{
+		return 0;
+	}
+	return __builtin_clz(value);
+}
+inline unsigned long firstbithigh(unsigned long value)
+{
+	if (value == 0)
+	{
+		return 0;
+	}
+	return __builtin_clzl(value);
+}
+inline unsigned long firstbithigh(unsigned long long value)
+{
+	if (value == 0)
+	{
+		return 0;
+	}
+	return __builtin_clzll(value);
+}
+inline unsigned long firstbitlow(unsigned int value)
+{
+	if (value == 0)
+	{
+		return 0;
+	}
+	return __builtin_ctz(value);
+}
+inline unsigned long firstbitlow(unsigned long value)
+{
+	if (value == 0)
+	{
+		return 0;
+	}
+	return __builtin_ctzl(value);
+}
+inline unsigned long firstbitlow(unsigned long long value)
+{
+	if (value == 0)
+	{
+		return 0;
+	}
+	return __builtin_ctzll(value);
+}
+#endif // _WIN32
+
+// Enable enum flags:
+//	https://www.justsoftwaresolutions.co.uk/cplusplus/using-enum-classes-as-bitfields.html
+template<typename E>
+struct enable_bitmask_operators {
+	static constexpr bool enable = false;
+};
+template<typename E>
+constexpr typename std::enable_if<enable_bitmask_operators<E>::enable, E>::type operator|(E lhs, E rhs)
+{
+	typedef typename std::underlying_type<E>::type underlying;
+	return static_cast<E>(
+		static_cast<underlying>(lhs) | static_cast<underlying>(rhs));
+}
+template<typename E>
+constexpr typename std::enable_if<enable_bitmask_operators<E>::enable, E&>::type operator|=(E& lhs, E rhs)
+{
+	typedef typename std::underlying_type<E>::type underlying;
+	lhs = static_cast<E>(
+		static_cast<underlying>(lhs) | static_cast<underlying>(rhs));
+	return lhs;
+}
+template<typename E>
+constexpr typename std::enable_if<enable_bitmask_operators<E>::enable, E>::type operator&(E lhs, E rhs)
+{
+	typedef typename std::underlying_type<E>::type underlying;
+	return static_cast<E>(
+		static_cast<underlying>(lhs) & static_cast<underlying>(rhs));
+}
+template<typename E>
+constexpr typename std::enable_if<enable_bitmask_operators<E>::enable, E&>::type operator&=(E& lhs, E rhs)
+{
+	typedef typename std::underlying_type<E>::type underlying;
+	lhs = static_cast<E>(
+		static_cast<underlying>(lhs) & static_cast<underlying>(rhs));
+	return lhs;
+}
+template<typename E>
+constexpr typename std::enable_if<enable_bitmask_operators<E>::enable, E>::type operator~(E rhs)
+{
+	typedef typename std::underlying_type<E>::type underlying;
+	rhs = static_cast<E>(
+		~static_cast<underlying>(rhs));
+	return rhs;
+}
+template<typename E>
+constexpr bool has_flag(E lhs, E rhs)
+{
+	return (lhs & rhs) == rhs;
+}
+
+#endif //WICKEDENGINE_COMMONINCLUDE_H
+
+
+#include <string>
+
+
+
+
+
+#pragma once
+// This file includes platform, os specific libraries and supplies common platform specific resources
+
+#ifdef _WIN32
+
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif // NOMINMAX
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <SDKDDKVer.h>
+#include <windows.h>
+#include <tchar.h>
+
+#if WINAPI_FAMILY == WINAPI_FAMILY_APP
+#define PLATFORM_UWP
+#define wiLoadLibrary(name) LoadPackagedLibrary(_T(name),0)
+#define wiGetProcAddress(handle,name) GetProcAddress(handle, name)
+#include <winrt/Windows.UI.Core.h>
+#include <winrt/Windows.Graphics.Display.h>
+#include <winrt/Windows.ApplicationModel.Core.h>
+#else
+#if WINAPI_FAMILY == WINAPI_FAMILY_GAMES
+#define PLATFORM_XBOX
+#else
+#define PLATFORM_WINDOWS_DESKTOP
+#endif // WINAPI_FAMILY_GAMES
+#define wiLoadLibrary(name) LoadLibraryA(name)
+#define wiGetProcAddress(handle,name) GetProcAddress(handle, name)
+#endif // WINAPI_FAMILY_APP
+#elif defined(__SCE__)
+#define PLATFORM_PS5
+#else
+#define PLATFORM_LINUX
+#include <dlfcn.h>
+#define wiLoadLibrary(name) dlopen(name, RTLD_LAZY)
+#define wiGetProcAddress(handle,name) dlsym(handle, name)
+typedef void* HMODULE;
+#endif // _WIN32
+
+#ifdef SDL2
+#include <SDL2/SDL.h>
+#include <SDL_vulkan.h>
+#include "sdl2.h"
+#endif
+
+
+namespace wi::platform
+{
+#ifdef _WIN32
+#ifdef PLATFORM_UWP
+	using window_type = const winrt::Windows::UI::Core::CoreWindow*;
+#else
+	using window_type = HWND;
+#endif // PLATFORM_UWP
+#elif SDL2
+	using window_type = SDL_Window*;
+#else
+	using window_type = void*;
+#endif // _WIN32
+
+	inline void Exit()
+	{
+#ifdef _WIN32
+#ifndef PLATFORM_UWP
+		PostQuitMessage(0);
+#else
+		winrt::Windows::ApplicationModel::Core::CoreApplication::Exit();
+#endif // PLATFORM_UWP
+#endif // _WIN32
+#ifdef SDL2
+		SDL_Event quit_event;
+		quit_event.type = SDL_QUIT;
+		SDL_PushEvent(&quit_event);
+#endif
+	}
+
+	struct WindowProperties
+	{
+		int width = 0;
+		int height = 0;
+		float dpi = 96;
+	};
+	inline void GetWindowProperties(window_type window, WindowProperties* dest)
+	{
+#ifdef PLATFORM_WINDOWS_DESKTOP
+		dest->dpi = (float)GetDpiForWindow(window);
+#endif // WINDOWS_DESKTOP
+
+#ifdef PLATFORM_XBOX
+		dest->dpi = 96.f;
+#endif // PLATFORM_XBOX
+
+#if defined(PLATFORM_WINDOWS_DESKTOP) || defined(PLATFORM_XBOX)
+		RECT rect;
+		GetClientRect(window, &rect);
+		dest->width = int(rect.right - rect.left);
+		dest->height = int(rect.bottom - rect.top);
+#endif // PLATFORM_WINDOWS_DESKTOP || PLATFORM_XBOX
+
+#ifdef PLATFORM_UWP
+		dest->dpi = winrt::Windows::Graphics::Display::DisplayInformation::GetForCurrentView().LogicalDpi();
+		float dpiscale = dest->dpi / 96.f;
+		dest->width = uint32_t(window->Bounds().Width * dpiscale);
+		dest->height = uint32_t(window->Bounds().Height * dpiscale);
+#endif // PLATFORM_UWP
+
+#ifdef PLATFORM_LINUX
+		int window_width, window_height;
+		SDL_GetWindowSize(window, &window_width, &window_height);
+		SDL_Vulkan_GetDrawableSize(window, &dest->width, &dest->height);
+		dest->dpi = ((float)dest->width / (float)window_width) * 96.f;
+#endif // PLATFORM_LINUX
+	}
+}
+
+
+
+
+
+
+#pragma once
+#include <chrono>
+namespace wi
+{
+	struct Timer
+	{
+		std::chrono::high_resolution_clock::time_point timestamp = std::chrono::high_resolution_clock::now();
+
+		// Record a reference timestamp
+		inline void record()
+		{
+			timestamp = std::chrono::high_resolution_clock::now();
+		}
+
+		// Elapsed time in seconds between the wi::Timer creation or last recording and "timestamp2"
+		inline double elapsed_seconds_since(std::chrono::high_resolution_clock::time_point timestamp2)
+		{
+			std::chrono::duration<double> time_span = std::chrono::duration_cast<std::chrono::duration<double>>(timestamp2 - timestamp);
+			return time_span.count();
+		}
+
+		// Elapsed time in seconds since the wi::Timer creation or last recording
+		inline double elapsed_seconds()
+		{
+			return elapsed_seconds_since(std::chrono::high_resolution_clock::now());
+		}
+
+		// Elapsed time in milliseconds since the wi::Timer creation or last recording
+		inline double elapsed_milliseconds()
+		{
+			return elapsed_seconds() * 1000.0;
+		}
+
+		// Elapsed time in milliseconds since the wi::Timer creation or last recording
+		inline double elapsed()
+		{
+			return elapsed_milliseconds();
+		}
+
+		// Record a reference timestamp and return elapsed time in seconds since the wi::Timer creation or last recording
+		inline double record_elapsed_seconds()
+		{
+			auto timestamp2 = std::chrono::high_resolution_clock::now();
+			auto elapsed = elapsed_seconds_since(timestamp2);
+			timestamp = timestamp2;
+			return elapsed;
+		}
+	};
+}
+
+
+
+#include <memory>
+#include <algorithm>
+#include <deque>
+#include <string>
+#include <thread>
+#include <mutex>
+#include <condition_variable>
+
+#ifdef PLATFORM_LINUX
+#include <pthread.h>
+#endif // PLATFORM_LINUX
+
+#ifdef PLATFORM_PS5
+#include "wiJobSystem_PS5.h"
+#endif // PLATFORM_PS5
+
+namespace wi::jobsystem
+{
+	struct Job
+	{
+		std::function<void(JobArgs)> task;
+		context* ctx;
+		uint32_t groupID;
+		uint32_t groupJobOffset;
+		uint32_t groupJobEnd;
+		uint32_t sharedmemory_size;
+	};
+	struct JobQueue
+	{
+		std::deque<Job> queue;
+		std::mutex locker;
+
+		inline void push_back(const Job& item)
+		{
+			std::scoped_lock lock(locker);
+			queue.push_back(item);
+		}
+
+		inline bool pop_front(Job& item)
+		{
+			std::scoped_lock lock(locker);
+			if (queue.empty())
+			{
+				return false;
+			}
+			item = std::move(queue.front());
+			queue.pop_front();
+			return true;
+		}
+
+	};
+
+	// This structure is responsible to stop worker thread loops.
+	//	Once this is destroyed, worker threads will be woken up and end their loops.
+	struct InternalState
+	{
+		uint32_t numCores = 0;
+		uint32_t numThreads = 0;
+		std::unique_ptr<JobQueue[]> jobQueuePerThread;
+		std::atomic_bool alive{ true };
+		std::condition_variable wakeCondition;
+		std::mutex wakeMutex;
+		std::atomic<uint32_t> nextQueue{ 0 };
+		std::vector<std::thread> threads;
+		void ShutDown()
+		{
+			alive.store(false); // indicate that new jobs cannot be started from this point
+			bool wake_loop = true;
+			std::thread waker([&] {
+				while (wake_loop)
+				{
+					wakeCondition.notify_all(); // wakes up sleeping worker threads
+				}
+				});
+			for (auto& thread : threads)
+			{
+				thread.join();
+			}
+			wake_loop = false;
+			waker.join();
+			jobQueuePerThread.reset();
+			threads.clear();
+			numCores = 0;
+			numThreads = 0;
+		}
+		~InternalState()
+		{
+			ShutDown();
+		}
+	} static internal_state;
+
+	// Start working on a job queue
+	//	After the job queue is finished, it can switch to an other queue and steal jobs from there
+	inline void work(uint32_t startingQueue)
+	{
+		Job job;
+		for (uint32_t i = 0; i < internal_state.numThreads; ++i)
+		{
+			JobQueue& job_queue = internal_state.jobQueuePerThread[startingQueue % internal_state.numThreads];
+			while (job_queue.pop_front(job))
+			{
+				JobArgs args;
+				args.groupID = job.groupID;
+				if (job.sharedmemory_size > 0)
+				{
+					thread_local static std::vector<uint8_t> shared_allocation_data;
+					shared_allocation_data.reserve(job.sharedmemory_size);
+					args.sharedmemory = shared_allocation_data.data();
+				}
+				else
+				{
+					args.sharedmemory = nullptr;
+				}
+
+				for (uint32_t j = job.groupJobOffset; j < job.groupJobEnd; ++j)
+				{
+					args.jobIndex = j;
+					args.groupIndex = j - job.groupJobOffset;
+					args.isFirstJobInGroup = (j == job.groupJobOffset);
+					args.isLastJobInGroup = (j == job.groupJobEnd - 1);
+					job.task(args);
+				}
+
+				job.ctx->counter.fetch_sub(1);
+			}
+			startingQueue++; // go to next queue
+		}
+	}
+
+	void Initialize(uint32_t maxThreadCount)
+	{
+		if (internal_state.numThreads > 0)
+			return;
+		maxThreadCount = std::max(1u, maxThreadCount);
+
+		wi::Timer timer;
+
+		// Retrieve the number of hardware threads in this system:
+		internal_state.numCores = std::thread::hardware_concurrency();
+
+		// Calculate the actual number of worker threads we want (-1 main thread):
+		internal_state.numThreads = std::min(maxThreadCount, std::max(1u, internal_state.numCores - 1));
+		internal_state.jobQueuePerThread.reset(new JobQueue[internal_state.numThreads]);
+		internal_state.threads.reserve(internal_state.numThreads);
+
+		for (uint32_t threadID = 0; threadID < internal_state.numThreads; ++threadID)
+		{
+			internal_state.threads.emplace_back([threadID] {
+
+				while (internal_state.alive.load())
+				{
+					work(threadID);
+
+					// finished with jobs, put to sleep
+					std::unique_lock<std::mutex> lock(internal_state.wakeMutex);
+					internal_state.wakeCondition.wait(lock);
+				}
+
+				});
+			std::thread& worker = internal_state.threads.back();
+
+#ifdef _WIN32
+			// Do Windows-specific thread setup:
+			HANDLE handle = (HANDLE)worker.native_handle();
+
+			// Put each thread on to dedicated core:
+			DWORD_PTR affinityMask = 1ull << threadID;
+			DWORD_PTR affinity_result = SetThreadAffinityMask(handle, affinityMask);
+			assert(affinity_result > 0);
+
+			//// Increase thread priority:
+			//BOOL priority_result = SetThreadPriority(handle, THREAD_PRIORITY_HIGHEST);
+			//assert(priority_result != 0);
+
+			// Name the thread:
+			std::wstring wthreadname = L"wi::jobsystem_" + std::to_wstring(threadID);
+			HRESULT hr = SetThreadDescription(handle, wthreadname.c_str());
+			assert(SUCCEEDED(hr));
+#elif defined(PLATFORM_LINUX)
+#define handle_error_en(en, msg) \
+               do { errno = en; perror(msg); } while (0)
+
+			int ret;
+			cpu_set_t cpuset;
+			CPU_ZERO(&cpuset);
+			size_t cpusetsize = sizeof(cpuset);
+
+			CPU_SET(threadID, &cpuset);
+			ret = pthread_setaffinity_np(worker.native_handle(), cpusetsize, &cpuset);
+			if (ret != 0)
+				handle_error_en(ret, std::string(" pthread_setaffinity_np[" + std::to_string(threadID) + ']').c_str());
+
+			// Name the thread
+			std::string thread_name = "wi::job::" + std::to_string(threadID);
+			ret = pthread_setname_np(worker.native_handle(), thread_name.c_str());
+			if (ret != 0)
+				handle_error_en(ret, std::string(" pthread_setname_np[" + std::to_string(threadID) + ']').c_str());
+#undef handle_error_en
+#elif defined(PLATFORM_PS5)
+			wi::jobsystem::ps5::SetupWorker(worker, threadID);
+#endif // _WIN32
+		}
+
+		std::cout << "wi::jobsystem Initialized with [" + std::to_string(internal_state.numCores) + " cores] [" + std::to_string(internal_state.numThreads) + " threads] (" + std::to_string((int)std::round(timer.elapsed())) + " ms)" << std::endl;
+	}
+
+	void ShutDown()
+	{
+		internal_state.ShutDown();
+	}
+
+	uint32_t GetThreadCount()
+	{
+		return internal_state.numThreads;
+	}
+
+	void Execute(context& ctx, const std::function<void(JobArgs)>& task)
+	{
+		// Context state is updated:
+		ctx.counter.fetch_add(1);
+
+		Job job;
+		job.ctx = &ctx;
+		job.task = task;
+		job.groupID = 0;
+		job.groupJobOffset = 0;
+		job.groupJobEnd = 1;
+		job.sharedmemory_size = 0;
+
+		internal_state.jobQueuePerThread[internal_state.nextQueue.fetch_add(1) % internal_state.numThreads].push_back(job);
+		internal_state.wakeCondition.notify_one();
+	}
+
+	void Dispatch(context& ctx, uint32_t jobCount, uint32_t groupSize, const std::function<void(JobArgs)>& task, size_t sharedmemory_size)
+	{
+		if (jobCount == 0 || groupSize == 0)
+		{
+			return;
+		}
+
+		const uint32_t groupCount = DispatchGroupCount(jobCount, groupSize);
+
+		// Context state is updated:
+		ctx.counter.fetch_add(groupCount);
+
+		Job job;
+		job.ctx = &ctx;
+		job.task = task;
+		job.sharedmemory_size = (uint32_t)sharedmemory_size;
+
+		for (uint32_t groupID = 0; groupID < groupCount; ++groupID)
+		{
+			// For each group, generate one real job:
+			job.groupID = groupID;
+			job.groupJobOffset = groupID * groupSize;
+			job.groupJobEnd = std::min(job.groupJobOffset + groupSize, jobCount);
+
+			internal_state.jobQueuePerThread[internal_state.nextQueue.fetch_add(1) % internal_state.numThreads].push_back(job);
+		}
+
+		internal_state.wakeCondition.notify_all();
+	}
+
+	uint32_t DispatchGroupCount(uint32_t jobCount, uint32_t groupSize)
+	{
+		// Calculate the amount of job groups to dispatch (overestimate, or "ceil"):
+		return (jobCount + groupSize - 1) / groupSize;
+	}
+
+	bool IsBusy(const context& ctx)
+	{
+		// Whenever the context label is greater than zero, it means that there is still work that needs to be done
+		return ctx.counter.load() > 0;
+	}
+
+	void Wait(const context& ctx)
+	{
+		if (IsBusy(ctx))
+		{
+			// Wake any threads that might be sleeping:
+			internal_state.wakeCondition.notify_all();
+
+			// work() will pick up any jobs that are on stand by and execute them on this thread:
+			work(internal_state.nextQueue.fetch_add(1) % internal_state.numThreads);
+
+			while (IsBusy(ctx))
+			{
+				// If we are here, then there are still remaining jobs that work() couldn't pick up.
+				//	In this case those jobs are not standing by on a queue but currently executing
+				//	on other threads, so they cannot be picked up by this thread.
+				//	Allow to swap out this thread by OS to not spin endlessly for nothing
+				std::this_thread::yield();
+			}
+		}
+	}
+}
+
+
+#pragma endregion
+
+namespace wi {
+	struct timer
+	{
+		std::string name;
+		std::chrono::high_resolution_clock::time_point start;
+
+		timer(const std::string& name) : name(name), start(std::chrono::high_resolution_clock::now()) {}
+		~timer()
+		{
+			auto end = std::chrono::high_resolution_clock::now();
+			std::cout << name << ": " << std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count() << " milliseconds" << std::endl;
+		}
+	};
+	void Spin(float milliseconds)
+	{
+		milliseconds /= 1000.0f;
+		std::chrono::high_resolution_clock::time_point t1 = std::chrono::high_resolution_clock::now();
+		double ms = 0;
+		while (ms < milliseconds)
+		{
+			std::chrono::high_resolution_clock::time_point t2 = std::chrono::high_resolution_clock::now();
+			std::chrono::duration<double> time_span = std::chrono::duration_cast<std::chrono::duration<double>>(t2 - t1);
+			ms = time_span.count();
+		}
+	}
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 namespace testing {
 	namespace utilities {
 		class typenames {
@@ -923,7 +1803,77 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 	}
 
 
+	if (true) {
+	    wi::jobsystem::Initialize();
 
+		// Serial test
+		{
+			auto t = wi::timer("Serial() test: ");
+			wi::Spin(100);
+			wi::Spin(100);
+			wi::Spin(100);
+			wi::Spin(100);
+			wi::Spin(100);
+			wi::Spin(100);
+		}
+
+		// Execute test
+		{
+			auto t = wi::timer("Execute() test: ");
+			wi::jobsystem::context context;
+
+			wi::jobsystem::Execute(context, [](wi::jobsystem::JobArgs args) { wi::Spin(100); });
+			wi::jobsystem::Execute(context, [](wi::jobsystem::JobArgs args) { wi::Spin(100); });
+			wi::jobsystem::Execute(context, [](wi::jobsystem::JobArgs args) { wi::Spin(100); });
+			wi::jobsystem::Execute(context, [](wi::jobsystem::JobArgs args) { wi::Spin(100); });
+			wi::jobsystem::Execute(context, [](wi::jobsystem::JobArgs args) { wi::Spin(100); });
+			wi::jobsystem::Execute(context, [](wi::jobsystem::JobArgs args) { wi::Spin(100); });
+			wi::jobsystem::Wait(context);
+		}
+
+		struct Data
+		{
+			float m[16];
+			void Compute(uint32_t value)
+			{
+				for (int i = 0; i < 16; ++i)
+				{
+					m[i] += float(value + i);
+				}
+			}
+		};
+		uint32_t dataCount = 400;
+
+		// Loop test:
+		{
+			Data* dataSet = new Data[dataCount];
+			{
+				auto t = wi::timer("loop test: ");
+
+				for (uint32_t i = 0; i < dataCount; ++i)
+				{
+					dataSet[i].Compute(i);
+				}
+			}
+			delete[] dataSet;
+		}
+
+		// Dispatch test:
+		{
+			Data* dataSet = new Data[dataCount];
+			{
+				auto t = wi::timer("Dispatch() test: ");
+				wi::jobsystem::context context;
+
+				const uint32_t groupSize = 10000;
+				wi::jobsystem::Dispatch(context, dataCount, groupSize, [&dataSet](wi::jobsystem::JobArgs args) {
+					dataSet[args.jobIndex].Compute(1);
+				});
+				wi::jobsystem::Wait(context);
+			}
+			delete[] dataSet;
+		}
+    }
 
 	{
 		fibers::TaskScheduler scheduler;
@@ -964,6 +1914,42 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 				std::cout << timePassed.ToString() << std::endl;
 			}
 			
+			printf("SpeedTest (Pattern) ");
+			std::cout << j;
+			printf(" (Wicked Fibers) : ");
+			{
+				cweeBalancedPattern pat;
+
+				Stopwatch sw; sw.Start();
+
+				auto data = std::make_shared<std::vector< cweeUnion<int, int, decltype(pat)*> >>(numLoops, cweeUnion<int, int, decltype(pat)*>(0, j, &pat));
+				wi::jobsystem::context context;
+
+				static auto todo = [](void* arg) {
+					int k;
+					auto& i = static_cast<cweeUnion<int, int, decltype(pat)*>*>(arg)->get<0>();
+					auto& j = static_cast<cweeUnion<int, int, decltype(pat)*>*>(arg)->get<1>();
+					auto& p = static_cast<cweeUnion<int, int, decltype(pat)*>*>(arg)->get<2>();
+
+					for (k = 0; k < j; k++) {
+						p->AddValue(i + k, i + k);
+					}
+				};
+
+				for (int i = 0; i < numLoops; i++) {
+					data->operator[](i).get<0>() = i;
+					
+					wi::jobsystem::Execute(context, [=](wi::jobsystem::JobArgs args) { 
+						todo(&data->operator[](i));
+					});
+				}
+				wi::jobsystem::Wait(context);
+
+				cweeUnitValues::second timePassed = sw.Stop() / 1000000000.0;
+				std::cout << timePassed.ToString() << std::endl;
+			}
+
+
 			printf("SpeedTest (Pattern) ");
 			std::cout << j;
 			printf(" (Fibers, Idealized) : ");
@@ -1027,7 +2013,18 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 				cweeUnitValues::second timePassed = sw.Stop() / 1000000000.0;
 				std::cout << timePassed.ToString() << std::endl;
 			}
+
+
+
+
+
+
+
+
+
 			printf("\n");
+
+
 		}
 		for (int j = 1; j < 10; j += 2) {
 			int numLoops = 400 * j * j;
