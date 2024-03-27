@@ -19,6 +19,7 @@ to maintain a single distribution point for the source code.
 #include "../FiberTasks/TaskScheduler.h"
 #include "../FiberTasks/WaitGroup.h"
 
+/* Wicked jobs are faster than everything (even single-threading!) when you use the dispatch system for parallel_for loops */
 #pragma region WickedJob
 
 #pragma once
@@ -73,15 +74,12 @@ namespace wi::jobsystem
 #include <atomic>
 #include <thread>
 #include <emmintrin.h> // _mm_pause()
-namespace wi
-{
-	class SpinLock
-	{
+namespace wi {
+	class SpinLock {
 	private:
 		std::atomic_flag lck = ATOMIC_FLAG_INIT;
 	public:
-		inline void lock()
-		{
+		inline void lock() {
 			int spin = 0;
 			while (!try_lock())
 			{
@@ -95,18 +93,16 @@ namespace wi
 				}
 				spin++;
 			}
-		}
-		inline bool try_lock()
-		{
+		};
+		inline bool try_lock() {
 			return !lck.test_and_set(std::memory_order_acquire);
-		}
+		};
 
-		inline void unlock()
-		{
+		inline void unlock() {
 			lck.clear(std::memory_order_release);
-		}
+		};
 	};
-}
+};
 
 #pragma once
 #ifndef WICKEDENGINE_COMMONINCLUDE_H
@@ -485,8 +481,7 @@ namespace wi::platform
 #include <chrono>
 namespace wi
 {
-	struct Timer
-	{
+	struct Timer {
 		std::chrono::high_resolution_clock::time_point timestamp = std::chrono::high_resolution_clock::now();
 
 		// Record a reference timestamp
@@ -545,14 +540,8 @@ namespace wi
 #include <pthread.h>
 #endif // PLATFORM_LINUX
 
-#ifdef PLATFORM_PS5
-#include "wiJobSystem_PS5.h"
-#endif // PLATFORM_PS5
-
-namespace wi::jobsystem
-{
-	struct Job
-	{
+namespace wi::jobsystem {
+	struct Job {
 		std::function<void(JobArgs)> task;
 		context* ctx;
 		uint32_t groupID;
@@ -560,19 +549,16 @@ namespace wi::jobsystem
 		uint32_t groupJobEnd;
 		uint32_t sharedmemory_size;
 	};
-	struct JobQueue
-	{
+	struct JobQueue {
 		std::deque<Job> queue;
 		std::mutex locker;
 
-		inline void push_back(const Job& item)
-		{
+		inline void push(const Job& item) {
 			std::scoped_lock lock(locker);
 			queue.push_back(item);
-		}
+		};
 
-		inline bool pop_front(Job& item)
-		{
+		inline bool try_pop(Job& item) {
 			std::scoped_lock lock(locker);
 			if (queue.empty())
 			{
@@ -581,14 +567,11 @@ namespace wi::jobsystem
 			item = std::move(queue.front());
 			queue.pop_front();
 			return true;
-		}
-
+		};
 	};
 
-	// This structure is responsible to stop worker thread loops.
-	//	Once this is destroyed, worker threads will be woken up and end their loops.
-	struct InternalState
-	{
+	// This structure is responsible to stop worker thread loops. Once this is destroyed, worker threads will be woken up and end their loops.
+	struct InternalState {
 		uint32_t numCores = 0;
 		uint32_t numThreads = 0;
 		std::unique_ptr<JobQueue[]> jobQueuePerThread;
@@ -597,8 +580,7 @@ namespace wi::jobsystem
 		std::mutex wakeMutex;
 		std::atomic<uint32_t> nextQueue{ 0 };
 		std::vector<std::thread> threads;
-		void ShutDown()
-		{
+		void ShutDown() {
 			alive.store(false); // indicate that new jobs cannot be started from this point
 			bool wake_loop = true;
 			std::thread waker([&] {
@@ -606,7 +588,7 @@ namespace wi::jobsystem
 				{
 					wakeCondition.notify_all(); // wakes up sleeping worker threads
 				}
-				});
+			});
 			for (auto& thread : threads)
 			{
 				thread.join();
@@ -617,22 +599,18 @@ namespace wi::jobsystem
 			threads.clear();
 			numCores = 0;
 			numThreads = 0;
-		}
-		~InternalState()
-		{
+		};
+		~InternalState() {
 			ShutDown();
-		}
+		};
 	} static internal_state;
 
-	// Start working on a job queue
-	//	After the job queue is finished, it can switch to an other queue and steal jobs from there
-	inline void work(uint32_t startingQueue)
-	{
+	// Start working on a job queue. After the job queue is finished, it can switch to an other queue and steal jobs from there
+	inline void work(uint32_t startingQueue) {
 		Job job;
-		for (uint32_t i = 0; i < internal_state.numThreads; ++i)
-		{
+		for (uint32_t i = 0; i < internal_state.numThreads; ++i) {
 			JobQueue& job_queue = internal_state.jobQueuePerThread[startingQueue % internal_state.numThreads];
-			while (job_queue.pop_front(job))
+			while (job_queue.try_pop(job))
 			{
 				JobArgs args;
 				args.groupID = job.groupID;
@@ -660,10 +638,9 @@ namespace wi::jobsystem
 			}
 			startingQueue++; // go to next queue
 		}
-	}
+	};
 
-	void Initialize(uint32_t maxThreadCount)
-	{
+	void Initialize(uint32_t maxThreadCount) {
 		if (internal_state.numThreads > 0)
 			return;
 		maxThreadCount = std::max(1u, maxThreadCount);
@@ -737,20 +714,17 @@ namespace wi::jobsystem
 		}
 
 		std::cout << "wi::jobsystem Initialized with [" + std::to_string(internal_state.numCores) + " cores] [" + std::to_string(internal_state.numThreads) + " threads] (" + std::to_string((int)std::round(timer.elapsed())) + " ms)" << std::endl;
-	}
+	};
 
-	void ShutDown()
-	{
+	void ShutDown() {
 		internal_state.ShutDown();
-	}
+	};
 
-	uint32_t GetThreadCount()
-	{
+	uint32_t GetThreadCount() {
 		return internal_state.numThreads;
-	}
+	};
 
-	void Execute(context& ctx, const std::function<void(JobArgs)>& task)
-	{
+	void Execute(context& ctx, const std::function<void(JobArgs)>& task) {
 		// Context state is updated:
 		ctx.counter.fetch_add(1);
 
@@ -762,16 +736,12 @@ namespace wi::jobsystem
 		job.groupJobEnd = 1;
 		job.sharedmemory_size = 0;
 
-		internal_state.jobQueuePerThread[internal_state.nextQueue.fetch_add(1) % internal_state.numThreads].push_back(job);
+		internal_state.jobQueuePerThread[internal_state.nextQueue.fetch_add(1) % internal_state.numThreads].push(job);
 		internal_state.wakeCondition.notify_one();
-	}
+	};
 
-	void Dispatch(context& ctx, uint32_t jobCount, uint32_t groupSize, const std::function<void(JobArgs)>& task, size_t sharedmemory_size)
-	{
-		if (jobCount == 0 || groupSize == 0)
-		{
-			return;
-		}
+	void Dispatch(context& ctx, uint32_t jobCount, uint32_t groupSize, const std::function<void(JobArgs)>& task, size_t sharedmemory_size) {
+		if (jobCount == 0 || groupSize == 0) { return; }
 
 		const uint32_t groupCount = DispatchGroupCount(jobCount, groupSize);
 
@@ -790,36 +760,31 @@ namespace wi::jobsystem
 			job.groupJobOffset = groupID * groupSize;
 			job.groupJobEnd = std::min(job.groupJobOffset + groupSize, jobCount);
 
-			internal_state.jobQueuePerThread[internal_state.nextQueue.fetch_add(1) % internal_state.numThreads].push_back(job);
+			internal_state.jobQueuePerThread[internal_state.nextQueue.fetch_add(1) % internal_state.numThreads].push(job);
 		}
 
 		internal_state.wakeCondition.notify_all();
-	}
+	};
 
-	uint32_t DispatchGroupCount(uint32_t jobCount, uint32_t groupSize)
-	{
+	uint32_t DispatchGroupCount(uint32_t jobCount, uint32_t groupSize) {
 		// Calculate the amount of job groups to dispatch (overestimate, or "ceil"):
 		return (jobCount + groupSize - 1) / groupSize;
-	}
+	};
 
-	bool IsBusy(const context& ctx)
-	{
+	bool IsBusy(const context& ctx) {
 		// Whenever the context label is greater than zero, it means that there is still work that needs to be done
 		return ctx.counter.load() > 0;
-	}
+	};
 
-	void Wait(const context& ctx)
-	{
-		if (IsBusy(ctx))
-		{
+	void Wait(const context& ctx) {
+		if (IsBusy(ctx)) {
 			// Wake any threads that might be sleeping:
 			internal_state.wakeCondition.notify_all();
 
 			// work() will pick up any jobs that are on stand by and execute them on this thread:
 			work(internal_state.nextQueue.fetch_add(1) % internal_state.numThreads);
 
-			while (IsBusy(ctx))
-			{
+			while (IsBusy(ctx)) {
 				// If we are here, then there are still remaining jobs that work() couldn't pick up.
 				//	In this case those jobs are not standing by on a queue but currently executing
 				//	on other threads, so they cannot be picked up by this thread.
@@ -827,11 +792,23 @@ namespace wi::jobsystem
 				std::this_thread::yield();
 			}
 		}
-	}
+	};
+
+	struct JobGroup {
+	private:
+		context ctx;
+
+	public:
+		auto Wait() { return wi::jobsystem::Wait(ctx); };
+		auto IsBusy() { return wi::jobsystem::IsBusy(ctx); };
+		auto Queue(const std::function<void(JobArgs)>& task) { return wi::jobsystem::Execute(ctx, task); };
+		auto Dispatch(uint32_t jobCount, const std::function<void(JobArgs)>& task) { 
+			uint32_t groupSize = (10000.0 / 400.0) * jobCount;
+			return wi::jobsystem::Dispatch(ctx, jobCount, groupSize, task);
+		};
+	};
+
 }
-
-
-#pragma endregion
 
 namespace wi {
 	struct timer
@@ -861,7 +838,976 @@ namespace wi {
 }
 
 
+#pragma endregion
 
+#pragma region Typhoon Jobs
+
+#include <cstdint>
+
+namespace Typhoon {
+	using JobId = uint16_t;
+}
+
+#include <cstddef> // size_t
+
+namespace Typhoon {
+
+	namespace Jobs {
+
+		// Job system configuration
+		// Either change the settings here or define the corresponding macros in your build configuration
+
+		// Maximum number of pending jobs
+#ifdef TY_JS_MAX_JOBS
+		constexpr size_t defaultMaxJobs = (TY_JS_MAX_JOBS);
+#else
+		constexpr size_t defaultMaxJobs = 4096;
+#endif
+
+		constexpr size_t maxThreads = 64;
+		constexpr size_t defaultParallelForSplitThreshold = 256; // TODO elements or bytes?
+		// Default sleep time in microsecond for idle threads
+		constexpr int sleep_us = 1;
+
+		// Alignment of the Job structure
+		// The padding bytes are used to hold data for the associated Job function
+#ifndef TY_JS_JOB_ALIGNMENT
+#define TY_JS_JOB_ALIGNMENT 256
+#endif
+
+// Set to 0 to disable job stealing
+#ifndef TY_JS_STEALING
+#define TY_JS_STEALING 1
+#endif
+
+// Set to 0 to disable profiling of worker threads
+#ifndef TY_JS_PROFILE
+#define TY_JS_PROFILE 1
+#endif
+
+	} // namespace Jobs
+
+} // namespace Typhoon
+
+// Alias
+namespace jobs = Typhoon::Jobs;
+
+namespace Typhoon {
+#define TY_JS_MAJOR_VERSION 1
+#define TY_JS_MINOR_VERSION 0
+#define TY_JS_PATCHLEVEL    0
+}; // namespace Typhoon
+
+/**
+ * @file
+ *
+ * Public interface.
+ */
+
+#include <cstdint>
+#include <functional>
+#include <tuple>
+#if TY_JS_PROFILE
+#include <chrono>
+#endif
+
+namespace Typhoon {
+
+	namespace Jobs {
+
+		using JobId = uint16_t;
+		constexpr JobId nullJobId = 0;
+
+		struct JobSystem;
+
+		/**
+		 * @brief Job parameters
+
+		job can be used to add child jobs on the fly <br>
+		threadIndex can be used to fetch from or store data into per-thread buffers  <br>
+		*/
+		struct JobParams {
+			JobId       job;
+			size_t      threadIndex;
+			const void* args;
+		};
+
+		/**
+		 * @brief Job function
+		 */
+		using JobFunction = void (*)(const JobParams&);
+
+		/**
+		 * @brief Job lambda
+		 */
+		using JobLambda = std::function<void(size_t threadIndex)>;
+
+		/**
+		 * @brief Parallel for function.
+		 */
+		using ParallelForFunction = void (*)(size_t elementCount, size_t splitThreshold, const void* functionArgs, size_t threadIndex);
+
+		/**
+		 * @brief Custom allocator
+		 */
+		struct JobSystemAllocator {
+			std::function<void* (size_t)> alloc;
+			std::function<void(void*)>   free;
+		};
+
+		// Pass this to initJobSystem to let the library initialize the number of worker threads
+		constexpr size_t defaultNumWorkerThreads = (size_t)-1;
+
+		/**
+		 * @brief Initialize the job system with a custom allocator
+		 * @param numJobsPerThread maximum number of jobs that a worker thread can execute
+		 * @param numWorkerThreads number of worker threads. Pass defaultNumWorkerThreads as default
+		 * @param allocator
+		 */
+		void initJobSystem(size_t numJobsPerThread, size_t numWorkerThreads, const JobSystemAllocator& allocator);
+
+		/**
+		 * @brief Initialize the job system with the default allocator (malloc and free)
+		 * @param numJobsPerThread maximum number of jobs that a worker thread can execute
+		 * @param numWorkerThreads number of worker threads. Pass defaultNumWorkerThreads as default
+		 */
+		void initJobSystem(size_t numJobsPerThread, size_t numWorkerThreads);
+
+		/**
+		 * @brief Destroy the job system
+		 */
+		void destroyJobSystem();
+
+		/**
+		 * @brief Return the number of worker threads
+		 * @return number of worker threads
+		 */
+		size_t getWorkerThreadCount();
+
+		/**
+		 * @brief Create an empty job
+		 * @return job identifier
+		 */
+		JobId createJob();
+
+		/**
+		 * @brief Create a job executing a function with arguments
+		 * @param function function associated with the job
+		 * @param ...args function arguments
+		 * @return new job identifier
+		 */
+		template <typename... ArgType>
+		JobId createJob(JobFunction function, ArgType... args);
+
+		/**
+		 * @brief Create a child job executing a function with no arguments
+		 * @param parentJobId parent job identifier
+		 * @param function function associated with the job
+		 * @return new job identifier
+		 */
+		JobId createChildJob(JobId parentJobId, JobFunction function = nullptr);
+
+		/**
+		 * @brief Create a child job executing a function with arguments
+		 * @tparam ...ArgType
+		 * @param parentJobId parent job identifier
+		 * @param function function associated with the job
+		 * @param ...args
+		 * @return new job identifier
+		 */
+		template <typename... ArgType>
+		JobId createChildJob(JobId parentJobId, JobFunction function, ArgType... args);
+
+		/**
+		 * @brief Start a job
+		 * @param jobId job identifier
+		 */
+		void startJob(JobId jobId);
+
+		/**
+		 * @brief Wait for a job to complete
+		 * @param jobId job identifier
+		 */
+		void waitForJob(JobId jobId);
+
+		/**
+		 * @brief Helper: start a job and wait for its completion
+		 * @param jobId job identifier
+		 */
+		void startAndWaitForJob(JobId jobId);
+
+		/**
+		 * @brief Create and start a child job executing a lambda function
+		 * @param parentJobId parent job identifier
+		 * @param lambda lambda function
+		 */
+		void startFunction(JobId parentJobId, JobLambda&& lambda);
+
+		/**
+		 * @brief Add a continuation to a job, with no arguments
+		 * @param job previous job identifier
+		 * @param function function associated with the continuation
+		 * @return continuation identifier
+		 */
+		JobId addContinuation(JobId job, JobFunction function);
+
+		/**
+		 * @brief Add a continuation to a job, with arguments
+		 * @param job previous job identifier
+		 * @param function function associated with the continuation
+		 * @param ...args function arguments
+		 * @return continuation identifier
+		 */
+		template <typename... ArgType>
+		JobId addContinuation(JobId job, JobFunction function, ArgType... args);
+
+		/**
+		 * @brief Add a lambda continuation to a job
+		 Note: prefer lambdas with few captures to avoid heap allocations
+		 * @param jobId previous job identifier
+		 * @param lambda lambda associated with the continuation
+		 * @return continuation identifier
+		*/
+		JobId addContinuation(JobId jobId, JobLambda&& lambda);
+
+		/**
+		 * @brief Helper: create and start a child job executing a function with arguments
+		 * @param parentJobId parent job identifier
+		 * @param function function associated with the job
+		 * @param ...args function arguments
+		 */
+		template <typename... ArgType>
+		void startChildJob(JobId parentJobId, JobFunction function, ArgType... args);
+
+		/**
+		 * @brief Execute a parallel for loop
+		 * @param parentJobId parent job identifier
+		 * @param elementCount element count
+		 * @param splitThreshold split threshold used to break the loop into threads, in elements
+		 * @param function associated with the job
+		 * @param ...args  function arguments
+		 * @return
+		 */
+		template <typename... ArgType>
+		JobId parallelFor(JobId parentJobId, size_t splitThreshold, ParallelForFunction function, size_t elementCount, const ArgType&... args);
+
+		/**
+		 * @brief Utility to unpack arguments
+		 * @param args pointer to a buffer containing arguments
+		 * @return a tuple with the unpacked arguments
+		 */
+		template <typename... ArgType>
+		std::tuple<ArgType...> unpackJobArgs(const void* args);
+
+		struct ThreadStats {
+			size_t numEnqueuedJobs;
+			size_t numExecutedJobs;
+#if TY_JS_STEALING
+			size_t numStolenJobs;
+			size_t numAttemptedStealings;
+			size_t numGivenJobs;
+#endif
+#if TY_JS_PROFILE
+			std::chrono::microseconds totalTime;
+			std::chrono::microseconds runningTime;
+#endif
+		};
+
+		/**
+		 * @param thread index
+		 * @return statistics about a worker thread
+		 */
+		ThreadStats getThreadStats(size_t threadIdx);
+
+		/**
+		 * @return the index of the currently active worker thread
+		 */
+		size_t getThisThreadIndex();
+
+	} // namespace Jobs
+
+} // namespace Typhoon
+
+#include <cstring>
+
+namespace Typhoon {
+
+	namespace Jobs {
+
+		namespace detail {
+
+			JobId createJobImpl(JobFunction function, const void* data = nullptr, size_t dataSize = 0);
+			JobId createChildJobImpl(JobId parent, JobFunction function, const void* data = nullptr, size_t dataSize = 0);
+			JobId addContinuationImpl(JobId job, JobFunction function, const void* data, size_t dataSize);
+
+			struct ParallelForJobData {
+				ParallelForFunction function;
+				uint32_t            splitThreshold;
+				uint32_t            offset;
+				uint32_t            count;
+				char                functionArgs[24];
+			};
+
+			void parallelForImpl(const JobParams& prm);
+
+		} // namespace detail
+
+		template <typename... ArgType>
+		JobId createJob(JobFunction function, ArgType... args) {
+			static_assert((std::is_trivially_copyable_v<ArgType> && ... && true));
+
+			auto argTuple = std::make_tuple(args...);
+			return createJobImpl(function, &argTuple, sizeof argTuple);
+		}
+
+		template <typename... ArgType>
+		JobId createChildJob(JobId parentJobId, JobFunction function, ArgType... args) {
+			static_assert((std::is_trivially_copyable_v<ArgType> && ... && true));
+
+			auto argTuple = std::make_tuple(args...);
+			return detail::createChildJobImpl(parentJobId, function, &argTuple, sizeof argTuple);
+		}
+
+		template <typename... ArgType>
+		void startChildJob(JobId parentJobId, JobFunction function, ArgType... args) {
+			JobId job = createChildJob(parentJobId, function, args...);
+			startJob(job);
+		}
+
+		template <typename... ArgType>
+		JobId addContinuation(JobId job, JobFunction function, ArgType... args) {
+			static_assert((std::is_trivially_copyable_v<ArgType> && ... && true));
+
+			auto argTuple = std::make_tuple(args...);
+			return detail::addContinuationImpl(job, function, &argTuple, sizeof argTuple);
+		}
+
+		template <typename... ArgType>
+		JobId parallelFor(JobId parent, size_t splitThreshold, ParallelForFunction function, size_t elementCount, const ArgType&... args) {
+			static_assert((std::is_trivially_copyable_v<ArgType> && ... && true));
+
+			auto                       argTuple = std::make_tuple(args...);
+			detail::ParallelForJobData jobData{ function, (uint32_t)splitThreshold, 0, (uint32_t)elementCount, {} };
+			// Store extra arguments in the job data
+			static_assert(sizeof argTuple <= sizeof jobData.functionArgs);
+			std::memcpy(jobData.functionArgs, &argTuple, sizeof argTuple);
+			return detail::createChildJobImpl(parent, detail::parallelForImpl, &jobData, sizeof jobData);
+		}
+
+		template <typename ArgType>
+		ArgType unpackJobArg(const void* args) {
+			static_assert((std::is_trivially_copyable_v<ArgType>));
+
+			ArgType arg;
+			std::memcpy(&arg, args, sizeof arg);
+			return arg;
+		}
+
+		template <typename... ArgType>
+		std::tuple<ArgType...> unpackJobArgs(const void* args) {
+			static_assert((std::is_trivially_copyable_v<ArgType> && ... && true));
+
+			std::tuple<ArgType...> tuple;
+			std::memcpy(&tuple, args, sizeof tuple);
+			return tuple;
+		}
+
+	} // namespace Jobs
+
+} // namespace Typhoon
+
+namespace Typhoon {
+
+	namespace Jobs {
+
+		namespace detail {
+
+			inline uintptr_t alignPointer(uintptr_t value, size_t alignment) {
+				return (value + (alignment - 1)) & (~(alignment - 1));
+			}
+
+			inline void* alignPointer(void* ptr, size_t alignment) {
+				return reinterpret_cast<void*>(alignPointer(reinterpret_cast<uintptr_t>(ptr), alignment));
+			}
+
+			inline constexpr bool isPowerOfTwo(uint32_t v) {
+				return 0 == (v & (v - 1));
+			}
+
+			inline constexpr uint32_t nextPowerOfTwo(uint32_t v) {
+				v--;
+				v |= v >> 1;
+				v |= v >> 2;
+				v |= v >> 4;
+				v |= v >> 8;
+				v |= v >> 16;
+				v++;
+				return v;
+			}
+
+		} // namespace detail
+
+	} // namespace Jobs
+
+} // namespace Typhoon
+
+
+#include <algorithm>
+#include <atomic>
+#include <cassert>
+#include <condition_variable>
+#include <mutex>
+#include <random>
+#include <thread>
+#include <vector>
+
+namespace Typhoon {
+
+	namespace Jobs {
+
+		namespace {
+
+			constexpr size_t jobAlignment = TY_JS_JOB_ALIGNMENT;
+			static_assert(jobAlignment >= 128 && detail::isPowerOfTwo(jobAlignment), "Job aligment must be a power of 2");
+
+#ifdef _DEBUG
+			constexpr size_t jobPadding =
+				jobAlignment - sizeof(JobFunction) - sizeof(std::atomic_int_fast32_t) - sizeof(JobId) * 3 - sizeof(bool) - sizeof(bool) * 2;
+#else
+			constexpr size_t jobPadding = jobAlignment - sizeof(JobFunction) - sizeof(std::atomic_int_fast32_t) - sizeof(JobId) * 3 - sizeof(bool);
+#endif
+
+			struct alignas(jobAlignment) Job {
+				JobFunction              func;
+				std::atomic_int_fast32_t unfinished;
+				JobId                    parent;
+				JobId                    continuation;
+				JobId                    next;
+				bool                     isLambda;
+#ifdef _DEBUG
+				bool started;
+				bool isContinuation;
+#endif
+				char data[jobPadding];
+			};
+
+			constexpr size_t sizeJob = sizeof(Job);
+
+			struct JobQueue {
+				JobId* jobIds;
+				size_t jobPoolOffset;
+				size_t jobPoolCapacity;
+				size_t jobPoolMask;
+				size_t jobIndex;
+				int    top;
+				int    bottom;
+#if TY_JS_STEALING
+				std::mutex mutex; // in case other threads steal a job from this queue
+#endif
+				std::thread::id threadId;
+				size_t          index;
+				ThreadStats     stats;
+#if TY_JS_PROFILE
+				std::chrono::steady_clock::time_point startTime;
+#endif
+			};
+
+			thread_local size_t tl_threadIndex = 0;
+
+		} // namespace
+
+		struct JobSystem {
+			JobSystemAllocator                 allocator;
+			std::vector<std::thread>           workerThreads;
+			void* jobPoolMemory;
+			Job* jobPool;
+			JobId* jobIdPool;
+			size_t                             threadCount; // main + worker threads
+			size_t                             jobsPerThread;
+			size_t                             jobCapacity;
+			JobQueue                           queues[maxThreads];
+			std::mutex                         cv_m;
+			std::condition_variable            semaphore;
+			std::atomic_int32_t                activeJobCount{ 0 };
+			std::mt19937                       randomEngine{ std::random_device {}() };
+			std::uniform_int_distribution<int> dist;
+			bool                               isRunning;
+		};
+
+		JobQueue& getQueue(JobId jobId, JobSystem& js) {
+			assert(jobId);
+			return js.queues[(jobId - 1) / js.jobsPerThread];
+		}
+
+		namespace {
+
+			Job& getJob(Job* jobPool, JobId jobId) {
+				assert(jobId);
+				return jobPool[jobId - 1];
+			}
+
+			JobQueue& getThisThreadQueue(JobSystem& js) {
+				return js.queues[tl_threadIndex];
+			}
+
+			// Adds a job to the private end of the queue (LIFO)
+			void pushJob(JobQueue& queue, JobId jobId, JobSystem& js) {
+				assert(queue.threadId == std::this_thread::get_id());
+				++queue.stats.numEnqueuedJobs;
+				{
+#if TY_JS_STEALING
+					std::lock_guard lock{ queue.mutex };
+#endif
+					assert(queue.top <= queue.bottom);
+					// TODO check capacity
+					queue.jobIds[queue.bottom & queue.jobPoolMask] = jobId;
+					++queue.bottom;
+				}
+				js.activeJobCount.fetch_add(1);
+				js.semaphore.notify_all(); // wake up working threads
+			}
+
+			// Pops a job from the private end of the queue (LIFO)
+			JobId popJob(JobQueue& queue, JobSystem& js) {
+				assert(queue.threadId == std::this_thread::get_id());
+#if TY_JS_STEALING
+				std::lock_guard lock{ queue.mutex };
+#endif
+				if (queue.bottom <= queue.top) {
+					return nullJobId;
+				}
+				--queue.bottom;
+				js.activeJobCount.fetch_sub(1);
+				return queue.jobIds[queue.bottom & queue.jobPoolMask];
+			}
+
+#if TY_JS_STEALING
+			JobId stealJob(JobQueue& queue) {
+				std::lock_guard lock{ queue.mutex };
+				if (queue.bottom <= queue.top) {
+					return nullJobId;
+				}
+				const JobId job = queue.jobIds[queue.top & queue.jobPoolMask];
+				++queue.top;
+				return job;
+			}
+#endif
+
+			void finishJob(JobSystem& js, JobId jobId, JobQueue& queue) {
+				Job& job = getJob(js.jobPool, jobId);
+				const int32_t unfinishedJobCount = --(job.unfinished);
+				assert(unfinishedJobCount >= 0);
+				if (unfinishedJobCount == 0) {
+					// Push continuations
+					for (JobId c = job.continuation; c; c = getJob(js.jobPool, c).next) {
+						pushJob(queue, c, js);
+					}
+					// Notify parent
+					if (job.parent) {
+						finishJob(js, job.parent, queue);
+					}
+				}
+			}
+
+			void executeJob(JobId jobId, JobSystem& js, JobQueue& queue) {
+#if TY_JS_PROFILE
+				const auto startTime = std::chrono::steady_clock::now();
+#endif
+				Job& job = getJob(js.jobPool, jobId);
+				assert(job.unfinished > 0);
+				const JobParams prm{ jobId, queue.index, job.data };
+				if (job.isLambda) {
+					void* ptr = detail::alignPointer(job.data, alignof(JobLambda));
+					JobLambda* lambda = static_cast<JobLambda*>(ptr);
+					(*lambda)(queue.index); // call
+					lambda->~JobLambda();   // destruct
+					job.isLambda = false;
+				}
+				else {
+					job.func(prm);
+				}
+				finishJob(js, jobId, queue);
+#if TY_JS_PROFILE
+				queue.stats.runningTime += std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - startTime);
+#endif
+			}
+
+			JobId getNextJob(JobQueue& queue, JobSystem& js) {
+				JobId job = popJob(queue, js);
+				if (!job) {
+#if TY_JS_STEALING
+					// This worker's queue is empty. Steal from other queues
+					// TODO How to steal from the queue with most jobs (usually the main one)
+					const size_t offset = js.dist(js.randomEngine);
+					const size_t otherQueueIndex = queue.index == 0 ? (queue.index + offset) % js.threadCount : 0;
+					assert(otherQueueIndex != queue.index);
+					++queue.stats.numAttemptedStealings;
+					job = stealJob(js.queues[otherQueueIndex]);
+					if (job) {
+						++queue.stats.numStolenJobs;
+						++js.queues[otherQueueIndex].stats.numGivenJobs;
+						return job;
+					}
+#endif // TY_JS_STEALING
+				}
+				return job;
+			}
+
+			// Function run by a worker thread
+			void worker(JobQueue& queue, size_t threadIndex, JobSystem& js) {
+				tl_threadIndex = threadIndex;
+				queue.threadId = std::this_thread::get_id();
+				while (true) {
+					std::unique_lock lk{ js.cv_m };
+					js.semaphore.wait(lk, [&js] { return !js.isRunning || js.activeJobCount.load() > 0; });
+					if (!js.isRunning) {
+						break;
+					}
+					if (JobId job = getNextJob(queue, js); job) {
+						// Release lock
+						lk.unlock();
+						executeJob(job, js, queue);
+						++queue.stats.numExecutedJobs;
+					}
+					else {
+						lk.unlock();
+						std::this_thread::sleep_for(std::chrono::microseconds(sleep_us));
+					}
+				}
+			}
+
+			void stopThreads(JobSystem& js) {
+				{
+					std::unique_lock lock{ js.cv_m };
+					js.isRunning = false;
+				}
+				js.semaphore.notify_all(); // notify working threads
+
+				for (auto& thread : js.workerThreads) {
+					thread.join();
+				}
+			}
+
+			bool isJobFinished(JobSystem& js, JobId jobId) {
+				const Job& job = getJob(js.jobPool, jobId);
+				return (job.unfinished == 0);
+			}
+
+			void nullFunction(const JobParams& /*prm*/) {
+			}
+
+			void* mallocWrap(size_t size) {
+				return malloc(size);
+			}
+
+			void freeWrap(void* ptr) {
+				free(ptr);
+			}
+
+			JobSystem* jobSystem = nullptr;
+
+		} // namespace
+
+		void initJobSystem(size_t numJobsPerThread, size_t numWorkerThreads) {
+			const JobSystemAllocator allocator{ mallocWrap, freeWrap }; // default allocator
+			initJobSystem(numJobsPerThread, numWorkerThreads, allocator);
+		}
+
+		void initJobSystem(size_t numJobsPerThread, size_t numWorkerThreads, const JobSystemAllocator& allocator) {
+			assert(numJobsPerThread > 0);
+			assert(allocator.alloc);
+			assert(allocator.free);
+
+			if (numWorkerThreads == defaultNumWorkerThreads) {
+				numWorkerThreads = std::thread::hardware_concurrency() - 1; // main thread excluded
+			}
+
+			constexpr size_t maxJobs = std::numeric_limits<JobId>::max() - 1; // jobId 0 is reserved
+
+			numJobsPerThread = detail::nextPowerOfTwo(static_cast<uint32_t>(numJobsPerThread));
+			while (numJobsPerThread > maxJobs) {
+				numJobsPerThread /= 2; // keep pow of 2
+			}
+
+			size_t threadCount = numWorkerThreads + 1; // + 1 for main thread
+			threadCount = std::min(threadCount, maxThreads);
+			threadCount = std::min(threadCount, maxJobs / numJobsPerThread);
+
+			const size_t jobCapacity = threadCount * numJobsPerThread;
+			const size_t jobPoolMemorySize = sizeof(Job) * jobCapacity + (jobAlignment - 1);
+			void* const  jobPoolMemory = allocator.alloc(jobPoolMemorySize);
+
+			Job* const jobPool = static_cast<Job*>(detail::alignPointer(jobPoolMemory, alignof(Job)));
+			for (size_t i = 0; i < jobCapacity; ++i) {
+				jobPool[i].unfinished = 0;
+			}
+
+			JobId* const jobIdPool = static_cast<JobId*>(allocator.alloc(jobCapacity * sizeof(JobId)));
+
+			auto js = new (allocator.alloc(sizeof(JobSystem))) JobSystem;
+			js->jobPoolMemory = jobPoolMemory;
+			js->jobsPerThread = numJobsPerThread;
+			js->threadCount = threadCount;
+			js->jobPool = jobPool;
+			js->jobIdPool = jobIdPool;
+			js->jobCapacity = jobCapacity;
+			js->allocator = allocator;
+			js->isRunning = true;
+
+			// Init worker threads and queues
+			js->workerThreads.reserve(threadCount - 1);
+
+			if (threadCount > 1) {
+				// Init uniform random distribution
+				using param_t = std::uniform_int_distribution<>::param_type;
+				js->dist.param(param_t{ 1, (int)threadCount - 1 });
+			}
+
+			for (size_t i = 0; i < threadCount; ++i) {
+				JobQueue& q = js->queues[i];
+				q.jobIds = jobIdPool + i * numJobsPerThread;
+				q.jobPoolOffset = i * numJobsPerThread;
+				q.jobPoolCapacity = numJobsPerThread;
+				q.jobPoolMask = numJobsPerThread - 1;
+				q.top = 0;
+				q.bottom = 0;
+				q.jobIndex = 0;
+				q.index = i;
+				q.stats = {};
+				if (i == 0) {
+					// Main thread
+					q.threadId = std::this_thread::get_id();
+				}
+				else {
+					// Worker thread
+					js->workerThreads.emplace_back(worker, std::ref(q), i, std::ref(*js));
+				}
+#if TY_JS_PROFILE
+				q.startTime = std::chrono::steady_clock::now();
+#endif
+			}
+
+			jobSystem = js;
+		}
+
+		void destroyJobSystem() {
+			if (jobSystem) {
+				JobSystemAllocator allocator = jobSystem->allocator;
+				stopThreads(*jobSystem);
+				allocator.free(jobSystem->jobPoolMemory);
+				allocator.free(jobSystem->jobIdPool);
+				jobSystem->~JobSystem();
+				allocator.free(jobSystem);
+				jobSystem = nullptr;
+			}
+		}
+
+		size_t getWorkerThreadCount() {
+			assert(jobSystem);
+			return jobSystem->workerThreads.size();
+		}
+
+		JobId createJob() {
+			return detail::createJobImpl(nullFunction, nullptr, 0);
+		}
+
+		JobId createChildJob(JobId parent, JobFunction function) {
+			return detail::createChildJobImpl(parent, function ? function : nullFunction, nullptr, 0);
+		}
+
+		void startJob(JobId jobId) {
+			assert(jobSystem);
+			JobSystem& js = *jobSystem;
+#ifdef _DEBUG
+			Job& job = getJob(js.jobPool, jobId);
+			assert(job.started == false);
+			assert(job.isContinuation == false); // cannot start manually a continuation
+			job.started = true;
+#endif
+
+			JobQueue& queue = getQueue(jobId, js);
+			assert(queue.threadId == std::this_thread::get_id());
+			pushJob(queue, jobId, js);
+		}
+
+		void waitForJob(JobId jobId) {
+			assert(jobId);
+			assert(jobSystem);
+			JobSystem& js = *jobSystem;
+
+			JobQueue& queue = getQueue(jobId, js);
+			assert(queue.threadId == std::this_thread::get_id()); // only the thread that created a job can wait for it
+			while (!isJobFinished(js, jobId)) {
+				if (JobId nextJob = getNextJob(queue, js); nextJob) {
+					executeJob(nextJob, js, queue);
+					++queue.stats.numExecutedJobs;
+				}
+				else {
+					std::this_thread::sleep_for(std::chrono::microseconds(sleep_us));
+				}
+			}
+		}
+
+		void startAndWaitForJob(JobId jobId) {
+			startJob(jobId);
+			waitForJob(jobId);
+		}
+
+		void startFunction(JobId parentJobId, JobLambda&& lambda) {
+			assert(jobSystem);
+
+			const JobId jobId = detail::createChildJobImpl(parentJobId, nullFunction, nullptr, 0);
+			Job& job = getJob(jobSystem->jobPool, jobId);
+			static_assert(sizeof job.data >= sizeof(JobLambda) + alignof(JobLambda) - 1);
+			// in-place move construct lambda into Job::data
+			void* const ptr = detail::alignPointer(job.data, alignof(JobLambda));
+			new (ptr) JobLambda{ std::move(lambda) };
+			job.isLambda = true;
+			startJob(jobId);
+		}
+
+		JobId addContinuation(JobId job, JobFunction function) {
+			return detail::addContinuationImpl(job, function, nullptr, 0);
+		}
+
+		JobId addContinuation(JobId job, JobLambda&& lambda) {
+			const JobId continuationId = detail::addContinuationImpl(job, nullFunction, nullptr, 0);
+			Job& continuation = getJob(jobSystem->jobPool, continuationId);
+			static_assert(sizeof continuation.data >= sizeof(JobLambda) + alignof(JobLambda) - 1);
+			// in-place move construct lambda into Job::data
+			void* const ptr = detail::alignPointer(continuation.data, alignof(JobLambda));
+			new (ptr) JobLambda{ std::move(lambda) };
+			continuation.isLambda = true;
+			return continuationId;
+		}
+
+		ThreadStats getThreadStats(size_t threadIdx) {
+			auto& queue = jobSystem->queues[threadIdx];
+#if TY_JS_PROFILE
+			const auto endTime = std::chrono::steady_clock::now();
+			queue.stats.totalTime = std::chrono::duration_cast<std::chrono::microseconds>(endTime - queue.startTime);
+#endif
+			return queue.stats;
+		}
+
+		size_t getThisThreadIndex() {
+			return getThisThreadQueue(*jobSystem).index;
+		}
+
+		namespace detail {
+
+			JobId createJobImpl(JobFunction function, const void* data, size_t dataSize) {
+				assert(function);
+				assert(dataSize <= sizeof(Job::data));
+				assert(data == nullptr || dataSize);
+
+				JobSystem& js = *jobSystem;
+
+				JobQueue& queue = getThisThreadQueue(js);
+				const JobId jobId = static_cast<JobId>(1 + queue.jobPoolOffset + queue.jobIndex);
+				queue.jobIndex = (queue.jobIndex + 1) & queue.jobPoolMask; // ring buffer
+				assert(jobId <= js.jobCapacity);
+				Job& job = getJob(js.jobPool, jobId);
+#ifdef _DEBUG
+				job.isContinuation = false;
+				job.started = false;
+				assert(job.unfinished == 0 && "Job queue is full"); // catch full queue
+#endif
+				job.func = function;
+				job.parent = nullJobId;
+				job.continuation = nullJobId;
+				job.next = nullJobId;
+				job.unfinished = 1;
+				job.isLambda = false;
+				if (data) {
+					std::memcpy(job.data, data, dataSize);
+				}
+				else {
+#if _DEBUG
+					std::memset(job.data, 0, sizeof job.data);
+#endif
+				}
+				return jobId;
+			}
+
+			JobId createChildJobImpl(JobId parent, JobFunction function, const void* data, size_t dataSize) {
+				JobSystem& js = *jobSystem;
+				JobId      jobId = createJobImpl(function, data, dataSize);
+				Job& job = getJob(js.jobPool, jobId);
+				job.parent = parent;
+				if (parent) {
+					Job& parentJob = getJob(js.jobPool, parent);
+					assert(parentJob.unfinished > 0); // it cannot have finished already
+					++parentJob.unfinished;
+				}
+				return jobId;
+			}
+
+			JobId addContinuationImpl(JobId previousJobId, JobFunction function, const void* data, size_t dataSize) {
+				assert(jobSystem);
+				assert(previousJobId != nullJobId);
+				assert(function);
+
+				Job& previousJob = getJob(jobSystem->jobPool, previousJobId);
+				assert(previousJob.started == false);
+
+				const JobId continuationId = createChildJobImpl(previousJob.parent, function, data, dataSize);
+#if _DEBUG
+				getJob(jobSystem->jobPool, continuationId).isContinuation = true;
+#endif
+
+				// Add continuation to linked list
+				if (!previousJob.continuation) {
+					previousJob.continuation = continuationId;
+				}
+				else {
+					JobId iter = previousJob.continuation;
+					while (jobSystem->jobPool[iter].next) {
+						iter = jobSystem->jobPool[iter].next;
+					}
+					jobSystem->jobPool[iter].next = continuationId;
+				}
+				return continuationId;
+			}
+
+			void parallelForImpl(const JobParams& prm) {
+				ParallelForJobData data;
+				std::memcpy(&data, prm.args, sizeof data); // copy to avoid misalignment
+				if (data.count > data.splitThreshold) {
+					// split in two
+					const uint32_t     leftCount = data.count / 2u;
+					ParallelForJobData leftData{ data.function, data.splitThreshold, data.offset, leftCount, {} };
+					std::memcpy(leftData.functionArgs, data.functionArgs, sizeof leftData.functionArgs);
+					JobId left = createChildJob(prm.job, parallelForImpl, leftData);
+					startJob(left);
+
+					const uint32_t     rightCount = data.count - leftCount;
+					ParallelForJobData rightData{ data.function, data.splitThreshold, data.offset + leftCount, rightCount, {} };
+					std::memcpy(rightData.functionArgs, data.functionArgs, sizeof rightData.functionArgs);
+					JobId right = createChildJob(prm.job, parallelForImpl, rightData);
+					startJob(right);
+				}
+				else {
+					// execute the function on the range of data
+					(data.function)(data.offset, data.count, data.functionArgs, prm.threadIndex);
+				}
+			}
+
+		} // namespace detail
+
+	} // namespace Jobs
+
+} // namespace Typhoon
+
+
+
+
+
+
+
+
+
+#pragma endregion
 
 
 
@@ -1802,7 +2748,30 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 		}
 	}
 
+	// typhoon
+	if (true) {
+		using namespace Typhoon::Jobs;
+		initJobSystem(defaultMaxJobs, std::thread::hardware_concurrency() - 1);
 
+		static auto updateRigidBody = [](const JobParams& prm) {
+			const int bodyIndex = unpackJobArg<int>(prm.args);
+			std::this_thread::sleep_for(std::chrono::microseconds(100)); // simulate work
+		};
+		static auto jobPhysics = [](const JobParams & prm) {
+			const int numRigidBodies = unpackJobArg<int>(prm.args);
+			for (int i = 0; i < numRigidBodies; ++i) {
+				startJob(createChildJob(prm.job, updateRigidBody, i));
+			}
+		};
+
+		const JobId rootJob = createJob(); // empty job, to be used to await all of its children
+		const JobId physicsJob = createChildJob(rootJob, jobPhysics, 100);
+		startJob(physicsJob);
+		startAndWaitForJob(rootJob);
+
+		destroyJobSystem();
+	}
+	// wicked
 	if (true) {
 	    wi::jobsystem::Initialize();
 
@@ -1820,15 +2789,15 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 		// Execute test
 		{
 			auto t = wi::timer("Execute() test: ");
-			wi::jobsystem::context context;
+			wi::jobsystem::JobGroup group;
 
-			wi::jobsystem::Execute(context, [](wi::jobsystem::JobArgs args) { wi::Spin(100); });
-			wi::jobsystem::Execute(context, [](wi::jobsystem::JobArgs args) { wi::Spin(100); });
-			wi::jobsystem::Execute(context, [](wi::jobsystem::JobArgs args) { wi::Spin(100); });
-			wi::jobsystem::Execute(context, [](wi::jobsystem::JobArgs args) { wi::Spin(100); });
-			wi::jobsystem::Execute(context, [](wi::jobsystem::JobArgs args) { wi::Spin(100); });
-			wi::jobsystem::Execute(context, [](wi::jobsystem::JobArgs args) { wi::Spin(100); });
-			wi::jobsystem::Wait(context);
+			group.Queue([](wi::jobsystem::JobArgs args) { wi::Spin(100); });
+			group.Queue([](wi::jobsystem::JobArgs args) { wi::Spin(100); });
+			group.Queue([](wi::jobsystem::JobArgs args) { wi::Spin(100); });
+			group.Queue([](wi::jobsystem::JobArgs args) { wi::Spin(100); });
+			group.Queue([](wi::jobsystem::JobArgs args) { wi::Spin(100); });
+			group.Queue([](wi::jobsystem::JobArgs args) { wi::Spin(100); });
+			group.Wait();
 		}
 
 		struct Data
@@ -1876,6 +2845,8 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
     }
 
 	{
+		Typhoon::Jobs::initJobSystem(Typhoon::Jobs::defaultMaxJobs * 100, std::thread::hardware_concurrency() - 1);
+
 		fibers::TaskScheduler scheduler;
 		scheduler.Init();
 
@@ -1895,7 +2866,7 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 				}
 
 				cweeUnitValues::second timePassed = sw.Stop() / 1000000000.0;
-				std::cout << timePassed.ToString() << std::endl;
+				std::cout << timePassed.ToString() << " (num = " << pat.GetNumValues() << ")" << std::endl;
 			}
 
 			printf("SpeedTest (Pattern) ");
@@ -1911,19 +2882,19 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 				});
 
 				cweeUnitValues::second timePassed = sw.Stop() / 1000000000.0;
-				std::cout << timePassed.ToString() << std::endl;
+				std::cout << timePassed.ToString() << " (num = " << pat.GetNumValues() << ")" << std::endl;
 			}
 			
 			printf("SpeedTest (Pattern) ");
 			std::cout << j;
-			printf(" (Wicked Fibers) : ");
+			printf(" (Wicked Fibers, Individual) : ");
 			{
 				cweeBalancedPattern pat;
 
 				Stopwatch sw; sw.Start();
 
 				auto data = std::make_shared<std::vector< cweeUnion<int, int, decltype(pat)*> >>(numLoops, cweeUnion<int, int, decltype(pat)*>(0, j, &pat));
-				wi::jobsystem::context context;
+				wi::jobsystem::JobGroup group;
 
 				static auto todo = [](void* arg) {
 					int k;
@@ -1939,16 +2910,115 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 				for (int i = 0; i < numLoops; i++) {
 					data->operator[](i).get<0>() = i;
 					
-					wi::jobsystem::Execute(context, [=](wi::jobsystem::JobArgs args) { 
+					group.Queue([=](wi::jobsystem::JobArgs args) {
 						todo(&data->operator[](i));
 					});
 				}
-				wi::jobsystem::Wait(context);
+				group.Wait();
 
 				cweeUnitValues::second timePassed = sw.Stop() / 1000000000.0;
-				std::cout << timePassed.ToString() << std::endl;
+				std::cout << timePassed.ToString() << " (num = " << pat.GetNumValues() << ")" << std::endl;
 			}
 
+			printf("SpeedTest (Pattern) ");
+			std::cout << j;
+			printf(" (Wicked Fibers, Dispatch) : ");
+			{
+				cweeBalancedPattern pat;
+
+				Stopwatch sw; sw.Start();
+
+				auto data = std::make_shared<std::vector< cweeUnion<int, int, decltype(pat)*> >>(numLoops, cweeUnion<int, int, decltype(pat)*>(0, j, &pat));
+				wi::jobsystem::JobGroup group;
+
+				static auto todo = [](void* arg) {
+					int k;
+					auto& i = static_cast<cweeUnion<int, int, decltype(pat)*>*>(arg)->get<0>();
+					auto& j = static_cast<cweeUnion<int, int, decltype(pat)*>*>(arg)->get<1>();
+					auto& p = static_cast<cweeUnion<int, int, decltype(pat)*>*>(arg)->get<2>();
+
+					for (k = 0; k < j; k++) {
+						p->AddValue(i + k, i + k);
+					}
+				};
+
+				group.Dispatch(numLoops, [=](wi::jobsystem::JobArgs args) {
+					data->operator[](args.jobIndex).get<0>() = args.jobIndex;
+					todo(&data->operator[](args.jobIndex));
+				});
+
+				group.Wait();
+
+				cweeUnitValues::second timePassed = sw.Stop() / 1000000000.0;
+				std::cout << timePassed.ToString() << " (num = " << pat.GetNumValues() << ")" << std::endl;
+			}
+
+			printf("SpeedTest (Pattern) ");
+			std::cout << j;
+			printf(" (Typhoon Jobs, Individual) : ");
+			{
+				using namespace Typhoon::Jobs;
+
+				cweeBalancedPattern pat;
+
+				std::vector< cweeUnion<int, int, decltype(pat)*> > data(numLoops, cweeUnion<int, int, decltype(pat)*>(0, j, &pat));
+
+				static auto todo = [](const JobParams& prm) {
+					const auto args = unpackJobArgs<int, int, decltype(pat)*>(prm.args);
+
+					int k;
+					auto& i = std::get<0>(args);
+					auto& j = std::get<1>(args);
+					auto& p = std::get<2>(args);
+
+					for (k = 0; k < j; k++) {
+						p->AddValue(i + k, i + k);
+					}
+				};
+
+				Stopwatch sw; sw.Start();
+
+				const JobId rootJob = createJob(); // empty job, to be used to await all of its children
+				for (int i = 0; i < numLoops; i++) {					
+					const JobId physicsJob = createChildJob(rootJob, todo, i, j, &pat);
+					startJob(physicsJob);
+				}
+				startAndWaitForJob(rootJob);
+
+
+				cweeUnitValues::second timePassed = sw.Stop() / 1000000000.0;
+				std::cout << timePassed.ToString() << " (num = " << pat.GetNumValues() << ")" << std::endl;
+			}
+
+			printf("SpeedTest (Pattern) ");
+			std::cout << j;
+			printf(" (Typhoon Jobs, Parallel_For) : ");
+			{
+				using namespace Typhoon::Jobs;
+
+				cweeBalancedPattern pat;
+
+				static auto todo = [](size_t offset, size_t count, const void* args, size_t threadIndex) {
+					auto [j, p] = unpackJobArgs<int, decltype(pat)*>(args);
+					(void)threadIndex;
+					auto& i = offset;
+					int k;
+
+					for (k = 0; k < j; k++) {
+						p->AddValue(i + k, i + k);
+					}
+				};
+
+				Stopwatch sw; sw.Start();
+
+				const JobId rootJob = createJob(); // empty job, to be used to await all of its children
+				const JobId parallelJob = Typhoon::Jobs::parallelFor(rootJob, 1024, todo, numLoops, j, &pat);
+				startJob(parallelJob);
+				startAndWaitForJob(rootJob);
+
+				cweeUnitValues::second timePassed = sw.Stop() / 1000000000.0;
+				std::cout << timePassed.ToString() << " (num = " << pat.GetNumValues() << ")" <<std::endl;
+			}
 
 			printf("SpeedTest (Pattern) ");
 			std::cout << j;
@@ -1978,7 +3048,7 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 				wg.Wait();
 
 				cweeUnitValues::second timePassed = sw.Stop() / 1000000000.0;
-				std::cout << timePassed.ToString() << std::endl;
+				std::cout << timePassed.ToString() << " (num = " << pat.GetNumValues() << ")" << std::endl;
 			}
 
 			printf("SpeedTest (Pattern) ");
@@ -2011,20 +3081,10 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 				wg.Wait();
 
 				cweeUnitValues::second timePassed = sw.Stop() / 1000000000.0;
-				std::cout << timePassed.ToString() << std::endl;
+				std::cout << timePassed.ToString() << " (num = " << pat.GetNumValues() << ")" << std::endl;
 			}
 
-
-
-
-
-
-
-
-
 			printf("\n");
-
-
 		}
 		for (int j = 1; j < 10; j += 2) {
 			int numLoops = 400 * j * j;
@@ -2042,7 +3102,7 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 				}
 
 				cweeUnitValues::second timePassed = sw.Stop() / 1000000000.0;
-				std::cout << timePassed.ToString() << std::endl;
+				std::cout << timePassed.ToString() << " (num = " << count.load() << ")" << std::endl;
 			}
 
 			printf("SpeedTest (atomic int) ");
@@ -2057,7 +3117,110 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 					});
 
 				cweeUnitValues::second timePassed = sw.Stop() / 1000000000.0;
-				std::cout << timePassed.ToString() << std::endl;
+				std::cout << timePassed.ToString() << " (num = " << count.load() << ")" << std::endl;
+			}
+
+			printf("SpeedTest (atomic int) ");
+			std::cout << j;
+			printf(" (Wicked Fibers, Individual) : ");
+			{
+				std::atomic<int> count;
+
+				Stopwatch sw; sw.Start();
+
+				wi::jobsystem::JobGroup group;
+
+				for (int i = 0; i < numLoops; i++) {
+					group.Queue([&](wi::jobsystem::JobArgs args) {
+						for (int k = 0; k < j; k++)
+							count.fetch_add(k);
+					});
+				}
+				group.Wait();
+
+				cweeUnitValues::second timePassed = sw.Stop() / 1000000000.0;
+				std::cout << timePassed.ToString() << " (num = " << count.load() << ")" << std::endl;
+			}
+
+			printf("SpeedTest (atomic int) ");
+			std::cout << j;
+			printf(" (Wicked Fibers, Dispatch) : ");
+			{
+				std::atomic<int> count;
+
+				Stopwatch sw; sw.Start();
+
+				wi::jobsystem::JobGroup group;
+
+				group.Dispatch(numLoops, [&count, &j](wi::jobsystem::JobArgs args) {
+					for (int k = 0; k < j; k++)
+						count.fetch_add(k);
+				});
+
+				group.Wait();
+
+				cweeUnitValues::second timePassed = sw.Stop() / 1000000000.0;
+				std::cout << timePassed.ToString() << " (num = " << count.load() << ")" << std::endl;
+			}
+
+			printf("SpeedTest (atomic int) ");
+			std::cout << j;
+			printf(" (Typhoon Jobs, Individual) : ");
+			{
+				using namespace Typhoon::Jobs;
+
+				std::atomic<int> count;
+
+				static auto todo = [](const JobParams& prm) {
+					const auto args = unpackJobArgs<int, decltype(count)*>(prm.args);
+
+					auto& j = std::get<0>(args);
+					auto& count = std::get<1>(args);
+
+					for (int k = 0; k < j; k++)
+						count->fetch_add(k);
+				};
+
+				Stopwatch sw; sw.Start();
+
+				const JobId rootJob = createJob(); // empty job, to be used to await all of its children
+				for (int i = 0; i < numLoops; i++) {
+					const JobId physicsJob = createChildJob(rootJob, todo, j, &count);
+					startJob(physicsJob);
+				}
+				startAndWaitForJob(rootJob);
+
+				cweeUnitValues::second timePassed = sw.Stop() / 1000000000.0;
+				std::cout << timePassed.ToString() << " (num = " << count.load() << ")" << std::endl;
+			}
+
+			printf("SpeedTest (atomic int) ");
+			std::cout << j;
+			printf(" (Typhoon Jobs, Parallel_For) : ");
+			{
+				using namespace Typhoon::Jobs;
+
+				std::atomic<int> C;
+
+				static auto todo = [](size_t offset, size_t count, const void* args, size_t threadIndex) {
+					auto [j, c] = unpackJobArgs<int, decltype(C)*>(args);
+					(void)threadIndex;
+					auto& i = offset;
+					int k;
+
+					for (int k = 0; k < j; k++)
+						c->fetch_add(k);
+				};
+
+				Stopwatch sw; sw.Start();
+
+				const JobId rootJob = createJob(); // empty job, to be used to await all of its children
+				const JobId parallelJob = Typhoon::Jobs::parallelFor(rootJob, 1024, todo, numLoops, j, &C);
+				startJob(parallelJob);
+				startAndWaitForJob(rootJob);
+
+				cweeUnitValues::second timePassed = sw.Stop() / 1000000000.0;
+				std::cout << timePassed.ToString() << " (num = " << C.load() << ")" << std::endl;
 			}
 
 			printf("SpeedTest (atomic int) ");
@@ -2086,7 +3249,7 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 				wg.Wait();
 
 				cweeUnitValues::second timePassed = sw.Stop() / 1000000000.0;
-				std::cout << timePassed.ToString() << std::endl;
+				std::cout << timePassed.ToString() << " (num = " << pat.load() << ")" << std::endl;
 			}
 
 			printf("SpeedTest (atomic int) ");
@@ -2117,7 +3280,7 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 				wg.Wait();
 
 				cweeUnitValues::second timePassed = sw.Stop() / 1000000000.0;
-				std::cout << timePassed.ToString() << std::endl;
+				std::cout << timePassed.ToString() << " (num = " << pat.load() << ")" << std::endl;
 			}
 
 			printf("\n");
@@ -2154,7 +3317,111 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 					for (int k = 0; k < j; k++) {
 						vec[i] = cweeStr(k);
 					}
+				});
+
+				cweeUnitValues::second timePassed = sw.Stop() / 1000000000.0;
+				std::cout << timePassed.ToString() << std::endl;
+			}
+
+			printf("SpeedTest (vector overwriting) ");
+			std::cout << j;
+			printf(" (Wicked Fibers, Individual) : ");
+			{
+				std::vector<cweeStr> vec(numLoops, cweeStr("TEST"));
+
+				Stopwatch sw; sw.Start();
+
+				wi::jobsystem::JobGroup group;
+
+				for (int i = 0; i < numLoops; i++) {
+					group.Queue([i, j, &vec](wi::jobsystem::JobArgs args) {
+						for (int k = 0; k < j; k++)
+							vec[i] = cweeStr(k);
 					});
+				}
+				group.Wait();
+
+				cweeUnitValues::second timePassed = sw.Stop() / 1000000000.0;
+				std::cout << timePassed.ToString() << std::endl;
+			}
+
+			printf("SpeedTest (vector overwriting) ");
+			std::cout << j;
+			printf(" (Wicked Fibers, Dispatch) : ");
+			{
+				std::vector<cweeStr> vec(numLoops, cweeStr("TEST"));
+
+				Stopwatch sw; sw.Start();
+
+				wi::jobsystem::JobGroup group;
+
+				group.Dispatch(numLoops, [&vec, &j](wi::jobsystem::JobArgs args) {
+					for (int k = 0; k < j; k++)
+						vec[args.jobIndex] = cweeStr(k);
+				});
+
+				group.Wait();
+
+				cweeUnitValues::second timePassed = sw.Stop() / 1000000000.0;
+				std::cout << timePassed.ToString() << std::endl;
+			}
+
+			printf("SpeedTest (atomic int) ");
+			std::cout << j;
+			printf(" (Typhoon Jobs, Individual) : ");
+			{
+				using namespace Typhoon::Jobs;
+
+				std::vector<cweeStr> vec(numLoops, cweeStr("TEST"));
+
+				static auto todo = [](const JobParams& prm) {
+					const auto args = unpackJobArgs<int, int, decltype(vec)*>(prm.args);
+					
+					auto& i = std::get<0>(args);
+					auto& j = std::get<1>(args);
+					auto& vec = *std::get<2>(args);
+
+					for (int k = 0; k < j; k++)
+						vec[i] = cweeStr(k);
+				};
+
+				Stopwatch sw; sw.Start();
+
+				const JobId rootJob = createJob(); // empty job, to be used to await all of its children
+				for (int i = 0; i < numLoops; i++) {
+					const JobId physicsJob = createChildJob(rootJob, todo, i, j, &vec);
+					startJob(physicsJob);
+				}
+				startAndWaitForJob(rootJob);
+
+				cweeUnitValues::second timePassed = sw.Stop() / 1000000000.0;
+				std::cout << timePassed.ToString() << std::endl;
+			}
+
+			printf("SpeedTest (atomic int) ");
+			std::cout << j;
+			printf(" (Typhoon Jobs, Parallel_For) : ");
+			{
+				using namespace Typhoon::Jobs;
+
+				std::vector<cweeStr> vec(numLoops, cweeStr("TEST"));
+
+				static auto todo = [](size_t offset, size_t count, const void* args, size_t threadIndex) {
+					auto [j, vect] = unpackJobArgs<int, decltype(vec)*>(args);
+					(void)threadIndex;
+					auto& i = offset;
+					int k;
+
+					for (k = 0; k < j; k++)
+						vect->operator[](i) = cweeStr(k);
+				};
+
+				Stopwatch sw; sw.Start();
+
+				const JobId rootJob = createJob(); // empty job, to be used to await all of its children
+				const JobId parallelJob = Typhoon::Jobs::parallelFor(rootJob, 1024, todo, numLoops, j, &vec);
+				startJob(parallelJob);
+				startAndWaitForJob(rootJob);
 
 				cweeUnitValues::second timePassed = sw.Stop() / 1000000000.0;
 				std::cout << timePassed.ToString() << std::endl;
@@ -2226,6 +3493,7 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 			printf("\n");
 		}
 
+		Typhoon::Jobs::destroyJobSystem();
 	}
 
 
