@@ -124,6 +124,9 @@
     <Filter Include="Lib\Header-Only\Math / Engineering\KMeans">
       <UniqueIdentifier>{2552f4eb-d66c-45d6-8d7f-2678f8c5ce0a}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Lib\Implimentations-Only\Heap">
+      <UniqueIdentifier>{c5072454-cb34-4953-8888-c4ccfe74a2d2}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="$(MSBuildThisFileDirectory)odbc.h">
@@ -343,9 +346,6 @@
       <Filter>Lib\Header-Only\Support</Filter>
     </ClInclude>
     <ClInclude Include="$(MSBuildThisFileDirectory)File.h">
-      <Filter>Lib\Header-Only\Support</Filter>
-    </ClInclude>
-    <ClInclude Include="$(MSBuildThisFileDirectory)Heap.h">
       <Filter>Lib\Header-Only\Support</Filter>
     </ClInclude>
     <ClInclude Include="$(MSBuildThisFileDirectory)Iterator.h">
@@ -798,6 +798,9 @@
     <ClInclude Include="$(MSBuildThisFileDirectory)KMeans.h">
       <Filter>Lib\Header-Only\Math / Engineering\KMeans</Filter>
     </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)Heap.h">
+      <Filter>Lib\Implimentations-Only\Heap</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="$(MSBuildThisFileDirectory)odbc.cpp">
@@ -859,6 +862,9 @@
     </ClCompile>
     <ClCompile Include="$(MSBuildThisFileDirectory)RTree.h">
       <Filter>Lib\Header-Only\Containers\Trees</Filter>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)Heap.cpp">
+      <Filter>Lib\Implimentations-Only\Heap</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>

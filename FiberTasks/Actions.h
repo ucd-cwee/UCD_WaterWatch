@@ -167,6 +167,59 @@
 #endif
 #pragma endregion 
 
+
+#include <functional>
+#include <memory>
+#include <utility>
+
+// Finally is a pure virtual base class, implemented by the templated FinallyImpl.
+class Finally { public:
+	virtual ~Finally() = default;
+};
+
+// FinallyImpl implements a Finally.
+// The template parameter F is the function type to be called when the finally is destructed. F must have the signature void().
+template <typename F>
+class FinallyImpl : public Finally { public:
+	inline FinallyImpl(const F& func_) : func(func_) {};
+	inline FinallyImpl(F&& func_) : func(std::move(func_)) {};
+	inline FinallyImpl(FinallyImpl<F>&& other) : func(std::move(other.func)) { other.valid = false; };
+	inline ~FinallyImpl() { if (valid) { func(); } };
+
+private:
+	FinallyImpl(const FinallyImpl<F>& other) = delete;
+	FinallyImpl<F>& operator=(const FinallyImpl<F>& other) = delete;
+	FinallyImpl<F>& operator=(FinallyImpl<F>&&) = delete;
+	F func;
+	bool valid = true;
+};
+template <typename F> inline [[nodiscard]] FinallyImpl<F> make_finally(F&& f) { return FinallyImpl<F>(std::forward<F>(f)); };
+template <typename F> inline [[nodiscard]] std::shared_ptr<Finally> make_shared_finally(F&& f) { return std::make_shared<FinallyImpl<F>>(std::forward<F>(f)); };
+
+#define FINALLY_CONCAT_(a, b) a##b
+#define FINALLY_CONCAT(a, b) FINALLY_CONCAT_(a, b)
+
+// defer() is a macro to defer execution of a statement until the surrounding
+// scope is closed and is typically used to perform cleanup logic once a
+// function returns.
+//
+// Note: Unlike golang's defer(), the defer statement is executed when the
+// surrounding *scope* is closed, not necessarily the function.
+//
+// Example usage:
+//
+//  void sayHelloWorld()
+//  {
+//      defer(printf("world\n"));
+//      printf("hello ");
+//  }
+//
+#define defer(x) \
+  decltype(auto) FINALLY_CONCAT(defer_, __LINE__) { make_finally([&] { x; }) }
+
+#define return_defered(x) \
+  return make_shared_finally([=] { x; })
+
 namespace fibers {
 	namespace synchronization {
 		/* Simple atomic spin-lock that fairly synchronizes threads or fibers based on a ticket-queue system. */
@@ -291,6 +344,7 @@ namespace fibers {
 			static constexpr std::string_view sv_type_name(identity<void>) { return "void"; };
 			static constexpr const char* type_name(identity<void>) { return "void"; };
 		};
+
 		template<typename T> struct count_arg;
 		template<typename R, typename ...Args> struct count_arg<std::function<R(Args...)>> { static constexpr const size_t value = sizeof...(Args); };
 		template <typename... Args> constexpr size_t sizeOfParameterPack(Args... Fargs) { return sizeof...(Args); }

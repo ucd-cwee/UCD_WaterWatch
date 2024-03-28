@@ -248,6 +248,7 @@
     <ClCompile Include="$(MSBuildThisFileDirectory)ExternData.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)FileSystemH.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)Geocoding.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)Heap.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)InteropData.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)MachineLearning.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)odbc.cpp" />

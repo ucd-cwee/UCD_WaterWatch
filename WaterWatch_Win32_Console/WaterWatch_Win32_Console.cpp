@@ -348,12 +348,7 @@ constexpr bool has_flag(E lhs, E rhs)
 
 #endif //WICKEDENGINE_COMMONINCLUDE_H
 
-
 #include <string>
-
-
-
-
 
 #pragma once
 // This file includes platform, os specific libraries and supplies common platform specific resources
@@ -808,6 +803,35 @@ namespace wi::jobsystem {
 		};
 	};
 
+	template<typename iteratorType, typename F>
+	decltype(auto) parallel_for(iteratorType start, iteratorType end, F const& ToDo) {
+		constexpr bool retNo = std::is_same<typename fibers::utilities::function_traits<decltype(std::function(ToDo))>::result_type, void>::value;
+		using returnT = typename fibers::utilities::function_traits<decltype(std::function(ToDo))>::result_type;
+
+		if constexpr (retNo) {
+			wi::jobsystem::JobGroup group;
+
+			group.Dispatch(end - start, [&](wi::jobsystem::JobArgs args) {
+				ToDo(start + args.jobIndex);
+			});
+
+			group.Wait();
+		}
+		else {
+			std::vector< returnT > out(end - start, returnT());
+
+			wi::jobsystem::JobGroup group;
+
+			group.Dispatch(end - start, [&](wi::jobsystem::JobArgs args) {
+				out[args.jobIndex] = ToDo(start + args.jobIndex);
+			});
+
+			group.Wait();
+
+			return out;
+		}
+	};
+
 }
 
 namespace wi {
@@ -1183,7 +1207,7 @@ namespace Typhoon {
 		}
 
 		template <typename... ArgType>
-		JobId parallelFor(JobId parent, size_t splitThreshold, ParallelForFunction function, size_t elementCount, const ArgType&... args) {
+		JobId parallelFor(JobId parentJobId, size_t splitThreshold, ParallelForFunction function, size_t elementCount, const ArgType&... args) {
 			static_assert((std::is_trivially_copyable_v<ArgType> && ... && true));
 
 			auto                       argTuple = std::make_tuple(args...);
@@ -1191,7 +1215,7 @@ namespace Typhoon {
 			// Store extra arguments in the job data
 			static_assert(sizeof argTuple <= sizeof jobData.functionArgs);
 			std::memcpy(jobData.functionArgs, &argTuple, sizeof argTuple);
-			return detail::createChildJobImpl(parent, detail::parallelForImpl, &jobData, sizeof jobData);
+			return detail::createChildJobImpl(parentJobId, detail::parallelForImpl, &jobData, sizeof jobData);
 		}
 
 		template <typename ArgType>
@@ -1808,42 +1832,6 @@ namespace Typhoon {
 
 
 #pragma endregion
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 namespace testing {
 	namespace utilities {
@@ -2570,6 +2558,9 @@ namespace testing {
 
 
 int Example::ExampleF(int numTasks, int numSubTasks) {
+	int* xyzwabc = new int[10000];
+	defer(delete[] xyzwabc); // does clean-up on our behalf on scope end
+	
 	// need a MUCH faster and lighter-weight job / action tool.
 	//while (true) 
 	{
@@ -2771,6 +2762,7 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 
 		destroyJobSystem();
 	}
+	
 	// wicked
 	if (true) {
 	    wi::jobsystem::Initialize();
@@ -2948,6 +2940,22 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 				});
 
 				group.Wait();
+
+				cweeUnitValues::second timePassed = sw.Stop() / 1000000000.0;
+				std::cout << timePassed.ToString() << " (num = " << pat.GetNumValues() << ")" << std::endl;
+			}
+
+			printf("SpeedTest (Pattern) ");
+			std::cout << j;
+			printf(" (Wicked Fibers, parallel_for) : ");
+			{
+				cweeBalancedPattern pat;
+				Stopwatch sw; sw.Start();
+
+				wi::jobsystem::parallel_for(0, numLoops, [&pat, &j](int i) {
+					for (int k = 0; k < j; k++)
+						pat.AddValue(i + k, i + k);
+				});
 
 				cweeUnitValues::second timePassed = sw.Stop() / 1000000000.0;
 				std::cout << timePassed.ToString() << " (num = " << pat.GetNumValues() << ")" << std::endl;
@@ -3165,6 +3173,22 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 
 			printf("SpeedTest (atomic int) ");
 			std::cout << j;
+			printf(" (Wicked Fibers, parallel_for) : ");
+			{
+				std::atomic<int> count;
+				Stopwatch sw; sw.Start();
+
+				wi::jobsystem::parallel_for(0, numLoops, [&count, &j](int i) {
+					for (int k = 0; k < j; k++)
+						count.fetch_add(k);
+				});
+
+				cweeUnitValues::second timePassed = sw.Stop() / 1000000000.0;
+				std::cout << timePassed.ToString() << " (num = " << count.load() << ")" << std::endl;
+			}
+
+			printf("SpeedTest (atomic int) ");
+			std::cout << j;
 			printf(" (Typhoon Jobs, Individual) : ");
 			{
 				using namespace Typhoon::Jobs;
@@ -3361,6 +3385,23 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 				});
 
 				group.Wait();
+
+				cweeUnitValues::second timePassed = sw.Stop() / 1000000000.0;
+				std::cout << timePassed.ToString() << std::endl;
+			}
+
+			printf("SpeedTest (vector overwriting) ");
+			std::cout << j;
+			printf(" (Wicked Fibers, parallel_for) : ");
+			{
+				std::vector<cweeStr> vec(numLoops, cweeStr("TEST"));
+
+				Stopwatch sw; sw.Start();
+
+				wi::jobsystem::parallel_for(0, numLoops, [&vec, &j](int i) {
+					for (int k = 0; k < j; k++)
+						vec[i] = cweeStr(k);
+				});
 
 				cweeUnitValues::second timePassed = sw.Stop() / 1000000000.0;
 				std::cout << timePassed.ToString() << std::endl;
