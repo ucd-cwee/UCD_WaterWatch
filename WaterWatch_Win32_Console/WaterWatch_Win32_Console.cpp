@@ -536,7 +536,7 @@ namespace wi
 #endif // PLATFORM_LINUX
 
 namespace wi::jobsystem {
-	struct Job {
+	struct Task {
 		std::function<void(JobArgs)> task;
 		context* ctx;
 		uint32_t groupID;
@@ -544,21 +544,16 @@ namespace wi::jobsystem {
 		uint32_t groupJobEnd;
 		uint32_t sharedmemory_size;
 	};
-	struct JobQueue {
-		std::deque<Job> queue;
+	struct TaskQueue {
+		std::deque<Task> queue;
 		std::mutex locker;
-
-		inline void push(const Job& item) {
+		inline void push(const Task& item) {
 			std::scoped_lock lock(locker);
 			queue.push_back(item);
 		};
-
-		inline bool try_pop(Job& item) {
+		inline bool try_pop(Task& item) {
 			std::scoped_lock lock(locker);
-			if (queue.empty())
-			{
-				return false;
-			}
+			if (queue.empty()) return false;
 			item = std::move(queue.front());
 			queue.pop_front();
 			return true;
@@ -569,7 +564,7 @@ namespace wi::jobsystem {
 	struct InternalState {
 		uint32_t numCores = 0;
 		uint32_t numThreads = 0;
-		std::unique_ptr<JobQueue[]> jobQueuePerThread;
+		std::unique_ptr<TaskQueue[]> jobQueuePerThread;
 		std::atomic_bool alive{ true };
 		std::condition_variable wakeCondition;
 		std::mutex wakeMutex;
@@ -602,9 +597,9 @@ namespace wi::jobsystem {
 
 	// Start working on a job queue. After the job queue is finished, it can switch to an other queue and steal jobs from there
 	inline void work(uint32_t startingQueue) {
-		Job job;
+		Task job;
 		for (uint32_t i = 0; i < internal_state.numThreads; ++i) {
-			JobQueue& job_queue = internal_state.jobQueuePerThread[startingQueue % internal_state.numThreads];
+			TaskQueue& job_queue = internal_state.jobQueuePerThread[startingQueue % internal_state.numThreads];
 			while (job_queue.try_pop(job))
 			{
 				JobArgs args;
@@ -647,7 +642,7 @@ namespace wi::jobsystem {
 
 		// Calculate the actual number of worker threads we want (-1 main thread):
 		internal_state.numThreads = std::min(maxThreadCount, std::max(1u, internal_state.numCores - 1));
-		internal_state.jobQueuePerThread.reset(new JobQueue[internal_state.numThreads]);
+		internal_state.jobQueuePerThread.reset(new TaskQueue[internal_state.numThreads]);
 		internal_state.threads.reserve(internal_state.numThreads);
 
 		for (uint32_t threadID = 0; threadID < internal_state.numThreads; ++threadID)
@@ -723,7 +718,7 @@ namespace wi::jobsystem {
 		// Context state is updated:
 		ctx.counter.fetch_add(1);
 
-		Job job;
+		Task job;
 		job.ctx = &ctx;
 		job.task = task;
 		job.groupID = 0;
@@ -743,7 +738,7 @@ namespace wi::jobsystem {
 		// Context state is updated:
 		ctx.counter.fetch_add(groupCount);
 
-		Job job;
+		Task job;
 		job.ctx = &ctx;
 		job.task = task;
 		job.sharedmemory_size = (uint32_t)sharedmemory_size;
@@ -789,7 +784,7 @@ namespace wi::jobsystem {
 		}
 	};
 
-	struct JobGroup {
+	struct TaskGroup {
 	private:
 		context ctx;
 
@@ -806,10 +801,11 @@ namespace wi::jobsystem {
 	template<typename iteratorType, typename F>
 	decltype(auto) parallel_for(iteratorType start, iteratorType end, F const& ToDo) {
 		constexpr bool retNo = std::is_same<typename fibers::utilities::function_traits<decltype(std::function(ToDo))>::result_type, void>::value;
-		using returnT = typename fibers::utilities::function_traits<decltype(std::function(ToDo))>::result_type;
-
+		
 		if constexpr (retNo) {
-			wi::jobsystem::JobGroup group;
+			if (end <= start) return;
+
+			wi::jobsystem::TaskGroup group;
 
 			group.Dispatch(end - start, [&](wi::jobsystem::JobArgs args) {
 				ToDo(start + args.jobIndex);
@@ -818,9 +814,13 @@ namespace wi::jobsystem {
 			group.Wait();
 		}
 		else {
+			using returnT = typename fibers::utilities::function_traits<decltype(std::function(ToDo))>::result_type;
+
+			if (end <= start) return std::vector< returnT >();
+
 			std::vector< returnT > out(end - start, returnT());
 
-			wi::jobsystem::JobGroup group;
+			wi::jobsystem::TaskGroup group;
 
 			group.Dispatch(end - start, [&](wi::jobsystem::JobArgs args) {
 				out[args.jobIndex] = ToDo(start + args.jobIndex);
@@ -832,7 +832,123 @@ namespace wi::jobsystem {
 		}
 	};
 
-}
+	template<typename iteratorType, typename F>
+	decltype(auto) parallel_for(iteratorType start, iteratorType end, iteratorType step, F const& ToDo) {
+		constexpr bool retNo = std::is_same<typename fibers::utilities::function_traits<decltype(std::function(ToDo))>::result_type, void>::value;
+		
+		if constexpr (retNo) {
+			if (end <= start) return; 
+			
+			wi::jobsystem::TaskGroup group;
+
+			group.Dispatch((end - start) / step, [&](wi::jobsystem::JobArgs args) {
+				ToDo(start + args.jobIndex * step);
+			});
+
+			group.Wait();
+		}
+		else {
+			using returnT = typename fibers::utilities::function_traits<decltype(std::function(ToDo))>::result_type;
+
+			if (end <= start) return std::vector< returnT >();
+
+			std::vector< returnT > out((end - start) / step, returnT());
+
+			wi::jobsystem::TaskGroup group;
+
+			group.Dispatch((end - start) / step, [&](wi::jobsystem::JobArgs args) {
+				out[args.jobIndex] = ToDo(start + args.jobIndex * step);
+			});
+
+			group.Wait();
+
+			return out;
+		}
+	};
+
+	template<typename containerType, typename F >
+	decltype(auto) parallel_for_each(containerType& container, F const& ToDo) {
+		constexpr bool retNo = std::is_same<typename fibers::utilities::function_traits<decltype(std::function(ToDo))>::result_type, void>::value;
+		
+		int n = container.size();
+		if constexpr (retNo) {
+			if (n <= 0) return;
+
+			std::vector<containerType::iterator> iterators(n, container.begin());
+
+			wi::jobsystem::TaskGroup group;
+
+			group.Dispatch(n, [&](wi::jobsystem::JobArgs args) {
+				std::advance(iterators[args.jobIndex], args.jobIndex);
+				ToDo(*iterators[args.jobIndex]);
+			});
+
+			group.Wait();
+		}
+		else {
+			using returnT = typename fibers::utilities::function_traits<decltype(std::function(ToDo))>::result_type;
+
+			if (n <= 0) return std::vector< returnT >();
+
+			std::vector<containerType::iterator> iterators(n, container.begin());
+
+			std::vector< returnT > out(n, returnT());
+
+			wi::jobsystem::TaskGroup group;
+
+			group.Dispatch(n, [&](wi::jobsystem::JobArgs args) {
+				std::advance(iterators[args.jobIndex], args.jobIndex);
+				out[args.jobIndex] = ToDo(*iterators[args.jobIndex]);
+			});
+
+			group.Wait();
+
+			return out;
+		}
+	};
+
+	template<typename containerType, typename F>
+	decltype(auto) parallel_for_each(containerType const& container, F const& ToDo) {
+		constexpr bool retNo = std::is_same<typename fibers::utilities::function_traits<decltype(std::function(ToDo))>::result_type, void>::value;
+		
+		int n = container.size();
+		if constexpr (retNo) {
+			if (n <= 0) return;
+
+			std::vector<containerType::const_iterator> iterators(n, container.begin());
+
+			wi::jobsystem::TaskGroup group;
+
+			group.Dispatch(n, [&](wi::jobsystem::JobArgs args) {
+				std::advance(iterators[args.jobIndex], args.jobIndex);
+				ToDo(*iterators[args.jobIndex]);
+			});
+
+			group.Wait();
+		}
+		else {
+			using returnT = typename fibers::utilities::function_traits<decltype(std::function(ToDo))>::result_type;
+
+			if (n <= 0) return std::vector< returnT >();
+
+			std::vector<containerType::const_iterator> iterators(n, container.begin());
+
+			std::vector< returnT > out(n, returnT());
+
+			wi::jobsystem::TaskGroup group;
+
+			group.Dispatch(n, [&](wi::jobsystem::JobArgs args) {
+				std::advance(iterators[args.jobIndex], args.jobIndex);
+				out[args.jobIndex] = ToDo(*iterators[args.jobIndex]);
+			});
+
+			group.Wait();
+
+			return out;
+		}
+	};
+
+};
 
 namespace wi {
 	struct timer
@@ -1317,7 +1433,7 @@ namespace Typhoon {
 
 			constexpr size_t sizeJob = sizeof(Job);
 
-			struct JobQueue {
+			struct TaskQueue {
 				JobId* jobIds;
 				size_t jobPoolOffset;
 				size_t jobPoolCapacity;
@@ -1349,7 +1465,7 @@ namespace Typhoon {
 			size_t                             threadCount; // main + worker threads
 			size_t                             jobsPerThread;
 			size_t                             jobCapacity;
-			JobQueue                           queues[maxThreads];
+			TaskQueue                           queues[maxThreads];
 			std::mutex                         cv_m;
 			std::condition_variable            semaphore;
 			std::atomic_int32_t                activeJobCount{ 0 };
@@ -1358,7 +1474,7 @@ namespace Typhoon {
 			bool                               isRunning;
 		};
 
-		JobQueue& getQueue(JobId jobId, JobSystem& js) {
+		TaskQueue& getQueue(JobId jobId, JobSystem& js) {
 			assert(jobId);
 			return js.queues[(jobId - 1) / js.jobsPerThread];
 		}
@@ -1370,12 +1486,12 @@ namespace Typhoon {
 				return jobPool[jobId - 1];
 			}
 
-			JobQueue& getThisThreadQueue(JobSystem& js) {
+			TaskQueue& getThisThreadQueue(JobSystem& js) {
 				return js.queues[tl_threadIndex];
 			}
 
 			// Adds a job to the private end of the queue (LIFO)
-			void pushJob(JobQueue& queue, JobId jobId, JobSystem& js) {
+			void pushJob(TaskQueue& queue, JobId jobId, JobSystem& js) {
 				assert(queue.threadId == std::this_thread::get_id());
 				++queue.stats.numEnqueuedJobs;
 				{
@@ -1392,7 +1508,7 @@ namespace Typhoon {
 			}
 
 			// Pops a job from the private end of the queue (LIFO)
-			JobId popJob(JobQueue& queue, JobSystem& js) {
+			JobId popJob(TaskQueue& queue, JobSystem& js) {
 				assert(queue.threadId == std::this_thread::get_id());
 #if TY_JS_STEALING
 				std::lock_guard lock{ queue.mutex };
@@ -1406,7 +1522,7 @@ namespace Typhoon {
 			}
 
 #if TY_JS_STEALING
-			JobId stealJob(JobQueue& queue) {
+			JobId stealJob(TaskQueue& queue) {
 				std::lock_guard lock{ queue.mutex };
 				if (queue.bottom <= queue.top) {
 					return nullJobId;
@@ -1417,7 +1533,7 @@ namespace Typhoon {
 			}
 #endif
 
-			void finishJob(JobSystem& js, JobId jobId, JobQueue& queue) {
+			void finishJob(JobSystem& js, JobId jobId, TaskQueue& queue) {
 				Job& job = getJob(js.jobPool, jobId);
 				const int32_t unfinishedJobCount = --(job.unfinished);
 				assert(unfinishedJobCount >= 0);
@@ -1433,7 +1549,7 @@ namespace Typhoon {
 				}
 			}
 
-			void executeJob(JobId jobId, JobSystem& js, JobQueue& queue) {
+			void executeJob(JobId jobId, JobSystem& js, TaskQueue& queue) {
 #if TY_JS_PROFILE
 				const auto startTime = std::chrono::steady_clock::now();
 #endif
@@ -1456,7 +1572,7 @@ namespace Typhoon {
 #endif
 			}
 
-			JobId getNextJob(JobQueue& queue, JobSystem& js) {
+			JobId getNextJob(TaskQueue& queue, JobSystem& js) {
 				JobId job = popJob(queue, js);
 				if (!job) {
 #if TY_JS_STEALING
@@ -1478,7 +1594,7 @@ namespace Typhoon {
 			}
 
 			// Function run by a worker thread
-			void worker(JobQueue& queue, size_t threadIndex, JobSystem& js) {
+			void worker(TaskQueue& queue, size_t threadIndex, JobSystem& js) {
 				tl_threadIndex = threadIndex;
 				queue.threadId = std::this_thread::get_id();
 				while (true) {
@@ -1588,7 +1704,7 @@ namespace Typhoon {
 			}
 
 			for (size_t i = 0; i < threadCount; ++i) {
-				JobQueue& q = js->queues[i];
+				TaskQueue& q = js->queues[i];
 				q.jobIds = jobIdPool + i * numJobsPerThread;
 				q.jobPoolOffset = i * numJobsPerThread;
 				q.jobPoolCapacity = numJobsPerThread;
@@ -1649,7 +1765,7 @@ namespace Typhoon {
 			job.started = true;
 #endif
 
-			JobQueue& queue = getQueue(jobId, js);
+			TaskQueue& queue = getQueue(jobId, js);
 			assert(queue.threadId == std::this_thread::get_id());
 			pushJob(queue, jobId, js);
 		}
@@ -1659,7 +1775,7 @@ namespace Typhoon {
 			assert(jobSystem);
 			JobSystem& js = *jobSystem;
 
-			JobQueue& queue = getQueue(jobId, js);
+			TaskQueue& queue = getQueue(jobId, js);
 			assert(queue.threadId == std::this_thread::get_id()); // only the thread that created a job can wait for it
 			while (!isJobFinished(js, jobId)) {
 				if (JobId nextJob = getNextJob(queue, js); nextJob) {
@@ -1727,7 +1843,7 @@ namespace Typhoon {
 
 				JobSystem& js = *jobSystem;
 
-				JobQueue& queue = getThisThreadQueue(js);
+				TaskQueue& queue = getThisThreadQueue(js);
 				const JobId jobId = static_cast<JobId>(1 + queue.jobPoolOffset + queue.jobIndex);
 				queue.jobIndex = (queue.jobIndex + 1) & queue.jobPoolMask; // ring buffer
 				assert(jobId <= js.jobCapacity);
@@ -2781,7 +2897,7 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 		// Execute test
 		{
 			auto t = wi::timer("Execute() test: ");
-			wi::jobsystem::JobGroup group;
+			wi::jobsystem::TaskGroup group;
 
 			group.Queue([](wi::jobsystem::JobArgs args) { wi::Spin(100); });
 			group.Queue([](wi::jobsystem::JobArgs args) { wi::Spin(100); });
@@ -2886,7 +3002,7 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 				Stopwatch sw; sw.Start();
 
 				auto data = std::make_shared<std::vector< cweeUnion<int, int, decltype(pat)*> >>(numLoops, cweeUnion<int, int, decltype(pat)*>(0, j, &pat));
-				wi::jobsystem::JobGroup group;
+				wi::jobsystem::TaskGroup group;
 
 				static auto todo = [](void* arg) {
 					int k;
@@ -2921,7 +3037,7 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 				Stopwatch sw; sw.Start();
 
 				auto data = std::make_shared<std::vector< cweeUnion<int, int, decltype(pat)*> >>(numLoops, cweeUnion<int, int, decltype(pat)*>(0, j, &pat));
-				wi::jobsystem::JobGroup group;
+				wi::jobsystem::TaskGroup group;
 
 				static auto todo = [](void* arg) {
 					int k;
@@ -2955,6 +3071,59 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 				wi::jobsystem::parallel_for(0, numLoops, [&pat, &j](int i) {
 					for (int k = 0; k < j; k++)
 						pat.AddValue(i + k, i + k);
+				});
+
+				cweeUnitValues::second timePassed = sw.Stop() / 1000000000.0;
+				std::cout << timePassed.ToString() << " (num = " << pat.GetNumValues() << ")" << std::endl;
+			}
+
+			printf("SpeedTest (Pattern) ");
+			std::cout << j;
+			printf(" (Wicked Fibers, parallel_for w/i parallel_for) : ");
+			{
+				cweeBalancedPattern pat;
+				Stopwatch sw; sw.Start();
+
+				wi::jobsystem::parallel_for(0, numLoops, [&pat, &j](int i) {
+					wi::jobsystem::parallel_for(0, j, [&pat, &j, &i](int k) {
+						pat.AddValue(i + k, i + k);
+					});
+				});
+
+				cweeUnitValues::second timePassed = sw.Stop() / 1000000000.0;
+				std::cout << timePassed.ToString() << " (num = " << pat.GetNumValues() << ")" << std::endl;
+			}
+
+			printf("SpeedTest (Pattern) ");
+			std::cout << j;
+			printf(" (Wicked Fibers, parallel_for { step }) : ");
+			{
+				cweeBalancedPattern pat;
+				Stopwatch sw; sw.Start();
+
+				wi::jobsystem::parallel_for(0, numLoops, 1, [&pat, &j](int i) {
+					for (int k = 0; k < j; k++)
+						pat.AddValue(i + k, i + k);
+				});
+
+				cweeUnitValues::second timePassed = sw.Stop() / 1000000000.0;
+				std::cout << timePassed.ToString() << " (num = " << pat.GetNumValues() << ")" << std::endl;
+			}
+
+			printf("SpeedTest (Pattern) ");
+			std::cout << j;
+			printf(" (Wicked Fibers, parallel_for_each) : ");
+			{
+				std::vector<int> test(numLoops, 0);
+				for (int i = 0; i < numLoops; i++) test[i] = i;
+
+				cweeBalancedPattern pat;
+				Stopwatch sw; sw.Start();
+
+				wi::jobsystem::parallel_for_each(test, [&pat, &j](int& i) {
+					for (int k = 0; k < j; k++) {
+						pat.AddValue(i + k, i + k);
+					}
 				});
 
 				cweeUnitValues::second timePassed = sw.Stop() / 1000000000.0;
@@ -3136,7 +3305,7 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 
 				Stopwatch sw; sw.Start();
 
-				wi::jobsystem::JobGroup group;
+				wi::jobsystem::TaskGroup group;
 
 				for (int i = 0; i < numLoops; i++) {
 					group.Queue([&](wi::jobsystem::JobArgs args) {
@@ -3158,7 +3327,7 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 
 				Stopwatch sw; sw.Start();
 
-				wi::jobsystem::JobGroup group;
+				wi::jobsystem::TaskGroup group;
 
 				group.Dispatch(numLoops, [&count, &j](wi::jobsystem::JobArgs args) {
 					for (int k = 0; k < j; k++)
@@ -3179,6 +3348,41 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 				Stopwatch sw; sw.Start();
 
 				wi::jobsystem::parallel_for(0, numLoops, [&count, &j](int i) {
+					for (int k = 0; k < j; k++)
+						count.fetch_add(k);
+				});
+
+				cweeUnitValues::second timePassed = sw.Stop() / 1000000000.0;
+				std::cout << timePassed.ToString() << " (num = " << count.load() << ")" << std::endl;
+			}
+
+			printf("SpeedTest (atomic int) ");
+			std::cout << j;
+			printf(" (Wicked Fibers, parallel_for w/i parallel_for) : ");
+			{
+				std::atomic<int> count;
+				Stopwatch sw; sw.Start();
+
+				wi::jobsystem::parallel_for(0, numLoops, [&count, &j](int i) {
+					wi::jobsystem::parallel_for(0, j, [&count, &j](int k) {
+						count.fetch_add(k);
+					});
+				});
+
+				cweeUnitValues::second timePassed = sw.Stop() / 1000000000.0;
+				std::cout << timePassed.ToString() << " (num = " << count.load() << ")" << std::endl;
+			}
+
+			printf("SpeedTest (atomic int) ");
+			std::cout << j;
+			printf(" (Wicked Fibers, parallel_for_each) : ");
+			{
+				std::atomic<int> count;
+				Stopwatch sw; sw.Start();
+
+				std::vector<int> n(numLoops, 0);
+
+				wi::jobsystem::parallel_for_each(n, [&count, &j](int& i) {
 					for (int k = 0; k < j; k++)
 						count.fetch_add(k);
 				});
@@ -3355,7 +3559,7 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 
 				Stopwatch sw; sw.Start();
 
-				wi::jobsystem::JobGroup group;
+				wi::jobsystem::TaskGroup group;
 
 				for (int i = 0; i < numLoops; i++) {
 					group.Queue([i, j, &vec](wi::jobsystem::JobArgs args) {
@@ -3377,7 +3581,7 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 
 				Stopwatch sw; sw.Start();
 
-				wi::jobsystem::JobGroup group;
+				wi::jobsystem::TaskGroup group;
 
 				group.Dispatch(numLoops, [&vec, &j](wi::jobsystem::JobArgs args) {
 					for (int k = 0; k < j; k++)
@@ -3407,7 +3611,24 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 				std::cout << timePassed.ToString() << std::endl;
 			}
 
-			printf("SpeedTest (atomic int) ");
+			printf("SpeedTest (vector overwriting) ");
+			std::cout << j;
+			printf(" (Wicked Fibers, parallel_for_each) : ");
+			{
+				std::vector<cweeStr> vec(numLoops, cweeStr("TEST"));
+
+				Stopwatch sw; sw.Start();
+
+				wi::jobsystem::parallel_for_each(vec, [&j](cweeStr& i) {
+					for (int k = 0; k < j; k++)
+						i = cweeStr(k);
+				});
+
+				cweeUnitValues::second timePassed = sw.Stop() / 1000000000.0;
+				std::cout << timePassed.ToString() << std::endl;
+			}
+
+			printf("SpeedTest (vector overwriting) ");
 			std::cout << j;
 			printf(" (Typhoon Jobs, Individual) : ");
 			{
@@ -3439,7 +3660,7 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 				std::cout << timePassed.ToString() << std::endl;
 			}
 
-			printf("SpeedTest (atomic int) ");
+			printf("SpeedTest (vector overwriting) ");
 			std::cout << j;
 			printf(" (Typhoon Jobs, Parallel_For) : ");
 			{

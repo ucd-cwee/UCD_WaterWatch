@@ -127,6 +127,33 @@
     <Filter Include="Lib\Implimentations-Only\Heap">
       <UniqueIdentifier>{c5072454-cb34-4953-8888-c4ccfe74a2d2}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Lib\Implimentations-Only\Heap\snmalloc">
+      <UniqueIdentifier>{dd3d1c09-cef8-44c0-8658-94a787fc00e0}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Lib\Implimentations-Only\Heap\snmalloc\aal">
+      <UniqueIdentifier>{c306644b-ee30-4f7e-b944-a384a6c414a0}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Lib\Implimentations-Only\Heap\snmalloc\backend">
+      <UniqueIdentifier>{98cc0afd-2052-476d-acf6-66e758833948}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Lib\Implimentations-Only\Heap\snmalloc\backend_helpers">
+      <UniqueIdentifier>{e168b6cf-503e-4f13-a169-5bb5135fcbf4}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Lib\Implimentations-Only\Heap\snmalloc\ds">
+      <UniqueIdentifier>{96f65c7d-0451-4d51-8432-854b321e75a3}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Lib\Implimentations-Only\Heap\snmalloc\ds_core">
+      <UniqueIdentifier>{5435e278-b812-4ae4-ba17-abf074cbdfb6}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Lib\Implimentations-Only\Heap\snmalloc\global">
+      <UniqueIdentifier>{43dc03d9-4abb-4920-b495-beabd727cb01}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Lib\Implimentations-Only\Heap\snmalloc\mem">
+      <UniqueIdentifier>{2a0b9216-eef7-4954-8fa4-7b7d168f3a4f}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Lib\Implimentations-Only\Heap\snmalloc\pal">
+      <UniqueIdentifier>{da0536f9-784c-4448-b7cc-6faf71cffe3e}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="$(MSBuildThisFileDirectory)odbc.h">
@@ -800,6 +827,312 @@
     </ClInclude>
     <ClInclude Include="$(MSBuildThisFileDirectory)Heap.h">
       <Filter>Lib\Implimentations-Only\Heap</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)snmalloc\snmalloc.h">
+      <Filter>Lib\Implimentations-Only\Heap\snmalloc</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)snmalloc\snmalloc_core.h">
+      <Filter>Lib\Implimentations-Only\Heap\snmalloc</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)snmalloc\snmalloc_front.h">
+      <Filter>Lib\Implimentations-Only\Heap\snmalloc</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)snmalloc\aal\aal.h">
+      <Filter>Lib\Implimentations-Only\Heap\snmalloc\aal</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)snmalloc\aal\aal_arm.h">
+      <Filter>Lib\Implimentations-Only\Heap\snmalloc\aal</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)snmalloc\aal\aal_cheri.h">
+      <Filter>Lib\Implimentations-Only\Heap\snmalloc\aal</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)snmalloc\aal\aal_concept.h">
+      <Filter>Lib\Implimentations-Only\Heap\snmalloc\aal</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)snmalloc\aal\aal_consts.h">
+      <Filter>Lib\Implimentations-Only\Heap\snmalloc\aal</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)snmalloc\aal\aal_powerpc.h">
+      <Filter>Lib\Implimentations-Only\Heap\snmalloc\aal</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)snmalloc\aal\aal_riscv.h">
+      <Filter>Lib\Implimentations-Only\Heap\snmalloc\aal</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)snmalloc\aal\aal_sparc.h">
+      <Filter>Lib\Implimentations-Only\Heap\snmalloc\aal</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)snmalloc\aal\aal_x86.h">
+      <Filter>Lib\Implimentations-Only\Heap\snmalloc\aal</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)snmalloc\aal\aal_x86_sgx.h">
+      <Filter>Lib\Implimentations-Only\Heap\snmalloc\aal</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)snmalloc\aal\address.h">
+      <Filter>Lib\Implimentations-Only\Heap\snmalloc\aal</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)snmalloc\backend\base_constants.h">
+      <Filter>Lib\Implimentations-Only\Heap\snmalloc\backend</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)snmalloc\backend\fixedglobalconfig.h">
+      <Filter>Lib\Implimentations-Only\Heap\snmalloc\backend</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)snmalloc\backend\globalconfig.h">
+      <Filter>Lib\Implimentations-Only\Heap\snmalloc\backend</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)snmalloc\backend\meta_protected_range.h">
+      <Filter>Lib\Implimentations-Only\Heap\snmalloc\backend</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)snmalloc\backend\standard_range.h">
+      <Filter>Lib\Implimentations-Only\Heap\snmalloc\backend</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)snmalloc\backend\backend.h">
+      <Filter>Lib\Implimentations-Only\Heap\snmalloc\backend</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)snmalloc\backend_helpers\backend_helpers.h">
+      <Filter>Lib\Implimentations-Only\Heap\snmalloc\backend_helpers</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)snmalloc\backend_helpers\buddy.h">
+      <Filter>Lib\Implimentations-Only\Heap\snmalloc\backend_helpers</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)snmalloc\backend_helpers\commitrange.h">
+      <Filter>Lib\Implimentations-Only\Heap\snmalloc\backend_helpers</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)snmalloc\backend_helpers\commonconfig.h">
+      <Filter>Lib\Implimentations-Only\Heap\snmalloc\backend_helpers</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)snmalloc\backend_helpers\defaultpagemapentry.h">
+      <Filter>Lib\Implimentations-Only\Heap\snmalloc\backend_helpers</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)snmalloc\backend_helpers\empty_range.h">
+      <Filter>Lib\Implimentations-Only\Heap\snmalloc\backend_helpers</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)snmalloc\backend_helpers\globalrange.h">
+      <Filter>Lib\Implimentations-Only\Heap\snmalloc\backend_helpers</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)snmalloc\backend_helpers\indirectrange.h">
+      <Filter>Lib\Implimentations-Only\Heap\snmalloc\backend_helpers</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)snmalloc\backend_helpers\largebuddyrange.h">
+      <Filter>Lib\Implimentations-Only\Heap\snmalloc\backend_helpers</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)snmalloc\backend_helpers\lockrange.h">
+      <Filter>Lib\Implimentations-Only\Heap\snmalloc\backend_helpers</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)snmalloc\backend_helpers\logrange.h">
+      <Filter>Lib\Implimentations-Only\Heap\snmalloc\backend_helpers</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)snmalloc\backend_helpers\pagemap.h">
+      <Filter>Lib\Implimentations-Only\Heap\snmalloc\backend_helpers</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)snmalloc\backend_helpers\pagemapregisterrange.h">
+      <Filter>Lib\Implimentations-Only\Heap\snmalloc\backend_helpers</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)snmalloc\backend_helpers\palrange.h">
+      <Filter>Lib\Implimentations-Only\Heap\snmalloc\backend_helpers</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)snmalloc\backend_helpers\range_helpers.h">
+      <Filter>Lib\Implimentations-Only\Heap\snmalloc\backend_helpers</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)snmalloc\backend_helpers\smallbuddyrange.h">
+      <Filter>Lib\Implimentations-Only\Heap\snmalloc\backend_helpers</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)snmalloc\backend_helpers\staticconditionalrange.h">
+      <Filter>Lib\Implimentations-Only\Heap\snmalloc\backend_helpers</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)snmalloc\backend_helpers\staticrange.h">
+      <Filter>Lib\Implimentations-Only\Heap\snmalloc\backend_helpers</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)snmalloc\backend_helpers\statsrange.h">
+      <Filter>Lib\Implimentations-Only\Heap\snmalloc\backend_helpers</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)snmalloc\backend_helpers\subrange.h">
+      <Filter>Lib\Implimentations-Only\Heap\snmalloc\backend_helpers</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)snmalloc\backend_helpers\authmap.h">
+      <Filter>Lib\Implimentations-Only\Heap\snmalloc\backend_helpers</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)snmalloc\ds\aba.h">
+      <Filter>Lib\Implimentations-Only\Heap\snmalloc\ds</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)snmalloc\ds\allocconfig.h">
+      <Filter>Lib\Implimentations-Only\Heap\snmalloc\ds</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)snmalloc\ds\ds.h">
+      <Filter>Lib\Implimentations-Only\Heap\snmalloc\ds</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)snmalloc\ds\entropy.h">
+      <Filter>Lib\Implimentations-Only\Heap\snmalloc\ds</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)snmalloc\ds\flaglock.h">
+      <Filter>Lib\Implimentations-Only\Heap\snmalloc\ds</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)snmalloc\ds\mpmcstack.h">
+      <Filter>Lib\Implimentations-Only\Heap\snmalloc\ds</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)snmalloc\ds\pagemap.h">
+      <Filter>Lib\Implimentations-Only\Heap\snmalloc\ds</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)snmalloc\ds\singleton.h">
+      <Filter>Lib\Implimentations-Only\Heap\snmalloc\ds</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)snmalloc\ds_core\concept.h">
+      <Filter>Lib\Implimentations-Only\Heap\snmalloc\ds_core</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)snmalloc\ds_core\defines.h">
+      <Filter>Lib\Implimentations-Only\Heap\snmalloc\ds_core</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)snmalloc\ds_core\ds_core.h">
+      <Filter>Lib\Implimentations-Only\Heap\snmalloc\ds_core</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)snmalloc\ds_core\helpers.h">
+      <Filter>Lib\Implimentations-Only\Heap\snmalloc\ds_core</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)snmalloc\ds_core\mitigations.h">
+      <Filter>Lib\Implimentations-Only\Heap\snmalloc\ds_core</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)snmalloc\ds_core\ptrwrap.h">
+      <Filter>Lib\Implimentations-Only\Heap\snmalloc\ds_core</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)snmalloc\ds_core\redblacktree.h">
+      <Filter>Lib\Implimentations-Only\Heap\snmalloc\ds_core</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)snmalloc\ds_core\seqset.h">
+      <Filter>Lib\Implimentations-Only\Heap\snmalloc\ds_core</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)snmalloc\ds_core\bits.h">
+      <Filter>Lib\Implimentations-Only\Heap\snmalloc\ds_core</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)snmalloc\global\global.h">
+      <Filter>Lib\Implimentations-Only\Heap\snmalloc\global</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)snmalloc\global\memcpy.h">
+      <Filter>Lib\Implimentations-Only\Heap\snmalloc\global</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)snmalloc\global\scopedalloc.h">
+      <Filter>Lib\Implimentations-Only\Heap\snmalloc\global</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)snmalloc\global\threadalloc.h">
+      <Filter>Lib\Implimentations-Only\Heap\snmalloc\global</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)snmalloc\global\bounds_checks.h">
+      <Filter>Lib\Implimentations-Only\Heap\snmalloc\global</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)snmalloc\mem\backend_wrappers.h">
+      <Filter>Lib\Implimentations-Only\Heap\snmalloc\mem</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)snmalloc\mem\corealloc.h">
+      <Filter>Lib\Implimentations-Only\Heap\snmalloc\mem</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)snmalloc\mem\entropy.h">
+      <Filter>Lib\Implimentations-Only\Heap\snmalloc\mem</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)snmalloc\mem\external_alloc.h">
+      <Filter>Lib\Implimentations-Only\Heap\snmalloc\mem</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)snmalloc\mem\freelist.h">
+      <Filter>Lib\Implimentations-Only\Heap\snmalloc\mem</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)snmalloc\mem\globalalloc.h">
+      <Filter>Lib\Implimentations-Only\Heap\snmalloc\mem</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)snmalloc\mem\localalloc.h">
+      <Filter>Lib\Implimentations-Only\Heap\snmalloc\mem</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)snmalloc\mem\localcache.h">
+      <Filter>Lib\Implimentations-Only\Heap\snmalloc\mem</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)snmalloc\mem\mem.h">
+      <Filter>Lib\Implimentations-Only\Heap\snmalloc\mem</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)snmalloc\mem\metadata.h">
+      <Filter>Lib\Implimentations-Only\Heap\snmalloc\mem</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)snmalloc\mem\pool.h">
+      <Filter>Lib\Implimentations-Only\Heap\snmalloc\mem</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)snmalloc\mem\pooled.h">
+      <Filter>Lib\Implimentations-Only\Heap\snmalloc\mem</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)snmalloc\mem\remoteallocator.h">
+      <Filter>Lib\Implimentations-Only\Heap\snmalloc\mem</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)snmalloc\mem\remotecache.h">
+      <Filter>Lib\Implimentations-Only\Heap\snmalloc\mem</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)snmalloc\mem\sizeclasstable.h">
+      <Filter>Lib\Implimentations-Only\Heap\snmalloc\mem</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)snmalloc\mem\ticker.h">
+      <Filter>Lib\Implimentations-Only\Heap\snmalloc\mem</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)snmalloc\mem\backend_concept.h">
+      <Filter>Lib\Implimentations-Only\Heap\snmalloc\mem</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)snmalloc\pal\pal_apple.h">
+      <Filter>Lib\Implimentations-Only\Heap\snmalloc\pal</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)snmalloc\pal\pal_bsd.h">
+      <Filter>Lib\Implimentations-Only\Heap\snmalloc\pal</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)snmalloc\pal\pal_bsd_aligned.h">
+      <Filter>Lib\Implimentations-Only\Heap\snmalloc\pal</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)snmalloc\pal\pal_concept.h">
+      <Filter>Lib\Implimentations-Only\Heap\snmalloc\pal</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)snmalloc\pal\pal_consts.h">
+      <Filter>Lib\Implimentations-Only\Heap\snmalloc\pal</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)snmalloc\pal\pal_dragonfly.h">
+      <Filter>Lib\Implimentations-Only\Heap\snmalloc\pal</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)snmalloc\pal\pal_ds.h">
+      <Filter>Lib\Implimentations-Only\Heap\snmalloc\pal</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)snmalloc\pal\pal_freebsd.h">
+      <Filter>Lib\Implimentations-Only\Heap\snmalloc\pal</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)snmalloc\pal\pal_freebsd_kernel.h">
+      <Filter>Lib\Implimentations-Only\Heap\snmalloc\pal</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)snmalloc\pal\pal_haiku.h">
+      <Filter>Lib\Implimentations-Only\Heap\snmalloc\pal</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)snmalloc\pal\pal_linux.h">
+      <Filter>Lib\Implimentations-Only\Heap\snmalloc\pal</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)snmalloc\pal\pal_netbsd.h">
+      <Filter>Lib\Implimentations-Only\Heap\snmalloc\pal</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)snmalloc\pal\pal_noalloc.h">
+      <Filter>Lib\Implimentations-Only\Heap\snmalloc\pal</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)snmalloc\pal\pal_open_enclave.h">
+      <Filter>Lib\Implimentations-Only\Heap\snmalloc\pal</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)snmalloc\pal\pal_openbsd.h">
+      <Filter>Lib\Implimentations-Only\Heap\snmalloc\pal</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)snmalloc\pal\pal_plain.h">
+      <Filter>Lib\Implimentations-Only\Heap\snmalloc\pal</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)snmalloc\pal\pal_posix.h">
+      <Filter>Lib\Implimentations-Only\Heap\snmalloc\pal</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)snmalloc\pal\pal_solaris.h">
+      <Filter>Lib\Implimentations-Only\Heap\snmalloc\pal</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)snmalloc\pal\pal_tid_default.h">
+      <Filter>Lib\Implimentations-Only\Heap\snmalloc\pal</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)snmalloc\pal\pal_timer_default.h">
+      <Filter>Lib\Implimentations-Only\Heap\snmalloc\pal</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)snmalloc\pal\pal_windows.h">
+      <Filter>Lib\Implimentations-Only\Heap\snmalloc\pal</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)snmalloc\pal\pal.h">
+      <Filter>Lib\Implimentations-Only\Heap\snmalloc\pal</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

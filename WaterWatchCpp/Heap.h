@@ -52,7 +52,6 @@ void* Mem_Alloc(const size_t size, const memTag_t tag);
 #endif
 char* Mem_CopyString(const char* in);
 
-
 void* operator new(size_t s);
 void  operator delete(void* p);
 void* operator new[](size_t s);
