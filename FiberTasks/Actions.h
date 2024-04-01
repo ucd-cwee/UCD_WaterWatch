@@ -860,13 +860,13 @@ namespace fibers {
 
 		static constexpr size_t NumInputs() noexcept { return NumArguments; };
 		static constexpr bool ReturnsNothing() {
-			static constexpr bool returnsNothing = std::is_same<ResultType, void>::value;
 			return returnsNothing;
 		};
 		const char* FunctionName() const {
 			return function.target_type().name();
 		};
 
+		static constexpr bool returnsNothing{ std::is_same<ResultType, void>::value };
 	};
 
 	/*! Supports forward-declaring a "cast" from an Any to the desired destination type. e.g: int& ref_int = any_obj.cast(); ... std::string str = any_obj.cast(); */

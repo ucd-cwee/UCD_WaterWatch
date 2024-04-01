@@ -547,6 +547,7 @@ namespace wi::jobsystem {
 	struct TaskQueue {
 		std::deque<Task> queue;
 		std::mutex locker;
+
 		inline void push(Task&& item) {
 			std::scoped_lock lock(locker);
 			queue.push_back(std::forward<Task>(item));
@@ -601,26 +602,32 @@ namespace wi::jobsystem {
 
 	// Start working on a job queue. After the job queue is finished, it can switch to an other queue and steal jobs from there
 	inline void work(uint32_t startingQueue) {
+		uint32_t i, j;
+		TaskQueue* job_queue;
 		Task job;
-		for (uint32_t i = 0; i < internal_state.numThreads; ++i) {
-			TaskQueue& job_queue = internal_state.jobQueuePerThread[startingQueue % internal_state.numThreads];
-			while (job_queue.try_pop(job))
-			{
-				JobArgs args;
+		JobArgs args{
+			0 // jobIndex
+			, 0 // groupID
+			, 0 // groupIndex
+			, false // isFirstJobInGroup
+			, false // isLastJobInGroup
+			, nullptr // sharedmemory
+		};
+
+		for (i = 0; i < internal_state.numThreads; ++i) {
+			job_queue = &internal_state.jobQueuePerThread[startingQueue % internal_state.numThreads];
+			while (job_queue->try_pop(job)) {
 				args.groupID = job.groupID;
-				if (job.sharedmemory_size > 0)
-				{
+				if (job.sharedmemory_size > 0) {
 					thread_local static std::vector<uint8_t> shared_allocation_data;
 					shared_allocation_data.reserve(job.sharedmemory_size);
 					args.sharedmemory = shared_allocation_data.data();
 				}
-				else
-				{
+				else {
 					args.sharedmemory = nullptr;
 				}
 
-				for (uint32_t j = job.groupJobOffset; j < job.groupJobEnd; ++j)
-				{
+				for (j = job.groupJobOffset; j < job.groupJobEnd; ++j) {
 					args.jobIndex = j;
 					args.groupIndex = j - job.groupJobOffset;
 					args.isFirstJobInGroup = (j == job.groupJobOffset);
@@ -652,17 +659,14 @@ namespace wi::jobsystem {
 		for (uint32_t threadID = 0; threadID < internal_state.numThreads; ++threadID)
 		{
 			internal_state.threads.emplace_back([threadID] {
-
-				while (internal_state.alive.load())
-				{
+				while (internal_state.alive.load()) {
 					work(threadID);
 
 					// finished with jobs, put to sleep
 					std::unique_lock<std::mutex> lock(internal_state.wakeMutex);
 					internal_state.wakeCondition.wait(lock);
 				}
-
-				});
+			});
 			std::thread& worker = internal_state.threads.back();
 
 #ifdef _WIN32
@@ -709,22 +713,14 @@ namespace wi::jobsystem {
 
 		std::cout << "wi::jobsystem Initialized with [" + std::to_string(internal_state.numCores) + " cores] [" + std::to_string(internal_state.numThreads) + " threads] (" + std::to_string((int)std::round(timer.elapsed())) + " ms)" << std::endl;
 	};
-
-	void ShutDown() {
-		internal_state.ShutDown();
-	};
-
-	uint32_t GetThreadCount() {
-		return internal_state.numThreads;
-	};
-
+	void ShutDown() { internal_state.ShutDown(); };
+	uint32_t GetThreadCount() { return internal_state.numThreads; };
 	void Execute(context& ctx, const std::function<void(JobArgs)>& task) {
 		// Context state is updated:
 		ctx.counter.fetch_add(1);
 		internal_state.jobQueuePerThread[internal_state.nextQueue.fetch_add(1) % internal_state.numThreads].push({ task, &ctx, 0, 0, 1, 0 });
 		internal_state.wakeCondition.notify_one();
 	};
-
 	void Dispatch(context& ctx, uint32_t jobCount, uint32_t groupSize, const std::function<void(JobArgs)>& task, size_t sharedmemory_size) {
 		if (jobCount == 0 || groupSize == 0) { return; }
 
@@ -745,17 +741,8 @@ namespace wi::jobsystem {
 
 		internal_state.wakeCondition.notify_all();
 	};
-
-	uint32_t DispatchGroupCount(uint32_t jobCount, uint32_t groupSize) {
-		// Calculate the amount of job groups to dispatch (overestimate, or "ceil"):
-		return (jobCount + groupSize - 1) / groupSize;
-	};
-
-	bool IsBusy(const context& ctx) {
-		// Whenever the context label is greater than zero, it means that there is still work that needs to be done
-		return ctx.counter.load() > 0;
-	};
-
+	uint32_t DispatchGroupCount(uint32_t jobCount, uint32_t groupSize) { return (jobCount + groupSize - 1) / groupSize; /* Calculate the amount of job groups to dispatch (overestimate, or "ceil"): */ };
+	bool IsBusy(const context& ctx) { return ctx.counter.load() > 0; /* Whenever the context label is greater than zero, it means that there is still work that needs to be done */ };
 	void Wait(const context& ctx) {
 		if (IsBusy(ctx)) {
 			// Wake any threads that might be sleeping:
@@ -785,7 +772,8 @@ namespace wi::jobsystem {
 		auto Dispatch(uint32_t jobCount, const std::function<void(JobArgs)>& task) { return wi::jobsystem::Dispatch(ctx, jobCount, (10000.0 / 400.0) * jobCount, task); };
 	};
 
-	/*  */
+	/* parallel_for (auto i = start; i < end; i++){ todo(i); }
+	If the todo(i) returns anything, it will be collected into a vector at the end. */
 	template<typename iteratorType, typename F> decltype(auto) parallel_for(iteratorType start, iteratorType end, F const& ToDo) {
 		constexpr bool retNo = std::is_same<typename fibers::utilities::function_traits<decltype(std::function(ToDo))>::result_type, void>::value;
 		
@@ -819,7 +807,8 @@ namespace wi::jobsystem {
 		}
 	};
 
-	/*  */
+	/* parallel_for (auto i = start; i < end; i += step){ todo(i); }
+	If the todo(i) returns anything, it will be collected into a vector at the end. */
 	template<typename iteratorType, typename F> decltype(auto) parallel_for(iteratorType start, iteratorType end, iteratorType step, F const& ToDo) {
 		constexpr bool retNo = std::is_same<typename fibers::utilities::function_traits<decltype(std::function(ToDo))>::result_type, void>::value;
 		
@@ -853,7 +842,8 @@ namespace wi::jobsystem {
 		}
 	};
 
-	/*  */
+	/* parallel_for (auto i = container.begin(); i != container.end(); i++){ todo(*i); }
+	If the todo(*i) returns anything, it will be collected into a vector at the end. */
 	template<typename containerType, typename F> decltype(auto) parallel_for_each(containerType& container, F const& ToDo) {
 		constexpr bool retNo = std::is_same<typename fibers::utilities::function_traits<decltype(std::function(ToDo))>::result_type, void>::value;
 		
@@ -866,8 +856,8 @@ namespace wi::jobsystem {
 			wi::jobsystem::TaskGroup group;
 
 			group.Dispatch(n, [&](wi::jobsystem::JobArgs args) {
-				std::advance(iterators[args.jobIndex], args.jobIndex);
-				ToDo(*iterators[args.jobIndex]);
+				std::advance(iterators[static_cast<int>(args.jobIndex)], args.jobIndex);
+				ToDo(*iterators[static_cast<int>(args.jobIndex)]);
 			});
 
 			group.Wait();
@@ -878,14 +868,13 @@ namespace wi::jobsystem {
 			if (n <= 0) return std::vector< returnT >();
 
 			std::vector<containerType::iterator> iterators(n, container.begin());
-
 			std::vector< returnT > out(n, returnT());
 
 			wi::jobsystem::TaskGroup group;
 
 			group.Dispatch(n, [&](wi::jobsystem::JobArgs args) {
-				std::advance(iterators[args.jobIndex], args.jobIndex);
-				out[args.jobIndex] = ToDo(*iterators[args.jobIndex]);
+				std::advance(iterators[static_cast<int>(args.jobIndex)], args.jobIndex);
+				out[static_cast<int>(args.jobIndex)] = ToDo(*iterators[static_cast<int>(args.jobIndex)]);
 			});
 
 			group.Wait();
@@ -894,7 +883,8 @@ namespace wi::jobsystem {
 		}
 	};
 
-	/*  */
+	/* parallel_for (auto i = container.cbegin(); i != container.cend(); i++){ todo(*i); }
+	If the todo(*i) returns anything, it will be collected into a vector at the end. */
 	template<typename containerType, typename F> decltype(auto) parallel_for_each(containerType const& container, F const& ToDo) {
 		constexpr bool retNo = std::is_same<typename fibers::utilities::function_traits<decltype(std::function(ToDo))>::result_type, void>::value;
 		
@@ -935,85 +925,176 @@ namespace wi::jobsystem {
 		}
 	};
 
+	class Action_Base {
+	public:
+		Action_Base() = default;
+		Action_Base(Action_Base const&) = delete;
+		Action_Base(Action_Base&&) = delete;
+		Action_Base& operator=(Action_Base const&) = delete;
+		Action_Base& operator=(Action_Base&&) = delete;
+		virtual ~Action_Base() = default;
+
+		virtual fibers::Any& GetResult() const = 0;
+		virtual fibers::Any& Invoke() = 0;
+		virtual const boost::typeindex::type_info& returnType() const = 0;
+		virtual std::string FunctionName() const = 0;		
+	};
+	template<typename F>
+	class Action_NoReturn final : public Action_Base {
+	private:
+		fibers::Function<F> func;
+
+	public:
+		Action_NoReturn() : Action_Base() {};
+		Action_NoReturn(fibers::Function<F>&& function) : Action_Base(), func(std::forward<fibers::Function<F>>(function)) {};
+		Action_NoReturn(Action_NoReturn const&) = delete;
+		Action_NoReturn(Action_NoReturn&&) = delete;
+		Action_NoReturn& operator=(Action_NoReturn const&) = delete;
+		Action_NoReturn& operator=(Action_NoReturn&&) = delete;
+		~Action_NoReturn() = default;
+
+		fibers::Any& GetResult() const override final {
+			if constexpr (decltype(func)::returnsNothing) {
+				static fibers::Any staticVal{};
+				return staticVal;
+			}
+			else {
+				throw(std::runtime_error("Action_NoReturn does not support returning anything."));
+			}
+		};
+		fibers::Any& Invoke() override final {
+			if constexpr (decltype(func)::returnsNothing) {
+				static fibers::Any staticVal{};
+				func.Invoke();
+				return staticVal;
+			}
+			else {
+				throw(std::runtime_error("Action_NoReturn does not support returning anything."));
+			}
+			
+		};
+		const boost::typeindex::type_info& returnType() const override final {
+			return boost::typeindex::type_id<void>().type_info();
+		};
+		std::string FunctionName() const override final {
+			return func.FunctionName();
+		};
+	};
+	template<typename F>
+	class Action_Returns final : public Action_Base {
+	private:
+		fibers::Function<F> func;
+		fibers::Any any;
+
+	public:
+		Action_Returns() : Action_Base(), any() {};
+		Action_Returns(fibers::Function<F>&& function) : Action_Base(), func(std::forward<fibers::Function<F>>(function)), any() {};
+		Action_Returns(Action_Returns const&) = delete;
+		Action_Returns(Action_Returns &&) = delete;
+		Action_Returns& operator=(Action_Returns const&) = delete;
+		Action_Returns& operator=(Action_Returns&&) = delete;		
+		~Action_Returns() = default;
+
+		fibers::Any& GetResult() const override final {
+			if constexpr (decltype(func)::returnsNothing) {
+				static fibers::Any staticVal{};
+				return staticVal;
+			}
+			else {
+				return any;
+			}
+
+		};
+		fibers::Any& Invoke() override final {
+			if constexpr (decltype(func)::returnsNothing) {
+				static fibers::Any staticVal{};
+				func.Invoke();
+				return staticVal;
+			}
+			else {
+				any = func();
+				return any;
+			}
+
+		};
+		const boost::typeindex::type_info& returnType() const override final {
+			return boost::typeindex::type_id<decltype(func)::ResultType>().type_info();
+		};
+		std::string FunctionName() const override final {
+			return func.FunctionName();
+		};
+	};
+
 	class JobGroup;
 
-	/*!
-	Class used to define and easily shared work that can be performed concurrently on in-line. e.g:
+	/*! Class used to define and easily shared work that can be performed concurrently on in-line. e.g:
 	int result1 = Job(&cweeMath::Ceil, 10.0f).Invoke().cast(); // Job takes function and up to 16 inputs. Invoke returns "Any" wraper. Any.cast() does the cast to the target destination, if the conversion makes sense.
 	float result2 = Job([](float& x)->float{ return x - 10.0f; }, 55.0f).Invoke().cast(); // Can also use lambdas instead of static function pointers.
-	Job([](){ return cweeStr("HELLO"); }).AsyncInvoke(); // Queues the job to take place on a fiber/thread, allowing you to continue work on this thread.
-	*/
+	Job([](){ return cweeStr("HELLO"); }).AsyncInvoke(); // Queues the job to take place on a fiber/thread, allowing you to continue work on this thread. */
 	class Job {
 		friend JobGroup;
 	protected:
-		mutable std::shared_ptr<Action> impl;
+		mutable std::shared_ptr<Action_Base> impl;
 
 	public:
-		Job() : impl(std::make_shared<Action>()) {};
+		Job() : impl(nullptr) {};
 		Job(const Job& other) : impl(other.impl) {};
-		Job(Job&& other) : impl(other.impl) {};
+		Job(Job&& other) : impl(std::move(other.impl)) {};
 		Job& operator=(const Job& other) { impl = other.impl; return *this; };
 		Job& operator=(Job&& other) { impl = std::move(other.impl); return *this; };
-		template < typename T, typename... Args, typename = std::enable_if_t< !std::is_same_v<Job, std::decay_t<T>> && !std::is_same_v<Any, std::decay_t<T>> >>
-		explicit Job(T function, Args && ... Fargs) : impl(new Action(function, std::forward<Args>(Fargs)...)) {};
+		template < typename T, typename... Args, typename = std::enable_if_t< !std::is_same_v<Job, std::decay_t<T>> && !std::is_same_v<fibers::Any, std::decay_t<T>> >>
+		explicit Job(T&& function, Args && ... Fargs) : impl(nullptr) {
+			auto func{ fibers::Function(std::function(std::forward<T>(function)), std::forward<Args>(Fargs)...) };
+			if constexpr (decltype(func)::returnsNothing) {
+				auto* action{ new Action_NoReturn(std::move(func)) }; // create ptr
+				impl = std::static_pointer_cast<Action_Base>(std::shared_ptr<typename std::remove_pointer_t<decltype(action)>>(std::move(action))); // move to smart ptr and then cast-down to base. Base handle counter will do destruction
+			}
+			else {
+				auto* action{ new Action_Returns(std::move(func)) }; // create ptr
+				impl = std::static_pointer_cast<Action_Base>(std::shared_ptr<typename std::remove_pointer_t<decltype(action)>>(std::move(action))); // move to smart ptr and then cast-down to base. Base handle counter will do destruction
+			}
+		};
 		~Job() = default;
 
 	public:
-		/* Do the task immediately, without using any thread/fiber tools. Does not do the task if it has been previously performed. */
-		Any Invoke() const noexcept {
-			Any out;
+		/* Do the task immediately, without using any thread/fiber tools. */
+		fibers::Any& Invoke() const noexcept {
+			static fibers::Any staticVal{};
 			if (impl) {
-				out = impl->Invoke();
+				return impl->Invoke();
 			}
-			return out;
-		};
-
-		/* Do the task immediately, without using any thread/fiber tools, whether or not it has been performed before. */
-		Any ForceInvoke() const noexcept {
-			Any out;
-			if (impl) {
-				out = impl->ForceInvoke();
+			else {
+				return staticVal;
 			}
-			return out;
 		};
 
 		/* Add the task to a thread / fiber, and retrieve an awaiter group. Does not do the task if it has been previously performed. */
-		JobGroup AsyncInvoke();
+		NODISCARD JobGroup AsyncInvoke();
 
-		/* Add the task to a thread / fiber, and retrieve an awaiter group, whether or not it has been performed before. */
-		JobGroup AsyncForceInvoke();
+		/* Fire and forget */
+		void AsyncFireAndForget();
 
 		/* Returns the potential name of the static function, if one was provided. */
-		const char* FunctionName() const {
+		std::string FunctionName() const {
+			static std::string staticVal{""};
 			if (impl) {
 				return impl->FunctionName();
 			}
-			return "";
+			return staticVal;
 		};
 
 		/* Returns the result of the job, if any. If the job has not been previously completed, it will perform the job. */
-		Any GetResult() {
-			return Invoke();
+		fibers::Any& GetResult() {
+			static fibers::Any staticVal{};
+			if (impl) {
+				return impl->GetResult();
+			}
+			return staticVal;
 		};
 
 		/* Returns the result of the job, if any. If the job has not been previously completed, it will perform the job. */
-		Any operator()() {
+		fibers::Any& operator()() {
 			return Invoke();
-		};
-
-		/* Checks if the job has been completed before */
-		bool IsFinished() const {
-			if (impl) {
-				return impl->IsFinished();
-			}
-			return true;
-		};
-
-		bool ReturnsNothing() const {
-			if (impl) {
-				return impl->ReturnsNothing();
-			}
-			return true;
 		};
 	};
 
@@ -1026,7 +1107,6 @@ namespace wi::jobsystem {
 			std::shared_ptr<void> waitGroup;
 			fibers::containers::vector<Job> jobs;
 
-
 			JobGroupImpl() : waitGroup(nullptr), jobs() {};
 			JobGroupImpl(std::shared_ptr<void> wg) : waitGroup(wg), jobs() {};
 			JobGroupImpl(JobGroupImpl const&) = delete;
@@ -1035,13 +1115,9 @@ namespace wi::jobsystem {
 			JobGroupImpl& operator=(JobGroupImpl&&) = delete;
 
 			void Queue(Job const& job);
-			void ForceQueue(Job const& job);
 			void Queue(std::vector<Job> const& listOfJobs);
-			void ForceQueue(std::vector<Job> const& listOfJobs);
 			void Wait();
-			~JobGroupImpl() {
-				// Wait(); // any jobs queued with this waiter will want to talk w/it when finished -- we must wait to ensure they go out of scope before we do.
-			};
+			~JobGroupImpl() { Wait(); };
 		};
 
 	public:
@@ -1061,19 +1137,10 @@ namespace wi::jobsystem {
 			impl->Queue(job);
 			return *this;
 		};
-		/* Queue job, and return tool to await the result */
-		JobGroup& ForceQueue(Job const& job) {
-			impl->ForceQueue(job);
-			return *this;
-		};
+
 		/* Queue jobs, and return tool to await the results */
 		JobGroup& Queue(std::vector<Job> const& listOfJobs) {
 			impl->Queue(listOfJobs);
-			return *this;
-		};
-		/* Queue jobs, and return tool to await the results */
-		JobGroup& ForceQueue(std::vector<Job> const& listOfJobs) {
-			impl->ForceQueue(listOfJobs);
 			return *this;
 		};
 
@@ -1119,14 +1186,6 @@ namespace wi::jobsystem {
 		});
 		jobs.push_back(job);
 	};
-	void JobGroup::JobGroupImpl::ForceQueue(Job const& job) {
-		std::shared_ptr<TaskGroup> wg = std::static_pointer_cast<TaskGroup>(waitGroup);
-		if (!wg) throw(std::runtime_error("Job Group was empty."));
-		wg->Queue([impl = job.impl](JobArgs args) {
-			impl->ForceInvoke();
-		});
-		jobs.push_back(job);
-	};
 	void JobGroup::JobGroupImpl::Queue(std::vector<Job> const& listOfJobs) {
 		std::shared_ptr<TaskGroup> wg = std::static_pointer_cast<TaskGroup>(waitGroup);
 		if (!wg) throw(std::runtime_error("Job Group was empty."));
@@ -1139,31 +1198,24 @@ namespace wi::jobsystem {
 			jobs.push_back(j);
 		}
 	};
-	void JobGroup::JobGroupImpl::ForceQueue(std::vector<Job> const& listOfJobs) {
-		std::shared_ptr<TaskGroup> wg = std::static_pointer_cast<TaskGroup>(waitGroup);
-		if (!wg) throw(std::runtime_error("Job Group was empty."));
-
-		wg->Dispatch(listOfJobs.size(), [listOfJobs](JobArgs args) {
-			listOfJobs[args.jobIndex].ForceInvoke();
-		});
-
-		for (Job const& j : listOfJobs) {
-			jobs.push_back(j);
-		}
-	};
 	void JobGroup::JobGroupImpl::Wait() {
 		std::shared_ptr<TaskGroup> wg = std::static_pointer_cast<TaskGroup>(waitGroup);
 		if (!wg) throw(std::runtime_error("Job Group was empty."));
 		wg->Wait();
 	};
-	JobGroup Job::AsyncInvoke() { return JobGroup(*this); };
-	JobGroup Job::AsyncForceInvoke() { return JobGroup(*this); };
-
+	NODISCARD JobGroup Job::AsyncInvoke() { return JobGroup(*this); };
+	void Job::AsyncFireAndForget() {
+		std::shared_ptr< context > ctx = std::make_shared<context>();
+		ctx->counter.fetch_add(1);
+		wi::jobsystem::Execute(*ctx, [action = this->impl, context = ctx](JobArgs args) {
+			context->counter.fetch_add(-1);
+			action->Invoke();
+		});
+	};
 
 };
 namespace wi {
-	struct timer
-	{
+	struct timer {
 		std::string name;
 		std::chrono::high_resolution_clock::time_point start;
 
@@ -1174,8 +1226,7 @@ namespace wi {
 			std::cout << name << ": " << std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count() << " milliseconds" << std::endl;
 		}
 	};
-	void Spin(float milliseconds)
-	{
+	void Spin(float milliseconds) {
 		milliseconds /= 1000.0f;
 		std::chrono::high_resolution_clock::time_point t1 = std::chrono::high_resolution_clock::now();
 		double ms = 0;
@@ -2288,6 +2339,8 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 				wi::jobsystem::parallel_for(0, numLoops, [&pat, &j](int i) {
 					for (int k = 0; k < j; k++)
 						pat.AddValue(i + k, i + k);
+
+					return i;
 				});
 
 				cweeUnitValues::second timePassed = sw.Stop() / 1000000000.0;
@@ -2302,13 +2355,16 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 				Stopwatch sw; sw.Start();
 
 				wi::jobsystem::JobGroup group;
+				std::vector< wi::jobsystem::Job > jobs;
 				for (int i = 0; i < numLoops; i++) {
-					group.Queue(wi::jobsystem::Job([&pat, &j](int i) {
+					auto job{ wi::jobsystem::Job([&pat, &j](int i) {
 						for (int k = 0; k < j; k++) {
 							pat.AddValue(i + k, i + k);
 						}
-					}, (int)i));
+					}, i) };
+					jobs.push_back(std::move(job));
 				}
+				group.Queue(jobs);
 				group.Wait();
 
 				cweeUnitValues::second timePassed = sw.Stop() / 1000000000.0;
@@ -2564,6 +2620,28 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 
 			printf("SpeedTest (atomic int) ");
 			std::cout << j;
+			printf(" (Wicked Fibers, jobs) : ");
+			{
+				std::atomic<int> count;
+				Stopwatch sw; sw.Start();
+
+				wi::jobsystem::JobGroup group;
+				std::vector< wi::jobsystem::Job > jobs;
+				for (int i = 0; i < numLoops; i++) {
+					jobs.push_back(wi::jobsystem::Job([&count, &j](int i) {
+						for (int k = 0; k < j; k++)
+							count.fetch_add(k);
+					}, (int)i));
+				}
+				group.Queue(jobs);
+				group.Wait();
+
+				cweeUnitValues::second timePassed = sw.Stop() / 1000000000.0;
+				std::cout << timePassed.ToString() << " (num = " << count.load() << ")" << std::endl;
+			}
+
+			printf("SpeedTest (atomic int) ");
+			std::cout << j;
 			printf(" (Fibers, Idealized) : ");
 			{
 				std::atomic<int> pat;
@@ -2734,6 +2812,29 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 					for (int k = 0; k < j; k++)
 						i = cweeStr(k);
 				});
+
+				cweeUnitValues::second timePassed = sw.Stop() / 1000000000.0;
+				std::cout << timePassed.ToString() << std::endl;
+			}
+
+			printf("SpeedTest (vector overwriting) ");
+			std::cout << j;
+			printf(" (Wicked Fibers, jobs) : ");
+			{
+				std::vector<cweeStr> vec(numLoops, cweeStr("TEST"));
+
+				Stopwatch sw; sw.Start();
+
+				wi::jobsystem::JobGroup group;
+				std::vector< wi::jobsystem::Job > jobs;
+				for (int i = 0; i < numLoops; i++) {
+					jobs.push_back(wi::jobsystem::Job([&vec, &j](int i) {
+						for (int k = 0; k < j; k++)
+							vec[i] = cweeStr(k);
+					}, (int)i));
+				}
+				group.Queue(jobs);
+				group.Wait();
 
 				cweeUnitValues::second timePassed = sw.Stop() / 1000000000.0;
 				std::cout << timePassed.ToString() << std::endl;
