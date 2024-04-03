@@ -1111,194 +1111,106 @@ namespace fibers {
 	__forceinline decltype(auto) Any::Object_Data::get(const AnyAutoCast& obj) { Any* t = const_cast<Any*>(obj.parent); std::shared_ptr<AnyData> out; if (t) { out = t->container; } return out; };
 	__forceinline decltype(auto) Any::Object_Data::get(const AnyAutoCast* t) { return get(*t); };
 
-	namespace {
-		class Action_Interface {
-		public:
-			virtual ~Action_Interface() = default;
 
-			virtual boost::typeindex::type_info const& type() const noexcept { return boost::typeindex::type_id<void>().type_info(); };
-			virtual const char* typeName() const noexcept { return ""; };
-			virtual Action_Interface* clone() const noexcept {
-				return new Action_Interface();
-			};
-			virtual fibers::Any& Invoke() noexcept { static fibers::Any staticTemp{}; return staticTemp; };
-			virtual fibers::Any& ForceInvoke() noexcept { static fibers::Any staticTemp{}; return staticTemp; };
-			virtual const char* FunctionName() const noexcept { return ""; };
-			virtual const fibers::Any& Result() const noexcept { static fibers::Any staticTemp{}; return staticTemp; };
-			virtual bool IsFinished() const noexcept { return true; };
-			virtual bool ReturnsNothing() const noexcept { return true; };
-			virtual std::function<void(Action_Interface*)>& deleter() const noexcept {
-				static auto deleteFunc{ std::function<void(Action_Interface*)>([](Action_Interface* p) {
-					if (p) {
-						delete p;
-					}
-				}) };
-				return deleteFunc;
-			};
-		};
-		template<typename ValueType> class Action_Impl final : public Action_Interface {
-		private:
-			using ReturnType = typename Function<ValueType>::ResultType;
-			static constexpr bool returnsNothing{ std::is_same<ReturnType, void>::value };
+	class Action_Base {
+	public:
+		Action_Base() = default;
+		Action_Base(Action_Base const&) = delete;
+		Action_Base(Action_Base&&) = delete;
+		Action_Base& operator=(Action_Base const&) = delete;
+		Action_Base& operator=(Action_Base&&) = delete;
+		virtual ~Action_Base() = default;
 
-		public:
-			Action_Impl() : Action_Interface() {};
-			Action_Impl(Function<ValueType> const& f) noexcept : Action_Interface(), data(f), result(), running(false), finished(false) {};
-			Action_Impl(Function<ValueType>&& f) noexcept : Action_Interface(), data(std::forward<Function<ValueType>>(f)), result(), running(false), finished(false) {};
-
-			boost::typeindex::type_info const& type() const noexcept override final {
-				return boost::typeindex::type_id<Function<ValueType>>().type_info();
-			};
-			const char* typeName() const noexcept final {
-				return boost::typeindex::type_id<Function<ValueType>>().type_info().name();
-			};
-			Action_Interface* clone() const noexcept override final {
-				return dynamic_cast<Action_Interface*>(new Action_Impl<ValueType>(data));
-			};
-			fibers::Any& Invoke() noexcept override final {
-				if (finished.load()) return result;
-				bool compare(false);
-				if (running.compare_exchange_strong(compare, true)) {
-					if constexpr (returnsNothing) {
-						data();
-					}
-					else {
-						result = fibers::Any(data());
-					}
-					finished.store(true);
-					running.store(false);
-				}
-				else {
-					while (running.load()) {}
-				}
-				return result;
-			};
-			fibers::Any& ForceInvoke() noexcept override final {
-				if constexpr (returnsNothing) {
-					data();
-				}
-				else {
-					result = fibers::Any(data());
-				}
-				return result;
-			};
-			const char* FunctionName() const noexcept override final {
-				return data.FunctionName();
-			};
-			const fibers::Any& Result() const noexcept override final {
-				return result;
-			};
-			bool IsFinished() const noexcept override final {
-				return finished.load();
-			};
-			bool ReturnsNothing() const noexcept override final {
-				return data.ReturnsNothing();
-			};
-			std::function<void(Action_Interface*)>& deleter() const noexcept override final {
-				static auto deleteFunc{ std::function<void(Action_Interface*)>([](Action_Interface* p) {
-					if (p) {
-						auto* p2 = dynamic_cast<Action_Impl<ValueType>*>(p);
-						if (p2) {
-							delete p2;
-						}
-						else {
-							delete p;
-						}
-					}
-				}) };
-				return deleteFunc;
-			};
-
-			Function<ValueType> data;
-			fibers::Any result;
-			std::atomic<bool> running;
-			std::atomic<bool> finished;
-		};
+		virtual const fibers::Any& GetResult() const = 0;
+		virtual fibers::Any& Invoke() = 0;
+		virtual const boost::typeindex::type_info& returnType() const = 0;
+		virtual std::string FunctionName() const = 0;
 	};
+	template<typename F>
+	class Action_NoReturn final : public Action_Base {
+	private:
+		fibers::Function<F> func;
 
-	/* Wrapper for Function<> which allows for sharing and capture of lambdas, functions, etc. that can be evaluated at later times/date/threads/fibers. e.g:
-	. auto f = Action([](int i, double x)->int{ return i+x; }, 10, 0.0);
-	. int value = f.Invoke().cast();
-	. assert(value == 10); */
-	class Action {
-	public: // structors
-		/*! Init */ Action() noexcept : content(nullptr) {};
-		/*! Copy */ Action(const Action& other) noexcept : content(other.content ? other.content->clone() : nullptr) {};
-		/*! Perfect forwarding */ Action(Action&& other) noexcept : content(std::move(other.content)) {};
-		/*! Data Assignment */ template<typename ValueType> explicit Action(Function<ValueType>&& value) : content(ToPtr<ValueType>(std::forward< Function<ValueType>>(value))) {};
-		/*! Direct instantiation2 */ template <typename F, typename... Args> Action(F&& function, Args &&... Fargs) : Action(Function(std::function(std::forward<F>(function)), std::forward<Args>(Fargs)...)) {};
-		~Action() {
-			if (content) {
-				auto& deleter = content->deleter();
-				deleter(content);
+	public:
+		Action_NoReturn() : Action_Base() {};
+		Action_NoReturn(fibers::Function<F>&& function) : Action_Base(), func(std::forward<fibers::Function<F>>(function)) {};
+		Action_NoReturn(Action_NoReturn const&) = delete;
+		Action_NoReturn(Action_NoReturn&&) = delete;
+		Action_NoReturn& operator=(Action_NoReturn const&) = delete;
+		Action_NoReturn& operator=(Action_NoReturn&&) = delete;
+		~Action_NoReturn() = default;
+
+		const fibers::Any& GetResult() const override final {
+			if constexpr (decltype(func)::returnsNothing) {
+				static fibers::Any staticVal{};
+				return staticVal;
+			}
+			else {
+				throw(std::runtime_error("Action_NoReturn does not support returning anything."));
 			}
 		};
+		fibers::Any& Invoke() override final {
+			if constexpr (decltype(func)::returnsNothing) {
+				static fibers::Any staticVal{};
+				func.Invoke();
+				return staticVal;
+			}
+			else {
+				throw(std::runtime_error("Action_NoReturn does not support returning anything."));
+			}
 
-	public: // modifiers
-		/*! Copy Data */ Action& operator=(const Action& rhs) = delete;
-		/*! Move Data */ Action& operator=(Action&& rhs) = delete;
-
-	public: // queries
-		explicit operator bool() { return !IsEmpty(); };
-		explicit operator bool() const { return !IsEmpty(); };
-
-		/*! Checks if the Action has been assigned something */
-		bool IsEmpty() const noexcept { return !content; };
-
-		template <typename ValueT> static constexpr const char* TypeNameOf() { return utilities::typenames::type_name<ValueT>(); };
-		template <typename ValueT> static const boost::typeindex::type_info& TypeOf() { return boost::typeindex::type_id<ValueT>().type_info(); };
-
-		const char* TypeName() const noexcept {
-			static const char* staticVal{ "" };
-			if (content) return content->typeName();
-			return staticVal;
 		};
-		const boost::typeindex::type_info& Type() const noexcept {
-			static const boost::typeindex::type_info& staticVal{ boost::typeindex::type_id<void>().type_info() };
-			if (content) return content->type();
-			return staticVal;
+		const boost::typeindex::type_info& returnType() const override final {
+			return boost::typeindex::type_id<void>().type_info();
 		};
-
-	private:
-		template <class ValueType> static Action_Interface* ToPtr(Function<ValueType>&& rhs) noexcept {
-			return dynamic_cast<Action_Interface*>(new Action_Impl<ValueType>(std::forward<Function<ValueType>>(rhs)));
-		};
-
-	public:
-		Action_Interface* content;
-
-	public:
-		fibers::Any& operator()() {
-			return Invoke();
-		};
-		fibers::Any& Invoke() {
-			static fibers::Any staticVal{};
-			if (content) return content->Invoke();
-			return staticVal;
-		};
-		fibers::Any& ForceInvoke() {
-			static fibers::Any staticVal{};
-			if (content) return content->ForceInvoke();
-			return staticVal;
-		};
-		const char* FunctionName() const {
-			static const char* staticVal{ "" };
-			if (content) return content->FunctionName();
-			return staticVal;
-		};
-		bool     IsFinished() const {
-			if (content) return content->IsFinished();
-			return true;
-		};
-		bool     ReturnsNothing() const {
-			if (content) return content->ReturnsNothing();
-			return true;
-		};
-		const fibers::Any& Result() const {
-			static fibers::Any staticVal{};
-			if (content) return content->Result();
-			return staticVal;
+		std::string FunctionName() const override final {
+			return func.FunctionName();
 		};
 	};
+	template<typename F>
+	class Action_Returns final : public Action_Base {
+	private:
+		fibers::Function<F> func;
+		fibers::Any any;
+
+	public:
+		Action_Returns() : Action_Base(), any() {};
+		Action_Returns(fibers::Function<F>&& function) : Action_Base(), func(std::forward<fibers::Function<F>>(function)), any() {};
+		Action_Returns(Action_Returns const&) = delete;
+		Action_Returns(Action_Returns&&) = delete;
+		Action_Returns& operator=(Action_Returns const&) = delete;
+		Action_Returns& operator=(Action_Returns&&) = delete;
+		~Action_Returns() = default;
+
+		const fibers::Any& GetResult() const override final {
+			if constexpr (decltype(func)::returnsNothing) {
+				static fibers::Any staticVal{};
+				return staticVal;
+			}
+			else {
+				return any;
+			}
+
+		};
+		fibers::Any& Invoke() override final {
+			if constexpr (decltype(func)::returnsNothing) {
+				static fibers::Any staticVal{};
+				func.Invoke();
+				return staticVal;
+			}
+			else {
+				any = func();
+				return any;
+			}
+
+		};
+		const boost::typeindex::type_info& returnType() const override final {
+			return boost::typeindex::type_id<decltype(func)::ResultType>().type_info();
+		};
+		std::string FunctionName() const override final {
+			return func.FunctionName();
+		};
+	};
+
 
 };

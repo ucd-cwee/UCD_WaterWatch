@@ -4344,7 +4344,7 @@ namespace epanet {
             }
             numN = net->Nlinks;
             
-#if 0
+#if 1
             fibers::parallel::For(1, numN, [&links, &currentTime, &hyd, &t, &pr, &net](int i) {
                 auto& obj = links[i];
                 if (obj) {

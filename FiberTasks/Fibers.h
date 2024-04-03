@@ -45,6 +45,19 @@
 #define NOMINMAX
 #define _CRT_FUNCTIONS_REQUIRED 1
 #define _SILENCE_CXX17_ITERATOR_BASE_CLASS_DEPRECATION_WARNING
+#include <functional>
+#include <atomic>
+#include <thread>
+#include <emmintrin.h> // _mm_pause()
+#include <chrono>
+#include <string>
+#include <memory>
+#include <algorithm>
+#include <deque>
+#include <string>
+#include <thread>
+#include <mutex>
+#include <condition_variable>
 #include <ShlDisp.h>
 #include <mutex>
 #include <shared_mutex>
@@ -56,6 +69,9 @@
 #include <concurrent_queue.h>
 #include <concurrent_unordered_set.h>
 #include <boost/any.hpp>
+#include <cstdint>
+#include <type_traits>
+
 #pragma endregion
 #pragma region iterator_definition
 #ifdef SETUP_STL_ITERATOR
@@ -169,7 +185,7 @@
 
 #include "Actions.h"
 #include "Concurrent_Queue.h"
-namespace fibers{
+namespace fibers {
 	namespace utilities {
 		class Hardware {
 		public:
@@ -177,7 +193,6 @@ namespace fibers{
 			static float GetPercentCpuLoad();
 		};
 	};
-
 	namespace containers {
 		/* Fiber- and thread-safe vector. Objects are stored and returned as std::shared_ptr. Growth, iterations, and push_back operations are concurrent, while erasing and clearing are non-concurrent and will replace the entire vector. */
 		template<typename _Ty>
@@ -443,100 +458,223 @@ namespace fibers{
 
 		template<typename _Key_type> using unordered_set = concurrency::concurrent_unordered_set<_Key_type>; /* Wrapper To-Do */
 		template<typename _Value_type> using queue = moodycamel::ConcurrentQueue<_Value_type>; //  concurrency::concurrent_queue<_Value_type>; /* Wrapper To-Do */
-    };
+	};
 
-	/*! Class used to queue and await one or multiple jobs submitted to a concurrent fiber manager. */
+	namespace synchronization {
+		class SpinLock {
+		private:
+			std::atomic_flag lck = ATOMIC_FLAG_INIT;
+		public:
+			inline void lock() {
+				int spin = 0;
+				while (!try_lock())
+				{
+					if (spin < 10)
+					{
+						_mm_pause(); // SMT thread swap can occur here
+					}
+					else
+					{
+						std::this_thread::yield(); // OS thread swap can occur here. It is important to keep it as fallback, to avoid any chance of lockup by busy wait
+					}
+					spin++;
+				}
+			};
+			inline bool try_lock() {
+				return !lck.test_and_set(std::memory_order_acquire);
+			};
+
+			inline void unlock() {
+				lck.clear(std::memory_order_release);
+			};
+		};
+	};
+
+	namespace impl {
+		bool Initialize(uint32_t maxThreadCount = ~0u);
+		void ShutDown();
+
+		struct JobArgs
+		{
+			uint32_t jobIndex;		// job index relative to dispatch (like SV_DispatchThreadID in HLSL)
+			uint32_t groupID;		// group index relative to dispatch (like SV_GroupID in HLSL)
+			uint32_t groupIndex;	// job index relative to group (like SV_GroupIndex in HLSL)
+			bool isFirstJobInGroup;	// is the current job the first one in the group?
+			bool isLastJobInGroup;	// is the current job the last one in the group?
+			void* sharedmemory;		// stack memory shared within the current group (jobs within a group execute serially)
+		};
+
+		uint32_t GetThreadCount();
+
+		// Defines a state of execution, can be waited on
+		struct context
+		{
+			std::atomic<uint32_t> counter{ 0 };
+		};
+		struct Task {
+			std::function<void(JobArgs)> task;
+			context* ctx;
+			uint32_t groupID;
+			uint32_t groupJobOffset;
+			uint32_t groupJobEnd;
+			uint32_t sharedmemory_size;
+		};
+		struct TaskQueue {
+			std::deque<Task> queue;
+			std::mutex locker;
+
+			inline void push(Task&& item) {
+				std::scoped_lock lock(locker);
+				queue.push_back(std::forward<Task>(item));
+			};
+			inline void push(const Task& item) {
+				std::scoped_lock lock(locker);
+				queue.push_back(item);
+			};
+			inline bool try_pop(Task& item) {
+				std::scoped_lock lock(locker);
+				if (queue.empty()) return false;
+				item = std::move(queue.front());
+				queue.pop_front();
+				return true;
+			};
+		};
+		struct InternalState {
+			uint32_t numCores = 0;
+			uint32_t numThreads = 0;
+			std::unique_ptr<TaskQueue[]> jobQueuePerThread;
+			std::atomic_bool alive{ true };
+			std::condition_variable wakeCondition;
+			std::mutex wakeMutex;
+			std::atomic<uint32_t> nextQueue{ 0 };
+			std::vector<std::thread> threads;
+			void ShutDown() {
+				alive.store(false); // indicate that new jobs cannot be started from this point
+				bool wake_loop = true;
+				std::thread waker([&] {
+					while (wake_loop)
+					{
+						wakeCondition.notify_all(); // wakes up sleeping worker threads
+					}
+					});
+				for (auto& thread : threads)
+				{
+					thread.join();
+				}
+				wake_loop = false;
+				waker.join();
+				jobQueuePerThread.reset();
+				threads.clear();
+				numCores = 0;
+				numThreads = 0;
+			};
+			~InternalState() {
+				ShutDown();
+			};
+		} static internal_state;
+
+		// Add a task to execute asynchronously. Any idle thread will execute this.
+		void Execute(context& ctx, const std::function<void(JobArgs)>& task);
+
+		// Divide a task onto multiple jobs and execute in parallel.
+		//	jobCount	: how many jobs to generate for this task.
+		//	groupSize	: how many jobs to execute per thread. Jobs inside a group execute serially. It might be worth to increase for small jobs
+		//	task		: receives a JobArgs as parameter
+		void Dispatch(context& ctx, uint32_t jobCount, uint32_t groupSize, const std::function<void(JobArgs)>& task, size_t sharedmemory_size = 0);
+
+		// Returns the amount of job groups that will be created for a set number of jobs and group size
+		uint32_t DispatchGroupCount(uint32_t jobCount, uint32_t groupSize);
+
+		// Check if any threads are working currently or not
+		bool IsBusy(const context& ctx);
+
+		// Wait until all threads become idle
+		//	Current thread will become a worker thread, executing jobs
+		void Wait(const context& ctx);
+
+		struct TaskGroup {
+		private:
+			context ctx;
+
+		public:
+			auto Wait() const { return impl::Wait(ctx); };
+			auto IsBusy() const { return impl::IsBusy(ctx); };
+			auto Queue(const std::function<void(JobArgs)>& task) { return impl::Execute(ctx, task); };
+			auto Dispatch(uint32_t jobCount, const std::function<void(JobArgs)>& task) { return impl::Dispatch(ctx, jobCount, (10000.0 / 400.0) * jobCount, task); };
+		};
+	};
+
 	class JobGroup;
 
-	/*!
-	Class used to define and easily shared work that can be performed concurrently on in-line. e.g:
-	int result1 = Job(&cweeMath::Ceil, 10.0f).Invoke().cast(); // Job takes function and up to 16 inputs. Invoke returns "Any" wraper. Any.cast() does the cast to the target destination, if the conversion makes sense.
+	/*! Class used to define and easily shared work that can be performed concurrently on in-line. e.g:
+	int result1 = Job(&cweeMath::Ceil, 10.0f).Invoke().cast(); // Job takes function and up to 16 inputs. Invoke returns "Any" wrapper. Any.cast() does the cast to the target destination, if the conversion makes sense.
 	float result2 = Job([](float& x)->float{ return x - 10.0f; }, 55.0f).Invoke().cast(); // Can also use lambdas instead of static function pointers.
-	Job([](){ return cweeStr("HELLO"); }).AsyncInvoke(); // Queues the job to take place on a fiber/thread, allowing you to continue work on this thread.
-	*/
+	auto __awaiter__ = Job([](){ return cweeStr("HELLO"); }).AsyncInvoke(); // Queues the job to take place on a fiber/thread, and guarrantees its completion before the scope ends. */
 	class Job {
 		friend JobGroup;
 	protected:
-		mutable std::shared_ptr<Action> impl;
+		mutable std::shared_ptr<fibers::Action_Base> impl;
 
 	public:
-		Job() : impl(std::make_shared<Action>()) {};
+		Job() : impl(nullptr) {};
 		Job(const Job& other) : impl(other.impl) {};
-		Job(Job&& other) : impl(other.impl) {};
+		Job(Job&& other) : impl(std::move(other.impl)) {};
 		Job& operator=(const Job& other) { impl = other.impl; return *this; };
 		Job& operator=(Job&& other) { impl = std::move(other.impl); return *this; };
-		template < typename T, typename... Args, typename = std::enable_if_t< !std::is_same_v<Job, std::decay_t<T>> && !std::is_same_v<Any, std::decay_t<T>> >>
-		explicit Job(T function, Args && ... Fargs) : impl(new Action(function, std::forward<Args>(Fargs)...)) {};
+
+		/* Creates a job from a function and (optionally) input parameters. Can handle basic type-casting from inputs to parameters, and supports shared_ptr casting (to and from). */
+		template < typename T, typename... Args, typename = std::enable_if_t< !std::is_same_v<Job, std::decay_t<T>> && !std::is_same_v<fibers::Any, std::decay_t<T>> >> explicit Job(T&& function, Args && ... Fargs) : impl(nullptr) {
+			auto func{ fibers::Function(std::function(std::forward<T>(function)), std::forward<Args>(Fargs)...) };
+			if constexpr (decltype(func)::returnsNothing) {
+				auto* action{ new fibers::Action_NoReturn(std::move(func)) }; // create ptr
+				impl = std::static_pointer_cast<fibers::Action_Base>(std::shared_ptr<typename std::remove_pointer_t<decltype(action)>>(std::move(action))); // move to smart ptr and then cast-down to base. Base handle counter will do destruction
+			}
+			else {
+				auto* action{ new fibers::Action_Returns(std::move(func)) }; // create ptr
+				impl = std::static_pointer_cast<fibers::Action_Base>(std::shared_ptr<typename std::remove_pointer_t<decltype(action)>>(std::move(action))); // move to smart ptr and then cast-down to base. Base handle counter will do destruction
+			}
+		};
 		~Job() = default;
 
 	public:
-		/* Do the task immediately, without using any thread/fiber tools. Does not do the task if it has been previously performed. */
-		Any Invoke() noexcept {
-			Any out;
+		/* Do the task immediately, without using any thread/fiber tools, and returns the result (if any). */
+		fibers::Any& Invoke() const noexcept {
+			static fibers::Any staticVal{};
 			if (impl) {
-				out = impl->Invoke();
+				return impl->Invoke();
 			}
-			return out;
+			else {
+				return staticVal;
+			}
 		};
 
-		/* Do the task immediately, without using any thread/fiber tools, whether or not it has been performed before. */
-		Any ForceInvoke() noexcept {
-			Any out;
-			if (impl) {
-				out = impl->ForceInvoke();
-			}
-			return out;
-		};
+		/* Add the task to a thread / fiber, and retrieve an awaiter group. The awaiter group guarrantees job completion before the awaiter or job goes out-of-scope. Useful for most basic task scheduling. */
+		[[nodiscard]] JobGroup AsyncInvoke();
 
-		/* Add the task to a thread / fiber, and retrieve an awaiter group. Does not do the task if it has been previously performed. */
-		JobGroup AsyncInvoke();
+		/* Add the task to a thread / fiber, and then "forgets" the job. CAUTION: user is responsible for guarranteeing that all data used by the job outlives the job itself, if using this mode of tasking. */
+		void AsyncFireAndForget();
 
-		/* Add the task to a thread / fiber, and retrieve an awaiter group, whether or not it has been performed before. */
-		JobGroup AsyncForceInvoke();
-
-		/* Queue job, and return tool to await the result */
-		void DelayedInvoke(double milliseconds_delay);
-
-		/* Queue job, and return tool to await the result */
-		void DelayedForceInvoke(double milliseconds_delay);
-
-		/* Queues the job onto a new thread to take place in the future */
-		void AsyncDelayedInvoke(double milliseconds_delay);
-
-		/* Queues the job onto a new thread to take place in the future */
-		void AsyncDelayedForceInvoke(double milliseconds_delay);
-
-		/* Returns the potential name of the static function, if one was provided. */
-		const char* FunctionName() const {
+		/* Returns the potential name of the static function, if one is known. */
+		std::string FunctionName() const {
+			static std::string staticVal{ "" };
 			if (impl) {
 				return impl->FunctionName();
 			}
-			return "";
+			return staticVal;
 		};
 
-		/* Returns the result of the job, if any. If the job has not been previously completed, it will perform the job. */
-		Any GetResult() {
-			return Invoke();
-		};
-
-		/* Returns the result of the job, if any. If the job has not been previously completed, it will perform the job. */
-		Any operator()() {
-			return Invoke();
-		};
-
-		/* Checks if the job has been completed before */
-		bool IsFinished() const {
+		/* Returns the result of the job, if any, if already performed. If not performed, the result will be empty. */
+		const fibers::Any& GetResult() const {
+			static fibers::Any staticVal{};
 			if (impl) {
-				return impl->IsFinished();
+				return impl->GetResult();
 			}
-			return true;
+			return staticVal;
 		};
 
-		bool ReturnsNothing() const {
-			if (impl) {
-				return impl->ReturnsNothing();
-			}
-			return true;
+		/* Do the task immediately, without using any thread/fiber tools, and returns the result (if any). */
+		fibers::Any& operator()() {
+			return Invoke();
 		};
 	};
 
@@ -549,7 +687,6 @@ namespace fibers{
 			std::shared_ptr<void> waitGroup;
 			fibers::containers::vector<Job> jobs;
 
-
 			JobGroupImpl() : waitGroup(nullptr), jobs() {};
 			JobGroupImpl(std::shared_ptr<void> wg) : waitGroup(wg), jobs() {};
 			JobGroupImpl(JobGroupImpl const&) = delete;
@@ -557,17 +694,10 @@ namespace fibers{
 			JobGroupImpl& operator=(JobGroupImpl const&) = delete;
 			JobGroupImpl& operator=(JobGroupImpl&&) = delete;
 
-			void Queue(FunctionBase* basicjob);
-			void Queue(std::vector< FunctionBase* > const& listOfJobs);
-
 			void Queue(Job const& job);
-			void ForceQueue(Job const& job); 
 			void Queue(std::vector<Job> const& listOfJobs);
-			void ForceQueue(std::vector<Job> const& listOfJobs);
 			void Wait();
-			~JobGroupImpl() {
-				// Wait(); // any jobs queued with this waiter will want to talk w/it when finished -- we must wait to ensure they go out of scope before we do.
-			};
+			~JobGroupImpl() { Wait(); };
 		};
 
 	public:
@@ -583,45 +713,26 @@ namespace fibers{
 		~JobGroup() {};
 
 		/* Queue job, and return tool to await the result */
-		JobGroup& Queue(FunctionBase* basicjob) {
-			impl->Queue(basicjob);
-			return *this;
-		};
-		/* Queue job, and return tool to await the result */
-		JobGroup& Queue(std::vector< FunctionBase* > const& listOfJobs) {
-			impl->Queue(listOfJobs);
-			return *this;
-		};
-		/* Queue job, and return tool to await the result */
 		JobGroup& Queue(Job const& job) {
 			impl->Queue(job);
 			return *this;
 		};
-		/* Queue job, and return tool to await the result */
-		JobGroup& ForceQueue(Job const& job) {
-			impl->ForceQueue(job);
-			return *this;
-		};
+
 		/* Queue jobs, and return tool to await the results */
 		JobGroup& Queue(std::vector<Job> const& listOfJobs) {
 			impl->Queue(listOfJobs);
 			return *this;
 		};
-		/* Queue jobs, and return tool to await the results */
-		JobGroup& ForceQueue(std::vector<Job> const& listOfJobs) {
-			impl->ForceQueue(listOfJobs);
-			return *this;
-		};
 
 		/* Await all jobs in this group, and get the return values (which may be empty) for each job */
-		std::vector<Any> Wait_Get() {
+		std::vector<fibers::Any> Wait_Get() {
 			impl->Wait();
 
 			typename decltype(JobGroupImpl::jobs) out;
 			out.swap(impl->jobs);
 
 			if (out.size() > 0) {
-				std::vector<Any> any;
+				std::vector<fibers::Any> any;
 				for (auto& job : out) {
 					if (job) {
 						any.push_back(job->GetResult());
@@ -630,7 +741,7 @@ namespace fibers{
 				return any;
 			}
 			else {
-				return std::vector<Any>();
+				return std::vector<fibers::Any>();
 			}
 		};
 
@@ -645,216 +756,167 @@ namespace fibers{
 
 	};
 
-	namespace synchronization {
-		/* Fiber mutex */
-		class mutex {
-		public:
-			mutex();
-			mutex(const mutex& other);
-			mutex(mutex&& other);
-			mutex& operator=(const mutex& s) { return *this; };
-			mutex& operator=(mutex&& s) { return *this; };
-			~mutex() = default;
-
-			[[nodiscard]] std::lock_guard<mutex>	guard() noexcept;
-			void			lock() noexcept;
-			void			unlock() noexcept;
-			bool            try_lock() noexcept;
-
-		protected:
-			std::shared_ptr<void> Handle;
-
-		};
-
-		/* Read-Write mutex that allows multiple readers and one writer to cooperatively access an underlying object. Very fast for 100% reading operations, as (effectively) no locking actually happens. */
-		template <class MutexType = fibers::synchronization::mutex>
-		class shared_mutex {
-		private:
-			MutexType    mut_;
-			std::condition_variable_any gate1_;
-			std::condition_variable_any gate2_;
-			unsigned state_;
-
-			static const unsigned write_entered_ = 1U << (sizeof(unsigned) * CHAR_BIT - 1);
-			static const unsigned n_readers_ = ~write_entered_;
-
-		public:
-			shared_mutex() : state_(0) {}
-			shared_mutex(shared_mutex const&) = default;
-			shared_mutex(shared_mutex&&) = default;
-			shared_mutex& operator=(shared_mutex const&) = default;
-			shared_mutex& operator=(shared_mutex&&) = default;
-			~shared_mutex() = default;
-
-			// Exclusive/Writer ownership
-			void lock() {
-				std::unique_lock<MutexType> lk(mut_);
-				while (state_ & write_entered_) gate1_.wait(lk);
-				state_ |= write_entered_;
-				while (state_ & n_readers_) gate2_.wait(lk);
-			};
-			// Exclusive/Writer ownership
-			bool try_lock() {
-				std::unique_lock<MutexType> lk(mut_, std::try_to_lock);
-				if (lk.owns_lock() && state_ == 0)
-				{
-					state_ = write_entered_;
-					return true;
-				}
-				return false;
-			};
-			// Exclusive/Writer ownership
-			void unlock() {
-				{
-					std::scoped_lock<MutexType> _(mut_);
-					state_ = 0;
-				}
-				gate1_.notify_all();
-			};
-
-			// Shared/Reader ownership
-			void lock_shared() {
-				std::unique_lock<MutexType> lk(mut_);
-				while ((state_ & write_entered_) || (state_ & n_readers_) == n_readers_)
-					gate1_.wait(lk);
-				unsigned num_readers = (state_ & n_readers_) + 1;
-				state_ &= ~n_readers_;
-				state_ |= num_readers;
-			};
-			// Shared/Reader ownership
-			bool try_lock_shared() {
-				std::unique_lock<MutexType> lk(mut_, std::try_to_lock);
-				unsigned num_readers = state_ & n_readers_;
-				if (lk.owns_lock() && !(state_ & write_entered_) && num_readers != n_readers_)
-				{
-					++num_readers;
-					state_ &= ~n_readers_;
-					state_ |= num_readers;
-					return true;
-				}
-				return false;
-			};
-			// Shared/Reader ownership
-			void unlock_shared() {
-				std::scoped_lock<MutexType> _(mut_);
-				unsigned num_readers = (state_ & n_readers_) - 1;
-				state_ &= ~n_readers_;
-				state_ |= num_readers;
-				if (state_ & write_entered_)
-				{
-					if (num_readers == 0)
-						gate2_.notify_one();
-				}
-				else
-				{
-					if (num_readers == n_readers_ - 1)
-						gate1_.notify_one();
-				}
-			};
-
-			[[nodiscard]] decltype(auto) Write_Guard() noexcept { return std::lock_guard(*this); };
-			[[nodiscard]] decltype(auto) Read_Guard() noexcept { return std::shared_lock(*this); };
-		};
-
-		/* Wrapper for non-atomic objects to allow for threads to lock them for exclusive access */
-		template< typename type, typename MutexType = fibers::synchronization::mutex>
-		class interlocked {
-		public:
-			class ExclusiveObject {
-			public:
-				constexpr ExclusiveObject(const interlocked<type>& mut) : owner(const_cast<interlocked<type>&>(mut)) { this->owner.Lock(); };
-				~ExclusiveObject() { this->owner.Unlock(); };
-
-				ExclusiveObject() = delete;
-				ExclusiveObject(const ExclusiveObject& other) = delete;
-				ExclusiveObject(ExclusiveObject&& other) = delete;
-				ExclusiveObject& operator=(const ExclusiveObject& other) = delete;
-				ExclusiveObject& operator=(ExclusiveObject&& other) = delete;
-
-				type& operator=(const type& a) { data() = a; return data(); };
-				type& operator=(type&& a) { data() = a; return data(); };
-				type& operator*() const { return data(); };
-				type* operator->() const { return &data(); };
-
-			protected:
-				type& data() const { return owner.UnsafeRead(); };
-				interlocked<type>& owner;
-			};
-
-		public: // construction and destruction
-			typedef type Type;
-
-			interlocked() : data() {};
-			interlocked(const type& other) : data(other) {};
-			interlocked(type&& other) : data(std::forward<type>(other)) {};
-			interlocked(const interlocked& other) : data() { this->Copy(other); };
-			interlocked(interlocked&& other) : data() { this->Copy(std::forward<interlocked>(other)); };
-			~interlocked() {};
-
-		public: // copy and clear
-			interlocked& operator=(const interlocked& other) {
-				this->Copy(other);
-				return *this;
-			};
-			interlocked& operator=(interlocked&& other) {
-				this->Copy(std::forward<interlocked<type>>(other));
-				return *this;
-			};
-			void Copy(const interlocked<type>& copy) {
-				if (&copy == this) return;
-				decltype(auto) g1 = Guard();
-				decltype(auto) g2 = copy.Guard();
-				data = copy.data;
-			};
-			void Copy(interlocked<type>&& copy) {
-				if (&copy == this) return;
-				decltype(auto) g1 = Guard();
-				decltype(auto) g2 = copy.Guard();
-				data = copy.data;
-			};
-			void Clear() {
-				decltype(auto) g = Guard();
-				data = type();
-			};
-
-		public: // read and swap
-			type Read() const {
-				decltype(auto) g = Guard();
-				return data;
-			};
-			void Swap(const type& replacement) {
-				decltype(auto) g = Guard();
-				data = replacement;
-			};
-			interlocked& operator=(const type& other) {
-				Swap(other);
-				return *this;
-			};
-
-			type* operator->() const { return &data; };
-
-		public: // lock, unlock, and direct edit
-			ExclusiveObject GetExclusive() const { return ExclusiveObject(*this); };
-
-			[[nodiscard]] decltype(auto) Guard() const { return lock.guard(); };
-			void Lock() const { lock.lock(); };
-			void Unlock() const { lock.unlock(); };
-			type& UnsafeRead() const { return data; };
-
-		private:
-			mutable type data;
-			mutable MutexType lock;
-
-		};
-	};
 	namespace parallel {
+		/* parallel_for (auto i = start; i < end; i++){ todo(i); }
+		If the todo(i) returns anything, it will be collected into a vector at the end. */
+		template<typename iteratorType, typename F> decltype(auto) For(iteratorType start, iteratorType end, F const& ToDo) {
+			constexpr bool retNo = std::is_same<typename fibers::utilities::function_traits<decltype(std::function(ToDo))>::result_type, void>::value;
+
+			if constexpr (retNo) {
+				if (end <= start) return;
+
+				impl::TaskGroup group;
+
+				group.Dispatch(end - start, [&](impl::JobArgs args) {
+					ToDo(start + args.jobIndex);
+				});
+
+				group.Wait();
+			}
+			else {
+				using returnT = typename fibers::utilities::function_traits<decltype(std::function(ToDo))>::result_type;
+
+				if (end <= start) return std::vector< returnT >();
+
+				std::vector< returnT > out(end - start, returnT());
+
+				impl::TaskGroup group;
+
+				group.Dispatch(end - start, [&](impl::JobArgs args) {
+					out[args.jobIndex] = ToDo(start + args.jobIndex);
+				});
+
+				group.Wait();
+
+				return out;
+			}
+		};
+
+		/* parallel_for (auto i = start; i < end; i += step){ todo(i); }
+		If the todo(i) returns anything, it will be collected into a vector at the end. */
+		template<typename iteratorType, typename F> decltype(auto) For(iteratorType start, iteratorType end, iteratorType step, F const& ToDo) {
+			constexpr bool retNo = std::is_same<typename fibers::utilities::function_traits<decltype(std::function(ToDo))>::result_type, void>::value;
+
+			if constexpr (retNo) {
+				if (end <= start) return;
+
+				impl::TaskGroup group;
+
+				group.Dispatch((end - start) / step, [&](impl::JobArgs args) {
+					ToDo(start + args.jobIndex * step);
+				});
+
+				group.Wait();
+			}
+			else {
+				using returnT = typename fibers::utilities::function_traits<decltype(std::function(ToDo))>::result_type;
+
+				if (end <= start) return std::vector< returnT >();
+
+				std::vector< returnT > out((end - start) / step, returnT());
+
+				impl::TaskGroup group;
+
+				group.Dispatch((end - start) / step, [&](impl::JobArgs args) {
+					out[args.jobIndex] = ToDo(start + args.jobIndex * step);
+				});
+
+				group.Wait();
+
+				return out;
+			}
+		};
+
+		/* parallel_for (auto i = container.begin(); i != container.end(); i++){ todo(*i); }
+		If the todo(*i) returns anything, it will be collected into a vector at the end. */
+		template<typename containerType, typename F> decltype(auto) ForEach(containerType& container, F const& ToDo) {
+			constexpr bool retNo = std::is_same<typename fibers::utilities::function_traits<decltype(std::function(ToDo))>::result_type, void>::value;
+
+			int n = container.size();
+			if constexpr (retNo) {
+				if (n <= 0) return;
+
+				std::vector<containerType::iterator> iterators(n, container.begin());
+
+				impl::TaskGroup group;
+
+				group.Dispatch(n, [&](impl::JobArgs args) {
+					std::advance(iterators[static_cast<int>(args.jobIndex)], args.jobIndex);
+					ToDo(*iterators[static_cast<int>(args.jobIndex)]);
+				});
+
+				group.Wait();
+			}
+			else {
+				using returnT = typename fibers::utilities::function_traits<decltype(std::function(ToDo))>::result_type;
+
+				if (n <= 0) return std::vector< returnT >();
+
+				std::vector<containerType::iterator> iterators(n, container.begin());
+				std::vector< returnT > out(n, returnT());
+
+				impl::TaskGroup group;
+
+				group.Dispatch(n, [&](impl::JobArgs args) {
+					std::advance(iterators[static_cast<int>(args.jobIndex)], args.jobIndex);
+					out[static_cast<int>(args.jobIndex)] = ToDo(*iterators[static_cast<int>(args.jobIndex)]);
+				});
+
+				group.Wait();
+
+				return out;
+			}
+		};
+
+		/* parallel_for (auto i = container.cbegin(); i != container.cend(); i++){ todo(*i); }
+		If the todo(*i) returns anything, it will be collected into a vector at the end. */
+		template<typename containerType, typename F> decltype(auto) ForEach(containerType const& container, F const& ToDo) {
+			constexpr bool retNo = std::is_same<typename fibers::utilities::function_traits<decltype(std::function(ToDo))>::result_type, void>::value;
+
+			int n = container.size();
+			if constexpr (retNo) {
+				if (n <= 0) return;
+
+				std::vector<containerType::const_iterator> iterators(n, container.begin());
+
+				impl::TaskGroup group;
+
+				group.Dispatch(n, [&](impl::JobArgs args) {
+					std::advance(iterators[args.jobIndex], args.jobIndex);
+					ToDo(*iterators[args.jobIndex]);
+				});
+
+				group.Wait();
+			}
+			else {
+				using returnT = typename fibers::utilities::function_traits<decltype(std::function(ToDo))>::result_type;
+
+				if (n <= 0) return std::vector< returnT >();
+
+				std::vector<containerType::const_iterator> iterators(n, container.begin());
+
+				std::vector< returnT > out(n, returnT());
+
+				impl::TaskGroup group;
+
+				group.Dispatch(n, [&](impl::JobArgs args) {
+					std::advance(iterators[args.jobIndex], args.jobIndex);
+					out[args.jobIndex] = ToDo(*iterators[args.jobIndex]);
+				});
+
+				group.Wait();
+
+				return out;
+			}
+		};
+
 		/*
-		outputType x; 
-		for (auto& v : resultList){ x += v; } 
+		outputType x;
+		for (auto& v : resultList){ x += v; }
 		return x;
 		*/
 		template<typename outputType>
-		decltype(auto) Accumulate(std::vector<std::shared_ptr<outputType>> const& resultList) {
+		decltype(auto) Accumulate(std::vector<outputType> const& resultList) {
 			outputType out{ 0 };
 			for (auto& v : resultList) {
 				if (v) {
@@ -862,158 +924,6 @@ namespace fibers{
 				}
 			}
 			return out;
-		};
-
-		/* 
-		parallel_for (auto i = start; i < end; i++){ todo(i); }
-		If the todo(i) returns anything, it will be collected into a vector at the end.
-		*/
-		template<typename iteratorType, typename F>
-		decltype(auto) For(iteratorType start, iteratorType end, F&& ToDo) {
-			decltype(auto) todo = std::function(std::forward<F>(ToDo));
-			constexpr bool retNo = std::is_same<typename utilities::function_traits<decltype(todo)>::result_type, void>::value;
-
-			fibers::JobGroup group;
-			if constexpr (retNo) {
-				iteratorType n = (end - start);
-				if (n > 0) {
-					if (n == 1) {
-						decltype(auto) f{ Function(std::function([todo](iteratorType const& T) { todo(T); }), (iteratorType)start) };
-						group.Queue(dynamic_cast<FunctionBase*>(&f));
-						group.Wait();
-						return;
-					}
-					else {
-						auto f{ Function(std::move(todo), (iteratorType)0) };
-						decltype(auto) jobs{ std::vector<decltype(f)>(n, std::move(f)) };
-						std::vector<FunctionBase*> jobPtrs(n, nullptr);
-						n = 0;
-						for (iteratorType iter = start; iter < end; iter++) {
-							jobPtrs[n] = dynamic_cast<FunctionBase*>(&jobs[n]);
-							jobs[n++].GetParameter<0>() = iter;							
-						}
-						group.Queue(jobPtrs);
-						group.Wait();
-						return;
-					}
-				}
-			}
-			else {
-				//  typename std::tuple_element<0, typename utilities::function_traits<decltype(todo)>::arguments>::type;
-				iteratorType n = (end - start);
-				if (n > 0) {
-					if (n == 1) {
-						auto job = fibers::Job([todo](iteratorType const& T) { return todo(T); }, (iteratorType)start);
-						group.Queue(job);
-					}
-					else {
-						std::vector< fibers::Job > jobs(n, fibers::Job());
-						n = 0;
-						for (iteratorType iter = start; iter < end; iter++) {
-							jobs[n++] = fibers::Job([todo](iteratorType const& T) { return todo(T); }, (iteratorType)iter);
-						}
-						group.Queue(jobs);
-					}
-				}
-
-				using outputType = typename utilities::function_traits<decltype(todo)>::result_type;
-				std::vector<std::shared_ptr<outputType>> toReturn;
-				for (auto& anyO : group.Wait_Get()) toReturn.push_back(anyO.cast<std::shared_ptr<outputType>>());
-				return toReturn;
-			}
-		};
-
-		/* 
-		parallel_for (auto i = start; i < end; i += step){ todo(i); }
-		If the todo(i) returns anything, it will be collected into a vector at the end.
-		*/
-		template<typename iteratorType, typename F>
-		decltype(auto) For(iteratorType start, iteratorType end, iteratorType step, F&& ToDo) {
-			fibers::JobGroup group;
-
-			decltype(auto) todo = std::function(std::forward<F>(ToDo));
-			constexpr bool retNo = std::is_same<typename utilities::function_traits<decltype(todo)>::result_type, void>::value;
-
-			int n = (end - start) / step;
-			std::vector< fibers::Job > jobs(n, fibers::Job());
-			n = 0;
-			for (iteratorType iter = start; iter < end; iter += step) {
-				jobs[n++] = fibers::Job([todo](iteratorType const& T) { return todo(T); }, (iteratorType)iter);
-			}
-			group.Queue(jobs);
-
-			if constexpr (retNo) {
-				group.Wait();
-			}
-			else {
-				using outputType = typename utilities::function_traits<decltype(todo)>::result_type;
-				std::vector<std::shared_ptr<outputType>> toReturn;
-				for (auto& anyO : group.Wait_Get()) toReturn.push_back(anyO.cast<std::shared_ptr<outputType>>());
-				return toReturn;
-			}
-		};
-
-		/* 
-		parallel_for (auto i = container.begin(); i != container.end(); i++){ todo(*i); }
-		If the todo(*i) returns anything, it will be collected into a vector at the end. 
-		*/
-		template<typename containerType, typename F>
-		decltype(auto) ForEach(containerType const& container, F&& ToDo) {
-			fibers::JobGroup group;
-
-			decltype(auto) todo = std::function(std::forward<F>(ToDo));
-			constexpr bool retNo = std::is_same<typename utilities::function_traits<decltype(todo)>::result_type, void>::value;
-
-			int n = 0;
-			for (auto iter = container.begin(); iter != container.end(); iter++) n++;
-			std::vector< fibers::Job > jobs(n, fibers::Job());
-			n = 0;
-			for (auto iter = container.begin(); iter != container.end(); iter++) {
-				jobs[n++] = fibers::Job([todo](typename containerType::const_iterator& T) { return todo(Any(std::shared_ptr<typename containerType::value_type>(const_cast<typename containerType::value_type*>(&*T), [](typename containerType::value_type*) {})).cast()); }, (typename containerType::const_iterator)(iter));
-			}
-			group.Queue(jobs);
-
-			if constexpr (retNo) {
-				group.Wait();
-			}
-			else {
-				using outputType = typename utilities::function_traits<decltype(todo)>::result_type;
-				std::vector<std::shared_ptr<outputType>> toReturn;
-				for (auto& anyO : group.Wait_Get()) toReturn.push_back(anyO.cast<std::shared_ptr<outputType>>());
-				return toReturn;
-			}
-		};
-
-		/* 
-		parallel_for (auto i = container.cbegin(); i != container.cend(); i++){ todo(*i); }
-		If the todo(*i) returns anything, it will be collected into a vector at the end. 
-		*/
-		template<typename containerType, typename F>
-		decltype(auto) ForEach(containerType& container, F&& ToDo) {
-			fibers::JobGroup group;
-
-			decltype(auto) todo = std::function(std::forward<F>(ToDo));
-			constexpr bool retNo = std::is_same<typename utilities::function_traits<decltype(todo)>::result_type, void>::value;
-
-			int n = 0;
-			for (auto iter = container.begin(); iter != container.end(); iter++) n++;
-			std::vector< fibers::Job > jobs(n, fibers::Job());
-			n = 0;
-
-			for (auto iter = container.begin(); iter != container.end(); iter++) {
-				jobs[n++] = fibers::Job([todo](typename containerType::iterator& T) { return todo(Any(std::shared_ptr<typename containerType::value_type>(&*T, [](typename containerType::value_type*) {})).cast()); }, (typename containerType::iterator)(iter));
-			}
-			group.Queue(jobs);
-
-			if constexpr (retNo) {
-				group.Wait();
-			}
-			else {
-				using outputType = typename utilities::function_traits<decltype(todo)>::result_type;
-				std::vector<std::shared_ptr<outputType>> toReturn;
-				for (auto& anyO : group.Wait_Get()) toReturn.push_back(anyO.cast<std::shared_ptr<outputType>>());
-				return toReturn;
-			}
 		};
 
 		/* Generic form of a future<T>, which can be used to wait on and get the results of any job. */
@@ -1068,12 +978,9 @@ namespace fibers{
 		};
 
 		/* A secondary type tag used to identify if a template type is a future<T> type. */
-		class future_type {
-		public:
-			virtual ~future_type() {};
-		};
+		class future_type { public: virtual ~future_type() {}; };
 
-		/* Specialized form of a promise, which can be used to handle type-casting for lambdas automatically, while still being useful for waiting on and getting the results of any job. 
+		/* Specialized form of a promise, which can be used to handle type-casting for lambdas automatically, while still being useful for waiting on and getting the results of any job.
 		Note: Only the first thread that "waits" on a future<T> assists the thread pool. More waiters != more jobs, and therefore additional waiters are spin-locking.
 		Recommended that only the thread (or consuming thread) that scheduled the future<T> object should wait for it. */
 		template <typename T> class future final : public promise/*, public future_type*/ {
@@ -1097,15 +1004,16 @@ namespace fibers{
 					if (p) {
 						if constexpr (std::is_same<void, T>()) {
 							return;
-						} else {
+						}
+						else {
 							// if the return type is itself a future_type, then we should "wait_get" it as well.
 							//if constexpr (std::is_base_of_v<future_type, T>) {
 							//	return static_cast<T>(p->cast<T>()).wait_get();
 							//}
 							//else {
-								return static_cast<T>(p->cast<T>());
+							return static_cast<T>(p->cast<T>());
 							//}
-						}						
+						}
 					}
 				}
 				throw(std::runtime_error("future was empty"));
@@ -1124,7 +1032,7 @@ namespace fibers{
 							//	return static_cast<T>(p->cast<T>()).wait_get_ref();
 							//}
 							//else {
-								return static_cast<T&>(p->cast<T&>());
+							return static_cast<T&>(p->cast<T&>());
 							//}
 						}
 					}
@@ -1145,7 +1053,7 @@ namespace fibers{
 							//	return static_cast<T>(p->cast<T>()).wait_get_shared();
 							//}
 							//else {
-								return static_cast<std::shared_ptr<T>>(p->cast<std::shared_ptr<T>>());
+							return static_cast<std::shared_ptr<T>>(p->cast<std::shared_ptr<T>>());
 							//}
 						}
 					}
@@ -1169,12 +1077,19 @@ namespace fibers{
 				return get_shared();
 			};
 		};
-		
+
 		/* returns a future<T> object for awaiting the results of the job. */
 		template < typename F, typename... Args, typename = std::enable_if_t< !std::is_same_v<Job, std::decay_t<F>> && !std::is_same_v<Any, std::decay_t<F>> >>
 		__forceinline static decltype(auto) async(F function, Args... Fargs) {
 			return future<typename utilities::function_traits<decltype(std::function(function))>::result_type>(Job(function, Fargs...));
 		};
 	};
-
 };
+
+class MultithreadingInstanceManager {
+	public:
+		MultithreadingInstanceManager() {};
+		virtual ~MultithreadingInstanceManager() {};
+	};
+/* Instances the fiber system, and destroys it if the DLL / library is unloaded. */
+extern std::shared_ptr<MultithreadingInstanceManager> multithreadingInstance;
