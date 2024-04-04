@@ -16,6 +16,7 @@ to maintain a single distribution point for the source code.
 #include "WaterWatch_Win32_Console.h"
 
 #include "../FiberTasks/Fibers.h"
+#include <execution>
 
 int Example::ExampleF(int numTasks, int numSubTasks) {
 	int* xyzwabc = new int[10000];
@@ -39,6 +40,26 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 
 				cweeUnitValues::second timePassed = sw.Stop() / 1000000000.0;
 				std::cout << timePassed.ToString() << " (num = " << pat.GetNumValues() << ")" << std::endl;
+			}
+
+			printf("SpeedTest (Pattern) ");
+			std::cout << j;
+			printf(" (Threads) : ");
+			{
+
+				cweeBalancedPattern pat;
+				Stopwatch sw; sw.Start();
+				int i, k;
+
+				std::vector<int> vec(numLoops, 0);
+				fibers::parallel::For(0, numLoops, [&vec](int i) { vec[i] = i; });
+				std::for_each_n(vec.begin(), numLoops, [&pat, &j](int& i) {
+					for (int k = 0; k < j; k++)
+						pat.AddValue(i + k, i + k);
+				});
+
+				cweeUnitValues::second timePassed = sw.Stop() / 1000000000.0;
+				std::cout << timePassed.ToString() << std::endl;
 			}
 
 			printf("SpeedTest (Pattern) ");
@@ -76,6 +97,25 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 
 				cweeUnitValues::second timePassed = sw.Stop() / 1000000000.0;
 				std::cout << timePassed.ToString() << " (num = " << count.load() << ")" << std::endl;
+			}
+
+			printf("SpeedTest (atomic int) ");
+			std::cout << j;
+			printf(" (Threads) : ");
+			{
+				
+				std::atomic<int> count;
+				Stopwatch sw; sw.Start();
+				int i, k;
+
+				std::vector<int> vec(numLoops, 0);
+				std::for_each_n(vec.begin(), numLoops, [&count, &j](int& V) {
+					for (int k = 0; k < j; k++)
+						count.fetch_add(k);
+				});
+
+				cweeUnitValues::second timePassed = sw.Stop() / 1000000000.0;
+				std::cout << timePassed.ToString() << std::endl;
 			}
 
 			printf("SpeedTest (atomic int) ");
@@ -118,6 +158,25 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 
 			printf("SpeedTest (vector overwriting) ");
 			std::cout << j;
+			printf(" (Threads) : ");
+			{
+				std::vector<cweeStr> vec(numLoops, cweeStr("TEST"));
+
+				Stopwatch sw; sw.Start();
+				int i, k;
+
+				std::for_each_n(vec.begin(), numLoops, [&vec, &j](cweeStr& V) {
+					for (int k = 0; k < j; k++) {
+						V = cweeStr(k);
+					}
+				});
+
+				cweeUnitValues::second timePassed = sw.Stop() / 1000000000.0;
+				std::cout << timePassed.ToString() << std::endl;
+			}
+
+			printf("SpeedTest (vector overwriting) ");
+			std::cout << j;
 			printf(" (Fibers) : ");
 			{
 				std::vector<cweeStr> vec(numLoops, cweeStr("TEST"));
@@ -135,12 +194,64 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 
 			printf("\n");
 		}
+		for (int j = 1; j < 10; j += 2) {
+			int numLoops = 400 * j * j;
+
+			printf("SpeedTest (vector search) ");
+			std::cout << j;
+			printf(" (No Fibers) : ");
+			{
+				std::vector<cweeStr> vec(numLoops, cweeStr());
+				fibers::parallel::For(0, numLoops, [&vec](int i) { vec[i] = cweeStr(i); });
+
+				Stopwatch sw; sw.Start();
+
+				for (int i = 0; i < numLoops; i++) {
+					(void)std::find_if(vec.begin(), vec.end(), [j = cweeStr((int)random_fast(0, numLoops-1))](cweeStr const& x) ->bool { return x == j; });
+				}
+
+				cweeUnitValues::second timePassed = sw.Stop() / 1000000000.0;
+				std::cout << timePassed.ToString() << std::endl;
+			}
+
+			printf("SpeedTest (vector search) ");
+			std::cout << j;
+			printf(" (Threads) : ");
+			{
+				std::vector<cweeStr> vec(numLoops, cweeStr());
+				fibers::parallel::For(0, numLoops, [&vec](int i) { vec[i] = cweeStr(i); });
+
+				Stopwatch sw; sw.Start();
+
+				for (int i = 0; i < numLoops; i++) {
+					(void)std::find_if(std::execution::par, vec.begin(), vec.end(), [j = cweeStr((int)random_fast(0, numLoops - 1))](cweeStr const& x) ->bool { return x == j; });
+				}
+
+				cweeUnitValues::second timePassed = sw.Stop() / 1000000000.0;
+				std::cout << timePassed.ToString() << std::endl;
+			}
+
+			printf("SpeedTest (vector search) ");
+			std::cout << j;
+			printf(" (Fibers) : ");
+			{
+				std::vector<cweeStr> vec(numLoops, cweeStr());
+				fibers::parallel::For(0, numLoops, [&vec](int i) { vec[i] = cweeStr(i); });
+
+				Stopwatch sw; sw.Start();
+
+				for (int i = 0; i < numLoops; i++) {
+					fibers::parallel::Find(vec, [j = cweeStr((int)random_fast(0, numLoops - 1))](cweeStr const& x) ->bool { return x == j; });
+				}
+
+				cweeUnitValues::second timePassed = sw.Stop() / 1000000000.0;
+				std::cout << timePassed.ToString() << std::endl;
+			}
+
+			printf("\n");
+		}
+
 	}
-
-
-
-
-
 
 
 	printf("Job 1\n");
@@ -295,6 +406,8 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 	int result1 = fibers::Job(&cweeMath::Ceil, 10.0f).Invoke().cast(); // Job takes function and up to 16 inputs. Invoke returns "Any" wrapper. Any.cast() does the cast to the target destination, if the conversion makes sense.
 	float result2 = fibers::Job([](float& x)->float { return x - 10.0f; }, 55.0f).Invoke().cast(); // Can also use lambdas instead of static function pointers.
 	auto __awaiter__ = fibers::Job([]() { return cweeStr("HELLO"); }).AsyncInvoke(); // Queues the job to take place on a fiber/thread, and guarrantees its completion before the scope ends.
+
+
 
 
 	printf("Loop done\n");

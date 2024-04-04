@@ -4,6 +4,9 @@
 #include "pal_tid_default.h"
 #include "pal_timer_default.h"
 
+#  include <memoryapi.h>
+#  include <chrono>
+
 #ifdef _WIN32
 #  ifndef _MSC_VER
 #    include <cstdio>
@@ -13,7 +16,6 @@
 #    define NOMINMAX
 #  endif
 #  include <windows.h>
-#  include <memoryapi.h>
 #  include <WinBase.h>
 #  pragma comment(lib, "bcrypt.lib")
 #  include <bcrypt.h>
@@ -24,9 +26,6 @@
 // #      define PLATFORM_HAS_VIRTUALALLOC2
 #    endif
 #  endif
-
-#  include <chrono>
-
 
 namespace snmalloc
 {

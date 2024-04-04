@@ -1,12 +1,20 @@
 #pragma once
 #include "Heap.h"
 
-// #define use_std_alloc
+#ifdef _UWPTARGET
+#define use_std_alloc
+#endif
+
 #ifndef use_std_alloc
+#include <memoryapi.h>
+#if WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_DESKTOP | WINAPI_PARTITION_SYSTEM | WINAPI_PARTITION_GAMES)
+#define use_std_alloc
+#else
 #define SNMALLOC_USE_CXX17
 #include <memoryapi.h>
 #include <winbase.h>
 #include "../WaterWatchCpp/snmalloc/snmalloc.h"
+#endif
 #endif 
 
 void* Mem_Alloc16(const size_t& size, const memTag_t& tag) { 

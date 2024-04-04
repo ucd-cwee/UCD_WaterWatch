@@ -71,6 +71,7 @@
 #include <boost/any.hpp>
 #include <cstdint>
 #include <type_traits>
+#include <execution>
 
 #pragma endregion
 #pragma region iterator_definition
@@ -877,7 +878,7 @@ namespace fibers {
 			if constexpr (retNo) {
 				if (n <= 0) return;
 
-				std::vector<containerType::const_iterator> iterators(n, container.begin());
+				std::vector<containerType::const_iterator> iterators(n, container.cbegin());
 
 				impl::TaskGroup group;
 
@@ -910,6 +911,68 @@ namespace fibers {
 			}
 		};
 
+		/* wrapper for std::find_if with std::execution::par */
+		template<typename containerType, typename F> decltype(auto) Find(containerType& container, F const& ToDo) {
+			constexpr bool retNo = std::is_same<typename fibers::utilities::function_traits<decltype(std::function(ToDo))>::result_type, void>::value;
+
+			int n = container.size();
+			auto out{ container.end() };
+
+			if (n <= 0) return out;
+
+			std::vector<containerType::iterator> iterators(n, container.begin());
+
+			impl::TaskGroup group;
+
+			std::mutex mut;
+
+			group.Dispatch(n, [&](impl::JobArgs args) {
+				std::advance(iterators[static_cast<int>(args.jobIndex)], args.jobIndex);
+				if (ToDo(*iterators[static_cast<int>(args.jobIndex)])) {
+					mut.lock();
+					out = iterators[static_cast<int>(args.jobIndex)];
+					mut.unlock();
+				}
+				});
+
+			group.Wait();
+
+			return out;
+
+			// return std::find_if(std::execution::par, container.begin(), container.end(), [&](auto& x) ->bool { return ToDo(x); });
+		};
+
+		/* wrapper for std::find_if with std::execution::par */
+		template<typename containerType, typename F> decltype(auto) Find(containerType const& container, F const& ToDo) {
+			constexpr bool retNo = std::is_same<typename fibers::utilities::function_traits<decltype(std::function(ToDo))>::result_type, void>::value;
+
+			int n = container.size();
+			auto out{ container.cend() };
+
+			if (n <= 0) return out;
+
+			std::vector<containerType::const_iterator> iterators(n, container.cbegin());
+
+			impl::TaskGroup group;
+
+			std::mutex mut;
+
+			group.Dispatch(n, [&](impl::JobArgs args) {
+				std::advance(iterators[static_cast<int>(args.jobIndex)], args.jobIndex);
+				if (ToDo(*iterators[static_cast<int>(args.jobIndex)])) {
+					mut.lock();
+					out = iterators[static_cast<int>(args.jobIndex)];
+					mut.unlock();
+				}
+			});
+
+			group.Wait();
+
+			return out;
+
+			// return std::find_if(std::execution::par, container.cbegin(), container.cend(), [&](auto const& x) ->bool { return ToDo(x); });
+		};
+
 		/*
 		outputType x;
 		for (auto& v : resultList){ x += v; }
@@ -925,6 +988,12 @@ namespace fibers {
 			}
 			return out;
 		};
+
+
+
+
+
+
 
 		/* Generic form of a future<T>, which can be used to wait on and get the results of any job. */
 		class promise {

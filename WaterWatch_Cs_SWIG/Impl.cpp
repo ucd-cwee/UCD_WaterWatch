@@ -948,12 +948,15 @@ MapLayer_Interop ScriptObject::Cast_MapLayer() {
 	MapLayer_Interop out2;
 	AUTO val2 = chaiscript::boxed_cast<chaiscript::UI_MapLayer*>(*boxed);
 	if (val2) {
-		for (size_t i = 0; i < val2->Children.size(); i++) {
+		std::mutex lock;
+		fibers::parallel::For((size_t)0, (size_t)val2->Children.size(), [&](size_t i) {
 			auto& bv = val2->Children[i];
 			if (bv.is_type(chaiscript::user_type<chaiscript::UI_MapIcon>())) {
 				AUTO val = chaiscript::boxed_cast<chaiscript::UI_MapIcon*>(bv);
 				if (val) {
+					lock.lock();
 					MapIcon_Interop& out = out2.icons[i];
+					lock.unlock();
 					out.color.R = val->color.R;
 					out.color.G = val->color.G;
 					out.color.B = val->color.B;
@@ -963,13 +966,15 @@ MapLayer_Interop ScriptObject::Cast_MapLayer() {
 					out.Label = val->Label.c_str();
 					out.size = val->size;
 					out.longitude = val->longitude;
-					out.latitude = val->latitude;		
+					out.latitude = val->latitude;
 				}
 			}
 			else if (bv.is_type(chaiscript::user_type<chaiscript::UI_MapPolyline>())) {
 				AUTO val = chaiscript::boxed_cast<chaiscript::UI_MapPolyline*>(bv);
 				if (val) {
+					lock.lock();
 					MapPolyline_Interop& out = out2.polylines[i];
+					lock.unlock();
 					out.color.R = val->color.R;
 					out.color.G = val->color.G;
 					out.color.B = val->color.B;
@@ -977,13 +982,15 @@ MapLayer_Interop ScriptObject::Cast_MapLayer() {
 					out.thickness = val->thickness;
 					out.dashed = val->dashed;
 					out.coordinates.reserve(val->coordinates.size() + 1);
-					for (auto& x : val->coordinates) { out.coordinates.push_back(Pair<double, double>(x.first, x.second)); }					
+					for (auto& x : val->coordinates) { out.coordinates.push_back(Pair<double, double>(x.first, x.second)); }
 				}
 			}
 			else if (bv.is_type(chaiscript::user_type<chaiscript::UI_MapPolygon>())) {
 				AUTO val = chaiscript::boxed_cast<chaiscript::UI_MapPolygon*>(bv);
 				if (val) {
+					lock.lock();
 					MapPolygon_Interop& out = out2.polygons[i];
+					lock.unlock();
 					out.fill.R = val->fill.R;
 					out.fill.G = val->fill.G;
 					out.fill.B = val->fill.B;
@@ -1000,7 +1007,7 @@ MapLayer_Interop ScriptObject::Cast_MapLayer() {
 					for (auto& x : val->coordinates) { out.coordinates.push_back(Pair<double, double>(x.first, x.second)); }
 				}
 			}
-		}
+		});
 	}
 	return out2;
 };
@@ -1855,12 +1862,15 @@ MapLayer_Interop ScriptEngine::Cast_MapLayer(std::string command) {
 	MapLayer_Interop out2;
 	AUTO val2 = chaiscript::boxed_cast<chaiscript::UI_MapLayer*>(boxed);
 	if (val2) {
-		for (int i = 0; i < val2->Children.size(); i++) {
+		std::mutex lock;
+		fibers::parallel::For((int)0, (int)val2->Children.size(), [&](int i) {
 			auto& bv = val2->Children[i];
 			if (bv.is_type(chaiscript::user_type<chaiscript::UI_MapIcon>())) {
 				AUTO val = chaiscript::boxed_cast<chaiscript::UI_MapIcon*>(bv);
 				if (val) {
+					lock.lock();
 					MapIcon_Interop& out = out2.icons[i];
+					lock.unlock();
 					out.color.R = val->color.R;
 					out.color.G = val->color.G;
 					out.color.B = val->color.B;
@@ -1876,7 +1886,9 @@ MapLayer_Interop ScriptEngine::Cast_MapLayer(std::string command) {
 			else if (bv.is_type(chaiscript::user_type<chaiscript::UI_MapPolyline>())) {
 				AUTO val = chaiscript::boxed_cast<chaiscript::UI_MapPolyline*>(bv);
 				if (val) {
+					lock.lock(); 
 					MapPolyline_Interop& out = out2.polylines[i];
+					lock.unlock();
 					out.color.R = val->color.R;
 					out.color.G = val->color.G;
 					out.color.B = val->color.B;
@@ -1890,7 +1902,9 @@ MapLayer_Interop ScriptEngine::Cast_MapLayer(std::string command) {
 			else if (bv.is_type(chaiscript::user_type<chaiscript::UI_MapPolygon>())) {
 				AUTO val = chaiscript::boxed_cast<chaiscript::UI_MapPolygon*>(bv);
 				if (val) {
+					lock.lock(); 
 					MapPolygon_Interop& out = out2.polygons[i];
+					lock.unlock();
 					out.fill.R = val->fill.R;
 					out.fill.G = val->fill.G;
 					out.fill.B = val->fill.B;
@@ -1907,7 +1921,7 @@ MapLayer_Interop ScriptEngine::Cast_MapLayer(std::string command) {
 					for (auto& x : val->coordinates) { out.coordinates.push_back(Pair<double, double>(x.first, x.second)); }
 				}
 			}
-		}
+		});
 	}
 	return out2;
 };
