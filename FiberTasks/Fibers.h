@@ -484,12 +484,149 @@ namespace fibers {
 			inline bool try_lock() {
 				return !lck.test_and_set(std::memory_order_acquire);
 			};
-
 			inline void unlock() {
 				lck.clear(std::memory_order_release);
 			};
 		};
+
+		class CriticalMutexLock {
+		private:
+			using mutexHandle_t = CRITICAL_SECTION;
+			static void				Sys_MutexCreate(mutexHandle_t& handle) noexcept { InitializeCriticalSection(&handle); };
+			static void				Sys_MutexDestroy(mutexHandle_t& handle) noexcept { DeleteCriticalSection(&handle); };
+			static void				Sys_MutexLock(mutexHandle_t& handle) noexcept { EnterCriticalSection(&handle); };
+			static bool				Sys_MutexTryLock(mutexHandle_t& handle) noexcept { return TryEnterCriticalSection(&handle) != 0; };
+			static void				Sys_MutexUnlock(mutexHandle_t& handle) noexcept { LeaveCriticalSection(&handle); };
+		public:
+			CriticalMutexLock() noexcept { Sys_MutexCreate(Handle); };
+			~CriticalMutexLock() noexcept { Sys_MutexDestroy(Handle); };
+
+			inline void lock() {
+				Sys_MutexLock(Handle);
+			};
+			inline bool try_lock() {
+				return Sys_MutexTryLock(Handle);
+			};
+			inline void unlock() {
+				Sys_MutexUnlock(Handle);
+			};
+
+			CriticalMutexLock(const CriticalMutexLock&) = delete;
+			CriticalMutexLock(CriticalMutexLock&&) = delete;
+			CriticalMutexLock& operator=(CriticalMutexLock const&) = delete;
+			CriticalMutexLock& operator=(CriticalMutexLock&&) = delete;
+
+		protected:
+			mutexHandle_t Handle;
+
+		};
+
+		template<typename type = long>
+		class atomic_num {
+		private:
+			static type Sys_InterlockedIncrementV(type& value) { return InterlockedIncrementAcquire(&value); }
+			static type Sys_InterlockedDecrementV(type& value) { return InterlockedDecrementRelease(&value); }
+			static type Sys_InterlockedAddV(type& value, const type& i) { return InterlockedExchangeAdd(&value, i) + i; }
+			static type Sys_InterlockedSubV(type& value, const type& i) { return InterlockedExchangeAdd(&value, -i) - i; }
+			static type Sys_InterlockedExchangeV(type& value, const type& exchange) { return InterlockedExchange(&value, exchange); }
+			static type Sys_InterlockedCompareExchangeV(type& value, const type& comparand, const type& exchange) { return InterlockedCompareExchange(&value, exchange, comparand); }
+
+		public:
+			atomic_num() : value(static_cast<type>(0)) {};
+			atomic_num(const type& a) : value(a) {};
+			atomic_num(const atomic_num& other) : value(other.GetValue()) {};
+			atomic_num& operator=(const atomic_num& other) { SetValue(other.GetValue()); return *this; };
+			atomic_num& operator=(const type& newSource) { SetValue(newSource); return *this; };
+
+			operator type() { return GetValue(); };
+			operator type() const { return GetValue(); };
+
+			friend atomic_num operator+(const type& i, const atomic_num& b) { atomic_num out(b); out.Add(i); return out; };
+			friend atomic_num operator+(const atomic_num& b, const type& i) { atomic_num out(b); out.Add(i); return out; };
+			friend atomic_num operator-(const type& i, const atomic_num& b) { atomic_num out(i); out.Add(-b.GetValue()); return out; };
+			friend atomic_num operator-(const atomic_num& b, const type& i) { atomic_num out(b); out.Add(-i); return out; };
+			friend atomic_num operator/(const type& i, const atomic_num& b) { return i / b.GetValue(); };
+			friend atomic_num operator/(const atomic_num& b, const type& i) { return b.GetValue() / i; };
+
+			atomic_num& operator+=(int i) { Add(i); return *this; };
+			atomic_num& operator-=(int i) { Add(-i); return *this; };
+
+			atomic_num& operator+=(const atomic_num& i) { Add(i.GetValue()); return *this; };
+			atomic_num& operator-=(const atomic_num& i) { Add(-i.GetValue()); return *this; };
+
+			bool operator==(const type& i) { return i == GetValue(); };
+			bool operator!=(const type& i) { return i != GetValue(); };
+			bool operator==(const atomic_num& i) { return i.GetValue() == GetValue(); };
+			bool operator!=(const atomic_num& i) { return i.GetValue() != GetValue(); };
+
+			friend bool operator<=(const type& i, const atomic_num& b) { return i <= b.GetValue(); };
+			friend bool operator<=(const atomic_num& b, const type& i) { return i > b.GetValue(); };
+			friend bool operator>=(const type& i, const atomic_num& b) { return i >= b.GetValue(); };
+			friend bool operator>=(const atomic_num& b, const type& i) { return i < b.GetValue(); };
+			friend bool operator>(const type& i, const atomic_num& b) { return i > b.GetValue(); };
+			friend bool operator>(const atomic_num& b, const type& i) { return i <= b.GetValue(); };
+			friend bool operator<(const type& i, const atomic_num& b) { return i < b.GetValue(); };
+			friend bool operator<(const atomic_num& b, const type& i) { return i >= b.GetValue(); };
+
+			friend bool operator<=(const atomic_num& i, const atomic_num& b) { return i.GetValue() <= b.GetValue(); };
+			friend bool operator>=(const atomic_num& i, const atomic_num& b) { return i.GetValue() >= b.GetValue(); };
+			friend bool operator>(const atomic_num& i, const atomic_num& b) { return i.GetValue() > b.GetValue(); };
+			friend bool operator<(const atomic_num& i, const atomic_num& b) { return i.GetValue() < b.GetValue(); };
+
+			type					Increment() { return Sys_InterlockedIncrementV(value); } // atomically increments the integer and returns the new value
+			type					Decrement() { return Sys_InterlockedDecrementV(value); } // atomically decrements the integer and returns the new value
+			type					Add(const type& v) { return Sys_InterlockedAddV(value, (type)v); } // atomically adds a value to the integer and returns the new value
+			type					Sub(const type& v) { return Sys_InterlockedSubV(value, (type)v); } // atomically subtracts a value from the integer and returns the new value
+			type					GetValue() const { return value; }
+			void				    SetValue(const type& v) { value = v; };
+
+		private:
+			type	            value;
+
+		};
+
+		template< typename T> 
+		class atomic_ptr {
+		private:
+			static void* Sys_InterlockedExchangePointer(void*& ptr, void* exchange) { return InterlockedExchangePointer(&ptr, exchange); };
+			static void* Sys_InterlockedCompareExchangePointer(void*& ptr, void* comparand, void* exchange) { return InterlockedCompareExchangePointer(&ptr, exchange, comparand); };
+
+		public:
+			constexpr atomic_ptr() noexcept : ptr(nullptr) {}
+			constexpr atomic_ptr(T* newSource) noexcept : ptr(newSource) {}
+			constexpr atomic_ptr(const atomic_ptr& other) noexcept : ptr(other.ptr) {};
+			atomic_ptr& operator=(const atomic_ptr& other) noexcept { Set(other.Get()); return *this; };
+			atomic_ptr& operator=(T* newSource) noexcept { Set(newSource); return *this; };
+			~atomic_ptr() { ptr = nullptr; };
+
+			explicit operator bool() { return ptr; };
+			explicit operator bool() const { return ptr; };
+
+			operator T* () noexcept { return ptr; };
+			operator const T* () const noexcept { return ptr; };
+
+			/* atomically sets the pointer and returns the previous pointer value */
+			T* Set(T* newPtr) noexcept {
+				return static_cast<T*>(Sys_InterlockedExchangePointer((void* &)ptr, static_cast<void* >(newPtr)));
+			};
+			/* atomically sets the pointer to 'newPtr' only if the previous pointer is equal to 'comparePtr' */
+			T* CompareExchange(T* comparePtr, T* newPtr) noexcept {
+				return static_cast<T*>(Sys_InterlockedCompareExchangePointer((void*&)ptr, static_cast<void*>(comparePtr), static_cast<void*>(newPtr)));
+			};
+
+			T* operator->() noexcept { return Get(); };
+			const T* operator->() const noexcept { return Get(); };
+			T* Get() noexcept { return ptr; };
+			const T* Get() const noexcept { return ptr; };
+
+		protected:
+			T* ptr;
+		};
+
 	};
+
+
+
 
 	namespace impl {
 		bool Initialize(uint32_t maxThreadCount = ~0u);
@@ -505,12 +642,10 @@ namespace fibers {
 			void* sharedmemory;		// stack memory shared within the current group (jobs within a group execute serially)
 		};
 
-		uint32_t GetThreadCount();
-
 		// Defines a state of execution, can be waited on
-		struct context
-		{
-			std::atomic<uint32_t> counter{ 0 };
+		struct context {
+			synchronization::atomic_num<uint32_t> counter{ 0 };
+			synchronization::atomic_ptr<std::exception_ptr> e{ nullptr };
 		};
 		struct Task {
 			std::function<void(JobArgs)> task;
@@ -520,19 +655,20 @@ namespace fibers {
 			uint32_t groupJobEnd;
 			uint32_t sharedmemory_size;
 		};
+
 		struct TaskQueue {
 			std::deque<Task> queue;
-			std::mutex locker;
-
-			inline void push(Task&& item) {
+			synchronization::CriticalMutexLock locker;
+			
+			__forceinline void push(Task&& item) {
 				std::scoped_lock lock(locker);
 				queue.push_back(std::forward<Task>(item));
 			};
-			inline void push(const Task& item) {
+			__forceinline void push(const Task& item) {
 				std::scoped_lock lock(locker);
 				queue.push_back(item);
 			};
-			inline bool try_pop(Task& item) {
+			__forceinline bool try_pop(Task& item) {
 				std::scoped_lock lock(locker);
 				if (queue.empty()) return false;
 				item = std::move(queue.front());
@@ -545,8 +681,8 @@ namespace fibers {
 			uint32_t numThreads = 0;
 			std::unique_ptr<TaskQueue[]> jobQueuePerThread;
 			std::atomic_bool alive{ true };
-			std::condition_variable wakeCondition;
-			std::mutex wakeMutex;
+			std::condition_variable_any wakeCondition; // std::condition_variable wakeCondition;
+			synchronization::CriticalMutexLock wakeMutex; // std::mutex wakeMutex;
 			std::atomic<uint32_t> nextQueue{ 0 };
 			std::vector<std::thread> threads;
 			void ShutDown() {
@@ -574,31 +710,34 @@ namespace fibers {
 			};
 		} static internal_state;
 
+		__forceinline uint32_t GetThreadCount() { return internal_state.numThreads; };
+
 		// Add a task to execute asynchronously. Any idle thread will execute this.
-		void Execute(context& ctx, const std::function<void(JobArgs)>& task);
+		void Execute(context& ctx, const std::function<void(JobArgs)>& task) noexcept;
 
 		// Divide a task onto multiple jobs and execute in parallel.
 		//	jobCount	: how many jobs to generate for this task.
 		//	groupSize	: how many jobs to execute per thread. Jobs inside a group execute serially. It might be worth to increase for small jobs
 		//	task		: receives a JobArgs as parameter
-		void Dispatch(context& ctx, uint32_t jobCount, uint32_t groupSize, const std::function<void(JobArgs)>& task, size_t sharedmemory_size = 0);
+		void Dispatch(context& ctx, uint32_t jobCount, uint32_t groupSize, const std::function<void(JobArgs)>& task, size_t sharedmemory_size = 0) noexcept;
 
 		// Returns the amount of job groups that will be created for a set number of jobs and group size
-		uint32_t DispatchGroupCount(uint32_t jobCount, uint32_t groupSize);
+		__forceinline constexpr uint32_t DispatchGroupCount(uint32_t jobCount, uint32_t groupSize) { return (jobCount + groupSize - 1) / groupSize; /* Calculate the amount of job groups to dispatch (overestimate, or "ceil"): */ };
 
 		// Check if any threads are working currently or not
 		bool IsBusy(const context& ctx);
 
-		// Wait until all threads become idle
-		//	Current thread will become a worker thread, executing jobs
-		void Wait(const context& ctx);
+		void HandleExceptions(context& ctx);
+
+		// Wait until all threads become idle. Current thread will become a worker thread, executing jobs.
+		void Wait(context& ctx);
 
 		struct TaskGroup {
 		private:
-			context ctx;
+			context ctx{0, nullptr};
 
 		public:
-			auto Wait() const { return impl::Wait(ctx); };
+			auto Wait() { return impl::Wait(ctx); };
 			auto IsBusy() const { return impl::IsBusy(ctx); };
 			auto Queue(const std::function<void(JobArgs)>& task) { return impl::Execute(ctx, task); };
 			auto Dispatch(uint32_t jobCount, const std::function<void(JobArgs)>& task) { return impl::Dispatch(ctx, jobCount, (10000.0 / 400.0) * jobCount, task); };
@@ -616,6 +755,48 @@ namespace fibers {
 	protected:
 		mutable std::shared_ptr<fibers::Action_Base> impl;
 
+	private:
+		template <typename T> static constexpr const bool IsStaticFunction() {
+			if constexpr (std::is_pointer<T>::value) {
+				return std::is_function<typename std::remove_pointer_t<T>>::value;
+			}
+			else {
+				return std::is_function<T>::value;
+			}
+		};
+		template <typename T> static constexpr const bool IsLambda(){
+			if constexpr (IsStaticFunction<T>() || std::is_member_function_pointer<T>::value) {
+				return false;
+			}
+			if constexpr (std::is_invocable<T>::value) {
+				return true;
+			}
+			return false;
+		};
+		template<typename T, typename... Args> static constexpr const bool IsStatelessTest() {
+			using return_type = typename std::invoke_result<T, Args...>::type;
+			using ftype = return_type(*)(Args...);
+			return std::is_convertible<T, ftype>::value;
+		};
+		template <typename T, typename... Args> static constexpr const bool IsLambdaStateless() {
+			if constexpr (IsLambda<T>()) {
+				return IsStatelessTest<T, Args...>();
+			}
+			else {
+				return false;
+			}
+		};
+		template<typename T, typename... Args> static constexpr const bool IsStateless() {
+			if constexpr (IsLambdaStateless<T, Args...>() || IsStaticFunction<T>()) {
+				return true;
+			}
+			else {
+				return false;
+			}
+		};
+
+
+
 	public:
 		Job() : impl(nullptr) {};
 		Job(const Job& other) : impl(other.impl) {};
@@ -624,14 +805,17 @@ namespace fibers {
 		Job& operator=(Job&& other) { impl = std::move(other.impl); return *this; };
 
 		/* Creates a job from a function and (optionally) input parameters. Can handle basic type-casting from inputs to parameters, and supports shared_ptr casting (to and from). */
-		template < typename T, typename... Args, typename = std::enable_if_t< !std::is_same_v<Job, std::decay_t<T>> && !std::is_same_v<fibers::Any, std::decay_t<T>> >> explicit Job(T&& function, Args && ... Fargs) : impl(nullptr) {
-			auto func{ fibers::Function(std::function(std::forward<T>(function)), std::forward<Args>(Fargs)...) };
+		template < typename T, typename... Args, typename = std::enable_if_t< !std::is_same_v<fibers::Job, std::decay_t<T>> && !std::is_same_v<fibers::Any, std::decay_t<T>> >> explicit Job(T&& function, Args && ... Fargs) : impl(nullptr) {
+			auto func{ fibers::Function(std::function(std::forward<T>(function)), std::forward<Args>(Fargs)...) }; 
+			
+			static constexpr const bool is_stateless{ IsStateless<T, Args...>() };
+
 			if constexpr (decltype(func)::returnsNothing) {
-				auto* action{ new fibers::Action_NoReturn(std::move(func)) }; // create ptr
+				auto* action{ new fibers::Action_NoReturn(std::move(func), is_stateless) }; // create ptr
 				impl = std::static_pointer_cast<fibers::Action_Base>(std::shared_ptr<typename std::remove_pointer_t<decltype(action)>>(std::move(action))); // move to smart ptr and then cast-down to base. Base handle counter will do destruction
 			}
 			else {
-				auto* action{ new fibers::Action_Returns(std::move(func)) }; // create ptr
+				auto* action{ new fibers::Action_Returns(std::move(func), is_stateless) }; // create ptr
 				impl = std::static_pointer_cast<fibers::Action_Base>(std::shared_ptr<typename std::remove_pointer_t<decltype(action)>>(std::move(action))); // move to smart ptr and then cast-down to base. Base handle counter will do destruction
 			}
 		};
@@ -654,6 +838,14 @@ namespace fibers {
 
 		/* Add the task to a thread / fiber, and then "forgets" the job. CAUTION: user is responsible for guarranteeing that all data used by the job outlives the job itself, if using this mode of tasking. */
 		void AsyncFireAndForget();
+
+		bool IsStatic() const noexcept {
+			static bool staticVal{ true };
+			if (impl) {
+				return impl->IsStatic();
+			}
+			return staticVal;
+		};
 
 		/* Returns the potential name of the static function, if one is known. */
 		std::string FunctionName() const {
@@ -752,12 +944,65 @@ namespace fibers {
 			impl->jobs.clear();
 		};
 
+		impl::TaskGroup& GetTaskGroup() const {
+			return *std::static_pointer_cast<impl::TaskGroup>(impl->waitGroup);
+		};
 	private:
 		std::unique_ptr<JobGroupImpl> impl;
 
 	};
 
 	namespace parallel {
+		/* parallel_for (auto i = start; i < end; i++){ todo(i); }
+		If the todo(i) returns anything, it will be collected into a vector at the end. */
+		template<typename iteratorType, typename F> decltype(auto) For(JobGroup& jobgroup, iteratorType start, iteratorType end, F const& ToDo) {
+			if (end <= start) return;
+			auto& group = jobgroup.GetTaskGroup();
+
+			group.Dispatch(end - start, [=](impl::JobArgs args) {
+				ToDo(start + args.jobIndex);
+			});			
+		};
+
+		/* parallel_for (auto i = start; i < end; i += step){ todo(i); }
+		If the todo(i) returns anything, it will be collected into a vector at the end. */
+		template<typename iteratorType, typename F> decltype(auto) For(JobGroup& jobgroup, iteratorType start, iteratorType end, iteratorType step, F const& ToDo) {
+			if (end <= start) return;
+			auto& group = jobgroup.GetTaskGroup();
+
+			group.Dispatch((end - start) / step, [=](impl::JobArgs args) {
+				ToDo(start + args.jobIndex * step);
+			});			
+		};
+
+		/* parallel_for (auto i = container.begin(); i != container.end(); i++){ todo(*i); }
+		If the todo(*i) returns anything, it will be collected into a vector at the end. */
+		template<typename containerType, typename F> decltype(auto) ForEach(JobGroup& jobgroup, containerType& container, F const& ToDo) {
+			int n = container.size();
+			if (n <= 0) return;
+			auto& group = jobgroup.GetTaskGroup();
+
+			group.Dispatch(n, [&container, to_do = ToDo](impl::JobArgs args) {
+				auto iter = container.begin();
+				std::advance(iter, args.jobIndex);
+				to_do(*iter);
+			});			
+		};
+
+		/* parallel_for (auto i = container.cbegin(); i != container.cend(); i++){ todo(*i); }
+		If the todo(*i) returns anything, it will be collected into a vector at the end. */
+		template<typename containerType, typename F> decltype(auto) ForEach(JobGroup& jobgroup, containerType const& container, F const& ToDo) {
+			int n = container.size();
+			if (n <= 0) return;
+			auto& group = jobgroup.GetTaskGroup();
+
+			group.Dispatch(n, [&container, to_do = ToDo](impl::JobArgs args) {
+				auto iter = container.cbegin();
+				std::advance(iter, args.jobIndex);
+				to_do(*iter);
+			});
+		};
+
 		/* parallel_for (auto i = start; i < end; i++){ todo(i); }
 		If the todo(i) returns anything, it will be collected into a vector at the end. */
 		template<typename iteratorType, typename F> decltype(auto) For(iteratorType start, iteratorType end, F const& ToDo) {
@@ -911,66 +1156,54 @@ namespace fibers {
 			}
 		};
 
-		/* wrapper for std::find_if with std::execution::par */
+		/* wrapper for std::find_if */
 		template<typename containerType, typename F> decltype(auto) Find(containerType& container, F const& ToDo) {
-			constexpr bool retNo = std::is_same<typename fibers::utilities::function_traits<decltype(std::function(ToDo))>::result_type, void>::value;
-
-			int n = container.size();
+#if 1
+			return std::find_if(container.begin(), container.end(), [&](auto& x) ->bool { return ToDo(x); }); // std::execution::par, 
+#else
+			uint32_t n{ static_cast<uint32_t>(container.size()) };
 			auto out{ container.end() };
-
-			if (n <= 0) return out;
-
-			std::vector<containerType::iterator> iterators(n, container.begin());
-
 			impl::TaskGroup group;
 
-			std::mutex mut;
-
-			group.Dispatch(n, [&](impl::JobArgs args) {
-				std::advance(iterators[static_cast<int>(args.jobIndex)], args.jobIndex);
-				if (ToDo(*iterators[static_cast<int>(args.jobIndex)])) {
-					mut.lock();
-					out = iterators[static_cast<int>(args.jobIndex)];
-					mut.unlock();
-				}
+			if (n > 0) {
+				std::vector<containerType::iterator> iterators(n, container.begin());
+				group.Dispatch(n, [&](impl::JobArgs args) {
+					std::advance(iterators[static_cast<int>(args.jobIndex)], args.jobIndex);
+					if (ToDo(*iterators[static_cast<int>(args.jobIndex)])) {
+						if (group.TryEarlyExit()) {
+							out = iterators[static_cast<int>(args.jobIndex)];
+						}
+					}
 				});
-
-			group.Wait();
-
+				group.Wait();
+			}
 			return out;
-
-			// return std::find_if(std::execution::par, container.begin(), container.end(), [&](auto& x) ->bool { return ToDo(x); });
+#endif
 		};
 
-		/* wrapper for std::find_if with std::execution::par */
+		/* wrapper for std::find_if */
 		template<typename containerType, typename F> decltype(auto) Find(containerType const& container, F const& ToDo) {
-			constexpr bool retNo = std::is_same<typename fibers::utilities::function_traits<decltype(std::function(ToDo))>::result_type, void>::value;
-
-			int n = container.size();
+#if 1
+			return std::find_if(container.cbegin(), container.cend(), [&](auto const& x) ->bool { return ToDo(x); }); // std::execution::par, 
+#else
+			uint32_t n{ static_cast<uint32_t>(container.size()) };
 			auto out{ container.cend() };
-
-			if (n <= 0) return out;
-
-			std::vector<containerType::const_iterator> iterators(n, container.cbegin());
-
 			impl::TaskGroup group;
 
-			std::mutex mut;
-
-			group.Dispatch(n, [&](impl::JobArgs args) {
-				std::advance(iterators[static_cast<int>(args.jobIndex)], args.jobIndex);
-				if (ToDo(*iterators[static_cast<int>(args.jobIndex)])) {
-					mut.lock();
-					out = iterators[static_cast<int>(args.jobIndex)];
-					mut.unlock();
-				}
-			});
-
-			group.Wait();
-
+			if (n > 0) {
+				std::vector<containerType::const_iterator> iterators(n, container.cbegin());
+				group.Dispatch(n, [&](impl::JobArgs args) {
+					std::advance(iterators[static_cast<int>(args.jobIndex)], args.jobIndex);
+					if (ToDo(*iterators[static_cast<int>(args.jobIndex)])) {
+						if (group.TryEarlyExit()) {
+							out = iterators[static_cast<int>(args.jobIndex)];
+						}
+					}					
+				});
+				group.Wait();
+			}
 			return out;
-
-			// return std::find_if(std::execution::par, container.cbegin(), container.cend(), [&](auto const& x) ->bool { return ToDo(x); });
+#endif
 		};
 
 		/*
@@ -989,23 +1222,17 @@ namespace fibers {
 			return out;
 		};
 
-
-
-
-
-
-
 		/* Generic form of a future<T>, which can be used to wait on and get the results of any job. */
 		class promise {
 		protected:
-			std::shared_ptr< std::atomic<JobGroup*>> shared_state;
-			std::shared_ptr<std::atomic<Any*>> result;
+			std::shared_ptr< synchronization::atomic_ptr<JobGroup> > shared_state;
+			std::shared_ptr< synchronization::atomic_ptr<Any> > result;
 
 		public:
 			promise() : shared_state(nullptr), result(nullptr) {};
 			promise(Job const& job) :
-				shared_state(std::shared_ptr<std::atomic<JobGroup*>>(new std::atomic<JobGroup*>(new JobGroup(job)), [](std::atomic<JobGroup*>* anyP) { if (anyP) { auto* p = anyP->exchange(nullptr); if (p) { delete p; } delete anyP; } })),
-				result(std::shared_ptr<std::atomic<Any*>>(new std::atomic<Any*>(), [](std::atomic<Any*>* anyP) { if (anyP) { auto* p = anyP->exchange(nullptr); if (p) { delete p; } delete anyP; } })) {};
+				shared_state(std::shared_ptr<synchronization::atomic_ptr<JobGroup>>(new synchronization::atomic_ptr<JobGroup>(new JobGroup(job)), [](synchronization::atomic_ptr<JobGroup>* anyP) { if (anyP) { auto* p = anyP->Set(nullptr); if (p) { delete p; } delete anyP; } })),
+				result(std::shared_ptr<synchronization::atomic_ptr<Any>>(new synchronization::atomic_ptr<Any>(), [](synchronization::atomic_ptr<Any>* anyP) { if (anyP) { auto* p = anyP->Set(nullptr); if (p) { delete p; } delete anyP; } })) {};
 			promise(promise const&) = default;
 			promise(promise&&) = default;
 			promise& operator=(promise const&) = default;
@@ -1017,23 +1244,25 @@ namespace fibers {
 			};
 			void wait() {
 				if (shared_state) {
-					auto p = shared_state->exchange(nullptr);
+					auto p = shared_state->Set(nullptr);
 					if (p) {
-						Any* p2 = result->exchange(new Any(p->Wait_Get()[0]));
-						if (p2) {
-							delete p2;
-						}
+						auto list = p->Wait_Get();
+						if (list.size() > 0) {
+							Any* p2 = result->Set(new Any(list[0]));
+							if (p2) {
+								delete p2;
+							}
+						}						
 						delete p;
 					}
 				}
-				while (result && !result->load()) {
-					YieldProcessor();
+				while (result && !result) {
+					std::this_thread::yield();
 				}
 			};
-
 			Any get_any() const noexcept {
 				if (result) {
-					Any* p = result->load();
+					Any* p = result->Get();
 					if (p) {
 						return Any(*p);
 					}
@@ -1069,7 +1298,7 @@ namespace fibers {
 			/* get a copy of the result of the task. must have already waited. */
 			decltype(auto) get() {
 				if (result) {
-					Any* p = result->load();
+					Any* p = result->Get();
 					if (p) {
 						if constexpr (std::is_same<void, T>()) {
 							return;
@@ -1090,7 +1319,7 @@ namespace fibers {
 			/* get a reference to the result of the task. Note: lifetime of return reference must not outlive the future<T> object. must have already waited. */
 			decltype(auto) get_ref() {
 				if (result) {
-					Any* p = result->load();
+					Any* p = result->Get();
 					if (p) {
 						if constexpr (std::is_same<void, T>()) {
 							return;
@@ -1111,7 +1340,7 @@ namespace fibers {
 			/* get a shared_pointer of the result of the task. must have already waited. */
 			decltype(auto) get_shared() {
 				if (result) {
-					Any* p = result->load();
+					Any* p = result->Get();
 					if (p) {
 						if constexpr (std::is_same<void, T>()) {
 							return;

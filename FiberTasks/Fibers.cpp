@@ -156,7 +156,7 @@ namespace fibers {
 	};
 
 	namespace impl {
-		inline void work(uint32_t startingQueue) {
+		inline void work(uint32_t startingQueue) noexcept {
 			uint32_t i, j;
 			TaskQueue* job_queue;
 			Task job;
@@ -182,15 +182,25 @@ namespace fibers {
 						args.sharedmemory = nullptr;
 					}
 
-					for (j = job.groupJobOffset; j < job.groupJobEnd; ++j) {
-						args.jobIndex = j;
-						args.groupIndex = j - job.groupJobOffset;
-						args.isFirstJobInGroup = (j == job.groupJobOffset);
-						args.isLastJobInGroup = (j == job.groupJobEnd - 1);
-						job.task(args);
+					{
+						for (j = job.groupJobOffset; j < job.groupJobEnd; ++j) {
+							args.jobIndex = j;
+							args.groupIndex = j - job.groupJobOffset;
+							args.isFirstJobInGroup = (j == job.groupJobOffset);
+							args.isLastJobInGroup = (j == job.groupJobEnd - 1);
+							try {
+								job.task(args);
+							} catch (...) {
+								if (!job.ctx->e) {
+									auto eptr = job.ctx->e.Set(new std::exception_ptr(std::current_exception()));
+									if (eptr) {
+										delete eptr;
+									}
+								}
+							}
+						}
 					}
-
-					job.ctx->counter.fetch_sub(1);
+					job.ctx->counter.Decrement(); // one got finished
 				}
 				startingQueue++; // go to next queue
 			}
@@ -215,7 +225,7 @@ namespace fibers {
 						work(threadID);
 
 						// finished with jobs, put to sleep
-						std::unique_lock<std::mutex> lock(internal_state.wakeMutex);
+						std::unique_lock<decltype(internal_state.wakeMutex)> lock(internal_state.wakeMutex); // std::unique_lock<std::mutex> lock(internal_state.wakeMutex);
 						internal_state.wakeCondition.wait(lock);
 					}
 					});
@@ -266,20 +276,19 @@ namespace fibers {
 			return true;
 		};
 		void ShutDown() { internal_state.ShutDown(); };
-		uint32_t GetThreadCount() { return internal_state.numThreads; };
-		void Execute(context& ctx, const std::function<void(JobArgs)>& task) {
-			// Context state is updated:
-			ctx.counter.fetch_add(1);
+
+		void Execute(context& ctx, const std::function<void(JobArgs)>& task) noexcept {
+			ctx.counter.Increment(); // Context state is updated:
 			internal_state.jobQueuePerThread[internal_state.nextQueue.fetch_add(1) % internal_state.numThreads].push({ task, &ctx, 0, 0, 1, 0 });
 			internal_state.wakeCondition.notify_one();
 		};
-		void Dispatch(context& ctx, uint32_t jobCount, uint32_t groupSize, const std::function<void(JobArgs)>& task, size_t sharedmemory_size) {
+		void Dispatch(context& ctx, uint32_t jobCount, uint32_t groupSize, const std::function<void(JobArgs)>& task, size_t sharedmemory_size) noexcept {
 			if (jobCount == 0 || groupSize == 0) { return; }
 
 			const uint32_t groupCount = DispatchGroupCount(jobCount, groupSize);
 
 			// Context state is updated:
-			ctx.counter.fetch_add(groupCount);
+			ctx.counter.Add(groupCount);
 
 			Task job{ task, &ctx, 0, 0, 1, (uint32_t)sharedmemory_size };
 
@@ -293,9 +302,19 @@ namespace fibers {
 
 			internal_state.wakeCondition.notify_all();
 		};
-		uint32_t DispatchGroupCount(uint32_t jobCount, uint32_t groupSize) { return (jobCount + groupSize - 1) / groupSize; /* Calculate the amount of job groups to dispatch (overestimate, or "ceil"): */ };
-		bool IsBusy(const context& ctx) { return ctx.counter.load() > 0; /* Whenever the context label is greater than zero, it means that there is still work that needs to be done */ };
-		void Wait(const context& ctx) {
+		bool IsBusy(const context& ctx) { return ctx.counter.GetValue() > 0; /* Whenever the context label is greater than zero, it means that there is still work that needs to be done */ };
+		void HandleExceptions(context& ctx) {
+			if (ctx.e) {
+				auto eptr = ctx.e.Set(nullptr);
+				if (eptr) {
+					std::exception_ptr copy{ *eptr };
+					delete eptr;
+					std::rethrow_exception(std::move(copy));
+				}
+			}
+		};
+		void Wait(context& ctx) {
+			int j{ 0 };
 			if (IsBusy(ctx)) {
 				// Wake any threads that might be sleeping:
 				internal_state.wakeCondition.notify_all();
@@ -308,9 +327,11 @@ namespace fibers {
 					//	In this case those jobs are not standing by on a queue but currently executing
 					//	on other threads, so they cannot be picked up by this thread.
 					//	Allow to swap out this thread by OS to not spin endlessly for nothing
-					std::this_thread::yield();
+					if (++j >= 40)
+						std::this_thread::yield(); 
 				}
 			}
+			HandleExceptions(ctx);			
 		};
 	};
 
@@ -320,7 +341,9 @@ namespace fibers {
 		std::shared_ptr<impl::TaskGroup> wg = std::static_pointer_cast<impl::TaskGroup>(waitGroup);
 		if (!wg) throw(std::runtime_error("Job Group was empty."));
 		wg->Queue([impl = job.impl](impl::JobArgs args) {
-			impl->Invoke();
+			if (impl) {
+				impl->Invoke();
+			}
 		});
 		jobs.push_back(job);
 	};
@@ -343,12 +366,19 @@ namespace fibers {
 	};
 	[[nodiscard]] JobGroup Job::AsyncInvoke() { return JobGroup(*this); };
 	void Job::AsyncFireAndForget() {
-		std::shared_ptr< impl::context > ctx = std::make_shared<impl::context>();
-		ctx->counter.fetch_add(1);
-		impl::Execute(*ctx, [action = this->impl, context = ctx](impl::JobArgs args) {
-			context->counter.fetch_add(-1);
-			action->Invoke();
-		});
+		if (this->IsStatic()) {
+			std::shared_ptr< impl::context > ctx = std::make_shared<impl::context>();
+			ctx->counter.Increment();
+			impl::Execute(*ctx, [action = this->impl, context = ctx](impl::JobArgs args) {
+				context->counter.Decrement();
+				if (action) {
+					action->Invoke();
+				}
+			});
+		}
+		else {
+			throw(std::runtime_error("Only static or stateless functions can be called from a fire-and-forget methodology."));
+		}
 	};
 
 };

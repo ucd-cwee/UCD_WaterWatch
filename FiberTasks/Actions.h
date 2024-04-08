@@ -167,7 +167,7 @@
 #endif
 #pragma endregion 
 
-
+#include <type_traits>
 #include <functional>
 #include <memory>
 #include <utility>
@@ -239,7 +239,7 @@ namespace fibers {
 			void lock() {
 				auto my_ticket = ticket.fetch_add(1, std::memory_order::memory_order_relaxed);
 				while (my_ticket != serving.load(std::memory_order::memory_order_acquire)) {
-					::SwitchToThread();
+					std::this_thread::yield();
 				}
 			};
 			void unlock() {
@@ -351,6 +351,18 @@ namespace fibers {
 		template<class R> struct function_traits { using result_type = R; using arguments = std::tuple<>; };
 		template<class R> struct function_traits<std::function<R(void)>> { using result_type = R; using arguments = std::tuple<>; };
 		template<class R, class... Args> struct function_traits<std::function<R(Args...)>> { using result_type = R; using arguments = std::tuple<Args...>; };
+
+		template <typename T, typename U> struct helper : helper<T, decltype(&U::operator())> {};
+		template <typename T, typename C, typename R, typename... A> struct helper<T, R(C::*)(A...) const> { static const bool value = std::is_convertible<T, R(*)(A...)>::value; };
+		template<typename T> struct is_stateless { static const bool value = helper<T, T>::value; };
+
+
+		template<typename Lambda>
+		constexpr auto is_captureless_lambda_tester(int) -> decltype(+std::declval<Lambda>(), void(), std::true_type{});
+
+		template<typename Lambda>
+		constexpr auto is_captureless_lambda_tester(long) -> std::false_type;
+
 	};
 
 	namespace {
@@ -419,8 +431,8 @@ namespace fibers {
 		using Type = typename F;
 		using ResultType = typename function_traits<std::function<Type>>::result_type;
 		using Arguments = typename function_traits<std::function<Type>>::arguments;
-		static constexpr const size_t NumArguments = function_traits<std::function<Type>>::num_arguments;
-
+		static constexpr const size_t NumArguments = function_traits<std::function<Type>>::num_arguments; 
+		
 	private:
 		template<int N, bool badIndex> struct function_destination_impl {
 			using type = typename std::tuple_element<N, typename Arguments>::type;
@@ -853,7 +865,7 @@ namespace fibers {
 				return function();
 			}
 			else {
-				throw(std::runtime_error("The number of arguments and number of parameters did not match"));
+			    throw(std::runtime_error("The number of arguments and number of parameters did not match"));				
 			}
 		}
 		void Invoke() override final { operator()(); };
@@ -1111,7 +1123,6 @@ namespace fibers {
 	__forceinline decltype(auto) Any::Object_Data::get(const AnyAutoCast& obj) { Any* t = const_cast<Any*>(obj.parent); std::shared_ptr<AnyData> out; if (t) { out = t->container; } return out; };
 	__forceinline decltype(auto) Any::Object_Data::get(const AnyAutoCast* t) { return get(*t); };
 
-
 	class Action_Base {
 	public:
 		Action_Base() = default;
@@ -1123,6 +1134,7 @@ namespace fibers {
 
 		virtual const fibers::Any& GetResult() const = 0;
 		virtual fibers::Any& Invoke() = 0;
+		virtual bool IsStatic() const noexcept = 0;
 		virtual const boost::typeindex::type_info& returnType() const = 0;
 		virtual std::string FunctionName() const = 0;
 	};
@@ -1130,10 +1142,11 @@ namespace fibers {
 	class Action_NoReturn final : public Action_Base {
 	private:
 		fibers::Function<F> func;
+		bool stateless;
 
 	public:
 		Action_NoReturn() : Action_Base() {};
-		Action_NoReturn(fibers::Function<F>&& function) : Action_Base(), func(std::forward<fibers::Function<F>>(function)) {};
+		Action_NoReturn(fibers::Function<F>&& function, bool isStateless) : Action_Base(), func(std::forward<fibers::Function<F>>(function)), stateless(isStateless) {};
 		Action_NoReturn(Action_NoReturn const&) = delete;
 		Action_NoReturn(Action_NoReturn&&) = delete;
 		Action_NoReturn& operator=(Action_NoReturn const&) = delete;
@@ -1160,6 +1173,9 @@ namespace fibers {
 			}
 
 		};
+		bool IsStatic() const noexcept override final {
+			return stateless;
+		};
 		const boost::typeindex::type_info& returnType() const override final {
 			return boost::typeindex::type_id<void>().type_info();
 		};
@@ -1172,10 +1188,11 @@ namespace fibers {
 	private:
 		fibers::Function<F> func;
 		fibers::Any any;
+		bool stateless;
 
 	public:
 		Action_Returns() : Action_Base(), any() {};
-		Action_Returns(fibers::Function<F>&& function) : Action_Base(), func(std::forward<fibers::Function<F>>(function)), any() {};
+		Action_Returns(fibers::Function<F>&& function, bool isStateless) : Action_Base(), func(std::forward<fibers::Function<F>>(function)), any(), stateless(isStateless) {};
 		Action_Returns(Action_Returns const&) = delete;
 		Action_Returns(Action_Returns&&) = delete;
 		Action_Returns& operator=(Action_Returns const&) = delete;
@@ -1204,6 +1221,9 @@ namespace fibers {
 			}
 
 		};
+		bool IsStatic() const noexcept override final {
+			return stateless;
+		};
 		const boost::typeindex::type_info& returnType() const override final {
 			return boost::typeindex::type_id<decltype(func)::ResultType>().type_info();
 		};
@@ -1211,6 +1231,5 @@ namespace fibers {
 			return func.FunctionName();
 		};
 	};
-
 
 };

@@ -1,6 +1,7 @@
 #pragma once
 #include "Heap.h"
 
+#define use_std_alloc
 #ifdef _UWPTARGET
 #define use_std_alloc
 #endif

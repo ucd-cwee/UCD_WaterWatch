@@ -18,6 +18,30 @@ to maintain a single distribution point for the source code.
 #include "../FiberTasks/Fibers.h"
 #include <execution>
 
+
+
+static int staticFunctionExample() noexcept {
+	return 2;
+};
+class Thing {
+public:
+	int memberFunctionExample() { // if static this will no longer be considered a "member function" and just a normal function
+		return 2;
+	};
+	static int staticMemberFunctionExample() { // if static this will no longer be considered a "member function" and just a normal function
+		return 2;
+	};
+};
+
+template < typename T, typename... Args, typename = std::enable_if_t< !std::is_same_v<fibers::Job, std::decay_t<T>> && !std::is_same_v<fibers::Any, std::decay_t<T>> >> 
+static constexpr const bool IsStatelessTest() {
+	using return_type = typename std::invoke_result<T, Args...>::type;
+	using ftype = return_type(*)(Args...);
+	return std::is_convertible<T, ftype>::value;
+};
+
+
+
 int Example::ExampleF(int numTasks, int numSubTasks) {
 	int* xyzwabc = new int[10000];
 	defer(delete[] xyzwabc); // does clean-up on our behalf on scope end
@@ -53,7 +77,7 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 
 				std::vector<int> vec(numLoops, 0);
 				fibers::parallel::For(0, numLoops, [&vec](int i) { vec[i] = i; });
-				std::for_each_n(vec.begin(), numLoops, [&pat, &j](int& i) {
+				std::for_each_n(std::execution::par, vec.begin(), numLoops, [&pat, &j](int& i) {
 					for (int k = 0; k < j; k++)
 						pat.AddValue(i + k, i + k);
 				});
@@ -109,7 +133,7 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 				int i, k;
 
 				std::vector<int> vec(numLoops, 0);
-				std::for_each_n(vec.begin(), numLoops, [&count, &j](int& V) {
+				std::for_each_n(std::execution::par, vec.begin(), numLoops, [&count, &j](int& V) {
 					for (int k = 0; k < j; k++)
 						count.fetch_add(k);
 				});
@@ -165,7 +189,7 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 				Stopwatch sw; sw.Start();
 				int i, k;
 
-				std::for_each_n(vec.begin(), numLoops, [&vec, &j](cweeStr& V) {
+				std::for_each_n(std::execution::par, vec.begin(), numLoops, [&vec, &j](cweeStr& V) {
 					for (int k = 0; k < j; k++) {
 						V = cweeStr(k);
 					}
@@ -185,6 +209,23 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 				fibers::parallel::For(0, numLoops, [&vec, &j](int i) {
 					for (int k = 0; k < j; k++) {
 						vec[i] = cweeStr(k);
+					}
+				});
+
+				cweeUnitValues::second timePassed = sw.Stop() / 1000000000.0;
+				std::cout << timePassed.ToString() << std::endl;
+			}
+
+			printf("SpeedTest (vector overwriting) ");
+			std::cout << j;
+			printf(" (Fibers ForEach) : ");
+			{
+				std::vector<cweeStr> vec(numLoops, cweeStr("TEST"));
+
+				Stopwatch sw; sw.Start();
+				fibers::parallel::ForEach(vec, [&j](cweeStr& v) {
+					for (int k = 0; k < j; k++) {
+						v = cweeStr(k);
 					}
 				});
 
@@ -241,7 +282,7 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 				Stopwatch sw; sw.Start();
 
 				for (int i = 0; i < numLoops; i++) {
-					fibers::parallel::Find(vec, [j = cweeStr((int)random_fast(0, numLoops - 1))](cweeStr const& x) ->bool { return x == j; });
+					(void)fibers::parallel::Find(vec, [j = cweeStr((int)random_fast(0, numLoops - 1))](cweeStr const& x) ->bool { return x == j; });
 				}
 
 				cweeUnitValues::second timePassed = sw.Stop() / 1000000000.0;
@@ -250,8 +291,184 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 
 			printf("\n");
 		}
+		for (int j = 1; j < 10; j += 2) {
+			int numLoops = 400 * j * j;
 
+			printf("SpeedTest (matrix overwriting) ");
+			std::cout << j;
+			printf(" (No Fibers) : ");
+			{
+				std::vector<std::vector<cweeStr>> vec(numLoops, std::vector<cweeStr>(j, cweeStr("TEST")));
+
+				Stopwatch sw; sw.Start();
+				int i, k;
+				for (i = 0; i < numLoops; i++) {
+					for (k = 0; k < j; k++) {
+						vec[i][k] = cweeStr(k);
+					}
+				}
+
+				cweeUnitValues::second timePassed = sw.Stop() / 1000000000.0;
+				std::cout << timePassed.ToString() << std::endl;
+			}
+
+			printf("SpeedTest (matrix overwriting) ");
+			std::cout << j;
+			printf(" (Threads w/ For-Loop) : ");
+			{
+				std::vector<std::vector<cweeStr>> vec(numLoops, std::vector<cweeStr>(j, cweeStr("TEST")));
+
+				Stopwatch sw; sw.Start();
+				int i, k;
+
+				std::for_each_n(std::execution::par, vec.begin(), numLoops, [&vec, &j](std::vector<cweeStr>& V) {
+					for (int k = 0; k < j; k++) {
+						V[k] = cweeStr(k);
+					}
+				});
+
+				cweeUnitValues::second timePassed = sw.Stop() / 1000000000.0;
+				std::cout << timePassed.ToString() << std::endl;
+			}
+
+			printf("SpeedTest (matrix overwriting) ");
+			std::cout << j;
+			printf(" (Threads w/ Threads) : ");
+			{
+				std::vector<std::vector<cweeStr>> vec(numLoops, std::vector<cweeStr>(j, cweeStr("TEST")));
+
+				Stopwatch sw; sw.Start();
+				int i, k;
+
+				std::for_each_n(std::execution::par, vec.begin(), numLoops, [&vec, &j](std::vector<cweeStr>& V) {
+					fibers::synchronization::atomic_num<long> n{ 0 };
+					std::for_each_n(std::execution::par, V.begin(), j, [&V, &n](cweeStr& V) {
+						V = cweeStr((int)(n.Increment()));
+					});
+				});
+
+				cweeUnitValues::second timePassed = sw.Stop() / 1000000000.0;
+				std::cout << timePassed.ToString() << std::endl;
+			}
+
+			printf("SpeedTest (matrix overwriting) ");
+			std::cout << j;
+			printf(" (Fibers w/ For-Loop) : ");
+			{
+				std::vector<std::vector<cweeStr>> vec(numLoops, std::vector<cweeStr>(j, cweeStr("TEST")));
+
+				Stopwatch sw; sw.Start();
+				fibers::parallel::For(0, numLoops, [&vec, &j](int i) {
+					for (int k = 0; k < j; k++) {
+						vec[i][k] = cweeStr(k);
+					}
+				});
+
+				cweeUnitValues::second timePassed = sw.Stop() / 1000000000.0;
+				std::cout << timePassed.ToString() << std::endl;
+			}
+
+			printf("SpeedTest (matrix overwriting) ");
+			std::cout << j;
+			printf(" (Fibers w/ Fibers) : ");
+			{
+				std::vector<std::vector<cweeStr>> vec(numLoops, std::vector<cweeStr>(j, cweeStr("TEST")));
+
+				Stopwatch sw; sw.Start();
+				fibers::parallel::For(0, numLoops, [&vec, &j](int i) {
+					fibers::parallel::For(0, j, [&vec, &j, &i](int k) {
+						vec[i][k] = cweeStr(k);
+					});
+				});
+
+				cweeUnitValues::second timePassed = sw.Stop() / 1000000000.0;
+				std::cout << timePassed.ToString() << std::endl;
+			}
+
+			printf("SpeedTest (matrix overwriting) ");
+			std::cout << j;
+			printf(" (Fibers Foreach w/ For-Loop) : ");
+			{
+				std::vector<std::vector<cweeStr>> vec(numLoops, std::vector<cweeStr>(j, cweeStr("TEST")));
+
+				Stopwatch sw; sw.Start();
+				fibers::parallel::ForEach(vec, [&j](std::vector<cweeStr>& vec) {
+					for (int k = 0; k < j; k++) {
+						vec[k] = cweeStr(k);
+					}
+				});
+
+				cweeUnitValues::second timePassed = sw.Stop() / 1000000000.0;
+				std::cout << timePassed.ToString() << std::endl;
+			}
+
+			printf("SpeedTest (matrix overwriting) ");
+			std::cout << j;
+			printf(" (Fibers Foreach w/ Fibers) : ");
+			{
+				std::vector<std::vector<cweeStr>> vec(numLoops, std::vector<cweeStr>(j, cweeStr("TEST")));
+
+				Stopwatch sw; sw.Start();
+				fibers::parallel::ForEach(vec, [&j](std::vector<cweeStr>& vec) {
+					fibers::parallel::For(0, j, [&vec, &j](int k) {
+						vec[k] = cweeStr(k);
+					});
+				});
+
+				cweeUnitValues::second timePassed = sw.Stop() / 1000000000.0;
+				std::cout << timePassed.ToString() << std::endl;
+			}
+
+			printf("SpeedTest (matrix overwriting) ");
+			std::cout << j;
+			printf(" (Fibers Foreach w/ Fibers as Combined Job Stack) : ");
+			{
+				std::vector<std::vector<cweeStr>> vec(numLoops, std::vector<cweeStr>(j, cweeStr("TEST")));
+
+				Stopwatch sw; sw.Start();
+
+				fibers::JobGroup group;
+				fibers::parallel::ForEach(group, vec, [&j, &group](std::vector<cweeStr>& vec) {
+					fibers::parallel::For(group, 0, j, [&vec](int k) {
+						vec[k] = cweeStr(k);
+					});
+				});
+				group.Wait(); // only one "wait" command, allowing the job system to better jump between jobs / cells of the matrix.
+
+				cweeUnitValues::second timePassed = sw.Stop() / 1000000000.0;
+				std::cout << timePassed.ToString() << std::endl;
+			}
+
+			printf("\n");
+		}
 	}
+
+	auto static_lambda = []()->cweeStr { return cweeStr("2"); };
+	auto dynamic_lambda = [xyzwabc]()->void{ xyzwabc[0]; return; };
+	auto static_function = &staticFunctionExample;
+	auto member_function = &Thing::memberFunctionExample;	
+	auto local_static_stdFunc = std::function([]()->int { throw(std::runtime_error("ERR")); return 2; });
+	auto local_dynamic_stdFunc = std::function([xyzwabc]()->int { return xyzwabc[0]; });
+	auto static_stdFunc = std::function(staticFunctionExample);
+	auto member_stdFunc = std::function(Thing::staticMemberFunctionExample);
+
+
+
+
+	int v = 1;
+	auto lambda1 = [](int i)->void {};
+	auto lambda2 = [v]()->void {};
+
+	constexpr const bool v_1234 = IsStatelessTest<decltype(lambda2)>();
+
+
+
+
+
+
+
+	auto jobTest = fibers::Job([]() { return 10.0f; });
+	jobTest.AsyncFireAndForget(); // will not crash
 
 
 	printf("Job 1\n");
@@ -406,6 +623,14 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 	int result1 = fibers::Job(&cweeMath::Ceil, 10.0f).Invoke().cast(); // Job takes function and up to 16 inputs. Invoke returns "Any" wrapper. Any.cast() does the cast to the target destination, if the conversion makes sense.
 	float result2 = fibers::Job([](float& x)->float { return x - 10.0f; }, 55.0f).Invoke().cast(); // Can also use lambdas instead of static function pointers.
 	auto __awaiter__ = fibers::Job([]() { return cweeStr("HELLO"); }).AsyncInvoke(); // Queues the job to take place on a fiber/thread, and guarrantees its completion before the scope ends.
+	fibers::Job([]() { return cweeStr("HELLO"); }).AsyncFireAndForget(); // Queues the job to take place on a fiber/thread, and it is the user's job to guarrantee it is safe to do so when the scope ends.
+
+	try {
+		fibers::Job([&]() { return t; }).AsyncFireAndForget(); // Queues the job to take place on a fiber/thread, and it is the user's job to guarrantee it is safe to do so when the scope ends.
+		throw(std::runtime_error("This should not happen"));
+	}catch(std::runtime_error){
+		// we anticipate that it would fail!
+	}
 
 
 
