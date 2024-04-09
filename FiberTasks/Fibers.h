@@ -1082,16 +1082,28 @@ namespace fibers {
 			if constexpr (retNo) {
 				if (n <= 0) return;
 
-				std::vector<containerType::iterator> iterators(n, container.begin());
-
-				impl::TaskGroup group;
-
-				group.Dispatch(n, [&](impl::JobArgs args) {
-					std::advance(iterators[static_cast<int>(args.jobIndex)], args.jobIndex);
-					ToDo(*iterators[static_cast<int>(args.jobIndex)]);
+				synchronization::atomic_ptr<std::exception_ptr> e{nullptr};
+				std::for_each_n(std::execution::par_unseq, container.begin(), container.end() - container.begin(), [&](auto& v) {
+					try {
+						ToDo(v);
+					}
+					catch (...) {
+						if (!e) {
+							auto eptr = e.Set(new std::exception_ptr(std::current_exception()));
+							if (eptr) {
+								delete eptr;
+							}
+						}
+					}
 				});
-
-				group.Wait();
+				if (e) {
+					auto eptr = e.Set(nullptr);
+					if (eptr) {
+						std::exception_ptr copy{ *eptr };
+						delete eptr;
+						std::rethrow_exception(std::move(copy));
+					}
+				}
 			}
 			else {
 				using returnT = typename fibers::utilities::function_traits<decltype(std::function(ToDo))>::result_type;
@@ -1123,16 +1135,28 @@ namespace fibers {
 			if constexpr (retNo) {
 				if (n <= 0) return;
 
-				std::vector<containerType::const_iterator> iterators(n, container.cbegin());
-
-				impl::TaskGroup group;
-
-				group.Dispatch(n, [&](impl::JobArgs args) {
-					std::advance(iterators[args.jobIndex], args.jobIndex);
-					ToDo(*iterators[args.jobIndex]);
+				synchronization::atomic_ptr<std::exception_ptr> e{ nullptr };
+				std::for_each_n(std::execution::par_unseq, container.cbegin(), container.cend() - container.cbegin(), [&](auto const& v) {
+					try {
+						ToDo(v);
+					}
+					catch (...) {
+						if (!e) {
+							auto eptr = e.Set(new std::exception_ptr(std::current_exception()));
+							if (eptr) {
+								delete eptr;
+							}
+						}
+					}
 				});
-
-				group.Wait();
+				if (e) {
+					auto eptr = e.Set(nullptr);
+					if (eptr) {
+						std::exception_ptr copy{ *eptr };
+						delete eptr;
+						std::rethrow_exception(std::move(copy));
+					}
+				}
 			}
 			else {
 				using returnT = typename fibers::utilities::function_traits<decltype(std::function(ToDo))>::result_type;
