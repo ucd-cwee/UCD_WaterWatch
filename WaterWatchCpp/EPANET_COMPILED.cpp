@@ -4322,6 +4322,29 @@ namespace epanet {
             auto& nodes = net->Node;
             auto& links = net->Link;
             auto numN = net->Nnodes;
+#if 1
+            fibers::JobGroup group;
+            fibers::parallel::For(group, (int)1, (int)nodes.size(), [&nodes, &currentTime, &hyd, &t, &pr, &net](int i) {
+                auto& obj = nodes[i];
+                if (obj) {
+                    auto& A_t = obj->Type_p;
+                    if ((t == 0_s) || A_t == asset_t::RESERVOIR) {
+                        AUTO pat = obj->GetValue<_HEAD_>();
+                        if (pat) {
+                            pat->AddUniqueValue(currentTime, hyd->NodeHead[i]);
+                            pat->CompressLastValueAdded();
+                        }
+                    }
+                    if ((t == 0_s) || A_t == asset_t::RESERVOIR) {
+                        AUTO pat = obj->GetValue<_DEMAND_>();
+                        if (pat) {
+                            pat->AddUniqueValue(currentTime, hyd->NodeDemand[i]);
+                            pat->CompressLastValueAdded();
+                        }
+                    }
+                }
+            });
+#else
             for (auto i = 1; i <= numN; i++) {
                 auto& obj = nodes[i];
                 if (obj) {
@@ -4342,10 +4365,10 @@ namespace epanet {
                     }
                 }
             }
+#endif
             numN = net->Nlinks;
-            
 #if 1
-            fibers::parallel::For(1, numN, [&links, &currentTime, &hyd, &t, &pr, &net](int i) {
+            fibers::parallel::For(group, 1, (int)links.size(), [&links, &currentTime, &hyd, &t, &pr, &net](int i) {
                 auto& obj = links[i];
                 if (obj) {
                     auto& A_t = obj->Type_p;
@@ -4447,6 +4470,8 @@ namespace epanet {
                     }
                 }
             });
+            group.Wait();
+
 #else
             for (auto i = 1; i <= numN; i++) {
                 auto& obj = links[i];
@@ -4553,6 +4578,59 @@ namespace epanet {
 #endif
             // on the reporting timestep, evaluate the pressure zones: 
             if (t == 0_s) {
+#if 1
+                fibers::parallel::For(group, 0, (int)net->Zone.size(), [&links, &currentTime, &hyd, &t, &pr, &net](int i) {
+                    auto& obj = net->Zone[i];
+                    if (obj) {
+                        bool hasWaterDemand = obj->HasWaterDemand();
+                        // sum of all customer demands
+                        cubic_foot_per_second_t demand = 0; // we will approximate the demand using the reservoirs and inflow/outflows. 
+                        cubic_foot_per_second_t flowrate = 0; // Flowrate is the next inflow or net outflow. I.e. NOT including the reservoirs. 
+                        foot_t head = 0; int numSamples = 0;
+
+                        for (auto& link : obj->Boundary_Link) {
+                            switch (link.second) {
+                            case direction_t::FLOW_WITHIN_DMA: break;
+                            case direction_t::FLOW_IN_DMA:
+                                demand += link.first->GetCurrentValue<_FLOW_>(currentTime);
+                                break;
+                            case direction_t::FLOW_OUT_DMA:
+                                demand -= link.first->GetCurrentValue<_FLOW_>(currentTime);
+                                break;
+                            }
+                        }
+                        flowrate = demand;
+                        for (auto& node : obj->Node) {
+                            if (!hasWaterDemand || node->Type_p == asset_t::RESERVOIR || node->HasWaterDemand())
+                                cweeMath::rollingAverageRef(head, node->GetCurrentValue<_HEAD_>(currentTime), numSamples);
+                            if (node->Type_p == asset_t::RESERVOIR) demand -= node->GetCurrentValue<_DEMAND_>(currentTime);
+                        }
+                        {
+                            AUTO pat = obj->GetValue<_DEMAND_>();
+                            if (pat) {
+                                pat->AddUniqueValue(currentTime, demand);
+                                pat->CompressLastValueAdded();
+                            }
+                        }
+                        {
+                            AUTO pat = obj->GetValue<_HEAD_>();
+                            if (pat) {
+                                pat->AddUniqueValue(currentTime, head);
+                                pat->CompressLastValueAdded();
+                            }
+                        }
+                        {
+                            AUTO pat = obj->GetValue<_FLOW_>();
+                            if (pat) {
+                                pat->AddUniqueValue(currentTime, flowrate);
+                                pat->CompressLastValueAdded();
+                            }
+                        }
+                    }
+
+                });
+                group.Wait();
+#else
                 for (auto& obj : net->Zone) {
                     if (obj) {
                         bool hasWaterDemand = obj->HasWaterDemand();
@@ -4601,7 +4679,10 @@ namespace epanet {
                         }
                     }
                 }
+#endif
             }
+
+
 
             net->System->GetValue<_DEMAND_>()->AddUniqueValue(currentTime, hyd->Dsystem);
             net->System->GetValue<_ENERGY_>()->AddUniqueValue(currentTime, hyd->Etotal);
