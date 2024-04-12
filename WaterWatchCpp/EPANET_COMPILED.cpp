@@ -2966,6 +2966,33 @@ namespace epanet {
             Hydraul* hyd = &pr->hydraul;
 
             auto& link = net->Link;
+#if 0
+            fibers::parallel::For(1, net->Nlinks + 1, [&link, &pr, &hyd](int k) {
+                switch (link[k]->Type) {
+                case CVPIPE:
+                case PIPE:
+                    pipecoeff(pr, k, link);
+                    break;
+                case PUMP:
+                    pumpcoeff(pr, k);
+                    break;
+                case PBV:
+                    pbvcoeff(pr, k);
+                    break;
+                case TCV:
+                    tcvcoeff(pr, k);
+                    break;
+                case GPV:
+                    gpvcoeff(pr, k);
+                    break;
+                case FCV:
+                case PRV:
+                case PSV:
+                    if (hyd->LinkSetting[k] == MISSING) valvecoeff(pr, k);
+                    else hyd->P[k] = 0.0;
+                }
+            });
+#else
             for (int k = 1; k <= net->Nlinks; k++) {
                 switch (link[k]->Type) {
                 case CVPIPE:
@@ -2991,6 +3018,7 @@ namespace epanet {
                     else hyd->P[k] = 0.0;
                 }
             }
+#endif
         };
 
         void     linkcoeffs(EN_Project const& pr)
@@ -3012,6 +3040,7 @@ namespace epanet {
             nL = net->Nlinks;
             auto& links = net->Link;
             Slink* link;
+
             for (k = 1; k <= nL; k++)
             {
                 if (hyd->P[k] == (cfs_p_ft_t)0.0) continue;
@@ -3049,6 +3078,7 @@ namespace epanet {
                 // ... node n2 is a tank/reservoir
                 else sm->F[sm->Row[n1]] += hyd->P[k] * hyd->NodeHead[n2];
             }
+
         };
         void     emittercoeffs(EN_Project const& pr)
             /*
@@ -3126,6 +3156,35 @@ namespace epanet {
             dp = (foot_t)(double)(hyd->Preq - hyd->Pmin);
             n = 1.0 / hyd->Pexp;
 
+#if 1
+            fibers::synchronization::CriticalMutexLock lock;
+            fibers::parallel::For(1, net->Njuncs + 1, [&lock, &hyd, &pr, &sm, &net, &dp, &n](int i) {
+                int
+                    row;
+                foot_t
+                    hloss;      // head loss in supplying demand (ft)
+                ft_per_cfs_t
+                    hgrad;      // gradient of demand head loss (ft/cfs)
+
+                // Skip junctions with non-positive demands
+                if (hyd->NodeDemand[i] <= 0.0_cfs) return;
+
+                // Find head loss for demand outflow at node's elevation
+                demandheadloss(pr, i, dp, n, &hloss, &hgrad);
+
+                // Update row of solution matrix A & its r.h.s. F
+                if (hgrad > (ft_per_cfs_t)0.0) {
+                    row = sm->Row[i];
+                    auto temp = (hloss + net->Node[i]->El + (foot_t)(double)hyd->Pmin) / hgrad;
+                    auto temp2 = 1.0 / hgrad;
+                    {
+                        auto scopedLock{ std::scoped_lock(lock) };
+                        sm->Aii[row] += temp2;
+                        sm->F[row] += temp;
+                    }
+                }
+            });
+#else
             // Examine each junction node
             for (i = 1; i <= net->Njuncs; i++)
             {
@@ -3143,6 +3202,7 @@ namespace epanet {
                     sm->F[row] += (hloss + net->Node[i]->El + (foot_t)(double)hyd->Pmin) / hgrad;
                 }
             }
+#endif
         };
         void     nodecoeffs(EN_Project const& pr)
             /*
@@ -3158,15 +3218,19 @@ namespace epanet {
             Hydraul* hyd = &pr->hydraul;
             Smatrix* sm = &hyd->smatrix;
 
-            int   i;
-
             // For junction nodes, subtract demand flow from net
             // flow excess & add flow excess to RHS array F
-            for (i = 1; i <= net->Njuncs; i++)
-            {
+#if 0
+            fibers::parallel::For(1, net->Njuncs + 1, [&hyd](int i) {
+                hyd->Xflow[i] -= hyd->DemandFlow[i];
+            });
+            for (int i = 1; i <= net->Njuncs; i++) sm->F[sm->Row[i]] += hyd->Xflow[i];
+#else
+            for (int i = 1; i <= net->Njuncs; i++) {
                 hyd->Xflow[i] -= hyd->DemandFlow[i];
                 sm->F[sm->Row[i]] += hyd->Xflow[i];
             }
+#endif
         };
         void     valvecoeffs(EN_Project const& pr)
             /*
@@ -3249,7 +3313,6 @@ namespace epanet {
             // Otherwise use normal emitter head loss function
             else *hloss = (*hgrad) * q / hyd->Qexp;
         };
-
         void     demandheadloss(EN_Project const& pr, int i, foot_t dp, SCALER n, foot_t* hloss, ft_per_cfs_t* hgrad)
             /*
             **--------------------------------------------------------------
@@ -3296,7 +3359,6 @@ namespace epanet {
                 *hloss = dp + (foot_t)(double)(CBIG * (d - dfull));
             }
         };
-
         void     matrixcoeffs(EN_Project const& pr)
             /*
             **--------------------------------------------------------------
@@ -3312,10 +3374,15 @@ namespace epanet {
 
             // Reset values of all diagonal coeffs. (Aii), off-diagonal
             // coeffs. (Aij), r.h.s. coeffs. (F) and node excess flow (Xflow)
-            for (auto& x : sm->Aii) x = 0;
-            for (auto& x : sm->Aij) x = 0;
-            for (auto& x : sm->F) x = 0;
-            for (auto& x : hyd->Xflow) x = 0;
+            if (sm->Aii.size() > 0) std::memset(sm->Aii.Ptr(), 0, sizeof(cfs_p_ft_t) * sm->Aii.size());
+            if (sm->Aij.size() > 0) std::memset(sm->Aij.Ptr(), 0, sizeof(cfs_p_ft_t) * sm->Aij.size());
+            if (sm->F.size() > 0) std::memset(sm->F.Ptr(), 0, sizeof(cubic_foot_per_second_t) * sm->F.size());
+            if (hyd->Xflow.size() > 0) std::memset(hyd->Xflow.Ptr(), 0, sizeof(cubic_foot_per_second_t) * hyd->Xflow.size());
+
+            // for (auto& x : sm->Aii) x = 0;
+            // for (auto& x : sm->Aij) x = 0;
+            // for (auto& x : sm->F) x = 0;
+            // for (auto& x : hyd->Xflow) x = 0;
 
             // Compute matrix coeffs. from links, emitters, and nodal demands
             linkcoeffs(pr);
@@ -3742,14 +3809,73 @@ namespace epanet {
             Hydraul* hyd = &pr->hydraul;
             Report* rpt = &pr->report;
 
-            int change = FALSE,             // Status change flag
+            fibers::synchronization::atomic_num<long> change{ 0 };
+            int             // Status change flag
                 k,                          // Link index
                 n1,                         // Start node index
                 n2;                         // End node index
             foot_t dh;                      // Head difference across link
             StatusType  status;             // Current status
             Slink* link;
+
             // Examine each link
+#if 1
+            fibers::synchronization::CriticalMutexLock lock;
+            fibers::parallel::For(1, net->Nlinks + 1, [&change, &lock, &net, &hyd, &pr, &rpt](int k) {
+                int     
+                    n1,                         // Start node index
+                    n2;                         // End node index
+                foot_t dh;                      // Head difference across link
+                StatusType  status;             // Current status
+                Slink* link;
+
+                link = net->Link[k].Get();
+                n1 = link->N1;
+                n2 = link->N2;
+                dh = hyd->NodeHead[n1] - hyd->NodeHead[n2];
+
+                // Re-open temporarily closed links (status = XHEAD or TEMPCLOSED)
+                status = hyd->LinkStatus[k];
+                if (status == XHEAD || status == TEMPCLOSED)
+                {
+                    hyd->LinkStatus[k] = OPEN;
+                }
+
+                // Check for status changes in CVs and pumps
+                if (link->Type == CVPIPE)
+                {
+                    hyd->LinkStatus[k] = cvstatus(pr, hyd->LinkStatus[k], (double)dh, (double)hyd->LinkFlow[k]);
+                }
+                if (link->Type == PUMP && hyd->LinkStatus[k] >= OPEN &&
+                    hyd->LinkSetting[k] > 0.0)
+                {
+                    hyd->LinkStatus[k] = pumpstatus(pr, k, (double)(-dh));
+                }
+
+                // Check for status changes in non-fixed FCVs
+                if (link->Type == FCV && hyd->LinkSetting[k] != MISSING)
+                {
+                    hyd->LinkStatus[k] = next_fcv_status(pr, k, status, (double)hyd->NodeHead[n1], (double)hyd->NodeHead[n2]);
+                }
+
+                // Check for flow into (out of) full (empty) tanks
+                if (n1 > net->Njuncs || n2 > net->Njuncs)
+                {
+                    tankstatus(pr, k, n1, n2);
+                }
+
+                // Note any change in link status; do not revise link flow
+                if (status != hyd->LinkStatus[k])
+                {
+                    change.SetValue(1);
+                    if ((SCALER)rpt->Statflag == FULL)
+                    {
+                        auto scopedLock{ std::scoped_lock(lock) };
+                        writestatchange(pr, k, status, hyd->LinkStatus[k]);
+                    }
+                }
+            });
+#else
             for (k = 1; k <= net->Nlinks; k++)
             {
                 link = net->Link[k].Get();
@@ -3797,7 +3923,9 @@ namespace epanet {
                     }
                 }
             }
-            return change;
+#endif
+
+            return change.GetValue();
         };
 
 
@@ -4744,13 +4872,12 @@ namespace epanet {
             maxtrials = hyd->MaxIter;
             if (hyd->ExtraIter > 0) maxtrials += hyd->ExtraIter;
             *iter = 1;
-            while (*iter <= maxtrials)
-            {
+            while (*iter <= maxtrials) {
                 // Compute coefficient matrices A & F and solve A*H = F
                 // where H = heads, A = Jacobian coeffs. derived from
                 // head loss gradients, & F = flow correction terms.
                 // Solution for H is returned in F from call to linsolve().
-                headlosscoeffs(pr);
+                headlosscoeffs(pr); // parallelized
                 matrixcoeffs(pr);
                 errcode = smatrix_t::linsolve(sm, net->Njuncs);
                 // Matrix ill-conditioning problem - if control valve causing problem,

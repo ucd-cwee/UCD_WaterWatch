@@ -836,7 +836,10 @@ namespace fibers {
 		/* Add the task to a thread / fiber, and retrieve an awaiter group. The awaiter group guarrantees job completion before the awaiter or job goes out-of-scope. Useful for most basic task scheduling. */
 		[[nodiscard]] JobGroup AsyncInvoke();
 
-		/* Add the task to a thread / fiber, and then "forgets" the job. CAUTION: user is responsible for guarranteeing that all data used by the job outlives the job itself, if using this mode of tasking. */
+		/* Add the task to a thread / fiber, and then "forgets" the job. 
+		CAUTION: user is responsible for guarranteeing that all data used by the job outlives the job itself, if using this mode of tasking. 
+		This will throw an error if the underlying job is a capturing lambda, to reinforce the above requirement. 
+		*/
 		void AsyncFireAndForget();
 
 		bool IsStatic() const noexcept {

@@ -351,7 +351,7 @@ std::vector<double> SharedMatrix::GetTimeSeries(double Left, double Top, double 
 		// do a faster, local interpolation of those results using the Hilbert curve for the last 2/3 components. 
 		if (true) {
 			fibers::parallel::For(0, numRows, [&numColumns, &out, &tempMatrix, &reductionRatio, &Left, &Top, &columnStep, &rowStep](int R) {
-				fibers::parallel::For(0, numColumns, [&R, &numColumns, &out, &tempMatrix, &reductionRatio, &Left, &Top, &columnStep, &rowStep](int C) {
+				for (int C = 0; C < numColumns; C++) {
 					//if (((int)(::Max(R, C) - ::Min(R, C))) % reductionRatio != 0) {
 					out[numColumns * R + C] = tempMatrix.GetCurrentValue(
 #ifdef useCachedMatrix
@@ -361,7 +361,7 @@ std::vector<double> SharedMatrix::GetTimeSeries(double Left, double Top, double 
 #endif
 					);
 					//}
-				});
+				}
 			});
 		}
 #undef useCachedMatrix
@@ -2015,15 +2015,13 @@ std::vector<Color_Interop> MapBackground_Interop::GetMatrix(double Left, double 
 						// no point in doing the analysis -- there is no "clip to bounds" and there will be no color transitions. 
 						alpha_foreground = minCol.A / 255.0;
 #if 1
-						fibers::parallel::For(0, pixelHeight * pixelWidth + pixelWidth, [&out, &alpha_foreground, &minCol](int byteIndex) {
-							auto& pixel = out[byteIndex];
-
+						fibers::parallel::ForEach(out, [&alpha_foreground, &minCol](Color_Interop& pixel) {
 							double alpha_background = pixel.A / 255.0;
 							pixel.R = alpha_foreground * minCol.R + alpha_background * pixel.R * (1.0 - alpha_foreground);
 							pixel.G = alpha_foreground * minCol.G + alpha_background * pixel.G * (1.0 - alpha_foreground);
 							pixel.B = alpha_foreground * minCol.B + alpha_background * pixel.B * (1.0 - alpha_foreground);
 							pixel.A = (1.0 - (1.0 - alpha_foreground) * (1.0 - alpha_background)) * 255.0;
-					    });
+						});
 #else
 						for (int y = 0; y < pixelHeight; y++)
 						{
@@ -2156,9 +2154,7 @@ std::vector<Color_Interop> MapBackground_Interop::GetMatrix(double Left, double 
 					pixel.A = (1.0 - (1.0 - alpha_foreground) * (1.0 - alpha_background)) * 255.0;
 				});
 #else
-				fibers::parallel::For(0, pixelHeight * pixelWidth + pixelWidth, [&out, &alpha_foreground, &minCol](int byteIndex) {
-					auto& pixel = out[byteIndex];
-
+				fibers::parallel::ForEach(out, [&alpha_foreground, &minCol](Color_Interop& pixel) {
 					double alpha_background = pixel.A / 255.0;
 					pixel.R = alpha_foreground * minCol.R + alpha_background * pixel.R * (1.0 - alpha_foreground);
 					pixel.G = alpha_foreground * minCol.G + alpha_background * pixel.G * (1.0 - alpha_foreground);
@@ -2216,8 +2212,7 @@ std::vector<Color_Interop> MapBackground_Interop::GetMatrix(double Left, double 
 
 	// add random sub-byte noise to break up the visible "banding" in color gradients, typically seen in shadows (like white-to-grey gradients)
 #if 1
-	fibers::parallel::For((int)0, (int)out.size(), [&out](int i) {
-		auto& pixel = out[i];
+	fibers::parallel::ForEach(out, [](Color_Interop& pixel) {
 		pixel.R = ::Min(255.0, ::Max<double>(0.0, pixel.R + random_fast(-0.5, 0.5))); // rand_fast since the rand is for visual polish, not numerical use. This random_fast is only pseudo-random
 		pixel.G = ::Min(255.0, ::Max<double>(0.0, pixel.G + random_fast(-0.5, 0.5)));
 		pixel.B = ::Min(255.0, ::Max<double>(0.0, pixel.B + random_fast(-0.5, 0.5)));
