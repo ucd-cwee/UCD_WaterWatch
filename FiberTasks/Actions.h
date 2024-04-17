@@ -199,21 +199,16 @@ template <typename F> inline [[nodiscard]] std::shared_ptr<Finally> make_shared_
 #define FINALLY_CONCAT_(a, b) a##b
 #define FINALLY_CONCAT(a, b) FINALLY_CONCAT_(a, b)
 
-// defer() is a macro to defer execution of a statement until the surrounding
-// scope is closed and is typically used to perform cleanup logic once a
-// function returns.
-//
-// Note: Unlike golang's defer(), the defer statement is executed when the
-// surrounding *scope* is closed, not necessarily the function.
-//
+// defer() is a macro to defer execution of a statement until the surrounding scope is closed and is typically used to perform cleanup logic once a function returns.
+// . .
+// Note: Unlike golang's defer(), the defer statement is executed when the surrounding *scope* is closed, not necessarily the function.
+// . .
 // Example usage:
-//
-//  void sayHelloWorld()
-//  {
-//      defer(printf("world\n"));
+// . .
+// void sayHelloWorld() {
+//		defer(printf("world\n"));
 //      printf("hello ");
-//  }
-//
+// }
 #define defer(x) \
   decltype(auto) FINALLY_CONCAT(defer_, __LINE__) { make_finally([&] { x; }) }
 

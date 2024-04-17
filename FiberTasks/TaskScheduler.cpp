@@ -395,13 +395,9 @@ namespace fibers {
 
 		// Jump to the quit fiber
 		// Create a scope so index isn't used after we come back from the switch. It will be wrong if we started on a non-main thread
-		unsigned index;
-		index = GetCurrentThreadIndex(); // should be 0
+		unsigned index{ GetCurrentThreadIndex() }; // should be 0
 		m_fibers[m_threads[index]->tls.CurrentFiberIndex]->fiber.SwitchToFiber(&m_quitFibers[index]);
 				
-		// We're back. We should be on the main thread now
-		index = GetCurrentThreadIndex();
-
 		// Wait for the worker threads to finish
 		for (unsigned i = 1; i < m_threads.size(); ++i) {
 			JoinThread(m_threads[i]->type);

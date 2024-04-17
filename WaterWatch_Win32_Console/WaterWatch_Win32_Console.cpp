@@ -41,7 +41,6 @@ static constexpr const bool IsStatelessTest() {
 };
 
 
-
 int Example::ExampleF(int numTasks, int numSubTasks) {
 	int* xyzwabc = new int[10000];
 	defer(delete[] xyzwabc); // does clean-up on our behalf on scope end

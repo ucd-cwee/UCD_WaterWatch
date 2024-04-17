@@ -186,6 +186,9 @@
 
 #include "Actions.h"
 #include "Concurrent_Queue.h"
+
+
+
 namespace fibers {
 	namespace utilities {
 		class Hardware {
@@ -975,24 +978,41 @@ namespace fibers {
 					return value;
 				}				
 			}
-			void				    SetValue(const type& v) { 
+			type				    SetValue(const type& v) {
+				type out; 
 				if constexpr (isFloatingPoint) {
 					auto Locked{ std::scoped_lock(*impl::atomic_number_lock) };
+					out = value; 
 					value = v;
 				}
 				else {
-					InterlockedExchange(&value, static_cast<internalType>(v));
+					out = InterlockedExchange(&value, static_cast<internalType>(v));
 				}
-			};
-			void				    SetValue(type&& v) {
+				return out;
+			}; // returns the previous value while setting with the new value
+			type				    SetValue(type&& v) {
+				type out;
 				if constexpr (isFloatingPoint) {
 					auto Locked{ std::scoped_lock(*impl::atomic_number_lock) };
+					out = value;
 					value = std::forward<type>(v);
 				}
 				else {
-					InterlockedExchange(&value, static_cast<internalType>(v));
+					out = InterlockedExchange(&value, static_cast<internalType>(v));
 				}
-			};
+				return out;
+			}; // returns the previous value while setting with the new value
+			type				    fetch_add(type const& v) {
+				if constexpr (isFloatingPoint) {
+					auto Locked{ std::scoped_lock(*impl::atomic_number_lock) };
+					type out{value};
+					value += v;
+					return out;					
+				}
+				else {
+					return InterlockedExchangeAdd(&value, static_cast<internalType>(v));
+				}
+			}; // returns the previous value while incrementing the actual counter
 
 		public:
 			internalType value;
@@ -1043,6 +1063,67 @@ namespace fibers {
 		template<typename _Value_type> using number = fibers::synchronization::atomic_number<_Value_type>;
 	};
 
+	namespace utilities {
+		template <class _Diff>
+		struct Static_partition_key { // "pointer" identifying a static partition
+			size_t _Chunk_number; // In range [0, numeric_limits<_Diff>::max()]
+			_Diff _Start_at;
+			_Diff _Size;
+			explicit operator bool() const { // test if this is a valid key
+				return _Chunk_number != static_cast<size_t>(-1);
+			}
+		};
+
+		template <class _Diff>
+		struct Static_partition_team { // common data for all static partitioned ops
+			fibers::containers::number<size_t> _Consumed_chunks;
+			size_t _Chunks;
+			_Diff _Count;
+			_Diff _Chunk_size;
+			_Diff _Unchunked_items;
+
+			constexpr Static_partition_team(const _Diff _Count_, const size_t _Chunks_) : _Consumed_chunks{ 0 }, _Chunks{ _Chunks_ }, _Count{ _Count_ }, _Chunk_size{ static_cast<_Diff>(
+																			   _Count_ / static_cast<_Diff>(_Chunks_)) },
+				_Unchunked_items{ static_cast<_Diff>(_Count_ % static_cast<_Diff>(_Chunks_)) } {
+				// Calculate common data for statically partitioning iterator ranges.
+				// pre: _Count_ >= _Chunks_ && _Chunks_ >= 1
+			}
+
+			Static_partition_key<_Diff> Get_chunk_key(const size_t _This_chunk) const {
+				const auto _This_chunk_diff = static_cast<_Diff>(_This_chunk);
+				auto _This_chunk_size = _Chunk_size;
+				auto _This_chunk_start_at = static_cast<_Diff>(_This_chunk_diff * _This_chunk_size);
+				if (_This_chunk_diff < _Unchunked_items) {
+					// chunks at index lower than _Unchunked_items get an extra item,
+					// and need to shift forward by all their predecessors' extra items
+					_This_chunk_start_at += _This_chunk_diff;
+					++_This_chunk_size;
+				}
+				else { // chunks without an extra item need to account for all the extra items
+					_This_chunk_start_at += _Unchunked_items;
+				}
+
+				return { _This_chunk, _This_chunk_start_at, _This_chunk_size };
+			}
+
+			_Diff Get_chunk_offset(const size_t _This_chunk) const {
+				const auto _This_chunk_diff = static_cast<_Diff>(_This_chunk);
+				return _This_chunk_diff * _Chunk_size + (_STD min)(_This_chunk_diff, _Unchunked_items);
+			}
+
+			Static_partition_key<_Diff> Get_next_key() {
+				// retrieves the next static partition key to process, if it exists;
+				// otherwise, retrieves an invalid partition key
+				const auto _This_chunk = _Consumed_chunks.fetch_add(1);
+				if (_This_chunk < _Chunks) {
+					return Get_chunk_key(_This_chunk);
+				}
+
+				return { static_cast<size_t>(-1), 0, 0 };
+			}
+		};
+	};
+
 	namespace impl {
 		bool Initialize(uint32_t maxThreadCount = ~0u);
 		void ShutDown();
@@ -1052,8 +1133,6 @@ namespace fibers {
 			uint32_t jobIndex;		// job index relative to dispatch (like SV_DispatchThreadID in HLSL)
 			uint32_t groupID;		// group index relative to dispatch (like SV_GroupID in HLSL)
 			uint32_t groupIndex;	// job index relative to group (like SV_GroupIndex in HLSL)
-			bool isFirstJobInGroup;	// is the current job the first one in the group?
-			bool isLastJobInGroup;	// is the current job the last one in the group?
 			void* sharedmemory;		// stack memory shared within the current group (jobs within a group execute serially)
 		};
 
@@ -1070,20 +1149,20 @@ namespace fibers {
 			uint32_t groupJobEnd;
 			uint32_t sharedmemory_size;
 		};
-
-		struct TaskQueue {
-			std::deque<Task> queue;
+		
+		template <typename T> struct Queue {
+			std::deque<T> queue;
 			synchronization::CriticalMutexLock locker;
-			
-			__forceinline void push(Task&& item) {
+
+			__forceinline void push(T&& item) {
 				std::scoped_lock lock(locker);
-				queue.push_back(std::forward<Task>(item));
+				queue.push_back(std::forward<T>(item));
 			};
-			__forceinline void push(const Task& item) {
+			__forceinline void push(const T& item) {
 				std::scoped_lock lock(locker);
 				queue.push_back(item);
 			};
-			__forceinline bool try_pop(Task& item) {
+			__forceinline bool try_pop(T& item) {
 				std::scoped_lock lock(locker);
 				if (queue.empty()) return false;
 				item = std::move(queue.front());
@@ -1094,23 +1173,23 @@ namespace fibers {
 		struct InternalState {
 			uint32_t numCores = 0;
 			uint32_t numThreads = 0;
-			std::unique_ptr<TaskQueue[]> jobQueuePerThread;
-			std::atomic_bool alive{ true };
-			std::condition_variable_any wakeCondition; // std::condition_variable wakeCondition;
-			synchronization::CriticalMutexLock wakeMutex; // std::mutex wakeMutex;
-			std::atomic<uint32_t> nextQueue{ 0 };
+			std::unique_ptr<Queue<Task>[]> jobQueuePerThread;
+
+			fibers::containers::number<bool> alive{ true };
+			std::condition_variable_any wakeCondition; // std::condition_variable wakeCondition; // 
+			synchronization::CriticalMutexLock wakeMutex; // std::mutex wakeMutex; // 
+			fibers::containers::number<long long> nextQueue{ 0 };
 			std::vector<std::thread> threads;
 			void ShutDown() {
-				alive.store(false); // indicate that new jobs cannot be started from this point
+				alive = false; // indicate that new jobs cannot be started from this point
 				bool wake_loop = true;
 				std::thread waker([&] {
 					while (wake_loop)
 					{
 						wakeCondition.notify_all(); // wakes up sleeping worker threads
 					}
-					});
-				for (auto& thread : threads)
-				{
+				});
+				for (auto& thread : threads) {
 					thread.join();
 				}
 				wake_loop = false;

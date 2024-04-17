@@ -158,14 +158,12 @@ namespace fibers {
 	namespace impl {
 		inline void work(uint32_t startingQueue) noexcept {
 			uint32_t i, j;
-			TaskQueue* job_queue;
+			Queue<Task>* job_queue;
 			Task job;
 			JobArgs args{
 				0 // jobIndex
 				, 0 // groupID
 				, 0 // groupIndex
-				, false // isFirstJobInGroup
-				, false // isLastJobInGroup
 				, nullptr // sharedmemory
 			};
 
@@ -186,8 +184,6 @@ namespace fibers {
 						for (j = job.groupJobOffset; !job.ctx->e && j < job.groupJobEnd; ++j) {
 							args.jobIndex = j;
 							args.groupIndex = j - job.groupJobOffset;
-							args.isFirstJobInGroup = (j == job.groupJobOffset);
-							args.isLastJobInGroup = (j == job.groupJobEnd - 1);
 							try {
 								job.task(args);
 							}
@@ -217,20 +213,20 @@ namespace fibers {
 
 			// Calculate the actual number of worker threads we want (-1 main thread):
 			internal_state.numThreads = std::min(maxThreadCount, std::max(1u, internal_state.numCores - 1));
-			internal_state.jobQueuePerThread.reset(new TaskQueue[internal_state.numThreads]);
+			internal_state.jobQueuePerThread.reset(new Queue<Task>[internal_state.numThreads]);
 			internal_state.threads.reserve(internal_state.numThreads);
 
 			for (uint32_t threadID = 0; threadID < internal_state.numThreads; ++threadID)
 			{
 				internal_state.threads.emplace_back([threadID] {
-					while (internal_state.alive.load()) {
+					while (internal_state.alive.GetValue()) {
 						work(threadID);
 
 						// finished with jobs, put to sleep
 						std::unique_lock<decltype(internal_state.wakeMutex)> lock(internal_state.wakeMutex); // std::unique_lock<std::mutex> lock(internal_state.wakeMutex);
 						internal_state.wakeCondition.wait(lock);
 					}
-					});
+				});
 				std::thread& worker = internal_state.threads.back();
 
 	#ifdef _WIN32
@@ -281,11 +277,11 @@ namespace fibers {
 
 		void Execute(context& ctx, const std::function<void(JobArgs)>& task) noexcept {
 			ctx.counter.Increment(); // Context state is updated:
-			internal_state.jobQueuePerThread[internal_state.nextQueue.fetch_add(1) % internal_state.numThreads].push({ task, &ctx, 0, 0, 1, 0 });
+			internal_state.jobQueuePerThread[internal_state.nextQueue.Increment() % internal_state.numThreads].push({ task, &ctx, 0, 0, 1, 0 });
 			internal_state.wakeCondition.notify_one();
 		};
 		void Dispatch(context& ctx, uint32_t jobCount, uint32_t groupSize, const std::function<void(JobArgs)>& task, size_t sharedmemory_size) noexcept {
-			if (jobCount == 0 || groupSize == 0) { return; }
+			if (jobCount == 0) { return; }
 
 			const uint32_t groupCount = DispatchGroupCount(jobCount, groupSize);
 
@@ -299,7 +295,7 @@ namespace fibers {
 				job.groupID = groupID;
 				job.groupJobOffset = groupID * groupSize;
 				job.groupJobEnd = std::min(job.groupJobOffset + groupSize, jobCount);
-				internal_state.jobQueuePerThread[internal_state.nextQueue.fetch_add(1) % internal_state.numThreads].push(job);
+				internal_state.jobQueuePerThread[internal_state.nextQueue.Increment() % internal_state.numThreads].push(job);
 			}
 
 			internal_state.wakeCondition.notify_all();
@@ -322,7 +318,7 @@ namespace fibers {
 				internal_state.wakeCondition.notify_all();
 
 				// work() will pick up any jobs that are on stand by and execute them on this thread:
-				work(internal_state.nextQueue.fetch_add(1) % internal_state.numThreads);
+				work(internal_state.nextQueue.Increment() % internal_state.numThreads);
 
 				while (IsBusy(ctx)) {
 					// If we are here, then there are still remaining jobs that work() couldn't pick up.
