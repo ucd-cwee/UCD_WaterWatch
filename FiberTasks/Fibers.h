@@ -521,67 +521,481 @@ namespace fibers {
 
 		};
 
-		template<typename type = long>
-		class atomic_num {
+		namespace impl {
+			extern CriticalMutexLock* atomic_number_lock;
+		};
+
+		template<typename type = double>
+		class atomic_number {
+		public:
+			static constexpr bool isFloatingPoint = std::is_floating_point<type>::value;
+			static constexpr bool isSigned = std::is_signed<type>::value;
+
 		private:
-			static type Sys_InterlockedIncrementV(type& value) { return InterlockedIncrementAcquire(&value); }
-			static type Sys_InterlockedDecrementV(type& value) { return InterlockedDecrementRelease(&value); }
-			static type Sys_InterlockedAddV(type& value, const type& i) { return InterlockedExchangeAdd(&value, i) + i; }
-			static type Sys_InterlockedSubV(type& value, const type& i) { return InterlockedExchangeAdd(&value, -i) - i; }
-			static type Sys_InterlockedExchangeV(type& value, const type& exchange) { return InterlockedExchange(&value, exchange); }
-			static type Sys_InterlockedCompareExchangeV(type& value, const type& comparand, const type& exchange) { return InterlockedCompareExchange(&value, exchange, comparand); }
+			static constexpr auto ValidTypeExample() {
+				if constexpr (isFloatingPoint) return static_cast<type>(0);
+				else { // Integral. Only 4 integral types are actually supported. long, unsigned int, unsigned long, unsigned __int64
+					if constexpr (isSigned) {
+						return static_cast<long>(0);
+					}
+					else {
+						// get the largest type that can contain the requested type. 
+						if constexpr (sizeof(type) <= sizeof(unsigned int)) {
+							return static_cast<unsigned int>(0);
+						}
+						else if constexpr (sizeof(type) <= sizeof(unsigned long)) {
+							return static_cast<unsigned long>(0);
+						}
+						else {
+							return static_cast<unsigned __int64>(0);
+						}
+					}
+				}
+			};
+			static constexpr auto ValidTypeExampleImpl = ValidTypeExample();
+			using internalType = typename std::remove_const_t<decltype(ValidTypeExampleImpl)>;
 
 		public:
-			atomic_num() : value(static_cast<type>(0)) {};
-			atomic_num(const type& a) : value(a) {};
-			atomic_num(const atomic_num& other) : value(other.GetValue()) {};
-			atomic_num& operator=(const atomic_num& other) { SetValue(other.GetValue()); return *this; };
-			atomic_num& operator=(const type& newSource) { SetValue(newSource); return *this; };
+			constexpr atomic_number() : value(static_cast<type>(0)) {};
+			constexpr atomic_number(const type& a) : value(a) {};
+			constexpr atomic_number(type&& a) : value(std::forward<type>(a)) {};
+			atomic_number(const atomic_number& other) : value(other.GetValue()) {};
+			atomic_number(atomic_number&& other) : value(std::move(other.value)) {};
+			atomic_number& operator=(const atomic_number& other) { 
+				SetValue(other.value);
+				return *this; 
+			};
+			atomic_number& operator=(atomic_number&& other) {
+				SetValue(std::move(other.value));
+				return *this;
+			};
+			~atomic_number() = default;
 
 			operator type() { return GetValue(); };
-			operator type() const { return GetValue(); };
+			operator const type() const { return GetValue(); };
 
-			friend atomic_num operator+(const type& i, const atomic_num& b) { atomic_num out(b); out.Add(i); return out; };
-			friend atomic_num operator+(const atomic_num& b, const type& i) { atomic_num out(b); out.Add(i); return out; };
-			friend atomic_num operator-(const type& i, const atomic_num& b) { atomic_num out(i); out.Add(-b.GetValue()); return out; };
-			friend atomic_num operator-(const atomic_num& b, const type& i) { atomic_num out(b); out.Add(-i); return out; };
-			friend atomic_num operator/(const type& i, const atomic_num& b) { return i / b.GetValue(); };
-			friend atomic_num operator/(const atomic_num& b, const type& i) { return b.GetValue() / i; };
+			template <typename T> decltype(auto) operator+(const atomic_number<T>& b) {
+				if constexpr (atomic_number<T>::isFloatingPoint || atomic_number<type>::isFloatingPoint) {
+					// one of these is a floating-point type, therefore the lock is needed.
+					auto Locked{ std::scoped_lock(*impl::atomic_number_lock) };
+					if constexpr (sizeof(T) > sizeof(type)) {
+						atomic_number<T> out;
+						out = static_cast<T>(value) + static_cast<T>(b.value);
+						return out;
+					}
+					else {
+						atomic_number< type> out;
+						out = static_cast<type>(value) + static_cast<type>(b.value);
+						return out;
+					}
+				}
+				else {
+					if constexpr (sizeof(T) > sizeof(type)) {
+						atomic_number<T> out;
+						out = static_cast<T>(value) + static_cast<T>(b.value);
+						return out;
+					}
+					else {
+						atomic_number< type> out;
+						out = static_cast<type>(value) + static_cast<type>(b.value);
+						return out;
+					}
+				}
+			};
+			template <typename T> decltype(auto) operator-(const atomic_number<T>& b) {
+				if constexpr (atomic_number<T>::isFloatingPoint || atomic_number<type>::isFloatingPoint) {
+					// one of these is a floating-point type, therefore the lock is needed.
+					auto Locked{ std::scoped_lock(*impl::atomic_number_lock) };
+					if constexpr (sizeof(T) > sizeof(type)) {
+						atomic_number<T> out;
+						out = static_cast<T>(value) - static_cast<T>(b.value);
+						return out;
+					}
+					else {
+						atomic_number< type> out;
+						out = static_cast<type>(value) - static_cast<type>(b.value);
+						return out;
+					}
+				}
+				else {
+					if constexpr (sizeof(T) > sizeof(type)) {
+						atomic_number<T> out;
+						out = static_cast<T>(value) - static_cast<T>(b.value);
+						return out;
+					}
+					else {
+						atomic_number< type> out;
+						out = static_cast<type>(value) - static_cast<type>(b.value);
+						return out;
+					}
+				}
+			};
+			template <typename T> decltype(auto) operator/(const atomic_number<T>& b) {
+				if constexpr (atomic_number<T>::isFloatingPoint || atomic_number<type>::isFloatingPoint) {
+					// one of these is a floating-point type, therefore the lock is needed.
+					auto Locked{ std::scoped_lock(*impl::atomic_number_lock) };
+					if constexpr (sizeof(T) > sizeof(type)) {
+						atomic_number<T> out;
+						out = static_cast<T>(value) / static_cast<T>(b.value);
+						return out;
+					}
+					else {
+						atomic_number< type> out;
+						out = static_cast<type>(value) / static_cast<type>(b.value);
+						return out;
+					}
+				}
+				else {
+					if constexpr (sizeof(T) > sizeof(type)) {
+						atomic_number<T> out;
+						out = static_cast<T>(value) / static_cast<T>(b.value);
+						return out;
+					}
+					else {
+						atomic_number< type> out;
+						out = static_cast<type>(value) / static_cast<type>(b.value);
+						return out;
+					}
+				}
+			};
+			template <typename T> decltype(auto) operator*(const atomic_number<T>& b) {
+				if constexpr (atomic_number<T>::isFloatingPoint || atomic_number<type>::isFloatingPoint) {
+					// one of these is a floating-point type, therefore the lock is needed.
+					auto Locked{ std::scoped_lock(*impl::atomic_number_lock) };
+					if constexpr (sizeof(T) > sizeof(type)) {
+						atomic_number<T> out;
+						out = static_cast<T>(value) * static_cast<T>(b.value);
+						return out;
+					}
+					else {
+						atomic_number< type> out;
+						out = static_cast<type>(value) * static_cast<type>(b.value);
+						return out;
+					}
+				}
+				else {
+					if constexpr (sizeof(T) > sizeof(type)) {
+						atomic_number<T> out;
+						out = static_cast<T>(value) * static_cast<T>(b.value);
+						return out;
+					}
+					else {
+						atomic_number< type> out;
+						out = static_cast<type>(value) * static_cast<type>(b.value);
+						return out;
+					}
+				}
+			};
+			
+			atomic_number& operator--() { 
+				if constexpr (isFloatingPoint) {
+					auto Locked{ std::scoped_lock(*impl::atomic_number_lock) }; 
+					value--;  
+					return *this;
+				}
+				else {
+					InterlockedExchangeAdd(&value, static_cast<internalType>(-1));
+					return *this;
+				}
+			};
+			atomic_number& operator++() { 
+				if constexpr (isFloatingPoint) {
+					auto Locked{ std::scoped_lock(*impl::atomic_number_lock) }; 
+					value++; 
+					return *this;
+				}
+				else {
+					InterlockedExchangeAdd(&value, static_cast<internalType>(1));
+					return *this;
+				}
+			};
+			atomic_number operator--(int) { return Decrement() + 1; };
+			atomic_number operator++(int) { return Increment() - 1; };
 
-			atomic_num& operator+=(int i) { Add(i); return *this; };
-			atomic_num& operator-=(int i) { Add(-i); return *this; };
+			atomic_number& operator+=(const atomic_number& i) { 
+				if constexpr (isFloatingPoint) {
+					auto Locked{ std::scoped_lock(*impl::atomic_number_lock) };
+					value += i.value;
+					return *this;
+				}
+				else {
+					InterlockedExchangeAdd(&value, static_cast<internalType>(i.value));
+					return *this;
+				}
+			};
+			atomic_number& operator-=(const atomic_number& i) { 
+				if constexpr (isFloatingPoint) {
+					auto Locked{ std::scoped_lock(*impl::atomic_number_lock) };
+					value -= i.value;
+					return *this;
+				}
+				else {
+					InterlockedExchangeAdd(&value, static_cast<internalType>(-i.value));
+					return *this;
+				}
+			};
+			atomic_number& operator/=(const atomic_number& i) {
+				if constexpr (isFloatingPoint) {
+					auto Locked{ std::scoped_lock(*impl::atomic_number_lock) };
+					value /= i.value;
+					return *this;
+				}
+				else {
+					InterlockedExchange(&value, static_cast<internalType>(value / i.value));
+					return *this;
+				}
+			};			
+			atomic_number& operator*=(const atomic_number& i) {
+				if constexpr (isFloatingPoint) {
+					auto Locked{ std::scoped_lock(*impl::atomic_number_lock) };
+					value *= i.value;
+					return *this;
+				}
+				else {
+					InterlockedExchange(&value, static_cast<internalType>(value * i.value));
+					return *this;
+				}
+			};
 
-			atomic_num& operator+=(const atomic_num& i) { Add(i.GetValue()); return *this; };
-			atomic_num& operator-=(const atomic_num& i) { Add(-i.GetValue()); return *this; };
+			template<typename T, typename = std::enable_if_t<!std::is_same_v<type, T>>>
+			atomic_number& operator+=(const atomic_number<T>& i) {
+				if constexpr (atomic_number<T>::isFloatingPoint || atomic_number<type>::isFloatingPoint) {
+					auto Locked{ std::scoped_lock(*impl::atomic_number_lock) };
+					
+					if constexpr (atomic_number<type>::isFloatingPoint) {
+						value += static_cast<type>(i.value);
+					}
+					else {
+						InterlockedExchangeAdd(&value, static_cast<internalType>(i.value));
+					}
+				}
+				else {
+					if constexpr (atomic_number<type>::isFloatingPoint) {
+						value += static_cast<type>(i.value);
+					}
+					else {
+						InterlockedExchangeAdd(&value, static_cast<internalType>(i.value));
+					}
+				}
+				return *this;
+			};
+			template<typename T, typename = std::enable_if_t<!std::is_same_v<type, T>>>
+			atomic_number& operator-=(const atomic_number<T>& i) {
+				if constexpr (atomic_number<T>::isFloatingPoint || atomic_number<type>::isFloatingPoint) {
+					auto Locked{ std::scoped_lock(*impl::atomic_number_lock) };
+					if constexpr (atomic_number<type>::isFloatingPoint) {
+						value -= static_cast<type>(i.value);
+					}
+					else {
+						InterlockedExchangeAdd(&value, static_cast<internalType>(-i.value));
+					}
+				}
+				else {
+					if constexpr (atomic_number<type>::isFloatingPoint) {
+						value -= static_cast<type>(i.value);
+					}
+					else {
+						InterlockedExchangeAdd(&value, static_cast<internalType>(-i.value));
+					}
+				}
+				return *this;
+			};
+			template<typename T, typename = std::enable_if_t<!std::is_same_v<type, T>>>
+			atomic_number& operator/=(const atomic_number<T>& i) {
+				if constexpr (atomic_number<T>::isFloatingPoint || atomic_number<type>::isFloatingPoint) {
+					auto Locked{ std::scoped_lock(*impl::atomic_number_lock) };
+					if constexpr (atomic_number<type>::isFloatingPoint) {
+						value /= static_cast<type>(i.value);
+					}
+					else {
+						InterlockedExchange(&value, value / static_cast<internalType>(i.value));
+					}
+				}
+				else {
+					if constexpr (atomic_number<type>::isFloatingPoint) {
+						value /= static_cast<type>(i.value);
+					}
+					else {
+						InterlockedExchange(&value, value / static_cast<internalType>(i.value));
+					}
+				}
+				return *this;
+			};
+			template<typename T, typename = std::enable_if_t<!std::is_same_v<type, T>>>
+			atomic_number& operator*=(const atomic_number<T>& i) {
+				if constexpr (atomic_number<T>::isFloatingPoint || atomic_number<type>::isFloatingPoint) {
+					auto Locked{ std::scoped_lock(*impl::atomic_number_lock) };
+					if constexpr (atomic_number<type>::isFloatingPoint) {
+						value *= static_cast<type>(i.value);
+					}
+					else {
+						InterlockedExchange(&value, value * static_cast<internalType>(i.value));
+					}
+				}
+				else {
+					if constexpr (atomic_number<type>::isFloatingPoint) {
+						value *= static_cast<type>(i.value);
+					}
+					else {
+						InterlockedExchange(&value, value * static_cast<internalType>(i.value));
+					}
+				}
+				return *this;
+			};
 
-			bool operator==(const type& i) { return i == GetValue(); };
-			bool operator!=(const type& i) { return i != GetValue(); };
-			bool operator==(const atomic_num& i) { return i.GetValue() == GetValue(); };
-			bool operator!=(const atomic_num& i) { return i.GetValue() != GetValue(); };
+			friend bool operator==(const atomic_number& i, const atomic_number& b) {
+				if constexpr (isFloatingPoint) {
+					auto Locked{ std::scoped_lock(*impl::atomic_number_lock) };
+					return i.value == b.value;
+				}
+				else {
+					return i.value == b.value;
+				}				
+			};
+			friend bool operator!=(const atomic_number& i, const atomic_number& b) {
+				return !(i == b);
+			};
 
-			friend bool operator<=(const type& i, const atomic_num& b) { return i <= b.GetValue(); };
-			friend bool operator<=(const atomic_num& b, const type& i) { return i > b.GetValue(); };
-			friend bool operator>=(const type& i, const atomic_num& b) { return i >= b.GetValue(); };
-			friend bool operator>=(const atomic_num& b, const type& i) { return i < b.GetValue(); };
-			friend bool operator>(const type& i, const atomic_num& b) { return i > b.GetValue(); };
-			friend bool operator>(const atomic_num& b, const type& i) { return i <= b.GetValue(); };
-			friend bool operator<(const type& i, const atomic_num& b) { return i < b.GetValue(); };
-			friend bool operator<(const atomic_num& b, const type& i) { return i >= b.GetValue(); };
+			friend bool operator<=(const atomic_number& i, const atomic_number& b) { 
+				if constexpr (isFloatingPoint) {
+					auto Locked{ std::scoped_lock(*impl::atomic_number_lock) };
+					return i.value <= b.value;
+				}
+				else {
+					return i.value <= b.value;
+				}
+			};
+			friend bool operator>=(const atomic_number& i, const atomic_number& b) { 
+				if constexpr (isFloatingPoint) {
+					auto Locked{ std::scoped_lock(*impl::atomic_number_lock) };
+					return i.value >= b.value;
+				}
+				else {
+					return i.value >= b.value;
+				}				
+			};
+			friend bool operator>(const atomic_number& i, const atomic_number& b) { 
+				if constexpr (isFloatingPoint) {
+					auto Locked{ std::scoped_lock(*impl::atomic_number_lock) };
+					return i.value > b.value;
+				}
+				else {
+					return i.value > b.value;
+				}				
+			};
+			friend bool operator<(const atomic_number& i, const atomic_number& b) { 
+				if constexpr (isFloatingPoint) {
+					auto Locked{ std::scoped_lock(*impl::atomic_number_lock) };
+					return i.value < b.value;
+				}
+				else {
+					return i.value < b.value;
+				}				
+			};
 
-			friend bool operator<=(const atomic_num& i, const atomic_num& b) { return i.GetValue() <= b.GetValue(); };
-			friend bool operator>=(const atomic_num& i, const atomic_num& b) { return i.GetValue() >= b.GetValue(); };
-			friend bool operator>(const atomic_num& i, const atomic_num& b) { return i.GetValue() > b.GetValue(); };
-			friend bool operator<(const atomic_num& i, const atomic_num& b) { return i.GetValue() < b.GetValue(); };
+			atomic_number pow(atomic_number const& V) const { 
+				if constexpr (isFloatingPoint) {
+					auto Locked{ std::scoped_lock(*impl::atomic_number_lock) };
+					return std::pow(value, V.value);
+				}
+				else {
+					return std::pow(value, V.value);
+				}
+			};
+			atomic_number sqrt() const { 
+				if constexpr (isFloatingPoint) {
+					auto Locked{ std::scoped_lock(*impl::atomic_number_lock) };
+					return std::sqrt(value);
+				}
+				else {
+					return std::sqrt(value);
+				}
+			};
+			atomic_number floor() const { 
+				if constexpr (isFloatingPoint) {
+					auto Locked{ std::scoped_lock(*impl::atomic_number_lock) };
+					return std::floor(value);
+				}
+				else {
+					return std::floor(value);
+				}
+			};
+			atomic_number ceiling() const { 
+				if constexpr (isFloatingPoint) {
+					auto Locked{ std::scoped_lock(*impl::atomic_number_lock) };
+					return std::ceil(value);
+				}
+				else {
+					return std::ceil(value);
+				}
+			};
 
-			type					Increment() { return Sys_InterlockedIncrementV(value); } // atomically increments the integer and returns the new value
-			type					Decrement() { return Sys_InterlockedDecrementV(value); } // atomically decrements the integer and returns the new value
-			type					Add(const type& v) { return Sys_InterlockedAddV(value, (type)v); } // atomically adds a value to the integer and returns the new value
-			type					Sub(const type& v) { return Sys_InterlockedSubV(value, (type)v); } // atomically subtracts a value from the integer and returns the new value
-			type					GetValue() const { return value; }
-			void				    SetValue(const type& v) { value = v; };
+			type					Increment() { 
+				if constexpr (isFloatingPoint) {
+					auto Locked{ std::scoped_lock(*impl::atomic_number_lock) };
+					return ++value;
+				}
+				else {
+					return InterlockedExchangeAdd(&value, static_cast<internalType>(1)) + 1;
+				}
+			} // atomically increments the value and returns the new value
+			type					Decrement() { 
+				if constexpr (isFloatingPoint) {
+					auto Locked{ std::scoped_lock(*impl::atomic_number_lock) };
+					return --value;
+				}
+				else {
+					return InterlockedExchangeAdd(&value, static_cast<internalType>(-1)) - 1;
+				}
+			} // atomically decrements the value and returns the new value
+			type					Add(const type& v) { 
+				if constexpr (isFloatingPoint) {
+					auto Locked{ std::scoped_lock(*impl::atomic_number_lock) };
+					return value += v;
+				}
+				else {
+					return InterlockedExchangeAdd(&value, static_cast<internalType>(v)) + v;
+				}
+			} // atomically adds a value and returns the new value
+			type					Sub(const type& v) {
+				if constexpr (isFloatingPoint) {
+					auto Locked{ std::scoped_lock(*impl::atomic_number_lock) };
+					return value -= v;
+				}
+				else {
+					return InterlockedExchangeAdd(&value, static_cast<internalType>(-v)) - v;
+				}
+			}; // atomically subtracts a value and returns the new value
+			type					GetValue() const { 
+				if constexpr (isFloatingPoint) {
+					auto Locked{ std::scoped_lock(*impl::atomic_number_lock) };
+					return value;
+				}
+				else {
+					return value;
+				}				
+			}
+			void				    SetValue(const type& v) { 
+				if constexpr (isFloatingPoint) {
+					auto Locked{ std::scoped_lock(*impl::atomic_number_lock) };
+					value = v;
+				}
+				else {
+					InterlockedExchange(&value, static_cast<internalType>(v));
+				}
+			};
+			void				    SetValue(type&& v) {
+				if constexpr (isFloatingPoint) {
+					auto Locked{ std::scoped_lock(*impl::atomic_number_lock) };
+					value = std::forward<type>(v);
+				}
+				else {
+					InterlockedExchange(&value, static_cast<internalType>(v));
+				}
+			};
 
-		private:
-			type	            value;
+		public:
+			internalType value;
 
 		};
 
@@ -625,8 +1039,9 @@ namespace fibers {
 
 	};
 
-
-
+	namespace containers {
+		template<typename _Value_type> using number = fibers::synchronization::atomic_number<_Value_type>;
+	};
 
 	namespace impl {
 		bool Initialize(uint32_t maxThreadCount = ~0u);
@@ -644,7 +1059,7 @@ namespace fibers {
 
 		// Defines a state of execution, can be waited on
 		struct context {
-			synchronization::atomic_num<uint32_t> counter{ 0 };
+			synchronization::atomic_number<long> counter{ 0 };
 			synchronization::atomic_ptr<std::exception_ptr> e{ nullptr };
 		};
 		struct Task {

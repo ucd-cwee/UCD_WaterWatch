@@ -3809,7 +3809,7 @@ namespace epanet {
             Hydraul* hyd = &pr->hydraul;
             Report* rpt = &pr->report;
 
-            fibers::synchronization::atomic_num<long> change{ 0 };
+            fibers::synchronization::atomic_number<int> change{ 0 };
             int             // Status change flag
                 k,                          // Link index
                 n1,                         // Start node index

@@ -1635,6 +1635,8 @@ namespace chaiscript {
 			DEF_DECLARE_STD_VECTOR_WITH_SCRIPT_ENGINE_AND_MODULE(vec2d);
 			AddBasicClassMember(Geometry, AllCoordinates); 			
 			lib->AddFunction(, Distance, , return a.Distance(b), Geometry const& a, Geometry const& b);
+			lib->AddFunction(, Distance, , return a.Distance(b), Geometry const& a, cweeBoundary const& b);
+			lib->AddFunction(, Distance, , return a.Distance(cweeBoundary(b)), Geometry const& a, vec2d const& b);
 			lib->AddFunction(, Length, , return o.Length(), Geometry const& o);
 			lib->AddFunction(, Elevation, , return o.Elevation(), Geometry const& o);
 			lib->AddFunction(, CenterOfMass, , return o.CenterOfMass(), Geometry const& o);
@@ -1666,6 +1668,8 @@ namespace chaiscript {
 			lib->AddFunction(, GetField, , return a.GetField(name), Feature const& a, cweeStr const& name);
 			lib->AddFunction(, GetGeometry, -> Geometry, return o.GetGeometry(), Feature const& o);
 			lib->AddFunction(, Distance, , return a.Distance(b), Feature const& a, Feature const& b);
+			lib->AddFunction(, Distance, , return a.GetGeometry().Distance(b), Feature const& a, cweeBoundary const& b);
+			lib->AddFunction(, Distance, , return a.GetGeometry().Distance(cweeBoundary(b)), Feature const& a, vec2d const& b);
 			lib->AddFunction(, Length, , return o.Length(), Feature const& o);
 			lib->AddFunction(, Elevation, , return o.Elevation(), Feature const& o);
 			lib->AddFunction(, CenterOfMass, , return o.GetGeometry().CenterOfMass(), Feature const& o);

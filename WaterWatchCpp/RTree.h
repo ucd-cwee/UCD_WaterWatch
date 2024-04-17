@@ -420,6 +420,7 @@ public:
 	vec2d bottomLeft;
 	
 	cweeBoundary() : coords(), geographic(true), topRight(-cweeMath::INF, -cweeMath::INF), bottomLeft(cweeMath::INF, cweeMath::INF) {};
+	cweeBoundary(vec2d const& a) : coords(), geographic(true), topRight(a), bottomLeft(a) {  };
 	cweeBoundary(cweeBoundary const& a) : coords(a.coords), geographic(a.geographic), topRight(a.topRight), bottomLeft(a.bottomLeft) {  };
 	cweeBoundary(cweeBoundary&& a) : coords(a.coords), geographic(a.geographic), topRight(a.topRight), bottomLeft(a.bottomLeft) {  };
 	cweeBoundary& operator=(cweeBoundary const&) = default;

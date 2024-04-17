@@ -111,16 +111,16 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 			std::cout << j;
 			printf(" (No Fibers) : ");
 			{
-				std::atomic<int> count;
+				fibers::containers::number<int> count;
 				Stopwatch sw; sw.Start();
 				int i, k;
 				for (i = 0; i < numLoops; i++) {
 					for (k = 0; k < j; k++)
-						count.fetch_add(k);
+						count.Add(k);
 				}
 
 				cweeUnitValues::second timePassed = sw.Stop() / 1000000000.0;
-				std::cout << timePassed.ToString() << " (num = " << count.load() << ")" << std::endl;
+				std::cout << timePassed.ToString() << " (num = " << count.GetValue() << ")" << std::endl;
 			}
 
 			printf("SpeedTest (atomic int) ");
@@ -128,33 +128,33 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 			printf(" (Threads) : ");
 			{
 				
-				std::atomic<int> count;
+				fibers::containers::number<int> count;
 				Stopwatch sw; sw.Start();
 				int i, k;
 
 				std::vector<int> vec(numLoops, 0);
 				std::for_each_n(std::execution::par, vec.begin(), numLoops, [&count, &j](int& V) {
 					for (int k = 0; k < j; k++)
-						count.fetch_add(k);
+						count.Add(k);
 				});
 
 				cweeUnitValues::second timePassed = sw.Stop() / 1000000000.0;
-				std::cout << timePassed.ToString() << std::endl;
+				std::cout << timePassed.ToString() << " (num = " << count.GetValue() << ")" << std::endl;
 			}
 
 			printf("SpeedTest (atomic int) ");
 			std::cout << j;
 			printf(" (Fibers) : ");
 			{
-				std::atomic<int> count;
+				fibers::containers::number<int> count;
 				Stopwatch sw; sw.Start();
 				fibers::parallel::For(0, numLoops, [&count, &j](int i) {
 					for (int k = 0; k < j; k++)
-						count.fetch_add(k);
+						count.Add(k);
 					});
 
 				cweeUnitValues::second timePassed = sw.Stop() / 1000000000.0;
-				std::cout << timePassed.ToString() << " (num = " << count.load() << ")" << std::endl;
+				std::cout << timePassed.ToString() << " (num = " << count.GetValue() << ")" << std::endl;
 			}
 
 			printf("\n");
@@ -341,9 +341,9 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 				int i, k;
 
 				std::for_each_n(std::execution::par, vec.begin(), numLoops, [&vec, &j](std::vector<cweeStr>& V) {
-					fibers::synchronization::atomic_num<long> n{ 0 };
+					fibers::containers::number<int> n{ 0 };
 					std::for_each_n(std::execution::par, V.begin(), j, [&V, &n](cweeStr& V) {
-						V = cweeStr((int)(n.Increment()));
+						V = cweeStr(n.Increment());
 					});
 				});
 
@@ -461,23 +461,72 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 
 	constexpr const bool v_1234 = IsStatelessTest<decltype(lambda2)>();
 
-
-
-
-
-
-
 	auto jobTest = fibers::Job([]() { return 10.0f; });
 	jobTest.AsyncFireAndForget(); // will not crash
 
-
-	printf("Job 1\n");
+	printf("Job 0\n");
 	if (true) {
-		fibers::parallel::For(0, numTasks * numSubTasks, [](int j) {
+		try {
+			fibers::parallel::For(0, numTasks * numSubTasks, [](int j) {
+				Stopwatch sw;
+				sw.Start();
+				while (sw.Stop() < 1000) {}
+				throw(std::move(sw)); // throws early, and (most) other threads early-exit. Threads in the middle of their work will still need to complete their work, however.
+			});
+
+			return -1; // should never happen
+		}
+		catch (...) {
+			// Great!
+		}
+	}
+	printf("Job 1");
+	if (true) {
+		fibers::containers::number<int> V{ 0 };
+		fibers::parallel::For(0, numTasks * numSubTasks, [&V](int j) {
 			Stopwatch sw;
 			sw.Start();
-			while (sw.Stop() < 1000) {}
+			while (sw.Stop() < 1000) {
+				V.Increment();
+			}
 		});
+		printf(": %i\n", (int)(V.GetValue()));
+	}
+	printf("Job 1.1");
+	if (true) {
+		fibers::containers::number<unsigned long long> V{ 0ull };
+		fibers::parallel::For(0, numTasks * numSubTasks, [&V](int j) {
+			Stopwatch sw;
+			sw.Start();
+			while (sw.Stop() < 1000) {
+				V.Increment();
+			}
+			});
+		printf(": %i\n", (int)(V.GetValue()));
+	}
+	printf("Job 1.2");
+	if (true) {
+		fibers::containers::number<double> V{ 0.0 };
+		fibers::parallel::For(0, numTasks * numSubTasks, [&V](int j) {
+			Stopwatch sw;
+			sw.Start();
+			while (sw.Stop() < 1000) {
+				V.Increment();
+			}
+			});
+		printf(": %f\n", (float)(V.GetValue()));
+	}
+	printf("Job 1.3");
+	if (true) {
+		fibers::containers::number<long double> V{ 0.0l };
+		fibers::parallel::For(0, numTasks * numSubTasks, [&V](int j) {
+			Stopwatch sw;
+			sw.Start();
+			while (sw.Stop() < 1000) {
+				V.Increment();
+			}
+			});
+		printf(": %f\n", (float)(V.GetValue()));
 	}
 	printf("Job 2\n");
 	if (true) {

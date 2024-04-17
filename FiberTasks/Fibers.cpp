@@ -183,21 +183,23 @@ namespace fibers {
 					}
 
 					{
-						for (j = job.groupJobOffset; j < job.groupJobEnd; ++j) {
+						for (j = job.groupJobOffset; !job.ctx->e && j < job.groupJobEnd; ++j) {
 							args.jobIndex = j;
 							args.groupIndex = j - job.groupJobOffset;
 							args.isFirstJobInGroup = (j == job.groupJobOffset);
 							args.isLastJobInGroup = (j == job.groupJobEnd - 1);
 							try {
 								job.task(args);
-							} catch (...) {
+							}
+							catch (...) {
 								if (!job.ctx->e) {
 									auto eptr = job.ctx->e.Set(new std::exception_ptr(std::current_exception()));
 									if (eptr) {
 										delete eptr;
 									}
 								}
-							}
+								break;
+							}							
 						}
 					}
 					job.ctx->counter.Decrement(); // one got finished
@@ -383,8 +385,6 @@ namespace fibers {
 
 };
 
-
-
 namespace {
 	class MultithreadingInstanceManagerImpl final : public MultithreadingInstanceManager {
 	public:
@@ -398,3 +398,12 @@ namespace {
 };
 /* Instances the fiber system, and destroys it if the DLL / library is unloaded. */
 std::shared_ptr<MultithreadingInstanceManager> multithreadingInstance = std::static_pointer_cast<MultithreadingInstanceManager>(std::make_shared<MultithreadingInstanceManagerImpl>());
+
+namespace fibers {
+	namespace synchronization {
+		namespace impl {
+			static CriticalMutexLock atomic_number_lock_impl;
+			CriticalMutexLock* atomic_number_lock = &atomic_number_lock_impl;
+		};
+	};
+};
