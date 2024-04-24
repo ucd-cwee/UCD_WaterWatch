@@ -628,8 +628,8 @@ public:
 		return out;
 	};
 
-	 void												AddValue(const X_Axis_Type& time, Y_Axis_Type valueIN) { InsertPair(time, valueIN, false); };
-	 void												AddUniqueValue(const X_Axis_Type& time, Y_Axis_Type valueIN) { InsertPair(time, valueIN, true); };
+	 bool												AddValue(const X_Axis_Type& time, Y_Axis_Type valueIN) { return InsertPair(time, valueIN, false); };
+	 bool												AddUniqueValue(const X_Axis_Type& time, Y_Axis_Type valueIN) { return InsertPair(time, valueIN, true); };
 	 void												CompressLastValueAdded() {
 		 int num, index; cweeThreadedList<X_Axis_Type> keysToDelete;
 		 constexpr Y_Axis_Type epsilon = 0.001f;
@@ -2051,14 +2051,17 @@ public:
 	void												Read_Lock() const { this->lock.Read_Lock(); };
 	void												Read_Unlock() const { this->lock.Read_Unlock(); };
 protected:
-	 void												InsertPair(const X_Axis_Type& time, const Y_Axis_Type& valueIN, bool unique = true) {
+	 /* returns true if the added pair was the last node, with some potantial benefit to compression */
+	 bool												InsertPair(const X_Axis_Type& time, const Y_Axis_Type& valueIN, bool unique = true) {
 		Lock();
 		if (container.GetNodeCount() + 1 > granularity) {
 			granularity = (cweeMath::max(granularity, container.GetNodeCount())) * GRANULARITY_SCALER;
 			container.Reserve(granularity);
 		}
-		container.Add(valueIN, time, unique);
+		auto* LastGot = container.Add(valueIN, time, unique);
+		auto* ActualLast = container.GetLast();
 		Unlock();
+		return LastGot == ActualLast;
 	};
 	 bool												IsLooped() const {
 		bool out = false;

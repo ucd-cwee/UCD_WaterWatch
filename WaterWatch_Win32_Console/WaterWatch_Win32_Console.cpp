@@ -18,8 +18,6 @@ to maintain a single distribution point for the source code.
 #include "../FiberTasks/Fibers.h"
 #include <execution>
 
-
-
 static int staticFunctionExample() noexcept {
 	return 2;
 };
@@ -44,7 +42,7 @@ static constexpr const bool IsStatelessTest() {
 int Example::ExampleF(int numTasks, int numSubTasks) {
 	int* xyzwabc = new int[10000];
 	defer(delete[] xyzwabc); // does clean-up on our behalf on scope end
-	
+
 	{
 		for (int j = 1; j < 10; j += 2) {
 			int numLoops = 400 * j * j;
@@ -55,34 +53,29 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 			{
 				cweeBalancedPattern pat;
 				Stopwatch sw; sw.Start();
-				
+				defer(std::cout << cweeUnitValues::second(sw.Stop() / 1000000000.0).ToString() << " (num = " << pat.GetNumValues() << ")" << std::endl);
+
 				for (int i = 0; i < numLoops; i++) {
 					for (int k = 0; k < j; k++)
 						pat.AddValue(i + k, i + k);
 				}
-
-				cweeUnitValues::second timePassed = sw.Stop() / 1000000000.0;
-				std::cout << timePassed.ToString() << " (num = " << pat.GetNumValues() << ")" << std::endl;
 			}
 
 			printf("SpeedTest (Pattern) ");
 			std::cout << j;
 			printf(" (Threads) : ");
 			{
-
 				cweeBalancedPattern pat;
 				Stopwatch sw; sw.Start();
-				int i, k;
+				defer(std::cout << cweeUnitValues::second(sw.Stop() / 1000000000.0).ToString() << " (num = " << pat.GetNumValues() << ")" << std::endl);
 
 				std::vector<int> vec(numLoops, 0);
 				fibers::parallel::For(0, numLoops, [&vec](int i) { vec[i] = i; });
 				std::for_each_n(std::execution::par, vec.begin(), numLoops, [&pat, &j](int& i) {
-					for (int k = 0; k < j; k++)
+					for (int k = 0; k < j; k++) {
 						pat.AddValue(i + k, i + k);
+					}
 				});
-
-				cweeUnitValues::second timePassed = sw.Stop() / 1000000000.0;
-				std::cout << timePassed.ToString() << std::endl;
 			}
 
 			printf("SpeedTest (Pattern) ");
@@ -91,18 +84,87 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 			{
 				cweeBalancedPattern pat;
 				Stopwatch sw; sw.Start();				
+				defer(std::cout << cweeUnitValues::second(sw.Stop() / 1000000000.0).ToString() << " (num = " << pat.GetNumValues() << ")" << std::endl);
 
 				fibers::parallel::For(0, numLoops, [&pat, &j](int i) {
 					for (int k = 0; k < j; k++)
 						pat.AddValue(i + k, i + k);
 				});
+			}
 
-				cweeUnitValues::second timePassed = sw.Stop() / 1000000000.0;
-				std::cout << timePassed.ToString() << " (num = " << pat.GetNumValues() << ")" << std::endl;
+			printf("SpeedTest (Pattern) ");
+			std::cout << j;
+			printf(" (Threads (Sequence)) : ");
+			{
+				cweeBalancedPattern pat;
+				Stopwatch sw; sw.Start();
+				defer(std::cout << cweeUnitValues::second(sw.Stop() / 1000000000.0).ToString() << " (num = " << pat.GetNumValues() << ")" << std::endl);
+
+				fibers::utilities::Sequence<int> seq{ numLoops };
+				std::for_each_n(std::execution::par, seq.begin(), numLoops, [&pat, &j](int& i) {
+					for (int k = 0; k < j; k++) {
+						pat.AddValue(i + k, i + k);
+					}
+				});
 			}
 
 			printf("\n");
 		}
+		
+		if (0)
+		for (int j = 1; j < 10; j += 2) {
+			int numLoops = 400 * j * j;
+
+			printf("SpeedTest (Tree) ");
+			std::cout << j;
+			printf(" (No Fibers) : ");
+			{
+				fibers::containers::Tree<cweeStr, int> tree;
+				Stopwatch sw; sw.Start();
+				defer(std::cout << cweeUnitValues::second(sw.Stop() / 1000000000.0).ToString() << " (num = " << tree.GetNodeCount() << ")" << std::endl);
+
+				for (int i = 0; i < numLoops; i++) {
+					for (int k = 0; k < j; k++) {
+						tree.Add(cweeStr::printf("%i", i + k), i + k, true);
+					}
+				}
+			}
+
+			printf("SpeedTest (Tree) ");
+			std::cout << j;
+			printf(" (Threads) : ");
+			{
+				fibers::containers::Tree<cweeStr, int> tree;
+				Stopwatch sw; sw.Start();
+				defer(std::cout << cweeUnitValues::second(sw.Stop() / 1000000000.0).ToString() << " (num = " << tree.GetNodeCount() << ")" << std::endl);
+
+				std::vector<int> vec(numLoops, 0);
+				fibers::parallel::For(0, numLoops, [&vec](int i) { vec[i] = i; });
+				std::for_each_n(std::execution::par, vec.begin(), numLoops, [&tree, &j](int& i) {
+					for (int k = 0; k < j; k++) {
+						tree.Add(cweeStr::printf("%i", i + k), i + k, true);
+					}
+				});
+			}
+
+			printf("SpeedTest (Tree) ");
+			std::cout << j;
+			printf(" (Fibers) : ");
+			{
+				fibers::containers::Tree<cweeStr, int> tree;
+				Stopwatch sw; sw.Start();
+				defer(std::cout << cweeUnitValues::second(sw.Stop() / 1000000000.0).ToString() << " (num = " << tree.GetNodeCount() << ")" << std::endl);
+
+				fibers::parallel::For(0, numLoops, [&tree, &j](int i) {
+					for (int k = 0; k < j; k++) {
+						tree.Add(cweeStr::printf("%i", i + k), i + k, true);
+					}
+				});
+			}
+
+			printf("\n");
+		}
+
 		for (int j = 1; j < 10; j += 2) {
 			int numLoops = 400 * j * j;
 
@@ -150,10 +212,82 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 				fibers::parallel::For(0, numLoops, [&count, &j](int i) {
 					for (int k = 0; k < j; k++)
 						count.Add(k);
-					});
+				});
 
 				cweeUnitValues::second timePassed = sw.Stop() / 1000000000.0;
 				std::cout << timePassed.ToString() << " (num = " << count.GetValue() << ")" << std::endl;
+			}
+
+			printf("SpeedTest (atomic int) ");
+			std::cout << j;
+			printf(" (Threads (Sequence)) : ");
+			{
+				fibers::containers::number<int> count;
+				Stopwatch sw; sw.Start();
+
+				fibers::utilities::Sequence<int> seq{ numLoops };
+				std::for_each_n(std::execution::par, seq.begin(), numLoops, [&count, &j](int& V) {
+					for (int k = 0; k < j; k++) {
+						count.Add(k);
+					}
+				});
+
+				cweeUnitValues::second timePassed = sw.Stop() / 1000000000.0;
+				std::cout << timePassed.ToString() << " (num = " << count.GetValue() << ")" << std::endl;
+			}
+
+			printf("\n");
+		}
+		for (int j = 1; j < 10; j += 2) {
+			int numLoops = 400 * j * j;
+
+			printf("SpeedTest (unit values) ");
+			std::cout << j;
+			printf(" (No Fibers) : ");
+			{
+				Units::gallon_per_minute count;
+				Stopwatch sw; sw.Start();
+				int i, k;
+				for (i = 0; i < numLoops; i++) {
+					for (k = 0; k < j; k++)
+						count += k;
+				}
+
+				cweeUnitValues::second timePassed = sw.Stop() / 1000000000.0;
+				std::cout << timePassed.ToString() << " (num = " << count << ")" << std::endl;
+			}
+
+			printf("SpeedTest (unit values) ");
+			std::cout << j;
+			printf(" (Threads) : ");
+			{
+				Units::gallon_per_minute count;
+				Stopwatch sw; sw.Start();
+				int i, k;
+
+				std::vector<int> vec(numLoops, 0);
+				std::for_each_n(std::execution::par, vec.begin(), numLoops, [&count, &j](int& V) {
+					for (int k = 0; k < j; k++)
+						count += k;
+				});
+
+				cweeUnitValues::second timePassed = sw.Stop() / 1000000000.0;
+				std::cout << timePassed.ToString() << " (num = " << count << ")" << std::endl;
+			}
+
+			printf("SpeedTest (unit values) ");
+			std::cout << j;
+			printf(" (Fibers) : ");
+			{
+				Units::gallon_per_minute count;
+				Stopwatch sw; sw.Start();
+				fibers::parallel::For(0, numLoops, [&count, &j](int i) {
+					for (int k = 0; k < j; k++)
+						count += k;
+				});
+
+				cweeUnitValues::second timePassed = sw.Stop() / 1000000000.0;
+				std::cout << timePassed.ToString() << " (num = " << count << ")" << std::endl;
 			}
 
 			printf("\n");

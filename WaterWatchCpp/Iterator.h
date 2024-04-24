@@ -16,107 +16,73 @@ to maintain a single distribution point for the source code.
 #pragma once
 #include "Precompiled.h"
 
-#define SETUP_STL_ITERATOR(ParentClass, IterType, StateType) typedef std::ptrdiff_t difference_type;											\
-	typedef size_t size_type; typedef IterType value_type; typedef IterType* pointer; typedef const IterType* const_pointer;					\
-	typedef IterType& reference;																												\
-	typedef const IterType& const_reference;																									\
-	class iterator {					\
-	public: const ParentClass* ref;	mutable StateType state;			\
-		iterator() : ref(nullptr), state() {};																									\
-		iterator(const ParentClass* parent) : ref(parent), state() {};																			\
-		iterator& operator+=(difference_type n) { for (int i = 0; i < n; i++) state.next(ref); return *this; };									\
-		iterator& operator-=(difference_type n) { for (int i = 0; i < n; i++) state.prev(ref); return *this; };									\
-		difference_type operator-(iterator const& other) { return state.distance(other.state); };												\
-		iterator& operator-(difference_type dist) { for (int i = 0; i < dist; i++) state.prev(ref); return *this; };							\
-		iterator& operator--() { state.prev(ref); return *this; };																				\
-		iterator operator--(int) { iterator retval = *this; --(*this); return retval; };														\
-		iterator& operator+(difference_type dist) { for (int i = 0; i < dist; i++) state.next(ref); return *this; };							\
-		iterator& operator++() { state.next(ref); return *this; };																				\
-		iterator operator++(int) { iterator retval = *this; ++(*this); return retval; };														\
-		bool operator==(iterator const& other) const { return !(operator!=(other)); };															\
-		bool operator!=(iterator const& other) const { return (ref != other.ref || state.cmp(other.state)); };									\
-		reference operator*() { return const_cast<reference>(state.get(ref)); };																\
-		pointer operator->() { return const_cast<pointer>(&state.get(ref)); };																	\
-		const_reference operator*() const { return state.get(ref); };																			\
-		const_pointer operator->() const { return &state.get(ref); };																			\
-		iterator& begin() { state.begin(ref); return *this; };																					\
-		iterator& end() { state.end(ref); return *this; };																						\
-	};																													\
-	iterator begin() { return iterator(this).begin(); };																						\
-	iterator end() { return iterator(this).end(); };																							\
-	class const_iterator {	\
-	public: const ParentClass* ref;	mutable StateType state;																					\
-		const_iterator() : ref(nullptr), state() {};																							\
-		const_iterator(const ParentClass* parent) : ref(parent), state() {};																	\
-		const_iterator& operator+=(difference_type n) { for (int i = 0; i < n; i++) state.next(ref); return *this; };							\
-		const_iterator& operator-=(difference_type n) { for (int i = 0; i < n; i++) state.prev(ref); return *this; };							\
-		difference_type operator-(const_iterator const& other) { return state.distance(other.state); };											\
-		const_iterator& operator-(difference_type dist) { for (int i = 0; i < dist; i++) state.prev(ref); return *this; };						\
-		const_iterator& operator--() { state.prev(ref); return *this; };																		\
-		const_iterator operator--(int) { const_iterator retval = *this; --(*this); return retval; };											\
-		const_iterator& operator+(difference_type dist) { for (int i = 0; i < dist; i++) state.next(ref); return *this; };						\
-		const_iterator& operator++() { state.next(ref); return *this; };																		\
-		const_iterator operator++(int) { const_iterator retval = *this; ++(*this); return retval; };											\
-		bool operator==(const_iterator const& other) const { return !(operator!=(other)); };													\
-		bool operator!=(const_iterator const& other) const { return (ref != other.ref || state.cmp(other.state)); };							\
-		const_reference operator*() { return const_cast<reference>(state.get(ref)); };															\
-		const_pointer operator->() { return const_cast<pointer>(&state.get(ref)); };															\
-		const_reference operator*() const { return state.get(ref); };																			\
-		const_pointer operator->() const { return &state.get(ref); };																			\
-		const_iterator& begin() { state.begin(ref); return *this; };																			\
-		const_iterator& end() { state.end(ref); return *this; };																				\
-	};																												\
-	const_iterator cbegin() const { return const_iterator(this).begin(); };																		\
-	const_iterator cend() const { return const_iterator(this).end(); };																			\
-	const_iterator begin() const { return cbegin(); };																							\
-	const_iterator end() const { return cend(); };																								\
-	class reverse_iterator {			\
-	public: const ParentClass* ref;	mutable StateType state;																					\
-		reverse_iterator() : ref(nullptr), state() {};																							\
-		reverse_iterator(const ParentClass* parent) : ref(parent), state() {};																	\
-		reverse_iterator& operator+=(difference_type n) { for (int i = 0; i < n; i++) state.prev(ref); return *this; };							\
-		reverse_iterator& operator-=(difference_type n) { for (int i = 0; i < n; i++) state.next(ref); return *this; };							\
-		difference_type operator-(reverse_iterator const& other) { return state.distance(other.state); };										\
-		reverse_iterator& operator-(difference_type dist) { for (int i = 0; i < dist; i++) state.next(ref); return *this; };					\
-		reverse_iterator& operator--() { state.next(ref); return *this; };																		\
-		reverse_iterator operator--(int) { reverse_iterator retval = *this; --(*this); return retval; };										\
-		reverse_iterator& operator+(difference_type dist) { for (int i = 0; i < dist; i++) state.prev(ref); return *this; };					\
-		reverse_iterator& operator++() { state.prev(ref); return *this; };																		\
-		reverse_iterator operator++(int) { reverse_iterator retval = *this; ++(*this); return retval; };										\
-		bool operator==(reverse_iterator const& other) const { return !(operator!=(other)); };													\
-		bool operator!=(reverse_iterator const& other) const { return (ref != other.ref || state.cmp(other.state)); };							\
-		reference operator*() { return const_cast<reference>(state.get(ref)); };																\
-		pointer operator->() { return const_cast<pointer>(&state.get(ref)); };																	\
-		const_reference operator*() const { return state.get(ref); };																			\
-		const_pointer operator->() const { return &state.get(ref); };																			\
-		reverse_iterator& begin() { state.end(ref); state.prev(ref); return *this; };															\
-		reverse_iterator& end() { state.begin(ref); state.prev(ref); return *this; };															\
-	};																											\
-	reverse_iterator rbegin() { return reverse_iterator(this).begin(); };																		\
-	reverse_iterator rend() { return reverse_iterator(this).end(); };																			\
-	class const_reverse_iterator {	\
-	public: const ParentClass* ref;	mutable StateType state;																					\
-		const_reverse_iterator() : ref(nullptr), state() {};																					\
-		const_reverse_iterator(const ParentClass* parent) : ref(parent), state() {};															\
-		const_reverse_iterator& operator+=(difference_type n) { for (int i = 0; i < n; i++) state.prev(ref); return *this; };					\
-		const_reverse_iterator& operator-=(difference_type n) { for (int i = 0; i < n; i++) state.next(ref); return *this; };					\
-		difference_type operator-(const_reverse_iterator const& other) { return state.distance(other.state); };									\
-		const_reverse_iterator& operator-(difference_type dist) { for (int i = 0; i < dist; i++) state.next(ref); return *this; };				\
-		const_reverse_iterator& operator--() { state.next(ref); return *this; };																\
-		const_reverse_iterator operator--(int) { const_reverse_iterator retval = *this; --(*this); return retval; };							\
-		const_reverse_iterator& operator+(difference_type dist) { for (int i = 0; i < dist; i++) state.prev(ref); return *this; };				\
-		const_reverse_iterator& operator++() { state.prev(ref); return *this; };																\
-		const_reverse_iterator operator++(int) { const_reverse_iterator retval = *this; ++(*this); return retval; };							\
-		bool operator==(const_reverse_iterator const& other) const { return !(operator!=(other)); };											\
-		bool operator!=(const_reverse_iterator const& other) const { return (ref != other.ref || state.cmp(other.state)); };					\
-		const_reference operator*() { return const_cast<reference>(state.get(ref)); };															\
-		const_pointer operator->() { return const_cast<pointer>(&state.get(ref)); };															\
-		const_reference operator*() const { return state.get(ref); };																			\
-		const_pointer operator->() const { return &state.get(ref); };																			\
-		const_reverse_iterator& begin() { state.end(ref); state.prev(ref); return *this; };														\
-		const_reverse_iterator& end() { state.begin(ref); state.prev(ref); return *this; };														\
-	};																										\
-	const_reverse_iterator rbegin() const { return const_reverse_iterator(this).begin(); };														\
-	const_reverse_iterator rend() const { return const_reverse_iterator(this).end(); };															\
-	const_reverse_iterator crbegin() const { return rbegin(); };																				\
-	const_reverse_iterator crend() const { return rend(); };
+
+#define SETUP_STL_ITERATOR(ParentClass, IterType, StateType)  typedef std::ptrdiff_t difference_type;											 \
+	typedef size_t size_type; typedef IterType value_type; typedef IterType* pointer; typedef const IterType* const_pointer;					 \
+	typedef IterType& reference;																												 \
+	typedef const IterType& const_reference;																									 \
+	class iterator  : public std::iterator<std::random_access_iterator_tag, value_type> {					 \
+	public: ParentClass* ref;	mutable StateType state;			 \
+        using difference_type = typename std::iterator<std::random_access_iterator_tag, value_type>::difference_type;  \
+		iterator() : ref(nullptr), state() {};																									 \
+		iterator(ParentClass* parent) : ref(parent), state() {};																			 \
+		inline iterator& operator+=(difference_type n) { for (int i = 0; i < n; i++) state.next(ref); return *this; };									 \
+		inline iterator& operator-=(difference_type n) { for (int i = 0; i < n; i++) state.prev(ref); return *this; };									 \
+        inline value_type& operator*() { return state.get(ref); }  \
+        inline value_type* operator->() { return &state.get(ref); }  \
+        inline const value_type& operator*() const { return state.get(ref); }  \
+        inline const value_type* operator->() const { return &state.get(ref); }  \
+        inline value_type& operator[](difference_type rhs) const { return *(*this + rhs); }  \
+        inline iterator& operator++() { state.next(ref); return *this; };  \
+        inline iterator& operator--() { state.prev(ref); return *this; };  \
+		inline iterator operator++(int) { iterator retval = *this; ++(*this); return retval; };  \
+		inline iterator operator--(int) { iterator retval = *this; --(*this); return retval; };  \
+        inline difference_type operator-(iterator const& other) const { return state.distance(other.state); };  \
+		inline iterator operator+(difference_type dist) const { iterator retval = *this; for (int i = 0; i < dist; i++) ++retval; return retval; };	 \
+        inline iterator operator-(difference_type dist) const { iterator retval = *this; for (int i = 0; i < dist; i++) --retval; return retval; };	 \
+		friend inline iterator operator+(difference_type lhs, const iterator& rhs) { return rhs + lhs; }  \
+		friend inline iterator operator-(difference_type lhs_pos, const iterator& rhs) { iterator retval = rhs; auto rhs_pos = rhs - retval.begin(); auto newPos = lhs_pos - rhs_pos; retval = retval.begin(); for (auto x = 0; x < newPos; x++){ ++retval; } return retval; }  \
+		inline bool operator==(const iterator& other) const { return !(operator!=(other)); }  \
+		inline bool operator!=(const iterator& other) const { return (ref != other.ref || state.cmp(other.state)); }  \
+		inline bool operator>(const iterator& rhs) const { iterator beginning = *this; beginning.begin(); auto lhs_pos = *this - beginning; auto rhs_pos = rhs - beginning; return lhs_pos > rhs_pos; }  \
+		inline bool operator<(const iterator& rhs) const { iterator beginning = *this; beginning.begin(); auto lhs_pos = *this - beginning; auto rhs_pos = rhs - beginning; return lhs_pos < rhs_pos;  }  \
+		inline bool operator>=(const iterator& rhs) const { iterator beginning = *this; beginning.begin(); auto lhs_pos = *this - beginning; auto rhs_pos = rhs - beginning; return lhs_pos >= rhs_pos;  }  \
+		inline bool operator<=(const iterator& rhs) const { iterator beginning = *this; beginning.begin(); auto lhs_pos = *this - beginning; auto rhs_pos = rhs - beginning; return lhs_pos <= rhs_pos;  }  \
+		iterator& begin() { state.begin(ref); return *this; };  \
+		iterator& end() { state.end(ref); return *this; };  \
+	}; \
+	iterator begin() { return iterator(this).begin(); };																						 \
+	iterator end() { return iterator(this).end(); }; \
+    \
+	class const_iterator  : public std::iterator<std::random_access_iterator_tag, value_type> {					 \
+	public: const ParentClass* ref;	mutable StateType state;			 \
+        using difference_type = typename std::iterator<std::random_access_iterator_tag, value_type>::difference_type;  \
+		const_iterator() : ref(nullptr), state() {};																									 \
+		const_iterator(const ParentClass* parent) : ref(parent), state() {};																			 \
+		inline const_iterator& operator+=(difference_type n) { for (int i = 0; i < n; i++) state.next(ref); return *this; };									 \
+		inline const_iterator& operator-=(difference_type n) { for (int i = 0; i < n; i++) state.prev(ref); return *this; };									 \
+        inline const value_type& operator*() const { return state.get(ref); }  \
+        inline const value_type* operator->() const { return &state.get(ref); }  \
+        inline const value_type& operator[](difference_type rhs) const { return *(*this + rhs); }  \
+        inline const_iterator& operator++() { state.next(ref); return *this; };  \
+        inline const_iterator& operator--() { state.prev(ref); return *this; };  \
+		inline const_iterator operator++(int) { const_iterator retval = *this; ++(*this); return retval; };  \
+		inline const_iterator operator--(int) { const_iterator retval = *this; --(*this); return retval; };  \
+        inline difference_type operator-(const_iterator const& other) const { return state.distance(other.state); };  \
+		inline const_iterator operator+(difference_type dist) const { const_iterator retval = *this; for (int i = 0; i < dist; i++) ++retval; return retval; };	 \
+        inline const_iterator operator-(difference_type dist) const { const_iterator retval = *this; for (int i = 0; i < dist; i++) --retval; return retval; };	 \
+		friend inline const_iterator operator+(difference_type lhs, const const_iterator& rhs) { return rhs + lhs; }  \
+		friend inline const_iterator operator-(difference_type lhs_pos, const const_iterator& rhs) { const_iterator retval = rhs; auto rhs_pos = rhs - retval.begin(); auto newPos = lhs_pos - rhs_pos; retval = retval.begin(); for (auto x = 0; x < newPos; x++){ ++retval; } return retval; }  \
+		inline bool operator==(const const_iterator& other) const { return !(operator!=(other)); }  \
+		inline bool operator!=(const const_iterator& other) const { return (ref != other.ref || state.cmp(other.state)); }  \
+		inline bool operator>(const const_iterator& rhs) const { const_iterator beginning = *this; beginning.begin(); auto lhs_pos = *this - beginning; auto rhs_pos = rhs - beginning; return lhs_pos > rhs_pos; }  \
+		inline bool operator<(const const_iterator& rhs) const { const_iterator beginning = *this; beginning.begin(); auto lhs_pos = *this - beginning; auto rhs_pos = rhs - beginning; return lhs_pos < rhs_pos;  }  \
+		inline bool operator>=(const const_iterator& rhs) const { const_iterator beginning = *this; beginning.begin(); auto lhs_pos = *this - beginning; auto rhs_pos = rhs - beginning; return lhs_pos >= rhs_pos;  }  \
+		inline bool operator<=(const const_iterator& rhs) const { const_iterator beginning = *this; beginning.begin(); auto lhs_pos = *this - beginning; auto rhs_pos = rhs - beginning; return lhs_pos <= rhs_pos;  }  \
+		const_iterator& begin() { state.begin(ref); return *this; };  \
+		const_iterator& end() { state.end(ref); return *this; };  \
+	}; \
+	const_iterator cbegin() const { return const_iterator(this).begin(); };																		 \
+	const_iterator cend() const { return const_iterator(this).end(); };																			 \
+	const_iterator begin() const { return cbegin(); };																							 \
+	const_iterator end() const { return cend(); };

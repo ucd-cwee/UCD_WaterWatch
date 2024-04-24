@@ -699,8 +699,68 @@ public:
 		free = NULL;
 		total = active = 0;
 	};
-	INLINE void			SetFixedBlocks(long long numBlocks);
-	INLINE void			FreeEmptyBlocks();
+	INLINE void			SetFixedBlocks(long long numBlocks) {
+		long long currentNumBlocks = 0;
+		for (cweeBlock* block = blocks; block != NULL; block = block->next) {
+			currentNumBlocks++;
+		}
+		for (long long i = currentNumBlocks; i < numBlocks; i++) {
+			AllocNewBlock();
+		}
+		allowAllocs = false;
+	};
+	INLINE void			FreeEmptyBlocks() {
+		// first count how many free elements are in each block and build up a free chain per block
+		for (cweeBlock* block = blocks; block != NULL; block = block->next) {
+			block->free = NULL;
+			block->freeCount = 0;
+		}
+		for (element_t* element = free; element != NULL; ) {
+			element_t* next = element->next;
+			for (cweeBlock* block = blocks; block != NULL; block = block->next) {
+				if (element >= block->elements && element < block->elements + _blockSize_) {
+					element->next = block->free;
+					block->free = element;
+					block->freeCount++;
+					break;
+				}
+			}
+			// if this assert fires, we couldn't find the element in any block
+			assert(element->next != next);
+			element = next;
+		}
+		// now free all blocks whose free count == _blockSize_
+		cweeBlock* prevBlock = NULL;
+		for (cweeBlock* block = blocks; block != NULL; ) {
+			cweeBlock* next = block->next;
+			if (block->freeCount == _blockSize_) {
+				if (prevBlock == NULL) {
+					assert(blocks == block);
+					blocks = block->next;
+				}
+				else {
+					assert(prevBlock->next == block);
+					prevBlock->next = block->next;
+				}
+				Mem_Free(block);
+				total -= _blockSize_;
+			}
+			else {
+				prevBlock = block;
+			}
+			block = next;
+		}
+		// now rebuild the free chain
+		free = NULL;
+		for (cweeBlock* block = blocks; block != NULL; block = block->next) {
+			for (element_t* element = block->free; element != NULL; ) {
+				element_t* next = element->next;
+				element->next = free;
+				free = element;
+				element = next;
+			}
+		}
+	};
 
 	static constexpr bool isPod() { return std::is_pod<_type_>::value; };
 	_type_*				Alloc() {
@@ -855,72 +915,6 @@ private:
 		total += _blockSize_;
 	};
 };
-
-template<class _type_, int _blockSize_, memTag_t memTag>
-INLINE void cweeBlockAlloc<_type_, _blockSize_, memTag>::SetFixedBlocks(long long numBlocks) {
-	long long currentNumBlocks = 0;
-	for (cweeBlock* block = blocks; block != NULL; block = block->next) {
-		currentNumBlocks++;
-	}
-	for (long long i = currentNumBlocks; i < numBlocks; i++) {
-		AllocNewBlock();
-	}
-	allowAllocs = false;
-}
-
-template<class _type_, int _blockSize_, memTag_t memTag>
-INLINE void cweeBlockAlloc<_type_, _blockSize_, memTag>::FreeEmptyBlocks() {
-	// first count how many free elements are in each block and build up a free chain per block
-	for (cweeBlock* block = blocks; block != NULL; block = block->next) {
-		block->free = NULL;
-		block->freeCount = 0;
-	}
-	for (element_t* element = free; element != NULL; ) {
-		element_t* next = element->next;
-		for (cweeBlock* block = blocks; block != NULL; block = block->next) {
-			if (element >= block->elements && element < block->elements + _blockSize_) {
-				element->next = block->free;
-				block->free = element;
-				block->freeCount++;
-				break;
-			}
-		}
-		// if this assert fires, we couldn't find the element in any block
-		assert(element->next != next);
-		element = next;
-	}
-	// now free all blocks whose free count == _blockSize_
-	cweeBlock* prevBlock = NULL;
-	for (cweeBlock* block = blocks; block != NULL; ) {
-		cweeBlock* next = block->next;
-		if (block->freeCount == _blockSize_) {
-			if (prevBlock == NULL) {
-				assert(blocks == block);
-				blocks = block->next;
-			}
-			else {
-				assert(prevBlock->next == block);
-				prevBlock->next = block->next;
-			}
-			Mem_Free(block);
-			total -= _blockSize_;
-		}
-		else {
-			prevBlock = block;
-		}
-		block = next;
-	}
-	// now rebuild the free chain
-	free = NULL;
-	for (cweeBlock* block = blocks; block != NULL; block = block->next) {
-		for (element_t* element = block->free; element != NULL; ) {
-			element_t* next = element->next;
-			element->next = free;
-			free = element;
-			element = next;
-		}
-	}
-}
 
 /*
 ==============================================================================

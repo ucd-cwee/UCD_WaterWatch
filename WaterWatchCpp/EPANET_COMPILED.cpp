@@ -4451,6 +4451,28 @@ namespace epanet {
             auto& links = net->Link;
             auto numN = net->Nnodes;
 #if 1
+#if 0
+            fibers::parallel::ForEach(nodes, [&nodes, &currentTime, &hyd, &t, &pr, &net](Pnode& obj) {
+                if (obj) {
+                    auto& i = obj->ResultIndex;
+                    auto& A_t = obj->Type_p;
+                    if ((t == 0_s) || A_t == asset_t::RESERVOIR) {
+                        AUTO pat = obj->GetValue<_HEAD_>();
+                        if (pat) {
+                            if (pat->AddUniqueValue(currentTime, hyd->NodeHead[i]))
+                                pat->CompressLastValueAdded();
+                        }
+                    }
+                    if ((t == 0_s) || A_t == asset_t::RESERVOIR) {
+                        AUTO pat = obj->GetValue<_DEMAND_>();
+                        if (pat) {
+                            if (pat->AddUniqueValue(currentTime, hyd->NodeDemand[i]))
+                                pat->CompressLastValueAdded();
+                        }
+                    }
+                }
+            });
+#else
             fibers::JobGroup group;
             fibers::parallel::For(group, (int)1, (int)nodes.size(), [&nodes, &currentTime, &hyd, &t, &pr, &net](int i) {
                 auto& obj = nodes[i];
@@ -4472,6 +4494,7 @@ namespace epanet {
                     }
                 }
             });
+#endif
 #else
             for (auto i = 1; i <= numN; i++) {
                 auto& obj = nodes[i];
@@ -4496,6 +4519,115 @@ namespace epanet {
 #endif
             numN = net->Nlinks;
 #if 1
+#if 0
+            group.Wait();
+            fibers::parallel::ForEach(links, [&links, &currentTime, &hyd, &t, &pr, &net](Plink& obj) {
+                if (obj) {
+                    auto& i = obj->ResultIndex;
+                    auto& A_t = obj->Type_p;
+                    if (A_t == asset_t::PIPE || A_t == asset_t::PUMP || A_t == asset_t::VALVE) {
+                        if ((t == 0_s) || A_t != asset_t::PIPE) {
+                            AUTO pat = obj->GetValue<_FLOW_>();
+                            if (pat) {
+                                if (pat->AddUniqueValue(currentTime, hyd->LinkFlow[i]))
+                                    pat->CompressLastValueAdded();
+                            }
+                        }
+                        if ((t == 0_s) || A_t != asset_t::PIPE) {
+                            AUTO pat = obj->GetValue<_VELOCITY_>();
+                            if (pat) {
+                                if (hyd->LinkStatus[i] <= CLOSED) {
+                                    if (pat->AddUniqueValue(currentTime, 0_fps))
+                                        pat->CompressLastValueAdded();
+                                }
+                                else {
+                                    if (pat->AddUniqueValue(currentTime, hyd->LinkFlow[i] / obj->Area()))
+                                        pat->CompressLastValueAdded();
+                                }
+                                
+                            }
+                        }
+                        if ((t == 0_s) || A_t != asset_t::PIPE) {
+                            AUTO pat = obj->GetValue<_HEADLOSS_>();
+                            if (pat) {
+                                auto h = hyd->NodeHead[obj->N1] - hyd->NodeHead[obj->N2];
+                                if (obj->Type != PUMP) h = ABS(h);
+                                if (pat->AddUniqueValue(currentTime, h))
+                                    pat->CompressLastValueAdded();
+                            }
+                        }
+                        if ((t == 0_s) || A_t != asset_t::PIPE) {
+                            AUTO pat = obj->GetValue<_STATUS_>();
+                            if (pat) {
+                                if (pat->AddUniqueValue(currentTime, (double)hyd->LinkStatus[i]))
+                                    pat->CompressLastValueAdded();
+                            }
+                        }
+                    }
+                    if (A_t == asset_t::PUMP || A_t == asset_t::VALVE) {
+                        {
+                            AUTO pat = obj->GetValue<_SETTING_>();
+                            if (pat) {
+                                if (hyd->LinkSetting[i] == MISSING) pat->AddUniqueValue(currentTime, 0);
+                                else {
+                                    switch (obj->Type)
+                                    {
+                                    case PRV:
+                                    case PSV:
+                                    case PBV:
+                                        // pressure setting, internally set as 'head' above elevation
+                                        if (pat->AddUniqueValue(currentTime, (double)(pounds_per_square_inch_t)(head_t)(double)hyd->LinkSetting[i]))
+                                            pat->CompressLastValueAdded();
+                                        break;
+                                    case FCV:
+                                        // flow setting - internally set as cfs
+                                        if (pat->AddUniqueValue(currentTime, (double)(cubic_foot_per_second_t)(double)hyd->LinkSetting[i]))
+                                            pat->CompressLastValueAdded();
+                                        break;
+                                    default:
+                                        if (pat->AddUniqueValue(currentTime, (double)hyd->LinkSetting[i]))
+                                            pat->CompressLastValueAdded();
+                                        break;
+                                    }
+                                }
+                                
+                            }
+                        }
+                    }
+                    if (A_t == asset_t::PUMP) {
+                        {
+                            AUTO pat = obj->GetValue<_ENERGY_>();
+                            if (pat) {
+                                kilowatt_t kw;
+                                SCALER eff;
+
+                                getenergy(pr, i, &kw, &eff);
+                                if (pat->AddUniqueValue(currentTime, kw))
+                                    pat->CompressLastValueAdded();
+                            }
+                        }
+                    }
+                    if (A_t == asset_t::VALVE) {
+                        {
+                            if (AUTO valve = net->Valve[findvalve(net, i)]) {
+                                AUTO pat = obj->GetValue<_ENERGY_>();
+                                if (valve->ProducesElectricity) {
+                                    kilowatt_t kw;
+                                    SCALER eff;
+                                    getenergy(pr, i, &kw, &eff);
+                                    if (pat->AddUniqueValue(currentTime, -kw))
+                                        pat->CompressLastValueAdded();                                    
+                                }
+                                else {
+                                    if (pat->AddUniqueValue(currentTime, 0_kW))
+                                        pat->CompressLastValueAdded();
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+#else
             fibers::parallel::For(group, 1, (int)links.size(), [&links, &currentTime, &hyd, &t, &pr, &net](int i) {
                 auto& obj = links[i];
                 if (obj) {
@@ -4599,7 +4731,7 @@ namespace epanet {
                 }
             });
             group.Wait();
-
+#endif
 #else
             for (auto i = 1; i <= numN; i++) {
                 auto& obj = links[i];
@@ -4707,6 +4839,56 @@ namespace epanet {
             // on the reporting timestep, evaluate the pressure zones: 
             if (t == 0_s) {
 #if 1
+#if 1
+                fibers::parallel::ForEach(net->Zone, [&links, &currentTime, &hyd, &t, &pr, &net](Pzone& obj) {
+                    if (obj) {
+                        bool hasWaterDemand = obj->HasWaterDemand();
+                        // sum of all customer demands
+                        cubic_foot_per_second_t demand = 0; // we will approximate the demand using the reservoirs and inflow/outflows. 
+                        cubic_foot_per_second_t flowrate = 0; // Flowrate is the next inflow or net outflow. I.e. NOT including the reservoirs. 
+                        foot_t head = 0; int numSamples = 0;
+
+                        for (auto& link : obj->Boundary_Link) {
+                            switch (link.second) {
+                            case direction_t::FLOW_WITHIN_DMA: break;
+                            case direction_t::FLOW_IN_DMA:
+                                demand += link.first->GetCurrentValue<_FLOW_>(currentTime);
+                                break;
+                            case direction_t::FLOW_OUT_DMA:
+                                demand -= link.first->GetCurrentValue<_FLOW_>(currentTime);
+                                break;
+                            }
+                        }
+                        flowrate = demand;
+                        for (auto& node : obj->Node) {
+                            if (!hasWaterDemand || node->Type_p == asset_t::RESERVOIR || node->HasWaterDemand())
+                                cweeMath::rollingAverageRef(head, node->GetCurrentValue<_HEAD_>(currentTime), numSamples);
+                            if (node->Type_p == asset_t::RESERVOIR) demand -= node->GetCurrentValue<_DEMAND_>(currentTime);
+                        }
+                        {
+                            AUTO pat = obj->GetValue<_DEMAND_>();
+                            if (pat) {
+                                if (pat->AddUniqueValue(currentTime, demand))
+                                    pat->CompressLastValueAdded();
+                            }
+                        }
+                        {
+                            AUTO pat = obj->GetValue<_HEAD_>();
+                            if (pat) {
+                                if (pat->AddUniqueValue(currentTime, head))
+                                    pat->CompressLastValueAdded();
+                            }
+                        }
+                        {
+                            AUTO pat = obj->GetValue<_FLOW_>();
+                            if (pat) {
+                                if (pat->AddUniqueValue(currentTime, flowrate))
+                                    pat->CompressLastValueAdded();
+                            }
+                        }
+                    }
+                });
+#else
                 fibers::parallel::For(group, 0, (int)net->Zone.size(), [&links, &currentTime, &hyd, &t, &pr, &net](int i) {
                     auto& obj = net->Zone[i];
                     if (obj) {
@@ -4758,6 +4940,7 @@ namespace epanet {
 
                 });
                 group.Wait();
+#endif 
 #else
                 for (auto& obj : net->Zone) {
                     if (obj) {
@@ -4809,11 +4992,16 @@ namespace epanet {
                 }
 #endif
             }
-
-
-
-            net->System->GetValue<_DEMAND_>()->AddUniqueValue(currentTime, hyd->Dsystem);
-            net->System->GetValue<_ENERGY_>()->AddUniqueValue(currentTime, hyd->Etotal);
+            {
+                auto p = net->System->GetValue<_DEMAND_>();
+                if (p && p->AddUniqueValue(currentTime, hyd->Dsystem))
+                    p->CompressLastValueAdded();
+            }
+            {
+                auto p = net->System->GetValue<_ENERGY_>();
+                if (p && p->AddUniqueValue(currentTime, hyd->Etotal))
+                    p->CompressLastValueAdded();
+            }
         };
         int      hydsolve(EN_Project const& pr, int* iter, SCALER* relerr, HydraulicSimulationQuality simQuality)
             /*
@@ -4890,10 +5078,17 @@ namespace epanet {
 
                 // Update current solution.
                 // (Row[i] = row of solution matrix corresponding to node i)
+#if 0
+                fibers::parallel::For(1, net->Njuncs + 1, [&hyd, &sm](int i) {
+                    hyd->NodeHead[i] = sm->B_ft[sm->Row[i]]; // Update heads
+                });
+#else
                 for (i = 1; i <= net->Njuncs; i++)
                 {
                     hyd->NodeHead[i] = sm->B_ft[sm->Row[i]];   // Update heads
                 }
+#endif
+
                 newerr = newflows(pr, &hydbal);             // Update flows
                 *relerr = newerr;
 
@@ -4954,13 +5149,21 @@ namespace epanet {
             }
 
             // Store actual junction outflow in NodeDemand & full demand in DemandFlow
+#if 0
+            fibers::parallel::For(1, net->Njuncs + 1, [&hyd](int i) {
+                thread_local static cubic_foot_per_second_t fullDemand;
+                fullDemand = hyd->NodeDemand[i];
+                hyd->NodeDemand[i] = hyd->DemandFlow[i] + hyd->EmitterFlow[i];
+                hyd->DemandFlow[i] = fullDemand;
+            });
+#else
             for (i = 1; i <= net->Njuncs; i++)
             {
                 fullDemand = hyd->NodeDemand[i];
                 hyd->NodeDemand[i] = hyd->DemandFlow[i] + hyd->EmitterFlow[i];
                 hyd->DemandFlow[i] = fullDemand;
             }
-
+#endif
             // Save the simulation data for this timestep            
             SaveResultsForTimeStep(pr, simQuality);
 
@@ -5307,6 +5510,26 @@ namespace epanet {
             hyd->Dsystem = 0.0_cfs;          // System-wide demand
             int nN = net->Njuncs;
             auto& nodes = net->Node;
+
+#if 0
+            fibers::parallel::For(1, nN + 1, [&nodes, &hyd, &t](int n) {
+                thread_local static cubic_foot_per_second_t sum;
+                sum = 0.0;
+                for (auto& demand : nodes[n]->D) {
+                    // pattern period (k) = (elapsed periods) modulus (periods per pattern)
+                    if (demand.TimePat) {
+                        thread_local static cubic_foot_per_second_t djunc;
+                        djunc = demand.Base;
+                        djunc *= hyd->Dmult;
+                        djunc *= demand.TimePat->Pat.GetCurrentValue(t);
+                        if (djunc > 0.0_cfs) hyd->Dsystem += djunc;
+                        sum += djunc;
+                    }
+                }
+                hyd->NodeDemand[n] = sum;
+                hyd->DemandFlow[n] = sum; // Initialize pressure dependent demand
+            });
+#else
             for (n = 1; n <= nN; n++) {
                 sum = 0.0_cfs;
                 for (auto& demand : nodes[n]->D) {
@@ -5324,9 +5547,21 @@ namespace epanet {
                 // Initialize pressure dependent demand
                 hyd->DemandFlow[n] = sum;
             }
+#endif
 
             // Update head at fixed grade nodes with time patterns
             nN = net->Ntanks;
+#if 0
+            fibers::parallel::For(1, nN + 1, [&net, &hyd, &time](int n) {
+                Ptank tank = net->Tank[n];
+                if (tank->Diameter == 0.0_ft)
+                {
+                    if (tank->TimePat) {
+                        hyd->NodeHead[tank->Node] = tank->El * tank->TimePat->Pat((u64)time->GetCurrentRealHtime());
+                    }
+                }
+            });
+#else
             for (n = 1; n <= nN; n++)
             {
                 Ptank tank = net->Tank[n];
@@ -5338,9 +5573,18 @@ namespace epanet {
                     }
                 }
             }
+#endif
 
             // Update status of pumps with utilization patterns
             nN = net->Npumps;
+#if 0
+            fibers::parallel::For(1, nN + 1, [&pr, &net, &hyd, &time](int n) {
+                Ppump pump = net->Pump[n];
+                if (pump->TimeUpat) {
+                    setlinksetting(pr, pump->Link, pump->TimeUpat->Pat((u64)time->GetCurrentRealHtime()), &hyd->LinkStatus[pump->Link], &hyd->LinkSetting[pump->Link]);
+                }
+            });
+#else
             for (n = 1; n <= nN; n++)
             {
                 Ppump pump = net->Pump[n];
@@ -5349,6 +5593,7 @@ namespace epanet {
                     setlinksetting(pr, i, pump->TimeUpat->Pat((u64)time->GetCurrentRealHtime()), &hyd->LinkStatus[i], &hyd->LinkSetting[i]);
                 }
             }
+#endif
         };
         int      controls(EN_Project const& pr)
             /*
@@ -5883,6 +6128,29 @@ namespace epanet {
 
             int    i, n;
 
+#if 1
+            fibers::parallel::For(1, net->Ntanks + 1, [&net, &hyd, &tstep, &pr](int i) {
+                Ptank tank = net->Tank[i];
+                if (tank->Diameter == 0.0_ft) return; // Skip reservoirs
+
+                // Update the tank's volume & water elevation
+                int n = tank->Node;
+                AUTO dv = hyd->NodeDemand[n] * tstep;
+                hyd->TankVolume[i] += dv;
+
+                // Check if tank full/empty within next second
+                if (hyd->TankVolume[i] + (hyd->NodeDemand[n] * 1_s) >= tank->Vmax(pr))
+                {
+                    hyd->TankVolume[i] = tank->Vmax(pr);
+                }
+                else if (hyd->TankVolume[i] - (hyd->NodeDemand[n] * 1_s) <= tank->Vmin(pr))
+                {
+                    hyd->TankVolume[i] = tank->Vmin(pr);
+                }
+
+                hyd->NodeHead[n] = tankgrade(pr, i, hyd->TankVolume[i]);
+            });
+#else
             for (i = 1; i <= net->Ntanks; i++)
             {
                 Ptank tank = net->Tank[i];
@@ -5905,6 +6173,9 @@ namespace epanet {
 
                 hyd->NodeHead[n] = tankgrade(pr, i, hyd->TankVolume[i]);
             }
+#endif
+
+
         };
         cubic_foot_t tankvolume(EN_Project const& pr, int i, foot_t h)
             /*
