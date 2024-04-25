@@ -169,26 +169,92 @@ namespace fibers {
 		private:
 			Type min;
 			Type max;
-			Type count;
 
 		public:
-			Sequence() = default;
-			Sequence(Type N) : min{ 0 }, max{ N }, count{ N } {};
-			Sequence(Type N0, Type N1) : min{ N0 }, max{ N1 }, count{ N1 - N0 } {};
+			Sequence() : min(0), max(0) {};
+			Sequence(Type N) : min(0), max(N) {};
+			Sequence(Type N0, Type N1) : min(N0), max(N1) {};
 
-			struct it_state {
-				Type pos = 0;
+			class Iterator : public std::iterator<std::random_access_iterator_tag, Type> {
+			public:
+				using difference_type = typename std::iterator<std::random_access_iterator_tag, Type>::difference_type;
 
-				inline void begin(const Sequence* ref) { pos = ref->min; }
-				inline void next(const Sequence* ref) { ++pos; }
-				inline void prev(const Sequence* ref) { --pos; }
-				inline void end(const Sequence* ref) { pos = ref->max; }
-				inline Type& get(Sequence* ref) { return pos; };
-				inline const Type& get(const Sequence* ref) const { return pos; };
-				inline bool cmp(const it_state& s) const { return (pos == s.pos) ? false : true; }
-				inline long long distance(const it_state& s) const { return pos - s.pos; };
+				Iterator() : _ptr(0) {}
+				Iterator(Type rhs) : _ptr(rhs) {}
+				Iterator(const Iterator& rhs) : _ptr(rhs._ptr) {}
+
+				inline Iterator& operator+=(difference_type rhs) { _ptr += rhs; return *this; }
+				inline Iterator& operator-=(difference_type rhs) { _ptr -= rhs; return *this; }
+				inline Type& operator*() { return _ptr; }
+				inline Type* operator->() { return &_ptr; }
+				inline Type operator[](difference_type rhs) { return static_cast<Type>(rhs); }
+				inline const Type& operator*() const { return _ptr; }
+				inline const Type* operator->() const { return &_ptr; }
+				inline const Type operator[](difference_type rhs) const { return static_cast<Type>(rhs); }
+
+				inline Iterator& operator++() { ++_ptr; return *this; }
+				inline Iterator& operator--() { --_ptr; return *this; }
+				inline Iterator operator++(int) { Iterator tmp(*this); ++_ptr; return tmp; }
+				inline Iterator operator--(int) { Iterator tmp(*this); --_ptr; return tmp; }
+				inline difference_type operator-(const Iterator& rhs) const { return _ptr - rhs._ptr; }
+				inline Iterator operator+(difference_type rhs) const { return Iterator(_ptr + rhs); }
+				inline Iterator operator-(difference_type rhs) const { return Iterator(_ptr - rhs); }
+				friend inline Iterator operator+(difference_type lhs, const Iterator& rhs) { return Iterator(lhs + rhs._ptr); }
+				friend inline Iterator operator-(difference_type lhs, const Iterator& rhs) { return Iterator(lhs - rhs._ptr); }
+
+				inline bool operator==(const Iterator& rhs) const { return _ptr == rhs._ptr; }
+				inline bool operator!=(const Iterator& rhs) const { return _ptr != rhs._ptr; }
+				inline bool operator>(const Iterator& rhs) const { return _ptr > rhs._ptr; }
+				inline bool operator<(const Iterator& rhs) const { return _ptr < rhs._ptr; }
+				inline bool operator>=(const Iterator& rhs) const { return _ptr >= rhs._ptr; }
+				inline bool operator<=(const Iterator& rhs) const { return _ptr <= rhs._ptr; }
+
+			private:
+				Type _ptr;
+
 			};
-			SETUP_STL_ITERATOR(Sequence, Type, it_state);
+			class ConstIterator : public std::iterator<std::random_access_iterator_tag, Type> {
+			public:
+				using difference_type = typename std::iterator<std::random_access_iterator_tag, Type>::difference_type;
+
+				ConstIterator() : _ptr(0) {}
+				ConstIterator(Type rhs) : _ptr(rhs) {}
+				ConstIterator(const ConstIterator& rhs) : _ptr(rhs._ptr) {}
+
+				inline ConstIterator& operator+=(difference_type rhs) { _ptr += rhs; return *this; }
+				inline ConstIterator& operator-=(difference_type rhs) { _ptr -= rhs; return *this; }
+				inline const Type& operator*() const { return _ptr; }
+				inline const Type* operator->() const { return &_ptr; }
+				inline const Type operator[](difference_type rhs) const { return static_cast<Type>(rhs); }
+
+				inline ConstIterator& operator++() { ++_ptr; return *this; }
+				inline ConstIterator& operator--() { --_ptr; return *this; }
+				inline ConstIterator operator++(int) { ConstIterator tmp(*this); ++_ptr; return tmp; }
+				inline ConstIterator operator--(int) { ConstIterator tmp(*this); --_ptr; return tmp; }
+				inline difference_type operator-(const ConstIterator& rhs) const { return _ptr - rhs._ptr; }
+				inline ConstIterator operator+(difference_type rhs) const { return ConstIterator(_ptr + rhs); }
+				inline ConstIterator operator-(difference_type rhs) const { return ConstIterator(_ptr - rhs); }
+				friend inline ConstIterator operator+(difference_type lhs, const ConstIterator& rhs) { return ConstIterator(lhs + rhs._ptr); }
+				friend inline ConstIterator operator-(difference_type lhs, const ConstIterator& rhs) { return ConstIterator(lhs - rhs._ptr); }
+
+				inline bool operator==(const ConstIterator& rhs) const { return _ptr == rhs._ptr; }
+				inline bool operator!=(const ConstIterator& rhs) const { return _ptr != rhs._ptr; }
+				inline bool operator>(const ConstIterator& rhs) const { return _ptr > rhs._ptr; }
+				inline bool operator<(const ConstIterator& rhs) const { return _ptr < rhs._ptr; }
+				inline bool operator>=(const ConstIterator& rhs) const { return _ptr >= rhs._ptr; }
+				inline bool operator<=(const ConstIterator& rhs) const { return _ptr <= rhs._ptr; }
+
+			private:
+				Type _ptr;
+
+			};
+
+			auto begin() { return Iterator(min); };
+			auto end() { return Iterator(max); };
+			auto cbegin() const { return ConstIterator(min); };
+			auto cend() const { return ConstIterator(max); };
+			auto begin() const { return ConstIterator(min); };
+			auto end() const { return ConstIterator(max); };
 		};
 	};
 	namespace containers {

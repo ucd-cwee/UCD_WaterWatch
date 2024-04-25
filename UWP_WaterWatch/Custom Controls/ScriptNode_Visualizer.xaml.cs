@@ -1020,17 +1020,20 @@ namespace UWP_WaterWatch.Custom_Controls
 
                 return FrameworkJob.ContinueWith(() => {
                     List<string> frameworkParms = FrameworkJob.Result;
-                    { if (double.TryParse(frameworkParms[0], out double w) && w != -1.0) { R.Opacity = w; } }
-                    { if (double.TryParse(frameworkParms[1], out double w) && w != -1.0) { R.Width = w; } }
-                    { if (double.TryParse(frameworkParms[2], out double w) && w != -1.0) { R.Height = w; } }
-                    { R.VerticalAlignment = FindBestMatch<VerticalAlignment>(frameworkParms[3]); }
-                    { R.HorizontalAlignment = FindBestMatch<HorizontalAlignment>(frameworkParms[4]); }
-                    { R.Name = frameworkParms[5]; }
-                    { if (double.TryParse(frameworkParms[6], out double w) && w != -1.0) { R.MinWidth = w; } }
-                    { if (double.TryParse(frameworkParms[7], out double w) && w != -1.0) { R.MinHeight = w; } }
-                    { if (double.TryParse(frameworkParms[8], out double w) && w != -1.0) { R.MaxWidth = w; } }
-                    { if (double.TryParse(frameworkParms[9], out double w) && w != -1.0) { R.MaxHeight = w; } }
-                    { if (TryStringToThickness(frameworkParms[10], out Thickness t)) { R.Margin = t; } }
+                    if (frameworkParms != null && frameworkParms.Count > 0)
+                    {
+                        { if (double.TryParse(frameworkParms[0], out double w) && w != -1.0) { R.Opacity = w; } }
+                        { if (double.TryParse(frameworkParms[1], out double w) && w != -1.0) { R.Width = w; } }
+                        { if (double.TryParse(frameworkParms[2], out double w) && w != -1.0) { R.Height = w; } }
+                        { R.VerticalAlignment = FindBestMatch<VerticalAlignment>(frameworkParms[3]); }
+                        { R.HorizontalAlignment = FindBestMatch<HorizontalAlignment>(frameworkParms[4]); }
+                        { R.Name = frameworkParms[5]; }
+                        { if (double.TryParse(frameworkParms[6], out double w) && w != -1.0) { R.MinWidth = w; } }
+                        { if (double.TryParse(frameworkParms[7], out double w) && w != -1.0) { R.MinHeight = w; } }
+                        { if (double.TryParse(frameworkParms[8], out double w) && w != -1.0) { R.MaxWidth = w; } }
+                        { if (double.TryParse(frameworkParms[9], out double w) && w != -1.0) { R.MaxHeight = w; } }
+                        { if (TryStringToThickness(frameworkParms[10], out Thickness t)) { R.Margin = t; } }
+                    }
                     return R;
                 }, true);
             }

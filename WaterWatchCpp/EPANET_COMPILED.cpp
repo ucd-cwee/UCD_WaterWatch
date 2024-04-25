@@ -4450,6 +4450,7 @@ namespace epanet {
             auto& nodes = net->Node;
             auto& links = net->Link;
             auto numN = net->Nnodes;
+            fibers::JobGroup group;
 #if 1
 #if 0
             fibers::parallel::ForEach(nodes, [&nodes, &currentTime, &hyd, &t, &pr, &net](Pnode& obj) {
@@ -4472,8 +4473,7 @@ namespace epanet {
                     }
                 }
             });
-#else
-            fibers::JobGroup group;
+#else            
             fibers::parallel::For(group, (int)1, (int)nodes.size(), [&nodes, &currentTime, &hyd, &t, &pr, &net](int i) {
                 auto& obj = nodes[i];
                 if (obj) {
@@ -4730,7 +4730,6 @@ namespace epanet {
                     }
                 }
             });
-            group.Wait();
 #endif
 #else
             for (auto i = 1; i <= numN; i++) {
@@ -4836,6 +4835,19 @@ namespace epanet {
                 }
             }
 #endif
+
+            if (1) {
+                auto p = net->System->GetValue<_DEMAND_>();
+                if (p && p->AddUniqueValue(currentTime, hyd->Dsystem))
+                    p->CompressLastValueAdded();
+            }
+            if (1) {
+                auto p = net->System->GetValue<_ENERGY_>();
+                if (p && p->AddUniqueValue(currentTime, hyd->Etotal))
+                    p->CompressLastValueAdded();
+            }
+            group.Wait();
+
             // on the reporting timestep, evaluate the pressure zones: 
             if (t == 0_s) {
 #if 1
@@ -4992,16 +5004,7 @@ namespace epanet {
                 }
 #endif
             }
-            {
-                auto p = net->System->GetValue<_DEMAND_>();
-                if (p && p->AddUniqueValue(currentTime, hyd->Dsystem))
-                    p->CompressLastValueAdded();
-            }
-            {
-                auto p = net->System->GetValue<_ENERGY_>();
-                if (p && p->AddUniqueValue(currentTime, hyd->Etotal))
-                    p->CompressLastValueAdded();
-            }
+
         };
         int      hydsolve(EN_Project const& pr, int* iter, SCALER* relerr, HydraulicSimulationQuality simQuality)
             /*
@@ -5511,8 +5514,9 @@ namespace epanet {
             int nN = net->Njuncs;
             auto& nodes = net->Node;
 
+            fibers::JobGroup group;
 #if 0
-            fibers::parallel::For(1, nN + 1, [&nodes, &hyd, &t](int n) {
+            fibers::parallel::For(group, 1, nN + 1, [&nodes, &hyd, &t](int n) {
                 thread_local static cubic_foot_per_second_t sum;
                 sum = 0.0;
                 for (auto& demand : nodes[n]->D) {
@@ -5552,7 +5556,7 @@ namespace epanet {
             // Update head at fixed grade nodes with time patterns
             nN = net->Ntanks;
 #if 0
-            fibers::parallel::For(1, nN + 1, [&net, &hyd, &time](int n) {
+            fibers::parallel::For(group, 1, nN + 1, [&net, &hyd, &time](int n) {
                 Ptank tank = net->Tank[n];
                 if (tank->Diameter == 0.0_ft)
                 {
@@ -5578,7 +5582,7 @@ namespace epanet {
             // Update status of pumps with utilization patterns
             nN = net->Npumps;
 #if 0
-            fibers::parallel::For(1, nN + 1, [&pr, &net, &hyd, &time](int n) {
+            fibers::parallel::For(group, 1, nN + 1, [&pr, &net, &hyd, &time](int n) {
                 Ppump pump = net->Pump[n];
                 if (pump->TimeUpat) {
                     setlinksetting(pr, pump->Link, pump->TimeUpat->Pat((u64)time->GetCurrentRealHtime()), &hyd->LinkStatus[pump->Link], &hyd->LinkSetting[pump->Link]);
@@ -5594,6 +5598,7 @@ namespace epanet {
                 }
             }
 #endif
+            group.Wait();
         };
         int      controls(EN_Project const& pr)
             /*

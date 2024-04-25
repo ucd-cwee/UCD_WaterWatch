@@ -32,7 +32,7 @@ to maintain a single distribution point for the source code.
         inline value_type* operator->() { return &state.get(ref); }  \
         inline const value_type& operator*() const { return state.get(ref); }  \
         inline const value_type* operator->() const { return &state.get(ref); }  \
-        inline value_type& operator[](difference_type rhs) const { return *(*this + rhs); }  \
+        inline value_type& operator[](difference_type rhs) const { return *(iterator(*this).begin() + rhs); }  \
         inline iterator& operator++() { state.next(ref); return *this; };  \
         inline iterator& operator--() { state.prev(ref); return *this; };  \
 		inline iterator operator++(int) { iterator retval = *this; ++(*this); return retval; };  \
@@ -63,7 +63,7 @@ to maintain a single distribution point for the source code.
 		inline const_iterator& operator-=(difference_type n) { for (int i = 0; i < n; i++) state.prev(ref); return *this; };									 \
         inline const value_type& operator*() const { return state.get(ref); }  \
         inline const value_type* operator->() const { return &state.get(ref); }  \
-        inline const value_type& operator[](difference_type rhs) const { return *(*this + rhs); }  \
+        inline const value_type& operator[](difference_type rhs) const { return *(const_iterator(*this).begin() + rhs); }  \
         inline const_iterator& operator++() { state.next(ref); return *this; };  \
         inline const_iterator& operator--() { state.prev(ref); return *this; };  \
 		inline const_iterator operator++(int) { const_iterator retval = *this; ++(*this); return retval; };  \

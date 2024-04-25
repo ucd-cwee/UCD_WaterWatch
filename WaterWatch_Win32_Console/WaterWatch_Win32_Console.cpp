@@ -38,7 +38,6 @@ static constexpr const bool IsStatelessTest() {
 	return std::is_convertible<T, ftype>::value;
 };
 
-
 int Example::ExampleF(int numTasks, int numSubTasks) {
 	int* xyzwabc = new int[10000];
 	defer(delete[] xyzwabc); // does clean-up on our behalf on scope end
@@ -94,7 +93,7 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 
 			printf("SpeedTest (Pattern) ");
 			std::cout << j;
-			printf(" (Threads (Sequence)) : ");
+			printf(" (Threads (Fibers Sequence)) : ");
 			{
 				cweeBalancedPattern pat;
 				Stopwatch sw; sw.Start();
@@ -220,7 +219,7 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 
 			printf("SpeedTest (atomic int) ");
 			std::cout << j;
-			printf(" (Threads (Sequence)) : ");
+			printf(" (Threads (Fibers Sequence)) : ");
 			{
 				fibers::containers::number<int> count;
 				Stopwatch sw; sw.Start();
