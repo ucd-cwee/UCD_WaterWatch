@@ -110,7 +110,7 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 			printf("\n");
 		}
 		
-		if (0)
+		if (1)
 		for (int j = 1; j < 10; j += 2) {
 			int numLoops = 400 * j * j;
 
@@ -118,13 +118,13 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 			std::cout << j;
 			printf(" (No Fibers) : ");
 			{
-				fibers::containers::Tree<cweeStr, int> tree;
+				fibers::containers::Tree<Units::value, int, 10, true> tree;
 				Stopwatch sw; sw.Start();
 				defer(std::cout << cweeUnitValues::second(sw.Stop() / 1000000000.0).ToString() << " (num = " << tree.GetNodeCount() << ")" << std::endl);
 
 				for (int i = 0; i < numLoops; i++) {
 					for (int k = 0; k < j; k++) {
-						tree.Add(cweeStr::printf("%i", i + k), i + k, true);
+						tree.Add(i + k, i + k, true);
 					}
 				}
 			}
@@ -133,15 +133,14 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 			std::cout << j;
 			printf(" (Threads) : ");
 			{
-				fibers::containers::Tree<cweeStr, int> tree;
+				fibers::containers::Tree<Units::value, int, 10, true> tree;
 				Stopwatch sw; sw.Start();
 				defer(std::cout << cweeUnitValues::second(sw.Stop() / 1000000000.0).ToString() << " (num = " << tree.GetNodeCount() << ")" << std::endl);
 
-				std::vector<int> vec(numLoops, 0);
-				fibers::parallel::For(0, numLoops, [&vec](int i) { vec[i] = i; });
-				std::for_each_n(std::execution::par, vec.begin(), numLoops, [&tree, &j](int& i) {
+				auto seq{ fibers::utilities::Sequence{ numLoops } };
+				std::for_each_n(std::execution::par, seq.begin(), numLoops, [&tree, &j](int& i) {
 					for (int k = 0; k < j; k++) {
-						tree.Add(cweeStr::printf("%i", i + k), i + k, true);
+						tree.Add(i + k, i + k, true);
 					}
 				});
 			}
@@ -150,13 +149,13 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 			std::cout << j;
 			printf(" (Fibers) : ");
 			{
-				fibers::containers::Tree<cweeStr, int> tree;
+				fibers::containers::Tree<Units::value, int, 10, true> tree;
 				Stopwatch sw; sw.Start();
 				defer(std::cout << cweeUnitValues::second(sw.Stop() / 1000000000.0).ToString() << " (num = " << tree.GetNodeCount() << ")" << std::endl);
 
 				fibers::parallel::For(0, numLoops, [&tree, &j](int i) {
 					for (int k = 0; k < j; k++) {
-						tree.Add(cweeStr::printf("%i", i + k), i + k, true);
+						tree.Add(i + k, i + k, true);
 					}
 				});
 			}

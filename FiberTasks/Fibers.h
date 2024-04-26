@@ -810,7 +810,7 @@ namespace fibers {
 		};
 
 		template<typename type = double>
-		class atomic_number {
+		struct atomic_number {
 		public:
 			static constexpr bool isFloatingPoint = std::is_floating_point<type>::value;
 			static constexpr bool isSigned = std::is_signed<type>::value;
@@ -845,14 +845,8 @@ namespace fibers {
 			constexpr atomic_number(type&& a) : value(std::forward<type>(a)) {};
 			atomic_number(const atomic_number& other) : value(other.GetValue()) {};
 			atomic_number(atomic_number&& other) : value(std::move(other.value)) {};
-			atomic_number& operator=(const atomic_number& other) { 
-				SetValue(other.value);
-				return *this; 
-			};
-			atomic_number& operator=(atomic_number&& other) {
-				SetValue(std::move(other.value));
-				return *this;
-			};
+			atomic_number& operator=(const atomic_number& other) { SetValue(other.value); return *this; };
+			atomic_number& operator=(atomic_number&& other) { SetValue(std::move(other.value)); return *this; };
 			~atomic_number() = default;
 
 			operator type() { return GetValue(); };
@@ -1385,13 +1379,24 @@ namespace fibers {
 				(void)exchange(v);
 			}; // sets the value to the input
 
+		public: // std::scoped_lock compatability
+			inline void lock() {
+				while (Increment() != static_cast<type>(1)) Decrement();
+			};
+			inline bool try_lock() {
+				return Increment() == static_cast<type>(1);
+			};
+			inline void unlock() {
+				Decrement();
+			};
+
 		public:
 			internalType value;
 
 		};
 
 		template< typename T> 
-		class atomic_ptr {
+		struct atomic_ptr {
 		private:
 			static void* Sys_InterlockedExchangePointer(void*& ptr, void* exchange) { return InterlockedExchangePointer(&ptr, exchange); };
 			static void* Sys_InterlockedCompareExchangePointer(void*& ptr, void* comparand, void* exchange) { return InterlockedCompareExchangePointer(&ptr, exchange, comparand); };
@@ -1451,7 +1456,7 @@ namespace fibers {
 			return out;
 		};
 
-		template<class _type_, int _blockSize_> class BlockAllocator {
+		template<class _type_, int _blockSize_, bool ForcePOD = false> class BlockAllocator {
 		public:
 			BlockAllocator(bool clear = true) : // = false
 				blocks(nullptr),
@@ -1554,7 +1559,7 @@ namespace fibers {
 				}
 			};
 
-			static constexpr bool isPod() { return std::is_pod<_type_>::value; };
+			static constexpr bool isPod() { return std::is_pod<_type_>::value || ForcePOD; };
 			_type_* Alloc() {
 				if (free == nullptr) {
 					if (!allowAllocs) {
@@ -1645,9 +1650,9 @@ namespace fibers {
 			};
 		};
 
-		template<class _type_, size_t BlockSize = 128> class Allocator {
+		template<class _type_, size_t BlockSize = 128, bool ForcePOD = false> class Allocator {
 		private:
-			static constexpr bool isPod() { return std::is_pod<_type_>::value; };
+			static constexpr bool isPod() { return std::is_pod<_type_>::value || ForcePOD; };
 
 		public:
 			Allocator() : lock(), ptrs(), alloc() {};
@@ -1657,16 +1662,12 @@ namespace fibers {
 			_type_* Alloc() {
 				auto locked{ std::scoped_lock(lock) };
 				decltype(auto) p = alloc.Alloc();
-				if constexpr (!isPod()) {
-					ptrs.insert(p);
-				}
+				if constexpr (!isPod()) { ptrs.insert(p); }
 				return p;
 			};
 			void	Free(_type_* element) {
 				auto locked{ std::scoped_lock(lock) };
-				if constexpr (!isPod()) {
-					ptrs.erase(element);
-				}
+				if constexpr (!isPod()) { ptrs.erase(element); }
 				alloc.Free(element);
 			};
 			void	Clean() {
@@ -1713,39 +1714,55 @@ namespace fibers {
 		private:
 			mutable synchronization::CriticalMutexLock lock;
 			std::set<_type_*> ptrs;
-			BlockAllocator<_type_, BlockSize> alloc;
+			BlockAllocator<_type_, BlockSize, ForcePOD> alloc;
 		};
-
 	};
 
 	namespace containers {
 		template<typename _Value_type> using number = fibers::synchronization::atomic_number<_Value_type>;
 
-		template< class objType, class keyType, int maxChildrenPerNode = 10 >
+		template< class objType, class keyType, int maxChildrenPerNode = 10, bool ForceObjectPOD = false>
 		class Tree {
 		public:
+#define LOCK_NODE_CONCAT_(a, b) a##b
+#define LOCK_NODE_CONCAT(a, b) LOCK_NODE_CONCAT_(a, b)
+#define LOCK_NODE(node) decltype(auto) LOCK_NODE_CONCAT(scopelock_, __LINE__) { std::scoped_lock((node)->lock) }
+#define READ_TREE() decltype(auto) LOCK_NODE_CONCAT(scopelock_, __LINE__) { std::shared_lock(this->lock) }
+#define WRITE_TREE() decltype(auto) LOCK_NODE_CONCAT(scopelock_, __LINE__) { std::scoped_lock(this->lock) }
 			struct TreeNode {
-
-				keyType				  key;							// key used for sorting
-				objType* object;						// if != NULL pointer to object stored in leaf node
-				TreeNode* parent;						// parent node
-				TreeNode* next;							// next sibling
-				TreeNode* prev;							// prev sibling
-				long long			  numChildren;					// number of children
-				TreeNode* firstChild;					// first child
-				TreeNode* lastChild;					// last child
+				fibers::synchronization::atomic_number<int> 
+					lock;                       // atomic lock that can be quickly "forgotten" without a destructor
+				keyType	  
+					key;						// key used for sorting
+				objType*  
+					object;						// if != NULL pointer to object stored in leaf node
+				TreeNode*
+					parent;                     // parent node
+				TreeNode*
+					next;						// next sibling
+				TreeNode*
+					prev;						// prev sibling
+				fibers::synchronization::atomic_number<int>
+					numChildren;				// number of children
+				TreeNode* 
+					firstChild;					// first child
+				TreeNode* 
+					lastChild;					// last child
 			};
+			__forceinline static TreeNode* InitNode(TreeNode* p) {
+				if (p) {
+					LOCK_NODE(p);
 
-			__forceinline TreeNode* InitNode(TreeNode* p) {
-				p->key = 0;
-				p->object = nullptr;
-				p->parent = nullptr;
-				p->next = nullptr;
-				p->prev = nullptr;
-				p->numChildren = 0;
-				p->firstChild = nullptr;
-				p->lastChild = nullptr;
-				return p;
+					p->key = 0;
+					p->object = nullptr;
+					p->parent = nullptr;
+					p->next = nullptr;
+					p->prev = nullptr;
+					p->numChildren = 0;
+					p->firstChild = nullptr;
+					p->lastChild = nullptr;
+				}
+				return p;				
 			};
 
 		public:
@@ -1754,7 +1771,11 @@ namespace fibers {
 				_iterType _node;
 				_iterType* node = &_node;
 				inline void begin(const Tree* ref) {
-					node = ref->GetFirst();
+					{
+						READ_TREE();
+						node = ref->root;
+					}
+					node = ref->GetNextLeaf(node);
 					if (!node) node = &_node;
 				};
 				inline void begin_at(const Tree* ref, keyType key) {
@@ -1784,81 +1805,8 @@ namespace fibers {
 				// Optional to allow `const_iterator`:
 				inline const _iterType& get(const Tree* ref) const { return *node; }
 			};
-#if 0
-			using ParentClass = Tree;
-			using IterType = _iterType;
-			using StateType = it_state;
-			typedef std::ptrdiff_t difference_type;
-			typedef size_t size_type; typedef IterType value_type; typedef IterType* pointer; typedef const IterType* const_pointer;
-			typedef IterType& reference;
-			typedef const IterType& const_reference;
-			class iterator : public std::iterator<std::random_access_iterator_tag, value_type> {
-			public: ParentClass* ref;	mutable StateType state;
-				  using difference_type = typename std::iterator<std::random_access_iterator_tag, value_type>::difference_type;
-				  iterator() : ref(nullptr), state() {};
-				  iterator(ParentClass* parent) : ref(parent), state() {};
-				  inline iterator& operator+=(difference_type n) { for (int i = 0; i < n; i++) state.next(ref); return *this; };
-				  inline iterator& operator-=(difference_type n) { for (int i = 0; i < n; i++) state.prev(ref); return *this; };
-				  inline value_type& operator*() { return state.get(ref); }
-				  inline value_type* operator->() { return &state.get(ref); }
-				  inline const value_type& operator*() const { return state.get(ref); }
-				  inline const value_type* operator->() const { return &state.get(ref); }
-				  inline value_type& operator[](difference_type rhs) const { return *(*this + rhs); }
-				  inline iterator& operator++() { state.next(ref); return *this; };
-				  inline iterator& operator--() { state.prev(ref); return *this; };
-				  inline iterator operator++(int) { iterator retval = *this; ++(*this); return retval; };
-				  inline iterator operator--(int) { iterator retval = *this; --(*this); return retval; };
-				  inline difference_type operator-(iterator const& other) const { return state.distance(other.state); };
-				  inline iterator operator+(difference_type dist) const { iterator retval = *this; for (int i = 0; i < dist; i++) ++retval; return retval; };
-				  inline iterator operator-(difference_type dist) const { iterator retval = *this; for (int i = 0; i < dist; i++) --retval; return retval; };
-				  friend inline iterator operator+(difference_type lhs, const iterator& rhs) { return rhs + lhs; }
-				  friend inline iterator operator-(difference_type lhs_pos, const iterator& rhs) { iterator retval = rhs; auto rhs_pos = rhs - retval.begin(); auto newPos = lhs_pos - rhs_pos; retval = retval.begin(); for (auto x = 0; x < newPos; x++) { ++retval; } return retval; }
-				  inline bool operator==(const iterator& other) const { return !(operator!=(other)); }
-				  inline bool operator!=(const iterator& other) const { return (ref != other.ref || state.cmp(other.state)); }
-				  inline bool operator>(const iterator& rhs) const { iterator beginning = *this; beginning.begin(); auto lhs_pos = *this - beginning; auto rhs_pos = rhs - beginning; return lhs_pos > rhs_pos; }
-				  inline bool operator<(const iterator& rhs) const { iterator beginning = *this; beginning.begin(); auto lhs_pos = *this - beginning; auto rhs_pos = rhs - beginning; return lhs_pos < rhs_pos; }
-				  inline bool operator>=(const iterator& rhs) const { iterator beginning = *this; beginning.begin(); auto lhs_pos = *this - beginning; auto rhs_pos = rhs - beginning; return lhs_pos >= rhs_pos; }
-				  inline bool operator<=(const iterator& rhs) const { iterator beginning = *this; beginning.begin(); auto lhs_pos = *this - beginning; auto rhs_pos = rhs - beginning; return lhs_pos <= rhs_pos; }
-				  iterator& begin() { state.begin(ref); return *this; };
-				  iterator& end() { state.end(ref); return *this; };
-			};
-			iterator begin() { return iterator(this).begin(); };
-			iterator end() { return iterator(this).end(); };
-			class const_iterator : public std::iterator<std::random_access_iterator_tag, value_type> {
-			public: const ParentClass* ref;	mutable StateType state;
-				  using difference_type = typename std::iterator<std::random_access_iterator_tag, value_type>::difference_type;
-				  const_iterator() : ref(nullptr), state() {};
-				  const_iterator(const ParentClass* parent) : ref(parent), state() {};
-				  inline const_iterator& operator+=(difference_type n) { for (int i = 0; i < n; i++) state.next(ref); return *this; };
-				  inline const_iterator& operator-=(difference_type n) { for (int i = 0; i < n; i++) state.prev(ref); return *this; };
-				  inline const value_type& operator*() const { return state.get(ref); }
-				  inline const value_type* operator->() const { return &state.get(ref); }
-				  inline const value_type& operator[](difference_type rhs) const { return *(*this + rhs); }
-				  inline const_iterator& operator++() { state.next(ref); return *this; };
-				  inline const_iterator& operator--() { state.prev(ref); return *this; };
-				  inline const_iterator operator++(int) { const_iterator retval = *this; ++(*this); return retval; };
-				  inline const_iterator operator--(int) { const_iterator retval = *this; --(*this); return retval; };
-				  inline difference_type operator-(const_iterator const& other) const { return state.distance(other.state); };
-				  inline const_iterator operator+(difference_type dist) const { const_iterator retval = *this; for (int i = 0; i < dist; i++) ++retval; return retval; };
-				  inline const_iterator operator-(difference_type dist) const { const_iterator retval = *this; for (int i = 0; i < dist; i++) --retval; return retval; };
-				  friend inline const_iterator operator+(difference_type lhs, const const_iterator& rhs) { return rhs + lhs; }
-				  friend inline const_iterator operator-(difference_type lhs_pos, const const_iterator& rhs) { const_iterator retval = rhs; auto rhs_pos = rhs - retval.begin(); auto newPos = lhs_pos - rhs_pos; retval = retval.begin(); for (auto x = 0; x < newPos; x++) { ++retval; } return retval; }
-				  inline bool operator==(const const_iterator& other) const { return !(operator!=(other)); }
-				  inline bool operator!=(const const_iterator& other) const { return (ref != other.ref || state.cmp(other.state)); }
-				  inline bool operator>(const const_iterator& rhs) const { const_iterator beginning = *this; beginning.begin(); auto lhs_pos = *this - beginning; auto rhs_pos = rhs - beginning; return lhs_pos > rhs_pos; }
-				  inline bool operator<(const const_iterator& rhs) const { const_iterator beginning = *this; beginning.begin(); auto lhs_pos = *this - beginning; auto rhs_pos = rhs - beginning; return lhs_pos < rhs_pos; }
-				  inline bool operator>=(const const_iterator& rhs) const { const_iterator beginning = *this; beginning.begin(); auto lhs_pos = *this - beginning; auto rhs_pos = rhs - beginning; return lhs_pos >= rhs_pos; }
-				  inline bool operator<=(const const_iterator& rhs) const { const_iterator beginning = *this; beginning.begin(); auto lhs_pos = *this - beginning; auto rhs_pos = rhs - beginning; return lhs_pos <= rhs_pos; }
-				  const_iterator& begin() { state.begin(ref); return *this; };
-				  const_iterator& end() { state.end(ref); return *this; };
-			};
-			const_iterator cbegin() const { return const_iterator(this).begin(); };
-			const_iterator cend() const { return const_iterator(this).end(); };
-			const_iterator begin() const { return cbegin(); };
-			const_iterator end() const { return cend(); };
-#else
 			SETUP_STL_ITERATOR(Tree, _iterType, it_state);
-#endif
+
 			iterator begin_at(keyType key) {
 				decltype(auto) iter = this->begin();
 				iter.state.begin_at(this, key);
@@ -1875,147 +1823,177 @@ namespace fibers {
 				return iter;
 			};
 
-		private:
-			synchronization::atomic_number<long long> Num; // thread-safe
-			synchronization::atomic_ptr< TreeNode > root; // thread-safe
-			synchronization::atomic_ptr< TreeNode > first; // thread-safe
-			synchronization::atomic_ptr< TreeNode > last; // thread-safe
-			utilities::Allocator<objType, maxChildrenPerNode>	objAllocator; // thread-safe
-			utilities::Allocator<TreeNode, maxChildrenPerNode>			nodeAllocator; // thread-safe
+		protected:
+			mutable std::shared_mutex // fibers::synchronization::CriticalMutexLock
+				lock; // actual lock
+			fibers::synchronization::atomic_ptr<TreeNode>
+				root; // root
+			utilities::Allocator<objType, maxChildrenPerNode, ForceObjectPOD>	
+				objAllocator; // thread-safe
+			utilities::Allocator<TreeNode, maxChildrenPerNode, true> 
+				nodeAllocator; // thread-safe, forced to be POD (quickly forgets allocations)
 
 		public:
-			Tree& operator=(const Tree& obj) {
-				Clear(); // empty out whatever this container had 
-
-				for (auto& x : obj) {
-					Add(*x.object, x.key, false);
-				}
-
-				return *this;
-			};
-			bool operator==(const Tree& obj) {
-				return GetFirst() == obj.GetFirst() && GetLast() == obj.GetLast();
-			};
-			bool operator!=(const Tree& obj) { return !operator==(obj); };
-
-			Tree() : Num(0), root(nullptr), first(nullptr), last(nullptr), objAllocator(), nodeAllocator() {
+			Tree() : root(nullptr), objAllocator(), nodeAllocator() {
 				static_assert(maxChildrenPerNode >= 4);
 				Init();
 			};
 			Tree(int toReserve) :
-				Num(0),
 				root(nullptr),
-				first(nullptr),
-				last(nullptr),
 				objAllocator(toReserve),
 				nodeAllocator(toReserve * 1.25)
 			{
 				static_assert(maxChildrenPerNode >= 4);
 				Init();
 			};
-			~Tree() {
-				Clear();
-			};
+			Tree(const Tree& obj) = delete;
+			Tree(Tree&& obj) = delete;
+			Tree& operator=(const Tree& obj) = delete;
+			Tree& operator=(Tree&& obj) = delete;
+			~Tree() { Shutdown(); };
 
-			void									Reserve(long long num) {
+			void Reserve(long long num) {
 				objAllocator.Reserve(num);
 				nodeAllocator.Reserve(num * 1.25); // approximately 25% more for 'overage'
 			};
 
+			// Thread-safe. Adds an object/key pair to the tree.
 			TreeNode* Add(objType const& object, keyType const& key, bool addUnique = true) {
 				TreeNode* node, * child, * newNode; objType* OBJ;
 
+				// Ensure the root exists (thread-safe due to blocking)
+				if (root == nullptr) {
+					this->lock.lock();
+				}
 				if (root == nullptr) {
 					root = AllocNode();
+					this->lock.unlock();
 				}
 
-				// check that the key does not already exist		
+				// Check that the key does not already exist (thread-safe)
 				if (addUnique) {
 					node = NodeFind(key);
 					if (node && node->object) {
 						*node->object = const_cast<objType&>(object);
-						return CheckLastNode(CheckFirstNode(node));
+						return node;
 					}
 				}
 
-				if (root->numChildren >= maxChildrenPerNode) {
-					newNode = AllocNode();
-					newNode->key = root->key;
-					newNode->firstChild = root;
-					newNode->lastChild = root;
-					newNode->numChildren = 1;
-					root->parent = newNode;
-					SplitNode(root);
-					root = newNode;
+				// Split the root if needed (thread-safe)
+				{
+					fibers::synchronization::atomic_number<int>* rootLock{ nullptr };
+					if (!rootLock && root->numChildren >= maxChildrenPerNode) {
+						this->lock.lock();
+						rootLock = &root->lock;
+						rootLock->lock();						
+					}
+					if (rootLock && root->numChildren >= maxChildrenPerNode) {
+						newNode = AllocNode();
+						LOCK_NODE(newNode);
+						newNode->key = root->key;
+						newNode->firstChild = root;
+						newNode->lastChild = root;
+						newNode->numChildren = 1;
+
+						SplitNode<false>(root, newNode);
+						{
+							
+							root = newNode;
+							rootLock->unlock();
+							this->lock.unlock();
+						}
+					}
 				}
 
 				newNode = AllocNode();
+				LOCK_NODE(newNode);
 				newNode->key = key;
-
-				OBJ = nullptr;
-				{
-					OBJ = objAllocator.Alloc();
+				OBJ = objAllocator.Alloc(); {
 					*OBJ = const_cast<objType&>(object);
-					Num++;
 				}
-
 				newNode->object = OBJ;
 
-				for (node = root; node->firstChild != nullptr; node = child) {
+				READ_TREE();
 
-					if (key > node->key) {
-						node->key = key;
-					}
+				for (node = root.Get(); node->firstChild != nullptr; node = child) {
+					LOCK_NODE(node);
 
+					if (key > node->key) node->key = key;
+					
 					// find the first child with a key larger equal to the key of the new node
-					for (child = node->firstChild; child->next; child = child->next) {
-						if (key <= child->key) {
-							break;
+					child = node->firstChild;
+					{
+						auto* childLock = &child->lock;
+						childLock->lock();
+						while (child->next) {
+							if (key <= child->key) {
+								break;
+							}
+
+							child = child->next;
+							child->lock.lock();
+							childLock->unlock();
+							childLock = &child->lock;
 						}
+						childLock->unlock();
 					}
 
-					if (child->object) {
+					LOCK_NODE(child);
+					{
+						if (child->object) {
+							newNode->parent = node;
 
-						if (key <= child->key) {
-							// insert new node before child
-							if (child->prev) {
-								child->prev->next = newNode;
+							if (key <= child->key) {
+								// insert new node before child
+								if (child->prev) {
+									LOCK_NODE(child->prev);
+
+									newNode->prev = child->prev;
+									newNode->next = child;
+									child->prev->next = newNode;
+									child->prev = newNode;
+								}
+								else {
+									newNode->prev = child->prev;
+									newNode->next = child;
+									node->firstChild = newNode;
+									child->prev = newNode;
+								}
 							}
 							else {
-								node->firstChild = newNode;
+								// insert new node after child
+								if (child->next) {
+									LOCK_NODE(child->next);
+
+									newNode->prev = child;
+									newNode->next = child->next;
+									child->next->prev = newNode;
+									child->next = newNode;
+								}
+								else {
+									newNode->prev = child;
+									newNode->next = child->next;									
+									node->lastChild = newNode;									
+									child->next = newNode;
+								}								
 							}
-							newNode->prev = child->prev;
-							newNode->next = child;
-							child->prev = newNode;
+							node->numChildren++;
+
+							return newNode;
 						}
-						else {
-							// insert new node after child
-							if (child->next) {
-								child->next->prev = newNode;
+
+						// make sure the child has room to store another node
+						if (child->numChildren >= maxChildrenPerNode) {
+							SplitNode<false>(child);
+							LOCK_NODE(child->prev);
+							if (key <= child->prev->key) {
+								child = child->prev;
 							}
-							else {
-								node->lastChild = newNode;
-							}
-							newNode->prev = child;
-							newNode->next = child->next;
-							child->next = newNode;
-						}
-
-						newNode->parent = node;
-						node->numChildren++;
-
-						return CheckLastNode(CheckFirstNode(newNode));
-					}
-
-					// make sure the child has room to store another node
-					if (child->numChildren >= maxChildrenPerNode) {
-						SplitNode(child);
-						if (key <= child->prev->key) {
-							child = child->prev;
 						}
 					}
 				}
 
+				LOCK_NODE(root);
 				// we only end up here if the root node is empty
 				newNode->parent = root;
 				root->key = key;
@@ -2023,24 +2001,12 @@ namespace fibers {
 				root->lastChild = newNode;
 				root->numChildren++;
 
-				return CheckLastNode(CheckFirstNode(newNode));
+				return newNode;
 			};
-			void									Add(std::vector<std::pair<keyType, objType>> const& data, bool addUnique = true) {
-				for (auto& source : data) {
-					Add(source.second, source.first, addUnique);
-				}
-			};
-			
-			void									Remove(TreeNode* node) {
+
+			void Add(std::vector<std::pair<keyType, objType>> const& data, bool addUnique = true) { for (auto& source : data) Add(source.second, source.first, addUnique); };
+			void Remove(TreeNode* node) {
 				if (!node) return;
-
-				if (first == node) {
-					first = this->GetNextLeaf(node);
-				}
-
-				if (last == node) {
-					last = this->GetPrevLeaf(node);
-				}
 
 				TreeNode* parent, * oldRoot;
 
@@ -2075,7 +2041,10 @@ namespace fibers {
 					}
 
 					if (parent->numChildren > maxChildrenPerNode) {
-						SplitNode(parent);
+						// PARENT SHOULD ALREADY BE LOCKED
+						// REMOVE THIS LOCK WHEN WE GET TO UPDATING THIS SECTION OF CODE
+						LOCK_NODE(parent);
+						SplitNode<true>(parent); // mark this false if the parent's parent is locked already
 						break;
 					}
 				}
@@ -2087,51 +2056,141 @@ namespace fibers {
 				}
 
 				// free the node
-				FreeNode(node);
+				FreeNode(node); // Non-locking.
 
 				// remove the root node if it has a single internal node as child
 				if (root->numChildren == 1 && root->firstChild->object == nullptr) {
 					oldRoot = root;
 					root->firstChild->parent = nullptr;
 					root = root->firstChild;
-					FreeNode(oldRoot);
+					FreeNode(oldRoot); // Non-locking.
 				}
 			};				// remove an object node from the tree
-			void									Clear() {
-				// while (first) { Remove(first); }
 
-				// remove all
-				nodeAllocator.Clear();
-				objAllocator.Clear();
-				root = nullptr;
-				first = nullptr;
-				last = nullptr;
-				Num = 0;
-
-				Init();
-			};
 			TreeNode* NodeFindByIndex(int index) const {
-				if (index <= 0) return first;
-				else if (index >= (Num - 1)) return last;
-				else return NodeFindByIndex(index, const_cast<TreeNode*>(root.Get()));
+				if (index < 0) return nullptr;
+				else if (index >= GetNodeCount()) return nullptr;
+				else {
+					READ_TREE();
+					return NodeFindByIndex(index, const_cast<TreeNode*>(root.Get()));
+				}
 			};
 			TreeNode* NodeFind(keyType  const& key) const {
+				READ_TREE();
 				return NodeFind(key, const_cast<TreeNode*>(root.Get()));
 			};								// find an object using the given key;
 			TreeNode* NodeFindSmallestLargerEqual(keyType const& key) const {
+				READ_TREE();
 				return NodeFindSmallestLargerEqual(key, const_cast<TreeNode*>(root.Get()));
 			};			// find an object with the smallest key larger equal the given key;
 			TreeNode* NodeFindLargestSmallerEqual(keyType const& key) const {
+				READ_TREE();
 				return NodeFindLargestSmallerEqual(key, const_cast<TreeNode*>(root.Get()));
 			};			// find an object with the largest key smaller equal the given key;
+			objType* Find(keyType  const& key) const {
+				READ_TREE();
+				TreeNode* node = NodeFind(key, root.Get());
+				if (node == nullptr) {
+					return nullptr;
+				}
+				else {
+					return node->object;
+				}
+			};									// find an object using the given key;
+			objType* FindSmallestLargerEqual(keyType const& key) const {
+				READ_TREE();
+				TreeNode* node = NodeFindSmallestLargerEqual(key, root.Get());
+				if (node == nullptr) {
+					return nullptr;
+				}
+				else {
+					return node->object;
+				}
+			};				// find an object with the smallest key larger equal the given key;
+			objType* FindLargestSmallerEqual(keyType const& key) const {
+				READ_TREE();
+				TreeNode* node = NodeFindLargestSmallerEqual(key, root.Get());
+				if (node == nullptr) {
+					return nullptr;
+				}
+				else {
+					return node->object;
+				}
+			};				// find an object with the largest key smaller equal the given key;
 
+		public:
+			// Thread-safe. Returns the number of allocated objects.
+			long long GetNodeCount() const { return objAllocator.GetAllocCount(); };
+			// Thread-safe. Returns the reservation size of the object allocator.
+			long long GetReservedCount() const { return objAllocator.GetTotalCount(); };
+
+		protected:
+			static TreeNode* GetNextLeaf(TreeNode* node) {
+				if (node) {
+					if (node->firstChild) {
+						while (node->firstChild) {
+							node = node->firstChild;
+						}
+					}
+					else {
+						while (node && !node->next) {
+							node = node->parent;
+						}
+						if (node) {
+							node = node->next;
+							while (node->firstChild) {
+								node = node->firstChild;
+							}
+						}
+						else {
+							node = nullptr;
+						}
+					}
+				}
+				return node;
+			};	// goes through all leaf nodes of the tree;
+			static TreeNode* GetPrevLeaf(TreeNode* node) {
+				if (!node) return nullptr;
+				if (node->lastChild) {
+					while (node->lastChild) {
+						node = node->lastChild;
+					}
+					return node;
+				}
+				else {
+					while (node && node->prev == nullptr) {
+						node = node->parent;
+					}
+					if (node) {
+						node = node->prev;
+						while (node->lastChild) {
+							node = node->lastChild;
+						}
+						return node;
+					}
+					else {
+						return nullptr;
+					}
+				}
+			};	// goes through all leaf nodes of the tree;
+			static TreeNode* GetNext(TreeNode* node) {
+				if (node) {
+					if (node->firstChild) {
+						node = node->firstChild;
+					}
+					else {
+						while (node && node->next == nullptr) {
+							node = node->parent;
+						}
+					}
+				}
+				return node;
+			};		// goes through all nodes of the tree;
 			static TreeNode* NodeFind(keyType  const& key, TreeNode* root) {
 				TreeNode* node = NodeFindLargestSmallerEqual(key, root);
 				if (node && node->object && node->key == key) return node;
 				return nullptr;
 			};								// find an object using the given key;
-
-
 			static TreeNode* NodeFindByIndex(int index, TreeNode* Root) {
 				int startIndex{ 0 };
 
@@ -2157,7 +2216,6 @@ namespace fibers {
 
 				return Root;
 			};			// find an object with the largest key smaller equal the given key;
-
 			static TreeNode* NodeFindSmallestLargerEqual(keyType const& key, TreeNode* Root) {
 				TreeNode* node, * smaller;
 
@@ -2167,12 +2225,6 @@ namespace fibers {
 
 				smaller = nullptr;
 				for (node = Root->lastChild; node != nullptr; node = node->lastChild) {
-					//if (node->lastChild && node->firstChild) {
-					//	if (node->firstChild->key > node->lastChild->key) {
-					//		node = GetPrevLeaf(Root);
-					//		break;
-					//	}
-					//}
 					while (node->prev) {
 						if (node->key <= key) {
 							if (!smaller) {
@@ -2238,265 +2290,66 @@ namespace fibers {
 				return node;
 			};			// find an object with the largest key smaller equal the given key;
 
-			objType* Find(keyType  const& key) const {
-				TreeNode* node = NodeFind(key, root);
-				if (node == nullptr) {
-					return nullptr;
-				}
-				else {
-					return node->object;
-				}
-			};									// find an object using the given key;
-			objType* FindSmallestLargerEqual(keyType const& key) const {
-				TreeNode* node = NodeFindSmallestLargerEqual(key, root);
-				if (node == nullptr) {
-					return nullptr;
-				}
-				else {
-					return node->object;
-				}
-			};				// find an object with the smallest key larger equal the given key;
-			objType* FindLargestSmallerEqual(keyType const& key) const {
-				TreeNode* node = NodeFindLargestSmallerEqual(key, root);
-				if (node == nullptr) {
-					return nullptr;
-				}
-				else {
-					return node->object;
-				}
-			};				// find an object with the largest key smaller equal the given key;
+		protected:
+			// Thread-safe. Initializes the tree and allocators.
+			void	  Init() {
+				WRITE_TREE();
 
-			TreeNode* GetFirst() const { return first; };
-			TreeNode* GetLast() const { return last; };
-			TreeNode* GetRoot() const { return root; };
-			long long								GetNodeCount() const {
-				return Num;
-			};										// returns the total number of nodes in the tree;
-			long long								GetReservedCount() const {
-				return objAllocator.GetTotalCount();  // .Num(); //  
-			};
-			static TreeNode* GetNext(TreeNode* node) {
-				if (node) {
-					if (node->firstChild) {
-						node = node->firstChild;
-					}
-					else {
-						while (node && node->next == nullptr) {
-							node = node->parent;
-						}
-					}
-				}
-				return node;
-
-				//if (!node) return nullptr; 
-				//if (node->firstChild) {
-				//	return node->firstChild;
-				//}
-				//else {
-				//	while (node && node->next == nullptr) {
-				//		node = node->parent;
-				//	}
-				//	return node;
-				//}
-			};		// goes through all nodes of the tree;
-
-		public:
-			static TreeNode* GetNextLeaf(TreeNode* node) {
-				if (node) {
-					if (node->firstChild) {
-						while (node->firstChild) {
-							node = node->firstChild;
-						}
-					}
-					else {
-						while (node && !node->next) {
-							node = node->parent;
-						}
-						if (node) {
-							node = node->next;
-							while (node->firstChild) {
-								node = node->firstChild;
-							}
-						}
-						else {
-							node = nullptr;
-						}
-					}
-				}
-				return node;
-
-				//if (!node) return nullptr;
-				//if (node->firstChild) {
-				//	while (node->firstChild) {
-				//		node = node->firstChild;
-				//	}
-				//	return node;
-				//}
-				//else {
-				//	while (node && node->next == nullptr) {
-				//		node = node->parent;
-				//	}
-				//	if (node) {
-				//		node = node->next;
-				//		while (node->firstChild) {
-				//			node = node->firstChild;
-				//		}
-				//		return node;
-				//	}
-				//	else {
-				//		return nullptr;
-				//	}
-				//}
-			};	// goes through all leaf nodes of the tree;
-			static TreeNode* GetPrevLeaf(TreeNode* node) {
-				if (!node) return nullptr;
-				if (node->lastChild) {
-					while (node->lastChild) {
-						node = node->lastChild;
-					}
-					return node;
-				}
-				else {
-					while (node && node->prev == nullptr) {
-						node = node->parent;
-					}
-					if (node) {
-						node = node->prev;
-						while (node->lastChild) {
-							node = node->lastChild;
-						}
-						return node;
-					}
-					else {
-						return nullptr;
-					}
-				}
-			};	// goes through all leaf nodes of the tree;
-
-		private:
-			TreeNode* CheckFirstNode(TreeNode* newNode) {
-				if (newNode && first) {
-					if (newNode->key < first->key) {
-						first = newNode;
-					}
-				}
-				else {
-					first = newNode;
-				}
-				return newNode;
-			};
-			TreeNode* CheckLastNode(TreeNode* newNode) {
-				if (newNode && last) {
-					if (newNode->key > last->key) {
-						last = newNode;
-					}
-				}
-				else {
-					last = newNode;
-				}
-				return newNode;
-			};
-			void									Init() {
 				root = AllocNode();
-				{ // helps init the objAllocator
-					auto x = objAllocator.Alloc();
-					objAllocator.Free(x);
-				}
+				objAllocator.Free(objAllocator.Alloc());
 			};
-			void									Shutdown() {
-				nodeAllocator.Clear();
+			// Thread-safe. Shutsdown the allocators. Need re-initialization to use again.
+			void	  Shutdown() {
+				WRITE_TREE();
 
+				nodeAllocator.Clear();
 				objAllocator.Clear();
 				root = nullptr;
-				first = nullptr;
-				last = nullptr;
-				Num = 0;
 			};
-			TreeNode* AllocNode() {
-				TreeNode* node;
-
-				node = nodeAllocator.Alloc();
-				return InitNode(node);
-
-				//node->key = 0;
-				//node->parent = nullptr;
-				//node->next = nullptr;
-				//node->prev = nullptr;
-				//node->numChildren = 0;
-				//node->firstChild = nullptr;
-				//node->lastChild = nullptr;
-				//node->object = nullptr;
-
-				//return node;
-			};
-			void									FreeNode(TreeNode* node) {
+			// Thread-safe. Allocates and initializes a tree node (not an object)
+			TreeNode* AllocNode() { return InitNode(nodeAllocator.Alloc()); };
+			// Thread-safe. Non-locking.
+			void      FreeNode(TreeNode* node) {
 				if (node && node->object) {
-					objAllocator.Free(node->object);  // RemoveFast(node->object); // 
-					Num--;
+					objAllocator.Free(node->object);
 				}
-				nodeAllocator.Free(node); // RemoveFast(node); //  
+				nodeAllocator.Free(node);
 			};
-			void									SplitNode(TreeNode* node) {
-				long long i;
-				TreeNode* child, * newNode;
-
-				// allocate a new node
-				newNode = AllocNode();
-				newNode->parent = node->parent;
-
-				// divide the children over the two nodes
-				child = node->firstChild;
-				child->parent = newNode;
-				for (i = 3; i < node->numChildren; i += 2) {
-					child = child->next;
-					child->parent = newNode;
-				}
-
-				newNode->key = child->key;
-				newNode->numChildren = node->numChildren / 2;
-				newNode->firstChild = node->firstChild;
-				newNode->lastChild = child;
-
-				node->numChildren -= newNode->numChildren;
-				node->firstChild = child->next;
-
-				child->next->prev = nullptr;
-				child->next = nullptr;
-
-				// add the new child to the parent before the split node
-				assert(node->parent->numChildren < maxChildrenPerNode);
-
-				if (node->prev) {
-					node->prev->next = newNode;
-				}
-				else {
-					node->parent->firstChild = newNode;
-				}
-				newNode->prev = node->prev;
-				newNode->next = node;
-				node->prev = newNode;
-
-				node->parent->numChildren++;
-			};
+			// Thread-safe. Locks the shared parent, node1, and node2. Node1 will be deleted. Node2 will be returned. All children of Node1 will be moved to Node2.
 			TreeNode* MergeNodes(TreeNode* node1, TreeNode* node2) {
-				TreeNode* child;
-
 				assert(node1->parent == node2->parent);
 				assert(node1->next == node2 && node2->prev == node1);
 				assert(node1->object == nullptr && node2->object == nullptr);
 				assert(node1->numChildren >= 1 && node2->numChildren >= 1);
 
-				for (child = node1->firstChild; child->next; child = child->next) {
+				LOCK_NODE(node1);
+				LOCK_NODE(node2);
+				LOCK_NODE(node1->parent);
+
+				TreeNode* child = node1->firstChild;
+				if (child) {
+					child->lock.lock();
+					while (child->next) {			
+						child->parent = node2;
+						child->lock.unlock();
+						child = child->next;
+						child->lock.lock();
+					}
 					child->parent = node2;
+					child->next = node2->firstChild;
+					child->lock.unlock();
 				}
-				child->parent = node2;
-				child->next = node2->firstChild;
-				node2->firstChild->prev = child;
-				node2->firstChild = node1->firstChild;
+
+				{
+					LOCK_NODE(node2->firstChild);
+					node2->firstChild->prev = child;
+					node2->firstChild = node1->firstChild;
+				}
 				node2->numChildren += node1->numChildren;
 
 				// unlink the first node from the parent
 				if (node1->prev) {
+					LOCK_NODE(node1->prev);
 					node1->prev->next = node2;
 				}
 				else {
@@ -2505,11 +2358,194 @@ namespace fibers {
 				node2->prev = node1->prev;
 				node2->parent->numChildren--;
 
-				FreeNode(node1);
+				FreeNode(node1); // Non-locking.
 
 				return node2;
 			};
+			// Thread-safe. Optionally locks the node's parent. Node should already be locked. A new node is created and the children are distributed among them.
+			template <bool LockParent = true>
+			void	  SplitNode(TreeNode* node, TreeNode* newParent = nullptr) {
+				// allocate a new node
+				TreeNode* newNode{ AllocNode() };
 
+				LOCK_NODE(newNode);
+
+				long long 
+					i;
+				TreeNode* 
+					child;
+
+				if (node->prev) {
+					LOCK_NODE(node->prev);
+
+					// Set the parents
+					if (newParent) node->parent = newParent;
+					newNode->parent = node->parent;
+
+					if constexpr (LockParent) {
+						LOCK_NODE(LockParent);
+
+						node->prev->next = newNode;
+
+						// divide the children over the two nodes
+						child = node->firstChild;
+						if (child) {
+							auto* thisChildLock = &child->lock;
+							thisChildLock->lock(); {
+								child->parent = newNode;
+								for (i = 3; i < node->numChildren; i += 2) {
+									child = child->next;
+									child->lock.lock();
+									child->parent = newNode;
+									thisChildLock->unlock();
+									thisChildLock = &child->lock;
+								}
+								LOCK_NODE(child->next);
+
+								newNode->key = child->key;
+								newNode->numChildren = node->numChildren / 2;
+								newNode->firstChild = node->firstChild;
+								newNode->lastChild = child;
+
+								node->numChildren -= newNode->numChildren;
+								node->firstChild = child->next;
+
+								child->next->prev = nullptr;
+								child->next = nullptr;
+							}
+							thisChildLock->unlock();
+						}
+
+						newNode->prev = node->prev;
+						newNode->next = node;
+						node->prev = newNode;
+						node->parent->numChildren++;
+					}
+					else {
+						node->prev->next = newNode;
+
+						// divide the children over the two nodes
+						child = node->firstChild;
+						if (child) {
+							auto* thisChildLock = &child->lock;
+							thisChildLock->lock(); {
+								child->parent = newNode;
+								for (i = 3; i < node->numChildren; i += 2) {
+									child = child->next;
+									child->lock.lock();
+									child->parent = newNode;
+									thisChildLock->unlock();
+									thisChildLock = &child->lock;
+								}
+								LOCK_NODE(child->next);
+
+								newNode->key = child->key;
+								newNode->numChildren = node->numChildren / 2;
+								newNode->firstChild = node->firstChild;
+								newNode->lastChild = child;
+
+								node->numChildren -= newNode->numChildren;
+								node->firstChild = child->next;
+
+								child->next->prev = nullptr;
+								child->next = nullptr;
+							}
+							thisChildLock->unlock();
+						}
+
+						newNode->prev = node->prev;
+						newNode->next = node;
+						node->prev = newNode;
+						node->parent->numChildren++;
+					}
+				}
+				else {
+					// Set the parents
+					if (newParent) node->parent = newParent;
+					newNode->parent = node->parent;
+
+					if constexpr (LockParent) {
+						LOCK_NODE(LockParent);
+
+						node->parent->firstChild = newNode;
+
+						// divide the children over the two nodes
+						child = node->firstChild;
+						if (child) {
+							auto* thisChildLock = &child->lock;
+							thisChildLock->lock(); {
+								child->parent = newNode;
+								for (i = 3; i < node->numChildren; i += 2) {
+									child = child->next;
+									child->lock.lock();
+									child->parent = newNode;
+									thisChildLock->unlock();
+									thisChildLock = &child->lock;
+								}
+								LOCK_NODE(child->next);
+
+								newNode->key = child->key;
+								newNode->numChildren = node->numChildren / 2;
+								newNode->firstChild = node->firstChild;
+								newNode->lastChild = child;
+
+								node->numChildren -= newNode->numChildren;
+								node->firstChild = child->next;
+
+								child->next->prev = nullptr;
+								child->next = nullptr;
+							}
+							thisChildLock->unlock();
+						}
+
+						newNode->prev = node->prev;
+						newNode->next = node;
+						node->prev = newNode;
+						node->parent->numChildren++;
+					}
+					else {
+						node->parent->firstChild = newNode;
+
+						// divide the children over the two nodes
+						child = node->firstChild;
+						if (child) {
+							auto* thisChildLock = &child->lock;
+							thisChildLock->lock(); {
+								child->parent = newNode;
+								for (i = 3; i < node->numChildren; i += 2) {
+									child = child->next;
+									child->lock.lock();
+									child->parent = newNode;
+									thisChildLock->unlock();
+									thisChildLock = &child->lock;
+								}
+								LOCK_NODE(child->next);
+
+								newNode->key = child->key;
+								newNode->numChildren = node->numChildren / 2;
+								newNode->firstChild = node->firstChild;
+								newNode->lastChild = child;
+
+								node->numChildren -= newNode->numChildren;
+								node->firstChild = child->next;
+
+								child->next->prev = nullptr;
+								child->next = nullptr;
+							}
+							thisChildLock->unlock();
+						}
+
+						newNode->prev = node->prev;
+						newNode->next = node;
+						node->prev = newNode;
+						node->parent->numChildren++;
+					}
+				}
+			};
+
+#undef LOCK_NODE
+#undef LOCK_NODE_CONCAT
+#undef LOCK_NODE_CONCAT_
 		};
 	};
 
