@@ -43,6 +43,30 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 	defer(delete[] xyzwabc); // does clean-up on our behalf on scope end
 
 	{
+		fibers::containers::BinarySearchTree<int> tree;
+		fibers::parallel::For(0, 400, [&tree](int i) {
+			if (i % 2 == 0) {
+				for (int k = i; k < (i + 400); k++) {
+					tree.add(k);
+				}
+			}
+			else {
+				for (int k = i; k < (i + 400); k += 2) {
+					tree.remove(k);
+				}
+			}			
+		});
+
+		if (tree.contains(1)) {
+			tree.remove(1);
+		}
+
+	}
+
+
+
+
+	{
 		for (int j = 1; j < 10; j += 2) {
 			int numLoops = 400 * j * j;
 

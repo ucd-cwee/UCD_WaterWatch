@@ -1,5 +1,97 @@
 ﻿#pragma once
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 #pragma region Precompiled STL Headers
 #pragma warning(disable : 4005)				// macro redefinition
 #pragma warning(disable : 4010)				// single-line comment contains line-continuation character
@@ -1720,6 +1812,498 @@ namespace fibers {
 
 	namespace containers {
 		template<typename _Value_type> using number = fibers::synchronization::atomic_number<_Value_type>;
+
+		namespace impl {	
+			template <typename KeyType = int> class Node;
+			template <typename KeyType = int> class NodePtrInfo {
+			public:
+				Node<KeyType>* nodeRef;
+				bool flag;
+				bool mark;
+				bool thread;
+				NodePtrInfo() noexcept {}
+				NodePtrInfo(Node<KeyType>* nodeRef, bool flag, bool mark, bool thread) noexcept :
+					nodeRef(nodeRef),
+					flag(flag),
+					mark(mark),
+					thread(thread) {}
+			};
+			template <typename KeyType> class Node {
+			public:
+				Node() noexcept {}
+				int k;
+				std::atomic<NodePtrInfo<KeyType>> child[2];
+				std::atomic<Node*> backLink;
+				Node* preLink;
+			};
+		};
+
+		template <typename KeyType = int>
+		class BinarySearchTree {
+		public:
+			BinarySearchTree() : count(0) {
+				root[0].k = -std::numeric_limits<KeyType>::max();
+				root[0].child[0] = impl::NodePtrInfo<KeyType>(&root[0], 0, 0, 1);
+				root[0].child[1] = impl::NodePtrInfo<KeyType>(&root[1], 0, 0, 1);
+				root[0].backLink = &root[1];
+				root[0].preLink = nullptr;
+
+				root[1].k = std::numeric_limits<KeyType>::max();
+				root[1].child[0] = impl::NodePtrInfo<KeyType>(&root[0], 0, 0, 0);
+				root[1].child[1] = impl::NodePtrInfo<KeyType>(nullptr, 0, 0, 1);
+				root[1].backLink = nullptr;
+				root[1].preLink = nullptr;
+			}
+			bool contains(KeyType k) {
+				auto* prev = &root[1];
+				auto* curr = &root[0];
+				KeyType dir;
+				dir = locate(prev, curr, k);
+				if (dir == -1) {
+					return 0;
+				}
+
+				if (dir == 2)
+					return true;
+				else
+					return false;
+			};
+			bool remove(KeyType k) {
+				impl::Node<KeyType>* prev = &root[1];
+				impl::Node<KeyType>* curr = &root[0];
+				bool result{ false };
+				double epsilon = 0.5;
+				KeyType dir;
+				dir = locate(prev, curr, (double)k - epsilon);
+				if (dir == -1) { return 0; }
+
+				impl::NodePtrInfo<KeyType> next = curr->child[dir];
+
+				if (k == next.nodeRef->k) {
+					result = tryFlag(curr, next.nodeRef, prev, true);
+
+					impl::NodePtrInfo<KeyType> curr_child = curr->child[dir];
+					if (curr_child.nodeRef == next.nodeRef) {
+						cleanFlag(curr, next.nodeRef, prev, true);
+					}
+
+					if (result) count.fetch_add(-1);
+				}
+				return result;
+			};
+			bool add(KeyType k) {
+				impl::Node<KeyType>* prev = &root[1];
+				impl::Node<KeyType>* curr = &root[0];
+
+				impl::Node<KeyType>* node = new impl::Node<KeyType>;
+				node->k = k;
+				node->child[0] = impl::NodePtrInfo<KeyType>(node, 0, 0, 1);
+
+				auto cmp1 = impl::NodePtrInfo<KeyType>(nullptr, 0, 0, 1);
+				auto cmp2 = impl::NodePtrInfo<KeyType>(node, 0, 0, 0);
+
+				while (true) {
+					KeyType dir;
+					dir = locate(prev, curr, k);
+					if (dir == -1) {
+						delete node;
+						return false;
+					}
+					else if (dir == 2) {
+						delete node;
+						return false;
+					}
+					else {
+						impl::NodePtrInfo<KeyType> R = curr->child[dir];
+						cmp1.nodeRef = R.nodeRef;
+						node->child[1] = cmp1;
+						node->backLink = curr;
+
+						bool result = CAS(curr->child[dir], cmp1, cmp2);
+
+						if (result) {
+							count.fetch_add(1);
+							return true;
+						}
+						else {
+							//This part is for helping
+							impl::NodePtrInfo<KeyType> newR = curr->child[dir];
+							if (newR.nodeRef == R.nodeRef) {
+								impl::Node<KeyType>* newCurr = prev;
+								if (newR.mark)
+									cleanMark(curr, dir);
+								else if (newR.flag)
+									cleanFlag(curr, R.nodeRef, prev, true);
+
+								curr = newCurr;
+								prev = newCurr->backLink;
+							}
+						}
+					}
+				}
+			};
+			size_t Num() const {
+				return (size_t)(long)count;
+			};
+
+		private:
+			KeyType locate(impl::Node<KeyType>*& prev, impl::Node<KeyType>*& curr, double k) {
+				KeyType stepCounter = 0;
+				while (true) {
+					stepCounter++;
+					if (stepCounter >= 10000)return -1;
+
+					KeyType dir = cmp(k, curr->k);
+
+					//		NodePtrInfo R = curr->child[dir];
+					//		Node* curr_backlink = curr->backLink;
+					//		prKeyTypef("Locate: 1: prev->k = %d, curr->k = %d, curr->backlink->k %d, k = %lf, dir %d, child threaded?= %d\n",  prev->k, curr->k, curr_backlink->k, k, dir, R.thread);
+							//if(prev->k == 492)
+					if (dir == 2)
+						return dir;
+
+					else {
+						impl::NodePtrInfo<KeyType> R = curr->child[dir];
+						if (R.mark == 1 && dir == 1) {
+							impl::Node<KeyType>* newPrev = prev->backLink;
+							//cleanMarked(prev, curr, dir); //cleanMarked function is not clear yet
+							cleanMark(curr, dir);
+							prev = newPrev;
+							KeyType pDir = cmp(k, prev->k);
+							impl::NodePtrInfo<KeyType> temp = prev->child[pDir];
+							curr = temp.nodeRef;
+							continue;
+						}
+
+						if (R.thread) {
+							double nextE = R.nodeRef->k;
+							if (dir == 0 || k < nextE) {
+								//prKeyTypef("Locate: 2: k = %d, prev->K = %d, curr->k = %d, dir %d\n", k, prev->k , curr->k, dir);
+								//if((KeyType)k==218)exit(0);
+								return dir;
+							}
+							else {
+								prev = curr;
+								curr = R.nodeRef;
+							}
+						}
+						else {
+							prev = curr;
+							curr = R.nodeRef;
+
+
+						}
+
+					}
+				}
+
+			};
+			bool tryFlag(impl::Node<KeyType>*& prev, impl::Node<KeyType>*& curr, impl::Node<KeyType>*& back, bool isThread) {
+
+				std::atomic<impl::NodePtrInfo<KeyType>> atomicNodePoKeyTypeerInfo;
+				while (true) {
+
+					KeyType pDir = cmp(curr->k, prev->k) & 1; //curr-> and prev->K will be same when they are poKeyTypeing to the same node. This is only possible by the threaded left-link.
+					bool t = isThread;
+
+					impl::NodePtrInfo<KeyType> test = impl::NodePtrInfo<KeyType>(curr, 0, 0, t);
+					impl::NodePtrInfo<KeyType> replace = impl::NodePtrInfo<KeyType>(curr, 1, 0, t);
+					//compareNodePoKeyTypeerInfo(prev->child[pDir], test, "inside try Flag 1");
+					bool result = CAS(prev->child[pDir], test, replace);
+
+					if (result) {
+						//			prKeyTypef("tryFlag: Flagged successfully: prev->k %d, curr->k %d\n", prev->k, curr->k);
+						return true;
+					}
+					else {
+
+						impl::NodePtrInfo<KeyType> temp = prev->child[pDir];
+						if (temp.nodeRef == curr) {
+							if (temp.flag)
+								return false;
+							else if (temp.mark)
+								cleanMark(prev, pDir);
+							prev = back;	//back is provided as third parameter. It helps to step back and restart.
+							KeyType newPDir = cmp(curr->k, prev->k);
+							impl::NodePtrInfo<KeyType> temp = prev->child[newPDir];
+							impl::Node<KeyType>* newCurr = temp.nodeRef;
+							locate(prev, newCurr, curr->k);
+							if (newCurr != curr)
+								return false;
+							prev = prev->backLink;
+						}
+					}
+
+				}
+			};
+			void tryMark(impl::Node<KeyType>* curr, KeyType dir) {
+
+				while (true) {
+					impl::Node<KeyType>* back = curr->backLink;
+					impl::NodePtrInfo<KeyType> next = curr->child[dir];
+					if (next.mark)
+						break;
+					else if (next.flag) {
+						if (!next.thread) {
+							cleanFlag(curr, next.nodeRef, back, false);
+							continue;
+						}
+						else if (next.thread && dir) {
+							cleanFlag(curr, next.nodeRef, back, true);
+							continue;
+						}
+					}
+
+					bool result = CAS(curr->child[dir], impl::NodePtrInfo<KeyType>(next.nodeRef, 0, 0, next.thread), impl::NodePtrInfo<KeyType>(next.nodeRef, 0, 1, next.thread));
+					if (result)
+						break;
+
+				}
+
+			};
+			void cleanFlag(impl::Node<KeyType>*& prev, impl::Node<KeyType>*& curr, impl::Node<KeyType>*& back, bool isThread) {
+				std::atomic<impl::NodePtrInfo<KeyType>> atomicNodePoKeyTypeerInfo;
+				if (isThread) {
+					while (true) {
+						impl::NodePtrInfo<KeyType> next = curr->child[1];
+						if (next.mark)
+							break;
+						else if (next.flag) {
+
+							if (back == next.nodeRef)
+								back = back->backLink;
+
+							impl::Node<KeyType>* backNode = curr->backLink;
+							cleanFlag(curr, next.nodeRef, backNode, next.thread);
+
+							if (back == next.nodeRef) {
+								KeyType pDir = cmp(prev->k, backNode->k);
+								//prev = back->child[pDir];
+								impl::Node<KeyType>* back_temp = back;
+								impl::NodePtrInfo<KeyType> back_child = back_temp->child[pDir];
+								prev = back_child.nodeRef;
+							}
+						}
+						else {
+							if (curr->preLink != prev) //step 2: set the prelink.
+								curr->preLink = prev;
+
+							//step: 3: mark the outgoing right link
+							bool result = CAS(curr->child[1], impl::NodePtrInfo<KeyType>(next.nodeRef, 0, 0, next.thread), impl::NodePtrInfo<KeyType>(next.nodeRef, 0, 1, next.thread));
+
+							impl::NodePtrInfo<KeyType> temp = curr->child[1];
+							if (result) {
+
+								//					puts("CleanFlag 1: successfully marked right link");
+								//					prKeyTypef("curr->k %d, temp.nodeRef->k %d, temp.mark %d\n", curr->k, temp.nodeRef->k, temp.mark);
+								//					exit(0);
+								break;
+							}
+
+
+						}
+					}
+					cleanMark(curr, 1);
+				}
+				else {
+
+					impl::NodePtrInfo<KeyType> right = curr->child[1];
+					//		prKeyTypef("inside cleanFlag2: prev->k %d, curr->k %d, right.nodeRef->k %d, right.flag %d, right.mark %d, right.thread %d\n",
+					//				prev->k, curr->k, right.nodeRef->k, right.flag, right.mark, right.thread );
+							//exit(0);
+					if (right.mark) {
+						impl::NodePtrInfo<KeyType> left = curr->child[0];
+						impl::Node<KeyType>* preNode = curr->preLink;
+
+						if (left.nodeRef != preNode) { //this is cat 3 node
+			//				puts("Clean flag 3: Entered to step 6");
+							//exit(0);
+							tryMark(curr, 0);
+							cleanMark(curr, 0);
+						}
+						else {
+							KeyType pDir = cmp(curr->k, prev->k);
+							if (left.nodeRef == curr) { //cat 1 node
+
+								CAS(prev->child[pDir], impl::NodePtrInfo<KeyType>(curr, 1, 0, 0), impl::NodePtrInfo<KeyType>(right.nodeRef, 0, 0, right.thread)); //what is f.
+
+								if (!right.thread) {
+									right.nodeRef->backLink.compare_exchange_weak(curr, prev);
+								}
+								//					prKeyTypef("removed %d\n",curr->k);
+							}
+							else {
+
+
+								bool result = CAS(preNode->child[1], impl::NodePtrInfo<KeyType>(curr, 1, 0, 1), impl::NodePtrInfo<KeyType>(right.nodeRef, 0, 0, right.thread));
+								//					prKeyTypef("swap success1: %d\n", result);
+
+								if (!right.thread) {
+									result = right.nodeRef->backLink.compare_exchange_strong(curr, prev);
+									//						prKeyTypef("swap success2: %d\n", result);
+								}
+
+
+								result = CAS(prev->child[pDir], impl::NodePtrInfo<KeyType>(curr, 1, 0, 0), impl::NodePtrInfo<KeyType>(preNode, 0, 0, right.thread));
+								//					prKeyTypef("swap success3: %d\n", result);
+
+								result = preNode->backLink.compare_exchange_strong(curr, prev);
+								//					prKeyTypef("swap success4: %d\n", result);
+								//					std::cout<<"removed: "<<curr->k<<'\n';
+							}
+						}
+					}
+					else if (right.thread && right.flag) {
+						impl::Node<KeyType>* delNode = right.nodeRef;
+						impl::Node<KeyType>* parent = delNode->backLink;
+						while (true) {
+
+							KeyType pDir = cmp(delNode->k, parent->k); //changed from paper
+							impl::NodePtrInfo<KeyType> temp = parent->child[pDir];
+							if (temp.mark)
+								cleanMark(parent, pDir);
+							else if (temp.flag)
+								break;
+							else if (CAS(parent->child[pDir], impl::NodePtrInfo<KeyType>(delNode, 0, 0, 0), impl::NodePtrInfo<KeyType>(delNode, 1, 0, 0))) {
+								//					puts("cleanFlag 4: step 5 done. Parent link of the node to be deleted flagged successfully");
+								break;
+							}
+
+						}
+
+						impl::Node<KeyType>* backNode = parent->backLink;
+
+						//			prKeyTypef("parent->k %d, delNode->k %d, backNode->k %d\n", parent->k, delNode->k, backNode->k);
+									//exit(0);
+						cleanFlag(parent, delNode, backNode, false); //changed to false. I think, "true" was a mistake.
+					}
+				}
+			};;
+			void cleanMark(impl::Node<KeyType>*& curr, KeyType markDir) {
+
+				std::atomic<impl::NodePtrInfo<KeyType>> atomicNodePoKeyTypeerInfo;
+				impl::NodePtrInfo<KeyType> left = curr->child[0];
+				impl::NodePtrInfo<KeyType> right = curr->child[1];
+				//	puts("inside clean Mark:");
+				//	prKeyTypef("curr %d, marDir %d, curr->child[0]->k %d, curr->child[1]->k: %d\n", curr->k, markDir, left.nodeRef->k, right.nodeRef->k);
+
+				if (markDir) {
+
+					//KeyType pDir = markDir;
+					impl::Node<KeyType>* delNode = curr; //Not sure
+					while (true) {
+
+						impl::Node<KeyType>* preNode = delNode->preLink;
+						//			std::cout<<"preNode->k :"<<preNode->k<<'\n';
+
+						impl::Node<KeyType>* parent = delNode->backLink;
+						KeyType pDir = cmp(delNode->k, parent->k);
+						impl::NodePtrInfo<KeyType> parent_child = parent->child[pDir];
+
+						//step 4 for category 1 and 2. Acutally step 5: flag the incoming parent link
+						if (preNode == left.nodeRef) { //category 1 or 2 node.
+			//				puts("clearn mark: inside cat 1 and 2");
+
+							impl::Node<KeyType>* parent = delNode->backLink;
+							impl::Node<KeyType>* back = parent->backLink;
+							//				prKeyTypef("delNode->k %d, parent->k %d, back-> %d\n", delNode->k, parent->k, back->k);
+							tryFlag(parent, curr, back, false); // why threaded? So, I changed it to non-threaded
+
+			//				prKeyTypef("Clean Mark 4: parent_child.nodeRef %d, curr %d, parent_child->k %d, curr->k %d\n", parent_child.nodeRef, curr, parent_child.nodeRef->k, curr->k);
+							if (parent_child.nodeRef == curr) { // If the link still persists
+								cleanFlag(parent, curr, back, false);
+								break;
+							}
+						}
+						else {
+							//category 3 node.
+							//This step 4 for category 3 node. Step 4: flag the incoming parent link of the predecessor.
+							impl::Node<KeyType>* preParent = preNode->backLink;
+							impl::NodePtrInfo<KeyType> temp = preParent->child[1]; // child[1] because predecessor of cat3 node is always the right child of it's parent.
+							impl::Node<KeyType>* backNode = preParent->backLink;
+
+							//				prKeyTypef("clean Mark 2: preNode->k %d, preParent->k %d, backNode->k %d\n", preNode->k , preParent->k, backNode->k );
+							//				prKeyTypef("clean Mark 3: temp.noderef->k: %d, temp.flag: %d, temp.mark: %d, temp.thread: %d\n", temp.nodeRef->k, temp.flag, temp.mark, temp.thread);
+
+
+							if (temp.mark)
+								cleanMark(preParent, 1);
+							else if (temp.flag) {
+								cleanFlag(preParent, preNode, backNode, false); //changed isThreaded parameter to false
+								break;
+							}
+							else if (CAS(preParent->child[pDir], impl::NodePtrInfo<KeyType>(preNode, 0, 0, 0), impl::NodePtrInfo<KeyType>(preNode, 1, 0, 0))) { //
+			//					prKeyTypef("incoming parentlink pred successfully flagged\n");
+
+								cleanFlag(preParent, preNode, backNode, false); //changed isThreaded parameter to false.
+								break;
+							}
+						}
+					}
+				}
+				else {
+					if (right.mark) {
+
+						impl::Node<KeyType>* preNode = curr->preLink;
+						tryMark(preNode, 0);
+						cleanMark(preNode, 0);
+					}
+					else if (right.thread && right.flag) {
+
+						impl::Node<KeyType>* delNode = right.nodeRef;
+						impl::Node<KeyType>* delNodePa = delNode->backLink;
+						impl::Node<KeyType>* preParent = curr->backLink;
+						KeyType pDir = cmp(delNode->k, delNodePa->k);
+						impl::NodePtrInfo<KeyType> delNodeL = delNode->child[0];
+						impl::NodePtrInfo<KeyType> delNodeR = delNode->child[1];
+
+						KeyType res1 = -1, res2 = -1, res3 = -1, res4 = -1, res5 = -1, res6 = -1, res7 = -1, res8 = -1;
+
+						res1 = CAS(preParent->child[1], impl::NodePtrInfo<KeyType>(curr, 1, 0, 0), impl::NodePtrInfo<KeyType>(left.nodeRef, left.flag, 0, left.thread));
+
+						if (!left.thread) {
+							res2 = left.nodeRef->backLink.compare_exchange_weak(curr, preParent);
+
+						}
+
+						res3 = CAS(curr->child[0], impl::NodePtrInfo<KeyType>(left.nodeRef, 0, 1, left.thread), impl::NodePtrInfo<KeyType>(delNodeL.nodeRef, 0, 0, 0));
+
+						res4 = delNodeL.nodeRef->backLink.compare_exchange_strong(delNode, curr);
+
+						res5 = CAS(curr->child[1], impl::NodePtrInfo<KeyType>(right.nodeRef, 1, 0, 1), impl::NodePtrInfo<KeyType>(delNodeR.nodeRef, 0, 0, delNodeR.thread));
+
+						if (!delNodeR.thread) {
+							res6 = delNodeR.nodeRef->backLink.compare_exchange_strong(delNode, curr);
+
+						}
+
+						res7 = CAS(delNodePa->child[pDir], impl::NodePtrInfo<KeyType>(delNode, 1, 0, 0), impl::NodePtrInfo<KeyType>(curr, 0, 0, 0));
+
+						res8 = curr->backLink.compare_exchange_strong(preParent, delNodePa);
+
+					}
+				}
+			};
+			static KeyType cmp(double x, double y) {
+				if (x == y)
+					return 2;
+				if (x > y)
+					return 1;
+				else
+					return 0;
+			};
+			bool CAS(std::atomic<impl::NodePtrInfo<KeyType>>& oldValue, impl::NodePtrInfo<KeyType> newValue, impl::NodePtrInfo<KeyType> replacement) {
+				bool result = 0;
+				for (KeyType i = 0; i < TIMES && !result; i++) {
+					result = oldValue.compare_exchange_strong(newValue, replacement);
+				}
+				return result;
+			};
+
+			std::atomic<long> count;
+			impl::Node<KeyType> root[2];
+			static constexpr KeyType TIMES = 4;
+		};
 
 		template< class objType, class keyType, int maxChildrenPerNode = 10, bool ForceObjectPOD = false>
 		class Tree {
