@@ -1,97 +1,5 @@
 ﻿#pragma once
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 #pragma region Precompiled STL Headers
 #pragma warning(disable : 4005)				// macro redefinition
 #pragma warning(disable : 4010)				// single-line comment contains line-continuation character
@@ -164,6 +72,13 @@
 #include <cstdint>
 #include <type_traits>
 #include <execution>
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <assert.h>
+#include <limits.h>
+#include <string.h>
+#include <sys/types.h>
 
 #pragma endregion
 #pragma region iterator_definition
@@ -838,6 +753,7 @@ namespace fibers {
 	};
 
 	namespace synchronization {
+		/* *THREAD SAFE* Simple atomic spin-lock that unfairly synchronizes threads or fibers. (No guarrantee of order) */
 		class SpinLock {
 		private:
 			std::atomic_flag lck = ATOMIC_FLAG_INIT;
@@ -864,7 +780,9 @@ namespace fibers {
 				lck.clear(std::memory_order_release);
 			};
 		};
-
+		
+		/* *THREAD SAFE* Windows-specific high-performance lock that only locks the OS (slow) when contention actually happens. When there is no contention, this is very fast. 
+		Generally speaking, out-performs std::mutex under most conditions. */
 		class CriticalMutexLock {
 		private:
 			using mutexHandle_t = CRITICAL_SECTION;
@@ -898,9 +816,14 @@ namespace fibers {
 		};
 
 		namespace impl {
-			extern CriticalMutexLock* atomic_number_lock;
+			extern CriticalMutexLock* atomic_number_lock; // instanced in the CPP file. Should only be a single atomic_number_lock for the entire program. 
 		};
 
+		/* *THREAD SAFE* Thread-safe and fiber-safe wrapper for any type of number, from integers to doubles. 
+		   Significant performance boost if the data type is one of: long, unsigned int, unsigned long, unsigned __int64
+		   Atomic and fast if the type is non-floating points. (E.g. int, long, etc.)
+		   Much slower, using a global lock, if using floating point numbers, like doubles. 
+		*/
 		template<typename type = double>
 		struct atomic_number {
 		public:
@@ -1487,6 +1410,7 @@ namespace fibers {
 
 		};
 
+		/* *THREAD SAFE* Thread-safe and fiber-safe wrapper for atomic operations on pointers, without having to utilize std::atomic<T*> */
 		template< typename T> 
 		struct atomic_ptr {
 		private:
@@ -1548,6 +1472,7 @@ namespace fibers {
 			return out;
 		};
 
+		/* *NOT THREAD SAFE* Basic block allocator that can create, reserve, and free shared memory. */
 		template<class _type_, int _blockSize_, bool ForcePOD = false> class BlockAllocator {
 		public:
 			BlockAllocator(bool clear = true) : // = false
@@ -1742,6 +1667,7 @@ namespace fibers {
 			};
 		};
 
+		/* *THREAD SAFE* Thread-safe wrapper for the BlockAllocator, which automatically cleans-up allocations on destruction. */
 		template<class _type_, size_t BlockSize = 128, bool ForcePOD = false> class Allocator {
 		private:
 			static constexpr bool isPod() { return std::is_pod<_type_>::value || ForcePOD; };
@@ -1749,6 +1675,10 @@ namespace fibers {
 		public:
 			Allocator() : lock(), ptrs(), alloc() {};
 			Allocator(int toReserve) : lock(), ptrs(), alloc(toReserve) {};
+			Allocator(Allocator const&) = delete;
+			Allocator(Allocator &&) = delete;
+			Allocator& operator=(Allocator const&) = delete;
+			Allocator& operator=(Allocator&&) = delete;
 			~Allocator() { Clear(); };
 
 			_type_* Alloc() {
@@ -1814,50 +1744,56 @@ namespace fibers {
 		template<typename _Value_type> using number = fibers::synchronization::atomic_number<_Value_type>;
 
 		namespace impl {	
-			template <typename KeyType = int> class Node;
-			template <typename KeyType = int> class NodePtrInfo {
+			template <typename KeyType = int> class SetNode;
+			template <typename KeyType = int> class SetNodePtrInfo {
 			public:
-				Node<KeyType>* nodeRef;
+				SetNode<KeyType>* nodeRef;
 				bool flag;
 				bool mark;
 				bool thread;
-				NodePtrInfo() noexcept {}
-				NodePtrInfo(Node<KeyType>* nodeRef, bool flag, bool mark, bool thread) noexcept :
+				SetNodePtrInfo() noexcept {}
+				SetNodePtrInfo(SetNode<KeyType>* nodeRef, bool flag, bool mark, bool thread) noexcept :
 					nodeRef(nodeRef),
 					flag(flag),
 					mark(mark),
 					thread(thread) {}
 			};
-			template <typename KeyType> class Node {
+			template <typename KeyType> class SetNode {
 			public:
-				Node() noexcept {}
-				int k;
-				std::atomic<NodePtrInfo<KeyType>> child[2];
-				std::atomic<Node*> backLink;
-				Node* preLink;
+				SetNode() noexcept {}
+				KeyType k;
+				std::atomic<SetNodePtrInfo<KeyType>> child[2];
+				std::atomic<SetNode*> backLink;
+				SetNode* preLink;
 			};
 		};
 
 		template <typename KeyType = int>
-		class BinarySearchTree {
+		class Set {
 		public:
-			BinarySearchTree() : count(0) {
+			Set() : count(0), nodeAllocator(std::make_shared<utilities::Allocator<impl::SetNode<KeyType>, 10, std::is_pod<KeyType>::value>>()) {
 				root[0].k = -std::numeric_limits<KeyType>::max();
-				root[0].child[0] = impl::NodePtrInfo<KeyType>(&root[0], 0, 0, 1);
-				root[0].child[1] = impl::NodePtrInfo<KeyType>(&root[1], 0, 0, 1);
+				root[0].child[0] = impl::SetNodePtrInfo<KeyType>(&root[0], 0, 0, 1);
+				root[0].child[1] = impl::SetNodePtrInfo<KeyType>(&root[1], 0, 0, 1);
 				root[0].backLink = &root[1];
 				root[0].preLink = nullptr;
 
 				root[1].k = std::numeric_limits<KeyType>::max();
-				root[1].child[0] = impl::NodePtrInfo<KeyType>(&root[0], 0, 0, 0);
-				root[1].child[1] = impl::NodePtrInfo<KeyType>(nullptr, 0, 0, 1);
+				root[1].child[0] = impl::SetNodePtrInfo<KeyType>(&root[0], 0, 0, 0);
+				root[1].child[1] = impl::SetNodePtrInfo<KeyType>(nullptr, 0, 0, 1);
 				root[1].backLink = nullptr;
 				root[1].preLink = nullptr;
 			}
+			Set(Set const&) = default;
+			Set(Set&&) = default;
+			Set& operator=(Set const&) = default;
+			Set& operator=(Set&&) = default;
+			~Set() = default;
+
 			bool contains(KeyType k) {
 				auto* prev = &root[1];
 				auto* curr = &root[0];
-				KeyType dir;
+				int dir;
 				dir = locate(prev, curr, k);
 				if (dir == -1) {
 					return 0;
@@ -1868,53 +1804,108 @@ namespace fibers {
 				else
 					return false;
 			};
+			KeyType findLargestKeyLessThanOrEqualTo(KeyType k) {
+				auto* prev = &root[1];
+				auto* curr = &root[0];
+				int dir;
+				dir = locate(prev, curr, k);
+				impl::SetNodePtrInfo<KeyType> curr_child;
+
+				switch (dir) {
+				case 0:
+				case 1:
+					curr_child = curr->child[0];
+					if (curr_child.nodeRef) {
+						auto* backLink = curr_child.nodeRef->backLink.load();
+						if (backLink)
+							return backLink->k;
+					}
+					break;
+				case 2:
+					return curr->k;
+				default:
+					return -std::numeric_limits<KeyType>::max();
+				}
+			};
+			KeyType findSmallestKeyGreaterThanOrEqualTo(KeyType k) {
+				auto* prev = &root[1];
+				auto* curr = &root[0];
+				int dir;
+				dir = locate(prev, curr, k);
+				impl::SetNodePtrInfo<KeyType> curr_child;
+
+				switch (dir) {
+				case 0:
+				case 1:
+					curr_child = curr->child[0];
+					if (curr_child.nodeRef) {
+						return curr_child.nodeRef->k;
+					}
+					break;
+				case 2:
+					return curr->k;
+				default:
+					return -std::numeric_limits<KeyType>::max();
+				}
+			};
 			bool remove(KeyType k) {
-				impl::Node<KeyType>* prev = &root[1];
-				impl::Node<KeyType>* curr = &root[0];
+				impl::SetNode<KeyType>* prev = &root[1];
+				impl::SetNode<KeyType>* curr = &root[0];
 				bool result{ false };
+				int dir;
+
+				//dir = locate(prev, curr, k); // looks for k -- if found, the "curr" is set the it's node, and prev is .. what is it?
+				//if (dir == 2) {
+				//	impl::SetNode<KeyType>* back = curr->backLink;
+				//	result = tryFlag(prev, curr, back, true); // flags them down
+				//	
+				//	cleanFlag(prev, curr, back, true);
+				//	if (result) {
+				//		count.fetch_add(-1);
+				//	}
+				//}
+				//return result;
+
 				double epsilon = 0.5;
-				KeyType dir;
-				dir = locate(prev, curr, (double)k - epsilon);
+				dir = locate(prev, curr, (double)k - epsilon); 
 				if (dir == -1) { return 0; }
-
-				impl::NodePtrInfo<KeyType> next = curr->child[dir];
-
+				impl::SetNodePtrInfo<KeyType> next = curr->child[dir];
 				if (k == next.nodeRef->k) {
 					result = tryFlag(curr, next.nodeRef, prev, true);
-
-					impl::NodePtrInfo<KeyType> curr_child = curr->child[dir];
+					impl::SetNodePtrInfo<KeyType> curr_child = curr->child[dir];
 					if (curr_child.nodeRef == next.nodeRef) {
 						cleanFlag(curr, next.nodeRef, prev, true);
 					}
-
-					if (result) count.fetch_add(-1);
+					if (result) {
+						count.fetch_add(-1);
+					}
 				}
 				return result;
 			};
 			bool add(KeyType k) {
-				impl::Node<KeyType>* prev = &root[1];
-				impl::Node<KeyType>* curr = &root[0];
+				impl::SetNode<KeyType>* prev = &root[1];
+				impl::SetNode<KeyType>* curr = &root[0];
 
-				impl::Node<KeyType>* node = new impl::Node<KeyType>;
+				impl::SetNode<KeyType>* node = nodeAllocator->Alloc();
 				node->k = k;
-				node->child[0] = impl::NodePtrInfo<KeyType>(node, 0, 0, 1);
+				node->child[0] = impl::SetNodePtrInfo<KeyType>(node, 0, 0, 1);
 
-				auto cmp1 = impl::NodePtrInfo<KeyType>(nullptr, 0, 0, 1);
-				auto cmp2 = impl::NodePtrInfo<KeyType>(node, 0, 0, 0);
+				auto cmp1 = impl::SetNodePtrInfo<KeyType>(nullptr, 0, 0, 1);
+				auto cmp2 = impl::SetNodePtrInfo<KeyType>(node, 0, 0, 0);
 
-				while (true) {
-					KeyType dir;
+				int dir;
+				while (true) {					
 					dir = locate(prev, curr, k);
 					if (dir == -1) {
-						delete node;
+						nodeAllocator->Free(node);
 						return false;
 					}
 					else if (dir == 2) {
-						delete node;
+						nodeAllocator->Free(node);
 						return false;
 					}
 					else {
-						impl::NodePtrInfo<KeyType> R = curr->child[dir];
+						impl::SetNodePtrInfo<KeyType> R = curr->child[dir];
 						cmp1.nodeRef = R.nodeRef;
 						node->child[1] = cmp1;
 						node->backLink = curr;
@@ -1927,9 +1918,9 @@ namespace fibers {
 						}
 						else {
 							//This part is for helping
-							impl::NodePtrInfo<KeyType> newR = curr->child[dir];
+							impl::SetNodePtrInfo<KeyType> newR = curr->child[dir];
 							if (newR.nodeRef == R.nodeRef) {
-								impl::Node<KeyType>* newCurr = prev;
+								impl::SetNode<KeyType>* newCurr = prev;
 								if (newR.mark)
 									cleanMark(curr, dir);
 								else if (newR.flag)
@@ -1947,39 +1938,28 @@ namespace fibers {
 			};
 
 		private:
-			KeyType locate(impl::Node<KeyType>*& prev, impl::Node<KeyType>*& curr, double k) {
-				KeyType stepCounter = 0;
+			int locate(impl::SetNode<KeyType>*& prev, impl::SetNode<KeyType>*& curr, KeyType k) {
 				while (true) {
-					stepCounter++;
-					if (stepCounter >= 10000)return -1;
+					auto dir = cmp(k, curr->k);
 
-					KeyType dir = cmp(k, curr->k);
-
-					//		NodePtrInfo R = curr->child[dir];
-					//		Node* curr_backlink = curr->backLink;
-					//		prKeyTypef("Locate: 1: prev->k = %d, curr->k = %d, curr->backlink->k %d, k = %lf, dir %d, child threaded?= %d\n",  prev->k, curr->k, curr_backlink->k, k, dir, R.thread);
-							//if(prev->k == 492)
 					if (dir == 2)
 						return dir;
 
 					else {
-						impl::NodePtrInfo<KeyType> R = curr->child[dir];
+						impl::SetNodePtrInfo<KeyType> R = curr->child[dir];
 						if (R.mark == 1 && dir == 1) {
-							impl::Node<KeyType>* newPrev = prev->backLink;
+							impl::SetNode<KeyType>* newPrev = prev->backLink;
 							//cleanMarked(prev, curr, dir); //cleanMarked function is not clear yet
 							cleanMark(curr, dir);
 							prev = newPrev;
-							KeyType pDir = cmp(k, prev->k);
-							impl::NodePtrInfo<KeyType> temp = prev->child[pDir];
+							auto pDir = cmp(k, prev->k);
+							impl::SetNodePtrInfo<KeyType> temp = prev->child[pDir];
 							curr = temp.nodeRef;
 							continue;
 						}
 
 						if (R.thread) {
-							double nextE = R.nodeRef->k;
-							if (dir == 0 || k < nextE) {
-								//prKeyTypef("Locate: 2: k = %d, prev->K = %d, curr->k = %d, dir %d\n", k, prev->k , curr->k, dir);
-								//if((KeyType)k==218)exit(0);
+							if (dir == 0 || k < R.nodeRef->k) {
 								return dir;
 							}
 							else {
@@ -1990,25 +1970,21 @@ namespace fibers {
 						else {
 							prev = curr;
 							curr = R.nodeRef;
-
-
 						}
-
 					}
 				}
-
 			};
-			bool tryFlag(impl::Node<KeyType>*& prev, impl::Node<KeyType>*& curr, impl::Node<KeyType>*& back, bool isThread) {
+			bool tryFlag(impl::SetNode<KeyType>*& prev, impl::SetNode<KeyType>*& curr, impl::SetNode<KeyType>*& back, bool isThread) {
 
-				std::atomic<impl::NodePtrInfo<KeyType>> atomicNodePoKeyTypeerInfo;
+				std::atomic<impl::SetNodePtrInfo<KeyType>> atomicSetNodePoKeyTypeerInfo;
 				while (true) {
 
-					KeyType pDir = cmp(curr->k, prev->k) & 1; //curr-> and prev->K will be same when they are poKeyTypeing to the same node. This is only possible by the threaded left-link.
+					auto pDir = cmp(curr->k, prev->k) & 1; //curr-> and prev->K will be same when they are poKeyTypeing to the same node. This is only possible by the threaded left-link.
 					bool t = isThread;
 
-					impl::NodePtrInfo<KeyType> test = impl::NodePtrInfo<KeyType>(curr, 0, 0, t);
-					impl::NodePtrInfo<KeyType> replace = impl::NodePtrInfo<KeyType>(curr, 1, 0, t);
-					//compareNodePoKeyTypeerInfo(prev->child[pDir], test, "inside try Flag 1");
+					impl::SetNodePtrInfo<KeyType> test = impl::SetNodePtrInfo<KeyType>(curr, 0, 0, t);
+					impl::SetNodePtrInfo<KeyType> replace = impl::SetNodePtrInfo<KeyType>(curr, 1, 0, t);
+					//compareSetNodePoKeyTypeerInfo(prev->child[pDir], test, "inside try Flag 1");
 					bool result = CAS(prev->child[pDir], test, replace);
 
 					if (result) {
@@ -2017,16 +1993,16 @@ namespace fibers {
 					}
 					else {
 
-						impl::NodePtrInfo<KeyType> temp = prev->child[pDir];
+						impl::SetNodePtrInfo<KeyType> temp = prev->child[pDir];
 						if (temp.nodeRef == curr) {
 							if (temp.flag)
 								return false;
 							else if (temp.mark)
 								cleanMark(prev, pDir);
 							prev = back;	//back is provided as third parameter. It helps to step back and restart.
-							KeyType newPDir = cmp(curr->k, prev->k);
-							impl::NodePtrInfo<KeyType> temp = prev->child[newPDir];
-							impl::Node<KeyType>* newCurr = temp.nodeRef;
+							auto newPDir = cmp(curr->k, prev->k);
+							impl::SetNodePtrInfo<KeyType> temp = prev->child[newPDir];
+							impl::SetNode<KeyType>* newCurr = temp.nodeRef;
 							locate(prev, newCurr, curr->k);
 							if (newCurr != curr)
 								return false;
@@ -2036,11 +2012,11 @@ namespace fibers {
 
 				}
 			};
-			void tryMark(impl::Node<KeyType>* curr, KeyType dir) {
+			void tryMark(impl::SetNode<KeyType>* curr, int dir) {
 
 				while (true) {
-					impl::Node<KeyType>* back = curr->backLink;
-					impl::NodePtrInfo<KeyType> next = curr->child[dir];
+					impl::SetNode<KeyType>* back = curr->backLink;
+					impl::SetNodePtrInfo<KeyType> next = curr->child[dir];
 					if (next.mark)
 						break;
 					else if (next.flag) {
@@ -2054,18 +2030,18 @@ namespace fibers {
 						}
 					}
 
-					bool result = CAS(curr->child[dir], impl::NodePtrInfo<KeyType>(next.nodeRef, 0, 0, next.thread), impl::NodePtrInfo<KeyType>(next.nodeRef, 0, 1, next.thread));
+					bool result = CAS(curr->child[dir], impl::SetNodePtrInfo<KeyType>(next.nodeRef, 0, 0, next.thread), impl::SetNodePtrInfo<KeyType>(next.nodeRef, 0, 1, next.thread));
 					if (result)
 						break;
 
 				}
 
 			};
-			void cleanFlag(impl::Node<KeyType>*& prev, impl::Node<KeyType>*& curr, impl::Node<KeyType>*& back, bool isThread) {
-				std::atomic<impl::NodePtrInfo<KeyType>> atomicNodePoKeyTypeerInfo;
+			void cleanFlag(impl::SetNode<KeyType>*& prev, impl::SetNode<KeyType>*& curr, impl::SetNode<KeyType>*& back, bool isThread) {
+				std::atomic<impl::SetNodePtrInfo<KeyType>> atomicSetNodePoKeyTypeerInfo;
 				if (isThread) {
 					while (true) {
-						impl::NodePtrInfo<KeyType> next = curr->child[1];
+						impl::SetNodePtrInfo<KeyType> next = curr->child[1];
 						if (next.mark)
 							break;
 						else if (next.flag) {
@@ -2073,14 +2049,14 @@ namespace fibers {
 							if (back == next.nodeRef)
 								back = back->backLink;
 
-							impl::Node<KeyType>* backNode = curr->backLink;
-							cleanFlag(curr, next.nodeRef, backNode, next.thread);
+							impl::SetNode<KeyType>* backSetNode = curr->backLink;
+							cleanFlag(curr, next.nodeRef, backSetNode, next.thread);
 
 							if (back == next.nodeRef) {
-								KeyType pDir = cmp(prev->k, backNode->k);
+								auto pDir = cmp(prev->k, backSetNode->k);
 								//prev = back->child[pDir];
-								impl::Node<KeyType>* back_temp = back;
-								impl::NodePtrInfo<KeyType> back_child = back_temp->child[pDir];
+								impl::SetNode<KeyType>* back_temp = back;
+								impl::SetNodePtrInfo<KeyType> back_child = back_temp->child[pDir];
 								prev = back_child.nodeRef;
 							}
 						}
@@ -2089,9 +2065,9 @@ namespace fibers {
 								curr->preLink = prev;
 
 							//step: 3: mark the outgoing right link
-							bool result = CAS(curr->child[1], impl::NodePtrInfo<KeyType>(next.nodeRef, 0, 0, next.thread), impl::NodePtrInfo<KeyType>(next.nodeRef, 0, 1, next.thread));
+							bool result = CAS(curr->child[1], impl::SetNodePtrInfo<KeyType>(next.nodeRef, 0, 0, next.thread), impl::SetNodePtrInfo<KeyType>(next.nodeRef, 0, 1, next.thread));
 
-							impl::NodePtrInfo<KeyType> temp = curr->child[1];
+							impl::SetNodePtrInfo<KeyType> temp = curr->child[1];
 							if (result) {
 
 								//					puts("CleanFlag 1: successfully marked right link");
@@ -2107,25 +2083,25 @@ namespace fibers {
 				}
 				else {
 
-					impl::NodePtrInfo<KeyType> right = curr->child[1];
+					impl::SetNodePtrInfo<KeyType> right = curr->child[1];
 					//		prKeyTypef("inside cleanFlag2: prev->k %d, curr->k %d, right.nodeRef->k %d, right.flag %d, right.mark %d, right.thread %d\n",
 					//				prev->k, curr->k, right.nodeRef->k, right.flag, right.mark, right.thread );
 							//exit(0);
 					if (right.mark) {
-						impl::NodePtrInfo<KeyType> left = curr->child[0];
-						impl::Node<KeyType>* preNode = curr->preLink;
+						impl::SetNodePtrInfo<KeyType> left = curr->child[0];
+						impl::SetNode<KeyType>* preSetNode = curr->preLink;
 
-						if (left.nodeRef != preNode) { //this is cat 3 node
+						if (left.nodeRef != preSetNode) { //this is cat 3 node
 			//				puts("Clean flag 3: Entered to step 6");
 							//exit(0);
 							tryMark(curr, 0);
 							cleanMark(curr, 0);
 						}
 						else {
-							KeyType pDir = cmp(curr->k, prev->k);
+							auto pDir = cmp(curr->k, prev->k);
 							if (left.nodeRef == curr) { //cat 1 node
 
-								CAS(prev->child[pDir], impl::NodePtrInfo<KeyType>(curr, 1, 0, 0), impl::NodePtrInfo<KeyType>(right.nodeRef, 0, 0, right.thread)); //what is f.
+								CAS(prev->child[pDir], impl::SetNodePtrInfo<KeyType>(curr, 1, 0, 0), impl::SetNodePtrInfo<KeyType>(right.nodeRef, 0, 0, right.thread)); //what is f.
 
 								if (!right.thread) {
 									right.nodeRef->backLink.compare_exchange_weak(curr, prev);
@@ -2135,7 +2111,7 @@ namespace fibers {
 							else {
 
 
-								bool result = CAS(preNode->child[1], impl::NodePtrInfo<KeyType>(curr, 1, 0, 1), impl::NodePtrInfo<KeyType>(right.nodeRef, 0, 0, right.thread));
+								bool result = CAS(preSetNode->child[1], impl::SetNodePtrInfo<KeyType>(curr, 1, 0, 1), impl::SetNodePtrInfo<KeyType>(right.nodeRef, 0, 0, right.thread));
 								//					prKeyTypef("swap success1: %d\n", result);
 
 								if (!right.thread) {
@@ -2144,69 +2120,69 @@ namespace fibers {
 								}
 
 
-								result = CAS(prev->child[pDir], impl::NodePtrInfo<KeyType>(curr, 1, 0, 0), impl::NodePtrInfo<KeyType>(preNode, 0, 0, right.thread));
+								result = CAS(prev->child[pDir], impl::SetNodePtrInfo<KeyType>(curr, 1, 0, 0), impl::SetNodePtrInfo<KeyType>(preSetNode, 0, 0, right.thread));
 								//					prKeyTypef("swap success3: %d\n", result);
 
-								result = preNode->backLink.compare_exchange_strong(curr, prev);
+								result = preSetNode->backLink.compare_exchange_strong(curr, prev);
 								//					prKeyTypef("swap success4: %d\n", result);
 								//					std::cout<<"removed: "<<curr->k<<'\n';
 							}
 						}
 					}
 					else if (right.thread && right.flag) {
-						impl::Node<KeyType>* delNode = right.nodeRef;
-						impl::Node<KeyType>* parent = delNode->backLink;
+						impl::SetNode<KeyType>* delSetNode = right.nodeRef;
+						impl::SetNode<KeyType>* parent = delSetNode->backLink;
 						while (true) {
 
-							KeyType pDir = cmp(delNode->k, parent->k); //changed from paper
-							impl::NodePtrInfo<KeyType> temp = parent->child[pDir];
+							auto pDir = cmp(delSetNode->k, parent->k); //changed from paper
+							impl::SetNodePtrInfo<KeyType> temp = parent->child[pDir];
 							if (temp.mark)
 								cleanMark(parent, pDir);
 							else if (temp.flag)
 								break;
-							else if (CAS(parent->child[pDir], impl::NodePtrInfo<KeyType>(delNode, 0, 0, 0), impl::NodePtrInfo<KeyType>(delNode, 1, 0, 0))) {
+							else if (CAS(parent->child[pDir], impl::SetNodePtrInfo<KeyType>(delSetNode, 0, 0, 0), impl::SetNodePtrInfo<KeyType>(delSetNode, 1, 0, 0))) {
 								//					puts("cleanFlag 4: step 5 done. Parent link of the node to be deleted flagged successfully");
 								break;
 							}
 
 						}
 
-						impl::Node<KeyType>* backNode = parent->backLink;
+						impl::SetNode<KeyType>* backSetNode = parent->backLink;
 
-						//			prKeyTypef("parent->k %d, delNode->k %d, backNode->k %d\n", parent->k, delNode->k, backNode->k);
+						//			prKeyTypef("parent->k %d, delSetNode->k %d, backSetNode->k %d\n", parent->k, delSetNode->k, backSetNode->k);
 									//exit(0);
-						cleanFlag(parent, delNode, backNode, false); //changed to false. I think, "true" was a mistake.
+						cleanFlag(parent, delSetNode, backSetNode, false); //changed to false. I think, "true" was a mistake.
 					}
 				}
 			};;
-			void cleanMark(impl::Node<KeyType>*& curr, KeyType markDir) {
+			void cleanMark(impl::SetNode<KeyType>*& curr, KeyType markDir) {
 
-				std::atomic<impl::NodePtrInfo<KeyType>> atomicNodePoKeyTypeerInfo;
-				impl::NodePtrInfo<KeyType> left = curr->child[0];
-				impl::NodePtrInfo<KeyType> right = curr->child[1];
+				std::atomic<impl::SetNodePtrInfo<KeyType>> atomicSetNodePoKeyTypeerInfo;
+				impl::SetNodePtrInfo<KeyType> left = curr->child[0];
+				impl::SetNodePtrInfo<KeyType> right = curr->child[1];
 				//	puts("inside clean Mark:");
 				//	prKeyTypef("curr %d, marDir %d, curr->child[0]->k %d, curr->child[1]->k: %d\n", curr->k, markDir, left.nodeRef->k, right.nodeRef->k);
 
 				if (markDir) {
 
 					//KeyType pDir = markDir;
-					impl::Node<KeyType>* delNode = curr; //Not sure
+					impl::SetNode<KeyType>* delSetNode = curr; //Not sure
 					while (true) {
 
-						impl::Node<KeyType>* preNode = delNode->preLink;
-						//			std::cout<<"preNode->k :"<<preNode->k<<'\n';
+						impl::SetNode<KeyType>* preSetNode = delSetNode->preLink;
+						//			std::cout<<"preSetNode->k :"<<preSetNode->k<<'\n';
 
-						impl::Node<KeyType>* parent = delNode->backLink;
-						KeyType pDir = cmp(delNode->k, parent->k);
-						impl::NodePtrInfo<KeyType> parent_child = parent->child[pDir];
+						impl::SetNode<KeyType>* parent = delSetNode->backLink;
+						auto pDir = cmp(delSetNode->k, parent->k);
+						impl::SetNodePtrInfo<KeyType> parent_child = parent->child[pDir];
 
 						//step 4 for category 1 and 2. Acutally step 5: flag the incoming parent link
-						if (preNode == left.nodeRef) { //category 1 or 2 node.
+						if (preSetNode == left.nodeRef) { //category 1 or 2 node.
 			//				puts("clearn mark: inside cat 1 and 2");
 
-							impl::Node<KeyType>* parent = delNode->backLink;
-							impl::Node<KeyType>* back = parent->backLink;
-							//				prKeyTypef("delNode->k %d, parent->k %d, back-> %d\n", delNode->k, parent->k, back->k);
+							impl::SetNode<KeyType>* parent = delSetNode->backLink;
+							impl::SetNode<KeyType>* back = parent->backLink;
+							//				prKeyTypef("delSetNode->k %d, parent->k %d, back-> %d\n", delSetNode->k, parent->k, back->k);
 							tryFlag(parent, curr, back, false); // why threaded? So, I changed it to non-threaded
 
 			//				prKeyTypef("Clean Mark 4: parent_child.nodeRef %d, curr %d, parent_child->k %d, curr->k %d\n", parent_child.nodeRef, curr, parent_child.nodeRef->k, curr->k);
@@ -2218,24 +2194,24 @@ namespace fibers {
 						else {
 							//category 3 node.
 							//This step 4 for category 3 node. Step 4: flag the incoming parent link of the predecessor.
-							impl::Node<KeyType>* preParent = preNode->backLink;
-							impl::NodePtrInfo<KeyType> temp = preParent->child[1]; // child[1] because predecessor of cat3 node is always the right child of it's parent.
-							impl::Node<KeyType>* backNode = preParent->backLink;
+							impl::SetNode<KeyType>* preParent = preSetNode->backLink;
+							impl::SetNodePtrInfo<KeyType> temp = preParent->child[1]; // child[1] because predecessor of cat3 node is always the right child of it's parent.
+							impl::SetNode<KeyType>* backSetNode = preParent->backLink;
 
-							//				prKeyTypef("clean Mark 2: preNode->k %d, preParent->k %d, backNode->k %d\n", preNode->k , preParent->k, backNode->k );
+							//				prKeyTypef("clean Mark 2: preSetNode->k %d, preParent->k %d, backSetNode->k %d\n", preSetNode->k , preParent->k, backSetNode->k );
 							//				prKeyTypef("clean Mark 3: temp.noderef->k: %d, temp.flag: %d, temp.mark: %d, temp.thread: %d\n", temp.nodeRef->k, temp.flag, temp.mark, temp.thread);
 
 
 							if (temp.mark)
 								cleanMark(preParent, 1);
 							else if (temp.flag) {
-								cleanFlag(preParent, preNode, backNode, false); //changed isThreaded parameter to false
+								cleanFlag(preParent, preSetNode, backSetNode, false); //changed isThreaded parameter to false
 								break;
 							}
-							else if (CAS(preParent->child[pDir], impl::NodePtrInfo<KeyType>(preNode, 0, 0, 0), impl::NodePtrInfo<KeyType>(preNode, 1, 0, 0))) { //
+							else if (CAS(preParent->child[pDir], impl::SetNodePtrInfo<KeyType>(preSetNode, 0, 0, 0), impl::SetNodePtrInfo<KeyType>(preSetNode, 1, 0, 0))) { //
 			//					prKeyTypef("incoming parentlink pred successfully flagged\n");
 
-								cleanFlag(preParent, preNode, backNode, false); //changed isThreaded parameter to false.
+								cleanFlag(preParent, preSetNode, backSetNode, false); //changed isThreaded parameter to false.
 								break;
 							}
 						}
@@ -2244,66 +2220,655 @@ namespace fibers {
 				else {
 					if (right.mark) {
 
-						impl::Node<KeyType>* preNode = curr->preLink;
-						tryMark(preNode, 0);
-						cleanMark(preNode, 0);
+						impl::SetNode<KeyType>* preSetNode = curr->preLink;
+						tryMark(preSetNode, 0);
+						cleanMark(preSetNode, 0);
 					}
 					else if (right.thread && right.flag) {
 
-						impl::Node<KeyType>* delNode = right.nodeRef;
-						impl::Node<KeyType>* delNodePa = delNode->backLink;
-						impl::Node<KeyType>* preParent = curr->backLink;
-						KeyType pDir = cmp(delNode->k, delNodePa->k);
-						impl::NodePtrInfo<KeyType> delNodeL = delNode->child[0];
-						impl::NodePtrInfo<KeyType> delNodeR = delNode->child[1];
+						impl::SetNode<KeyType>* delSetNode = right.nodeRef;
+						impl::SetNode<KeyType>* delSetNodePa = delSetNode->backLink;
+						impl::SetNode<KeyType>* preParent = curr->backLink;
+						auto pDir = cmp(delSetNode->k, delSetNodePa->k);
+						impl::SetNodePtrInfo<KeyType> delSetNodeL = delSetNode->child[0];
+						impl::SetNodePtrInfo<KeyType> delSetNodeR = delSetNode->child[1];
 
 						KeyType res1 = -1, res2 = -1, res3 = -1, res4 = -1, res5 = -1, res6 = -1, res7 = -1, res8 = -1;
 
-						res1 = CAS(preParent->child[1], impl::NodePtrInfo<KeyType>(curr, 1, 0, 0), impl::NodePtrInfo<KeyType>(left.nodeRef, left.flag, 0, left.thread));
+						res1 = CAS(preParent->child[1], impl::SetNodePtrInfo<KeyType>(curr, 1, 0, 0), impl::SetNodePtrInfo<KeyType>(left.nodeRef, left.flag, 0, left.thread));
 
 						if (!left.thread) {
 							res2 = left.nodeRef->backLink.compare_exchange_weak(curr, preParent);
 
 						}
 
-						res3 = CAS(curr->child[0], impl::NodePtrInfo<KeyType>(left.nodeRef, 0, 1, left.thread), impl::NodePtrInfo<KeyType>(delNodeL.nodeRef, 0, 0, 0));
+						res3 = CAS(curr->child[0], impl::SetNodePtrInfo<KeyType>(left.nodeRef, 0, 1, left.thread), impl::SetNodePtrInfo<KeyType>(delSetNodeL.nodeRef, 0, 0, 0));
 
-						res4 = delNodeL.nodeRef->backLink.compare_exchange_strong(delNode, curr);
+						res4 = delSetNodeL.nodeRef->backLink.compare_exchange_strong(delSetNode, curr);
 
-						res5 = CAS(curr->child[1], impl::NodePtrInfo<KeyType>(right.nodeRef, 1, 0, 1), impl::NodePtrInfo<KeyType>(delNodeR.nodeRef, 0, 0, delNodeR.thread));
+						res5 = CAS(curr->child[1], impl::SetNodePtrInfo<KeyType>(right.nodeRef, 1, 0, 1), impl::SetNodePtrInfo<KeyType>(delSetNodeR.nodeRef, 0, 0, delSetNodeR.thread));
 
-						if (!delNodeR.thread) {
-							res6 = delNodeR.nodeRef->backLink.compare_exchange_strong(delNode, curr);
+						if (!delSetNodeR.thread) {
+							res6 = delSetNodeR.nodeRef->backLink.compare_exchange_strong(delSetNode, curr);
 
 						}
 
-						res7 = CAS(delNodePa->child[pDir], impl::NodePtrInfo<KeyType>(delNode, 1, 0, 0), impl::NodePtrInfo<KeyType>(curr, 0, 0, 0));
+						res7 = CAS(delSetNodePa->child[pDir], impl::SetNodePtrInfo<KeyType>(delSetNode, 1, 0, 0), impl::SetNodePtrInfo<KeyType>(curr, 0, 0, 0));
 
-						res8 = curr->backLink.compare_exchange_strong(preParent, delNodePa);
+						res8 = curr->backLink.compare_exchange_strong(preParent, delSetNodePa);
 
 					}
 				}
 			};
-			static KeyType cmp(double x, double y) {
+			static int cmp(KeyType const& x, KeyType const& y) {
 				if (x == y)
 					return 2;
-				if (x > y)
+				else if (x > y)
 					return 1;
 				else
 					return 0;
 			};
-			bool CAS(std::atomic<impl::NodePtrInfo<KeyType>>& oldValue, impl::NodePtrInfo<KeyType> newValue, impl::NodePtrInfo<KeyType> replacement) {
-				bool result = 0;
-				for (KeyType i = 0; i < TIMES && !result; i++) {
+			bool CAS(std::atomic<impl::SetNodePtrInfo<KeyType>>& oldValue, impl::SetNodePtrInfo<KeyType> newValue, impl::SetNodePtrInfo<KeyType> replacement) {
+				bool result{ false };
+				for (int i = 0; i < TIMES && !result; i++) {
 					result = oldValue.compare_exchange_strong(newValue, replacement);
 				}
 				return result;
 			};
 
 			std::atomic<long> count;
-			impl::Node<KeyType> root[2];
-			static constexpr KeyType TIMES = 4;
+			std::shared_ptr<utilities::Allocator<impl::SetNode<KeyType>, 10, std::is_pod<KeyType>::value>> nodeAllocator;
+			impl::SetNode<KeyType> root[2];
+			static constexpr int TIMES = 4;
 		};
+
+		namespace impl {
+			template <typename KeyType, typename ObjType> class MapNode;
+			template <typename KeyType, typename ObjType> class MapNodePtrInfo {
+			public:
+				MapNode<KeyType, ObjType>* nodeRef;
+				bool flag;
+				bool mark;
+				bool thread;
+				MapNodePtrInfo() noexcept {}
+				MapNodePtrInfo(MapNode<KeyType, ObjType>* nodeRef, bool flag, bool mark, bool thread) noexcept :
+					nodeRef(nodeRef),
+					flag(flag),
+					mark(mark),
+					thread(thread) {}
+			};
+			template <typename KeyType, typename ObjType> class MapNode {
+			public:
+				MapNode() noexcept {}
+				KeyType k;
+				std::shared_ptr<ObjType> obj;
+				std::atomic<MapNodePtrInfo<KeyType, ObjType>> child[2];
+				std::atomic<MapNode*> backLink;
+				MapNode* preLink;
+			};
+		};
+
+		template <typename KeyType = int, typename ObjType = int>
+		class Map {
+		public:
+			Map() : count(0), nodeAllocator(std::make_shared<utilities::Allocator<impl::MapNode<KeyType, ObjType>, 10>>()) {
+				root[0].k = -std::numeric_limits<KeyType>::max();
+				root[0].child[0] = impl::MapNodePtrInfo<KeyType, ObjType>(&root[0], 0, 0, 1);
+				root[0].child[1] = impl::MapNodePtrInfo<KeyType, ObjType>(&root[1], 0, 0, 1);
+				root[0].backLink = &root[1];
+				root[0].preLink = nullptr;
+
+				root[1].k = std::numeric_limits<KeyType>::max();
+				root[1].child[0] = impl::MapNodePtrInfo<KeyType, ObjType>(&root[0], 0, 0, 0);
+				root[1].child[1] = impl::MapNodePtrInfo<KeyType, ObjType>(nullptr, 0, 0, 1);
+				root[1].backLink = nullptr;
+				root[1].preLink = nullptr;
+			}
+			Map(Map const&) = default;
+			Map(Map&&) = default;
+			Map& operator=(Map const&) = default;
+			Map& operator=(Map&&) = default;
+			~Map() = default;
+
+			bool contains(KeyType k) {
+				auto* prev = &root[1];
+				auto* curr = &root[0];
+				int dir;
+				dir = locate(prev, curr, k);
+
+				if (dir == 2)
+					return true;
+				else
+					return false;
+			};
+			bool remove(KeyType k) {
+				impl::MapNode<KeyType, ObjType>* prev = &root[1];
+				impl::MapNode<KeyType, ObjType>* curr = &root[0];
+				bool result{ false };
+				double epsilon = 0.5;
+				int dir;
+				dir = locate(prev, curr, (double)k - epsilon);
+				if (dir == -1) { return 0; }
+
+				impl::MapNodePtrInfo<KeyType, ObjType> next = curr->child[dir];
+
+				if (k == next.nodeRef->k) {
+					result = tryFlag(curr, next.nodeRef, prev, true);
+
+					impl::MapNodePtrInfo<KeyType, ObjType> curr_child = curr->child[dir];
+					if (curr_child.nodeRef == next.nodeRef) {
+						cleanFlag(curr, next.nodeRef, prev, true);
+					}
+
+					if (result) {
+						next.nodeRef->obj = nullptr;
+						nodeAllocator->Free(next.nodeRef);
+						count.fetch_add(-1);
+					}
+				}
+				return result;
+			};
+			std::shared_ptr<ObjType> add(KeyType k, ObjType const& obj) {
+				impl::MapNode<KeyType, ObjType>* prev = &root[1];
+				impl::MapNode<KeyType, ObjType>* curr = &root[0];
+
+				impl::MapNode<KeyType, ObjType>* node = nodeAllocator->Alloc();
+				std::shared_ptr<ObjType> objPtr{ std::make_shared<ObjType>(obj) };
+
+				node->obj = objPtr;
+				node->k = k;
+				node->child[0] = impl::MapNodePtrInfo<KeyType, ObjType>(node, 0, 0, 1);
+
+				auto cmp1 = impl::MapNodePtrInfo<KeyType, ObjType>(nullptr, 0, 0, 1);
+				auto cmp2 = impl::MapNodePtrInfo<KeyType, ObjType>(node, 0, 0, 0);
+
+				int dir;
+				while (true) {
+					dir = locate(prev, curr, k);
+					if (dir == -1) {
+						nodeAllocator->Free(node);
+
+						return nullptr;
+					}
+					else if (dir == 2) { // it exists already
+						nodeAllocator->Free(node);
+
+						*curr->obj = obj;
+
+						return curr->obj;
+					}
+					else {
+						impl::MapNodePtrInfo<KeyType, ObjType> R = curr->child[dir];
+						cmp1.nodeRef = R.nodeRef;
+						node->child[1] = cmp1;
+						node->backLink = curr;
+
+						bool result = CAS(curr->child[dir], cmp1, cmp2);
+
+						if (result) {
+							count.fetch_add(1);
+							return objPtr;
+						}
+						else {
+							//This part is for helping
+							impl::MapNodePtrInfo<KeyType, ObjType> newR = curr->child[dir];
+							if (newR.nodeRef == R.nodeRef) {
+								impl::MapNode<KeyType, ObjType>* newCurr = prev;
+								if (newR.mark)
+									cleanMark(curr, dir);
+								else if (newR.flag)
+									cleanFlag(curr, R.nodeRef, prev, true);
+
+								curr = newCurr;
+								prev = newCurr->backLink;
+							}
+						}
+					}
+				}
+			};
+			std::shared_ptr<ObjType> add(KeyType k, ObjType&& obj) {
+				impl::MapNode<KeyType, ObjType>* prev = &root[1];
+				impl::MapNode<KeyType, ObjType>* curr = &root[0];
+
+				impl::MapNode<KeyType, ObjType>* node = nodeAllocator->Alloc();
+				std::shared_ptr<ObjType> objPtr{ std::make_shared<ObjType>(std::forward<ObjType>(obj)) };
+
+				node->obj = objPtr;
+				node->k = k;
+				node->child[0] = impl::MapNodePtrInfo<KeyType, ObjType>(node, 0, 0, 1);
+
+				auto cmp1 = impl::MapNodePtrInfo<KeyType, ObjType>(nullptr, 0, 0, 1);
+				auto cmp2 = impl::MapNodePtrInfo<KeyType, ObjType>(node, 0, 0, 0);
+
+				int dir;
+				while (true) {
+					dir = locate(prev, curr, k);
+					if (dir == -1) {
+						nodeAllocator->Free(node);
+
+						return nullptr;
+					}
+					else if (dir == 2) { // it exists already
+						nodeAllocator->Free(node);
+
+						*curr->obj = obj;
+
+						return curr->obj;
+					}
+					else {
+						impl::MapNodePtrInfo<KeyType, ObjType> R = curr->child[dir];
+						cmp1.nodeRef = R.nodeRef;
+						node->child[1] = cmp1;
+						node->backLink = curr;
+
+						bool result = CAS(curr->child[dir], cmp1, cmp2);
+
+						if (result) {
+							count.fetch_add(1);
+							return objPtr;
+						}
+						else {
+							//This part is for helping
+							impl::MapNodePtrInfo<KeyType, ObjType> newR = curr->child[dir];
+							if (newR.nodeRef == R.nodeRef) {
+								impl::MapNode<KeyType, ObjType>* newCurr = prev;
+								if (newR.mark)
+									cleanMark(curr, dir);
+								else if (newR.flag)
+									cleanFlag(curr, R.nodeRef, prev, true);
+
+								curr = newCurr;
+								prev = newCurr->backLink;
+							}
+						}
+					}
+				}
+			};
+			size_t Num() const {
+				return (size_t)(long)count;
+			};
+			
+			std::shared_ptr<ObjType> operator[](KeyType k) {
+				impl::MapNode<KeyType, ObjType>* prev = &root[1];
+				impl::MapNode<KeyType, ObjType>* curr = &root[0];
+				bool result{ false };
+				double epsilon = 0.5;
+
+				if (locate(prev, curr, (double)k - epsilon) == 2) {
+					return curr->obj;
+				}
+				else {
+					return add(k, ObjType());
+				}				
+			};
+			const std::shared_ptr<ObjType> at(KeyType k) const {
+				impl::MapNode<KeyType, ObjType>* prev = &root[1];
+				impl::MapNode<KeyType, ObjType>* curr = &root[0];
+				bool result{ false };
+				double epsilon{ 0.5 };
+				if (locate(prev, curr, (double)k - epsilon) == 2) {
+					return curr->obj;
+				}
+				else {
+					return nullptr;
+				}
+			};
+			std::shared_ptr<ObjType> at(KeyType k) {
+				return operator[](k);
+			};
+
+		private:
+			int locate(impl::MapNode<KeyType, ObjType>*& prev, impl::MapNode<KeyType, ObjType>*& curr, KeyType k) {
+				while (true) {
+					auto dir = cmp(k, curr->k);
+
+					if (dir == 2) {
+						return dir; // exact find
+					}
+					else {
+						impl::MapNodePtrInfo<KeyType, ObjType> R = curr->child[dir];
+						if (R.mark == 1 && dir == 1) {
+							impl::MapNode<KeyType, ObjType>* newPrev = prev->backLink;
+							//cleanMarked(prev, curr, dir); //cleanMarked function is not clear yet
+							cleanMark(curr, dir);
+							prev = newPrev;
+							auto pDir = cmp(k, prev->k);
+							impl::MapNodePtrInfo<KeyType, ObjType> temp = prev->child[pDir];
+							curr = temp.nodeRef;
+							continue;
+						}
+
+						if (R.thread) {
+							if (dir == 0 || k < R.nodeRef->k) {
+								return dir;
+							}
+							else {
+								prev = curr;
+								curr = R.nodeRef;
+							}
+						}
+						else {
+							prev = curr;
+							curr = R.nodeRef;
+						}
+					}
+				}
+
+			};
+			bool tryFlag(impl::MapNode<KeyType, ObjType>*& prev, impl::MapNode<KeyType, ObjType>*& curr, impl::MapNode<KeyType, ObjType>*& back, bool isThread) {
+
+				std::atomic<impl::MapNodePtrInfo<KeyType, ObjType>> atomicMapNodePoKeyTypeerInfo;
+				while (true) {
+
+					auto pDir = cmp(curr->k, prev->k) & 1; //curr-> and prev->K will be same when they are poKeyTypeing to the same node. This is only possible by the threaded left-link.
+					bool t = isThread;
+
+					impl::MapNodePtrInfo<KeyType, ObjType> test = impl::MapNodePtrInfo<KeyType, ObjType>(curr, 0, 0, t);
+					impl::MapNodePtrInfo<KeyType, ObjType> replace = impl::MapNodePtrInfo<KeyType, ObjType>(curr, 1, 0, t);
+					//compareMapNodePoKeyTypeerInfo(prev->child[pDir], test, "inside try Flag 1");
+					bool result = CAS(prev->child[pDir], test, replace);
+
+					if (result) {
+						//			prKeyTypef("tryFlag: Flagged successfully: prev->k %d, curr->k %d\n", prev->k, curr->k);
+						return true;
+					}
+					else {
+
+						impl::MapNodePtrInfo<KeyType, ObjType> temp = prev->child[pDir];
+						if (temp.nodeRef == curr) {
+							if (temp.flag)
+								return false;
+							else if (temp.mark)
+								cleanMark(prev, pDir);
+							prev = back;	//back is provided as third parameter. It helps to step back and restart.
+							auto newPDir = cmp(curr->k, prev->k);
+							impl::MapNodePtrInfo<KeyType, ObjType> temp = prev->child[newPDir];
+							impl::MapNode<KeyType, ObjType>* newCurr = temp.nodeRef;
+							locate(prev, newCurr, curr->k);
+							if (newCurr != curr)
+								return false;
+							prev = prev->backLink;
+						}
+					}
+
+				}
+			};
+			void tryMark(impl::MapNode<KeyType, ObjType>* curr, int dir) {
+
+				while (true) {
+					impl::MapNode<KeyType, ObjType>* back = curr->backLink;
+					impl::MapNodePtrInfo<KeyType, ObjType> next = curr->child[dir];
+					if (next.mark)
+						break;
+					else if (next.flag) {
+						if (!next.thread) {
+							cleanFlag(curr, next.nodeRef, back, false);
+							continue;
+						}
+						else if (next.thread && dir) {
+							cleanFlag(curr, next.nodeRef, back, true);
+							continue;
+						}
+					}
+
+					bool result = CAS(curr->child[dir], impl::MapNodePtrInfo<KeyType, ObjType>(next.nodeRef, 0, 0, next.thread), impl::MapNodePtrInfo<KeyType, ObjType>(next.nodeRef, 0, 1, next.thread));
+					if (result)
+						break;
+
+				}
+
+			};
+			void cleanFlag(impl::MapNode<KeyType, ObjType>*& prev, impl::MapNode<KeyType, ObjType>*& curr, impl::MapNode<KeyType, ObjType>*& back, bool isThread) {
+				std::atomic<impl::MapNodePtrInfo<KeyType, ObjType>> atomicMapNodePoKeyTypeerInfo;
+				if (isThread) {
+					while (true) {
+						impl::MapNodePtrInfo<KeyType, ObjType> next = curr->child[1];
+						if (next.mark)
+							break;
+						else if (next.flag) {
+
+							if (back == next.nodeRef)
+								back = back->backLink;
+
+							impl::MapNode<KeyType, ObjType>* backMapNode = curr->backLink;
+							cleanFlag(curr, next.nodeRef, backMapNode, next.thread);
+
+							if (back == next.nodeRef) {
+								auto pDir = cmp(prev->k, backMapNode->k);
+								//prev = back->child[pDir];
+								impl::MapNode<KeyType, ObjType>* back_temp = back;
+								impl::MapNodePtrInfo<KeyType, ObjType> back_child = back_temp->child[pDir];
+								prev = back_child.nodeRef;
+							}
+						}
+						else {
+							if (curr->preLink != prev) //step 2: set the prelink.
+								curr->preLink = prev;
+
+							//step: 3: mark the outgoing right link
+							bool result = CAS(curr->child[1], impl::MapNodePtrInfo<KeyType, ObjType>(next.nodeRef, 0, 0, next.thread), impl::MapNodePtrInfo<KeyType, ObjType>(next.nodeRef, 0, 1, next.thread));
+
+							impl::MapNodePtrInfo<KeyType, ObjType> temp = curr->child[1];
+							if (result) {
+
+								//					puts("CleanFlag 1: successfully marked right link");
+								//					prKeyTypef("curr->k %d, temp.nodeRef->k %d, temp.mark %d\n", curr->k, temp.nodeRef->k, temp.mark);
+								//					exit(0);
+								break;
+							}
+
+
+						}
+					}
+					cleanMark(curr, 1);
+				}
+				else {
+
+					impl::MapNodePtrInfo<KeyType, ObjType> right = curr->child[1];
+					//		prKeyTypef("inside cleanFlag2: prev->k %d, curr->k %d, right.nodeRef->k %d, right.flag %d, right.mark %d, right.thread %d\n",
+					//				prev->k, curr->k, right.nodeRef->k, right.flag, right.mark, right.thread );
+							//exit(0);
+					if (right.mark) {
+						impl::MapNodePtrInfo<KeyType, ObjType> left = curr->child[0];
+						impl::MapNode<KeyType, ObjType>* preMapNode = curr->preLink;
+
+						if (left.nodeRef != preMapNode) { //this is cat 3 node
+			//				puts("Clean flag 3: Entered to step 6");
+							//exit(0);
+							tryMark(curr, 0);
+							cleanMark(curr, 0);
+						}
+						else {
+							auto pDir = cmp(curr->k, prev->k);
+							if (left.nodeRef == curr) { //cat 1 node
+
+								CAS(prev->child[pDir], impl::MapNodePtrInfo<KeyType, ObjType>(curr, 1, 0, 0), impl::MapNodePtrInfo<KeyType, ObjType>(right.nodeRef, 0, 0, right.thread)); //what is f.
+
+								if (!right.thread) {
+									right.nodeRef->backLink.compare_exchange_weak(curr, prev);
+								}
+								//					prKeyTypef("removed %d\n",curr->k);
+							}
+							else {
+
+
+								bool result = CAS(preMapNode->child[1], impl::MapNodePtrInfo<KeyType, ObjType>(curr, 1, 0, 1), impl::MapNodePtrInfo<KeyType, ObjType>(right.nodeRef, 0, 0, right.thread));
+								//					prKeyTypef("swap success1: %d\n", result);
+
+								if (!right.thread) {
+									result = right.nodeRef->backLink.compare_exchange_strong(curr, prev);
+									//						prKeyTypef("swap success2: %d\n", result);
+								}
+
+
+								result = CAS(prev->child[pDir], impl::MapNodePtrInfo<KeyType, ObjType>(curr, 1, 0, 0), impl::MapNodePtrInfo<KeyType, ObjType>(preMapNode, 0, 0, right.thread));
+								//					prKeyTypef("swap success3: %d\n", result);
+
+								result = preMapNode->backLink.compare_exchange_strong(curr, prev);
+								//					prKeyTypef("swap success4: %d\n", result);
+								//					std::cout<<"removed: "<<curr->k<<'\n';
+							}
+						}
+					}
+					else if (right.thread && right.flag) {
+						impl::MapNode<KeyType, ObjType>* delMapNode = right.nodeRef;
+						impl::MapNode<KeyType, ObjType>* parent = delMapNode->backLink;
+						while (true) {
+
+							auto pDir = cmp(delMapNode->k, parent->k); //changed from paper
+							impl::MapNodePtrInfo<KeyType, ObjType> temp = parent->child[pDir];
+							if (temp.mark)
+								cleanMark(parent, pDir);
+							else if (temp.flag)
+								break;
+							else if (CAS(parent->child[pDir], impl::MapNodePtrInfo<KeyType, ObjType>(delMapNode, 0, 0, 0), impl::MapNodePtrInfo<KeyType, ObjType>(delMapNode, 1, 0, 0))) {
+								//					puts("cleanFlag 4: step 5 done. Parent link of the node to be deleted flagged successfully");
+								break;
+							}
+
+						}
+
+						impl::MapNode<KeyType, ObjType>* backMapNode = parent->backLink;
+
+						//			prKeyTypef("parent->k %d, delMapNode->k %d, backMapNode->k %d\n", parent->k, delMapNode->k, backMapNode->k);
+									//exit(0);
+						cleanFlag(parent, delMapNode, backMapNode, false); //changed to false. I think, "true" was a mistake.
+					}
+				}
+			};;
+			void cleanMark(impl::MapNode<KeyType, ObjType>*& curr, KeyType markDir) {
+
+				std::atomic<impl::MapNodePtrInfo<KeyType, ObjType>> atomicMapNodePoKeyTypeerInfo;
+				impl::MapNodePtrInfo<KeyType, ObjType> left = curr->child[0];
+				impl::MapNodePtrInfo<KeyType, ObjType> right = curr->child[1];
+				//	puts("inside clean Mark:");
+				//	prKeyTypef("curr %d, marDir %d, curr->child[0]->k %d, curr->child[1]->k: %d\n", curr->k, markDir, left.nodeRef->k, right.nodeRef->k);
+
+				if (markDir) {
+
+					//KeyType pDir = markDir;
+					impl::MapNode<KeyType, ObjType>* delMapNode = curr; //Not sure
+					while (true) {
+
+						impl::MapNode<KeyType, ObjType>* preMapNode = delMapNode->preLink;
+						//			std::cout<<"preMapNode->k :"<<preMapNode->k<<'\n';
+
+						impl::MapNode<KeyType, ObjType>* parent = delMapNode->backLink;
+						auto pDir = cmp(delMapNode->k, parent->k);
+						impl::MapNodePtrInfo<KeyType, ObjType> parent_child = parent->child[pDir];
+
+						//step 4 for category 1 and 2. Acutally step 5: flag the incoming parent link
+						if (preMapNode == left.nodeRef) { //category 1 or 2 node.
+			//				puts("clearn mark: inside cat 1 and 2");
+
+							impl::MapNode<KeyType, ObjType>* parent = delMapNode->backLink;
+							impl::MapNode<KeyType, ObjType>* back = parent->backLink;
+							//				prKeyTypef("delMapNode->k %d, parent->k %d, back-> %d\n", delMapNode->k, parent->k, back->k);
+							tryFlag(parent, curr, back, false); // why threaded? So, I changed it to non-threaded
+
+			//				prKeyTypef("Clean Mark 4: parent_child.nodeRef %d, curr %d, parent_child->k %d, curr->k %d\n", parent_child.nodeRef, curr, parent_child.nodeRef->k, curr->k);
+							if (parent_child.nodeRef == curr) { // If the link still persists
+								cleanFlag(parent, curr, back, false);
+								break;
+							}
+						}
+						else {
+							//category 3 node.
+							//This step 4 for category 3 node. Step 4: flag the incoming parent link of the predecessor.
+							impl::MapNode<KeyType, ObjType>* preParent = preMapNode->backLink;
+							impl::MapNodePtrInfo<KeyType, ObjType> temp = preParent->child[1]; // child[1] because predecessor of cat3 node is always the right child of it's parent.
+							impl::MapNode<KeyType, ObjType>* backMapNode = preParent->backLink;
+
+							//				prKeyTypef("clean Mark 2: preMapNode->k %d, preParent->k %d, backMapNode->k %d\n", preMapNode->k , preParent->k, backMapNode->k );
+							//				prKeyTypef("clean Mark 3: temp.noderef->k: %d, temp.flag: %d, temp.mark: %d, temp.thread: %d\n", temp.nodeRef->k, temp.flag, temp.mark, temp.thread);
+
+
+							if (temp.mark)
+								cleanMark(preParent, 1);
+							else if (temp.flag) {
+								cleanFlag(preParent, preMapNode, backMapNode, false); //changed isThreaded parameter to false
+								break;
+							}
+							else if (CAS(preParent->child[pDir], impl::MapNodePtrInfo<KeyType, ObjType>(preMapNode, 0, 0, 0), impl::MapNodePtrInfo<KeyType, ObjType>(preMapNode, 1, 0, 0))) { //
+			//					prKeyTypef("incoming parentlink pred successfully flagged\n");
+
+								cleanFlag(preParent, preMapNode, backMapNode, false); //changed isThreaded parameter to false.
+								break;
+							}
+						}
+					}
+				}
+				else {
+					if (right.mark) {
+
+						impl::MapNode<KeyType, ObjType>* preMapNode = curr->preLink;
+						tryMark(preMapNode, 0);
+						cleanMark(preMapNode, 0);
+					}
+					else if (right.thread && right.flag) {
+
+						impl::MapNode<KeyType, ObjType>* delMapNode = right.nodeRef;
+						impl::MapNode<KeyType, ObjType>* delMapNodePa = delMapNode->backLink;
+						impl::MapNode<KeyType, ObjType>* preParent = curr->backLink;
+						auto pDir = cmp(delMapNode->k, delMapNodePa->k);
+						impl::MapNodePtrInfo<KeyType, ObjType> delMapNodeL = delMapNode->child[0];
+						impl::MapNodePtrInfo<KeyType, ObjType> delMapNodeR = delMapNode->child[1];
+
+						KeyType res1 = -1, res2 = -1, res3 = -1, res4 = -1, res5 = -1, res6 = -1, res7 = -1, res8 = -1;
+
+						res1 = CAS(preParent->child[1], impl::MapNodePtrInfo<KeyType, ObjType>(curr, 1, 0, 0), impl::MapNodePtrInfo<KeyType, ObjType>(left.nodeRef, left.flag, 0, left.thread));
+
+						if (!left.thread) {
+							res2 = left.nodeRef->backLink.compare_exchange_weak(curr, preParent);
+
+						}
+
+						res3 = CAS(curr->child[0], impl::MapNodePtrInfo<KeyType, ObjType>(left.nodeRef, 0, 1, left.thread), impl::MapNodePtrInfo<KeyType, ObjType>(delMapNodeL.nodeRef, 0, 0, 0));
+
+						res4 = delMapNodeL.nodeRef->backLink.compare_exchange_strong(delMapNode, curr);
+
+						res5 = CAS(curr->child[1], impl::MapNodePtrInfo<KeyType, ObjType>(right.nodeRef, 1, 0, 1), impl::MapNodePtrInfo<KeyType, ObjType>(delMapNodeR.nodeRef, 0, 0, delMapNodeR.thread));
+
+						if (!delMapNodeR.thread) {
+							res6 = delMapNodeR.nodeRef->backLink.compare_exchange_strong(delMapNode, curr);
+
+						}
+
+						res7 = CAS(delMapNodePa->child[pDir], impl::MapNodePtrInfo<KeyType, ObjType>(delMapNode, 1, 0, 0), impl::MapNodePtrInfo<KeyType, ObjType>(curr, 0, 0, 0));
+
+						res8 = curr->backLink.compare_exchange_strong(preParent, delMapNodePa);
+
+					}
+				}
+			};
+			static int cmp(KeyType const& x, KeyType const& y) {
+				if (x == y)
+					return 2;
+				else if (x > y)
+					return 1;
+				else
+					return 0;
+			};
+			bool CAS(std::atomic<impl::MapNodePtrInfo<KeyType, ObjType>>& oldValue, impl::MapNodePtrInfo<KeyType, ObjType> newValue, impl::MapNodePtrInfo<KeyType, ObjType> replacement) {
+				bool result{ false };
+				for (int i = 0; i < TIMES && !result; i++) {
+					result = oldValue.compare_exchange_strong(newValue, replacement);
+				}
+				return result;
+			};
+
+			std::atomic<long> count;
+			std::shared_ptr < utilities::Allocator<impl::MapNode<KeyType, ObjType>, 10> > nodeAllocator;
+			impl::MapNode<KeyType, ObjType> root[2];
+			static constexpr int TIMES = 4;
+		};
+
+
+
+
+
+
+
 
 		template< class objType, class keyType, int maxChildrenPerNode = 10, bool ForceObjectPOD = false>
 		class Tree {
@@ -3131,7 +3696,581 @@ namespace fibers {
 #undef LOCK_NODE_CONCAT
 #undef LOCK_NODE_CONCAT_
 		};
+
+
+
 	};
+
+#if 0
+	namespace containers {
+		 // Setting MAX_LEVELS to 1 essentially makes this data structure the Harris-Michael lock-free list (see list.c).
+#define CACHE_LINE_SIZE  64 // 64 byte cache line on x86 and x86-64
+#define CACHE_LINE_SCALE 6  // log base 2 of the cache line size
+
+#define EXPECT_TRUE(x)      __builtin_expect(!!(x), 1)
+#define EXPECT_FALSE(x)     __builtin_expect(!!(x), 0)
+
+#ifndef NBD_SINGLE_THREADED
+
+#define MAX_NUM_THREADS  32 // make this whatever you want, but make it a power of 2
+
+#define SYNC_SWAP(addr,x)         __sync_lock_test_and_set(addr,x)
+#define SYNC_CAS(addr,old,x)      __sync_val_compare_and_swap(addr,old,x)
+#define SYNC_ADD(addr,n)          __sync_add_and_fetch(addr,n)
+#define SYNC_FETCH_AND_OR(addr,x) __sync_fetch_and_or(addr,x)
+#else// NBD_SINGLE_THREADED
+
+#define MAX_NUM_THREADS  1
+
+#define SYNC_SWAP(addr,x)         ({ typeof(*(addr)) _old = *(addr); *(addr)  = (x); _old; })
+#define SYNC_CAS(addr,old,x)      ({ typeof(*(addr)) _old = *(addr); *(addr)  = (x); _old; })
+//#define SYNC_CAS(addr,old,x)    ({ typeof(*(addr)) _old = *(addr); if ((old) == _old) { *(addr)  = (x); } _old; })
+#define SYNC_ADD(addr,n)          ({ typeof(*(addr)) _old = *(addr); *(addr) += (n); _old; })
+#define SYNC_FETCH_AND_OR(addr,x) ({ typeof(*(addr)) _old = *(addr); *(addr) |= (x); _old; })
+
+#endif//NBD_SINGLE_THREADED
+
+#define COUNT_TRAILING_ZEROS __builtin_ctz
+
+#define MASK(n)     ((1ULL << (n)) - 1)
+
+#define TRUE  1
+#define FALSE 0
+
+#ifdef NBD32
+#define TAG1         (1U << 31)
+#define TAG2         (1U << 30)
+#else
+#define TAG1         (1ULL << 63)
+#define TAG2         (1ULL << 62)
+#endif
+#define TAG_VALUE(v, tag) ((v) |  tag)
+#define IS_TAGGED(v, tag) ((v) &  tag)
+#define STRIP_TAG(v, tag) ((v) & ~tag)
+
+#define DOES_NOT_EXIST 0
+#define ERROR_INVALID_OPTION      (-1)
+#define ERROR_INVALID_ARGUMENT    (-2)
+#define ERROR_UNSUPPORTED_FEATURE (-3)
+#define ERROR_TXN_NOT_RUNNING     (-4)
+
+#define VOLATILE_DEREF(x) (*((volatile typeof(x))(x)))
+
+		//typedef unsigned long long uint64_t;
+		//typedef unsigned int       uint32_t;
+		//typedef unsigned short     uint16_t;
+		//typedef unsigned char      uint8_t;
+
+		using markable_t = size_t;
+
+#define MAX_LEVELS 24
+
+		using map_key_t = uint64_t;
+		using map_val_t = uint64_t;
+
+		typedef int      (*cmp_fun_t)   (void*, void*);
+		typedef void* (*clone_fun_t) (void*);
+		typedef uint32_t(*hash_fun_t)  (void*);
+
+		typedef struct datatype {
+			cmp_fun_t   cmp;
+			hash_fun_t  hash;
+			clone_fun_t clone;
+		} datatype_t;
+
+		enum unlink {
+			FORCE_UNLINK,
+			ASSIST_UNLINK,
+			DONT_UNLINK
+		};
+
+		typedef struct node {
+			map_key_t key;
+			map_val_t val;
+			unsigned num_levels;
+			markable_t next[1];
+		} node_t;
+
+		struct sl_iter {
+			node_t* next;
+		};
+
+		struct sl {
+			node_t* head;
+			const datatype_t* key_type;
+			int high_water; // max historic number of levels
+		};
+
+		// Marking the <next> field of a node logically removes it from the list
+#if 0
+		static inline markable_t  MARK_NODE(node_t* x) { return TAG_VALUE((markable_t)x, 0x1); }
+		static inline int        HAS_MARK(markable_t x) { return (IS_TAGGED(x, 0x1) == 0x1); }
+		static inline node_t* GET_NODE(markable_t x) { assert(!HAS_MARK(x)); return (node_t*)x; }
+		static inline node_t* STRIP_MARK(markable_t x) { return ((node_t*)STRIP_TAG(x, 0x1)); }
+#else
+#define  MARK_NODE(x) TAG_VALUE((markable_t)(x), 0x1)
+#define   HAS_MARK(x) (IS_TAGGED((x), 0x1) == 0x1)
+#define   GET_NODE(x) ((node_t *)(x))
+#define STRIP_MARK(x) ((node_t *)STRIP_TAG((x), 0x1))
+#endif
+
+		typedef struct sl skiplist_t;
+		typedef struct sl_iter sl_iter_t;
+
+
+
+
+
+
+
+
+		static int random_levels(skiplist_t* sl) {
+			uint64_t r = nbd_rand();
+			int z = __builtin_ctz(r);
+			int levels = (int)(z / 1.5);
+			if (levels == 0)
+				return 1;
+			if (levels > sl->high_water) {
+				levels = SYNC_ADD(&sl->high_water, 1);
+				TRACE("s2", "random_levels: increased high water mark to %lld", sl->high_water, 0);
+			}
+			if (levels > MAX_LEVELS) { levels = MAX_LEVELS; }
+			return levels;
+		}
+
+		static node_t* node_alloc(int num_levels, map_key_t key, map_val_t val) {
+			assert(num_levels >= 0 && num_levels <= MAX_LEVELS);
+			size_t sz = sizeof(node_t) + (num_levels - 1) * sizeof(node_t*);
+			node_t* item = (node_t*)nbd_malloc(sz);
+			memset(item, 0, sz);
+			item->key = key;
+			item->val = val;
+			item->num_levels = num_levels;
+			TRACE("s2", "node_alloc: new node %p (%llu levels)", item, num_levels);
+			return item;
+		}
+
+		skiplist_t* sl_alloc(const datatype_t* key_type) {
+			skiplist_t* sl = (skiplist_t*)nbd_malloc(sizeof(skiplist_t));
+			sl->key_type = key_type;
+			sl->high_water = 1;
+			sl->head = node_alloc(MAX_LEVELS, 0, 0);
+			memset(sl->head->next, 0, MAX_LEVELS * sizeof(skiplist_t*));
+			return sl;
+		}
+
+		void sl_free(skiplist_t* sl) {
+			node_t* item = GET_NODE(sl->head->next[0]);
+			while (item) {
+				node_t* next = STRIP_MARK(item->next[0]);
+				if (sl->key_type != NULL) {
+					nbd_free((void*)item->key);
+				}
+				nbd_free(item);
+				item = next;
+			}
+		}
+
+		size_t sl_count(skiplist_t* sl) {
+			size_t count = 0;
+			node_t* item = GET_NODE(sl->head->next[0]);
+			while (item) {
+				if (!HAS_MARK(item->next[0])) {
+					count++;
+				}
+				item = STRIP_MARK(item->next[0]);
+			}
+			return count;
+		}
+
+		static node_t* find_preds(node_t** preds, node_t** succs, int n, skiplist_t* sl, map_key_t key, enum unlink unlink) {
+			node_t* pred = sl->head;
+			node_t* item = NULL;
+			TRACE("s2", "find_preds: searching for key %p in skiplist (head is %p)", key, pred);
+			int d = 0;
+
+			// Traverse the levels of <sl> from the top level to the bottom
+			for (int level = sl->high_water - 1; level >= 0; --level) {
+				markable_t next = pred->next[level];
+				if (next == DOES_NOT_EXIST && level >= n)
+					continue;
+				TRACE("s3", "find_preds: traversing level %p starting at %p", level, pred);
+				if (EXPECT_FALSE(HAS_MARK(next))) {
+					TRACE("s2", "find_preds: pred %p is marked for removal (next %p); retry", pred, next);
+					ASSERT(level == pred->num_levels - 1 || HAS_MARK(pred->next[level + 1]));
+					return find_preds(preds, succs, n, sl, key, unlink); // retry
+				}
+				item = GET_NODE(next);
+				while (item != NULL) {
+					next = item->next[level];
+
+					// A tag means an item is logically removed but not physically unlinked yet.
+					while (EXPECT_FALSE(HAS_MARK(next))) {
+						TRACE("s3", "find_preds: found marked item %p (next is %p)", item, next);
+						if (unlink == DONT_UNLINK) {
+
+							// Skip over logically removed items.
+							item = STRIP_MARK(next);
+							if (EXPECT_FALSE(item == NULL))
+								break;
+							next = item->next[level];
+						}
+						else {
+
+							// Unlink logically removed items.
+							markable_t other = SYNC_CAS(&pred->next[level], (markable_t)item, (markable_t)STRIP_MARK(next));
+							if (other == (markable_t)item) {
+								TRACE("s3", "find_preds: unlinked item from pred %p", pred, 0);
+								item = STRIP_MARK(next);
+							}
+							else {
+								TRACE("s3", "find_preds: lost race to unlink item pred %p's link changed to %p", pred, other);
+								if (HAS_MARK(other))
+									return find_preds(preds, succs, n, sl, key, unlink); // retry
+								item = GET_NODE(other);
+							}
+							next = (item != NULL) ? item->next[level] : DOES_NOT_EXIST;
+						}
+					}
+
+					if (EXPECT_FALSE(item == NULL)) {
+						TRACE("s3", "find_preds: past the last item in the skiplist", 0, 0);
+						break;
+					}
+
+					TRACE("s4", "find_preds: visiting item %p (next is %p)", item, next);
+					TRACE("s4", "find_preds: key %p val %p", STRIP_MARK(item->key), item->val);
+
+					if (EXPECT_TRUE(sl->key_type == NULL)) {
+						d = item->key - key;
+					}
+					else {
+						d = sl->key_type->cmp((void*)item->key, (void*)key);
+					}
+
+					if (d > 0)
+						break;
+					if (d == 0 && unlink != FORCE_UNLINK)
+						break;
+
+					pred = item;
+					item = GET_NODE(next);
+				}
+
+				TRACE("s3", "find_preds: found pred %p next %p", pred, item);
+
+				if (level < n) {
+					if (preds != NULL) {
+						preds[level] = pred;
+					}
+					if (succs != NULL) {
+						succs[level] = item;
+					}
+				}
+			}
+
+			if (d == 0) {
+				TRACE("s2", "find_preds: found matching item %p in skiplist, pred is %p", item, pred);
+				return item;
+			}
+			TRACE("s2", "find_preds: found proper place for key %p in skiplist, pred is %p. returning null", key, pred);
+			return NULL;
+		}
+
+		// Fast find that does not help unlink partially removed nodes and does not return the node's predecessors.
+		map_val_t sl_lookup(skiplist_t* sl, map_key_t key) {
+			TRACE("s1", "sl_lookup: searching for key %p in skiplist %p", key, sl);
+			node_t* item = find_preds(NULL, NULL, 0, sl, key, DONT_UNLINK);
+
+			// If we found an <item> matching the <key> return its value.
+			if (item != NULL) {
+				map_val_t val = item->val;
+				if (val != DOES_NOT_EXIST) {
+					TRACE("s1", "sl_lookup: found item %p. val %p. returning item", item, item->val);
+					return val;
+				}
+			}
+
+			TRACE("s1", "sl_lookup: no item in the skiplist matched the key", 0, 0);
+			return DOES_NOT_EXIST;
+		}
+
+		map_key_t sl_min_key(skiplist_t* sl) {
+			node_t* item = GET_NODE(sl->head->next[0]);
+			while (item != NULL) {
+				markable_t next = item->next[0];
+				if (!HAS_MARK(next))
+					return item->key;
+				item = STRIP_MARK(next);
+			}
+			return DOES_NOT_EXIST;
+		}
+
+		static map_val_t update_item(node_t* item, map_val_t expectation, map_val_t new_val) {
+			map_val_t old_val = item->val;
+
+			// If the item's value is DOES_NOT_EXIST it means another thread removed the node out from under us.
+			if (EXPECT_FALSE(old_val == DOES_NOT_EXIST)) {
+				TRACE("s2", "update_item: lost a race to another thread removing the item. retry", 0, 0);
+				return DOES_NOT_EXIST; // retry
+			}
+
+			if (EXPECT_FALSE(expectation == CAS_EXPECT_DOES_NOT_EXIST)) {
+				TRACE("s1", "update_item: the expectation was not met; the skiplist was not changed", 0, 0);
+				return old_val; // failure
+			}
+
+			// Use a CAS and not a SWAP. If the CAS fails it means another thread removed the node or updated its
+			// value. If another thread removed the node but it is not unlinked yet and we used a SWAP, we could
+			// replace DOES_NOT_EXIST with our value. Then another thread that is updating the value could think it
+			// succeeded and return our value even though it should return DOES_NOT_EXIST.
+			if (old_val == SYNC_CAS(&item->val, old_val, new_val)) {
+				TRACE("s1", "update_item: the CAS succeeded. updated the value of the item", 0, 0);
+				return old_val; // success
+			}
+			TRACE("s2", "update_item: lost a race. the CAS failed. another thread changed the item's value", 0, 0);
+
+			// retry
+			return update_item(item, expectation, new_val); // tail call
+		}
+
+		map_val_t sl_cas(skiplist_t* sl, map_key_t key, map_val_t expectation, map_val_t new_val) {
+			TRACE("s1", "sl_cas: key %p skiplist %p", key, sl);
+			TRACE("s1", "sl_cas: expectation %p new value %p", expectation, new_val);
+			ASSERT((int64_t)new_val > 0);
+
+			node_t* preds[MAX_LEVELS];
+			node_t* nexts[MAX_LEVELS];
+			node_t* new_item = NULL;
+			int n = random_levels(sl);
+			node_t* old_item = find_preds(preds, nexts, n, sl, key, ASSIST_UNLINK);
+
+			// If there is already an item in the skiplist that matches the key just update its value.
+			if (old_item != NULL) {
+				map_val_t ret_val = update_item(old_item, expectation, new_val);
+				if (ret_val != DOES_NOT_EXIST)
+					return ret_val;
+
+				// If we lose a race with a thread removing the item we tried to update then we have to retry.
+				return sl_cas(sl, key, expectation, new_val); // tail call
+			}
+
+			if (EXPECT_FALSE(expectation != CAS_EXPECT_DOES_NOT_EXIST && expectation != CAS_EXPECT_WHATEVER)) {
+				TRACE("s1", "sl_cas: the expectation was not met, the skiplist was not changed", 0, 0);
+				return DOES_NOT_EXIST; // failure, the caller expected an item for the <key> to already exist
+			}
+
+			// Create a new node and insert it into the skiplist.
+			TRACE("s3", "sl_cas: attempting to insert a new item between %p and %p", preds[0], nexts[0]);
+			map_key_t new_key = sl->key_type == NULL ? key : (map_key_t)sl->key_type->clone((void*)key);
+			new_item = node_alloc(n, new_key, new_val);
+
+			// Set <new_item>'s next pointers to their proper values
+			markable_t next = new_item->next[0] = (markable_t)nexts[0];
+			for (int level = 1; level < new_item->num_levels; ++level) {
+				new_item->next[level] = (markable_t)nexts[level];
+			}
+
+			// Link <new_item> into <sl> from the bottom level up. After <new_item> is inserted into the bottom level
+			// it is officially part of the skiplist.
+			node_t* pred = preds[0];
+			markable_t other = SYNC_CAS(&pred->next[0], next, (markable_t)new_item);
+			if (other != next) {
+				TRACE("s3", "sl_cas: failed to change pred's link: expected %p found %p", next, other);
+
+				// Lost a race to another thread modifying the skiplist. Free the new item we allocated and retry.
+				if (sl->key_type != NULL) {
+					nbd_free((void*)new_key);
+				}
+				nbd_free(new_item);
+				return sl_cas(sl, key, expectation, new_val); // tail call
+			}
+
+			TRACE("s3", "sl_cas: successfully inserted a new item %p at the bottom level", new_item, 0);
+
+			ASSERT(new_item->num_levels <= MAX_LEVELS);
+			for (int level = 1; level < new_item->num_levels; ++level) {
+				TRACE("s3", "sl_cas: inserting the new item %p at level %p", new_item, level);
+				do {
+					node_t* pred = preds[level];
+					ASSERT(new_item->next[level] == (markable_t)nexts[level] || new_item->next[level] == MARK_NODE(nexts[level]));
+					TRACE("s3", "sl_cas: attempting to to insert the new item between %p and %p", pred, nexts[level]);
+
+					markable_t other = SYNC_CAS(&pred->next[level], (markable_t)nexts[level], (markable_t)new_item);
+					if (other == (markable_t)nexts[level])
+						break; // successfully linked <new_item> into the skiplist at the current <level>
+					TRACE("s3", "sl_cas: lost a race. failed to change pred's link. expected %p found %p", nexts[level], other);
+
+					// Find <new_item>'s new preds and nexts.
+					find_preds(preds, nexts, new_item->num_levels, sl, key, ASSIST_UNLINK);
+
+					for (int i = level; i < new_item->num_levels; ++i) {
+						markable_t old_next = new_item->next[i];
+						if ((markable_t)nexts[i] == old_next)
+							continue;
+
+						// Update <new_item>'s inconsistent next pointer before trying again. Use a CAS so if another thread
+						// is trying to remove the new item concurrently we do not stomp on the mark it places on the item.
+						TRACE("s3", "sl_cas: attempting to update the new item's link from %p to %p", old_next, nexts[i]);
+						other = SYNC_CAS(&new_item->next[i], old_next, (markable_t)nexts[i]);
+						ASSERT(other == old_next || other == MARK_NODE(old_next));
+
+						// If another thread is removing this item we can stop linking it into to skiplist
+						if (HAS_MARK(other)) {
+							find_preds(NULL, NULL, 0, sl, key, FORCE_UNLINK); // see comment below
+							return DOES_NOT_EXIST;
+						}
+					}
+				} while (1);
+			}
+
+			// In case another thread was in the process of removing the <new_item> while we were added it, we have to
+			// make sure it is completely unlinked before we return. We might have lost a race and inserted the new item
+			// at some level after the other thread thought it was fully removed. That is a problem because once a thread
+			// thinks it completely unlinks a node it queues it to be freed
+			if (HAS_MARK(new_item->next[new_item->num_levels - 1])) {
+				find_preds(NULL, NULL, 0, sl, key, FORCE_UNLINK);
+			}
+
+			return DOES_NOT_EXIST; // success, inserted a new item
+		}
+
+		map_val_t sl_remove(skiplist_t* sl, map_key_t key) {
+			TRACE("s1", "sl_remove: removing item with key %p from skiplist %p", key, sl);
+			node_t* preds[MAX_LEVELS];
+			node_t* item = find_preds(preds, NULL, sl->high_water, sl, key, ASSIST_UNLINK);
+			if (item == NULL) {
+				TRACE("s3", "sl_remove: remove failed, an item with a matching key does not exist in the skiplist", 0, 0);
+				return DOES_NOT_EXIST;
+			}
+
+			// Mark <item> at each level of <sl> from the top down. If multiple threads try to concurrently remove
+			// the same item only one of them should succeed. Marking the bottom level establishes which of them succeeds.
+			markable_t old_next = 0;
+			for (int level = item->num_levels - 1; level >= 0; --level) {
+				markable_t next;
+				old_next = item->next[level];
+				do {
+					TRACE("s3", "sl_remove: marking item at level %p (next %p)", level, old_next);
+					next = old_next;
+					old_next = SYNC_CAS(&item->next[level], next, MARK_NODE((node_t*)next));
+					if (HAS_MARK(old_next)) {
+						TRACE("s2", "sl_remove: %p is already marked for removal by another thread (next %p)", item, old_next);
+						if (level == 0)
+							return DOES_NOT_EXIST;
+						break;
+					}
+				} while (next != old_next);
+			}
+
+			// Atomically swap out the item's value in case another thread is updating the item while we are
+			// removing it. This establishes which operation occurs first logically, the update or the remove.
+			map_val_t val = SYNC_SWAP(&item->val, DOES_NOT_EXIST);
+			TRACE("s2", "sl_remove: replaced item %p's value with DOES_NOT_EXIT", item, 0);
+
+			// unlink the item
+			find_preds(NULL, NULL, 0, sl, key, FORCE_UNLINK);
+
+			// free the node
+			if (sl->key_type != NULL) {
+				rcu_defer_free((void*)item->key);
+			}
+			rcu_defer_free(item);
+
+			return val;
+		}
+
+		void sl_print(skiplist_t* sl, int verbose) {
+
+			if (verbose) {
+				for (int level = MAX_LEVELS - 1; level >= 0; --level) {
+					node_t* item = sl->head;
+					if (item->next[level] == DOES_NOT_EXIST)
+						continue;
+					printf("(%d) ", level);
+					int i = 0;
+					while (item) {
+						markable_t next = item->next[level];
+						printf("%s%p ", HAS_MARK(next) ? "*" : "", item);
+						item = STRIP_MARK(next);
+						if (i++ > 30) {
+							printf("...");
+							break;
+						}
+					}
+					printf("\n");
+					fflush(stdout);
+				}
+				node_t* item = sl->head;
+				int i = 0;
+				while (item) {
+					int is_marked = HAS_MARK(item->next[0]);
+					printf("%s%p:0x%llx ", is_marked ? "*" : "", item, (uint64_t)item->key);
+					if (item != sl->head) {
+						printf("[%d]", item->num_levels);
+					}
+					else {
+						printf("[HEAD]");
+					}
+					for (int level = 1; level < item->num_levels; ++level) {
+						node_t* next = STRIP_MARK(item->next[level]);
+						is_marked = HAS_MARK(item->next[0]);
+						printf(" %p%s", next, is_marked ? "*" : "");
+						if (item == sl->head && item->next[level] == DOES_NOT_EXIST)
+							break;
+					}
+					printf("\n");
+					fflush(stdout);
+					item = STRIP_MARK(item->next[0]);
+					if (i++ > 30) {
+						printf("...\n");
+						break;
+					}
+				}
+			}
+			printf("levels:%-2d  count:%-6lld \n", sl->high_water, (uint64_t)sl_count(sl));
+		}
+
+		sl_iter_t* sl_iter_begin(skiplist_t* sl, map_key_t key) {
+			sl_iter_t* iter = (sl_iter_t*)nbd_malloc(sizeof(sl_iter_t));
+			if (key != DOES_NOT_EXIST) {
+				find_preds(NULL, &iter->next, 1, sl, key, DONT_UNLINK);
+			}
+			else {
+				iter->next = GET_NODE(sl->head->next[0]);
+			}
+			return iter;
+		}
+
+		map_val_t sl_iter_next(sl_iter_t* iter, map_key_t* key_ptr) {
+			assert(iter);
+			node_t* item = iter->next;
+			while (item != NULL && HAS_MARK(item->next[0])) {
+				item = STRIP_MARK(item->next[0]);
+			}
+			if (item == NULL) {
+				iter->next = NULL;
+				return DOES_NOT_EXIST;
+			}
+			iter->next = STRIP_MARK(item->next[0]);
+			if (key_ptr != NULL) {
+				*key_ptr = item->key;
+			}
+			return item->val;
+		}
+
+		void sl_iter_free(sl_iter_t* iter) {
+			nbd_free(iter);
+		}
+
+
+
+
+
+
+
+	};
+#endif
 
 	namespace utilities {
 		template <class _Diff>

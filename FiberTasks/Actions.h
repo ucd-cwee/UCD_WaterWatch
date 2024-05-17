@@ -217,7 +217,7 @@ template <typename F> inline [[nodiscard]] std::shared_ptr<Finally> make_shared_
 
 namespace fibers {
 	namespace synchronization {
-		/* Simple atomic spin-lock that fairly synchronizes threads or fibers based on a ticket-queue system. */
+		/* *THREAD SAFE* Simple atomic spin-lock that fairly synchronizes threads or fibers based on a ticket-queue system. */
 		class TicketSpinLock {
 		private:
 			std::atomic<unsigned long> ticket;
@@ -233,15 +233,23 @@ namespace fibers {
 
 			void lock() {
 				auto my_ticket = ticket.fetch_add(1, std::memory_order::memory_order_relaxed);
+				int spin = 0;
 				while (my_ticket != serving.load(std::memory_order::memory_order_acquire)) {
-					std::this_thread::yield();
+					if (spin < 10)
+					{
+						_mm_pause(); // SMT thread swap can occur here
+					}
+					else
+					{
+						std::this_thread::yield(); // OS thread swap can occur here. It is important to keep it as fallback, to avoid any chance of lockup by busy wait
+					}
+					spin++;
 				}
 			};
 			void unlock() {
 				serving.fetch_add(1, std::memory_order::memory_order_release);
 			};
 		};
-
 	};
 	namespace containers {
 		/* Generic container that does not instantiate an object until actually needed. Useful for seperating consumption from creation. Once made, the container is nearly "free" in terms of speed. */
@@ -279,7 +287,6 @@ namespace fibers {
 			std::function<T* ()> createFunc;
 			std::function<void(T*)> deleteFunc;
 		};
-
 	};
 	namespace utilities {
 		class typenames {
@@ -1226,5 +1233,4 @@ namespace fibers {
 			return func.FunctionName();
 		};
 	};
-
 };

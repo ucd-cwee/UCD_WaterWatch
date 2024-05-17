@@ -43,25 +43,76 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 	defer(delete[] xyzwabc); // does clean-up on our behalf on scope end
 
 	{
-		fibers::containers::BinarySearchTree<int> tree;
-		fibers::parallel::For(0, 400, [&tree](int i) {
+		fibers::containers::Set<double> concurrent_set;
+		concurrent_set.add(0);
+		concurrent_set.add(1);
+		concurrent_set.add(2);
+		concurrent_set.add(3);
+		concurrent_set.add(4);
+		concurrent_set.add(5);
+		
+		concurrent_set.remove(3);
+
+		if (concurrent_set.contains(3)) {
+			std::cout << "TEST" << std::endl;
+		}
+
+		std::cout << concurrent_set.findLargestKeyLessThanOrEqualTo(1.5) << std::endl;
+		std::cout << concurrent_set.findLargestKeyLessThanOrEqualTo(2.5) << std::endl;
+		std::cout << concurrent_set.findLargestKeyLessThanOrEqualTo(3.5) << std::endl;
+		std::cout << concurrent_set.findLargestKeyLessThanOrEqualTo(4) << std::endl;
+		std::cout << concurrent_set.findLargestKeyLessThanOrEqualTo(4.5) << std::endl;
+
+		std::cout << concurrent_set.findSmallestKeyGreaterThanOrEqualTo(1.5) << std::endl;
+		std::cout << concurrent_set.findSmallestKeyGreaterThanOrEqualTo(2.5) << std::endl;
+		std::cout << concurrent_set.findSmallestKeyGreaterThanOrEqualTo(3.5) << std::endl;
+		std::cout << concurrent_set.findSmallestKeyGreaterThanOrEqualTo(4) << std::endl;
+		std::cout << concurrent_set.findSmallestKeyGreaterThanOrEqualTo(4.5) << std::endl;
+
+		fibers::parallel::For(0, 400, [&concurrent_set](int i) {
 			if (i % 2 == 0) {
 				for (int k = i; k < (i + 400); k++) {
-					tree.add(k);
+					concurrent_set.add(k);
 				}
 			}
 			else {
 				for (int k = i; k < (i + 400); k += 2) {
-					tree.remove(k);
+					concurrent_set.remove(k);
 				}
 			}			
 		});
 
-		if (tree.contains(1)) {
-			tree.remove(1);
+		if (concurrent_set.contains(1)) {
+			concurrent_set.remove(1);
 		}
-
 	}
+
+	{
+		fibers::containers::Map<int, fibers::synchronization::atomic_number<double>> concurrent_set;
+
+		concurrent_set.add(0, 0);
+		concurrent_set.add(0, 1);
+		*concurrent_set[0] = 2;
+
+		fibers::parallel::For(0, 400, [&concurrent_set](int i) {
+			if (i % 2 == 0) {
+				for (int k = i; k < (i + 400); k++) {
+					*concurrent_set[k] = 3;
+				}
+			}
+			else {
+				for (int k = i; k < (i + 400); k += 2) {
+					concurrent_set.remove(k);
+				}
+			}
+		});
+
+		*concurrent_set[1] = 100l;
+		if (concurrent_set.contains(1)) {
+			concurrent_set.remove(1);
+		}
+	}
+
 
 
 
