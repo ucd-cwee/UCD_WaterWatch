@@ -20,6 +20,7 @@
 #pragma warning(disable : 4305)				// truncating a literal from double to float
 #pragma warning(disable : 4311)				// pointer truncation from 'void *' to 'int'
 #pragma warning(disable : 4312)				// conversion from 'int' to 'void*' of greater size
+#pragma warning(disable : 4351)             // Squelch warnings on initializing arrays; it is new (good) behavior in C++11.
 #pragma warning(disable : 4390)				// ';' empty controlled statement
 #pragma warning(disable : 4456)				// declaration hides previous local declaration
 #pragma warning(disable : 4458)				// hides class member
@@ -160,11 +161,42 @@
 #include "Concurrent_Queue.h"
 #include "../WaterWatchCpp/enum.h"
 #include <set>
+#include <functional>
+#include <vector>
+#include <unordered_map>
+#include <unordered_set>
+#include <chrono>
+#include <assert.h>
+#include <thread>
+//#include <boost/lockfree/spsc_queue.hpp>
+//#include <boost/thread/barrier.hpp>
+//#include <boost/thread.hpp>
+#include <iostream>
+#include <memory>
+#include <atomic>
 
 #define CONST_MAX( x, y )			( (x) > (y) ? (x) : (y) )
 namespace fibers {
 
 	namespace utilities {
+		__forceinline static void* Mem_Alloc64(const size_t& size) { if (!size) return nullptr; const size_t paddedSize = (size + 63) & ~63; return ::_aligned_malloc(paddedSize, 64); };
+		__forceinline static void* Mem_Alloc16(const size_t& size) { if (!size) return nullptr; const size_t paddedSize = (size + 15) & ~15; return ::_aligned_malloc(paddedSize, 16); };
+		__forceinline static void  Mem_Free64(void* ptr) { if (ptr) ::_aligned_free(ptr); };
+		__forceinline static void  Mem_Free16(void* ptr) { if (ptr) ::_aligned_free(ptr); };
+		__forceinline static void* Mem_ClearedAlloc(const size_t& size) {
+			void* mem = Mem_Alloc16(size);
+			::memset(mem, 0, size);
+			return mem;
+		};
+		__forceinline static void  Mem_Free(void* ptr) { Mem_Free16(ptr); }
+		__forceinline static void* Mem_Alloc(const size_t size) { return Mem_ClearedAlloc(size); }
+		__forceinline static char* Mem_CopyString(const char* in) {
+			size_t L{ strlen(in) + 1 };
+			char* out = (char*)Mem_Alloc(L);
+			::strncpy(out, in, L - 1); // ::strcpy_s(out, L, in);
+			return out;
+		};
+
 		class Hardware {
 		public:
 			static int GetNumCpuCores();
@@ -263,6 +295,2183 @@ namespace fibers {
 			auto begin() const { return ConstIterator(min); };
 			auto end() const { return ConstIterator(max); };
 		};
+
+
+
+#if 1
+		// SEE: https://github.com/microsoft/pmwcas/blob/master/src/mwcas/mwcas.h
+		// REF: https://www.cl.cam.ac.uk/research/srg/netos/papers/2002-casn.pdf
+		// REF: https://paulcavallaro.com/blog/the-bw-tree/
+		// REF: https://paulcavallaro.com/blog/a-practical-multi-word-compare-and-swap-operation/
+		// REF: https://www.cl.cam.ac.uk/techreports/UCAM-CL-TR-579.pdf
+		// REF: https://db.in.tum.de/~leis/papers/artsync.pdf
+		// REF: https://github.com/wangziqi2013/BwTree/tree/master
+		// UNRELATED, CHECK OUT https://github.com/BRL-CAD/brlcad
+		// UNRELATED, CHECK OUT https://en.wikipedia.org/wiki/SolveSpace
+
+#define RETURN_NOT_OK(s) do { auto _s = (s); if (!_s.ok()) return _s; } while (0);
+#define IS_POWER_OF_TWO(x) (x && (x & (x - 1)) == 0)
+
+		namespace garbage_collection {
+
+			class Slice {
+			public:
+				/// Create an empty slice.
+				Slice() : data_(""), size_(0) { }
+
+				/// Create a slice that refers to d[0,n-1].
+				Slice(const char* d, size_t n) : data_(d), size_(n) { }
+
+				/// Create a slice that refers to the contents of "s"
+				Slice(const std::string& s) : data_(s.data()), size_(s.size()) { }
+
+				/// Create a slice that refers to s[0,strlen(s)-1]
+				Slice(const char* s) : data_(s), size_(strlen(s)) { }
+
+				/// Create a single slice from SliceParts using buf as storage.
+				/// buf must exist as long as the returned Slice exists.
+				Slice(const struct SliceParts& parts, std::string* buf);
+
+				/// Return a pointer to the beginning of the referenced data
+				const char* data() const {
+					return data_;
+				}
+
+				/// Return the length (in bytes) of the referenced data
+				size_t size() const {
+					return size_;
+				}
+
+				/// Return true iff the length of the referenced data is zero
+				bool empty() const {
+					return size_ == 0;
+				}
+
+				/// Return the ith byte in the referenced data.
+				/// REQUIRES: n < size()
+				char operator[](size_t n) const {
+					assert(n < size());
+					return data_[n];
+				}
+
+				/// Change this slice to refer to an empty array
+				void clear() {
+					data_ = "";
+					size_ = 0;
+				}
+
+				/// Drop the first "n" bytes from this slice.
+				void remove_prefix(size_t n) {
+					assert(n <= size());
+					data_ += n;
+					size_ -= n;
+				}
+
+				/// Drop the last "n" bytes from this slice.
+				void remove_suffix(size_t n) {
+					assert(n <= size());
+					size_ -= n;
+				}
+
+				/// Return a string that contains the copy of the referenced data.
+				std::string ToString(bool hex = false) const {
+					return data();
+				};
+
+				/// Copies the slice to the specified destination.
+				void copy(char* dest, size_t dest_size) const {
+					assert(dest_size >= size_);
+					memcpy(dest, data_, size_);
+				}
+
+				/// Copies the specified number of bytes of the slice to the specified
+				/// destination.
+				void copy(char* dest, size_t dest_size, size_t count) const {
+					assert(count <= size_);
+					assert(dest_size >= count);
+					memcpy(dest, data_, count);
+				}
+
+				/// Three-way comparison.  Returns value:
+				///   <  0 iff "*this" <  "b",
+				///   == 0 iff "*this" == "b",
+				///   >  0 iff "*this" >  "b"
+				int compare(const Slice& b) const {
+					const size_t min_len = (std::min)(size_, b.size_);
+					int r = memcmp(data_, b.data_, min_len);
+					if (r == 0) {
+						if (size_ < b.size_) r = -1;
+						else if (size_ > b.size_) r = +1;
+					}
+					return r;
+				};
+
+				/// Besides returning the comparison value, also sets out parameter "index" to
+				/// be the least index
+				/// such that "this[index]" != "b[index]".
+				int compare_with_index(const Slice& b, size_t& index) const {
+					const size_t min_len = (std::min)(size_, b.size_);
+					int r = memcmp_with_index(data_, b.data_, min_len, index);
+					if (r == 0) {
+						if (size_ < b.size_) r = -1;
+						else if (size_ > b.size_) r = +1;
+					}
+					return r;
+				};
+
+				/// Compares the first "len" bytes of "this" with the first "len" bytes of "b".
+				int compare(const Slice& b, size_t len) const {
+					const size_t min_len = (std::min)(size_, b.size_);
+					int r = memcmp(data_, b.data_, (std::min)(min_len, len));
+					if (r == 0 && min_len < len) {
+						if (size_ < b.size_) r = -1;
+						else if (size_ > b.size_) r = +1;
+					}
+					return r;
+				};
+
+				/// Besides returning the comparison value, also sets out parameter "index" to
+				/// be the least index such that "this[index]" != "b[index]".
+				int compare_with_index(const Slice& b, size_t len, size_t& index) const {
+					const size_t min_len = (std::min)(size_, b.size_);
+					int r = memcmp_with_index(data_, b.data_, (std::min)(min_len, len), index);
+					if (r == 0 && min_len < len) {
+						if (size_ < b.size_) r = -1;
+						else if (size_ > b.size_) r = +1;
+					}
+					return r;
+				};
+
+				/// Return true iff "x" is a prefix of "*this"
+				bool starts_with(const Slice& x) const {
+					return ((size_ >= x.size_) &&
+						(memcmp(data_, x.data_, x.size_) == 0));
+				}
+
+				/// Performs a memcmp() and also sets "index" to the index of the first
+				/// disagreement (if any) between the buffers being compared.
+				static int memcmp_with_index(const void* buf1, const void* buf2, size_t size,
+					size_t& index) {
+					// Currently using naive implementation, since this is called only during
+					// consolidate/split.
+					for (index = 0; index < size; ++index) {
+						uint8_t byte1 = reinterpret_cast<const uint8_t*>(buf1)[index];
+						uint8_t byte2 = reinterpret_cast<const uint8_t*>(buf2)[index];
+						if (byte1 != byte2) {
+							return (byte1 < byte2) ? -1 : +1;
+						}
+					}
+					return 0;
+				}
+
+				friend bool		operator==(const Slice& x, const Slice& y) {
+					return ((x.size() == y.size()) && (memcmp(x.data(), y.data(), x.size()) == 0));
+				};
+				friend bool		operator!=(const Slice& x, const Slice& y) {
+					return !(x == y);
+				};
+
+
+
+			public:
+				const char* data_;
+				size_t size_;
+			};
+			class Status {
+			
+			public:
+				enum Code {
+					kOk = 0,
+					kNotFound = 1,
+					kCorruption = 2,
+					kNotSupported = 3,
+					kInvalidArgument = 4,
+					kIOError = 5,
+					kMergeInProgress = 6,
+					kIncomplete = 7,
+					kShutdownInProgress = 8,
+					kTimedOut = 9,
+					kAborted = 10,
+					kBusy = 11,
+					kOutOfMemory = 12,
+					kKeyAlreadyExists = 13,
+					kUnableToMerge = 14,
+					kMwCASFailure = 15,
+				};
+				explicit Status(Code _code) : code_(_code), state_(nullptr) {}
+
+			private:
+				static const char* CopyState(const char* s) {
+					return fibers::utilities::Mem_CopyString(s);
+				};
+				Status(Code _code, const Slice& msg, const Slice& msg2) : code_(_code), state_(nullptr) {
+					std::string Str = msg.ToString() + ": " + msg2.ToString();
+					state_ = CopyState(Str.c_str());
+				};
+
+			public:
+				// Create a success status.
+				Status() : code_(kOk), state_(nullptr) { }
+				~Status() {
+					delete[] state_;
+				}
+
+				// Copy the specified status.
+				Status(const Status& s) {
+					code_ = s.code_;
+					state_ = (s.state_ == nullptr) ? nullptr : CopyState(s.state_);
+				};
+				void operator=(const Status& s) {
+					// The following condition catches both aliasing (when this == &s),
+					// and the common case where both s and *this are ok.
+					code_ = s.code_;
+					if (state_ != s.state_) {
+						delete[] state_;
+						state_ = (s.state_ == nullptr) ? nullptr : CopyState(s.state_);
+					}
+				};
+				bool operator==(const Status& rhs) const {
+					return (code_ == rhs.code_);
+				};
+				bool operator!=(const Status& rhs) const {
+					return !(*this == rhs);
+				};
+
+				// Return a success status.
+				static Status OK() {
+					return Status();
+				}
+
+				// Return error status of an appropriate type.
+				static Status NotFound(const Slice& msg, const Slice& msg2 = Slice()) {
+					return Status(kNotFound, msg, msg2);
+				}
+				// Fast path for not found without malloc;
+				static Status NotFound() {
+					return Status(kNotFound);
+				}
+				static Status Corruption(const Slice& msg, const Slice& msg2 = Slice()) {
+					return Status(kCorruption, msg, msg2);
+				}
+				static Status NotSupported(const Slice& msg, const Slice& msg2 = Slice()) {
+					return Status(kNotSupported, msg, msg2);
+				}
+				static Status InvalidArgument(const Slice& msg, const Slice& msg2 = Slice()) {
+					return Status(kInvalidArgument, msg, msg2);
+				}
+				static Status IOError(const Slice& msg, const Slice& msg2 = Slice()) {
+					return Status(kIOError, msg, msg2);
+				}
+				static Status MergeInProgress() {
+					return Status(kMergeInProgress);
+				}
+				static Status UnableToMerge() {
+					return Status(kUnableToMerge);
+				}
+				static Status Incomplete(const Slice& msg, const Slice& msg2 = Slice()) {
+					return Status(kIncomplete, msg, msg2);
+				}
+				static Status ShutdownInProgress() {
+					return Status(kShutdownInProgress);
+				}
+				static Status ShutdownInProgress(const Slice& msg,
+					const Slice& msg2 = Slice()) {
+					return Status(kShutdownInProgress, msg, msg2);
+				}
+				static Status Aborted() {
+					return Status(kAborted);
+				}
+				static Status Aborted(const Slice& msg, const Slice& msg2 = Slice()) {
+					return Status(kAborted, msg, msg2);
+				}
+				static Status Busy() {
+					return Status(kBusy);
+				}
+				static Status Busy(const Slice& msg, const Slice& msg2 = Slice()) {
+					return Status(kBusy, msg, msg2);
+				}
+				static Status OutOfMemory() {
+					return Status(kOutOfMemory);
+				}
+				static Status TimedOut() {
+					return Status(kTimedOut);
+				}
+				static Status KeyAlreadyExists() {
+					return Status(kKeyAlreadyExists);
+				}
+				static Status MwCASFailure() {
+					return Status(kMwCASFailure);
+				}
+
+				// Returns true iff the status indicates success.
+				bool ok() const {
+					return code() == kOk;
+				}
+
+				// Returns true iff the status indicates a NotFound error.
+				bool IsNotFound() const {
+					return code() == kNotFound;
+				}
+
+				// Returns true iff the status indicates a Corruption error.
+				bool IsCorruption() const {
+					return code() == kCorruption;
+				}
+
+				// Returns true iff the status indicates a NotSupported error.
+				bool IsNotSupported() const {
+					return code() == kNotSupported;
+				}
+
+				// Returns true iff the status indicates an InvalidArgument error.
+				bool IsInvalidArgument() const {
+					return code() == kInvalidArgument;
+				}
+
+				// Returns true iff the status indicates an IOError.
+				bool IsIOError() const {
+					return code() == kIOError;
+				}
+
+				// Returns true iff the status indicates Incomplete
+				bool IsIncomplete() const {
+					return code() == kIncomplete;
+				}
+
+				// Returns true iff the status indicates Shutdown In progress
+				bool IsShutdownInProgress() const {
+					return code() == kShutdownInProgress;
+				}
+
+				bool IsTimedOut() const {
+					return code() == kTimedOut;
+				}
+
+				bool IsAborted() const {
+					return code() == kAborted;
+				}
+
+				bool IsOutOfMemory() const {
+					return code() == kOutOfMemory;
+				}
+
+				bool IsKeyAlreadyExists() const {
+					return code() == kKeyAlreadyExists;
+				}
+
+				// Returns true iff the status indicates that a resource is Busy and
+				// temporarily could not be acquired.
+				bool IsBusy() const {
+					return code() == kBusy;
+				}
+
+				bool IsMwCASFailure() const {
+					return code() == kMwCASFailure;
+				}
+
+				// Return a string representation of this status suitable for printing.
+				// Returns the string "OK" for success.
+				std::string ToString() const {
+					if (Code::kOk == code_) return "OK";
+					if (state_) return state_;
+					return "";
+				};
+
+				Code code() const {
+					return code_;
+				}
+			private:
+				// A nullptr state_ (which is always the case for OK) means the message
+				// is empty.
+				// of the following form:
+				//    state_[0..3] == length of message
+				//    state_[4..]  == message
+				Code code_;
+				const char* state_;
+			};
+
+			__forceinline uint32_t Murmur3_32(uint32_t h) {
+				h ^= h >> 16;
+				h *= 0x85ebca6b;
+				h ^= h >> 13;
+				h *= 0xc2b2ae35;
+				h ^= h >> 16;
+				return h;
+			};
+			__forceinline uint64_t Murmur3_64(uint64_t h) {
+				h ^= h >> 33;
+				h *= 0xff51afd7ed558ccd;
+				h ^= h >> 33;
+				h *= 0xc4ceb9fe1a85ec53;
+				h ^= h >> 33;
+				return h;
+			};
+
+			const static uintptr_t kAtomicAlignment = 4;
+
+			// The minimum alignment to guarantee atomic operations on a platform for both value types and pointer types
+			// The maximum size to guarantee atomic operations with the primitives below
+#if defined (_M_I386)
+#define AtomicAlignment  4
+#define PointerAlignment 4
+#define AtomicMaxSize    4
+#else
+#define AtomicAlignment  4
+#define PointerAlignment 8
+#define AtomicMaxSize    8
+#endif
+
+            // Identical for WIN32 and Linux
+			template <typename T> T LdImm(T const* const source) {
+				static_assert(sizeof(T) <= AtomicMaxSize, "Type must be aligned to native pointer alignment.");
+
+				// The volatile qualifier has the side effect of being a load-aquire on IA64.
+				// That's a result of overloading the volatile keyword.
+				return *((volatile T*)source);
+			}
+
+			/// A load with acquire semantics for a type T
+			template <typename T> inline T LdAq(T const* const source) {
+				static_assert(sizeof(T) <= AtomicMaxSize,
+					"Type must be aligned to native pointer alignment.");
+				assert((((uintptr_t)source) & (AtomicAlignment - 1)) == 0);
+
+#ifdef WIN32
+				// COMPILER-WISE:
+				// a volatile read is not compiler reorderable w/r to reads. However,
+				//  we put in a _ReadBarrier() just to make sure
+				// PROCESSOR-WISE:
+				// Common consensus is that X86 and X64 do NOT reorder loads.
+				// IA64 volatile emits ld.aq,which ensures all loads complete before this one
+				_ReadBarrier();
+#else
+				_mm_lfence();
+#endif
+				return *((volatile T*)source);
+			}
+
+			template <typename T> void StRel(T* destination, T value) {
+				static_assert(sizeof(T) <= AtomicMaxSize,
+					"Type must be aligned to native pointer alignment.");
+
+				// COMPILER-WISE:
+				// A volatile write is not compiler reorderable w/r to writes
+				// PROCESSOR-WISE:
+				// X86 and X64 do not reorder stores. IA64 volatile emits st.rel,
+				//  which ensures all stores complete before this one
+				*((volatile T*)destination) = value;
+			}
+
+#ifdef WIN32
+			template <typename T> T CompareExchange64(T* destination, T new_value,
+				T comparand) {
+				static_assert(sizeof(T) == 8, "CompareExchange64 only works on 64 bit values");
+
+				return ::InterlockedCompareExchange64(
+					reinterpret_cast<LONGLONG*>(destination), new_value, comparand);
+			}
+
+			template <typename T>
+			T* CompareExchange64Ptr(T** destination, T* new_value, T* comparand) {
+				return (T*)(::InterlockedCompareExchangePointer(
+					reinterpret_cast<void**>(destination), new_value, comparand));
+			}
+
+			template <typename T> T CompareExchange32(T* destination, T new_value,
+				T comparand) {
+				static_assert(sizeof(T) == 4,
+					"CompareExchange32 only works on 32 bit values");
+
+				return ::InterlockedCompareExchange(reinterpret_cast<LONG*>(destination),
+					new_value, comparand);
+			}
+
+			template <typename T> T FetchAdd64(T* destination, T add_value) {
+				static_assert(sizeof(T) <= AtomicMaxSize,
+					"Type must be aligned to native pointer alignment.");
+				return ::InterlockedAdd(reinterpret_cast<LONG*>(destination), add_value);
+			}
+
+			template <typename T> T Decrement64(T* destination) {
+				static_assert(sizeof(T) <= AtomicMaxSize,
+					"Type must be aligned to native pointer alignment.");
+				return ::InterlockedDecrement64(destination);
+			}
+
+			template <typename T> T Decrement32(T* destination) {
+				static_assert(sizeof(T) <= AtomicMaxSize,
+					"Type must be aligned to native pointer alignment.");
+				return ::InterlockedDecrement(destination);
+			}
+
+			class Barrier {
+			public:
+				Barrier(uint64_t thread_count)
+					: wait_count_{ thread_count }
+					, thread_count_{ thread_count }
+					, windows_semaphore_{ ::CreateSemaphore(0, 0, 1024, 0) } {
+				}
+
+				~Barrier() {
+					::CloseHandle(windows_semaphore_);
+				}
+
+				void CountAndWait() {
+					if (0 == --wait_count_) {
+						wait_count_.store(thread_count_, std::memory_order_release);
+						::ReleaseSemaphore(windows_semaphore_,
+							static_cast<LONG>(thread_count_ - 1), 0);
+					}
+					else {
+						::WaitForSingleObject(windows_semaphore_, INFINITE);
+					}
+				}
+
+			private:
+				std::atomic<uint64_t> wait_count_;
+				const uint64_t thread_count_;
+				const HANDLE windows_semaphore_;
+			};
+
+#else
+			template <typename T> T CompareExchange64(T* destination, T new_value,
+				T comparand) {
+				static_assert(sizeof(T) == 8,
+					"CompareExchange64 only works on 64 bit values");
+				::__atomic_compare_exchange_n(destination, &comparand, new_value, false,
+					__ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST);
+				return comparand;
+			}
+
+			template <typename T>
+			T* CompareExchange64Ptr(T** destination, T* new_value, T* comparand) {
+				::__atomic_compare_exchange_n(destination, &comparand, new_value, false,
+					__ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST);
+				return comparand;
+			}
+
+			template <typename T> T CompareExchange32(T* destination, T new_value,
+				T comparand) {
+				static_assert(sizeof(T) == 4,
+					"CompareExchange32 only works on 32 bit values");
+				::__atomic_compare_exchange_n(destination, &comparand, new_value, false,
+					__ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST);
+				return comparand;
+			}
+
+			template <typename T> T FetchAdd64(T* destination, T add_value) {
+				static_assert(sizeof(T) <= AtomicMaxSize,
+					"Type must be aligned to native pointer alignment.");
+				return ::__atomic_fetch_add(destination, add_value, __ATOMIC_SEQ_CST);
+			}
+
+			template <typename T> T Decrement64(T* destination) {
+				static_assert(sizeof(T) <= AtomicMaxSize,
+					"Type must be aligned to native pointer alignment.");
+				return ::__atomic_sub_fetch(destination, 1);
+			}
+
+			template <typename T> T Decrement32(T* destination) {
+				static_assert(sizeof(T) <= AtomicMaxSize,
+					"Type must be aligned to native pointer alignment.");
+				return ::__atomic_sub_fetch(destination, 1);
+			}
+
+			class Barrier {
+			public:
+				Barrier(uint64_t thread_count)
+					: wait_count_{ thread_count } {
+				}
+
+				~Barrier() {}
+
+				void CountAndWait() {
+					uint64_t c = --wait_count_;
+					while (wait_count_ != 0) {}
+				}
+
+			private:
+				std::atomic<uint64_t> wait_count_;
+			};
+
+
+#endif
+
+
+
+
+
+
+			/// A "timestamp" that is used to determine when it is safe to reuse memory in
+			/// data structures that are protected with an EpochManager. Epochs are
+			/// opaque to threads and data structures that use the EpochManager. They
+			/// may receive Epochs from some of the methods, but they never need to
+			/// perform any computation on them, other than to pass them back to the
+			/// EpochManager on future calls (for example, EpochManager::GetCurrentEpoch()
+			/// and EpochManager::IsSafeToReclaim()).
+			typedef uint64_t Epoch;
+			typedef std::list<std::pair<uint64_t*, uint64_t> > TlsList;
+
+			extern std::unordered_map<std::thread::id, std::shared_ptr<TlsList>>* registry_;
+			extern std::mutex* registryMutex_;
+
+			/// Used to ensure that concurrent accesses to data structures don't reuse
+			/// memory that some threads may be accessing. Specifically, for many lock-free
+			/// data structures items are "unlinked" when they are removed. Unlinked items
+			/// cannot be disposed until it is guaranteed that no threads are accessing or
+			/// will ever access the memory associated with the item again. EpochManager
+			/// makes it easy for data structures to determine if it is safe to reuse
+			/// memory by "timestamping" removed items and the entry/exit of threads
+			/// into the protected code region.
+			///
+			/// Practically, a developer "protects" some region of code by marking it
+			/// with calls to Protect() and Unprotect(). The developer must guarantee that
+			/// no pointers to internal data structure items are retained beyond the
+			/// Unprotect() call. Up until Unprotect(), pointers to internal items in
+			/// a data structure may remain safe for access (see the specific data
+			/// structures that use this class via IsSafeToReclaim() for documentation on
+			/// what items are safe to hold pointers to within the protected region).
+			///
+			/// Data structure developers must "swap" elements out of their structures
+			/// atomically and with a sequentially consistent store operation. This ensures
+			/// that all threads call Protect() in the future will not see the deleted item.
+			/// Afterward, the removed item must be associated with the current Epoch
+			/// (acquired via GetCurrentEpoch()). Data structures can use any means to
+			/// track the association between the removed item and the Epoch it was
+			/// removed during. Such removed elements must be retained and remain safe for
+			/// access until IsSafeToReclaim() returns true (which indicates no threads are
+			/// accessing or ever will access the item again).
+			class EpochManager {
+			public:
+				EpochManager() : current_epoch_{ 1 } , safe_to_reclaim_epoch_{ 0 } , epoch_table_{ nullptr } { };
+				~EpochManager() {
+					Uninitialize();
+				};
+
+				/**
+				* Initialize an uninitialized EpochManager. This method must be used before
+				* it is safe to use an instance via any other members. Calling this on an
+				* initialized instance has no effect.
+				*
+				* \retval S_OK Initialization was successful and instance is ready for use.
+				* \retval S_FALSE This instance was already initialized; no action was taken.
+				* \retval E_OUTOFMEMORY Initialization failed due to lack of heap space, the
+				*      instance was left safely in an uninitialized state.
+				*/
+				Status Initialize() {
+					if (epoch_table_) return Status::OK();
+
+					auto new_table = std::make_shared<MinEpochTable>();
+
+					if (new_table == nullptr) return Status::Corruption("Out of memory");
+					RETURN_NOT_OK(new_table->Initialize());
+
+					current_epoch_ = 1;
+					safe_to_reclaim_epoch_ = 0;
+					epoch_table_ = new_table;
+
+					return Status::OK();
+				};
+				/**
+				* Uninitialize an initialized EpochManager. This method must be used before
+				* it is safe to destroy or re-initialize an EpochManager. The caller is
+				* responsible for ensuring no threads are protected (have started a Protect()
+				* without having completed an Unprotect() and that no threads will call
+				* Protect()/Unprotect() while the manager is uninitialized; failing to do
+				* so results in undefined behavior. Calling Uninitialize() on an uninitialized
+				* instance has no effect.
+				*
+				* \return Success or or may return other error codes indicating a
+				*       failure deallocating the thread local storage used by the EpochManager
+				*       internally. Even for returns other than success the object is safely
+				*       left in an uninitialized state, though some thread local resources may
+				*       not have been reclaimed properly.
+				* \retval S_OK Success.
+				* \retval S_FALSE Success; instance was already uninitialized, so no effect.
+				*/
+				Status Uninitialize() {
+					if (!epoch_table_) return Status::OK();
+
+					Status s = epoch_table_->Uninitialize();
+
+					// Keep going anyway. Even if the inner table fails to completely
+					// clean up we want to clean up as much as possible.
+					epoch_table_ = nullptr;
+					current_epoch_ = 1;
+					safe_to_reclaim_epoch_ = 0;
+
+					return s;
+				};
+
+				/// Enter the thread into the protected code region, which guarantees
+				/// pointer stability for records in client data structures. After this
+				/// call, accesses to protected data structure items are guaranteed to be
+				/// safe, even if the item is concurrently removed from the structure.
+				///
+				/// Behavior is undefined if Protect() is called from an already
+				/// protected thread. Upon creation, threads are unprotected.
+				/// \return S_OK indicates thread may now enter the protected region. Any
+				///      other return indicates a fatal problem accessing the thread local
+				///      storage; the thread may not enter the protected region. Most likely
+				///      the library has entered some non-serviceable state.
+				Status Protect() {
+					return epoch_table_->Protect(
+						current_epoch_.load(std::memory_order_relaxed));
+				};
+
+				/// Exit the thread from the protected code region. The thread must
+				/// promise not to access pointers to elements in the protected data
+				/// structures beyond this call.
+				///
+				/// Behavior is undefined if Unprotect() is called from an already
+				/// unprotected thread.
+				/// \return S_OK indicates thread successfully exited protected region. Any
+				///      other return indicates a fatal problem accessing the thread local
+				///      storage; the thread may not have successfully exited the protected
+				///      region. Most likely the library has entered some non-serviceable
+				///      state.
+				Status Unprotect() {
+					return epoch_table_->Unprotect(
+						current_epoch_.load(std::memory_order_relaxed));
+				};
+
+				/// Get a snapshot of the current global Epoch. This is used by
+				/// data structures to fetch an Epoch that is recorded along with
+				/// a removed element.
+				Epoch GetCurrentEpoch() {
+					return current_epoch_.load(std::memory_order_seq_cst);
+				};
+
+				/// Returns true if an item tagged with \a epoch (which was returned by
+				/// an earlier call to GetCurrentEpoch()) is safe to reclaim and reuse.
+				/// If false is returned the caller then others threads may still be
+				/// concurrently accessed the object inquired about.
+				bool IsSafeToReclaim(Epoch epoch) {
+					return epoch <= safe_to_reclaim_epoch_.load(std::memory_order_relaxed);
+				};
+
+				/// Returns true if the calling thread is already in the protected code
+				/// region (i.e., have already called Protected()).
+				bool IsProtected() {
+					return epoch_table_->IsProtected();
+				};
+
+				/**
+				* Increment the current epoch; this should be called "occasionally" to
+				* ensure that items removed from client data structures can eventually be
+				* removed. Roughly, items removed from data structures cannot be reclaimed
+				* until the epoch in which they were removed ends and all threads that may
+				* have operated in the protected region during that Epoch have exited the
+				* protected region. As a result, the current epoch should be bumped whenever
+				* enough items have been removed from data structures that they represent
+				* a significant amount of memory. Bumping the epoch unnecessarily may impact
+				* performance, since it is an atomic operation and invalidates a read-hot
+				* object in the cache of all of the cores.
+				*
+				* Only called by GarbageList.
+				*/
+				void BumpCurrentEpoch() {
+					Epoch newEpoch = current_epoch_.fetch_add(1, std::memory_order_seq_cst);
+					ComputeNewSafeToReclaimEpoch(newEpoch);
+				};
+
+			public:
+				/**
+				* Looks at all of the threads in the protected region and the current
+				* Epoch and updates the Epoch that is guaranteed to be safe for
+				* reclamation (stored in #m_safeToReclaimEpoch). This must be called
+				* occasionally to ensure the system makes garbage collection progress.
+				* For now, it's called every time bumpCurrentEpoch() is called, which
+				* might work as a reasonable heuristic for when this should be called.
+				*/
+				void ComputeNewSafeToReclaimEpoch(Epoch currentEpoch) {
+					safe_to_reclaim_epoch_.store(
+						epoch_table_->ComputeNewSafeToReclaimEpoch(currentEpoch),
+						std::memory_order_release);
+				};
+
+				/// Keeps track of which threads are executing in region protected by
+				/// its parent EpochManager. This table does most of the work of the
+				/// EpochManager. It allocates a slot in thread local storage. When
+				/// threads enter the protected region for the first time it assigns
+				/// the thread a slot in the table and stores its address in thread
+				/// local storage. On Protect() and Unprotect() by a thread it updates
+				/// the table entry that tracks whether the thread is currently operating
+				/// in the protected region, and, if so, a conservative estimate of how
+				/// early it might have entered.
+				class MinEpochTable {
+				public:
+
+					/// Entries should be exactly cacheline sized to prevent contention
+					/// between threads.
+					enum { CACHELINE_SIZE = 64 };
+
+					/// Default number of entries managed by the MinEpochTable
+					static const uint64_t kDefaultSize = 128;
+
+					MinEpochTable() : table_{ nullptr }, size_{} { };
+					/**
+					* Initialize an uninitialized table. This method must be used before
+					* it is safe to use an instance via any other members. Calling this on an
+					* initialized instance has no effect.
+					*
+					* \param size The initial number of distinct threads to support calling
+					*       Protect()/Unprotect(). This must be a power of two. If the table runs
+					*       out of space to track threads, then calls may stall. Internally, the
+					*       table may allocate additional tables to solve this, or it may reclaim
+					*       entries in the table after a long idle periods of by some threads.
+					*       If this number is too large it may slow down threads performing
+					*       space reclamation, since this table must be scanned occasionally to
+					*       make progress.
+					* TODO(stutsman) Table growing and entry reclamation are not yet implemented.
+					* Currently, the manager supports precisely size distinct threads over the
+					* lifetime of the manager until it begins permanently spinning in all calls to
+					* Protect().
+					*
+					* \retval S_OK Initialization was successful and instance is ready for use.
+					* \retval S_FALSE Instance was already initialized; instance is ready for use.
+					* \retval E_INVALIDARG \a size was not a power of two.
+					* \retval E_OUTOFMEMORY Initialization failed due to lack of heap space, the
+					*       instance was left safely in an uninitialized state.
+					* \retval HRESULT_FROM_WIN32(TLS_OUT_OF_INDEXES) Initialization failed because
+					*       TlsAlloc() failed; the table was safely left in an uninitialized state.
+					*/
+					Status Initialize(uint64_t size = MinEpochTable::kDefaultSize) {
+						if (table_) return Status::OK();
+
+						if (!IS_POWER_OF_TWO(size)) return Status::InvalidArgument("size not a power of two");
+
+						Entry* new_table = new Entry[size];
+						if (!new_table) return Status::Corruption("Out of memory");
+
+						// Ensure the table is cacheline size aligned.
+						assert(!(reinterpret_cast<uintptr_t>(new_table) & (CACHELINE_SIZE - 1)));
+
+						table_ = new_table;
+						size_ = size;
+
+						return Status::OK();
+					};
+					/**
+					* Uninitialize an initialized table. This method must be used before
+					* it is safe to destroy or re-initialize an table. The caller is
+					* responsible for ensuring no threads are protected (have started a Protect()
+					* without having completed an Unprotect() and that no threads will call
+					* Protect()/Unprotect() while the manager is uninitialized; failing to do
+					* so results in undefined behavior. Calling Uninitialize() on an uninitialized
+					* instance has no effect.
+					*
+					* \return May return other error codes indicating a failure deallocating the
+					*      thread local storage used by the table internally. Even for returns
+					*      other than success the object is safely left in an uninitialized state,
+					*      though some thread local resources may not have been reclaimed
+					*      properly.
+					* \retval S_OK Success; resources were reclaimed and table is uninitialized.
+					* \retval S_FALSE Success; no effect, since table was already uninitialized.
+					*/
+					Status Uninitialize() {
+						if (!table_) return Status::OK();
+
+						size_ = 0;
+						delete[] table_;
+						table_ = nullptr;
+
+						return Status::OK();
+					};
+					/**
+					* Enter the thread into the protected code region, which guarantees
+					* pointer stability for records in client data structures. After this
+					* call, accesses to protected data structure items are guaranteed to be
+					* safe, even if the item is concurrently removed from the structure.
+					*
+					* Behavior is undefined if Protect() is called from an already
+					* protected thread. Upon creation, threads are unprotected.
+					*
+					* \param currentEpoch A sequentially consistent snapshot of the current
+					*      global epoch. It is okay that this may be stale by the time it
+					*      actually gets entered into the table.
+					* \return S_OK indicates thread may now enter the protected region. Any
+					*      other return indicates a fatal problem accessing the thread local
+					*      storage; the thread may not enter the protected region. Most likely
+					*      the library has entered some non-serviceable state.
+					*/
+					Status Protect(Epoch currentEpoch) {
+						Entry* entry = nullptr;
+						RETURN_NOT_OK(GetEntryForThread(&entry));
+
+						entry->last_unprotected_epoch = 0;
+#if 1
+						entry->protected_epoch.store(currentEpoch, std::memory_order_release);
+						// TODO: For this to really make sense according to the spec we
+						// need a (relaxed) load on entry->protected_epoch. What we want to
+						// ensure is that loads "above" this point in this code don't leak down
+						// and access data structures before it is safe.
+						// Consistent with http://preshing.com/20130922/acquire-and-release-fences/
+						// but less clear whether it is consistent with stdc++.
+						std::atomic_thread_fence(std::memory_order_acquire);
+#else
+						entry->m_protectedEpoch.exchange(currentEpoch, std::memory_order_acq_rel);
+#endif
+						return Status::OK();
+					};
+					/**
+					* Exit the thread from the protected code region. The thread must
+					* promise not to access pointers to elements in the protected data
+					* structures beyond this call.
+					*
+					* Behavior is undefined if Unprotect() is called from an already
+					* unprotected thread.
+					*
+					* \param currentEpoch A any rough snapshot of the current global epoch, so
+					*      long as it is greater than or equal to the value used on the thread's
+					*      corresponding call to Protect().
+					* \return S_OK indicates thread successfully exited protected region. Any
+					*      other return indicates a fatal problem accessing the thread local
+					*      storage; the thread may not have successfully exited the protected
+					*      region. Most likely the library has entered some non-serviceable
+					*      state.
+					*/
+					Status Unprotect(Epoch currentEpoch) {
+						Entry* entry = nullptr;
+						RETURN_NOT_OK(GetEntryForThread(&entry));
+						auto hash{ std::hash<std::thread::id>()(std::this_thread::get_id()) };
+
+						entry->last_unprotected_epoch = currentEpoch;
+						std::atomic_thread_fence(std::memory_order_release);
+						entry->protected_epoch.store(0, std::memory_order_relaxed);
+						return Status::OK();
+					};
+					/**
+					* Looks at all of the threads in the protected region and \a currentEpoch
+					* and returns the latest Epoch that is guaranteed to be safe for reclamation.
+					* That is, all items removed and tagged with a lower Epoch than returned by
+					* this call may be safely reused.
+					*
+					* \param currentEpoch A snapshot of the current global Epoch; it is okay
+					*      that the snapshot may lag the true current epoch slightly.
+					* \return An Epoch that can be compared to Epochs associated with items
+					*      removed from data structures. If an Epoch associated with a removed
+					*      item is less or equal to the returned value, then it is guaranteed
+					*      that no future thread will access the item, and it can be reused
+					*      (by calling, free() on it, for example). The returned value will
+					*      never be equal to or greater than the global epoch at any point, ever.
+					*      That ensures that removed items in one Epoch can never be freed
+					*      within the same Epoch.
+					*/
+					Epoch ComputeNewSafeToReclaimEpoch(Epoch currentEpoch) {
+						Epoch oldest_call = currentEpoch;
+						for (uint64_t i = 0; i < size_; ++i) {
+							Entry& entry = table_[i];
+							// If any other thread has flushed a protected epoch to the cache
+							// hierarchy we're guaranteed to see it even with relaxed access.
+							Epoch entryEpoch =
+								entry.protected_epoch.load(std::memory_order_acquire);
+							if (entryEpoch != 0 && entryEpoch < oldest_call) {
+								oldest_call = entryEpoch;
+							}
+						}
+						// The latest safe epoch is the one just before the earlier unsafe one.
+						return oldest_call - 1;
+					};
+
+					/// An entry tracks the protected/unprotected state of a single
+					/// thread. Threads (conservatively) the Epoch when they entered
+					/// the protected region, and more loosely when they left.
+					/// Threads compete for entries and atomically lock them using a
+					/// compare-and-swap on the #m_threadId member.
+					struct Entry {
+						/// Construct an Entry in an unlocked and ready to use state.
+						Entry()
+							: protected_epoch{ 0 },
+							last_unprotected_epoch{ 0 },
+							thread_id{ 0 } {
+						}
+
+						/// Threads record a snapshot of the global epoch during Protect().
+						/// Threads reset this to 0 during Unprotect().
+						/// It is safe that this value may actually lag the real current
+						/// epoch by the time it is actually stored. This value is set
+						/// with a sequentially-consistent store, which guarantees that
+						/// it precedes any pointers that were removed (with sequential
+						/// consistency) from data structures before the thread entered
+						/// the epoch. This is critical to ensuring that a thread entering
+						/// a protected region can never see a pointer to a data item that
+						/// was already "unlinked" from a protected data structure. If an
+						/// item is "unlinked" while this field is non-zero, then the thread
+						/// associated with this entry may be able to access the unlinked
+						/// memory still. This is safe, because the value stored here must
+						/// be less than the epoch value associated with the deleted item
+						/// (by sequential consistency, the snapshot of the epoch taken
+						/// during the removal operation must have happened before the
+						/// snapshot taken just before this field was updated during
+						/// Protect()), which will prevent its reuse until this (and all
+						/// other threads that could access the item) have called
+						/// Unprotect().
+						std::atomic<Epoch> protected_epoch; // 8 bytes
+
+						/// Stores the approximate epoch under which the thread last
+						/// completed an Unprotect(). This need not be very accurate; it
+						/// is used to determine if a thread's slot can be preempted.
+						Epoch last_unprotected_epoch;        //  8 bytes
+
+						/// ID of the thread associated with this entry. Entries are
+						/// locked by threads using atomic compare-and-swap. See
+						/// reserveEntry() for details.
+						/// XXX(tzwang): on Linux pthread_t is 64-bit
+						std::atomic<uint64_t> thread_id;    //  8 bytes
+
+						/// Ensure that each Entry is CACHELINE_SIZE.
+						char ___padding[40];
+
+						// -- Allocation policy to ensure alignment --
+
+						/// Provides cacheline aligned allocation for the table.
+						/// Note: We'll want to be even smarter for NUMA. We'll want to
+						/// allocate slots that reside in socket-local DRAM to threads.
+						void* operator new[](uint64_t count) {
+#ifdef WIN32
+							return _aligned_malloc(count, CACHELINE_SIZE);
+#else
+							void* mem = nullptr;
+							int n = posix_memalign(&mem, CACHELINE_SIZE, count);
+							return mem;
+#endif
+						}
+
+						void operator delete[](void* p) {
+#ifdef WIN32
+							/// _aligned_malloc-specific delete.
+							return _aligned_free(p);
+#else
+							free(p);
+#endif
+						}
+
+						/// Don't allow single-entry allocations. We don't ever do them.
+						/// No definition is provided so that programs that do single
+						/// allocations will fail to link.
+						void* operator new(uint64_t count);
+
+						/// Don't allow single-entry deallocations. We don't ever do them.
+						/// No definition is provided so that programs that do single
+						/// deallocations will fail to link.
+						void operator delete(void* p);
+					};
+					static_assert(sizeof(Entry) == CACHELINE_SIZE, "Unexpected table entry size");
+
+				public:
+
+					/**
+					* Get a pointer to the thread-specific state needed for a thread to
+					* Protect()/Unprotect(). If no thread-specific Entry has been allocated
+					* yet, then one it transparently allocated and its address is stashed
+					* in the thread's local storage.
+					*
+					* \param[out] entry Points to an address that is populated with
+					*      a pointer to the thread's Entry upon return. It is illegal to
+					*      pass nullptr.
+					* \return S_OK if the thread's entry was discovered or allocated; in such
+					*      a successful call \a entry points to a pointer to the Entry.
+					*      Any other return value means there was a problem accessing or
+					*      setting values in the thread's local storage. The value pointed
+					*      to by entry remains unchanged, but the library may have entered
+					*      a non-serviceable state.
+					*/
+					Status GetEntryForThread(Entry** entry) {
+						thread_local Entry* tls = nullptr;
+						if (tls) {
+							*entry = tls;
+							return Status::OK();
+						}
+
+						// No entry index was found in TLS, so we need to reserve a new entry
+						// and record its index in TLS
+						Entry* reserved = ReserveEntryForThread();
+						tls = *entry = reserved;
+
+						RegisterTls((uint64_t*)&tls, (uint64_t)nullptr);
+
+						return Status::OK();
+					};
+				// private:
+
+					void RegisterTls(uint64_t* ptr, uint64_t val) {
+						auto id = std::this_thread::get_id();
+
+						std::unique_lock<std::mutex> lock(*registryMutex_);
+						if (registry_->find(id) == registry_->end()) {
+							registry_->emplace(id, std::make_shared<TlsList>());
+						}
+						registry_->operator[](id)->emplace_back(ptr, val);
+					}
+					void ClearTls(bool destroy) {
+						auto id_ = std::this_thread::get_id(); 
+						
+						std::unique_lock<std::mutex> lock(*registryMutex_);
+
+						auto iter = registry_->find(id_);
+						if (iter != registry_->end()) {
+							std::shared_ptr<TlsList> list = iter->second;
+							for (auto& entry : *list) {
+								*entry.first = entry.second;
+							}
+							list->clear();							
+						}
+					}
+					void ClearRegistry(bool destroy) {
+						std::unique_lock<std::mutex> lock(*registryMutex_);
+						for (auto& r : *registry_) {
+							std::shared_ptr<TlsList> list = r.second;
+							for (auto& entry : *list) {
+								*entry.first = entry.second;
+							}
+							list->clear();
+						}
+						if (destroy) {
+							registry_->clear();
+						}
+					}
+
+				public:
+					/**
+					* Does the heavy lifting of reserveEntryForThread() and is really just
+					* split out for easy unit testing. This method relies on the fact that no
+					* thread will ever have ID on Windows 0.
+					* http://msdn.microsoft.com/en-us/library/windows/desktop/ms686746(v=vs.85).aspx
+					*/
+					Entry* ReserveEntry(uint64_t startIndex, uint64_t threadId) {
+						for (;;) {
+							// Reserve an entry in the table.
+							for (uint64_t i = 0; i < size_; ++i) {
+								uint64_t indexToTest = (startIndex + i) & (size_ - 1);
+								Entry& entry = table_[indexToTest];
+								if (entry.thread_id == 0) {
+									uint64_t expected = 0;
+									// Atomically grab a slot. No memory barriers needed.
+									// Once the threadId is in place the slot is locked.
+									bool success =
+										entry.thread_id.compare_exchange_strong(expected,
+											threadId, std::memory_order_relaxed);
+									if (success) {
+										return &table_[indexToTest];
+									}
+									// Ignore the CAS failure since the entry must be populated,
+									// just move on to the next entry.
+								}
+							}
+							ReclaimOldEntries();
+						}
+					};
+					/**
+					* Allocate a new Entry to track a thread's protected/unprotected status and
+					* return a pointer to it. This should only be called once for a thread.
+					*/
+					Entry* ReserveEntryForThread() {
+						auto hash = std::hash<std::thread::id>()(std::this_thread::get_id());
+
+						uint64_t current_thread_id = static_cast<uint64_t>(hash);
+						uint64_t startIndex = Murmur3_64(current_thread_id);
+						return ReserveEntry(startIndex, current_thread_id);
+					};
+					void ReleaseEntryForThread() { /* Not implemented? */ };
+					void ReclaimOldEntries() { /* Not implemented? */  };
+					bool IsProtected() {
+						Entry* entry = nullptr;
+						Status s = GetEntryForThread(&entry);
+						// It's myself checking my own protected_epoch, safe to use relaxed
+						return entry->protected_epoch.load(std::memory_order_relaxed) != 0;
+					};
+
+				public:
+
+					/// Thread protection status entries. Threads lock entries the first time
+					/// the call Protect() (see reserveEntryForThread()). See documentation for
+					/// the fields to specifics of how threads use their Entries to guarantee
+					/// memory-stability.
+					Entry* table_;
+
+					/// The number of entries #m_table. Currently, this is fixed after
+					/// Initialize() and never changes or grows. If #m_table runs out
+					/// of entries, then the current implementation will deadlock threads.
+					uint64_t size_;
+				};
+
+				/// A notion of time for objects that are removed from data structures.
+				/// Objects in data structures are timestamped with this Epoch just after
+				/// they have been (sequentially consistently) "unlinked" from a structure.
+				/// Threads also use this Epoch to mark their entry into a protected region
+				/// (also in sequentially consistent way). While a thread operates in this
+				/// region "unlinked" items that they may be accessing will not be reclaimed.
+				std::atomic<Epoch> current_epoch_;
+
+				/// Caches the most recent result of ComputeNewSafeToReclaimEpoch() so
+				/// that fast decisions about whether an object can be reused or not
+				/// (in IsSafeToReclaim()). Effectively, this is periodically computed
+				/// by taking the minimum of the protected Epochs in #m_epochTable and
+				/// #current_epoch_.
+				std::atomic<Epoch> safe_to_reclaim_epoch_;
+
+				/// Keeps track of which threads are executing in region protected by
+				/// its parent EpochManager. On Protect() and Unprotect() by a thread it
+				/// updates the table entry that tracks whether the thread is currently
+				/// operating in the protected region, and, if so, a conservative estimate
+				/// of how early it might have entered. See MinEpochTable for more details.
+				std::shared_ptr<MinEpochTable> epoch_table_;
+
+				EpochManager(const EpochManager&) = delete;
+				EpochManager& operator=(const EpochManager&) = delete;
+				EpochManager(EpochManager&&) = delete; 
+				EpochManager& operator=(EpochManager&&) = delete;
+			};
+
+			/// Enters an epoch on construction and exits it on destruction. Makes it
+			/// easy to ensure epoch protection boundaries tightly adhere to stack life
+			/// time even with complex control flow.
+			class EpochGuard {
+			public:
+				explicit EpochGuard(EpochManager* epoch_manager) : epoch_manager_{ epoch_manager }, unprotect_at_exit_(true) { epoch_manager_->Protect(); };
+
+				/// Offer the option of having protext called on \a epoch_manager.
+				/// When protect = false this implies "attach" semantics and the caller should
+				/// have already called Protect. Behavior is undefined otherwise.
+				explicit EpochGuard(EpochManager* epoch_manager, bool protect) : epoch_manager_{ epoch_manager }, unprotect_at_exit_(protect) { if (protect) { epoch_manager_->Protect(); } };
+
+				~EpochGuard() { if (unprotect_at_exit_ && epoch_manager_) { epoch_manager_->Unprotect(); } };
+
+				/// Release the current epoch manger. It is up to the caller to manually
+				/// Unprotect the epoch returned. Unprotect will not be called upon EpochGuard
+				/// desruction.
+				EpochManager* Release() { EpochManager* ret = epoch_manager_; epoch_manager_ = nullptr; return ret; };
+
+			private:
+				/// The epoch manager responsible for protect/unprotect.
+				EpochManager* epoch_manager_;
+
+				/// Whether the guard should call unprotect when going out of scope.
+				bool unprotect_at_exit_;
+			};
+
+			/// Interface for the GarbageList; used to make it easy to drop is mocked out
+			/// garbage lists for unit testing. See GarbageList template below for
+			/// full documentation.
+			class IGarbageList {
+			public:
+				typedef void
+				(*DestroyCallback)(void* callback_context, void* object);
+
+				IGarbageList() {}
+
+				virtual ~IGarbageList() {}
+
+				virtual Status Initialize(EpochManager* epoch_manager, size_t size = 4 * 1024 * 1024) {
+					((void)epoch_manager);
+					((void)epoch_manager);
+					return Status::OK();
+				}
+
+				virtual Status Uninitialize() {
+					return Status::OK();
+				}
+
+				virtual Status Push(void* removed_item, DestroyCallback destroy_callback,
+					void* context) = 0;
+			};
+
+			/// Tracks items that have been removed from a data structure but to which
+			/// there may still be concurrent accesses using the item from other threads.
+			/// GarbageList works together with the EpochManager to ensure that items
+			/// placed on the list are only destructed and freed when it is safe to do so.
+			///
+			/// Lock-free data structures use this template by creating an instance specific
+			/// to the type of the item they will place on the list. When an element is
+			/// has been "removed" from the data structure it should call Push() to
+			/// transfer responsibility for the item over to the garbage list.
+			/// Occasionally, Push() operations will check to see if objects on the list are
+			/// ready for reuse, freeing them up if it is safe to do so. The user of the
+			/// GarbageList provides a callback that is invoked so custom logic can be used
+			/// to reclaim resources.
+			class GarbageList : public IGarbageList {
+			public:
+				/// Holds a pointer to an object in the garbage list along with the Epoch
+				/// in which it was removed and a chain field so that it can be linked into
+				/// a queue.
+				struct Item {
+					/// Epoch in which the #m_removedItem was removed from the data
+					/// structure. In practice, due to delay between the actual removal
+					/// operation and the push onto the garbage list, #m_removalEpoch may
+					/// be later than when the actual remove happened, but that is safe
+					/// since the invariant is that the epoch stored here needs to be
+					/// greater than or equal to the current global epoch in which the
+					/// item was actually removed.
+					Epoch removal_epoch;
+
+					/// Function provided by user on Push() called when an object
+					/// that was pushed to the list is safe for reclamation. When invoked the
+					/// function is passed a pointer to an object that is safe to destroy and
+					/// free along with #m_pbDestroyCallbackContext. The function must
+					/// perform all needed destruction and release any resources associated
+					/// with the object.
+					DestroyCallback destroy_callback;
+
+					/// Passed along with a pointer to the object to destroy to
+					/// #m_destroyCallback; it threads state to destroyCallback calls so they
+					/// can access, for example, the allocator from which the object was
+					/// allocated.
+					void* destroy_callback_context;
+
+					/// Point to the object that is enqueued for destruction. Concurrent
+					/// accesses may still be ongoing to the object, so absolutely no
+					/// changes should be made to the value it refers to until
+					/// #m_removalEpoch is deemed safe for reclamation by the
+					/// EpochManager.
+					void* removed_item;
+				};
+				static_assert(std::is_pod<Item>::value, "Item should be POD");
+
+				/// Construct a GarbageList in an uninitialized state.
+				GarbageList()
+					: epoch_manager_{}
+					, tail_{}
+					, item_count_{}
+					, items_{} {
+				}
+
+				/// Uninitialize the GarbageList (if still initialized) and destroy it.
+				virtual ~GarbageList() {
+					Uninitialize();
+				}
+
+				/// Initialize the GarbageList and associate it with an EpochManager.
+				/// This must be called on a newly constructed instance before it
+				/// is safe to call other methods. If the GarbageList is already
+				/// initialized then it will have no effect.
+				///
+				/// \param pEpochManager
+				///      EpochManager that is used to determine when it is safe to reclaim
+				///      items pushed onto the list. Must not be nullptr.
+				/// \param nItems
+				///      Number of addresses that can be held aside for pointer stability.
+				///      If this number is too small the system runs the risk of deadlock.
+				///      Must be a power of two.
+				///
+				/// \retval S_OK
+				///      The instance is now initialized and ready for use.
+				/// \retval S_FALSE
+				///      The instance was already initialized; no effect.
+				/// \retval E_INVALIDARG
+				///      \a nItems wasn't a power of two.
+				virtual Status Initialize(EpochManager* epoch_manager,
+					size_t item_count = 128 * 1024) {
+					if (epoch_manager_) return Status::OK();
+
+					if (!epoch_manager) return Status::InvalidArgument("Null pointer");
+
+					if (!item_count || !IS_POWER_OF_TWO(item_count)) {
+						return Status::InvalidArgument("items not a power of two");
+					}
+
+					size_t nItemArraySize = sizeof(*items_) * item_count;
+					items_ = static_cast<Item*>(fibers::utilities::Mem_Alloc64(nItemArraySize));
+					// posix_memalign((void**)&items_, 64, nItemArraySize);
+
+					if (!items_) return Status::Corruption("Out of memory");
+
+					for (size_t i = 0; i < item_count; ++i) new(&items_[i]) Item{};
+
+					item_count_ = item_count;
+					tail_ = 0;
+					epoch_manager_ = epoch_manager;
+
+					return Status::OK();
+				}
+
+				/// Uninitialize the GarbageList and disassociate from its EpochManager;
+				/// for each item still on the list call its destructor and free it.
+				/// Careful: objects freed by this call will NOT obey the epoch protocol,
+				/// so it is important that this thread is only called when it is clear
+				/// that no other threads may still be concurrently accessing items
+				/// on the list.
+				///
+				/// \retval S_OK
+				///      The instance is now uninitialized; resources were released.
+				/// \retval S_FALSE
+				///      The instance was already uninitialized; no effect.
+				virtual Status Uninitialize() {
+					if (!epoch_manager_) return Status::OK();
+
+					for (size_t i = 0; i < item_count_; ++i) {
+						Item& item = items_[i];
+						if (item.removed_item) {
+							item.destroy_callback(
+								item.destroy_callback_context,
+								item.removed_item);
+							item.removed_item = nullptr;
+							item.removal_epoch = 0;
+						}
+					}
+
+					fibers::utilities::Mem_Free64(items_);
+
+					items_ = nullptr;
+					tail_ = 0;
+					item_count_ = 0;
+					epoch_manager_ = nullptr;
+
+					return Status::OK();
+				}
+
+				/// Append an item to the reclamation queue; the item will be stamped
+				/// with an epoch and will not be reclaimed until the EpochManager confirms
+				/// that no threads can ever access the item again. Once an item is ready
+				/// for removal the destruction callback passed to Initialize() will be
+				/// called which must free all resources associated with the object
+				/// INCLUDING the memory backing the object.
+				///
+				/// \param removed_item
+				///      Item to place on the list; it will remain live until
+				///      the EpochManager indicates that no threads will ever access it
+				///      again, after which the destruction callback will be invoked on it.
+				/// \param callback
+				///      Function to call when the object that was pushed to the list is safe
+				///      for reclamation. When invoked the, function is passed a pointer to
+				///      an object that is safe to destroy and free along with
+				///      \a pvDestroyCallbackContext. The function must perform
+				///      all needed destruction and release any resources associated with
+				///      the object. Must not be nullptr.
+				/// \param context
+				///      Passed along with a pointer to the object to destroy to
+				///      \a destroyCallback; it threads state to destroyCallback calls so
+				///      they can access, for example, the allocator from which the object
+				///      was allocated. Left uninterpreted, so may be nullptr.
+				virtual Status Push(void* removed_item, DestroyCallback callback, void* context) {
+					Epoch removal_epoch = epoch_manager_->GetCurrentEpoch();
+					const uint64_t invalid_epoch = ~0llu;
+
+					for (;;) {
+						int64_t slot = (tail_.fetch_add(1) - 1) & (item_count_ - 1);
+
+						// Everytime we work through 25% of the capacity of the list roll
+						// the epoch over.
+						if (((slot << 2) & (item_count_ - 1)) == 0)
+							epoch_manager_->BumpCurrentEpoch();
+
+						Item& item = items_[slot];
+
+						Epoch priorItemEpoch = item.removal_epoch;
+						if (priorItemEpoch == invalid_epoch) {
+							// Someone is modifying this slot. Try elsewhere.
+							continue;
+						}
+
+						Epoch result = CompareExchange64<Epoch>(&item.removal_epoch, invalid_epoch, priorItemEpoch);
+						if (result != priorItemEpoch) {
+							// Someone else is now modifying the slot or it has been
+							// replaced with a new item. If someone replaces the old item
+							// with a new one of the same epoch number, that's ok.
+							continue;
+						}
+
+						// Ensure it is safe to free the old entry.
+						if (priorItemEpoch) {
+							if (!epoch_manager_->IsSafeToReclaim(priorItemEpoch)) {
+								// Uh-oh, we couldn't free the old entry. Things aren't looking
+								// good, but maybe it was just the result of a race. Replace the
+								// epoch number we mangled and try elsewhere.
+								*((volatile Epoch*)&item.removal_epoch) = priorItemEpoch;
+								continue;
+							}
+							item.destroy_callback(item.destroy_callback_context,
+								item.removed_item);
+						}
+
+						// Now populate the entry with the new item.
+						item.destroy_callback = callback;
+						item.destroy_callback_context = context;
+						item.removed_item = removed_item;
+						*((volatile Epoch*)&item.removal_epoch) = removal_epoch;
+
+						return Status::OK();
+					}
+				}
+
+				/// Scavenge items that are safe to be reused - useful when the user cannot
+				/// wait until the garbage list is full. Currently (May 2016) the only user is
+				/// MwCAS' descriptor pool which we'd like to keep small. Tedious to tune the
+				/// descriptor pool size vs. garbage list size, so there is this function.
+				int32_t Scavenge() {
+					const uint64_t invalid_epoch = ~0llu;
+					auto max_slot = tail_.load(std::memory_order_relaxed);
+					int32_t scavenged = 0;
+
+					for (int64_t slot = 0; slot < item_count_; ++slot) {
+						auto& item = items_[slot];
+						Epoch priorItemEpoch = item.removal_epoch;
+						if (priorItemEpoch == 0 || priorItemEpoch == invalid_epoch) {
+							// Someone is modifying this slot. Try elsewhere.
+							continue;
+						}
+
+						Epoch result = CompareExchange64<Epoch>(&item.removal_epoch,
+							invalid_epoch, priorItemEpoch);
+						if (result != priorItemEpoch) {
+							// Someone else is now modifying the slot or it has been
+							// replaced with a new item. If someone replaces the old item
+							// with a new one of the same epoch number, that's ok.
+							continue;
+						}
+
+						if (priorItemEpoch) {
+							if (!epoch_manager_->IsSafeToReclaim(priorItemEpoch)) {
+								// Uh-oh, we couldn't free the old entry. Things aren't looking
+								// good, but maybe it was just the result of a race. Replace the
+								// epoch number we mangled and try elsewhere.
+								*((volatile Epoch*)&item.removal_epoch) = priorItemEpoch;
+								continue;
+							}
+							item.destroy_callback(item.destroy_callback_context,
+								item.removed_item);
+						}
+
+						// Now reset the entry
+						item.destroy_callback = nullptr;
+						item.destroy_callback_context = nullptr;
+						item.removed_item = nullptr;
+						*((volatile Epoch*)&item.removal_epoch) = 0;
+					}
+
+					return scavenged;
+				}
+
+				/// Returns (a pointer to) the epoch manager associated with this garbage list.
+				EpochManager* GetEpoch() {
+					return epoch_manager_;
+				}
+
+			private:
+				/// EpochManager instance that is used to determine when it is safe to
+				/// free up items. Specifically, it is used to stamp items during Push()
+				/// with the current epoch, and it is used in to ensure
+				/// that deletion of each item on the list is safe.
+				EpochManager* epoch_manager_;
+
+				/// Point in the #m_items ring where the next pushed address will be placed.
+				/// Also indicates the next address that will be freed on the next push.
+				/// Atomically incremented within Push().
+				std::atomic<int64_t> tail_;
+
+				/// Size of the #m_items array. Must be a power of two.
+				size_t item_count_;
+
+				/// Ring of addresses the addresses pushed to the list and metadata about
+				/// them needed to determine when it is safe to free them and how they
+				/// should be freed. This is filled as a ring; when a new Push() comes that
+				/// would replace an already occupied slot the entry in the slot is freed,
+				/// if possible.
+				Item* items_;
+			};
+
+		}  // namespace pmwcas
+
+#undef RETURN_NOT_OK
+#undef IS_POWER_OF_TWO
+
+
+
+
+#define MWCAS_CAPACITY 4
+#define MWCAS_RETRY_THRESHOLD 10
+#define MWCAS_SLEEP_TIME 10
+
+		// utility
+		namespace dbgroup::atomic::mwcas {
+			/*######################################################################################
+			 * Global enum and constants
+			 *####################################################################################*/
+
+			 /// The maximum number of target words of MwCAS
+			constexpr size_t kMwCASCapacity = MWCAS_CAPACITY;
+
+			/// The maximum number of retries for preventing busy loops.
+			constexpr size_t kRetryNum = MWCAS_RETRY_THRESHOLD;
+
+			/// A sleep time for preventing busy loops [us].
+			static constexpr auto kShortSleep = std::chrono::microseconds{ MWCAS_SLEEP_TIME };
+
+			/*######################################################################################
+			 * Global utility functions
+			 *####################################################################################*/
+
+			 /**
+			  * @tparam T a MwCAS target class.
+			  * @retval true if a target class can be updated by MwCAS.
+			  * @retval false otherwise.
+			  */
+			template <class T> constexpr auto CanMwCAS() -> bool {
+				if constexpr (sizeof(uint64_t) == sizeof(T)) {
+					return true;
+				}
+				else {
+					if constexpr (std::is_same_v<T, uint64_t> || std::is_pointer_v<T>) {
+						return true;
+					}
+					else {
+						return false;
+					}
+				}
+			};
+
+		}  // namespace dbgroup::atomic::mwcas
+		// common
+		namespace dbgroup::atomic::mwcas::component
+		{
+			/*######################################################################################
+			 * Global enum and constants
+			 *####################################################################################*/
+
+			 /// Assumes that the length of one word is 8 bytes
+			constexpr size_t kWordSize = 8;
+
+			/// Assumes that the size of one cache line is 64 bytes
+			constexpr size_t kCacheLineSize = 64;
+
+			/*######################################################################################
+			 * Global utility structs
+			 *####################################################################################*/
+
+			 /**
+			  * @brief An union to convert MwCAS target data into uint64_t.
+			  *
+			  * @tparam T a type of target data
+			  */
+			template <class T>
+			union CASTargetConverter {
+				const T target_data;
+				const uint64_t converted_data;
+
+				explicit constexpr CASTargetConverter(const uint64_t converted) : converted_data{ converted } {}
+
+				explicit constexpr CASTargetConverter(const T target) : target_data{ target } {}
+			};
+
+			/**
+			 * @brief Specialization for unsigned long type.
+			 *
+			 */
+			template <>
+			union CASTargetConverter<uint64_t> {
+				const uint64_t target_data;
+				const uint64_t converted_data;
+
+				explicit constexpr CASTargetConverter(const uint64_t target) : target_data{ target } {}
+			};
+
+		}  // namespace dbgroup::atomic::mwcas::component
+		// field 
+		namespace dbgroup::atomic::mwcas::component
+		{
+			/**
+			 * @brief A class to represent a MwCAS target field.
+			 *
+			 */
+			class MwCASField
+			{
+			public:
+				/*####################################################################################
+				 * Public constructors and assignment operators
+				 *##################################################################################*/
+
+				 /**
+				  * @brief Construct an empty field for MwCAS.
+				  *
+				  */
+				constexpr MwCASField() : target_bit_arr_{}, mwcas_flag_{ 0 } {}
+
+				/**
+				 * @brief Construct a MwCAS field with given data.
+				 *
+				 * @tparam T a target class to be embedded.
+				 * @param target_data target data to be embedded.
+				 * @param is_mwcas_descriptor a flag to indicate this field contains a descriptor.
+				 */
+				template <class T>
+				explicit constexpr MwCASField(  //
+					T target_data,
+					bool is_mwcas_descriptor = false)
+					: target_bit_arr_{ ConvertToUint64(target_data) }, mwcas_flag_{ is_mwcas_descriptor }
+				{
+					// static check to validate MwCAS targets
+					static_assert(sizeof(T) == kWordSize);  // NOLINT
+					static_assert(std::is_trivially_copyable_v<T>);
+					static_assert(std::is_copy_constructible_v<T>);
+					static_assert(std::is_move_constructible_v<T>);
+					static_assert(std::is_copy_assignable_v<T>);
+					static_assert(std::is_move_assignable_v<T>);
+					static_assert(CanMwCAS<T>());
+				}
+
+				constexpr MwCASField(const MwCASField&) = default;
+				constexpr MwCASField(MwCASField&&) = default;
+
+				constexpr auto operator=(const MwCASField& obj)->MwCASField & = default;
+				constexpr auto operator=(MwCASField&&)->MwCASField & = default;
+
+				/*####################################################################################
+				 * Public destructor
+				 *##################################################################################*/
+
+				 /**
+				  * @brief Destroy the MwCASField object.
+				  *
+				  */
+				~MwCASField() = default;
+
+				/*####################################################################################
+				 * Public operators
+				 *##################################################################################*/
+
+				auto
+					operator==(const MwCASField& obj) const  //
+					-> bool
+				{
+					return memcmp(this, &obj, sizeof(MwCASField)) == 0;
+				}
+
+				auto
+					operator!=(const MwCASField& obj) const  //
+					-> bool
+				{
+					return memcmp(this, &obj, sizeof(MwCASField)) != 0;
+				}
+
+				/*####################################################################################
+				 * Public getters/setters
+				 *##################################################################################*/
+
+				 /**
+				  * @retval true if this field contains a descriptor.
+				  * @retval false otherwise.
+				  */
+				[[nodiscard]] constexpr auto
+					IsMwCASDescriptor() const  //
+					-> bool
+				{
+					return mwcas_flag_;
+				}
+
+				/**
+				 * @tparam T an expected class of data.
+				 * @return data retained in this field.
+				 */
+				template <class T>
+				[[nodiscard]] constexpr auto
+					GetTargetData() const  //
+					-> T
+				{
+					if constexpr (std::is_same_v<T, uint64_t>) {
+						return target_bit_arr_;
+					}
+					else if constexpr (std::is_pointer_v<T>) {
+						return reinterpret_cast<T>(target_bit_arr_);  // NOLINT
+					}
+					else {
+						return CASTargetConverter<T>{target_bit_arr_}.target_data;  // NOLINT
+					}
+				}
+
+			private:
+				/*####################################################################################
+				 * Internal utility functions
+				 *##################################################################################*/
+
+				 /**
+				  * @brief Conver given data into uint64_t.
+				  *
+				  * @tparam T a class of given data.
+				  * @param data data to be converted.
+				  * @return data converted to uint64_t.
+				  */
+				template <class T>
+				constexpr auto
+					ConvertToUint64(const T data)  //
+					-> uint64_t
+				{
+					if constexpr (std::is_same_v<T, uint64_t>) {
+						return data;
+					}
+					else if constexpr (std::is_pointer_v<T>) {
+						return reinterpret_cast<uint64_t>(data);  // NOLINT
+					}
+					else {
+						return CASTargetConverter<T>{data}.converted_data;  // NOLINT
+					}
+				}
+
+				/*####################################################################################
+				 * Internal member variables
+				 *##################################################################################*/
+
+				 /// An actual target data
+				uint64_t target_bit_arr_ : 63;
+
+				/// Representing whether this field contains a MwCAS descriptor
+				uint64_t mwcas_flag_ : 1;
+			};
+
+			// CAS target words must be one word
+			static_assert(sizeof(MwCASField) == kWordSize);
+
+		}  // namespace dbgroup::atomic::mwcas::component
+		// target
+		namespace dbgroup::atomic::mwcas::component
+		{
+			/**
+			 * @brief A class to represent a MwCAS target.
+			 *
+			 */
+			class MwCASTarget
+			{
+			public:
+				/*####################################################################################
+				 * Public constructors and assignment operators
+				 *##################################################################################*/
+
+				 /**
+				  * @brief Construct an empty MwCAS target.
+				  *
+				  */
+				constexpr MwCASTarget() = default;
+
+				/**
+				 * @brief Construct a new MwCAS target based on given information.
+				 *
+				 * @tparam T a class of MwCAS targets.
+				 * @param addr a target memory address.
+				 * @param old_val an expected value of the target address.
+				 * @param new_val an desired value of the target address.
+				 */
+				template <class T>
+				constexpr MwCASTarget(  //
+					void* addr,
+					const T old_val,
+					const T new_val,
+					const std::memory_order fence)
+					: addr_{ static_cast<std::atomic<MwCASField> *>(addr) },
+					old_val_{ old_val },
+					new_val_{ new_val },
+					fence_{ fence }
+				{
+				}
+
+				constexpr MwCASTarget(const MwCASTarget&) = default;
+				constexpr MwCASTarget(MwCASTarget&&) = default;
+
+				constexpr auto operator=(const MwCASTarget& obj)->MwCASTarget & = default;
+				constexpr auto operator=(MwCASTarget&&)->MwCASTarget & = default;
+
+				/*####################################################################################
+				 * Public destructor
+				 *##################################################################################*/
+
+				 /**
+				  * @brief Destroy the MwCASTarget object.
+				  *
+				  */
+				~MwCASTarget() = default;
+
+				/*####################################################################################
+				 * Public utility functions
+				 *##################################################################################*/
+
+				 /**
+				  * @brief Embed a descriptor into this target address to linearlize MwCAS operations.
+				  *
+				  * @param desc_addr a memory address of a target descriptor.
+				  * @retval true if the descriptor address is successfully embedded.
+				  * @retval false otherwise.
+				  */
+				auto
+					EmbedDescriptor(const MwCASField desc_addr)  //
+					-> bool
+				{
+					for (size_t i = 1; true; ++i) {
+						// try to embed a MwCAS decriptor
+						auto expected = addr_->load(std::memory_order_relaxed);
+						if (expected == old_val_
+							&& addr_->compare_exchange_strong(expected, desc_addr, std::memory_order_relaxed)) {
+							return true;
+						}
+						if (!expected.IsMwCASDescriptor() || i >= kRetryNum) return false;
+
+						// retry if another desctiptor is embedded
+					}
+				}
+
+				/**
+				 * @brief Update a value of this target address.
+				 *
+				 */
+				void
+					RedoMwCAS()
+				{
+					addr_->store(new_val_, fence_);
+				}
+
+				/**
+				 * @brief Revert a value of this target address.
+				 *
+				 */
+				void
+					UndoMwCAS()
+				{
+					addr_->store(old_val_, std::memory_order_relaxed);
+				}
+
+			private:
+				/*####################################################################################
+				 * Internal member variables
+				 *##################################################################################*/
+
+				 /// A target memory address
+				std::atomic<MwCASField>* addr_{};
+
+				/// An expected value of a target field
+				MwCASField old_val_{};
+
+				/// An inserting value into a target field
+				MwCASField new_val_{};
+
+				/// A fence to be inserted when embedding a new value.
+				std::memory_order fence_{ std::memory_order_seq_cst };
+			};
+
+		}  // namespace dbgroup::atomic::mwcas::component
+		// descriptor
+		namespace dbgroup::atomic::mwcas
+		{
+			/**
+			 * @brief A class to manage a MwCAS (multi-words compare-and-swap) operation.
+			 *
+			 */
+			class alignas(component::kCacheLineSize) MwCASDescriptor
+			{
+				/*####################################################################################
+				 * Type aliases
+				 *##################################################################################*/
+
+				using MwCASTarget = component::MwCASTarget;
+				using MwCASField = component::MwCASField;
+
+			public:
+				/*####################################################################################
+				 * Public constructors and assignment operators
+				 *##################################################################################*/
+
+				 /**
+				  * @brief Construct an empty descriptor for MwCAS operations.
+				  *
+				  */
+				constexpr MwCASDescriptor() = default;
+
+				constexpr MwCASDescriptor(const MwCASDescriptor&) = default;
+				constexpr MwCASDescriptor(MwCASDescriptor&&) = default;
+
+				constexpr auto operator=(const MwCASDescriptor& obj)->MwCASDescriptor & = default;
+				constexpr auto operator=(MwCASDescriptor&&)->MwCASDescriptor & = default;
+
+				/*####################################################################################
+				 * Public destructors
+				 *##################################################################################*/
+
+				 /**
+				  * @brief Destroy the MwCASDescriptor object.
+				  *
+				  */
+				~MwCASDescriptor() = default;
+
+				/*####################################################################################
+				 * Public getters/setters
+				 *##################################################################################*/
+
+				 /**
+				  * @return the number of registered MwCAS targets
+				  */
+				[[nodiscard]] constexpr auto
+					Size() const  //
+					-> size_t
+				{
+					return target_count_;
+				}
+
+				/*####################################################################################
+				 * Public utility functions
+				 *##################################################################################*/
+
+				 /**
+				  * @brief Read a value from a given memory address.
+				  * \e NOTE: if a memory address is included in MwCAS target fields, it must be read
+				  * via this function.
+				  *
+				  * @tparam T an expected class of a target field
+				  * @param addr a target memory address to read
+				  * @param fence a flag for controling std::memory_order.
+				  * @return a read value
+				  */
+				template <class T>
+				static auto
+					Read(  //
+						const void* addr,
+						const std::memory_order fence = std::memory_order_seq_cst)  //
+					-> T
+				{
+					const auto* target_addr = static_cast<const std::atomic<MwCASField> *>(addr);
+
+					MwCASField target_word{};
+					while (true) {
+						for (size_t i = 1; true; ++i) {
+							target_word = target_addr->load(fence);
+							if (!target_word.IsMwCASDescriptor()) return target_word.GetTargetData<T>();
+							if (i > kRetryNum) break;
+						}
+
+						// wait to prevent busy loop
+						std::this_thread::sleep_for(kShortSleep);
+					}
+				}
+
+				/**
+				 * @brief Add a new MwCAS target to this descriptor.
+				 *
+				 * @tparam T a class of a target
+				 * @param addr a target memory address
+				 * @param old_val an expected value of a target field
+				 * @param new_val an inserting value into a target field
+				 * @param fence a flag for controling std::memory_order.
+				 */
+				template <class T>
+				constexpr void
+					AddMwCASTarget(  //
+						void* addr,
+						const T old_val,
+						const T new_val,
+						const std::memory_order fence = std::memory_order_seq_cst)
+				{
+					assert(target_count_ < kMwCASCapacity);
+
+					targets_[target_count_++] = MwCASTarget{ addr, old_val, new_val, fence };
+				}
+
+				/**
+				 * @brief Perform a MwCAS operation by using registered targets.
+				 *
+				 * @retval true if a MwCAS operation succeeds
+				 * @retval false if a MwCAS operation fails
+				 */
+				auto
+					MwCAS()  //
+					-> bool
+				{
+					const MwCASField desc_addr{ this, true };
+
+					// serialize MwCAS operations by embedding a descriptor
+					auto mwcas_success = true;
+					size_t embedded_count = 0;
+					for (size_t i = 0; i < target_count_; ++i, ++embedded_count) {
+						if (!targets_[i].EmbedDescriptor(desc_addr)) {
+							// if a target field has been already updated, MwCAS fails
+							mwcas_success = false;
+							break;
+						}
+					}
+
+					// complete MwCAS
+					if (mwcas_success) {
+						for (size_t i = 0; i < embedded_count; ++i) {
+							targets_[i].RedoMwCAS();
+						}
+					}
+					else {
+						for (size_t i = 0; i < embedded_count; ++i) {
+							targets_[i].UndoMwCAS();
+						}
+					}
+
+					return mwcas_success;
+				}
+
+			private:
+				/*####################################################################################
+				 * Internal member variables
+				 *##################################################################################*/
+
+				 /// Target entries of MwCAS
+				MwCASTarget targets_[kMwCASCapacity];
+
+				/// The number of registered MwCAS targets
+				size_t target_count_{ 0 };
+			};
+
+		}  // namespace dbgroup::atomic::mwcas
+
+		template <typename Arg>
+		union ContainerImpl {
+			Arg data;
+			uint64_t addresses[1 + sizeof(Arg) / 8];
+		};
+
+		template <typename Arg>
+		struct CAS_Container {
+		public:
+			static constexpr size_t NumWords{ 1 + sizeof(Arg) / 8 };
+			ContainerImpl<Arg> data;
+
+			uint64_t& Word(size_t index) {
+				return data.addresses[index];
+			};
+			const uint64_t& Word(size_t index) const {
+				return data.addresses[index];
+			};
+			const Arg& Data() const {
+				return data.data;
+			};
+			Arg& Data() {
+				return data.data;
+			};
+			CAS_Container<Arg> Copy() const {
+				using namespace dbgroup::atomic::mwcas;
+				CAS_Container<Arg> temp;
+				for (size_t index = 0; index < data.NumWords; index++) {
+					temp.Word(index) = MwCASDescriptor::Read<uint64_t>(&data.Word(index));
+				}
+				return temp;
+			};
+
+
+
+			// control bits must be initialzed by zeros
+			constexpr MultiWordCAS_SwappableContainer() : data{} {};
+			constexpr MultiWordCAS_SwappableContainer(Arg&& a) : data(std::forward<Arg>(a)) {};
+			constexpr MultiWordCAS_SwappableContainer(Arg const& a) : data(a) {};
+
+			// target class must satisfy conditions of the std::atomic template
+			~MultiWordCAS_SwappableContainer() = default;
+			constexpr MultiWordCAS_SwappableContainer(const MultiWordCAS_SwappableContainer&) = default;
+			constexpr MultiWordCAS_SwappableContainer& operator=(const MultiWordCAS_SwappableContainer&) = default;
+			constexpr MultiWordCAS_SwappableContainer(MultiWordCAS_SwappableContainer&&) = default;
+			constexpr MultiWordCAS_SwappableContainer& operator=(MultiWordCAS_SwappableContainer&&) = default;
+		};
+
+
+
+
+#undef MWCAS_SLEEP_TIME
+#undef MWCAS_RETRY_THRESHOLD
+#undef MWCAS_CAPACITY
+
+
+
+
+#endif
+
 	};
 	namespace containers {
 		/* Fiber- and thread-safe vector. Objects are stored and returned as std::shared_ptr. Growth, iterations, and push_back operations are concurrent, while erasing and clearing are non-concurrent and will replace the entire vector. */
@@ -753,7 +2962,7 @@ namespace fibers {
 	};
 
 	namespace synchronization {
-		/* *THREAD SAFE* Simple atomic spin-lock that unfairly synchronizes threads or fibers. (No guarrantee of order) */
+		/* *THREAD SAFE* Simple atomic spin-lock that unfairly synchronizes threads or fibers. (No guarrantee of order). Suggest using the ticket spin lock instead. */
 		class SpinLock {
 		private:
 			std::atomic_flag lck = ATOMIC_FLAG_INIT;
@@ -783,7 +2992,7 @@ namespace fibers {
 		
 		/* *THREAD SAFE* Windows-specific high-performance lock that only locks the OS (slow) when contention actually happens. When there is no contention, this is very fast. 
 		Generally speaking, out-performs std::mutex under most conditions. */
-		class CriticalMutexLock {
+		class mutex {
 		private:
 			using mutexHandle_t = CRITICAL_SECTION;
 			static void				Sys_MutexCreate(mutexHandle_t& handle) noexcept { InitializeCriticalSection(&handle); };
@@ -792,8 +3001,8 @@ namespace fibers {
 			static bool				Sys_MutexTryLock(mutexHandle_t& handle) noexcept { return TryEnterCriticalSection(&handle) != 0; };
 			static void				Sys_MutexUnlock(mutexHandle_t& handle) noexcept { LeaveCriticalSection(&handle); };
 		public:
-			CriticalMutexLock() noexcept { Sys_MutexCreate(Handle); };
-			~CriticalMutexLock() noexcept { Sys_MutexDestroy(Handle); };
+			mutex() noexcept { Sys_MutexCreate(Handle); };
+			~mutex() noexcept { Sys_MutexDestroy(Handle); };
 
 			inline void lock() {
 				Sys_MutexLock(Handle);
@@ -805,18 +3014,101 @@ namespace fibers {
 				Sys_MutexUnlock(Handle);
 			};
 
-			CriticalMutexLock(const CriticalMutexLock&) = delete;
-			CriticalMutexLock(CriticalMutexLock&&) = delete;
-			CriticalMutexLock& operator=(CriticalMutexLock const&) = delete;
-			CriticalMutexLock& operator=(CriticalMutexLock&&) = delete;
+			mutex(const mutex&) = delete;
+			mutex(mutex&&) = delete;
+			mutex& operator=(mutex const&) = delete;
+			mutex& operator=(mutex&&) = delete;
 
 		protected:
 			mutexHandle_t Handle;
 
 		};
 
+		template <typename mutex = synchronization::mutex> class shared_mutex {
+		private:
+			static auto GetUnderlyingConditionalVariableExample() {
+				if constexpr (std::is_same<mutex, std::mutex>::value) {
+					return std::condition_variable();
+				}
+				else {
+					return std::condition_variable_any();
+				}
+			};
+
+		public:
+			using cond_var = typename fibers::utilities::function_traits<decltype(std::function(GetUnderlyingConditionalVariableExample))>::result_type;
+
+		private:
+			mutex    mut_;
+			cond_var gate1_;
+			cond_var gate2_;
+			unsigned state_;
+
+			static const unsigned write_entered_ = 1U << (sizeof(unsigned) * CHAR_BIT - 1);
+			static const unsigned n_readers_ = ~write_entered_;
+
+		public:
+			shared_mutex() : mut_(), gate1_(), gate2_(), state_(0) {}
+
+			// Exclusive ownership
+			void lock() {
+				std::unique_lock<mutex> lk(mut_);
+				while (state_ & write_entered_) gate1_.wait(lk);
+				state_ |= write_entered_;
+				while (state_ & n_readers_) gate2_.wait(lk);
+			};
+			bool try_lock() {
+				std::unique_lock<mutex> lk(mut_, std::try_to_lock_t);
+				if (lk.owns_lock() && state_ == 0) {
+					state_ = write_entered_;
+					return true;
+				}
+				return false;
+			};
+			void unlock() {
+				{
+					std::scoped_lock<mutex> _(mut_);
+					state_ = 0;
+				}
+				gate1_.notify_all();
+			};
+
+			// Shared ownership
+			void lock_shared() {
+				std::unique_lock<mutex> lk(mut_);
+				while ((state_ & write_entered_) || (state_ & n_readers_) == n_readers_) gate1_.wait(lk);
+				unsigned num_readers = (state_ & n_readers_) + 1;
+				state_ &= ~n_readers_;
+				state_ |= num_readers;
+			};
+			bool try_lock_shared() {
+				std::unique_lock<mutex> lk(mut_, std::try_to_lock_t);
+				unsigned num_readers = state_ & n_readers_;
+				if (lk.owns_lock() && !(state_ & write_entered_) && num_readers != n_readers_) {
+					++num_readers;
+					state_ &= ~n_readers_;
+					state_ |= num_readers;
+					return true;
+				}
+				return false;
+			};
+			void unlock_shared() {
+				std::scoped_lock<mutex> _(mut_);
+				unsigned num_readers = (state_ & n_readers_) - 1;
+				state_ &= ~n_readers_;
+				state_ |= num_readers;
+				if (state_ & write_entered_) {
+					if (num_readers == 0) gate2_.notify_one();
+				}
+				else {
+					if (num_readers == n_readers_ - 1) gate1_.notify_one();
+				}
+			};
+		
+		};
+
 		namespace impl {
-			extern CriticalMutexLock* atomic_number_lock; // instanced in the CPP file. Should only be a single atomic_number_lock for the entire program. 
+			extern mutex* atomic_number_lock; // instanced in the CPP file. Should only be a single atomic_number_lock for the entire program. 
 		};
 
 		/* *THREAD SAFE* Thread-safe and fiber-safe wrapper for any type of number, from integers to doubles. 
@@ -1435,6 +3727,29 @@ namespace fibers {
 			T* Set(T* newPtr) noexcept {
 				return static_cast<T*>(Sys_InterlockedExchangePointer((void* &)ptr, static_cast<void* >(newPtr)));
 			};
+			bool TrySet(T* newPtr, T** oldPtr = nullptr) noexcept {
+				T* PREV_VAL = this->load();
+				if (this->CompareExchange(PREV_VAL, newPtr) == PREV_VAL) {
+					if (oldPtr) *oldPtr = PREV_VAL;
+					return true;
+				}
+				else {
+					if (oldPtr) *oldPtr = nullptr;
+					return false;
+				}
+			};
+			bool TrySet(T* newPtr, atomic_ptr<T>* oldPtr) noexcept {
+				T* PREV_VAL = this->load();
+				if (this->CompareExchange(PREV_VAL, newPtr) == PREV_VAL) {
+					if (oldPtr) *oldPtr = PREV_VAL;
+					return true;
+				}
+				else {
+					if (oldPtr) *oldPtr = nullptr;
+					return false;
+				}
+			};
+
 			/* atomically sets the pointer to 'newPtr' only if the previous pointer is equal to 'comparePtr' */
 			T* CompareExchange(T* comparePtr, T* newPtr) noexcept {
 				return static_cast<T*>(Sys_InterlockedCompareExchangePointer((void*&)ptr, static_cast<void*>(comparePtr), static_cast<void*>(newPtr)));
@@ -1444,6 +3759,8 @@ namespace fibers {
 			const T* operator->() const noexcept { return Get(); };
 			T* Get() noexcept { return ptr; };
 			T* Get() const noexcept { return ptr; };
+			T* load() noexcept { return Get(); };
+			T* load() const noexcept { return Get(); };
 
 		protected:
 			T* ptr;
@@ -1451,173 +3768,150 @@ namespace fibers {
 	};
 
 	namespace utilities {
-		__forceinline static void* Mem_Alloc16(const size_t& size) {
-			if (!size) return NULL; const size_t paddedSize = (size + 15) & ~15; return ::_aligned_malloc(paddedSize, 16);
-		};
-		__forceinline static void  Mem_Free16(void* ptr) {
-			if (ptr)
-				::_aligned_free(ptr);
-		};
-		__forceinline static void* Mem_ClearedAlloc(const size_t& size) {
-			void* mem = Mem_Alloc16(size);
-			::memset(mem, 0, size);
-			return mem;
-		};
-		__forceinline static void  Mem_Free(void* ptr) { Mem_Free16(ptr); }
-		__forceinline static void* Mem_Alloc(const size_t size) { return Mem_ClearedAlloc(size); }
-		__forceinline static char* Mem_CopyString(const char* in) {
-			size_t L{ strlen(in) + 1 };
-			char* out = (char*)Mem_Alloc(L);
-			::strncpy(out, in, L - 1); // ::strcpy_s(out, L, in);
-			return out;
-		};
+		/* *THREAD SAFE* Thread- and Fiber-safe allocator that can create, reserve, and free shared memory. 
+		Optimized for POD types, but will correctly manage the destruction of non-POD type data when shutdown. */
+		template<class _type_, int _blockSize_, bool ForcePOD = false> class Allocator {
+		private:
+			struct element_item {
+				// actual underlying data
+				_type_ data;
+				// non-POD, but can be "forgotten" without consequence. 
+				synchronization::atomic_ptr<element_item> next; 
+				// non-POD, but can be "forgotten" without consequence. 
+				synchronization::atomic_number<long> initialized; 
+			};
+			class memory_block {
+			public:
+				// static buffer -- does not grow or shrink. Cannot allocate less than this, and if needs more, we allocate another block.
+				element_item		elements[_blockSize_]; 
+				// ptr to next block.
+				synchronization::atomic_ptr<memory_block> next; 
+			};
 
-		/* *NOT THREAD SAFE* Basic block allocator that can create, reserve, and free shared memory. */
-		template<class _type_, int _blockSize_, bool ForcePOD = false> class BlockAllocator {
+			synchronization::atomic_ptr<memory_block> blocks;
+			synchronization::atomic_ptr<element_item> free;
+			synchronization::atomic_number<long> total;
+			synchronization::atomic_number<long> active;
+
+			// can an element_item be "forgotten" without calling a destructor?
+			static constexpr bool isPod() { return std::is_pod<_type_>::value || ForcePOD; };
+			// creates a new memory_block and sets the free ptr. 
+			void			    AllocNewBlock() {
+				memory_block* block{ (memory_block*)Mem_ClearedAlloc((size_t)(sizeof(memory_block))) }; // explicitely initialized to 0 at all bits
+				int i;
+				while (true) {
+					block->next = blocks.load();
+					if (blocks.TrySet(block, &block->next)) {
+						for (i = 0; i < _blockSize_; i++) {
+							while (true) {
+								block->elements[i].next = free.load();
+								if (free.TrySet(&block->elements[i], &block->elements[i].next)) {
+									break;
+								}
+							}
+						}
+						total += _blockSize_;
+						break;
+					}
+				}
+			};
+			// shuts down the allocator and frees all associated memory and (if needed) destroys the non-POD type data.
+			void			    Shutdown() {
+				memory_block* block;
+				int i;
+
+				while (block = blocks.load()) {
+					if (blocks.TrySet(block->next, &block)) {
+						// Check if the data type if POD...
+						if constexpr (!isPod()) {
+							// ... because non-POD types must call their destructors to prevent memory leaks per element ...
+							for (i = 0; i < _blockSize_; i++) 
+								// ... but only when the element was already initialized ...
+								if (block->elements[i].initialized.Decrement() == 0) block->elements[i].data.~_type_();
+						}
+						// ... then we can free the memory block
+						Mem_Free(block);
+					}
+				}
+
+				free = nullptr;
+				total = active = 0;
+			};
+
 		public:
-			BlockAllocator(bool clear = true) : // = false
-				blocks(nullptr),
-				free(nullptr),
-				total(0),
-				active(0),
-				allowAllocs(true),
-				clearAllocs(clear)
-			{};
-			BlockAllocator(int toReserve) :
-				blocks(nullptr),
-				free(nullptr),
-				total(0),
-				active(0),
-				allowAllocs(true),
-				clearAllocs(true)
-			{
-				Reserve(toReserve);
-			};
-			~BlockAllocator() {
-				Shutdown();
-			};
+			Allocator() : blocks(nullptr), free(nullptr), total(0), active(0) {};
+			Allocator(int toReserve) : blocks(nullptr), free(nullptr), total(0), active(0) { Reserve(toReserve); };
+			~Allocator() { Shutdown(); };
 
 			// returns total size of allocated memory
-			size_t				Allocated() const { return total * sizeof(_type_); }
+			size_t				Allocated() const { return total.load() * sizeof(_type_); }
 
 			// returns total size of allocated memory including size of (*this)
 			size_t				Size() const { return sizeof(*this) + Allocated(); }
 
-			void				Shutdown() {
-				while (blocks != nullptr) {
-					cweeBlock* block = blocks;
-					blocks = blocks->next;
-					Mem_Free(block);
-				}
-				blocks = nullptr;
-				free = nullptr;
-				total = active = 0;
-			};
-			__forceinline void	SetFixedBlocks(long long numBlocks) {
-				long long currentNumBlocks = 0;
-				for (cweeBlock* block = blocks; block != nullptr; block = block->next) {
-					currentNumBlocks++;
-				}
-				for (long long i = currentNumBlocks; i < numBlocks; i++) {
-					AllocNewBlock();
-				}
-				allowAllocs = false;
-			};
-			__forceinline void	FreeEmptyBlocks() {
-				// first count how many free elements are in each block and build up a free chain per block
-				for (cweeBlock* block = blocks; block != nullptr; block = block->next) {
-					block->free = nullptr;
-					block->freeCount = 0;
-				}
-				for (element_t* element = free; element != nullptr; ) {
-					element_t* next = element->next;
-					for (cweeBlock* block = blocks; block != nullptr; block = block->next) {
-						if (element >= block->elements && element < block->elements + _blockSize_) {
-							element->next = block->free;
-							block->free = element;
-							block->freeCount++;
-							break;
+			// Request a new memory pointer. May be recovered from a previously-used location. Will be cleared and correctly initialized, if appropriate.
+			_type_*             Alloc() {
+				_type_* t{nullptr};
+				element_item* element{ nullptr };
+
+				++active;
+				while (!element) {
+					while (element = free.load()) { // if we have free elements available...
+						if (free.TrySet(element->next, &element)) { // get the free element and swap it with it's next ptr. If this fails, we will simply try again.
+							// we now have exclusive access to this element.
+							element->next = nullptr;
+							break; 
 						}
 					}
-					// if this assert fires, we couldn't find the element in any block
-					assert(element->next != next);
-					element = next;
-				}
-				// now free all blocks whose free count == _blockSize_
-				cweeBlock* prevBlock = nullptr;
-				for (cweeBlock* block = blocks; block != nullptr; ) {
-					cweeBlock* next = block->next;
-					if (block->freeCount == _blockSize_) {
-						if (prevBlock == nullptr) {
-							assert(blocks == block);
-							blocks = block->next;
-						}
-						else {
-							assert(prevBlock->next == block);
-							prevBlock->next = block->next;
-						}
-						Mem_Free(block);
-						total -= _blockSize_;
-					}
-					else {
-						prevBlock = block;
-					}
-					block = next;
-				}
-				// now rebuild the free chain
-				free = nullptr;
-				for (cweeBlock* block = blocks; block != nullptr; block = block->next) {
-					for (element_t* element = block->free; element != nullptr; ) {
-						element_t* next = element->next;
-						element->next = free;
-						free = element;
-						element = next;
-					}
-				}
-			};
-
-			static constexpr bool isPod() { return std::is_pod<_type_>::value || ForcePOD; };
-			_type_* Alloc() {
-				if (free == nullptr) {
-					if (!allowAllocs) {
-						return nullptr;
-					}
-					AllocNewBlock();
+					// if we fell through and for some reason the element is still empty, we need to allocate more. May be due to contention and many allocations are happening.
+					if (!element) AllocNewBlock(); // adds a new element to the "free" elements
 				}
 
-				active++;
-				element_t* element = free;
-				free = free->next;
-				element->next = nullptr;
-
-				_type_* t = (_type_*)element->buffer;
-				if constexpr (isPod()) {
-					memset(t, 0, sizeof(_type_));
-				}
-				else {
-					if (clearAllocs) {
-						memset(t, 0, sizeof(_type_));
+				t = static_cast<_type_*>(static_cast<void*>(element));
+				memset(t, 0, sizeof(_type_));
+				if constexpr (!isPod()) {
+					if (element->initialized.Increment() == 1) {
+						new (t) _type_;
 					}
-					new (t) _type_;
-				}
+					
+				}				
 
 				return t;
 			};
+
+			// Frees the memory pointer, previously provided by this allocator. Calls the destructor for non-POD types, and will store the pointer for later use.
 			void				Free(_type_* element) {
-				if (element == nullptr) {
-					return;
-				}
+				element_item* t{nullptr};
+				element_item* prevFree{ nullptr };
+
+				if (!element) return; // no work to be done
+				
+				t = static_cast<element_item*>(static_cast<void*>(element));
 
 				if constexpr (!isPod()) {
-					element->~_type_();
-				}
-
-				element_t* t = (element_t*)(element);
-				t->next = free;
-				free = t;
-				active--;
+					if (t->initialized.Decrement() == 0)
+						element->~_type_();
+					
+				}				
+				while (true) {
+					prevFree = (t->next = free.load());
+					if (free.CompareExchange(prevFree, t) == prevFree) {
+						--active;
+						break;
+					}
+				}				
 			};
+
+			// Request a new memory pointer that will self-delete and return to the memory pool automatically. Important: This allocator must out-live the shared_ptr.
+			std::shared_ptr< _type_ > AllocShared() {
+				return std::shared_ptr<_type_>(Alloc(), [this](_type_* p) { Free(p); });
+			};
+
+			// Calls "Alloc" X-num times, and then frees them all for later re-use.
 			__forceinline void	Reserve(long long num) {
+				// this algorithm can be improved. 
+				// TODO: Create (num / _blockSize_) memory_blocks, order them as next->PTR->next->PTR, etc, and the Compare-Swap with the current end of the block chain. Then update the free chain as needed.
+
 				if (total < num) {
 					std::vector< _type_* > arr; arr.reserve(2 * (num - total));
 					while (total < num) {
@@ -1628,120 +3922,509 @@ namespace fibers {
 					}
 				}
 			};
-			long long			GetTotalCount() const { return total; }
-			long long			GetAllocCount() const { return active; }
-			long long			GetFreeCount() const { return total - active; }
-
-		private:
-			union element_t {
-				_type_* data;
-				element_t* next;
-				::byte			buffer[(CONST_MAX(sizeof(_type_), sizeof(element_t*)) + (16 - 1)) & ~(16 - 1)];
-			};
-
-			class cweeBlock {
-			public:
-				element_t		elements[_blockSize_];
-				cweeBlock* next;
-				element_t* free;		// list with free elements in this block (temp used only by FreeEmptyBlocks)
-				long long		freeCount;	// number of free elements in this block (temp used only by FreeEmptyBlocks)
-			};
-
-			cweeBlock* blocks;
-			element_t* free;
-			long long			total;
-			long long			active;
-			bool				allowAllocs;
-			bool				clearAllocs;
-
-			void			AllocNewBlock() {
-				cweeBlock* block = (cweeBlock*)Mem_Alloc((size_t)(sizeof(cweeBlock)));
-				block->next = blocks;
-				blocks = block;
-				for (int i = 0; i < _blockSize_; i++) {
-					block->elements[i].next = free;
-					free = &block->elements[i];
-					assert((((UINT_PTR)free) & (16 - 1)) == 0);
-				}
-				total += _blockSize_;
-			};
-		};
-
-		/* *THREAD SAFE* Thread-safe wrapper for the BlockAllocator, which automatically cleans-up allocations on destruction. */
-		template<class _type_, size_t BlockSize = 128, bool ForcePOD = false> class Allocator {
-		private:
-			static constexpr bool isPod() { return std::is_pod<_type_>::value || ForcePOD; };
-
-		public:
-			Allocator() : lock(), ptrs(), alloc() {};
-			Allocator(int toReserve) : lock(), ptrs(), alloc(toReserve) {};
-			Allocator(Allocator const&) = delete;
-			Allocator(Allocator &&) = delete;
-			Allocator& operator=(Allocator const&) = delete;
-			Allocator& operator=(Allocator&&) = delete;
-			~Allocator() { Clear(); };
-
-			_type_* Alloc() {
-				auto locked{ std::scoped_lock(lock) };
-				decltype(auto) p = alloc.Alloc();
-				if constexpr (!isPod()) { ptrs.insert(p); }
-				return p;
-			};
-			void	Free(_type_* element) {
-				auto locked{ std::scoped_lock(lock) };
-				if constexpr (!isPod()) { ptrs.erase(element); }
-				alloc.Free(element);
-			};
-			void	Clean() {
-				auto locked{ std::scoped_lock(lock) };
-				alloc.FreeEmptyBlocks();
-			};
-			long long	GetTotalCount() const {
-				long long out;
-				auto locked{ std::scoped_lock(lock) };
-				out = alloc.GetTotalCount();
-				return out;
-			};
-			long long	GetAllocCount() const {
-				long long out;
-				auto locked{ std::scoped_lock(lock) };
-				if constexpr (!isPod()) {
-					out = ptrs.size();
-				}
-				else {
-					out = alloc.GetAllocCount();
-				}
-				return out;
-			};
-			void	Clear() {
-				auto locked{ std::scoped_lock(lock) };
-				if constexpr (!isPod()) {
-					for (auto& x : ptrs) {
-						if (x != nullptr) {
-							alloc.Free(x);
-						}
-					}
-					ptrs.clear();
-				}
-				else {
-					alloc.Shutdown();
-					alloc.Free(alloc.Alloc());
-				}
-			};
-			void	Reserve(long long n) {
-				auto locked{ std::scoped_lock(lock) };
-				alloc.Reserve(n);
-			};
-
-		private:
-			mutable synchronization::CriticalMutexLock lock;
-			std::set<_type_*> ptrs;
-			BlockAllocator<_type_, BlockSize, ForcePOD> alloc;
+			
+			long long			GetTotalCount() const { return total.load(); }
+			long long			GetAllocCount() const { return active.load(); }
+			long long			GetFreeCount() const { return total.load() - active.load(); }
 		};
 	};
 
 	namespace containers {
+		/* *THREAD SAFE* Thread- and Fiber-safe wrapper for any type of number, from integers to doubles.
+		   Significant performance boost if the data type is one of: long, unsigned int, unsigned long, unsigned __int64
+		   Atomic and fast if the type is non-floating points. (E.g. int, long, etc.)
+		   Much slower, using a global lock, if using floating point numbers, like doubles.
+		*/
 		template<typename _Value_type> using number = fibers::synchronization::atomic_number<_Value_type>;
+		
+		/* *THREAD SAFE* Thread- and Fiber-safe queue with Last-In-First-Out functionality.
+		* POD types are stored by-value, non-POD types are stored as shared_ptr's. 
+		* POD types have a speed-up by avoiding destructor calls.
+		* Example: [1,2]. Push(5) -> [1,2,5]. Pop(&Out) -> [1,2] & sets Out to 5. 
+		*/
+		template <typename value> class Stack {
+		private:
+			static auto GetValueStorageType() {
+				if constexpr (std::is_pod<value>::value) {
+					value out{};
+					return out;
+				}
+				else {
+					auto out{ std::make_shared<value>() };
+					return out;
+				}
+			};
+			static auto MakeValueStorageType(value const& v) {
+				if constexpr (std::is_pod<value>::value) {
+					return static_cast<value const&>(v);
+				}
+				else {
+					return std::make_shared<value>(v);
+				}
+			};
+			static auto MakeValueStorageType(value && v) {
+				if constexpr (std::is_pod<value>::value) {
+					return static_cast<value const&>(v);
+				}
+				else {
+					return std::make_shared<value>(std::forward<value>(v));
+				}
+			};
+			using ValueStorageType = typename fibers::utilities::function_traits<decltype(std::function(GetValueStorageType))>::result_type;
+			static value& GetValueFromStorageType(ValueStorageType& v) {
+				if constexpr (std::is_pod<value>::value) {
+					return v;
+				}
+				else {
+					return *v;
+				}
+			};
+
+			/* storage class for each node in the stack. May or may not be POD, depending on the value type being stored. */
+			class linkedListItem {
+			public:
+				ValueStorageType value; // may be copied-as-value or may be a shared_ptr. May or may not be POD. 
+				synchronization::atomic_ptr<linkedListItem> prev; // ptr to the "prev" ptr. Non-POD but can be "forgotten" without penalty
+				
+				linkedListItem() : value(), prev(nullptr) {}
+				linkedListItem(ValueStorageType const& mvalue) : value(mvalue), prev(nullptr) {}
+				linkedListItem(linkedListItem const&) = default;
+				linkedListItem(linkedListItem &&) = default;
+				linkedListItem& operator=(linkedListItem const&) = default;
+				linkedListItem& operator=(linkedListItem&&) = default;
+				~linkedListItem() = default;
+			};
+
+			/* allocator is forced to use POD optimization if the value type is POD. */
+			utilities::Allocator< linkedListItem, 128, std::is_pod<value>::value> nodeAlloc;
+			/* the current "tip" of the stack, which will be pop'd on request. */
+			synchronization::atomic_ptr<linkedListItem> head;
+
+		public:
+			Stack() = default;
+			Stack(Stack const&) = delete;
+			Stack(Stack &&) = delete;
+			Stack& operator=(Stack const&) = delete;
+			Stack& operator=(Stack&&) = delete;
+			~Stack() { clear(); };
+
+			/**
+			 * @brief current size of the list.
+			 * @return number of items in list
+			 */
+			unsigned long size() const {
+				return nodeAlloc.GetAllocCount();
+			};
+
+			/**
+			 * @brief clears the list.
+			 * @return void
+			 */
+			void clear() {
+				linkedListItem* p = head.Set(nullptr);
+				linkedListItem* n = nullptr;
+
+				while (p) {
+					n = p->prev.Set(nullptr);
+					nodeAlloc.Free(p);
+					p = n;
+					if (!p) // At end, lets check if new stuff came in
+						p = head.Set(nullptr);
+				}
+
+				//nodeAlloc.Clean();
+			};
+
+			/**
+			 * @brief pushes a copy of Value at the end of the list.
+			 * @return void
+			 */
+			void push(value const& Value) {
+				auto* node = nodeAlloc.Alloc(); {
+					node->value = MakeValueStorageType(Value);
+				}
+
+				while (true) {
+					node->prev = head.load();
+					if (head.CompareExchange(node->prev, node) == node->prev) {
+						break;
+					}
+				}
+			};
+
+			/**
+			 * @brief pushes a copy of Value at the end of the list.
+			 * @return void
+			 */
+			void push(value && Value) {
+				auto* node = nodeAlloc.Alloc(); {
+					node->value = MakeValueStorageType(std::forward<value>(Value));
+				}
+
+				while (true) {
+					node->prev = head.load();
+					if (head.CompareExchange(node->prev, node) == node->prev) {
+						break;
+					}
+				}
+			};
+
+			/**
+			 * @brief pushes a shared_ptr of the Value at the end of the list. Only available if value type is non-POD. (POD data are stored-by-value and a shared_ptr would not be respected)
+			 * @return void
+			 */
+			template<typename = std::enable_if_t<!std::is_pod<value>::value>> void push(std::shared_ptr<value> const& Value) {
+				auto* node = nodeAlloc.Alloc(); {
+					node->value = Value;
+				}
+
+				while (true) {
+					node->prev = head.load();
+					if (head.CompareExchange(node->prev, node) == node->prev) {
+						break;
+					}
+				}
+			};
+
+			/**
+			 * @brief Searches for the first match with Value and removes it from the list.
+			 * @return successful or not
+			 */
+			bool try_remove(value const& Value) {
+				bool found = false;
+				linkedListItem* next = nullptr;
+				linkedListItem* current = head.load(); 
+				if (current) {
+					linkedListItem* prev = current->prev.load();
+					while (!found && current) {
+
+						if (GetValueFromStorageType(current->value) == Value) {
+							// found it
+							if (next) {
+								// set it's next->prev to prev, not current
+								if (next->prev.CompareExchange(current, prev) == current) {
+									found = true;
+									break;
+								}
+								else {
+									// something interupted -- try again
+									continue;
+								}
+							}
+							else {
+								// no "next" implies current was the head.
+								if (head.CompareExchange(current, prev) == current) {
+									found = true;
+									break;
+								}
+								else {
+									continue;
+								}
+							}
+						}
+
+						next = current;
+						current = prev;
+						if (current) {
+							prev = current->prev.load();
+						}
+						else {
+							prev = nullptr;
+						}
+					}
+					if (found && current) {
+						nodeAlloc.Free(current);
+					}
+				}
+				return found;
+			};
+
+			/**
+			 * @brief Trys to retrieve the item at the end of the list. If found, sets Out to that value.
+			 * @return successful or not, and will set Out if successful
+			 */
+			bool try_pop(ValueStorageType& out) {
+				linkedListItem* current{ nullptr };
+				linkedListItem* prev{ nullptr };
+				bool found = false;
+
+				while (!found && current) {
+					current = head.load();
+					prev = current->prev.load();
+					// no "next" implies current was the head.
+					if (head.CompareExchange(current, prev) == current) {
+						found = true;
+						break;
+					}
+					else { // something interupted -- try again
+						continue;
+					}
+				}
+				if (found) {
+					out = std::move(current->value);
+					nodeAlloc.Free(current);
+				}
+				return found;
+			};
+
+			/**
+			 * @brief Trys to remove the last (most recent) element from the list. 
+			 * @return successful or not
+			 */
+			bool try_pop() {
+				linkedListItem* current{ nullptr };
+				linkedListItem* prev{ nullptr };
+				bool found = false;
+
+				while (!found && current) {
+					current = head.load();
+					prev = current->prev.load();
+					// no "next" implies current was the head.
+					if (head.CompareExchange(current, prev) == current) {
+						found = true;
+						break;
+					}
+					else { // something interupted -- try again
+						continue;
+					}
+				}
+				if (found) {
+					nodeAlloc.Free(current);
+				}
+				return found;
+			};
+
+			/**
+			 * @brief Trys to retrieve the item at the end of the list. If found, sets Out to that value.
+			 * @return successful or not, and will set Out if successful
+			 */
+			template<typename = std::enable_if_t<!std::is_pod<value>::value>> bool try_pop(value& out) {
+				linkedListItem* current{ nullptr };
+				linkedListItem* prev{ nullptr };
+				bool found = false;
+
+				while (!found && current) {
+					current = head.load();
+					prev = current->prev.load();
+					// no "next" implies current was the head.
+					if (head.CompareExchange(current, prev) == current) {
+						found = true;
+						break;
+					}
+					else { // something interupted -- try again
+						continue;
+					}
+				}
+				if (found) {
+					out = std::move(*current->value);
+					nodeAlloc.Free(current);
+				}
+				return found;
+			};
+
+			/**
+			 * @brief counts how many times the Value is found in the list.
+			 * @return number of matched items in list
+			 */
+			unsigned long count(value const& Value, unsigned long maxCount = std::numeric_limits<unsigned long>::max()) const {
+				linkedListItem* current = head.load();
+				unsigned long counted{ 0 };
+				while (current && (counted < maxCount)) {
+					if (GetValueFromStorageType(current->value) == Value) {
+						counted++;
+					}
+					current = current->prev.load();
+				}
+				return counted;
+			};
+
+			/**
+			 * @brief Determines if the Value is in the list.
+			 * @return whether or not the Value was found
+			 */
+			bool contains(value const& Value) const {
+				return count(Value, 1) > 0;
+			};
+
+		};
+	
+#if 0
+		template <typename key> class OrderedSet {
+		private:
+			static constexpr bool isPod{ std::is_pod<key>::value };
+
+			struct node {
+				key Position;
+				synchronization::atomic_ptr<node> parent;
+				synchronization::atomic_ptr<node> next;
+				synchronization::atomic_ptr<node> prev;
+				synchronization::atomic_number<long> numChildren;
+				synchronization::atomic_ptr<node> firstChild;
+				synchronization::atomic_ptr<node> lastChild;
+				
+				synchronization::TicketSpinLock nodeLock;
+				// synchronization::shared_mutex nodeLock;				
+			};
+
+			utilities::Allocator< node, 128, isPod> nodeAllocator;
+
+			synchronization::atomic_number<long> Num;
+			synchronization::atomic_ptr<node> root;
+			synchronization::atomic_ptr<node> first;
+			synchronization::atomic_ptr<node> last;
+
+			decltype(auto) AllocNode() {
+				return nodeAllocator.Alloc(); // retrieve and clear a previously used node.
+			};
+			void FreeNode(node* Node) {
+				nodeAllocator.Free(Node); // returns the node to the list for later re-use.
+			};
+
+			void SwapSingleNode(node* oldNode, node* newNode) {
+				auto nodeLock{ std::scoped_lock(oldNode->nodeLock) };
+				auto nodeLock{ std::scoped_lock(oldNode->nodeLock) };
+
+
+
+				auto parentLock{ std::scoped_lock(oldNode->parent) };
+
+
+
+
+				auto leftLock{ std::scoped_lock(oldNode->prev) };
+				auto rightLock{ std::scoped_lock(oldNode->prev) };
+
+
+
+				newNode->parent = oldNode->parent;
+			}
+
+
+
+
+
+			void SplitNode(node* Node) {
+
+
+
+
+
+
+
+				assert(Node->parent); // the incoming node must have a valid parent to be able to be "split". This includes the root, which requires some modifications to work with this system.
+
+
+
+
+
+
+
+
+
+
+				// lock this and neighboring nodes down for changes
+				auto nodeLock1{ std::scoped_lock(Node->nodeLock) };
+
+
+
+
+
+
+				{
+					long long i;
+					node* child, * newNode;
+
+					// allocate a new node
+					newNode = AllocNode();
+					newNode->parent = Node->parent;
+
+					// divide the children over the two nodes
+					child = Node->firstChild;
+					child->parent = newNode;
+					for (i = 3; i < Node->numChildren; i += 2) {
+						child = child->next;
+						child->parent = newNode;
+					}
+
+					newNode->key = child->key;
+					newNode->numChildren = Node->numChildren / 2;
+					newNode->firstChild = Node->firstChild;
+					newNode->lastChild = child;
+
+					Node->numChildren -= newNode->numChildren;
+					Node->firstChild = child->next;
+
+					child->next->prev = nullptr;
+					child->next = nullptr;
+
+					// add the new child to the parent before the split node
+					assert(Node->parent->numChildren < maxChildrenPerNode);
+
+					if (Node->prev) {
+						Node->prev->next = newNode;
+					}
+					else {
+						Node->parent->firstChild = newNode;
+					}
+					newNode->prev = Node->prev;
+					newNode->next = Node;
+					Node->prev = newNode;
+
+					Node->parent->numChildren++;
+				}
+			};
+
+
+
+
+
+
+
+		private:
+			utilities::Allocator< element, 128, std::is_pod<key>::value> elementAlloc;
+			utilities::Allocator< node, 128, true> nodeAlloc;
+			node* MakeNode() { return nodeAlloc.Alloc(); };
+			element* MakeElement() { return elementAlloc.Alloc();};
+
+		public:
+			OrderedSet() : nodeAllocator(), Num(0), root(nullptr), first(nullptr), last(nullptr) { 
+				root = nodeAllocator.Alloc(); 
+			};
+
+
+
+
+			// returns true if the key did not already exist. Otherwise returns false.
+			bool try_insert(key const& newKey) {
+
+			};
+			// returns true if the key exists. Otherwise return false.
+			bool contains(key const& findKey) {
+
+			};
+			// returns true if the key did exist. Otherwise returns false.
+			bool try_remove(key const& findKey) {
+
+			};
+			
+
+
+
+
+		};
+#endif
+
+
+
+
+
+
+
+
+
+
+
+
 
 		namespace impl {	
 			template <typename KeyType = int> class SetNode;
@@ -1979,12 +4662,12 @@ namespace fibers {
 				std::atomic<impl::SetNodePtrInfo<KeyType>> atomicSetNodePoKeyTypeerInfo;
 				while (true) {
 
-					auto pDir = cmp(curr->k, prev->k) & 1; //curr-> and prev->K will be same when they are poKeyTypeing to the same node. This is only possible by the threaded left-link.
+					auto pDir = cmp(curr->k, prev->k) & 1; //curr-> and prev->K will be same when they are pointing to the same node. This is only possible by the threaded left-link.
 					bool t = isThread;
 
 					impl::SetNodePtrInfo<KeyType> test = impl::SetNodePtrInfo<KeyType>(curr, 0, 0, t);
 					impl::SetNodePtrInfo<KeyType> replace = impl::SetNodePtrInfo<KeyType>(curr, 1, 0, t);
-					//compareSetNodePoKeyTypeerInfo(prev->child[pDir], test, "inside try Flag 1");
+					//compareSetNodePointerInfo(prev->child[pDir], test, "inside try Flag 1");
 					bool result = CAS(prev->child[pDir], test, replace);
 
 					if (result) {
@@ -2977,9 +5660,9 @@ namespace fibers {
 				lock; // actual lock
 			fibers::synchronization::atomic_ptr<TreeNode>
 				root; // root
-			utilities::Allocator<objType, maxChildrenPerNode, ForceObjectPOD>	
+			utilities::Allocator<objType, maxChildrenPerNode, ForceObjectPOD>
 				objAllocator; // thread-safe
-			utilities::Allocator<TreeNode, maxChildrenPerNode, true> 
+			utilities::Allocator<TreeNode, maxChildrenPerNode, true>
 				nodeAllocator; // thread-safe, forced to be POD (quickly forgets allocations)
 
 		public:
@@ -3451,8 +6134,8 @@ namespace fibers {
 			void	  Shutdown() {
 				WRITE_TREE();
 
-				nodeAllocator.Clear();
-				objAllocator.Clear();
+				//nodeAllocator.Clear();
+				//objAllocator.Clear();
 				root = nullptr;
 			};
 			// Thread-safe. Allocates and initializes a tree node (not an object)
@@ -4361,7 +7044,7 @@ namespace fibers {
 		
 		template <typename T> struct Queue {
 			std::deque<T> queue;
-			synchronization::CriticalMutexLock locker;
+			fibers::synchronization::mutex locker;
 
 			__forceinline void push(T&& item) {
 				std::scoped_lock lock(locker);
@@ -4386,7 +7069,7 @@ namespace fibers {
 
 			fibers::containers::number<bool> alive{ true };
 			std::condition_variable_any wakeCondition; // std::condition_variable wakeCondition; // 
-			synchronization::CriticalMutexLock wakeMutex; // std::mutex wakeMutex; // 
+			synchronization::mutex wakeMutex; // std::mutex wakeMutex; // 
 			fibers::containers::number<long long> nextQueue{ 0 };
 			std::vector<std::thread> threads;
 			void ShutDown() {

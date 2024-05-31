@@ -396,10 +396,26 @@ namespace {
 std::shared_ptr<MultithreadingInstanceManager> multithreadingInstance = std::static_pointer_cast<MultithreadingInstanceManager>(std::make_shared<MultithreadingInstanceManagerImpl>());
 
 namespace fibers {
-	namespace synchronization {
-		namespace impl {
-			static CriticalMutexLock atomic_number_lock_impl;
-			CriticalMutexLock* atomic_number_lock = &atomic_number_lock_impl;
+	namespace utilities {
+		namespace garbage_collection {
+			static std::unordered_map<std::thread::id, std::shared_ptr<TlsList>> registry_impl;
+			std::unordered_map<std::thread::id, std::shared_ptr<TlsList>>* registry_ = &registry_impl;
+
+			static std::mutex registryMutex_impl;
+			std::mutex* registryMutex_ = &registryMutex_impl;
 		};
 	};
+
+
+
+	namespace synchronization {
+		namespace impl {
+			static fibers::synchronization::mutex atomic_number_lock_impl;
+			fibers::synchronization::mutex* atomic_number_lock = &atomic_number_lock_impl;
+		};
+	};
+
+
+
+
 };

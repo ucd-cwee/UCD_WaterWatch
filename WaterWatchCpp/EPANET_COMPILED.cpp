@@ -3157,7 +3157,7 @@ namespace epanet {
             n = 1.0 / hyd->Pexp;
 
 #if 1
-            fibers::synchronization::CriticalMutexLock lock;
+            fibers::synchronization::mutex lock;
             fibers::parallel::For(1, net->Njuncs + 1, [&lock, &hyd, &pr, &sm, &net, &dp, &n](int i) {
                 int
                     row;
@@ -3820,7 +3820,7 @@ namespace epanet {
 
             // Examine each link
 #if 1
-            fibers::synchronization::CriticalMutexLock lock;
+            fibers::synchronization::mutex lock;
             fibers::parallel::For(1, net->Nlinks + 1, [&change, &lock, &net, &hyd, &pr, &rpt](int k) {
                 int     
                     n1,                         // Start node index

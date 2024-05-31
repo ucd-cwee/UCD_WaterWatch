@@ -38,9 +38,566 @@ static constexpr const bool IsStatelessTest() {
 	return std::is_convertible<T, ftype>::value;
 };
 
+class stackThing {
+public:
+	cweeStr varName;
+	fibers::Any var;
+
+public:
+	stackThing() : varName(), var() {};
+	stackThing(cweeStr const& name) : varName(name), var() {};
+	template<typename T> stackThing(cweeStr const& name, T const& obj) : varName(name), var(obj) {};
+	template<typename T> stackThing(cweeStr const& name, T&& obj) : varName(name), var(std::forward<T>(obj)) {};
+	stackThing(stackThing const& r) : varName(r.varName), var(r.var) {};
+	stackThing(stackThing&& r) : varName(std::move(r.varName)), var(std::move(r.var)) {};
+	stackThing& operator=(stackThing const& r) { varName = r.varName; var = r.var; }
+	stackThing& operator=(stackThing&& r) { varName = std::move(r.varName); var = std::move(r.var); }
+	~stackThing() { if (!varName.IsEmpty()) { std::cout << "DELETING " << varName << std::endl; } };
+
+	bool operator==(stackThing const& a) const { return varName == a.varName; };
+	bool operator!=(stackThing const& a) const { return varName != a.varName; };
+};
+
+// padded node whose size is always 64-bits
+struct DListNode {
+	const static int kCacheLineSize = 64;
+
+	// Put prev and next in the same cacheline so that a single NVRAM::Flush is enough.
+	DListNode* prev;  // 8-byte
+	DListNode* next;  // 8-byte
+	uint32_t payload;  // 4-byte
+	char padding[kCacheLineSize - (sizeof(decltype(prev)) + sizeof(decltype(next)) + sizeof(decltype(payload)))];
+
+	DListNode(DListNode* p, DListNode* n, decltype(payload) s) : prev(p), next(n), payload(s) {}
+	DListNode() : DListNode(nullptr, nullptr, 0) { }
+
+	inline char* GetBuffer() { return &padding[0]; };
+};
+
+
 int Example::ExampleF(int numTasks, int numSubTasks) {
 	int* xyzwabc = new int[10000];
 	defer(delete[] xyzwabc); // does clean-up on our behalf on scope end
+
+
+#if 1
+#define EXPECT_EQ(a, b) if (a == b) {} else { std::cout << "FAILURE AT LINE " << __LINE__ << std::endl; }
+#define EXPECT_NE(a, b) if (a != b) {} else { std::cout << "FAILURE AT LINE " << __LINE__ << std::endl; }
+	if (1) {
+		// Epoch-based garbage collector examples
+		if (1) {
+			using namespace fibers::utilities::garbage_collection;
+			{
+				EpochManager mgr_;
+				mgr_.Initialize();
+				defer(mgr_.Uninitialize());
+				{
+					EXPECT_EQ(1llu, mgr_.current_epoch_.load());
+					EXPECT_EQ(0llu, mgr_.safe_to_reclaim_epoch_.load());
+					EXPECT_NE(nullptr, mgr_.epoch_table_);
+				}
+			}
+			{
+				EpochManager mgr_;
+				mgr_.Initialize();
+				defer(mgr_.Uninitialize());
+				{
+					mgr_.BumpCurrentEpoch();
+					EXPECT_EQ(true, mgr_.Protect().ok());
+					// Make sure the table is clear except the one new entry.
+					auto* table = mgr_.epoch_table_->table_;
+					for (uint64_t i = 0; i < mgr_.epoch_table_->size_; ++i) {
+						const auto& entry = table[i];
+						if (entry.thread_id != 0) {
+							EXPECT_EQ(static_cast<uint64_t>(std::hash<std::thread::id>()(std::this_thread::get_id())), entry.thread_id.load());
+							EXPECT_EQ(2llu, entry.protected_epoch.load());
+							EXPECT_EQ(0llu, entry.last_unprotected_epoch);
+							break;
+						}
+						EXPECT_EQ(0lu, entry.thread_id.load());
+						EXPECT_EQ(0llu, entry.protected_epoch.load());
+						EXPECT_EQ(0llu, entry.last_unprotected_epoch);
+					}
+				}
+			}
+			{
+				EpochManager mgr_;
+				mgr_.Initialize();
+				defer(mgr_.Uninitialize());
+				{
+					mgr_.BumpCurrentEpoch();
+					EXPECT_EQ(true, mgr_.Protect().ok());
+					mgr_.BumpCurrentEpoch();
+					EXPECT_EQ(true, mgr_.Unprotect().ok());
+
+					// Make sure the table is clear except the one new entry.
+					auto* table = mgr_.epoch_table_->table_;
+					for (size_t i = 0; i < mgr_.epoch_table_->size_; ++i) {
+						const auto& entry = table[i];
+						if (entry.thread_id != 0) {
+							EXPECT_EQ(static_cast<uint64_t>(std::hash<std::thread::id>()(std::this_thread::get_id())), entry.thread_id.load());
+							EXPECT_EQ(0llu, entry.protected_epoch.load());
+							EXPECT_EQ(3llu, entry.last_unprotected_epoch);
+							break;
+						}
+						EXPECT_EQ(0lu, (DWORD)entry.thread_id.load());
+						EXPECT_EQ(0llu, entry.protected_epoch.load());
+						EXPECT_EQ(0llu, entry.last_unprotected_epoch);
+					}
+				}
+			}
+			{
+				EpochManager mgr_;
+				mgr_.Initialize();
+				defer(mgr_.Uninitialize());
+				{
+					mgr_.epoch_table_->table_[0].protected_epoch = 98;
+					mgr_.current_epoch_ = 99;
+					mgr_.ComputeNewSafeToReclaimEpoch(99);
+					EXPECT_EQ(97llu, mgr_.safe_to_reclaim_epoch_.load());
+					mgr_.epoch_table_->table_[0].protected_epoch = 0;
+					EXPECT_EQ(97llu, mgr_.safe_to_reclaim_epoch_.load());
+					mgr_.ComputeNewSafeToReclaimEpoch(99);
+					EXPECT_EQ(98llu, mgr_.safe_to_reclaim_epoch_.load());
+				}
+			}
+			{
+				EpochManager mgr_;
+				mgr_.Initialize();
+				defer(mgr_.Uninitialize());
+				{
+					GarbageList gc;
+					gc.Initialize(&mgr_);
+					defer(gc.Uninitialize());
+					{
+						for (int k = 0; k < 5; k++) {
+							// 5 iterations 
+							fibers::parallel::For(0, 50, [&mgr_, &gc](int i) {
+								{
+									auto guard{ EpochGuard(&mgr_) }; // try to guard this "generation" of stuff since it's being worked on
+									for (int j = 0; j < 50; j++) {
+										// 50 children per generation
+										{
+											auto* testPtr = new stackThing(cweeStr::printf("CHILD %i FROM GENERATION %i (LIFETIME: EPOCH %i to ", j, i, static_cast<int>(mgr_.GetCurrentEpoch())), (float)i);
+											gc.Push(testPtr, [](void* context, void* object) {
+												stackThing* objAs = (stackThing*)object;
+												EpochManager* mgr_ = (EpochManager*)context;
+												objAs->varName += cweeStr(cweeStr(static_cast<int>(mgr_->GetCurrentEpoch())) + ")");
+												delete objAs;
+												}, &mgr_);
+										}
+									}
+								}
+
+								mgr_.BumpCurrentEpoch(); // force the epoch forward -- should be a safe thing to do.
+								gc.Scavenge(); // constantly try to delete stuff
+								});
+
+							mgr_.BumpCurrentEpoch(); // force the epoch forward -- should be a safe thing to do.
+							gc.Scavenge(); // constantly try to delete stuff
+						}
+					}
+				}
+			}
+		}
+
+		// Multi-word Compare-and-Swap
+		if (1) {
+			// 2-word pairs
+			{
+				size_t kThreadNum = std::thread::hardware_concurrency();
+
+				// the number of MwCAS operations in each thread
+				constexpr size_t kExecNum = 1e6;
+
+				// use an unsigned long type as MwCAS targets
+				using Target = uint64_t;
+
+				using fibers::utilities::dbgroup::atomic::mwcas::MwCASDescriptor;
+
+				// targets of a 2wCAS example
+				Target word_1 = 0;
+				Target word_2 = 0;
+
+				fibers::parallel::For((size_t)0, kThreadNum, [kExecNum, &word_1, &word_2](size_t threadNum) {
+					for (size_t i = 0; i < kExecNum; ++i) {
+						// continue until a MwCAS operation succeeds
+						while (true) {
+							// create a MwCAS descriptor
+							MwCASDescriptor desc{};
+
+							// prepare expected/desired values
+							const auto old_1 = MwCASDescriptor::Read<Target>(&word_1);
+							const auto new_1 = old_1 + 1;
+							const auto old_2 = MwCASDescriptor::Read<Target>(&word_2);
+							const auto new_2 = old_2 + 1;
+
+							// register MwCAS targets with the descriptor
+							desc.AddMwCASTarget(&word_1, old_1, new_1);
+							desc.AddMwCASTarget(&word_2, old_2, new_2);
+
+							// try MwCAS
+							if (desc.MwCAS()) break;
+						}
+					}
+					});
+
+				// check whether MwCAS operations are performed consistently
+				std::cout << "\n\t1st field: " << word_1 << "\n\t2nd field: " << word_2 << std::endl << std::endl;
+			}
+			
+			// 3-word pairs
+			{
+				size_t kThreadNum = std::thread::hardware_concurrency();
+
+				// the number of MwCAS operations in each thread
+				constexpr size_t kExecNum = 1e6;
+
+				// use an unsigned long type as MwCAS targets
+				using Target = uint64_t;
+
+				using fibers::utilities::dbgroup::atomic::mwcas::MwCASDescriptor;
+
+				// targets of a mwCAS example
+				Target word_1 = 0; // back PTR
+				Target word_2 = 0; // this data PTR
+				Target word_3 = 0; // next PTR
+
+				fibers::parallel::For((size_t)0, kThreadNum, [kExecNum, &word_1, &word_2, &word_3](size_t threadNum) {
+					for (size_t i = 0; i < kExecNum; ++i) {
+						// continue until a MwCAS operation succeeds
+						while (true) {
+							// create a MwCAS descriptor
+							MwCASDescriptor desc{};
+
+							// prepare expected/desired values
+							const auto old_1 = MwCASDescriptor::Read<Target>(&word_1);
+							const auto new_1 = old_1 + 1;
+							const auto old_2 = MwCASDescriptor::Read<Target>(&word_2);
+							const auto new_2 = old_2 + 2;
+							const auto old_3 = MwCASDescriptor::Read<Target>(&word_3);
+							const auto new_3 = old_3 + 4;
+
+							// register MwCAS targets with the descriptor
+							desc.AddMwCASTarget(&word_1, old_1, new_1);
+							desc.AddMwCASTarget(&word_2, old_2, new_2);
+							desc.AddMwCASTarget(&word_3, old_3, new_3);
+
+							// try MwCAS
+							if (desc.MwCAS()) break;
+
+						}
+					}
+					});
+
+				// check whether MwCAS operations are performed consistently
+				std::cout << "\n\t1st field: " << word_1 << "\n\t2nd field: " << word_2 << "\n\t3rd field: " << word_3 << std::endl << std::endl;
+			}
+
+			// 2-word pairs to compose floating point numbers;
+			{
+				size_t kThreadNum = std::thread::hardware_concurrency();
+
+				// the number of MwCAS operations in each thread
+				constexpr size_t kExecNum = 1e6;
+
+				// use an unsigned long type as MwCAS targets
+
+				// target of a mwCAS example
+				fibers::utilities::CAS_Container<double> data;
+
+				using fibers::utilities::dbgroup::atomic::mwcas::MwCASDescriptor;
+
+				fibers::parallel::For((size_t)0, kThreadNum, [kExecNum, &data](size_t threadNum) {
+					for (size_t i = 0; i < kExecNum; ++i) {
+						// continue until a MwCAS operation succeeds
+						while (true) {
+							// create a MwCAS descriptor
+							MwCASDescriptor desc{};
+
+							// prepare expected/desired values
+							const auto OldCopy = data.Copy();
+
+
+
+
+
+							for (size_t index = 0; index < data.NumWords; index++) {
+								const auto old = MwCASDescriptor::Read<uint64_t>(&data.Word(index));
+
+
+							}
+
+							
+
+
+
+							const auto old_1 = MwCASDescriptor::Read<Target>(&word_1);
+							const auto new_1 = old_1 + 1;
+							const auto old_2 = MwCASDescriptor::Read<Target>(&word_2);
+							const auto new_2 = old_2 + 2;
+							const auto old_3 = MwCASDescriptor::Read<Target>(&word_3);
+							const auto new_3 = old_3 + 4;
+
+							// register MwCAS targets with the descriptor
+							desc.AddMwCASTarget(&word_1, old_1, new_1);
+							desc.AddMwCASTarget(&word_2, old_2, new_2);
+							desc.AddMwCASTarget(&word_3, old_3, new_3);
+
+							// try MwCAS
+							if (desc.MwCAS()) break;
+
+						}
+					}
+				});
+
+				// check whether MwCAS operations are performed consistently
+				std::cout << "\n\t1st field: " << word_1 << "\n\t2nd field: " << word_2 << "\n\t3rd field: " << word_3 << std::endl << std::endl;
+			}
+
+		}
+
+
+
+
+
+
+	}
+#endif
+
+	{
+		int index = 0;
+		for (index = 0; index < 10; index++)
+		{
+			fibers::utilities::Allocator<double, 128> alloc;
+			fibers::containers::queue<double*> ptrs;
+
+			auto* p1 = alloc.Alloc();
+			alloc.Free(p1);
+
+			auto* p2 = alloc.Alloc();
+			auto* p3 = alloc.Alloc();
+			alloc.Free(p2);
+			alloc.Free(p3);
+
+			fibers::parallel::For(0, 400, [&alloc, &ptrs](int i) {
+				if (i % 2 == 0) {
+					for (int k = i; k < (i + 400); k++) {
+						auto* p = alloc.Alloc();
+						*p = random_fast(-100, 100);
+						ptrs.push(p);
+					}
+				}
+				else {
+					for (int k = i; k < (i + 400); k += 2) {
+						double* ptr{ nullptr };
+						if (ptrs.try_pop(ptr)) {
+							alloc.Free(ptr);
+						}
+					}
+				}
+			});
+		}
+		for (index = 0; index < 10; index++)
+		{
+			fibers::utilities::Allocator<double, 128> alloc;
+
+			fibers::parallel::For(0, 400, [&alloc](int i) {
+				if (i % 2 == 0) {
+					for (int k = i; k < (i + 400); k++) {
+						auto ptr = alloc.AllocShared();
+						*ptr = random_fast(-100, 100);
+					}
+				}
+			});
+		}
+		for (index = 0; index < 10; index++)
+		{
+			fibers::utilities::Allocator<stackThing, 128> alloc;
+			fibers::containers::queue<stackThing*> ptrs;
+
+			auto* p1 = alloc.Alloc();
+			alloc.Free(p1);
+
+			auto* p2 = alloc.Alloc();
+			auto* p3 = alloc.Alloc();
+			alloc.Free(p2);
+			alloc.Free(p3);
+
+			fibers::parallel::For(0, 400, [&alloc, &ptrs](int i) {
+				if (i % 2 == 0) {
+					for (int k = i; k < (i + 400); k++) {
+						auto* p = alloc.Alloc();
+						p->var = random_fast(-100, 100);
+						p->varName = cweeStr(p->var.cast<float>());
+						ptrs.push(p);
+					}
+				}
+				else {
+					for (int k = i; k < (i + 400); k += 2) {
+						stackThing* ptr{ nullptr };
+						if (ptrs.try_pop(ptr)) {
+							alloc.Free(ptr);
+						}
+					}
+				}
+			});
+		}
+		for (index = 0; index < 10; index++)
+		{
+			fibers::utilities::Allocator<stackThing, 128> alloc;
+
+			fibers::parallel::For(0, 400, [&alloc](int i) {
+				if (i % 2 == 0) {
+					for (int k = i; k < (i + 400); k++) {
+						auto p = alloc.AllocShared();
+						p->var = random_fast(-100, 100);
+						p->varName = cweeStr(p->var.cast<float>());
+					}
+				}
+			});
+		}
+	}
+
+	{
+		int ijk = 0;
+		for (ijk = 0; ijk < 100; ijk++) {
+			fibers::containers::Stack<double> concurrent_set;
+
+			concurrent_set.push(0);
+			concurrent_set.push(1);
+			concurrent_set.push(2);
+			concurrent_set.push(3);
+			concurrent_set.push(4);
+			concurrent_set.push(5);
+
+			concurrent_set.try_remove(3);
+
+			if (concurrent_set.contains(3)) {
+				std::cout << "TEST" << std::endl;
+			}
+
+			double x{ 0 };
+			if (concurrent_set.try_pop(x)) {
+				std::cout << x << std::endl;
+			}
+
+			fibers::parallel::For(0, 400, [&concurrent_set](int i) {
+				if (i % 2 == 0) {
+					for (int k = i; k < (i + 400); k++) {
+						concurrent_set.push(k);
+					}
+				}
+				else {
+					for (int k = i; k < (i + 400); k += 2) {
+						concurrent_set.try_remove(k);
+					}
+				}
+			});
+
+			if (concurrent_set.contains(1)) {
+				concurrent_set.try_remove(1);
+			}
+		}
+		for (ijk = 0; ijk < 100; ijk++) {
+			{
+				fibers::containers::Stack<stackThing> concurrent_set; {
+					for (int i = 0; i < 100; i++) {
+						concurrent_set.push(stackThing(cweeStr(i), (int)i));
+					}
+				}
+			}
+			{
+				fibers::containers::Stack<stackThing> concurrent_set; {
+					fibers::parallel::For(0, 100, [&](int i) {
+						int index = i % 10;
+						int index2 = (i+1) % 10;
+
+						concurrent_set.push(stackThing(cweeStr(index), (int)index));
+						concurrent_set.try_remove(stackThing(cweeStr(index2), (int)index2));
+					});
+				}
+			}
+
+			/*
+			concurrent_set.push(stackThing("integer", 100));
+			concurrent_set.push(stackThing("double", 100.0));
+			concurrent_set.push(stackThing("long", 100l));
+			concurrent_set.push(stackThing("long long", 100ll));
+			concurrent_set.push(stackThing("long double", 100.0l));
+
+			concurrent_set.try_remove(stackThing("long"));
+
+			if (concurrent_set.contains(stackThing("long"))) {
+				std::cout << "FAILED" << std::endl;
+			}
+
+			std::shared_ptr<stackThing> x;
+			if (concurrent_set.try_pop(x)) {
+				if (x) {
+					std::cout << x->varName << std::endl;
+				}
+			}
+			stackThing y;
+			if (concurrent_set.try_pop(y)) {
+				if (x) {
+					std::cout << y.varName << std::endl;
+				}
+			}
+
+			fibers::parallel::For(0, 400, [&concurrent_set](int i) {
+				if (i % 2 == 0) {
+					for (int k = i; k < (i + 400); k++) {
+						concurrent_set.push(stackThing(cweeStr(k), k));
+					}
+				}
+				else {
+					for (int k = i; k < (i + 400); k += 2) {
+						concurrent_set.try_remove(stackThing(cweeStr(k), k));
+					}
+				}
+			});*/
+
+		}
+	}
+
+	//{
+	//	fibers::containers::fineTree<double, cweeStr> concurrent_set;
+	//	concurrent_set.insert(0, "TEST");
+	//	concurrent_set.insert(1, "TEST");
+	//	concurrent_set.insert(2, "TEST");
+	//	concurrent_set.insert(3, "TEST");
+	//	concurrent_set.insert(4, "TEST");
+	//	concurrent_set..remove(3);
+	//	if (concurrent_set.contains(3)) {
+	//		std::cout << "TEST" << std::endl;
+	//	}
+	//	std::cout << concurrent_set.findLargestKeyLessThanOrEqualTo(1.5) << std::endl;
+	//	std::cout << concurrent_set.findLargestKeyLessThanOrEqualTo(2.5) << std::endl;
+	//	std::cout << concurrent_set.findLargestKeyLessThanOrEqualTo(3.5) << std::endl;
+	//	std::cout << concurrent_set.findLargestKeyLessThanOrEqualTo(4) << std::endl;
+	//	std::cout << concurrent_set.findLargestKeyLessThanOrEqualTo(4.5) << std::endl;
+	//	std::cout << concurrent_set.findSmallestKeyGreaterThanOrEqualTo(1.5) << std::endl;
+	//	std::cout << concurrent_set.findSmallestKeyGreaterThanOrEqualTo(2.5) << std::endl;
+	//	std::cout << concurrent_set.findSmallestKeyGreaterThanOrEqualTo(3.5) << std::endl;
+	//	std::cout << concurrent_set.findSmallestKeyGreaterThanOrEqualTo(4) << std::endl;
+	//	std::cout << concurrent_set.findSmallestKeyGreaterThanOrEqualTo(4.5) << std::endl;
+	//	fibers::parallel::For(0, 400, [&concurrent_set](int i) {
+	//		if (i % 2 == 0) {
+	//			for (int k = i; k < (i + 400); k++) {
+	//				concurrent_set.add(k);
+	//			}
+	//		}
+	//		else {
+	//			for (int k = i; k < (i + 400); k += 2) {
+	//				concurrent_set.remove(k);
+	//			}
+	//		}
+	//		});
+	//	if (concurrent_set.contains(1)) {
+	//		concurrent_set.remove(1);
+	//	}
+	//}
 
 	{
 		fibers::containers::Set<double> concurrent_set;

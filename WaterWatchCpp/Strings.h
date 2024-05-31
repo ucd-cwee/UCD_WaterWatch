@@ -62,6 +62,16 @@ public:
 		strncpy(data, text.data, l+1);
 		len = l;
 	};
+	cweeStr(cweeStr&& text) {
+		Construct();
+		size_t l;
+		l = text.Length();
+		EnsureAlloced(l + 1);
+		strncpy(data, text.data, l + 1);
+		len = l;
+
+		text.Clear();
+	};
 	cweeStr(const cweeStr& text, size_t start, size_t end) {
 		Construct();
 		size_t i;
@@ -246,6 +256,17 @@ public:
 		strncpy(data, text.data, l + 1);
 		data[l] = '\0';
 		len = l;
+	};
+	void				operator=(cweeStr&& text) {
+		size_t l;
+		l = text.Length();
+		EnsureAlloced(l + 1, false);
+		// std::memcpy(data, text.data, l);
+		strncpy(data, text.data, l + 1);
+		data[l] = '\0';
+		len = l;
+
+		text.Clear();
 	};
 	void				operator=(const char* text) { this->operator=(cweeStr(text)); };
 
