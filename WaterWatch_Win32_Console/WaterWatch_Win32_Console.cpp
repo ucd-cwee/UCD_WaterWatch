@@ -58,20 +58,16 @@ public:
 	bool operator!=(stackThing const& a) const { return varName != a.varName; };
 };
 
-// padded node whose size is always 64-bits
 struct DListNode {
-	const static int kCacheLineSize = 64;
-
 	// Put prev and next in the same cacheline so that a single NVRAM::Flush is enough.
 	DListNode* prev;  // 8-byte
 	DListNode* next;  // 8-byte
 	uint32_t payload;  // 4-byte
-	char padding[kCacheLineSize - (sizeof(decltype(prev)) + sizeof(decltype(next)) + sizeof(decltype(payload)))];
 
-	DListNode(DListNode* p, DListNode* n, decltype(payload) s) : prev(p), next(n), payload(s) {}
-	DListNode() : DListNode(nullptr, nullptr, 0) { }
+	
+	DListNode() = default;
+	DListNode(DListNode* p, DListNode* n, uint32_t pl) : prev{ p }, next{ n }, payload{ pl } {};
 
-	inline char* GetBuffer() { return &padding[0]; };
 };
 
 
@@ -294,7 +290,7 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 				std::cout << "\n\t1st field: " << word_1 << "\n\t2nd field: " << word_2 << "\n\t3rd field: " << word_3 << std::endl << std::endl;
 			}
 
-			// 2-word pairs to compose floating point numbers;
+			// Generic multi-word compare and swap with types of various sizes
 			{
 				size_t kThreadNum = std::thread::hardware_concurrency();
 
@@ -304,55 +300,92 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 				// use an unsigned long type as MwCAS targets
 
 				// target of a mwCAS example
-				fibers::utilities::CAS_Container<double> data;
+				fibers::utilities::CAS_Container<int> data;
 
 				using fibers::utilities::dbgroup::atomic::mwcas::MwCASDescriptor;
 
 				fibers::parallel::For((size_t)0, kThreadNum, [kExecNum, &data](size_t threadNum) {
 					for (size_t i = 0; i < kExecNum; ++i) {
-						// continue until a MwCAS operation succeeds
-						while (true) {
-							// create a MwCAS descriptor
-							MwCASDescriptor desc{};
+						data.Add(1);
+					}
+				});
 
-							// prepare expected/desired values
-							const auto OldCopy = data.Copy();
+				// check whether MwCAS operations are performed consistently
+				std::cout << "\n\tValue: " << data.load() << std::endl << std::endl;
+			}
+			{
+				size_t kThreadNum = std::thread::hardware_concurrency();
 
+				// the number of MwCAS operations in each thread
+				constexpr size_t kExecNum = 1e6;
 
+				// use an unsigned long type as MwCAS targets
 
+				// target of a mwCAS example
+				fibers::utilities::CAS_Container<float> data;
 
+				using fibers::utilities::dbgroup::atomic::mwcas::MwCASDescriptor;
 
-							for (size_t index = 0; index < data.NumWords; index++) {
-								const auto old = MwCASDescriptor::Read<uint64_t>(&data.Word(index));
+				fibers::parallel::For((size_t)0, kThreadNum, [kExecNum, &data](size_t threadNum) {
+					for (size_t i = 0; i < kExecNum; ++i) {
+						data.Add(1);
+					}
+				});
 
+				// check whether MwCAS operations are performed consistently
+				std::cout << "\n\tValue: " << data.load() << std::endl << std::endl;
+			}
+			{
+				size_t kThreadNum = std::thread::hardware_concurrency();
 
-							}
+				// the number of MwCAS operations in each thread
+				constexpr size_t kExecNum = 1e6;
 
-							
+				// use an unsigned long type as MwCAS targets
 
+				// target of a mwCAS example
+				fibers::utilities::CAS_Container<long double> data;
 
+				using fibers::utilities::dbgroup::atomic::mwcas::MwCASDescriptor;
 
-							const auto old_1 = MwCASDescriptor::Read<Target>(&word_1);
-							const auto new_1 = old_1 + 1;
-							const auto old_2 = MwCASDescriptor::Read<Target>(&word_2);
-							const auto new_2 = old_2 + 2;
-							const auto old_3 = MwCASDescriptor::Read<Target>(&word_3);
-							const auto new_3 = old_3 + 4;
+				fibers::parallel::For((size_t)0, kThreadNum, [kExecNum, &data](size_t threadNum) {
+					for (size_t i = 0; i < kExecNum; ++i) {
+						data.Add(1);
+					}
+				});
 
-							// register MwCAS targets with the descriptor
-							desc.AddMwCASTarget(&word_1, old_1, new_1);
-							desc.AddMwCASTarget(&word_2, old_2, new_2);
-							desc.AddMwCASTarget(&word_3, old_3, new_3);
+				// check whether MwCAS operations are performed consistently
+				std::cout << "\n\tValue: " << data.load() << std::endl << std::endl;
+			}
+			{
+				size_t kThreadNum = std::thread::hardware_concurrency();
 
-							// try MwCAS
-							if (desc.MwCAS()) break;
+				// the number of MwCAS operations in each thread
+				constexpr size_t kExecNum = 1e6;
 
+				// use an unsigned long type as MwCAS targets
+
+				// target of a mwCAS example
+				fibers::utilities::CAS_Container<DListNode> data;
+
+				using fibers::utilities::dbgroup::atomic::mwcas::MwCASDescriptor;
+
+				fibers::parallel::For((size_t)0, kThreadNum, [kExecNum, &data](size_t threadNum) {
+					DListNode node, oldNode;
+					for (size_t i = 0; i < kExecNum; ++i) {
+						while (true) {							
+							node = oldNode = data.load();
+							node.prev = node.next;
+							node.next = node.prev + 1;
+							node.payload += 1;
+
+							if (data.CompareSwap(oldNode, node)) break;
 						}
 					}
 				});
 
 				// check whether MwCAS operations are performed consistently
-				std::cout << "\n\t1st field: " << word_1 << "\n\t2nd field: " << word_2 << "\n\t3rd field: " << word_3 << std::endl << std::endl;
+				std::cout << "\n\tValue: " << data.load().payload << std::endl << std::endl;
 			}
 
 		}

@@ -1875,9 +1875,6 @@ namespace fibers {
 #undef RETURN_NOT_OK
 #undef IS_POWER_OF_TWO
 
-
-
-
 #define MWCAS_CAPACITY 4
 #define MWCAS_RETRY_THRESHOLD 10
 #define MWCAS_SLEEP_TIME 10
@@ -2413,29 +2410,15 @@ namespace fibers {
 		}  // namespace dbgroup::atomic::mwcas
 
 		template <typename Arg>
-		union ContainerImpl {
-			Arg data;
-			uint64_t addresses[1 + sizeof(Arg) / 8];
-		};
-
-		template <typename Arg>
 		struct CAS_Container {
 		public:
 			static constexpr size_t NumWords{ 1 + sizeof(Arg) / 8 };
-			ContainerImpl<Arg> data;
-
-			uint64_t& Word(size_t index) {
-				return data.addresses[index];
+		protected:
+			union ContainerImpl {
+				Arg data;
+				uint64_t addresses[1 + sizeof(Arg) / 8];
 			};
-			const uint64_t& Word(size_t index) const {
-				return data.addresses[index];
-			};
-			const Arg& Data() const {
-				return data.data;
-			};
-			Arg& Data() {
-				return data.data;
-			};
+			ContainerImpl data;
 			CAS_Container<Arg> Copy() const {
 				using namespace dbgroup::atomic::mwcas;
 				CAS_Container<Arg> temp;
@@ -2444,31 +2427,204 @@ namespace fibers {
 				}
 				return temp;
 			};
+			uint64_t& Word(size_t index) {
+				return data.addresses[index];
+			};
+			const uint64_t& Word(size_t index) const {
+				return data.addresses[index];
+			};
+			const Arg& Data() const { return data.data; };
+			Arg& Data() { return data.data; };
 
+		public:
+			constexpr CAS_Container() : data{} { 
+				for (size_t i = 0; i < (1 + sizeof(Arg) / 8); i++) { data.addresses[i] = 0; }
+				static_assert(std::is_pod_v<Arg>, "Compare-and-swap operations only work with POD-type structs.");
+			};
+			constexpr CAS_Container(Arg&& a) : data{} { 
+				for (size_t i = 0; i < (1 + sizeof(Arg) / 8); i++) { data.addresses[i] = 0; } 
+				data.data = std::forward<Arg>(a); 
+				static_assert(std::is_pod_v<Arg>, "Compare-and-swap operations only work with POD-type structs.");
+			};
+			constexpr CAS_Container(Arg const& a) : data{} { 
+				for (size_t i = 0; i < (1 + sizeof(Arg) / 8); i++) { data.addresses[i] = 0; } 
+				data.data = a; 
+				static_assert(std::is_pod_v<Arg>, "Compare-and-swap operations only work with POD-type structs.");
+			};
 
+			~CAS_Container() = default;
+			constexpr CAS_Container(const CAS_Container&) = default;
+			constexpr CAS_Container& operator=(const CAS_Container&) = default;
+			constexpr CAS_Container(CAS_Container&&) = default;
+			constexpr CAS_Container& operator=(CAS_Container&&) = default;
 
-			// control bits must be initialzed by zeros
-			constexpr MultiWordCAS_SwappableContainer() : data{} {};
-			constexpr MultiWordCAS_SwappableContainer(Arg&& a) : data(std::forward<Arg>(a)) {};
-			constexpr MultiWordCAS_SwappableContainer(Arg const& a) : data(a) {};
+		public:
+			bool CompareSwap(Arg const& compare, Arg const& input) {
+				using fibers::utilities::dbgroup::atomic::mwcas::MwCASDescriptor;
 
-			// target class must satisfy conditions of the std::atomic template
-			~MultiWordCAS_SwappableContainer() = default;
-			constexpr MultiWordCAS_SwappableContainer(const MultiWordCAS_SwappableContainer&) = default;
-			constexpr MultiWordCAS_SwappableContainer& operator=(const MultiWordCAS_SwappableContainer&) = default;
-			constexpr MultiWordCAS_SwappableContainer(MultiWordCAS_SwappableContainer&&) = default;
-			constexpr MultiWordCAS_SwappableContainer& operator=(MultiWordCAS_SwappableContainer&&) = default;
+				fibers::utilities::CAS_Container<Arg> 
+					OldCopy(compare), 
+					UpdateCopy(input);
+				size_t 
+					index;
+
+				// continue until a MwCAS operation succeeds
+				while (true) {
+					// create a MwCAS descriptor
+					MwCASDescriptor desc{};
+
+					// prepare the swap target(s)
+					for (index = 0; index < NumWords; index++) {
+						desc.AddMwCASTarget(&Word(index), OldCopy.Word(index), UpdateCopy.Word(index));
+					}
+
+					// try multi-word compare and swap
+					if (desc.MwCAS()) return true;
+					else return false;
+				}
+			}; // returns the previous value while changing the underlying value
+			Arg Swap(Arg const& input, bool allowMiss = false) {
+				using fibers::utilities::dbgroup::atomic::mwcas::MwCASDescriptor;
+
+				fibers::utilities::CAS_Container<Arg> OldCopy, UpdateCopy;
+				size_t index;
+
+				// continue until a MwCAS operation succeeds
+				while (true) {
+					// create a MwCAS descriptor
+					MwCASDescriptor desc{};
+
+					// capture the old words
+					for (index = 0; index < NumWords; index++) {
+						OldCopy.Word(index) = UpdateCopy.Word(index) = MwCASDescriptor::Read<uint64_t>(&Word(index));
+					}
+
+					// update the actual data
+					UpdateCopy.Data() = input;
+
+					// prepare the swap target(s)
+					for (index = 0; index < NumWords; index++) {
+						desc.AddMwCASTarget(&Word(index), OldCopy.Word(index), UpdateCopy.Word(index));
+					}
+
+					// try multi-word compare and swap
+					if (desc.MwCAS()) break;
+					else if (allowMiss) break;
+				}
+				return OldCopy.Data();
+			}; // returns the previous value while changing the underlying value
+			Arg Swap(Arg&& input, bool allowMiss = false) {
+				using fibers::utilities::dbgroup::atomic::mwcas::MwCASDescriptor;
+
+				fibers::utilities::CAS_Container<Arg> OldCopy, UpdateCopy;
+				size_t index;
+
+				// continue until a MwCAS operation succeeds
+				while (true) {
+					// create a MwCAS descriptor
+					MwCASDescriptor desc{};
+
+					// capture the old words
+					for (index = 0; index < NumWords; index++) {
+						OldCopy.Word(index) = UpdateCopy.Word(index) = MwCASDescriptor::Read<uint64_t>(&Word(index));
+					}
+
+					// update the actual data
+					UpdateCopy.Data() = std::forward<Arg>(input);
+
+					// prepare the swap target(s)
+					for (index = 0; index < NumWords; index++) {
+						desc.AddMwCASTarget(&Word(index), OldCopy.Word(index), UpdateCopy.Word(index));
+					}
+
+					// try multi-word compare and swap
+					if (desc.MwCAS()) break;
+					else if (allowMiss) break;
+				}
+				return OldCopy.Data();
+			}; // returns the previous value while changing the underlying value
+			Arg Add(Arg const& input) {
+				using fibers::utilities::dbgroup::atomic::mwcas::MwCASDescriptor;
+
+				fibers::utilities::CAS_Container<Arg> OldCopy, UpdateCopy;
+				size_t index;
+
+				// continue until a MwCAS operation succeeds
+				while (true) {
+					// create a MwCAS descriptor
+					MwCASDescriptor desc{};
+
+					// capture the old words
+					for (index = 0; index < NumWords; index++) {
+						OldCopy.Word(index) = UpdateCopy.Word(index) = MwCASDescriptor::Read<uint64_t>(&Word(index));
+					}
+
+					// update the actual data
+					UpdateCopy.Data() += input;
+
+					// prepare the swap target(s)
+					for (index = 0; index < NumWords; index++) {
+						desc.AddMwCASTarget(&Word(index), OldCopy.Word(index), UpdateCopy.Word(index));
+					}
+
+					// try multi-word compare and swap
+					if (desc.MwCAS()) break;
+				}
+				return OldCopy.Data();
+			}; // returns the previous value while incrementing the actual counter
+			Arg Add(Arg && input) {
+				using fibers::utilities::dbgroup::atomic::mwcas::MwCASDescriptor;
+
+				fibers::utilities::CAS_Container<Arg> OldCopy, UpdateCopy;
+				size_t index;
+
+				// continue until a MwCAS operation succeeds
+				while (true) {
+					// create a MwCAS descriptor
+					MwCASDescriptor desc{};
+
+					// capture the old words
+					for (index = 0; index < NumWords; index++) {
+						OldCopy.Word(index) = UpdateCopy.Word(index) = MwCASDescriptor::Read<uint64_t>(&Word(index));
+					}
+
+					// update the actual data
+					UpdateCopy.Data() += std::forward<Arg>(input);
+
+					// prepare the swap target(s)
+					for (index = 0; index < NumWords; index++) {
+						desc.AddMwCASTarget(&Word(index), OldCopy.Word(index), UpdateCopy.Word(index));
+					}
+
+					// try multi-word compare and swap
+					if (desc.MwCAS()) break;
+				}
+				return OldCopy.Data();
+			}; // returns the previous value while incrementing the actual counter
+
+		public: // std::atomic compatability
+			Arg fetch_add(Arg const& v) {
+				return Add(v);
+			}; // returns the previous value while incrementing the actual counter
+			Arg fetch_sub(Arg const& v) {
+				return Add(-v);
+			}; // returns the previous value while decrementing the actual counter
+			Arg exchange(Arg const& v) {
+				return Swap(v);
+			}; // returns the previous value while setting the value to the input
+			Arg load() const {
+				return Copy().data.data;
+			}; // gets the value
+			void store(Arg const& v) {
+				Swap(v);
+				return;
+			}; // sets the value to the input
+
 		};
-
-
-
 
 #undef MWCAS_SLEEP_TIME
 #undef MWCAS_RETRY_THRESHOLD
 #undef MWCAS_CAPACITY
-
-
-
 
 #endif
 
@@ -3024,6 +3180,7 @@ namespace fibers {
 
 		};
 
+		/* mutex which allows multiple readers OR one writer to access a critical section at the same time. */
 		template <typename mutex = synchronization::mutex> class shared_mutex {
 		private:
 			static auto GetUnderlyingConditionalVariableExample() {
