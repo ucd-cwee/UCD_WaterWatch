@@ -128,7 +128,92 @@ namespace fibers::platform {
 namespace fibers {
 	namespace utilities {
 		int Hardware::GetNumCpuCores() {
-			return static_cast<int>(std::thread::hardware_concurrency());
+
+			typedef BOOL(WINAPI* LPFN_GLPI)(PSYSTEM_LOGICAL_PROCESSOR_INFORMATION, PDWORD);
+
+			PSYSTEM_LOGICAL_PROCESSOR_INFORMATION buffer = nullptr; // NULL
+			PSYSTEM_LOGICAL_PROCESSOR_INFORMATION ptr = nullptr; // NULL
+			PCACHE_DESCRIPTOR Cache;
+			LPFN_GLPI	glpi;
+			BOOL		done = FALSE;
+			DWORD		returnLength = 0;
+			DWORD		byteOffset = 0;
+
+			cweeCpuInfo_t cpuInfo;
+			cpuInfo = cweeCpuInfo_t();
+
+			glpi = (LPFN_GLPI)GetProcAddress(GetModuleHandle(TEXT("kernel32")), "GetLogicalProcessorInformation");
+			if (NULL == glpi) {
+				return 0;
+			}
+
+			while (!done) {
+				DWORD rc = glpi(buffer, &returnLength);
+
+				if (FALSE == rc) {
+					if (GetLastError() == ERROR_INSUFFICIENT_BUFFER) {
+						if (buffer) {
+							free(buffer);
+						}
+
+						buffer = (PSYSTEM_LOGICAL_PROCESSOR_INFORMATION)malloc(returnLength);
+					}
+					else {
+						return 0;
+					}
+				}
+				else {
+					done = TRUE;
+				}
+			}
+
+			ptr = buffer;
+
+			while (byteOffset + sizeof(SYSTEM_LOGICAL_PROCESSOR_INFORMATION) <= returnLength) {
+				switch ((e_LOGICAL_PROCESSOR_RELATIONSHIP_LOCAL)ptr->Relationship) {
+				case e_localRelationProcessorCore: // A hyperthreaded core supplies more than one logical processor.
+					cpuInfo.processorCoreCount++;
+					cpuInfo.logicalProcessorCount += CountSetBits(ptr->ProcessorMask);
+					break;
+
+				case e_localRelationNumaNode: // Non-NUMA systems report a single record of this type.
+					cpuInfo.numaNodeCount++;
+					break;
+
+				case e_localRelationCache: // Cache data is in ptr->Cache, one CACHE_DESCRIPTOR structure for each cache. 
+					Cache = &ptr->Cache;
+					if (Cache->Level >= 1 && Cache->Level <= 3) {
+						int level = Cache->Level - 1;
+						if (cpuInfo.cacheLevel[level].count > 0) {
+							cpuInfo.cacheLevel[level].count++;
+						}
+						else {
+							cpuInfo.cacheLevel[level].associativity = Cache->Associativity;
+							cpuInfo.cacheLevel[level].lineSize = Cache->LineSize;
+							cpuInfo.cacheLevel[level].size = Cache->Size;
+						}
+					}
+					break;
+
+				case e_localRelationProcessorPackage: // Logical processors share a physical package.
+					cpuInfo.processorPackageCount++;
+					break;
+
+				default:
+					break;
+				}
+				byteOffset += sizeof(SYSTEM_LOGICAL_PROCESSOR_INFORMATION);
+				ptr++;
+			}
+
+			free(buffer);
+
+			if (cpuInfo.logicalProcessorCount > 32) cpuInfo.logicalProcessorCount = 32;
+			if (cpuInfo.logicalProcessorCount <= 0) cpuInfo.logicalProcessorCount = 1;
+
+			return cpuInfo.logicalProcessorCount;
+
+			// return static_cast<int>(WindowsPlatform::GetCPUInfo().logicalProcessorCount); // std::thread::hardware_concurrency());
 		};
 		float Hardware::GetPercentCpuLoad() {
 			auto CalculateCPULoad = [](unsigned long long idleTicks, unsigned long long totalTicks)->float
@@ -209,7 +294,7 @@ namespace fibers {
 			maxThreadCount = std::max(1u, maxThreadCount);
 
 			// Retrieve the number of hardware threads in this system:
-			internal_state.numCores = std::thread::hardware_concurrency();
+			internal_state.numCores = fibers::utilities::Hardware::GetNumCpuCores();
 
 			// Calculate the actual number of worker threads we want (-1 main thread):
 			internal_state.numThreads = std::min(maxThreadCount, std::max(1u, internal_state.numCores - 1));
@@ -223,7 +308,7 @@ namespace fibers {
 						work(threadID);
 
 						// finished with jobs, put to sleep
-						std::unique_lock<decltype(internal_state.wakeMutex)> lock(internal_state.wakeMutex); // std::unique_lock<std::mutex> lock(internal_state.wakeMutex);
+						auto lock{ std::unique_lock(internal_state.wakeMutex) };
 						internal_state.wakeCondition.wait(lock);
 					}
 				});
@@ -278,23 +363,26 @@ namespace fibers {
 		void Execute(context& ctx, const std::function<void(JobArgs)>& task) noexcept {
 			ctx.counter.Increment(); // Context state is updated:
 			internal_state.jobQueuePerThread[internal_state.nextQueue.Increment() % internal_state.numThreads].push({ task, &ctx, 0, 0, 1, 0 });
-			internal_state.wakeCondition.notify_one();
+			internal_state.wakeCondition.notify_one(); // 
 		};
-		void Dispatch(context& ctx, uint32_t jobCount, uint32_t groupSize, const std::function<void(JobArgs)>& task, size_t sharedmemory_size) noexcept {
+		void Dispatch(context& ctx, uint32_t jobCount, const std::function<void(JobArgs)>& task, size_t sharedmemory_size) noexcept {
 			if (jobCount == 0) { return; }
 
-			const uint32_t groupCount = DispatchGroupCount(jobCount, groupSize);
+			uint32_t groupCount = std::max<uint32_t>(1, std::min<uint32_t>(jobCount, internal_state.numThreads));
+			uint32_t groupSize = jobCount / groupCount;
+			while ((uint32_t)(groupCount * groupSize) < jobCount) groupCount++;
 
 			// Context state is updated:
 			ctx.counter.Add(groupCount);
 
 			Task job{ task, &ctx, 0, 0, 1, (uint32_t)sharedmemory_size };
 
-			for (uint32_t groupID = 0; groupID < groupCount; ++groupID) {
+			for (uint32_t groupID = 0; ; ++groupID) { // groupID < groupCount
 				// For each group, generate one real job:
 				job.groupID = groupID;
-				job.groupJobOffset = groupID * groupSize;
+				job.groupJobOffset = groupID * groupSize; 
 				job.groupJobEnd = std::min(job.groupJobOffset + groupSize, jobCount);
+				if (job.groupJobOffset >= job.groupJobEnd) break; // this is how we know we've produced enough job groups to cover the number of jobs requested, and no more.
 				internal_state.jobQueuePerThread[internal_state.nextQueue.Increment() % internal_state.numThreads].push(job);
 			}
 
@@ -351,7 +439,7 @@ namespace fibers {
 
 		wg->Dispatch(listOfJobs.size(), [listOfJobs](impl::JobArgs args) {
 			listOfJobs[args.jobIndex].Invoke();
-			});
+		});
 
 		for (Job const& j : listOfJobs) {
 			jobs.push_back(j);
@@ -405,17 +493,4 @@ namespace fibers {
 			std::mutex* registryMutex_ = &registryMutex_impl;
 		};
 	};
-
-
-
-	namespace synchronization {
-		namespace impl {
-			static fibers::synchronization::mutex atomic_number_lock_impl;
-			fibers::synchronization::mutex* atomic_number_lock = &atomic_number_lock_impl;
-		};
-	};
-
-
-
-
 };

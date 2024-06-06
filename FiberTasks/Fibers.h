@@ -179,6 +179,29 @@
 namespace fibers {
 
 	namespace utilities {
+		namespace HasDefaultConstructor
+		{
+			template <class... T> struct Friend;
+			struct testing_tag;
+
+			// specialisation simply to check if default constructible
+			template <class T> struct Friend<T, testing_tag> {
+				// sfinae trick has to be nested in the Friend class
+				// this candidate will be ignored if X does not have a default constructor
+				template <class X, class = decltype(X())>
+				static std::true_type test(X*);
+
+				template <class X>
+				static std::false_type test(...);
+
+				static constexpr bool value = decltype(test<T>(0))::value;
+			};
+			template <class T> using has_any_default_constructor = Friend<T, testing_tag>;
+			template <class T> constexpr bool HasDefaultConstructor_v() {
+				return has_any_default_constructor < T >::value;
+			};
+		}
+
 		__forceinline static void* Mem_Alloc64(const size_t& size) { if (!size) return nullptr; const size_t paddedSize = (size + 63) & ~63; return ::_aligned_malloc(paddedSize, 64); };
 		__forceinline static void* Mem_Alloc16(const size_t& size) { if (!size) return nullptr; const size_t paddedSize = (size + 15) & ~15; return ::_aligned_malloc(paddedSize, 16); };
 		__forceinline static void  Mem_Free64(void* ptr) { if (ptr) ::_aligned_free(ptr); };
@@ -201,6 +224,42 @@ namespace fibers {
 		public:
 			static int GetNumCpuCores();
 			static float GetPercentCpuLoad();
+		private:
+			enum e_LOGICAL_PROCESSOR_RELATIONSHIP_LOCAL {
+				e_localRelationProcessorCore,
+				e_localRelationNumaNode,
+				e_localRelationCache,
+				e_localRelationProcessorPackage
+			};
+			static __forceinline DWORD CountSetBits(ULONG_PTR bitMask) {
+				DWORD LSHIFT = sizeof(ULONG_PTR) * 8 - 1;
+				DWORD bitSetCount = 0;
+				ULONG_PTR bitTest = (ULONG_PTR)1 << LSHIFT;
+
+				for (DWORD i = 0; i <= LSHIFT; i++) {
+					bitSetCount += ((bitMask & bitTest) ? 1 : 0);
+					bitTest /= 2;
+				}
+
+				return bitSetCount;
+			};
+			class cweeCpuInfo_t {
+			public:
+				cweeCpuInfo_t() : processorPackageCount(0), processorCoreCount(0), logicalProcessorCount(0), numaNodeCount(0), cacheLevel() {};
+				int processorPackageCount;
+				int processorCoreCount;
+				int logicalProcessorCount; // the value we care about -- indicated the number of actual "threads" that can run at once. 
+				int numaNodeCount;
+				class cacheInfo_t {
+				public:
+					cacheInfo_t() : count(0), associativity(0), lineSize(0), size(0) {};
+					int count;
+					int associativity;
+					int lineSize;
+					int size;
+				};
+				cacheInfo_t cacheLevel[3];
+			};
 		};
 		
 		template<typename Type = size_t>
@@ -296,7 +355,402 @@ namespace fibers {
 			auto end() const { return ConstIterator(max); };
 		};
 
+		template<typename... Args> class Union {
+		private:
+#pragma region IMPLIMENTATION DETAILS
+			using byte = unsigned char;
+			template<int N> using NthTypeOf = typename std::remove_const<typename std::remove_reference<typename std::tuple_element<N, std::tuple<Args...>>::type>::type>::type;
+			static constexpr size_t num_parameters = sizeof...(Args);
+			template<int N>	static constexpr size_t SizeOfFirstN() {
+				size_t d(0);
+				if constexpr (num_parameters >= 1 && N >= 1) {
+					d += sizeof(NthTypeOf<0>);
+				}
+				if constexpr (num_parameters >= 2 && N >= 2) {
+					d += sizeof(NthTypeOf<1>);
+				}
+				if constexpr (num_parameters >= 3 && N >= 3) {
+					d += sizeof(NthTypeOf<2>);
+				}
+				if constexpr (num_parameters >= 4 && N >= 4) {
+					d += sizeof(NthTypeOf<3>);
+				}
+				if constexpr (num_parameters >= 5 && N >= 5) {
+					d += sizeof(NthTypeOf<4>);
+				}
+				if constexpr (num_parameters >= 6 && N >= 6) {
+					d += sizeof(NthTypeOf<5>);
+				}
+				if constexpr (num_parameters >= 7 && N >= 7) {
+					d += sizeof(NthTypeOf<6>);
+				}
+				if constexpr (num_parameters >= 8 && N >= 8) {
+					d += sizeof(NthTypeOf<7>);
+				}
+				if constexpr (num_parameters >= 9 && N >= 9) {
+					d += sizeof(NthTypeOf<8>);
+				}
+				if constexpr (num_parameters >= 10 && N >= 10) {
+					d += sizeof(NthTypeOf<9>);
+				}
+				if constexpr (num_parameters >= 11 && N >= 11) {
+					d += sizeof(NthTypeOf<10>);
+				}
+				if constexpr (num_parameters >= 12 && N >= 12) {
+					d += sizeof(NthTypeOf<11>);
+				}
+				if constexpr (num_parameters >= 13 && N >= 13) {
+					d += sizeof(NthTypeOf<12>);
+				}
+				if constexpr (num_parameters >= 13 && N >= 14) {
+					d += sizeof(NthTypeOf<13>);
+				}
+				if constexpr (num_parameters >= 14 && N >= 15) {
+					d += sizeof(NthTypeOf<14>);
+				}
+				if constexpr (num_parameters >= 15 && N >= 16) {
+					d += sizeof(NthTypeOf<15>);
+				}
+				return d;
+			};
+			static constexpr size_t SizeOfAll() {
+				return SizeOfFirstN<num_parameters>();
+			};
+			static constexpr size_t sizeOfArgs = SizeOfAll();
+			static constexpr size_t bitOffset_0 = SizeOfFirstN<0>();
+			static constexpr size_t bitOffset_1 = SizeOfFirstN<1>();
+			static constexpr size_t bitOffset_2 = SizeOfFirstN<2>();
+			static constexpr size_t bitOffset_3 = SizeOfFirstN<3>();
+			static constexpr size_t bitOffset_4 = SizeOfFirstN<4>();
+			static constexpr size_t bitOffset_5 = SizeOfFirstN<5>();
+			static constexpr size_t bitOffset_6 = SizeOfFirstN<6>();
+			static constexpr size_t bitOffset_7 = SizeOfFirstN<7>();
+			static constexpr size_t bitOffset_8 = SizeOfFirstN<8>();
+			static constexpr size_t bitOffset_9 = SizeOfFirstN<9>();
+			static constexpr size_t bitOffset_10 = SizeOfFirstN<10>();
+			static constexpr size_t bitOffset_11 = SizeOfFirstN<11>();
+			static constexpr size_t bitOffset_12 = SizeOfFirstN<12>();
+			static constexpr size_t bitOffset_13 = SizeOfFirstN<13>();
+			static constexpr size_t bitOffset_14 = SizeOfFirstN<14>();
+			static constexpr size_t bitOffset_15 = SizeOfFirstN<15>();
 
+#pragma endregion
+		public:
+#pragma region INTENDED PUBLIC FUCNTIONS AND USES
+			/* ALLOC THE UNIONED DATA IN STACK */
+			Union() noexcept : data{ 0 } { Alloc(&data[0]); };
+			/* ALLOC THE UNIONED DATA FROM PARAMETERS */ template <typename T, typename = std::enable_if_t<!std::is_same_v<typename std::remove_reference<T>::type, Union>>, typename... TArgs>
+			explicit Union(T&& b, TArgs&&... a) noexcept : data{ 0 } {
+				InitAndSet(std::forward<T>(b), std::forward<TArgs>(a)...);
+			};
+
+			/* INIT AND COPY THE UNIONED DATA FROM ANOTHER UNION */
+			Union(Union const& a) noexcept : data{ 0 } { InitAndCopy(a); };
+			/* INIT AND TAKE THE UNIONED DATA FROM ANOTHER UNION */
+			Union(Union&& a) noexcept : data{ 0 } { InitAndTake(std::forward<Union>(a)); };
+			/* COPY THE UNIONED DATA FROM ANOTHER UNION */
+			Union& operator=(Union const& a) { Copy(a); return *this; };
+			/* TAKE THE UNIONED DATA FROM ANOTHER UNION */
+			Union& operator=(Union&& a) { Take(std::forward<Union>(a)); return *this; };
+			/* DESTROY THE UNION ONCE OUT-OF-SCOPE */
+			~Union() { Delete(); };
+
+			/* GET A REFERENCE TO THE N'th ITEM */  template<int N>
+			constexpr NthTypeOf<N>& get() const noexcept {
+				static_assert(N < num_parameters&& N >= 0, "Cannot access parameters beyond the allocated buffer.");
+				constexpr size_t index = SizeOfFirstN<N>();
+				return *static_cast<NthTypeOf<N>*>(static_cast<void*>(&data[index]));
+
+				//constexpr NthTypeOf<N>* out = static_cast<NthTypeOf<N>*>(static_cast<void*>((static_cast<byte*>(&const_cast<byte&>(data[SizeOfFirstN<N>()])))));
+				//return *out;
+			};
+			/* GET THE SIZE (in bytes) OF THE ENTIRE UNION */
+			static constexpr size_t size() noexcept { return SizeOfAll(); };
+			/* GET THE SIZE (in bytes) OF THE N'th ITEM */ template<int N>
+			static constexpr size_t size() noexcept { return sizeof(NthTypeOf<N>); };
+
+			/* COMPARE WITH ANOTHER UNION */
+			friend bool operator==(Union const& a, Union const& b) {
+				return Equals(a, b);
+			};
+			friend bool operator!=(Union const& a, Union const& b) {
+				return !operator==(a, b);
+			};
+#pragma endregion
+		private:
+#pragma region DATA ARRAY (BYTES)
+			mutable byte data[sizeOfArgs];
+#pragma endregion
+		private:
+#pragma region STATIC UTILITY FUNCTIONS
+			template<typename _type_> static bool is_empty(_type_* d, size_t size) { byte* buf = static_cast<byte*>(static_cast<void*>(d)); return buf[0] == 0 && 0 == ::memcmp(buf, buf + 1, size - 1); };
+			template<typename _type_> static constexpr bool isPod() { return std::is_pod<_type_>::value; };
+			template<typename _type_> static void InstantiateData(_type_* ptr) {
+				if constexpr (isPod<_type_>()) {
+					/* already cleared during instantiation */
+				}
+				else {
+					if constexpr (HasDefaultConstructor::HasDefaultConstructor_v<_type_>()) {
+						new (&ptr[0]) _type_;
+					}
+				}
+			};
+			template<typename _type_> static void InstantiateData(_type_* ptr, _type_&& srce) {
+				if constexpr (isPod<_type_>()) {
+					*ptr = std::forward<_type_>(srce);
+				}
+				else {
+					if constexpr (std::is_move_constructible<_type_>::value) {
+						new (&ptr[0]) _type_(std::forward<_type_>(srce));
+					}
+					else if constexpr (std::is_copy_constructible<_type_>::value) {
+						new (&ptr[0]) _type_(srce);
+					}
+				}
+			};
+			template<typename _type_> static void InstantiateData(_type_* ptr, _type_ const& srce) {
+				if constexpr (isPod<_type_>()) {
+					*ptr = srce;
+				}
+				else {
+					if constexpr (std::is_copy_constructible<_type_>::value) {
+						new (&ptr[0]) _type_(srce);
+					}
+				}
+			};
+			template<typename _type_, typename _type2_, typename = std::enable_if_t<!std::is_same_v<_type2_, _type_>>>
+			static void InstantiateData(_type_* ptr, _type2_&& srce) {
+				if constexpr (isPod<_type_>()) {
+					*ptr = std::forward<_type2_>(srce);
+				}
+				else {
+					new (&ptr[0]) _type_(std::forward<_type2_>(srce));
+				}
+			};
+			template<typename _type_, typename _type2_, typename = std::enable_if_t<!std::is_same_v<_type2_, _type_>>>
+			static void InstantiateData(_type_* ptr, _type2_ const& srce) {
+				if constexpr (isPod<_type_>()) {
+					*ptr = srce;
+				}
+				else {
+					new (&ptr[0]) _type_(srce);
+				}
+			};
+			template<typename _type_> static void DestroyData(_type_* ptr) {
+				if constexpr (isPod<_type_>()) { /* does not require clearing */ }
+				else {
+					if (!is_empty(ptr, sizeof(_type_))) {
+						ptr[0].~_type_();
+					}
+				}
+			};
+			template <int N> static NthTypeOf<N>* PtrAt(byte* data) { return static_cast<NthTypeOf<N>*>(static_cast<void*>(&data[SizeOfFirstN<N>()])); };
+			static void Alloc(byte* data) {
+				if constexpr (num_parameters >= 1) { InstantiateData(PtrAt<0>(data)); }
+				if constexpr (num_parameters >= 2) { InstantiateData(PtrAt<1>(data)); }
+				if constexpr (num_parameters >= 3) { InstantiateData(PtrAt<2>(data)); }
+				if constexpr (num_parameters >= 4) { InstantiateData(PtrAt<3>(data)); }
+				if constexpr (num_parameters >= 5) { InstantiateData(PtrAt<4>(data)); }
+				if constexpr (num_parameters >= 6) { InstantiateData(PtrAt<5>(data)); }
+				if constexpr (num_parameters >= 7) { InstantiateData(PtrAt<6>(data)); }
+				if constexpr (num_parameters >= 8) { InstantiateData(PtrAt<7>(data)); }
+				if constexpr (num_parameters >= 9) { InstantiateData(PtrAt<8>(data)); }
+				if constexpr (num_parameters >= 10) { InstantiateData(PtrAt<9>(data)); }
+				if constexpr (num_parameters >= 11) { InstantiateData(PtrAt<10>(data)); }
+				if constexpr (num_parameters >= 12) { InstantiateData(PtrAt<11>(data)); }
+				if constexpr (num_parameters >= 13) { InstantiateData(PtrAt<12>(data)); }
+				if constexpr (num_parameters >= 14) { InstantiateData(PtrAt<13>(data)); }
+				if constexpr (num_parameters >= 15) { InstantiateData(PtrAt<14>(data)); }
+				if constexpr (num_parameters >= 16) { InstantiateData(PtrAt<15>(data)); }
+			};
+#pragma endregion
+		private:
+#pragma region UTILITY FUNCTIONS
+			template <int N> bool ElementIsZero() { return is_empty(PtrAt<N>(&data[0]), sizeof(NthTypeOf<N>)); };
+			bool IsAllZero() { return is_empty(&data[0], sizeOfArgs); };
+			void Clear() { ::memset(&data[0], 0, sizeOfArgs); };
+			template <int N> void Clear() { ::memset(&get<N>(), 0, sizeof(NthTypeOf<N>)); };
+			void Delete() {
+				if (IsAllZero()) return; // sign that this item was not initialized, is all POD, or was recently "taken" over
+				if constexpr (num_parameters >= 1) { DestroyData(PtrAt<0>(data)); }
+				if constexpr (num_parameters >= 2) { DestroyData(PtrAt<1>(data)); }
+				if constexpr (num_parameters >= 3) { DestroyData(PtrAt<2>(data)); }
+				if constexpr (num_parameters >= 4) { DestroyData(PtrAt<3>(data)); }
+				if constexpr (num_parameters >= 5) { DestroyData(PtrAt<4>(data)); }
+				if constexpr (num_parameters >= 6) { DestroyData(PtrAt<5>(data)); }
+				if constexpr (num_parameters >= 7) { DestroyData(PtrAt<6>(data)); }
+				if constexpr (num_parameters >= 8) { DestroyData(PtrAt<7>(data)); }
+				if constexpr (num_parameters >= 9) { DestroyData(PtrAt<8>(data)); }
+				if constexpr (num_parameters >= 10) { DestroyData(PtrAt<9>(data)); }
+				if constexpr (num_parameters >= 11) { DestroyData(PtrAt<10>(data)); }
+				if constexpr (num_parameters >= 12) { DestroyData(PtrAt<11>(data)); }
+				if constexpr (num_parameters >= 13) { DestroyData(PtrAt<12>(data)); }
+				if constexpr (num_parameters >= 14) { DestroyData(PtrAt<13>(data)); }
+				if constexpr (num_parameters >= 15) { DestroyData(PtrAt<14>(data)); }
+				if constexpr (num_parameters >= 16) { DestroyData(PtrAt<15>(data)); }
+				Clear();
+			};
+
+#pragma endregion
+		private:
+#pragma region SET WITH PARAMETER ARGS
+			/* INIT DATA USING PARAMETER */ template <int N> void InitAndSetAt(NthTypeOf<N> const& a) {
+				InstantiateData(PtrAt<N>(&data[0]), a);
+			};
+			/* INIT DATA USING PARAMETER */ template <int N> void InitAndSetAt(NthTypeOf<N>&& a) {
+				InstantiateData(PtrAt<N>(&data[0]), std::forward<NthTypeOf<N>>(a));
+			};
+			/* INIT DATA USING PARAMETER */ template <int N, typename T, typename = std::enable_if_t<!std::is_same_v<T, NthTypeOf<N>>>> void InitAndSetAt(T&& a) {
+				InstantiateData(PtrAt<N>(&data[0]), std::forward<T>(a));
+			};
+			/* EMPTY PARAMETER PACK -> END RECURSION */ void InitAndSetDataWith() { return; };
+			/* RECURSIVELY UNPACK THE PARAMETER PACK */ template<typename T, typename... Targs> void InitAndSetDataWith(const T& value, Targs&&... Fargs) {
+				InitAndSetAt<num_parameters - (1 + sizeof...(Fargs))>(value);
+				InitAndSetDataWith(std::forward<Targs>(Fargs)...);
+			};
+			/* RECURSIVELY UNPACK THE PARAMETER PACK */ template<typename T, typename... Targs> void InitAndSetDataWith(T&& value, Targs&&... Fargs) {
+				InitAndSetAt<num_parameters - (1 + sizeof...(Fargs))>(std::forward<T>(value));
+				InitAndSetDataWith(std::forward<Targs>(Fargs)...);
+			};
+			/* SET WITH PARAMETER PACK */ template <typename... TArgs> void InitAndSet(TArgs const&... a) {
+				static_assert((sizeof...(TArgs)) == num_parameters, "Union initializer must use the same number of parametrers as are defined in the Union.");
+				InitAndSetDataWith(a...);
+			};
+			/* SET WITH PARAMETER PACK */ template <typename... TArgs> void InitAndSet(TArgs&&... a) {
+				static_assert((sizeof...(TArgs)) == num_parameters, "Union initializer must use the same number of parametrers as are defined in the Union.");
+				InitAndSetDataWith(std::forward<TArgs>(a)...);
+			};
+
+			/* SET DATA USING PARAMETER */ template <int N> void SetAt(NthTypeOf<N> const& a) { this->get<N>() = a; };
+			/* SET DATA USING PARAMETER */ template <int N> void SetAt(NthTypeOf<N>&& a) { this->get<N>() = std::forward<NthTypeOf<N>>(a); };
+			/* EMPTY PARAMETER PACK -> END RECURSION */ void SetDataWith() { return; };
+			/* RECURSIVELY UNPACK THE PARAMETER PACK */ template<typename T, typename... Targs> void SetDataWith(const T& value, Targs&&... Fargs) { SetAt<num_parameters - (1 + sizeof...(Fargs))>(value); SetDataWith(std::forward<Targs>(Fargs)...); };
+			/* RECURSIVELY UNPACK THE PARAMETER PACK */ template<typename T, typename... Targs> void SetDataWith(T&& value, Targs&&... Fargs) { SetAt<num_parameters - (1 + sizeof...(Fargs))>(std::forward<T>(value)); SetDataWith(std::forward<Targs>(Fargs)...); };
+			/* SET WITH PARAMETER PACK */ template <typename... TArgs> void Set(TArgs const&... a) {
+				static_assert((sizeof...(TArgs)) == num_parameters, "Union initializer must use the same number of parametrers as are defined in the Union.");
+				SetDataWith(a...);
+			};
+			/* SET WITH PARAMETER PACK */ template <typename... TArgs> void Set(TArgs&&... a) {
+				static_assert((sizeof...(TArgs)) == num_parameters, "Union initializer must use the same number of parametrers as are defined in the Union.");
+				SetDataWith(std::forward<TArgs>(a)...);
+			};
+#pragma endregion
+#pragma region COMPARE WITH CONST&
+			template <int N> static bool EqualsAt(Union const& a, Union const& b) {
+				return a.get<N>() == b.get<N>();
+			};
+			static bool Equals(Union const& a, Union const& b) {
+				bool out = true;
+				if constexpr (num_parameters >= 1) { out = out && EqualsAt<0>(a, b); if (!out) return out; }
+				if constexpr (num_parameters >= 2) { out = out && EqualsAt<1>(a, b); if (!out) return out; }
+				if constexpr (num_parameters >= 3) { out = out && EqualsAt<2>(a, b); if (!out) return out; }
+				if constexpr (num_parameters >= 4) { out = out && EqualsAt<3>(a, b); if (!out) return out; }
+				if constexpr (num_parameters >= 5) { out = out && EqualsAt<4>(a, b); if (!out) return out; }
+				if constexpr (num_parameters >= 6) { out = out && EqualsAt<5>(a, b); if (!out) return out; }
+				if constexpr (num_parameters >= 7) { out = out && EqualsAt<6>(a, b); if (!out) return out; }
+				if constexpr (num_parameters >= 8) { out = out && EqualsAt<7>(a, b); if (!out) return out; }
+				if constexpr (num_parameters >= 9) { out = out && EqualsAt<8>(a, b); if (!out) return out; }
+				if constexpr (num_parameters >= 10) { out = out && EqualsAt<9>(a, b); if (!out) return out; }
+				if constexpr (num_parameters >= 11) { out = out && EqualsAt<10>(a, b); if (!out) return out; }
+				if constexpr (num_parameters >= 12) { out = out && EqualsAt<11>(a, b); if (!out) return out; }
+				if constexpr (num_parameters >= 13) { out = out && EqualsAt<12>(a, b); if (!out) return out; }
+				if constexpr (num_parameters >= 14) { out = out && EqualsAt<13>(a, b); if (!out) return out; }
+				if constexpr (num_parameters >= 15) { out = out && EqualsAt<14>(a, b); if (!out) return out; }
+				if constexpr (num_parameters >= 16) { out = out && EqualsAt<15>(a, b); if (!out) return out; }
+				return out;
+			};
+#pragma endregion
+#pragma region COPY FROM CONST&
+			template <int N> void InitAndCopyAt(Union const& a) { InstantiateData(PtrAt<N>(&data[0]), a.get<N>()); };
+			void InitAndCopy(Union const& a) {
+				if constexpr (num_parameters >= 1) { InitAndCopyAt<0>(a); }
+				if constexpr (num_parameters >= 2) { InitAndCopyAt<1>(a); }
+				if constexpr (num_parameters >= 3) { InitAndCopyAt<2>(a); }
+				if constexpr (num_parameters >= 4) { InitAndCopyAt<3>(a); }
+				if constexpr (num_parameters >= 5) { InitAndCopyAt<4>(a); }
+				if constexpr (num_parameters >= 6) { InitAndCopyAt<5>(a); }
+				if constexpr (num_parameters >= 7) { InitAndCopyAt<6>(a); }
+				if constexpr (num_parameters >= 8) { InitAndCopyAt<7>(a); }
+				if constexpr (num_parameters >= 9) { InitAndCopyAt<8>(a); }
+				if constexpr (num_parameters >= 10) { InitAndCopyAt<9>(a); }
+				if constexpr (num_parameters >= 11) { InitAndCopyAt<10>(a); }
+				if constexpr (num_parameters >= 12) { InitAndCopyAt<11>(a); }
+				if constexpr (num_parameters >= 13) { InitAndCopyAt<12>(a); }
+				if constexpr (num_parameters >= 14) { InitAndCopyAt<13>(a); }
+				if constexpr (num_parameters >= 15) { InitAndCopyAt<14>(a); }
+				if constexpr (num_parameters >= 16) { InitAndCopyAt<15>(a); }
+			};
+
+			template <int N> void CopyAt(Union const& a) { this->get<N>() = a.get<N>(); };
+			void Copy(Union const& a) {
+				if constexpr (num_parameters >= 1) { CopyAt<0>(a); }
+				if constexpr (num_parameters >= 2) { CopyAt<1>(a); }
+				if constexpr (num_parameters >= 3) { CopyAt<2>(a); }
+				if constexpr (num_parameters >= 4) { CopyAt<3>(a); }
+				if constexpr (num_parameters >= 5) { CopyAt<4>(a); }
+				if constexpr (num_parameters >= 6) { CopyAt<5>(a); }
+				if constexpr (num_parameters >= 7) { CopyAt<6>(a); }
+				if constexpr (num_parameters >= 8) { CopyAt<7>(a); }
+				if constexpr (num_parameters >= 9) { CopyAt<8>(a); }
+				if constexpr (num_parameters >= 10) { CopyAt<9>(a); }
+				if constexpr (num_parameters >= 11) { CopyAt<10>(a); }
+				if constexpr (num_parameters >= 12) { CopyAt<11>(a); }
+				if constexpr (num_parameters >= 13) { CopyAt<12>(a); }
+				if constexpr (num_parameters >= 14) { CopyAt<13>(a); }
+				if constexpr (num_parameters >= 15) { CopyAt<14>(a); }
+				if constexpr (num_parameters >= 16) { CopyAt<15>(a); }
+			};
+#pragma endregion
+#pragma region TAKE FROM &&
+			template <int N> void InitAndTakeAt(Union&& a) {
+				InstantiateData(PtrAt<N>(&data[0]), std::move(a.get<N>()));
+				if constexpr (!isPod<NthTypeOf<N>>()) { a.Clear<N>(); }
+			};
+			void InitAndTake(Union&& a) {
+				if constexpr (num_parameters >= 1) { InitAndTakeAt<0>(std::forward<Union>(a)); }
+				if constexpr (num_parameters >= 2) { InitAndTakeAt<1>(std::forward<Union>(a)); }
+				if constexpr (num_parameters >= 3) { InitAndTakeAt<2>(std::forward<Union>(a)); }
+				if constexpr (num_parameters >= 4) { InitAndTakeAt<3>(std::forward<Union>(a)); }
+				if constexpr (num_parameters >= 5) { InitAndTakeAt<4>(std::forward<Union>(a)); }
+				if constexpr (num_parameters >= 6) { InitAndTakeAt<5>(std::forward<Union>(a)); }
+				if constexpr (num_parameters >= 7) { InitAndTakeAt<6>(std::forward<Union>(a)); }
+				if constexpr (num_parameters >= 8) { InitAndTakeAt<7>(std::forward<Union>(a)); }
+				if constexpr (num_parameters >= 9) { InitAndTakeAt<8>(std::forward<Union>(a)); }
+				if constexpr (num_parameters >= 10) { InitAndTakeAt<9>(std::forward<Union>(a)); }
+				if constexpr (num_parameters >= 11) { InitAndTakeAt<10>(std::forward<Union>(a)); }
+				if constexpr (num_parameters >= 12) { InitAndTakeAt<11>(std::forward<Union>(a)); }
+				if constexpr (num_parameters >= 13) { InitAndTakeAt<12>(std::forward<Union>(a)); }
+				if constexpr (num_parameters >= 14) { InitAndTakeAt<13>(std::forward<Union>(a)); }
+				if constexpr (num_parameters >= 15) { InitAndTakeAt<14>(std::forward<Union>(a)); }
+				if constexpr (num_parameters >= 16) { InitAndTakeAt<15>(std::forward<Union>(a)); }
+				a.Clear();
+			};
+
+			template <int N> void TakeAt(Union&& a) {
+				get<N>() = std::move(a.get<N>());
+				if constexpr (!isPod<NthTypeOf<N>>()) { a.Clear<N>(); }
+			};
+			void Take(Union&& a) {
+				if constexpr (num_parameters >= 1) { TakeAt<0>(std::forward<Union>(a)); }
+				if constexpr (num_parameters >= 2) { TakeAt<1>(std::forward<Union>(a)); }
+				if constexpr (num_parameters >= 3) { TakeAt<2>(std::forward<Union>(a)); }
+				if constexpr (num_parameters >= 4) { TakeAt<3>(std::forward<Union>(a)); }
+				if constexpr (num_parameters >= 5) { TakeAt<4>(std::forward<Union>(a)); }
+				if constexpr (num_parameters >= 6) { TakeAt<5>(std::forward<Union>(a)); }
+				if constexpr (num_parameters >= 7) { TakeAt<6>(std::forward<Union>(a)); }
+				if constexpr (num_parameters >= 8) { TakeAt<7>(std::forward<Union>(a)); }
+				if constexpr (num_parameters >= 9) { TakeAt<8>(std::forward<Union>(a)); }
+				if constexpr (num_parameters >= 10) { TakeAt<9>(std::forward<Union>(a)); }
+				if constexpr (num_parameters >= 11) { TakeAt<10>(std::forward<Union>(a)); }
+				if constexpr (num_parameters >= 12) { TakeAt<11>(std::forward<Union>(a)); }
+				if constexpr (num_parameters >= 13) { TakeAt<12>(std::forward<Union>(a)); }
+				if constexpr (num_parameters >= 14) { TakeAt<13>(std::forward<Union>(a)); }
+				if constexpr (num_parameters >= 15) { TakeAt<14>(std::forward<Union>(a)); }
+				if constexpr (num_parameters >= 16) { TakeAt<15>(std::forward<Union>(a)); }
+				a.Clear();
+			};
+#pragma endregion
+		};
 
 #if 1
 		// SEE: https://github.com/microsoft/pmwcas/blob/master/src/mwcas/mwcas.h
@@ -1875,7 +2329,7 @@ namespace fibers {
 #undef RETURN_NOT_OK
 #undef IS_POWER_OF_TWO
 
-#define MWCAS_CAPACITY 4
+#define MWCAS_CAPACITY 7
 #define MWCAS_RETRY_THRESHOLD 10
 #define MWCAS_SLEEP_TIME 10
 
@@ -2409,8 +2863,10 @@ namespace fibers {
 
 		}  // namespace dbgroup::atomic::mwcas
 
-		template <typename Arg>
-		struct CAS_Container {
+		/* Converts any small POD-style struct into an atomic struct using multi-word compare and swap operations. 
+		Capacity is about 56 bytes, or about 7 pointers / integers. Can be used for a POD collection (like a struct) or non-standard POD items like floats to long doubles.
+		*/
+		template <typename Arg> struct CAS_Container {
 		public:
 			static constexpr size_t NumWords{ 1 + sizeof(Arg) / 8 };
 		protected:
@@ -2422,8 +2878,8 @@ namespace fibers {
 			CAS_Container<Arg> Copy() const {
 				using namespace dbgroup::atomic::mwcas;
 				CAS_Container<Arg> temp;
-				for (size_t index = 0; index < data.NumWords; index++) {
-					temp.Word(index) = MwCASDescriptor::Read<uint64_t>(&data.Word(index));
+				for (size_t index = 0; index < NumWords; index++) {
+					temp.Word(index) = MwCASDescriptor::Read<uint64_t>(&Word(index));
 				}
 				return temp;
 			};
@@ -2622,11 +3078,167 @@ namespace fibers {
 
 		};
 
+		template <typename... Args> struct MultiItemCAS {
+		private:
+			template<int N> using NthTypeOf = typename std::remove_const<typename std::remove_reference<typename std::tuple_element<N, std::tuple<Args...>>::type>::type>::type;
+			static constexpr size_t num_parameters = sizeof...(Args);
+
+		public:
+			MultiItemCAS() : container() {};
+			MultiItemCAS(Args*... items) : container(items...) {};
+			MultiItemCAS(MultiItemCAS const&) = delete;
+			MultiItemCAS(MultiItemCAS &&) = delete;
+			MultiItemCAS& operator=(MultiItemCAS const&) = delete;
+			MultiItemCAS& operator=(MultiItemCAS &&) = delete;
+			~MultiItemCAS() {};
+
+		private:
+			template <int index> decltype(auto) GetCurrentValue(fibers::utilities::dbgroup::atomic::mwcas::MwCASDescriptor& desc) const {
+				return desc.Read<NthTypeOf<index>>(container.get<index>());
+			};
+			void CaptureOldValues(Union< Args... >& OldCopy, size_t& index, fibers::utilities::dbgroup::atomic::mwcas::MwCASDescriptor& desc) const {
+				for (index = 0; index < num_parameters; index++) {
+					switch (index) {
+					case 0: if constexpr (num_parameters > 0) OldCopy.get<0>() = GetCurrentValue<0>(desc); break;
+					case 1: if constexpr (num_parameters > 1) OldCopy.get<1>() = GetCurrentValue<1>(desc); break;
+					case 2: if constexpr (num_parameters > 2) OldCopy.get<2>() = GetCurrentValue<2>(desc); break;
+					case 3: if constexpr (num_parameters > 3) OldCopy.get<3>() = GetCurrentValue<3>(desc); break;
+					case 4: if constexpr (num_parameters > 4) OldCopy.get<4>() = GetCurrentValue<4>(desc); break;
+					case 5: if constexpr (num_parameters > 5) OldCopy.get<5>() = GetCurrentValue<5>(desc); break;
+					case 6: if constexpr (num_parameters > 6) OldCopy.get<6>() = GetCurrentValue<6>(desc); break;
+					case 7: if constexpr (num_parameters > 7) OldCopy.get<7>() = GetCurrentValue<7>(desc); break;
+					case 8: if constexpr (num_parameters > 8) OldCopy.get<8>() = GetCurrentValue<8>(desc); break;
+					case 9: if constexpr (num_parameters > 9) OldCopy.get<9>() = GetCurrentValue<9>(desc); break;
+					default: break;
+					}
+				}
+			};
+
+			template <typename... IncomingArgs>
+			void CaptureOldValuesAndModify(Union< Args... >& OldCopy, Union< Args... >& NewValues, Union< IncomingArgs... >& Functors, size_t& index, fibers::utilities::dbgroup::atomic::mwcas::MwCASDescriptor& desc) const {
+				for (index = 0; index < num_parameters; index++) {
+					switch (index) {
+					case 0: if constexpr (num_parameters > 0) NewValues.get<0>() = Functors.get<0>()(OldCopy.get<0>() = GetCurrentValue<0>(desc)); break;
+					case 1: if constexpr (num_parameters > 1) NewValues.get<1>() = Functors.get<1>()(OldCopy.get<1>() = GetCurrentValue<1>(desc)); break;
+					case 2: if constexpr (num_parameters > 2) NewValues.get<2>() = Functors.get<2>()(OldCopy.get<2>() = GetCurrentValue<2>(desc)); break;
+					case 3: if constexpr (num_parameters > 3) NewValues.get<3>() = Functors.get<3>()(OldCopy.get<3>() = GetCurrentValue<3>(desc)); break;
+					case 4: if constexpr (num_parameters > 4) NewValues.get<4>() = Functors.get<4>()(OldCopy.get<4>() = GetCurrentValue<4>(desc)); break;
+					case 5: if constexpr (num_parameters > 5) NewValues.get<5>() = Functors.get<5>()(OldCopy.get<5>() = GetCurrentValue<5>(desc)); break;
+					case 6: if constexpr (num_parameters > 6) NewValues.get<6>() = Functors.get<6>()(OldCopy.get<6>() = GetCurrentValue<6>(desc)); break;
+					case 7: if constexpr (num_parameters > 7) NewValues.get<7>() = Functors.get<7>()(OldCopy.get<7>() = GetCurrentValue<7>(desc)); break;
+					case 8: if constexpr (num_parameters > 8) NewValues.get<8>() = Functors.get<8>()(OldCopy.get<8>() = GetCurrentValue<8>(desc)); break;
+					case 9: if constexpr (num_parameters > 9) NewValues.get<9>() = Functors.get<9>()(OldCopy.get<9>() = GetCurrentValue<9>(desc)); break;
+					default: break;
+					}
+				}
+			};
+
+			template <int index> decltype(auto) PrepareSwapTarget(Union< Args... >& OldCopy, Union< Args... >& NewValues, fibers::utilities::dbgroup::atomic::mwcas::MwCASDescriptor& desc) const {
+				desc.AddMwCASTarget(container.get<index>(), OldCopy.get<index>(), NewValues.get<index>());
+			};
+			void PrepareSwapTargets(Union< Args... >& OldCopy, Union< Args... >& NewValues, size_t& index, fibers::utilities::dbgroup::atomic::mwcas::MwCASDescriptor& desc) {
+				for (index = 0; index < num_parameters; index++) {
+					switch (index) {
+					case 0: if constexpr (num_parameters > 0) PrepareSwapTarget<0>(OldCopy, NewValues, desc); break;
+					case 1: if constexpr (num_parameters > 1) PrepareSwapTarget<1>(OldCopy, NewValues, desc); break;
+					case 2: if constexpr (num_parameters > 2) PrepareSwapTarget<2>(OldCopy, NewValues, desc); break;
+					case 3: if constexpr (num_parameters > 3) PrepareSwapTarget<3>(OldCopy, NewValues, desc); break;
+					case 4: if constexpr (num_parameters > 4) PrepareSwapTarget<4>(OldCopy, NewValues, desc); break;
+					case 5: if constexpr (num_parameters > 5) PrepareSwapTarget<5>(OldCopy, NewValues, desc); break;
+					case 6: if constexpr (num_parameters > 6) PrepareSwapTarget<6>(OldCopy, NewValues, desc); break;
+					case 7: if constexpr (num_parameters > 7) PrepareSwapTarget<7>(OldCopy, NewValues, desc); break;
+					case 8: if constexpr (num_parameters > 8) PrepareSwapTarget<8>(OldCopy, NewValues, desc); break;
+					case 9: if constexpr (num_parameters > 9) PrepareSwapTarget<9>(OldCopy, NewValues, desc); break;
+					default: break;
+					}
+				}
+			};
+
+		public:
+			template <typename... IncomingArgs>
+			Union< Args... > Swap(IncomingArgs&&... newValues) {
+				using fibers::utilities::dbgroup::atomic::mwcas::MwCASDescriptor;
+
+				Union< Args... > OldCopy;
+				Union< Args... > UpdateCopy(std::forward<IncomingArgs>(newValues)...);
+
+				size_t
+					index;
+
+				// continue until a MwCAS operation succeeds
+				while (true) {
+					// create a MwCAS descriptor
+					MwCASDescriptor desc{};
+
+					// capture the old values
+					CaptureOldValues(OldCopy, index, desc);
+
+					// update the actual data
+					// ... already done with the provided values
+
+					// prepare the swap target(s)
+					PrepareSwapTargets(OldCopy, UpdateCopy, index, desc);
+
+					// try multi-word compare and swap
+					if (desc.MwCAS()) break;
+				}
+
+				return OldCopy;
+			}; // returns the previous value while changing the underlying value
+			
+			template <typename... IncomingArgs>
+			Union< Args... > SwapWithFunctions(IncomingArgs&&... newValues) {
+				using fibers::utilities::dbgroup::atomic::mwcas::MwCASDescriptor;
+
+				Union< IncomingArgs... > Functors(std::forward<IncomingArgs>(newValues)...);
+				Union< Args... > OldCopy;
+				Union< Args... > UpdateCopy;
+
+				size_t
+					index;
+
+				// continue until a MwCAS operation succeeds
+				while (true) {
+					// create a MwCAS descriptor
+					MwCASDescriptor desc{};
+
+					// capture the old values
+					CaptureOldValuesAndModify(OldCopy, UpdateCopy, Functors, index, desc);
+
+					// update the actual data
+					// ... already done with the provided values during the capture
+
+					// prepare the swap target(s)
+					PrepareSwapTargets(OldCopy, UpdateCopy, index, desc);
+
+					// try multi-word compare and swap
+					if (desc.MwCAS()) break;
+				}
+
+				return OldCopy;
+			}; // returns the previous value while changing the underlying value
+
+			template <int index>
+			decltype(auto) Read() {
+				using fibers::utilities::dbgroup::atomic::mwcas::MwCASDescriptor;
+				MwCASDescriptor desc{};
+				return GetCurrentValue<index>(desc);
+			};
+
+		private:
+			Union< Args*... > container;
+		};
+
+
+
+
+
 #undef MWCAS_SLEEP_TIME
 #undef MWCAS_RETRY_THRESHOLD
 #undef MWCAS_CAPACITY
 
 #endif
+
 
 	};
 	namespace containers {
@@ -3264,14 +3876,9 @@ namespace fibers {
 		
 		};
 
-		namespace impl {
-			extern mutex* atomic_number_lock; // instanced in the CPP file. Should only be a single atomic_number_lock for the entire program. 
-		};
-
 		/* *THREAD SAFE* Thread-safe and fiber-safe wrapper for any type of number, from integers to doubles. 
-		   Significant performance boost if the data type is one of: long, unsigned int, unsigned long, unsigned __int64
-		   Atomic and fast if the type is non-floating points. (E.g. int, long, etc.)
-		   Much slower, using a global lock, if using floating point numbers, like doubles. 
+		   Significant performance boost if the data type is an integer type or one of: long, unsigned int, unsigned long, unsigned __int64		   
+		   Slower, but still atomic using multi-word CAS algorithms, if using floating-point numbers like doubles or floats. 
 		*/
 		template<typename type = double>
 		struct atomic_number {
@@ -3280,8 +3887,8 @@ namespace fibers {
 			static constexpr bool isSigned = std::is_signed<type>::value;
 
 		private:
-			static constexpr auto ValidTypeExample() {
-				if constexpr (isFloatingPoint) return static_cast<type>(0);
+			static auto ValidTypeExample() {
+				if constexpr (isFloatingPoint) return fibers::utilities::CAS_Container<type>();
 				else { // Integral. Only 4 integral types are actually supported. long, unsigned int, unsigned long, unsigned __int64
 					if constexpr (isSigned) {
 						return static_cast<long>(0);
@@ -3300,17 +3907,16 @@ namespace fibers {
 					}
 				}
 			};
-			static constexpr auto ValidTypeExampleImpl = ValidTypeExample();
-			using internalType = typename std::remove_const_t<decltype(ValidTypeExampleImpl)>;
+			using internalType = typename std::remove_const_t<typename fibers::utilities::function_traits<decltype(std::function(ValidTypeExample))>::result_type>;
 
 		public:
 			constexpr atomic_number() : value(static_cast<type>(0)) {};
 			constexpr atomic_number(const type& a) : value(a) {};
 			constexpr atomic_number(type&& a) : value(std::forward<type>(a)) {};
-			atomic_number(const atomic_number& other) : value(other.GetValue()) {};
-			atomic_number(atomic_number&& other) : value(std::move(other.value)) {};
-			atomic_number& operator=(const atomic_number& other) { SetValue(other.value); return *this; };
-			atomic_number& operator=(atomic_number&& other) { SetValue(std::move(other.value)); return *this; };
+			atomic_number(const atomic_number& other) : value(other.load()) {};
+			atomic_number(atomic_number&& other) : value(other.load()) {};
+			atomic_number& operator=(const atomic_number& other) { SetValue(other.load()); return *this; };
+			atomic_number& operator=(atomic_number&& other) { SetValue(other.load()); return *this; };
 			~atomic_number() = default;
 
 			operator type() { return GetValue(); };
@@ -3319,15 +3925,14 @@ namespace fibers {
 			template <typename T> decltype(auto) operator+(const atomic_number<T>& b) {
 				if constexpr (atomic_number<T>::isFloatingPoint || atomic_number<type>::isFloatingPoint) {
 					// one of these is a floating-point type, therefore the lock is needed.
-					auto Locked{ std::scoped_lock(*impl::atomic_number_lock) };
 					if constexpr (sizeof(T) > sizeof(type)) {
 						atomic_number<T> out;
-						out = static_cast<T>(value) + static_cast<T>(b.value);
+						out = static_cast<T>(load()) + static_cast<T>(b.load());
 						return out;
 					}
 					else {
 						atomic_number< type> out;
-						out = static_cast<type>(value) + static_cast<type>(b.value);
+						out = static_cast<type>(load()) + static_cast<type>(b.load());
 						return out;
 					}
 				}
@@ -3347,15 +3952,14 @@ namespace fibers {
 			template <typename T> decltype(auto) operator-(const atomic_number<T>& b) {
 				if constexpr (atomic_number<T>::isFloatingPoint || atomic_number<type>::isFloatingPoint) {
 					// one of these is a floating-point type, therefore the lock is needed.
-					auto Locked{ std::scoped_lock(*impl::atomic_number_lock) };
 					if constexpr (sizeof(T) > sizeof(type)) {
 						atomic_number<T> out;
-						out = static_cast<T>(value) - static_cast<T>(b.value);
+						out = static_cast<T>(load()) - static_cast<T>(b.load());
 						return out;
 					}
 					else {
 						atomic_number< type> out;
-						out = static_cast<type>(value) - static_cast<type>(b.value);
+						out = static_cast<type>(load()) - static_cast<type>(b.load());
 						return out;
 					}
 				}
@@ -3375,15 +3979,14 @@ namespace fibers {
 			template <typename T> decltype(auto) operator/(const atomic_number<T>& b) {
 				if constexpr (atomic_number<T>::isFloatingPoint || atomic_number<type>::isFloatingPoint) {
 					// one of these is a floating-point type, therefore the lock is needed.
-					auto Locked{ std::scoped_lock(*impl::atomic_number_lock) };
 					if constexpr (sizeof(T) > sizeof(type)) {
 						atomic_number<T> out;
-						out = static_cast<T>(value) / static_cast<T>(b.value);
+						out = static_cast<T>(load()) / static_cast<T>(b.load());
 						return out;
 					}
 					else {
 						atomic_number< type> out;
-						out = static_cast<type>(value) / static_cast<type>(b.value);
+						out = static_cast<type>(load()) / static_cast<type>(b.load());
 						return out;
 					}
 				}
@@ -3403,15 +4006,14 @@ namespace fibers {
 			template <typename T> decltype(auto) operator*(const atomic_number<T>& b) {
 				if constexpr (atomic_number<T>::isFloatingPoint || atomic_number<type>::isFloatingPoint) {
 					// one of these is a floating-point type, therefore the lock is needed.
-					auto Locked{ std::scoped_lock(*impl::atomic_number_lock) };
 					if constexpr (sizeof(T) > sizeof(type)) {
 						atomic_number<T> out;
-						out = static_cast<T>(value) * static_cast<T>(b.value);
+						out = static_cast<T>(load()) * static_cast<T>(b.load());
 						return out;
 					}
 					else {
 						atomic_number< type> out;
-						out = static_cast<type>(value) * static_cast<type>(b.value);
+						out = static_cast<type>(load()) * static_cast<type>(b.load());
 						return out;
 					}
 				}
@@ -3431,8 +4033,7 @@ namespace fibers {
 			
 			atomic_number& operator--() { 
 				if constexpr (isFloatingPoint) {
-					auto Locked{ std::scoped_lock(*impl::atomic_number_lock) }; 
-					value--;  
+					value.Add(-1);
 					return *this;
 				}
 				else {
@@ -3442,8 +4043,7 @@ namespace fibers {
 			};
 			atomic_number& operator++() { 
 				if constexpr (isFloatingPoint) {
-					auto Locked{ std::scoped_lock(*impl::atomic_number_lock) }; 
-					value++; 
+					value.Add(1);
 					return *this;
 				}
 				else {
@@ -3456,8 +4056,7 @@ namespace fibers {
 
 			atomic_number& operator+=(const atomic_number& i) { 
 				if constexpr (isFloatingPoint) {
-					auto Locked{ std::scoped_lock(*impl::atomic_number_lock) };
-					value += i.value;
+					value.Add(i.load());
 					return *this;
 				}
 				else {
@@ -3467,8 +4066,7 @@ namespace fibers {
 			};
 			atomic_number& operator-=(const atomic_number& i) { 
 				if constexpr (isFloatingPoint) {
-					auto Locked{ std::scoped_lock(*impl::atomic_number_lock) };
-					value -= i.value;
+					value.Add(-(i.load()));
 					return *this;
 				}
 				else {
@@ -3478,8 +4076,14 @@ namespace fibers {
 			};
 			atomic_number& operator/=(const atomic_number& i) {
 				if constexpr (isFloatingPoint) {
-					auto Locked{ std::scoped_lock(*impl::atomic_number_lock) };
-					value /= i.value;
+					type newV, oldV;
+					while (true) {
+						newV = oldV = value.load();
+						newV /= i.load();
+
+						if (value.CompareSwap(oldV, newV)) break;
+					}
+						
 					return *this;
 				}
 				else {
@@ -3489,8 +4093,14 @@ namespace fibers {
 			};			
 			atomic_number& operator*=(const atomic_number& i) {
 				if constexpr (isFloatingPoint) {
-					auto Locked{ std::scoped_lock(*impl::atomic_number_lock) };
-					value *= i.value;
+					type newV, oldV;
+					while (true) {
+						newV = oldV = value.load();
+						newV *= i.load();
+
+						if (value.CompareSwap(oldV, newV)) break;
+					}
+
 					return *this;
 				}
 				else {
@@ -3501,198 +4111,94 @@ namespace fibers {
 
 			template<typename T, typename = std::enable_if_t<!std::is_same_v<type, T>>>
 			atomic_number& operator+=(const atomic_number<T>& i) {
-				if constexpr (atomic_number<T>::isFloatingPoint || atomic_number<type>::isFloatingPoint) {
-					auto Locked{ std::scoped_lock(*impl::atomic_number_lock) };
-					
-					if constexpr (atomic_number<type>::isFloatingPoint) {
-						value += static_cast<type>(i.value);
-					}
-					else {
-						InterlockedExchangeAdd(&value, static_cast<internalType>(i.value));
-					}
+				if constexpr (atomic_number<type>::isFloatingPoint) {
+					value.Add(static_cast<type>(i.load()));
 				}
 				else {
-					if constexpr (atomic_number<type>::isFloatingPoint) {
-						value += static_cast<type>(i.value);
-					}
-					else {
-						InterlockedExchangeAdd(&value, static_cast<internalType>(i.value));
-					}
+					InterlockedExchangeAdd(&value, static_cast<internalType>(i.load()));
 				}
 				return *this;
 			};
 			template<typename T, typename = std::enable_if_t<!std::is_same_v<type, T>>>
 			atomic_number& operator-=(const atomic_number<T>& i) {
-				if constexpr (atomic_number<T>::isFloatingPoint || atomic_number<type>::isFloatingPoint) {
-					auto Locked{ std::scoped_lock(*impl::atomic_number_lock) };
-					if constexpr (atomic_number<type>::isFloatingPoint) {
-						value -= static_cast<type>(i.value);
-					}
-					else {
-						InterlockedExchangeAdd(&value, static_cast<internalType>(-i.value));
-					}
+				if constexpr (atomic_number<type>::isFloatingPoint) {
+					value.Add(-(i.load()));
 				}
 				else {
-					if constexpr (atomic_number<type>::isFloatingPoint) {
-						value -= static_cast<type>(i.value);
-					}
-					else {
-						InterlockedExchangeAdd(&value, static_cast<internalType>(-i.value));
-					}
+					InterlockedExchangeAdd(&value, static_cast<internalType>(-i.load()));
 				}
 				return *this;
 			};
 			template<typename T, typename = std::enable_if_t<!std::is_same_v<type, T>>>
 			atomic_number& operator/=(const atomic_number<T>& i) {
-				if constexpr (atomic_number<T>::isFloatingPoint || atomic_number<type>::isFloatingPoint) {
-					auto Locked{ std::scoped_lock(*impl::atomic_number_lock) };
-					if constexpr (atomic_number<type>::isFloatingPoint) {
-						value /= static_cast<type>(i.value);
-					}
-					else {
-						InterlockedExchange(&value, value / static_cast<internalType>(i.value));
+				if constexpr (atomic_number<type>::isFloatingPoint) {
+					type newV, oldV;
+					while (true) {
+						newV = oldV = value.load();
+						newV /= i.load();
+
+						if (value.CompareSwap(oldV, newV)) break;
 					}
 				}
 				else {
-					if constexpr (atomic_number<type>::isFloatingPoint) {
-						value /= static_cast<type>(i.value);
-					}
-					else {
-						InterlockedExchange(&value, value / static_cast<internalType>(i.value));
-					}
+					InterlockedExchange(&value, value / static_cast<internalType>(i.load()));
 				}
 				return *this;
 			};
 			template<typename T, typename = std::enable_if_t<!std::is_same_v<type, T>>>
 			atomic_number& operator*=(const atomic_number<T>& i) {
-				if constexpr (atomic_number<T>::isFloatingPoint || atomic_number<type>::isFloatingPoint) {
-					auto Locked{ std::scoped_lock(*impl::atomic_number_lock) };
-					if constexpr (atomic_number<type>::isFloatingPoint) {
-						value *= static_cast<type>(i.value);
-					}
-					else {
-						InterlockedExchange(&value, value * static_cast<internalType>(i.value));
+				if constexpr (atomic_number<type>::isFloatingPoint) {
+					type newV, oldV;
+					while (true) {
+						newV = oldV = value.load();
+						newV *= i.load();
+
+						if (value.CompareSwap(oldV, newV)) break;
 					}
 				}
 				else {
-					if constexpr (atomic_number<type>::isFloatingPoint) {
-						value *= static_cast<type>(i.value);
-					}
-					else {
-						InterlockedExchange(&value, value * static_cast<internalType>(i.value));
-					}
+					InterlockedExchange(&value, value * static_cast<internalType>(i.load()));
 				}
 				return *this;
 			};
 
 			template <typename T> bool operator==(const atomic_number<T>& b) {
-				if constexpr (atomic_number<T>::isFloatingPoint || atomic_number<type>::isFloatingPoint) {
-					// one of these is a floating-point type, therefore the lock is needed.
-					auto Locked{ std::scoped_lock(*impl::atomic_number_lock) };
-					if constexpr (sizeof(T) > sizeof(type)) {
-						return static_cast<T>(value) == static_cast<T>(b.value);
-					}
-					else {
-						return static_cast<type>(value) == static_cast<type>(b.value);
-					}
+				if constexpr (sizeof(T) > sizeof(type)) {
+					return static_cast<T>(load()) == static_cast<T>(b.load());
 				}
 				else {
-					if constexpr (sizeof(T) > sizeof(type)) {
-						return static_cast<T>(value) == static_cast<T>(b.value);
-					}
-					else {
-						return static_cast<type>(value) == static_cast<type>(b.value);
-					}
-				}
+					return static_cast<type>(load()) == static_cast<type>(b.load());
+				}				
 			};
 			template <typename T> bool operator!=(const atomic_number<T>& b) {
 				return !operator==(b);
 			};
 			template <typename T> bool operator<=(const atomic_number<T>& b) {
-				if constexpr (atomic_number<T>::isFloatingPoint || atomic_number<type>::isFloatingPoint) {
-					// one of these is a floating-point type, therefore the lock is needed.
-					auto Locked{ std::scoped_lock(*impl::atomic_number_lock) };
-					if constexpr (sizeof(T) > sizeof(type)) {
-						return static_cast<T>(value) <= static_cast<T>(b.value);
-					}
-					else {
-						return static_cast<type>(value) <= static_cast<type>(b.value);
-					}
+				if constexpr (sizeof(T) > sizeof(type)) {
+					return static_cast<T>(load()) <= static_cast<T>(b.load());
 				}
 				else {
-					if constexpr (sizeof(T) > sizeof(type)) {
-						return static_cast<T>(value) <= static_cast<T>(b.value);
-					}
-					else {
-						return static_cast<type>(value) <= static_cast<type>(b.value);
-					}
-				}
-			};
-			template <typename T> bool operator<(const atomic_number<T>& b) {
-				if constexpr (atomic_number<T>::isFloatingPoint || atomic_number<type>::isFloatingPoint) {
-					// one of these is a floating-point type, therefore the lock is needed.
-					auto Locked{ std::scoped_lock(*impl::atomic_number_lock) };
-					if constexpr (sizeof(T) > sizeof(type)) {
-						return static_cast<T>(value) < static_cast<T>(b.value);
-					}
-					else {
-						return static_cast<type>(value) < static_cast<type>(b.value);
-					}
-				}
-				else {
-					if constexpr (sizeof(T) > sizeof(type)) {
-						return static_cast<T>(value) < static_cast<T>(b.value);
-					}
-					else {
-						return static_cast<type>(value) < static_cast<type>(b.value);
-					}
+					return static_cast<type>(load()) <= static_cast<type>(b.load());
 				}
 			};
 			template <typename T> bool operator>=(const atomic_number<T>& b) {
-				if constexpr (atomic_number<T>::isFloatingPoint || atomic_number<type>::isFloatingPoint) {
-					// one of these is a floating-point type, therefore the lock is needed.
-					auto Locked{ std::scoped_lock(*impl::atomic_number_lock) };
-					if constexpr (sizeof(T) > sizeof(type)) {
-						return static_cast<T>(value) >= static_cast<T>(b.value);
-					}
-					else {
-						return static_cast<type>(value) >= static_cast<type>(b.value);
-					}
+				if constexpr (sizeof(T) > sizeof(type)) {
+					return static_cast<T>(load()) >= static_cast<T>(b.load());
 				}
 				else {
-					if constexpr (sizeof(T) > sizeof(type)) {
-						return static_cast<T>(value) >= static_cast<T>(b.value);
-					}
-					else {
-						return static_cast<type>(value) >= static_cast<type>(b.value);
-					}
+					return static_cast<type>(load()) >= static_cast<type>(b.load());
 				}
 			};
+			template <typename T> bool operator<(const atomic_number<T>& b) {
+				return !operator>=(b);
+			};
 			template <typename T> bool operator>(const atomic_number<T>& b) {
-				if constexpr (atomic_number<T>::isFloatingPoint || atomic_number<type>::isFloatingPoint) {
-					// one of these is a floating-point type, therefore the lock is needed.
-					auto Locked{ std::scoped_lock(*impl::atomic_number_lock) };
-					if constexpr (sizeof(T) > sizeof(type)) {
-						return static_cast<T>(value) > static_cast<T>(b.value);
-					}
-					else {
-						return static_cast<type>(value) > static_cast<type>(b.value);
-					}
-				}
-				else {
-					if constexpr (sizeof(T) > sizeof(type)) {
-						return static_cast<T>(value) > static_cast<T>(b.value);
-					}
-					else {
-						return static_cast<type>(value) > static_cast<type>(b.value);
-					}
-				}
+				return !operator<=(b);
 			};
 
 			atomic_number pow(atomic_number const& V) const { 
 				if constexpr (isFloatingPoint) {
-					auto Locked{ std::scoped_lock(*impl::atomic_number_lock) };
-					return std::pow(value, V.value);
+					return std::pow(value.load(), V.load());
 				}
 				else {
 					return std::pow(value, V.value);
@@ -3700,8 +4206,7 @@ namespace fibers {
 			};
 			atomic_number sqrt() const { 
 				if constexpr (isFloatingPoint) {
-					auto Locked{ std::scoped_lock(*impl::atomic_number_lock) };
-					return std::sqrt(value);
+					return std::sqrt(value.load());
 				}
 				else {
 					return std::sqrt(value);
@@ -3709,8 +4214,7 @@ namespace fibers {
 			};
 			atomic_number floor() const { 
 				if constexpr (isFloatingPoint) {
-					auto Locked{ std::scoped_lock(*impl::atomic_number_lock) };
-					return std::floor(value);
+					return std::floor(value.load());
 				}
 				else {
 					return std::floor(value);
@@ -3718,8 +4222,7 @@ namespace fibers {
 			};
 			atomic_number ceiling() const { 
 				if constexpr (isFloatingPoint) {
-					auto Locked{ std::scoped_lock(*impl::atomic_number_lock) };
-					return std::ceil(value);
+					return std::ceil(value.load());
 				}
 				else {
 					return std::ceil(value);
@@ -3728,8 +4231,7 @@ namespace fibers {
 
 			type Increment() { 
 				if constexpr (isFloatingPoint) {
-					auto Locked{ std::scoped_lock(*impl::atomic_number_lock) };
-					return ++value;
+					return value.Add(1) + 1;
 				}
 				else {
 					return InterlockedExchangeAdd(&value, static_cast<internalType>(1)) + 1;
@@ -3737,8 +4239,7 @@ namespace fibers {
 			} // atomically increments the value and returns the new value
 			type Decrement() { 
 				if constexpr (isFloatingPoint) {
-					auto Locked{ std::scoped_lock(*impl::atomic_number_lock) };
-					return --value;
+					return value.Add(-1) - 1;
 				}
 				else {
 					return InterlockedExchangeAdd(&value, static_cast<internalType>(-1)) - 1;
@@ -3746,8 +4247,7 @@ namespace fibers {
 			} // atomically decrements the value and returns the new value
 			type Add(const type& v) { 
 				if constexpr (isFloatingPoint) {
-					auto Locked{ std::scoped_lock(*impl::atomic_number_lock) };
-					return value += v;
+					return value.Add(v);
 				}
 				else {
 					return InterlockedExchangeAdd(&value, static_cast<internalType>(v)) + v;
@@ -3755,8 +4255,7 @@ namespace fibers {
 			} // atomically adds a value and returns the new value
 			type Sub(const type& v) {
 				if constexpr (isFloatingPoint) {
-					auto Locked{ std::scoped_lock(*impl::atomic_number_lock) };
-					return value -= v;
+					return value.Add(-v);
 				}
 				else {
 					return InterlockedExchangeAdd(&value, static_cast<internalType>(-v)) - v;
@@ -3764,8 +4263,7 @@ namespace fibers {
 			}; // atomically subtracts a value and returns the new value
 			type GetValue() const { 
 				if constexpr (isFloatingPoint) {
-					auto Locked{ std::scoped_lock(*impl::atomic_number_lock) };
-					return value;
+					return value.load();
 				}
 				else {
 					return value;
@@ -3773,10 +4271,7 @@ namespace fibers {
 			}
 			type SetValue(const type& v) {
 				if constexpr (isFloatingPoint) {
-					auto Locked{ std::scoped_lock(*impl::atomic_number_lock) };
-					type out{value};
-					value = v;
-					return out;
+					return value.Swap(v);
 				}
 				else {
 					return InterlockedExchange(&value, static_cast<internalType>(v));
@@ -3784,10 +4279,7 @@ namespace fibers {
 			}; // returns the previous value while setting with the new value
 			type SetValue(type&& v) {
 				if constexpr (isFloatingPoint) {
-					auto Locked{ std::scoped_lock(*impl::atomic_number_lock) };
-					type out{ std::forward< type>(value) };
-					value = v;
-					return out;
+					return value.Swap(std::forward<type>(v));
 				}
 				else {
 					return InterlockedExchange(&value, static_cast<internalType>(v));
@@ -3797,10 +4289,7 @@ namespace fibers {
         public: // std::atomic compatability
 			type fetch_add(type const& v) {
 				if constexpr (isFloatingPoint) {
-					auto Locked{ std::scoped_lock(*impl::atomic_number_lock) };
-					type out{value};
-					value += v;
-					return out;					
+					return value.fetch_add(v);
 				}
 				else {
 					return InterlockedExchangeAdd(&value, static_cast<internalType>(v));
@@ -3808,10 +4297,7 @@ namespace fibers {
 			}; // returns the previous value while incrementing the actual counter
 			type fetch_sub(type const& v) {
 				if constexpr (isFloatingPoint) {
-					auto Locked{ std::scoped_lock(*impl::atomic_number_lock) };
-					type out{ value };
-					value -= v;
-					return out;
+					return value.fetch_sub(v);
 				}
 				else {
 					return InterlockedExchangeAdd(&value, static_cast<internalType>(-v));
@@ -3819,26 +4305,21 @@ namespace fibers {
 			}; // returns the previous value while decrementing the actual counter
 			static constexpr bool is_lock_free() {
 				if constexpr (isFloatingPoint) {
-					return false;
+					return true; // thanks to the MwCAS algorithm
 				}
 				else {
-					return true;
+					return true; // built-in to 99.99% of hardware nowadays
 				}
 			}; // returns whether a lock is utilized or the number is actually lock-free
 			type exchange(type const& v) {
 				if constexpr (isFloatingPoint) {
-					auto Locked{ std::scoped_lock(*impl::atomic_number_lock) };
-					type out{ value };
-					value = v;
-					return out;
+					return value.exchange(v);
 				}
 				else {
 					return InterlockedExchange(&value, static_cast<internalType>(v));
 				}
 			}; // returns the previous value while setting the value to the input
-			type load() const {
-				return GetValue();
-			};
+			type load() const { return GetValue(); };
 			void store(type const& v) {
 				(void)exchange(v);
 			}; // sets the value to the input
@@ -3854,7 +4335,7 @@ namespace fibers {
 				Decrement();
 			};
 
-		public:
+		private:
 			internalType value;
 
 		};
@@ -4087,10 +4568,9 @@ namespace fibers {
 	};
 
 	namespace containers {
-		/* *THREAD SAFE* Thread- and Fiber-safe wrapper for any type of number, from integers to doubles.
-		   Significant performance boost if the data type is one of: long, unsigned int, unsigned long, unsigned __int64
-		   Atomic and fast if the type is non-floating points. (E.g. int, long, etc.)
-		   Much slower, using a global lock, if using floating point numbers, like doubles.
+		/* *THREAD SAFE* Thread-safe and fiber-safe wrapper for any type of number, from integers to doubles.
+		   Significant performance boost if the data type is an integer type or one of: long, unsigned int, unsigned long, unsigned __int64
+		   Slower, but still atomic using multi-word CAS algorithms, if using floating-point numbers like doubles or floats.
 		*/
 		template<typename _Value_type> using number = fibers::synchronization::atomic_number<_Value_type>;
 		
@@ -4405,6 +4885,16 @@ namespace fibers {
 
 		};
 	
+
+
+
+
+
+
+
+
+
+
 #if 0
 		template <typename key> class OrderedSet {
 		private:
@@ -7174,7 +7664,7 @@ namespace fibers {
 	};
 
 	namespace impl {
-		bool Initialize(uint32_t maxThreadCount = ~0u);
+		bool Initialize(uint32_t maxThreadCount = std::numeric_limits< uint32_t>::max());
 		void ShutDown();
 
 		struct JobArgs
@@ -7225,18 +7715,15 @@ namespace fibers {
 			std::unique_ptr<Queue<Task>[]> jobQueuePerThread;
 
 			fibers::containers::number<bool> alive{ true };
-			std::condition_variable_any wakeCondition; // std::condition_variable wakeCondition; // 
-			synchronization::mutex wakeMutex; // std::mutex wakeMutex; // 
+			std::condition_variable_any wakeCondition; // std::condition_variable wakeCondition; //  
+			synchronization::mutex wakeMutex; // std::mutex wakeMutex; //  
 			fibers::containers::number<long long> nextQueue{ 0 };
 			std::vector<std::thread> threads;
 			void ShutDown() {
 				alive = false; // indicate that new jobs cannot be started from this point
 				bool wake_loop = true;
 				std::thread waker([&] {
-					while (wake_loop)
-					{
-						wakeCondition.notify_all(); // wakes up sleeping worker threads
-					}
+					while (wake_loop) wakeCondition.notify_all(); // wakes up sleeping worker threads
 				});
 				for (auto& thread : threads) {
 					thread.join();
@@ -7262,7 +7749,7 @@ namespace fibers {
 		//	jobCount	: how many jobs to generate for this task.
 		//	groupSize	: how many jobs to execute per thread. Jobs inside a group execute serially. It might be worth to increase for small jobs
 		//	task		: receives a JobArgs as parameter
-		void Dispatch(context& ctx, uint32_t jobCount, uint32_t groupSize, const std::function<void(JobArgs)>& task, size_t sharedmemory_size = 0) noexcept;
+		void Dispatch(context& ctx, uint32_t jobCount, const std::function<void(JobArgs)>& task, size_t sharedmemory_size = 0) noexcept;
 
 		// Returns the amount of job groups that will be created for a set number of jobs and group size
 		__forceinline constexpr uint32_t DispatchGroupCount(uint32_t jobCount, uint32_t groupSize) { return (jobCount + groupSize - 1) / groupSize; /* Calculate the amount of job groups to dispatch (overestimate, or "ceil"): */ };
@@ -7283,7 +7770,7 @@ namespace fibers {
 			auto Wait() { return impl::Wait(ctx); };
 			auto IsBusy() const { return impl::IsBusy(ctx); };
 			auto Queue(const std::function<void(JobArgs)>& task) { return impl::Execute(ctx, task); };
-			auto Dispatch(uint32_t jobCount, const std::function<void(JobArgs)>& task) { return impl::Dispatch(ctx, jobCount, (10000.0 / 400.0) * jobCount, task); };
+			auto Dispatch(uint32_t jobCount, const std::function<void(JobArgs)>& task) { return impl::Dispatch(ctx, jobCount, task); };
 		};
 	};
 
