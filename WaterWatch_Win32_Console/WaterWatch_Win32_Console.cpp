@@ -71,13 +71,28 @@ struct DListNode {
 };
 
 
-#if 0
-template<typename keyType, typename objType>
-class BalancedTreeNode {
+#if 1
+template<typename keyType, typename objType> class BalancedTreeNode; // Forward decl
+
+template<typename keyType, typename objType> class BalancedTreeNodeParentReference {
+public:
+	BalancedTreeNode<keyType, objType>* parent;
+public:
+	BalancedTreeNodeParentReference() = default;
+	BalancedTreeNodeParentReference(BalancedTreeNode<keyType, objType>* p) : parent{p} {};
+	BalancedTreeNodeParentReference(BalancedTreeNodeParentReference const&) = default;
+	BalancedTreeNodeParentReference(BalancedTreeNodeParentReference&&) = default;
+	BalancedTreeNodeParentReference& operator=(BalancedTreeNodeParentReference const&) = default;
+	BalancedTreeNodeParentReference& operator=(BalancedTreeNodeParentReference&&) = default;
+	~BalancedTreeNodeParentReference() = default;
+
+};
+
+template<typename keyType, typename objType> class BalancedTreeNode {
 public:
 	keyType			  key;							// key used for sorting
 	objType*          object;						// if != NULL pointer to object stored in leaf node
-	BalancedTreeNode* parent;						// parent node
+	BalancedTreeNodeParentReference<keyType, objType>* parent;		// reference to shared parent node
 	BalancedTreeNode* next;							// next sibling
 	BalancedTreeNode* prev;							// prev sibling
 	uint64_t	      numChildren;					// number of children
@@ -92,11 +107,43 @@ public:
 	BalancedTreeNode& operator=(BalancedTreeNode &&) = default;
 	~BalancedTreeNode() = default;
 	
+	BalancedTreeNode* GetParent() const {
+		using namespace fibers::utilities;
+		auto ptr1 = MultiItemCAS(&parent).Read<0>();
+		if (ptr1) {
+			return MultiItemCAS(&ptr1->parent).Read<0>();
+		}
+		else {
+			return nullptr;
+		}
+		
+	};
+	BalancedTreeNode* GetNext() const {
+		using namespace fibers::utilities;
+		return MultiItemCAS(&next).Read<0>();
+	};
+	BalancedTreeNode* GetPrev() const {
+		using namespace fibers::utilities;
+		return MultiItemCAS(&prev).Read<0>();
+	};
+	BalancedTreeNode* GetFirstChild() const {
+		using namespace fibers::utilities;
+		return MultiItemCAS(&firstChild).Read<0>();
+	};
+	BalancedTreeNode* GetLastChild() const {
+		using namespace fibers::utilities;
+		return MultiItemCAS(&lastChild).Read<0>();
+	};
+	uint64_t GetNumChildren() const {
+		using namespace fibers::utilities;
+		return MultiItemCAS(&numChildren).Read<0>();
+	};
+
 	void Reset() {
 		using namespace fibers::utilities;
 
-		p->key = 0; // non-CAS
-		p->object = nullptr; // non-CAS
+		key = 0; // non-CAS
+		object = nullptr; // non-CAS
 		
 		auto container{ MultiItemCAS(
 			&parent,
@@ -109,76 +156,328 @@ public:
 		container.Swap(nullptr, nullptr, nullptr, 0, nullptr, nullptr);
 	};
 
-	// One-at-a-time, moves the final child of "node1" into "node2" 
+	/// <summary>
+	/// Moves all of the children from node1 to node2 and updates the neighbors, all atomic and at-once.
+	/// The user is reponsible for freeing the "node1" and its BalancedTreeNodeParentReference after the merger. 
+	/// </summary>
+	/// <param name="node1"></param>
+	/// <param name="node2"></param>
+	/// <returns></returns>
 	static BalancedTreeNode* MergeNodes(BalancedTreeNode* node1, BalancedTreeNode* node2) {
 		using namespace fibers::utilities;
 
-		// assert(node1->parent == node2->parent);
-		// assert(node1->next == node2 && node2->prev == node1);
-		// assert(node1->object == nullptr && node2->object == nullptr);
-		// assert(node1->numChildren >= 1 && node2->numChildren >= 1);
+		while (true) {
+			auto node1_Characteristics = MultiItemCAS(&node1->lastChild, &node1->numChildren, &node1->prev, &node1->parent, &node1->firstChild).ReadAll();
+			auto node2_Characteristics = MultiItemCAS(&node2->firstChild, &node2->numChildren, &node2->prev).ReadAll();
 
-		BalancedTreeNode* child;
+			BalancedTreeNode* node1_prev = node1_Characteristics.get<2>();
+			BalancedTreeNode* node1_lastChild = node1_Characteristics.get<0>();
+			BalancedTreeNode* node2_firstChild = node2_Characteristics.get<0>();
+			BalancedTreeNode* node1_firstChild = node1_Characteristics.get<4>();
 
-		auto swapper{ MultiItemCAS(&node1->lastChild, ) };
+			auto node1_parent = MultiItemCAS(&node1_Characteristics.get<3>()->parent).Read<0>();
 
+			auto node1_lastChild_Characteristics = MultiItemCAS(&node1_lastChild->next, &node1_lastChild->parent).ReadAll();
+			auto node2_firstChild_Characteristics = MultiItemCAS(&node2_firstChild->prev, &node2_firstChild->parent).ReadAll();
 
+			BalancedTreeNodeParentReference<keyType, objType>* node1ParentWrapper = node1_lastChild_Characteristics.get<1>();
+			BalancedTreeNodeParentReference<keyType, objType>* node2ParentWrapper = node2_firstChild_Characteristics.get<1>();
 
+			auto LargeSwap{ MultiItemCAS(
+				node1_parent ? (uint64_t*)&node1_parent->numChildren : (uint64_t*)nullptr, // to be decremented by one
+				node1_prev ? (BalancedTreeNode**)(&node1_prev->next) : (BalancedTreeNode**)nullptr, // to be made "node2"
+				&node1ParentWrapper->parent, // to be made "node2"
+				&node2->prev, // to be made "node1_prev"
+				&node1_lastChild->next, // to be made "node2_firstChild"
+				&node2_firstChild->prev, // to be made "node1_lastChild"
+				&node1->numChildren, // to be made zero
+				&node2->numChildren, // to be incremented by the value of node1->numChildren
+				&node2->firstChild // to be made "node1_firstChild"
+			) };
 
+			auto OldValues{ LargeSwap.ReadAll() };
 
-		for (child = MultiItemCAS(&node1->firstChild).Read<0>(); MultiItemCAS(&child->next).Read<0>(); child = MultiItemCAS(&child->next).Read<0>()) {
-			child->parent = node2;
+			if (LargeSwap.TrySwap(OldValues,
+				OldValues.get<0>() - 1,
+				node2,
+				node2,
+				node1_prev,
+				node2_firstChild,
+				node1_lastChild,
+				0,
+				OldValues.get<6>() + OldValues.get<7>(),
+				node1_firstChild
+			)) {
 
+				// Nearly finished, go through and unify the parent references for all of node2
+				BalancedTreeNode* child;
+				for (child = node1_firstChild; child; child = MultiItemCAS(&child->next).Read<0>()) {
+					if (child) {
+						MultiItemCAS(&child->parent).Swap(node2ParentWrapper);
+					}
+				}
 
+				break;
+			};
 		}
-		// node1->firstChild
-
-
-
-
-
-		for (child = node1->firstChild; child->next; child = child->next) {
-			child->parent = node2;
-		}
-		child->parent = node2;
-		child->next = node2->firstChild;
-		node2->firstChild->prev = child;
-		node2->firstChild = node1->firstChild;
-		node2->numChildren += node1->numChildren;
-
-		// unlink the first node from the parent
-		if (node1->prev) {
-			node1->prev->next = node2;
-		}
-		else {
-			node1->parent->firstChild = node2;
-		}
-		node2->prev = node1->prev;
-		node2->parent->numChildren--;
-
-		FreeNode(node1);
 
 		return node2;
 
 
 
 
+		//for (child = node1->firstChild; child->next; child = child->next) {
+		//	child->parent = node2;
+		//}
+		//child->parent = node2;
+		//child->next = node2->firstChild;
+		//node2->firstChild->prev = child;
+		//node2->firstChild = node1->firstChild;
+		//node2->numChildren += node1->numChildren;
 
+		//
+		//if (node1->prev) { // unlink the first node from the parent
+		//	node1->prev->next = node2;
+		//}
+		//else {
+		//	node1->parent->firstChild = node2;
+		//}
+		//node2->prev = node1->prev;
+		//node2->parent->numChildren--;
 
+		//FreeNode(node1);
 
-
-		auto container{ MultiItemCAS(
-			&parent,
-			&next,
-			&prev,
-			&numChildren,
-			&firstChild,
-			&lastChild
-		) };
-		container.Swap(nullptr, nullptr, nullptr, 0, nullptr, nullptr);
+		//return node2;
 	};
 
+	static bool SplitNode(BalancedTreeNode* node, std::function< BalancedTreeNode*()> const& allocationNodeFunc, std::function< BalancedTreeNodeParentReference<keyType, objType>* (BalancedTreeNode*)> const& allocationRefFunc) {
+		using namespace fibers::utilities; 
+		
+		long long i;
+		BalancedTreeNode * child, * newNode;
+		newNode = allocationNodeFunc();
+		auto newNodeRef = allocationRefFunc(node); // reference for the children of the new node, temporarily pointing to the current node.
 
+		while (true) {
+			auto node_Characteristics = MultiItemCAS(
+				&node->firstChild,
+				&node->lastChild, 
+				&node->numChildren, 
+				&node->prev, 
+				&node->parent).ReadAll();
+
+			auto numNodeChildren = node_Characteristics.get<2>();
+			auto node_parent = MultiItemCAS(&node_Characteristics.get<4>()->parent).Read<0>();
+			auto prevNode = node_Characteristics.get<3>();
+
+			if (numNodeChildren <= 5) return false;
+
+			// for the first half of the children of this node, we are going to swap the reference pointer to this newNodeRef, which itself points to the original node (for now)
+			child = node_Characteristics.get<0>();
+			MultiItemCAS(&child->parent).Swap(newNodeRef);
+			for (i = 3; i < numNodeChildren; i += 2) {
+				child = MultiItemCAS(&child->next).Read<0>();
+				if (child) MultiItemCAS(&child->parent).Swap(newNodeRef);
+			}
+
+			auto oldNodeNewFirstChild = MultiItemCAS(&child->next).Read<0>();
+
+			// no competition for this new node yet, so we don't have to use CAS for itself. 
+			newNode->key = MultiItemCAS(&child->key).Read<0>();
+			newNode->parent = node_Characteristics.get<4>(); 
+			newNode->prev = prevNode;
+			newNode->next = node;
+			newNode->firstChild = node_Characteristics.get<0>();
+			newNode->lastChild = child;
+			newNode->numChildren = numNodeChildren / 2;
+
+			auto LargeSwap{ MultiItemCAS(
+				node_parent ? (uint64_t*)&node_parent->numChildren : (uint64_t*)nullptr, // to be incremented by one
+				!prevNode ? (BalancedTreeNode**)&node_parent->firstChild : (BalancedTreeNode**)nullptr, // to be set to "newNode"
+				prevNode ? (BalancedTreeNode**)&prevNode->next : (BalancedTreeNode**)nullptr, // to be set to "newNode"
+				&oldNodeNewFirstChild->prev, // to be set to "nullptr"
+				&child->next, // to be set to "nullptr"
+				&node->firstChild, // to be set to "oldNodeNewFirstChild"
+				&node->prev, // to be set to "newNode"
+				&newNodeRef->parent, // to be set to "newNode"
+				&node->numChildren // to be decremented by newNode->numChildren
+			) };
+
+			auto OldValues{ LargeSwap.ReadAll() };
+
+			if (LargeSwap.TrySwap(OldValues,
+				OldValues.get<0>() + 1,
+				newNode,
+				newNode,
+				nullptr,
+				nullptr,
+				oldNodeNewFirstChild,
+				newNode,
+				newNode,
+				OldValues.get<8>() - newNode->numChildren
+			)) return true;
+		}
+	};
+
+	/// <summary>
+	/// parent or root must already exist prior to this
+	/// </summary>
+	/// <param name="parent"></param>
+	/// <param name="object"></param>
+	/// <param name="key"></param>
+	/// <param name="allocationNodeFunc"></param>
+	/// <param name="allocationRefFunc"></param>
+	/// <returns></returns>
+	static BalancedTreeNode* AddChild(uint64_t maxChildrenPerNode, BalancedTreeNode*& root, objType* object, keyType const& key, std::function< BalancedTreeNode* ()> const& allocationNodeFunc, std::function< BalancedTreeNodeParentReference<keyType, objType>* (BalancedTreeNode*)> const& allocationRefFunc) {
+		using namespace fibers::utilities; 
+		
+		BalancedTreeNode* node, * child, * newNode;
+
+		// before we can add anything to this node, we will have to split it if it's too big
+		if (root->GetNumChildren() >= maxChildrenPerNode) {
+			newNode = allocationNodeFunc();
+			newNode->key = root->key;
+			newNode->firstChild = root;
+			newNode->lastChild = root;
+			newNode->numChildren = 1;
+
+			MultiItemCAS(&root->parent).Swap(allocationRefFunc(newNode));
+			SplitNode(root, allocationNodeFunc, allocationRefFunc);
+			root = newNode;
+		}
+
+		while (true) {
+			newNode = allocationNodeFunc();
+			newNode->key = key;
+			newNode->object = object;
+
+			for (node = root; node->GetFirstChild() != nullptr; node = child) {
+				if (key > node->key) {
+					node->key = key; // why? Does this never happen? I don't understand this one
+				}
+
+				// find the first child with a key larger equal to the key of the new node
+				for (child = node->GetFirstChild(); child->GetNext(); child = child->GetNext()) {
+					if (key <= child->key) {
+						break;
+					}
+				}
+
+				if (child->object) {
+					if (key <= child->key) {
+						while (true) {
+							auto childPrev = child->GetPrev();
+							auto parentObj = MultiItemCAS(&child->parent).Read<0>();
+
+							// insert new node before child
+							auto LargeSwap{ MultiItemCAS(
+								childPrev ? (BalancedTreeNode**)&childPrev->next : (BalancedTreeNode**)nullptr, // to be set to newNode
+								!childPrev ? (BalancedTreeNode**)&node->firstChild : (BalancedTreeNode**)nullptr, // to be set to newNode
+								&newNode->prev, // to be set to childPrev
+								&newNode->next, // to be set to child
+								&child->prev, // to be set to newNode
+								&newNode->parent, // to be set to childPrev->parent
+								&node->numChildren // to be incremented by one
+							) };
+							auto OldValues{ LargeSwap.ReadAll() };
+							if (LargeSwap.TrySwap(OldValues,
+								newNode,
+								newNode,
+								childPrev,
+								child,
+								newNode,
+								parentObj,
+								OldValues.get<6>() + 1
+							)) break;
+						}
+					}
+					else {
+						while (true) {
+							auto childNext = child->GetNext();
+							auto parentObj = MultiItemCAS(&child->parent).Read<0>();
+
+							// insert new node after child
+							auto LargeSwap{ MultiItemCAS(
+								childNext ? (BalancedTreeNode**)&childNext->prev : (BalancedTreeNode**)nullptr, // to be set to newNode
+								!childNext ? (BalancedTreeNode**)&node->lastChild : (BalancedTreeNode**)nullptr, // to be set to newNode
+								&newNode->prev, // to be set to child
+								&newNode->next, // to be set to childNext
+								&child->next,  // to be set to newNode
+								&newNode->parent, // to be set to childNext->parent
+								&node->numChildren // to be incremented by one
+							) };
+							auto OldValues{ LargeSwap.ReadAll() };
+							if (LargeSwap.TrySwap(OldValues,
+								newNode,
+								newNode,
+								child,
+								childNext,
+								newNode,
+								parentObj,
+								OldValues.get<6>() + 1
+							)) break;
+						}
+					}
+					return newNode;
+				}
+
+				// make sure the child has room to store another node
+				if (child->GetNumChildren() >= maxChildrenPerNode) {
+					SplitNode(child, allocationNodeFunc, allocationRefFunc);
+					if (key <= child->GetPrev()->key) {
+						child = child->GetPrev();
+					}
+				}
+			}
+			{
+				root->key = key;
+
+				// we only end up here if the root node is empty
+				auto LargeSwap{ MultiItemCAS(
+					&newNode->parent,
+					&root->firstChild,
+					&root->lastChild,
+					&root->numChildren
+				) };
+				auto OldValues{ LargeSwap.ReadAll() };
+				if (LargeSwap.TrySwap(OldValues,
+					allocationRefFunc(root),
+					newNode,
+					newNode,
+					OldValues.get<3>() + 1
+				)) {
+					break;
+				}
+			}
+		}
+
+		return newNode;
+	};
+
+	static BalancedTreeNode* GetNextLeaf(BalancedTreeNode* node) {
+		if (node) {
+			if (node->GetFirstChild()) {
+				while (node->GetFirstChild()) {
+					node = node->GetFirstChild();
+				}
+			}
+			else {
+				while (node && !node->GetNext()) {
+					node = node->GetParent();
+				}
+				if (node) {
+					node = node->next;
+					while (node->GetFirstChild()) {
+						node = node->GetFirstChild();
+					}
+				}
+				else {
+					node = nullptr;
+				}
+			}
+		}
+		return node;
+	};	// goes through all leaf nodes of the tree;
 };
 #endif
 
@@ -738,7 +1037,137 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 			//});
 		}
 
+		if (1) {
+			{
+				BalancedTreeNode<int, const char> parentOfParents; parentOfParents.Reset();
+				BalancedTreeNodeParentReference<int, const char> parentOfParentsRef(&parentOfParents);
 
+				BalancedTreeNode<int, const char> parent1; parent1.Reset();
+				BalancedTreeNodeParentReference<int, const char> parentRef1(&parent1);
+				BalancedTreeNode<int, const char> child1; child1.Reset();
+				BalancedTreeNode<int, const char> child2; child2.Reset();
+
+				BalancedTreeNode<int, const char> parent2; parent2.Reset();
+				BalancedTreeNodeParentReference<int, const char> parentRef2(&parent2);
+				BalancedTreeNode<int, const char> child3; child3.Reset();
+				BalancedTreeNode<int, const char> child4; child4.Reset();
+
+				{
+					parentOfParents.object = "parentOfParents";
+					parent1.object = "Parent1";
+					parent2.object = "Parent2";
+					child1.object = "Child1";
+					child2.object = "Child2";
+					child3.object = "Child3";
+					child4.object = "Child4";
+
+					parent1.parent = &parentOfParentsRef;
+					parent2.parent = &parentOfParentsRef;
+
+					child1.parent = &parentRef1;
+					child2.parent = &parentRef1;
+					child1.prev = nullptr;
+					child1.next = &child2;
+					child2.prev = &child1;
+					child2.next = nullptr;
+					parent1.firstChild = &child1;
+					parent1.lastChild = &child2;
+					parent1.numChildren = 2;
+
+					child3.parent = &parentRef2;
+					child4.parent = &parentRef2;
+					child3.prev = nullptr;
+					child3.next = &child4;
+					child4.prev = &child3;
+					child4.next = nullptr;
+					parent2.firstChild = &child3;
+					parent2.lastChild = &child4;
+					parent2.numChildren = 2;
+
+					parent1.next = &parent2;
+					parent2.prev = &parent1;
+
+					parentOfParents.firstChild = &parent1;
+					parentOfParents.lastChild = &parent2;
+					parentOfParents.numChildren = 2;
+				}
+
+				std::cout << "\n\t\tChild1 Parent: " << child1.GetParent()->object << std::endl;
+				std::cout << "\t\tChild2 Parent: " << child2.GetParent()->object << std::endl;
+				std::cout << "\t\tChild3 Parent: " << child3.GetParent()->object << std::endl;
+				std::cout << "\t\tChild4 Parent: " << child4.GetParent()->object << std::endl;
+
+				std::cout << "\t\tParent1 Num Children: " << parent1.numChildren << std::endl;
+				std::cout << "\t\tParent1 First Child: " << parent1.firstChild->object << std::endl;
+				std::cout << "\t\tParent1 Last Child: " << parent1.lastChild->object << std::endl;
+
+				std::cout << "\t\tParent2 Num Children: " << parent2.numChildren << std::endl;
+				std::cout << "\t\tParent2 First Child: " << parent2.firstChild->object << std::endl;
+				std::cout << "\t\tParent2 Last Child: " << parent2.lastChild->object << std::endl;
+
+				std::cout << "\t\tParentOfParents NumChildren: " << parentOfParents.numChildren << std::endl;
+
+				BalancedTreeNode<int, const char>::MergeNodes(&parent1, &parent2);
+
+				std::cout << "\n\t\tChild1 Parent: " << child1.GetParent()->object << std::endl;
+				std::cout << "\t\tChild2 Parent: " << child2.GetParent()->object << std::endl;
+				std::cout << "\t\tChild3 Parent: " << child3.GetParent()->object << std::endl;
+				std::cout << "\t\tChild4 Parent: " << child4.GetParent()->object << std::endl;
+
+				std::cout << "\t\tParent1 Num Children: " << parent1.numChildren << std::endl;
+				std::cout << "\t\tParent1 First Child: " << parent1.firstChild->object << std::endl;
+				std::cout << "\t\tParent1 Last Child: " << parent1.lastChild->object << std::endl;
+
+				std::cout << "\t\tParent2 Num Children: " << parent2.numChildren << std::endl;
+				std::cout << "\t\tParent2 First Child: " << parent2.firstChild->object << std::endl;
+				std::cout << "\t\tParent2 Last Child: " << parent2.lastChild->object << std::endl;
+
+				std::cout << "\t\tParentOfParents NumChildren: " << parentOfParents.numChildren << std::endl;
+
+			}
+			{
+				fibers::utilities::Allocator<cweeStr, 128> str_alloc;
+				fibers::utilities::Allocator<BalancedTreeNode<int, const char>, 128> alloc1;
+				fibers::utilities::Allocator<BalancedTreeNodeParentReference<int, const char>, 128> alloc2;
+
+
+				BalancedTreeNode<int, const char>* root = alloc1.Alloc();
+				root->Reset();
+				root->key = 0;
+				root->object = "Root!";
+
+				for (int i = 1; i < 50; i++) {
+					auto str_ptr = str_alloc.Alloc();
+					str_ptr->operator=(cweeStr::printf("Object%i", i));
+					BalancedTreeNode<int, const char>::AddChild(10, root, str_ptr->c_str(), i, [&alloc1]() { return alloc1.Alloc(); }, [&alloc2](BalancedTreeNode<int, const char>* p) { auto x = alloc2.Alloc(); x->parent = p; return x; });
+				}
+
+				auto GetNameFrom = [](BalancedTreeNode<int, const char>* p) -> const char* { if (p) { return ""; } else { return p->object; }};
+				BalancedTreeNode<int, const char>* child = root;
+				while (child) {
+					std::cout << std::endl;
+
+					std::cout << "\t" << GetNameFrom(child) << std::endl;
+					std::cout << "\t\t Key: " << child->key << std::endl;
+					std::cout << "\t\t Parent: " << GetNameFrom(child->GetParent()) << std::endl;
+					std::cout << "\t\t Prev <-: " << GetNameFrom(child->GetPrev()) << std::endl;
+					std::cout << "\t\t Next ->: " << GetNameFrom(child->GetNext()) << std::endl;
+					std::cout << "\t\t First Child /: " << GetNameFrom(child->GetFirstChild()) << std::endl;
+					std::cout << "\t\t Last Child \\: " << GetNameFrom(child->GetLastChild()) << std::endl;
+					std::cout << "\t\t Num Children #: " << child->GetNumChildren() << std::endl;
+
+					child = BalancedTreeNode<int, const char>::GetNextLeaf(child);
+				}
+
+
+
+
+
+
+
+			}
+
+		}
 
 
 

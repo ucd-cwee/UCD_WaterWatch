@@ -2329,7 +2329,7 @@ namespace fibers {
 #undef RETURN_NOT_OK
 #undef IS_POWER_OF_TWO
 
-#define MWCAS_CAPACITY 7
+#define MWCAS_CAPACITY 14
 #define MWCAS_RETRY_THRESHOLD 10
 #define MWCAS_SLEEP_TIME 10
 
@@ -3079,6 +3079,13 @@ namespace fibers {
 		};
 
 		template <typename... Args> struct MultiItemCAS {
+#define SWITCH_FOR_0_to_16 switch (index) { \
+			REPEATFOR(0); REPEATFOR(1); REPEATFOR(2); REPEATFOR(3); \
+			REPEATFOR(4); REPEATFOR(5); REPEATFOR(6); REPEATFOR(7); \
+			REPEATFOR(8); REPEATFOR(9); REPEATFOR(10); REPEATFOR(11); \
+			REPEATFOR(12); REPEATFOR(13); \
+		    default: break; }
+
 		private:
 			template<int N> using NthTypeOf = typename std::remove_const<typename std::remove_reference<typename std::tuple_element<N, std::tuple<Args...>>::type>::type>::type;
 			static constexpr size_t num_parameters = sizeof...(Args);
@@ -3093,65 +3100,42 @@ namespace fibers {
 			~MultiItemCAS() {};
 
 		private:
-			template <int index> decltype(auto) GetCurrentValue(fibers::utilities::dbgroup::atomic::mwcas::MwCASDescriptor& desc) const {
-				return desc.Read<NthTypeOf<index>>(container.get<index>());
+			template <int index> decltype(auto) GetCurrentValue(fibers::utilities::dbgroup::atomic::mwcas::MwCASDescriptor& desc) const { 
+				if (container.get<index>()) {
+					return desc.Read<NthTypeOf<index>>(container.get<index>());
+				}
+				else {
+					return NthTypeOf<index>();
+				}				
 			};
 			void CaptureOldValues(Union< Args... >& OldCopy, size_t& index, fibers::utilities::dbgroup::atomic::mwcas::MwCASDescriptor& desc) const {
+#define REPEATFOR(index) case index: if constexpr (num_parameters > index) OldCopy.get<index>() = GetCurrentValue<index>(desc); break
 				for (index = 0; index < num_parameters; index++) {
-					switch (index) {
-					case 0: if constexpr (num_parameters > 0) OldCopy.get<0>() = GetCurrentValue<0>(desc); break;
-					case 1: if constexpr (num_parameters > 1) OldCopy.get<1>() = GetCurrentValue<1>(desc); break;
-					case 2: if constexpr (num_parameters > 2) OldCopy.get<2>() = GetCurrentValue<2>(desc); break;
-					case 3: if constexpr (num_parameters > 3) OldCopy.get<3>() = GetCurrentValue<3>(desc); break;
-					case 4: if constexpr (num_parameters > 4) OldCopy.get<4>() = GetCurrentValue<4>(desc); break;
-					case 5: if constexpr (num_parameters > 5) OldCopy.get<5>() = GetCurrentValue<5>(desc); break;
-					case 6: if constexpr (num_parameters > 6) OldCopy.get<6>() = GetCurrentValue<6>(desc); break;
-					case 7: if constexpr (num_parameters > 7) OldCopy.get<7>() = GetCurrentValue<7>(desc); break;
-					case 8: if constexpr (num_parameters > 8) OldCopy.get<8>() = GetCurrentValue<8>(desc); break;
-					case 9: if constexpr (num_parameters > 9) OldCopy.get<9>() = GetCurrentValue<9>(desc); break;
-					default: break;
-					}
+					SWITCH_FOR_0_to_16;
 				}
+#undef REPEATFOR
 			};
 
 			template <typename... IncomingArgs>
 			void CaptureOldValuesAndModify(Union< Args... >& OldCopy, Union< Args... >& NewValues, Union< IncomingArgs... >& Functors, size_t& index, fibers::utilities::dbgroup::atomic::mwcas::MwCASDescriptor& desc) const {
+#define REPEATFOR(index) case index: if constexpr (num_parameters > index) NewValues.get<index>() = Functors.get<index>()(OldCopy.get<index>() = GetCurrentValue<index>(desc)); break
 				for (index = 0; index < num_parameters; index++) {
-					switch (index) {
-					case 0: if constexpr (num_parameters > 0) NewValues.get<0>() = Functors.get<0>()(OldCopy.get<0>() = GetCurrentValue<0>(desc)); break;
-					case 1: if constexpr (num_parameters > 1) NewValues.get<1>() = Functors.get<1>()(OldCopy.get<1>() = GetCurrentValue<1>(desc)); break;
-					case 2: if constexpr (num_parameters > 2) NewValues.get<2>() = Functors.get<2>()(OldCopy.get<2>() = GetCurrentValue<2>(desc)); break;
-					case 3: if constexpr (num_parameters > 3) NewValues.get<3>() = Functors.get<3>()(OldCopy.get<3>() = GetCurrentValue<3>(desc)); break;
-					case 4: if constexpr (num_parameters > 4) NewValues.get<4>() = Functors.get<4>()(OldCopy.get<4>() = GetCurrentValue<4>(desc)); break;
-					case 5: if constexpr (num_parameters > 5) NewValues.get<5>() = Functors.get<5>()(OldCopy.get<5>() = GetCurrentValue<5>(desc)); break;
-					case 6: if constexpr (num_parameters > 6) NewValues.get<6>() = Functors.get<6>()(OldCopy.get<6>() = GetCurrentValue<6>(desc)); break;
-					case 7: if constexpr (num_parameters > 7) NewValues.get<7>() = Functors.get<7>()(OldCopy.get<7>() = GetCurrentValue<7>(desc)); break;
-					case 8: if constexpr (num_parameters > 8) NewValues.get<8>() = Functors.get<8>()(OldCopy.get<8>() = GetCurrentValue<8>(desc)); break;
-					case 9: if constexpr (num_parameters > 9) NewValues.get<9>() = Functors.get<9>()(OldCopy.get<9>() = GetCurrentValue<9>(desc)); break;
-					default: break;
-					}
+					SWITCH_FOR_0_to_16;
 				}
+#undef REPEATFOR
 			};
 
 			template <int index> decltype(auto) PrepareSwapTarget(Union< Args... >& OldCopy, Union< Args... >& NewValues, fibers::utilities::dbgroup::atomic::mwcas::MwCASDescriptor& desc) const {
-				desc.AddMwCASTarget(container.get<index>(), OldCopy.get<index>(), NewValues.get<index>());
+				if (container.get<index>()) {
+					desc.AddMwCASTarget(container.get<index>(), OldCopy.get<index>(), NewValues.get<index>());
+				}
 			};
 			void PrepareSwapTargets(Union< Args... >& OldCopy, Union< Args... >& NewValues, size_t& index, fibers::utilities::dbgroup::atomic::mwcas::MwCASDescriptor& desc) {
+#define REPEATFOR(index) case index: if constexpr (num_parameters > index) PrepareSwapTarget<index>(OldCopy, NewValues, desc); break			
 				for (index = 0; index < num_parameters; index++) {
-					switch (index) {
-					case 0: if constexpr (num_parameters > 0) PrepareSwapTarget<0>(OldCopy, NewValues, desc); break;
-					case 1: if constexpr (num_parameters > 1) PrepareSwapTarget<1>(OldCopy, NewValues, desc); break;
-					case 2: if constexpr (num_parameters > 2) PrepareSwapTarget<2>(OldCopy, NewValues, desc); break;
-					case 3: if constexpr (num_parameters > 3) PrepareSwapTarget<3>(OldCopy, NewValues, desc); break;
-					case 4: if constexpr (num_parameters > 4) PrepareSwapTarget<4>(OldCopy, NewValues, desc); break;
-					case 5: if constexpr (num_parameters > 5) PrepareSwapTarget<5>(OldCopy, NewValues, desc); break;
-					case 6: if constexpr (num_parameters > 6) PrepareSwapTarget<6>(OldCopy, NewValues, desc); break;
-					case 7: if constexpr (num_parameters > 7) PrepareSwapTarget<7>(OldCopy, NewValues, desc); break;
-					case 8: if constexpr (num_parameters > 8) PrepareSwapTarget<8>(OldCopy, NewValues, desc); break;
-					case 9: if constexpr (num_parameters > 9) PrepareSwapTarget<9>(OldCopy, NewValues, desc); break;
-					default: break;
-					}
+					SWITCH_FOR_0_to_16;
 				}
+#undef REPEATFOR
 			};
 
 		public:
@@ -3218,15 +3202,54 @@ namespace fibers {
 				return OldCopy;
 			}; // returns the previous value while changing the underlying value
 
+			template <typename... IncomingArgs>
+			bool TrySwap(Union< Args... >& OldCopy, IncomingArgs&&... newValues) {
+				using fibers::utilities::dbgroup::atomic::mwcas::MwCASDescriptor;
+
+				Union< Args... > UpdateCopy(std::forward<IncomingArgs>(newValues)...);
+
+				size_t
+					index;
+
+				// continue until a MwCAS operation succeeds
+				while (true) {
+					// create a MwCAS descriptor
+					MwCASDescriptor desc{};
+
+					// prepare the swap target(s)
+					PrepareSwapTargets(OldCopy, UpdateCopy, index, desc);
+
+					// try multi-word compare and swap
+					if (desc.MwCAS()) return true;
+					else return false;
+				}
+
+				return false;
+			}; // returns the previous value while changing the underlying value
+
+
 			template <int index>
-			decltype(auto) Read() {
+			decltype(auto) Read() const {
 				using fibers::utilities::dbgroup::atomic::mwcas::MwCASDescriptor;
 				MwCASDescriptor desc{};
 				return GetCurrentValue<index>(desc);
 			};
 
+			Union< Args... > ReadAll() const {
+				using fibers::utilities::dbgroup::atomic::mwcas::MwCASDescriptor;
+				MwCASDescriptor desc{};
+
+				Union< Args... > OldCopy;
+				size_t index;
+				CaptureOldValues(OldCopy, index, desc);
+
+				return OldCopy;
+			};
+
+
 		private:
 			Union< Args*... > container;
+#undef SWITCH_FOR_0_to_16
 		};
 
 
