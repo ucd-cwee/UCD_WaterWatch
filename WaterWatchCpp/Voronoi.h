@@ -741,7 +741,7 @@ public:
             dyp = p->y - topsite->p.y;
             dxp = p->x - topsite->p.x;
             int fast = 0;
-            if ((!right_of_site & (e->b < (double)0)) | (right_of_site & (e->b >= (double)0)))
+            if ((!right_of_site & (e->b < (double)0)) || (right_of_site & (e->b >= (double)0)))
             {
                 above = dyp >= e->b * dxp;
                 fast = above;

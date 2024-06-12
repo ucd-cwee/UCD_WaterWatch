@@ -71,10 +71,10 @@ struct DListNode {
 };
 
 
-#if 1
-template<typename keyType, typename objType> class BalancedTreeNode; // Forward decl
+#if 0
+template<typename keyType, typename objType> struct BalancedTreeNode; // Forward decl
 
-template<typename keyType, typename objType> class BalancedTreeNodeParentReference {
+template<typename keyType, typename objType> struct BalancedTreeNodeParentReference {
 public:
 	BalancedTreeNode<keyType, objType>* parent;
 public:
@@ -88,9 +88,9 @@ public:
 
 };
 
-template<typename keyType, typename objType> class BalancedTreeNode {
+template<typename keyType, typename objType> struct BalancedTreeNode {
 public:
-	keyType			  key;							// key used for sorting
+	fibers::synchronization::atomic_number< keyType> key; // key used for sorting
 	objType*          object;						// if != NULL pointer to object stored in leaf node
 	BalancedTreeNodeParentReference<keyType, objType>* parent;		// reference to shared parent node
 	BalancedTreeNode* next;							// next sibling
@@ -250,7 +250,14 @@ public:
 		//return node2;
 	};
 
-	static bool SplitNode(BalancedTreeNode* node, std::function< BalancedTreeNode*()> const& allocationNodeFunc, std::function< BalancedTreeNodeParentReference<keyType, objType>* (BalancedTreeNode*)> const& allocationRefFunc) {
+	static bool SplitNode(
+		BalancedTreeNode* node, 
+		std::function< BalancedTreeNode*()> const& allocationNodeFunc, 
+		std::function< BalancedTreeNodeParentReference<keyType, objType>* (BalancedTreeNode*)> const& allocationRefFunc, 
+		BalancedTreeNodeParentReference<keyType, objType>** proposedNodeParentRef = nullptr, 
+		BalancedTreeNode** optionalReplaceSite = nullptr, 
+		BalancedTreeNode* optionalReplaceValue = nullptr
+	) {
 		using namespace fibers::utilities; 
 		
 		long long i;
@@ -267,7 +274,7 @@ public:
 				&node->parent).ReadAll();
 
 			auto numNodeChildren = node_Characteristics.get<2>();
-			auto node_parent = MultiItemCAS(&node_Characteristics.get<4>()->parent).Read<0>();
+			auto node_parent = proposedNodeParentRef ? (*proposedNodeParentRef)->parent : MultiItemCAS(&node_Characteristics.get<4>()->parent).Read<0>();
 			auto prevNode = node_Characteristics.get<3>();
 
 			if (numNodeChildren <= 5) return false;
@@ -291,36 +298,71 @@ public:
 			newNode->lastChild = child;
 			newNode->numChildren = numNodeChildren / 2;
 
-			auto LargeSwap{ MultiItemCAS(
-				node_parent ? (uint64_t*)&node_parent->numChildren : (uint64_t*)nullptr, // to be incremented by one
-				!prevNode ? (BalancedTreeNode**)&node_parent->firstChild : (BalancedTreeNode**)nullptr, // to be set to "newNode"
-				prevNode ? (BalancedTreeNode**)&prevNode->next : (BalancedTreeNode**)nullptr, // to be set to "newNode"
-				&oldNodeNewFirstChild->prev, // to be set to "nullptr"
-				&child->next, // to be set to "nullptr"
-				&node->firstChild, // to be set to "oldNodeNewFirstChild"
-				&node->prev, // to be set to "newNode"
-				&newNodeRef->parent, // to be set to "newNode"
-				&node->numChildren // to be decremented by newNode->numChildren
-			) };
+			if (prevNode) {
+				auto LargeSwap{ MultiItemCAS(
+					node_parent ? (uint64_t*)&node_parent->numChildren : (uint64_t*)nullptr, // to be incremented by one
+					&prevNode->next, // to be set to "newNode"
+					&oldNodeNewFirstChild->prev, // to be set to "nullptr"
+					&child->next, // to be set to "nullptr"
+					&node->firstChild, // to be set to "oldNodeNewFirstChild"
+					&node->prev, // to be set to "newNode"
+					&newNodeRef->parent, // to be set to "newNode"
+					&node->numChildren  // to be decremented by newNode->numChildren
+					//proposedNodeParentRef ? (BalancedTreeNodeParentReference<keyType, objType>**)(&node->parent) : (BalancedTreeNodeParentReference<keyType, objType>**)nullptr,
+					//optionalReplaceSite
+				) };
 
-			auto OldValues{ LargeSwap.ReadAll() };
+				auto OldValues{ LargeSwap.ReadAll() };
 
-			if (LargeSwap.TrySwap(OldValues,
-				OldValues.get<0>() + 1,
-				newNode,
-				newNode,
-				nullptr,
-				nullptr,
-				oldNodeNewFirstChild,
-				newNode,
-				newNode,
-				OldValues.get<8>() - newNode->numChildren
-			)) return true;
+				if (LargeSwap.TrySwap(OldValues,
+					(uint64_t)(OldValues.get<0>() + 1),
+					(BalancedTreeNode*)newNode,
+					(BalancedTreeNode*)nullptr,
+					(BalancedTreeNode*)nullptr,
+					oldNodeNewFirstChild,
+					newNode,
+					newNode,
+					(uint64_t)(OldValues.get<7>() - newNode->numChildren)
+					//(BalancedTreeNodeParentReference<keyType, objType>*)(*proposedNodeParentRef),
+					//(BalancedTreeNode*)optionalReplaceValue
+				)) return true;
+			}
+			else {
+				auto LargeSwap{ MultiItemCAS(
+					node_parent ? (uint64_t*)&node_parent->numChildren : (uint64_t*)nullptr, // to be incremented by one
+					&node_parent->firstChild, // to be set to "newNode"
+					&oldNodeNewFirstChild->prev, // to be set to "nullptr"
+					&child->next, // to be set to "nullptr"
+					&node->firstChild, // to be set to "oldNodeNewFirstChild"
+					&node->prev, // to be set to "newNode"
+					&newNodeRef->parent, // to be set to "newNode"
+					&node->numChildren  // to be decremented by newNode->numChildren
+					//proposedNodeParentRef ? (BalancedTreeNodeParentReference<keyType, objType>**)(&node->parent) : (BalancedTreeNodeParentReference<keyType, objType>**)nullptr,
+					//optionalReplaceSite
+				) };
+
+				auto OldValues{ LargeSwap.ReadAll() };
+
+				if (LargeSwap.TrySwap(OldValues,
+					(uint64_t)(OldValues.get<0>() + 1),
+					(BalancedTreeNode*)newNode,
+					(BalancedTreeNode*)nullptr,
+					(BalancedTreeNode*)nullptr,
+					oldNodeNewFirstChild,
+					newNode,
+					newNode,
+					(uint64_t)(OldValues.get<7>() - newNode->numChildren)
+					//(BalancedTreeNodeParentReference<keyType, objType>*)(*proposedNodeParentRef),
+					//(BalancedTreeNode*)optionalReplaceValue
+				)) return true;
+			}
+
+
 		}
 	};
 
 	/// <summary>
-	/// parent or root must already exist prior to this
+	/// parent or root must already exist prior to this. Does not add duplicates.
 	/// </summary>
 	/// <param name="parent"></param>
 	/// <param name="object"></param>
@@ -328,127 +370,163 @@ public:
 	/// <param name="allocationNodeFunc"></param>
 	/// <param name="allocationRefFunc"></param>
 	/// <returns></returns>
-	static BalancedTreeNode* AddChild(uint64_t maxChildrenPerNode, BalancedTreeNode*& root, objType* object, keyType const& key, std::function< BalancedTreeNode* ()> const& allocationNodeFunc, std::function< BalancedTreeNodeParentReference<keyType, objType>* (BalancedTreeNode*)> const& allocationRefFunc) {
+	static BalancedTreeNode* AddChild(
+		fibers::synchronization::shared_mutex<fibers::synchronization::mutex>& rootLock, 
+		uint64_t maxChildrenPerNode, 
+		fibers::synchronization::atomic_ptr< BalancedTreeNode<int, const char> >& root,
+		objType* object, 
+		keyType const& key, 
+		std::function< BalancedTreeNode* ()> const& allocationNodeFunc, 
+		std::function< BalancedTreeNodeParentReference<keyType, objType>* (BalancedTreeNode*)> const& allocationRefFunc
+	) {
 		using namespace fibers::utilities; 
 		
-		BalancedTreeNode* node, * child, * newNode;
+		BalancedTreeNode
+			*node{ nullptr },
+			*child{ nullptr },
+			*newNode{ nullptr };
 
-		// before we can add anything to this node, we will have to split it if it's too big
+		// before we can add anything to this node, we will have to split the root if it's too big
 		if (root->GetNumChildren() >= maxChildrenPerNode) {
-			newNode = allocationNodeFunc();
-			newNode->key = root->key;
-			newNode->firstChild = root;
-			newNode->lastChild = root;
-			newNode->numChildren = 1;
+			auto hard_lock{ std::unique_lock(rootLock) };
+			if (root->GetNumChildren() >= maxChildrenPerNode) {
+				newNode = allocationNodeFunc();
+				newNode->key = root->key;
+				newNode->firstChild = root;
+				newNode->lastChild = root;
+				newNode->numChildren = 1;
 
-			MultiItemCAS(&root->parent).Swap(allocationRefFunc(newNode));
-			SplitNode(root, allocationNodeFunc, allocationRefFunc);
-			root = newNode;
+				auto* newParentRef = allocationRefFunc(newNode);
+
+				MultiItemCAS(&root->parent).Swap(allocationRefFunc(newNode));
+				if (SplitNode(&*root, allocationNodeFunc, allocationRefFunc), &newParentRef/*, &root, newNode*/) { // tries to split Root and swaps root with "newNode", all atomic. 
+					root = newNode;
+				}
+			}
 		}
 
+		
+
 		while (true) {
-			newNode = allocationNodeFunc();
-			newNode->key = key;
-			newNode->object = object;
-
-			for (node = root; node->GetFirstChild() != nullptr; node = child) {
-				if (key > node->key) {
-					node->key = key; // why? Does this never happen? I don't understand this one
+			{
+				if (!newNode) {
+					newNode = allocationNodeFunc();
+					newNode->key = key;
+					newNode->object = object;
 				}
+				child = nullptr; 
 
-				// find the first child with a key larger equal to the key of the new node
-				for (child = node->GetFirstChild(); child->GetNext(); child = child->GetNext()) {
-					if (key <= child->key) {
+				auto soft_lock{ std::shared_lock(rootLock) };
+
+				for (node = root; node->GetFirstChild(); node = child) {
+					// node->key.Max(key);
+
+					// find the first child with a key larger equal to the key of the new node
+					for (child = node->GetFirstChild(); child->GetNext(); child = child->GetNext()) {
+						if (key <= child->key) {
+							break;
+						}
+					}
+
+					if (child->object) {
+						if (key == child->key) {
+							return child;
+						}
+						else if (key < child->key) {
+							while (true) {
+								auto childPrev = child->GetPrev();
+								auto parentObj = MultiItemCAS(&child->parent).Read<0>();
+
+								// insert new node before child
+								auto LargeSwap{ MultiItemCAS(
+									childPrev ? (BalancedTreeNode**)&childPrev->next : (BalancedTreeNode**)nullptr, // to be set to newNode
+									!childPrev ? (BalancedTreeNode**)&node->firstChild : (BalancedTreeNode**)nullptr, // to be set to newNode
+									&newNode->prev, // to be set to childPrev
+									&newNode->next, // to be set to child
+									&child->prev, // to be set to newNode
+									&newNode->parent, // to be set to childPrev->parent
+									&node->numChildren // to be incremented by one
+								) };
+								auto OldValues{ LargeSwap.ReadAll() };
+								if (LargeSwap.TrySwap(OldValues,
+									newNode,
+									newNode,
+									childPrev,
+									child,
+									newNode,
+									parentObj,
+									OldValues.get<6>() + 1
+								)) break;
+							}
+						}
+						else /* key > child->key */ {
+							while (true) {
+								auto childNext = child->GetNext();
+								auto parentObj = MultiItemCAS(&child->parent).Read<0>();
+
+								// insert new node after child
+								auto LargeSwap{ MultiItemCAS(
+									childNext ? (BalancedTreeNode**)&childNext->prev : (BalancedTreeNode**)nullptr, // to be set to newNode
+									!childNext ? (BalancedTreeNode**)&node->lastChild : (BalancedTreeNode**)nullptr, // to be set to newNode
+									&newNode->prev, // to be set to child
+									&newNode->next, // to be set to childNext
+									&child->next,  // to be set to newNode
+									&newNode->parent, // to be set to childNext->parent
+									&node->numChildren // to be incremented by one
+								) };
+								auto OldValues{ LargeSwap.ReadAll() };
+								if (LargeSwap.TrySwap(OldValues,
+									newNode,
+									newNode,
+									child,
+									childNext,
+									newNode,
+									parentObj,
+									OldValues.get<6>() + 1
+								)) {
+									node->key.Max(key);
+									break;
+								}
+							}
+						}
+						return newNode;
+					}
+
+					// make sure the child has room to store another node
+					while (child->GetNumChildren() >= maxChildrenPerNode) {
+
+						SplitNode(child, allocationNodeFunc, allocationRefFunc);
+						if (key <= child->GetPrev()->key) {
+							child = child->GetPrev();
+						}
+					}
+				}
+			}
+
+			if (!root->GetFirstChild()) {
+				auto hard_lock{ std::unique_lock(rootLock) };
+
+				// we only end up here if the root node is empty
+				if (!root->GetFirstChild()) {
+					root->key = key;
+					auto LargeSwap{ MultiItemCAS(
+						&newNode->parent,
+						&root->firstChild,
+						&root->lastChild,
+						&root->numChildren
+					) };
+					auto OldValues{ LargeSwap.ReadAll() };
+					if (LargeSwap.TrySwap(OldValues,
+						allocationRefFunc(root),
+						newNode,
+						newNode,
+						OldValues.get<3>() + 1
+					)) {
 						break;
 					}
 				}
-
-				if (child->object) {
-					if (key <= child->key) {
-						while (true) {
-							auto childPrev = child->GetPrev();
-							auto parentObj = MultiItemCAS(&child->parent).Read<0>();
-
-							// insert new node before child
-							auto LargeSwap{ MultiItemCAS(
-								childPrev ? (BalancedTreeNode**)&childPrev->next : (BalancedTreeNode**)nullptr, // to be set to newNode
-								!childPrev ? (BalancedTreeNode**)&node->firstChild : (BalancedTreeNode**)nullptr, // to be set to newNode
-								&newNode->prev, // to be set to childPrev
-								&newNode->next, // to be set to child
-								&child->prev, // to be set to newNode
-								&newNode->parent, // to be set to childPrev->parent
-								&node->numChildren // to be incremented by one
-							) };
-							auto OldValues{ LargeSwap.ReadAll() };
-							if (LargeSwap.TrySwap(OldValues,
-								newNode,
-								newNode,
-								childPrev,
-								child,
-								newNode,
-								parentObj,
-								OldValues.get<6>() + 1
-							)) break;
-						}
-					}
-					else {
-						while (true) {
-							auto childNext = child->GetNext();
-							auto parentObj = MultiItemCAS(&child->parent).Read<0>();
-
-							// insert new node after child
-							auto LargeSwap{ MultiItemCAS(
-								childNext ? (BalancedTreeNode**)&childNext->prev : (BalancedTreeNode**)nullptr, // to be set to newNode
-								!childNext ? (BalancedTreeNode**)&node->lastChild : (BalancedTreeNode**)nullptr, // to be set to newNode
-								&newNode->prev, // to be set to child
-								&newNode->next, // to be set to childNext
-								&child->next,  // to be set to newNode
-								&newNode->parent, // to be set to childNext->parent
-								&node->numChildren // to be incremented by one
-							) };
-							auto OldValues{ LargeSwap.ReadAll() };
-							if (LargeSwap.TrySwap(OldValues,
-								newNode,
-								newNode,
-								child,
-								childNext,
-								newNode,
-								parentObj,
-								OldValues.get<6>() + 1
-							)) break;
-						}
-					}
-					return newNode;
-				}
-
-				// make sure the child has room to store another node
-				if (child->GetNumChildren() >= maxChildrenPerNode) {
-					SplitNode(child, allocationNodeFunc, allocationRefFunc);
-					if (key <= child->GetPrev()->key) {
-						child = child->GetPrev();
-					}
-				}
 			}
-			{
-				root->key = key;
 
-				// we only end up here if the root node is empty
-				auto LargeSwap{ MultiItemCAS(
-					&newNode->parent,
-					&root->firstChild,
-					&root->lastChild,
-					&root->numChildren
-				) };
-				auto OldValues{ LargeSwap.ReadAll() };
-				if (LargeSwap.TrySwap(OldValues,
-					allocationRefFunc(root),
-					newNode,
-					newNode,
-					OldValues.get<3>() + 1
-				)) {
-					break;
-				}
-			}
 		}
 
 		return newNode;
@@ -481,7 +559,24 @@ public:
 };
 #endif
 
+#if 1
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#endif
 
 
 
@@ -585,118 +680,306 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 
 		// Epoch-based garbage collector examples
 		if (1) {
-			using namespace fibers::utilities::garbage_collection;
-			{
-				EpochManager mgr_;
-				mgr_.Initialize();
-				defer(mgr_.Uninitialize());
+			if (0) {
+				using namespace fibers::utilities::garbage_collection;
 				{
-					EXPECT_EQ(1llu, mgr_.current_epoch_.load());
-					EXPECT_EQ(0llu, mgr_.safe_to_reclaim_epoch_.load());
-					EXPECT_NE(nullptr, mgr_.epoch_table_);
-				}
-			}
-			{
-				EpochManager mgr_;
-				mgr_.Initialize();
-				defer(mgr_.Uninitialize());
-				{
-					mgr_.BumpCurrentEpoch();
-					EXPECT_EQ(true, mgr_.Protect().ok());
-					// Make sure the table is clear except the one new entry.
-					auto* table = mgr_.epoch_table_->table_;
-					for (uint64_t i = 0; i < mgr_.epoch_table_->size_; ++i) {
-						const auto& entry = table[i];
-						if (entry.thread_id != 0) {
-							EXPECT_EQ(static_cast<uint64_t>(std::hash<std::thread::id>()(std::this_thread::get_id())), entry.thread_id.load());
-							EXPECT_EQ(2llu, entry.protected_epoch.load());
-							EXPECT_EQ(0llu, entry.last_unprotected_epoch);
-							break;
-						}
-						EXPECT_EQ(0lu, entry.thread_id.load());
-						EXPECT_EQ(0llu, entry.protected_epoch.load());
-						EXPECT_EQ(0llu, entry.last_unprotected_epoch);
-					}
-				}
-			}
-			{
-				EpochManager mgr_;
-				mgr_.Initialize();
-				defer(mgr_.Uninitialize());
-				{
-					mgr_.BumpCurrentEpoch();
-					EXPECT_EQ(true, mgr_.Protect().ok());
-					mgr_.BumpCurrentEpoch();
-					EXPECT_EQ(true, mgr_.Unprotect().ok());
-
-					// Make sure the table is clear except the one new entry.
-					auto* table = mgr_.epoch_table_->table_;
-					for (size_t i = 0; i < mgr_.epoch_table_->size_; ++i) {
-						const auto& entry = table[i];
-						if (entry.thread_id != 0) {
-							EXPECT_EQ(static_cast<uint64_t>(std::hash<std::thread::id>()(std::this_thread::get_id())), entry.thread_id.load());
-							EXPECT_EQ(0llu, entry.protected_epoch.load());
-							EXPECT_EQ(3llu, entry.last_unprotected_epoch);
-							break;
-						}
-						EXPECT_EQ(0lu, (DWORD)entry.thread_id.load());
-						EXPECT_EQ(0llu, entry.protected_epoch.load());
-						EXPECT_EQ(0llu, entry.last_unprotected_epoch);
-					}
-				}
-			}
-			{
-				EpochManager mgr_;
-				mgr_.Initialize();
-				defer(mgr_.Uninitialize());
-				{
-					mgr_.epoch_table_->table_[0].protected_epoch = 98;
-					mgr_.current_epoch_ = 99;
-					mgr_.ComputeNewSafeToReclaimEpoch(99);
-					EXPECT_EQ(97llu, mgr_.safe_to_reclaim_epoch_.load());
-					mgr_.epoch_table_->table_[0].protected_epoch = 0;
-					EXPECT_EQ(97llu, mgr_.safe_to_reclaim_epoch_.load());
-					mgr_.ComputeNewSafeToReclaimEpoch(99);
-					EXPECT_EQ(98llu, mgr_.safe_to_reclaim_epoch_.load());
-				}
-			}
-			{
-				EpochManager mgr_;
-				mgr_.Initialize();
-				defer(mgr_.Uninitialize());
-				{
-					GarbageList gc;
-					gc.Initialize(&mgr_);
-					defer(gc.Uninitialize());
+					EpochManager mgr_;
+					mgr_.Initialize();
+					defer(mgr_.Uninitialize());
 					{
-						for (int k = 0; k < 5; k++) {
-							// 5 iterations 
-							fibers::parallel::For(0, 50, [&mgr_, &gc](int i) {
-								{
-									auto guard{ EpochGuard(&mgr_) }; // try to guard this "generation" of stuff since it's being worked on
-									for (int j = 0; j < 50; j++) {
-										// 50 children per generation
-										{
-											auto* testPtr = new stackThing(cweeStr::printf("CHILD %i FROM GENERATION %i (LIFETIME: EPOCH %i to ", j, i, static_cast<int>(mgr_.GetCurrentEpoch())), (float)i);
-											gc.Push(testPtr, [](void* context, void* object) {
-												stackThing* objAs = (stackThing*)object;
-												EpochManager* mgr_ = (EpochManager*)context;
-												objAs->varName += cweeStr(cweeStr(static_cast<int>(mgr_->GetCurrentEpoch())) + ")");
-												delete objAs;
-												}, &mgr_);
+						EXPECT_EQ(1llu, mgr_.current_epoch_.load());
+						EXPECT_EQ(0llu, mgr_.safe_to_reclaim_epoch_.load());
+						EXPECT_NE(nullptr, mgr_.epoch_table_);
+					}
+				}
+				{
+					EpochManager mgr_;
+					mgr_.Initialize();
+					defer(mgr_.Uninitialize());
+					{
+						mgr_.BumpCurrentEpoch();
+						EXPECT_EQ(true, mgr_.Protect().ok());
+						// Make sure the table is clear except the one new entry.
+						auto* table = mgr_.epoch_table_->table_;
+						for (uint64_t i = 0; i < mgr_.epoch_table_->size_; ++i) {
+							const auto& entry = table[i];
+							if (entry.thread_id != 0) {
+								EXPECT_EQ(static_cast<uint64_t>(std::hash<std::thread::id>()(std::this_thread::get_id())), entry.thread_id.load());
+								EXPECT_EQ(2llu, entry.protected_epoch.load());
+								EXPECT_EQ(0llu, entry.last_unprotected_epoch);
+								break;
+							}
+							EXPECT_EQ(0lu, entry.thread_id.load());
+							EXPECT_EQ(0llu, entry.protected_epoch.load());
+							EXPECT_EQ(0llu, entry.last_unprotected_epoch);
+						}
+					}
+				}
+				{
+					EpochManager mgr_;
+					mgr_.Initialize();
+					defer(mgr_.Uninitialize());
+					{
+						mgr_.BumpCurrentEpoch();
+						EXPECT_EQ(true, mgr_.Protect().ok());
+						mgr_.BumpCurrentEpoch();
+						EXPECT_EQ(true, mgr_.Unprotect().ok());
+
+						// Make sure the table is clear except the one new entry.
+						auto* table = mgr_.epoch_table_->table_;
+						for (size_t i = 0; i < mgr_.epoch_table_->size_; ++i) {
+							const auto& entry = table[i];
+							if (entry.thread_id != 0) {
+								EXPECT_EQ(static_cast<uint64_t>(std::hash<std::thread::id>()(std::this_thread::get_id())), entry.thread_id.load());
+								EXPECT_EQ(0llu, entry.protected_epoch.load());
+								EXPECT_EQ(3llu, entry.last_unprotected_epoch);
+								break;
+							}
+							EXPECT_EQ(0lu, (DWORD)entry.thread_id.load());
+							EXPECT_EQ(0llu, entry.protected_epoch.load());
+							EXPECT_EQ(0llu, entry.last_unprotected_epoch);
+						}
+					}
+				}
+				{
+					EpochManager mgr_;
+					mgr_.Initialize();
+					defer(mgr_.Uninitialize());
+					{
+						mgr_.epoch_table_->table_[0].protected_epoch = 98;
+						mgr_.current_epoch_ = 99;
+						mgr_.ComputeNewSafeToReclaimEpoch(99);
+						EXPECT_EQ(97llu, mgr_.safe_to_reclaim_epoch_.load());
+						mgr_.epoch_table_->table_[0].protected_epoch = 0;
+						EXPECT_EQ(97llu, mgr_.safe_to_reclaim_epoch_.load());
+						mgr_.ComputeNewSafeToReclaimEpoch(99);
+						EXPECT_EQ(98llu, mgr_.safe_to_reclaim_epoch_.load());
+					}
+				}
+				{
+					EpochManager mgr_;
+					mgr_.Initialize();
+					defer(mgr_.Uninitialize());
+					{
+						GarbageList gc;
+						gc.Initialize(&mgr_);
+						defer(gc.Uninitialize());
+						{
+							for (int k = 0; k < 5; k++) {
+								// 5 iterations 
+								fibers::parallel::For(0, 50, [&mgr_, &gc](int i) {
+									{
+										auto guard{ EpochGuard(&mgr_) }; // try to guard this "generation" of stuff since it's being worked on
+										for (int j = 0; j < 50; j++) {
+											// 50 children per generation
+											{
+												auto* testPtr = new stackThing(cweeStr::printf("CHILD %i FROM GENERATION %i (LIFETIME: EPOCH %i to ", j, i, static_cast<int>(mgr_.GetCurrentEpoch())), (float)i);
+												gc.Push(testPtr, [](void* context, void* object) {
+													stackThing* objAs = (stackThing*)object;
+													EpochManager* mgr_ = (EpochManager*)context;
+													objAs->varName += cweeStr(cweeStr(static_cast<int>(mgr_->GetCurrentEpoch())) + ")");
+													delete objAs;
+													}, &mgr_);
+											}
 										}
 									}
-								}
+
+									mgr_.BumpCurrentEpoch(); // force the epoch forward -- should be a safe thing to do.
+									gc.Scavenge(); // constantly try to delete stuff
+									});
 
 								mgr_.BumpCurrentEpoch(); // force the epoch forward -- should be a safe thing to do.
 								gc.Scavenge(); // constantly try to delete stuff
-								});
-
-							mgr_.BumpCurrentEpoch(); // force the epoch forward -- should be a safe thing to do.
-							gc.Scavenge(); // constantly try to delete stuff
+							}
 						}
 					}
 				}
+			}
+
+			if (1) {
+			    using namespace fibers::utilities::dbgroup::memory;
+
+		
+				// using a garbage collector across multiple threads
+				{
+					constexpr size_t kGCInterval = 1E3;  // increment an epoch value every 1ms
+					constexpr size_t kThreadNum = 1;     // use one thread to release garbage
+
+					EpochBasedGC <
+						fibers::utilities::dbgroup::memory::Target<stackThing>,
+						fibers::utilities::dbgroup::memory::Target < float >
+					> gc{ kGCInterval, kThreadNum };
+					gc.StartGC();
+					{
+						for (int k = 0; k < 50; k++) {
+							// 50 iterations 
+							fibers::parallel::For(0, 50, [&gc](int i) {
+								{
+									const auto& guard = gc.CreateEpochGuard(); // try to guard this "generation" of stuff since it's being worked on
+
+									for (int j = 0; j < 5; j++) {
+										// 5 children per generation
+										{
+											auto* testPtr = new stackThing(cweeStr::printf("CHILD %i FROM GENERATION %i", j, i), (float)i);
+											gc.Push(testPtr);
+										}
+
+										// 5 children per generation
+										{
+											auto* testPtr = new float((float)i);
+											gc.Push(testPtr);
+										}
+									}
+								}
+								});
+						}
+					}
+				}
+
+				// using multple garbage collectors across multiple threads simultaneously
+				{
+
+					fibers::parallel::For(0, 50, [](int i) {
+						constexpr size_t kGCInterval = 1E3;  // increment an epoch value every 1ms
+						constexpr size_t kThreadNum = 1;     // use one thread to release garbage
+
+						EpochBasedGC < fibers::utilities::dbgroup::memory::Target<stackThing> > gc{ kGCInterval, kThreadNum }; // may be constexpr
+
+						gc.StartGC();
+
+						for (int k = 0; k < 50; k++) {
+							auto* testPtr = new stackThing(cweeStr::printf("CHILD %i FROM GENERATION %i", k, i), (float)i);
+							gc.Push(testPtr);
+						}
+					});
+				}
+
+
+
+
+
+            }
+
+		}
+
+		// Atomic BW Tree
+		if (1) {
+			using namespace fibers::utilities::dbgroup::index::bw_tree;
+			if (1) {
+				BwTree<uint64_t, uint64_t> tree;
+				tree.Insert(5, 100);
+				EXPECT_EQ(true, tree.Read(5).has_value());
+				tree.Delete(5);
+				EXPECT_EQ(false, tree.Read(5).has_value());
+
+				fibers::parallel::For(0, 50, [&tree](int i) {
+					tree.Insert(i, i);
+				});
+			}
+			if (1) {
+				BwTree<int, double> tree;
+				tree.Insert(5, 100);
+				EXPECT_EQ(true, tree.Read(5).has_value());
+				tree.Delete(5);
+				EXPECT_EQ(false, tree.Read(5).has_value());
+
+				fibers::parallel::For(0, 500, [&tree](int i) {
+					tree.Insert(i, i);
+				});
+			}
+			if (1) {
+				BwTree<double, double> tree;
+				tree.Insert(5, 100.0);
+				EXPECT_EQ(true, tree.Read(5).has_value() && (tree.Read(5).value() == 100.0));
+				tree.Delete(5);
+				EXPECT_EQ(false, tree.Read(5).has_value());
+
+				fibers::parallel::For(0, 5000, [&tree](int i) {
+					tree.Insert(i, i);
+				});
+			}
+			if (1) {
+				BwTree<long double, double> tree;
+				tree.Insert(5, 100.0);
+				EXPECT_EQ(true, tree.Read(5).has_value() && (tree.Read(5).value() == 100.0));
+				tree.Delete(5);
+				EXPECT_EQ(false, tree.Read(5).has_value());
+
+				fibers::parallel::For(0, 500, [&tree](int i) {
+					tree.Insert(i, i);
+				});
+
+
+				auto futureObj = fibers::parallel::async([&tree](){
+					::Sleep(10);
+					std::cout << "Working... " << std::endl;
+					for (int i = 0; i < 500; i++) {
+						tree.Write(i - 1, i + 1);
+						tree.Insert(i + 0.5, i + 0.5);
+					}
+					std::cout << " ...Finished." << std::endl;
+				});
+
+#if 1
+				futureObj.wait();
+
+				Stopwatch sw;
+
+				{ // FOUND 55.5
+					defer(std::cout << "\t" << cweeUnitValues::second(sw.Stop() / 1000000000.0).ToString() << std::endl);
+					sw.Start();
+					auto tryFind1 = tree.Scan(std::tuple<long double, size_t, bool>({ 55.1l, (size_t)(sizeof(long double)), true }));
+					if (tryFind1) std::cout << "\tKey: " << tryFind1.GetKey() << ", Value: " << tryFind1.GetPayload() << std::endl; else std::cout << "Could not scan." << std::endl;					
+				}
+
+				{ // FOUND 55.5
+					defer(std::cout << "\t" << cweeUnitValues::second(sw.Stop() / 1000000000.0).ToString() << std::endl);
+					sw.Start();
+					auto tryFind2 = tree.Scan(std::tuple<long double, size_t, bool>({ 55.1l, (size_t)(sizeof(long double)), false }));
+					if (tryFind2) std::cout << "\tKey: " << tryFind2.GetKey() << ", Value: " << tryFind2.GetPayload() << std::endl; else std::cout << "Could not scan." << std::endl;
+				}
+
+				{ // FOUND THE FIRST ITERATOR
+					defer(std::cout << "\t" << cweeUnitValues::second(sw.Stop() / 1000000000.0).ToString() << std::endl);
+					sw.Start();
+					auto tryFind2 = tree.Scan(std::nullopt, std::tuple<long double, size_t, bool>({ 55.1l, (size_t)(sizeof(long double)), false }));
+					if (tryFind2) std::cout << "\tKey: " << tryFind2.GetKey() << ", Value: " << tryFind2.GetPayload() << std::endl; else std::cout << "Could not scan." << std::endl;
+				}
+
+				{ // FOUND 55.5. This function works as intended, at the moment, and is (overall) efficient.   TODO: search to LargestSmallerEqual nodes.
+					defer(std::cout << "\t" << cweeUnitValues::second(sw.Stop() / 1000000000.0).ToString() << std::endl);
+					sw.Start();
+					auto tryFind2 = tree.FindSmallestLargerEqual(55.11);
+					if (tryFind2) {
+						std::cout << "\tKey: " << tryFind2.GetKey() << ", Value: " << tryFind2.GetPayload() << std::endl;
+					}
+					else {
+						std::cout << "Could not scan." << std::endl;
+					}
+				}
+
+				{ // FAILED TO FIND ANYTHING
+					defer(std::cout << "\t" << cweeUnitValues::second(sw.Stop() / 1000000000.0).ToString() << std::endl);
+					sw.Start();
+					auto tryFind3 = tree.Scan(std::tuple<long double, size_t, bool>({ 55.1l, (size_t)(sizeof(long double)), false }), std::tuple<long double, size_t, bool>({ 55.21, (size_t)(sizeof(long double)), false }));
+					if (tryFind3) std::cout << "\tKey: " << tryFind3.GetKey() << ", Value: " << tryFind3.GetPayload() << std::endl; else std::cout << "Could not scan." << std::endl;
+				}
+
+
+
+				for (auto iter = tree.Scan(); iter; ++iter) {
+					std::cout << "\tKey: " << iter.GetKey() << ", Value: " << iter.GetPayload() << std::endl;
+					::Sleep(1);
+				}
+
+#else
+				for (auto& x : tree) {
+					std::cout << "\tKey: " << x.first << ", Value: " << x.second << std::endl;
+					::Sleep(1);
+				}
+				futureObj.wait();
+#endif
+
 			}
 		}
 
@@ -723,12 +1006,12 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 						// continue until a MwCAS operation succeeds
 						while (true) {
 							// create a MwCAS descriptor
-							MwCASDescriptor desc{};
+							MwCASDescriptor<2> desc{};
 
 							// prepare expected/desired values
-							const auto old_1 = MwCASDescriptor::Read<Target>(&word_1);
+							const auto old_1 = MwCASDescriptor<2>::Read<Target>(&word_1);
 							const auto new_1 = old_1 + 1;
-							const auto old_2 = MwCASDescriptor::Read<Target>(&word_2);
+							const auto old_2 = MwCASDescriptor<2>::Read<Target>(&word_2);
 							const auto new_2 = old_2 + 1;
 
 							// register MwCAS targets with the descriptor
@@ -767,14 +1050,14 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 						// continue until a MwCAS operation succeeds
 						while (true) {
 							// create a MwCAS descriptor
-							MwCASDescriptor desc{};
+							MwCASDescriptor<3> desc{};
 
 							// prepare expected/desired values
-							const auto old_1 = MwCASDescriptor::Read<Target>(&word_1);
+							const auto old_1 = MwCASDescriptor<3>::Read<Target>(&word_1);
 							const auto new_1 = old_1 + 1;
-							const auto old_2 = MwCASDescriptor::Read<Target>(&word_2);
+							const auto old_2 = MwCASDescriptor<3>::Read<Target>(&word_2);
 							const auto new_2 = old_2 + 2;
-							const auto old_3 = MwCASDescriptor::Read<Target>(&word_3);
+							const auto old_3 = MwCASDescriptor<3>::Read<Target>(&word_3);
 							const auto new_3 = old_3 + 4;
 
 							// register MwCAS targets with the descriptor
@@ -817,12 +1100,12 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 							// continue until a MwCAS operation succeeds
 							while (true) {
 								// create a MwCAS descriptor
-								MwCASDescriptor desc{};
+								MwCASDescriptor<2> desc{};
 
 								// prepare expected/desired values
-								const auto old_1 = MwCASDescriptor::Read<Target>(&word_1);
+								const auto old_1 = MwCASDescriptor<2>::Read<Target>(&word_1);
 								const auto new_1 = old_1 + 2;
-								const auto old_3 = MwCASDescriptor::Read<Target>(&word_3);
+								const auto old_3 = MwCASDescriptor<2>::Read<Target>(&word_3);
 								const auto new_3 = old_3 + 4;
 
 								// register MwCAS targets with the descriptor
@@ -841,12 +1124,12 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 							// continue until a MwCAS operation succeeds
 							while (true) {
 								// create a MwCAS descriptor
-								MwCASDescriptor desc{};
+								MwCASDescriptor<2> desc{};
 
 								// prepare expected/desired values
-								const auto old_2 = MwCASDescriptor::Read<Target>(&word_2);
+								const auto old_2 = MwCASDescriptor<2>::Read<Target>(&word_2);
 								const auto new_2 = old_2 + 4;
-								const auto old_3 = MwCASDescriptor::Read<Target>(&word_3);
+								const auto old_3 = MwCASDescriptor<2>::Read<Target>(&word_3);
 								const auto new_3 = old_3 + 4;
 
 								// register MwCAS targets with the descriptor
@@ -1037,20 +1320,21 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 			//});
 		}
 
+#if 0
 		if (1) {
 			{
-				BalancedTreeNode<int, const char> parentOfParents; parentOfParents.Reset();
-				BalancedTreeNodeParentReference<int, const char> parentOfParentsRef(&parentOfParents);
+				BalancedTreeNode<int, const char> parentOfParents{ 0 }; parentOfParents.Reset();
+				BalancedTreeNodeParentReference<int, const char> parentOfParentsRef{ &parentOfParents };
 
-				BalancedTreeNode<int, const char> parent1; parent1.Reset();
-				BalancedTreeNodeParentReference<int, const char> parentRef1(&parent1);
-				BalancedTreeNode<int, const char> child1; child1.Reset();
-				BalancedTreeNode<int, const char> child2; child2.Reset();
+				BalancedTreeNode<int, const char> parent1{ 0 }; parent1.Reset();
+				BalancedTreeNodeParentReference<int, const char> parentRef1{ &parent1 };
+				BalancedTreeNode<int, const char> child1{ 0 }; child1.Reset();
+				BalancedTreeNode<int, const char> child2{ 0 }; child2.Reset();
 
-				BalancedTreeNode<int, const char> parent2; parent2.Reset();
-				BalancedTreeNodeParentReference<int, const char> parentRef2(&parent2);
-				BalancedTreeNode<int, const char> child3; child3.Reset();
-				BalancedTreeNode<int, const char> child4; child4.Reset();
+				BalancedTreeNode<int, const char> parent2{ 0 }; parent2.Reset();
+				BalancedTreeNodeParentReference<int, const char> parentRef2{ &parent2 };
+				BalancedTreeNode<int, const char> child3{ 0 }; child3.Reset();
+				BalancedTreeNode<int, const char> child4{ 0 }; child4.Reset();
 
 				{
 					parentOfParents.object = "parentOfParents";
@@ -1130,8 +1414,8 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 				fibers::utilities::Allocator<BalancedTreeNode<int, const char>, 128> alloc1;
 				fibers::utilities::Allocator<BalancedTreeNodeParentReference<int, const char>, 128> alloc2;
 
-
-				BalancedTreeNode<int, const char>* root = alloc1.Alloc();
+				fibers::synchronization::shared_mutex<fibers::synchronization::mutex> rootLock;
+				fibers::synchronization::atomic_ptr< BalancedTreeNode<int, const char> > root = alloc1.Alloc();
 				root->Reset();
 				root->key = 0;
 				root->object = "Root!";
@@ -1139,10 +1423,10 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 				for (int i = 1; i < 50; i++) {
 					auto str_ptr = str_alloc.Alloc();
 					str_ptr->operator=(cweeStr::printf("Object%i", i));
-					BalancedTreeNode<int, const char>::AddChild(10, root, str_ptr->c_str(), i, [&alloc1]() { return alloc1.Alloc(); }, [&alloc2](BalancedTreeNode<int, const char>* p) { auto x = alloc2.Alloc(); x->parent = p; return x; });
+					BalancedTreeNode<int, const char>::AddChild(rootLock, 10, root, str_ptr->c_str(), i, [&alloc1]() { return alloc1.Alloc(); }, [&alloc2](BalancedTreeNode<int, const char>* p) { auto x = alloc2.Alloc(); x->parent = p; return x; });
 				}
 
-				auto GetNameFrom = [](BalancedTreeNode<int, const char>* p) -> const char* { if (p) { return ""; } else { return p->object; }};
+				auto GetNameFrom = [](BalancedTreeNode<int, const char>* p) -> const char* { if (!p || !p->object) { return ""; } else { return p->object; }};
 				BalancedTreeNode<int, const char>* child = root;
 				while (child) {
 					std::cout << std::endl;
@@ -1167,8 +1451,42 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 
 			}
 
-		}
+			{
+				fibers::utilities::Allocator<cweeStr, 128> str_alloc;
+				fibers::utilities::Allocator<BalancedTreeNode<int, const char>, 128> alloc1;
+				fibers::utilities::Allocator<BalancedTreeNodeParentReference<int, const char>, 128> alloc2;
 
+				fibers::synchronization::shared_mutex<fibers::synchronization::mutex> rootLock;
+				fibers::synchronization::atomic_ptr< BalancedTreeNode<int, const char> >  root = alloc1.Alloc();
+				root->Reset();
+				root->key = 0;
+				root->object = "Root!";
+
+				fibers::parallel::For(0, 50, [&str_alloc, &root, &alloc1, &alloc2, &rootLock](int i) {
+					auto str_ptr = str_alloc.Alloc();
+					str_ptr->operator=(cweeStr::printf("Object%i", i));
+					BalancedTreeNode<int, const char>::AddChild(rootLock, 10, root, str_ptr->c_str(), i, [&alloc1]() { return alloc1.Alloc(); }, [&alloc2](BalancedTreeNode<int, const char>* p) { auto x = alloc2.Alloc(); x->parent = p; return x; });
+				});
+
+				auto GetNameFrom = [](BalancedTreeNode<int, const char>* p) -> const char* { if (!p || !p->object) { return ""; } else { return p->object; }};
+				BalancedTreeNode<int, const char>* child = root;
+				while (child) {
+					std::cout << std::endl;
+
+					std::cout << "\t" << GetNameFrom(child) << std::endl;
+					std::cout << "\t\t Key: " << child->key << std::endl;
+					std::cout << "\t\t Parent: " << GetNameFrom(child->GetParent()) << std::endl;
+					std::cout << "\t\t Prev <-: " << GetNameFrom(child->GetPrev()) << std::endl;
+					std::cout << "\t\t Next ->: " << GetNameFrom(child->GetNext()) << std::endl;
+					std::cout << "\t\t First Child /: " << GetNameFrom(child->GetFirstChild()) << std::endl;
+					std::cout << "\t\t Last Child \\: " << GetNameFrom(child->GetLastChild()) << std::endl;
+					std::cout << "\t\t Num Children #: " << child->GetNumChildren() << std::endl;
+
+					child = BalancedTreeNode<int, const char>::GetNextLeaf(child);
+				}
+			}
+		}
+#endif
 
 
 	}
