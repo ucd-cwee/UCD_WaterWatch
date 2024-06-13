@@ -939,17 +939,29 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 					if (tryFind2) std::cout << "\tKey: " << tryFind2.GetKey() << ", Value: " << tryFind2.GetPayload() << std::endl; else std::cout << "Could not scan." << std::endl;
 				}
 
-				{ // FOUND THE FIRST ITERATOR
+				{ // FIRST, SMALLEST KEY
 					defer(std::cout << "\t" << cweeUnitValues::second(sw.Stop() / 1000000000.0).ToString() << std::endl);
 					sw.Start();
-					auto tryFind2 = tree.Scan(std::nullopt, std::tuple<long double, size_t, bool>({ 55.1l, (size_t)(sizeof(long double)), false }));
+					auto tryFind2 = tree.First();
 					if (tryFind2) std::cout << "\tKey: " << tryFind2.GetKey() << ", Value: " << tryFind2.GetPayload() << std::endl; else std::cout << "Could not scan." << std::endl;
 				}
 
-				{ // FOUND 55.5. This function works as intended, at the moment, and is (overall) efficient.   TODO: search to LargestSmallerEqual nodes.
+				{ // FOUND 55.5. This function works as intended, at the moment, and is (overall) efficient.
 					defer(std::cout << "\t" << cweeUnitValues::second(sw.Stop() / 1000000000.0).ToString() << std::endl);
 					sw.Start();
 					auto tryFind2 = tree.FindSmallestLargerEqual(55.11);
+					if (tryFind2) {
+						std::cout << "\tKey: " << tryFind2.GetKey() << ", Value: " << tryFind2.GetPayload() << std::endl;
+					}
+					else {
+						std::cout << "Could not scan." << std::endl;
+					}
+				}
+
+				{ // FOUND 55. This function works as intended, at the moment, and is about as efficient as the FindSmallestLargerEqual alternative.
+					defer(std::cout << "\t" << cweeUnitValues::second(sw.Stop() / 1000000000.0).ToString() << std::endl);
+					sw.Start();
+					auto tryFind2 = tree.FindLargestSmallerEqual(55.11);
 					if (tryFind2) {
 						std::cout << "\tKey: " << tryFind2.GetKey() << ", Value: " << tryFind2.GetPayload() << std::endl;
 					}
@@ -964,6 +976,55 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 					auto tryFind3 = tree.Scan(std::tuple<long double, size_t, bool>({ 55.1l, (size_t)(sizeof(long double)), false }), std::tuple<long double, size_t, bool>({ 55.21, (size_t)(sizeof(long double)), false }));
 					if (tryFind3) std::cout << "\tKey: " << tryFind3.GetKey() << ", Value: " << tryFind3.GetPayload() << std::endl; else std::cout << "Could not scan." << std::endl;
 				}
+
+				for (double D = -2.25; D <= 505; D += 1.25) {
+					std::cout << "\t D = " << D << std::endl;
+
+					if (D >= 500) {
+						std::cout << "CATCH ME" << std::endl;
+					}
+
+
+					auto iter_Larger = tree.FindSmallestLargerEqual(D);
+					auto iter_Smaller = tree.FindLargestSmallerEqual(D);
+
+					if (iter_Larger && iter_Larger.GetKey() < D) {
+						iter_Larger = tree.FindSmallestLargerEqual(D);
+
+						auto iter = tree.Scan(std::tuple<long double, size_t, bool>({ D - 1.5, (size_t)(sizeof(long double)), false }));
+						while (iter && (iter.GetKey() < (D + 1.5))) {
+							std::cout << "\t\t Err!! Iter Results: " << iter.GetKey() << std::endl;
+							++iter;
+						}						
+					}
+
+					if (iter_Smaller && iter_Smaller.GetKey() < (D - 1)) {
+						iter_Smaller = tree.FindLargestSmallerEqual(D);
+
+						//auto iter = tree.Scan(std::tuple<long double, size_t, bool>({ D, (size_t)(sizeof(long double)), false }));
+						//std::cout << "\t\t Err!! Iter Result: " << iter.GetKey() << std::endl;
+					}
+
+					
+					if (iter_Larger && iter_Smaller) {
+						std::cout << "\t\t Larger: " << iter_Larger.GetKey() << ", Smaller: " << iter_Smaller.GetKey() << std::endl;
+					}
+					else if (iter_Larger) {
+						std::cout << "\t\t Larger: " << iter_Larger.GetKey() << ", Smaller: N/A" << std::endl;
+					}
+					else if (iter_Smaller) {
+						std::cout << "\t\t Larger: N/A" << ", Smaller: " << iter_Smaller.GetKey() << std::endl;
+					}
+					else {
+						std::cout << "\t\t Could not find any keys" << std::endl;
+					}
+				}
+
+
+
+
+
+
 
 
 

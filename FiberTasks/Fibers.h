@@ -5703,6 +5703,7 @@ static __forceinline constexpr size_t LOG2(size_t n) { return ((n < 2) ? 1 : 1 +
 					using ScanKey = std::optional<std::tuple<const Key&, size_t, bool>>;
 					using BwTree_t = BwTree<Key, Payload, Comp>;
 					using Node_t = typename BwTree_t::Node_t;
+					friend class BwTree_t;
 
 					/*####################################################################################
 					 * Public constructors and assignment operators
@@ -6892,6 +6893,21 @@ static __forceinline constexpr size_t LOG2(size_t n) { return ((n < 2) ? 1 : 1 +
 					return { keys_[pos], GetPayload<T>(pos) };
 				}
 
+				///**
+				// * @brief Get the rightmost child node.
+				// *
+				// * If this object is actually a delta record, this function traverses a delta-chain
+				// * and returns the right most child from a base node.
+				// *
+				// * @return the page ID of the rightmost child node.
+				// */
+				//[[nodiscard]] auto
+				//	GetRightmostChild() const  //
+				//	-> PageID
+				//{
+				//	// To-Do
+				//}
+
 				/**
 				 * @brief Get the leftmost child node.
 				 *
@@ -6904,7 +6920,7 @@ static __forceinline constexpr size_t LOG2(size_t n) { return ((n < 2) ? 1 : 1 +
 					GetLeftmostChild() const  //
 					-> PageID
 				{
-					const auto* cur = this;
+					const Node* cur = this;
 					for (; cur->delta_type_ != kNotDelta; cur = cur->template GetNext<const Node*>()) {
 						// go to the next delta record or base node
 					}
@@ -7578,17 +7594,16 @@ static __forceinline constexpr size_t LOG2(size_t n) { return ((n < 2) ? 1 : 1 +
 				}
 
 				/**
-				 * @brief Perform a range scan with given keys.
+				 * @brief Try to find the node the smallest key that is equal to or greater than the requested key. (e.g. search for 55.5, returns 56)
 				 *
-				 * @param begin_key a pair of a begin key and its openness (true=closed).
-				 * @param end_key a pair of an end key and its openness (true=closed).
-				 * @return an iterator to access scanned records.
+				 * @param key a key to search for.
+				 * @return an iterator to access the scanned record.
 				 */
 				auto
 					FindSmallestLargerEqual(const Key& key)
 					-> RecordIterator_t
 				{
-					ScanKey begin_key(std::tuple<const Key&, size_t, bool>({ key, (size_t)(sizeof(Key)), true }));
+					ScanKey begin_key(std::tuple<const Key&, size_t, bool>({ key/* - std::numeric_limits<Key>::min()*/, (size_t)(sizeof(Key)), true })); // true = may include the value if found
 
 					[[maybe_unused]] const auto& guard = gc_.CreateEpochGuard();
 					thread_local std::unique_ptr<void, std::function<void(void*)>> page{ dbgroup::memory::Allocate<NodePage>(2 * kPageSize), dbgroup::memory::Release<NodePage> };
@@ -7596,50 +7611,148 @@ static __forceinline constexpr size_t LOG2(size_t n) { return ((n < 2) ? 1 : 1 +
 					auto* node = new (page.get()) Node_t{};
 					size_t begin_pos{};
 
-					// traverse to a leaf node and sort records for scanning
-					const auto& [b_key, b_key_len, b_closed] = *begin_key;
-					auto&& stack = SearchLeafNode(b_key, b_closed);
-					begin_pos = ConsolidateForScan(node, b_key, b_closed, stack);
-					
-					// check the end position of scanning
-					// const auto [is_end, end_pos] = node->SearchEndPositionFor(std::nullopt);
+					{
+						// traverse to a leaf node and sort records for scanning
+						const auto& [b_key, b_key_len, b_closed] = *begin_key;
+						auto&& stack = SearchLeafNode(b_key, b_closed);
+						begin_pos = ConsolidateForScan(node, b_key, b_closed, stack);
 
-					return RecordIterator_t{ this, node, begin_pos, begin_pos + 1, std::nullopt, true };
-					// return RecordIterator_t{ this, node, begin_pos, end_pos, std::nullopt, is_end };
+						RecordIterator_t record{ this, node, begin_pos, begin_pos + 1, std::nullopt, true };
+
+						if (record && record.GetKey() >= key) {
+							// success. Accounts for ~ 95% - 99% of cases. 
+							return record;
+						}
+						else {
+							// We are at the end of a node, and the solution is either on the next node, or the solution does not exist. 
+							if (record.node_->has_high_key_) {
+								// go to the next sibling/node and continue scanning
+								const auto& next_key = record.node_->GetHighKey();
+								const auto sib_pid = record.node_->template GetNext<PageID>();
+								record = this->SiblingScan(sib_pid, record.node_, next_key, std::nullopt);
+
+								RecordIterator_t record2{ record };
+								while (record && record.GetKey() < key) {
+									record++;
+									if (record) {
+										record2++;
+									}
+								}
+								return record2;
+							}
+							else {
+								// this happens when we are out-of-bounds for the search region and the desired key is larger than our highest available key.
+								// Because we attempted to find a key that was out-of-bounds, the "node" we got is slightly broken, and must be repaired by re-searching:
+								auto lowKey = node->GetLowKey();
+
+								node = new (page.get()) Node_t{};
+								// traverse to a leaf node and sort records for scanning
+								auto&& stack2 = SearchLeafNode(lowKey, b_closed);
+								begin_pos = ConsolidateForScan(node, lowKey, b_closed, stack2);
+								
+								const auto [is_end, end_pos] = node->SearchEndPositionFor(std::nullopt);
+
+								record = RecordIterator_t{ this, node, begin_pos, end_pos, std::nullopt, is_end };
+								RecordIterator_t record2{ record };
+								while (record && record.GetKey() < key) {
+									record++;
+									if (record) {
+										record2++;
+									}
+								}
+								return record2;
+							}
+						}
+					}
 				}
 
-#if 0
 				/**
-				 * @brief Perform a range scan with given keys.
+				 * @brief Try to find the first, smallest node in the tree.
 				 *
-				 * @param begin_key a pair of a begin key and its openness (true=closed).
-				 * @param end_key a pair of an end key and its openness (true=closed).
-				 * @return an iterator to access scanned records.
+				 * @return an iterator to access the first, smallest keyed record.
+				 */
+				auto
+					First()
+					-> RecordIterator_t
+				{
+					[[maybe_unused]] const auto& guard = gc_.CreateEpochGuard();
+					thread_local std::unique_ptr<void, std::function<void(void*)>> page{ dbgroup::memory::Allocate<NodePage>(2 * kPageSize), dbgroup::memory::Release<NodePage> };
+
+					auto* node = new (page.get()) Node_t{};
+					size_t begin_pos{};
+
+					Node_t* dummy_node = nullptr;
+					// traverse to the leftmost leaf node directly
+					auto&& stack = SearchLeftmostLeaf();
+					while (true) {
+						const auto* lptr = mapping_table_.GetLogicalPtr(stack.back());
+						const auto* head = lptr->template Load<Delta_t*>();
+						if (head->GetDeltaType() == DeltaType::kRemoveNode) continue;
+						TryConsolidate(head, node, dummy_node, kIsScan);
+						break;
+					}
+					begin_pos = 0;
+
+					return RecordIterator_t{ this, node, begin_pos, begin_pos + 1, std::nullopt, true };
+				}
+
+				/**
+				 * @brief Try to find the node the largest key that is equal to or less than the requested key. (e.g. search for 55.5, returns 55)
+				 *
+				 * @param key a key to search for.
+				 * @return an iterator to access the scanned record.
 				 */
 				auto
 					FindLargestSmallerEqual(const Key& key)
 					-> RecordIterator_t
 				{
-					ScanKey begin_key(std::tuple<const Key&, size_t, bool>({ key, (size_t)(sizeof(Key)), true }));
-
 					[[maybe_unused]] const auto& guard = gc_.CreateEpochGuard();
 					thread_local std::unique_ptr<void, std::function<void(void*)>> page{ dbgroup::memory::Allocate<NodePage>(2 * kPageSize), dbgroup::memory::Release<NodePage> };
 
 					auto* node = new (page.get()) Node_t{};
 					size_t begin_pos{};
 
-					// traverse to a leaf node and sort records for scanning
-					const auto& [b_key, b_key_len, b_closed] = *begin_key;
-					auto&& stack = SearchLeafNode(b_key, b_closed);
-					begin_pos = ConsolidateForScan(node, b_key, b_closed, stack);
+					Node_t* dummy_node = nullptr;
+					// traverse to the leftmost leaf node directly
+					auto&& stack = SearchLeftmostLeaf();
+					while (true) {
+						const auto* lptr = mapping_table_.GetLogicalPtr(stack.back());
+						const auto* head = lptr->template Load<Delta_t*>();
+						if (head->GetDeltaType() == DeltaType::kRemoveNode) continue;
+						TryConsolidate(head, node, dummy_node, kIsScan);
+						break;
+					}
+					begin_pos = 0;
+
+					ScanKey keyFind{ std::tuple<const Key&, size_t, bool>({ key/* + std::numeric_limits<Key>::min()*/, (size_t)(sizeof(Key)), true }) };
+					RecordIterator_t record{ this, node, begin_pos, begin_pos + 1, std::nullopt, true };
+					while (record) {
+						const auto [is_end, end_pos] = record.node_->SearchEndPositionFor(keyFind);
+
+						if (is_end) {
+							// check if it equals or not
+							record = RecordIterator_t{ this, record.node_, end_pos, end_pos + 1, std::nullopt, true };
+							if (record.GetKey() <= key) {
+								return record;
+							}
+							else if (end_pos > 0) {
+								return RecordIterator_t{ this, record.node_, end_pos - 1, end_pos, std::nullopt, true };
+							}
+							else {
+								return record;
+							}
+						}
+
+						// go to the next sibling/node and continue scanning
+						const auto& next_key = record.node_->GetHighKey();
+						const auto sib_pid = record.node_->template GetNext<PageID>();
+						record = this->SiblingScan(sib_pid, record.node_, next_key, keyFind);
+					}
 
 					// check the end position of scanning
-					// const auto [is_end, end_pos] = node->SearchEndPositionFor(std::nullopt);
-
-					return RecordIterator_t{ this, node, begin_pos, begin_pos + 1, std::nullopt, true };
-					// return RecordIterator_t{ this, node, begin_pos, end_pos, std::nullopt, is_end };
+					const auto [is_end, end_pos] = node->SearchEndPositionFor(keyFind);
+					return RecordIterator_t{ this, node, begin_pos, end_pos, keyFind, is_end };
 				}
-#endif
 
 				/*####################################################################################
 				 * Public write APIs
@@ -8244,6 +8357,30 @@ static __forceinline constexpr size_t LOG2(size_t n) { return ((n < 2) ? 1 : 1 +
 					}
 				}
 
+				///**
+				// * @brief Search a rightmost leaf node in this tree.
+				// *
+				// * @return a stack of traversed nodes.
+				// */
+				//[[nodiscard]] auto
+				//	SearchRightmostLeaf() const  //
+				//	-> std::vector<PageID>
+				//{
+				//	std::vector<PageID> stack{};
+				//	stack.reserve(kExpectedTreeHeight);
+				//	stack.emplace_back(root_.load(std::memory_order_relaxed));
+
+				//	// traverse a Bw-tree
+				//	while (true) {
+				//		const auto* lptr = mapping_table_.GetLogicalPtr(stack.back());
+				//		const Node_t* node = lptr->template Load<Node_t*>();
+				//		if (node->IsLeaf()) break;
+				//		stack.emplace_back(node->GetRightmostChild());
+				//	}
+
+				//	return stack;
+				//}
+
 				/**
 				 * @brief Search a leftmost leaf node in this tree.
 				 *
@@ -8260,7 +8397,7 @@ static __forceinline constexpr size_t LOG2(size_t n) { return ((n < 2) ? 1 : 1 +
 					// traverse a Bw-tree
 					while (true) {
 						const auto* lptr = mapping_table_.GetLogicalPtr(stack.back());
-						const auto* node = lptr->template Load<Node_t*>();
+						const Node_t* node = lptr->template Load<Node_t*>();
 						if (node->IsLeaf()) break;
 						stack.emplace_back(node->GetLeftmostChild());
 					}
