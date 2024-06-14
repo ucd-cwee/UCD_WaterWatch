@@ -912,127 +912,27 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 
 				auto futureObj = fibers::parallel::async([&tree](){
 					::Sleep(10);
-					std::cout << "Working... " << std::endl;
+					std::cout << "\nWorking... \n";
 					for (int i = 0; i < 500; i++) {
+						if (i % 50 == 0) ::Sleep(1);
+
 						tree.Write(i - 1, i + 1);
-						tree.Insert(i + 0.5, i + 0.5);
+						tree.Insert(i + 0.5, i + 0.5);						
 					}
-					std::cout << " ...Finished." << std::endl;
+					std::cout << "\n ...Finished.\n";
 				});
 
 #if 1
-				futureObj.wait();
-
-				Stopwatch sw;
-
-				{ // FOUND 55.5
-					defer(std::cout << "\t" << cweeUnitValues::second(sw.Stop() / 1000000000.0).ToString() << std::endl);
-					sw.Start();
-					auto tryFind1 = tree.Scan(std::tuple<long double, size_t, bool>({ 55.1l, (size_t)(sizeof(long double)), true }));
-					if (tryFind1) std::cout << "\tKey: " << tryFind1.GetKey() << ", Value: " << tryFind1.GetPayload() << std::endl; else std::cout << "Could not scan." << std::endl;					
-				}
-
-				{ // FOUND 55.5
-					defer(std::cout << "\t" << cweeUnitValues::second(sw.Stop() / 1000000000.0).ToString() << std::endl);
-					sw.Start();
-					auto tryFind2 = tree.Scan(std::tuple<long double, size_t, bool>({ 55.1l, (size_t)(sizeof(long double)), false }));
-					if (tryFind2) std::cout << "\tKey: " << tryFind2.GetKey() << ", Value: " << tryFind2.GetPayload() << std::endl; else std::cout << "Could not scan." << std::endl;
-				}
-
-				{ // FIRST, SMALLEST KEY
-					defer(std::cout << "\t" << cweeUnitValues::second(sw.Stop() / 1000000000.0).ToString() << std::endl);
-					sw.Start();
-					auto tryFind2 = tree.First();
-					if (tryFind2) std::cout << "\tKey: " << tryFind2.GetKey() << ", Value: " << tryFind2.GetPayload() << std::endl; else std::cout << "Could not scan." << std::endl;
-				}
-
-				{ // FOUND 55.5. This function works as intended, at the moment, and is (overall) efficient.
-					defer(std::cout << "\t" << cweeUnitValues::second(sw.Stop() / 1000000000.0).ToString() << std::endl);
-					sw.Start();
-					auto tryFind2 = tree.FindSmallestLargerEqual(55.11);
-					if (tryFind2) {
-						std::cout << "\tKey: " << tryFind2.GetKey() << ", Value: " << tryFind2.GetPayload() << std::endl;
-					}
-					else {
-						std::cout << "Could not scan." << std::endl;
-					}
-				}
-
-				{ // FOUND 55. This function works as intended, at the moment, and is about as efficient as the FindSmallestLargerEqual alternative.
-					defer(std::cout << "\t" << cweeUnitValues::second(sw.Stop() / 1000000000.0).ToString() << std::endl);
-					sw.Start();
-					auto tryFind2 = tree.FindLargestSmallerEqual(55.11);
-					if (tryFind2) {
-						std::cout << "\tKey: " << tryFind2.GetKey() << ", Value: " << tryFind2.GetPayload() << std::endl;
-					}
-					else {
-						std::cout << "Could not scan." << std::endl;
-					}
-				}
-
-				{ // FAILED TO FIND ANYTHING
-					defer(std::cout << "\t" << cweeUnitValues::second(sw.Stop() / 1000000000.0).ToString() << std::endl);
-					sw.Start();
-					auto tryFind3 = tree.Scan(std::tuple<long double, size_t, bool>({ 55.1l, (size_t)(sizeof(long double)), false }), std::tuple<long double, size_t, bool>({ 55.21, (size_t)(sizeof(long double)), false }));
-					if (tryFind3) std::cout << "\tKey: " << tryFind3.GetKey() << ", Value: " << tryFind3.GetPayload() << std::endl; else std::cout << "Could not scan." << std::endl;
-				}
-
 				for (double D = -2.25; D <= 505; D += 1.25) {
-					std::cout << "\t D = " << D << std::endl;
-
-					if (D >= 500) {
-						std::cout << "CATCH ME" << std::endl;
-					}
-
-
 					auto iter_Larger = tree.FindSmallestLargerEqual(D);
 					auto iter_Smaller = tree.FindLargestSmallerEqual(D);
-
-					if (iter_Larger && iter_Larger.GetKey() < D) {
-						iter_Larger = tree.FindSmallestLargerEqual(D);
-
-						auto iter = tree.Scan(std::tuple<long double, size_t, bool>({ D - 1.5, (size_t)(sizeof(long double)), false }));
-						while (iter && (iter.GetKey() < (D + 1.5))) {
-							std::cout << "\t\t Err!! Iter Results: " << iter.GetKey() << std::endl;
-							++iter;
-						}						
-					}
-
-					if (iter_Smaller && iter_Smaller.GetKey() < (D - 1)) {
-						iter_Smaller = tree.FindLargestSmallerEqual(D);
-
-						//auto iter = tree.Scan(std::tuple<long double, size_t, bool>({ D, (size_t)(sizeof(long double)), false }));
-						//std::cout << "\t\t Err!! Iter Result: " << iter.GetKey() << std::endl;
-					}
-
 					
 					if (iter_Larger && iter_Smaller) {
-						std::cout << "\t\t Larger: " << iter_Larger.GetKey() << ", Smaller: " << iter_Smaller.GetKey() << std::endl;
-					}
-					else if (iter_Larger) {
-						std::cout << "\t\t Larger: " << iter_Larger.GetKey() << ", Smaller: N/A" << std::endl;
-					}
-					else if (iter_Smaller) {
-						std::cout << "\t\t Larger: N/A" << ", Smaller: " << iter_Smaller.GetKey() << std::endl;
-					}
-					else {
-						std::cout << "\t\t Could not find any keys" << std::endl;
+						std::cout << "\tTarget Key: " << D << ", Smaller Key/Value:" << iter_Smaller.GetKey() << "/" << iter_Smaller.GetPayload() << ", Larger Key/Value: " << iter_Larger.GetKey() << "/" << iter_Larger.GetPayload() << std::endl;
 					}
 				}
 
-
-
-
-
-
-
-
-
-				for (auto iter = tree.Scan(); iter; ++iter) {
-					std::cout << "\tKey: " << iter.GetKey() << ", Value: " << iter.GetPayload() << std::endl;
-					::Sleep(1);
-				}
-
+				futureObj.wait();
 #else
 				for (auto& x : tree) {
 					std::cout << "\tKey: " << x.first << ", Value: " << x.second << std::endl;
@@ -1042,7 +942,50 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 #endif
 
 			}
+
+			if (1) {
+				BwTree<long double, double> tree;
+
+				fibers::parallel::For(0, 500, [&tree](int i) {
+					tree.Insert(i, i);
+				});
+
+				auto futureObj = fibers::parallel::async([&tree]() {
+					std::cout << "\nWorking... \n";
+
+					for (auto iter = tree.Scan(); iter; iter++) {
+						tree.Write(iter.GetKey(), iter.GetPayload() + cweeRandomFloat(-1, 1));
+					}
+					for (auto iter = tree.Scan(); iter; iter++) {
+						tree.Write(iter.GetKey(), iter.GetPayload() + cweeRandomFloat(-1, 1));
+					}
+					for (auto iter = tree.Scan(); iter; iter++) {
+						tree.Write(iter.GetKey(), iter.GetPayload() + cweeRandomFloat(-1, 1));
+					}
+					for (auto iter = tree.Scan(); iter; iter++) {
+						tree.Write(iter.GetKey(), iter.GetPayload() + cweeRandomFloat(-1, 1));
+					}
+
+					std::cout << "\n ...Finished.\n";
+				});
+
+				for (double D = -2.25; D <= 505; D += 1.25) {
+					auto iter_Larger = tree.FindSmallestLargerEqual(D);
+					auto iter_Smaller = tree.FindLargestSmallerEqual(D);
+
+					if (iter_Larger && iter_Smaller) {
+						std::cout << "\tTarget Key: " << D << ", Smaller Key/Value:" << iter_Smaller.GetKey() << "/" << iter_Smaller.GetPayload() << ", Larger Key/Value: " << iter_Larger.GetKey() << "/" << iter_Larger.GetPayload() << std::endl;
+					}
+				}
+
+				futureObj.wait();
+			}
+
 		}
+
+
+
+
 
 		// Multi-word Compare-and-Swap
 		if (1) {
@@ -1219,7 +1162,7 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 				// use an unsigned long type as MwCAS targets
 
 				// target of a mwCAS example
-				fibers::utilities::CAS_Container<int> data;
+				fibers::utilities::CAS_Container<int> data{ 0 };
 
 				using fibers::utilities::dbgroup::atomic::mwcas::MwCASDescriptor;
 
@@ -1241,7 +1184,7 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 				// use an unsigned long type as MwCAS targets
 
 				// target of a mwCAS example
-				fibers::utilities::CAS_Container<float> data;
+				fibers::utilities::CAS_Container<float> data{ 0 };
 
 				using fibers::utilities::dbgroup::atomic::mwcas::MwCASDescriptor;
 
@@ -1263,7 +1206,7 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 				// use an unsigned long type as MwCAS targets
 
 				// target of a mwCAS example
-				fibers::utilities::CAS_Container<long double> data;
+				fibers::utilities::CAS_Container<long double> data{ 0 };
 
 				using fibers::utilities::dbgroup::atomic::mwcas::MwCASDescriptor;
 
@@ -1285,7 +1228,7 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 				// use an unsigned long type as MwCAS targets
 
 				// target of a mwCAS example
-				fibers::utilities::CAS_Container<DListNode> data;
+				fibers::utilities::CAS_Container<DListNode> data{ { nullptr, nullptr, 0 } };
 
 				using fibers::utilities::dbgroup::atomic::mwcas::MwCASDescriptor;
 
