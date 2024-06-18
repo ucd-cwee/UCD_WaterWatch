@@ -19,28 +19,15 @@
     </ProjectConfiguration>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="Alloc.cpp" />
     <ClCompile Include="Fibers.cpp" />
-    <ClCompile Include="Fiber.cpp" />
-    <ClCompile Include="Fibtex.cpp" />
-    <ClCompile Include="TaskScheduler.cpp" />
-    <ClCompile Include="ThreadAbstraction.cpp" />
-    <ClCompile Include="WaitGroup.cpp" />
+    <ClCompile Include="MultiWord_CompareAndSwap.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="Alloc.h" />
-    <ClInclude Include="Callbacks.h" />
     <ClInclude Include="Concurrent_Queue.h" />
-    <ClInclude Include="Config.h" />
     <ClInclude Include="Fibers.h" />
-    <ClInclude Include="Fiber.h" />
-    <ClInclude Include="Fibtex.h" />
     <ClInclude Include="Actions.h" />
-    <ClInclude Include="Tasks.h" />
-    <ClInclude Include="TaskScheduler.h" />
-    <ClInclude Include="TaskSchedulerInternal.h" />
-    <ClInclude Include="ThreadAbstraction.h" />
-    <ClInclude Include="WaitGroup.h" />
+    <ClInclude Include="MultiWord_CompareAndSwap.h" />
+    <ClInclude Include="Units.h" />
   </ItemGroup>
   <PropertyGroup Label="Globals">
     <VCProjectVersion>16.0</VCProjectVersion>
