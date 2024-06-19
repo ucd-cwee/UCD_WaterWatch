@@ -215,8 +215,15 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 
 			std::cout << 1_ft << std::endl;
 
-			Units::meter test1 = 1_ft - 1_m; // forces the result to meter (default, SI unit for length)
-			Units::yard test2 = Units::foot(1_ft) + Units::meter(-1_m); // forces the result to yards
+			auto y1 = 1_ft;
+			auto y2 = 1_m;
+			auto y3 = y1 - y2;
+			Units::meter test1 = y3; // forces the result to meter (default, SI unit for length)
+
+			auto x1 = Units::foot(1_ft);
+			auto x2 = Units::meter(-1_m);
+			auto x3 = x1 + x2;
+			Units::yard test2 = x3; // forces the result to yards
 			auto test3 = Units::foot(1_ft) - Units::meter(1_m); // allows any resulting unit so long as the value is correct for the unit selected. E.g. could be foot, meter, cm, etc. In this case it'll be foot.
 
 			std::cout << test1 << std::endl;
@@ -530,6 +537,9 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 
 
 				auto futureObj = fibers::parallel::async([&tree](){
+					Stopwatch sw;
+					sw.Start();
+
 					::Sleep(10);
 					std::cout << "\nWorking... \n";
 					for (int i = 0; i < 500; i++) {
@@ -539,6 +549,10 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 						tree.Insert(i + 0.5, i + 0.5);						
 					}
 					std::cout << "\n ...Finished.\n";
+
+					sw.Stop();
+
+					return Units::second(sw.Seconds_Passed());
 				});
 
 #if 1
@@ -551,7 +565,8 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 					}
 				}
 
-				futureObj.wait();
+				// wait until the job is completed and the result (if any) is returned.
+				std::cout << futureObj.wait_get_ref() << std::endl; 
 #else
 				for (auto& x : tree) {
 					std::cout << "\tKey: " << x.first << ", Value: " << x.second << std::endl;

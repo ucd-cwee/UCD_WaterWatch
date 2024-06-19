@@ -30,14 +30,14 @@
 	constexpr static const char* specialized_name() noexcept { return #type; }; \
 	type() noexcept : category(0.0, specialized_abbreviation(), ratio) {}; \
 	type(double V) noexcept : category(V, specialized_abbreviation(), ratio) {}; \
-	type(value const& V) : category(0.0, specialized_abbreviation(), ratio) { \
-        this->unit_m.Update([other = V.unit_m.load()](Units::AtomicUnitStruct Data)->Units::AtomicUnitStruct{ \
-             if (Data.IsSameCategory(other)) { Data.value_m = other.value_m; } \
-		     else if (other.isScalar_m) { Data.value_m = (other.value_m / other.ratio_m) * ratio; } \
-		     else if (Data.isScalar_m) { Data = other; } \
-		     else { throw(std::runtime_error(Units::printf("Assignment(const&) failed due to incompatible non-scalar units: '%s' and '%s'.", specialized_abbreviation(), AbbreviationFast(other).c_str()))); } \
-             return Data; \
-        });  \
+	type(value const& other) : category(0.0, specialized_abbreviation(), ratio) { \
+		this->unit_m.Update([V = other.unit_m.load(), this, &other](Units::AtomicUnitStruct Data)->Units::AtomicUnitStruct { \
+			if (Data.IsSameCategory(V)) Data.value_m = V.value_m; \
+			else if (V.isScalar_m) Data.value_m = (V.value_m / V.ratio_m) * ratio; \
+			else if (Data.isScalar_m) Data = V; \
+			else throw(std::runtime_error(Units::printf("Assignment(const&) failed due to incompatible non-scalar value: '%s' and '%s'.", this->Abbreviation().c_str(), other.Abbreviation().c_str()))); \
+            return Data; \
+		}); \
     }; \
     virtual bool IsStaticType() const { return true; }; \
     virtual ~type() {}; \
@@ -334,8 +334,6 @@ public:
 		};
 
 	};
-
-	static constexpr bool THINGY{ std::is_pod<AtomicUnitStruct>::value };
 
 	class value {
 	public:

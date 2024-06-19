@@ -2259,41 +2259,51 @@ namespace fibers {
 			return out;
 		};
 
-		/* Generic form of a future<T>, which can be used to wait on and get the results of any job. */
+		/* Generic form of a future<T>, which can be used to wait on and get the results of any job. Can be safely shared if multiple places will need access to the result once available. */
 		class promise {
 		protected:
 			std::shared_ptr< synchronization::atomic_ptr<JobGroup> > shared_state;
 			std::shared_ptr< synchronization::atomic_ptr<Any> > result;
+			std::shared_ptr< synchronization::atomic_number<long> > waiting;
 
 		public:
-			promise() : shared_state(nullptr), result(nullptr) {};
+			promise() : shared_state(nullptr), result(nullptr), waiting(nullptr) {};
 			promise(Job const& job) :
 				shared_state(std::shared_ptr<synchronization::atomic_ptr<JobGroup>>(new synchronization::atomic_ptr<JobGroup>(new JobGroup(job)), [](synchronization::atomic_ptr<JobGroup>* anyP) { if (anyP) { auto* p = anyP->Set(nullptr); if (p) { delete p; } delete anyP; } })),
-				result(std::shared_ptr<synchronization::atomic_ptr<Any>>(new synchronization::atomic_ptr<Any>(), [](synchronization::atomic_ptr<Any>* anyP) { if (anyP) { auto* p = anyP->Set(nullptr); if (p) { delete p; } delete anyP; } })) {};
+				result(std::shared_ptr<synchronization::atomic_ptr<Any>>(new synchronization::atomic_ptr<Any>(), [](synchronization::atomic_ptr<Any>* anyP) { if (anyP) { auto* p = anyP->Set(nullptr); if (p) { delete p; } delete anyP; } })),
+				waiting(std::shared_ptr<synchronization::atomic_number<long>>(new synchronization::atomic_number<long>{ 0 }))
+			{};
 			promise(promise const&) = default;
 			promise(promise&&) = default;
 			promise& operator=(promise const&) = default;
 			promise& operator=(promise&&) = default;
 			virtual ~promise() {};
 
-			bool valid() const noexcept {
-				return (bool)shared_state;
-			};
+			/* Returns true if this promise has been initialized correctly. Otherwise, false. */
+			bool valid() const noexcept { return (bool)shared_state; };
+			/* Wait until the requested job is completed. Repeated waiting is OK, however only the first "waiting" thread actually helps to complete the job - the remaining waiters will spin-wait. */
 			void wait() {
-				if (shared_state) {
-					auto p = shared_state->Set(nullptr);
-					if (p) {
-						auto list = p->Wait_Get();
-						if (list.size() > 0) {
-							Any* p2 = result->Set(new Any(list[0]));
-							if (p2) {
-								delete p2;
+				if (valid()) {
+					while (waiting->load() > 0) { std::this_thread::yield(); }
+					if (!result->load()) {
+						waiting->Add(1);
+						defer(waiting->Sub(1));
+
+						auto p = shared_state->Set(nullptr);
+						if (p) {
+							auto list = p->Wait_Get();
+							if (list.size() > 0) {
+								Any* p2 = result->Set(new Any(list[0]));
+								if (p2) {
+									delete p2;
+								}
 							}
-						}						
-						delete p;
+							delete p;
+						}
 					}
 				}
 			};
+			/* Try to get the result, if available. Does not wait. */
 			Any get_any() const noexcept {
 				if (result) {
 					Any* p = result->Get();
@@ -2303,6 +2313,7 @@ namespace fibers {
 				}
 				return Any();
 			};
+			/* Get the result, once available. Waits for the result, if necessary. */
 			Any wait_get_any() {
 				wait();
 				return get_any();

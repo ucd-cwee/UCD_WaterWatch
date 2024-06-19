@@ -7611,24 +7611,52 @@ namespace fibers {
 			};
 
 		private:
-			Arg data;
-
-			//struct container {
-			//	float multiplier; // MUST BE UNSIGNED
-			//	unsigned short exponent; // MUST BE UNSIGNED
-			//	bool negativeMultiplier : 1;
-			//	bool negativeExponent : 1;
-			//};
+// #define useMantissaRepresentation
+			// Attempted to store double as unsigned integers/bools, which works in theory but occassionally crashes for reasons I do not yet understand.
+#ifdef useMantissaRepresentation
+			struct container { // targeting 64 bits
+				uint64_t multiplier : 58; // 64 bits minus the sum of the other bits 
+				unsigned short exponent : 6; // 0 to 63 for the 2^n exponent.
+				bool negativeMultiplier : 1; // bool for whether the multiplier is negative or not
+				bool negativeExponent : 1; // bool for whether the exponent is negative or not
+			};
+#endif
+#ifdef useMantissaRepresentation
+			container 
+#else
+			Arg
+#endif
+			data;
 
 		private:
 			static constexpr Arg Bound(Arg const& a) { return std::max<Arg>(-MaxV, std::min<Arg>(MaxV, a)); };
-			static constexpr Arg MakeUnsignedAndBound(Arg const& a) {
+			static constexpr decltype(data) MakeUnsignedAndBound(Arg const& a) {
+#ifdef useMantissaRepresentation
+				int n;
+				auto temp{ frexp(a, &n) };
+				{
+					return container{
+						static_cast<uint64_t>(static_cast<long double>(temp < (Arg)0 ? static_cast<Arg>(-1.0) * temp : temp) * 1e16l),
+						static_cast<unsigned short>(n < 0 ? -1.0f * n : n),
+						temp < (Arg)0,
+						n < (int)0
+					};
+				}
+#else
 				return Bound(a) + MaxV;
+#endif
 			};
-			static constexpr Arg MakeSigned(Arg const& a) {
+			static constexpr Arg MakeSigned(decltype(data) const& a) {
+#ifdef useMantissaRepresentation
+				return static_cast<Arg>(ldexp(
+					static_cast<Arg>(a.negativeMultiplier ? -static_cast<long double>(a.multiplier) / 1e16l : static_cast<long double>(a.multiplier) / 1e16l),
+					a.negativeExponent ? -static_cast<int>(a.exponent) : static_cast<int>(a.exponent)
+				));
+#else
 				return a - MaxV;
+#endif
 			};
-
+#undef useMantissaRepresentation
 		public:
 			constexpr UnsignedWrapper() = default;
 			constexpr UnsignedWrapper(Arg const& a) : data{ MakeUnsignedAndBound(a) } {};
