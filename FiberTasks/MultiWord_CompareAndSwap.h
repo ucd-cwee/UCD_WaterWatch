@@ -7569,6 +7569,216 @@ namespace fibers {
 			};
 		}  // namespace dbgroup::index::bw_tree
 
+        /* Non-atomic, but guarrantees that floating-point numbers will not be negative, which breaks atomic operations. */
+		template <typename Arg> struct UnsignedWrapper {
+		private:
+			static constexpr inline unsigned long long constexpr_pow(unsigned long long x, unsigned long long y) { return y == 0 ? 1.0 : x * constexpr_pow(x, y - 1); };
+			static constexpr unsigned long long MANT_DIG() {
+				if constexpr (std::is_same<double, Arg>::value) {
+					return (DBL_MANT_DIG - 9) / 1.7;
+				}
+				else if constexpr (std::is_same<long double, Arg>::value) {
+					return (LDBL_MANT_DIG - 9) / 1.7;//28;
+				}
+				else if constexpr (std::is_same<float, Arg>::value) {
+					return (FLT_MANT_DIG - 9) / 1.7;
+				}
+				else {
+					return 1;
+				}
+			};
+			static constexpr Arg abs(const Arg val) {
+				return val >= (Arg)0 ? val : -val;
+			}
+			static constexpr Arg floor(const Arg val) {
+				// casting to int truncates the value, which is floor(val) for positive values,
+				// but we have to substract 1 for negative values (unless val is already floored == recasted int val)
+				const auto val_int = (int64_t)val;
+				const Arg fval_int = (Arg)val_int;
+				return (val >= (Arg)0 ? fval_int : (val == fval_int ? val : fval_int - (Arg)1));
+			};
+			static constexpr Arg MaxV{ constexpr_pow(2, MANT_DIG()) };
+			static constexpr Arg Scale{ 10.0 };
+			static constexpr long double squareroot_of_0_001{ 0.03162277660168 };
+			static constexpr long double squareroot_of_0_0000001{ 0.0003162277660168 };
+			static constexpr Arg RoundToMillionth(Arg a) {
+				if (abs(a) > 10000000) {
+					return floor(a * ((1.0l / squareroot_of_0_001) * (1.0l / squareroot_of_0_001)) + 0.5l) * 0.001l;
+				}
+				else {
+					return floor(a * ((1.0l / squareroot_of_0_0000001) * (1.0l / squareroot_of_0_0000001)) + 0.5l) * 0.0000001l;
+				}
+			};
+
+		private:
+			Arg data;
+
+			//struct container {
+			//	float multiplier; // MUST BE UNSIGNED
+			//	unsigned short exponent; // MUST BE UNSIGNED
+			//	bool negativeMultiplier : 1;
+			//	bool negativeExponent : 1;
+			//};
+
+		private:
+			static constexpr Arg Bound(Arg const& a) { return std::max<Arg>(-MaxV, std::min<Arg>(MaxV, a)); };
+			static constexpr Arg MakeUnsignedAndBound(Arg const& a) {
+				return Bound(a) + MaxV;
+			};
+			static constexpr Arg MakeSigned(Arg const& a) {
+				return a - MaxV;
+			};
+
+		public:
+			constexpr UnsignedWrapper() = default;
+			constexpr UnsignedWrapper(Arg const& a) : data{ MakeUnsignedAndBound(a) } {};
+			constexpr UnsignedWrapper(Arg&& a) : data{ MakeUnsignedAndBound(std::forward<Arg>(a)) } {};
+
+			constexpr UnsignedWrapper(const UnsignedWrapper&) = default;
+			constexpr UnsignedWrapper& operator=(const UnsignedWrapper&) = default;
+			constexpr UnsignedWrapper(UnsignedWrapper&&) = default;
+			constexpr UnsignedWrapper& operator=(UnsignedWrapper&&) = default;
+			~UnsignedWrapper() = default;
+
+		public:
+			operator Arg() { return load(); };
+			operator const Arg() const { return load(); };
+
+			template <typename T> decltype(auto) operator+(const UnsignedWrapper<T>& b) {
+				if constexpr (sizeof(T) > sizeof(Arg)) {
+					return UnsignedWrapper<T>{ load() + b.load() };
+				}
+				else {
+					return UnsignedWrapper{ load() + b.load() };
+				}
+			}
+			template <typename T> decltype(auto) operator-(const UnsignedWrapper<T>& b) {
+				if constexpr (sizeof(T) > sizeof(Arg)) {
+					return UnsignedWrapper<T>{ load() - b.load() };
+				}
+				else {
+					return UnsignedWrapper{ load() - b.load() };
+				}
+			}
+			template <typename T> decltype(auto) operator/(const UnsignedWrapper<T>& b) {
+				if constexpr (sizeof(T) > sizeof(Arg)) {
+					return UnsignedWrapper<T>{ load() / b.load() };
+				}
+				else {
+					return UnsignedWrapper{ load() / b.load() };
+				}
+			}
+			template <typename T> decltype(auto) operator*(const UnsignedWrapper<T>& b) {
+				if constexpr (sizeof(T) > sizeof(Arg)) {
+					return UnsignedWrapper<T>{ load()* b.load() };
+				}
+				else {
+					return UnsignedWrapper{ load() * b.load() };
+				}
+			}
+
+			UnsignedWrapper& operator--() {
+				Add(-1);
+				return *this;
+			};
+			UnsignedWrapper& operator++() {
+				Add(1);
+				return *this;
+			};
+			UnsignedWrapper operator--(int) { return operator--() + 1; };
+			UnsignedWrapper operator++(int) { return operator++() - 1; };
+
+			UnsignedWrapper& operator+=(const UnsignedWrapper& i) {
+				Update([i](Arg x)->Arg { return x + i.load(); });
+				return *this;
+			};
+			UnsignedWrapper& operator-=(const UnsignedWrapper& i) {
+				Update([i](Arg x)->Arg { return x - i.load(); });
+				return *this;
+			};
+			UnsignedWrapper& operator/=(const UnsignedWrapper& i) {
+				Update([i](Arg x)->Arg { return x / i.load(); });
+				return *this;
+			};
+			UnsignedWrapper& operator*=(const UnsignedWrapper& i) {
+				Update([i](Arg x)->Arg { return x * i.load(); });
+				return *this;
+			};
+
+			template<typename T, typename = std::enable_if_t<!std::is_same_v<Arg, T>>> UnsignedWrapper& operator+=(const UnsignedWrapper<T>& i) {
+				Update([i](Arg x)->Arg { return x + i.load(); });
+				return *this;
+			};
+			template<typename T, typename = std::enable_if_t<!std::is_same_v<Arg, T>>> UnsignedWrapper& operator-=(const UnsignedWrapper<T>& i) {
+				Update([i](Arg x)->Arg { return x - i.load(); });
+				return *this;
+			};
+			template<typename T, typename = std::enable_if_t<!std::is_same_v<Arg, T>>> UnsignedWrapper& operator/=(const UnsignedWrapper<T>& i) {
+				Update([i](Arg x)->Arg { return x / i.load(); });
+				return *this;
+			};
+			template<typename T, typename = std::enable_if_t<!std::is_same_v<Arg, T>>> UnsignedWrapper& operator*=(const UnsignedWrapper<T>& i) {
+				Update([i](Arg x)->Arg { return x * i.load(); });
+				return *this;
+			};
+
+			template <typename T> bool operator==(const UnsignedWrapper<T>& b) { return load() == b.load(); };
+			template <typename T> bool operator!=(const UnsignedWrapper<T>& b) { return !operator==(b); };
+			template <typename T> bool operator<=(const UnsignedWrapper<T>& b) { return load() <= b.load(); };
+			template <typename T> bool operator>=(const UnsignedWrapper<T>& b) { return load() >= b.load(); };
+			template <typename T> bool operator<(const UnsignedWrapper<T>& b) { return !operator>=(b); };
+			template <typename T> bool operator>(const UnsignedWrapper<T>& b) { return !operator<=(b); };
+
+			UnsignedWrapper pow(UnsignedWrapper const& V) const {
+				return UnsignedWrapper{ std::pow(load(), V.load()) };
+			};
+			UnsignedWrapper sqrt() const {
+				return UnsignedWrapper{ std::sqrt(load()) };
+			};
+			UnsignedWrapper floor() const {
+				return UnsignedWrapper{ std::floor(load()) };
+			};
+			UnsignedWrapper ceiling() const {
+				return UnsignedWrapper{ std::ceil(load()) };
+			};
+
+		public:
+			Arg Swap(Arg const& input) {
+				Arg old{ load() };
+				data = MakeUnsignedAndBound(input);
+				return old;
+			}; // returns the previous value while changing the underlying value
+			Arg Add(Arg const& input) {
+				Arg old{ load() };
+				data = MakeUnsignedAndBound(old + input);
+				return old;
+			}; // returns the previous value while incrementing the actual counter
+			Arg Update(std::function<Arg(Arg)> updateFunction) {
+				Arg old{ load() };
+				data = MakeUnsignedAndBound(updateFunction(old));
+				return old;
+			}; // returns the previous value while incrementing the actual counter
+
+		public: // std::atomic compatability
+			Arg fetch_add(Arg const& v) {
+				return Add(v);
+			}; // returns the previous value while incrementing the actual counter
+			Arg fetch_sub(Arg const& v) {
+				return Add(-v);
+			}; // returns the previous value while decrementing the actual counter
+			Arg exchange(Arg const& v) {
+				return Swap(v);
+			}; // returns the previous value while setting the value to the input
+			Arg load() const {
+				return MakeSigned(data);
+			}; // gets the value
+			void store(Arg const& v) {
+				Swap(v);
+				return;
+			}; // sets the value to the input
+
+		};
+
 		/* Converts any small POD-style struct into an atomic struct using multi-word compare and swap operations.
 		Capacity is about 56 bytes, or about 7 pointers / integers. Can be used for a POD collection (like a struct) or non-standard POD items like floats to long doubles.
 		*/
@@ -7580,7 +7790,7 @@ namespace fibers {
 
 		public:
 			static constexpr size_t NumWords{ 1 + sizeof(Arg) / 8 };
-			static constexpr Arg MaxV{ constexpr_pow(2, (DBL_MANT_DIG - 6.0) / 1.7) };
+			static constexpr double MaxV{ constexpr_pow(2, (DBL_MANT_DIG - 6.0) / 1.7) };
 
 		protected:
 			union ContainerImpl {
@@ -7607,13 +7817,34 @@ namespace fibers {
 			const Arg& Data() const { return data.data; };
 			Arg& Data() { return data.data; };
 
-			static constexpr Arg Bound(Arg const& a) { return std::max<Arg>(-MaxV, std::min<Arg>(MaxV, a)); };
-			static constexpr Arg MakeUnsignedAndBound(Arg const& a) { return Bound(a) + MaxV; };
-			static constexpr Arg MakeSigned(Arg const& a) { return a - MaxV; };
+			static constexpr Arg Bound(Arg const& a) { 
+				if constexpr (std::is_arithmetic<Arg>::value) {
+					return std::max<Arg>(-MaxV, std::min<Arg>(MaxV, a));
+				}
+				else {
+					return a;
+				}
+			};
+			static constexpr Arg MakeUnsignedAndBound(Arg const& a) { 
+				if constexpr (std::is_arithmetic<Arg>::value) {
+					return Bound(a) + MaxV;
+				}
+				else {
+					return a;
+				}				
+			};
+			static constexpr Arg MakeSigned(Arg const& a) { 
+				if constexpr (std::is_arithmetic<Arg>::value) {
+					return a - MaxV;
+				}
+				else {
+					return a;
+				}
+			};
 
 		public:
 			
-			constexpr CAS_Container() : data{ static_cast<Arg>(0) } { static_assert(std::is_pod_v<Arg>, "Compare-and-swap operations only work with POD-type structs."); };
+			constexpr CAS_Container() : data{} { static_assert(std::is_pod_v<Arg>, "Compare-and-swap operations only work with POD-type structs."); };
 			constexpr CAS_Container(Arg const& a) : data{ MakeUnsignedAndBound(a) } { static_assert(std::is_pod_v<Arg>, "Compare-and-swap operations only work with POD-type structs."); };
 
 			~CAS_Container() = default;
@@ -7707,6 +7938,35 @@ namespace fibers {
 				}
 				return OldCopy.load();
 			}; // returns the previous value while incrementing the actual counter
+			Arg Update(std::function<Arg(Arg)> updateFunction) {
+				using fibers::utilities::dbgroup::atomic::mwcas::MwCASDescriptor;
+
+				fibers::utilities::CAS_Container<Arg> OldCopy, UpdateCopy;
+				size_t index;
+
+				// continue until a MwCAS operation succeeds
+				while (true) {
+					// create a MwCAS descriptor
+					MwCASDescriptor<NumWords> desc{};
+
+					// capture the old words
+					for (index = 0; index < NumWords; index++) {
+						OldCopy.Word(index) = MwCASDescriptor<NumWords>::template Read<uint64_t>(&Word(index));
+					}
+
+					// update the actual data
+					UpdateCopy.Data() = MakeUnsignedAndBound(updateFunction(OldCopy.load()));
+
+					// prepare the swap target(s)
+					for (index = 0; index < NumWords; index++) {
+						desc.AddMwCASTarget(&Word(index), OldCopy.Word(index), UpdateCopy.Word(index));
+					}
+
+					// try multi-word compare and swap
+					if (desc.MwCAS()) break;
+				}
+				return OldCopy.load();
+			}; // returns the previous value while incrementing the actual counter
 
 		public: // std::atomic compatability
 			Arg fetch_add(Arg const& v) {
@@ -7729,7 +7989,6 @@ namespace fibers {
 
 		};
 		
-
 		template <typename... Args> struct MultiItemCAS {
 #define SWITCH_FOR_0_to_16 switch (Index) { \
 			REPEATFOR(0); REPEATFOR(1); REPEATFOR(2); REPEATFOR(3); \

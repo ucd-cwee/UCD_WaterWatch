@@ -58,6 +58,28 @@ public:
 	bool operator!=(stackThing const& a) const { return varName != a.varName; };
 };
 
+
+
+
+
+
+
+
+
+struct AtomicUnitStruct {
+	static constexpr size_t NumUnits = unitTypes::units_type::_size_constant;
+
+	// unit data
+	char* abbreviation_m;
+	bool isScalar_m;
+	bool isSI_m;
+	std::array< fibers::utilities::UnsignedWrapper<double>, NumUnits> unitType_m;
+	fibers::utilities::UnsignedWrapper<double> ratio_m;
+
+	// SI-unit's actual value
+	fibers::utilities::UnsignedWrapper<double> value_m;
+};
+
 int Example::ExampleF(int numTasks, int numSubTasks) {
 	int* xyzwabc = new int[10000];
 	defer(delete[] xyzwabc); // does clean-up on our behalf on scope end
@@ -66,6 +88,43 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 #define EXPECT_EQ(a, b) if (a == b) {} else { std::cout << "FAILURE AT LINE " << __LINE__ << std::endl; }
 #define EXPECT_NE(a, b) if (a != b) {} else { std::cout << "FAILURE AT LINE " << __LINE__ << std::endl; }
 	if (1) {
+		std::is_pod< fibers::utilities::UnsignedWrapper<double> >::value;
+		std::is_pod< AtomicUnitStruct >::value;
+
+		// try to atomic swap the data needed for the unit system
+		if (1) {
+			{
+				fibers::utilities::CAS_Container<AtomicUnitStruct> value{ { const_cast<char*>("ft"), false, false, {1.0,0.0,0.0,0.0,0.0}, 0.304, 1.0 } };
+				for (int i = 0; i < 10; i++) {
+					std::cout << value.load().value_m.load() << " " << value.load().abbreviation_m << std::endl;
+					value.Update([](AtomicUnitStruct currentValue)->AtomicUnitStruct {
+						currentValue.abbreviation_m = const_cast<char*>("m");
+						currentValue.ratio_m = 1.0;
+						currentValue.isSI_m = true;
+						currentValue.isScalar_m = false;
+						currentValue.value_m += 1.0;
+
+						return currentValue;
+					});
+				}
+			}
+			{
+				fibers::utilities::CAS_Container<AtomicUnitStruct> value{ { const_cast<char*>("ft"), false, false, {1.0,0.0,0.0,0.0,0.0}, 0.304, -1.0 } };
+				for (int i = 0; i < 10; i++) {
+					std::cout << value.load().value_m.load() << " " << value.load().abbreviation_m << std::endl;
+					value.Update([](AtomicUnitStruct currentValue)->AtomicUnitStruct {
+						currentValue.abbreviation_m = const_cast<char*>("m");
+						currentValue.ratio_m = 1.0;
+						currentValue.isSI_m = true;
+						currentValue.isScalar_m = false;
+						currentValue.value_m -= 1.0;
+
+						return currentValue;
+					});
+				}
+			}
+		}
+
 		// Check the atomic_number system is not broken
 		if (1) {
 			fibers::utilities::CAS_Container<double> value{ 1 };
@@ -147,7 +206,6 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 			}
 		}
 
-
 		// Unit Values
 		if (1) {
 			using namespace literals;
@@ -174,10 +232,104 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 			// test close unit discovery (gal*min/s does not exist, and it's resulting ratio is still not going to be found). Should find a valid volume unit type, but we will not know which (e.g. could be L or mL or m^3 -- all would be legal as long as the volume conversion is correct still).
 			std::cout << ((10_gal / -60_s) * -1_min).ToString() << std::endl;
 
+			// test generation of a unit through multiplication / power functions
+			std::cout << (1_m).pow(3) << std::endl;
+			std::cout << (4_sq_m).pow(0.5) << std::endl;
+
+			// Test multi-threading
+			if (1) { // simple atomic additions
+				using namespace literals;
+
+				Units::value shared = 0_ft;
+
+				fibers::parallel::For((size_t)0, (size_t)(100), [&shared](size_t threadNum) {
+					for (int i = 0; i < 1000; i++) {
+						switch (threadNum % 4) {
+						default:
+						case 0:
+							shared += 1_ft;
+							break;
+						case 1:
+							shared += Units::meter(1_ft);
+							break;
+						case 2:
+							shared += Units::inch(1_ft);
+							break;
+						case 3:
+							shared += Units::centimeter(1_ft);
+							break;
+						}
+					}
+				});
+				std::cout << "Result = " << shared << std::endl;
+			}
+			if (1) { // complex atomic math
+				using namespace literals;
+
+				Units::value shared = 0_ft;
+
+				fibers::parallel::For((size_t)0, (size_t)(100), [&shared](size_t threadNum) {
+					for (int i = 0; i < 1000; i++) {
+						switch (i % 4) {
+						default:
+						case 0:
+							shared *= 2;
+							break;
+						case 1:
+							shared /= 2;
+							break;
+						case 2:
+							shared += 2;
+							break;
+						case 3:
+							shared -= 2;
+							break;
+						}
+
+						if ((threadNum * 1000 + i) % 750 == 0) {
+							auto str = shared.ToString();
+							std::cout << cweeStr::printf("\tResult (Intermediate)= %s\n", str.c_str());
+						}
+					}
+				});
+				std::cout << "Result = " << shared << std::endl;
+			}
+			if (1) { // swapping and modification of units
+				using namespace literals;
+
+				Units::value shared = 0_ft;
+
+				fibers::parallel::For((size_t)0, (size_t)(100), [&shared](size_t threadNum) {
+					for (int i = 0; i < 1000; i++) {
+						switch ((cweeRandomInt(0,4) + i) % 4) {
+						default:
+						case 0:
+							shared.Swap(1_ft);
+							break;
+						case 1:
+							shared += 2; // whatever the unit is, add two
+							break;
+						case 2:
+							shared.Swap(1_m * 1_ft);
+							break;
+						case 3:
+							shared.Swap(1_gal * 1_min * 1_yr / 1_d / 1_acre);
+							break;
+						}
+
+						if ((threadNum * 1000 + i) % 250 == 0) {
+							auto str = shared.ToString();
+							std::cout << cweeStr::printf("\tResult (Intermediate)= %s\n", str.c_str());
+						}
+					}
+				});
+				std::cout << "Result = " << shared << std::endl;
+			}
+
 		}
 
 		// Unions 
-		if (1) {
+		if (0) {
 			using namespace fibers::utilities;
 			{
 				Union<double, bool, float> obj;
@@ -194,7 +346,7 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 		}
 
 		// MultiItemCAS, which leverages the Unions for organizing N-number of types of pointers. 
-		if (1) {
+		if (0) {
 			using namespace fibers::utilities;
 			{
 				uint64_t item1{ 0 };
@@ -263,7 +415,7 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 		}
 
 		// Epoch-based garbage collector examples
-		if (1) {
+		if (0) {
 			if (1) {
 			    using namespace fibers::utilities::dbgroup::memory;
 
@@ -332,7 +484,7 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 		// Atomic BW Tree
 		if (1) {
 			using namespace fibers::utilities::dbgroup::index::bw_tree;
-			if (1) {
+			if (0) {
 				BwTree<uint64_t, uint64_t> tree;
 				tree.Insert(5, 100);
 				EXPECT_EQ(true, tree.Read(5).has_value());
@@ -343,7 +495,7 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 					tree.Insert(i, i);
 				});
 			}
-			if (1) {
+			if (0) {
 				BwTree<int, double> tree;
 				tree.Insert(5, 100);
 				EXPECT_EQ(true, tree.Read(5).has_value());
@@ -354,7 +506,7 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 					tree.Insert(i, i);
 				});
 			}
-			if (1) {
+			if (0) {
 				BwTree<double, double> tree;
 				tree.Insert(5, 100.0);
 				EXPECT_EQ(true, tree.Read(5).has_value() && (tree.Read(5).value() == 100.0));
@@ -366,13 +518,13 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 				});
 			}
 			if (1) {
-				BwTree<long double, double> tree;
+				BwTree<fibers::utilities::UnsignedWrapper < long double >, fibers::utilities::UnsignedWrapper < double >> tree;
 				tree.Insert(5, 100.0);
 				EXPECT_EQ(true, tree.Read(5).has_value() && (tree.Read(5).value() == 100.0));
 				tree.Delete(5);
 				EXPECT_EQ(false, tree.Read(5).has_value());
 
-				fibers::parallel::For(0, 500, [&tree](int i) {
+				fibers::parallel::For(-5, 500, [&tree](int i) {
 					tree.Insert(i, i);
 				});
 
@@ -395,7 +547,7 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 					auto iter_Smaller = tree.FindLargestSmallerEqual(D);
 					
 					if (iter_Larger && iter_Smaller) {
-						std::cout << "\tTarget Key: " << D << ", Smaller Key/Value:" << iter_Smaller.GetKey() << "/" << iter_Smaller.GetPayload() << ", Larger Key/Value: " << iter_Larger.GetKey() << "/" << iter_Larger.GetPayload() << std::endl;
+						std::cout << "\tTarget Key: " << D << ", Smaller Key/Value:" << iter_Smaller.GetKey().load() << "/" << iter_Smaller.GetPayload().load() << ", Larger Key/Value: " << iter_Larger.GetKey().load() << "/" << iter_Larger.GetPayload().load() << std::endl;
 					}
 				}
 
@@ -410,454 +562,11 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 
 			}
 
-			if (1) {
-				BwTree<long double, double> tree;
 
-				fibers::parallel::For(0, 500, [&tree](int i) {
-					tree.Insert(i, i);
-				});
 
-				auto futureObj = fibers::parallel::async([&tree]() {
-					std::cout << "\nWorking... \n";
 
-					for (auto iter = tree.Scan(); iter; iter++) {
-						tree.Write(iter.GetKey(), iter.GetPayload() + cweeRandomFloat(-1, 1));
-					}
-					for (auto iter = tree.Scan(); iter; iter++) {
-						tree.Write(iter.GetKey(), iter.GetPayload() + cweeRandomFloat(-1, 1));
-					}
-					for (auto iter = tree.Scan(); iter; iter++) {
-						tree.Write(iter.GetKey(), iter.GetPayload() + cweeRandomFloat(-1, 1));
-					}
-					for (auto iter = tree.Scan(); iter; iter++) {
-						tree.Write(iter.GetKey(), iter.GetPayload() + cweeRandomFloat(-1, 1));
-					}
-
-					std::cout << "\n ...Finished.\n";
-				});
-
-				for (double D = -2.25; D <= 505; D += 1.25) {
-					auto iter_Larger = tree.FindSmallestLargerEqual(D);
-					auto iter_Smaller = tree.FindLargestSmallerEqual(D);
-
-					if (iter_Larger && iter_Smaller) {
-						std::cout << "\tTarget Key: " << D << ", Smaller Key/Value:" << iter_Smaller.GetKey() << "/" << iter_Smaller.GetPayload() << ", Larger Key/Value: " << iter_Larger.GetKey() << "/" << iter_Larger.GetPayload() << std::endl;
-					}
-				}
-
-				futureObj.wait();
-			}
 
 		}
-
-
-
-
-
-		// Multi-word Compare-and-Swap
-		if (1) {
-			// 2-word pairs
-			{
-				size_t kThreadNum = fibers::utilities::Hardware::GetNumCpuCores();
-
-				// the number of MwCAS operations in each thread
-				constexpr size_t kExecNum = 1e6;
-
-				// use an unsigned long type as MwCAS targets
-				using Target = uint64_t;
-
-				using fibers::utilities::dbgroup::atomic::mwcas::MwCASDescriptor;
-
-				// targets of a 2wCAS example
-				Target word_1 = 0;
-				Target word_2 = 0;
-
-				fibers::parallel::For((size_t)0, kThreadNum, [kExecNum, &word_1, &word_2](size_t threadNum) {
-					for (size_t i = 0; i < kExecNum; ++i) {
-						// continue until a MwCAS operation succeeds
-						while (true) {
-							// create a MwCAS descriptor
-							MwCASDescriptor<2> desc{};
-
-							// prepare expected/desired values
-							const auto old_1 = MwCASDescriptor<2>::Read<Target>(&word_1);
-							const auto new_1 = old_1 + 1;
-							const auto old_2 = MwCASDescriptor<2>::Read<Target>(&word_2);
-							const auto new_2 = old_2 + 1;
-
-							// register MwCAS targets with the descriptor
-							desc.AddMwCASTarget(&word_1, old_1, new_1);
-							desc.AddMwCASTarget(&word_2, old_2, new_2);
-
-							// try MwCAS
-							if (desc.MwCAS()) break;
-						}
-					}
-					});
-
-				// check whether MwCAS operations are performed consistently
-				std::cout << "\n\t1st field: " << word_1 << "\n\t2nd field: " << word_2 << std::endl << std::endl;
-			}
-			
-			// 3-word pairs
-			{
-				size_t kThreadNum = fibers::utilities::Hardware::GetNumCpuCores();
-
-				// the number of MwCAS operations in each thread
-				constexpr size_t kExecNum = 1e6;
-
-				// use an unsigned long type as MwCAS targets
-				using Target = uint64_t;
-
-				using fibers::utilities::dbgroup::atomic::mwcas::MwCASDescriptor;
-
-				// targets of a mwCAS example
-				Target word_1 = 0; // back PTR
-				Target word_2 = 0; // this data PTR
-				Target word_3 = 0; // next PTR
-
-				fibers::parallel::For((size_t)0, kThreadNum, [kExecNum, &word_1, &word_2, &word_3](size_t threadNum) {
-					for (size_t i = 0; i < kExecNum; ++i) {
-						// continue until a MwCAS operation succeeds
-						while (true) {
-							// create a MwCAS descriptor
-							MwCASDescriptor<3> desc{};
-
-							// prepare expected/desired values
-							const auto old_1 = MwCASDescriptor<3>::Read<Target>(&word_1);
-							const auto new_1 = old_1 + 1;
-							const auto old_2 = MwCASDescriptor<3>::Read<Target>(&word_2);
-							const auto new_2 = old_2 + 2;
-							const auto old_3 = MwCASDescriptor<3>::Read<Target>(&word_3);
-							const auto new_3 = old_3 + 4;
-
-							// register MwCAS targets with the descriptor
-							desc.AddMwCASTarget(&word_1, old_1, new_1);
-							desc.AddMwCASTarget(&word_2, old_2, new_2);
-							desc.AddMwCASTarget(&word_3, old_3, new_3);
-
-							// try MwCAS
-							if (desc.MwCAS()) break;
-
-						}
-					}
-					});
-
-				// check whether MwCAS operations are performed consistently
-				std::cout << "\n\t1st field: " << word_1 << "\n\t2nd field: " << word_2 << "\n\t3rd field: " << word_3 << std::endl << std::endl;
-			}
-
-			// 3-word pairs, updated in 2-word batches (A&&C or B&&C)
-			{
-				size_t kThreadNum = fibers::utilities::Hardware::GetNumCpuCores();
-
-				// the number of MwCAS operations in each thread
-				constexpr size_t kExecNum = 1e6;
-
-				// use an unsigned long type as MwCAS targets
-				using Target = uint64_t;
-
-				using fibers::utilities::dbgroup::atomic::mwcas::MwCASDescriptor;
-
-				// targets of a mwCAS example
-				Target word_1 = 0; // back PTR
-				Target word_2 = 0; // this data PTR
-				Target word_3 = 0; // next PTR
-
-				fibers::parallel::For((size_t)0, kThreadNum, [kExecNum, &word_1, &word_2, &word_3](size_t threadNum) {
-					if (threadNum % 2 == 0) {
-						// A && C
-						for (size_t i = 0; i < kExecNum; ++i) {
-							// continue until a MwCAS operation succeeds
-							while (true) {
-								// create a MwCAS descriptor
-								MwCASDescriptor<2> desc{};
-
-								// prepare expected/desired values
-								const auto old_1 = MwCASDescriptor<2>::Read<Target>(&word_1);
-								const auto new_1 = old_1 + 2;
-								const auto old_3 = MwCASDescriptor<2>::Read<Target>(&word_3);
-								const auto new_3 = old_3 + 4;
-
-								// register MwCAS targets with the descriptor
-								desc.AddMwCASTarget(&word_1, old_1, new_1);
-								desc.AddMwCASTarget(&word_3, old_3, new_3);
-
-								// try MwCAS
-								if (desc.MwCAS()) break;
-
-							}
-						}
-					}
-					else {
-						// B && C
-						for (size_t i = 0; i < kExecNum; ++i) {
-							// continue until a MwCAS operation succeeds
-							while (true) {
-								// create a MwCAS descriptor
-								MwCASDescriptor<2> desc{};
-
-								// prepare expected/desired values
-								const auto old_2 = MwCASDescriptor<2>::Read<Target>(&word_2);
-								const auto new_2 = old_2 + 4;
-								const auto old_3 = MwCASDescriptor<2>::Read<Target>(&word_3);
-								const auto new_3 = old_3 + 4;
-
-								// register MwCAS targets with the descriptor
-								desc.AddMwCASTarget(&word_2, old_2, new_2);
-								desc.AddMwCASTarget(&word_3, old_3, new_3);
-
-								// try MwCAS
-								if (desc.MwCAS()) break;
-
-							}
-						}
-					}
-				});
-
-				// check whether MwCAS operations are performed consistently
-				std::cout << "\n\t1st field: " << word_1 << "\n\t2nd field: " << word_2 << "\n\t3rd field: " << word_3 << std::endl << std::endl;
-			}
-
-			// Generic multi-word compare and swap with types of various sizes
-			{
-				size_t kThreadNum = fibers::utilities::Hardware::GetNumCpuCores();
-
-				// the number of MwCAS operations in each thread
-				constexpr size_t kExecNum = 1e5;
-
-				// use an unsigned long type as MwCAS targets
-
-				// target of a mwCAS example
-				fibers::utilities::CAS_Container<int> data{ 0 };
-
-				using fibers::utilities::dbgroup::atomic::mwcas::MwCASDescriptor;
-
-				fibers::parallel::For((size_t)0, kThreadNum, [kExecNum, &data](size_t threadNum) {
-					for (size_t i = 0; i < kExecNum; ++i) {
-						data.Add(1);
-					}
-				});
-
-				// check whether MwCAS operations are performed consistently
-				std::cout << "\n\tValue: " << data.load() << std::endl << std::endl;
-			}
-			{
-				size_t kThreadNum = fibers::utilities::Hardware::GetNumCpuCores();
-
-				// the number of MwCAS operations in each thread
-				constexpr size_t kExecNum = 1e5;
-
-				// use an unsigned long type as MwCAS targets
-
-				// target of a mwCAS example
-				fibers::utilities::CAS_Container<float> data{ 0 };
-
-				using fibers::utilities::dbgroup::atomic::mwcas::MwCASDescriptor;
-
-				fibers::parallel::For((size_t)0, kThreadNum, [kExecNum, &data](size_t threadNum) {
-					for (size_t i = 0; i < kExecNum; ++i) {
-						data.Add(1);
-					}
-				});
-
-				// check whether MwCAS operations are performed consistently
-				std::cout << "\n\tValue: " << data.load() << std::endl << std::endl;
-			}
-			{
-				size_t kThreadNum = fibers::utilities::Hardware::GetNumCpuCores();
-
-				// the number of MwCAS operations in each thread
-				constexpr size_t kExecNum = 1e5;
-
-				// use an unsigned long type as MwCAS targets
-
-				// target of a mwCAS example
-				fibers::utilities::CAS_Container<long double> data{ 0 };
-
-				using fibers::utilities::dbgroup::atomic::mwcas::MwCASDescriptor;
-
-				fibers::parallel::For((size_t)0, kThreadNum, [kExecNum, &data](size_t threadNum) {
-					for (size_t i = 0; i < kExecNum; ++i) {
-						data.Add(1);
-					}
-				});
-
-				// check whether MwCAS operations are performed consistently
-				std::cout << "\n\tValue: " << data.load() << std::endl << std::endl;
-			}
-		}
-
-
-#if 0
-		if (1) {
-			{
-				BalancedTreeNode<int, const char> parentOfParents{ 0 }; parentOfParents.Reset();
-				BalancedTreeNodeParentReference<int, const char> parentOfParentsRef{ &parentOfParents };
-
-				BalancedTreeNode<int, const char> parent1{ 0 }; parent1.Reset();
-				BalancedTreeNodeParentReference<int, const char> parentRef1{ &parent1 };
-				BalancedTreeNode<int, const char> child1{ 0 }; child1.Reset();
-				BalancedTreeNode<int, const char> child2{ 0 }; child2.Reset();
-
-				BalancedTreeNode<int, const char> parent2{ 0 }; parent2.Reset();
-				BalancedTreeNodeParentReference<int, const char> parentRef2{ &parent2 };
-				BalancedTreeNode<int, const char> child3{ 0 }; child3.Reset();
-				BalancedTreeNode<int, const char> child4{ 0 }; child4.Reset();
-
-				{
-					parentOfParents.object = "parentOfParents";
-					parent1.object = "Parent1";
-					parent2.object = "Parent2";
-					child1.object = "Child1";
-					child2.object = "Child2";
-					child3.object = "Child3";
-					child4.object = "Child4";
-
-					parent1.parent = &parentOfParentsRef;
-					parent2.parent = &parentOfParentsRef;
-
-					child1.parent = &parentRef1;
-					child2.parent = &parentRef1;
-					child1.prev = nullptr;
-					child1.next = &child2;
-					child2.prev = &child1;
-					child2.next = nullptr;
-					parent1.firstChild = &child1;
-					parent1.lastChild = &child2;
-					parent1.numChildren = 2;
-
-					child3.parent = &parentRef2;
-					child4.parent = &parentRef2;
-					child3.prev = nullptr;
-					child3.next = &child4;
-					child4.prev = &child3;
-					child4.next = nullptr;
-					parent2.firstChild = &child3;
-					parent2.lastChild = &child4;
-					parent2.numChildren = 2;
-
-					parent1.next = &parent2;
-					parent2.prev = &parent1;
-
-					parentOfParents.firstChild = &parent1;
-					parentOfParents.lastChild = &parent2;
-					parentOfParents.numChildren = 2;
-				}
-
-				std::cout << "\n\t\tChild1 Parent: " << child1.GetParent()->object << std::endl;
-				std::cout << "\t\tChild2 Parent: " << child2.GetParent()->object << std::endl;
-				std::cout << "\t\tChild3 Parent: " << child3.GetParent()->object << std::endl;
-				std::cout << "\t\tChild4 Parent: " << child4.GetParent()->object << std::endl;
-
-				std::cout << "\t\tParent1 Num Children: " << parent1.numChildren << std::endl;
-				std::cout << "\t\tParent1 First Child: " << parent1.firstChild->object << std::endl;
-				std::cout << "\t\tParent1 Last Child: " << parent1.lastChild->object << std::endl;
-
-				std::cout << "\t\tParent2 Num Children: " << parent2.numChildren << std::endl;
-				std::cout << "\t\tParent2 First Child: " << parent2.firstChild->object << std::endl;
-				std::cout << "\t\tParent2 Last Child: " << parent2.lastChild->object << std::endl;
-
-				std::cout << "\t\tParentOfParents NumChildren: " << parentOfParents.numChildren << std::endl;
-
-				BalancedTreeNode<int, const char>::MergeNodes(&parent1, &parent2);
-
-				std::cout << "\n\t\tChild1 Parent: " << child1.GetParent()->object << std::endl;
-				std::cout << "\t\tChild2 Parent: " << child2.GetParent()->object << std::endl;
-				std::cout << "\t\tChild3 Parent: " << child3.GetParent()->object << std::endl;
-				std::cout << "\t\tChild4 Parent: " << child4.GetParent()->object << std::endl;
-
-				std::cout << "\t\tParent1 Num Children: " << parent1.numChildren << std::endl;
-				std::cout << "\t\tParent1 First Child: " << parent1.firstChild->object << std::endl;
-				std::cout << "\t\tParent1 Last Child: " << parent1.lastChild->object << std::endl;
-
-				std::cout << "\t\tParent2 Num Children: " << parent2.numChildren << std::endl;
-				std::cout << "\t\tParent2 First Child: " << parent2.firstChild->object << std::endl;
-				std::cout << "\t\tParent2 Last Child: " << parent2.lastChild->object << std::endl;
-
-				std::cout << "\t\tParentOfParents NumChildren: " << parentOfParents.numChildren << std::endl;
-
-			}
-			{
-				fibers::utilities::Allocator<cweeStr, 128> str_alloc;
-				fibers::utilities::Allocator<BalancedTreeNode<int, const char>, 128> alloc1;
-				fibers::utilities::Allocator<BalancedTreeNodeParentReference<int, const char>, 128> alloc2;
-
-				fibers::synchronization::shared_mutex<fibers::synchronization::mutex> rootLock;
-				fibers::synchronization::atomic_ptr< BalancedTreeNode<int, const char> > root = alloc1.Alloc();
-				root->Reset();
-				root->key = 0;
-				root->object = "Root!";
-
-				for (int i = 1; i < 50; i++) {
-					auto str_ptr = str_alloc.Alloc();
-					str_ptr->operator=(cweeStr::printf("Object%i", i));
-					BalancedTreeNode<int, const char>::AddChild(rootLock, 10, root, str_ptr->c_str(), i, [&alloc1]() { return alloc1.Alloc(); }, [&alloc2](BalancedTreeNode<int, const char>* p) { auto x = alloc2.Alloc(); x->parent = p; return x; });
-				}
-
-				auto GetNameFrom = [](BalancedTreeNode<int, const char>* p) -> const char* { if (!p || !p->object) { return ""; } else { return p->object; }};
-				BalancedTreeNode<int, const char>* child = root;
-				while (child) {
-					std::cout << std::endl;
-
-					std::cout << "\t" << GetNameFrom(child) << std::endl;
-					std::cout << "\t\t Key: " << child->key << std::endl;
-					std::cout << "\t\t Parent: " << GetNameFrom(child->GetParent()) << std::endl;
-					std::cout << "\t\t Prev <-: " << GetNameFrom(child->GetPrev()) << std::endl;
-					std::cout << "\t\t Next ->: " << GetNameFrom(child->GetNext()) << std::endl;
-					std::cout << "\t\t First Child /: " << GetNameFrom(child->GetFirstChild()) << std::endl;
-					std::cout << "\t\t Last Child \\: " << GetNameFrom(child->GetLastChild()) << std::endl;
-					std::cout << "\t\t Num Children #: " << child->GetNumChildren() << std::endl;
-
-					child = BalancedTreeNode<int, const char>::GetNextLeaf(child);
-				}
-
-
-
-
-
-
-
-			}
-
-			{
-				fibers::utilities::Allocator<cweeStr, 128> str_alloc;
-				fibers::utilities::Allocator<BalancedTreeNode<int, const char>, 128> alloc1;
-				fibers::utilities::Allocator<BalancedTreeNodeParentReference<int, const char>, 128> alloc2;
-
-				fibers::synchronization::shared_mutex<fibers::synchronization::mutex> rootLock;
-				fibers::synchronization::atomic_ptr< BalancedTreeNode<int, const char> >  root = alloc1.Alloc();
-				root->Reset();
-				root->key = 0;
-				root->object = "Root!";
-
-				fibers::parallel::For(0, 50, [&str_alloc, &root, &alloc1, &alloc2, &rootLock](int i) {
-					auto str_ptr = str_alloc.Alloc();
-					str_ptr->operator=(cweeStr::printf("Object%i", i));
-					BalancedTreeNode<int, const char>::AddChild(rootLock, 10, root, str_ptr->c_str(), i, [&alloc1]() { return alloc1.Alloc(); }, [&alloc2](BalancedTreeNode<int, const char>* p) { auto x = alloc2.Alloc(); x->parent = p; return x; });
-				});
-
-				auto GetNameFrom = [](BalancedTreeNode<int, const char>* p) -> const char* { if (!p || !p->object) { return ""; } else { return p->object; }};
-				BalancedTreeNode<int, const char>* child = root;
-				while (child) {
-					std::cout << std::endl;
-
-					std::cout << "\t" << GetNameFrom(child) << std::endl;
-					std::cout << "\t\t Key: " << child->key << std::endl;
-					std::cout << "\t\t Parent: " << GetNameFrom(child->GetParent()) << std::endl;
-					std::cout << "\t\t Prev <-: " << GetNameFrom(child->GetPrev()) << std::endl;
-					std::cout << "\t\t Next ->: " << GetNameFrom(child->GetNext()) << std::endl;
-					std::cout << "\t\t First Child /: " << GetNameFrom(child->GetFirstChild()) << std::endl;
-					std::cout << "\t\t Last Child \\: " << GetNameFrom(child->GetLastChild()) << std::endl;
-					std::cout << "\t\t Num Children #: " << child->GetNumChildren() << std::endl;
-
-					child = BalancedTreeNode<int, const char>::GetNextLeaf(child);
-				}
-			}
-		}
-#endif
-
-
 	}
 #endif
 
@@ -962,7 +671,7 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 			fibers::containers::Stack<double> concurrent_set;
 
 			concurrent_set.push(0);
-			concurrent_set.push(1);
+ 			concurrent_set.push(1);
 			concurrent_set.push(2);
 			concurrent_set.push(3);
 			concurrent_set.push(4);
@@ -1058,7 +767,7 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 		}
 	}
 
-	if (0) {
+	if (1) {
 		for (int j = 1; j < 10; j += 2) {
 			int numLoops = 400 * j * j;
 
@@ -1125,8 +834,6 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 
 			printf("\n");
 		}
-		
-
 		for (int j = 1; j < 10; j += 2) {
 			int numLoops = 400 * j * j;
 

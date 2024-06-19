@@ -3,10 +3,10 @@
 #include "Fibers.h"
 
 #define DefineCategoryType(type, a, b, c, d, e) class type : public value { public: \
-	type() noexcept : value(0.0, Unit_ID(a, b, c, d, e, false, "", 1.0)) {}; \
-	type(double V) noexcept : value(V, Unit_ID(a, b, c, d, e, false, "", 1.0)) {}; \
-	type(double V, const char* abbreviation) noexcept : value(V, Unit_ID(a, b, c, d, e, false, abbreviation, 1.0)) {}; \
-	type(double V, const char* abbreviation, double ratio) noexcept : value(V, Unit_ID(a, b, c, d, e, false, abbreviation, ratio)) {}; \
+	type() noexcept : value(AtomicUnitStruct(a, b, c, d, e, false, "", 1.0, 0.0)) {}; \
+	type(double V) noexcept : value(AtomicUnitStruct(a, b, c, d, e, false, "", 1.0, V)) {}; \
+	type(double V, const char* abbreviation) noexcept : value(AtomicUnitStruct(a, b, c, d, e, false, abbreviation, 1.0, V)) {}; \
+	type(double V, const char* abbreviation, double ratio) noexcept : value(AtomicUnitStruct(a, b, c, d, e, false, abbreviation, ratio, V)) {}; \
     type(value const& V) noexcept = delete; \
     virtual ~type() {}; \
 	friend inline std::ostream& operator<<(std::ostream& os, type const& obj) { os << obj.ToString(); return os; }; \
@@ -31,10 +31,13 @@
 	type() noexcept : category(0.0, specialized_abbreviation(), ratio) {}; \
 	type(double V) noexcept : category(V, specialized_abbreviation(), ratio) {}; \
 	type(value const& V) : category(0.0, specialized_abbreviation(), ratio) { \
-		if (this->unit_m.IsSameCategory(V.unit_m)) { this->value_m = V.value_m; } \
-		else if (value::is_scalar(V)) { this->value_m = V() * ratio; } \
-		else if (value::is_scalar(*this)) { this->unit_m = V.unit_m; this->value_m = V.value_m; } \
-		else { throw(std::runtime_error(Units::Unit_ID::printf("Assignment(const&) failed due to incompatible non-scalar units: '%s' and '%s'.", specialized_abbreviation(), V.Abbreviation().c_str()))); } \
+        this->unit_m.Update([other = V.unit_m.load()](Units::AtomicUnitStruct Data)->Units::AtomicUnitStruct{ \
+             if (Data.IsSameCategory(other)) { Data.value_m = other.value_m; } \
+		     else if (other.isScalar_m) { Data.value_m = (other.value_m / other.ratio_m) * ratio; } \
+		     else if (Data.isScalar_m) { Data = other; } \
+		     else { throw(std::runtime_error(Units::printf("Assignment(const&) failed due to incompatible non-scalar units: '%s' and '%s'.", specialized_abbreviation(), AbbreviationFast(other).c_str()))); } \
+             return Data; \
+        });  \
     }; \
     virtual bool IsStaticType() const { return true; }; \
     virtual ~type() {}; \
@@ -95,6 +98,7 @@
 namespace unitTypes {
 	BETTER_ENUM(units_type, uint8_t, METERS, KILOGRAMS, SECONDS, AMPERES, DOLLAR);
 };
+
 class Units {
 public:
 	template <typename Derived> static constexpr __forceinline double Conversion(double X) { return Derived::conversion() * X; };
@@ -154,115 +158,128 @@ public:
 
 		return 0;		// strings are equal
 	};
+	static void AddToDelimiter(std::string& obj, std::string const& toAdd, std::string const& delim) {
+		if (obj.length() == 0) {
+			obj += toAdd;
+		}
+		else {
+			obj += delim;
+			obj += toAdd;
+		}
+	};
+	static size_t		vsnPrintf(char* dest, size_t size, const char* fmt, va_list argptr) {
+		size_t ret;
+#undef _vsnprintf
+		ret = ::_vsnprintf(dest, size - 1, fmt, argptr);
+		dest[size - 1] = '\0';
+		if (ret < 0 || ret >= size)  ret = -1;
+		return ret;
+	};
+	static std::string	printf(const char* fmt, ...) {
+		va_list argptr;
 
-	class Unit_ID {
+		decltype(auto) buffer = new char[128000];
+		buffer[128000 - 1] = '\0';
+
+		va_start(argptr, fmt);
+		vsnPrintf(buffer, 128000 - 1 /*sizeof(buffer) - 1*/, fmt, argptr);
+		va_end(argptr);
+		buffer[128000 /*sizeof(buffer)*/ - 1] = '\0';
+
+		std::string out(buffer);
+
+		delete[] buffer;
+		return out;
+	};
+	static bool IsInteger(double value) {
+		double intpart;
+		return modf(value, &intpart) == 0.0;
+	};
+	static void removeTrailingCharacters(std::string& str, const char charToRemove) {
+		str.erase(str.find_last_not_of(charToRemove) + 1, std::string::npos);
+	};
+	
+	struct AtomicUnitStruct {
+	public:
 		static constexpr size_t NumUnits = unitTypes::units_type::_size_constant;
-	private:
 		constexpr double abs(double x) { return x > 0 ? x : -x; };
-	public:
-		constexpr Unit_ID() noexcept :
-			unitType_m{ 0.0, 0.0, 0.0, 0.0, 0.0 }, isScalar_m(true), isSI_m(false), abbreviation_m(const_cast<char*>("")), ratio_m(1.)
-		{};
-		constexpr Unit_ID(double a, double b, double c, double d, double e, double isScalar_p, const char* abbreviation_p, double ratio_p) noexcept :
-			unitType_m{ a, b, c, d, e }, isScalar_m(isScalar_p), isSI_m((abs(a) + abs(b) + abs(c) + abs(d) + abs(e)) == 1.0 && abs(ratio_p) == 1.0), abbreviation_m(const_cast<char*>(abbreviation_p)), ratio_m(ratio_p)
-		{};
-		Unit_ID(Unit_ID const& other) noexcept :
-			unitType_m{ other.unitType_m }, isScalar_m{ other.isScalar_m }, isSI_m{ other.isSI_m }, abbreviation_m{ other.abbreviation_m }, ratio_m{ other.ratio_m }
-		{};
-		Unit_ID(Unit_ID&& other) noexcept :
-			unitType_m{ std::move(other.unitType_m) }, isScalar_m{ std::move(other.isScalar_m) }, isSI_m{ std::move(other.isSI_m) }, abbreviation_m{ std::move(other.abbreviation_m) }, ratio_m{ std::move(other.ratio_m) }
-		{};
-		Unit_ID& operator=(Unit_ID const& other) noexcept {
-			unitType_m = other.unitType_m;
-			isScalar_m = other.isScalar_m;
-			isSI_m = other.isSI_m;
-			abbreviation_m = other.abbreviation_m;
-			ratio_m = other.ratio_m;
-
-			return *this;
-		};
-		~Unit_ID() {};
 
 	public:
+		// unit data
+		char* abbreviation_m;
+		bool isScalar_m;
+		bool isSI_m;
+		std::array< fibers::utilities::UnsignedWrapper<double>, NumUnits> unitType_m;
+		fibers::utilities::UnsignedWrapper<double> ratio_m;
 
-		bool IsSameCategory(Unit_ID const& other) const noexcept {
+		// SI-unit's actual value
+		fibers::utilities::UnsignedWrapper<double> value_m;
+
+	public:
+		AtomicUnitStruct() = default; /*:
+			abbreviation_m{ const_cast<char*>("") },
+			isScalar_m{ true },
+			isSI_m{ false },
+			unitType_m{ 0., 0., 0., 0., 0. },
+			ratio_m{ 1. },
+			value_m{ 0. }
+		{};*/
+		constexpr AtomicUnitStruct(double a, double b, double c, double d, double e, bool isScalar_p, const char* abbreviation_p, double ratio_p, double value_p = 0.0) noexcept :
+			abbreviation_m{ const_cast<char*>(abbreviation_p) },
+			isScalar_m{ isScalar_p },
+			isSI_m{ (abs(a) + abs(b) + abs(c) + abs(d) + abs(e)) == 1.0 && abs(ratio_p) == 1.0 },
+			unitType_m{ a, b, c, d, e },
+			ratio_m{ ratio_p },
+			value_m{ value_p * ratio_p }
+		{};
+		constexpr AtomicUnitStruct(AtomicUnitStruct const&) = default;
+		constexpr AtomicUnitStruct(AtomicUnitStruct&&) = default;
+		constexpr AtomicUnitStruct& operator=(AtomicUnitStruct const&) = default;
+		constexpr AtomicUnitStruct& operator=(AtomicUnitStruct&&) = default;
+
+	public:
+		bool IsSameCategory(AtomicUnitStruct const& other) const noexcept {
 			if (isScalar_m && other.isScalar_m) return true;
 			return std::memcmp(&unitType_m, &other.unitType_m, sizeof(unitType_m)) == 0;
 		};
-		bool IsSameUnit(Unit_ID const& other) const noexcept {
+		bool IsSameUnit(AtomicUnitStruct const& other) const noexcept {
 			return IsSameCategory(other) && (ratio_m == other.ratio_m);
 		};
 		decltype(auto) HashCategory() const noexcept {
 			return Units::HashUnits(unitType_m[0], unitType_m[1], unitType_m[2], unitType_m[3], unitType_m[4]);
 		};
-		const char* LookupAbbreviation(bool isStatic) const noexcept {
+		/* To-Do, this no longer "corrects" the abbreviation! */
+		std::pair<const char*, double> LookupAbbreviation(bool isStatic) const noexcept {
 			if (StrCmp(abbreviation_m, "") != 0) {
-				return abbreviation_m;
+				return { abbreviation_m, ratio_m.load() };
 			}
 
 			if (!isStatic && !isScalar_m) {
-				abbreviation_m.Set(const_cast<char*>(Units::UnitsDetail::lookup_abbreviation(HashCategory(), ratio_m)));
-				if (StrCmp(abbreviation_m, "") == 0) {
-					ratio_m = 1;
-				}
+				/* To-Do, this no longer "corrects" the abbreviation or the ratio! */
+				double ratio_bestFit = ratio_m.load();
+				auto* abbrev_bestFit = Units::UnitsDetail::lookup_abbreviation(HashCategory(), ratio_bestFit);
+				/* ratio_bestFit and abbrev_bestFit are the best fit for the current, "custom" unit type */
+
+				/* To-Do, return both? Figure this out... */
+				return { abbrev_bestFit, ratio_bestFit };
 			}
-			return abbreviation_m;
+
+			return { abbreviation_m, ratio_m.load() };
 		};
 		const char* LookupTypeName() const noexcept {
-			return Units::UnitsDetail::lookup_typename(HashCategory(), ratio_m);
+			double ratio_bestFit = ratio_m.load();
+			auto* TypeName_bestFit = Units::UnitsDetail::lookup_typename(HashCategory(), ratio_bestFit);
+			/* ratio_bestFit and TypeName_bestFit are the best fit for the current, "custom" unit type */
+			return TypeName_bestFit;
 		};
-
-	private:
-		static void AddToDelimiter(std::string& obj, std::string const& toAdd, std::string const& delim) {
-			if (obj.length() == 0) {
-				obj += toAdd;
-			}
-			else {
-				obj += delim;
-				obj += toAdd;
-			}
-		};
-		static size_t		vsnPrintf(char* dest, size_t size, const char* fmt, va_list argptr) {
-			size_t ret;
-#undef _vsnprintf
-			ret = ::_vsnprintf(dest, size - 1, fmt, argptr);
-			dest[size - 1] = '\0';
-			if (ret < 0 || ret >= size)  ret = -1;
-			return ret;
-		};
-
-	public:
-		static std::string	printf(const char* fmt, ...) {
-			va_list argptr;
-
-			decltype(auto) buffer = new char[128000];
-			buffer[128000 - 1] = '\0';
-
-			va_start(argptr, fmt);
-			vsnPrintf(buffer, 128000 - 1 /*sizeof(buffer) - 1*/, fmt, argptr);
-			va_end(argptr);
-			buffer[128000 /*sizeof(buffer)*/ - 1] = '\0';
-
-			std::string out(buffer);
-
-			delete[] buffer;
-			return out;
-		};
-		static bool IsInteger(double value) {
-			double intpart;
-			return modf(value, &intpart) == 0.0;
-		};
-		static void removeTrailingCharacters(std::string& str, const char charToRemove) {
-			str.erase(str.find_last_not_of(charToRemove) + 1, std::string::npos);
-		};
-
-	public:
 		std::string CreateAbbreviation(bool isStatic) const noexcept {
-			if (isScalar_m) { 
-				return ""; 
+			if (isScalar_m) {
+				return "";
 			}
 			else {
-				std::string out = LookupAbbreviation(isStatic);
+				std::string out;
+				auto [abbreviation, ratio] = LookupAbbreviation(isStatic);
+				out = abbreviation;
 				if (!isScalar_m && out.empty()) {
 					std::array< const char*, NumUnits> unitBases{ "m", "kg", "s", "A", "$" };
 
@@ -316,43 +333,135 @@ public:
 			}
 		};
 
-	public:
-		std::array< fibers::synchronization::atomic_number<double>, NumUnits> unitType_m;
-		fibers::synchronization::atomic_number<bool> isScalar_m;
-		fibers::synchronization::atomic_number<bool> isSI_m;
-		mutable fibers::synchronization::atomic_ptr<char> abbreviation_m;
-		mutable fibers::synchronization::atomic_number<double> ratio_m;
 	};
+
+	static constexpr bool THINGY{ std::is_pod<AtomicUnitStruct>::value };
 
 	class value {
 	public:
-		Units::Unit_ID unit_m;
-		fibers::synchronization::atomic_number<double> value_m;
+		mutable fibers::utilities::CAS_Container<Units::AtomicUnitStruct> unit_m;
 
 	protected:
-		double conversion() const noexcept { return unit_m.ratio_m; };
+		// double conversion() const noexcept { return unit_m.ratio_m; };
 
 	public: // constructors
-		value() noexcept : unit_m(), value_m(0.0) {};
-		explicit value(Units::Unit_ID const& unit_p) noexcept : unit_m(unit_p), value_m(0.0) {};
-		explicit value(double V, Units::Unit_ID const& unit_p) noexcept : unit_m(unit_p), value_m(V* conversion()) {};
-		value(value&& V) noexcept : unit_m(std::move(V.unit_m)), value_m(std::move(V.value_m)) {};
-		value(value const& V) noexcept : unit_m(V.unit_m), value_m(V.value_m) {};
-		value(double V) noexcept : unit_m(), value_m(V* conversion()) {};
+		value() noexcept : unit_m{ Units::AtomicUnitStruct{} } {};
+		explicit value(Units::AtomicUnitStruct const& unit_p) noexcept : unit_m{ unit_p } {};
+		explicit value(double V, Units::AtomicUnitStruct const& unit_p) noexcept :
+			unit_m{ Units::AtomicUnitStruct(unit_p.unitType_m[0].load(), unit_p.unitType_m[1].load(), unit_p.unitType_m[2].load(), unit_p.unitType_m[3].load(), unit_p.unitType_m[4].load(), unit_p.isScalar_m, unit_p.abbreviation_m, unit_p.ratio_m.load(), V) }
+		{};
+		value(value&& V) noexcept : unit_m(std::move(V.unit_m)) {};
+		value(value const& V) noexcept : unit_m(V.unit_m) {};
+		value(double V) noexcept : unit_m{ Units::AtomicUnitStruct(0,0,0,0,0,true,"",1,V) } {};
 
 		virtual bool IsStaticType() const { return false; };
 		virtual ~value() = default;
 
 	private:
 		double GetVisibleValue() const noexcept {
-			if (unit_m.isSI_m && unit_m.ratio_m == 1.0) {
-				return value_m.GetValue();
+			double out;
+			Abbreviation(&out);
+			return out;
+		};
+
+		static std::string GetValueStr(value const& V) noexcept {
+			float v = V();
+			if (std::fmod(v, 1.0) == 0.0) { // integer?
+				return Units::printf("%i", (int)v);
 			}
-			else {
-				unit_m.LookupAbbreviation(IsStaticType());
-				return value_m.GetValue() / conversion();
+			else { // floating-point
+				std::string out{ Units::printf("%.4f", (float)v) };
+				Units::removeTrailingCharacters(out, '0'); // e.g. 25.5000 -> 25.5
+				Units::removeTrailingCharacters(out, '.'); // e.g. 25.0000 -> 25. -> 25
+				return out;
 			}
 		};
+
+		static bool IdenticalUnits(Units::AtomicUnitStruct const& LHS, Units::AtomicUnitStruct const& RHS) noexcept { return LHS.IsSameCategory(RHS); };
+		static bool is_scalar(Units::AtomicUnitStruct const& V) noexcept { return V.isScalar_m; };
+
+		static bool NormalArithmeticOkay(Units::AtomicUnitStruct const& LHS, Units::AtomicUnitStruct const& RHS) noexcept {
+			if (is_scalar(LHS) || is_scalar(RHS)) return true;
+			if (IdenticalUnits(LHS, RHS)) return true;
+			return false;
+		};
+		static bool UnaryArithmeticOkay(Units::AtomicUnitStruct const& LHS, Units::AtomicUnitStruct const& RHS) noexcept {
+			if (is_scalar(RHS)) return true;
+			if (IdenticalUnits(LHS, RHS)) return true;
+			return false;
+		};
+		static void HandleNormalArithmetic(Units::AtomicUnitStruct const& LHS, Units::AtomicUnitStruct const& RHS) {
+			if (NormalArithmeticOkay(LHS, RHS)) return;
+			throw(std::runtime_error(Units::printf("Normal, dynamic arithmetic failed due to incompatible non-scalar value: '%s' and '%s'", AbbreviationFast(LHS).c_str(), AbbreviationFast(RHS).c_str())));
+		};
+		static void HandleUnaryArithmetic(Units::AtomicUnitStruct const& LHS, Units::AtomicUnitStruct const& RHS) {
+			if (UnaryArithmeticOkay(LHS, RHS)) return;
+			throw(std::runtime_error(Units::printf("Unary (in-place or self-modifying) arithmetic failed due to incompatible value: '%s' and '%s'", AbbreviationFast(LHS).c_str(), AbbreviationFast(RHS).c_str())));
+		};
+		static void HandleNotScalar(Units::AtomicUnitStruct const& V) {
+			if (is_scalar(V)) return;
+			throw(std::runtime_error(Units::printf("Type must be scalar (was '%s').", AbbreviationFast(V).c_str())));
+		};
+	public:
+		static std::string AbbreviationFast(Units::AtomicUnitStruct const& V) noexcept {
+			std::string toReturn{ V.abbreviation_m };
+			
+			if (V.isScalar_m && toReturn.empty()) {
+				auto [abbreviation, ratio] = V.LookupAbbreviation(false);
+				toReturn = abbreviation;
+				if (!V.isScalar_m && toReturn.empty()) {
+					constexpr static std::array< const char*, AtomicUnitStruct::NumUnits> unitBases{ "m", "kg", "s", "A", "$" };
+
+					bool anyNegatives = false;
+					std::string Num;
+					for (int i = AtomicUnitStruct::NumUnits - 1; i >= 0; i--) {
+						decltype(auto) unitBase = unitBases[i];
+						decltype(auto) v = V.unitType_m[i];
+
+						if (v > 0) {
+							if (v == 1)
+								AddToDelimiter(toReturn, unitBase, " ");
+							else {
+								if (IsInteger(v)) {
+									Num = std::to_string((int)v);
+								}
+								else {
+									Num = std::to_string((float)v);
+								}
+								AddToDelimiter(toReturn, printf("%s^%s", unitBase, Num.c_str()), " ");
+							}
+						}
+						else if (v < 0) {
+							anyNegatives = true;
+						}
+					}
+					if (anyNegatives) {
+						toReturn += " /";
+						for (int i = AtomicUnitStruct::NumUnits - 1; i >= 0; i--) {
+							decltype(auto) unitBase = unitBases[i];
+							decltype(auto) v = V.unitType_m[i];
+
+							if (v < 0) {
+								if (v == -1)
+									AddToDelimiter(toReturn, unitBase, " ");
+								else {
+									if (IsInteger(v)) {
+										Num = std::to_string((int)(-1.0 * v));
+									}
+									else {
+										Num = std::to_string((float)(-1.0 * v));
+									}
+									AddToDelimiter(toReturn, printf("%s^%s", unitBase, Num.c_str()), " ");
+								}
+							}
+						}
+					}
+				}
+			}
+
+			return toReturn;
+		};
+
 
 	public: // value operator
 		explicit operator double() const noexcept { return GetVisibleValue(); };
@@ -360,176 +469,350 @@ public:
 
 	public: // Functions
 		const char* UnitName() const noexcept {
-			unit_m.LookupAbbreviation(IsStaticType());
-			return unit_m.LookupTypeName();
+			const char* toReturn{ "" };
+			unit_m.Update([&toReturn, this](Units::AtomicUnitStruct Data)->Units::AtomicUnitStruct {
+				auto [abbreviation, ratio] = Data.LookupAbbreviation(this->IsStaticType());
+				Data.abbreviation_m = const_cast<char*>(abbreviation);
+				Data.ratio_m = ratio;
+
+				toReturn = Data.LookupTypeName();
+
+				return Data;
+			});
+			return toReturn;
 		};
 		bool AreConvertableTypes(value const& V) const {
-			return value::NormalArithmeticOkay(*this, V);
+			return value::NormalArithmeticOkay(this->unit_m.load(), V.unit_m.load());
 		};
-		void Clear() { unit_m = Units::Unit_ID(); value_m = 0.0; };
-
+		void Clear() { 
+			unit_m.store(Units::AtomicUnitStruct{}); 
+		};
+		void Swap(value const& other) const {
+			unit_m.Swap(other.unit_m.load(), false); 
+		};
 	public:
-		std::string Abbreviation() const noexcept {
-			return unit_m.CreateAbbreviation(IsStaticType());
+		std::string Abbreviation(double* visibleValue = nullptr) const noexcept {
+			bool isStatic{ IsStaticType() };
+			std::string toReturn{ "" };
+			unit_m.Update([isStatic, &toReturn, this, &visibleValue](Units::AtomicUnitStruct Data)->Units::AtomicUnitStruct {
+				if (Data.isScalar_m) {
+					toReturn = "";
+					if (visibleValue) {
+						*visibleValue = Data.value_m.load();
+					}
+				}
+				else {
+					auto [abbreviation, ratio] = Data.LookupAbbreviation(isStatic);
+					Data.abbreviation_m = const_cast<char*>(abbreviation);
+					Data.ratio_m = ratio;
+					toReturn = abbreviation;
+
+					if (!Data.isScalar_m && toReturn.empty()) {
+						// we failed to find this unit in the system -- it must be set to SI unit now. 
+						Data.ratio_m = 1.0;
+						Data.isSI_m = true;
+
+						constexpr static std::array< const char*, AtomicUnitStruct::NumUnits> unitBases{ "m", "kg", "s", "A", "$" };
+
+						bool anyNegatives = false;
+						std::string Num;
+						for (int i = AtomicUnitStruct::NumUnits - 1; i >= 0; i--) {
+							const char* unitBase = unitBases[i];
+							double v = Data.unitType_m[i].load();
+
+							if (v > 0) {
+								if (v == 1)
+									AddToDelimiter(toReturn, unitBase, " ");
+								else {
+									if (IsInteger(v)) {
+										Num = std::to_string(static_cast<int>(v));
+									}
+									else {
+										Num = std::to_string((float)v);
+									}
+									AddToDelimiter(toReturn, printf("%s^%s", unitBase, Num.c_str()), " ");
+								}
+							}
+							else if (v < 0) {
+								anyNegatives = true;
+							}
+						}
+						if (anyNegatives) {
+							toReturn += " /";
+							for (int i = AtomicUnitStruct::NumUnits - 1; i >= 0; i--) {
+								const char* unitBase = unitBases[i];
+								double v = Data.unitType_m[i].load();
+
+								if (v < 0) {
+									if (v == -1)
+										AddToDelimiter(toReturn, unitBase, " ");
+									else {
+										if (IsInteger(v)) {
+											Num = std::to_string(static_cast<int>(-1.0 * v));
+										}
+										else {
+											Num = std::to_string((float)(-1.0 * v));
+										}
+										AddToDelimiter(toReturn, printf("%s^%s", unitBase, Num.c_str()), " ");
+									}
+								}
+							}
+						}
+					}
+
+					if (visibleValue) {
+						*visibleValue = Data.value_m.load() / Data.ratio_m.load();
+					}
+				}
+
+				return Data;
+			});
+			return toReturn;
 		};
 		std::string ToString() const {
-			std::string abbreviation{ Abbreviation() };
-			if (abbreviation.length() > 0) return GetValueStr(*this) + " " + abbreviation;
-			else return GetValueStr(*this);
+			double out{0.0};
+			std::string abbreviation{ Abbreviation(&out) };
+			if (abbreviation.length() > 0) return GetValueStr(out) + " " + abbreviation;
+			else return GetValueStr(out);
 		};
 
 	public: // Streaming functions (should be specialized per type)
 		friend inline std::ostream& operator<<(std::ostream& os, value const& obj) { os << obj.ToString(); return os; };
 		friend inline std::stringstream& operator>>(std::stringstream& os, value& obj) { double v = 0; os >> v; obj = v; return os; };
-		static bool IdenticalUnits(value const& LHS, value const& RHS) noexcept { return LHS.unit_m.IsSameCategory(RHS.unit_m); };
-		static bool is_scalar(value const& V) noexcept { return V.unit_m.isScalar_m; };
 
 	private:
-		static std::string GetValueStr(value const& V) noexcept {
-			float v = V();
-			if (std::fmod(v, 1.0) == 0.0) { // integer?
-				return Units::Unit_ID::printf("%i", (int)v);
-			}
-			else { // floating-point
-				std::string out{ Units::Unit_ID::printf("%.4f", (float)v) };
-				Units::Unit_ID::removeTrailingCharacters(out, '0'); // e.g. 25.5000 -> 25.5
-				Units::Unit_ID::removeTrailingCharacters(out, '.'); // e.g. 25.0000 -> 25. -> 25
-				return out;
-			}
-		};
-		static bool NormalArithmeticOkay(value const& LHS, value const& RHS) noexcept {
-			if (is_scalar(LHS) || is_scalar(RHS)) return true;
-			if (IdenticalUnits(LHS, RHS)) return true;
-			return false;
-		};
-		static bool UnaryArithmeticOkay(value const& LHS, value const& RHS) noexcept {
-			if (is_scalar(RHS)) return true;
-			if (IdenticalUnits(LHS, RHS)) return true;
-			return false;
-		};
-		static void HandleNormalArithmetic(value const& LHS, value const& RHS) {
-			if (NormalArithmeticOkay(LHS, RHS)) return;
-			throw(std::runtime_error(Units::Unit_ID::printf("Normal, dynamic arithmetic failed due to incompatible non-scalar value: '%s' and '%s'", LHS.Abbreviation().c_str(), RHS.Abbreviation().c_str())));
-		};
-		static void HandleUnaryArithmetic(value const& LHS, value const& RHS) {
-			if (UnaryArithmeticOkay(LHS, RHS)) return;
-			throw(std::runtime_error(Units::Unit_ID::printf("Unary (in-place or self-modifying) arithmetic failed due to incompatible value: '%s' and '%s'", LHS.Abbreviation().c_str(), RHS.Abbreviation().c_str())));
-		};
-		static void HandleNotScalar(value const& V) {
-			if (is_scalar(V)) return;
-			throw(std::runtime_error(Units::Unit_ID::printf("Type must be scalar (was '%s').", V.Abbreviation().c_str())));
-		};
 		/* Used for multiplication or division operations */
-		template <bool multiplication = true> value& CompoundUnits(value const& V) noexcept {
-			bool V_Is_Scalar{ is_scalar(V) }, I_am_Scalar{ is_scalar(*this) };
-			if (I_am_Scalar && V_Is_Scalar) return *this;
-			
-			// if V is a scaler, then our unit type will not change whatsoever.
-			if (V_Is_Scalar) return *this;
+		template <bool multiplication = true> value& CompoundUnits(value const& other) noexcept {
+			Units::AtomicUnitStruct V { other.unit_m.load() };
 
-			// V is not a scalar...
+			unit_m.Update([V](Units::AtomicUnitStruct Data)->Units::AtomicUnitStruct {
+				bool V_Is_Scalar{ is_scalar(V) }, I_am_Scalar{ is_scalar(Data) };
 
-			// If V is an SI unit and we are unitless, then we are about to become an SI unit too.
-			if (I_am_Scalar && V.unit_m.isSI_m) {
-				unit_m.isSI_m = V.unit_m.isSI_m;
-			}
-			// else we will become an SI unit only if we are already one and V is too. 
-			else {
-				unit_m.isSI_m = unit_m.isSI_m && V.unit_m.isSI_m;
-			}
+				if (V_Is_Scalar) {
+					if constexpr (multiplication) {
+						Data.value_m *= V.value_m;
+					}
+					else {
+						Data.value_m /= V.value_m;
+					}
+					return Data; // do nothing
+				}
 
-			// remove the abbreviation since we either don't know what we are or we will become empty anyhow.
-			unit_m.abbreviation_m = const_cast<char*>(""); 
+				// If V is an SI unit and we are unitless, then we are about to become an SI unit too.
+				if (I_am_Scalar && V.isSI_m) {
+					Data.isSI_m = V.isSI_m;
+				}
+				// else we will become an SI unit only if we are already one and V is too. 
+				else {
+					Data.isSI_m = Data.isSI_m && V.isSI_m;
+				}
 
-			// V is not a scaler, but I could become one.
-			bool allZero = true;
-			for (int i = unit_m.unitType_m.size() - 1; i >= 0; i--) {
+				// remove the abbreviation since we either don't know what we are or we will become empty anyhow.
+				Data.abbreviation_m = const_cast<char*>("");
+
+				// V is not a scaler, but I could become one.
+				bool allZero = true;
+				for (int i = Data.unitType_m.size() - 1; i >= 0; i--) {
+					if constexpr (multiplication) {
+						Data.unitType_m[i] += V.unitType_m[i];
+					}
+					else {
+						Data.unitType_m[i] -= V.unitType_m[i];
+					}
+					allZero = allZero && Data.unitType_m[i] == 0;
+				}
+				if (allZero) { Data.isScalar_m = true; }
+				else { Data.isScalar_m = false; }
+
+				// now that we have modified the unit type (length, time, etc.), the conversion ratio makes no sense anymore (e.g. within length, is it a foot, meter, yard, etc.)
 				if constexpr (multiplication) {
-					unit_m.unitType_m[i] += V.unit_m.unitType_m[i];
+					Data.ratio_m *= V.ratio_m;
 				}
 				else {
-					unit_m.unitType_m[i] -= V.unit_m.unitType_m[i];
+					Data.ratio_m /= V.ratio_m;
 				}
-				allZero = allZero && unit_m.unitType_m[i] == 0;
-			}
-			if (allZero) { unit_m.isScalar_m = true; }
-			else { unit_m.isScalar_m = false; }
 
-			// now that we have modified the unit type (length, time, etc.), the conversion ratio makes no sense anymore (e.g. within length, is it a foot, meter, yard, etc.)
-			if constexpr (multiplication) {
-				unit_m.ratio_m *= V.unit_m.ratio_m;
-			}
-			else {
-				unit_m.ratio_m /= V.unit_m.ratio_m;
-			}
+				// unitless values cannot have "ratios" -- there are not alternatives of "unitless". 
+				if (Data.isScalar_m) {
+					Data.ratio_m = 1;
+				}
 
-			// unitless values cannot have "ratios" -- there are not alternatives of "unitless". 
-			if (unit_m.isScalar_m) {
-				unit_m.ratio_m = 1;
-			}
+				{
+					if constexpr (multiplication) {
+						Data.value_m *= V.value_m;
+					}
+					else {
+						Data.value_m /= V.value_m;
+					}
+					return Data;
+				}
+			});
 
 			return *this;
 		};
+		
 		/* Used for exponential operations */
 		value& MultiplyUnits(double const& V) noexcept {
-			if (is_scalar(*this) || V == 1.0) return *this;
-			for (int i = unit_m.unitType_m.size() - 1; i >= 0; i--) unit_m.unitType_m[i] *= V;
-			if (V == 0) unit_m.isScalar_m = true;
+			unit_m.Update([V](Units::AtomicUnitStruct Data)->Units::AtomicUnitStruct {
+				if (V == 1.0 || is_scalar(Data)) {
 
-			// remove the abbreviation since we either don't know what we are or we will become empty anyhow.
-			unit_m.abbreviation_m = const_cast<char*>("");
+					Data.value_m = std::pow(Data.value_m / Data.ratio_m, V) * Data.ratio_m; // save in SI value
 
-			// now that we have modified the value, the conversion ratio makes no sense anymore and must be reset. 
-			unit_m.ratio_m = std::pow(unit_m.ratio_m, V);
+					return Data;
+				}
+				for (int i = Data.unitType_m.size() - 1; i >= 0; i--) Data.unitType_m[i] *= V;
+				if (V == 0) Data.isScalar_m = true;
 
+				// remove the abbreviation since we either don't know what we are or we will become empty anyhow.
+				Data.abbreviation_m = const_cast<char*>("");
+
+				// now that we have modified the value, the conversion ratio makes no sense anymore and must be reset. 
+				Data.ratio_m = std::pow(Data.ratio_m, V);
+
+				// do the exonentiation of the value
+				// i.e. (10 (ft)) ^ (3) -> (1000 (cu_ft)) * (1 / 35.3147 (cu_m/cu_ft)) -> 28.3168 cu_m in SI value
+				Data.value_m = std::pow(Data.value_m / Data.ratio_m, V) * Data.ratio_m; // save in SI value
+
+				return Data;
+			});
 			return *this;
 		};
 
 	public: // = Operators
-		value& operator=(value const& V) {
-			if (this->unit_m.IsSameCategory(V.unit_m)) { // same category, but perhaps different conversion factor. That's OK. 
-				value_m = V.value_m;
-			}
-			else if (is_scalar(V)) { // incoming is a scaler and this unit is not. Use this unit's conversion factor.
-				value_m = V.GetVisibleValue() * conversion();
-			}
-			else if (is_scalar(*this)) { // I am a scaler but the incoming unit is not. Simply copy the incoming unit entirely.
-				unit_m = V.unit_m;
-				value_m = V.value_m;
-			}
-			else { // incoming unit AND this unit are different non-scalers of different categories. No exchange is reasonable. 
-				throw(std::runtime_error(Units::Unit_ID::printf("Assignment(const&) failed due to incompatible non-scalar value: '%s' and '%s'.", this->Abbreviation().c_str(), V.Abbreviation().c_str())));
-			}
+		value& operator=(value const& other) {
+			Units::AtomicUnitStruct V{ other.unit_m.load() };
+
+			unit_m.Update([V, this, &other](Units::AtomicUnitStruct Data)->Units::AtomicUnitStruct {
+				if (Data.IsSameCategory(V)) { // same category, but perhaps different conversion factor. That's OK. 
+					Data.value_m = V.value_m;
+				}
+				else if (is_scalar(V)) { // incoming is a scaler and this unit is not. Use this unit's conversion factor.
+					Data.value_m = (V.value_m / V.ratio_m) * Data.ratio_m;
+				}
+				else if (is_scalar(Data)) { // I am a scaler but the incoming unit is not. Simply copy the incoming unit entirely.
+					Data = V;
+				}
+				else { // incoming unit AND this unit are different non-scalers of different categories. No exchange is reasonable. 
+					throw(std::runtime_error(Units::printf("Assignment(const&) failed due to incompatible non-scalar value: '%s' and '%s'.", this->Abbreviation().c_str(), other.Abbreviation().c_str())));
+				}
+				return Data;
+			});
+
 			return *this;
 		};
 
 	public: // Comparison operators
-		friend bool operator==(value const& A, value const& V) noexcept { if (!NormalArithmeticOkay(A, V)) return false; if (is_scalar(V) == is_scalar(A)) { return A.value_m == V.value_m; } else if (is_scalar(V)) { value W = A; W = V; return A.value_m == W.value_m; } else { value W = V; W = A; return W.value_m == V.value_m; } };
+		friend bool operator==(value const& A, value const& V) noexcept { 
+			auto Data1{ A.unit_m.load() };
+			auto Data2{ V.unit_m.load() };
+
+			if (!NormalArithmeticOkay(Data1, Data2)) return false;
+
+			if (is_scalar(Data1) == is_scalar(Data2)) {
+				return Data1.value_m == Data2.value_m;
+			} 
+			else if (is_scalar(Data2)) {
+				value W = A; W = V; return Data1.value_m == W.unit_m.load().value_m;
+			} 
+			else { 
+				value W = V; W = A; return W.unit_m.load().value_m == Data2.value_m;
+			} 
+		};
+		friend bool operator<(value const& A, value const& V) { 
+			auto Data1{ A.unit_m.load() };
+			auto Data2{ V.unit_m.load() };
+
+			HandleNormalArithmetic(Data1, Data2);
+			if (is_scalar(Data2) == is_scalar(Data1)) {
+				return Data1.value_m < Data2.value_m;
+			} 
+			else if (is_scalar(Data2)) {
+				value W = A; W = V; 
+				return Data1.value_m < W.unit_m.load().value_m;
+			} 
+			else { 
+				value W = V; W = A; 
+				return W.unit_m.load().value_m < Data2.value_m;
+			} 
+		};
+		friend bool operator<=(value const& A, value const& V) { 
+			auto Data1{ A.unit_m.load() };
+			auto Data2{ V.unit_m.load() };
+
+			HandleNormalArithmetic(Data1, Data2);
+			if (is_scalar(Data2) == is_scalar(Data1)) {
+				return Data1.value_m <= Data2.value_m;
+			} 
+			else if (is_scalar(Data2)) {
+				value W = A; W = V; 
+				return Data1.value_m <= W.unit_m.load().value_m;
+			} 
+			else { 
+				value W = V; W = A; 
+				return W.unit_m.load().value_m <= Data2.value_m;
+			} 
+		};
+		friend bool operator>(value const& A, value const& V) { return !(A <= V); };
+		friend bool operator>=(value const& A, value const& V) { return !(A < V); };
 		friend bool operator!=(value const& A, value const& V) noexcept { return !(operator==(A, V)); };
-		friend bool operator<(value const& A, value const& V) { HandleNormalArithmetic(A, V); if (is_scalar(V) == is_scalar(A)) { return A.value_m < V.value_m; } else if (is_scalar(V)) { value W = A; W = V; return A.value_m < W.value_m; } else { value W = V; W = A; return W.value_m < V.value_m; } };
-		friend bool operator<=(value const& A, value const& V) { HandleNormalArithmetic(A, V); if (is_scalar(V) == is_scalar(A)) { return A.value_m <= V.value_m; } else if (is_scalar(V)) { value W = A; W = V; return A.value_m <= W.value_m; } else { value W = V; W = A; return W.value_m <= V.value_m; } };
-		friend bool operator>(value const& A, value const& V) { HandleNormalArithmetic(A, V); if (is_scalar(V) == is_scalar(A)) { return A.value_m > V.value_m; } else if (is_scalar(V)) { value W = A; W = V; return A.value_m > W.value_m; } else { value W = V; W = A; return W.value_m > V.value_m; } };
-		friend bool operator>=(value const& A, value const& V) { HandleNormalArithmetic(A, V); if (is_scalar(V) == is_scalar(A)) { return A.value_m >= V.value_m; } else if (is_scalar(V)) { value W = A; W = V; return A.value_m >= W.value_m; } else { value W = V; W = A; return W.value_m >= V.value_m; } };
 
 	public: // Unary operators
-		value& operator++() { value_m = (GetVisibleValue() + 1) * conversion(); return *this; };
-		value& operator--() { value_m = (GetVisibleValue() - 1) * conversion(); return *this; };
-		value operator++(int) { value out = *this; value_m = (GetVisibleValue() + 1) * conversion(); return out; };
-		value operator--(int) { value out = *this; value_m = (GetVisibleValue() - 1) * conversion(); return out; };
+		value& operator++() { 
+			unit_m.Update([](Units::AtomicUnitStruct Data)->Units::AtomicUnitStruct {
+				Data.value_m += Data.ratio_m;
+				return Data;
+			});
+			return *this;
+		};
+		value& operator--() {
+			unit_m.Update([](Units::AtomicUnitStruct Data)->Units::AtomicUnitStruct {
+				Data.value_m -= Data.ratio_m;
+				return Data;
+			});
+			return *this;
+		};
+		value operator++(int) { 
+			value out = *this; 
+			unit_m.Update([](Units::AtomicUnitStruct Data)->Units::AtomicUnitStruct {
+				Data.value_m += Data.ratio_m;
+				return Data;
+			});
+			return out;
+		};
+		value operator--(int) { 
+			value out = *this; 
+			unit_m.Update([](Units::AtomicUnitStruct Data)->Units::AtomicUnitStruct {
+				Data.value_m -= Data.ratio_m;
+				return Data;
+			});
+			return out; 
+		};
 
 	public: // + and - Operators
 		static value Add(value const& a, value const& b) {
-			HandleNormalArithmetic(a, b);
 			value out1 = a;
 			value out2 = a; out2 = b;
-			out1.value_m += out2.value_m;
+
+			auto V{ out2.unit_m.load() };
+			out1.unit_m.Update([V](Units::AtomicUnitStruct Data)->Units::AtomicUnitStruct {
+				HandleNormalArithmetic(Data, V);
+				Data.value_m += V.value_m;
+				return Data;
+			});
+
 			return out1;
 		};
 		static value Sub(value const& a, value const& b) {
-			HandleNormalArithmetic(a, b);
 			value out1 = a;
 			value out2 = a; out2 = b;
-			out1.value_m -= out2.value_m;
+
+			auto V{ out2.unit_m.load() };
+			out1.unit_m.Update([V](Units::AtomicUnitStruct Data)->Units::AtomicUnitStruct {
+				HandleNormalArithmetic(Data, V);
+				Data.value_m -= V.value_m;
+				return Data;
+			});
+
 			return out1;
 		};
 
@@ -538,41 +821,47 @@ public:
 		friend value operator+(value const& A, value const& V) { return Add(A, V); };
 		friend value operator-(value const& A, value const& V) { return Sub(A, V); };
 		value& operator+=(value const& V) {
-			if (this->unit_m.IsSameCategory(V.unit_m)) { // same category, but perhaps different conversion factor. That's OK. 
-				this->value_m += V.value_m;
-			}
-			else if (is_scalar(V)) { // incoming is a scaler and this unit is not. Use this unit's conversion factor.
-				this->value_m += V.GetVisibleValue() * conversion();
-			}
-			else if (is_scalar(*this)) { // I am a scaler but the incoming unit is not. Copy the incoming value's visible value.
-				this->value_m += V.GetVisibleValue();
-			}
-			else { // incoming unit AND this unit are different non-scalers of different categories. No exchange is reasonable. 
-				HandleUnaryArithmetic(*this, V);
-				value temp = *this;
-				temp = V;
-				this->value_m += temp.value_m;
-			}
+			unit_m.Update([other = V.unit_m.load()](Units::AtomicUnitStruct Data)->Units::AtomicUnitStruct {
+				if (Data.IsSameCategory(other)) { // same category, but perhaps different conversion factor. That's OK. 
+					Data.value_m += other.value_m;
+				}
+				else if (is_scalar(other)) { // incoming is a scaler and this unit is not. Use this unit's conversion factor.
+					Data.value_m += (other.value_m / other.ratio_m) * Data.ratio_m;
+				}
+				else if (is_scalar(Data)) { // I am a scaler but the incoming unit is not. Copy the incoming value's visible value.
+					Data.value_m += (other.value_m / other.ratio_m);
+				}
+				else { // incoming unit AND this unit are different non-scalers of different categories. No exchange is reasonable. 
+					HandleUnaryArithmetic(Data, other);
+					value temp{ Data };
+					temp = value(other);
+					Data.value_m += temp.unit_m.load().value_m;
+				}
 
+				return Data;
+			});
 			return *this;
 		};
 		value& operator-=(value const& V) {
-			if (this->unit_m.IsSameCategory(V.unit_m)) { // same category, but perhaps different conversion factor. That's OK. 
-				this->value_m -= V.value_m;
-			}
-			else if (is_scalar(V)) { // incoming is a scaler and this unit is not. Use this unit's conversion factor.
-				this->value_m -= V.GetVisibleValue() * conversion();
-			}
-			else if (is_scalar(*this)) { // I am a scaler but the incoming unit is not. Copy the incoming value's visible value.
-				this->value_m -= V.GetVisibleValue();
-			}
-			else { // incoming unit AND this unit are different non-scalers of different categories. No exchange is reasonable. 
-				HandleUnaryArithmetic(*this, V);
-				value temp = *this;
-				temp = V;
-				this->value_m -= temp.value_m;
-			}
+			unit_m.Update([other = V.unit_m.load()](Units::AtomicUnitStruct Data)->Units::AtomicUnitStruct {
+				if (Data.IsSameCategory(other)) { // same category, but perhaps different conversion factor. That's OK. 
+					Data.value_m -= other.value_m;
+				}
+				else if (is_scalar(other)) { // incoming is a scaler and this unit is not. Use this unit's conversion factor.
+					Data.value_m -= (other.value_m / other.ratio_m) * Data.ratio_m;
+				}
+				else if (is_scalar(Data)) { // I am a scaler but the incoming unit is not. Copy the incoming value's visible value.
+					Data.value_m -= (other.value_m / other.ratio_m);
+				}
+				else { // incoming unit AND this unit are different non-scalers of different categories. No exchange is reasonable. 
+					HandleUnaryArithmetic(Data, other);
+					value temp{ Data };
+					temp = value(other);
+					Data.value_m -= temp.unit_m.load().value_m;
+				}
 
+				return Data;
+			});
 			return *this;
 		};
 
@@ -580,45 +869,80 @@ public:
 		static value Multiply(value const& A, value const& V) {
 			value out = A;
 			out.CompoundUnits<true>(V);
-			out.value_m *= V.value_m;
 			return out;
 		};
 		static value Divide(value const& A, value const& V) {
 			value out = A;
 			out.CompoundUnits<false>(V);
-			out.value_m /= V.value_m;
 			return out;
 		};
 
 		friend value operator*(value const& A, value const& V) { return Multiply(A, V); };
 		friend value operator/(value const& A, value const& V) { return Divide(A, V); };
 		value& operator*=(value const& V) {
-			HandleNotScalar(V);
-			value_m *= V.value_m;
+			auto other{ V.unit_m.load() };
+			HandleNotScalar(other);
+			unit_m.Update([other](Units::AtomicUnitStruct Data)->Units::AtomicUnitStruct {
+				Data.value_m *= other.value_m;
+				return Data;
+			});
 			return *this;
 		};
 		value& operator/=(value const& V) {
-			HandleNotScalar(V);
-			value_m /= V.value_m;
+			auto other{ V.unit_m.load() };
+			HandleNotScalar(other);
+			unit_m.Update([other](Units::AtomicUnitStruct Data)->Units::AtomicUnitStruct {
+				Data.value_m /= other.value_m;
+				return Data;
+			});
 			return *this;
 		};
 
 	public: // pow and sqrt Operators
 		value pow(value const& V) const {
-			HandleNotScalar(V);
+			auto other{ V.unit_m.load() };
+
+			HandleNotScalar(other);
 
 			value out = *this;
-			out.MultiplyUnits(V.value_m);
-
-			// i.e. (10 (ft)) ^ (3) -> (1000 (cu_ft)) * (1 / 35.3147 (cu_m/cu_ft)) -> 28.3168 cu_m in SI value
-			out.value_m = std::pow(this->GetVisibleValue(), V.value_m) * out.conversion(); // save in SI value
+			out.MultiplyUnits(other.value_m);
 
 			return out;
 		};
-		value& pow_value(value const& V) { HandleNotScalar(V); value_m = std::pow(GetVisibleValue(), V.GetVisibleValue()) * conversion(); return *this; };
-		value sqrt() const { value out = *this; out.MultiplyUnits(0.5); out.value_m = std::sqrt(out.value_m); return out; };
-		value floor() const { value out = *this; out.value_m = std::floor(GetVisibleValue()) * conversion(); return out; };
-		value ceiling() const { value out = *this; out.value_m = std::ceil(GetVisibleValue()) * conversion(); return out; };
+		value& pow_value(value const& V) { 
+			auto other{ V.unit_m.load() };
+			HandleNotScalar(other);
+			unit_m.Update([other](Units::AtomicUnitStruct Data)->Units::AtomicUnitStruct {
+				Data.value_m = std::pow(Data.value_m / Data.ratio_m, other.value_m / other.ratio_m) * Data.ratio_m;
+				return Data;
+			});
+			return *this; 
+		};
+		value sqrt() const { 
+			return pow(0.5);
+		};
+		value floor() const { 
+			unit_m.Update([](Units::AtomicUnitStruct Data)->Units::AtomicUnitStruct {
+				Data.value_m = std::floor(Data.value_m / Data.ratio_m) * Data.ratio_m;
+				return Data;
+			});
+			return *this;
+		};
+		value ceiling() const { 
+			unit_m.Update([](Units::AtomicUnitStruct Data)->Units::AtomicUnitStruct {
+				Data.value_m = std::ceil(Data.value_m / Data.ratio_m) * Data.ratio_m;
+				return Data;
+			});
+			return *this;
+		};
+		value update(std::function<double(double)> updateFunction) const {
+			unit_m.Update([&updateFunction](Units::AtomicUnitStruct Data)->Units::AtomicUnitStruct {
+				Data.value_m = updateFunction(Data.value_m / Data.ratio_m) * Data.ratio_m;
+				return Data;
+			});
+			return *this;
+		};
+
 	};
 	using scalar = value;
 
@@ -902,7 +1226,7 @@ public:
 		UnitHash determines the class of unit (length, time, length/time, length/time^2, length^1.25, etc.
 		UnitRatio determines the specific ratio within that class (meter, foot, inch, etc.)
 		*/
-		static std::pair< const char*, const char*>& lookup_impl(size_t UnitHash, fibers::synchronization::atomic_number<double>& UnitRatio) noexcept {
+		static std::pair< const char*, const char*>& lookup_impl(size_t UnitHash, double& UnitRatio) noexcept {
 			static std::pair<const char*, const char*> out{ "","" };
 			static std::mutex mut;
 			static std::shared_ptr<void> Tag{ nullptr };
@@ -1095,7 +1419,7 @@ public:
 			if (model && model->first.count(UnitHash) > 0) {
 				auto& curve = model->first.at(UnitHash);
 
-				auto iter = curve.FindSmallestLargerEqual(UnitRatio.GetValue());
+				auto iter = curve.FindSmallestLargerEqual(UnitRatio);
 				if (iter) {
 					auto* p = iter.GetPayload();
 					if (p) {
@@ -1110,10 +1434,10 @@ public:
 #undef CreateRowWithMetricPrefixes
 #undef CreateRow
 
-		static const char* lookup_abbreviation(size_t UnitHash, fibers::synchronization::atomic_number<double>& UnitRatio) noexcept {
+		static const char* lookup_abbreviation(size_t UnitHash, double& UnitRatio) noexcept {
 			return lookup_impl(UnitHash, UnitRatio).first;
 		};
-		static const char* lookup_typename(size_t UnitHash, fibers::synchronization::atomic_number<double>& UnitRatio) noexcept {
+		static const char* lookup_typename(size_t UnitHash, double& UnitRatio) noexcept {
 			return lookup_impl(UnitHash, UnitRatio).second;
 		};
 	};

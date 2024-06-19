@@ -2293,9 +2293,6 @@ namespace fibers {
 						delete p;
 					}
 				}
-				while (result && !result) {
-					std::this_thread::yield();
-				}
 			};
 			Any get_any() const noexcept {
 				if (result) {
