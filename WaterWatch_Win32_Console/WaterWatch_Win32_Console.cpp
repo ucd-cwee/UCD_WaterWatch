@@ -242,6 +242,14 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 			// test generation of a unit through multiplication / power functions
 			std::cout << (1_m).pow(3) << std::endl;
 			std::cout << (4_sq_m).pow(0.5) << std::endl;
+			std::cout << (4_ft).pow(0.5) << std::endl;
+			std::cout << (2_m).pow(1.5) << std::endl;
+			
+			std::cout << 16_cu_m / 2_m << std::endl;
+			std::cout << (16_cu_m / 2_m) / 2_m << std::endl;
+
+			std::cout << 16_cu_ft / 2_ft << std::endl;
+			std::cout << (16_cu_ft / 2_ft) / 2_ft << std::endl;
 
 			// Test multi-threading
 			if (1) { // simple atomic additions
@@ -305,6 +313,8 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 				using namespace literals;
 
 				Units::value shared = 0_ft;
+
+				Units::foot(100) + Units::inch(10000.123) + Units::meter(10);
 
 				fibers::parallel::For((size_t)0, (size_t)(100), [&shared](size_t threadNum) {
 					for (int i = 0; i < 1000; i++) {
@@ -565,7 +575,7 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 					}
 				}
 
-				// wait until the job is completed and the result (if any) is returned.
+				// wait until the job is completed and the result is returned.
 				std::cout << futureObj.wait_get_ref() << std::endl; 
 #else
 				for (auto& x : tree) {
@@ -680,7 +690,8 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 		}
 	}
 
-	{
+	// fibers::containers::Stack
+	if (0) {
 		int ijk = 0;
 		for (ijk = 0; ijk < 100; ijk++) {
 			fibers::containers::Stack<double> concurrent_set;
@@ -937,7 +948,7 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 						count += k;
 				}
 
-				cweeUnitValues::second timePassed = sw.Stop() / 1000000000.0;
+				Units::second timePassed = sw.Stop() / 1000000000.0;
 				std::cout << timePassed.ToString() << " (num = " << count << ")" << std::endl;
 			}
 
@@ -955,7 +966,7 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 						count += k;
 				});
 
-				cweeUnitValues::second timePassed = sw.Stop() / 1000000000.0;
+				Units::second timePassed = sw.Stop() / 1000000000.0;
 				std::cout << timePassed.ToString() << " (num = " << count << ")" << std::endl;
 			}
 
@@ -970,7 +981,25 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 						count += k;
 				});
 
-				cweeUnitValues::second timePassed = sw.Stop() / 1000000000.0;
+				Units::second timePassed = sw.Stop() / 1000000000.0;
+				std::cout << timePassed.ToString() << " (num = " << count << ")" << std::endl;
+			}
+
+			printf("SpeedTest (unit values) ");
+			std::cout << j;
+			printf(" (Fibers, Locked) : ");
+			{
+				fibers::synchronization::mutex lock;
+				Units::gallon_per_minute count;
+				Stopwatch sw; sw.Start();
+				fibers::parallel::For(0, numLoops, [&lock, &count, &j](int i) {
+					for (int k = 0; k < j; k++) {
+						auto locked{ std::scoped_lock{ lock } };
+						count += k;
+					}
+				});
+
+				Units::second timePassed = sw.Stop() / 1000000000.0;
 				std::cout << timePassed.ToString() << " (num = " << count << ")" << std::endl;
 			}
 

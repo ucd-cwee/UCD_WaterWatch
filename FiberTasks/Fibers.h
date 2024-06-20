@@ -2199,20 +2199,26 @@ namespace fibers {
 			return std::find_if(container.begin(), container.end(), [&](auto& x) ->bool { return ToDo(x); }); // std::execution::par, 
 #else
 			uint32_t n{ static_cast<uint32_t>(container.size()) };
-			auto out{ container.end() };
+			auto out{ container.begin() };
 			impl::TaskGroup group;
-
 			if (n > 0) {
-				std::vector<containerType::iterator> iterators(n, container.begin());
 				group.Dispatch(n, [&](impl::JobArgs args) {
-					std::advance(iterators[static_cast<int>(args.jobIndex)], args.jobIndex);
-					if (ToDo(*iterators[static_cast<int>(args.jobIndex)])) {
-						if (group.TryEarlyExit()) {
-							out = iterators[static_cast<int>(args.jobIndex)];
-						}
-					}
+					if (ToDo(out[args.jobIndex])) {
+						auto result{ container.begin() };
+						std::advance(result, args.jobIndex);
+						throw(result);
+					}					
 				});
-				group.Wait();
+
+				try {
+					group.Wait();
+				}
+				catch (decltype(out) iter) {
+					return iter;
+				}
+				catch (...) {
+					std::rethrow_exception(std::current_exception());
+				}
 			}
 			return out;
 #endif
@@ -2224,20 +2230,26 @@ namespace fibers {
 			return std::find_if(container.cbegin(), container.cend(), [&](auto const& x) ->bool { return ToDo(x); }); // std::execution::par, 
 #else
 			uint32_t n{ static_cast<uint32_t>(container.size()) };
-			auto out{ container.cend() };
+			auto out{ container.cbegin() };
 			impl::TaskGroup group;
-
 			if (n > 0) {
-				std::vector<containerType::const_iterator> iterators(n, container.cbegin());
 				group.Dispatch(n, [&](impl::JobArgs args) {
-					std::advance(iterators[static_cast<int>(args.jobIndex)], args.jobIndex);
-					if (ToDo(*iterators[static_cast<int>(args.jobIndex)])) {
-						if (group.TryEarlyExit()) {
-							out = iterators[static_cast<int>(args.jobIndex)];
-						}
-					}					
+					if (ToDo(out[args.jobIndex])) {
+						auto result{ container.begin() };
+						std::advance(result, args.jobIndex);
+						throw(result);
+					}
 				});
-				group.Wait();
+
+				try {
+					group.Wait();
+				}
+				catch (decltype(out) iter) {
+					return iter;
+				}
+				catch (...) {
+					std::rethrow_exception(std::current_exception());
+				}
 			}
 			return out;
 #endif
@@ -2264,14 +2276,14 @@ namespace fibers {
 		protected:
 			std::shared_ptr< synchronization::atomic_ptr<JobGroup> > shared_state;
 			std::shared_ptr< synchronization::atomic_ptr<Any> > result;
-			std::shared_ptr< synchronization::atomic_number<long> > waiting;
+			std::shared_ptr< synchronization::mutex > waiting;
 
 		public:
 			promise() : shared_state(nullptr), result(nullptr), waiting(nullptr) {};
 			promise(Job const& job) :
 				shared_state(std::shared_ptr<synchronization::atomic_ptr<JobGroup>>(new synchronization::atomic_ptr<JobGroup>(new JobGroup(job)), [](synchronization::atomic_ptr<JobGroup>* anyP) { if (anyP) { auto* p = anyP->Set(nullptr); if (p) { delete p; } delete anyP; } })),
 				result(std::shared_ptr<synchronization::atomic_ptr<Any>>(new synchronization::atomic_ptr<Any>(), [](synchronization::atomic_ptr<Any>* anyP) { if (anyP) { auto* p = anyP->Set(nullptr); if (p) { delete p; } delete anyP; } })),
-				waiting(std::shared_ptr<synchronization::atomic_number<long>>(new synchronization::atomic_number<long>{ 0 }))
+				waiting(std::shared_ptr<synchronization::mutex>(new synchronization::mutex()))
 			{};
 			promise(promise const&) = default;
 			promise(promise&&) = default;
@@ -2283,24 +2295,21 @@ namespace fibers {
 			bool valid() const noexcept { return (bool)shared_state; };
 			/* Wait until the requested job is completed. Repeated waiting is OK, however only the first "waiting" thread actually helps to complete the job - the remaining waiters will spin-wait. */
 			void wait() {
-				if (valid()) {
-					while (waiting->load() > 0) { std::this_thread::yield(); }
-					if (!result->load()) {
-						waiting->Add(1);
-						defer(waiting->Sub(1));
+				JobGroup* p{ nullptr };
+				Any* p2{ nullptr };
+				
+				defer(if (p) { delete p; });
+				defer(if (p2) { delete p2; });
 
-						auto p = shared_state->Set(nullptr);
-						if (p) {
-							auto list = p->Wait_Get();
-							if (list.size() > 0) {
-								Any* p2 = result->Set(new Any(list[0]));
-								if (p2) {
-									delete p2;
-								}
-							}
-							delete p;
-						}
-					}
+				if (valid() && !result->load()) {
+					auto guard{ std::lock_guard(*waiting) };
+
+					p = shared_state->Set(nullptr);
+					if (p) {
+						auto list{ p->Wait_Get() };
+						if (list.size() > 0) p2 = result->Set(new Any(list[0]));
+						else p2 = result->Set(new Any());							
+					}					
 				}
 			};
 			/* Try to get the result, if available. Does not wait. */

@@ -7657,6 +7657,7 @@ namespace fibers {
 #endif
 			};
 #undef useMantissaRepresentation
+
 		public:
 			constexpr UnsignedWrapper() = default;
 			constexpr UnsignedWrapper(Arg const& a) : data{ MakeUnsignedAndBound(a) } {};
@@ -7669,10 +7670,10 @@ namespace fibers {
 			~UnsignedWrapper() = default;
 
 		public:
-			operator Arg() { return load(); };
-			operator const Arg() const { return load(); };
+			constexpr operator Arg() { return load(); };
+			constexpr operator const Arg() const { return load(); };
 
-			template <typename T> decltype(auto) operator+(const UnsignedWrapper<T>& b) {
+			template <typename T> constexpr decltype(auto) operator+(const UnsignedWrapper<T>& b) {
 				if constexpr (sizeof(T) > sizeof(Arg)) {
 					return UnsignedWrapper<T>{ load() + b.load() };
 				}
@@ -7680,7 +7681,7 @@ namespace fibers {
 					return UnsignedWrapper{ load() + b.load() };
 				}
 			}
-			template <typename T> decltype(auto) operator-(const UnsignedWrapper<T>& b) {
+			template <typename T> constexpr decltype(auto) operator-(const UnsignedWrapper<T>& b) {
 				if constexpr (sizeof(T) > sizeof(Arg)) {
 					return UnsignedWrapper<T>{ load() - b.load() };
 				}
@@ -7688,7 +7689,7 @@ namespace fibers {
 					return UnsignedWrapper{ load() - b.load() };
 				}
 			}
-			template <typename T> decltype(auto) operator/(const UnsignedWrapper<T>& b) {
+			template <typename T> constexpr decltype(auto) operator/(const UnsignedWrapper<T>& b) {
 				if constexpr (sizeof(T) > sizeof(Arg)) {
 					return UnsignedWrapper<T>{ load() / b.load() };
 				}
@@ -7696,7 +7697,7 @@ namespace fibers {
 					return UnsignedWrapper{ load() / b.load() };
 				}
 			}
-			template <typename T> decltype(auto) operator*(const UnsignedWrapper<T>& b) {
+			template <typename T> constexpr decltype(auto) operator*(const UnsignedWrapper<T>& b) {
 				if constexpr (sizeof(T) > sizeof(Arg)) {
 					return UnsignedWrapper<T>{ load()* b.load() };
 				}
@@ -7750,24 +7751,27 @@ namespace fibers {
 				return *this;
 			};
 
-			template <typename T> bool operator==(const UnsignedWrapper<T>& b) { return load() == b.load(); };
-			template <typename T> bool operator!=(const UnsignedWrapper<T>& b) { return !operator==(b); };
-			template <typename T> bool operator<=(const UnsignedWrapper<T>& b) { return load() <= b.load(); };
-			template <typename T> bool operator>=(const UnsignedWrapper<T>& b) { return load() >= b.load(); };
-			template <typename T> bool operator<(const UnsignedWrapper<T>& b) { return !operator>=(b); };
-			template <typename T> bool operator>(const UnsignedWrapper<T>& b) { return !operator<=(b); };
+			template <typename T> constexpr bool operator==(const UnsignedWrapper<T>& b) { return load() == b.load(); };
+			template <typename T> constexpr bool operator!=(const UnsignedWrapper<T>& b) { return !operator==(b); };
+			template <typename T> constexpr bool operator<=(const UnsignedWrapper<T>& b) { return load() <= b.load(); };
+			template <typename T> constexpr bool operator>=(const UnsignedWrapper<T>& b) { return load() >= b.load(); };
+			template <typename T> constexpr bool operator<(const UnsignedWrapper<T>& b) { return !operator>=(b); };
+			template <typename T> constexpr bool operator>(const UnsignedWrapper<T>& b) { return !operator<=(b); };
 
-			UnsignedWrapper pow(UnsignedWrapper const& V) const {
+			UnsignedWrapper Pow(UnsignedWrapper const& V) const {
 				return UnsignedWrapper{ std::pow(load(), V.load()) };
 			};
-			UnsignedWrapper sqrt() const {
+			UnsignedWrapper Sqrt() const {
 				return UnsignedWrapper{ std::sqrt(load()) };
 			};
-			UnsignedWrapper floor() const {
-				return UnsignedWrapper{ std::floor(load()) };
+			constexpr UnsignedWrapper Abs() const {
+				return UnsignedWrapper{ abs(load()) };
 			};
-			UnsignedWrapper ceiling() const {
-				return UnsignedWrapper{ std::ceil(load()) };
+			constexpr UnsignedWrapper Floor() const {
+				return UnsignedWrapper{ floor(load()) };
+			};
+			constexpr UnsignedWrapper Ceiling() const {
+				return UnsignedWrapper{ floor(load() + static_cast<Arg>(1)) };
 			};
 
 		public:
@@ -7797,7 +7801,7 @@ namespace fibers {
 			Arg exchange(Arg const& v) {
 				return Swap(v);
 			}; // returns the previous value while setting the value to the input
-			Arg load() const {
+			constexpr Arg load() const {
 				return MakeSigned(data);
 			}; // gets the value
 			void store(Arg const& v) {
@@ -7811,14 +7815,8 @@ namespace fibers {
 		Capacity is about 56 bytes, or about 7 pointers / integers. Can be used for a POD collection (like a struct) or non-standard POD items like floats to long doubles.
 		*/
 		template <typename Arg> struct CAS_Container {
-		private:
-			static constexpr inline unsigned long long constexpr_pow(unsigned long long x, unsigned long long y) {
-				return y == 0 ? 1.0 : x * constexpr_pow(x, y - 1);
-			};
-
 		public:
 			static constexpr size_t NumWords{ 1 + sizeof(Arg) / 8 };
-			static constexpr double MaxV{ constexpr_pow(2, (DBL_MANT_DIG - 6.0) / 1.7) };
 
 		protected:
 			union ContainerImpl {
@@ -7826,61 +7824,46 @@ namespace fibers {
 				uint64_t addresses[NumWords];
 			};
 			ContainerImpl data;
+			
 			CAS_Container<Arg> Copy() const {
 				using namespace dbgroup::atomic::mwcas;
-				CAS_Container<Arg> temp;
-				MwCASDescriptor<NumWords> desc{};
+				CAS_Container<Arg> temp; // constexpr
+				MwCASDescriptor<NumWords> desc{}; // constexpr
 
 				for (size_t index = 0; index < NumWords; index++) {
 					temp.Word(index) = desc.Read< uint64_t>(&Word(index));
 				}
 				return temp;
 			};
-			uint64_t& Word(size_t index) {
+			constexpr uint64_t& Word(size_t index) {
 				return data.addresses[index];
 			};
-			const uint64_t& Word(size_t index) const {
+			constexpr const uint64_t& Word(size_t index) const {
 				return data.addresses[index];
 			};
-			const Arg& Data() const { return data.data; };
-			Arg& Data() { return data.data; };
-
-			static constexpr Arg Bound(Arg const& a) { 
-				if constexpr (std::is_arithmetic<Arg>::value) {
-					return std::max<Arg>(-MaxV, std::min<Arg>(MaxV, a));
-				}
-				else {
-					return a;
-				}
-			};
-			static constexpr Arg MakeUnsignedAndBound(Arg const& a) { 
-				if constexpr (std::is_arithmetic<Arg>::value) {
-					return Bound(a) + MaxV;
-				}
-				else {
-					return a;
-				}				
-			};
-			static constexpr Arg MakeSigned(Arg const& a) { 
-				if constexpr (std::is_arithmetic<Arg>::value) {
-					return a - MaxV;
-				}
-				else {
-					return a;
-				}
-			};
+		
+		public:
+			constexpr const Arg& Data() const { return data.data; };
+			constexpr Arg& Data() { return data.data; };
 
 		public:
-			
-			constexpr CAS_Container() : data{} { static_assert(std::is_pod_v<Arg>, "Compare-and-swap operations only work with POD-type structs."); };
-			constexpr CAS_Container(Arg const& a) : data{ MakeUnsignedAndBound(a) } { static_assert(std::is_pod_v<Arg>, "Compare-and-swap operations only work with POD-type structs."); };
-
-			~CAS_Container() = default;
+			constexpr CAS_Container() : data{} { 
+				static_assert(std::is_trivially_destructible< Arg >::value
+					&& std::is_trivially_copy_constructible< Arg >::value
+					&& std::is_trivially_copy_assignable< Arg >::value
+					&& std::is_trivially_copyable< Arg >::value, "Compare-and-swap operations only work with trivial structs.");
+			};
+			constexpr CAS_Container(Arg const& a) : data{ a } { 
+				static_assert(std::is_trivially_destructible< Arg >::value
+					&& std::is_trivially_copy_constructible< Arg >::value
+					&& std::is_trivially_copy_assignable< Arg >::value
+					&& std::is_trivially_copyable< Arg >::value, "Compare-and-swap operations only work with trivial structs.");
+			};
 			constexpr CAS_Container(const CAS_Container&) = default;
 			constexpr CAS_Container& operator=(const CAS_Container&) = default;
 			constexpr CAS_Container(CAS_Container&&) = default;
 			constexpr CAS_Container& operator=(CAS_Container&&) = default;
-
+			~CAS_Container() = default;
 
 		public:
 			bool CompareSwap(Arg const& compare, Arg const& input) {
@@ -7924,7 +7907,7 @@ namespace fibers {
 					}
 
 					// update the actual data
-					UpdateCopy.Data() = MakeUnsignedAndBound(input);
+					UpdateCopy.Data() = input;
 
 					// prepare the swap target(s)
 					for (index = 0; index < NumWords; index++) {
@@ -7954,7 +7937,7 @@ namespace fibers {
 					}
 
 					// update the actual data
-					UpdateCopy.Data() = MakeUnsignedAndBound(UpdateCopy.load() + input);
+					UpdateCopy.Data() = UpdateCopy.load() + input;
 
 					// prepare the swap target(s)
 					for (index = 0; index < NumWords; index++) {
@@ -7983,7 +7966,7 @@ namespace fibers {
 					}
 
 					// update the actual data
-					UpdateCopy.Data() = MakeUnsignedAndBound(updateFunction(OldCopy.load()));
+					UpdateCopy.Data() = updateFunction(OldCopy.load());
 
 					// prepare the swap target(s)
 					for (index = 0; index < NumWords; index++) {
@@ -8008,7 +7991,7 @@ namespace fibers {
 			}; // returns the previous value while setting the value to the input
 			Arg load() const {
 				const CAS_Container<Arg> x = Copy();
-				return CAS_Container::MakeSigned(x.Data());
+				return x.Data();
 			}; // gets the value
 			void store(Arg const& v) {
 				Swap(v);

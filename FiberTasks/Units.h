@@ -199,38 +199,45 @@ public:
 		str.erase(str.find_last_not_of(charToRemove) + 1, std::string::npos);
 	};
 	
+	// container for all of the information that defines a unit value, including the unit data as well as the underlying SI value.
 	struct AtomicUnitStruct {
 	public:
-		static constexpr size_t NumUnits = unitTypes::units_type::_size_constant;
+		static constexpr size_t NumUnits{ unitTypes::units_type::_size_constant };
 		constexpr double abs(double x) { return x > 0 ? x : -x; };
 
 	public:
 		// unit data
-		char* abbreviation_m;
-		bool isScalar_m;
-		bool isSI_m;
-		std::array< fibers::utilities::UnsignedWrapper<double>, NumUnits> unitType_m;
-		fibers::utilities::UnsignedWrapper<double> ratio_m;
-
-		// SI-unit's actual value
-		fibers::utilities::UnsignedWrapper<double> value_m;
+		std::array< fibers::utilities::UnsignedWrapper<double>, NumUnits> unitType_m; // power exponents for the SI units (e.g. m^1 * kg^0 * s^-1 * A^0 * $^0 = m/s)
+		fibers::utilities::UnsignedWrapper<double> ratio_m; // ratio multiplier for converting from the SI units to this actual unit (e.g. 1 = meters, 0.304 = feet, etc.)
+		fibers::utilities::UnsignedWrapper<double> value_m; // underlying value of the unit if represented as SI units. (e.g. will always be in meters, regardless of the actual unit being in feet)
+		char* abbreviation_m; // optional abbreviation (e.g. "ft") for the unit. If present, that means this is likely (but not guarranteed) a static (pre-made) type
+		bool isScalar_m; // bool for whether or not this unit is 100% a unitless scalar. Could be determined from unitType_m and removed from data storage.
+		bool isSI_m; // bool for whether or not this unit is 100% a basic SI unit. Could be determined from unitType_m and removed from data storage. 
 
 	public:
-		AtomicUnitStruct() = default; /*:
+		constexpr AtomicUnitStruct() : 
+			unitType_m{ 0., 0., 0., 0., 0. }, 
+			ratio_m{ 1. },
+			value_m{ 0. },
 			abbreviation_m{ const_cast<char*>("") },
 			isScalar_m{ true },
-			isSI_m{ false },
-			unitType_m{ 0., 0., 0., 0., 0. },
+			isSI_m{ false }
+		{};
+		constexpr AtomicUnitStruct(double V) :
+			unitType_m{ 0., 0., 0., 0., 0. }, 
 			ratio_m{ 1. },
-			value_m{ 0. }
-		{};*/
+			value_m{ V },
+			abbreviation_m{ const_cast<char*>("") },
+			isScalar_m{ true },
+			isSI_m{ false }
+		{};
 		constexpr AtomicUnitStruct(double a, double b, double c, double d, double e, bool isScalar_p, const char* abbreviation_p, double ratio_p, double value_p = 0.0) noexcept :
-			abbreviation_m{ const_cast<char*>(abbreviation_p) },
-			isScalar_m{ isScalar_p },
-			isSI_m{ (abs(a) + abs(b) + abs(c) + abs(d) + abs(e)) == 1.0 && abs(ratio_p) == 1.0 },
-			unitType_m{ a, b, c, d, e },
+			unitType_m{ a, b, c, d, e }, 
 			ratio_m{ ratio_p },
-			value_m{ value_p * ratio_p }
+			value_m{ value_p * ratio_p },
+			abbreviation_m{ const_cast<char*>(abbreviation_p) },
+			isScalar_m{ isScalar_p },			
+			isSI_m{ (abs(a) + abs(b) + abs(c) + abs(d) + abs(e)) == 1.0 && abs(ratio_p) == 1.0 }
 		{};
 		constexpr AtomicUnitStruct(AtomicUnitStruct const&) = default;
 		constexpr AtomicUnitStruct(AtomicUnitStruct&&) = default;
@@ -298,6 +305,8 @@ public:
 								}
 								else {
 									Num = std::to_string((float)v);
+									removeTrailingCharacters(Num, '0');
+									removeTrailingCharacters(Num, '.');
 								}
 								AddToDelimiter(out, printf("%s^%s", unitBase, Num.c_str()), " ");
 							}
@@ -322,6 +331,8 @@ public:
 									}
 									else {
 										Num = std::to_string((float)(-1.0 * v));
+										removeTrailingCharacters(Num, '0');
+										removeTrailingCharacters(Num, '.');
 									}
 									AddToDelimiter(out, printf("%s^%s", unitBase, Num.c_str()), " ");
 								}
@@ -339,25 +350,24 @@ public:
 	public:
 		mutable fibers::utilities::CAS_Container<Units::AtomicUnitStruct> unit_m;
 
-	protected:
-		// double conversion() const noexcept { return unit_m.ratio_m; };
-
 	public: // constructors
-		value() noexcept : unit_m{ Units::AtomicUnitStruct{} } {};
-		explicit value(Units::AtomicUnitStruct const& unit_p) noexcept : unit_m{ unit_p } {};
-		explicit value(double V, Units::AtomicUnitStruct const& unit_p) noexcept :
+		value() : unit_m{ Units::AtomicUnitStruct{} } {};
+		explicit value(Units::AtomicUnitStruct const& unit_p) : unit_m{ unit_p } {};
+		explicit value(double V, Units::AtomicUnitStruct const& unit_p) :
 			unit_m{ Units::AtomicUnitStruct(unit_p.unitType_m[0].load(), unit_p.unitType_m[1].load(), unit_p.unitType_m[2].load(), unit_p.unitType_m[3].load(), unit_p.unitType_m[4].load(), unit_p.isScalar_m, unit_p.abbreviation_m, unit_p.ratio_m.load(), V) }
 		{};
-		value(value&& V) noexcept : unit_m(std::move(V.unit_m)) {};
-		value(value const& V) noexcept : unit_m(V.unit_m) {};
-		value(double V) noexcept : unit_m{ Units::AtomicUnitStruct(0,0,0,0,0,true,"",1,V) } {};
-
-		virtual bool IsStaticType() const { return false; };
+		explicit value(Units::AtomicUnitStruct && unit_p) : unit_m{ std::forward<Units::AtomicUnitStruct>(unit_p) } {};
+		value(value&& V) : unit_m{ std::move(V.unit_m) } {};
+		value(value const& V) : unit_m{ V.unit_m.load() } {};
+		value(double V) : unit_m{ Units::AtomicUnitStruct(0,0,0,0,0,true,"",1,V) } {};
 		virtual ~value() = default;
+
+	protected:
+		virtual bool IsStaticType() const { return false; };
 
 	private:
 		double GetVisibleValue() const noexcept {
-			double out;
+			double out{ 0. };
 			Abbreviation(&out);
 			return out;
 		};
@@ -400,7 +410,6 @@ public:
 			if (is_scalar(V)) return;
 			throw(std::runtime_error(Units::printf("Type must be scalar (was '%s').", AbbreviationFast(V).c_str())));
 		};
-	public:
 		static std::string AbbreviationFast(Units::AtomicUnitStruct const& V) noexcept {
 			std::string toReturn{ V.abbreviation_m };
 			
@@ -425,6 +434,8 @@ public:
 								}
 								else {
 									Num = std::to_string((float)v);
+									removeTrailingCharacters(Num, '0');
+									removeTrailingCharacters(Num, '.');
 								}
 								AddToDelimiter(toReturn, printf("%s^%s", unitBase, Num.c_str()), " ");
 							}
@@ -448,6 +459,8 @@ public:
 									}
 									else {
 										Num = std::to_string((float)(-1.0 * v));
+										removeTrailingCharacters(Num, '0');
+										removeTrailingCharacters(Num, '.');
 									}
 									AddToDelimiter(toReturn, printf("%s^%s", unitBase, Num.c_str()), " ");
 								}
@@ -459,7 +472,6 @@ public:
 
 			return toReturn;
 		};
-
 
 	public: // value operator
 		explicit operator double() const noexcept { return GetVisibleValue(); };
@@ -479,92 +491,97 @@ public:
 			});
 			return toReturn;
 		};
-		bool AreConvertableTypes(value const& V) const {
-			return value::NormalArithmeticOkay(this->unit_m.load(), V.unit_m.load());
-		};
 		void Clear() { 
 			unit_m.store(Units::AtomicUnitStruct{}); 
 		};
 		void Swap(value const& other) const {
 			unit_m.Swap(other.unit_m.load(), false); 
 		};
+
 	public:
 		std::string Abbreviation(double* visibleValue = nullptr) const noexcept {
 			bool isStatic{ IsStaticType() };
 			std::string toReturn{ "" };
-			unit_m.Update([isStatic, &toReturn, this, &visibleValue](Units::AtomicUnitStruct Data)->Units::AtomicUnitStruct {
-				if (Data.isScalar_m) {
-					toReturn = "";
-					if (visibleValue) {
-						*visibleValue = Data.value_m.load();
-					}
-				}
-				else {
-					auto [abbreviation, ratio] = Data.LookupAbbreviation(isStatic);
-					Data.abbreviation_m = const_cast<char*>(abbreviation);
-					Data.ratio_m = ratio;
-					toReturn = abbreviation;
 
-					if (!Data.isScalar_m && toReturn.empty()) {
-						// we failed to find this unit in the system -- it must be set to SI unit now. 
-						Data.ratio_m = 1.0;
-						Data.isSI_m = true;
-
-						constexpr static std::array< const char*, AtomicUnitStruct::NumUnits> unitBases{ "m", "kg", "s", "A", "$" };
-
-						bool anyNegatives = false;
-						std::string Num;
-						for (int i = AtomicUnitStruct::NumUnits - 1; i >= 0; i--) {
-							const char* unitBase = unitBases[i];
-							double v = Data.unitType_m[i].load();
-
-							if (v > 0) {
-								if (v == 1)
-									AddToDelimiter(toReturn, unitBase, " ");
-								else {
-									if (IsInteger(v)) {
-										Num = std::to_string(static_cast<int>(v));
-									}
-									else {
-										Num = std::to_string((float)v);
-									}
-									AddToDelimiter(toReturn, printf("%s^%s", unitBase, Num.c_str()), " ");
-								}
-							}
-							else if (v < 0) {
-								anyNegatives = true;
-							}
+			{
+				unit_m.Update([isStatic, &toReturn, this, &visibleValue](Units::AtomicUnitStruct Data)->Units::AtomicUnitStruct {
+					if (Data.isScalar_m) {
+						toReturn = "";
+						if (visibleValue) {
+							*visibleValue = Data.value_m.load();
 						}
-						if (anyNegatives) {
-							toReturn += " /";
+					}
+					else {
+						auto [abbreviation, ratio] = Data.LookupAbbreviation(isStatic);
+						Data.abbreviation_m = const_cast<char*>(abbreviation);
+						Data.ratio_m = ratio;
+						toReturn = abbreviation;
+
+						if (!Data.isScalar_m && toReturn.empty()) {
+							// we failed to find this unit in the system -- it must be set to SI unit now. 
+							Data.ratio_m = 1.0;
+							Data.isSI_m = true;
+
+							constexpr static std::array< const char*, AtomicUnitStruct::NumUnits> unitBases{ "m", "kg", "s", "A", "$" };
+
+							bool anyNegatives = false;
+							std::string Num;
 							for (int i = AtomicUnitStruct::NumUnits - 1; i >= 0; i--) {
 								const char* unitBase = unitBases[i];
 								double v = Data.unitType_m[i].load();
 
-								if (v < 0) {
-									if (v == -1)
+								if (v > 0) {
+									if (v == 1)
 										AddToDelimiter(toReturn, unitBase, " ");
 									else {
 										if (IsInteger(v)) {
-											Num = std::to_string(static_cast<int>(-1.0 * v));
+											Num = std::to_string(static_cast<int>(v));
 										}
 										else {
-											Num = std::to_string((float)(-1.0 * v));
+											Num = std::to_string((float)v);
+											removeTrailingCharacters(Num, '0');
+											removeTrailingCharacters(Num, '.');
 										}
 										AddToDelimiter(toReturn, printf("%s^%s", unitBase, Num.c_str()), " ");
 									}
 								}
+								else if (v < 0) {
+									anyNegatives = true;
+								}
 							}
+							if (anyNegatives) {
+								toReturn += " /";
+								for (int i = AtomicUnitStruct::NumUnits - 1; i >= 0; i--) {
+									const char* unitBase = unitBases[i];
+									double v = Data.unitType_m[i].load();
+
+									if (v < 0) {
+										if (v == -1)
+											AddToDelimiter(toReturn, unitBase, " ");
+										else {
+											if (IsInteger(v)) {
+												Num = std::to_string(static_cast<int>(-1.0 * v));
+											}
+											else {
+												Num = std::to_string((float)(-1.0 * v));
+												removeTrailingCharacters(Num, '0');
+												removeTrailingCharacters(Num, '.');
+											}
+											AddToDelimiter(toReturn, printf("%s^%s", unitBase, Num.c_str()), " ");
+										}
+									}
+								}
+							}
+						}
+
+						if (visibleValue) {
+							*visibleValue = Data.value_m.load() / Data.ratio_m.load();
 						}
 					}
 
-					if (visibleValue) {
-						*visibleValue = Data.value_m.load() / Data.ratio_m.load();
-					}
-				}
-
-				return Data;
-			});
+					return Data;
+					});
+			}
 			return toReturn;
 		};
 		std::string ToString() const {
@@ -786,7 +803,7 @@ public:
 			return out; 
 		};
 
-	public: // + and - Operators
+	private: 
 		static value Add(value const& a, value const& b) {
 			value out1 = a;
 			value out2 = a; out2 = b;
@@ -813,7 +830,18 @@ public:
 
 			return out1;
 		};
+		static value Multiply(value const& A, value const& V) {
+			value out = A;
+			out.CompoundUnits<true>(V);
+			return out;
+		};
+		static value Divide(value const& A, value const& V) {
+			value out = A;
+			out.CompoundUnits<false>(V);
+			return out;
+		};
 
+	public: // + and - Operators
 		value operator-() const { return *this * -1.0; };
 
 		friend value operator+(value const& A, value const& V) { return Add(A, V); };
@@ -864,17 +892,6 @@ public:
 		};
 
 	public: // * and / Operators
-		static value Multiply(value const& A, value const& V) {
-			value out = A;
-			out.CompoundUnits<true>(V);
-			return out;
-		};
-		static value Divide(value const& A, value const& V) {
-			value out = A;
-			out.CompoundUnits<false>(V);
-			return out;
-		};
-
 		friend value operator*(value const& A, value const& V) { return Multiply(A, V); };
 		friend value operator/(value const& A, value const& V) { return Divide(A, V); };
 		value& operator*=(value const& V) {
@@ -897,6 +914,21 @@ public:
 		};
 
 	public: // pow and sqrt Operators
+		// atomicly updates the value with a custom user-provided function.
+		value& update(std::function<double(double)> updateFunction) {
+			unit_m.Update([&updateFunction](Units::AtomicUnitStruct Data)->Units::AtomicUnitStruct {
+				Data.value_m = updateFunction(Data.value_m / Data.ratio_m) * Data.ratio_m;
+				return Data;
+			});
+			return *this;
+		};
+		// Creats a copy of the value and updates it with a custom user-provided function.
+		value update(std::function<double(double)> updateFunction) const {
+			auto out{ value(*this) };
+			out.update(updateFunction);
+			return out;
+		};
+		// Returns a new value multiplied by itself "V" times. (e.g. (3_m).pow(3) => 3_cu_m)
 		value pow(value const& V) const {
 			auto other{ V.unit_m.load() };
 
@@ -907,6 +939,7 @@ public:
 
 			return out;
 		};
+		// atomicly updates the value by exponentiating the underlying value (e.g. (3_m).pow_value(3) => 9_m)
 		value& pow_value(value const& V) { 
 			auto other{ V.unit_m.load() };
 			HandleNotScalar(other);
@@ -916,29 +949,29 @@ public:
 			});
 			return *this; 
 		};
+		// pow(0.5)
 		value sqrt() const { 
 			return pow(0.5);
 		};
-		value floor() const { 
-			unit_m.Update([](Units::AtomicUnitStruct Data)->Units::AtomicUnitStruct {
-				Data.value_m = std::floor(Data.value_m / Data.ratio_m) * Data.ratio_m;
-				return Data;
-			});
-			return *this;
+		// atomicly floors (rounds to lower whole integer) the underlying value
+		value& floor() { 
+			return update([](double v)->double { return std::floor(v); });
 		};
-		value ceiling() const { 
-			unit_m.Update([](Units::AtomicUnitStruct Data)->Units::AtomicUnitStruct {
-				Data.value_m = std::ceil(Data.value_m / Data.ratio_m) * Data.ratio_m;
-				return Data;
-			});
-			return *this;
+		// Creats a copy of the value and floors (rounds to lower whole integer) the underlying value
+		value floor() const {
+			auto out{ value(*this) };
+			out.floor();
+			return out;
 		};
-		value update(std::function<double(double)> updateFunction) const {
-			unit_m.Update([&updateFunction](Units::AtomicUnitStruct Data)->Units::AtomicUnitStruct {
-				Data.value_m = updateFunction(Data.value_m / Data.ratio_m) * Data.ratio_m;
-				return Data;
-			});
-			return *this;
+		// atomicly ceilings (rounds to upper whole integer) the underlying value
+		value& ceiling() {
+			return update([](double v)->double { return std::ceil(v); });
+		}; 
+		// Creats a copy of the value and ceilings (rounds to upper whole integer) the underlying value
+		value ceiling() const {
+			auto out{ value(*this) };
+			out.ceiling();
+			return out;
 		};
 
 	};
@@ -947,7 +980,7 @@ public:
 	class traits {
 		/* test if two unit types are convertable */
 		template<class U1, class U2> struct is_convertible_unit_t {
-			static constexpr const std::intmax_t value = HashUnits(U1::A(), U1::B(), U1::C(), U1::D(), U1::E()) == HashUnits(U2::A(), U2::B(), U2::C(), U2::D(), U2::E());
+			static constexpr const std::intmax_t value = Units::HashUnits(U1::A(), U1::B(), U1::C(), U1::D(), U1::E()) == Units::HashUnits(U2::A(), U2::B(), U2::C(), U2::D(), U2::E());
 		};
 
 		template<class U1> struct is_unit_t {
@@ -1476,18 +1509,6 @@ public:
 			if (b < *a) *a = b;
 		};
 	};
-
-	//class traits {
-	//public:
-	//	/* test if two unit types are convertable */
-	//	template<class U1, class U2> struct is_convertible_unit_t {
-	//		static constexpr const std::intmax_t value = HashUnits(U1::A(), U1::B(), U1::C(), U1::D(), U1::E()) == HashUnits(U2::A(), U2::B(), U2::C(), U2::D(), U2::E());
-	//	};
-
-	//	template<class U1> struct is_unit_t {
-	//		static constexpr const std::intmax_t value = std::is_base_of<Units::value, U1>::value;
-	//	};
-	//};
 
 	class constants {
 	public:
