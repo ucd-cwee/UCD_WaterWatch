@@ -144,7 +144,7 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 
 		}
 
-
+		// Check the atomic_number system is not broken
 		if (1) {
 			fibers::synchronization::atomic_number<double> value;
 			std::cout << "\n\tValue (Befor Add): " << value.load() << std::endl << std::endl;
@@ -201,6 +201,21 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 						largest.store(thisLargest);
 
 					shared.fetch_add(-1);
+				});
+				std::cout << cweeStr::printf("\tResult (double) = %f\n", (float)largest.load());
+			}
+			{
+				fibers::synchronization::atomic_number<double> shared;
+				std::atomic<int> largest;
+				fibers::parallel::For((size_t)0, (size_t)(fibers::utilities::Hardware::GetNumCpuCores()), [kExecNum = 1e5, &shared, &largest](size_t threadNum) {
+					auto thisLargest = std::abs(shared.fetch_add(-1));
+
+					::Sleep(1000);
+
+					if (largest.load() < thisLargest)
+						largest.store(thisLargest);
+
+					shared.fetch_add(1);
 				});
 				std::cout << cweeStr::printf("\tResult (double) = %f\n", (float)largest.load());
 			}

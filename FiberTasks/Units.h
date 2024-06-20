@@ -11,11 +11,7 @@
     virtual ~type() {}; \
 	friend inline std::ostream& operator<<(std::ostream& os, type const& obj) { os << obj.ToString(); return os; }; \
 	friend inline std::stringstream& operator>>(std::stringstream& os, type& obj) { double v = 0; os >> v; obj = v; return os; }; \
-	constexpr static double A() noexcept { return a; } \
-	constexpr static double B() noexcept { return b; } \
-	constexpr static double C() noexcept { return c; } \
-	constexpr static double D() noexcept { return d; } \
-	constexpr static double E() noexcept { return e; } \
+	static constexpr size_t UnitHash() { return Units::HashUnits(a,b,c,d,e); } \
 };
 #define DefineCategoryStd(type, a, b, c, d, e) namespace std { template<> class numeric_limits<Units::type> { public: \
 	static constexpr double min() { return std::numeric_limits<double>::min(); } \
@@ -980,7 +976,7 @@ public:
 	class traits {
 		/* test if two unit types are convertable */
 		template<class U1, class U2> struct is_convertible_unit_t {
-			static constexpr const std::intmax_t value = Units::HashUnits(U1::A(), U1::B(), U1::C(), U1::D(), U1::E()) == Units::HashUnits(U2::A(), U2::B(), U2::C(), U2::D(), U2::E());
+			static constexpr const std::intmax_t value = (U1::UnitHash() == U2::UnitHash());
 		};
 
 		template<class U1> struct is_unit_t {
@@ -1235,7 +1231,7 @@ public:
 
 	class UnitsDetail {
 	public:
-#define CreateRow(model, Type) { auto* p = model->second.Alloc(); *p = { Type::specialized_abbreviation(), #Type }; model->first.operator[](HashUnits(Type::A(), Type::B(), Type::C(), Type::D(), Type::E())).Write(Type::conversion(), p); }
+#define CreateRow(model, Type) { auto* p = model->second.Alloc(); *p = { Type::specialized_abbreviation(), #Type }; model->first.operator[](Type::UnitHash()).Write(Type::conversion(), p); }
 #define CreateRowWithMetricPrefixes(model, Type)\
 			CreateRow(model, Type); \
 			CreateRow(model, femto ## Type); \
@@ -1450,12 +1446,47 @@ public:
 			if (model && model->first.count(UnitHash) > 0) {
 				auto& curve = model->first.at(UnitHash);
 
-				auto iter = curve.FindSmallestLargerEqual(UnitRatio);
-				if (iter) {
-					auto* p = iter.GetPayload();
+				auto iter1 = curve.FindLargestSmallerEqual(UnitRatio);
+				if (iter1 && iter1.GetKey() == UnitRatio) {
+					// exact find -- best case scenario
+					auto* p = iter1.GetPayload();
 					if (p) {
-						UnitRatio = iter.GetKey();
+						UnitRatio = iter1.GetKey();
 						return *p;
+					}
+				}
+				else {
+					// not an exact find. 
+					auto iter2 = curve.FindSmallestLargerEqual(UnitRatio);
+					if (iter1 && iter2) {
+						if (std::abs(iter1.GetKey() - UnitRatio) < std::abs(iter2.GetKey() - UnitRatio)) {
+							auto* p = iter1.GetPayload();
+							if (p) {
+								UnitRatio = iter1.GetKey();
+								return *p;
+							}
+						}
+						else {
+							auto* p = iter2.GetPayload();
+							if (p) {
+								UnitRatio = iter2.GetKey();
+								return *p;
+							}
+						}
+					}
+					else if (iter1) {
+						auto* p = iter1.GetPayload();
+						if (p) {
+							UnitRatio = iter1.GetKey();
+							return *p;
+						}
+					}
+					else if (iter2) {
+						auto* p = iter2.GetPayload();
+						if (p) {
+							UnitRatio = iter2.GetKey();
+							return *p;
+						}
 					}
 				}
 			}

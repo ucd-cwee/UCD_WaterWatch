@@ -7569,9 +7569,13 @@ namespace fibers {
 			};
 		}  // namespace dbgroup::index::bw_tree
 
+		template <typename Arg> struct CAS_Container; // forward decl
+
+
         /* Non-atomic, but guarrantees that floating-point numbers will not be negative, which breaks atomic operations. */
 		template <typename Arg> struct UnsignedWrapper {
-		private:
+		template <typename U>  friend struct CAS_Container; // <Arg>
+		protected:
 			static constexpr inline unsigned long long constexpr_pow(unsigned long long x, unsigned long long y) { return y == 0 ? 1.0 : x * constexpr_pow(x, y - 1); };
 			static constexpr unsigned long long MANT_DIG() {
 				if constexpr (std::is_same<double, Arg>::value) {
@@ -7842,6 +7846,23 @@ namespace fibers {
 				return data.addresses[index];
 			};
 		
+			static constexpr Arg MakeUnsignedAndBound(Arg const& a) {
+				if constexpr (std::is_arithmetic<Arg>::value) {
+					return UnsignedWrapper<Arg>::MakeUnsignedAndBound(a);
+				}
+				else {
+					return a;
+				}
+			};
+			static constexpr Arg MakeSigned(Arg const& a) {
+				if constexpr (std::is_arithmetic<Arg>::value) {
+					return UnsignedWrapper<Arg>::MakeSigned(a);
+				}
+				else {
+					return a;
+				}
+			};
+
 		public:
 			constexpr const Arg& Data() const { return data.data; };
 			constexpr Arg& Data() { return data.data; };
@@ -7853,7 +7874,7 @@ namespace fibers {
 					&& std::is_trivially_copy_assignable< Arg >::value
 					&& std::is_trivially_copyable< Arg >::value, "Compare-and-swap operations only work with trivial structs.");
 			};
-			constexpr CAS_Container(Arg const& a) : data{ a } { 
+			constexpr CAS_Container(Arg const& a) : data{ MakeUnsignedAndBound(a) } {
 				static_assert(std::is_trivially_destructible< Arg >::value
 					&& std::is_trivially_copy_constructible< Arg >::value
 					&& std::is_trivially_copy_assignable< Arg >::value
@@ -7907,7 +7928,8 @@ namespace fibers {
 					}
 
 					// update the actual data
-					UpdateCopy.Data() = input;
+					UpdateCopy.Data() = MakeUnsignedAndBound(input);
+					
 
 					// prepare the swap target(s)
 					for (index = 0; index < NumWords; index++) {
@@ -7937,7 +7959,7 @@ namespace fibers {
 					}
 
 					// update the actual data
-					UpdateCopy.Data() = UpdateCopy.load() + input;
+					UpdateCopy.Data() = MakeUnsignedAndBound(UpdateCopy.load() + input);
 
 					// prepare the swap target(s)
 					for (index = 0; index < NumWords; index++) {
@@ -7966,7 +7988,7 @@ namespace fibers {
 					}
 
 					// update the actual data
-					UpdateCopy.Data() = updateFunction(OldCopy.load());
+					UpdateCopy.Data() = MakeUnsignedAndBound(updateFunction(OldCopy.load()));
 
 					// prepare the swap target(s)
 					for (index = 0; index < NumWords; index++) {
@@ -7991,7 +8013,7 @@ namespace fibers {
 			}; // returns the previous value while setting the value to the input
 			Arg load() const {
 				const CAS_Container<Arg> x = Copy();
-				return x.Data();
+				return MakeSigned(x.Data());
 			}; // gets the value
 			void store(Arg const& v) {
 				Swap(v);

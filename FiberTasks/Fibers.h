@@ -617,7 +617,7 @@ namespace fibers {
 
 		private:
 			static auto ValidTypeExample() {
-				if constexpr (isFloatingPoint) return fibers::utilities::CAS_Container<type>{ 0 };
+				if constexpr (isFloatingPoint) return fibers::utilities::CAS_Container<type>{};
 				else { // Integral. Only 4 integral types are actually supported. long, unsigned int, unsigned long, unsigned __int64
 					if constexpr (isSigned) {
 						return static_cast<long>(0);
@@ -639,11 +639,11 @@ namespace fibers {
 			using internalType = typename std::remove_const_t<typename fibers::utilities::function_traits<decltype(std::function(ValidTypeExample))>::result_type>;
 
 		public:
-			constexpr atomic_number() : value(static_cast<type>(0)) {};
-			constexpr atomic_number(const type& a) : value(a) {};
-			constexpr atomic_number(type&& a) : value(std::forward<type>(a)) {};
-			atomic_number(const atomic_number& other) : value(other.load()) {};
-			atomic_number(atomic_number&& other) : value(other.load()) {};
+			constexpr atomic_number() : value{ static_cast<internalType>(0) }  {};
+			constexpr atomic_number(const type& a) : value{ static_cast<internalType>(a) } {};
+			constexpr atomic_number(type&& a) : value{ static_cast<internalType>(std::forward<type>(a)) } {};
+			atomic_number(const atomic_number& other) : value{ other.load() } {};
+			atomic_number(atomic_number&& other) : value{ other.load() } {};
 			atomic_number& operator=(const atomic_number& other) { SetValue(other.load()); return *this; };
 			atomic_number& operator=(atomic_number&& other) { SetValue(other.load()); return *this; };
 			~atomic_number() = default;
