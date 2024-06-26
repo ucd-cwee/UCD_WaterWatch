@@ -868,7 +868,23 @@ namespace chaiscript {
 					}
 					return out + prevBest;
 				};
-								
+				cweeUnitValues::unit_value ForecastSeasonal_T(cweeUnitValues::second const& time, cweeUnitValues::unit_value const& prevBest) const {
+					auto out{ Labels.Y_Type() };
+					if (seasonal.learned) {
+						AUTO df2Ptr = GetDf2(seasonal.svr_results.df2);
+						if (df2Ptr) {
+							AUTO df2 = *df2Ptr;
+							std::vector<float> sampleVec = { 0.0f, 0.0f };
+
+							sampleVec[0] = SeasonalEstimate(time)();
+							sampleVec[1] = 1.0f - sampleVec[0];
+
+							out = df2(dlib::mat(sampleVec));							
+						}
+					}
+					return out + prevBest;
+				};
+			
 				void LearnMonthly(cweeUnitPattern const& mask, cweeUnitPattern const& prevBest) {
 					AUTO ToPredict = (Labels - prevBest).Blur(cweeUnitValues::year(LabelSummary.maxTime - LabelSummary.minTime)() * 12.0, mask);
 					cweeThreadedList<float>							label_list;
@@ -909,6 +925,24 @@ namespace chaiscript {
 								}
 								out.AddValue(t, df2(dlib::mat(sampleVec)));
 							}
+						}
+					}
+					return out + prevBest;
+				};
+				cweeUnitValues::unit_value ForecastMonthly_T(cweeUnitValues::second const& time, cweeUnitValues::unit_value const& prevBest) const {
+					auto out{ Labels.Y_Type() };
+					if (monthly.learned) {
+						AUTO df2Ptr = GetDf2(monthly.svr_results.df2);
+						if (df2Ptr) {
+							AUTO df2 = *df2Ptr;
+							std::vector<float> sampleVec = { 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f };
+
+							int i;
+							for (i = 0; i < 12; i++) {
+								sampleVec[i] = MonthlyEstimate(time, i)();
+							}
+
+							out = df2(dlib::mat(sampleVec));
 						}
 					}
 					return out + prevBest;
@@ -958,6 +992,24 @@ namespace chaiscript {
 					}
 					return out + prevBest;
 				};
+				cweeUnitValues::unit_value ForecastWeekday_T(cweeUnitValues::second const& time, cweeUnitValues::unit_value const& prevBest) const {
+					auto out{ Labels.Y_Type() };
+					if (weekday.learned) {
+						AUTO df2Ptr = GetDf2(weekday.svr_results.df2);
+						if (df2Ptr) {
+							AUTO df2 = *df2Ptr;
+							std::vector<float> sampleVec = { 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f };
+
+							int i;
+							for (i = 0; i <= 6; i++) {
+								sampleVec[i] = WeekdayEstimate(time, i)();
+							}
+
+							out = df2(dlib::mat(sampleVec));
+						}
+					}
+					return out + prevBest;
+				};
 
 				void LearnDaily(cweeUnitPattern const& mask, cweeUnitPattern const& prevBest) {
 					AUTO ToPredict = Labels - prevBest;
@@ -1000,40 +1052,23 @@ namespace chaiscript {
 					}
 					return out + prevBest;
 				};
+				cweeUnitValues::unit_value ForecastDaily_T(cweeUnitValues::second const& time, cweeUnitValues::unit_value const& prevBest) const {
+					auto out{ Labels.Y_Type() };
+					if (daily.learned) {
+						AUTO df2Ptr = GetDf2(daily.svr_results.df2);
+						if (df2Ptr) {
+							AUTO df2 = *df2Ptr;
+							std::vector<float> sampleVec = { 0.0f };
+
+							sampleVec[0] = DailyEstimate(time)();
+
+							out = df2(dlib::mat(sampleVec));
+						}
+					}
+					return out + prevBest;
+				};
 
 			public:
-				//cweeUnitValues::second LearnBasic(cweeUnitPattern const& mask) {
-				//	
-				//	this->LabelSummary = PatternSummary(Labels);
-
-				//	Stopwatch sw; sw.Start();
-
-				//	cweeUnitPattern finalLabels;
-				//	//cweeUnitPattern finalMask;
-				//	if (hourlyEffect) {
-				//		//finalMask = mask.Blur((cweeUnitValues::hour(mask.GetMaxTime() - mask.GetMinTime()))());
-				//		finalLabels = Labels.Blur((cweeUnitValues::hour(Labels.GetMaxTime() - Labels.GetMinTime()))(), mask);
-				//	}
-				//	else if (weekdayEffect) {
-				//		//finalMask = mask.Blur((cweeUnitValues::day(mask.GetMaxTime() - mask.GetMinTime()))());
-				//		finalLabels = Labels.Blur((cweeUnitValues::day(Labels.GetMaxTime() - Labels.GetMinTime()))(), mask);
-				//	}
-				//	else if (monthlyEffect) {
-				//		//finalMask = mask.Blur((cweeUnitValues::month(mask.GetMaxTime() - mask.GetMinTime()))());
-				//		finalLabels = Labels.Blur((cweeUnitValues::month(Labels.GetMaxTime() - Labels.GetMinTime()))(), mask);
-				//	}
-				//	else if (annualEffect) {
-				//		//finalMask = mask.Blur((cweeUnitValues::year(mask.GetMaxTime() - mask.GetMinTime()))() * 2);
-				//		finalLabels = Labels.Blur((cweeUnitValues::year(Labels.GetMaxTime() - Labels.GetMinTime()))() * 2, mask);
-				//	}
-
-				//	this->LineOfBestFit = finalLabels.LineOfBestFit(mask);
-
-				//	sw.Stop();
-
-				//	return cweeUnitValues::second(sw.Seconds_Passed());
-				//};
-
 				cweeUnitValues::second Learn(cweeUnitPattern const& mask) {
 					this->LineOfBestFit = Labels.LineOfBestFit(mask);
 					this->LabelSummary = PatternSummary(Labels);
@@ -1084,6 +1119,14 @@ namespace chaiscript {
 					else if (annualEffect) return ForecastSeasonal(LineOfBestFit);
 					else return LineOfBestFit;
 				};
+				cweeUnitValues::unit_value Forecast_T(cweeUnitValues::second const& time) const {
+					if (hourlyEffect) return ForecastDaily_T(time, ForecastWeekday_T(time, ForecastMonthly_T(time, ForecastSeasonal_T(time, LineOfBestFit.GetCurrentValue(time)))));
+					else if (weekdayEffect) return ForecastWeekday_T(time, ForecastMonthly_T(time, ForecastSeasonal_T(time, LineOfBestFit.GetCurrentValue(time))));
+					else if (monthlyEffect) return ForecastMonthly_T(time, ForecastSeasonal_T(time, LineOfBestFit.GetCurrentValue(time)));
+					else if (annualEffect) return ForecastSeasonal_T(time, LineOfBestFit.GetCurrentValue(time));
+					else return LineOfBestFit.GetCurrentValue(time);
+				};
+
 
 				/* Takes the average forecast, and attempts to augment it with additional data from the past or future of this timeseries */
 				cweeUnitPattern ForecastAdvanced(cweeUnitPattern const& mask) const {
@@ -1119,7 +1162,47 @@ namespace chaiscript {
 
 					return out;
 				};
+				cweeUnitPattern ForecastAdvanced(cweeUnitPattern const& mask, cweeUnitValues::second const& time0, cweeUnitValues::second const& time1) const {
+					AUTO averageForecast = Forecast();
+					AUTO minTimeStep = averageForecast.GetMinimumTimeStep();
+					AUTO maxT = averageForecast.GetMaxTime();
+					AUTO minT = averageForecast.GetMinTime();
+					for (auto t = time0; t < time1 && t < minT; t += minTimeStep) { averageForecast.AddUniqueValue(t, Forecast_T(t)); }
+					for (auto t = maxT; t < time1; t += minTimeStep) { averageForecast.AddUniqueValue(t, Forecast_T(t)); }
+					maxT = averageForecast.GetMaxTime();
+					minT = averageForecast.GetMinTime();
+					AUTO out = cweeUnitPattern(Labels.X_Type(), Labels.Y_Type());
+					bool wasSuccessful;
 
+					auto step{ cweeUnitValues::year(1) }; // { cweeUnitValues::day(7) };
+					auto val{ Labels.Y_Type() }; int count = 0; cweeUnitValues::unit_value t2;
+					for (cweeUnitValues::unit_value t = minT; t <= maxT; t += cweeUnitValues::hour(1)) {
+						AUTO currAvg = averageForecast.GetCurrentValue(t);
+						val = 0; // currAvg;
+						count = 0; // 1;
+
+						// try to get the value locally if we can, working backwards. 
+						wasSuccessful = false;
+						for (t2 = t - step; t2 >= minT && count < 1; t2 -= step) {
+							if (mask.GetCurrentValue(t2) <= 0) {
+								cweeMath::rollingAverageRef(val, (currAvg - averageForecast.GetCurrentValue(t2)) + Labels.GetCurrentValue(t2), count);
+							}
+						}
+						for (t2 = t + step; t2 <= maxT && count < 2; t2 += step) {
+							if (mask.GetCurrentValue(t2) <= 0) {
+								cweeMath::rollingAverageRef(val, (currAvg - averageForecast.GetCurrentValue(t2)) + Labels.GetCurrentValue(t2), count);
+							}
+						}
+
+						if (count > 0) out.AddValue(t, val);
+						else out.AddValue(t, currAvg);
+					}
+
+					out.RemoveTimes(-std::numeric_limits<cweeUnitValues::second>::max(), time0);
+					out.RemoveTimes(time1+1, std::numeric_limits<cweeUnitValues::second>::max());
+
+					return out;
+				};
 
             };
 
@@ -1156,8 +1239,10 @@ namespace chaiscript {
 			lib->AddFunction(, Learn, -> cweeUnitValues::unit_value, return learned.Learn(), PatternLearner& learned);
 			lib->AddFunction(, Learn, -> cweeUnitValues::unit_value, return learned.Learn(mask), PatternLearner& learned, cweeUnitPattern const& mask);
 			lib->AddFunction(, Forecast, -> cweeUnitPattern, return learned.Forecast(), PatternLearner const& learned);
+			lib->AddFunction(, Forecast, -> cweeUnitValues::unit_value, return learned.Forecast_T(time0), PatternLearner const& learned, cweeUnitValues::unit_value const& time0);
 			lib->AddFunction(, ForecastAdvanced, -> cweeUnitPattern, return learned.ForecastAdvanced(mask), PatternLearner const& learned, cweeUnitPattern const& mask);
-			
+			lib->AddFunction(, ForecastAdvanced, -> cweeUnitPattern, return learned.ForecastAdvanced(mask, time0, time1), PatternLearner const& learned, cweeUnitPattern const& mask, cweeUnitValues::unit_value const& time0, cweeUnitValues::unit_value const& time1);
+
 			AUTO todo = [](cweeUnitPattern const& pat) {
 				AUTO mask{ pat.GetOutlierMask() };
 

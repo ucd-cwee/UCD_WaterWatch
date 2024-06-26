@@ -2145,7 +2145,6 @@ std::vector<Color_Interop> MapBackground_Interop::GetMatrix(double Left, double 
 				alpha_foreground = minCol.A / 255.0;
 #if 1
 #if 1
-#if 0
 				fibers::parallel::ForEach(out, [&alpha_foreground, &minCol](Color_Interop& pixel) {
 					double alpha_background = pixel.A / 255.0;
 					pixel.R = alpha_foreground * minCol.R + alpha_background * pixel.R * (1.0 - alpha_foreground);
@@ -2153,15 +2152,6 @@ std::vector<Color_Interop> MapBackground_Interop::GetMatrix(double Left, double 
 					pixel.B = alpha_foreground * minCol.B + alpha_background * pixel.B * (1.0 - alpha_foreground);
 					pixel.A = (1.0 - (1.0 - alpha_foreground) * (1.0 - alpha_background)) * 255.0;
 				});
-#else
-				fibers::parallel::ForEach(out, [&alpha_foreground, &minCol](Color_Interop& pixel) {
-					double alpha_background = pixel.A / 255.0;
-					pixel.R = alpha_foreground * minCol.R + alpha_background * pixel.R * (1.0 - alpha_foreground);
-					pixel.G = alpha_foreground * minCol.G + alpha_background * pixel.G * (1.0 - alpha_foreground);
-					pixel.B = alpha_foreground * minCol.B + alpha_background * pixel.B * (1.0 - alpha_foreground);
-					pixel.A = (1.0 - (1.0 - alpha_foreground) * (1.0 - alpha_background)) * 255.0;
-				});
-#endif
 #else
 				fibers::parallel::For(0, pixelHeight, [&minCol, &alpha_foreground, &out, &pixelWidth](int y) {
 					fibers::parallel::For(0, pixelWidth, [&minCol, &alpha_foreground, &out, &y, &pixelWidth](int x) {
