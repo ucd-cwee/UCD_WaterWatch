@@ -1667,6 +1667,8 @@ namespace fibers {
 			uint32_t groupJobOffset;
 			uint32_t groupJobEnd;
 			uint32_t sharedmemory_size;
+			std::function<void(void*)> GroupStartJob; // callback func with memory for type T
+			std::function<void(void*)> GroupEndJob; // callback func with memory for type T
 		};
 		
 		template <typename T> struct Queue {
@@ -1729,7 +1731,14 @@ namespace fibers {
 		//	jobCount	: how many jobs to generate for this task.
 		//	groupSize	: how many jobs to execute per thread. Jobs inside a group execute serially. It might be worth to increase for small jobs
 		//	task		: receives a JobArgs as parameter
-		void Dispatch(context& ctx, uint32_t jobCount, const std::function<void(JobArgs)>& task, size_t sharedmemory_size = 0) noexcept;
+		void Dispatch(
+			context& ctx, 
+			uint32_t jobCount, 
+			const std::function<void(JobArgs)>& task, 
+			size_t sharedmemory_size = 0, 
+			const std::function<void(void*)>& GroupStartJob = nullptr, // callback func with memory for type T
+			const std::function<void(void*)>& GroupEndJob = nullptr // callback func with memory for type T
+		) noexcept;
 
 		// Returns the amount of job groups that will be created for a set number of jobs and group size
 		__forceinline constexpr uint32_t DispatchGroupCount(uint32_t jobCount, uint32_t groupSize) { return (jobCount + groupSize - 1) / groupSize; /* Calculate the amount of job groups to dispatch (overestimate, or "ceil"): */ };
@@ -1750,7 +1759,23 @@ namespace fibers {
 			auto Wait() { return impl::Wait(ctx); };
 			auto IsBusy() const { return impl::IsBusy(ctx); };
 			auto Queue(const std::function<void(JobArgs)>& task) { return impl::Execute(ctx, task); };
-			auto Dispatch(uint32_t jobCount, const std::function<void(JobArgs)>& task) { return impl::Dispatch(ctx, jobCount, task); };
+			template <typename T> auto Dispatch(
+				uint32_t jobCount, 
+				const std::function<void(JobArgs)>& task, 
+				const std::function<void(void*)>& GroupStartJob = nullptr, // callback func with memory for type T
+				const std::function<void(void*)>& GroupEndJob = nullptr // callback func with memory for type T
+			){ 
+				return impl::Dispatch(ctx, jobCount, task, sizeof(T), GroupStartJob, GroupEndJob);
+			};
+			template <> auto Dispatch<void>(
+				uint32_t jobCount, 
+				const std::function<void(JobArgs)>& task, 
+				const std::function<void(void*)>& GroupStartJob, // callback func with memory for type T
+				const std::function<void(void*)>& GroupEndJob // callback func with memory for type T
+			) { 
+				return impl::Dispatch(ctx, jobCount, task, 0, GroupStartJob, GroupEndJob);
+			};
+
 		};
 	};
 
@@ -1972,7 +1997,7 @@ namespace fibers {
 			if (end <= start) return;
 			auto& group = jobgroup.GetTaskGroup();
 
-			group.Dispatch(end - start, [=](impl::JobArgs args) {
+			group.Dispatch<void>(end - start, [=](impl::JobArgs args) {
 				ToDo(start + args.jobIndex);
 			});			
 		};
@@ -1983,7 +2008,7 @@ namespace fibers {
 			if (end <= start) return;
 			auto& group = jobgroup.GetTaskGroup();
 
-			group.Dispatch((end - start) / step, [=](impl::JobArgs args) {
+			group.Dispatch<void>((end - start) / step, [=](impl::JobArgs args) {
 				ToDo(start + args.jobIndex * step);
 			});			
 		};
@@ -1991,29 +2016,65 @@ namespace fibers {
 		/* parallel_for (auto i = container.begin(); i != container.end(); i++){ todo(*i); }
 		If the todo(*i) returns anything, it will be collected into a vector at the end. */
 		template<typename containerType, typename F> decltype(auto) ForEach(JobGroup& jobgroup, containerType& container, F const& ToDo) {
-			int n = container.size();
-			if (n <= 0) return;
-			auto& group = jobgroup.GetTaskGroup();
+			using iterType = typename containerType::iterator;
 
-			group.Dispatch(n, [&container, to_do = ToDo](impl::JobArgs args) {
-				auto iter = container.begin();
-				std::advance(iter, args.jobIndex);
-				to_do(*iter);
-			});			
+			auto iter = container.begin();
+			auto iter_end = container.end();
+
+			if ((iter_end - iter) > 0) {
+				auto& group = jobgroup.GetTaskGroup();
+
+				group.Dispatch<iterType>(iter_end - iter, [&](impl::JobArgs args) { // actual work
+					iterType* iterInternal{ nullptr };
+					iterInternal = static_cast<iterType*>(args.sharedmemory); // cast PTR
+					if ((iterInternal) && (args.groupIndex == 0) && (args.jobIndex > 0)) std::advance(*iterInternal, args.jobIndex); // advance as needed if this is a new non-starting group
+
+					if (*iterInternal != iter_end) {
+						ToDo(**iterInternal);
+						iterInternal->operator++();
+					}
+				}, [&iter](void* p)->void { // start-up
+					new (p) iterType(iter);
+				}, [&](void* p)->void { // close-out
+					if constexpr (!std::is_pod<iterType>::value) {
+						static_cast<iterType*>(p)->~iterType();
+					}
+				});
+
+				group.Wait();
+			}
 		};
 
 		/* parallel_for (auto i = container.cbegin(); i != container.cend(); i++){ todo(*i); }
 		If the todo(*i) returns anything, it will be collected into a vector at the end. */
 		template<typename containerType, typename F> decltype(auto) ForEach(JobGroup& jobgroup, containerType const& container, F const& ToDo) {
-			int n = container.size();
-			if (n <= 0) return;
-			auto& group = jobgroup.GetTaskGroup();
+			using iterType = typename containerType::const_iterator;
 
-			group.Dispatch(n, [&container, to_do = ToDo](impl::JobArgs args) {
-				auto iter = container.cbegin();
-				std::advance(iter, args.jobIndex);
-				to_do(*iter);
-			});
+			auto iter = container.cbegin();
+			auto iter_end = container.cend();
+
+			if ((iter_end - iter) > 0) {
+				auto& group = jobgroup.GetTaskGroup();
+
+				group.Dispatch<iterType>(iter_end - iter, [&](impl::JobArgs args) { // actual work
+					iterType* iterInternal{ nullptr };
+					iterInternal = static_cast<iterType*>(args.sharedmemory); // cast PTR
+					if ((iterInternal) && (args.groupIndex == 0) && (args.jobIndex > 0)) std::advance(*iterInternal, args.jobIndex); // advance as needed if this is a new non-starting group
+
+					if (*iterInternal != iter_end) {
+						ToDo(**iterInternal);
+						iterInternal->operator++();
+					}
+				}, [&iter](void* p)->void { // start-up
+					new (p) iterType(iter);
+				}, [&](void* p)->void { // close-out
+					if constexpr (!std::is_pod<iterType>::value) {
+						static_cast<iterType*>(p)->~iterType();
+					}
+				});
+
+				group.Wait();
+			}
 		};
 
 		/* parallel_for (auto i = start; i < end; i++){ todo(i); }
@@ -2026,7 +2087,7 @@ namespace fibers {
 
 				impl::TaskGroup group;
 
-				group.Dispatch(end - start, [&](impl::JobArgs args) {
+				group.Dispatch<void>(end - start, [&](impl::JobArgs args) {
 					ToDo(start + args.jobIndex);
 				});
 
@@ -2041,7 +2102,7 @@ namespace fibers {
 
 				impl::TaskGroup group;
 
-				group.Dispatch(end - start, [&](impl::JobArgs args) {
+				group.Dispatch<void>(end - start, [&](impl::JobArgs args) {
 					out[args.jobIndex] = ToDo(start + args.jobIndex);
 				});
 
@@ -2061,7 +2122,7 @@ namespace fibers {
 
 				impl::TaskGroup group;
 
-				group.Dispatch((end - start) / step, [&](impl::JobArgs args) {
+				group.Dispatch<void>((end - start) / step, [&](impl::JobArgs args) {
 					ToDo(start + args.jobIndex * step);
 				});
 
@@ -2076,7 +2137,7 @@ namespace fibers {
 
 				impl::TaskGroup group;
 
-				group.Dispatch((end - start) / step, [&](impl::JobArgs args) {
+				group.Dispatch<void>((end - start) / step, [&](impl::JobArgs args) {
 					out[args.jobIndex] = ToDo(start + args.jobIndex * step);
 				});
 
@@ -2091,10 +2152,11 @@ namespace fibers {
 		template<typename containerType, typename F> decltype(auto) ForEach(containerType& container, F const& ToDo) {
 			constexpr bool retNo = std::is_same<typename fibers::utilities::function_traits<decltype(std::function(ToDo))>::result_type, void>::value;
 
-			int n = container.size();
 			if constexpr (retNo) {
-				if (n <= 0) return;
+				// int n = container.size();
+				// if (n <= 0) return;
 
+#if 0
 				synchronization::atomic_ptr<std::exception_ptr> e{nullptr};
 				std::for_each_n(std::execution::par_unseq, container.begin(), container.end() - container.begin(), [&](auto& v) {
 					try {
@@ -2117,25 +2179,79 @@ namespace fibers {
 						std::rethrow_exception(std::move(copy));
 					}
 				}
+
+#else
+				using iterType = typename containerType::iterator;
+				
+				auto iter = container.begin();
+				auto iter_end = container.end();
+
+				if ((iter_end - iter) > 0) {
+					impl::TaskGroup group;
+
+					group.Dispatch<iterType>(iter_end - iter, [&](impl::JobArgs args) { // actual work
+						iterType* iterInternal{ nullptr };
+						iterInternal = static_cast<iterType*>(args.sharedmemory); // cast PTR
+						if ((iterInternal) && (args.groupIndex == 0) && (args.jobIndex > 0)) std::advance(*iterInternal, args.jobIndex); // advance as needed if this is a new non-starting group
+						
+						if (*iterInternal != iter_end) {
+							ToDo(**iterInternal);
+							iterInternal->operator++();
+						}
+					}, [&iter](void* p)->void { // start-up
+						new (p) iterType(iter);
+					}, [&](void* p)->void { // close-out
+						if constexpr (!std::is_pod<iterType>::value) {
+							static_cast<iterType*>(p)->~iterType();
+						}
+					});
+
+					group.Wait();
+				}
+
+#endif
 			}
 			else {
+
+
 				using returnT = typename fibers::utilities::function_traits<decltype(std::function(ToDo))>::result_type;
+				
 
-				if (n <= 0) return std::vector< returnT >();
+				using iterType = typename containerType::iterator;
 
-				std::vector<containerType::iterator> iterators(n, container.begin());
-				std::vector< returnT > out(n, returnT());
+				auto iter = container.begin();
+				auto iter_end = container.end();
 
-				impl::TaskGroup group;
+				if ((iter_end - iter) > 0) {
+					std::vector< returnT > out(iter_end - iter, returnT());
 
-				group.Dispatch(n, [&](impl::JobArgs args) {
-					std::advance(iterators[static_cast<int>(args.jobIndex)], args.jobIndex);
-					out[static_cast<int>(args.jobIndex)] = ToDo(*iterators[static_cast<int>(args.jobIndex)]);
-				});
+					impl::TaskGroup group;
 
-				group.Wait();
+					group.Dispatch<iterType>(iter_end - iter, [&](impl::JobArgs args) { // actual work
+						iterType* iterInternal{ nullptr };
+						iterInternal = static_cast<iterType*>(args.sharedmemory); // cast PTR
+						if ((iterInternal) && (args.groupIndex == 0) && (args.jobIndex > 0)) std::advance(*iterInternal, args.jobIndex); // advance as needed if this is a new non-starting group
 
-				return out;
+						if (*iterInternal != iter_end) {
+							out[static_cast<int>(args.jobIndex)] = ToDo(**iterInternal);
+							iterInternal->operator++();
+						}
+						}, [&iter](void* p)->void { // start-up
+							new (p) iterType(iter);
+						}, [&](void* p)->void { // close-out
+							if constexpr (!std::is_pod<iterType>::value) {
+								static_cast<iterType*>(p)->~iterType();
+							}
+						});
+
+					group.Wait();
+
+					return out;
+				}
+				else {
+					return std::vector< returnT >();
+				}
+
 			}
 		};
 
@@ -2144,10 +2260,40 @@ namespace fibers {
 		template<typename containerType, typename F> decltype(auto) ForEach(containerType const& container, F const& ToDo) {
 			constexpr bool retNo = std::is_same<typename fibers::utilities::function_traits<decltype(std::function(ToDo))>::result_type, void>::value;
 
-			int n = container.size();
 			if constexpr (retNo) {
-				if (n <= 0) return;
+				// int n = container.size();
+				// if (n <= 0) return;
 
+#if 1
+				using iterType = typename containerType::const_iterator;
+
+				auto iter = container.cbegin();
+				auto iter_end = container.cend();
+				
+				if ((iter_end - iter) > 0) {
+					impl::TaskGroup group;
+
+					group.Dispatch<iterType>(iter_end - iter, [&](impl::JobArgs args) { // actual work
+						iterType* iterInternal{ nullptr };
+						iterInternal = static_cast<iterType*>(args.sharedmemory); // cast PTR
+						if ((iterInternal) && (args.groupIndex == 0) && (args.jobIndex > 0)) std::advance(*iterInternal, args.jobIndex); // advance as needed if this is a new non-starting group
+
+						if (*iterInternal != iter_end) {
+							ToDo(**iterInternal);
+							iterInternal->operator++();
+						}
+					}, [&iter](void* p)->void { // start-up
+						new (p) iterType(iter);
+					}, [&](void* p)->void { // close-out
+						if constexpr (!std::is_pod<iterType>::value) {
+							static_cast<iterType*>(p)->~iterType();
+						}
+					});
+
+					group.Wait();
+				}
+				
+#else
 				synchronization::atomic_ptr<std::exception_ptr> e{ nullptr };
 				std::for_each_n(std::execution::par_unseq, container.cbegin(), container.cend() - container.cbegin(), [&](auto const& v) {
 					try {
@@ -2170,98 +2316,120 @@ namespace fibers {
 						std::rethrow_exception(std::move(copy));
 					}
 				}
+
+#endif
 			}
 			else {
 				using returnT = typename fibers::utilities::function_traits<decltype(std::function(ToDo))>::result_type;
 
-				if (n <= 0) return std::vector< returnT >();
+				using iterType = typename containerType::const_iterator;
 
-				std::vector<containerType::const_iterator> iterators(n, container.begin());
+				auto iter = container.cbegin();
+				auto iter_end = container.cend();
 
-				std::vector< returnT > out(n, returnT());
+				if ((iter_end - iter) > 0) {
+					std::vector< returnT > out(iter_end - iter, returnT());
 
-				impl::TaskGroup group;
+					impl::TaskGroup group;
 
-				group.Dispatch(n, [&](impl::JobArgs args) {
-					std::advance(iterators[args.jobIndex], args.jobIndex);
-					out[args.jobIndex] = ToDo(*iterators[args.jobIndex]);
-				});
+					group.Dispatch<iterType>(iter_end - iter, [&](impl::JobArgs args) { // actual work
+						iterType* iterInternal{ nullptr };
+						iterInternal = static_cast<iterType*>(args.sharedmemory); // cast PTR
+						if ((iterInternal) && (args.groupIndex == 0) && (args.jobIndex > 0)) std::advance(*iterInternal, args.jobIndex); // advance as needed if this is a new non-starting group
 
-				group.Wait();
+						if (*iterInternal != iter_end) {
+							out[static_cast<int>(args.jobIndex)] = ToDo(**iterInternal);
+							iterInternal->operator++();
+						}
+						}, [&iter](void* p)->void { // start-up
+							new (p) iterType(iter);
+						}, [&](void* p)->void { // close-out
+							if constexpr (!std::is_pod<iterType>::value) {
+								static_cast<iterType*>(p)->~iterType();
+							}
+						});
 
-				return out;
+					group.Wait();
+
+					return out;
+				}
+				else {
+					return std::vector< returnT >();
+				}
+
 			}
 		};
 
 		/* wrapper for std::find_if */
 		template<typename containerType, typename F> decltype(auto) Find(containerType& container, F const& ToDo) {
-#if 1
-			return std::find_if(container.begin(), container.end(), [&](auto& x) ->bool { return ToDo(x); }); // std::execution::par, 
-#else
-			uint32_t n{ static_cast<uint32_t>(container.size()) };
-			auto out{ container.begin() };
-			impl::TaskGroup group;
-			if (n > 0) {
-				group.Dispatch(n, [&](impl::JobArgs args) {
-					if (ToDo(out[args.jobIndex])) {
-						auto result{ container.begin() };
-						std::advance(result, args.jobIndex);
-						throw(result);
-					}					
-				});
-
-				try {
-					group.Wait();
-				}
-				catch (decltype(out) iter) {
-					return iter;
-				}
-				catch (...) {
-					std::rethrow_exception(std::current_exception());
-				}
-			}
-			return out;
-#endif
+			return std::find_if(container.begin(), container.end(), [&](auto& x) ->bool { return ToDo(x); }); 
 		};
 
 		/* wrapper for std::find_if */
 		template<typename containerType, typename F> decltype(auto) Find(containerType const& container, F const& ToDo) {
-#if 1
-			return std::find_if(container.cbegin(), container.cend(), [&](auto const& x) ->bool { return ToDo(x); }); // std::execution::par, 
-#else
-			uint32_t n{ static_cast<uint32_t>(container.size()) };
-			auto out{ container.cbegin() };
-			impl::TaskGroup group;
-			if (n > 0) {
-				group.Dispatch(n, [&](impl::JobArgs args) {
-					if (ToDo(out[args.jobIndex])) {
-						auto result{ container.begin() };
-						std::advance(result, args.jobIndex);
-						throw(result);
+			return std::find_if(container.cbegin(), container.cend(), [&](auto const& x) ->bool { return ToDo(x); }); 
+		};
+
+		/* outputType x;
+		for (auto& v : resultList){ x += v; }
+		return x; */
+		template<typename outputType>
+		decltype(auto) Accumulate(std::vector<outputType> const& resultList) {
+#if 0 // Works, and is very fast, but not as fast as the C++ for-loop and accumulation. It is just that hard to beat. 
+			outputType finalSum{ 0 };
+			fibers::synchronization::mutex lock;
+
+			using iterType = typename std::vector<outputType>::const_iterator;
+
+			auto iter = resultList.cbegin();
+			auto iter_end = resultList.cend();
+
+			if ((iter_end - iter) > 0) {
+				impl::TaskGroup group;
+
+				struct data_container{
+					iterType iter;
+					outputType partialSum;
+
+					data_container() = default;
+					data_container(iterType i) : iter(i), partialSum{ 0 } {};
+					data_container(data_container const&) = default;
+					data_container(data_container &&) = default;
+					data_container& operator=(data_container const&) = default;
+					data_container& operator=(data_container&&) = default;
+					~data_container() = default;
+				};
+
+				group.Dispatch<data_container>(iter_end - iter, [&](impl::JobArgs args) { // actual work
+					data_container* dataInternal{ nullptr };
+					iterType* iterInternal{ nullptr };
+
+					dataInternal = static_cast<data_container*>(args.sharedmemory); // cast PTR
+					iterInternal = &dataInternal->iter; // cast PTR
+					if ((iterInternal) && (args.groupIndex == 0) && (args.jobIndex > 0)) std::advance(*iterInternal, args.jobIndex); // advance as needed if this is a new non-starting group
+
+					if (*iterInternal != iter_end) {
+						dataInternal->partialSum += **iterInternal;
+						iterInternal->operator++();
+					}
+				}, [&iter](void* p)->void { // start-up
+					new (p) data_container(iter);
+				}, [&](void* p)->void { // close-out
+					{
+						auto locked{ std::scoped_lock(lock) };
+						finalSum += static_cast<data_container*>(p)->partialSum;
+					}
+					if constexpr (!std::is_pod<iterType>::value || !std::is_pod<outputType>::value) {
+						static_cast<data_container*>(p)->~data_container();
 					}
 				});
 
-				try {
-					group.Wait();
-				}
-				catch (decltype(out) iter) {
-					return iter;
-				}
-				catch (...) {
-					std::rethrow_exception(std::current_exception());
-				}
-			}
-			return out;
-#endif
-		};
+				group.Wait();
 
-		/*
-		outputType x;
-		for (auto& v : resultList){ x += v; }
-		return x;
-		*/
-		template<typename outputType>
-		decltype(auto) Accumulate(std::vector<outputType> const& resultList) {
+				return outputType(finalSum);
+			}
+
+#else
 			outputType out{ 0 };
 			for (auto& v : resultList) {
 				if (v) {
@@ -2269,6 +2437,7 @@ namespace fibers {
 				}
 			}
 			return out;
+#endif
 		};
 
 		/* Generic form of a future<T>, which can be used to wait on and get the results of any job. Can be safely shared if multiple places will need access to the result once available. */

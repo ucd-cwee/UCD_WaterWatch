@@ -59,26 +59,33 @@ public:
 };
 
 
+//constexpr static auto sizeOfPart1 = sizeof(std::array< fibers::utilities::UnsignedWrapper<float>, unitTypes::units_type::_size_constant>);
+//constexpr static auto sizeOfPart2 = sizeof(fibers::utilities::UnsignedWrapper<double>);
+//constexpr static auto sizeOfPart3 = sizeof(char*);
+//constexpr static auto sizeOfPart4 = sizeof(bool);
+//constexpr static auto sizeOfStruct = sizeof(Units::AtomicUnitStruct);
+//
+//
+//
+//
+//
+//
+//struct AtomicUnitStruct {
+//	static constexpr size_t NumUnits = unitTypes::units_type::_size_constant;
+//	
+//	char* abbreviation_m;
+//	// unit data
+//	fibers::utilities::UnsignedWrapper<double> ratio_m;
+//	// SI-unit's actual value
+//	fibers::utilities::UnsignedWrapper<double> value_m;
+//	std::array< fibers::utilities::UnsignedWrapper<float>, NumUnits> unitType_m;
+//	bool isScalar_m : 1;
+//	bool isSI_m : 1;
+//	
+//};
+//
+//constexpr static auto sizeOfStruct2 = sizeof(AtomicUnitStruct);
 
-
-
-
-
-
-
-struct AtomicUnitStruct {
-	static constexpr size_t NumUnits = unitTypes::units_type::_size_constant;
-
-	// unit data
-	char* abbreviation_m;
-	bool isScalar_m;
-	bool isSI_m;
-	std::array< fibers::utilities::UnsignedWrapper<double>, NumUnits> unitType_m;
-	fibers::utilities::UnsignedWrapper<double> ratio_m;
-
-	// SI-unit's actual value
-	fibers::utilities::UnsignedWrapper<double> value_m;
-};
 
 int Example::ExampleF(int numTasks, int numSubTasks) {
 	int* xyzwabc = new int[10000];
@@ -89,40 +96,43 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 #define EXPECT_NE(a, b) if (a != b) {} else { std::cout << "FAILURE AT LINE " << __LINE__ << std::endl; }
 	if (1) {
 		std::is_pod< fibers::utilities::UnsignedWrapper<double> >::value;
-		std::is_pod< AtomicUnitStruct >::value;
 
-		// try to atomic swap the data needed for the unit system
-		if (1) {
-			{
-				fibers::utilities::CAS_Container<AtomicUnitStruct> value{ { const_cast<char*>("ft"), false, false, {1.0,0.0,0.0,0.0,0.0}, 0.304, 1.0 } };
-				for (int i = 0; i < 10; i++) {
-					std::cout << value.load().value_m.load() << " " << value.load().abbreviation_m << std::endl;
-					value.Update([](AtomicUnitStruct currentValue)->AtomicUnitStruct {
-						currentValue.abbreviation_m = const_cast<char*>("m");
-						currentValue.ratio_m = 1.0;
-						currentValue.isSI_m = true;
-						currentValue.isScalar_m = false;
-						currentValue.value_m += 1.0;
+		// TODO; Test the new fibers::parallel::ForEach system to make sure it works as intended and is not broken unintentionally. 
+		{
+			fibers::utilities::Sequence seq(1000);
+			fibers::synchronization::atomic_number<double> D{ 0 };
+			fibers::parallel::ForEach(seq, [&D](int i) {
+				D.Increment();
+			});
+			EXPECT_EQ(D, 1000.0);
+		}
 
-						return currentValue;
-					});
+		try{
+			fibers::utilities::Sequence seq(1000);
+			fibers::synchronization::atomic_number<double> D{ 0 };
+			fibers::parallel::ForEach(seq, [&D](int i) {
+				if (D.Decrement() < 500) {
+					throw(true);
 				}
-			}
-			{
-				fibers::utilities::CAS_Container<AtomicUnitStruct> value{ { const_cast<char*>("ft"), false, false, {1.0,0.0,0.0,0.0,0.0}, 0.304, -1.0 } };
-				for (int i = 0; i < 10; i++) {
-					std::cout << value.load().value_m.load() << " " << value.load().abbreviation_m << std::endl;
-					value.Update([](AtomicUnitStruct currentValue)->AtomicUnitStruct {
-						currentValue.abbreviation_m = const_cast<char*>("m");
-						currentValue.ratio_m = 1.0;
-						currentValue.isSI_m = true;
-						currentValue.isScalar_m = false;
-						currentValue.value_m -= 1.0;
+			});
+			EXPECT_EQ(D, -1000.0);
+		}
+		catch (bool v) {
+			EXPECT_EQ(v, true);
+		}
 
-						return currentValue;
-					});
+		try {
+			std::vector<cweeStr> vec(500, cweeStr("TEST"));
+			fibers::synchronization::atomic_number<double> D{ 0 };
+			fibers::parallel::ForEach(vec, [&D](cweeStr& i) {
+				if (D.Decrement() < 500) {
+					throw(true);
 				}
-			}
+			});
+			EXPECT_EQ(D, -1000.0);
+		}
+		catch (bool v) {
+			EXPECT_EQ(v, true);
 		}
 
 		// Check the atomic_number system is not broken
@@ -873,6 +883,21 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 				});
 			}
 
+			printf("SpeedTest (Pattern) ");
+			std::cout << j;
+			printf(" (Fibers (Fibers Sequence)) : ");
+			{
+				cweeBalancedPattern pat;
+				Stopwatch sw; sw.Start();
+				defer(std::cout << cweeUnitValues::second(sw.Stop() / 1000000000.0).ToString() << " (num = " << pat.GetNumValues() << ")" << std::endl);
+
+				fibers::utilities::Sequence<int> seq{ numLoops };
+				fibers::parallel::ForEach(seq, [&pat, &j](int& i) {
+					for (int k = 0; k < j; k++)
+						pat.AddValue(i + k, i + k);
+				});
+			}
+
 			printf("\n");
 		}
 		for (int j = 1; j < 10; j += 2) {
@@ -946,6 +971,24 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 				std::cout << timePassed.ToString() << " (num = " << count.GetValue() << ")" << std::endl;
 			}
 
+			printf("SpeedTest (atomic int) ");
+			std::cout << j;
+			printf(" (Fibers (Fibers Sequence)) : ");
+			{
+				fibers::containers::number<int> count;
+				Stopwatch sw; sw.Start();
+
+				fibers::utilities::Sequence<int> seq{ numLoops };
+				fibers::parallel::ForEach(seq, [&count, &j](int& V) {
+					for (int k = 0; k < j; k++) {
+						count.Add(k);
+					}
+				});
+
+				cweeUnitValues::second timePassed = sw.Stop() / 1000000000.0;
+				std::cout << timePassed.ToString() << " (num = " << count.GetValue() << ")" << std::endl;
+			}
+
 			printf("\n");
 		}
 		for (int j = 1; j < 10; j += 2) {
@@ -975,8 +1018,8 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 				Stopwatch sw; sw.Start();
 				int i, k;
 
-				std::vector<int> vec(numLoops, 0);
-				std::for_each_n(std::execution::par, vec.begin(), numLoops, [&count, &j](int& V) {
+				fibers::utilities::Sequence<int> seq{ numLoops };
+				std::for_each_n(std::execution::par, seq.begin(), numLoops, [&count, &j](int& V) {
 					for (int k = 0; k < j; k++)
 						count += k;
 				});
@@ -1127,23 +1170,6 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 
 				for (int i = 0; i < numLoops; i++) {
 					(void)std::find_if(std::execution::par, vec.begin(), vec.end(), [j = cweeStr((int)random_fast(0, numLoops - 1))](cweeStr const& x) ->bool { return x == j; });
-				}
-
-				cweeUnitValues::second timePassed = sw.Stop() / 1000000000.0;
-				std::cout << timePassed.ToString() << std::endl;
-			}
-
-			printf("SpeedTest (vector search) ");
-			std::cout << j;
-			printf(" (Fibers) : ");
-			{
-				std::vector<cweeStr> vec(numLoops, cweeStr());
-				fibers::parallel::For(0, numLoops, [&vec](int i) { vec[i] = cweeStr(i); });
-
-				Stopwatch sw; sw.Start();
-
-				for (int i = 0; i < numLoops; i++) {
-					(void)fibers::parallel::Find(vec, [j = cweeStr((int)random_fast(0, numLoops - 1))](cweeStr const& x) ->bool { return x == j; });
 				}
 
 				cweeUnitValues::second timePassed = sw.Stop() / 1000000000.0;
@@ -1302,6 +1328,7 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 
 			printf("\n");
 		}
+
 	}
 
 	auto static_lambda = []()->cweeStr { return cweeStr("2"); };

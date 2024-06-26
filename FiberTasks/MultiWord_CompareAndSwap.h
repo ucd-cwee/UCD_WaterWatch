@@ -270,6 +270,9 @@ namespace fibers {
 
 			};
 
+			using iterator = Iterator;
+			using const_iterator = ConstIterator;
+
 			auto begin() { return Iterator(min); };
 			auto end() { return Iterator(max); };
 			auto cbegin() const { return ConstIterator(min); };

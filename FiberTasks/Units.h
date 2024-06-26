@@ -203,37 +203,37 @@ public:
 
 	public:
 		// unit data
-		std::array< fibers::utilities::UnsignedWrapper<double>, NumUnits> unitType_m; // power exponents for the SI units (e.g. m^1 * kg^0 * s^-1 * A^0 * $^0 = m/s)
+		char* abbreviation_m; // optional abbreviation (e.g. "ft") for the unit. If present, that means this is likely (but not guarranteed) a static (pre-made) type
+		bool isScalar_m : 1; // bool for whether or not this unit is 100% a unitless scalar. Could be determined from unitType_m and removed from data storage.
+		bool isSI_m : 1; // bool for whether or not this unit is 100% a basic SI unit. Could be determined from unitType_m and removed from data storage. 
+		std::array< fibers::utilities::UnsignedWrapper<float>, NumUnits> unitType_m; // power exponents for the SI units (e.g. m^1 * kg^0 * s^-1 * A^0 * $^0 = m/s)
 		fibers::utilities::UnsignedWrapper<double> ratio_m; // ratio multiplier for converting from the SI units to this actual unit (e.g. 1 = meters, 0.304 = feet, etc.)
 		fibers::utilities::UnsignedWrapper<double> value_m; // underlying value of the unit if represented as SI units. (e.g. will always be in meters, regardless of the actual unit being in feet)
-		char* abbreviation_m; // optional abbreviation (e.g. "ft") for the unit. If present, that means this is likely (but not guarranteed) a static (pre-made) type
-		bool isScalar_m; // bool for whether or not this unit is 100% a unitless scalar. Could be determined from unitType_m and removed from data storage.
-		bool isSI_m; // bool for whether or not this unit is 100% a basic SI unit. Could be determined from unitType_m and removed from data storage. 
 
 	public:
 		constexpr AtomicUnitStruct() : 
-			unitType_m{ 0., 0., 0., 0., 0. }, 
-			ratio_m{ 1. },
-			value_m{ 0. },
 			abbreviation_m{ const_cast<char*>("") },
 			isScalar_m{ true },
-			isSI_m{ false }
+			isSI_m{ false }, 
+			unitType_m{ 0.f, 0.f, 0.f, 0.f, 0.f },
+			ratio_m{ 1. },
+			value_m{ 0. }
 		{};
 		constexpr AtomicUnitStruct(double V) :
-			unitType_m{ 0., 0., 0., 0., 0. }, 
-			ratio_m{ 1. },
-			value_m{ V },
 			abbreviation_m{ const_cast<char*>("") },
 			isScalar_m{ true },
-			isSI_m{ false }
+			isSI_m{ false },
+			unitType_m{ 0.f, 0.f, 0.f, 0.f, 0.f },
+			ratio_m{ 1. },
+			value_m{ V }			
 		{};
 		constexpr AtomicUnitStruct(double a, double b, double c, double d, double e, bool isScalar_p, const char* abbreviation_p, double ratio_p, double value_p = 0.0) noexcept :
-			unitType_m{ a, b, c, d, e }, 
-			ratio_m{ ratio_p },
-			value_m{ value_p * ratio_p },
 			abbreviation_m{ const_cast<char*>(abbreviation_p) },
-			isScalar_m{ isScalar_p },			
-			isSI_m{ (abs(a) + abs(b) + abs(c) + abs(d) + abs(e)) == 1.0 && abs(ratio_p) == 1.0 }
+			isScalar_m{ isScalar_p },
+			isSI_m{ (abs(a) + abs(b) + abs(c) + abs(d) + abs(e)) == 1.0 && abs(ratio_p) == 1.0 },
+			unitType_m{ static_cast<float>(a), static_cast<float>(b), static_cast<float>(c), static_cast<float>(d), static_cast<float>(e) },
+			ratio_m{ ratio_p },
+			value_m{ value_p * ratio_p }			
 		{};
 		constexpr AtomicUnitStruct(AtomicUnitStruct const&) = default;
 		constexpr AtomicUnitStruct(AtomicUnitStruct&&) = default;
