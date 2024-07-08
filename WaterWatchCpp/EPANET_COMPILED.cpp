@@ -3156,7 +3156,7 @@ namespace epanet {
             dp = (foot_t)(double)(hyd->Preq - hyd->Pmin);
             n = 1.0 / hyd->Pexp;
 
-#if 1
+#if 0
             fibers::synchronization::mutex lock;
             fibers::parallel::For(1, net->Njuncs + 1, [&lock, &hyd, &pr, &sm, &net, &dp, &n](int i) {
                 int
@@ -3819,7 +3819,7 @@ namespace epanet {
             Slink* link;
 
             // Examine each link
-#if 1
+#if 0
             fibers::synchronization::mutex lock;
             fibers::parallel::For(1, net->Nlinks + 1, [&change, &lock, &net, &hyd, &pr, &rpt](int k) {
                 int     
@@ -6133,7 +6133,7 @@ namespace epanet {
 
             int    i, n;
 
-#if 1
+#if 0
             fibers::parallel::For(1, net->Ntanks + 1, [&net, &hyd, &tstep, &pr](int i) {
                 Ptank tank = net->Tank[i];
                 if (tank->Diameter == 0.0_ft) return; // Skip reservoirs

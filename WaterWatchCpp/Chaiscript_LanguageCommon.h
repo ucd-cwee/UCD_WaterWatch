@@ -24,7 +24,7 @@ namespace chaiscript {
         template<typename T>
         static bool is_reserved_word(const T& s) noexcept {
             const static std::unordered_set<std::uint32_t>
-                words{ utility::hash("def"), utility::hash("fun"), utility::hash("while"), utility::hash("for"), utility::hash("parallel_for"), utility::hash("if"), utility::hash("else"), utility::hash("&&"), utility::hash("||"), utility::hash(","), utility::hash("auto"), utility::hash("return"), utility::hash("break"), utility::hash("true"), utility::hash("false"), utility::hash("class"), utility::hash("attr"), utility::hash("var"), utility::hash("global"), utility::hash("GLOBAL"), utility::hash("_"), utility::hash("__LINE__"), utility::hash("__FILE__"), utility::hash("__FUNC__"), utility::hash("__CLASS__"), utility::hash("__LOCK__") /* utility::hash("is"), */};
+                words{ utility::hash("def"), utility::hash("fun"), utility::hash("while"), utility::hash("for"), utility::hash("if"), utility::hash("else"), utility::hash("&&"), utility::hash("||"), utility::hash(","), utility::hash("auto"), utility::hash("return"), utility::hash("break"), utility::hash("true"), utility::hash("false"), utility::hash("class"), utility::hash("attr"), utility::hash("var"), utility::hash("global"), utility::hash("GLOBAL"), utility::hash("_"), utility::hash("__LINE__"), utility::hash("__FILE__"), utility::hash("__FUNC__"), utility::hash("__CLASS__"), utility::hash("__LOCK__") /* utility::hash("is"), */};
 
             return words.count(utility::hash(s)) == 1;
         }
@@ -729,6 +729,7 @@ namespace chaiscript {
             };
 
             /// Creates a new scope then pops it on destruction
+            /// NOTE: This is linear only, and does not support non-linear or parallel computing
             struct Scope_Push_Pop {
                 Scope_Push_Pop(Scope_Push_Pop&&) = default;
                 Scope_Push_Pop& operator=(Scope_Push_Pop&&) = delete;

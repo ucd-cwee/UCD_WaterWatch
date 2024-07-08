@@ -95,11 +95,16 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 #define EXPECT_EQ(a, b) if (a == b) {} else { std::cout << "FAILURE AT LINE " << __LINE__ << std::endl; }
 #define EXPECT_NE(a, b) if (a != b) {} else { std::cout << "FAILURE AT LINE " << __LINE__ << std::endl; }
 	if (1) {
-		std::is_pod< fibers::utilities::UnsignedWrapper<double> >::value;
+		// TODO; Ensure the job system supports basic queue and wait features.
+		{
+			fibers::JobGroup jobGroup(fibers::Job([]() { return 100.0f; }).AsyncInvoke());
+			auto result = jobGroup.Wait_Get()[0];
+			EXPECT_EQ(result.cast<float>(), 100.0f);
+		}
 
 		// TODO; Test the new fibers::parallel::ForEach system to make sure it works as intended and is not broken unintentionally. 
 		{
-			fibers::utilities::Sequence seq(1000);
+			fibers::utilities::Sequence seq(1000); // 0..999
 			fibers::synchronization::atomic_number<double> D{ 0 };
 			fibers::parallel::ForEach(seq, [&D](int i) {
 				D.Increment();
@@ -108,7 +113,7 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 		}
 
 		try{
-			fibers::utilities::Sequence seq(1000);
+			fibers::utilities::Sequence seq(1000); // 0..999
 			fibers::synchronization::atomic_number<double> D{ 0 };
 			fibers::parallel::ForEach(seq, [&D](int i) {
 				if (D.Decrement() < 500) {
@@ -457,7 +462,7 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 		}
 
 		// Epoch-based garbage collector examples
-		if (0) {
+		if (1) {
 			if (1) {
 			    using namespace fibers::utilities::dbgroup::memory;
 
@@ -517,7 +522,44 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 				}
 
 
+				// using a garbage collector across multiple threads
+				{
+					fibers::utilities::GarbageCollectedAllocator< stackThing > gc;
+					{
+						for (int k = 0; k < 50; k++) {
+							// 50 iterations 
+							fibers::parallel::For(0, 50, [&gc](int i) {
+								{
+									const auto& guard = gc.CreateEpochGuard(); // try to guard this "generation" of stuff since it's being worked on
 
+									for (int j = 0; j < 5; j++) {
+										// 5 children per generation
+										{
+											stackThing* testPtr = gc.Alloc(cweeStr::printf("CHILD %i FROM GENERATION %i", j, i), (float)i);
+											gc.Free(testPtr);
+											testPtr->var = 100.0f; // ptr will remain available until at least 3 epochs after this one, which is protected currently.
+										}
+									}
+								}
+							});
+						}
+					}
+				}
+
+				// using multple garbage collectors across multiple threads simultaneously
+				{
+
+					fibers::parallel::For(0, 50, [](int i) {
+						fibers::utilities::GarbageCollectedAllocator< stackThing > gc;
+						for (int k = 0; k < 50; k++) {
+							const auto& guard = gc.CreateEpochGuard(); // try to guard this "generation" of stuff since it's being worked on
+							for (int j = 0; j < 5; j++) {
+								stackThing* testPtr = gc.Alloc(cweeStr::printf("CHILD %i FROM GENERATION %i", (k * 5) + j, i), (float)i);
+								gc.Free(testPtr); // may be instantly cleared since we are not protecting this Epoch
+							}
+						}
+					});
+				}
 
 
             }
@@ -715,10 +757,65 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 		}
 	}
 
+	// across multiple threads, submitting lots of jobs all at the same time. Then waiting for them.
+	if (1) {
+		{
+			Stopwatch sw; sw.Start();
+			fibers::containers::number<long long> Num{ 0 };
+			defer(std::cout << cweeStr::printf("JobList A: %f seconds: %i.\n", (float)Units::second(sw.Stop() / 1000000000.0l)(), (int)Num.load()));
+			
+			fibers::parallel::For(0, 400, [&Num](int i) {
+				fibers::parallel::For(0, 400, [&Num](int i) {
+					Num.Increment();
+				});
+			});			
+		}
+		{
+			Stopwatch sw; sw.Start();
+			fibers::containers::number<long long> Num{ 0 };
+			defer(std::cout << cweeStr::printf("JobList B: %f seconds: %i.\n", (float)Units::second(sw.Stop() / 1000000000.0l)(), (int)Num.load()));
+
+			fibers::JobGroup group;
+			fibers::parallel::For(0, 400, [&group, &Num](int i) {
+				fibers::parallel::For(group, 0, 400, [&Num](int i) {
+					Num.Increment();
+				});
+			});
+			group.Wait(); // contributes to the job(s)
+		}
+		{
+			Stopwatch sw; sw.Start();
+			fibers::containers::number<long long> Num{ 0 };
+			defer(std::cout << cweeStr::printf("JobList C: %f seconds: %i.\n", (float)Units::second(sw.Stop() / 1000000000.0l)(), (int)Num.load()));
+
+			fibers::JobGroup group;
+			fibers::parallel::For(0, 400, [&group, &Num](int i) {
+				fibers::parallel::For(group, 0, 400, [&Num](int i) {
+					Num.Increment();
+				});
+				group.Wait(); // contributes to the job(s)
+			});
+			
+		}
+		{
+			Stopwatch sw; sw.Start();
+			fibers::containers::number<long long> Num{ 0 };
+			defer(std::cout << cweeStr::printf("JobList D: %f seconds: %i.\n", (float)Units::second(sw.Stop() / 1000000000.0l)(), (int)Num.load()));
+
+			fibers::JobGroup group;
+			fibers::parallel::For(group, 0, 400, [&group, &Num](int i) {
+				fibers::parallel::For(group, 0, 400, [&Num](int i) {
+					Num.Increment();
+				});
+			});
+			group.Wait(); // contributes to the job(s)			
+		}
+	}
+
 	// fibers::containers::Stack
-	if (0) {
+	if (1) {
 		int ijk = 0;
-		for (ijk = 0; ijk < 100; ijk++) {
+		for (ijk = 0; ijk < 5; ijk++) {
 			fibers::containers::Stack<double> concurrent_set;
 
 			concurrent_set.push(0);
@@ -730,14 +827,10 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 
 			concurrent_set.try_remove(3);
 
-			if (concurrent_set.contains(3)) {
-				std::cout << "TEST" << std::endl;
-			}
+			EXPECT_EQ(false, concurrent_set.contains(3));
 
 			double x{ 0 };
-			if (concurrent_set.try_pop(x)) {
-				std::cout << x << std::endl;
-			}
+			EXPECT_EQ(true, concurrent_set.try_pop(x));
 
 			fibers::parallel::For(0, 400, [&concurrent_set](int i) {
 				if (i % 2 == 0) {
@@ -745,78 +838,46 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 						concurrent_set.push(k);
 					}
 				}
-				else {
-					for (int k = i; k < (i + 400); k += 2) {
-						concurrent_set.try_remove(k);
-					}
-				}
 			});
 
 			if (concurrent_set.contains(1)) {
-				concurrent_set.try_remove(1);
+				double T;
+				concurrent_set.try_pop(T);
 			}
-		}
-		for (ijk = 0; ijk < 100; ijk++) {
-			{
-				fibers::containers::Stack<stackThing> concurrent_set; {
-					for (int i = 0; i < 100; i++) {
-						concurrent_set.push(stackThing(cweeStr(i), (int)i));
-					}
-				}
-			}
-			{
-				fibers::containers::Stack<stackThing> concurrent_set; {
-					fibers::parallel::For(0, 100, [&](int i) {
-						int index = i % 10;
-						int index2 = (i+1) % 10;
-
-						concurrent_set.push(stackThing(cweeStr(index), (int)index));
-						concurrent_set.try_remove(stackThing(cweeStr(index2), (int)index2));
-					});
-				}
-			}
-
-			/*
-			concurrent_set.push(stackThing("integer", 100));
-			concurrent_set.push(stackThing("double", 100.0));
-			concurrent_set.push(stackThing("long", 100l));
-			concurrent_set.push(stackThing("long long", 100ll));
-			concurrent_set.push(stackThing("long double", 100.0l));
-
-			concurrent_set.try_remove(stackThing("long"));
-
-			if (concurrent_set.contains(stackThing("long"))) {
-				std::cout << "FAILED" << std::endl;
-			}
-
-			std::shared_ptr<stackThing> x;
-			if (concurrent_set.try_pop(x)) {
-				if (x) {
-					std::cout << x->varName << std::endl;
-				}
-			}
-			stackThing y;
-			if (concurrent_set.try_pop(y)) {
-				if (x) {
-					std::cout << y.varName << std::endl;
-				}
-			}
-
-			fibers::parallel::For(0, 400, [&concurrent_set](int i) {
-				if (i % 2 == 0) {
-					for (int k = i; k < (i + 400); k++) {
-						concurrent_set.push(stackThing(cweeStr(k), k));
-					}
-				}
-				else {
-					for (int k = i; k < (i + 400); k += 2) {
-						concurrent_set.try_remove(stackThing(cweeStr(k), k));
-					}
-				}
-			});*/
-
 		}
 	}
+
+	// fibers::containers::AtomicQueue
+	if (1) {
+		fibers::containers::AtomicQueue<long long> concurrent_queue;
+		fibers::containers::number<int> jobs{ 0 };
+		while (jobs.load() < 100) {
+			concurrent_queue.push(jobs.Increment());
+		}
+		jobs = 0;
+
+		fibers::parallel::For(0, fibers::utilities::Hardware::GetNumCpuCores() + 1, [&concurrent_queue, &jobs](int i) {
+			if (i == 0) {
+				// add items to the back of the queue
+				while (jobs.load() < 100) {
+					concurrent_queue.push(jobs.Increment());
+				}
+			}
+			else {
+				long long Task{ 0 };
+				while (concurrent_queue.front(Task)) {
+					::Sleep(1);
+					if (concurrent_queue.try_remove_front_if([Task](long long const& actualFront)->bool { return Task == actualFront; })) {
+						std::cout << cweeStr::printf("\t\tThread %i Removed Task %i.\n", (int)i, (int)Task);
+					}
+					else {
+						std::cout << cweeStr::printf("\t\t\tThread %i Worked on Task %i but failed to remove it.\n", (int)i, (int)Task);
+					}
+				}
+			}
+		});
+	}
+
 
 	if (1) {
 		for (int j = 1; j < 10; j += 2) {

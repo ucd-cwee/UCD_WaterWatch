@@ -1238,8 +1238,8 @@ namespace fibers {
 			size_t				Size() const { return sizeof(*this) + Allocated(); }
 
 			// Request a new memory pointer. May be recovered from a previously-used location. Will be cleared and correctly initialized, if appropriate.
-			_type_*             Alloc() {
-				_type_* t{nullptr};
+			template <typename... TArgs> _type_* Alloc(TArgs const&... a) {
+				_type_* t{ nullptr };
 				element_item* element{ nullptr };
 
 				++active;
@@ -1248,7 +1248,7 @@ namespace fibers {
 						if (free.TrySet(element->next, &element)) { // get the free element and swap it with it's next ptr. If this fails, we will simply try again.
 							// we now have exclusive access to this element.
 							element->next = nullptr;
-							break; 
+							break;
 						}
 					}
 					// if we fell through and for some reason the element is still empty, we need to allocate more. May be due to contention and many allocations are happening.
@@ -1257,15 +1257,36 @@ namespace fibers {
 
 				t = static_cast<_type_*>(static_cast<void*>(element));
 				memset(t, 0, sizeof(_type_));
-				if constexpr (!isPod()) {
-					if (element->initialized.Increment() == 1) {
-						new (t) _type_;
-					}
-					
-				}				
+				new (t) _type_(a...);
 
 				return t;
 			};
+			
+			//_type_*             Alloc() {
+			//	_type_* t{nullptr};
+			//	element_item* element{ nullptr };
+			//	++active;
+			//	while (!element) {
+			//		while (element = free.load()) { // if we have free elements available...
+			//			if (free.TrySet(element->next, &element)) { // get the free element and swap it with it's next ptr. If this fails, we will simply try again.
+			//				// we now have exclusive access to this element.
+			//				element->next = nullptr;
+			//				break; 
+			//			}
+			//		}
+			//		// if we fell through and for some reason the element is still empty, we need to allocate more. May be due to contention and many allocations are happening.
+			//		if (!element) AllocNewBlock(); // adds a new element to the "free" elements
+			//	}
+			//	t = static_cast<_type_*>(static_cast<void*>(element));
+			//	memset(t, 0, sizeof(_type_));
+			//	if constexpr (!isPod()) {
+			//		if (element->initialized.Increment() == 1) {
+			//			new (t) _type_;
+			//		}
+			//		
+			//	}	
+			//	return t;
+			//};
 
 			// Frees the memory pointer, previously provided by this allocator. Calls the destructor for non-POD types, and will store the pointer for later use.
 			void				Free(_type_* element) {
@@ -1315,6 +1336,51 @@ namespace fibers {
 			long long			GetAllocCount() const { return active.load(); }
 			long long			GetFreeCount() const { return total.load() - active.load(); }
 		};
+
+
+		template<class _type_> class GarbageCollectedAllocator {
+		private:
+			synchronization::atomic_number<long> active;
+			fibers::utilities::dbgroup::index::bw_tree::BwTree< _type_*, bool> ptrs;
+			utilities::dbgroup::memory::EpochBasedGC < fibers::utilities::dbgroup::memory::Target< _type_ > > gc{ 1E3, 1 };
+			
+		public:
+			// Prevents deletion of elements until at least 3 Epochs after the current Epoch. Allows use of ptr's in one thread while another thread can still queue for deletion of ptr's. 
+			auto CreateEpochGuard() {
+				return gc.CreateEpochGuard();
+			};
+			// Create a new ptr that will be deleted by the allocator on destruction or 
+			template <typename... TArgs> _type_* Alloc(TArgs const&... a) {
+				_type_* ptr = new _type_(a...);
+				ptrs.Write(ptr, false);
+				active.Increment();
+				return ptr;
+			};
+			// Requests to free / delete the element. Note that this does not delete the element immediately -- and it is delayed for as long as an older EpochGuard exists. 
+			void Free(_type_* element) {
+				ptrs.Delete(element); 
+				gc.Push(element);
+				active.Decrement();
+				// do NOT clear the ptr or call the destructor yet -- leave that to the garbage collector. 
+			};
+			// returns the number of "live" ptrs, approximately
+			long long			GetAllocCount() { return active.load(); }
+
+			// Initializes the garbage collector automatically. 
+			GarbageCollectedAllocator() : active{ 0 }, ptrs(), gc() {
+				gc.StartGC(); 
+			};
+			GarbageCollectedAllocator(GarbageCollectedAllocator&) = delete;
+			GarbageCollectedAllocator(GarbageCollectedAllocator&&) = delete;
+			GarbageCollectedAllocator& operator=(GarbageCollectedAllocator const&) = delete; 
+			GarbageCollectedAllocator& operator=(GarbageCollectedAllocator&&) = delete;
+			// Clears the garbage collector. 
+			~GarbageCollectedAllocator() {				
+				for (auto iter = ptrs.Scan(); iter; iter++) {
+					gc.Push(iter.GetKey());
+				}
+			};
+		};
 	};
 
 	namespace containers {
@@ -1323,7 +1389,7 @@ namespace fibers {
 		   Slower, but still atomic using multi-word CAS algorithms, if using floating-point numbers like doubles or floats.
 		*/
 		template<typename _Value_type> using number = fibers::synchronization::atomic_number<_Value_type>;
-		
+	
 		/* *THREAD SAFE* Thread- and Fiber-safe queue with Last-In-First-Out functionality.
 		* POD types are stored by-value, non-POD types are stored as shared_ptr's. 
 		* POD types have a speed-up by avoiding destructor calls.
@@ -1383,7 +1449,7 @@ namespace fibers {
 			};
 
 			/* allocator is forced to use POD optimization if the value type is POD. */
-			utilities::Allocator< linkedListItem, 128, std::is_pod<value>::value> nodeAlloc;
+			utilities::GarbageCollectedAllocator< linkedListItem > nodeAlloc;
 			/* the current "tip" of the stack, which will be pop'd on request. */
 			synchronization::atomic_ptr<linkedListItem> head;
 
@@ -1478,13 +1544,14 @@ namespace fibers {
 			 * @return successful or not
 			 */
 			bool try_remove(value const& Value) {
+				decltype(auto) guard { nodeAlloc.CreateEpochGuard() };
+
 				bool found = false;
 				linkedListItem* next = nullptr;
 				linkedListItem* current = head.load(); 
 				if (current) {
 					linkedListItem* prev = current->prev.load();
 					while (!found && current) {
-
 						if (GetValueFromStorageType(current->value) == Value) {
 							// found it
 							if (next) {
@@ -1531,7 +1598,9 @@ namespace fibers {
 			 * @return successful or not, and will set Out if successful
 			 */
 			bool try_pop(ValueStorageType& out) {
-				linkedListItem* current{ nullptr };
+				decltype(auto) guard{ nodeAlloc.CreateEpochGuard() };
+
+				linkedListItem* current{ head.load() };
 				linkedListItem* prev{ nullptr };
 				bool found = false;
 
@@ -1559,7 +1628,9 @@ namespace fibers {
 			 * @return successful or not
 			 */
 			bool try_pop() {
-				linkedListItem* current{ nullptr };
+				decltype(auto) guard{ nodeAlloc.CreateEpochGuard() };
+
+				linkedListItem* current{ head.load() };
 				linkedListItem* prev{ nullptr };
 				bool found = false;
 
@@ -1586,7 +1657,9 @@ namespace fibers {
 			 * @return successful or not, and will set Out if successful
 			 */
 			template<typename = std::enable_if_t<!std::is_pod<value>::value>> bool try_pop(value& out) {
-				linkedListItem* current{ nullptr };
+				decltype(auto) guard{ nodeAlloc.CreateEpochGuard() };
+
+				linkedListItem* current{ head.load() };
 				linkedListItem* prev{ nullptr };
 				bool found = false;
 
@@ -1613,7 +1686,9 @@ namespace fibers {
 			 * @brief counts how many times the Value is found in the list.
 			 * @return number of matched items in list
 			 */
-			unsigned long count(value const& Value, unsigned long maxCount = std::numeric_limits<unsigned long>::max()) const {
+			unsigned long count(value const& Value, unsigned long maxCount = std::numeric_limits<unsigned long>::max())  {
+				decltype(auto) guard{ nodeAlloc.CreateEpochGuard() };
+
 				linkedListItem* current = head.load();
 				unsigned long counted{ 0 };
 				while (current && (counted < maxCount)) {
@@ -1629,12 +1704,391 @@ namespace fibers {
 			 * @brief Determines if the Value is in the list.
 			 * @return whether or not the Value was found
 			 */
-			bool contains(value const& Value) const {
+			bool contains(value const& Value)  {
 				return count(Value, 1) > 0;
 			};
 
 		};
-	
+
+		template <typename value> class AtomicQueue {
+		public:
+			/* storage class for each node in the stack. May or may not be POD, depending on the value type being stored. */
+			class linkedListItem {
+			public:
+				value Value; // may be copied-as-value or may be a shared_ptr. May or may not be POD. 
+				linkedListItem* prev;
+				linkedListItem* next;
+
+				linkedListItem(value const& mvalue, linkedListItem* mprev = nullptr, linkedListItem* mnext = nullptr) : Value(mvalue), prev(mprev), next(mnext) {}
+				linkedListItem() = default; 
+				linkedListItem(linkedListItem const&) = default;
+				linkedListItem(linkedListItem&&) = default;
+				linkedListItem& operator=(linkedListItem const&) = default;
+				linkedListItem& operator=(linkedListItem&&) = default;
+				~linkedListItem() = default;
+			};
+			// GarbageCollected
+			fibers::synchronization::shared_mutex<fibers::synchronization::mutex> deleteGuard;
+			utilities::Allocator< linkedListItem, 128, std::is_pod<value>::value > nodeAlloc; /* the allocator, which supports deferred deletion when we want to access the data of a node that may have been deleted concurrently. */
+			linkedListItem* head; /* the current "beginning" of the line, which will be pushed forward on request. */
+			linkedListItem* tail; /* the current "end" of the line, which will be pop'd (e.g. somebody leaves the line) on request. */
+
+			// try to add new element to the start of the line. May fail under competition with other threads.
+			bool try_push(value const& element) noexcept {
+				//auto guard{ nodeAlloc.CreateEpochGuard() };
+
+				auto* newNode = nodeAlloc.Alloc(element);
+				if (true) {
+					newNode->prev = newNode;
+					newNode->next = newNode;
+
+					linkedListItem* currentHead; 
+					linkedListItem* currentTail; {
+						auto container{ fibers::utilities::MultiItemCAS(
+							&head,
+							&tail
+						) };
+						currentHead = container.Read<0>();
+						currentTail = container.Read<1>();
+					}
+					if (currentHead && currentTail) {
+						// there is already a head and tail. 
+						linkedListItem* currentHeadNext; {
+							auto container{ fibers::utilities::MultiItemCAS(
+								&currentHead->next
+							) };
+							currentHeadNext = container.Read<0>();
+						}
+
+						if (currentHeadNext == currentHead) {
+							// the head points to itself -- e.g. the list only has one element
+							newNode->next = currentHead;
+							newNode->prev = currentHead;
+
+							auto container{ fibers::utilities::MultiItemCAS(
+								&head, // becomes newNode
+								&currentHead->next, // becomes newNode
+								&currentHead->prev, // becomes newNode
+								& tail // becomes currentHead
+							) };
+							fibers::utilities::Union< linkedListItem*, linkedListItem*, linkedListItem*, linkedListItem*> OldValues(currentHead, currentHead, currentHead, currentTail);
+							if (container.TrySwap(OldValues, newNode, newNode, newNode, currentHead)) return true;
+						}
+						else {
+							// the head points to something -- e.g. the list has two or more elements
+							newNode->next = currentHead;
+							newNode->prev = currentTail;
+
+							auto container{ fibers::utilities::MultiItemCAS(
+								&head, // becomes newNode
+								&currentHead->prev, // becomes newNode
+								& currentTail->next // becomes newNode
+							) };
+							fibers::utilities::Union< linkedListItem*, linkedListItem*, linkedListItem*> OldValues(currentHead, currentTail, currentHead);
+							if (container.TrySwap(OldValues, newNode, newNode, newNode)) return true;
+						}
+					}
+					else {
+						// if there is no head, try to swap the head and tail for the new node.
+						fibers::utilities::Union< linkedListItem*, linkedListItem*> OldValues(nullptr, nullptr);
+						auto container{ fibers::utilities::MultiItemCAS(
+							&head,
+							&tail
+						) };
+						if (container.TrySwap(OldValues, newNode, newNode)) return true; 						
+					}
+				}
+				nodeAlloc.Free(newNode); // easy replacement
+				return false;
+			}
+			// add new element to the start of the line. Will always succeed, eventually. 
+			bool push(value const& element) noexcept {
+				//auto guard{ nodeAlloc.CreateEpochGuard() };
+
+				auto* newNode = nodeAlloc.Alloc(element);
+				while (true) {
+					newNode->prev = newNode;
+					newNode->next = newNode;
+
+					linkedListItem* currentHead;
+					linkedListItem* currentTail; {
+						auto container{ fibers::utilities::MultiItemCAS(
+							&head,
+							&tail
+						) };
+						currentHead = container.Read<0>();
+						currentTail = container.Read<1>();
+					}
+					if (currentHead && currentTail) {
+						// there is already a head and tail. 
+						linkedListItem* currentHeadNext; {
+							auto container{ fibers::utilities::MultiItemCAS(
+								&currentHead->next
+							) };
+							currentHeadNext = container.Read<0>();
+						}
+
+						if (currentHeadNext == currentHead) {
+							// the head points to itself -- e.g. the list only has one element
+							newNode->next = currentHead;
+							newNode->prev = currentHead;
+
+							auto container{ fibers::utilities::MultiItemCAS(
+								&head, // becomes newNode
+								&currentHead->next, // becomes newNode
+								&currentHead->prev, // becomes newNode
+								&tail // becomes currentHead
+							) };
+							fibers::utilities::Union< linkedListItem*, linkedListItem*, linkedListItem*, linkedListItem*> OldValues(currentHead, currentHead, currentHead, currentTail);
+							if (container.TrySwap(OldValues, newNode, newNode, newNode, currentHead)) return true;
+						}
+						else {
+							// the head points to something -- e.g. the list has two or more elements
+							newNode->next = currentHead;
+							newNode->prev = currentTail;
+
+							auto container{ fibers::utilities::MultiItemCAS(
+								&head, // becomes newNode
+								&currentHead->prev, // becomes newNode
+								&currentTail->next // becomes newNode
+							) };
+							fibers::utilities::Union< linkedListItem*, linkedListItem*, linkedListItem*> OldValues(currentHead, currentTail, currentHead);
+							if (container.TrySwap(OldValues, newNode, newNode, newNode)) return true;
+						}
+					}
+					else {
+						// if there is no head, try to swap the head and tail for the new node.
+						fibers::utilities::Union< linkedListItem*, linkedListItem*> OldValues(nullptr, nullptr);
+						auto container{ fibers::utilities::MultiItemCAS(
+							&head,
+							&tail
+						) };
+						if (container.TrySwap(OldValues, newNode, newNode)) return true;
+					}
+				}
+				nodeAlloc.Free(newNode); // easy replacement
+				return false;
+			}
+			// Remove the front element from line or return false if the list is empty. Will always succeed, eventually. 
+			bool pop(value& element) noexcept {
+				//auto guard{ nodeAlloc.CreateEpochGuard() };
+
+				while (true) {
+					linkedListItem* currentHead;
+					linkedListItem* currentTail; {
+						auto container{ fibers::utilities::MultiItemCAS(
+							&head,
+							&tail
+						) };
+						currentHead = container.Read<0>();
+						currentTail = container.Read<1>();
+					}
+
+					if (!currentHead || !currentTail) return false; // the list is empty
+					
+					linkedListItem* currentHeadPrev;
+					linkedListItem* currentTailPrev; {
+						auto container{ fibers::utilities::MultiItemCAS(
+							&currentTail->prev,
+							& currentHead->prev
+						) };
+						currentTailPrev = container.Read<0>();
+						currentHeadPrev = container.Read<1>();
+					}
+
+					if (currentHead == currentTail) {
+						// they are the same node, meaning the list has only one item. Clear it out and allow us to start fresh. 
+						auto container{ fibers::utilities::MultiItemCAS(
+							&head, // becomes nullptr
+	                        &currentHead->prev, // becomes nullptr
+							&currentTailPrev->next, // becomes nullptr
+							&tail // becomes nullptr
+						) };
+						fibers::utilities::Union< linkedListItem*, linkedListItem*, linkedListItem*, linkedListItem*> OldValues(currentHead, currentTail, currentTail, currentTail);
+						if (container.TrySwap(OldValues, nullptr, nullptr, nullptr, nullptr)) {
+							element = currentTail->Value;
+							auto guard{ std::shared_lock(deleteGuard) };
+							nodeAlloc.Free(currentTail);
+							return true;
+						}
+					}
+					else {
+						auto container{ fibers::utilities::MultiItemCAS(
+							&tail, // becomes currentTailPrev
+							&currentHead->prev, // becomes currentTailPrev
+							&currentTailPrev->next // becomes currentHead
+						) };
+						fibers::utilities::Union< linkedListItem*, linkedListItem*, linkedListItem*> OldValues(currentTail, currentTail, currentTail);
+						if (container.TrySwap(OldValues, currentTailPrev, currentTailPrev, currentHead)) {
+							element = currentTail->Value;
+							auto guard{ std::shared_lock(deleteGuard) };
+							nodeAlloc.Free(currentTail);
+							return true;
+						}
+					}
+				}
+
+				return false;
+			}
+			// try to remove the front element from line. May fail under competition with other threads or if the list is empty.
+			bool try_pop(value& element) noexcept {
+				//auto guard{ nodeAlloc.CreateEpochGuard() };
+
+				if (true) {
+					linkedListItem* currentHead;
+					linkedListItem* currentTail; {
+						auto container{ fibers::utilities::MultiItemCAS(
+							&head,
+							&tail
+						) };
+						currentHead = container.Read<0>();
+						currentTail = container.Read<1>();
+					}
+
+					if (!currentHead || !currentTail) return false; // the list is empty
+
+					linkedListItem* currentHeadPrev;
+					linkedListItem* currentTailPrev; {
+						auto container{ fibers::utilities::MultiItemCAS(
+							&currentTail->prev,
+							& currentHead->prev
+						) };
+						currentTailPrev = container.Read<0>();
+						currentHeadPrev = container.Read<1>();
+					}
+
+					if (currentHead == currentTail) {
+						// they are the same node, meaning the list has only one item. Clear it out and allow us to start fresh. 
+						auto container{ fibers::utilities::MultiItemCAS(
+							&head, // becomes nullptr
+							&currentHead->prev, // becomes nullptr
+							&currentTailPrev->next, // becomes nullptr
+							&tail // becomes nullptr
+						) };
+						fibers::utilities::Union< linkedListItem*, linkedListItem*, linkedListItem*, linkedListItem*> OldValues(currentHead, currentTail, currentTail, currentTail);
+						if (container.TrySwap(OldValues, nullptr, nullptr, nullptr, nullptr)) {
+							element = currentTail->Value;
+							auto guard{ std::shared_lock(deleteGuard) };
+							nodeAlloc.Free(currentTail);
+							return true;
+						}
+					}
+					else {
+						auto container{ fibers::utilities::MultiItemCAS(
+							&tail, // becomes currentTailPrev
+							&currentHead->prev, // becomes currentTailPrev
+							&currentTailPrev->next // becomes currentHead
+						) };
+						fibers::utilities::Union< linkedListItem*, linkedListItem*, linkedListItem*> OldValues(currentTail, currentTail, currentTail);
+						if (container.TrySwap(OldValues, currentTailPrev, currentTailPrev, currentHead)) {
+							element = currentTail->Value;
+							auto guard{ std::shared_lock(deleteGuard) };
+							nodeAlloc.Free(currentTail);
+							return true;
+						}
+					}
+				}
+
+				return false;
+			}
+			// try to remove the front element from line if its value matches the element.
+			bool try_remove_front_if(std::function<bool(value const&)> test) noexcept {
+				//auto guard{ nodeAlloc.CreateEpochGuard() };
+				
+				while (true) {
+					linkedListItem* currentHead;
+					linkedListItem* currentTail; {
+						auto container{ fibers::utilities::MultiItemCAS(
+							&head,
+							&tail
+						) };
+						currentHead = container.Read<0>();
+						currentTail = container.Read<1>();
+					}
+
+					if (!currentHead || !currentTail) return false; // the list is empty
+
+					linkedListItem* currentHeadPrev;
+					linkedListItem* currentTailPrev; {
+						auto container{ fibers::utilities::MultiItemCAS(
+							&currentTail->prev,
+							& currentHead->prev
+						) };
+						currentTailPrev = container.Read<0>();
+						currentHeadPrev = container.Read<1>();
+					}
+
+					if (currentHead == currentTail) {
+						// they are the same node, meaning the list has only one item. Clear it out and allow us to start fresh. 
+						auto container{ fibers::utilities::MultiItemCAS(
+							&head, // becomes nullptr
+							&currentHead->prev, // becomes nullptr
+							&currentTailPrev->next, // becomes nullptr
+							&tail // becomes nullptr
+						) };
+						fibers::utilities::Union< linkedListItem*, linkedListItem*, linkedListItem*, linkedListItem*> OldValues(currentHead, currentTail, currentTail, currentTail);
+
+						if (test(currentTail->Value)) {
+							if (container.TrySwap(OldValues, nullptr, nullptr, nullptr, nullptr)) {
+								auto guard{ std::shared_lock(deleteGuard) };
+								nodeAlloc.Free(currentTail);
+								return true;
+							}
+							else {
+								// try again
+							}
+						}
+						else {
+							return false;
+						}
+					}
+					else {
+						auto container{ fibers::utilities::MultiItemCAS(
+							&tail, // becomes currentTailPrev
+							&currentHead->prev, // becomes currentTailPrev
+							&currentTailPrev->next // becomes currentHead
+						) };
+						fibers::utilities::Union< linkedListItem*, linkedListItem*, linkedListItem*> OldValues(currentTail, currentTail, currentTail);
+						
+						if (test(currentTail->Value)) {
+							if (container.TrySwap(OldValues, currentTailPrev, currentTailPrev, currentHead)) {
+								auto guard{ std::shared_lock(deleteGuard) };
+								nodeAlloc.Free(currentTail);
+								return true;
+							}
+							else {
+								// try again
+							}
+						}
+						else {
+							return false;
+						}
+					}
+				}
+
+				return false;
+			}
+
+			bool front(value& Value) {
+				//auto guard{ nodeAlloc.CreateEpochGuard() };
+				auto guard{ std::scoped_lock(deleteGuard) };
+
+				linkedListItem* currentTail; {
+					auto container{ fibers::utilities::MultiItemCAS(
+						&tail
+					) };
+					currentTail = container.Read<0>();
+				}
+				if (currentTail) {
+					Value = currentTail->Value;
+					return true;
+				}
+				else {
+					return false;
+				}
+			};
+		};
+
 
 
 
@@ -1647,8 +2101,8 @@ namespace fibers {
 		bool Initialize(uint32_t maxThreadCount = std::numeric_limits< uint32_t>::max());
 		void ShutDown();
 
-		struct JobArgs
-		{
+		/* job arguments used to perform work as part of a loop over a Task */
+		struct JobArgs {
 			uint32_t jobIndex;		// job index relative to dispatch (like SV_DispatchThreadID in HLSL)
 			uint32_t groupID;		// group index relative to dispatch (like SV_GroupID in HLSL)
 			uint32_t groupIndex;	// job index relative to group (like SV_GroupIndex in HLSL)
@@ -1657,9 +2111,11 @@ namespace fibers {
 
 		// Defines a state of execution, can be waited on
 		struct context {
-			synchronization::atomic_number<long> counter{ 0 };
-			synchronization::atomic_ptr<std::exception_ptr> e{ nullptr };
+			synchronization::atomic_number<long> counter{ 0 }; // how many Tasks* are awaited
+			synchronization::atomic_ptr<std::exception_ptr> e{ nullptr }; // shared error PTR for re-throwing at the end of the Tasks.
 		};
+
+		/* job arguments used to perform work as part of a loop over a Task */
 		struct Task {
 			std::function<void(JobArgs)> task;
 			context* ctx;
@@ -1670,8 +2126,40 @@ namespace fibers {
 			std::function<void(void*)> GroupStartJob; // callback func with memory for type T
 			std::function<void(void*)> GroupEndJob; // callback func with memory for type T
 		};
-		
-		template <typename T> struct Queue {
+
+		template <typename T> class Queue {
+		public:
+#if 0 // breaks so far, for reasons unknown. May be a bug with AtomicQueue.
+			moodycamel::ConcurrentQueue<T> queue;
+			// fibers::containers::AtomicQueue<T> queue;
+
+			__forceinline void push(T&& item) {
+				queue.push(std::forward<T>(item));
+			};
+			__forceinline void push(const T& item) {
+				queue.push(item);
+			};
+			__forceinline bool try_pop(T& item) {
+				return queue.try_pop(item);
+			};
+			__forceinline bool front(T& item) {
+				return queue.front(item);
+			};
+#else
+#if 1 // utilizes a lock-free design that guarrantees progress under heavy contention
+			concurrency::concurrent_queue<T> queue;
+
+			__forceinline void push(T&& item) {
+				queue.push(std::forward<T>(item));
+			};
+			__forceinline void push(const T& item) {
+				queue.push(item);
+			};
+			__forceinline bool try_pop(T& item) {
+				return queue.try_pop(item);
+			};
+			__forceinline bool front(T& item) = delete; // this function is not supported under this mode.
+#else
 			std::deque<T> queue;
 			fibers::synchronization::mutex locker;
 
@@ -1690,11 +2178,40 @@ namespace fibers {
 				queue.pop_front();
 				return true;
 			};
+			__forceinline bool front(T& item) {
+				std::scoped_lock lock(locker);
+				if (queue.empty()) return false;
+				item = std::move(queue.front());				
+				return true;
+			};
+			__forceinline bool try_pop_back(T& item) {
+				std::scoped_lock lock(locker);
+				if (queue.empty()) return false;
+				item = std::move(queue.back());
+				queue.pop_back();
+				return true;
+			};
+			__forceinline bool back(T& item) {
+				std::scoped_lock lock(locker);
+				if (queue.empty()) return false;
+				item = std::move(queue.back());
+				return true;
+			};
+#endif
+#endif
+			Queue() = default;
+			Queue(Queue const&) = default;
+			Queue(Queue &&) = default;
+			Queue& operator=(Queue const&) = default;
+			Queue& operator=(Queue&&) = default;
+			~Queue() = default;
 		};
 		struct InternalState {
 			uint32_t numCores = 0;
 			uint32_t numThreads = 0;
+
 			std::unique_ptr<Queue<Task>[]> jobQueuePerThread;
+			// std::unique_ptr<Task[]> currentTaskPerThread;
 
 			fibers::containers::number<bool> alive{ true };
 			std::condition_variable_any wakeCondition; // std::condition_variable wakeCondition; //  
@@ -1713,6 +2230,7 @@ namespace fibers {
 				wake_loop = false;
 				waker.join();
 				jobQueuePerThread.reset();
+				// currentTaskPerThread.reset();
 				threads.clear();
 				numCores = 0;
 				numThreads = 0;
@@ -1938,7 +2456,7 @@ namespace fibers {
 		// The waiter should not be passed around. Ideally we want to follow Fiber job logic, e.g. splitting jobs quickly and 
 		// then finishing them in the same job that started them, continuing like the split never happened.
 		JobGroup(JobGroup const&) = delete;
-		JobGroup(JobGroup&&) = delete;
+		JobGroup(JobGroup&& a) : impl(std::move(a.impl)) {};
 		JobGroup& operator=(JobGroup const&) = delete;
 		JobGroup& operator=(JobGroup&&) = delete;
 		~JobGroup() {};
@@ -1985,14 +2503,15 @@ namespace fibers {
 		impl::TaskGroup& GetTaskGroup() const {
 			return *std::static_pointer_cast<impl::TaskGroup>(impl->waitGroup);
 		};
-	private:
+
+	protected:
 		std::unique_ptr<JobGroupImpl> impl;
 
 	};
 
 	namespace parallel {
 		/* parallel_for (auto i = start; i < end; i++){ todo(i); }
-		If the todo(i) returns anything, it will be collected into a vector at the end. */
+		The user is reponsible for calling jobgroup.Wait() after this dispatches the job(s). */
 		template<typename iteratorType, typename F> decltype(auto) For(JobGroup& jobgroup, iteratorType start, iteratorType end, F const& ToDo) {
 			if (end <= start) return;
 			auto& group = jobgroup.GetTaskGroup();
@@ -2003,7 +2522,7 @@ namespace fibers {
 		};
 
 		/* parallel_for (auto i = start; i < end; i += step){ todo(i); }
-		If the todo(i) returns anything, it will be collected into a vector at the end. */
+		The user is reponsible for calling jobgroup.Wait() after this dispatches the job(s). */
 		template<typename iteratorType, typename F> decltype(auto) For(JobGroup& jobgroup, iteratorType start, iteratorType end, iteratorType step, F const& ToDo) {
 			if (end <= start) return;
 			auto& group = jobgroup.GetTaskGroup();
@@ -2014,17 +2533,17 @@ namespace fibers {
 		};
 
 		/* parallel_for (auto i = container.begin(); i != container.end(); i++){ todo(*i); }
-		If the todo(*i) returns anything, it will be collected into a vector at the end. */
+		The user is reponsible for calling jobgroup.Wait() after this dispatches the job(s). */
 		template<typename containerType, typename F> decltype(auto) ForEach(JobGroup& jobgroup, containerType& container, F const& ToDo) {
 			using iterType = typename containerType::iterator;
 
 			auto iter = container.begin();
 			auto iter_end = container.end();
-
-			if ((iter_end - iter) > 0) {
+			auto distance = std::distance(iter, iter_end);
+			if (distance > 0) {
 				auto& group = jobgroup.GetTaskGroup();
 
-				group.Dispatch<iterType>(iter_end - iter, [&](impl::JobArgs args) { // actual work
+				group.Dispatch<iterType>(distance, [&](impl::JobArgs args) { // actual work
 					iterType* iterInternal{ nullptr };
 					iterInternal = static_cast<iterType*>(args.sharedmemory); // cast PTR
 					if ((iterInternal) && (args.groupIndex == 0) && (args.jobIndex > 0)) std::advance(*iterInternal, args.jobIndex); // advance as needed if this is a new non-starting group
@@ -2046,17 +2565,17 @@ namespace fibers {
 		};
 
 		/* parallel_for (auto i = container.cbegin(); i != container.cend(); i++){ todo(*i); }
-		If the todo(*i) returns anything, it will be collected into a vector at the end. */
+		The user is reponsible for calling jobgroup.Wait() after this dispatches the job(s). */
 		template<typename containerType, typename F> decltype(auto) ForEach(JobGroup& jobgroup, containerType const& container, F const& ToDo) {
 			using iterType = typename containerType::const_iterator;
 
 			auto iter = container.cbegin();
 			auto iter_end = container.cend();
-
-			if ((iter_end - iter) > 0) {
+			auto distance = std::distance(iter, iter_end);
+			if (distance > 0) {
 				auto& group = jobgroup.GetTaskGroup();
 
-				group.Dispatch<iterType>(iter_end - iter, [&](impl::JobArgs args) { // actual work
+				group.Dispatch<iterType>(distance, [&](impl::JobArgs args) { // actual work
 					iterType* iterInternal{ nullptr };
 					iterInternal = static_cast<iterType*>(args.sharedmemory); // cast PTR
 					if ((iterInternal) && (args.groupIndex == 0) && (args.jobIndex > 0)) std::advance(*iterInternal, args.jobIndex); // advance as needed if this is a new non-starting group
@@ -2153,43 +2672,15 @@ namespace fibers {
 			constexpr bool retNo = std::is_same<typename fibers::utilities::function_traits<decltype(std::function(ToDo))>::result_type, void>::value;
 
 			if constexpr (retNo) {
-				// int n = container.size();
-				// if (n <= 0) return;
-
-#if 0
-				synchronization::atomic_ptr<std::exception_ptr> e{nullptr};
-				std::for_each_n(std::execution::par_unseq, container.begin(), container.end() - container.begin(), [&](auto& v) {
-					try {
-						ToDo(v);
-					}
-					catch (...) {
-						if (!e) {
-							auto eptr = e.Set(new std::exception_ptr(std::current_exception()));
-							if (eptr) {
-								delete eptr;
-							}
-						}
-					}
-				});
-				if (e) {
-					auto eptr = e.Set(nullptr);
-					if (eptr) {
-						std::exception_ptr copy{ *eptr };
-						delete eptr;
-						std::rethrow_exception(std::move(copy));
-					}
-				}
-
-#else
 				using iterType = typename containerType::iterator;
 				
 				auto iter = container.begin();
 				auto iter_end = container.end();
-
-				if ((iter_end - iter) > 0) {
+				auto distance = std::distance(iter, iter_end);
+				if (distance > 0) {
 					impl::TaskGroup group;
 
-					group.Dispatch<iterType>(iter_end - iter, [&](impl::JobArgs args) { // actual work
+					group.Dispatch<iterType>(distance, [&](impl::JobArgs args) { // actual work
 						iterType* iterInternal{ nullptr };
 						iterInternal = static_cast<iterType*>(args.sharedmemory); // cast PTR
 						if ((iterInternal) && (args.groupIndex == 0) && (args.jobIndex > 0)) std::advance(*iterInternal, args.jobIndex); // advance as needed if this is a new non-starting group
@@ -2208,12 +2699,8 @@ namespace fibers {
 
 					group.Wait();
 				}
-
-#endif
 			}
 			else {
-
-
 				using returnT = typename fibers::utilities::function_traits<decltype(std::function(ToDo))>::result_type;
 				
 
@@ -2221,13 +2708,13 @@ namespace fibers {
 
 				auto iter = container.begin();
 				auto iter_end = container.end();
-
-				if ((iter_end - iter) > 0) {
+				auto distance = std::distance(iter, iter_end);
+				if (distance > 0) {
 					std::vector< returnT > out(iter_end - iter, returnT());
 
 					impl::TaskGroup group;
 
-					group.Dispatch<iterType>(iter_end - iter, [&](impl::JobArgs args) { // actual work
+					group.Dispatch<iterType>(distance, [&](impl::JobArgs args) { // actual work
 						iterType* iterInternal{ nullptr };
 						iterInternal = static_cast<iterType*>(args.sharedmemory); // cast PTR
 						if ((iterInternal) && (args.groupIndex == 0) && (args.jobIndex > 0)) std::advance(*iterInternal, args.jobIndex); // advance as needed if this is a new non-starting group
@@ -2236,13 +2723,13 @@ namespace fibers {
 							out[static_cast<int>(args.jobIndex)] = ToDo(**iterInternal);
 							iterInternal->operator++();
 						}
-						}, [&iter](void* p)->void { // start-up
-							new (p) iterType(iter);
-						}, [&](void* p)->void { // close-out
-							if constexpr (!std::is_pod<iterType>::value) {
-								static_cast<iterType*>(p)->~iterType();
-							}
-						});
+					}, [&iter](void* p)->void { // start-up
+						new (p) iterType(iter);
+					}, [&](void* p)->void { // close-out
+						if constexpr (!std::is_pod<iterType>::value) {
+							static_cast<iterType*>(p)->~iterType();
+						}
+					});
 
 					group.Wait();
 
@@ -2261,19 +2748,17 @@ namespace fibers {
 			constexpr bool retNo = std::is_same<typename fibers::utilities::function_traits<decltype(std::function(ToDo))>::result_type, void>::value;
 
 			if constexpr (retNo) {
-				// int n = container.size();
-				// if (n <= 0) return;
-
-#if 1
 				using iterType = typename containerType::const_iterator;
 
 				auto iter = container.cbegin();
 				auto iter_end = container.cend();
 				
-				if ((iter_end - iter) > 0) {
+				auto distance = std::distance(iter, iter_end);
+
+				if (distance > 0) {
 					impl::TaskGroup group;
 
-					group.Dispatch<iterType>(iter_end - iter, [&](impl::JobArgs args) { // actual work
+					group.Dispatch<iterType>(distance, [&](impl::JobArgs args) { // actual work
 						iterType* iterInternal{ nullptr };
 						iterInternal = static_cast<iterType*>(args.sharedmemory); // cast PTR
 						if ((iterInternal) && (args.groupIndex == 0) && (args.jobIndex > 0)) std::advance(*iterInternal, args.jobIndex); // advance as needed if this is a new non-starting group
@@ -2292,32 +2777,6 @@ namespace fibers {
 
 					group.Wait();
 				}
-				
-#else
-				synchronization::atomic_ptr<std::exception_ptr> e{ nullptr };
-				std::for_each_n(std::execution::par_unseq, container.cbegin(), container.cend() - container.cbegin(), [&](auto const& v) {
-					try {
-						ToDo(v);
-					}
-					catch (...) {
-						if (!e) {
-							auto eptr = e.Set(new std::exception_ptr(std::current_exception()));
-							if (eptr) {
-								delete eptr;
-							}
-						}
-					}
-				});
-				if (e) {
-					auto eptr = e.Set(nullptr);
-					if (eptr) {
-						std::exception_ptr copy{ *eptr };
-						delete eptr;
-						std::rethrow_exception(std::move(copy));
-					}
-				}
-
-#endif
 			}
 			else {
 				using returnT = typename fibers::utilities::function_traits<decltype(std::function(ToDo))>::result_type;
@@ -2326,13 +2785,13 @@ namespace fibers {
 
 				auto iter = container.cbegin();
 				auto iter_end = container.cend();
-
-				if ((iter_end - iter) > 0) {
+				auto distance = std::distance(iter, iter_end);
+				if (distance > 0) {
 					std::vector< returnT > out(iter_end - iter, returnT());
 
 					impl::TaskGroup group;
 
-					group.Dispatch<iterType>(iter_end - iter, [&](impl::JobArgs args) { // actual work
+					group.Dispatch<iterType>(distance, [&](impl::JobArgs args) { // actual work
 						iterType* iterInternal{ nullptr };
 						iterInternal = static_cast<iterType*>(args.sharedmemory); // cast PTR
 						if ((iterInternal) && (args.groupIndex == 0) && (args.jobIndex > 0)) std::advance(*iterInternal, args.jobIndex); // advance as needed if this is a new non-starting group
@@ -2360,12 +2819,12 @@ namespace fibers {
 			}
 		};
 
-		/* wrapper for std::find_if */
+		/* wrapper for std::find_if. This is not parallelized, it is linear, which appears to be the fastest search for some reason under most cases. */
 		template<typename containerType, typename F> decltype(auto) Find(containerType& container, F const& ToDo) {
 			return std::find_if(container.begin(), container.end(), [&](auto& x) ->bool { return ToDo(x); }); 
 		};
 
-		/* wrapper for std::find_if */
+		/* wrapper for std::find_if. This is not parallelized, it is linear, which appears to be the fastest search for some reason under most cases. */
 		template<typename containerType, typename F> decltype(auto) Find(containerType const& container, F const& ToDo) {
 			return std::find_if(container.cbegin(), container.cend(), [&](auto const& x) ->bool { return ToDo(x); }); 
 		};
@@ -2383,8 +2842,9 @@ namespace fibers {
 
 			auto iter = resultList.cbegin();
 			auto iter_end = resultList.cend();
+			auto distance = std::distance(iter, iter_end);
 
-			if ((iter_end - iter) > 0) {
+			if (distance > 0) {
 				impl::TaskGroup group;
 
 				struct data_container{
@@ -2400,7 +2860,7 @@ namespace fibers {
 					~data_container() = default;
 				};
 
-				group.Dispatch<data_container>(iter_end - iter, [&](impl::JobArgs args) { // actual work
+				group.Dispatch<data_container>(distance, [&](impl::JobArgs args) { // actual work
 					data_container* dataInternal{ nullptr };
 					iterType* iterInternal{ nullptr };
 

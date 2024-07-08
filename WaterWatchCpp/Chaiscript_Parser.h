@@ -2233,44 +2233,43 @@ namespace chaiscript {
                         build_match<eval::Ranged_For_AST_Node<Tracer>>(prev_stack_top);
                     }
                 }
-                else if (Keyword("parallel_for")) {
-                    retval = true;
+                // else if (Keyword("parallel_for")){ /* ... */ } 
 
-                    SkipWS(true);
-
-                    if (!Char('(')) {
-                        throw exception::eval_error("Incomplete parallel 'for' expression", File_Position(m_position.line, m_position.col), *m_filename);
+                /* 
+                Attempted to support parallel_for loop.
+                This failed because the t_ss system strongly assumes that the current scope is the last, most recent scope during evaluation. 
+                This assumption is true during linear, serial evaluation:   
+                { Scope 1...
+                    { Scope 2 (for i = 0..2)
+                        { Scope 3... ( i = 0 ) }
+                        { Scope 3... ( i = 1 ) }
+                        { Scope 3... ( i = 2 ) }
                     }
-
-                    SkipWS(true);
-
-                    const bool ranged_for = !(For_Guards() && Char(')'));
-                    if (ranged_for && !(Range_Expression() && Char(')'))) {
-                        throw exception::eval_error("Incomplete parallel 'for' expression", File_Position(m_position.line, m_position.col), *m_filename);
-                    }
-
-                    SkipWS(true);
-
-                    if (!Block()) {
-                        throw exception::eval_error("Incomplete parallel 'for' block", File_Position(m_position.line, m_position.col), *m_filename);
-                    }
-
-                    const auto num_children = m_match_stack.size() - prev_stack_top;
-
-                    if (num_children != 3) {
-                        throw exception::eval_error("Incomplete parallel ranged-for expression", File_Position(m_position.line, m_position.col), *m_filename);
-                    }
-
-                    if (!(m_match_stack[0]->identifier == AST_Node_Type::Id 
-                        || m_match_stack[0]->identifier == AST_Node_Type::Var_Decl 
-                        || m_match_stack[0]->identifier == AST_Node_Type::Reference 
-                        || m_match_stack[0]->identifier == AST_Node_Type::Global_Decl)) {
-                        throw exception::eval_error("Parallel ranged-for variable must be a local reference variable", File_Position(m_position.line, m_position.col), *m_filename);
-                    }
-
-                    build_match<eval::Parallel_AST_Node<Tracer>>(prev_stack_top);                               
                 }
 
+                This assumption falls apart when we add multithreading, where the parent scope must be known by each child scope:
+                { Scope 1...
+                    { Scope 2 (parallel_for i = 0..2)
+                        // Dispatches all "level 3" scopes simultaneously.
+                        { Scope 3a... ( i = 0 ) } 
+                        && { Scope 3b... ( i = 1 ) } 
+                        && { Scope 3c... ( i = 2 ) }
+                    }
+                }
+
+                The issue is that the t_ss is shared across all nodes, and the evaluation shares t_ss, NOT the scope. 
+                In reality, the t_ss and scope should be combined. A unique t_ss should be generated every time a new scope is pushed. 
+
+                Each evaluation of each AST node must have a unique t_ss evaluated with a unique parent-child scope chain. E.g.:
+                Scope 1... Scope 2... Scope 3... Scope 3a... Scope 4. // This "Scope 4" is unique to this Scope3a and can never access the other "Scope 4" scopes
+                Scope 1... Scope 2... Scope 3... Scope 3b... Scope 4a. // This "Scope 4a" is unique to this Scope3b and can never access the other "Scope 4" scopes
+                Scope 1... Scope 2... Scope 3... Scope 3b... Scope 4b. // This "Scope 4b" is unique to this Scope3b and can never access the other "Scope 4" scopes
+                Scope 1... Scope 2... Scope 3... Scope 3c... Scope 4. // This "Scope 4" is unique to this Scope3c and can never access the other "Scope 4" scopes
+
+                When Scope 3b's evaluation seeks for the variables available to it, it'll seek upwards its parents, correctly "missing" the other parallel nodes, 
+                and correctly assuming that it can spawn k-children in paralle without concern.
+
+                */
                 return retval;
             }
 

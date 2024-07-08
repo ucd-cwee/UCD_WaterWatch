@@ -45,13 +45,34 @@ namespace chaiscript {
             lib->add(chaiscript::fun([](FutureObj& a, std::function<void(chaiscript::Boxed_Value)> const& f) { return a.continue_with(f); }), "continue_with");
 
             lib->add(chaiscript::fun([](std::function<chaiscript::Boxed_Value()> const& t_func) {
+                /*
+                fibers::Any p_any = std::make_shared<std::promise<chaiscript::Boxed_Value>>();
+                auto awaiter_fibers = fibers::Job([](std::function<chaiscript::Boxed_Value()>& func, std::promise<chaiscript::Boxed_Value>& promise) {
+                    chaiscript::Boxed_Value toReturn;
+                    try {
+                        toReturn = func();
+                    }
+                    catch (...) {
+                        toReturn = chaiscript::Boxed_Value(std::current_exception());
+                    }   
+                    promise.set_value(toReturn);
+                }, (std::decay_t<decltype(t_func)>)t_func, p_any);
+                awaiter_fibers.AsyncFireAndForget();
+                return FutureObj(
+                    p_any, // promise container
+                    p_any.cast< std::promise<chaiscript::Boxed_Value>& >().get_future(), // future container
+                    awaiter_fibers // job task
+                );
+                */
+
                 cweeAny p = make_cwee_shared<std::promise<chaiscript::Boxed_Value>>(new std::promise<chaiscript::Boxed_Value>());
                 auto awaiter = cweeJob([](std::function<chaiscript::Boxed_Value()>& func, std::promise<chaiscript::Boxed_Value>& promise) {
                     chaiscript::Boxed_Value toReturn;
                     try {
                         toReturn = func();
                     }
-                    catch (...) {}
+                    catch (...) {
+                    }
                     promise.set_value(toReturn);
                 }, t_func, p).AsyncInvoke();
                 return FutureObj(

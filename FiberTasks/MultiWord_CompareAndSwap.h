@@ -1403,7 +1403,7 @@ namespace fibers {
 					thread_local HeartBeater hb{};
 					if (!hb.HasID()) {
 						auto id = std::hash<std::thread::id>{}(std::this_thread::get_id()) % kMaxThreadNum;
-						while (true) {
+						while (id_vec) {
 							auto& dst = id_vec[id];
 							auto reserved = dst.load(kRelaxed);
 							if (!reserved && dst.compare_exchange_strong(reserved, true, kRelaxed)) {

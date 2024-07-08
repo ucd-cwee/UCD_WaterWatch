@@ -613,320 +613,261 @@ namespace chaiscript {
         struct For_Loop {
             template<typename T>
             auto optimize(eval::AST_Node_Impl_Ptr<T> for_node) {
-                if (for_node->identifier != AST_Node_Type::For) {
-                    return for_node;
-                }
+                if (for_node->identifier == AST_Node_Type::For) {
+                    const auto& eq_node = child_at(*for_node, 0);
+                    const auto& binary_node = child_at(*for_node, 1);
+                    const auto& prefix_node = child_at(*for_node, 2);
 
-                const auto& eq_node = child_at(*for_node, 0);
-                const auto& binary_node = child_at(*for_node, 1);
-                const auto& prefix_node = child_at(*for_node, 2);
+                    // in-line declaration of a variable, AND a binary operation is used in the binary slot
+                    if (child_count(*for_node) == 4 && eq_node.identifier == AST_Node_Type::Assign_Decl && binary_node.identifier == AST_Node_Type::Binary) {                    
+                        // in-line declaration of a variable using an ID and a constant (i.e. var& i = 0)
+                        if (child_count(eq_node) == 2
+                            && child_at(eq_node, 0).identifier == AST_Node_Type::Id 
+                            && child_at(eq_node, 1).identifier == AST_Node_Type::Constant) {
 
-                // in-line declaration of a variable, AND a binary operation is used in the binary slot
-                if (child_count(*for_node) == 4 && eq_node.identifier == AST_Node_Type::Assign_Decl && binary_node.identifier == AST_Node_Type::Binary) {                    
-                    // in-line declaration of a variable using an ID and a constant (i.e. var& i = 0)
-                    if (child_count(eq_node) == 2
-                        && child_at(eq_node, 0).identifier == AST_Node_Type::Id 
-                        && child_at(eq_node, 1).identifier == AST_Node_Type::Constant) {
-
-                        // binary test with the correct variable name and a constant
-                        if (child_count(binary_node) == 2
-                            && child_at(binary_node, 0).identifier == AST_Node_Type::Id 
-                            && child_at(binary_node, 0).text == child_at(eq_node, 0).text
-                            && child_at(binary_node, 1).identifier == AST_Node_Type::Constant
-                            ) {
+                            // binary test with the correct variable name and a constant
+                            if (child_count(binary_node) == 2
+                                && child_at(binary_node, 0).identifier == AST_Node_Type::Id 
+                                && child_at(binary_node, 0).text == child_at(eq_node, 0).text
+                                && child_at(binary_node, 1).identifier == AST_Node_Type::Constant
+                                ) {
                             
-                            const std::string& id = child_at(eq_node, 0).text;
-                            const Boxed_Value& begin = dynamic_cast<const eval::Constant_AST_Node<T> &>(child_at(eq_node, 1)).m_value;
-                            double start_int = 0; // = boxed_cast<int>(begin);
-                            int mode = 0;
-                            if (begin.get_type_info().bare_equal(user_type<int>())) {
-                                start_int = boxed_cast<int>(begin);
-                                mode = 0;
-                            }
-                            else if (begin.get_type_info().bare_equal(user_type<float>())) {
-                                start_int = boxed_cast<float>(begin);
-                                mode = 1;
-                            }
-                            else if (begin.get_type_info().bare_equal(user_type<double>())) {
-                                start_int = boxed_cast<double>(begin);
-                                mode = 2;
-                            }
-                            else {
-                                return for_node;
-                            }
-
-                            const Boxed_Value& end = dynamic_cast<const eval::Constant_AST_Node<T> &>(child_at(binary_node, 1)).m_value;
-                            double end_int = 0;
-                            if (end.get_type_info().bare_equal(user_type<int>())) {
-                                end_int = boxed_cast<int>(end);
-                            }
-                            else if (end.get_type_info().bare_equal(user_type<float>())) {
-                                end_int = boxed_cast<float>(end);
-                            }
-                            else if (end.get_type_info().bare_equal(user_type<double>())) {
-                                end_int = boxed_cast<double>(end);
-                            }
-                            else {
-                                return for_node;
-                            }
-
-                            cweeSharedPtr<std::function<bool(double&)>> finishedFunc;  {
-                                const auto parsed = Operators::to_operator(binary_node.text);
-                                switch (parsed) {
-                                case Operators::Opers::equals:
-                                    finishedFunc = make_cwee_shared<std::function<bool(double&)>>([=](double& val) {
-                                        return val == end_int;
-                                    });
-                                    break;
-                                case Operators::Opers::less_than:
-                                    finishedFunc = make_cwee_shared<std::function<bool(double&)>>([=](double& val) {
-                                        return val < end_int;
-                                    });
-                                    break;
-                                case Operators::Opers::less_than_equal:
-                                    finishedFunc = make_cwee_shared<std::function<bool(double&)>>([=](double& val) {
-                                        return val <= end_int;
-                                    });
-                                    break;
-                                case Operators::Opers::greater_than:
-                                    finishedFunc = make_cwee_shared<std::function<bool(double&)>>([=](double& val) {
-                                        return val > end_int;
-                                    });
-                                    break;
-                                case Operators::Opers::greater_than_equal:
-                                    finishedFunc = make_cwee_shared<std::function<bool(double&)>>([=](double& val) {
-                                        return val >= end_int;
-                                    });
-                                    break;
-                                case Operators::Opers::not_equal:
-                                    finishedFunc = make_cwee_shared<std::function<bool(double&)>>([=](double& val) {
-                                        return val != end_int;
-                                    });
-                                    break;
-                                default:
-                                    return for_node;
-                                }                            
-                            }
-                            cweeSharedPtr<std::function<void(double&)>> incrementFunc; {
-
-                                // prefix? i.e. ++i
-                                if (prefix_node.identifier == AST_Node_Type::Prefix) {
-                                    if (child_count(prefix_node) == 1
-                                        && child_at(prefix_node, 0).identifier == AST_Node_Type::Id
-                                        && child_at(prefix_node, 0).text == child_at(eq_node, 0).text) {
-
-                                        const auto parsed = Operators::to_operator(prefix_node.text);
-                                        switch (parsed) {
-                                        case Operators::Opers::pre_increment:
-                                            incrementFunc = make_cwee_shared<std::function<void(double&)>>([=](double& val) {
-                                                ++val;
-                                                });
-                                            break;
-                                        case Operators::Opers::pre_decrement:
-                                            incrementFunc = make_cwee_shared<std::function<void(double&)>>([=](double& val) {
-                                                --val;
-                                                });
-                                            break;
-                                        default:
-                                            return for_node;
-                                        }
-
-                                    }
+                                const std::string& id = child_at(eq_node, 0).text;
+                                const Boxed_Value& begin = dynamic_cast<const eval::Constant_AST_Node<T> &>(child_at(eq_node, 1)).m_value;
+                                double start_int = 0; // = boxed_cast<int>(begin);
+                                int mode = 0;
+                                if (begin.get_type_info().bare_equal(user_type<int>())) {
+                                    start_int = boxed_cast<int>(begin);
+                                    mode = 0;
                                 }
-                                // postfix? i.e. i++
-                                else if (prefix_node.identifier == AST_Node_Type::Postfix) {
-                                    if (child_count(prefix_node) == 1
-                                        && child_at(prefix_node, 0).identifier == AST_Node_Type::Id
-                                        && child_at(prefix_node, 0).text == child_at(eq_node, 0).text) {
-                                        const auto parsed = Operators::to_operator(prefix_node.text);
-                                        switch (parsed) {
-                                        case Operators::Opers::pre_increment:
-                                            incrementFunc = make_cwee_shared<std::function<void(double&)>>([=](double& val) {
-                                                ++val;
-                                                });
-                                            break;
-                                        case Operators::Opers::pre_decrement:
-                                            incrementFunc = make_cwee_shared<std::function<void(double&)>>([=](double& val) {
-                                                --val;
-                                                });
-                                            break;
-                                        default:
-                                            return for_node;
-                                        }
-                                    }
+                                else if (begin.get_type_info().bare_equal(user_type<float>())) {
+                                    start_int = boxed_cast<float>(begin);
+                                    mode = 1;
                                 }
-                                // equation? I.e. i += 2;
-                                else if (prefix_node.identifier == AST_Node_Type::Equation) {
-                                    if (child_count(prefix_node) == 2
-                                        && child_at(prefix_node, 0).identifier == AST_Node_Type::Id
-                                        && child_at(prefix_node, 0).text == child_at(eq_node, 0).text
-                                        && child_at(prefix_node, 1).identifier == AST_Node_Type::Constant
-                                        ) {
-                                        const Boxed_Value& incremental = dynamic_cast<const eval::Constant_AST_Node<T> &>(child_at(prefix_node, 1)).m_value;
-                                        double incremental_int = 0;
-                                        if (incremental.get_type_info().bare_equal(user_type<int>())) {
-                                            incremental_int = boxed_cast<int>(incremental);
-                                        }
-                                        else if (incremental.get_type_info().bare_equal(user_type<float>())) {
-                                            incremental_int = boxed_cast<float>(incremental);
-                                        }
-                                        else if (incremental.get_type_info().bare_equal(user_type<double>())) {
-                                            incremental_int = boxed_cast<double>(incremental);
-                                        }
-                                        else {
-                                            return for_node;
-                                        }
-
-                                        const auto parsed = Operators::to_operator(prefix_node.text);
-                                        switch (parsed) {
-                                        case Operators::Opers::assign_sum:
-                                            incrementFunc = make_cwee_shared<std::function<void(double&)>>([=](double& val) {
-                                                val += incremental_int;
-                                                });
-                                            break;
-                                        case Operators::Opers::assign_difference:
-                                            incrementFunc = make_cwee_shared<std::function<void(double&)>>([=](double& val) {
-                                                val -= incremental_int;
-                                                });
-                                            break;
-                                        default:
-                                            return for_node;
-                                        }
-                                    }
+                                else if (begin.get_type_info().bare_equal(user_type<double>())) {
+                                    start_int = boxed_cast<double>(begin);
+                                    mode = 2;
                                 }
                                 else {
                                     return for_node;
                                 }
 
-                            } 
+                                const Boxed_Value& end = dynamic_cast<const eval::Constant_AST_Node<T> &>(child_at(binary_node, 1)).m_value;
+                                double end_int = 0;
+                                if (end.get_type_info().bare_equal(user_type<int>())) {
+                                    end_int = boxed_cast<int>(end);
+                                }
+                                else if (end.get_type_info().bare_equal(user_type<float>())) {
+                                    end_int = boxed_cast<float>(end);
+                                }
+                                else if (end.get_type_info().bare_equal(user_type<double>())) {
+                                    end_int = boxed_cast<double>(end);
+                                }
+                                else {
+                                    return for_node;
+                                }
 
-                            if (finishedFunc && incrementFunc) {
-                                // note that we are moving the last element out, then popping the empty shared_ptr
-                                // from the vector
-                                chaiscript::small_vector<eval::AST_Node_Impl_Ptr<T>> body_vector;
-                                auto body_child = std::move(for_node->children[3]);
-                                for_node->children.pop_back();
-                                body_vector.emplace_back(std::move(body_child));
+                                cweeSharedPtr<std::function<bool(double&)>> finishedFunc;  {
+                                    const auto parsed = Operators::to_operator(binary_node.text);
+                                    switch (parsed) {
+                                    case Operators::Opers::equals:
+                                        finishedFunc = make_cwee_shared<std::function<bool(double&)>>([=](double& val) {
+                                            return val == end_int;
+                                        });
+                                        break;
+                                    case Operators::Opers::less_than:
+                                        finishedFunc = make_cwee_shared<std::function<bool(double&)>>([=](double& val) {
+                                            return val < end_int;
+                                        });
+                                        break;
+                                    case Operators::Opers::less_than_equal:
+                                        finishedFunc = make_cwee_shared<std::function<bool(double&)>>([=](double& val) {
+                                            return val <= end_int;
+                                        });
+                                        break;
+                                    case Operators::Opers::greater_than:
+                                        finishedFunc = make_cwee_shared<std::function<bool(double&)>>([=](double& val) {
+                                            return val > end_int;
+                                        });
+                                        break;
+                                    case Operators::Opers::greater_than_equal:
+                                        finishedFunc = make_cwee_shared<std::function<bool(double&)>>([=](double& val) {
+                                            return val >= end_int;
+                                        });
+                                        break;
+                                    case Operators::Opers::not_equal:
+                                        finishedFunc = make_cwee_shared<std::function<bool(double&)>>([=](double& val) {
+                                            return val != end_int;
+                                        });
+                                        break;
+                                    default:
+                                        return for_node;
+                                    }                            
+                                }
+                                cweeSharedPtr<std::function<void(double&)>> incrementFunc; {
 
-                                return make_compiled_node(std::move(for_node), std::move(body_vector),
-                                    [mode, finishedFunc, incrementFunc, id, start_int, end_int](const chaiscript::small_vector<eval::AST_Node_Impl_Ptr<T>>& children,
-                                        const chaiscript::detail::Dispatch_State& t_ss) {
-                                            assert(children.size() == 1);
-                                            chaiscript::eval::detail::Scope_Push_Pop spp(t_ss);
-                                            AUTO i = chaiscript::make_shared<double>(start_int);
-                                            auto& func1 = *finishedFunc;
-                                            auto& func2 = *incrementFunc;
+                                    // prefix? i.e. ++i
+                                    if (prefix_node.identifier == AST_Node_Type::Prefix) {
+                                        if (child_count(prefix_node) == 1
+                                            && child_at(prefix_node, 0).identifier == AST_Node_Type::Id
+                                            && child_at(prefix_node, 0).text == child_at(eq_node, 0).text) {
 
-                                            switch (mode) {
+                                            const auto parsed = Operators::to_operator(prefix_node.text);
+                                            switch (parsed) {
+                                            case Operators::Opers::pre_increment:
+                                                incrementFunc = make_cwee_shared<std::function<void(double&)>>([=](double& val) {
+                                                    ++val;
+                                                    });
+                                                break;
+                                            case Operators::Opers::pre_decrement:
+                                                incrementFunc = make_cwee_shared<std::function<void(double&)>>([=](double& val) {
+                                                    --val;
+                                                    });
+                                                break;
                                             default:
-                                            case 0: {
-                                                AUTO j = chaiscript::make_shared<int>(start_int);
-                                                t_ss.add_object(id, var(j));
-                                                try {
-                                                    for (; func1(*i); func2(*i)) {
-                                                        *j = *i;
-                                                        try {
-                                                            children[0]->eval(t_ss);
-                                                        }
-                                                        catch (eval::detail::Continue_Loop&) {}
-                                                    }
-                                                }
-                                                catch (eval::detail::Break_Loop&) {}
-                                                break;
-                                            }
-                                            case 1: {
-                                                AUTO j = chaiscript::make_shared<float>(start_int);
-                                                t_ss.add_object(id, var(j));
-                                                try {
-                                                    for (; func1(*i); func2(*i)) {
-                                                        *j = *i;
-                                                        try {
-                                                            children[0]->eval(t_ss);
-                                                        }
-                                                        catch (eval::detail::Continue_Loop&) {}
-                                                    }
-                                                }
-                                                catch (eval::detail::Break_Loop&) {}
-                                                break;
-                                            }
-                                            case 2: {
-                                                t_ss.add_object(id, var(i));
-                                                try {
-                                                    for (; func1(*i); func2(*i)) {
-                                                        try {
-                                                            children[0]->eval(t_ss);
-                                                        }
-                                                        catch (eval::detail::Continue_Loop&) {}
-                                                    }
-                                                }
-                                                catch (eval::detail::Break_Loop&) {}
-                                                break;
-                                            }
+                                                return for_node;
                                             }
 
-                                            return void_var();
-                                    });
+                                        }
+                                    }
+                                    // postfix? i.e. i++
+                                    else if (prefix_node.identifier == AST_Node_Type::Postfix) {
+                                        if (child_count(prefix_node) == 1
+                                            && child_at(prefix_node, 0).identifier == AST_Node_Type::Id
+                                            && child_at(prefix_node, 0).text == child_at(eq_node, 0).text) {
+                                            const auto parsed = Operators::to_operator(prefix_node.text);
+                                            switch (parsed) {
+                                            case Operators::Opers::pre_increment:
+                                                incrementFunc = make_cwee_shared<std::function<void(double&)>>([=](double& val) {
+                                                    ++val;
+                                                    });
+                                                break;
+                                            case Operators::Opers::pre_decrement:
+                                                incrementFunc = make_cwee_shared<std::function<void(double&)>>([=](double& val) {
+                                                    --val;
+                                                    });
+                                                break;
+                                            default:
+                                                return for_node;
+                                            }
+                                        }
+                                    }
+                                    // equation? I.e. i += 2;
+                                    else if (prefix_node.identifier == AST_Node_Type::Equation) {
+                                        if (child_count(prefix_node) == 2
+                                            && child_at(prefix_node, 0).identifier == AST_Node_Type::Id
+                                            && child_at(prefix_node, 0).text == child_at(eq_node, 0).text
+                                            && child_at(prefix_node, 1).identifier == AST_Node_Type::Constant
+                                            ) {
+                                            const Boxed_Value& incremental = dynamic_cast<const eval::Constant_AST_Node<T> &>(child_at(prefix_node, 1)).m_value;
+                                            double incremental_int = 0;
+                                            if (incremental.get_type_info().bare_equal(user_type<int>())) {
+                                                incremental_int = boxed_cast<int>(incremental);
+                                            }
+                                            else if (incremental.get_type_info().bare_equal(user_type<float>())) {
+                                                incremental_int = boxed_cast<float>(incremental);
+                                            }
+                                            else if (incremental.get_type_info().bare_equal(user_type<double>())) {
+                                                incremental_int = boxed_cast<double>(incremental);
+                                            }
+                                            else {
+                                                return for_node;
+                                            }
+
+                                            const auto parsed = Operators::to_operator(prefix_node.text);
+                                            switch (parsed) {
+                                            case Operators::Opers::assign_sum:
+                                                incrementFunc = make_cwee_shared<std::function<void(double&)>>([=](double& val) {
+                                                    val += incremental_int;
+                                                    });
+                                                break;
+                                            case Operators::Opers::assign_difference:
+                                                incrementFunc = make_cwee_shared<std::function<void(double&)>>([=](double& val) {
+                                                    val -= incremental_int;
+                                                    });
+                                                break;
+                                            default:
+                                                return for_node;
+                                            }
+                                        }
+                                    }
+                                    else {
+                                        return for_node;
+                                    }
+
+                                } 
+
+                                if (finishedFunc && incrementFunc) {
+                                    // note that we are moving the last element out, then popping the empty shared_ptr
+                                    // from the vector
+                                    chaiscript::small_vector<eval::AST_Node_Impl_Ptr<T>> body_vector;
+                                    auto body_child = std::move(for_node->children[3]);
+                                    for_node->children.pop_back();
+                                    body_vector.emplace_back(std::move(body_child));
+
+                                    return make_compiled_node(std::move(for_node), std::move(body_vector),
+                                        [mode, finishedFunc, incrementFunc, id, start_int, end_int](const chaiscript::small_vector<eval::AST_Node_Impl_Ptr<T>>& children,
+                                            const chaiscript::detail::Dispatch_State& t_ss) {
+                                                assert(children.size() == 1);
+                                                chaiscript::eval::detail::Scope_Push_Pop spp(t_ss);
+                                                AUTO i = chaiscript::make_shared<double>(start_int);
+                                                auto& func1 = *finishedFunc;
+                                                auto& func2 = *incrementFunc;
+
+                                                switch (mode) {
+                                                default:
+                                                case 0: {
+                                                    AUTO j = chaiscript::make_shared<int>(start_int);
+                                                    t_ss.add_object(id, var(j));
+                                                    try {
+                                                        for (; func1(*i); func2(*i)) {
+                                                            *j = *i;
+                                                            try {
+                                                                children[0]->eval(t_ss);
+                                                            }
+                                                            catch (eval::detail::Continue_Loop&) {}
+                                                        }
+                                                    }
+                                                    catch (eval::detail::Break_Loop&) {}
+                                                    break;
+                                                }
+                                                case 1: {
+                                                    AUTO j = chaiscript::make_shared<float>(start_int);
+                                                    t_ss.add_object(id, var(j));
+                                                    try {
+                                                        for (; func1(*i); func2(*i)) {
+                                                            *j = *i;
+                                                            try {
+                                                                children[0]->eval(t_ss);
+                                                            }
+                                                            catch (eval::detail::Continue_Loop&) {}
+                                                        }
+                                                    }
+                                                    catch (eval::detail::Break_Loop&) {}
+                                                    break;
+                                                }
+                                                case 2: {
+                                                    t_ss.add_object(id, var(i));
+                                                    try {
+                                                        for (; func1(*i); func2(*i)) {
+                                                            try {
+                                                                children[0]->eval(t_ss);
+                                                            }
+                                                            catch (eval::detail::Continue_Loop&) {}
+                                                        }
+                                                    }
+                                                    catch (eval::detail::Break_Loop&) {}
+                                                    break;
+                                                }
+                                                }
+
+                                                return void_var();
+                                        });
+                                }
                             }
                         }
                     }
                 }
-
-#if 0
-                if (child_count(*for_node) == 4 && eq_node.identifier == AST_Node_Type::Assign_Decl && child_count(eq_node) == 2
-                    && child_at(eq_node, 0).identifier == AST_Node_Type::Id && child_at(eq_node, 1).identifier == AST_Node_Type::Constant
-                    && binary_node.identifier == AST_Node_Type::Binary && binary_node.text == "<" && child_count(binary_node) == 2
-                    && child_at(binary_node, 0).identifier == AST_Node_Type::Id && child_at(binary_node, 0).text == child_at(eq_node, 0).text
-                    && child_at(binary_node, 1).identifier == AST_Node_Type::Constant && prefix_node.identifier == AST_Node_Type::Prefix
-                    && prefix_node.text == "++" && child_count(prefix_node) == 1 && child_at(prefix_node, 0).identifier == AST_Node_Type::Id
-                    && child_at(prefix_node, 0).text == child_at(eq_node, 0).text) {
-                    const Boxed_Value& begin = dynamic_cast<const eval::Constant_AST_Node<T> &>(child_at(eq_node, 1)).m_value;
-                    const Boxed_Value& end = dynamic_cast<const eval::Constant_AST_Node<T> &>(child_at(binary_node, 1)).m_value;
-                    const std::string& id = child_at(prefix_node, 0).text;
-
-                    if (begin.get_type_info().bare_equal(user_type<int>()) && end.get_type_info().bare_equal(user_type<int>())) {
-                        const auto start_int = boxed_cast<int>(begin);
-                        const auto end_int = boxed_cast<int>(end);
-
-                        // note that we are moving the last element out, then popping the empty shared_ptr
-                        // from the vector
-                        chaiscript::small_vector<eval::AST_Node_Impl_Ptr<T>> body_vector;
-                        auto body_child = std::move(for_node->children[3]);
-                        for_node->children.pop_back();
-                        body_vector.emplace_back(std::move(body_child));
-
-                        return make_compiled_node(std::move(for_node),
-                            std::move(body_vector),
-                            [id, start_int, end_int](const chaiscript::small_vector<eval::AST_Node_Impl_Ptr<T>>& children,
-                                const chaiscript::detail::Dispatch_State& t_ss) {
-                                    assert(children.size() == 1);
-                                    chaiscript::eval::detail::Scope_Push_Pop spp(t_ss);
-
-                                    chaiscript::shared_ptr<int> i = chaiscript::make_shared<int>(start_int);
-                                    t_ss.add_object(id, var(i));
-
-                                    try {
-                                        for (; *i < end_int; *i += 1) {
-                                            try {
-                                                // Body of Loop
-                                                children[0]->eval(t_ss);
-                                            }
-                                            catch (eval::detail::Continue_Loop&) {
-                                                // we got a continue exception, which means all of the remaining
-                                                // loop implementation is skipped and we just need to continue to
-                                                // the next iteration step
-                                            }
-                                        }
-                                    }
-                                    catch (eval::detail::Break_Loop&) {
-                                        // loop broken
-                                    }
-
-                                    return void_var();
-                            });
-                    }
-                }
-#endif
-
                 return for_node;
             }
         };

@@ -284,7 +284,7 @@ std::vector<double> SharedMatrix::GetTimeSeries(double Left, double Top, double 
 						alglib::rbfcreate(2, 1, model->get<0>());
 						rbfsetpoints(model->get<0>(), arr);
 						alglib::rbfreport rep;
-						alglib::rbfsetalgohierarchical(model->get<0>(), avgDistanceBetweenKnots * 10.0, 4, 0.0); // (*model, avgDistanceBetweenKnots * 10.0, 4, 0.0);
+						alglib::rbfsetalgohierarchical(model->get<0>(), avgDistanceBetweenKnots * 10.0, 4, 0.0); 
 						alglib::rbfbuildmodel(model->get<0>(), rep, alglib::parallel);
 					}
 				}
@@ -311,8 +311,9 @@ std::vector<double> SharedMatrix::GetTimeSeries(double Left, double Top, double 
 		tempMatrix.Reserve(numColumns * numRows + 2);
 #endif
 		
-		fibers::parallel::For(0, numRows, [&tempMatrix , &out, &buffer_queue, &numColumns, &Left, &Top, &rowStep, &columnStep, &reductionRatio, &model](int R) {
-			//std::vector< cweeUnion<double, double, double> > out_internal(numColumns, cweeUnion<double, double, double>(std::numeric_limits<double>::max(), std::numeric_limits<double>::max(), std::numeric_limits<double>::max()));
+		//fibers::parallel::For(0, numRows, [&tempMatrix , &out, &buffer_queue, &numColumns, &Left, &Top, &rowStep, &columnStep, &reductionRatio, &model](int R) 
+		for (int R = 0 ; R < numRows; R++)
+		{
 			cweeUnion<double, double> coords;
 			alglib::real_1d_array results;
 			std::shared_ptr<alglib::rbfcalcbuffer> buf;
@@ -346,13 +347,15 @@ std::vector<double> SharedMatrix::GetTimeSeries(double Left, double Top, double 
 				}
 			}
 			buffer_queue.push(buf);
-		});
+		}
+		//);
 
 		// do a faster, local interpolation of those results using the Hilbert curve for the last 2/3 components. 
 		if (true) {
-			fibers::parallel::For(0, numRows, [&numColumns, &out, &tempMatrix, &reductionRatio, &Left, &Top, &columnStep, &rowStep](int R) {
+			fibers::parallel::For(0, numRows, [&numColumns, &out, &tempMatrix, &reductionRatio, &Left, &Top, &columnStep, &rowStep](int R) 
+			// for (int R = 0; R < numRows; R++)
+			{
 				for (int C = 0; C < numColumns; C++) {
-					//if (((int)(::Max(R, C) - ::Min(R, C))) % reductionRatio != 0) {
 					out[numColumns * R + C] = tempMatrix.GetCurrentValue(
 #ifdef useCachedMatrix
 						Left + C * columnStep, Top - R * rowStep
@@ -360,9 +363,9 @@ std::vector<double> SharedMatrix::GetTimeSeries(double Left, double Top, double 
 						C, R
 #endif
 					);
-					//}
 				}
-			});
+			}
+			);
 		}
 #undef useCachedMatrix
 #endif
@@ -612,9 +615,6 @@ std::vector<double> SharedMatrix::GetTimeSeries(double Left, double Top, double 
 		}
 
 	}
-
-	//sw.Stop();
-	//cweeToasts->submitToast("Seconds Required", cweeUnitValues::second(sw.Seconds_Passed()).ToString());
 
 	return out;
 };
@@ -2015,6 +2015,15 @@ std::vector<Color_Interop> MapBackground_Interop::GetMatrix(double Left, double 
 						// no point in doing the analysis -- there is no "clip to bounds" and there will be no color transitions. 
 						alpha_foreground = minCol.A / 255.0;
 #if 1
+						//fibers::parallel::For((size_t)0, out.size(), [&out, &alpha_foreground, &minCol](size_t index) {
+						//	Color_Interop& pixel = out[index];
+						//	double alpha_background = pixel.A / 255.0;
+						//	pixel.R = alpha_foreground * minCol.R + alpha_background * pixel.R * (1.0 - alpha_foreground);
+						//	pixel.G = alpha_foreground * minCol.G + alpha_background * pixel.G * (1.0 - alpha_foreground);
+						//	pixel.B = alpha_foreground * minCol.B + alpha_background * pixel.B * (1.0 - alpha_foreground);
+						//	pixel.A = (1.0 - (1.0 - alpha_foreground) * (1.0 - alpha_background)) * 255.0;
+						//});
+
 						fibers::parallel::ForEach(out, [&alpha_foreground, &minCol](Color_Interop& pixel) {
 							double alpha_background = pixel.A / 255.0;
 							pixel.R = alpha_foreground * minCol.R + alpha_background * pixel.R * (1.0 - alpha_foreground);
@@ -2153,8 +2162,9 @@ std::vector<Color_Interop> MapBackground_Interop::GetMatrix(double Left, double 
 					pixel.A = (1.0 - (1.0 - alpha_foreground) * (1.0 - alpha_background)) * 255.0;
 				});
 #else
-				fibers::parallel::For(0, pixelHeight, [&minCol, &alpha_foreground, &out, &pixelWidth](int y) {
-					fibers::parallel::For(0, pixelWidth, [&minCol, &alpha_foreground, &out, &y, &pixelWidth](int x) {
+				fibers::JobGroup group;
+				fibers::parallel::For(group, 0, pixelHeight, [&group, &minCol, &alpha_foreground, &out, &pixelWidth](int y) {
+					fibers::parallel::For(group, 0, pixelWidth, [&minCol, &alpha_foreground, &out, &y, &pixelWidth](int x) {
 						int byteIndex = (y * pixelWidth + x);
 						auto& pixel = out[byteIndex];
 
@@ -2163,8 +2173,9 @@ std::vector<Color_Interop> MapBackground_Interop::GetMatrix(double Left, double 
 						pixel.G = alpha_foreground * minCol.G + alpha_background * pixel.G * (1.0 - alpha_foreground);
 						pixel.B = alpha_foreground * minCol.B + alpha_background * pixel.B * (1.0 - alpha_foreground);
 						pixel.A = (1.0 - (1.0 - alpha_foreground) * (1.0 - alpha_background)) * 255.0;
-						});
 					});
+				});
+				group.Wait();
 #endif
 #else
 				for (y = 0; y < pixelHeight; y++)
@@ -2201,7 +2212,7 @@ std::vector<Color_Interop> MapBackground_Interop::GetMatrix(double Left, double 
 	}
 
 	// add random sub-byte noise to break up the visible "banding" in color gradients, typically seen in shadows (like white-to-grey gradients)
-#if 1
+#if 0
 	fibers::parallel::ForEach(out, [](Color_Interop& pixel) {
 		pixel.R = ::Min(255.0, ::Max<double>(0.0, pixel.R + random_fast(-0.5, 0.5))); // rand_fast since the rand is for visual polish, not numerical use. This random_fast is only pseudo-random
 		pixel.G = ::Min(255.0, ::Max<double>(0.0, pixel.G + random_fast(-0.5, 0.5)));

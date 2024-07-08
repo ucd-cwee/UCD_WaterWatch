@@ -127,8 +127,8 @@ namespace fibers::platform {
 
 namespace fibers {
 	namespace impl {
-		inline void work(uint32_t startingQueue) noexcept {
-			uint32_t i, j;
+		inline void work(uint32_t startingQueue, const context* parentCtx = nullptr) noexcept {
+			uint32_t i, j, threadID;
 			Queue<Task>* job_queue;
 			Task job;
 			JobArgs args{
@@ -138,13 +138,16 @@ namespace fibers {
 				, nullptr // sharedmemory
 			};
 
-			for (i = 0; i < internal_state.numThreads; ++i) {
-				job_queue = &internal_state.jobQueuePerThread[startingQueue % internal_state.numThreads];
+			bool didWork = true;
+			while (didWork && (!parentCtx || (parentCtx && IsBusy(*parentCtx)))) {
+				didWork = false;
+				threadID = startingQueue % internal_state.numThreads;
+				job_queue = &internal_state.jobQueuePerThread[threadID]; 
 				void* data{ nullptr };
-				while (job_queue->try_pop(job)) {
-					args.groupID = job.groupID;
-
-					{
+				while ((!parentCtx || (parentCtx && IsBusy(*parentCtx))) && job_queue->try_pop(job)) {
+					didWork = true;
+					if (!job.ctx->e) { // if another group threw an error, do not process this group at all.
+						args.groupID = job.groupID;
 						// Allocate Shared Group Memory
 						data = nullptr; {
 							if (job.sharedmemory_size > 0) {
@@ -186,14 +189,13 @@ namespace fibers {
 							fibers::utilities::Mem_Free16(data); 
 						}
 					}
-					job.ctx->counter.Decrement(); // one got finished
+					job.ctx->counter.Decrement(); // one group got finished, regardless of the outcome.
 				}
 				startingQueue++; // go to next queue
 			}
 		};
 		bool Initialize(uint32_t maxThreadCount) {
-			if (internal_state.numThreads > 0)
-				return false;
+			if (internal_state.numThreads > 0) return false;
 			maxThreadCount = std::max(1u, maxThreadCount);
 
 			// Retrieve the number of hardware threads in this system:
@@ -201,16 +203,17 @@ namespace fibers {
 
 			// Calculate the actual number of worker threads we want (-1 main thread):
 			internal_state.numThreads = std::min(maxThreadCount, std::max(1u, internal_state.numCores - 1));
-			internal_state.jobQueuePerThread.reset(new Queue<Task>[internal_state.numThreads]);
+			internal_state.jobQueuePerThread.reset(new Queue<Task>[internal_state.numThreads]());
+			// internal_state.currentTaskPerThread.reset(new Task[internal_state.numThreads]);
 			internal_state.threads.reserve(internal_state.numThreads);
 
-			for (uint32_t threadID = 0; threadID < internal_state.numThreads; ++threadID)
-			{
+			for (uint32_t threadID = 0; threadID < internal_state.numThreads; ++threadID) {
 				internal_state.threads.emplace_back([threadID] {
-					while (internal_state.alive.GetValue()) {
-						work(threadID);
+					while (internal_state.alive.load()) {
+						// Work until no more jobs are found
+						work(threadID); 
 
-						// finished with jobs, put to sleep
+						// go to sleep, to be awoken when new jobs are added
 						auto lock{ std::unique_lock(internal_state.wakeMutex) };
 						internal_state.wakeCondition.wait(lock);
 					}
@@ -278,15 +281,17 @@ namespace fibers {
 		) noexcept {
 			if (jobCount == 0) { return; }
 
-			uint32_t groupCount = std::max<uint32_t>(1, std::min<uint32_t>(jobCount, internal_state.numThreads));
+			uint32_t groupCount = std::max<uint32_t>(1, std::min<uint32_t>(jobCount, internal_state.numThreads * 5));
 			uint32_t groupSize = jobCount / groupCount;
 			while ((uint32_t)(groupCount * groupSize) < jobCount) groupCount++;
 
-			// Context state is updated:
+			// context state is updated to its maximum:
 			ctx.counter.Add(groupCount);
 
+			// create the overarching task:
 			Task job{ task, &ctx, 0, 0, 1, (uint32_t)sharedmemory_size, GroupStartJob, GroupEndJob };
 
+			// submit groups evenly into the thread pool:
 			for (uint32_t groupID = 0; ; ++groupID) { // groupID < groupCount
 				// For each group, generate one real job:
 				job.groupID = groupID;
@@ -296,6 +301,7 @@ namespace fibers {
 				internal_state.jobQueuePerThread[internal_state.nextQueue.Increment() % internal_state.numThreads].push(job);
 			}
 
+			// wake any threads that might be sleeping:
 			internal_state.wakeCondition.notify_all();
 		};
 		bool IsBusy(const context& ctx) { return ctx.counter.GetValue() > 0; /* Whenever the context label is greater than zero, it means that there is still work that needs to be done */ };
@@ -311,23 +317,21 @@ namespace fibers {
 		};
 		void Wait(context& ctx) {
 			int j{ 0 };
-			if (IsBusy(ctx)) {
+			// work(internal_state.nextQueue.Increment() % internal_state.numThreads, &ctx);
+			while (IsBusy(ctx)) {
 				// Wake any threads that might be sleeping:
 				internal_state.wakeCondition.notify_all();
-
-				// work() will pick up any jobs that are on stand by and execute them on this thread:
-				work(internal_state.nextQueue.Increment() % internal_state.numThreads);
-
-				while (IsBusy(ctx)) {
-					// If we are here, then there are still remaining jobs that work() couldn't pick up.
-					//	In this case those jobs are not standing by on a queue but currently executing
-					//	on other threads, so they cannot be picked up by this thread.
-					//	Allow to swap out this thread by OS to not spin endlessly for nothing
-					if (++j >= 40)
-						std::this_thread::yield(); 
-				}
+				
+				//if (++j >= 40) {
+				//	std::this_thread::yield();
+				//}
+				//else {
+					// work() will pick up any jobs that are on stand by and execute them on this thread immediately:
+					work(internal_state.nextQueue.Increment() % internal_state.numThreads, &ctx);
+				//}
 			}
-			HandleExceptions(ctx);			
+			// re-throw any exceptions that were caught during the workload
+			HandleExceptions(ctx);
 		};
 	};
 

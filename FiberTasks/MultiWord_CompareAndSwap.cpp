@@ -121,8 +121,8 @@ namespace fibers {
 namespace fibers {
 	namespace utilities {
 		namespace dbgroup::thread {
-			// static std::shared_ptr<std::atomic_bool[]> id_vec_impl = std::shared_ptr<std::atomic_bool[]>(new std::atomic_bool[kMaxThreadNum]);
 			std::shared_ptr<std::atomic_bool[]> id_vec = std::shared_ptr<std::atomic_bool[]>(new std::atomic_bool[kMaxThreadNum]);
+			// std::shared_ptr<concurrency::concurrent_unordered_map<unsigned long long, std::atomic_bool>>  id_vec = std::shared_ptr<concurrency::concurrent_unordered_map<unsigned long long, std::atomic_bool>>(new concurrency::concurrent_unordered_map<unsigned long long, std::atomic_bool>());
 		}
 	};
 };

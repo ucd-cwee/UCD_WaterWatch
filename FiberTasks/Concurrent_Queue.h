@@ -706,6 +706,7 @@ namespace moodycamel {
 		// but not which one; that's up to the user to track.
 		inline bool valid() const { return producer != nullptr; }
 
+		ProducerToken() = default;
 		~ProducerToken()
 		{
 			if (producer != nullptr) {
@@ -717,7 +718,7 @@ namespace moodycamel {
 		// Disable copying and assignment
 		ProducerToken(ProducerToken const&) MOODYCAMEL_DELETE_FUNCTION;
 		ProducerToken& operator=(ProducerToken const&) MOODYCAMEL_DELETE_FUNCTION;
-
+		
 	private:
 		template<typename T, typename Traits> friend class ConcurrentQueue;
 		friend class ConcurrentQueueTests;
