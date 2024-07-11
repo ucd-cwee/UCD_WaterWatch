@@ -148,7 +148,7 @@
       <LanguageStandard>stdcpp17</LanguageStandard>
       <AdditionalIncludeDirectories>$(SolutionDir)EDMS_DLL_Codebase;$(SolutionDir)EDMS_DLL_Codebase\include;$(ProjectDir)include;$(SolutionDir)dlib-19.17\source\;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <ProgramDataBaseFileName>$(IntDir)Symbols\$(ProjectName).pdb</ProgramDataBaseFileName>
-      <AdditionalOptions>/bigobj %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalOptions>/bigobj /DPARALLEL %(AdditionalOptions)</AdditionalOptions>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <EnableFiberSafeOptimizations>true</EnableFiberSafeOptimizations>
     </ClCompile>

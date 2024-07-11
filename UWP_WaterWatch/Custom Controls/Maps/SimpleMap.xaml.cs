@@ -1514,7 +1514,13 @@ namespace UWP_WaterWatch.Custom_Controls
                                 return shared_matrix.GetTimeSeries(shared_matrix.GetMinX(), shared_matrix.GetMaxY(), shared_matrix.GetMaxX(), shared_matrix.GetMinY(), CustomMapTileDataSourceWithTag.pixelsPerPage, CustomMapTileDataSourceWithTag.pixelsPerPage);
                             }, false, true);
                         }
-
+                        
+                        // If a background doesn't cover the whole earth, there is a risk of overdraw of sample looping beyond its bounds
+                        // To prevent this, we clip the bounds of ALL sampling to the most conservative limit. 
+                        // Note, this could be fixed to allow multi-sized backgrounds simultaneously, but it would require a
+                        // slight re-architecting of the tools to support it. The current system gets:
+                        // Coordinates (in matrix form) to:: Values (in vector form) to:: Colors (in vector form)
+                        // This means the coordinates (to determine bounds) and colors (to alpha-out) are currently seperated and do not speak to each other yet.
                         if (shared_matrix.GetNumValues() > 0) {
                             minX = Math.Max(minX, shared_matrix.GetMinX());
                             maxX = Math.Min(maxX, shared_matrix.GetMaxX());

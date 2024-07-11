@@ -73,7 +73,7 @@ public:
     void    AppendData(double X, double Y, float value);
     double  GetValue(double X, double Y);
     std::vector<double> GetKnotSeries(double Left, double Top, double Right, double Bottom, int numColumns, int numRows);
-    std::vector<double> GetTimeSeries(double Left, double Top, double Right, double Bottom, int numColumns, int numRows);    
+    std::vector<double> GetTimeSeries(double Left, double Top, double Right, double Bottom, int numColumns, int numRows, int reductionRatio = 8);
     double  GetMinX();
     double  GetMaxX();
     double  GetMinY();

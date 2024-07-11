@@ -1778,7 +1778,33 @@ SWIGEXPORT void * SWIGSTDCALL CSharp_SharedMatrix_GetKnotSeries(void * jarg1, do
 }
 
 
-SWIGEXPORT void * SWIGSTDCALL CSharp_SharedMatrix_GetTimeSeries(void * jarg1, double jarg2, double jarg3, double jarg4, double jarg5, int jarg6, int jarg7) {
+SWIGEXPORT void * SWIGSTDCALL CSharp_SharedMatrix_GetTimeSeries__SWIG_0(void * jarg1, double jarg2, double jarg3, double jarg4, double jarg5, int jarg6, int jarg7, int jarg8) {
+  void * jresult ;
+  SharedMatrix *arg1 = (SharedMatrix *) 0 ;
+  double arg2 ;
+  double arg3 ;
+  double arg4 ;
+  double arg5 ;
+  int arg6 ;
+  int arg7 ;
+  int arg8 ;
+  std::vector< double > result;
+  
+  arg1 = (SharedMatrix *)jarg1; 
+  arg2 = (double)jarg2; 
+  arg3 = (double)jarg3; 
+  arg4 = (double)jarg4; 
+  arg5 = (double)jarg5; 
+  arg6 = (int)jarg6; 
+  arg7 = (int)jarg7; 
+  arg8 = (int)jarg8; 
+  result = (arg1)->GetTimeSeries(arg2,arg3,arg4,arg5,arg6,arg7,arg8);
+  jresult = new std::vector< double >(result); 
+  return jresult;
+}
+
+
+SWIGEXPORT void * SWIGSTDCALL CSharp_SharedMatrix_GetTimeSeries__SWIG_1(void * jarg1, double jarg2, double jarg3, double jarg4, double jarg5, int jarg6, int jarg7) {
   void * jresult ;
   SharedMatrix *arg1 = (SharedMatrix *) 0 ;
   double arg2 ;

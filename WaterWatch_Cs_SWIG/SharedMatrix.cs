@@ -87,8 +87,13 @@ public class SharedMatrix : global::System.IDisposable {
     return ret;
   }
 
+  public vector_double GetTimeSeries(double Left, double Top, double Right, double Bottom, int numColumns, int numRows, int reductionRatio) {
+    vector_double ret = new vector_double(ConvPINVOKE.SharedMatrix_GetTimeSeries__SWIG_0(swigCPtr, Left, Top, Right, Bottom, numColumns, numRows, reductionRatio), true);
+    return ret;
+  }
+
   public vector_double GetTimeSeries(double Left, double Top, double Right, double Bottom, int numColumns, int numRows) {
-    vector_double ret = new vector_double(ConvPINVOKE.SharedMatrix_GetTimeSeries(swigCPtr, Left, Top, Right, Bottom, numColumns, numRows), true);
+    vector_double ret = new vector_double(ConvPINVOKE.SharedMatrix_GetTimeSeries__SWIG_1(swigCPtr, Left, Top, Right, Bottom, numColumns, numRows), true);
     return ret;
   }
 

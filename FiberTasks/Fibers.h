@@ -189,6 +189,221 @@
 
 namespace fibers {
 	namespace containers {
+
+		/* Fiber- and thread-safe sorted container for time-series patterns, where the x- and y-values may be integers, floating numbers, long doubles, etc. */
+		template <typename xType, typename yType> class Pattern {
+		protected:
+			using underlying = fibers::utilities::dbgroup::index::bw_tree::BwTree< typename utilities::impl::CAS_Safe_Type < xType >::type, typename utilities::impl::CAS_Safe_Type < yType >::type >;
+			std::shared_ptr< underlying > data;
+
+		public:
+			enum class interp_t { SPLINE, LEFT, RIGHT, LINEAR };
+
+			Pattern() : data(std::make_shared<underlying>()) {};
+			Pattern(Pattern const& r) : data(std::make_shared<underlying>()) {
+				operator=(r);
+			}
+			Pattern(Pattern&& r) = default;
+			Pattern& operator=(Pattern const& r) {
+				if (static_cast<void*>(this) != static_cast<const void*>(&r)) {
+					Pattern out;
+					//for (auto& x : r)
+					//	out->push_back(x);
+					out.data.swap(data);
+				}
+				return *this;
+			};
+			Pattern& operator=(Pattern&& r) = default;
+			~Pattern() = default;
+
+			typename underlying::RecordIterator_t FindSmallestLargerEqual(xType position, std::optional<xType> const& end = std::nullopt) {
+				if (end.has_value()) {
+					return data->FindSmallestLargerEqual(position, end.value());
+				}
+				else {
+					return data->FindSmallestLargerEqual(position);
+				}				
+			};
+			typename underlying::RecordIterator_t FindLargestSmallerEqual(xType position, std::optional<xType> const& end = std::nullopt) {
+				if (end.has_value()) {
+					return data->FindLargestSmallerEqual(position, end.value());
+				}
+				else {
+					return data->FindLargestSmallerEqual(position);
+				}
+			};
+			std::optional<yType> Read(xType position) {
+				auto payload = data->Read(position);
+				if (payload.has_value()) {
+					return (yType)payload.value();
+				}
+				else {
+					return std::nullopt;
+				}
+			};
+			std::optional<xType> GetMinTime() {
+				auto iter = FindSmallestLargerEqual(-std::numeric_limits<xType>::max());
+				if (iter) {
+					return (xType)iter.GetKey(); // iter.GetPayload()
+				}
+				else {
+					return std::nullopt;
+				}
+			};
+			std::optional<xType> GetMaxTime() {
+				auto iter = FindLargestSmallerEqual(std::numeric_limits<xType>::max());
+				if (iter) {
+					return (xType)iter.GetKey();
+				}
+				else {
+					return std::nullopt;
+				}
+			};
+			//size_t GetNumValues();
+			//std::optional<yType> GetMinValue();
+			//std::optional<yType> GetMaxValue();
+			//std::optional<yType> GetCurrentValue(xType position, interp_t interpolationType = interp_t::LINEAR);
+			bool Delete(xType position) {
+				return data->Delete(position) == fibers::utilities::dbgroup::index::bw_tree::ReturnCode::kSuccess;
+			};
+			bool Insert(xType position, yType value, bool overwiteIfExists = true) {
+				if (overwiteIfExists) {
+					return data->Write(position, value) == fibers::utilities::dbgroup::index::bw_tree::ReturnCode::kSuccess;
+				}
+				else {
+					return data->Insert(position, value) == fibers::utilities::dbgroup::index::bw_tree::ReturnCode::kSuccess;
+				}
+			};
+			typename underlying::RecordIterator_t Scan(std::optional<xType> start = std::nullopt, std::optional<xType> end = std::nullopt) {
+				using scanKeyType = typename underlying::ScanKey;
+				if (start.has_value()) {
+					if (end.has_value()) {
+						return data->FindSmallestLargerEqual(start.value(), end.value());
+					}
+					else {
+						return data->FindSmallestLargerEqual(start.value());
+					}
+				}
+				else {
+					if (end.has_value()) {
+						return data->Scan(
+							std::nullopt,
+							scanKeyType(
+								std::tuple<const typename utilities::impl::CAS_Safe_Type < xType >::type&, size_t, bool> {
+							        end.value(), sizeof(typename utilities::impl::CAS_Safe_Type < xType >::type), true
+						        }
+						    )
+						);
+					}
+					else {
+						return data->Scan();
+					}					
+				}
+			};
+
+			struct Iterator : public std::iterator<std::forward_iterator_tag, std::pair<xType, yType>> {
+			public:
+				using difference_type = typename std::iterator<std::forward_iterator_tag, std::pair<xType, yType>>::difference_type;
+
+				Iterator() = default;
+				Iterator(Iterator&& rhs) = default;
+				Iterator(Pattern*&& _parent, int pos, std::optional<xType> const& _start = std::nullopt, std::optional<xType> const& _end = std::nullopt) :
+					start{ std::nullopt }
+					//, end{ std::nullopt }
+					, parent{ std::forward<Pattern*>(_parent) }
+					, _ptr{ begin(_parent, _start, _end) }
+					, result{}
+					, position{ pos }
+				{ 
+					if (_start.has_value()) start.emplace(_start.value());
+					//if (_end.has_value()) end.emplace(_end.value());
+
+					while (pos > 0) { ++_ptr; --pos; } 
+				};
+				Iterator(const Iterator& rhs) : 
+					start{ std::nullopt }
+					//, end{ std::nullopt }
+					, parent{ rhs.parent }
+					, _ptr{ begin(rhs.parent, rhs.start, rhs._ptr.GetEndKey<xType>()) }
+					, result{}
+					, position{ rhs.position }
+				{
+					if (rhs.start.has_value()) start.emplace(rhs.start.value());
+					//if (rhs.end.has_value()) end.emplace(rhs.end.value());
+
+					int pos = position;
+					while (pos > 0) { ++_ptr; --pos; }
+				};
+				Iterator& operator=(const Iterator& rhs) = delete;
+				Iterator& operator=(Iterator&& rhs) = delete;
+				~Iterator() = default;
+
+				const std::pair<xType, yType>& operator*() const { LoadResult(); return result; };
+				const std::pair<xType, yType>* operator->() const { LoadResult(); return &result; };
+
+				Iterator& operator++() { Increment(); return *this; }
+
+				explicit operator bool() const { return Valid(); };
+				bool operator==(const Iterator& rhs) const {
+					if (!rhs.Valid() && !Valid()) return true;
+					if (!rhs.Valid()) {
+						return !Valid();
+					}
+					if (!Valid()) {
+						return !rhs.Valid();
+					}
+					return _ptr == rhs._ptr; 
+				}
+				bool operator!=(const Iterator& rhs) const { return !operator==(rhs); }
+
+			private:
+				bool Valid() const { return (bool)_ptr; };
+				void Increment() { if (Valid()) ++_ptr; ++position; };
+				void LoadResult() const { if (Valid()) result = { (xType)_ptr.GetKey(), (yType)_ptr.GetPayload() }; };
+
+				static typename underlying::RecordIterator_t begin(Pattern* parent, std::optional<xType> const& start = std::nullopt, std::optional<xType> const& end = std::nullopt) {
+					if (parent) {
+						if (start.has_value()) {
+							if (end.has_value()) {
+								return parent->Scan(start.value(), end.value());
+							}
+							else {
+								return parent->Scan(start.value());
+							}
+						}
+						else {
+							if (end.has_value()) {
+								return parent->Scan(std::nullopt, end.value());
+							}
+							else {
+								return parent->Scan();
+							}
+						}
+					}
+					return typename underlying::RecordIterator_t();
+				};
+
+			public:
+				std::optional<xType> start{ std::nullopt };
+				//std::optional<xType> end{ std::nullopt };
+				Pattern* parent{ nullptr };
+				mutable typename underlying::RecordIterator_t _ptr{};
+				mutable std::pair<xType, yType> result{};
+				int position{ 0 };
+
+			};
+			using iterator = Iterator;
+			using const_iterator = Iterator;
+
+			Iterator begin(std::optional<xType> const& start = std::nullopt, std::optional<xType> const& end = std::nullopt) const { return Iterator(const_cast<Pattern*>(this), 0, start, end); };
+			Iterator end() const { return Iterator(nullptr, 0, std::nullopt, std::nullopt); };
+			Iterator cbegin(std::optional<xType> start = std::nullopt, std::optional<xType> end = std::nullopt) const { return begin(start, end); };
+			Iterator cend() const { return end(); };
+		};
+	};
+
+
+	namespace containers {
 		/* Fiber- and thread-safe vector. Objects are stored and returned as std::shared_ptr. Growth, iterations, and push_back operations are concurrent, while erasing and clearing are non-concurrent and will replace the entire vector. */
 		template<typename _Ty>
 		class vector {
@@ -2459,7 +2674,7 @@ namespace fibers {
 		JobGroup(JobGroup&& a) : impl(std::move(a.impl)) {};
 		JobGroup& operator=(JobGroup const&) = delete;
 		JobGroup& operator=(JobGroup&&) = delete;
-		~JobGroup() {};
+		~JobGroup() = default;
 
 		/* Queue job, and return tool to await the result */
 		JobGroup& Queue(Job const& job) {
@@ -2505,7 +2720,7 @@ namespace fibers {
 		};
 
 	protected:
-		std::unique_ptr<JobGroupImpl> impl;
+		std::unique_ptr<JobGroupImpl> impl{};
 
 	};
 

@@ -96,9 +96,7 @@ INLINE units::length::foot_t DistanceFunction_Timeseries(cweeUnion<vec3d, cweeBo
 	return a.get<1>().Distance(b);
 };
 
-std::vector<double> SharedMatrix::GetTimeSeries(double Left, double Top, double Right, double Bottom, int numColumns, int numRows) {
-	constexpr int
-		reductionRatio = 8;
+std::vector<double> SharedMatrix::GetTimeSeries(double Left, double Top, double Right, double Bottom, int numColumns, int numRows, int reductionRatio) {
 	std::vector<double>
 		out;
 	out.reserve(numColumns * numRows + 12);
@@ -311,6 +309,11 @@ std::vector<double> SharedMatrix::GetTimeSeries(double Left, double Top, double 
 		tempMatrix.Reserve(numColumns * numRows + 2);
 #endif
 		
+		//auto minX = GetMinX();
+		//auto maxX = GetMaxX();
+		//auto minY = GetMinY();
+		//auto maxY = GetMaxY();
+
 		//fibers::parallel::For(0, numRows, [&tempMatrix , &out, &buffer_queue, &numColumns, &Left, &Top, &rowStep, &columnStep, &reductionRatio, &model](int R) 
 		for (int R = 0 ; R < numRows; R++)
 		{
@@ -352,8 +355,7 @@ std::vector<double> SharedMatrix::GetTimeSeries(double Left, double Top, double 
 
 		// do a faster, local interpolation of those results using the Hilbert curve for the last 2/3 components. 
 		if (true) {
-			fibers::parallel::For(0, numRows, [&numColumns, &out, &tempMatrix, &reductionRatio, &Left, &Top, &columnStep, &rowStep](int R) 
-			// for (int R = 0; R < numRows; R++)
+			fibers::parallel::For(0, numRows, [/*&minX , &maxX, &minY, &maxY, */&numColumns, &out, &tempMatrix, &reductionRatio, &Left, &Top, &columnStep, &rowStep](int R) // for (int R = 0; R < numRows; R++)
 			{
 				for (int C = 0; C < numColumns; C++) {
 					out[numColumns * R + C] = tempMatrix.GetCurrentValue(
@@ -1949,7 +1951,12 @@ std::vector<Color_Interop> MapBackground_Interop::GetMatrix(double Left, double 
 		auto& bg = backgrounds[i];
 		auto& shared_matrix = matrixes[i];
 
-		if (shared_matrix.GetMaxX() < Left || shared_matrix.GetMinX() > Right || shared_matrix.GetMaxY() < Bottom || shared_matrix.GetMinY() > Top) { }
+		auto minX = shared_matrix.GetMinX();
+		auto maxX = shared_matrix.GetMaxX();
+		auto minY = shared_matrix.GetMinY();
+		auto maxY = shared_matrix.GetMaxY();
+
+		if (maxX < Left || minX > Right || maxY < Bottom || minY > Top) { }
 		else {
 			auto& minCol = bg.min_color;
 			auto& maxCol = bg.max_color;
@@ -1971,7 +1978,7 @@ std::vector<Color_Interop> MapBackground_Interop::GetMatrix(double Left, double 
 						std::vector<double> values;
 						if (bg.highQuality)
 						{
-							values = shared_matrix.GetTimeSeries(Left, Top, Right, Bottom, numColumns, numRows);
+							values = shared_matrix.GetTimeSeries(Left, Top, Right, Bottom, numColumns, numRows, bg.clipToBounds ? 4 : 8);
 						}
 						else
 						{
@@ -2055,7 +2062,7 @@ std::vector<Color_Interop> MapBackground_Interop::GetMatrix(double Left, double 
 					std::vector<double> values;
 					if (bg.highQuality)
 					{
-						values = shared_matrix.GetTimeSeries(Left, Top, Right, Bottom, numColumns, numRows);
+						values = shared_matrix.GetTimeSeries(Left, Top, Right, Bottom, numColumns, numRows, bg.clipToBounds ? 4 : 8);
 					}
 					else
 					{

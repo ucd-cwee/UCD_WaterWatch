@@ -92,8 +92,9 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 	defer(delete[] xyzwabc); // does clean-up on our behalf on scope end
 
 #if 1
-#define EXPECT_EQ(a, b) if (a == b) {} else { std::cout << "FAILURE AT LINE " << __LINE__ << std::endl; }
-#define EXPECT_NE(a, b) if (a != b) {} else { std::cout << "FAILURE AT LINE " << __LINE__ << std::endl; }
+#define EXPECT_EQ(a,b) if ((a) == (b)) {} else { std::cout << "FAILURE AT LINE " << __LINE__ << std::endl; }
+#define EXPECT_NE(a, b) if ((a) != (b)) {} else { std::cout << "FAILURE AT LINE " << __LINE__ << std::endl; }
+
 	if (1) {
 		// TODO; Ensure the job system supports basic queue and wait features.
 		{
@@ -143,34 +144,58 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 		// Check the atomic_number system is not broken
 		if (1) {
 			fibers::utilities::CAS_Container<double> value{ 1 };
-			std::cout << value.load() << std::endl; // 1
+			EXPECT_EQ(value.load(), 1);
 
 			value.Add(1);
-			std::cout << value.load() << std::endl; // 2
+			EXPECT_EQ(value.load(), 2);
 
 			value.Add(1);
-			std::cout << value.load() << std::endl; // 3
+			EXPECT_EQ(value.load(), 3);
 
 			value.Add(-5);
-			std::cout << value.load() << std::endl; // -2
+			EXPECT_EQ(value.load(), -2);
 
-			value.Add(1.999995);
-			std::cout << value.load() << std::endl; // -0.000005
+			value.Add(2);
+			EXPECT_EQ(value.load(), 0);
+		}
+		if (1) {
+			fibers::utilities::CAS_Container<double> value{ 1 };
+			EXPECT_EQ(value.load(), 1);
 
+			value.Add(-50);
+			EXPECT_EQ(value.load(), -49);
+
+			value.Add(48.5);
+			EXPECT_EQ(value.load(), -0.5);
+
+			value.Add(5.5);
+			EXPECT_EQ(value.load(), 5);
+
+			// value.Add(-5);
+			// value.Add(2e10);
+			// EXPECT_EQ(value.load(), 2e10);
+		}
+		if (1) {
+			fibers::utilities::UnsignedWrapper<long double> value{ 0 };
+
+			value = std::numeric_limits<double>::max();
+
+			std::cout << value.load() << std::endl;
+			std::cout << std::numeric_limits<double>::max() << std::endl;
 		}
 
 		// Check the atomic_number system is not broken
 		if (1) {
 			fibers::synchronization::atomic_number<double> value;
-			std::cout << "\n\tValue (Befor Add): " << value.load() << std::endl << std::endl;
+			EXPECT_EQ(value.load(), 0);
 			fibers::parallel::For(0, 10000, [&value](int jobNum) {
 				value.Add(0.125);
 			});
-			std::cout << "\n\tValue (After Add): " << value.load() << std::endl << std::endl;
+			EXPECT_EQ(value.load(), 10000 * 0.125);
 			fibers::parallel::For(0, 10000, [&value](int jobNum) {
 				value.Sub(0.125);
 			});
-			std::cout << "\n\tValue (After Sub): " << value.load() << std::endl << std::endl;
+			EXPECT_EQ(value.load(), 0);
 
 			value = 0;
 
@@ -256,9 +281,9 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 			Units::yard test2 = x3; // forces the result to yards
 			auto test3 = Units::foot(1_ft) - Units::meter(1_m); // allows any resulting unit so long as the value is correct for the unit selected. E.g. could be foot, meter, cm, etc. In this case it'll be foot.
 
-			std::cout << test1 << std::endl;
-			std::cout << test2 << std::endl;
-			std::cout << test3 << std::endl;
+			EXPECT_EQ(test1, test2);
+			EXPECT_EQ(test1, test3);
+			EXPECT_EQ(test2, test3);
 
 			// test unit canceling (should become unitless, like a normal double)
 			std::cout << (5_ft / Units::meter(2_ft)).ToString() << std::endl;
@@ -462,7 +487,7 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 		}
 
 		// Epoch-based garbage collector examples
-		if (1) {
+		if (0) {
 			if (1) {
 			    using namespace fibers::utilities::dbgroup::memory;
 
@@ -567,9 +592,8 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 
 		// Atomic BW Tree
 		if (1) {
-			using namespace fibers::utilities::dbgroup::index::bw_tree;
-			if (0) {
-				BwTree<uint64_t, uint64_t> tree;
+			if (1) {
+				fibers::containers::Pattern<uint64_t, uint64_t> tree;
 				tree.Insert(5, 100);
 				EXPECT_EQ(true, tree.Read(5).has_value());
 				tree.Delete(5);
@@ -578,51 +602,62 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 				fibers::parallel::For(0, 50, [&tree](int i) {
 					tree.Insert(i, i);
 				});
+
+				for (auto iter = tree.Scan(); iter; iter++) {
+					(void)iter.GetKey();
+				}
 			}
-			if (0) {
-				BwTree<int, double> tree;
+			if (1) {
+				fibers::containers::Pattern<int, double> tree;
 				tree.Insert(5, 100);
 				EXPECT_EQ(true, tree.Read(5).has_value());
 				tree.Delete(5);
 				EXPECT_EQ(false, tree.Read(5).has_value());
 
 				fibers::parallel::For(0, 500, [&tree](int i) {
-					tree.Insert(i, i);
+					EXPECT_EQ(true, tree.Insert(i, i));
 				});
+
+				for (auto iter = tree.Scan(); iter; iter++) {
+					(void)iter.GetKey();
+				}
 			}
-			if (0) {
-				BwTree<double, double> tree;
+			if (1) {
+				fibers::containers::Pattern<double, double> tree;
 				tree.Insert(5, 100.0);
 				EXPECT_EQ(true, tree.Read(5).has_value() && (tree.Read(5).value() == 100.0));
 				tree.Delete(5);
 				EXPECT_EQ(false, tree.Read(5).has_value());
 
 				fibers::parallel::For(0, 5000, [&tree](int i) {
-					tree.Insert(i, i);
+					EXPECT_EQ(true, tree.Insert(i, i));
 				});
+
+				for (auto iter = tree.Scan(); iter; iter++) {
+					(void)iter.GetKey();
+				}
 			}
 			if (1) {
-				BwTree<fibers::utilities::UnsignedWrapper < long double >, fibers::utilities::UnsignedWrapper < double >> tree;
+				fibers::containers::Pattern<long double, double> tree;
 				tree.Insert(5, 100.0);
 				EXPECT_EQ(true, tree.Read(5).has_value() && (tree.Read(5).value() == 100.0));
 				tree.Delete(5);
 				EXPECT_EQ(false, tree.Read(5).has_value());
 
 				fibers::parallel::For(-5, 500, [&tree](int i) {
-					tree.Insert(i, i);
+					EXPECT_EQ(true, tree.Insert(i, i));
 				});
-
 
 				auto futureObj = fibers::parallel::async([&tree](){
 					Stopwatch sw;
 					sw.Start();
 
-					::Sleep(10);
+					::Sleep(3);
 					std::cout << "\nWorking... \n";
 					for (int i = 0; i < 500; i++) {
 						if (i % 50 == 0) ::Sleep(1);
 
-						tree.Write(i - 1, i + 1);
+						tree.Insert(i - 1, i + 1);
 						tree.Insert(i + 0.5, i + 0.5);						
 					}
 					std::cout << "\n ...Finished.\n";
@@ -638,12 +673,88 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 					auto iter_Smaller = tree.FindLargestSmallerEqual(D);
 					
 					if (iter_Larger && iter_Smaller) {
-						std::cout << "\tTarget Key: " << D << ", Smaller Key/Value:" << iter_Smaller.GetKey().load() << "/" << iter_Smaller.GetPayload().load() << ", Larger Key/Value: " << iter_Larger.GetKey().load() << "/" << iter_Larger.GetPayload().load() << std::endl;
+						//EXPECT_EQ(true, (iter_Smaller.GetKey().load() <= D));
+						//EXPECT_EQ(true, (iter_Larger.GetKey().load() >= D));
+						std::cout << cweeStr::printf("\t %f <= %f <= %f\n", (float)iter_Smaller.GetKey().load(), (float)D, (float)iter_Larger.GetKey().load());
 					}
 				}
 
 				// wait until the job is completed and the result is returned.
 				std::cout << futureObj.wait_get_ref() << std::endl; 
+
+				std::cout << cweeStr::printf("MinTime = %f, MaxTime = %f\n", (float)tree.GetMinTime().value_or(0), (float)tree.GetMaxTime().value_or(0)) << std::endl;
+
+				fibers::containers::number<long> count{ 0 };
+				auto iter_end{ tree.end() };
+				int initialCount{ 0 };
+
+
+				count = 0;
+				for (auto iter = tree.Scan(); iter; iter++) {
+					count++;
+				}
+				EXPECT_EQ(true, count >= 500); // works
+				initialCount = count.load();
+
+				count = 0;
+				for (auto iter = tree.Scan(5, 15); iter; iter++) { // works, surprisingly
+					count++;
+				}
+				EXPECT_EQ(true, count >= 8); // FAIL
+
+				count = 0;
+				for (auto iter = tree.FindSmallestLargerEqual(5); iter; ++iter) {
+					count++;
+				}
+				EXPECT_EQ(true, count >= 495); 
+
+				count = 0;
+				for (auto iter = tree.FindSmallestLargerEqual(5, 15); iter; ++iter) {
+					count++;
+				}
+				EXPECT_EQ(true, count >= 8); 
+
+				count = 0;
+				for (auto iter = tree.begin(5.25, 15.25); iter != iter_end; ++iter) { // neither 5 nor 15 exist
+					count++;
+				}
+				EXPECT_EQ(true, count >= 8); // FAIL
+
+				count = 0;
+				for (auto iter = tree.begin(5); iter != iter_end; ++iter) { // neither 5 nor 15 exist
+					count++;
+				}
+				EXPECT_EQ(true, count >= 495);
+
+				count = 0;
+				for (auto iter = tree.begin(); iter != iter_end; ++iter) {
+					count++;
+				}
+				EXPECT_EQ(true, count >= 500);
+				EXPECT_EQ(initialCount, count.load());
+
+				count = 0;
+				for (auto iter = tree.begin(); iter != iter_end; std::advance(iter, 1)) {
+					count++;
+				}
+				EXPECT_EQ(true, count >= 500);
+				EXPECT_EQ(initialCount, count.load());
+
+				count = 0;
+				for (auto& x : tree) {
+					count++;
+				}
+				EXPECT_EQ(true, count >= 500);
+				EXPECT_EQ(initialCount, count.load());
+
+				count = 0;
+				fibers::parallel::ForEach(tree, [&count](std::pair<long double, double> const& iter) {
+					//std::cout << cweeStr::printf("\tKey: %f, Value: %f", (float)iter.first, (float)iter.second) << std::endl;
+					count++;
+				});
+				EXPECT_EQ(true, count >= 500);
+				EXPECT_EQ(initialCount, count.load());
+
 #else
 				for (auto& x : tree) {
 					std::cout << "\tKey: " << x.first << ", Value: " << x.second << std::endl;

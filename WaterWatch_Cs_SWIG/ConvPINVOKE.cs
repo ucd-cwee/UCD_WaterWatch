@@ -300,8 +300,11 @@ class ConvPINVOKE {
   [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_SharedMatrix_GetKnotSeries")]
   public static extern global::System.IntPtr SharedMatrix_GetKnotSeries(global::System.Runtime.InteropServices.HandleRef jarg1, double jarg2, double jarg3, double jarg4, double jarg5, int jarg6, int jarg7);
 
-  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_SharedMatrix_GetTimeSeries")]
-  public static extern global::System.IntPtr SharedMatrix_GetTimeSeries(global::System.Runtime.InteropServices.HandleRef jarg1, double jarg2, double jarg3, double jarg4, double jarg5, int jarg6, int jarg7);
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_SharedMatrix_GetTimeSeries__SWIG_0")]
+  public static extern global::System.IntPtr SharedMatrix_GetTimeSeries__SWIG_0(global::System.Runtime.InteropServices.HandleRef jarg1, double jarg2, double jarg3, double jarg4, double jarg5, int jarg6, int jarg7, int jarg8);
+
+  [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_SharedMatrix_GetTimeSeries__SWIG_1")]
+  public static extern global::System.IntPtr SharedMatrix_GetTimeSeries__SWIG_1(global::System.Runtime.InteropServices.HandleRef jarg1, double jarg2, double jarg3, double jarg4, double jarg5, int jarg6, int jarg7);
 
   [global::System.Runtime.InteropServices.DllImport("Conv", EntryPoint="CSharp_SharedMatrix_GetMinX")]
   public static extern double SharedMatrix_GetMinX(global::System.Runtime.InteropServices.HandleRef jarg1);

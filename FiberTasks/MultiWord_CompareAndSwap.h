@@ -108,6 +108,8 @@
 #include <map>
 #include <type_traits>
 
+#include "Actions.h"
+
 namespace fibers {
 	namespace utilities {
 		namespace HasDefaultConstructor
@@ -4094,24 +4096,38 @@ namespace fibers {
 					 * @param is_end a flag for indicating a current node is rightmost in scan-range.
 					 */
 					RecordIterator(  //
+						BwTree_t* bw_tree, 
 						Node_t* node,
 						size_t begin_pos,
 						size_t end_pos,
-						const bool is_end)
-						: node_{ node }, rec_count_{ end_pos }, current_pos_{ begin_pos }, is_end_{ is_end }
+						const bool is_end) : 
+						bw_tree_{ bw_tree },
+						node_{ node },
+						rec_count_{ end_pos }, 
+						current_pos_{ begin_pos }, 
+						is_end_{ is_end }
 					{
 					}
 
 					RecordIterator() = default;
+					RecordIterator(const RecordIterator & r) : 
+						bw_tree_{ r.bw_tree_ }, 
+						node_{ r.node_ },
+						rec_count_{ r.rec_count_ }, 
+						current_pos_{ r.current_pos_ }, 
+						is_end_{ r.is_end_ } {}
+					RecordIterator(RecordIterator && r) : 
+						bw_tree_{ r.bw_tree_ }, 
+						node_{ r.node_ }, 
+						rec_count_{ r.rec_count_ }, 
+						current_pos_{ r.current_pos_ }, 
+						is_end_{ r.is_end_ } {}
 
-					RecordIterator(const RecordIterator& r) : node_{ r.node_ }, rec_count_{ r.rec_count_ }, current_pos_{ r.current_pos_ }, is_end_{ r.is_end_ } {}
-					RecordIterator(RecordIterator&& r) : node_{ r.node_ }, rec_count_{ r.rec_count_ }, current_pos_{ r.current_pos_ }, is_end_{ r.is_end_ } {}
-
-					// auto operator=(const RecordIterator&)->RecordIterator & = delete;
 					constexpr auto
 						operator=(RecordIterator const& obj) noexcept  //
 						-> RecordIterator&
 					{
+						bw_tree_ = obj.bw_tree_;
 						node_ = obj.node_;
 						rec_count_ = obj.rec_count_;
 						current_pos_ = obj.current_pos_;
@@ -4120,10 +4136,10 @@ namespace fibers {
 						return *this;
 					}
 
-					constexpr auto
-						operator=(RecordIterator&& obj) noexcept  //
+					constexpr auto operator=(RecordIterator && obj) noexcept  //
 						-> RecordIterator&
 					{
+						bw_tree_ = obj.bw_tree_;
 						node_ = obj.node_;
 						rec_count_ = obj.rec_count_;
 						current_pos_ = obj.current_pos_;
@@ -4224,16 +4240,20 @@ namespace fibers {
 						operator==(const RecordIterator& r) const
 						-> bool
 					{
-						if (r.is_end_) {
-							return !const_cast<RecordIterator*>(this)->HasRecord();
-						}
-						else if (is_end_) {
-							return !const_cast<RecordIterator&>(r).HasRecord();
+						bool finished = !const_cast<RecordIterator*>(this)->HasRecord();
+						bool rfinished = !const_cast<RecordIterator&>(r).HasRecord();
+						if (finished || rfinished) {
+							return finished && rfinished;
 						}
 						else {
 							return current_pos_ == r.current_pos_;
 						}
 					}
+					constexpr auto operator!=(const RecordIterator& r) const -> bool { return !operator==(r); }
+					inline bool operator>(const RecordIterator& rhs) const { return current_pos_ > rhs.current_pos_; }
+					inline bool operator<(const RecordIterator& rhs) const { return current_pos_ < rhs.current_pos_; }
+					inline bool operator>=(const RecordIterator& rhs) const { return current_pos_ >= rhs.current_pos_; }
+					inline bool operator<=(const RecordIterator& rhs) const { return current_pos_ <= rhs.current_pos_; }
 
 
 					/*####################################################################################
@@ -4283,7 +4303,20 @@ namespace fibers {
 						return node_->template GetPayload<Payload>(current_pos_);
 					}
 
-				protected:
+					template<typename T = Key>
+					[[nodiscard]] auto
+						GetEndKey() const  //
+						-> std::optional<T>
+					{
+						if (end_key_.has_value()) {
+							return (T)(std::get<0>(end_key_.value()));
+						}
+						else {
+							return std::nullopt;
+						}
+					}
+
+				public:
 					/*####################################################################################
 					 * Internal member variables
 					 *##################################################################################*/
@@ -5950,10 +5983,14 @@ namespace fibers {
 				 * @return an iterator to access the scanned record.
 				 */
 				auto
-					FindSmallestLargerEqual(const Key& key)
+					FindSmallestLargerEqual(const Key& key, std::optional<Key> const& maxKey = std::nullopt)
 					-> RecordIterator_t
 				{
 					ScanKey begin_key(std::tuple<const Key&, size_t, bool>({ key, (size_t)(sizeof(Key)), true })); // true = may include the value if found
+					ScanKey end_key;
+					if (maxKey.has_value()) {
+						end_key.emplace(std::tuple<const Key&, size_t, bool>({ maxKey.value(), (size_t)(sizeof(Key)), true })); // true = may include the value if found
+					}
 
 					[[maybe_unused]] const auto& guard = gc_.CreateEpochGuard();
 					thread_local std::unique_ptr<void, std::function<void(void*)>> page{ dbgroup::memory::Allocate<NodePage>(2 * kPageSize), dbgroup::memory::Release<NodePage> };
@@ -5969,8 +6006,14 @@ namespace fibers {
 
 						RecordIterator_t record{ this, node, begin_pos, begin_pos + 1, std::nullopt, true };
 
-						if (record && record.GetKey() >= key) {
-							// success. Accounts for ~ 95% - 99% of cases. 
+						if (record && record.GetKey() >= key) { // success. Accounts for ~ 95% - 99% of cases. 
+					        // check the end position of scanning
+							const auto [is_end, end_pos] = node->SearchEndPositionFor(end_key);
+							if (end_key.has_value()) {
+								record.end_key_.emplace(end_key.value());
+							}
+							record.is_end_ = is_end;
+							record.rec_count_ = end_pos;
 							return record;
 						}
 						else {
@@ -5981,6 +6024,7 @@ namespace fibers {
 								const auto sib_pid = record.node_->template GetNext<PageID>();
 								record = this->SiblingScan(sib_pid, record.node_, next_key, std::nullopt);
 
+								//record.bw_tree_ = this;
 								RecordIterator_t record2{ record };
 								while (record && record.GetKey() < key) {
 									record++;
@@ -5988,6 +6032,15 @@ namespace fibers {
 										record2++;
 									}
 								}
+
+								if (record) {
+									const auto [is_end, end_pos] = node->SearchEndPositionFor(end_key);
+									if (end_key.has_value()) {
+										record2.end_key_.emplace(end_key.value());
+									}
+									record2.is_end_ = is_end;
+									record2.rec_count_ = end_pos;
+								} // otherwise we are already at the end and nothing can be done -- no need to search.
 								return record2;
 							}
 							else {
@@ -6043,7 +6096,9 @@ namespace fibers {
 					}
 					begin_pos = 0;
 
-					return RecordIterator_t{ this, node, begin_pos, begin_pos + 1, std::nullopt, true };
+					const auto [is_end, end_pos] = node->SearchEndPositionFor(std::nullopt);
+
+					return RecordIterator_t{ this, node, begin_pos, end_pos, std::nullopt, is_end };
 				};
 
 				/**
@@ -6053,10 +6108,14 @@ namespace fibers {
 				 * @return an iterator to access the scanned record.
 				 */
 				auto
-					FindLargestSmallerEqual(const Key& key)
+					FindLargestSmallerEqual(const Key& key, std::optional<Key> const& maxKey = std::nullopt)
 					-> RecordIterator_t
 				{
 					ScanKey keyFind{ std::tuple<const Key&, size_t, bool>({ key, (size_t)(sizeof(Key)), true }) };
+					ScanKey end_key;
+					if (maxKey.has_value()) {
+						end_key.emplace(std::tuple<const Key&, size_t, bool>({ maxKey.value(), (size_t)(sizeof(Key)), true })); // true = may include the value if found
+					}
 
 					[[maybe_unused]] const auto& guard = gc_.CreateEpochGuard();
 					thread_local std::unique_ptr<void, std::function<void(void*)>> page{ dbgroup::memory::Allocate<NodePage>(2 * kPageSize), dbgroup::memory::Release<NodePage> };
@@ -6102,6 +6161,14 @@ namespace fibers {
 							record = this->SiblingScan(sib_pid, record.node_, next_key, keyFind);
 						}
 					}
+
+					const auto [is_end, end_pos] = node->SearchEndPositionFor(end_key);
+					if (end_key.has_value()) {
+						FinalRecord.end_key_.emplace(end_key.value());
+					}
+					FinalRecord.is_end_ = is_end;
+					FinalRecord.rec_count_ = end_pos;
+
 					return FinalRecord;
 				};
 
@@ -7029,7 +7096,7 @@ namespace fibers {
 					// check the end position of scanning
 					const auto [is_end, end_pos] = node->SearchEndPositionFor(end_key);
 
-					return RecordIterator_t{ node, begin_pos, end_pos, is_end };
+					return RecordIterator_t{ this, node, begin_pos, end_pos, is_end };
 				}
 
 				/*####################################################################################
@@ -8219,5 +8286,25 @@ namespace fibers {
 #undef BW_TREE_RETRY_THRESHOLD
 #undef BW_TREE_SLEEP_TIME
 	};
+
+	namespace utilities {
+		namespace impl {
+			template <typename T> auto CAS_Safe_Type_F() {
+				if constexpr (std::is_floating_point<T>::value) {
+					return fibers::utilities::UnsignedWrapper < T >();
+				}
+				else {
+					return T();
+				}
+			};
+			
+			template <typename T>
+			struct CAS_Safe_Type {
+				using type = typename fibers::utilities::function_traits<decltype(std::function(CAS_Safe_Type_F<T>))>::result_type;
+			};
+
+		}
+	}
+
 
 };
