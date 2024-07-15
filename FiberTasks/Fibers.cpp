@@ -127,6 +127,7 @@ namespace fibers::platform {
 
 namespace fibers {
 	namespace impl {
+#if 0
 		inline void work(uint32_t startingQueue, const context* parentCtx = nullptr) noexcept {
 			uint32_t i, j, threadID;
 			Queue<Task>* job_queue;
@@ -139,11 +140,11 @@ namespace fibers {
 			};
 
 			bool didWork = true;
+			void* data{ nullptr };
 			while (didWork && (!parentCtx || (parentCtx && IsBusy(*parentCtx)))) {
 				didWork = false;
 				threadID = startingQueue % internal_state.numThreads;
-				job_queue = &internal_state.jobQueuePerThread[threadID]; 
-				void* data{ nullptr };
+				job_queue = &internal_state.jobQueuePerThread[threadID];
 				while ((!parentCtx || (parentCtx && IsBusy(*parentCtx))) && job_queue->try_pop(job)) {
 					didWork = true;
 					if (!job.ctx->e) { // if another group threw an error, do not process this group at all.
@@ -156,7 +157,7 @@ namespace fibers {
 
 								if (job.GroupStartJob) {
 									job.GroupStartJob(args.sharedmemory);
-								}								
+								}
 							}
 							else {
 								args.sharedmemory = nullptr;
@@ -169,7 +170,7 @@ namespace fibers {
 							args.groupIndex = j - job.groupJobOffset;
 							try {
 								job.task(args);
-							} 
+							}
 							catch (...) {
 								if (!job.ctx->e) {
 									auto eptr = job.ctx->e.Set(new std::exception_ptr(std::current_exception())); // Sets the error to the new PTR
@@ -178,15 +179,15 @@ namespace fibers {
 									}
 								}
 								break;
-							}							
+							}
 						}
 
 						// Deallocate Shared Group Memory
-						if (data) { 
+						if (data) {
 							if (job.GroupEndJob) {
 								job.GroupEndJob(args.sharedmemory);
 							}
-							fibers::utilities::Mem_Free16(data); 
+							fibers::utilities::Mem_Free16(data);
 						}
 					}
 					job.ctx->counter.Decrement(); // one group got finished, regardless of the outcome.
@@ -194,6 +195,158 @@ namespace fibers {
 				startingQueue++; // go to next queue
 			}
 		};
+#else
+		inline void work(uint32_t startingQueue, const context* parentCtx) noexcept {
+			uint32_t i, j, threadID;
+			Queue<Task>* job_queue;
+			Task job;
+			JobArgs args{
+				0 // jobIndex
+				, 0 // groupID
+				, 0 // groupIndex
+				, nullptr // sharedmemory
+			};
+			
+			uint32_t sizeOfData{ 0 };
+			void* data{ nullptr };
+			defer(if (data) { fibers::utilities::Mem_Free16(data); });
+
+			bool didWork = true;
+			while (didWork && (!parentCtx || (parentCtx && IsBusy(*parentCtx)))) {
+				didWork = false;
+				for (i = 0; i < internal_state.numThreads && (!parentCtx || (parentCtx && IsBusy(*parentCtx))); i++) {
+					threadID = (i + startingQueue) % internal_state.numThreads;
+					job_queue = &internal_state.jobQueuePerThread[threadID];
+					while ((!parentCtx || (parentCtx && IsBusy(*parentCtx))) && job_queue->try_pop(job)) {
+						didWork = true;
+						if (!job.ctx->e) { // if another group threw an error, do not process this group at all.
+							args.groupID = job.groupID;
+							// Allocate Shared Group Memory (heap allocates only when more memory is needed than was previously used).
+							{
+								if (job.sharedmemory_size > 0) {
+									if (sizeOfData < job.sharedmemory_size) {
+										if (data) fibers::utilities::Mem_Free16(data);
+										data = fibers::utilities::Mem_Alloc16(job.sharedmemory_size);
+										sizeOfData = job.sharedmemory_size;
+									}
+
+									::memset(data, 0, job.sharedmemory_size);
+
+									args.sharedmemory = data;
+
+									if (job.GroupStartJob) {
+										job.GroupStartJob(args.sharedmemory);
+									}
+								}
+								else {
+									args.sharedmemory = nullptr;
+								}
+							}
+
+							// Do Group Jobs Until Done or Error is Thrown
+							for (j = job.groupJobOffset; !job.ctx->e && j < job.groupJobEnd; ++j) {
+								args.jobIndex = j;
+								args.groupIndex = j - job.groupJobOffset;
+								try {
+									job.task(args);
+								}
+								catch (...) {
+									if (!job.ctx->e) {
+										auto eptr = job.ctx->e.Set(new std::exception_ptr(std::current_exception())); // Sets the error to the new PTR
+										if (eptr) { // If we accidentilly errored at the same time as another group, prevent leak
+											delete eptr;
+										}
+									}
+									break;
+								}
+							}
+
+							// Deallocate Shared Group Memory
+							if (args.sharedmemory && job.GroupEndJob) job.GroupEndJob(args.sharedmemory);								
+							
+						}
+						job.ctx->counter.Decrement(); // one group got finished, regardless of the outcome.
+					}
+					startingQueue++; // go to next queue
+				}
+			}
+		};
+		inline void work(uint32_t startingQueue) noexcept {
+			uint32_t i, j, threadID;
+			Queue<Task>* job_queue;
+			Task job;
+			JobArgs args{
+				0 // jobIndex
+				, 0 // groupID
+				, 0 // groupIndex
+				, nullptr // sharedmemory
+			};
+
+			uint32_t sizeOfData{ 0 };
+			void* data{ nullptr };
+			defer(if (data) { fibers::utilities::Mem_Free16(data); });
+
+			bool didWork = true;
+			while (didWork) {
+				didWork = false;
+				for (i = 0; i < internal_state.numThreads; i++) {
+					threadID = (i + startingQueue) % internal_state.numThreads;
+					job_queue = &internal_state.jobQueuePerThread[threadID];
+					while (job_queue->try_pop(job)) {
+						didWork = true;
+						if (!job.ctx->e) { // if another group threw an error, do not process this group at all.
+							args.groupID = job.groupID;
+							// Allocate Shared Group Memory (heap allocates only when more memory is needed than was previously used).
+							{
+								if (job.sharedmemory_size > 0) {
+									if (sizeOfData < job.sharedmemory_size) {
+										if (data) fibers::utilities::Mem_Free16(data);
+										data = fibers::utilities::Mem_Alloc16(job.sharedmemory_size);
+										sizeOfData = job.sharedmemory_size;
+									}
+
+									::memset(data, 0, job.sharedmemory_size);
+
+									args.sharedmemory = data;
+
+									if (job.GroupStartJob) {
+										job.GroupStartJob(args.sharedmemory);
+									}
+								}
+								else {
+									args.sharedmemory = nullptr;
+								}
+							}
+
+							// Do Group Jobs Until Done or Error is Thrown
+							for (j = job.groupJobOffset; !job.ctx->e && j < job.groupJobEnd; ++j) {
+								args.jobIndex = j;
+								args.groupIndex = j - job.groupJobOffset;
+								try {
+									job.task(args);
+								}
+								catch (...) {
+									if (!job.ctx->e) {
+										auto eptr = job.ctx->e.Set(new std::exception_ptr(std::current_exception())); // Sets the error to the new PTR
+										if (eptr) { // If we accidentilly errored at the same time as another group, prevent leak
+											delete eptr;
+										}
+									}
+									break;
+								}
+							}
+
+							// Deallocate Shared Group Memory
+							if (args.sharedmemory && job.GroupEndJob) job.GroupEndJob(args.sharedmemory);
+
+						}
+						job.ctx->counter.Decrement(); // one group got finished, regardless of the outcome.
+					}
+					startingQueue++; // go to next queue
+				}
+			}
+		};
+#endif
 		bool Initialize(uint32_t maxThreadCount) {
 			if (internal_state.numThreads > 0) return false;
 			maxThreadCount = std::max(1u, maxThreadCount);
@@ -266,22 +419,19 @@ namespace fibers {
 		};
 		void ShutDown() { internal_state.ShutDown(); };
 
-		void Execute(context& ctx, const std::function<void(JobArgs)>& task) noexcept {
+		void Execute(context& ctx, std::function<void(JobArgs const&)> const& task) noexcept {
 			ctx.counter.Increment(); // Context state is updated:
 			internal_state.jobQueuePerThread[internal_state.nextQueue.Increment() % internal_state.numThreads].push({ task, &ctx, 0, 0, 1, 0 });
 			internal_state.wakeCondition.notify_one(); // 
 		};
 		void Dispatch(
-			context& ctx, 
-			uint32_t jobCount, 
-			const std::function<void(JobArgs)>& task, 
-			size_t sharedmemory_size,
-			const std::function<void(void*)>& GroupStartJob, // callback func with memory for type T
-			const std::function<void(void*)>& GroupEndJob // callback func with memory for type T
+			context& ctx,
+			uint32_t jobCount,
+			std::function<void(JobArgs const&)> const& task
 		) noexcept {
 			if (jobCount == 0) { return; }
 
-			uint32_t groupCount = std::max<uint32_t>(1, std::min<uint32_t>(jobCount, internal_state.numThreads * 5));
+			uint32_t groupCount = std::max<uint32_t>(1, std::min<uint32_t>(jobCount, internal_state.numThreads * 4));
 			uint32_t groupSize = jobCount / groupCount;
 			while ((uint32_t)(groupCount * groupSize) < jobCount) groupCount++;
 
@@ -289,7 +439,48 @@ namespace fibers {
 			ctx.counter.Add(groupCount);
 
 			// create the overarching task:
-			Task job{ task, &ctx, 0, 0, 1, (uint32_t)sharedmemory_size, GroupStartJob, GroupEndJob };
+			Task job{
+				task,
+				&ctx, 0, 0, 1, 0, nullptr, nullptr
+			};
+
+			// submit groups evenly into the thread pool:
+			for (uint32_t groupID = 0; ; ++groupID) { // groupID < groupCount
+				// For each group, generate one real job:
+				job.groupID = groupID;
+				job.groupJobOffset = groupID * groupSize;
+				job.groupJobEnd = std::min(job.groupJobOffset + groupSize, jobCount);
+				if (job.groupJobOffset >= job.groupJobEnd) break; // this is how we know we've produced enough job groups to cover the number of jobs requested, and no more.
+				internal_state.jobQueuePerThread[internal_state.nextQueue.Increment() % internal_state.numThreads].push(job);
+			}
+
+			// wake any threads that might be sleeping:
+			internal_state.wakeCondition.notify_all();
+		};
+		void Dispatch(
+			context& ctx, 
+			uint32_t jobCount, 
+			std::function<void(JobArgs const&)> const& task,
+			size_t sharedmemory_size,
+			std::function<void(void*)> const& GroupStartJob, // callback func with memory for type T
+			std::function<void(void*)> const& GroupEndJob // callback func with memory for type T
+		) noexcept {
+			if (jobCount == 0) { return; }
+
+			uint32_t groupCount = std::max<uint32_t>(1, std::min<uint32_t>(jobCount, internal_state.numThreads * 4));
+			uint32_t groupSize = jobCount / groupCount;
+			while ((uint32_t)(groupCount * groupSize) < jobCount) groupCount++;
+
+			// context state is updated to its maximum:
+			ctx.counter.Add(groupCount);
+
+			// create the overarching task:
+			Task job{ 
+				task, 
+				&ctx, 0, 0, 1, (uint32_t)sharedmemory_size, 
+				GroupStartJob,
+				GroupEndJob
+			};
 
 			// submit groups evenly into the thread pool:
 			for (uint32_t groupID = 0; ; ++groupID) { // groupID < groupCount
@@ -316,48 +507,47 @@ namespace fibers {
 			}
 		};
 		void Wait(context& ctx) {
-			int j{ 0 };
-			// work(internal_state.nextQueue.Increment() % internal_state.numThreads, &ctx);
-			while (IsBusy(ctx)) {
-				// Wake any threads that might be sleeping:
-				internal_state.wakeCondition.notify_all();
-				
-				//if (++j >= 40) {
-				//	std::this_thread::yield();
-				//}
-				//else {
-					// work() will pick up any jobs that are on stand by and execute them on this thread immediately:
-					work(internal_state.nextQueue.Increment() % internal_state.numThreads, &ctx);
-				//}
-			}
-			// re-throw any exceptions that were caught during the workload
+#if 0 // Does not support jobs calling jobs 
+			internal_state.wakeCondition.notify_all();
+			work(internal_state.nextQueue.Increment() % internal_state.numThreads, &ctx);
+			while (IsBusy(ctx)) { std::this_thread::yield(); };
 			HandleExceptions(ctx);
+#else // supports jobs calling jobs
+			internal_state.wakeCondition.notify_all(); // Wake any threads that might be sleeping:
+			while (IsBusy(ctx)) { // Do work
+				work(internal_state.nextQueue.Increment() % internal_state.numThreads, &ctx);
+			}
+			HandleExceptions(ctx);  // re-throw any exceptions that were caught during the workload
+#endif
 		};
 	};
 
-	JobGroup::JobGroup() : impl(new JobGroup::JobGroupImpl(std::static_pointer_cast<void>(std::shared_ptr<impl::TaskGroup>(new impl::TaskGroup())))) {};
-	JobGroup::JobGroup(Job const& job) : impl(new JobGroup::JobGroupImpl(std::static_pointer_cast<void>(std::shared_ptr<impl::TaskGroup>(new impl::TaskGroup())))) { Queue(job); };
+	JobGroup::JobGroup() : 
+		impl(new JobGroup::JobGroupImpl(std::static_pointer_cast<void>(std::shared_ptr<impl::TaskGroup>(new impl::TaskGroup())))) 
+	{};
+	JobGroup::JobGroup(Job const& job) : 
+		impl(new JobGroup::JobGroupImpl(std::static_pointer_cast<void>(std::shared_ptr<impl::TaskGroup>(new impl::TaskGroup())))) 
+	{ Queue(job); };
 	void JobGroup::JobGroupImpl::Queue(Job const& job) {
 		std::shared_ptr<impl::TaskGroup> wg = std::static_pointer_cast<impl::TaskGroup>(waitGroup);
 		if (!wg) throw(std::runtime_error("Job Group was empty."));
-		wg->Queue([impl = job.impl](impl::JobArgs args) {
+		wg->Queue([impl = job.impl](impl::JobArgs const& args) {
 			if (impl) {
 				impl->Invoke();
 			}
 		});
-		jobs.push_back(job);
+		last_job = job;
 	};
 	void JobGroup::JobGroupImpl::Queue(std::vector<Job> const& listOfJobs) {
 		std::shared_ptr<impl::TaskGroup> wg = std::static_pointer_cast<impl::TaskGroup>(waitGroup);
 		if (!wg) throw(std::runtime_error("Job Group was empty."));
 
-		wg->Dispatch<void>(listOfJobs.size(), [listOfJobs](impl::JobArgs args) {
+		wg->Dispatch(listOfJobs.size(), [listOfJobs](impl::JobArgs const& args) {
 			listOfJobs[args.jobIndex].Invoke();
 		});
 
-		for (Job const& j : listOfJobs) {
-			jobs.push_back(j);
-		}
+		if (listOfJobs.size() > 0) 
+			last_job = listOfJobs[listOfJobs.size() - 1];
 	};
 	void JobGroup::JobGroupImpl::Wait() {
 		std::shared_ptr<impl::TaskGroup> wg = std::static_pointer_cast<impl::TaskGroup>(waitGroup);
@@ -369,7 +559,7 @@ namespace fibers {
 		if (this->IsStatic()) {
 			std::shared_ptr< impl::context > ctx = std::make_shared<impl::context>();
 			ctx->counter.Increment();
-			impl::Execute(*ctx, [action = this->impl, context = ctx](impl::JobArgs args) {
+			impl::Execute(*ctx, [action = this->impl, context = ctx](impl::JobArgs const& args) {
 				context->counter.Decrement();
 				if (action) {
 					action->Invoke();

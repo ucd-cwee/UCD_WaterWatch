@@ -314,8 +314,8 @@ std::vector<double> SharedMatrix::GetTimeSeries(double Left, double Top, double 
 		//auto minY = GetMinY();
 		//auto maxY = GetMaxY();
 
-		//fibers::parallel::For(0, numRows, [&tempMatrix , &out, &buffer_queue, &numColumns, &Left, &Top, &rowStep, &columnStep, &reductionRatio, &model](int R) 
-		for (int R = 0 ; R < numRows; R++)
+		fibers::parallel::For(0, numRows, [&tempMatrix , &out, &buffer_queue, &numColumns, &Left, &Top, &rowStep, &columnStep, &reductionRatio, &model](int R) 
+		//for (int R = 0 ; R < numRows; R++)
 		{
 			cweeUnion<double, double> coords;
 			alglib::real_1d_array results;
@@ -351,7 +351,7 @@ std::vector<double> SharedMatrix::GetTimeSeries(double Left, double Top, double 
 			}
 			buffer_queue.push(buf);
 		}
-		//);
+		);
 
 		// do a faster, local interpolation of those results using the Hilbert curve for the last 2/3 components. 
 		if (true) {
@@ -2219,7 +2219,7 @@ std::vector<Color_Interop> MapBackground_Interop::GetMatrix(double Left, double 
 	}
 
 	// add random sub-byte noise to break up the visible "banding" in color gradients, typically seen in shadows (like white-to-grey gradients)
-#if 0
+#if 1
 	fibers::parallel::ForEach(out, [](Color_Interop& pixel) {
 		pixel.R = ::Min(255.0, ::Max<double>(0.0, pixel.R + random_fast(-0.5, 0.5))); // rand_fast since the rand is for visual polish, not numerical use. This random_fast is only pseudo-random
 		pixel.G = ::Min(255.0, ::Max<double>(0.0, pixel.G + random_fast(-0.5, 0.5)));

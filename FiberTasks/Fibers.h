@@ -306,42 +306,60 @@ namespace fibers {
 				using difference_type = typename std::iterator<std::forward_iterator_tag, std::pair<xType, yType>>::difference_type;
 
 				Iterator() = default;
-				Iterator(Iterator&& rhs) = default;
 				Iterator(Pattern*&& _parent, int pos, std::optional<xType> const& _start = std::nullopt, std::optional<xType> const& _end = std::nullopt) :
 					start{ std::nullopt }
-					//, end{ std::nullopt }
 					, parent{ std::forward<Pattern*>(_parent) }
 					, _ptr{ begin(_parent, _start, _end) }
 					, result{}
 					, position{ pos }
 				{ 
 					if (_start.has_value()) start.emplace(_start.value());
-					//if (_end.has_value()) end.emplace(_end.value());
-
-					while (pos > 0) { ++_ptr; --pos; } 
+					while (pos > 0 && _ptr) { ++_ptr;  --pos; }
 				};
 				Iterator(const Iterator& rhs) : 
 					start{ std::nullopt }
-					//, end{ std::nullopt }
 					, parent{ rhs.parent }
 					, _ptr{ begin(rhs.parent, rhs.start, rhs._ptr.GetEndKey<xType>()) }
 					, result{}
 					, position{ rhs.position }
 				{
 					if (rhs.start.has_value()) start.emplace(rhs.start.value());
-					//if (rhs.end.has_value()) end.emplace(rhs.end.value());
-
-					int pos = position;
-					while (pos > 0) { ++_ptr; --pos; }
+					int pos = position; while (pos > 0 && _ptr) { ++_ptr;  --pos; }
 				};
-				Iterator& operator=(const Iterator& rhs) = delete;
-				Iterator& operator=(Iterator&& rhs) = delete;
+				Iterator(Iterator&& rhs) = default; /* : start{ std::nullopt }
+					, parent{ rhs.parent }
+					, _ptr{ begin(rhs.parent, rhs.start, rhs._ptr.GetEndKey<xType>()) }
+					, result{}
+					, position{ rhs.position }
+				{
+					if (rhs.start.has_value()) start.emplace(rhs.start.value());
+					int pos = position; while (pos > 0 && _ptr) { ++_ptr;  --pos; }
+				}; */
+				Iterator& operator=(const Iterator& rhs) {
+					start.reset();;
+					parent = rhs.parent;
+					_ptr = begin(rhs.parent, rhs.start, rhs._ptr.GetEndKey<xType>());
+					position = rhs.position;
+
+					if (rhs.start.has_value()) start.emplace(rhs.start.value());
+					int pos = position; while (pos > 0 && _ptr) { ++_ptr;  --pos; }
+				};
+				Iterator& operator=(Iterator&& rhs) {
+					start.reset();;
+					parent = rhs.parent;
+					_ptr = begin(rhs.parent, rhs.start, rhs._ptr.GetEndKey<xType>());
+					position = rhs.position;
+
+					if (rhs.start.has_value()) start.emplace(rhs.start.value());
+					int pos = position; while (pos > 0 && _ptr) { ++_ptr;  --pos; }
+				};
 				~Iterator() = default;
 
-				const std::pair<xType, yType>& operator*() const { LoadResult(); return result; };
-				const std::pair<xType, yType>* operator->() const { LoadResult(); return &result; };
+				std::pair<xType, yType>& operator*() const { LoadResult(); return result; };
+				std::pair<xType, yType>* operator->() const { LoadResult(); return &result; };
 
 				Iterator& operator++() { Increment(); return *this; }
+				// Iterator operator++(int) { Iterator out{ *this }; Increment(); return out; }
 
 				explicit operator bool() const { return Valid(); };
 				bool operator==(const Iterator& rhs) const {
@@ -385,7 +403,6 @@ namespace fibers {
 
 			public:
 				std::optional<xType> start{ std::nullopt };
-				//std::optional<xType> end{ std::nullopt };
 				Pattern* parent{ nullptr };
 				mutable typename underlying::RecordIterator_t _ptr{};
 				mutable std::pair<xType, yType> result{};
@@ -1476,32 +1493,6 @@ namespace fibers {
 
 				return t;
 			};
-			
-			//_type_*             Alloc() {
-			//	_type_* t{nullptr};
-			//	element_item* element{ nullptr };
-			//	++active;
-			//	while (!element) {
-			//		while (element = free.load()) { // if we have free elements available...
-			//			if (free.TrySet(element->next, &element)) { // get the free element and swap it with it's next ptr. If this fails, we will simply try again.
-			//				// we now have exclusive access to this element.
-			//				element->next = nullptr;
-			//				break; 
-			//			}
-			//		}
-			//		// if we fell through and for some reason the element is still empty, we need to allocate more. May be due to contention and many allocations are happening.
-			//		if (!element) AllocNewBlock(); // adds a new element to the "free" elements
-			//	}
-			//	t = static_cast<_type_*>(static_cast<void*>(element));
-			//	memset(t, 0, sizeof(_type_));
-			//	if constexpr (!isPod()) {
-			//		if (element->initialized.Increment() == 1) {
-			//			new (t) _type_;
-			//		}
-			//		
-			//	}	
-			//	return t;
-			//};
 
 			// Frees the memory pointer, previously provided by this allocator. Calls the destructor for non-POD types, and will store the pointer for later use.
 			void				Free(_type_* element) {
@@ -2361,7 +2352,7 @@ namespace fibers {
 				return queue.front(item);
 			};
 #else
-#if 1 // utilizes a lock-free design that guarrantees progress under heavy contention
+#if 0 // utilizes a lock-free design that guarrantees progress under heavy contention
 			concurrency::concurrent_queue<T> queue;
 
 			__forceinline void push(T&& item) {
@@ -2458,7 +2449,7 @@ namespace fibers {
 		__forceinline uint32_t GetThreadCount() { return internal_state.numThreads; };
 
 		// Add a task to execute asynchronously. Any idle thread will execute this.
-		void Execute(context& ctx, const std::function<void(JobArgs)>& task) noexcept;
+		void Execute(context& ctx, std::function<void(JobArgs const&)> const& task) noexcept;
 
 		// Divide a task onto multiple jobs and execute in parallel.
 		//	jobCount	: how many jobs to generate for this task.
@@ -2467,10 +2458,16 @@ namespace fibers {
 		void Dispatch(
 			context& ctx, 
 			uint32_t jobCount, 
-			const std::function<void(JobArgs)>& task, 
-			size_t sharedmemory_size = 0, 
-			const std::function<void(void*)>& GroupStartJob = nullptr, // callback func with memory for type T
-			const std::function<void(void*)>& GroupEndJob = nullptr // callback func with memory for type T
+			std::function<void(JobArgs const&)> const& task
+		) noexcept;
+
+		void Dispatch(
+			context& ctx,
+			uint32_t jobCount,
+			std::function<void(JobArgs const&)> const& task,
+			size_t sharedmemory_size,
+			std::function<void(void*)> const& GroupStartJob, // callback func with memory for type T
+			std::function<void(void*)> const& GroupEndJob // callback func with memory for type T
 		) noexcept;
 
 		// Returns the amount of job groups that will be created for a set number of jobs and group size
@@ -2491,24 +2488,25 @@ namespace fibers {
 		public:
 			auto Wait() { return impl::Wait(ctx); };
 			auto IsBusy() const { return impl::IsBusy(ctx); };
-			auto Queue(const std::function<void(JobArgs)>& task) { return impl::Execute(ctx, task); };
+			auto Queue(std::function<void(JobArgs const&)> const& task) { return impl::Execute(ctx, task); };
+			
+			/* Dispatch a function that does not need to share memory within a group / cluster of the Task jobs. */
+			auto Dispatch(
+				uint32_t jobCount,
+				std::function<void(JobArgs const&)> const& task
+			) {
+				return impl::Dispatch(ctx, jobCount, task);
+			};	
+			
+			/* Dispatch a function that intends to share memory serially within a group / cluster of the Task jobs. */
 			template <typename T> auto Dispatch(
-				uint32_t jobCount, 
-				const std::function<void(JobArgs)>& task, 
-				const std::function<void(void*)>& GroupStartJob = nullptr, // callback func with memory for type T
-				const std::function<void(void*)>& GroupEndJob = nullptr // callback func with memory for type T
-			){ 
+				uint32_t jobCount,
+				std::function<void(JobArgs const&)> const& task,
+				std::function<void(void*)> const& GroupStartJob, // callback func with memory for type T
+				std::function<void(void*)> const& GroupEndJob // callback func with memory for type T
+			){
 				return impl::Dispatch(ctx, jobCount, task, sizeof(T), GroupStartJob, GroupEndJob);
 			};
-			template <> auto Dispatch<void>(
-				uint32_t jobCount, 
-				const std::function<void(JobArgs)>& task, 
-				const std::function<void(void*)>& GroupStartJob, // callback func with memory for type T
-				const std::function<void(void*)>& GroupEndJob // callback func with memory for type T
-			) { 
-				return impl::Dispatch(ctx, jobCount, task, 0, GroupStartJob, GroupEndJob);
-			};
-
 		};
 	};
 
@@ -2562,8 +2560,6 @@ namespace fibers {
 				return false;
 			}
 		};
-
-
 
 	public:
 		Job() : impl(nullptr) {};
@@ -2649,10 +2645,10 @@ namespace fibers {
 		class JobGroupImpl {
 		public:
 			std::shared_ptr<void> waitGroup;
-			fibers::containers::vector<Job> jobs;
+			Job last_job;
 
-			JobGroupImpl() : waitGroup(nullptr), jobs() {};
-			JobGroupImpl(std::shared_ptr<void> wg) : waitGroup(wg), jobs() {};
+			JobGroupImpl() : waitGroup(nullptr), last_job() {};
+			JobGroupImpl(std::shared_ptr<void> wg) : waitGroup(wg), last_job() {};
 			JobGroupImpl(JobGroupImpl const&) = delete;
 			JobGroupImpl(JobGroupImpl&&) = delete;
 			JobGroupImpl& operator=(JobGroupImpl const&) = delete;
@@ -2688,35 +2684,26 @@ namespace fibers {
 			return *this;
 		};
 
-		/* Await all jobs in this group, and get the return values (which may be empty) for each job */
-		std::vector<fibers::Any> Wait_Get() {
+		/* Await all jobs in this group, and gets the return value of the last job submitted */
+		template <typename T = void>
+		decltype(auto) Wait_Get() {
 			impl->Wait();
 
-			typename decltype(JobGroupImpl::jobs) out;
-			out.swap(impl->jobs);
-
-			if (out.size() > 0) {
-				std::vector<fibers::Any> any;
-				for (auto& job : out) {
-					if (job) {
-						any.push_back(job->GetResult());
-					}
-				}
-				return any;
+			if constexpr (std::is_same<T, void>::value) {
+				return impl->last_job.GetResult();
 			}
 			else {
-				return std::vector<fibers::Any>();
+				return impl->last_job.GetResult().cast<T>();
 			}
 		};
 
 		/* Await all jobs in this group */
 		void Wait() {
 			impl->Wait();
-			impl->jobs.clear();
 		};
 
 		impl::TaskGroup& GetTaskGroup() const {
-			return *std::static_pointer_cast<impl::TaskGroup>(impl->waitGroup);
+			return *static_cast<impl::TaskGroup*>(impl->waitGroup.get());
 		};
 
 	protected:
@@ -2725,312 +2712,641 @@ namespace fibers {
 	};
 
 	namespace parallel {
-		/* parallel_for (auto i = start; i < end; i++){ todo(i); }
-		The user is reponsible for calling jobgroup.Wait() after this dispatches the job(s). */
-		template<typename iteratorType, typename F> decltype(auto) For(JobGroup& jobgroup, iteratorType start, iteratorType end, F const& ToDo) {
-			if (end <= start) return;
-			auto& group = jobgroup.GetTaskGroup();
+#if 0
+		namespace impl {
+			template <class _FwdIt, class _Diff = std::_Iter_diff_t<_FwdIt>, bool = std::_Is_random_iter_v<_FwdIt>>
+			struct _Static_partition_range;
 
-			group.Dispatch<void>(end - start, [=](impl::JobArgs args) {
-				ToDo(start + args.jobIndex);
-			});			
-		};
+			template <class _RanIt, class _Diff> /* random iteration type */
+			struct _Static_partition_range<_RanIt, _Diff, true> {
+				using _Target_diff = std::_Iter_diff_t<_RanIt>;
+				using _URanIt = std::_Unwrapped_t<const _RanIt&>;
+				_URanIt _Start_at;
+				using _Chunk_type = std::_Iterator_range<_URanIt>;
 
-		/* parallel_for (auto i = start; i < end; i += step){ todo(i); }
-		The user is reponsible for calling jobgroup.Wait() after this dispatches the job(s). */
-		template<typename iteratorType, typename F> decltype(auto) For(JobGroup& jobgroup, iteratorType start, iteratorType end, iteratorType step, F const& ToDo) {
-			if (end <= start) return;
-			auto& group = jobgroup.GetTaskGroup();
-
-			group.Dispatch<void>((end - start) / step, [=](impl::JobArgs args) {
-				ToDo(start + args.jobIndex * step);
-			});			
-		};
-
-		/* parallel_for (auto i = container.begin(); i != container.end(); i++){ todo(*i); }
-		The user is reponsible for calling jobgroup.Wait() after this dispatches the job(s). */
-		template<typename containerType, typename F> decltype(auto) ForEach(JobGroup& jobgroup, containerType& container, F const& ToDo) {
-			using iterType = typename containerType::iterator;
-
-			auto iter = container.begin();
-			auto iter_end = container.end();
-			auto distance = std::distance(iter, iter_end);
-			if (distance > 0) {
-				auto& group = jobgroup.GetTaskGroup();
-
-				group.Dispatch<iterType>(distance, [&](impl::JobArgs args) { // actual work
-					iterType* iterInternal{ nullptr };
-					iterInternal = static_cast<iterType*>(args.sharedmemory); // cast PTR
-					if ((iterInternal) && (args.groupIndex == 0) && (args.jobIndex > 0)) std::advance(*iterInternal, args.jobIndex); // advance as needed if this is a new non-starting group
-
-					if (*iterInternal != iter_end) {
-						ToDo(**iterInternal);
-						iterInternal->operator++();
-					}
-				}, [&iter](void* p)->void { // start-up
-					new (p) iterType(iter);
-				}, [&](void* p)->void { // close-out
-					if constexpr (!std::is_pod<iterType>::value) {
-						static_cast<iterType*>(p)->~iterType();
-					}
-				});
-
-				group.Wait();
-			}
-		};
-
-		/* parallel_for (auto i = container.cbegin(); i != container.cend(); i++){ todo(*i); }
-		The user is reponsible for calling jobgroup.Wait() after this dispatches the job(s). */
-		template<typename containerType, typename F> decltype(auto) ForEach(JobGroup& jobgroup, containerType const& container, F const& ToDo) {
-			using iterType = typename containerType::const_iterator;
-
-			auto iter = container.cbegin();
-			auto iter_end = container.cend();
-			auto distance = std::distance(iter, iter_end);
-			if (distance > 0) {
-				auto& group = jobgroup.GetTaskGroup();
-
-				group.Dispatch<iterType>(distance, [&](impl::JobArgs args) { // actual work
-					iterType* iterInternal{ nullptr };
-					iterInternal = static_cast<iterType*>(args.sharedmemory); // cast PTR
-					if ((iterInternal) && (args.groupIndex == 0) && (args.jobIndex > 0)) std::advance(*iterInternal, args.jobIndex); // advance as needed if this is a new non-starting group
-
-					if (*iterInternal != iter_end) {
-						ToDo(**iterInternal);
-						iterInternal->operator++();
-					}
-				}, [&iter](void* p)->void { // start-up
-					new (p) iterType(iter);
-				}, [&](void* p)->void { // close-out
-					if constexpr (!std::is_pod<iterType>::value) {
-						static_cast<iterType*>(p)->~iterType();
-					}
-				});
-
-				group.Wait();
-			}
-		};
-
-		/* parallel_for (auto i = start; i < end; i++){ todo(i); }
-		If the todo(i) returns anything, it will be collected into a vector at the end. */
-		template<typename iteratorType, typename F> decltype(auto) For(iteratorType start, iteratorType end, F const& ToDo) {
-			constexpr bool retNo = std::is_same<typename fibers::utilities::function_traits<decltype(std::function(ToDo))>::result_type, void>::value;
-
-			if constexpr (retNo) {
-				if (end <= start) return;
-
-				impl::TaskGroup group;
-
-				group.Dispatch<void>(end - start, [&](impl::JobArgs args) {
-					ToDo(start + args.jobIndex);
-				});
-
-				group.Wait();
-			}
-			else {
-				using returnT = typename fibers::utilities::function_traits<decltype(std::function(ToDo))>::result_type;
-
-				if (end <= start) return std::vector< returnT >();
-
-				std::vector< returnT > out(end - start, returnT());
-
-				impl::TaskGroup group;
-
-				group.Dispatch<void>(end - start, [&](impl::JobArgs args) {
-					out[args.jobIndex] = ToDo(start + args.jobIndex);
-				});
-
-				group.Wait();
-
-				return out;
-			}
-		};
-
-		/* parallel_for (auto i = start; i < end; i += step){ todo(i); }
-		If the todo(i) returns anything, it will be collected into a vector at the end. */
-		template<typename iteratorType, typename F> decltype(auto) For(iteratorType start, iteratorType end, iteratorType step, F const& ToDo) {
-			constexpr bool retNo = std::is_same<typename fibers::utilities::function_traits<decltype(std::function(ToDo))>::result_type, void>::value;
-
-			if constexpr (retNo) {
-				if (end <= start) return;
-
-				impl::TaskGroup group;
-
-				group.Dispatch<void>((end - start) / step, [&](impl::JobArgs args) {
-					ToDo(start + args.jobIndex * step);
-				});
-
-				group.Wait();
-			}
-			else {
-				using returnT = typename fibers::utilities::function_traits<decltype(std::function(ToDo))>::result_type;
-
-				if (end <= start) return std::vector< returnT >();
-
-				std::vector< returnT > out((end - start) / step, returnT());
-
-				impl::TaskGroup group;
-
-				group.Dispatch<void>((end - start) / step, [&](impl::JobArgs args) {
-					out[args.jobIndex] = ToDo(start + args.jobIndex * step);
-				});
-
-				group.Wait();
-
-				return out;
-			}
-		};
-
-		/* parallel_for (auto i = container.begin(); i != container.end(); i++){ todo(*i); }
-		If the todo(*i) returns anything, it will be collected into a vector at the end. */
-		template<typename containerType, typename F> decltype(auto) ForEach(containerType& container, F const& ToDo) {
-			constexpr bool retNo = std::is_same<typename fibers::utilities::function_traits<decltype(std::function(ToDo))>::result_type, void>::value;
-
-			if constexpr (retNo) {
-				using iterType = typename containerType::iterator;
-				
-				auto iter = container.begin();
-				auto iter_end = container.end();
-				auto distance = std::distance(iter, iter_end);
-				if (distance > 0) {
-					impl::TaskGroup group;
-
-					group.Dispatch<iterType>(distance, [&](impl::JobArgs args) { // actual work
-						iterType* iterInternal{ nullptr };
-						iterInternal = static_cast<iterType*>(args.sharedmemory); // cast PTR
-						if ((iterInternal) && (args.groupIndex == 0) && (args.jobIndex > 0)) std::advance(*iterInternal, args.jobIndex); // advance as needed if this is a new non-starting group
-						
-						if (*iterInternal != iter_end) {
-							ToDo(**iterInternal);
-							iterInternal->operator++();
-						}
-					}, [&iter](void* p)->void { // start-up
-						new (p) iterType(iter);
-					}, [&](void* p)->void { // close-out
-						if constexpr (!std::is_pod<iterType>::value) {
-							static_cast<iterType*>(p)->~iterType();
-						}
-					});
-
-					group.Wait();
-				}
-			}
-			else {
-				using returnT = typename fibers::utilities::function_traits<decltype(std::function(ToDo))>::result_type;
-				
-
-				using iterType = typename containerType::iterator;
-
-				auto iter = container.begin();
-				auto iter_end = container.end();
-				auto distance = std::distance(iter, iter_end);
-				if (distance > 0) {
-					std::vector< returnT > out(iter_end - iter, returnT());
-
-					impl::TaskGroup group;
-
-					group.Dispatch<iterType>(distance, [&](impl::JobArgs args) { // actual work
-						iterType* iterInternal{ nullptr };
-						iterInternal = static_cast<iterType*>(args.sharedmemory); // cast PTR
-						if ((iterInternal) && (args.groupIndex == 0) && (args.jobIndex > 0)) std::advance(*iterInternal, args.jobIndex); // advance as needed if this is a new non-starting group
-
-						if (*iterInternal != iter_end) {
-							out[static_cast<int>(args.jobIndex)] = ToDo(**iterInternal);
-							iterInternal->operator++();
-						}
-					}, [&iter](void* p)->void { // start-up
-						new (p) iterType(iter);
-					}, [&](void* p)->void { // close-out
-						if constexpr (!std::is_pod<iterType>::value) {
-							static_cast<iterType*>(p)->~iterType();
-						}
-					});
-
-					group.Wait();
-
-					return out;
-				}
-				else {
-					return std::vector< returnT >();
+				_RanIt _Populate(const std::_Static_partition_team<_Diff>& _Team, _RanIt _First) {
+					// statically partition a random-access iterator range and return next(_First, _Team._Count)
+					// pre: _Populate hasn't yet been called on this instance
+					auto _Result = _First + static_cast<_Target_diff>(_Team._Count); // does verification
+					_Start_at = std::_Get_unwrapped(_First);
+					return _Result;
 				}
 
-			}
-		};
-
-		/* parallel_for (auto i = container.cbegin(); i != container.cend(); i++){ todo(*i); }
-		If the todo(*i) returns anything, it will be collected into a vector at the end. */
-		template<typename containerType, typename F> decltype(auto) ForEach(containerType const& container, F const& ToDo) {
-			constexpr bool retNo = std::is_same<typename fibers::utilities::function_traits<decltype(std::function(ToDo))>::result_type, void>::value;
-
-			if constexpr (retNo) {
-				using iterType = typename containerType::const_iterator;
-
-				auto iter = container.cbegin();
-				auto iter_end = container.cend();
-				
-				auto distance = std::distance(iter, iter_end);
-
-				if (distance > 0) {
-					impl::TaskGroup group;
-
-					group.Dispatch<iterType>(distance, [&](impl::JobArgs args) { // actual work
-						iterType* iterInternal{ nullptr };
-						iterInternal = static_cast<iterType*>(args.sharedmemory); // cast PTR
-						if ((iterInternal) && (args.groupIndex == 0) && (args.jobIndex > 0)) std::advance(*iterInternal, args.jobIndex); // advance as needed if this is a new non-starting group
-
-						if (*iterInternal != iter_end) {
-							ToDo(**iterInternal);
-							iterInternal->operator++();
-						}
-					}, [&iter](void* p)->void { // start-up
-						new (p) iterType(iter);
-					}, [&](void* p)->void { // close-out
-						if constexpr (!std::is_pod<iterType>::value) {
-							static_cast<iterType*>(p)->~iterType();
-						}
-					});
-
-					group.Wait();
+				bool _Populate(const std::_Static_partition_team<_Diff>& _Team, _RanIt _First, _RanIt _Last) {
+					// statically partition a random-access iterator range and check if the range ends at _Last
+					// pre: _Populate hasn't yet been called on this instance
+					std::_Adl_verify_range(_First, _Last);
+					_Start_at = std::_Get_unwrapped(_First);
+					return _Team._Count == _Last - _First;
 				}
-			}
-			else {
-				using returnT = typename fibers::utilities::function_traits<decltype(std::function(ToDo))>::result_type;
 
-				using iterType = typename containerType::const_iterator;
+				_URanIt _Get_first(size_t /* _Chunk_number */, const _Diff _Offset) {
+					// get the first iterator for _Chunk _Chunk_number (which is at offset _Offset)
+					return _Start_at + static_cast<_Target_diff>(_Offset);
+				}
 
-				auto iter = container.cbegin();
-				auto iter_end = container.cend();
-				auto distance = std::distance(iter, iter_end);
-				if (distance > 0) {
-					std::vector< returnT > out(iter_end - iter, returnT());
+				_Chunk_type _Get_chunk(const std::_Static_partition_key<_Diff> _Key) const {
+					// get a static partition chunk from a random-access range
+					// pre: _Key was generated by the _Static_partition_team instance passed to a previous call to _Populate
+					const auto _First = _Start_at + static_cast<_Target_diff>(_Key._Start_at);
+					return { _First, _First + static_cast<_Target_diff>(_Key._Size) };
+				}
+			};
 
-					impl::TaskGroup group;
+			template <class _FwdIt, class _Diff> /* non-random (e.g. forward) iter type */
+			struct _Static_partition_range<_FwdIt, _Diff, false> {
+				using _Target_diff = std::_Iter_diff_t<_FwdIt>;
+				using _UFwdIt = std::_Unwrapped_t<const _FwdIt&>;
+				std::_Parallel_vector<_UFwdIt> _Division_points;
+				using _Chunk_type = std::_Iterator_range<_UFwdIt>;
 
-					group.Dispatch<iterType>(distance, [&](impl::JobArgs args) { // actual work
-						iterType* iterInternal{ nullptr };
-						iterInternal = static_cast<iterType*>(args.sharedmemory); // cast PTR
-						if ((iterInternal) && (args.groupIndex == 0) && (args.jobIndex > 0)) std::advance(*iterInternal, args.jobIndex); // advance as needed if this is a new non-starting group
+				_FwdIt _Populate(const std::_Static_partition_team<_Diff>& _Team, _FwdIt _First) {
+					// statically partition a forward iterator range and return next(_First, _Team._Count)
+					// pre: _Populate hasn't yet been called on this instance
+					const auto _Chunks = _Team._Chunks;
+					_Division_points.resize(_Chunks + 1);
+					// The following potentially narrowing cast is OK because caller has ensured
+					// next(_First, _Team._Count) is valid (and _Count <= _Chunk_size)
+					const auto _Chunk_size = static_cast<_Target_diff>(_Team._Chunk_size);
+					const auto _Unchunked_items = _Team._Unchunked_items;
+					auto _Result = _Division_points.begin();
+					*_Result = std::_Get_unwrapped(_First);
+					for (_Diff _Idx{}; _Idx < _Unchunked_items; ++_Idx) { // record bounds of chunks with an extra item
+						_STD advance(_First, static_cast<_Target_diff>(_Chunk_size + 1));
+						*++_Result = std::_Get_unwrapped(_First);
+					}
 
-						if (*iterInternal != iter_end) {
-							out[static_cast<int>(args.jobIndex)] = ToDo(**iterInternal);
-							iterInternal->operator++();
-						}
-						}, [&iter](void* p)->void { // start-up
-							new (p) iterType(iter);
-						}, [&](void* p)->void { // close-out
-							if constexpr (!std::is_pod<iterType>::value) {
-								static_cast<iterType*>(p)->~iterType();
+					const auto _Diff_chunks = static_cast<_Diff>(_Chunks);
+					for (_Diff _Idx = _Unchunked_items; _Idx < _Diff_chunks; ++_Idx) { // record bounds of chunks with no extra item
+						_STD advance(_First, _Chunk_size);
+						*++_Result = std::_Get_unwrapped(_First);
+					}
+
+					return _First;
+				}
+
+				bool _Populate(const std::_Static_partition_team<_Diff>& _Team, _FwdIt _First, _FwdIt _Last) {
+					// statically partition a forward iterator range and check if the range ends at _Last
+					// pre: _Populate hasn't yet been called on this instance
+					const auto _Chunks = _Team._Chunks;
+					_Division_points.resize(_Chunks + 1);
+					const auto _Chunk_size = _Team._Chunk_size;
+					const auto _Unchunked_items = _Team._Unchunked_items;
+					auto _Result = _Division_points.begin();
+					*_Result = std::_Get_unwrapped(_First);
+					for (_Diff _Idx{}; _Idx < _Unchunked_items; ++_Idx) { // record bounds of chunks with an extra item
+						for (_Diff _This_chunk_size = _Chunk_size + 1; 0 < _This_chunk_size--;) {
+							if (_First == _Last) {
+								return false;
 							}
-						});
 
-					group.Wait();
+							++_First;
+						}
+
+						*++_Result = std::_Get_unwrapped(_First);
+					}
+
+					const auto _Diff_chunks = static_cast<_Diff>(_Chunks);
+					for (_Diff _Idx = _Unchunked_items; _Idx < _Diff_chunks; ++_Idx) { // record bounds of chunks with no extra item
+						for (_Diff _This_chunk_size = _Chunk_size; 0 < _This_chunk_size--;) {
+							if (_First == _Last) {
+								return false;
+							}
+
+							++_First;
+						}
+
+						*++_Result = std::_Get_unwrapped(_First);
+					}
+
+					return _First == _Last;
+				}
+
+				_UFwdIt _Get_first(const size_t _Chunk_number, _Diff /* _Offset */) {
+					// get the first iterator for _Chunk _Chunk_number (which is at offset _Offset)
+					return _Division_points[_Chunk_number];
+				}
+
+				_Chunk_type _Get_chunk(const std::_Static_partition_key<_Diff> _Key) const {
+					// get a static partition chunk from a forward range
+					// pre: _Key was generated by the _Static_partition_team instance passed to a previous call to _Populate
+					return { _Division_points[_Key._Chunk_number], _Division_points[_Key._Chunk_number + 1] };
+				}
+			};
+
+			template <class _FwdIt, class _Diff, class _Fn>
+			struct _Static_partitioned_for_each2 { // for_each task scheduled on the system thread pool
+				std::_Static_partition_team<_Diff> _Team;
+				impl::_Static_partition_range<_FwdIt, _Diff> _Basis;
+				_Fn _Func;
+
+				_Static_partitioned_for_each2(const size_t _Hw_threads, const _Diff _Count, _Fn _Fx)
+					: _Team{ _Count, std::_Get_chunked_work_chunk_count(_Hw_threads, _Count) }, _Basis{}, _Func(_Fx) {}
+
+				std::_Cancellation_status _Process_chunk() {
+					const auto _Key = _Team._Get_next_key();
+					if (_Key) {
+						const auto _Chunk = _Basis._Get_chunk(_Key);
+						std::_For_each_ivdep(_Chunk._First, _Chunk._Last, _Func);
+						return std::_Cancellation_status::_Running;
+					}
+
+					return std::_Cancellation_status::_Canceled;
+				}
+
+				static void __stdcall _Threadpool_callback(
+					__std_PTP_CALLBACK_INSTANCE, void* const _Context, __std_PTP_WORK) noexcept /* terminates */ {
+					std::_Run_available_chunked_work(*static_cast<_Static_partitioned_for_each2*>(_Context));
+				}
+			};
+		}
+#endif
+
+		/* parallel_for (auto i = start; i < end; i++){ todo(i); }
+		If the todo(i) returns anything, it will be collected into a vector at the end. */
+		template<typename iteratorType, class F> decltype(auto) For(iteratorType start, iteratorType end, F ToDo) {
+			constexpr bool retNo = std::is_same<typename fibers::utilities::function_traits<decltype(std::function(ToDo))>::result_type, void>::value;
+			if constexpr (retNo) {
+				synchronization::atomic_ptr<std::exception_ptr> e{ nullptr };
+
+				auto _Passed_fn = /*std::_Pass_fn*/([&](iteratorType i) {
+					if (!e) {
+						try {
+							i += start;
+							ToDo(i);
+						}
+						catch (...) {
+							if (!e) {
+								auto eptr = e.Set(new std::exception_ptr(std::current_exception())); // Sets the error to the new PTR
+								if (eptr) { // If we accidentilly errored at the same time as another group, prevent leak
+									delete eptr;
+								}
+							}
+						}
+					}
+				});
+				fibers::utilities::Sequence<iteratorType> seq(end - start);
+
+				auto _Count = end - start;
+				const size_t _Hw_threads = __std_parallel_algorithms_hw_threads();
+				if (_Hw_threads > 1 && _Count > 2) {
+					auto _First = seq.begin();
+
+					auto _UFirst = std::_Get_unwrapped_n(_First, _Count);
+					auto _Operation = std::_Static_partitioned_for_each2<decltype(_UFirst), decltype(_Count), decltype(_Passed_fn)>{ _Hw_threads, _Count, _Passed_fn };
+					std::_Seek_wrapped(_First, _Operation._Basis._Populate(_Operation._Team, _UFirst));
+
+					// process chunks of _Operation on the thread pool
+					const std::_Work_ptr _Work_op{ _Operation };
+
+					// setup complete, hereafter nothrow or terminate
+					_Work_op._Submit_for_chunks(_Hw_threads, _Operation._Team._Chunks);
+					std::_Run_available_chunked_work(_Operation);
+				}
+				else {
+					// not enough threads or the num jobs is not large enough to warrent multithreading
+					for (; start < end; start++) {
+						_Passed_fn(start);
+					}
+				}
+
+				if (e) {
+					auto eptr = e.Set(nullptr);
+					if (eptr) {
+						std::exception_ptr copy{ *eptr };
+						delete eptr;
+						std::rethrow_exception(std::move(copy));
+					}
+				}
+			}
+			else {
+				using returnT = typename fibers::utilities::function_traits<decltype(std::function(ToDo))>::result_type;
+				auto _Count = end - start;
+				if (_Count > 0) {
+					std::vector< returnT > out(_Count, returnT());
+
+					synchronization::atomic_ptr<std::exception_ptr> e{ nullptr };
+
+					auto _Passed_fn = /*std::_Pass_fn*/([&](iteratorType i) {
+						if (!e) {
+							try {
+								i += start;
+								out[i] = ToDo(i);
+							}
+							catch (...) {
+								if (!e) {
+									auto eptr = e.Set(new std::exception_ptr(std::current_exception())); // Sets the error to the new PTR
+									if (eptr) { // If we accidentilly errored at the same time as another group, prevent leak
+										delete eptr;
+									}
+								}
+							}
+						}
+					});
+					fibers::utilities::Sequence<iteratorType> seq(end - start);
+
+					auto _Count = end - start;
+					const size_t _Hw_threads = __std_parallel_algorithms_hw_threads();
+					if (_Hw_threads > 1 && _Count > 2) {
+						auto _First = seq.begin();
+
+						auto _UFirst = std::_Get_unwrapped_n(_First, _Count);
+						auto _Operation = std::_Static_partitioned_for_each2<decltype(_UFirst), decltype(_Count), decltype(_Passed_fn)>{ _Hw_threads, _Count, _Passed_fn };
+						std::_Seek_wrapped(_First, _Operation._Basis._Populate(_Operation._Team, _UFirst));
+
+						// process chunks of _Operation on the thread pool
+						const std::_Work_ptr _Work_op{ _Operation };
+
+						// setup complete, hereafter nothrow or terminate
+						_Work_op._Submit_for_chunks(_Hw_threads, _Operation._Team._Chunks);
+						std::_Run_available_chunked_work(_Operation);
+					}
+					else {
+						// not enough threads or the num jobs is not large enough to warrent multithreading
+						for (; start < end; start++) {
+							_Passed_fn(start);
+						}
+					}
+
+					if (e) {
+						auto eptr = e.Set(nullptr);
+						if (eptr) {
+							std::exception_ptr copy{ *eptr };
+							delete eptr;
+							std::rethrow_exception(std::move(copy));
+						}
+					}
 
 					return out;
 				}
 				else {
 					return std::vector< returnT >();
 				}
+			}
+		};
 
+		/* parallel_for (auto i = start; i < end; i++){ todo(i); }
+		If the todo(i) returns anything, it will be collected into a vector at the end. */
+		template<typename iteratorType, class F> decltype(auto) For(iteratorType start, iteratorType end, iteratorType step, F ToDo) {
+			constexpr bool retNo = std::is_same<typename fibers::utilities::function_traits<decltype(std::function(ToDo))>::result_type, void>::value;
+			if constexpr (retNo) {
+				synchronization::atomic_ptr<std::exception_ptr> e{ nullptr };
+
+				auto _Passed_fn = /*std::_Pass_fn*/([&](iteratorType i) {
+					if (!e) {
+						try {
+							i *= step;
+							i += start;
+							ToDo(i);
+						}
+						catch (...) {
+							if (!e) {
+								auto eptr = e.Set(new std::exception_ptr(std::current_exception())); // Sets the error to the new PTR
+								if (eptr) { // If we accidentilly errored at the same time as another group, prevent leak
+									delete eptr;
+								}
+							}
+						}
+					}
+					});
+				fibers::utilities::Sequence<iteratorType> seq(end - start);
+
+				auto _Count = (end - start) / step;
+				const size_t _Hw_threads = __std_parallel_algorithms_hw_threads();
+				if (_Hw_threads > 1 && _Count > 2) {
+					auto _First = seq.begin();
+
+					auto _UFirst = std::_Get_unwrapped_n(_First, _Count);
+					auto _Operation = std::_Static_partitioned_for_each2<decltype(_UFirst), decltype(_Count), decltype(_Passed_fn)>{ _Hw_threads, _Count, _Passed_fn };
+					std::_Seek_wrapped(_First, _Operation._Basis._Populate(_Operation._Team, _UFirst));
+
+					// process chunks of _Operation on the thread pool
+					const std::_Work_ptr _Work_op{ _Operation };
+
+					// setup complete, hereafter nothrow or terminate
+					_Work_op._Submit_for_chunks(_Hw_threads, _Operation._Team._Chunks);
+					std::_Run_available_chunked_work(_Operation);
+				}
+				else {
+					// not enough threads or the num jobs is not large enough to warrent multithreading
+					for (; start < end; start += step) {
+						_Passed_fn(start);
+					}
+				}
+
+				if (e) {
+					auto eptr = e.Set(nullptr);
+					if (eptr) {
+						std::exception_ptr copy{ *eptr };
+						delete eptr;
+						std::rethrow_exception(std::move(copy));
+					}
+				}
+			}
+			else {
+				using returnT = typename fibers::utilities::function_traits<decltype(std::function(ToDo))>::result_type;
+				auto _Count = end - start;
+				if (_Count > 0) {
+					std::vector< returnT > out(_Count, returnT());
+
+					synchronization::atomic_ptr<std::exception_ptr> e{ nullptr };
+
+					auto _Passed_fn = /*std::_Pass_fn*/([&](iteratorType i) {
+						if (!e) {
+							try {
+								i *= step;
+								i += start;
+								out[i] = ToDo(i);
+							}
+							catch (...) {
+								if (!e) {
+									auto eptr = e.Set(new std::exception_ptr(std::current_exception())); // Sets the error to the new PTR
+									if (eptr) { // If we accidentilly errored at the same time as another group, prevent leak
+										delete eptr;
+									}
+								}
+							}
+						}
+					});
+					fibers::utilities::Sequence<iteratorType> seq(end - start);
+
+					auto _Count = (end - start) / step;
+					const size_t _Hw_threads = __std_parallel_algorithms_hw_threads();
+					if (_Hw_threads > 1 && _Count > 2) {
+						auto _First = seq.begin();
+
+						auto _UFirst = std::_Get_unwrapped_n(_First, _Count);
+						auto _Operation = std::_Static_partitioned_for_each2<decltype(_UFirst), decltype(_Count), decltype(_Passed_fn)>{ _Hw_threads, _Count, _Passed_fn };
+						std::_Seek_wrapped(_First, _Operation._Basis._Populate(_Operation._Team, _UFirst));
+
+						// process chunks of _Operation on the thread pool
+						const std::_Work_ptr _Work_op{ _Operation };
+
+						// setup complete, hereafter nothrow or terminate
+						_Work_op._Submit_for_chunks(_Hw_threads, _Operation._Team._Chunks);
+						std::_Run_available_chunked_work(_Operation);
+					}
+					else {
+						// not enough threads or the num jobs is not large enough to warrent multithreading
+						for (; start < end; start += step) {
+							_Passed_fn(start);
+						}
+					}
+
+					if (e) {
+						auto eptr = e.Set(nullptr);
+						if (eptr) {
+							std::exception_ptr copy{ *eptr };
+							delete eptr;
+							std::rethrow_exception(std::move(copy));
+						}
+					}
+
+					return out;
+				}
+				else {
+					return std::vector< returnT >();
+				}
+			}
+		};
+
+		/* parallel_for (auto i = container.begin(); i != container.end(); i++){ todo(*i); }
+		If the todo(*i) returns anything, it will be collected into a vector at the end. */
+		template<typename containerType, typename F> decltype(auto) ForEach(containerType& container, F ToDo) {
+			constexpr bool retNo = std::is_same<typename fibers::utilities::function_traits<decltype(std::function(ToDo))>::result_type, void>::value;
+			using iterType = typename containerType::iterator;
+			using value_type = std::remove_reference_t<typename iterType::reference>;
+
+			if constexpr (retNo) {
+				synchronization::atomic_ptr<std::exception_ptr> e{ nullptr };
+
+				auto _Passed_fn = /*std::_Pass_fn*/([&](value_type& i) {
+					if (!e) {
+						try {
+							ToDo(i);
+						} catch (...) {
+							if (!e) {
+								auto eptr = e.Set(new std::exception_ptr(std::current_exception())); // Sets the error to the new PTR
+								if (eptr) { // If we accidentilly errored at the same time as another group, prevent leak
+									delete eptr;
+								}
+							}
+						}
+					}
+				});
+
+				auto _UFirst = std::_Get_unwrapped(container.begin());
+				auto _ULast = std::_Get_unwrapped(container.end());
+				auto _Count = std::distance(_UFirst, _ULast);
+				const size_t _Hw_threads = __std_parallel_algorithms_hw_threads();
+				if (_Hw_threads > 1 && _Count > 2) {
+					auto _Operation = std::_Static_partitioned_for_each2<decltype(_UFirst), decltype(_Count), decltype(_Passed_fn)>{ _Hw_threads, _Count, _Passed_fn };
+					(void)_Operation._Basis._Populate(_Operation._Team, _UFirst);
+					const std::_Work_ptr _Work_op{ _Operation }; // process chunks of _Operation on the thread pool
+
+					// setup complete, hereafter nothrow or terminate
+					_Work_op._Submit_for_chunks(_Hw_threads, _Operation._Team._Chunks);
+					std::_Run_available_chunked_work(_Operation);
+				}
+				else {
+					// not enough threads or the num jobs is not large enough to warrent multithreading
+					for (; _UFirst != _ULast; ++_UFirst) {
+						_Passed_fn(*_UFirst);
+					}
+				}
+
+				if (e) {
+					auto eptr = e.Set(nullptr);
+					if (eptr) {
+						std::exception_ptr copy{ *eptr };
+						delete eptr;
+						std::rethrow_exception(std::move(copy));
+					}
+				}
+			}
+			else{
+				using returnT = typename fibers::utilities::function_traits<decltype(std::function(ToDo))>::result_type;
+				auto _First = container.begin();
+				auto _Last = container.end();
+				auto _Count = std::distance(_First, _Last);
+
+				if (_Count > 0) {
+					std::vector< returnT > out(_Count, returnT());
+
+					synchronization::atomic_ptr<std::exception_ptr> e{ nullptr };
+
+					fibers::utilities::IteratorSequence<decltype(_First)> seq(_First, _Last);
+					auto _UFirst = std::_Get_unwrapped(seq.begin());
+					auto _ULast = std::_Get_unwrapped(seq.end());
+					
+					auto _Passed_fn = /*std::_Pass_fn*/([&](typename decltype(seq)::iterator::value_type& i) {
+						if (!e) {
+							try {
+								out[i.first] = ToDo(*i.second);
+							}
+							catch (...) {
+								if (!e) {
+									auto eptr = e.Set(new std::exception_ptr(std::current_exception())); // Sets the error to the new PTR
+									if (eptr) { // If we accidentilly errored at the same time as another group, prevent leak
+										delete eptr;
+									}
+								}
+							}
+						}
+					});
+
+					const size_t _Hw_threads = __std_parallel_algorithms_hw_threads();
+					if (_Hw_threads > 1 && _Count > 2) {
+						auto _Operation = std::_Static_partitioned_for_each2<decltype(_UFirst), decltype(_Count), decltype(_Passed_fn)>{ _Hw_threads, _Count, _Passed_fn };
+						(void)_Operation._Basis._Populate(_Operation._Team, _UFirst);
+						const std::_Work_ptr _Work_op{ _Operation }; // process chunks of _Operation on the thread pool
+
+						// setup complete, hereafter nothrow or terminate
+						_Work_op._Submit_for_chunks(_Hw_threads, _Operation._Team._Chunks);
+						std::_Run_available_chunked_work(_Operation);
+					}
+					else {
+						// not enough threads or the num jobs is not large enough to warrent multithreading
+						for (; _UFirst != _ULast; ++_UFirst) {
+							_Passed_fn(*_UFirst);
+						}
+					}
+
+					if (e) {
+						auto eptr = e.Set(nullptr);
+						if (eptr) {
+							std::exception_ptr copy{ *eptr };
+							delete eptr;
+							std::rethrow_exception(std::move(copy));
+						}
+					}
+
+					return out;
+				}
+				else {
+					return std::vector< returnT >();
+				}
+			}
+			
+		};
+
+		/* parallel_for (auto i = container.begin(); i != container.end(); i++){ todo(*i); }
+		If the todo(*i) returns anything, it will be collected into a vector at the end. */
+		template<typename containerType, typename F> decltype(auto) ForEach(containerType const& container, F ToDo) {
+			constexpr bool retNo = std::is_same<typename fibers::utilities::function_traits<decltype(std::function(ToDo))>::result_type, void>::value;
+			using iterType = typename containerType::const_iterator;
+			using value_type = std::remove_reference_t<typename iterType::value_type>;
+
+			if constexpr (retNo) {
+				synchronization::atomic_ptr<std::exception_ptr> e{ nullptr };
+
+				auto _Passed_fn = /*std::_Pass_fn*/([&](value_type& i) {
+					if (!e) {
+						try {
+							ToDo(i);
+						}
+						catch (...) {
+							if (!e) {
+								auto eptr = e.Set(new std::exception_ptr(std::current_exception())); // Sets the error to the new PTR
+								if (eptr) { // If we accidentilly errored at the same time as another group, prevent leak
+									delete eptr;
+								}
+							}
+						}
+					}
+					});
+
+				auto _UFirst = std::_Get_unwrapped(container.begin());
+				auto _ULast = std::_Get_unwrapped(container.end());
+				auto _Count = std::distance(_UFirst, _ULast);
+				const size_t _Hw_threads = __std_parallel_algorithms_hw_threads();
+				if (_Hw_threads > 1 && _Count > 2) {
+					auto _Operation = std::_Static_partitioned_for_each2<decltype(_UFirst), decltype(_Count), decltype(_Passed_fn)>{ _Hw_threads, _Count, _Passed_fn };
+					(void)_Operation._Basis._Populate(_Operation._Team, _UFirst);
+					const std::_Work_ptr _Work_op{ _Operation }; // process chunks of _Operation on the thread pool
+
+					// setup complete, hereafter nothrow or terminate
+					_Work_op._Submit_for_chunks(_Hw_threads, _Operation._Team._Chunks);
+					std::_Run_available_chunked_work(_Operation);
+				}
+				else {
+					// not enough threads or the num jobs is not large enough to warrent multithreading
+					for (; _UFirst != _ULast; ++_UFirst) {
+						_Passed_fn(*_UFirst);
+					}
+				}
+
+				if (e) {
+					auto eptr = e.Set(nullptr);
+					if (eptr) {
+						std::exception_ptr copy{ *eptr };
+						delete eptr;
+						std::rethrow_exception(std::move(copy));
+					}
+				}
+			}
+			else {
+				using returnT = typename fibers::utilities::function_traits<decltype(std::function(ToDo))>::result_type;
+				auto _First = container.begin();
+				auto _Last = container.end();
+				auto _Count = std::distance(_First, _Last);
+
+				if (_Count > 0) {
+					std::vector< returnT > out(_Count, returnT());
+
+					synchronization::atomic_ptr<std::exception_ptr> e{ nullptr };
+
+					fibers::utilities::IteratorSequence<decltype(_First)> seq(_First, _Last);
+					auto _UFirst = std::_Get_unwrapped(seq.begin());
+					auto _ULast = std::_Get_unwrapped(seq.end());
+
+					auto _Passed_fn = /*std::_Pass_fn*/([&](typename decltype(seq)::iterator::value_type& i) {
+						if (!e) {
+							try {
+								out[i.first] = ToDo(*i.second);
+							}
+							catch (...) {
+								if (!e) {
+									auto eptr = e.Set(new std::exception_ptr(std::current_exception())); // Sets the error to the new PTR
+									if (eptr) { // If we accidentilly errored at the same time as another group, prevent leak
+										delete eptr;
+									}
+								}
+							}
+						}
+					});
+
+					const size_t _Hw_threads = __std_parallel_algorithms_hw_threads();
+					if (_Hw_threads > 1 && _Count > 2) {
+						auto _Operation = std::_Static_partitioned_for_each2<decltype(_UFirst), decltype(_Count), decltype(_Passed_fn)>{ _Hw_threads, _Count, _Passed_fn };
+						(void)_Operation._Basis._Populate(_Operation._Team, _UFirst);
+						const std::_Work_ptr _Work_op{ _Operation }; // process chunks of _Operation on the thread pool
+
+						// setup complete, hereafter nothrow or terminate
+						_Work_op._Submit_for_chunks(_Hw_threads, _Operation._Team._Chunks);
+						std::_Run_available_chunked_work(_Operation);
+					}
+					else {
+						// not enough threads or the num jobs is not large enough to warrent multithreading
+						for (; _UFirst != _ULast; ++_UFirst) {
+							_Passed_fn(*_UFirst);
+						}
+					}
+
+					if (e) {
+						auto eptr = e.Set(nullptr);
+						if (eptr) {
+							std::exception_ptr copy{ *eptr };
+							delete eptr;
+							std::rethrow_exception(std::move(copy));
+						}
+					}
+
+					return out;
+				}
+				else {
+					return std::vector< returnT >();
+				}
 			}
 		};
 
@@ -3049,61 +3365,8 @@ namespace fibers {
 		return x; */
 		template<typename outputType>
 		decltype(auto) Accumulate(std::vector<outputType> const& resultList) {
-#if 0 // Works, and is very fast, but not as fast as the C++ for-loop and accumulation. It is just that hard to beat. 
-			outputType finalSum{ 0 };
-			fibers::synchronization::mutex lock;
-
-			using iterType = typename std::vector<outputType>::const_iterator;
-
-			auto iter = resultList.cbegin();
-			auto iter_end = resultList.cend();
-			auto distance = std::distance(iter, iter_end);
-
-			if (distance > 0) {
-				impl::TaskGroup group;
-
-				struct data_container{
-					iterType iter;
-					outputType partialSum;
-
-					data_container() = default;
-					data_container(iterType i) : iter(i), partialSum{ 0 } {};
-					data_container(data_container const&) = default;
-					data_container(data_container &&) = default;
-					data_container& operator=(data_container const&) = default;
-					data_container& operator=(data_container&&) = default;
-					~data_container() = default;
-				};
-
-				group.Dispatch<data_container>(distance, [&](impl::JobArgs args) { // actual work
-					data_container* dataInternal{ nullptr };
-					iterType* iterInternal{ nullptr };
-
-					dataInternal = static_cast<data_container*>(args.sharedmemory); // cast PTR
-					iterInternal = &dataInternal->iter; // cast PTR
-					if ((iterInternal) && (args.groupIndex == 0) && (args.jobIndex > 0)) std::advance(*iterInternal, args.jobIndex); // advance as needed if this is a new non-starting group
-
-					if (*iterInternal != iter_end) {
-						dataInternal->partialSum += **iterInternal;
-						iterInternal->operator++();
-					}
-				}, [&iter](void* p)->void { // start-up
-					new (p) data_container(iter);
-				}, [&](void* p)->void { // close-out
-					{
-						auto locked{ std::scoped_lock(lock) };
-						finalSum += static_cast<data_container*>(p)->partialSum;
-					}
-					if constexpr (!std::is_pod<iterType>::value || !std::is_pod<outputType>::value) {
-						static_cast<data_container*>(p)->~data_container();
-					}
-				});
-
-				group.Wait();
-
-				return outputType(finalSum);
-			}
-
+#if 1 
+			return std::reduce(std::execution::par, resultList.begin(), resultList.end(), 0, [](outputType a, outputType b) { return a + b; });
 #else
 			outputType out{ 0 };
 			for (auto& v : resultList) {
@@ -3114,6 +3377,20 @@ namespace fibers {
 			return out;
 #endif
 		};
+
+
+		
+
+
+
+
+
+
+
+
+
+
+
 
 		/* Generic form of a future<T>, which can be used to wait on and get the results of any job. Can be safely shared if multiple places will need access to the result once available. */
 		class promise {
@@ -3150,9 +3427,7 @@ namespace fibers {
 
 					p = shared_state->Set(nullptr);
 					if (p) {
-						auto list{ p->Wait_Get() };
-						if (list.size() > 0) p2 = result->Set(new Any(list[0]));
-						else p2 = result->Set(new Any());							
+						p2 = result->Set(new Any(p->Wait_Get()));					
 					}					
 				}
 			};

@@ -99,8 +99,7 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 		// TODO; Ensure the job system supports basic queue and wait features.
 		{
 			fibers::JobGroup jobGroup(fibers::Job([]() { return 100.0f; }).AsyncInvoke());
-			auto result = jobGroup.Wait_Get()[0];
-			EXPECT_EQ(result.cast<float>(), 100.0f);
+			EXPECT_EQ(jobGroup.Wait_Get<float>(), 100.0f);
 		}
 
 		// TODO; Test the new fibers::parallel::ForEach system to make sure it works as intended and is not broken unintentionally. 
@@ -205,7 +204,7 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 				fibers::parallel::For((size_t)0, (size_t)(fibers::utilities::Hardware::GetNumCpuCores()), [kExecNum = 1e5, &shared, &largest](size_t threadNum) {
 					auto thisLargest = shared.fetch_add(1);
 
-					::Sleep(1000);
+					::Sleep(100);
 
 					if (largest.load() < thisLargest)
 						largest.store(thisLargest);
@@ -220,7 +219,7 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 				fibers::parallel::For((size_t)0, (size_t)(fibers::utilities::Hardware::GetNumCpuCores()), [kExecNum = 1e5, &shared, &largest](size_t threadNum) {
 					auto thisLargest = shared.fetch_add(1);
 
-					::Sleep(1000);
+					::Sleep(100);
 
 					if (largest.load() < thisLargest)
 						largest.store(thisLargest);
@@ -235,7 +234,7 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 				fibers::parallel::For((size_t)0, (size_t)(fibers::utilities::Hardware::GetNumCpuCores()), [kExecNum = 1e5, &shared, &largest](size_t threadNum) {
 					auto thisLargest = shared.fetch_add(1);
 
-					::Sleep(1000);
+					::Sleep(100);
 
 					if (largest.load() < thisLargest)
 						largest.store(thisLargest);
@@ -250,7 +249,7 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 				fibers::parallel::For((size_t)0, (size_t)(fibers::utilities::Hardware::GetNumCpuCores()), [kExecNum = 1e5, &shared, &largest](size_t threadNum) {
 					auto thisLargest = std::abs(shared.fetch_add(-1));
 
-					::Sleep(1000);
+					::Sleep(100);
 
 					if (largest.load() < thisLargest)
 						largest.store(thisLargest);
@@ -286,25 +285,25 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 			EXPECT_EQ(test2, test3);
 
 			// test unit canceling (should become unitless, like a normal double)
-			std::cout << (5_ft / Units::meter(2_ft)).ToString() << std::endl;
+			std::cout << (5_ft / Units::meter(2_ft)).ToString() << std::endl; // 2.5
 
 			// test exact unit discovery (should discover that m/s is a valid, known unit type and report it correctly)
-			std::cout << (10_m / 2_s).ToString() << std::endl;
+			std::cout << (10_m / 2_s).ToString() << std::endl; // 5 mps
 
 			// test close unit discovery (gal*min/s does not exist, and it's resulting ratio is still not going to be found). Should find a valid volume unit type, but we will not know which (e.g. could be L or mL or m^3 -- all would be legal as long as the volume conversion is correct still).
-			std::cout << ((10_gal / -60_s) * -1_min).ToString() << std::endl;
+			std::cout << ((10_gal / -60_s) * -1_min).ToString() << std::endl; // e.g. 0.2381 bl, or gallons, or MG, etc. all are valid results
 
 			// test generation of a unit through multiplication / power functions
-			std::cout << (1_m).pow(3) << std::endl;
-			std::cout << (4_sq_m).pow(0.5) << std::endl;
-			std::cout << (4_ft).pow(0.5) << std::endl;
-			std::cout << (2_m).pow(1.5) << std::endl;
+			std::cout << (1_m).pow(3) << std::endl; // 1 cu_m
+			std::cout << (4_sq_m).pow(0.5) << std::endl; // 2 m
+			std::cout << (4_ft).pow(0.5) << std::endl; // 0.8204 m^0.5
+			std::cout << (2_m).pow(1.5) << std::endl; //  2.8284 m^1.5
 			
-			std::cout << 16_cu_m / 2_m << std::endl;
-			std::cout << (16_cu_m / 2_m) / 2_m << std::endl;
+			std::cout << 16_cu_m / 2_m << std::endl; // 8 sq_m
+			std::cout << (16_cu_m / 2_m) / 2_m << std::endl; // 4 m
 
-			std::cout << 16_cu_ft / 2_ft << std::endl;
-			std::cout << (16_cu_ft / 2_ft) / 2_ft << std::endl;
+			std::cout << 16_cu_ft / 2_ft << std::endl; // 8 sq_ft
+			std::cout << (16_cu_ft / 2_ft) / 2_ft << std::endl; // 4 ft
 
 			// Test multi-threading
 			if (1) { // simple atomic additions
@@ -313,7 +312,7 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 				Units::value shared = 0_ft;
 
 				fibers::parallel::For((size_t)0, (size_t)(100), [&shared](size_t threadNum) {
-					for (int i = 0; i < 1000; i++) {
+					for (int i = 0; i < 100; i++) {
 						switch (threadNum % 4) {
 						default:
 						case 0:
@@ -339,7 +338,7 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 				Units::value shared = 0_ft;
 
 				fibers::parallel::For((size_t)0, (size_t)(100), [&shared](size_t threadNum) {
-					for (int i = 0; i < 1000; i++) {
+					for (int i = 0; i < 100; i++) {
 						switch (i % 4) {
 						default:
 						case 0:
@@ -372,7 +371,7 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 				Units::foot(100) + Units::inch(10000.123) + Units::meter(10);
 
 				fibers::parallel::For((size_t)0, (size_t)(100), [&shared](size_t threadNum) {
-					for (int i = 0; i < 1000; i++) {
+					for (int i = 0; i < 100; i++) {
 						switch ((cweeRandomInt(0,4) + i) % 4) {
 						default:
 						case 0:
@@ -649,10 +648,9 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 				});
 
 				auto futureObj = fibers::parallel::async([&tree](){
-					Stopwatch sw;
+					Stopwatch sw; 
 					sw.Start();
 
-					::Sleep(3);
 					std::cout << "\nWorking... \n";
 					for (int i = 0; i < 500; i++) {
 						if (i % 50 == 0) ::Sleep(1);
@@ -663,18 +661,15 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 					std::cout << "\n ...Finished.\n";
 
 					sw.Stop();
-
 					return Units::second(sw.Seconds_Passed());
 				});
 
-#if 1
 				for (double D = -2.25; D <= 505; D += 1.25) {
 					auto iter_Larger = tree.FindSmallestLargerEqual(D);
 					auto iter_Smaller = tree.FindLargestSmallerEqual(D);
 					
 					if (iter_Larger && iter_Smaller) {
-						//EXPECT_EQ(true, (iter_Smaller.GetKey().load() <= D));
-						//EXPECT_EQ(true, (iter_Larger.GetKey().load() >= D));
+						Sleep(1);
 						std::cout << cweeStr::printf("\t %f <= %f <= %f\n", (float)iter_Smaller.GetKey().load(), (float)D, (float)iter_Larger.GetKey().load());
 					}
 				}
@@ -688,19 +683,18 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 				auto iter_end{ tree.end() };
 				int initialCount{ 0 };
 
-
 				count = 0;
 				for (auto iter = tree.Scan(); iter; iter++) {
 					count++;
 				}
-				EXPECT_EQ(true, count >= 500); // works
+				EXPECT_EQ(true, count >= 500);
 				initialCount = count.load();
 
 				count = 0;
 				for (auto iter = tree.Scan(5, 15); iter; iter++) { // works, surprisingly
 					count++;
 				}
-				EXPECT_EQ(true, count >= 8); // FAIL
+				EXPECT_EQ(true, count >= 8); 
 
 				count = 0;
 				for (auto iter = tree.FindSmallestLargerEqual(5); iter; ++iter) {
@@ -718,7 +712,7 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 				for (auto iter = tree.begin(5.25, 15.25); iter != iter_end; ++iter) { // neither 5 nor 15 exist
 					count++;
 				}
-				EXPECT_EQ(true, count >= 8); // FAIL
+				EXPECT_EQ(true, count >= 8); 
 
 				count = 0;
 				for (auto iter = tree.begin(5); iter != iter_end; ++iter) { // neither 5 nor 15 exist
@@ -749,26 +743,11 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 
 				count = 0;
 				fibers::parallel::ForEach(tree, [&count](std::pair<long double, double> const& iter) {
-					//std::cout << cweeStr::printf("\tKey: %f, Value: %f", (float)iter.first, (float)iter.second) << std::endl;
 					count++;
 				});
-				EXPECT_EQ(true, count >= 500);
-				EXPECT_EQ(initialCount, count.load());
-
-#else
-				for (auto& x : tree) {
-					std::cout << "\tKey: " << x.first << ", Value: " << x.second << std::endl;
-					::Sleep(1);
-				}
-				futureObj.wait();
-#endif
-
+				EXPECT_EQ(true, count >= 500); 
+				EXPECT_EQ(initialCount, count.load()); 
 			}
-
-
-
-
-
 		}
 	}
 #endif
@@ -870,61 +849,62 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 
 	// across multiple threads, submitting lots of jobs all at the same time. Then waiting for them.
 	if (1) {
-		{
-			Stopwatch sw; sw.Start();
-			fibers::containers::number<long long> Num{ 0 };
-			defer(std::cout << cweeStr::printf("JobList A: %f seconds: %i.\n", (float)Units::second(sw.Stop() / 1000000000.0l)(), (int)Num.load()));
-			
-			fibers::parallel::For(0, 400, [&Num](int i) {
-				fibers::parallel::For(0, 400, [&Num](int i) {
-					Num.Increment();
-				});
-			});			
-		}
-		{
-			Stopwatch sw; sw.Start();
-			fibers::containers::number<long long> Num{ 0 };
-			defer(std::cout << cweeStr::printf("JobList B: %f seconds: %i.\n", (float)Units::second(sw.Stop() / 1000000000.0l)(), (int)Num.load()));
+		for (int numJobs = 400; numJobs <= 1600; numJobs += 400) {
+			{
+				Stopwatch sw; sw.Start();
+				fibers::containers::number<long long> Num{ 0 };
+				defer(std::cout << cweeStr::printf("ForEachN:  %f seconds: %i.\n", (float)Units::second(sw.Stop() / 1000000000.0l)(), (int)Num.load()));
 
-			fibers::JobGroup group;
-			fibers::parallel::For(0, 400, [&group, &Num](int i) {
-				fibers::parallel::For(group, 0, 400, [&Num](int i) {
-					Num.Increment();
+				fibers::utilities::Sequence<int> seq{ numJobs };
+				std::for_each_n(std::execution::par, seq.begin(), numJobs, [&Num, &numJobs](int& i) {
+					fibers::utilities::Sequence<int> seq2{ numJobs };
+					std::for_each_n(std::execution::par, seq2.begin(), numJobs, [&Num](int& i) {
+						//Num.Increment();
+					});
 				});
-			});
-			group.Wait(); // contributes to the job(s)
-		}
-		{
-			Stopwatch sw; sw.Start();
-			fibers::containers::number<long long> Num{ 0 };
-			defer(std::cout << cweeStr::printf("JobList C: %f seconds: %i.\n", (float)Units::second(sw.Stop() / 1000000000.0l)(), (int)Num.load()));
+			}
+			{
+				Stopwatch sw; sw.Start();
+				fibers::containers::number<long long> Num{ 0 };
+				defer(std::cout << cweeStr::printf("JobList A: %f seconds: %i.\n", (float)Units::second(sw.Stop() / 1000000000.0l)(), (int)Num.load()));
 
-			fibers::JobGroup group;
-			fibers::parallel::For(0, 400, [&group, &Num](int i) {
-				fibers::parallel::For(group, 0, 400, [&Num](int i) {
-					Num.Increment();
+				fibers::parallel::For(0, numJobs, [&Num, &numJobs](int i) {
+					fibers::parallel::For(0, numJobs, [&Num](int i) {
+						//Num.Increment();
+					});
 				});
-				group.Wait(); // contributes to the job(s)
-			});
-			
+			}
 		}
-		{
-			Stopwatch sw; sw.Start();
-			fibers::containers::number<long long> Num{ 0 };
-			defer(std::cout << cweeStr::printf("JobList D: %f seconds: %i.\n", (float)Units::second(sw.Stop() / 1000000000.0l)(), (int)Num.load()));
+		for (int numJobs = 400; numJobs <= 1600; numJobs += 400) {
+			{
+				Stopwatch sw; sw.Start();
+				fibers::containers::number<long long> Num{ 0 };
+				defer(std::cout << cweeStr::printf("ForEachN:  %f seconds: %i.\n", (float)Units::second(sw.Stop() / 1000000000.0l)(), (int)Num.load()));
 
-			fibers::JobGroup group;
-			fibers::parallel::For(group, 0, 400, [&group, &Num](int i) {
-				fibers::parallel::For(group, 0, 400, [&Num](int i) {
-					Num.Increment();
+				fibers::utilities::Sequence<int> seq{ numJobs };
+				std::for_each_n(std::execution::par, seq.begin(), numJobs, [&Num, &numJobs](int& i) {
+					fibers::utilities::Sequence<int> seq2{ numJobs };
+					std::for_each_n(std::execution::par, seq2.begin(), numJobs, [&Num](int& i) {
+						Num.Increment();
+					});
 				});
-			});
-			group.Wait(); // contributes to the job(s)			
+			}
+			{
+				Stopwatch sw; sw.Start();
+				fibers::containers::number<long long> Num{ 0 };
+				defer(std::cout << cweeStr::printf("JobList A: %f seconds: %i.\n", (float)Units::second(sw.Stop() / 1000000000.0l)(), (int)Num.load()));
+
+				fibers::parallel::For(0, numJobs, [&Num, &numJobs](int i) {
+					fibers::parallel::For(0, numJobs, [&Num](int i) {
+						Num.Increment();
+					});
+				});
+			}
 		}
 	}
 
 	// fibers::containers::Stack
-	if (1) {
+	if (0) {
 		int ijk = 0;
 		for (ijk = 0; ijk < 5; ijk++) {
 			fibers::containers::Stack<double> concurrent_set;
@@ -959,7 +939,7 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 	}
 
 	// fibers::containers::AtomicQueue
-	if (1) {
+	if (0) {
 		fibers::containers::AtomicQueue<long long> concurrent_queue;
 		fibers::containers::number<int> jobs{ 0 };
 		while (jobs.load() < 100) {
@@ -989,9 +969,23 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 		});
 	}
 
+	std::cout << "Starting Speed Tests:\n";
 
 	if (1) {
-		for (int j = 1; j < 10; j += 2) {
+		EXPECT_EQ(100, fibers::parallel::For(0, 100, [](int& i) {
+			return 10;
+		}).size());
+		EXPECT_EQ(100, fibers::parallel::For(0, 100, 1, [](int& i) {
+			return 10;
+		}).size());
+		EXPECT_EQ(100, fibers::parallel::ForEach(std::vector<int>(100, 0), [](const int& i) {
+			return 10;
+		}).size());
+		EXPECT_EQ(100, fibers::parallel::ForEach(std::vector<cweeStr>(100, "TEST"), [](const cweeStr& i) {
+			return cweeStr(i);
+		}).size());
+
+		for (int j = 1; j < 10; j += 4) {
 			int numLoops = 400 * j * j;
 
 			printf("SpeedTest (Pattern) ");
@@ -1072,7 +1066,88 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 
 			printf("\n");
 		}
-		for (int j = 1; j < 10; j += 2) {
+		for (int j = 1; j < 10; j += 4) {
+			int numLoops = 400 * j * j;
+
+			printf("SpeedTest (Atomic Pattern) ");
+			std::cout << j;
+			printf(" (No Fibers) : ");
+			{
+				fibers::containers::Pattern<long double, double> pat;
+				Stopwatch sw; sw.Start();
+				defer(std::cout << cweeUnitValues::second(sw.Stop() / 1000000000.0).ToString() << std::endl);
+
+				for (int i = 0; i < numLoops; i++) {
+					for (int k = 0; k < j; k++)
+						pat.Insert(i + k, i + k);
+				}
+			}
+
+			printf("SpeedTest (Atomic Pattern) ");
+			std::cout << j;
+			printf(" (Threads) : ");
+			{
+				fibers::containers::Pattern<long double, double> pat;
+				Stopwatch sw; sw.Start();
+				defer(std::cout << cweeUnitValues::second(sw.Stop() / 1000000000.0).ToString() << std::endl);
+
+				std::vector<int> vec(numLoops, 0);
+				fibers::parallel::For(0, numLoops, [&vec](int i) { vec[i] = i; });
+				std::for_each_n(std::execution::par, vec.begin(), numLoops, [&pat, &j](int& i) {
+					for (int k = 0; k < j; k++) {
+						pat.Insert(i + k, i + k);
+					}
+				});
+			}
+
+			printf("SpeedTest (Atomic Pattern) ");
+			std::cout << j;
+			printf(" (Fibers) : ");
+			{
+				fibers::containers::Pattern<long double, double> pat;
+				Stopwatch sw; sw.Start();
+				defer(std::cout << cweeUnitValues::second(sw.Stop() / 1000000000.0).ToString() << std::endl);
+
+				fibers::parallel::For(0, numLoops, [&pat, &j](int i) {
+					for (int k = 0; k < j; k++)
+						pat.Insert(i + k, i + k);
+				});
+			}
+
+			printf("SpeedTest (Atomic Pattern) ");
+			std::cout << j;
+			printf(" (Threads (Fibers Sequence)) : ");
+			{
+				fibers::containers::Pattern<long double, double> pat;
+				Stopwatch sw; sw.Start();
+				defer(std::cout << cweeUnitValues::second(sw.Stop() / 1000000000.0).ToString() << std::endl);
+
+				fibers::utilities::Sequence<int> seq{ numLoops };
+				std::for_each_n(std::execution::par, seq.begin(), numLoops, [&pat, &j](int& i) {
+					for (int k = 0; k < j; k++) {
+						pat.Insert(i + k, i + k);
+					}
+				});
+			}
+
+			printf("SpeedTest (Atomic Pattern) ");
+			std::cout << j;
+			printf(" (Fibers (Fibers Sequence)) : ");
+			{
+				fibers::containers::Pattern<long double, double> pat;
+				Stopwatch sw; sw.Start();
+				defer(std::cout << cweeUnitValues::second(sw.Stop() / 1000000000.0).ToString() << std::endl);
+
+				fibers::utilities::Sequence<int> seq{ numLoops };
+				fibers::parallel::ForEach(seq, [&pat, &j](int& i) {
+					for (int k = 0; k < j; k++)
+						pat.Insert(i + k, i + k);
+				});
+			}
+
+			printf("\n");
+		}
+		for (int j = 1; j < 10; j += 4) {
 			int numLoops = 400 * j * j;
 
 			printf("SpeedTest (atomic int) ");
@@ -1163,7 +1238,7 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 
 			printf("\n");
 		}
-		for (int j = 1; j < 10; j += 2) {
+		for (int j = 1; j < 10; j += 4) {
 			int numLoops = 400 * j * j;
 
 			printf("SpeedTest (unit values) ");
@@ -1235,7 +1310,7 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 
 			printf("\n");
 		}
-		for (int j = 1; j < 10; j += 2) {
+		for (int j = 1; j < 10; j += 4) {
 			int numLoops = 400 * j * j;
 
 			printf("SpeedTest (vector overwriting) ");
@@ -1311,7 +1386,7 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 
 			printf("\n");
 		}
-		for (int j = 1; j < 10; j += 2) {
+		for (int j = 1; j < 10; j += 4) {
 			int numLoops = 400 * j * j;
 
 			printf("SpeedTest (vector search) ");
@@ -1350,7 +1425,7 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 
 			printf("\n");
 		}
-		for (int j = 1; j < 10; j += 2) {
+		for (int j = 1; j < 10; j += 4) {
 			int numLoops = 400 * j * j;
 
 			printf("SpeedTest (matrix overwriting) ");
@@ -1478,29 +1553,53 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 				std::cout << timePassed.ToString() << std::endl;
 			}
 
-			printf("SpeedTest (matrix overwriting) ");
+			printf("\n");
+		}
+		for (int j = 1; j < 10; j += 4) {
+			int numLoops = 400 * j * j;
+			bool successfulErrorCatch = false;
+
+			printf("SpeedTest (catching errors) ");
 			std::cout << j;
-			printf(" (Fibers Foreach w/ Fibers as Combined Job Stack) : ");
-			{
-				std::vector<std::vector<cweeStr>> vec(numLoops, std::vector<cweeStr>(j, cweeStr("TEST")));
+			printf(" (No Fibers) : "); {
+				try {
+					std::vector<int> vec(numLoops, 0);
+					Stopwatch sw;
+					defer(std::cout << cweeUnitValues::second(sw.Stop() / 1000000000.0).ToString() << std::endl);
+					sw.Start();
 
-				Stopwatch sw; sw.Start();
+					int i;
+					for (i = 0; i < numLoops; i++) {
+						throw(std::runtime_error("Purposeful error"));
+					}
+				}
+				catch (std::runtime_error const& e) { successfulErrorCatch = true; }
+				catch (...) {}
+				EXPECT_EQ(true, successfulErrorCatch);
+				successfulErrorCatch = false;
+			}
 
-				fibers::JobGroup group;
-				fibers::parallel::ForEach(group, vec, [&j, &group](std::vector<cweeStr>& vec) {
-					fibers::parallel::For(group, 0, j, [&vec](int k) {
-						vec[k] = cweeStr(k);
+			printf("SpeedTest (catching errors) ");
+			std::cout << j;
+			printf(" (Fibers) : "); {
+				try {
+					std::vector<int> vec(numLoops, 0);
+					Stopwatch sw;
+					defer(std::cout << cweeUnitValues::second(sw.Stop() / 1000000000.0).ToString() << std::endl);
+					sw.Start();
+
+					fibers::parallel::For(0, numLoops, [](int i) {
+						throw(std::runtime_error("Purposeful error"));
 					});
-				});
-				group.Wait(); // only one "wait" command, allowing the job system to better jump between jobs / cells of the matrix.
-
-				cweeUnitValues::second timePassed = sw.Stop() / 1000000000.0;
-				std::cout << timePassed.ToString() << std::endl;
+				}
+				catch (std::runtime_error const& e) { successfulErrorCatch = true; }
+				catch (...) {}
+				EXPECT_EQ(true, successfulErrorCatch);
+				successfulErrorCatch = false;
 			}
 
 			printf("\n");
 		}
-
 	}
 
 	auto static_lambda = []()->cweeStr { return cweeStr("2"); };
@@ -1521,8 +1620,8 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 
 	constexpr const bool v_1234 = IsStatelessTest<decltype(lambda2)>();
 
-	auto jobTest = fibers::Job([]() { return 10.0f; });
-	jobTest.AsyncFireAndForget(); // will not crash
+	auto jobTest = fibers::Job([]() { return 10.0f; }); // static function
+	jobTest.AsyncFireAndForget(); // will not crash, since the above function is stateless (which can be called without concern of us going out of scope)
 
 	printf("Job 0\n");
 	if (true) {
@@ -1732,17 +1831,14 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 	int result1 = fibers::Job(&cweeMath::Ceil, 10.0f).Invoke().cast(); // Job takes function and up to 16 inputs. Invoke returns "Any" wrapper. Any.cast() does the cast to the target destination, if the conversion makes sense.
 	float result2 = fibers::Job([](float& x)->float { return x - 10.0f; }, 55.0f).Invoke().cast(); // Can also use lambdas instead of static function pointers.
 	auto __awaiter__ = fibers::Job([]() { return cweeStr("HELLO"); }).AsyncInvoke(); // Queues the job to take place on a fiber/thread, and guarrantees its completion before the scope ends.
-	fibers::Job([]() { return cweeStr("HELLO"); }).AsyncFireAndForget(); // Queues the job to take place on a fiber/thread, and it is the user's job to guarrantee it is safe to do so when the scope ends.
+	(void)fibers::Job([]() { return cweeStr("HELLO"); }).AsyncFireAndForget(); // Queues the job to take place on a fiber/thread, and it is the user's job to guarrantee it is safe to do so when the scope ends.
 
 	try {
 		fibers::Job([&]() { return t; }).AsyncFireAndForget(); // Queues the job to take place on a fiber/thread, and it is the user's job to guarrantee it is safe to do so when the scope ends.
 		throw(std::runtime_error("This should not happen"));
 	}catch(std::runtime_error){
-		// we anticipate that it would fail!
+		// we anticipate that it would fail! The user attempted to cast a capturing lambda which may have gone out-of-scope. 
 	}
-
-
-
 
 	printf("Loop done\n");
 
@@ -1970,25 +2066,19 @@ int main() {
 	std::shared_ptr<chaiscript::WaterWatch_ChaiScript> engine = std::make_shared<chaiscript::WaterWatch_ChaiScript>();
 	while (true) {
 		AUTO input = GetUserInput();
-		cweeStr str = input.wait_get();//Await().cast();
+		cweeStr str = input.wait_get();
 
 		if (str == "Fiber") {
 			int x = 1000;
 			int y = 10;
-			int z;
-			while (true) {
-				z = Example::ExampleF(y, x);
-				if (y * x != z) {
-					cweeStr err = cweeStr::printf("Something went wrong with the job system and a job returned %i instead of %i", z, y * x);
-					throw(std::runtime_error(err.c_str()));
-				}
-
-
-				auto job = cweeJob(Example::ExampleF, (int)y, (int)x);
-				job.AsyncInvoke();
-				job.Await();
-
+			
+			try {
+				fibers::Job(Example::ExampleF, (int)y, (int)x).AsyncInvoke().Wait();
 			}
+			catch (std::runtime_error err) {
+				std::cout << "FIBER TEST ERROR: " << err.what() << std::endl;
+			}
+			
 		}
 		if (str == "Exit")
 		{

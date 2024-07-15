@@ -4474,7 +4474,7 @@ namespace epanet {
                 }
             });
 #else            
-            fibers::parallel::For(group, (int)1, (int)nodes.size(), [&nodes, &currentTime, &hyd, &t, &pr, &net](int i) {
+            fibers::parallel::For((int)1, (int)nodes.size(), [&nodes, &currentTime, &hyd, &t, &pr, &net](int i) {
                 auto& obj = nodes[i];
                 if (obj) {
                     auto& A_t = obj->Type_p;
@@ -4628,7 +4628,7 @@ namespace epanet {
                 }
             });
 #else
-            fibers::parallel::For(group, 1, (int)links.size(), [&links, &currentTime, &hyd, &t, &pr, &net](int i) {
+            fibers::parallel::For(1, (int)links.size(), [&links, &currentTime, &hyd, &t, &pr, &net](int i) {
                 auto& obj = links[i];
                 if (obj) {
                     auto& A_t = obj->Type_p;
