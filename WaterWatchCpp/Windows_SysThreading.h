@@ -25,6 +25,7 @@ to maintain a single distribution point for the source code.
 // #include <corecrt_malloc.h>
 #include <Windows.h>
 #include <winnt.h>
+#include <Psapi.h>
 
 typedef CRITICAL_SECTION		mutexHandle_t;
 typedef HANDLE					signalHandle_t;
@@ -89,17 +90,24 @@ public:
 		, currentPageMemoryUsed(0)
 		, totalVirtualMemory(0)
 		, currentVirtualMemoryUsed(0)
+		, virtualMemUsedByProcess(0)
 	{ Init(); };
+	Computer_Usage(Computer_Usage const& o) = default;
+	Computer_Usage(Computer_Usage && o) = default;
+	Computer_Usage& operator=(Computer_Usage const& o) = default;
+	Computer_Usage& operator=(Computer_Usage && o) = default;
+	~Computer_Usage() = default;
 
 public:
-	float const& PercentMemoryUsed() const { return percentMemoryUsed; }
-	float const& TotalPhysMemory() const { return totalPhysMemory; }
-	float const& Ram_MB() const { return system_ram_MB; }
-	float const& CurrentPhysMemoryUsed() const { return currentPhysMemoryUsed; }
-	float const& TotalPageMemory() const { return totalPageMemory; }
-	float const& CurrentPageMemoryUsed() const { return currentPageMemoryUsed; }
-	float const& TotalVirtualMemory() const { return totalVirtualMemory; }
-	float const& CurrentVirtualMemoryUsed() const { return currentVirtualMemoryUsed; }
+	long double PercentMemoryUsed() const { return percentMemoryUsed; }
+	long double TotalPhysMemory() const { return totalPhysMemory; }
+	long double Ram_MB() const { return system_ram_MB; }
+	long double CurrentPhysMemoryUsed() const { return currentPhysMemoryUsed; }
+	long double TotalPageMemory() const { return totalPageMemory; }
+	long double CurrentPageMemoryUsed() const { return currentPageMemoryUsed; }
+	long double TotalVirtualMemory() const { return totalVirtualMemory; }
+	long double CurrentVirtualMemoryUsed() const { return currentVirtualMemoryUsed; }
+	long double CurrentVirtualMemoryUsedByProcess() const { return virtualMemUsedByProcess; }
 
 private:
 	typedef enum {
@@ -119,15 +127,6 @@ private:
 		CPUID_FTZ = 0x04000,			// Flush-To-Zero mode (denormal results are flushed to zero)
 		CPUID_DAZ = 0x08000				// Denormals-Are-Zero mode (denormal source operands are set to zero)
 	} cpuid_t;
-	struct sysMemoryStats_t {
-		DWORDLONG percentMemoryUsed;
-		DWORDLONG totalPhysMemory;
-		DWORDLONG CurrentPhysMemoryUsed;
-		DWORDLONG totalPageMemory;
-		DWORDLONG CurrentPageMemoryUsed;
-		DWORDLONG totalVirtualMemory;
-		DWORDLONG CurrentVirtualMemoryUsed;
-	};
 	void Init() {
 		MEMORYSTATUSEX memInfo;
 		memInfo.dwLength = sizeof(MEMORYSTATUSEX);
@@ -141,6 +140,10 @@ private:
 		currentPageMemoryUsed = memInfo.ullTotalPageFile - memInfo.ullAvailPageFile;
 		totalVirtualMemory = memInfo.ullTotalVirtual;
 		currentVirtualMemoryUsed = memInfo.ullTotalVirtual - memInfo.ullAvailVirtual;
+
+		PROCESS_MEMORY_COUNTERS_EX pmc;
+		GetProcessMemoryInfo(GetCurrentProcess(), (PROCESS_MEMORY_COUNTERS*)&pmc, sizeof(pmc));
+		virtualMemUsedByProcess = pmc.PrivateUsage;
 	};
 	float percentMemoryUsed;
 	float totalPhysMemory;
@@ -150,7 +153,7 @@ private:
 	float currentPageMemoryUsed;
 	float totalVirtualMemory;
 	float currentVirtualMemoryUsed;
-
+	size_t virtualMemUsedByProcess;
 };
 
 #include <windows.h>
