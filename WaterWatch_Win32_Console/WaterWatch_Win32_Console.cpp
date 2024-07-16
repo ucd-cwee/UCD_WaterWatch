@@ -91,28 +91,15 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 #define EXPECT_EQ(a,b) [&]()->bool{ if ((a) == (b)) { return true; } else { std::cout << "FAILURE AT LINE " << __LINE__ << std::endl; return false; } }()
 #define EXPECT_NE(a, b) [&]()->bool{ if ((a) != (b)) { return true; } else { std::cout << "FAILURE AT LINE " << __LINE__ << std::endl; return false; } }()
 
-	Computer_Usage usage_start;
-	auto TestMemory = [&](long currentLine) {
-		Computer_Usage currentMemory;
-		auto memoryIncrease = currentMemory.CurrentVirtualMemoryUsedByProcess() - usage_start.CurrentVirtualMemoryUsedByProcess();
-		if (memoryIncrease != 0) {
-			std::cout << cweeStr::printf("%i virtual memory use increase at ", (int)(float)(double)(memoryIncrease)) << currentLine << std::endl;
-		}
-		usage_start = currentMemory;
-	};
-	TestMemory(__LINE__);
-
 	if (1) {
 		// TODO; Test the new fibers::parallel::ForEach system to make sure it works as intended and is not broken unintentionally. 
 		if (1) {
 			fibers::parallel::For(0, 10, [](int i) {});
 		}
-		TestMemory(__LINE__); // 
 		if (1) {
 			fibers::utilities::Sequence seq(1000); // 0..999
 			fibers::parallel::ForEach(seq, [](int i) {  });
 		}
-		TestMemory(__LINE__); // 
 		if (1) {
 			fibers::utilities::Sequence seq(1000); // 0..999
 			fibers::synchronization::atomic_number<double> D{ 0 };
@@ -121,7 +108,6 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 			});
 			EXPECT_EQ(D, 1000.0);
 		}
-		TestMemory(__LINE__); // 
 		if (1) {
 			try {
 				fibers::utilities::Sequence seq(1000); // 0..999
@@ -137,11 +123,9 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 				EXPECT_EQ(v, true);
 			}
 		}
-		TestMemory(__LINE__); // 32768
 		if (1) {
 			fibers::parallel::For(0, 10000, [](int i) {});
 		}
-		TestMemory(__LINE__); // 
 		if (1) {
 			try {
 				std::vector<cweeStr> vec(500, cweeStr("TEST"));
@@ -157,7 +141,6 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 				EXPECT_EQ(v, true);
 			}
 		}
-		TestMemory(__LINE__); // 
 
 		// Check the atomic_number system is not broken
 		if (1) {
@@ -176,7 +159,6 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 			value.Add(2);
 			EXPECT_EQ(value.load(), 0);
 		}
-		TestMemory(__LINE__); //
 		if (1) {
 			fibers::utilities::CAS_Container<double> value{ 1 };
 			EXPECT_EQ(value.load(), 1);
@@ -190,7 +172,6 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 			value.Add(5.5);
 			EXPECT_EQ(value.load(), 5);
 		}
-		TestMemory(__LINE__); //
 		if (1) {
 			fibers::synchronization::atomic_number<double> value;
 			EXPECT_EQ(value.load(), 0);
@@ -204,7 +185,6 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 			EXPECT_EQ(value.load(), 0);
 			value = 0;
 		}
-		TestMemory(__LINE__); // 
 		if (1) {
 			fibers::synchronization::atomic_number<double> value;
 			EXPECT_EQ(value.load(), 0);
@@ -219,7 +199,6 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 
 			value = 0;
 		}
-		TestMemory(__LINE__); // 155648
 
 		// Unit Values
 		if (1) {
@@ -277,7 +256,6 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 				if (!EXPECT_EQ(shared, 10000_ft)) { std::cout << shared << std::endl; }
 			}
 		}
-		TestMemory(__LINE__); // 6180864
 
 		// Unions 
 		if (1) {
@@ -295,7 +273,6 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 				obj.get<2>() = (float*)(void*)(1);
 			}
 		}
-		TestMemory(__LINE__); // 131072
 
 		// MultiItemCAS, which leverages the Unions for organizing N-number of types of pointers. 
 		if (1) {
@@ -366,7 +343,6 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 				EXPECT_EQ(item3, 2000000);
 			}
 		}
-		TestMemory(__LINE__); // 3264512
 
 		// Epoch-based garbage collector examples
 		if (0) {
@@ -471,7 +447,6 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 
 			}
 		}
-		TestMemory(__LINE__); // 131072
 
 		// Atomic BW Tree
 		if (1) {
@@ -633,7 +608,6 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 				EXPECT_EQ(initialCount, count.load());
 			}
 		}
-		TestMemory(__LINE__); // 7106560
 	}
 
 
@@ -1602,19 +1576,6 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 	std::cout << "Starting Speed Tests:\n";
 
 	if (1) {
-		EXPECT_EQ(100, fibers::parallel::For(0, 100, [](int& i) {
-			return 10;
-		}).size());
-		EXPECT_EQ(100, fibers::parallel::For(0, 100, 1, [](int& i) {
-			return 10;
-		}).size());
-		EXPECT_EQ(100, fibers::parallel::ForEach(std::vector<int>(100, 0), [](const int& i) {
-			return 10;
-		}).size());
-		EXPECT_EQ(100, fibers::parallel::ForEach(std::vector<cweeStr>(100, "TEST"), [](const cweeStr& i) {
-			return cweeStr(i);
-		}).size());
-
 		for (int j = 1; j < 10; j += 4) {
 			int numLoops = 400 * j * j;
 
@@ -2400,15 +2361,13 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 	}
 
 	auto x = fibers::parallel::async([](int x) { return 100.0f; }, 10).wait_get(); // returns 100.0f
-	size_t t = fibers::parallel::For(0, numTasks * numSubTasks, [](int i) { return i; }).size();
-
 	int result1 = fibers::Job(&cweeMath::Ceil, 10.0f).Invoke().cast(); // Job takes function and up to 16 inputs. Invoke returns "Any" wrapper. Any.cast() does the cast to the target destination, if the conversion makes sense.
 	float result2 = fibers::Job([](float& x)->float { return x - 10.0f; }, 55.0f).Invoke().cast(); // Can also use lambdas instead of static function pointers.
 	auto __awaiter__ = fibers::Job([]() { return cweeStr("HELLO"); }).AsyncInvoke(); // Queues the job to take place on a fiber/thread, and guarrantees its completion before the scope ends.
 	(void)fibers::Job([]() { return cweeStr("HELLO"); }).AsyncFireAndForget(); // Queues the job to take place on a fiber/thread, and it is the user's job to guarrantee it is safe to do so when the scope ends.
 
 	try {
-		fibers::Job([&]() { return t; }).AsyncFireAndForget(); // Queues the job to take place on a fiber/thread, and it is the user's job to guarrantee it is safe to do so when the scope ends.
+		fibers::Job([&]() { return x; }).AsyncFireAndForget(); // Queues the job to take place on a fiber/thread, and it is the user's job to guarrantee it is safe to do so when the scope ends.
 		throw(std::runtime_error("This should not happen"));
 	}catch(std::runtime_error){
 		// we anticipate that it would fail! The user attempted to cast a capturing lambda which may have gone out-of-scope. 
@@ -2416,7 +2375,7 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 
 	printf("Loop done\n");
 
-	return t;
+	return 10;
 
 
 

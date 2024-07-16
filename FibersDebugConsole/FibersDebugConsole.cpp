@@ -360,7 +360,7 @@ int main() {
 
 		// Atomic BW Tree
 		if (1) {
-			//
+			// No leak
 			if (1) {
 
 				using treeType = fibers::utilities::dbgroup::index::bw_tree::BwTree<uint64_t, uint64_t>;
@@ -369,77 +369,63 @@ int main() {
 				gc_.StartGC();
 				// <-- No Leak
 
-				// LEAK --> ... potential solution is to use an allocator / deallocator, since it SEEMS (need to confirm) that the mapping table does all of its own allocation / deallocations, and it is not using a garbage collector. (Maybe  it should!)
-				treeType::MappingTable_t* mapping_table_ = new treeType::MappingTable_t();
-				auto root_id = mapping_table_->GetNewPageID();
-				auto* root_ptr = mapping_table_->GetLogicalPtr(root_id);
-				delete mapping_table_;
-				// <-- LEAK
+				// No Leak -->
+				treeType::MappingTable_t mapping_table_;
+				auto root_id = mapping_table_.GetNewPageID();
+				auto* root_ptr = mapping_table_.GetLogicalPtr(root_id);
+				// <-- No Leak
+
+				//std::atomic_uint64_t root_{};
+
+				//auto GetNodePage = [&]() -> treeType::Node_t* {
+				//	auto* page = gc_.template GetPageIfPossible<treeType::NodePage>();
+				//	if (page == nullptr) {
+				//		page = fibers::utilities::dbgroup::memory::Allocate<treeType::NodePage>();
+				//	}
+				//	return static_cast<treeType::Node_t*>(page);
+				//};
 
 
-				//auto root_id = mapping_table_.GetNewPageID();
-				//auto* root_ptr = mapping_table_.GetLogicalPtr(root_id);
-				
+				//// GetNodePage();
 
-
-
-
-
-
-
-
-
-				//Node_t
-
-
-
-				
-				//auto* root_node = new (GetNodePage()) Node_t{};
-				
-				
-				
-				
-				
-				
-				
-				
-				
-				
-				//root_ptr->Store(root_node);
-
-
-
-
-
-
-
-				// create an empty Bw-tree
-				// auto* root_node = new (GetNodePage()) Node_t{};
-				//auto root_id = mapping_table_.GetNewPageID();
-				//auto* root_ptr = mapping_table_.GetLogicalPtr(root_id);
+				//auto* root_node = new (GetNodePage()) treeType::Node_t{};
 				//root_ptr->Store(root_node);
 				//root_.store(root_id, std::memory_order_relaxed);
 
-				
 
 			}
-			// 
-			if (0) {
+			//  No leak
+			if (1) {
+				// No leak -->
 				fibers::utilities::dbgroup::index::bw_tree::BwTree<uint64_t, uint64_t> tree;
+				
+				for (int i = 0; i < 100; i ++)
+					tree.Write(i, i);
+				
+				for (int i = 0; i < 100; i++)
+					tree.Delete(i);
+
+				for (int i = 0; i < 100; i++)
+					tree.Write(i, i);
+
+				
+
+				for (auto iter = tree.Scan(); iter; ++iter) {
+					
+
+				}
+				// <-- No leak
+
 			}
-			// 
-			if (0) {
-				fibers::containers::Pattern<uint64_t, uint64_t> tree;
-			}
-			// 
-			if (0) {
+			// No leak
+			if (1) {
 				fibers::containers::Pattern<uint64_t, uint64_t> tree;
 				for (int i = 0; i < 50; i++) {
 					tree.Insert(i, i);
 				}
 			}
-			// 
-			if (0) {
+			// No leak
+			if (1) {
 				fibers::containers::Pattern<uint64_t, uint64_t> tree;
 				tree.Insert(5, 100);
 				EXPECT_EQ(true, tree.Read(5).has_value());
@@ -454,8 +440,8 @@ int main() {
 					(void)iter.GetKey();
 				}
 			}
-			// 
-			if (0) {
+			// No leak
+			if (1) {
 				fibers::containers::Pattern<int, double> tree;
 				tree.Insert(5, 100);
 				EXPECT_EQ(true, tree.Read(5).has_value());
@@ -470,8 +456,8 @@ int main() {
 					(void)iter.GetKey();
 				}
 			}
-			// 
-			if (0) {
+			// No leak
+			if (1) {
 				fibers::containers::Pattern<double, double> tree;
 				tree.Insert(5, 100.0);
 				EXPECT_EQ(true, tree.Read(5).has_value() && (tree.Read(5).value() == 100.0));
@@ -487,7 +473,7 @@ int main() {
 				}
 			}
 			// 
-			if (0) {
+			if (1) {
 				fibers::containers::Pattern<long double, double> tree;
 				tree.Insert(5, 100.0);
 				EXPECT_EQ(true, tree.Read(5).has_value() && (tree.Read(5).value() == 100.0));

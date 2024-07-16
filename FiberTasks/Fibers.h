@@ -1291,227 +1291,9 @@ namespace fibers {
 			internalType value;
 
 		};
-
-		/* *THREAD SAFE* Thread-safe and fiber-safe wrapper for atomic operations on pointers, without having to utilize std::atomic<T*> */
-		template< typename T> 
-		struct atomic_ptr {
-		private:
-			static void* Sys_InterlockedExchangePointer(void*& ptr, void* exchange) { return InterlockedExchangePointer(&ptr, exchange); };
-			static void* Sys_InterlockedCompareExchangePointer(void*& ptr, void* comparand, void* exchange) { return InterlockedCompareExchangePointer(&ptr, exchange, comparand); };
-
-		public:
-			constexpr atomic_ptr() noexcept : ptr(nullptr) {}
-			constexpr atomic_ptr(T* newSource) noexcept : ptr(newSource) {}
-			constexpr atomic_ptr(const atomic_ptr& other) noexcept : ptr(other.ptr) {};
-			atomic_ptr& operator=(const atomic_ptr& other) noexcept { Set(other.Get()); return *this; };
-			atomic_ptr& operator=(T* newSource) noexcept { Set(newSource); return *this; };
-			~atomic_ptr() { ptr = nullptr; };
-
-			explicit operator bool() { return ptr; };
-			explicit operator bool() const { return ptr; };
-
-			operator T* () noexcept { return ptr; };
-			operator const T* () const noexcept { return ptr; };
-
-			/* atomically sets the pointer and returns the previous pointer value */
-			T* Set(T* newPtr) noexcept {
-				return static_cast<T*>(Sys_InterlockedExchangePointer((void* &)ptr, static_cast<void* >(newPtr)));
-			};
-			bool TrySet(T* newPtr, T** oldPtr = nullptr) noexcept {
-				T* PREV_VAL = this->load();
-				if (this->CompareExchange(PREV_VAL, newPtr) == PREV_VAL) {
-					if (oldPtr) *oldPtr = PREV_VAL;
-					return true;
-				}
-				else {
-					if (oldPtr) *oldPtr = nullptr;
-					return false;
-				}
-			};
-			bool TrySet(T* newPtr, atomic_ptr<T>* oldPtr) noexcept {
-				T* PREV_VAL = this->load();
-				if (this->CompareExchange(PREV_VAL, newPtr) == PREV_VAL) {
-					if (oldPtr) *oldPtr = PREV_VAL;
-					return true;
-				}
-				else {
-					if (oldPtr) *oldPtr = nullptr;
-					return false;
-				}
-			};
-
-			/* atomically sets the pointer to 'newPtr' only if the previous pointer is equal to 'comparePtr' */
-			T* CompareExchange(T* comparePtr, T* newPtr) noexcept {
-				return static_cast<T*>(Sys_InterlockedCompareExchangePointer((void*&)ptr, static_cast<void*>(comparePtr), static_cast<void*>(newPtr)));
-			};
-
-			T* operator->() noexcept { return Get(); };
-			const T* operator->() const noexcept { return Get(); };
-			T* Get() noexcept { return ptr; };
-			T* Get() const noexcept { return ptr; };
-			T* load() noexcept { return Get(); };
-			T* load() const noexcept { return Get(); };
-
-		protected:
-			T* ptr;
-		};
 	};
 
 	namespace utilities {
-		/* *THREAD SAFE* Thread- and Fiber-safe allocator that can create, reserve, and free shared memory. 
-		Optimized for POD types, but will correctly manage the destruction of non-POD type data when shutdown. */
-		template<class _type_, int _blockSize_, bool ForcePOD = false> class Allocator {
-		private:
-			struct element_item {
-				// actual underlying data
-				_type_ data;
-				// non-POD, but can be "forgotten" without consequence. 
-				synchronization::atomic_ptr<element_item> next; 
-				// non-POD, but can be "forgotten" without consequence. 
-				synchronization::atomic_number<long> initialized; 
-			};
-			class memory_block {
-			public:
-				// static buffer -- does not grow or shrink. Cannot allocate less than this, and if needs more, we allocate another block.
-				element_item		elements[_blockSize_]; 
-				// ptr to next block.
-				synchronization::atomic_ptr<memory_block> next; 
-			};
-
-			synchronization::atomic_ptr<memory_block> blocks;
-			synchronization::atomic_ptr<element_item> free;
-			synchronization::atomic_number<long> total;
-			synchronization::atomic_number<long> active;
-
-			// can an element_item be "forgotten" without calling a destructor?
-			static constexpr bool isPod() { return std::is_pod<_type_>::value || ForcePOD; };
-			// creates a new memory_block and sets the free ptr. 
-			void			    AllocNewBlock() {
-				memory_block* block{ (memory_block*)Mem_ClearedAlloc((size_t)(sizeof(memory_block))) }; // explicitely initialized to 0 at all bits
-				int i;
-				while (true) {
-					block->next = blocks.load();
-					if (blocks.TrySet(block, &block->next)) {
-						for (i = 0; i < _blockSize_; i++) {
-							while (true) {
-								block->elements[i].next = free.load();
-								if (free.TrySet(&block->elements[i], &block->elements[i].next)) {
-									break;
-								}
-							}
-						}
-						total += _blockSize_;
-						break;
-					}
-				}
-			};
-			// shuts down the allocator and frees all associated memory and (if needed) destroys the non-POD type data.
-			void			    Shutdown() {
-				memory_block* block;
-				int i;
-
-				while (block = blocks.load()) {
-					if (blocks.TrySet(block->next, &block)) {
-						// Check if the data type if POD...
-						if constexpr (!isPod()) {
-							// ... because non-POD types must call their destructors to prevent memory leaks per element ...
-							for (i = 0; i < _blockSize_; i++) 
-								// ... but only when the element was already initialized ...
-								if (block->elements[i].initialized.Decrement() == 0) block->elements[i].data.~_type_();
-						}
-						// ... then we can free the memory block
-						Mem_Free(block);
-					}
-				}
-
-				free = nullptr;
-				total = active = 0;
-			};
-
-		public:
-			Allocator() : blocks(nullptr), free(nullptr), total(0), active(0) {};
-			Allocator(int toReserve) : blocks(nullptr), free(nullptr), total(0), active(0) { Reserve(toReserve); };
-			~Allocator() { Shutdown(); };
-
-			// returns total size of allocated memory
-			size_t				Allocated() const { return total.load() * sizeof(_type_); }
-
-			// returns total size of allocated memory including size of (*this)
-			size_t				Size() const { return sizeof(*this) + Allocated(); }
-
-			// Request a new memory pointer. May be recovered from a previously-used location. Will be cleared and correctly initialized, if appropriate.
-			template <typename... TArgs> _type_* Alloc(TArgs const&... a) {
-				_type_* t{ nullptr };
-				element_item* element{ nullptr };
-
-				++active;
-				while (!element) {
-					while (element = free.load()) { // if we have free elements available...
-						if (free.TrySet(element->next, &element)) { // get the free element and swap it with it's next ptr. If this fails, we will simply try again.
-							// we now have exclusive access to this element.
-							element->next = nullptr;
-							break;
-						}
-					}
-					// if we fell through and for some reason the element is still empty, we need to allocate more. May be due to contention and many allocations are happening.
-					if (!element) AllocNewBlock(); // adds a new element to the "free" elements
-				}
-
-				t = static_cast<_type_*>(static_cast<void*>(element));
-				memset(t, 0, sizeof(_type_));
-				new (t) _type_(a...);
-
-				return t;
-			};
-
-			// Frees the memory pointer, previously provided by this allocator. Calls the destructor for non-POD types, and will store the pointer for later use.
-			void				Free(_type_* element) {
-				element_item* t{nullptr};
-				element_item* prevFree{ nullptr };
-
-				if (!element) return; // no work to be done
-				
-				t = static_cast<element_item*>(static_cast<void*>(element));
-
-				if constexpr (!isPod()) {
-					if (t->initialized.Decrement() == 0)
-						element->~_type_();
-					
-				}				
-				while (true) {
-					prevFree = (t->next = free.load());
-					if (free.CompareExchange(prevFree, t) == prevFree) {
-						--active;
-						break;
-					}
-				}				
-			};
-
-			// Request a new memory pointer that will self-delete and return to the memory pool automatically. Important: This allocator must out-live the shared_ptr.
-			std::shared_ptr< _type_ > AllocShared() {
-				return std::shared_ptr<_type_>(Alloc(), [this](_type_* p) { Free(p); });
-			};
-
-			// Calls "Alloc" X-num times, and then frees them all for later re-use.
-			__forceinline void	Reserve(long long num) {
-				// this algorithm can be improved. 
-				// TODO: Create (num / _blockSize_) memory_blocks, order them as next->PTR->next->PTR, etc, and the Compare-Swap with the current end of the block chain. Then update the free chain as needed.
-
-				if (total < num) {
-					std::vector< _type_* > arr; arr.reserve(2 * (num - total));
-					while (total < num) {
-						arr.push_back(Alloc());
-					}
-					for (_type_* p : arr) {
-						Free(p);
-					}
-				}
-			};
-			
-			long long			GetTotalCount() const { return total.load(); }
-			long long			GetAllocCount() const { return active.load(); }
-			long long			GetFreeCount() const { return total.load() - active.load(); }
-		};
 
 		// bw tree
 		namespace dbgroup::index::bw_tree
@@ -1618,6 +1400,8 @@ namespace fibers {
 				  *
 				  */
 				~BwTree() {
+
+
 					//std::atomic_uint64_t root_{}; /// a root node of this Bw-tree.
 					//MappingTable_t mapping_table_{}; /// a table to map logical IDs with physical pointers.
 					//NodeGC_t gc_{}; /// a garbage collector of base nodes and delta records.
@@ -1965,19 +1749,7 @@ namespace fibers {
 					// insert a delta record
 					const auto rec_len = key_len + kPayLen + kMetaLen;
 
-					void* recPage{ nullptr };
-					{
-						if (tls_delta_page_) {
-							recPage = tls_delta_page_.release();
-						}
-						if (!recPage) {
-							recPage = gc_.template GetPageIfPossible<DeltaPage>();
-							if (!recPage) {
-								recPage = dbgroup::memory::Allocate<DeltaPage>(kDeltaRecSize);
-							}
-						}						
-					}
-
+					void* recPage{ GetRecPage() };
 					auto* write_d = new (recPage) Delta_t{ DeltaType::kInsert, key, key_len, payload };
 					while (true) {
 						// check whether the target node includes incomplete SMOs
@@ -2363,7 +2135,7 @@ namespace fibers {
 						page = dbgroup::memory::Allocate<NodePage>();
 					}
 					return static_cast<Node_t*>(page);
-				}
+				};
 
 				/**
 				 * @brief Allocate or reuse a memory region for a delta record.
@@ -2374,11 +2146,17 @@ namespace fibers {
 					GetRecPage()  //
 					-> void*
 				{
-					if (tls_delta_page_) return tls_delta_page_.release();
-
-					auto* page = gc_.template GetPageIfPossible<DeltaPage>();
-					return (page == nullptr) ? (dbgroup::memory::Allocate<DeltaPage>(kDeltaRecSize)) : page;
-				}
+					if (tls_delta_page_) {
+						return tls_delta_page_.release();
+					}
+					else {
+						auto* page = gc_.template GetPageIfPossible<DeltaPage>();
+						if (page == nullptr) {
+							page = dbgroup::memory::Allocate<DeltaPage>(kDeltaRecSize);
+						}
+						return page;
+					}
+				};
 
 				/**
 				 * @brief Add a given delta-chain to GC targets.
@@ -4451,7 +4229,7 @@ namespace fibers {
 				return queue.front(item);
 			};
 #else
-#if 0 // utilizes a lock-free design that guarrantees progress under heavy contention
+#if 1 // utilizes a lock-free design that guarrantees progress under heavy contention
 			concurrency::concurrent_queue<T> queue;
 
 			__forceinline void push(T&& item) {
