@@ -192,38 +192,39 @@ namespace fibers {
 		private:
 			Type min;
 			Type max;
-
+			Type step;
 		public:
-			Sequence() : min(0), max(0) {};
-			Sequence(Type N) : min(0), max(N) {};
-			Sequence(Type N0, Type N1) : min(N0), max(N1) {};
+			Sequence() : min(0), max(0), step(1) {};
+			Sequence(Type N) : min(0), max(N), step(1) {};
+			Sequence(Type N0, Type N1) : min(N0), max(N1), step(1) {};
+			Sequence(Type N0, Type N1, Type Step) : min(N0), max(N1), step(Step) {};
 
 			class Iterator : public std::iterator<std::random_access_iterator_tag, Type> {
 			public:
 				using difference_type = typename std::iterator<std::random_access_iterator_tag, Type>::difference_type;
 
-				Iterator() : _ptr(0) {}
-				Iterator(Type rhs) : _ptr(rhs) {}
-				Iterator(const Iterator& rhs) : _ptr(rhs._ptr) {}
+				Iterator() : _ptr(0), _min(0), _step(1) {}
+				Iterator(Type rhs, Type min, Type step) : _ptr(rhs), _min(min), _step(step) {}
+				Iterator(const Iterator& rhs) : _ptr(rhs._ptr), _min(rhs._min), _step(rhs._step) {}
 
-				inline Iterator& operator+=(difference_type rhs) { _ptr += rhs; return *this; }
-				inline Iterator& operator-=(difference_type rhs) { _ptr -= rhs; return *this; }
+				inline Iterator& operator+=(difference_type rhs) { _ptr += rhs * step; return *this; }
+				inline Iterator& operator-=(difference_type rhs) { _ptr -= rhs * step; return *this; }
 				inline Type& operator*() { return _ptr; }
 				inline Type* operator->() { return &_ptr; }
-				inline Type operator[](difference_type rhs) { return static_cast<Type>(rhs); }
+				inline Type operator[](difference_type rhs) { return static_cast<Type>(_min + rhs * _step); }
 				inline const Type& operator*() const { return _ptr; }
 				inline const Type* operator->() const { return &_ptr; }
-				inline const Type operator[](difference_type rhs) const { return static_cast<Type>(rhs); }
+				inline const Type operator[](difference_type rhs) const { return static_cast<Type>(_min + rhs * _step); }
 
-				inline Iterator& operator++() { ++_ptr; return *this; }
-				inline Iterator& operator--() { --_ptr; return *this; }
-				inline Iterator operator++(int) { Iterator tmp(*this); ++_ptr; return tmp; }
-				inline Iterator operator--(int) { Iterator tmp(*this); --_ptr; return tmp; }
-				inline difference_type operator-(const Iterator& rhs) const { return _ptr - rhs._ptr; }
-				inline Iterator operator+(difference_type rhs) const { return Iterator(_ptr + rhs); }
-				inline Iterator operator-(difference_type rhs) const { return Iterator(_ptr - rhs); }
-				friend inline Iterator operator+(difference_type lhs, const Iterator& rhs) { return Iterator(lhs + rhs._ptr); }
-				friend inline Iterator operator-(difference_type lhs, const Iterator& rhs) { return Iterator(lhs - rhs._ptr); }
+				inline Iterator& operator++() { _ptr += _step; return *this; }
+				inline Iterator& operator--() { _ptr -= _step; return *this; }
+				inline Iterator operator++(int) { Iterator tmp(*this); _ptr += _step; return tmp; }
+				inline Iterator operator--(int) { Iterator tmp(*this); _ptr -= _step; return tmp; }
+				inline difference_type operator-(const Iterator& rhs) const { return (_ptr - rhs._ptr) / _step; }
+				inline Iterator operator+(difference_type rhs) const { return Iterator(_ptr + rhs * _step, _min, _step); }
+				inline Iterator operator-(difference_type rhs) const { return Iterator(_ptr - rhs * _step, _min, _step); }
+				friend inline Iterator operator+(difference_type lhs, const Iterator& rhs) { return Iterator((lhs * rhs._step) + rhs._ptr, rhs._min, rhs._step); }
+				friend inline Iterator operator-(difference_type lhs, const Iterator& rhs) { return Iterator((lhs * rhs._step) - rhs._ptr, rhs._min, rhs._step); }
 
 				inline bool operator==(const Iterator& rhs) const { return _ptr == rhs._ptr; }
 				inline bool operator!=(const Iterator& rhs) const { return _ptr != rhs._ptr; }
@@ -232,33 +233,34 @@ namespace fibers {
 				inline bool operator>=(const Iterator& rhs) const { return _ptr >= rhs._ptr; }
 				inline bool operator<=(const Iterator& rhs) const { return _ptr <= rhs._ptr; }
 
-			private:
+			protected:
+				Type _min;
 				Type _ptr;
-
+				Type _step;
 			};
 			class ConstIterator : public std::iterator<std::random_access_iterator_tag, Type> {
 			public:
 				using difference_type = typename std::iterator<std::random_access_iterator_tag, Type>::difference_type;
 
-				ConstIterator() : _ptr(0) {}
-				ConstIterator(Type rhs) : _ptr(rhs) {}
-				ConstIterator(const ConstIterator& rhs) : _ptr(rhs._ptr) {}
+				ConstIterator() : _ptr(0), _min(0), _step(1) {}
+				ConstIterator(Type rhs, Type min, Type step) : _ptr(rhs), _min(min), _step(step) {}
+				ConstIterator(const ConstIterator& rhs) : _ptr(rhs._ptr), _min(rhs._min), _step(rhs._step) {}
 
-				inline ConstIterator& operator+=(difference_type rhs) { _ptr += rhs; return *this; }
-				inline ConstIterator& operator-=(difference_type rhs) { _ptr -= rhs; return *this; }
+				inline ConstIterator& operator+=(difference_type rhs) { _ptr += rhs * step; return *this; }
+				inline ConstIterator& operator-=(difference_type rhs) { _ptr -= rhs * step; return *this; }
 				inline const Type& operator*() const { return _ptr; }
 				inline const Type* operator->() const { return &_ptr; }
-				inline const Type operator[](difference_type rhs) const { return static_cast<Type>(rhs); }
+				inline const Type operator[](difference_type rhs) const { return static_cast<Type>(_min + rhs * _step); }
 
-				inline ConstIterator& operator++() { ++_ptr; return *this; }
-				inline ConstIterator& operator--() { --_ptr; return *this; }
-				inline ConstIterator operator++(int) { ConstIterator tmp(*this); ++_ptr; return tmp; }
-				inline ConstIterator operator--(int) { ConstIterator tmp(*this); --_ptr; return tmp; }
-				inline difference_type operator-(const ConstIterator& rhs) const { return _ptr - rhs._ptr; }
-				inline ConstIterator operator+(difference_type rhs) const { return ConstIterator(_ptr + rhs); }
-				inline ConstIterator operator-(difference_type rhs) const { return ConstIterator(_ptr - rhs); }
-				friend inline ConstIterator operator+(difference_type lhs, const ConstIterator& rhs) { return ConstIterator(lhs + rhs._ptr); }
-				friend inline ConstIterator operator-(difference_type lhs, const ConstIterator& rhs) { return ConstIterator(lhs - rhs._ptr); }
+				inline ConstIterator& operator++() { _ptr += _step; return *this; }
+				inline ConstIterator& operator--() { _ptr -= _step; return *this; }
+				inline ConstIterator operator++(int) { ConstIterator tmp(*this); _ptr += _step; return tmp; }
+				inline ConstIterator operator--(int) { ConstIterator tmp(*this); _ptr -= _step; return tmp; }
+				inline difference_type operator-(const ConstIterator& rhs) const { return (_ptr - rhs._ptr) / _step; }
+				inline ConstIterator operator+(difference_type rhs) const { return ConstIterator(_ptr + rhs * _step, _min, _step); }
+				inline ConstIterator operator-(difference_type rhs) const { return ConstIterator(_ptr - rhs * _step, _min, _step); }
+				friend inline ConstIterator operator+(difference_type lhs, const ConstIterator& rhs) { return ConstIterator((lhs * rhs._step) + rhs._ptr, rhs._min, rhs._step); }
+				friend inline ConstIterator operator-(difference_type lhs, const ConstIterator& rhs) { return ConstIterator((lhs * rhs._step) - rhs._ptr, rhs._min, rhs._step); }
 
 				inline bool operator==(const ConstIterator& rhs) const { return _ptr == rhs._ptr; }
 				inline bool operator!=(const ConstIterator& rhs) const { return _ptr != rhs._ptr; }
@@ -267,20 +269,21 @@ namespace fibers {
 				inline bool operator>=(const ConstIterator& rhs) const { return _ptr >= rhs._ptr; }
 				inline bool operator<=(const ConstIterator& rhs) const { return _ptr <= rhs._ptr; }
 
-			private:
+			protected:
+				Type _min;
 				Type _ptr;
-
+				Type _step;
 			};
 
 			using iterator = Iterator;
 			using const_iterator = ConstIterator;
 
-			auto begin() { return Iterator(min); };
-			auto end() { return Iterator(max); };
-			auto cbegin() const { return ConstIterator(min); };
-			auto cend() const { return ConstIterator(max); };
-			auto begin() const { return ConstIterator(min); };
-			auto end() const { return ConstIterator(max); };
+			auto begin() { return Iterator(min, min, step); };
+			auto end() { return Iterator(max, min, step); };
+			auto cbegin() const { return ConstIterator(min, min, step); };
+			auto cend() const { return ConstIterator(max, min, step); };
+			auto begin() const { return ConstIterator(min, min, step); };
+			auto end() const { return ConstIterator(max, min, step); };
 		};
 
 		template<typename Type>
@@ -3915,9 +3918,10 @@ namespace fibers {
 						const auto row_num = is_last ? ((cur_id >> kRowShift) & kIDMask) : kArrayCapacity;
 						const auto col_num = is_last ? (cur_id & kIDMask) : kArrayCapacity;
 
-						auto* table = tables_[i].load(std::memory_order_relaxed);
+						Table* table = tables_[i].load(std::memory_order_relaxed);
+
 						for (size_t j = 0; j < row_num; ++j) {
-							auto* row = table->Get(j).load(std::memory_order_relaxed);
+							Row* row = table->Get(j).load(std::memory_order_relaxed);
 							for (size_t k = 0; k < col_num; ++k) {
 								ReleaseLogicalPtr(row->Get(k));
 							}
@@ -3956,16 +3960,16 @@ namespace fibers {
 								const auto row_id = (new_id >> kRowShift) & kIDMask;
 								if (row_id < kArrayCapacity) {
 									// prepare a new row
-									auto* row = dbgroup::memory::Allocate<Row>(kVMPageSize);
-									auto* table = tables_[(new_id >> kTabShift) & kIDMask].load(std::memory_order_relaxed);
+									Row* row = dbgroup::memory::Allocate<Row>(kVMPageSize);
+									Table* table = tables_[(new_id >> kTabShift) & kIDMask].load(std::memory_order_relaxed);
 									table->Get(row_id).store(row, std::memory_order_relaxed);
 									cnt_.store(new_id & ~kIDMask, std::memory_order_relaxed);
 									return cur_id;
 								}
 
 								// prepare a new table
-								auto* row = dbgroup::memory::Allocate<Row>(kVMPageSize);
-								auto* table = dbgroup::memory::Allocate<Table>(kVMPageSize);
+								Row* row = dbgroup::memory::Allocate<Row>(kVMPageSize);
+								Table* table = dbgroup::memory::Allocate<Table>(kVMPageSize);
 								table->Get(0).store(row, std::memory_order_relaxed);
 								new_id += kTabIDUnit;
 								tables_[(new_id >> kTabShift) & kIDMask].store(table, std::memory_order_relaxed);
@@ -3984,8 +3988,8 @@ namespace fibers {
 					GetLogicalPtr(const uint64_t id) const  //
 					-> LogicalPtr*
 				{
-					auto* table = tables_[(id >> kTabShift) & kIDMask].load(std::memory_order_relaxed);
-					auto* row = table->Get((id >> kRowShift) & kIDMask).load(std::memory_order_relaxed);
+					Table* table = tables_[(id >> kTabShift) & kIDMask].load(std::memory_order_relaxed);
+					Row* row = table->Get((id >> kRowShift) & kIDMask).load(std::memory_order_relaxed);
 					return const_cast<LogicalPtr*>(&(row->Get(id & kIDMask)));
 				}
 
@@ -4035,22 +4039,22 @@ namespace fibers {
 				static constexpr size_t kMSBShift = 63;
 
 				/// the unit value for incrementing column IDs.
-				static constexpr uint64_t kColIDUnit = 1UL;
+				static constexpr uint64_t kColIDUnit = 1UL; // 1
 
 				/// the unit value for incrementing row IDs.
-				static constexpr uint64_t kRowIDUnit = 1UL << kRowShift;
+				static constexpr uint64_t kRowIDUnit = 1UL << kRowShift; // 65536
 
 				/// the unit value for incrementing table IDs.
-				static constexpr uint64_t kTabIDUnit = 1UL << kTabShift;
+				static constexpr uint64_t kTabIDUnit = 1UL << kTabShift; // 1
 
 				/// a bit mask for extracting IDs.
-				static constexpr uint64_t kIDMask = 0xFFFFUL;
+				static constexpr uint64_t kIDMask = 0xFFFFUL; // 65535
 
 				/// the capacity of each array (rows and columns).
-				static constexpr size_t kArrayCapacity = kVMPageSize / kWordSize;
+				static constexpr size_t kArrayCapacity = kVMPageSize / kWordSize; // 512
 
 				/// the capacity of a table.
-				static constexpr size_t kTableCapacity = (kVMPageSize - kCacheLineSize) / kWordSize;
+				static constexpr size_t kTableCapacity = (kVMPageSize - kCacheLineSize) / kWordSize; // 504
 
 				/*####################################################################################
 				 * Internal utilities
@@ -4084,13 +4088,13 @@ namespace fibers {
 				 *##################################################################################*/
 
 				 /// an atomic counter for incrementing page IDs.
-				std::atomic_uint64_t cnt_{ 1UL << kMSBShift };
+				std::atomic_uint64_t cnt_{ 1UL << kMSBShift }; // 2147483648
 
 				/// padding space for the cache line alignment.
-				size_t padding_[(kCacheLineSize - kWordSize) / kWordSize]{};
+				size_t padding_[(kCacheLineSize - kWordSize) / kWordSize]{ 0 };
 
 				/// mapping tables.
-				std::atomic<Table*> tables_[kTableCapacity]{};
+				std::atomic<Table*> tables_[kTableCapacity]{ 0 };
 			};
 
 		}  // namespace dbgroup::index::bw_tree::component

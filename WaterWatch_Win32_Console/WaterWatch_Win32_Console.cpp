@@ -2398,62 +2398,6 @@ int Example::ExampleF(int numTasks, int numSubTasks) {
 			});
 		});
 	}
-	printf("Job 7b\n");
-	if (false) {
-		std::shared_ptr<std::atomic<int>> counter(new std::atomic<int>(0));
-
-		fibers::JobGroup group;
-		for (int i = 0; i < numTasks; ++i){
-			group.Queue(fibers::Job([&numSubTasks, &counter](int i) {
-				fibers::JobGroup group;
-				for (int j = 0; j < numSubTasks; ++j) {
-					group.Queue(fibers::Job([&counter](int j) {
-						counter->fetch_add(1);
-					}, (int)j));
-				}
-				group.Wait();
-			}, (int)i));
-		};
-		group.Wait();
-	}
-	printf("Job 7c\n");
-	if (false) {
-		std::shared_ptr<std::atomic<int>> counter(new std::atomic<int>(0));
-		auto job = cweeJob([&counter, &numTasks, &numSubTasks]() {
-			fibers::JobGroup group;
-			for (int i = 0; i < numTasks; ++i) {
-				group.Queue(fibers::Job([&numSubTasks, &counter](int i) {
-					fibers::JobGroup group;
-					for (int j = 0; j < numSubTasks; ++j) {
-						group.Queue(fibers::Job([&counter](int j) {
-							counter->fetch_add(1);
-						}, (int)j));
-					}
-					group.Wait();
-				}, (int)i));
-			};
-			group.Wait();
-		});
-		job.AsyncInvoke();
-		job.Await();
-	}
-	printf("Job 7d\n");
-	if (false) {
-		std::shared_ptr<std::atomic<int>> counter(new std::atomic<int>(0));
-		fibers::containers::vector<int> list;
-		auto job = cweeJob([&counter, &numTasks, &numSubTasks, &list]() {
-			fibers::parallel::For(0, numTasks, [&counter, &list, numSubTasks](int i) {
-				fibers::parallel::For(0, numSubTasks, [&counter, &list](int j) {
-					list.push_back(
-						counter->fetch_add(1)
-					); // do work
-				});
-			});
-		});
-		job.AsyncInvoke();
-		job.Await();
-		return counter->load();
-	}
 
 	auto x = fibers::parallel::async([](int x) { return 100.0f; }, 10).wait_get(); // returns 100.0f
 	size_t t = fibers::parallel::For(0, numTasks * numSubTasks, [](int i) { return i; }).size();

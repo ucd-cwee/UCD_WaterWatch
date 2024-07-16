@@ -1231,7 +1231,7 @@ public:
 
 	class UnitsDetail {
 	public:
-#define CreateRow(model, Type) { auto* p = model->second.Alloc(); *p = { Type::specialized_abbreviation(), #Type }; model->first.operator[](Type::UnitHash()).Write(Type::conversion(), p); }
+#define CreateRow(model, Type) { model->operator[](Type::UnitHash())[Type::conversion()] = { Type::specialized_abbreviation(), #Type }; }
 #define CreateRowWithMetricPrefixes(model, Type)\
 			CreateRow(model, Type); \
 			CreateRow(model, femto ## Type); \
@@ -1258,10 +1258,9 @@ public:
 			static std::mutex mut;
 			static std::shared_ptr<void> Tag{ nullptr };
 
-			using AllocatorType = fibers::utilities::Allocator< std::pair< const char*, const char*>, 128>;
-			using TreeType = fibers::utilities::dbgroup::index::bw_tree::BwTree<double, std::pair< const char*, const char*>*>;
+			using TreeType = std::map<double, std::pair< const char*, const char*>>;
 
-			using ModelType = std::pair< std::map<size_t, TreeType>, AllocatorType>;
+			using ModelType = std::map<size_t, TreeType>;
 
 			std::shared_ptr < ModelType > model;
 
@@ -1443,50 +1442,50 @@ public:
 				model = std::static_pointer_cast<ModelType>(Tag);
 			}
 
-			if (model && model->first.count(UnitHash) > 0) {
-				auto& curve = model->first.at(UnitHash);
-
-				auto iter1 = curve.FindLargestSmallerEqual(UnitRatio);
-				if (iter1 && iter1.GetKey() == UnitRatio) {
-					// exact find -- best case scenario
-					auto* p = iter1.GetPayload();
-					if (p) {
-						UnitRatio = iter1.GetKey();
-						return *p;
+			if (model && model->count(UnitHash) > 0) {
+				auto& curve = model->at(UnitHash);
+				
+				auto iter1{ curve.end() }; /* FindLargestSmallerEqual(UnitRatio) */ {
+					auto i = curve.upper_bound(UnitRatio);
+					iter1 = i;
+					while (i != curve.end() && i->first <= UnitRatio) {
+						iter1 = i;
+						++i;
 					}
+				}
+
+				if ((iter1 != curve.end()) && iter1->first == UnitRatio) {
+					// exact find -- best case scenario
+					UnitRatio = iter1->first;
+					return iter1->second;					
 				}
 				else {
 					// not an exact find. 
-					auto iter2 = curve.FindSmallestLargerEqual(UnitRatio);
-					if (iter1 && iter2) {
-						if (std::abs(iter1.GetKey() - UnitRatio) < std::abs(iter2.GetKey() - UnitRatio)) {
-							auto* p = iter1.GetPayload();
-							if (p) {
-								UnitRatio = iter1.GetKey();
-								return *p;
-							}
+					auto iter2{ curve.end() }; /* FindSmallestLargerEqual(UnitRatio) */ {
+						auto i = curve.lower_bound(UnitRatio);
+						iter2 = i;
+						while (i != curve.end() && i->first >= UnitRatio) {
+							iter2 = i;
+							--i;
+						}
+					}
+					if (iter1 != curve.end() && iter2 != curve.end()) {
+						if (std::abs(iter1->first - UnitRatio) < std::abs(iter2->first - UnitRatio)) {							
+							UnitRatio = iter1->first;
+							return iter1->second;							
 						}
 						else {
-							auto* p = iter2.GetPayload();
-							if (p) {
-								UnitRatio = iter2.GetKey();
-								return *p;
-							}
+							UnitRatio = iter2->first;
+							return iter2->second;							
 						}
 					}
-					else if (iter1) {
-						auto* p = iter1.GetPayload();
-						if (p) {
-							UnitRatio = iter1.GetKey();
-							return *p;
-						}
+					else if (iter1 != curve.end()) {
+						UnitRatio = iter1->first;
+						return iter1->second;						
 					}
-					else if (iter2) {
-						auto* p = iter2.GetPayload();
-						if (p) {
-							UnitRatio = iter2.GetKey();
-							return *p;
-						}
+					else if (iter2 != curve.end()) {
+						UnitRatio = iter2->first;
+						return iter2->second;
 					}
 				}
 			}

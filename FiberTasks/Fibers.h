@@ -162,6 +162,208 @@
 #endif
 #pragma endregion 
 
+#include <minwinbase.h>
+#include <synchapi.h>
+#include <processthreadsapi.h>
+#include <handleapi.h>
+#include <libloaderapi.h>
+#include <errhandlingapi.h>
+#include <winerror.h>
+#include <Windows.h>
+#include <winnt.h>
+#include <Psapi.h>
+
+/*
+ * Author:  David Robert Nadeau
+ * Site:    http://NadeauSoftware.com/
+ * License: Creative Commons Attribution 3.0 Unported License
+ *          http://creativecommons.org/licenses/by/3.0/deed.en_US
+ */
+
+#if defined(_WIN32)
+#include <psapi.h>
+#include <windows.h>
+
+#elif defined(__unix__) || defined(__unix) || defined(unix) ||                 \
+    (defined(__APPLE__) && defined(__MACH__))
+#include <sys/resource.h>
+#include <unistd.h>
+
+#if defined(__APPLE__) && defined(__MACH__)
+#include <mach/mach.h>
+
+#elif (defined(_AIX) || defined(__TOS__AIX__)) ||                              \
+    (defined(__sun__) || defined(__sun) ||                                     \
+     defined(sun) && (defined(__SVR4) || defined(__svr4__)))
+#include <fcntl.h>
+#include <procfs.h>
+
+#elif defined(__linux__) || defined(__linux) || defined(linux) ||              \
+    defined(__gnu_linux__)
+#include <stdio.h>
+
+#endif
+
+#else
+#error "Cannot define getPeakRSS( ) or getCurrentRSS( ) for an unknown OS."
+#endif
+
+namespace fibers::utilities {
+	 /**
+	  * Returns the peak (maximum so far) resident set size (physical
+	  * memory use) measured in bytes, or zero if the value cannot be
+	  * determined on this OS.
+	  */
+	inline size_t getPeakRSS() {
+#if defined(_WIN32)
+		/* Windows -------------------------------------------------- */
+		PROCESS_MEMORY_COUNTERS info;
+		GetProcessMemoryInfo(GetCurrentProcess(), &info, sizeof(info));
+		return (size_t)info.PeakWorkingSetSize;
+
+#elif (defined(_AIX) || defined(__TOS__AIX__)) ||                              \
+    (defined(__sun__) || defined(__sun) ||                                     \
+     defined(sun) && (defined(__SVR4) || defined(__svr4__)))
+		/* AIX and Solaris ------------------------------------------ */
+		struct psinfo psinfo;
+		int fd = -1;
+		if ((fd = open("/proc/self/psinfo", O_RDONLY)) == -1)
+			return (size_t)0L; /* Can't open? */
+		if (read(fd, &psinfo, sizeof(psinfo)) != sizeof(psinfo)) {
+			close(fd);
+			return (size_t)0L; /* Can't read? */
+		}
+		close(fd);
+		return (size_t)(psinfo.pr_rssize * 1024L);
+
+#elif defined(__unix__) || defined(__unix) || defined(unix) ||                 \
+    (defined(__APPLE__) && defined(__MACH__))
+		/* BSD, Linux, and OSX -------------------------------------- */
+		struct rusage rusage;
+		getrusage(RUSAGE_SELF, &rusage);
+#if defined(__APPLE__) && defined(__MACH__)
+		return (size_t)rusage.ru_maxrss;
+#else
+		return (size_t)(rusage.ru_maxrss * 1024L);
+#endif
+
+#else
+		/* Unknown OS ----------------------------------------------- */
+		return (size_t)0L; /* Unsupported. */
+#endif
+	}
+
+	/**
+	 * Returns the current resident set size (physical memory use) measured
+	 * in bytes, or zero if the value cannot be determined on this OS.
+	 */
+	inline size_t getCurrentRSS() {
+#if defined(_WIN32)
+		/* Windows -------------------------------------------------- */
+		PROCESS_MEMORY_COUNTERS info;
+		GetProcessMemoryInfo(GetCurrentProcess(), &info, sizeof(info));
+		return (size_t)info.WorkingSetSize;
+
+#elif defined(__APPLE__) && defined(__MACH__)
+		/* OSX ------------------------------------------------------ */
+		struct mach_task_basic_info info;
+		mach_msg_type_number_t infoCount = MACH_TASK_BASIC_INFO_COUNT;
+		if (task_info(mach_task_self(), MACH_TASK_BASIC_INFO, (task_info_t)&info,
+			&infoCount) != KERN_SUCCESS)
+			return (size_t)0L; /* Can't access? */
+		return (size_t)info.resident_size;
+
+#elif defined(__linux__) || defined(__linux) || defined(linux) ||              \
+    defined(__gnu_linux__)
+		/* Linux ---------------------------------------------------- */
+		long rss = 0L;
+		FILE* fp = NULL;
+		if ((fp = fopen("/proc/self/statm", "r")) == NULL)
+			return (size_t)0L; /* Can't open? */
+		if (fscanf(fp, "%*s%ld", &rss) != 1) {
+			fclose(fp);
+			return (size_t)0L; /* Can't read? */
+		}
+		fclose(fp);
+		return (size_t)rss * (size_t)sysconf(_SC_PAGESIZE);
+
+#else
+		/* AIX, BSD, Solaris, and Unknown OS ------------------------ */
+		return (size_t)0L; /* Unsupported. */
+#endif
+	}
+
+	class Computer_Usage {
+	public:
+		Computer_Usage() :
+			percentMemoryUsed(0)
+			, totalPhysMemory(0)
+			, currentPhysMemoryUsed(0)
+			, totalPageMemory(0)
+			, currentPageMemoryUsed(0)
+			, totalVirtualMemory(0)
+			, currentVirtualMemoryUsed(0)
+			, virtualMemUsedByProcess(0)
+			, currentRSS(0)
+			, maxRSS(0)
+		{
+			Init();
+		};
+		Computer_Usage(Computer_Usage const& o) = default;
+		Computer_Usage(Computer_Usage&& o) = default;
+		Computer_Usage& operator=(Computer_Usage const& o) = default;
+		Computer_Usage& operator=(Computer_Usage&& o) = default;
+		~Computer_Usage() = default;
+
+	public:
+		long double PercentMemoryUsed() const { return percentMemoryUsed; }
+		long double TotalPhysMemory() const { return totalPhysMemory; }
+		long double Ram_MB() const { return system_ram_MB; }
+		long double CurrentPhysMemoryUsed() const { return currentPhysMemoryUsed; }
+		long double TotalPageMemory() const { return totalPageMemory; }
+		long double CurrentPageMemoryUsed() const { return currentPageMemoryUsed; }
+		long double TotalVirtualMemory() const { return totalVirtualMemory; }
+		long double CurrentVirtualMemoryUsed() const { return currentVirtualMemoryUsed; }
+		long double CurrentVirtualMemoryUsedByProcess() const { return virtualMemUsedByProcess; }
+		long double CurrentRSS() const { return currentRSS; }
+		long double CurrentMaxRSS() const { return maxRSS; }
+		long double CurrentMemoryUsed() const { return currentPhysMemoryUsed + currentPageMemoryUsed + currentVirtualMemoryUsed; }
+	private:
+		void Init() {
+			MEMORYSTATUSEX memInfo;
+			memInfo.dwLength = sizeof(MEMORYSTATUSEX);
+			GlobalMemoryStatusEx(&memInfo);
+
+			system_ram_MB = (memInfo.ullTotalPhys / (1024 * 1024) + 8) & ~15;
+			percentMemoryUsed = memInfo.dwMemoryLoad;
+			totalPhysMemory = memInfo.ullTotalPhys;
+			currentPhysMemoryUsed = memInfo.ullTotalPhys - memInfo.ullAvailPhys;
+			totalPageMemory = memInfo.ullTotalPageFile;
+			currentPageMemoryUsed = memInfo.ullTotalPageFile - memInfo.ullAvailPageFile;
+			totalVirtualMemory = memInfo.ullTotalVirtual;
+			currentVirtualMemoryUsed = memInfo.ullTotalVirtual - memInfo.ullAvailVirtual;
+
+			PROCESS_MEMORY_COUNTERS_EX pmc;
+			GetProcessMemoryInfo(GetCurrentProcess(), (PROCESS_MEMORY_COUNTERS*)&pmc, sizeof(pmc));
+			virtualMemUsedByProcess = pmc.PrivateUsage;
+
+			currentRSS = getCurrentRSS();
+			maxRSS = getPeakRSS();
+		};
+		float percentMemoryUsed;
+		float totalPhysMemory;
+		float system_ram_MB;
+		float currentPhysMemoryUsed;
+		float totalPageMemory;
+		float currentPageMemoryUsed;
+		float totalVirtualMemory;
+		float currentVirtualMemoryUsed;
+		size_t virtualMemUsedByProcess;
+		size_t currentRSS;
+		size_t maxRSS;
+	};
+};
+
 #include "Actions.h"
 #include "Concurrent_Queue.h"
 #include "../WaterWatchCpp/enum.h"
@@ -1415,7 +1617,13 @@ namespace fibers {
 				  * @brief Destroy the BwTree object.
 				  *
 				  */
-				~BwTree() = default;
+				~BwTree() {
+					//std::atomic_uint64_t root_{}; /// a root node of this Bw-tree.
+					//MappingTable_t mapping_table_{}; /// a table to map logical IDs with physical pointers.
+					//NodeGC_t gc_{}; /// a garbage collector of base nodes and delta records.
+
+
+				};
 
 				/*####################################################################################
 				 * Public read APIs
@@ -1756,7 +1964,21 @@ namespace fibers {
 
 					// insert a delta record
 					const auto rec_len = key_len + kPayLen + kMetaLen;
-					auto* write_d = new (GetRecPage()) Delta_t{ DeltaType::kInsert, key, key_len, payload };
+
+					void* recPage{ nullptr };
+					{
+						if (tls_delta_page_) {
+							recPage = tls_delta_page_.release();
+						}
+						if (!recPage) {
+							recPage = gc_.template GetPageIfPossible<DeltaPage>();
+							if (!recPage) {
+								recPage = dbgroup::memory::Allocate<DeltaPage>(kDeltaRecSize);
+							}
+						}						
+					}
+
+					auto* write_d = new (recPage) Delta_t{ DeltaType::kInsert, key, key_len, payload };
 					while (true) {
 						// check whether the target node includes incomplete SMOs
 						const auto [head, rc] = GetHeadWithKeyCheck(key, stack);
@@ -3187,8 +3409,7 @@ namespace fibers {
 				NodeGC_t gc_{};
 
 				/// a thread-local delta-record page to reuse
-				inline static thread_local std::unique_ptr<void, std::function<void(void*)>>  //
-					tls_delta_page_{ nullptr, dbgroup::memory::Release<DeltaPage> };           // NOLINT
+				inline static thread_local std::unique_ptr<void, std::function<void(void*)>> tls_delta_page_{ nullptr, dbgroup::memory::Release<DeltaPage> }; // NOLINT
 			};
 		};  // namespace dbgroup::index::bw_tree
 
@@ -4743,488 +4964,90 @@ namespace fibers {
 		/* parallel_for (auto i = start; i < end; i++){ todo(i); }
 		If the todo(i) returns anything, it will be collected into a vector at the end. */
 		template<typename iteratorType, class F> decltype(auto) For(iteratorType start, iteratorType end, F ToDo) {
-			constexpr bool retNo = std::is_same<typename fibers::utilities::function_traits<decltype(std::function(ToDo))>::result_type, void>::value;
-			if constexpr (retNo) {
-				synchronization::atomic_ptr<std::exception_ptr> e{ nullptr };
+			fibers::utilities::Sequence seq(start, end); // 0..999
+			fibers::synchronization::atomic_ptr<std::exception_ptr> e{ nullptr };
 
-				auto _Passed_fn = /*std::_Pass_fn*/([&](iteratorType i) {
+			std::for_each(seq.begin(), seq.end(), [&](auto& x) {
+				try {
+					if (!e) ToDo(x);
+				}
+				catch (...) {
 					if (!e) {
-						try {
-							i += start;
-							ToDo(i);
-						}
-						catch (...) {
-							if (!e) {
-								auto eptr = e.Set(new std::exception_ptr(std::current_exception())); // Sets the error to the new PTR
-								if (eptr) { // If we accidentilly errored at the same time as another group, prevent leak
-									delete eptr;
-								}
-							}
-						}
-					}
-				});
-				fibers::utilities::Sequence<iteratorType> seq(end - start);
-
-				auto _Count = end - start;
-				const size_t _Hw_threads = __std_parallel_algorithms_hw_threads();
-				if (_Hw_threads > 1 && _Count > 2) {
-					auto _First = seq.begin();
-
-					auto _UFirst = std::_Get_unwrapped_n(_First, _Count);
-					auto _Operation = std::_Static_partitioned_for_each2<decltype(_UFirst), decltype(_Count), decltype(_Passed_fn)>{ _Hw_threads, _Count, _Passed_fn };
-					std::_Seek_wrapped(_First, _Operation._Basis._Populate(_Operation._Team, _UFirst));
-
-					// process chunks of _Operation on the thread pool
-					const std::_Work_ptr _Work_op{ _Operation };
-
-					// setup complete, hereafter nothrow or terminate
-					_Work_op._Submit_for_chunks(_Hw_threads, _Operation._Team._Chunks);
-					std::_Run_available_chunked_work(_Operation);
-				}
-				else {
-					// not enough threads or the num jobs is not large enough to warrent multithreading
-					for (; start < end; start++) {
-						_Passed_fn(start);
+						if (auto* p = e.Set(new std::exception_ptr(std::current_exception()))) delete p;
 					}
 				}
-
-				if (e) {
-					auto eptr = e.Set(nullptr);
-					if (eptr) {
-						std::exception_ptr copy{ *eptr };
-						delete eptr;
-						std::rethrow_exception(std::move(copy));
-					}
-				}
-			}
-			else {
-				using returnT = typename fibers::utilities::function_traits<decltype(std::function(ToDo))>::result_type;
-				auto _Count = end - start;
-				if (_Count > 0) {
-					std::vector< returnT > out(_Count, returnT());
-
-					synchronization::atomic_ptr<std::exception_ptr> e{ nullptr };
-
-					auto _Passed_fn = /*std::_Pass_fn*/([&](iteratorType i) {
-						if (!e) {
-							try {
-								i += start;
-								out[i] = ToDo(i);
-							}
-							catch (...) {
-								if (!e) {
-									auto eptr = e.Set(new std::exception_ptr(std::current_exception())); // Sets the error to the new PTR
-									if (eptr) { // If we accidentilly errored at the same time as another group, prevent leak
-										delete eptr;
-									}
-								}
-							}
-						}
-					});
-					fibers::utilities::Sequence<iteratorType> seq(end - start);
-
-					auto _Count = end - start;
-					const size_t _Hw_threads = __std_parallel_algorithms_hw_threads();
-					if (_Hw_threads > 1 && _Count > 2) {
-						auto _First = seq.begin();
-
-						auto _UFirst = std::_Get_unwrapped_n(_First, _Count);
-						auto _Operation = std::_Static_partitioned_for_each2<decltype(_UFirst), decltype(_Count), decltype(_Passed_fn)>{ _Hw_threads, _Count, _Passed_fn };
-						std::_Seek_wrapped(_First, _Operation._Basis._Populate(_Operation._Team, _UFirst));
-
-						// process chunks of _Operation on the thread pool
-						const std::_Work_ptr _Work_op{ _Operation };
-
-						// setup complete, hereafter nothrow or terminate
-						_Work_op._Submit_for_chunks(_Hw_threads, _Operation._Team._Chunks);
-						std::_Run_available_chunked_work(_Operation);
-					}
-					else {
-						// not enough threads or the num jobs is not large enough to warrent multithreading
-						for (; start < end; start++) {
-							_Passed_fn(start);
-						}
-					}
-
-					if (e) {
-						auto eptr = e.Set(nullptr);
-						if (eptr) {
-							std::exception_ptr copy{ *eptr };
-							delete eptr;
-							std::rethrow_exception(std::move(copy));
-						}
-					}
-
-					return out;
-				}
-				else {
-					return std::vector< returnT >();
-				}
+			});
+			if (auto* p = e.Set(nullptr)) {
+				std::exception_ptr copy{ *p };
+				delete p;
+				std::rethrow_exception(std::move(copy));
 			}
 		};
 
 		/* parallel_for (auto i = start; i < end; i++){ todo(i); }
 		If the todo(i) returns anything, it will be collected into a vector at the end. */
 		template<typename iteratorType, class F> decltype(auto) For(iteratorType start, iteratorType end, iteratorType step, F ToDo) {
-			constexpr bool retNo = std::is_same<typename fibers::utilities::function_traits<decltype(std::function(ToDo))>::result_type, void>::value;
-			if constexpr (retNo) {
-				synchronization::atomic_ptr<std::exception_ptr> e{ nullptr };
+			fibers::utilities::Sequence seq(start, end, step); // 0..999
+			fibers::synchronization::atomic_ptr<std::exception_ptr> e{ nullptr };
 
-				auto _Passed_fn = /*std::_Pass_fn*/([&](iteratorType i) {
+			std::for_each(seq.begin(), seq.end(), [&](auto& x) {
+				try {
+					if (!e) ToDo(x);
+				}
+				catch (...) {
 					if (!e) {
-						try {
-							i *= step;
-							i += start;
-							ToDo(i);
-						}
-						catch (...) {
-							if (!e) {
-								auto eptr = e.Set(new std::exception_ptr(std::current_exception())); // Sets the error to the new PTR
-								if (eptr) { // If we accidentilly errored at the same time as another group, prevent leak
-									delete eptr;
-								}
-							}
-						}
-					}
-					});
-				fibers::utilities::Sequence<iteratorType> seq(end - start);
-
-				auto _Count = (end - start) / step;
-				const size_t _Hw_threads = __std_parallel_algorithms_hw_threads();
-				if (_Hw_threads > 1 && _Count > 2) {
-					auto _First = seq.begin();
-
-					auto _UFirst = std::_Get_unwrapped_n(_First, _Count);
-					auto _Operation = std::_Static_partitioned_for_each2<decltype(_UFirst), decltype(_Count), decltype(_Passed_fn)>{ _Hw_threads, _Count, _Passed_fn };
-					std::_Seek_wrapped(_First, _Operation._Basis._Populate(_Operation._Team, _UFirst));
-
-					// process chunks of _Operation on the thread pool
-					const std::_Work_ptr _Work_op{ _Operation };
-
-					// setup complete, hereafter nothrow or terminate
-					_Work_op._Submit_for_chunks(_Hw_threads, _Operation._Team._Chunks);
-					std::_Run_available_chunked_work(_Operation);
-				}
-				else {
-					// not enough threads or the num jobs is not large enough to warrent multithreading
-					for (; start < end; start += step) {
-						_Passed_fn(start);
+						if (auto* p = e.Set(new std::exception_ptr(std::current_exception()))) delete p;
 					}
 				}
-
-				if (e) {
-					auto eptr = e.Set(nullptr);
-					if (eptr) {
-						std::exception_ptr copy{ *eptr };
-						delete eptr;
-						std::rethrow_exception(std::move(copy));
-					}
-				}
-			}
-			else {
-				using returnT = typename fibers::utilities::function_traits<decltype(std::function(ToDo))>::result_type;
-				auto _Count = end - start;
-				if (_Count > 0) {
-					std::vector< returnT > out(_Count, returnT());
-
-					synchronization::atomic_ptr<std::exception_ptr> e{ nullptr };
-
-					auto _Passed_fn = /*std::_Pass_fn*/([&](iteratorType i) {
-						if (!e) {
-							try {
-								i *= step;
-								i += start;
-								out[i] = ToDo(i);
-							}
-							catch (...) {
-								if (!e) {
-									auto eptr = e.Set(new std::exception_ptr(std::current_exception())); // Sets the error to the new PTR
-									if (eptr) { // If we accidentilly errored at the same time as another group, prevent leak
-										delete eptr;
-									}
-								}
-							}
-						}
-					});
-					fibers::utilities::Sequence<iteratorType> seq(end - start);
-
-					auto _Count = (end - start) / step;
-					const size_t _Hw_threads = __std_parallel_algorithms_hw_threads();
-					if (_Hw_threads > 1 && _Count > 2) {
-						auto _First = seq.begin();
-
-						auto _UFirst = std::_Get_unwrapped_n(_First, _Count);
-						auto _Operation = std::_Static_partitioned_for_each2<decltype(_UFirst), decltype(_Count), decltype(_Passed_fn)>{ _Hw_threads, _Count, _Passed_fn };
-						std::_Seek_wrapped(_First, _Operation._Basis._Populate(_Operation._Team, _UFirst));
-
-						// process chunks of _Operation on the thread pool
-						const std::_Work_ptr _Work_op{ _Operation };
-
-						// setup complete, hereafter nothrow or terminate
-						_Work_op._Submit_for_chunks(_Hw_threads, _Operation._Team._Chunks);
-						std::_Run_available_chunked_work(_Operation);
-					}
-					else {
-						// not enough threads or the num jobs is not large enough to warrent multithreading
-						for (; start < end; start += step) {
-							_Passed_fn(start);
-						}
-					}
-
-					if (e) {
-						auto eptr = e.Set(nullptr);
-						if (eptr) {
-							std::exception_ptr copy{ *eptr };
-							delete eptr;
-							std::rethrow_exception(std::move(copy));
-						}
-					}
-
-					return out;
-				}
-				else {
-					return std::vector< returnT >();
-				}
+			});
+			if (auto* p = e.Set(nullptr)) {
+				std::exception_ptr copy{ *p };
+				delete p;
+				std::rethrow_exception(std::move(copy));
 			}
 		};
 
 		/* parallel_for (auto i = container.begin(); i != container.end(); i++){ todo(*i); }
 		If the todo(*i) returns anything, it will be collected into a vector at the end. */
 		template<typename containerType, typename F> decltype(auto) ForEach(containerType& container, F ToDo) {
-			constexpr bool retNo = std::is_same<typename fibers::utilities::function_traits<decltype(std::function(ToDo))>::result_type, void>::value;
-			using iterType = typename containerType::iterator;
-			using value_type = std::remove_reference_t<typename iterType::reference>;
+			fibers::synchronization::atomic_ptr<std::exception_ptr> e{ nullptr };
 
-			if constexpr (retNo) {
-				synchronization::atomic_ptr<std::exception_ptr> e{ nullptr };
-
-				auto _Passed_fn = /*std::_Pass_fn*/([&](value_type& i) {
+			std::for_each(container.begin(), container.end(), [&](auto& x) {
+				try {
+					if (!e) ToDo(x);
+				}
+				catch (...) {
 					if (!e) {
-						try {
-							ToDo(i);
-						} catch (...) {
-							if (!e) {
-								auto eptr = e.Set(new std::exception_ptr(std::current_exception())); // Sets the error to the new PTR
-								if (eptr) { // If we accidentilly errored at the same time as another group, prevent leak
-									delete eptr;
-								}
-							}
-						}
+						if (auto* p = e.Set(new std::exception_ptr(std::current_exception()))) delete p;
 					}
+				}
 				});
-
-				auto _UFirst = std::_Get_unwrapped(container.begin());
-				auto _ULast = std::_Get_unwrapped(container.end());
-				auto _Count = std::distance(_UFirst, _ULast);
-				const size_t _Hw_threads = __std_parallel_algorithms_hw_threads();
-				if (_Hw_threads > 1 && _Count > 2) {
-					auto _Operation = std::_Static_partitioned_for_each2<decltype(_UFirst), decltype(_Count), decltype(_Passed_fn)>{ _Hw_threads, _Count, _Passed_fn };
-					(void)_Operation._Basis._Populate(_Operation._Team, _UFirst);
-					const std::_Work_ptr _Work_op{ _Operation }; // process chunks of _Operation on the thread pool
-
-					// setup complete, hereafter nothrow or terminate
-					_Work_op._Submit_for_chunks(_Hw_threads, _Operation._Team._Chunks);
-					std::_Run_available_chunked_work(_Operation);
-				}
-				else {
-					// not enough threads or the num jobs is not large enough to warrent multithreading
-					for (; _UFirst != _ULast; ++_UFirst) {
-						_Passed_fn(*_UFirst);
-					}
-				}
-
-				if (e) {
-					auto eptr = e.Set(nullptr);
-					if (eptr) {
-						std::exception_ptr copy{ *eptr };
-						delete eptr;
-						std::rethrow_exception(std::move(copy));
-					}
-				}
-			}
-			else{
-				using returnT = typename fibers::utilities::function_traits<decltype(std::function(ToDo))>::result_type;
-				auto _First = container.begin();
-				auto _Last = container.end();
-				auto _Count = std::distance(_First, _Last);
-
-				if (_Count > 0) {
-					std::vector< returnT > out(_Count, returnT());
-
-					synchronization::atomic_ptr<std::exception_ptr> e{ nullptr };
-
-					fibers::utilities::IteratorSequence<decltype(_First)> seq(_First, _Last);
-					auto _UFirst = std::_Get_unwrapped(seq.begin());
-					auto _ULast = std::_Get_unwrapped(seq.end());
-					
-					auto _Passed_fn = /*std::_Pass_fn*/([&](typename decltype(seq)::iterator::value_type& i) {
-						if (!e) {
-							try {
-								out[i.first] = ToDo(*i.second);
-							}
-							catch (...) {
-								if (!e) {
-									auto eptr = e.Set(new std::exception_ptr(std::current_exception())); // Sets the error to the new PTR
-									if (eptr) { // If we accidentilly errored at the same time as another group, prevent leak
-										delete eptr;
-									}
-								}
-							}
-						}
-					});
-
-					const size_t _Hw_threads = __std_parallel_algorithms_hw_threads();
-					if (_Hw_threads > 1 && _Count > 2) {
-						auto _Operation = std::_Static_partitioned_for_each2<decltype(_UFirst), decltype(_Count), decltype(_Passed_fn)>{ _Hw_threads, _Count, _Passed_fn };
-						(void)_Operation._Basis._Populate(_Operation._Team, _UFirst);
-						const std::_Work_ptr _Work_op{ _Operation }; // process chunks of _Operation on the thread pool
-
-						// setup complete, hereafter nothrow or terminate
-						_Work_op._Submit_for_chunks(_Hw_threads, _Operation._Team._Chunks);
-						std::_Run_available_chunked_work(_Operation);
-					}
-					else {
-						// not enough threads or the num jobs is not large enough to warrent multithreading
-						for (; _UFirst != _ULast; ++_UFirst) {
-							_Passed_fn(*_UFirst);
-						}
-					}
-
-					if (e) {
-						auto eptr = e.Set(nullptr);
-						if (eptr) {
-							std::exception_ptr copy{ *eptr };
-							delete eptr;
-							std::rethrow_exception(std::move(copy));
-						}
-					}
-
-					return out;
-				}
-				else {
-					return std::vector< returnT >();
-				}
-			}
-			
+			if (auto* p = e.Set(nullptr)) {
+				std::exception_ptr copy{ *p };
+				delete p;
+				std::rethrow_exception(std::move(copy));
+			}			
 		};
 
 		/* parallel_for (auto i = container.begin(); i != container.end(); i++){ todo(*i); }
 		If the todo(*i) returns anything, it will be collected into a vector at the end. */
 		template<typename containerType, typename F> decltype(auto) ForEach(containerType const& container, F ToDo) {
-			constexpr bool retNo = std::is_same<typename fibers::utilities::function_traits<decltype(std::function(ToDo))>::result_type, void>::value;
-			using iterType = typename containerType::const_iterator;
-			using value_type = std::remove_reference_t<typename iterType::value_type>;
+			fibers::synchronization::atomic_ptr<std::exception_ptr> e{ nullptr };
 
-			if constexpr (retNo) {
-				synchronization::atomic_ptr<std::exception_ptr> e{ nullptr };
-
-				auto _Passed_fn = /*std::_Pass_fn*/([&](value_type& i) {
+			std::for_each(container.begin(), container.end(), [&](auto& x) {
+				try {
+					if (!e) ToDo(x);
+				}
+				catch (...) {
 					if (!e) {
-						try {
-							ToDo(i);
-						}
-						catch (...) {
-							if (!e) {
-								auto eptr = e.Set(new std::exception_ptr(std::current_exception())); // Sets the error to the new PTR
-								if (eptr) { // If we accidentilly errored at the same time as another group, prevent leak
-									delete eptr;
-								}
-							}
-						}
-					}
-					});
-
-				auto _UFirst = std::_Get_unwrapped(container.begin());
-				auto _ULast = std::_Get_unwrapped(container.end());
-				auto _Count = std::distance(_UFirst, _ULast);
-				const size_t _Hw_threads = __std_parallel_algorithms_hw_threads();
-				if (_Hw_threads > 1 && _Count > 2) {
-					auto _Operation = std::_Static_partitioned_for_each2<decltype(_UFirst), decltype(_Count), decltype(_Passed_fn)>{ _Hw_threads, _Count, _Passed_fn };
-					(void)_Operation._Basis._Populate(_Operation._Team, _UFirst);
-					const std::_Work_ptr _Work_op{ _Operation }; // process chunks of _Operation on the thread pool
-
-					// setup complete, hereafter nothrow or terminate
-					_Work_op._Submit_for_chunks(_Hw_threads, _Operation._Team._Chunks);
-					std::_Run_available_chunked_work(_Operation);
-				}
-				else {
-					// not enough threads or the num jobs is not large enough to warrent multithreading
-					for (; _UFirst != _ULast; ++_UFirst) {
-						_Passed_fn(*_UFirst);
+						if (auto* p = e.Set(new std::exception_ptr(std::current_exception()))) delete p;
 					}
 				}
-
-				if (e) {
-					auto eptr = e.Set(nullptr);
-					if (eptr) {
-						std::exception_ptr copy{ *eptr };
-						delete eptr;
-						std::rethrow_exception(std::move(copy));
-					}
-				}
-			}
-			else {
-				using returnT = typename fibers::utilities::function_traits<decltype(std::function(ToDo))>::result_type;
-				auto _First = container.begin();
-				auto _Last = container.end();
-				auto _Count = std::distance(_First, _Last);
-
-				if (_Count > 0) {
-					std::vector< returnT > out(_Count, returnT());
-
-					synchronization::atomic_ptr<std::exception_ptr> e{ nullptr };
-
-					fibers::utilities::IteratorSequence<decltype(_First)> seq(_First, _Last);
-					auto _UFirst = std::_Get_unwrapped(seq.begin());
-					auto _ULast = std::_Get_unwrapped(seq.end());
-
-					auto _Passed_fn = /*std::_Pass_fn*/([&](typename decltype(seq)::iterator::value_type& i) {
-						if (!e) {
-							try {
-								out[i.first] = ToDo(*i.second);
-							}
-							catch (...) {
-								if (!e) {
-									auto eptr = e.Set(new std::exception_ptr(std::current_exception())); // Sets the error to the new PTR
-									if (eptr) { // If we accidentilly errored at the same time as another group, prevent leak
-										delete eptr;
-									}
-								}
-							}
-						}
-					});
-
-					const size_t _Hw_threads = __std_parallel_algorithms_hw_threads();
-					if (_Hw_threads > 1 && _Count > 2) {
-						auto _Operation = std::_Static_partitioned_for_each2<decltype(_UFirst), decltype(_Count), decltype(_Passed_fn)>{ _Hw_threads, _Count, _Passed_fn };
-						(void)_Operation._Basis._Populate(_Operation._Team, _UFirst);
-						const std::_Work_ptr _Work_op{ _Operation }; // process chunks of _Operation on the thread pool
-
-						// setup complete, hereafter nothrow or terminate
-						_Work_op._Submit_for_chunks(_Hw_threads, _Operation._Team._Chunks);
-						std::_Run_available_chunked_work(_Operation);
-					}
-					else {
-						// not enough threads or the num jobs is not large enough to warrent multithreading
-						for (; _UFirst != _ULast; ++_UFirst) {
-							_Passed_fn(*_UFirst);
-						}
-					}
-
-					if (e) {
-						auto eptr = e.Set(nullptr);
-						if (eptr) {
-							std::exception_ptr copy{ *eptr };
-							delete eptr;
-							std::rethrow_exception(std::move(copy));
-						}
-					}
-
-					return out;
-				}
-				else {
-					return std::vector< returnT >();
-				}
+				});
+			if (auto* p = e.Set(nullptr)) {
+				std::exception_ptr copy{ *p };
+				delete p;
+				std::rethrow_exception(std::move(copy));
 			}
 		};
 
