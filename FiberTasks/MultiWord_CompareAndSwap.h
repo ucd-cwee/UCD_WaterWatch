@@ -107,8 +107,9 @@
 #include <mutex>
 #include <map>
 #include <type_traits>
-
+#include "../WaterWatchCpp/Clock.h"
 #include "Actions.h"
+#include "Concurrent_Queue.h"
 
 namespace fibers {
 	namespace utilities {
@@ -207,8 +208,8 @@ namespace fibers {
 				Iterator(Type rhs, Type min, Type step) : _ptr(rhs), _min(min), _step(step) {}
 				Iterator(const Iterator& rhs) : _ptr(rhs._ptr), _min(rhs._min), _step(rhs._step) {}
 
-				inline Iterator& operator+=(difference_type rhs) { _ptr += rhs * step; return *this; }
-				inline Iterator& operator-=(difference_type rhs) { _ptr -= rhs * step; return *this; }
+				inline Iterator& operator+=(difference_type rhs) { _ptr += rhs * _step; return *this; }
+				inline Iterator& operator-=(difference_type rhs) { _ptr -= rhs * _step; return *this; }
 				inline Type& operator*() { return _ptr; }
 				inline Type* operator->() { return &_ptr; }
 				inline Type operator[](difference_type rhs) { return static_cast<Type>(_min + rhs * _step); }
@@ -347,6 +348,79 @@ namespace fibers {
 			auto begin() { return Iterator(min, 0); };
 			auto end() { return Iterator(max, count); };
 		};
+
+		template<class returnType, typename Type = size_t>
+		class CustomizedSequence {
+		private:
+			std::function<returnType(Type)> functor;
+			Type min;
+			Type max;
+			Type step;			
+
+		public:
+			CustomizedSequence() : functor(), min(0), max(0), step(1) {};
+			CustomizedSequence(std::function<returnType(Type)>&& toDo, Type N) : functor(std::forward<std::function<returnType(Type)>>(toDo)), min(0), max(N), step(1) {};
+			CustomizedSequence(std::function<returnType(Type)>&& toDo, Type N0, Type N1) : functor(std::forward<std::function<returnType(Type)>>(toDo)), min(N0), max(N1), step(1) {};
+			CustomizedSequence(std::function<returnType(Type)>&& toDo, Type N0, Type N1, Type Step) : functor(std::forward<std::function<returnType(Type)>>(toDo)), min(N0), max(N1), step(Step) {};
+			CustomizedSequence(CustomizedSequence const&) = default;
+			CustomizedSequence(CustomizedSequence &&) = default;
+			CustomizedSequence& operator=(CustomizedSequence const&) = default;
+			CustomizedSequence& operator=(CustomizedSequence&&) = default;
+			~CustomizedSequence() = default;
+
+			class Iterator : public std::iterator<std::random_access_iterator_tag, Type> {
+			public:
+				using difference_type = typename std::iterator<std::random_access_iterator_tag, Type>::difference_type;
+
+				Iterator() : _functor(nullptr), _ptr(0), _min(0), _step(1), _out{} {}
+				Iterator(std::function<returnType(Type)>* toDo, Type rhs, Type min, Type step) : _functor(toDo), _ptr(rhs), _min(min), _step(step), _out{} {}
+				Iterator(const Iterator& rhs) : _functor(rhs._functor), _ptr(rhs._ptr), _min(rhs._min), _step(rhs._step), _out{ rhs._out } {}
+
+				inline Iterator& operator+=(difference_type rhs) { _ptr += rhs * step; return *this; }
+				inline Iterator& operator-=(difference_type rhs) { _ptr -= rhs * step; return *this; }
+				inline returnType& operator*() { _out = (*_functor)(_ptr); return _out; }
+				inline returnType* operator->() { _out = (*_functor)(_ptr); return &_out; }
+				inline returnType operator[](difference_type rhs) { return (*_functor)(static_cast<Type>(_min + rhs * _step)); }
+				inline const returnType& operator*() const { _out = (*_functor)(_ptr); return _out; }
+				inline const returnType* operator->() const { _out = (*_functor)(_ptr); return &_out; }
+				inline const returnType operator[](difference_type rhs) const { return (*_functor)(static_cast<Type>(_min + rhs * _step)); }
+
+				inline Iterator& operator++() { _ptr += _step; return *this; }
+				inline Iterator& operator--() { _ptr -= _step; return *this; }
+				inline Iterator operator++(int) { Iterator tmp(*this); _ptr += _step; return tmp; }
+				inline Iterator operator--(int) { Iterator tmp(*this); _ptr -= _step; return tmp; }
+				inline difference_type operator-(const Iterator& rhs) const { return (_ptr - rhs._ptr) / _step; }
+				inline Iterator operator+(difference_type rhs) const { return Iterator(rhs._functor, _ptr + rhs * _step, _min, _step); }
+				inline Iterator operator-(difference_type rhs) const { return Iterator(rhs._functor, _ptr - rhs * _step, _min, _step); }
+				friend inline Iterator operator+(difference_type lhs, const Iterator& rhs) { return Iterator(rhs._functor, (lhs * rhs._step) + rhs._ptr, rhs._min, rhs._step); }
+				friend inline Iterator operator-(difference_type lhs, const Iterator& rhs) { return Iterator(rhs._functor, (lhs * rhs._step) - rhs._ptr, rhs._min, rhs._step); }
+
+				inline bool operator==(const Iterator& rhs) const { return _ptr == rhs._ptr; }
+				inline bool operator!=(const Iterator& rhs) const { return _ptr != rhs._ptr; }
+				inline bool operator>(const Iterator& rhs) const { return _ptr > rhs._ptr; }
+				inline bool operator<(const Iterator& rhs) const { return _ptr < rhs._ptr; }
+				inline bool operator>=(const Iterator& rhs) const { return _ptr >= rhs._ptr; }
+				inline bool operator<=(const Iterator& rhs) const { return _ptr <= rhs._ptr; }
+
+			protected:
+				std::function<returnType(Type)>* _functor;
+				Type _min;
+				Type _ptr;
+				Type _step;
+				returnType _out{};
+
+			};
+			using iterator = Iterator;
+
+			auto begin() { return Iterator(&functor, min, min, step); };
+			auto end() { return Iterator(&functor, max, min, step); };
+			auto cbegin() const { return Iterator(&functor, min, min, step); };
+			auto cend() const { return Iterator(&functor, max, min, step); };
+			auto begin() const { return Iterator(&functor, min, min, step); };
+			auto end() const { return Iterator(&functor, max, min, step); };
+		};
+
+
 
 
 		template<typename... Args> class Union {
@@ -773,25 +847,23 @@ namespace fibers {
 			T* Set(T* newPtr) noexcept {
 				return static_cast<T*>(Sys_InterlockedExchangePointer((void*&)ptr, static_cast<void*>(newPtr)));
 			};
-			bool TrySet(T* newPtr, T** oldPtr = nullptr) noexcept {
+			bool TrySet(T* newPtr, T* & oldPtr) noexcept {
 				T* PREV_VAL = this->load();
 				if (this->CompareExchange(PREV_VAL, newPtr) == PREV_VAL) {
-					if (oldPtr) *oldPtr = PREV_VAL;
+					oldPtr = PREV_VAL;
 					return true;
 				}
 				else {
-					if (oldPtr) *oldPtr = nullptr;
 					return false;
 				}
 			};
-			bool TrySet(T* newPtr, atomic_ptr<T>* oldPtr) noexcept {
+			bool TrySet(T* newPtr, atomic_ptr<T>& oldPtr) noexcept {
 				T* PREV_VAL = this->load();
 				if (this->CompareExchange(PREV_VAL, newPtr) == PREV_VAL) {
-					if (oldPtr) *oldPtr = PREV_VAL;
+					oldPtr = PREV_VAL;
 					return true;
 				}
 				else {
-					if (oldPtr) *oldPtr = nullptr;
 					return false;
 				}
 			};
@@ -812,175 +884,111 @@ namespace fibers {
 			T* ptr;
 		};
 
-	};
-
-	namespace utilities {
-		/* *THREAD SAFE* Thread- and Fiber-safe allocator that can create, reserve, and free shared memory.
-		Optimized for POD types, but will correctly manage the destruction of non-POD type data when shutdown. */
-		template<class _type_, int _blockSize_ = 1 << 18, bool ForcePOD = false> class Allocator {
-		private:
-			struct element_item {
-				// actual underlying data
-				_type_ data;
-				// non-POD, but can be "forgotten" without consequence. 
-				fibers::synchronization::atomic_ptr<element_item> next;
-				// non-POD, but can be "forgotten" without consequence. 
-				std::atomic<long> initialized;
-			};
-			class memory_block {
+		namespace impl {
+			/* thread-safe and fiber-safe integer (atomic swapping of integers) */
+			class InterlockedLong {
 			public:
-				// static buffer -- does not grow or shrink. Cannot allocate less than this, and if needs more, we allocate another block.
-				element_item		elements[_blockSize_];
-				// ptr to next block.
-				synchronization::atomic_ptr<memory_block> next;
-			};
+				constexpr InterlockedLong() noexcept : value(0) {};
+				constexpr InterlockedLong(long a) noexcept : value(a) {};
+				InterlockedLong(const InterlockedLong& other) : value(other.GetValue()) {};
+				InterlockedLong& operator=(const InterlockedLong& other) { SetValue(other.GetValue()); return *this; };
+				InterlockedLong& operator=(long newSource) { SetValue(newSource); return *this; };
 
-			synchronization::atomic_ptr<memory_block> blocks;
-			synchronization::atomic_ptr<element_item> free;
-			std::atomic<long> total;
-			std::atomic<long> active;
+				explicit operator long() { return GetValue(); };
+				explicit operator long() const { return GetValue(); };
 
-			// can an element_item be "forgotten" without calling a destructor?
-			static constexpr bool isPod() { return std::is_pod<_type_>::value || ForcePOD; };
-			// creates a new memory_block and sets the free ptr. 
-			void			    AllocNewBlock() {
-				memory_block* block{ (memory_block*)Mem_ClearedAlloc((size_t)(sizeof(memory_block))) }; // explicitely initialized to 0 at all bits
-				int i;
-				while (true) {
-					block->next = blocks.load();
-					if (blocks.TrySet(block, &block->next)) {
-						for (i = 0; i < _blockSize_; i++) {
-							while (true) {
-								block->elements[i].next = free.load();
-								if (free.TrySet(&block->elements[i], &block->elements[i].next)) {
-									break;
-								}
-							}
-						}
-						total += _blockSize_;
-						break;
+				explicit operator bool() { if (GetValue() == 0) return false; else return true; };
+				explicit operator bool() const { if (GetValue() == 0) return false; else return true; };
+
+				friend InterlockedLong operator+(long i, const InterlockedLong& b) { InterlockedLong out(b); out.Add(i); return out; };
+				friend InterlockedLong operator+(const InterlockedLong& b, long i) { InterlockedLong out(b); out.Add(i); return out; };
+				friend InterlockedLong operator-(long i, const InterlockedLong& b) { InterlockedLong out(i); out.Add(-b.GetValue()); return out; };
+				friend InterlockedLong operator-(const InterlockedLong& b, long i) { InterlockedLong out(b); out.Add(-i); return out; };
+				friend InterlockedLong operator/(long i, const InterlockedLong& b) { return i / b.GetValue(); };
+				friend InterlockedLong operator/(const InterlockedLong& b, long i) { return b.GetValue() / i; };
+
+				friend bool operator<=(long i, const InterlockedLong& b) { return i <= b.GetValue(); };
+				friend bool operator<=(const InterlockedLong& b, long i) { return i > b.GetValue(); };
+				friend bool operator>=(long i, const InterlockedLong& b) { return i >= b.GetValue(); };
+				friend bool operator>=(const InterlockedLong& b, long i) { return i < b.GetValue(); };
+				friend bool operator>(long i, const InterlockedLong& b) { return i > b.GetValue(); };
+				friend bool operator>(const InterlockedLong& b, long i) { return i <= b.GetValue(); };
+				friend bool operator<(long i, const InterlockedLong& b) { return i < b.GetValue(); };
+				friend bool operator<(const InterlockedLong& b, long i) { return i >= b.GetValue(); };
+
+				friend bool operator<=(const InterlockedLong& i, const InterlockedLong& b) { return i.GetValue() <= b.GetValue(); };
+				friend bool operator>=(const InterlockedLong& i, const InterlockedLong& b) { return i.GetValue() >= b.GetValue(); };
+				friend bool operator>(const InterlockedLong& i, const InterlockedLong& b) { return i.GetValue() > b.GetValue(); };
+				friend bool operator<(const InterlockedLong& i, const InterlockedLong& b) { return i.GetValue() < b.GetValue(); };
+
+				InterlockedLong operator++(int) { InterlockedLong out{ *this }; Increment(); return out; };
+				InterlockedLong& operator++() { Increment(); return *this; };
+
+				InterlockedLong operator--(int) { InterlockedLong out{ *this }; Decrement(); return out; };
+				InterlockedLong& operator--() { Decrement(); return *this; };
+
+				InterlockedLong& operator+=(long i) { 
+					if (i == 1) {
+						Increment();
 					}
-				}
-			};
-			// shuts down the allocator and frees all associated memory and (if needed) destroys the non-POD type data.
-			void			    Shutdown() {
-				memory_block* block;
-				int i;
-
-				while (block = blocks.load()) {
-					if (blocks.TrySet(block->next, &block)) { // Check if the data type if POD...
-						if constexpr (!isPod()) { // ... because non-POD types must call their destructors to prevent memory leaks per element ...
-							for (i = 0; i < _blockSize_; i++)  // ... but only when the element was already initialized ...
-								if ((block->elements[i].initialized.fetch_sub(1) - 1) == 0) block->elements[i].data.~_type_();
-							// if (block->elements[i].initialized.Decrement() == 0) block->elements[i].data.~_type_();
-						}
-						// ... then we can free the memory block
-						Mem_Free(block);
+					else if (i == -1) {
+						Decrement();
 					}
-				}
-
-				free = nullptr;
-				total = active = 0;
-			};
-
-		public:
-			Allocator() : blocks(nullptr), free(nullptr), total(0), active(0) {};
-			Allocator(int toReserve) : blocks(nullptr), free(nullptr), total(0), active(0) { Reserve(toReserve); };
-			~Allocator() { Shutdown(); };
-
-			// returns total size of allocated memory
-			size_t				Allocated() const { return total.load() * sizeof(_type_); }
-
-			// returns total size of allocated memory including size of (*this)
-			size_t				Size() const { return sizeof(*this) + Allocated(); }
-
-			// Request a new memory pointer. May be recovered from a previously-used location. Will be cleared and correctly initialized, if appropriate.
-			template <typename... TArgs> _type_* Alloc(TArgs const&... a) {
-				_type_* t{ nullptr };
-				element_item* element{ nullptr };
-
-				++active;
-				while (!element) {
-					while (element = free.load()) { // if we have free elements available...
-						if (free.TrySet(element->next, &element)) { // get the free element and swap it with it's next ptr. If this fails, we will simply try again.
-							// we now have exclusive access to this element.
-							element->next = nullptr;
-							break;
-						}
+					else {
+						Add(i); 
+					}	
+					return *this;
+				};
+				InterlockedLong& operator-=(long i) { 
+					if (i == 1) {
+						Decrement();
 					}
-					// if we fell through and for some reason the element is still empty, we need to allocate more. May be due to contention and many allocations are happening.
-					if (!element) AllocNewBlock(); // adds a new element to the "free" elements
-				}
-
-				t = static_cast<_type_*>(static_cast<void*>(element));
-				memset(t, 0, sizeof(_type_));
-				new (t) _type_(a...);
-
-				if constexpr (isPod()) {
-					element->initialized.fetch_add(1);
-					// element->initialized = true;
-				}
-
-				return t;
-			};
-
-			// Frees the memory pointer, previously provided by this allocator. Calls the destructor for non-POD types, and will store the pointer for later use.
-			void				Free(_type_* element) {
-				element_item* t{ nullptr };
-				element_item* prevFree{ nullptr };
-
-				if (!element) return; // no work to be done
-
-				t = static_cast<element_item*>(static_cast<void*>(element));
-
-				if constexpr (!isPod()) {
-					if ((t->initialized.fetch_sub(1) - 1) == 0)
-						// if (t->initialized.Decrement() == 0)
-						element->~_type_();
-
-				}
-				while (true) {
-					prevFree = (t->next = free.load());
-					if (free.CompareExchange(prevFree, t) == prevFree) {
-						--active;
-						break;
+					else if (i == -1) {
+						Increment();
 					}
-				}
-			};
-
-			// Request a new memory pointer that will self-delete and return to the memory pool automatically. Important: This allocator must out-live the shared_ptr.
-			std::shared_ptr< _type_ > AllocShared() {
-				return std::shared_ptr<_type_>(Alloc(), [this](_type_* p) { Free(p); });
-			};
-
-			// Calls "Alloc" X-num times, and then frees them all for later re-use.
-			__forceinline void	Reserve(long long num) {
-				// this algorithm can be improved. 
-				// TODO: Create (num / _blockSize_) memory_blocks, order them as next->PTR->next->PTR, etc, and the Compare-Swap with the current end of the block chain. Then update the free chain as needed.
-
-				if (total.load() < num) {
-					std::vector< _type_* > arr; arr.reserve(2 * (num - total.load()));
-					while (total.load() < num) {
-						arr.push_back(Alloc());
+					else {
+						Add(-i);
 					}
-					for (_type_* p : arr) {
-						Free(p);
-					}
-				}
-			};
+					return *this;
+				};
 
-			long long			GetTotalCount() const { return total.load(); }
-			long long			GetAllocCount() const { return active.load(); }
-			long long			GetFreeCount() const { return total.load() - active.load(); }
+				InterlockedLong& operator+=(const InterlockedLong& i) { return operator+=(i.GetValue()); };
+				InterlockedLong& operator-=(const InterlockedLong& i) { return operator-=(i.GetValue()); };
+
+				bool operator==(long i) { return i == GetValue(); };
+				bool operator!=(long i) { return i != GetValue(); };
+				bool operator==(const InterlockedLong& i) { return i.GetValue() == GetValue(); };
+				bool operator!=(const InterlockedLong& i) { return i.GetValue() != GetValue(); };
+
+				long				Increment() { return InterlockedIncrementAcquire(&value); } // atomically increments the integer and returns the new value
+				long				Decrement() { return InterlockedDecrementRelease(&value); } // atomically decrements the integer and returns the new value
+				long				Add(long v) { return InterlockedExchangeAdd(&value, v) + v; } // atomically adds a value to the integer and returns the new value
+				long				Sub(long v) { return InterlockedExchangeAdd(&value, -v) - v; } // atomically subtracts a value from the integer and returns the new value
+				long				GetValue() const { return value; } // returns the current value of the integer
+				void				SetValue(long v) { InterlockedExchange(&value, v); };
+				bool				SetValueIfEqual(long desired, long compare) { return InterlockedCompareExchange(&value, desired, compare) == compare; };
+
+				bool				TryIncrementTo(long n) {
+					if (Increment() == n) {
+						return true;
+					}
+					Decrement();
+					return false;
+				};
+
+				void lock() {
+					while (!TryIncrementTo(1)) {};
+				};
+				void unlock() {
+					Decrement();
+				};
+
+			private:
+				long	value;
+			};
 		};
-
 	};
 };
-
-
-
-namespace fibers {
-	namespace utilities {
 
 #define MWCAS_CAPACITY 14
 #define MWCAS_RETRY_THRESHOLD 10
@@ -996,14 +1004,16 @@ namespace fibers {
 #define CPP_UTILITY_SPINLOCK_RETRY_NUM 10
 #define CPP_UTILITY_BACKOFF_TIME 10
 #define BW_TREE_PAGE_SIZE 1024
-		static __forceinline constexpr size_t LOG2(size_t n) { return ((n < 2) ? 1 : 1 + LOG2(n / 2)); };
+static __forceinline constexpr size_t LOG2(size_t n) { return ((n < 2) ? 1 : 1 + LOG2(n / 2)); };
 #define BW_TREE_DELTA_RECORD_NUM_THRESHOLD (2 * LOG2(BW_TREE_PAGE_SIZE / 256))
 #define BW_TREE_MAX_DELTA_RECORD_NUM 64
 #define BW_TREE_MIN_NODE_SIZE (BW_TREE_PAGE_SIZE / 16)
 #define BW_TREE_MAX_VARIABLE_DATA_SIZE 128
 #define BW_TREE_RETRY_THRESHOLD 10
 #define BW_TREE_SLEEP_TIME 10
-
+// dbgroup::atomic::mwcas
+namespace fibers {
+	namespace utilities {
 		// ATOMIC
 		// utility
 		namespace dbgroup::atomic::mwcas {
@@ -3846,8 +3856,10 @@ namespace fibers {
 				{
 					auto has_smo = false;
 
+					// int maxDepth = 100000;
+
 					// traverse a delta chain
-					for (; true; delta = delta->GetNext()) {
+					for (; /*--maxDepth >= 0*/; delta = delta->GetNext()) {
 						switch (delta->GetDeltaType()) {
 						case kInsert:
 						case kModify:
@@ -3896,6 +3908,8 @@ namespace fibers {
 							return kReachBaseNode;
 						}
 					}
+
+					// return kRecordNotFound;
 				}
 
 				/**
@@ -4076,6 +4090,2772 @@ namespace fibers {
 			};
 
 		}  // namespace dbgroup::index::bw_tree::component
+
+	};
+};
+
+// fibers::utilities::CAS_Container
+namespace fibers {
+	namespace utilities {
+		template <typename Arg> class CAS_Container; // forward decl
+		
+        /* Non-atomic, but guarrantees that floating-point numbers will not be negative, which breaks atomic operations. */
+		template <typename Arg> class UnsignedWrapper {
+		template <typename U>  friend class CAS_Container; // <Arg>
+		protected:
+			static constexpr inline unsigned long long constexpr_pow(unsigned long long x, unsigned long long y) { return y == 0 ? 1.0 : x * constexpr_pow(x, y - 1); };
+			static constexpr unsigned long long MANT_DIG() {
+				if constexpr (std::is_same<double, Arg>::value) {
+					return (DBL_MANT_DIG - 9) / 1.7;
+				}
+				else if constexpr (std::is_same<long double, Arg>::value) {
+					return (LDBL_MANT_DIG - 9) / 1.7;
+				}
+				else if constexpr (std::is_same<float, Arg>::value) {
+					return (FLT_MANT_DIG - 9) / 1.7;
+				}
+				else {
+					return 1;
+				}
+			};
+			static constexpr Arg abs(const Arg val) {
+				return val >= (Arg)0 ? val : -val;
+			}
+			static constexpr Arg floor(const Arg val) {
+				// casting to int truncates the value, which is floor(val) for positive values,
+				// but we have to substract 1 for negative values (unless val is already floored == recasted int val)
+				const auto val_int = (int64_t)val;
+				const Arg fval_int = (Arg)val_int;
+				return (val >= (Arg)0 ? fval_int : (val == fval_int ? val : fval_int - (Arg)1));
+			};
+			static constexpr Arg MaxV{ constexpr_pow(2, MANT_DIG()) };
+			static constexpr Arg Scale{ 10.0 };
+			static constexpr long double squareroot_of_0_001{ 0.03162277660168 };
+			static constexpr long double squareroot_of_0_0000001{ 0.0003162277660168 };
+			static constexpr Arg RoundToMillionth(Arg a) {
+				if (abs(a) > 10000000) {
+					return floor(a * ((1.0l / squareroot_of_0_001) * (1.0l / squareroot_of_0_001)) + 0.5l) * 0.001l;
+				}
+				else {
+					return floor(a * ((1.0l / squareroot_of_0_0000001) * (1.0l / squareroot_of_0_0000001)) + 0.5l) * 0.0000001l;
+				}
+			};
+
+		public:
+// #define useMantissaRepresentation
+			// Attempted to store double as unsigned integers/bools, which works in theory but occassionally crashes for reasons I do not yet understand.
+#ifdef useMantissaRepresentation
+			struct container {
+				uint64_t integralPart : 31;
+				bool is_negative : 1; 
+				uint64_t decimalPart : 31;			
+			};
+
+			//struct alignas(64) container { // targeting 64 bits
+			//	uint64_t multiplier : 58; // 64 bits minus the sum of the other bits  // 58
+			//	uint64_t exponent : 6; // 0 to 63 for the 2^n exponent.
+			//	bool negativeMultiplier : 1; // bool for whether the multiplier is negative or not
+			//	bool negativeExponent : 1; // bool for whether the exponent is negative or not
+			//};
+			static constexpr long double multiplier = 1e16l; // 1e16l;
+#endif
+#ifdef useMantissaRepresentation
+			container 
+#else
+			Arg
+#endif
+			data;
+
+		private:
+			static constexpr Arg Bound(Arg const& a) { 
+			    return std::max<Arg>(-MaxV, std::min<Arg>(MaxV, a));
+			};
+			static constexpr decltype(data) MakeUnsignedAndBound(Arg const& a) {
+#ifdef useMantissaRepresentation
+				Arg integralPart = std::floor(std::abs(a));
+				uint64_t fractionalPart = static_cast<uint64_t>(std::round((std::abs(a) - integralPart) * 2147483648));
+				return container{
+					static_cast<uint64_t>(integralPart),
+					a < 0,
+					fractionalPart,
+					
+				};
+
+
+				//int n;
+				//auto temp{ frexp(a, &n) };
+				//{
+				//	return container{
+				//		static_cast<uint64_t>(static_cast<long double>(temp < (Arg)0 ? static_cast<Arg>(-1.0) * temp : temp) * multiplier),
+				//		static_cast<unsigned short>(n < 0 ? -1.0f * n : n),
+				//		temp < (Arg)0,
+				//		n < (int)0,
+				//	};
+				//}
+#else
+				return Bound(a) + MaxV;
+#endif
+			};
+			static constexpr Arg MakeSigned(decltype(data) const& a) {
+#ifdef useMantissaRepresentation
+				return a.is_negative ? -(static_cast<Arg>(a.integralPart) + (static_cast<Arg>(a.decimalPart) / 2147483648)) : (static_cast<Arg>(a.integralPart) + (static_cast<Arg>(a.decimalPart) / 2147483648));
+
+				//return static_cast<Arg>(ldexp(
+				//	static_cast<Arg>(a.negativeMultiplier ? -static_cast<long double>(a.multiplier) / multiplier : static_cast<long double>(a.multiplier) / multiplier),
+				//	a.negativeExponent ? -static_cast<int>(a.exponent) : static_cast<int>(a.exponent)
+				//));
+#else
+				return a -MaxV;
+#endif
+			};
+#undef useMantissaRepresentation
+
+		public:
+			constexpr UnsignedWrapper() = default;
+			constexpr UnsignedWrapper(Arg const& a) : data{ MakeUnsignedAndBound(a) } {};
+			constexpr UnsignedWrapper(Arg&& a) : data{ MakeUnsignedAndBound(std::forward<Arg>(a)) } {};
+
+			constexpr UnsignedWrapper(const UnsignedWrapper&) = default;
+			constexpr UnsignedWrapper& operator=(const UnsignedWrapper&) = default;
+			constexpr UnsignedWrapper(UnsignedWrapper&&) = default;
+			constexpr UnsignedWrapper& operator=(UnsignedWrapper&&) = default;
+			~UnsignedWrapper() = default;
+
+		public:
+			constexpr operator Arg() { return load(); };
+			constexpr operator const Arg() const { return load(); };
+
+			template <typename T> constexpr decltype(auto) operator+(const UnsignedWrapper<T>& b) {
+				if constexpr (sizeof(T) > sizeof(Arg)) {
+					return UnsignedWrapper<T>{ load() + b.load() };
+				}
+				else {
+					return UnsignedWrapper{ load() + b.load() };
+				}
+			}
+			template <typename T> constexpr decltype(auto) operator-(const UnsignedWrapper<T>& b) {
+				if constexpr (sizeof(T) > sizeof(Arg)) {
+					return UnsignedWrapper<T>{ load() - b.load() };
+				}
+				else {
+					return UnsignedWrapper{ load() - b.load() };
+				}
+			}
+			template <typename T> constexpr decltype(auto) operator/(const UnsignedWrapper<T>& b) {
+				if constexpr (sizeof(T) > sizeof(Arg)) {
+					return UnsignedWrapper<T>{ load() / b.load() };
+				}
+				else {
+					return UnsignedWrapper{ load() / b.load() };
+				}
+			}
+			template <typename T> constexpr decltype(auto) operator*(const UnsignedWrapper<T>& b) {
+				if constexpr (sizeof(T) > sizeof(Arg)) {
+					return UnsignedWrapper<T>{ load()* b.load() };
+				}
+				else {
+					return UnsignedWrapper{ load() * b.load() };
+				}
+			}
+
+			UnsignedWrapper& operator--() {
+				Add(-1);
+				return *this;
+			};
+			UnsignedWrapper& operator++() {
+				Add(1);
+				return *this;
+			};
+			UnsignedWrapper operator--(int) { return operator--() + 1; };
+			UnsignedWrapper operator++(int) { return operator++() - 1; };
+
+			UnsignedWrapper& operator+=(const UnsignedWrapper& i) {
+				Update([i](Arg x)->Arg { return x + i.load(); });
+				return *this;
+			};
+			UnsignedWrapper& operator-=(const UnsignedWrapper& i) {
+				Update([i](Arg x)->Arg { return x - i.load(); });
+				return *this;
+			};
+			UnsignedWrapper& operator/=(const UnsignedWrapper& i) {
+				Update([i](Arg x)->Arg { return x / i.load(); });
+				return *this;
+			};
+			UnsignedWrapper& operator*=(const UnsignedWrapper& i) {
+				Update([i](Arg x)->Arg { return x * i.load(); });
+				return *this;
+			};
+
+			template<typename T, typename = std::enable_if_t<!std::is_same_v<Arg, T>>> UnsignedWrapper& operator+=(const UnsignedWrapper<T>& i) {
+				Update([i](Arg x)->Arg { return x + i.load(); });
+				return *this;
+			};
+			template<typename T, typename = std::enable_if_t<!std::is_same_v<Arg, T>>> UnsignedWrapper& operator-=(const UnsignedWrapper<T>& i) {
+				Update([i](Arg x)->Arg { return x - i.load(); });
+				return *this;
+			};
+			template<typename T, typename = std::enable_if_t<!std::is_same_v<Arg, T>>> UnsignedWrapper& operator/=(const UnsignedWrapper<T>& i) {
+				Update([i](Arg x)->Arg { return x / i.load(); });
+				return *this;
+			};
+			template<typename T, typename = std::enable_if_t<!std::is_same_v<Arg, T>>> UnsignedWrapper& operator*=(const UnsignedWrapper<T>& i) {
+				Update([i](Arg x)->Arg { return x * i.load(); });
+				return *this;
+			};
+
+			template <typename T> constexpr bool operator==(const UnsignedWrapper<T>& b) { return (std::abs(load() - b.load()) < 0.00005); };
+			template <typename T> constexpr bool operator!=(const UnsignedWrapper<T>& b) { return !operator==(b); };
+			template <typename T> constexpr bool operator<=(const UnsignedWrapper<T>& b) { auto x{ load() }; auto y{ b.load() }; return (std::abs(x - y) < 0.00005) || (x < y); };
+			template <typename T> constexpr bool operator>=(const UnsignedWrapper<T>& b) { auto x{ load() }; auto y{ b.load() }; return (std::abs(x - y) < 0.00005) || (x > y); };
+			template <typename T> constexpr bool operator<(const UnsignedWrapper<T>& b) { return !operator>=(b); };
+			template <typename T> constexpr bool operator>(const UnsignedWrapper<T>& b) { return !operator<=(b); };
+
+			UnsignedWrapper Pow(UnsignedWrapper const& V) const {
+				return UnsignedWrapper{ std::pow(load(), V.load()) };
+			};
+			UnsignedWrapper Sqrt() const {
+				return UnsignedWrapper{ std::sqrt(load()) };
+			};
+			constexpr UnsignedWrapper Abs() const {
+				return UnsignedWrapper{ abs(load()) };
+			};
+			constexpr UnsignedWrapper Floor() const {
+				return UnsignedWrapper{ floor(load()) };
+			};
+			constexpr UnsignedWrapper Ceiling() const {
+				return UnsignedWrapper{ floor(load() + static_cast<Arg>(1)) };
+			};
+
+		public:
+			Arg Swap(Arg const& input) {
+				Arg old{ load() };
+				data = MakeUnsignedAndBound(input);
+				return old;
+			}; // returns the previous value while changing the underlying value
+			Arg Add(Arg const& input) {
+				Arg old{ load() };
+				data = MakeUnsignedAndBound(old + input);
+				return old;
+			}; // returns the previous value while incrementing the actual counter
+			Arg Update(std::function<Arg(Arg)> updateFunction) {
+				Arg old{ load() };
+				data = MakeUnsignedAndBound(updateFunction(old));
+				return old;
+			}; // returns the previous value while incrementing the actual counter
+
+		public: // std::atomic compatability
+			Arg fetch_add(Arg const& v) {
+				return Add(v);
+			}; // returns the previous value while incrementing the actual counter
+			Arg fetch_sub(Arg const& v) {
+				return Add(-v);
+			}; // returns the previous value while decrementing the actual counter
+			Arg exchange(Arg const& v) {
+				return Swap(v);
+			}; // returns the previous value while setting the value to the input
+			constexpr Arg load() const {
+				return MakeSigned(data);
+			}; // gets the value
+			void store(Arg const& v) {
+				Swap(v);
+				return;
+			}; // sets the value to the input
+
+		};
+
+		/* Thread- and fiber-safe method to change multiple uint64_t type objects simultaneously and atomicly.
+		* Requires that all *reads or writes* from the uint64_t objects must be done through this interface to work, however. e.g:
+		* uint64_t a{ 0 }, b{ 0 }; 
+		* auto reader{ MultiItemCAS(&a, &b) };
+		* reader.Update([](Union<uint64_t, uint64_t> read){ ++read.get<0>(); --read.get<1>(); return read; });
+		* assert(reader.Read<0>() == 1); assert(reader.Read<1>() == -1);
+		*/
+		template <typename... Args> class MultiItemCAS {
+#define SWITCH_FOR_0_to_16 switch (Index) { \
+			REPEATFOR(0); REPEATFOR(1); REPEATFOR(2); REPEATFOR(3); \
+			REPEATFOR(4); REPEATFOR(5); REPEATFOR(6); REPEATFOR(7); \
+			REPEATFOR(8); REPEATFOR(9); REPEATFOR(10); REPEATFOR(11); \
+			REPEATFOR(12); REPEATFOR(13); \
+		    default: break; }
+
+		private:
+			template<int N> using NthTypeOf = typename std::remove_const<typename std::remove_reference<typename std::tuple_element<N, std::tuple<Args...>>::type>::type>::type;
+			static constexpr size_t num_parameters = sizeof...(Args);
+
+		public:
+			MultiItemCAS() : container() {};
+			MultiItemCAS(Args*... items) : container(items...) {};
+			MultiItemCAS(MultiItemCAS const&) = delete;
+			MultiItemCAS(MultiItemCAS&&) = delete;
+			MultiItemCAS& operator=(MultiItemCAS const&) = delete;
+			MultiItemCAS& operator=(MultiItemCAS&&) = delete;
+			~MultiItemCAS() {};
+
+		private:
+			template <int index> NthTypeOf<index> GetCurrentValue(fibers::utilities::dbgroup::atomic::mwcas::MwCASDescriptor< num_parameters >& desc) const {
+				if (container.get<index>()) {
+					return desc.Read<NthTypeOf<index>>(container.get<index>());
+				}
+				else {
+					return 0;
+				}
+			};
+			void CaptureOldValues(Union< Args... >& OldCopy, size_t& Index, fibers::utilities::dbgroup::atomic::mwcas::MwCASDescriptor< num_parameters >& desc) const {
+#define REPEATFOR(index) case index: if constexpr (num_parameters > index) OldCopy.get<index>() = GetCurrentValue<index>(desc); break
+				for (Index = 0; Index < num_parameters; Index++) {
+					SWITCH_FOR_0_to_16;
+				}
+#undef REPEATFOR
+			};
+
+			template <typename... IncomingArgs>
+			void CaptureOldValuesAndModify(Union< Args... >& OldCopy, Union< Args... >& NewValues, Union< IncomingArgs... >& Functors, size_t& Index, fibers::utilities::dbgroup::atomic::mwcas::MwCASDescriptor< num_parameters >& desc) const {
+#define REPEATFOR(index) case index: if constexpr (num_parameters > index) NewValues.get<index>() = Functors.get<index>()(OldCopy.get<index>() = GetCurrentValue<index>(desc)); break
+				for (Index = 0; Index < num_parameters; Index++) {
+					SWITCH_FOR_0_to_16;
+				}
+#undef REPEATFOR
+			};
+
+			template <int index> decltype(auto) PrepareSwapTarget(Union< Args... >& OldCopy, Union< Args... >& NewValues, fibers::utilities::dbgroup::atomic::mwcas::MwCASDescriptor< num_parameters >& desc) const {
+				if (container.get<index>()) {
+					desc.AddMwCASTarget(container.get<index>(), OldCopy.get<index>(), NewValues.get<index>());
+				}
+			};
+			void PrepareSwapTargets(Union< Args... >& OldCopy, Union< Args... >& NewValues, size_t& Index, fibers::utilities::dbgroup::atomic::mwcas::MwCASDescriptor< num_parameters >& desc) {
+#define REPEATFOR(index) case index: if constexpr (num_parameters > index) PrepareSwapTarget<index>(OldCopy, NewValues, desc); break			
+				for (Index = 0; Index < num_parameters; Index++) {
+					SWITCH_FOR_0_to_16;
+				}
+#undef REPEATFOR
+			};
+
+		public:
+			void Attach(Args*... items) {
+				container = Union< Args*... >(items...);
+			};
+
+			template <typename... IncomingArgs>
+			Union< Args... > Swap(IncomingArgs&&... newValues) {
+				using fibers::utilities::dbgroup::atomic::mwcas::MwCASDescriptor;
+
+				Union< Args... > OldCopy;
+				Union< Args... > UpdateCopy(std::forward<IncomingArgs>(newValues)...);
+
+				size_t
+					index;
+
+				// continue until a MwCAS operation succeeds
+				while (true) {
+					// create a MwCAS descriptor
+					MwCASDescriptor< num_parameters > desc{};
+
+					// capture the old values
+					CaptureOldValues(OldCopy, index, desc);
+
+					// update the actual data
+					// ... already done with the provided values
+
+					// prepare the swap target(s)
+					PrepareSwapTargets(OldCopy, UpdateCopy, index, desc);
+
+					// try multi-word compare and swap
+					if (desc.MwCAS()) break;
+				}
+
+				return OldCopy;
+			}; // returns the previous value while changing the underlying value
+
+			template <typename... IncomingArgs>
+			Union< Args... > SwapWithFunctions(IncomingArgs&&... newValues) {
+				using fibers::utilities::dbgroup::atomic::mwcas::MwCASDescriptor;
+
+				Union< IncomingArgs... > Functors(std::forward<IncomingArgs>(newValues)...);
+				Union< Args... > OldCopy;
+				Union< Args... > UpdateCopy;
+
+				size_t
+					index;
+
+				// continue until a MwCAS operation succeeds
+				while (true) {
+					// create a MwCAS descriptor
+					MwCASDescriptor< num_parameters > desc{};
+
+					// capture the old values
+					CaptureOldValuesAndModify(OldCopy, UpdateCopy, Functors, index, desc);
+
+					// update the actual data
+					// ... already done with the provided values during the capture
+
+					// prepare the swap target(s)
+					PrepareSwapTargets(OldCopy, UpdateCopy, index, desc);
+
+					// try multi-word compare and swap
+					if (desc.MwCAS()) break;
+				}
+
+				return OldCopy;
+			}; // returns the previous value while changing the underlying value
+
+			template <typename... IncomingArgs>
+			bool TrySwap(Union< Args... >& OldCopy, IncomingArgs&&... newValues) {
+				using fibers::utilities::dbgroup::atomic::mwcas::MwCASDescriptor;
+
+				Union< Args... > UpdateCopy(std::forward<IncomingArgs>(newValues)...);
+
+				size_t
+					index;
+
+				// continue until a MwCAS operation succeeds
+				while (true) {
+					// create a MwCAS descriptor
+					MwCASDescriptor< num_parameters > desc{};
+
+					// prepare the swap target(s)
+					PrepareSwapTargets(OldCopy, UpdateCopy, index, desc);
+
+					// try multi-word compare and swap
+					if (desc.MwCAS()) return true;
+					else return false;
+				}
+
+				return false;
+			}; // returns the previous value while changing the underlying value
+
+			template <int index>
+			decltype(auto) Read() const {
+				using fibers::utilities::dbgroup::atomic::mwcas::MwCASDescriptor;
+				MwCASDescriptor< num_parameters > desc{};
+				return GetCurrentValue<index>(desc);
+			};
+
+			Union< Args... > ReadAll() const {
+				using fibers::utilities::dbgroup::atomic::mwcas::MwCASDescriptor;
+				MwCASDescriptor< num_parameters > desc{};
+
+				Union< Args... > OldCopy;
+				size_t index;
+				CaptureOldValues(OldCopy, index, desc);
+
+				return OldCopy;
+			};
+
+			Union< Args... > Update(std::function<Union<Args...>(Union<Args...>)> updateFunction) {
+				using fibers::utilities::dbgroup::atomic::mwcas::MwCASDescriptor;
+
+				Union< Args... > OldCopy;
+				Union< Args... > UpdateCopy;
+
+				size_t
+					index;
+
+				// continue until a MwCAS operation succeeds
+				while (true) {
+					// create a MwCAS descriptor
+					MwCASDescriptor< num_parameters > desc{};
+
+					// capture the old values
+					CaptureOldValues(OldCopy, index, desc);
+
+					UpdateCopy = updateFunction(OldCopy);
+
+					// prepare the swap target(s)
+					PrepareSwapTargets(OldCopy, UpdateCopy, index, desc);
+
+					// try multi-word compare and swap
+					if (desc.MwCAS()) break;
+				}
+
+				return OldCopy;
+			};
+
+
+
+		private:
+			Union< Args*... > container;
+#undef SWITCH_FOR_0_to_16
+		};
+
+		// constexpr wrapper that guarrantees the underlying storage data maintains a '0' in the final bit, which is necessary for CAS atomic operations.
+		class DoubleWrapper {
+			using Arg = double;
+		protected:
+			static constexpr Arg abs(Arg val) {
+				return val >= (Arg)0 ? val : -val;
+			}
+			static constexpr Arg floor(Arg val) {
+				// casting to int truncates the value, which is floor(val) for positive values,
+				// but we have to substract 1 for negative values (unless val is already floored == recasted int val)
+				const auto val_int = (int64_t)val;
+				const Arg fval_int = (Arg)val_int;
+				return (val >= (Arg)0 ? fval_int : (val == fval_int ? val : fval_int - (Arg)1));
+			};
+
+			// assumes the structure of the double is MANTISSA, EXPONENT, SIGN. 
+			// and assumes that the exponent can be reduced by one bit, the sign can be moved over, and the final bit can be cleared, reserved for CAS swaps.
+			static constexpr uint64_t pack_fast(double value) {
+				if (value == 0) return 0;
+				struct tempContainer { short value : 10; };
+				uint64_t toReturn = (*(uint64_t*)(void*)&value << (64 - (DBL_MANT_DIG - 1))) >> (64 - (DBL_MANT_DIG - 1));
+				uint64_t exponent_literal{ *(uint64_t*)(void*)&value >> (DBL_MANT_DIG - 1) };
+				auto exponent_signed{ tempContainer{ static_cast<short>(static_cast<long long>(exponent_literal) - 1023ll) } };
+				exponent_signed.value += 50;
+				return (toReturn | ((*(uint64_t*)(void*)&exponent_signed) << (DBL_MANT_DIG - 1))) | (((*(uint64_t*)(void*)&value) >> 63) << 62);
+			};
+			static constexpr double unpack_fast(uint64_t value) {
+				if (value == 0) return 0;
+				uint64_t toReturn{ (value << (64 - (DBL_MANT_DIG - 1))) >> (64 - (DBL_MANT_DIG - 1)) };
+				uint64_t exponent_signed{ ((*(uint64_t*)(void*)&value) << 2) >> (DBL_MANT_DIG + 1) };
+				uint64_t exponent_literal{ static_cast<uint64_t>(static_cast<long long>(exponent_signed) - 50ll + 1023ll) };
+				toReturn |= ((exponent_literal << (DBL_MANT_DIG - 1)) | ((((*(uint64_t*)(void*)&value) >> 62) << 63)));
+				return *(double*)(void*)&toReturn;
+			};
+
+		protected:
+			uint64_t representation;
+
+		private:
+			static constexpr double unpack_impl(uint64_t source) {
+				return unpack_fast(source);
+			};
+			static constexpr uint64_t pack_impl(double value) {
+				return pack_fast(value);
+			};
+
+		protected:
+			void pack(double a) {
+				representation = pack_impl(a);
+			};
+			constexpr Arg unpack() const {
+				return unpack_impl(representation);
+			};
+
+		public:
+			constexpr DoubleWrapper() : representation{ pack_impl(0) } {};
+
+			template <typename T, typename = std::enable_if_t<!std::is_same<std::decay_t<T>, DoubleWrapper>::value>> constexpr DoubleWrapper(T a) : representation{ pack_impl(static_cast<double>(a)) } {};
+
+			//constexpr DoubleWrapper(Arg const& a) : representation{ pack_impl(a) } {};
+			//constexpr DoubleWrapper(Arg&& a) : representation{pack_impl(a) } {};
+
+			constexpr DoubleWrapper(const DoubleWrapper& a) = default;
+			constexpr DoubleWrapper& operator=(const DoubleWrapper& a) = default;
+			constexpr DoubleWrapper(DoubleWrapper&& a) = default;
+			constexpr DoubleWrapper& operator=(DoubleWrapper&& a) = default;
+			~DoubleWrapper() = default;
+
+		public:
+			constexpr operator Arg() { return load(); };
+			constexpr operator const Arg() const { return load(); };
+
+			constexpr DoubleWrapper operator+(DoubleWrapper& b) {
+				return DoubleWrapper{ load() + b.load() };
+			}
+			constexpr DoubleWrapper operator-(DoubleWrapper& b) {
+				return DoubleWrapper{ load() - b.load() };
+			}
+			constexpr DoubleWrapper operator/(DoubleWrapper& b) {
+				return DoubleWrapper{ load() / b.load() };
+			}
+			constexpr DoubleWrapper operator*(DoubleWrapper& b) {
+				return DoubleWrapper{ load() * b.load() };
+			}
+
+			DoubleWrapper& operator--() {
+				Add(-1);
+				return *this;
+			};
+			DoubleWrapper& operator++() {
+				Add(1);
+				return *this;
+			};
+			DoubleWrapper operator--(int) { return operator--() + 1; };
+			DoubleWrapper operator++(int) { return operator++() - 1; };
+
+			DoubleWrapper& operator+=(const DoubleWrapper& i) {
+				Update([i](Arg x)->Arg { return x + i.load(); });
+				return *this;
+			};
+			DoubleWrapper& operator-=(const DoubleWrapper& i) {
+				Update([i](Arg x)->Arg { return x - i.load(); });
+				return *this;
+			};
+			DoubleWrapper& operator/=(const DoubleWrapper& i) {
+				Update([i](Arg x)->Arg { return x / i.load(); });
+				return *this;
+			};
+			DoubleWrapper& operator*=(const DoubleWrapper& i) {
+				Update([i](Arg x)->Arg { return x * i.load(); });
+				return *this;
+			};
+
+			template <typename T> constexpr bool operator==(T b) const {
+				return std::abs(load() - (Arg)b) <= 0.00005l;
+			};
+			template <typename T> constexpr bool operator!=(T b) const { return !operator==(b); };
+
+			constexpr bool operator<=(DoubleWrapper& b) { auto x{ load() }; auto y{ b.load() }; return x <= y; };
+			constexpr bool operator>=(DoubleWrapper& b) { auto x{ load() }; auto y{ b.load() }; return x >= y; };
+			constexpr bool operator<(DoubleWrapper& b) { return !operator>=(b); };
+			constexpr bool operator>(DoubleWrapper& b) { return !operator<=(b); };
+
+			DoubleWrapper Pow(DoubleWrapper const& V) const {
+				return DoubleWrapper{ std::pow(load(), V.load()) };
+			};
+			DoubleWrapper Sqrt() const {
+				return DoubleWrapper{ std::sqrt(load()) };
+			};
+			constexpr DoubleWrapper Abs() const {
+				return DoubleWrapper{ abs(load()) };
+			};
+			constexpr DoubleWrapper Floor() const {
+				return DoubleWrapper{ floor(load()) };
+			};
+			constexpr DoubleWrapper Ceiling() const {
+				return DoubleWrapper{ floor(load() + static_cast<Arg>(1)) };
+			};
+
+		public:
+			Arg Swap(Arg const& input) {
+				auto out{ load() };
+				pack(input);
+				return out;
+			}; // returns the previous value while changing the underlying value
+			Arg Add(Arg const& input) {
+				auto out{ load() };
+				pack(input + out);
+				return out;
+			}; // returns the previous value while incrementing the actual counter
+			Arg Update(std::function<Arg(Arg)> updateFunction) {
+				auto out{ load() };
+				pack(updateFunction(out));
+				return out;
+			}; // returns the previous value while incrementing the actual counter
+
+		public: // std::atomic compatability
+			Arg fetch_add(Arg const& v) {
+				return Add(v);
+			}; // returns the previous value while incrementing the actual counter
+			Arg fetch_sub(Arg const& v) {
+				return Add(-v);
+			}; // returns the previous value while decrementing the actual counter
+			Arg exchange(Arg const& v) {
+				return Swap(v);
+			}; // returns the previous value while setting the value to the input
+			constexpr Arg load() const {
+				return unpack();
+			}; // gets the value
+			void store(Arg const& v) {
+				Swap(v);
+				return;
+			}; // sets the value to the input
+
+		};
+
+		// constexpr wrapper that guarrantees the underlying storage data maintains a '0' in the final bit, which is necessary for CAS atomic operations.
+		class FloatWrapper {
+			using Arg = float;
+		protected:
+			static constexpr Arg abs(Arg val) {
+				return val >= (Arg)0 ? val : -val;
+			}
+			static constexpr Arg floor(Arg val) {
+				// casting to int truncates the value, which is floor(val) for positive values,
+				// but we have to substract 1 for negative values (unless val is already floored == recasted int val)
+				const auto val_int = (int64_t)val;
+				const Arg fval_int = (Arg)val_int;
+				return (val >= (Arg)0 ? fval_int : (val == fval_int ? val : fval_int - (Arg)1));
+			};
+
+			static constexpr uint32_t pack_fast(float value) {
+				if (value == 0) return 0;
+				struct tempContainer { short value : 7; };
+				uint32_t toReturn = (*(uint32_t*)(void*)&value << (32 - (FLT_MANT_DIG - 1))) >> (32 - (FLT_MANT_DIG - 1));
+				uint32_t exponent_literal{ *(uint32_t*)(void*)&value >> (FLT_MANT_DIG - 1) };
+				tempContainer exponent_signed{ static_cast<short>(static_cast<long long>(exponent_literal) - 128ll) };
+				exponent_signed.value += 50;
+				return toReturn | (*(uint32_t*)(void*)&exponent_signed << (FLT_MANT_DIG - 1)) | (((*(uint32_t*)(void*)&value >> (32 - 1)) << (32 - 2)));
+			};
+			static constexpr float unpack_fast(uint32_t value) {
+				if (value == 0) return 0;
+				uint32_t toReturn{ (value << (32 - (FLT_MANT_DIG - 1))) >> (32 - (FLT_MANT_DIG - 1)) };
+				uint32_t exponent_signed{ (*(uint32_t*)(void*)&value << 2) >> (FLT_MANT_DIG + 1) };
+				uint32_t exponent_literal{ static_cast<uint32_t>(static_cast<long long>(exponent_signed) - 50ll + 128ll) };
+				toReturn |= (exponent_literal << (FLT_MANT_DIG - 1)) | ((*(uint32_t*)(void*)&value >> (32 - 2)) << (32 - 1));
+				return *(float*)(void*)&toReturn;
+			};
+
+		protected:
+			uint32_t representation;
+
+		private:
+			static constexpr float unpack_impl(uint32_t source) {
+				return unpack_fast(source);
+			};
+			static constexpr uint32_t pack_impl(float value) {
+				return pack_fast(value);
+			};
+
+		protected:
+			void pack(float a) {
+				representation = pack_impl(a);
+			};
+			constexpr Arg unpack() const {
+				return unpack_impl(representation);
+			};
+
+		public:
+			constexpr FloatWrapper() : representation{ pack_impl(0) } {};
+			template <typename T, typename = std::enable_if_t<!std::is_same<std::decay_t<T>, FloatWrapper>::value>> constexpr FloatWrapper(T a) : representation{ pack_impl(static_cast<float>(a)) } {};
+			// constexpr FloatWrapper(Arg&& a) : representation{ pack_impl(a) } {};
+			constexpr FloatWrapper(const FloatWrapper& a) = default; // : representation(a.unpack()) {};
+			constexpr FloatWrapper& operator=(const FloatWrapper& a) = default; //{ pack(a.unpack()); };
+			constexpr FloatWrapper(FloatWrapper&& a) = default; //: representation(a.unpack()) {};
+			constexpr FloatWrapper& operator=(FloatWrapper&& a) = default; //{ pack(a.unpack()); };
+			~FloatWrapper() = default;
+
+		public:
+			constexpr operator Arg() { return load(); };
+			constexpr operator const Arg() const { return load(); };
+
+			constexpr FloatWrapper operator+(FloatWrapper& b) {
+				return FloatWrapper{ load() + b.load() };
+			}
+			constexpr FloatWrapper operator-(FloatWrapper& b) {
+				return FloatWrapper{ load() - b.load() };
+			}
+			constexpr FloatWrapper operator/(FloatWrapper& b) {
+				return FloatWrapper{ load() / b.load() };
+			}
+			constexpr FloatWrapper operator*(FloatWrapper& b) {
+				return FloatWrapper{ load() * b.load() };
+			}
+
+			FloatWrapper& operator--() {
+				Add(-1);
+				return *this;
+			};
+			FloatWrapper& operator++() {
+				Add(1);
+				return *this;
+			};
+			FloatWrapper operator--(int) { return operator--() + 1; };
+			FloatWrapper operator++(int) { return operator++() - 1; };
+
+			FloatWrapper& operator+=(const FloatWrapper& i) {
+				Update([i](Arg x)->Arg { return x + i.load(); });
+				return *this;
+			};
+			FloatWrapper& operator-=(const FloatWrapper& i) {
+				Update([i](Arg x)->Arg { return x - i.load(); });
+				return *this;
+			};
+			FloatWrapper& operator/=(const FloatWrapper& i) {
+				Update([i](Arg x)->Arg { return x / i.load(); });
+				return *this;
+			};
+			FloatWrapper& operator*=(const FloatWrapper& i) {
+				Update([i](Arg x)->Arg { return x * i.load(); });
+				return *this;
+			};
+
+			template <typename T> constexpr bool operator==(T b) const {
+				return std::abs(load() - (Arg)b) <= 0.00005l;
+			};
+			template <typename T> constexpr bool operator!=(T b) const { return !operator==(b); };
+			constexpr bool operator<=(FloatWrapper& b) { auto x{ load() }; auto y{ b.load() }; return x <= y; };
+			constexpr bool operator>=(FloatWrapper& b) { auto x{ load() }; auto y{ b.load() }; return x >= y; };
+			constexpr bool operator<(FloatWrapper& b) { return !operator>=(b); };
+			constexpr bool operator>(FloatWrapper& b) { return !operator<=(b); };
+
+			FloatWrapper Pow(FloatWrapper const& V) const {
+				return FloatWrapper{ std::pow(load(), V.load()) };
+			};
+			FloatWrapper Sqrt() const {
+				return FloatWrapper{ std::sqrt(load()) };
+			};
+			constexpr FloatWrapper Abs() const {
+				return FloatWrapper{ abs(load()) };
+			};
+			constexpr FloatWrapper Floor() const {
+				return FloatWrapper{ floor(load()) };
+			};
+			constexpr FloatWrapper Ceiling() const {
+				return FloatWrapper{ floor(load() + static_cast<Arg>(1)) };
+			};
+
+		public:
+			Arg Swap(Arg const& input) {
+				auto out{ load() };
+				pack(input);
+				return out;
+			}; // returns the previous value while changing the underlying value
+			Arg Add(Arg const& input) {
+				auto out{ load() };
+				pack(input + out);
+				return out;
+			}; // returns the previous value while incrementing the actual counter
+			Arg Update(std::function<Arg(Arg)> updateFunction) {
+				auto out{ load() };
+				pack(updateFunction(out));
+				return out;
+			}; // returns the previous value while incrementing the actual counter
+
+		public: // std::atomic compatability
+			Arg fetch_add(Arg const& v) {
+				return Add(v);
+			}; // returns the previous value while incrementing the actual counter
+			Arg fetch_sub(Arg const& v) {
+				return Add(-v);
+			}; // returns the previous value while decrementing the actual counter
+			Arg exchange(Arg const& v) {
+				return Swap(v);
+			}; // returns the previous value while setting the value to the input
+			constexpr Arg load() const {
+				return unpack();
+			}; // gets the value
+			void store(Arg const& v) {
+				Swap(v);
+				return;
+			}; // sets the value to the input
+
+		};
+
+		// constexpr wrapper that guarrantees the underlying storage data maintains a '0' in the final bit, which is necessary for CAS atomic operations.
+		class LongLongWrapper {
+		private:
+			using Arg = long long;
+
+		protected:
+			static constexpr Arg abs(Arg val) {
+				return val >= (Arg)0 ? val : -val;
+			}
+			static constexpr Arg floor(Arg val) {
+				// casting to int truncates the value, which is floor(val) for positive values,
+				// but we have to substract 1 for negative values (unless val is already floored == recasted int val)
+				const auto val_int = (int64_t)val;
+				const Arg fval_int = (Arg)val_int;
+				return (val >= (Arg)0 ? fval_int : (val == fval_int ? val : fval_int - (Arg)1));
+			};
+
+			static constexpr uint64_t pack_fast(Arg value) {
+				return static_cast<uint64_t>(value + (std::numeric_limits<Arg>::max() / 100000000ll));
+			};
+			static constexpr Arg unpack_fast(uint64_t value) {
+				return static_cast<Arg>(value) - (std::numeric_limits<Arg>::max() / 100000000ll);
+			};
+
+		protected:
+			uint64_t representation;
+
+		private:
+			static constexpr Arg unpack_impl(uint64_t source) {
+				return unpack_fast(source);
+			};
+			static constexpr uint64_t pack_impl(Arg value) {
+				return pack_fast(value);
+			};
+
+		protected:
+			void pack(Arg a) {
+				representation = pack_impl(a);
+			};
+			constexpr Arg unpack() const {
+				return unpack_impl(representation);
+			};
+
+		public:
+			constexpr LongLongWrapper() : representation{ pack_impl(0) } {};
+
+			template <typename T, typename = std::enable_if_t<!std::is_same<std::decay_t<T>, LongLongWrapper>::value>> constexpr LongLongWrapper(T a) : representation{ pack_impl(static_cast<Arg>(a)) } {};
+
+			//constexpr LongLongWrapper(Arg const& a) : representation{ pack_impl(a) } {};
+			//constexpr LongLongWrapper(Arg&& a) : representation{pack_impl(a) } {};
+
+			constexpr LongLongWrapper(const LongLongWrapper& a) = default;
+			constexpr LongLongWrapper& operator=(const LongLongWrapper& a) = default;
+			constexpr LongLongWrapper(LongLongWrapper&& a) = default;
+			constexpr LongLongWrapper& operator=(LongLongWrapper&& a) = default;
+			~LongLongWrapper() = default;
+
+		public:
+			constexpr operator Arg() { return load(); };
+			constexpr operator const Arg() const { return load(); };
+
+			constexpr LongLongWrapper operator+(LongLongWrapper& b) {
+				return LongLongWrapper{ load() + b.load() };
+			}
+			constexpr LongLongWrapper operator-(LongLongWrapper& b) {
+				return LongLongWrapper{ load() - b.load() };
+			}
+			constexpr LongLongWrapper operator/(LongLongWrapper& b) {
+				return LongLongWrapper{ load() / b.load() };
+			}
+			constexpr LongLongWrapper operator*(LongLongWrapper& b) {
+				return LongLongWrapper{ load() * b.load() };
+			}
+
+			LongLongWrapper& operator--() {
+				Add(-1);
+				return *this;
+			};
+			LongLongWrapper& operator++() {
+				Add(1);
+				return *this;
+			};
+			LongLongWrapper operator--(int) { return operator--() + 1; };
+			LongLongWrapper operator++(int) { return operator++() - 1; };
+
+			LongLongWrapper& operator+=(const LongLongWrapper& i) {
+				Update([i](Arg x)->Arg { return x + i.load(); });
+				return *this;
+			};
+			LongLongWrapper& operator-=(const LongLongWrapper& i) {
+				Update([i](Arg x)->Arg { return x - i.load(); });
+				return *this;
+			};
+			LongLongWrapper& operator/=(const LongLongWrapper& i) {
+				Update([i](Arg x)->Arg { return x / i.load(); });
+				return *this;
+			};
+			LongLongWrapper& operator*=(const LongLongWrapper& i) {
+				Update([i](Arg x)->Arg { return x * i.load(); });
+				return *this;
+			};
+
+			template <typename T> constexpr bool operator==(T b) const {
+				return std::abs(load() - (Arg)b) <= 0.00005l;
+			};
+			template <typename T> constexpr bool operator!=(T b) const { return !operator==(b); };
+
+			constexpr bool operator<=(LongLongWrapper& b) { auto x{ load() }; auto y{ b.load() }; return x <= y; };
+			constexpr bool operator>=(LongLongWrapper& b) { auto x{ load() }; auto y{ b.load() }; return x >= y; };
+			constexpr bool operator<(LongLongWrapper& b) { return !operator>=(b); };
+			constexpr bool operator>(LongLongWrapper& b) { return !operator<=(b); };
+
+			LongLongWrapper Pow(LongLongWrapper const& V) const {
+				return LongLongWrapper{ std::pow(load(), V.load()) };
+			};
+			LongLongWrapper Sqrt() const {
+				return LongLongWrapper{ std::sqrt(load()) };
+			};
+			constexpr LongLongWrapper Abs() const {
+				return LongLongWrapper{ abs(load()) };
+			};
+			constexpr LongLongWrapper Floor() const {
+				return LongLongWrapper{ floor(load()) };
+			};
+			constexpr LongLongWrapper Ceiling() const {
+				return LongLongWrapper{ floor(load() + static_cast<Arg>(1)) };
+			};
+
+		public:
+			Arg Swap(Arg const& input) {
+				auto out{ load() };
+				pack(input);
+				return out;
+			}; // returns the previous value while changing the underlying value
+			Arg Add(Arg const& input) {
+				auto out{ load() };
+				pack(input + out);
+				return out;
+			}; // returns the previous value while incrementing the actual counter
+			Arg Update(std::function<Arg(Arg)> updateFunction) {
+				auto out{ load() };
+				pack(updateFunction(out));
+				return out;
+			}; // returns the previous value while incrementing the actual counter
+
+		public: // std::atomic compatability
+			Arg fetch_add(Arg const& v) {
+				return Add(v);
+			}; // returns the previous value while incrementing the actual counter
+			Arg fetch_sub(Arg const& v) {
+				return Add(-v);
+			}; // returns the previous value while decrementing the actual counter
+			Arg exchange(Arg const& v) {
+				return Swap(v);
+			}; // returns the previous value while setting the value to the input
+			constexpr Arg load() const {
+				return unpack();
+			}; // gets the value
+			void store(Arg const& v) {
+				Swap(v);
+				return;
+			}; // sets the value to the input
+
+		};
+
+		namespace impl {
+			template <typename T> auto CAS_Safe_Type_F() {
+				if constexpr (std::is_floating_point<T>::value) {					
+					if constexpr (std::is_same<T, float>::value) {
+						return fibers::utilities::FloatWrapper();
+					}
+					else {
+						return fibers::utilities::DoubleWrapper();
+					}
+				}
+				else {
+					if constexpr (std::is_pointer<T>::value) {
+						return T{ nullptr };
+					}
+					else if constexpr (std::is_same<T, long long>::value) {
+						return fibers::utilities::LongLongWrapper();
+					}
+					else if constexpr (std::is_arithmetic<T>::value && std::is_signed<T>::value){
+						return uint64_t();
+					}
+					else {
+						return T();
+					}
+				}
+			};
+
+			template <typename T> struct CAS_Safe_Type {
+				using type = typename fibers::utilities::function_traits<decltype(std::function(CAS_Safe_Type_F<T>))>::result_type;
+			};
+		}
+
+		/* Converts any small POD-style struct into an atomic struct using multi-word compare and swap operations.
+		Capacity is about 56 bytes, or about 7 pointers / integers. Can be used for a POD collection (like a struct) or non-standard POD items like floats to long doubles.
+		The item should be smaller than a uint64_t, OR the final bit of every uin64_t word must exactly be 0 and unused, without exception.
+		*/
+		template <typename Arg> class CAS_Container {
+		public:
+			using storageType = typename impl::CAS_Safe_Type<Arg>::type;
+			static constexpr size_t NumWords{ sizeof(storageType) / 8 }; // 1 + 
+
+		protected:
+			union ContainerImpl {
+				storageType data;
+				uint64_t addresses[NumWords];
+			};
+			ContainerImpl data;
+			
+			CAS_Container<Arg> Copy() const {
+				using namespace dbgroup::atomic::mwcas;
+				CAS_Container<Arg> temp; // constexpr
+				MwCASDescriptor<NumWords> desc{}; // constexpr
+
+				for (size_t index = 0; index < NumWords; index++) {
+					temp.Word(index) = desc.Read< uint64_t>(&Word(index));
+				}
+				return temp;
+			};
+			constexpr uint64_t& Word(size_t index) {
+				return data.addresses[index];
+			};
+			constexpr const uint64_t& Word(size_t index) const {
+				return data.addresses[index];
+			};
+
+		public:
+			constexpr const storageType& Data() const { return data.data; };
+			constexpr storageType& Data() { return data.data; };
+			operator Arg() const {
+				return load();
+			};
+		public:
+			constexpr CAS_Container() : data{ storageType{} } {
+				static_assert(std::is_trivially_destructible< Arg >::value
+					&& std::is_trivially_copy_constructible< Arg >::value
+					&& std::is_trivially_copy_assignable< Arg >::value
+					&& std::is_trivially_copyable< Arg >::value, "Compare-and-swap operations only work with trivial structs.");
+			};
+			constexpr CAS_Container(Arg const& a) : data{ storageType{ a } } {
+				static_assert(std::is_trivially_destructible< Arg >::value
+					&& std::is_trivially_copy_constructible< Arg >::value
+					&& std::is_trivially_copy_assignable< Arg >::value
+					&& std::is_trivially_copyable< Arg >::value, "Compare-and-swap operations only work with trivial structs.");
+			};
+			constexpr CAS_Container(const CAS_Container&) = default;
+			constexpr CAS_Container& operator=(const CAS_Container&) = default;
+			constexpr CAS_Container(CAS_Container&&) = default;
+			constexpr CAS_Container& operator=(CAS_Container&&) = default;
+			~CAS_Container() = default;
+
+			template <typename T> bool operator==(T b) const {
+				const auto x = Copy();
+				return x.Data() == b;
+			};
+			template <typename T> bool operator!=(T b) const {
+				return !operator==(b);
+			};
+
+
+		public:
+			bool CompareSwap(Arg const& compare, Arg const& input) {
+				using fibers::utilities::dbgroup::atomic::mwcas::MwCASDescriptor;
+
+				fibers::utilities::CAS_Container<Arg>
+					OldCopy(compare),
+					UpdateCopy(input);
+				size_t
+					index;
+
+				// continue until a MwCAS operation succeeds
+				while (true) {
+					// create a MwCAS descriptor
+					MwCASDescriptor<NumWords> desc{};
+
+					// prepare the swap target(s)
+					for (index = 0; index < NumWords; index++) {
+						desc.AddMwCASTarget(&Word(index), OldCopy.Word(index), UpdateCopy.Word(index));
+					}
+
+					// try multi-word compare and swap
+					if (desc.MwCAS()) return true;
+					else return false;
+				}
+			}; // returns the previous value while changing the underlying value
+			Arg Swap(Arg const& input, bool allowMiss = false) {
+				using fibers::utilities::dbgroup::atomic::mwcas::MwCASDescriptor;
+
+				fibers::utilities::CAS_Container<Arg> OldCopy, UpdateCopy;
+				size_t index;
+
+				// continue until a MwCAS operation succeeds
+				while (true) {
+					// create a MwCAS descriptor
+					MwCASDescriptor<NumWords> desc{};
+
+					// capture the old words
+					for (index = 0; index < NumWords; index++) {
+						OldCopy.Word(index) = UpdateCopy.Word(index) = MwCASDescriptor<NumWords>::template Read<uint64_t>(&Word(index));
+					}
+
+					// update the actual data
+					UpdateCopy.Data() = input;
+					
+
+					// prepare the swap target(s)
+					for (index = 0; index < NumWords; index++) {
+						desc.AddMwCASTarget(&Word(index), OldCopy.Word(index), UpdateCopy.Word(index));
+					}
+
+					// try multi-word compare and swap
+					if (desc.MwCAS()) break;
+					else if (allowMiss) break;
+				}
+				return OldCopy.load();
+			}; // returns the previous value while changing the underlying value
+			Arg Add(Arg const& input) {
+				using fibers::utilities::dbgroup::atomic::mwcas::MwCASDescriptor;
+
+				fibers::utilities::CAS_Container<Arg> OldCopy, UpdateCopy;
+				size_t index;
+
+				// continue until a MwCAS operation succeeds
+				while (true) {
+					// create a MwCAS descriptor
+					MwCASDescriptor<NumWords> desc{};
+
+					// capture the old words
+					for (index = 0; index < NumWords; index++) {
+						OldCopy.Word(index) = UpdateCopy.Word(index) = MwCASDescriptor<NumWords>::template Read<uint64_t>(&Word(index));
+					}
+
+					// update the actual data
+					UpdateCopy.Data() = (Arg)OldCopy.Data() + input;
+
+					// prepare the swap target(s)
+					for (index = 0; index < NumWords; index++) {
+						desc.AddMwCASTarget(&Word(index), OldCopy.Word(index), UpdateCopy.Word(index));
+					}
+
+					// try multi-word compare and swap
+					if (desc.MwCAS()) break;
+				}
+				return OldCopy.load();
+			}; // returns the previous value while incrementing the actual counter
+			Arg Update(std::function<Arg(Arg)> updateFunction) {
+				using fibers::utilities::dbgroup::atomic::mwcas::MwCASDescriptor;
+
+				fibers::utilities::CAS_Container<Arg> OldCopy, UpdateCopy;
+				size_t index;
+
+				// continue until a MwCAS operation succeeds
+				while (true) {
+					// create a MwCAS descriptor
+					MwCASDescriptor<NumWords> desc{};
+
+					// capture the old words
+					for (index = 0; index < NumWords; index++) {
+						OldCopy.Word(index) = MwCASDescriptor<NumWords>::template Read<uint64_t>(&Word(index));
+					}
+
+					// update the actual data
+					UpdateCopy.Data() = updateFunction((Arg)OldCopy.Data());
+
+					// prepare the swap target(s)
+					for (index = 0; index < NumWords; index++) {
+						desc.AddMwCASTarget(&Word(index), OldCopy.Word(index), UpdateCopy.Word(index));
+					}
+
+					// try multi-word compare and swap
+					if (desc.MwCAS()) break;
+				}
+				return OldCopy.load();
+			}; // returns the previous value while incrementing the actual counter
+
+		public: // std::atomic compatability
+			Arg fetch_add(Arg const& v) {
+				return Add(v);
+			}; // returns the previous value while incrementing the actual counter
+			Arg fetch_sub(Arg const& v) {
+				return Add(-v);
+			}; // returns the previous value while decrementing the actual counter
+			Arg exchange(Arg const& v) {
+				return Swap(v);
+			}; // returns the previous value while setting the value to the input
+			Arg load() const {
+				const CAS_Container<Arg> x = Copy();
+				return (Arg)x.Data();
+			}; // gets the value
+			void store(Arg const& v) {
+				Swap(v);
+				return;
+			}; // sets the value to the input
+
+		};
+	};
+
+};
+
+
+namespace fibers {
+	// RingBuffer
+	namespace synchronization {
+		/* Thread- and fiber-safe queue which utilizes a fixed-sized buffer of size *maxCapacity*
+		Can optionally lock-up once the buffer is full, to support some atomic operations like memory allocators. */
+		template<typename Type, int maxCapacity, bool FailWhenFull = false> class RingBuffer {
+		private:
+			std::vector<Type> _elements;
+			mutable fibers::utilities::MultiItemCAS<uint64_t, uint64_t> reader; // converts readPosition and writePosition into atomic multi-item compare-and-swap items.
+			uint64_t readPosition;
+			uint64_t writePosition;
+
+		public:
+			RingBuffer() :
+				_elements(maxCapacity, Type()),
+				readPosition(0), 
+				writePosition(0),
+				reader() 
+			{
+				reader.Attach(&readPosition, &writePosition);
+			};
+			RingBuffer(RingBuffer const& a) :
+				_elements(a._elements),
+				readPosition(0),
+				writePosition(0),
+				reader() 
+			{
+				reader.Attach(&readPosition, &writePosition);
+				reader.Swap(a.reader.Read<0>(), a.reader.Read<1>());
+			};
+			RingBuffer(RingBuffer&& a) :
+				_elements(a._elements),
+				readPosition(0),
+				writePosition(0),
+				reader() 
+			{
+				reader.Attach(&readPosition, &writePosition);
+				reader.Swap(a.reader.Read<0>(), a.reader.Read<1>());
+			};
+			RingBuffer& operator=(RingBuffer const& a) {
+				_elements = a._elements;
+				reader.Swap(a.reader.Read<0>(), a.reader.Read<1>());
+			};
+			RingBuffer& operator=(RingBuffer&& a) {
+				_elements = a._elements;
+				reader.Swap(a.reader.Read<0>(), a.reader.Read<1>());
+			};
+			~RingBuffer() { };
+
+			bool push_back(Type const& val) {
+				while (true) {
+					auto old_read = reader.ReadAll();
+					auto& this_read_position = old_read.get<0>();
+					auto& this_write_position = old_read.get<1>();
+
+					auto size = (this_write_position + 1) - this_read_position;
+					if (size > maxCapacity) {
+						return false;
+					}
+
+					if (reader.TrySwap(old_read, this_read_position, this_write_position + 1)) {
+						// successfully swapped the write position!
+						_elements[this_write_position % maxCapacity] = val;
+						return true;
+					}
+				}
+
+			};
+			bool push_back(Type&& val) {
+				while (true) {
+					auto old_read = reader.ReadAll();
+					auto& this_read_position = old_read.get<0>();
+					auto& this_write_position = old_read.get<1>();
+
+					auto size = (this_write_position + 1) - this_read_position;
+					if (size > maxCapacity) {
+						return false;
+					}
+
+					if (reader.TrySwap(old_read, this_read_position, this_write_position + 1)) {
+						// successfully swapped the write position!
+						_elements[this_write_position % maxCapacity] = std::forward<Type>(val);
+						return true;
+					}
+				}
+			};
+			bool try_pop(Type& val) {
+				while (true) {
+					auto old_read = reader.ReadAll();
+					auto& this_read_position = old_read.get<0>();
+					auto& this_write_position = old_read.get<1>();
+					if (this_read_position >= this_write_position) {
+						// nothing to be done -- do not move the read position forward.
+						return false;
+					}
+					else {
+						if constexpr (FailWhenFull) {
+							auto size = this_write_position - this_read_position;
+							if (size >= maxCapacity) {
+								return false;
+							}
+						}
+
+						if (reader.TrySwap(old_read, this_read_position+1, this_write_position)) {
+							// successfully swapped the read position!
+							val = std::move(_elements[this_read_position % maxCapacity]);
+							return true;
+						}
+					}
+				}
+			};
+			size_t size() {
+				auto old_read = reader.ReadAll();
+				auto& this_read_position = old_read.get<0>();
+				auto& this_write_position = old_read.get<1>();
+				return this_write_position - this_read_position;
+			};
+			size_t capacity() {
+				return maxCapacity;
+			};
+			void clear() {
+				reader.Swap(0, 0);
+			};
+		};
+
+	};
+
+	// atomic_shared_ptr
+	namespace synchronization {
+		namespace impl {
+#define allowCweeSharedPtrCaptureByValue
+			/* Interface for simply allowing the sharing of a virtual pointer */
+			class Details_Interface {
+			protected:
+				Details_Interface() noexcept {};
+				explicit Details_Interface(Details_Interface const&) = delete;
+				explicit Details_Interface(Details_Interface&&) = delete;
+				Details_Interface& operator=(Details_Interface const&) = delete;
+				Details_Interface& operator=(Details_Interface&&) = delete;
+
+			public:
+				virtual ~Details_Interface() noexcept {};
+				virtual void* source() const noexcept = 0;
+				virtual int	use_count() const noexcept = 0;
+				virtual void increment() const noexcept = 0;
+				virtual int decrement() const noexcept = 0;
+				virtual std::function<void(Details_Interface*)>& Details_Interface_Deleter() const noexcept = 0;
+			};
+
+			/* Interface for simply allowing the sharing of a virtual pointer */
+			class atomic_shared_ptr_Data_Interface {
+			protected:
+				atomic_shared_ptr_Data_Interface() noexcept {};
+				virtual ~atomic_shared_ptr_Data_Interface() noexcept {};
+				explicit atomic_shared_ptr_Data_Interface(atomic_shared_ptr_Data_Interface const& other) noexcept = delete;
+				explicit atomic_shared_ptr_Data_Interface(atomic_shared_ptr_Data_Interface&& other) noexcept = delete;
+				atomic_shared_ptr_Data_Interface& operator=(atomic_shared_ptr_Data_Interface const& other) = delete;
+				atomic_shared_ptr_Data_Interface& operator=(atomic_shared_ptr_Data_Interface&& other) = delete;
+			public:
+				virtual void* source() const noexcept = 0;
+				virtual int	use_count() const noexcept = 0;
+				virtual void increment() const noexcept = 0;
+				virtual int decrement() const noexcept = 0;
+				virtual Details_Interface* ptr() const noexcept = 0;
+			};
+
+			template <typename type> class atomic_shared_ptr {
+#pragma region Class Defs
+			public:
+				using swappablePtr = atomic_ptr<type>;
+#ifdef allowCweeSharedPtrCaptureByValue
+				class details_withData final : public Details_Interface {
+				public:
+					~details_withData() noexcept {};
+					explicit details_withData(details_withData const&) = delete;
+					explicit details_withData(details_withData&&) = delete;
+					details_withData& operator=(details_withData const&) = delete;
+					details_withData& operator=(details_withData&&) = delete;
+
+					template <typename Q = type, typename = std::enable_if_t<!std::is_same_v<Q, void>> > __forceinline explicit details_withData() noexcept : count(1), d() {};
+					template <typename Q = type, typename = std::enable_if_t<!std::is_same_v<Q, void>> > __forceinline explicit details_withData(std::decay_t<typename std::remove_reference<typename std::remove_pointer<Q>::type>::type>&& obj) noexcept : count(1), d(std::forward<type>(obj)) {};
+					template <typename Q = type, typename = std::enable_if_t<!std::is_same_v<Q, void>> > __forceinline explicit details_withData(std::decay_t<typename std::remove_reference<typename std::remove_pointer<Q>::type>::type>const& obj) noexcept : count(1), d(obj) {};
+
+					__forceinline void* source() const noexcept final { return const_cast<void*>(static_cast<const void*>(&d)); };
+					__forceinline int	use_count() const noexcept final { return count.GetValue(); };
+					__forceinline void increment() const noexcept final { count.Increment(); };
+					__forceinline int decrement() const noexcept final { return count.Decrement(); };
+					__forceinline std::function<void(Details_Interface*)> Details_Interface_Deleter() const noexcept final {
+						return [](Details_Interface* p) {
+							if (p) {
+								decltype(auto) q = dynamic_cast<atomic_shared_ptr<type>::details_withData*>(p);
+								if (q) {
+									delete q;
+								}
+								else {
+									delete p; // likely a  leak
+								}
+							}
+						};
+					};
+
+				private:
+					mutable InterlockedLong count;
+					type d;
+				};
+#endif
+				class details final : public Details_Interface {
+				public:
+					explicit details() = delete;
+					~details() noexcept {};
+					explicit details(details const&) = delete;
+					explicit details(details&&) = delete;
+					details& operator=(details const&) = delete;
+					details& operator=(details&&) = delete;
+					__forceinline explicit details(type* _source, std::function<void(type*)> _destroy) noexcept :
+						p(_source), count(1), reader(&p, &count), deleter(std::move(_destroy)) {};
+					__forceinline void* source() const noexcept final { 
+						return static_cast<void*>(reader.Read<0>());
+					};
+					__forceinline int	use_count() const noexcept final {
+						return static_cast<int>(reader.Read<1>());
+					};
+					__forceinline void increment() const noexcept final {
+						while (true) {
+							auto previous = reader.ReadAll();
+							if (!previous.get<0>()) {
+								return; // failed
+							}
+							else {
+								if (reader.TrySwap(previous, previous.get<0>(), previous.get<1>() + 1)) {
+									return;
+								}
+							}
+						}
+					};
+					__forceinline int decrement() const noexcept final {
+						while (true) {
+							auto previous = reader.ReadAll();
+							if (!previous.get<0>()) {
+								return static_cast<int>(previous.get<1>()); // failed
+							}
+							else {
+								if (previous.get<1>() == 1) {
+									if (reader.TrySwap(previous, nullptr, previous.get<1>() - 1)) {
+										deleter(previous.get<0>());
+										return previous.get<1>() - 1;
+									}
+								}
+								else {
+									if (reader.TrySwap(previous, previous.get<0>(), previous.get<1>() - 1)) {
+										return previous.get<1>() - 1;
+									}
+								}
+							}
+						}
+					};
+					__forceinline std::function<void(Details_Interface*)>& Details_Interface_Deleter() const noexcept final {
+						static std::function<void(Details_Interface*)> deleter{ [](Details_Interface* p) {
+							if (p) {
+								decltype(auto) q = dynamic_cast<atomic_shared_ptr<type>::details*>(p);
+								if (q) {
+									delete q;
+								}
+								else {
+									delete p; // likely a  leak
+								}
+							}
+						} };
+						return deleter;
+					};
+
+				private:
+					type* p;
+					uint64_t count;
+					mutable fibers::utilities::MultiItemCAS< type*, uint64_t> reader;
+					mutable std::function<void(type*)> deleter;
+
+				};
+
+				class details_no_destructor final : public Details_Interface {
+				public:
+					explicit details_no_destructor() = delete;
+					~details_no_destructor() noexcept {};
+					explicit details_no_destructor(details_no_destructor const&) = delete;
+					explicit details_no_destructor(details_no_destructor&&) = delete;
+					details_no_destructor& operator=(details_no_destructor const&) = delete;
+					details_no_destructor& operator=(details_no_destructor&&) = delete;
+					__forceinline explicit details_no_destructor(type* _source) noexcept :
+						p(_source), count(1), reader(&p, &count) {};
+					__forceinline void* source() const noexcept final {
+						return static_cast<void*>(reader.Read<0>());
+					};
+					__forceinline int	use_count() const noexcept final {
+						return static_cast<int>(reader.Read<1>());
+					};
+					__forceinline void increment() const noexcept final {
+						while (true) {
+							auto previous = reader.ReadAll();
+							if (!previous.get<0>()) {
+								return; // failed
+							}
+							else {
+								if (reader.TrySwap(previous, previous.get<0>(), previous.get<1>() + 1)) {
+									return;
+								}
+							}
+						}
+					};
+					__forceinline int decrement() const noexcept final {
+						while (true) {
+							auto previous = reader.ReadAll();
+							if (!previous.get<0>()) {
+								return static_cast<int>(previous.get<1>()); // failed
+							}
+							else {
+								if (previous.get<1>() == 1) {
+									if (reader.TrySwap(previous, nullptr, previous.get<1>() - 1)) {
+										delete previous.get<0>();
+										return previous.get<1>() - 1;
+									}
+								}
+								else {
+									if (reader.TrySwap(previous, previous.get<0>(), previous.get<1>() - 1)) {
+										return previous.get<1>() - 1;
+									}
+								}
+							}
+						}
+					};
+					__forceinline std::function<void(Details_Interface*)>& Details_Interface_Deleter() const noexcept final {
+						static std::function<void(Details_Interface*)> deleter{ [](Details_Interface* p) {
+							if (p) {
+								decltype(auto) q = dynamic_cast<atomic_shared_ptr<type>::details*>(p);
+								if (q) {
+									delete q;
+								}
+								else {
+									delete p; // likely a  leak
+								}
+							}
+						} };
+						return deleter;
+					};
+
+				private:
+					type* p;
+					uint64_t count;
+					mutable fibers::utilities::MultiItemCAS< type*, uint64_t> reader;
+
+				};
+
+				class atomic_shared_ptr_DataImpl final : public atomic_shared_ptr_Data_Interface {
+				public:
+					explicit atomic_shared_ptr_DataImpl() = delete;
+					~atomic_shared_ptr_DataImpl() noexcept {
+						decrement();
+					};
+					explicit atomic_shared_ptr_DataImpl(atomic_shared_ptr_DataImpl const&) = delete;
+					explicit atomic_shared_ptr_DataImpl(atomic_shared_ptr_DataImpl&&) = delete;
+					atomic_shared_ptr_DataImpl& operator=(atomic_shared_ptr_DataImpl const&) = delete;
+					atomic_shared_ptr_DataImpl& operator=(atomic_shared_ptr_DataImpl&&) = delete;
+
+					__forceinline explicit atomic_shared_ptr_DataImpl(const atomic_shared_ptr_Data_Interface& other, type* _ptr) noexcept :
+						det(other.ptr()), m_ptr{ _ptr }, reader(&det, &m_ptr)
+					{ increment(); };
+
+					__forceinline explicit atomic_shared_ptr_DataImpl(const atomic_shared_ptr_Data_Interface& other, std::function<type* (void*)> _getter) noexcept :
+						det(other.ptr()), m_ptr{ _getter(other.source()) }, reader(&det, &m_ptr)
+					{ increment(); };
+
+					__forceinline explicit atomic_shared_ptr_DataImpl(type* _source, std::function<void(type*)> _on_destroy, std::function<type* (void*)> _getter) noexcept :
+						det(new details(_source, std::move(_on_destroy))), m_ptr{ _source }, reader(&det, &m_ptr)
+					{};
+					__forceinline explicit atomic_shared_ptr_DataImpl(type* _source, std::function<type* (void*)> _getter) noexcept : 
+						det(new details_no_destructor(_source)), m_ptr{ _source }, reader(&det, &m_ptr)
+					{};
+
+#ifdef allowCweeSharedPtrCaptureByValue
+					template <typename Q = type, typename = std::enable_if_t<!std::is_same_v<Q, void>> >
+					__forceinline explicit atomic_shared_ptr_DataImpl(std::function<type* (void*)> _getter) noexcept : 
+						det(new details_withData()), m_ptr{ _getter(source()) }, reader(&det, &m_ptr)
+					{};
+
+					template <typename Q = type, typename = std::enable_if_t<!std::is_same_v<Q, void>> >
+					__forceinline explicit atomic_shared_ptr_DataImpl(std::decay_t<typename std::remove_reference<typename std::remove_pointer<Q>::type>::type>&& _obj, std::function<type* (void*)> _getter) noexcept : 
+						det(new details_withData(std::forward<type>(_obj))), m_ptr{ _getter(source()) }, reader(&det, &m_ptr)
+					{};
+
+					template <typename Q = type, typename = std::enable_if_t<!std::is_same_v<Q, void>> >
+					__forceinline explicit atomic_shared_ptr_DataImpl(std::decay_t<typename std::remove_reference<typename std::remove_pointer<Q>::type>::type>const& _obj, std::function<type* (void*)> _getter) noexcept :
+						det(new details_withData(_obj)), m_ptr{ _getter(source()) }, reader(&det, &m_ptr)
+					{};
+#endif
+					__forceinline void* source() const noexcept final {
+						auto* p = reader.Read<0>();
+						if (p) {
+							return p->source();
+						}
+						return nullptr;
+					};
+					__forceinline int	use_count() const noexcept final {
+						auto* p = reader.Read<0>();
+						if (p) {
+							return p->use_count();
+						}
+						return 0;
+					};
+					__forceinline void increment() const noexcept final {
+						auto* p = reader.Read<0>();
+						if (p) {
+							p->increment();
+						}
+					};
+					__forceinline int decrement() const noexcept final {
+						int i = -1;
+						auto p = reader.ReadAll();
+						if (p.get<0>()) {
+							i = p.get<0>()->decrement();
+							if (i == 0) {
+								{
+									while (true) {
+										p = reader.ReadAll();
+										if (reader.TrySwap(p, nullptr, nullptr)) {
+											if (p.get<0>()) {
+												p.get<0>()->Details_Interface_Deleter()(p.get<0>());
+
+											}
+											else {
+												delete p.get<0>(); // likely a leak
+											}
+
+											break;
+										}
+									}
+								}
+							}
+						}
+						return i;
+					};
+					__forceinline Details_Interface* ptr() const noexcept final { return reader.Read<0>(); };
+					__forceinline type* data() const noexcept { return reader.Read<1>(); };
+
+				private:
+					Details_Interface* 
+						det;
+					type*              
+						m_ptr;
+					mutable fibers::utilities::MultiItemCAS< Details_Interface*, type* > 
+						reader;
+
+				};
+
+#pragma endregion 
+#pragma region Type Defs
+			public:
+				typedef type						Type;
+				typedef type* PtrType;
+#pragma endregion 
+
+#define use_atomic_shared_ptr_mutex
+// #define use_atomic_shared_ptr_unique_mutex
+
+#pragma region Data Members
+			public:
+#ifdef use_atomic_shared_ptr_mutex
+				mutable std::shared_mutex				
+					mutex;
+#endif
+#ifdef use_atomic_shared_ptr_unique_mutex
+				mutable std::mutex
+					mutex;
+#endif
+
+				mutable atomic_ptr<atomic_shared_ptr_DataImpl>
+					m_data;
+#pragma endregion 
+#pragma region Create or Destroy
+			public:
+				/*! Create an empty pointer (nullptr) */
+				constexpr atomic_shared_ptr() noexcept :
+#if defined(use_atomic_shared_ptr_mutex) || defined(use_atomic_shared_ptr_unique_mutex)
+					mutex{}, 
+#endif
+					m_data(nullptr) {};
+
+				/*! Instantiate a shared pointer by handing over a nullptr */
+				constexpr atomic_shared_ptr(std::nullptr_t) noexcept :
+#if defined(use_atomic_shared_ptr_mutex) || defined(use_atomic_shared_ptr_unique_mutex)
+					mutex{},
+#endif
+					m_data(nullptr) {};
+
+				/*! Instantiate a shared pointer by handing over a "new pointer()" to be managed, shared, and ultimately deleted by the shared pointer. */
+				__forceinline atomic_shared_ptr(PtrType source) noexcept :
+#if defined(use_atomic_shared_ptr_mutex) || defined(use_atomic_shared_ptr_unique_mutex)
+					mutex{},
+#endif
+					m_data(InitData(source)) {};
+
+				/*! Instantiate a shared pointer by handing over a "new pointer()" to be managed, shared, and ultimately deleted by the shared pointer. */
+				__forceinline atomic_shared_ptr(PtrType source, std::function<void(PtrType)> destroy) noexcept :
+#if defined(use_atomic_shared_ptr_mutex) || defined(use_atomic_shared_ptr_unique_mutex)
+					mutex{},
+#endif
+					m_data(InitData(source, std::move(destroy))) {};
+
+				/*! Instantiate a shared pointer by handing over a "new pointer()" to be managed, shared, and ultimately deleted by the shared pointer. */
+				__forceinline atomic_shared_ptr(PtrType source, std::function<void(PtrType)> destroy, std::function<PtrType(void*)> _getter) noexcept :
+#if defined(use_atomic_shared_ptr_mutex) || defined(use_atomic_shared_ptr_unique_mutex)
+					mutex{},
+#endif
+					m_data(InitData(source, std::move(destroy), std::move(_getter))) {};
+
+				/*! instantiate with a constructor and destructor */
+				__forceinline atomic_shared_ptr(std::function<PtrType()> create, std::function<void(PtrType)> destroy) noexcept :
+#if defined(use_atomic_shared_ptr_mutex) || defined(use_atomic_shared_ptr_unique_mutex)
+					mutex{},
+#endif
+					m_data(InitData(std::move(create), std::move(destroy))) {};
+
+				/*! instantiate from another ptr */
+				atomic_shared_ptr(atomic_shared_ptr const& samePtr) noexcept : 
+#if defined(use_atomic_shared_ptr_mutex) || defined(use_atomic_shared_ptr_unique_mutex)
+					mutex{},
+#endif
+					m_data(InitDataFromAnotherPtr(samePtr)) {};
+				atomic_shared_ptr(atomic_shared_ptr&& other) noexcept : 
+#if defined(use_atomic_shared_ptr_mutex) || defined(use_atomic_shared_ptr_unique_mutex)
+					mutex{},
+#endif
+					m_data(InitDataFromAnotherPtr(std::forward<atomic_shared_ptr>(other))) {};
+
+				/*! instantiate from another ptr with complex "get" instructions */
+				__forceinline atomic_shared_ptr(atomic_shared_ptr const& samePtr, std::function<PtrType(void*)> _getter) noexcept :
+#if defined(use_atomic_shared_ptr_mutex) || defined(use_atomic_shared_ptr_unique_mutex)
+					mutex{},
+#endif					
+					m_data(InitDataFromAnotherPtr(samePtr, std::move(_getter))) {};
+				__forceinline atomic_shared_ptr(atomic_shared_ptr&& other, std::function<PtrType(void*)> _getter) noexcept :
+#if defined(use_atomic_shared_ptr_mutex) || defined(use_atomic_shared_ptr_unique_mutex)
+					mutex{},
+#endif					
+					m_data(InitDataFromAnotherPtr(std::forward<atomic_shared_ptr>(other), std::move(_getter))) {};
+
+				/*! instantiate from another ptr with a different Type, using basic cast operations */
+				template <typename T, typename = std::enable_if_t<!std::is_same_v<Type, T>> >
+				__forceinline atomic_shared_ptr(atomic_shared_ptr<T> const& similarPtr) noexcept :
+#if defined(use_atomic_shared_ptr_mutex) || defined(use_atomic_shared_ptr_unique_mutex)
+					mutex{},
+#endif					
+					m_data(InitDataFromAnotherPtr(similarPtr, [](void* p) constexpr -> PtrType {
+					if constexpr (std::is_polymorphic<Type>::value && std::is_polymorphic<T>::value && (std::is_base_of<T, Type>::value || std::is_base_of<Type, T>::value)) {
+						return dynamic_cast<PtrType>((T*)p);
+					}
+					else {
+						return static_cast<PtrType>((T*)p);
+					}
+				})) {};
+
+				template <typename T, typename = std::enable_if_t<!std::is_same_v<Type, T>> >
+				__forceinline atomic_shared_ptr(atomic_shared_ptr<T>&& other) noexcept :
+#if defined(use_atomic_shared_ptr_mutex) || defined(use_atomic_shared_ptr_unique_mutex)
+					mutex{},
+#endif					
+					m_data(InitDataFromAnotherPtr(std::forward<atomic_shared_ptr<T>>(other), [](void* p) constexpr -> PtrType {
+					if constexpr (std::is_polymorphic<Type>::value && std::is_polymorphic<T>::value && (std::is_base_of<T, Type>::value || std::is_base_of<Type, T>::value)) {
+						return dynamic_cast<PtrType>((T*)p);
+					}
+					else {
+						return static_cast<PtrType>((T*)p);
+					}
+				})) {};
+
+				/*! instantiate from another ptr with a different Type with complex "get" instructions */
+				template <typename T, typename = std::enable_if_t<!std::is_same_v<Type, T>> >
+				__forceinline atomic_shared_ptr(atomic_shared_ptr<T> const& similarPtr, std::function<PtrType(void*)> _getter) noexcept :
+#if defined(use_atomic_shared_ptr_mutex) || defined(use_atomic_shared_ptr_unique_mutex)
+					mutex{},
+#endif
+					m_data(InitDataFromAnotherPtr(similarPtr, std::move(_getter))) {};
+
+				template <typename T, typename = std::enable_if_t<!std::is_same_v<Type, T>> >
+				__forceinline atomic_shared_ptr(atomic_shared_ptr<T>&& other, std::function<PtrType(void*)> _getter) noexcept :
+#if defined(use_atomic_shared_ptr_mutex) || defined(use_atomic_shared_ptr_unique_mutex)
+					mutex{},
+#endif
+					m_data(InitDataFromAnotherPtr(std::forward<atomic_shared_ptr<T>>(other), std::move(_getter))) {};
+
+				template <typename Q = type, typename = std::enable_if_t<!std::is_same_v<Q, void>> >
+				__forceinline atomic_shared_ptr(std::decay_t<typename std::remove_reference<typename std::remove_pointer<Q>::type>::type> const& source) noexcept :
+#if defined(use_atomic_shared_ptr_mutex) || defined(use_atomic_shared_ptr_unique_mutex)
+					mutex{},
+#endif
+					m_data(
+#ifdef allowCweeSharedPtrCaptureByValue
+						new atomic_shared_ptr_DataImpl(source, std::function<PtrType(void*)>([](void* p) constexpr -> PtrType {return (PtrType)p; }))
+#else
+						InitData(new Type(source))
+#endif
+					) {};
+
+				template <typename Q = type, typename = std::enable_if_t<!std::is_same_v<Q, void>> >
+				__forceinline atomic_shared_ptr(std::decay_t<typename std::remove_reference<typename std::remove_pointer<Q>::type>::type>&& source) noexcept :
+#if defined(use_atomic_shared_ptr_mutex) || defined(use_atomic_shared_ptr_unique_mutex)
+					mutex{},
+#endif
+					m_data(
+#ifdef allowCweeSharedPtrCaptureByValue
+						new atomic_shared_ptr_DataImpl(std::forward<std::decay_t<typename std::remove_reference<typename std::remove_pointer<Q>::type>::type>>(source), std::function<PtrType(void*)>([](void* p) constexpr -> PtrType {return (PtrType)p; }))
+#else
+						InitData(new Type(std::forward<Type>(source)))
+#endif
+					) {};
+
+#ifdef allowCweeSharedPtrCaptureByValue
+				template <typename Q = type, typename = std::enable_if_t<!std::is_same_v<Q, void>> >
+				__forceinline static atomic_shared_ptr<Q> InstantiateInline() {
+					decltype(auto) toReturn = atomic_shared_ptr<Q>();
+					toReturn.UnsafeSetData(
+						new atomic_shared_ptr_DataImpl(
+							std::function<PtrType(void*)>([](void* p) constexpr -> PtrType {return (PtrType)p; })
+						)
+					);
+					return toReturn;
+				};
+#endif
+
+				/*! Destroy this instance of the shared pointer and potentially delete the data */
+				~atomic_shared_ptr() noexcept {
+					ClearData();
+				};
+#pragma endregion
+#pragma region Internal Support Functions
+			public:
+				__forceinline PtrType Get() const {
+#ifdef use_atomic_shared_ptr_mutex
+					auto locked{ std::shared_lock(mutex) };
+#endif
+					if (m_data) {
+						return m_data->data();
+					}
+					return nullptr;
+				};
+
+			public:
+				PtrType UnsafeGet() const noexcept {
+					if (m_data) {
+						return m_data->data();
+					}
+					return nullptr;
+				};
+				template <typename... Args> void UnsafeSet(Args... Fargs) { UnsafeSetData(atomic_shared_ptr<type>::InitData(Fargs...)); };
+			protected:
+				template <typename T> static atomic_shared_ptr_DataImpl* InitDataFromAnotherPtr(atomic_shared_ptr<T> const& Ptr) noexcept {
+					atomic_shared_ptr<type>::atomic_shared_ptr_DataImpl* out{ nullptr };
+#ifdef use_atomic_shared_ptr_mutex
+					auto locked{ std::shared_lock(Ptr.mutex) };
+#endif
+					if (Ptr.m_data) {
+						out = new atomic_shared_ptr<type>::atomic_shared_ptr_DataImpl(*Ptr.m_data, Ptr.m_data->data());
+					}
+					return out;
+				};
+				template <typename T> __forceinline static atomic_shared_ptr_DataImpl* InitDataFromAnotherPtr(atomic_shared_ptr<T> const& Ptr, std::function<PtrType(void*)> from) noexcept {
+					atomic_shared_ptr<type>::atomic_shared_ptr_DataImpl* out{ nullptr };
+#ifdef use_atomic_shared_ptr_mutex
+					auto locked{ std::shared_lock(Ptr.mutex) };
+#endif
+					if (Ptr.m_data) {
+						out = new atomic_shared_ptr<type>::atomic_shared_ptr_DataImpl(*Ptr.m_data, std::move(from));
+					}
+					return out;
+				};
+				template <typename T, typename = std::enable_if_t<!std::is_same_v<Type, T>> > __forceinline static atomic_shared_ptr_DataImpl* InitDataFromAnotherPtr(atomic_shared_ptr<T>&& Ptr) noexcept {
+					return InitDataFromAnotherPtr(std::forward<atomic_shared_ptr<T>>(Ptr), [](void* p) constexpr -> PtrType { return (PtrType)p; });
+				};
+				template <typename T, typename = std::enable_if_t<!std::is_same_v<Type, T>> > __forceinline static atomic_shared_ptr_DataImpl* InitDataFromAnotherPtr(atomic_shared_ptr<T>&& Ptr, std::function<type* (void*)> from) noexcept {
+#if defined(use_atomic_shared_ptr_mutex) || defined(use_atomic_shared_ptr_unique_mutex)
+					auto locked{ std::unique_lock(Ptr.mutex) };
+#endif
+					typename atomic_shared_ptr<T>::atomic_shared_ptr_DataImpl* p = Ptr.m_data.Set(nullptr);
+					if (p) {
+						decltype(auto) d = new atomic_shared_ptr<type>::atomic_shared_ptr_DataImpl(*p, std::move(from));
+						delete p;
+						return d;
+					}
+					return nullptr;
+				};
+
+				static atomic_shared_ptr_DataImpl* InitDataFromAnotherPtr(atomic_shared_ptr&& Ptr) noexcept {
+#if defined(use_atomic_shared_ptr_mutex) || defined(use_atomic_shared_ptr_unique_mutex)
+					auto locked{ std::unique_lock(Ptr.mutex) };
+#endif
+					return Ptr.m_data.Set(nullptr);
+				};
+				static atomic_shared_ptr_DataImpl* InitDataFromAnotherPtr(atomic_shared_ptr&& Ptr, std::function<type* (void*)> from) noexcept {
+#if defined(use_atomic_shared_ptr_mutex) || defined(use_atomic_shared_ptr_unique_mutex)
+					auto locked{ std::unique_lock(Ptr.mutex) };
+#endif
+					typename atomic_shared_ptr<type>::atomic_shared_ptr_DataImpl* p = Ptr.m_data.Set(nullptr);
+					if (p) {
+						decltype(auto) d = new atomic_shared_ptr<type>::atomic_shared_ptr_DataImpl(*p, std::move(from));
+						delete p;
+						return d;
+					}
+					return nullptr;
+				};
+
+				__forceinline static decltype(auto) InitData(PtrType source, std::function<PtrType(void*)> from) noexcept { return new atomic_shared_ptr_DataImpl(source, std::move(from)); };
+				__forceinline static decltype(auto) InitData(PtrType source, std::function<void(PtrType)> destroy, std::function<PtrType(void*)> from) noexcept { return new atomic_shared_ptr_DataImpl(source, std::move(destroy), std::move(from)); };
+				__forceinline static decltype(auto) InitData(PtrType source) noexcept { return InitData(source, std::function<PtrType(void*)>([](void* p) constexpr -> PtrType {return (PtrType)p; })); };
+				__forceinline static decltype(auto) InitData(PtrType source, std::function<void(PtrType)> destroy) noexcept { return InitData(source, std::move(destroy), std::function<PtrType(void*)>([](void* p) constexpr -> PtrType {return (PtrType)p; })); };
+				__forceinline static decltype(auto) InitData(std::function<PtrType()> create) noexcept { return InitData(create()); };
+				__forceinline static decltype(auto) InitData(std::function<PtrType()> create, std::function<PtrType(void*)> from) noexcept { return InitData(create(), std::move(from)); };
+				__forceinline static decltype(auto) InitData(std::function<PtrType()> create, std::function<void(PtrType)> destroy) noexcept { return InitData(create(), std::move(destroy)); };
+				__forceinline static decltype(auto) InitData(std::function<PtrType()> create, std::function<void(PtrType)> destroy, std::function<PtrType(void*)> from) noexcept { return InitData(create(), std::move(destroy), std::move(from)); };
+
+				__forceinline void SetData(atomic_shared_ptr_DataImpl* p) const noexcept {
+#if defined(use_atomic_shared_ptr_mutex) || defined(use_atomic_shared_ptr_unique_mutex)
+					auto locked{ std::unique_lock(mutex) };
+#endif
+					auto* d = m_data.Set(p);
+					if (d) {
+						delete d;
+					}
+				};
+				__forceinline void UnsafeSetData(atomic_shared_ptr_DataImpl* p) const noexcept {
+					decltype(auto) d = m_data.Set(p);
+					if (d) {
+						delete d;
+					}
+				};
+				__forceinline void ClearData() const noexcept { SetData(nullptr); };
+
+#pragma endregion 
+#pragma region Boolean Operators
+			public:
+				__forceinline constexpr explicit operator bool() const { return m_data.Get(); };
+				__forceinline friend bool operator==(const atomic_shared_ptr& a, const atomic_shared_ptr& b) noexcept { return a.Get() == b.Get(); };
+				__forceinline friend bool operator!=(const atomic_shared_ptr& a, const atomic_shared_ptr& b) noexcept { return a.Get() != b.Get(); };
+				__forceinline friend bool operator<(const atomic_shared_ptr& a, const atomic_shared_ptr& b) noexcept { return a.Get() < b.Get(); };
+				__forceinline friend bool operator<=(const atomic_shared_ptr& a, const atomic_shared_ptr& b) noexcept { return a.Get() <= b.Get(); };
+				__forceinline friend bool operator>(const atomic_shared_ptr& a, const atomic_shared_ptr& b) noexcept { return a.Get() > b.Get(); };
+				__forceinline friend bool operator>=(const atomic_shared_ptr& a, const atomic_shared_ptr& b) noexcept { return a.Get() >= b.Get(); };
+				__forceinline friend bool operator==(const atomic_shared_ptr& a, std::nullptr_t) noexcept { return a.m_data.Get() == nullptr; };
+				__forceinline friend bool operator!=(const atomic_shared_ptr& a, std::nullptr_t) noexcept { return a.m_data.Get() != nullptr; };
+				__forceinline friend bool operator<(const atomic_shared_ptr& a, std::nullptr_t) noexcept { return a.m_data.Get() < nullptr; };
+				__forceinline friend bool operator<=(const atomic_shared_ptr& a, std::nullptr_t) noexcept { return a.m_data.Get() <= nullptr; };
+				__forceinline friend bool operator>(const atomic_shared_ptr& a, std::nullptr_t) noexcept { return a.m_data.Get() > nullptr; };
+				__forceinline friend bool operator>=(const atomic_shared_ptr& a, std::nullptr_t) noexcept { return a.m_data.Get() >= nullptr; };
+				__forceinline friend bool operator==(std::nullptr_t, const atomic_shared_ptr& a) noexcept { return nullptr == a.m_data.Get(); };
+				__forceinline friend bool operator!=(std::nullptr_t, const atomic_shared_ptr& a) noexcept { return nullptr != a.m_data.Get(); };
+				__forceinline friend bool operator<(std::nullptr_t, const atomic_shared_ptr& a) noexcept { return nullptr < a.m_data.Get(); };
+				__forceinline friend bool operator<=(std::nullptr_t, const atomic_shared_ptr& a) noexcept { return nullptr <= a.m_data.Get(); };
+				__forceinline friend bool operator>(std::nullptr_t, const atomic_shared_ptr& a) noexcept { return nullptr > a.m_data.Get(); };
+				__forceinline friend bool operator>=(std::nullptr_t, const atomic_shared_ptr& a) noexcept { return nullptr >= a.m_data.Get(); };
+#pragma endregion
+#pragma region Ptr Casting
+			public:
+				/*! Create a shared pointer from this one with an added const component to the underlying managed object type */
+				__forceinline atomic_shared_ptr<typename std::add_const<Type>::type> ConstReference() const noexcept {
+					typedef typename std::add_const<Type>::type newT;
+					atomic_shared_ptr<newT> out;
+					typedef typename atomic_shared_ptr<type>::atomic_shared_ptr_DataImpl oldDI;
+					typedef typename atomic_shared_ptr<newT>::atomic_shared_ptr_DataImpl newDI;
+					typedef typename atomic_shared_ptr<newT>::PtrType newP;
+					std::function<newP(void*)> _getter = [](void* p) {
+						return (newP)(p);
+					};
+
+					newDI* d_p = nullptr;
+					{
+#ifdef use_atomic_shared_ptr_mutex
+						auto locked{ std::shared_lock(mutex) };
+#endif
+						if (m_data)
+							d_p = new newDI(*m_data, _getter);
+					}
+					out.m_data.Set(d_p);
+
+					return out;
+				};
+				/*! Create a shared pointer from this one with an removed const component to the underlying managed object type */
+				__forceinline atomic_shared_ptr<typename std::remove_const<Type>::type> RemoveConstReference() const noexcept {
+					typedef typename std::remove_const<Type>::type newT;
+					atomic_shared_ptr<newT> out;
+					typedef typename atomic_shared_ptr<type>::atomic_shared_ptr_DataImpl oldDI;
+					typedef typename atomic_shared_ptr<newT>::atomic_shared_ptr_DataImpl newDI;
+					typedef typename atomic_shared_ptr<newT>::PtrType newP;
+					std::function<newP(void*)> _getter = [](void* p) {
+						return (newP)(p);
+					};
+
+					newDI* d_p = nullptr;
+					{
+#ifdef use_atomic_shared_ptr_mutex
+						auto locked{ std::shared_lock(mutex) };
+#endif
+						if (m_data)
+							d_p = new newDI(*m_data, _getter);
+					}
+					out.m_data.Set(d_p);
+
+					return out;
+				};
+				/*! Create a shared pointer from this one that casts the underlying type to another underlying type (i.e. for derived types) */
+				template<typename astype> __forceinline atomic_shared_ptr<typename std::remove_const<astype>::type> CastReference() const noexcept {
+					using newT = typename std::remove_const<astype>::type;
+					atomic_shared_ptr<newT> out;
+					using oldDI = typename atomic_shared_ptr<type>::atomic_shared_ptr_DataImpl;
+					using newDI = typename atomic_shared_ptr<newT>::atomic_shared_ptr_DataImpl;
+					using  newP = typename atomic_shared_ptr<newT>::PtrType;
+
+					atomic_shared_ptr<type> copy = *this;
+					std::function<newP(void*)> _getter = [copy](void* p) {
+						return dynamic_cast<newP>(copy.Get());
+					};
+
+					newDI* d_p = nullptr;
+					{
+#ifdef use_atomic_shared_ptr_mutex
+						auto locked{ std::shared_lock(mutex) };
+#endif
+						if (m_data)
+							d_p = new newDI(*m_data, _getter);
+					}
+					out.m_data.Set(d_p);
+
+					return out;
+				};
+#pragma endregion
+#pragma region Data Access
+			public:
+				/*! Pointer Access (never throws) (no race conditions) */
+				__forceinline PtrType operator->() const noexcept { 
+#ifdef use_atomic_shared_ptr_mutex
+					auto locked{ std::shared_lock(mutex) };
+#endif
+					return (PtrType)m_data->data();
+				};
+
+				template<typename Q = type> __forceinline typename std::enable_if<!std::is_same<Q, void>::value, Q&>::type operator[](std::ptrdiff_t idx) const {
+#ifdef use_atomic_shared_ptr_mutex
+					auto locked{ std::shared_lock(mutex) };
+#endif
+					auto* p = (PtrType)m_data->data();
+					if (p) return p[idx];					
+					throw(std::runtime_error(std::string("atomic_shared_ptr was null with indexed access")));
+				};
+
+				template<typename Q = type> __forceinline typename std::enable_if<!std::is_same<Q, void>::value, Q&>::type operator*() const {
+#ifdef use_atomic_shared_ptr_mutex
+					auto locked{ std::shared_lock(mutex) };
+#endif
+					auto* p = (PtrType)m_data->data();
+					if (p) return *p;
+					throw(std::runtime_error(std::string("atomic_shared_ptr was null with reference access")));
+				};
+
+				template<typename Q = type> __forceinline typename std::enable_if<std::is_same<Q, void>::value, void>::type operator[](std::ptrdiff_t idx) const { 
+					throw(std::exception("atomic_shared_ptr was null with indexed access")); 
+				};
+
+				template<typename Q = type> __forceinline typename std::enable_if<std::is_same<Q, void>::value, void>::type operator*() const { 
+					throw(std::exception("atomic_shared_ptr was null with reference access")); 
+				};
+
+#pragma endregion
+#pragma region Assignment Operators
+			public:
+				/*! Share ownership */
+				__forceinline atomic_shared_ptr& operator=(const atomic_shared_ptr& other) noexcept {
+					if (other == *this) { return *this; }
+
+					SetData(InitDataFromAnotherPtr(other));
+
+					return *this;
+				};
+
+				/*! Take ownership */
+				__forceinline atomic_shared_ptr& operator=(atomic_shared_ptr&& other) noexcept {
+					if (other == *this) { return *this; }
+#if defined(use_atomic_shared_ptr_mutex) || defined(use_atomic_shared_ptr_unique_mutex)
+					auto locked{ std::unique_lock(other.mutex) };
+#endif
+					SetData(other.m_data.Set(nullptr));
+
+					return *this;
+				};
+#pragma endregion
+#pragma region Swap Operators
+			public:
+				__forceinline atomic_shared_ptr& Swap(atomic_shared_ptr& other) {
+					atomic_shared_ptr t = *this;
+					*this = other;
+					other = t;
+					return *this;
+				};
+#pragma endregion
+#pragma region "std::shared_ptr" Compatability Methods
+			public:
+				/*! Get access to the underlying data in a thread-safe way. (The underlying data isn't necessarily thread-safe, but accessing the pointer itself has no data race.) */
+				__forceinline PtrType get() const noexcept { return Get(); };
+				/*! Empty the current data pointer and free the data. */
+				__forceinline void reset() { atomic_shared_ptr().Swap(*this); };
+				/*! Exchange the current data with the provided new data. */
+				template< class Y > __forceinline void reset(Y* ptr) { atomic_shared_ptr(ptr).Swap(*this); };
+				/*! Swap shared pointers */
+				__forceinline void swap(atomic_shared_ptr& r) { Swap(r); };
+				/*! Number of shared pointers with access to the underlying data, including this one. */
+				__forceinline long use_count() const noexcept {
+#ifdef use_atomic_shared_ptr_mutex
+					auto locked{ std::shared_lock(mutex) };
+#endif
+					if (m_data) return m_data->use_count();
+					return 0;
+				};
+#pragma endregion
+#pragma region Guard
+			public:
+				//void lock_shared() { mutex.lock_shared(); };
+				//void unlock_shared() { mutex.unlock_shared(); };
+				//void lock() { Lock(); };
+				//void unlock() { Unlock(); };
+
+#pragma endregion
+			};
+		};
+	};
+
+	// Allocator
+	namespace utilities {
+#if 1 // allocator that frees allocation blocks as soon as a block is fully returned. BUT seems to fail occassionally, for reasons we do not understand. 
+		namespace impl {
+			template <typename element_item, int _blockSize_>
+			class memory_block_impl {
+			public:
+				element_item
+					elements[_blockSize_]; // static buffer -- does not grow or shrink. Cannot allocate less than this, and if needs more, we allocate another block.			
+				synchronization::RingBuffer< element_item*, _blockSize_, true>
+					free_queue; // locks-up and prevents getting free'd items once it fills up, to support deletion.
+				size_t 
+					memory_blocks_index;
+
+				memory_block_impl() : 
+					elements{}, 
+					free_queue{}, 
+					memory_blocks_index{ 0 }
+				{};
+				memory_block_impl(memory_block_impl const&) = delete;
+				memory_block_impl(memory_block_impl&&) = delete;
+				memory_block_impl& operator=(memory_block_impl const&) = delete;
+				memory_block_impl& operator=(memory_block_impl&&) = delete;
+				~memory_block_impl() = default;
+			};
+		};
+
+		/* Allocates *_blockSize_* number of elements at a time. Once all of the elements from a block are free'd, the entire block is free'd. */
+		template <typename _type_, size_t _blockSize_ = (sizeof(_type_) << 4), bool ForcePOD = false, unsigned int forcedSize = sizeof(_type_)>
+		class BlockAllocator {
+		private: // definitions
+			class element_item {
+			public:
+				// actual underlying data
+				char data[forcedSize];
+				// parent memory_block index
+				size_t parent_index;
+				// non-POD, but can be "forgotten" without consequence. 
+				bool initialized;
+			};
+			using memory_block = impl::memory_block_impl<element_item, _blockSize_>;
+			using memory_block_ptr = fibers::synchronization::impl::atomic_shared_ptr<memory_block>; 
+
+		private: // data members
+#define use_cached_memory_block_ptrs
+			std::atomic<size_t>
+				memory_blocks_size{ 0 };
+			concurrency::concurrent_vector< memory_block_ptr >
+				memory_blocks{}; // can only grow -- but is only a list of ptr's, so impact is fairly small.
+			moodycamel::ConcurrentQueue< size_t >
+				deleted_memory_block_indexes{}; // once a memory block is free'd, its index is available to be used again. 
+			std::atomic<long>
+				total{ 0 };
+			std::atomic<long>
+				active{ 0 };
+			std::mutex
+				lock{};
+#ifdef use_cached_memory_block_ptrs
+			synchronization::RingBuffer < memory_block*, 16> 
+				cached_memory_block_ptrs;
+#endif
+		private: // private static functors
+			// returns whether the constructor/destructor needs to be called for each element. (Constructor is always called if args are provided on initialization)
+			static constexpr bool isPod() { return std::is_pod<_type_>::value || ForcePOD; };
+			// Free an allocated block and all interior memory allocations associated to it.
+			static bool FreeBlock(BlockAllocator* parent, memory_block* block, size_t index) {
+				if (!block || !parent) return false; // failure
+
+				defer(parent->deleted_memory_block_indexes.push(index));
+
+				// free any custom allocated memory within the memory block (this should not be necessary, but we do it to be sure)
+				for (size_t i = 0; i < _blockSize_; i++) {
+					if (block->elements[i].initialized) { // ... but only when the element was already initialized ...
+						if constexpr (!isPod()) { // ... because non-POD types must call their destructors to prevent memory leaks per element ...
+							((_type_*)(void*)(&block->elements[i]))->~_type_(); // ... we call the type-specific destructor function.
+						}
+						block->elements[i].initialized = false;
+						parent->active--;
+					}
+				}
+
+				parent->total -= _blockSize_;
+				block->free_queue.clear();
+
+				// free the memory block itself
+#ifdef use_cached_memory_block_ptrs
+				if (!parent->cached_memory_block_ptrs.push_back(block)) {
+					delete block;
+				}
+#else
+				delete block;
+#endif
+
+				// success
+				return true;
+			};
+			// creates a new memory_block (may re-use an old index though) and returns an uninitialized ptr to the first element of that memory_block. 
+			static element_item* AllocNewBlock(BlockAllocator* parent) {
+				if (!parent) return nullptr;
+
+				auto locked{ std::unique_lock(parent->lock) };
+
+				// try to get an already-available element if possible
+				for (memory_block_ptr memory_block_atomic_ptr : parent->memory_blocks) {
+					if (memory_block_atomic_ptr) {
+						element_item* element{ nullptr };
+						if (memory_block_atomic_ptr->free_queue.try_pop(element)) { // locks-up if full, which may indicate that it's to be deleted. 
+							return element;
+						}
+						else if (memory_block_atomic_ptr->free_queue.size() == _blockSize_) {
+							parent->memory_blocks[memory_block_atomic_ptr->memory_blocks_index] = nullptr;
+						}
+					}
+				}
+
+				// determine the target destination for this memory_block
+				size_t memory_blocks_index{ 0 };
+				if (!parent->deleted_memory_block_indexes.try_pop(memory_blocks_index)) {
+					// we failed to pull the index of a free slot in the memory_blocks -- so append a new slot to the end.
+					memory_blocks_index = (size_t)parent->memory_blocks_size.fetch_add(1);
+					parent->memory_blocks.push_back(nullptr);
+				}
+
+				// create the actual memory_block
+				memory_block* block{ nullptr };
+#ifdef use_cached_memory_block_ptrs
+				if (!parent->cached_memory_block_ptrs.try_pop(block)) {
+					block = new memory_block();
+				}
+#else
+				block = new memory_block()
+					;
+#endif
+				parent->total += _blockSize_;
+				for (size_t i = 0; i < _blockSize_; i++) {
+					block->elements[i].data[0] = '\0';
+					block->elements[i].parent_index = memory_blocks_index;
+					block->elements[i].initialized = false;
+				}
+
+				// queue all but the first elements as being free and available
+				for (size_t i = 1; i < _blockSize_; i++) {
+					block->free_queue.push_back(&block->elements[i]);
+				}
+				block->memory_blocks_index = memory_blocks_index;
+
+				// place the new memory_block into its designated index
+				parent->memory_blocks[memory_blocks_index] = memory_block_ptr(block, [parent, memory_blocks_index](memory_block* p)->void {
+					FreeBlock(parent, (memory_block*)p, memory_blocks_index);
+				});
+
+				// return the first new element
+				return &block->elements[0];
+			};
+
+		public: // public API
+			// Request a new memory pointer. May be recovered from a previously-used location. Will be cleared and correctly initialized, if appropriate.
+			template <typename... TArgs> _type_* Alloc(TArgs&&... a) {
+				_type_* t{ nullptr };
+				element_item* element{ nullptr };
+
+				while (!element) {
+					// iterate through the memory blocks and find a non-empty memory block with a non-empty queue
+					for (memory_block_ptr memory_block_atomic_ptr : memory_blocks) {
+						if (memory_block_atomic_ptr) {
+							if (memory_block_atomic_ptr->free_queue.try_pop(element)) {
+								break;
+							}
+						}
+					}
+
+					// if this failed, we must allocate a new block to the vector
+					if (!element) element = AllocNewBlock(this);
+				}
+
+				t = static_cast<_type_*>(static_cast<void*>(element));
+
+				if constexpr (isPod()) {
+					if constexpr (sizeof...(TArgs) > 0) {
+						new (t) _type_(std::forward<TArgs>(a)...);
+					}
+					else {
+						::memset(t, 0, forcedSize);
+					}
+				}
+				else {
+					new (t) _type_(std::forward<TArgs>(a)...);
+				}
+				element->initialized = true;
+				active++;
+
+				return t;
+			};
+			// Frees the memory pointer, previously provided by this allocator. Calls the destructor for non-POD types, and will store the pointer for later use.
+			template <bool skipDestructor = false> void Free(const _type_* element) {
+				if (!element) return; // no work to be done
+				element_item* t{ static_cast<element_item*>(static_cast<void*>(const_cast<_type_*>(element))) };
+				if (t && element) {
+					memory_block_ptr memory_block_atomic_ptr{ memory_blocks[t->parent_index] };
+					if (memory_block_atomic_ptr) {
+						memory_block_atomic_ptr->free_queue.push_back(t);
+					}
+
+					if constexpr (!isPod() && !skipDestructor) {
+						element->~_type_();
+					}
+					t->initialized = false;
+					active--;
+				}
+			};
+			// Request a shared memory ptr, which uses the allocator for memory handling. Allocator must out-live the memory lifetime of this shared_ptr. 
+			template <typename... TArgs> std::shared_ptr< _type_ > AllocShared(TArgs&&... a) {
+				return std::shared_ptr<_type_>(Alloc(std::forward<TArgs>(a)...), [this](_type_* p) { Free(p); });
+			};
+			// Does nothing -- is now handled automatically during Free(...) calls.
+			void			FreeEmptyBlocks() {
+				return;
+			};
+			// Attempts to cleanup unused memory
+			auto TryCleanupUnusedMemory() ->void {};
+			// Returns the maximum number of blocks the allocator has reserved -- does not mean all of these blocks are in active use or even alive.
+			size_t          MaxBlockCapacity() const {
+				return memory_blocks_size.load();
+			};
+			// Approximate current (alive) block count. Not all elements in thse blocks are alive or allocated, but usually at least one is.
+			size_t          CurrentBlockCount() const {
+				return total.load() / _blockSize_;
+			};
+			// Approximate current capacity for elements, based on the alive blocks.
+			size_t          TotalCapacity() const {
+				return total.load();
+			};
+			// Approximate current alive element count
+			size_t          TotalAlive() const {
+				return active.load();
+			};
+			// Report on the statistics for the allocator
+			std::string     ReportStatistics(bool includeEndLine = false) const {
+				std::string out;
+				out.append("Blocks: ");
+				out.append(std::to_string(CurrentBlockCount()));
+				out.append(" / ");
+				out.append(std::to_string(MaxBlockCapacity()));
+				out.append("; Elements: ");
+				out.append(std::to_string(TotalAlive()));
+				out.append(" / ");
+				out.append(std::to_string(TotalCapacity()));
+				if (includeEndLine) out.append("\n");
+				return out;
+			};
+
+		public: // constructors and destructors
+			BlockAllocator() = default;
+			~BlockAllocator() {
+				while (total > 0) {
+					// memory_blocks captured "this" and must be expunged before our destruction
+					if (1) {
+						for (auto& block : memory_blocks) {
+							block = nullptr;
+						}
+					}
+					// free the cache
+#ifdef use_cached_memory_block_ptrs
+					if (1) {
+						memory_block* block{ nullptr };
+						while (cached_memory_block_ptrs.try_pop(block)) {
+							delete block;
+						}
+
+					}
+#endif
+				}
+			};
+
+		};
+
+		template<class _type_, int _blockSize_ = (sizeof(_type_) << 4), bool ForcePOD = false, unsigned int forcedSize = sizeof(_type_)>
+		using Allocator = BlockAllocator<_type_, _blockSize_, ForcePOD, forcedSize>;
+#else // immortal and always appears to work -- BUT does not de-allocate until end of life! Will re-distribute as needed but the "peak" demand determines the memory usage.
+		namespace impl {
+			template <typename element_item, int _blockSize_>
+			class memory_block_impl {
+			public:
+				element_item		elements[_blockSize_]; // static buffer -- does not grow or shrink. Cannot allocate less than this, and if needs more, we allocate another block.			
+				synchronization::atomic_ptr<memory_block_impl> next; // ptr to next block.				
+				long free_count; // free count 
+				bool active;
+			};
+		};
+
+		/* *THREAD SAFE* Thread- and Fiber-safe allocator that can create, reserve, and free shared memory.
+		Optimized for POD types, but will correctly manage the destruction of non-POD type data when shutdown. */
+		template<class _type_, int _blockSize_ = (sizeof(_type_) << 4) /*1 << 18*/, bool ForcePOD = false, unsigned int forcedSize = sizeof(_type_)>
+		class Allocator {
+		private:
+			class element_item {
+			public:
+				// actual underlying data
+				char data[forcedSize];
+				// non-POD, but can be "forgotten" without consequence. 
+				fibers::synchronization::atomic_ptr<element_item> next;
+				// parent
+				impl::memory_block_impl<element_item, _blockSize_>* parent;
+				// non-POD, but can be "forgotten" without consequence. 
+				std::atomic<long> initialized;
+			};
+			using memory_block = impl::memory_block_impl<element_item, _blockSize_>;
+
+			std::shared_mutex mut;
+			synchronization::atomic_ptr<memory_block> blocks;
+			synchronization::atomic_ptr<element_item> free;
+			std::atomic<long> total;
+			std::atomic<long> active;
+			std::atomic<unsigned long long> previousEpoch;
+
+			static long long GetCurrentEpoch() { return clock_ms(); };
+
+
+			// can an element_item be "forgotten" without calling a destructor?
+			static constexpr bool isPod() { return std::is_pod<_type_>::value || ForcePOD; };
+			// creates a new memory_block and sets the free ptr. 
+			void			    AllocNewBlock() {
+				memory_block* block{ (memory_block*)Mem_ClearedAlloc((size_t)(sizeof(memory_block))) }; // explicitely initialized to 0 at all bits
+				int i;
+				while (true) {
+					// block->next = blocks.load();
+					if (blocks.TrySet(block, block->next)) {
+						for (i = 0; i < _blockSize_; i++) {
+							block->elements[i].parent = block;
+							block->elements[i].next = free.Set(&block->elements[i]);
+
+							//while (!free.TrySet(&block->elements[i], &block->elements[i].next)) {
+							//	block->elements[i].next = free.load();
+							//	if (free.TrySet(&block->elements[i], &block->elements[i].next)) {
+							//		break;
+							//	}
+							//}
+						}
+						total += _blockSize_;
+						break;
+					}
+				}
+			};
+			// shuts down the allocator and frees all associated memory and (if needed) destroys the non-POD type data.
+			void			    Shutdown() {
+				auto lock{ std::scoped_lock(mut) };
+
+				memory_block* block;
+				int i;
+
+				while (block = blocks.load()) {
+					if (blocks.TrySet(block->next, block)) { // Check if the data type if POD...
+						if constexpr (!isPod()) { // ... because non-POD types must call their destructors to prevent memory leaks per element ...
+							for (i = 0; i < _blockSize_; i++)  // ... but only when the element was already initialized ...
+								if ((block->elements[i].initialized.fetch_sub(1) - 1) == 0) {
+									((_type_*)(void*)(&block->elements[i]))->~_type_();
+
+									// block->elements[i].data.~_type_();
+								}
+							// if (block->elements[i].initialized.Decrement() == 0) block->elements[i].data.~_type_();
+						}
+						// ... then we can free the memory block
+						Mem_Free(block);
+					}
+				}
+
+				free = nullptr;
+				total = active = 0;
+			};
+
+		public:
+			Allocator() : mut{}, blocks{ nullptr }, free{ nullptr }, total{ 0 }, active{ 0 }, previousEpoch{ 0 } {};
+			Allocator(int toReserve) : mut{}, blocks(nullptr), free(nullptr), total(0), active(0), previousEpoch{ 0 }  { Reserve(toReserve); };
+			~Allocator() { Shutdown(); };
+
+			// returns total size of allocated memory
+			size_t				Allocated() const { return total.load() * forcedSize; }
+
+			// returns total size of allocated memory including size of (*this)
+			size_t				Size() const { return sizeof(*this) + Allocated(); }
+
+			// Request a new memory pointer. May be recovered from a previously-used location. Will be cleared and correctly initialized, if appropriate.
+			template <typename... TArgs> _type_* Alloc(TArgs&&... a) {
+				_type_* t{ nullptr };
+				element_item* element{ nullptr };
+
+				auto lock{ std::shared_lock(mut) };
+
+				++active;
+				while (!element) {
+					while (element = free.load()) { // if we have free elements available...
+						if (free.TrySet(element->next, element)) { // get the free element and swap it with it's next ptr. If this fails, we will simply try again.
+							break;
+						}
+					}
+					// if we fell through and for some reason the element is still empty, we need to allocate more. May be due to contention and many allocations are happening.
+					if (!element) AllocNewBlock(); // adds a new element to the "free" elements
+				}
+				element->next = nullptr;
+
+				t = static_cast<_type_*>(static_cast<void*>(element));
+				// memset(t, 0, forcedSize);
+				if constexpr (isPod()) {
+					if constexpr (sizeof...(TArgs) > 0) {
+						new (t) _type_(std::forward<TArgs>(a)...);
+					}
+				}
+				else {
+					new (t) _type_(std::forward<TArgs>(a)...);
+				}
+				element->initialized.fetch_add(1);
+
+				return t;
+			};
+
+			// Frees the memory pointer, previously provided by this allocator. Calls the destructor for non-POD types, and will store the pointer for later use.
+			template <bool skipDestructor = false>
+			void				Free(const _type_* element) {
+				if (!element) return; // no work to be done
+
+				element_item* t{ static_cast<element_item*>(static_cast<void*>(const_cast<_type_*>(element))) };
+				element_item* prevFree{ nullptr };
+
+				auto lock{ std::shared_lock(mut) };
+
+				if constexpr (!isPod()) {
+					if ((t->initialized.fetch_sub(1) - 1) == 0) {
+						if constexpr (!skipDestructor) {
+							element->~_type_();
+						}
+					}
+				}
+
+				while (true) {
+					prevFree = (t->next = free.load());
+					if (free.CompareExchange(prevFree, t) == prevFree) {
+						--active;
+						return;
+					}
+				}
+			};
+
+			// Request a new memory pointer that will self-delete and return to the memory pool automatically. Important: This allocator must out-live the shared_ptr.
+			std::shared_ptr< _type_ > AllocShared() {
+				return std::shared_ptr<_type_>(Alloc(), [this](_type_* p) { Free(p); });
+			};
+
+		private:
+			void			FreeEmptyBlocks() {
+				return;
+#if 0
+				// Only perform the free-ing when there is enough "free" elements that we MAY have an empty block.
+				if ((total - active) > (_blockSize_ * 3)) {
+
+					// Unload the free list (we don't have to do all of it... should we stop early?)
+					std::map< memory_block*, std::vector<element_item*>> freeList;
+					{
+						auto lock{ std::shared_lock(mut) };
+
+						element_item* element{ nullptr };
+						// Do not remove all free elements, as this will reduce efficiency during multithreaded allocations
+						while (((total - active) > _blockSize_) && (element = free.load())) { // if we have free elements available...
+							if (free.TrySet(element->next, element)) { // get the free element and swap it with it's next ptr. If this fails, we will simply try again.
+								--total;
+								// we now have exclusive access to this element. 
+								element->next = nullptr;
+								freeList[element->parent].push_back(element);
+
+								//for (memory_block* block = blocks; block; block = block->next) {
+								//	if ((element >= block->elements) && (element < (block->elements + _blockSize_))) {
+								//		// element belongs to this block
+								//		freeList[block].push_back(element);
+								//		break;
+								//	}
+								//}
+							}
+						}
+					}
+
+					std::set< memory_block* > blocksToBeDeleted;
+
+					// for each block, if its free list is full, then we know the block can be freed.
+					for (auto& freeListPair : freeList) {
+						if (freeListPair.second.size() == _blockSize_) {
+							// block can be freed - but must be done atomicly. 
+							blocksToBeDeleted.insert(freeListPair.first);
+						}
+						else {
+							// add the ptr back to the free list without re-calling the destructor
+							for (auto& ptr : freeListPair.second) {
+								++total;
+								Free<true>((_type_*)(void*)(element_item*)ptr); // this also helps to re-order the free's according to their blocks. 
+							}
+						}
+					}
+
+					std::set< memory_block* > blocksToFree;
+
+					if (blocksToBeDeleted.size() > 0) {
+						auto lock{ std::scoped_lock(mut) };
+
+						memory_block* block{ blocks.load() };
+						memory_block* prev{ nullptr };
+						// we always skip the first block
+						while ((blocksToBeDeleted.size() > 0) && block) {
+							if (block->next == block) {
+								block->next = nullptr;
+							}
+
+							if (prev && blocksToBeDeleted.find(block) != blocksToBeDeleted.end()) { // we want to delete this guy, who may be (likely is) in the middle of the list
+								if (prev->next.TrySet(block->next, block)) {
+									// success - this block has been "forgotten" 
+								}
+								else {
+									// reset and try again
+									block = blocks.load();
+									continue;
+								}
+							}
+							else {
+								if (blocksToBeDeleted.find(block) != blocksToBeDeleted.end()) {
+									blocks.Set(block->next);
+									prev = nullptr;
+									block = blocks.load();
+								}
+							}
+
+							prev = block;
+							block = block->next;
+						}
+
+						for (auto& blockToDelete : blocksToBeDeleted) {
+							Mem_Free(blockToDelete);
+						}
+					}
+
+					for (auto& block : blocksToFree) {
+						for (auto& ptr : freeList[block]) {
+							++total;
+							Free<true>((_type_*)(void*)(element_item*)ptr);
+						}
+					}
+				}
+#endif
+			};
+
+		public:
+
+
+			// Attempts to cleanup unused memory
+			auto TryCleanupUnusedMemory() ->void {
+				long long currentEpoch = GetCurrentEpoch();
+				unsigned long long prevEpoch = previousEpoch.load();
+				if (prevEpoch < (currentEpoch - 1) && previousEpoch.compare_exchange_weak(prevEpoch, currentEpoch)) {
+					FreeEmptyBlocks();
+				}
+			};
+
+			// Calls "Alloc" X-num times, and then frees them all for later re-use.
+			__forceinline void	Reserve(long long num) {
+				// this algorithm can be improved. 
+				// TODO: Create (num / _blockSize_) memory_blocks, order them as next->PTR->next->PTR, etc, and the Compare-Swap with the current end of the block chain. Then update the free chain as needed.
+
+				if (total.load() < num) {
+					std::vector< _type_* > arr; arr.reserve(2 * (num - total.load()));
+					while (total.load() < num) {
+						arr.push_back(Alloc());
+					}
+					for (_type_* p : arr) {
+						Free(p);
+					}
+				}
+			};
+
+			long long			GetTotalCount() const { return total.load(); }
+			long long			GetAllocCount() const { return active.load(); }
+			long long			GetFreeCount() const { return total.load() - active.load(); }
+		};
+
+#endif
+
+
+
+	};
+};
+
+
+
+
+
+
+
+
+
+
+
+
+// requires Allocator<> to function correctly
+// dbgroup::index::bw_tree::component
+namespace fibers {
+	namespace utilities {
 		// mapping table
 		namespace dbgroup::index::bw_tree::component
 		{
@@ -4124,15 +6904,16 @@ namespace fibers {
 				  * @brief Construct a new MappingTable object.
 				  *
 				  */
-#define useAllocator
 				MappingTable() {
-#ifdef useAllocator
-					auto* row = static_cast<Row*>(static_cast<void*>(Allocator.Alloc())); // 
-					auto* table = static_cast<Table*>(static_cast<void*>(Allocator.Alloc())); // 
-#else
-					auto* row = dbgroup::memory::Allocate<Row>(kVMPageSize);
-					auto* table = dbgroup::memory::Allocate<Table>(kVMPageSize);
-#endif
+					auto* row = static_cast<Row*>(static_cast<void*>(Allocator.Alloc()));
+					auto* table = static_cast<Table*>(static_cast<void*>(Allocator.Alloc()));
+					table->Get(0).store(row, std::memory_order_relaxed);
+					tables_[0].store(table, std::memory_order_relaxed);
+					DeleteLogicalPtr_Functor = [this](LogicalPtr& lid) { this->ReleaseLogicalPtr(lid); };
+				}
+				MappingTable(std::function<void(LogicalPtr& lid)>&& DeleteLogicalPtr) : DeleteLogicalPtr_Functor(std::forward<std::function<void(LogicalPtr& lid)>>(DeleteLogicalPtr)) {
+					auto* row = static_cast<Row*>(static_cast<void*>(Allocator.Alloc()));
+					auto* table = static_cast<Table*>(static_cast<void*>(Allocator.Alloc()));
 					table->Get(0).store(row, std::memory_order_relaxed);
 					tables_[0].store(table, std::memory_order_relaxed);
 				}
@@ -4167,19 +6948,12 @@ namespace fibers {
 						for (size_t j = 0; table && (j < row_num); ++j) {
 							Row* row = table->Get(j).load(std::memory_order_relaxed);
 							for (size_t k = 0; row && (k < col_num) && (--numProcessed >= 0); ++k) {
-								ReleaseLogicalPtr(row->Get(k));
+								DeleteLogicalPtr_Functor(row->Get(k));
 							}
-#ifdef useAllocator
-							Allocator.Free(static_cast<BufferSizeAlignment*>(static_cast<void*>(row))); // 
-#else
-							dbgroup::memory::Release<Row>(row);
-#endif
+							Allocator.Free(static_cast<BufferSizeAlignment*>(static_cast<void*>(row)));
+
 						}
-#ifdef useAllocator
-						Allocator.Free(static_cast<BufferSizeAlignment*>(static_cast<void*>(table))); // 
-#else
-						dbgroup::memory::Release<Table>(table);
-#endif
+						Allocator.Free(static_cast<BufferSizeAlignment*>(static_cast<void*>(table)));
 					}
 				}
 
@@ -4187,11 +6961,15 @@ namespace fibers {
 				 * Public getters/setters
 				 *##################################################################################*/
 
-				 /**
-				  * @brief Get a new page ID.
-				  *
-				  * @return a reserved page ID.
-				  */
+				auto TryCleanupUnusedMemory() -> void {
+					Allocator.TryCleanupUnusedMemory();
+				};
+
+				/**
+				 * @brief Get a new page ID.
+				 *
+				 * @return a reserved page ID.
+				 */
 				auto
 					GetNewPageID()  //
 					-> uint64_t
@@ -4212,11 +6990,8 @@ namespace fibers {
 								const auto row_id = (new_id >> kRowShift) & kIDMask;
 								if (row_id < kArrayCapacity) {
 									// prepare a new row
-#ifdef useAllocator
 									auto* row = static_cast<Row*>(static_cast<void*>(Allocator.Alloc())); // 
-#else
-									Row* row = dbgroup::memory::Allocate<Row>(kVMPageSize);
-#endif
+
 									Table* table = tables_[(new_id >> kTabShift) & kIDMask].load(std::memory_order_relaxed);
 									table->Get(row_id).store(row, std::memory_order_relaxed);
 									cnt_.store(new_id & ~kIDMask, std::memory_order_relaxed);
@@ -4224,13 +6999,8 @@ namespace fibers {
 								}
 								else {
 									// prepare a new table
-#ifdef useAllocator
 									auto* row = static_cast<Row*>(static_cast<void*>(Allocator.Alloc()));
-									auto* table = static_cast<Table*>(static_cast<void*>(Allocator.Alloc())); 
-#else
-									Row* row = dbgroup::memory::Allocate<Row>(kVMPageSize);
-									Table* table = dbgroup::memory::Allocate<Table>(kVMPageSize);
-#endif
+									auto* table = static_cast<Table*>(static_cast<void*>(Allocator.Alloc()));
 									table->Get(0).store(row, std::memory_order_relaxed);
 									new_id += kTabIDUnit;
 									tables_[(new_id >> kTabShift) & kIDMask].store(table, std::memory_order_relaxed);
@@ -4357,9 +7127,11 @@ namespace fibers {
 
 				/// mapping tables.
 				std::atomic<Table*> tables_[kTableCapacity]{ 0 };
-#ifdef useAllocator
+
 				fibers::utilities::Allocator<BufferSizeAlignment, true> Allocator;
-#endif
+
+				std::function<void(LogicalPtr& lid)> DeleteLogicalPtr_Functor;
+
 			};
 		}  // namespace dbgroup::index::bw_tree::component
 		// record iterator
@@ -4427,31 +7199,31 @@ namespace fibers {
 					 * @param is_end a flag for indicating a current node is rightmost in scan-range.
 					 */
 					RecordIterator(  //
-						BwTree_t* bw_tree, 
+						BwTree_t* bw_tree,
 						Node_t* node,
 						size_t begin_pos,
 						size_t end_pos,
-						const bool is_end) : 
+						const bool is_end) :
 						bw_tree_{ bw_tree },
 						node_{ node },
-						rec_count_{ end_pos }, 
-						current_pos_{ begin_pos }, 
+						rec_count_{ end_pos },
+						current_pos_{ begin_pos },
 						is_end_{ is_end }
 					{
 					}
 
 					RecordIterator() = default;
-					RecordIterator(const RecordIterator & r) : 
-						bw_tree_{ r.bw_tree_ }, 
+					RecordIterator(const RecordIterator& r) :
+						bw_tree_{ r.bw_tree_ },
 						node_{ r.node_ },
-						rec_count_{ r.rec_count_ }, 
-						current_pos_{ r.current_pos_ }, 
+						rec_count_{ r.rec_count_ },
+						current_pos_{ r.current_pos_ },
 						is_end_{ r.is_end_ } {}
-					RecordIterator(RecordIterator && r) : 
-						bw_tree_{ r.bw_tree_ }, 
-						node_{ r.node_ }, 
-						rec_count_{ r.rec_count_ }, 
-						current_pos_{ r.current_pos_ }, 
+					RecordIterator(RecordIterator&& r) :
+						bw_tree_{ r.bw_tree_ },
+						node_{ r.node_ },
+						rec_count_{ r.rec_count_ },
+						current_pos_{ r.current_pos_ },
 						is_end_{ r.is_end_ } {}
 
 					constexpr auto
@@ -4467,7 +7239,7 @@ namespace fibers {
 						return *this;
 					}
 
-					constexpr auto operator=(RecordIterator && obj) noexcept  //
+					constexpr auto operator=(RecordIterator&& obj) noexcept  //
 						-> RecordIterator&
 					{
 						bw_tree_ = obj.bw_tree_;
@@ -4625,10 +7397,30 @@ namespace fibers {
 					}
 
 					/**
+					* @return a key of a current record
+					*/
+					[[nodiscard]] auto
+						first() const  //
+						-> Key
+					{
+						return node_->GetKey(current_pos_);
+					}
+
+					/**
 					 * @return a payload of a current record
 					 */
 					[[nodiscard]] auto
 						GetPayload() const  //
+						-> Payload
+					{
+						return node_->template GetPayload<Payload>(current_pos_);
+					}
+
+					/**
+					 * @return a payload of a current record
+					 */
+					[[nodiscard]] auto
+						second() const  //
 						-> Payload
 					{
 						return node_->template GetPayload<Payload>(current_pos_);
@@ -6089,633 +8881,8 @@ namespace fibers {
 			};
 
 		}  // namespace dbgroup::index::bw_tree::component::fixlen
-
-
-		template <typename Arg> struct CAS_Container; // forward decl
-
-
-        /* Non-atomic, but guarrantees that floating-point numbers will not be negative, which breaks atomic operations. */
-		template <typename Arg> struct UnsignedWrapper {
-		template <typename U>  friend struct CAS_Container; // <Arg>
-		protected:
-			static constexpr inline unsigned long long constexpr_pow(unsigned long long x, unsigned long long y) { return y == 0 ? 1.0 : x * constexpr_pow(x, y - 1); };
-			static constexpr unsigned long long MANT_DIG() {
-				if constexpr (std::is_same<double, Arg>::value) {
-					return (DBL_MANT_DIG - 9) / 1.7;
-				}
-				else if constexpr (std::is_same<long double, Arg>::value) {
-					return (LDBL_MANT_DIG - 9) / 1.7;//28;
-				}
-				else if constexpr (std::is_same<float, Arg>::value) {
-					return (FLT_MANT_DIG - 9) / 1.7;
-				}
-				else {
-					return 1;
-				}
-			};
-			static constexpr Arg abs(const Arg val) {
-				return val >= (Arg)0 ? val : -val;
-			}
-			static constexpr Arg floor(const Arg val) {
-				// casting to int truncates the value, which is floor(val) for positive values,
-				// but we have to substract 1 for negative values (unless val is already floored == recasted int val)
-				const auto val_int = (int64_t)val;
-				const Arg fval_int = (Arg)val_int;
-				return (val >= (Arg)0 ? fval_int : (val == fval_int ? val : fval_int - (Arg)1));
-			};
-			static constexpr Arg MaxV{ constexpr_pow(2, MANT_DIG()) };
-			static constexpr Arg Scale{ 10.0 };
-			static constexpr long double squareroot_of_0_001{ 0.03162277660168 };
-			static constexpr long double squareroot_of_0_0000001{ 0.0003162277660168 };
-			static constexpr Arg RoundToMillionth(Arg a) {
-				if (abs(a) > 10000000) {
-					return floor(a * ((1.0l / squareroot_of_0_001) * (1.0l / squareroot_of_0_001)) + 0.5l) * 0.001l;
-				}
-				else {
-					return floor(a * ((1.0l / squareroot_of_0_0000001) * (1.0l / squareroot_of_0_0000001)) + 0.5l) * 0.0000001l;
-				}
-			};
-
-		private:
-// #define useMantissaRepresentation
-			// Attempted to store double as unsigned integers/bools, which works in theory but occassionally crashes for reasons I do not yet understand.
-#ifdef useMantissaRepresentation
-			struct container { // targeting 64 bits
-				uint64_t multiplier : 58; // 64 bits minus the sum of the other bits 
-				unsigned short exponent : 6; // 0 to 63 for the 2^n exponent.
-				bool negativeMultiplier : 1; // bool for whether the multiplier is negative or not
-				bool negativeExponent : 1; // bool for whether the exponent is negative or not
-			};
-#endif
-#ifdef useMantissaRepresentation
-			container 
-#else
-			Arg
-#endif
-			data;
-
-		private:
-			static constexpr Arg Bound(Arg const& a) { return std::max<Arg>(-MaxV, std::min<Arg>(MaxV, a)); };
-			static constexpr decltype(data) MakeUnsignedAndBound(Arg const& a) {
-#ifdef useMantissaRepresentation
-				int n;
-				auto temp{ frexp(a, &n) };
-				{
-					return container{
-						static_cast<uint64_t>(static_cast<long double>(temp < (Arg)0 ? static_cast<Arg>(-1.0) * temp : temp) * 1e16l),
-						static_cast<unsigned short>(n < 0 ? -1.0f * n : n),
-						temp < (Arg)0,
-						n < (int)0
-					};
-				}
-#else
-				return Bound(a) + MaxV;
-#endif
-			};
-			static constexpr Arg MakeSigned(decltype(data) const& a) {
-#ifdef useMantissaRepresentation
-				return static_cast<Arg>(ldexp(
-					static_cast<Arg>(a.negativeMultiplier ? -static_cast<long double>(a.multiplier) / 1e16l : static_cast<long double>(a.multiplier) / 1e16l),
-					a.negativeExponent ? -static_cast<int>(a.exponent) : static_cast<int>(a.exponent)
-				));
-#else
-				return a - MaxV;
-#endif
-			};
-#undef useMantissaRepresentation
-
-		public:
-			constexpr UnsignedWrapper() = default;
-			constexpr UnsignedWrapper(Arg const& a) : data{ MakeUnsignedAndBound(a) } {};
-			constexpr UnsignedWrapper(Arg&& a) : data{ MakeUnsignedAndBound(std::forward<Arg>(a)) } {};
-
-			constexpr UnsignedWrapper(const UnsignedWrapper&) = default;
-			constexpr UnsignedWrapper& operator=(const UnsignedWrapper&) = default;
-			constexpr UnsignedWrapper(UnsignedWrapper&&) = default;
-			constexpr UnsignedWrapper& operator=(UnsignedWrapper&&) = default;
-			~UnsignedWrapper() = default;
-
-		public:
-			constexpr operator Arg() { return load(); };
-			constexpr operator const Arg() const { return load(); };
-
-			template <typename T> constexpr decltype(auto) operator+(const UnsignedWrapper<T>& b) {
-				if constexpr (sizeof(T) > sizeof(Arg)) {
-					return UnsignedWrapper<T>{ load() + b.load() };
-				}
-				else {
-					return UnsignedWrapper{ load() + b.load() };
-				}
-			}
-			template <typename T> constexpr decltype(auto) operator-(const UnsignedWrapper<T>& b) {
-				if constexpr (sizeof(T) > sizeof(Arg)) {
-					return UnsignedWrapper<T>{ load() - b.load() };
-				}
-				else {
-					return UnsignedWrapper{ load() - b.load() };
-				}
-			}
-			template <typename T> constexpr decltype(auto) operator/(const UnsignedWrapper<T>& b) {
-				if constexpr (sizeof(T) > sizeof(Arg)) {
-					return UnsignedWrapper<T>{ load() / b.load() };
-				}
-				else {
-					return UnsignedWrapper{ load() / b.load() };
-				}
-			}
-			template <typename T> constexpr decltype(auto) operator*(const UnsignedWrapper<T>& b) {
-				if constexpr (sizeof(T) > sizeof(Arg)) {
-					return UnsignedWrapper<T>{ load()* b.load() };
-				}
-				else {
-					return UnsignedWrapper{ load() * b.load() };
-				}
-			}
-
-			UnsignedWrapper& operator--() {
-				Add(-1);
-				return *this;
-			};
-			UnsignedWrapper& operator++() {
-				Add(1);
-				return *this;
-			};
-			UnsignedWrapper operator--(int) { return operator--() + 1; };
-			UnsignedWrapper operator++(int) { return operator++() - 1; };
-
-			UnsignedWrapper& operator+=(const UnsignedWrapper& i) {
-				Update([i](Arg x)->Arg { return x + i.load(); });
-				return *this;
-			};
-			UnsignedWrapper& operator-=(const UnsignedWrapper& i) {
-				Update([i](Arg x)->Arg { return x - i.load(); });
-				return *this;
-			};
-			UnsignedWrapper& operator/=(const UnsignedWrapper& i) {
-				Update([i](Arg x)->Arg { return x / i.load(); });
-				return *this;
-			};
-			UnsignedWrapper& operator*=(const UnsignedWrapper& i) {
-				Update([i](Arg x)->Arg { return x * i.load(); });
-				return *this;
-			};
-
-			template<typename T, typename = std::enable_if_t<!std::is_same_v<Arg, T>>> UnsignedWrapper& operator+=(const UnsignedWrapper<T>& i) {
-				Update([i](Arg x)->Arg { return x + i.load(); });
-				return *this;
-			};
-			template<typename T, typename = std::enable_if_t<!std::is_same_v<Arg, T>>> UnsignedWrapper& operator-=(const UnsignedWrapper<T>& i) {
-				Update([i](Arg x)->Arg { return x - i.load(); });
-				return *this;
-			};
-			template<typename T, typename = std::enable_if_t<!std::is_same_v<Arg, T>>> UnsignedWrapper& operator/=(const UnsignedWrapper<T>& i) {
-				Update([i](Arg x)->Arg { return x / i.load(); });
-				return *this;
-			};
-			template<typename T, typename = std::enable_if_t<!std::is_same_v<Arg, T>>> UnsignedWrapper& operator*=(const UnsignedWrapper<T>& i) {
-				Update([i](Arg x)->Arg { return x * i.load(); });
-				return *this;
-			};
-
-			template <typename T> constexpr bool operator==(const UnsignedWrapper<T>& b) { return (std::abs(load() - b.load()) < 0.00005); };
-			template <typename T> constexpr bool operator!=(const UnsignedWrapper<T>& b) { return !operator==(b); };
-			template <typename T> constexpr bool operator<=(const UnsignedWrapper<T>& b) { auto x{ load() }; auto y{ b.load() }; return (std::abs(x - y) < 0.00005) || (x < y); };
-			template <typename T> constexpr bool operator>=(const UnsignedWrapper<T>& b) { auto x{ load() }; auto y{ b.load() }; return (std::abs(x - y) < 0.00005) || (x > y); };
-			template <typename T> constexpr bool operator<(const UnsignedWrapper<T>& b) { return !operator>=(b); };
-			template <typename T> constexpr bool operator>(const UnsignedWrapper<T>& b) { return !operator<=(b); };
-
-			UnsignedWrapper Pow(UnsignedWrapper const& V) const {
-				return UnsignedWrapper{ std::pow(load(), V.load()) };
-			};
-			UnsignedWrapper Sqrt() const {
-				return UnsignedWrapper{ std::sqrt(load()) };
-			};
-			constexpr UnsignedWrapper Abs() const {
-				return UnsignedWrapper{ abs(load()) };
-			};
-			constexpr UnsignedWrapper Floor() const {
-				return UnsignedWrapper{ floor(load()) };
-			};
-			constexpr UnsignedWrapper Ceiling() const {
-				return UnsignedWrapper{ floor(load() + static_cast<Arg>(1)) };
-			};
-
-		public:
-			Arg Swap(Arg const& input) {
-				Arg old{ load() };
-				data = MakeUnsignedAndBound(input);
-				return old;
-			}; // returns the previous value while changing the underlying value
-			Arg Add(Arg const& input) {
-				Arg old{ load() };
-				data = MakeUnsignedAndBound(old + input);
-				return old;
-			}; // returns the previous value while incrementing the actual counter
-			Arg Update(std::function<Arg(Arg)> updateFunction) {
-				Arg old{ load() };
-				data = MakeUnsignedAndBound(updateFunction(old));
-				return old;
-			}; // returns the previous value while incrementing the actual counter
-
-		public: // std::atomic compatability
-			Arg fetch_add(Arg const& v) {
-				return Add(v);
-			}; // returns the previous value while incrementing the actual counter
-			Arg fetch_sub(Arg const& v) {
-				return Add(-v);
-			}; // returns the previous value while decrementing the actual counter
-			Arg exchange(Arg const& v) {
-				return Swap(v);
-			}; // returns the previous value while setting the value to the input
-			constexpr Arg load() const {
-				return MakeSigned(data);
-			}; // gets the value
-			void store(Arg const& v) {
-				Swap(v);
-				return;
-			}; // sets the value to the input
-
-		};
-
-		/* Converts any small POD-style struct into an atomic struct using multi-word compare and swap operations.
-		Capacity is about 56 bytes, or about 7 pointers / integers. Can be used for a POD collection (like a struct) or non-standard POD items like floats to long doubles.
-		*/
-		template <typename Arg> struct CAS_Container {
-		public:
-			static constexpr size_t NumWords{ 1 + sizeof(Arg) / 8 };
-
-		protected:
-			union ContainerImpl {
-				Arg data;
-				uint64_t addresses[NumWords];
-			};
-			ContainerImpl data;
-			
-			CAS_Container<Arg> Copy() const {
-				using namespace dbgroup::atomic::mwcas;
-				CAS_Container<Arg> temp; // constexpr
-				MwCASDescriptor<NumWords> desc{}; // constexpr
-
-				for (size_t index = 0; index < NumWords; index++) {
-					temp.Word(index) = desc.Read< uint64_t>(&Word(index));
-				}
-				return temp;
-			};
-			constexpr uint64_t& Word(size_t index) {
-				return data.addresses[index];
-			};
-			constexpr const uint64_t& Word(size_t index) const {
-				return data.addresses[index];
-			};
-		
-			static constexpr Arg MakeUnsignedAndBound(Arg const& a) {
-				if constexpr (std::is_arithmetic<Arg>::value) {
-					return UnsignedWrapper<Arg>::MakeUnsignedAndBound(a);
-				}
-				else {
-					return a;
-				}
-			};
-			static constexpr Arg MakeSigned(Arg const& a) {
-				if constexpr (std::is_arithmetic<Arg>::value) {
-					return UnsignedWrapper<Arg>::MakeSigned(a);
-				}
-				else {
-					return a;
-				}
-			};
-
-		public:
-			constexpr const Arg& Data() const { return data.data; };
-			constexpr Arg& Data() { return data.data; };
-
-		public:
-			constexpr CAS_Container() : data{} { 
-				static_assert(std::is_trivially_destructible< Arg >::value
-					&& std::is_trivially_copy_constructible< Arg >::value
-					&& std::is_trivially_copy_assignable< Arg >::value
-					&& std::is_trivially_copyable< Arg >::value, "Compare-and-swap operations only work with trivial structs.");
-			};
-			constexpr CAS_Container(Arg const& a) : data{ MakeUnsignedAndBound(a) } {
-				static_assert(std::is_trivially_destructible< Arg >::value
-					&& std::is_trivially_copy_constructible< Arg >::value
-					&& std::is_trivially_copy_assignable< Arg >::value
-					&& std::is_trivially_copyable< Arg >::value, "Compare-and-swap operations only work with trivial structs.");
-			};
-			constexpr CAS_Container(const CAS_Container&) = default;
-			constexpr CAS_Container& operator=(const CAS_Container&) = default;
-			constexpr CAS_Container(CAS_Container&&) = default;
-			constexpr CAS_Container& operator=(CAS_Container&&) = default;
-			~CAS_Container() = default;
-
-		public:
-			bool CompareSwap(Arg const& compare, Arg const& input) {
-				using fibers::utilities::dbgroup::atomic::mwcas::MwCASDescriptor;
-
-				fibers::utilities::CAS_Container<Arg>
-					OldCopy(compare),
-					UpdateCopy(input);
-				size_t
-					index;
-
-				// continue until a MwCAS operation succeeds
-				while (true) {
-					// create a MwCAS descriptor
-					MwCASDescriptor<NumWords> desc{};
-
-					// prepare the swap target(s)
-					for (index = 0; index < NumWords; index++) {
-						desc.AddMwCASTarget(&Word(index), OldCopy.Word(index), UpdateCopy.Word(index));
-					}
-
-					// try multi-word compare and swap
-					if (desc.MwCAS()) return true;
-					else return false;
-				}
-			}; // returns the previous value while changing the underlying value
-			Arg Swap(Arg const& input, bool allowMiss = false) {
-				using fibers::utilities::dbgroup::atomic::mwcas::MwCASDescriptor;
-
-				fibers::utilities::CAS_Container<Arg> OldCopy, UpdateCopy;
-				size_t index;
-
-				// continue until a MwCAS operation succeeds
-				while (true) {
-					// create a MwCAS descriptor
-					MwCASDescriptor<NumWords> desc{};
-
-					// capture the old words
-					for (index = 0; index < NumWords; index++) {
-						OldCopy.Word(index) = UpdateCopy.Word(index) = MwCASDescriptor<NumWords>::template Read<uint64_t>(&Word(index));
-					}
-
-					// update the actual data
-					UpdateCopy.Data() = MakeUnsignedAndBound(input);
-					
-
-					// prepare the swap target(s)
-					for (index = 0; index < NumWords; index++) {
-						desc.AddMwCASTarget(&Word(index), OldCopy.Word(index), UpdateCopy.Word(index));
-					}
-
-					// try multi-word compare and swap
-					if (desc.MwCAS()) break;
-					else if (allowMiss) break;
-				}
-				return OldCopy.load();
-			}; // returns the previous value while changing the underlying value
-			Arg Add(Arg const& input) {
-				using fibers::utilities::dbgroup::atomic::mwcas::MwCASDescriptor;
-
-				fibers::utilities::CAS_Container<Arg> OldCopy, UpdateCopy;
-				size_t index;
-
-				// continue until a MwCAS operation succeeds
-				while (true) {
-					// create a MwCAS descriptor
-					MwCASDescriptor<NumWords> desc{};
-
-					// capture the old words
-					for (index = 0; index < NumWords; index++) {
-						OldCopy.Word(index) = UpdateCopy.Word(index) = MwCASDescriptor<NumWords>::template Read<uint64_t>(&Word(index));
-					}
-
-					// update the actual data
-					UpdateCopy.Data() = MakeUnsignedAndBound(UpdateCopy.load() + input);
-
-					// prepare the swap target(s)
-					for (index = 0; index < NumWords; index++) {
-						desc.AddMwCASTarget(&Word(index), OldCopy.Word(index), UpdateCopy.Word(index));
-					}
-
-					// try multi-word compare and swap
-					if (desc.MwCAS()) break;
-				}
-				return OldCopy.load();
-			}; // returns the previous value while incrementing the actual counter
-			Arg Update(std::function<Arg(Arg)> updateFunction) {
-				using fibers::utilities::dbgroup::atomic::mwcas::MwCASDescriptor;
-
-				fibers::utilities::CAS_Container<Arg> OldCopy, UpdateCopy;
-				size_t index;
-
-				// continue until a MwCAS operation succeeds
-				while (true) {
-					// create a MwCAS descriptor
-					MwCASDescriptor<NumWords> desc{};
-
-					// capture the old words
-					for (index = 0; index < NumWords; index++) {
-						OldCopy.Word(index) = MwCASDescriptor<NumWords>::template Read<uint64_t>(&Word(index));
-					}
-
-					// update the actual data
-					UpdateCopy.Data() = MakeUnsignedAndBound(updateFunction(OldCopy.load()));
-
-					// prepare the swap target(s)
-					for (index = 0; index < NumWords; index++) {
-						desc.AddMwCASTarget(&Word(index), OldCopy.Word(index), UpdateCopy.Word(index));
-					}
-
-					// try multi-word compare and swap
-					if (desc.MwCAS()) break;
-				}
-				return OldCopy.load();
-			}; // returns the previous value while incrementing the actual counter
-
-		public: // std::atomic compatability
-			Arg fetch_add(Arg const& v) {
-				return Add(v);
-			}; // returns the previous value while incrementing the actual counter
-			Arg fetch_sub(Arg const& v) {
-				return Add(-v);
-			}; // returns the previous value while decrementing the actual counter
-			Arg exchange(Arg const& v) {
-				return Swap(v);
-			}; // returns the previous value while setting the value to the input
-			Arg load() const {
-				const CAS_Container<Arg> x = Copy();
-				return MakeSigned(x.Data());
-			}; // gets the value
-			void store(Arg const& v) {
-				Swap(v);
-				return;
-			}; // sets the value to the input
-
-		};
-		
-		template <typename... Args> struct MultiItemCAS {
-#define SWITCH_FOR_0_to_16 switch (Index) { \
-			REPEATFOR(0); REPEATFOR(1); REPEATFOR(2); REPEATFOR(3); \
-			REPEATFOR(4); REPEATFOR(5); REPEATFOR(6); REPEATFOR(7); \
-			REPEATFOR(8); REPEATFOR(9); REPEATFOR(10); REPEATFOR(11); \
-			REPEATFOR(12); REPEATFOR(13); \
-		    default: break; }
-
-		private:
-			template<int N> using NthTypeOf = typename std::remove_const<typename std::remove_reference<typename std::tuple_element<N, std::tuple<Args...>>::type>::type>::type;
-			static constexpr size_t num_parameters = sizeof...(Args);
-
-		public:
-			MultiItemCAS() : container() {};
-			MultiItemCAS(Args*... items) : container(items...) {};
-			MultiItemCAS(MultiItemCAS const&) = delete;
-			MultiItemCAS(MultiItemCAS&&) = delete;
-			MultiItemCAS& operator=(MultiItemCAS const&) = delete;
-			MultiItemCAS& operator=(MultiItemCAS&&) = delete;
-			~MultiItemCAS() {};
-
-		private:
-			template <int index> NthTypeOf<index> GetCurrentValue(fibers::utilities::dbgroup::atomic::mwcas::MwCASDescriptor< num_parameters >& desc) const {
-				if (container.get<index>()) {
-					return desc.Read<NthTypeOf<index>>(container.get<index>());
-				}
-				else {
-					return 0;
-				}
-			};
-			void CaptureOldValues(Union< Args... >& OldCopy, size_t& Index, fibers::utilities::dbgroup::atomic::mwcas::MwCASDescriptor< num_parameters >& desc) const {
-#define REPEATFOR(index) case index: if constexpr (num_parameters > index) OldCopy.get<index>() = GetCurrentValue<index>(desc); break
-				for (Index = 0; Index < num_parameters; Index++) {
-					SWITCH_FOR_0_to_16;
-				}
-#undef REPEATFOR
-			};
-
-			template <typename... IncomingArgs>
-			void CaptureOldValuesAndModify(Union< Args... >& OldCopy, Union< Args... >& NewValues, Union< IncomingArgs... >& Functors, size_t& Index, fibers::utilities::dbgroup::atomic::mwcas::MwCASDescriptor< num_parameters >& desc) const {
-#define REPEATFOR(index) case index: if constexpr (num_parameters > index) NewValues.get<index>() = Functors.get<index>()(OldCopy.get<index>() = GetCurrentValue<index>(desc)); break
-				for (Index = 0; Index < num_parameters; Index++) {
-					SWITCH_FOR_0_to_16;
-				}
-#undef REPEATFOR
-			};
-
-			template <int index> decltype(auto) PrepareSwapTarget(Union< Args... >& OldCopy, Union< Args... >& NewValues, fibers::utilities::dbgroup::atomic::mwcas::MwCASDescriptor< num_parameters >& desc) const {
-				if (container.get<index>()) {
-					desc.AddMwCASTarget(container.get<index>(), OldCopy.get<index>(), NewValues.get<index>());
-				}
-			};
-			void PrepareSwapTargets(Union< Args... >& OldCopy, Union< Args... >& NewValues, size_t& Index, fibers::utilities::dbgroup::atomic::mwcas::MwCASDescriptor< num_parameters >& desc) {
-#define REPEATFOR(index) case index: if constexpr (num_parameters > index) PrepareSwapTarget<index>(OldCopy, NewValues, desc); break			
-				for (Index = 0; Index < num_parameters; Index++) {
-					SWITCH_FOR_0_to_16;
-				}
-#undef REPEATFOR
-			};
-
-		public:
-			template <typename... IncomingArgs>
-			Union< Args... > Swap(IncomingArgs&&... newValues) {
-				using fibers::utilities::dbgroup::atomic::mwcas::MwCASDescriptor;
-
-				Union< Args... > OldCopy;
-				Union< Args... > UpdateCopy(std::forward<IncomingArgs>(newValues)...);
-
-				size_t
-					index;
-
-				// continue until a MwCAS operation succeeds
-				while (true) {
-					// create a MwCAS descriptor
-					MwCASDescriptor< num_parameters > desc{};
-
-					// capture the old values
-					CaptureOldValues(OldCopy, index, desc);
-
-					// update the actual data
-					// ... already done with the provided values
-
-					// prepare the swap target(s)
-					PrepareSwapTargets(OldCopy, UpdateCopy, index, desc);
-
-					// try multi-word compare and swap
-					if (desc.MwCAS()) break;
-				}
-
-				return OldCopy;
-			}; // returns the previous value while changing the underlying value
-
-			template <typename... IncomingArgs>
-			Union< Args... > SwapWithFunctions(IncomingArgs&&... newValues) {
-				using fibers::utilities::dbgroup::atomic::mwcas::MwCASDescriptor;
-
-				Union< IncomingArgs... > Functors(std::forward<IncomingArgs>(newValues)...);
-				Union< Args... > OldCopy;
-				Union< Args... > UpdateCopy;
-
-				size_t
-					index;
-
-				// continue until a MwCAS operation succeeds
-				while (true) {
-					// create a MwCAS descriptor
-					MwCASDescriptor< num_parameters > desc{};
-
-					// capture the old values
-					CaptureOldValuesAndModify(OldCopy, UpdateCopy, Functors, index, desc);
-
-					// update the actual data
-					// ... already done with the provided values during the capture
-
-					// prepare the swap target(s)
-					PrepareSwapTargets(OldCopy, UpdateCopy, index, desc);
-
-					// try multi-word compare and swap
-					if (desc.MwCAS()) break;
-				}
-
-				return OldCopy;
-			}; // returns the previous value while changing the underlying value
-
-			template <typename... IncomingArgs>
-			bool TrySwap(Union< Args... >& OldCopy, IncomingArgs&&... newValues) {
-				using fibers::utilities::dbgroup::atomic::mwcas::MwCASDescriptor;
-
-				Union< Args... > UpdateCopy(std::forward<IncomingArgs>(newValues)...);
-
-				size_t
-					index;
-
-				// continue until a MwCAS operation succeeds
-				while (true) {
-					// create a MwCAS descriptor
-					MwCASDescriptor< num_parameters > desc{};
-
-					// prepare the swap target(s)
-					PrepareSwapTargets(OldCopy, UpdateCopy, index, desc);
-
-					// try multi-word compare and swap
-					if (desc.MwCAS()) return true;
-					else return false;
-				}
-
-				return false;
-			}; // returns the previous value while changing the underlying value
-
-			template <int index>
-			decltype(auto) Read() const {
-				using fibers::utilities::dbgroup::atomic::mwcas::MwCASDescriptor;
-				MwCASDescriptor< num_parameters > desc{};
-				return GetCurrentValue<index>(desc);
-			};
-
-			Union< Args... > ReadAll() const {
-				using fibers::utilities::dbgroup::atomic::mwcas::MwCASDescriptor;
-				MwCASDescriptor< num_parameters > desc{};
-
-				Union< Args... > OldCopy;
-				size_t index;
-				CaptureOldValues(OldCopy, index, desc);
-
-				return OldCopy;
-			};
-
-
-		private:
-			Union< Args*... > container;
-#undef SWITCH_FOR_0_to_16
-		};
+	};
+};
 
 #undef MWCAS_CAPACITY
 #undef MWCAS_RETRY_THRESHOLD
@@ -6737,26 +8904,3 @@ namespace fibers {
 #undef BW_TREE_MAX_VARIABLE_DATA_SIZE
 #undef BW_TREE_RETRY_THRESHOLD
 #undef BW_TREE_SLEEP_TIME
-	};
-
-	namespace utilities {
-		namespace impl {
-			template <typename T> auto CAS_Safe_Type_F() {
-				if constexpr (std::is_floating_point<T>::value) {
-					return fibers::utilities::UnsignedWrapper < T >();
-				}
-				else {
-					return T();
-				}
-			};
-			
-			template <typename T>
-			struct CAS_Safe_Type {
-				using type = typename fibers::utilities::function_traits<decltype(std::function(CAS_Safe_Type_F<T>))>::result_type;
-			};
-
-		}
-	}
-
-
-};

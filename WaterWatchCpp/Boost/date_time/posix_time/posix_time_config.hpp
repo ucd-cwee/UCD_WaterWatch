@@ -155,6 +155,8 @@ namespace posix_time {
 #endif
   };
 
+
+
 #endif
 
 } }//namespace posix_time

@@ -1507,7 +1507,7 @@ namespace epanet {
                 break;
 
             case EN_STATISTIC:
-                if ((double)value > RANGE) return 213;
+                if ((double)value > (int)RANGE) return 213;
                 rpt->Tstatflag = (char)(double)value;
                 break;
 

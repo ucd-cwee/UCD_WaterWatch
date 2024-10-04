@@ -151,6 +151,8 @@
       <AdditionalOptions>/bigobj /DPARALLEL %(AdditionalOptions)</AdditionalOptions>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <EnableFiberSafeOptimizations>true</EnableFiberSafeOptimizations>
+      <Optimization>Full</Optimization>
+      <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>

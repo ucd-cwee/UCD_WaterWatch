@@ -215,6 +215,38 @@ template <typename F> inline [[nodiscard]] std::shared_ptr<Finally> make_shared_
 #define return_defered(x) \
   return make_shared_finally([=] { x; })
 
+namespace scripting {
+	namespace details {
+		namespace exception {
+			/// \brief Thrown in the event that an Any cannot be cast to the desired type
+			/// It is used internally during function dispatch.
+			class bad_any_cast : public std::bad_cast {
+			public:
+				/// \brief Description of what error occurred
+				const char* what() const noexcept override { return exc.c_str(); }
+
+				bad_any_cast() : 
+					from(boost::typeindex::type_id<void>().type_info()),
+					to(boost::typeindex::type_id<void>().type_info()),
+					exc("Bad Any Cast") {};
+				bad_any_cast(const boost::typeindex::type_info& from_m, const boost::typeindex::type_info& to_m) : 
+					from(from_m),
+					to(to_m),
+					exc(std::string("Bad Any Cast From \"") + from_m.name() + "\" To \"" + to_m.name()) 
+				{};
+
+			private:
+				std::string exc;
+				const boost::typeindex::type_info& from;
+				const boost::typeindex::type_info& to;
+			};
+		}; // namespace exception
+	}; // namespace details
+
+};
+
+
+
 namespace fibers {
 	namespace synchronization {
 		/* *THREAD SAFE* Simple atomic spin-lock that fairly synchronizes threads or fibers based on a ticket-queue system. */
@@ -350,9 +382,9 @@ namespace fibers {
 		template<typename T> struct count_arg;
 		template<typename R, typename ...Args> struct count_arg<std::function<R(Args...)>> { static constexpr const size_t value = sizeof...(Args); };
 		template <typename... Args> constexpr size_t sizeOfParameterPack(Args... Fargs) { return sizeof...(Args); }
-		template<class R> struct function_traits { using result_type = R; using arguments = std::tuple<>; };
-		template<class R> struct function_traits<std::function<R(void)>> { using result_type = R; using arguments = std::tuple<>; };
-		template<class R, class... Args> struct function_traits<std::function<R(Args...)>> { using result_type = R; using arguments = std::tuple<Args...>; };
+		template<typename R> struct function_traits { using result_type = R; using arguments = std::tuple<>; };
+		template<typename R> struct function_traits<std::function<R(void)>> { using result_type = R; using arguments = std::tuple<>; };
+		template<typename R, typename... Args> struct function_traits<std::function<R(Args...)>> { using result_type = R; using arguments = std::tuple<Args...>; };
 
 		template <typename T, typename U> struct helper : helper<T, decltype(&U::operator())> {};
 		template <typename T, typename C, typename R, typename... A> struct helper<T, R(C::*)(A...) const> { static const bool value = std::is_convertible<T, R(*)(A...)>::value; };
@@ -386,9 +418,22 @@ namespace fibers {
 			~AnyData() = default;
 
 		public:
-			template<typename ToType> std::shared_ptr<ToType> cast() const { return std::static_pointer_cast<ToType>(m_ptr); };
+			template<typename ToType> std::shared_ptr<ToType> cast() const {
+				return std::static_pointer_cast<ToType>(m_ptr); 
+			};
 			void* ptr() const { return m_ptr.get(); };
+			template<typename ToType> void ThrowIfNot() {
+				using baseType = typename std::decay_t<typename std::remove_reference_t<typename std::remove_pointer_t<typename std::remove_const_t<typename get_type< ToType >::type>>>>;
 
+				if (boost::typeindex::type_id<baseType>().type_info() != m_type) {
+#if 0
+                    #include <iostream>
+					std::cout << std::string("Bad Cast From \"") + m_type.name() + "\" To \"" + typeid(std::remove_const_t<std::decay_t<baseType>>).name() + "\".";
+#else
+					throw scripting::details::exception::bad_any_cast(m_type, boost::typeindex::type_id<std::remove_const_t<std::decay_t<baseType>>>().type_info());
+#endif
+				}
+			};
 			template<typename T> static std::shared_ptr<void> get_data(const std::shared_ptr<T>& data) {
 				if constexpr (std::is_const< T >::value) {
 					return std::const_pointer_cast<void>(std::static_pointer_cast<const void>(data));
@@ -1021,6 +1066,8 @@ namespace fibers {
 				typedef typename std::remove_reference<typename std::remove_pointer<VType>::type>::type desiredT;
 				auto* ptr = p->container.get();
 				if (ptr) {
+					ptr->ThrowIfNot< VType>();
+
 					if constexpr (is_ptr) {
 						return static_cast<desiredT*>(ptr->ptr());
 					}

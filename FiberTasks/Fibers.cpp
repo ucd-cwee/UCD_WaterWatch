@@ -362,6 +362,9 @@ namespace fibers {
 
 			for (uint32_t threadID = 0; threadID < internal_state.numThreads; ++threadID) {
 				internal_state.threads.emplace_back([threadID] {
+					// pre-warm this thread's heap
+					for (int i = 0; i < 100000; i++) delete (new int(5));
+
 					while (internal_state.alive.load()) {
 						// Work until no more jobs are found
 						work(threadID); 

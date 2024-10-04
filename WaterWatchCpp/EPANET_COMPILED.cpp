@@ -8752,7 +8752,7 @@ namespace epanet {
                             if (j == FLOW) xx = ABS(xx);
                             if (j == STATUS)
                             {
-                                if (xx >= OPEN) xx = 1.0;
+                                if (xx >= (int)OPEN) xx = 1.0;
                                 else            xx = 0.0;
                             }
                         }

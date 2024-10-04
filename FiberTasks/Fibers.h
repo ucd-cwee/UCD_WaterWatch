@@ -814,12 +814,13 @@ namespace fibers {
 		template<typename type = double>
 		struct atomic_number {
 		public:
-			static constexpr bool isFloatingPoint = std::is_floating_point<type>::value;
+			static constexpr bool isFloatingPoint = std::is_floating_point<type>::value || std::is_same_v<type, long long>;
 			static constexpr bool isSigned = std::is_signed<type>::value;
 
 		private:
 			static auto ValidTypeExample() {
-				if constexpr (isFloatingPoint) return fibers::utilities::CAS_Container<type>{};
+				if constexpr (isFloatingPoint) return fibers::utilities::CAS_Container<type>{}; // this makes it actually thread-safe. DoubleWrapper does not. 
+				else if constexpr (std::is_same_v<type, long long>) return fibers::utilities::CAS_Container<type>{}; // this makes it actually thread-safe. DoubleWrapper does not. 
 				else { // Integral. Only 4 integral types are actually supported. long, unsigned int, unsigned long, unsigned __int64
 					if constexpr (isSigned) {
 						return static_cast<long>(0);
@@ -1001,6 +1002,13 @@ namespace fibers {
 					return *this;
 				}
 				else {
+					//type previousV;
+					//while (true) {
+					//	previousV = value;
+					//	if (previousV == InterlockedCompareExchange(&value, previousV - static_cast<internalType>(i.value), previousV)) {
+					//		break;
+					//	}
+					//}
 					InterlockedExchangeAdd(&value, static_cast<internalType>(-i.value));
 					return *this;
 				}
@@ -1093,15 +1101,10 @@ namespace fibers {
 				return *this;
 			};
 
-			template <typename T> bool operator==(const atomic_number<T>& b) {
-				if constexpr (sizeof(T) > sizeof(type)) {
-					return static_cast<T>(load()) == static_cast<T>(b.load());
-				}
-				else {
-					return static_cast<type>(load()) == static_cast<type>(b.load());
-				}				
+			template <typename T> bool operator==(const atomic_number<T>& b) const {
+				return std::abs(static_cast<long double>(load()) - static_cast<long double>(b.load())) <= 0.00005l;
 			};
-			template <typename T> bool operator!=(const atomic_number<T>& b) {
+			template <typename T> bool operator!=(const atomic_number<T>& b) const {
 				return !operator==(b);
 			};
 			template <typename T> bool operator<=(const atomic_number<T>& b) {
@@ -1159,6 +1162,22 @@ namespace fibers {
 					return std::ceil(value);
 				}
 			};
+			//static atomic_number min(atomic_number const& a, atomic_number const& b) const {
+			//	if constexpr (isFloatingPoint) {
+			//		return std::min(a.load(), b.load());
+			//	}
+			//	else {
+			//		return std::min(a, b);
+			//	}
+			//};
+			//static atomic_number max(atomic_number const& a, atomic_number const& b) const {
+			//	if constexpr (isFloatingPoint) {
+			//		return std::max(a.load(), b.load());
+			//	}
+			//	else {
+			//		return std::max(a, b);
+			//	}
+			//};
 
 			bool CompareExchange(type expected, type newValue) {
 				if constexpr (isFloatingPoint) {
@@ -1292,8 +1311,646 @@ namespace fibers {
 
 		};
 	};
+	namespace containers {
+		/* *THREAD SAFE* Thread- and Fiber-safe queue with Last-In-First-Out functionality.
+		* POD types are stored by-value, non-POD types are stored as shared_ptr's.
+		* POD types have a speed-up by avoiding destructor calls.
+		* Example: [1,2]. Push(5) -> [1,2,5]. Pop(&Out) -> [1,2] & sets Out to 5.
+		*/
+		template <typename value> class Stack {
+		private:
+			static auto GetValueStorageType() {
+				if constexpr (std::is_pod<value>::value) {
+					value out{};
+					return out;
+				}
+				else {
+					auto out{ std::make_shared<value>() };
+					return out;
+				}
+			};
+			static auto MakeValueStorageType(value const& v) {
+				if constexpr (std::is_pod<value>::value) {
+					return static_cast<value const&>(v);
+				}
+				else {
+					return std::make_shared<value>(v);
+				}
+			};
+			static auto MakeValueStorageType(value&& v) {
+				if constexpr (std::is_pod<value>::value) {
+					return static_cast<value const&>(v);
+				}
+				else {
+					return std::make_shared<value>(std::forward<value>(v));
+				}
+			};
+			using ValueStorageType = typename fibers::utilities::function_traits<decltype(std::function(GetValueStorageType))>::result_type;
+			static value& GetValueFromStorageType(ValueStorageType& v) {
+				if constexpr (std::is_pod<value>::value) {
+					return v;
+				}
+				else {
+					return *v;
+				}
+			};
+
+			/* storage class for each node in the stack. May or may not be POD, depending on the value type being stored. */
+			class linkedListItem {
+			public:
+				ValueStorageType value; // may be copied-as-value or may be a shared_ptr. May or may not be POD. 
+				synchronization::atomic_ptr<linkedListItem> prev; // ptr to the "prev" ptr. Non-POD but can be "forgotten" without penalty
+
+				linkedListItem() : value(), prev(nullptr) {}
+				linkedListItem(ValueStorageType const& mvalue) : value(mvalue), prev(nullptr) {}
+				linkedListItem(linkedListItem const&) = default;
+				linkedListItem(linkedListItem&&) = default;
+				linkedListItem& operator=(linkedListItem const&) = default;
+				linkedListItem& operator=(linkedListItem&&) = default;
+				~linkedListItem() = default;
+			};
+
+			/* allocator is forced to use POD optimization if the value type is POD. */
+			utilities::Allocator< linkedListItem > nodeAlloc;
+			/* the current "tip" of the stack, which will be pop'd on request. */
+			synchronization::atomic_ptr<linkedListItem> head;
+
+		public:
+			Stack() = default;
+			Stack(Stack const&) = delete;
+			Stack(Stack&&) = delete;
+			Stack& operator=(Stack const&) = delete;
+			Stack& operator=(Stack&&) = delete;
+			~Stack() { clear(); };
+
+			/**
+			 * @brief current size of the list.
+			 * @return number of items in list
+			 */
+			unsigned long size() const {
+				return nodeAlloc.GetAllocCount();
+			};
+
+			/**
+			 * @brief clears the list.
+			 * @return void
+			 */
+			void clear() {
+				linkedListItem* p = head.Set(nullptr);
+				linkedListItem* n = nullptr;
+
+				while (p) {
+					n = p->prev.Set(nullptr);
+					nodeAlloc.Free(p);
+					p = n;
+					if (!p) // At end, lets check if new stuff came in
+						p = head.Set(nullptr);
+				}
+
+				//nodeAlloc.Clean();
+			};
+
+			/**
+			 * @brief pushes a copy of Value at the end of the list.
+			 * @return true if Stack was previously empty, false otherwise.
+			 */
+			bool push(value const& Value) {
+				auto* node = nodeAlloc.Alloc(); {
+					node->value = MakeValueStorageType(Value);
+				}
+
+				while (true) {
+					node->prev = head.load();
+					if (head.CompareExchange(node->prev, node) == node->prev) {
+						return node->prev == nullptr;
+						// break;
+					}
+				}
+			};
+
+			/**
+			 * @brief pushes a copy of Value at the end of the list.
+			 * @return true if Stack was previously empty, false otherwise.
+			 */
+			bool push(value&& Value) {
+				auto* node = nodeAlloc.Alloc(); {
+					node->value = MakeValueStorageType(std::forward<value>(Value));
+				}
+
+				while (true) {
+					node->prev = head.load();
+					if (head.CompareExchange(node->prev, node) == node->prev) {
+						return node->prev == nullptr;
+						break;
+					}
+				}
+			};
+
+			/**
+			 * @brief pushes a shared_ptr of the Value at the end of the list. Only available if value type is non-POD. (POD data are stored-by-value and a shared_ptr would not be respected)
+			 * @return true if Stack was previously empty, false otherwise.
+			 */
+			template<typename = std::enable_if_t<!std::is_pod<value>::value>> bool push(std::shared_ptr<value> const& Value) {
+				auto* node = nodeAlloc.Alloc(); {
+					node->value = Value;
+				}
+
+				while (true) {
+					node->prev = head.load();
+					if (head.CompareExchange(node->prev, node) == node->prev) {
+						return node->prev == nullptr;
+						break;
+					}
+				}
+			};
+
+			/**
+			 * @brief Searches for the first match with Value and removes it from the list.
+			 * @return successful or not
+			 */
+			bool try_remove(value const& Value) {
+				bool found = false;
+				linkedListItem* next = nullptr;
+				linkedListItem* current = head.load();
+				if (current) {
+					linkedListItem* prev = current->prev.load();
+					while (!found && current) {
+						if (GetValueFromStorageType(current->value) == Value) {
+							// found it
+							if (next) {
+								// set it's next->prev to prev, not current
+								if (next->prev.CompareExchange(current, prev) == current) {
+									found = true;
+									break;
+								}
+								else {
+									// something interupted -- try again
+									continue;
+								}
+							}
+							else {
+								// no "next" implies current was the head.
+								if (head.CompareExchange(current, prev) == current) {
+									found = true;
+									break;
+								}
+								else {
+									continue;
+								}
+							}
+						}
+
+						next = current;
+						current = prev;
+						if (current) {
+							prev = current->prev.load();
+						}
+						else {
+							prev = nullptr;
+						}
+					}
+					if (found && current) {
+						nodeAlloc.Free(current);
+					}
+				}
+				return found;
+			};
+
+			/**
+			 * @brief Trys to retrieve the item at the end of the list. If found, sets Out to that value.
+			 * @return successful or not, and will set Out if successful
+			 */
+			bool try_pop(ValueStorageType& out) {
+				linkedListItem* current{ head.load() };
+				linkedListItem* prev{ nullptr };
+				bool found = false;
+
+				while (!found && current) {
+					current = head.load();
+					prev = current->prev.load();
+					// no "next" implies current was the head.
+					if (head.CompareExchange(current, prev) == current) {
+						found = true;
+						break;
+					}
+					else { // something interupted -- try again
+						continue;
+					}
+				}
+				if (found) {
+					out = std::move(current->value);
+					nodeAlloc.Free(current);
+				}
+				return found;
+			};
+
+			/**
+			 * @brief Trys to remove the last (most recent) element from the list.
+			 * @return successful or not
+			 */
+			bool try_pop() {
+				linkedListItem* current{ head.load() };
+				linkedListItem* prev{ nullptr };
+				bool found = false;
+
+				while (!found && current) {
+					current = head.load();
+					prev = current->prev.load();
+					// no "next" implies current was the head.
+					if (head.CompareExchange(current, prev) == current) {
+						found = true;
+						break;
+					}
+					else { // something interupted -- try again
+						continue;
+					}
+				}
+				if (found) {
+					nodeAlloc.Free(current);
+				}
+				return found;
+			};
+
+			/**
+			 * @brief Trys to remove the last (most recent) element from the list.
+			 * @return successful or not
+			 */
+			bool try_pop_and_return_if_empty() {
+				linkedListItem* current{ head.load() };
+				linkedListItem* prev{ nullptr };
+				bool found = false;
+				bool isEmpty{ true };
+				while (!found && current) {
+					current = head.load();
+					prev = current->prev.load();
+					// no "next" implies current was the head.
+					if (head.CompareExchange(current, prev) == current) {
+						if (!prev) {
+							isEmpty = true;
+						}
+
+						found = true;
+						break;
+					}
+					else { // something interupted -- try again
+						continue;
+					}
+				}
+				if (found) {
+					nodeAlloc.Free(current);
+				}
+				return isEmpty;
+			};
+
+			/**
+			 * @brief Trys to retrieve the item at the end of the list. If found, sets Out to that value.
+			 * @return successful or not, and will set Out if successful
+			 */
+			template<typename = std::enable_if_t<!std::is_pod<value>::value>> bool try_pop(value& out) {
+				linkedListItem* current{ head.load() };
+				linkedListItem* prev{ nullptr };
+				bool found = false;
+
+				while (!found && current) {
+					current = head.load();
+					prev = current->prev.load();
+					// no "next" implies current was the head.
+					if (head.CompareExchange(current, prev) == current) {
+						found = true;
+						break;
+					}
+					else { // something interupted -- try again
+						continue;
+					}
+				}
+				if (found) {
+					out = std::move(*current->value);
+					nodeAlloc.Free(current);
+				}
+				return found;
+			};
+
+			/**
+			 * @brief counts how many times the Value is found in the list.
+			 * @return number of matched items in list
+			 */
+			unsigned long count(value const& Value, unsigned long maxCount = std::numeric_limits<unsigned long>::max()) {
+				linkedListItem* current = head.load();
+				unsigned long counted{ 0 };
+				while (current && (counted < maxCount)) {
+					if (GetValueFromStorageType(current->value) == Value) {
+						counted++;
+					}
+					current = current->prev.load();
+				}
+				return counted;
+			};
+
+			/**
+			 * @brief Determines if the Value is in the list.
+			 * @return whether or not the Value was found
+			 */
+			bool contains(value const& Value) {
+				return count(Value, 1) > 0;
+			};
+
+		};
+	};
 
 	namespace utilities {
+		/* 
+		Allows user to queue ptrs for deletion or actions to take place during garbage collection phases. Garbage collection or deletion can be postponed until safe, utilizing scope guards. 
+		If a thread is accessing a pointer and is at-risk for another thread deleting the pointer, then this GC tool may be a solution. Guarrantees that any ptr's queued for deletion will be deleted, even if this GC goes out-of-scope.
+		\n
+		CleanupFrequencyMilliseconds = will not perform GC if it was already performed within the last X milliseconds.
+		*/
+		template <uint64_t CleanupFrequencyMilliseconds = 1>
+		class EpochGarbageCollector {
+		private: // Support functions
+			template <typename T> class Queue {
+			public:
+#if 1 // breaks so far, for reasons unknown. May be a bug with AtomicQueue.
+				moodycamel::ConcurrentQueue<T> queue{};
+
+				__forceinline void push(T&& item) {
+					queue.push(std::forward<T>(item));
+				};
+				__forceinline void push(const T& item) {
+					queue.push(item);
+				};
+				__forceinline bool try_pop(T& item) {
+					return queue.try_pop(item);
+				};
+				__forceinline bool front(T& item) {
+					return queue.front(item);
+				};
+#else
+#if 0 // utilizes a lock-free design that guarrantees progress under heavy contention
+				concurrency::concurrent_queue<T> queue{};
+
+				__forceinline void push(T&& item) {
+					queue.push(std::forward<T>(item));
+				};
+				__forceinline void push(const T& item) {
+					queue.push(item);
+				};
+				__forceinline bool try_pop(T& item) {
+					return queue.try_pop(item);
+				};
+				__forceinline bool front(T& item) = delete; // this function is not supported under this mode.
+#else
+				std::deque<T> queue{};
+				fibers::synchronization::mutex locker{};
+
+				__forceinline void push(T&& item) {
+					std::scoped_lock lock(locker);
+					queue.push_back(std::forward<T>(item));
+				};
+				__forceinline void push(const T& item) {
+					std::scoped_lock lock(locker);
+					queue.push_back(item);
+				};
+				__forceinline bool try_pop(T& item) {
+					std::scoped_lock lock(locker);
+					if (queue.empty()) return false;
+					item = std::move(queue.front());
+					queue.pop_front();
+					return true;
+				};
+				__forceinline bool front(T& item) {
+					std::scoped_lock lock(locker);
+					if (queue.empty()) return false;
+					item = std::move(queue.front());
+					return true;
+				};
+				__forceinline bool try_pop_back(T& item) {
+					std::scoped_lock lock(locker);
+					if (queue.empty()) return false;
+					item = std::move(queue.back());
+					queue.pop_back();
+					return true;
+				};
+				__forceinline bool back(T& item) {
+					std::scoped_lock lock(locker);
+					if (queue.empty()) return false;
+					item = std::move(queue.back());
+					return true;
+				};
+#endif
+#endif
+				Queue() = default;
+				Queue(Queue const&) = default;
+				Queue(Queue&&) = default;
+				Queue& operator=(Queue const&) = default;
+				Queue& operator=(Queue&&) = default;
+				~Queue() = default;
+			};
+			
+			static auto GetCurrentEpoch() {
+				return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now().time_since_epoch()).count();
+			};
+
+		private: // Using statements
+			using EpochStorageType = typename fibers::utilities::function_traits<decltype(std::function(GetCurrentEpoch))>::result_type;
+			using EpochDeleteType = std::function<void()>;
+			using EpochQueueType = std::pair<EpochGarbageCollector::EpochStorageType, EpochDeleteType>;
+			using IDManager = fibers::utilities::dbgroup::thread::IDManager;
+
+		protected: // Reclamation Queue
+			Queue< EpochQueueType> DeleteList;	// Queue of pointers to reclaim. We try to quickly keep the queue partially sorted. When unsorted, we move the first out-of-position item to the end and exit, to try again at a later date.
+			bool Dequeue(EpochQueueType& out) { return DeleteList.try_pop(out); }; // Try to get a pointer for reclamation.
+			void Enqueue(EpochQueueType&& obj) { DeleteList.push(std::forward<EpochQueueType>(obj)); }; // add a pointer or function for reclamation
+			void Enqueue(EpochQueueType const& obj) { DeleteList.push(obj); }; // add a pointer or function for reclamation
+			void Enqueue(EpochDeleteType&& obj) { DeleteList.push({ GetCurrentEpoch(), std::forward<EpochDeleteType>(obj) }); }; // add a pointer or function for reclamation
+
+		private:
+			class ThreadLocalStorage {
+			public:
+				ThreadLocalStorage() = default;
+				~ThreadLocalStorage() = default;
+				ThreadLocalStorage(ThreadLocalStorage const&) = delete;
+				ThreadLocalStorage(ThreadLocalStorage&&) = delete;
+				ThreadLocalStorage& operator=(ThreadLocalStorage const&) = delete;
+				ThreadLocalStorage& operator=(ThreadLocalStorage&&) = delete;
+
+				EpochGarbageCollector::EpochStorageType EpochLimit{ 0 }; // to be reclaimed if a pointer is older than this 
+				fibers::synchronization::atomic_number<unsigned long long> Active{ 0 }; // incremented when a TLS is utilized. Should not (but is allowed to) exceed a value of 1. 
+				EpochGarbageCollector* parent{ nullptr }; // set once without race condition, and never changed thereafter. 
+			
+			private:
+				EpochGarbageCollector::EpochStorageType Epoch_3{ 0 }; // oldest Epoch
+				EpochGarbageCollector::EpochStorageType Epoch_2{ 0 }; // middle Epoch
+				EpochGarbageCollector::EpochStorageType Epoch_1{ 0 }; // youngest Epoch
+				fibers::synchronization::atomic_number<long> StackLevel{ 0 };
+				
+				// 
+				class EpochGuard {
+				private:
+					ThreadLocalStorage* _parent;
+					EpochStorageType _CurrentEpoch;
+
+				public:
+					EpochGuard() = default;
+					EpochGuard(ThreadLocalStorage* parent, EpochStorageType CurrentEpoch) :
+						_parent{ parent }
+						, _CurrentEpoch{ CurrentEpoch }
+					{};
+					EpochGuard(EpochGuard const&) = delete;
+					EpochGuard(EpochGuard&&) = delete;
+					EpochGuard& operator=(EpochGuard const&) = delete;
+					EpochGuard& operator=(EpochGuard&&) = delete;
+					~EpochGuard() {
+						if (_parent->StackLevel.Decrement() == 0) {
+							_parent->ForwardEpoch(_CurrentEpoch);
+							_parent->parent->RunGC();
+						}
+					};
+				};
+				// forwards the current Epoch, and returns the epoch for which it is 100% safe to delete for (previous EpochLimit).
+				EpochGarbageCollector::EpochStorageType ForwardEpoch(EpochGarbageCollector::EpochStorageType CurrentEpoch) {
+					auto cas{ fibers::utilities::MultiItemCAS(&EpochLimit, &Epoch_1, &Epoch_2, &Epoch_3) };
+
+					auto oldSwap = cas.Update([this, &CurrentEpoch](auto data) {
+						auto& EpochLimit{ data.get<0>() };
+						auto& Epoch_1{ data.get<1>() };
+						auto& Epoch_2{ data.get<2>() };
+						auto& Epoch_3{ data.get<3>() };
+
+						// ptrs that are as old as Epoch_3 or older are now available for deleting
+						EpochLimit = Epoch_3;
+						Epoch_3 = Epoch_2;
+						Epoch_2 = Epoch_1;
+						Epoch_1 = CurrentEpoch;
+
+						return data;
+						});
+
+					return oldSwap.get<0>();
+				};
+
+			public:
+				[[nodiscard]] const auto ProtectCurrentEpoch() {
+					if (StackLevel.Increment() == 1 && Active == 0) { Active++; }
+					return EpochGuard(this, GetCurrentEpoch());
+				};
+
+			};
+			// Performs the actual garbage collection. OK to call this over-and-over again, as it'll space itself out in time to prevent over-ambitous GC calls. 
+			void RunGC() {
+				EpochQueueType out{};
+				EpochGarbageCollector::EpochStorageType _EpochLimit{ std::numeric_limits<EpochGarbageCollector::EpochStorageType>::max() };
+				auto currentGC{ std::chrono::milliseconds(GetCurrentEpoch()) };
+				static constexpr auto duration{ std::chrono::milliseconds(CleanupFrequencyMilliseconds) };
+
+				if ((currentGC - std::chrono::milliseconds(lastGC.load())) > duration) {
+					lastGC.SetValue(currentGC.count());
+
+					for (auto& tls : TLS_arr) 
+						if (tls.Active > 0) 
+							_EpochLimit = std::min(_EpochLimit, fibers::utilities::MultiItemCAS(&tls.EpochLimit).Read<0>());
+						
+					if (_EpochLimit > 0) 
+						while (Dequeue(out)) // while jobs are available...
+							if (out.first < _EpochLimit) // ...if the data is in the correct time period for reclamation...
+								out.second(); // ... then do the clean-up, and try again (hoping that the list is semi-sorted).
+							else 
+								return Enqueue(out); // ... otherwise push to the end of the queue, which is a form of lazy sorting (also prevents endless looping without additional checks / handles). 
+				}
+			};
+
+		private:
+			static constexpr size_t kMaxThreadNum = fibers::utilities::dbgroup::thread::kMaxThreadNum;
+			static auto GetThreadID() { return IDManager::GetThreadID(); };
+			std::array<ThreadLocalStorage, kMaxThreadNum> TLS_arr;
+			fibers::synchronization::atomic_number<EpochStorageType> lastGC;
+			auto& GetTLS() { return TLS_arr[GetThreadID()]; };
+
+		public:
+			EpochGarbageCollector() : TLS_arr{}, lastGC{ 0 }, DeleteList{} { for (auto& tls : TLS_arr) tls.parent = this; };
+			EpochGarbageCollector(EpochGarbageCollector const&) = delete;
+			EpochGarbageCollector(EpochGarbageCollector&&) = delete;
+			EpochGarbageCollector& operator=(EpochGarbageCollector const&) = delete;
+			EpochGarbageCollector& operator=(EpochGarbageCollector&&) = delete;
+			~EpochGarbageCollector() { EpochQueueType out; while (Dequeue(out)) out.second(); };
+
+		public:
+			// Attempts to cleanup unused memory
+			const auto TryCleanupUnusedMemory() { return RunGC(); };
+			// Stalls deallocation / free calls made after this guard until this guard expires.
+			[[nodiscard]] const auto CreateEpochGuard() {
+				return GetTLS().ProtectCurrentEpoch();
+			};
+			// Queues a pointer for deletion, which may happen immediately or after some delay, depending on barriers and timing.
+			template <class Target, typename = std::enable_if_t<!std::is_same_v<Target, void> > > void AddGarbage(const Target* garbage_ptr) {
+				Enqueue([garbage_ptr]() {
+					const Target* p = static_cast<const Target*>(garbage_ptr);
+					delete p;
+				});
+			};
+			// Queues a pointer for deletion, which may happen immediately or after some delay, depending on barriers and timing.
+			template <class Target> void AddGarbage(const void* garbage_ptr) {
+				Enqueue([garbage_ptr]() {
+					const Target* p = static_cast<const Target*>(garbage_ptr);
+					delete p;
+				});
+			};
+			// Queues an action to take place during the collection process, including custom destruction calls. Can be blocked like normal by the Epoch guards.
+			template <class Target = void> void AddCollectionAction(EpochDeleteType&& functor) {
+				Enqueue(std::forward<EpochDeleteType>(functor));
+			};
+		};
+
+		/* 
+		Allocator (enables efficient use of memory) which also allows free / deletion operations to be postponed until safe, utilizing scope guards. If a thread is accessing a pointer and is at-risk for another thread deleting the pointer, then this allocator tool may be a solution. Guarrantees that any memory allocated will be cleaned-up, even if this allocator goes out-of-scope. 
+		\n
+		T = typename to be allocated.
+		forcedSize = can be used to allocate larger blocks than just the sizeof(T). 
+		forcePOD = can be used to guarrantee that the destructor is not called on each pointer, T. Speed-up when correctly used, otherwise can cause a memory leak.
+		CleanupFrequencyMilliseconds = will not perform GC if it was already performed within the last X milliseconds.
+		*/
+		template <typename T, unsigned int forcedSize = sizeof(T), bool forcePOD = std::is_pod_v<T>, uint64_t CleanupFrequencyMilliseconds = 1>
+		class GarbageCollectedAllocator {
+		private:
+			std::shared_ptr<EpochGarbageCollector<CleanupFrequencyMilliseconds>> _gc; // thread-safe, single-threaded GC which allows delaying the GC until after it is safe to reclame memory, and guarrantees reclamation of all queued data on destruction. 
+			std::shared_ptr<fibers::utilities::Allocator<T, 256, forcePOD, forcedSize>> _alloc; // thread-safe allocator that guarrantees reclamation of data on close-out. 
+
+		public:
+			GarbageCollectedAllocator() : _gc(std::make_shared<EpochGarbageCollector<CleanupFrequencyMilliseconds>>()), _alloc(std::make_shared<fibers::utilities::Allocator<T, 256, forcePOD, forcedSize>>()) {};
+			GarbageCollectedAllocator(GarbageCollectedAllocator const&) = default;
+			GarbageCollectedAllocator(GarbageCollectedAllocator&&) = default;
+			GarbageCollectedAllocator& operator=(GarbageCollectedAllocator const&) = default;
+			GarbageCollectedAllocator& operator=(GarbageCollectedAllocator&&) = default;
+			~GarbageCollectedAllocator() { // _gc *must* release first, _alloc afterwards. This odd code helps guarrantee the compiler won't re-arrange the code. 
+				_alloc = std::static_pointer_cast<fibers::utilities::Allocator<T, 256, forcePOD, forcedSize>>(std::static_pointer_cast<void>(_gc = nullptr /* set to null, return result (null) */)) /* casts appropriate type. Is actually null, so this is OK. */;
+			};
+
+			// Request a new memory pointer. May be recovered from a previously-used location. Will be cleared and correctly initialized, if appropriate.
+			template <typename... TArgs> T* Alloc(TArgs &&... a) {
+				return this->_alloc->Alloc(std::forward<TArgs>(a)...);
+			};
+
+			// Frees the memory pointer, previously provided by this allocator. Calls the destructor for non-POD types, and will store the pointer for later use.
+			void				Free(const T* element) {
+				_gc->AddCollectionAction([this, element]() {
+					this->_alloc->Free(element);
+				});
+			};
+
+			// Request a new memory pointer that will self-delete and return to the memory pool automatically. Important: This allocator must out-live the shared_ptr.
+			template <typename... TArgs> std::shared_ptr< T > AllocShared(TArgs &&... a) {
+				return std::shared_ptr<T>(Alloc(std::forward<TArgs>(a)...), [this](T* p) { this->Free(p); });
+			};
+
+			// Stalls deallocation / free calls made after this guard until this guard expires.
+			[[nodiscard]] const auto CreateEpochGuard() { return this->_gc->CreateEpochGuard(); };
+
+			// Attempts to cleanup unused memory
+			const auto TryCleanupUnusedMemory() { 
+				this->_gc->TryCleanupUnusedMemory();
+				this->_alloc->TryCleanupUnusedMemory();
+			};
+
+		};
 
 		// bw tree
 		namespace dbgroup::index::bw_tree
@@ -1332,7 +1989,6 @@ namespace fibers {
 				using MappingTable_t = component::MappingTable<Node_t, Delta_t>;
 				using DC = component::DeltaChain<Delta_t>;
 				using ConsolidateInfo = std::pair<const void*, const void*>;
-				using NodeGC_t = dbgroup::memory::EpochBasedGC<NodePage, DeltaPage>;
 				using ScanKey = std::optional<std::tuple<const Key&, size_t, bool>>;
 
 				template <class Entry>
@@ -1341,24 +1997,6 @@ namespace fibers {
 				using BulkResult = std::pair<size_t, std::vector<NodeEntry>>;
 				using BulkPromise = std::promise<BulkResult>;
 				using BulkFuture = std::future<BulkResult>;
-
-#if 0
-				using value_type = std::pair<Key, Payload>;
-				struct it_state {
-					mutable RecordIterator_t pos;
-					mutable value_type obj;
-
-					inline void begin(const BwTree* ref) { pos = const_cast<BwTree*>(ref)->Scan(); }
-					inline void next(const BwTree* ref) { ++pos; }
-					inline void end(const BwTree* ref) { pos = RecordIterator_t(); }
-					inline value_type& get(BwTree* ref) { if (pos) { obj.first = pos.GetKey(); obj.second = pos.GetPayload(); } return obj; }
-					inline bool cmp(const it_state& s) const { return (pos == s.pos) ? false : true; }
-					inline long long distance(const it_state& s) const { return pos - s.pos; };
-					inline void prev(const BwTree* ref) { --pos; }
-					inline const value_type& get(const BwTree* ref) const { if (pos) { obj.first = pos.GetKey(); obj.second = pos.GetPayload(); } return obj; }
-				};
-				SETUP_STL_ITERATOR(BwTree, value_type, it_state);
-#endif
 
 				/*####################################################################################
 				 * Public constructors and assignment operators
@@ -1373,7 +2011,7 @@ namespace fibers {
 				explicit BwTree(  //
 					const size_t gc_interval_microsec = kDefaultGCTime,
 					const size_t gc_thread_num = kDefaultGCThreadNum)
-					: gc_{ gc_interval_microsec, gc_thread_num }
+					: mapping_table_([this](LogicalPtr& lid) { this->DeallocateLogicalPtr(lid); })
 				{
 					// create an empty Bw-tree
 					auto* root_node = new (GetNodePage()) Node_t{};
@@ -1381,8 +2019,6 @@ namespace fibers {
 					auto* root_ptr = mapping_table_.GetLogicalPtr(root_id);
 					root_ptr->Store(root_node);
 					root_.store(root_id, std::memory_order_relaxed);
-
-					gc_.StartGC();
 				}
 
 				BwTree(const BwTree&) = delete;
@@ -1390,6 +2026,11 @@ namespace fibers {
 
 				auto operator=(const BwTree&)->BwTree & = delete;
 				auto operator=(BwTree&&)->BwTree & = delete;
+
+				void DeallocateLogicalPtr(LogicalPtr& lid) {
+					return;
+				};
+
 
 				/*####################################################################################
 				 * Public destructors
@@ -1399,15 +2040,7 @@ namespace fibers {
 				  * @brief Destroy the BwTree object.
 				  *
 				  */
-				~BwTree() {
-
-
-					//std::atomic_uint64_t root_{}; /// a root node of this Bw-tree.
-					//MappingTable_t mapping_table_{}; /// a table to map logical IDs with physical pointers.
-					//NodeGC_t gc_{}; /// a garbage collector of base nodes and delta records.
-
-
-				};
+				~BwTree() {};
 
 				/*####################################################################################
 				 * Public read APIs
@@ -1427,7 +2060,8 @@ namespace fibers {
 						[[maybe_unused]] const size_t key_len = sizeof(Key)) //
 					-> std::optional<Payload>
 				{
-					[[maybe_unused]] const auto& guard = gc_.CreateEpochGuard();
+					[[maybe_unused]] const auto& guard2 = PageAllocator.CreateEpochGuard();
+					[[maybe_unused]] const auto& guard3 = DeltaAllocator.CreateEpochGuard();
 
 					// check whether the leaf node has a target key
 					auto&& stack = SearchLeafNode(key, kClosed);
@@ -1488,10 +2122,14 @@ namespace fibers {
 						const ScanKey& end_key = std::nullopt)   //
 					-> RecordIterator_t
 				{
-					[[maybe_unused]] const auto& guard = gc_.CreateEpochGuard();
-					thread_local std::unique_ptr<void, std::function<void(void*)>>  //
-						page{ dbgroup::memory::Allocate<NodePage>(2 * kPageSize),
-							 dbgroup::memory::Release<NodePage> };
+					[[maybe_unused]] const auto& guard2 = PageAllocator.CreateEpochGuard();
+					[[maybe_unused]] const auto& guard3 = DeltaAllocator.CreateEpochGuard();
+
+
+					std::unique_ptr<void, std::function<void(void*)>> page{
+						PageAllocator.Alloc(),
+						[this](void* p) { PageAllocator.Free(static_cast<NodePage*>(p)); } 
+					};
 
 					auto* node = new (page.get()) Node_t{};
 					size_t begin_pos{};
@@ -1521,6 +2159,14 @@ namespace fibers {
 					return RecordIterator_t{ this, node, begin_pos, end_pos, end_key, is_end };
 				}
 
+				auto 
+					TryCleanupUnusedMemory() -> void {
+
+					PageAllocator.TryCleanupUnusedMemory();
+					DeltaAllocator.TryCleanupUnusedMemory();
+					mapping_table_.TryCleanupUnusedMemory();
+				};
+
 				/**
 				 * @brief Try to find the node the smallest key that is equal to or greater than the requested key. (e.g. search for 55.5, returns 56)
 				 *
@@ -1537,8 +2183,13 @@ namespace fibers {
 						end_key.emplace(std::tuple<const Key&, size_t, bool>({ maxKey.value(), (size_t)(sizeof(Key)), true })); // true = may include the value if found
 					}
 
-					[[maybe_unused]] const auto& guard = gc_.CreateEpochGuard();
-					thread_local std::unique_ptr<void, std::function<void(void*)>> page{ dbgroup::memory::Allocate<NodePage>(2 * kPageSize), dbgroup::memory::Release<NodePage> };
+					[[maybe_unused]] const auto& guard2 = PageAllocator.CreateEpochGuard();
+					[[maybe_unused]] const auto& guard3 = DeltaAllocator.CreateEpochGuard();
+
+					std::unique_ptr<void, std::function<void(void*)>> page{ 
+						PageAllocator.Alloc(), 
+						[this](void* p) { PageAllocator.Free(static_cast<NodePage*>(p)); }
+					};
 
 					auto* node = new (page.get()) Node_t{};
 					size_t begin_pos{};
@@ -1623,8 +2274,13 @@ namespace fibers {
 					First()
 					-> RecordIterator_t
 				{
-					[[maybe_unused]] const auto& guard = gc_.CreateEpochGuard();
-					thread_local std::unique_ptr<void, std::function<void(void*)>> page{ dbgroup::memory::Allocate<NodePage>(2 * kPageSize), dbgroup::memory::Release<NodePage> };
+					[[maybe_unused]] const auto& guard2 = PageAllocator.CreateEpochGuard();
+					[[maybe_unused]] const auto& guard3 = DeltaAllocator.CreateEpochGuard();
+
+					std::unique_ptr<void, std::function<void(void*)>> page{ 
+						PageAllocator.Alloc(), 
+						[this](void* p) { PageAllocator.Free(static_cast<NodePage*>(p)); } 
+					};
 
 					auto* node = new (page.get()) Node_t{};
 					size_t begin_pos{};
@@ -1652,8 +2308,7 @@ namespace fibers {
 				 * @param key a key to search for.
 				 * @return an iterator to access the scanned record.
 				 */
-				auto
-					FindLargestSmallerEqual(const Key& key, std::optional<Key> const& maxKey = std::nullopt)
+				auto FindLargestSmallerEqual(const Key& key, std::optional<Key> const& maxKey = std::nullopt)
 					-> RecordIterator_t
 				{
 					ScanKey keyFind{ std::tuple<const Key&, size_t, bool>({ key, (size_t)(sizeof(Key)), true }) };
@@ -1662,8 +2317,13 @@ namespace fibers {
 						end_key.emplace(std::tuple<const Key&, size_t, bool>({ maxKey.value(), (size_t)(sizeof(Key)), true })); // true = may include the value if found
 					}
 
-					[[maybe_unused]] const auto& guard = gc_.CreateEpochGuard();
-					thread_local std::unique_ptr<void, std::function<void(void*)>> page{ dbgroup::memory::Allocate<NodePage>(2 * kPageSize), dbgroup::memory::Release<NodePage> };
+					[[maybe_unused]] const auto& guard2 = PageAllocator.CreateEpochGuard();
+					[[maybe_unused]] const auto& guard3 = DeltaAllocator.CreateEpochGuard();
+
+					std::unique_ptr<void, std::function<void(void*)>> page{ 
+						PageAllocator.Alloc(), 
+						[this](void* p) { PageAllocator.Free(static_cast<NodePage*>(p)); } 
+					};
 
 					auto* node = new (page.get()) Node_t{};
 					size_t begin_pos{};
@@ -1717,6 +2377,158 @@ namespace fibers {
 					return FinalRecord;
 				};
 
+				/**
+				 * @brief Try to find the node the largest key that is equal to or less than the requested key. (e.g. search for 55.5, returns 55)
+				 *
+				 * @param key a key to search for.
+				 * @return an iterator to access the scanned record.
+				 */
+				auto FindSecondLargestSmallerEqual(const Key& key, std::optional<Key> const& maxKey = std::nullopt) -> RecordIterator_t {
+					ScanKey keyFind{ std::tuple<const Key&, size_t, bool>({ key, (size_t)(sizeof(Key)), true }) };
+					ScanKey end_key;
+					if (maxKey.has_value()) {
+						end_key.emplace(std::tuple<const Key&, size_t, bool>({ maxKey.value(), (size_t)(sizeof(Key)), true })); // true = may include the value if found
+					}
+
+					[[maybe_unused]] const auto& guard2 = PageAllocator.CreateEpochGuard();
+					[[maybe_unused]] const auto& guard3 = DeltaAllocator.CreateEpochGuard();
+
+					std::unique_ptr<void, std::function<void(void*)>> page{
+						PageAllocator.Alloc(),
+						[this](void* p) { PageAllocator.Free(static_cast<NodePage*>(p)); }
+					};
+
+					auto* node = new (page.get()) Node_t{};
+					size_t begin_pos{};
+
+					Node_t* dummy_node = nullptr;
+					// traverse to the leftmost leaf node directly
+					auto&& stack = SearchLeftmostLeaf();
+					while (true) {
+						const auto* lptr = mapping_table_.GetLogicalPtr(stack.back());
+						const auto* head = lptr->template Load<Delta_t*>();
+						if (head->GetDeltaType() == DeltaType::kRemoveNode) continue;
+						TryConsolidate(head, node, dummy_node, kIsScan);
+						break;
+					}
+					begin_pos = 0;
+
+					RecordIterator_t record{ this, node, begin_pos, begin_pos + 1, std::nullopt, true }; // first "node" in the entire tree. If this is not valid, we are hopeless.
+					RecordIterator_t FinalRecord{ record };
+					if (!record) { return record; }
+
+					while (record) {
+						const auto [is_end, end_pos] = record.node_->SearchEndPositionFor(keyFind);
+						if (is_end) { // final node
+							if (end_pos > 1) { // 
+								FinalRecord = RecordIterator_t{ this, record.node_, end_pos - 2, end_pos - 1, std::nullopt, true };
+								break;
+							}
+							else {
+								// end_pos was 0 or 1, meaning the best value was the last available one!
+								break;
+							}
+						}
+						else {
+							// indicates that there will be another node after this, likely with a node larger than ours. BUT it could be the first item in that new node, so we capture the last item in this one just in case.
+							if (end_pos == 0)
+								FinalRecord = RecordIterator_t{ this, record.node_, end_pos, end_pos + 1, std::nullopt, true };
+							else 
+								FinalRecord = RecordIterator_t{ this, record.node_, end_pos - 1, end_pos, std::nullopt, true };
+
+							// go to the next sibling/node and continue scanning
+							const auto& next_key = record.node_->GetHighKey();
+							const auto sib_pid = record.node_->template GetNext<PageID>();
+							record = this->SiblingScan(sib_pid, record.node_, next_key, keyFind);
+						}
+					}
+
+					const auto [is_end, end_pos] = node->SearchEndPositionFor(end_key);
+					if (end_key.has_value()) {
+						FinalRecord.end_key_.emplace(end_key.value());
+					}
+					FinalRecord.is_end_ = is_end;
+					FinalRecord.rec_count_ = end_pos;
+
+					return FinalRecord;
+				};
+
+				/**
+				 * @brief Try to find the node the largest key that is equal to or less than the requested key. (e.g. search for 55.5, returns 55)
+				 *
+				 * @param key a key to search for.
+				 * @return an iterator to access the scanned record.
+				 */
+				auto FindNthLargestSmallerEqual(const Key& key, int N, std::optional<Key> const& maxKey = std::nullopt) -> RecordIterator_t {
+					ScanKey keyFind{ std::tuple<const Key&, size_t, bool>({ key, (size_t)(sizeof(Key)), true }) };
+					ScanKey end_key;
+					if (maxKey.has_value()) {
+						end_key.emplace(std::tuple<const Key&, size_t, bool>({ maxKey.value(), (size_t)(sizeof(Key)), true })); // true = may include the value if found
+					}
+
+					[[maybe_unused]] const auto& guard2 = PageAllocator.CreateEpochGuard();
+					[[maybe_unused]] const auto& guard3 = DeltaAllocator.CreateEpochGuard();
+
+					std::unique_ptr<void, std::function<void(void*)>> page{
+						PageAllocator.Alloc(),
+						[this](void* p) { PageAllocator.Free(static_cast<NodePage*>(p)); }
+					};
+
+					auto* node = new (page.get()) Node_t{};
+					size_t begin_pos{};
+
+					Node_t* dummy_node = nullptr;
+					// traverse to the leftmost leaf node directly
+					auto&& stack = SearchLeftmostLeaf();
+					while (true) {
+						const auto* lptr = mapping_table_.GetLogicalPtr(stack.back());
+						const auto* head = lptr->template Load<Delta_t*>();
+						if (head->GetDeltaType() == DeltaType::kRemoveNode) continue;
+						TryConsolidate(head, node, dummy_node, kIsScan);
+						break;
+					}
+					begin_pos = 0;
+
+					RecordIterator_t record{ this, node, begin_pos, begin_pos + 1, std::nullopt, true }; // first "node" in the entire tree. If this is not valid, we are hopeless.
+					RecordIterator_t FinalRecord{ record };
+					if (!record) { return record; }
+
+					while (record) {
+						const auto [is_end, end_pos] = record.node_->SearchEndPositionFor(keyFind);
+						if (is_end) { // final node
+							if (end_pos > 1) { // 
+								FinalRecord = RecordIterator_t{ this, record.node_, (end_pos - 1) - (N-1), end_pos, std::nullopt, true };
+								break;
+							}
+							else {
+								// end_pos was 0 or 1, meaning the best value was the last available one!
+								break;
+							}
+						}
+						else {
+							// indicates that there will be another node after this, likely with a node larger than ours. BUT it could be the first item in that new node, so we capture the last item in this one just in case.
+							if (end_pos == 0)
+								FinalRecord = RecordIterator_t{ this, record.node_, end_pos, end_pos + 1, std::nullopt, true };
+							else
+								FinalRecord = RecordIterator_t{ this, record.node_, end_pos - (N - 1), (end_pos + 1) - (N - 1), std::nullopt, true };
+
+							// go to the next sibling/node and continue scanning
+							const auto& next_key = record.node_->GetHighKey();
+							const auto sib_pid = record.node_->template GetNext<PageID>();
+							record = this->SiblingScan(sib_pid, record.node_, next_key, keyFind);
+						}
+					}
+
+					const auto [is_end, end_pos] = node->SearchEndPositionFor(end_key);
+					if (end_key.has_value()) {
+						FinalRecord.end_key_.emplace(end_key.value());
+					}
+					FinalRecord.is_end_ = is_end;
+					FinalRecord.rec_count_ = end_pos;
+
+					return FinalRecord;
+				};
+
 				/*####################################################################################
 				 * Public write APIs
 				 *##################################################################################*/
@@ -1741,7 +2553,8 @@ namespace fibers {
 						[[maybe_unused]] const size_t pay_len = sizeof(Payload))  //
 					-> ReturnCode
 				{
-					[[maybe_unused]] const auto& guard = gc_.CreateEpochGuard();
+					[[maybe_unused]] const auto& guard2 = PageAllocator.CreateEpochGuard();
+					[[maybe_unused]] const auto& guard3 = DeltaAllocator.CreateEpochGuard();
 
 					// traverse to a target leaf node
 					auto&& stack = SearchLeafNode(key, kClosed);
@@ -1751,14 +2564,17 @@ namespace fibers {
 
 					void* recPage{ GetRecPage() };
 					auto* write_d = new (recPage) Delta_t{ DeltaType::kInsert, key, key_len, payload };
+					auto rc = kSuccess;
 					while (true) {
 						// check whether the target node includes incomplete SMOs
-						const auto [head, rc] = GetHeadWithKeyCheck(key, stack);
-						if (rc == DeltaRC::kRecordFound) {
+						const auto [head, existence] = GetHeadWithKeyCheck(key, stack);
+						if (existence == DeltaRC::kRecordFound) {
+							rc = kKeyExist;
 							write_d->SetDeltaType(DeltaType::kModify);
 							write_d->SetNext(head, 0);
 						}
 						else {
+							rc = kSuccess;
 							write_d->SetDeltaType(DeltaType::kInsert);
 							write_d->SetNext(head, rec_len);
 						}
@@ -1772,7 +2588,7 @@ namespace fibers {
 						TrySMOs(write_d, stack);
 					}
 
-					return kSuccess;
+					return rc;
 				}
 
 				/**
@@ -1796,7 +2612,8 @@ namespace fibers {
 						const size_t key_len = sizeof(Key),
 						[[maybe_unused]] const size_t pay_len = sizeof(Payload))  //
 				{
-					[[maybe_unused]] const auto& guard = gc_.CreateEpochGuard();
+					[[maybe_unused]] const auto& guard2 = PageAllocator.CreateEpochGuard();
+					[[maybe_unused]] const auto& guard3 = DeltaAllocator.CreateEpochGuard();
 
 					// traverse to a target leaf node
 					auto&& stack = SearchLeafNode(key, kClosed);
@@ -1810,7 +2627,9 @@ namespace fibers {
 						const auto [head, existence] = GetHeadWithKeyCheck(key, stack);
 						if (existence == DeltaRC::kRecordFound) {
 							rc = kKeyExist;
-							tls_delta_page_.reset(insert_d);
+
+							DeltaAllocator.Free((DeltaPage*)(void*)insert_d);
+
 							break;
 						}
 
@@ -1850,7 +2669,8 @@ namespace fibers {
 						const size_t key_len = sizeof(Key),
 						[[maybe_unused]] const size_t pay_len = sizeof(Payload))  //
 				{
-					[[maybe_unused]] const auto& guard = gc_.CreateEpochGuard();
+					[[maybe_unused]] const auto& guard2 = PageAllocator.CreateEpochGuard();
+					[[maybe_unused]] const auto& guard3 = DeltaAllocator.CreateEpochGuard();
 
 					// traverse to a target leaf node
 					auto&& stack = SearchLeafNode(key, kClosed);
@@ -1863,7 +2683,9 @@ namespace fibers {
 						const auto [head, existence] = GetHeadWithKeyCheck(key, stack);
 						if (existence == DeltaRC::kRecordNotFound) {
 							rc = kKeyNotExist;
-							tls_delta_page_.reset(modify_d);
+
+							DeltaAllocator.Free((DeltaPage*)(void*)modify_d);
+
 							break;
 						}
 
@@ -1898,7 +2720,8 @@ namespace fibers {
 						const size_t key_len = sizeof(Key))  //
 					-> ReturnCode
 				{
-					[[maybe_unused]] const auto& guard = gc_.CreateEpochGuard();
+					[[maybe_unused]] const auto& guard2 = PageAllocator.CreateEpochGuard();
+					[[maybe_unused]] const auto& guard3 = DeltaAllocator.CreateEpochGuard();
 
 					// traverse to a target leaf node
 					auto&& stack = SearchLeafNode(key, kClosed);
@@ -1912,7 +2735,9 @@ namespace fibers {
 						auto [head, existence] = GetHeadWithKeyCheck(key, stack);
 						if (existence == DeltaRC::kRecordNotFound) {
 							rc = kKeyNotExist;
-							tls_delta_page_.reset(delete_d);
+
+							DeltaAllocator.Free((DeltaPage*)(void*)delete_d);
+
 							break;
 						}
 
@@ -2021,7 +2846,7 @@ namespace fibers {
 					// set a new root
 					const auto old_pid = root_.exchange(new_pid, std::memory_order_release);
 					auto* old_lptr = mapping_table_.GetLogicalPtr(old_pid);
-					gc_.AddGarbage<NodePage>(old_lptr->template Load<Delta_t*>());
+					PageAllocator.Free<NodePage>(old_lptr->template Load<Delta_t*>());
 					old_lptr->Clear();
 
 					return ReturnCode::kSuccess;
@@ -2126,15 +2951,8 @@ namespace fibers {
 				  *
 				  * @returns the reserved memory page.
 				  */
-				[[nodiscard]] auto
-					GetNodePage()  //
-					-> Node_t*
-				{
-					auto* page = gc_.template GetPageIfPossible<NodePage>();
-					if (page == nullptr) {
-						page = dbgroup::memory::Allocate<NodePage>();
-					}
-					return static_cast<Node_t*>(page);
+				[[nodiscard]] auto GetNodePage() -> Node_t* {
+					return (Node_t*)(void*)PageAllocator.Alloc();
 				};
 
 				/**
@@ -2142,20 +2960,8 @@ namespace fibers {
 				 *
 				 * @returns the reserved memory page.
 				 */
-				[[nodiscard]] auto
-					GetRecPage()  //
-					-> void*
-				{
-					if (tls_delta_page_) {
-						return tls_delta_page_.release();
-					}
-					else {
-						auto* page = gc_.template GetPageIfPossible<DeltaPage>();
-						if (page == nullptr) {
-							page = dbgroup::memory::Allocate<DeltaPage>(kDeltaRecSize);
-						}
-						return page;
-					}
+				[[nodiscard]] auto GetRecPage() -> void* {
+					return (void*)DeltaAllocator.Alloc();
 				};
 
 				/**
@@ -2177,12 +2983,12 @@ namespace fibers {
 					const auto* garbage = reinterpret_cast<const Delta_t*>(head);
 					while (garbage->GetDeltaType() != DeltaType::kNotDelta) {
 						// register this delta record with GC
-						gc_.AddGarbage<DeltaPage>(garbage);
+						DeltaAllocator.Free((DeltaPage*)(void*)garbage);
 
 						// if the delta record is merge-delta, delete the merged sibling node
 						if (garbage->GetDeltaType() == DeltaType::kMerge) {
 							auto* removed_node = garbage->template GetPayload<Node_t*>();
-							gc_.AddGarbage<NodePage>(removed_node);
+							PageAllocator.Free((NodePage*)(void*)removed_node);
 						}
 
 						// check the next delta record or base node
@@ -2191,7 +2997,7 @@ namespace fibers {
 					}
 
 					// register a base node with GC
-					gc_.AddGarbage<NodePage>(reinterpret_cast<const Node_t*>(garbage));
+					PageAllocator.Free((const NodePage*)(const void*)reinterpret_cast<const Node_t*>(garbage));
 				}
 
 				/**
@@ -2229,7 +3035,7 @@ namespace fibers {
 					// collect data recursively
 					if (!head->IsLeaf()) {
 						// consolidate the node to traverse child nodes
-						auto* page = dbgroup::memory::Allocate<NodePage>(2 * kPageSize);
+						auto* page = PageAllocator.Alloc();
 						auto* consolidated = new (page) Node_t{ !kIsLeaf };
 						Node_t* dummy_node = nullptr;
 						TryConsolidate(head, consolidated, dummy_node, kIsScan);
@@ -2239,7 +3045,7 @@ namespace fibers {
 							CollectStatisticalData(child_pid, level + 1, stat_data);
 						}
 
-						dbgroup::memory::Release<NodePage>(consolidated);
+						PageAllocator.Free(static_cast<NodePage*>(consolidated));
 					}
 				}
 
@@ -2491,7 +3297,9 @@ namespace fibers {
 						std::vector<PageID>& stack)  //
 					-> std::pair<const Delta_t*, DeltaRC>
 				{
-					for (uintptr_t out_ptr{}; true;) {
+					int maxDepth = 100000;
+
+					for (uintptr_t out_ptr{}; --maxDepth >= 0;) {
 						// check whether the node is active and has a target key
 						const auto* head = LoadValidHead(stack.back());
 						auto rc = DC::SearchRecord(head, key, out_ptr);
@@ -2526,6 +3334,7 @@ namespace fibers {
 
 						return { head, rc };
 					}
+					return { LoadValidHead(stack.back()), DeltaRC::kRecordNotFound };
 				}
 
 				/**
@@ -2660,11 +3469,9 @@ namespace fibers {
 				  * @brief Create a temporary array for sorting delta records.
 				  *
 				  */
-				static auto
-					CreateTempRecords()
-				{
-					thread_local std::array<Record, kMaxDeltaRecordNum> arr{};
-
+				static auto& CreateTempRecords() {
+					thread_local static std::array<Record, kMaxDeltaRecordNum> arr{};
+					std::memset(&arr, 0, sizeof(decltype(arr)));
 					return arr;
 				}
 
@@ -2681,8 +3488,10 @@ namespace fibers {
 						Delta_t* head,
 						std::vector<PageID>& stack)
 				{
-					thread_local std::unique_ptr<Node_t, std::function<void(void*)>>  //
-						tls_node{ nullptr, dbgroup::memory::Release<NodePage> };
+					std::unique_ptr<Node_t, std::function<void(void*)>> tls_node{ 
+						nullptr, 
+						[this](void* p) { PageAllocator.Free(static_cast<NodePage*>(p)); } 
+					};
 					Node_t* r_node = nullptr;
 
 					// recheck other threads have modifed this delta chain
@@ -2694,12 +3503,12 @@ namespace fibers {
 					switch (TryConsolidate(head, new_node, r_node)) {
 					case kTrySplit:
 						// we use fixed-length pages, and so splitting a node must succeed
-						Split(new_node, r_node, stack);
+						Split(new_node, r_node, stack); // adds it to the mapping_table_?
 						break;
 
 					case kTryMerge:
 						if (!TryMerge(head, new_node, stack)) {
-							tls_node.reset(new_node);
+							tls_node.reset(new_node); // tls_node should handle this
 							return;
 						}
 						break;
@@ -2708,7 +3517,7 @@ namespace fibers {
 					default:
 						// install a consolidated node
 						if (!lptr->CASStrong(head, new_node)) {
-							tls_node.reset(new_node);
+							tls_node.reset(new_node); // tls_node should handle this
 							return;
 						}
 						break;
@@ -2733,10 +3542,10 @@ namespace fibers {
 						const bool is_scan = false)  //
 					-> SMOsRC
 				{
-					thread_local std::vector<const void*> nodes{};
-					nodes.reserve(kDeltaRecordThreshold);
-					nodes.clear();
-					auto&& records = CreateTempRecords();
+					thread_local static std::vector<const void*> nodes{ kDeltaRecordThreshold, nullptr };
+					nodes.clear(); 
+
+					auto& records = CreateTempRecords();
 
 					// sort delta records
 					const auto rec_num = DC::Sort(head, records, nodes);
@@ -2873,7 +3682,7 @@ namespace fibers {
 						// check the current node is a root node
 						if (stack.empty()) {
 							if (TryRootSplit(entry_d, l_pid)) {
-								tls_delta_page_.reset(entry_d);
+								DeltaAllocator.Free((DeltaPage*)(void*)entry_d);
 								return;
 							}
 							SearchTargetNode(stack, key, r_pid);
@@ -2949,7 +3758,7 @@ namespace fibers {
 					const auto rem_pid = stack.back();
 					auto* rem_lptr = mapping_table_.GetLogicalPtr(rem_pid);
 					if (!rem_lptr->CASStrong(head, remove_d)) {
-						tls_delta_page_.reset(remove_d);
+						DeltaAllocator.Free((DeltaPage*)(void*)remove_d);
 						return false;
 					}
 					stack.pop_back();  // remove the child node
@@ -3031,7 +3840,7 @@ namespace fibers {
 						auto [head, rc] = GetHeadForMerge(del_key, sib_key, stack);
 						if (rc == DeltaRC::kAbortMerge) {
 							// the leftmost nodes cannot be merged
-							tls_delta_page_.reset(delete_d);
+							DeltaAllocator.Free((DeltaPage*)(void*)delete_d);
 							return nullptr;
 						}
 
@@ -3178,86 +3987,38 @@ namespace fibers {
 				 *##################################################################################*/
 
 				 /// a root node of this Bw-tree.
-				std::atomic_uint64_t root_{};
+				std::atomic_uint64_t root_{}; // holds a ptr, allocated elsewhere
 
 				/// a table to map logical IDs with physical pointers.
-				MappingTable_t mapping_table_{};
+				MappingTable_t mapping_table_{}; // allocates and destroys its own data. Logical ptrs provided to it, though, must be destroyed elsewhere.
 
-				/// a garbage collector of base nodes and delta records.
-				NodeGC_t gc_{};
-
-				/// a thread-local delta-record page to reuse
-				inline static thread_local std::unique_ptr<void, std::function<void(void*)>> tls_delta_page_{ nullptr, dbgroup::memory::Release<DeltaPage> }; // NOLINT
+				fibers::utilities::GarbageCollectedAllocator<NodePage, 2 * kPageSize, true, 1> PageAllocator{}; // allocator which provides memory re-use at runtime and memory clean-up on destruction
+				fibers::utilities::GarbageCollectedAllocator<DeltaPage, kDeltaRecSize, true, 1> DeltaAllocator{}; // allocator which provides memory re-use at runtime and memory clean-up on destruction
 			};
 		};  // namespace dbgroup::index::bw_tree
-
-		template<class _type_> class GarbageCollectedAllocator {
-		private:
-			synchronization::atomic_number<long> active;
-			fibers::utilities::dbgroup::index::bw_tree::BwTree< _type_*, bool> ptrs;
-			utilities::dbgroup::memory::EpochBasedGC < fibers::utilities::dbgroup::memory::Target< _type_ > > gc{ 1E3, 1 };
-			
-		public:
-			// Prevents deletion of elements until at least 3 Epochs after the current Epoch. Allows use of ptr's in one thread while another thread can still queue for deletion of ptr's. 
-			auto CreateEpochGuard() {
-				return gc.CreateEpochGuard();
-			};
-			// Create a new ptr that will be deleted by the allocator on destruction or 
-			template <typename... TArgs> _type_* Alloc(TArgs const&... a) {
-				_type_* ptr = new _type_(a...);
-				ptrs.Write(ptr, false);
-				active.Increment();
-				return ptr;
-			};
-			// Requests to free / delete the element. Note that this does not delete the element immediately -- and it is delayed for as long as an older EpochGuard exists. 
-			void Free(_type_* element) {
-				ptrs.Delete(element); 
-				gc.Push(element);
-				active.Decrement();
-				// do NOT clear the ptr or call the destructor yet -- leave that to the garbage collector. 
-			};
-			// returns the number of "live" ptrs, approximately
-			long long			GetAllocCount() { return active.load(); }
-
-			// Initializes the garbage collector automatically. 
-			GarbageCollectedAllocator() : active{ 0 }, ptrs(), gc() {
-				gc.StartGC(); 
-			};
-			GarbageCollectedAllocator(GarbageCollectedAllocator&) = delete;
-			GarbageCollectedAllocator(GarbageCollectedAllocator&&) = delete;
-			GarbageCollectedAllocator& operator=(GarbageCollectedAllocator const&) = delete; 
-			GarbageCollectedAllocator& operator=(GarbageCollectedAllocator&&) = delete;
-			// Clears the garbage collector. 
-			~GarbageCollectedAllocator() {				
-				for (auto iter = ptrs.Scan(); iter; iter++) {
-					gc.Push(iter.GetKey());
-				}
-			};
-		};
 	};
 
-
-
 	namespace containers {
-		/* Fiber- and thread-safe sorted container for time-series patterns, where the x- and y-values may be integers, floating numbers, long doubles, etc. */
+		enum class interp_t { LEFT, RIGHT, LINEAR, SPLINE };
+
+		/* Fiber- and thread-safe lock-free sorted container for time-series patterns, where the x- and y-values may be integers, floating numbers, long doubles, etc. */
 		template <typename xType, typename yType> class Pattern {
 		protected:
 			using underlying = fibers::utilities::dbgroup::index::bw_tree::BwTree< typename utilities::impl::CAS_Safe_Type < xType >::type, typename utilities::impl::CAS_Safe_Type < yType >::type >;
-			std::shared_ptr< underlying > data;
+			using dataType = std::pair< underlying , fibers::synchronization::atomic_number<long> >;
+			std::shared_ptr< dataType > data;
 
 		public:
-			enum class interp_t { SPLINE, LEFT, RIGHT, LINEAR };
-
-			Pattern() : data(std::make_shared<underlying>()) {};
-			Pattern(Pattern const& r) : data(std::make_shared<underlying>()) {
+			Pattern() : data(std::make_shared<dataType>()) {};
+			Pattern(Pattern const& r) : data(std::make_shared<dataType>()) {
 				operator=(r);
 			}
 			Pattern(Pattern&& r) = default;
 			Pattern& operator=(Pattern const& r) {
 				if (static_cast<void*>(this) != static_cast<const void*>(&r)) {
 					Pattern out;
-					//for (auto& x : r)
-					//	out->push_back(x);
+					for (auto& x : r)
+						out.Insert(x.first, x.second);
 					out.data.swap(data);
 				}
 				return *this;
@@ -3265,24 +4026,133 @@ namespace fibers {
 			Pattern& operator=(Pattern&& r) = default;
 			~Pattern() = default;
 
+			void TryCleanupUnusedMemory() {
+				data->first.TryCleanupUnusedMemory();
+			};
+
+			/// <summary>
+			/// get iterator for the knot whose X-position is the smallest possible that is equal to or larger than the provided position. Optionally can provide the end-position for the iterator.
+			/// </summary>
+			/// <param name="position"></param>
+			/// <param name="end"></param>
+			/// <returns></returns>
 			typename underlying::RecordIterator_t FindSmallestLargerEqual(xType position, std::optional<xType> const& end = std::nullopt) {
 				if (end.has_value()) {
-					return data->FindSmallestLargerEqual(position, end.value());
+					return data->first.FindSmallestLargerEqual(position, end.value());
 				}
 				else {
-					return data->FindSmallestLargerEqual(position);
+					return data->first.FindSmallestLargerEqual(position);
 				}
 			};
+			
+			/// <summary>
+			/// get iterator for the knot whose X-position is the largest possible that is less than or equal to than the provided position. Optionally can provide the end-position for the iterator.
+			/// </summary>
+			/// <param name="position"></param>
+			/// <param name="end"></param>
+			/// <returns></returns>
 			typename underlying::RecordIterator_t FindLargestSmallerEqual(xType position, std::optional<xType> const& end = std::nullopt) {
 				if (end.has_value()) {
-					return data->FindLargestSmallerEqual(position, end.value());
+					return data->first.FindLargestSmallerEqual(position, end.value());
 				}
 				else {
-					return data->FindLargestSmallerEqual(position);
+					return data->first.FindLargestSmallerEqual(position);
 				}
 			};
+
+			/// <summary>
+			/// get iterator for the knot whose X-position is the second-largest possible that is less than or equal to than the provided position. Optionally can provide the end-position for the iterator.
+			/// </summary>
+			/// <param name="position"></param>
+			/// <param name="end"></param>
+			/// <returns></returns>
+			typename underlying::RecordIterator_t FindSecondLargestSmallerEqual(xType position, std::optional<xType> const& end = std::nullopt) {
+				if (end.has_value()) {
+					return data->first.FindSecondLargestSmallerEqual(position, end.value());
+				}
+				else {
+					return data->first.FindSecondLargestSmallerEqual(position);
+				}
+			};
+
+			/// <summary>
+			/// get iterator for the knot whose X-position is the Nth-largest possible that is less than or equal to than the provided position. Optionally can provide the end-position for the iterator.
+			/// N == 1 indicates the LEFT SNAP behavior.
+			/// N == 2 indicates the iterator just left of that iterator returned with N==1..
+			/// N == 3 indicates the iterator just left of that iterator returned with N==2...
+			/// </summary>
+			/// <param name="position"></param>
+			/// <param name="end"></param>
+			/// <returns></returns>
+			typename underlying::RecordIterator_t FindNthLargestSmallerEqual(xType position, int N, std::optional<xType> const& end = std::nullopt) {
+				if (end.has_value()) {
+					return data->first.FindNthLargestSmallerEqual(position, N, end.value());
+				}
+				else {
+					return data->first.FindNthLargestSmallerEqual(position, N);
+				}
+			};
+
+			/// <summary>
+			/// attempts to compress the pattern if there is a unecessary value stored in the final 5 slots.
+			/// </summary>
+			/// <returns>whether a value was deleted or not</returns>
+			bool CompressLastValueAdded() {
+				int num, index; 
+				constexpr yType epsilon = 0.001f;
+				yType val1{ 0 }, val2{ 0 }, val3{ 0 }, val4{ 0 }, val5{ 0 };
+				xType t3{ 0 };
+
+				{
+					num = 0; 
+
+					for (auto iter = FindNthLargestSmallerEqual(std::numeric_limits <xType>::max(), 5); iter; ++iter) {
+						num++;
+						if (!val1) {
+							val1 = iter.GetPayload();
+						}
+						else if (!val2) {
+							val2 = iter.GetPayload();
+						}
+						else if (!val3) {
+							val3 = iter.GetPayload();
+							t3 = iter.GetKey();
+						}
+						else if (!val4) {
+							val4 = iter.GetPayload();
+						}
+						else if (!val5) {
+							val5 = iter.GetPayload();
+							break;
+						}
+					}
+
+					if (num >= 5) {
+						if (::abs(val1 - val2) <= epsilon &&
+							::abs(val2 - val3) <= epsilon &&
+							::abs(val3 - val4) <= epsilon &&
+							::abs(val4 - val5) <= epsilon)
+							return Delete(t3);
+					}
+				}
+
+				return false;
+			};
+			
+			/// <summary>
+			/// Resets the pattern
+			/// </summary>
+			void Clear() {
+				data.swap(std::make_shared<dataType>());
+			};
+
+			/// <summary>
+			/// Attempts to read the y-value at the given x-position, if it exists.
+			/// </summary>
+			/// <param name="position"></param>
+			/// <returns></returns>
 			std::optional<yType> Read(xType position) {
-				auto payload = data->Read(position);
+				auto payload = data->first.Read(position);
 				if (payload.has_value()) {
 					return (yType)payload.value();
 				}
@@ -3290,6 +4160,11 @@ namespace fibers {
 					return std::nullopt;
 				}
 			};
+
+			/// <summary>
+			/// Gets the minimum time, if any values exist.
+			/// </summary>
+			/// <returns></returns>
 			std::optional<xType> GetMinTime() {
 				auto iter = FindSmallestLargerEqual(-std::numeric_limits<xType>::max());
 				if (iter) {
@@ -3299,6 +4174,11 @@ namespace fibers {
 					return std::nullopt;
 				}
 			};
+
+			/// <summary>
+			/// Gets the maximum time, if any values exist.
+			/// </summary>
+			/// <returns></returns>
 			std::optional<xType> GetMaxTime() {
 				auto iter = FindLargestSmallerEqual(std::numeric_limits<xType>::max());
 				if (iter) {
@@ -3308,34 +4188,223 @@ namespace fibers {
 					return std::nullopt;
 				}
 			};
-			//size_t GetNumValues();
-			//std::optional<yType> GetMinValue();
-			//std::optional<yType> GetMaxValue();
-			//std::optional<yType> GetCurrentValue(xType position, interp_t interpolationType = interp_t::LINEAR);
-			bool Delete(xType position) {
-				return data->Delete(position) == fibers::utilities::dbgroup::index::bw_tree::ReturnCode::kSuccess;
+			
+			/// <summary>
+			/// Iterates through the list and gets the 
+			/// </summary>
+			/// <returns></returns>
+			size_t GetNumValues() const { return data->second.load(); };
+
+			/// <summary>
+			/// Finds the smallest Y-value in the pattern, if any knots exist.
+			/// </summary>
+			/// <param name="start"></param>
+			/// <param name="end"></param>
+			/// <returns></returns>
+			std::optional<yType> GetMinValue(std::optional<xType> start = std::nullopt, std::optional<xType> end = std::nullopt) const {
+				std::optional<yType> out{ std::nullopt };
+
+				for (auto knot = const_cast<Pattern*>(this)->Scan(start, end); knot; ++knot) {
+					if (out.has_value()){
+						if (out.value() > knot.GetPayload())
+							out = knot.GetPayload();
+					}
+					else {
+						out = knot.GetPayload();
+					}
+				}
+
+				return out;
 			};
+
+			/// <summary>
+			/// Finds the largest Y-value in the pattern, if any knots exist.
+			/// </summary>
+			/// <param name="start"></param>
+			/// <param name="end"></param>
+			/// <returns></returns>
+			std::optional<yType> GetMaxValue(std::optional<xType> start = std::nullopt, std::optional<xType> end = std::nullopt) const {
+				std::optional<yType> out{ std::nullopt };
+				
+				for (auto knot = const_cast<Pattern*>(this)->Scan(start, end); knot; ++knot) {
+					if (out.has_value()) {
+						if (out.value() < knot.GetPayload())
+							out = knot.GetPayload();
+					}
+					else {
+						out = knot.GetPayload();
+					}
+				}
+
+				return out;
+			};
+			
+			std::optional<yType> GetCurrentValue(xType position, interp_t interpolationType = interp_t::LINEAR) const {
+				switch (interpolationType) {
+				case interp_t::LEFT: {
+					if (auto iter = const_cast<Pattern*>(this)->FindLargestSmallerEqual(position)) {
+						return iter.GetPayload();
+					}
+					break;
+				}
+				case interp_t::RIGHT: {
+					if (auto iter = const_cast<Pattern*>(this)->FindSmallestLargerEqual(position)) {
+						return iter.GetPayload();
+					}
+					break;
+				}
+				case interp_t::LINEAR: {
+					if (auto iter = const_cast<Pattern*>(this)->FindLargestSmallerEqual(position)) {
+						xType leftX = iter.GetKey();
+						yType leftY = iter.GetPayload();
+
+						++iter;
+						if (iter) {
+							xType rightX = iter.GetKey();
+							yType rightY = iter.GetPayload();
+
+							auto t = (position - leftX) / (rightX - leftX);
+
+							return ::fma(t, rightY, ::fma(-t, leftY, leftY));
+						}
+						else {
+							return leftY;
+						}
+					}
+					break;
+				}
+				case interp_t::SPLINE: { 
+					if (auto iter = const_cast<Pattern*>(this)->FindSecondLargestSmallerEqual(position)) {
+						xType 
+							X0{ iter.GetKey() }, 
+							X1{ 0 }, 
+							X2{ 0 }, 
+							X3{ 0 },
+							s{ 0 },
+							t{ 0 };
+						yType 
+							Y0{ iter.GetPayload() }, 
+							Y1{ 0 }, 
+							Y2{ 0 }, 
+							Y3{ 0 };
+
+						++iter;
+						if (iter) {
+							X1 = iter.GetKey();
+							Y1 = iter.GetPayload();
+
+							++iter;
+							if (iter) {
+								X2 = iter.GetKey();
+								Y2 = iter.GetPayload();
+
+								++iter;
+								if (iter) {
+									X3 = iter.GetKey();
+									Y3 = iter.GetPayload();
+
+									if ((X1 <= position) && (X2 >= position)) {
+										s = (position - X1) / (X2 - X1);
+										if (!::isfinite(s)) s = 0;
+
+										return 
+											::fma(Y0, ((2.0f - s) * s - 1.0f) * s * 0.5f,          // -0.5f s * s * s + s * s - 0.5f * s
+											::fma(Y1, (((3.0f * s - 5.0f) * s) * s + 2.0f) * 0.5f, // 1.5f * s * s * s - 2.5f * s * s + 1.0f
+											::fma(Y2, ((-3.0f * s + 4.0f) * s + 1.0f) * s * 0.5f,  // -1.5f * s * s * s - 2.0f * s * s + 0.5f s
+											::fma(Y3, ((s - 1.0f) * s * s) * 0.5f,                 // 0.5f * s * s * s - 0.5f * s * s
+											      0))));
+									}
+								}
+								else {
+									X3 = X2 + (X2 - X1);
+									t = (X3 - X1) / (X2 - X1);
+									Y3 = ::fma(t, Y2, ::fma(-t, Y1, Y1));
+
+									if ((X1 <= position) && (X2 >= position)) {
+										s = (position - X1) / (X2 - X1);
+										if (!::isfinite(s)) s = 0;
+
+										return
+											::fma(Y0, ((2.0f - s) * s - 1.0f) * s * 0.5f,          // -0.5f s * s * s + s * s - 0.5f * s
+												::fma(Y1, (((3.0f * s - 5.0f) * s) * s + 2.0f) * 0.5f, // 1.5f * s * s * s - 2.5f * s * s + 1.0f
+													::fma(Y2, ((-3.0f * s + 4.0f) * s + 1.0f) * s * 0.5f,  // -1.5f * s * s * s - 2.0f * s * s + 0.5f s
+														::fma(Y3, ((s - 1.0f) * s * s) * 0.5f,                 // 0.5f * s * s * s - 0.5f * s * s
+															0))));
+									}
+								}
+							} 
+							else {
+								t = (position - X0) / (X1 - X0);
+								return ::fma(t, Y1, ::fma(-t, Y0, Y0));
+							}
+						}
+					}
+					return GetCurrentValue(position, interp_t::LINEAR);
+					break; 
+				}		
+				default: throw(std::runtime_error("Unhandled interp_t value."));
+				}
+				return std::nullopt;
+			};
+
+			/// <summary>
+			/// Deletes the knot at the provided position, if it exists. Returns true if successful.
+			/// </summary>
+			/// <param name="position"></param>
+			/// <returns></returns>
+			bool Delete(xType position) {
+				if (data->first.Delete(position) == fibers::utilities::dbgroup::index::bw_tree::ReturnCode::kSuccess) {
+					data->second--;
+					return true;
+				}
+				return false;				
+			};
+
+			/// <summary>
+			/// Inserts a new knot into the pattern. if (overwiteIfExists), then it will overwrite the value if it is found to already exist. Returns true if added or overwritten.
+			/// </summary>
+			/// <param name="position"></param>
+			/// <param name="value"></param>
+			/// <param name="overwiteIfExists"></param>
+			/// <returns></returns>
 			bool Insert(xType position, yType value, bool overwiteIfExists = true) {
 				if (overwiteIfExists) {
-					return data->Write(position, value) == fibers::utilities::dbgroup::index::bw_tree::ReturnCode::kSuccess;
+					if (data->first.Write(position, value) == fibers::utilities::dbgroup::index::bw_tree::ReturnCode::kKeyExist) {
+						return true; // key exists but was overwritten
+					}
+					else {
+						data->second++;
+						return true; // key did not exist
+					}
 				}
 				else {
-					return data->Insert(position, value) == fibers::utilities::dbgroup::index::bw_tree::ReturnCode::kSuccess;
+					if (data->first.Insert(position, value) == fibers::utilities::dbgroup::index::bw_tree::ReturnCode::kSuccess) {
+						data->second++;
+						return true; // key did not exist
+					}
 				}
+				return false;
 			};
+			
+			/// <summary>
+			/// Returns an iterator that can be used to iterate over the Pattern in-order, from (optional) start to (optional) end.
+			/// </summary>
+			/// <param name="start"></param>
+			/// <param name="end"></param>
+			/// <returns></returns>
 			typename underlying::RecordIterator_t Scan(std::optional<xType> start = std::nullopt, std::optional<xType> end = std::nullopt) {
 				using scanKeyType = typename underlying::ScanKey;
 				if (start.has_value()) {
 					if (end.has_value()) {
-						return data->FindSmallestLargerEqual(start.value(), end.value());
+						return data->first.FindSmallestLargerEqual(start.value(), end.value());
 					}
 					else {
-						return data->FindSmallestLargerEqual(start.value());
+						return data->first.FindSmallestLargerEqual(start.value());
 					}
 				}
 				else {
 					if (end.has_value()) {
-						return data->Scan(
+						return data->first.Scan(
 							std::nullopt,
 							scanKeyType(
 								std::tuple<const typename utilities::impl::CAS_Safe_Type < xType >::type&, size_t, bool> {
@@ -3345,7 +4414,7 @@ namespace fibers {
 						);
 					}
 					else {
-						return data->Scan();
+						return data->first.Scan();
 					}
 				}
 			};
@@ -3358,7 +4427,7 @@ namespace fibers {
 				Iterator(Pattern*&& _parent, int pos, std::optional<xType> const& _start = std::nullopt, std::optional<xType> const& _end = std::nullopt) :
 					start{ std::nullopt }
 					, parent{ std::forward<Pattern*>(_parent) }
-					, _ptr{ begin(_parent, _start, _end) }
+					, _ptr{ begin_impl(_parent, _start, _end) }
 					, result{}
 					, position{ pos }
 				{
@@ -3368,26 +4437,18 @@ namespace fibers {
 				Iterator(const Iterator& rhs) :
 					start{ std::nullopt }
 					, parent{ rhs.parent }
-					, _ptr{ begin(rhs.parent, rhs.start, rhs._ptr.GetEndKey<xType>()) }
+					, _ptr{ begin_impl(rhs.parent, rhs.start, rhs._ptr.GetEndKey<xType>()) }
 					, result{}
 					, position{ rhs.position }
 				{
 					if (rhs.start.has_value()) start.emplace(rhs.start.value());
 					int pos = position; while (pos > 0 && _ptr) { ++_ptr;  --pos; }
 				};
-				Iterator(Iterator&& rhs) = default; /* : start{ std::nullopt }
-					, parent{ rhs.parent }
-					, _ptr{ begin(rhs.parent, rhs.start, rhs._ptr.GetEndKey<xType>()) }
-					, result{}
-					, position{ rhs.position }
-				{
-					if (rhs.start.has_value()) start.emplace(rhs.start.value());
-					int pos = position; while (pos > 0 && _ptr) { ++_ptr;  --pos; }
-				}; */
+				Iterator(Iterator&& rhs) = default;
 				Iterator& operator=(const Iterator& rhs) {
 					start.reset();;
 					parent = rhs.parent;
-					_ptr = begin(rhs.parent, rhs.start, rhs._ptr.GetEndKey<xType>());
+					_ptr = begin_impl(rhs.parent, rhs.start, rhs._ptr.GetEndKey<xType>());
 					position = rhs.position;
 
 					if (rhs.start.has_value()) start.emplace(rhs.start.value());
@@ -3396,7 +4457,7 @@ namespace fibers {
 				Iterator& operator=(Iterator&& rhs) {
 					start.reset();;
 					parent = rhs.parent;
-					_ptr = begin(rhs.parent, rhs.start, rhs._ptr.GetEndKey<xType>());
+					_ptr = begin_impl(rhs.parent, rhs.start, rhs._ptr.GetEndKey<xType>());
 					position = rhs.position;
 
 					if (rhs.start.has_value()) start.emplace(rhs.start.value());
@@ -3408,7 +4469,6 @@ namespace fibers {
 				std::pair<xType, yType>* operator->() const { LoadResult(); return &result; };
 
 				Iterator& operator++() { Increment(); return *this; }
-				// Iterator operator++(int) { Iterator out{ *this }; Increment(); return out; }
 
 				explicit operator bool() const { return Valid(); };
 				bool operator==(const Iterator& rhs) const {
@@ -3423,12 +4483,15 @@ namespace fibers {
 				}
 				bool operator!=(const Iterator& rhs) const { return !operator==(rhs); }
 
+				Iterator begin() const { return Iterator(*this); };
+				Iterator end() const { return Iterator(nullptr, 0, std::nullopt, std::nullopt); };
+
 			private:
 				bool Valid() const { return (bool)_ptr; };
 				void Increment() { if (Valid()) ++_ptr; ++position; };
 				void LoadResult() const { if (Valid()) result = { (xType)_ptr.GetKey(), (yType)_ptr.GetPayload() }; };
 
-				static typename underlying::RecordIterator_t begin(Pattern* parent, std::optional<xType> const& start = std::nullopt, std::optional<xType> const& end = std::nullopt) {
+				static typename underlying::RecordIterator_t begin_impl(Pattern* parent, std::optional<xType> const& start = std::nullopt, std::optional<xType> const& end = std::nullopt) {
 					if (parent) {
 						if (start.has_value()) {
 							if (end.has_value()) {
@@ -3465,7 +4528,58 @@ namespace fibers {
 			Iterator end() const { return Iterator(nullptr, 0, std::nullopt, std::nullopt); };
 			Iterator cbegin(std::optional<xType> start = std::nullopt, std::optional<xType> end = std::nullopt) const { return begin(start, end); };
 			Iterator cend() const { return end(); };
+
+			auto GetKnotSeries(std::optional<xType> const& start = std::nullopt, std::optional<xType> const& end = std::nullopt) const {
+				if (start.has_value()) {
+					if (end.has_value()) {
+						return begin(start.value(), end.value());
+					}
+					else {
+						return begin(start.value(), std::nullopt);
+					}
+				}
+				else {
+					if (end.has_value()) {
+						return begin(std::nullopt, end.value());
+					}
+					else {
+						return begin(std::nullopt, std::nullopt);
+					}
+				}
+			};
+			
+			/// <summary>
+			/// Creates an iterator that will step through from Start to End at interval Step, sampling the pattern using the InterpolationType. 
+			/// </summary>
+			/// <param name="start"></param>
+			/// <param name="end"></param>
+			/// <param name="step"></param>
+			/// <param name="interpolationType"></param>
+			/// <returns>Iterator that will sample at the requested interval using the interpolationType</returns>
+			auto GetTimeSeries(xType start, xType end, xType step, interp_t interpolationType = interp_t::LINEAR) {
+				return 
+					fibers::utilities::CustomizedSequence<std::pair<xType, std::optional<yType>>, xType>(
+						std::function([this, interpolationType](xType x) -> std::pair<xType, std::optional<yType>> {
+							auto optional = this->GetCurrentValue(x, interpolationType);
+							if (optional.has_value()) {
+								return std::pair<xType, std::optional<yType>>{ x, optional.value() };
+							}
+							else {
+								return std::pair<xType, std::optional<yType>>{ x, std::nullopt };
+							}
+
+							
+						})
+						, start
+						, end
+						, step
+					);
+			};
+
+
+
 		};
+
 
 		/* *THREAD SAFE* Thread-safe and fiber-safe wrapper for any type of number, from integers to doubles.
 		   Significant performance boost if the data type is an integer type or one of: long, unsigned int, unsigned long, unsigned __int64
@@ -3473,326 +4587,6 @@ namespace fibers {
 		*/
 		template<typename _Value_type> using number = fibers::synchronization::atomic_number<_Value_type>;
 	
-		/* *THREAD SAFE* Thread- and Fiber-safe queue with Last-In-First-Out functionality.
-		* POD types are stored by-value, non-POD types are stored as shared_ptr's. 
-		* POD types have a speed-up by avoiding destructor calls.
-		* Example: [1,2]. Push(5) -> [1,2,5]. Pop(&Out) -> [1,2] & sets Out to 5. 
-		*/
-		template <typename value> class Stack {
-		private:
-			static auto GetValueStorageType() {
-				if constexpr (std::is_pod<value>::value) {
-					value out{};
-					return out;
-				}
-				else {
-					auto out{ std::make_shared<value>() };
-					return out;
-				}
-			};
-			static auto MakeValueStorageType(value const& v) {
-				if constexpr (std::is_pod<value>::value) {
-					return static_cast<value const&>(v);
-				}
-				else {
-					return std::make_shared<value>(v);
-				}
-			};
-			static auto MakeValueStorageType(value && v) {
-				if constexpr (std::is_pod<value>::value) {
-					return static_cast<value const&>(v);
-				}
-				else {
-					return std::make_shared<value>(std::forward<value>(v));
-				}
-			};
-			using ValueStorageType = typename fibers::utilities::function_traits<decltype(std::function(GetValueStorageType))>::result_type;
-			static value& GetValueFromStorageType(ValueStorageType& v) {
-				if constexpr (std::is_pod<value>::value) {
-					return v;
-				}
-				else {
-					return *v;
-				}
-			};
-
-			/* storage class for each node in the stack. May or may not be POD, depending on the value type being stored. */
-			class linkedListItem {
-			public:
-				ValueStorageType value; // may be copied-as-value or may be a shared_ptr. May or may not be POD. 
-				synchronization::atomic_ptr<linkedListItem> prev; // ptr to the "prev" ptr. Non-POD but can be "forgotten" without penalty
-				
-				linkedListItem() : value(), prev(nullptr) {}
-				linkedListItem(ValueStorageType const& mvalue) : value(mvalue), prev(nullptr) {}
-				linkedListItem(linkedListItem const&) = default;
-				linkedListItem(linkedListItem &&) = default;
-				linkedListItem& operator=(linkedListItem const&) = default;
-				linkedListItem& operator=(linkedListItem&&) = default;
-				~linkedListItem() = default;
-			};
-
-			/* allocator is forced to use POD optimization if the value type is POD. */
-			utilities::GarbageCollectedAllocator< linkedListItem > nodeAlloc;
-			/* the current "tip" of the stack, which will be pop'd on request. */
-			synchronization::atomic_ptr<linkedListItem> head;
-
-		public:
-			Stack() = default;
-			Stack(Stack const&) = delete;
-			Stack(Stack &&) = delete;
-			Stack& operator=(Stack const&) = delete;
-			Stack& operator=(Stack&&) = delete;
-			~Stack() { clear(); };
-
-			/**
-			 * @brief current size of the list.
-			 * @return number of items in list
-			 */
-			unsigned long size() const {
-				return nodeAlloc.GetAllocCount();
-			};
-
-			/**
-			 * @brief clears the list.
-			 * @return void
-			 */
-			void clear() {
-				linkedListItem* p = head.Set(nullptr);
-				linkedListItem* n = nullptr;
-
-				while (p) {
-					n = p->prev.Set(nullptr);
-					nodeAlloc.Free(p);
-					p = n;
-					if (!p) // At end, lets check if new stuff came in
-						p = head.Set(nullptr);
-				}
-
-				//nodeAlloc.Clean();
-			};
-
-			/**
-			 * @brief pushes a copy of Value at the end of the list.
-			 * @return void
-			 */
-			void push(value const& Value) {
-				auto* node = nodeAlloc.Alloc(); {
-					node->value = MakeValueStorageType(Value);
-				}
-
-				while (true) {
-					node->prev = head.load();
-					if (head.CompareExchange(node->prev, node) == node->prev) {
-						break;
-					}
-				}
-			};
-
-			/**
-			 * @brief pushes a copy of Value at the end of the list.
-			 * @return void
-			 */
-			void push(value && Value) {
-				auto* node = nodeAlloc.Alloc(); {
-					node->value = MakeValueStorageType(std::forward<value>(Value));
-				}
-
-				while (true) {
-					node->prev = head.load();
-					if (head.CompareExchange(node->prev, node) == node->prev) {
-						break;
-					}
-				}
-			};
-
-			/**
-			 * @brief pushes a shared_ptr of the Value at the end of the list. Only available if value type is non-POD. (POD data are stored-by-value and a shared_ptr would not be respected)
-			 * @return void
-			 */
-			template<typename = std::enable_if_t<!std::is_pod<value>::value>> void push(std::shared_ptr<value> const& Value) {
-				auto* node = nodeAlloc.Alloc(); {
-					node->value = Value;
-				}
-
-				while (true) {
-					node->prev = head.load();
-					if (head.CompareExchange(node->prev, node) == node->prev) {
-						break;
-					}
-				}
-			};
-
-			/**
-			 * @brief Searches for the first match with Value and removes it from the list.
-			 * @return successful or not
-			 */
-			bool try_remove(value const& Value) {
-				decltype(auto) guard { nodeAlloc.CreateEpochGuard() };
-
-				bool found = false;
-				linkedListItem* next = nullptr;
-				linkedListItem* current = head.load(); 
-				if (current) {
-					linkedListItem* prev = current->prev.load();
-					while (!found && current) {
-						if (GetValueFromStorageType(current->value) == Value) {
-							// found it
-							if (next) {
-								// set it's next->prev to prev, not current
-								if (next->prev.CompareExchange(current, prev) == current) {
-									found = true;
-									break;
-								}
-								else {
-									// something interupted -- try again
-									continue;
-								}
-							}
-							else {
-								// no "next" implies current was the head.
-								if (head.CompareExchange(current, prev) == current) {
-									found = true;
-									break;
-								}
-								else {
-									continue;
-								}
-							}
-						}
-
-						next = current;
-						current = prev;
-						if (current) {
-							prev = current->prev.load();
-						}
-						else {
-							prev = nullptr;
-						}
-					}
-					if (found && current) {
-						nodeAlloc.Free(current);
-					}
-				}
-				return found;
-			};
-
-			/**
-			 * @brief Trys to retrieve the item at the end of the list. If found, sets Out to that value.
-			 * @return successful or not, and will set Out if successful
-			 */
-			bool try_pop(ValueStorageType& out) {
-				decltype(auto) guard{ nodeAlloc.CreateEpochGuard() };
-
-				linkedListItem* current{ head.load() };
-				linkedListItem* prev{ nullptr };
-				bool found = false;
-
-				while (!found && current) {
-					current = head.load();
-					prev = current->prev.load();
-					// no "next" implies current was the head.
-					if (head.CompareExchange(current, prev) == current) {
-						found = true;
-						break;
-					}
-					else { // something interupted -- try again
-						continue;
-					}
-				}
-				if (found) {
-					out = std::move(current->value);
-					nodeAlloc.Free(current);
-				}
-				return found;
-			};
-
-			/**
-			 * @brief Trys to remove the last (most recent) element from the list. 
-			 * @return successful or not
-			 */
-			bool try_pop() {
-				decltype(auto) guard{ nodeAlloc.CreateEpochGuard() };
-
-				linkedListItem* current{ head.load() };
-				linkedListItem* prev{ nullptr };
-				bool found = false;
-
-				while (!found && current) {
-					current = head.load();
-					prev = current->prev.load();
-					// no "next" implies current was the head.
-					if (head.CompareExchange(current, prev) == current) {
-						found = true;
-						break;
-					}
-					else { // something interupted -- try again
-						continue;
-					}
-				}
-				if (found) {
-					nodeAlloc.Free(current);
-				}
-				return found;
-			};
-
-			/**
-			 * @brief Trys to retrieve the item at the end of the list. If found, sets Out to that value.
-			 * @return successful or not, and will set Out if successful
-			 */
-			template<typename = std::enable_if_t<!std::is_pod<value>::value>> bool try_pop(value& out) {
-				decltype(auto) guard{ nodeAlloc.CreateEpochGuard() };
-
-				linkedListItem* current{ head.load() };
-				linkedListItem* prev{ nullptr };
-				bool found = false;
-
-				while (!found && current) {
-					current = head.load();
-					prev = current->prev.load();
-					// no "next" implies current was the head.
-					if (head.CompareExchange(current, prev) == current) {
-						found = true;
-						break;
-					}
-					else { // something interupted -- try again
-						continue;
-					}
-				}
-				if (found) {
-					out = std::move(*current->value);
-					nodeAlloc.Free(current);
-				}
-				return found;
-			};
-
-			/**
-			 * @brief counts how many times the Value is found in the list.
-			 * @return number of matched items in list
-			 */
-			unsigned long count(value const& Value, unsigned long maxCount = std::numeric_limits<unsigned long>::max())  {
-				decltype(auto) guard{ nodeAlloc.CreateEpochGuard() };
-
-				linkedListItem* current = head.load();
-				unsigned long counted{ 0 };
-				while (current && (counted < maxCount)) {
-					if (GetValueFromStorageType(current->value) == Value) {
-						counted++;
-					}
-					current = current->prev.load();
-				}
-				return counted;
-			};
-
-			/**
-			 * @brief Determines if the Value is in the list.
-			 * @return whether or not the Value was found
-			 */
-			bool contains(value const& Value)  {
-				return count(Value, 1) > 0;
-			};
-
-		};
-
 		template <typename value> class AtomicQueue {
 		public:
 			/* storage class for each node in the stack. May or may not be POD, depending on the value type being stored. */
@@ -4171,13 +4965,6 @@ namespace fibers {
 				}
 			};
 		};
-
-
-
-
-
-
-
 	};
 
 	namespace impl {
@@ -4212,7 +4999,7 @@ namespace fibers {
 
 		template <typename T> class Queue {
 		public:
-#if 0 // breaks so far, for reasons unknown. May be a bug with AtomicQueue.
+#if 1 // breaks so far, for reasons unknown. May be a bug with AtomicQueue.
 			moodycamel::ConcurrentQueue<T> queue;
 			// fibers::containers::AtomicQueue<T> queue;
 
@@ -4229,7 +5016,7 @@ namespace fibers {
 				return queue.front(item);
 			};
 #else
-#if 1 // utilizes a lock-free design that guarrantees progress under heavy contention
+#if 0 // utilizes a lock-free design that guarrantees progress under heavy contention
 			concurrency::concurrent_queue<T> queue;
 
 			__forceinline void push(T&& item) {
@@ -4289,6 +5076,7 @@ namespace fibers {
 			Queue& operator=(Queue&&) = default;
 			~Queue() = default;
 		};
+
 		struct InternalState {
 			uint32_t numCores = 0;
 			uint32_t numThreads = 0;
@@ -4399,43 +5187,162 @@ namespace fibers {
 		mutable std::shared_ptr<fibers::Action_Base> impl;
 
 	private:
-		template <typename T> static constexpr const bool IsStaticFunction() {
-			if constexpr (std::is_pointer<T>::value) {
-				return std::is_function<typename std::remove_pointer_t<T>>::value;
-			}
-			else {
-				return std::is_function<T>::value;
-			}
+		// Scoped to return whetever the function desires / requires. Note: Can only be used in a "decltype" context, as it cannot actually do anything at all. 
+		struct passepartout {
+			template <typename T> operator T& ();
+			template <typename T> operator T&& ();
 		};
-		template <typename T> static constexpr const bool IsLambda(){
+
+	private:
+		template <typename T> static constexpr const bool IsStaticFunction() {
+			return (std::is_pointer<T>::value && std::is_function<typename std::remove_pointer_t<T>>::value) || std::is_function<T>::value;
+		};
+		template <typename T> static constexpr const bool IsLambda() {
 			if constexpr (IsStaticFunction<T>() || std::is_member_function_pointer<T>::value) {
 				return false;
 			}
-			if constexpr (std::is_invocable<T>::value) {
+			else if constexpr (std::is_invocable<T>::value) {
 				return true;
 			}
-			return false;
-		};
-		template<typename T, typename... Args> static constexpr const bool IsStatelessTest() {
-			using return_type = typename std::invoke_result<T, Args...>::type;
-			using ftype = return_type(*)(Args...);
-			return std::is_convertible<T, ftype>::value;
-		};
-		template <typename T, typename... Args> static constexpr const bool IsLambdaStateless() {
-			if constexpr (IsLambda<T>()) {
-				return IsStatelessTest<T, Args...>();
-			}
-			else {
-				return false;
-			}
-		};
-		template<typename T, typename... Args> static constexpr const bool IsStateless() {
-			if constexpr (IsLambdaStateless<T, Args...>() || IsStaticFunction<T>()) {
+			else if constexpr (std::is_invocable<T, passepartout&>::value) {
 				return true;
 			}
-			else {
-				return false;
+			else if constexpr (std::is_invocable<T, passepartout&, passepartout&>::value) {
+				return true;
 			}
+			else if constexpr (std::is_invocable<T, passepartout&, passepartout&, passepartout&>::value) {
+				return true;
+			}
+			else if constexpr (std::is_invocable<T, passepartout&, passepartout&, passepartout&, passepartout&>::value) {
+				return true;
+			}
+			else if constexpr (std::is_invocable<T, passepartout&, passepartout&, passepartout&, passepartout&,
+				passepartout&>::value) {
+				return true;
+			}
+			else if constexpr (std::is_invocable<T, passepartout&, passepartout&, passepartout&, passepartout&,
+				passepartout&, passepartout&>::value) {
+				return true;
+			}
+			else if constexpr (std::is_invocable<T, passepartout&, passepartout&, passepartout&, passepartout&,
+				passepartout&, passepartout&, passepartout&>::value) {
+				return true;
+			}
+			else if constexpr (std::is_invocable<T, passepartout&, passepartout&, passepartout&, passepartout&,
+				passepartout&, passepartout&, passepartout&, passepartout&>::value) {
+				return true;
+			}
+			else if constexpr (std::is_invocable<T, passepartout&, passepartout&, passepartout&, passepartout&,
+				passepartout&, passepartout&, passepartout&, passepartout&,
+				passepartout&>::value) {
+				return true;
+			}
+			else if constexpr (std::is_invocable<T, passepartout&, passepartout&, passepartout&, passepartout&,
+				passepartout&, passepartout&, passepartout&, passepartout&,
+				passepartout&, passepartout&>::value) {
+				return true;
+			}
+			else if constexpr (std::is_invocable<T, passepartout&, passepartout&, passepartout&, passepartout&,
+				passepartout&, passepartout&, passepartout&, passepartout&,
+				passepartout&, passepartout&, passepartout&>::value) {
+				return true;
+			}
+			else if constexpr (std::is_invocable<T, passepartout&, passepartout&, passepartout&, passepartout&,
+				passepartout&, passepartout&, passepartout&, passepartout&,
+				passepartout&, passepartout&, passepartout&, passepartout&>::value) {
+				return true;
+			}
+			else if constexpr (std::is_invocable<T, passepartout&, passepartout&, passepartout&, passepartout&,
+				passepartout&, passepartout&, passepartout&, passepartout&,
+				passepartout&, passepartout&, passepartout&, passepartout&,
+				passepartout&>::value) {
+				return true;
+			}
+			else if constexpr (std::is_invocable<T, passepartout&, passepartout&, passepartout&, passepartout&,
+				passepartout&, passepartout&, passepartout&, passepartout&,
+				passepartout&, passepartout&, passepartout&, passepartout&,
+				passepartout&, passepartout&>::value) {
+				return true;
+			}
+			else if constexpr (std::is_invocable<T, passepartout&, passepartout&, passepartout&, passepartout&,
+				passepartout&, passepartout&, passepartout&, passepartout&,
+				passepartout&, passepartout&, passepartout&, passepartout&,
+				passepartout&, passepartout&, passepartout&>::value) {
+				return true;
+			}
+			else if constexpr (std::is_invocable<T, passepartout&, passepartout&, passepartout&, passepartout&,
+				passepartout&, passepartout&, passepartout&, passepartout&,
+				passepartout&, passepartout&, passepartout&, passepartout&,
+				passepartout&, passepartout&, passepartout&, passepartout&>::value) {
+				return true;
+			}
+			else return false;
+		};
+		template<typename T, typename Arguments> static constexpr const bool IsStatelessTest() {
+			if constexpr (IsStaticFunction<T>()) { return true; }
+			else {
+				// using Arguments = typename fibers::utilities::function_traits<std::function<T(Args...)>>::arguments; // tuple
+
+#define Ty(n) typename std::tuple_element<n, Arguments>::type
+#define TIter0() Ty(0)
+#define TIter1() Ty(0), Ty(1)
+#define TIter2() Ty(0), Ty(1), Ty(2)
+#define TIter3() Ty(0), Ty(1), Ty(2), Ty(3)
+#define TIter4() Ty(0), Ty(1), Ty(2), Ty(3), Ty(4)
+#define TIter5() Ty(0), Ty(1), Ty(2), Ty(3), Ty(4), Ty(5)
+#define TIter6() Ty(0), Ty(1), Ty(2), Ty(3), Ty(4), Ty(5), Ty(6)
+#define TIter7() Ty(0), Ty(1), Ty(2), Ty(3), Ty(4), Ty(5), Ty(6), Ty(7)
+#define TIter8() Ty(0), Ty(1), Ty(2), Ty(3), Ty(4), Ty(5), Ty(6), Ty(7), Ty(8)
+#define TIter9() Ty(0), Ty(1), Ty(2), Ty(3), Ty(4), Ty(5), Ty(6), Ty(7), Ty(8), Ty(9)
+#define TIter10() Ty(0), Ty(1), Ty(2), Ty(3), Ty(4), Ty(5), Ty(6), Ty(7), Ty(8), Ty(9), Ty(10)
+#define TIter11() Ty(0), Ty(1), Ty(2), Ty(3), Ty(4), Ty(5), Ty(6), Ty(7), Ty(8), Ty(9), Ty(10), Ty(11)
+#define TIter12() Ty(0), Ty(1), Ty(2), Ty(3), Ty(4), Ty(5), Ty(6), Ty(7), Ty(8), Ty(9), Ty(10), Ty(11), Ty(12)
+#define TIter13() Ty(0), Ty(1), Ty(2), Ty(3), Ty(4), Ty(5), Ty(6), Ty(7), Ty(8), Ty(9), Ty(10), Ty(11), Ty(12), Ty(13)
+#define TIter14() Ty(0), Ty(1), Ty(2), Ty(3), Ty(4), Ty(5), Ty(6), Ty(7), Ty(8), Ty(9), Ty(10), Ty(11), Ty(12), Ty(13), Ty(14)
+#define TIter15() Ty(0), Ty(1), Ty(2), Ty(3), Ty(4), Ty(5), Ty(6), Ty(7), Ty(8), Ty(9), Ty(10), Ty(11), Ty(12), Ty(13), Ty(14), Ty(15)
+				if constexpr (std::tuple_size_v< Arguments> > 16) return IsStaticFunction<T>();
+				if constexpr (std::tuple_size_v< Arguments> == 0) return IsStaticFunction<T>() || std::is_convertible<T, typename std::invoke_result<T>::type(*)()>::value;
+				if constexpr (std::tuple_size_v< Arguments> == 1) return IsStaticFunction<T>() || std::is_convertible<T, typename std::invoke_result<T, TIter0()>::type(*)(TIter0())>::value;
+				if constexpr (std::tuple_size_v< Arguments> == 2) return IsStaticFunction<T>() || std::is_convertible<T, typename std::invoke_result<T, TIter1()>::type(*)(TIter1())>::value;
+				if constexpr (std::tuple_size_v< Arguments> == 3) return IsStaticFunction<T>() || std::is_convertible<T, typename std::invoke_result<T, TIter2()>::type(*)(TIter2())>::value;
+				if constexpr (std::tuple_size_v< Arguments> == 4) return IsStaticFunction<T>() || std::is_convertible<T, typename std::invoke_result<T, TIter3()>::type(*)(TIter3())>::value;
+				if constexpr (std::tuple_size_v< Arguments> == 5) return IsStaticFunction<T>() || std::is_convertible<T, typename std::invoke_result<T, TIter4()>::type(*)(TIter4())>::value;
+				if constexpr (std::tuple_size_v< Arguments> == 6) return IsStaticFunction<T>() || std::is_convertible<T, typename std::invoke_result<T, TIter5()>::type(*)(TIter5())>::value;
+				if constexpr (std::tuple_size_v< Arguments> == 7) return IsStaticFunction<T>() || std::is_convertible<T, typename std::invoke_result<T, TIter6()>::type(*)(TIter6())>::value;
+				if constexpr (std::tuple_size_v< Arguments> == 8) return IsStaticFunction<T>() || std::is_convertible<T, typename std::invoke_result<T, TIter7()>::type(*)(TIter7())>::value;
+				if constexpr (std::tuple_size_v< Arguments> == 9) return IsStaticFunction<T>() || std::is_convertible<T, typename std::invoke_result<T, TIter8()>::type(*)(TIter8())>::value;
+				if constexpr (std::tuple_size_v< Arguments> == 10) return IsStaticFunction<T>() || std::is_convertible<T, typename std::invoke_result<T, TIter9()>::type(*)(TIter9())>::value;
+				if constexpr (std::tuple_size_v< Arguments> == 11) return IsStaticFunction<T>() || std::is_convertible<T, typename std::invoke_result<T, TIter10()>::type(*)(TIter10())>::value;
+				if constexpr (std::tuple_size_v< Arguments> == 12) return IsStaticFunction<T>() || std::is_convertible<T, typename std::invoke_result<T, TIter11()>::type(*)(TIter11())>::value;
+				if constexpr (std::tuple_size_v< Arguments> == 13) return IsStaticFunction<T>() || std::is_convertible<T, typename std::invoke_result<T, TIter12()>::type(*)(TIter12())>::value;
+				if constexpr (std::tuple_size_v< Arguments> == 14) return IsStaticFunction<T>() || std::is_convertible<T, typename std::invoke_result<T, TIter13()>::type(*)(TIter13())>::value;
+				if constexpr (std::tuple_size_v< Arguments> == 15) return IsStaticFunction<T>() || std::is_convertible<T, typename std::invoke_result<T, TIter14()>::type(*)(TIter14())>::value;
+				if constexpr (std::tuple_size_v< Arguments> == 16) return IsStaticFunction<T>() || std::is_convertible<T, typename std::invoke_result<T, TIter15()>::type(*)(TIter15())>::value;
+				return false;
+#undef Ty
+#undef TIter0
+#undef TIter1
+#undef TIter2
+#undef TIter3
+#undef TIter4
+#undef TIter5
+#undef TIter6
+#undef TIter7
+#undef TIter8
+#undef TIter9
+#undef TIter10
+#undef TIter11
+#undef TIter12
+#undef TIter13
+#undef TIter14
+#undef TIter15
+			}
+		};
+		template <typename T, typename Args> static constexpr const bool IsLambdaStateless() {
+			return IsLambda<T>() && IsStatelessTest<T, Args>();
+		};
+		template<typename T, typename Args> static constexpr const bool IsStateless() {
+			return IsStaticFunction<T>() || IsLambdaStateless<T, Args>();
 		};
 
 	public:
@@ -4447,10 +5354,12 @@ namespace fibers {
 
 		/* Creates a job from a function and (optionally) input parameters. Can handle basic type-casting from inputs to parameters, and supports shared_ptr casting (to and from). */
 		template < typename T, typename... Args, typename = std::enable_if_t< !std::is_same_v<fibers::Job, std::decay_t<T>> && !std::is_same_v<fibers::Any, std::decay_t<T>> >> explicit Job(T&& function, Args && ... Fargs) : impl(nullptr) {
-			auto func{ fibers::Function(std::function(std::forward<T>(function)), std::forward<Args>(Fargs)...) }; 
-			
-			static constexpr const bool is_stateless{ IsStateless<T, Args...>() };
+			auto func{ fibers::Function(std::function(std::forward<T>(function)), std::forward<Args>(Fargs)...) };
 
+			static constexpr const bool is_stateless{ IsStateless<T, typename decltype(func)::Arguments>() };
+			
+			
+		
 			if constexpr (decltype(func)::returnsNothing) {
 				auto* action{ new fibers::Action_NoReturn(std::move(func), is_stateless) }; // create ptr
 				impl = std::static_pointer_cast<fibers::Action_Base>(std::shared_ptr<typename std::remove_pointer_t<decltype(action)>>(std::move(action))); // move to smart ptr and then cast-down to base. Base handle counter will do destruction
@@ -4589,159 +5498,12 @@ namespace fibers {
 	};
 
 	namespace parallel {
-#if 0
-		namespace impl {
-			template <class _FwdIt, class _Diff = std::_Iter_diff_t<_FwdIt>, bool = std::_Is_random_iter_v<_FwdIt>>
-			struct _Static_partition_range;
-
-			template <class _RanIt, class _Diff> /* random iteration type */
-			struct _Static_partition_range<_RanIt, _Diff, true> {
-				using _Target_diff = std::_Iter_diff_t<_RanIt>;
-				using _URanIt = std::_Unwrapped_t<const _RanIt&>;
-				_URanIt _Start_at;
-				using _Chunk_type = std::_Iterator_range<_URanIt>;
-
-				_RanIt _Populate(const std::_Static_partition_team<_Diff>& _Team, _RanIt _First) {
-					// statically partition a random-access iterator range and return next(_First, _Team._Count)
-					// pre: _Populate hasn't yet been called on this instance
-					auto _Result = _First + static_cast<_Target_diff>(_Team._Count); // does verification
-					_Start_at = std::_Get_unwrapped(_First);
-					return _Result;
-				}
-
-				bool _Populate(const std::_Static_partition_team<_Diff>& _Team, _RanIt _First, _RanIt _Last) {
-					// statically partition a random-access iterator range and check if the range ends at _Last
-					// pre: _Populate hasn't yet been called on this instance
-					std::_Adl_verify_range(_First, _Last);
-					_Start_at = std::_Get_unwrapped(_First);
-					return _Team._Count == _Last - _First;
-				}
-
-				_URanIt _Get_first(size_t /* _Chunk_number */, const _Diff _Offset) {
-					// get the first iterator for _Chunk _Chunk_number (which is at offset _Offset)
-					return _Start_at + static_cast<_Target_diff>(_Offset);
-				}
-
-				_Chunk_type _Get_chunk(const std::_Static_partition_key<_Diff> _Key) const {
-					// get a static partition chunk from a random-access range
-					// pre: _Key was generated by the _Static_partition_team instance passed to a previous call to _Populate
-					const auto _First = _Start_at + static_cast<_Target_diff>(_Key._Start_at);
-					return { _First, _First + static_cast<_Target_diff>(_Key._Size) };
-				}
-			};
-
-			template <class _FwdIt, class _Diff> /* non-random (e.g. forward) iter type */
-			struct _Static_partition_range<_FwdIt, _Diff, false> {
-				using _Target_diff = std::_Iter_diff_t<_FwdIt>;
-				using _UFwdIt = std::_Unwrapped_t<const _FwdIt&>;
-				std::_Parallel_vector<_UFwdIt> _Division_points;
-				using _Chunk_type = std::_Iterator_range<_UFwdIt>;
-
-				_FwdIt _Populate(const std::_Static_partition_team<_Diff>& _Team, _FwdIt _First) {
-					// statically partition a forward iterator range and return next(_First, _Team._Count)
-					// pre: _Populate hasn't yet been called on this instance
-					const auto _Chunks = _Team._Chunks;
-					_Division_points.resize(_Chunks + 1);
-					// The following potentially narrowing cast is OK because caller has ensured
-					// next(_First, _Team._Count) is valid (and _Count <= _Chunk_size)
-					const auto _Chunk_size = static_cast<_Target_diff>(_Team._Chunk_size);
-					const auto _Unchunked_items = _Team._Unchunked_items;
-					auto _Result = _Division_points.begin();
-					*_Result = std::_Get_unwrapped(_First);
-					for (_Diff _Idx{}; _Idx < _Unchunked_items; ++_Idx) { // record bounds of chunks with an extra item
-						_STD advance(_First, static_cast<_Target_diff>(_Chunk_size + 1));
-						*++_Result = std::_Get_unwrapped(_First);
-					}
-
-					const auto _Diff_chunks = static_cast<_Diff>(_Chunks);
-					for (_Diff _Idx = _Unchunked_items; _Idx < _Diff_chunks; ++_Idx) { // record bounds of chunks with no extra item
-						_STD advance(_First, _Chunk_size);
-						*++_Result = std::_Get_unwrapped(_First);
-					}
-
-					return _First;
-				}
-
-				bool _Populate(const std::_Static_partition_team<_Diff>& _Team, _FwdIt _First, _FwdIt _Last) {
-					// statically partition a forward iterator range and check if the range ends at _Last
-					// pre: _Populate hasn't yet been called on this instance
-					const auto _Chunks = _Team._Chunks;
-					_Division_points.resize(_Chunks + 1);
-					const auto _Chunk_size = _Team._Chunk_size;
-					const auto _Unchunked_items = _Team._Unchunked_items;
-					auto _Result = _Division_points.begin();
-					*_Result = std::_Get_unwrapped(_First);
-					for (_Diff _Idx{}; _Idx < _Unchunked_items; ++_Idx) { // record bounds of chunks with an extra item
-						for (_Diff _This_chunk_size = _Chunk_size + 1; 0 < _This_chunk_size--;) {
-							if (_First == _Last) {
-								return false;
-							}
-
-							++_First;
-						}
-
-						*++_Result = std::_Get_unwrapped(_First);
-					}
-
-					const auto _Diff_chunks = static_cast<_Diff>(_Chunks);
-					for (_Diff _Idx = _Unchunked_items; _Idx < _Diff_chunks; ++_Idx) { // record bounds of chunks with no extra item
-						for (_Diff _This_chunk_size = _Chunk_size; 0 < _This_chunk_size--;) {
-							if (_First == _Last) {
-								return false;
-							}
-
-							++_First;
-						}
-
-						*++_Result = std::_Get_unwrapped(_First);
-					}
-
-					return _First == _Last;
-				}
-
-				_UFwdIt _Get_first(const size_t _Chunk_number, _Diff /* _Offset */) {
-					// get the first iterator for _Chunk _Chunk_number (which is at offset _Offset)
-					return _Division_points[_Chunk_number];
-				}
-
-				_Chunk_type _Get_chunk(const std::_Static_partition_key<_Diff> _Key) const {
-					// get a static partition chunk from a forward range
-					// pre: _Key was generated by the _Static_partition_team instance passed to a previous call to _Populate
-					return { _Division_points[_Key._Chunk_number], _Division_points[_Key._Chunk_number + 1] };
-				}
-			};
-
-			template <class _FwdIt, class _Diff, class _Fn>
-			struct _Static_partitioned_for_each2 { // for_each task scheduled on the system thread pool
-				std::_Static_partition_team<_Diff> _Team;
-				impl::_Static_partition_range<_FwdIt, _Diff> _Basis;
-				_Fn _Func;
-
-				_Static_partitioned_for_each2(const size_t _Hw_threads, const _Diff _Count, _Fn _Fx)
-					: _Team{ _Count, std::_Get_chunked_work_chunk_count(_Hw_threads, _Count) }, _Basis{}, _Func(_Fx) {}
-
-				std::_Cancellation_status _Process_chunk() {
-					const auto _Key = _Team._Get_next_key();
-					if (_Key) {
-						const auto _Chunk = _Basis._Get_chunk(_Key);
-						std::_For_each_ivdep(_Chunk._First, _Chunk._Last, _Func);
-						return std::_Cancellation_status::_Running;
-					}
-
-					return std::_Cancellation_status::_Canceled;
-				}
-
-				static void __stdcall _Threadpool_callback(
-					__std_PTP_CALLBACK_INSTANCE, void* const _Context, __std_PTP_WORK) noexcept /* terminates */ {
-					std::_Run_available_chunked_work(*static_cast<_Static_partitioned_for_each2*>(_Context));
-				}
-			};
-		}
-#endif
-
+#define UseStdForEachForParallelManager // without, we are very stable (>1.5hr) and memory-leak free (so far).
+		
 		/* parallel_for (auto i = start; i < end; i++){ todo(i); }
 		If the todo(i) returns anything, it will be collected into a vector at the end. */
-		template<typename iteratorType, class F> decltype(auto) For(iteratorType start, iteratorType end, F ToDo) {
+		template<typename iteratorType, class F> decltype(auto) For(iteratorType start, iteratorType end, F ToDo) {			
+#ifdef UseStdForEachForParallelManager			
 			fibers::utilities::Sequence seq(start, end); // 0..999
 			fibers::synchronization::atomic_ptr<std::exception_ptr> e{ nullptr };
 
@@ -4760,11 +5522,20 @@ namespace fibers {
 				delete p;
 				std::rethrow_exception(std::move(copy));
 			}
+#else
+			impl::context ctx;
+			impl::Dispatch(ctx, end - start, [&ToDo, start](impl::JobArgs const& _args)->void { 
+				iteratorType t{ static_cast<iteratorType>(_args.jobIndex) + start };
+				ToDo(t); 
+			});
+			impl::Wait(ctx);
+#endif
 		};
 
 		/* parallel_for (auto i = start; i < end; i++){ todo(i); }
 		If the todo(i) returns anything, it will be collected into a vector at the end. */
 		template<typename iteratorType, class F> decltype(auto) For(iteratorType start, iteratorType end, iteratorType step, F ToDo) {
+#ifdef UseStdForEachForParallelManager			
 			fibers::utilities::Sequence seq(start, end, step); // 0..999
 			fibers::synchronization::atomic_ptr<std::exception_ptr> e{ nullptr };
 
@@ -4783,11 +5554,21 @@ namespace fibers {
 				delete p;
 				std::rethrow_exception(std::move(copy));
 			}
+#else
+			impl::context ctx;
+			impl::Dispatch(ctx, (end - start) / step, [&ToDo, start, step](impl::JobArgs const& _args)->void { 
+				iteratorType t{ (static_cast<iteratorType>(_args.jobIndex) * step) + start };
+				ToDo(t); 
+			});
+			impl::Wait(ctx);
+#endif
+
 		};
 
 		/* parallel_for (auto i = container.begin(); i != container.end(); i++){ todo(*i); }
 		If the todo(*i) returns anything, it will be collected into a vector at the end. */
 		template<typename containerType, typename F> decltype(auto) ForEach(containerType& container, F ToDo) {
+#ifdef UseStdForEachForParallelManager		
 			fibers::synchronization::atomic_ptr<std::exception_ptr> e{ nullptr };
 
 			std::for_each(container.begin(), container.end(), [&](auto& x) {
@@ -4799,17 +5580,45 @@ namespace fibers {
 						if (auto* p = e.Set(new std::exception_ptr(std::current_exception()))) delete p;
 					}
 				}
-				});
+			});
 			if (auto* p = e.Set(nullptr)) {
 				std::exception_ptr copy{ *p };
 				delete p;
 				std::rethrow_exception(std::move(copy));
 			}			
+#else
+			auto begin = container.begin();
+			auto end = container.end();
+			using iterType = decltype(begin);
+			impl::context ctx;
+			impl::Dispatch(ctx, 
+				std::distance(begin, end), 
+				[&ToDo](impl::JobArgs const& _args)-> void { 
+					iterType& iter = *((iterType*)_args.sharedmemory);
+					if (_args.groupIndex == 0) {
+						std::advance(iter, _args.jobIndex);
+					}
+					else {
+						std::advance(iter, 1);
+					}
+					ToDo(*iter); 
+				},
+				sizeof(iterType),
+				[&begin](void* p)->void { 
+					new (p) iterType{ begin };
+				},
+				[](void* p)->void {
+					((iterType*)p)->~iterType();
+				}
+			);
+			impl::Wait(ctx);
+#endif
 		};
 
 		/* parallel_for (auto i = container.begin(); i != container.end(); i++){ todo(*i); }
 		If the todo(*i) returns anything, it will be collected into a vector at the end. */
 		template<typename containerType, typename F> decltype(auto) ForEach(containerType const& container, F ToDo) {
+#ifdef UseStdForEachForParallelManager		
 			fibers::synchronization::atomic_ptr<std::exception_ptr> e{ nullptr };
 
 			std::for_each(container.begin(), container.end(), [&](auto& x) {
@@ -4827,14 +5636,43 @@ namespace fibers {
 				delete p;
 				std::rethrow_exception(std::move(copy));
 			}
+#else
+			auto begin = container.begin();
+			auto end = container.end();
+			using iterType = decltype(begin);
+			impl::context ctx;
+			impl::Dispatch(ctx,
+				std::distance(begin, end),
+				[&ToDo](impl::JobArgs const& _args)-> void {
+					iterType& iter = *((iterType*)_args.sharedmemory);
+					if (_args.groupIndex == 0) {
+						std::advance(iter, _args.jobIndex);
+					}
+					else {
+						std::advance(iter, 1);
+					}
+					ToDo(*iter);
+				},
+				sizeof(iterType),
+				[&begin](void* p)->void {
+					new (p) iterType{ begin };
+				},
+				[](void* p)->void {
+					((iterType*)p)->~iterType();
+				}
+				);
+			impl::Wait(ctx);
+#endif
 		};
 
-		/* wrapper for std::find_if. This is not parallelized, it is linear, which appears to be the fastest search for some reason under most cases. */
+		/* wrapper for std::find_if. 
+		This is not parallelized, it is linear, which appears to be the fastest search for some reason under most cases. */
 		template<typename containerType, typename F> decltype(auto) Find(containerType& container, F const& ToDo) {
 			return std::find_if(container.begin(), container.end(), [&](auto& x) ->bool { return ToDo(x); }); 
 		};
 
-		/* wrapper for std::find_if. This is not parallelized, it is linear, which appears to be the fastest search for some reason under most cases. */
+		/* wrapper for std::find_if. 
+		This is not parallelized, it is linear, which appears to be the fastest search for some reason under most cases. */
 		template<typename containerType, typename F> decltype(auto) Find(containerType const& container, F const& ToDo) {
 			return std::find_if(container.cbegin(), container.cend(), [&](auto const& x) ->bool { return ToDo(x); }); 
 		};
@@ -4842,34 +5680,9 @@ namespace fibers {
 		/* outputType x;
 		for (auto& v : resultList){ x += v; }
 		return x; */
-		template<typename outputType>
-		decltype(auto) Accumulate(std::vector<outputType> const& resultList) {
-#if 1 
+		template<typename outputType> decltype(auto) Accumulate(std::vector<outputType> const& resultList) {
 			return std::reduce(std::execution::par, resultList.begin(), resultList.end(), 0, [](outputType a, outputType b) { return a + b; });
-#else
-			outputType out{ 0 };
-			for (auto& v : resultList) {
-				if (v) {
-					out += *v;
-				}
-			}
-			return out;
-#endif
 		};
-
-
-		
-
-
-
-
-
-
-
-
-
-
-
 
 		/* Generic form of a future<T>, which can be used to wait on and get the results of any job. Can be safely shared if multiple places will need access to the result once available. */
 		class promise {
@@ -5038,10 +5851,845 @@ namespace fibers {
 
 #include "Units.h"
 
-class MultithreadingInstanceManager {
-	public:
-		MultithreadingInstanceManager() {};
-		virtual ~MultithreadingInstanceManager() {};
+#include <boost/date_time.hpp>
+// Thread- and Fiber-safe wrapper for Units::day which supports fundamental DateTime and Duration math. Utilizes Boost for the timezone math, AM/PM extractions, string conversions, etc.
+// Meant to be used in parallel with Units for proper unit management while manipulating DateTime ranges.
+// E.g: using namespace literals; return DateTime::make_time(1940, 1, 1) + 1_d - 30_s;
+class DateTime {
+protected:
+	Units::day time; // stored as a thread-safe double
+	static boost::posix_time::ptime const& Shared_Epoch_posixTime() {
+		static boost::posix_time::ptime rc{ boost::posix_time::time_from_string("1970/1/1 0:0:0") };
+		return rc;
 	};
+	boost::posix_time::ptime ToPTime() const {
+		Units::millisecond D{ time };
+		if (D < 0) {
+			return Shared_Epoch_posixTime() + boost::posix_time::milliseconds((long long)(D()));
+		}
+		else {
+			return Shared_Epoch_posixTime() - boost::posix_time::milliseconds((long long)(-(D())));
+		}
+	};
+	Units::day FromPTime(boost::posix_time::ptime const& time) {
+		boost::posix_time::ptime const& epoch = Shared_Epoch_posixTime();
+
+		if (time >= epoch) {
+			return Units::millisecond((time - epoch).total_milliseconds());
+		}
+		else {
+			return -Units::millisecond((epoch - time).total_milliseconds());
+		}
+	};
+
+private:
+	explicit DateTime(const boost::posix_time::ptime& t) : time{ FromPTime(t) } {};
+
+public:
+	DateTime() : time{ FromPTime(Shared_Epoch_posixTime()) } {};
+	DateTime(Units::second const& a) : time{ a } {};
+	DateTime(Units::second&& a) : time{ a } {};
+	DateTime(const DateTime& other) = default;
+	DateTime(DateTime&& other) = default;
+	DateTime& operator=(const DateTime& other) = default;
+	DateTime& operator=(DateTime && other) = default;
+	DateTime& operator=(Units::second const& other) { time = other; return *this; };
+	DateTime(std::string const& t) : time{ FromPTime(Shared_Epoch_posixTime()) } { this->FromString(t); };
+	~DateTime() = default;
+
+public:
+	auto& Add(const Units::day& v) { return time += v; }; // atomically adds a value and returns the new value
+	auto& Sub(const Units::day& v) { return time -= v; }; // atomically subtracts a value and returns the new value
+	Units::day Add(const Units::day& v) const { return time + v; }; // adds a value and returns the new value
+	Units::day Sub(const Units::day& v) const { return time - v; }; // subtracts a value and returns the new value
+	const auto& GetValue() const { return time; };
+	auto& SetValue(const Units::day& v) { return time = v; }; // returns the previous value while setting with the new value
+	auto& SetValue(Units::day&& v) { return time = std::forward<Units::day>(v); }; // returns the previous value while setting with the new value
+	const auto& load() const { return GetValue(); };
+
+private:
+	static Units::second getUtcOffset_impl() {
+		bool isNegative;
+
+		time_t ts = 0;
+		char buf[16];
+		decltype(auto) t = ::localtime(&ts);
+		::strftime(buf, sizeof(buf), "%z", t);
+		std::string offset = buf; // -0800
+		isNegative = offset.find('-') >= 0;
+		// get the right 2 values
+		decltype(auto) minuteOffset = std::atof(offset.substr(offset.length() - 2, 2).c_str()); // 00
+		decltype(auto) hourOffset = std::atof(offset.substr(offset.length() - 4, 4).substr(0, 2).c_str()); // 08
+
+		Units::second offsetV = ((hourOffset * 3600.0) + (minuteOffset * 60.0)) * (isNegative ? -1.0 : 1.0);
+
+		if (t->tm_isdst) {
+			// offsetV -= Units::second(3600);
+		}
+
+		return offsetV;
+	};
+	static Units::second getUtcOffset() {
+		static Units::second tr(getUtcOffset_impl());
+		return tr;
+	};
+	static Units::second getUtcOffset_impl(boost::posix_time::ptime const& pt) {
+		bool isNegative;
+
+		// time_t ts = boost::posix_time::to_tm(pt);
+		char buf[16];
+		decltype(auto) t = boost::posix_time::to_tm(boost::posix_time::ptime(pt.date()));
+		::mktime(&t);
+		::strftime(buf, sizeof(buf), "%z", &t);
+		std::string offset = buf; // -0800
+
+		isNegative = offset.find('-') >= 0;
+		// get the right 2 values
+
+		decltype(auto) minuteOffset = std::atof(offset.substr(offset.length() - 2, 2).c_str()); // 00
+		decltype(auto) hourOffset = std::atof(offset.substr(offset.length() - 4, 4).substr(0, 2).c_str()); // 08
+
+		Units::second offsetV = ((hourOffset * 3600.0) + (minuteOffset * 60.0)) * (isNegative ? -1.0 : 1.0);
+
+		if (t.tm_isdst) {
+			// offsetV -= Units::second(3600);
+		}
+
+		return offsetV;
+	};
+	static Units::second getUtcOffset(boost::posix_time::ptime const& pt) {
+		return getUtcOffset_impl(pt);
+	};
+	static DateTime const& Shared_Epoch() { static DateTime rc{ Shared_Epoch_posixTime() }; return rc; }
+	std::string	ToString() const {
+		DateTime temp{ this->time + getUtcOffset(ToPTime()) };
+
+		return Units::printf("%i/%i/%i %i:%i:%f",
+			temp.tm_year() + 1900,
+			temp.tm_mon() + 1,
+			temp.tm_mday(),
+			temp.tm_hour(),
+			temp.tm_min(),
+			temp.tm_sec()
+		);
+	};
+	DateTime&	FromString(const std::string& timeStr) {
+		DateTime t{ boost::posix_time::time_from_string(timeStr.c_str()) };
+		return operator=(DateTime{ t.time - getUtcOffset(t.ToPTime()) });
+	};
+
+public:
+	inline static DateTime timeFromString(const std::string& timeStr = "1970/1/1 0:0:0") { return DateTime().FromString(timeStr); };
+	static DateTime Epoch() { return Shared_Epoch(); };
+	static DateTime Now() { return DateTime{ static_cast<long double>(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count()) / 1000.0 }; };
+	static DateTime createTimeFromMinutes(float minutes) {
+		decltype(auto) t = Now();
+		t.ToStartOfDay();
+		t += (minutes * 60.0f);
+		return t;
+	}
+	static int			getNumDaysInSameMonth(DateTime const& in) {
+		Units::day duration = (Units::day)(DateTime(in).ToEndOfMonth() - DateTime(in).ToStartOfMonth());
+		duration += 0.5;
+		return (int)duration.floor()();
+		// return (int)std::floor((((long double)(DateTime(in).ToEndOfMonth() - DateTime(in).ToStartOfMonth())) / (24.0 * 60.0 * 60.0)) + 0.5);
+	};
+	static DateTime	make_time(int year = 1970, int month = 1, int day = 1, int hour = 0, int minute = 0, float second = 0, bool useLocalTime = true) {
+		DateTime t = DateTime::timeFromString(Units::printf("%i/%i/%i %i:%i:%f", year, month, day, hour, minute, second));
+		//if (useLocalTime) { t -= getUtcOffset(t.ToPTime())(); }
+		return t;
+	};
+	static Units::second GetUtcOffset(DateTime const& in) {
+		return getUtcOffset(in.ToPTime());
+	};
+
+public:
+	DateTime& ToStartOfMonth() {
+		this->operator-=(Units::second(tm_sec()));
+		this->operator-=(Units::minute(tm_min()));
+		this->operator-=(Units::hour(tm_hour()));
+		this->operator-=(Units::day(tm_mday() - 1));
+		return *this;
+	};
+	DateTime& ToStartOfDay() {
+		this->operator-=(Units::second(tm_sec()));
+		this->operator-=(Units::minute(tm_min()));
+		this->operator-=(Units::hour(tm_hour()));
+		return *this;
+	};
+	DateTime& ToStartOfHour() {
+		this->operator-=(Units::second(tm_sec()));
+		this->operator-=(Units::minute(tm_min()));
+		return *this;
+	};
+	DateTime& ToStartOfMinute() {
+		this->operator-=(Units::second(tm_sec()));
+		return *this;
+	};
+	DateTime& ToEndOfMonth() {
+		if (tm_mon() >= 11) {
+			DateTime out(make_time(tm_year() + 1901, 1, 1, 0, 0, 0));
+			out -= 1;
+			*this = out; //  (make_time(tm_year() + 1901, 1, 1, 0, 0, 0) - 1);
+		}
+		else {
+			DateTime out(make_time(tm_year() + 1900, tm_mon() + 2, 1, 0, 0, 0));
+			out -= 1;
+			*this = out; // (make_time(tm_year() + 1900, tm_mon() + 2, 1, 0, 0, 0) - 1);
+		}
+		return *this;
+	};
+	DateTime& ToEndOfDay() {
+		this->operator+=(Units::second(60 - tm_sec()));
+		this->operator+=(Units::second((59 - tm_min()) * 60));
+		this->operator+=(Units::second((23 - tm_hour()) * 3600));
+		return *this;
+	};
+	DateTime& ToEndOfHour() {
+		this->operator+=(Units::second(60 - tm_sec()));
+		this->operator+=(Units::second((59 - tm_min()) * 60));
+		return *this;
+	};
+	DateTime& ToEndOfMinute() {
+		this->operator+=(Units::second(60 - tm_sec()));
+		return *this;
+	};
+
+public:
+	/* milliseconds after the second - [0, 1000] including leap second */
+	long double tm_fractionalsec() const {
+		boost::posix_time::time_duration td(0, 0, 0, ToPTime().time_of_day().fractional_seconds());
+		decltype(auto) t = (long double)(td.total_nanoseconds()) / 1000000000.0L;
+		return t;
+	};
+
+	/* seconds after the minute - [0, 60] including leap second */
+	long double tm_sec() const {
+		return ((long double)ToPTime().time_of_day().seconds()) + tm_fractionalsec();
+	};
+
+	/* minutes after the hour - [0, 59] */
+	int tm_min() const { return ToPTime().time_of_day().minutes(); };
+
+	/* hours since midnight - [0, 23] */
+	int tm_hour() const { return ToPTime().time_of_day().hours(); };
+
+	/* day of the month - [1, 31] */
+	int tm_mday() const { return ToPTime().date().year_month_day().day; };
+
+	/* months since January - [0, 11] */
+	int tm_mon() const { return ToPTime().date().year_month_day().month - 1; };
+
+	/* years since 1900 */
+	int tm_year() const { return ToPTime().date().year_month_day().year - 1900; };
+
+	/* days since Sunday - [0, 6] */
+	int tm_wday() const { return ToPTime().date().day_of_week().as_number(); };
+
+	/* days since January 1 - [0, 365] */
+	int tm_yday() const { return ToPTime().date().day_of_year() - 1; };
+
+public:
+	std::string c_str() const {
+		return ToString();
+	};
+	operator std::string() const { return ToString(); };
+	operator Units::second() const { return time; };
+	operator Units::millisecond() const { return time; };
+	operator Units::minute() const { return time; };
+	operator Units::hour() const { return time; };
+	operator Units::day() const { return time; };
+	operator Units::year() const { return time; };
+
+	friend bool	operator==(const DateTime& a, DateTime const& t) { return a.time == t.time; };
+	friend bool	operator!=(const DateTime& a, DateTime const& t) { return !(a == t); };
+	friend bool	operator>=(const DateTime& a, DateTime const& t) { return a.time >= t.time; };
+	friend bool	operator<=(const DateTime& a, DateTime const& t) { return a.time <= t.time; };
+	friend bool	operator>(const DateTime& a, DateTime const& t) { return !(a <= t); };
+	friend bool	operator<(const DateTime& a, DateTime const& t) { return !(a >= t); };
+
+	friend bool	operator==(const DateTime& a, Units::second const& t) { return a.time == t; };
+	friend bool	operator!=(const DateTime& a, Units::second const& t) { return !(a == t); };
+	friend bool	operator>=(const DateTime& a, Units::second const& t) { return a.time >= t; };
+	friend bool	operator<=(const DateTime& a, Units::second const& t) { return a.time <= t; };
+	friend bool	operator>(const DateTime& a, Units::second const& t) { return !(a <= t); };
+	friend bool	operator<(const DateTime& a, Units::second const& t) { return !(a >= t); };
+
+	friend bool	operator==(const Units::second& a, DateTime const& t) { return a == t.time; };
+	friend bool	operator!=(const Units::second& a, DateTime const& t) { return !(a == t); };
+	friend bool	operator>=(const Units::second& a, DateTime const& t) { return a >= t.time; };
+	friend bool	operator<=(const Units::second& a, DateTime const& t) { return a <= t.time; };
+	friend bool	operator>(const Units::second& a, DateTime const& t) { return !(a <= t); };
+	friend bool	operator<(const Units::second& a, DateTime const& t) { return !(a >= t); };
+
+	friend inline std::ostream& operator<<(std::ostream& os, DateTime const& obj) { os << obj.ToString(); return os; };
+	friend inline std::stringstream& operator>>(std::stringstream& os, DateTime& obj) { Units::second v = 0; os >> v; obj = v; return os; };
+
+	DateTime& operator+=(Units::second seconds) {
+		time += Units::second(seconds);
+		return *this;
+	};
+	DateTime& operator-=(Units::second seconds) {
+		time -= Units::second(seconds);
+		return *this;
+	};
+	DateTime& operator*=(Units::second seconds) {
+		time *= seconds;
+		return *this;
+	};
+	DateTime& operator/=(Units::second seconds) {
+		time /= seconds;
+		return *this;
+	};
+
+	friend DateTime operator+(const DateTime& a, const DateTime& b) {
+		DateTime out(a);
+		out += b.time;
+		return out;
+	};
+	friend DateTime operator-(const DateTime& a, const DateTime& b) {
+		DateTime out(a);
+		out -= b.time;
+		return out;
+	};
+	friend DateTime operator*(const DateTime& a, const DateTime& b) {
+		DateTime out(a);
+		out *= b.time;
+		return out;
+	};
+	friend DateTime operator/(const DateTime& a, const DateTime& b) {
+		DateTime out(a);
+		out /= b.time;
+		return out;
+	};
+
+	friend DateTime operator+(const DateTime& a, const Units::second& b) {
+		DateTime out(a);
+		out.time += b;
+		return out;
+	};
+	friend DateTime operator-(const DateTime& a, const Units::second& b) {
+		DateTime out(a);
+		out.time -= b;
+		return out;
+	};
+	friend DateTime operator*(const DateTime& a, const Units::second& b) {
+		DateTime out(a);
+		out.time *= b;
+		return out;
+	};
+	friend DateTime operator/(const DateTime& a, const Units::second& b) {
+		DateTime out(a);
+		out.time /= b;
+		return out;
+	};
+
+	friend DateTime operator+(const Units::second& a, const DateTime& b) {
+		DateTime out{ Units::second(a) };
+		out += b.time;
+		return out;
+	};
+	friend DateTime operator-(const Units::second& a, const DateTime& b) {
+		DateTime out{ Units::second(a) };
+		out -= b.time;
+		return out;
+	};
+	friend DateTime operator*(const Units::second& a, const DateTime& b) {
+		DateTime out{ Units::second(a) };
+		out *= b.time;
+		return out;
+	};
+	friend DateTime operator/(const Units::second& a, const DateTime& b) {
+		DateTime out{ Units::second(a) };
+		out /= b.time;
+		return out;
+	};
+
+
+};
+
+#include <type_traits>
+namespace fibers {
+	using Type_Info = boost::typeindex::type_info;
+
+	namespace exception {
+		/// \brief Thrown in the event that a Boxed_Value cannot be cast to the desired type
+		///
+		/// It is used internally during function dispatch and may be used by the end user.
+		///
+		/// \sa chaiscript::boxed_cast
+		class bad_boxed_cast : public std::bad_cast {
+		public:
+			bad_boxed_cast(Type_Info const& t_from, Type_Info const& t_to, std::string_view const& t_what) noexcept
+				: from(t_from)
+				, to(t_to)
+				, m_what(std::move(t_what)) {};
+
+			bad_boxed_cast(Type_Info const& t_from, Type_Info const& t_to) noexcept
+				: from(t_from)
+				, to(t_to)
+				, m_what("Cannot perform boxed_cast") {};
+
+			explicit bad_boxed_cast(std::string_view const& t_what) noexcept
+				: from(boost::typeindex::type_id<void>().type_info())
+				, to(boost::typeindex::type_id<void>().type_info())
+				, m_what(std::move(t_what)) {};
+
+			bad_boxed_cast(const bad_boxed_cast&) noexcept = default;
+			~bad_boxed_cast() noexcept override = default;
+
+			/// \brief Description of what error occurred
+			const char* what() const noexcept override { return m_what.data(); };
+
+			Type_Info const& from; ///< Type_Info contained in the Boxed_Value
+			Type_Info const& to; ///< std::type_info of the desired (but failed) result type
+
+		private:
+			std::string_view m_what;
+		};
+
+		class bad_boxed_type_cast : public bad_boxed_cast {
+		public:
+			bad_boxed_type_cast(const Type_Info& t_from, const Type_Info& t_to, std::string_view const& t_what) noexcept
+				: bad_boxed_cast(t_from, t_to, t_what) {
+			}
+
+			bad_boxed_type_cast(const Type_Info& t_from, const Type_Info& t_to) noexcept
+				: bad_boxed_cast(t_from, t_to) {
+			}
+
+			explicit bad_boxed_type_cast(std::string_view const& w) noexcept
+				: bad_boxed_cast(w) {
+			}
+
+			bad_boxed_type_cast(const bad_boxed_type_cast&) = default;
+
+			~bad_boxed_type_cast() noexcept override = default;
+		};
+	} // namespace exception
+
+	
+	namespace details {
+		class Type_Conversion_Base {
+		public:
+			// From -> To
+			virtual Any convert(const Any& from) const = 0;
+			// To -> From
+			virtual Any convert_down(const Any& to) const = 0;
+
+			virtual int cost() const noexcept { return 0; };
+
+			// to type
+			const Type_Info& to() const noexcept { return m_to; }
+			// from type
+			const Type_Info& from() const noexcept { return m_from; }
+
+			// is bidirectional?
+			virtual bool bidir() const noexcept { return true; }
+			// is polymorphic conversion?
+			virtual bool polymorphic() const noexcept { return false; }
+
+			virtual ~Type_Conversion_Base() = default;
+
+		protected:
+			Type_Conversion_Base(Type_Info const& t_to, Type_Info const& t_from): m_to(t_to), m_from(t_from) {}
+
+		private:
+			const Type_Info& m_to;
+			const Type_Info& m_from;
+		};
+
+		template<class Callable>
+		class Custom_Type_Conversion_Impl : public Type_Conversion_Base {
+		public:
+			Custom_Type_Conversion_Impl(Callable t_func)
+				: Type_Conversion_Base(
+					boost::typeindex::type_id<fibers::utilities::function_traits< decltype(std::function(t_func)) >::result_type>().type_info(),
+					boost::typeindex::type_id<std::decay_t<std::tuple_element_t<0, fibers::utilities::function_traits< decltype(std::function(t_func)) >::arguments>>>().type_info()
+				)
+				, m_func(std::move(t_func))
+			{};
+
+			// To -> From
+			Any convert_down(const Any&) const override {			
+				throw exception::bad_boxed_cast("Custom_Type_Conversion_Impl is not bidirectional.");
+			};
+
+			// From -> To
+			Any convert(const Any& t_from) const override {
+				return m_func(t_from.cast()); // we do not know the exact desired input type, so we hope the auto-cast can figure it out.
+			};
+
+			bool bidir() const noexcept override { return false; }
+
+			int cost() const noexcept override { return 5; /* Assumed custom converters are 5* more expensive compared to static casts */ };
+
+		private:
+			Callable m_func;
+
+		};
+
+		namespace impl {
+			template <class From, class To, class = void>
+			struct is_explicitly_convertible_to_impl : std::false_type {};
+
+			template <class From, class To>
+			struct is_explicitly_convertible_to_impl<
+				From, To, std::void_t<decltype(static_cast<To>(std::declval<From>()))>>
+				: std::true_type {};
+
+			template <class From, class To>
+			struct is_explicitly_convertible_to
+				: is_explicitly_convertible_to_impl<From, To> {};
+
+			template <class From, class To>
+			inline constexpr bool is_explicitly_convertible_to_v =
+				is_explicitly_convertible_to<From, To>::value;
+
+		};
+
+		template<typename From, typename To>
+		class Static_Type_Conversion_Impl : public Type_Conversion_Base {
+		private:
+			constexpr static bool is_bidir = impl::is_explicitly_convertible_to<To, From>::value;
+
+		public:
+			Static_Type_Conversion_Impl() 
+				: Type_Conversion_Base(boost::typeindex::type_id<To>().type_info(), boost::typeindex::type_id<From>().type_info())
+			{};
+
+			// To -> From
+			Any convert_down(const Any& t_to) const override {
+				if constexpr (is_bidir) {
+					return (From)(t_to.cast<To&>());
+				}
+				else {
+					throw exception::bad_boxed_cast("Static_Type_Conversion_Impl was not bidirectional.");
+				}
+			};
+
+			// From -> To
+			Any convert(const Any& t_from) const override {
+				return (To)(t_from.cast<From&>());
+			};
+
+			bool bidir() const noexcept override { return is_bidir; }
+
+			int cost() const noexcept override { return 1; };
+		};
+
+		template<typename ChildType, typename BaseType>
+		class Dynamic_Type_Conversion_Impl : public Type_Conversion_Base {
+		public:
+			Dynamic_Type_Conversion_Impl()
+				: Type_Conversion_Base(boost::typeindex::type_id<BaseType>().type_info(), boost::typeindex::type_id<ChildType>().type_info())
+			{};
+
+			// BaseType -> ChildType
+			Any convert_down(const Any& t_to) const override {
+				throw exception::bad_boxed_cast("Dynamic_Type_Conversion_Impl is never bidirectional (Base -> Child). Only may cast from (Child -> Base).");
+			};
+
+			// ChildType -> BaseType
+			Any convert(const Any& t_from) const override {
+				std::shared_ptr<ChildType> ptr{ t_from.cast<std::shared_ptr<ChildType>>() };
+				return std::dynamic_pointer_cast<BaseType>(ptr);
+			};
+
+			bool bidir() const noexcept override { return false; }
+
+			int cost() const noexcept override { return 0; /* Assumed that dynamic casts are effectively free */ };
+		};
+
+		class Type_Converter_Tree {
+		private:
+			class Node {
+			public:
+				const Type_Info* from;
+				concurrency::concurrent_unordered_map<
+					const Type_Info*, // to
+					std::shared_ptr<Type_Conversion_Base> // converter function
+				> connections;
+
+				mutable concurrency::concurrent_unordered_map<
+					const Type_Info*, // to
+					std::tuple<
+					    std::shared_ptr<std::vector<const Type_Info*>> // list of target types to convert to, including the final "to". 
+					    , fibers::synchronization::impl::InterlockedLong // version of this conversion list
+					>
+				> cached_conversions;
+			};
+
+			concurrency::concurrent_unordered_map<
+				const Type_Info*, // from
+				Node // to/connections
+			> nodes;
+
+			fibers::synchronization::impl::InterlockedLong version;
+
+		private:
+			// Solves Dijkstra's algorithm to determine the shortest path for "From" to "To", puts the path in "Out", and returns true. 
+			// If no path is possible, returns false.
+			bool TryCreateConversionPath(Type_Info const& From, Type_Info const& To, std::vector<const Type_Info*>& out) const {
+				out.clear();
+				if (nodes.count(&From) > 0) {
+					
+					std::map< 
+						const Type_Info*, // FROM vertex
+						std::map< 
+						    const Type_Info*, // TO vertex
+						    double // distance
+						> 
+					> vertices_and_distances;
+
+					std::map<
+						const Type_Info*, // FROM vertex
+						std::vector<const Type_Info*> // predecessors
+					> vertices_and_predecessors;
+
+					std::map<
+						const Type_Info*, // vertex
+						double // weight
+					> vertices_and_weights;
+
+					std::set< const Type_Info* > visited;
+
+					for (auto& node : nodes) {
+						vertices_and_weights[node.first] = std::numeric_limits<double>::max();						
+						for (auto& connection : node.second.connections) {
+							vertices_and_distances[node.first][connection.first] = connection.second->cost();
+						}
+					}
+
+					vertices_and_weights[&From] = 0;
+					vertices_and_predecessors[&From] = {};
+
+					const Type_Info* CurrentVertex = &From;
+					
+					while (visited.size() < vertices_and_distances.size()) {
+						// for each adjacent node...
+						for (auto& connection : vertices_and_distances[CurrentVertex]) {
+							// not previously visited...
+							if (visited.count(connection.first) == 0) {
+								// the distance to the start node must be calculated...
+								auto totalDistanceFromStartToThisVertex = vertices_and_weights[CurrentVertex] + connection.second;
+								// and update, if it is now the shortest path.
+								if (vertices_and_weights[connection.first] > totalDistanceFromStartToThisVertex) {
+									vertices_and_weights[connection.first] = totalDistanceFromStartToThisVertex;
+
+									// update the predecessors
+									vertices_and_predecessors[connection.first] = vertices_and_predecessors[CurrentVertex];
+									vertices_and_predecessors[connection.first].push_back(connection.first);
+								}
+							}
+						}
+						// we have visited this node.
+						visited.emplace(CurrentVertex);
+
+						// sort the non-visited nodes by weights
+						std::multimap<double, const Type_Info*> sorted;
+						for (auto& vert : vertices_and_weights) {
+							if (visited.count(vert.first) == 0) {
+								sorted.emplace(vert.second, vert.first);
+							}
+						}
+						if (sorted.size() > 0) {
+							CurrentVertex = sorted.begin()->second;
+						}
+
+						if (CurrentVertex == &To) break; // we have the shortest path From -> To within these distances by now, right?
+					}
+
+					if (vertices_and_predecessors.count(&To) > 0) {
+						out = vertices_and_predecessors[&To];
+
+						std::cout << Units::printf("Converting %s -> %s requires:\n\t%s", From.name(),To.name(), From.name());
+						for (auto& x : out) {
+							std::cout << Units::printf(" ... %s", x->name());
+						}
+						std::cout << std::endl;
+
+						return true;
+					}
+				}
+				return false;
+			};
+
+		public:
+			// add an automatic static or polymorphic conversion
+			template <typename FromType, typename ToType> bool AddConverter() {
+				auto const& fromTypeInfo{ boost::typeindex::type_id<FromType>().type_info() };
+				auto const& toTypeInfo{ boost::typeindex::type_id<ToType>().type_info() };
+
+				constexpr static bool is_polymorphic = std::is_base_of< ToType, FromType>::value;
+				constexpr static bool is_static = impl::is_explicitly_convertible_to<FromType, ToType>::value;
+				constexpr static bool is_bidir = impl::is_explicitly_convertible_to<ToType, FromType>::value;
+				if constexpr (!is_static && !is_polymorphic) {
+					return false;
+				}
+
+				Node& node = nodes[&fromTypeInfo];
+				node.from = &fromTypeInfo;
+
+				auto& targetLocation = node.connections[&toTypeInfo];
+				if (!targetLocation) {
+					if constexpr (std::is_base_of< ToType, FromType>::value) {
+						targetLocation = std::dynamic_pointer_cast<Type_Conversion_Base>(std::make_shared<Dynamic_Type_Conversion_Impl<FromType, ToType>>());
+					}
+					else {
+						targetLocation = std::dynamic_pointer_cast<Type_Conversion_Base>(std::make_shared<Static_Type_Conversion_Impl<FromType, ToType>>());
+					}
+
+					node.cached_conversions[&toTypeInfo] = { 
+						std::make_shared<std::vector<const Type_Info*>>(std::vector<const Type_Info*>({ &toTypeInfo })), 
+						fibers::synchronization::impl::InterlockedLong(std::numeric_limits<double>::max())
+					}; // even if there was a previous cached conversion, override it.
+
+					// if this converter was bidirectional, we should explicitely add it to the list.
+					// This will be slightly recursive but should end abruptly. 
+					if constexpr (is_static && is_bidir) {
+						AddConverter<ToType, FromType>();
+					}
+
+					version++;
+
+					return true;
+				}
+
+				return false;				
+			};
+			
+			// adds a customized conversion (e.g. calls a custom function)
+			// tree.AddConverter([](float v) -> double { return v; }))
+			// tree.AddConverter([](std::string const& v) -> const char* { return v.c_str(); }))
+			template <class Callable> bool AddConverter(Callable t_func) {
+				auto const& toTypeInfo = boost::typeindex::type_id<fibers::utilities::function_traits< decltype(std::function(t_func)) >::result_type>().type_info();
+				auto const& fromTypeInfo = boost::typeindex::type_id<std::decay_t<std::tuple_element_t<0, fibers::utilities::function_traits< decltype(std::function(t_func)) >::arguments>>>().type_info();
+
+				constexpr static bool is_polymorphic = std::is_base_of< 
+					fibers::utilities::function_traits< decltype(std::function(t_func)) >::result_type
+					, std::decay_t<std::tuple_element_t<0, fibers::utilities::function_traits< decltype(std::function(t_func)) >::arguments>>
+				>::value;
+				constexpr static bool is_static = impl::is_explicitly_convertible_to<
+					std::decay_t<std::tuple_element_t<0, fibers::utilities::function_traits< decltype(std::function(t_func)) >::arguments>>
+					, fibers::utilities::function_traits< decltype(std::function(t_func)) >::result_type
+				>::value;
+				if constexpr (is_static || is_polymorphic) {
+					// There is a "cheaper" conversion available using built-in static_cast or dynamic_cast.
+					// Assumes that the user-provided function is exclusively performing casting, and not other functions (like counting, tracking, or initialization).
+					return AddConverter<
+						std::decay_t<std::tuple_element_t<0, fibers::utilities::function_traits< decltype(std::function(t_func)) >::arguments>>
+						, fibers::utilities::function_traits< decltype(std::function(t_func)) >::result_type
+					>();
+				}
+
+				Node& node = nodes[&fromTypeInfo];
+				node.from = &fromTypeInfo;
+
+				auto& targetLocation = node.connections[&toTypeInfo];
+				if (!targetLocation) {
+					targetLocation = std::dynamic_pointer_cast<Type_Conversion_Base>(std::make_shared<Custom_Type_Conversion_Impl<Callable>>(std::move(t_func)));
+
+					node.cached_conversions[&toTypeInfo] = {
+						std::make_shared<std::vector<const Type_Info*>>(std::vector<const Type_Info*>({ &toTypeInfo })),
+						fibers::synchronization::impl::InterlockedLong(std::numeric_limits<double>::max())
+					}; // even if there was a previous cached conversion, override it.
+
+					version++;
+
+					return true;
+				}
+				return false;
+			};
+
+			/// <summary>
+			/// returns true if it could convert "From" to "To" type, and stores the converted answer in "result". Otherwise returns false. 
+			/// </summary>
+			bool TryConvert(Any const& From, Type_Info const& to, Any& result) const {
+				auto& fromType = From.Type();
+				if (fromType == to) {
+					result = From;
+					return true;
+				}
+				else {
+					if (nodes.count(&fromType) > 0) {
+						Node const& node = nodes.at(&fromType);
+
+						// If the conversion path does not exist OR is outdated, then re-create it. 
+						if (node.cached_conversions.count(&to) == 0 || std::get<1>(node.cached_conversions.at(&to)).GetValue() < version.GetValue()) {
+							auto newCache{ std::make_shared<std::vector<const Type_Info*>>() };
+							if (newCache) {
+								auto& newCached = *newCache.get();
+								if (TryCreateConversionPath(fromType, to, newCached)) {
+									node.cached_conversions.insert({ &to, { newCache, version.GetValue() } });
+									std::get<0>(node.cached_conversions.at(&to)) = newCache;
+									std::get<1>(node.cached_conversions.at(&to)) = version.GetValue();
+								}
+								else { // cache the failure -- to prevent repeated Dijkstra searches unless the tree is updated to (hopefully) bridge the gap.
+									node.cached_conversions.insert({ &to, { {}, version.GetValue() } });
+									std::get<0>(node.cached_conversions.at(&to)) = {};
+									std::get<1>(node.cached_conversions.at(&to)) = version.GetValue();
+								}
+							}
+						}
+
+						// try again... hopefully it has been made (for better or worse)
+						if (node.cached_conversions.count(&to) > 0) {
+							std::shared_ptr<std::vector<const Type_Info*>> conversion_path = std::get<0>(node.cached_conversions.at(&to));
+							if (conversion_path && conversion_path->size() > 0) {
+								Any currentFrom = From;
+								const Node* currentNode = &node;
+								for (auto& intermediate_to_type : *conversion_path) {
+									currentFrom = currentNode->connections.at(intermediate_to_type)->convert(currentFrom);
+									currentNode = &nodes.at(&currentFrom.Type());
+								}
+								result = currentFrom;
+								return true;
+							}
+						}
+					}
+					return false;
+				}
+			}
+			
+			/// <summary>
+			/// Converts "From" to the type of "To" and returns the final conversion. If not possible, then it throws an error. 
+			/// </summary>
+			Any Convert(Any const& From, Type_Info const& to) const {
+				Any result;
+				if (!TryConvert(From, to, result)) {
+					throw scripting::details::exception::bad_any_cast(From.Type(), to);
+				}
+				return result;
+			};
+
+		};
+
+
+
+
+
+
+
+
+	};
+
+
+
+
+};
+
+
+
+
+
+
+
+
+class MultithreadingInstanceManager {
+public:
+	MultithreadingInstanceManager() {};
+	virtual ~MultithreadingInstanceManager() {};
+};
 /* Instances the fiber system, and destroys it if the DLL / library is unloaded. */
 extern std::shared_ptr<MultithreadingInstanceManager> multithreadingInstance;

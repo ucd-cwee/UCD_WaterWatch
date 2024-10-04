@@ -77,7 +77,9 @@ namespace posix_time {
   }
 
 
-} }//namespace posix_time
+} 
+
+}//namespace posix_time
 
 
 #endif

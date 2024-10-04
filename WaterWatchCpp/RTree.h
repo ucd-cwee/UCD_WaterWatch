@@ -26,7 +26,6 @@ to maintain a single distribution point for the source code.
 #include "cweeThreadedMap.h"
 #include "Voronoi.h"
 #include "Geocoding.h"
-#include <ppl.h>
 #include "KMeans.h"
 
 class cweeBoundary {
@@ -499,6 +498,11 @@ public:
 	cwee_units::foot_t Distance(cweeBoundary const& a) const {
 		return Distance(*this, a);
 	};
+	void ExpandToInclude(vec2d const& p) {
+		if (topRight < p) topRight = p;
+		if (bottomLeft > p) bottomLeft = p;
+	};
+
 };
 
 /* Data structure meant to enable high-performance spatial analysis of 2D objects (E.g. nearest neighbor) by creating and caching a large, fairly distributed tree structure. */
@@ -512,7 +516,6 @@ class RTree {
 public:
 	static cweeBoundary const& GetBoundary(objType const& obj) { return coordinateLookupFunctor(obj); };
 
-	
 	class TreeNode {
 	public:
 		class TreeNodeCache {
@@ -526,8 +529,6 @@ public:
 		};
 
 	public:
-
-
 		cweeList<cweeSharedPtr<objType>>
 			unhandledObjs;
 		cweeList< TreeNode* >
@@ -609,6 +610,7 @@ public:
 	/* Direct (100% accurate) approach to clustering. Very fast, but becomes a serious memory-performance problem with large datasets (>1000 objects). */
 	static cweeList< cweeList<cweeSharedPtr<objType> > > kmeans_cluster(int k, cweeList<vec2d> const& data, cweeList<cweeSharedPtr<objType>> const& objs, cweeList<vec2d>& new_centers) {
 		cweeList< cweeList<cweeSharedPtr<objType>> > out;
+#if 1
 		out.SetNum(k);
 
 		int m = data.size(), n = 2, i, j, l, label;
@@ -676,14 +678,14 @@ public:
 			out[i].SetGranularity(counts[i] + 1);
 		for (i = 0; i < m; ++i) 
 			out[labels[i]].Append(objs[i]);
-
+#endif
 		return out;
 	};
 	/* Approximate approach to clustering. Very fast for large datasets. Repeatedly analyzes the square root of the number of objects, and should only be applied to larger datasets (>150). */
 	static cweeList< cweeList<cweeSharedPtr<objType> > > kmeans_cluster_fast(int numClusters, cweeList<vec2d> const& coord_data, cweeList<cweeSharedPtr<objType>> const& objs) {
 		cweeList< cweeList<cweeSharedPtr<objType>> > out;
+#if 1
 		out.SetGranularity(numClusters + 1);
-
 		auto newCenters = KMeans().GetClusters(coord_data, numClusters);
 		if (newCenters->Num() <= 1) { for (auto& x : objs) { if (x) out.Alloc().Append(x); } }
 		else {
@@ -718,7 +720,7 @@ public:
 				if (objs.Num() < numClusters) for (auto& x : objs) if (x) out.Alloc().Append(x);
 			}
 		}
-
+#endif
 		return out;
 	};
 	/* Clusters a list of objects into X clusters, using a combination of approaches (direct for small datasets, or, approximate & voronoi for large datasets). */

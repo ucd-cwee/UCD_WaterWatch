@@ -166,11 +166,12 @@
       </PrecompiledHeaderFile>
       <AdditionalIncludeDirectories>$(ProjectDir)third_party\catch2\third_party;$(ProjectDir)third_party\boost_context\include;$(ProjectDir)third_party;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
-      <LanguageStandard>stdcpp17</LanguageStandard>
       <StringPooling>true</StringPooling>
       <EnableEnhancedInstructionSet>NotSet</EnableEnhancedInstructionSet>
       <EnableFiberSafeOptimizations>true</EnableFiberSafeOptimizations>
       <AdditionalOptions>/DPARALLEL %(AdditionalOptions)</AdditionalOptions>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <Optimization>Full</Optimization>
     </ClCompile>
     <Link>
       <SubSystem>

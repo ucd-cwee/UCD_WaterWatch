@@ -47,7 +47,7 @@ namespace cweeGeo {
 
 	public:
 		Shapefile() : data(nullptr) {};
-		Shapefile(cweeStr const& filePath);
+		Shapefile(cweeStr const& filePath, bool readOnly = true);
 		Shapefile(decltype(Shapefile::data) dataSource) : data(dataSource) {};
 		Shapefile(Shapefile const& other) : data(other.data) {};
 		Shapefile(Shapefile&& other) : data(std::forward<decltype(Shapefile::data)>(other.data)) {};
@@ -61,6 +61,8 @@ namespace cweeGeo {
 		int NumLayers() const;
 		cweeStr DriverName() const;
 		cweeStr Description() const;
+		Layer CreateLayer(cweeStr const& name, GeometryType type);
+
 	};
 
 	class Raster {
@@ -122,6 +124,11 @@ namespace cweeGeo {
 		Feature GetFeature(int Fid) const;
 		cweeStr Name() const;
 		cweeBoundary Boundary();
+		void Rename(cweeStr const& newName);
+		// Feature CreateFeature();
+		void AddField(cweeStr const& name, FieldType type);
+
+
 
 		static cweeList<cweeList<cweePair<Feature, cwee_units::foot_t>>> Near(Layer& layer1, Layer& layer2, std::function<double(Geometry const&, Geometry const&)> DistanceFunction, int numNearest = 1, std::function<bool(Feature const&)> WhereFunction = [](Feature const&)->bool { return true; });
 		static cweeList<cweePair<Feature, cwee_units::foot_t>> Near(Feature const& layer1, Layer& layer2, int numNearest = 1, std::function<bool(Feature const&)> WhereFunction = [](Feature const&)->bool { return true; });
@@ -157,6 +164,20 @@ namespace cweeGeo {
 		cwee_units::foot_t Elevation() const;
 	};
 
+	//class FeatureDefinition {
+	//protected:
+	//	cweeSharedPtr<void> data;
+	//public:
+	//	FeatureDefinition(decltype(FeatureDefinition::data) const& dataSource) : data(dataSource) {};
+	//};
+
+	//class FieldDefinition {
+	//protected:
+	//	cweeSharedPtr<void> data;
+	//public:
+	//	FieldDefinition(decltype(FieldDefinition::data) const& dataSource) : data(dataSource) {};
+	//};
+
 	class Field {
 	public:
 	protected:
@@ -176,6 +197,10 @@ namespace cweeGeo {
 		FieldType Type() const;
 		bool IsUnset() const;
 		bool IsNull() const;
+		void Set(nullptr_t);
+		void Set(cweeStr const& V);
+		void Set(double V);
+		void Set(cweeTime const& V);
 		chaiscript::Boxed_Value GetBoxed() const;
 		cweeAny GetAny() const;
 		cweeStr GetAsString() const;

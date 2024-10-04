@@ -815,11 +815,9 @@ namespace chaiscript {
             return Boxed_Number(oper(Operators::Opers::shift_right, t_lhs.bv, t_rhs.bv));
         }
 
-        static Boxed_Value do_oper(Operators::Opers t_oper, const Boxed_Value& t_lhs, const Boxed_Value& t_rhs) {
-            return oper(t_oper, t_lhs, t_rhs);
-        }
+        static Boxed_Value do_oper(Operators::Opers t_oper, const Boxed_Value& t_lhs, const Boxed_Value& t_rhs) { return oper(t_oper, t_lhs, t_rhs); };
 
-        static Boxed_Value do_oper(Operators::Opers t_oper, const Boxed_Value& t_lhs) { return oper(t_oper, t_lhs); }
+        static Boxed_Value do_oper(Operators::Opers t_oper, const Boxed_Value& t_lhs) { return oper(t_oper, t_lhs); };
 
         Boxed_Value bv;
     };
