@@ -2,6 +2,7 @@
 
 #include <iostream>
 #include "../FiberTasks/Fibers.h"
+#include "../FiberTasks/ScriptingLanguage.h"
 #include <execution>
 #include "../WaterWatchCpp/Clock.h"
 
@@ -24,7 +25,8 @@ public:
 			// std::cout << Units::printf("DELETING %s\n", varName.c_str());
 		}
 	};
-
+	int length() const { return varName.length(); };
+	std::string& get_var_name() { return varName; };
 	bool operator==(stackThing const& a) const { return varName == a.varName; };
 	bool operator!=(stackThing const& a) const { return varName != a.varName; };
 };
@@ -62,8 +64,8 @@ int main() {
 			if (1) {
 				fibers::details::Static_Type_Conversion_Impl<int, float> converter;
 
-				EXPECT_EQ(converter.to(), boost::typeindex::type_id<float>().type_info());
-				EXPECT_EQ(converter.from(), boost::typeindex::type_id<int>().type_info());
+				EXPECT_EQ(converter.to(), fibers::user_type<float>());
+				EXPECT_EQ(converter.from(), fibers::user_type<int>());
 
 				EXPECT_EQ(converter.bidir(), true);
 				EXPECT_EQ(converter.polymorphic(), false);
@@ -77,8 +79,8 @@ int main() {
 			if (1) {
 				fibers::details::Dynamic_Type_Conversion_Impl< Units::foot, Units::value> converter;
 
-				EXPECT_EQ(converter.to(), boost::typeindex::type_id<Units::value>().type_info());
-				EXPECT_EQ(converter.from(), boost::typeindex::type_id<Units::foot>().type_info());
+				EXPECT_EQ(converter.to(), fibers::user_type<Units::value>());
+				EXPECT_EQ(converter.from(), fibers::user_type<Units::foot>());
 
 				fibers::Any Child = Units::foot(100);
 				EXPECT_EQ(converter.convert(Child).cast<Units::value>()(), 100.0f);
@@ -96,8 +98,8 @@ int main() {
 					return a;
 				})};
 
-				EXPECT_EQ(converter.to(), boost::typeindex::type_id<Units::value>().type_info());
-				EXPECT_EQ(converter.from(), boost::typeindex::type_id<Units::foot>().type_info());
+				EXPECT_EQ(converter.to(), fibers::user_type<Units::value>());
+				EXPECT_EQ(converter.from(), fibers::user_type<Units::foot>());
 
 				fibers::Any Child = Units::foot(100);
 				EXPECT_EQ(converter.convert(Child).IsTypeOf<Units::value>(), true);
@@ -116,8 +118,8 @@ int main() {
 					return 100; // always returns 100
 				}) };
 
-				EXPECT_EQ(converter.to(), boost::typeindex::type_id<int>().type_info());
-				EXPECT_EQ(converter.from(), boost::typeindex::type_id<fibers::Any>().type_info());
+				EXPECT_EQ(converter.to(), fibers::user_type<int>());
+				EXPECT_EQ(converter.from(), fibers::user_type<fibers::Any>());
 
 				fibers::Any Child = Units::foot(100);
 				EXPECT_EQ(converter.convert(Child).IsTypeOf<int>(), true);
@@ -134,81 +136,381 @@ int main() {
 				fibers::details::Type_Converter_Tree tree;
 
 				fibers::Any result;
-				EXPECT_EQ(true, tree.TryConvert(1.0f, boost::typeindex::type_id<float>().type_info(), result)); // no conversion = successful, no conversion necessary.
+				EXPECT_EQ(true, tree.TryConvert(1.0f, fibers::user_type<float>(), result)); // no conversion = successful, no conversion necessary.
+				EXPECT_EQ(false, tree.TryConvert(1, fibers::user_type<float>(), result)); // no conversion provided, so this should fail. 
 
-				EXPECT_EQ(false, tree.TryConvert(1, boost::typeindex::type_id<float>().type_info(), result)); // no conversion provided, so this should fail. 
-
-				EXPECT_EQ(true, SINGLE_ARG(tree.AddConverter<int, float>())); // {int -> float} AND {float -> int}
-
-				EXPECT_EQ(true, tree.TryConvert(1, boost::typeindex::type_id<float>().type_info(), result)); // int -> float 
-				EXPECT_EQ(true, tree.TryConvert(1.0f, boost::typeindex::type_id<int>().type_info(), result)); // float -> int
-
-				EXPECT_EQ(true, SINGLE_ARG(tree.AddConverter<float, double>())); // {double -> float} AND {float -> double}
-				
-				EXPECT_EQ(true, tree.TryConvert(1.0, boost::typeindex::type_id<float>().type_info(), result)); // double -> float 
-				EXPECT_EQ(true, tree.TryConvert(1.0f, boost::typeindex::type_id<double>().type_info(), result)); // float -> double
-				
-				EXPECT_EQ(true, tree.TryConvert(1, boost::typeindex::type_id<double>().type_info(), result)); // int -> double
-				EXPECT_EQ(true, tree.TryConvert(1.0, boost::typeindex::type_id<int>().type_info(), result)); // double -> int 
-
-
-
-
-
-
-
-				
-				
-				EXPECT_EQ(true, SINGLE_ARG(tree.AddConverter<double, uint64_t>())); // static
-				EXPECT_EQ(true, SINGLE_ARG(tree.AddConverter<uint64_t, DateTime>())); // static
-				EXPECT_EQ(true, SINGLE_ARG(tree.AddConverter<DateTime, Units::second>())); // static
-				EXPECT_EQ(true, SINGLE_ARG(tree.AddConverter<Units::foot, Units::value>())); // polymorphic
-				EXPECT_EQ(false, tree.AddConverter([](float v) -> double { return v; })); // expect false because this conversion should already exist
-
+				// Numbers conversions
+				EXPECT_EQ(true, SINGLE_ARG(tree.AddConverter<int, bool>())); // int -> bool, bool -> int
+				EXPECT_EQ(true, SINGLE_ARG(tree.AddConverter<int, float>())); 
+				EXPECT_EQ(true, SINGLE_ARG(tree.AddConverter<int, double>()));
+				EXPECT_EQ(true, SINGLE_ARG(tree.AddConverter<int, uint64_t>()));
+				EXPECT_EQ(true, SINGLE_ARG(tree.AddConverter<int, long>()));
+				EXPECT_EQ(true, SINGLE_ARG(tree.AddConverter<int, unsigned long>()));
+				EXPECT_EQ(true, SINGLE_ARG(tree.AddConverter<int, long long>()));
+				EXPECT_EQ(true, SINGLE_ARG(tree.AddConverter<int, long double>()));
+				EXPECT_EQ(true, SINGLE_ARG(tree.AddConverter<float, double>()));
+				EXPECT_EQ(true, SINGLE_ARG(tree.AddConverter<float, uint64_t>()));
+				EXPECT_EQ(true, SINGLE_ARG(tree.AddConverter<float, long>()));
+				EXPECT_EQ(true, SINGLE_ARG(tree.AddConverter<float, unsigned long>()));
+				EXPECT_EQ(true, SINGLE_ARG(tree.AddConverter<float, long long>()));
+				EXPECT_EQ(true, SINGLE_ARG(tree.AddConverter<float, long double>()));
+				EXPECT_EQ(true, SINGLE_ARG(tree.AddConverter<double, uint64_t>()));
+				EXPECT_EQ(true, SINGLE_ARG(tree.AddConverter<double, long>()));
+				EXPECT_EQ(true, SINGLE_ARG(tree.AddConverter<double, unsigned long>()));
+				EXPECT_EQ(true, SINGLE_ARG(tree.AddConverter<double, long long>()));
+				EXPECT_EQ(true, SINGLE_ARG(tree.AddConverter<double, long double>()));
+				EXPECT_EQ(true, SINGLE_ARG(tree.AddConverter<uint64_t, long>()));
+				EXPECT_EQ(true, SINGLE_ARG(tree.AddConverter<uint64_t, unsigned long>()));
+				EXPECT_EQ(true, SINGLE_ARG(tree.AddConverter<uint64_t, long long>()));
+				EXPECT_EQ(true, SINGLE_ARG(tree.AddConverter<uint64_t, long double>()));
+				EXPECT_EQ(true, SINGLE_ARG(tree.AddConverter<long, unsigned long>()));
+				EXPECT_EQ(true, SINGLE_ARG(tree.AddConverter<long, long long>()));
+				EXPECT_EQ(true, SINGLE_ARG(tree.AddConverter<long, long double>()));
+				EXPECT_EQ(true, SINGLE_ARG(tree.AddConverter<unsigned long, long long>()));
+				EXPECT_EQ(true, SINGLE_ARG(tree.AddConverter<unsigned long, long double>()));
+				EXPECT_EQ(true, SINGLE_ARG(tree.AddConverter<long long, long double>()));
+				// Units conversions
+				EXPECT_EQ(true, SINGLE_ARG(tree.AddConverter<int, Units::value>())); // static
+				EXPECT_EQ(true, SINGLE_ARG(tree.AddConverter<float, Units::value>())); // static
 				EXPECT_EQ(true, SINGLE_ARG(tree.AddConverter<double, Units::value>())); // static
-				EXPECT_EQ(true, SINGLE_ARG(tree.AddConverter<double, Units::foot>())); // static
-				EXPECT_EQ(true, SINGLE_ARG(tree.AddConverter<double, Units::meter>())); // static
-				EXPECT_EQ(true, SINGLE_ARG(tree.AddConverter<double, Units::inch>())); // static
+				EXPECT_EQ(true, SINGLE_ARG(tree.AddConverter<uint64_t, Units::value>())); // static
+				EXPECT_EQ(true, SINGLE_ARG(tree.AddConverter<long double, Units::value>())); // static
+				EXPECT_EQ(true, SINGLE_ARG(tree.AddConverter<Units::foot, Units::value>())); // polymorphic
+				EXPECT_EQ(true, SINGLE_ARG(tree.AddConverter<Units::meter, Units::value>())); // polymorphic
+				EXPECT_EQ(true, SINGLE_ARG(tree.AddConverter<Units::inch, Units::value>())); // polymorphic
+				EXPECT_EQ(true, SINGLE_ARG(tree.AddConverter<Units::yard, Units::value>())); // polymorphic
+				EXPECT_EQ(true, SINGLE_ARG(tree.AddConverter<Units::millimeter, Units::value>())); // polymorphic
+				EXPECT_EQ(true, SINGLE_ARG(tree.AddConverter<Units::second, Units::value>())); // polymorphic
+				EXPECT_EQ(true, SINGLE_ARG(tree.AddConverter<Units::minute, Units::value>())); // polymorphic
+				EXPECT_EQ(true, SINGLE_ARG(tree.AddConverter<Units::hour, Units::value>())); // polymorphic
+				EXPECT_EQ(true, SINGLE_ARG(tree.AddConverter<Units::day, Units::value>())); // polymorphic
+				EXPECT_EQ(true, SINGLE_ARG(tree.AddConverter<Units::year, Units::value>())); // polymorphic
+				EXPECT_EQ(true, SINGLE_ARG(tree.AddConverter<DateTime, Units::second>())); // static
 
-
-				EXPECT_EQ(true, tree.TryConvert(100, boost::typeindex::type_id<Units::value>().type_info(), result));
+				EXPECT_EQ(true, tree.TryConvert(1, fibers::user_type<bool>(), result));
+				EXPECT_EQ(true, tree.TryConvert(100, fibers::user_type<Units::value>(), result));
 				EXPECT_EQ("100", result.cast< Units::value >().ToString());
 
 				EXPECT_EQ(true, tree.TryConvert(100, fibers::Any::TypeOf<Units::foot>(), result));
 				EXPECT_EQ("100 ft", result.cast< Units::foot >().ToString());
 
+				{
+					using namespace literals;
+					EXPECT_EQ(true, tree.TryConvert(1726254751_s, fibers::user_type<DateTime>(), result));
+				}
+				{
+					using namespace literals;
+					EXPECT_EQ(false, tree.TryConvert(1726254751_ft, fibers::user_type<DateTime>(), result));
+				}
 
-
-
-
-				EXPECT_EQ(true, tree.TryConvert(1, boost::typeindex::type_id<Units::second>().type_info(), result));
-
-				EXPECT_EQ(true, tree.TryConvert(1, boost::typeindex::type_id<Units::second>().type_info(), result)); // int -> float -> double -> uint64_t -> DateTime -> Units::second
-				// will NOT re-evaluate the conversion since it's been cached, and the tree has not been updated. 
-				EXPECT_EQ(true, tree.TryConvert(1, boost::typeindex::type_id<Units::second>().type_info(), result)); // int -> float -> double -> uint64_t -> DateTime -> Units::second
-
-				// update the tree...
-				EXPECT_EQ(true, SINGLE_ARG(tree.AddConverter<double, Units::second>()));
-				// ... which will now re-evaluate the conversion and will use the faster conversion from now on. 
-				EXPECT_EQ(true, tree.TryConvert(1, boost::typeindex::type_id<Units::second>().type_info(), result)); // int -> float -> double -> Units::second
+				EXPECT_EQ(true, tree.TryConvert(1, fibers::user_type<Units::second>(), result));
 
 				// update the tree...
-				EXPECT_EQ(true, SINGLE_ARG(tree.AddConverter<int, Units::second>()));
+				EXPECT_EQ(true, SINGLE_ARG(tree.AddConverter([](std::string_view const& r) -> std::string { return r.data(); })));
+				EXPECT_EQ(true, SINGLE_ARG(tree.AddConverter([](std::string const& r) -> std::string_view { return std::string_view(r); })));
+				EXPECT_EQ(true, SINGLE_ARG(tree.AddConverter([](std::string const& r) -> float { return atof(r.c_str()); })));
+				EXPECT_EQ(true, SINGLE_ARG(tree.AddConverter([](int r) -> std::string { return std::to_string(r); })));
+				EXPECT_EQ(true, SINGLE_ARG(tree.AddConverter([](float r) -> std::string { return std::to_string(r); })));
+				EXPECT_EQ(true, SINGLE_ARG(tree.AddConverter([](double r) -> std::string { return std::to_string(r); })));
+				EXPECT_EQ(true, SINGLE_ARG(tree.AddConverter([](long r) -> std::string { return std::to_string(r); })));
+				EXPECT_EQ(true, SINGLE_ARG(tree.AddConverter([](long long r) -> std::string { return std::to_string(r); })));
+				EXPECT_EQ(true, SINGLE_ARG(tree.AddConverter([](long double r) -> std::string { return std::to_string(r); })));
+				EXPECT_EQ(true, SINGLE_ARG(tree.AddConverter([](uint64_t r) -> std::string { return std::to_string(r); })));
+				EXPECT_EQ(true, SINGLE_ARG(tree.AddConverter([](Units::value const& r) -> std::string { return r.ToString(); })));
+
 				// ... which will now re-evaluate the conversion and will use the faster conversion from now on. 
-				EXPECT_EQ(true, tree.TryConvert(1, boost::typeindex::type_id<Units::second>().type_info(), result)); // int -> Units::second
+				EXPECT_EQ(true, tree.TryConvert(1, fibers::user_type<Units::second>(), result)); 
+				EXPECT_EQ(true, tree.TryConvert(1, fibers::user_type<std::string_view>(), result)); 
+				EXPECT_EQ(true, tree.TryConvert(1.0, fibers::user_type<std::string_view>(), result)); 
+				EXPECT_EQ(true, tree.TryConvert(Units::foot(1), fibers::user_type<std::string_view>(), result));
 
-				// update the tree...
-				EXPECT_EQ(true, SINGLE_ARG(tree.AddConverter<float, Units::second>()));
-				// ... which will now re-evaluate the conversion and will use the faster conversion from now on. 
-				EXPECT_EQ(true, tree.TryConvert(1, boost::typeindex::type_id<Units::second>().type_info(), result)); // int -> Units::second
-				EXPECT_EQ(true, tree.TryConvert(1, boost::typeindex::type_id<Units::second>().type_info(), result)); // int -> Units::second
-				// update the tree...
-				EXPECT_EQ(true, SINGLE_ARG(tree.AddConverter([](std::string const& r) -> std::string_view { return r; })));
-				EXPECT_EQ(true, SINGLE_ARG(tree.AddConverter([](std::string_view const& r) -> const char* { return r.data(); })));
-				// ... which will now re-evaluate the conversion and will use the faster conversion from now on. 
-				EXPECT_EQ(true, tree.TryConvert(1, boost::typeindex::type_id<Units::second>().type_info(), result)); // int -> Units::second
-				EXPECT_EQ(false, tree.TryConvert(1, boost::typeindex::type_id<std::string_view>().type_info(), result)); // no conversion possible
-				EXPECT_EQ(false, tree.TryConvert(1, boost::typeindex::type_id<std::string_view>().type_info(), result)); // no conversion possible, AND that result should have been cached
+				if (1) {
+					std::vector<fibers::Any> inputs{ fibers::Any(10) };
+					fibers::details::Param_Types function_required_params({ {"int", fibers::user_type<int>() } });
+					auto converted_inputs = function_required_params.convert(fibers::details::Function_Params{ inputs }, tree);
+
+					for (int i = 0; i < function_required_params.size(); i++) {
+						EXPECT_EQ(true, converted_inputs[i].IsTypeOf(function_required_params[i].second));
+					}
+				}
+				if (1) {
+					std::vector<fibers::Any> inputs{ fibers::Any(10.0f), fibers::Any(10.0) };
+					fibers::details::Param_Types function_required_params({ {"int1", fibers::user_type<int>() }, {"int2", fibers::user_type<int>() } });
+					auto converted_inputs = function_required_params.convert(fibers::details::Function_Params{ inputs }, tree);
+
+					for (int i = 0; i < function_required_params.size(); i++) {
+						EXPECT_EQ(true, converted_inputs[i].IsTypeOf(function_required_params[i].second));
+					}
+				}
+				if (1) {
+					std::vector<fibers::Any> inputs{ fibers::Any(10.0f), fibers::Any(10.0), fibers::Any(10) };
+					fibers::details::Param_Types function_required_params({ {"std::string_view", fibers::user_type<std::string_view>() }, {"std::string_view", fibers::user_type<std::string_view>() }, {"std::string_view", fibers::user_type<std::string_view>() } });
+
+					try {
+						auto converted_inputs = function_required_params.convert(fibers::details::Function_Params{ inputs }, tree);
+						EXPECT_EQ(false, true);
+					}
+					catch (std::exception e) { // expect it to throw an error!
+						std::cout << e.what() << std::endl;						
+					}
+				}
+
+				if (1) {
+					fibers::details::Param_Types function1({ {"double", fibers::user_type<double>() }, {"double", fibers::user_type<double>() }, {"double", fibers::user_type<double>() } });
+					fibers::details::Param_Types function2({ {"float", fibers::user_type<float>() }, {"float", fibers::user_type<float>() }, {"float", fibers::user_type<float>() } });
+					fibers::details::Param_Types function3({ {"double", fibers::user_type<double>() }, {"int", fibers::user_type<int>() }, {"float", fibers::user_type<float>() } });
+					fibers::details::Param_Types function4({ {"seconds", fibers::user_type<Units::second>() }, {"seconds", fibers::user_type<Units::second>() }, {"seconds", fibers::user_type<Units::second>() } });
+
+					std::vector<fibers::Any> inputs{ fibers::Any(10ull), fibers::Any(10ull), fibers::Any(10ull) };
+
+					float cost1 = function1.conversion_cost(fibers::details::Function_Params{ inputs }, tree);
+					float cost2 = function2.conversion_cost(fibers::details::Function_Params{ inputs }, tree);
+					float cost3 = function3.conversion_cost(fibers::details::Function_Params{ inputs }, tree);
+					float cost4 = function4.conversion_cost(fibers::details::Function_Params{ inputs }, tree);
+
+					std::cout << Units::printf("Cost1: %f\nCost2: %f\nCost3: %f\nCost4: %f\n\n", cost1, cost2, cost3, cost4);
+
+					float minCost = std::min({ cost1, cost2, cost3, cost4 });
+
+					std::vector<fibers::Any> converted_inputs;
+					if (cost1 == minCost) {
+						converted_inputs = function1.convert(fibers::details::Function_Params{ inputs }, tree);
+					}
+					else if (cost2 == minCost) {
+						converted_inputs = function2.convert(fibers::details::Function_Params{ inputs }, tree);
+					}
+					else if (cost3 == minCost) {
+						converted_inputs = function3.convert(fibers::details::Function_Params{ inputs }, tree);
+					}
+					else if (cost4 == minCost) {
+						converted_inputs = function4.convert(fibers::details::Function_Params{ inputs }, tree);
+					}
+				}
+
+				if (1) {
+					auto inputs{ std::vector<fibers::Any>{} };
+					auto* function_impl = new fibers::details::Explicit_Function_Impl(
+						[]() -> int { return 10; }
+					);
+					auto ptr{ std::static_pointer_cast<fibers::details::Proxy_Function_Base>(std::shared_ptr<typename std::remove_pointer<decltype(function_impl)>::type>(function_impl)) };
+					auto returned{ ptr->operator()(fibers::details::Function_Params{ inputs }, tree) };
+					EXPECT_EQ(returned.IsTypeOf(ptr->ReturnType()), true);
+					EXPECT_EQ(tree.Convert<int>(returned), 10);
+				};
+
+				if (1) {
+					auto inputs{ std::vector<fibers::Any>{} };
+					auto* function_impl = new fibers::details::Explicit_Function_Impl(
+						[]() {}
+					);
+					auto ptr{ std::static_pointer_cast<fibers::details::Proxy_Function_Base>(std::shared_ptr<typename std::remove_pointer<decltype(function_impl)>::type>(function_impl)) };
+					auto returned{ ptr->operator()(fibers::details::Function_Params{ inputs }, tree) };
+					EXPECT_EQ(returned.IsTypeOf(ptr->ReturnType()), true);
+				};
+
+				if (1) {
+					auto inputs{ std::vector<fibers::Any>{ { 1 }, { 2 } } };
+					auto* function_impl = new fibers::details::Explicit_Function_Impl(
+						[](int i, int j) -> int { return i + j; }
+					);
+					auto ptr{ std::static_pointer_cast<fibers::details::Proxy_Function_Base>(std::shared_ptr<typename std::remove_pointer<decltype(function_impl)>::type>(function_impl)) };
+					auto returned{ ptr->operator()(fibers::details::Function_Params{ inputs }, tree) };
+					EXPECT_EQ(returned.IsTypeOf(ptr->ReturnType()), true);
+					EXPECT_EQ(tree.Convert<int>(returned), 3);
+				};
+
+				if (1) {
+					auto inputs{ std::vector<fibers::Any>{ { 1.0 }, { 2.0f } } }; // provided types (do not need to match)
+					auto* function_impl = new fibers::details::Explicit_Function_Impl(
+						[](int i, int j) -> int { return i + j; } // callable
+					);
+					auto ptr{ std::static_pointer_cast<fibers::details::Proxy_Function_Base>(std::shared_ptr<typename std::remove_pointer<decltype(function_impl)>::type>(function_impl)) };
+					auto returned{ ptr->operator()(fibers::details::Function_Params{ inputs }, tree) };
+					EXPECT_EQ(returned.IsTypeOf(ptr->ReturnType()), true);
+
+					EXPECT_EQ(returned.cast<int>(), 3);
+					EXPECT_EQ(tree.Convert<double>(returned), 3.0);
+				};
+
+				if (1) {
+					auto inputs{ std::vector<fibers::Any>{ { Units::inch(12) }, { Units::inch(12) } } }; // provided types (do not need to match)
+					auto* function_impl = new fibers::details::Explicit_Function_Impl(
+						[](Units::foot x1, Units::meter x2) -> Units::inch { return x1 + x2; } // callable
+					);
+					auto ptr{ std::static_pointer_cast<fibers::details::Proxy_Function_Base>(std::shared_ptr<typename std::remove_pointer<decltype(function_impl)>::type>(function_impl)) };
+					auto returned{ ptr->operator()(fibers::details::Function_Params{ inputs }, tree) };
+					EXPECT_EQ(returned.IsTypeOf(ptr->ReturnType()), true);
+
+					EXPECT_EQ(tree.Convert<Units::foot>(returned), 2.0);
+				};
+
+				try {
+					auto inputs{ std::vector<fibers::Any>{ { Units::inch(12) }, { Units::year(12) } } }; // provided types (do not need to match)
+					auto* function_impl = new fibers::details::Explicit_Function_Impl(
+						[](Units::foot x1, Units::second x2) -> Units::value { return x1 + x2; } // callable
+					);
+					auto ptr{ std::static_pointer_cast<fibers::details::Proxy_Function_Base>(std::shared_ptr<typename std::remove_pointer<decltype(function_impl)>::type>(function_impl)) };
+					auto returned{ ptr->operator()(fibers::details::Function_Params{ inputs }, tree) };
+					EXPECT_EQ(returned.IsTypeOf(ptr->ReturnType()), true);
+
+					EXPECT_EQ(tree.Convert<Units::value>(returned), 2.0);
+					
+					EXPECT_EQ(false, true);
+				}
+				catch (std::runtime_error e) {
+					std::cout << e.what() << std::endl;
+					// EXPECTED TO CATCH A RUNTIME ERROR FOR THE BAD UNITS MANAGEMENT
+				}
+
+
+				if (1) {
+					auto inputs{ std::vector<fibers::Any>{ { DateTime::Now() }, { Units::year(1) } } }; // provided types (do not need to match)
+					auto* function_impl = new fibers::details::Explicit_Function_Impl(
+						[](DateTime const& x1, Units::second x2) -> DateTime { return x1 + x2; } // callable
+					);
+					auto ptr{ std::static_pointer_cast<fibers::details::Proxy_Function_Base>(std::shared_ptr<typename std::remove_pointer<decltype(function_impl)>::type>(function_impl)) };
+					auto returned{ ptr->operator()(fibers::details::Function_Params{ inputs }, tree) };
+					EXPECT_EQ(returned.IsTypeOf(ptr->ReturnType()), true);
+
+					EXPECT_EQ(tree.Convert<DateTime>(returned).tm_year() + 1900, DateTime::Now().tm_year()+1901);
+				}
+				if (1) {
+					auto inputs{ std::vector<fibers::Any>{ { stackThing("TEST", 100) } } }; // provided types (do not need to match)
+
+					auto* function_impl = new fibers::details::Attribute_Access_Impl(&stackThing::varName);
+					auto ptr{ std::static_pointer_cast<fibers::details::Proxy_Function_Base>(std::shared_ptr<typename std::remove_pointer<decltype(function_impl)>::type>(function_impl)) };
+					auto returned{ ptr->operator()(fibers::details::Function_Params{ inputs }, tree) };
+					
+					EXPECT_EQ(returned.IsTypeOf(ptr->ReturnType()), true);		
+					EXPECT_EQ(tree.Convert<std::string>(returned), "TEST");
+					returned.cast<std::string&>() = "TEST2";
+					EXPECT_EQ(inputs[0].cast<stackThing&>().varName, "TEST2");
+				}
+				if (1) {
+					auto inputs{ std::vector<fibers::Any>{ { stackThing("TEST") } } }; // provided types (do not need to match)
+
+					auto* function_impl = new fibers::details::Attribute_Access_Impl(&stackThing::var);
+					auto ptr{ std::static_pointer_cast<fibers::details::Proxy_Function_Base>(std::shared_ptr<typename std::remove_pointer<decltype(function_impl)>::type>(function_impl)) };
+					auto returned{ ptr->operator()(fibers::details::Function_Params{ inputs }, tree) };
+
+					EXPECT_EQ(returned.IsTypeOf(fibers::user_type<void>()), true);
+				}
+				if (1) {
+					auto inputs{ std::vector<fibers::Any>{ { stackThing("TEST", 100) } } }; // provided types (do not need to match)
+
+					auto* function_impl = new fibers::details::Attribute_Access_Impl(&stackThing::var);
+					auto ptr{ std::static_pointer_cast<fibers::details::Proxy_Function_Base>(std::shared_ptr<typename std::remove_pointer<decltype(function_impl)>::type>(function_impl)) };
+					auto returned{ ptr->operator()(fibers::details::Function_Params{ inputs }, tree) };
+
+					EXPECT_EQ(returned.IsTypeOf(fibers::user_type<int>()), true);
+					EXPECT_EQ(returned.IsTypeOf(fibers::user_type<fibers::Any>()), false);
+					EXPECT_EQ(returned.cast<int>(), 100);
+				}
+				if (1) {
+					auto inputs{ std::vector<fibers::Any>{ { stackThing("TEST", 100) } } }; // provided types (do not need to match)
+					auto ptr = fibers::details::Member_Function_Impl(&stackThing::length);
+					auto returned{ ptr->operator()(fibers::details::Function_Params{ inputs }, tree) };
+
+					EXPECT_EQ(returned.IsTypeOf(fibers::user_type<int>()), true);
+					EXPECT_EQ(returned.IsTypeOf(fibers::user_type<fibers::Any>()), false);
+					EXPECT_EQ(returned.cast<int>(), 4);
+				}
+				if (1) {
+					auto inputs{ std::vector<fibers::Any>{ { 1.0l } } }; // provided types (do not need to match)
+					auto* function_impl = new fibers::details::Static_Function_Impl(&Units::CUBED);
+					auto ptr{ std::static_pointer_cast<fibers::details::Proxy_Function_Base>(std::shared_ptr<typename std::remove_pointer<decltype(function_impl)>::type>(function_impl)) };
+					auto returned{ ptr->operator()(fibers::details::Function_Params{ inputs }, tree) };
+
+					EXPECT_EQ(returned.IsTypeOf(fibers::user_type<long double>()), true);
+					EXPECT_EQ(returned.IsTypeOf(fibers::user_type<fibers::Any>()), false);
+					EXPECT_EQ(returned.cast<long double>(), 1); // FAILURE
+				}
+				if (1) {
+					auto inputs{ std::vector<fibers::Any>{ { stackThing("TEST", 100) } } }; // provided types (do not need to match)
+					auto ptr = fibers::details::Member_Function_Impl(&stackThing::get_var_name);
+					auto returned{ ptr->operator()(fibers::details::Function_Params{ inputs }, tree) };
+
+					EXPECT_EQ(returned.IsTypeOf(fibers::user_type<std::string>()), true);
+					EXPECT_EQ(returned.IsTypeOf(fibers::user_type<fibers::Any>()), false);
+					EXPECT_EQ(returned.cast<std::string>(), "TEST");
+				}
+
+
+
+				// PROXY FUNCTIONS
+				if (1) {
+					// PROXY_FUNCTION WRAPPERS
+					std::string example = "EXAMPLE";
+					auto caller0 = fibers::details::make_callable([example]() -> std::string { return example; }); // capturing lambda, no return
+					auto caller1 = fibers::details::make_callable(&stackThing::varName); // member object 
+					auto caller2 = fibers::details::make_callable(&stackThing::var); // member object 
+					auto caller3 = fibers::details::make_callable(&stackThing::length); // member function, returns value
+					auto caller4 = fibers::details::make_callable([](stackThing& o) -> void {}); // lambda, no return
+					auto caller5 = fibers::details::make_callable([](stackThing& o)-> int { return o.length(); }); // lambda, returns
+					auto caller6 = fibers::details::make_callable(&Units::CUBED); // static member function
+					auto caller7 = fibers::details::make_callable(&stackThing::get_var_name); // member function, returns reference
+					auto caller8 = fibers::details::make_callable(&Thing); // static function, returns
+					auto caller9 = fibers::details::make_callable([](stackThing& a, stackThing const& b) -> stackThing& { return a = b; }); // static friend function
+
+					// STATIC RESULT TESTS (WITHOUT RUNNING THE ACTUAL CODE)
+					EXPECT_EQ(caller0->ReturnType(), fibers::user_type<std::string>());
+					EXPECT_EQ(caller1->ReturnType(), fibers::user_type<std::string>());
+					EXPECT_NE(caller2->ReturnType(), fibers::user_type<int>()); // Because the return type is not known at compile-time, the "return type" from the function is "Any".
+					EXPECT_EQ(caller2->ReturnType(), fibers::user_type<fibers::Any>()); // Because the return type is not known at compile-time, the "return type" from the function is "Any".
+					EXPECT_EQ(caller3->ReturnType(), fibers::user_type<int>());
+					EXPECT_EQ(caller4->ReturnType(), fibers::user_type<void>());
+					EXPECT_EQ(caller5->ReturnType(), fibers::user_type<int>());
+					EXPECT_EQ(caller6->ReturnType(), fibers::user_type<long double>());
+					EXPECT_EQ(caller7->ReturnType(), fibers::user_type<std::string>());
+					EXPECT_EQ(caller8->ReturnType(), fibers::user_type<bool>());
+					EXPECT_EQ(caller9->ReturnType(), fibers::user_type<stackThing>());
+
+					// INPUTS
+					auto inputs{ std::vector<fibers::Any>{ { stackThing("TEST", 100) } } }; // provided types (do not need to match)
+					auto inputs2{ std::vector<fibers::Any>{ { stackThing("TEST", 100) }, { stackThing("TEST2", 200) } } }; // provided types (do not need to match)
+
+					// RETURNED RESULTS FROM PROXY_FUNCTIONS
+					auto returned0{ fibers::details::call(caller0, {}, tree) };
+					auto returned1{ fibers::details::call(caller1, inputs, tree) };
+					auto returned2{ fibers::details::call(caller2, inputs, tree) };
+					auto returned3{ fibers::details::call(caller3, inputs, tree) };
+					auto returned4{ fibers::details::call(caller4, inputs, tree) };
+					auto returned5{ fibers::details::call(caller5, inputs, tree) };
+					auto returned6{ fibers::details::call(caller6, { { 100.0l } }, tree) };
+					auto returned7{ fibers::details::call(caller7, inputs, tree) };
+					auto returned8{ fibers::details::call(caller8, {}, tree) };
+					auto returned9{ fibers::details::call(caller9, inputs2, tree) };
+
+					// TEST RUNTIME RESULTS TO ENSURE TYPES ALIGN WITH EXPECTATIONS
+					EXPECT_EQ(returned0.IsTypeOf(fibers::user_type<std::string>()), true);
+					EXPECT_EQ(returned1.IsTypeOf(fibers::user_type<std::string>()), true);
+					EXPECT_EQ(returned2.IsTypeOf(fibers::user_type<int>()), true); // the type is only known at runtime, after running the function
+					returned2.cast<int&>() = 1000; // test assignment for an Any passed as a result
+					EXPECT_EQ(inputs[0].cast<stackThing&>().var.cast<int&>(), 1000);
+					EXPECT_EQ(returned3.IsTypeOf(fibers::user_type<int>()), true);
+					EXPECT_EQ(returned4.IsTypeOf(fibers::user_type<void>()), true);
+					EXPECT_EQ(returned5.IsTypeOf(fibers::user_type<int>()), true);
+					EXPECT_EQ(returned6.IsTypeOf(fibers::user_type<long double>()), true);
+					EXPECT_EQ(returned7.IsTypeOf(fibers::user_type<std::string>()), true);
+					EXPECT_EQ(returned8.IsTypeOf(fibers::user_type<bool>()), true);
+					returned1.cast<std::string&>() = "TEST2"; // test assignment for member object
+					EXPECT_EQ(inputs[0].cast<stackThing&>().varName, "TEST2");
+					returned7.cast<std::string&>() = "TEST3"; // test assignment for reference object passed as result for member function
+					EXPECT_EQ(inputs[0].cast<stackThing&>().varName, "TEST3");
+					EXPECT_EQ(returned9.IsTypeOf(fibers::user_type<stackThing>()), true);
+					EXPECT_EQ(inputs2[0].cast<stackThing>().varName, "TEST2");
+					
+					// ensure type-conversion failures throws catchable errors
+					try {
+						fibers::details::call(caller1, {}, tree);
+						EXPECT_EQ(true, false);
+					}
+					catch (std::exception e) {  }
+					try {
+						fibers::details::call(caller1, { fibers::Any{ 100 } }, tree);
+						EXPECT_EQ(true, false);
+					}
+					catch (std::exception e) {  }
 
 
 
@@ -219,6 +521,19 @@ int main() {
 
 
 
+
+
+				}
+
+
+				tree.Convert<DateTime>( 100ull );
+				EXPECT_EQ(tree.Convert<std::string_view>(std::string("TEST")), "TEST");
+				EXPECT_EQ(tree.Convert<std::string>(std::string_view(std::string("TEST"))), "TEST");
+				EXPECT_EQ(tree.Convert<std::string>(100), "100");
+				EXPECT_EQ(tree.Convert<std::string>(Units::meter(1)), Units::meter(1).ToString());
+
+				EXPECT_EQ(tree.Convert<uint64_t>(100), 100);
+				EXPECT_EQ(tree.Convert<long>(100ull), 100);
 
 
 

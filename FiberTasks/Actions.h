@@ -215,37 +215,303 @@ template <typename F> inline [[nodiscard]] std::shared_ptr<Finally> make_shared_
 #define return_defered(x) \
   return make_shared_finally([=] { x; })
 
-namespace scripting {
+
+
+#include <type_traits>
+namespace fibers {
+	template<typename T> static constexpr decltype(auto) TypeId() { 
+		return typeid(T); // boost::typeindex::type_id<T>().type_info();
+	};
+	namespace impl {
+		using underlying_type_info = typename std::decay_t<decltype(TypeId<void>())>;
+	};
 	namespace details {
-		namespace exception {
-			/// \brief Thrown in the event that an Any cannot be cast to the desired type
-			/// It is used internally during function dispatch.
-			class bad_any_cast : public std::bad_cast {
-			public:
-				/// \brief Description of what error occurred
-				const char* what() const noexcept override { return exc.c_str(); }
 
-				bad_any_cast() : 
-					from(boost::typeindex::type_id<void>().type_info()),
-					to(boost::typeindex::type_id<void>().type_info()),
-					exc("Bad Any Cast") {};
-				bad_any_cast(const boost::typeindex::type_info& from_m, const boost::typeindex::type_info& to_m) : 
-					from(from_m),
-					to(to_m),
-					exc(std::string("Bad Any Cast From \"") + from_m.name() + "\" To \"" + to_m.name()) 
-				{};
+		struct Unknown_Type {};
 
-			private:
-				std::string exc;
-				const boost::typeindex::type_info& from;
-				const boost::typeindex::type_info& to;
-			};
-		}; // namespace exception
-	}; // namespace details
+		template<typename T>
+		struct Bare_Type {
+			using type = typename std::remove_cv<typename std::remove_pointer<typename std::remove_reference<T>::type>::type>::type;
+		};
+
+		template<typename T, typename _ = void>
+		struct is_container {
+			static bool const value = false;
+			using type = Unknown_Type;
+		};
+
+		template<typename... Ts>
+		struct is_container_helper {};
+
+		template<typename T>
+		struct is_container<
+			T,
+			std::conditional_t<
+			false,
+			is_container_helper<
+			typename T::value_type,
+			decltype(std::declval<T>().size()),
+			decltype(std::declval<T>().begin()),
+			decltype(std::declval<T>().end())
+			>,
+			void
+			>
+		> {
+			static bool const value = true;
+			using type = typename Bare_Type<T>::type::value_type;
+		};
+
+		template<typename T>
+		struct Contained_Type {
+			using bare_type = typename details::Bare_Type<T>::type;
+			using container_inner_type = typename details::is_container<bare_type>::type;
+			using type = container_inner_type;
+		};
+	} // namespace detail
+
+	/// \brief Compile time deduced information about a type
+	class Type_Info {
+	public:
+		static bool SameTypeInfo(const impl::underlying_type_info& a, const impl::underlying_type_info& b) noexcept {
+			return &a == &b;
+		};
+
+		constexpr Type_Info(
+			const bool t_is_const,
+			const bool t_is_reference,
+			const bool t_is_pointer,
+			const bool t_is_void,
+			const impl::underlying_type_info* t_ti,
+			const impl::underlying_type_info* t_bare_ti,
+			const impl::underlying_type_info* t_contained_ti
+		) noexcept
+			: m_type_info(t_ti)
+			, m_bare_type_info(t_bare_ti)
+			, m_contained_type_info(t_contained_ti)
+			, m_flags((static_cast<unsigned int>(t_is_const) << is_const_flag) + (static_cast<unsigned int>(t_is_reference) << is_reference_flag)
+				+ (static_cast<unsigned int>(t_is_pointer) << is_pointer_flag) + (static_cast<unsigned int>(t_is_void) << is_void_flag)) {
+		}
+
+		constexpr Type_Info() noexcept = default;
+
+		bool operator<(const Type_Info& ti) const noexcept { return m_type_info->before(*ti.m_type_info); };
+		bool operator>=(const Type_Info& ti) const noexcept { return !operator<(ti); };
+		bool operator>(const Type_Info& ti) const noexcept { return operator>=(ti) && operator!=(ti); };
+		bool operator<=(const Type_Info& ti) const noexcept { return !operator>(ti); };
+
+		bool operator!=(const Type_Info& ti) const noexcept { return !(operator==(ti)); };
+		bool operator!=(const impl::underlying_type_info& ti) const noexcept { return !(operator==(ti)); };
+		bool operator==(const Type_Info& ti) const noexcept {
+			return ti.m_type_info == m_type_info || (m_type_info && ti.m_type_info && SameTypeInfo(*ti.m_type_info, *m_type_info));
+		}
+		bool operator==(const impl::underlying_type_info& ti) const noexcept { return !is_undef() && m_type_info && SameTypeInfo(ti, *m_type_info); };
+
+		bool bare_equal(const Type_Info& ti) const noexcept {
+			return ti.m_bare_type_info == m_bare_type_info || (ti.m_bare_type_info && m_bare_type_info && SameTypeInfo(*ti.m_bare_type_info, *m_bare_type_info));
+		};
+		bool bare_equal_type_info(const impl::underlying_type_info& ti) const noexcept {
+			return !is_undef() && m_bare_type_info && SameTypeInfo(ti, *m_bare_type_info);
+		};
+
+		constexpr bool is_const() const noexcept { return (m_flags & (1 << is_const_flag)) != 0; };
+		constexpr bool is_reference() const noexcept { return (m_flags & (1 << is_reference_flag)) != 0; };
+		constexpr bool is_void() const noexcept { return (m_flags & (1 << is_void_flag)) != 0; };
+		constexpr bool is_undef() const noexcept { return (m_flags & (1 << is_undef_flag)) != 0; };
+		constexpr bool is_pointer() const noexcept { return (m_flags & (1 << is_pointer_flag)) != 0; };
+
+		const char* name() const noexcept {
+			if (!is_undef()) {
+				return m_type_info->name();
+			}
+			else {
+				return "";
+			}
+		}
+
+		const char* bare_name() const noexcept {
+			if (!is_undef()) {
+				return m_bare_type_info->name();
+			}
+			else {
+				return "";
+			}
+		}
+
+		const char* contained_name() const noexcept {
+			if (!is_undef()) {
+				return m_contained_type_info->name();
+			}
+			else {
+				return "";
+			}
+		}
+
+		constexpr const impl::underlying_type_info* bare_type_info() const noexcept { return m_bare_type_info; }
+		constexpr const impl::underlying_type_info* contained_type_info() const noexcept { return m_contained_type_info; }
+		constexpr bool is_container_type() const noexcept { return m_contained_type_info != &TypeId<details::Unknown_Type >(); }
+
+	private:
+		const impl::underlying_type_info* m_type_info = &TypeId<details::Unknown_Type>();
+		const impl::underlying_type_info* m_bare_type_info = &TypeId<details::Unknown_Type>();
+		const impl::underlying_type_info* m_contained_type_info = &TypeId<details::Unknown_Type>();
+		unsigned int m_flags = (1 << is_undef_flag);
+
+	private: // flags
+		static const int is_const_flag = 0;
+		static const int is_reference_flag = 1;
+		static const int is_pointer_flag = 2;
+		static const int is_void_flag = 3;
+		static const int is_undef_flag = 4;
+	};
+};
+
+namespace std {
+	template <>
+	struct hash<fibers::Type_Info>
+	{
+		std::size_t operator()(const fibers::Type_Info& k) const
+		{
+			return reinterpret_cast<size_t>(k.bare_type_info());
+		}
+	};
+};
+
+namespace fibers {
+
+	namespace details {
+		/// Helper used to create a Type_Info object
+		template<typename T>
+		struct Get_Type_Info {
+			constexpr static Type_Info get() noexcept {
+				return Type_Info(std::is_const<typename std::remove_pointer<typename std::remove_reference<T>::type>::type>::value,
+					std::is_reference<T>::value,
+					std::is_pointer<T>::value,
+					std::is_void<T>::value,
+					&TypeId<T>(),
+					&TypeId<typename Bare_Type<T>::type>(),
+					&TypeId<typename Contained_Type<T>::type>()
+				);
+			}
+		};
+
+		template<typename T>
+		struct Get_Type_Info<std::shared_ptr<T>> {
+			constexpr static Type_Info get() noexcept {
+				return Type_Info(std::is_const<T>::value,
+					std::is_reference<T>::value,
+					std::is_pointer<T>::value,
+					std::is_void<T>::value,
+					&TypeId<std::shared_ptr<T>>(),
+					&TypeId<typename Bare_Type<T>::type>(),
+					&TypeId<typename Contained_Type<T>::type>()
+				);
+			}
+		};
+
+		template<typename T>
+		struct Get_Type_Info<std::shared_ptr<T>&> : Get_Type_Info<std::shared_ptr<T>> {
+		};
+
+		template<typename T>
+		struct Get_Type_Info<const std::shared_ptr<T>&> {
+			constexpr static Type_Info get() noexcept {
+				return Type_Info(std::is_const<T>::value,
+					std::is_reference<T>::value,
+					std::is_pointer<T>::value,
+					std::is_void<T>::value,
+					&TypeId<const std::shared_ptr<T>&>(),
+					&TypeId<typename Bare_Type<T>::type>(),
+					&TypeId<typename Contained_Type<T>::type>()
+				);
+			}
+		};
+
+		template<typename T>
+		struct Get_Type_Info<std::reference_wrapper<T>> {
+			constexpr static Type_Info get() noexcept {
+				return Type_Info(std::is_const<T>::value,
+					std::is_reference<T>::value,
+					std::is_pointer<T>::value,
+					std::is_void<T>::value,
+					&TypeId<std::reference_wrapper<T>>(),
+					&TypeId<typename Bare_Type<T>::type>(),
+					&TypeId<typename Contained_Type<T>::type>()
+				);
+			}
+		};
+
+		template<typename T>
+		struct Get_Type_Info<const std::reference_wrapper<T>&> {
+			constexpr static Type_Info get() noexcept {
+				return Type_Info(std::is_const<T>::value,
+					std::is_reference<T>::value,
+					std::is_pointer<T>::value,
+					std::is_void<T>::value,
+					&TypeId<const std::reference_wrapper<T>&>(),
+					&TypeId<typename Bare_Type<T>::type>(),
+					&TypeId<typename Contained_Type<T>::type>()
+				);
+			}
+		};
+
+	} // namespace detail
+
+	/// \brief Creates a Type_Info object representing the type passed in
+	/// \tparam T Type of object to get a Type_Info for, derived from the passed in parameter
+	/// \return Type_Info for T
+	///
+	/// \b Example:
+	/// \code
+	/// int i;
+	/// chaiscript::Type_Info ti = chaiscript::user_type(i);
+	/// \endcode
+	template<typename T> constexpr Type_Info user_type(const T& /*t*/) noexcept {
+		return details::Get_Type_Info<T>::get();
+	};
+
+	/// \brief Creates a Type_Info object representing the templated type
+	/// \tparam T Type of object to get a Type_Info for
+	/// \return Type_Info for T
+	///
+	/// \b Example:
+	/// \code
+	/// chaiscript::Type_Info ti = chaiscript::user_type<int>();
+	/// \endcode
+	template<typename T> constexpr Type_Info user_type() noexcept {
+		return details::Get_Type_Info<T>::get();
+	};
 
 };
 
+namespace fibers {
+	namespace exception {
+		/// \brief Thrown in the event that an Any cannot be cast to the desired type
+		/// It is used internally during function dispatch.
+		class bad_any_cast : public std::bad_cast {
+		public:
+			/// \brief Description of what error occurred
+			const char* what() const noexcept override { return exc.c_str(); }
 
+			bad_any_cast() : 
+				bad_cast(std::bad_cast::__construct_from_string_literal("Bad Any Cast")),
+				from(user_type<void>()), 
+				to(user_type<void>()), 
+				exc("Bad Any Cast") 
+			{};
+			bad_any_cast(const fibers::Type_Info& from_m, const fibers::Type_Info& to_m) :
+				bad_cast(std::bad_cast::__construct_from_string_literal((std::string("Bad Any Cast From \"") + from_m.name() + "\" To \"" + to_m.name() + "\"").c_str())),
+				from(from_m),
+				to(to_m),
+				exc(std::string("Bad Any Cast From \"") + from_m.name() + "\" To \"" + to_m.name() + "\"")
+			{};
+
+		private:
+			std::string exc;
+			fibers::Type_Info from;
+			fibers::Type_Info to;
+		};
+	}; // namespace exception
+};
 
 namespace fibers {
 	namespace synchronization {
@@ -410,7 +676,7 @@ namespace fibers {
 
 		class AnyData {
 		public:
-			AnyData(std::shared_ptr<void> const& t_ptr, const boost::typeindex::type_info& t_type, const bool t_const) noexcept : m_ptr(t_ptr), m_type(t_type), m_const(t_const) {};
+			AnyData(std::shared_ptr<void> const& t_ptr, const Type_Info& t_type, const bool t_const) noexcept : m_ptr(t_ptr), m_type(t_type), m_const(t_const) {};
 			AnyData(AnyData const&) = default;
 			AnyData(AnyData&&) = default;
 			AnyData& operator=(AnyData const&) = default;
@@ -424,13 +690,13 @@ namespace fibers {
 			void* ptr() const { return m_ptr.get(); };
 			template<typename ToType> void ThrowIfNot() {
 				using baseType = typename std::decay_t<typename std::remove_reference_t<typename std::remove_pointer_t<typename std::remove_const_t<typename get_type< ToType >::type>>>>;
-
-				if (boost::typeindex::type_id<baseType>().type_info() != m_type) {
+				
+				if (user_type<baseType>() != m_type) {
 #if 0
                     #include <iostream>
 					std::cout << std::string("Bad Cast From \"") + m_type.name() + "\" To \"" + typeid(std::remove_const_t<std::decay_t<baseType>>).name() + "\".";
 #else
-					throw scripting::details::exception::bad_any_cast(m_type, boost::typeindex::type_id<std::remove_const_t<std::decay_t<baseType>>>().type_info());
+					throw exception::bad_any_cast(m_type, user_type<std::remove_const_t<std::decay_t<baseType>>>());
 #endif
 				}
 			};
@@ -448,12 +714,13 @@ namespace fibers {
 
 		public:
 			std::shared_ptr<void>					m_ptr; // underlying shared ptr for the provided object. (e.g. std::shared_ptr<int>, etc.)
-			const boost::typeindex::type_info&      m_type; // type information of the saved object
+			Type_Info      m_type; // type information of the saved object
 			const bool						        m_const; // whether or not the saved object is const
 
 		};
 	}
-	
+	class Any;
+
 	class FunctionBase {
 	public:
 		virtual ~FunctionBase() = default;
@@ -745,7 +1012,22 @@ namespace fibers {
 		};
 
 	private:
-		template <int N = 0> static void AddData(typename ParameterPackImpl<NumArguments>::type& d) {};
+		template <int N = 0> static void AddData(typename ParameterPackImpl<NumArguments>::type& d) {
+			if constexpr (N < NumArguments) {
+				static constexpr bool desire_shared_ptr = !std::is_same<typename get_type<typename ArgumentType<N>::parameter_pack::type>::type, typename ArgumentType<N>::parameter_pack::type>::value;
+				if constexpr (desire_shared_ptr) {
+					// we WANT a shared ptr. 
+					getParam(N, d) = std::make_shared<typename ArgumentType<N>::parameter_pack::underlying_type>();
+				}
+				else {
+					// we DO NOT want a shared ptr. Did we get one?
+					getParam(N, d) = typename ArgumentType<N>::parameter_pack::type();
+				}
+				if constexpr (N + 1 < NumArguments) {
+					AddData<N + 1>(d);
+				}
+			}
+		};
 		template<int N = 0, typename T, typename... Targs> static void AddData(typename ParameterPackImpl<NumArguments>::type& d, T&& value, Targs && ... Fargs) {// recursive function		
 			if constexpr (std::is_same<T, void>::value) {
 				AddData<N + 1>(d, std::forward<Targs>(Fargs)...);
@@ -914,8 +1196,113 @@ namespace fibers {
 			else {
 			    throw(std::runtime_error("The number of arguments and number of parameters did not match"));				
 			}
-		}
+		};
 		void Invoke() override final { operator()(); };
+
+		template<int N> static constexpr Type_Info InputType() noexcept {
+			return user_type< typename ArgumentType<N>::parameter_pack::type >();
+		};
+		std::vector<Type_Info> InputTypes() noexcept {
+			if constexpr (NumArguments == 0) {
+				return {};
+			}
+			else if constexpr (NumArguments == 1) {
+				return { InputType<0>() };
+			}
+			else if constexpr (NumArguments == 2) {
+				return { InputType<0>(), InputType<1>() };
+			}
+			else if constexpr (NumArguments == 3) {
+				return { InputType<0>(), InputType<1>(), InputType<2>() };
+			}
+			else if constexpr (NumArguments == 4) {
+				return { InputType<0>(), InputType<1>(), InputType<2>(), InputType<3>() };
+			}
+			else if constexpr (NumArguments == 5) {
+				return {
+					InputType<0>(), InputType<1>(), InputType<2>(), InputType<3>(),
+					InputType<4>()
+				};
+			}
+			else if constexpr (NumArguments == 6) {
+				return {
+					InputType<0>(), InputType<1>(), InputType<2>(), InputType<3>(),
+					InputType<4>(), InputType<5>()
+				};
+			}
+			else if constexpr (NumArguments == 7) {
+				return {
+					InputType<0>(), InputType<1>(), InputType<2>(), InputType<3>(),
+					InputType<4>(), InputType<5>(), InputType<6>()
+				};
+			}
+			else if constexpr (NumArguments == 8) {
+				return {
+					InputType<0>(), InputType<1>(), InputType<2>(), InputType<3>(),
+					InputType<4>(), InputType<5>(), InputType<6>(), InputType<7>()
+				};
+			}
+			else if constexpr (NumArguments == 9) {
+				return {
+					InputType<0>(), InputType<1>(), InputType<2>(), InputType<3>(),
+					InputType<4>(), InputType<5>(), InputType<6>(), InputType<7>(),
+					InputType<8>()
+				};
+			}
+			else if constexpr (NumArguments == 10) {
+				return {
+					InputType<0>(), InputType<1>(), InputType<2>(), InputType<3>(),
+					InputType<4>(), InputType<5>(), InputType<6>(), InputType<7>(),
+					InputType<8>(), InputType<9>()
+				};
+			}
+			else if constexpr (NumArguments == 11) {
+				return {
+					InputType<0>(), InputType<1>(), InputType<2>(), InputType<3>(),
+					InputType<4>(), InputType<5>(), InputType<6>(), InputType<7>(),
+					InputType<8>(), InputType<9>(), InputType<10>()
+				};
+			}
+			else if constexpr (NumArguments == 12) {
+				return {
+					InputType<0>(), InputType<1>(), InputType<2>(), InputType<3>(),
+					InputType<4>(), InputType<5>(), InputType<6>(), InputType<7>(),
+					InputType<8>(), InputType<9>(), InputType<10>(), InputType<11>()
+				};
+			}
+			else if constexpr (NumArguments == 13) {
+				return {
+					InputType<0>(), InputType<1>(), InputType<2>(), InputType<3>(),
+					InputType<4>(), InputType<5>(), InputType<6>(), InputType<7>(),
+					InputType<8>(), InputType<9>(), InputType<10>(), InputType<11>(),
+					InputType<12>()
+				};
+			}
+			else if constexpr (NumArguments == 14) {
+				return {
+					InputType<0>(), InputType<1>(), InputType<2>(), InputType<3>(),
+					InputType<4>(), InputType<5>(), InputType<6>(), InputType<7>(),
+					InputType<8>(), InputType<9>(), InputType<10>(), InputType<11>(),
+					InputType<12>(), InputType<13>()
+				};
+			}
+			else if constexpr (NumArguments == 15) {
+				return {
+					InputType<0>(), InputType<1>(), InputType<2>(), InputType<3>(),
+					InputType<4>(), InputType<5>(), InputType<6>(), InputType<7>(),
+					InputType<8>(), InputType<9>(), InputType<10>(), InputType<11>(),
+					InputType<12>(), InputType<13>(), InputType<14>()
+				};
+			}
+			else if constexpr (NumArguments == 16) {
+				return {
+					InputType<0>(), InputType<1>(), InputType<2>(), InputType<3>(),
+					InputType<4>(), InputType<5>(), InputType<6>(), InputType<7>(),
+					InputType<8>(), InputType<9>(), InputType<10>(), InputType<11>(),
+					InputType<12>(), InputType<13>(), InputType<14>(), InputType<15>()
+				};
+			}
+		};
 
 		static constexpr size_t NumInputs() noexcept { return NumArguments; };
 		static constexpr bool ReturnsNothing() {
@@ -937,10 +1324,10 @@ namespace fibers {
 		struct Object_Data {
 			template <template<class> class H, class S, typename = std::enable_if_t<std::is_same_v<H<S>, std::shared_ptr<S>>>> static decltype(auto) get(const H<S>* obj) { return get(*obj); };
 			template <template<class> class H, class S, typename = std::enable_if_t<std::is_same_v<H<S>, std::shared_ptr<S>>>> static decltype(auto) get(const H<S>& obj) {
-				return std::shared_ptr<AnyData>(new AnyData(AnyData::get_data<S>(obj), boost::typeindex::type_id<S>().type_info(), std::is_const_v<S>));
+				return std::shared_ptr<AnyData>(new AnyData(AnyData::get_data<S>(obj), user_type<S>(), std::is_const_v<S>));
 			};
 			template <template<class> class H, class S, typename = std::enable_if_t<std::is_same_v<H<S>, std::shared_ptr<S>>>> static decltype(auto) get(H<S>&& obj) {
-				return std::shared_ptr<AnyData>(new AnyData(AnyData::get_data<S>(std::forward<H<S>>(obj)), boost::typeindex::type_id<S>().type_info(), std::is_const_v<S>));
+				return std::shared_ptr<AnyData>(new AnyData(AnyData::get_data<S>(std::forward<H<S>>(obj)), user_type<S>(), std::is_const_v<S>));
 			};
 			template<typename T, typename = std::enable_if_t<!std::is_same_v<fibers::AnyAutoCast, T>>> static decltype(auto) get(T* t) { return get(std::make_shared<T>(t)); };
 			template<typename T, typename = std::enable_if_t<!std::is_same_v<fibers::AnyAutoCast, T>>> static decltype(auto) get(const T* t) { return get(*t); };
@@ -995,20 +1382,21 @@ namespace fibers {
 		void Clear() noexcept { container = nullptr; };
 
 		template <typename ValueT> static const char* TypeNameOf() { return TypeOf<ValueT>().name(); };
-		template <typename ValueT> static const boost::typeindex::type_info& TypeOf() { return boost::typeindex::type_id<ValueT>().type_info(); };
+		template <typename ValueT> static Type_Info TypeOf() { return user_type<ValueT>(); };
 
 		const char* TypeName() const noexcept { return Type().name(); };
-		const boost::typeindex::type_info& Type() const noexcept {
+		Type_Info Type() const noexcept {
 			std::shared_ptr<AnyData> m = container;
 			if (m) { return m->m_type; }
-			else { return boost::typeindex::type_id<void>().type_info(); }
+			else { return user_type<void>(); }
 		};
 		template<typename VType> bool IsTypeOf() const noexcept {
-			decltype(auto) targetType = TypeOf<VType>();
-			decltype(auto) thisType = Type();
-			bool out = (thisType == targetType);
-			return out;
+			return Type() == TypeOf<VType>();
 		};
+		bool IsTypeOf(Type_Info const& targetType) const noexcept {
+			return Type() == targetType;
+		};
+		
 
 #pragma region Boolean Operators
 	public:
@@ -1184,7 +1572,7 @@ namespace fibers {
 		virtual const fibers::Any& GetResult() const = 0;
 		virtual fibers::Any& Invoke() = 0;
 		virtual bool IsStatic() const noexcept = 0;
-		virtual const boost::typeindex::type_info& returnType() const = 0;
+		virtual Type_Info returnType() const = 0;
 		virtual std::string FunctionName() const = 0;
 	};
 	template<typename F>
@@ -1225,8 +1613,8 @@ namespace fibers {
 		bool IsStatic() const noexcept override final {
 			return stateless;
 		};
-		const boost::typeindex::type_info& returnType() const override final {
-			return boost::typeindex::type_id<void>().type_info();
+		Type_Info returnType() const override final {
+			return user_type<void>();
 		};
 		std::string FunctionName() const override final {
 			return func.FunctionName();
@@ -1273,8 +1661,8 @@ namespace fibers {
 		bool IsStatic() const noexcept override final {
 			return stateless;
 		};
-		const boost::typeindex::type_info& returnType() const override final {
-			return boost::typeindex::type_id<decltype(func)::ResultType>().type_info();
+		Type_Info returnType() const override final {
+			return user_type<decltype(func)::ResultType>();
 		};
 		std::string FunctionName() const override final {
 			return func.FunctionName();

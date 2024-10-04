@@ -36,5 +36,8 @@
     <ClCompile Include="MultiWord_CompareAndSwap.cpp">
       <Filter>Files\CPP</Filter>
     </ClCompile>
+    <ClCompile Include="ScriptingLanguage.h">
+      <Filter>Files\H</Filter>
+    </ClCompile>
   </ItemGroup>
 </Project>
