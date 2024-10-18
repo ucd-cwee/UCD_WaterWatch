@@ -21,6 +21,7 @@
   <ItemGroup>
     <ClCompile Include="Fibers.cpp" />
     <ClCompile Include="MultiWord_CompareAndSwap.cpp" />
+    <ClCompile Include="ScriptingLanguage.h" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Concurrent_Queue.h" />

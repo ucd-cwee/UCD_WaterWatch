@@ -1388,7 +1388,7 @@ namespace fibers {
 			 * @return number of items in list
 			 */
 			unsigned long size() const {
-				return nodeAlloc.GetAllocCount();
+				return nodeAlloc.TotalAlive();
 			};
 
 			/**
@@ -1934,6 +1934,9 @@ namespace fibers {
 				_gc->AddCollectionAction([this, element]() {
 					this->_alloc->Free(element);
 				});
+			};
+			size_t				size() const {
+				return _alloc->TotalAlive();
 			};
 
 			// Request a new memory pointer that will self-delete and return to the memory pool automatically. Important: This allocator must out-live the shared_ptr.
@@ -4004,7 +4007,10 @@ namespace fibers {
 		/* Fiber- and thread-safe lock-free sorted container for time-series patterns, where the x- and y-values may be integers, floating numbers, long doubles, etc. */
 		template <typename xType, typename yType> class Pattern {
 		protected:
-			using underlying = fibers::utilities::dbgroup::index::bw_tree::BwTree< typename utilities::impl::CAS_Safe_Type < xType >::type, typename utilities::impl::CAS_Safe_Type < yType >::type >;
+			using underlying = fibers::utilities::dbgroup::index::bw_tree::BwTree< 
+				typename utilities::impl::CAS_Safe_Type < xType >::type, 
+				typename utilities::impl::CAS_Safe_Type < yType >::type 
+			>;
 			using dataType = std::pair< underlying , fibers::synchronization::atomic_number<long> >;
 			std::shared_ptr< dataType > data;
 
@@ -4151,7 +4157,7 @@ namespace fibers {
 			/// </summary>
 			/// <param name="position"></param>
 			/// <returns></returns>
-			std::optional<yType> Read(xType position) {
+			std::optional<yType> Read(xType position) const {
 				auto payload = data->first.Read(position);
 				if (payload.has_value()) {
 					return (yType)payload.value();
@@ -4580,6 +4586,205 @@ namespace fibers {
 
 		};
 
+		/* *THREAD SAFE* Thread-safe and fiber-safe sorted map. KeyType may be anything that can be hashed, and ObjType must be copy-by-value. */
+		template <typename KeyType = std::string, typename ObjType = std::string, typename Hasher = std::hash<KeyType>> class Map {
+		private:
+			mutable fibers::utilities::GarbageCollectedAllocator<std::pair<KeyType, ObjType>>
+				nodeAllocator;
+			fibers::containers::Pattern < size_t, std::pair<KeyType, ObjType>*>
+				sort;
+
+		public:
+			Map() = default;
+			Map(Map const&) = default;
+			Map(Map&&) = default;
+			Map& operator=(Map const&) = default;
+			Map& operator=(Map&&) = default;
+			~Map() = default;
+
+		public:
+			/* emplaces the object at the key in the map. */
+			bool emplace(KeyType const& key, ObjType const& object, bool overwriteIfExists = true) {
+				size_t key_hash = Hasher()(key);
+				std::pair<KeyType, ObjType>* newObj = nodeAllocator.Alloc(key, object);
+				if (sort.Insert(key_hash, newObj, overwriteIfExists)) {
+					return true;
+				}
+				else {
+					nodeAllocator.Free(newObj);
+					return false;
+				}
+			};
+			/* emplaces the object at the key in the map. */
+			bool emplace(KeyType const& key, ObjType&& object, bool overwriteIfExists = true) {
+				size_t key_hash = Hasher()(key);
+				std::pair<KeyType, ObjType>* newObj = nodeAllocator.Alloc(key, std::forward<ObjType>(object));
+				if (sort.Insert(key_hash, newObj, overwriteIfExists)) {
+					return true;
+				}
+				else {
+					nodeAllocator.Free(newObj);
+					return false;
+				}
+			};
+			/* returns a COPY of the value at the key. Returns empty if the value is not found. */
+			std::optional<ObjType> at(KeyType const& key) const {
+				auto g{ nodeAllocator.CreateEpochGuard() };
+
+				size_t key_hash = Hasher()(key);
+
+				{
+					std::optional<std::pair<KeyType, ObjType>*> optionalFind = sort.Read(key_hash);
+					if (optionalFind.has_value()) {
+						return optionalFind.value()->second;
+					}
+					else {
+						return std::nullopt;
+					}
+				}
+			};
+			/* returns a COPY of the value at the hashed key. Returns empty if the value is not found.
+			Allows user to calculate the hash externally from the Map. */
+			std::optional<ObjType> at_hash(size_t const& key_hash) const {
+				auto g{ nodeAllocator.CreateEpochGuard() };
+
+				{
+					std::optional<std::pair<KeyType, ObjType>*> optionalFind = sort.Read(key_hash);
+					if (optionalFind.has_value()) {
+						return optionalFind.value()->second;
+					}
+					else {
+						return std::nullopt;
+					}
+				}
+			};
+			/* queues the key to be erased. Note that the erasure may be delayed depending on use of the map. */
+			bool erase(KeyType const& key) {
+				auto g{ nodeAllocator.CreateEpochGuard() };
+				size_t key_hash = Hasher()(key);
+				std::optional<std::pair<KeyType, ObjType>*> optionalFind = sort.Read(key_hash);
+				if (optionalFind.has_value()) {
+					nodeAllocator.Free(optionalFind.value());
+					return sort.Delete(key_hash);
+				}
+				return false;
+			};
+			/* returns true if the key is in the map. */
+			bool contains(KeyType const& key) const {
+				return at(key).has_value();
+			};
+			/* returns the list of all keys currently in the map */
+			std::vector<KeyType> keys() const {
+				auto g{ nodeAllocator.CreateEpochGuard() };
+
+				std::vector<KeyType> out;
+				for (auto& x : sort) {
+					out.push_back(x.second->first);
+				}
+				return out;
+			};
+			/* attempts to find the key associated to the provided object, if found. */
+			std::optional<KeyType> key_of(ObjType const& obj) const {
+				auto g{ nodeAllocator.CreateEpochGuard() };
+
+				for (auto& x : sort) {
+					if (x.second->second == obj) {
+						return x.second->first;
+					}
+				}
+				return std::nullopt;
+			};
+
+			size_t size() const {
+				return nodeAllocator.size();
+			};
+
+			struct Iterator : public std::iterator<std::forward_iterator_tag, std::pair<KeyType, ObjType>> {
+			public:
+				using difference_type = typename std::iterator<std::forward_iterator_tag, std::pair<KeyType, ObjType>>::difference_type;
+
+				Iterator() = default;
+				Iterator(Map*&& _parent, int pos) :
+					parent{ std::forward<Map*>(_parent) }
+					, _ptr{ begin_impl(_parent) }
+					, result{}
+					, position{ pos }
+				{
+					while (pos > 0 && _ptr) { ++_ptr;  --pos; }
+				};
+				Iterator(const Iterator& rhs) :
+					parent{ rhs.parent }
+					, _ptr{ begin_impl(rhs.parent) }
+					, result{}
+					, position{ rhs.position }
+				{
+					int pos = position; while (pos > 0 && _ptr) { ++_ptr;  --pos; }
+				};
+				Iterator(Iterator&& rhs) = default;
+				Iterator& operator=(const Iterator& rhs) {
+					parent = rhs.parent;
+					_ptr = begin_impl(rhs.parent);
+					position = rhs.position;
+
+					int pos = position; while (pos > 0 && _ptr) { ++_ptr;  --pos; }
+				};
+				Iterator& operator=(Iterator&& rhs) {
+					parent = rhs.parent;
+					_ptr = begin_impl(rhs.parent);
+					position = rhs.position;
+
+					int pos = position; while (pos > 0 && _ptr) { ++_ptr;  --pos; }
+				};
+				~Iterator() = default;
+
+				std::pair<KeyType, ObjType>& operator*() const { LoadResult(); return result; };
+				std::pair<KeyType, ObjType>* operator->() const { LoadResult(); return &result; };
+
+				Iterator& operator++() { Increment(); return *this; }
+
+				explicit operator bool() const { return Valid(); };
+				bool operator==(const Iterator& rhs) const {
+					if (!rhs.Valid() && !Valid()) return true;
+					if (!rhs.Valid()) {
+						return !Valid();
+					}
+					if (!Valid()) {
+						return !rhs.Valid();
+					}
+					return _ptr == rhs._ptr;
+				}
+				bool operator!=(const Iterator& rhs) const { return !operator==(rhs); }
+
+				Iterator begin() const { return Iterator(*this); };
+				Iterator end() const { return Iterator(nullptr, 0); };
+
+			private:
+				bool Valid() const { return (bool)_ptr; };
+				void Increment() { if (Valid()) ++_ptr; ++position; };
+				void LoadResult() const { if (Valid() && parent) { auto g{ parent->nodeAllocator.CreateEpochGuard() };  result = { (KeyType)_ptr->second->first, (ObjType)_ptr->second->second }; } };
+
+				static typename decltype(sort)::Iterator begin_impl(Map* parent) {
+					if (parent) {
+						return parent->sort.begin();
+					}
+					return typename decltype(sort)::Iterator();
+				};
+
+			public:
+				Map* parent{ nullptr };
+				mutable typename decltype(sort)::Iterator _ptr{};
+				mutable std::pair<KeyType, ObjType> result{};
+				int position{ 0 };
+
+			};
+			using iterator = Iterator;
+			using const_iterator = Iterator;
+
+			Iterator begin() const { return Iterator(const_cast<Map*>(this), 0); };
+			Iterator end() const { return Iterator(nullptr, 0); };
+			Iterator cbegin() const { return begin(); };
+			Iterator cend() const { return end(); };
+		};
 
 		/* *THREAD SAFE* Thread-safe and fiber-safe wrapper for any type of number, from integers to doubles.
 		   Significant performance boost if the data type is an integer type or one of: long, unsigned int, unsigned long, unsigned __int64
