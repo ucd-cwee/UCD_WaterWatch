@@ -3221,9 +3221,8 @@ namespace fibers {
 				 * @param pid the page ID of a target node.
 				 * @return a head of a delta chain.
 				 */
-				auto
+				const Delta_t*
 					LoadValidHead(const PageID pid)  //
-					-> const Delta_t*
 				{
 					const auto* lptr = mapping_table_.GetLogicalPtr(pid);
 					while (true) {

@@ -276,25 +276,37 @@ namespace fibers {
 			return &a == &b;
 		};
 
-		constexpr Type_Info(
+		Type_Info(
 			const bool t_is_const,
 			const bool t_is_reference,
 			const bool t_is_pointer,
 			const bool t_is_void,
 			const impl::underlying_type_info* t_ti,
-			const impl::underlying_type_info* t_bare_ti,
-			const impl::underlying_type_info* t_contained_ti
+			const impl::underlying_type_info* t_bare_ti
 		) noexcept
 			: m_type_info(t_ti)
 			, m_bare_type_info(t_bare_ti)
-			, m_contained_type_info(t_contained_ti)
 			, m_flags((static_cast<unsigned int>(t_is_const) << is_const_flag) + (static_cast<unsigned int>(t_is_reference) << is_reference_flag)
-				+ (static_cast<unsigned int>(t_is_pointer) << is_pointer_flag) + (static_cast<unsigned int>(t_is_void) << is_void_flag)) {
-		}
+				+ (static_cast<unsigned int>(t_is_pointer) << is_pointer_flag) + (static_cast<unsigned int>(t_is_void) << is_void_flag)) 
+			, qualified_namespace_and_name()
+			, Name()
+		{}
+		Type_Info(
+			const std::string& qualifiedNamespace_p,
+			const std::string& name_p
+		) noexcept
+			: m_type_info(nullptr)
+			, m_bare_type_info(nullptr)
+			, m_flags((static_cast<unsigned int>(false) << is_const_flag) + (static_cast<unsigned int>(false) << is_reference_flag)
+				+ (static_cast<unsigned int>(false) << is_pointer_flag) + (static_cast<unsigned int>(false) << is_void_flag)) 
+			, qualified_namespace_and_name(qualifiedNamespace_p + name_p)
+			, Name(name_p)
+		{}
+		Type_Info() noexcept = default;
 
-		constexpr Type_Info() noexcept = default;
-
-		bool operator<(const Type_Info& ti) const noexcept { return m_type_info->before(*ti.m_type_info); };
+		bool operator<(const Type_Info& ti) const noexcept { 
+			return bare_type_info() < ti.bare_type_info();
+		};
 		bool operator>=(const Type_Info& ti) const noexcept { return !operator<(ti); };
 		bool operator>(const Type_Info& ti) const noexcept { return operator>=(ti) && operator!=(ti); };
 		bool operator<=(const Type_Info& ti) const noexcept { return !operator>(ti); };
@@ -302,15 +314,10 @@ namespace fibers {
 		bool operator!=(const Type_Info& ti) const noexcept { return !(operator==(ti)); };
 		bool operator!=(const impl::underlying_type_info& ti) const noexcept { return !(operator==(ti)); };
 		bool operator==(const Type_Info& ti) const noexcept {
-			return ti.m_type_info == m_type_info || (m_type_info && ti.m_type_info && SameTypeInfo(*ti.m_type_info, *m_type_info));
+			return bare_type_info() == ti.bare_type_info();
 		}
-		bool operator==(const impl::underlying_type_info& ti) const noexcept { return !is_undef() && m_type_info && SameTypeInfo(ti, *m_type_info); };
-
-		bool bare_equal(const Type_Info& ti) const noexcept {
-			return ti.m_bare_type_info == m_bare_type_info || (ti.m_bare_type_info && m_bare_type_info && SameTypeInfo(*ti.m_bare_type_info, *m_bare_type_info));
-		};
-		bool bare_equal_type_info(const impl::underlying_type_info& ti) const noexcept {
-			return !is_undef() && m_bare_type_info && SameTypeInfo(ti, *m_bare_type_info);
+		bool operator==(const impl::underlying_type_info& ti) const noexcept { 
+			return !is_undef() && m_type_info && SameTypeInfo(ti, *m_type_info); 
 		};
 
 		constexpr bool is_const() const noexcept { return (m_flags & (1 << is_const_flag)) != 0; };
@@ -320,41 +327,34 @@ namespace fibers {
 		constexpr bool is_pointer() const noexcept { return (m_flags & (1 << is_pointer_flag)) != 0; };
 
 		const char* name() const noexcept {
-			if (!is_undef()) {
+			if (m_type_info && !is_undef())
 				return m_type_info->name();
-			}
 			else {
-				return "";
-			}
-		}
 
+				return Name.c_str();
+			}
+		};
 		const char* bare_name() const noexcept {
-			if (!is_undef()) {
+			if (m_bare_type_info && !is_undef())
 				return m_bare_type_info->name();
-			}
 			else {
-				return "";
-			}
-		}
 
-		const char* contained_name() const noexcept {
-			if (!is_undef()) {
-				return m_contained_type_info->name();
+				return Name.c_str();
 			}
-			else {
-				return "";
-			}
-		}
-
-		constexpr const impl::underlying_type_info* bare_type_info() const noexcept { return m_bare_type_info; }
-		constexpr const impl::underlying_type_info* contained_type_info() const noexcept { return m_contained_type_info; }
-		constexpr bool is_container_type() const noexcept { return m_contained_type_info != &TypeId<details::Unknown_Type >(); }
-
+		};
+		const impl::underlying_type_info* bare_type_info() const noexcept {
+			if (m_bare_type_info)
+				return m_bare_type_info;
+			else
+				return (const impl::underlying_type_info*)(std::hash<std::string>()(qualified_namespace_and_name));
+		};
+			
 	private:
 		const impl::underlying_type_info* m_type_info = &TypeId<details::Unknown_Type>();
 		const impl::underlying_type_info* m_bare_type_info = &TypeId<details::Unknown_Type>();
-		const impl::underlying_type_info* m_contained_type_info = &TypeId<details::Unknown_Type>();
 		unsigned int m_flags = (1 << is_undef_flag);
+		std::string qualified_namespace_and_name;
+		std::string Name;
 
 	private: // flags
 		static const int is_const_flag = 0;
@@ -388,8 +388,7 @@ namespace fibers {
 					std::is_pointer<T>::value,
 					std::is_void<T>::value,
 					&TypeId<T>(),
-					&TypeId<typename Bare_Type<T>::type>(),
-					&TypeId<typename Contained_Type<T>::type>()
+					&TypeId<typename Bare_Type<T>::type>()
 				);
 			}
 		};
@@ -402,8 +401,7 @@ namespace fibers {
 					std::is_pointer<T>::value,
 					std::is_void<T>::value,
 					&TypeId<std::shared_ptr<T>>(),
-					&TypeId<typename Bare_Type<T>::type>(),
-					&TypeId<typename Contained_Type<T>::type>()
+					&TypeId<typename Bare_Type<T>::type>()
 				);
 			}
 		};
@@ -420,8 +418,7 @@ namespace fibers {
 					std::is_pointer<T>::value,
 					std::is_void<T>::value,
 					&TypeId<const std::shared_ptr<T>&>(),
-					&TypeId<typename Bare_Type<T>::type>(),
-					&TypeId<typename Contained_Type<T>::type>()
+					&TypeId<typename Bare_Type<T>::type>()
 				);
 			}
 		};
@@ -434,8 +431,7 @@ namespace fibers {
 					std::is_pointer<T>::value,
 					std::is_void<T>::value,
 					&TypeId<std::reference_wrapper<T>>(),
-					&TypeId<typename Bare_Type<T>::type>(),
-					&TypeId<typename Contained_Type<T>::type>()
+					&TypeId<typename Bare_Type<T>::type>()
 				);
 			}
 		};
@@ -448,8 +444,7 @@ namespace fibers {
 					std::is_pointer<T>::value,
 					std::is_void<T>::value,
 					&TypeId<const std::reference_wrapper<T>&>(),
-					&TypeId<typename Bare_Type<T>::type>(),
-					&TypeId<typename Contained_Type<T>::type>()
+					&TypeId<typename Bare_Type<T>::type>()
 				);
 			}
 		};

@@ -78,7 +78,11 @@ namespace scripting {
 		*/
 		struct arity_error : std::range_error {
 			arity_error(int t_got, int t_expected)
-				: std::range_error(Units::printf("Arity mismatch: function requires %i parameters, but only %i were provided", t_expected, t_got))
+				: std::range_error(
+					t_expected >= 0 ?
+					Units::printf("Arity mismatch: function requires %i parameters, but only %i were provided", t_expected, t_got)
+					: std::string("Function was not found")
+				)
 				, got(t_got)
 				, expected(t_expected) {
 			}
@@ -484,6 +488,10 @@ namespace scripting {
 				result = From;
 				return true;
 			}
+			else if (to == user_type<Any>()) {
+				result = From;
+				return true;
+			}
 			else {
 				if (nodes.count(fromType) > 0) {
 					Node const& node = nodes.at(fromType);
@@ -651,29 +659,24 @@ namespace scripting {
 			constexpr auto FIRSTH = 37; /* also prime */
 
 			size_t h = FIRSTH;
-			for (auto& s : *this) {
-				h = (h * A) ^ (std::hash<Type_Info>()(s.Type()) * B);
+			if (size() > 0) {
+				for (auto& s : *this) {
+					h = (h * A) ^ (std::hash<Type_Info>()(s.Type()) * B);
+				}
 			}
 			auto result = h % C;
 			return result;
 		};
 
 	public:
-		Function_Params(Any* t_begin, Any* t_end)
-			: m_begin(t_begin)
-			, m_end(t_end)
+		Function_Params()
+			: m_begin(nullptr)
+			, m_end(nullptr)
 			, hash_value(0)
 		{
 			hash_value = HashTypes();
 		};
-		explicit Function_Params(Any& bv)
-			: m_begin(&bv)
-			, m_end(m_begin + 1) 
-			, hash_value(0) 
-		{
-			hash_value = HashTypes();
-		};
-		explicit Function_Params(std::vector<Any>& vec)
+		Function_Params(std::vector<Any>& vec)
 			: m_begin(vec.empty() ? nullptr : &vec.front())
 			, m_end(vec.empty() ? nullptr : &vec.front() + vec.size())
 			, hash_value(0)
@@ -685,7 +688,7 @@ namespace scripting {
 		[[nodiscard]] constexpr const Any* begin() const noexcept { return m_begin; }
 		[[nodiscard]] constexpr const Any& front() const noexcept { return *m_begin; }
 		[[nodiscard]] constexpr const Any* end() const noexcept { return m_end; }
-		[[nodiscard]] constexpr std::size_t size() const noexcept { return std::size_t(m_end - m_begin); }
+		[[nodiscard]] constexpr std::size_t size() const noexcept { if (m_begin && m_end) return std::size_t(m_end - m_begin); else return 0; }
 		[[nodiscard]] std::vector<Any> to_vector() const {
 			std::vector<Any> out;
 			out.reserve(m_end - m_begin);
@@ -722,9 +725,7 @@ namespace scripting {
 		};
 
 	public:
-		Param_Types() {}
-
-		explicit Param_Types(std::vector<std::pair<std::string, Type_Info>> t_types)
+		Param_Types(std::vector<std::pair<std::string, Type_Info>> t_types = std::vector<std::pair<std::string, Type_Info>>())
 			: m_types(std::move(t_types)), has_template_type(false), hash_value(0)
 		{
 			for (auto& t : m_types) {
@@ -737,6 +738,31 @@ namespace scripting {
 			hash_value = HashTypes(m_types);
 
 		}
+
+		Param_Types(Function_Params const& params, std::vector<std::pair<std::string, Type_Info>> t_types)
+			: m_types(std::move(t_types)), has_template_type(false), hash_value(0)
+		{
+			int index = 0;
+			for (auto& paramType : params) {
+				if (m_types[index].second == user_type<Any>()) {
+					m_types[index].second = paramType.Type();
+				}	
+				index++;
+			}
+
+			for (auto& t : m_types) {
+				if (t.second == user_type<fibers::Any>()) {
+					has_template_type = true;
+					break;
+				}
+			}
+
+			hash_value = HashTypes(m_types);
+
+		}
+
+
+
 
 		void push_front(std::string t_name, Type_Info t_ti) {
 			m_types.emplace(m_types.begin(), std::move(t_name), t_ti);
@@ -2895,7 +2921,12 @@ namespace scripting {
 	};
 	// Call a generic, proxy function using a vector of inputs (may be empty), which will be converted as necessary to the expected types. 
 	__forceinline Any call(Proxy_Function callable, std::vector<Any> const& inputs, Type_Converter_Tree const& conversionTree) {
-		return callable->operator()(Function_Params{ const_cast<std::vector<Any>&>(inputs) }, conversionTree);
+		if (callable) {
+			return callable->operator()(Function_Params{ const_cast<std::vector<Any>&>(inputs) }, conversionTree);
+		}
+		else {
+			throw exception::arity_error(inputs.size(), -1);
+		}
 	};
 
 
@@ -3034,14 +3065,27 @@ namespace scripting {
 
     class Scope {		
 	public:
+		friend class Namespace;
+		friend class Class;
 		Scope(std::weak_ptr<Scope> parent = std::weak_ptr<Scope>())
 			: p_parent{ parent }
-		{};
+		{
+			auto randN = [](double min, double max) -> double {
+				return (((double)std::rand() / (double)RAND_MAX) * (max - min)) + min;
+			};
+			for (int i = 0; i < 16; i++) {
+				p_NameRand += (char)(int)randN((int)('A'), (int)('Z'));
+			}
+		};
 		Scope(Scope const&) = default;
 		Scope(Scope&&) = default;
 		Scope& operator=(Scope const&) = default;
 		Scope& operator=(Scope&&) = default;
 		virtual ~Scope() = default;
+
+	private:
+		std::string
+			p_NameRand;
 
 	public:
 		std::weak_ptr<Scope>
@@ -3063,6 +3107,7 @@ namespace scripting {
 		virtual const std::string& GetName() const {
 			static std::string emptyString{};
 			return emptyString;
+			// return p_NameRand;
 		};
 		virtual std::string GetQualifiedNamespace() const {
 			std::string path = "::";
@@ -3219,8 +3264,43 @@ namespace scripting {
 			}
 			return false;
 		};
+	
+    protected:
+		/* 
+		Get all namespaces that may be used to search for an object (e.g this scope, it's USING scopes, its PARENT scopes 
+		Ordered from ParentScope -> UsingScope -> ThisScope
+		*/
+		virtual std::map<int, std::shared_ptr<Scope>> GetScopesForObjectSearchImpl(std::shared_ptr<std::set<std::shared_ptr<Scope>>> evaluated = std::make_shared<std::set<std::shared_ptr<Scope>>>(), bool requestedScope = true) const {
+			const std::string& myScopeName = GetName();
 
-	public:
+			evaluated->emplace(this->p_self.lock());
+
+			// locally declared namespaces > using namespaces
+
+			std::map<int, std::shared_ptr<Scope>> out;
+
+			// get my parent first...
+			if (auto ptr = p_parent.lock()) {
+				if (evaluated->count(ptr) <= 0)
+					out = ptr->GetScopesForObjectSearchImpl(evaluated, false);
+			}
+
+			// get my "using" children first... 
+			for (auto& usingScope : this->p_using) {
+				if (auto ptr = usingScope.second.lock()) {
+					for (auto x : ((Scope*)ptr.get())->GetScopesForObjectSearchImpl(evaluated, false)) {
+						out.emplace(out.size(), x.second);
+					}
+				}
+			}
+
+			// also remember to add myself (if I am a namespace)...
+			out.emplace(out.size(), p_self.lock());
+
+			return out;
+		};
+	
+    public:
 		/* Get all named namespaces that are discoverable from the current Scope */
 		virtual std::map<std::string, std::weak_ptr<Namespace>> GetAvailableNamespaces(std::shared_ptr<std::set<std::shared_ptr<Scope>>> evaluated = std::make_shared<std::set<std::shared_ptr<Scope>>>(), bool requestedScope = true) const {
 			const std::string& myScopeName = GetName();
@@ -3242,9 +3322,8 @@ namespace scripting {
 				if (auto ptr = usingScope.second.lock()) {
 					for (auto& using_child : ((Scope*)ptr.get())->p_children) {
 						if (using_child.second) {
-							// if (evaluated->count(std::dynamic_pointer_cast<Scope>(using_child.second)) <= 0)
 							for (auto& using_namespace : ((Scope*)using_child.second.get())->GetAvailableNamespaces(evaluated, false)) {
-								out[using_namespace.first] = using_namespace.second;
+								if (auto ptr = using_namespace.second.lock()) out[using_namespace.first] = ptr;
 							}
 						}
 					}
@@ -3254,9 +3333,8 @@ namespace scripting {
 			// get my actual children last...
 			for (auto& using_child : this->p_children) {
 				if (using_child.second) {
-					// if (evaluated->count(std::dynamic_pointer_cast<Scope>(using_child.second)) <= 0)
 					for (auto& using_namespace : ((Scope*)using_child.second.get())->GetAvailableNamespaces(evaluated, false)) {
-						out[using_namespace.first] = using_namespace.second;
+						if (auto ptr = using_namespace.second.lock()) out[using_namespace.first] = ptr; 
 					}
 				}
 			}
@@ -3269,37 +3347,14 @@ namespace scripting {
 			return out;
 		};
 
-		/* Get all namespaces that may be used to search for an object (e.g this scope, it's USING scopes, its PARENT scopes */
-		virtual std::set<std::shared_ptr<Scope>> GetScopesForObjectSearch(std::shared_ptr<std::set<std::shared_ptr<Scope>>> evaluated = std::make_shared<std::set<std::shared_ptr<Scope>>>(), bool requestedScope = true) const {
-			const std::string& myScopeName = GetName();
-
-			evaluated->emplace(this->p_self.lock());
-
-			// locally declared namespaces > using namespaces
-
-			std::set<std::shared_ptr<Scope>> out;
-
-			// get my parent first...
-			if (auto ptr = p_parent.lock()) {
-				if (evaluated->count(ptr) <= 0)
-					out = ptr->GetScopesForObjectSearch(evaluated, false);
-			}
-
-			// get my "using" children first... 
-			for (auto& usingScope : this->p_using) {
-				if (auto ptr = usingScope.second.lock()) {
-					for (auto x : ((Scope*)ptr.get())->GetScopesForObjectSearch(evaluated, false)) {
-						out.emplace(x);
-					}
-				}
-			}
-
-			// also remember to add myself (if I am a namespace)...
-			out.emplace(p_self.lock());
-			
+		/* Get all namespaces that may be used to search for an object (e.g this scope, it's USING scopes, its PARENT scopes), in order of ThisScope -> UsingScope -> ParentScope */
+		virtual std::vector<std::shared_ptr<Scope>> GetScopesForObjectSearch() const {
+			std::vector<std::shared_ptr<Scope>> out;
+			auto init = GetScopesForObjectSearchImpl();
+			out.reserve(init.size() + 1);
+			for (auto iter = init.rbegin(); iter != init.rend(); iter++) out.push_back(iter->second);
 			return out;
 		};
-
 
 	public:
 		// Attempts to find a namespace or class with the requested namespace name. 
@@ -3307,7 +3362,7 @@ namespace scripting {
 		// If not qualified, then it attempts to find it from the current node -> up.
 		// If the scope is not found, it MAY suggest the placement of the new namespace as a child of the provided "best_scope"
 		// For example, "::std::string::impl" (assuming impl does not exist) may return the node for "::std::string::")
-		virtual bool TryFindScope(std::shared_ptr<Scope>& best_scope, std::string const& Namespace/* = "string"*/) const {
+		virtual bool TryFindScope(std::shared_ptr<Scope>& best_scope, std::string const& Namespace, std::vector<std::string>* namespaceListToAppend = nullptr) const {
 			decltype(auto) available_scopes = GetAvailableNamespaces();
 
 			std::string scopeToFind = Namespace;
@@ -3321,8 +3376,13 @@ namespace scripting {
 			}
 
 			// failed to find it -- can we make a recommendation of where to put it?
-			for (; scopeToFind.rfind("::") != std::string::npos;) {
-				scopeToFind = scopeToFind.substr(0, scopeToFind.rfind("::"));
+			size_t pos;
+			for (pos = scopeToFind.rfind("::"); pos != std::string::npos;) {
+				std::string removedScopeName = scopeToFind.substr(pos + 2);
+				if (namespaceListToAppend)
+					namespaceListToAppend->push_back(removedScopeName);
+
+				scopeToFind = scopeToFind.substr(0, pos);
 
 				f = available_scopes.find(scopeToFind);
 				if (f != available_scopes.end()) {
@@ -3338,97 +3398,58 @@ namespace scripting {
 				if (best_scope) return false;
 			}
 
+			if (namespaceListToAppend)
+				namespaceListToAppend->push_back(scopeToFind);
+
 			// return THIS scope
 			best_scope = p_self.lock();
 			return false;
 		};
-
-
-
+		virtual std::shared_ptr<Scope> FindScope(std::string const& Namespace/* = "string"*/) const {
+			std::shared_ptr<Scope> foundScope;
+			if (this->TryFindScope(foundScope, Namespace)) {
+				return foundScope;
+			}
+			return nullptr;
+		};
 
 	protected:
-		virtual bool TryFindObjectImpl(std::string const& objectName, std::shared_ptr<fibers::Any>& out, std::set<std::string>& previouslyEvaluated) const {
-			auto qualifiedNamespace = this->GetQualifiedNamespace();
-			if (previouslyEvaluated.count(qualifiedNamespace) > 0) {
-				return false;
-			}
-			previouslyEvaluated.emplace(qualifiedNamespace);
+		virtual bool TryFindObjectImpl(std::string const& objectName, std::shared_ptr<fibers::Any>& out) const {
 
-			std::string scopeName;
-			std::string objectNameActual;
 			size_t lastOfColons{ 0 };
 			if ((lastOfColons = objectName.find_last_of("::")) == std::string::npos) {
-				scopeName = "";
-				objectNameActual = objectName;
+				// just a normal var name
 
-				std::shared_ptr<Scope> p = p_self.lock();
-				while (p) {
-					auto x = p_objects.at(objectNameActual);
-					if (x.has_value()){
-						out = x.value();
+				for (auto& scope : GetScopesForObjectSearch()) {
+					auto found = scope->p_objects.at(objectName);
+					if (found.has_value()) {
+						out = found.value();
 						return true;
 					}
-					else {
-						// test the using...
-						for (auto& usingParent : p->p_using) {
-							auto ptr2 = usingParent.second.lock();
-							if (ptr2 && std::dynamic_pointer_cast<Scope>(ptr2)->TryFindObjectImpl(objectName, out, previouslyEvaluated)) {
-								return true;
-							}
-						}
-						// test the parent...
-						p = p->p_parent.lock();
-					}
 				}
-
 				return false;
 			}
 			else {
-				objectNameActual = objectName.substr(lastOfColons + 1);
-				scopeName = objectName.substr(0, lastOfColons - 1);
+				std::string objectNameActual{ objectName.substr(lastOfColons + 1) };
+				std::string scopeName{ objectName.substr(0, lastOfColons - 1) };
 
 				std::shared_ptr<Scope> foundScope;
 				if (this->TryFindScope(foundScope, scopeName)) {
-					auto x = foundScope->p_objects.at(objectNameActual);
-					if (x.has_value()) {
-						out = x.value();
-						return true;
-					}
+					return foundScope->TryFindObjectImpl(objectNameActual, out);
 				}
 				return false;
 			}
 		};
 	
     public:
-		//// Attempts to find a namespace or class with the requested namespace name. 
-		//// If qualified (e.g. starts with "::") then it attempts to find it from the global root -> down. 
-		//// If not qualified, then it attempts to find it from the current node -> up.
-		//// If the scope is not found, it MAY suggest the placement of the new namespace as a child of the provided "best_scope"
-		//// For example, "::std::string::impl" (assuming impl does not exist) may return the node for "::std::string::")
-		//virtual bool TryFindScope(std::shared_ptr<Scope>& best_scope, std::string const& Namespace/* = "string"*/) const {
-		//	std::shared_ptr<Scope> toSearch = p_self.lock();
-		//	while (toSearch) {
-		//		if (toSearch->TryFindScopeImpl(best_scope, Namespace)) {
-		//			return true;
-		//		}
-		//		// check our using children to see if we can improve this match
-		//		for (auto& parent_namespace : toSearch->p_using) {
-		//			auto ptr = parent_namespace.second.lock();
-		//			if (ptr) {
-		//				if (std::dynamic_pointer_cast<Scope>(ptr)->TryFindScopeImpl(best_scope, Namespace)) {
-		//					return true;
-		//				}
-		//			}
-		//		}
-		//		toSearch = toSearch->p_parent.lock();
-		//	}
-		//	return false;
-		//};
-
-		virtual bool TryFindObject(std::string const& objectName /* x, y, etc. */, std::shared_ptr<fibers::Any>& out) const {
-			out = nullptr;
-			std::set<std::string> previouslyEvaluated;
-			return TryFindObjectImpl(objectName, out, previouslyEvaluated);
+		virtual std::shared_ptr<fibers::Any> FindObject(std::string const& objectName /* x, y, etc. */) const {
+			std::shared_ptr<fibers::Any> out{ nullptr };
+			if (TryFindObjectImpl(objectName, out)) {
+				return out;
+			}
+			else {
+				return nullptr;
+			}
 		};
 		virtual bool AddObject(std::string const& objectName, std::shared_ptr<fibers::Any> toAdd, bool overwriteIfExists = true) {
 			std::string scopeName;
@@ -3448,10 +3469,110 @@ namespace scripting {
 			}
 		};
 
-
 	};
+
+	class Functions {
+	private:
+		fibers::containers::Map<
+			std::string, // Function Name (e.g. string). 
+			std::shared_ptr<fibers::containers::Map<
+			    Param_Types, // Function parameters (e.g. {string, Any}, or {Any, Any, Any}). 
+			    Proxy_Function
+			>>
+		> m_functions;
+
+	public:
+		std::shared_ptr< fibers::containers::Map<Param_Types, Proxy_Function>> operator[](std::string const& key) {
+			while (true) {
+				auto optionalF = m_functions.at(key);
+				if (optionalF.has_value()) return optionalF.value();
+				m_functions.emplace(key, std::make_shared<fibers::containers::Map<Param_Types, Proxy_Function>>(), false);
+			}
+		};
+		std::shared_ptr< fibers::containers::Map<Param_Types, Proxy_Function>> operator[](std::string const& key) const {			
+			auto optionalF = m_functions.at(key);
+			if (optionalF.has_value()) return optionalF.value();
+			return nullptr;
+		};
+		std::shared_ptr< fibers::containers::Map<Param_Types, Proxy_Function>> operator()(std::string const& key) {
+			while (true) {
+				auto optionalF = m_functions.at(key);
+				if (optionalF.has_value()) return optionalF.value();
+				m_functions.emplace(key, std::make_shared<fibers::containers::Map<Param_Types, Proxy_Function>>(), false);
+			}
+		};
+		std::shared_ptr< fibers::containers::Map<Param_Types, Proxy_Function>> operator()(std::string const& key) const {
+			auto optionalF = m_functions.at(key);
+			if (optionalF.has_value()) return optionalF.value();
+			return nullptr;
+		};
+		std::shared_ptr< fibers::containers::Map<Param_Types, Proxy_Function>> at(std::string const& key) const {
+			return operator()(key);
+		};
+
+		Proxy_Function operator()(std::string const& key, Function_Params const& params) {
+			auto ptr = operator()(key);
+			while (ptr) {
+				auto optionalF = ptr->at_hash(params.hash());
+				if (optionalF.has_value()) return optionalF.value();
+				return nullptr;
+			}
+		};
+		Proxy_Function operator()(std::string const& key, Function_Params const& params) const {
+			auto ptr = operator()(key);
+			while (ptr) {
+				auto optionalF = ptr->at_hash(params.hash());
+				if (optionalF.has_value()) return optionalF.value();
+				return nullptr;
+			}
+		};
+		Proxy_Function at(std::string const& key, Function_Params const& params) const {
+			return operator()(key, params);
+		};
+
+		Proxy_Function operator()(std::string const& key, Param_Types const& params) {
+			auto ptr = operator()(key);
+			while (ptr) {
+				auto optionalF = ptr->at(params);
+				if (optionalF.has_value()) return optionalF.value();
+				return nullptr;
+			}
+		};
+		Proxy_Function operator()(std::string const& key, Param_Types const& params) const {
+			auto ptr = operator()(key);
+			while (ptr) {
+				auto optionalF = ptr->at(params);
+				if (optionalF.has_value()) return optionalF.value();
+				return nullptr;
+			}
+		};
+		Proxy_Function at(std::string const& key, Param_Types const& params) const {
+			return operator()(key, params);
+		};
+
+		bool emplace(std::string const& key, Proxy_Function func, bool replaceIfAlreadyExists = true) {
+			if (func) {
+				if (auto ptr = operator()(key)) {
+					return ptr->emplace(func->Arguments(), func, replaceIfAlreadyExists);
+				}
+			}
+			return false;
+		};
+		bool emplace(std::string const& key, Proxy_Function func, Param_Types const& params, bool replaceIfAlreadyExists = true) {
+			if (func) {
+				if (auto ptr = operator()(key)) {
+					return ptr->emplace(params, func, replaceIfAlreadyExists);
+				}
+			}
+			return false;
+		};
+	};
+
 	class Namespace : public Scope {
 	public:
+		friend class Scope;
+		friend class Class;
+
 		Namespace(std::weak_ptr<Scope> parent = std::weak_ptr<Scope>(), std::string const& Name = "")
 			: Scope(parent)
 			, p_Name{ Name }
@@ -3465,17 +3586,12 @@ namespace scripting {
 	public:
 		std::string
 			p_Name; // e.g. "", or "_NAMESPACE_NAME_", or "_CLASS_NAME_"
-		fibers::containers::Map<std::string, Type_Info>
+		fibers::containers::Map<std::string, std::weak_ptr<Type_Info>>
 			m_postfixes{}; // allowed postfixes (e.g. 10_ft, where "_ft" is the key) to their desired typename. Duplicate are not allowed.
-		fibers::containers::Map<std::string, Type_Info> 
+		fibers::containers::Map<std::string, std::weak_ptr<Type_Info>>
 			m_typenames{}; // Typenames, declared in (and available from) this namespace. Duplicates are not allowed.
-		fibers::containers::Map<
-			std::string, // Function Name (e.g. string). 
-			std::shared_ptr<fibers::containers::Map<
-			    Param_Types, // Function parameters (e.g. {string, Any}, or {Any, Any, Any}). 
-			    Proxy_Function
-			>>
-		> m_functions; // functions. (e.g. `==` or `to_string`). Duplicate names are expected. 
+		Functions
+			m_functions; // functions. (e.g. `==` or `to_string`). Duplicate names are expected. 
 
 	public:
 		virtual bool IsClass() const override { return false; };
@@ -3504,11 +3620,12 @@ namespace scripting {
 				if (auto ptr = usingScope.second.lock()) {
 					for (auto& using_child : ((Scope*)ptr.get())->p_children) {
 						if (using_child.second) {
-							// if (evaluated->count(std::dynamic_pointer_cast<Scope>(using_child.second)) <= 0)
-								for (auto& using_namespace : ((Scope*)using_child.second.get())->GetAvailableNamespaces(evaluated, false)) {
-									out[GetName() + "::" + using_namespace.first] = using_namespace.second;
-									if (requestedScope) out[using_namespace.first] = using_namespace.second;
+							for (auto& using_namespace : ((Scope*)using_child.second.get())->GetAvailableNamespaces(evaluated, false)) {
+								if (auto ptr = using_namespace.second.lock()) {
+									out[GetName() + "::" + using_namespace.first] = ptr;
+									if (requestedScope) out[using_namespace.first] = ptr;
 								}
+							}
 						}
 					}
 				}
@@ -3517,11 +3634,12 @@ namespace scripting {
 			// get my actual children last...
 			for (auto& using_child : this->p_children) {
 				if (using_child.second) {
-					// if (evaluated->count(std::dynamic_pointer_cast<Scope>(using_child.second)) <= 0)
-						for (auto& using_namespace : ((Scope*)using_child.second.get())->GetAvailableNamespaces(evaluated, false)) {
-							out[GetName() + "::" + using_namespace.first] = using_namespace.second;
-							if (requestedScope) out[using_namespace.first] = using_namespace.second;
+					for (auto& using_namespace : ((Scope*)using_child.second.get())->GetAvailableNamespaces(evaluated, false)) {
+						if (auto ptr = using_namespace.second.lock()) {
+							out[GetName() + "::" + using_namespace.first] = ptr;
+							if (requestedScope) out[using_namespace.first] = ptr;
 						}
+					}
 				}
 			}
 
@@ -3532,44 +3650,53 @@ namespace scripting {
 
 			return out;
 		};
-
-		/* Get all namespaces that may be used to search for an object (e.g this scope, it's USING scopes, its PARENT scopes */
-		virtual std::set<std::shared_ptr<Scope>> GetScopesForObjectSearch(std::shared_ptr<std::set<std::shared_ptr<Scope>>> evaluated = std::make_shared<std::set<std::shared_ptr<Scope>>>(), bool requestedScope = true) const override {
+	
+	protected:
+		/*
+		Get all namespaces that may be used to search for an object (e.g this scope, it's USING scopes, its PARENT scopes
+		Ordered from ParentScope -> UsingScope -> ThisScope
+		*/
+		virtual std::map<int, std::shared_ptr<Scope>> GetScopesForObjectSearchImpl(std::shared_ptr<std::set<std::shared_ptr<Scope>>> evaluated = std::make_shared<std::set<std::shared_ptr<Scope>>>(), bool requestedScope = true) const override {
 			const std::string& myScopeName = GetName();
 
 			evaluated->emplace(this->p_self.lock());
 
 			// locally declared namespaces > using namespaces
 
-			std::set<std::shared_ptr<Scope>> out;
+			std::map<int, std::shared_ptr<Scope>> out;
 
 			// get my parent first...
 			if (auto ptr = p_parent.lock()) {
 				if (evaluated->count(ptr) <= 0)
-					out = ptr->GetScopesForObjectSearch(evaluated, false);
+					out = ptr->GetScopesForObjectSearchImpl(evaluated, false);
 			}
 
 			// get my "using" children first... 
 			for (auto& usingScope : this->p_using) {
 				if (auto ptr = usingScope.second.lock()) {
-					for (auto x : ptr->GetScopesForObjectSearch(evaluated, false)) {
-						out.emplace(x);
+					for (auto x : ptr->GetScopesForObjectSearchImpl(evaluated, false)) {
+						out.emplace(out.size(), x.second);
 					}
 				}
 			}
 
 			// also remember to add myself (if I am a namespace)...
-			out.emplace(p_self.lock());
+			out.emplace(out.size(), p_self.lock());
 
 			return out;
 		};
-	};
+	
+    };
 	class Class : public Namespace {
 	public:
+		friend class Scope;
+		friend class Namespace;
+
 		Class(
 			std::weak_ptr<Scope> parent = std::weak_ptr<Scope>(), 
 			std::string const& Name = "",
-			std::weak_ptr<Class> inheritance = std::weak_ptr<Class>() // e.g. this class derives from another Class
+			std::weak_ptr<Class> inheritance = std::weak_ptr<Class>(), // e.g. this class derives from another Class
+			Type_Info type = user_type<void>()
 		)
 			: Namespace(parent, Name)
 			, DerivedFrom(inheritance)
@@ -3577,7 +3704,34 @@ namespace scripting {
 			if (auto ptr = DerivedFrom.lock()) {
 				this->AddUsing(ptr);
 			}
+
+			if (type == user_type<void>()) {
+				ClassType = std::make_shared<Type_Info>(GetQualifiedNamespace(), Name);
+			}
+			else {
+				ClassType = std::make_shared<Type_Info>(type);
+			}
 		};
+		Class(
+			std::weak_ptr<Scope> parent,
+			std::string const& Name,
+			Type_Info type
+		)
+			: Namespace(parent, Name)
+			, DerivedFrom(std::weak_ptr<Class>())
+		{
+			if (auto ptr = DerivedFrom.lock()) {
+				this->AddUsing(ptr);
+			}
+
+			if (type == user_type<void>()) {
+				ClassType = std::make_shared<Type_Info>(GetQualifiedNamespace(), Name);
+			}
+			else {
+				ClassType = std::make_shared<Type_Info>(type);
+			}
+		};
+
 		Class(Class const&) = default;
 		Class(Class&&) = default;
 		Class& operator=(Class const&) = default;
@@ -3586,6 +3740,7 @@ namespace scripting {
 
 	public:
 		std::weak_ptr<Class> DerivedFrom; // e.g. this class derives from another Class
+		std::shared_ptr<Type_Info> ClassType;
 
 	public:
 		virtual bool IsClass() const override { return true; };
@@ -3617,8 +3772,10 @@ namespace scripting {
 						if (using_child.second) {
 							// if (evaluated->count(std::dynamic_pointer_cast<Scope>(using_child.second)) <= 0)
 								for (auto& using_namespace : ((Scope*)using_child.second.get())->GetAvailableNamespaces(evaluated, false)) {
-									out[GetName() + "::" + using_namespace.first] = using_namespace.second;
-									if (requestedScope) out[using_namespace.first] = using_namespace.second;
+									if (auto ptr = using_namespace.second.lock()) {
+										out[GetName() + "::" + using_namespace.first] = ptr;
+										if (requestedScope) out[using_namespace.first] = ptr;
+									}
 								}
 						}
 					}
@@ -3631,8 +3788,10 @@ namespace scripting {
 					if (using_child.second) {
 						// if (evaluated->count(std::dynamic_pointer_cast<Scope>(using_child.second)) <= 0)
 							for (auto& using_namespace : ((Scope*)using_child.second.get())->GetAvailableNamespaces(evaluated, false)) {
-								out[GetName() + "::" + using_namespace.first] = using_namespace.second;
-								if (requestedScope) out[using_namespace.first] = using_namespace.second;
+								if (auto ptr = using_namespace.second.lock()) {
+									out[GetName() + "::" + using_namespace.first] = ptr;
+									if (requestedScope) out[using_namespace.first] = ptr;
+								}
 							}
 					}
 				}
@@ -3644,8 +3803,10 @@ namespace scripting {
 				if (using_child.second) {
 					// if (evaluated->count(std::dynamic_pointer_cast<Scope>(using_child.second)) <= 0)
 						for (auto& using_namespace : ((Scope*)using_child.second.get())->GetAvailableNamespaces(evaluated, false)) {
-							out[GetName() + "::" + using_namespace.first] = using_namespace.second;
-							if (requestedScope) out[using_namespace.first] = using_namespace.second;
+							if (auto ptr = using_namespace.second.lock()) {
+								out[GetName() + "::" + using_namespace.first] = ptr;
+								if (requestedScope) out[using_namespace.first] = ptr;
+							}
 						}
 				}
 			}
@@ -3657,28 +3818,32 @@ namespace scripting {
 
 			return out;
 		};
-
-		/* Get all namespaces that may be used to search for an object (e.g this scope, it's USING scopes, its PARENT scopes */
-		virtual std::set<std::shared_ptr<Scope>> GetScopesForObjectSearch(std::shared_ptr<std::set<std::shared_ptr<Scope>>> evaluated = std::make_shared<std::set<std::shared_ptr<Scope>>>(), bool requestedScope = true) const override {
+	
+	protected:
+		/*
+		Get all namespaces that may be used to search for an object (e.g this scope, it's USING scopes, its PARENT scopes
+		Ordered from ParentScope -> UsingScope -> ThisScope
+		*/		
+		virtual std::map<int, std::shared_ptr<Scope>> GetScopesForObjectSearchImpl(std::shared_ptr<std::set<std::shared_ptr<Scope>>> evaluated = std::make_shared<std::set<std::shared_ptr<Scope>>>(), bool requestedScope = true) const override {
 			const std::string& myScopeName = GetName();
 
 			evaluated->emplace(this->p_self.lock());
 
 			// locally declared namespaces > using namespaces
 
-			std::set<std::shared_ptr<Scope>> out;
+			std::map<int, std::shared_ptr<Scope>> out;
 
 			// get my parent first...
 			if (auto ptr = p_parent.lock()) {
 				if (evaluated->count(ptr) <= 0)
-					out = ptr->GetScopesForObjectSearch(evaluated, false);
+					out = ptr->GetScopesForObjectSearchImpl(evaluated, false);
 			}
 
 			// get my "using" children first... 
 			for (auto& usingScope : this->p_using) {
 				if (auto ptr = usingScope.second.lock()) {
-					for (auto& x : ptr->GetScopesForObjectSearch(evaluated, false)) {
-						out.emplace(x);
+					for (auto& x : ptr->GetScopesForObjectSearchImpl(evaluated, false)) {
+						out.emplace(out.size(), x.second);
 					}
 				}
 			}
@@ -3688,23 +3853,21 @@ namespace scripting {
 				for (auto& using_child : ((Scope*)ptr.get())->p_children) {
 					if (using_child.second) {
 						// if (evaluated->count(std::dynamic_pointer_cast<Scope>(using_child.second)) <= 0)
-						for (auto using_namespace : ((Scope*)using_child.second.get())->GetScopesForObjectSearch(evaluated, false)) {
-							out.emplace(using_namespace);
+						for (auto using_namespace : ((Scope*)using_child.second.get())->GetScopesForObjectSearchImpl(evaluated, false)) {
+							out.emplace(out.size(), using_namespace.second);
 						}
 					}
 				}
-				out.emplace(ptr);
+				out.emplace(out.size(), ptr);
 			}
 
 			// also remember to add myself (if I am a namespace)...
-			out.emplace(p_self.lock());
+			out.emplace(out.size(), p_self.lock());
 
 			return out;
 		};
+
 	};
-
-
-
 
 #if 0
 
@@ -3720,96 +3883,24 @@ namespace scripting {
 			if (!scope) return std::shared_ptr<Scope>{ nullptr };
 
 			std::shared_ptr<Scope> best_match{ nullptr };
-			if (scope->TryFindScope(best_match, Namespace)) {
+			std::vector<std::string> namespaces;
+			if (scope->TryFindScope(best_match, Namespace, &namespaces)) {
 				// we were successful!
 				return best_match;
 			}
 			else {
-				// we could not find it
-				if (best_match) {
-					auto recommendedPlacementNamespace = best_match->GetQualifiedNamespace();
-					if ((Namespace.find("::") == 0)) {
-						// qualified namespace -- we have to re-navigate the suggestion name and find the deviation
-						// e.g. 
-						// best_match == "::std::string::"
-						// Namespace == "::std::string::impl::"
-						// we need to figure out that the new namespace we create should be named "impl"
-
-						// OR
-
-						// e.g. 
-						// best_match == "::"
-						// Namespace == "::fibers::example::thing::"
-						// we need to figure out that the new namespace we create should be named "fibers" and we need to re-submit this function to loop again
-
-						// ::std::string::impl::test:: 
-						// w/in recommended placement of 
-						// ::std::string::
-						// ->
-						// impl
-
-						std::string namespace_to_add;
-						std::string namespace_without_overlap_and_leading_colons; {
-							std::string namespace_without_overlap; {
-								int i = 0;
-								for (; i < recommendedPlacementNamespace.size() && i < Namespace.size(); i++) {
-									if (recommendedPlacementNamespace[i] != Namespace[i]) {
-										break;
-									}
-								}
-								namespace_without_overlap = Namespace.substr(i);
-							}
-							auto namespace_without_overlap_and_leading_colons = namespace_without_overlap.substr(namespace_without_overlap.find_first_not_of("::"));
-							namespace_to_add = namespace_without_overlap_and_leading_colons.substr(0, namespace_without_overlap_and_leading_colons.find("::"));
-						}
-
-						auto childScope = std::make_shared<scripting::Namespace>(best_match, namespace_to_add);
-						best_match->AddChild(childScope);
-
-
-						if (namespace_without_overlap_and_leading_colons.length() > namespace_to_add.length() + 2) {
-							auto remaining_scope = namespace_without_overlap_and_leading_colons.substr(namespace_to_add.size() + 2);
-							//std::cout << remaining_scope << std::endl;
-							return FindOrMakeNamespace(std::dynamic_pointer_cast<Scope>(childScope), remaining_scope);
-						}
-						else {
-							return std::dynamic_pointer_cast<Scope>(childScope);
-						}
-					}
-					else {
-						// non-qualified namespace -- place it literally where it was suggested
-
-						// e.g. 
-						// best_match == "::std::string::"
-						// Namespace == "impl"
-						// we need to figure out that the new namespace we create should be named "impl"
-
-						// OR
-
-						// e.g. 
-						// best_match == "::"
-						// Namespace == "fibers::example::thing::"
-						// we need to figure out that the new namespace we create should be named "fibers" and we need to re-submit this function to loop again
-
-						auto namespace_without_leading_colons = Namespace.substr(Namespace.find_first_not_of("::"));
-						auto namespace_first_named = namespace_without_leading_colons.substr(0, namespace_without_leading_colons.find("::"));
-
-						auto childScope = std::make_shared<scripting::Namespace>(best_match, namespace_first_named);
-						best_match->AddChild(childScope);
-
-						if (namespace_without_leading_colons.length() > namespace_first_named.length() + 2) {
-							auto remaining_scope = namespace_without_leading_colons.substr(namespace_first_named.size() + 2);
-							return FindOrMakeNamespace(std::dynamic_pointer_cast<Scope>(childScope), remaining_scope);
-						}
-						else {
-							return std::dynamic_pointer_cast<Scope>(childScope);
-						}
-					}
+				std::reverse(namespaces.begin(), namespaces.end());
+				for (auto& Namespaces : namespaces) {
+					auto childScope = std::make_shared<scripting::Namespace>(best_match, Namespaces);
+					childScope->p_self = childScope;
+					best_match->AddChild(childScope);
+					return FindOrMakeNamespaceImpl(scope, Namespace);
 				}
-				else {
-					// and we don't know where to put it!
-					return std::shared_ptr<Scope>{ nullptr };
-				}
+
+				auto childScope = std::make_shared<scripting::Namespace>(best_match, Namespace);
+				childScope->p_self = childScope;
+				best_match->AddChild(childScope);
+				return FindOrMakeNamespaceImpl(scope, Namespace);
 			}
 		};
 	

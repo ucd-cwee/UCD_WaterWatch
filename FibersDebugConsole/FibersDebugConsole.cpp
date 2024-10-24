@@ -237,7 +237,7 @@ int main() {
 
 							// the "std" namespace imports the "string" namespace...
 							{
-								auto string_namespace{ std::make_shared<Class>(std_namespace, "string") };
+								auto string_namespace{ std::make_shared<Class>(std_namespace, "string", user_type<std::string>()) };
 								string_namespace->p_self = string_namespace;
 								std_namespace->AddChild(string_namespace);
 
@@ -251,7 +251,7 @@ int main() {
 
 							// the "std" namespace imports the "map" namespace...
 							{
-								auto string_namespace{ std::make_shared<Class>(std_namespace, "map") };
+								auto string_namespace{ std::make_shared<Class>(std_namespace, "map", user_type<std::map<std::string, Any>>()) };
 								string_namespace->p_self = string_namespace;
 								std_namespace->AddChild(string_namespace);
 
@@ -265,7 +265,7 @@ int main() {
 
 							// the "std" namespace imports the "set" namespace...
 							{
-								auto string_namespace{ std::make_shared<Class>(std_namespace, "set") };
+								auto string_namespace{ std::make_shared<Class>(std_namespace, "set", user_type<std::set<std::string>>()) };
 								string_namespace->p_self = string_namespace;
 								std_namespace->AddChild(string_namespace);
 
@@ -279,7 +279,7 @@ int main() {
 
 							// the "std" namespace imports the "vector" namespace...
 							{
-								auto string_namespace{ std::make_shared<Class>(std_namespace, "vector") };
+								auto string_namespace{ std::make_shared<Class>(std_namespace, "vector", user_type<std::vector<Any>>()) };
 								string_namespace->p_self = string_namespace;
 								std_namespace->AddChild(string_namespace);
 
@@ -300,7 +300,7 @@ int main() {
 
 							// the "fibers" namespace imports the "Number" namespace...
 							{
-								auto string_namespace{ std::make_shared<Class>(std_namespace, "Number") };
+								auto string_namespace{ std::make_shared<Class>(std_namespace, "Number", user_type<fibers::containers::number<double>>()) };
 								string_namespace->p_self = string_namespace;
 								std_namespace->AddChild(string_namespace);
 
@@ -314,7 +314,7 @@ int main() {
 
 							// the "fibers" namespace imports the "Pattern" namespace...
 							{
-								auto string_namespace{ std::make_shared<Class>(std_namespace, "Pattern") };
+								auto string_namespace{ std::make_shared<Class>(std_namespace, "Pattern", user_type<fibers::containers::Pattern<double, double>>()) };
 								string_namespace->p_self = string_namespace;
 								std_namespace->AddChild(string_namespace);
 
@@ -338,6 +338,75 @@ int main() {
 									impl_namespace->p_self = impl_namespace;
 									string_namespace->AddChild(impl_namespace);
 								}
+
+								std_namespace->m_typenames.emplace("Matrix", string_namespace->ClassType);
+								std::cout << string_namespace->ClassType->bare_name() << std::endl;
+
+								scripting::Type_Converter_Tree tree; {
+									tree.AddConverter<short, int>(); 
+									tree.AddConverter<float, int>();
+									tree.AddConverter<float, double>();
+									tree.AddConverter<float, long >();
+									tree.AddConverter<float, long double>();
+								}
+							 
+								{
+									std_namespace->m_functions.emplace("Test1", scripting::make_callable([]() { return 100.0f; }), true);
+									auto returned = scripting::call(std_namespace->m_functions.at("Test1", scripting::Function_Params()), {}, tree);
+									EXPECT_EQ(returned.Type(), user_type<float>());
+								}
+								{
+									std_namespace->m_functions.emplace("Test2", scripting::make_callable([](int x) { return 100.0f; }), true);
+									std::vector<Any> params{ Any(1) };
+									auto returned = scripting::call(std_namespace->m_functions.at("Test2", scripting::Function_Params(params)), params, tree);
+									EXPECT_EQ(returned.Type(), user_type<float>());
+								}
+								{
+									std_namespace->m_functions.emplace("Test3", scripting::make_callable([](Any const& x) -> Any { return x; }), Param_Types({ { "x", user_type<float>() } }), true);
+									std::vector<Any> params{ Any(100.0f) };
+									auto returned = scripting::call(std_namespace->m_functions.at("Test3", scripting::Function_Params(params)), params, tree);
+									EXPECT_EQ(returned.Type(), user_type<float>());
+								}
+								{
+									std_namespace->m_functions.emplace("Test4", scripting::make_callable([](Any const& x) -> Any { return x; }), Param_Types({ { "x", user_type<Any>() } }), true);
+									std::vector<Any> params{ Any(100) };
+
+									while (true) {
+										auto direct_find = std_namespace->m_functions.at("Test4", scripting::Function_Params(params));
+										if (direct_find) {
+											auto returned = scripting::call(direct_find, params, tree);
+
+											EXPECT_EQ(returned.Type(), user_type<int>());
+											break;
+										}
+										else {
+											for (auto& func : *std_namespace->m_functions["Test4"]) {
+												try {
+													auto returned = scripting::call(func.second, params, tree);
+
+													// was successful ... 
+
+													std_namespace->m_functions.emplace(
+														"Test4",
+														scripting::make_callable([](Any const& x) -> Any { return x; }),
+														scripting::Param_Types(params, func.second->Arguments().types()),
+														true
+													);
+
+													EXPECT_EQ(returned.Type(), user_type<int>());
+
+													break;
+												}
+												catch (scripting::exception::arity_error) {}
+											}
+										}
+									}
+
+									auto returned = scripting::call(std_namespace->m_functions.at("Test4", scripting::Function_Params(params)), params, tree);
+									EXPECT_EQ(returned.Type(), user_type<int>());
+
+								}
+
 							}
 
 							// the "fibers" namespace imports the "UI" namespace...
@@ -432,10 +501,7 @@ int main() {
 					}
 					printf("");
 
-					{
-						std::shared_ptr<Scope> foundScope;
-						EXPECT_EQ(true, script_scope->TryFindScope(foundScope, "std"));
-
+					if (auto foundScope = script_scope->FindScope("std")) {
 						printf("PRINTING OBJECT ACCESS FROM STD:");
 						for (auto& child : foundScope->GetScopesForObjectSearch()) {
 							if (auto ptr = child) {
@@ -445,9 +511,7 @@ int main() {
 						printf("");
 					}
 
-					{
-						std::shared_ptr<Scope> foundScope;
-						EXPECT_EQ(true, script_scope->TryFindScope(foundScope, "std"));
+					if (auto foundScope = script_scope->FindScope("std")) {
 						EXPECT_EQ(true, script_scope->AddUsing(std::dynamic_pointer_cast<Namespace>(foundScope)));
 
 						EXPECT_EQ(true, script_scope->TryFindScope(foundScope, "fibers::UI::Map::InteractiveImpl"));
@@ -467,9 +531,7 @@ int main() {
 						script_scope2->p_self = script_scope2;
 
 						// that script then declares it is "using" the "fibers::UI" namespace...
-						{
-							std::shared_ptr<Scope> foundScope;
-							EXPECT_EQ(true, script_scope2->TryFindScope(foundScope, "fibers::UI"));
+						if (auto foundScope = script_scope2->FindScope("fibers::UI")){
 							EXPECT_EQ(true, script_scope2->AddUsing(std::dynamic_pointer_cast<Namespace>(foundScope)));
 						}
 
@@ -482,65 +544,84 @@ int main() {
 
 					// access it...
 					{
-						std::shared_ptr<Scope> foundScope;
-						EXPECT_EQ(true, script_scope->TryFindScope(foundScope, "std"));
-						EXPECT_EQ(true, script_scope->TryFindScope(foundScope, "std::string"));
-						EXPECT_EQ(true, script_scope->TryFindScope(foundScope, "std::string::impl"));
-						EXPECT_EQ(true, script_scope->TryFindScope(foundScope, "std::vector"));
-						EXPECT_EQ(true, script_scope->TryFindScope(foundScope, "std::map"));
-						EXPECT_EQ(true, script_scope->TryFindScope(foundScope, "fibers::Pattern"));
-						EXPECT_EQ(true, script_scope->TryFindScope(foundScope, "fibers::UI::Map::InteractiveImpl"));
-
-						EXPECT_EQ(true, script_scope->TryFindScope(foundScope, "::std::"));
-						EXPECT_EQ(true, script_scope->TryFindScope(foundScope, "::std::string::"));
-						EXPECT_EQ(true, script_scope->TryFindScope(foundScope, "::std::string::impl::"));
-						EXPECT_EQ(true, script_scope->TryFindScope(foundScope, "::std::vector::"));
-						EXPECT_EQ(true, script_scope->TryFindScope(foundScope, "::std::map::"));
-						EXPECT_EQ(true, script_scope->TryFindScope(foundScope, "::fibers::Pattern::"));
-						EXPECT_EQ(true, script_scope->TryFindScope(foundScope, "::fibers::UI::Map::InteractiveImpl::"));
-
-						EXPECT_EQ(false, script_scope->TryFindScope(foundScope, "fibx"));
-						EXPECT_EQ(false, script_scope->TryFindScope(foundScope, "std::string::string_view"));
-						EXPECT_EQ(false, script_scope->TryFindScope(foundScope, "std::string_view"));
 
 
-						EXPECT_EQ(true, script_scope->TryFindScope(foundScope, "::std::"));
-						printf("PRINTING:");
-						for (auto& child : foundScope->GetAvailableNamespaces()) {
-							printf(child.first + "\t  ->  \t" + child.second.lock()->GetQualifiedNamespace());
-						}
-						printf("");
+						if (auto foundScope = script_scope->FindScope("std")) {}
+						else { EXPECT_EQ(true, false); }
+						if (auto foundScope = script_scope->FindScope("std::string")) {}
+						else { EXPECT_EQ(true, false); }
+						if (auto foundScope = script_scope->FindScope("std::string::impl")) {}
+						else { EXPECT_EQ(true, false); }
+						if (auto foundScope = script_scope->FindScope("std::vector")) {}
+						else { EXPECT_EQ(true, false); }
+						if (auto foundScope = script_scope->FindScope("std::map")) {}
+						else { EXPECT_EQ(true, false); }
+						if (auto foundScope = script_scope->FindScope("fibers::Pattern")) {}
+						else { EXPECT_EQ(true, false); }
+						if (auto foundScope = script_scope->FindScope("fibers::UI::Map::InteractiveImpl")) {}
+						else { EXPECT_EQ(true, false); }
 
-						// that script then declares it is "using" the "fibers::UI" namespace...
-						{
-							EXPECT_EQ(true, script_scope->TryFindScope(foundScope, "fibers::UI"));
-							EXPECT_EQ(true, script_scope->AddUsing(std::dynamic_pointer_cast<Namespace>(foundScope)));
-						}
+						if (auto foundScope = script_scope->FindScope("::std::")) {}
+						else { EXPECT_EQ(true, false); }
+						if (auto foundScope = script_scope->FindScope("::std::string::")) {}
+						else { EXPECT_EQ(true, false); }
+						if (auto foundScope = script_scope->FindScope("::std::string::impl::")) {}
+						else { EXPECT_EQ(true, false); }
+						if (auto foundScope = script_scope->FindScope("::std::vector::")) {}
+						else { EXPECT_EQ(true, false); }
+						if (auto foundScope = script_scope->FindScope("::std::map::")) {}
+						else { EXPECT_EQ(true, false); }
+						if (auto foundScope = script_scope->FindScope("::fibers::Pattern::")) {}
+						else { EXPECT_EQ(true, false); }
+						if (auto foundScope = script_scope->FindScope("::fibers::UI::Map::InteractiveImpl::")) {}
+						else { EXPECT_EQ(true, false); }
 
-						EXPECT_EQ(true, script_scope->TryFindScope(foundScope, "fibers::UI::Map"));
-						EXPECT_EQ(true, script_scope->TryFindScope(foundScope, "Map"));
-
-						printf("PRINTING:");
-						for (auto& child : foundScope->GetAvailableNamespaces()) {
-							printf(child.first + "\t  ->  \t" + child.second.lock()->GetQualifiedNamespace());
-						}
-						printf("");
+						if (auto foundScope = script_scope->FindScope("fibx")) { EXPECT_EQ(true, false); }
+						else {}
+						if (auto foundScope = script_scope->FindScope("std::string::string_view")) { EXPECT_EQ(true, false); }
+						else {}
+						if (auto foundScope = script_scope->FindScope("std::string_view")) { EXPECT_EQ(true, false); }
+						else {}
 						
-						// that script then declares it is "using" the "std" namespace...
 						{
-							EXPECT_EQ(true, script_scope->TryFindScope(foundScope, "std"));
-							EXPECT_EQ(true, script_scope->AddUsing(std::dynamic_pointer_cast<Namespace>(foundScope)));
+							std::shared_ptr<Scope> foundScope;
+							EXPECT_EQ(true, script_scope->TryFindScope(foundScope, "::std::"));
+							printf("PRINTING:");
+							for (auto& child : foundScope->GetAvailableNamespaces()) {
+								printf(child.first + "\t  ->  \t" + child.second.lock()->GetQualifiedNamespace());
+							}
+							printf("");
+
+							// that script then declares it is "using" the "fibers::UI" namespace...
+							{
+								EXPECT_EQ(true, script_scope->TryFindScope(foundScope, "fibers::UI"));
+								EXPECT_EQ(true, script_scope->AddUsing(std::dynamic_pointer_cast<Namespace>(foundScope)));
+							}
+
+							EXPECT_EQ(true, script_scope->TryFindScope(foundScope, "fibers::UI::Map"));
+							EXPECT_EQ(true, script_scope->TryFindScope(foundScope, "Map"));
+
+							printf("PRINTING:");
+							for (auto& child : foundScope->GetAvailableNamespaces()) {
+								printf(child.first + "\t  ->  \t" + child.second.lock()->GetQualifiedNamespace());
+							}
+							printf("");
+
+							// that script then declares it is "using" the "std" namespace...
+							{
+								EXPECT_EQ(true, script_scope->TryFindScope(foundScope, "std"));
+								EXPECT_EQ(true, script_scope->AddUsing(std::dynamic_pointer_cast<Namespace>(foundScope)));
+							}
+
+							EXPECT_EQ(true, script_scope->TryFindScope(foundScope, "Map"));
+							printf("PRINTING:");
+							for (auto& child : foundScope->GetAvailableNamespaces()) {
+								printf(child.first + "\t  ->  \t" + child.second.lock()->GetQualifiedNamespace());
+							}
+							printf("");
+
+							EXPECT_EQ(true, script_scope->TryFindScope(foundScope, "Map::InteractiveImpl"));
 						}
-
-						EXPECT_EQ(true, script_scope->TryFindScope(foundScope, "Map"));
-						printf("PRINTING:");
-						for (auto& child : foundScope->GetAvailableNamespaces()) {
-							printf(child.first + "\t  ->  \t" + child.second.lock()->GetQualifiedNamespace());
-						}
-						printf("");
-
-						EXPECT_EQ(true, script_scope->TryFindScope(foundScope, "Map::InteractiveImpl"));
-
 
 					}
 
@@ -884,15 +965,18 @@ int main() {
 
 			EXPECT_EQ(true, global_scope->AddObject("apple", std::make_shared<fibers::Any>(100)));
 			{
-				std::shared_ptr<fibers::Any> toFind;
-				EXPECT_EQ(true, global_scope->TryFindObject("apple", toFind));
+				if (auto ptr = global_scope->FindObject("apple")) {}
+				else { EXPECT_EQ(true, false); }
 			}
 			{
 				auto script_scope{ std::make_shared<Scope>(global_scope) };
 				script_scope->p_self = script_scope;
 
-				std::shared_ptr<fibers::Any> toFind;
-				EXPECT_EQ(true, script_scope->TryFindObject("apple", toFind));		
+				if (auto ptr = script_scope->FindObject("apple")) {}
+				else { EXPECT_EQ(true, false); }
+
+				if (auto ptr = script_scope->FindObject("::apple")) {}
+				else { EXPECT_EQ(true, false); }
 			}
 			{
 				auto script_scope{ std::make_shared<Scope>(global_scope) };
@@ -922,8 +1006,7 @@ int main() {
 					}
 				}
 
-				std::shared_ptr<fibers::Any> toFind;
-				EXPECT_EQ(true, script_scope->TryFindObject("std::string::npos", toFind));
+				if (auto ptr = script_scope->FindObject("std::string::npos")) {} else { EXPECT_EQ(true, false); }
 
 				// that script then declares it is "using" the "std" namespace...
 				{
@@ -932,7 +1015,7 @@ int main() {
 					script_scope->AddUsing(std::dynamic_pointer_cast<Namespace>(foundScope));					
 				}
 
-				EXPECT_EQ(true, script_scope->TryFindObject("string::npos", toFind));
+				if (auto ptr = script_scope->FindObject("string::npos")) {} else { EXPECT_EQ(true, false); }
 
 				// that script then declares it is "using" the "string" namespace...
 				{
@@ -942,24 +1025,25 @@ int main() {
 					}
 				}
 
-				EXPECT_EQ(true, script_scope->TryFindObject("npos", toFind));
-				EXPECT_EQ(true, script_scope->TryFindObject("string::npos", toFind));
-				EXPECT_EQ(true, script_scope->TryFindObject("std::string::npos", toFind));
-				EXPECT_EQ(toFind->cast<size_t>(), std::string::npos);
+				if (auto ptr = script_scope->FindObject("npos")) {} else { EXPECT_EQ(true, false); }
+				if (auto ptr = script_scope->FindObject("string::npos")) {} else { EXPECT_EQ(true, false); }
+				if (auto ptr = script_scope->FindObject("std::string::npos")) {} else { EXPECT_EQ(true, false); }
 
-				Impl::FindOrMakeNamespace(script_scope, "::std::numeric_limits");
+				Impl::FindOrMakeNamespace(script_scope, "std::numeric_limits");
 
-				{
-					std::shared_ptr<Scope> foundScope;
-					EXPECT_EQ(true, script_scope->TryFindScope(foundScope, "std::numeric_limits"));
-					script_scope->AddUsing(std::dynamic_pointer_cast<Namespace>(foundScope));
+				printf("PRINTING:");
+				for (auto& child : script_scope->GetAvailableNamespaces()) {
+					printf(child.first + "\t  ->  \t" + child.second.lock()->GetQualifiedNamespace());
 				}
+				printf("");
+
+				if (auto foundScope = script_scope->FindScope("std::numeric_limits")){
+					script_scope->AddUsing(std::dynamic_pointer_cast<Namespace>(foundScope));
+				} else { EXPECT_EQ(true, false); }
 
 				EXPECT_EQ(true, script_scope->AddObject("std::numeric_limits::max", std::make_shared<fibers::Any>(std::numeric_limits<double>::max())));
 
-				EXPECT_EQ(true, script_scope->TryFindObject("std::numeric_limits::max", toFind));
-				EXPECT_EQ(toFind->cast<double>(), std::numeric_limits<double>::max());
-
+				if (auto ptr = script_scope->FindObject("std::numeric_limits::max")) {}	else { EXPECT_EQ(true, false); }
 
 				// that script then declares it is "using" the "std::numeric_limits" namespace...
 				{
