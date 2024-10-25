@@ -1552,9 +1552,16 @@ namespace fibers {
 			return Type() == TypeOf<VType>();
 		};
 		bool IsTypeOf(Type_Info const& targetType) const noexcept {
+			if (auto p = Type().lock()) {
+				return targetType == *p;
+			}
+			else {
+				return targetType == user_type<void>();
+			}
+		};
+		bool IsTypeOf(std::weak_ptr<Type_Info> const& targetType) const noexcept {
 			return Type() == targetType;
 		};
-		
 #pragma region Boolean Operators
 	public:
 		explicit operator bool() const { return (bool)container; };

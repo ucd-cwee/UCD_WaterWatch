@@ -149,12 +149,12 @@ int main() {
 		if (1) {
 			scripting::ScriptingState objs;
 
-			EXPECT_EQ(objs.AddType("int", fibers::user_type<int>()), true);
-			EXPECT_EQ(objs.AddType("float", fibers::user_type<float>()), true);
-			EXPECT_EQ(objs.AddType("double", fibers::user_type<double>()), true);
-			EXPECT_EQ(objs.AddType("std::string", fibers::user_type<std::string>()), true);
-			EXPECT_EQ(objs.GetType("int").value(), fibers::user_type<int>());
-			EXPECT_EQ(objs.GetType("float").value(), fibers::user_type<float>());
+			EXPECT_EQ(objs.AddType("int", scripting::user_type<int>()), true);
+			EXPECT_EQ(objs.AddType("float", scripting::user_type<float>()), true);
+			EXPECT_EQ(objs.AddType("double", scripting::user_type<double>()), true);
+			EXPECT_EQ(objs.AddType("std::string", scripting::user_type<std::string>()), true);
+			EXPECT_EQ(objs.GetType("int").value(), scripting::user_type<int>());
+			EXPECT_EQ(objs.GetType("float").value(), scripting::user_type<float>());
 			for (auto& obj : objs.GetTypes()) {}
 
 			objs.AddObj("x", 100);
@@ -215,6 +215,158 @@ int main() {
 
 		}
 		
+		// MODERN TEST
+		if (1) {
+			using namespace scripting;
+			auto printf = [](auto x) { std::cout << x << std::endl; };
+
+			// Import Collection...
+			fibers::containers::Map<std::string, std::shared_ptr<Namespace>> imports;
+
+			// Global Namespace...
+			auto global_scope{ std::make_shared<Namespace>() }; // global should always be a Namespace
+			global_scope->p_self = global_scope;
+
+			{
+				{
+					// DEMONSTRATES HOW TO MAKE A INDEPENDANT IMPORT (e.g. from github), store it in its own, independant scope (global_scope2), and "add it" to another running scope without changing it.
+
+					auto global_scope2{ std::make_shared<Namespace>() }; // global should always be a Namespace
+					global_scope2->p_self = global_scope2;
+
+					// Add Global Functions...
+					{
+						global_scope2->m_functions.emplace("Type", scripting::Param_Types({ { std::string("obj"), scripting::user_type<Any>() } }), scripting::make_callable(
+							[](Any const& x) -> fibers::Type_Info {
+								if (auto p = x.Type().lock())
+									return *p;
+								else
+									return fibers::user_type<void>();
+							}
+						), true);
+					}
+
+					// Create STD library...
+					{
+						auto std_namespace{ std::make_shared<Namespace>(global_scope2, "std") };
+						std_namespace->p_self = std_namespace;
+						global_scope2->AddChild(std_namespace);
+
+						// the "std" namespace imports the "string" namespace...
+						{
+							auto string_namespace{ std::make_shared<Class>(fibers::user_type<std::string>(), std_namespace, "string") };
+							string_namespace->p_self = string_namespace;
+							std_namespace->AddChild(string_namespace);
+
+							// ... which imports the "impl" namespace...								
+							{
+								auto impl_namespace{ std::make_shared<Namespace>(string_namespace, "impl") };
+								impl_namespace->p_self = impl_namespace;
+								string_namespace->AddChild(impl_namespace);
+							}
+
+							// ... which has a couple constructor functions ... 
+							string_namespace->m_functions.emplace("string", scripting::make_callable([](std::string const& x) -> std::string { return x; }), scripting::Param_Types({ { std::string("parent"), string_namespace->ClassType } }));
+							string_namespace->m_functions.emplace("string", scripting::make_callable([](Any const& x) -> std::string {  return x.TypeName(); }), scripting::Param_Types({ { std::string("parent"), scripting::user_type<float>() } }));
+							string_namespace->m_functions.emplace("string", scripting::make_callable([](Any const& x) -> std::string {  return x.TypeName(); }), scripting::Param_Types({ { std::string("parent"), scripting::user_type<int>() } }));
+							string_namespace->m_functions.emplace("string", scripting::make_callable([](Any const& x) -> std::string {  return x.TypeName(); }), scripting::Param_Types({ { std::string("parent"), scripting::user_type<double>() } }));						
+
+							// ... and has "to_string" functions...
+							std_namespace->m_functions.emplace("to_string", scripting::Param_Types({ { "o", string_namespace->ClassType } }), scripting::make_callable(
+								[](std::string const& x) -> std::string { return x; }
+							));
+							std_namespace->m_functions.emplace("to_string", scripting::Param_Types({ { "o", user_type<int>() } }), scripting::make_callable(
+								[](int const& x) -> std::string { return std::to_string(x); }
+							));
+							std_namespace->m_functions.emplace("to_string", scripting::Param_Types({ { "o", user_type<float>() } }), scripting::make_callable(
+								[](float const& x) -> std::string { return std::to_string(x); }
+							));
+							std_namespace->m_functions.emplace("to_string", scripting::Param_Types({ { "o", user_type<double>() } }), scripting::make_callable(
+								[](double const& x) -> std::string { return std::to_string(x); }
+							));
+							std_namespace->m_functions.emplace("to_string", scripting::Param_Types({ { "o", user_type<Any>() } }), scripting::make_callable(
+								[](Any const& x) -> std::string { return Units::printf("`%s`", x.TypeName()); }
+							));
+						}
+
+						// the "std" namespace imports the "map" namespace...
+						{
+							auto string_namespace{ std::make_shared<Class>(fibers::user_type<std::map<std::string, fibers::Any>>(), std_namespace, "map") };
+							string_namespace->p_self = string_namespace;
+							std_namespace->AddChild(string_namespace);
+
+							// ... which imports the "impl" namespace...
+							{
+								auto impl_namespace{ std::make_shared<Namespace>(string_namespace, "impl") };
+								impl_namespace->p_self = impl_namespace;
+								string_namespace->AddChild(impl_namespace);
+							}
+						}
+
+						// the "std" namespace imports the "set" namespace...
+						{
+							auto string_namespace{ std::make_shared<Class>(fibers::user_type<std::set<std::string>>(), std_namespace, "set") };
+							string_namespace->p_self = string_namespace;
+							std_namespace->AddChild(string_namespace);
+
+							// ... which imports the "impl" namespace...
+							{
+								auto impl_namespace{ std::make_shared<Namespace>(string_namespace, "impl") };
+								impl_namespace->p_self = impl_namespace;
+								string_namespace->AddChild(impl_namespace);
+							}
+						}
+
+						// the "std" namespace imports the "vector" namespace...
+						{
+							auto string_namespace{ std::make_shared<Class>(fibers::user_type<std::vector<fibers::Any>>(), std_namespace, "vector") };
+							string_namespace->p_self = string_namespace;
+							std_namespace->AddChild(string_namespace);
+
+							// ... which imports the "impl" namespace...
+							{
+								auto impl_namespace{ std::make_shared<Namespace>(string_namespace, "impl") };
+								impl_namespace->p_self = impl_namespace;
+								string_namespace->AddChild(impl_namespace);
+							}
+						}
+					}
+
+					// add it to our script...
+					imports.emplace("github//scriptLanguage.std", global_scope2); // the import map guarrantees lifetime...
+					global_scope->AddUsing(global_scope2); // ... while "using" allows our global to share their global's custom namespaces and objects
+				}
+
+				// make sure it works...
+				{
+					Type_Converter_Tree tree;
+					{
+						std::vector<Any> params = { Any(100) };
+						if (auto ptr = global_scope->FindFunction("std::to_string", params, tree)) {
+							auto returned = call(ptr, params, tree);
+							EXPECT_EQ(true, returned.IsTypeOf<std::string>());
+							printf(returned.cast<std::string>());
+						}
+					}
+					{
+						std::vector<Any> params = { Any(std::string("TEST")) };
+						if (auto ptr = global_scope->FindFunction("std::to_string", params, tree)) {
+							auto returned = call(ptr, params, tree);
+							EXPECT_EQ(true, returned.IsTypeOf<std::string>());
+							printf(returned.cast<std::string>());
+						}
+					}
+					{
+						if (auto ptr = global_scope->FindScope("std::string::impl")) {
+							global_scope->Print();
+						}
+					}
+				}
+			}
+		}
+
+
+
 		if (1) {
 			using namespace scripting;
 			auto printf = [](auto x) { std::cout << x << std::endl; };
@@ -252,10 +404,10 @@ int main() {
 									m_typeConverters;
 
 								// ... which has a couple constructor functions ... 
-								string_namespace->m_functions.emplace("string", scripting::make_callable([](std::string const& x) -> std::string { return x; }), scripting::Param_Types({ { std::string("parent"), *string_namespace->ClassType } }));
-								string_namespace->m_functions.emplace("string", scripting::make_callable([](Any const& x) -> std::string {  return x.TypeName(); }), scripting::Param_Types({ { std::string("parent"), fibers::user_type<float>() } }));
-								string_namespace->m_functions.emplace("string", scripting::make_callable([](Any const& x) -> std::string {  return x.TypeName(); }), scripting::Param_Types({ { std::string("parent"), fibers::user_type<int>() } }));
-								string_namespace->m_functions.emplace("string", scripting::make_callable([](Any const& x) -> std::string {  return x.TypeName(); }), scripting::Param_Types({ { std::string("parent"), fibers::user_type<double>() } }));
+								string_namespace->m_functions.emplace("string", scripting::make_callable([](std::string const& x) -> std::string { return x; }), scripting::Param_Types({ { std::string("parent"), string_namespace->ClassType } }));
+								string_namespace->m_functions.emplace("string", scripting::make_callable([](Any const& x) -> std::string {  return x.TypeName(); }), scripting::Param_Types({ { std::string("parent"), scripting::user_type<float>() } }));
+								string_namespace->m_functions.emplace("string", scripting::make_callable([](Any const& x) -> std::string {  return x.TypeName(); }), scripting::Param_Types({ { std::string("parent"), scripting::user_type<int>() } }));
+								string_namespace->m_functions.emplace("string", scripting::make_callable([](Any const& x) -> std::string {  return x.TypeName(); }), scripting::Param_Types({ { std::string("parent"), scripting::user_type<double>() } }));
 
 								{
 									std::vector<fibers::Any> params = { fibers::Any(std::string("TEST")) };
@@ -291,12 +443,12 @@ int main() {
 
 								{
 									auto functionName = "Type";
-									global_scope->m_functions.emplace(functionName, scripting::Param_Types({ { std::string("obj"), fibers::user_type<Any>() } }), scripting::make_callable(
-										[](Any const& x) -> Type_Info { 
+									global_scope->m_functions.emplace(functionName, scripting::Param_Types({ { std::string("obj"), scripting::user_type<Any>() } }), scripting::make_callable(
+										[](Any const& x) -> fibers::Type_Info { 
 											if (auto p = x.Type().lock())
 												return *p;
 											else
-												return scripting::user_type<void>();
+												return fibers::user_type<void>();
 										}
 									), true);
 
@@ -304,8 +456,8 @@ int main() {
 										std::vector<fibers::Any> params = { fibers::Any(100.0f) };
 										if (auto ptr = string_namespace->FindFunction(functionName, params, m_typeConverters)) {
 											auto returned = scripting::call(ptr, params, m_typeConverters);
-											EXPECT_EQ(returned.IsTypeOf<Type_Info>(), true);
-											std::cout << returned.cast<Type_Info>().name() << std::endl;
+											EXPECT_EQ(returned.IsTypeOf<fibers::Type_Info>(), true);
+											std::cout << returned.cast<fibers::Type_Info>().name() << std::endl;
 										}
 									}
 									
@@ -313,8 +465,8 @@ int main() {
 										std::vector<fibers::Any> params = { fibers::Any(100.0) };
 										if (auto ptr = string_namespace->FindFunction(functionName, params, m_typeConverters)) {
 											auto returned = scripting::call(ptr, params, m_typeConverters);
-											EXPECT_EQ(returned.IsTypeOf<Type_Info>(), true);
-											std::cout << returned.cast<Type_Info>().name() << std::endl;
+											EXPECT_EQ(returned.IsTypeOf<fibers::Type_Info>(), true);
+											std::cout << returned.cast<fibers::Type_Info>().name() << std::endl;
 										}
 									}
 
@@ -322,8 +474,8 @@ int main() {
 										std::vector<fibers::Any> params = { fibers::Any(100) };
 										if (auto ptr = string_namespace->FindFunction(functionName, params, m_typeConverters)) {
 											auto returned = scripting::call(ptr, params, m_typeConverters);
-											EXPECT_EQ(returned.IsTypeOf<Type_Info>(), true);
-											std::cout << returned.cast<Type_Info>().name() << std::endl;
+											EXPECT_EQ(returned.IsTypeOf<fibers::Type_Info>(), true);
+											std::cout << returned.cast<fibers::Type_Info>().name() << std::endl;
 										}
 									}
 
@@ -331,8 +483,8 @@ int main() {
 										std::vector<fibers::Any> params = { fibers::Any(std::string("TEST"))};
 										if (auto ptr = string_namespace->FindFunction(functionName, params, m_typeConverters)) {
 											auto returned = scripting::call(ptr, params, m_typeConverters);
-											EXPECT_EQ(returned.IsTypeOf<Type_Info>(), true);
-											std::cout << returned.cast<Type_Info>().name() << std::endl;
+											EXPECT_EQ(returned.IsTypeOf<fibers::Type_Info>(), true);
+											std::cout << returned.cast<fibers::Type_Info>().name() << std::endl;
 										}
 									}
 
@@ -345,27 +497,27 @@ int main() {
 
 								auto functionName = "to_string";
 								// variadic template, which takes any type. Up to the user to handle the various types, however. Will cache the result for faster retrieval.  
-								std_namespace->m_functions.emplace(functionName, scripting::Param_Types({ { std::string("any"), fibers::user_type<Any>() } }), scripting::make_callable(
+								std_namespace->m_functions.emplace(functionName, scripting::Param_Types({ { std::string("any"), scripting::user_type<Any>() } }), scripting::make_callable(
 									[](Any const& x) -> std::string {
 										if (auto p = x.Type().lock()) {
 											return std::string("Retrieved type of: ") + p->name();
 										}
 										else {
-											return std::string("Retrieved type of: ") + user_type<void>().name();
+											return std::string("Retrieved type of: ") + fibers::user_type<void>().name();
 										}
 									}
 								), true);
 								// specialized functions, for when the parameters exactly match. 
-								std_namespace->m_functions.emplace(functionName, scripting::Param_Types({ { std::string("i"), fibers::user_type<int>() } }), scripting::make_callable(
+								std_namespace->m_functions.emplace(functionName, scripting::Param_Types({ { std::string("i"), scripting::user_type<int>() } }), scripting::make_callable(
 									[](int const& x) -> std::string { return std::to_string(x); }
 								), true);
-								std_namespace->m_functions.emplace(functionName, scripting::Param_Types({ { std::string("i"), fibers::user_type<float>() } }), scripting::make_callable(
+								std_namespace->m_functions.emplace(functionName, scripting::Param_Types({ { std::string("i"), scripting::user_type<float>() } }), scripting::make_callable(
 									[](float const& x) -> std::string { return std::to_string(x); }
 								), true);
-								std_namespace->m_functions.emplace(functionName, scripting::Param_Types({ { std::string("i"), fibers::user_type<std::string>() } }), scripting::make_callable(
+								std_namespace->m_functions.emplace(functionName, scripting::Param_Types({ { std::string("i"), scripting::user_type<std::string>() } }), scripting::make_callable(
 									[](std::string const& x) -> std::string { return x; }
 								), true);
-								std_namespace->m_functions.emplace(functionName, scripting::Param_Types({ { std::string("i"), fibers::user_type<void>() } }), scripting::make_callable(
+								std_namespace->m_functions.emplace(functionName, scripting::Param_Types({ { std::string("i"), scripting::user_type<void>() } }), scripting::make_callable(
 									[](Any const& x) -> std::string { return "NULL"; }
 								), true);
 
@@ -561,12 +713,12 @@ int main() {
 
 								// ... which has a couple constructor functions ... 
 								string_namespace->m_functions.emplace("0_param", scripting::make_callable([]() -> std::string {  return "0 params"; }), scripting::Param_Types());
-								string_namespace->m_functions.emplace("1_param", scripting::Param_Types({ { std::string("a"), *string_namespace->ClassType } }), 
+								string_namespace->m_functions.emplace("1_param", scripting::Param_Types({ { std::string("a"), string_namespace->ClassType } }), 
 									scripting::make_callable([](Any const& a) -> std::string {
 										return a.TypeName();
 									})
 								);
-								string_namespace->m_functions.emplace("+", scripting::Param_Types({ { std::string("a"), *string_namespace->ClassType }, { std::string("b"), *string_namespace->ClassType } }), scripting::make_callable([](Any const& a, Any const& b) -> std::string {
+								string_namespace->m_functions.emplace("+", scripting::Param_Types({ { std::string("a"), string_namespace->ClassType }, { std::string("b"), string_namespace->ClassType } }), scripting::make_callable([](Any const& a, Any const& b) -> std::string {
 									return std::string(a.TypeName()) + " + " + b.TypeName();
 									}));
 
@@ -604,9 +756,8 @@ int main() {
 									std::vector<fibers::Any> params = { fibers::Any(fibers::DynamicObject()), fibers::Any(fibers::DynamicObject()) };
 									auto function = string_namespace->FindFunction("+", params, m_typeConverters);
 									if (function) {
-										auto returned = scripting::call(function, params, m_typeConverters);
-										EXPECT_EQ(returned.IsTypeOf<std::string>(), true);
-										std::cout << returned.cast<std::string>() << std::endl;
+										// SHOULD NOT RETURN A VALID FUNCTION
+										EXPECT_EQ(false, true);
 									}
 								}
 							}
@@ -2261,7 +2412,7 @@ int main() {
 
 				if (1) {
 					std::vector<fibers::Any> inputs{ fibers::Any(10) };
-					scripting::Param_Types function_required_params({ {"int", fibers::user_type<int>() } });
+					scripting::Param_Types function_required_params({ {"int", scripting::user_type<int>() } });
 					auto converted_inputs = function_required_params.convert(scripting::Function_Params{ inputs }, tree);
 
 					for (int i = 0; i < function_required_params.size(); i++) {
@@ -2270,7 +2421,7 @@ int main() {
 				}
 				if (1) {
 					std::vector<fibers::Any> inputs{ fibers::Any(10.0f), fibers::Any(10.0) };
-					scripting::Param_Types function_required_params({ {"int1", fibers::user_type<int>() }, {"int2", fibers::user_type<int>() } });
+					scripting::Param_Types function_required_params({ {"int1", scripting::user_type<int>() }, {"int2", scripting::user_type<int>() } });
 					auto converted_inputs = function_required_params.convert(scripting::Function_Params{ inputs }, tree);
 
 					for (int i = 0; i < function_required_params.size(); i++) {
@@ -2279,15 +2430,15 @@ int main() {
 				}
 				if (1) {
 					std::vector<fibers::Any> inputs{ fibers::Any(10.0f), fibers::Any(10.0), fibers::Any(10) };
-					scripting::Param_Types function_required_params({ {"std::string_view", fibers::user_type<std::string_view>() }, {"std::string_view", fibers::user_type<std::string_view>() }, {"std::string_view", fibers::user_type<std::string_view>() } });
+					scripting::Param_Types function_required_params({ {"std::string_view", scripting::user_type<std::string_view>() }, {"std::string_view", scripting::user_type<std::string_view>() }, {"std::string_view", scripting::user_type<std::string_view>() } });
 					auto converted_inputs = function_required_params.convert(scripting::Function_Params{ inputs }, tree);
 				}
 
 				if (1) {
-					scripting::Param_Types function1({ {"double", fibers::user_type<double>() }, {"double", fibers::user_type<double>() }, {"double", fibers::user_type<double>() } });
-					scripting::Param_Types function2({ {"float", fibers::user_type<float>() }, {"float", fibers::user_type<float>() }, {"float", fibers::user_type<float>() } });
-					scripting::Param_Types function3({ {"double", fibers::user_type<double>() }, {"int", fibers::user_type<int>() }, {"float", fibers::user_type<float>() } });
-					scripting::Param_Types function4({ {"seconds", fibers::user_type<Units::second>() }, {"seconds", fibers::user_type<Units::second>() }, {"seconds", fibers::user_type<Units::second>() } });
+					scripting::Param_Types function1({ {"double", scripting::user_type<double>() }, {"double", scripting::user_type<double>() }, {"double", scripting::user_type<double>() } });
+					scripting::Param_Types function2({ {"float", scripting::user_type<float>() }, {"float", scripting::user_type<float>() }, {"float", scripting::user_type<float>() } });
+					scripting::Param_Types function3({ {"double", scripting::user_type<double>() }, {"int", scripting::user_type<int>() }, {"float", scripting::user_type<float>() } });
+					scripting::Param_Types function4({ {"seconds", scripting::user_type<Units::second>() }, {"seconds", scripting::user_type<Units::second>() }, {"seconds", scripting::user_type<Units::second>() } });
 
 					std::vector<fibers::Any> inputs{ fibers::Any(10ull), fibers::Any(10ull), fibers::Any(10ull) };
 
