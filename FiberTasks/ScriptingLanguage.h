@@ -608,6 +608,9 @@ namespace scripting {
 			if (From == To) {
 				return true;
 			}
+			else if (To == user_type<Any>()) {
+				return true;
+			}
 			else {
 				if (nodes.count(From) > 0) {
 					Node const& node = nodes.at(From);
@@ -3058,6 +3061,166 @@ namespace scripting {
 
 	*/
 
+	class Functions {
+	private:
+		fibers::containers::Map<
+			std::string, // Function Name (e.g. string). 
+			std::shared_ptr<fibers::containers::Map<
+			Param_Types, // Function parameters (e.g. {string, Any}, or {Any, Any, Any}). 
+			Proxy_Function
+			>>
+			> m_functions;
+
+	public:
+		std::shared_ptr< fibers::containers::Map<Param_Types, Proxy_Function>> operator[](std::string const& key) {
+			while (true) {
+				auto optionalF = m_functions.at(key);
+				if (optionalF.has_value()) return optionalF.value();
+				m_functions.emplace(key, std::make_shared<fibers::containers::Map<Param_Types, Proxy_Function>>(), false);
+			}
+		};
+		std::shared_ptr< fibers::containers::Map<Param_Types, Proxy_Function>> operator[](std::string const& key) const {
+			auto optionalF = m_functions.at(key);
+			if (optionalF.has_value()) return optionalF.value();
+			return nullptr;
+		};
+		std::shared_ptr< fibers::containers::Map<Param_Types, Proxy_Function>> operator()(std::string const& key) {
+			while (true) {
+				auto optionalF = m_functions.at(key);
+				if (optionalF.has_value()) return optionalF.value();
+				m_functions.emplace(key, std::make_shared<fibers::containers::Map<Param_Types, Proxy_Function>>(), false);
+			}
+		};
+		std::shared_ptr< fibers::containers::Map<Param_Types, Proxy_Function>> operator()(std::string const& key) const {
+			auto optionalF = m_functions.at(key);
+			if (optionalF.has_value()) return optionalF.value();
+			return nullptr;
+		};
+		std::shared_ptr< fibers::containers::Map<Param_Types, Proxy_Function>> at(std::string const& key) const {
+			return operator()(key);
+		};
+
+		Proxy_Function operator()(std::string const& key, Function_Params const& params) {
+			auto ptr = operator()(key);
+			while (ptr) {
+				auto optionalF = ptr->at_hash(params.hash());
+				if (optionalF.has_value()) return optionalF.value();
+				return nullptr;
+			}
+		};
+		Proxy_Function operator()(std::string const& key, Function_Params const& params) const {
+			auto ptr = operator()(key);
+			while (ptr) {
+				auto optionalF = ptr->at_hash(params.hash());
+				if (optionalF.has_value()) return optionalF.value();
+				return nullptr;
+			}
+		};
+		Proxy_Function at(std::string const& key, Function_Params const& params) const {
+			return operator()(key, params);
+		};
+
+		Proxy_Function operator()(std::string const& key, Param_Types const& params) {
+			auto ptr = operator()(key);
+			while (ptr) {
+				auto optionalF = ptr->at(params);
+				if (optionalF.has_value()) return optionalF.value();
+				return nullptr;
+			}
+		};
+		Proxy_Function operator()(std::string const& key, Param_Types const& params) const {
+			auto ptr = operator()(key);
+			while (ptr) {
+				auto optionalF = ptr->at(params);
+				if (optionalF.has_value()) return optionalF.value();
+				return nullptr;
+			}
+		};
+		Proxy_Function at(std::string const& key, Param_Types const& params) const {
+			return operator()(key, params);
+		};
+
+		bool emplace(std::string const& key, Proxy_Function func, bool replaceIfAlreadyExists = true) {
+			if (func) {
+				if (auto ptr = operator()(key)) {
+					return ptr->emplace(func->Arguments(), func, replaceIfAlreadyExists);
+				}
+			}
+			return false;
+		};
+		bool emplace(std::string const& key, Proxy_Function func, Param_Types const& params, bool replaceIfAlreadyExists = true) {
+			if (func) {
+				if (auto ptr = operator()(key)) {
+					return ptr->emplace(params, func, replaceIfAlreadyExists);
+				}
+			}
+			return false;
+		};
+		bool emplace(std::string const& key, Param_Types const& params, Proxy_Function func, bool replaceIfAlreadyExists = true) {
+			if (func) {
+				if (auto ptr = operator()(key)) {
+					return ptr->emplace(params, func, replaceIfAlreadyExists);
+				}
+			}
+			return false;
+		};
+
+		/* Given a function name and call parameters, will attempt to find an exact-match function, variadic instantiation, or convertable function call, or return nullptr. */
+		Proxy_Function BuildMatch(std::string const& functionName, scripting::Function_Params const& params, Type_Converter_Tree const& m_typeConverters = Type_Converter_Tree(), bool AllowTemplateInstantiation = true, bool AllowTypeConversion = true) {
+			if (auto ptr = at(functionName, params)) {
+				return ptr;
+			}
+			else {
+				bool successfullyAddedFunction{ false };
+				if (AllowTemplateInstantiation) {
+					for (auto& function : *this->operator[](functionName)) {
+						if (function.first.Template()) {
+							try {
+								if (function.first.converts(params, m_typeConverters)) {
+									auto newParms = scripting::Param_Types(params, function.second->Arguments().types());
+									emplace(functionName, newParms, function.second, false);
+									successfullyAddedFunction = true;
+									break;
+								}
+							}
+							catch (scripting::exception::arity_error err) {
+
+							}
+							catch (scripting::exception::bad_boxed_cast err) {
+
+							}
+						}
+						else {
+							// must be perfect match -- requires casting. We can try that, but only if no template exists that would work.
+						}
+					}
+				}
+				if (AllowTypeConversion) {
+					if (!successfullyAddedFunction) {
+						for (auto& function : *this->operator[](functionName)) {
+							if (function.first.Template()) {
+								// already tried this...
+							}
+							else {
+								if (function.first.converts(params, m_typeConverters)) {
+									auto newParms = scripting::Param_Types(params, function.second->Arguments().types());
+									emplace(functionName, newParms, function.second, false);
+									successfullyAddedFunction = true;
+									break;
+								}
+							}
+						}
+					}
+				}
+				if (successfullyAddedFunction) {
+					return at(functionName, params);
+				}
+			}
+			return nullptr;
+		};
+
+	};
+
 
     class Scope;
     class Namespace;
@@ -3440,7 +3603,60 @@ namespace scripting {
 				return false;
 			}
 		};
-	
+		virtual const Functions* GetFunctions() const { return nullptr; };
+		virtual Functions* GetFunctions() { return nullptr; };
+		virtual bool TryFindFunctionImpl(std::string const& functionName, scripting::Function_Params const& params, Type_Converter_Tree const& m_conversionTree, Proxy_Function& out) const {
+			size_t lastOfColons{ 0 };
+			if ((lastOfColons = functionName.find_last_of("::")) == std::string::npos) {
+				// just a normal var name
+				for (auto& scope : GetScopesForObjectSearch()) {
+					if (auto* ptr = scope->GetFunctions()) {
+						if (auto func = ptr->BuildMatch(functionName, params, m_conversionTree)) {
+							out = func;
+							return true;
+						}
+					}
+				}
+				return false;
+			}
+			else {
+				std::string functionNameActual{ functionName.substr(lastOfColons + 1) };
+				std::string scopeName{ functionName.substr(0, lastOfColons - 1) };
+
+				std::shared_ptr<Scope> foundScope;
+				if (this->TryFindScope(foundScope, scopeName)) {
+					return foundScope->TryFindFunctionImpl(functionNameActual, params, m_conversionTree, out);
+				}
+				return false;
+			}
+		};
+		virtual bool TryFindFunctionImpl(std::string const& functionName, scripting::Function_Params const& params, Type_Converter_Tree const& m_conversionTree, Proxy_Function& out) {
+			size_t lastOfColons{ 0 };
+			if ((lastOfColons = functionName.find_last_of("::")) == std::string::npos) {
+				// just a normal var name
+				for (auto& scope : GetScopesForObjectSearch()) {
+					if (auto* ptr = scope->GetFunctions()) {
+						if (auto func = ptr->BuildMatch(functionName, params, m_conversionTree)) {
+							out = func;
+							return true;
+						}
+					}
+				}
+				return false;
+			}
+			else {
+				std::string functionNameActual{ functionName.substr(lastOfColons + 1) };
+				std::string scopeName{ functionName.substr(0, lastOfColons - 1) };
+
+				std::shared_ptr<Scope> foundScope;
+				if (this->TryFindScope(foundScope, scopeName)) {
+					return foundScope->TryFindFunctionImpl(functionNameActual, params, m_conversionTree, out);
+				}
+				return false;
+			}
+		};
+
+
     public:
 		virtual std::shared_ptr<fibers::Any> FindObject(std::string const& objectName /* x, y, etc. */) const {
 			std::shared_ptr<fibers::Any> out{ nullptr };
@@ -3469,104 +3685,27 @@ namespace scripting {
 			}
 		};
 
+		virtual Proxy_Function FindFunction(std::string const& functionName /* x, y, etc. */, scripting::Function_Params const& params, Type_Converter_Tree const& m_conversionTree) const {
+			Proxy_Function out{ nullptr };
+			if (TryFindFunctionImpl(functionName, params, m_conversionTree, out)) {
+				return out;
+			}
+			else {
+				return nullptr;
+			}
+		};
+		virtual Proxy_Function FindFunction(std::string const& functionName /* x, y, etc. */, scripting::Function_Params const& params, Type_Converter_Tree const& m_conversionTree) {
+			Proxy_Function out{ nullptr };
+			if (TryFindFunctionImpl(functionName, params, m_conversionTree, out)) {
+				return out;
+			}
+			else {
+				return nullptr;
+			}
+		};
+
 	};
 
-	class Functions {
-	private:
-		fibers::containers::Map<
-			std::string, // Function Name (e.g. string). 
-			std::shared_ptr<fibers::containers::Map<
-			    Param_Types, // Function parameters (e.g. {string, Any}, or {Any, Any, Any}). 
-			    Proxy_Function
-			>>
-		> m_functions;
-
-	public:
-		std::shared_ptr< fibers::containers::Map<Param_Types, Proxy_Function>> operator[](std::string const& key) {
-			while (true) {
-				auto optionalF = m_functions.at(key);
-				if (optionalF.has_value()) return optionalF.value();
-				m_functions.emplace(key, std::make_shared<fibers::containers::Map<Param_Types, Proxy_Function>>(), false);
-			}
-		};
-		std::shared_ptr< fibers::containers::Map<Param_Types, Proxy_Function>> operator[](std::string const& key) const {			
-			auto optionalF = m_functions.at(key);
-			if (optionalF.has_value()) return optionalF.value();
-			return nullptr;
-		};
-		std::shared_ptr< fibers::containers::Map<Param_Types, Proxy_Function>> operator()(std::string const& key) {
-			while (true) {
-				auto optionalF = m_functions.at(key);
-				if (optionalF.has_value()) return optionalF.value();
-				m_functions.emplace(key, std::make_shared<fibers::containers::Map<Param_Types, Proxy_Function>>(), false);
-			}
-		};
-		std::shared_ptr< fibers::containers::Map<Param_Types, Proxy_Function>> operator()(std::string const& key) const {
-			auto optionalF = m_functions.at(key);
-			if (optionalF.has_value()) return optionalF.value();
-			return nullptr;
-		};
-		std::shared_ptr< fibers::containers::Map<Param_Types, Proxy_Function>> at(std::string const& key) const {
-			return operator()(key);
-		};
-
-		Proxy_Function operator()(std::string const& key, Function_Params const& params) {
-			auto ptr = operator()(key);
-			while (ptr) {
-				auto optionalF = ptr->at_hash(params.hash());
-				if (optionalF.has_value()) return optionalF.value();
-				return nullptr;
-			}
-		};
-		Proxy_Function operator()(std::string const& key, Function_Params const& params) const {
-			auto ptr = operator()(key);
-			while (ptr) {
-				auto optionalF = ptr->at_hash(params.hash());
-				if (optionalF.has_value()) return optionalF.value();
-				return nullptr;
-			}
-		};
-		Proxy_Function at(std::string const& key, Function_Params const& params) const {
-			return operator()(key, params);
-		};
-
-		Proxy_Function operator()(std::string const& key, Param_Types const& params) {
-			auto ptr = operator()(key);
-			while (ptr) {
-				auto optionalF = ptr->at(params);
-				if (optionalF.has_value()) return optionalF.value();
-				return nullptr;
-			}
-		};
-		Proxy_Function operator()(std::string const& key, Param_Types const& params) const {
-			auto ptr = operator()(key);
-			while (ptr) {
-				auto optionalF = ptr->at(params);
-				if (optionalF.has_value()) return optionalF.value();
-				return nullptr;
-			}
-		};
-		Proxy_Function at(std::string const& key, Param_Types const& params) const {
-			return operator()(key, params);
-		};
-
-		bool emplace(std::string const& key, Proxy_Function func, bool replaceIfAlreadyExists = true) {
-			if (func) {
-				if (auto ptr = operator()(key)) {
-					return ptr->emplace(func->Arguments(), func, replaceIfAlreadyExists);
-				}
-			}
-			return false;
-		};
-		bool emplace(std::string const& key, Proxy_Function func, Param_Types const& params, bool replaceIfAlreadyExists = true) {
-			if (func) {
-				if (auto ptr = operator()(key)) {
-					return ptr->emplace(params, func, replaceIfAlreadyExists);
-				}
-			}
-			return false;
-		};
-	};
 
 	class Namespace : public Scope {
 	public:
@@ -3582,6 +3721,10 @@ namespace scripting {
 		Namespace& operator=(Namespace const&) = default;
 		Namespace& operator=(Namespace&&) = default;
 		virtual ~Namespace() = default;
+
+	protected:
+		virtual const Functions* GetFunctions() const override { return &m_functions; };
+		virtual Functions* GetFunctions() override { return &m_functions; };
 
 	public:
 		std::string
@@ -3719,6 +3862,26 @@ namespace scripting {
 		)
 			: Namespace(parent, Name)
 			, DerivedFrom(std::weak_ptr<Class>())
+		{
+			if (auto ptr = DerivedFrom.lock()) {
+				this->AddUsing(ptr);
+			}
+
+			if (type == user_type<void>()) {
+				ClassType = std::make_shared<Type_Info>(GetQualifiedNamespace(), Name);
+			}
+			else {
+				ClassType = std::make_shared<Type_Info>(type);
+			}
+		};
+		Class(
+			Type_Info type, 
+			std::weak_ptr<Scope> parent,
+			std::string const& Name,
+			std::weak_ptr<Class> inheritance = std::weak_ptr<Class>() // e.g. this class derives from another Class
+		)
+			: Namespace(parent, Name)
+			, DerivedFrom(inheritance)
 		{
 			if (auto ptr = DerivedFrom.lock()) {
 				this->AddUsing(ptr);

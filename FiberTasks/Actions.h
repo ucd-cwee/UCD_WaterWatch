@@ -270,43 +270,64 @@ namespace fibers {
 	} // namespace detail
 
 	/// \brief Compile time deduced information about a type
+	/// \brief Compile time deduced information about a type
 	class Type_Info {
+	private:
+		class Custom_Type_Info {
+		public:
+			Custom_Type_Info(std::string ns, std::string n, size_t h) 
+				: qualified_namespace(std::move(ns))
+				, bare_name(std::move(n))
+				, uniqueHash{ h } 
+			{}
+			Custom_Type_Info() = default;
+			Custom_Type_Info(Custom_Type_Info const&) = default;
+			Custom_Type_Info(Custom_Type_Info&&) = default;
+			Custom_Type_Info& operator=(Custom_Type_Info const&) = default;
+			Custom_Type_Info& operator=(Custom_Type_Info&&) = default;
+			~Custom_Type_Info() = default;
+		public:
+			std::string qualified_namespace;
+			std::string bare_name;
+			size_t uniqueHash;
+		};
+
 	public:
 		static bool SameTypeInfo(const impl::underlying_type_info& a, const impl::underlying_type_info& b) noexcept {
 			return &a == &b;
 		};
 
-		Type_Info(
+		constexpr Type_Info(
 			const bool t_is_const,
 			const bool t_is_reference,
 			const bool t_is_pointer,
 			const bool t_is_void,
 			const impl::underlying_type_info* t_ti,
-			const impl::underlying_type_info* t_bare_ti
+			const impl::underlying_type_info* t_bare_ti,
+			const impl::underlying_type_info* t_contained_ti
 		) noexcept
 			: m_type_info(t_ti)
 			, m_bare_type_info(t_bare_ti)
+			, m_contained_type_info(t_contained_ti)
 			, m_flags((static_cast<unsigned int>(t_is_const) << is_const_flag) + (static_cast<unsigned int>(t_is_reference) << is_reference_flag)
-				+ (static_cast<unsigned int>(t_is_pointer) << is_pointer_flag) + (static_cast<unsigned int>(t_is_void) << is_void_flag)) 
-			, qualified_namespace_and_name()
-			, Name()
+				+ (static_cast<unsigned int>(t_is_pointer) << is_pointer_flag) + (static_cast<unsigned int>(t_is_void) << is_void_flag))
+			, customTypeInfo{ nullptr }
 		{}
 		Type_Info(
-			const std::string& qualifiedNamespace_p,
-			const std::string& name_p
+			const std::string& t_namespace,
+			const std::string& t_name
 		) noexcept
-			: m_type_info(nullptr)
-			, m_bare_type_info(nullptr)
+			: m_type_info{ nullptr }
+			, m_bare_type_info{ nullptr }
+			, m_contained_type_info{ nullptr }
 			, m_flags((static_cast<unsigned int>(false) << is_const_flag) + (static_cast<unsigned int>(false) << is_reference_flag)
-				+ (static_cast<unsigned int>(false) << is_pointer_flag) + (static_cast<unsigned int>(false) << is_void_flag)) 
-			, qualified_namespace_and_name(qualifiedNamespace_p + name_p)
-			, Name(name_p)
+				+ (static_cast<unsigned int>(false) << is_pointer_flag) + (static_cast<unsigned int>(false) << is_void_flag))
+			, customTypeInfo{ std::make_shared<Custom_Type_Info>(t_namespace, t_name, std::hash<std::string>()(t_namespace + t_name)) }
 		{}
-		Type_Info() noexcept = default;
 
-		bool operator<(const Type_Info& ti) const noexcept { 
-			return bare_type_info() < ti.bare_type_info();
-		};
+		constexpr Type_Info() noexcept = default;
+
+		bool operator<(const Type_Info& ti) const noexcept { if (m_type_info) return m_type_info->before(*ti.m_type_info); else return name() < ti.name(); };
 		bool operator>=(const Type_Info& ti) const noexcept { return !operator<(ti); };
 		bool operator>(const Type_Info& ti) const noexcept { return operator>=(ti) && operator!=(ti); };
 		bool operator<=(const Type_Info& ti) const noexcept { return !operator>(ti); };
@@ -314,10 +335,21 @@ namespace fibers {
 		bool operator!=(const Type_Info& ti) const noexcept { return !(operator==(ti)); };
 		bool operator!=(const impl::underlying_type_info& ti) const noexcept { return !(operator==(ti)); };
 		bool operator==(const Type_Info& ti) const noexcept {
-			return bare_type_info() == ti.bare_type_info();
+			if (m_type_info) return ti.m_type_info == m_type_info || (m_type_info && ti.m_type_info && SameTypeInfo(*ti.m_type_info, *m_type_info));
+			else return name() == ti.name();
 		}
-		bool operator==(const impl::underlying_type_info& ti) const noexcept { 
-			return !is_undef() && m_type_info && SameTypeInfo(ti, *m_type_info); 
+		bool operator==(const impl::underlying_type_info& ti) const noexcept {
+			if (m_type_info) return !is_undef() && m_type_info && SameTypeInfo(ti, *m_type_info);
+			else  return name() == ti.name();
+		};
+
+		bool bare_equal(const Type_Info& ti) const noexcept {
+			if (m_type_info) return ti.m_bare_type_info == m_bare_type_info || (ti.m_bare_type_info && m_bare_type_info && SameTypeInfo(*ti.m_bare_type_info, *m_bare_type_info));
+			else return name() == ti.name();
+		};
+		bool bare_equal_type_info(const impl::underlying_type_info& ti) const noexcept {
+			if (m_type_info) return !is_undef() && m_bare_type_info && SameTypeInfo(ti, *m_bare_type_info);
+			else return name() == ti.name();
 		};
 
 		constexpr bool is_const() const noexcept { return (m_flags & (1 << is_const_flag)) != 0; };
@@ -327,34 +359,42 @@ namespace fibers {
 		constexpr bool is_pointer() const noexcept { return (m_flags & (1 << is_pointer_flag)) != 0; };
 
 		const char* name() const noexcept {
-			if (m_type_info && !is_undef())
-				return m_type_info->name();
-			else {
-
-				return Name.c_str();
+			if (!is_undef()) {
+				if (m_type_info) return m_type_info->name();
+				else if (customTypeInfo) return customTypeInfo->bare_name.c_str();
 			}
-		};
+			return "";
+		}
 		const char* bare_name() const noexcept {
-			if (m_bare_type_info && !is_undef())
-				return m_bare_type_info->name();
-			else {
-
-				return Name.c_str();
+			if (!is_undef()) {
+				if (m_type_info) return m_bare_type_info->name();
+				else if (customTypeInfo) return customTypeInfo->bare_name.c_str();
 			}
+			return "";
+		}
+		const char* contained_name() const noexcept {
+			if (!is_undef()) {
+				if (m_type_info) return m_contained_type_info->name();
+				else if (customTypeInfo) return customTypeInfo->bare_name.c_str();
+			}
+			return "";
+		}
+
+		constexpr const impl::underlying_type_info* bare_type_info() const noexcept {
+			if (m_type_info) return m_bare_type_info;
+			else return (const impl::underlying_type_info*)(customTypeInfo->uniqueHash);
 		};
-		const impl::underlying_type_info* bare_type_info() const noexcept {
-			if (m_bare_type_info)
-				return m_bare_type_info;
-			else
-				return (const impl::underlying_type_info*)(std::hash<std::string>()(qualified_namespace_and_name));
+		constexpr const impl::underlying_type_info* contained_type_info() const noexcept {
+			return m_contained_type_info;
 		};
-			
+		constexpr bool is_container_type() const noexcept { return m_contained_type_info != &TypeId<details::Unknown_Type >(); }
+
 	private:
 		const impl::underlying_type_info* m_type_info = &TypeId<details::Unknown_Type>();
 		const impl::underlying_type_info* m_bare_type_info = &TypeId<details::Unknown_Type>();
+		const impl::underlying_type_info* m_contained_type_info = &TypeId<details::Unknown_Type>();
 		unsigned int m_flags = (1 << is_undef_flag);
-		std::string qualified_namespace_and_name;
-		std::string Name;
+		std::shared_ptr<Custom_Type_Info> customTypeInfo;
 
 	private: // flags
 		static const int is_const_flag = 0;
@@ -363,6 +403,7 @@ namespace fibers {
 		static const int is_void_flag = 3;
 		static const int is_undef_flag = 4;
 	};
+
 };
 
 namespace std {
@@ -388,6 +429,7 @@ namespace fibers {
 					std::is_pointer<T>::value,
 					std::is_void<T>::value,
 					&TypeId<T>(),
+					&TypeId<typename Bare_Type<T>::type>(),
 					&TypeId<typename Bare_Type<T>::type>()
 				);
 			}
@@ -401,6 +443,7 @@ namespace fibers {
 					std::is_pointer<T>::value,
 					std::is_void<T>::value,
 					&TypeId<std::shared_ptr<T>>(),
+					&TypeId<typename Bare_Type<T>::type>(),
 					&TypeId<typename Bare_Type<T>::type>()
 				);
 			}
@@ -418,6 +461,7 @@ namespace fibers {
 					std::is_pointer<T>::value,
 					std::is_void<T>::value,
 					&TypeId<const std::shared_ptr<T>&>(),
+					&TypeId<typename Bare_Type<T>::type>(),
 					&TypeId<typename Bare_Type<T>::type>()
 				);
 			}
@@ -431,6 +475,7 @@ namespace fibers {
 					std::is_pointer<T>::value,
 					std::is_void<T>::value,
 					&TypeId<std::reference_wrapper<T>>(),
+					&TypeId<typename Bare_Type<T>::type>(),
 					&TypeId<typename Bare_Type<T>::type>()
 				);
 			}
@@ -444,6 +489,7 @@ namespace fibers {
 					std::is_pointer<T>::value,
 					std::is_void<T>::value,
 					&TypeId<const std::reference_wrapper<T>&>(),
+					&TypeId<typename Bare_Type<T>::type>(),
 					&TypeId<typename Bare_Type<T>::type>()
 				);
 			}
@@ -460,8 +506,9 @@ namespace fibers {
 	/// int i;
 	/// chaiscript::Type_Info ti = chaiscript::user_type(i);
 	/// \endcode
-	template<typename T> constexpr Type_Info user_type(const T& /*t*/) noexcept {
-		return details::Get_Type_Info<T>::get();
+	template<typename T> Type_Info user_type(const T& /*t*/) noexcept {
+		static Type_Info out{ details::Get_Type_Info<T>::get() };
+		return out;
 	};
 
 	/// \brief Creates a Type_Info object representing the templated type
@@ -472,8 +519,9 @@ namespace fibers {
 	/// \code
 	/// chaiscript::Type_Info ti = chaiscript::user_type<int>();
 	/// \endcode
-	template<typename T> constexpr Type_Info user_type() noexcept {
-		return details::Get_Type_Info<T>::get();
+	template<typename T> Type_Info user_type() noexcept {
+		static Type_Info out{ details::Get_Type_Info<T>::get() };
+		return out;
 	};
 
 };
@@ -493,17 +541,23 @@ namespace fibers {
 				to(user_type<void>()), 
 				exc("Bad Any Cast") 
 			{};
-			bad_any_cast(const fibers::Type_Info& from_m, const fibers::Type_Info& to_m) :
-				bad_cast(std::bad_cast::__construct_from_string_literal((std::string("Bad Any Cast From \"") + from_m.name() + "\" To \"" + to_m.name() + "\"").c_str())),
+			bad_any_cast(fibers::Type_Info from_m, fibers::Type_Info to_m) :
+				bad_cast(std::bad_cast::__construct_from_string_literal((std::string("Bad Any Cast From \"") + NameFromType(from_m) + "\" To \"" + NameFromType(to_m) + "\"").c_str())),
 				from(from_m),
 				to(to_m),
-				exc(std::string("Bad Any Cast From \"") + from_m.name() + "\" To \"" + to_m.name() + "\"")
+				exc(std::string("Bad Any Cast From \"") + NameFromType(from_m) + "\" To \"" + NameFromType(to_m) + "\"")
 			{};
 
 		private:
 			std::string exc;
 			fibers::Type_Info from;
 			fibers::Type_Info to;
+
+			static std::string NameFromType(fibers::Type_Info const& x) {
+				return x.name();
+				// if (auto y = x.lock()) return y->name();else return "Unknown";				
+			};
+
 		};
 	}; // namespace exception
 };
@@ -671,7 +725,7 @@ namespace fibers {
 
 		class AnyData {
 		public:
-			AnyData(std::shared_ptr<void> const& t_ptr, const Type_Info& t_type, const bool t_const) noexcept : m_ptr(t_ptr), m_type(t_type), m_const(t_const) {};
+			AnyData(std::shared_ptr<void> const& t_ptr, Type_Info t_type, const bool t_const) noexcept : m_ptr(t_ptr), m_type(t_type), m_const(t_const) {};
 			AnyData(AnyData const&) = default;
 			AnyData(AnyData&&) = default;
 			AnyData& operator=(AnyData const&) = default;
@@ -709,7 +763,7 @@ namespace fibers {
 
 		public:
 			std::shared_ptr<void>					m_ptr; // underlying shared ptr for the provided object. (e.g. std::shared_ptr<int>, etc.)
-			Type_Info      m_type; // type information of the saved object
+			Type_Info                               m_type; // type information of the saved object
 			const bool						        m_const; // whether or not the saved object is const
 
 		};
