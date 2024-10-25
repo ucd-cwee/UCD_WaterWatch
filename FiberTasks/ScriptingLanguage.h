@@ -3066,10 +3066,10 @@ namespace scripting {
 		fibers::containers::Map<
 			std::string, // Function Name (e.g. string). 
 			std::shared_ptr<fibers::containers::Map<
-			Param_Types, // Function parameters (e.g. {string, Any}, or {Any, Any, Any}). 
-			Proxy_Function
+			    Param_Types, // Function parameters (e.g. {string, Any}, or {Any, Any, Any}). 
+			    Proxy_Function
 			>>
-			> m_functions;
+		> m_functions;
 
 	public:
 		std::shared_ptr< fibers::containers::Map<Param_Types, Proxy_Function>> operator[](std::string const& key) {
@@ -3173,43 +3173,45 @@ namespace scripting {
 			else {
 				bool successfullyAddedFunction{ false };
 				if (AllowTemplateInstantiation) {
-					for (auto& function : *this->operator[](functionName)) {
-						if (function.first.Template()) {
-							try {
-								if (function.first.converts(params, m_typeConverters)) {
-									auto newParms = scripting::Param_Types(params, function.second->Arguments().types());
-									emplace(functionName, newParms, function.second, false);
-									successfullyAddedFunction = true;
-									break;
+					if (auto ptr = this->operator[](functionName))
+						for (auto& function : *ptr) {
+							if (function.first.Template()) {
+								try {
+									if (function.first.converts(params, m_typeConverters)) {
+										auto newParms = scripting::Param_Types(params, function.second->Arguments().types());
+										emplace(functionName, newParms, function.second, false);
+										successfullyAddedFunction = true;
+										break;
+									}
+								}
+								catch (scripting::exception::arity_error err) {
+
+								}
+								catch (scripting::exception::bad_boxed_cast err) {
+
 								}
 							}
-							catch (scripting::exception::arity_error err) {
-
-							}
-							catch (scripting::exception::bad_boxed_cast err) {
-
+							else {
+								// must be perfect match -- requires casting. We can try that, but only if no template exists that would work.
 							}
 						}
-						else {
-							// must be perfect match -- requires casting. We can try that, but only if no template exists that would work.
-						}
-					}
 				}
 				if (AllowTypeConversion) {
 					if (!successfullyAddedFunction) {
-						for (auto& function : *this->operator[](functionName)) {
-							if (function.first.Template()) {
-								// already tried this...
-							}
-							else {
-								if (function.first.converts(params, m_typeConverters)) {
-									auto newParms = scripting::Param_Types(params, function.second->Arguments().types());
-									emplace(functionName, newParms, function.second, false);
-									successfullyAddedFunction = true;
-									break;
+						if (auto ptr = this->operator[](functionName))
+							for (auto& function : *ptr) {
+								if (function.first.Template()) {
+									// already tried this...
+								}
+								else {
+									if (function.first.converts(params, m_typeConverters)) {
+										auto newParms = scripting::Param_Types(params, function.second->Arguments().types());
+										emplace(functionName, newParms, function.second, false);
+										successfullyAddedFunction = true;
+										break;
+									}
 								}
 							}
-						}
 					}
 				}
 				if (successfullyAddedFunction) {

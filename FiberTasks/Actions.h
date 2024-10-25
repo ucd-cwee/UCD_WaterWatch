@@ -269,8 +269,7 @@ namespace fibers {
 		};
 	} // namespace detail
 
-	/// \brief Compile time deduced information about a type
-	/// \brief Compile time deduced information about a type
+	/// \brief Deduced information about a C++ class type, or custom-infromation about a scripted class type
 	class Type_Info {
 	private:
 		class Custom_Type_Info {
@@ -741,12 +740,7 @@ namespace fibers {
 				using baseType = typename std::decay_t<typename std::remove_reference_t<typename std::remove_pointer_t<typename std::remove_const_t<typename get_type< ToType >::type>>>>;
 				
 				if (user_type<baseType>() != m_type) {
-#if 0
-                    #include <iostream>
-					std::cout << std::string("Bad Cast From \"") + m_type.name() + "\" To \"" + typeid(std::remove_const_t<std::decay_t<baseType>>).name() + "\".";
-#else
 					throw exception::bad_any_cast(m_type, user_type<std::remove_const_t<std::decay_t<baseType>>>());
-#endif
 				}
 			};
 			template<typename T> static std::shared_ptr<void> get_data(const std::shared_ptr<T>& data) {

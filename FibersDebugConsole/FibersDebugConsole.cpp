@@ -339,21 +339,23 @@ int main() {
 									m_typeConverters;
 
 								auto functionName = "to_string";
-								std_namespace->m_functions.emplace(functionName, scripting::Param_Types({ { std::string("obj"), fibers::user_type<Any>() } }), scripting::make_callable(
+								// variadic template, which takes any type. Up to the user to handle the various types, however. Will cache the result for faster retrieval.  
+								std_namespace->m_functions.emplace(functionName, scripting::Param_Types({ { std::string("any"), fibers::user_type<Any>() } }), scripting::make_callable(
 									[](Any const& x) -> std::string {
 										return std::string("Retrieved type of: ") + x.Type().name();
 									}
 								), true);
-								std_namespace->m_functions.emplace(functionName, scripting::Param_Types({ { std::string("obj"), fibers::user_type<int>() } }), scripting::make_callable(
+								// specialized functions, for when the parameters exactly match. 
+								std_namespace->m_functions.emplace(functionName, scripting::Param_Types({ { std::string("i"), fibers::user_type<int>() } }), scripting::make_callable(
 									[](int const& x) -> std::string { return std::to_string(x); }
 								), true);
-								std_namespace->m_functions.emplace(functionName, scripting::Param_Types({ { std::string("obj"), fibers::user_type<float>() } }), scripting::make_callable(
+								std_namespace->m_functions.emplace(functionName, scripting::Param_Types({ { std::string("i"), fibers::user_type<float>() } }), scripting::make_callable(
 									[](float const& x) -> std::string { return std::to_string(x); }
 								), true);
-								std_namespace->m_functions.emplace(functionName, scripting::Param_Types({ { std::string("obj"), fibers::user_type<std::string>() } }), scripting::make_callable(
+								std_namespace->m_functions.emplace(functionName, scripting::Param_Types({ { std::string("i"), fibers::user_type<std::string>() } }), scripting::make_callable(
 									[](std::string const& x) -> std::string { return x; }
 								), true);
-								std_namespace->m_functions.emplace(functionName, scripting::Param_Types({ { std::string("obj"), fibers::user_type<void>() } }), scripting::make_callable(
+								std_namespace->m_functions.emplace(functionName, scripting::Param_Types({ { std::string("i"), fibers::user_type<void>() } }), scripting::make_callable(
 									[](Any const& x) -> std::string { return "NULL"; }
 								), true);
 
