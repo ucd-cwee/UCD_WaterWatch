@@ -407,11 +407,21 @@ namespace fibers {
 
 namespace std {
 	template <>
-	struct hash<fibers::Type_Info>
-	{
+	struct hash<fibers::Type_Info> {
 		std::size_t operator()(const fibers::Type_Info& k) const
 		{
 			return reinterpret_cast<size_t>(k.bare_type_info());
+		}
+	};
+
+	template <>
+	struct hash<std::weak_ptr<fibers::Type_Info>> {
+		std::size_t operator()(const std::weak_ptr<fibers::Type_Info>& k) const
+		{
+			if (auto ptr = k.lock())
+				return reinterpret_cast<size_t>(ptr->bare_type_info());
+			else
+				return std::hash<fibers::Type_Info>()(fibers::Type_Info());
 		}
 	};
 };
@@ -523,6 +533,50 @@ namespace fibers {
 		return out;
 	};
 
+};
+
+__forceinline bool operator==(std::weak_ptr<fibers::Type_Info> const& a, std::weak_ptr<fibers::Type_Info> const& b) {
+	auto x = a.lock();
+	auto y = b.lock();
+	if (x && y) {
+		return *x == *y;
+	}
+	else if (!x && !y) {
+		return true;
+	}
+	else if (x) {
+		return *x == fibers::user_type<void>();
+	}
+	else if (y) {
+		return *y == fibers::user_type<void>();
+	}
+};
+__forceinline bool operator!=(std::weak_ptr<fibers::Type_Info> const& a, std::weak_ptr<fibers::Type_Info> const& b) {
+	return !operator==(a, b);
+};
+__forceinline bool operator==(std::weak_ptr<fibers::Type_Info> const& a, fibers::Type_Info const& b) {
+	auto x = a.lock();
+	if (x) {
+		return *x == b;
+	}
+	else {
+		return b == fibers::user_type<void>();
+	}
+};
+__forceinline bool operator!=(std::weak_ptr<fibers::Type_Info> const& a, fibers::Type_Info const& b) {
+	return !operator==(a, b);
+};
+__forceinline bool operator==(fibers::Type_Info const& b, std::weak_ptr<fibers::Type_Info> const& a) {
+	auto x = a.lock();
+	if (x) {
+		return *x == b;
+	}
+	else {
+		return b == fibers::user_type<void>();
+	}
+};
+__forceinline bool operator!=(fibers::Type_Info const& b, std::weak_ptr<fibers::Type_Info> const& a) {
+	return !operator==(a, b);
 };
 
 namespace fibers {
@@ -724,7 +778,7 @@ namespace fibers {
 
 		class AnyData {
 		public:
-			AnyData(std::shared_ptr<void> const& t_ptr, Type_Info t_type, const bool t_const) noexcept : m_ptr(t_ptr), m_type(t_type), m_const(t_const) {};
+			AnyData(std::shared_ptr<void> const& t_ptr, std::weak_ptr<Type_Info> t_type, const bool t_const) noexcept : m_ptr(t_ptr), m_type(t_type), m_const(t_const) {};
 			AnyData(AnyData const&) = default;
 			AnyData(AnyData&&) = default;
 			AnyData& operator=(AnyData const&) = default;
@@ -740,7 +794,12 @@ namespace fibers {
 				using baseType = typename std::decay_t<typename std::remove_reference_t<typename std::remove_pointer_t<typename std::remove_const_t<typename get_type< ToType >::type>>>>;
 				
 				if (user_type<baseType>() != m_type) {
-					throw exception::bad_any_cast(m_type, user_type<std::remove_const_t<std::decay_t<baseType>>>());
+					if (auto ptr = m_type.lock()) {
+						throw exception::bad_any_cast(*ptr, user_type<std::remove_const_t<std::decay_t<baseType>>>());
+					}
+					else {
+						throw exception::bad_any_cast(user_type<void>(), user_type<std::remove_const_t<std::decay_t<baseType>>>());
+					}
 				}
 			};
 			template<typename T> static std::shared_ptr<void> get_data(const std::shared_ptr<T>& data) {
@@ -757,7 +816,7 @@ namespace fibers {
 
 		public:
 			std::shared_ptr<void>					m_ptr; // underlying shared ptr for the provided object. (e.g. std::shared_ptr<int>, etc.)
-			Type_Info                               m_type; // type information of the saved object
+			std::weak_ptr<Type_Info>                m_type; // type information of the saved object
 			const bool						        m_const; // whether or not the saved object is const
 
 		};
@@ -1361,16 +1420,40 @@ namespace fibers {
 	/*! Supports forward-declaring a "cast" from an Any to the desired destination type. e.g: int& ref_int = any_obj.cast(); ... std::string str = any_obj.cast(); */
 	class AnyAutoCast; /* forward decl */
 
+		// serves as an instance of a custom class
+	class DynamicObject {
+	public:
+		DynamicObject() = default;
+		DynamicObject(std::weak_ptr< Type_Info > const& type)
+			: m_classType(type)
+			, m_objects()
+		{};
+		DynamicObject(DynamicObject const&) = default;
+		DynamicObject(DynamicObject&&) = default;
+		DynamicObject& operator=(DynamicObject const&) = default;
+		DynamicObject& operator=(DynamicObject&&) = default;
+		~DynamicObject() = default;
+
+		std::weak_ptr< Type_Info >
+			m_classType;
+		concurrency::concurrent_unordered_map<std::string, std::shared_ptr<Any>> 
+			m_objects;
+
+	};
+
+
 	/*! Generic container that enables the containment and sharing of any data type to/from std::shared_ptrs */
 	class Any {
 	public:
 		struct Object_Data {
 			template <template<class> class H, class S, typename = std::enable_if_t<std::is_same_v<H<S>, std::shared_ptr<S>>>> static decltype(auto) get(const H<S>* obj) { return get(*obj); };
 			template <template<class> class H, class S, typename = std::enable_if_t<std::is_same_v<H<S>, std::shared_ptr<S>>>> static decltype(auto) get(const H<S>& obj) {
-				return std::shared_ptr<AnyData>(new AnyData(AnyData::get_data<S>(obj), user_type<S>(), std::is_const_v<S>));
+				static auto sharedType{ std::make_shared<Type_Info>(user_type<S>()) };
+				return std::shared_ptr<AnyData>(new AnyData(AnyData::get_data<S>(obj), sharedType, std::is_const_v<S>));
 			};
 			template <template<class> class H, class S, typename = std::enable_if_t<std::is_same_v<H<S>, std::shared_ptr<S>>>> static decltype(auto) get(H<S>&& obj) {
-				return std::shared_ptr<AnyData>(new AnyData(AnyData::get_data<S>(std::forward<H<S>>(obj)), user_type<S>(), std::is_const_v<S>));
+				static auto sharedType{ std::make_shared<Type_Info>(user_type<S>()) };
+				return std::shared_ptr<AnyData>(new AnyData(AnyData::get_data<S>(std::forward<H<S>>(obj)), sharedType, std::is_const_v<S>));
 			};
 			template<typename T, typename = std::enable_if_t<!std::is_same_v<fibers::AnyAutoCast, T>>> static decltype(auto) get(T* t) { return get(std::make_shared<T>(t)); };
 			template<typename T, typename = std::enable_if_t<!std::is_same_v<fibers::AnyAutoCast, T>>> static decltype(auto) get(const T* t) { return get(*t); };
@@ -1427,11 +1510,43 @@ namespace fibers {
 		template <typename ValueT> static const char* TypeNameOf() { return TypeOf<ValueT>().name(); };
 		template <typename ValueT> static Type_Info TypeOf() { return user_type<ValueT>(); };
 
-		const char* TypeName() const noexcept { return Type().name(); };
-		Type_Info Type() const noexcept {
+		const char* TypeName() const noexcept {
+			if (auto p = Type().lock()) {
+				return p->name();
+			}
+			else {
+				return user_type<void>().name();
+			}
+		};
+		std::weak_ptr<Type_Info> Type() const noexcept {
 			std::shared_ptr<AnyData> m = container;
-			if (m) { return m->m_type; }
-			else { return user_type<void>(); }
+			if (m) { 
+				if (auto p = m->m_type.lock()) {
+					if (*p == user_type<DynamicObject>()) {
+						if (auto p2 = std::static_pointer_cast<DynamicObject>(m->m_ptr)) {
+							if (auto p3 = p2->m_classType.lock()) {
+								return p3;
+							}
+							else {
+								return p;
+							}
+						}
+						else {
+							return p;
+						}
+					}
+					else {
+						return p;
+					}
+				}
+				else {
+					return m->m_type;
+				}
+				return m->m_type;
+			} else { 
+				static auto SharedT{ std::make_shared<Type_Info>(user_type<void>()) };
+				return SharedT;
+			}
 		};
 		template<typename VType> bool IsTypeOf() const noexcept {
 			return Type() == TypeOf<VType>();
@@ -1440,7 +1555,6 @@ namespace fibers {
 			return Type() == targetType;
 		};
 		
-
 #pragma region Boolean Operators
 	public:
 		explicit operator bool() const { return (bool)container; };

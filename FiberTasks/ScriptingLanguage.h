@@ -483,7 +483,9 @@ namespace scripting {
 		/// returns true if it could convert "From" to "To" type, and stores the converted answer in "result". Otherwise returns false. 
 		/// </summary>
 		bool TryConvert(Any const& From, Type_Info const& to, Any& result) const {
-			auto fromType = From.Type();
+			auto fromType = From.Type().lock();
+			if (!fromType) return false;
+
 			if (fromType == to) {
 				result = From;
 				return true;
@@ -493,15 +495,15 @@ namespace scripting {
 				return true;
 			}
 			else {
-				if (nodes.count(fromType) > 0) {
-					Node const& node = nodes.at(fromType);
+				if (nodes.count(*fromType) > 0) {
+					Node const& node = nodes.at(*fromType);
 
 					// If the conversion path does not exist OR is outdated, then re-create it. 
 					if (node.cached_conversions.count(to) == 0 || std::get<1>(node.cached_conversions.at(to)).GetValue() < version.GetValue()) {
 						auto newCache{ std::make_shared<std::vector<Type_Info>>() };
 						if (newCache) {
 							auto& newCached = *newCache.get();
-							if (TryCreateConversionPath(fromType, to, newCached)) {
+							if (TryCreateConversionPath(*fromType, to, newCached)) {
 								node.cached_conversions.insert({ to, { newCache, version.GetValue() } });
 								std::get<0>(node.cached_conversions.at(to)) = newCache;
 								std::get<1>(node.cached_conversions.at(to)) = version.GetValue();
@@ -523,7 +525,12 @@ namespace scripting {
 								const Node* currentNode = &node;
 								for (auto& intermediate_to_type : *conversion_path) {
 									currentFrom = currentNode->connections.at(intermediate_to_type)->convert(currentFrom);
-									currentNode = &nodes.at(currentFrom.Type());
+									if (auto p = currentFrom.Type().lock()) {
+										currentNode = &nodes.at(*p);
+									}
+									else {
+										throw std::runtime_error("Something went wrong with the analysis");
+									}
 								}
 								result = currentFrom;
 								return true;
@@ -547,7 +554,12 @@ namespace scripting {
 		Any Convert(Any const& From, Type_Info const& to) const {
 			Any result;
 			if (!TryConvert(From, to, result)) {
-				throw fibers::exception::bad_any_cast(From.Type(), to);
+				if (auto p = From.Type().lock()) {
+					throw fibers::exception::bad_any_cast(*p, to);
+				}
+				else {
+					throw fibers::exception::bad_any_cast(user_type<void>(), to);
+				}
 			}
 			return result;
 		};
@@ -642,7 +654,14 @@ namespace scripting {
 			}
 		};
 		// true if the tree knows how to convert From into To
-		bool Converts(Any const& From, Type_Info const& To) const { return Converts(From.Type(), To); };
+		bool Converts(Any const& From, Type_Info const& To) const { 
+			if (auto p = From.Type().lock()) {
+				return Converts(*p, To);
+			}
+			else {
+				return Converts(fibers::user_type<void>(), To);
+			}
+		};
 		// true if the tree knows how to convert From into To
 		template <typename From, typename To> bool Converts() const { return Converts(user_type<From>(), user_type<To>()); };
 		// true if the tree knows how to convert From into To
@@ -664,7 +683,9 @@ namespace scripting {
 			size_t h = FIRSTH;
 			if (size() > 0) {
 				for (auto& s : *this) {
-					h = (h * A) ^ (std::hash<Type_Info>()(s.Type()) * B);
+					if (auto p = s.Type().lock()) {
+						h = (h * A) ^ (std::hash<Type_Info>()(*p) * B);
+					}					
 				}
 			}
 			auto result = h % C;
@@ -748,7 +769,9 @@ namespace scripting {
 			int index = 0;
 			for (auto& paramType : params) {
 				if (m_types[index].second == user_type<Any>()) {
-					m_types[index].second = paramType.Type();
+					if (auto p = paramType.Type().lock()) {
+						m_types[index].second = *p;
+					}
 				}	
 				index++;
 			}
@@ -838,9 +861,11 @@ namespace scripting {
 				const auto& bv = t_params[i];
 				const auto& ti = m_types[i].second;
 				if (!ti.is_undef()) {
-					auto cost = t_conversions.ConversionCost(t_params[i].Type(), ti); // success or failure, caches the result for faster future eval's
-					if (cost >= std::numeric_limits<double>::max()) return std::numeric_limits<double>::max();
-					else out += cost;
+					if (auto p = t_params[i].Type().lock()) {
+						auto cost = t_conversions.ConversionCost(*p, ti); // success or failure, caches the result for faster future eval's
+						if (cost >= std::numeric_limits<double>::max()) return std::numeric_limits<double>::max();
+						else out += cost;
+					}
 				}
 			}
 			return out;

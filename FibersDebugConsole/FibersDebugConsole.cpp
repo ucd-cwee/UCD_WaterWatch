@@ -292,7 +292,12 @@ int main() {
 								{
 									auto functionName = "Type";
 									global_scope->m_functions.emplace(functionName, scripting::Param_Types({ { std::string("obj"), fibers::user_type<Any>() } }), scripting::make_callable(
-										[](Any const& x) -> Type_Info { return x.Type(); }
+										[](Any const& x) -> Type_Info { 
+											if (auto p = x.Type().lock())
+												return *p;
+											else
+												return scripting::user_type<void>();
+										}
 									), true);
 
 									{
@@ -342,7 +347,12 @@ int main() {
 								// variadic template, which takes any type. Up to the user to handle the various types, however. Will cache the result for faster retrieval.  
 								std_namespace->m_functions.emplace(functionName, scripting::Param_Types({ { std::string("any"), fibers::user_type<Any>() } }), scripting::make_callable(
 									[](Any const& x) -> std::string {
-										return std::string("Retrieved type of: ") + x.Type().name();
+										if (auto p = x.Type().lock()) {
+											return std::string("Retrieved type of: ") + p->name();
+										}
+										else {
+											return std::string("Retrieved type of: ") + user_type<void>().name();
+										}
 									}
 								), true);
 								// specialized functions, for when the parameters exactly match. 
@@ -539,13 +549,6 @@ int main() {
 								string_namespace->p_self = string_namespace;
 								std_namespace->AddChild(string_namespace);
 
-								class DynamicObject {
-								public:
-									std::string Name = "I AM A MATRIX";
-
-								};
-
-
 								// ... which imports the "impl" namespace...
 								{
 									auto impl_namespace{ std::make_shared<Namespace>(string_namespace, "impl") };
@@ -558,16 +561,18 @@ int main() {
 
 								// ... which has a couple constructor functions ... 
 								string_namespace->m_functions.emplace("0_param", scripting::make_callable([]() -> std::string {  return "0 params"; }), scripting::Param_Types());
-								string_namespace->m_functions.emplace("1_param", scripting::make_callable([](Any const& a) -> std::string {
-									return a.TypeName();
-									}), scripting::Param_Types({ { std::string("a"), *string_namespace->ClassType } }));
+								string_namespace->m_functions.emplace("1_param", scripting::Param_Types({ { std::string("a"), *string_namespace->ClassType } }), 
+									scripting::make_callable([](Any const& a) -> std::string {
+										return a.TypeName();
+									})
+								);
 								string_namespace->m_functions.emplace("+", scripting::Param_Types({ { std::string("a"), *string_namespace->ClassType }, { std::string("b"), *string_namespace->ClassType } }), scripting::make_callable([](Any const& a, Any const& b) -> std::string {
 									return std::string(a.TypeName()) + " + " + b.TypeName();
 									}));
 
 								{
 									std::vector<fibers::Any> params;
-									auto function = string_namespace->m_functions("0_param", scripting::Function_Params(params));
+									auto function = string_namespace->FindFunction("0_param", params, m_typeConverters);
 									if (function) {
 										auto returned = scripting::call(function, params, m_typeConverters);
 										EXPECT_EQ(returned.IsTypeOf<std::string>(), true);
@@ -576,21 +581,34 @@ int main() {
 								}
 
 								{
-									std::vector<fibers::Any> params = { fibers::Any(DynamicObject()) };
-									auto function = string_namespace->m_functions("1_param", scripting::Function_Params(params));
-									auto returned = scripting::call(function, params, m_typeConverters);
-									EXPECT_EQ(returned.IsTypeOf<std::string>(), true);
-									std::cout << returned.cast<std::string>() << std::endl;
+									std::vector<fibers::Any> params = { fibers::Any(fibers::DynamicObject(string_namespace->ClassType)) };
+									auto function = string_namespace->FindFunction("1_param", params, m_typeConverters);
+									if (function) {
+										auto returned = scripting::call(function, params, m_typeConverters);
+										EXPECT_EQ(returned.IsTypeOf<std::string>(), true);
+										std::cout << returned.cast<std::string>() << std::endl;
+									}
 								}
 
 								{
-									std::vector<fibers::Any> params = { fibers::Any(DynamicObject()), fibers::Any(DynamicObject()) };
-									auto function = string_namespace->m_functions("+", scripting::Function_Params(params));
-									auto returned = scripting::call(function, params, m_typeConverters);
-									EXPECT_EQ(returned.IsTypeOf<std::string>(), true);
-									std::cout << returned.cast<std::string>() << std::endl;
+									std::vector<fibers::Any> params = { fibers::Any(fibers::DynamicObject(string_namespace->ClassType)), fibers::Any(fibers::DynamicObject(string_namespace->ClassType)) };
+									auto function = string_namespace->FindFunction("+", params, m_typeConverters);
+									if (function) {
+										auto returned = scripting::call(function, params, m_typeConverters);
+										EXPECT_EQ(returned.IsTypeOf<std::string>(), true);
+										std::cout << returned.cast<std::string>() << std::endl;
+									}
 								}
 
+								{
+									std::vector<fibers::Any> params = { fibers::Any(fibers::DynamicObject()), fibers::Any(fibers::DynamicObject()) };
+									auto function = string_namespace->FindFunction("+", params, m_typeConverters);
+									if (function) {
+										auto returned = scripting::call(function, params, m_typeConverters);
+										EXPECT_EQ(returned.IsTypeOf<std::string>(), true);
+										std::cout << returned.cast<std::string>() << std::endl;
+									}
+								}
 							}
 
 							// the "fibers" namespace imports the "UI" namespace...
