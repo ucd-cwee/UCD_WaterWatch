@@ -228,7 +228,8 @@ int main() {
 			global_scope->p_self = global_scope;
 
 			{
-				{
+				// "Import" the `STD` library...
+				if (1) {
 					// DEMONSTRATES HOW TO MAKE A INDEPENDANT IMPORT (e.g. from github), store it in its own, independant scope (global_scope2), and "add it" to another running scope without changing it.
 
 					auto global_scope2{ std::make_shared<Namespace>() }; // global should always be a Namespace
@@ -337,8 +338,142 @@ int main() {
 					global_scope->AddUsing(global_scope2); // ... while "using" allows our global to share their global's custom namespaces and objects
 				}
 
+				// "Import" the `fibers` library...
+				if (1) {
+				    auto script_scope{ std::make_shared<Namespace>() }; // global should always be a Namespace
+					script_scope->p_self = script_scope;
+
+					{
+						auto std_namespace{ std::make_shared<Namespace>(script_scope, "fibers") };
+						std_namespace->p_self = std_namespace;
+						script_scope->AddChild(std_namespace);
+
+						// the "fibers" namespace imports the "Number" namespace...
+						{
+							auto string_namespace{ std::make_shared<Class>(fibers::user_type<fibers::containers::number<double>>(), std_namespace, "Number") };
+							string_namespace->p_self = string_namespace;
+							std_namespace->AddChild(string_namespace);
+
+							// ... which imports the "impl" namespace...								
+							{
+								auto impl_namespace{ std::make_shared<Namespace>(string_namespace, "impl") };
+								impl_namespace->p_self = impl_namespace;
+								string_namespace->AddChild(impl_namespace);
+							}
+						}
+
+						// the "fibers" namespace imports the "Pattern" namespace...
+						{
+							auto string_namespace{ std::make_shared<Class>(fibers::user_type<fibers::containers::Pattern<double, double>>(), std_namespace, "Pattern") };
+							string_namespace->p_self = string_namespace;
+							std_namespace->AddChild(string_namespace);
+
+							// ... which imports the "impl" namespace...
+							{
+								auto impl_namespace{ std::make_shared<Namespace>(string_namespace, "impl") };
+								impl_namespace->p_self = impl_namespace;
+								string_namespace->AddChild(impl_namespace);
+							}
+						}
+
+						// the "fibers" namespace imports the "Matrix" namespace...
+						{
+							auto string_namespace{ std::make_shared<Class>(std_namespace, "Matrix") };
+							string_namespace->p_self = string_namespace;
+							std_namespace->AddChild(string_namespace);
+
+							// ... which imports the "impl" namespace...
+							{
+								auto impl_namespace{ std::make_shared<Namespace>(string_namespace, "impl") };
+								impl_namespace->p_self = impl_namespace;
+								string_namespace->AddChild(impl_namespace);
+							}
+						}
+
+						// the "fibers" namespace imports the "UI" namespace...
+						{
+							auto string_namespace{ std::make_shared<Namespace>(std_namespace, "UI") };
+							string_namespace->p_self = string_namespace;
+							std_namespace->AddChild(string_namespace);
+
+							// ... which imports the "Interactive" namespace...
+							auto interactive_namespace{ std::make_shared<Class>(string_namespace, "Interactive") }; {
+								interactive_namespace->p_self = interactive_namespace;
+								string_namespace->AddChild(interactive_namespace);
+
+								{
+									auto impl_namespace{ std::make_shared<Namespace>(interactive_namespace, "InteractiveImpl") };
+									impl_namespace->p_self = impl_namespace;
+									interactive_namespace->AddChild(impl_namespace);
+								}
+							}
+
+							// ... which imports the "Map" namespace...
+							{
+								auto impl_namespace{ std::make_shared<Class>(string_namespace, "Map", interactive_namespace) };
+								impl_namespace->p_self = impl_namespace;
+								string_namespace->AddChild(impl_namespace);
+
+								{
+									auto impl_namespace2{ std::make_shared<Namespace>(impl_namespace, "MapImpl") };
+									impl_namespace2->p_self = impl_namespace2;
+									impl_namespace->AddChild(impl_namespace2);
+								}
+
+								{
+									auto impl_namespace2{ std::make_shared<Namespace>(impl_namespace, "Text") };
+									impl_namespace2->p_self = impl_namespace2;
+									impl_namespace->AddChild(impl_namespace2);
+								}
+							}
+
+							// ... which imports the "Button" namespace...
+							{
+								auto impl_namespace{ std::make_shared<Class>(string_namespace, "Button", interactive_namespace) };
+								impl_namespace->p_self = impl_namespace;
+								string_namespace->AddChild(impl_namespace);
+							}
+
+							// ... which imports the "Grid" namespace...
+							{
+								auto impl_namespace{ std::make_shared<Class>(string_namespace, "Grid") };
+								impl_namespace->p_self = impl_namespace;
+								string_namespace->AddChild(impl_namespace);
+							}
+
+							// ... which imports the "Plot" namespace...
+							{
+								auto impl_namespace{ std::make_shared<Class>(string_namespace, "Plot") };
+								impl_namespace->p_self = impl_namespace;
+								string_namespace->AddChild(impl_namespace);
+							}
+
+							// ... which imports the "Text" namespace...
+							{
+								auto impl_namespace{ std::make_shared<Class>(string_namespace, "Text") };
+								impl_namespace->p_self = impl_namespace;
+								string_namespace->AddChild(impl_namespace);
+							}
+
+							// ... which imports the "WebPage" namespace...
+							{
+								auto impl_namespace{ std::make_shared<Class>(string_namespace, "WebPage") };
+								impl_namespace->p_self = impl_namespace;
+								string_namespace->AddChild(impl_namespace);
+							}
+
+						}
+					}
+
+					// add it to our script...
+					imports.emplace("github//scriptLanguage.fibers", script_scope); // the import map guarrantees lifetime...
+					global_scope->AddUsing(script_scope); // ... while "using" allows our global to share their global's custom namespaces and objects
+                }
+
 				// make sure it works...
 				{
+				    global_scope->Print();
+
 					Type_Converter_Tree tree;
 					{
 						std::vector<Any> params = { Any(100) };
@@ -357,9 +492,50 @@ int main() {
 						}
 					}
 					{
+						printf("PRINTING:");
+						for (auto& child : global_scope->GetAvailableNamespaces()) {
+							printf(child.first + "\t  ->  \t" + child.second.lock()->GetQualifiedNamespace());
+						}
+						printf("");
+
 						if (auto ptr = global_scope->FindScope("std::string::impl")) {
 							global_scope->Print();
 						}
+
+						if (auto ptr = global_scope->FindScope("fibers::string::impl2")) {
+							EXPECT_EQ(false, true);
+						}
+					}
+					{
+						if (auto scope = scripting::Impl::FindOrMakeNamespace(global_scope, "fibers::UI::Map").lock()) {
+							if (scope->IsClass()) {
+								if (auto ClassPtr = std::static_pointer_cast<Class>(scope)) {
+									global_scope->m_functions.emplace("=", make_callable([](Any& lhs, Any const& rhs) -> Any {
+										fibers::DynamicObject& LHS = lhs.cast();
+										fibers::DynamicObject& RHS = rhs.cast();
+										LHS = RHS;
+										return Any(lhs);
+									}), scripting::Param_Types({ { "lhs", ClassPtr->ClassType }, { "rhs", ClassPtr->ClassType } }));
+
+									std::vector<Any> params { Any(fibers::DynamicObject(ClassPtr->ClassType)), Any(fibers::DynamicObject(ClassPtr->ClassType)) };
+
+									params[0].cast< fibers::DynamicObject >().m_objects["a"] = nullptr;
+									params[1].cast< fibers::DynamicObject >().m_objects["b"] = nullptr;
+
+									if (auto func = global_scope->FindFunction("=", params, tree)) {
+										auto returned = call(func, params, tree);
+										EXPECT_EQ(returned.Type(), ClassPtr->ClassType);
+										EXPECT_EQ(returned.TypeName(), "Map");
+										EXPECT_EQ(returned.cast< fibers::DynamicObject>().m_objects.at("b"), nullptr);
+
+									}
+								}
+							}
+						}
+
+
+					
+
 					}
 				}
 			}

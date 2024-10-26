@@ -3349,7 +3349,7 @@ namespace scripting {
 		virtual bool AddUsing(std::weak_ptr<Namespace> const& p_namespace) {
 			auto ptr = p_namespace.lock();
 			if (ptr) {
-				return p_using.emplace(((Scope*)(ptr.get()))->GetName(), p_namespace);
+				return p_using.emplace(((Scope*)(ptr.get()))->p_NameRand, p_namespace);
 			}
 			return false;
 		};
@@ -3363,14 +3363,27 @@ namespace scripting {
 				for (auto& child : p_children) {
 					((Scope*)(child.second.get()))->Print(indentLevel + 2);
 				}
+				for (auto& child_parent : p_using) {
+					if (auto this_parent = std::dynamic_pointer_cast<Scope>(child_parent.second.lock())) {
+						for (auto& child2 : this_parent->p_children) {
+							((Scope*)(child2.second.get()))->Print(indentLevel + 2);
+						}
+					}					
+				}
 			}
 			else {
 				std::cout << GetName() << std::endl;
 				for (auto& child : p_children) {
 					((Scope*)(child.second.get()))->Print(indentLevel + GetName().length());
 				}
+				for (auto& child_parent : p_using) {
+					if (auto this_parent = std::dynamic_pointer_cast<Scope>(child_parent.second.lock())) {
+						for (auto& child2 : this_parent->p_children) {
+							((Scope*)(child2.second.get()))->Print(indentLevel + GetName().length());
+						}
+					}
+				}
 			}
-
 		};
 		
 	protected:
@@ -3577,8 +3590,9 @@ namespace scripting {
 
 			// failed to find it -- can we make a recommendation of where to put it?
 			size_t pos;
-			for (pos = scopeToFind.rfind("::"); pos != std::string::npos;) {
+			for (pos = scopeToFind.rfind("::"); pos != std::string::npos; pos = scopeToFind.rfind("::")) {
 				std::string removedScopeName = scopeToFind.substr(pos + 2);
+
 				if (namespaceListToAppend)
 					namespaceListToAppend->push_back(removedScopeName);
 
