@@ -3348,8 +3348,7 @@ namespace scripting {
 			return p_children.emplace(((Scope*)p_namespace.get())->GetName(), p_namespace);
 		};
 		virtual bool AddUsing(std::weak_ptr<Namespace> const& p_namespace) {
-			auto ptr = p_namespace.lock();
-			if (ptr) {
+			if (auto ptr = p_namespace.lock()) {
 				return p_using.emplace(((Scope*)(ptr.get()))->p_NameRand, p_namespace);
 			}
 			return false;
@@ -3620,9 +3619,12 @@ namespace scripting {
 			best_scope = p_self.lock();
 			return false;
 		};
+		virtual const fibers::containers::Map<std::string, std::weak_ptr<Class>>* GetPostFixes() const {
+			return nullptr;
+		};
 
 	public:
-		// Attempts to find a namespace or class with the requested namespace name. 
+		// Attempts to find a namespace or class with the requested namespace name (may be a qualified namespace). 
 		virtual std::shared_ptr<Namespace> FindNamespace(std::string const& Namespace/* = "string"*/) const {
 			std::shared_ptr<Scope> foundScope;
 			if (this->TryFindScope(foundScope, Namespace)) {
@@ -3712,8 +3714,7 @@ namespace scripting {
 				return false;
 			}
 		};
-
-
+		
     public:
 		virtual std::shared_ptr<fibers::Any> FindObject(std::string const& objectName /* x, y, etc. */) const {
 			std::shared_ptr<fibers::Any> out{ nullptr };
@@ -3760,6 +3761,31 @@ namespace scripting {
 				return nullptr;
 			}
 		};
+		
+		// Attempts to find a class with the requested class name (may be a qualified namespace).
+		virtual /*Type_Info*/ std::shared_ptr<Class> FindClass(std::string const& functionName) {
+			auto f = std::dynamic_pointer_cast<Scope>(FindNamespace(functionName));
+			if (f && f->IsClass()) {
+				return std::dynamic_pointer_cast<Class>(f);
+			}
+			return nullptr;
+		};
+
+		// Attempts to find a class that has been requested based on the postfix (e.g. "_ft", "l", "f", "ll", "_m", or "_gal")
+		virtual std::shared_ptr<Class> GetPostfix(std::string const& nonqualified_postfix /* = "_ft" */) {
+			for (auto& scope : GetScopesForObjectSearch()) {
+				if (auto* postfixes = scope->GetPostFixes()) {
+					auto optional = postfixes->at(nonqualified_postfix);
+					if (optional.has_value()) {
+						if (auto ptr = optional.value().lock()) {
+							return ptr;
+						}
+					}
+				}
+			}
+			return nullptr;
+		};
+
 
 	};
 
@@ -3786,10 +3812,8 @@ namespace scripting {
 	public:
 		std::string
 			p_Name; // e.g. "", or "_NAMESPACE_NAME_", or "_CLASS_NAME_"
-		fibers::containers::Map<std::string, Type_Info>
+		fibers::containers::Map<std::string, std::weak_ptr<Class>>
 			m_postfixes{}; // allowed postfixes (e.g. 10_ft, where "_ft" is the key) to their desired typename. Duplicate are not allowed.
-		fibers::containers::Map<std::string, Type_Info>
-			m_typenames{}; // Typenames, declared in (and available from) this namespace. Duplicates are not allowed.
 		Functions
 			m_functions; // functions. (e.g. `==` or `to_string`). Duplicate names are expected. 
 
@@ -3852,6 +3876,10 @@ namespace scripting {
 		};
 	
 	protected:
+		virtual const fibers::containers::Map<std::string, std::weak_ptr<Class>>* GetPostFixes() const override {
+			return &m_postfixes;
+		};
+
 		/*
 		Get all namespaces that may be used to search for an object (e.g this scope, it's USING scopes, its PARENT scopes
 		Ordered from ParentScope -> UsingScope -> ThisScope

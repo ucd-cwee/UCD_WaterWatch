@@ -425,6 +425,13 @@ int main() {
 									impl_namespace2->p_self = impl_namespace2;
 									impl_namespace->AddChild(impl_namespace2);
 								}
+
+								impl_namespace->m_functions.emplace("=", make_callable([](Any& lhs, Any const& rhs) -> Any {
+									fibers::DynamicObject& LHS = lhs.cast();
+									fibers::DynamicObject& RHS = rhs.cast();
+									LHS = RHS;
+									return Any(lhs);
+								}), scripting::Param_Types({ { "lhs", impl_namespace->ClassType }, { "rhs", impl_namespace->ClassType } }));
 							}
 
 							// ... which imports the "Button" namespace...
@@ -470,6 +477,84 @@ int main() {
 					global_scope->AddUsing(script_scope); // ... while "using" allows our global to share their global's custom namespaces and objects
                 }
 
+				// "Import" the `Units` library...
+				if (1) {
+					auto global_scope2{ std::make_shared<Namespace>() }; // global should always be a Namespace
+					global_scope2->p_self = global_scope2;
+
+					// Create STD library...
+					{
+						auto std_namespace{ std::make_shared<Namespace>(global_scope2, "Units") };
+						std_namespace->p_self = std_namespace;
+						global_scope2->AddChild(std_namespace);
+
+						// the "std" namespace imports the "string" namespace...
+						{
+							auto value_namespace{ std::make_shared<Class>(fibers::user_type<Units::value>(), std_namespace, "value") };
+							value_namespace->p_self = value_namespace;
+							std_namespace->AddChild(value_namespace);
+
+							// which has the following types groups... 
+							for (auto& type_group : Units::UnitsDetail::GetValueTypes()) {
+								// all the types within this group are naivly convertable to each other... remember to use this! 
+								for (auto& type : type_group) {
+									auto impl_namespace{ std::make_shared<Class>(value_namespace, std::get<1>(type), value_namespace, fibers::user_type<Units::value>()) }; // std::get<3>(type)
+									impl_namespace->p_self = impl_namespace;
+									std_namespace->AddChild(impl_namespace);
+
+									std_namespace->m_postfixes.emplace(std::get<0>(type), impl_namespace);
+
+									impl_namespace->m_functions.emplace(std::get<1>(type), make_callable([thisT = std::get<2>(type)]() {
+										Units::value out = thisT;
+										out = 0;
+										return out;
+									}), scripting::Param_Types());
+									impl_namespace->m_functions.emplace(std::get<1>(type), make_callable([thisT = std::get<2>(type)](double x) {
+										Units::value out = thisT;
+										out = x;
+										return out;
+									}), scripting::Param_Types({ { "in", user_type<double>() } }));
+									impl_namespace->m_functions.emplace(std::get<1>(type), make_callable([thisT = std::get<2>(type)](Units::value const& x) {
+										Units::value out = thisT;
+										out = x;
+										return out;
+									}), scripting::Param_Types({ { "in", user_type<Units::value>() } }));
+									impl_namespace->m_functions.emplace("abbreviation", make_callable([thisT = std::get<0>(type)]() {
+										return thisT;
+									}), scripting::Param_Types());
+									impl_namespace->m_functions.emplace("name", make_callable([thisT = std::get<1>(type)]() {
+										return thisT;
+									}), scripting::Param_Types());
+								}
+
+								// TESTING -> adding converters! 
+								Type_Converter_Tree tree;
+								for (int i = 0; i < type_group.size(); i++) {
+									for (int j = 0; j < type_group.size(); j++) {
+										if (i != j) {
+											// tree.AddConverter([](Any const& x, Any const& y) {
+												
+											// }, std::vector<fibers::Type_Info>());
+
+											auto& from_type = std::get<3>(type_group[i]);
+											auto& to_type = std::get<3>(type_group[j]);
+
+											auto conversion_function = [](Units::value& x, Units::value const& y) {
+												x = y;
+											};
+
+										}
+									}
+								}
+							}
+						}
+					}
+
+					// add it to our script...
+					imports.emplace("github//scriptLanguage.Units", global_scope2); // the import map guarrantees lifetime...
+					global_scope->AddUsing(global_scope2); // ... while "using" allows our global to share their global's custom namespaces and objects
+				}
+
 				// make sure it works...
 				{
 				    global_scope->Print();
@@ -507,34 +592,49 @@ int main() {
 						}
 					}
 					{
-						if (auto scope = global_scope->FindNamespace("fibers::UI::Map")) {
-							if (scope->IsClass()) {
-								if (auto ClassPtr = std::static_pointer_cast<Class>(scope)) {
-									global_scope->m_functions.emplace("=", make_callable([](Any& lhs, Any const& rhs) -> Any {
-										fibers::DynamicObject& LHS = lhs.cast();
-										fibers::DynamicObject& RHS = rhs.cast();
-										LHS = RHS;
-										return Any(lhs);
-									}), scripting::Param_Types({ { "lhs", ClassPtr->ClassType }, { "rhs", ClassPtr->ClassType } }));
+						if (auto ClassPtr = global_scope->FindClass("fibers::UI::Map")) {
+							global_scope->m_functions.emplace("=", make_callable([](Any& lhs, Any const& rhs) -> Any {
+								fibers::DynamicObject& LHS = lhs.cast();
+								fibers::DynamicObject& RHS = rhs.cast();
+								LHS = RHS;
+								return Any(lhs);
+							}), scripting::Param_Types({ { "lhs", ClassPtr->ClassType }, { "rhs", ClassPtr->ClassType } }));
 
-									std::vector<Any> params { Any(fibers::DynamicObject(ClassPtr->ClassType)), Any(fibers::DynamicObject(ClassPtr->ClassType)) };
+							std::vector<Any> params { Any(fibers::DynamicObject(ClassPtr->ClassType)), Any(fibers::DynamicObject(ClassPtr->ClassType)) };
 
-									params[0].cast< fibers::DynamicObject >().m_objects["a"] = nullptr;
-									params[1].cast< fibers::DynamicObject >().m_objects["b"] = nullptr;
+							params[0].cast< fibers::DynamicObject >().m_objects["a"] = nullptr;
+							params[1].cast< fibers::DynamicObject >().m_objects["b"] = nullptr;
 
-									if (auto func = global_scope->FindFunction("=", params, tree)) {
-										auto returned = call(func, params, tree);
-										EXPECT_EQ(returned.Type(), ClassPtr->ClassType);
-										EXPECT_EQ(std::string(returned.TypeName()), std::string("Map"));
-										EXPECT_EQ(returned.cast< fibers::DynamicObject>().m_objects.at("b"), nullptr);
-									}
-								}
+							if (auto func = global_scope->FindFunction("=", params, tree)) {
+								auto returned = call(func, params, tree);
+								EXPECT_EQ(returned.Type(), ClassPtr->ClassType);
+								EXPECT_EQ(std::string(returned.TypeName()), std::string("Map"));
+								EXPECT_EQ(returned.cast< fibers::DynamicObject>().m_objects.at("b"), nullptr);
 							}
 						}
 						if (auto scope = global_scope->FindNamespace("impl::fibers::UI::Map")) {
 							EXPECT_EQ(false, true);
 						}
 					}
+
+					{
+						EXPECT_EQ(true, global_scope->AddUsing(global_scope->FindNamespace("Units")));
+
+
+
+
+						if (auto ClassPtr = global_scope->FindClass("foot")) {
+							if (auto func = ClassPtr->FindFunction("foot", {}, tree)) {
+								auto returned = call(func, {}, tree);
+								EXPECT_EQ(returned.Type(), user_type<Units::value>());
+
+								std::cout << returned.cast<Units::value&>().Abbreviation() << std::endl;
+							}
+						}
+
+						global_scope->Print();
+					}
+
 				}
 			}
 		}
