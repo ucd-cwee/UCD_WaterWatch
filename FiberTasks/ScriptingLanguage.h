@@ -3258,7 +3258,7 @@ namespace scripting {
 
 	};
 
-
+	class Impl;
     class Scope;
     class Namespace;
 	class Class;
@@ -3267,6 +3267,7 @@ namespace scripting {
 	public:
 		friend class Namespace;
 		friend class Class;
+		friend class Impl;
 		Scope(std::weak_ptr<Scope> parent = std::weak_ptr<Scope>())
 			: p_parent{ parent }
 		{
@@ -3569,7 +3570,7 @@ namespace scripting {
 			return out;
 		};
 
-	public:
+	protected:
 		// Attempts to find a namespace or class with the requested namespace name. 
 		// If qualified (e.g. starts with "::") then it attempts to find it from the global root -> down. 
 		// If not qualified, then it attempts to find it from the current node -> up.
@@ -3619,10 +3620,15 @@ namespace scripting {
 			best_scope = p_self.lock();
 			return false;
 		};
-		virtual std::shared_ptr<Scope> FindScope(std::string const& Namespace/* = "string"*/) const {
+
+	public:
+		// Attempts to find a namespace or class with the requested namespace name. 
+		virtual std::shared_ptr<Namespace> FindNamespace(std::string const& Namespace/* = "string"*/) const {
 			std::shared_ptr<Scope> foundScope;
 			if (this->TryFindScope(foundScope, Namespace)) {
-				return foundScope;
+				if (foundScope->IsNamespace()) {
+					return std::dynamic_pointer_cast<scripting::Namespace>(foundScope);
+				}
 			}
 			return nullptr;
 		};
