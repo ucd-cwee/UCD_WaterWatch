@@ -4654,12 +4654,20 @@ namespace fibers {
 			ObjType at_or(KeyType const& key, ObjType const& defaultObj = ObjType()) const {
 				return at(key).value_or(defaultObj);
 			};
+
 			/* returns a COPY of the value at the hashed key. Returns empty if the value is not found.
 			Allows user to calculate the hash externally from the Map. */
-			const ObjType operator[](KeyType const& key) const {
-				return at_or(key);
+			ObjType get_or_insert(KeyType const& key, ObjType const& defaultObj = ObjType()) {
+				while (true) {
+					auto x = at(key);
+					if (!x.has_value()) {
+						emplace(key, defaultObj, false);
+					}
+					else {
+						return x.value();
+					}
+				}
 			};
-
 
 			std::optional<ObjType> at_hash(size_t const& key_hash) const {
 				auto g{ nodeAllocator.CreateEpochGuard() };

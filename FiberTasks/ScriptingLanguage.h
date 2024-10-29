@@ -697,9 +697,9 @@ namespace scripting {
 			> cached_conversions;
 		};
 		// does not support deleting type conversions, but that should be OK, since type conversions should be baked-in.
-		concurrency::concurrent_unordered_map<
-			fibers::Type_Info, // from
-			Node // to/connections
+		fibers::containers::Map<
+			scripting::Type_Info, // from
+			std::shared_ptr<Node> // to/connections
 		> nodes;
 
 		fibers::synchronization::impl::InterlockedLong version;
@@ -733,7 +733,7 @@ namespace scripting {
 
 				for (auto& node : nodes) {
 					vertices_and_weights[node.first] = std::numeric_limits<double>::max();
-					for (auto& connection : node.second.connections) {
+					for (auto& connection : node.second->connections) {
 						vertices_and_distances[node.first][connection.first] = connection.second->cost();
 					}
 				}
@@ -814,8 +814,8 @@ namespace scripting {
 	public:
 		// add an automatic static or polymorphic conversion
 		template <typename FromType, typename ToType> bool AddConverter() {
-			auto fromTypeInfo{ fibers::user_type<FromType>() };
-			auto toTypeInfo{ fibers::user_type<ToType>() };
+			auto fromTypeInfo{ scripting::user_type<FromType>() };
+			auto toTypeInfo{ scripting::user_type<ToType>() };
 
 			constexpr static bool is_polymorphic = std::is_base_of< ToType, FromType>::value;
 			constexpr static bool is_static = details::impl::is_explicitly_convertible_to<FromType, ToType>::value;
@@ -824,10 +824,10 @@ namespace scripting {
 				return false;
 			}
 
-			Node& node = nodes[fromTypeInfo];
-			node.from = fromTypeInfo;
+			std::shared_ptr<Node> node = nodes.get_or_insert(fromTypeInfo, std::make_shared<Node>());
+			node->from = fromTypeInfo;
 
-			auto& targetLocation = node.connections[toTypeInfo];
+			auto& targetLocation = node->connections[toTypeInfo];
 			if (!targetLocation) {
 				if constexpr (std::is_base_of< ToType, FromType>::value) {
 					targetLocation = std::dynamic_pointer_cast<details::Type_Conversion_Base>(std::make_shared<details::Dynamic_Type_Conversion_Impl<FromType, ToType>>());
@@ -838,7 +838,7 @@ namespace scripting {
 
 				(void)targetLocation->cost(); // cache the cost to perform this conversion
 
-				node.cached_conversions[toTypeInfo] = {
+				node->cached_conversions[toTypeInfo] = {
 					std::make_shared<std::vector<fibers::Type_Info>>(std::vector<fibers::Type_Info>({ toTypeInfo })),
 					fibers::synchronization::impl::InterlockedLong(std::numeric_limits<double>::max())
 				}; // even if there was a previous cached conversion, override it.
@@ -861,8 +861,8 @@ namespace scripting {
 		// tree.AddConverter([](float v) -> double { return v; }))
 		// tree.AddConverter([](std::string const& v) -> const char* { return v.c_str(); }))
 		template <class Callable> bool AddConverter(Callable t_func) {
-			auto toTypeInfo = fibers::user_type<fibers::utilities::function_traits< decltype(std::function(t_func)) >::result_type>();
-			auto fromTypeInfo = fibers::user_type<std::decay_t<std::tuple_element_t<0, fibers::utilities::function_traits< decltype(std::function(t_func)) >::arguments>>>();
+			auto toTypeInfo = scripting::user_type<fibers::utilities::function_traits< decltype(std::function(t_func)) >::result_type>();
+			auto fromTypeInfo = scripting::user_type<std::decay_t<std::tuple_element_t<0, fibers::utilities::function_traits< decltype(std::function(t_func)) >::arguments>>>();
 
 			constexpr static bool is_polymorphic = std::is_base_of<
 				fibers::utilities::function_traits< decltype(std::function(t_func)) >::result_type
@@ -881,16 +881,16 @@ namespace scripting {
 				>();
 			}
 
-			Node& node = nodes[fromTypeInfo];
-			node.from = fromTypeInfo;
+			std::shared_ptr<Node> node = nodes.get_or_insert(fromTypeInfo, std::make_shared<Node>());
+			node->from = fromTypeInfo;
 
-			auto& targetLocation = node.connections[toTypeInfo];
+			auto& targetLocation = node->connections[toTypeInfo];
 			if (!targetLocation) {
 				targetLocation = std::dynamic_pointer_cast<details::Type_Conversion_Base>(std::make_shared<details::Custom_Type_Conversion_Impl<Callable>>(std::move(t_func)));
 
 				(void)targetLocation->cost(); // cache the cost to perform this conversion
 
-				node.cached_conversions[toTypeInfo] = {
+				node->cached_conversions[toTypeInfo] = {
 					std::make_shared<std::vector<fibers::Type_Info>>(std::vector<fibers::Type_Info>({ toTypeInfo })),
 					fibers::synchronization::impl::InterlockedLong(std::numeric_limits<double>::max())
 				}; // even if there was a previous cached conversion, override it.
@@ -918,8 +918,8 @@ namespace scripting {
 				return true;
 			}
 			else {
-				if (nodes.count(*fromType) > 0) {
-					Node const& node = nodes.at(*fromType);
+				if (auto node_ptr = nodes.at(fromType).value_or(nullptr)) {
+					auto& node = *node_ptr;
 
 					// If the conversion path does not exist OR is outdated, then re-create it. 
 					if (node.cached_conversions.count(to) == 0 || std::get<1>(node.cached_conversions.at(to)).GetValue() < version.GetValue()) {
@@ -945,11 +945,11 @@ namespace scripting {
 							std::shared_ptr<std::vector<fibers::Type_Info>> conversion_path = std::get<0>(node.cached_conversions.at(to));
 							if (conversion_path && conversion_path->size() > 0) {
 								Any currentFrom = From;
-								const Node* currentNode = &node;
+								std::shared_ptr<Node> currentNode = node_ptr;
 								for (auto& intermediate_to_type : *conversion_path) {
 									currentFrom = currentNode->connections.at(intermediate_to_type)->convert(currentFrom);
 									if (auto p = currentFrom.Type().lock()) {
-										currentNode = &nodes.at(*p);
+										currentNode = nodes.at(p).value_or(nullptr);
 									}
 									else {
 										throw std::runtime_error("Something went wrong with the analysis");
@@ -966,7 +966,9 @@ namespace scripting {
 							return false;
 						}
 					}
+
 				}
+
 				return false;
 			}
 		}
@@ -995,8 +997,8 @@ namespace scripting {
 				return 0;
 			}
 			else {
-				if (nodes.count(From) > 0) {
-					Node const& node = nodes.at(From);
+				if (auto node_ptr = nodes.at(From).value_or(nullptr)) {
+					auto& node = *node_ptr;
 
 					// If the conversion path does not exist OR is outdated, then re-create it. 
 					if (node.cached_conversions.count(To) == 0 || std::get<1>(node.cached_conversions.at(To)).GetValue() < version.GetValue()) {
@@ -1021,10 +1023,10 @@ namespace scripting {
 						std::shared_ptr<std::vector<fibers::Type_Info>> conversion_path = std::get<0>(node.cached_conversions.at(To));
 						if (conversion_path && conversion_path->size() > 0) {
 							double cost{ 0 };
-							const Node* currentNode = &node;
+							std::shared_ptr<Node> currentNode = node_ptr;
 							for (auto& intermediate_to_type : *conversion_path) {
 								cost += currentNode->connections.at(intermediate_to_type)->cost();
-								currentNode = &nodes.at(intermediate_to_type);
+								currentNode = nodes.at_hash(std::hash<fibers::Type_Info>()(intermediate_to_type)).value_or(nullptr);
 							}
 							return cost;
 						}
@@ -1045,8 +1047,8 @@ namespace scripting {
 				return true;
 			}
 			else {
-				if (nodes.count(From) > 0) {
-					Node const& node = nodes.at(From);
+				if (auto node_ptr = nodes.at(From).value_or(nullptr)) {
+					auto& node = *node_ptr;
 
 					// If the conversion path does not exist OR is outdated, then re-create it. 
 					if (node.cached_conversions.count(To) == 0 || std::get<1>(node.cached_conversions.at(To)).GetValue() < version.GetValue()) {
@@ -1205,11 +1207,7 @@ namespace scripting {
 			}
 
 			hash_value = HashTypes(m_types);
-
 		}
-
-
-
 
 		void push_front(std::string t_name, Type_Info t_ti) {
 			m_types.emplace(m_types.begin(), std::move(t_name), t_ti);
