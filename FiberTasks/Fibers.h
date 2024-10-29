@@ -4656,6 +4656,10 @@ namespace fibers {
 			};
 			/* returns a COPY of the value at the hashed key. Returns empty if the value is not found.
 			Allows user to calculate the hash externally from the Map. */
+			const ObjType operator[](KeyType const& key) const {
+				return at_or(key);
+			};
+
 
 			std::optional<ObjType> at_hash(size_t const& key_hash) const {
 				auto g{ nodeAllocator.CreateEpochGuard() };

@@ -323,7 +323,27 @@ namespace fibers {
 				+ (static_cast<unsigned int>(false) << is_pointer_flag) + (static_cast<unsigned int>(false) << is_void_flag))
 			, customTypeInfo{ std::make_shared<Custom_Type_Info>(t_namespace, t_name, std::hash<std::string>()(t_namespace + t_name)) }
 		{}
-
+		Type_Info(
+			std::weak_ptr< Type_Info> r
+		) noexcept 
+			: Type_Info(
+				std::is_const<typename std::remove_pointer<typename std::remove_reference<void>::type>::type>::value,
+				std::is_reference<void>::value,
+				std::is_pointer<void>::value,
+				std::is_void<void>::value,
+				&TypeId<void>(),
+				&TypeId<void>(),
+				&TypeId<void>()
+			)
+		{
+			if (auto p = r.lock()) {
+				m_type_info = p->m_type_info;
+				m_bare_type_info = p->m_bare_type_info;
+				m_contained_type_info = p->m_contained_type_info;
+				m_flags = p->m_flags;
+				customTypeInfo = p->customTypeInfo;
+			}
+		}
 		constexpr Type_Info() noexcept = default;
 
 		bool operator<(const Type_Info& ti) const noexcept { if (m_type_info) return m_type_info->before(*ti.m_type_info); else return name() < ti.name(); };

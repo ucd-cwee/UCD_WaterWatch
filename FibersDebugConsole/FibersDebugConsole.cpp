@@ -620,9 +620,6 @@ int main() {
 					{
 						EXPECT_EQ(true, global_scope->AddUsing(global_scope->FindNamespace("Units")));
 
-
-
-
 						if (auto ClassPtr = global_scope->FindClass("foot")) {
 							if (auto func = ClassPtr->FindFunction("foot", {}, tree)) {
 								auto returned = call(func, {}, tree);
@@ -2346,8 +2343,8 @@ int main() {
 				scripting::Type_Converter_Tree tree;
 
 				fibers::Any result;
-				EXPECT_EQ(true, tree.TryConvert(1.0f, fibers::user_type<float>(), result)); // no conversion = successful, no conversion necessary.
-				EXPECT_EQ(false, tree.TryConvert(1, fibers::user_type<float>(), result)); // no conversion provided, so this should fail. 
+				EXPECT_EQ(true, tree.TryConvert(1.0f, scripting::user_type<float>(), result)); // no conversion = successful, no conversion necessary.
+				EXPECT_EQ(false, tree.TryConvert(1, scripting::user_type<float>(), result)); // no conversion provided, so this should fail. 
 
 				// Numbers conversions
 				EXPECT_EQ(true, SINGLE_ARG(tree.AddConverter<int, bool>())); // int -> bool, bool -> int
@@ -2397,23 +2394,23 @@ int main() {
 				EXPECT_EQ(true, SINGLE_ARG(tree.AddConverter<Units::year, Units::value>())); // polymorphic
 				EXPECT_EQ(true, SINGLE_ARG(tree.AddConverter<DateTime, Units::second>())); // static
 
-				EXPECT_EQ(true, tree.TryConvert(1, fibers::user_type<bool>(), result));
-				EXPECT_EQ(true, tree.TryConvert(100, fibers::user_type<Units::value>(), result));
+				EXPECT_EQ(true, tree.TryConvert(1, scripting::user_type<bool>(), result));
+				EXPECT_EQ(true, tree.TryConvert(100, scripting::user_type<Units::value>(), result));
 				EXPECT_EQ("100", result.cast< Units::value >().ToString());
 
-				EXPECT_EQ(true, tree.TryConvert(100, fibers::user_type<Units::foot>(), result));
+				EXPECT_EQ(true, tree.TryConvert(100, scripting::user_type<Units::foot>(), result));
 				EXPECT_EQ("100 ft", result.cast< Units::foot >().ToString());
 
 				{
 					using namespace literals;
-					EXPECT_EQ(true, tree.TryConvert(1726254751_s, fibers::user_type<DateTime>(), result));
+					EXPECT_EQ(true, tree.TryConvert(1726254751_s, scripting::user_type<DateTime>(), result));
 				}
 				{
 					using namespace literals;
-					EXPECT_EQ(false, tree.TryConvert(1726254751_ft, fibers::user_type<DateTime>(), result));
+					EXPECT_EQ(false, tree.TryConvert(1726254751_ft, scripting::user_type<DateTime>(), result));
 				}
 
-				EXPECT_EQ(true, tree.TryConvert(1, fibers::user_type<Units::second>(), result));
+				EXPECT_EQ(true, tree.TryConvert(1, scripting::user_type<Units::second>(), result));
 
 				// update the tree...
 				EXPECT_EQ(true, SINGLE_ARG(tree.AddConverter([](std::string_view const& r) -> std::string { return r.data(); })));
@@ -2429,10 +2426,10 @@ int main() {
 				EXPECT_EQ(true, SINGLE_ARG(tree.AddConverter([](Units::value const& r) -> std::string { return r.ToString(); })));
 
 				// ... which will now re-evaluate the conversion and will use the faster conversion from now on. 
-				EXPECT_EQ(true, tree.TryConvert(1, fibers::user_type<Units::second>(), result));
-				EXPECT_EQ(true, tree.TryConvert(1, fibers::user_type<std::string_view>(), result));
-				EXPECT_EQ(true, tree.TryConvert(1.0, fibers::user_type<std::string_view>(), result));
-				EXPECT_EQ(true, tree.TryConvert(Units::foot(1), fibers::user_type<std::string_view>(), result));
+				EXPECT_EQ(true, tree.TryConvert(1, scripting::user_type<Units::second>(), result));
+				EXPECT_EQ(true, tree.TryConvert(1, scripting::user_type<std::string_view>(), result));
+				EXPECT_EQ(true, tree.TryConvert(1.0, scripting::user_type<std::string_view>(), result));
+				EXPECT_EQ(true, tree.TryConvert(Units::foot(1), scripting::user_type<std::string_view>(), result));
 
 				if (1) {
 					std::vector<fibers::Any> inputs{ fibers::Any(10) };

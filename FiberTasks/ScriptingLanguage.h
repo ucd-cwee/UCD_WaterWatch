@@ -263,7 +263,7 @@ namespace scripting {
 	// *THREAD-SAFE* Allows conversion from Types (e.g. double -> int, or std::string -> double)
 	// If needed, will gladly follow a conversion chain to achieve its desired result. (e.g. std::string -> double -> int -> uint)
 	// Assumes that conversions cannot be deleted, but does allow addition of conversion specializations.
-	class Type_Converter_Tree {
+	class Type_Converter_Tree2 {
 	private:
 		class Node {
 		public:
@@ -674,7 +674,423 @@ namespace scripting {
 
 	};
 
+	// *THREAD-SAFE* Allows conversion from Types (e.g. double -> int, or std::string -> double)
+	// If needed, will gladly follow a conversion chain to achieve its desired result. (e.g. std::string -> double -> int -> uint)
+	// Assumes that conversions cannot be deleted, but does allow addition of conversion specializations.
+	class Type_Converter_Tree {
+	private:
+		class Node {
+		public:
+			fibers::Type_Info from;
+			// does not support deleting type conversions, but that should be OK, since type conversions should be baked-in.
+			concurrency::concurrent_unordered_map<
+				fibers::Type_Info, // to
+				std::shared_ptr<details::Type_Conversion_Base> // converter function
+			> connections;
+			// does not support deleting type conversions, but that should be OK, since type conversions should be baked-in.
+			mutable concurrency::concurrent_unordered_map<
+				fibers::Type_Info, // to
+				std::tuple<
+				std::shared_ptr<std::vector<fibers::Type_Info>> // list of target types to convert to, including the final "to". 
+				, fibers::synchronization::impl::InterlockedLong // version of this conversion list
+				>
+			> cached_conversions;
+		};
+		// does not support deleting type conversions, but that should be OK, since type conversions should be baked-in.
+		concurrency::concurrent_unordered_map<
+			fibers::Type_Info, // from
+			Node // to/connections
+		> nodes;
 
+		fibers::synchronization::impl::InterlockedLong version;
+
+	private:
+		// Solves Dijkstra's algorithm to determine the shortest path for "From" to "To", puts the path in "Out", and returns true. 
+		// If no path is possible, returns false.
+		bool TryCreateConversionPath(scripting::Type_Info const& From, scripting::Type_Info const& To, std::vector<fibers::Type_Info>& out) const {
+			out.clear();
+			if (nodes.count(From) > 0) {
+
+				std::map<
+					fibers::Type_Info, // FROM vertex
+					std::map<
+					fibers::Type_Info, // TO vertex
+					double // distance
+					>
+				> vertices_and_distances;
+
+				std::map<
+					fibers::Type_Info, // FROM vertex
+					std::vector<fibers::Type_Info> // predecessors
+				> vertices_and_predecessors;
+
+				std::map<
+					fibers::Type_Info, // vertex
+					double // weight
+				> vertices_and_weights;
+
+				std::set< fibers::Type_Info > visited;
+
+				for (auto& node : nodes) {
+					vertices_and_weights[node.first] = std::numeric_limits<double>::max();
+					for (auto& connection : node.second.connections) {
+						vertices_and_distances[node.first][connection.first] = connection.second->cost();
+					}
+				}
+
+				vertices_and_weights[From] = 0;
+				vertices_and_predecessors[From] = {};
+
+				fibers::Type_Info CurrentVertex = From;
+				int numToVisit = 1;
+				bool FoundEnd = false;
+				int countDown = 0;
+				std::multimap<double, fibers::Type_Info> sorted;
+				while ((visited.size() < vertices_and_distances.size()) && (numToVisit-- >= 1)) {
+					// for each adjacent node...
+					numToVisit += vertices_and_distances[CurrentVertex].size();
+					for (auto& connection : vertices_and_distances[CurrentVertex]) {
+						// not previously visited...
+						if (visited.count(connection.first) == 0) {
+							// the distance to the start node must be calculated...
+							auto totalDistanceFromStartToThisVertex = vertices_and_weights[CurrentVertex] + connection.second;
+							// and update, if it is now the shortest path.
+							if (vertices_and_weights[connection.first] > totalDistanceFromStartToThisVertex) {
+								vertices_and_weights[connection.first] = totalDistanceFromStartToThisVertex;
+
+								// update the predecessors
+								vertices_and_predecessors[connection.first] = vertices_and_predecessors[CurrentVertex];
+								vertices_and_predecessors[connection.first].push_back(connection.first);
+							}
+						}
+					}
+
+					// we have visited this node.
+					visited.emplace(CurrentVertex);
+
+					// sort the non-visited nodes by weights
+					sorted.clear();
+					for (auto& vert : vertices_and_weights) {
+						if (visited.count(vert.first) == 0) {
+							sorted.emplace(vert.second, vert.first);
+						}
+					}
+					if (sorted.size() > 0) {
+						CurrentVertex = sorted.begin()->second;
+					}
+
+					// if we have the (likely) shortest path From -> To...
+					if (CurrentVertex == To) {
+						FoundEnd = true;
+					}
+					// otherwise, handle the countDown.
+					else {
+						if (!FoundEnd) countDown++;
+						else if (countDown-- <= 0) break;
+					}
+				}
+
+				if (vertices_and_predecessors.count(To) > 0) {
+					out = vertices_and_predecessors.operator[](To);
+
+					if (auto p1 = From.lock()) {
+						if (auto p2 = To.lock()) {
+							std::cout << Units::printf("Converting %s -> %s requires:\n\t%s", p1->name(), p2->name(), p1->name());
+							for (auto& x : out) {
+								//if (auto p3 = x.lock()) {
+									std::cout << Units::printf(" ... %s", /*p3->*/x.name());
+								//}
+							}
+						}
+					}
+					std::cout << Units::printf(" (%f)\n", (float)vertices_and_weights[To]);
+
+					return true;
+				}
+			}
+			return false;
+		};
+
+	public:
+		// add an automatic static or polymorphic conversion
+		template <typename FromType, typename ToType> bool AddConverter() {
+			auto fromTypeInfo{ fibers::user_type<FromType>() };
+			auto toTypeInfo{ fibers::user_type<ToType>() };
+
+			constexpr static bool is_polymorphic = std::is_base_of< ToType, FromType>::value;
+			constexpr static bool is_static = details::impl::is_explicitly_convertible_to<FromType, ToType>::value;
+			constexpr static bool is_bidir = details::impl::is_explicitly_convertible_to<ToType, FromType>::value;
+			if constexpr (!is_static && !is_polymorphic) {
+				return false;
+			}
+
+			Node& node = nodes[fromTypeInfo];
+			node.from = fromTypeInfo;
+
+			auto& targetLocation = node.connections[toTypeInfo];
+			if (!targetLocation) {
+				if constexpr (std::is_base_of< ToType, FromType>::value) {
+					targetLocation = std::dynamic_pointer_cast<details::Type_Conversion_Base>(std::make_shared<details::Dynamic_Type_Conversion_Impl<FromType, ToType>>());
+				}
+				else {
+					targetLocation = std::dynamic_pointer_cast<details::Type_Conversion_Base>(std::make_shared<details::Static_Type_Conversion_Impl<FromType, ToType>>());
+				}
+
+				(void)targetLocation->cost(); // cache the cost to perform this conversion
+
+				node.cached_conversions[toTypeInfo] = {
+					std::make_shared<std::vector<fibers::Type_Info>>(std::vector<fibers::Type_Info>({ toTypeInfo })),
+					fibers::synchronization::impl::InterlockedLong(std::numeric_limits<double>::max())
+				}; // even if there was a previous cached conversion, override it.
+
+				// if this converter was bidirectional, we should explicitely add it to the list.
+				// This will be slightly recursive but should end abruptly. 
+				if constexpr (is_static && is_bidir) {
+					AddConverter<ToType, FromType>();
+				}
+
+				version++;
+
+				return true;
+			}
+
+			return false;
+		};
+
+		// adds a customized conversion (e.g. calls a custom function)
+		// tree.AddConverter([](float v) -> double { return v; }))
+		// tree.AddConverter([](std::string const& v) -> const char* { return v.c_str(); }))
+		template <class Callable> bool AddConverter(Callable t_func) {
+			auto toTypeInfo = fibers::user_type<fibers::utilities::function_traits< decltype(std::function(t_func)) >::result_type>();
+			auto fromTypeInfo = fibers::user_type<std::decay_t<std::tuple_element_t<0, fibers::utilities::function_traits< decltype(std::function(t_func)) >::arguments>>>();
+
+			constexpr static bool is_polymorphic = std::is_base_of<
+				fibers::utilities::function_traits< decltype(std::function(t_func)) >::result_type
+				, std::decay_t<std::tuple_element_t<0, fibers::utilities::function_traits< decltype(std::function(t_func)) >::arguments>>
+			>::value;
+			constexpr static bool is_static = details::impl::is_explicitly_convertible_to<
+				std::decay_t<std::tuple_element_t<0, fibers::utilities::function_traits< decltype(std::function(t_func)) >::arguments>>
+				, fibers::utilities::function_traits< decltype(std::function(t_func)) >::result_type
+			>::value;
+			if constexpr (is_static || is_polymorphic) {
+				// There is a "cheaper" conversion available using built-in static_cast or dynamic_cast.
+				// Assumes that the user-provided function is exclusively performing casting, and not other functions (like counting, tracking, or initialization).
+				return AddConverter<
+					std::decay_t<std::tuple_element_t<0, fibers::utilities::function_traits< decltype(std::function(t_func)) >::arguments>>
+					, fibers::utilities::function_traits< decltype(std::function(t_func)) >::result_type
+				>();
+			}
+
+			Node& node = nodes[fromTypeInfo];
+			node.from = fromTypeInfo;
+
+			auto& targetLocation = node.connections[toTypeInfo];
+			if (!targetLocation) {
+				targetLocation = std::dynamic_pointer_cast<details::Type_Conversion_Base>(std::make_shared<details::Custom_Type_Conversion_Impl<Callable>>(std::move(t_func)));
+
+				(void)targetLocation->cost(); // cache the cost to perform this conversion
+
+				node.cached_conversions[toTypeInfo] = {
+					std::make_shared<std::vector<fibers::Type_Info>>(std::vector<fibers::Type_Info>({ toTypeInfo })),
+					fibers::synchronization::impl::InterlockedLong(std::numeric_limits<double>::max())
+				}; // even if there was a previous cached conversion, override it.
+
+				version++;
+
+				return true;
+			}
+			return false;
+		};
+
+		/// <summary>
+		/// returns true if it could convert "From" to "To" type, and stores the converted answer in "result". Otherwise returns false. 
+		/// </summary>
+		bool TryConvert(Any const& From, scripting::Type_Info const& to, Any& result) const {
+			auto fromType = From.Type().lock();
+			if (!fromType) return false;
+
+			if (fromType == to) {
+				result = From;
+				return true;
+			}
+			else if (to == scripting::user_type<Any>()) {
+				result = From;
+				return true;
+			}
+			else {
+				if (nodes.count(*fromType) > 0) {
+					Node const& node = nodes.at(*fromType);
+
+					// If the conversion path does not exist OR is outdated, then re-create it. 
+					if (node.cached_conversions.count(to) == 0 || std::get<1>(node.cached_conversions.at(to)).GetValue() < version.GetValue()) {
+						auto newCache{ std::make_shared<std::vector<fibers::Type_Info>>() };
+						if (newCache) {
+							auto& newCached = *newCache.get();
+							if (TryCreateConversionPath(fromType, to, newCached)) {
+								node.cached_conversions.insert({ to, { newCache, version.GetValue() } });
+								std::get<0>(node.cached_conversions.at(to)) = newCache;
+								std::get<1>(node.cached_conversions.at(to)) = version.GetValue();
+							}
+							else { // cache the failure -- to prevent repeated Dijkstra searches unless the tree is updated to (hopefully) bridge the gap.
+								node.cached_conversions.insert({ to, { {}, version.GetValue() } });
+								std::get<0>(node.cached_conversions.at(to)) = {};
+								std::get<1>(node.cached_conversions.at(to)) = version.GetValue();
+							}
+						}
+					}
+
+					// try again... hopefully it has been made (for better or worse)
+					if (node.cached_conversions.count(to) > 0) {
+						try {
+							std::shared_ptr<std::vector<fibers::Type_Info>> conversion_path = std::get<0>(node.cached_conversions.at(to));
+							if (conversion_path && conversion_path->size() > 0) {
+								Any currentFrom = From;
+								const Node* currentNode = &node;
+								for (auto& intermediate_to_type : *conversion_path) {
+									currentFrom = currentNode->connections.at(intermediate_to_type)->convert(currentFrom);
+									if (auto p = currentFrom.Type().lock()) {
+										currentNode = &nodes.at(*p);
+									}
+									else {
+										throw std::runtime_error("Something went wrong with the analysis");
+									}
+								}
+								result = currentFrom;
+								return true;
+							}
+						}
+						catch (...) {
+							node.cached_conversions.insert({ to, { {}, version.GetValue() } });
+							std::get<0>(node.cached_conversions.at(to)) = {};
+							std::get<1>(node.cached_conversions.at(to)) = version.GetValue();
+							return false;
+						}
+					}
+				}
+				return false;
+			}
+		}
+
+		/// <summary>
+		/// Converts "From" to the type of "To" and returns the final conversion. If not possible, then it throws an error. 
+		/// </summary>
+		Any Convert(Any const& From, scripting::Type_Info const& to) const {
+			Any result;
+			if (!TryConvert(From, to, result)) {
+				throw fibers::exception::bad_any_cast(From.Type(), to);
+			}
+			return result;
+		};
+		/// <summary>
+		/// Converts "From" to the type of "To" and returns the final conversion. If not possible, then it throws an error. 
+		/// </summary>
+		template <typename To> To Convert(Any const& From) const { return Convert(From, scripting::user_type<To>()).cast(); };
+
+		// Symbolic "cost" to perform the conversion, in 100's of nanoseconds. Not meant to be precise, but meant to be relative for comparison with other converters.
+		double ConversionCost(scripting::Type_Info const& From, scripting::Type_Info const& To) const {
+			if (From == To) {
+				return 0;
+			}
+			else if (To == scripting::user_type<Any>()) {
+				return 0;
+			}
+			else {
+				if (nodes.count(From) > 0) {
+					Node const& node = nodes.at(From);
+
+					// If the conversion path does not exist OR is outdated, then re-create it. 
+					if (node.cached_conversions.count(To) == 0 || std::get<1>(node.cached_conversions.at(To)).GetValue() < version.GetValue()) {
+						auto newCache{ std::make_shared<std::vector<fibers::Type_Info>>() };
+						if (newCache) {
+							auto& newCached = *newCache.get();
+							if (TryCreateConversionPath(From, To, newCached)) {
+								node.cached_conversions.insert({ To, { newCache, version.GetValue() } });
+								std::get<0>(node.cached_conversions.at(To)) = newCache;
+								std::get<1>(node.cached_conversions.at(To)) = version.GetValue();
+							}
+							else { // cache the failure -- to prevent repeated Dijkstra searches unless the tree is updated to (hopefully) bridge the gap.
+								node.cached_conversions.insert({ To, { {}, version.GetValue() } });
+								std::get<0>(node.cached_conversions.at(To)) = {};
+								std::get<1>(node.cached_conversions.at(To)) = version.GetValue();
+							}
+						}
+					}
+
+					// try again... hopefully it has been made (for better or worse)
+					if (node.cached_conversions.count(To) > 0) {
+						std::shared_ptr<std::vector<fibers::Type_Info>> conversion_path = std::get<0>(node.cached_conversions.at(To));
+						if (conversion_path && conversion_path->size() > 0) {
+							double cost{ 0 };
+							const Node* currentNode = &node;
+							for (auto& intermediate_to_type : *conversion_path) {
+								cost += currentNode->connections.at(intermediate_to_type)->cost();
+								currentNode = &nodes.at(intermediate_to_type);
+							}
+							return cost;
+						}
+					}
+				}
+				return std::numeric_limits<double>::max();
+			}
+		};
+		// Symbolic "cost" to perform the conversion, in 100's of nanoseconds. Not meant to be precise, but meant to be relative for comparison with other converters.
+		template <typename From, typename To> double ConversionCost() const { return ConversionCost(scripting::user_type<From>(), scripting::user_type<To>()); };
+
+		// true if the tree knows how to convert From into To
+		bool Converts(scripting::Type_Info const& From, scripting::Type_Info const& To) const {
+			if (From == To) {
+				return true;
+			}
+			else if (To == scripting::user_type<Any>()) {
+				return true;
+			}
+			else {
+				if (nodes.count(From) > 0) {
+					Node const& node = nodes.at(From);
+
+					// If the conversion path does not exist OR is outdated, then re-create it. 
+					if (node.cached_conversions.count(To) == 0 || std::get<1>(node.cached_conversions.at(To)).GetValue() < version.GetValue()) {
+						auto newCache{ std::make_shared<std::vector<fibers::Type_Info>>() };
+						if (newCache) {
+							auto& newCached = *newCache.get();
+							if (TryCreateConversionPath(From, To, newCached)) {
+								node.cached_conversions.insert({ To, { newCache, version.GetValue() } });
+								std::get<0>(node.cached_conversions.at(To)) = newCache;
+								std::get<1>(node.cached_conversions.at(To)) = version.GetValue();
+							}
+							else { // cache the failure -- to prevent repeated Dijkstra searches unless the tree is updated to (hopefully) bridge the gap.
+								node.cached_conversions.insert({ To, { {}, version.GetValue() } });
+								std::get<0>(node.cached_conversions.at(To)) = {};
+								std::get<1>(node.cached_conversions.at(To)) = version.GetValue();
+							}
+						}
+					}
+
+					// try again... hopefully it has been made (for better or worse)
+					if (node.cached_conversions.count(To) > 0) {
+						return true;
+					}
+				}
+				return false;
+			}
+		};
+		// true if the tree knows how to convert From into To
+		bool Converts(Any const& From, scripting::Type_Info const& To) const {
+			if (auto p = From.Type().lock()) {
+				return Converts(*p, To);
+			}
+			else {
+				return Converts(scripting::user_type<void>(), To);
+			}
+		};
+		// true if the tree knows how to convert From into To
+		template <typename From, typename To> bool Converts() const { return Converts(scripting::user_type<From>(), scripting::user_type<To>()); };
+		// true if the tree knows how to convert From into To
+		template <typename To> bool Converts(Any const& From) const { return Converts(From, scripting::user_type<To>()); };
+
+
+
+	};
 
 
 
@@ -692,7 +1108,7 @@ namespace scripting {
 			size_t h = FIRSTH;
 			if (size() > 0) {
 				for (auto& s : *this) {
-					h = (h * A) ^ (std::hash<Type_Info>()(s.Type()) * B);
+					h = (h * A) ^ (std::hash<scripting::Type_Info>()(s.Type()) * B);
 				}
 			}
 			auto result = h % C;
@@ -837,7 +1253,7 @@ namespace scripting {
 				const auto& ti = m_types[i].second;
 				if (auto p = ti.lock()) {
 					if (!p->is_undef()) {
-						vals[i] = t_conversions.Convert(bv, *p); // success or failure, caches the result for faster future eval's
+						vals[i] = t_conversions.Convert(bv, p); // success or failure, caches the result for faster future eval's
 					}
 				}
 			}
@@ -856,7 +1272,7 @@ namespace scripting {
 				const auto& ti = m_types[i].second;
 				if (auto p = ti.lock()) {
 					if (!p->is_undef()) {
-						if (!t_conversions.Converts(bv.Type(), *p)) return false;
+						if (!t_conversions.Converts(bv.Type(), p)) return false;
 					}
 				}
 			}
@@ -872,7 +1288,7 @@ namespace scripting {
 				if (auto p = ti.lock()) {
 					if (!p->is_undef()) {
 						if (auto p2 = t_params[i].Type().lock()) {
-							auto cost = t_conversions.ConversionCost(*p2, *p); // success or failure, caches the result for faster future eval's
+							auto cost = t_conversions.ConversionCost(p2, p); // success or failure, caches the result for faster future eval's
 							if (cost >= std::numeric_limits<double>::max()) return std::numeric_limits<double>::max();
 							else out += cost;
 						}
@@ -961,10 +1377,10 @@ namespace scripting {
 			bool compare_first_type(const Any& bv, const Type_Converter_Tree& t_conversions) const noexcept {
 				if (m_types.size() > 0) {
 					if (auto p = m_types[0].second.lock()) {
-						return t_conversions.Converts(bv, *p);
+						return t_conversions.Converts(bv, p);
 					}
 					else {
-						return t_conversions.Converts(bv, fibers::user_type<void>());
+						return t_conversions.Converts(bv, scripting::user_type<void>());
 					}
 				}
 				else {
