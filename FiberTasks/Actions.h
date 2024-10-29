@@ -600,17 +600,20 @@ namespace fibers {
 				to(to_m),
 				exc(std::string("Bad Any Cast From \"") + NameFromType(from_m) + "\" To \"" + NameFromType(to_m) + "\"")
 			{};
-
+			bad_any_cast(std::weak_ptr<fibers::Type_Info> from_m, std::weak_ptr<fibers::Type_Info> to_m) :
+				bad_cast(std::bad_cast::__construct_from_string_literal((std::string("Bad Any Cast From \"") + NameFromType(from_m) + "\" To \"" + NameFromType(to_m) + "\"").c_str())),
+				from(TypeFromPtr(from_m)),
+				to(TypeFromPtr(to_m)),
+				exc(std::string("Bad Any Cast From \"") + NameFromType(from_m) + "\" To \"" + NameFromType(to_m) + "\"")
+			{};
 		private:
 			std::string exc;
 			fibers::Type_Info from;
 			fibers::Type_Info to;
 
-			static std::string NameFromType(fibers::Type_Info const& x) {
-				return x.name();
-				// if (auto y = x.lock()) return y->name();else return "Unknown";				
-			};
-
+			static std::string NameFromType(fibers::Type_Info const& x) { return x.name(); };
+			static std::string NameFromType(std::weak_ptr<fibers::Type_Info> const& x) { if (auto y = x.lock()) return y->name();else return "Unknown"; };
+			static fibers::Type_Info TypeFromPtr(std::weak_ptr<fibers::Type_Info> const& x) { if (auto y = x.lock()) return *y; else return  fibers::Type_Info(); };
 		};
 	}; // namespace exception
 };

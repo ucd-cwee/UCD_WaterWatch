@@ -2401,7 +2401,7 @@ int main() {
 				EXPECT_EQ(true, tree.TryConvert(100, fibers::user_type<Units::value>(), result));
 				EXPECT_EQ("100", result.cast< Units::value >().ToString());
 
-				EXPECT_EQ(true, tree.TryConvert(100, fibers::Any::TypeOf<Units::foot>(), result));
+				EXPECT_EQ(true, tree.TryConvert(100, fibers::user_type<Units::foot>(), result));
 				EXPECT_EQ("100 ft", result.cast< Units::foot >().ToString());
 
 				{
@@ -2429,9 +2429,9 @@ int main() {
 				EXPECT_EQ(true, SINGLE_ARG(tree.AddConverter([](Units::value const& r) -> std::string { return r.ToString(); })));
 
 				// ... which will now re-evaluate the conversion and will use the faster conversion from now on. 
-				EXPECT_EQ(true, tree.TryConvert(1, fibers::user_type<Units::second>(), result)); 
-				EXPECT_EQ(true, tree.TryConvert(1, fibers::user_type<std::string_view>(), result)); 
-				EXPECT_EQ(true, tree.TryConvert(1.0, fibers::user_type<std::string_view>(), result)); 
+				EXPECT_EQ(true, tree.TryConvert(1, fibers::user_type<Units::second>(), result));
+				EXPECT_EQ(true, tree.TryConvert(1, fibers::user_type<std::string_view>(), result));
+				EXPECT_EQ(true, tree.TryConvert(1.0, fibers::user_type<std::string_view>(), result));
 				EXPECT_EQ(true, tree.TryConvert(Units::foot(1), fibers::user_type<std::string_view>(), result));
 
 				if (1) {

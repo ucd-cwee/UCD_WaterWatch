@@ -4626,6 +4626,14 @@ namespace fibers {
 					return false;
 				}
 			};
+			/* emplaces the object at the key in the map. */
+			bool insert(std::pair<KeyType, ObjType> const& pair, bool overwriteIfExists = true) {
+				return emplace(pair.first, pair.second, overwriteIfExists);
+			};
+			/* emplaces the object at the key in the map. */
+			bool insert(std::pair<KeyType, ObjType> && pair, bool overwriteIfExists = true) {
+				return emplace(std::move(pair.first), std::move(pair.second), overwriteIfExists);
+			};
 			/* returns a COPY of the value at the key. Returns empty if the value is not found. */
 			std::optional<ObjType> at(KeyType const& key) const {
 				auto g{ nodeAllocator.CreateEpochGuard() };
@@ -4642,8 +4650,13 @@ namespace fibers {
 					}
 				}
 			};
+			/* returns a COPY of the value at the key. Returns default values if the value is not found. */
+			ObjType at_or(KeyType const& key, ObjType const& defaultObj = ObjType()) const {
+				return at(key).value_or(defaultObj);
+			};
 			/* returns a COPY of the value at the hashed key. Returns empty if the value is not found.
 			Allows user to calculate the hash externally from the Map. */
+
 			std::optional<ObjType> at_hash(size_t const& key_hash) const {
 				auto g{ nodeAllocator.CreateEpochGuard() };
 
@@ -4656,6 +4669,10 @@ namespace fibers {
 						return std::nullopt;
 					}
 				}
+			};
+			/* returns a COPY of the value at the key. Returns default values if the value is not found. */
+			ObjType at_hash_or(size_t const& key_hash, ObjType const& defaultObj = ObjType()) const {
+				return at_hash(key_hash).value_or(defaultObj);
 			};
 			/* queues the key to be erased. Note that the erasure may be delayed depending on use of the map. */
 			bool erase(KeyType const& key) {
@@ -4671,6 +4688,10 @@ namespace fibers {
 			/* returns true if the key is in the map. */
 			bool contains(KeyType const& key) const {
 				return at(key).has_value();
+			};
+			/* returns true if the key is in the map. */
+			size_t count(KeyType const& key) const {
+				return at(key).has_value() ? 1 : 0;
 			};
 			/* returns the list of all keys currently in the map */
 			std::vector<KeyType> keys() const {

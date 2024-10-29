@@ -674,6 +674,12 @@ namespace scripting {
 
 	};
 
+
+
+
+
+
+
 	// input values to be offered to a function. Does not need to match the function input arguments -- conversions will take place later, if conversions are published to Type_Converter_Tree.
 	class Function_Params {
 	private:
