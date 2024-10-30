@@ -687,7 +687,7 @@ namespace scripting {
 		public:
 			fibers::Type_Info from;
 			// does not support deleting type conversions, but that should be OK, since type conversions should be baked-in.
-			concurrency::concurrent_unordered_map<
+			fibers::containers::Map<
 				fibers::Type_Info, // to
 				std::shared_ptr<details::Type_Conversion_Base> // converter function
 			> connections; // CONVERT THIS SECOND, SINCE IT (APPARENTLY) DEPENDS ON THE CACHE RETURN TYPE
@@ -831,13 +831,14 @@ namespace scripting {
 			std::shared_ptr<Node> node = nodes.get_or_insert(fromTypeInfo, std::make_shared<Node>());
 			node->from = fromTypeInfo;
 
-			auto& targetLocation = node->connections[toTypeInfo];
+
+			auto targetLocation = node->connections.at_or(toTypeInfo, nullptr);
 			if (!targetLocation) {
 				if constexpr (std::is_base_of< ToType, FromType>::value) {
-					targetLocation = std::dynamic_pointer_cast<details::Type_Conversion_Base>(std::make_shared<details::Dynamic_Type_Conversion_Impl<FromType, ToType>>());
+					targetLocation = node->connections.get_or_insert(toTypeInfo, std::dynamic_pointer_cast<details::Type_Conversion_Base>(std::make_shared<details::Dynamic_Type_Conversion_Impl<FromType, ToType>>()));
 				}
 				else {
-					targetLocation = std::dynamic_pointer_cast<details::Type_Conversion_Base>(std::make_shared<details::Static_Type_Conversion_Impl<FromType, ToType>>());
+					targetLocation = node->connections.get_or_insert(toTypeInfo, std::dynamic_pointer_cast<details::Type_Conversion_Base>(std::make_shared<details::Static_Type_Conversion_Impl<FromType, ToType>>()));
 				}
 
 				(void)targetLocation->cost(); // cache the cost to perform this conversion
@@ -888,9 +889,9 @@ namespace scripting {
 			std::shared_ptr<Node> node = nodes.get_or_insert(fromTypeInfo, std::make_shared<Node>());
 			node->from = fromTypeInfo;
 
-			auto& targetLocation = node->connections[toTypeInfo];
+			auto targetLocation = node->connections.at_or(toTypeInfo, nullptr);
 			if (!targetLocation) {
-				targetLocation = std::dynamic_pointer_cast<details::Type_Conversion_Base>(std::make_shared<details::Custom_Type_Conversion_Impl<Callable>>(std::move(t_func)));
+				targetLocation = node->connections.get_or_insert(toTypeInfo, std::dynamic_pointer_cast<details::Type_Conversion_Base>(std::make_shared<details::Custom_Type_Conversion_Impl<Callable>>(std::move(t_func))));
 
 				(void)targetLocation->cost(); // cache the cost to perform this conversion
 
@@ -972,13 +973,18 @@ namespace scripting {
 								Any currentFrom = From;
 								std::shared_ptr<Node> currentNode = node_ptr;
 								for (auto& intermediate_to_type : conversion_path) {
-									currentFrom = currentNode->connections.at(intermediate_to_type)->convert(currentFrom);
-									if (auto p = currentFrom.Type().lock()) {
-										currentNode = nodes.at(p).value_or(nullptr);
+									if (auto f = currentNode->connections.at_or(intermediate_to_type, nullptr)) {
+										currentFrom = f->convert(currentFrom);
+										if (auto p = currentFrom.Type().lock()) {
+											currentNode = nodes.at(p).value_or(nullptr);
+										}
+										else {
+											throw std::runtime_error("Something went wrong with the analysis at " + std::to_string(__LINE__));
+										}
 									}
 									else {
 										throw std::runtime_error("Something went wrong with the analysis at " + std::to_string(__LINE__));
-									}
+									}									
 								}
 								result = currentFrom;
 								return true;
@@ -1065,8 +1071,13 @@ namespace scripting {
 							double cost{ 0 };
 							std::shared_ptr<Node> currentNode = node_ptr;
 							for (auto& intermediate_to_type : conversion_path) {
-								cost += currentNode->connections.at(intermediate_to_type)->cost();
-								currentNode = nodes.at_hash(std::hash<fibers::Type_Info>()(intermediate_to_type)).value_or(nullptr);
+								if (auto f = currentNode->connections.at_or(intermediate_to_type, nullptr)) {
+									cost += f->cost();
+									currentNode = nodes.at_hash(std::hash<fibers::Type_Info>()(intermediate_to_type)).value_or(nullptr);
+								}
+								else {
+									throw std::runtime_error("Something went wrong with the analysis at " + std::to_string(__LINE__));
+								}
 							}
 							return cost;
 						}
