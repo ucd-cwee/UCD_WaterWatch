@@ -225,9 +225,13 @@ namespace scripting {
 				static double actualCost{ -1 };
 				static From inputObj{};
 				if (actualCost < 0) {
-					auto startT = clock_ns();
-					(void)((To)(inputObj));
-					actualCost = 1.0 + (double)(clock_ns() - startT) / 100.0;
+					double temp{ 0 };
+					for (int i = 0; i < 10; i++) {
+						auto startT = clock_ns();
+						(void)((To)(inputObj));
+						temp += (double)(clock_ns() - startT) / 100.0;
+					}
+					actualCost = 1.0 + temp/10.0;
 				}
 				return actualCost;
 			};
@@ -930,30 +934,32 @@ namespace scripting {
 							if (TryCreateConversionPath(fromType, to, newCached)) {
 								auto [f2, x] = node.cached_conversions.insert({ to, 
 									std::make_shared<std::tuple<std::shared_ptr<std::vector<fibers::Type_Info>>, fibers::synchronization::impl::InterlockedLong>>(
-										newCache, version.GetValue()
+										newCache, 
+										version.GetValue()
 									) 
 								});
-								if (f2 != node.cached_conversions.end() && f2->second) {
-									std::get<0>(*f2->second) = newCache;
-									std::get<1>(*f2->second) = version.GetValue();
-								}
-								else {
-									throw std::runtime_error("Something went wrong with the analysis at " + std::to_string(__LINE__));
-								}
+								//if (f2 != node.cached_conversions.end() && f2->second) {
+								//	std::get<0>(*f2->second) = newCache;
+								//	std::get<1>(*f2->second) = version.GetValue();
+								//}
+								//else {
+								//	throw std::runtime_error("Something went wrong with the analysis at " + std::to_string(__LINE__));
+								//}
 							}
 							else { // cache the failure -- to prevent repeated Dijkstra searches unless the tree is updated to (hopefully) bridge the gap.
 								auto [f2, x] = node.cached_conversions.insert({ to, 
 									std::make_shared<std::tuple<std::shared_ptr<std::vector<fibers::Type_Info>>, fibers::synchronization::impl::InterlockedLong>>(
-										 std::make_shared<std::vector<fibers::Type_Info>>(), version.GetValue()
+										 std::make_shared<std::vector<fibers::Type_Info>>(), 
+										version.GetValue()
 									) 
 								});
-								if (f2 != node.cached_conversions.end() && f2->second) {
-									std::get<0>(*f2->second) = {};
-									std::get<1>(*f2->second) = version.GetValue();
-								}
-								else {
-									throw std::runtime_error("Something went wrong with the analysis at " + std::to_string(__LINE__));
-								}
+								//if (f2 != node.cached_conversions.end() && f2->second) {
+								//	std::get<0>(*f2->second) = {};
+								//	std::get<1>(*f2->second) = version.GetValue();
+								//}
+								//else {
+								//	throw std::runtime_error("Something went wrong with the analysis at " + std::to_string(__LINE__));
+								//}
 							}
 						}
 					}
@@ -1025,24 +1031,30 @@ namespace scripting {
 						if (newCache) {
 							auto& newCached = *newCache.get();
 							if (TryCreateConversionPath(From, To, newCached)) {
-								auto [f2, x] = node.cached_conversions.insert({ To, std::make_shared<std::tuple<std::shared_ptr<std::vector<fibers::Type_Info>>, fibers::synchronization::impl::InterlockedLong>>(newCache, version.GetValue()) });
-								if (f2 != node.cached_conversions.end() && f2->second) {
-									std::get<0>(*f2->second) = newCache;
-									std::get<1>(*f2->second) = version.GetValue();
-								}
-								else {
-									throw std::runtime_error("Something went wrong with the analysis at " + std::to_string(__LINE__));
-								}
+								auto [f2, x] = node.cached_conversions.insert({ To, std::make_shared<std::tuple<std::shared_ptr<std::vector<fibers::Type_Info>>, fibers::synchronization::impl::InterlockedLong>>(
+									newCache, 
+									version.GetValue()
+								)});
+								//if (f2 != node.cached_conversions.end() && f2->second) {
+								//	std::get<0>(*f2->second) = newCache;
+								//	std::get<1>(*f2->second) = version.GetValue();
+								//}
+								//else {
+								//	throw std::runtime_error("Something went wrong with the analysis at " + std::to_string(__LINE__));
+								//}
 							}
 							else { // cache the failure -- to prevent repeated Dijkstra searches unless the tree is updated to (hopefully) bridge the gap.
-								auto [f2, x] = node.cached_conversions.insert({ To, std::make_shared<std::tuple<std::shared_ptr<std::vector<fibers::Type_Info>>, fibers::synchronization::impl::InterlockedLong>>(std::make_shared<std::vector<fibers::Type_Info>>(), version.GetValue()) });
-								if (f2 != node.cached_conversions.end() && f2->second) {
-									std::get<0>(*f2->second) = {};
-									std::get<1>(*f2->second) = version.GetValue();
-								}
-								else {
-									throw std::runtime_error("Something went wrong with the analysis at " + std::to_string(__LINE__));
-								}
+								auto [f2, x] = node.cached_conversions.insert({ To, std::make_shared<std::tuple<std::shared_ptr<std::vector<fibers::Type_Info>>, fibers::synchronization::impl::InterlockedLong>>(
+									std::make_shared<std::vector<fibers::Type_Info>>(), 
+									version.GetValue()
+								)});
+								//if (f2 != node.cached_conversions.end() && f2->second) {
+								//	std::get<0>(*f2->second) = {};
+								//	std::get<1>(*f2->second) = version.GetValue();
+								//}
+								//else {
+								//	throw std::runtime_error("Something went wrong with the analysis at " + std::to_string(__LINE__));
+								//}
 							}
 						}
 					}
@@ -1087,24 +1099,28 @@ namespace scripting {
 						if (newCache) {
 							auto& newCached = *newCache.get();
 							if (TryCreateConversionPath(From, To, newCached)) {
-								auto [f2, x] = node.cached_conversions.insert({ To, std::make_shared<std::tuple<std::shared_ptr<std::vector<fibers::Type_Info>>, fibers::synchronization::impl::InterlockedLong>>(newCache, version.GetValue()) });
-								if (f2 != node.cached_conversions.end() && f2->second) {
-									std::get<0>(*f2->second) = newCache;
-									std::get<1>(*f2->second) = version.GetValue();
-								}
-								else {
-									throw std::runtime_error("Something went wrong with the analysis at " + std::to_string(__LINE__));
-								}
+								auto [f2, x] = node.cached_conversions.insert({ To, std::make_shared<std::tuple<std::shared_ptr<std::vector<fibers::Type_Info>>, fibers::synchronization::impl::InterlockedLong>>(
+									newCache, version.GetValue()
+								)});
+								//if (f2 != node.cached_conversions.end() && f2->second) {
+								//	std::get<0>(*f2->second) = newCache;
+								//	std::get<1>(*f2->second) = version.GetValue();
+								//}
+								//else {
+								//	throw std::runtime_error("Something went wrong with the analysis at " + std::to_string(__LINE__));
+								//}
 							}
 							else { // cache the failure -- to prevent repeated Dijkstra searches unless the tree is updated to (hopefully) bridge the gap.
-								auto [f2, x] = node.cached_conversions.insert({ To, std::make_shared<std::tuple<std::shared_ptr<std::vector<fibers::Type_Info>>, fibers::synchronization::impl::InterlockedLong>>(std::make_shared<std::vector<fibers::Type_Info>>(), version.GetValue()) });
-								if (f2 != node.cached_conversions.end() && f2->second) {
-									std::get<0>(*f2->second) = {};
-									std::get<1>(*f2->second) = version.GetValue();
-								}
-								else {
-									throw std::runtime_error("Something went wrong with the analysis at " + std::to_string(__LINE__));
-								}
+								auto [f2, x] = node.cached_conversions.insert({ To, std::make_shared<std::tuple<std::shared_ptr<std::vector<fibers::Type_Info>>, fibers::synchronization::impl::InterlockedLong>>(
+									std::make_shared<std::vector<fibers::Type_Info>>(), version.GetValue()
+								)});
+								//if (f2 != node.cached_conversions.end() && f2->second) {
+								//	std::get<0>(*f2->second) = {};
+								//	std::get<1>(*f2->second) = version.GetValue();
+								//}
+								//else {
+								//	throw std::runtime_error("Something went wrong with the analysis at " + std::to_string(__LINE__));
+								//}
 							}
 						}
 					}
