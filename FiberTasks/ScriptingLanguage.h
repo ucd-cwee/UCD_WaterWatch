@@ -692,13 +692,13 @@ namespace scripting {
 				std::shared_ptr<details::Type_Conversion_Base> // converter function
 			> connections; // CONVERT THIS SECOND, SINCE IT (APPARENTLY) DEPENDS ON THE CACHE RETURN TYPE
 			// does not support deleting type conversions, but that should be OK, since type conversions should be baked-in.
-			mutable concurrency::concurrent_unordered_map<
+			mutable fibers::containers::Map <
 				fibers::Type_Info, // to
 				std::shared_ptr<std::tuple<
 				    std::vector<fibers::Type_Info> // list of target types to convert to, including the final "to". 
-				    , fibers::synchronization::impl::InterlockedLong // version of this conversion list
+				    , long // version of this conversion list
 				>>
-			> cached_conversions; // CONVERT THIS FIRST
+			> cached_conversions; 
 		};
 		// does not support deleting type conversions, but that should be OK, since type conversions should be baked-in.
 		fibers::containers::Map<
@@ -842,10 +842,10 @@ namespace scripting {
 
 				(void)targetLocation->cost(); // cache the cost to perform this conversion
 
-				node->cached_conversions[toTypeInfo] = std::make_shared<std::tuple<std::vector<fibers::Type_Info>, fibers::synchronization::impl::InterlockedLong>>(
+				node->cached_conversions.emplace(toTypeInfo, std::make_shared<std::tuple<std::vector<fibers::Type_Info>, long>>(
 					std::vector<fibers::Type_Info>({ toTypeInfo }),
-					fibers::synchronization::impl::InterlockedLong(std::numeric_limits<double>::max())
-				); // even if there was a previous cached conversion, override it.
+					(long)(std::numeric_limits<double>::max())
+				)); // even if there was a previous cached conversion, override it.
 
 				// if this converter was bidirectional, we should explicitely add it to the list.
 				// This will be slightly recursive but should end abruptly. 
@@ -894,10 +894,10 @@ namespace scripting {
 
 				(void)targetLocation->cost(); // cache the cost to perform this conversion
 
-				node->cached_conversions[toTypeInfo] = std::make_shared<std::tuple<std::vector<fibers::Type_Info>, fibers::synchronization::impl::InterlockedLong>>(
+				node->cached_conversions.emplace(toTypeInfo, std::make_shared<std::tuple<std::vector<fibers::Type_Info>, long>>(
 					std::vector<fibers::Type_Info>({ toTypeInfo }),
-					fibers::synchronization::impl::InterlockedLong(std::numeric_limits<double>::max())
-				); // even if there was a previous cached conversion, override it.
+					(long)(std::numeric_limits<double>::max())
+				)); // even if there was a previous cached conversion, override it.
 
 				version++;
 
@@ -926,13 +926,13 @@ namespace scripting {
 					auto& node = *node_ptr;
 
 					// If the conversion path does not exist OR is outdated, then re-create it. 
-					auto f = node.cached_conversions.find(to);
-					if (f == node.cached_conversions.end() || !f->second || std::get<1>(*f->second).GetValue() < version.GetValue()) {
+					auto f = node.cached_conversions.at(to).value_or(nullptr);
+					if (!f || std::get<1>(*f) < version.GetValue()) {
 						std::vector<fibers::Type_Info> newCached;
 						{
 							if (TryCreateConversionPath(fromType, to, newCached)) {
-								auto [f2, x] = node.cached_conversions.insert({ to, 
-									std::make_shared<std::tuple<std::vector<fibers::Type_Info>, fibers::synchronization::impl::InterlockedLong>>(
+								/*auto [f2, x] = */node.cached_conversions.insert({ to, 
+									std::make_shared<std::tuple<std::vector<fibers::Type_Info>, long>>(
 										newCached,
 										version.GetValue()
 									) 
@@ -946,8 +946,8 @@ namespace scripting {
 								//}
 							}
 							else { // cache the failure -- to prevent repeated Dijkstra searches unless the tree is updated to (hopefully) bridge the gap.
-								auto [f2, x] = node.cached_conversions.insert({ to, 
-									std::make_shared<std::tuple<std::vector<fibers::Type_Info>, fibers::synchronization::impl::InterlockedLong>>(
+								/*auto [f2, x] = */node.cached_conversions.insert({ to, 
+									std::make_shared<std::tuple<std::vector<fibers::Type_Info>, long>>(
 										std::vector<fibers::Type_Info>(), 
 										version.GetValue()
 									) 
@@ -964,10 +964,10 @@ namespace scripting {
 					}
 
 					// try again... hopefully it has been made (for better or worse)
-					f = node.cached_conversions.find(to);
-					if (f != node.cached_conversions.end() && f->second) {
+					f = node.cached_conversions.at(to).value_or(nullptr);
+					if (f) {
 						try {
-							std::vector<fibers::Type_Info>& conversion_path = std::get<0>(*f->second);
+							std::vector<fibers::Type_Info>& conversion_path = std::get<0>(*f);
 							if (conversion_path.size() > 0) {
 								Any currentFrom = From;
 								std::shared_ptr<Node> currentNode = node_ptr;
@@ -985,7 +985,7 @@ namespace scripting {
 							}
 						}
 						catch (...) {
-							auto [f2, x] = node.cached_conversions.insert({ to, std::make_shared<std::tuple<std::vector<fibers::Type_Info>, fibers::synchronization::impl::InterlockedLong>>(std::vector<fibers::Type_Info>(), version.GetValue()) });
+							/*auto [f2, x] = */node.cached_conversions.insert({ to, std::make_shared<std::tuple<std::vector<fibers::Type_Info>, long>>(std::vector<fibers::Type_Info>(), version.GetValue()) });
 							//std::get<0>(*f2->second) = {};
 							//std::get<1>(*f2->second) = version.GetValue();
 							return false;
@@ -1024,12 +1024,12 @@ namespace scripting {
 					auto& node = *node_ptr;
 
 					// If the conversion path does not exist OR is outdated, then re-create it. 
-					auto f = node.cached_conversions.find(To);
-					if (f == node.cached_conversions.end() || !f->second || std::get<1>(*f->second).GetValue() < version.GetValue()) {
+					auto f = node.cached_conversions.at(To).value_or(nullptr);
+					if (!f || std::get<1>(*f) < version.GetValue()) {
 						std::vector<fibers::Type_Info> newCached;
 						{
 							if (TryCreateConversionPath(From, To, newCached)) {
-								auto [f2, x] = node.cached_conversions.insert({ To, std::make_shared<std::tuple<std::vector<fibers::Type_Info>, fibers::synchronization::impl::InterlockedLong>>(
+								/*auto [f2, x] = */node.cached_conversions.insert({ To, std::make_shared<std::tuple<std::vector<fibers::Type_Info>, long>>(
 									newCached,
 									version.GetValue()
 								)});
@@ -1042,7 +1042,7 @@ namespace scripting {
 								//}
 							}
 							else { // cache the failure -- to prevent repeated Dijkstra searches unless the tree is updated to (hopefully) bridge the gap.
-								auto [f2, x] = node.cached_conversions.insert({ To, std::make_shared<std::tuple<std::vector<fibers::Type_Info>, fibers::synchronization::impl::InterlockedLong>>(
+								/*auto [f2, x] = */node.cached_conversions.insert({ To, std::make_shared<std::tuple<std::vector<fibers::Type_Info>, long>>(
 									std::vector<fibers::Type_Info>(),
 									version.GetValue()
 								)});
@@ -1058,9 +1058,9 @@ namespace scripting {
 					}
 
 					// try again... hopefully it has been made (for better or worse)
-					f = node.cached_conversions.find(To);
-					if (f != node.cached_conversions.end() && f->second) {
-						std::vector<fibers::Type_Info>& conversion_path = std::get<0>(*f->second);
+					f = node.cached_conversions.at(To).value_or(nullptr);
+					if (f) {
+						std::vector<fibers::Type_Info>& conversion_path = std::get<0>(*f);
 						if (conversion_path.size() > 0) {
 							double cost{ 0 };
 							std::shared_ptr<Node> currentNode = node_ptr;
@@ -1091,12 +1091,12 @@ namespace scripting {
 					auto& node = *node_ptr;
 
 					// If the conversion path does not exist OR is outdated, then re-create it. 
-					auto f = node.cached_conversions.find(To);
-					if (f == node.cached_conversions.end() || !f->second || std::get<1>(*f->second).GetValue() < version.GetValue()) {
+					auto f = node.cached_conversions.at(To).value_or(nullptr);
+					if (!f || std::get<1>(*f) < version.GetValue()) {
 						std::vector<fibers::Type_Info> newCached;
 						{
 							if (TryCreateConversionPath(From, To, newCached)) {
-								auto [f2, x] = node.cached_conversions.insert({ To, std::make_shared<std::tuple<std::vector<fibers::Type_Info>, fibers::synchronization::impl::InterlockedLong>>(
+								/*auto [f2, x] = */node.cached_conversions.insert({ To, std::make_shared<std::tuple<std::vector<fibers::Type_Info>, long>>(
 									newCached, 
 									version.GetValue()
 								)});
@@ -1109,7 +1109,7 @@ namespace scripting {
 								//}
 							}
 							else { // cache the failure -- to prevent repeated Dijkstra searches unless the tree is updated to (hopefully) bridge the gap.
-								auto [f2, x] = node.cached_conversions.insert({ To, std::make_shared<std::tuple<std::vector<fibers::Type_Info>, fibers::synchronization::impl::InterlockedLong>>(
+								/*auto [f2, x] = */node.cached_conversions.insert({ To, std::make_shared<std::tuple<std::vector<fibers::Type_Info>, long>>(
 									std::vector<fibers::Type_Info>(), 
 									version.GetValue()
 								)});
@@ -1125,8 +1125,8 @@ namespace scripting {
 					}
 
 					// try again... hopefully it has been made (for better or worse)
-					f = node.cached_conversions.find(To);
-					if (f != node.cached_conversions.end() && f->second) {
+					f = node.cached_conversions.at(To).value_or(nullptr);
+					if (f) {
 						return true;
 					}
 				}
