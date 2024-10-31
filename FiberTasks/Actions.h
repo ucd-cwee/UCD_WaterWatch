@@ -444,6 +444,34 @@ namespace std {
 				return std::hash<fibers::Type_Info>()(fibers::Type_Info());
 		}
 	};
+
+	template<> struct less<fibers::Type_Info>
+	{
+		bool operator() (const fibers::Type_Info& lhs, const fibers::Type_Info& rhs) const
+		{
+			return lhs < rhs;
+		}
+	};
+
+	template<> struct less<std::weak_ptr<fibers::Type_Info>>
+	{
+		bool operator() (const std::weak_ptr<fibers::Type_Info>& lhs, const std::weak_ptr<fibers::Type_Info>& rhs) const
+		{
+			auto LHS = lhs.lock();
+			auto RHS = rhs.lock();
+
+			if (LHS && RHS) {
+				return *LHS < *RHS;
+			}
+			else if (!LHS && !RHS) {
+				return LHS.get() < RHS.get();
+			}
+			else {
+				return LHS.get() < RHS.get();
+			}
+		}
+	};
+
 };
 
 namespace fibers {
