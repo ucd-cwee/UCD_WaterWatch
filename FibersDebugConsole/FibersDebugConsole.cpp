@@ -495,58 +495,307 @@ int main() {
 							std_namespace->AddChild(value_namespace);
 
 							// which has the following types groups... 
-							for (auto& type_group : Units::UnitsDetail::GetValueTypes()) {
-								// all the types within this group are naivly convertable to each other... remember to use this! 
-								for (auto& type : type_group) {
-									auto impl_namespace{ std::make_shared<Class>(value_namespace, std::get<1>(type), value_namespace, fibers::user_type<Units::value>()) }; // std::get<3>(type)
+							Type_Converter_Tree tree;
+							{
+								// default, built-in conversions...
+								tree.AddConverter<int, double>();
+								tree.AddConverter<int, float>();
+								tree.AddConverter<double, float>();
+								tree.AddConverter([](int x) -> std::string { return std::to_string(x); });
+								tree.AddConverter([](float x) -> std::string { return std::to_string(x); });
+								tree.AddConverter([](double x) -> std::string { return std::to_string(x); });
+								tree.AddConverter([](std::string x) -> double { return std::atof(x.c_str()); });
+								tree.AddConverter([](std::string x) -> float { return std::atof(x.c_str()); });
+								tree.AddConverter([](std::string x) -> int { return std::atof(x.c_str()); });
+							}
+
+							{
+								tree.AddConverter<Units::value, double>();
+								tree.AddConverter([](Units::value const& x) -> std::string { return x.ToString(); });
+								value_namespace->m_functions.emplace("abbreviation", make_callable([](Units::value const& x)->std::string {
+									return x.Abbreviation();
+								}), scripting::Param_Types());
+								value_namespace->m_functions.emplace("name", make_callable([](Units::value const& x)->std::string {
+									return x.UnitName();
+								}), scripting::Param_Types());
+
+								// manually go through and add each unit type... 
+								auto allUnitTypes = Units::UnitsDetail::GetValueTypes();
+								auto addUnit = [&](auto impl, std::string const& name) -> void {
+									auto impl_namespace{ std::make_shared<Class>(std_namespace, name, value_namespace, scripting::user_type<decltype(impl)>()) };
 									impl_namespace->p_self = impl_namespace;
 									std_namespace->AddChild(impl_namespace);
 
-									std_namespace->m_postfixes.emplace(std::get<0>(type), impl_namespace);
+									// Polymorphic converter
+									tree.AddConverter<decltype(impl), Units::value>();
+									tree.AddConverter<Units::value, decltype(impl)>();
+									tree.AddConverter<decltype(impl), double>();
+									tree.AddConverter([](decltype(impl) const& x) -> std::string { return x.ToString(); });
 
-									impl_namespace->m_functions.emplace(std::get<1>(type), make_callable([thisT = std::get<2>(type)]() {
-										Units::value out = thisT;
-										out = 0;
-										return out;
-									}), scripting::Param_Types());
-									impl_namespace->m_functions.emplace(std::get<1>(type), make_callable([thisT = std::get<2>(type)](double x) {
-										Units::value out = thisT;
-										out = x;
-										return out;
-									}), scripting::Param_Types({ { "in", user_type<double>() } }));
-									impl_namespace->m_functions.emplace(std::get<1>(type), make_callable([thisT = std::get<2>(type)](Units::value const& x) {
-										Units::value out = thisT;
-										out = x;
-										return out;
-									}), scripting::Param_Types({ { "in", user_type<Units::value>() } }));
-									impl_namespace->m_functions.emplace("abbreviation", make_callable([thisT = std::get<0>(type)]() {
-										return thisT;
-									}), scripting::Param_Types());
-									impl_namespace->m_functions.emplace("name", make_callable([thisT = std::get<1>(type)]() {
-										return thisT;
-									}), scripting::Param_Types());
-								}
+									bool found{ false };
+									for (auto& type_group : allUnitTypes) {
+										if (found) break;
+										for (auto& type : type_group) {
+											if (std::get<1>(type) == name) {
+												auto& abbrev = std::get<0>(type);
 
-								// TESTING -> adding converters! 
-								Type_Converter_Tree tree;
-								for (int i = 0; i < type_group.size(); i++) {
-									for (int j = 0; j < type_group.size(); j++) {
-										if (i != j) {
-											// tree.AddConverter([](Any const& x, Any const& y) {
+												// POSTFIX
+												std_namespace->m_postfixes.emplace(abbrev, impl_namespace);
+
+												// CONSTRUCT {}
+												impl_namespace->m_functions.emplace(name, make_callable([thisT = impl]()->Units::value {
+													Units::value out = thisT;
+													out = 0;
+													return out;
+												}), scripting::Param_Types());
+
+												// CONSTRUCT { double }
+												impl_namespace->m_functions.emplace(name, make_callable([thisT = impl](double x)->Units::value {
+													Units::value out = thisT;
+													out = x;
+													return out;
+												}), scripting::Param_Types({ { "in", user_type<double>() } }));
+
+												// CONSTRUCT { Units::value }
+												impl_namespace->m_functions.emplace(name, make_callable([thisT = impl](Units::value const& x)->Units::value {
+													Units::value out = thisT;
+													out = x;
+													return out;
+												}), scripting::Param_Types({ { "in", user_type<Units::value>() } }));
+
+												// abbreviation
+												impl_namespace->m_functions.emplace("abbreviation", make_callable([thisT = abbrev]()->std::string {
+													return thisT;
+												}), scripting::Param_Types());
+
+												// name
+												impl_namespace->m_functions.emplace("name", make_callable([thisT = name]()->std::string {
+													return thisT;
+												}), scripting::Param_Types());
 												
-											// }, std::vector<fibers::Type_Info>());
+												
 
-											auto& from_type = std::get<3>(type_group[i]);
-											auto& to_type = std::get<3>(type_group[j]);
-
-											auto conversion_function = [](Units::value& x, Units::value const& y) {
-												x = y;
-											};
-
+												found = true;
+												break;
+											}
 										}
 									}
-								}
+								};
+
+#define AddUnit(unitname) addUnit(Units::##unitname(), #unitname)
+								AddUnit(meter);
+								AddUnit(foot);
+								AddUnit(inch);
+								AddUnit(mile);
+								AddUnit(nauticalMile);
+								AddUnit(astronicalUnit);
+								AddUnit(yard);
+								AddUnit(gram);
+								AddUnit(metric_ton);
+								AddUnit(pound);
+								AddUnit(long_ton);
+								AddUnit(short_ton);
+								AddUnit(stone);
+								AddUnit(ounce);
+								AddUnit(carat);
+								AddUnit(slug);
+								AddUnit(second);
+								AddUnit(minute);
+								AddUnit(hour);
+								AddUnit(day);
+								AddUnit(week);
+								AddUnit(year);
+								AddUnit(month);
+								AddUnit(julian_year);
+								AddUnit(gregorian_year);
+								AddUnit(ampere);
+								AddUnit(Dollar);
+								AddUnit(MillionDollar);
+								AddUnit(hertz);
+								AddUnit(meters_per_second);
+								AddUnit(feet_per_second);
+								AddUnit(feet_per_minute);
+								AddUnit(feet_per_hour);
+								AddUnit(miles_per_hour);
+								AddUnit(kilometers_per_hour);
+								AddUnit(knot);
+								AddUnit(meters_per_second_squared);
+								AddUnit(feet_per_second_squared);
+								AddUnit(standard_gravity);
+								AddUnit(newton);
+								AddUnit(pound_f);
+								AddUnit(dyne);
+								AddUnit(kilopond);
+								AddUnit(poundal);
+								AddUnit(pascals);
+								AddUnit(bar);
+								AddUnit(atmosphere);
+								AddUnit(pounds_per_square_inch);
+								AddUnit(head);
+								AddUnit(torr);
+								AddUnit(coulomb);
+								AddUnit(ampere_hour);
+								AddUnit(watt);
+								AddUnit(horsepower);
+								AddUnit(joule);
+								AddUnit(calorie);
+								AddUnit(watt_minute);
+								AddUnit(watt_hour);
+								AddUnit(watt_day);
+								AddUnit(british_thermal_unit);
+								AddUnit(british_thermal_unit_iso);
+								AddUnit(british_thermal_unit_59);
+								AddUnit(therm);
+								AddUnit(foot_pound);
+								AddUnit(volt);
+								AddUnit(ohm);
+								AddUnit(siemens);
+								AddUnit(square_meter);
+								AddUnit(square_foot);
+								AddUnit(square_inch);
+								AddUnit(square_mile);
+								AddUnit(square_kilometer);
+								AddUnit(hectare);
+								AddUnit(acre);
+								AddUnit(cubic_meter);
+								AddUnit(cubic_millimeter);
+								AddUnit(cubic_kilometer);
+								AddUnit(liter);
+								AddUnit(cubic_inch);
+								AddUnit(cubic_foot);
+								AddUnit(cubic_yard);
+								AddUnit(cubic_mile);
+								AddUnit(gallon);
+								AddUnit(imperial_gallon);
+								AddUnit(million_gallon);
+								AddUnit(imperial_million_gallon);
+								AddUnit(acre_foot);
+								AddUnit(quart);
+								AddUnit(pint);
+								AddUnit(cup);
+								AddUnit(fluid_ounce);
+								AddUnit(barrel);
+								AddUnit(bushel);
+								AddUnit(cord);
+								AddUnit(tablespoon);
+								AddUnit(teaspoon);
+								AddUnit(pinch);
+								AddUnit(dash);
+								AddUnit(drop);
+								AddUnit(fifth);
+								AddUnit(dram);
+								AddUnit(gill);
+								AddUnit(peck);
+								AddUnit(sack);
+								AddUnit(shot);
+								AddUnit(strike);
+								AddUnit(gram_per_second);
+								AddUnit(metric_ton_per_second);
+								AddUnit(metric_ton_per_minute);
+								AddUnit(metric_ton_per_hour);
+								AddUnit(metric_ton_per_day);
+								AddUnit(metric_ton_per_year);
+								AddUnit(cubic_meter_per_second);
+								AddUnit(cubic_meter_per_hour);
+								AddUnit(cubic_meter_per_day);
+								AddUnit(cubic_millimeter_per_second);
+								AddUnit(liter_per_second);
+								AddUnit(liter_per_minute);
+								AddUnit(liter_per_day);
+								AddUnit(megaliter_per_day);
+								AddUnit(cubic_inch_per_second);
+								AddUnit(cubic_inch_per_hour);
+								AddUnit(cubic_foot_per_second);
+								AddUnit(cubic_foot_per_hour);
+								AddUnit(gallon_per_second);
+								AddUnit(gallon_per_minute);
+								AddUnit(gallon_per_hour);
+								AddUnit(gallon_per_day);
+								AddUnit(gallon_per_year);
+								AddUnit(million_gallon_per_second);
+								AddUnit(million_gallon_per_minute);
+								AddUnit(million_gallon_per_hour);
+								AddUnit(million_gallon_per_day);
+								AddUnit(million_gallon_per_year);
+								AddUnit(imperial_million_gallon_per_second);
+								AddUnit(imperial_million_gallon_per_minute);
+								AddUnit(imperial_million_gallon_per_hour);
+								AddUnit(imperial_million_gallon_per_day);
+								AddUnit(imperial_million_gallon_per_year);
+								AddUnit(acre_foot_per_second);
+								AddUnit(acre_foot_per_minute);
+								AddUnit(acre_foot_per_hour);
+								AddUnit(acre_foot_per_day);
+								AddUnit(acre_foot_per_year);
+								AddUnit(kilograms_per_cubic_meter);
+								AddUnit(grams_per_milliliter);
+								AddUnit(kilograms_per_liter);
+								AddUnit(ounces_per_cubic_foot);
+								AddUnit(ounces_per_cubic_inch);
+								AddUnit(ounces_per_gallon);
+								AddUnit(pounds_per_cubic_foot);
+								AddUnit(pounds_per_cubic_inch);
+								AddUnit(pounds_per_gallon);
+								AddUnit(slugs_per_cubic_foot);
+								AddUnit(Dollar_per_joule);
+								AddUnit(Dollar_per_kilowatt_hour);
+								AddUnit(Dollar_per_watt);
+								AddUnit(Dollar_per_kilowatt);
+								AddUnit(Dollar_per_cubic_meter);
+								AddUnit(Dollar_per_gallon);
+								AddUnit(kilowatt_hour_per_acre_foot);
+								AddUnit(Dollar_per_mile);
+								AddUnit(Dollar_per_ton);
+								AddUnit(ton_per_kilowatt_hour);
+#undef AddUnit
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 							}
+
+							// TESTING -> use those converters! 
+							{
+								Any obj; 
+
+								obj = Units::foot(1); 
+								EXPECT_EQ(true, tree.Converts(obj, user_type<Units::inch>()));
+								
+								obj = Units::foot(1); 
+								EXPECT_EQ(true, tree.Converts(obj, user_type<Units::meter>()));
+								
+								obj = Units::second(1); 
+								EXPECT_EQ(true, tree.Converts(obj, user_type<Units::year>()));
+								
+								obj = Units::gallon(1); 
+								EXPECT_EQ(true, tree.Converts(obj, user_type<Units::million_gallon>()));
+								
+								obj = Units::foot(1) * Units::foot(1); 
+								EXPECT_EQ(true, tree.Converts(obj, user_type<Units::acre>()));
+								
+								std::cout << tree.Convert(Units::foot(1), user_type<Units::inch>()).cast<Units::inch>() << std::endl;
+								std::cout << tree.Convert(Units::foot(1) * Units::foot(1), user_type<Units::acre>()).cast<Units::acre>() << std::endl;
+								std::cout << tree.Convert(Units::foot(1) * Units::inch(1) * Units::meter(1), user_type<Units::gallon>()).cast<Units::gallon>() << std::endl;
+
+								obj = Units::foot(1) * Units::foot(1);
+								EXPECT_EQ(false, tree.Converts(obj, user_type<Units::year>())); // sq_ft to year is nonsense and should fail
+
+								EXPECT_EQ(true, tree.Convert(Units::foot(1), user_type<Units::inch>()).IsTypeOf(user_type<Units::inch>()));
+								EXPECT_EQ(true, tree.Convert(Units::foot(1) * Units::foot(1), user_type<Units::acre>()).IsTypeOf(user_type<Units::acre>()));
+								EXPECT_EQ(true, tree.Convert(Units::foot(1), user_type<Units::value>()).IsTypeOf(user_type<Units::value>()));
+							}
+
 						}
 					}
 

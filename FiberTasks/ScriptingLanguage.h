@@ -6,8 +6,9 @@ namespace scripting {
 	using Type_Info = std::weak_ptr<fibers::Type_Info>;
 	using Any = fibers::Any;
 	template <typename T> __forceinline Type_Info user_type() {
-		static auto f{ std::make_shared<fibers::Type_Info>(fibers::user_type<T>()) };
-		return f;
+		return Units::UnitsDetail::user_type<T>();
+		// static auto f{ std::make_shared<fibers::Type_Info>(fibers::user_type<T>()) };
+		// return f;
 	};
 
 	namespace exception {
@@ -639,6 +640,7 @@ namespace scripting {
 			}
 			return result;
 		};
+		
 		/// <summary>
 		/// Converts "From" to the type of "To" and returns the final conversion. If not possible, then it throws an error. 
 		/// </summary>
@@ -744,9 +746,9 @@ namespace scripting {
 			}
 		};
 		// true if the tree knows how to convert From into To
-		bool Converts(Any const& From, scripting::Type_Info const& To) const {
+		bool Converts(Any& From, scripting::Type_Info const& To) const {
 			if (auto p = From.Type().lock()) {
-				return Converts(*p, To);
+				return Converts(p, To);
 			}
 			else {
 				return Converts(scripting::user_type<void>(), To);
@@ -755,7 +757,7 @@ namespace scripting {
 		// true if the tree knows how to convert From into To
 		template <typename From, typename To> bool Converts() const { return Converts(scripting::user_type<From>(), scripting::user_type<To>()); };
 		// true if the tree knows how to convert From into To
-		template <typename To> bool Converts(Any const& From) const { return Converts(From, scripting::user_type<To>()); };
+		template <typename To> bool Converts(Any& From) const { return Converts(From, scripting::user_type<To>()); };
 
 
 
@@ -1035,7 +1037,7 @@ namespace scripting {
 				return m_types.converts(vals, t_conversions);
 			};
 			// Faster comparison for just the first parameter, to quickly rule-out if this function is available to the boxed value
-			bool compare_first_type(const Any& bv, const Type_Converter_Tree& t_conversions) const noexcept {
+			bool compare_first_type(Any& bv, const Type_Converter_Tree& t_conversions) const noexcept {
 				if (m_types.size() > 0) {
 					if (auto p = m_types[0].second.lock()) {
 						return t_conversions.Converts(bv, p);

@@ -834,22 +834,23 @@ namespace fibers {
 			AnyData(AnyData&&) = default;
 			AnyData& operator=(AnyData const&) = default;
 			AnyData& operator=(AnyData&&) = default;
-			~AnyData() = default;
+			/*virtual*/ ~AnyData() = default;
 
 		public:
 			template<typename ToType> std::shared_ptr<ToType> cast() const {
 				return std::static_pointer_cast<ToType>(m_ptr); 
 			};
 			void* ptr() const { return m_ptr.get(); };
-			template<typename ToType> void ThrowIfNot() {
-				using baseType = typename std::decay_t<typename std::remove_reference_t<typename std::remove_pointer_t<typename std::remove_const_t<typename get_type< ToType >::type>>>>;
-				
-				if (user_type<baseType>() != m_type) {
+			/*virtual*/ void ThrowIfNot(Type_Info type) const {
+				// Direct match
+				if (type == m_type) return;
+				// else if (user_type<baseType>() == m_type) return; // POLYMORPHIC MATCH?
+				else  {
 					if (auto ptr = m_type.lock()) {
-						throw exception::bad_any_cast(*ptr, user_type<std::remove_const_t<std::decay_t<baseType>>>());
+						throw exception::bad_any_cast(*ptr, type);
 					}
 					else {
-						throw exception::bad_any_cast(user_type<void>(), user_type<std::remove_const_t<std::decay_t<baseType>>>());
+						throw exception::bad_any_cast(user_type<void>(), type);
 					}
 				}
 			};
@@ -871,6 +872,29 @@ namespace fibers {
 			const bool						        m_const; // whether or not the saved object is const
 
 		};
+	
+		//template <typename T>
+		//class SpecificType : public AnyData {
+		//public:
+		//	SpecificType() : AnyData() {};
+		//	virtual ~SpecificType() {};
+
+		//	virtual void ThrowIfNot(std::weak_ptr<Type_Info> type) const {
+		//		// Direct match
+		//		if (type == m_type) return;
+		//		else if (user_type<baseType>() == m_type) return; // POLYMORPHIC MATCH?
+		//		else {
+		//			if (auto ptr = m_type.lock()) {
+		//				throw exception::bad_any_cast(*ptr, type);
+		//			}
+		//			else {
+		//				throw exception::bad_any_cast(user_type<void>(), type);
+		//			}
+		//		}
+		//	};
+
+		//};
+	
 	}
 	class Any;
 
@@ -1649,9 +1673,10 @@ namespace fibers {
 			template<typename T> struct is_SharedPtr_class<std::shared_ptr<T>&&> { using type = std::true_type; };
 
 		private:
-			template <class VType> static decltype(auto) DoCast_Shared(Any* p) noexcept {
+			template <class VType> static decltype(auto) DoCast_Shared(Any* p, bool typeCheck = true) noexcept {
 				auto* ptr = p->container.get();
 				if (ptr) {
+					if (typeCheck) ptr->ThrowIfNot(user_type<typename std::decay_t<typename std::remove_reference_t<typename std::remove_pointer_t<typename std::remove_const_t<typename get_type< VType >::type>>>>> ());
 					return ptr->cast<VType>();
 				}
 				else {
@@ -1663,13 +1688,13 @@ namespace fibers {
 			template <class VType> static decltype(auto) DoCast_Shared_Sentinel(Any* p) noexcept {
 				throw("Casting Any to  std::shared_ptr<T>* or  std::shared_ptr<T>& is not recommended due to lifetime management concerns. Suggest changing cast to std::shared_ptr<T>.");
 			};
-			template<typename VType> static decltype(auto) DoCast_Unshared(Any* p) noexcept {
+			template<typename VType> static decltype(auto) DoCast_Unshared(Any* p, bool typeCheck = true) noexcept {
 				constexpr bool is_ptr = std::is_pointer_v<VType>;
 
 				typedef typename std::remove_reference<typename std::remove_pointer<VType>::type>::type desiredT;
 				auto* ptr = p->container.get();
 				if (ptr) {
-					ptr->ThrowIfNot< VType>();
+					if (typeCheck) ptr->ThrowIfNot(user_type<typename std::decay_t<typename std::remove_reference_t<typename std::remove_pointer_t<typename std::remove_const_t<typename get_type< VType >::type>>>>>());
 
 					if constexpr (is_ptr) {
 						return static_cast<desiredT*>(ptr->ptr());
@@ -1690,8 +1715,9 @@ namespace fibers {
 				}
 			};
 
+
 		public:
-			template<typename T> static decltype(auto) DoCast(Any* p) noexcept {
+			template<typename T> static decltype(auto) DoCast(Any* p, bool typeCheck = true) noexcept {
 				typedef typename is_SharedPtr_class<T>::type isShared;
 				constexpr bool is_shared_ptr = isShared::value;
 				constexpr bool is_ptr = std::is_pointer_v<T>;
@@ -1705,25 +1731,25 @@ namespace fibers {
 						throw("Casting Any to std::shared_ptr<T>* or std::shared_ptr<T>& is not recommended due to lifetime management concerns. Suggest changing cast to std::shared_ptr<T>.");
 					}
 					else {
-						return DoCast_Shared<innertype>(p);
+						return DoCast_Shared<innertype>(p, typeCheck);
 					}
 				}
 				else {
-					return DoCast_Unshared<T>(p);
+					return DoCast_Unshared<T>(p, typeCheck);
 				}
 			};
 		};
 
 		template<typename VType, typename = std::enable_if_t<!std::is_same_v<Any, std::decay_t<typename std::remove_reference<typename std::remove_pointer<VType>::type>::type>>>>
-		decltype(auto) cast() const noexcept { return DataCaster::DoCast<VType>(const_cast<Any*>(this)); };
+		decltype(auto) cast(bool typeCheck = true) const noexcept { return DataCaster::DoCast<VType>(const_cast<Any*>(this), typeCheck); };
 
 		template<typename VType, typename = std::enable_if_t<!std::is_pointer<VType>::value&& std::is_same_v<Any, std::decay_t<typename std::remove_reference<typename std::remove_pointer<VType>::type>::type>>>>
-		Any& cast() const noexcept { return *const_cast<Any*>(this); };
+		Any& cast(bool typeCheck = true) const noexcept { return *const_cast<Any*>(this); };
 
 		template<typename VType, typename = std::enable_if_t<std::is_pointer<VType>::value&& std::is_same_v<Any, std::decay_t<typename std::remove_reference<typename std::remove_pointer<VType>::type>::type>>>>
-		Any* cast() const noexcept { return const_cast<Any*>(this); };
+		Any* cast(bool typeCheck = true) const noexcept { return const_cast<Any*>(this); };
 
-		AnyAutoCast cast() const noexcept;
+		AnyAutoCast cast(bool typeCheck = true) const noexcept;
 
 	public:
 		mutable std::shared_ptr<AnyData> container;
@@ -1733,13 +1759,15 @@ namespace fibers {
 	/*! Supports forward-declaring a "cast" from an Any to the desired destination type. e.g: int& ref_int = any_obj.cast(); ... std::string str = any_obj.cast(); */
 	class AnyAutoCast {
 	public:
-		AnyAutoCast(const Any* _parent) :
+		AnyAutoCast(const Any* _parent, bool typeCheck = true) :
 			parent(const_cast<Any*>(_parent)),
-			parentCopy(*_parent)
+			parentCopy(*_parent),
+			TypeCheck(typeCheck)
 		{};
 		AnyAutoCast(AnyAutoCast&& other) :
 			parent(std::move(other.parent)),
-			parentCopy(std::move(other.parentCopy))
+			parentCopy(std::move(other.parentCopy)),
+			TypeCheck(true)
 		{};
 
 		AnyAutoCast() = delete;
@@ -1752,26 +1780,27 @@ namespace fibers {
 		explicit operator Any* () const noexcept { return parent; };
 
 		template <typename T>
-		operator std::shared_ptr<T>() const noexcept { return parentCopy.cast<std::shared_ptr<T>>(); };
+		operator std::shared_ptr<T>() const noexcept { return parentCopy.cast<std::shared_ptr<T>>(TypeCheck); };
 
 		template <typename T>
-		operator std::shared_ptr<T>* () const noexcept { return parentCopy.cast<std::shared_ptr<T>*>(); };
+		operator std::shared_ptr<T>* () const noexcept { return parentCopy.cast<std::shared_ptr<T>*>(TypeCheck); };
 
 		template< bool cond, typename U >
 		using resolvedType = typename std::enable_if< cond, U >::type;
 
 		template< typename ValueTypeT, typename U = ValueTypeT&, typename = std::enable_if<!Any::DataCaster::is_SharedPtr_class<ValueTypeT>::type::value> >
-		operator ValueTypeT& () const noexcept { return *parentCopy.cast<ValueTypeT*>(); };
+		operator ValueTypeT& () const noexcept { return *parentCopy.cast<ValueTypeT*>(TypeCheck); };
 
 		template< typename ValueTypeT, typename U = ValueTypeT*, typename = std::enable_if<!Any::DataCaster::is_SharedPtr_class<ValueTypeT>::type::value> >
-		operator ValueTypeT* () const noexcept { return parentCopy.cast<ValueTypeT*>(); };
+		operator ValueTypeT* () const noexcept { return parentCopy.cast<ValueTypeT*>(TypeCheck); };
 
 		Any* parent;
 		Any parentCopy;
+		bool TypeCheck;
 	};
 
 	/*! Casts to whatever is on the left-hand-side, with specializations for references, pointers, values, and std::shared_ptrs. References and pointers are lifetime-sensitive. */
-	__forceinline AnyAutoCast Any::cast() const noexcept { return AnyAutoCast(this); };
+	__forceinline AnyAutoCast Any::cast(bool typeCheck) const noexcept { return AnyAutoCast(this, typeCheck); };
 	__forceinline decltype(auto) Any::Object_Data::get(const AnyAutoCast& obj) { Any* t = const_cast<Any*>(obj.parent); std::shared_ptr<AnyData> out; if (t) { out = t->container; } return out; };
 	__forceinline decltype(auto) Any::Object_Data::get(const AnyAutoCast* t) { return get(*t); };
 
