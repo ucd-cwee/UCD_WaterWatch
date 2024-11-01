@@ -145,7 +145,7 @@ int main() {
 				});
 			}
 		}
-
+#if 0
 		if (1) {
 			scripting::ScriptingState objs;
 
@@ -214,7 +214,696 @@ int main() {
 
 
 		}
-		
+#endif
+
+		// MODERN TEST 2
+		if (1) {
+			using namespace scripting;
+			auto printf = [](auto x) { std::cout << x << std::endl; };
+
+			// Import Collection (to be owned and maintained by engine instance)
+			fibers::containers::Map<std::string, std::shared_ptr<Namespace>> imports;
+
+			// Global Namespace...
+			auto global_scope{ std::make_shared<Global>() };
+			global_scope->p_self = global_scope;
+
+			// Built-In Functions, Type, Conversions
+			if (1) {
+				// template function (specified by the "Any" type) which be duplicated and instantiated whenever actually called by a "real" set of parameters
+				global_scope->m_functions.emplace("Type", scripting::Param_Types({ { std::string("obj"), scripting::user_type<Any>() } }), scripting::make_callable(
+					[](Any const& x) -> fibers::Type_Info {
+						if (auto p = x.Type().lock())
+							return *p;
+						else
+							return fibers::user_type<void>();
+					}
+				), true);
+				global_scope->m_functions.emplace("+", scripting::make_callable([](double a, double b) -> double {
+					return a + b;
+				}), true);
+				global_scope->m_functions.emplace("*", scripting::make_callable([](double a, double b) -> double {
+					return a * b;
+				}), true);
+				global_scope->m_functions.emplace("-", scripting::make_callable([](double a, double b) -> double {
+					return a - b;
+				}), true);
+				global_scope->m_functions.emplace("/", scripting::make_callable([](double a, double b) -> double {
+					return a / b;
+				}), true);
+				global_scope->m_functions.emplace("^", scripting::make_callable([](double a, double b) -> double {
+					return std::pow(a, b);
+				}), true);
+
+
+				global_scope->TypeConversionTree()->AddConverter<unsigned int, int>();
+				global_scope->TypeConversionTree()->AddConverter<int, float>();
+				global_scope->TypeConversionTree()->AddConverter<double, int>(); 
+				global_scope->TypeConversionTree()->AddConverter<double, float>();
+				global_scope->TypeConversionTree()->AddConverter<double, size_t>();
+				global_scope->TypeConversionTree()->AddConverter<int, size_t>();
+				global_scope->TypeConversionTree()->AddConverter<float, size_t>();
+				global_scope->TypeConversionTree()->AddConverter<unsigned int, size_t>();
+
+
+				global_scope->CallFunction("Type", { Any(100.0) });
+				global_scope->CallFunction("+", { Any(100.0), Any(100.0) });
+				global_scope->CallFunction("^", { Any(5.0), Any(2.0) });
+			}
+
+			// Import Namespaces...
+			if (1) {
+				// #include "std"
+				if (1) {
+					auto global_scope2{ std::make_shared<Global>() }; 
+					global_scope2->p_self = global_scope2;
+
+					// Create STD library...
+					{
+						auto std_namespace{ std::make_shared<Namespace>(global_scope2, "std") };
+						std_namespace->p_self = std_namespace;
+						global_scope2->AddChild(std_namespace);
+
+						// the "std" namespace imports the "string" namespace...
+						{
+							auto string_namespace{ std::make_shared<Class>(fibers::user_type<std::string>(), std_namespace, "string") };
+							string_namespace->p_self = string_namespace;
+							std_namespace->AddChild(string_namespace);
+
+							// ... which imports the "impl" namespace...								
+							{
+								auto impl_namespace{ std::make_shared<Namespace>(string_namespace, "impl") };
+								impl_namespace->p_self = impl_namespace;
+								string_namespace->AddChild(impl_namespace);
+							}
+
+							// ... which has a couple constructor functions ... 
+							string_namespace->m_functions.emplace("string", scripting::make_callable([](std::string const& x) -> std::string { return x; }), scripting::Param_Types({ { std::string("parent"), string_namespace->ClassType } }));
+							string_namespace->m_functions.emplace("string", scripting::make_callable([](Any const& x) -> std::string {  return x.TypeName(); }), scripting::Param_Types({ { std::string("parent"), scripting::user_type<float>() } }));
+							string_namespace->m_functions.emplace("string", scripting::make_callable([](Any const& x) -> std::string {  return x.TypeName(); }), scripting::Param_Types({ { std::string("parent"), scripting::user_type<int>() } }));
+							string_namespace->m_functions.emplace("string", scripting::make_callable([](Any const& x) -> std::string {  return x.TypeName(); }), scripting::Param_Types({ { std::string("parent"), scripting::user_type<double>() } }));
+
+							// ... and has "to_string" functions...
+							std_namespace->m_functions.emplace("to_string", scripting::Param_Types({ { "o", string_namespace->ClassType } }), scripting::make_callable(
+								[](std::string const& x) -> std::string { return x; }
+							));
+							std_namespace->m_functions.emplace("to_string", scripting::Param_Types({ { "o", user_type<int>() } }), scripting::make_callable(
+								[](int const& x) -> std::string { return std::to_string(x); }
+							));
+							std_namespace->m_functions.emplace("to_string", scripting::Param_Types({ { "o", user_type<float>() } }), scripting::make_callable(
+								[](float const& x) -> std::string { return std::to_string(x); }
+							));
+							std_namespace->m_functions.emplace("to_string", scripting::Param_Types({ { "o", user_type<double>() } }), scripting::make_callable(
+								[](double const& x) -> std::string { return std::to_string(x); }
+							));
+							std_namespace->m_functions.emplace("to_string", scripting::Param_Types({ { "o", user_type<Any>() } }), scripting::make_callable(
+								[](Any const& x) -> std::string { return Units::printf("`%s`", x.TypeName()); }
+							));
+
+
+
+
+						}
+
+						// the "std" namespace imports the "map" namespace...
+						{
+							auto string_namespace{ std::make_shared<Class>(fibers::user_type<std::map<std::string, fibers::Any>>(), std_namespace, "map") };
+							string_namespace->p_self = string_namespace;
+							std_namespace->AddChild(string_namespace);
+
+							// ... which imports the "impl" namespace...
+							{
+								auto impl_namespace{ std::make_shared<Namespace>(string_namespace, "impl") };
+								impl_namespace->p_self = impl_namespace;
+								string_namespace->AddChild(impl_namespace);
+							}
+						}
+
+						// the "std" namespace imports the "set" namespace...
+						{
+							auto string_namespace{ std::make_shared<Class>(fibers::user_type<std::set<std::string>>(), std_namespace, "set") };
+							string_namespace->p_self = string_namespace;
+							std_namespace->AddChild(string_namespace);
+
+							// ... which imports the "impl" namespace...
+							{
+								auto impl_namespace{ std::make_shared<Namespace>(string_namespace, "impl") };
+								impl_namespace->p_self = impl_namespace;
+								string_namespace->AddChild(impl_namespace);
+							}
+						}
+
+						// the "std" namespace imports the "vector" namespace...
+						{
+							auto string_namespace{ std::make_shared<Class>(fibers::user_type<std::vector<fibers::Any>>(), std_namespace, "vector") };
+							string_namespace->p_self = string_namespace;
+							std_namespace->AddChild(string_namespace);
+
+							// ... which imports the "impl" namespace...
+							{
+								auto impl_namespace{ std::make_shared<Namespace>(string_namespace, "impl") };
+								impl_namespace->p_self = impl_namespace;
+								string_namespace->AddChild(impl_namespace);
+							}
+						}
+					}
+
+					// add it to our script...
+					imports.emplace("github//scriptLanguage.std", global_scope2); // the import map guarrantees lifetime...
+					global_scope->AddUsing(global_scope2); // ... while "using" allows our global to share their global's custom namespaces and objects
+				}
+
+				// #include "fibers"
+				if (1) {
+					auto script_scope{ std::make_shared<Global>() }; // global should always be a Namespace
+					script_scope->p_self = script_scope;
+
+					{
+						auto std_namespace{ std::make_shared<Namespace>(script_scope, "fibers") };
+						std_namespace->p_self = std_namespace;
+						script_scope->AddChild(std_namespace);
+
+						// the "fibers" namespace imports the "Number" namespace...
+						{
+							auto string_namespace{ std::make_shared<Class>(fibers::user_type<fibers::containers::number<double>>(), std_namespace, "Number") };
+							string_namespace->p_self = string_namespace;
+							std_namespace->AddChild(string_namespace);
+
+							// ... which imports the "impl" namespace...								
+							{
+								auto impl_namespace{ std::make_shared<Namespace>(string_namespace, "impl") };
+								impl_namespace->p_self = impl_namespace;
+								string_namespace->AddChild(impl_namespace);
+							}
+
+							string_namespace->TypeConversionTree()->AddConverter<fibers::containers::number<double>, unsigned int>();
+							string_namespace->TypeConversionTree()->AddConverter<fibers::containers::number<double>, int>();
+							string_namespace->TypeConversionTree()->AddConverter<fibers::containers::number<double>, float>();
+							string_namespace->TypeConversionTree()->AddConverter<fibers::containers::number<double>, double>();
+							string_namespace->TypeConversionTree()->AddConverter<fibers::containers::number<double>, size_t>();
+						}
+
+						// the "fibers" namespace imports the "Pattern" namespace...
+						{
+							auto string_namespace{ std::make_shared<Class>(fibers::user_type<fibers::containers::Pattern<double, double>>(), std_namespace, "Pattern") };
+							string_namespace->p_self = string_namespace;
+							std_namespace->AddChild(string_namespace);
+
+							// ... which imports the "impl" namespace...
+							{
+								auto impl_namespace{ std::make_shared<Namespace>(string_namespace, "impl") };
+								impl_namespace->p_self = impl_namespace;
+								string_namespace->AddChild(impl_namespace);
+							}
+						}
+
+						// the "fibers" namespace imports the "Matrix" namespace...
+						{
+							auto string_namespace{ std::make_shared<Class>(std_namespace, "Matrix") };
+							string_namespace->p_self = string_namespace;
+							std_namespace->AddChild(string_namespace);
+
+							// ... which imports the "impl" namespace...
+							{
+								auto impl_namespace{ std::make_shared<Namespace>(string_namespace, "impl") };
+								impl_namespace->p_self = impl_namespace;
+								string_namespace->AddChild(impl_namespace);
+							}
+						}
+
+						// the "fibers" namespace imports the "UI" namespace...
+						{
+							auto string_namespace{ std::make_shared<Namespace>(std_namespace, "UI") };
+							string_namespace->p_self = string_namespace;
+							std_namespace->AddChild(string_namespace);
+
+							// ... which imports the "Interactive" namespace...
+							auto interactive_namespace{ std::make_shared<Class>(string_namespace, "Interactive") }; {
+								interactive_namespace->p_self = interactive_namespace;
+								string_namespace->AddChild(interactive_namespace);
+
+								{
+									auto impl_namespace{ std::make_shared<Namespace>(interactive_namespace, "InteractiveImpl") };
+									impl_namespace->p_self = impl_namespace;
+									interactive_namespace->AddChild(impl_namespace);
+								}
+							}
+
+							// ... which imports the "Map" namespace...
+							{
+								auto impl_namespace{ std::make_shared<Class>(string_namespace, "Map", interactive_namespace) };
+								impl_namespace->p_self = impl_namespace;
+								string_namespace->AddChild(impl_namespace);
+
+								{
+									auto impl_namespace2{ std::make_shared<Namespace>(impl_namespace, "MapImpl") };
+									impl_namespace2->p_self = impl_namespace2;
+									impl_namespace->AddChild(impl_namespace2);
+								}
+
+								{
+									auto impl_namespace2{ std::make_shared<Namespace>(impl_namespace, "Text") };
+									impl_namespace2->p_self = impl_namespace2;
+									impl_namespace->AddChild(impl_namespace2);
+								}
+
+								impl_namespace->m_functions.emplace("=", make_callable([](Any& lhs, Any const& rhs) -> Any {
+									fibers::DynamicObject& LHS = lhs.cast();
+									fibers::DynamicObject& RHS = rhs.cast();
+									LHS = RHS;
+									return Any(lhs);
+									}), scripting::Param_Types({ { "lhs", impl_namespace->ClassType }, { "rhs", impl_namespace->ClassType } }));
+							}
+
+							// ... which imports the "Button" namespace...
+							{
+								auto impl_namespace{ std::make_shared<Class>(string_namespace, "Button", interactive_namespace) };
+								impl_namespace->p_self = impl_namespace;
+								string_namespace->AddChild(impl_namespace);
+							}
+
+							// ... which imports the "Grid" namespace...
+							{
+								auto impl_namespace{ std::make_shared<Class>(string_namespace, "Grid") };
+								impl_namespace->p_self = impl_namespace;
+								string_namespace->AddChild(impl_namespace);
+							}
+
+							// ... which imports the "Plot" namespace...
+							{
+								auto impl_namespace{ std::make_shared<Class>(string_namespace, "Plot") };
+								impl_namespace->p_self = impl_namespace;
+								string_namespace->AddChild(impl_namespace);
+							}
+
+							// ... which imports the "Text" namespace...
+							{
+								auto impl_namespace{ std::make_shared<Class>(string_namespace, "Text") };
+								impl_namespace->p_self = impl_namespace;
+								string_namespace->AddChild(impl_namespace);
+							}
+
+							// ... which imports the "WebPage" namespace...
+							{
+								auto impl_namespace{ std::make_shared<Class>(string_namespace, "WebPage") };
+								impl_namespace->p_self = impl_namespace;
+								string_namespace->AddChild(impl_namespace);
+							}
+
+						}
+					}
+
+					// add it to our script...
+					imports.emplace("github//scriptLanguage.fibers", script_scope); // the import map guarrantees lifetime...
+					global_scope->AddUsing(script_scope); // ... while "using" allows our global to share their global's custom namespaces and objects
+				}
+
+				// #include "Units"
+				if (1) {
+					auto global_scope2{ std::make_shared<Global>() }; // global should always be a Namespace
+					global_scope2->p_self = global_scope2;
+					auto& tree = *global_scope2->TypeConversionTree();
+
+					// Create library...
+					{
+						auto std_namespace{ std::make_shared<Namespace>(global_scope2, "Units") };
+						std_namespace->p_self = std_namespace;
+						global_scope2->AddChild(std_namespace);
+
+						// the "std" namespace imports the "string" namespace...
+						{
+							auto value_namespace{ std::make_shared<Class>(fibers::user_type<Units::value>(), std_namespace, "value") };
+							value_namespace->p_self = value_namespace;
+							std_namespace->AddChild(value_namespace);
+
+							// which has the following types groups... 
+
+							{
+								// default, built-in conversions...
+								tree.AddConverter<int, double>();
+								tree.AddConverter<int, float>();
+								tree.AddConverter<double, float>();
+								tree.AddConverter([](int x) -> std::string { return std::to_string(x); });
+								tree.AddConverter([](float x) -> std::string { return std::to_string(x); });
+								tree.AddConverter([](double x) -> std::string { return std::to_string(x); });
+								tree.AddConverter([](std::string x) -> double { return std::atof(x.c_str()); });
+								tree.AddConverter([](std::string x) -> float { return std::atof(x.c_str()); });
+								tree.AddConverter([](std::string x) -> int { return std::atof(x.c_str()); });
+							}
+
+							{
+								tree.AddConverter<Units::value, double>();
+								tree.AddConverter([](Units::value const& x) -> std::string { return x.ToString(); });
+								value_namespace->m_functions.emplace("abbreviation", make_callable([](Units::value const& x)->std::string {
+									return x.Abbreviation();
+								}), scripting::Param_Types());
+								value_namespace->m_functions.emplace("name", make_callable([](Units::value const& x)->std::string {
+									return x.UnitName();
+								}), scripting::Param_Types());
+
+								value_namespace->m_functions.emplace("*", make_callable([](Units::value const& x, Units::value const& y)->Units::value{
+									return x * y;
+								}));
+								value_namespace->m_functions.emplace("+", make_callable([](Units::value const& x, Units::value const& y)->Units::value {
+									return x + y;
+								}));
+								value_namespace->m_functions.emplace("-", make_callable([](Units::value const& x, Units::value const& y)->Units::value {
+									return x - y;
+								}));
+								value_namespace->m_functions.emplace("/", make_callable([](Units::value const& x, Units::value const& y)->Units::value {
+									return x / y;
+								}));
+								value_namespace->m_functions.emplace("+=", make_callable([](Units::value& x, Units::value const& y) -> void {
+									x += y;
+								}));
+								value_namespace->m_functions.emplace("*=", make_callable([](Units::value& x, Units::value const& y) -> void {
+									x *= y;
+								}));
+								value_namespace->m_functions.emplace("/=", make_callable([](Units::value& x, Units::value const& y) -> void {
+									x /= y;
+								}));
+								value_namespace->m_functions.emplace("-=", make_callable([](Units::value& x, Units::value const& y) -> void {
+									x -= y;
+								}));
+
+								// manually go through and add each unit type... 
+								auto allUnitTypes = Units::UnitsDetail::GetValueTypes();
+								auto addUnit = [&](auto impl, std::string const& name) -> void {
+									auto impl_namespace{ std::make_shared<Class>(std_namespace, name, value_namespace, user_type<decltype(impl)>()) };
+									impl_namespace->p_self = impl_namespace;
+									std_namespace->AddChild(impl_namespace);
+
+									// Polymorphic converter
+									tree.AddConverter<decltype(impl), Units::value>();
+									tree.AddConverter<Units::value, decltype(impl)>();
+									tree.AddConverter<decltype(impl), double>();
+									tree.AddConverter([](decltype(impl) const& x) -> std::string { return x.ToString(); });
+
+									bool found{ false };
+									for (auto& type_group : allUnitTypes) {
+										if (found) break;
+										for (auto& type : type_group) {
+											if (std::get<1>(type) == name) {
+												auto& abbrev = std::get<0>(type);
+
+												// POSTFIX
+												std_namespace->m_postfixes.emplace(abbrev, impl_namespace);
+
+												// CONSTRUCT {}
+												impl_namespace->m_functions.emplace(name, make_callable([/*thisT = impl*/]()->decltype(impl) {
+													decltype(impl) out;
+													out = 0;
+													return out;
+												}), scripting::Param_Types());
+
+												// CONSTRUCT { double }
+												impl_namespace->m_functions.emplace(name, make_callable([/*thisT = impl*/](double x)->decltype(impl) {
+													decltype(impl) out;
+													out = x;
+													return out;
+												}), scripting::Param_Types({ { "in", user_type<double>() } }));
+
+												// CONSTRUCT { Units::value }
+												impl_namespace->m_functions.emplace(name, make_callable([/*thisT = impl*/](Units::value const& x)->decltype(impl) {
+													decltype(impl) out;
+													out = x;
+													return out;
+												}), scripting::Param_Types({ { "in", user_type<Units::value>() } }));
+
+												// abbreviation
+												impl_namespace->m_functions.emplace("abbreviation", make_callable([thisT = abbrev]()->std::string {
+													return thisT;
+												}), scripting::Param_Types({ { "parent", user_type<decltype(impl)>() } }));
+
+												// name
+												impl_namespace->m_functions.emplace("name", make_callable([thisT = name]()->std::string {
+													return thisT;
+												}), scripting::Param_Types({ { "parent", user_type<decltype(impl)>() } }));
+
+												std_namespace->AddUsing(impl_namespace);
+
+												found = true;
+												break;
+											}
+										}
+									}
+								};
+
+								
+
+#define AddUnit(unitname) addUnit(Units::##unitname(), #unitname)
+								AddUnit(meter);
+								AddUnit(foot);
+								AddUnit(inch);
+								AddUnit(mile);
+								AddUnit(nauticalMile);
+								AddUnit(astronicalUnit);
+								AddUnit(yard);
+								AddUnit(gram);
+								AddUnit(metric_ton);
+								AddUnit(pound);
+								AddUnit(long_ton);
+								AddUnit(short_ton);
+								AddUnit(stone);
+								AddUnit(ounce);
+								AddUnit(carat);
+								AddUnit(slug);
+								AddUnit(second);
+								AddUnit(minute);
+								AddUnit(hour);
+								AddUnit(day);
+								AddUnit(week);
+								AddUnit(year);
+								AddUnit(month);
+								AddUnit(julian_year);
+								AddUnit(gregorian_year);
+								AddUnit(ampere);
+								AddUnit(Dollar);
+								AddUnit(MillionDollar);
+								AddUnit(hertz);
+								AddUnit(meters_per_second);
+								AddUnit(feet_per_second);
+								AddUnit(feet_per_minute);
+								AddUnit(feet_per_hour);
+								AddUnit(miles_per_hour);
+								AddUnit(kilometers_per_hour);
+								AddUnit(knot);
+								AddUnit(meters_per_second_squared);
+								AddUnit(feet_per_second_squared);
+								AddUnit(standard_gravity);
+								AddUnit(newton);
+								AddUnit(pound_f);
+								AddUnit(dyne);
+								AddUnit(kilopond);
+								AddUnit(poundal);
+								AddUnit(pascals);
+								AddUnit(bar);
+								AddUnit(atmosphere);
+								AddUnit(pounds_per_square_inch);
+								AddUnit(head);
+								AddUnit(torr);
+								AddUnit(coulomb);
+								AddUnit(ampere_hour);
+								AddUnit(watt);
+								AddUnit(horsepower);
+								AddUnit(joule);
+								AddUnit(calorie);
+								AddUnit(watt_minute);
+								AddUnit(watt_hour);
+								AddUnit(watt_day);
+								AddUnit(british_thermal_unit);
+								AddUnit(british_thermal_unit_iso);
+								AddUnit(british_thermal_unit_59);
+								AddUnit(therm);
+								AddUnit(foot_pound);
+								AddUnit(volt);
+								AddUnit(ohm);
+								AddUnit(siemens);
+								AddUnit(square_meter);
+								AddUnit(square_foot);
+								AddUnit(square_inch);
+								AddUnit(square_mile);
+								AddUnit(square_kilometer);
+								AddUnit(hectare);
+								AddUnit(acre);
+								AddUnit(cubic_meter);
+								AddUnit(cubic_millimeter);
+								AddUnit(cubic_kilometer);
+								AddUnit(liter);
+								AddUnit(cubic_inch);
+								AddUnit(cubic_foot);
+								AddUnit(cubic_yard);
+								AddUnit(cubic_mile);
+								AddUnit(gallon);
+								AddUnit(imperial_gallon);
+								AddUnit(million_gallon);
+								AddUnit(imperial_million_gallon);
+								AddUnit(acre_foot);
+								AddUnit(quart);
+								AddUnit(pint);
+								AddUnit(cup);
+								AddUnit(fluid_ounce);
+								AddUnit(barrel);
+								AddUnit(bushel);
+								AddUnit(cord);
+								AddUnit(tablespoon);
+								AddUnit(teaspoon);
+								AddUnit(pinch);
+								AddUnit(dash);
+								AddUnit(drop);
+								AddUnit(fifth);
+								AddUnit(dram);
+								AddUnit(gill);
+								AddUnit(peck);
+								AddUnit(sack);
+								AddUnit(shot);
+								AddUnit(strike);
+								AddUnit(gram_per_second);
+								AddUnit(metric_ton_per_second);
+								AddUnit(metric_ton_per_minute);
+								AddUnit(metric_ton_per_hour);
+								AddUnit(metric_ton_per_day);
+								AddUnit(metric_ton_per_year);
+								AddUnit(cubic_meter_per_second);
+								AddUnit(cubic_meter_per_hour);
+								AddUnit(cubic_meter_per_day);
+								AddUnit(cubic_millimeter_per_second);
+								AddUnit(liter_per_second);
+								AddUnit(liter_per_minute);
+								AddUnit(liter_per_day);
+								AddUnit(megaliter_per_day);
+								AddUnit(cubic_inch_per_second);
+								AddUnit(cubic_inch_per_hour);
+								AddUnit(cubic_foot_per_second);
+								AddUnit(cubic_foot_per_hour);
+								AddUnit(gallon_per_second);
+								AddUnit(gallon_per_minute);
+								AddUnit(gallon_per_hour);
+								AddUnit(gallon_per_day);
+								AddUnit(gallon_per_year);
+								AddUnit(million_gallon_per_second);
+								AddUnit(million_gallon_per_minute);
+								AddUnit(million_gallon_per_hour);
+								AddUnit(million_gallon_per_day);
+								AddUnit(million_gallon_per_year);
+								AddUnit(imperial_million_gallon_per_second);
+								AddUnit(imperial_million_gallon_per_minute);
+								AddUnit(imperial_million_gallon_per_hour);
+								AddUnit(imperial_million_gallon_per_day);
+								AddUnit(imperial_million_gallon_per_year);
+								AddUnit(acre_foot_per_second);
+								AddUnit(acre_foot_per_minute);
+								AddUnit(acre_foot_per_hour);
+								AddUnit(acre_foot_per_day);
+								AddUnit(acre_foot_per_year);
+								AddUnit(kilograms_per_cubic_meter);
+								AddUnit(grams_per_milliliter);
+								AddUnit(kilograms_per_liter);
+								AddUnit(ounces_per_cubic_foot);
+								AddUnit(ounces_per_cubic_inch);
+								AddUnit(ounces_per_gallon);
+								AddUnit(pounds_per_cubic_foot);
+								AddUnit(pounds_per_cubic_inch);
+								AddUnit(pounds_per_gallon);
+								AddUnit(slugs_per_cubic_foot);
+								AddUnit(Dollar_per_joule);
+								AddUnit(Dollar_per_kilowatt_hour);
+								AddUnit(Dollar_per_watt);
+								AddUnit(Dollar_per_kilowatt);
+								AddUnit(Dollar_per_cubic_meter);
+								AddUnit(Dollar_per_gallon);
+								AddUnit(kilowatt_hour_per_acre_foot);
+								AddUnit(Dollar_per_mile);
+								AddUnit(Dollar_per_ton);
+								AddUnit(ton_per_kilowatt_hour);
+#undef AddUnit
+							}
+
+							// std_namespace->AddUsing(value_namespace);
+						}
+					}
+
+					// add it to our script...
+					imports.emplace("github//scriptLanguage.Units", global_scope2); // the import map guarrantees lifetime...
+					global_scope->AddUsing(global_scope2); // ... while "using" allows our global to share their global's custom namespaces and objects
+				}
+			}
+
+			// TESTING...
+			if (1) {
+				auto localScope = std::make_shared<Scope>(global_scope);
+				localScope->p_self = localScope;
+
+				auto trees = localScope->TypeConversionTrees();
+				auto tree = Type_Converter_Tree::Combine(trees);
+				EXPECT_EQ(true, tree.Converts(scripting::user_type<int>(), scripting::user_type<float>()));
+				EXPECT_EQ(true, tree.Converts(scripting::user_type<double>(), scripting::user_type<Units::foot>()));
+				EXPECT_EQ(true, tree.Converts(scripting::user_type<Units::foot>(), scripting::user_type<Units::value>()));
+				EXPECT_EQ(true, tree.Converts(scripting::user_type<Units::foot>(), scripting::user_type<Units::meter>()));
+				
+				tree.Convert(100.0, scripting::user_type<Units::foot>());
+				tree.Convert(Units::foot(100.0), scripting::user_type<Units::value>());
+				tree.Convert(Units::foot(100.0), scripting::user_type<Units::meter>());
+
+
+
+				localScope->Print();
+
+				printf("PRINTING:");
+				for (auto& child : localScope->GetAvailableNamespaces()) {
+					printf(child.first + "\t  ->  \t" + child.second.lock()->GetQualifiedNamespace());
+				}
+				printf("");
+				
+				Any foot_v;
+				{
+					foot_v = localScope->CallFunction("Units::foot", { Any(100.0) });
+					printf(foot_v.cast<Units::foot>().ToString());
+				}
+
+				if (auto nsFound = localScope->FindNamespace("Units")) {
+					foot_v = nsFound->CallFunction("foot", { Any(100.0) });
+					printf(foot_v.cast<Units::foot>().ToString());
+				}
+
+				// ISSUE: the wrong "type conversion tree" is being searched for potential conversions
+				// SOLUTION: must search MULTIPLE trees to generate the correct solution. 
+				{
+					auto meter_v = localScope->CallFunction("Units::meter", { foot_v });
+					printf(meter_v.cast<Units::meter>().ToString());
+				}
+
+				{
+					auto text_v = localScope->CallFunction("to_string", { foot_v });
+					printf(text_v.cast<std::string>());
+				}
+			}
+		}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#if 0
 		// MODERN TEST
 		if (1) {
 			using namespace scripting;
@@ -479,6 +1168,7 @@ int main() {
 
 				// "Import" the `Units` library...
 				if (1) {
+					Type_Converter_Tree tree;
 					auto global_scope2{ std::make_shared<Namespace>() }; // global should always be a Namespace
 					global_scope2->p_self = global_scope2;
 
@@ -495,7 +1185,7 @@ int main() {
 							std_namespace->AddChild(value_namespace);
 
 							// which has the following types groups... 
-							Type_Converter_Tree tree;
+							
 							{
 								// default, built-in conversions...
 								tree.AddConverter<int, double>();
@@ -522,7 +1212,7 @@ int main() {
 								// manually go through and add each unit type... 
 								auto allUnitTypes = Units::UnitsDetail::GetValueTypes();
 								auto addUnit = [&](auto impl, std::string const& name) -> void {
-									auto impl_namespace{ std::make_shared<Class>(std_namespace, name, value_namespace, scripting::user_type<decltype(impl)>()) };
+									auto impl_namespace{ std::make_shared<Class>(std_namespace, name, value_namespace, user_type<decltype(impl)>()) };
 									impl_namespace->p_self = impl_namespace;
 									std_namespace->AddChild(impl_namespace);
 
@@ -566,14 +1256,14 @@ int main() {
 												// abbreviation
 												impl_namespace->m_functions.emplace("abbreviation", make_callable([thisT = abbrev]()->std::string {
 													return thisT;
-												}), scripting::Param_Types());
+												}), scripting::Param_Types({ { "parent", user_type<decltype(impl)>() } }));
 
 												// name
 												impl_namespace->m_functions.emplace("name", make_callable([thisT = name]()->std::string {
 													return thisT;
-												}), scripting::Param_Types());
+												}), scripting::Param_Types({ { "parent", user_type<decltype(impl)>() } }));
 												
-												
+												std_namespace->AddUsing(impl_namespace);
 
 												found = true;
 												break;
@@ -751,22 +1441,10 @@ int main() {
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
 							}
 
 							// TESTING -> use those converters! 
-							{
+							if (1) {
 								Any obj; 
 
 								obj = Units::foot(1); 
@@ -789,13 +1467,102 @@ int main() {
 								std::cout << tree.Convert(Units::foot(1) * Units::inch(1) * Units::meter(1), user_type<Units::gallon>()).cast<Units::gallon>() << std::endl;
 
 								obj = Units::foot(1) * Units::foot(1);
-								EXPECT_EQ(false, tree.Converts(obj, user_type<Units::year>())); // sq_ft to year is nonsense and should fail
+								EXPECT_EQ(true, tree.Converts(obj, user_type<Units::year>())); // technically, Units::value -> Units::year is a valid conversion, since we can't (until runtime) determine the actual unit type.
 
 								EXPECT_EQ(true, tree.Convert(Units::foot(1), user_type<Units::inch>()).IsTypeOf(user_type<Units::inch>()));
 								EXPECT_EQ(true, tree.Convert(Units::foot(1) * Units::foot(1), user_type<Units::acre>()).IsTypeOf(user_type<Units::acre>()));
 								EXPECT_EQ(true, tree.Convert(Units::foot(1), user_type<Units::value>()).IsTypeOf(user_type<Units::value>()));
-							}
 
+								auto tempScope = std::make_shared<scripting::Scope>(global_scope2);
+								tempScope->p_self = tempScope;
+								{
+									tempScope->AddUsing(std_namespace);
+									std::vector<Any> params{ Any(100.0) };
+									if (auto constructor = tempScope->FindFunction("foot", Function_Params{ params }, tree)) {
+										auto returned_foot = call(constructor, params, tree);
+
+										if (auto foundClass = tempScope->FindClass("meter")) {
+											auto returned = tree.Convert(returned_foot, foundClass->ClassType);
+
+											printf(tree.Convert(returned, user_type<std::string>()).cast<std::string>());
+										}
+
+										if (auto foundClass = tempScope->FindClass("inch")) {
+											auto returned = tree.Convert(returned_foot, foundClass->ClassType);
+
+											printf(tree.Convert(returned, user_type<std::string>()).cast<std::string>());
+										}
+
+										if (auto foundClass = tempScope->FindClass("yard")) {
+											auto returned = tree.Convert(returned_foot, foundClass->ClassType);
+
+											printf(tree.Convert(returned, user_type<std::string>()).cast<std::string>());
+										}
+
+										// EXPECT FOOT -> YEAR TO FAIL. 
+										if (auto foundClass = tempScope->FindClass("year")) {
+											try {
+												
+												auto returned_year = tree.Convert(returned_foot, foundClass->ClassType);
+												EXPECT_EQ(true, false);
+											} catch (...) {}
+										}
+									}
+
+									std::vector<Any> params2{ Any(Units::foot(100.0)) };
+									if (auto constructor = tempScope->FindFunction("meter", Function_Params{ params2 }, tree)) {
+										auto returned_foot = call(constructor, params2, tree);
+
+										if (auto foundClass = tempScope->FindClass("meter")) {
+											auto returned = tree.Convert(returned_foot, foundClass->ClassType);
+
+											printf(tree.Convert(returned, user_type<std::string>()).cast<std::string>());
+										}
+
+										if (auto foundClass = tempScope->FindClass("inch")) {
+											auto returned = tree.Convert(returned_foot, foundClass->ClassType);
+
+											printf(tree.Convert(returned, user_type<std::string>()).cast<std::string>());
+										}
+
+										if (auto foundClass = tempScope->FindClass("yard")) {
+											auto returned = tree.Convert(returned_foot, foundClass->ClassType);
+
+											printf(tree.Convert(returned, user_type<std::string>()).cast<std::string>());
+										}
+
+										// EXPECT METER -> YEAR TO FAIL. 
+										if (auto foundClass = tempScope->FindClass("year")) {
+											try {
+
+												auto returned_year = tree.Convert(returned_foot, foundClass->ClassType);
+												EXPECT_EQ(true, false);
+											}
+											catch (...) {}
+										}
+									}
+
+									Any params3{ Units::foot(10.0) * Units::foot(10.0) };
+									{
+										if (auto foundClass = tempScope->FindClass("acre")) {
+											auto returned = tree.Convert(params3, foundClass->ClassType);
+											printf(tree.Convert(returned, user_type<std::string>()).cast<std::string>());
+										}
+									}
+									Any params4{ Units::foot(10.0) * Units::foot(10.0) * Units::foot(10.0) };
+									{
+										if (auto foundClass = tempScope->FindClass("gallon")) {
+											auto returned = tree.Convert(params4, foundClass->ClassType);
+											printf(tree.Convert(returned, user_type<std::string>()).cast<std::string>());
+										}
+										if (auto foundClass = tempScope->FindClass("million_gallon")) {
+											auto returned = tree.Convert(params4, foundClass->ClassType);
+											printf(tree.Convert(returned, user_type<std::string>()).cast<std::string>());
+										}
+									}
+
+								}
+							}
 						}
 					}
 
@@ -1693,12 +2460,7 @@ int main() {
 
 
 		}
-
-
-
-
-
-
+#endif
 
 #if 0
 		if (1) {
@@ -2463,15 +3225,6 @@ int main() {
 
 #endif
 
-
-
-
-
-
-
-
-
-
 #if 0
 		if (1) {
 			scripting::Namespace global_namespace("global");
@@ -2680,6 +3433,7 @@ int main() {
 				EXPECT_EQ(true, tree.TryConvert(1.0, scripting::user_type<std::string_view>(), result));
 				EXPECT_EQ(true, tree.TryConvert(Units::foot(1), scripting::user_type<std::string_view>(), result));
 
+#if 0
 				if (1) {
 					std::vector<fibers::Any> inputs{ fibers::Any(10) };
 					scripting::Param_Types function_required_params({ {"int", scripting::user_type<int>() } });
@@ -2883,8 +3637,7 @@ int main() {
 					EXPECT_EQ(returned.IsTypeOf(fibers::user_type<fibers::Any>()), false);
 					EXPECT_EQ(returned.cast<std::string>(), "TEST");
 				}
-
-
+#endif
 
 				// PROXY FUNCTIONS
 				if (1) {
@@ -2918,6 +3671,7 @@ int main() {
 					auto inputs{ std::vector<fibers::Any>{ { stackThing("TEST", 100) } } }; // provided types (do not need to match)
 					auto inputs2{ std::vector<fibers::Any>{ { stackThing("TEST", 100) }, { stackThing("TEST2", 200) } } }; // provided types (do not need to match)
 
+#if 0
 					// RETURNED RESULTS FROM PROXY_FUNCTIONS
 					auto returned0{ scripting::call(caller0, {}, tree) };
 					auto returned1{ scripting::call(caller1, inputs, tree) };
@@ -2961,19 +3715,8 @@ int main() {
 					}
 					catch (std::exception e) {  }
 
-
-
-
-
-
-
-
-
-
-
-
+#endif
 				}
-
 
 				tree.Convert<DateTime>( 100ull );
 				EXPECT_EQ(tree.Convert<std::string_view>(std::string("TEST")), "TEST");
