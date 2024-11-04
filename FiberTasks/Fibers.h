@@ -33,6 +33,7 @@
 #pragma warning(disable : 4701)				// potentially uninitialized local variable
 #pragma warning(disable : 4714)				// function marked as __forceinline not inlined
 #pragma warning(disable : 4715)				// not all control paths return a value
+#pragma warning(disable : 4804)				// unsafe use of type 'bool' in operation
 #pragma warning(disable : 4996)				// unsafe string operations
 #pragma warning(disable : 6011)				// Dereferencing NULL ptr
 #pragma warning(disable : 6385)				// Reading invalid data from buf
@@ -4006,11 +4007,11 @@ namespace fibers {
 		/* Fiber- and thread-safe lock-free sorted container for time-series patterns, where the x- and y-values may be integers, floating numbers, long doubles, etc. */
 		template <typename xType, typename yType> class Pattern {
 		protected:
-			using underlying = fibers::utilities::dbgroup::index::bw_tree::BwTree< 
-				typename utilities::impl::CAS_Safe_Type < xType >::type, 
-				typename utilities::impl::CAS_Safe_Type < yType >::type 
+			using underlying = fibers::utilities::dbgroup::index::bw_tree::BwTree<
+				typename utilities::impl::CAS_Safe_Type < xType >::type,
+				typename utilities::impl::CAS_Safe_Type < yType >::type
 			>;
-			using dataType = std::pair< underlying , fibers::synchronization::atomic_number<long> >;
+			using dataType = std::pair< underlying, fibers::synchronization::atomic_number<long> >;
 			std::shared_ptr< dataType > data;
 
 		public:
@@ -4049,7 +4050,7 @@ namespace fibers {
 					return data->first.FindSmallestLargerEqual(position);
 				}
 			};
-			
+
 			/// <summary>
 			/// get iterator for the knot whose X-position is the largest possible that is less than or equal to than the provided position. Optionally can provide the end-position for the iterator.
 			/// </summary>
@@ -4103,13 +4104,13 @@ namespace fibers {
 			/// </summary>
 			/// <returns>whether a value was deleted or not</returns>
 			bool CompressLastValueAdded() {
-				int num, index; 
+				int num, index;
 				constexpr yType epsilon = 0.001f;
 				yType val1{ 0 }, val2{ 0 }, val3{ 0 }, val4{ 0 }, val5{ 0 };
 				xType t3{ 0 };
 
 				{
-					num = 0; 
+					num = 0;
 
 					for (auto iter = FindNthLargestSmallerEqual(std::numeric_limits <xType>::max(), 5); iter; ++iter) {
 						num++;
@@ -4143,7 +4144,7 @@ namespace fibers {
 
 				return false;
 			};
-			
+
 			/// <summary>
 			/// Resets the pattern
 			/// </summary>
@@ -4193,7 +4194,7 @@ namespace fibers {
 					return std::nullopt;
 				}
 			};
-			
+
 			/// <summary>
 			/// Iterates through the list and gets the 
 			/// </summary>
@@ -4210,7 +4211,7 @@ namespace fibers {
 				std::optional<yType> out{ std::nullopt };
 
 				for (auto knot = const_cast<Pattern*>(this)->Scan(start, end); knot; ++knot) {
-					if (out.has_value()){
+					if (out.has_value()) {
 						if (out.value() > knot.GetPayload())
 							out = knot.GetPayload();
 					}
@@ -4230,7 +4231,7 @@ namespace fibers {
 			/// <returns></returns>
 			std::optional<yType> GetMaxValue(std::optional<xType> start = std::nullopt, std::optional<xType> end = std::nullopt) const {
 				std::optional<yType> out{ std::nullopt };
-				
+
 				for (auto knot = const_cast<Pattern*>(this)->Scan(start, end); knot; ++knot) {
 					if (out.has_value()) {
 						if (out.value() < knot.GetPayload())
@@ -4243,7 +4244,7 @@ namespace fibers {
 
 				return out;
 			};
-			
+
 			std::optional<yType> GetCurrentValue(xType position, interp_t interpolationType = interp_t::LINEAR) const {
 				switch (interpolationType) {
 				case interp_t::LEFT: {
@@ -4278,19 +4279,19 @@ namespace fibers {
 					}
 					break;
 				}
-				case interp_t::SPLINE: { 
+				case interp_t::SPLINE: {
 					if (auto iter = const_cast<Pattern*>(this)->FindSecondLargestSmallerEqual(position)) {
-						xType 
-							X0{ iter.GetKey() }, 
-							X1{ 0 }, 
-							X2{ 0 }, 
+						xType
+							X0{ iter.GetKey() },
+							X1{ 0 },
+							X2{ 0 },
 							X3{ 0 },
 							s{ 0 },
 							t{ 0 };
-						yType 
-							Y0{ iter.GetPayload() }, 
-							Y1{ 0 }, 
-							Y2{ 0 }, 
+						yType
+							Y0{ iter.GetPayload() },
+							Y1{ 0 },
+							Y2{ 0 },
 							Y3{ 0 };
 
 						++iter;
@@ -4312,12 +4313,12 @@ namespace fibers {
 										s = (position - X1) / (X2 - X1);
 										if (!::isfinite(s)) s = 0;
 
-										return 
+										return
 											::fma(Y0, ((2.0f - s) * s - 1.0f) * s * 0.5f,          // -0.5f s * s * s + s * s - 0.5f * s
-											::fma(Y1, (((3.0f * s - 5.0f) * s) * s + 2.0f) * 0.5f, // 1.5f * s * s * s - 2.5f * s * s + 1.0f
-											::fma(Y2, ((-3.0f * s + 4.0f) * s + 1.0f) * s * 0.5f,  // -1.5f * s * s * s - 2.0f * s * s + 0.5f s
-											::fma(Y3, ((s - 1.0f) * s * s) * 0.5f,                 // 0.5f * s * s * s - 0.5f * s * s
-											      0))));
+												::fma(Y1, (((3.0f * s - 5.0f) * s) * s + 2.0f) * 0.5f, // 1.5f * s * s * s - 2.5f * s * s + 1.0f
+													::fma(Y2, ((-3.0f * s + 4.0f) * s + 1.0f) * s * 0.5f,  // -1.5f * s * s * s - 2.0f * s * s + 0.5f s
+														::fma(Y3, ((s - 1.0f) * s * s) * 0.5f,                 // 0.5f * s * s * s - 0.5f * s * s
+															0))));
 									}
 								}
 								else {
@@ -4337,7 +4338,7 @@ namespace fibers {
 															0))));
 									}
 								}
-							} 
+							}
 							else {
 								t = (position - X0) / (X1 - X0);
 								return ::fma(t, Y1, ::fma(-t, Y0, Y0));
@@ -4345,8 +4346,8 @@ namespace fibers {
 						}
 					}
 					return GetCurrentValue(position, interp_t::LINEAR);
-					break; 
-				}		
+					break;
+				}
 				default: throw(std::runtime_error("Unhandled interp_t value."));
 				}
 				return std::nullopt;
@@ -4362,7 +4363,7 @@ namespace fibers {
 					data->second--;
 					return true;
 				}
-				return false;				
+				return false;
 			};
 
 			/// <summary>
@@ -4390,7 +4391,7 @@ namespace fibers {
 				}
 				return false;
 			};
-			
+
 			/// <summary>
 			/// Returns an iterator that can be used to iterate over the Pattern in-order, from (optional) start to (optional) end.
 			/// </summary>
@@ -4552,7 +4553,7 @@ namespace fibers {
 					}
 				}
 			};
-			
+
 			/// <summary>
 			/// Creates an iterator that will step through from Start to End at interval Step, sampling the pattern using the InterpolationType. 
 			/// </summary>
@@ -4562,7 +4563,7 @@ namespace fibers {
 			/// <param name="interpolationType"></param>
 			/// <returns>Iterator that will sample at the requested interval using the interpolationType</returns>
 			auto GetTimeSeries(xType start, xType end, xType step, interp_t interpolationType = interp_t::LINEAR) {
-				return 
+				return
 					fibers::utilities::CustomizedSequence<std::pair<xType, std::optional<yType>>, xType>(
 						std::function([this, interpolationType](xType x) -> std::pair<xType, std::optional<yType>> {
 							auto optional = this->GetCurrentValue(x, interpolationType);
@@ -4573,12 +4574,12 @@ namespace fibers {
 								return std::pair<xType, std::optional<yType>>{ x, std::nullopt };
 							}
 
-							
-						})
+
+							})
 						, start
-						, end
-						, step
-					);
+								, end
+								, step
+								);
 			};
 
 
@@ -4631,7 +4632,7 @@ namespace fibers {
 				return emplace(pair.first, pair.second, overwriteIfExists);
 			};
 			/* emplaces the object at the key in the map. */
-			bool insert(std::pair<KeyType, ObjType> && pair, bool overwriteIfExists = true) {
+			bool insert(std::pair<KeyType, ObjType>&& pair, bool overwriteIfExists = true) {
 				return emplace(std::move(pair.first), std::move(pair.second), overwriteIfExists);
 			};
 			/* returns a COPY of the value at the key. Returns empty if the value is not found. */
@@ -4823,7 +4824,26 @@ namespace fibers {
 		   Slower, but still atomic using multi-word CAS algorithms, if using floating-point numbers like doubles or floats.
 		*/
 		template<typename _Value_type> using number = fibers::synchronization::atomic_number<_Value_type>;
-	
+	};
+};
+
+namespace std {
+	__forceinline std::string to_string(fibers::containers::number<double> const& _Val) { // convert to string
+		return std::to_string(_Val.load());
+	}
+	template<> class numeric_limits<fibers::containers::number<double>> {
+	public:
+		static constexpr double min() { return std::numeric_limits<double>::min(); }
+		static constexpr double max() { return std::numeric_limits<double>::max() / 2.0; }
+		static constexpr double lowest() { return std::numeric_limits<double>::lowest() / 2.0; }
+		static constexpr bool is_integer = std::numeric_limits<double>::is_integer;
+		static constexpr bool is_signed = std::numeric_limits<double>::is_signed;
+	};
+
+};
+
+namespace fibers{
+	namespace containers{
 		template <typename value> class AtomicQueue {
 		public:
 			/* storage class for each node in the stack. May or may not be POD, depending on the value type being stored. */

@@ -98,6 +98,22 @@ namespace scripting {
 			int got;
 			int expected;
 		};
+
+		/**
+		* Exception thrown when there is a mismatch in number of
+		* parameters during Proxy_Function execution
+		*/
+		struct not_found_error : std::runtime_error {
+			not_found_error(const std::string& triedToFind)
+				: std::runtime_error(
+					Units::printf("Could not find \"%s\"", triedToFind.c_str())
+				), m_triedToFind(triedToFind)
+			{}
+			not_found_error(const not_found_error&) = default;
+			~not_found_error() noexcept override = default;
+
+			std::string m_triedToFind;
+		};
 	}; // namespace exception
 
 	namespace details {
@@ -914,9 +930,14 @@ namespace scripting {
 		{
 			int index = 0;
 			for (auto& paramType : params) {
-				//if (m_types[index].second == user_type<Any>()) {
+				if (index < m_types.size()) {
+					//if (m_types[index].second == user_type<Any>()) {
 					m_types[index].second = paramType.Type();
-				//}	
+					//}	
+				}
+				else {
+					m_types.push_back({ Units::printf("Param%i", index), paramType.Type()});
+				}
 				index++;
 			}
 
@@ -929,6 +950,15 @@ namespace scripting {
 
 			hash_value = HashTypes(m_types);
 		}
+
+		Param_Types(Param_Types const& params, std::vector<std::string> t_typeNames)
+			: m_types(params.m_types), has_template_type(params.has_template_type), hash_value(params.hash_value)
+		{
+			for (int i = 0; ((i < m_types.size()) && (i < t_typeNames.size())); i++) {
+				m_types[i].first = t_typeNames[i];
+			}
+		}
+
 
 		void push_front(std::string t_name, Type_Info t_ti) {
 			m_types.emplace(m_types.begin(), std::move(t_name), t_ti);
@@ -964,16 +994,16 @@ namespace scripting {
 		};
 
 		// Performs the conversion from the input parameters to the necessary types, if possible. Throws otherwise. 
-		std::vector<Any> convert(Function_Params t_params, const std::vector<const Type_Converter_Tree*>& t_conversions) const {
+		std::vector<Any> convert(Function_Params t_params, Type_Converter_Tree const& t_conversions) const {
 			auto vals = t_params.to_vector();
-			if (m_types.size() < t_params.size()) throw(exception::arity_error(m_types.size(), t_params.size()));
-			for (size_t i = 0; i < vals.size(); ++i) {
-				// const auto& name = m_types[i].first;
+			if (m_types.size() > vals.size()) throw(exception::arity_error(m_types.size(), vals.size()));
+			vals.resize(m_types.size()); // become smaller if necessary
+			for (size_t i = 0; i < m_types.size(); ++i) {
 				const auto& bv = vals[i];
 				const auto& ti = m_types[i].second;
 				if (auto p = ti.lock()) {
 					if (!p->is_undef()) {
-						vals[i] = Type_Converter_Tree::Convert(t_conversions, bv, p); // success or failure, caches the result for faster future eval's
+						vals[i] = t_conversions.Convert(bv, p); // success or failure, caches the result for faster future eval's
 					}
 				}
 			}
@@ -981,21 +1011,19 @@ namespace scripting {
 		};
 
 		// Tests if the conversion from the input parameters to the necessary types is possible. 
-		bool converts(Function_Params t_params, const std::vector<const Type_Converter_Tree*>& t_conversions) const {
+		bool converts(Function_Params t_params, Type_Converter_Tree const& t_conversions) const {
 			// Quick return if the types exactly match.
 			if (t_params.hash() == hash()) { return true; }
 
-			// auto vals = t_params.to_vector();
+			if (m_types.size() > t_params.size()) return false;
 
-			if (m_types.size() < t_params.size()) return false;
-
-			for (size_t i = 0; i < t_params.size(); ++i) {
+			for (size_t i = 0; i < m_types.size(); ++i) {
 				//const auto& name = m_types[i].first;
 				const auto& bv = t_params[i];
 				const auto& ti = m_types[i].second;
 				if (auto p = ti.lock()) {
 					if (!p->is_undef()) {
-						if (!Type_Converter_Tree::Converts(t_conversions, bv.Type(), p)) return false;
+						if (!t_conversions.Converts(bv.Type(), p)) return false;
 					}
 				}
 			}
@@ -1003,16 +1031,16 @@ namespace scripting {
 		};
 
 		// Symbolic "cost" to perform the conversion, in 100's of nanoseconds. Not meant to be precise, but meant to be relative for comparison with other converters.
-		double conversion_cost(Function_Params t_params, const std::vector<const Type_Converter_Tree*>& t_conversions) const {
+		double conversion_cost(Function_Params t_params, Type_Converter_Tree const& t_conversions) const {
 			double out{ 0 };
-			if (m_types.size() < t_params.size()) return std::numeric_limits<double>::max();
-			for (size_t i = 0; i < t_params.size(); ++i) {
+			if (m_types.size() > t_params.size()) return std::numeric_limits<double>::max();
+			for (size_t i = 0; i < m_types.size(); ++i) {
 				const auto& bv = t_params[i];
 				const auto& ti = m_types[i].second;
 				if (auto p = ti.lock()) {
 					if (!p->is_undef()) {
 						if (auto p2 = t_params[i].Type().lock()) {
-							auto cost = Type_Converter_Tree::ConversionCost(t_conversions, p2, p); // success or failure, caches the result for faster future eval's
+							auto cost = t_conversions.ConversionCost(p2, p); // success or failure, caches the result for faster future eval's
 							if (cost >= std::numeric_limits<double>::max()) return std::numeric_limits<double>::max();
 							else out += cost;
 						}
@@ -1079,12 +1107,12 @@ namespace scripting {
 			const Type_Info& ReturnType() const noexcept { return m_return; };
 
 			// Symbolic "cost" to perform the conversion, in 100's of nanoseconds. Not meant to be precise, but meant to be relative for comparison with other converters.
-			double conversion_cost(Function_Params t_params, const std::vector<const Type_Converter_Tree*>& t_conversions) const {
+			double conversion_cost(Function_Params t_params, const Type_Converter_Tree& t_conversions) const {
 				return m_types.conversion_cost(t_params, t_conversions);
 			};
 
-			Any operator()(const Function_Params& params, const std::vector<const Type_Converter_Tree*>& t_conversions) const {
-				if (params.size() == m_types.size()) {
+			Any operator()(const Function_Params& params, const Type_Converter_Tree& t_conversions) const {
+				if (params.size() >= m_types.size()) {
 					return do_call(convert(params, t_conversions));
 				}
 				throw exception::arity_error(static_cast<int>(params.size()), m_types.size());
@@ -1094,17 +1122,17 @@ namespace scripting {
 				return m_types == other.m_types && m_return == other.m_return; // same signature
 			};
 
-			bool call_match(const Function_Params& vals, const std::vector<const Type_Converter_Tree*>& t_conversions) const {
+			bool call_match(const Function_Params& vals, const Type_Converter_Tree& t_conversions) const {
 				return m_types.converts(vals, t_conversions);
 			};
 			// Faster comparison for just the first parameter, to quickly rule-out if this function is available to the boxed value
-			bool compare_first_type(Any& bv, const std::vector<const Type_Converter_Tree*>& t_conversions) const noexcept {
+			bool compare_first_type(Any& bv, const Type_Converter_Tree& t_conversions) const noexcept {
 				if (m_types.size() > 0) {
 					if (auto p = m_types[0].second.lock()) {
-						return Type_Converter_Tree::Converts(t_conversions, bv, p);
+						return t_conversions.Converts(bv, p);
 					}
 					else {
-						return Type_Converter_Tree::Converts(t_conversions, bv, scripting::user_type<void>());
+						return t_conversions.Converts(bv, scripting::user_type<void>());
 					}
 				}
 				else {
@@ -1114,7 +1142,7 @@ namespace scripting {
 
 		protected:
 			// Performs the conversion from the input parameters to the necessary types, if possible. Throws otherwise. 
-			std::vector<Any> convert(Function_Params t_params, const std::vector<const Type_Converter_Tree*>& t_conversions) const {
+			std::vector<Any> convert(Function_Params t_params, const Type_Converter_Tree& t_conversions) const {
 				return m_types.convert(t_params, t_conversions);
 			};
 
@@ -3106,7 +3134,7 @@ namespace scripting {
 
 
 	// Call a generic, proxy function using a vector of inputs (may be empty), which will be converted as necessary to the expected types. 
-	__forceinline Any call(Proxy_Function callable, std::vector<Any> const& inputs, std::vector<const Type_Converter_Tree*> const& conversionTree) {
+	__forceinline Any call(Proxy_Function callable, std::vector<Any> const& inputs, Type_Converter_Tree const& conversionTree) {
 		if (callable) {
 			return callable->operator()(Function_Params{ const_cast<std::vector<Any>&>(inputs) }, conversionTree);
 		}
@@ -3347,9 +3375,21 @@ namespace scripting {
 			}
 			return false;
 		};
+		bool emplace(std::string const& key, Proxy_Function func, std::vector<std::string> const& params, bool replaceIfAlreadyExists = true) {
+			if (func) {
+				return emplace(key, func, Param_Types(func->Arguments(), params), replaceIfAlreadyExists);
+			}
+			return false;
+		};
+		bool emplace(std::string const& key, std::vector<std::string> const& params, Proxy_Function func, bool replaceIfAlreadyExists = true) {
+			if (func) {
+				return emplace(key, func, Param_Types(func->Arguments(), params), replaceIfAlreadyExists);
+			}
+			return false;
+		};
 
 		/* Given a function name and call parameters, will attempt to find an exact-match function, variadic instantiation, or convertable function call, or return nullptr. */
-		Proxy_Function BuildMatch(std::string const& functionName, scripting::Function_Params const& params, std::vector<const Type_Converter_Tree*> const& m_typeConverters = {}, bool AllowTemplateInstantiation = true, bool AllowTypeConversion = true) {
+		Proxy_Function BuildMatch(std::string const& functionName, scripting::Function_Params const& params, Type_Converter_Tree const& m_typeConverters = Type_Converter_Tree(), bool AllowTemplateInstantiation = true, bool AllowTypeConversion = true) {
 			std::multimap<double, std::tuple<Proxy_Function, Param_Types>> candidates;
 			
 			if (auto ptr = at(functionName, params)) {
@@ -3357,6 +3397,7 @@ namespace scripting {
 			}
 			else {
 				bool successfullyAddedFunction{ false };
+
 				if (AllowTemplateInstantiation) {
 					if (auto ptr = this->operator[](functionName)) {
 						for (auto& function : *ptr) {
@@ -3568,7 +3609,7 @@ namespace scripting {
 
 		// Return the conversion tree(s) from the nearest Global namespace
 		virtual void TypeConversionTrees(std::vector<Type_Converter_Tree*>& out, std::set<size_t>& previous) {
-			if (previous.find((size_t)p_self.lock().get()) != previous.end()) {
+			if (previous.find((size_t)p_self.lock().get()) == previous.end()) {
 				previous.insert((size_t)p_self.lock().get());
 				for (auto& Using : p_using) {
 					if (auto ptr = std::dynamic_pointer_cast<Scope>(Using.second.lock())) {
@@ -3580,7 +3621,7 @@ namespace scripting {
 		};
 		// Return the conversion tree(s) from the nearest Global namespace
 		virtual void TypeConversionTrees(std::vector<const Type_Converter_Tree*>& out, std::set<size_t>& previous) const {
-			if (previous.find((size_t)p_self.lock().get()) != previous.end()) {
+			if (previous.find((size_t)p_self.lock().get()) == previous.end()) {
 				previous.insert((size_t)p_self.lock().get());
 				for (auto& Using : p_using) {
 					if (auto ptr = std::dynamic_pointer_cast<Scope>(Using.second.lock())) {
@@ -3903,8 +3944,8 @@ namespace scripting {
 		};
 		virtual const Functions* GetFunctions() const { return nullptr; };
 		virtual Functions* GetFunctions() { return nullptr; };
-		virtual bool TryFindFunctionImpl(std::string const& functionName, scripting::Function_Params const& params, std::vector<const Type_Converter_Tree*> const& m_conversionTree, Proxy_Function& out, int depth = 0) const {
-			if (depth > 1) return false;
+		virtual bool TryFindFunctionImpl(std::string const& functionName, scripting::Function_Params const& params, Type_Converter_Tree const& m_conversionTree, Proxy_Function& out, int depth = 0) const {
+			if (depth > 2) return false;
 
 			size_t lastOfColons{ 0 };
 			if ((lastOfColons = functionName.find_last_of("::")) == std::string::npos) {
@@ -3918,25 +3959,37 @@ namespace scripting {
 					}
 				}
 
-				//// perhaps the user intends for the function to be qualified based on the class of the first parameters
-				//if (depth <= 0) {
-				//	auto firstParam = params.begin();
-				//	if (firstParam != params.end()) {
-				//		auto firstParamType = firstParam->Type();
-				//		for (auto& Namespace : GetAvailableNamespaces()) {
-				//			if (auto ptr = std::dynamic_pointer_cast<Scope>(Namespace.second.lock())) {
-				//				if (ptr->IsClass()) {
-				//					if (firstParamType == ptr->GetClassType()) {
-				//						return ptr->TryFindFunctionImpl(functionName, params, m_conversionTree, out, depth + 1);
-				//					}
-				//				}
-				//			}
-				//		}
-				//	}
-				//}
-				//else {
-				//	Print();
-				//}
+				// perhaps the user intends for the function to be qualified based on the class of the first parameters
+				if (depth <= 0) {
+					auto firstParam = params.begin();
+					if (firstParam != params.end()) {
+						auto firstParamType = firstParam->Type();
+						for (auto& Namespace : GetAvailableNamespaces()) { // forced to check ALL possible namespaces, since we are searching based on the ClassPtr, and not its name. 
+							if (auto ptr = std::dynamic_pointer_cast<Scope>(Namespace.second.lock())) {
+								if (ptr->IsClass()) {
+									if (firstParamType == ptr->GetClassType()) {
+										// we found the class
+										if (ptr->TryFindFunctionImpl(functionName, params, m_conversionTree, out, depth + 1)) {
+											return true;
+										}
+										else {
+											break;
+										}
+									}
+								}
+							}
+						}
+					}
+				}
+
+				// perhaps the Function name is actually a class name
+				if (depth <= 1) {
+					if (auto scope = std::dynamic_pointer_cast<Scope>(this->FindClass(functionName))) {
+						if (scope->TryFindFunctionImpl(functionName, params, m_conversionTree, out, depth + 1)) {
+							return true;
+						}
+					}
+				}
 
 				return false;
 			}
@@ -3951,7 +4004,7 @@ namespace scripting {
 				return false;
 			}
 		};
-		virtual bool TryFindFunctionImpl(std::string const& functionName, scripting::Function_Params const& params, std::vector<const Type_Converter_Tree*> const& m_conversionTree, Proxy_Function& out, int depth = 0) {
+		virtual bool TryFindFunctionImpl(std::string const& functionName, scripting::Function_Params const& params, Type_Converter_Tree const& m_conversionTree, Proxy_Function& out, int depth = 0) {
 			if (depth > 1) return false; 
 			
 			size_t lastOfColons{ 0 };
@@ -3966,25 +4019,36 @@ namespace scripting {
 					}
 				}
 
-				//// perhaps the user intends for the function to be qualified based on the class of the first parameters
-				//if (depth <= 0) {
-				//	auto firstParam = params.begin();
-				//	if (firstParam != params.end()) {
-				//		auto firstParamType = firstParam->Type();
-				//		for (auto& Namespace : GetAvailableNamespaces()) {
-				//			if (auto ptr = std::dynamic_pointer_cast<Scope>(Namespace.second.lock())) {
-				//				if (ptr->IsClass()) {
-				//					if (firstParamType == ptr->GetClassType()) {
-				//						return ptr->TryFindFunctionImpl(functionName, params, m_conversionTree, out, depth + 1);
-				//					}
-				//				}
-				//			}
-				//		}
-				//	}
-				//}
-				//else {
-				//	Print();
-				//}
+				// perhaps the user intends for the function to be qualified based on the class of the first parameters
+				if (depth <= 0) {
+					auto firstParam = params.begin();
+					if (firstParam != params.end()) {
+						auto firstParamType = firstParam->Type();
+						for (auto& Namespace : GetAvailableNamespaces()) {
+							if (auto ptr = std::dynamic_pointer_cast<Scope>(Namespace.second.lock())) {
+								if (ptr->IsClass()) {
+									if (firstParamType == ptr->GetClassType()) {
+										if (ptr->TryFindFunctionImpl(functionName, params, m_conversionTree, out, depth + 1)) {
+											return true;
+										}
+										else {
+											break;
+										}
+									}
+								}
+							}
+						}
+					}
+				}
+
+				// perhaps the Function name is actually a class name
+				if (depth <= 1) {
+					if (auto scope = std::dynamic_pointer_cast<Scope>(this->FindClass(functionName))) {
+						if (scope->TryFindFunctionImpl(functionName, params, m_conversionTree, out, depth + 1)) {
+							return true;
+						}
+					}
+				}
 
 				return false;
 			}
@@ -4030,7 +4094,7 @@ namespace scripting {
 
 		virtual Proxy_Function FindFunction(std::string const& functionName /* x, y, etc. */, scripting::Function_Params const& params) const {
 			Proxy_Function out{ nullptr };
-			if (TryFindFunctionImpl(functionName, params, TypeConversionTrees(), out)) {
+			if (TryFindFunctionImpl(functionName, params, Type_Converter_Tree::Combine(TypeConversionTrees()), out)) {
 				return out;
 			}
 			else {
@@ -4039,7 +4103,7 @@ namespace scripting {
 		};
 		virtual Proxy_Function FindFunction(std::string const& functionName /* x, y, etc. */, scripting::Function_Params const& params) {
 			Proxy_Function out{ nullptr };
-			if (TryFindFunctionImpl(functionName, params, TypeConversionTrees(), out)) {
+			if (TryFindFunctionImpl(functionName, params, Type_Converter_Tree::Combine(TypeConversionTrees()), out)) {
 				return out;
 			}
 			else {
@@ -4048,7 +4112,7 @@ namespace scripting {
 		};
 
 		// Attempts to find a class with the requested class name (may be a qualified namespace).
-		virtual /*Type_Info*/ std::shared_ptr<Class> FindClass(std::string const& functionName) {
+		virtual /*Type_Info*/ std::shared_ptr<Class> FindClass(std::string const& functionName) const {
 			auto f = std::dynamic_pointer_cast<Scope>(FindNamespace(functionName));
 			if (f && f->IsClass()) {
 				return std::dynamic_pointer_cast<Class>(f);
@@ -4075,9 +4139,9 @@ namespace scripting {
 		virtual Any CallFunction(std::string const& functionName, std::vector<Any> const& inputs) const {
 			// direct find attempt
 			if (auto callable = FindFunction(functionName, const_cast<std::vector<Any>&>(inputs))) {
-				return callable->operator()(Function_Params{ const_cast<std::vector<Any>&>(inputs) }, TypeConversionTrees());
+				return callable->operator()(Function_Params{ const_cast<std::vector<Any>&>(inputs) }, Type_Converter_Tree::Combine(TypeConversionTrees()));
 			}			
-			throw exception::arity_error(inputs.size(), -1);
+			throw exception::not_found_error(functionName);
 		};
 
 	};
@@ -4207,59 +4271,7 @@ namespace scripting {
 		};
 	
     };
-	class Global final : public Namespace {
-	public:
-		friend class Scope;
-		friend class Namespace;
 
-		Global()
-			: Namespace({}, "")
-			, tree()
-		{};
-		
-		Global(Global const&) = default;
-		Global(Global&&) = default;
-		Global& operator=(Global const&) = default;
-		Global& operator=(Global&&) = default;
-		~Global() = default; // not virtual b/c is final
-
-		// Return the conversion tree(s) from the nearest Global namespace
-		virtual void TypeConversionTrees(std::vector<Type_Converter_Tree*>& out, std::set<size_t>& previous)  override {
-			if (previous.find((size_t)p_self.lock().get()) != previous.end()) {
-				previous.insert((size_t)p_self.lock().get());
-				for (auto& Using : p_using) {
-					if (auto ptr = std::dynamic_pointer_cast<Scope>(Using.second.lock())) {
-						ptr->TypeConversionTrees(out, previous);
-					}
-				}
-				out.push_back(&tree);
-			}
-			
-		};
-		// Return the conversion tree(s) from the nearest Global namespace
-		virtual void TypeConversionTrees(std::vector<const Type_Converter_Tree*>& out, std::set<size_t>& previous) const override {
-			if (previous.find((size_t)p_self.lock().get()) != previous.end()) {
-				previous.insert((size_t)p_self.lock().get());
-				for (auto& Using : p_using) {
-					if (auto ptr = std::dynamic_pointer_cast<Scope>(Using.second.lock())) {
-						ptr->TypeConversionTrees(out, previous);
-					}
-				}
-				out.push_back(&tree);
-			}
-			
-		};
-		virtual Type_Converter_Tree* TypeConversionTree() override {
-			return &tree;
-		};
-		virtual const Type_Converter_Tree* TypeConversionTree() const override {
-			return &tree;
-		};
-
-	public:
-		Type_Converter_Tree tree;
-
-	};
 	class Class : public Namespace {
 	public:
 		friend class Scope;
@@ -4463,10 +4475,199 @@ namespace scripting {
 		};
 
 	};
+	class Global final : public Namespace {
+	public:
+		friend class Scope;
+		friend class Namespace;
 
-#if 0
+		Global()
+			: Namespace({}, "")
+			, tree()
+		{};
 
-#endif
+		Global(Global const&) = default;
+		Global(Global&&) = default;
+		Global& operator=(Global const&) = default;
+		Global& operator=(Global&&) = default;
+		~Global() = default; // not virtual b/c is final
+
+	public:
+		void AddBuiltIns() {
+			auto defineBuiltInType = [this](auto typeImpl, std::string const& Name) -> void {
+				// make it a class
+				auto classPtr = std::dynamic_pointer_cast<Class>(this->p_children.get_or_insert(Name, std::make_shared<Class>(user_type<decltype(typeImpl)>(), this->p_self, Name)));
+				classPtr->p_self = classPtr;
+
+				// add converters
+				this->tree.AddConverter<decltype(typeImpl), char>();
+				this->tree.AddConverter<decltype(typeImpl), int>();
+				this->tree.AddConverter<decltype(typeImpl), long>();
+				this->tree.AddConverter<decltype(typeImpl), float>();
+				this->tree.AddConverter<decltype(typeImpl), double>();
+				this->tree.AddConverter<decltype(typeImpl), size_t>();
+				this->tree.AddConverter<decltype(typeImpl), fibers::containers::number < double > >();
+				this->tree.AddConverter<decltype(typeImpl), signed char>();
+				this->tree.AddConverter<decltype(typeImpl), unsigned char>();
+				this->tree.AddConverter<decltype(typeImpl), char16_t >();
+				this->tree.AddConverter<decltype(typeImpl), char32_t >();
+				this->tree.AddConverter<decltype(typeImpl), wchar_t >();
+				this->tree.AddConverter<decltype(typeImpl), short>();
+				this->tree.AddConverter<decltype(typeImpl), unsigned short>();
+				this->tree.AddConverter<decltype(typeImpl), unsigned int>();
+				this->tree.AddConverter<decltype(typeImpl), unsigned long>();
+				this->tree.AddConverter<decltype(typeImpl), long long>();
+				this->tree.AddConverter<decltype(typeImpl), long double>();
+				this->tree.AddConverter([](decltype(typeImpl) const& o) -> std::string { return std::to_string(o); });
+
+				// Constructors
+				classPtr->m_functions.emplace(Name, make_callable([typeImplCopy = typeImpl]() -> decltype(typeImpl) { return typeImplCopy; }));
+				classPtr->m_functions.emplace(Name, make_callable([](decltype(typeImpl) const& o) -> decltype(typeImpl) { return decltype(typeImpl)(o); }));
+
+				// Comparisons
+				classPtr->m_functions.emplace("==", scripting::make_callable([](decltype(typeImpl) const& x, decltype(typeImpl) const& y) -> bool { return x == y; }));
+				classPtr->m_functions.emplace("!=", scripting::make_callable([](decltype(typeImpl) const& x, decltype(typeImpl) const& y) -> bool { return x != y; }));
+				classPtr->m_functions.emplace("<", scripting::make_callable([](decltype(typeImpl) const& x, decltype(typeImpl) const& y) -> bool { return x < y; }));
+				classPtr->m_functions.emplace("<=", scripting::make_callable([](decltype(typeImpl) const& x, decltype(typeImpl) const& y) -> bool { return x <= y; }));
+				classPtr->m_functions.emplace(">", scripting::make_callable([](decltype(typeImpl) const& x, decltype(typeImpl) const& y) -> bool { return x > y; }));
+				classPtr->m_functions.emplace(">=", scripting::make_callable([](decltype(typeImpl) const& x, decltype(typeImpl) const& y) -> bool { return x >= y; }));
+				classPtr->m_functions.emplace("+", scripting::make_callable([](decltype(typeImpl) const& x, decltype(typeImpl) const& y) -> decltype(typeImpl) { return x + y; }));
+				classPtr->m_functions.emplace("-", scripting::make_callable([](decltype(typeImpl) const& x, decltype(typeImpl) const& y) -> decltype(typeImpl) { return x - y; }));
+				classPtr->m_functions.emplace("*", scripting::make_callable([](decltype(typeImpl) const& x, decltype(typeImpl) const& y) -> decltype(typeImpl) { return x * y; }));
+				classPtr->m_functions.emplace("/", scripting::make_callable([](decltype(typeImpl) const& x, decltype(typeImpl) const& y) -> decltype(typeImpl) { if (y == 0) return std::numeric_limits<decltype(typeImpl)>::max(); else return x / y; }));
+
+				// Functions
+				classPtr->m_functions.emplace("max", make_callable([]() { return std::numeric_limits<decltype(typeImpl)>::max(); }));
+				classPtr->m_functions.emplace("min", make_callable([]() { return std::numeric_limits<decltype(typeImpl)>::lowest(); }));
+				classPtr->m_functions.emplace("to_string", make_callable([](decltype(typeImpl) const& o) -> std::string { return std::to_string(o); }));
+				
+			};
+
+			// Built-in types
+			if (1) {
+#define DefineBuiltInType(V) defineBuiltInType(##V(0), #V);
+				DefineBuiltInType(bool);
+				FindClass("bool")->m_functions.emplace("to_string", make_callable([](bool const& o) -> std::string { if (o) { return "true"; } else { return "false"; } }));
+				DefineBuiltInType(char);
+				DefineBuiltInType(int);
+				DefineBuiltInType(long);
+				DefineBuiltInType(float);
+				DefineBuiltInType(double);
+				DefineBuiltInType(size_t);
+				defineBuiltInType(fibers::containers::number<double>(), "Number");
+				DefineBuiltInType(char16_t);
+				DefineBuiltInType(char32_t);
+				DefineBuiltInType(wchar_t);
+				DefineBuiltInType(short);
+				defineBuiltInType(unsigned char(0), "uchar");
+				defineBuiltInType(unsigned short(0), "ushort");
+				defineBuiltInType(unsigned int(0), "uint");
+				defineBuiltInType(unsigned long(0), "ulong");
+				defineBuiltInType(long long(0), "llong");
+				defineBuiltInType(long double(), "ldouble");
+#undef DefineBuiltInType
+
+				// String
+				if (1) {
+					auto string_namespace = std::dynamic_pointer_cast<Class>(this->p_children.get_or_insert("string", std::make_shared<Class>(user_type<std::string>(), this->p_self, "string")));
+					string_namespace->p_self = string_namespace;
+
+					// Constructors
+					string_namespace->m_functions.emplace("string", scripting::make_callable([]() -> std::string { return ""; }));
+					string_namespace->m_functions.emplace("string", scripting::make_callable([](std::string const& x) -> std::string { return x; }));
+					
+					// Comparisons
+					string_namespace->m_functions.emplace("==", scripting::make_callable([](std::string const& x, std::string const& y) { return x == y; }));
+					string_namespace->m_functions.emplace("!=", scripting::make_callable([](std::string const& x, std::string const& y) { return x != y; }));
+					string_namespace->m_functions.emplace("<", scripting::make_callable([](std::string const& x, std::string const& y) { return x < y; }));
+					string_namespace->m_functions.emplace("<=", scripting::make_callable([](std::string const& x, std::string const& y) { return x <= y; }));
+					string_namespace->m_functions.emplace(">", scripting::make_callable([](std::string const& x, std::string const& y) { return x > y; }));
+					string_namespace->m_functions.emplace(">=", scripting::make_callable([](std::string const& x, std::string const& y) { return x >= y; }));
+					string_namespace->m_functions.emplace("+", scripting::make_callable([](std::string const& x, std::string const& y) { return x + y; }));
+
+					// Functions
+					string_namespace->m_functions.emplace("length", scripting::make_callable([](std::string const& x) { return x.length(); }));
+					string_namespace->m_functions.emplace("substr", scripting::make_callable([](std::string const& x, size_t Off) { return x.substr(Off); }), { "input", "Off" });
+					string_namespace->m_functions.emplace("substr", scripting::make_callable([](std::string const& x, size_t Off, size_t Count) { return x.substr(Off, Count); }), { "input", "Off", "Count"});
+					string_namespace->m_functions.emplace("size", scripting::make_callable([](std::string const& x) { return x.size(); }));
+					string_namespace->m_functions.emplace("front", scripting::make_callable([](std::string const& x) -> char { return x.front(); }));
+					string_namespace->m_functions.emplace("back", scripting::make_callable([](std::string const& x) -> char { return x.back(); }));
+					string_namespace->m_functions.emplace("at", scripting::make_callable([](std::string const& x, size_t Off) -> char { return x.at(Off); }), { "input", "Off" });
+					string_namespace->m_functions.emplace("to_string", make_callable([](std::string const& o) -> std::string { return o; }));
+
+					// Objects or Constants
+					string_namespace->AddObject("npos", std::make_shared<Any>(std::string::npos));
+				}
+
+
+			}
+
+			// Built-In functions
+			if (1) {
+				// Returns the type of the Any obj
+				this->m_functions.emplace("Type", scripting::Param_Types({ { std::string("obj"), scripting::user_type<Any>() } }), scripting::make_callable(
+					[](Any const& x) -> fibers::Type_Info {
+						if (auto p = x.Type().lock())
+							return *p;
+						else
+							return fibers::user_type<void>();
+					}
+				), true);
+				
+				// Returns a stringified version of the provided Any obj. This is meant to be a fall-back. 
+				this->m_functions.emplace("to_string", scripting::Param_Types({ { "obj", user_type<Any>() } }), scripting::make_callable(
+					[](Any const& x) -> std::string { return Units::printf("`%s`", x.TypeName()); }
+				));
+
+
+
+
+
+			}
+
+
+
+
+		};
+
+	public:
+
+		// Return the conversion tree(s) from the nearest Global namespace
+		virtual void TypeConversionTrees(std::vector<Type_Converter_Tree*>& out, std::set<size_t>& previous)  override {
+			if (previous.find((size_t)p_self.lock().get()) == previous.end()) {
+				previous.insert((size_t)p_self.lock().get());
+				for (auto& Using : p_using) {
+					if (auto ptr = std::dynamic_pointer_cast<Scope>(Using.second.lock())) {
+						ptr->TypeConversionTrees(out, previous);
+					}
+				}
+				out.push_back(&tree);
+			}
+
+		};
+		// Return the conversion tree(s) from the nearest Global namespace
+		virtual void TypeConversionTrees(std::vector<const Type_Converter_Tree*>& out, std::set<size_t>& previous) const override {
+			if (previous.find((size_t)p_self.lock().get()) == previous.end()) {
+				previous.insert((size_t)p_self.lock().get());
+				for (auto& Using : p_using) {
+					if (auto ptr = std::dynamic_pointer_cast<Scope>(Using.second.lock())) {
+						ptr->TypeConversionTrees(out, previous);
+					}
+				}
+				out.push_back(&tree);
+			}
+
+		};
+		virtual Type_Converter_Tree* TypeConversionTree() override {
+			return &tree;
+		};
+		virtual const Type_Converter_Tree* TypeConversionTree() const override {
+			return &tree;
+		};
+
+	public:
+		Type_Converter_Tree tree;
+
+	};
 
 	class Impl {
 	private:
@@ -4515,6 +4716,10 @@ namespace scripting {
 			return p;
 		};
 
+		
+
+
+
 	};
 
 
@@ -4558,134 +4763,6 @@ namespace scripting {
 
 
 	};
-
-	/* Scope, which may be executed and accessed in parallel by downstream children (e.g. for-each-loop children scopes executing in parallel, accessing objects from their shared parent scope)*/
-#if 0
-	class Scope {
-	private:
-		concurrency::concurrent_vector<std::string>
-			using_namespaces; // e.g. Using Namespace _NAMESPACE_NAME_;
-
-	private:
-		static std::string createFullyQualifiedNamespace(std::string parentNamespace, std::string newName) {
-			if (newName == "") {
-				return parentNamespace;
-			}
-			else if (parentNamespace == "") {
-				return newName;
-			}
-			else {
-				std::string temp = parentNamespace + "::" + newName;
-
-				while (temp.find("::::") != std::string::npos) {
-					size_t start_pos = 0;
-					while ((start_pos = temp.find("::::", start_pos)) != std::string::npos) {
-						temp = temp.replace(start_pos, 4, "::");
-						start_pos += 2; // In case 'to' contains 'from', like replacing 'x' with 'yx'
-					}
-				}
-
-				while (temp.find("::") == 0) {
-					size_t start_pos = 0;
-					if ((start_pos = temp.find("::", start_pos)) == 0) {
-						temp = temp.replace(start_pos, 2, "");
-					}
-				}
-
-				return temp;
-			}
-		};
-
-	public:
-		Scope(State& p_state) 
-			: m_state{ p_state } 
-			, m_parent{ nullptr }
-			, m_name { "" }
-			, m_qualified_name{ "" }
-		{};
-		Scope(Scope* p_parent)
-			: m_state{ p_parent->m_state }
-			, m_parent { p_parent }
-			, m_name{ "" }
-			, m_qualified_name{ createFullyQualifiedNamespace(p_parent->m_qualified_name, "") }
-		{};
-		Scope(Scope* p_parent, std::string const& p_name)
-			: m_state{ p_parent->m_state }
-			, m_parent{ p_parent }
-			, m_name{ p_name }
-			, m_qualified_name{ createFullyQualifiedNamespace(p_parent->m_qualified_name, p_name) }
-		{};
-		Scope(Scope const&) = default;
-		Scope(Scope &&) = default;
-		Scope& operator=(Scope const&) = default;
-		Scope& operator=(Scope&&) = default;
-		~Scope() = default;
-	
-	public:
-		State&
-			m_state; // shared engine state
-		Scope* const
-			m_parent; // parent scope
-		std::string
-			m_name; // namespace (e.g. "::" or "std::" or "details::")
-		std::string
-			m_qualified_name; // fully qualified namespace (e.g. "::" or "::std::" or "::std::details::")
-		fibers::containers::Map<std::string,Any> 
-			m_objects{}; // objects. (e.g. "x" or "alpha"). Duplicate names are not allowed.
-		fibers::containers::Map<std::string,Type_Info> 
-			m_postfixes{}; // allowed postfixes (e.g. 10_ft, where "_ft" is the key) to their desired typename. Duplicate names are not allowed.
-		
-		/*
-		To handle the following case:
-		def ToString(Any x){ Meant to be a fall-back when no other specialization is available };
-		def ToString(cweeStr x){ Specialization, should be used when all parameters match exactly };
-		def ToString(double x){ Specialization, should be used when all parameters match exactly };
-
-		The engine should utilize template specialization, similar to C++.
-		Functions with template parameters (Param_Types().Template() == true) should be re-submitted to the matrix, if successfully used, with specializations for their successfully used types.
-
-		Example 1:
-			Let's say user shows up with the following:
-				Function Name = "ToString";
-				Function_Params = { cweeStr };
-			Lookup should return:
-				ToString(cweeStr);
-			Because the search was matched exactly, we are done.
-
-		Example 2:
-			Let's say user shows up with the following:
-				Function Name = "ToString";
-				Function_Params = { int };
-			Lookup should return:
-				ToString(Any);
-			Because the parameters do not exactly match ({Any} != {int}), after running the function, if successful, and a specialized version should be added to the map:
-				ToString(int) -> which maps to -> ToString(Any);
-
-
-		*/
-		fibers::containers::Map<
-			std::string, // Function Name (e.g. cweeStr). 
-			std::shared_ptr<fibers::containers::Map<
-			    Param_Types, // Function parameters (e.g. {cweeStr, Any}, or {Any, Any, Any}). 
-			    Proxy_Function 
-			>>
-		> 
-			m_functions{}; // functions. (e.g. `==` or `to_string`). Duplicate names are expected. 
-
-		Scope CreateChild(std::string const& childName = "") {
-			return Scope(this, childName);
-		};
-
-
-
-
-
-
-
-
-
-	};
-#endif
 
 	class ScriptingState {
 	private:

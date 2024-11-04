@@ -227,6 +227,7 @@ int main() {
 			// Global Namespace...
 			auto global_scope{ std::make_shared<Global>() };
 			global_scope->p_self = global_scope;
+			global_scope->AddBuiltIns();
 
 			// Built-In Functions, Type, Conversions
 			if (1) {
@@ -256,16 +257,6 @@ int main() {
 				}), true);
 
 
-				global_scope->TypeConversionTree()->AddConverter<unsigned int, int>();
-				global_scope->TypeConversionTree()->AddConverter<int, float>();
-				global_scope->TypeConversionTree()->AddConverter<double, int>(); 
-				global_scope->TypeConversionTree()->AddConverter<double, float>();
-				global_scope->TypeConversionTree()->AddConverter<double, size_t>();
-				global_scope->TypeConversionTree()->AddConverter<int, size_t>();
-				global_scope->TypeConversionTree()->AddConverter<float, size_t>();
-				global_scope->TypeConversionTree()->AddConverter<unsigned int, size_t>();
-
-
 				global_scope->CallFunction("Type", { Any(100.0) });
 				global_scope->CallFunction("+", { Any(100.0), Any(100.0) });
 				global_scope->CallFunction("^", { Any(5.0), Any(2.0) });
@@ -277,6 +268,8 @@ int main() {
 				if (1) {
 					auto global_scope2{ std::make_shared<Global>() }; 
 					global_scope2->p_self = global_scope2;
+
+					global_scope2->AddBuiltIns();
 
 					// Create STD library...
 					{
@@ -377,6 +370,8 @@ int main() {
 				if (1) {
 					auto script_scope{ std::make_shared<Global>() }; // global should always be a Namespace
 					script_scope->p_self = script_scope;
+
+					script_scope->AddBuiltIns();
 
 					{
 						auto std_namespace{ std::make_shared<Namespace>(script_scope, "fibers") };
@@ -524,6 +519,8 @@ int main() {
 					global_scope2->p_self = global_scope2;
 					auto& tree = *global_scope2->TypeConversionTree();
 
+					global_scope2->AddBuiltIns();
+
 					// Create library...
 					{
 						auto std_namespace{ std::make_shared<Namespace>(global_scope2, "Units") };
@@ -539,27 +536,17 @@ int main() {
 							// which has the following types groups... 
 
 							{
-								// default, built-in conversions...
-								tree.AddConverter<int, double>();
-								tree.AddConverter<int, float>();
-								tree.AddConverter<double, float>();
-								tree.AddConverter([](int x) -> std::string { return std::to_string(x); });
-								tree.AddConverter([](float x) -> std::string { return std::to_string(x); });
-								tree.AddConverter([](double x) -> std::string { return std::to_string(x); });
-								tree.AddConverter([](std::string x) -> double { return std::atof(x.c_str()); });
-								tree.AddConverter([](std::string x) -> float { return std::atof(x.c_str()); });
-								tree.AddConverter([](std::string x) -> int { return std::atof(x.c_str()); });
-							}
-
-							{
 								tree.AddConverter<Units::value, double>();
 								tree.AddConverter([](Units::value const& x) -> std::string { return x.ToString(); });
 								value_namespace->m_functions.emplace("abbreviation", make_callable([](Units::value const& x)->std::string {
 									return x.Abbreviation();
-								}), scripting::Param_Types());
+								}));
 								value_namespace->m_functions.emplace("name", make_callable([](Units::value const& x)->std::string {
 									return x.UnitName();
-								}), scripting::Param_Types());
+								}));
+								value_namespace->m_functions.emplace("to_string", make_callable([](Units::value const& x)->std::string {
+									return x.ToString();
+								}));
 
 								value_namespace->m_functions.emplace("*", make_callable([](Units::value const& x, Units::value const& y)->Units::value{
 									return x * y;
@@ -633,12 +620,12 @@ int main() {
 												// abbreviation
 												impl_namespace->m_functions.emplace("abbreviation", make_callable([thisT = abbrev]()->std::string {
 													return thisT;
-												}), scripting::Param_Types({ { "parent", user_type<decltype(impl)>() } }));
+												}));
 
 												// name
 												impl_namespace->m_functions.emplace("name", make_callable([thisT = name]()->std::string {
 													return thisT;
-												}), scripting::Param_Types({ { "parent", user_type<decltype(impl)>() } }));
+												}));
 
 												std_namespace->AddUsing(impl_namespace);
 
@@ -836,16 +823,90 @@ int main() {
 
 				auto trees = localScope->TypeConversionTrees();
 				auto tree = Type_Converter_Tree::Combine(trees);
+
 				EXPECT_EQ(true, tree.Converts(scripting::user_type<int>(), scripting::user_type<float>()));
-				EXPECT_EQ(true, tree.Converts(scripting::user_type<double>(), scripting::user_type<Units::foot>()));
+				EXPECT_EQ(true, tree.Converts(scripting::user_type<double>(), scripting::user_type<float>()));
+				EXPECT_EQ(true, tree.Converts(scripting::user_type<unsigned char>(), scripting::user_type<char>()));
+				EXPECT_EQ(true, tree.Converts(scripting::user_type<long>(), scripting::user_type<double>()));
+				EXPECT_EQ(true, tree.Converts(scripting::user_type<unsigned int>(), scripting::user_type<long double>()));
 				EXPECT_EQ(true, tree.Converts(scripting::user_type<Units::foot>(), scripting::user_type<Units::value>()));
 				EXPECT_EQ(true, tree.Converts(scripting::user_type<Units::foot>(), scripting::user_type<Units::meter>()));
+
+				if (Any f = localScope->CallFunction("double", { Any(100.0) })) {
+					printf(f.cast<double>());
+				}
+				if (Any f = localScope->CallFunction("int", { Any(100) })) {
+					printf(f.cast<int>());
+				}
+				if (Any f = localScope->CallFunction("double", { Any(10) })) {
+					printf(f.cast<double>());
+				}
+				if (Any f = localScope->CallFunction("int", { Any(10.0) })) {
+					printf(f.cast<int>());
+				}
+				if (Any f = localScope->CallFunction("char", { Any(int('A'))})) {
+					printf(f.cast<char>());
+				}
+				if (Any f = localScope->CallFunction("double", {})) {
+					printf(f.cast<double>());
+				}
+				if (Any f = localScope->CallFunction("double", { Units::foot( 100.0 ) })) {
+					printf(f.cast<double>());
+				}
+				if (Any f = localScope->CallFunction("double", { Units::meter(Units::foot(100.0)) })) {
+					printf(f.cast<double>());
+				}
+
+				if (Any f = localScope->CallFunction("max", { 100.0 })) {
+					printf(f.cast<double>());
+				}
+				if (Any f = localScope->CallFunction("max", { bool() })) {
+					printf(f.cast<bool>());
+				}
+				if (Any f = localScope->CallFunction("min", { int() })) {
+					printf(f.cast<int>());
+				}
+				if (Any f = localScope->CallFunction("int::min", {})) {
+					printf(f.cast<int>());
+				}
+				if (Any f = localScope->CallFunction("int::min", { int() })) {
+					printf(f.cast<int>());
+				}
+				if (Any f = localScope->CallFunction("int::min", { double() })) {
+					printf(f.cast<int>());
+				}
+				if (Any f = localScope->CallFunction("to_string", { double(100.0) })) {
+					printf(f.cast<std::string>());
+				}
+				if (Any f = localScope->CallFunction("to_string", { (unsigned int)(55) })) {
+					printf(f.cast<std::string>());
+				}
+				if (Any f = localScope->CallFunction("to_string", { (Units::value)(54) })) {
+					printf(f.cast<std::string>());
+				}
+				if (Any f = localScope->CallFunction("to_string", { (Units::foot)(50) })) {
+					printf(f.cast<std::string>());
+				}
+				if (Any f = localScope->CallFunction("!=", { 50.0, 75.0 })) {
+					printf(f.cast<bool>());
+				}
+				if (Any f = localScope->CallFunction("==", { 500, 500.0f })) {
+					printf(f.cast<bool>());
+				}
+				if (Any f = localScope->CallFunction("==", { 'z', (int)('z') })) {
+					printf(f.cast<bool>());
+				}
+				if (Any f = localScope->CallFunction("to_string", { localScope->CallFunction("*", { 5.0f, 5.0 }) })) {
+					printf(f.cast<std::string>());
+				}
+
+
+
+
 				
 				tree.Convert(100.0, scripting::user_type<Units::foot>());
 				tree.Convert(Units::foot(100.0), scripting::user_type<Units::value>());
 				tree.Convert(Units::foot(100.0), scripting::user_type<Units::meter>());
-
-
 
 				localScope->Print();
 
@@ -872,11 +933,29 @@ int main() {
 					auto meter_v = localScope->CallFunction("Units::meter", { foot_v });
 					printf(meter_v.cast<Units::meter>().ToString());
 				}
-
 				{
+					auto meter_v = localScope->CallFunction("Units::meter", { foot_v });
+					printf(meter_v.cast<Units::meter>().ToString());
+				}
+
+				// expect failure
+				try{
 					auto text_v = localScope->CallFunction("to_string", { foot_v });
 					printf(text_v.cast<std::string>());
 				}
+				catch (...) {}
+
+				{
+					auto text_v = localScope->CallFunction("std::to_string", { foot_v });
+					printf(text_v.cast<std::string>());
+				}
+
+				{
+					localScope->AddUsing(localScope->FindNamespace("std"));
+					auto text_v = localScope->CallFunction("to_string", { foot_v });
+					printf(text_v.cast<std::string>());
+				}
+
 			}
 		}
 
