@@ -5755,7 +5755,7 @@ namespace fibers{
 	};
 
 	namespace parallel {
-#define UseStdForEachForParallelManager // without, we are very stable (>1.5hr) and memory-leak free (so far).
+#define UseStdForEachForParallelManager // without, we are very stable (>1.5hr) and memory-leak free (so far). However, the competition from high parallelism causes memory usage overloads.
 		
 		/* parallel_for (auto i = start; i < end; i++){ todo(i); }
 		If the todo(i) returns anything, it will be collected into a vector at the end. */

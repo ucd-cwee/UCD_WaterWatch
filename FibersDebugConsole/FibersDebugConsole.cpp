@@ -277,47 +277,6 @@ int main() {
 						std_namespace->p_self = std_namespace;
 						global_scope2->AddChild(std_namespace);
 
-						// the "std" namespace imports the "string" namespace...
-						{
-							auto string_namespace{ std::make_shared<Class>(fibers::user_type<std::string>(), std_namespace, "string") };
-							string_namespace->p_self = string_namespace;
-							std_namespace->AddChild(string_namespace);
-
-							// ... which imports the "impl" namespace...								
-							{
-								auto impl_namespace{ std::make_shared<Namespace>(string_namespace, "impl") };
-								impl_namespace->p_self = impl_namespace;
-								string_namespace->AddChild(impl_namespace);
-							}
-
-							// ... which has a couple constructor functions ... 
-							string_namespace->m_functions.emplace("string", scripting::make_callable([](std::string const& x) -> std::string { return x; }), scripting::Param_Types({ { std::string("parent"), string_namespace->ClassType } }));
-							string_namespace->m_functions.emplace("string", scripting::make_callable([](Any const& x) -> std::string {  return x.TypeName(); }), scripting::Param_Types({ { std::string("parent"), scripting::user_type<float>() } }));
-							string_namespace->m_functions.emplace("string", scripting::make_callable([](Any const& x) -> std::string {  return x.TypeName(); }), scripting::Param_Types({ { std::string("parent"), scripting::user_type<int>() } }));
-							string_namespace->m_functions.emplace("string", scripting::make_callable([](Any const& x) -> std::string {  return x.TypeName(); }), scripting::Param_Types({ { std::string("parent"), scripting::user_type<double>() } }));
-
-							// ... and has "to_string" functions...
-							std_namespace->m_functions.emplace("to_string", scripting::Param_Types({ { "o", string_namespace->ClassType } }), scripting::make_callable(
-								[](std::string const& x) -> std::string { return x; }
-							));
-							std_namespace->m_functions.emplace("to_string", scripting::Param_Types({ { "o", user_type<int>() } }), scripting::make_callable(
-								[](int const& x) -> std::string { return std::to_string(x); }
-							));
-							std_namespace->m_functions.emplace("to_string", scripting::Param_Types({ { "o", user_type<float>() } }), scripting::make_callable(
-								[](float const& x) -> std::string { return std::to_string(x); }
-							));
-							std_namespace->m_functions.emplace("to_string", scripting::Param_Types({ { "o", user_type<double>() } }), scripting::make_callable(
-								[](double const& x) -> std::string { return std::to_string(x); }
-							));
-							std_namespace->m_functions.emplace("to_string", scripting::Param_Types({ { "o", user_type<Any>() } }), scripting::make_callable(
-								[](Any const& x) -> std::string { return Units::printf("`%s`", x.TypeName()); }
-							));
-
-
-
-
-						}
-
 						// the "std" namespace imports the "map" namespace...
 						{
 							auto string_namespace{ std::make_shared<Class>(fibers::user_type<std::map<std::string, fibers::Any>>(), std_namespace, "map") };
@@ -816,21 +775,177 @@ int main() {
 				}
 			}
 
+
+
+
+
+
+
+
+
+
+
+
+
 			// TESTING...
 			if (1) {
+				// Simulate a complex, multithreaded ForLoop
+				{
+					auto ScriptScope = std::make_shared<Scope>(global_scope);
+					ScriptScope->p_self = ScriptScope;
+
+					ScriptScope->AddObject("x", std::make_shared<Any>(fibers::containers::number<double>(0)));
+
+					{
+
+						auto ForScope = std::make_shared<Scope>(ScriptScope);
+						ForScope->p_self = ForScope;
+
+						fibers::parallel::For(0, 100, [&](int i) {
+							auto LoopScope = std::make_shared<Scope>(ForScope);
+							LoopScope->p_self = LoopScope;
+
+							LoopScope->AddObject("i", std::make_shared<Any>((int)i));
+
+							if (auto i_obj = LoopScope->FindObject("i")) {
+								auto LengthObj = LoopScope->CallFunction("length", { // returns a size_t
+									LoopScope->CallFunction("string", { // returns a string
+										LoopScope->CallFunction("double", { // returns a double
+											*i_obj
+										})
+									})
+								});
+
+								printf(std::string("Length of ") + Impl::Cast<std::string>(*i_obj, LoopScope) + " is " + Impl::Cast<std::string>(LengthObj, LoopScope));
+
+								if (auto x_obj = LoopScope->FindObject("x")) {
+									LoopScope->CallFunction("+=", { *x_obj, LengthObj });
+								}
+							}
+						});
+					}
+
+					printf(std::string("Final Answer: \t") + Impl::Cast<std::string>(*ScriptScope->FindObject("x"), ScriptScope));
+				}
+
+				// Simulate a complex, multithreaded ForLoop which Throws a runtime error during one of the evaluations
+				{
+					auto ScriptScope = std::make_shared<Scope>(global_scope);
+					ScriptScope->p_self = ScriptScope;
+
+					ScriptScope->AddObject("x", std::make_shared<Any>(fibers::containers::number<double>(0)));
+
+					{
+
+						auto ForScope = std::make_shared<Scope>(ScriptScope);
+						ForScope->p_self = ForScope;
+
+						try{
+							fibers::parallel::For(0, 100, [&](int i) {
+								auto LoopScope = std::make_shared<Scope>(ForScope);
+								LoopScope->p_self = LoopScope;
+
+								LoopScope->AddObject("i", std::make_shared<Any>((int)i));
+
+								if (auto i_obj = LoopScope->FindObject("i")) {
+									auto LengthObj = LoopScope->CallFunction("length", { // returns a size_t
+										LoopScope->CallFunction("string", { // returns a string
+											LoopScope->CallFunction("double", { // returns a double
+												*i_obj
+											})
+										})
+									});
+
+									// printf(std::string("Length of ") + Impl::Cast<std::string>(*i_obj, LoopScope) + " is " + Impl::Cast<std::string>(LengthObj, LoopScope));
+
+									if (Impl::Cast<int>(*LoopScope->FindObject("x"), LoopScope) > 800) {
+										throw(std::runtime_error("x cannot be greater than 800 for some random reason!"));
+									}
+
+									if (auto x_obj = LoopScope->FindObject("x")) {
+										LoopScope->CallFunction("+=", { *x_obj, LengthObj });
+
+
+										if (Impl::Cast<bool>(LoopScope->CallFunction(">", { *x_obj, 800 }), LoopScope)) {
+											throw(std::runtime_error("x cannot be greater than 800 for some random reason"));
+										}
+									}
+								}
+							});
+
+							EXPECT_EQ(true, false); // we should not get here.
+						}
+						catch (std::runtime_error const& e) {							
+							printf(e.what());
+						}
+					}
+
+					// the variable x should still be valid, and should have a value greater than 800
+					printf(std::string("Final Answer: \t") + Impl::Cast<std::string>(*ScriptScope->FindObject("x"), ScriptScope));
+				}
+
+				// Simulate a simple string operation
+				{
+					// {
+						auto ScriptScope = std::make_shared<Scope>(global_scope); ScriptScope->p_self = ScriptScope;
+						// var x = "A";
+						ScriptScope->AddObject("x", std::make_shared<Any>(std::string("A")));
+						// var y = "B";
+						ScriptScope->AddObject("y", std::make_shared<Any>(std::string("B")));
+						// return x + y;
+						printf(Impl::Cast<std::string>(ScriptScope->CallFunction("+", { *ScriptScope->FindObject("x"), *ScriptScope->FindObject("y") }), ScriptScope));
+					// }
+				}
+
+				// Simulate a simple Units operation
+				{
+					// {
+						auto ScriptScope = std::make_shared<Scope>(global_scope); ScriptScope->p_self = ScriptScope;
+						// Using namespace "Units"
+						ScriptScope->AddUsing(ScriptScope->FindNamespace("Units"));
+						// var x = foot(int(10.4));
+						ScriptScope->AddObject("x", std::make_shared<Any>(ScriptScope->CallFunction("foot", { ScriptScope->CallFunction("int", { 10.4 }) })));
+						// var y = meter(100);
+						ScriptScope->AddObject("y", std::make_shared<Any>(ScriptScope->CallFunction("meter", { 100 })));
+						// var z = inch(12);
+						ScriptScope->AddObject("z", std::make_shared<Any>(ScriptScope->CallFunction("inch", { 12 })));
+						// return Units::gallon(x*y*z);
+						auto result = ScriptScope->CallFunction("gallon", { ScriptScope->CallFunction("*", { ScriptScope->CallFunction("*", { *ScriptScope->FindObject("x"), *ScriptScope->FindObject("y") }), *ScriptScope->FindObject("z") }) });
+						printf(Impl::Cast<std::string>(result, ScriptScope));
+					// }
+				}
+
+
+
+
+
+
+
+
+
+
 				auto localScope = std::make_shared<Scope>(global_scope);
 				localScope->p_self = localScope;
 
-				auto trees = localScope->TypeConversionTrees();
-				auto tree = Type_Converter_Tree::Combine(trees);
+				if (1) {
+					auto& tree = localScope->GetCombinedTypeConversionTree(); // Likely returns the tree used for the parent scope
+					EXPECT_EQ(true, tree.Converts(scripting::user_type<int>(), scripting::user_type<float>()));
+					EXPECT_EQ(true, tree.Converts(scripting::user_type<double>(), scripting::user_type<float>()));
+					EXPECT_EQ(true, tree.Converts(scripting::user_type<unsigned char>(), scripting::user_type<char>()));
+					EXPECT_EQ(true, tree.Converts(scripting::user_type<long>(), scripting::user_type<double>()));
+					EXPECT_EQ(true, tree.Converts(scripting::user_type<unsigned int>(), scripting::user_type<long double>()));
+					EXPECT_EQ(true, tree.Converts(scripting::user_type<Units::foot>(), scripting::user_type<Units::value>()));
+					EXPECT_EQ(true, tree.Converts(scripting::user_type<Units::foot>(), scripting::user_type<Units::meter>()));
+					EXPECT_EQ(true, tree.Converts(scripting::user_type<float>(), scripting::user_type<std::string>()));
+					EXPECT_EQ(true, tree.Converts(scripting::user_type<int>(), scripting::user_type<std::string>()));
+					EXPECT_EQ(true, tree.Converts(scripting::user_type<double>(), scripting::user_type<std::string>()));
+					EXPECT_EQ(true, tree.Converts(scripting::user_type<size_t>(), scripting::user_type<std::string>()));
+					EXPECT_EQ(true, tree.Converts(scripting::user_type<Units::foot>(), scripting::user_type<std::string>()));
 
-				EXPECT_EQ(true, tree.Converts(scripting::user_type<int>(), scripting::user_type<float>()));
-				EXPECT_EQ(true, tree.Converts(scripting::user_type<double>(), scripting::user_type<float>()));
-				EXPECT_EQ(true, tree.Converts(scripting::user_type<unsigned char>(), scripting::user_type<char>()));
-				EXPECT_EQ(true, tree.Converts(scripting::user_type<long>(), scripting::user_type<double>()));
-				EXPECT_EQ(true, tree.Converts(scripting::user_type<unsigned int>(), scripting::user_type<long double>()));
-				EXPECT_EQ(true, tree.Converts(scripting::user_type<Units::foot>(), scripting::user_type<Units::value>()));
-				EXPECT_EQ(true, tree.Converts(scripting::user_type<Units::foot>(), scripting::user_type<Units::meter>()));
+					tree.Convert(100.0, scripting::user_type<Units::foot>());
+					tree.Convert(Units::foot(100.0), scripting::user_type<Units::value>());
+					tree.Convert(Units::foot(100.0), scripting::user_type<Units::meter>());
+				}
 
 				if (Any f = localScope->CallFunction("double", { Any(100.0) })) {
 					printf(f.cast<double>());
@@ -899,14 +1014,37 @@ int main() {
 				if (Any f = localScope->CallFunction("to_string", { localScope->CallFunction("*", { 5.0f, 5.0 }) })) {
 					printf(f.cast<std::string>());
 				}
+				if (Any f = localScope->CallFunction("string", { Any(36.0f) })) {
+					printf(f.cast<std::string>());
+				}
+				if (Any f = localScope->CallFunction("string", { localScope->CallFunction("ldouble", { 5555ll }) })) {
+					printf(f.cast<std::string>());
+				}
+				if (Any f = localScope->CallFunction("string", {})) {
+					printf(f.cast<std::string>());
+				}
+				if (Any f = localScope->CallFunction("float", {})) {
+					printf(f.cast<float>());
+				}
+				if (Any f = localScope->CallFunction("float", { 100.0 })) {
+					printf(f.cast<float>());
+				}
 
+				if (auto foundScope = localScope->FindClass(user_type<float>())) {
+					if (Any f = localScope->CallFunction(foundScope->GetName(), { 123.0 })) {
+						printf(f.cast<float>());
+					}
+				}
 
+				printf(Impl::Cast<float>(321, localScope));
+				printf(Impl::Cast<std::string>(std::string("I am a TEST"), localScope));
+				printf(Impl::Cast<std::string>(Units::gallon(100), localScope));
+				printf(Impl::Cast<Units::gallon>(localScope->CallFunction("length", { std::string("TEST") }), localScope));
 
-
-				
-				tree.Convert(100.0, scripting::user_type<Units::foot>());
-				tree.Convert(Units::foot(100.0), scripting::user_type<Units::value>());
-				tree.Convert(Units::foot(100.0), scripting::user_type<Units::meter>());
+				printf(Impl::Cast(321, user_type<std::string>(), localScope).cast<std::string>());
+				printf(Impl::Cast(std::string("I am a TEST"), user_type<std::string>(), localScope).cast<std::string>());
+				printf(Impl::Cast(Units::gallon(100), user_type<std::string>(), localScope).cast<std::string>());
+				printf(Impl::Cast(localScope->CallFunction("length", { std::string("TEST") }), user_type<std::string>(), localScope).cast<std::string>());
 
 				localScope->Print();
 
@@ -938,23 +1076,26 @@ int main() {
 					printf(meter_v.cast<Units::meter>().ToString());
 				}
 
-				// expect failure
-				try{
+				// expect success
+				{
 					auto text_v = localScope->CallFunction("to_string", { foot_v });
 					printf(text_v.cast<std::string>());
 				}
-				catch (...) {}
+				
 
-				{
-					auto text_v = localScope->CallFunction("std::to_string", { foot_v });
-					printf(text_v.cast<std::string>());
-				}
 
-				{
-					localScope->AddUsing(localScope->FindNamespace("std"));
-					auto text_v = localScope->CallFunction("to_string", { foot_v });
-					printf(text_v.cast<std::string>());
-				}
+
+
+
+
+
+
+
+
+
+
+
+
 
 			}
 		}

@@ -316,9 +316,13 @@ namespace scripting {
 		fibers::containers::Map<
 			scripting::Type_Info, // from
 			std::shared_ptr<Node> // to/connections
-		> nodes;
+		> 
+			nodes;
 
-		fibers::synchronization::impl::InterlockedLong version;
+		fibers::synchronization::atomic_number<size_t>
+			version;
+		// fibers::synchronization::impl::InterlockedLong
+			// version;
 
 	private:
 		// Solves Dijkstra's algorithm to determine the shortest path for "From" to "To", puts the path in "Out", and returns true. 
@@ -350,6 +354,7 @@ namespace scripting {
 				for (auto& node : nodes) {
 					vertices_and_weights[node.first] = std::numeric_limits<double>::max();
 					for (auto& connection : node.second->connections) {
+						vertices_and_weights[connection.first] = std::numeric_limits<double>::max();
 						vertices_and_distances[node.first][connection.first] = connection.second->cost();
 					}
 				}
@@ -364,7 +369,7 @@ namespace scripting {
 				std::multimap<double, scripting::Type_Info> sorted;
 				while ((visited.size() < vertices_and_distances.size()) && (numToVisit-- >= 1)) {
 					// for each adjacent node...
-					numToVisit += vertices_and_distances[CurrentVertex].size();
+					numToVisit += (vertices_and_distances[CurrentVertex].size() + 1);
 					for (auto& connection : vertices_and_distances[CurrentVertex]) {
 						// not previously visited...
 						if (visited.count(connection.first) == 0) {
@@ -428,6 +433,9 @@ namespace scripting {
 		};
 
 	public:
+		// Tree Version
+		long Version() const { return version.GetValue(); };
+
 		// add an automatic static or polymorphic conversion
 		template <typename FromType, typename ToType> bool AddConverter() {
 			auto fromTypeInfo{ scripting::user_type<FromType>() };
@@ -504,7 +512,8 @@ namespace scripting {
 			auto targetLocation = node->connections.at_or(toTypeInfo, nullptr);
 			if (!targetLocation) {
 				targetLocation = node->connections.get_or_insert(toTypeInfo, std::dynamic_pointer_cast<details::Type_Conversion_Base>(std::make_shared<details::Custom_Type_Conversion_Impl<Callable>>(std::move(t_func))));
-
+			}
+			if (1){
 				(void)targetLocation->cost(); // cache the cost to perform this conversion
 
 				node->cached_conversions.emplace(toTypeInfo, std::make_shared<std::tuple<std::vector<scripting::Type_Info>, long>>(
@@ -550,8 +559,9 @@ namespace scripting {
 			if (!targetLocation) {
 				targetLocation = node->connections.get_or_insert(outboundType, std::dynamic_pointer_cast<details::Type_Conversion_Base>(
 					std::make_shared<details::Custom_Type_Conversion_Impl<Callable>>(std::move(t_func), inboundType, outboundType)
-				));
-
+					));
+			}
+			if (1){
 				(void)targetLocation->cost(); // cache the cost to perform this conversion
 
 				node->cached_conversions.emplace(outboundType, std::make_shared<std::tuple<std::vector<scripting::Type_Info>, long>>(
@@ -688,13 +698,13 @@ namespace scripting {
 								node.cached_conversions.insert({ To, std::make_shared<std::tuple<std::vector<scripting::Type_Info>, long>>(
 									std::vector<scripting::Type_Info>(),
 									version.GetValue()
-								)});
+								) });								
+								return std::numeric_limits<double>::max();
 							}
 						}
+						f = node.cached_conversions.at(To).value_or(nullptr);
 					}
 
-					// try again... hopefully it has been made (for better or worse)
-					f = node.cached_conversions.at(To).value_or(nullptr);
 					if (f) {
 						std::vector<scripting::Type_Info>& conversion_path = std::get<0>(*f);
 						if (conversion_path.size() > 0) {
@@ -744,17 +754,21 @@ namespace scripting {
 							}
 							else { // cache the failure -- to prevent repeated Dijkstra searches unless the tree is updated to (hopefully) bridge the gap.
 								node.cached_conversions.insert({ To, std::make_shared<std::tuple<std::vector<scripting::Type_Info>, long>>(
-									std::vector<scripting::Type_Info>(), 
+									std::vector<scripting::Type_Info>(),
 									version.GetValue()
-								)});
+								) });								
+								return false;
 							}
 						}
+						f = node.cached_conversions.at(To).value_or(nullptr);
 					}
 
 					// try again... hopefully it has been made (for better or worse)
-					f = node.cached_conversions.at(To).value_or(nullptr);
 					if (f) {
-						return true;
+						std::vector<scripting::Type_Info>& conversion_path = std::get<0>(*f);
+						if (conversion_path.size() > 0) {
+							return true;
+						}
 					}
 				}
 				return false;
@@ -796,6 +810,7 @@ namespace scripting {
 					}
 				}
 			}
+
 			return out;
 		};
 		static bool TryConvert(std::vector<const Type_Converter_Tree*> trees, Any const& From, scripting::Type_Info const& To, Any& result) {
@@ -1033,19 +1048,28 @@ namespace scripting {
 		// Symbolic "cost" to perform the conversion, in 100's of nanoseconds. Not meant to be precise, but meant to be relative for comparison with other converters.
 		double conversion_cost(Function_Params t_params, Type_Converter_Tree const& t_conversions) const {
 			double out{ 0 };
+
+			// Quick return if the types exactly match.
+			if (t_params.hash() == hash()) { return 0; }
+
 			if (m_types.size() > t_params.size()) return std::numeric_limits<double>::max();
-			for (size_t i = 0; i < m_types.size(); ++i) {
+			size_t i = 0;
+			for (; i < m_types.size(); ++i) {
 				const auto& bv = t_params[i];
 				const auto& ti = m_types[i].second;
 				if (auto p = ti.lock()) {
 					if (!p->is_undef()) {
-						if (auto p2 = t_params[i].Type().lock()) {
-							auto cost = t_conversions.ConversionCost(p2, p); // success or failure, caches the result for faster future eval's
-							if (cost >= std::numeric_limits<double>::max()) return std::numeric_limits<double>::max();
+						if (!t_conversions.Converts(bv.Type(), p)) return std::numeric_limits<double>::max();
+						else {
+							auto cost = t_conversions.ConversionCost(bv.Type(), p);
+							if (cost == std::numeric_limits<double>::max()) return std::numeric_limits<double>::max();
 							else out += cost;
 						}
 					}
 				}
+			}
+			for (; i < t_params.size(); ++i) {
+				out += 10000; // large penalty for not using the provided type(s).
 			}
 			return out;
 		};
@@ -3390,29 +3414,32 @@ namespace scripting {
 
 		/* Given a function name and call parameters, will attempt to find an exact-match function, variadic instantiation, or convertable function call, or return nullptr. */
 		Proxy_Function BuildMatch(std::string const& functionName, scripting::Function_Params const& params, Type_Converter_Tree const& m_typeConverters = Type_Converter_Tree(), bool AllowTemplateInstantiation = true, bool AllowTypeConversion = true) {
-			std::multimap<double, std::tuple<Proxy_Function, Param_Types>> candidates;
-			
 			if (auto ptr = at(functionName, params)) {
 				return ptr;
 			}
 			else {
+				std::multimap<double, std::tuple<Proxy_Function, Param_Types>> candidates;
+
 				bool successfullyAddedFunction{ false };
 
-				if (AllowTemplateInstantiation) {
-					if (auto ptr = this->operator[](functionName)) {
-						for (auto& function : *ptr) {
-							if (function.first.Template()) {
-								if (function.first.converts(params, m_typeConverters)) {
-									candidates.insert({ function.first.conversion_cost(params, m_typeConverters), { function.second, function.first } });
+				if (AllowTypeConversion) {
+					if (!successfullyAddedFunction) {
+						if (auto ptr = this->operator[](functionName)) {
+							for (auto& function : *ptr) {
+								if (function.first.Template()) {
+									// already tried this...
 								}
-							}
-							else {
-								// must be perfect match -- requires casting. We can try that, but only if no template exists that would work instead.
+								else {
+									if (function.first.converts(params, m_typeConverters)) {
+										candidates.insert({ function.first.conversion_cost(params, m_typeConverters), { function.second, function.first } });
+									}
+								}
 							}
 						}
 					}
 				}
-				
+
+				// Get the "cheapest" or fastest conversion option available at this scope.
 				//for (auto& candidate : candidates) {
 				//	auto& func = std::get<0>(candidate.second);
 				//	auto& param = std::get<1>(candidate.second);
@@ -3427,19 +3454,20 @@ namespace scripting {
 				//	catch (scripting::exception::bad_boxed_cast err) {}
 				//}
 				//candidates.clear();
+				//if (successfullyAddedFunction) {
+					//return at(functionName, params);
+				//}
 
-				if (AllowTypeConversion) {
-					if (!successfullyAddedFunction) {
-						if (auto ptr = this->operator[](functionName)){
-							for (auto& function : *ptr) {
-								if (function.first.Template()) {
-									// already tried this...
+				if (AllowTemplateInstantiation) {
+					if (auto ptr = this->operator[](functionName)) {
+						for (auto& function : *ptr) {
+							if (function.first.Template()) {
+								if (function.first.converts(params, m_typeConverters)) {
+									candidates.insert({ function.first.conversion_cost(params, m_typeConverters), { function.second, function.first } });
 								}
-								else {
-									if (function.first.converts(params, m_typeConverters)) {
-										candidates.insert({ function.first.conversion_cost(params, m_typeConverters), { function.second, function.first } });
-									}
-								}
+							}
+							else {
+								// must be perfect match -- requires casting. We can try that, but only if no template exists that would work instead.
 							}
 						}
 					}
@@ -3481,6 +3509,7 @@ namespace scripting {
 		friend class Impl;
 		Scope(std::weak_ptr<Scope> parent = std::weak_ptr<Scope>())
 			: p_parent{ parent }
+			, p_temp_tree()
 		{
 			auto randN = [](double min, double max) -> double {
 				return (((double)std::rand() / (double)RAND_MAX) * (max - min)) + min;
@@ -3498,6 +3527,10 @@ namespace scripting {
 	private:
 		std::string
 			p_NameRand;
+		mutable fibers::synchronization::atomic_number<size_t>
+			p_temp_tree_hash;
+		mutable Type_Converter_Tree
+			p_temp_tree;
 
 	public:
 		std::weak_ptr<Scope>
@@ -3632,24 +3665,101 @@ namespace scripting {
 			}
 		};
 
+		// Get all applicable Conversion Trees for this scope. We allow multiple trees (from multiple Imports, for example) to co-exist and they are combined per-Scope on an as-needed basis.
 		std::vector<const Type_Converter_Tree*> TypeConversionTrees() const {
-			std::set< const Type_Converter_Tree*> out2;
-
 			std::vector<const Type_Converter_Tree*> out;
 
-			std::set<size_t> previous;
-			TypeConversionTrees(out, previous);
+			// Get Initial List (May contain duplicates)
+			{
+				static thread_local std::set<size_t> previous{};
+				previous.clear();
+				TypeConversionTrees(out, previous);
+			}
 
-			for (auto& x : out)
-				out2.insert(x);
+			// Unique List
+			{
+				static thread_local std::set< const Type_Converter_Tree*> out2{};
+				out2.clear();
 
-			out.clear();
+				for (auto& x : out) out2.insert(x);
 
-			for (auto& x : out2) {
-				if (x != nullptr) out.push_back(x);
+				out.clear();
+
+				for (auto& x : out2) if (x != nullptr) out.push_back(x);
 			}
 
 			return out;
+		};
+		
+		/* 
+		Each Scope has a local copy of a Type_Converter_Tree. However, if there is no difference between the Type_Converter_Tree for this scope or it's parent, then it returns the parent's Type_Converter_Tree. 
+		This is designed to encourage re-use of similar Type_Converter_Tree's and prevent time wasted on their construction. 
+		*/
+		Type_Converter_Tree const& GetCombinedTypeConversionTree() const {
+			auto HashTrees = [](std::vector<const Type_Converter_Tree*> const& trees) -> size_t {
+				constexpr auto A = 54059; /* a prime */
+				constexpr auto B = 76963; /* another prime */
+				constexpr auto C = 86969; /* yet another prime */
+				constexpr auto FIRSTH = 37; /* also prime */
+
+				size_t h = FIRSTH;
+				if (trees.size() > 0)
+					for (auto& s : trees)
+						if (s)
+							h = (h * A) ^ (s->Version() * B);
+
+				auto result = h % C;
+				return result;
+			};
+
+			// get the highest parent where the conversion trees don't change;
+			if (std::shared_ptr<Scope> highestSuccess = p_self.lock()) {
+				auto trees = highestSuccess->TypeConversionTrees();
+				auto highestSuccessHash = HashTrees(trees);
+				while (std::shared_ptr<Scope> parentAttempt = highestSuccess->p_parent.lock()) {
+					auto parentHash = HashTrees(parentAttempt->TypeConversionTrees());
+					if (parentHash != highestSuccessHash) {
+						break;
+					}
+					else {
+						highestSuccess = parentAttempt;
+					}
+				}
+
+				while (true) {
+					// something changed with some of these 
+					if (highestSuccess->p_temp_tree_hash != highestSuccessHash) {
+						highestSuccess->p_temp_tree_hash = highestSuccessHash;
+
+						if (highestSuccess->p_temp_tree_hash == highestSuccessHash) {
+							highestSuccess->p_temp_tree = Type_Converter_Tree::Combine(trees);
+							return highestSuccess->p_temp_tree;
+						}
+					}
+					else {
+						return highestSuccess->p_temp_tree;
+					}
+				}
+
+				return highestSuccess->p_temp_tree;
+			}
+			return this->p_temp_tree;
+
+			//while (true) {
+			//	auto trees = TypeConversionTrees();
+			//	size_t Hash = HashTrees(trees);
+			//	// something changed with some of these 
+			//	if (p_temp_tree_hash != Hash) {
+			//		p_temp_tree_hash = Hash;
+			//		if (p_temp_tree_hash == Hash) {
+			//			p_temp_tree = Type_Converter_Tree::Combine(trees);
+			//			return p_temp_tree;
+			//		}
+			//	}
+			//	else {
+			//		return p_temp_tree;
+			//	}
+			//}
 		};
 
 	protected:
@@ -3944,110 +4054,111 @@ namespace scripting {
 		};
 		virtual const Functions* GetFunctions() const { return nullptr; };
 		virtual Functions* GetFunctions() { return nullptr; };
-		virtual bool TryFindFunctionImpl(std::string const& functionName, scripting::Function_Params const& params, Type_Converter_Tree const& m_conversionTree, Proxy_Function& out, int depth = 0) const {
-			if (depth > 2) return false;
-
+		virtual bool TryFindFunctionImpl(std::string const& functionName, scripting::Function_Params const& params, Type_Converter_Tree const& m_conversionTree, Proxy_Function& out) const {
 			size_t lastOfColons{ 0 };
 			if ((lastOfColons = functionName.find_last_of("::")) == std::string::npos) {
-				// just a normal var name
-				for (auto& scope : GetScopesForObjectSearch()) {
-					if (auto* ptr = scope->GetFunctions()) {
-						if (auto func = ptr->BuildMatch(functionName, params, m_conversionTree)) {
-							out = func;
-							return true;
+				std::shared_ptr<Scope> firstParamScopePtr{ nullptr };
+				std::shared_ptr<Scope> constructorScopePtr{ nullptr };
+
+				// FIRST SEARCH DOES ALLOW FOR CONVERSIONS, BUT NO TEMPLATES
+				if (1) {
+					//std::multimap<double, Proxy_Function> sort;
+
+					for (auto& scope : GetScopesForObjectSearch()) {
+						if (auto* ptr = scope->GetFunctions()) {
+							if (auto func = ptr->BuildMatch(functionName, params, m_conversionTree, false, true)) {
+								//sort.emplace(func->conversion_cost(params, m_conversionTree), func);
+								out = func;
+								return true;
+							}
 						}
 					}
-				}
-
-				// perhaps the user intends for the function to be qualified based on the class of the first parameters
-				if (depth <= 0) {
-					auto firstParam = params.begin();
-					if (firstParam != params.end()) {
-						auto firstParamType = firstParam->Type();
-						for (auto& Namespace : GetAvailableNamespaces()) { // forced to check ALL possible namespaces, since we are searching based on the ClassPtr, and not its name. 
-							if (auto ptr = std::dynamic_pointer_cast<Scope>(Namespace.second.lock())) {
-								if (ptr->IsClass()) {
-									if (firstParamType == ptr->GetClassType()) {
-										// we found the class
-										if (ptr->TryFindFunctionImpl(functionName, params, m_conversionTree, out, depth + 1)) {
-											return true;
-										}
-										else {
-											break;
-										}
-									}
+					{
+						auto firstParam = params.begin();
+						if (firstParam != params.end()) firstParamScopePtr = std::dynamic_pointer_cast<Scope>(this->FindClass(firstParam->Type()));						
+					}
+					if (firstParamScopePtr) {
+						for (auto& scope : firstParamScopePtr->GetScopesForObjectSearch()) {
+							if (auto* ptr = scope->GetFunctions()) {
+								if (auto func = ptr->BuildMatch(functionName, params, m_conversionTree, false, true)) {
+									//sort.emplace(func->conversion_cost(params, m_conversionTree), func);
+									out = func;
+									return true;
 								}
 							}
 						}
 					}
+
+					// for (auto& s : sort) { out = s.second; return true; }
 				}
 
-				// perhaps the Function name is actually a class name
-				if (depth <= 1) {
-					if (auto scope = std::dynamic_pointer_cast<Scope>(this->FindClass(functionName))) {
-						if (scope->TryFindFunctionImpl(functionName, params, m_conversionTree, out, depth + 1)) {
-							return true;
+				// PERHAPS THE USER MEANT TO CALL THE CONSTRUCTOR FOR A CLASS (ALLOW FOR CONVERSIONS, BUT NO TEMPLATES)
+				if (1) {
+					//std::multimap<double, Proxy_Function> sort;
+
+					if (constructorScopePtr = std::dynamic_pointer_cast<Scope>(this->FindClass(functionName))) {
+						// Can the conversion tree do this itself, without any help?
+						if (params.size() == 1 && firstParamScopePtr) {
+							if (m_conversionTree.Converts(firstParamScopePtr->GetClassType(), constructorScopePtr->GetClassType())) {
+								auto func = make_callable([tree = m_conversionTree, toType = constructorScopePtr->GetClassType()](Any const& from)->Any {
+									return tree.Convert(from, toType);
+								});
+
+								//sort.emplace(func->conversion_cost(params, m_conversionTree), func);
+								out = func;
+								return true;
+							}
+						}
+
+						// Is there a pre-defined constructor that this could work with?
+						if (auto* functions = constructorScopePtr->GetFunctions()) {
+							if (auto func = functions->BuildMatch(functionName, params, m_conversionTree, false, true)) {
+								//sort.emplace(func->conversion_cost(params, m_conversionTree), func);
+								out = func;
+								return true;
+							}
+						}
+					}					
+
+					// for (auto& s : sort) { out = s.second; return true; }
+				}
+
+				// SECOND SEARCH ALLOWS FOR TEMPLATE FUNCTIONS
+				if (1) {
+					//std::multimap<double, Proxy_Function> sort;
+					for (auto& scope : GetScopesForObjectSearch()) {
+						if (auto* ptr = scope->GetFunctions()) {
+							if (auto func = ptr->BuildMatch(functionName, params, m_conversionTree, true, true)) {
+								//sort.emplace(func->conversion_cost(params, m_conversionTree), func);
+								out = func;
+								return true;
+							}
 						}
 					}
-				}
-
-				return false;
-			}
-			else {
-				std::string functionNameActual{ functionName.substr(lastOfColons + 1) };
-				std::string scopeName{ functionName.substr(0, lastOfColons - 1) };
-
-				std::shared_ptr<Scope> foundScope;
-				if (this->TryFindScope(foundScope, scopeName)) {
-					return foundScope->TryFindFunctionImpl(functionNameActual, params, m_conversionTree, out);
-				}
-				return false;
-			}
-		};
-		virtual bool TryFindFunctionImpl(std::string const& functionName, scripting::Function_Params const& params, Type_Converter_Tree const& m_conversionTree, Proxy_Function& out, int depth = 0) {
-			if (depth > 1) return false; 
-			
-			size_t lastOfColons{ 0 };
-			if ((lastOfColons = functionName.find_last_of("::")) == std::string::npos) {
-				// just a normal var name
-				for (auto& scope : GetScopesForObjectSearch()) {
-					if (auto* ptr = scope->GetFunctions()) {
-						if (auto func = ptr->BuildMatch(functionName, params, m_conversionTree)) {
-							out = func;
-							return true;
-						}
-					}
-				}
-
-				// perhaps the user intends for the function to be qualified based on the class of the first parameters
-				if (depth <= 0) {
-					auto firstParam = params.begin();
-					if (firstParam != params.end()) {
-						auto firstParamType = firstParam->Type();
-						for (auto& Namespace : GetAvailableNamespaces()) {
-							if (auto ptr = std::dynamic_pointer_cast<Scope>(Namespace.second.lock())) {
-								if (ptr->IsClass()) {
-									if (firstParamType == ptr->GetClassType()) {
-										if (ptr->TryFindFunctionImpl(functionName, params, m_conversionTree, out, depth + 1)) {
-											return true;
-										}
-										else {
-											break;
-										}
-									}
+					if (firstParamScopePtr) {
+						for (auto& scope : firstParamScopePtr->GetScopesForObjectSearch()) {
+							if (auto* ptr = scope->GetFunctions()) {
+								if (auto func = ptr->BuildMatch(functionName, params, m_conversionTree, true, true)) {
+									//sort.emplace(func->conversion_cost(params, m_conversionTree), func); 
+									out = func;
+									return true;
 								}
 							}
 						}
 					}
+					// for (auto& s : sort) { out = s.second; return true; }
 				}
 
-				// perhaps the Function name is actually a class name
-				if (depth <= 1) {
-					if (auto scope = std::dynamic_pointer_cast<Scope>(this->FindClass(functionName))) {
-						if (scope->TryFindFunctionImpl(functionName, params, m_conversionTree, out, depth + 1)) {
-							return true;
+				// IF ALL SEARCHES FAILED, PERHAPS THE USER MEANT TO CALL THE CONSTRUCTOR FOR A CLASS
+				if (1) {
+					if (constructorScopePtr) {
+						if (auto* functions = constructorScopePtr->GetFunctions()) {
+							if (auto func = functions->BuildMatch(functionName, params, m_conversionTree, true, true)) {
+								out = func;
+								return true;
+							}
 						}
-					}
+					}					
 				}
 
 				return false;
@@ -4094,7 +4205,7 @@ namespace scripting {
 
 		virtual Proxy_Function FindFunction(std::string const& functionName /* x, y, etc. */, scripting::Function_Params const& params) const {
 			Proxy_Function out{ nullptr };
-			if (TryFindFunctionImpl(functionName, params, Type_Converter_Tree::Combine(TypeConversionTrees()), out)) {
+			if (TryFindFunctionImpl(functionName, params, this->GetCombinedTypeConversionTree(), out)) {
 				return out;
 			}
 			else {
@@ -4103,7 +4214,7 @@ namespace scripting {
 		};
 		virtual Proxy_Function FindFunction(std::string const& functionName /* x, y, etc. */, scripting::Function_Params const& params) {
 			Proxy_Function out{ nullptr };
-			if (TryFindFunctionImpl(functionName, params, Type_Converter_Tree::Combine(TypeConversionTrees()), out)) {
+			if (TryFindFunctionImpl(functionName, params, this->GetCombinedTypeConversionTree(), out)) {
 				return out;
 			}
 			else {
@@ -4116,6 +4227,20 @@ namespace scripting {
 			auto f = std::dynamic_pointer_cast<Scope>(FindNamespace(functionName));
 			if (f && f->IsClass()) {
 				return std::dynamic_pointer_cast<Class>(f);
+			}
+			return nullptr;
+		};
+
+		// Attempts to find a class with the requested class name (may be a qualified namespace).
+		virtual /*Type_Info*/ std::shared_ptr<Class> FindClass(scripting::Type_Info classType) const {
+			for (auto& Namespace : GetAvailableNamespaces()) { // forced to check ALL possible namespaces, since we are searching based on the ClassPtr, and not its name. 
+				if (auto ptr = std::dynamic_pointer_cast<Scope>(Namespace.second.lock())) {
+					if (ptr->IsClass()) {
+						if (classType == ptr->GetClassType()) {
+							return std::dynamic_pointer_cast<Class>(ptr);
+						}
+					}
+				}
 			}
 			return nullptr;
 		};
@@ -4137,11 +4262,14 @@ namespace scripting {
 
 		// Call a generic, proxy function using a vector of inputs (may be empty), which will be converted as necessary to the expected types. 
 		virtual Any CallFunction(std::string const& functionName, std::vector<Any> const& inputs) const {
-			// direct find attempt
-			if (auto callable = FindFunction(functionName, const_cast<std::vector<Any>&>(inputs))) {
-				return callable->operator()(Function_Params{ const_cast<std::vector<Any>&>(inputs) }, Type_Converter_Tree::Combine(TypeConversionTrees()));
-			}			
-			throw exception::not_found_error(functionName);
+			Proxy_Function out{ nullptr };
+			auto& tree{ this->GetCombinedTypeConversionTree() };
+			if (TryFindFunctionImpl(functionName, const_cast<std::vector<Any>&>(inputs), tree, out)) {
+				return out->operator()(Function_Params{ const_cast<std::vector<Any>&>(inputs) }, tree);
+			}
+			else {
+				throw exception::not_found_error(functionName);
+			}
 		};
 
 	};
@@ -4271,7 +4399,6 @@ namespace scripting {
 		};
 	
     };
-
 	class Class : public Namespace {
 	public:
 		friend class Scope;
@@ -4517,7 +4644,7 @@ namespace scripting {
 				this->tree.AddConverter<decltype(typeImpl), unsigned long>();
 				this->tree.AddConverter<decltype(typeImpl), long long>();
 				this->tree.AddConverter<decltype(typeImpl), long double>();
-				this->tree.AddConverter([](decltype(typeImpl) const& o) -> std::string { return std::to_string(o); });
+				this->tree.AddConverter([](decltype(typeImpl) o) -> std::string { return std::to_string(o); });
 
 				// Constructors
 				classPtr->m_functions.emplace(Name, make_callable([typeImplCopy = typeImpl]() -> decltype(typeImpl) { return typeImplCopy; }));
@@ -4534,6 +4661,11 @@ namespace scripting {
 				classPtr->m_functions.emplace("-", scripting::make_callable([](decltype(typeImpl) const& x, decltype(typeImpl) const& y) -> decltype(typeImpl) { return x - y; }));
 				classPtr->m_functions.emplace("*", scripting::make_callable([](decltype(typeImpl) const& x, decltype(typeImpl) const& y) -> decltype(typeImpl) { return x * y; }));
 				classPtr->m_functions.emplace("/", scripting::make_callable([](decltype(typeImpl) const& x, decltype(typeImpl) const& y) -> decltype(typeImpl) { if (y == 0) return std::numeric_limits<decltype(typeImpl)>::max(); else return x / y; }));
+				classPtr->m_functions.emplace("+=", scripting::make_callable([](decltype(typeImpl)& x, decltype(typeImpl) const& y) -> void { x += y; }));
+				classPtr->m_functions.emplace("-=", scripting::make_callable([](decltype(typeImpl)& x, decltype(typeImpl) const& y) -> void { x -= y; }));
+				classPtr->m_functions.emplace("*=", scripting::make_callable([](decltype(typeImpl)& x, decltype(typeImpl) const& y) -> void { x *= y; }));
+				classPtr->m_functions.emplace("/=", scripting::make_callable([](decltype(typeImpl)& x, decltype(typeImpl) const& y) -> void { if (y == 0) x = std::numeric_limits<decltype(typeImpl)>::max(); else x /= y; }));
+
 
 				// Functions
 				classPtr->m_functions.emplace("max", make_callable([]() { return std::numeric_limits<decltype(typeImpl)>::max(); }));
@@ -4585,10 +4717,10 @@ namespace scripting {
 					string_namespace->m_functions.emplace("+", scripting::make_callable([](std::string const& x, std::string const& y) { return x + y; }));
 
 					// Functions
-					string_namespace->m_functions.emplace("length", scripting::make_callable([](std::string const& x) { return x.length(); }));
-					string_namespace->m_functions.emplace("substr", scripting::make_callable([](std::string const& x, size_t Off) { return x.substr(Off); }), { "input", "Off" });
-					string_namespace->m_functions.emplace("substr", scripting::make_callable([](std::string const& x, size_t Off, size_t Count) { return x.substr(Off, Count); }), { "input", "Off", "Count"});
-					string_namespace->m_functions.emplace("size", scripting::make_callable([](std::string const& x) { return x.size(); }));
+					string_namespace->m_functions.emplace("length", scripting::make_callable([](std::string const& x) -> size_t { return x.length(); }));
+					string_namespace->m_functions.emplace("substr", scripting::make_callable([](std::string const& x, size_t Off) -> std::string { return x.substr(Off); }), { "input", "Off" });
+					string_namespace->m_functions.emplace("substr", scripting::make_callable([](std::string const& x, size_t Off, size_t Count) -> std::string { return x.substr(Off, Count); }), { "input", "Off", "Count"});
+					string_namespace->m_functions.emplace("size", scripting::make_callable([](std::string const& x) -> size_t { return x.size(); }));
 					string_namespace->m_functions.emplace("front", scripting::make_callable([](std::string const& x) -> char { return x.front(); }));
 					string_namespace->m_functions.emplace("back", scripting::make_callable([](std::string const& x) -> char { return x.back(); }));
 					string_namespace->m_functions.emplace("at", scripting::make_callable([](std::string const& x, size_t Off) -> char { return x.at(Off); }), { "input", "Off" });
@@ -4716,7 +4848,47 @@ namespace scripting {
 			return p;
 		};
 
-		
+		template<typename To> 
+		static auto Cast(Any const& From, std::weak_ptr<Scope> scope) {
+			using TT = typename Any::DataCaster::is_SharedPtr_class<To>::type;
+			using TTT = typename fibers::get_type<To>::type;
+			constexpr bool is_shared_ptr = TT::value;
+			constexpr bool is_ptr = std::is_pointer_v<To>;
+			constexpr bool is_ref = std::is_reference_v<To>;
+			if constexpr (is_shared_ptr) {
+				if (auto ScopePtr = scope.lock()) {
+					if (auto foundScope = ScopePtr->FindClass(user_type<TTT>())) {
+						if (Any f = foundScope->CallFunction(foundScope->GetName(), { From })) {
+							return f.cast<std::shared_ptr<TTT>>();
+						}
+					}
+				}
+				return std::shared_ptr<TTT>();
+			}
+			else {
+				if (auto ScopePtr = scope.lock()) {
+					if (auto foundScope = ScopePtr->FindClass(user_type<typename std::remove_reference<typename std::remove_pointer<To>::type>::type>())) {
+						if (Any f = foundScope->CallFunction(foundScope->GetName(), { From })) {
+							return f.cast<typename std::remove_reference<typename std::remove_pointer<To>::type>::type>();
+						}
+					}
+				}
+				return typename std::remove_reference<typename std::remove_pointer<To>::type>::type();
+			}
+		};
+
+		static Any Cast(Any const& From, Type_Info const& To, std::weak_ptr<Scope> scope) {
+			if (auto ScopePtr = scope.lock()) {
+				if (auto foundScope = ScopePtr->FindClass(To)) {
+					if (Any f = foundScope->CallFunction(foundScope->GetName(), { From })) {
+						return f;
+					}
+				}
+			}
+			throw(exception::bad_boxed_cast(From.Type(), To));
+		};
+
+
 
 
 

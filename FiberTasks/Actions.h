@@ -1715,7 +1715,6 @@ namespace fibers {
 				}
 			};
 
-
 		public:
 			template<typename T> static decltype(auto) DoCast(Any* p, bool typeCheck = true) noexcept {
 				typedef typename is_SharedPtr_class<T>::type isShared;
