@@ -1858,6 +1858,11 @@ namespace fibers {
 								return Enqueue(out); // ... otherwise push to the end of the queue, which is a form of lazy sorting (also prevents endless looping without additional checks / handles). 
 				}
 			};
+			
+		public:
+			void Clear() {
+				EpochQueueType out; while (Dequeue(out)) out.second();
+			};
 
 		private:
 			static constexpr size_t kMaxThreadNum = fibers::utilities::dbgroup::thread::kMaxThreadNum;
@@ -1866,15 +1871,17 @@ namespace fibers {
 			fibers::synchronization::atomic_number<EpochStorageType> lastGC;
 			auto& GetTLS() { return TLS_arr[GetThreadID()]; };
 
+
 		public:
 			EpochGarbageCollector() : TLS_arr{}, lastGC{ 0 }, DeleteList{} { for (auto& tls : TLS_arr) tls.parent = this; };
 			EpochGarbageCollector(EpochGarbageCollector const&) = delete;
 			EpochGarbageCollector(EpochGarbageCollector&&) = delete;
 			EpochGarbageCollector& operator=(EpochGarbageCollector const&) = delete;
 			EpochGarbageCollector& operator=(EpochGarbageCollector&&) = delete;
-			~EpochGarbageCollector() { EpochQueueType out; while (Dequeue(out)) out.second(); };
+			~EpochGarbageCollector() { Clear(); };
 
 		public:
+
 			// Attempts to cleanup unused memory
 			const auto TryCleanupUnusedMemory() { return RunGC(); };
 			// Stalls deallocation / free calls made after this guard until this guard expires.
@@ -1912,46 +1919,53 @@ namespace fibers {
 		template <typename T, unsigned int forcedSize = sizeof(T), bool forcePOD = std::is_pod_v<T>, uint64_t CleanupFrequencyMilliseconds = 1>
 		class GarbageCollectedAllocator {
 		private:
-			std::shared_ptr<EpochGarbageCollector<CleanupFrequencyMilliseconds>> _gc; // thread-safe, single-threaded GC which allows delaying the GC until after it is safe to reclame memory, and guarrantees reclamation of all queued data on destruction. 
-			std::shared_ptr<fibers::utilities::Allocator<T, 256, forcePOD, forcedSize>> _alloc; // thread-safe allocator that guarrantees reclamation of data on close-out. 
+			/*std::shared_ptr<*/fibers::utilities::Allocator<T, 256, forcePOD, forcedSize>/*>*/ _alloc; // thread-safe allocator that guarrantees reclamation of data on close-out. 
+			/*std::shared_ptr<*/EpochGarbageCollector<CleanupFrequencyMilliseconds>/*>*/ _gc; // thread-safe, single-threaded GC which allows delaying the GC until after it is safe to reclame memory, and guarrantees reclamation of all queued data on destruction. 
 
 		public:
-			GarbageCollectedAllocator() : _gc(std::make_shared<EpochGarbageCollector<CleanupFrequencyMilliseconds>>()), _alloc(std::make_shared<fibers::utilities::Allocator<T, 256, forcePOD, forcedSize>>()) {};
-			GarbageCollectedAllocator(GarbageCollectedAllocator const&) = default;
-			GarbageCollectedAllocator(GarbageCollectedAllocator&&) = default;
-			GarbageCollectedAllocator& operator=(GarbageCollectedAllocator const&) = default;
-			GarbageCollectedAllocator& operator=(GarbageCollectedAllocator&&) = default;
+			GarbageCollectedAllocator() 
+				: _alloc{}/*(std::make_shared<fibers::utilities::Allocator<T, 256, forcePOD, forcedSize>>())*/
+				, _gc {}/*(std::make_shared<EpochGarbageCollector<CleanupFrequencyMilliseconds>>())*/			    
+			{};
+			GarbageCollectedAllocator(GarbageCollectedAllocator const&) = delete;
+			GarbageCollectedAllocator(GarbageCollectedAllocator&&) = delete;
+			GarbageCollectedAllocator& operator=(GarbageCollectedAllocator const&) = delete;
+			GarbageCollectedAllocator& operator=(GarbageCollectedAllocator&&) = delete;
 			~GarbageCollectedAllocator() { // _gc *must* release first, _alloc afterwards. This odd code helps guarrantee the compiler won't re-arrange the code. 
-				_alloc = std::static_pointer_cast<fibers::utilities::Allocator<T, 256, forcePOD, forcedSize>>(std::static_pointer_cast<void>(_gc = nullptr /* set to null, return result (null) */)) /* casts appropriate type. Is actually null, so this is OK. */;
+				_gc.Clear();
+
+				//while (_gc) { _gc.reset(); }
+				//while (_alloc) { _alloc.reset(); }
+				// _alloc = std::static_pointer_cast<fibers::utilities::Allocator<T, 256, forcePOD, forcedSize>>(std::static_pointer_cast<void>(_gc = nullptr /* set to null, return result (null) */)) /* casts appropriate type. Is actually null, so this is OK. */;
 			};
 
 			// Request a new memory pointer. May be recovered from a previously-used location. Will be cleared and correctly initialized, if appropriate.
 			template <typename... TArgs> T* Alloc(TArgs &&... a) {
-				return this->_alloc->Alloc(std::forward<TArgs>(a)...);
+				return _alloc.Alloc(std::forward<TArgs>(a)...);
 			};
 
 			// Frees the memory pointer, previously provided by this allocator. Calls the destructor for non-POD types, and will store the pointer for later use.
 			void				Free(const T* element) {
-				_gc->AddCollectionAction([this, element]() {
-					this->_alloc->Free(element);
+				_gc.AddCollectionAction([this, element]() {
+					this->_alloc.Free(element);
 				});
 			};
 			size_t				size() const {
-				return _alloc->TotalAlive();
+				return _alloc.TotalAlive();
 			};
 
 			// Request a new memory pointer that will self-delete and return to the memory pool automatically. Important: This allocator must out-live the shared_ptr.
 			template <typename... TArgs> std::shared_ptr< T > AllocShared(TArgs &&... a) {
-				return std::shared_ptr<T>(Alloc(std::forward<TArgs>(a)...), [this](T* p) { this->Free(p); });
+				return std::shared_ptr<T>(Alloc(std::forward<TArgs>(a)...), [this](T* p) { Free(p); });
 			};
 
 			// Stalls deallocation / free calls made after this guard until this guard expires.
-			[[nodiscard]] const auto CreateEpochGuard() { return this->_gc->CreateEpochGuard(); };
+			[[nodiscard]] const auto CreateEpochGuard() { return _gc.CreateEpochGuard(); };
 
 			// Attempts to cleanup unused memory
 			const auto TryCleanupUnusedMemory() { 
-				this->_gc->TryCleanupUnusedMemory();
-				this->_alloc->TryCleanupUnusedMemory();
+				_gc.TryCleanupUnusedMemory();
+				_alloc.TryCleanupUnusedMemory();
 			};
 
 		};
@@ -2064,8 +2078,8 @@ namespace fibers {
 						[[maybe_unused]] const size_t key_len = sizeof(Key)) //
 					-> std::optional<Payload>
 				{
-					[[maybe_unused]] const auto& guard2 = PageAllocator.CreateEpochGuard();
-					[[maybe_unused]] const auto& guard3 = DeltaAllocator.CreateEpochGuard();
+					[[maybe_unused]] const auto& guard2 = PageAllocator->CreateEpochGuard();
+					[[maybe_unused]] const auto& guard3 = DeltaAllocator->CreateEpochGuard();
 
 					// check whether the leaf node has a target key
 					auto&& stack = SearchLeafNode(key, kClosed);
@@ -2126,13 +2140,13 @@ namespace fibers {
 						const ScanKey& end_key = std::nullopt)   //
 					-> RecordIterator_t
 				{
-					[[maybe_unused]] const auto& guard2 = PageAllocator.CreateEpochGuard();
-					[[maybe_unused]] const auto& guard3 = DeltaAllocator.CreateEpochGuard();
+					[[maybe_unused]] const auto& guard2 = PageAllocator->CreateEpochGuard();
+					[[maybe_unused]] const auto& guard3 = DeltaAllocator->CreateEpochGuard();
 
 
 					std::unique_ptr<void, std::function<void(void*)>> page{
-						PageAllocator.Alloc(),
-						[this](void* p) { PageAllocator.Free(static_cast<NodePage*>(p)); } 
+						PageAllocator->Alloc(),
+						[this](void* p) { PageAllocator->Free(static_cast<NodePage*>(p)); } 
 					};
 
 					auto* node = new (page.get()) Node_t{};
@@ -2166,8 +2180,8 @@ namespace fibers {
 				auto 
 					TryCleanupUnusedMemory() -> void {
 
-					PageAllocator.TryCleanupUnusedMemory();
-					DeltaAllocator.TryCleanupUnusedMemory();
+					PageAllocator->TryCleanupUnusedMemory();
+					DeltaAllocator->TryCleanupUnusedMemory();
 					mapping_table_.TryCleanupUnusedMemory();
 				};
 
@@ -2187,12 +2201,12 @@ namespace fibers {
 						end_key.emplace(std::tuple<const Key&, size_t, bool>({ maxKey.value(), (size_t)(sizeof(Key)), true })); // true = may include the value if found
 					}
 
-					[[maybe_unused]] const auto& guard2 = PageAllocator.CreateEpochGuard();
-					[[maybe_unused]] const auto& guard3 = DeltaAllocator.CreateEpochGuard();
+					[[maybe_unused]] const auto& guard2 = PageAllocator->CreateEpochGuard();
+					[[maybe_unused]] const auto& guard3 = DeltaAllocator->CreateEpochGuard();
 
 					std::unique_ptr<void, std::function<void(void*)>> page{ 
-						PageAllocator.Alloc(), 
-						[this](void* p) { PageAllocator.Free(static_cast<NodePage*>(p)); }
+						PageAllocator->Alloc(), 
+						[this](void* p) { PageAllocator->Free(static_cast<NodePage*>(p)); }
 					};
 
 					auto* node = new (page.get()) Node_t{};
@@ -2278,12 +2292,12 @@ namespace fibers {
 					First()
 					-> RecordIterator_t
 				{
-					[[maybe_unused]] const auto& guard2 = PageAllocator.CreateEpochGuard();
-					[[maybe_unused]] const auto& guard3 = DeltaAllocator.CreateEpochGuard();
+					[[maybe_unused]] const auto& guard2 = PageAllocator->CreateEpochGuard();
+					[[maybe_unused]] const auto& guard3 = DeltaAllocator->CreateEpochGuard();
 
 					std::unique_ptr<void, std::function<void(void*)>> page{ 
-						PageAllocator.Alloc(), 
-						[this](void* p) { PageAllocator.Free(static_cast<NodePage*>(p)); } 
+						PageAllocator->Alloc(), 
+						[this](void* p) { PageAllocator->Free(static_cast<NodePage*>(p)); } 
 					};
 
 					auto* node = new (page.get()) Node_t{};
@@ -2321,12 +2335,12 @@ namespace fibers {
 						end_key.emplace(std::tuple<const Key&, size_t, bool>({ maxKey.value(), (size_t)(sizeof(Key)), true })); // true = may include the value if found
 					}
 
-					[[maybe_unused]] const auto& guard2 = PageAllocator.CreateEpochGuard();
-					[[maybe_unused]] const auto& guard3 = DeltaAllocator.CreateEpochGuard();
+					[[maybe_unused]] const auto& guard2 = PageAllocator->CreateEpochGuard();
+					[[maybe_unused]] const auto& guard3 = DeltaAllocator->CreateEpochGuard();
 
 					std::unique_ptr<void, std::function<void(void*)>> page{ 
-						PageAllocator.Alloc(), 
-						[this](void* p) { PageAllocator.Free(static_cast<NodePage*>(p)); } 
+						PageAllocator->Alloc(), 
+						[this](void* p) { PageAllocator->Free(static_cast<NodePage*>(p)); } 
 					};
 
 					auto* node = new (page.get()) Node_t{};
@@ -2394,12 +2408,12 @@ namespace fibers {
 						end_key.emplace(std::tuple<const Key&, size_t, bool>({ maxKey.value(), (size_t)(sizeof(Key)), true })); // true = may include the value if found
 					}
 
-					[[maybe_unused]] const auto& guard2 = PageAllocator.CreateEpochGuard();
-					[[maybe_unused]] const auto& guard3 = DeltaAllocator.CreateEpochGuard();
+					[[maybe_unused]] const auto& guard2 = PageAllocator->CreateEpochGuard();
+					[[maybe_unused]] const auto& guard3 = DeltaAllocator->CreateEpochGuard();
 
 					std::unique_ptr<void, std::function<void(void*)>> page{
-						PageAllocator.Alloc(),
-						[this](void* p) { PageAllocator.Free(static_cast<NodePage*>(p)); }
+						PageAllocator->Alloc(),
+						[this](void* p) { PageAllocator->Free(static_cast<NodePage*>(p)); }
 					};
 
 					auto* node = new (page.get()) Node_t{};
@@ -2470,12 +2484,12 @@ namespace fibers {
 						end_key.emplace(std::tuple<const Key&, size_t, bool>({ maxKey.value(), (size_t)(sizeof(Key)), true })); // true = may include the value if found
 					}
 
-					[[maybe_unused]] const auto& guard2 = PageAllocator.CreateEpochGuard();
-					[[maybe_unused]] const auto& guard3 = DeltaAllocator.CreateEpochGuard();
+					[[maybe_unused]] const auto& guard2 = PageAllocator->CreateEpochGuard();
+					[[maybe_unused]] const auto& guard3 = DeltaAllocator->CreateEpochGuard();
 
 					std::unique_ptr<void, std::function<void(void*)>> page{
-						PageAllocator.Alloc(),
-						[this](void* p) { PageAllocator.Free(static_cast<NodePage*>(p)); }
+						PageAllocator->Alloc(),
+						[this](void* p) { PageAllocator->Free(static_cast<NodePage*>(p)); }
 					};
 
 					auto* node = new (page.get()) Node_t{};
@@ -2557,8 +2571,8 @@ namespace fibers {
 						[[maybe_unused]] const size_t pay_len = sizeof(Payload))  //
 					-> ReturnCode
 				{
-					[[maybe_unused]] const auto& guard2 = PageAllocator.CreateEpochGuard();
-					[[maybe_unused]] const auto& guard3 = DeltaAllocator.CreateEpochGuard();
+					[[maybe_unused]] const auto& guard2 = PageAllocator->CreateEpochGuard();
+					[[maybe_unused]] const auto& guard3 = DeltaAllocator->CreateEpochGuard();
 
 					// traverse to a target leaf node
 					auto&& stack = SearchLeafNode(key, kClosed);
@@ -2616,8 +2630,8 @@ namespace fibers {
 						const size_t key_len = sizeof(Key),
 						[[maybe_unused]] const size_t pay_len = sizeof(Payload))  //
 				{
-					[[maybe_unused]] const auto& guard2 = PageAllocator.CreateEpochGuard();
-					[[maybe_unused]] const auto& guard3 = DeltaAllocator.CreateEpochGuard();
+					[[maybe_unused]] const auto& guard2 = PageAllocator->CreateEpochGuard();
+					[[maybe_unused]] const auto& guard3 = DeltaAllocator->CreateEpochGuard();
 
 					// traverse to a target leaf node
 					auto&& stack = SearchLeafNode(key, kClosed);
@@ -2632,7 +2646,7 @@ namespace fibers {
 						if (existence == DeltaRC::kRecordFound) {
 							rc = kKeyExist;
 
-							DeltaAllocator.Free((DeltaPage*)(void*)insert_d);
+							DeltaAllocator->Free((DeltaPage*)(void*)insert_d);
 
 							break;
 						}
@@ -2673,8 +2687,8 @@ namespace fibers {
 						const size_t key_len = sizeof(Key),
 						[[maybe_unused]] const size_t pay_len = sizeof(Payload))  //
 				{
-					[[maybe_unused]] const auto& guard2 = PageAllocator.CreateEpochGuard();
-					[[maybe_unused]] const auto& guard3 = DeltaAllocator.CreateEpochGuard();
+					[[maybe_unused]] const auto& guard2 = PageAllocator->CreateEpochGuard();
+					[[maybe_unused]] const auto& guard3 = DeltaAllocator->CreateEpochGuard();
 
 					// traverse to a target leaf node
 					auto&& stack = SearchLeafNode(key, kClosed);
@@ -2688,7 +2702,7 @@ namespace fibers {
 						if (existence == DeltaRC::kRecordNotFound) {
 							rc = kKeyNotExist;
 
-							DeltaAllocator.Free((DeltaPage*)(void*)modify_d);
+							DeltaAllocator->Free((DeltaPage*)(void*)modify_d);
 
 							break;
 						}
@@ -2724,8 +2738,8 @@ namespace fibers {
 						const size_t key_len = sizeof(Key))  //
 					-> ReturnCode
 				{
-					[[maybe_unused]] const auto& guard2 = PageAllocator.CreateEpochGuard();
-					[[maybe_unused]] const auto& guard3 = DeltaAllocator.CreateEpochGuard();
+					[[maybe_unused]] const auto& guard2 = PageAllocator->CreateEpochGuard();
+					[[maybe_unused]] const auto& guard3 = DeltaAllocator->CreateEpochGuard();
 
 					// traverse to a target leaf node
 					auto&& stack = SearchLeafNode(key, kClosed);
@@ -2740,7 +2754,7 @@ namespace fibers {
 						if (existence == DeltaRC::kRecordNotFound) {
 							rc = kKeyNotExist;
 
-							DeltaAllocator.Free((DeltaPage*)(void*)delete_d);
+							DeltaAllocator->Free((DeltaPage*)(void*)delete_d);
 
 							break;
 						}
@@ -2850,7 +2864,7 @@ namespace fibers {
 					// set a new root
 					const auto old_pid = root_.exchange(new_pid, std::memory_order_release);
 					auto* old_lptr = mapping_table_.GetLogicalPtr(old_pid);
-					PageAllocator.Free<NodePage>(old_lptr->template Load<Delta_t*>());
+					PageAllocator->Free<NodePage>(old_lptr->template Load<Delta_t*>());
 					old_lptr->Clear();
 
 					return ReturnCode::kSuccess;
@@ -2956,7 +2970,7 @@ namespace fibers {
 				  * @returns the reserved memory page.
 				  */
 				[[nodiscard]] auto GetNodePage() -> Node_t* {
-					return (Node_t*)(void*)PageAllocator.Alloc();
+					return (Node_t*)(void*)PageAllocator->Alloc();
 				};
 
 				/**
@@ -2965,7 +2979,7 @@ namespace fibers {
 				 * @returns the reserved memory page.
 				 */
 				[[nodiscard]] auto GetRecPage() -> void* {
-					return (void*)DeltaAllocator.Alloc();
+					return (void*)DeltaAllocator->Alloc();
 				};
 
 				/**
@@ -2987,12 +3001,12 @@ namespace fibers {
 					const auto* garbage = reinterpret_cast<const Delta_t*>(head);
 					while (garbage->GetDeltaType() != DeltaType::kNotDelta) {
 						// register this delta record with GC
-						DeltaAllocator.Free((DeltaPage*)(void*)garbage);
+						DeltaAllocator->Free((DeltaPage*)(void*)garbage);
 
 						// if the delta record is merge-delta, delete the merged sibling node
 						if (garbage->GetDeltaType() == DeltaType::kMerge) {
 							auto* removed_node = garbage->template GetPayload<Node_t*>();
-							PageAllocator.Free((NodePage*)(void*)removed_node);
+							PageAllocator->Free((NodePage*)(void*)removed_node);
 						}
 
 						// check the next delta record or base node
@@ -3001,7 +3015,7 @@ namespace fibers {
 					}
 
 					// register a base node with GC
-					PageAllocator.Free((const NodePage*)(const void*)reinterpret_cast<const Node_t*>(garbage));
+					PageAllocator->Free((const NodePage*)(const void*)reinterpret_cast<const Node_t*>(garbage));
 				}
 
 				/**
@@ -3039,7 +3053,7 @@ namespace fibers {
 					// collect data recursively
 					if (!head->IsLeaf()) {
 						// consolidate the node to traverse child nodes
-						auto* page = PageAllocator.Alloc();
+						auto* page = PageAllocator->Alloc();
 						auto* consolidated = new (page) Node_t{ !kIsLeaf };
 						Node_t* dummy_node = nullptr;
 						TryConsolidate(head, consolidated, dummy_node, kIsScan);
@@ -3049,7 +3063,7 @@ namespace fibers {
 							CollectStatisticalData(child_pid, level + 1, stat_data);
 						}
 
-						PageAllocator.Free(static_cast<NodePage*>(consolidated));
+						PageAllocator->Free(static_cast<NodePage*>(consolidated));
 					}
 				}
 
@@ -3493,7 +3507,7 @@ namespace fibers {
 				{
 					std::unique_ptr<Node_t, std::function<void(void*)>> tls_node{ 
 						nullptr, 
-						[this](void* p) { PageAllocator.Free(static_cast<NodePage*>(p)); } 
+						[this](void* p) { PageAllocator->Free(static_cast<NodePage*>(p)); } 
 					};
 					Node_t* r_node = nullptr;
 
@@ -3685,7 +3699,7 @@ namespace fibers {
 						// check the current node is a root node
 						if (stack.empty()) {
 							if (TryRootSplit(entry_d, l_pid)) {
-								DeltaAllocator.Free((DeltaPage*)(void*)entry_d);
+								DeltaAllocator->Free((DeltaPage*)(void*)entry_d);
 								return;
 							}
 							SearchTargetNode(stack, key, r_pid);
@@ -3761,7 +3775,7 @@ namespace fibers {
 					const auto rem_pid = stack.back();
 					auto* rem_lptr = mapping_table_.GetLogicalPtr(rem_pid);
 					if (!rem_lptr->CASStrong(head, remove_d)) {
-						DeltaAllocator.Free((DeltaPage*)(void*)remove_d);
+						DeltaAllocator->Free((DeltaPage*)(void*)remove_d);
 						return false;
 					}
 					stack.pop_back();  // remove the child node
@@ -3843,7 +3857,7 @@ namespace fibers {
 						auto [head, rc] = GetHeadForMerge(del_key, sib_key, stack);
 						if (rc == DeltaRC::kAbortMerge) {
 							// the leftmost nodes cannot be merged
-							DeltaAllocator.Free((DeltaPage*)(void*)delete_d);
+							DeltaAllocator->Free((DeltaPage*)(void*)delete_d);
 							return nullptr;
 						}
 
@@ -3995,8 +4009,12 @@ namespace fibers {
 				/// a table to map logical IDs with physical pointers.
 				MappingTable_t mapping_table_{}; // allocates and destroys its own data. Logical ptrs provided to it, though, must be destroyed elsewhere.
 
-				fibers::utilities::GarbageCollectedAllocator<NodePage, 2 * kPageSize, true, 1> PageAllocator{}; // allocator which provides memory re-use at runtime and memory clean-up on destruction
-				fibers::utilities::GarbageCollectedAllocator<DeltaPage, kDeltaRecSize, true, 1> DeltaAllocator{}; // allocator which provides memory re-use at runtime and memory clean-up on destruction
+				std::shared_ptr<fibers::utilities::GarbageCollectedAllocator<NodePage, 2 * kPageSize, true, 1>> PageAllocator{
+					std::make_shared<fibers::utilities::GarbageCollectedAllocator<NodePage, 2 * kPageSize, true, 1>>()
+				}; // allocator which provides memory re-use at runtime and memory clean-up on destruction
+				std::shared_ptr < fibers::utilities::GarbageCollectedAllocator<DeltaPage, kDeltaRecSize, true, 1>> DeltaAllocator{
+				    std::make_shared<fibers::utilities::GarbageCollectedAllocator<DeltaPage, kDeltaRecSize, true, 1>>()
+				}; // allocator which provides memory re-use at runtime and memory clean-up on destruction
 			};
 		};  // namespace dbgroup::index::bw_tree
 	};
@@ -4589,10 +4607,10 @@ namespace fibers {
 		/* *THREAD SAFE* Thread-safe and fiber-safe sorted map. KeyType may be anything that can be hashed, and ObjType must be copy-by-value. */
 		template <typename KeyType = std::string, typename ObjType = std::string, typename Hasher = std::hash<KeyType>> class Map {
 		private:
-			mutable fibers::utilities::GarbageCollectedAllocator<std::pair<KeyType, ObjType>>
-				nodeAllocator;
+			mutable std::shared_ptr<fibers::utilities::GarbageCollectedAllocator<std::pair<KeyType, ObjType>>>
+				nodeAllocator{ std::make_shared<fibers::utilities::GarbageCollectedAllocator<std::pair<KeyType, ObjType>>>() };
 			fibers::containers::Pattern < size_t, std::pair<KeyType, ObjType>*>
-				sort;
+				sort{};
 
 		public:
 			Map() = default;
@@ -4606,24 +4624,24 @@ namespace fibers {
 			/* emplaces the object at the key in the map. */
 			bool emplace(KeyType const& key, ObjType const& object, bool overwriteIfExists = true) {
 				size_t key_hash = Hasher()(key);
-				std::pair<KeyType, ObjType>* newObj = nodeAllocator.Alloc(key, object);
+				std::pair<KeyType, ObjType>* newObj = nodeAllocator->Alloc(key, object);
 				if (sort.Insert(key_hash, newObj, overwriteIfExists)) {
 					return true;
 				}
 				else {
-					nodeAllocator.Free(newObj);
+					nodeAllocator->Free(newObj);
 					return false;
 				}
 			};
 			/* emplaces the object at the key in the map. */
 			bool emplace(KeyType const& key, ObjType&& object, bool overwriteIfExists = true) {
 				size_t key_hash = Hasher()(key);
-				std::pair<KeyType, ObjType>* newObj = nodeAllocator.Alloc(key, std::forward<ObjType>(object));
+				std::pair<KeyType, ObjType>* newObj = nodeAllocator->Alloc(key, std::forward<ObjType>(object));
 				if (sort.Insert(key_hash, newObj, overwriteIfExists)) {
 					return true;
 				}
 				else {
-					nodeAllocator.Free(newObj);
+					nodeAllocator->Free(newObj);
 					return false;
 				}
 			};
@@ -4637,7 +4655,7 @@ namespace fibers {
 			};
 			/* returns a COPY of the value at the key. Returns empty if the value is not found. */
 			std::optional<ObjType> at(KeyType const& key) const {
-				auto g{ nodeAllocator.CreateEpochGuard() };
+				auto g{ nodeAllocator->CreateEpochGuard() };
 
 				size_t key_hash = Hasher()(key);
 
@@ -4671,7 +4689,7 @@ namespace fibers {
 			};
 
 			std::optional<ObjType> at_hash(size_t const& key_hash) const {
-				auto g{ nodeAllocator.CreateEpochGuard() };
+				auto g{ nodeAllocator->CreateEpochGuard() };
 
 				{
 					std::optional<std::pair<KeyType, ObjType>*> optionalFind = sort.Read(key_hash);
@@ -4689,11 +4707,11 @@ namespace fibers {
 			};
 			/* queues the key to be erased. Note that the erasure may be delayed depending on use of the map. */
 			bool erase(KeyType const& key) {
-				auto g{ nodeAllocator.CreateEpochGuard() };
+				auto g{ nodeAllocator->CreateEpochGuard() };
 				size_t key_hash = Hasher()(key);
 				std::optional<std::pair<KeyType, ObjType>*> optionalFind = sort.Read(key_hash);
 				if (optionalFind.has_value()) {
-					nodeAllocator.Free(optionalFind.value());
+					nodeAllocator->Free(optionalFind.value());
 					return sort.Delete(key_hash);
 				}
 				return false;
@@ -4708,7 +4726,7 @@ namespace fibers {
 			};
 			/* returns the list of all keys currently in the map */
 			std::vector<KeyType> keys() const {
-				auto g{ nodeAllocator.CreateEpochGuard() };
+				auto g{ nodeAllocator->CreateEpochGuard() };
 
 				std::vector<KeyType> out;
 				for (auto& x : sort) {
@@ -4718,7 +4736,7 @@ namespace fibers {
 			};
 			/* attempts to find the key associated to the provided object, if found. */
 			std::optional<KeyType> key_of(ObjType const& obj) const {
-				auto g{ nodeAllocator.CreateEpochGuard() };
+				auto g{ nodeAllocator->CreateEpochGuard() };
 
 				for (auto& x : sort) {
 					if (x.second->second == obj) {
@@ -4729,7 +4747,12 @@ namespace fibers {
 			};
 
 			size_t size() const {
-				return nodeAllocator.size();
+				return nodeAllocator->size();
+			};
+
+			void TryCleanupUnusedMemory() {
+				nodeAllocator->TryCleanupUnusedMemory();
+				sort.TryCleanupUnusedMemory();
 			};
 
 			struct Iterator : public std::iterator<std::forward_iterator_tag, std::pair<KeyType, ObjType>> {
@@ -4794,7 +4817,7 @@ namespace fibers {
 			private:
 				bool Valid() const { return (bool)_ptr; };
 				void Increment() { if (Valid()) ++_ptr; ++position; };
-				void LoadResult() const { if (Valid() && parent) { auto g{ parent->nodeAllocator.CreateEpochGuard() };  result = { (KeyType)_ptr->second->first, (ObjType)_ptr->second->second }; } };
+				void LoadResult() const { if (Valid() && parent) { auto g{ parent->nodeAllocator->CreateEpochGuard() };  result = { (KeyType)_ptr->second->first, (ObjType)_ptr->second->second }; } };
 
 				static typename decltype(sort)::Iterator begin_impl(Map* parent) {
 					if (parent) {

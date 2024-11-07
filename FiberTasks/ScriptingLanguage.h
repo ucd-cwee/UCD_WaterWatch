@@ -3298,7 +3298,7 @@ namespace scripting {
 
 	class Functions {
 	private:
-		fibers::containers::Map<
+		mutable fibers::containers::Map<
 			std::string, // Function Name (e.g. string). 
 			std::shared_ptr<fibers::containers::Map<
 			    Param_Types, // Function parameters (e.g. {string, Any}, or {Any, Any, Any}). 
@@ -3307,77 +3307,90 @@ namespace scripting {
 		> m_functions;
 
 	public:
+		Functions() = default;
+		Functions(Functions const&) = default;
+		Functions(Functions &&) = default;
+		Functions& operator=(Functions const&) = default;
+		Functions& operator=(Functions&&) = default;
+		~Functions() = default;
+
 		std::shared_ptr< fibers::containers::Map<Param_Types, Proxy_Function>> operator[](std::string const& key) {
+			std::shared_ptr<fibers::containers::Map<Param_Types, Proxy_Function>> temp;
+			defer(m_functions.TryCleanupUnusedMemory()); 
 			while (true) {
 				auto optionalF = m_functions.at(key);
 				if (optionalF.has_value()) return optionalF.value();
-				m_functions.emplace(key, std::make_shared<fibers::containers::Map<Param_Types, Proxy_Function>>(), false);
+				else if (!temp) temp = std::make_shared<fibers::containers::Map<Param_Types, Proxy_Function>>();
+				m_functions.emplace(key, temp, false);
 			}
 		};
 		std::shared_ptr< fibers::containers::Map<Param_Types, Proxy_Function>> operator[](std::string const& key) const {
 			auto optionalF = m_functions.at(key);
-			if (optionalF.has_value()) return optionalF.value();
+			if (optionalF.has_value()) {
+				return optionalF.value();
+			}
 			return nullptr;
 		};
 		std::shared_ptr< fibers::containers::Map<Param_Types, Proxy_Function>> operator()(std::string const& key) {
+			std::shared_ptr<fibers::containers::Map<Param_Types, Proxy_Function>> temp;
+			defer(m_functions.TryCleanupUnusedMemory());
 			while (true) {
 				auto optionalF = m_functions.at(key);
 				if (optionalF.has_value()) return optionalF.value();
-				m_functions.emplace(key, std::make_shared<fibers::containers::Map<Param_Types, Proxy_Function>>(), false);
+				else if (!temp) temp = std::make_shared<fibers::containers::Map<Param_Types, Proxy_Function>>();
+				m_functions.emplace(key, temp, false);
 			}
 		};
 		std::shared_ptr< fibers::containers::Map<Param_Types, Proxy_Function>> operator()(std::string const& key) const {
+			defer(m_functions.TryCleanupUnusedMemory());
 			auto optionalF = m_functions.at(key);
 			if (optionalF.has_value()) return optionalF.value();
 			return nullptr;
 		};
-		std::shared_ptr< fibers::containers::Map<Param_Types, Proxy_Function>> at(std::string const& key) const {
-			return operator()(key);
-		};
+		std::shared_ptr< fibers::containers::Map<Param_Types, Proxy_Function>> at(std::string const& key) const { return operator()(key); };
 
 		Proxy_Function operator()(std::string const& key, Function_Params const& params) {
-			auto ptr = operator()(key);
-			while (ptr) {
+			if (auto ptr = operator()(key)) {
+				defer(ptr->TryCleanupUnusedMemory());
 				auto optionalF = ptr->at_hash(params.hash());
 				if (optionalF.has_value()) return optionalF.value();
-				return nullptr;
 			}
+			return nullptr;
 		};
 		Proxy_Function operator()(std::string const& key, Function_Params const& params) const {
-			auto ptr = operator()(key);
-			while (ptr) {
+			if (auto ptr = operator()(key)) {
+				defer(ptr->TryCleanupUnusedMemory());
 				auto optionalF = ptr->at_hash(params.hash());
 				if (optionalF.has_value()) return optionalF.value();
-				return nullptr;
 			}
+			return nullptr;
 		};
 		Proxy_Function at(std::string const& key, Function_Params const& params) const {
 			return operator()(key, params);
 		};
 
 		Proxy_Function operator()(std::string const& key, Param_Types const& params) {
-			auto ptr = operator()(key);
-			while (ptr) {
+			if (auto ptr = operator()(key)) {
+				defer(ptr->TryCleanupUnusedMemory());
 				auto optionalF = ptr->at(params);
 				if (optionalF.has_value()) return optionalF.value();
-				return nullptr;
 			}
+			return nullptr;
 		};
 		Proxy_Function operator()(std::string const& key, Param_Types const& params) const {
-			auto ptr = operator()(key);
-			while (ptr) {
+			if (auto ptr = operator()(key)) {
+				defer(ptr->TryCleanupUnusedMemory());
 				auto optionalF = ptr->at(params);
 				if (optionalF.has_value()) return optionalF.value();
-				return nullptr;
 			}
+			return nullptr;
 		};
-		Proxy_Function at(std::string const& key, Param_Types const& params) const {
-			return operator()(key, params);
-		};
+		Proxy_Function at(std::string const& key, Param_Types const& params) const { return operator()(key, params); };
 
 		bool emplace(std::string const& key, Proxy_Function func, bool replaceIfAlreadyExists = true) {
 			if (func) {
 				if (auto ptr = operator()(key)) {
+					defer(ptr->TryCleanupUnusedMemory());
 					return ptr->emplace(func->Arguments(), func, replaceIfAlreadyExists);
 				}
 			}
@@ -3386,14 +3399,17 @@ namespace scripting {
 		bool emplace(std::string const& key, Proxy_Function func, Param_Types const& params, bool replaceIfAlreadyExists = true) {
 			if (func) {
 				if (auto ptr = operator()(key)) {
+					defer(ptr->TryCleanupUnusedMemory());
 					return ptr->emplace(params, func, replaceIfAlreadyExists);
 				}
 			}
 			return false;
 		};
 		bool emplace(std::string const& key, Param_Types const& params, Proxy_Function func, bool replaceIfAlreadyExists = true) {
+			
 			if (func) {
 				if (auto ptr = operator()(key)) {
+					defer(ptr->TryCleanupUnusedMemory());
 					return ptr->emplace(params, func, replaceIfAlreadyExists);
 				}
 			}
@@ -4749,16 +4765,7 @@ namespace scripting {
 				this->m_functions.emplace("to_string", scripting::Param_Types({ { "obj", user_type<Any>() } }), scripting::make_callable(
 					[](Any const& x) -> std::string { return Units::printf("`%s`", x.TypeName()); }
 				));
-
-
-
-
-
 			}
-
-
-
-
 		};
 
 	public:

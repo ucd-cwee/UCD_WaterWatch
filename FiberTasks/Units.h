@@ -1203,10 +1203,19 @@ public:
 	// DerivedUnitType(per_year, time_rate, p_yr, 1.0 / Conversion<year>(1.0));
 
 	class UnitsDetail {
+	private:
+		static fibers::utilities::BlockAllocator< fibers::Type_Info >& user_type_allocator() {
+			static fibers::utilities::BlockAllocator< fibers::Type_Info > allocator{};
+			return allocator;
+		};
 	public:
-		template <typename T> __forceinline static std::weak_ptr<fibers::Type_Info> user_type() {
-			static auto f{ std::make_shared<fibers::Type_Info>(fibers::user_type<T>()) };
-			return f;
+		template <typename T> /*__forceinline */static std::weak_ptr<fibers::Type_Info> user_type() {			
+			static auto f{ user_type_allocator().AllocShared(fibers::user_type<T>()) };
+			static std::weak_ptr<fibers::Type_Info> j{ f };
+			// static auto f{ std::make_shared<fibers::Type_Info>(fibers::user_type<T>()) };
+			//return f;
+
+			return j;
 		};
 
 

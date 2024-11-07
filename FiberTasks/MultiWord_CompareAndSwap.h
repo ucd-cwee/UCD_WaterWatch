@@ -6385,8 +6385,7 @@ namespace fibers {
 					block = new memory_block();
 				}
 #else
-				block = new memory_block()
-					;
+				block = new memory_block();
 #endif
 				parent->total += _blockSize_;
 				for (size_t i = 0; i < _blockSize_; i++) {

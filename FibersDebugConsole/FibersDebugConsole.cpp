@@ -216,6 +216,130 @@ int main() {
 		}
 #endif
 
+		// Leak Test
+		if (1) {
+			delete (new int(5));
+			if (true) {
+				fibers::containers::Pattern<double, double> test;
+			}
+			delete (new int(5));
+		}
+
+		if (1) {
+			delete (new int(5));
+			if (true) {
+				fibers::utilities::GarbageCollectedAllocator<std::pair<std::string, double>> nodeAllocator;
+			}
+			delete (new int(5));
+		}
+
+		if (1) {
+			delete (new int(5));
+			if (true) {
+				fibers::containers::Pattern<double, double> test;
+				test.Insert(1, 1, true);
+			}
+			delete (new int(5));
+		}
+
+		if (1) {
+			delete (new int(5));
+			if (true) {
+				fibers::utilities::GarbageCollectedAllocator<std::pair<std::string, double>> nodeAllocator;
+				nodeAllocator.Free(nodeAllocator.Alloc());
+			}
+			delete (new int(5));
+		}
+
+		if (1) {
+			delete (new int(5));
+			if (true) {
+				fibers::containers::Map<std::string, std::shared_ptr<int>> obj;
+				obj.emplace("TEST", std::make_shared<int>(100));
+				obj.emplace("TEST2", std::make_shared<int>(100));
+				obj.emplace("TEST3", std::make_shared<int>(100));
+			}
+			delete (new int(5));
+		}
+
+
+		if (1) {
+			delete (new int(5));
+			if (true) {
+				fibers::containers::Map<std::string, std::shared_ptr<int>> m_functions;
+			}
+			delete (new int(5));
+		}
+
+
+		if (1) {
+			delete (new int(5));
+			if (true) {
+				fibers::containers::Map<
+					std::string, // Function Name (e.g. string). 
+					std::shared_ptr<fibers::containers::Map<
+						scripting::Param_Types, // Function parameters (e.g. {string, Any}, or {Any, Any, Any}). 
+					    scripting::Proxy_Function
+					>>
+				> m_functions;
+			}
+			delete (new int(5));
+		}
+
+
+		if (1) {
+			delete (new int(5));
+			if (true) {
+				scripting::Functions funcs; // LEAK
+			}
+			delete (new int(5));
+		}
+
+		if (1) {
+			delete (new int(5));
+			if (true) {
+				scripting::Functions funcs;
+				funcs.emplace("Foo", scripting::make_callable([](){}), true);
+				funcs.emplace("Bar", scripting::make_callable([](int x){}), true);
+			}
+			delete (new int(5));
+		}
+
+		if (1) {
+			delete (new int(5));
+			if (true) {
+				scripting::Functions funcs;
+				funcs.emplace("Foo", scripting::make_callable([]() {}));
+				funcs.emplace("Bar", scripting::make_callable([](int x) {}));
+				funcs.emplace("Foo", scripting::make_callable([](int x) {}));
+				funcs.emplace("Bar", scripting::make_callable([](int x, int y) {}));
+			}
+			delete (new int(5));
+		}
+
+		if (1) {
+			delete (new int(5));
+			if (true) {
+				auto global_scope{ std::make_shared<scripting::Global>() };
+				global_scope->p_self = global_scope;
+				global_scope->AddBuiltIns();
+			}
+			delete (new int(5));
+		}
+
+		if (1) {
+			delete (new int(5));
+			if (true) {
+				auto global_scope{ std::make_shared<scripting::Global>() };
+				global_scope->p_self = global_scope;
+				global_scope->AddBuiltIns();
+				delete (new int(5));
+			}
+			delete (new int(5));
+		}
+
+
+
 		// MODERN TEST 2
 		if (1) {
 			using namespace scripting;
@@ -229,38 +353,36 @@ int main() {
 			global_scope->p_self = global_scope;
 			global_scope->AddBuiltIns();
 
-			// Built-In Functions, Type, Conversions
-			if (1) {
-				// template function (specified by the "Any" type) which be duplicated and instantiated whenever actually called by a "real" set of parameters
-				global_scope->m_functions.emplace("Type", scripting::Param_Types({ { std::string("obj"), scripting::user_type<Any>() } }), scripting::make_callable(
-					[](Any const& x) -> fibers::Type_Info {
-						if (auto p = x.Type().lock())
-							return *p;
-						else
-							return fibers::user_type<void>();
-					}
-				), true);
-				global_scope->m_functions.emplace("+", scripting::make_callable([](double a, double b) -> double {
-					return a + b;
-				}), true);
-				global_scope->m_functions.emplace("*", scripting::make_callable([](double a, double b) -> double {
-					return a * b;
-				}), true);
-				global_scope->m_functions.emplace("-", scripting::make_callable([](double a, double b) -> double {
-					return a - b;
-				}), true);
-				global_scope->m_functions.emplace("/", scripting::make_callable([](double a, double b) -> double {
-					return a / b;
-				}), true);
-				global_scope->m_functions.emplace("^", scripting::make_callable([](double a, double b) -> double {
-					return std::pow(a, b);
-				}), true);
-
-
-				global_scope->CallFunction("Type", { Any(100.0) });
-				global_scope->CallFunction("+", { Any(100.0), Any(100.0) });
-				global_scope->CallFunction("^", { Any(5.0), Any(2.0) });
-			}
+			//// Built-In Functions, Type, Conversions
+			//if (1) {
+			//	// template function (specified by the "Any" type) which be duplicated and instantiated whenever actually called by a "real" set of parameters
+			//	global_scope->m_functions.emplace("Type", scripting::Param_Types({ { std::string("obj"), scripting::user_type<Any>() } }), scripting::make_callable(
+			//		[](Any const& x) -> fibers::Type_Info {
+			//			if (auto p = x.Type().lock())
+			//				return *p;
+			//			else
+			//				return fibers::user_type<void>();
+			//		}
+			//	), true);
+			//	global_scope->m_functions.emplace("+", scripting::make_callable([](double a, double b) -> double {
+			//		return a + b;
+			//	}), true);
+			//	global_scope->m_functions.emplace("*", scripting::make_callable([](double a, double b) -> double {
+			//		return a * b;
+			//	}), true);
+			//	global_scope->m_functions.emplace("-", scripting::make_callable([](double a, double b) -> double {
+			//		return a - b;
+			//	}), true);
+			//	global_scope->m_functions.emplace("/", scripting::make_callable([](double a, double b) -> double {
+			//		return a / b;
+			//	}), true);
+			//	global_scope->m_functions.emplace("^", scripting::make_callable([](double a, double b) -> double {
+			//		return std::pow(a, b);
+			//	}), true);
+			//	global_scope->CallFunction("Type", { Any(100.0) });
+			//	global_scope->CallFunction("+", { Any(100.0), Any(100.0) });
+			//	global_scope->CallFunction("^", { Any(5.0), Any(2.0) });
+			//}
 
 			// Import Namespaces...
 			if (1) {
