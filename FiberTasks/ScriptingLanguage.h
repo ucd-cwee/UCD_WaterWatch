@@ -399,6 +399,15 @@ namespace scripting {
 					if (sorted.size() > 0) {
 						CurrentVertex = sorted.begin()->second;
 					}
+					else {
+						// something went wrong
+						if (FoundEnd) break;
+						else {
+							// something *is* wrong
+							std::cout << "SOMETHING IS WRONG HERE" << std::endl;
+							return false;
+						}
+					}
 
 					// if we have the (likely) shortest path From -> To...
 					if (CurrentVertex == To) {
@@ -4113,6 +4122,15 @@ namespace scripting {
 					//std::multimap<double, Proxy_Function> sort;
 
 					if (constructorScopePtr = std::dynamic_pointer_cast<Scope>(this->FindClass(functionName))) {
+						// Is there a pre-defined constructor that this could work with?
+						if (auto* functions = constructorScopePtr->GetFunctions()) {
+							if (auto func = functions->BuildMatch(functionName, params, m_conversionTree, false, true)) {
+								//sort.emplace(func->conversion_cost(params, m_conversionTree), func);
+								out = func;
+								return true;
+							}
+						}
+
 						// Can the conversion tree do this itself, without any help?
 						if (params.size() == 1 && firstParamScopePtr) {
 							if (m_conversionTree.Converts(firstParamScopePtr->GetClassType(), constructorScopePtr->GetClassType())) {
@@ -4120,15 +4138,6 @@ namespace scripting {
 									return tree.Convert(from, toType);
 								});
 
-								//sort.emplace(func->conversion_cost(params, m_conversionTree), func);
-								out = func;
-								return true;
-							}
-						}
-
-						// Is there a pre-defined constructor that this could work with?
-						if (auto* functions = constructorScopePtr->GetFunctions()) {
-							if (auto func = functions->BuildMatch(functionName, params, m_conversionTree, false, true)) {
 								//sort.emplace(func->conversion_cost(params, m_conversionTree), func);
 								out = func;
 								return true;
@@ -4434,7 +4443,7 @@ namespace scripting {
 			}
 
 			if (type == user_type<void>()) {
-				ClassType = std::make_shared<fibers::Type_Info>(GetQualifiedNamespace(), Name);
+				ClassType = std::make_shared<fibers::Type_Info>(this->p_NameRand /*GetQualifiedNamespace()*/, Name);
 			}
 			else {
 				ClassType = std::make_shared<fibers::Type_Info>(type);
@@ -4663,8 +4672,8 @@ namespace scripting {
 				this->tree.AddConverter([](decltype(typeImpl) o) -> std::string { return std::to_string(o); });
 
 				// Constructors
-				classPtr->m_functions.emplace(Name, make_callable([typeImplCopy = typeImpl]() -> decltype(typeImpl) { return typeImplCopy; }));
-				classPtr->m_functions.emplace(Name, make_callable([](decltype(typeImpl) const& o) -> decltype(typeImpl) { return decltype(typeImpl)(o); }));
+				classPtr->m_functions.emplace(Name, make_callable([typeImplCopy = typeImpl]() -> decltype(typeImpl) { return typeImplCopy; })); // Default Constructor
+				classPtr->m_functions.emplace(Name, make_callable([](decltype(typeImpl) const& o) -> decltype(typeImpl) { return (decltype(typeImpl))(o); })); // Copy Constructor
 
 				// Comparisons
 				classPtr->m_functions.emplace("==", scripting::make_callable([](decltype(typeImpl) const& x, decltype(typeImpl) const& y) -> bool { return x == y; }));
@@ -4720,8 +4729,8 @@ namespace scripting {
 					string_namespace->p_self = string_namespace;
 
 					// Constructors
-					string_namespace->m_functions.emplace("string", scripting::make_callable([]() -> std::string { return ""; }));
-					string_namespace->m_functions.emplace("string", scripting::make_callable([](std::string const& x) -> std::string { return x; }));
+					string_namespace->m_functions.emplace("string", scripting::make_callable([]() -> std::string { return ""; })); // Default Constructor
+					string_namespace->m_functions.emplace("string", scripting::make_callable([](std::string const& x) -> std::string { return x; })); // Copy Constructor
 					
 					// Comparisons
 					string_namespace->m_functions.emplace("==", scripting::make_callable([](std::string const& x, std::string const& y) { return x == y; }));

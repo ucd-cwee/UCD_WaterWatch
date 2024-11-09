@@ -254,10 +254,17 @@ int main() {
 		if (1) {
 			delete (new int(5));
 			if (true) {
-				fibers::containers::Map<std::string, std::shared_ptr<int>> obj;
+				fibers::containers::MapImpl<std::string, std::shared_ptr<int>> obj;
 				obj.emplace("TEST", std::make_shared<int>(100));
 				obj.emplace("TEST2", std::make_shared<int>(100));
 				obj.emplace("TEST3", std::make_shared<int>(100));
+
+				for (auto& objs : obj) { }
+
+				EXPECT_EQ(true, obj.erase("TEST"));
+				EXPECT_EQ(2, obj.size());
+				EXPECT_EQ(false, obj.contains("TEST"));
+				EXPECT_EQ(true, obj.contains("TEST2"));
 			}
 			delete (new int(5));
 		}
@@ -282,6 +289,9 @@ int main() {
 					    scripting::Proxy_Function
 					>>
 				> m_functions;
+
+
+
 			}
 			delete (new int(5));
 		}
@@ -316,6 +326,10 @@ int main() {
 			}
 			delete (new int(5));
 		}
+
+
+
+
 
 		if (1) {
 			delete (new int(5));
@@ -897,16 +911,17 @@ int main() {
 				}
 			}
 
-
-
-
-
-
-
-
-
-
-
+			// TEST SHAREDPTR
+			if (1) {
+				fibers::utilities::SharedPtr<int> test;
+				fibers::parallel::For(0, 100, [&](int i) {
+					test = fibers::utilities::make_shared<int>(i);
+					fibers::utilities::SharedPtr<int> localCopy{ test };
+					if (localCopy) {
+						// printf(*localCopy);
+					}
+				});
+            }
 
 
 			// TESTING...
@@ -936,7 +951,7 @@ int main() {
 											*i_obj
 										})
 									})
-								});
+									});
 
 								printf(std::string("Length of ") + Impl::Cast<std::string>(*i_obj, LoopScope) + " is " + Impl::Cast<std::string>(LengthObj, LoopScope));
 
@@ -944,7 +959,7 @@ int main() {
 									LoopScope->CallFunction("+=", { *x_obj, LengthObj });
 								}
 							}
-						});
+							});
 					}
 
 					printf(std::string("Final Answer: \t") + Impl::Cast<std::string>(*ScriptScope->FindObject("x"), ScriptScope));
@@ -962,7 +977,7 @@ int main() {
 						auto ForScope = std::make_shared<Scope>(ScriptScope);
 						ForScope->p_self = ForScope;
 
-						try{
+						try {
 							fibers::parallel::For(0, 100, [&](int i) {
 								auto LoopScope = std::make_shared<Scope>(ForScope);
 								LoopScope->p_self = LoopScope;
@@ -976,7 +991,7 @@ int main() {
 												*i_obj
 											})
 										})
-									});
+										});
 
 									// printf(std::string("Length of ") + Impl::Cast<std::string>(*i_obj, LoopScope) + " is " + Impl::Cast<std::string>(LengthObj, LoopScope));
 
@@ -993,11 +1008,11 @@ int main() {
 										}
 									}
 								}
-							});
+								});
 
 							EXPECT_EQ(true, false); // we should not get here.
 						}
-						catch (std::runtime_error const& e) {							
+						catch (std::runtime_error const& e) {
 							printf(e.what());
 						}
 					}
@@ -1009,35 +1024,211 @@ int main() {
 				// Simulate a simple string operation
 				{
 					// {
-						auto ScriptScope = std::make_shared<Scope>(global_scope); ScriptScope->p_self = ScriptScope;
-						// var x = "A";
-						ScriptScope->AddObject("x", std::make_shared<Any>(std::string("A")));
-						// var y = "B";
-						ScriptScope->AddObject("y", std::make_shared<Any>(std::string("B")));
-						// return x + y;
-						printf(Impl::Cast<std::string>(ScriptScope->CallFunction("+", { *ScriptScope->FindObject("x"), *ScriptScope->FindObject("y") }), ScriptScope));
+					auto ScriptScope = std::make_shared<Scope>(global_scope); ScriptScope->p_self = ScriptScope;
+					// var x = "A";
+					ScriptScope->AddObject("x", std::make_shared<Any>(std::string("A")));
+					// var y = "B";
+					ScriptScope->AddObject("y", std::make_shared<Any>(std::string("B")));
+					// return x + y;
+					printf(Impl::Cast<std::string>(ScriptScope->CallFunction("+", { *ScriptScope->FindObject("x"), *ScriptScope->FindObject("y") }), ScriptScope));
 					// }
 				}
 
 				// Simulate a simple Units operation
 				{
 					// {
-						auto ScriptScope = std::make_shared<Scope>(global_scope); ScriptScope->p_self = ScriptScope;
-						// Using namespace "Units"
-						ScriptScope->AddUsing(ScriptScope->FindNamespace("Units"));
-						// var x = foot(int(10.4));
-						ScriptScope->AddObject("x", std::make_shared<Any>(ScriptScope->CallFunction("foot", { ScriptScope->CallFunction("int", { 10.4 }) })));
-						// var y = meter(100);
-						ScriptScope->AddObject("y", std::make_shared<Any>(ScriptScope->CallFunction("meter", { 100 })));
-						// var z = inch(12);
-						ScriptScope->AddObject("z", std::make_shared<Any>(ScriptScope->CallFunction("inch", { 12 })));
-						// return Units::gallon(x*y*z);
-						auto result = ScriptScope->CallFunction("gallon", { ScriptScope->CallFunction("*", { ScriptScope->CallFunction("*", { *ScriptScope->FindObject("x"), *ScriptScope->FindObject("y") }), *ScriptScope->FindObject("z") }) });
-						printf(Impl::Cast<std::string>(result, ScriptScope));
+					auto ScriptScope = std::make_shared<Scope>(global_scope); ScriptScope->p_self = ScriptScope;
+					// Using namespace "Units"
+					ScriptScope->AddUsing(ScriptScope->FindNamespace("Units"));
+					// var x = foot(int(10.4));
+					ScriptScope->AddObject("x", std::make_shared<Any>(ScriptScope->CallFunction("foot", { ScriptScope->CallFunction("int", { 10.4 }) })));
+					// var y = meter(100);
+					ScriptScope->AddObject("y", std::make_shared<Any>(ScriptScope->CallFunction("meter", { 100 })));
+					// var z = inch(12);
+					ScriptScope->AddObject("z", std::make_shared<Any>(ScriptScope->CallFunction("inch", { 12 })));
+					// return Units::gallon(x*y*z);
+					auto result = ScriptScope->CallFunction("gallon", { ScriptScope->CallFunction("*", { ScriptScope->CallFunction("*", { *ScriptScope->FindObject("x"), *ScriptScope->FindObject("y") }), *ScriptScope->FindObject("z") }) });
+					printf(Impl::Cast<std::string>(result, ScriptScope));
 					// }
 				}
 
+				// Simulate a for-loop that 1: creates a new Class, 2: adds functions to it, 3: adds a conversion for it to std::string, and 4: uses that conversion. 
 
+				{
+					auto ScriptScope = std::make_shared<Scope>(global_scope);
+					ScriptScope->p_self = ScriptScope;
+
+					{
+						auto ForScope = std::make_shared<Scope>(ScriptScope);
+						ForScope->p_self = ForScope;
+
+						for (int i = 0; i < 100; i++){ // fibers::parallel::For(0, 100, [&](int i) {
+							auto LoopScope = std::make_shared<Scope>(ForScope);
+							LoopScope->p_self = LoopScope;
+							LoopScope->AddObject("i", std::make_shared<Any>((int)i));
+
+							if (1) {
+								// Make the new class...
+								auto Position = std::make_shared<Class>(LoopScope, "Position");
+								Position->p_self = Position;
+
+								if (1) {
+									Position->m_functions.emplace("Position", make_callable([thisScope = std::weak_ptr<Scope>(Position), t = Position->ClassType]()->fibers::DynamicObject {
+										fibers::DynamicObject out(t);
+										if (auto ptr = thisScope.lock()) {
+											out.m_objects.insert(std::pair<std::string, std::shared_ptr<Any>>("longitude", std::make_shared<Any>(ptr->CallFunction("Number", {}))));
+											out.m_objects.insert(std::pair<std::string, std::shared_ptr<Any>>("latitude", std::make_shared<Any>(ptr->CallFunction("Number", {}))));
+											out.m_objects.insert(std::pair<std::string, std::shared_ptr<Any>>("elevation", std::make_shared<Any>(ptr->CallFunction("Units::foot", {}))));
+										}
+										else {
+											throw(std::runtime_error("Class definition was no longer available"));
+										}
+										return out;
+									}));
+									Position->m_functions.emplace("Position", make_callable([thisScope = std::weak_ptr<Scope>(Position), t = Position->ClassType](Any const& tryCopy)->fibers::DynamicObject {
+										fibers::DynamicObject out(t);
+										// generic code to "Copy" the Dynamic Object
+										if (auto ptr = thisScope.lock()) {
+											auto& tryCopyObj = tryCopy.cast<fibers::DynamicObject>();
+											for (auto& obj : tryCopyObj.m_objects) {
+												auto& obj_name = obj.first; 
+												Any& obj_obj = *obj.second;
+												Type_Info obj_type = obj_obj.Type();
+												
+												// if we cannot find this type anymore, how can we be expected to copy it?
+												if (auto ObjClass = ptr->FindClass(obj_type)) {
+													try {
+														out.m_objects.insert(
+															std::pair<std::string, std::shared_ptr<Any>>{
+															    obj_name,
+																std::make_shared<Any>(ptr->CallFunction(ObjClass->GetName(), { obj_obj })) // e.g. Number(number_object) , or, double(double_obj)
+														    }
+														);
+													}
+													catch (exception::not_found_error) {
+														// the function to actually copy the object was not found or doesn't exist -- so use the value as-is. Nothing more can be done without throwing the error upstream. 
+														out.m_objects.insert(
+															std::pair<std::string, std::shared_ptr<Any>>{
+															    obj_name,
+																obj.second
+														    }
+														);
+													}
+
+													// MAKE SURE THAT WE ACTUALLY MADE A COPY, AND NOT JUST PASSING IT ALONG
+													Any& new_obj = *out.m_objects[obj_name];
+													Any& old_obj = *tryCopyObj.m_objects[obj_name];
+													EXPECT_NE(new_obj, old_obj);
+												}
+											}
+										}
+										else {
+											throw(std::runtime_error("Class definition was no longer available"));
+										}
+										return out;
+									}), Param_Types({ { "ToCopy", Position->ClassType } }));
+									Position->m_functions.emplace("Position", make_callable([thisScope = std::weak_ptr<Scope>(Position), t = Position->ClassType](double longitude, double latitude, Units::foot elevation)->fibers::DynamicObject {
+										fibers::DynamicObject out(t);
+										if (auto ptr = thisScope.lock()) {
+											out.m_objects.insert(std::pair<std::string, std::shared_ptr<Any>>("longitude", std::make_shared<Any>(ptr->CallFunction("Number", {
+												longitude
+											}))));
+											out.m_objects.insert(std::pair<std::string, std::shared_ptr<Any>>("latitude", std::make_shared<Any>(ptr->CallFunction("Number", {
+												latitude
+											}))));
+											out.m_objects.insert(std::pair<std::string, std::shared_ptr<Any>>("elevation", std::make_shared<Any>(ptr->CallFunction("Units::foot", {
+												elevation
+											}))));
+										}
+										else {
+											throw(std::runtime_error("Class definition was no longer available"));
+										}
+										return out;
+									}), Param_Types({ { "longitude", user_type<double>() }, { "latitude", user_type<double>() }, { "elevation", user_type<Units::foot>() } }));
+									Position->m_functions.emplace("to_string", make_callable([thisScope = std::weak_ptr<Scope>(Position)](Any const& parent)->std::string {
+										std::string out;
+										// generic code to "Print" the Dynamic Object
+										auto& Parent = parent.cast<fibers::DynamicObject>();
+										if (auto ptr = thisScope.lock()) {
+											for (auto& obj : Parent.m_objects) {
+												if (out.length() > 0) out += ",";
+												auto conv = Impl::Cast<std::string>(*obj.second, ptr);
+												out += std::string(Units::printf(" { \"%s\": %s }", obj.first.c_str(), conv.c_str()));
+											}
+										}
+										else {
+											throw(std::runtime_error("Class definition was no longer available"));
+										}
+										return std::string("{") + out + " }";
+									}), Param_Types({ { "parent", Position->ClassType } }));
+									Position->TypeConversionTree()->AddConverter([thisScope = std::weak_ptr<Scope>(Position)](Any const& parent)->std::string {
+										std::string out;
+										auto& Parent = parent.cast<fibers::DynamicObject>();
+										if (auto ptr = thisScope.lock()) {
+											for (auto& obj : Parent.m_objects) {
+												if (out.length() > 0) out += ",";
+												auto conv = Impl::Cast<std::string>(*obj.second, ptr);
+												out += std::string(Units::printf(" { \"%s\": %s }", obj.first.c_str(), conv.c_str()));
+											}
+										}
+										else {
+											throw(std::runtime_error("Class definition was no longer available"));
+										}
+										return std::string("{") + out + " }";
+									}, Position->ClassType, user_type<std::string>());
+									Position->m_functions.emplace("longitude", make_callable([](Any const& parent)-> Any {
+										auto& Parent = parent.cast<fibers::DynamicObject>();
+										return *Parent.m_objects.at("longitude");
+									}), Param_Types({ { "parent", Position->ClassType } }));
+									Position->m_functions.emplace("latitude", make_callable([](Any const& parent)-> Any {
+										auto& Parent = parent.cast<fibers::DynamicObject>();
+										return *Parent.m_objects.at("latitude");
+									}), Param_Types({ { "parent", Position->ClassType } }));
+									Position->m_functions.emplace("elevation", make_callable([](Any const& parent)-> Any {
+										auto& Parent = parent.cast<fibers::DynamicObject>();
+										return *Parent.m_objects.at("elevation");
+									}), Param_Types({ { "parent", Position->ClassType } }));
+								}
+
+								// ...and add it to the parent scope
+								LoopScope->AddChild(Position);
+							}
+
+							if (auto i_obj = LoopScope->FindObject("i")) {
+								auto PositionInstance1 = LoopScope->CallFunction("Position", {  }); // create as instance
+								auto PositionInstance2 = LoopScope->CallFunction("Position", { -121, 32, Units::foot(15) }); // create from objs
+								auto PositionInstance3 = LoopScope->CallFunction("Position", { PositionInstance2 }); // create as copy
+
+								EXPECT_EQ(-121, Impl::Cast<int>(LoopScope->CallFunction("longitude", { PositionInstance2 }), LoopScope));
+								EXPECT_EQ(-121, Impl::Cast<int>(LoopScope->CallFunction("longitude", { PositionInstance3 }), LoopScope));
+
+								auto& longitude = LoopScope->CallFunction("longitude", { PositionInstance2 }).cast<fibers::containers::number<double>&>();
+								EXPECT_EQ(-121, longitude);
+								LoopScope->CallFunction("+=", { LoopScope->CallFunction("longitude", { PositionInstance2 }), -1 });
+								EXPECT_EQ(-122, longitude);
+								EXPECT_EQ(-122, LoopScope->CallFunction("longitude", { PositionInstance2 }).cast<fibers::containers::number<double>&>());
+								
+								EXPECT_EQ(-121, LoopScope->CallFunction("longitude", { PositionInstance3 }).cast<fibers::containers::number<double>&>());
+
+								// Test that we can cast to std::string
+								printf(Impl::Cast<std::string>(PositionInstance2, LoopScope));
+							}
+
+						} // );
+					}
+
+					// now, we are going to do a bad thing on purpose, and try to call that custom class and its functions. 
+					if (1) {
+						try {
+							auto PositionInstance1 = ScriptScope->CallFunction("Position", {  }); // create as instance
+							EXPECT_EQ(false, true); // should not happen
+						}
+						catch (exception::not_found_error const& e) {
+							printf(e.what());
+							EXPECT_EQ(true, true); // Good!
+						}
+					}
+				}
 
 
 

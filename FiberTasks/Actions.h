@@ -346,7 +346,11 @@ namespace fibers {
 		}
 		constexpr Type_Info() noexcept = default;
 
-		bool operator<(const Type_Info& ti) const noexcept { if (m_type_info) return m_type_info->before(*ti.m_type_info); else return name() < ti.name(); };
+		bool operator<(const Type_Info& ti) const noexcept { 
+			if (customTypeInfo || ti.customTypeInfo) return name() < ti.name();
+			else if (m_type_info && ti.m_type_info) return m_type_info->before(*ti.m_type_info); 
+			else return name() < ti.name();
+		};
 		bool operator>=(const Type_Info& ti) const noexcept { return !operator<(ti); };
 		bool operator>(const Type_Info& ti) const noexcept { return operator>=(ti) && operator!=(ti); };
 		bool operator<=(const Type_Info& ti) const noexcept { return !operator>(ti); };
@@ -354,20 +358,24 @@ namespace fibers {
 		bool operator!=(const Type_Info& ti) const noexcept { return !(operator==(ti)); };
 		bool operator!=(const impl::underlying_type_info& ti) const noexcept { return !(operator==(ti)); };
 		bool operator==(const Type_Info& ti) const noexcept {
-			if (m_type_info) return ti.m_type_info == m_type_info || (m_type_info && ti.m_type_info && SameTypeInfo(*ti.m_type_info, *m_type_info));
+			if (customTypeInfo) return name() == ti.name();
+			else if (m_type_info) return ti.m_type_info == m_type_info || (m_type_info && ti.m_type_info && SameTypeInfo(*ti.m_type_info, *m_type_info));
 			else return name() == ti.name();
 		}
 		bool operator==(const impl::underlying_type_info& ti) const noexcept {
-			if (m_type_info) return !is_undef() && m_type_info && SameTypeInfo(ti, *m_type_info);
+			if (customTypeInfo) return name() == ti.name();
+			else if (m_type_info) return !is_undef() && m_type_info && SameTypeInfo(ti, *m_type_info);
 			else  return name() == ti.name();
 		};
 
 		bool bare_equal(const Type_Info& ti) const noexcept {
-			if (m_type_info) return ti.m_bare_type_info == m_bare_type_info || (ti.m_bare_type_info && m_bare_type_info && SameTypeInfo(*ti.m_bare_type_info, *m_bare_type_info));
+			if (customTypeInfo) return name() == ti.name();
+			else if (m_type_info) return ti.m_bare_type_info == m_bare_type_info || (ti.m_bare_type_info && m_bare_type_info && SameTypeInfo(*ti.m_bare_type_info, *m_bare_type_info));
 			else return name() == ti.name();
 		};
 		bool bare_equal_type_info(const impl::underlying_type_info& ti) const noexcept {
-			if (m_type_info) return !is_undef() && m_bare_type_info && SameTypeInfo(ti, *m_bare_type_info);
+			if (customTypeInfo) return name() == ti.name();
+			else if (m_type_info) return !is_undef() && m_bare_type_info && SameTypeInfo(ti, *m_bare_type_info);
 			else return name() == ti.name();
 		};
 
@@ -379,34 +387,35 @@ namespace fibers {
 
 		const char* name() const noexcept {
 			if (!is_undef()) {
-				if (m_type_info) return m_type_info->name();
-				else if (customTypeInfo) return customTypeInfo->bare_name.c_str();
+				if (customTypeInfo) return customTypeInfo->bare_name.c_str();
+				else if (m_type_info) return m_type_info->name();
 			}
 			return "";
 		}
 		const char* bare_name() const noexcept {
 			if (!is_undef()) {
-				if (m_type_info) return m_bare_type_info->name();
-				else if (customTypeInfo) return customTypeInfo->bare_name.c_str();
+				if (customTypeInfo) return customTypeInfo->bare_name.c_str(); 
+				else if (m_type_info) return m_bare_type_info->name();
 			}
 			return "";
 		}
 		const char* contained_name() const noexcept {
 			if (!is_undef()) {
-				if (m_type_info) return m_contained_type_info->name();
-				else if (customTypeInfo) return customTypeInfo->bare_name.c_str();
+				if (customTypeInfo) return customTypeInfo->bare_name.c_str();
+				else if (m_type_info) return m_contained_type_info->name();
 			}
 			return "";
 		}
 
-		constexpr const impl::underlying_type_info* bare_type_info() const noexcept {
-			if (m_type_info) return m_bare_type_info;
-			else return (const impl::underlying_type_info*)(customTypeInfo->uniqueHash);
+		const impl::underlying_type_info* bare_type_info() const noexcept {
+			if (customTypeInfo) return (const impl::underlying_type_info*)(customTypeInfo->uniqueHash);
+			else if (m_type_info) return m_bare_type_info;
+			else return &TypeId<details::Unknown_Type>();
 		};
-		constexpr const impl::underlying_type_info* contained_type_info() const noexcept {
+		const impl::underlying_type_info* contained_type_info() const noexcept {
 			return m_contained_type_info;
 		};
-		constexpr bool is_container_type() const noexcept { return m_contained_type_info != &TypeId<details::Unknown_Type >(); }
+		bool is_container_type() const noexcept { return m_contained_type_info != &TypeId<details::Unknown_Type >(); }
 
 	private:
 		const impl::underlying_type_info* m_type_info = &TypeId<details::Unknown_Type>();
@@ -871,30 +880,7 @@ namespace fibers {
 			std::weak_ptr<Type_Info>                m_type; // type information of the saved object
 			const bool						        m_const; // whether or not the saved object is const
 
-		};
-	
-		//template <typename T>
-		//class SpecificType : public AnyData {
-		//public:
-		//	SpecificType() : AnyData() {};
-		//	virtual ~SpecificType() {};
-
-		//	virtual void ThrowIfNot(std::weak_ptr<Type_Info> type) const {
-		//		// Direct match
-		//		if (type == m_type) return;
-		//		else if (user_type<baseType>() == m_type) return; // POLYMORPHIC MATCH?
-		//		else {
-		//			if (auto ptr = m_type.lock()) {
-		//				throw exception::bad_any_cast(*ptr, type);
-		//			}
-		//			else {
-		//				throw exception::bad_any_cast(user_type<void>(), type);
-		//			}
-		//		}
-		//	};
-
-		//};
-	
+		};	
 	}
 	class Any;
 
@@ -1495,7 +1481,7 @@ namespace fibers {
 	/*! Supports forward-declaring a "cast" from an Any to the desired destination type. e.g: int& ref_int = any_obj.cast(); ... std::string str = any_obj.cast(); */
 	class AnyAutoCast; /* forward decl */
 
-		// serves as an instance of a custom class
+	// serves as an instance of a customizable class
 	class DynamicObject {
 	public:
 		DynamicObject() = default;
@@ -1515,7 +1501,6 @@ namespace fibers {
 			m_objects;
 
 	};
-
 
 	/*! Generic container that enables the containment and sharing of any data type to/from std::shared_ptrs */
 	class Any {

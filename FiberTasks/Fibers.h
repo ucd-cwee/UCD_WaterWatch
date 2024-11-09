@@ -1658,6 +1658,14 @@ namespace fibers {
 		};
 	};
 
+	namespace containers {
+		/* *THREAD SAFE* Thread-safe and fiber-safe wrapper for any type of number, from integers to doubles.
+		   Significant performance boost if the data type is an integer type or one of: long, unsigned int, unsigned long, unsigned __int64
+		   Slower, but still atomic using multi-word CAS algorithms, if using floating-point numbers like doubles or floats.
+		*/
+		template<typename _Value_type> using number = fibers::synchronization::atomic_number<_Value_type>;
+	};
+
 	namespace utilities {
 		/* 
 		Allows user to queue ptrs for deletion or actions to take place during garbage collection phases. Garbage collection or deletion can be postponed until safe, utilizing scope guards. 
@@ -4017,12 +4025,676 @@ namespace fibers {
 				}; // allocator which provides memory re-use at runtime and memory clean-up on destruction
 			};
 		};  // namespace dbgroup::index::bw_tree
+
+		class Details_Interface {
+		protected:
+			Details_Interface() noexcept {};
+			explicit Details_Interface(Details_Interface const&) = delete;
+			explicit Details_Interface(Details_Interface&&) = delete;
+			Details_Interface& operator=(Details_Interface const&) = delete;
+			Details_Interface& operator=(Details_Interface&&) = delete;
+
+		public:
+			virtual ~Details_Interface() noexcept {};
+			virtual void* source() const noexcept = 0;
+			virtual int	use_count() const noexcept = 0;
+			virtual void increment() const noexcept = 0;
+			virtual int decrement() const noexcept = 0;
+			virtual std::function<void(Details_Interface*)> Details_Interface_Deleter() const noexcept = 0;
+
+		};
+		/* Interface for simply allowing the sharing of a virtual pointer */
+		class SharedPtr_Data_Interface {
+		protected:
+			SharedPtr_Data_Interface() noexcept {};
+			virtual ~SharedPtr_Data_Interface() noexcept {};
+			explicit SharedPtr_Data_Interface(SharedPtr_Data_Interface const& other) noexcept = delete;
+			explicit SharedPtr_Data_Interface(SharedPtr_Data_Interface&& other) noexcept = delete;
+			SharedPtr_Data_Interface& operator=(SharedPtr_Data_Interface const& other) = delete;
+			SharedPtr_Data_Interface& operator=(SharedPtr_Data_Interface&& other) = delete;
+		public:
+			virtual void* source() const noexcept = 0;
+			virtual int	use_count() const noexcept = 0;
+			virtual void increment() const noexcept = 0;
+			virtual int decrement() const noexcept = 0;
+			virtual fibers::synchronization::atomic_ptr<Details_Interface>& ptr() const noexcept = 0;
+		};
+		template <typename type> class SharedPtr {
+#pragma region Class Defs
+		public:
+			using swappablePtr = fibers::synchronization::atomic_ptr<type>;
+			class details_withData final : public Details_Interface {
+			public:
+				~details_withData() noexcept {};
+				explicit details_withData(details_withData const&) = delete;
+				explicit details_withData(details_withData&&) = delete;
+				details_withData& operator=(details_withData const&) = delete;
+				details_withData& operator=(details_withData&&) = delete;
+
+				template <typename Q = type, typename = std::enable_if_t<!std::is_same_v<Q, void>> > __forceinline explicit details_withData() noexcept : count(1), d() {};
+				template <typename Q = type, typename = std::enable_if_t<!std::is_same_v<Q, void>> > __forceinline explicit details_withData(std::decay_t<typename std::remove_reference<typename std::remove_pointer<Q>::type>::type>&& obj) noexcept : count(1), d(std::forward<type>(obj)) {};
+				template <typename Q = type, typename = std::enable_if_t<!std::is_same_v<Q, void>> > __forceinline explicit details_withData(std::decay_t<typename std::remove_reference<typename std::remove_pointer<Q>::type>::type>const& obj) noexcept : count(1), d(obj) {};
+
+				__forceinline void* source() const noexcept final { return const_cast<void*>(static_cast<const void*>(&d)); };
+				__forceinline int	use_count() const noexcept final { return count.GetValue(); };
+				__forceinline void increment() const noexcept final { count.Increment(); };
+				__forceinline int decrement() const noexcept final { return count.Decrement(); };
+				__forceinline std::function<void(Details_Interface*)> Details_Interface_Deleter() const noexcept final {
+					return [](Details_Interface* p) {
+						if (p) {
+							decltype(auto) q = dynamic_cast<SharedPtr<type>::details_withData*>(p);
+							if (q) {
+								delete q;
+							}
+							else {
+								delete p; // likely a  leak
+							}
+						}
+					};
+				};
+
+			private:
+				mutable fibers::containers::number<int> count;
+				type d;
+			};
+			class details final : public Details_Interface {
+			public:
+				explicit details() = delete;
+				~details() noexcept {};
+				explicit details(details const&) = delete;
+				explicit details(details&&) = delete;
+				details& operator=(details const&) = delete;
+				details& operator=(details&&) = delete;
+				__forceinline explicit details(type* _source, std::function<void(type*)> _destroy) noexcept :
+					p(_source), count(1), deleter(std::move(_destroy)) {};
+				__forceinline void* source() const noexcept final { return static_cast<void*>(p.Get()); };
+				__forceinline int	use_count() const noexcept final {
+					return count.GetValue();
+				};
+				__forceinline void increment() const noexcept final {
+					count.Increment();
+				};
+				__forceinline int decrement() const noexcept final {
+					int i = count.Decrement();
+					if (i == 0) {
+						deleter(p.Set(nullptr));
+					}
+					return i;
+				};
+				__forceinline std::function<void(Details_Interface*)> Details_Interface_Deleter() const noexcept final {
+					return [](Details_Interface* p) {
+						if (p) {
+							decltype(auto) q = dynamic_cast<SharedPtr<type>::details*>(p);
+							if (q) {
+								delete q;
+							}
+							else {
+								delete p; // likely a  leak
+							}
+						}
+					};
+				};
+			private:
+				mutable swappablePtr p;
+				mutable fibers::containers::number<int> count;
+				mutable std::function<void(type*)> deleter;
+			};
+			class details_no_destructor final : public Details_Interface {
+			public:
+				explicit details_no_destructor() = delete;
+				~details_no_destructor() noexcept {};
+				explicit details_no_destructor(details_no_destructor const&) = delete;
+				explicit details_no_destructor(details_no_destructor&&) = delete;
+				details_no_destructor& operator=(details_no_destructor const&) = delete;
+				details_no_destructor& operator=(details_no_destructor&&) = delete;
+				__forceinline explicit details_no_destructor(type* _source) noexcept :
+					p(_source), count(1) {};
+				__forceinline void* source() const noexcept final {
+					return static_cast<void*>(p.Get());
+				};
+				__forceinline int	use_count() const noexcept final {
+					return count.GetValue();
+				};
+				__forceinline void increment() const noexcept final {
+					count.Increment();
+				};
+				__forceinline int decrement() const noexcept final {
+					int i = count.Decrement();
+					if (i == 0) {
+						decltype(auto) P = p.Set(nullptr);
+						if (P) {
+							delete P;
+						}
+					}
+					return i;
+				};
+				__forceinline std::function<void(Details_Interface*)> Details_Interface_Deleter() const noexcept final {
+					return [](Details_Interface* p) {
+						if (p) {
+							decltype(auto) q = dynamic_cast<SharedPtr<type>::details_no_destructor*>(p);
+							if (q) {
+								delete q;
+							}
+							else {
+								delete p; // likely a  leak
+							}
+						}
+					};
+				};
+			private:
+				mutable swappablePtr p;
+				mutable fibers::containers::number<int> count;
+			};
+			class SharedPtr_DataImpl final : public SharedPtr_Data_Interface {
+			public:
+				explicit SharedPtr_DataImpl() = delete;
+				~SharedPtr_DataImpl() noexcept {
+					decrement();
+					m_ptr = nullptr;
+				};
+				explicit SharedPtr_DataImpl(SharedPtr_DataImpl const&) = delete;
+				explicit SharedPtr_DataImpl(SharedPtr_DataImpl&&) = delete;
+				SharedPtr_DataImpl& operator=(SharedPtr_DataImpl const&) = delete;
+				SharedPtr_DataImpl& operator=(SharedPtr_DataImpl&&) = delete;
+
+				__forceinline explicit SharedPtr_DataImpl(const SharedPtr_Data_Interface& other, type* _ptr) noexcept : det(other.ptr()), m_ptr(_ptr) {
+					increment();
+				};
+
+				__forceinline explicit SharedPtr_DataImpl(const SharedPtr_Data_Interface& other, std::function<type* (void*)> _getter) noexcept : det(other.ptr()) {
+					m_ptr = _getter(other.source());
+					increment();
+				};
+
+				__forceinline explicit SharedPtr_DataImpl(type* _source, std::function<void(type*)> _on_destroy, std::function<type* (void*)> _getter) noexcept :
+					det(new details(_source, std::move(_on_destroy)))
+				{
+					m_ptr = _source;
+				};
+				__forceinline explicit SharedPtr_DataImpl(type* _source, std::function<type* (void*)> _getter) noexcept : det(new details_no_destructor(_source)) {
+					m_ptr = _source;
+				};
+
+				template <typename Q = type, typename = std::enable_if_t<!std::is_same_v<Q, void>> >
+				__forceinline explicit SharedPtr_DataImpl(std::function<type* (void*)> _getter) noexcept : det(new details_withData()) {
+					m_ptr = _getter(source());
+				};
+
+				template <typename Q = type, typename = std::enable_if_t<!std::is_same_v<Q, void>> >
+				__forceinline explicit SharedPtr_DataImpl(std::decay_t<typename std::remove_reference<typename std::remove_pointer<Q>::type>::type>&& _obj, std::function<type* (void*)> _getter) noexcept : det(new details_withData(std::forward<type>(_obj))) {
+					m_ptr = _getter(source());
+				};
+
+				template <typename Q = type, typename = std::enable_if_t<!std::is_same_v<Q, void>> >
+				__forceinline explicit SharedPtr_DataImpl(std::decay_t<typename std::remove_reference<typename std::remove_pointer<Q>::type>::type>const& _obj, std::function<type* (void*)> _getter) noexcept : det(new details_withData(_obj)) {
+					m_ptr = _getter(source());
+				};
+
+				__forceinline void* source() const noexcept final {
+					decltype(auto) p = det.Get();
+					if (p) {
+						return p->source();
+					}
+					return nullptr;
+				};
+				__forceinline int	use_count() const noexcept final {
+					decltype(auto) p = det.Get();
+					if (p) {
+						return p->use_count();
+					}
+					return 0;
+				};
+				__forceinline void increment() const noexcept final {
+					decltype(auto) p = det.Get();
+					if (p) {
+						p->increment();
+					}
+				};
+				__forceinline int decrement() const noexcept final {
+					int i = -1;
+					decltype(auto) p = det.Get();
+					if (p) {
+						i = p->decrement();
+						if (i == 0) {
+							{
+								decltype(auto) p2 = det.Set(nullptr);
+								m_ptr = nullptr;
+								if (p2 != nullptr) {
+									decltype(auto) func = p2->Details_Interface_Deleter();
+									func(p2);
+								}
+								else {
+									delete p; // likely a leak
+								}
+							}
+						}
+					}
+					return i;
+				};
+				__forceinline fibers::synchronization::atomic_ptr<Details_Interface>& ptr() const noexcept final { return det; };
+
+			public:
+				mutable fibers::synchronization::atomic_ptr<Details_Interface>	det;
+				mutable type* m_ptr;
+			};
+#pragma endregion 
+#pragma region Type Defs
+		public:
+			typedef type						Type;
+			typedef type* PtrType;
+#pragma endregion 
+#pragma region Data Members
+		public:
+			mutable fibers::containers::number<int>									mutex;
+			mutable fibers::synchronization::atomic_ptr<SharedPtr_DataImpl>			m_data;
+#pragma endregion 
+#pragma region Create or Destroy
+		public:
+			/*! Create an empty pointer (nullptr) */
+			constexpr SharedPtr() noexcept : mutex(0), m_data(nullptr) {};
+
+			/*! Instantiate a shared pointer by handing over a nullptr */
+			constexpr SharedPtr(std::nullptr_t) noexcept : mutex(0), m_data(nullptr) {};
+
+			/*! Instantiate a shared pointer by handing over a "new pointer()" to be managed, shared, and ultimately deleted by the shared pointer. */
+			__forceinline SharedPtr(PtrType source) noexcept : mutex(0), m_data(InitData(source)) {};
+
+			/*! Instantiate a shared pointer by handing over a "new pointer()" to be managed, shared, and ultimately deleted by the shared pointer. */
+			__forceinline SharedPtr(PtrType source, std::function<void(PtrType)> destroy) noexcept : mutex(0), m_data(InitData(source, std::move(destroy))) {};
+
+			/*! Instantiate a shared pointer by handing over a "new pointer()" to be managed, shared, and ultimately deleted by the shared pointer. */
+			__forceinline SharedPtr(PtrType source, std::function<void(PtrType)> destroy, std::function<PtrType(void*)> _getter) noexcept : mutex(0), m_data(InitData(source, std::move(destroy), std::move(_getter))) {};
+
+			/*! instantiate with a constructor and destructor */
+			__forceinline SharedPtr(std::function<PtrType()> create, std::function<void(PtrType)> destroy) noexcept : mutex(0), m_data(InitData(std::move(create), std::move(destroy))) {};
+
+			/*! instantiate from another ptr */
+			SharedPtr(SharedPtr const& samePtr) noexcept : mutex(0), m_data(InitDataFromAnotherPtr(samePtr)) {};
+			SharedPtr(SharedPtr&& other) noexcept : mutex(0), m_data(InitDataFromAnotherPtr(std::forward<SharedPtr>(other))) {};
+
+			/*! instantiate from another ptr with complex "get" instructions */
+			__forceinline SharedPtr(SharedPtr const& samePtr, std::function<PtrType(void*)> _getter) noexcept : mutex(0), m_data(InitDataFromAnotherPtr(samePtr, std::move(_getter))) {};
+			__forceinline SharedPtr(SharedPtr&& other, std::function<PtrType(void*)> _getter) noexcept : mutex(0), m_data(InitDataFromAnotherPtr(std::forward<SharedPtr>(other), std::move(_getter))) {};
+
+			/*! instantiate from another ptr with a different Type, using basic cast operations */
+			template <typename T, typename = std::enable_if_t<!std::is_same_v<Type, T>> >
+			__forceinline SharedPtr(SharedPtr<T> const& similarPtr) noexcept : mutex(0), m_data(InitDataFromAnotherPtr(similarPtr, [](void* p) constexpr -> PtrType {
+				if constexpr (std::is_polymorphic<Type>::value && std::is_polymorphic<T>::value && (std::is_base_of<T, Type>::value || std::is_base_of<Type, T>::value)) {
+					return dynamic_cast<PtrType>((T*)p);
+				}
+				else {
+					return static_cast<PtrType>((T*)p);
+				}
+				// return static_cast<PtrType>((T*)p); // dynamic_cast
+				})) {};
+				template <typename T, typename = std::enable_if_t<!std::is_same_v<Type, T>> >
+				__forceinline SharedPtr(SharedPtr<T>&& other) noexcept : mutex(0), m_data(InitDataFromAnotherPtr(std::forward<SharedPtr<T>>(other), [](void* p) constexpr -> PtrType {
+					if constexpr (std::is_polymorphic<Type>::value && std::is_polymorphic<T>::value && (std::is_base_of<T, Type>::value || std::is_base_of<Type, T>::value)) {
+						return dynamic_cast<PtrType>((T*)p);
+					}
+					else {
+						return static_cast<PtrType>((T*)p);
+					}
+					// return static_cast<PtrType>((T*)p); // dynamic_cast
+					})) {};
+
+					/*! instantiate from another ptr with a different Type with complex "get" instructions */
+					template <typename T, typename = std::enable_if_t<!std::is_same_v<Type, T>> >
+					__forceinline SharedPtr(SharedPtr<T> const& similarPtr, std::function<PtrType(void*)> _getter) noexcept : mutex(0), m_data(InitDataFromAnotherPtr(similarPtr, std::move(_getter))) {};
+					template <typename T, typename = std::enable_if_t<!std::is_same_v<Type, T>> >
+					__forceinline SharedPtr(SharedPtr<T>&& other, std::function<PtrType(void*)> _getter) noexcept : mutex(0), m_data(InitDataFromAnotherPtr(std::forward<SharedPtr<T>>(other), std::move(_getter))) {};
+
+					template <typename Q = type, typename = std::enable_if_t<!std::is_same_v<Q, void>> >
+					__forceinline SharedPtr(std::decay_t<typename std::remove_reference<typename std::remove_pointer<Q>::type>::type> const& source) noexcept : mutex(0), m_data(
+						new SharedPtr_DataImpl(source, std::function<PtrType(void*)>([](void* p) constexpr -> PtrType {return (PtrType)p; }))
+					) {};
+
+					template <typename Q = type, typename = std::enable_if_t<!std::is_same_v<Q, void>> >
+					__forceinline SharedPtr(std::decay_t<typename std::remove_reference<typename std::remove_pointer<Q>::type>::type>&& source) noexcept : mutex(0), m_data(
+						new SharedPtr_DataImpl(std::forward<std::decay_t<typename std::remove_reference<typename std::remove_pointer<Q>::type>::type>>(source), std::function<PtrType(void*)>([](void* p) constexpr -> PtrType {return (PtrType)p; }))
+					) {};
+
+					template <typename Q = type, typename = std::enable_if_t<!std::is_same_v<Q, void>> >
+					__forceinline static SharedPtr<Q> InstantiateInline() {
+						decltype(auto) toReturn = SharedPtr<Q>();
+						toReturn.UnsafeSetData(
+							new SharedPtr_DataImpl(
+								std::function<PtrType(void*)>([](void* p) constexpr -> PtrType {return (PtrType)p; })
+							)
+						);
+						return toReturn;
+					};
+
+					/*! Destroy this instance of the shared pointer and potentially delete the data */
+					~SharedPtr() noexcept {
+						ClearData();
+					};
+#pragma endregion
+#pragma region Internal Support Functions
+		public:
+			__forceinline PtrType Get() const {
+				PtrType out{ nullptr };
+				Lock();
+				if (m_data) {
+					out = m_data->m_ptr;
+				}
+				Unlock();
+				return out;
+			};
+
+		public:
+			__forceinline void Lock() const noexcept { while (mutex.Increment() != 1) mutex.Decrement(); };
+			__forceinline void Unlock() const noexcept { mutex.Decrement(); };
+			PtrType UnsafeGet() const noexcept {
+				if (m_data) {
+					return m_data->m_ptr;
+				}
+				return nullptr;
+			};
+			template <typename... Args> void UnsafeSet(Args... Fargs) { UnsafeSetData(SharedPtr<type>::InitData(Fargs...)); };
+		protected:
+			template <typename T> static SharedPtr_DataImpl* InitDataFromAnotherPtr(SharedPtr<T> const& Ptr) noexcept {
+				SharedPtr<type>::SharedPtr_DataImpl* out = nullptr;
+				Ptr.Lock();
+				typename SharedPtr<T>::SharedPtr_DataImpl* p = Ptr.m_data.Get();
+				if (p) {
+					out = new SharedPtr<type>::SharedPtr_DataImpl(*p, p->m_ptr);
+				}
+				Ptr.Unlock();
+				return out;
+			};
+			template <typename T> __forceinline static SharedPtr_DataImpl* InitDataFromAnotherPtr(SharedPtr<T> const& Ptr, std::function<PtrType(void*)> from) noexcept {
+				SharedPtr<type>::SharedPtr_DataImpl* out = nullptr;
+				Ptr.Lock();
+				typename SharedPtr<T>::SharedPtr_DataImpl* p = Ptr.m_data.Get();
+				if (p) {
+					out = new SharedPtr<type>::SharedPtr_DataImpl(*p, std::move(from));
+				}
+				Ptr.Unlock();
+				return out;
+			};
+			template <typename T, typename = std::enable_if_t<!std::is_same_v<Type, T>> > __forceinline static SharedPtr_DataImpl* InitDataFromAnotherPtr(SharedPtr<T>&& Ptr) noexcept {
+				return InitDataFromAnotherPtr(std::forward<SharedPtr<T>>(Ptr), [](void* p) constexpr -> PtrType { return (PtrType)p; });
+			};
+			template <typename T, typename = std::enable_if_t<!std::is_same_v<Type, T>> > __forceinline static SharedPtr_DataImpl* InitDataFromAnotherPtr(SharedPtr<T>&& Ptr, std::function<type* (void*)> from) noexcept {
+				Ptr.Lock();
+				typename SharedPtr<T>::SharedPtr_DataImpl* p = Ptr.m_data.Set(nullptr);
+				if (p) {
+					decltype(auto) d = new SharedPtr<type>::SharedPtr_DataImpl(*p, std::move(from));
+					Ptr.Unlock();
+					delete p;
+					return d;
+				}
+				Ptr.Unlock();
+				return nullptr;
+			};
+
+
+			static SharedPtr_DataImpl* InitDataFromAnotherPtr(SharedPtr&& Ptr) noexcept {
+				//SharedPtr_DataImpl* p;
+				// Ptr.Lock(); // lock is unecessary since no other resource should be able to access this pointer
+				return /* p = */ Ptr.m_data.Set(nullptr);
+				// Ptr.Unlock();
+				// return p;
+			};
+			static SharedPtr_DataImpl* InitDataFromAnotherPtr(SharedPtr&& Ptr, std::function<type* (void*)> from) noexcept {
+				Ptr.Lock();
+				typename SharedPtr<type>::SharedPtr_DataImpl* p = Ptr.m_data.Set(nullptr);
+				if (p) {
+					decltype(auto) d = new SharedPtr<type>::SharedPtr_DataImpl(*p, std::move(from));
+					Ptr.Unlock();
+					delete p;
+					return d;
+				}
+				Ptr.Unlock();
+				return nullptr;
+			};
+
+			__forceinline static decltype(auto) InitData(PtrType source, std::function<PtrType(void*)> from) noexcept {
+				return new SharedPtr_DataImpl(source, std::move(from));
+			};
+			__forceinline static decltype(auto) InitData(PtrType source, std::function<void(PtrType)> destroy, std::function<PtrType(void*)> from) noexcept {
+				return new SharedPtr_DataImpl(source, std::move(destroy), std::move(from));
+			};
+			__forceinline static decltype(auto) InitData(PtrType source) noexcept { return InitData(source, std::function<PtrType(void*)>([](void* p) constexpr -> PtrType {return (PtrType)p; })); };
+			__forceinline static decltype(auto) InitData(PtrType source, std::function<void(PtrType)> destroy) noexcept { return InitData(source, std::move(destroy), std::function<PtrType(void*)>([](void* p) constexpr -> PtrType {return (PtrType)p; })); };
+			__forceinline static decltype(auto) InitData(std::function<PtrType()> create) noexcept { return InitData(create()); };
+			__forceinline static decltype(auto) InitData(std::function<PtrType()> create, std::function<PtrType(void*)> from) noexcept { return InitData(create(), std::move(from)); };
+			__forceinline static decltype(auto) InitData(std::function<PtrType()> create, std::function<void(PtrType)> destroy) noexcept { return InitData(create(), std::move(destroy)); };
+			__forceinline static decltype(auto) InitData(std::function<PtrType()> create, std::function<void(PtrType)> destroy, std::function<PtrType(void*)> from) noexcept { return InitData(create(), std::move(destroy), std::move(from)); };
+
+			__forceinline void SetData(SharedPtr_DataImpl* p) const noexcept {
+				Lock();
+				decltype(auto) d = m_data.Set(p);
+				Unlock();
+				if (d) {
+					delete d;
+				}
+			};
+			__forceinline void UnsafeSetData(SharedPtr_DataImpl* p) const noexcept {
+				decltype(auto) d = m_data.Set(p);
+				if (d) {
+					delete d;
+				}
+			};
+			__forceinline void ClearData() const noexcept { SetData(nullptr); };
+
+#pragma endregion 
+#pragma region Boolean Operators
+		public:
+			__forceinline constexpr explicit operator bool() const { return m_data.Get(); };
+			__forceinline friend bool operator==(const SharedPtr& a, const SharedPtr& b) noexcept { return a.Get() == b.Get(); };
+			__forceinline friend bool operator!=(const SharedPtr& a, const SharedPtr& b) noexcept { return a.Get() != b.Get(); };
+			__forceinline friend bool operator<(const SharedPtr& a, const SharedPtr& b) noexcept { return a.Get() < b.Get(); };
+			__forceinline friend bool operator<=(const SharedPtr& a, const SharedPtr& b) noexcept { return a.Get() <= b.Get(); };
+			__forceinline friend bool operator>(const SharedPtr& a, const SharedPtr& b) noexcept { return a.Get() > b.Get(); };
+			__forceinline friend bool operator>=(const SharedPtr& a, const SharedPtr& b) noexcept { return a.Get() >= b.Get(); };
+			__forceinline friend bool operator==(const SharedPtr& a, std::nullptr_t) noexcept { return a.m_data.Get() == nullptr; };
+			__forceinline friend bool operator!=(const SharedPtr& a, std::nullptr_t) noexcept { return a.m_data.Get() != nullptr; };
+			__forceinline friend bool operator<(const SharedPtr& a, std::nullptr_t) noexcept { return a.m_data.Get() < nullptr; };
+			__forceinline friend bool operator<=(const SharedPtr& a, std::nullptr_t) noexcept { return a.m_data.Get() <= nullptr; };
+			__forceinline friend bool operator>(const SharedPtr& a, std::nullptr_t) noexcept { return a.m_data.Get() > nullptr; };
+			__forceinline friend bool operator>=(const SharedPtr& a, std::nullptr_t) noexcept { return a.m_data.Get() >= nullptr; };
+			__forceinline friend bool operator==(std::nullptr_t, const SharedPtr& a) noexcept { return nullptr == a.m_data.Get(); };
+			__forceinline friend bool operator!=(std::nullptr_t, const SharedPtr& a) noexcept { return nullptr != a.m_data.Get(); };
+			__forceinline friend bool operator<(std::nullptr_t, const SharedPtr& a) noexcept { return nullptr < a.m_data.Get(); };
+			__forceinline friend bool operator<=(std::nullptr_t, const SharedPtr& a) noexcept { return nullptr <= a.m_data.Get(); };
+			__forceinline friend bool operator>(std::nullptr_t, const SharedPtr& a) noexcept { return nullptr > a.m_data.Get(); };
+			__forceinline friend bool operator>=(std::nullptr_t, const SharedPtr& a) noexcept { return nullptr >= a.m_data.Get(); };
+#pragma endregion
+#pragma region Ptr Casting
+		public:
+			/*! Create a shared pointer from this one with an added const component to the underlying managed object type */
+			__forceinline SharedPtr<typename std::add_const<Type>::type> ConstReference() const noexcept {
+				typedef typename std::add_const<Type>::type newT;
+				SharedPtr<newT> out;
+				typedef typename SharedPtr<type>::SharedPtr_DataImpl oldDI;
+				typedef typename SharedPtr<newT>::SharedPtr_DataImpl newDI;
+				typedef typename SharedPtr<newT>::PtrType newP;
+				std::function<newP(void*)> _getter = [](void* p) {
+					return (newP)(p);
+				};
+
+				newDI* d_p = nullptr;
+				{
+					this->Lock();
+					oldDI* p = this->m_data.Get();
+					if (p) {
+						d_p = new newDI(*p, _getter);
+					}
+					this->Unlock();
+				}
+				out.m_data.Set(d_p);
+
+				return out;
+			};
+			/*! Create a shared pointer from this one with an removed const component to the underlying managed object type */
+			__forceinline SharedPtr<typename std::remove_const<Type>::type> RemoveConstReference() const noexcept {
+				typedef typename std::remove_const<Type>::type newT;
+				SharedPtr<newT> out;
+				typedef typename SharedPtr<type>::SharedPtr_DataImpl oldDI;
+				typedef typename SharedPtr<newT>::SharedPtr_DataImpl newDI;
+				typedef typename SharedPtr<newT>::PtrType newP;
+				std::function<newP(void*)> _getter = [](void* p) {
+					return (newP)(p);
+				};
+
+				newDI* d_p = nullptr;
+				{
+					this->Lock();
+					oldDI* p = this->m_data.Get();
+					if (p) {
+						d_p = new newDI(*p, _getter);
+					}
+					this->Unlock();
+				}
+				out.m_data.Set(d_p);
+
+				return out;
+			};
+			/*! Create a shared pointer from this one that casts the underlying type to another underlying type (i.e. for derived types) */
+			template<typename astype> __forceinline SharedPtr<typename std::remove_const<astype>::type> CastReference() const noexcept {
+				using newT = typename std::remove_const<astype>::type;
+				SharedPtr<newT> out;
+				using oldDI = typename SharedPtr<type>::SharedPtr_DataImpl;
+				using newDI = typename SharedPtr<newT>::SharedPtr_DataImpl;
+				using  newP = typename SharedPtr<newT>::PtrType;
+
+				SharedPtr<type> copy = *this;
+				std::function<newP(void*)> _getter = [copy](void* p) {
+					return dynamic_cast<newP>(copy.Get());
+				};
+
+				newDI* d_p = nullptr;
+				{
+					this->Lock();
+					oldDI* p = this->m_data.Get();
+					if (p) {
+						d_p = new newDI(*p, _getter);
+					}
+					this->Unlock();
+				}
+				out.m_data.Set(d_p);
+
+				return out;
+			};
+#pragma endregion
+#pragma region Data Access
+		public:
+			/*! Pointer Access (never throws) (no race conditions) */
+			__forceinline PtrType operator->() const noexcept { return Get(); };
+
+			template<typename Q = type> __forceinline typename std::enable_if<!std::is_same<Q, void>::value, Q&>::type operator[](std::ptrdiff_t idx) const
+			{
+				decltype(auto) x = Get();
+				if (x) return x[idx];
+				throw(std::runtime_error(std::string("SharedPtr was null with indexed access")));
+			};
+
+			template<typename Q = type> __forceinline typename std::enable_if<!std::is_same<Q, void>::value, Q&>::type operator*() const
+			{
+				decltype(auto) x = Get();
+				if (x) return *x;
+				throw(std::runtime_error(std::string("SharedPtr was null with reference access")));
+			};
+
+			template<typename Q = type> __forceinline typename std::enable_if<std::is_same<Q, void>::value, void>::type operator[](std::ptrdiff_t idx) const { throw(std::exception("SharedPtr was null with indexed access")); };
+
+			template<typename Q = type> __forceinline typename std::enable_if<std::is_same<Q, void>::value, void>::type operator*() const { throw(std::exception("SharedPtr was null with reference access")); };
+
+#pragma endregion
+#pragma region Assignment Operators
+		public:
+			/*! Share ownership */
+			__forceinline SharedPtr& operator=(const SharedPtr& other) noexcept {
+				if (other == *this) { return *this; }
+
+				decltype(auto) p = InitDataFromAnotherPtr(other);
+				SetData(p);
+
+				return *this;
+			};
+
+			/*! Take ownership */
+			__forceinline SharedPtr& operator=(SharedPtr&& other) noexcept {
+				if (other == *this) { return *this; }
+
+				other.Lock();
+				decltype(auto) p = other.m_data.Set(nullptr);
+				other.Unlock();
+				SetData(p);
+
+				return *this;
+			};
+#pragma endregion
+#pragma region Swap Operators
+		public:
+			__forceinline SharedPtr& Swap(SharedPtr& other) {
+				SharedPtr t = *this;
+				*this = other;
+				other = t;
+				return *this;
+			};
+#pragma endregion
+#pragma region "std::shared_ptr" Compatability Methods
+		public:
+			/*! Get access to the underlying data in a thread-safe way. (The underlying data isn't necessarily thread-safe, but accessing the pointer itself has no data race.) */
+			__forceinline PtrType get() const noexcept { return Get(); };
+			/*! Empty the current data pointer and free the data. */
+			__forceinline void reset() { SharedPtr().Swap(*this); };
+			/*! Exchange the current data with the provided new data. */
+			template< class Y > __forceinline void reset(Y* ptr) { SharedPtr(ptr).Swap(*this); };
+			/*! Swap shared pointers */
+			__forceinline void swap(SharedPtr& r) { Swap(r); };
+			/*! Number of shared pointers with access to the underlying data, including this one. */
+			__forceinline long use_count() const noexcept {
+				long out(0);
+				Lock();
+				decltype(auto) d = m_data.Get();
+				if (d) {
+					out = d->use_count();
+				}
+				Unlock();
+				return out;
+			};
+#pragma endregion
+#pragma region Guard
+		public:
+			class SharedPtrGuard {
+			public:
+				constexpr explicit operator bool() const { return m_p; };
+				SharedPtrGuard() = delete;
+				SharedPtrGuard(SharedPtrGuard&&) = delete;
+				SharedPtrGuard(SharedPtrGuard const&) = delete;
+				SharedPtrGuard& operator=(SharedPtrGuard const&) = delete;
+				SharedPtrGuard& operator=(SharedPtrGuard&&) = delete;
+				explicit SharedPtrGuard(const SharedPtr* p_p) noexcept : m_p(p_p) { p_p->Lock(); }
+				~SharedPtrGuard() noexcept { m_p->Unlock(); };
+			private:
+				const SharedPtr* m_p;
+			};
+			[[nodiscard]] SharedPtrGuard Guard() const noexcept { return SharedPtrGuard(this); };
+#pragma endregion
+		};
+
+		template <typename type> __forceinline SharedPtr<type> make_shared() {
+			if constexpr (std::is_copy_constructible<type>::value) {
+				return SharedPtr<type>::InstantiateInline();
+			}
+			else {
+				return SharedPtr<type>(new type());
+			}
+		};
+		template <typename type> __forceinline SharedPtr<type> make_shared(type* p) { return SharedPtr<type>(p); };
+		template<typename type, typename t1, typename = std::enable_if_t<!std::is_same_v<type*, t1>>> __forceinline SharedPtr<type> make_shared(t1&& d) { return SharedPtr<type>(new type(std::forward<t1>(d))); };
+		template <typename type, typename t1, typename = std::enable_if_t<!std::is_same_v<type*, t1>>, class ...Args> __forceinline SharedPtr<type> make_shared(t1&& d, Args&&... Fargs) { return SharedPtr<type>(new type(std::forward<t1>(d), std::forward<Args>(Fargs)...)); };
+
 	};
 
 	namespace containers {
 		enum class interp_t { LEFT, RIGHT, LINEAR, SPLINE };
 
-		/* Fiber- and thread-safe lock-free sorted container for time-series patterns, where the x- and y-values may be integers, floating numbers, long doubles, etc. */
+		/* *THREAD SAFE* Fiber- and thread-safe lock-free sorted container for time-series patterns, where the x- and y-values may be integers, floating numbers, long doubles, etc. */
 		template <typename xType, typename yType> class Pattern {
 		protected:
 			using underlying = fibers::utilities::dbgroup::index::bw_tree::BwTree<
@@ -4604,7 +5276,214 @@ namespace fibers {
 
 		};
 
-		/* *THREAD SAFE* Thread-safe and fiber-safe sorted map. KeyType may be anything that can be hashed, and ObjType must be copy-by-value. */
+		/* *THREAD SAFE* Fiber- and thread-safe unsorted map. KeyType may be anything that can be hashed, and ObjType must be copy-by-value. */
+		template <typename KeyType = std::string, typename ObjType = std::string, typename Hasher = std::hash<KeyType>> class MapImpl {
+		private:
+			concurrency::concurrent_unordered_map<size_t, std::pair<KeyType, ObjType>> map{};
+			mutable fibers::synchronization::shared_mutex<fibers::synchronization::mutex> mut{};
+
+		public:
+			MapImpl() = default;
+			MapImpl(MapImpl const&) = delete;
+			MapImpl(MapImpl&&) = delete;
+			MapImpl& operator=(MapImpl const&) = delete;
+			MapImpl& operator=(MapImpl&&) = delete;
+			~MapImpl() = default;
+
+		public:
+			/* emplaces the object at the key in the map. */
+			bool emplace(KeyType const& key, ObjType const& object, bool overwriteIfExists = true) {
+				size_t key_hash = Hasher()(key);
+				auto lock{ std::shared_lock(mut) };
+				map.insert(std::pair<size_t, std::pair<KeyType, ObjType>>(key_hash, std::pair<KeyType, ObjType>(key, object)));
+				return true;
+			};
+			/* emplaces the object at the key in the map. */
+			bool emplace(KeyType const& key, ObjType&& object, bool overwriteIfExists = true) {
+				size_t key_hash = Hasher()(key); 
+				auto lock{ std::shared_lock(mut) };
+				map.insert(std::pair<size_t, std::pair<KeyType, ObjType>>(key_hash, std::pair<KeyType, ObjType>(key, std::forward<ObjType>(object))));
+				return true;
+			};
+			/* emplaces the object at the key in the map. */
+			bool insert(std::pair<KeyType, ObjType> const& pair, bool overwriteIfExists = true) { return emplace(pair.first, pair.second, overwriteIfExists); };
+			/* emplaces the object at the key in the map. */
+			bool insert(std::pair<KeyType, ObjType>&& pair, bool overwriteIfExists = true) { return emplace(std::move(pair.first), std::move(pair.second), overwriteIfExists); };
+			/* returns a COPY of the value at the key. Returns empty if the value is not found. */
+			std::optional<ObjType> at_hash(size_t const& key_hash) const {
+				auto lock{ std::shared_lock(mut) };
+				auto ptr = map.find(key_hash);
+				if (ptr != map.end()) {
+					return ptr->second.second;
+				}
+				return std::nullopt;
+			};
+			/* returns a COPY of the value at the key. Returns default values if the value is not found. */
+			ObjType at_hash_or(size_t const& key_hash, ObjType const& defaultObj = ObjType()) const {
+				return at_hash(key_hash).value_or(defaultObj);
+			};
+			/* returns a COPY of the value at the key. Returns empty if the value is not found. */
+
+			std::optional<ObjType> at(KeyType const& key) const {
+				return at_hash(Hasher()(key));
+			};
+			/* returns a COPY of the value at the key. Returns default values if the value is not found. */
+			ObjType at_or(KeyType const& key, ObjType const& defaultObj = ObjType()) const {
+				return at(key).value_or(defaultObj); 
+			};
+
+			/* returns a COPY of the value at the hashed key. Returns empty if the value is not found.
+			Allows user to calculate the hash externally from the Map. */
+			ObjType get_or_insert(KeyType const& key, ObjType const& defaultObj = ObjType()) {
+				while (true) {
+					auto optionalF = at(key);
+					if (optionalF.has_value()) 
+						return optionalF.value();
+					else 
+						emplace(key, defaultObj);					
+				}
+			};
+
+
+			/* queues the key to be erased. Note that the erasure may be delayed depending on use of the map. */
+			bool erase(KeyType const& key) {
+				size_t key_hash = Hasher()(key);
+				auto lock{ std::unique_lock(mut) };
+
+				return map.unsafe_erase(key_hash) > 0;
+			};
+			/* returns true if the key is in the map. */
+			bool contains(KeyType const& key) const {
+				size_t key_hash = Hasher()(key);
+				auto lock{ std::shared_lock(mut) };
+				return map.find(key_hash) != map.end();
+			};
+			/* returns true if the key is in the map. */
+			size_t count(KeyType const& key) const {
+				size_t key_hash = Hasher()(key);
+				auto lock{ std::shared_lock(mut) };
+				return map.count(key_hash);
+			};
+			/* returns the list of all keys currently in the map */
+			std::vector<KeyType> keys() const {
+				auto lock{ std::shared_lock(mut) };
+
+				std::vector<KeyType> out;
+				for (auto& x : map) {
+					out.push_back(x.second.first);
+				}
+				return out;
+			};
+			/* attempts to find the key associated to the provided object, if found. */
+			std::optional<KeyType> key_of(ObjType const& obj) const {
+				auto lock{ std::shared_lock(mut) };
+
+				for (auto& x : map) {
+					if (x.second.second == obj) {
+						return x.second.first;
+					}
+				}
+				return std::nullopt;
+			};
+
+			size_t size() const {
+				auto lock{ std::shared_lock(mut) };
+				return map.size();
+			};
+
+			void TryCleanupUnusedMemory() {}; // does nothing 
+
+			struct Iterator : public std::iterator<std::forward_iterator_tag, std::pair<KeyType, ObjType>> {
+			public:
+				using difference_type = typename std::iterator<std::forward_iterator_tag, std::pair<KeyType, ObjType>>::difference_type;
+
+				Iterator() = default;
+				Iterator(MapImpl*&& _parent, int pos) :
+					parent{ std::forward<MapImpl*>(_parent) }
+					, _ptr{ begin_impl(_parent) }
+					, result{}
+					, position{ pos }
+				{
+					while (pos > 0/* && _ptr*/) { ++_ptr;  --pos; }
+				};
+				Iterator(const Iterator& rhs) :
+					parent{ rhs.parent }
+					, _ptr{ begin_impl(rhs.parent) }
+					, result{}
+					, position{ rhs.position }
+				{
+					int pos = position; while (pos > 0/* && _ptr*/) { ++_ptr;  --pos; }
+				};
+				Iterator(Iterator&& rhs) = default;
+				Iterator& operator=(const Iterator& rhs) {
+					parent = rhs.parent;
+					_ptr = begin_impl(rhs.parent);
+					position = rhs.position;
+
+					int pos = position; while (pos > 0/* && _ptr*/) { ++_ptr;  --pos; }
+				};
+				Iterator& operator=(Iterator&& rhs) {
+					parent = rhs.parent;
+					_ptr = begin_impl(rhs.parent);
+					position = rhs.position;
+
+					int pos = position; while (pos > 0/* && _ptr*/) { ++_ptr;  --pos; }
+				};
+				~Iterator() = default;
+
+				std::pair<KeyType, ObjType>& operator*() const { LoadResult(); return result; };
+				std::pair<KeyType, ObjType>* operator->() const { LoadResult(); return &result; };
+
+				Iterator& operator++() { Increment(); return *this; }
+
+				explicit operator bool() const { return Valid(); };
+				bool operator==(const Iterator& rhs) const {
+					if (!rhs.Valid() && !Valid()) return true;
+					if (!rhs.Valid()) {
+						return !Valid();
+					}
+					if (!Valid()) {
+						return !rhs.Valid();
+					}
+					return _ptr == rhs._ptr;
+				}
+				bool operator!=(const Iterator& rhs) const { return !operator==(rhs); }
+
+				Iterator begin() const { return Iterator(*this); };
+				Iterator end() const { return Iterator(nullptr, 0); };
+
+			private:
+				bool Valid() const { 
+					return (parent && (_ptr != parent->map.end()));
+				};
+				void Increment() { if (Valid()) ++_ptr; ++position; };
+				void LoadResult() const { if (Valid() && parent) { result = _ptr->second; } };
+
+				static typename decltype(map)::iterator begin_impl(MapImpl* parent) {
+					if (parent) {
+						return parent->map.begin();
+					}
+					return typename decltype(map)::iterator();
+				};
+
+			public:
+				MapImpl* parent{ nullptr };
+				mutable typename decltype(map)::iterator _ptr{};
+				mutable std::pair<KeyType, ObjType> result{};
+				int position{ 0 };
+
+			};
+			using iterator = Iterator;
+			using const_iterator = Iterator;
+
+			Iterator begin() const { return Iterator(const_cast<MapImpl*>(this), 0); };
+			Iterator end() const { return Iterator(nullptr, 0); };
+			Iterator cbegin() const { return begin(); };
+			Iterator cend() const { return end(); };
+		};
+
+		/* *THREAD SAFE* Fiber- and thread-safe sorted map. KeyType may be anything that can be hashed, and ObjType must be copy-by-value. */
+#if 0
 		template <typename KeyType = std::string, typename ObjType = std::string, typename Hasher = std::hash<KeyType>> class Map {
 		private:
 			mutable std::shared_ptr<fibers::utilities::GarbageCollectedAllocator<std::pair<KeyType, ObjType>>>
@@ -4841,12 +5720,422 @@ namespace fibers {
 			Iterator cbegin() const { return begin(); };
 			Iterator cend() const { return end(); };
 		};
+#endif
 
-		/* *THREAD SAFE* Thread-safe and fiber-safe wrapper for any type of number, from integers to doubles.
-		   Significant performance boost if the data type is an integer type or one of: long, unsigned int, unsigned long, unsigned __int64
-		   Slower, but still atomic using multi-word CAS algorithms, if using floating-point numbers like doubles or floats.
-		*/
-		template<typename _Value_type> using number = fibers::synchronization::atomic_number<_Value_type>;
+		template <typename KeyType = std::string, typename ObjType = std::string, typename Hasher = std::hash<KeyType>> class Map {
+		private:
+			std::shared_ptr< MapImpl<KeyType, ObjType, Hasher> > impl;
+
+		public:
+			Map() 
+				: impl(std::make_shared<MapImpl<KeyType, ObjType, Hasher>>())
+			{};
+			Map(Map const&) = default;
+			Map(Map&&) = default;
+			Map& operator=(Map const&) = default;
+			Map& operator=(Map&&) = default;
+			~Map() = default;
+
+		public:
+			/* emplaces the object at the key in the map. */
+			bool emplace(KeyType const& key, ObjType const& object, bool overwriteIfExists = true) {
+				return impl->emplace(key, object, overwriteIfExists);
+			};
+			/* emplaces the object at the key in the map. */
+			bool emplace(KeyType const& key, ObjType&& object, bool overwriteIfExists = true) {
+				return impl->emplace(key, std::forward<ObjType>(object), overwriteIfExists);
+			};
+			/* emplaces the object at the key in the map. */
+			bool insert(std::pair<KeyType, ObjType> const& pair, bool overwriteIfExists = true) { return emplace(pair.first, pair.second, overwriteIfExists); };
+			/* emplaces the object at the key in the map. */
+			bool insert(std::pair<KeyType, ObjType>&& pair, bool overwriteIfExists = true) { return emplace(std::move(pair.first), std::move(pair.second), overwriteIfExists); };
+			/* returns a COPY of the value at the key. Returns empty if the value is not found. */
+			std::optional<ObjType> at_hash(size_t const& key_hash) const {
+				return impl->at_hash(key_hash);
+			};
+			/* returns a COPY of the value at the key. Returns default values if the value is not found. */
+			ObjType at_hash_or(size_t const& key_hash, ObjType const& defaultObj = ObjType()) const {
+				return at_hash(key_hash).value_or(defaultObj);
+			};
+			/* returns a COPY of the value at the key. Returns empty if the value is not found. */
+			std::optional<ObjType> at(KeyType const& key) const {
+				return at_hash(Hasher()(key));
+			};
+			/* returns a COPY of the value at the key. Returns default values if the value is not found. */
+			ObjType at_or(KeyType const& key, ObjType const& defaultObj = ObjType()) const {
+				return at(key).value_or(defaultObj);
+			};
+
+			/* returns a COPY of the value at the hashed key. Returns empty if the value is not found.
+			Allows user to calculate the hash externally from the Map. */
+			ObjType get_or_insert(KeyType const& key, ObjType const& defaultObj = ObjType()) {
+				while (true) {
+					auto optionalF = at(key);
+					if (optionalF.has_value())
+						return optionalF.value();
+					else
+						emplace(key, defaultObj);
+				}
+			};
+
+			/* queues the key to be erased. Note that the erasure may be delayed depending on use of the map. */
+			bool erase(KeyType const& key) {
+				return impl->erase(key);
+			};
+			/* returns true if the key is in the map. */
+			bool contains(KeyType const& key) const {
+				return impl->contains(key);
+			};
+			/* returns true if the key is in the map. */
+			size_t count(KeyType const& key) const {
+				return impl->count(key);
+			};
+			/* returns the list of all keys currently in the map */
+			std::vector<KeyType> keys() const {
+				return impl->keys();
+			};
+			/* attempts to find the key associated to the provided object, if found. */
+			std::optional<KeyType> key_of(ObjType const& obj) const {
+				return impl->key_of(obj);
+			};
+			size_t size() const {
+				return impl->size();
+			};
+			void TryCleanupUnusedMemory() {}; // does nothing 
+
+			struct Iterator : public std::iterator<std::forward_iterator_tag, std::pair<KeyType, ObjType>> {
+			public:
+				using difference_type = typename std::iterator<std::forward_iterator_tag, std::pair<KeyType, ObjType>>::difference_type;
+
+				Iterator() = default;
+				Iterator(Map*&& _parent, int pos) :
+					parent{ std::forward<Map*>(_parent) }
+					, _ptr{ begin_impl(_parent) }
+					, result{}
+					, position{ pos }
+				{
+					while (pos > 0/* && _ptr*/) { ++_ptr;  --pos; }
+				};
+				Iterator(const Iterator& rhs) :
+					parent{ rhs.parent }
+					, _ptr{ begin_impl(rhs.parent) }
+					, result{}
+					, position{ rhs.position }
+				{
+					int pos = position; while (pos > 0/* && _ptr*/) { ++_ptr;  --pos; }
+				};
+				Iterator(Iterator&& rhs) = default;
+				Iterator& operator=(const Iterator& rhs) {
+					parent = rhs.parent;
+					_ptr = begin_impl(rhs.parent);
+					position = rhs.position;
+
+					int pos = position; while (pos > 0/* && _ptr*/) { ++_ptr;  --pos; }
+				};
+				Iterator& operator=(Iterator&& rhs) {
+					parent = rhs.parent;
+					_ptr = begin_impl(rhs.parent);
+					position = rhs.position;
+
+					int pos = position; while (pos > 0/* && _ptr*/) { ++_ptr;  --pos; }
+				};
+				~Iterator() = default;
+
+				std::pair<KeyType, ObjType>& operator*() const { LoadResult(); return result; };
+				std::pair<KeyType, ObjType>* operator->() const { LoadResult(); return &result; };
+
+				Iterator& operator++() { Increment(); return *this; }
+
+				explicit operator bool() const { return Valid(); };
+				bool operator==(const Iterator& rhs) const {
+					if (!rhs.Valid() && !Valid()) return true;
+					if (!rhs.Valid()) {
+						return !Valid();
+					}
+					if (!Valid()) {
+						return !rhs.Valid();
+					}
+					return _ptr == rhs._ptr;
+				}
+				bool operator!=(const Iterator& rhs) const { return !operator==(rhs); }
+
+				Iterator begin() const { return Iterator(*this); };
+				Iterator end() const { return Iterator(nullptr, 0); };
+
+			private:
+				bool Valid() const {
+					return (parent && (_ptr != parent->impl->end()));
+				};
+				void Increment() { if (Valid()) ++_ptr; ++position; };
+				void LoadResult() const { if (Valid() && parent) { result = *_ptr; } };
+
+				static typename MapImpl<KeyType, ObjType, Hasher>::Iterator begin_impl(Map* parent) {
+					if (parent) {
+						return parent->impl->begin();
+					}
+					return typename MapImpl<KeyType, ObjType, Hasher>::Iterator();
+				};
+
+			public:
+				Map* parent{ nullptr };
+				mutable typename MapImpl<KeyType, ObjType, Hasher>::Iterator _ptr{};
+				mutable std::pair<KeyType, ObjType> result{};
+				int position{ 0 };
+
+			};
+			using iterator = Iterator;
+			using const_iterator = Iterator;
+
+			Iterator begin() const { return Iterator(const_cast<Map*>(this), 0); };
+			Iterator end() const { return Iterator(nullptr, 0); };
+			Iterator cbegin() const { return begin(); };
+			Iterator cend() const { return end(); };
+		};
+#if 0
+		template <typename KeyType = std::string, typename ObjType = std::string, typename Hasher = std::hash<KeyType>> class Map2 {
+		private:
+			concurrency::concurrent_unordered_map<size_t, fibers::utilities::SharedPtr<std::pair<const KeyType, ObjType>>> map;
+			fibers::synchronization::shared_mutex<fibers::synchronization::mutex> mut;
+
+		public:
+			Map2()
+				: map()
+				, mut()
+			{};
+			Map2(Map2 const& o) 
+				: map(o.map)
+				, mut()
+			{};
+			Map2(Map2&& o)
+				: map(o.map)
+				, mut()
+			{};
+			Map2& operator=(Map2 const& o) {
+				auto lock{ std::unique_lock(mut) };
+				map = o.map;
+			};
+			Map2& operator=(Map2&& o) {
+				auto lock{ std::unique_lock(mut) };
+				map = o.map;
+			};
+			~Map2() = default;
+
+		public:
+			/* emplaces the object at the key in the map. */
+			bool emplace(KeyType const& key, ObjType const& object, bool overwriteIfExists = true) {
+				auto lock{ std::shared_lock(mut) };
+
+				auto hash{ Hasher()(key) };
+				{
+					auto f = map.find(hash);
+					if (f != map.end()) {
+						if (overwriteIfExists) {
+							if (f->second) {
+								f->second->second = object;
+							}
+							else {
+								f->second = fibers::utilities::make_shared<std::pair<const KeyType, ObjType>>({ key, object });
+							}
+							return true;
+						}
+						else {
+							return false;
+						}
+					}
+					else {
+						map.insert({ hash,  fibers::utilities::make_shared<std::pair<const KeyType, ObjType>>({ key, object }) });
+						return true;
+					}
+				}
+			};
+			/* emplaces the object at the key in the map. */
+			bool emplace(KeyType const& key, ObjType&& object, bool overwriteIfExists = true) {
+				auto lock{ std::shared_lock(mut) }; 
+				
+				auto hash{ Hasher()(key) };
+				{
+					auto f = map.find(hash);
+					if (f != map.end()) {
+						if (overwriteIfExists) {
+							if (f->second) {
+								f->second->second = std::forward<ObjType>(object);
+							}
+							else {
+								f->second = fibers::utilities::make_shared<std::pair<const KeyType, ObjType>>({ key, std::forward<ObjType>(object) });
+							}
+							return true;
+						}
+						else {
+							return false;
+						}
+					}
+					else {
+						map.insert({ hash,  fibers::utilities::make_shared<std::pair<const KeyType, ObjType>>({ key, std::forward<ObjType>(object) }) });
+						return true;
+					}
+				}
+			};
+			/* emplaces the object at the key in the map. */
+			bool insert(std::pair<KeyType, ObjType> const& pair, bool overwriteIfExists = true) { return emplace(pair.first, pair.second, overwriteIfExists); };
+			/* emplaces the object at the key in the map. */
+			bool insert(std::pair<KeyType, ObjType>&& pair, bool overwriteIfExists = true) { return emplace(std::move(pair.first), std::move(pair.second), overwriteIfExists); };
+			/* returns a COPY of the value at the key. Returns empty if the value is not found. */
+			std::optional<ObjType> at_hash(size_t const& key_hash) const {
+				auto lock{ std::shared_lock(mut) };
+
+				auto f = map.find(key_hash);
+				if (f != map.end() && f->second) {
+					return f->second->second;
+				}
+				else {
+					return std::nullopt;
+				}
+			};
+			/* returns a COPY of the value at the key. Returns default values if the value is not found. */
+			ObjType at_hash_or(size_t const& key_hash, ObjType const& defaultObj = ObjType()) const { return at_hash(key_hash).value_or(defaultObj); };
+			/* returns a COPY of the value at the key. Returns empty if the value is not found. */
+			std::optional<ObjType> at(KeyType const& key) const { return at_hash(Hasher()(key)); };
+			/* returns a COPY of the value at the key. Returns default values if the value is not found. */
+			ObjType at_or(KeyType const& key, ObjType const& defaultObj = ObjType()) const { return at(key).value_or(defaultObj); };
+
+			/* returns a COPY of the value at the hashed key. Returns empty if the value is not found.
+			Allows user to calculate the hash externally from the Map. */
+			ObjType get_or_insert(KeyType const& key, ObjType const& defaultObj = ObjType()) {
+				while (true) {
+					auto optionalF = at(key);
+					if (optionalF.has_value())
+						return optionalF.value();
+					else
+						emplace(key, defaultObj);
+				}
+			};
+
+			/* queues the key to be erased. Note that the erasure may be delayed depending on use of the map. */
+			bool erase(KeyType const& key) {
+				auto lock{ std::unique_lock(mut) };
+				return map.unsafe_erase(Hasher()(key)) > 0;
+			};
+			/* returns true if the key is in the map. */
+			bool contains(KeyType const& key) const {
+				auto lock{ std::shared_lock(mut) };
+				return map.count(Hasher()(key)) > 0;
+			};
+			/* returns true if the key is in the map. */
+			size_t count(KeyType const& key) const {
+				auto lock{ std::shared_lock(mut) };
+				return map.count(Hasher()(key));
+			};
+			/* returns the list of all keys currently in the map */
+			std::vector<KeyType> keys() const {
+				auto lock{ std::shared_lock(mut) };
+
+				std::vector<KeyType> out;
+				for (auto& x : map) {
+					if (x.second) {
+						out.push_back(x.second->first);
+					}
+				}
+				return out;
+			};
+			/* attempts to find the key associated to the provided object, if found. */
+			std::optional<KeyType> key_of(ObjType const& obj) const {
+				auto lock{ std::shared_lock(mut) };
+				for (auto& x : map) {
+					if (x.second && x.second->second == obj) {
+						return x.second->first;
+					}
+				}
+				return std::nullopt;
+			};
+			size_t size() const {
+				auto lock{ std::shared_lock(mut) };
+				return map.size();
+			};
+			void TryCleanupUnusedMemory() {}; // does nothing 
+
+
+
+
+
+
+
+
+			struct Iterator : public std::iterator<std::forward_iterator_tag, std::pair<const KeyType, ObjType>> {
+			public:
+				Map2* parent{ nullptr };
+				mutable typename decltype(map)::iterator _ptr{};
+				mutable fibers::utilities::SharedPtr<std::pair<const KeyType, ObjType>> result{ nullptr };
+
+			public:
+				using difference_type = typename std::iterator<std::forward_iterator_tag, std::pair<const KeyType, ObjType>>::difference_type;
+
+				Iterator() = default;
+				Iterator(Map2* _parent) :
+					parent{ _parent }
+					, _ptr{ begin_impl(_parent) }
+					, result{}
+				{};
+				Iterator(const Iterator& rhs) :
+					parent{ rhs.parent }
+					, _ptr{ rhs._ptr }
+					, result{}
+				{};
+				Iterator(Iterator&& rhs) = default;
+				Iterator& operator=(const Iterator& rhs) {
+					parent = rhs.parent;
+					_ptr = rhs._ptr;
+				};
+				Iterator& operator=(Iterator&& rhs) {
+					parent = rhs.parent;
+					_ptr = rhs._ptr;
+				};
+				~Iterator() = default;
+
+				std::pair<const KeyType, ObjType>& operator*() const { LoadResult(); return result; };
+				std::pair<const KeyType, ObjType>* operator->() const { LoadResult(); return &result; };
+
+				Iterator& operator++() { Increment(); return *this; }
+
+				explicit operator bool() const { return Valid(); };
+				bool operator==(const Iterator& rhs) const {
+					if (!rhs.Valid() && !Valid()) return true;
+					if (!rhs.Valid()) {
+						return !Valid();
+					}
+					if (!Valid()) {
+						return !rhs.Valid();
+					}
+					return _ptr == rhs._ptr;
+				}
+				bool operator!=(const Iterator& rhs) const { return !operator==(rhs); }
+
+				Iterator begin() const { return Iterator(*this); };
+				Iterator end() const { return Iterator(nullptr, 0); };
+
+			private:
+				bool Valid() const {
+					return (parent && (_ptr != parent->impl->end()));
+				};
+				void Increment() { if (Valid()) ++_ptr; ++position; };
+				void LoadResult() const { if (Valid() && parent) { result = *_ptr; } };
+
+				static auto begin_impl(Map2* parent) {
+					if (parent) {
+						return parent->map.begin();
+					}
+					return typename decltype(map)::iterator();
+				};
+
+			};
+			using iterator = Iterator;
+			using const_iterator = Iterator;
+
+			Iterator begin() const { return Iterator(const_cast<Map*>(this), 0); };
+			Iterator end() const { return Iterator(nullptr, 0); };
+			Iterator cbegin() const { return begin(); };
+			Iterator cend() const { return end(); };
+		};
+#endif
 	};
 };
 
@@ -5778,7 +7067,7 @@ namespace fibers{
 	};
 
 	namespace parallel {
-#define UseStdForEachForParallelManager // without, we are very stable (>1.5hr) and memory-leak free (so far). However, the competition from high parallelism causes memory usage overloads.
+// #define UseStdForEachForParallelManager // without, we are very stable (>1.5hr) and memory-leak free (so far). However, the competition from high parallelism causes memory usage overloads.
 		
 		/* parallel_for (auto i = start; i < end; i++){ todo(i); }
 		If the todo(i) returns anything, it will be collected into a vector at the end. */
