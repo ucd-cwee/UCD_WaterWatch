@@ -278,14 +278,18 @@ namespace fibers {
 				: qualified_namespace(std::move(ns))
 				, bare_name(std::move(n))
 				, uniqueHash{ h } 
-			{}
+			{
+				raw_name = qualified_namespace + "_" + bare_name;
+			}
 			Custom_Type_Info() = default;
 			Custom_Type_Info(Custom_Type_Info const&) = default;
 			Custom_Type_Info(Custom_Type_Info&&) = default;
 			Custom_Type_Info& operator=(Custom_Type_Info const&) = default;
 			Custom_Type_Info& operator=(Custom_Type_Info&&) = default;
 			~Custom_Type_Info() = default;
+
 		public:
+			std::string raw_name;
 			std::string qualified_namespace;
 			std::string bare_name;
 			size_t uniqueHash;
@@ -347,9 +351,9 @@ namespace fibers {
 		constexpr Type_Info() noexcept = default;
 
 		bool operator<(const Type_Info& ti) const noexcept { 
-			if (customTypeInfo || ti.customTypeInfo) return name() < ti.name();
+			if (customTypeInfo || ti.customTypeInfo) return raw_name() < ti.raw_name();
 			else if (m_type_info && ti.m_type_info) return m_type_info->before(*ti.m_type_info); 
-			else return name() < ti.name();
+			else return raw_name() < ti.raw_name();
 		};
 		bool operator>=(const Type_Info& ti) const noexcept { return !operator<(ti); };
 		bool operator>(const Type_Info& ti) const noexcept { return operator>=(ti) && operator!=(ti); };
@@ -358,25 +362,25 @@ namespace fibers {
 		bool operator!=(const Type_Info& ti) const noexcept { return !(operator==(ti)); };
 		bool operator!=(const impl::underlying_type_info& ti) const noexcept { return !(operator==(ti)); };
 		bool operator==(const Type_Info& ti) const noexcept {
-			if (customTypeInfo) return name() == ti.name();
+			if (customTypeInfo) return raw_name() == ti.raw_name();
 			else if (m_type_info) return ti.m_type_info == m_type_info || (m_type_info && ti.m_type_info && SameTypeInfo(*ti.m_type_info, *m_type_info));
-			else return name() == ti.name();
+			else return raw_name() == ti.raw_name();
 		}
 		bool operator==(const impl::underlying_type_info& ti) const noexcept {
-			if (customTypeInfo) return name() == ti.name();
+			if (customTypeInfo) return raw_name() == (std::string(ti.raw_name()) + "_" + ti.name());
 			else if (m_type_info) return !is_undef() && m_type_info && SameTypeInfo(ti, *m_type_info);
-			else  return name() == ti.name();
+			else  return raw_name() == (std::string(ti.raw_name()) + "_" + ti.name());
 		};
 
 		bool bare_equal(const Type_Info& ti) const noexcept {
-			if (customTypeInfo) return name() == ti.name();
+			if (customTypeInfo) return raw_name() == ti.raw_name();
 			else if (m_type_info) return ti.m_bare_type_info == m_bare_type_info || (ti.m_bare_type_info && m_bare_type_info && SameTypeInfo(*ti.m_bare_type_info, *m_bare_type_info));
-			else return name() == ti.name();
+			else return raw_name() == ti.raw_name();
 		};
 		bool bare_equal_type_info(const impl::underlying_type_info& ti) const noexcept {
-			if (customTypeInfo) return name() == ti.name();
+			if (customTypeInfo) return raw_name() == (std::string(ti.raw_name()) + "_" + ti.name());
 			else if (m_type_info) return !is_undef() && m_bare_type_info && SameTypeInfo(ti, *m_bare_type_info);
-			else return name() == ti.name();
+			else return raw_name() == (std::string(ti.raw_name()) + "_" + ti.name());
 		};
 
 		constexpr bool is_const() const noexcept { return (m_flags & (1 << is_const_flag)) != 0; };
@@ -385,27 +389,34 @@ namespace fibers {
 		constexpr bool is_undef() const noexcept { return (m_flags & (1 << is_undef_flag)) != 0; };
 		constexpr bool is_pointer() const noexcept { return (m_flags & (1 << is_pointer_flag)) != 0; };
 
+		std::string raw_name() const noexcept {
+			if (!is_undef()) {
+				if (customTypeInfo) return customTypeInfo->raw_name + "_" + customTypeInfo->bare_name;
+				else if (m_type_info) return std::string(m_type_info->raw_name()) + "_" + m_type_info->name();
+			}
+			return "";
+		};
 		const char* name() const noexcept {
 			if (!is_undef()) {
 				if (customTypeInfo) return customTypeInfo->bare_name.c_str();
 				else if (m_type_info) return m_type_info->name();
 			}
 			return "";
-		}
+		};
 		const char* bare_name() const noexcept {
 			if (!is_undef()) {
-				if (customTypeInfo) return customTypeInfo->bare_name.c_str(); 
+				if (customTypeInfo) return customTypeInfo->bare_name.c_str();
 				else if (m_type_info) return m_bare_type_info->name();
 			}
 			return "";
-		}
+		};
 		const char* contained_name() const noexcept {
 			if (!is_undef()) {
 				if (customTypeInfo) return customTypeInfo->bare_name.c_str();
 				else if (m_type_info) return m_contained_type_info->name();
 			}
 			return "";
-		}
+		};
 
 		const impl::underlying_type_info* bare_type_info() const noexcept {
 			if (customTypeInfo) return (const impl::underlying_type_info*)(customTypeInfo->uniqueHash);

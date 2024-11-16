@@ -4685,9 +4685,9 @@ namespace fibers {
 				return SharedPtr<type>(new type());
 			}
 		};
-		template <typename type> __forceinline SharedPtr<type> make_shared(type* p) { return SharedPtr<type>(p); };
-		template<typename type, typename t1, typename = std::enable_if_t<!std::is_same_v<type*, t1>>> __forceinline SharedPtr<type> make_shared(t1&& d) { return SharedPtr<type>(new type(std::forward<t1>(d))); };
-		template <typename type, typename t1, typename = std::enable_if_t<!std::is_same_v<type*, t1>>, class ...Args> __forceinline SharedPtr<type> make_shared(t1&& d, Args&&... Fargs) { return SharedPtr<type>(new type(std::forward<t1>(d), std::forward<Args>(Fargs)...)); };
+		template <typename type, typename t1, typename ...Args> __forceinline SharedPtr<type> make_shared(t1&& d, Args&&... Fargs) { 
+			return SharedPtr<type>(new type(std::forward<t1>(d), std::forward<Args>(Fargs)...)); 
+		};
 
 	};
 
@@ -5722,6 +5722,7 @@ namespace fibers {
 		};
 #endif
 
+#if 0
 		template <typename KeyType = std::string, typename ObjType = std::string, typename Hasher = std::hash<KeyType>> class Map {
 		private:
 			std::shared_ptr< MapImpl<KeyType, ObjType, Hasher> > impl;
@@ -5891,34 +5892,34 @@ namespace fibers {
 			Iterator cbegin() const { return begin(); };
 			Iterator cend() const { return end(); };
 		};
-#if 0
-		template <typename KeyType = std::string, typename ObjType = std::string, typename Hasher = std::hash<KeyType>> class Map2 {
+#else
+		template <typename KeyType = std::string, typename ObjType = std::string, typename Hasher = std::hash<KeyType>> class Map {
 		private:
 			concurrency::concurrent_unordered_map<size_t, fibers::utilities::SharedPtr<std::pair<const KeyType, ObjType>>> map;
-			fibers::synchronization::shared_mutex<fibers::synchronization::mutex> mut;
+			mutable fibers::synchronization::shared_mutex<fibers::synchronization::mutex> mut;
 
 		public:
-			Map2()
+			Map()
 				: map()
 				, mut()
 			{};
-			Map2(Map2 const& o) 
+			Map(Map const& o) 
 				: map(o.map)
 				, mut()
 			{};
-			Map2(Map2&& o)
+			Map(Map&& o)
 				: map(o.map)
 				, mut()
 			{};
-			Map2& operator=(Map2 const& o) {
+			Map& operator=(Map const& o) {
 				auto lock{ std::unique_lock(mut) };
 				map = o.map;
 			};
-			Map2& operator=(Map2&& o) {
+			Map& operator=(Map&& o) {
 				auto lock{ std::unique_lock(mut) };
 				map = o.map;
 			};
-			~Map2() = default;
+			~Map() = default;
 
 		public:
 			/* emplaces the object at the key in the map. */
@@ -5930,11 +5931,16 @@ namespace fibers {
 					auto f = map.find(hash);
 					if (f != map.end()) {
 						if (overwriteIfExists) {
-							if (f->second) {
-								f->second->second = object;
+							if constexpr (std::is_copy_assignable<ObjType>::value) {
+								if (f->second) {
+									f->second->second = object;
+								}
+								else {
+									f->second = fibers::utilities::make_shared<std::pair<const KeyType, ObjType>>(std::pair<const KeyType, ObjType>(key, object));
+								}
 							}
 							else {
-								f->second = fibers::utilities::make_shared<std::pair<const KeyType, ObjType>>({ key, object });
+								f->second = fibers::utilities::make_shared<std::pair<const KeyType, ObjType>>(std::pair<const KeyType, ObjType>(key, object));
 							}
 							return true;
 						}
@@ -5943,7 +5949,7 @@ namespace fibers {
 						}
 					}
 					else {
-						map.insert({ hash,  fibers::utilities::make_shared<std::pair<const KeyType, ObjType>>({ key, object }) });
+						map.insert({ hash,  fibers::utilities::make_shared<std::pair<const KeyType, ObjType>>(std::pair<const KeyType, ObjType>(key, object)) });
 						return true;
 					}
 				}
@@ -5957,11 +5963,16 @@ namespace fibers {
 					auto f = map.find(hash);
 					if (f != map.end()) {
 						if (overwriteIfExists) {
-							if (f->second) {
-								f->second->second = std::forward<ObjType>(object);
+							if constexpr (std::is_copy_assignable<ObjType>::value) {
+								if (f->second) {
+									f->second->second = std::forward<ObjType>(object);
+								}
+								else {
+									f->second = fibers::utilities::make_shared<std::pair<const KeyType, ObjType>>((const KeyType)key, std::forward<ObjType>(object));
+								}
 							}
 							else {
-								f->second = fibers::utilities::make_shared<std::pair<const KeyType, ObjType>>({ key, std::forward<ObjType>(object) });
+								f->second = fibers::utilities::make_shared<std::pair<const KeyType, ObjType>>((const KeyType)key, std::forward<ObjType>(object));
 							}
 							return true;
 						}
@@ -5970,7 +5981,7 @@ namespace fibers {
 						}
 					}
 					else {
-						map.insert({ hash,  fibers::utilities::make_shared<std::pair<const KeyType, ObjType>>({ key, std::forward<ObjType>(object) }) });
+						map.insert({ hash,  fibers::utilities::make_shared<std::pair<const KeyType, ObjType>>((const KeyType)key, std::forward<ObjType>(object)) });
 						return true;
 					}
 				}
@@ -6052,47 +6063,47 @@ namespace fibers {
 				return map.size();
 			};
 			void TryCleanupUnusedMemory() {}; // does nothing 
-
-
-
-
-
-
-
-
+			void clear() {
+				auto lock{ std::unique_lock(mut) };
+				map.clear();
+			};
 			struct Iterator : public std::iterator<std::forward_iterator_tag, std::pair<const KeyType, ObjType>> {
 			public:
-				Map2* parent{ nullptr };
+				std::shared_ptr<std::shared_lock<decltype(mut)>> locked;
+				Map* parent{ nullptr };
 				mutable typename decltype(map)::iterator _ptr{};
-				mutable fibers::utilities::SharedPtr<std::pair<const KeyType, ObjType>> result{ nullptr };
+				mutable typename decltype(map)::iterator _end{};
+				//mutable fibers::utilities::SharedPtr<std::pair<const KeyType, ObjType>> result{ nullptr };
 
 			public:
-				using difference_type = typename std::iterator<std::forward_iterator_tag, std::pair<const KeyType, ObjType>>::difference_type;
+				using difference_type = typename std::iterator<std::forward_iterator_tag, fibers::utilities::SharedPtr<std::pair<const KeyType, ObjType>>>::difference_type;
 
 				Iterator() = default;
-				Iterator(Map2* _parent) :
+				Iterator(Map* _parent) :
 					parent{ _parent }
+					, locked{ lock_impl(_parent) }
 					, _ptr{ begin_impl(_parent) }
-					, result{}
+					, _end{ end_impl(_parent) }
+					//, result{ nullptr }
 				{};
-				Iterator(const Iterator& rhs) :
-					parent{ rhs.parent }
-					, _ptr{ rhs._ptr }
-					, result{}
-				{};
+				Iterator(const Iterator& rhs) = default;
 				Iterator(Iterator&& rhs) = default;
-				Iterator& operator=(const Iterator& rhs) {
-					parent = rhs.parent;
-					_ptr = rhs._ptr;
-				};
-				Iterator& operator=(Iterator&& rhs) {
-					parent = rhs.parent;
-					_ptr = rhs._ptr;
-				};
+				Iterator& operator=(const Iterator& rhs) = default;
+				Iterator& operator=(Iterator&& rhs) = default;
 				~Iterator() = default;
 
-				std::pair<const KeyType, ObjType>& operator*() const { LoadResult(); return result; };
-				std::pair<const KeyType, ObjType>* operator->() const { LoadResult(); return &result; };
+				fibers::utilities::SharedPtr<std::pair<const KeyType, ObjType>>& operator*() { 
+					return _ptr->second; // LoadResult(); return result;
+				};
+				fibers::utilities::SharedPtr<std::pair<const KeyType, ObjType>>* operator->() { 
+					return &_ptr->second; // LoadResult(); return &result; 
+				};
+				fibers::utilities::SharedPtr<std::pair<const KeyType, ObjType>>& operator*() const { 
+					return _ptr->second; // LoadResult(); return result; 
+				};
+				fibers::utilities::SharedPtr<std::pair<const KeyType, ObjType>>* operator->() const { 
+					return &_ptr->second; // LoadResult(); return &result; 
+				};
 
 				Iterator& operator++() { Increment(); return *this; }
 
@@ -6114,24 +6125,42 @@ namespace fibers {
 
 			private:
 				bool Valid() const {
-					return (parent && (_ptr != parent->impl->end()));
+					return /*parent && */(_ptr != _end);
 				};
-				void Increment() { if (Valid()) ++_ptr; ++position; };
-				void LoadResult() const { if (Valid() && parent) { result = *_ptr; } };
+				void Increment() { if (Valid()) ++_ptr; };
+				//void LoadResult() const { 
+				//	// if (Valid()) { 
+				//	    auto locked{ std::shared_lock<decltype(mut)>(parent->mut) };
+				//		if (_ptr != _end) {
+				//			result = _ptr->second;
+				//		}
+				//    // }
+				//};
 
-				static auto begin_impl(Map2* parent) {
+				static decltype(_ptr) begin_impl(Map* parent) {
 					if (parent) {
 						return parent->map.begin();
 					}
-					return typename decltype(map)::iterator();
+					return decltype(_ptr){};
 				};
-
+				static decltype(_end) end_impl(Map* parent) {
+					if (parent) {
+						return parent->map.end();
+					}
+					return decltype(_end){};
+				};
+				static decltype(locked) lock_impl(Map* parent) {
+					if (parent) {
+						return std::make_shared<std::shared_lock<decltype(mut)>>(parent->mut);
+					}
+					return decltype(locked){};
+				};
 			};
 			using iterator = Iterator;
 			using const_iterator = Iterator;
 
-			Iterator begin() const { return Iterator(const_cast<Map*>(this), 0); };
-			Iterator end() const { return Iterator(nullptr, 0); };
+			Iterator begin() const { return Iterator(const_cast<Map*>(this)); };
+			Iterator end() const { return Iterator(nullptr); };
 			Iterator cbegin() const { return begin(); };
 			Iterator cend() const { return end(); };
 		};
