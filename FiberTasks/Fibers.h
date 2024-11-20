@@ -5924,9 +5924,11 @@ namespace fibers {
 		public:
 			/* emplaces the object at the key in the map. */
 			bool emplace(KeyType const& key, ObjType const& object, bool overwriteIfExists = true) {
+				static auto hasher{ Hasher() };
+
 				auto lock{ std::shared_lock(mut) };
 
-				auto hash{ Hasher()(key) };
+				auto hash{ hasher(key) };
 				{
 					auto f = map.find(hash);
 					if (f != map.end()) {
@@ -5956,9 +5958,11 @@ namespace fibers {
 			};
 			/* emplaces the object at the key in the map. */
 			bool emplace(KeyType const& key, ObjType&& object, bool overwriteIfExists = true) {
+				static auto hasher{ Hasher() };
+
 				auto lock{ std::shared_lock(mut) }; 
 				
-				auto hash{ Hasher()(key) };
+				auto hash{ hasher(key) };
 				{
 					auto f = map.find(hash);
 					if (f != map.end()) {
@@ -6005,7 +6009,7 @@ namespace fibers {
 			/* returns a COPY of the value at the key. Returns default values if the value is not found. */
 			ObjType at_hash_or(size_t const& key_hash, ObjType const& defaultObj = ObjType()) const { return at_hash(key_hash).value_or(defaultObj); };
 			/* returns a COPY of the value at the key. Returns empty if the value is not found. */
-			std::optional<ObjType> at(KeyType const& key) const { return at_hash(Hasher()(key)); };
+			std::optional<ObjType> at(KeyType const& key) const { static auto hasher{ Hasher() }; return at_hash(hasher(key)); };
 			/* returns a COPY of the value at the key. Returns default values if the value is not found. */
 			ObjType at_or(KeyType const& key, ObjType const& defaultObj = ObjType()) const { return at(key).value_or(defaultObj); };
 
@@ -6023,18 +6027,21 @@ namespace fibers {
 
 			/* queues the key to be erased. Note that the erasure may be delayed depending on use of the map. */
 			bool erase(KeyType const& key) {
+				static auto hasher{ Hasher() };
 				auto lock{ std::unique_lock(mut) };
-				return map.unsafe_erase(Hasher()(key)) > 0;
+				return map.unsafe_erase(hasher(key)) > 0;
 			};
 			/* returns true if the key is in the map. */
 			bool contains(KeyType const& key) const {
+				static auto hasher{ Hasher() };
 				auto lock{ std::shared_lock(mut) };
-				return map.count(Hasher()(key)) > 0;
+				return map.count(hasher(key)) > 0;
 			};
 			/* returns true if the key is in the map. */
 			size_t count(KeyType const& key) const {
+				static auto hasher{ Hasher() };
 				auto lock{ std::shared_lock(mut) };
-				return map.count(Hasher()(key));
+				return map.count(hasher(key));
 			};
 			/* returns the list of all keys currently in the map */
 			std::vector<KeyType> keys() const {
@@ -6165,6 +6172,150 @@ namespace fibers {
 			Iterator cend() const { return end(); };
 		};
 #endif
+		template <typename KeyType = std::string, typename Hasher = std::hash<KeyType>> class Set {
+		private:
+			Map< KeyType, KeyType, Hasher > map;
+
+		public:
+			Set()
+				: map()
+			{};
+			Set(Set const& o)
+				: map(o.map)
+			{};
+			Set(Set&& o)
+				: map(o.map)
+			{};
+			Set& operator=(Set const& o) {
+				map = o.map;
+			};
+			Set& operator=(Set&& o) {
+				map = o.map;
+			};
+			~Set() = default;
+
+		public:
+			/* emplaces the object at the key in the map. */
+			bool emplace(KeyType const& key) {
+				return map.emplace(key, key, false);
+			};
+			/* emplaces the object at the key in the map. */
+			bool insert(KeyType const& pair) { return emplace(pair); };
+			/* emplaces the object at the key in the map. */
+			bool insert(KeyType&& pair) { return emplace(std::move(pair)); };
+			/* returns a COPY of the value at the key. Returns empty if the value is not found. */
+			std::optional<KeyType> at_hash(size_t const& key_hash) const {
+				return map.at_hash(key_hash);
+			};
+			/* returns a COPY of the value at the key. Returns default values if the value is not found. */
+			KeyType at_hash_or(size_t const& key_hash, KeyType const& defaultObj = KeyType()) const { return at_hash(key_hash).value_or(defaultObj); };
+
+			/* queues the key to be erased. Note that the erasure may be delayed depending on use of the map. */
+			bool erase(KeyType const& key) {
+				return map.erase(key);
+			};
+			/* returns true if the key is in the map. */
+			bool contains(KeyType const& key) const {
+				return map.contains(key);
+			};
+			/* returns true if the key is in the map. */
+			size_t count(KeyType const& key) const {
+				return map.count(key);
+			};
+			/* returns the list of all keys currently in the map */
+			std::vector<KeyType> keys() const {
+				return map.keys();
+			};
+			size_t size() const {
+				return map.size();
+			};
+			void TryCleanupUnusedMemory() {}; // does nothing 
+			void clear() {
+				map.clear();
+			};
+			struct Iterator : public std::iterator<std::forward_iterator_tag, KeyType> {
+			public:
+				Set* parent{ nullptr };
+				mutable typename decltype(map)::iterator _ptr{};
+				mutable typename decltype(map)::iterator _end{};
+				//mutable fibers::utilities::SharedPtr<std::pair<const KeyType, ObjType>> result{ nullptr };
+
+			public:
+				using difference_type = typename std::iterator<std::forward_iterator_tag, KeyType>::difference_type;
+
+				Iterator() = default;
+				Iterator(Set* _parent) :
+					parent{ _parent }
+					, _ptr{ begin_impl(_parent) }
+					, _end{ end_impl(_parent) }
+					//, result{ nullptr }
+				{};
+				Iterator(const Iterator& rhs) = default;
+				Iterator(Iterator&& rhs) = default;
+				Iterator& operator=(const Iterator& rhs) = default;
+				Iterator& operator=(Iterator&& rhs) = default;
+				~Iterator() = default;
+
+				KeyType operator*() {
+					if (auto p = *_ptr) {
+						return p->second;
+					}
+					return KeyType();
+				};
+				KeyType operator*() const {
+					if (auto p = *_ptr) {
+						return p->second;
+					}
+					return KeyType();
+				};
+
+				Iterator& operator++() { Increment(); return *this; }
+
+				explicit operator bool() const { return Valid(); };
+				bool operator==(const Iterator& rhs) const {
+					if (!rhs.Valid() && !Valid()) return true;
+					if (!rhs.Valid()) {
+						return !Valid();
+					}
+					if (!Valid()) {
+						return !rhs.Valid();
+					}
+					return _ptr == rhs._ptr;
+				}
+				bool operator!=(const Iterator& rhs) const { return !operator==(rhs); }
+
+				Iterator begin() const { return Iterator(*this); };
+				Iterator end() const { return Iterator(nullptr); };
+
+			private:
+				bool Valid() const {
+					return /*parent && */(_ptr != _end);
+				};
+				void Increment() { if (Valid()) ++_ptr; };
+
+				static decltype(_ptr) begin_impl(Set* parent) {
+					if (parent) {
+						return parent->map.begin();
+					}
+					return decltype(_ptr){};
+				};
+				static decltype(_end) end_impl(Set* parent) {
+					if (parent) {
+						return parent->map.end();
+					}
+					return decltype(_end){};
+				};
+			};
+			using iterator = Iterator;
+			using const_iterator = Iterator;
+
+			Iterator begin() const { return Iterator(const_cast<Set*>(this)); };
+			Iterator end() const { return Iterator(nullptr); };
+			Iterator cbegin() const { return begin(); };
+			Iterator cend() const { return end(); };
+		};
+
+
 	};
 };
 

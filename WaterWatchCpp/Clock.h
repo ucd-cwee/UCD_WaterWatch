@@ -46,6 +46,7 @@ public:
 	Stopwatch() : t0(clock_ns()), t1(t0) {};
 	void Start() { t0 = clock_ns(); };
 	long double Stop() { t1 = clock_ns(); return static_cast<long double>(t1 - t0); };
+	long double Stop_s() { t1 = clock_ns(); return static_cast<long double>(t1 - t0) / 1000000000.0; };
 	long double Seconds_Passed() const { return static_cast<long double>(t1-t0) / 1000000000.0; };
 	long double Nanoseconds_Passed() const { return static_cast<long double>(t1 - t0); };
 
