@@ -5276,6 +5276,8 @@ namespace fibers {
 
 		};
 
+
+#if 0
 		/* *THREAD SAFE* Fiber- and thread-safe unsorted map. KeyType may be anything that can be hashed, and ObjType must be copy-by-value. */
 		template <typename KeyType = std::string, typename ObjType = std::string, typename Hasher = std::hash<KeyType>> class MapImpl {
 		private:
@@ -5300,7 +5302,7 @@ namespace fibers {
 			};
 			/* emplaces the object at the key in the map. */
 			bool emplace(KeyType const& key, ObjType&& object, bool overwriteIfExists = true) {
-				size_t key_hash = Hasher()(key); 
+				size_t key_hash = Hasher()(key);
 				auto lock{ std::shared_lock(mut) };
 				map.insert(std::pair<size_t, std::pair<KeyType, ObjType>>(key_hash, std::pair<KeyType, ObjType>(key, std::forward<ObjType>(object))));
 				return true;
@@ -5329,7 +5331,7 @@ namespace fibers {
 			};
 			/* returns a COPY of the value at the key. Returns default values if the value is not found. */
 			ObjType at_or(KeyType const& key, ObjType const& defaultObj = ObjType()) const {
-				return at(key).value_or(defaultObj); 
+				return at(key).value_or(defaultObj);
 			};
 
 			/* returns a COPY of the value at the hashed key. Returns empty if the value is not found.
@@ -5337,10 +5339,10 @@ namespace fibers {
 			ObjType get_or_insert(KeyType const& key, ObjType const& defaultObj = ObjType()) {
 				while (true) {
 					auto optionalF = at(key);
-					if (optionalF.has_value()) 
+					if (optionalF.has_value())
 						return optionalF.value();
-					else 
-						emplace(key, defaultObj);					
+					else
+						emplace(key, defaultObj);
 				}
 			};
 
@@ -5453,7 +5455,7 @@ namespace fibers {
 				Iterator end() const { return Iterator(nullptr, 0); };
 
 			private:
-				bool Valid() const { 
+				bool Valid() const {
 					return (parent && (_ptr != parent->map.end()));
 				};
 				void Increment() { if (Valid()) ++_ptr; ++position; };
@@ -5483,7 +5485,6 @@ namespace fibers {
 		};
 
 		/* *THREAD SAFE* Fiber- and thread-safe sorted map. KeyType may be anything that can be hashed, and ObjType must be copy-by-value. */
-#if 0
 		template <typename KeyType = std::string, typename ObjType = std::string, typename Hasher = std::hash<KeyType>> class Map {
 		private:
 			mutable std::shared_ptr<fibers::utilities::GarbageCollectedAllocator<std::pair<KeyType, ObjType>>>
@@ -5893,10 +5894,13 @@ namespace fibers {
 			Iterator cend() const { return end(); };
 		};
 #else
+        /* *THREAD SAFE* Fiber- and thread-safe sorted map. KeyType may be anything that can be hashed, and ObjType must be copy-by-value. */
 		template <typename KeyType = std::string, typename ObjType = std::string, typename Hasher = std::hash<KeyType>> class Map {
 		private:
-			concurrency::concurrent_unordered_map<size_t, fibers::utilities::SharedPtr<std::pair<const KeyType, ObjType>>> map;
-			mutable fibers::synchronization::shared_mutex<fibers::synchronization::mutex> mut;
+			concurrency::concurrent_unordered_map<size_t, std::shared_ptr<std::pair<const KeyType, ObjType>>> 
+				map;
+			mutable fibers::synchronization::shared_mutex<fibers::synchronization::mutex> 
+				mut;
 
 		public:
 			Map()
@@ -5922,6 +5926,18 @@ namespace fibers {
 			~Map() = default;
 
 		public:
+			std::shared_ptr<std::pair<const KeyType, ObjType>> first() const {
+				auto lock{ std::shared_lock(mut) };
+				auto b = map.begin();
+				if (b != map.end()) {
+					return b->second;
+				}
+				else
+				{
+					return nullptr;
+				}
+			};
+
 			/* emplaces the object at the key in the map. */
 			bool emplace(KeyType const& key, ObjType const& object, bool overwriteIfExists = true) {
 				static auto hasher{ Hasher() };
@@ -5938,11 +5954,11 @@ namespace fibers {
 									f->second->second = object;
 								}
 								else {
-									f->second = fibers::utilities::make_shared<std::pair<const KeyType, ObjType>>(std::pair<const KeyType, ObjType>(key, object));
+									f->second = std::make_shared<std::pair<const KeyType, ObjType>>(std::pair<const KeyType, ObjType>(key, object));
 								}
 							}
 							else {
-								f->second = fibers::utilities::make_shared<std::pair<const KeyType, ObjType>>(std::pair<const KeyType, ObjType>(key, object));
+								f->second = std::make_shared<std::pair<const KeyType, ObjType>>(std::pair<const KeyType, ObjType>(key, object));
 							}
 							return true;
 						}
@@ -5951,7 +5967,7 @@ namespace fibers {
 						}
 					}
 					else {
-						map.insert({ hash,  fibers::utilities::make_shared<std::pair<const KeyType, ObjType>>(std::pair<const KeyType, ObjType>(key, object)) });
+						map.insert({ hash,  std::make_shared<std::pair<const KeyType, ObjType>>(std::pair<const KeyType, ObjType>(key, object)) });
 						return true;
 					}
 				}
@@ -5972,11 +5988,11 @@ namespace fibers {
 									f->second->second = std::forward<ObjType>(object);
 								}
 								else {
-									f->second = fibers::utilities::make_shared<std::pair<const KeyType, ObjType>>((const KeyType)key, std::forward<ObjType>(object));
+									f->second = std::make_shared<std::pair<const KeyType, ObjType>>((const KeyType)key, std::forward<ObjType>(object));
 								}
 							}
 							else {
-								f->second = fibers::utilities::make_shared<std::pair<const KeyType, ObjType>>((const KeyType)key, std::forward<ObjType>(object));
+								f->second = std::make_shared<std::pair<const KeyType, ObjType>>((const KeyType)key, std::forward<ObjType>(object));
 							}
 							return true;
 						}
@@ -5985,7 +6001,7 @@ namespace fibers {
 						}
 					}
 					else {
-						map.insert({ hash,  fibers::utilities::make_shared<std::pair<const KeyType, ObjType>>((const KeyType)key, std::forward<ObjType>(object)) });
+						map.insert({ hash,  std::make_shared<std::pair<const KeyType, ObjType>>((const KeyType)key, std::forward<ObjType>(object)) });
 						return true;
 					}
 				}
@@ -6080,10 +6096,9 @@ namespace fibers {
 				Map* parent{ nullptr };
 				mutable typename decltype(map)::iterator _ptr{};
 				mutable typename decltype(map)::iterator _end{};
-				//mutable fibers::utilities::SharedPtr<std::pair<const KeyType, ObjType>> result{ nullptr };
 
 			public:
-				using difference_type = typename std::iterator<std::forward_iterator_tag, fibers::utilities::SharedPtr<std::pair<const KeyType, ObjType>>>::difference_type;
+				using difference_type = typename std::iterator<std::forward_iterator_tag, std::shared_ptr<std::pair<const KeyType, ObjType>>>::difference_type;
 
 				Iterator() = default;
 				Iterator(Map* _parent) :
@@ -6099,16 +6114,16 @@ namespace fibers {
 				Iterator& operator=(Iterator&& rhs) = default;
 				~Iterator() = default;
 
-				fibers::utilities::SharedPtr<std::pair<const KeyType, ObjType>>& operator*() { 
+				std::shared_ptr<std::pair<const KeyType, ObjType>>& operator*() {
 					return _ptr->second; // LoadResult(); return result;
 				};
-				fibers::utilities::SharedPtr<std::pair<const KeyType, ObjType>>* operator->() { 
+				std::shared_ptr<std::pair<const KeyType, ObjType>>* operator->() {
 					return &_ptr->second; // LoadResult(); return &result; 
 				};
-				fibers::utilities::SharedPtr<std::pair<const KeyType, ObjType>>& operator*() const { 
+				std::shared_ptr<std::pair<const KeyType, ObjType>>& operator*() const {
 					return _ptr->second; // LoadResult(); return result; 
 				};
-				fibers::utilities::SharedPtr<std::pair<const KeyType, ObjType>>* operator->() const { 
+				std::shared_ptr<std::pair<const KeyType, ObjType>>* operator->() const {
 					return &_ptr->second; // LoadResult(); return &result; 
 				};
 
@@ -6135,14 +6150,6 @@ namespace fibers {
 					return /*parent && */(_ptr != _end);
 				};
 				void Increment() { if (Valid()) ++_ptr; };
-				//void LoadResult() const { 
-				//	// if (Valid()) { 
-				//	    auto locked{ std::shared_lock<decltype(mut)>(parent->mut) };
-				//		if (_ptr != _end) {
-				//			result = _ptr->second;
-				//		}
-				//    // }
-				//};
 
 				static decltype(_ptr) begin_impl(Map* parent) {
 					if (parent) {
@@ -6195,6 +6202,16 @@ namespace fibers {
 			~Set() = default;
 
 		public:
+			// ADD CODE TO GET ANY OR FIRST VALUE FROM SET, FOR QUICK ITERATIONS WHERE WE WANT "ANY" 
+			std::optional<KeyType> first() const {
+				if (auto p = map.first()) {
+					return p->second;
+				}
+				else {
+					return std::nullopt;
+				}
+			};
+
 			/* emplaces the object at the key in the map. */
 			bool emplace(KeyType const& key) {
 				return map.emplace(key, key, false);

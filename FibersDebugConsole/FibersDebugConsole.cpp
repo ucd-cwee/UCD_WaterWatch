@@ -547,6 +547,9 @@ int main() {
 							// may (and is allowed to) discover any of the "Position" classes that are available in this Scope
 							set.emplace(p);
 						}
+						else {
+							EXPECT_EQ(true, false);
+						}
 					}
 				});
 				printf(std::string("Used ") + std::to_string(set.size()) + " unique Positions, across a loop of 10000.");
@@ -589,12 +592,15 @@ int main() {
 					})) {
 						EXPECT_NE(p->GetQualifiedNamespace(true).find(scope_7->GetQualifiedNamespace(true)), std::string::npos);
 					}
+					else {
+						EXPECT_EQ(true, false);
+					}
 				});
 			}
 
 			// this scope has a child AND parent, named "string". Expect return of parent. 
 			sw.Start();
-			fibers::parallel::For(0, 10000, [&](int i) {
+			fibers::parallel::For(0, 100000, [&](int i) {
 				if (auto p = scope_4->FindNearestNamespaceWhere([](std::shared_ptr<Namespace2> const& namespacePtr)->bool {
 					return namespacePtr->GetName() == "string";
 					})) {
@@ -606,7 +612,7 @@ int main() {
 			});
 			printf(std::to_string(__LINE__) + ": " + Units::second(sw.Stop_s()).ToString());
 			sw.Start();
-			fibers::parallel::For(0, 10000, [&](int i) {
+			fibers::parallel::For(0, 100000, [&](int i) {
 				if (auto p = scope_4->FindNamespace("string")) {
 					EXPECT_EQ(p->GetQualifiedNamespace(), "::std::string::");
 				}
@@ -618,7 +624,7 @@ int main() {
 
 			// Expect quick discovery of parent. 
 			sw.Start();
-			fibers::parallel::For(0, 10000, [&](int i) {
+			fibers::parallel::For(0, 100000, [&](int i) {
 				if (auto p = scope_4->FindNearestNamespaceWhere([](std::shared_ptr<Namespace2> const& namespacePtr)->bool {
 					return namespacePtr->GetName() == "std";
 				})) {
@@ -630,7 +636,7 @@ int main() {
 			});
 			printf(std::to_string(__LINE__) + ": " + Units::second(sw.Stop_s()).ToString());
 			sw.Start();
-			fibers::parallel::For(0, 10000, [&](int i) {
+			fibers::parallel::For(0, 100000, [&](int i) {
 				if (auto p = scope_4->FindNamespace("std")) {
 					EXPECT_EQ(p->GetQualifiedNamespace(), "::std::");
 				}
@@ -642,7 +648,7 @@ int main() {
 
 			// Qualified name requires a bit more work to find.
 			sw.Start();
-			fibers::parallel::For(0, 10000, [&](int i) {
+			fibers::parallel::For(0, 100000, [&](int i) {
 				if (auto p = scope_4->FindNearestNamespaceWhere([](std::shared_ptr<Namespace2> const& namespacePtr)->bool {
 					std::string tryFind = "std::string";
 					long long len = tryFind.length();
@@ -668,19 +674,19 @@ int main() {
 			});
 			printf(std::to_string(__LINE__) + ": " + Units::second(sw.Stop_s()).ToString());
 			sw.Start();
-			fibers::parallel::For(0, 10000, [&](int i) {
+			fibers::parallel::For(0, 100000, [&](int i) {
 				if (auto p = scope_4->FindNamespace("std::string")) {
 					EXPECT_EQ(p->GetQualifiedNamespace(), "::std::string::");
 				}
 				else {
 					EXPECT_EQ(true, false);
 				}
-				});
+			});
 			printf(std::to_string(__LINE__) + ": " + Units::second(sw.Stop_s()).ToString());
 
 			// Qualified approach should work for unqualified search name. 
 			sw.Start();
-			fibers::parallel::For(0, 10000, [&](int i) {
+			fibers::parallel::For(0, 100000, [&](int i) {
 				if (auto p = scope_4->FindNearestNamespaceWhere([](std::shared_ptr<Namespace2> const& namespacePtr)->bool {
 					std::string tryFind = "string";
 					long long len = tryFind.length();
@@ -706,7 +712,7 @@ int main() {
 			});
 			printf(std::to_string(__LINE__) + ": " + Units::second(sw.Stop_s()).ToString());
 			sw.Start();
-			fibers::parallel::For(0, 10000, [&](int i) {
+			fibers::parallel::For(0, 100000, [&](int i) {
 				if (auto p = scope_4->FindNamespace("string")) {
 					EXPECT_EQ(p->GetQualifiedNamespace(), "::std::string::");
 				}
@@ -718,7 +724,7 @@ int main() {
 
 			// Expect scope to eventually try and check its own children.
 			sw.Start();
-			fibers::parallel::For(0, 1000, [&](int i) {
+			fibers::parallel::For(0, 100000, [&](int i) {
 				if (auto p = scope_4->FindNearestNamespaceWhere([&](std::shared_ptr<Namespace2> const& namespacePtr)->bool {
 					std::string tryFind = "std::string::string";
 					long long len = tryFind.length();
@@ -744,7 +750,7 @@ int main() {
 			});
 			printf(std::to_string(__LINE__) + ": " + Units::second(sw.Stop_s()).ToString());
 			sw.Start();
-			fibers::parallel::For(0, 1000, [&](int i) {
+			fibers::parallel::For(0, 100000, [&](int i) {
 				if (auto p = scope_4->FindNamespace("std::string::string")) {
 					EXPECT_EQ(p->GetQualifiedNamespace(), "::std::string::string::");
 				}
@@ -756,7 +762,7 @@ int main() {
 
 			// Expect scope to eventually try and check children from the parents, and (eventually) discover this far-away qualified namespace
 			sw.Start();
-			fibers::parallel::For(0, 1000, [&](int i) {
+			fibers::parallel::For(0, 100000, [&](int i) {
 				if (auto p = scope_4->FindNearestNamespaceWhere([&](std::shared_ptr<Namespace2> const& namespacePtr)->bool {
 					std::string tryFind = "fibers::containers::Map";
 					long long len = tryFind.length();
@@ -782,7 +788,7 @@ int main() {
 			});
 			printf(std::to_string(__LINE__) + ": " + Units::second(sw.Stop_s()).ToString());
 			sw.Start();
-			fibers::parallel::For(0, 1000, [&](int i) {
+			fibers::parallel::For(0, 100000, [&](int i) {
 				if (auto p = scope_4->FindNamespace("fibers::containers::Map")) {
 					EXPECT_EQ(p->GetQualifiedNamespace(), "::fibers::containers::Map::");
 				}

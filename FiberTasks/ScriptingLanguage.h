@@ -5103,6 +5103,9 @@ namespace scripting {
 
 			if (auto p = p_parent.lock()) { p_library = p->GetLibraryImpl(); }
 			else { p_library = std::dynamic_pointer_cast<Global2>(p_self.lock()); }
+
+			qualifiedNamespaceWithQualifiers = GetQualifiedNamespaceImpl(true);			
+			qualifiedNamespaceWithoutQualifiers = GetQualifiedNamespaceImpl();
 		};
 		Scope2(Scope2 const&) = default;
 		Scope2(Scope2&&) = default;
@@ -5212,12 +5215,8 @@ namespace scripting {
 	private:
 		std::weak_ptr<Scope2> // shared_pointer to itself. MUST be set immediately after creating the Scope/Class/Namespace/Global.
 			p_self{}; 
-	public:
-		void SetSelf(std::shared_ptr<Scope2>& p) { p_self = p; };
-		virtual bool IsClass() const { return false; };
-		virtual bool IsNamespace() const { return false; };
-		virtual std::string GetName() const { return ""; };
-		std::string GetQualifiedNamespace(bool GetUniqueQualifier = false) const {
+
+		std::string GetQualifiedNamespaceImpl(bool GetUniqueQualifier = false) const {
 			std::string path = "::";
 
 			auto parent = p_parent.lock();
@@ -5252,6 +5251,24 @@ namespace scripting {
 			}
 
 			return path;
+		};
+		std::string
+			qualifiedNamespaceWithQualifiers;
+		std::string
+			qualifiedNamespaceWithoutQualifiers;
+		
+	public:
+		void SetSelf(std::shared_ptr<Scope2>& p) { p_self = p; };
+		virtual bool IsClass() const { return false; };
+		virtual bool IsNamespace() const { return false; };
+		virtual std::string GetName() const { return ""; };
+		std::string const& GetQualifiedNamespace(bool GetUniqueQualifier = false) const {
+			if (GetUniqueQualifier) {
+				return qualifiedNamespaceWithQualifiers;
+			}
+			else {
+				return qualifiedNamespaceWithoutQualifiers;
+			}
 		};
 
 	private:
@@ -5291,42 +5308,52 @@ namespace scripting {
 		std::shared_ptr<Global2> GetLibrary() const { return p_library.lock(); };
 
 	public:
-		fibers::containers::Set<std::weak_ptr<Namespace2>, Hasher> // allows this scope to use the children of other scopes as if they were their own.
+		fibers::containers::Map< std::weak_ptr<Namespace2>, std::weak_ptr<Namespace2>, Hasher> // allows this scope to use the children of other scopes as if they were their own.
 			p_using; 
 
 	public:
 		// allows this scope to use the children of other scopes as if they were their own.
 		bool AddUsing(std::weak_ptr<Namespace2> namespacePtr) {
-			return p_using.emplace(namespacePtr);
+			return p_using.emplace(namespacePtr, namespacePtr);
 		};
 
 	private:
-		fibers::containers::Set<std::shared_ptr<Namespace2>, Hasher> // children namespaces - may be classes or namespaces. By this design, imported namespaces may be "unloaded" on scope unloading, which is on purpose.
+		fibers::containers::Map<std::string, 
+			std::shared_ptr<
+			    fibers::containers::Map<std::shared_ptr<Namespace2>, std::shared_ptr<Namespace2>, Hasher>
+			>
+		> // children namespaces - may be classes or namespaces. By this design, imported namespaces may be "unloaded" on scope unloading, which is on purpose.
 			p_children;
 	public:
 		bool AddChild(std::shared_ptr<Namespace2> NamespacePtr) {
-			return p_children.emplace(NamespacePtr);
+			if (auto p = std::dynamic_pointer_cast<Scope2>(NamespacePtr)) {
+				auto name = p->GetName();
+				auto ptr = p_children.get_or_insert(name, std::make_shared<fibers::containers::Map<std::shared_ptr<Namespace2>, std::shared_ptr<Namespace2>, Hasher>>());
+				return ptr->emplace(NamespacePtr, NamespacePtr);
+			}
+			return false;
 		};
 
 	private:
 		virtual bool TryFindNearestNamespaceWhere(
 			std::shared_ptr<Namespace2>& bestMatch,
 			std::function<bool(std::shared_ptr<Namespace2> const&)> const& func,
-			fibers::containers::Set< std::weak_ptr<Scope2>, Hasher > const& CheckedSelf = {},
-			fibers::containers::Set< std::weak_ptr<Scope2>, Hasher > const& CheckedAll = {}
+			std::unordered_set< std::shared_ptr<Scope2> > const& CheckedSelf = {},
+			std::unordered_set< std::shared_ptr<Scope2> > const& CheckedAll = {}
 		) const {
-			auto& checkedSelf = const_cast<fibers::containers::Set< std::weak_ptr<Scope2>, Hasher >&>(CheckedSelf);
-			auto& checkedAll = const_cast<fibers::containers::Set< std::weak_ptr<Scope2>, Hasher >&>(CheckedAll);
+			auto& checkedSelf = const_cast<std::unordered_set< std::shared_ptr<Scope2> >&>(CheckedSelf);
+			auto& checkedAll = const_cast<std::unordered_set< std::shared_ptr<Scope2> >&>(CheckedAll);
+			auto selfPtr = this->p_self.lock();
 
 			// Prevent Duplication
-			if (checkedAll.contains(this->p_self)) { return false; }
-			checkedAll.emplace(this->p_self);
+			if (checkedAll.count(selfPtr)>=1) { return false; }
+			checkedAll.emplace(selfPtr);
 
 			// test myself			
-			if (!checkedSelf.contains(this->p_self)) {
-				checkedSelf.emplace(this->p_self);
+			if (!checkedSelf.count(selfPtr) >= 1) {
+				checkedSelf.emplace(selfPtr);
 				if (this->IsNamespace()) {
-					if (auto p = std::dynamic_pointer_cast<Namespace2>(this->p_self.lock())) {
+					if (auto p = std::dynamic_pointer_cast<Namespace2>(selfPtr)) {
 						if (func(p)) {
 							bestMatch = p;
 							return true;
@@ -5336,10 +5363,12 @@ namespace scripting {
 			}
 
 			// test my "using" namespaces and their children.
-			for (auto childNamespace : this->p_using) {
-				if (auto p = std::dynamic_pointer_cast<Scope2>(childNamespace.lock())) {
-					if (p && p->TryFindNearestNamespaceWhere(bestMatch, func, CheckedSelf, CheckedAll)) {
-						return true;
+			for (auto& childNamespace : this->p_using) {
+				if (childNamespace) {
+					if (auto p = std::dynamic_pointer_cast<Scope2>(childNamespace->second.lock())) {
+						if (p && p->TryFindNearestNamespaceWhere(bestMatch, func, CheckedSelf, CheckedAll)) {
+							return true;
+						}
 					}
 				}
 			}
@@ -5347,7 +5376,7 @@ namespace scripting {
 			// test all of my parents
 			auto parentPtr = this->p_parent.lock();
 			while (parentPtr) {
-				if (!checkedSelf.contains(parentPtr)) {
+				if (!checkedSelf.count(parentPtr) >= 1) {
 					checkedSelf.emplace(parentPtr);
 					if (parentPtr->IsNamespace()) {
 						if (auto p = std::dynamic_pointer_cast<Namespace2>(parentPtr)) {
@@ -5364,11 +5393,27 @@ namespace scripting {
 				parentPtr = parentPtr->p_parent.lock();				
 			}
 
-			// test my children.
-			for (auto childNamespace : this->p_children) {
-				if (auto p = std::dynamic_pointer_cast<Scope2>(childNamespace)) {
-					if (p->TryFindNearestNamespaceWhere(bestMatch, func, CheckedSelf, CheckedAll)) {
-						return true;
+			// Test my children themselves.
+			for (auto& childNamespace : this->p_children) {
+				if (childNamespace && childNamespace->second) {
+					for (auto& innerChildNamespace : *childNamespace->second) {
+						if (innerChildNamespace->second) {
+							auto ptr = std::dynamic_pointer_cast<Scope2>(innerChildNamespace->second);
+							if (!checkedSelf.count(ptr) >= 1) {
+								checkedSelf.emplace(ptr);
+								if (ptr->IsNamespace()) {
+									if (auto p = std::dynamic_pointer_cast<Namespace2>(ptr)) {
+										if (func(p)) {
+											bestMatch = p;
+											return true;
+										}
+									}
+								}
+							}
+							else {
+								break; // we've checked this before! Quick, get out. 
+							}
+						}
 					}
 				}
 			}
@@ -5380,49 +5425,17 @@ namespace scripting {
 				}
 			}
 
-			return false;
-		};
-
-		virtual bool TryFindChildNamespaceWhere(
-			std::shared_ptr<Namespace2>& bestMatch,
-			std::function<bool(std::shared_ptr<Namespace2> const&)> const& func,
-			fibers::containers::Set< std::weak_ptr<Scope2>, Hasher > const& CheckedSelf = {},
-			fibers::containers::Set< std::weak_ptr<Scope2>, Hasher > const& CheckedAll = {}
-		) const {
-			auto& checkedSelf = const_cast<fibers::containers::Set< std::weak_ptr<Scope2>, Hasher >&>(CheckedSelf);
-			auto& checkedAll = const_cast<fibers::containers::Set< std::weak_ptr<Scope2>, Hasher >&>(CheckedAll);
-
-			// Prevent Duplication
-			if (checkedAll.contains(this->p_self)) { return false; }
-			checkedAll.emplace(this->p_self);
-
-			// test myself			
-			if (!checkedSelf.contains(this->p_self)) {
-				checkedSelf.emplace(this->p_self);
-				if (this->IsNamespace()) {
-					if (auto p = std::dynamic_pointer_cast<Namespace2>(this->p_self.lock())) {
-						if (func(p)) {
-							bestMatch = p;
-							return true;
+			// test my children's children.
+			for (auto& childNamespace : this->p_children) {
+				if (childNamespace && childNamespace->second) {
+					for (auto& innerChildNamespace : *childNamespace->second) {
+						if (innerChildNamespace) {
+							if (auto p = std::dynamic_pointer_cast<Scope2>(innerChildNamespace->second)) {
+								if (p->TryFindNearestNamespaceWhere(bestMatch, func, CheckedSelf, CheckedAll)) {
+									return true;
+								}
+							}
 						}
-					}
-				}
-			}
-
-			// test my "using" namespaces and their children.
-			for (auto childNamespace : this->p_using) {
-				if (auto p = std::dynamic_pointer_cast<Scope2>(childNamespace.lock())) {
-					if (p && p->TryFindChildNamespaceWhere(bestMatch, func, CheckedSelf, CheckedAll)) {
-						return true;
-					}
-				}
-			}
-
-			// test my children.
-			for (auto childNamespace : this->p_children) {
-				if (auto p = std::dynamic_pointer_cast<Scope2>(childNamespace)) {
-					if (p->TryFindChildNamespaceWhere(bestMatch, func, CheckedSelf, CheckedAll)) {
-						return true;
 					}
 				}
 			}
@@ -5441,7 +5454,7 @@ namespace scripting {
 			}
 		};
 
-		std::shared_ptr<Namespace2> FindNamespace(std::string QualifiedOrUnqualifiedNamespaceName/*, std::string const& prevPart = ""*/) const {
+		std::shared_ptr<Namespace2> FindNamespace(std::string QualifiedOrUnqualifiedNamespaceName) const {
 			static auto fixNamespace{ [](std::string x) -> std::string {
 				while (x.find("::") == 0 && x.length() > 2) {
 					x = x.substr(2);
@@ -5475,67 +5488,68 @@ namespace scripting {
 #else
 			auto firstOfColons = QualifiedOrUnqualifiedNamespaceName.find_first_of("::");
 			if (firstOfColons == std::string::npos) {
-				if (prevPart == "") {
-					// straight name
-					if (TryFindNearestNamespaceWhere(out, [tryFind = prevPart + QualifiedOrUnqualifiedNamespaceName](std::shared_ptr<Namespace2> const& namespacePtr)->bool {
-						long long len = tryFind.length();
-						auto qualifiedName = std::dynamic_pointer_cast<Scope2>(namespacePtr)->GetQualifiedNamespace();
+				// straight name
+				if (TryFindNearestNamespaceWhere(out, [tryFind = QualifiedOrUnqualifiedNamespaceName](std::shared_ptr<Namespace2> const& namespacePtr)->bool {
+					long long len = tryFind.length();
+					auto qualifiedName = std::dynamic_pointer_cast<Scope2>(namespacePtr)->GetQualifiedNamespace();
 
-						// remove "::" from end
-						while (qualifiedName.size() >= 2 && (qualifiedName.rfind("::") == (qualifiedName.length() - 2))) { qualifiedName = qualifiedName.substr(0, qualifiedName.length() - 2); }
+					// remove "::" from end
+					while (qualifiedName.size() >= 2 && (qualifiedName.rfind("::") == (qualifiedName.length() - 2))) { qualifiedName = qualifiedName.substr(0, qualifiedName.length() - 2); }
 
-						long long qualifiedNameLen = qualifiedName.length();
-						auto F = qualifiedName.find(tryFind);
-						if (F != std::string::npos) {
-							if (F == (qualifiedNameLen - len)) {
-								return true;
-							}
+					long long qualifiedNameLen = qualifiedName.length();
+					auto F = qualifiedName.find(tryFind);
+					if (F != std::string::npos) {
+						if (F == (qualifiedNameLen - len)) {
+							return true;
 						}
-						return false;
-					})) {
-						return out;
 					}
-				}
-				else {
-					// straight name
-					if (TryFindChildNamespaceWhere(out, [tryFind = prevPart + QualifiedOrUnqualifiedNamespaceName](std::shared_ptr<Namespace2> const& namespacePtr)->bool {
-						long long len = tryFind.length();
-						auto qualifiedName = std::dynamic_pointer_cast<Scope2>(namespacePtr)->GetQualifiedNamespace();
-
-						// remove "::" from end
-						while (qualifiedName.size() >= 2 && (qualifiedName.rfind("::") == (qualifiedName.length() - 2))) { qualifiedName = qualifiedName.substr(0, qualifiedName.length() - 2); }
-
-						long long qualifiedNameLen = qualifiedName.length();
-						auto F = qualifiedName.find(tryFind);
-						if (F != std::string::npos) {
-							if (F == (qualifiedNameLen - len)) {
-								return true;
-							}
-						}
-						return false;
-					})) {
-						return out;
-					}
+					return false;
+				})) {
+					return out;
 				}
 			}
 			else {
-				// split the problem into pieces and try to solve them one-at-a-time. It may be faster, by reducing the complexity of the search algorithm and how far it has to navigate. 
-				// e.g. std::string
-
-				auto firstPart = QualifiedOrUnqualifiedNamespaceName.substr(0, firstOfColons); // std
-				auto secondPart = QualifiedOrUnqualifiedNamespaceName.substr(firstOfColons + 2); // string
-
-				// std::cout << Units::printf("%s%s::%s\n", prevPart.c_str(), firstPart.c_str(), secondPart.c_str());
-
-				if (auto ptr = std::dynamic_pointer_cast<Scope2>(FindNamespace(firstPart, prevPart))) {
-					if (auto result = ptr->FindNamespace(secondPart, prevPart + firstPart + "::")) { // will recursively keep "splitting" the problem
-						return result;
+				// split the problem into pieces
+				std::vector<std::string> parts; {
+					std::string parts_str = QualifiedOrUnqualifiedNamespaceName;
+					std::string prev = "";
+					while (firstOfColons != std::string::npos) {
+						parts.push_back(parts_str.substr(0, firstOfColons)); // std
+						parts_str = parts_str.substr(firstOfColons + 2); // string::...
+						firstOfColons = parts_str.find("::");
 					}
+					parts.push_back(parts_str);
 				}
 
-				if (prevPart == "") {
-					// try as-requested. This probably made the search slower, as a result. 
-					if (TryFindChildNamespaceWhere(out, [tryFind = QualifiedOrUnqualifiedNamespaceName](std::shared_ptr<Namespace2> const& namespacePtr)->bool {
+				// Find the first part
+				auto partPtr = FindNamespace(parts[0]);
+				for (int i = 1; i < parts.size(); i++) {
+					if (auto p = std::dynamic_pointer_cast<Scope2>(partPtr)) {
+						if (auto ptr = p->p_children.at_or(parts[i], nullptr)) {
+							if (ptr->size() >= 1) {
+								// all of these are *technically* compatible... 
+								auto subPtr = ptr->first();
+								if (subPtr && subPtr->second) {
+									partPtr = subPtr->second;
+								}
+								else {
+									partPtr = nullptr;
+									break;
+								}
+							}
+							else {
+								partPtr = nullptr;
+								break;
+							}
+						}
+						else {
+							partPtr = nullptr;
+							break;
+						}
+					}
+				}
+				if (auto p = std::dynamic_pointer_cast<Scope2>(partPtr)) {
+					if (p->TryFindNearestNamespaceWhere(out, [tryFind = QualifiedOrUnqualifiedNamespaceName](std::shared_ptr<Namespace2> const& namespacePtr)->bool {
 						long long len = tryFind.length();
 						auto qualifiedName = std::dynamic_pointer_cast<Scope2>(namespacePtr)->GetQualifiedNamespace();
 
@@ -5550,10 +5564,28 @@ namespace scripting {
 							}
 						}
 						return false;
-						})) {
+					})) {
 						return out;
 					}
 				}
+
+				// try as-requested. This probably made the search slower, as a result. 
+				if (this->TryFindNearestNamespaceWhere(out, [tryFind = QualifiedOrUnqualifiedNamespaceName](std::shared_ptr<Namespace2> const& namespacePtr)->bool {
+					long long len = tryFind.length();
+					auto qualifiedName = std::dynamic_pointer_cast<Scope2>(namespacePtr)->GetQualifiedNamespace();
+
+					// remove "::" from end
+					while (qualifiedName.size() >= 2 && (qualifiedName.rfind("::") == (qualifiedName.length() - 2))) { qualifiedName = qualifiedName.substr(0, qualifiedName.length() - 2); }
+
+					long long qualifiedNameLen = qualifiedName.length();
+					auto F = qualifiedName.find(tryFind);
+					if (F != std::string::npos) {
+						if (F == (qualifiedNameLen - len)) {
+							return true;
+						}
+					}
+					return false;
+				})) { return out; }				
 			}
 #endif		
 			return nullptr;			
@@ -5573,7 +5605,10 @@ namespace scripting {
 		Namespace2(std::weak_ptr<Scope2> const& parent, std::string const& Name)
 			: Scope2(parent)
 			, p_Name(Name)
-		{};
+		{
+			qualifiedNamespaceWithQualifiers = this->GetQualifiedNamespaceImpl(true);
+			qualifiedNamespaceWithoutQualifiers = this->GetQualifiedNamespaceImpl();
+		};
 		virtual ~Namespace2() {};
 		void SetSelf(std::shared_ptr<Namespace2>& p) { p_self = p; };
 		virtual bool IsClass() const override { return false; };
@@ -5623,6 +5658,9 @@ namespace scripting {
 			else {
 				ClassType = type.lock();
 			}
+
+			qualifiedNamespaceWithQualifiers = this->GetQualifiedNamespaceImpl(true);
+			qualifiedNamespaceWithoutQualifiers = this->GetQualifiedNamespaceImpl();
 		};
 		virtual ~Class2() {};
 		void SetSelf(std::shared_ptr<Class2>& p) { p_self = p; };
@@ -5639,21 +5677,22 @@ namespace scripting {
 		virtual bool TryFindNearestNamespaceWhere(
 			std::shared_ptr<Namespace2>& bestMatch, 
 			std::function<bool(std::shared_ptr<Namespace2> const&)> const& func, 
-			fibers::containers::Set< std::weak_ptr<Scope2>, Hasher > const& CheckedSelf = {},
-			fibers::containers::Set< std::weak_ptr<Scope2>, Hasher > const& CheckedAll = {}
-		) const override {
-			auto& checkedSelf = const_cast<fibers::containers::Set< std::weak_ptr<Scope2>, Hasher >&>(CheckedSelf);
-			auto& checkedAll = const_cast<fibers::containers::Set< std::weak_ptr<Scope2>, Hasher >&>(CheckedAll);
+			std::unordered_set< std::shared_ptr<Scope2> > const& CheckedSelf = {},
+			std::unordered_set< std::shared_ptr<Scope2> > const& CheckedAll = {}
+		) const {
+			auto& checkedSelf = const_cast<std::unordered_set< std::shared_ptr<Scope2> >&>(CheckedSelf);
+			auto& checkedAll = const_cast<std::unordered_set< std::shared_ptr<Scope2> >&>(CheckedAll);
+			auto selfPtr = this->p_self.lock();
 
 			// Prevent Duplication
-			if (checkedAll.contains(this->p_self)) { return false; }
-			checkedAll.emplace(this->p_self);
+			if (checkedAll.count(selfPtr)>=1) { return false; }
+			checkedAll.emplace(selfPtr);
 
 			// test myself			
-			if (!checkedSelf.contains(this->p_self)) {
-				checkedSelf.emplace(this->p_self);
+			if (!checkedSelf.count(selfPtr) >= 1) {
+				checkedSelf.emplace(selfPtr);
 				if (this->IsNamespace()) {
-					if (auto p = std::dynamic_pointer_cast<Namespace2>(this->p_self.lock())) {
+					if (auto p = std::dynamic_pointer_cast<Namespace2>(selfPtr)) {
 						if (func(p)) {
 							bestMatch = p;
 							return true;
@@ -5663,10 +5702,12 @@ namespace scripting {
 			}
 
 			// test my "using" namespaces and their children.
-			for (auto childNamespace : this->p_using) {
-				if (auto p = std::dynamic_pointer_cast<Scope2>(childNamespace.lock())) {
-					if (p && p->TryFindNearestNamespaceWhere(bestMatch, func, CheckedSelf, CheckedAll)) {
-						return true;
+			for (auto& childNamespace : this->p_using) {
+				if (childNamespace) {
+					if (auto p = std::dynamic_pointer_cast<Scope2>(childNamespace->second.lock())) {
+						if (p && p->TryFindNearestNamespaceWhere(bestMatch, func, CheckedSelf, CheckedAll)) {
+							return true;
+						}
 					}
 				}
 			}
@@ -5679,30 +5720,48 @@ namespace scripting {
 			}
 
 			// test all of my parents 
-			auto parentPtr = this->p_parent.lock();
-			while (parentPtr) {
-				if (!checkedSelf.contains(parentPtr)) {
-					checkedSelf.emplace(parentPtr);
-					if (parentPtr->IsNamespace()) {
-						if (auto p = std::dynamic_pointer_cast<Namespace2>(parentPtr)) {
-							if (func(p)) {
-								bestMatch = p;
-								return true;
+			if (1) {
+				auto parentPtr = this->p_parent.lock();
+				while (parentPtr) {
+					if (!checkedSelf.count(parentPtr) >= 1) {
+						checkedSelf.emplace(parentPtr);
+						if (parentPtr->IsNamespace()) {
+							if (auto p = std::dynamic_pointer_cast<Namespace2>(parentPtr)) {
+								if (func(p)) {
+									bestMatch = p;
+									return true;
+								}
 							}
 						}
 					}
+					else {
+						break; // we've checked this before! Quick, get out. 
+					}
+					parentPtr = parentPtr->p_parent.lock();
 				}
-				else {
-					break; // we've checked this before! Quick, get out. 
-				}
-				parentPtr = parentPtr->p_parent.lock();
 			}
 
-			// test my children.
-			for (auto childNamespace : this->p_children) {
-				if (auto p = std::dynamic_pointer_cast<Scope2>(childNamespace)) {
-					if (p->TryFindNearestNamespaceWhere(bestMatch, func, CheckedSelf, CheckedAll)) {
-						return true;
+			// test my children themselves
+			for (auto& childNamespace : this->p_children) {
+				if (childNamespace && childNamespace->second) {
+					for (auto& innerChildNamespace : *childNamespace->second) {
+						if (innerChildNamespace->second) {
+							auto ptr = std::dynamic_pointer_cast<Scope2>(innerChildNamespace->second);
+							if (!checkedSelf.count(ptr) >= 1) {
+								checkedSelf.emplace(ptr);
+								if (ptr->IsNamespace()) {
+									if (auto p = std::dynamic_pointer_cast<Namespace2>(ptr)) {
+										if (func(p)) {
+											bestMatch = p;
+											return true;
+										}
+									}
+								}
+							}
+							else {
+								break; // we've checked this before! Quick, get out. 
+							}
+						}
 					}
 				}
 			}
@@ -5714,69 +5773,34 @@ namespace scripting {
 				}
 			}
 
-			return false;
-		};
-
-		virtual bool TryFindChildNamespaceWhere(
-			std::shared_ptr<Namespace2>& bestMatch,
-			std::function<bool(std::shared_ptr<Namespace2> const&)> const& func,
-			fibers::containers::Set< std::weak_ptr<Scope2>, Hasher > const& CheckedSelf = {},
-			fibers::containers::Set< std::weak_ptr<Scope2>, Hasher > const& CheckedAll = {}
-		) const {
-			auto& checkedSelf = const_cast<fibers::containers::Set< std::weak_ptr<Scope2>, Hasher >&>(CheckedSelf);
-			auto& checkedAll = const_cast<fibers::containers::Set< std::weak_ptr<Scope2>, Hasher >&>(CheckedAll);
-
-			// Prevent Duplication
-			if (checkedAll.contains(this->p_self)) { return false; }
-			checkedAll.emplace(this->p_self);
-
-			// test myself			
-			if (!checkedSelf.contains(this->p_self)) {
-				checkedSelf.emplace(this->p_self);
-				if (this->IsNamespace()) {
-					if (auto p = std::dynamic_pointer_cast<Namespace2>(this->p_self.lock())) {
-						if (func(p)) {
-							bestMatch = p;
-							return true;
+			// test my children's children.
+			for (auto& childNamespace : this->p_children) {
+				if (childNamespace && childNamespace->second) {
+					for (auto& innerChildNamespace : *childNamespace->second) {
+						if (innerChildNamespace) {
+							if (auto p = std::dynamic_pointer_cast<Scope2>(innerChildNamespace->second)) {
+								if (p->TryFindNearestNamespaceWhere(bestMatch, func, CheckedSelf, CheckedAll)) {
+									return true;
+								}
+							}
 						}
 					}
 				}
 			}
 
-			// test my "using" namespaces and their children.
-			for (auto childNamespace : this->p_using) {
-				if (auto p = std::dynamic_pointer_cast<Scope2>(childNamespace.lock())) {
-					if (p && p->TryFindChildNamespaceWhere(bestMatch, func, CheckedSelf, CheckedAll)) {
-						return true;
-					}
-				}
-			}
-
-			// test my inherited namespace.
-			if (auto p = std::dynamic_pointer_cast<Scope2>(DerivedFrom.lock())) {
-				if (p->TryFindChildNamespaceWhere(bestMatch, func, CheckedSelf, CheckedAll)) {
-					return true;
-				}
-			}
-
-			// test my children.
-			for (auto childNamespace : this->p_children) {
-				if (auto p = std::dynamic_pointer_cast<Scope2>(childNamespace)) {
-					if (p->TryFindChildNamespaceWhere(bestMatch, func, CheckedSelf, CheckedAll)) {
-						return true;
-					}
-				}
-			}
-
 			return false;
 		};
+
 	};
 
 	class Global2 final : public Namespace2 {
 	public:
 		Global2()
 			: Namespace2(std::weak_ptr<Scope2>(), "")
-		{};
+		{
+			qualifiedNamespaceWithQualifiers = this->GetQualifiedNamespaceImpl(true);
+			qualifiedNamespaceWithoutQualifiers = this->GetQualifiedNamespaceImpl();
+		};
 		virtual ~Global2() {};
 		void SetSelf(std::shared_ptr<Global2>& p) { p_self = p; };
 
