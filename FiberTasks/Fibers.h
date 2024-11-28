@@ -6022,6 +6022,18 @@ namespace fibers {
 					return std::nullopt;
 				}
 			};
+			/* returns a COPY of the value at the key. Returns empty if the value is not found. */
+			std::optional<std::pair<const KeyType, ObjType>> pair_at_hash(size_t const& key_hash) const {
+				auto lock{ std::shared_lock(mut) };
+
+				auto f = map.find(key_hash);
+				if (f != map.end() && f->second) {
+					return *f->second;
+				}
+				else {
+					return std::nullopt;
+				}
+			};
 			/* returns a COPY of the value at the key. Returns default values if the value is not found. */
 			ObjType at_hash_or(size_t const& key_hash, ObjType const& defaultObj = ObjType()) const { return at_hash(key_hash).value_or(defaultObj); };
 			/* returns a COPY of the value at the key. Returns empty if the value is not found. */
@@ -6046,6 +6058,14 @@ namespace fibers {
 				static auto hasher{ Hasher() };
 				auto lock{ std::unique_lock(mut) };
 				return map.unsafe_erase(hasher(key)) > 0;
+			};
+			/* queues the keys to be erased. Note that the erasure may be delayed depending on use of the map. */
+			void erase(std::vector<KeyType> const& keys) {
+				if (keys.size() > 0) {
+					static auto hasher{ Hasher() };
+					auto lock{ std::unique_lock(mut) };
+					for (auto& key : keys) map.unsafe_erase(hasher(key));
+				}
 			};
 			/* returns true if the key is in the map. */
 			bool contains(KeyType const& key) const {

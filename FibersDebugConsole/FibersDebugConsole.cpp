@@ -101,7 +101,6 @@ int main() {
 					}
 				}
 			}
-
 			if (1) {
 				fibers::containers::Map<std::string, std::shared_ptr<stackThing>> map;
 				fibers::parallel::For(0, 100, [&](int i) {
@@ -156,6 +155,7 @@ int main() {
 				});
 			}
 		}
+
 #if 0
 		if (1) {
 			scripting::ScriptingState objs;
@@ -427,6 +427,7 @@ int main() {
 		}
 #endif
 
+#if 0
 		if (1) {
 			delete (new int(5));
 			if (true) {
@@ -477,6 +478,8 @@ int main() {
 			}
 			delete (new int(5));
 		}
+#endif
+
 
 		// Re-build 2 Test
 		if (1) {
@@ -484,8 +487,650 @@ int main() {
 			auto printf = [](auto x) { std::cout << x << std::endl; };
 			Stopwatch sw{};
 
+			fibers::containers::Map<std::string, std::shared_ptr<Global2>> imports;
+
 			auto scope_1 = std::make_shared<Global2>(); // ::
 			scope_1->SetSelf(scope_1);
+			scope_1->AddBuiltIns();
+
+			int numIterations = 100000;
+
+			// FindNamespace
+			if (1) {
+				sw.Start();
+				fibers::parallel::For(0, numIterations, [&](int i) {
+					if (auto namespacePtr = scope_1->FindNamespace("string")) {
+
+					}
+					else {
+						EXPECT_EQ(true, false);
+					}
+					});
+				printf(std::to_string(__LINE__) + ": \t" + std::to_string(numIterations) + " operations per " + Units::second(sw.Stop_s()).ToString() + ".");
+			}
+
+			// FindClass
+			if (1) {
+				sw.Start();
+				fibers::parallel::For(0, numIterations, [&](int i) {
+					if (auto namespacePtr = scope_1->FindClass(user_type<std::string>())) {
+
+					}
+					else {
+						EXPECT_EQ(true, false);
+					}
+					});
+				printf(std::to_string(__LINE__) + ": \t" + std::to_string(numIterations) + " operations per " + Units::second(sw.Stop_s()).ToString() + ".");
+			}
+
+			// Find Objects
+			if (1) {
+				sw.Start();
+				fibers::parallel::For(0, numIterations, [&](int i) {
+					if (auto p = scope_1->FindObj("npos")) {
+						EXPECT_EQ(p->cast<size_t>(), std::string::npos);
+					}
+					else {
+						EXPECT_EQ(true, false);
+					}
+					});
+				printf(std::to_string(__LINE__) + ": \t" + std::to_string(numIterations) + " operations per " + Units::second(sw.Stop_s()).ToString() + ".");
+
+				sw.Start();
+				fibers::parallel::For(0, numIterations, [&](int i) {
+					if (auto p = scope_1->FindObj("::string::npos")) {
+						EXPECT_EQ(p->cast<size_t>(), std::string::npos);
+					}
+					else {
+						EXPECT_EQ(true, false);
+					}
+					});
+				printf(std::to_string(__LINE__) + ": \t" + std::to_string(numIterations) + " operations per " + Units::second(sw.Stop_s()).ToString() + ".");
+			}
+
+			// Find Functions
+			if (1) {
+				sw.Start();
+				fibers::parallel::For(0, numIterations, [&](int i) {
+					if (auto p = scope_1->FindFunctions("length")) {
+
+					}
+					else {
+						EXPECT_EQ(true, false);
+					}
+					});
+				printf(std::to_string(__LINE__) + ": \t" + std::to_string(numIterations) + " operations per " + Units::second(sw.Stop_s()).ToString() + ".");
+
+				sw.Start();
+				fibers::parallel::For(0, numIterations, [&](int i) {
+					if (auto p = scope_1->FindFunctions("::string::length")) {
+
+					}
+					else {
+						EXPECT_EQ(true, false);
+					}
+					});
+				printf(std::to_string(__LINE__) + ": \t" + std::to_string(numIterations) + " operations per " + Units::second(sw.Stop_s()).ToString() + ".");
+			}
+
+			// Create and test the type conversion tree, which builds itself from the constructors of the various classes.
+			if (1) {
+				sw.Start();
+				for (int i = 0; i < numIterations / 10; i++) // fibers::parallel::For(0, numIterations / 10, [&](int i)
+					{
+						auto tree = scope_1->GetTypeConverterTree(); // builds and caches the tree. Updates the tree only if the situation has changed (new functions, new classes, or new Using statements)
+
+						if (!tree->Converts<int, long>()) { EXPECT_EQ(true, false); }
+						if (!tree->Converts<float, long>()) { EXPECT_EQ(true, false); }
+						if (!tree->Converts<int, double>()) { EXPECT_EQ(true, false); }
+						if (!tree->Converts<bool, int>()) { EXPECT_EQ(true, false); }
+						if (!tree->Converts<int, int>()) { EXPECT_EQ(true, false); }
+						if (!tree->Converts<double, int>()) { EXPECT_EQ(true, false); }
+						if (!tree->Converts<bool, double>()) { EXPECT_EQ(true, false); }
+
+						EXPECT_EQ(100, tree->Convert<int>(100.0));
+						EXPECT_EQ(100.0, tree->Convert<double>(100l));
+						EXPECT_EQ(100l, tree->Convert<long>(100.0f));
+						EXPECT_EQ(100.0f, tree->Convert<float>(100.0));
+						EXPECT_EQ(true, tree->Convert<bool>(1));
+						EXPECT_EQ(100.0f, tree->Convert<float>(100l));
+						EXPECT_EQ(1.0, tree->Convert<double>(true));
+					}
+				// );
+				printf(std::to_string(__LINE__) + ": \t" + std::to_string(numIterations / 10) + " operations (on 10,000 classes) per " + Units::second(sw.Stop_s()).ToString() + ".");
+			}
+
+			// Create and test the type conversion tree, which builds itself from the constructors of the various classes.
+			if (1) {
+				std::vector<Any> params = { Any(fibers::containers::number<double>(0)), Any(1) };
+				auto& n = params[0].cast<fibers::containers::number<double>&>();
+
+				sw.Start();
+				auto scope_outer = std::make_shared<Scope2>(scope_1);
+				scope_outer->SetSelf(scope_outer);
+				fibers::parallel::For(0, numIterations, [&](int i) {
+					auto scope_inner = std::make_shared<Scope2>(scope_outer);
+					scope_inner->SetSelf(scope_inner);
+					scope_inner->AddObj("i", std::make_shared<Any>(i));
+					{
+						scope_inner->CallFunction("+=", params);
+					}
+					});
+				printf(std::to_string(__LINE__) + ": \t" + std::to_string(numIterations) + " operations (on 10,000 classes) per " + Units::second(sw.Stop_s()).ToString() + ".");
+
+				{
+					EXPECT_EQ(true, scope_1->Cast<bool>(scope_1->CallFunction("==", { params[0], numIterations })));
+				}
+
+				{
+					printf(scope_1->Cast<std::string>(
+						scope_1->CallFunction("+", {
+							scope_1->Cast<std::string>(params[0])
+							, std::string(" is the count")
+							})
+						));
+				}
+
+				EXPECT_EQ(n, (numIterations));
+			}
+
+			EXPECT_EQ("100", scope_1->Cast<std::string>(scope_1->CallFunction("string", { 100 })));
+			EXPECT_EQ("200", scope_1->Cast<std::string>(scope_1->CallFunction("::string", { scope_1->Cast<int>(scope_1->CallFunction("+", { 100.0f, 100.0 })) })));
+
+			printf(scope_1->Cast<std::string>(scope_1->CallFunction("Type", { 100 })));
+			printf(scope_1->Cast<std::string>(scope_1->CallFunction("Type", { 100.0f })));
+			printf(scope_1->Cast<std::string>(scope_1->CallFunction("Type", { 100.0 })));
+			printf(scope_1->Cast<std::string>(scope_1->CallFunction("Type", { std::string("TEST") })));
+			printf(scope_1->Cast<std::string>(scope_1->CallFunction("Type", { 'A' })));
+			printf(scope_1->Cast<std::string>(scope_1->CallFunction("Type", { Units::acre(1) })));
+
+			EXPECT_EQ(true, scope_1->Cast<bool>(scope_1->CallFunction("!=", { scope_1->CallFunction("Type", { 100.0 }), scope_1->CallFunction("Type", { 100.0f }) })));
+			EXPECT_EQ(true, scope_1->Cast<bool>(scope_1->CallFunction("==", { scope_1->CallFunction("Type", { 100.0 }), scope_1->CallFunction("Type", { 100.0 }) })));
+
+#if 1
+			// Units
+			if (1) {
+				// #include "Units"
+				if (1) {
+					auto global_scope2{ std::make_shared<Global2>() }; // global should always be a Namespace
+					global_scope2->SetSelf(global_scope2);
+					global_scope2->AddBuiltIns();
+
+					// Create library...
+					{
+						auto std_namespace{ std::make_shared<Namespace2>(global_scope2, "Units") };
+						std_namespace->SetSelf(std_namespace);
+						global_scope2->AddChild(std_namespace);
+
+						// the "std" namespace imports the "string" namespace...
+						{
+							auto value_namespace{ std::make_shared<Class2>(std_namespace, "value", scripting::user_type<Units::value>()) };
+							value_namespace->SetSelf(value_namespace);
+							std_namespace->AddChild(value_namespace);
+
+							// which has the following types groups... 
+							{
+								// value -> double
+								if (auto p = std_namespace->FindClass(user_type<double>())) {
+									p->AddFunction(p->GetName(), make_callable([](Units::value const& o) -> double { return o(); }));
+								}
+								// value -> string
+								if (auto p = std_namespace->FindClass(user_type<std::string>())) {
+									p->AddFunction(p->GetName(), make_callable([](Units::value const& o) -> std::string { return o.ToString(); }));
+								}
+
+								value_namespace->AddFunction("abbreviation", make_callable([](Units::value const& x)->std::string {
+									return x.Abbreviation();
+								}));
+								value_namespace->AddFunction("name", make_callable([](Units::value const& x)->std::string {
+									return x.UnitName();
+								}));
+								value_namespace->AddFunction("to_string", make_callable([](Units::value const& x)->std::string {
+									return x.ToString();
+								}));
+
+
+								// Constructors
+								value_namespace->AddFunction("value", make_callable([]() -> Units::value { return Units::value{}; }));
+								value_namespace->AddFunction("value", make_callable([](Units::value const& makeCopy) -> Units::value { return makeCopy; }));
+								value_namespace->AddFunction("value", make_callable([](double const& o)->Units::value { return o; }));
+								value_namespace->AddFunction("=", make_callable([](Any const& a, Units::value const& b) -> Any { Units::value& out = a.cast(); out = b; return a; }), Param_Types({ {std::string("a"), user_type<Units::value>() }, {std::string("b"), user_type<Units::value>() } }));
+
+								// Comparisons & operators
+								value_namespace->AddFunction("==", scripting::make_callable([](Units::value const& x, Units::value const& y) -> bool { return x == y; }));
+								value_namespace->AddFunction("!=", scripting::make_callable([](Units::value const& x, Units::value const& y) -> bool { return x != y; }));
+								value_namespace->AddFunction("<", scripting::make_callable([](Units::value const& x, Units::value const& y) -> bool { return x < y; }));
+								value_namespace->AddFunction(">", scripting::make_callable([](Units::value const& x, Units::value const& y) -> bool { return x > y; }));
+								value_namespace->AddFunction("<=", scripting::make_callable([](Units::value const& x, Units::value const& y) -> bool { return x <= y; }));
+								value_namespace->AddFunction(">=", scripting::make_callable([](Units::value const& x, Units::value const& y) -> bool { return x >= y; }));
+								value_namespace->AddFunction("+", scripting::make_callable([](Units::value const& x, Units::value const& y) -> Units::value { return x + y; }));
+								value_namespace->AddFunction("-", scripting::make_callable([](Units::value const& x, Units::value const& y) -> Units::value { return x - y; }));
+								value_namespace->AddFunction("*", scripting::make_callable([](Units::value const& x, Units::value const& y) -> Units::value { return x * y; }));
+								value_namespace->AddFunction("/", scripting::make_callable([](Units::value const& x, Units::value const& y) -> Units::value { return x / y; }));
+								value_namespace->AddFunction("+=", make_callable([](Any const& a, Units::value const& b) -> Any { Units::value& out = a.cast(); out += b; return a; }), Param_Types({ {std::string("a"), user_type<Units::value>() }, {std::string("b"), user_type<Units::value>() } }));
+								value_namespace->AddFunction("-=", make_callable([](Any const& a, Units::value const& b) -> Any { Units::value& out = a.cast(); out -= b; return a; }), Param_Types({ {std::string("a"), user_type<Units::value>() }, {std::string("b"), user_type<Units::value>() } }));
+								value_namespace->AddFunction("*=", make_callable([](Any const& a, Units::value const& b) -> Any { Units::value& out = a.cast(); out *= b; return a; }), Param_Types({ {std::string("a"), user_type<Units::value>() }, {std::string("b"), user_type<Units::value>() } }));
+								value_namespace->AddFunction("/=", make_callable([](Any const& a, Units::value const& b) -> Any { Units::value& out = a.cast(); out /= b; return a; }), Param_Types({ {std::string("a"), user_type<Units::value>() }, {std::string("b"), user_type<Units::value>() } }));
+
+#if 0
+
+								// manually go through and add each unit type... 
+								auto allUnitTypes = Units::UnitsDetail::GetValueTypes();
+								auto addUnit = [&](auto impl, std::string const& name) -> void {
+									auto impl_namespace{ std::make_shared<Class2>(std_namespace, name, user_type<decltype(impl)>(), value_namespace) };
+									impl_namespace->SetSelf(impl_namespace);
+									std_namespace->AddChild(impl_namespace);
+
+
+
+
+
+
+									// Polymorphic converter
+									tree.AddConverter<decltype(impl), Units::value>();
+									tree.AddConverter<Units::value, decltype(impl)>();
+									tree.AddConverter<decltype(impl), double>();
+									tree.AddConverter([](decltype(impl) const& x) -> std::string { return x.ToString(); });
+
+									bool found{ false };
+									for (auto& type_group : allUnitTypes) {
+										if (found) break;
+										for (auto& type : type_group) {
+											if (std::get<1>(type) == name) {
+												auto& abbrev = std::get<0>(type);
+
+												// POSTFIX
+												std_namespace->m_postfixes.emplace(abbrev, impl_namespace);
+
+												// CONSTRUCT {}
+												impl_namespace->m_functions.emplace(name, make_callable([/*thisT = impl*/]()->decltype(impl) {
+													decltype(impl) out;
+													out = 0;
+													return out;
+													}), scripting::Param_Types());
+
+												// CONSTRUCT { double }
+												impl_namespace->m_functions.emplace(name, make_callable([/*thisT = impl*/](double x)->decltype(impl) {
+													decltype(impl) out;
+													out = x;
+													return out;
+													}), scripting::Param_Types({ { "in", user_type<double>() } }));
+
+												// CONSTRUCT { Units::value }
+												impl_namespace->m_functions.emplace(name, make_callable([/*thisT = impl*/](Units::value const& x)->decltype(impl) {
+													decltype(impl) out;
+													out = x;
+													return out;
+													}), scripting::Param_Types({ { "in", user_type<Units::value>() } }));
+
+												// abbreviation
+												impl_namespace->m_functions.emplace("abbreviation", make_callable([thisT = abbrev]()->std::string {
+													return thisT;
+													}));
+
+												// name
+												impl_namespace->m_functions.emplace("name", make_callable([thisT = name]()->std::string {
+													return thisT;
+													}));
+
+												std_namespace->AddUsing(impl_namespace);
+
+												found = true;
+												break;
+											}
+										}
+									}
+								};
+
+
+
+#define AddUnit(unitname) addUnit(Units::##unitname(), #unitname)
+								AddUnit(meter);
+								AddUnit(foot);
+								AddUnit(inch);
+								AddUnit(mile);
+								AddUnit(nauticalMile);
+								AddUnit(astronicalUnit);
+								AddUnit(yard);
+								AddUnit(gram);
+								AddUnit(metric_ton);
+								AddUnit(pound);
+								AddUnit(long_ton);
+								AddUnit(short_ton);
+								AddUnit(stone);
+								AddUnit(ounce);
+								AddUnit(carat);
+								AddUnit(slug);
+								AddUnit(second);
+								AddUnit(minute);
+								AddUnit(hour);
+								AddUnit(day);
+								AddUnit(week);
+								AddUnit(year);
+								AddUnit(month);
+								AddUnit(julian_year);
+								AddUnit(gregorian_year);
+								AddUnit(ampere);
+								AddUnit(Dollar);
+								AddUnit(MillionDollar);
+								AddUnit(hertz);
+								AddUnit(meters_per_second);
+								AddUnit(feet_per_second);
+								AddUnit(feet_per_minute);
+								AddUnit(feet_per_hour);
+								AddUnit(miles_per_hour);
+								AddUnit(kilometers_per_hour);
+								AddUnit(knot);
+								AddUnit(meters_per_second_squared);
+								AddUnit(feet_per_second_squared);
+								AddUnit(standard_gravity);
+								AddUnit(newton);
+								AddUnit(pound_f);
+								AddUnit(dyne);
+								AddUnit(kilopond);
+								AddUnit(poundal);
+								AddUnit(pascals);
+								AddUnit(bar);
+								AddUnit(atmosphere);
+								AddUnit(pounds_per_square_inch);
+								AddUnit(head);
+								AddUnit(torr);
+								AddUnit(coulomb);
+								AddUnit(ampere_hour);
+								AddUnit(watt);
+								AddUnit(horsepower);
+								AddUnit(joule);
+								AddUnit(calorie);
+								AddUnit(watt_minute);
+								AddUnit(watt_hour);
+								AddUnit(watt_day);
+								AddUnit(british_thermal_unit);
+								AddUnit(british_thermal_unit_iso);
+								AddUnit(british_thermal_unit_59);
+								AddUnit(therm);
+								AddUnit(foot_pound);
+								AddUnit(volt);
+								AddUnit(ohm);
+								AddUnit(siemens);
+								AddUnit(square_meter);
+								AddUnit(square_foot);
+								AddUnit(square_inch);
+								AddUnit(square_mile);
+								AddUnit(square_kilometer);
+								AddUnit(hectare);
+								AddUnit(acre);
+								AddUnit(cubic_meter);
+								AddUnit(cubic_millimeter);
+								AddUnit(cubic_kilometer);
+								AddUnit(liter);
+								AddUnit(cubic_inch);
+								AddUnit(cubic_foot);
+								AddUnit(cubic_yard);
+								AddUnit(cubic_mile);
+								AddUnit(gallon);
+								AddUnit(imperial_gallon);
+								AddUnit(million_gallon);
+								AddUnit(imperial_million_gallon);
+								AddUnit(acre_foot);
+								AddUnit(quart);
+								AddUnit(pint);
+								AddUnit(cup);
+								AddUnit(fluid_ounce);
+								AddUnit(barrel);
+								AddUnit(bushel);
+								AddUnit(cord);
+								AddUnit(tablespoon);
+								AddUnit(teaspoon);
+								AddUnit(pinch);
+								AddUnit(dash);
+								AddUnit(drop);
+								AddUnit(fifth);
+								AddUnit(dram);
+								AddUnit(gill);
+								AddUnit(peck);
+								AddUnit(sack);
+								AddUnit(shot);
+								AddUnit(strike);
+								AddUnit(gram_per_second);
+								AddUnit(metric_ton_per_second);
+								AddUnit(metric_ton_per_minute);
+								AddUnit(metric_ton_per_hour);
+								AddUnit(metric_ton_per_day);
+								AddUnit(metric_ton_per_year);
+								AddUnit(cubic_meter_per_second);
+								AddUnit(cubic_meter_per_hour);
+								AddUnit(cubic_meter_per_day);
+								AddUnit(cubic_millimeter_per_second);
+								AddUnit(liter_per_second);
+								AddUnit(liter_per_minute);
+								AddUnit(liter_per_day);
+								AddUnit(megaliter_per_day);
+								AddUnit(cubic_inch_per_second);
+								AddUnit(cubic_inch_per_hour);
+								AddUnit(cubic_foot_per_second);
+								AddUnit(cubic_foot_per_hour);
+								AddUnit(gallon_per_second);
+								AddUnit(gallon_per_minute);
+								AddUnit(gallon_per_hour);
+								AddUnit(gallon_per_day);
+								AddUnit(gallon_per_year);
+								AddUnit(million_gallon_per_second);
+								AddUnit(million_gallon_per_minute);
+								AddUnit(million_gallon_per_hour);
+								AddUnit(million_gallon_per_day);
+								AddUnit(million_gallon_per_year);
+								AddUnit(imperial_million_gallon_per_second);
+								AddUnit(imperial_million_gallon_per_minute);
+								AddUnit(imperial_million_gallon_per_hour);
+								AddUnit(imperial_million_gallon_per_day);
+								AddUnit(imperial_million_gallon_per_year);
+								AddUnit(acre_foot_per_second);
+								AddUnit(acre_foot_per_minute);
+								AddUnit(acre_foot_per_hour);
+								AddUnit(acre_foot_per_day);
+								AddUnit(acre_foot_per_year);
+								AddUnit(kilograms_per_cubic_meter);
+								AddUnit(grams_per_milliliter);
+								AddUnit(kilograms_per_liter);
+								AddUnit(ounces_per_cubic_foot);
+								AddUnit(ounces_per_cubic_inch);
+								AddUnit(ounces_per_gallon);
+								AddUnit(pounds_per_cubic_foot);
+								AddUnit(pounds_per_cubic_inch);
+								AddUnit(pounds_per_gallon);
+								AddUnit(slugs_per_cubic_foot);
+								AddUnit(Dollar_per_joule);
+								AddUnit(Dollar_per_kilowatt_hour);
+								AddUnit(Dollar_per_watt);
+								AddUnit(Dollar_per_kilowatt);
+								AddUnit(Dollar_per_cubic_meter);
+								AddUnit(Dollar_per_gallon);
+								AddUnit(kilowatt_hour_per_acre_foot);
+								AddUnit(Dollar_per_mile);
+								AddUnit(Dollar_per_ton);
+								AddUnit(ton_per_kilowatt_hour);
+#undef AddUnit
+
+#endif
+							}
+
+							// std_namespace->AddUsing(value_namespace);
+
+							auto foot_namespace{ std::make_shared<Class2>(std_namespace, "foot", scripting::user_type<Units::foot>(), value_namespace) };
+							foot_namespace->SetSelf(foot_namespace);
+							std_namespace->AddChild(foot_namespace);
+							{
+								// Constructors
+								// foot()
+								foot_namespace->AddFunction("foot", make_callable([]() -> Units::foot { return Units::foot{}; }));
+								// foot(double)
+								foot_namespace->AddFunction("foot", make_callable([](double const& o)->Units::foot { return o; }));
+								// foot(value)
+								foot_namespace->AddFunction("foot", make_callable([](Units::value const& makeCopy) -> Units::foot { return makeCopy; }));
+								// foot() = value();
+								foot_namespace->AddFunction("=", make_callable([](Any const& a, Units::value const& b) -> Any { Units::foot& out = a.cast(); out = b; return a; }), Param_Types({ {std::string("a"), user_type<Units::foot>() }, {std::string("b"), user_type<Units::value>() } }));
+
+								// Comparisons & operators
+								foot_namespace->AddFunction("==", scripting::make_callable([](Units::foot const& x, Units::foot const& y) -> bool { return x == y; }));
+								foot_namespace->AddFunction("!=", scripting::make_callable([](Units::foot const& x, Units::foot const& y) -> bool { return x != y; }));
+								foot_namespace->AddFunction("<", scripting::make_callable([](Units::foot const& x, Units::foot const& y) -> bool { return x < y; }));
+								foot_namespace->AddFunction(">", scripting::make_callable([](Units::foot const& x, Units::foot const& y) -> bool { return x > y; }));
+								foot_namespace->AddFunction("<=", scripting::make_callable([](Units::foot const& x, Units::foot const& y) -> bool { return x <= y; }));
+								foot_namespace->AddFunction(">=", scripting::make_callable([](Units::foot const& x, Units::foot const& y) -> bool { return x >= y; }));
+								foot_namespace->AddFunction("+", scripting::make_callable([](Units::foot const& x, Units::foot const& y) -> Units::foot { return x + y; }));
+								foot_namespace->AddFunction("-", scripting::make_callable([](Units::foot const& x, Units::foot const& y) -> Units::foot { return x - y; }));
+								foot_namespace->AddFunction("*", scripting::make_callable([](Units::foot const& x, Units::foot const& y) -> Units::foot { return x * y; }));
+								foot_namespace->AddFunction("/", scripting::make_callable([](Units::foot const& x, Units::foot const& y) -> Units::foot { return x / y; }));
+								foot_namespace->AddFunction("+=", make_callable([](Any const& a, Units::foot const& b) -> Any { Units::foot& out = a.cast(); out += b; return a; }), Param_Types({ {std::string("a"), user_type<Units::foot>() }, {std::string("b"), user_type<Units::foot>() } }));
+								foot_namespace->AddFunction("-=", make_callable([](Any const& a, Units::foot const& b) -> Any { Units::foot& out = a.cast(); out -= b; return a; }), Param_Types({ {std::string("a"), user_type<Units::foot>() }, {std::string("b"), user_type<Units::foot>() } }));
+								foot_namespace->AddFunction("*=", make_callable([](Any const& a, Units::foot const& b) -> Any { Units::foot& out = a.cast(); out *= b; return a; }), Param_Types({ {std::string("a"), user_type<Units::foot>() }, {std::string("b"), user_type<Units::foot>() } }));
+								foot_namespace->AddFunction("/=", make_callable([](Any const& a, Units::foot const& b) -> Any { Units::foot& out = a.cast(); out /= b; return a; }), Param_Types({ {std::string("a"), user_type<Units::foot>() }, {std::string("b"), user_type<Units::foot>() } }));
+
+								// foot -> double converters
+								//if (auto p = std_namespace->FindClass(user_type<double>())) {
+								//	p->AddFunction(p->GetName(), make_callable([](Units::foot const& o) -> double { return o(); }));
+								//}
+								// foot -> string converters
+								//if (auto p = std_namespace->FindClass(user_type<std::string>())) {
+								//	p->AddFunction(p->GetName(), make_callable([](Units::foot const& o) -> std::string { return o.ToString(); }));
+								//}
+								
+								// value(foot)
+								value_namespace->AddFunction(value_namespace->GetName(), make_callable([](Any const& from) -> std::shared_ptr<Units::value> {
+									return std::dynamic_pointer_cast<Units::value>(from.cast<std::shared_ptr<Units::foot>>());
+								}), Param_Types({ { "from", foot_namespace->GetClassType() } }));
+
+								// Functions 
+								//foot_namespace->AddFunction("abbreviation", make_callable([](Units::foot const& x)->std::string {
+								//	return x.Abbreviation();
+								//}));
+								//foot_namespace->AddFunction("name", make_callable([](Units::foot const& x)->std::string {
+								//	return x.UnitName();
+								//}));
+								//foot_namespace->AddFunction("to_string", make_callable([](Units::foot const& x)->std::string {
+								//	return x.ToString();
+								//}));
+
+
+								auto foot_str = global_scope2->Cast<std::string>(global_scope2->Cast<Units::value>(global_scope2->Cast<Units::foot>(100)));
+								EXPECT_EQ(foot_str, "100 ft");
+
+								auto value_str = global_scope2->Cast<std::string>(global_scope2->Cast<Units::value>(100));
+								EXPECT_EQ(value_str, "100");
+
+								auto temp1 = value_namespace->CallFunction("value", { Units::foot(100) });
+								EXPECT_EQ(temp1.Type(), user_type<Units::value>());
+
+								auto temp = value_namespace->CallFunction("value", { 100 });
+								EXPECT_EQ(temp.Type(), user_type<Units::value>());
+
+								auto foot_str2 = global_scope2->Cast<std::string>(global_scope2->CallFunction("string", { global_scope2->CallFunction("value", { global_scope2->CallFunction("foot", { 100 }) }) }));
+								//printf(foot_str2);
+								EXPECT_EQ(foot_str2, "100 ft");
+
+								auto foot_str3 = global_scope2->Cast<std::string>(global_scope2->CallFunction("::string", { global_scope2->CallFunction("Units::value", { global_scope2->CallFunction("Units::foot", { 100 }) }) }));
+								//printf(foot_str3);
+								EXPECT_EQ(foot_str3, "100 ft");
+
+
+
+
+
+
+							}
+						}
+					}
+
+					// add it to our script...
+					imports.emplace("github//scriptLanguage.Units", global_scope2); // the import map guarrantees lifetime...
+					scope_1->AddUsing(global_scope2); // ... while "using" allows our global to share their global's custom namespaces and objects
+
+					if (auto p = scope_1->FindFunctions("Units::value")) {
+						EXPECT_EQ(true, true);
+					}
+					else {
+						EXPECT_EQ(false, true);
+					}
+
+					std::vector<Any> params = { 100 };
+					if (auto p = scope_1->BuildFunction("Units::value", params)) {
+						EXPECT_EQ(true, true);
+					}
+					else {
+						EXPECT_EQ(false, true);
+					}
+					if (auto p = scope_1->CallFunction("Units::value", params)) {
+						EXPECT_EQ(user_type<Units::value>(), p.Type());
+					}
+					else {
+						EXPECT_EQ(false, true);
+					}
+
+					std::vector<Any> params2 = { Units::value(100), 100 };
+					if (auto p = scope_1->BuildFunction("==", params2)) {
+						EXPECT_EQ(true, true);
+					}
+					else {
+						EXPECT_EQ(false, true);
+					}
+					if (auto p = scope_1->CallFunction("==", params2)) {
+						EXPECT_EQ(user_type<bool>(), p.Type());
+					}
+					else {
+						EXPECT_EQ(false, true);
+					}
+
+				}
+
+				if (1) {
+					sw.Start();
+					auto scope_outer = std::make_shared<Scope2>(scope_1);
+					scope_outer->SetSelf(scope_outer);
+					for (int i = 0; i < numIterations; i++){// fibers::parallel::For(0, numIterations, [&](int i) {
+						auto scope_inner = std::make_shared<Scope2>(scope_outer);
+						scope_inner->SetSelf(scope_inner);
+						scope_inner->AddObj("i", std::make_shared<Any>(i));
+						{
+							auto a1 = scope_inner->CallFunction("Units::value", { 100 });
+							auto a2 = scope_inner->CallFunction("==", { a1, 100 });
+							bool f = scope_inner->Cast<bool>(a2);
+							EXPECT_EQ(true, f);
+						}
+					}//);
+					printf(std::to_string(__LINE__) + ": \t" + std::to_string(numIterations) + " operations (on 10,000 classes) per " + Units::second(sw.Stop_s()).ToString() + ".");
+				}
+
+
+			}
+#endif
+
+
+
+
+		
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#if 0
+			EXPECT_EQ(true, scope_1->AddFunction("length", make_callable([]() -> size_t { return 0; }), true));
+			EXPECT_EQ(true, scope_1->AddFunction("size", make_callable([]() -> size_t { return 0; }), true));
+
 			{
 				auto scope_t = std::make_shared<Namespace2>(scope_1, "fibers"); // ::fibers::
 				scope_t->SetSelf(scope_t);
@@ -497,7 +1142,7 @@ int main() {
 					scope_t->AddChild(scope_t2);
 
 					{
-						auto scope_t3 = std::make_shared<Class2>(scope_t2, "Map"); // ::fibers::containers::Map::
+						auto scope_t3 = std::make_shared<Class2>(scope_t2, "Map", user_type<fibers::containers::Map<std::string, fibers::Any>>()); // ::fibers::containers::Map::
 						scope_t3->SetSelf(scope_t3);
 						scope_t2->AddChild(scope_t3);
 					}
@@ -507,10 +1152,17 @@ int main() {
 			scope_2->SetSelf(scope_2);
 			scope_1->AddChild(scope_2);
 
-			auto scope_3 = std::make_shared<Class2>(scope_2, "string"); // ::std::string::
+			EXPECT_EQ(true, scope_2->AddFunction("length", make_callable([](int x) -> size_t { return sizeof(int); }), true));
+			EXPECT_EQ(true, scope_2->AddFunction("size", make_callable([](int x) -> size_t { return sizeof(int); }), true));
+
+			EXPECT_EQ(true, scope_2->AddFunction("length", make_callable([](double x) -> size_t { return sizeof(double); }), true));
+			EXPECT_EQ(true, scope_2->AddFunction("size", make_callable([](double x) -> size_t { return sizeof(double); }), true));
+
+			auto scope_3 = std::make_shared<Class2>(scope_2, "string", user_type<std::string>()); // ::std::string::
 			scope_3->SetSelf(scope_3);
 			scope_2->AddChild(scope_3);
-
+			EXPECT_EQ(scope_3->AddObj("npos", std::make_shared<fibers::Any>(std::string::npos), true), true);
+			
 			auto scope_4 = std::make_shared<Scope2>(scope_3); // ::std::string::
 			scope_4->SetSelf(scope_4);
 
@@ -518,10 +1170,142 @@ int main() {
 			scope_5->SetSelf(scope_5);
 			scope_4->AddChild(scope_5);
 
+
+
+
+			if (0) {
+				// support the default types
+				if (1) {
+					auto lambda = [&](auto type, std::string className) {
+						using TypeTypename = decltype(type);
+
+						auto defaultTypeClass = std::make_shared<Class2>(scope_1, className, user_type<TypeTypename>());
+						defaultTypeClass->SetSelf(defaultTypeClass);
+						scope_1->AddChild(defaultTypeClass);
+
+						defaultTypeClass->AddFunction(className, make_callable([]() -> TypeTypename { return TypeTypename{}; }));
+						defaultTypeClass->AddFunction(className, make_callable([](TypeTypename const& makeCopy) -> TypeTypename { return makeCopy; }));
+						defaultTypeClass->AddFunction("=", make_callable([](Any const& a, TypeTypename const& b) -> Any { a.cast<TypeTypename&>() = b; return a; }), Param_Types({ {"a", user_type<TypeTypename>() }, {"b", user_type<TypeTypename>() } }));
+						defaultTypeClass->AddFunction("==", make_callable([](TypeTypename const& a, TypeTypename const& b) -> bool { return a == b; }));
+						defaultTypeClass->AddFunction("!=", make_callable([](TypeTypename const& a, TypeTypename const& b) -> bool { return a != b; }));
+						defaultTypeClass->AddFunction(">", make_callable([](TypeTypename const& a, TypeTypename const& b) -> bool { return a > b; }));
+						defaultTypeClass->AddFunction(">=", make_callable([](TypeTypename const& a, TypeTypename const& b) -> bool { return a >= b; }));
+						defaultTypeClass->AddFunction("<", make_callable([](TypeTypename const& a, TypeTypename const& b) -> bool { return a < b; }));
+						defaultTypeClass->AddFunction("<=", make_callable([](TypeTypename const& a, TypeTypename const& b) -> bool { return a <= b; }));
+						defaultTypeClass->AddFunction("+", make_callable([](TypeTypename const& a, TypeTypename const& b) -> TypeTypename { return a + b; }));
+						defaultTypeClass->AddFunction("-", make_callable([](TypeTypename const& a, TypeTypename const& b) -> TypeTypename { return a - b; }));
+						defaultTypeClass->AddFunction("*", make_callable([](TypeTypename const& a, TypeTypename const& b) -> TypeTypename { return a * b; }));
+						defaultTypeClass->AddFunction("/", make_callable([](TypeTypename const& a, TypeTypename const& b) -> TypeTypename { return a / b; }));
+						defaultTypeClass->AddFunction("+=", make_callable([](Any const& a, TypeTypename const& b) -> Any { a.cast<TypeTypename&>() += b; return a; }), Param_Types({ {"a", user_type<TypeTypename>() }, {"b", user_type<TypeTypename>() } }));
+						defaultTypeClass->AddFunction("-=", make_callable([](Any const& a, TypeTypename const& b) -> Any { a.cast<TypeTypename&>() -= b; return a; }), Param_Types({ {"a", user_type<TypeTypename>() }, {"b", user_type<TypeTypename>() } }));
+						defaultTypeClass->AddFunction("*=", make_callable([](Any const& a, TypeTypename const& b) -> Any { a.cast<TypeTypename&>() *= b; return a; }), Param_Types({ {"a", user_type<TypeTypename>() }, {"b", user_type<TypeTypename>() } }));
+						defaultTypeClass->AddFunction("/=", make_callable([](Any const& a, TypeTypename const& b) -> Any { a.cast<TypeTypename&>() /= b; return a; }), Param_Types({ {"a", user_type<TypeTypename>() }, {"b", user_type<TypeTypename>() } }));
+					};
+
+#define MakeClasses(className) lambda(##className(), #className)
+					MakeClasses(bool);
+					MakeClasses(char);
+					MakeClasses(int);
+					MakeClasses(long);
+					MakeClasses(size_t);
+					MakeClasses(float);
+					MakeClasses(double);
+					lambda(fibers::containers::number<double>(), "number");
+#undef MakeClasses
+				}
+				if (1) {
+					auto lambda_oneWay = [&](auto FromType, auto ToType) {
+						using FromTypename = decltype(FromType);
+						using ToTypename = decltype(ToType);
+
+						if (auto ToClass = scope_1->FindClass(user_type<ToTypename>())) {
+							ToClass->AddFunction(ToClass->GetName(), make_callable([](FromTypename const& from) -> ToTypename { return (ToTypename)from; }));
+						}
+						else {
+							EXPECT_EQ(true, false);
+						}
+					};
+					auto lambda = [&](auto FromType, auto ToType) {
+						lambda_oneWay(FromType, ToType);
+						lambda_oneWay(ToType, FromType);
+					};
+
+#define MakeConverter(from, to) lambda(from(), to())
+
+#define MakeConverters(from) lambda(from(), bool()); \
+                             lambda(from(), char()); \
+                             lambda(from(), int()); \
+                             lambda(from(), long()); \
+                             lambda(from(), size_t()); \
+                             lambda(from(), float()); \
+                             lambda(from(), double())
+
+					//lambda(char(), bool());
+					//lambda(char(), int());
+					//lambda(long(), int());
+					//lambda(long(), size_t());
+					//lambda(float(), size_t());
+					//lambda(float(), double());
+					//lambda(fibers::containers::number<double>(), double());
+
+					MakeConverters(bool);
+					MakeConverters(char);
+					MakeConverters(int);
+					MakeConverters(long);
+					MakeConverters(size_t);
+					MakeConverters(float);
+					MakeConverters(double);
+					MakeConverters(fibers::containers::number<double>);
+#undef MakeConverters
+#undef MakeConverter
+				}
+				if (1) {
+					// constructors
+					scope_3->AddFunction("string", make_callable([]() -> std::string { return std::string{}; }));
+					scope_3->AddFunction("string", make_callable([](std::string const& makeCopy) -> std::string { return makeCopy; }));
+					scope_3->AddFunction("string", make_callable([](bool from) -> std::string { if (from) return "true"; else return "false"; }));
+					scope_3->AddFunction("string", make_callable([](int from) -> std::string { return std::to_string(from); }));
+					scope_3->AddFunction("string", make_callable([](long from) -> std::string { return std::to_string(from); }));
+					scope_3->AddFunction("string", make_callable([](size_t from) -> std::string { return std::to_string(from); }));
+					scope_3->AddFunction("string", make_callable([](float from) -> std::string { return std::to_string(from); }));
+					scope_3->AddFunction("string", make_callable([](double from) -> std::string { return std::to_string(from); }));
+					scope_3->AddFunction("string", make_callable([](fibers::containers::number<double> from) -> std::string { return std::to_string(from); }));
+
+					// operators
+					scope_3->AddFunction("=", make_callable([](Any const& a, std::string const& b) -> Any { a.cast<std::string&>() = b; return a; }), Param_Types({ {"a", user_type<std::string>() }, {"b", user_type<std::string>() } }));
+					scope_3->AddFunction("==", make_callable([](std::string const& a, std::string const& b) -> bool { return a == b; }));
+					scope_3->AddFunction("!=", make_callable([](std::string const& a, std::string const& b) -> bool { return a != b; }));
+					scope_3->AddFunction(">", make_callable([](std::string const& a, std::string const& b) -> bool { return a > b; }));
+					scope_3->AddFunction(">=", make_callable([](std::string const& a, std::string const& b) -> bool { return a >= b; }));
+					scope_3->AddFunction("<", make_callable([](std::string const& a, std::string const& b) -> bool { return a < b; }));
+					scope_3->AddFunction("<=", make_callable([](std::string const& a, std::string const& b) -> bool { return a <= b; }));
+					scope_3->AddFunction("+", make_callable([](std::string const& a, std::string const& b) -> std::string { return a + b; }));
+					scope_3->AddFunction("+=", make_callable([](Any const& a, std::string const& b) -> Any { a.cast<std::string&>() += b; return a; }), Param_Types({ {"a", user_type<std::string>() }, {"b", user_type<std::string>() } }));
+
+					// functions
+					scope_3->AddFunction("length", make_callable([](std::string const& a) -> size_t { return a.length(); }));
+					scope_3->AddFunction("size", make_callable([](std::string const& a) -> size_t { return a.size(); }));
+					scope_3->AddFunction("[]", make_callable([](std::string const& a, size_t index) -> char { return a[index]; }));
+					scope_3->AddFunction("front", make_callable([](std::string const& a) -> char { return a.front(); }));
+					scope_3->AddFunction("find", make_callable([](std::string const& a, std::string const& toFind) -> size_t { return a.find(toFind); }));
+					scope_3->AddFunction("find", make_callable([](std::string const& a, std::string const& toFind, size_t startPos) -> size_t { return a.find(toFind, startPos); }));
+
+				}
+
+
+			}
+
+
+
+
+
 			// Demonstrate multiple classes with the same name being created, added to, and found from the same Scope
 			if (1) {
-				fibers::containers::Set<std::weak_ptr<Scope2>, Scope2::Hasher> set;
+				fibers::containers::Map<std::shared_ptr<Scope2>, std::shared_ptr<Scope2>, Scope2::Hasher> set;
+				fibers::containers::number<int> counter{ 0 };
+				fibers::containers::number<int> counter_failed{ 0 };
 				fibers::parallel::For(0, 10000, [&](int i) {
+					
 					auto scope_6 = std::make_shared<Scope2>(scope_4); // ::std::string::
 					scope_6->SetSelf(scope_6);
 					{
@@ -531,28 +1315,24 @@ int main() {
 							scope_6->AddChild(scope_7);
 						}
 
-						if (auto p = scope_6->FindNearestNamespaceWhere([](std::shared_ptr<Namespace2> const& namespacePtr)->bool {
-							std::string tryFind = "Position";
-							long long len = tryFind.length();
-							auto qualifiedName = namespacePtr->GetQualifiedNamespace();
+						// may (and is allowed to) discover any of the "Position" classes that are available in this Scope
+						if (auto p = std::dynamic_pointer_cast<Scope2>(scope_6->FindNamespace("Position"))) {
+							EXPECT_NE(p->GetQualifiedNamespace(true).find(scope_6->GetQualifiedNamespace(true)), std::string::npos);
 
-							// remove "::" from end
-							while (qualifiedName.size() >= 2 && (qualifiedName.rfind("::") == (qualifiedName.length() - 2))) { qualifiedName = qualifiedName.substr(0, qualifiedName.length() - 2); }
-
-							long long qualifiedNameLen = qualifiedName.length();
-							auto F = qualifiedName.find(tryFind);
-							if (F != std::string::npos) if (F == (qualifiedNameLen - len)) return true;							
-							return false;
-						})) {
-							// may (and is allowed to) discover any of the "Position" classes that are available in this Scope
-							set.emplace(p);
+							if (set.emplace(p, p, false)) {
+								counter++;
+							}
+							else {
+								counter_failed++;
+							}
 						}
 						else {
 							EXPECT_EQ(true, false);
 						}
 					}
 				});
-				printf(std::string("Used ") + std::to_string(set.size()) + " unique Positions, across a loop of 10000.");
+				EXPECT_EQ(counter.load(), set.size());
+				EXPECT_EQ(counter_failed.load(), 0);
 			}
 
 			// Demonstrate multiple classes with the same name being created and added to unique - but connected - Namespaces, and discovered from those unique Namespaces
@@ -562,7 +1342,8 @@ int main() {
 				scope_6->SetSelf(scope_6);
 				scope_4->AddChild(scope_6);
 
-				fibers::parallel::For(0, 10000, [&](int i) {
+				
+				fibers::parallel::For(0, 1000, [&](int i) {
 					auto scope_7 = std::make_shared<Namespace2>(scope_6, "Each"); // ForLoop Scope ...
 					scope_7->SetSelf(scope_7);
 					scope_6->AddChild(scope_7);
@@ -598,9 +1379,11 @@ int main() {
 				});
 			}
 
+			int numIterations = 100000;
+
 			// this scope has a child AND parent, named "string". Expect return of parent. 
 			sw.Start();
-			fibers::parallel::For(0, 100000, [&](int i) {
+			fibers::parallel::For(0, numIterations, [&](int i) {
 				if (auto p = scope_4->FindNearestNamespaceWhere([](std::shared_ptr<Namespace2> const& namespacePtr)->bool {
 					return namespacePtr->GetName() == "string";
 					})) {
@@ -610,9 +1393,10 @@ int main() {
 					EXPECT_EQ(true, false);
 				}
 			});
-			printf(std::to_string(__LINE__) + ": " + Units::second(sw.Stop_s()).ToString());
+			printf(std::to_string(__LINE__) + ": \t" + std::to_string(numIterations) + " operations per " + Units::second(sw.Stop_s()).ToString() + ".");
+			
 			sw.Start();
-			fibers::parallel::For(0, 100000, [&](int i) {
+			fibers::parallel::For(0, numIterations, [&](int i) {
 				if (auto p = scope_4->FindNamespace("string")) {
 					EXPECT_EQ(p->GetQualifiedNamespace(), "::std::string::");
 				}
@@ -620,11 +1404,11 @@ int main() {
 					EXPECT_EQ(true, false);
 				}
 				});
-			printf(std::to_string(__LINE__) + ": " + Units::second(sw.Stop_s()).ToString());
+			printf(std::to_string(__LINE__) + ": \t" + std::to_string(numIterations) + " operations per " + Units::second(sw.Stop_s()).ToString() + ".");
 
 			// Expect quick discovery of parent. 
 			sw.Start();
-			fibers::parallel::For(0, 100000, [&](int i) {
+			fibers::parallel::For(0, numIterations, [&](int i) {
 				if (auto p = scope_4->FindNearestNamespaceWhere([](std::shared_ptr<Namespace2> const& namespacePtr)->bool {
 					return namespacePtr->GetName() == "std";
 				})) {
@@ -634,9 +1418,10 @@ int main() {
 					EXPECT_EQ(true, false);
 				}
 			});
-			printf(std::to_string(__LINE__) + ": " + Units::second(sw.Stop_s()).ToString());
+			printf(std::to_string(__LINE__) + ": \t" + std::to_string(numIterations) + " operations per " + Units::second(sw.Stop_s()).ToString() + ".");
+			
 			sw.Start();
-			fibers::parallel::For(0, 100000, [&](int i) {
+			fibers::parallel::For(0, numIterations, [&](int i) {
 				if (auto p = scope_4->FindNamespace("std")) {
 					EXPECT_EQ(p->GetQualifiedNamespace(), "::std::");
 				}
@@ -644,11 +1429,11 @@ int main() {
 					EXPECT_EQ(true, false);
 				}
 				});
-			printf(std::to_string(__LINE__) + ": " + Units::second(sw.Stop_s()).ToString());
+			printf(std::to_string(__LINE__) + ": \t" + std::to_string(numIterations) + " operations per " + Units::second(sw.Stop_s()).ToString() + ".");
 
 			// Qualified name requires a bit more work to find.
 			sw.Start();
-			fibers::parallel::For(0, 100000, [&](int i) {
+			fibers::parallel::For(0, numIterations, [&](int i) {
 				if (auto p = scope_4->FindNearestNamespaceWhere([](std::shared_ptr<Namespace2> const& namespacePtr)->bool {
 					std::string tryFind = "std::string";
 					long long len = tryFind.length();
@@ -672,9 +1457,10 @@ int main() {
 					EXPECT_EQ(true, false);
 				}
 			});
-			printf(std::to_string(__LINE__) + ": " + Units::second(sw.Stop_s()).ToString());
+			printf(std::to_string(__LINE__) + ": \t" + std::to_string(numIterations) + " operations per " + Units::second(sw.Stop_s()).ToString() + ".");
+			
 			sw.Start();
-			fibers::parallel::For(0, 100000, [&](int i) {
+			fibers::parallel::For(0, numIterations, [&](int i) {
 				if (auto p = scope_4->FindNamespace("std::string")) {
 					EXPECT_EQ(p->GetQualifiedNamespace(), "::std::string::");
 				}
@@ -682,11 +1468,11 @@ int main() {
 					EXPECT_EQ(true, false);
 				}
 			});
-			printf(std::to_string(__LINE__) + ": " + Units::second(sw.Stop_s()).ToString());
+			printf(std::to_string(__LINE__) + ": \t" + std::to_string(numIterations) + " operations per " + Units::second(sw.Stop_s()).ToString() + ".");
 
 			// Qualified approach should work for unqualified search name. 
 			sw.Start();
-			fibers::parallel::For(0, 100000, [&](int i) {
+			fibers::parallel::For(0, numIterations, [&](int i) {
 				if (auto p = scope_4->FindNearestNamespaceWhere([](std::shared_ptr<Namespace2> const& namespacePtr)->bool {
 					std::string tryFind = "string";
 					long long len = tryFind.length();
@@ -710,9 +1496,10 @@ int main() {
 					EXPECT_EQ(true, false);
 				}
 			});
-			printf(std::to_string(__LINE__) + ": " + Units::second(sw.Stop_s()).ToString());
+			printf(std::to_string(__LINE__) + ": \t" + std::to_string(numIterations) + " operations per " + Units::second(sw.Stop_s()).ToString() + ".");
+			
 			sw.Start();
-			fibers::parallel::For(0, 100000, [&](int i) {
+			fibers::parallel::For(0, numIterations, [&](int i) {
 				if (auto p = scope_4->FindNamespace("string")) {
 					EXPECT_EQ(p->GetQualifiedNamespace(), "::std::string::");
 				}
@@ -720,11 +1507,11 @@ int main() {
 					EXPECT_EQ(true, false);
 				}
 				});
-			printf(std::to_string(__LINE__) + ": " + Units::second(sw.Stop_s()).ToString());
+			printf(std::to_string(__LINE__) + ": \t" + std::to_string(numIterations) + " operations per " + Units::second(sw.Stop_s()).ToString() + ".");
 
 			// Expect scope to eventually try and check its own children.
 			sw.Start();
-			fibers::parallel::For(0, 100000, [&](int i) {
+			fibers::parallel::For(0, numIterations, [&](int i) {
 				if (auto p = scope_4->FindNearestNamespaceWhere([&](std::shared_ptr<Namespace2> const& namespacePtr)->bool {
 					std::string tryFind = "std::string::string";
 					long long len = tryFind.length();
@@ -748,9 +1535,10 @@ int main() {
 					EXPECT_EQ(true, false);
 				}
 			});
-			printf(std::to_string(__LINE__) + ": " + Units::second(sw.Stop_s()).ToString());
+			printf(std::to_string(__LINE__) + ": \t" + std::to_string(numIterations) + " operations per " + Units::second(sw.Stop_s()).ToString() + ".");
+			
 			sw.Start();
-			fibers::parallel::For(0, 100000, [&](int i) {
+			fibers::parallel::For(0, numIterations, [&](int i) {
 				if (auto p = scope_4->FindNamespace("std::string::string")) {
 					EXPECT_EQ(p->GetQualifiedNamespace(), "::std::string::string::");
 				}
@@ -758,11 +1546,11 @@ int main() {
 					EXPECT_EQ(true, false);
 				}
 			});
-			printf(std::to_string(__LINE__) + ": " + Units::second(sw.Stop_s()).ToString());
+			printf(std::to_string(__LINE__) + ": \t" + std::to_string(numIterations) + " operations per " + Units::second(sw.Stop_s()).ToString() + ".");
 
 			// Expect scope to eventually try and check children from the parents, and (eventually) discover this far-away qualified namespace
 			sw.Start();
-			fibers::parallel::For(0, 100000, [&](int i) {
+			fibers::parallel::For(0, numIterations, [&](int i) {
 				if (auto p = scope_4->FindNearestNamespaceWhere([&](std::shared_ptr<Namespace2> const& namespacePtr)->bool {
 					std::string tryFind = "fibers::containers::Map";
 					long long len = tryFind.length();
@@ -786,9 +1574,10 @@ int main() {
 					EXPECT_EQ(true, false);
 				}
 			});
-			printf(std::to_string(__LINE__) + ": " + Units::second(sw.Stop_s()).ToString());
+			printf(std::to_string(__LINE__) + ": \t" + std::to_string(numIterations) + " operations per " + Units::second(sw.Stop_s()).ToString() + ".");
+			
 			sw.Start();
-			fibers::parallel::For(0, 100000, [&](int i) {
+			fibers::parallel::For(0, numIterations, [&](int i) {
 				if (auto p = scope_4->FindNamespace("fibers::containers::Map")) {
 					EXPECT_EQ(p->GetQualifiedNamespace(), "::fibers::containers::Map::");
 				}
@@ -796,15 +1585,217 @@ int main() {
 					EXPECT_EQ(true, false);
 				}
 				});
-			printf(std::to_string(__LINE__) + ": " + Units::second(sw.Stop_s()).ToString());
+			printf(std::to_string(__LINE__) + ": \t" + std::to_string(numIterations) + " operations per " + Units::second(sw.Stop_s()).ToString() + ".");
 
+			// Find Classes using TypeInfo tags
+			sw.Start();
+			fibers::parallel::For(0, numIterations, [&](int i) {
+				if (auto p = scope_4->FindClass(user_type<std::string>())) {
+					EXPECT_EQ(p->GetQualifiedNamespace(), "::std::string::");
+				}
+				else {
+					EXPECT_EQ(true, false);
+				}
+				});
+			printf(std::to_string(__LINE__) + ": \t" + std::to_string(numIterations) + " operations per " + Units::second(sw.Stop_s()).ToString() + ".");
+			
+			sw.Start();
+			fibers::parallel::For(0, numIterations, [&](int i) {
+				if (auto p = scope_4->FindClass(user_type<fibers::containers::Map<std::string, fibers::Any>>())) {
+					EXPECT_EQ(p->GetQualifiedNamespace(), "::fibers::containers::Map::");
+				}
+				else {
+					EXPECT_EQ(true, false);
+				}
+				});
+			printf(std::to_string(__LINE__) + ": \t" + std::to_string(numIterations) + " operations per " + Units::second(sw.Stop_s()).ToString() + ".");
 
+			// Find Objects
+			sw.Start();
+			fibers::parallel::For(0, numIterations, [&](int i) {
+				if (auto p = scope_4->FindObj("npos")) {
+					EXPECT_EQ(p->cast<size_t>(), std::string::npos);
+				}
+				else {
+					EXPECT_EQ(true, false);
+				}
+			});
+			printf(std::to_string(__LINE__) + ": \t" + std::to_string(numIterations) + " operations per " + Units::second(sw.Stop_s()).ToString() + ".");
+			
+			sw.Start();
+			fibers::parallel::For(0, numIterations, [&](int i) {
+				if (auto p = scope_4->FindObj("::std::string::npos")) {
+					EXPECT_EQ(p->cast<size_t>(), std::string::npos);
+				}
+				else {
+					EXPECT_EQ(true, false);
+				}
+			});
+			printf(std::to_string(__LINE__) + ": \t" + std::to_string(numIterations) + " operations per " + Units::second(sw.Stop_s()).ToString() + ".");
+			
+			sw.Start();
+			fibers::parallel::For(0, numIterations, [&](int i) {
+				if (auto p = scope_4->FindObj("::string::npos")) {
+					EXPECT_EQ(p->cast<size_t>(), std::string::npos);
+				}
+				else {
+					EXPECT_EQ(true, false);
+				}
+			});
+			printf(std::to_string(__LINE__) + ": \t" + std::to_string(numIterations) + " operations per " + Units::second(sw.Stop_s()).ToString() + ".");
 
+			// Find Functions
+			sw.Start();
+			fibers::parallel::For(0, numIterations, [&](int i) {
+				if (auto p = scope_4->FindFunctions("length")) {
+					//EXPECT_EQ(p->cast<size_t>(), std::string::npos);
+				}
+				else {
+					EXPECT_EQ(true, false);
+				}
+			});
+			printf(std::to_string(__LINE__) + ": \t" + std::to_string(numIterations) + " operations per " + Units::second(sw.Stop_s()).ToString() + ".");
+			
+			sw.Start();
+			fibers::parallel::For(0, numIterations, [&](int i) {
+				if (auto p = scope_4->FindFunctions("::std::string::length")) {
+					//EXPECT_EQ(p->cast<size_t>(), std::string::npos);
+				}
+				else {
+					EXPECT_EQ(true, false);
+				}
+			});
+			printf(std::to_string(__LINE__) + ": \t" + std::to_string(numIterations) + " operations per " + Units::second(sw.Stop_s()).ToString() + ".");
+			
+			sw.Start();
+			fibers::parallel::For(0, numIterations, [&](int i) {
+				if (auto p = scope_4->FindFunctions("::string::length")) {
+					//EXPECT_EQ(p->cast<size_t>(), std::string::npos);
+				}
+				else {
+					EXPECT_EQ(true, false);
+				}
+			});
+			printf(std::to_string(__LINE__) + ": \t" + std::to_string(numIterations) + " operations per " + Units::second(sw.Stop_s()).ToString() + ".");
 
+			// Find and Call Functions
+			if (1) {
+				std::vector<Any> params = { Any(std::string("TESTING")) };
+				
+				sw.Start();
+				fibers::parallel::For(0, numIterations, [&](int i) {
+					if (auto p = scope_4->FindFunction("length", scripting::Function_Params(params))) {
+						EXPECT_EQ(true, p->first->call_match(params, {}));
+						EXPECT_EQ(scripting::call(p->first, params, {}).cast<size_t>(), 7);
+					}
+					else {
+						EXPECT_EQ(true, false);
+					}
+				});
+				printf(std::to_string(__LINE__) + ": \t" + std::to_string(numIterations) + " operations per " + Units::second(sw.Stop_s()).ToString() + ".");
+				
+				sw.Start();
+				fibers::parallel::For(0, numIterations, [&](int i) {
+					if (auto p = scope_4->FindFunction("::std::string::length", scripting::Function_Params(params))) {
+						EXPECT_EQ(true, p->first->call_match(params, {}));
+						EXPECT_EQ(scripting::call(p->first, params, {}).cast<size_t>(), 7);
+					}
+					else {
+						EXPECT_EQ(true, false);
+					}
+				});
+				printf(std::to_string(__LINE__) + ": \t" + std::to_string(numIterations) + " operations per " + Units::second(sw.Stop_s()).ToString() + ".");
+				
+				sw.Start();
+				fibers::parallel::For(0, numIterations, [&](int i) {
+					if (auto p = scope_4->FindFunction("::string::length", scripting::Function_Params(params))) {
+						EXPECT_EQ(true, p->first->call_match(params, {}));
+						EXPECT_EQ(scripting::call(p->first, params, {}).cast<size_t>(), 7);
+					}
+					else {
+						EXPECT_EQ(true, false);
+					}
+				});
+				printf(std::to_string(__LINE__) + ": \t" + std::to_string(numIterations) + " operations per " + Units::second(sw.Stop_s()).ToString() + ".");
+			}
+			// Get All Available Classes
+			if (1) {
+				sw.Start();
+				fibers::parallel::For(0, numIterations, [&](int i)
+				{
+					auto classes = scope_4->GetLibrary()->GetAllAvailableClasses();
+					EXPECT_EQ(true, classes->size() >= 10);
+				}
+				);
+				printf(std::to_string(__LINE__) + ": \t" + std::to_string(numIterations) + " operations (on 10,000 classes) per " + Units::second(sw.Stop_s()).ToString() + ".");
+			}
 
+			// Create and test the type conversion tree, which builds itself from the constructors of the various classes.
+			if (1) {
+				sw.Start();
+				fibers::parallel::For(0, numIterations / 10, [&](int i)
+					{
+						auto tree = scope_4->GetTypeConverterTree(); // builds and caches the tree. Updates the tree only if the situation has changed (new functions, new classes, or new Using statements)
 
+						if (!tree->Converts<int, long>()) { EXPECT_EQ(true, false); }
+						if (!tree->Converts<float, long>()) { EXPECT_EQ(true, false); }
+						if (!tree->Converts<int, double>()) { EXPECT_EQ(true, false); }
+						if (!tree->Converts<bool, int>()) { EXPECT_EQ(true, false); }
+						if (!tree->Converts<int, int>()) { EXPECT_EQ(true, false); }
+						if (!tree->Converts<double, int>()) { EXPECT_EQ(true, false); }
+						if (!tree->Converts<bool, double>()) { EXPECT_EQ(true, false); }
 
+						EXPECT_EQ(100, tree->Convert<int>(100.0));
+						EXPECT_EQ(100.0, tree->Convert<double>(100l));
+						EXPECT_EQ(100l, tree->Convert<long>(100.0f));
+						EXPECT_EQ(100.0f, tree->Convert<float>(100.0));
+						EXPECT_EQ(true, tree->Convert<bool>(1));
+						EXPECT_EQ(100.0f, tree->Convert<float>(100l));
+						EXPECT_EQ(1.0, tree->Convert<double>(true));
+					}
+				);
+				printf(std::to_string(__LINE__) + ": \t" + std::to_string(numIterations / 10) + " operations (on 10,000 classes) per " + Units::second(sw.Stop_s()).ToString() + ".");
+			}
 
+			// Create and test the type conversion tree, which builds itself from the constructors of the various classes.
+			if (1) {
+
+				std::vector<Any> params = { Any(fibers::containers::number<double>(0)), Any(1) };
+				auto& n = params[0].cast<fibers::containers::number<double>&>();
+
+				sw.Start();
+				auto scope_outer = std::make_shared<Scope2>(scope_4);
+				scope_outer->SetSelf(scope_outer);
+				fibers::parallel::For(0, numIterations, [&](int i) {
+					auto scope_inner = std::make_shared<Scope2>(scope_outer);
+					scope_inner->SetSelf(scope_inner);
+					scope_inner->AddObj("i", std::make_shared<Any>(i));
+					{
+
+						scope_inner->CallFunction("+=", params);
+
+					}
+				});
+				printf(std::to_string(__LINE__) + ": \t" + std::to_string(numIterations) + " operations (on 10,000 classes) per " + Units::second(sw.Stop_s()).ToString() + ".");
+
+				{
+					EXPECT_EQ(true, scope_4->Cast<bool>(scope_4->CallFunction("==", { params[0], numIterations })));
+				}
+
+				{
+					printf(scope_4->Cast<std::string>(
+						scope_4->CallFunction("+", { 
+							scope_4->Cast<std::string>(params[0])
+							, std::string(" is the count") 
+						})
+					));
+				}
+
+				EXPECT_EQ(n, (numIterations));
+			}
+
+			EXPECT_EQ("100", scope_4->Cast<std::string>(scope_4->CallFunction("std::string", { 100 })));
+			EXPECT_EQ("200", scope_4->Cast<std::string>(scope_1->CallFunction("::std::string", { scope_4->Cast<int>(scope_1->CallFunction("+", { 100.0f, 100.0 })) })));
 
 
 
@@ -825,19 +1816,16 @@ int main() {
 			EXPECT_EQ(scope_4->p_using.size(), 2);
 
 
+#endif
 
 
 
 
 
-
-		}
-
+	    }
 
 
-
-
-
+#if 0
 
 		// MODERN TEST 2
 		if (1) {
@@ -1969,28 +2957,7 @@ int main() {
 			}
 		}
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+#endif
 
 #if 0
 		// MODERN TEST
@@ -4822,14 +5789,6 @@ int main() {
 			}
 		}
 
-
-
-
-
-
-
-
-
 		// RingBuffer
 		if (1) {
 			fibers::containers::number<int> thing{ 0 };
@@ -4920,10 +5879,6 @@ int main() {
 			}
 		}
 
-
-
-
-
 		if (1) {
 			fibers::synchronization::impl::atomic_shared_ptr< stackThing > testPtr{ nullptr };
 
@@ -4938,15 +5893,6 @@ int main() {
 				EXPECT_EQ(ptr->var.cast<int>(), 10); // shared access
 			});
 		}
-
-
-
-
-
-
-
-
-
 
 		if (1) {
 			if (1) {
@@ -4977,8 +5923,6 @@ int main() {
 			}
 
 		}
-
-
 
 		// NO LEAK w/ custom lock-free garbage collector
 		if (1) {
@@ -6115,18 +7059,6 @@ int main() {
 			time += 1;
 			EXPECT_EQ(time.c_str(), "2024/3/1 0:0:0.000000");
 		}
-
-
-
-		
-
-
-
-
-
-
-
-
 
 	}
 

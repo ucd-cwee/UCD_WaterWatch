@@ -568,26 +568,6 @@ namespace scripting {
 		// tree.AddConverter([](float v) -> double { return v; }))
 		// tree.AddConverter([](std::string const& v) -> const char* { return v.c_str(); }))
 		template <class Callable> bool AddConverter(Callable t_func, Type_Info inboundType, Type_Info outboundType) {
-			auto toTypeInfo = scripting::user_type<fibers::utilities::function_traits< decltype(std::function(t_func)) >::result_type>();
-			auto fromTypeInfo = scripting::user_type<std::decay_t<std::tuple_element_t<0, fibers::utilities::function_traits< decltype(std::function(t_func)) >::arguments>>>();
-
-			constexpr static bool is_polymorphic = std::is_base_of<
-				fibers::utilities::function_traits< decltype(std::function(t_func)) >::result_type
-				, std::decay_t<std::tuple_element_t<0, fibers::utilities::function_traits< decltype(std::function(t_func)) >::arguments>>
-			>::value;
-			constexpr static bool is_static = details::impl::is_explicitly_convertible_to<
-				std::decay_t<std::tuple_element_t<0, fibers::utilities::function_traits< decltype(std::function(t_func)) >::arguments>>
-				, fibers::utilities::function_traits< decltype(std::function(t_func)) >::result_type
-			>::value;
-			if constexpr (is_static || is_polymorphic) {
-				// There is a "cheaper" conversion available using built-in static_cast or dynamic_cast.
-				// Assumes that the user-provided function is exclusively performing casting, and not other functions (like counting, tracking, or initialization).
-				return AddConverter<
-					std::decay_t<std::tuple_element_t<0, fibers::utilities::function_traits< decltype(std::function(t_func)) >::arguments>>
-					, fibers::utilities::function_traits< decltype(std::function(t_func)) >::result_type
-				>();
-			}
-
 			std::shared_ptr<Node> node = nodes.get_or_insert(inboundType, std::make_shared<Node>());
 			node->from = inboundType;
 
@@ -642,7 +622,7 @@ namespace scripting {
 										newCached,
 										version.GetValue()
 									)
-									});
+								}, false);
 							}
 							else { // cache the failure -- to prevent repeated Dijkstra searches unless the tree is updated to (hopefully) bridge the gap.
 								node.cached_conversions.insert({ to,
@@ -650,13 +630,13 @@ namespace scripting {
 										std::vector<scripting::Type_Info>(),
 										version.GetValue()
 									)
-									});
+								}, false);
 							}
 						}
+						f = node.cached_conversions.at_or(to, nullptr);
 					}
 
-					// try again... hopefully it has been made (for better or worse)
-					f = node.cached_conversions.at(to).value_or(nullptr);
+					// try again... hopefully it has been made (for better or worse)					
 					if (f) {
 						try {
 							std::vector<scripting::Type_Info>& conversion_path = std::get<0>(*f);
@@ -682,7 +662,12 @@ namespace scripting {
 							}
 						}
 						catch (...) {
-							node.cached_conversions.insert({ to, std::make_shared<std::tuple<std::vector<scripting::Type_Info>, long>>(std::vector<scripting::Type_Info>(), version.GetValue()) });
+							node.cached_conversions.insert({ to, 
+								std::make_shared<std::tuple<std::vector<scripting::Type_Info>, long>>(
+									std::vector<scripting::Type_Info>(), 
+									version.GetValue()
+								) 
+							}, false);
 							return false;
 						}
 					}
@@ -728,13 +713,13 @@ namespace scripting {
 								node.cached_conversions.insert({ To, std::make_shared<std::tuple<std::vector<scripting::Type_Info>, long>>(
 									newCached,
 									version.GetValue()
-								) });
+								) }, false);
 							}
 							else { // cache the failure -- to prevent repeated Dijkstra searches unless the tree is updated to (hopefully) bridge the gap.
 								node.cached_conversions.insert({ To, std::make_shared<std::tuple<std::vector<scripting::Type_Info>, long>>(
 									std::vector<scripting::Type_Info>(),
 									version.GetValue()
-								) });
+								) }, false);
 								return std::numeric_limits<double>::max();
 							}
 						}
@@ -786,13 +771,13 @@ namespace scripting {
 								node.cached_conversions.insert({ To, std::make_shared<std::tuple<std::vector<scripting::Type_Info>, long>>(
 									newCached,
 									version.GetValue()
-								) });
+								) }, false);
 							}
 							else { // cache the failure -- to prevent repeated Dijkstra searches unless the tree is updated to (hopefully) bridge the gap.
 								node.cached_conversions.insert({ To, std::make_shared<std::tuple<std::vector<scripting::Type_Info>, long>>(
 									std::vector<scripting::Type_Info>(),
 									version.GetValue()
-								) });
+								) }, false);
 								return false;
 							}
 						}
@@ -1148,6 +1133,7 @@ namespace scripting {
 			const auto& Argument(size_t N) const noexcept { return m_types[N]; };
 			const auto& Arguments() const noexcept { return m_types; };
 			const Type_Info& ReturnType() const noexcept { return m_return; };
+			void SetReturnType(Type_Info const& out) noexcept { m_return = out; };
 
 			// Symbolic "cost" to perform the conversion, in 100's of nanoseconds. Not meant to be precise, but meant to be relative for comparison with other converters.
 			double conversion_cost(Function_Params t_params, const Type_Converter_Tree& t_conversions) const {
@@ -1160,6 +1146,14 @@ namespace scripting {
 				}
 				throw exception::arity_error(static_cast<int>(params.size()), m_types.size());
 			};
+
+			Any operator()(const Function_Params& params) const {
+				if (params.size() == m_types.size()) {
+					return do_call(params.to_vector());
+				}
+				throw exception::arity_error(static_cast<int>(params.size()), m_types.size());
+			};
+
 
 			bool operator==(const Proxy_Function_Base& other) const noexcept {
 				return m_types == other.m_types && m_return == other.m_return; // same signature
@@ -3186,9 +3180,13 @@ namespace scripting {
 		}
 	};
 
-
-
-
+	// Call a generic, proxy function using a vector of inputs (may be empty), which will be converted as necessary to the expected types. 
+	__forceinline Any call(Proxy_Function callable, Param_Types callable_params, std::vector<Any> const& inputs, Type_Converter_Tree const& conversionTree) {
+		auto converted = callable_params.convert(Function_Params{ const_cast<std::vector<Any>&>(inputs) }, conversionTree);
+		return call(std::move(callable), std::move(converted), conversionTree);
+	};
+	
+#if 0
 	/*
 	// If a function is namespaced in a class, that means it's a free function in the namespace of _CLASS_NAME_, whose first parameter is to be that class type. 
 	def _CLASS_NAME_::_FUNCTION_NAME_(Type_Info _PARAM_NAME_, ...) -> Type_Info { ... };
@@ -3314,19 +3312,27 @@ namespace scripting {
 
 
 	*/
-
 	class Functions {
 	private:
-		mutable fibers::containers::Map<
+		mutable std::shared_ptr <
+			std::pair < fibers::synchronization::shared_mutex < fibers::synchronization::mutex>,
+			fibers::containers::Map<
 			std::string, // Function Name (e.g. string). 
 			std::shared_ptr<fibers::containers::Map<
 			    Param_Types, // Function parameters (e.g. {string, Any}, or {Any, Any, Any}). 
 			    Proxy_Function
-			>>
-		> m_functions;
+			>>>
+		>> m_functions;
+		
 
 	public:
-		Functions() = default;
+		Functions() : m_functions(std::make_shared<std::pair < fibers::synchronization::shared_mutex < fibers::synchronization::mutex>,
+			fibers::containers::Map<
+			std::string, // Function Name (e.g. string). 
+			std::shared_ptr<fibers::containers::Map<
+			Param_Types, // Function parameters (e.g. {string, Any}, or {Any, Any, Any}). 
+			Proxy_Function
+			>>>>>()) {};
 		Functions(Functions const&) = default;
 		Functions(Functions &&) = default;
 		Functions& operator=(Functions const&) = default;
@@ -3335,56 +3341,48 @@ namespace scripting {
 
 		std::shared_ptr< fibers::containers::Map<Param_Types, Proxy_Function>> operator[](std::string const& key) {
 			std::shared_ptr<fibers::containers::Map<Param_Types, Proxy_Function>> temp;
-			defer(m_functions.TryCleanupUnusedMemory()); 
 			while (true) {
-				auto optionalF = m_functions.at(key);
-				if (optionalF.has_value()) return optionalF.value();
-				else if (!temp) temp = std::make_shared<fibers::containers::Map<Param_Types, Proxy_Function>>();
-				m_functions.emplace(key, temp, false);
+				if (1) {
+					auto locked{ std::shared_lock(m_functions->first) };
+					auto optionalF = m_functions->second.at(key);
+					if (optionalF.has_value()) return optionalF.value();
+				}
+				if (!temp) temp = std::make_shared<fibers::containers::Map<Param_Types, Proxy_Function>>();
+				if (1) {
+					auto locked{ std::unique_lock(m_functions->first) };					
+					if (m_functions->second.emplace(key, temp, false)) {
+						m_functions->second.TryCleanupUnusedMemory();
+					}
+				}
 			}
 		};
 		std::shared_ptr< fibers::containers::Map<Param_Types, Proxy_Function>> operator[](std::string const& key) const {
-			auto optionalF = m_functions.at(key);
-			if (optionalF.has_value()) {
-				return optionalF.value();
-			}
+			auto locked{ std::shared_lock(m_functions->first) };
+			auto optionalF = m_functions->second.at(key);
+			if (optionalF.has_value()) return optionalF.value();			
 			return nullptr;
 		};
-		std::shared_ptr< fibers::containers::Map<Param_Types, Proxy_Function>> operator()(std::string const& key) {
-			std::shared_ptr<fibers::containers::Map<Param_Types, Proxy_Function>> temp;
-			defer(m_functions.TryCleanupUnusedMemory());
-			while (true) {
-				auto optionalF = m_functions.at(key);
-				if (optionalF.has_value()) return optionalF.value();
-				else if (!temp) temp = std::make_shared<fibers::containers::Map<Param_Types, Proxy_Function>>();
-				m_functions.emplace(key, temp, false);
-			}
-		};
-		std::shared_ptr< fibers::containers::Map<Param_Types, Proxy_Function>> operator()(std::string const& key) const {
-			defer(m_functions.TryCleanupUnusedMemory());
-			auto optionalF = m_functions.at(key);
-			if (optionalF.has_value()) return optionalF.value();
-			return nullptr;
-		};
+		std::shared_ptr< fibers::containers::Map<Param_Types, Proxy_Function>> operator()(std::string const& key) { return operator[](key); };
+		std::shared_ptr< fibers::containers::Map<Param_Types, Proxy_Function>> operator()(std::string const& key) const { return operator[](key); };
 		std::shared_ptr< fibers::containers::Map<Param_Types, Proxy_Function>> at(std::string const& key) const { return operator()(key); };
 
-		Proxy_Function operator()(std::string const& key, Function_Params const& params) {
+		std::pair< Param_Types, Proxy_Function> operator()(std::string const& key, Function_Params const& params) {
 			if (auto ptr = operator()(key)) {
 				defer(ptr->TryCleanupUnusedMemory());
-				auto optionalF = ptr->at_hash(params.hash());
+				auto optionalF = ptr->pair_at_hash(params.hash());
 				if (optionalF.has_value()) return optionalF.value();
 			}
-			return nullptr;
+			return {};
 		};
-		Proxy_Function operator()(std::string const& key, Function_Params const& params) const {
+		std::pair< Param_Types, Proxy_Function> operator()(std::string const& key, Function_Params const& params) const {
 			if (auto ptr = operator()(key)) {
 				defer(ptr->TryCleanupUnusedMemory());
-				auto optionalF = ptr->at_hash(params.hash());
+				auto optionalF = ptr->pair_at_hash(params.hash());
 				if (optionalF.has_value()) return optionalF.value();
 			}
-			return nullptr;
+			return {};
 		};
-		Proxy_Function at(std::string const& key, Function_Params const& params) const {
+		std::pair< Param_Types, Proxy_Function> at(std::string const& key, Function_Params const& params) const {
 			return operator()(key, params);
 		};
 
@@ -3406,7 +3404,7 @@ namespace scripting {
 		};
 		Proxy_Function at(std::string const& key, Param_Types const& params) const { return operator()(key, params); };
 
-		bool emplace(std::string const& key, Proxy_Function func, bool replaceIfAlreadyExists = true) {
+		bool emplace(std::string const& key, Proxy_Function func, bool replaceIfAlreadyExists = false) {
 			if (func) {
 				if (auto ptr = operator()(key)) {
 					defer(ptr->TryCleanupUnusedMemory());
@@ -3415,7 +3413,7 @@ namespace scripting {
 			}
 			return false;
 		};
-		bool emplace(std::string const& key, Proxy_Function func, Param_Types const& params, bool replaceIfAlreadyExists = true) {
+		bool emplace(std::string const& key, Proxy_Function func, Param_Types const& params, bool replaceIfAlreadyExists = false) {
 			if (func) {
 				if (auto ptr = operator()(key)) {
 					defer(ptr->TryCleanupUnusedMemory());
@@ -3424,8 +3422,7 @@ namespace scripting {
 			}
 			return false;
 		};
-		bool emplace(std::string const& key, Param_Types const& params, Proxy_Function func, bool replaceIfAlreadyExists = true) {
-			
+		bool emplace(std::string const& key, Param_Types const& params, Proxy_Function func, bool replaceIfAlreadyExists = false) {
 			if (func) {
 				if (auto ptr = operator()(key)) {
 					defer(ptr->TryCleanupUnusedMemory());
@@ -3434,13 +3431,13 @@ namespace scripting {
 			}
 			return false;
 		};
-		bool emplace(std::string const& key, Proxy_Function func, std::vector<std::string> const& params, bool replaceIfAlreadyExists = true) {
+		bool emplace(std::string const& key, Proxy_Function func, std::vector<std::string> const& params, bool replaceIfAlreadyExists = false) {
 			if (func) {
 				return emplace(key, func, Param_Types(func->Arguments(), params), replaceIfAlreadyExists);
 			}
 			return false;
 		};
-		bool emplace(std::string const& key, std::vector<std::string> const& params, Proxy_Function func, bool replaceIfAlreadyExists = true) {
+		bool emplace(std::string const& key, std::vector<std::string> const& params, Proxy_Function func, bool replaceIfAlreadyExists = false) {
 			if (func) {
 				return emplace(key, func, Param_Types(func->Arguments(), params), replaceIfAlreadyExists);
 			}
@@ -3448,28 +3445,27 @@ namespace scripting {
 		};
 
 		/* Given a function name and call parameters, will attempt to find an exact-match function, variadic instantiation, or convertable function call, or return nullptr. */
-		Proxy_Function BuildMatch(std::string const& functionName, scripting::Function_Params const& params, Type_Converter_Tree const& m_typeConverters = Type_Converter_Tree(), bool AllowTemplateInstantiation = true, bool AllowTypeConversion = true) {
-			if (auto ptr = at(functionName, params)) {
-				return ptr;
+		std::pair<Param_Types, Proxy_Function> BuildMatch(std::string const& functionName, scripting::Function_Params const& params, Type_Converter_Tree const& m_typeConverters = Type_Converter_Tree(), bool AllowTemplateInstantiation = true, bool AllowTypeConversion = true) {
+			auto [directFindParams, directFind] = at(functionName, params);
+			
+			if (directFind) {
+				// exact match found
+				return { directFindParams, directFind };
 			}
 			else {
 				std::multimap<double, std::tuple<Proxy_Function, Param_Types>> candidates;
 
-				bool successfullyAddedFunction{ false };
-
 				if (AllowTypeConversion) {
-					if (!successfullyAddedFunction) {
-						if (auto ptr = this->operator[](functionName)) {
-							if (ptr) {
-								for (auto& function : *ptr) {
-									if (function) {
-										if (function->first.Template()) {
-											// already tried this...
-										}
-										else {
-											if (function->first.converts(params, m_typeConverters)) {
-												candidates.insert({ function->first.conversion_cost(params, m_typeConverters), { function->second, function->first } });
-											}
+					if (auto ptr = this->operator[](functionName)) {
+						if (ptr) {
+							for (auto& function : *ptr) {
+								if (function) {
+									if (function->first.Template()) {
+										// already tried this...
+									}
+									else {
+										if (function->first.converts(params, m_typeConverters)) {
+											candidates.insert({ function->first.conversion_cost(params, m_typeConverters), { function->second, function->first } });
 										}
 									}
 								}
@@ -3521,19 +3517,178 @@ namespace scripting {
 					if (candidate.first == std::numeric_limits<double>::max()) { break; }
 					auto& func = std::get<0>(candidate.second);
 					auto& param = std::get<1>(candidate.second);
+					
 					try {
-						auto newParms = scripting::Param_Types(params, func->Arguments().types());
+						auto newParms = scripting::Param_Types(params, param/*func->Arguments()*/.types());
 						if (emplace(functionName, newParms, func, false)) {
-							successfullyAddedFunction = true;
-							break;
+							return { newParms, func };
 						}
 					}
 					catch (scripting::exception::arity_error const& err) {}
 					catch (scripting::exception::bad_boxed_cast const& err) {}
 				}
+			}
+			return {};
+		};
 
-				if (successfullyAddedFunction) {
-					return at(functionName, params);
+	};
+#endif
+	
+	class Functions2 {
+	public:
+		using FunctionActual = std::pair<Proxy_Function, Param_Types>; // this can never be seperated. The underlying function needs this conversion to function properly. 
+		using FunctionActualPtr = std::shared_ptr<FunctionActual>;
+		using FunctionSort = fibers::containers::Map< Param_Types, FunctionActualPtr>; // sorts actual functions by filters, to speed-up filtering and finding with repeat conversions
+		using FunctionMap = fibers::containers::Map< std::string, std::shared_ptr< FunctionSort > >;
+		
+		mutable std::shared_ptr< FunctionMap > m_functions{ std::make_shared<FunctionMap>() };
+
+		std::shared_ptr< FunctionSort > operator[](std::string const& key) {
+			std::shared_ptr< FunctionSort > temp;
+			while (true) {
+				auto optionalF = m_functions->at(key);
+				if (optionalF.has_value()) return optionalF.value();
+
+				if (!temp) temp = std::make_shared<FunctionSort>();
+				if (1) {
+					if (m_functions->emplace(key, temp, false)) {
+						m_functions->TryCleanupUnusedMemory();
+					}
+				}
+			}
+		};
+		std::shared_ptr< FunctionSort > operator[](std::string const& key) const {
+			auto optionalF = m_functions->at(key);
+			if (optionalF.has_value()) return optionalF.value();
+			return nullptr;
+		};
+		std::shared_ptr< FunctionSort > operator()(std::string const& key) { return operator[](key); };
+		std::shared_ptr< FunctionSort > operator()(std::string const& key) const { return operator[](key); };
+		std::shared_ptr< FunctionSort > at(std::string const& key) const { return operator()(key); };
+
+		FunctionActualPtr operator()(std::string const& key, Function_Params const& params) const {
+			if (auto ptr = operator()(key)) {
+				defer(ptr->TryCleanupUnusedMemory());
+				auto optionalF = ptr->at_hash(params.hash());
+				if (optionalF.has_value()) return optionalF.value();
+			}
+			return nullptr;
+		};
+		FunctionActualPtr at(std::string const& key, Function_Params const& params) const {
+			return operator()(key, params);
+		};
+
+		FunctionActualPtr operator()(std::string const& key, Param_Types const& params) const {
+			if (auto ptr = operator()(key)) {
+				defer(ptr->TryCleanupUnusedMemory());
+				auto optionalF = ptr->at(params);
+				if (optionalF.has_value()) return optionalF.value();
+			}
+			return nullptr;
+		};
+		FunctionActualPtr at(std::string const& key, Param_Types const& params) const {
+			return operator()(key, params);
+		};
+
+		bool emplace(std::string const& key, Param_Types const& params, Proxy_Function func, bool replaceIfAlreadyExists = false) {
+			if (func) {
+				if (auto ptr = operator()(key)) {
+					defer(ptr->TryCleanupUnusedMemory());
+					return ptr->emplace(params, std::make_shared<FunctionActual>(func, params), replaceIfAlreadyExists);
+				}
+			}
+			return false;
+		};
+		bool emplace(std::string const& key, Proxy_Function func, Param_Types const& params, bool replaceIfAlreadyExists = false) { return emplace(key, params, func, replaceIfAlreadyExists); };
+		bool emplace(std::string const& key, Proxy_Function func, bool replaceIfAlreadyExists = false) { if (func) return emplace(key, func->Arguments(), func, replaceIfAlreadyExists); else return false; };
+		bool emplace(std::string const& key, Proxy_Function func, std::vector<std::string> const& params, bool replaceIfAlreadyExists = false) { if (func) return emplace(key, func, Param_Types(func->Arguments(), params), replaceIfAlreadyExists); else return false; };
+		bool emplace(std::string const& key, std::vector<std::string> const& params, Proxy_Function func, bool replaceIfAlreadyExists = false) { if (func) return emplace(key, func, Param_Types(func->Arguments(), params), replaceIfAlreadyExists); else return false; };
+
+		bool emplace_free(std::string const& key, Param_Types const& params, Proxy_Function func, bool replaceIfAlreadyExists = false) {
+			if (func) {
+				if (auto ptr = operator()(key)) {
+					defer(ptr->TryCleanupUnusedMemory());
+					return ptr->emplace(params, std::make_shared<FunctionActual>(func, params), replaceIfAlreadyExists);
+				}
+			}
+			return false;
+		};
+		bool emplace_free(std::string const& key, Proxy_Function func, Param_Types const& params, bool replaceIfAlreadyExists = false) { return emplace_free(key, params, func, replaceIfAlreadyExists); };
+		bool emplace_free(std::string const& key, Proxy_Function func, bool replaceIfAlreadyExists = false) { if (func) return emplace_free(key, func->Arguments(), func, replaceIfAlreadyExists); else return false; };
+		bool emplace_free(std::string const& key, Proxy_Function func, std::vector<std::string> const& params, bool replaceIfAlreadyExists = false) { if (func) return emplace_free(key, func, Param_Types(func->Arguments(), params), replaceIfAlreadyExists); else return false; };
+		bool emplace_free(std::string const& key, std::vector<std::string> const& params, Proxy_Function func, bool replaceIfAlreadyExists = false) { if (func) return emplace_free(key, func, Param_Types(func->Arguments(), params), replaceIfAlreadyExists); else return false; };
+
+		/* Given a function name and call parameters, will attempt to find an exact-match function, variadic instantiation, or convertable function call, or return nullptr. */
+		scripting::Functions2::FunctionActualPtr BuildMatch(std::string const& functionName, scripting::Function_Params const& params, Type_Converter_Tree const& m_typeConverters = Type_Converter_Tree(), bool AllowTemplateInstantiation = true, bool AllowTypeConversion = true) {
+			if (auto func = at(functionName, params)) {
+				// exact match found
+				return func;
+			}
+			else {
+				std::multimap<double, scripting::Functions2::FunctionActualPtr> candidates;
+
+				if (AllowTypeConversion) {
+					if (auto ptr = this->operator[](functionName)) {
+						if (ptr) {
+							for (auto& function : *ptr) {
+								if (function) {
+									if (function->first.Template()) {
+										// already tried this...
+									}
+									else {
+										if (function->first.converts(params, m_typeConverters)) {
+											candidates.insert({ function->first.conversion_cost(params, m_typeConverters), function->second });
+										}
+									}
+								}
+							}
+						}
+					}
+				}
+
+				if (AllowTemplateInstantiation) {
+					if (auto ptr = this->operator[](functionName)) {
+						if (ptr) {
+							for (auto& function : *ptr) {
+								if (function) {
+									if (function->first.Template()) {
+										if (function->first.converts(params, m_typeConverters)) {
+											candidates.insert({ function->first.conversion_cost(params, m_typeConverters), function->second });
+										}
+									}
+									else {
+										// must be perfect match -- requires casting. We can try that, but only if no template exists that would work instead.
+									}
+								}
+							}
+						}
+					}
+				}
+
+				// Get the "cheapest" or fastest conversion option available at this scope.
+				for (auto& candidate : candidates) {
+					if (candidate.first == std::numeric_limits<double>::max()) { break; }
+					auto& func = candidate.second->first;
+					auto& param = candidate.second->second;
+
+					try {
+						auto newParms = scripting::Param_Types(params, param.types());
+
+						if (func) {
+							if (auto ptr = operator()(functionName)) {
+								defer(ptr->TryCleanupUnusedMemory());
+								if (ptr->emplace(newParms, candidate.second, false)) {
+									return candidate.second;
+								}
+								else {
+									// try again -- someone beat us to the punch. It'll (probably) be available this time. 
+									return BuildMatch(functionName, params, m_typeConverters, AllowTemplateInstantiation, AllowTypeConversion);
+								}
+							}
+						}
+					}
+					catch (scripting::exception::arity_error const& err) {}
+					catch (scripting::exception::bad_boxed_cast const& err) {}
 				}
 			}
 			return nullptr;
@@ -3542,9 +3697,12 @@ namespace scripting {
 	};
 
 	class Impl;
+#if 0
     class Scope;
     class Namespace;
 	class Class;
+
+	// keep updating so that the return value from Functions makes useful sense (Function with specialized params)
 
     class Scope {		
 	public:
@@ -4189,8 +4347,9 @@ namespace scripting {
 
 					for (auto& scope : GetScopesForObjectSearch()) {
 						if (auto* ptr = scope->GetFunctions()) {
-							if (auto func = ptr->BuildMatch(functionName, params, m_conversionTree, false, true)) {
-								sort.emplace(func->conversion_cost(params, m_conversionTree), func);
+							auto [funcParams, func] = ptr->BuildMatch(functionName, params, m_conversionTree, false, true);
+							if (func) {
+								sort.emplace(funcParams.conversion_cost(params, m_conversionTree), func);
 							}
 						}
 					}
@@ -4203,8 +4362,9 @@ namespace scripting {
 					if (firstParamScopePtr) {
 						for (auto& scope : firstParamScopePtr->GetScopesForObjectSearch()) {
 							if (auto* ptr = scope->GetFunctions()) {
-								if (auto func = ptr->BuildMatch(functionName, params, m_conversionTree, false, true)) {
-									sort.emplace(func->conversion_cost(params, m_conversionTree), func);
+								auto [funcParams, func] = ptr->BuildMatch(functionName, params, m_conversionTree, false, true);
+								if (func) {
+									sort.emplace(funcParams.conversion_cost(params, m_conversionTree), func);
 								}
 							}
 						}
@@ -4213,8 +4373,9 @@ namespace scripting {
 					if (constructorScopePtr = std::dynamic_pointer_cast<Scope>(this->FindClass(functionName))) {
 						// Is there a pre-defined constructor that this could work with?
 						if (auto* functions = constructorScopePtr->GetFunctions()) {
-							if (auto func = functions->BuildMatch(functionName, params, m_conversionTree, false, true)) {
-								sort.emplace(func->conversion_cost(params, m_conversionTree), func);
+							auto [funcParams, func] = functions->BuildMatch(functionName, params, m_conversionTree, false, true);
+							if (func) {
+								sort.emplace(funcParams.conversion_cost(params, m_conversionTree), func);
 							}
 						}
 
@@ -4249,16 +4410,18 @@ namespace scripting {
 					std::multimap<double, Proxy_Function> sort;
 					for (auto& scope : GetScopesForObjectSearch()) {
 						if (auto* ptr = scope->GetFunctions()) {
-							if (auto func = ptr->BuildMatch(functionName, params, m_conversionTree, true, true)) {
-								sort.emplace(func->conversion_cost(params, m_conversionTree), func);
+							auto [funcParams, func] = ptr->BuildMatch(functionName, params, m_conversionTree, true, true);
+							if (func) {
+								sort.emplace(funcParams.conversion_cost(params, m_conversionTree), func);
 							}
 						}
 					}
 					if (firstParamScopePtr) {
 						for (auto& scope : firstParamScopePtr->GetScopesForObjectSearch()) {
 							if (auto* ptr = scope->GetFunctions()) {
-								if (auto func = ptr->BuildMatch(functionName, params, m_conversionTree, true, true)) {
-									sort.emplace(func->conversion_cost(params, m_conversionTree), func); 
+								auto [funcParams, func] = ptr->BuildMatch(functionName, params, m_conversionTree, true, true);
+								if (func) {
+									sort.emplace(funcParams.conversion_cost(params, m_conversionTree), func);
 								}
 							}
 						}
@@ -4267,8 +4430,9 @@ namespace scripting {
 					if (constructorScopePtr = std::dynamic_pointer_cast<Scope>(this->FindClass(functionName))) {
 						// Is there a pre-defined constructor that this could work with?
 						if (auto* functions = constructorScopePtr->GetFunctions()) {
-							if (auto func = functions->BuildMatch(functionName, params, m_conversionTree, true, true)) {
-								sort.emplace(func->conversion_cost(params, m_conversionTree), func);
+							auto [funcParams, func] = functions->BuildMatch(functionName, params, m_conversionTree, true, true);
+							if (func) {
+								sort.emplace(funcParams.conversion_cost(params, m_conversionTree), func);
 							}
 						}
 
@@ -4303,8 +4467,9 @@ namespace scripting {
 				if (1) {
 					if (constructorScopePtr) {
 						if (auto* functions = constructorScopePtr->GetFunctions()) {
-							if (auto func = functions->BuildMatch(functionName, params, m_conversionTree, true, true)) {
-								if (func->conversion_cost(params, m_conversionTree) != std::numeric_limits<double>::max()) {
+							auto [funcParams, func] = functions->BuildMatch(functionName, params, m_conversionTree, true, true);
+							if (func) {
+								if (funcParams.conversion_cost(params, m_conversionTree) != std::numeric_limits<double>::max()) {
 									out = func;
 									return true;
 								}
@@ -5066,6 +5231,7 @@ namespace scripting {
 			return h % C;
 		};
 	};
+#endif
 
 	class Scope2;
 	class Namespace2;
@@ -5078,7 +5244,7 @@ namespace scripting {
 		friend class Class2;
 		friend class Global2;
 
-		Scope2(std::weak_ptr<Scope2> const& parent)
+		Scope2(std::shared_ptr<Scope2> const& parent)
 			: p_UniqueName(" _ _ _ _ _ _")
 			, p_self()
 			, p_parent(parent)
@@ -5087,7 +5253,7 @@ namespace scripting {
 			, p_using()
 		{
 			static auto randN{ [](double min, double max) -> double { return (((double)std::rand() / (double)RAND_MAX) * (max - min)) + min; } };
-			fibers::parallel::For(0, 12, [&](int i) {
+			for (int i = 0; i < 12; i++) {
 				if (i < 2)
 					p_UniqueName[i] = (char)(int)randN((int)('A'), (int)('Z'));
 				else if (i < 6)
@@ -5096,7 +5262,7 @@ namespace scripting {
 					p_UniqueName[i] = (char)(int)randN((int)('A'), (int)('Z'));
 				else if (i < 12)
 					p_UniqueName[i] = (char)(int)randN((int)('0'), (int)('9'));
-			});
+			};
 			
 			if (auto p = p_parent.lock()) { p_namespace = p->GetNamespaceImpl(); }
 			else { p_namespace = std::dynamic_pointer_cast<Namespace2>(p_self.lock()); }
@@ -5107,6 +5273,10 @@ namespace scripting {
 			qualifiedNamespaceWithQualifiers = GetQualifiedNamespaceImpl(true);			
 			qualifiedNamespaceWithoutQualifiers = GetQualifiedNamespaceImpl();
 		};
+		Scope2(std::shared_ptr<Namespace2> const& parent) : Scope2(std::dynamic_pointer_cast<Scope2>(parent)) {};
+		Scope2(std::shared_ptr<Class2> const& parent) : Scope2(std::dynamic_pointer_cast<Scope2>(parent)) {};
+		Scope2(std::shared_ptr<Global2> const& parent) : Scope2(std::dynamic_pointer_cast<Scope2>(parent)) {};
+		
 		Scope2(Scope2 const&) = default;
 		Scope2(Scope2&&) = default;
 		Scope2& operator=(Scope2 const&) = default;
@@ -5127,95 +5297,108 @@ namespace scripting {
 			Hasher& operator=(Hasher&&) = default;
 
 			size_t operator()(std::weak_ptr<Scope2> const& ptr) const noexcept {
-				static auto hasher{ std::hash<std::string>() };
-				if (auto p = ptr.lock()) {
-					return hasher(p->p_UniqueName);
-				} else {
-					return 37; // prime
-				}
+				return std::hash<std::shared_ptr<Scope2>>()(ptr.lock());
+
+				//static auto hasher{ std::hash<std::string>() };
+				//if (auto p = ptr.lock()) {
+				//	return hasher(p->p_UniqueName);
+				//} else {
+				//	return 37; // prime
+				//}
 			};
 			size_t operator()(std::weak_ptr<Namespace2> const& ptr) const noexcept {
-				static auto hasher{ std::hash<std::string>() };
-				if (auto p = ptr.lock()) {
-					if (auto p2 = (Scope2*)(void*)p.get()) {
-						return hasher(p2->p_UniqueName);
-					}					
-				}
-				else {
-					return 37; // prime
-				}
+				return std::hash<std::shared_ptr<Scope2>>()(std::dynamic_pointer_cast<Scope2>(ptr.lock()));
+
+				//static auto hasher{ std::hash<std::string>() };
+				//if (auto p = ptr.lock()) {
+				//	if (auto p2 = (Scope2*)(void*)p.get()) {
+				//		return hasher(p2->p_UniqueName);
+				//	}					
+				//}
+				//else {
+				//	return 37; // prime
+				//}
 			};
 			size_t operator()(std::weak_ptr<Class2> const& ptr) const noexcept {
-				static auto hasher{ std::hash<std::string>() };
-				if (auto p = ptr.lock()) {
-					if (auto p2 = (Scope2*)(void*)p.get()) {
-						return hasher(p2->p_UniqueName);
-					}
-				}
-				else {
-					return 37; // prime
-				}
+				return std::hash<std::shared_ptr<Scope2>>()(std::dynamic_pointer_cast<Scope2>(ptr.lock()));
+
+				//static auto hasher{ std::hash<std::string>() };
+				//if (auto p = ptr.lock()) {
+				//	if (auto p2 = (Scope2*)(void*)p.get()) {
+				//		return hasher(p2->p_UniqueName);
+				//	}
+				//}
+				//else {
+				//	return 37; // prime
+				//}
 			};
 			size_t operator()(std::weak_ptr<Global2> const& ptr) const noexcept {
-				static auto hasher{ std::hash<std::string>() };
-				if (auto p = ptr.lock()) {
-					if (auto p2 = (Scope2*)(void*)p.get()) {
-						return hasher(p2->p_UniqueName);
-					}
-				}
-				else {
-					return 37; // prime
-				}
+				return std::hash<std::shared_ptr<Scope2>>()(std::dynamic_pointer_cast<Scope2>(ptr.lock()));
+
+				//static auto hasher{ std::hash<std::string>() };
+				//if (auto p = ptr.lock()) {
+				//	if (auto p2 = (Scope2*)(void*)p.get()) {
+				//		return hasher(p2->p_UniqueName);
+				//	}
+				//}
+				//else {
+				//	return 37; // prime
+				//}
 			};
 			
 			size_t operator()(std::shared_ptr<Scope2> const& p) const noexcept {
-				static auto hasher{ std::hash<std::string>() };
-				if (p) {
-					return hasher(p->p_UniqueName);
-				}
-				else {
-					return 37; // prime
-				}
+				return std::hash<std::shared_ptr<Scope2>>()(p);
+
+				//static auto hasher{ std::hash<std::string>() };
+				//if (p) {
+				//	return hasher(p->p_UniqueName);
+				//}
+				//else {
+				//	return 37; // prime
+				//}
 			};
 			size_t operator()(std::shared_ptr<Namespace2> const& p) const noexcept {
-				static auto hasher{ std::hash<std::string>() };
-				if (p) {
-					if (auto p2 = (Scope2*)(void*)p.get()) {
-						return hasher(p2->p_UniqueName);
-					}
-				}
-				else {
-					return 37; // prime
-				}
+				return std::hash<std::shared_ptr<Scope2>>()(std::dynamic_pointer_cast<Scope2>(p));
+
+				//static auto hasher{ std::hash<std::string>() };
+				//if (p) {
+				//	if (auto p2 = (Scope2*)(void*)p.get()) {
+				//		return hasher(p2->p_UniqueName);
+				//	}
+				//}
+				//else {
+				//	return 37; // prime
+				//}
 			};
 			size_t operator()(std::shared_ptr<Class2> const& p) const noexcept {
-				static auto hasher{ std::hash<std::string>() };
-				if (p) {
-					if (auto p2 = (Scope2*)(void*)p.get()) {
-						return hasher(p2->p_UniqueName);
-					}
-				}
-				else {
-					return 37; // prime
-				}
+				return std::hash<std::shared_ptr<Scope2>>()(std::dynamic_pointer_cast<Scope2>(p));
+
+				//static auto hasher{ std::hash<std::string>() };
+				//if (p) {
+				//	if (auto p2 = (Scope2*)(void*)p.get()) {
+				//		return hasher(p2->p_UniqueName);
+				//	}
+				//}
+				//else {
+				//	return 37; // prime
+				//}
 			};
 			size_t operator()(std::shared_ptr<Global2> const& p) const noexcept {
-				static auto hasher{ std::hash<std::string>() };
-				if (p) {
-					if (auto p2 = (Scope2*)(void*)p.get()) {
-						return hasher(p2->p_UniqueName);
-					}
-				}
-				else {
-					return 37; // prime
-				}
+				return std::hash<std::shared_ptr<Scope2>>()(std::dynamic_pointer_cast<Scope2>(p));
+
+				//static auto hasher{ std::hash<std::string>() };
+				//if (p) {
+				//	if (auto p2 = (Scope2*)(void*)p.get()) {
+				//		return hasher(p2->p_UniqueName);
+				//	}
+				//}
+				//else {
+				//	return 37; // prime
+				//}
 			};
 		};
 
 	private:
-		std::weak_ptr<Scope2> // shared_pointer to itself. MUST be set immediately after creating the Scope/Class/Namespace/Global.
-			p_self{}; 
-
 		std::string GetQualifiedNamespaceImpl(bool GetUniqueQualifier = false) const {
 			std::string path = "::";
 
@@ -5252,11 +5435,15 @@ namespace scripting {
 
 			return path;
 		};
+
+	private:
+		std::weak_ptr<Scope2> // shared_pointer to itself. MUST be set immediately after creating the Scope/Class/Namespace/Global.
+			p_self{}; 
 		std::string
-			qualifiedNamespaceWithQualifiers;
+			qualifiedNamespaceWithQualifiers{};
 		std::string
-			qualifiedNamespaceWithoutQualifiers;
-		
+			qualifiedNamespaceWithoutQualifiers{};
+
 	public:
 		void SetSelf(std::shared_ptr<Scope2>& p) { p_self = p; };
 		virtual bool IsClass() const { return false; };
@@ -5289,6 +5476,38 @@ namespace scripting {
 	public:
 		// if Namespace or Class or Global, returns self. Otherwise, returns the parent's Namespace. 
 		std::shared_ptr<Namespace2> GetNamespace() const { return p_namespace.lock(); };
+	
+    private:
+		fibers::containers::Map<std::string, std::shared_ptr<fibers::Any>>
+			p_objects; // scopes of all types may declare objects. Namespace objects may be global objects, but still. 
+
+	public:
+		// try and find the object with the requested key.
+		std::shared_ptr<fibers::Any> GetObj(std::string const& name) const {
+			return p_objects.at_or(name, nullptr);
+		};
+		// Returns true if successful. Returns false is replaceIfExisting==false and the object already existed on the Scope.
+		bool AddObj(std::string const& name, std::shared_ptr<fibers::Any> const& obj, bool replaceIfExisting = true) {
+			return p_objects.emplace(name, obj, replaceIfExisting);
+		};
+		// Returns true if successful.
+		bool EraseObj(std::string const& name) {
+			return p_objects.erase(name);
+		};
+		// Returns true if successful.
+		bool EraseObj(std::shared_ptr<fibers::Any> const& Obj) {
+			std::string key;
+			bool doErasure = false;
+			for (auto& obj : p_objects) {
+				if (obj && (obj->second == Obj)) {
+					key = obj->first;
+					doErasure = true;
+					break;
+				}
+			}
+			if (doErasure) return EraseObj(key);
+			else return false;
+		};
 
 	private:
 		std::weak_ptr<Global2> // parent's parent's ... parent's scope. The logical result of asking for p_parent on repeat until you get the end. 
@@ -5305,36 +5524,206 @@ namespace scripting {
 
 	public:
 		// if Global, returns self. Otherwise, returns the parent's Library. 
-		std::shared_ptr<Global2> GetLibrary() const { return p_library.lock(); };
+		std::shared_ptr<Global2> GetLibrary() const { 
+			if (auto p = p_library.lock())
+				return p;
+			else if (auto p = std::dynamic_pointer_cast<Global2>(p_self.lock()))
+				return p;
+			else
+				return nullptr;
+		};
 
 	public:
-		fibers::containers::Map< std::weak_ptr<Namespace2>, std::weak_ptr<Namespace2>, Hasher> // allows this scope to use the children of other scopes as if they were their own.
+		fibers::containers::Map< size_t, std::weak_ptr<Namespace2>> // allows this scope to use the children of other scopes as if they were their own.
 			p_using; 
+		// the Library should know about our "using" list
+		virtual bool RecordUsing(std::shared_ptr<Namespace2> ptr, bool overrideIfExists = true) {
+			if (auto p = std::dynamic_pointer_cast<Scope2>(GetLibrary())) {
+				return p->RecordUsing(ptr, overrideIfExists);
+			}
+			return false;
+		};
 
 	public:
 		// allows this scope to use the children of other scopes as if they were their own.
 		bool AddUsing(std::weak_ptr<Namespace2> namespacePtr) {
-			return p_using.emplace(namespacePtr, namespacePtr);
+			if (auto p = std::dynamic_pointer_cast<Scope2>(namespacePtr.lock())) {
+				if (p_using.emplace(Hasher()(p), namespacePtr)) {
+					if (p->IsNamespace()) {
+						// if this "namespacePtr" belongs to our same library, then we do not care. We only care to track other libraries being used.
+						if (p->GetLibrary() != this->GetLibrary()) {
+							(void)RecordUsing(std::dynamic_pointer_cast<Namespace2>(p));
+						}
+					}
+					return true;
+				}
+			}
+			return false;
 		};
-
+		
 	private:
 		fibers::containers::Map<std::string, 
 			std::shared_ptr<
-			    fibers::containers::Map<std::shared_ptr<Namespace2>, std::shared_ptr<Namespace2>, Hasher>
+			    fibers::containers::Map<size_t, std::shared_ptr<Namespace2>>
 			>
 		> // children namespaces - may be classes or namespaces. By this design, imported namespaces may be "unloaded" on scope unloading, which is on purpose.
 			p_children;
+		// the Library should know about our "Class" list
+		virtual bool RecordClass(std::shared_ptr<Class2> ptr, bool overrideIfExists = true) {
+			if (auto p = std::dynamic_pointer_cast<Scope2>(GetLibrary())) {
+				return p->RecordClass(ptr, overrideIfExists);
+			}			
+			return false;
+		};
+
 	public:
 		bool AddChild(std::shared_ptr<Namespace2> NamespacePtr) {
 			if (auto p = std::dynamic_pointer_cast<Scope2>(NamespacePtr)) {
 				auto name = p->GetName();
-				auto ptr = p_children.get_or_insert(name, std::make_shared<fibers::containers::Map<std::shared_ptr<Namespace2>, std::shared_ptr<Namespace2>, Hasher>>());
-				return ptr->emplace(NamespacePtr, NamespacePtr);
+				auto ptr = p_children.get_or_insert(name, std::make_shared<fibers::containers::Map<size_t, std::shared_ptr<Namespace2>>>());
+				if (ptr->emplace(Hasher()(NamespacePtr), NamespacePtr)) {
+					if (p->IsClass()) {
+						(void)RecordClass(std::dynamic_pointer_cast<Class2>(p));
+					}
+					return true;
+				}
 			}
 			return false;
 		};
 
 	private:
+		virtual void RemoveStaleReferences() {
+			// p_using
+			while (true) {
+				size_t toRemove{};
+				bool doRemoval = false;
+				for (auto& ref : p_using) {
+					if (ref) {
+						if (ref->second.expired()) {
+							toRemove = ref->first;
+							doRemoval = true;
+							break;
+						}
+					}
+				}
+				if (doRemoval) {
+					p_using.erase(toRemove);
+				}
+				else {
+					break;
+				}
+			}
+		};
+
+		virtual bool TryFindNearestScopeWhere(
+			std::shared_ptr<Scope2>& bestMatch,
+			std::function<bool(std::shared_ptr<Scope2> const&)> const& func,
+			std::unordered_set< std::shared_ptr<Scope2> > const& CheckedSelf = {},
+			std::unordered_set< std::shared_ptr<Scope2> > const& CheckedAll = {}
+		) const {
+			auto& checkedSelf = const_cast<std::unordered_set< std::shared_ptr<Scope2> >&>(CheckedSelf);
+			auto& checkedAll = const_cast<std::unordered_set< std::shared_ptr<Scope2> >&>(CheckedAll);
+			auto selfPtr = this->p_self.lock();
+
+			// Prevent Duplication
+			if (checkedAll.count(selfPtr) >= 1) { return false; }
+			checkedAll.emplace(selfPtr);
+
+			// test myself			
+			if (!checkedSelf.count(selfPtr) >= 1) {
+				checkedSelf.emplace(selfPtr);
+				if (1) {
+					if (auto p = std::dynamic_pointer_cast<Scope2>(selfPtr)) {
+						if (func(p)) {
+							bestMatch = p;
+							return true;
+						}
+					}
+				}
+			}
+
+			// test my "using" namespaces and their children.
+			for (auto& childNamespace : this->p_using) {
+				if (childNamespace) {
+					if (auto p = std::dynamic_pointer_cast<Scope2>(childNamespace->second.lock())) {
+						if (p && p->TryFindNearestScopeWhere(bestMatch, func, CheckedSelf, CheckedAll)) {
+							return true;
+						}
+					}
+				}
+			}
+
+			// test all of my parents
+			auto parentPtr = this->p_parent.lock();
+			while (parentPtr) {
+				if (!checkedSelf.count(parentPtr) >= 1) {
+					checkedSelf.emplace(parentPtr);
+					if (1) {
+						if (auto p = std::dynamic_pointer_cast<Scope2>(parentPtr)) {
+							if (func(p)) {
+								bestMatch = p;
+								return true;
+							}
+						}
+					}
+				}
+				else {
+					break; // we've checked this before! Quick, get out. 
+				}
+				parentPtr = parentPtr->p_parent.lock();
+			}
+
+			// Test my children themselves.
+			for (auto& childNamespace : this->p_children) {
+				if (childNamespace && childNamespace->second) {
+					for (auto& innerChildNamespace : *childNamespace->second) {
+						if (innerChildNamespace->second) {
+							auto ptr = std::dynamic_pointer_cast<Scope2>(innerChildNamespace->second);
+							if (!checkedSelf.count(ptr) >= 1) {
+								checkedSelf.emplace(ptr);
+								if (1) {
+									if (auto p = std::dynamic_pointer_cast<Scope2>(ptr)) {
+										if (func(p)) {
+											bestMatch = p;
+											return true;
+										}
+									}
+								}
+							}
+							else {
+								break; // we've checked this before! Quick, get out. 
+							}
+						}
+					}
+				}
+			}
+
+			// test my parents and their children
+			if (auto p = this->p_parent.lock()) {
+				if (p->TryFindNearestScopeWhere(bestMatch, func, CheckedSelf, CheckedAll)) {
+					return true;
+				}
+			}
+
+			// test my children's children.
+			for (auto& childNamespace : this->p_children) {
+				if (childNamespace && childNamespace->second) {
+					for (auto& innerChildNamespace : *childNamespace->second) {
+						if (innerChildNamespace) {
+							if (auto p = std::dynamic_pointer_cast<Scope2>(innerChildNamespace->second)) {
+								if (p->TryFindNearestScopeWhere(bestMatch, func, CheckedSelf, CheckedAll)) {
+									return true;
+								}
+							}
+						}
+					}
+				}
+			}
+
+			return false;
+		};
+
+
 		virtual bool TryFindNearestNamespaceWhere(
 			std::shared_ptr<Namespace2>& bestMatch,
 			std::function<bool(std::shared_ptr<Namespace2> const&)> const& func,
@@ -5442,8 +5831,192 @@ namespace scripting {
 
 			return false;
 		};
+	
+    protected:
+		virtual Type_Info GetClassType() const { return Type_Info(); };
 
 	public:
+		virtual bool AddFunction(std::string const& name, Proxy_Function function, bool overrideIfAlreadyExists) {
+			if (auto namespacePtr = std::dynamic_pointer_cast<Scope2>(GetNamespace())) {
+				return namespacePtr->AddFunction(name, function, overrideIfAlreadyExists);
+			}
+			else {
+				return false;
+			}
+		};
+		virtual bool AddFunction(std::string const& name, Proxy_Function function, Param_Types const& params, bool overrideIfAlreadyExists = true) {
+			if (auto namespacePtr = std::dynamic_pointer_cast<Scope2>(GetNamespace())) {
+				return namespacePtr->AddFunction(name, function, params, overrideIfAlreadyExists);
+			}
+			else {
+				return false;
+			}
+		};
+
+	private:
+		virtual bool AddFreeFunction(std::string const& name, Proxy_Function function, bool overrideIfAlreadyExists = true) {
+			if (auto namespacePtr = std::dynamic_pointer_cast<Scope2>(GetNamespace())) {
+				return namespacePtr->AddFreeFunction(name, function, overrideIfAlreadyExists);
+			}
+			else {
+				return false;
+			}
+		};
+		virtual bool AddFreeFunction(std::string const& name, Proxy_Function function, Param_Types const& params, bool overrideIfAlreadyExists = true) {
+			if (auto namespacePtr = std::dynamic_pointer_cast<Scope2>(GetNamespace())) {
+				return namespacePtr->AddFreeFunction(name, function, params, overrideIfAlreadyExists);
+			}
+			else {
+				return false;
+			}
+		};
+
+	public:
+#if 0
+		template<typename FromType, typename ToType>
+		bool AddConstructors(bool overrideIfAlreadyExists = true) {
+			auto fromTypeInfo{ scripting::user_type<FromType>() };
+			auto toTypeInfo{ scripting::user_type<ToType>() };
+
+			// Ensure these two classes have been added already
+			auto fromClass = std::dynamic_pointer_cast<Scope2>(this->FindClass(fromTypeInfo));
+			auto toClass = std::dynamic_pointer_cast<Scope2>(this->FindClass(toTypeInfo));
+			if (!fromClass) throw exception::not_found_error("Could not find the \"From\" Class for Constructor"); 
+			if (!toClass) throw exception::not_found_error("Could not find the \"To\" Class for Constructor"); 
+
+			constexpr static bool is_polymorphic = std::is_base_of< ToType, FromType>::value;
+			constexpr static bool is_static = details::impl::is_explicitly_convertible_to<FromType, ToType>::value;
+			constexpr static bool is_bidir = details::impl::is_explicitly_convertible_to<ToType, FromType>::value;
+			if constexpr (!is_static && !is_polymorphic) {
+				return false;
+			}
+
+			// static conversion
+			toClass->AddFunction(toClass->GetName(), make_callable([](FromType const& from) -> ToType { return (FromType)from; }));
+
+			// polymorphic conversion
+			toClass->AddFreeFunction(toClass->GetName(), make_callable([](Any const& from) -> std::shared_ptr<ToType> {
+				return std::dynamic_pointer_cast<ToType>(from.cast<std::shared_ptr<FromType>>());
+			}), { {"from", fromTypeInfo } });
+
+
+
+
+
+
+
+
+			value_namespace->AddFunction("value", make_callable([](Units::value const& makeCopy) -> Units::value { return makeCopy; }));
+
+
+
+
+
+
+
+
+
+
+			std::shared_ptr<Node> node = nodes.get_or_insert(fromTypeInfo, std::make_shared<Node>());
+			node->from = fromTypeInfo;
+
+			auto targetLocation = node->connections.at_or(toTypeInfo, nullptr);
+			if (!targetLocation) {
+				if constexpr (std::is_base_of< ToType, FromType>::value) {
+					targetLocation = node->connections.get_or_insert(toTypeInfo, std::dynamic_pointer_cast<details::Type_Conversion_Base>(std::make_shared<details::Dynamic_Type_Conversion_Impl<FromType, ToType>>()));
+				}
+				else {
+					targetLocation = node->connections.get_or_insert(toTypeInfo, std::dynamic_pointer_cast<details::Type_Conversion_Base>(std::make_shared<details::Static_Type_Conversion_Impl<FromType, ToType>>()));
+				}
+
+				(void)targetLocation->cost(); // cache the cost to perform this conversion
+
+				node->cached_conversions.emplace(toTypeInfo, std::make_shared<std::tuple<std::vector<scripting::Type_Info>, long>>(
+					std::vector<scripting::Type_Info>({ toTypeInfo }),
+					(long)(std::numeric_limits<double>::max())
+					)); // even if there was a previous cached conversion, override it.
+
+					// if this converter was bidirectional, we should explicitely add it to the list.
+					// This will be slightly recursive but should end abruptly. 
+				if constexpr (is_static && is_bidir) {
+					AddConverter<ToType, FromType>();
+				}
+
+				version++;
+
+				return true;
+			}
+
+			return false;
+
+
+			//auto FromType = user_type<From>();
+			//auto ToType = user_type<To>();
+
+			//GetTypeConverterTree()->AddConverter();
+
+
+
+
+
+
+
+
+
+
+			//if (auto namespacePtr = std::dynamic_pointer_cast<Scope2>(GetNamespace())) {
+			//	return namespacePtr->AddFunction(name, function, params, overrideIfAlreadyExists);
+			//}
+			//else {
+			//	return false;
+			//}
+		};
+#endif
+
+
+		virtual std::shared_ptr< Functions2 > GetFunctions() const {
+			if (auto namespacePtr = std::dynamic_pointer_cast<Scope2>(GetNamespace())) {
+				return namespacePtr->GetFunctions();
+			}
+			else {
+				return nullptr;
+			}
+		};
+		virtual std::shared_ptr< Functions2::FunctionSort > GetFunctions(std::string const& name) const {
+			if (auto namespacePtr = std::dynamic_pointer_cast<Scope2>(GetNamespace())) {
+				return namespacePtr->GetFunctions(name);
+			}
+			else {
+				return nullptr;
+			}
+		};
+		virtual Functions2::FunctionActualPtr GetFunction(std::string const& name, Function_Params const& params) {
+			if (auto namespacePtr = std::dynamic_pointer_cast<Scope2>(GetNamespace())) {
+				return namespacePtr->GetFunction(name, params);
+			}
+			else {
+				return {};
+			}
+		};
+		virtual Functions2::FunctionActualPtr GetFunction(std::string const& name, Function_Params const& params, Type_Converter_Tree const& tree)  {
+			if (auto namespacePtr = std::dynamic_pointer_cast<Scope2>(GetNamespace())) {
+				return namespacePtr->GetFunction(name, params, tree);
+			}
+			else {
+				return {};
+			}
+		};
+
+	public:
+		std::shared_ptr<Scope2> FindNearestScopeWhere(std::function<bool(std::shared_ptr<Scope2> const&)> const& func) const {
+			std::shared_ptr<Scope2> out;
+			if (TryFindNearestScopeWhere(out, func)) {
+				return out;
+			}
+			else {
+				return nullptr;
+			}
+		};
 		std::shared_ptr<Namespace2> FindNearestNamespaceWhere(std::function<bool(std::shared_ptr<Namespace2> const&)> const& func) const {
 			std::shared_ptr<Namespace2> out;
 			if (TryFindNearestNamespaceWhere(out, func)) {
@@ -5453,7 +6026,6 @@ namespace scripting {
 				return nullptr;
 			}
 		};
-
 		std::shared_ptr<Namespace2> FindNamespace(std::string QualifiedOrUnqualifiedNamespaceName) const {
 			static auto fixNamespace{ [](std::string x) -> std::string {
 				while (x.find("::") == 0 && x.length() > 2) {
@@ -5590,11 +6162,589 @@ namespace scripting {
 #endif		
 			return nullptr;			
 		};
+		std::shared_ptr<Class2> FindClass(fibers::Type_Info typeInfo) const {
+			std::shared_ptr<Namespace2> out;
+			if (TryFindNearestNamespaceWhere(out, [tryFind = std::move(typeInfo)](std::shared_ptr<Namespace2> const& namespacePtr)->bool {
+				if (auto ptr = std::dynamic_pointer_cast<Scope2>(namespacePtr)) {
+					if (ptr->IsClass()) {
+						if (tryFind == ptr->GetClassType()) {
+							return true;
+						}
+					}
+				}
+				return false;
+			})) {
+				return std::dynamic_pointer_cast<Class2>(out);
+			}
+			else {
+				return nullptr;
+			}
+		};
+		std::shared_ptr<Class2> FindClass(Type_Info typeInfo) const {
+			std::shared_ptr<Namespace2> out;
+			if (TryFindNearestNamespaceWhere(out, [tryFind = std::move(typeInfo)](std::shared_ptr<Namespace2> const& namespacePtr)->bool {
+				if (auto ptr = std::dynamic_pointer_cast<Scope2>(namespacePtr)) {
+					if (ptr->IsClass()) {
+						if (tryFind == ptr->GetClassType()) {
+							return true;
+						}
+					}
+				}
+				return false;
+			})) {
+				return std::dynamic_pointer_cast<Class2>(out);
+			}
+			else {
+				return nullptr;
+			}
+		};
+		std::shared_ptr<Class2> FindClass(std::string QualifiedOrUnqualifiedNamespaceName) const {
+			static auto fixNamespace{ [](std::string x) -> std::string {
+				while (x.find("::") == 0 && x.length() > 2) {
+					x = x.substr(2);
+				}
 
+				while (x.size() >= 2 && (x.rfind("::") == (x.length() - 2))) { x = x.substr(0, x.length() - 2); }
 
+				return x;
+			} };
 
+			QualifiedOrUnqualifiedNamespaceName = fixNamespace(QualifiedOrUnqualifiedNamespaceName);
 
+			if (QualifiedOrUnqualifiedNamespaceName == "" || QualifiedOrUnqualifiedNamespaceName == "::") { return nullptr; }
 
+			std::shared_ptr<Namespace2> out;
+
+			long long len = QualifiedOrUnqualifiedNamespaceName.length();
+			if (TryFindNearestNamespaceWhere(out, [&len, tryFind = QualifiedOrUnqualifiedNamespaceName](std::shared_ptr<Namespace2> const& namespacePtr)->bool {
+				if (std::dynamic_pointer_cast<Scope2>(namespacePtr)->IsClass()) {
+					auto qualifiedName = std::dynamic_pointer_cast<Scope2>(namespacePtr)->GetQualifiedNamespace();
+
+					// remove "::" from end
+					while (qualifiedName.size() >= 2 && (qualifiedName.rfind("::") == (qualifiedName.length() - 2))) { qualifiedName = qualifiedName.substr(0, qualifiedName.length() - 2); }
+
+					long long qualifiedNameLen = qualifiedName.length();
+					auto F = qualifiedName.find(tryFind);
+
+					if ((F != std::string::npos) && (F == (qualifiedNameLen - len))) return true;
+				}
+				return false;
+			})) {
+				return std::dynamic_pointer_cast<Class2>(out);
+			}
+			return nullptr;
+		};
+
+		std::shared_ptr<Namespace2> FindNamespaceWithObj(std::string objName) const {
+			static auto fixNamespace{ [](std::string x) -> std::string {
+				while (x.find("::") == 0 && x.length() > 2) {
+					x = x.substr(2);
+				}
+
+				while (x.size() >= 2 && (x.rfind("::") == (x.length() - 2))) { x = x.substr(0, x.length() - 2); }
+
+				return x;
+			} };
+			objName = fixNamespace(objName);
+
+			auto lastOfColons = objName.find_last_of("::");
+			if (lastOfColons == std::string::npos) {
+				std::shared_ptr<Namespace2> out;
+				if (TryFindNearestNamespaceWhere(out, [&objName](std::shared_ptr<Namespace2> const& namespacePtr)->bool {
+					if (auto ptr = std::dynamic_pointer_cast<Scope2>(namespacePtr)) {
+						if (auto objFound = ptr->GetObj(objName)) {
+							return true;
+						}
+					}
+					return false;
+				})) {
+					return out;
+				}
+				else {
+					return nullptr;
+				}
+			}
+			else {
+				std::string Namespace = objName.substr(0, lastOfColons-1);
+				objName = objName.substr(lastOfColons + 1);
+				if (auto namespacePtr = std::dynamic_pointer_cast<Scope2>(FindNamespace(Namespace))) {
+					return namespacePtr->FindNamespaceWithObj(objName);
+				}
+				else {
+					return nullptr;
+				}
+			}
+		};
+		std::shared_ptr<fibers::Any> FindObj(std::string objName) const {
+			static auto fixNamespace{ [](std::string x) -> std::string {
+				while (x.find("::") == 0 && x.length() > 2) {
+					x = x.substr(2);
+				}
+
+				while (x.size() >= 2 && (x.rfind("::") == (x.length() - 2))) { x = x.substr(0, x.length() - 2); }
+
+				return x;
+			} };
+			objName = fixNamespace(objName);
+
+			auto lastOfColons = objName.find_last_of("::");
+			if (lastOfColons == std::string::npos) {
+				if (auto ptr = std::dynamic_pointer_cast<Scope2>(FindNamespaceWithObj(objName))) {
+					return ptr->GetObj(objName);
+				}
+				else {
+					return nullptr;
+				}
+			}
+			else {
+				std::string Namespace = objName.substr(0, lastOfColons-1);
+				objName = objName.substr(lastOfColons + 1);
+				if (auto namespacePtr = std::dynamic_pointer_cast<Scope2>(FindNamespace(Namespace))) {
+					return namespacePtr->FindObj(objName);
+				}
+				else {
+					return nullptr;
+				}
+			}
+		};
+
+		std::shared_ptr<Namespace2> FindNamespaceWithFunction(std::string functionName) const {
+			static auto fixNamespace{ [](std::string x) -> std::string {
+				while (x.find("::") == 0 && x.length() > 2) {
+					x = x.substr(2);
+				}
+
+				while (x.size() >= 2 && (x.rfind("::") == (x.length() - 2))) { x = x.substr(0, x.length() - 2); }
+
+				return x;
+			} };
+			functionName = fixNamespace(functionName);
+
+			auto lastOfColons = functionName.find_last_of("::");
+			if (lastOfColons == std::string::npos) {
+				std::shared_ptr<Namespace2> out;
+				if (TryFindNearestNamespaceWhere(out, [&functionName](std::shared_ptr<Namespace2> const& namespacePtr)->bool {
+					if (auto ptr = std::dynamic_pointer_cast<Scope2>(namespacePtr)) {
+						if (auto objFound = ptr->GetFunctions(functionName)) {
+							return true;
+						}
+					}
+					return false;
+				})) {
+					return out;
+				}
+				else {
+					return nullptr;
+				}
+			}
+			else {
+				std::string Namespace = functionName.substr(0, lastOfColons - 1);
+				functionName = functionName.substr(lastOfColons + 1);
+				if (auto namespacePtr = std::dynamic_pointer_cast<Scope2>(FindNamespace(Namespace))) {
+					return namespacePtr->FindNamespaceWithFunction(functionName);
+				}
+				else {
+					return nullptr;
+				}
+			}
+		};
+		std::shared_ptr< Functions2::FunctionSort > FindFunctions(std::string functionName) const {
+			static auto fixNamespace{ [](std::string x) -> std::string {
+				while (x.find("::") == 0 && x.length() > 2) {
+					x = x.substr(2);
+				}
+
+				while (x.size() >= 2 && (x.rfind("::") == (x.length() - 2))) { x = x.substr(0, x.length() - 2); }
+
+				return x;
+			} };
+			functionName = fixNamespace(functionName);
+
+			auto lastOfColons = functionName.find_last_of("::");
+			if (lastOfColons == std::string::npos) {
+				if (auto ptr = std::dynamic_pointer_cast<Scope2>(FindNamespaceWithFunction(functionName))) {
+					return ptr->GetFunctions(functionName);
+				}
+				else {
+					return nullptr;
+				}
+			}
+			else {
+				std::string Namespace = functionName.substr(0, lastOfColons - 1);
+				functionName = functionName.substr(lastOfColons + 1);
+
+				if (auto namespacePtr = std::dynamic_pointer_cast<Scope2>(FindNamespace(Namespace))) {
+					return namespacePtr->FindFunctions(functionName);
+				}
+				else {
+					return nullptr;
+				}
+			}
+		};
+
+		std::shared_ptr<Namespace2> FindNamespaceWithFunction(std::string functionName, Function_Params const& params, Type_Converter_Tree const& tree) {
+			static auto fixNamespace{ [](std::string x) -> std::string {
+				while (x.find("::") == 0 && x.length() > 2) {
+					x = x.substr(2);
+				}
+
+				while (x.size() >= 2 && (x.rfind("::") == (x.length() - 2))) { x = x.substr(0, x.length() - 2); }
+
+				return x;
+			} };
+			functionName = fixNamespace(functionName);
+
+			auto lastOfColons = functionName.find_last_of("::");
+			if (lastOfColons == std::string::npos) {
+				std::shared_ptr<Namespace2> out;
+				if (TryFindNearestNamespaceWhere(out, [&functionName, &params, &tree](std::shared_ptr<Namespace2> const& namespacePtr)->bool {
+					if (auto ptr = std::dynamic_pointer_cast<Scope2>(namespacePtr)) {
+						if (auto func = ptr->GetFunction(functionName, params, tree)) {
+							return true;
+						}
+					}
+					return false;
+				})) {
+					return out;
+				}
+				else {
+					return nullptr;
+				}
+			}
+			else {
+				std::string Namespace = functionName.substr(0, lastOfColons - 1);
+				functionName = functionName.substr(lastOfColons + 1);
+				if (auto namespacePtr = std::dynamic_pointer_cast<Scope2>(FindNamespace(Namespace))) {
+					return namespacePtr->FindNamespaceWithFunction(functionName, params, tree);
+				}
+				else {
+					return nullptr;
+				}
+			}
+		};
+		Functions2::FunctionActualPtr FindFunction(std::string functionName, Function_Params const& params, Type_Converter_Tree const& tree) {
+			static auto fixNamespace{ [](std::string x) -> std::string {
+				while (x.find("::") == 0 && x.length() > 2) {
+					x = x.substr(2);
+				}
+
+				while (x.size() >= 2 && (x.rfind("::") == (x.length() - 2))) { x = x.substr(0, x.length() - 2); }
+
+				return x;
+			} };
+			functionName = fixNamespace(functionName);
+
+			auto lastOfColons = functionName.find_last_of("::");
+			if (lastOfColons == std::string::npos) {
+				if (auto ptr = std::dynamic_pointer_cast<Scope2>(FindNamespaceWithFunction(functionName, params, tree))) {
+					return ptr->GetFunction(functionName, params, tree);
+				}
+				else {
+					return {};
+				}
+			}
+			else {
+				std::string Namespace = functionName.substr(0, lastOfColons - 1);
+				functionName = functionName.substr(lastOfColons + 1);
+
+				if (auto namespacePtr = std::dynamic_pointer_cast<Scope2>(FindNamespace(Namespace))) {
+					return namespacePtr->FindFunction(functionName, params, tree);
+				}
+				else {
+					return {};
+				}
+			}
+		};
+
+		virtual std::shared_ptr<Type_Converter_Tree> GetTypeConverterTree() const {
+			if (auto p = std::dynamic_pointer_cast<Scope2>(GetLibrary())) {
+				return p->GetTypeConverterTree();
+			}
+			else {
+				return nullptr;
+			}
+		};
+
+		std::shared_ptr<Namespace2> FindNamespaceWithFunction(std::string functionName, Function_Params const& params) {
+			return FindNamespaceWithFunction(functionName, params, *GetTypeConverterTree());
+		};
+		Functions2::FunctionActualPtr FindFunction(std::string functionName, Function_Params const& params) {
+			auto tree = GetTypeConverterTree();
+			return FindFunction(functionName, params, *tree);
+		};
+
+		std::vector<std::shared_ptr<Scope2>> GetScopesForObjectSearch() const {
+			std::vector<std::shared_ptr<Scope2>> out;
+			// will loop over all available scopes in the order we like
+			(void)FindNearestScopeWhere([&](std::shared_ptr<Scope2> const& ptr) -> bool {
+				out.push_back(ptr);
+				return false;
+			});
+			return out;
+		};
+
+		bool TryFindFunctionImpl(std::string const& functionName, scripting::Function_Params const& params, std::shared_ptr<Type_Converter_Tree> const& m_conversionTree, Functions2::FunctionActualPtr& out) const {
+			if (!m_conversionTree) return false;
+			
+			size_t lastOfColons{ 0 };
+			if ((lastOfColons = functionName.find_last_of("::")) == std::string::npos) {
+				std::shared_ptr<Scope2> firstParamScopePtr{ nullptr };
+				std::shared_ptr<Scope2> constructorScopePtr{ nullptr };
+
+				// FIRST SEARCH DOES ALLOW FOR CONVERSIONS, BUT NO TEMPLATES
+				if (1) {
+					std::multimap<double, Functions2::FunctionActualPtr> sort;
+
+					// FIRST, WE CHECK TO SEE IF THE DESIRED FUNCTION IS AVAILABLE FROM THE CLASS OF THE FIRST PARAM (e.g. to_string(Units::foot()) would search the Units::foot class before anything else)				
+					{
+						auto firstParam = params.begin();
+						if (firstParam != params.end()) {
+							firstParamScopePtr = std::dynamic_pointer_cast<Scope2>(this->FindClass(firstParam->Type()));
+						}
+					}
+					// While we normally try to minimize the conversion cost, 
+					if (firstParamScopePtr) {
+						if (auto ptr = firstParamScopePtr->GetFunctions()) {
+							if (auto func = ptr->BuildMatch(functionName, params, *m_conversionTree, false, true)) {
+								if (func->second.conversion_cost(params, *m_conversionTree) != std::numeric_limits<double>::max()) {
+									// The function is available and requires (potentially) conversion of other parameters. 
+									out = func;
+									return true;
+								}
+							}
+						}
+					}
+					
+
+					for (auto& scope : GetScopesForObjectSearch()) {
+						if (scope) {
+							if (auto ptr = scope->GetFunctions()) {
+								if (auto func = ptr->BuildMatch(functionName, params, *m_conversionTree, false, true)) {
+									sort.emplace(func->second.conversion_cost(params, *m_conversionTree), func);
+								}
+							}
+						}						
+					}
+					//{
+					//	auto firstParam = params.begin();
+					//	if (firstParam != params.end()) {
+					//		firstParamScopePtr = std::dynamic_pointer_cast<Scope2>(this->FindClass(firstParam->Type()));
+					//	}
+					//}
+					//if (firstParamScopePtr) {
+					//	for (auto& scope : firstParamScopePtr->GetScopesForObjectSearch()) {
+					//		if (scope) {
+					//			if (auto ptr = scope->GetFunctions()) {
+					//				if (auto func = ptr->BuildMatch(functionName, params, *m_conversionTree, false, true)) {
+					//					sort.emplace(func->second.conversion_cost(params, *m_conversionTree), func);
+					//				}
+					//			}
+					//		}
+					//	}
+					//}
+
+					// PERHAPS THE USER MEANT TO CALL THE CONSTRUCTOR FOR A CLASS (ALLOW FOR CONVERSIONS, BUT NO TEMPLATES)
+					if (constructorScopePtr = std::dynamic_pointer_cast<Scope2>(this->FindClass(functionName))) {
+						// Is there a pre-defined constructor that this could work with?
+						if (auto functions = constructorScopePtr->GetFunctions()) {
+							if (auto func = functions->BuildMatch(functionName, params, *m_conversionTree, false, true)) {
+								sort.emplace(func->second.conversion_cost(params, *m_conversionTree), func);
+							}
+						}
+
+						// Can the conversion tree do this itself, without any help?
+						//if (params.size() == 1) {
+						//	if (m_conversionTree->Converts(params[0].Type(), constructorScopePtr->GetClassType())) {
+						//		auto func = make_callable([tree = std::weak_ptr<Type_Converter_Tree>(m_conversionTree), toType = constructorScopePtr->GetClassType()](Any const& from)->Any {
+						//			if (auto Tree = tree.lock()) {
+						//				if (Tree->Converts(from.Type(), toType)) {
+						//					try {
+						//						return Tree->Convert(from, toType);
+						//					}
+						//					catch (exception::bad_boxed_cast const& e) {
+						//						std::cout << "Conversion is no longer available" << std::endl;
+						//						throw exception::not_found_error("Conversion is no longer available");
+						//					}
+						//				}
+						//			}
+						//			std::cout << "Conversion is no longer available" << std::endl;
+						//			throw exception::not_found_error("Conversion is no longer available");									
+						//		});
+						//		func->SetReturnType(constructorScopePtr->GetClassType());
+						//		sort.emplace(func->conversion_cost(params, *m_conversionTree), std::make_shared<Functions2::FunctionActual>(func, scripting::Param_Types(
+						//			{ {"From", params[0].Type() } }
+						//		)));
+						//	}
+						//}
+					}
+					for (auto& s : sort) { if (s.first != std::numeric_limits<double>::max()) { out = s.second; return true; } }
+				}
+
+				// SECOND SEARCH ALLOWS FOR TEMPLATE FUNCTIONS
+				if (1) {
+					std::multimap<double, Functions2::FunctionActualPtr> sort;
+					for (auto& scope : GetScopesForObjectSearch()) {
+						if (scope) {
+							if (auto ptr = scope->GetFunctions()) {
+								if (auto func = ptr->BuildMatch(functionName, params, *m_conversionTree, true, true)) {
+									sort.emplace(func->second.conversion_cost(params, *m_conversionTree), func);
+								}
+							}
+						}
+					}
+					if (firstParamScopePtr) {
+						for (auto& scope : firstParamScopePtr->GetScopesForObjectSearch()) {
+							if (scope) {
+								if (auto ptr = scope->GetFunctions()) {
+									if (auto func = ptr->BuildMatch(functionName, params, *m_conversionTree, true, true)) {
+										sort.emplace(func->second.conversion_cost(params, *m_conversionTree), func);
+									}
+								}
+							}
+						}
+					}
+					// PERHAPS THE USER MEANT TO CALL THE CONSTRUCTOR FOR A CLASS (ALLOW FOR CONVERSIONS, AND TEMPLATES)
+					if (constructorScopePtr = std::dynamic_pointer_cast<Scope2>(this->FindClass(functionName))) {
+						// Is there a pre-defined constructor that this could work with?
+						if (auto functions = constructorScopePtr->GetFunctions()) {
+							if (auto func = functions->BuildMatch(functionName, params, *m_conversionTree, true, true)) {
+								sort.emplace(func->second.conversion_cost(params, *m_conversionTree), func);
+							}
+						}
+
+						// Can the conversion tree do this itself, without any help?
+						//if (params.size() == 1 && firstParamScopePtr) {
+						//	if (m_conversionTree->Converts(firstParamScopePtr->GetClassType(), constructorScopePtr->GetClassType())) {
+						//		auto func = make_callable([tree = std::weak_ptr<Type_Converter_Tree>(m_conversionTree), toType = constructorScopePtr->GetClassType()](Any const& from)->Any {
+						//			if (auto Tree = tree.lock()) {
+						//				if (Tree->Converts(from.Type(), toType)) {
+						//					try {
+						//						return Tree->Convert(from, toType);
+						//					}
+						//					catch (exception::bad_boxed_cast const& e) {
+						//						std::cout << Units::printf("This conversion is no longer available { %i }\n", __LINE__);
+						//						throw exception::not_found_error(std::string("Conversion is no longer available: ") + e.what());
+						//					}
+						//				}
+						//			}
+						//			std::cout << Units::printf("This conversion is no longer available { %i }\n", __LINE__);
+						//			throw exception::not_found_error("Conversion is no longer available");
+						//		});
+						//		func->SetReturnType(constructorScopePtr->GetClassType());
+						//		sort.emplace(func->conversion_cost(params, *m_conversionTree), std::make_shared<Functions2::FunctionActual>(func, scripting::Param_Types(
+						//			{ {"From", firstParamScopePtr->GetClassType() } }
+						//		)));
+						//	}
+						//}
+					}
+					for (auto& s : sort) { if (s.first != std::numeric_limits<double>::max()) { out = s.second; return true; } }
+				}
+
+				// IF ALL SEARCHES FAILED, PERHAPS THE USER MEANT TO CALL THE CONSTRUCTOR FOR A CLASS
+				if (1) {
+					if (constructorScopePtr) {
+						if (auto functions = constructorScopePtr->GetFunctions()) {
+							if (auto func = functions->BuildMatch(functionName, params, *m_conversionTree, true, true)) {
+								if (func->second.conversion_cost(params, *m_conversionTree) != std::numeric_limits<double>::max()) {
+									out = func;
+									return true;
+								}
+							}
+						}
+					}
+				}
+
+				return false;
+			}
+			else {
+				std::string functionNameActual{ functionName.substr(lastOfColons + 1) };
+				std::string scopeName{ functionName.substr(0, lastOfColons - 1) };
+
+				if (auto namespacePtr = std::dynamic_pointer_cast<Scope2>(FindNamespace(functionName))) {
+					return namespacePtr->TryFindFunctionImpl(functionNameActual, params, m_conversionTree, out);
+				}
+
+				return false;
+			}
+		};
+
+		Functions2::FunctionActualPtr BuildFunction(std::string const& functionName, scripting::Function_Params const& params, std::shared_ptr<Type_Converter_Tree> const& m_conversionTree) const {
+			Functions2::FunctionActualPtr out{ nullptr };
+			if (TryFindFunctionImpl(functionName, params, m_conversionTree, out)) {
+				return out;
+			}
+			else {
+				return nullptr;
+			}
+		};
+		Functions2::FunctionActualPtr BuildFunction(std::string const& functionName, scripting::Function_Params const& params) const {
+			return BuildFunction(functionName, params, GetTypeConverterTree());
+		};
+		Any CallFunction(std::string const& functionName, scripting::Function_Params const& params) const {
+			auto tree = GetTypeConverterTree(); // builds and caches the tree. Updates the tree only if the situation has changed (new functions, new classes, or new Using statements)
+			if (tree) {
+				if (auto func = BuildFunction(functionName, params, tree)) {
+					auto converted = func->second.convert(params, *tree);
+					return scripting::call(func->first, converted, *tree);
+				}
+				else {
+					throw exception::not_found_error(functionName);
+				}
+			}
+			throw std::runtime_error("Scope was invalid");
+		};
+		Any CallFunction(std::string const& functionName, std::vector<Any> const& params) const {
+			scripting::Function_Params Params{ const_cast<std::vector<Any>&>(params) };
+			Any toReturn;
+			toReturn = CallFunction(functionName, Params);
+			return toReturn;
+		};
+
+		template <typename T>
+		T Cast(Any const& from) const {
+			auto ToType = user_type<T>();
+			auto FromType = from.Type();
+
+			// see if we can convert (fastest option)
+			auto Tree = this->GetTypeConverterTree();
+			if (Tree && Tree->Converts(FromType, ToType)) {
+				return Tree->Convert(from, ToType).cast<T>();
+			}
+
+			auto ToClass = std::dynamic_pointer_cast<Scope2>(this->FindClass(user_type<T>()));
+			if (ToClass) {
+				// see if he can convert (fastest option)
+				auto Tree2 = ToClass->GetTypeConverterTree();
+				if (Tree2 && Tree2->Converts(FromType, ToType)) {
+					return Tree2->Convert(from, ToType).cast<T>();
+				}
+
+				// search for a function that can do it
+				if (1) {
+					std::vector<Any> params = { from };
+
+					// call a functor from our scope
+					try {
+						return this->CallFunction(ToClass->GetName(), params).cast<T>();
+					}
+					catch (exception::not_found_error) {}
+
+					// call a functor from their scope
+					try {
+						return ToClass->CallFunction(ToClass->GetName(), params).cast<T>();
+					}
+					catch (exception::not_found_error) {}
+				}
+
+				// Failure
+				throw exception::not_found_error(ToClass->GetName());
+			}
+
+			// Failure
+			throw exception::not_found_error(user_type<T>().lock()->name());			
+		};
+
+		
 	};
 
 	class Namespace2 : public Scope2 {
@@ -5602,15 +6752,19 @@ namespace scripting {
 		friend class Class2;
 		friend class Global2;
 
-		Namespace2(std::weak_ptr<Scope2> const& parent, std::string const& Name)
+		Namespace2(std::shared_ptr<Scope2> const& parent, std::string const& Name)
 			: Scope2(parent)
 			, p_Name(Name)
 		{
 			qualifiedNamespaceWithQualifiers = this->GetQualifiedNamespaceImpl(true);
 			qualifiedNamespaceWithoutQualifiers = this->GetQualifiedNamespaceImpl();
 		};
+		Namespace2(std::shared_ptr<Namespace2> const& parent, std::string const& Name) : Namespace2(std::dynamic_pointer_cast<Scope2>(parent), Name) {};
+		Namespace2(std::shared_ptr<Class2> const& parent, std::string const& Name) : Namespace2(std::dynamic_pointer_cast<Scope2>(parent), Name) {};
+		Namespace2(std::shared_ptr<Global2> const& parent, std::string const& Name) : Namespace2(std::dynamic_pointer_cast<Scope2>(parent), Name) {};
+		
 		virtual ~Namespace2() {};
-		void SetSelf(std::shared_ptr<Namespace2>& p) { p_self = p; };
+		void SetSelf(std::shared_ptr<Namespace2>& p) { this->p_self = std::dynamic_pointer_cast<Scope2>(p); };
 		virtual bool IsClass() const override { return false; };
 		virtual bool IsNamespace() const override { return true; };
 		virtual std::string GetName() const override { return p_Name; };
@@ -5620,18 +6774,106 @@ namespace scripting {
 			p_Name;
 	public:
 
-
 	private:
 		fibers::containers::Map<std::string, std::weak_ptr<Class2>> // allowed postfixes (e.g. 10_ft, where "_ft" is the key) to their desired typename. Duplicate are not allowed.
 			p_postfixes; 
+
 	public:
 
 
 	private:
-		Functions // functions. (e.g. `==` or `to_string`). Duplicate names are expected. 
-			p_functions; 
+		std::shared_ptr<Functions2> // functions. (e.g. `==` or `to_string`). Duplicate names are expected. 
+			p_functions{ std::make_shared<Functions2>() };
+
+	private:
+		virtual void RemoveStaleReferences() override {
+			// p_using
+			while (true) {
+				size_t toRemove{};
+				bool doRemoval = false;
+				for (auto& ref : p_using) {
+					if (ref) {
+						if (ref->second.expired()) {
+							toRemove = ref->first;
+							doRemoval = true;
+							break;
+						}
+					}
+				}
+				if (doRemoval) {
+					p_using.erase(toRemove);
+				}
+				else {
+					break;
+				}
+			}
+
+			// p_postfixes
+			while (true) {
+				std::string toRemove{};
+				bool doRemoval = false;
+				for (auto& ref : p_postfixes) {
+					if (ref) {
+						if (ref->second.expired()) {
+							toRemove = ref->first;
+							doRemoval = true;
+							break;
+						}
+					}
+				}
+				if (doRemoval) {
+					p_postfixes.erase(toRemove);
+				}
+				else {
+					break;
+				}
+			}
+
+			// p_functions
+			
+
+		};
+		virtual bool RecordFunction(std::string const& Name, Proxy_Function ptr, bool overrideIfExists = true) {
+			if (auto p = std::dynamic_pointer_cast<Namespace2>(GetLibrary())) {
+				return p->RecordFunction(Name, ptr, overrideIfExists);
+			}
+			return false;
+		};
+	public:
+		virtual bool AddFunction(std::string const& name, Proxy_Function function, bool overrideIfAlreadyExists = false) override {
+			defer(this->RecordFunction(name, function, overrideIfAlreadyExists));
+			return p_functions->emplace(name, function, overrideIfAlreadyExists);
+		};
+		virtual bool AddFunction(std::string const& name, Proxy_Function function, Param_Types const& params, bool overrideIfAlreadyExists = false) override {
+			defer(this->RecordFunction(name, function, overrideIfAlreadyExists));
+			return p_functions->emplace(name, function, params, overrideIfAlreadyExists);
+		};
+
+	private:
+		virtual bool AddFreeFunction(std::string const& name, Proxy_Function function, bool overrideIfAlreadyExists = true) override {
+			defer(this->RecordFunction(name, function, overrideIfAlreadyExists));
+			return p_functions->emplace_free(name, function, overrideIfAlreadyExists);
+		};
+		virtual bool AddFreeFunction(std::string const& name, Proxy_Function function, Param_Types const& params, bool overrideIfAlreadyExists = true) override {
+			defer(this->RecordFunction(name, function, overrideIfAlreadyExists));
+			return p_functions->emplace_free(name, function, params, overrideIfAlreadyExists);
+		};
+
 	public:
 
+		virtual std::shared_ptr< Functions2 > GetFunctions() const override {
+			return p_functions;
+		};
+		virtual std::shared_ptr< Functions2::FunctionSort > GetFunctions(std::string const& name) const override {
+			return p_functions->operator()(name);
+		};
+		virtual Functions2::FunctionActualPtr GetFunction(std::string const& name, Function_Params const& params, Type_Converter_Tree const& tree) override {
+			return p_functions->BuildMatch(name, params, tree);
+		};
+		virtual Functions2::FunctionActualPtr GetFunction(std::string const& name, Function_Params const& params) override {
+			auto tree = GetTypeConverterTree();
+			return GetFunction(name, params, *tree);
+		};
 
 	};
 
@@ -5640,15 +6882,15 @@ namespace scripting {
 		friend class Global2;
 
 		Class2(
-			std::weak_ptr<Scope2> const& parent
+			std::shared_ptr<Scope2> const& parent
 			, std::string const& Name
-			, scripting::Type_Info type = scripting::user_type<void>()
+			, Type_Info type = user_type<void>()
 			, std::weak_ptr<Class2> inheritance = std::weak_ptr<Class2>() // e.g. this class derives from another Class
 		)
 			: Namespace2(parent, Name)
 			, DerivedFrom(inheritance)
 		{
-			if (auto ptr = DerivedFrom.lock()) {
+			if (auto ptr = std::dynamic_pointer_cast<Namespace2>(DerivedFrom.lock())) {
 				this->AddUsing(ptr);
 			}
 
@@ -5662,18 +6904,144 @@ namespace scripting {
 			qualifiedNamespaceWithQualifiers = this->GetQualifiedNamespaceImpl(true);
 			qualifiedNamespaceWithoutQualifiers = this->GetQualifiedNamespaceImpl();
 		};
+
+		Class2(std::shared_ptr<Namespace2> const& parent, std::string const& Name, Type_Info type = user_type<void>(), std::weak_ptr<Class2> inheritance = std::weak_ptr<Class2>()) 
+			: Class2(std::dynamic_pointer_cast<Scope2>(parent), Name, type, inheritance) {};
+		Class2(std::shared_ptr<Class2> const& parent, std::string const& Name, Type_Info type = user_type<void>(), std::weak_ptr<Class2> inheritance = std::weak_ptr<Class2>()) 
+			: Class2(std::dynamic_pointer_cast<Scope2>(parent), Name, type, inheritance) {};
+		Class2(std::shared_ptr<Global2> const& parent, std::string const& Name, Type_Info type = user_type<void>(), std::weak_ptr<Class2> inheritance = std::weak_ptr<Class2>()) 
+			: Class2(std::dynamic_pointer_cast<Scope2>(parent), Name, type, inheritance) {};
+
 		virtual ~Class2() {};
-		void SetSelf(std::shared_ptr<Class2>& p) { p_self = p; };
+		void SetSelf(std::shared_ptr<Class2>& p) { this->p_self = std::dynamic_pointer_cast<Scope2>(p); };
 		virtual bool IsClass() const override { return true; };
 
 	private:
-		std::weak_ptr<Class2> DerivedFrom; // e.g. this class derives from another Class
-		std::shared_ptr<fibers::Type_Info> ClassType;
+		std::weak_ptr<Class2> 
+			DerivedFrom; // e.g. this class derives from another Class
+		std::shared_ptr<fibers::Type_Info> 
+			ClassType;
 
 	public:
-		Type_Info GetClassType() const { return ClassType; };
+		virtual Type_Info GetClassType() const override { return ClassType; };
 
 	private:
+		virtual bool TryFindNearestScopeWhere(
+			std::shared_ptr<Scope2>& bestMatch,
+			std::function<bool(std::shared_ptr<Scope2> const&)> const& func,
+			std::unordered_set< std::shared_ptr<Scope2> > const& CheckedSelf = {},
+			std::unordered_set< std::shared_ptr<Scope2> > const& CheckedAll = {}
+		) const {
+			auto& checkedSelf = const_cast<std::unordered_set< std::shared_ptr<Scope2> >&>(CheckedSelf);
+			auto& checkedAll = const_cast<std::unordered_set< std::shared_ptr<Scope2> >&>(CheckedAll);
+			auto selfPtr = this->p_self.lock();
+
+			// Prevent Duplication
+			if (checkedAll.count(selfPtr) >= 1) { return false; }
+			checkedAll.emplace(selfPtr);
+
+			// test myself			
+			if (!checkedSelf.count(selfPtr) >= 1) {
+				checkedSelf.emplace(selfPtr);
+				if (1) {
+					if (auto p = std::dynamic_pointer_cast<Scope2>(selfPtr)) {
+						if (func(p)) {
+							bestMatch = p;
+							return true;
+						}
+					}
+				}
+			}
+
+			// test my "using" namespaces and their children.
+			for (auto& childNamespace : this->p_using) {
+				if (childNamespace) {
+					if (auto p = std::dynamic_pointer_cast<Scope2>(childNamespace->second.lock())) {
+						if (p && p->TryFindNearestScopeWhere(bestMatch, func, CheckedSelf, CheckedAll)) {
+							return true;
+						}
+					}
+				}
+			}
+
+			// test my inherited namespace.
+			if (auto p = std::dynamic_pointer_cast<Scope2>(DerivedFrom.lock())) {
+				if (p->TryFindNearestScopeWhere(bestMatch, func, CheckedSelf, CheckedAll)) {
+					return true;
+				}
+			}
+
+
+			// test all of my parents
+			auto parentPtr = this->p_parent.lock();
+			while (parentPtr) {
+				if (!checkedSelf.count(parentPtr) >= 1) {
+					checkedSelf.emplace(parentPtr);
+					if (1) {
+						if (auto p = std::dynamic_pointer_cast<Scope2>(parentPtr)) {
+							if (func(p)) {
+								bestMatch = p;
+								return true;
+							}
+						}
+					}
+				}
+				else {
+					break; // we've checked this before! Quick, get out. 
+				}
+				parentPtr = parentPtr->p_parent.lock();
+			}
+
+			// Test my children themselves.
+			for (auto& childNamespace : this->p_children) {
+				if (childNamespace && childNamespace->second) {
+					for (auto& innerChildNamespace : *childNamespace->second) {
+						if (innerChildNamespace->second) {
+							auto ptr = std::dynamic_pointer_cast<Scope2>(innerChildNamespace->second);
+							if (!checkedSelf.count(ptr) >= 1) {
+								checkedSelf.emplace(ptr);
+								if (1) {
+									if (auto p = std::dynamic_pointer_cast<Scope2>(ptr)) {
+										if (func(p)) {
+											bestMatch = p;
+											return true;
+										}
+									}
+								}
+							}
+							else {
+								break; // we've checked this before! Quick, get out. 
+							}
+						}
+					}
+				}
+			}
+
+			// test my parents and their children
+			if (auto p = this->p_parent.lock()) {
+				if (p->TryFindNearestScopeWhere(bestMatch, func, CheckedSelf, CheckedAll)) {
+					return true;
+				}
+			}
+
+			// test my children's children.
+			for (auto& childNamespace : this->p_children) {
+				if (childNamespace && childNamespace->second) {
+					for (auto& innerChildNamespace : *childNamespace->second) {
+						if (innerChildNamespace) {
+							if (auto p = std::dynamic_pointer_cast<Scope2>(innerChildNamespace->second)) {
+								if (p->TryFindNearestScopeWhere(bestMatch, func, CheckedSelf, CheckedAll)) {
+									return true;
+								}
+							}
+						}
+					}
+				}
+			}
+
+			return false;
+		};
+
 		virtual bool TryFindNearestNamespaceWhere(
 			std::shared_ptr<Namespace2>& bestMatch, 
 			std::function<bool(std::shared_ptr<Namespace2> const&)> const& func, 
@@ -5796,33 +7164,575 @@ namespace scripting {
 	class Global2 final : public Namespace2 {
 	public:
 		Global2()
-			: Namespace2(std::weak_ptr<Scope2>(), "")
+			: Namespace2(std::shared_ptr<Scope2>(), "")
 		{
 			qualifiedNamespaceWithQualifiers = this->GetQualifiedNamespaceImpl(true);
 			qualifiedNamespaceWithoutQualifiers = this->GetQualifiedNamespaceImpl();
 		};
 		virtual ~Global2() {};
-		void SetSelf(std::shared_ptr<Global2>& p) { p_self = p; };
+		void SetSelf(std::shared_ptr<Global2>& p) { this->p_self = std::dynamic_pointer_cast<Scope2>(p); };
+
+		std::vector<std::weak_ptr<Class2>> GetClasses() const {
+			std::vector<std::weak_ptr<Class2>> out;
+			out.reserve(Classes.size() + 16);
+			static auto badHash{ Scope2::Hasher()(std::weak_ptr<Scope2>()) };
+
+			bool DoCleanup = false;
+
+			size_t hash{ 0 };
+			for (auto& x : Classes) {
+				if (x) {
+					hash = Scope2::Hasher()(x->second);
+					if (hash == badHash) {
+						DoCleanup = true;
+					}
+					else {
+						out.push_back(x->second);
+					}
+				}
+			}
+
+			if (DoCleanup) {
+				//const_cast<Global2*>(this)->CleanupRequested.CompareExchange(0, 1);
+				const_cast<Global2*>(this)->RemoveStaleReferences();
+			}
+
+			return out;
+		};
+		std::vector<std::weak_ptr<Namespace2>> GetUsing() const {
+			std::vector<std::weak_ptr<Namespace2>> out;
+			out.reserve(Classes.size() + 16);
+			static auto badHash{ Scope2::Hasher()(std::weak_ptr<Scope2>()) };
+
+			bool DoCleanup = false;
+
+			size_t hash{ 0 };
+			for (auto& x : Usings) {
+				if (x) {
+					hash = Scope2::Hasher()(x->second);
+					if (hash == badHash) {
+						DoCleanup = true;
+					}
+					else {
+						out.push_back(x->second);
+					}
+				}
+			}
+
+			if (DoCleanup) {
+				//const_cast<Global2*>(this)->CleanupRequested.CompareExchange(0, 1);
+				const_cast<Global2*>(this)->RemoveStaleReferences();
+			}
+
+			return out;
+		};
+	
+	public:
+		void AddBuiltIns() {
+			auto defineBuiltInType = [this](auto typeImpl, std::string const& Name) -> void {
+				// make it a class
+				std::shared_ptr<Class2> classPtr; {
+					classPtr.reset(new Class2(this->p_self.lock(), Name, user_type<decltype(typeImpl)>()));
+				}
+				classPtr->SetSelf(classPtr);
+				this->AddChild(classPtr);
+
+				// add converters
+				classPtr->AddFunction(Name, make_callable([](bool from) -> decltype(typeImpl) { return (decltype(typeImpl))from; }));
+				classPtr->AddFunction(Name, make_callable([](char from) -> decltype(typeImpl) { return (decltype(typeImpl))from; }));
+				classPtr->AddFunction(Name, make_callable([](int from) -> decltype(typeImpl) { return (decltype(typeImpl))from; }));
+				classPtr->AddFunction(Name, make_callable([](long from) -> decltype(typeImpl) { return (decltype(typeImpl))from; }));
+				classPtr->AddFunction(Name, make_callable([](float from) -> decltype(typeImpl) { return (decltype(typeImpl))from; }));
+				classPtr->AddFunction(Name, make_callable([](double from) -> decltype(typeImpl) { return (decltype(typeImpl))from; }));
+				classPtr->AddFunction(Name, make_callable([](size_t from) -> decltype(typeImpl) { return (decltype(typeImpl))from; }));
+				classPtr->AddFunction(Name, make_callable([](fibers::containers::number < double > from) -> decltype(typeImpl) { return (decltype(typeImpl))from; }));
+				classPtr->AddFunction(Name, make_callable([](signed char from) -> decltype(typeImpl) { return (decltype(typeImpl))from; }));
+				classPtr->AddFunction(Name, make_callable([](unsigned char from) -> decltype(typeImpl) { return (decltype(typeImpl))from; }));
+				classPtr->AddFunction(Name, make_callable([](char16_t from) -> decltype(typeImpl) { return (decltype(typeImpl))from; }));
+				classPtr->AddFunction(Name, make_callable([](char32_t from) -> decltype(typeImpl) { return (decltype(typeImpl))from; }));
+				classPtr->AddFunction(Name, make_callable([](wchar_t from) -> decltype(typeImpl) { return (decltype(typeImpl))from; }));
+				classPtr->AddFunction(Name, make_callable([](short from) -> decltype(typeImpl) { return (decltype(typeImpl))from; }));
+				classPtr->AddFunction(Name, make_callable([](unsigned short from) -> decltype(typeImpl) { return (decltype(typeImpl))from; }));
+				classPtr->AddFunction(Name, make_callable([](unsigned int from) -> decltype(typeImpl) { return (decltype(typeImpl))from; }));
+				classPtr->AddFunction(Name, make_callable([](unsigned long from) -> decltype(typeImpl) { return (decltype(typeImpl))from; }));
+				classPtr->AddFunction(Name, make_callable([](long long from) -> decltype(typeImpl) { return (decltype(typeImpl))from; }));
+				classPtr->AddFunction(Name, make_callable([](long double from) -> decltype(typeImpl) { return (decltype(typeImpl))from; }));
+				
+				// Constructors
+				classPtr->AddFunction(Name, make_callable([]() ->  decltype(typeImpl) { return  decltype(typeImpl){}; }));
+				classPtr->AddFunction(Name, make_callable([](decltype(typeImpl) const& makeCopy) ->  decltype(typeImpl) { return makeCopy; }));
+				Type_Info thisType = user_type<decltype(typeImpl)>();
+				std::vector<std::pair<std::string, Type_Info>> temp; {
+					std::pair<std::string, Type_Info> tempPair{ std::string(), Type_Info() };
+					tempPair.first = "o";
+					tempPair.second = thisType;
+					temp.push_back(tempPair);
+					temp.push_back(tempPair);
+				}
+				classPtr->AddFunction("=", make_callable([](Any const& a, decltype(typeImpl) const& b) -> Any { decltype(typeImpl)& x = a.cast(); x = b; return a; }), Param_Types(temp));
+
+				// Comparisons
+				classPtr->AddFunction("==", scripting::make_callable([](decltype(typeImpl) const& x, decltype(typeImpl) const& y) -> bool { return x == y; }));
+				classPtr->AddFunction("!=", scripting::make_callable([](decltype(typeImpl) const& x, decltype(typeImpl) const& y) -> bool { return x != y; }));
+				classPtr->AddFunction("<", scripting::make_callable([](decltype(typeImpl) const& x, decltype(typeImpl) const& y) -> bool { return x < y; }));
+				classPtr->AddFunction("<=", scripting::make_callable([](decltype(typeImpl) const& x, decltype(typeImpl) const& y) -> bool { return x <= y; }));
+				classPtr->AddFunction(">", scripting::make_callable([](decltype(typeImpl) const& x, decltype(typeImpl) const& y) -> bool { return x > y; }));
+				classPtr->AddFunction(">=", scripting::make_callable([](decltype(typeImpl) const& x, decltype(typeImpl) const& y) -> bool { return x >= y; }));
+				classPtr->AddFunction("+", scripting::make_callable([](decltype(typeImpl) const& x, decltype(typeImpl) const& y) -> decltype(typeImpl) { return x + y; }));
+				classPtr->AddFunction("-", scripting::make_callable([](decltype(typeImpl) const& x, decltype(typeImpl) const& y) -> decltype(typeImpl) { return x - y; }));
+				classPtr->AddFunction("*", scripting::make_callable([](decltype(typeImpl) const& x, decltype(typeImpl) const& y) -> decltype(typeImpl) { return x * y; }));
+				classPtr->AddFunction("/", scripting::make_callable([](decltype(typeImpl) const& x, decltype(typeImpl) const& y) -> decltype(typeImpl) { if (y == 0) return std::numeric_limits<decltype(typeImpl)>::max(); else return x / y; }));
+				classPtr->AddFunction("+=", scripting::make_callable([](decltype(typeImpl)& x, decltype(typeImpl) const& y) -> void { x += y; }));
+				classPtr->AddFunction("-=", scripting::make_callable([](decltype(typeImpl)& x, decltype(typeImpl) const& y) -> void { x -= y; }));
+				classPtr->AddFunction("*=", scripting::make_callable([](decltype(typeImpl)& x, decltype(typeImpl) const& y) -> void { x *= y; }));
+				classPtr->AddFunction("/=", scripting::make_callable([](decltype(typeImpl)& x, decltype(typeImpl) const& y) -> void { if (y == 0) x = std::numeric_limits<decltype(typeImpl)>::max(); else x /= y; }));
+
+				// Functions
+				classPtr->AddFunction("max", make_callable([]() { return std::numeric_limits<decltype(typeImpl)>::max(); }));
+				classPtr->AddFunction("min", make_callable([]() { return std::numeric_limits<decltype(typeImpl)>::lowest(); }));
+				classPtr->AddFunction("to_string", make_callable([](decltype(typeImpl) const& o) -> std::string { return std::to_string(o); }));
+
+			};
+
+			// Built-in types
+			if (1) {
+#define DefineBuiltInType(V) defineBuiltInType(##V(0), #V);
+				DefineBuiltInType(bool);
+				DefineBuiltInType(char);
+				DefineBuiltInType(int);
+				DefineBuiltInType(long);
+				DefineBuiltInType(float);
+				DefineBuiltInType(double);
+				DefineBuiltInType(size_t);
+				defineBuiltInType(fibers::containers::number<double>(), "Number");
+				DefineBuiltInType(char16_t);
+				DefineBuiltInType(char32_t);
+				DefineBuiltInType(wchar_t);
+				DefineBuiltInType(short);
+				defineBuiltInType(unsigned char(0), "uchar");
+				defineBuiltInType(unsigned short(0), "ushort");
+				defineBuiltInType(unsigned int(0), "uint");
+				defineBuiltInType(unsigned long(0), "ulong");
+				defineBuiltInType(long long(0), "llong");
+				defineBuiltInType(long double(), "ldouble");
+#undef DefineBuiltInType
+
+				// String
+				if (1) {
+					// make it a class
+					std::shared_ptr<Class2> classPtr; {
+						classPtr.reset(new Class2(this->p_self.lock(), "string", user_type<std::string>()));
+					}
+					classPtr->SetSelf(classPtr);
+					this->AddChild(classPtr);
+
+					// add converters
+					classPtr->AddFunction("string", make_callable([](bool from) -> std::string { if (from) return "true"; else return "false"; }));
+					classPtr->AddFunction("string", make_callable([](char from) -> std::string { return std::to_string(from); }));
+					classPtr->AddFunction("string", make_callable([](int from) -> std::string { return std::to_string(from); }));
+					classPtr->AddFunction("string", make_callable([](long from) -> std::string { return std::to_string(from); }));
+					classPtr->AddFunction("string", make_callable([](float from) -> std::string { return std::to_string(from); }));
+					classPtr->AddFunction("string", make_callable([](double from) -> std::string { return std::to_string(from); }));
+					classPtr->AddFunction("string", make_callable([](size_t from) -> std::string { return std::to_string(from); }));
+					classPtr->AddFunction("string", make_callable([](fibers::containers::number < double > from) -> std::string { return std::to_string(from.load()); }));
+					classPtr->AddFunction("string", make_callable([](signed char from) -> std::string { return std::to_string(from); }));
+					classPtr->AddFunction("string", make_callable([](unsigned char from) -> std::string { return std::to_string(from); }));
+					classPtr->AddFunction("string", make_callable([](char16_t from) -> std::string { return std::to_string(from); }));
+					classPtr->AddFunction("string", make_callable([](char32_t from) -> std::string { return std::to_string(from); }));
+					classPtr->AddFunction("string", make_callable([](wchar_t from) -> std::string { return std::to_string(from); }));
+					classPtr->AddFunction("string", make_callable([](short from) -> std::string { return std::to_string(from); }));
+					classPtr->AddFunction("string", make_callable([](unsigned short from) -> std::string { return std::to_string(from); }));
+					classPtr->AddFunction("string", make_callable([](unsigned int from) -> std::string { return std::to_string(from); }));
+					classPtr->AddFunction("string", make_callable([](unsigned long from) -> std::string { return std::to_string(from); }));
+					classPtr->AddFunction("string", make_callable([](long long from) -> std::string { return std::to_string(from); }));
+					classPtr->AddFunction("string", make_callable([](long double from) -> std::string { return std::to_string(from); }));
+					classPtr->AddFunction("string", make_callable([self = classPtr->p_self](fibers::Type_Info from) -> std::string {
+						if (auto p = self.lock()) if (auto p2 = p->FindClass(from)) return p2->GetName();						
+						return from.name();
+					}));
+
+					// Constructors
+					classPtr->AddFunction("string", make_callable([]() -> std::string { return std::string{}; }));
+					classPtr->AddFunction("string", make_callable([](std::string const& makeCopy) -> std::string { return makeCopy; }));
+					classPtr->AddFunction("=", make_callable([](Any const& a, std::string const& b) -> Any { std::string& out = a.cast(); out = b; return a; }), Param_Types({ {std::string("a"), user_type<std::string>() }, {std::string("b"), user_type<std::string>() } }));
+
+					// Comparisons
+					classPtr->AddFunction("==", scripting::make_callable([](std::string const& x, std::string const& y) -> bool { return x == y; }));
+					classPtr->AddFunction("!=", scripting::make_callable([](std::string const& x, std::string const& y) -> bool { return x != y; }));
+					classPtr->AddFunction("<", scripting::make_callable([](std::string const& x, std::string const& y) -> bool { return x < y; }));
+					classPtr->AddFunction("<=", scripting::make_callable([](std::string const& x, std::string const& y) -> bool { return x <= y; }));
+					classPtr->AddFunction(">", scripting::make_callable([](std::string const& x, std::string const& y) -> bool { return x > y; }));
+					classPtr->AddFunction(">=", scripting::make_callable([](std::string const& x, std::string const& y) -> bool { return x >= y; }));
+					classPtr->AddFunction("+", scripting::make_callable([](std::string const& x, std::string const& y) -> std::string { return x + y; }));
+    				classPtr->AddFunction("+=", make_callable([](Any const& a, std::string const& b) -> Any { std::string& out = a.cast(); out += b; return a; }), Param_Types({ {std::string("a"), user_type<std::string>() }, {std::string("b"), user_type<std::string>() } }));
+
+					// Functions
+					classPtr->AddFunction("length", make_callable([](std::string const& a) -> size_t { return a.length(); }));
+					classPtr->AddFunction("size", make_callable([](std::string const& a) -> size_t { return a.size(); }));
+					classPtr->AddFunction("[]", make_callable([](std::string const& a, size_t index) -> char { return a[index]; }));
+					classPtr->AddFunction("front", make_callable([](std::string const& a) -> char { return a.front(); }));
+					classPtr->AddFunction("back", make_callable([](std::string const& a) -> char { return a.back(); }));
+					classPtr->AddFunction("find", make_callable([](std::string const& a, std::string const& toFind) -> size_t { return a.find(toFind); }));
+					classPtr->AddFunction("find", make_callable([](std::string const& a, std::string const& toFind, size_t startPos) -> size_t { return a.find(toFind, startPos); }));
+					classPtr->AddFunction("substr", make_callable([](std::string const& x, size_t Off) -> std::string { return x.substr(Off); })/*, { "input", "Off" }*/);
+					classPtr->AddFunction("substr", make_callable([](std::string const& x, size_t Off, size_t Count) -> std::string { return x.substr(Off, Count); })/*, { "input", "Off", "Count" }*/);
+					classPtr->AddFunction("to_string", make_callable([](std::string const& o) -> std::string { return o; }));
+
+					// Objects or Constants
+					classPtr->AddObj("npos", std::make_shared<Any>(std::string::npos));
+				}
+
+				// Type
+				if (1) {
+					// make it a class
+					std::shared_ptr<Class2> classPtr; {
+						classPtr.reset(new Class2(this->p_self.lock(), "Type_Info", user_type<fibers::Type_Info>()));
+					}
+					classPtr->p_self = classPtr;
+					this->AddChild(classPtr);
+
+					// Constructors
+					classPtr->AddFunction("Type_Info", make_callable([]() -> fibers::Type_Info { return fibers::Type_Info{}; }));
+					classPtr->AddFunction("Type_Info", make_callable([](fibers::Type_Info const& makeCopy) -> fibers::Type_Info { return makeCopy; }));
+					classPtr->AddFunction("=", make_callable([](Any const& a, fibers::Type_Info const& b) -> Any { fibers::Type_Info& out = a.cast(); out = b; return a; }), Param_Types({ {std::string("a"), user_type<fibers::Type_Info>() }, {std::string("b"), user_type<fibers::Type_Info>() } }));
+
+					// Comparisons
+					classPtr->AddFunction("==", scripting::make_callable([](fibers::Type_Info const& x, fibers::Type_Info const& y) -> bool { return x == y; }));
+					classPtr->AddFunction("!=", scripting::make_callable([](fibers::Type_Info const& x, fibers::Type_Info const& y) -> bool { return x != y; }));
+					classPtr->AddFunction("<", scripting::make_callable([](fibers::Type_Info const& x, fibers::Type_Info const& y) -> bool { return x < y; }));
+					classPtr->AddFunction("<=", scripting::make_callable([](fibers::Type_Info const& x, fibers::Type_Info const& y) -> bool { return x <= y; }));
+					classPtr->AddFunction(">", scripting::make_callable([](fibers::Type_Info const& x, fibers::Type_Info const& y) -> bool { return x > y; }));
+					classPtr->AddFunction(">=", scripting::make_callable([](fibers::Type_Info const& x, fibers::Type_Info const& y) -> bool { return x >= y; }));
+
+					// Functions
+					classPtr->AddFunction("to_string", make_callable([self = classPtr->p_self](fibers::Type_Info const& from) -> std::string {
+						if (auto p = self.lock()) if (auto p2 = p->FindClass(from)) return p2->GetName();
+						return from.name();
+					}));
+					classPtr->AddFunction("name", make_callable([self = classPtr->p_self](fibers::Type_Info const& from)->std::string {
+						if (auto p = self.lock()) if (auto p2 = p->FindClass(from)) return p2->GetName();
+						return from.name();
+					}));
+					classPtr->AddFunction("cpp_name", make_callable([self = classPtr->p_self](fibers::Type_Info const& from)->std::string {
+						return from.name();
+					}));
+					classPtr->AddFunction("is_undef", make_callable([self = classPtr->p_self](fibers::Type_Info const& from)-> bool {
+						return from.is_undef();
+					}));
+					classPtr->AddFunction("is_void", make_callable([self = classPtr->p_self](fibers::Type_Info const& from)-> bool {
+						return from.is_void();
+					}));
+				}
+			}
+
+			// Built-In functions
+			if (1) {
+				// Returns the type of Any object. By not specifying the type, the Any is treated like a Template
+				this->AddFunction("Type", make_callable([](Any const& obj) -> fibers::Type_Info {
+					if (auto p = obj.Type().lock())
+						return *p;
+					else
+						return fibers::user_type<void>();
+				}));
+
+				// Returns a stringified version of the provided Any obj. This is meant to be a fall-back template whenever no specialization is available. 
+				this->AddFunction("to_string", make_callable([](Any const& x) -> std::string {
+					return Units::printf("`%s`", x.TypeName());
+				}));
+			}
+        };
+
+	private:
+		void GetClasses(std::unordered_map<size_t, std::weak_ptr<Class2>>& out) const {
+			bool DoCleanup = false;
+			static auto badHash{ Scope2::Hasher()(std::weak_ptr<Scope2>()) };
+
+			size_t hash{ 0 };
+			for (auto& x : Classes) {
+				if (x) {
+					hash = Scope2::Hasher()(x->second);
+					if (hash == badHash) {
+						DoCleanup = true;
+					}
+					else {
+						out.insert({ hash, x->second });
+					}
+				}
+			}
+
+			if (DoCleanup) {
+				const_cast<Global2*>(this)->RemoveStaleReferences();
+			}
+		};
+		void GetAllAvailableClassesImpl(
+			std::unordered_map<size_t, std::weak_ptr<Class2>>& out,
+			std::unordered_map<size_t, std::weak_ptr<Scope2>>& uniqueLibraries
+		) const {
+			auto hashed{ Scope2::Hasher()(this->p_self) };
+			if (uniqueLibraries.count(hashed) > 0) return;
+			uniqueLibraries.insert({ hashed, this->p_self });
+
+			this->GetClasses(out);
+			static auto badHash{ Scope2::Hasher()(std::weak_ptr<Scope2>()) };
+			size_t hash{ 0 };
+			bool DoCleanup = false;
+			for (auto& x : Usings) {
+				if (x) {
+					hash = Scope2::Hasher()(x->second);
+					if (hash == badHash) {
+						DoCleanup = true;
+					}
+					else {
+						if (auto ptr = x->second.lock()) {
+							if (auto p2 = ptr->GetLibrary()) {
+								p2->GetAllAvailableClassesImpl(out, uniqueLibraries);
+							}
+						}
+					}
+				}
+			}
+			if (DoCleanup) {
+				//const_cast<Global2*>(this)->CleanupRequested.CompareExchange(0, 1);
+				const_cast<Global2*>(this)->RemoveStaleReferences();
+			}
+		};
+	
+	private:
+		// Searches for all classes that are defined in the current and "used" libraries. 
+		std::map<Type_Info, std::weak_ptr<Class2>> GetAllAvailableClassesImpl() const {
+			thread_local static std::unordered_map<size_t, std::weak_ptr<Class2>> allClasses{};
+			thread_local static std::unordered_map<size_t, std::weak_ptr<Scope2>> uniqueList{};
+			defer(allClasses.clear());
+			defer(uniqueList.clear());
+
+			GetAllAvailableClassesImpl(allClasses, uniqueList);
+			{
+				std::map<Type_Info, std::weak_ptr<Class2>> out;
+				for (auto& x : allClasses) {
+					if (auto p = std::dynamic_pointer_cast<Scope2>(x.second.lock())) {
+						out[p->GetClassType()] = x.second;
+					}					
+				}
+				return out;
+			}
+		};
+	public:
+		std::shared_ptr<std::map<Type_Info, std::weak_ptr<Class2>>> GetAllAvailableClasses() const {
+			auto oldVersion = CachedClassListVersion.load();
+			if (oldVersion != RecordVersion) {
+				auto guard{ std::unique_lock(const_cast<Global2*>(this)->CachedClassListMutex) };
+				if (const_cast<Global2*>(this)->CachedClassListVersion.CompareExchange(oldVersion, RecordVersion)) {
+					return const_cast<Global2*>(this)->CachedClassList = std::make_shared<std::map<Type_Info, std::weak_ptr<Class2>>>(GetAllAvailableClassesImpl());
+				}
+			}
+			
+			if (1) {
+				auto guard{ std::shared_lock(const_cast<Global2*>(this)->CachedClassListMutex) };
+				return CachedClassList;
+			}
+		};
+	private:
+		// Creates a tree of type-converter functions using the classes found with GetAllAvailableClasses()
+		void CreateTypeConverterTree(std::shared_ptr<Type_Converter_Tree>& out) const {
+			if (auto classes = GetAllAvailableClasses()) {
+				for (auto& FoundClass : *classes) {
+					auto& outputType = FoundClass.first;
+					if (auto p = FoundClass.second.lock()) {
+						// Type Conversions are identical to Constructors with one input type. Therefore ...
+						auto className = p->GetName();						
+						// ... find all constructors ...
+						if (auto constructors = p->GetFunctions(className)) {
+							for (auto& constructor : *constructors) {
+								if (constructor && constructor->second) {
+									// ... whose inputs are size of 1 ...
+									if (constructor->first.size() == 1) {
+										// FIX ME! FIX ME:
+										auto& inputType = constructor->first[0].second;
+										out->AddConverter([func = constructor->second, this](Any const& input)->Any {
+											std::vector<Any> params = { input }; 
+											//if (auto Tree = this->CachedTypeConverterTree)
+											//	return scripting::call(func->first, params, *Tree);
+											//else 
+												return func->first->operator()(params);											
+										}, inputType, outputType);
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		};
+
+	public:
+		virtual std::shared_ptr<Type_Converter_Tree> GetTypeConverterTree() const override {
+			auto oldVersion = CachedTypeConverterTreeVersion.load();
+			if (oldVersion != RecordVersion) {
+				auto guard{ std::unique_lock(const_cast<Global2*>(this)->CachedTypeConverterTreeMutex) };
+				if (const_cast<Global2*>(this)->CachedTypeConverterTreeVersion.CompareExchange(oldVersion, RecordVersion)) {
+					auto tree = std::make_shared<Type_Converter_Tree>();
+					CreateTypeConverterTree(tree);
+					return const_cast<Global2*>(this)->CachedTypeConverterTree = tree;
+				}
+			}
+
+			if (1) {
+				auto guard{ std::shared_lock(const_cast<Global2*>(this)->CachedTypeConverterTreeMutex) };
+				return CachedTypeConverterTree;
+			}
+		};
+
+	private:
+		fibers::containers::Map<size_t, std::weak_ptr<Class2>> // collection of all classes that are added as "children" of this library
+			Classes; 
+		fibers::containers::Map<size_t, std::weak_ptr<Namespace2>> // collection of all namespaces that are added being "used" by this library
+			Usings;
+		fibers::containers::Map<size_t, std::pair<std::string, std::weak_ptr<details::Proxy_Function_Base>>> // collection of all namespaces that are added being "used" by this library
+			Functions;
+
+		std::shared_ptr<Type_Converter_Tree>
+			CachedTypeConverterTree{ std::make_shared<Type_Converter_Tree>() };
+		fibers::containers::number<unsigned __int64>
+			CachedTypeConverterTreeVersion{ 0 };
+		fibers::synchronization::shared_mutex<fibers::synchronization::mutex>
+			CachedTypeConverterTreeMutex{};
+
+		std::shared_ptr<std::map<Type_Info, std::weak_ptr<Class2>>>
+			CachedClassList{ std::make_shared<std::map<Type_Info, std::weak_ptr<Class2>>>() };
+		fibers::containers::number<unsigned __int64>
+			CachedClassListVersion{ 0 };
+		fibers::synchronization::shared_mutex<fibers::synchronization::mutex>
+			CachedClassListMutex{};
+
+		//fibers::containers::number<unsigned int> 
+			//CleanupRequested{ 0 };
+		fibers::containers::number<unsigned __int64>
+			CleanupVersion{ 0 };
+		fibers::containers::number<unsigned __int64>
+			RecordVersion{ 0 };
+
+		virtual void RemoveStaleReferences() override {
+			auto oldVersion = CleanupVersion.load();
+			if (oldVersion != RecordVersion) {
+				if (CleanupVersion.CompareExchange(oldVersion, RecordVersion)) {
+					// p_using
+					while (true) {
+						size_t toRemove{};
+						bool doRemoval = false;
+						for (auto& ref : p_using) {
+							if (ref) {
+								if (ref->second.expired()) {
+									toRemove = ref->first;
+									doRemoval = true;
+									break;
+								}
+							}
+						}
+						if (doRemoval) {
+							p_using.erase(toRemove);
+						}
+						else {
+							break;
+						}
+					}
+
+					// p_postfixes
+					while (true) {
+						std::string toRemove{};
+						bool doRemoval = false;
+						for (auto& ref : p_postfixes) {
+							if (ref) {
+								if (ref->second.expired()) {
+									toRemove = ref->first;
+									doRemoval = true;
+									break;
+								}
+							}
+						}
+						if (doRemoval) {
+							p_postfixes.erase(toRemove);
+						}
+						else {
+							break;
+						}
+					}
+
+					// Classes
+					if (1) {
+						thread_local static std::vector<size_t> toRemove{};
+						for (auto& ref : Classes) {
+							if (ref) {
+								if (ref->second.expired()) {
+									toRemove.push_back(ref->first);
+								}
+							}
+						}
+						Classes.erase(toRemove);
+						toRemove.clear();
+					}
+
+					// Usings
+					if (1) {
+						thread_local static std::vector<size_t> toRemove{};
+						for (auto& ref : Usings) {
+							if (ref) {
+								if (ref->second.expired()) {
+									toRemove.push_back(ref->first);
+								}
+							}
+						}
+						Usings.erase(toRemove);
+						toRemove.clear();
+					}
+
+					// Functions
+					if (1) {
+						thread_local static std::vector<size_t> toRemove{};
+						for (auto& ref : Functions) {
+							if (ref) {
+								if (ref->second.second.expired()) {
+									toRemove.push_back(ref->first);
+								}
+							}
+						}
+						Functions.erase(toRemove);
+						toRemove.clear();
+					}
+				}
+			}
+		};
+
+		virtual bool RecordClass(std::shared_ptr<Class2> ptr, bool overrideIfExists = true) override {
+			//if (CleanupRequested.CompareExchange(1, 0)) RemoveStaleReferences();			
+			if (Classes.emplace(Scope2::Hasher()(ptr), ptr, overrideIfExists)){
+				RecordVersion++;
+				return true;
+			}
+			return false;
+		};
+
+		virtual bool RecordUsing(std::shared_ptr<Namespace2> ptr, bool overrideIfExists = true) override {
+			//if (CleanupRequested.CompareExchange(1, 0)) RemoveStaleReferences();			
+			if (Usings.emplace(Scope2::Hasher()(ptr), ptr, overrideIfExists)) {
+				RecordVersion++;
+				return true;
+			}
+			return false;
+		};
+
+		virtual bool RecordFunction(std::string const& Name, Proxy_Function ptr, bool overrideIfExists = true) override {
+			//if (CleanupRequested.CompareExchange(1, 0)) RemoveStaleReferences();			
+			if (Functions.emplace(std::hash<Proxy_Function>()(ptr), { Name, ptr }, overrideIfExists)) {
+				RecordVersion++;
+				return true;
+			}
+			return false;
+		};
+
 
 	};
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+#if 0
 	class Impl {
 	private:
 		// Attempts to find or make a namespace with the requested namespace name. 
@@ -6025,33 +7935,9 @@ namespace scripting {
 
 
 	};
+#endif
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+#if 0
 	/* Engine state shared by all scopes or namespaces, which may be accessed in parallel by multiple parallel-execution scripts or parallel-execution scopes */
 	class State {
 	private:
@@ -6236,7 +8122,6 @@ namespace scripting {
 
 	};
 
-
 	class Stack {
 	private:
 		Stack*
@@ -6298,7 +8183,7 @@ namespace scripting {
 		};
 
 	};
-
+#endif
 
 #if 0
 	// A "namespace" is any (optionally named) scope, which may contains: 

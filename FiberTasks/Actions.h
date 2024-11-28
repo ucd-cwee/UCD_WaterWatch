@@ -512,37 +512,42 @@ namespace fibers {
 			}
 		};
 
-		template<typename T>
-		struct Get_Type_Info<std::shared_ptr<T>> {
-			constexpr static Type_Info get() noexcept {
-				return Type_Info(std::is_const<T>::value,
-					std::is_reference<T>::value,
-					std::is_pointer<T>::value,
-					std::is_void<T>::value,
-					&TypeId<std::shared_ptr<T>>(),
-					&TypeId<typename Bare_Type<T>::type>(),
-					&TypeId<typename Bare_Type<T>::type>()
-				);
-			}
-		};
+		//template<typename T>
+		//struct Get_Type_Info<std::shared_ptr<T>> {
+		//	constexpr static Type_Info get() noexcept {
+		//		return Type_Info(std::is_const<T>::value,
+		//			std::is_reference<T>::value,
+		//			std::is_pointer<T>::value,
+		//			std::is_void<T>::value,
+		//			&TypeId<T>(), // std::shared_ptr<T>
+		//			&TypeId<typename Bare_Type<T>::type>(),
+		//			&TypeId<typename Bare_Type<T>::type>()
+		//		);
+		//	}
+		//};
 
 		template<typename T>
-		struct Get_Type_Info<std::shared_ptr<T>&> : Get_Type_Info<std::shared_ptr<T>> {
-		};
+		struct Get_Type_Info<std::shared_ptr<T>> : Get_Type_Info<T> {};
 
 		template<typename T>
-		struct Get_Type_Info<const std::shared_ptr<T>&> {
-			constexpr static Type_Info get() noexcept {
-				return Type_Info(std::is_const<T>::value,
-					std::is_reference<T>::value,
-					std::is_pointer<T>::value,
-					std::is_void<T>::value,
-					&TypeId<const std::shared_ptr<T>&>(),
-					&TypeId<typename Bare_Type<T>::type>(),
-					&TypeId<typename Bare_Type<T>::type>()
-				);
-			}
-		};
+		struct Get_Type_Info<std::shared_ptr<T>&> : Get_Type_Info<std::shared_ptr<T>> {};
+
+		template<typename T>
+		struct Get_Type_Info<const std::shared_ptr<T>&> : Get_Type_Info<T> {};
+
+		//template<typename T>
+		//struct Get_Type_Info<const std::shared_ptr<T>&> {
+		//	constexpr static Type_Info get() noexcept {
+		//		return Type_Info(std::is_const<T>::value,
+		//			std::is_reference<T>::value,
+		//			std::is_pointer<T>::value,
+		//			std::is_void<T>::value,
+		//			&TypeId<T>(), // const std::shared_ptr<T>&
+		//			&TypeId<typename Bare_Type<T>::type>(),
+		//			&TypeId<typename Bare_Type<T>::type>()
+		//		);
+		//	}
+		//};
 
 		template<typename T>
 		struct Get_Type_Info<std::reference_wrapper<T>> {
@@ -551,7 +556,7 @@ namespace fibers {
 					std::is_reference<T>::value,
 					std::is_pointer<T>::value,
 					std::is_void<T>::value,
-					&TypeId<std::reference_wrapper<T>>(),
+					&TypeId<T>(),
 					&TypeId<typename Bare_Type<T>::type>(),
 					&TypeId<typename Bare_Type<T>::type>()
 				);
@@ -565,7 +570,7 @@ namespace fibers {
 					std::is_reference<T>::value,
 					std::is_pointer<T>::value,
 					std::is_void<T>::value,
-					&TypeId<const std::reference_wrapper<T>&>(),
+					&TypeId<T>(),
 					&TypeId<typename Bare_Type<T>::type>(),
 					&TypeId<typename Bare_Type<T>::type>()
 				);
