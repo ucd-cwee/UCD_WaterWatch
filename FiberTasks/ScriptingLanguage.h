@@ -450,18 +450,6 @@ namespace scripting {
 				if (vertices_and_predecessors.count(To) > 0) {
 					out = vertices_and_predecessors.operator[](To);
 
-					if (auto p1 = From.lock()) {
-						if (auto p2 = To.lock()) {
-							std::cout << Units::printf("Converting %s -> %s requires:\n\t%s", p1->name(), p2->name(), p1->name());
-							for (auto& x : out) {
-								if (auto p3 = x.lock()) {
-									std::cout << Units::printf(" ... %s", p3->name());
-								}
-							}
-						}
-					}
-					std::cout << Units::printf(" (%f)\n", (float)vertices_and_weights[To]);
-
 					return true;
 				}
 			}
@@ -502,7 +490,7 @@ namespace scripting {
 				node->cached_conversions.emplace(toTypeInfo, std::make_shared<std::tuple<std::vector<scripting::Type_Info>, long>>(
 					std::vector<scripting::Type_Info>({ toTypeInfo }),
 					(long)(std::numeric_limits<double>::max())
-					)); // even if there was a previous cached conversion, override it.
+				), false); // even if there was a previous cached conversion, override it.
 
 					// if this converter was bidirectional, we should explicitely add it to the list.
 					// This will be slightly recursive but should end abruptly. 
@@ -555,7 +543,7 @@ namespace scripting {
 				node->cached_conversions.emplace(toTypeInfo, std::make_shared<std::tuple<std::vector<scripting::Type_Info>, long>>(
 					std::vector<scripting::Type_Info>({ toTypeInfo }),
 					(long)(std::numeric_limits<double>::max())
-					)); // even if there was a previous cached conversion, override it.
+				), false); // even if there was a previous cached conversion, override it.
 
 				version++;
 
@@ -575,7 +563,7 @@ namespace scripting {
 			if (!targetLocation) {
 				targetLocation = node->connections.get_or_insert(outboundType, std::dynamic_pointer_cast<details::Type_Conversion_Base>(
 					std::make_shared<details::Custom_Type_Conversion_Impl<Callable>>(std::move(t_func), inboundType, outboundType)
-					));
+				));
 			}
 			if (1) {
 				(void)targetLocation->cost(); // cache the cost to perform this conversion
@@ -583,7 +571,7 @@ namespace scripting {
 				node->cached_conversions.emplace(outboundType, std::make_shared<std::tuple<std::vector<scripting::Type_Info>, long>>(
 					std::vector<scripting::Type_Info>({ outboundType }),
 					(long)(std::numeric_limits<double>::max())
-					)); // even if there was a previous cached conversion, override it.
+				), false); // even if there was a previous cached conversion, override it.
 
 				version++;
 
@@ -617,12 +605,33 @@ namespace scripting {
 						std::vector<scripting::Type_Info> newCached;
 						{
 							if (TryCreateConversionPath(fromType, to, newCached)) {
-								node.cached_conversions.insert({ to,
+								if (node.cached_conversions.insert({ to,
 									std::make_shared<std::tuple<std::vector<scripting::Type_Info>, long>>(
 										newCached,
 										version.GetValue()
 									)
-								}, false);
+								}, false)) {
+									// successfully added a new, valid conversion
+
+
+									if (auto p1 = fromType) {
+										if (auto p2 = to.lock()) {
+											std::string inner = p1->name();
+											for (auto& x : newCached) {
+												if (auto p3 = x.lock()) {
+													inner += Units::printf(" ... %s", p3->name());
+												}
+											}
+											std::cout << Units::printf("Converting %s -> %s requires:\n\t%s\n", p1->name(), p2->name(), inner.c_str());
+										}
+									}
+
+
+								}
+								else {
+									// The conversion was valid, but another one already existed! 
+									// Often happens when multiple threads are calling a conversion for the first time in tandum
+								}
 							}
 							else { // cache the failure -- to prevent repeated Dijkstra searches unless the tree is updated to (hopefully) bridge the gap.
 								node.cached_conversions.insert({ to,
@@ -661,7 +670,7 @@ namespace scripting {
 								return true;
 							}
 						}
-						catch (...) {
+						catch (...) { // cache the failure -- to prevent repeated Dijkstra searches unless the tree is updated to (hopefully) bridge the gap.
 							node.cached_conversions.insert({ to, 
 								std::make_shared<std::tuple<std::vector<scripting::Type_Info>, long>>(
 									std::vector<scripting::Type_Info>(), 
@@ -710,10 +719,27 @@ namespace scripting {
 						std::vector<scripting::Type_Info> newCached;
 						{
 							if (TryCreateConversionPath(From, To, newCached)) {
-								node.cached_conversions.insert({ To, std::make_shared<std::tuple<std::vector<scripting::Type_Info>, long>>(
+								if (node.cached_conversions.insert({ To, std::make_shared<std::tuple<std::vector<scripting::Type_Info>, long>>(
 									newCached,
 									version.GetValue()
-								) }, false);
+								) }, false)) {
+									// successfully added a new, valid conversion
+									if (auto p1 = From.lock()) {
+										if (auto p2 = To.lock()) {
+											std::string inner = p1->name();
+											for (auto& x : newCached) {
+												if (auto p3 = x.lock()) {
+													inner += Units::printf(" ... %s", p3->name());
+												}
+											}
+											std::cout << Units::printf("Converting %s -> %s requires:\n\t%s\n", p1->name(), p2->name(), inner.c_str());
+										}
+									}
+								}
+								else {
+									// The conversion was valid, but another one already existed! 
+									// Often happens when multiple threads are calling a conversion for the first time in tandum
+								}
 							}
 							else { // cache the failure -- to prevent repeated Dijkstra searches unless the tree is updated to (hopefully) bridge the gap.
 								node.cached_conversions.insert({ To, std::make_shared<std::tuple<std::vector<scripting::Type_Info>, long>>(
@@ -768,10 +794,27 @@ namespace scripting {
 						std::vector<scripting::Type_Info> newCached;
 						{
 							if (TryCreateConversionPath(From, To, newCached)) {
-								node.cached_conversions.insert({ To, std::make_shared<std::tuple<std::vector<scripting::Type_Info>, long>>(
+								if (node.cached_conversions.insert({ To, std::make_shared<std::tuple<std::vector<scripting::Type_Info>, long>>(
 									newCached,
 									version.GetValue()
-								) }, false);
+								) }, false)) {
+									// successfully added a new, valid conversion
+									if (auto p1 = From.lock()) {
+										if (auto p2 = To.lock()) {
+											std::string inner = p1->name();
+											for (auto& x : newCached) {
+												if (auto p3 = x.lock()) {
+													inner += Units::printf(" ... %s", p3->name());
+												}
+											}
+											std::cout << Units::printf("Converting %s -> %s requires:\n\t%s\n", p1->name(), p2->name(), inner.c_str());
+										}
+									}
+								}
+								else {
+									// The conversion was valid, but another one already existed! 
+									// Often happens when multiple threads are calling a conversion for the first time in tandum
+								}
 							}
 							else { // cache the failure -- to prevent repeated Dijkstra searches unless the tree is updated to (hopefully) bridge the gap.
 								node.cached_conversions.insert({ To, std::make_shared<std::tuple<std::vector<scripting::Type_Info>, long>>(
@@ -7546,8 +7589,7 @@ namespace scripting {
 								if (constructor && constructor->second) {
 									// ... whose inputs are size of 1 ...
 									if (constructor->first.size() == 1) {
-										// FIX ME! FIX ME:
-										auto& inputType = constructor->first[0].second;
+										auto& inputType = constructor->second->second[0].second; //  constructor->first[0].second;
 										out->AddConverter([func = constructor->second, this](Any const& input)->Any {
 											std::vector<Any> params = { input }; 
 											//if (auto Tree = this->CachedTypeConverterTree)

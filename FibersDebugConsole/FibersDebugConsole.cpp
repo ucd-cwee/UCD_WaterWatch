@@ -576,7 +576,7 @@ int main() {
 			// Create and test the type conversion tree, which builds itself from the constructors of the various classes.
 			if (1) {
 				sw.Start();
-				for (int i = 0; i < numIterations / 10; i++) // fibers::parallel::For(0, numIterations / 10, [&](int i)
+				fibers::parallel::For(0, numIterations, [&](int i)
 					{
 						auto tree = scope_1->GetTypeConverterTree(); // builds and caches the tree. Updates the tree only if the situation has changed (new functions, new classes, or new Using statements)
 
@@ -596,8 +596,8 @@ int main() {
 						EXPECT_EQ(100.0f, tree->Convert<float>(100l));
 						EXPECT_EQ(1.0, tree->Convert<double>(true));
 					}
-				// );
-				printf(std::to_string(__LINE__) + ": \t" + std::to_string(numIterations / 10) + " operations (on 10,000 classes) per " + Units::second(sw.Stop_s()).ToString() + ".");
+				);
+				printf(std::to_string(__LINE__) + ": \t" + std::to_string(numIterations) + " operations (on 10,000 classes) per " + Units::second(sw.Stop_s()).ToString() + ".");
 			}
 
 			// Create and test the type conversion tree, which builds itself from the constructors of the various classes.
@@ -1086,20 +1086,50 @@ int main() {
 					sw.Start();
 					auto scope_outer = std::make_shared<Scope2>(scope_1);
 					scope_outer->SetSelf(scope_outer);
-					for (int i = 0; i < numIterations; i++){// fibers::parallel::For(0, numIterations, [&](int i) {
+					fibers::parallel::For(0, numIterations, [&](int i) {
 						auto scope_inner = std::make_shared<Scope2>(scope_outer);
 						scope_inner->SetSelf(scope_inner);
 						scope_inner->AddObj("i", std::make_shared<Any>(i));
 						{
-							auto a1 = scope_inner->CallFunction("Units::value", { 100 });
-							auto a2 = scope_inner->CallFunction("==", { a1, 100 });
-							bool f = scope_inner->Cast<bool>(a2);
-							EXPECT_EQ(true, f);
+							EXPECT_EQ(true, scope_inner->Cast<bool>(scope_inner->CallFunction("==", { scope_inner->CallFunction("Units::value", { 100.0f }), 100l })));
 						}
-					}//);
+					});
 					printf(std::to_string(__LINE__) + ": \t" + std::to_string(numIterations) + " operations (on 10,000 classes) per " + Units::second(sw.Stop_s()).ToString() + ".");
 				}
 
+				if (1) {
+					// This one "uses" the Units namespace, to see if it provides a speed boost at all.
+					sw.Start();
+					auto scope_outer = std::make_shared<Scope2>(scope_1);
+					scope_outer->SetSelf(scope_outer);
+					scope_outer->AddUsing(scope_outer->FindNamespace("Units"));
+					fibers::parallel::For(0, numIterations, [&](int i) {
+						auto scope_inner = std::make_shared<Scope2>(scope_outer);
+						scope_inner->SetSelf(scope_inner);
+						scope_inner->AddObj("i", std::make_shared<Any>(i));
+						{
+							EXPECT_EQ(true, scope_inner->Cast<bool>(scope_inner->CallFunction("==", { scope_inner->CallFunction("Units::value", { 100.0f }), 100l })));
+						}
+					});
+					printf(std::to_string(__LINE__) + ": \t" + std::to_string(numIterations) + " operations (on 10,000 classes) per " + Units::second(sw.Stop_s()).ToString() + ".");
+				}
+
+				if (1) {
+					// This one "uses" the Units namespace, but doesn't use the Units:: qualifier, to see if it provides a speed boost at all.
+					sw.Start();
+					auto scope_outer = std::make_shared<Scope2>(scope_1);
+					scope_outer->SetSelf(scope_outer);
+					scope_outer->AddUsing(scope_outer->FindNamespace("Units"));
+					fibers::parallel::For(0, numIterations, [&](int i) {
+						auto scope_inner = std::make_shared<Scope2>(scope_outer);
+						scope_inner->SetSelf(scope_inner);
+						scope_inner->AddObj("i", std::make_shared<Any>(i));
+						{
+							EXPECT_EQ(true, scope_inner->Cast<bool>(scope_inner->CallFunction("==", { scope_inner->CallFunction("value", { 100.0f }), 100l })));
+						}
+					});
+					printf(std::to_string(__LINE__) + ": \t" + std::to_string(numIterations) + " operations (on 10,000 classes) per " + Units::second(sw.Stop_s()).ToString() + ".");
+				}
 
 			}
 #endif
