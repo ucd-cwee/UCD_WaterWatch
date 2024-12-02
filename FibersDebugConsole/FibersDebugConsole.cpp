@@ -482,7 +482,7 @@ int main() {
 
 
 		// Re-build 2 Test
-		if (1) {
+		try {
 			using namespace scripting;
 			auto printf = [](auto x) { std::cout << x << std::endl; };
 			Stopwatch sw{};
@@ -688,7 +688,6 @@ int main() {
 								value_namespace->AddFunction("to_string", make_callable([](Units::value const& x)->std::string {
 									return x.ToString();
 								}));
-
 
 								// Constructors
 								value_namespace->AddFunction("value", make_callable([]() -> Units::value { return Units::value{}; }));
@@ -955,7 +954,6 @@ int main() {
 							}
 
 							// std_namespace->AddUsing(value_namespace);
-
 							auto foot_namespace{ std::make_shared<Class2>(std_namespace, "foot", scripting::user_type<Units::foot>(), value_namespace) };
 							foot_namespace->SetSelf(foot_namespace);
 							std_namespace->AddChild(foot_namespace);
@@ -1082,6 +1080,7 @@ int main() {
 
 				}
 
+				// slowest
 				if (1) {
 					sw.Start();
 					auto scope_outer = std::make_shared<Scope2>(scope_1);
@@ -1097,6 +1096,8 @@ int main() {
 					printf(std::to_string(__LINE__) + ": \t" + std::to_string(numIterations) + " operations (on 10,000 classes) per " + Units::second(sw.Stop_s()).ToString() + ".");
 				}
 
+				// OPTIMIZATION IDEA: when using for-loops with Using statements: move those Using statements to the temporary parent scope (scope_outer) of the for-loop to reduce the number of cache misses of the type conversion tree
+				// fastest
 				if (1) {
 					// This one "uses" the Units namespace, to see if it provides a speed boost at all.
 					sw.Start();
@@ -1114,6 +1115,7 @@ int main() {
 					printf(std::to_string(__LINE__) + ": \t" + std::to_string(numIterations) + " operations (on 10,000 classes) per " + Units::second(sw.Stop_s()).ToString() + ".");
 				}
 
+				// for some reason, slightly slower!
 				if (1) {
 					// This one "uses" the Units namespace, but doesn't use the Units:: qualifier, to see if it provides a speed boost at all.
 					sw.Start();
@@ -1130,6 +1132,83 @@ int main() {
 					});
 					printf(std::to_string(__LINE__) + ": \t" + std::to_string(numIterations) + " operations (on 10,000 classes) per " + Units::second(sw.Stop_s()).ToString() + ".");
 				}
+
+				// Using Units;
+				// for (int i = 0; i < numIterations; i++){
+				//     true == (Units::value(i) == i);
+				// }
+				if (1) {
+					// This one "uses" the Units namespace, to see if it provides a speed boost at all.
+					sw.Start();
+					auto scope_outer = std::make_shared<Scope2>(scope_1);
+					scope_outer->SetSelf(scope_outer);
+					scope_outer->AddUsing(scope_outer->FindNamespace("Units"));
+					fibers::parallel::For(0, numIterations, [&](int i) {
+						auto scope_inner = std::make_shared<Scope2>(scope_outer);
+						scope_inner->SetSelf(scope_inner);
+						scope_inner->AddObj("i", std::make_shared<Any>(i));
+						{
+							auto i_obj = scope_inner->FindObj("i");
+							auto i_value = scope_inner->CallFunction("Units::value", { i_obj });
+							EXPECT_EQ(true, scope_inner->Cast<bool>(scope_inner->CallFunction("==", { i_value, i_obj })));
+						}
+					});
+					printf(std::to_string(__LINE__) + ": \t" + std::to_string(numIterations) + " operations (on 10,000 classes) per " + Units::second(sw.Stop_s()).ToString() + ".");
+				}
+
+				// Using Units;
+				// for (int i = 0; i < numIterations; i++){
+				//     true == (Units::value(string::npos) == string::npos); 
+				// }
+				if (1) {
+					// This one "uses" the Units namespace, to see if it provides a speed boost at all.
+					sw.Start();
+					auto scope_outer = std::make_shared<Scope2>(scope_1);
+					scope_outer->SetSelf(scope_outer);
+					scope_outer->AddUsing(scope_outer->FindNamespace("Units"));
+					fibers::parallel::For(0, numIterations, [&](int i) {
+						auto scope_inner = std::make_shared<Scope2>(scope_outer);
+						scope_inner->SetSelf(scope_inner);
+						scope_inner->AddObj("i", std::make_shared<Any>(i));
+						{
+							auto i_obj = scope_inner->FindObj("string::npos"); // searching and failing to find does not throw, but returns an empty ptr
+							auto i_value = scope_inner->CallFunction("Units::value", { i_obj });
+							EXPECT_EQ(true, scope_inner->Cast<bool>(scope_inner->CallFunction("==", { i_value, i_obj })));
+						}
+					});
+					printf(std::to_string(__LINE__) + ": \t" + std::to_string(numIterations) + " operations (on 10,000 classes) per " + Units::second(sw.Stop_s()).ToString() + ".");
+				}
+
+				// Using Units;
+				// for (int i = 0; i < numIterations; i++){
+				//     true == (Units::value(string::npos) == string::npos); 
+				// }
+				if (1) {
+					// This one "uses" the Units namespace, to see if it provides a speed boost at all.
+					sw.Start();
+					auto scope_outer = std::make_shared<Scope2>(scope_1);
+					scope_outer->SetSelf(scope_outer);
+					scope_outer->AddUsing(scope_outer->FindNamespace("Units"));
+					fibers::parallel::For(0, numIterations, [&](int i) {
+						auto scope_inner = std::make_shared<Scope2>(scope_outer);
+						scope_inner->SetSelf(scope_inner);
+						scope_inner->AddObj("i", std::make_shared<Any>(i));
+						{
+							auto i_obj = scope_inner->FindObj("i"); // searching and failing to find does not throw, but returns an empty ptr
+							auto i_ft = scope_inner->CallFunction("Units::foot", { i_obj });
+							auto ft_abbrev = scope_inner->CallFunction("abbreviation", { i_ft });
+							// printf(scope_inner->Cast<std::string>(ft_abbrev));
+							EXPECT_EQ(scope_inner->Cast<std::string>(ft_abbrev), "ft");
+						}
+					});
+					printf(std::to_string(__LINE__) + ": \t" + std::to_string(numIterations) + " operations (on 10,000 classes) per " + Units::second(sw.Stop_s()).ToString() + ".");
+				}
+
+
+
+
+
+
 
 			}
 #endif
@@ -1852,7 +1931,10 @@ int main() {
 
 
 
-	    }
+		}
+		catch (std::exception& e) {
+			printf(e.what());
+		}
 
 
 #if 0

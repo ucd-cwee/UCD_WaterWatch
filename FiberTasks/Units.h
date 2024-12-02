@@ -1439,7 +1439,7 @@ public:
 
 			if (model && model->second.count(UnitHash) > 0) {
 				auto& curve = model->second.at(UnitHash);
-				
+				// defer(curve.TryCleanupUnusedMemory());
 				auto iter1 = curve.FindLargestSmallerEqual(targetRatio);
 				if ((iter1/* != curve.end()*/) && iter1.first() == targetRatio) {
 					// exact find -- best case scenario

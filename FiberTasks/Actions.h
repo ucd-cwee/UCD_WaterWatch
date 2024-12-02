@@ -1524,16 +1524,40 @@ namespace fibers {
 		struct Object_Data {
 			template <template<class> class H, class S, typename = std::enable_if_t<std::is_same_v<H<S>, std::shared_ptr<S>>>> static decltype(auto) get(const H<S>* obj) { return get(*obj); };
 			template <template<class> class H, class S, typename = std::enable_if_t<std::is_same_v<H<S>, std::shared_ptr<S>>>> static decltype(auto) get(const H<S>& obj) {
-				static auto sharedType{ std::make_shared<Type_Info>(user_type<S>()) };
-				return std::shared_ptr<AnyData>(new AnyData(AnyData::get_data<S>(obj), sharedType, std::is_const_v<S>));
+				if constexpr (std::is_same<Any, S>::value) {
+					// we are trying to "get" from a std::shared_ptr<Any>
+					if (obj) {
+						return obj->container;
+					}
+					else {
+						return std::shared_ptr<AnyData>();
+					}
+				}
+				else {
+					static auto sharedType{ std::make_shared<Type_Info>(user_type<S>()) };
+					return std::shared_ptr<AnyData>(new AnyData(AnyData::get_data<S>(obj), sharedType, std::is_const_v<S>));
+				}				
 			};
 			template <template<class> class H, class S, typename = std::enable_if_t<std::is_same_v<H<S>, std::shared_ptr<S>>>> static decltype(auto) get(H<S>&& obj) {
-				static auto sharedType{ std::make_shared<Type_Info>(user_type<S>()) };
-				return std::shared_ptr<AnyData>(new AnyData(AnyData::get_data<S>(std::forward<H<S>>(obj)), sharedType, std::is_const_v<S>));
+				if constexpr (std::is_same<Any, S>::value) {
+					// we are trying to "get" from a std::shared_ptr<Any>
+					if (obj) {
+						return obj->container;
+					}
+					else {
+						return std::shared_ptr<AnyData>();
+					}
+				}
+				else {
+					static auto sharedType{ std::make_shared<Type_Info>(user_type<S>()) };
+					return std::shared_ptr<AnyData>(new AnyData(AnyData::get_data<S>(std::forward<H<S>>(obj)), sharedType, std::is_const_v<S>));
+				}				
 			};
+			
 			template<typename T, typename = std::enable_if_t<!std::is_same_v<fibers::AnyAutoCast, T>>> static decltype(auto) get(T* t) { return get(std::make_shared<T>(t)); };
 			template<typename T, typename = std::enable_if_t<!std::is_same_v<fibers::AnyAutoCast, T>>> static decltype(auto) get(const T* t) { return get(*t); };
 			template<typename T, typename = std::enable_if_t<!std::is_same_v<fibers::AnyAutoCast, T>>> static decltype(auto) get(const T& obj) { return get(std::make_shared<T>(obj)); };
+
 			static decltype(auto) get(const fibers::AnyAutoCast& obj);
 			static decltype(auto) get(const fibers::AnyAutoCast* t);
 		};

@@ -338,8 +338,8 @@ namespace scripting {
 
 		fibers::synchronization::atomic_number<size_t>
 			version;
-		// fibers::synchronization::impl::InterlockedLong
-			// version;
+
+		constexpr static bool printTypeConversionSuccesses{ true };
 
 	private:
 		// Solves Dijkstra's algorithm to determine the shortest path for "From" to "To", puts the path in "Out", and returns true. 
@@ -612,21 +612,19 @@ namespace scripting {
 									)
 								}, false)) {
 									// successfully added a new, valid conversion
-
-
-									if (auto p1 = fromType) {
-										if (auto p2 = to.lock()) {
-											std::string inner = p1->name();
-											for (auto& x : newCached) {
-												if (auto p3 = x.lock()) {
-													inner += Units::printf(" ... %s", p3->name());
+									if constexpr (printTypeConversionSuccesses) {
+										if (auto p1 = fromType) {
+											if (auto p2 = to.lock()) {
+												std::string inner = p1->name();
+												for (auto& x : newCached) {
+													if (auto p3 = x.lock()) {
+														inner += Units::printf(" ... %s", p3->name());
+													}
 												}
+												std::cout << Units::printf("Converting %s -> %s requires:\n\t%s\n", p1->name(), p2->name(), inner.c_str());
 											}
-											std::cout << Units::printf("Converting %s -> %s requires:\n\t%s\n", p1->name(), p2->name(), inner.c_str());
 										}
 									}
-
-
 								}
 								else {
 									// The conversion was valid, but another one already existed! 
@@ -724,15 +722,17 @@ namespace scripting {
 									version.GetValue()
 								) }, false)) {
 									// successfully added a new, valid conversion
-									if (auto p1 = From.lock()) {
-										if (auto p2 = To.lock()) {
-											std::string inner = p1->name();
-											for (auto& x : newCached) {
-												if (auto p3 = x.lock()) {
-													inner += Units::printf(" ... %s", p3->name());
+									if constexpr (printTypeConversionSuccesses) {
+										if (auto p1 = From.lock()) {
+											if (auto p2 = To.lock()) {
+												std::string inner = p1->name();
+												for (auto& x : newCached) {
+													if (auto p3 = x.lock()) {
+														inner += Units::printf(" ... %s", p3->name());
+													}
 												}
+												std::cout << Units::printf("Converting %s -> %s requires:\n\t%s\n", p1->name(), p2->name(), inner.c_str());
 											}
-											std::cout << Units::printf("Converting %s -> %s requires:\n\t%s\n", p1->name(), p2->name(), inner.c_str());
 										}
 									}
 								}
@@ -799,15 +799,17 @@ namespace scripting {
 									version.GetValue()
 								) }, false)) {
 									// successfully added a new, valid conversion
-									if (auto p1 = From.lock()) {
-										if (auto p2 = To.lock()) {
-											std::string inner = p1->name();
-											for (auto& x : newCached) {
-												if (auto p3 = x.lock()) {
-													inner += Units::printf(" ... %s", p3->name());
+									if constexpr (printTypeConversionSuccesses) {
+										if (auto p1 = From.lock()) {
+											if (auto p2 = To.lock()) {
+												std::string inner = p1->name();
+												for (auto& x : newCached) {
+													if (auto p3 = x.lock()) {
+														inner += Units::printf(" ... %s", p3->name());
+													}
 												}
+												std::cout << Units::printf("Converting %s -> %s requires:\n\t%s\n", p1->name(), p2->name(), inner.c_str());
 											}
-											std::cout << Units::printf("Converting %s -> %s requires:\n\t%s\n", p1->name(), p2->name(), inner.c_str());
 										}
 									}
 								}
@@ -839,14 +841,7 @@ namespace scripting {
 			}
 		};
 		// true if the tree knows how to convert From into To
-		bool Converts(Any& From, scripting::Type_Info const& To) const {
-			if (auto p = From.Type().lock()) {
-				return Converts(p, To);
-			}
-			else {
-				return Converts(scripting::user_type<void>(), To);
-			}
-		};
+		bool Converts(Any& From, scripting::Type_Info const& To) const { if (auto p = From.Type().lock()) return Converts(p, To); else return Converts(scripting::user_type<void>(), To); };
 		// true if the tree knows how to convert From into To
 		template <typename From, typename To> bool Converts() const { return Converts(scripting::user_type<From>(), scripting::user_type<To>()); };
 		// true if the tree knows how to convert From into To
@@ -893,9 +888,6 @@ namespace scripting {
 			return out;
 		};
 	};
-
-	
-
 
 	// input values to be offered to a function. Does not need to match the function input arguments -- conversions will take place later, if conversions are published to Type_Converter_Tree.
 	class Function_Params {
@@ -6278,7 +6270,7 @@ namespace scripting {
 			return nullptr;
 		};
 
-		std::shared_ptr<Namespace2> FindNamespaceWithObj(std::string objName) const {
+		std::shared_ptr<Scope2> FindScopeWithObj(std::string objName) const {
 			static auto fixNamespace{ [](std::string x) -> std::string {
 				while (x.find("::") == 0 && x.length() > 2) {
 					x = x.substr(2);
@@ -6292,8 +6284,8 @@ namespace scripting {
 
 			auto lastOfColons = objName.find_last_of("::");
 			if (lastOfColons == std::string::npos) {
-				std::shared_ptr<Namespace2> out;
-				if (TryFindNearestNamespaceWhere(out, [&objName](std::shared_ptr<Namespace2> const& namespacePtr)->bool {
+				std::shared_ptr<Scope2> out;
+				if (TryFindNearestScopeWhere(out, [&objName](std::shared_ptr<Scope2> const& namespacePtr)->bool {
 					if (auto ptr = std::dynamic_pointer_cast<Scope2>(namespacePtr)) {
 						if (auto objFound = ptr->GetObj(objName)) {
 							return true;
@@ -6311,7 +6303,7 @@ namespace scripting {
 				std::string Namespace = objName.substr(0, lastOfColons-1);
 				objName = objName.substr(lastOfColons + 1);
 				if (auto namespacePtr = std::dynamic_pointer_cast<Scope2>(FindNamespace(Namespace))) {
-					return namespacePtr->FindNamespaceWithObj(objName);
+					return namespacePtr->FindScopeWithObj(objName);
 				}
 				else {
 					return nullptr;
@@ -6332,7 +6324,7 @@ namespace scripting {
 
 			auto lastOfColons = objName.find_last_of("::");
 			if (lastOfColons == std::string::npos) {
-				if (auto ptr = std::dynamic_pointer_cast<Scope2>(FindNamespaceWithObj(objName))) {
+				if (auto ptr = std::dynamic_pointer_cast<Scope2>(FindScopeWithObj(objName))) {
 					return ptr->GetObj(objName);
 				}
 				else {
@@ -6731,7 +6723,25 @@ namespace scripting {
 					return scripting::call(func->first, converted, *tree);
 				}
 				else {
-					throw exception::not_found_error(functionName);
+					// function was not found with the given params
+					std::string params_str;
+					for (auto& p : params) {
+						std::string className = p.TypeName(); {
+							if (auto classPtr = std::dynamic_pointer_cast<Scope2>(this->FindClass(p.Type()))) {
+								className = classPtr->GetName();
+							}
+						}
+
+						if (params_str.empty()) {
+							params_str += className;
+						}
+						else {
+							params_str += ", ";
+							params_str += className;
+						}
+					}
+
+					throw exception::not_found_error(Units::printf("`%s`(%s)", functionName.c_str(), params_str.c_str()));
 				}
 			}
 			throw std::runtime_error("Scope was invalid");
