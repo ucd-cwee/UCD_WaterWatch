@@ -5894,7 +5894,7 @@ namespace fibers {
 			Iterator cend() const { return end(); };
 		};
 #else
-        /* *THREAD SAFE* Fiber- and thread-safe sorted map. KeyType may be anything that can be hashed, and ObjType must be copy-by-value. */
+        /* *THREAD SAFE* Fiber- and thread-safe unsorted map. KeyType may be anything that can be hashed, and ObjType must be copy-by-value. */
 		template <typename KeyType = std::string, typename ObjType = std::string, typename Hasher = std::hash<KeyType>> class Map {
 		private:
 			concurrency::concurrent_unordered_map<size_t, std::shared_ptr<std::pair<const KeyType, ObjType>>> 

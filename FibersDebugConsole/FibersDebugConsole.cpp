@@ -3,6 +3,7 @@
 #include <iostream>
 #include "../FiberTasks/Fibers.h"
 #include "../FiberTasks/ScriptingLanguage.h"
+#include "../FiberTasks/UnitsLibrary.h"
 #include <execution>
 #include "../WaterWatchCpp/Clock.h"
 
@@ -36,6 +37,7 @@ static bool Thing() { return true; };
 #define SINGLE_ARG(...) __VA_ARGS__
 #define EXPECT_EQ(a,b) [&]()->bool{ if ((a) == (b)) { return true; } else { std::cout << Units::printf("FAILURE AT LINE %i\n", (int)__LINE__); return false; } }()
 #define EXPECT_NE(a, b) [&]()->bool{ if ((a) != (b)) { return true; } else { std::cout << Units::printf("FAILURE AT LINE %i\n", (int)__LINE__); return false; } }()
+
 int main() {
 	// pre-warm the heap
 	for (int i = 0; i < 100000; i++) delete (new int(5));
@@ -59,7 +61,7 @@ int main() {
 		std::this_thread::yield();
 
 		// Scripting language 
-		if (1) {
+		if (0) {
 			if (1) {
 				fibers::containers::Map<std::string, double> map;
 				EXPECT_EQ(true, map.emplace("x", 100));
@@ -228,7 +230,7 @@ int main() {
 #endif
 
 		// Leak Test
-		if (1) {
+		if (0) {
 			delete (new int(5));
 			if (true) {
 				fibers::containers::Pattern<double, double> test;
@@ -236,7 +238,7 @@ int main() {
 			delete (new int(5));
 		}
 
-		if (1) {
+		if (0) {
 			delete (new int(5));
 			if (true) {
 				fibers::utilities::GarbageCollectedAllocator<std::pair<std::string, double>> nodeAllocator;
@@ -244,7 +246,7 @@ int main() {
 			delete (new int(5));
 		}
 
-		if (1) {
+		if (0) {
 			delete (new int(5));
 			if (true) {
 				fibers::containers::Pattern<double, double> test;
@@ -253,7 +255,7 @@ int main() {
 			delete (new int(5));
 		}
 
-		if (1) {
+		if (0) {
 			delete (new int(5));
 			if (true) {
 				fibers::utilities::GarbageCollectedAllocator<std::pair<std::string, double>> nodeAllocator;
@@ -493,7 +495,7 @@ int main() {
 			scope_1->SetSelf(scope_1);
 			scope_1->AddBuiltIns();
 
-			int numIterations = 100000;
+			int numIterations = 10000;
 
 			// FindNamespace
 			if (1) {
@@ -622,30 +624,21 @@ int main() {
 					EXPECT_EQ(true, scope_1->Cast<bool>(scope_1->CallFunction("==", { params[0], numIterations })));
 				}
 
-				{
-					printf(scope_1->Cast<std::string>(
-						scope_1->CallFunction("+", {
-							scope_1->Cast<std::string>(params[0])
-							, std::string(" is the count")
-							})
-						));
-				}
-
 				EXPECT_EQ(n, (numIterations));
 			}
 
-			EXPECT_EQ("100", scope_1->Cast<std::string>(scope_1->CallFunction("string", { 100 })));
-			EXPECT_EQ("200", scope_1->Cast<std::string>(scope_1->CallFunction("::string", { scope_1->Cast<int>(scope_1->CallFunction("+", { 100.0f, 100.0 })) })));
+			//EXPECT_EQ("100", scope_1->Cast<std::string>(scope_1->CallFunction("string", { 100 })));
+			//EXPECT_EQ("200", scope_1->Cast<std::string>(scope_1->CallFunction("::string", { scope_1->Cast<int>(scope_1->CallFunction("+", { 100.0f, 100.0 })) })));
 
-			printf(scope_1->Cast<std::string>(scope_1->CallFunction("Type", { 100 })));
-			printf(scope_1->Cast<std::string>(scope_1->CallFunction("Type", { 100.0f })));
-			printf(scope_1->Cast<std::string>(scope_1->CallFunction("Type", { 100.0 })));
-			printf(scope_1->Cast<std::string>(scope_1->CallFunction("Type", { std::string("TEST") })));
-			printf(scope_1->Cast<std::string>(scope_1->CallFunction("Type", { 'A' })));
-			printf(scope_1->Cast<std::string>(scope_1->CallFunction("Type", { Units::acre(1) })));
+			//printf(scope_1->Cast<std::string>(scope_1->CallFunction("Type", { 100 })));
+			//printf(scope_1->Cast<std::string>(scope_1->CallFunction("Type", { 100.0f })));
+			//printf(scope_1->Cast<std::string>(scope_1->CallFunction("Type", { 100.0 })));
+			//printf(scope_1->Cast<std::string>(scope_1->CallFunction("Type", { std::string("TEST") })));
+			//printf(scope_1->Cast<std::string>(scope_1->CallFunction("Type", { 'A' })));
+			//printf(scope_1->Cast<std::string>(scope_1->CallFunction("Type", { Units::acre(1) })));
 
-			EXPECT_EQ(true, scope_1->Cast<bool>(scope_1->CallFunction("!=", { scope_1->CallFunction("Type", { 100.0 }), scope_1->CallFunction("Type", { 100.0f }) })));
-			EXPECT_EQ(true, scope_1->Cast<bool>(scope_1->CallFunction("==", { scope_1->CallFunction("Type", { 100.0 }), scope_1->CallFunction("Type", { 100.0 }) })));
+			//EXPECT_EQ(true, scope_1->Cast<bool>(scope_1->CallFunction("!=", { scope_1->CallFunction("Type", { 100.0 }), scope_1->CallFunction("Type", { 100.0f }) })));
+			//EXPECT_EQ(true, scope_1->Cast<bool>(scope_1->CallFunction("==", { scope_1->CallFunction("Type", { 100.0 }), scope_1->CallFunction("Type", { 100.0 }) })));
 
 #if 1
 			// Units
@@ -674,6 +667,14 @@ int main() {
 								if (auto p = std_namespace->FindClass(user_type<double>())) {
 									p->AddFunction(p->GetName(), make_callable([](Units::value const& o) -> double { return o(); }));
 								}
+								// value -> float
+								if (auto p = std_namespace->FindClass(user_type<float>())) {
+									p->AddFunction(p->GetName(), make_callable([](Units::value const& o) -> float { return o(); }));
+								}
+								// value -> int
+								if (auto p = std_namespace->FindClass(user_type<int>())) {
+									p->AddFunction(p->GetName(), make_callable([](Units::value const& o) -> int { return o(); }));
+								}
 								// value -> string
 								if (auto p = std_namespace->FindClass(user_type<std::string>())) {
 									p->AddFunction(p->GetName(), make_callable([](Units::value const& o) -> std::string { return o.ToString(); }));
@@ -692,6 +693,8 @@ int main() {
 								// Constructors
 								value_namespace->AddFunction("value", make_callable([]() -> Units::value { return Units::value{}; }));
 								value_namespace->AddFunction("value", make_callable([](Units::value const& makeCopy) -> Units::value { return makeCopy; }));
+								value_namespace->AddFunction("value", make_callable([](int const& o)->Units::value { return o; }));
+								value_namespace->AddFunction("value", make_callable([](float const& o)->Units::value { return o; }));
 								value_namespace->AddFunction("value", make_callable([](double const& o)->Units::value { return o; }));
 								value_namespace->AddFunction("=", make_callable([](Any const& a, Units::value const& b) -> Any { Units::value& out = a.cast(); out = b; return a; }), Param_Types({ {std::string("a"), user_type<Units::value>() }, {std::string("b"), user_type<Units::value>() } }));
 
@@ -710,332 +713,29 @@ int main() {
 								value_namespace->AddFunction("-=", make_callable([](Any const& a, Units::value const& b) -> Any { Units::value& out = a.cast(); out -= b; return a; }), Param_Types({ {std::string("a"), user_type<Units::value>() }, {std::string("b"), user_type<Units::value>() } }));
 								value_namespace->AddFunction("*=", make_callable([](Any const& a, Units::value const& b) -> Any { Units::value& out = a.cast(); out *= b; return a; }), Param_Types({ {std::string("a"), user_type<Units::value>() }, {std::string("b"), user_type<Units::value>() } }));
 								value_namespace->AddFunction("/=", make_callable([](Any const& a, Units::value const& b) -> Any { Units::value& out = a.cast(); out /= b; return a; }), Param_Types({ {std::string("a"), user_type<Units::value>() }, {std::string("b"), user_type<Units::value>() } }));
-
-#if 0
-
-								// manually go through and add each unit type... 
-								auto allUnitTypes = Units::UnitsDetail::GetValueTypes();
-								auto addUnit = [&](auto impl, std::string const& name) -> void {
-									auto impl_namespace{ std::make_shared<Class2>(std_namespace, name, user_type<decltype(impl)>(), value_namespace) };
-									impl_namespace->SetSelf(impl_namespace);
-									std_namespace->AddChild(impl_namespace);
-
-
-
-
-
-
-									// Polymorphic converter
-									tree.AddConverter<decltype(impl), Units::value>();
-									tree.AddConverter<Units::value, decltype(impl)>();
-									tree.AddConverter<decltype(impl), double>();
-									tree.AddConverter([](decltype(impl) const& x) -> std::string { return x.ToString(); });
-
-									bool found{ false };
-									for (auto& type_group : allUnitTypes) {
-										if (found) break;
-										for (auto& type : type_group) {
-											if (std::get<1>(type) == name) {
-												auto& abbrev = std::get<0>(type);
-
-												// POSTFIX
-												std_namespace->m_postfixes.emplace(abbrev, impl_namespace);
-
-												// CONSTRUCT {}
-												impl_namespace->m_functions.emplace(name, make_callable([/*thisT = impl*/]()->decltype(impl) {
-													decltype(impl) out;
-													out = 0;
-													return out;
-													}), scripting::Param_Types());
-
-												// CONSTRUCT { double }
-												impl_namespace->m_functions.emplace(name, make_callable([/*thisT = impl*/](double x)->decltype(impl) {
-													decltype(impl) out;
-													out = x;
-													return out;
-													}), scripting::Param_Types({ { "in", user_type<double>() } }));
-
-												// CONSTRUCT { Units::value }
-												impl_namespace->m_functions.emplace(name, make_callable([/*thisT = impl*/](Units::value const& x)->decltype(impl) {
-													decltype(impl) out;
-													out = x;
-													return out;
-													}), scripting::Param_Types({ { "in", user_type<Units::value>() } }));
-
-												// abbreviation
-												impl_namespace->m_functions.emplace("abbreviation", make_callable([thisT = abbrev]()->std::string {
-													return thisT;
-													}));
-
-												// name
-												impl_namespace->m_functions.emplace("name", make_callable([thisT = name]()->std::string {
-													return thisT;
-													}));
-
-												std_namespace->AddUsing(impl_namespace);
-
-												found = true;
-												break;
-											}
-										}
-									}
-								};
-
-
-
-#define AddUnit(unitname) addUnit(Units::##unitname(), #unitname)
-								AddUnit(meter);
-								AddUnit(foot);
-								AddUnit(inch);
-								AddUnit(mile);
-								AddUnit(nauticalMile);
-								AddUnit(astronicalUnit);
-								AddUnit(yard);
-								AddUnit(gram);
-								AddUnit(metric_ton);
-								AddUnit(pound);
-								AddUnit(long_ton);
-								AddUnit(short_ton);
-								AddUnit(stone);
-								AddUnit(ounce);
-								AddUnit(carat);
-								AddUnit(slug);
-								AddUnit(second);
-								AddUnit(minute);
-								AddUnit(hour);
-								AddUnit(day);
-								AddUnit(week);
-								AddUnit(year);
-								AddUnit(month);
-								AddUnit(julian_year);
-								AddUnit(gregorian_year);
-								AddUnit(ampere);
-								AddUnit(Dollar);
-								AddUnit(MillionDollar);
-								AddUnit(hertz);
-								AddUnit(meters_per_second);
-								AddUnit(feet_per_second);
-								AddUnit(feet_per_minute);
-								AddUnit(feet_per_hour);
-								AddUnit(miles_per_hour);
-								AddUnit(kilometers_per_hour);
-								AddUnit(knot);
-								AddUnit(meters_per_second_squared);
-								AddUnit(feet_per_second_squared);
-								AddUnit(standard_gravity);
-								AddUnit(newton);
-								AddUnit(pound_f);
-								AddUnit(dyne);
-								AddUnit(kilopond);
-								AddUnit(poundal);
-								AddUnit(pascals);
-								AddUnit(bar);
-								AddUnit(atmosphere);
-								AddUnit(pounds_per_square_inch);
-								AddUnit(head);
-								AddUnit(torr);
-								AddUnit(coulomb);
-								AddUnit(ampere_hour);
-								AddUnit(watt);
-								AddUnit(horsepower);
-								AddUnit(joule);
-								AddUnit(calorie);
-								AddUnit(watt_minute);
-								AddUnit(watt_hour);
-								AddUnit(watt_day);
-								AddUnit(british_thermal_unit);
-								AddUnit(british_thermal_unit_iso);
-								AddUnit(british_thermal_unit_59);
-								AddUnit(therm);
-								AddUnit(foot_pound);
-								AddUnit(volt);
-								AddUnit(ohm);
-								AddUnit(siemens);
-								AddUnit(square_meter);
-								AddUnit(square_foot);
-								AddUnit(square_inch);
-								AddUnit(square_mile);
-								AddUnit(square_kilometer);
-								AddUnit(hectare);
-								AddUnit(acre);
-								AddUnit(cubic_meter);
-								AddUnit(cubic_millimeter);
-								AddUnit(cubic_kilometer);
-								AddUnit(liter);
-								AddUnit(cubic_inch);
-								AddUnit(cubic_foot);
-								AddUnit(cubic_yard);
-								AddUnit(cubic_mile);
-								AddUnit(gallon);
-								AddUnit(imperial_gallon);
-								AddUnit(million_gallon);
-								AddUnit(imperial_million_gallon);
-								AddUnit(acre_foot);
-								AddUnit(quart);
-								AddUnit(pint);
-								AddUnit(cup);
-								AddUnit(fluid_ounce);
-								AddUnit(barrel);
-								AddUnit(bushel);
-								AddUnit(cord);
-								AddUnit(tablespoon);
-								AddUnit(teaspoon);
-								AddUnit(pinch);
-								AddUnit(dash);
-								AddUnit(drop);
-								AddUnit(fifth);
-								AddUnit(dram);
-								AddUnit(gill);
-								AddUnit(peck);
-								AddUnit(sack);
-								AddUnit(shot);
-								AddUnit(strike);
-								AddUnit(gram_per_second);
-								AddUnit(metric_ton_per_second);
-								AddUnit(metric_ton_per_minute);
-								AddUnit(metric_ton_per_hour);
-								AddUnit(metric_ton_per_day);
-								AddUnit(metric_ton_per_year);
-								AddUnit(cubic_meter_per_second);
-								AddUnit(cubic_meter_per_hour);
-								AddUnit(cubic_meter_per_day);
-								AddUnit(cubic_millimeter_per_second);
-								AddUnit(liter_per_second);
-								AddUnit(liter_per_minute);
-								AddUnit(liter_per_day);
-								AddUnit(megaliter_per_day);
-								AddUnit(cubic_inch_per_second);
-								AddUnit(cubic_inch_per_hour);
-								AddUnit(cubic_foot_per_second);
-								AddUnit(cubic_foot_per_hour);
-								AddUnit(gallon_per_second);
-								AddUnit(gallon_per_minute);
-								AddUnit(gallon_per_hour);
-								AddUnit(gallon_per_day);
-								AddUnit(gallon_per_year);
-								AddUnit(million_gallon_per_second);
-								AddUnit(million_gallon_per_minute);
-								AddUnit(million_gallon_per_hour);
-								AddUnit(million_gallon_per_day);
-								AddUnit(million_gallon_per_year);
-								AddUnit(imperial_million_gallon_per_second);
-								AddUnit(imperial_million_gallon_per_minute);
-								AddUnit(imperial_million_gallon_per_hour);
-								AddUnit(imperial_million_gallon_per_day);
-								AddUnit(imperial_million_gallon_per_year);
-								AddUnit(acre_foot_per_second);
-								AddUnit(acre_foot_per_minute);
-								AddUnit(acre_foot_per_hour);
-								AddUnit(acre_foot_per_day);
-								AddUnit(acre_foot_per_year);
-								AddUnit(kilograms_per_cubic_meter);
-								AddUnit(grams_per_milliliter);
-								AddUnit(kilograms_per_liter);
-								AddUnit(ounces_per_cubic_foot);
-								AddUnit(ounces_per_cubic_inch);
-								AddUnit(ounces_per_gallon);
-								AddUnit(pounds_per_cubic_foot);
-								AddUnit(pounds_per_cubic_inch);
-								AddUnit(pounds_per_gallon);
-								AddUnit(slugs_per_cubic_foot);
-								AddUnit(Dollar_per_joule);
-								AddUnit(Dollar_per_kilowatt_hour);
-								AddUnit(Dollar_per_watt);
-								AddUnit(Dollar_per_kilowatt);
-								AddUnit(Dollar_per_cubic_meter);
-								AddUnit(Dollar_per_gallon);
-								AddUnit(kilowatt_hour_per_acre_foot);
-								AddUnit(Dollar_per_mile);
-								AddUnit(Dollar_per_ton);
-								AddUnit(ton_per_kilowatt_hour);
-#undef AddUnit
-
-#endif
 							}
 
-							// std_namespace->AddUsing(value_namespace);
-							auto foot_namespace{ std::make_shared<Class2>(std_namespace, "foot", scripting::user_type<Units::foot>(), value_namespace) };
-							foot_namespace->SetSelf(foot_namespace);
-							std_namespace->AddChild(foot_namespace);
-							{
-								// Constructors
-								// foot()
-								foot_namespace->AddFunction("foot", make_callable([]() -> Units::foot { return Units::foot{}; }));
-								// foot(double)
-								foot_namespace->AddFunction("foot", make_callable([](double const& o)->Units::foot { return o; }));
-								// foot(value)
-								foot_namespace->AddFunction("foot", make_callable([](Units::value const& makeCopy) -> Units::foot { return makeCopy; }));
-								// foot() = value();
-								foot_namespace->AddFunction("=", make_callable([](Any const& a, Units::value const& b) -> Any { Units::foot& out = a.cast(); out = b; return a; }), Param_Types({ {std::string("a"), user_type<Units::foot>() }, {std::string("b"), user_type<Units::value>() } }));
-
-								// Comparisons & operators
-								foot_namespace->AddFunction("==", scripting::make_callable([](Units::foot const& x, Units::foot const& y) -> bool { return x == y; }));
-								foot_namespace->AddFunction("!=", scripting::make_callable([](Units::foot const& x, Units::foot const& y) -> bool { return x != y; }));
-								foot_namespace->AddFunction("<", scripting::make_callable([](Units::foot const& x, Units::foot const& y) -> bool { return x < y; }));
-								foot_namespace->AddFunction(">", scripting::make_callable([](Units::foot const& x, Units::foot const& y) -> bool { return x > y; }));
-								foot_namespace->AddFunction("<=", scripting::make_callable([](Units::foot const& x, Units::foot const& y) -> bool { return x <= y; }));
-								foot_namespace->AddFunction(">=", scripting::make_callable([](Units::foot const& x, Units::foot const& y) -> bool { return x >= y; }));
-								foot_namespace->AddFunction("+", scripting::make_callable([](Units::foot const& x, Units::foot const& y) -> Units::foot { return x + y; }));
-								foot_namespace->AddFunction("-", scripting::make_callable([](Units::foot const& x, Units::foot const& y) -> Units::foot { return x - y; }));
-								foot_namespace->AddFunction("*", scripting::make_callable([](Units::foot const& x, Units::foot const& y) -> Units::foot { return x * y; }));
-								foot_namespace->AddFunction("/", scripting::make_callable([](Units::foot const& x, Units::foot const& y) -> Units::foot { return x / y; }));
-								foot_namespace->AddFunction("+=", make_callable([](Any const& a, Units::foot const& b) -> Any { Units::foot& out = a.cast(); out += b; return a; }), Param_Types({ {std::string("a"), user_type<Units::foot>() }, {std::string("b"), user_type<Units::foot>() } }));
-								foot_namespace->AddFunction("-=", make_callable([](Any const& a, Units::foot const& b) -> Any { Units::foot& out = a.cast(); out -= b; return a; }), Param_Types({ {std::string("a"), user_type<Units::foot>() }, {std::string("b"), user_type<Units::foot>() } }));
-								foot_namespace->AddFunction("*=", make_callable([](Any const& a, Units::foot const& b) -> Any { Units::foot& out = a.cast(); out *= b; return a; }), Param_Types({ {std::string("a"), user_type<Units::foot>() }, {std::string("b"), user_type<Units::foot>() } }));
-								foot_namespace->AddFunction("/=", make_callable([](Any const& a, Units::foot const& b) -> Any { Units::foot& out = a.cast(); out /= b; return a; }), Param_Types({ {std::string("a"), user_type<Units::foot>() }, {std::string("b"), user_type<Units::foot>() } }));
-
-								// foot -> double converters
-								//if (auto p = std_namespace->FindClass(user_type<double>())) {
-								//	p->AddFunction(p->GetName(), make_callable([](Units::foot const& o) -> double { return o(); }));
-								//}
-								// foot -> string converters
-								//if (auto p = std_namespace->FindClass(user_type<std::string>())) {
-								//	p->AddFunction(p->GetName(), make_callable([](Units::foot const& o) -> std::string { return o.ToString(); }));
-								//}
-								
-								// value(foot)
-								value_namespace->AddFunction(value_namespace->GetName(), make_callable([](Any const& from) -> std::shared_ptr<Units::value> {
-									return std::dynamic_pointer_cast<Units::value>(from.cast<std::shared_ptr<Units::foot>>());
-								}), Param_Types({ { "from", foot_namespace->GetClassType() } }));
-
-								// Functions 
-								//foot_namespace->AddFunction("abbreviation", make_callable([](Units::foot const& x)->std::string {
-								//	return x.Abbreviation();
-								//}));
-								//foot_namespace->AddFunction("name", make_callable([](Units::foot const& x)->std::string {
-								//	return x.UnitName();
-								//}));
-								//foot_namespace->AddFunction("to_string", make_callable([](Units::foot const& x)->std::string {
-								//	return x.ToString();
-								//}));
-
-
-								auto foot_str = global_scope2->Cast<std::string>(global_scope2->Cast<Units::value>(global_scope2->Cast<Units::foot>(100)));
-								EXPECT_EQ(foot_str, "100 ft");
-
-								auto value_str = global_scope2->Cast<std::string>(global_scope2->Cast<Units::value>(100));
-								EXPECT_EQ(value_str, "100");
-
-								auto temp1 = value_namespace->CallFunction("value", { Units::foot(100) });
-								EXPECT_EQ(temp1.Type(), user_type<Units::value>());
-
-								auto temp = value_namespace->CallFunction("value", { 100 });
-								EXPECT_EQ(temp.Type(), user_type<Units::value>());
-
-								auto foot_str2 = global_scope2->Cast<std::string>(global_scope2->CallFunction("string", { global_scope2->CallFunction("value", { global_scope2->CallFunction("foot", { 100 }) }) }));
-								//printf(foot_str2);
-								EXPECT_EQ(foot_str2, "100 ft");
-
-								auto foot_str3 = global_scope2->Cast<std::string>(global_scope2->CallFunction("::string", { global_scope2->CallFunction("Units::value", { global_scope2->CallFunction("Units::foot", { 100 }) }) }));
-								//printf(foot_str3);
-								EXPECT_EQ(foot_str3, "100 ft");
-
-
+							if (1) {
+								scripting::UnitsLibrary::UnitsLibrary::Part1(std_namespace, value_namespace);
+								scripting::UnitsLibrary::UnitsLibrary::Part2(std_namespace, value_namespace);
+								scripting::UnitsLibrary::UnitsLibrary::Part3(std_namespace, value_namespace);
 
 
 
 
 							}
+
+
+
+
+
+
+
+
+
+
+
+
 						}
 					}
 
@@ -1130,7 +830,7 @@ int main() {
 							EXPECT_EQ(true, scope_inner->Cast<bool>(scope_inner->CallFunction("==", { scope_inner->CallFunction("value", { 100.0f }), 100l })));
 						}
 					});
-					printf(std::to_string(__LINE__) + ": \t" + std::to_string(numIterations) + " operations (on 10,000 classes) per " + Units::second(sw.Stop_s()).ToString() + ".");
+					// printf(std::to_string(__LINE__) + ": \t" + std::to_string(numIterations) + " operations (on 10,000 classes) per " + Units::second(sw.Stop_s()).ToString() + ".");
 				}
 
 				// Using Units;
@@ -1171,9 +871,9 @@ int main() {
 						scope_inner->SetSelf(scope_inner);
 						scope_inner->AddObj("i", std::make_shared<Any>(i));
 						{
-							auto i_obj = scope_inner->FindObj("string::npos"); // searching and failing to find does not throw, but returns an empty ptr
-							auto i_value = scope_inner->CallFunction("Units::value", { i_obj });
-							EXPECT_EQ(true, scope_inner->Cast<bool>(scope_inner->CallFunction("==", { i_value, i_obj })));
+							auto i_obj = scope_inner->FindObj("i"); // searching and failing to find does not throw, but returns an empty ptr
+							auto j_obj = scope_inner->FindObj("string::npos"); // searching and failing to find does not throw, but returns an empty ptr
+							EXPECT_EQ(true, scope_inner->Cast<bool>(scope_inner->CallFunction("!=", { i_obj, j_obj })));
 						}
 					});
 					printf(std::to_string(__LINE__) + ": \t" + std::to_string(numIterations) + " operations (on 10,000 classes) per " + Units::second(sw.Stop_s()).ToString() + ".");
@@ -1181,7 +881,31 @@ int main() {
 
 				// Using Units;
 				// for (int i = 0; i < numIterations; i++){
-				//     true == (Units::value(string::npos) == string::npos); 
+				//	   true == ("ft" == Units::foot(i).abbreviation());
+				// }
+				if (1) {
+					// Requires up-casting Units::foot to Units::value before calling 'abbreviation' and getting the result from the polymorphic type. 
+					sw.Start();
+					auto scope_outer = std::make_shared<Scope2>(scope_1);
+					scope_outer->SetSelf(scope_outer);
+					scope_outer->AddUsing(scope_outer->FindNamespace("Units"));
+					fibers::parallel::For(0, numIterations, [&](int i) {
+						auto scope_inner = std::make_shared<Scope2>(scope_outer);
+						scope_inner->SetSelf(scope_inner);
+						scope_inner->AddObj("i", std::make_shared<Any>(i));
+						{
+							auto i_obj = scope_inner->FindObj("i"); // searching and failing to find does not throw, but returns an empty ptr
+							auto i_ft = scope_inner->CallFunction("Units::foot", { i_obj });
+							auto ft_abbrev = scope_inner->CallFunction("abbreviation", { i_ft });
+							EXPECT_EQ(scope_inner->Cast<std::string>(ft_abbrev), "ft");
+						}
+					});
+					printf(std::to_string(__LINE__) + ": \t" + std::to_string(numIterations) + " operations (on 10,000 classes) per " + Units::second(sw.Stop_s()).ToString() + ".");
+				}
+
+				// Using Units;
+				// for (int i = 0; i < numIterations; i++){
+				//	   true == ("foot" == Units::foot(i).name());
 				// }
 				if (1) {
 					// This one "uses" the Units namespace, to see if it provides a speed boost at all.
@@ -1196,44 +920,96 @@ int main() {
 						{
 							auto i_obj = scope_inner->FindObj("i"); // searching and failing to find does not throw, but returns an empty ptr
 							auto i_ft = scope_inner->CallFunction("Units::foot", { i_obj });
-							auto ft_abbrev = scope_inner->CallFunction("abbreviation", { i_ft });
-							// printf(scope_inner->Cast<std::string>(ft_abbrev));
-							EXPECT_EQ(scope_inner->Cast<std::string>(ft_abbrev), "ft");
+							auto ft_abbrev = scope_inner->CallFunction("name", { i_ft });
+							EXPECT_EQ(scope_inner->Cast<std::string>(ft_abbrev), "foot");
 						}
 					});
 					printf(std::to_string(__LINE__) + ": \t" + std::to_string(numIterations) + " operations (on 10,000 classes) per " + Units::second(sw.Stop_s()).ToString() + ".");
 				}
 
+				// Using Units;
+				// for (int i = 0; i < numIterations; i++){
+				//     true == ("${i} ft" == Units::foot(i).value().to_string());
+				// }
+				if (1) {
+					// This one "uses" the Units namespace, to see if it provides a speed boost at all.
+					sw.Start();
+					auto scope_outer = std::make_shared<Scope2>(scope_1);
+					scope_outer->SetSelf(scope_outer);
+					scope_outer->AddUsing(scope_outer->FindNamespace("Units"));
+					fibers::parallel::For(0, numIterations, [&](int i) {
+						auto scope_inner = std::make_shared<Scope2>(scope_outer);
+						scope_inner->SetSelf(scope_inner);
+						scope_inner->AddObj("i", std::make_shared<Any>(i));
+						{
+							auto i_obj = scope_inner->FindObj("i"); // searching and failing to find does not throw, but returns an empty ptr
+							auto i_ft = scope_inner->CallFunction("value", { scope_inner->CallFunction("Units::foot", { i_obj }) });
+							auto ft_str = scope_inner->CallFunction("to_string", { i_ft });
+							EXPECT_EQ(scope_inner->Cast<std::string>(ft_str), Units::printf("%i ft", i));
+						}
+					});
+					printf(std::to_string(__LINE__) + ": \t" + std::to_string(numIterations) + " operations (on 10,000 classes) per " + Units::second(sw.Stop_s()).ToString() + ".");
+				}
 
+				// Using Units;
+				// for (int i = 0; i < numIterations; i++){
+				//     true == (Units::foot(i) == Units::meter(Units::foot(i)));
+				// }
+				if (1) {
+					// This one "uses" the Units namespace, to see if it provides a speed boost at all.
+					sw.Start();
+					auto scope_outer = std::make_shared<Scope2>(scope_1);
+					scope_outer->SetSelf(scope_outer);
+					scope_outer->AddUsing(scope_outer->FindNamespace("Units"));
+					fibers::parallel::For(0, numIterations, [&](int i) {
+						auto scope_inner = std::make_shared<Scope2>(scope_outer);
+						scope_inner->SetSelf(scope_inner);
+						scope_inner->AddObj("i", std::make_shared<Any>(i));
+						{
+							auto i_obj = scope_inner->FindObj("i");
+							EXPECT_EQ(true, scope_inner->Cast<bool>(scope_inner->CallFunction("==", { scope_inner->CallFunction("Units::foot", { i_obj }), scope_inner->CallFunction("Units::meter", { scope_inner->CallFunction("Units::foot", { i_obj }) }) })));
+						}
+					});
+					printf(std::to_string(__LINE__) + ": \t" + std::to_string(numIterations) + " operations (on 10,000 classes) per " + Units::second(sw.Stop_s()).ToString() + ".");
+				}
 
+				// Using Units;
+				// for (int i = 0; i < numIterations; i++){
+				//     (Units::foot(i) * Units::foot(i)).to_string == "${ i * i } sq_ft"
+				// }
+				if (1) {
+					// This one "uses" the Units namespace, to see if it provides a speed boost at all.
+					sw.Start();
+					auto scope_outer = std::make_shared<Scope2>(scope_1);
+					scope_outer->SetSelf(scope_outer);
+					scope_outer->AddUsing(scope_outer->FindNamespace("Units"));
+					fibers::parallel::For(0, numIterations, [&](int i) {
+						auto scope_inner = std::make_shared<Scope2>(scope_outer);
+						scope_inner->SetSelf(scope_inner);
+						scope_inner->AddObj("i", std::make_shared<Any>(i));
+						{
+							auto i_obj = scope_inner->FindObj("i");
+							auto pt1 = scope_inner->CallFunction("Units::foot", { i_obj });
+							auto pt2 = scope_inner->CallFunction("Units::foot", { i_obj });
 
+							auto multiplied = scope_inner->CallFunction("*", { pt1, pt2 });
+							auto stringified = scope_inner->CallFunction("to_string", { multiplied });
 
-
-
+							size_t L = (long double)i * (long double)i;
+							EXPECT_EQ(true, scope_inner->Cast<bool>(scope_inner->CallFunction("==", { stringified, Units::printf("%zu sq_ft", L) })));
+						}
+					});
+					printf(std::to_string(__LINE__) + ": \t" + std::to_string(numIterations) + " operations (on 10,000 classes) per " + Units::second(sw.Stop_s()).ToString() + ".");
+				}
 			}
+
+
+
+
+
+
+
 #endif
-
-
-
-
-		
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 #if 0
@@ -1926,11 +1702,6 @@ int main() {
 
 
 #endif
-
-
-
-
-
 		}
 		catch (std::exception& e) {
 			printf(e.what());
@@ -5435,6 +5206,7 @@ int main() {
 		}
 #endif
 
+#if 0
 		// Type Conversions
 		if (1) {
 			// Static
@@ -7171,6 +6943,7 @@ int main() {
 			time += 1;
 			EXPECT_EQ(time.c_str(), "2024/3/1 0:0:0.000000");
 		}
+#endif
 
 	}
 

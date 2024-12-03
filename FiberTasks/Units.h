@@ -1218,8 +1218,8 @@ public:
 			return j;
 		};
 
-
-#define CreateRow(model, Type) { model->second[Type::UnitHash()].Insert(static_cast<uint64_t>(static_cast<long double>(Type::conversion()) * 1e8l), model->first.Alloc(std::tuple< const char*, const char*, Units::value, std::weak_ptr<fibers::Type_Info>>{ Type::specialized_abbreviation(), #Type, Type(), user_type<Type>() }), false); }
+//#define CreateRow(model, Type) { model->second[Type::UnitHash()].Insert(static_cast<uint64_t>(static_cast<long double>(Type::conversion()) * 1e8l), model->first.Alloc(std::tuple< const char*, const char*, Units::value, std::weak_ptr<fibers::Type_Info>>{ Type::specialized_abbreviation(), #Type, Type(), user_type<Type>() }), false); }
+#define CreateRow(model, Type) { model->second[Type::UnitHash()][static_cast<uint64_t>(static_cast<long double>(Type::conversion()) * 1e8l)] = model->first.Alloc(std::tuple< const char*, const char*, Units::value, std::weak_ptr<fibers::Type_Info>>{ Type::specialized_abbreviation(), #Type, Type(), user_type<Type>() }); }
 #define CreateRowWithMetricPrefixes(model, Type)\
 			CreateRow(model, Type); \
 			CreateRow(model, femto ## Type); \
@@ -1237,8 +1237,8 @@ public:
 			CreateRow(model, tera ## Type); \
 			CreateRow(model, peta ## Type);
 	private:
-		static std::pair<std::mutex, std::shared_ptr<void>>& Shared_Data() noexcept {
-			static std::pair<std::mutex, std::shared_ptr<void>> out;
+		static std::pair<std::shared_mutex, std::shared_ptr<void>>& Shared_Data() noexcept {
+			static std::pair<std::shared_mutex, std::shared_ptr<void>> out;
 			return out;
 		};
 	public:
@@ -1254,8 +1254,36 @@ public:
 			auto& [mut, Tag] = Shared_Data();
 
 			using AllocType = fibers::utilities::Allocator<std::tuple< const char*, const char*, Units::value, std::weak_ptr<fibers::Type_Info>>>;
-			using TreeType = fibers::containers::Pattern<uint64_t, std::tuple< const char*, const char*, Units::value, std::weak_ptr<fibers::Type_Info>>*>;
+			using TreeType = std::map/*fibers::containers::Pattern*/<uint64_t, std::tuple< const char*, const char*, Units::value, std::weak_ptr<fibers::Type_Info>>*>;
 			using ModelType = std::pair< AllocType, std::map<size_t, TreeType>>;
+
+			auto FindLargestSmallerEqual = [](TreeType const& f, uint64_t pos) {
+				auto ptr = f.lower_bound(pos); // equal to or larger than pos
+				if (ptr != f.end()) {
+					// map is not empty, AND we either found the actual key, or the one JUST larger than it 
+					if (ptr->first == pos) {
+						// DONE
+					}
+					else {
+						// we are beyond our goal -- move back one. 
+						ptr = std::prev(ptr);
+
+						// what if this was actually the first position? 
+						if (ptr == f.end()) {
+							ptr = f.begin();
+						}
+					}
+				}
+				else {
+					if (!f.empty()) {
+						ptr = std::prev(f.end()); // get what you get
+					}
+				}
+				return ptr;
+			};
+			auto FindSmallestLargerEqual = [](TreeType const& f, uint64_t pos) {
+				return f.lower_bound(pos); // equal to or larger than pos				
+			};
 
 			std::shared_ptr < ModelType > model;
 
@@ -1437,35 +1465,40 @@ public:
 				model = std::static_pointer_cast<ModelType>(Tag);
 			}
 
-			if (model && model->second.count(UnitHash) > 0) {
-				auto& curve = model->second.at(UnitHash);
-				// defer(curve.TryCleanupUnusedMemory());
-				auto iter1 = curve.FindLargestSmallerEqual(targetRatio);
-				if ((iter1/* != curve.end()*/) && iter1.first() == targetRatio) {
-					// exact find -- best case scenario
-					UnitRatio = static_cast<long double>(iter1.first()) / 1e8l;
-					return *iter1.second();					
-				}
-				else {
-					// not an exact find. 
-					auto iter2 = curve.FindSmallestLargerEqual(targetRatio);
-					if (iter1 /*!= curve.end()*/ && iter2 /*!= curve.end()*/) {
-						if (std::abs(static_cast<long double>(iter1.first()) - static_cast<long double>(targetRatio)) < std::abs(static_cast<long double>(iter2.first()) - static_cast<long double>(targetRatio))) {
-							UnitRatio = static_cast<long double>(iter1.first()) / 1e8l;
-							return *iter1.second();
-						}
-						else {
-							UnitRatio = static_cast<long double>(iter2.first()) / 1e8l;
-							return *iter2.second();
-						}
+			{
+				auto locked{ std::shared_lock(mut) };
+				if (model && model->second.count(UnitHash) > 0) {
+					auto& curve = model->second.at(UnitHash);
+					// defer(curve.TryCleanupUnusedMemory());
+					// auto iter1 = curve.FindLargestSmallerEqual(targetRatio);
+					auto iter1 = FindLargestSmallerEqual(curve, targetRatio);
+					if ((iter1 != curve.end()) && iter1->first == targetRatio) {
+						// exact find -- best case scenario
+						UnitRatio = static_cast<long double>(iter1->first) / 1e8l;
+						return *iter1->second;
 					}
-					else if (iter1/* != curve.end()*/) {
-						UnitRatio = static_cast<long double>(iter1.first()) / 1e8l;
-						return *iter1.second();
-					}
-					else if (iter2/* != curve.end()*/) {
-						UnitRatio = static_cast<long double>(iter2.first()) / 1e8l;
-						return *iter2.second();
+					else {
+						// not an exact find. 
+						// auto iter2 = curve.FindSmallestLargerEqual(targetRatio);
+						auto iter2 = FindSmallestLargerEqual(curve, targetRatio);
+						if (iter1 != curve.end() && iter2 != curve.end()) {
+							if (std::abs(static_cast<long double>(iter1->first) - static_cast<long double>(targetRatio)) < std::abs(static_cast<long double>(iter2->first) - static_cast<long double>(targetRatio))) {
+								UnitRatio = static_cast<long double>(iter1->first) / 1e8l;
+								return *iter1->second;
+							}
+							else {
+								UnitRatio = static_cast<long double>(iter2->first) / 1e8l;
+								return *iter2->second;
+							}
+						}
+						else if (iter1 != curve.end()) {
+							UnitRatio = static_cast<long double>(iter1->first) / 1e8l;
+							return *iter1->second;
+						}
+						else if (iter2 != curve.end()) {
+							UnitRatio = static_cast<long double>(iter2->first) / 1e8l;
+							return *iter2->second;
+						}
 					}
 				}
 			}
@@ -1490,9 +1523,10 @@ public:
 			auto& [mut, Tag] = Shared_Data();
 
 			using AllocType = fibers::utilities::Allocator<std::tuple< const char*, const char*, Units::value, std::weak_ptr<fibers::Type_Info>>>;
-			using TreeType = fibers::containers::Pattern<uint64_t, std::tuple< const char*, const char*, Units::value, std::weak_ptr<fibers::Type_Info>>*>;
+			using TreeType = std::map/*fibers::containers::Pattern*/<uint64_t, std::tuple< const char*, const char*, Units::value, std::weak_ptr<fibers::Type_Info>>*>;
 			using ModelType = std::pair< AllocType, std::map<size_t, TreeType>>;
 
+			auto locked{ std::shared_lock(mut) };
 			if (std::shared_ptr < ModelType > model = std::static_pointer_cast<ModelType>(Tag)) {
 				for (auto& typeValue : model->second) {
 					std::vector<
@@ -1508,7 +1542,12 @@ public:
 						std::string abbrev = std::get<0>(*each.second);
 						std::string fullName = std::get<1>(*each.second);
 						Units::value& impl = std::get<2>(*each.second);
-						temp.push_back(std::tuple<std::string, std::string, Units::value, std::weak_ptr<fibers::Type_Info>>(abbrev, fullName, impl, std::get<3>(*each.second)));
+						temp.push_back(std::tuple<std::string, std::string, Units::value, std::weak_ptr<fibers::Type_Info>>(
+							abbrev, 
+							fullName, 
+							impl, 
+							std::get<3>(*each.second)
+						));
 					}
 
 					out.push_back(temp);

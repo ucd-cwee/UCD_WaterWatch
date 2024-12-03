@@ -339,7 +339,7 @@ namespace scripting {
 		fibers::synchronization::atomic_number<size_t>
 			version;
 
-		constexpr static bool printTypeConversionSuccesses{ true };
+		constexpr static bool printTypeConversionSuccesses{ false };
 
 	private:
 		// Solves Dijkstra's algorithm to determine the shortest path for "From" to "To", puts the path in "Out", and returns true. 
@@ -351,29 +351,37 @@ namespace scripting {
 				std::map<
 					scripting::Type_Info, // FROM vertex
 					std::map<
-					scripting::Type_Info, // TO vertex
-					double // distance
-					>
+					     scripting::Type_Info, // TO vertex
+					     double, // distance
+					     std::owner_less<scripting::Type_Info>
+					>, 
+					std::owner_less<scripting::Type_Info>
 				> vertices_and_distances;
 
 				std::map<
 					scripting::Type_Info, // FROM vertex
-					std::vector<scripting::Type_Info> // predecessors
+					std::vector<scripting::Type_Info>, // predecessors
+					std::owner_less<scripting::Type_Info>
 				> vertices_and_predecessors;
 
 				std::map<
 					scripting::Type_Info, // vertex
-					double // weight
+					double, // weight
+					std::owner_less<scripting::Type_Info>
 				> vertices_and_weights;
 
-				std::set< scripting::Type_Info > visited;
+				std::set<scripting::Type_Info, std::owner_less<scripting::Type_Info>> non_visted;
+
+				std::set< scripting::Type_Info, std::owner_less<scripting::Type_Info>> visited;
 
 				for (auto& node : nodes) {
 					if (node) {
 						vertices_and_weights[node->first] = std::numeric_limits<double>::max();
+						non_visted.insert(node->first);
 						for (auto& connection : node->second->connections) {
 							if (connection) {
 								vertices_and_weights[connection->first] = std::numeric_limits<double>::max();
+								non_visted.insert(connection->first);
 								vertices_and_distances[node->first][connection->first] = connection->second->cost();
 							}
 							else {
@@ -387,13 +395,16 @@ namespace scripting {
 				}
 
 				vertices_and_weights[From] = 0;
+				non_visted.insert(From);
 				vertices_and_predecessors[From] = {};
 
 				scripting::Type_Info CurrentVertex = From;
 				int numToVisit = 1;
 				bool FoundEnd = false;
 				int countDown = 0;
-				std::multimap<double, scripting::Type_Info> sorted;
+				std::map<double, scripting::Type_Info> sorted; // std::multimap<double, scripting::Type_Info> sorted;
+				// long double minV; scripting::Type_Info minVO;
+
 				while ((visited.size() < vertices_and_distances.size()) && (numToVisit-- >= 1)) {
 					// for each adjacent node...
 					numToVisit += (vertices_and_distances[CurrentVertex].size() + 1);
@@ -415,17 +426,39 @@ namespace scripting {
 
 					// we have visited this node.
 					visited.emplace(CurrentVertex);
+					non_visted.erase(CurrentVertex);
 
 					// sort the non-visited nodes by weights
 					sorted.clear();
-					for (auto& vert : vertices_and_weights) {
-						if (visited.count(vert.first) == 0) {
-							sorted.emplace(vert.second, vert.first);
+					//minV = std::numeric_limits<long double>::max();
+					if (((double)non_visted.size() * std::log(vertices_and_weights.size())) < ((double)vertices_and_weights.size() * std::log(visited.size()))) {
+						for (auto& non_visted_node : non_visted) {
+							auto& vert = vertices_and_weights[non_visted_node];
+							//if (vert <= minV) {
+							//	minV = vert;
+							//	minVO = non_visted_node;
+							//}
+
+							if ((sorted.size() == 0) || (vert < sorted.begin()->first))
+							sorted.emplace(vert, non_visted_node);
 						}
 					}
-					if (sorted.size() > 0) {
-						CurrentVertex = sorted.begin()->second;
+					else {
+						for (auto& vert : vertices_and_weights) {
+							if (visited.count(vert.first) == 0) {
+								//if (vert.second <= minV) {
+								//	minV = vert.second;
+								//	minVO = vert.first;
+								//}
+
+								if ((sorted.size() == 0) || (vert.second < sorted.begin()->first))
+								sorted.emplace(vert.second, vert.first);
+							}
+						}
 					}
+
+					if (sorted.size() > 0) { CurrentVertex = sorted.begin()->second; }
+					//if (minV < std::numeric_limits<long double>::max()) { CurrentVertex = minVO; }					
 					else {
 						// something went wrong
 						if (FoundEnd) break;
@@ -3204,7 +3237,6 @@ namespace scripting {
 		}
 	};
 
-
 	// Call a generic, proxy function using a vector of inputs (may be empty), which will be converted as necessary to the expected types. 
 	__forceinline Any call(Proxy_Function callable, std::vector<Any> const& inputs, Type_Converter_Tree const& conversionTree) {
 		if (callable) {
@@ -3221,9 +3253,8 @@ namespace scripting {
 		return call(std::move(callable), std::move(converted), conversionTree);
 	};
 	
-#if 0
 	/*
-	// If a function is namespaced in a class, that means it's a free function in the namespace of _CLASS_NAME_, whose first parameter is to be that class type. 
+	// If a function is namespaced in a class, that means it's a free function in the namespace of _CLASS_NAME_, whose first parameter is to be that class type.
 	def _CLASS_NAME_::_FUNCTION_NAME_(Type_Info _PARAM_NAME_, ...) -> Type_Info { ... };
 		e.g.
 		return _FUNCTION_NAME_( _CLASS_NAME_(),  ... );
@@ -3249,7 +3280,7 @@ namespace scripting {
 
 	namespace { // e.g. global namespace
 		class _CLASS_NAME_ {
-			def _FUNCTION_NAME_(...) -> void {}; 
+			def _FUNCTION_NAME_(...) -> void {};
 				e.g.
 				return ::_CLASS_NAME_()._FUNCTION_NAME_( ... );
 				or
@@ -3262,17 +3293,17 @@ namespace scripting {
 				return ::_CLASS_NAME_::_FUNCTION_NAME_( ... );
 
 			def _CLASS_NAME_() -> _CLASS_NAME_ {}; // EXCEPTION TO THE ABOVE RULES. IF THE FUNCTION NAME MATCHES THE CLASS NAME, THEN IT'S A FUNCTION ADDED TO THE PARENT NAMESPACE
-				e.g. 
+				e.g.
 				return ::_CLASS_NAME_();
 
 			def _CLASS_NAME_(...) -> _CLASS_NAME_ {}; // EXCEPTION TO THE ABOVE RULES. IF THE FUNCTION NAME MATCHES THE CLASS NAME, THEN IT'S A FUNCTION ADDED TO THE PARENT NAMESPACE
 				e.g.
 				return ::_CLASS_NAME_(...);
 
-			Type_Info _PARAMETER_NAME_; // parameter within the class, accessible from an instance of it. 
+			Type_Info _PARAMETER_NAME_; // parameter within the class, accessible from an instance of it.
 				e.g.
 				return ::_CLASS_NAME_()._PARAMETER_NAME_;
-				or 
+				or
 				return ::_CLASS_NAME_::_PARAMETER_NAME_( ::_CLASS_NAME_() );
 
 			static Type_Info _VARIABLE_NAME_; // static variable associated to a class, accessible from an instance of it or from the class name.
@@ -3310,8 +3341,8 @@ namespace scripting {
 
 	// If a function is delcared in a namespace, how that namespace begins determines the ownership behavior
 	namespace _NAMESPACE_NAME_ { // e.g. current parent namespace
-		def _FUNCTION_NAME_(...) ->  void {}; 
-			e.g. 
+		def _FUNCTION_NAME_(...) ->  void {};
+			e.g.
 			::_NAMESPACE_NAME_::_FUNCTION_NAME_(...); // incorporates the _NAMESPACE_NAME_
 
 		def ::_FUNCTION_NAME_(...) ->  void {};
@@ -3328,7 +3359,7 @@ namespace scripting {
 		def ::to_string() ->  void {}; // non-static implies the first parameter must be a _CLASS_NAME_
 			e.g.
 			_CLASS_NAME_().to_string();
-			or 
+			or
 			to_string(_CLASS_NAME_());
 
 		def static ::to_json(_CLASS_NAME_ a) -> JSON {};
@@ -3347,228 +3378,6 @@ namespace scripting {
 
 
 	*/
-	class Functions {
-	private:
-		mutable std::shared_ptr <
-			std::pair < fibers::synchronization::shared_mutex < fibers::synchronization::mutex>,
-			fibers::containers::Map<
-			std::string, // Function Name (e.g. string). 
-			std::shared_ptr<fibers::containers::Map<
-			    Param_Types, // Function parameters (e.g. {string, Any}, or {Any, Any, Any}). 
-			    Proxy_Function
-			>>>
-		>> m_functions;
-		
-
-	public:
-		Functions() : m_functions(std::make_shared<std::pair < fibers::synchronization::shared_mutex < fibers::synchronization::mutex>,
-			fibers::containers::Map<
-			std::string, // Function Name (e.g. string). 
-			std::shared_ptr<fibers::containers::Map<
-			Param_Types, // Function parameters (e.g. {string, Any}, or {Any, Any, Any}). 
-			Proxy_Function
-			>>>>>()) {};
-		Functions(Functions const&) = default;
-		Functions(Functions &&) = default;
-		Functions& operator=(Functions const&) = default;
-		Functions& operator=(Functions&&) = default;
-		~Functions() = default;
-
-		std::shared_ptr< fibers::containers::Map<Param_Types, Proxy_Function>> operator[](std::string const& key) {
-			std::shared_ptr<fibers::containers::Map<Param_Types, Proxy_Function>> temp;
-			while (true) {
-				if (1) {
-					auto locked{ std::shared_lock(m_functions->first) };
-					auto optionalF = m_functions->second.at(key);
-					if (optionalF.has_value()) return optionalF.value();
-				}
-				if (!temp) temp = std::make_shared<fibers::containers::Map<Param_Types, Proxy_Function>>();
-				if (1) {
-					auto locked{ std::unique_lock(m_functions->first) };					
-					if (m_functions->second.emplace(key, temp, false)) {
-						m_functions->second.TryCleanupUnusedMemory();
-					}
-				}
-			}
-		};
-		std::shared_ptr< fibers::containers::Map<Param_Types, Proxy_Function>> operator[](std::string const& key) const {
-			auto locked{ std::shared_lock(m_functions->first) };
-			auto optionalF = m_functions->second.at(key);
-			if (optionalF.has_value()) return optionalF.value();			
-			return nullptr;
-		};
-		std::shared_ptr< fibers::containers::Map<Param_Types, Proxy_Function>> operator()(std::string const& key) { return operator[](key); };
-		std::shared_ptr< fibers::containers::Map<Param_Types, Proxy_Function>> operator()(std::string const& key) const { return operator[](key); };
-		std::shared_ptr< fibers::containers::Map<Param_Types, Proxy_Function>> at(std::string const& key) const { return operator()(key); };
-
-		std::pair< Param_Types, Proxy_Function> operator()(std::string const& key, Function_Params const& params) {
-			if (auto ptr = operator()(key)) {
-				defer(ptr->TryCleanupUnusedMemory());
-				auto optionalF = ptr->pair_at_hash(params.hash());
-				if (optionalF.has_value()) return optionalF.value();
-			}
-			return {};
-		};
-		std::pair< Param_Types, Proxy_Function> operator()(std::string const& key, Function_Params const& params) const {
-			if (auto ptr = operator()(key)) {
-				defer(ptr->TryCleanupUnusedMemory());
-				auto optionalF = ptr->pair_at_hash(params.hash());
-				if (optionalF.has_value()) return optionalF.value();
-			}
-			return {};
-		};
-		std::pair< Param_Types, Proxy_Function> at(std::string const& key, Function_Params const& params) const {
-			return operator()(key, params);
-		};
-
-		Proxy_Function operator()(std::string const& key, Param_Types const& params) {
-			if (auto ptr = operator()(key)) {
-				defer(ptr->TryCleanupUnusedMemory());
-				auto optionalF = ptr->at(params);
-				if (optionalF.has_value()) return optionalF.value();
-			}
-			return nullptr;
-		};
-		Proxy_Function operator()(std::string const& key, Param_Types const& params) const {
-			if (auto ptr = operator()(key)) {
-				defer(ptr->TryCleanupUnusedMemory());
-				auto optionalF = ptr->at(params);
-				if (optionalF.has_value()) return optionalF.value();
-			}
-			return nullptr;
-		};
-		Proxy_Function at(std::string const& key, Param_Types const& params) const { return operator()(key, params); };
-
-		bool emplace(std::string const& key, Proxy_Function func, bool replaceIfAlreadyExists = false) {
-			if (func) {
-				if (auto ptr = operator()(key)) {
-					defer(ptr->TryCleanupUnusedMemory());
-					return ptr->emplace(func->Arguments(), func, replaceIfAlreadyExists);
-				}
-			}
-			return false;
-		};
-		bool emplace(std::string const& key, Proxy_Function func, Param_Types const& params, bool replaceIfAlreadyExists = false) {
-			if (func) {
-				if (auto ptr = operator()(key)) {
-					defer(ptr->TryCleanupUnusedMemory());
-					return ptr->emplace(params, func, replaceIfAlreadyExists);
-				}
-			}
-			return false;
-		};
-		bool emplace(std::string const& key, Param_Types const& params, Proxy_Function func, bool replaceIfAlreadyExists = false) {
-			if (func) {
-				if (auto ptr = operator()(key)) {
-					defer(ptr->TryCleanupUnusedMemory());
-					return ptr->emplace(params, func, replaceIfAlreadyExists);
-				}
-			}
-			return false;
-		};
-		bool emplace(std::string const& key, Proxy_Function func, std::vector<std::string> const& params, bool replaceIfAlreadyExists = false) {
-			if (func) {
-				return emplace(key, func, Param_Types(func->Arguments(), params), replaceIfAlreadyExists);
-			}
-			return false;
-		};
-		bool emplace(std::string const& key, std::vector<std::string> const& params, Proxy_Function func, bool replaceIfAlreadyExists = false) {
-			if (func) {
-				return emplace(key, func, Param_Types(func->Arguments(), params), replaceIfAlreadyExists);
-			}
-			return false;
-		};
-
-		/* Given a function name and call parameters, will attempt to find an exact-match function, variadic instantiation, or convertable function call, or return nullptr. */
-		std::pair<Param_Types, Proxy_Function> BuildMatch(std::string const& functionName, scripting::Function_Params const& params, Type_Converter_Tree const& m_typeConverters = Type_Converter_Tree(), bool AllowTemplateInstantiation = true, bool AllowTypeConversion = true) {
-			auto [directFindParams, directFind] = at(functionName, params);
-			
-			if (directFind) {
-				// exact match found
-				return { directFindParams, directFind };
-			}
-			else {
-				std::multimap<double, std::tuple<Proxy_Function, Param_Types>> candidates;
-
-				if (AllowTypeConversion) {
-					if (auto ptr = this->operator[](functionName)) {
-						if (ptr) {
-							for (auto& function : *ptr) {
-								if (function) {
-									if (function->first.Template()) {
-										// already tried this...
-									}
-									else {
-										if (function->first.converts(params, m_typeConverters)) {
-											candidates.insert({ function->first.conversion_cost(params, m_typeConverters), { function->second, function->first } });
-										}
-									}
-								}
-							}
-						}
-					}
-				}
-
-				// Get the "cheapest" or fastest conversion option available at this scope.
-				//for (auto& candidate : candidates) {
-				//	auto& func = std::get<0>(candidate.second);
-				//	auto& param = std::get<1>(candidate.second);
-				//	try {
-				//		auto newParms = scripting::Param_Types(params, func->Arguments().types());
-				//		if (emplace(functionName, newParms, func, false)) {
-				//			successfullyAddedFunction = true;
-				//			break;
-				//		}
-				//	}
-				//	catch (scripting::exception::arity_error err) {}
-				//	catch (scripting::exception::bad_boxed_cast err) {}
-				//}
-				//candidates.clear();
-				//if (successfullyAddedFunction) {
-					//return at(functionName, params);
-				//}
-
-				if (AllowTemplateInstantiation) {
-					if (auto ptr = this->operator[](functionName)) {
-						if (ptr) {
-							for (auto& function : *ptr) {
-								if (function) {
-									if (function->first.Template()) {
-										if (function->first.converts(params, m_typeConverters)) {
-											candidates.insert({ function->first.conversion_cost(params, m_typeConverters), { function->second, function->first } });
-										}
-									}
-									else {
-										// must be perfect match -- requires casting. We can try that, but only if no template exists that would work instead.
-									}
-								}
-							}
-						}
-					}
-				}
-
-				// Get the "cheapest" or fastest conversion option available at this scope.
-				for (auto& candidate : candidates) {
-					if (candidate.first == std::numeric_limits<double>::max()) { break; }
-					auto& func = std::get<0>(candidate.second);
-					auto& param = std::get<1>(candidate.second);
-					
-					try {
-						auto newParms = scripting::Param_Types(params, param/*func->Arguments()*/.types());
-						if (emplace(functionName, newParms, func, false)) {
-							return { newParms, func };
-						}
-					}
-					catch (scripting::exception::arity_error const& err) {}
-					catch (scripting::exception::bad_boxed_cast const& err) {}
-				}
-			}
-			return {};
-		};
-
-	};
-#endif
-	
 	class Functions2 {
 	public:
 		using FunctionActual = std::pair<Proxy_Function, Param_Types>; // this can never be seperated. The underlying function needs this conversion to function properly. 
@@ -3732,1541 +3541,6 @@ namespace scripting {
 	};
 
 	class Impl;
-#if 0
-    class Scope;
-    class Namespace;
-	class Class;
-
-	// keep updating so that the return value from Functions makes useful sense (Function with specialized params)
-
-    class Scope {		
-	public:
-		friend class Namespace;
-		friend class Class;
-		friend class Impl;
-		Scope(std::weak_ptr<Scope> parent = std::weak_ptr<Scope>())
-			: p_parent{ parent }
-			, p_temp_tree()
-		{
-			auto randN = [](double min, double max) -> double {
-				return (((double)std::rand() / (double)RAND_MAX) * (max - min)) + min;
-			};
-			for (int i = 0; i < 16; i++) {
-				p_NameRand += (char)(int)randN((int)('A'), (int)('Z'));
-			}
-		};
-		Scope(Scope const&) = default;
-		Scope(Scope&&) = default;
-		Scope& operator=(Scope const&) = default;
-		Scope& operator=(Scope&&) = default;
-		virtual ~Scope() = default;
-
-	private:
-		std::string
-			p_NameRand;
-		mutable fibers::synchronization::atomic_number<size_t>
-			p_temp_tree_hash;
-		mutable Type_Converter_Tree
-			p_temp_tree;
-
-	public:
-		std::weak_ptr<Scope>
-			p_self; // shared_pointer to itself
-		std::weak_ptr<Scope>
-			p_parent; // parent scope, for navigation. 
-		fibers::containers::Map<std::string, std::shared_ptr<Namespace>>
-			p_children; // children namespaces - may be classes or namespaces. By this design, imported namespaces may be "unloaded" on scope unloading, which is on purpose.
-		fibers::containers::Map<std::string, std::shared_ptr<fibers::Any>>
-			p_objects; // scopes of all types may declare objects. Namespace objects may be global objects, but still. 
-		fibers::containers::Map<std::string, std::weak_ptr<Namespace>>
-			p_using; // allows this scope to use the children of other scopes as if they were their own.
-
-		
-	public:
-
-		virtual bool IsClass() const { return false; }; // classes are specialized namespaces
-		virtual bool IsNamespace() const { return false; }; // namespaces may declare functions and types
-		virtual bool IsBasicScope() const { return !IsNamespace(); }; // basic scopes may only store local objects
-
-		virtual const std::string& GetName() const {
-			static std::string emptyString{};
-			return emptyString;
-			// return p_NameRand;
-		};
-		virtual std::string GetQualifiedNamespace(bool GetUniqueQualifier = false) const {
-			std::string path = "::";
-
-			auto parent = p_parent.lock();
-
-			if (!parent) {
-				path = "::";
-			}
-			else {
-				auto name{ GetName() };
-				if (GetUniqueQualifier) {
-					if (name == "") {
-						name = p_NameRand;
-					}
-					else {
-						name = p_NameRand + "_" + name;
-					}
-				}
-				if (!name.empty()) {
-					path = parent->GetQualifiedNamespace(GetUniqueQualifier) + name + "::";
-				}
-				else {
-					path = parent->GetQualifiedNamespace(GetUniqueQualifier);
-				}
-			}
-
-			while (path.find("::::") != std::string::npos) {
-				size_t start_pos = 0;
-				while ((start_pos = path.find("::::", start_pos)) != std::string::npos) {
-					path = path.replace(start_pos, 4, "::");
-					start_pos += 2; // In case 'to' contains 'from', like replacing 'x' with 'yx'
-				}
-			}
-
-			return path;
-		};
-		// Record that a namespace is a child of the current Scope. This creates a hard link, ensuring the lifetime of the child is associated to the lifetime of the parent. You MUST NEVER assign a child-parent-child loop, otherwise it will never free its memory. 
-		virtual bool AddChild(std::weak_ptr<Namespace> const& p_namespace, bool overwriteIfExists = true) { 
-			// If so... we are done. 
-			if (auto ptr = p_namespace.lock()) {
-				if (std::dynamic_pointer_cast<Scope>(ptr)->IsNamespace()) {
-					return p_children.emplace(((Scope*)(ptr.get()))->GetName(), ptr, overwriteIfExists);
-				}
-			}
-			return false;	
-		};
-		// Identify that a Namespace is being "Used" by the current scope, meaning the Used's children will be easily found in the current scope without name-qualifications.
-		virtual bool AddUsing(std::weak_ptr<Namespace> const& p_namespace) {
-			if (auto ptr = p_namespace.lock()) {
-				if (std::dynamic_pointer_cast<Scope>(ptr)->IsNamespace()) {
-					return p_using.emplace(((Scope*)(ptr.get()))->p_NameRand, p_namespace);
-				}
-			}
-			return false;
-		};
-		virtual void Print(int indentLevel = 0) const {
-			int IndentLevel = 0;
-			for (; IndentLevel < indentLevel; IndentLevel++) {
-				std::cout << " ";
-			}
-			if (GetName() == "") {
-				std::cout << "::" << std::endl;
-				for (auto& child : p_children) {
-					if (child && child->second) {
-						((Scope*)(child->second.get()))->Print(indentLevel + 2);
-					}
-				}
-				for (auto& child_parent : p_using) {
-					if (child_parent) {
-						if (auto this_parent = std::dynamic_pointer_cast<Scope>(child_parent->second.lock())) {
-							for (auto& child2 : this_parent->p_children) {
-								if (child2 && child2->second) {
-									((Scope*)(child2->second.get()))->Print(indentLevel + 2);
-								}
-							}
-						}
-					}
-				}
-			}
-			else {
-				std::cout << GetName() << std::endl;
-				for (auto& child : p_children) {
-					if (child && child->second) {
-						((Scope*)(child->second.get()))->Print(indentLevel + GetName().length());
-					}
-				}
-				for (auto& child_parent : p_using) {
-					if (child_parent) {
-						if (auto this_parent = std::dynamic_pointer_cast<Scope>(child_parent->second.lock())) {
-							for (auto& child2 : this_parent->p_children) {
-								if (child2 && child2->second) {
-									((Scope*)(child2->second.get()))->Print(indentLevel + GetName().length());
-								}
-							}
-						}
-					}
-				}
-			}
-		};
-
-		// Return the conversion tree(s) from the nearest Global namespace
-		virtual Type_Converter_Tree* TypeConversionTree() {
-			if (auto parent = p_parent.lock()) return parent->TypeConversionTree();
-			return nullptr;
-		};
-		virtual const Type_Converter_Tree* TypeConversionTree() const {
-			if (auto parent = p_parent.lock()) return parent->TypeConversionTree();
-			return nullptr;
-		};
-
-		// Return the conversion tree(s) from the nearest Global namespace
-		virtual void TypeConversionTrees(std::vector<Type_Converter_Tree*>& out, std::set<size_t>& previous) {
-			if (previous.find((size_t)p_self.lock().get()) == previous.end()) {
-				previous.insert((size_t)p_self.lock().get());
-				for (auto& Using : p_using) {
-					if (Using) {
-						if (auto ptr = std::dynamic_pointer_cast<Scope>(Using->second.lock())) {
-							ptr->TypeConversionTrees(out, previous);
-						}
-					}
-				}
-				if (auto parent = p_parent.lock()) parent->TypeConversionTrees(out, previous);				
-			}
-		};
-		// Return the conversion tree(s) from the nearest Global namespace
-		virtual void TypeConversionTrees(std::vector<const Type_Converter_Tree*>& out, std::set<size_t>& previous) const {
-			if (previous.find((size_t)p_self.lock().get()) == previous.end()) {
-				previous.insert((size_t)p_self.lock().get());
-				for (auto& Using : p_using) {
-					if (Using) {
-						if (auto ptr = std::dynamic_pointer_cast<Scope>(Using->second.lock())) {
-							ptr->TypeConversionTrees(out, previous);
-						}
-					}
-				}
-				if (auto parent = p_parent.lock()) parent->TypeConversionTrees(out, previous);
-			}
-		};
-
-		// Get all applicable Conversion Trees for this scope. We allow multiple trees (from multiple Imports, for example) to co-exist and they are combined per-Scope on an as-needed basis.
-		std::vector<const Type_Converter_Tree*> TypeConversionTrees() const {
-			std::vector<const Type_Converter_Tree*> out;
-
-			// Get Initial List (May contain duplicates)
-			{
-				std::set<size_t> previous{};
-				TypeConversionTrees(out, previous);
-			}
-
-			// Unique List
-			{
-				std::set< const Type_Converter_Tree*> out2{};
-
-				for (auto& x : out) out2.insert(x);
-
-				out.clear();
-
-				for (auto& x : out2) if (x != nullptr) out.push_back(x);
-			}
-
-			return out;
-		};
-		
-		/* 
-		Each Scope has a local copy of a Type_Converter_Tree. However, if there is no difference between the Type_Converter_Tree for this scope or it's parent, then it returns the parent's Type_Converter_Tree. 
-		This is designed to encourage re-use of similar Type_Converter_Tree's and prevent time wasted on their construction. 
-		*/
-		Type_Converter_Tree const& GetCombinedTypeConversionTree() const {
-			auto HashTrees = [](std::vector<const Type_Converter_Tree*> const& trees) -> size_t {
-				constexpr auto A = 54059; /* a prime */
-				constexpr auto B = 76963; /* another prime */
-				constexpr auto C = 86969; /* yet another prime */
-				constexpr auto FIRSTH = 37; /* also prime */
-
-				size_t h = FIRSTH;
-				if (trees.size() > 0)
-					for (auto& s : trees)
-						if (s) {
-							h = (h * A) ^ ((size_t)s * B);
-							h = (h * A) ^ (s->Version() * B);
-						}
-
-				auto result = h % C;
-				return result;
-			};
-
-#if 0
-			auto trees = TypeConversionTrees();
-			auto hash = HashTrees(trees);
-			auto prevHash = this->p_temp_tree_hash;
-			if (prevHash != hash) {
-				p_temp_tree_hash = hash;
-				return p_temp_tree = Type_Converter_Tree::Combine(trees);
-			}
-			else {
-				return p_temp_tree;
-			}
-#else
-			// get the highest parent where the conversion trees don't change;
-			if (std::shared_ptr<Scope> highestSuccess = p_self.lock()) {
-				auto trees = highestSuccess->TypeConversionTrees();
-				auto highestSuccessHash = HashTrees(trees);
-				while (std::shared_ptr<Scope> parentAttempt = highestSuccess->p_parent.lock()) {
-					auto parentHash = HashTrees(parentAttempt->TypeConversionTrees());
-					if (parentHash != highestSuccessHash) {
-						break;
-					}
-					else {
-						highestSuccess = parentAttempt;
-					}
-				}
-
-				while (true) {
-					// something changed with some of these 
-					auto prevHash = highestSuccess->p_temp_tree_hash;
-					if (prevHash != highestSuccessHash) {
-						highestSuccess->p_temp_tree_hash = highestSuccessHash;
-						return highestSuccess->p_temp_tree = Type_Converter_Tree::Combine(trees);
-					}
-					else {
-						return highestSuccess->p_temp_tree;
-					}
-				}
-
-				return highestSuccess->p_temp_tree;
-			}
-			return this->p_temp_tree;
-
-			//while (true) {
-			//	auto trees = TypeConversionTrees();
-			//	size_t Hash = HashTrees(trees);
-			//	// something changed with some of these 
-			//	if (p_temp_tree_hash != Hash) {
-			//		p_temp_tree_hash = Hash;
-			//		if (p_temp_tree_hash == Hash) {
-			//			p_temp_tree = Type_Converter_Tree::Combine(trees);
-			//			return p_temp_tree;
-			//		}
-			//	}
-			//	else {
-			//		return p_temp_tree;
-			//	}
-			//}
-#endif
-		};
-
-	protected:
-		static std::string FixQualifiedNamespaceString(std::string const& Namespace) {
-			auto path = Namespace + "::";
-			while (path.find("::::") != std::string::npos) {
-				size_t start_pos = 0;
-				while ((start_pos = path.find("::::", start_pos)) != std::string::npos) {
-					path = path.replace(start_pos, 4, "::");
-					start_pos += 2; // In case 'to' contains 'from', like replacing 'x' with 'yx'
-				}
-			}
-			return path;
-		};
-
-		// get the nearest parent whose scope is equivalent to the global scope.
-		// e.g. ::{ scope 1 }::{ scope 2}::Namespace1::Namespace2::{ scope 3 }->GetGlobalScope() would return { scope 2 }.
-		std::weak_ptr<Scope> GetGlobalScope() const {
-			std::shared_ptr<Scope> out = p_self.lock();			
-			while (out) {
-				auto parent = out->p_parent.lock();
-				if (!parent) break;
-
-				if (out->GetQualifiedNamespace() == "::") return out;
-				out = parent;
-			}
-			
-			return out;
-		};
-		// determines if the namespace qualifies itself as relative to the global (e.g. starts with "::")
-		static bool IsNamespaceQualified(std::string const& Namespace/* = "::std::string::"*/) {
-			return (Namespace.find("::") == 0);
-		};
-		// find the child nearest to the current node with the specified, fully-qualified namespace
-		static bool FindChildNearestToQualifiedNamespace(std::shared_ptr<Scope> current_scope, std::string const& fullyQualifiedNamespace/* = "::std::string::"*/, std::shared_ptr<Scope>& best_scope, int& best_match_count) {
-			if (!current_scope) { return false; }
-
-			auto qualifiedNamespace = current_scope->GetQualifiedNamespace();
-
-			int overlap = fullyQualifiedNamespace._Starts_with(qualifiedNamespace) ? qualifiedNamespace.length() : 0;
-			
-			bool toReturn = false;
-
-			if (overlap > best_match_count) {
-				best_match_count = overlap;
-				best_scope = current_scope;
-				toReturn = true;
-
-				// check our children to see if we can improve this match
-				for (auto& child_namespace : current_scope->p_children) {
-					if (child_namespace) {
-						if (FindChildNearestToQualifiedNamespace(std::dynamic_pointer_cast<Scope>(child_namespace->second), fullyQualifiedNamespace, best_scope, best_match_count)) {
-							toReturn = true;
-						}
-					}
-				}
-			}
-			return toReturn;
-		};
-		// find the child nearest to the current node with the generic, NOT fully-qualified namespace
-		static bool FindChildNearestToNamespace(std::shared_ptr<Scope> current_scope, std::string const& Namespace/* = "string"*/, std::shared_ptr<Scope>& best_scope) {
-			while (current_scope) {
-				if (current_scope->GetName() == Namespace) {
-					best_scope = current_scope;
-					return true;
-				}
-				if (!best_scope) { best_scope = current_scope; }
-				if (!current_scope) { return false; }
-				if (Namespace == "") {
-					return true;
-				}
-
-				std::string namespaceToFind = current_scope->GetQualifiedNamespace() + Namespace + "::";
-
-				int bestMatch = -1;
-				std::shared_ptr<Scope> bestScopeTemp{ nullptr };
-				if (FindChildNearestToQualifiedNamespace(current_scope, namespaceToFind, bestScopeTemp, bestMatch)) {
-					if (bestScopeTemp->GetQualifiedNamespace() == namespaceToFind) {
-						// awesome, it was found in our children
-
-						best_scope = bestScopeTemp;
-
-						return true;
-					}
-					else {
-						current_scope = current_scope->p_parent.lock();
-					}
-				}
-				else {
-					// not found... try our parent. 
-					current_scope = current_scope->p_parent.lock();
-				}
-			}
-			return false;
-		};
-	
-    protected:
-		/* 
-		Get all namespaces that may be used to search for an object (e.g this scope, it's USING scopes, its PARENT scopes 
-		Ordered from ParentScope -> UsingScope -> ThisScope
-		*/
-		virtual std::map<int, std::shared_ptr<Scope>> GetScopesForObjectSearchImpl(std::shared_ptr<std::set<std::shared_ptr<Scope>>> evaluated = std::make_shared<std::set<std::shared_ptr<Scope>>>(), bool requestedScope = true) const {
-			const std::string& myScopeName = GetName();
-
-			evaluated->emplace(this->p_self.lock());
-
-			// locally declared namespaces > using namespaces
-
-			std::map<int, std::shared_ptr<Scope>> out;
-
-			// get my parent first...
-			if (auto ptr = p_parent.lock()) {
-				if (evaluated->count(ptr) <= 0)
-					out = ptr->GetScopesForObjectSearchImpl(evaluated, false);
-			}
-
-			// get my "using" children first... 
-			for (auto& usingScope : this->p_using) {
-				if (usingScope) {
-					if (auto ptr = usingScope->second.lock()) {
-						for (auto x : ((Scope*)ptr.get())->GetScopesForObjectSearchImpl(evaluated, false)) {
-							out.emplace(out.size(), x.second);
-						}
-					}
-				}
-			}
-
-			// also remember to add myself (if I am a namespace)...
-			out.emplace(out.size(), p_self.lock());
-
-			return out;
-		};
-		/* Get all named namespaces that are discoverable from the current Scope */
-		virtual std::map<std::string, std::weak_ptr<Namespace>> GetAvailableNamespacesImpl(std::shared_ptr<std::set<std::shared_ptr<Scope>>> evaluated = std::make_shared<std::set<std::shared_ptr<Scope>>>(), bool requestedScope = true, bool useUniqueNames = false) const {
-			const std::string& myScopeName = GetName();
-
-			evaluated->emplace(this->p_self.lock());
-
-			// locally declared namespaces > using namespaces
-
-			std::map<std::string, std::weak_ptr<Namespace>> out;
-
-			// get my parent first...
-			if (auto ptr = p_parent.lock()) {
-				if (evaluated->count(ptr) <= 0)
-					out = ptr->GetAvailableNamespacesImpl(evaluated, false, useUniqueNames);
-			}
-
-			// get my "using" children first... 
-			for (auto& usingScope : this->p_using) {
-				if (usingScope) {
-					if (auto ptr = usingScope->second.lock()) {
-						for (auto& using_child : ((Scope*)ptr.get())->p_children) {
-							if (using_child && using_child->second) {
-								for (auto& using_namespace : ((Scope*)using_child->second.get())->GetAvailableNamespacesImpl(evaluated, false, useUniqueNames)) {
-									if (auto ptr = using_namespace.second.lock()) out[using_namespace.first] = ptr;
-								}
-							}
-						}
-					}
-				}
-			}
-
-			// get my actual children last...
-			for (auto& using_child : this->p_children) {
-				if (using_child && using_child->second) {
-					for (auto& using_namespace : ((Scope*)using_child->second.get())->GetAvailableNamespacesImpl(evaluated, false, useUniqueNames)) {
-						if (auto ptr = using_namespace.second.lock()) out[using_namespace.first] = ptr;
-					}
-				}
-			}
-
-			// also remember to add myself (if I am a namespace)...
-			if (IsNamespace()) {
-				if (useUniqueNames) {
-					out[this->p_NameRand + "_" + GetName()] = std::dynamic_pointer_cast<Namespace>(p_self.lock()); 
-				}else{
-					out[GetName()] = std::dynamic_pointer_cast<Namespace>(p_self.lock());
-				}
-			}
-
-			return out;
-		};
-
-	public:
-		/* Get all named namespaces that are discoverable from the current Scope */
-		virtual std::map<std::string, std::weak_ptr<Namespace>> GetAvailableNamespaces(std::shared_ptr<std::set<std::shared_ptr<Scope>>> evaluated = std::make_shared<std::set<std::shared_ptr<Scope>>>(), bool requestedScope = true, bool useUniqueNames = false) const {
-			auto fixNamespace = [](std::string x) -> std::string {
-				while (x.find("::") == 0 && x.length() > 2) {
-					x = x.substr(2);
-				}
-				return x;
-			};
-
-			std::map<std::string, std::weak_ptr<Namespace>> out;
-			for (auto& x : GetAvailableNamespacesImpl(evaluated, requestedScope, useUniqueNames)) out[fixNamespace(x.first)] = x.second;
-			return out;
-		};
-
-	public:
-		/* Get all namespaces that may be used to search for an object (e.g this scope, it's USING scopes, its PARENT scopes), in order of ThisScope -> UsingScope -> ParentScope */
-		virtual std::vector<std::shared_ptr<Scope>> GetScopesForObjectSearch(std::shared_ptr<std::set<std::shared_ptr<Scope>>> evaluated = std::make_shared<std::set<std::shared_ptr<Scope>>>()) const {
-			std::vector<std::shared_ptr<Scope>> out;
-			auto init = GetScopesForObjectSearchImpl(evaluated);
-			out.reserve(init.size() + 1);
-			for (auto iter = init.rbegin(); iter != init.rend(); iter++) out.push_back(iter->second);
-			return out;
-		};
-
-	public:
-		virtual size_t GetCurrentVersion(std::shared_ptr<std::set<std::shared_ptr<Scope>>> evaluated = std::make_shared<std::set<std::shared_ptr<Scope>>>()) const {
-			constexpr auto A = 54059; /* a prime */
-			constexpr auto B = 76963; /* another prime */
-			constexpr auto C = 86969; /* yet another prime */
-			constexpr auto FIRSTH = 37; /* also prime */
-			size_t h = FIRSTH;
-
-			evaluated->emplace(this->p_self.lock());
-
-			// get my parent first...
-			if (auto ptr = p_parent.lock()) {
-				if (evaluated->count(ptr) <= 0)
-					h = (h * A) ^ (ptr->GetCurrentVersion(evaluated)* B);
-			}
-
-			// get my "using" children... 
-			for (auto& usingScope : this->p_using) {
-				if (usingScope) {
-					if (auto ptr = std::dynamic_pointer_cast<Scope>(usingScope->second.lock())) {
-						h = (h * A) ^ (ptr->GetCurrentVersion(evaluated) * B);
-					}
-				}
-			}
-
-			return h % C;
-		};
-
-	protected:
-		// Attempts to find a namespace or class with the requested namespace name. 
-		// If qualified (e.g. starts with "::") then it attempts to find it from the global root -> down. 
-		// If not qualified, then it attempts to find it from the current node -> up.
-		// If the scope is not found, it MAY suggest the placement of the new namespace as a child of the provided "best_scope"
-		// For example, "::std::string::impl" (assuming impl does not exist) may return the node for "::std::string::")
-		virtual bool TryFindScope(std::shared_ptr<Scope>& best_scope, std::string const& Namespace, std::vector<std::string>* namespaceListToAppend = nullptr) const {
-			decltype(auto) available_scopes = GetAvailableNamespaces();
-
-			std::string scopeToFind = Namespace;
-			while (scopeToFind.size() >= 2 && (scopeToFind.find("::") == 0)) { scopeToFind = scopeToFind.substr(2); }
-			while (scopeToFind.size() >= 2 && (scopeToFind.rfind("::") == (scopeToFind.length()-2))) { scopeToFind = scopeToFind.substr(0, scopeToFind.length() - 2); }
-
-			auto f = available_scopes.find(scopeToFind);
-			if (f != available_scopes.end()) {
-				best_scope = std::dynamic_pointer_cast<Scope>(f->second.lock());
-				if (best_scope) return true;
-			}
-
-			// failed to find it -- can we make a recommendation of where to put it?
-			size_t pos;
-			for (pos = scopeToFind.rfind("::"); pos != std::string::npos; pos = scopeToFind.rfind("::")) {
-				std::string removedScopeName = scopeToFind.substr(pos + 2);
-
-				if (namespaceListToAppend)
-					namespaceListToAppend->push_back(removedScopeName);
-
-				scopeToFind = scopeToFind.substr(0, pos);
-
-				f = available_scopes.find(scopeToFind);
-				if (f != available_scopes.end()) {
-					best_scope = std::dynamic_pointer_cast<Scope>(f->second.lock());
-					if (best_scope) return false;
-				}
-			}
-
-			// we should be on the last "real" scope name
-			f = available_scopes.find(scopeToFind);
-			if (f != available_scopes.end()) {
-				best_scope = std::dynamic_pointer_cast<Scope>(f->second.lock());
-				if (best_scope) return false;
-			}
-
-			if (namespaceListToAppend)
-				namespaceListToAppend->push_back(scopeToFind);
-
-			// return THIS scope
-			best_scope = p_self.lock();
-			return false;
-		};
-		virtual const fibers::containers::Map<std::string, std::weak_ptr<Class>>* GetPostFixes() const {
-			return nullptr;
-		};
-
-	public:
-		// Attempts to find a namespace or class with the requested namespace name (may be a qualified namespace). 
-		virtual std::shared_ptr<Namespace> FindNamespace(std::string const& Namespace/* = "string"*/) const {
-			std::shared_ptr<Scope> foundScope;
-			if (this->TryFindScope(foundScope, Namespace)) {
-				if (foundScope->IsNamespace()) {
-					return std::dynamic_pointer_cast<scripting::Namespace>(foundScope);
-				}
-			}
-			return nullptr;
-		};
-
-	protected:
-		virtual Type_Info GetClassType() const { return {}; };
-		virtual bool TryFindObjectImpl(std::string const& objectName, std::shared_ptr<fibers::Any>& out) const {
-
-			size_t lastOfColons{ 0 };
-			if ((lastOfColons = objectName.find_last_of("::")) == std::string::npos) {
-				// just a normal var name
-
-				for (auto& scope : GetScopesForObjectSearch()) {
-					auto found = scope->p_objects.at(objectName);
-					if (found.has_value()) {
-						out = found.value();
-						return true;
-					}
-				}
-				return false;
-			}
-			else {
-				std::string objectNameActual{ objectName.substr(lastOfColons + 1) };
-				std::string scopeName{ objectName.substr(0, lastOfColons - 1) };
-
-				std::shared_ptr<Scope> foundScope;
-				if (this->TryFindScope(foundScope, scopeName)) {
-					return foundScope->TryFindObjectImpl(objectNameActual, out);
-				}
-				return false;
-			}
-		};
-		virtual const Functions* GetFunctions() const { return nullptr; };
-		virtual Functions* GetFunctions() { return nullptr; };
-		virtual bool TryFindFunctionImpl(std::string const& functionName, scripting::Function_Params const& params, Type_Converter_Tree const& m_conversionTree, Proxy_Function& out) const {
-			size_t lastOfColons{ 0 };
-			if ((lastOfColons = functionName.find_last_of("::")) == std::string::npos) {
-				std::shared_ptr<Scope> firstParamScopePtr{ nullptr };
-				std::shared_ptr<Scope> constructorScopePtr{ nullptr };
-
-				// FIRST SEARCH DOES ALLOW FOR CONVERSIONS, BUT NO TEMPLATES
-				if (1) {
-					std::multimap<double, Proxy_Function> sort;
-
-					for (auto& scope : GetScopesForObjectSearch()) {
-						if (auto* ptr = scope->GetFunctions()) {
-							auto [funcParams, func] = ptr->BuildMatch(functionName, params, m_conversionTree, false, true);
-							if (func) {
-								sort.emplace(funcParams.conversion_cost(params, m_conversionTree), func);
-							}
-						}
-					}
-					{
-						auto firstParam = params.begin();
-						if (firstParam != params.end()) {
-							firstParamScopePtr = std::dynamic_pointer_cast<Scope>(this->FindClass(firstParam->Type()));
-						}						
-					}
-					if (firstParamScopePtr) {
-						for (auto& scope : firstParamScopePtr->GetScopesForObjectSearch()) {
-							if (auto* ptr = scope->GetFunctions()) {
-								auto [funcParams, func] = ptr->BuildMatch(functionName, params, m_conversionTree, false, true);
-								if (func) {
-									sort.emplace(funcParams.conversion_cost(params, m_conversionTree), func);
-								}
-							}
-						}
-					}
-					// PERHAPS THE USER MEANT TO CALL THE CONSTRUCTOR FOR A CLASS (ALLOW FOR CONVERSIONS, BUT NO TEMPLATES)
-					if (constructorScopePtr = std::dynamic_pointer_cast<Scope>(this->FindClass(functionName))) {
-						// Is there a pre-defined constructor that this could work with?
-						if (auto* functions = constructorScopePtr->GetFunctions()) {
-							auto [funcParams, func] = functions->BuildMatch(functionName, params, m_conversionTree, false, true);
-							if (func) {
-								sort.emplace(funcParams.conversion_cost(params, m_conversionTree), func);
-							}
-						}
-
-						// Can the conversion tree do this itself, without any help?
-						if (params.size() == 1) {
-							if (m_conversionTree.Converts(params[0].Type(), constructorScopePtr->GetClassType())) {
-								auto func = make_callable([tree = m_conversionTree, toType = constructorScopePtr->GetClassType()](Any const& from)->Any {
-									if (tree.Converts(from.Type(), toType)) {
-										try {
-											return tree.Convert(from, toType);
-										}
-										catch (exception::bad_boxed_cast const& e) {
-											std::cout << "Conversion is no longer available" << std::endl;
-											throw exception::not_found_error("Conversion is no longer available");
-										}
-									}
-									else {
-										std::cout << "Conversion is no longer available" << std::endl;
-										throw exception::not_found_error("Conversion is no longer available");
-										// return Any();
-									}
-								});
-								sort.emplace(func->conversion_cost(params, m_conversionTree), func);
-							}
-						}
-					}
-					for (auto& s : sort) { if (s.first != std::numeric_limits<double>::max()) { out = s.second; return true; } }
-				}
-
-				// SECOND SEARCH ALLOWS FOR TEMPLATE FUNCTIONS
-				if (1) {
-					std::multimap<double, Proxy_Function> sort;
-					for (auto& scope : GetScopesForObjectSearch()) {
-						if (auto* ptr = scope->GetFunctions()) {
-							auto [funcParams, func] = ptr->BuildMatch(functionName, params, m_conversionTree, true, true);
-							if (func) {
-								sort.emplace(funcParams.conversion_cost(params, m_conversionTree), func);
-							}
-						}
-					}
-					if (firstParamScopePtr) {
-						for (auto& scope : firstParamScopePtr->GetScopesForObjectSearch()) {
-							if (auto* ptr = scope->GetFunctions()) {
-								auto [funcParams, func] = ptr->BuildMatch(functionName, params, m_conversionTree, true, true);
-								if (func) {
-									sort.emplace(funcParams.conversion_cost(params, m_conversionTree), func);
-								}
-							}
-						}
-					}
-					// PERHAPS THE USER MEANT TO CALL THE CONSTRUCTOR FOR A CLASS (ALLOW FOR CONVERSIONS, AND TEMPLATES)
-					if (constructorScopePtr = std::dynamic_pointer_cast<Scope>(this->FindClass(functionName))) {
-						// Is there a pre-defined constructor that this could work with?
-						if (auto* functions = constructorScopePtr->GetFunctions()) {
-							auto [funcParams, func] = functions->BuildMatch(functionName, params, m_conversionTree, true, true);
-							if (func) {
-								sort.emplace(funcParams.conversion_cost(params, m_conversionTree), func);
-							}
-						}
-
-						// Can the conversion tree do this itself, without any help?
-						if (params.size() == 1 && firstParamScopePtr) {
-							if (m_conversionTree.Converts(firstParamScopePtr->GetClassType(), constructorScopePtr->GetClassType())) {
-								auto func = make_callable([tree = m_conversionTree, toType = constructorScopePtr->GetClassType()](Any const& from)->Any {
-									if (tree.Converts(from.Type(), toType)) {
-										try {
-											return tree.Convert(from, toType);
-										}
-										catch (exception::bad_boxed_cast const& e) {
-											std::cout << Units::printf("This conversion is no longer available { %i }\n", __LINE__);
-											throw exception::not_found_error(std::string("Conversion is no longer available: ") + e.what());
-										}
-									}
-									else {
-										std::cout << Units::printf("This conversion is no longer available { %i }\n", __LINE__);
-										throw exception::not_found_error("Conversion is no longer available");
-										// return Any();
-									}
-								});
-
-								sort.emplace(func->conversion_cost(params, m_conversionTree), func);
-							}
-						}
-					}
-					for (auto& s : sort) { if (s.first != std::numeric_limits<double>::max()) { out = s.second; return true; } }
-				}
-
-				// IF ALL SEARCHES FAILED, PERHAPS THE USER MEANT TO CALL THE CONSTRUCTOR FOR A CLASS
-				if (1) {
-					if (constructorScopePtr) {
-						if (auto* functions = constructorScopePtr->GetFunctions()) {
-							auto [funcParams, func] = functions->BuildMatch(functionName, params, m_conversionTree, true, true);
-							if (func) {
-								if (funcParams.conversion_cost(params, m_conversionTree) != std::numeric_limits<double>::max()) {
-									out = func;
-									return true;
-								}
-							}
-						}
-					}					
-				}
-
-				return false;
-			}
-			else {
-				std::string functionNameActual{ functionName.substr(lastOfColons + 1) };
-				std::string scopeName{ functionName.substr(0, lastOfColons - 1) };
-
-				std::shared_ptr<Scope> foundScope;
-				if (this->TryFindScope(foundScope, scopeName)) {
-					return foundScope->TryFindFunctionImpl(functionNameActual, params, m_conversionTree, out);
-				}
-				return false;
-			}
-		};
-
-    public:
-		virtual std::shared_ptr<fibers::Any> FindObject(std::string const& objectName /* x, y, etc. */) const {
-			std::shared_ptr<fibers::Any> out{ nullptr };
-			if (TryFindObjectImpl(objectName, out)) {
-				return out;
-			}
-			else {
-				return nullptr;
-			}
-		};
-		virtual bool AddObject(std::string const& objectName, std::shared_ptr<fibers::Any> toAdd, bool overwriteIfExists = true) {
-			std::string scopeName;
-			std::string objectNameActual;
-			size_t lastOfColons{ 0 };
-			if ((lastOfColons = objectName.find_last_of("::")) == std::string::npos) {
-				return p_objects.emplace(objectName, toAdd, overwriteIfExists);
-			}
-			else {
-				objectNameActual = objectName.substr(lastOfColons + 1);
-				scopeName = objectName.substr(0, lastOfColons - 1);
-				std::shared_ptr<Scope> foundScope;
-				if (this->TryFindScope(foundScope, scopeName)) {
-					return foundScope->p_objects.emplace(std::move(objectNameActual), toAdd, overwriteIfExists);
-				}
-				return false;
-			}
-		};
-
-		virtual Proxy_Function FindFunction(std::string const& functionName /* x, y, etc. */, scripting::Function_Params const& params) const {
-			Proxy_Function out{ nullptr };
-			if (TryFindFunctionImpl(functionName, params, this->GetCombinedTypeConversionTree(), out)) {
-				return out;
-			}
-			else {
-				return nullptr;
-			}
-		};
-		virtual Proxy_Function FindFunction(std::string const& functionName /* x, y, etc. */, scripting::Function_Params const& params) {
-			Proxy_Function out{ nullptr };
-			if (TryFindFunctionImpl(functionName, params, this->GetCombinedTypeConversionTree(), out)) {
-				return out;
-			}
-			else {
-				return nullptr;
-			}
-		};
-
-		// Attempts to find a class with the requested class name (may be a qualified namespace).
-		virtual /*Type_Info*/ std::shared_ptr<Class> FindClass(std::string const& functionName) const {
-			auto f = std::dynamic_pointer_cast<Scope>(FindNamespace(functionName));
-			if (f && f->IsClass()) {
-				return std::dynamic_pointer_cast<Class>(f);
-			}
-			return nullptr;
-		};
-
-		// Attempts to find a class with the requested class name (may be a qualified namespace).
-		virtual /*Type_Info*/ std::shared_ptr<Class> FindClass(scripting::Type_Info classType) const {
-			for (auto& Namespace : GetAvailableNamespaces(std::make_shared<std::set<std::shared_ptr<Scope>>>(), true, true)) { // forced to check ALL possible namespaces, since we are searching based on the ClassPtr, and not its name. 
-				if (auto ptr = std::dynamic_pointer_cast<Scope>(Namespace.second.lock())) {
-					if (ptr->IsClass()) {
-						if (classType == ptr->GetClassType()) {
-							return std::dynamic_pointer_cast<Class>(ptr);
-						}
-					}
-				}
-			}
-			return nullptr;
-		};
-
-		// Attempts to find a class that has been requested based on the postfix (e.g. "_ft", "l", "f", "ll", "_m", or "_gal")
-		virtual std::shared_ptr<Class> GetPostfix(std::string const& nonqualified_postfix /* = "_ft" */) {
-			for (auto& scope : GetScopesForObjectSearch()) {
-				if (auto* postfixes = scope->GetPostFixes()) {
-					auto optional = postfixes->at(nonqualified_postfix);
-					if (optional.has_value()) {
-						if (auto ptr = optional.value().lock()) {
-							return ptr;
-						}
-					}
-				}
-			}
-			return nullptr;
-		};
-
-		// Call a generic, proxy function using a vector of inputs (may be empty), which will be converted as necessary to the expected types. 
-		virtual Any CallFunction(std::string const& functionName, std::vector<Any> const& inputs) const {
-			Proxy_Function out{ nullptr };
-			auto& tree{ this->GetCombinedTypeConversionTree() };
-			if (TryFindFunctionImpl(functionName, const_cast<std::vector<Any>&>(inputs), tree, out)) {
-				return out->operator()(Function_Params{ const_cast<std::vector<Any>&>(inputs) }, tree);
-			}
-			else {
-				throw exception::not_found_error(functionName);
-			}
-		};
-		virtual Any CallFunction(std::string const& functionName, std::vector<Any> const& inputs, Type_Converter_Tree const& m_conversionTree) const {
-			Proxy_Function out{ nullptr };
-			if (TryFindFunctionImpl(functionName, const_cast<std::vector<Any>&>(inputs), m_conversionTree, out)) {
-				return out->operator()(Function_Params{ const_cast<std::vector<Any>&>(inputs) }, m_conversionTree);
-			}
-			else {
-				throw exception::not_found_error(functionName);
-			}
-		};
-
-	};
-	class Namespace : public Scope {
-	public:
-		friend class Scope;
-		friend class Class;
-
-		Namespace(std::weak_ptr<Scope> parent = std::weak_ptr<Scope>(), std::string const& Name = "")
-			: Scope(parent)
-			, p_Name{ Name }
-		{};
-		Namespace(Namespace const&) = default;
-		Namespace(Namespace&&) = default;
-		Namespace& operator=(Namespace const&) = default;
-		Namespace& operator=(Namespace&&) = default;
-		virtual ~Namespace() = default;
-
-	protected:
-		virtual const Functions* GetFunctions() const override { return &m_functions; };
-		virtual Functions* GetFunctions() override { return &m_functions; };
-
-	public:
-		std::string
-			p_Name; // e.g. "", or "_NAMESPACE_NAME_", or "_CLASS_NAME_"
-		fibers::containers::Map<std::string, std::weak_ptr<Class>>
-			m_postfixes{}; // allowed postfixes (e.g. 10_ft, where "_ft" is the key) to their desired typename. Duplicate are not allowed.
-		Functions
-			m_functions; // functions. (e.g. `==` or `to_string`). Duplicate names are expected. 
-
-	public:
-		virtual bool IsClass() const override { return false; };
-		virtual bool IsNamespace() const override { return true; };
-		virtual const std::string& GetName() const override {
-			return p_Name;
-		};
-		/* Get all named namespaces that are discoverable from the current Scope */
-	protected:
-		virtual std::map<std::string, std::weak_ptr<Namespace>> GetAvailableNamespacesImpl(std::shared_ptr<std::set<std::shared_ptr<Scope>>> evaluated = std::make_shared<std::set<std::shared_ptr<Scope>>>(), bool requestedScope = true, bool useUniqueNames = false) const override {
-			const std::string& myScopeName = GetName();
-
-			evaluated->emplace(this->p_self.lock());
-
-			// locally declared namespaces > inherited > using > parent scopes
-
-			std::map<std::string, std::weak_ptr<Namespace>> out;
-
-			// get my parent first...
-			if (auto ptr = p_parent.lock()) {
-				if (evaluated->count(ptr) <= 0)
-					out = ptr->GetAvailableNamespacesImpl(evaluated, false, useUniqueNames); // GetAvailableNamespaces
-			}
-
-			// get my "using" children first... 
-			for (auto& usingScope : this->p_using) {
-				if (usingScope) {
-					if (auto ptr = usingScope->second.lock()) {
-						for (auto& using_child : ((Scope*)ptr.get())->p_children) {
-							if (using_child && using_child->second) {
-								for (auto& using_namespace : ((Scope*)using_child->second.get())->GetAvailableNamespacesImpl(evaluated, false, useUniqueNames)) { // GetAvailableNamespaces
-									if (auto ptr = using_namespace.second.lock()) {
-										out[GetName() + "::" + using_namespace.first] = ptr;
-										if (requestedScope) out[using_namespace.first] = ptr;
-									}
-								}
-							}
-						}
-					}
-				}
-			}
-
-			// get my actual children last...
-			for (auto& using_child : this->p_children) {
-				if (using_child && using_child->second) {
-					for (auto& using_namespace : ((Scope*)using_child->second.get())->GetAvailableNamespacesImpl(evaluated, false, useUniqueNames)) { // GetAvailableNamespaces
-						if (auto ptr = using_namespace.second.lock()) {
-							out[GetName() + "::" + using_namespace.first] = ptr;
-							if (requestedScope) out[using_namespace.first] = ptr;
-						}
-					}
-				}
-			}
-
-			// also remember to add myself (if I am a namespace)...
-			if (useUniqueNames) {
-				out[this->p_NameRand + "_" + GetName()] = std::dynamic_pointer_cast<Namespace>(p_self.lock());
-			}
-			else {
-				out[GetName()] = std::dynamic_pointer_cast<Namespace>(p_self.lock());
-			}
-
-			return out;
-		};
-	
-	protected:
-		virtual const fibers::containers::Map<std::string, std::weak_ptr<Class>>* GetPostFixes() const override {
-			return &m_postfixes;
-		};
-
-		/*
-		Get all namespaces that may be used to search for an object (e.g this scope, it's USING scopes, its PARENT scopes
-		Ordered from ParentScope -> UsingScope -> ThisScope
-		*/
-		virtual std::map<int, std::shared_ptr<Scope>> GetScopesForObjectSearchImpl(std::shared_ptr<std::set<std::shared_ptr<Scope>>> evaluated = std::make_shared<std::set<std::shared_ptr<Scope>>>(), bool requestedScope = true) const override {
-			const std::string& myScopeName = GetName();
-
-			evaluated->emplace(this->p_self.lock());
-
-			// locally declared namespaces > using namespaces
-
-			std::map<int, std::shared_ptr<Scope>> out;
-
-			// get my parent first...
-			if (auto ptr = p_parent.lock()) {
-				if (evaluated->count(ptr) <= 0)
-					out = ptr->GetScopesForObjectSearchImpl(evaluated, false);
-			}
-
-			// get my "using" children first... 
-			for (auto& usingScope : this->p_using) {
-				if (usingScope) {
-					if (auto ptr = usingScope->second.lock()) {
-						for (auto x : ptr->GetScopesForObjectSearchImpl(evaluated, false)) {
-							out.emplace(out.size(), x.second);
-						}
-					}
-				}
-			}
-
-			// also remember to add myself (if I am a namespace)...
-			out.emplace(out.size(), p_self.lock());
-
-			return out;
-		};
-
-	public:
-		virtual size_t GetCurrentVersion(std::shared_ptr<std::set<std::shared_ptr<Scope>>> evaluated = std::make_shared<std::set<std::shared_ptr<Scope>>>()) const override {
-			constexpr auto A = 54059; /* a prime */
-			constexpr auto B = 76963; /* another prime */
-			constexpr auto C = 86969; /* yet another prime */
-			constexpr auto FIRSTH = 37; /* also prime */
-			size_t h = FIRSTH;
-
-			evaluated->emplace(this->p_self.lock());
-
-			// get my parent first...
-			if (auto ptr = p_parent.lock()) {
-				if (evaluated->count(ptr) <= 0)
-					h = (h * A) ^ (ptr->GetCurrentVersion(evaluated) * B);
-			}
-
-			// get my "using" children... 
-			for (auto& usingScope : this->p_using) {
-				if (usingScope) {
-					if (auto ptr = usingScope->second.lock()) {
-						h = (h * A) ^ (ptr->GetCurrentVersion(evaluated) * B);
-					}
-				}
-			}
-
-			return h % C;
-		};
-
-    };
-	class Class : public Namespace {
-	public:
-		friend class Scope;
-		friend class Namespace;
-
-		Class(
-			std::weak_ptr<Scope> parent = std::weak_ptr<Scope>(), 
-			std::string const& Name = "",
-			std::weak_ptr<Class> inheritance = std::weak_ptr<Class>(), // e.g. this class derives from another Class
-			fibers::Type_Info type = fibers::user_type<void>()
-		)
-			: Namespace(parent, Name)
-			, DerivedFrom(inheritance)
-		{
-			if (auto ptr = DerivedFrom.lock()) {
-				this->AddUsing(ptr);
-			}
-
-			if (type == user_type<void>()) {
-				ClassType = std::make_shared<fibers::Type_Info>(this->p_NameRand /*GetQualifiedNamespace()*/, Name);
-			}
-			else {
-				ClassType = std::make_shared<fibers::Type_Info>(type);
-			}
-		};
-		Class(
-			std::weak_ptr<Scope> parent,
-			std::string const& Name,
-			fibers::Type_Info type
-		)
-			: Namespace(parent, Name)
-			, DerivedFrom(std::weak_ptr<Class>())
-		{
-			if (auto ptr = DerivedFrom.lock()) {
-				this->AddUsing(ptr);
-			}
-
-			if (type == user_type<void>()) {
-				ClassType = std::make_shared<fibers::Type_Info>(GetQualifiedNamespace(), Name);
-			}
-			else {
-				ClassType = std::make_shared<fibers::Type_Info>(type);
-			}
-		};
-		Class(
-			fibers::Type_Info type,
-			std::weak_ptr<Scope> parent,
-			std::string const& Name,
-			std::weak_ptr<Class> inheritance = std::weak_ptr<Class>() // e.g. this class derives from another Class
-		)
-			: Namespace(parent, Name)
-			, DerivedFrom(inheritance)
-		{
-			if (auto ptr = DerivedFrom.lock()) {
-				this->AddUsing(ptr);
-			}
-
-			if (type == user_type<void>()) {
-				ClassType = std::make_shared<fibers::Type_Info>(GetQualifiedNamespace(), Name);
-			}
-			else {
-				ClassType = std::make_shared<fibers::Type_Info>(type);
-			}
-		};
-
-		Class(Class const&) = default;
-		Class(Class&&) = default;
-		Class& operator=(Class const&) = default;
-		Class& operator=(Class&&) = default;
-		virtual ~Class() = default;
-
-	public:
-		std::weak_ptr<Class> DerivedFrom; // e.g. this class derives from another Class
-		std::shared_ptr<fibers::Type_Info> ClassType;
-
-	public:
-		virtual bool IsClass() const override { return true; };
-		virtual bool IsNamespace() const override { return true; };
-		virtual const std::string& GetName() const override {
-			return this->p_Name;
-		};
-		virtual Type_Info GetClassType() const { return ClassType; };
-
-	protected:
-		/* Get all named namespaces that are discoverable from the current Scope */
-		virtual std::map<std::string, std::weak_ptr<Namespace>> GetAvailableNamespacesImpl(std::shared_ptr<std::set<std::shared_ptr<Scope>>> evaluated = std::make_shared<std::set<std::shared_ptr<Scope>>>(), bool requestedScope = true, bool useUniqueNames = false) const override {
-			const std::string& myScopeName = GetName();
-
-			evaluated->emplace(this->p_self.lock());
-
-			// locally declared namespaces > inherited > using > parent scopes
-
-			std::map<std::string, std::weak_ptr<Namespace>> out;
-
-			// get my parent first...
-			if (auto ptr = p_parent.lock()) {
-				if (evaluated->count(ptr) <= 0)
-					out = ptr->GetAvailableNamespacesImpl(evaluated, false, useUniqueNames);
-			}
-
-			// get my "using" children first... 
-			for (auto& usingScope : this->p_using) {
-				if (usingScope) {
-					if (auto ptr = usingScope->second.lock()) {
-						for (auto& using_child : ((Scope*)ptr.get())->p_children) {
-							if (using_child && using_child->second) {
-								// if (evaluated->count(std::dynamic_pointer_cast<Scope>(using_child.second)) <= 0)
-								for (auto& using_namespace : ((Scope*)using_child->second.get())->GetAvailableNamespacesImpl(evaluated, false, useUniqueNames)) {
-									if (auto ptr = using_namespace.second.lock()) {
-										out[GetName() + "::" + using_namespace.first] = ptr;
-										if (requestedScope) out[using_namespace.first] = ptr;
-									}
-								}
-							}
-						}
-					}
-				}
-			}
-
-			// get my inherited children second... 
-			if (auto ptr = this->DerivedFrom.lock()) {
-				for (auto& using_child : ((Scope*)ptr.get())->p_children) {
-					if (using_child && using_child->second) {
-						// if (evaluated->count(std::dynamic_pointer_cast<Scope>(using_child.second)) <= 0)
-							for (auto& using_namespace : ((Scope*)using_child->second.get())->GetAvailableNamespacesImpl(evaluated, false, useUniqueNames)) {
-								if (auto ptr = using_namespace.second.lock()) {
-									out[GetName() + "::" + using_namespace.first] = ptr;
-									if (requestedScope) out[using_namespace.first] = ptr;
-								}
-							}
-					}
-				}
-				out[ptr->GetName()] = ptr;
-			}
-
-			// get my actual children last...
-			for (auto& using_child : this->p_children) {
-				if (using_child && using_child->second) {
-					// if (evaluated->count(std::dynamic_pointer_cast<Scope>(using_child.second)) <= 0)
-						for (auto& using_namespace : ((Scope*)using_child->second.get())->GetAvailableNamespacesImpl(evaluated, false, useUniqueNames)) {
-							if (auto ptr = using_namespace.second.lock()) {
-								out[GetName() + "::" + using_namespace.first] = ptr;
-								if (requestedScope) out[using_namespace.first] = ptr;
-							}
-						}
-				}
-			}
-
-			// also remember to add myself (if I am a namespace)...
-			if (useUniqueNames) {
-				out[this->p_NameRand + "_" + GetName()] = std::dynamic_pointer_cast<Namespace>(p_self.lock());
-			}
-			else {
-				out[GetName()] = std::dynamic_pointer_cast<Namespace>(p_self.lock());
-			}
-
-			return out;
-		};
-	
-	protected:
-		/*
-		Get all namespaces that may be used to search for an object (e.g this scope, it's USING scopes, its PARENT scopes
-		Ordered from ParentScope -> UsingScope -> ThisScope
-		*/		
-		virtual std::map<int, std::shared_ptr<Scope>> GetScopesForObjectSearchImpl(std::shared_ptr<std::set<std::shared_ptr<Scope>>> evaluated = std::make_shared<std::set<std::shared_ptr<Scope>>>(), bool requestedScope = true) const override {
-			const std::string& myScopeName = GetName();
-
-			evaluated->emplace(this->p_self.lock());
-
-			// locally declared namespaces > using namespaces
-
-			std::map<int, std::shared_ptr<Scope>> out;
-
-			// get my parent first...
-			if (auto ptr = p_parent.lock()) {
-				if (evaluated->count(ptr) <= 0)
-					out = ptr->GetScopesForObjectSearchImpl(evaluated, false);
-			}
-
-			// get my "using" children first... 
-			for (auto& usingScope : this->p_using) {
-				if (usingScope) {
-					if (auto ptr = usingScope->second.lock()) {
-						for (auto& x : ptr->GetScopesForObjectSearchImpl(evaluated, false)) {
-							out.emplace(out.size(), x.second);
-						}
-					}
-				}
-			}
-
-			// get my inherited children second... 
-			if (auto ptr = this->DerivedFrom.lock()) {
-				for (auto& using_child : ((Scope*)ptr.get())->p_children) {
-					if (using_child && using_child->second) {
-						// if (evaluated->count(std::dynamic_pointer_cast<Scope>(using_child.second)) <= 0)
-						for (auto using_namespace : ((Scope*)using_child->second.get())->GetScopesForObjectSearchImpl(evaluated, false)) {
-							out.emplace(out.size(), using_namespace.second);
-						}
-					}
-				}
-				out.emplace(out.size(), ptr);
-			}
-
-			// also remember to add myself (if I am a namespace)...
-			out.emplace(out.size(), p_self.lock());
-
-			return out;
-		};
-	
-    public:
-		virtual size_t GetCurrentVersion(std::shared_ptr<std::set<std::shared_ptr<Scope>>> evaluated = std::make_shared<std::set<std::shared_ptr<Scope>>>()) const override {
-			constexpr auto A = 54059; /* a prime */
-			constexpr auto B = 76963; /* another prime */
-			constexpr auto C = 86969; /* yet another prime */
-			constexpr auto FIRSTH = 37; /* also prime */
-			size_t h = FIRSTH;
-
-			evaluated->emplace(this->p_self.lock());
-
-			// get my parent first...
-			if (auto ptr = p_parent.lock()) {
-				if (evaluated->count(ptr) <= 0)
-					h = (h * A) ^ (ptr->GetCurrentVersion(evaluated) * B);
-			}
-
-			// get my "using" children... 
-			for (auto& usingScope : this->p_using) {
-				if (usingScope) {
-					if (auto ptr = usingScope->second.lock()) {
-						h = (h * A) ^ (ptr->GetCurrentVersion(evaluated) * B);
-					}
-				}
-			}
-
-			// get my inherited children second... 
-			if (auto ptr = this->DerivedFrom.lock()) {
-				for (auto& using_child : ((Scope*)ptr.get())->p_children) {
-					if (using_child && using_child->second) {
-						h = (h * A) ^ (((Scope*)using_child->second.get())->GetCurrentVersion(evaluated) * B);
-					}
-				}
-				h = (h * A) ^ (ptr->GetCurrentVersion(evaluated) * B);
-			}
-
-			return h % C;
-		};
-
-	};
-	class Global final : public Namespace {
-	public:
-		friend class Scope;
-		friend class Namespace;
-
-		Global()
-			: Namespace({}, "")
-			, tree()
-		{};
-
-		Global(Global const&) = default;
-		Global(Global&&) = default;
-		Global& operator=(Global const&) = default;
-		Global& operator=(Global&&) = default;
-		~Global() = default; // not virtual b/c is final
-
-	public:
-		void AddBuiltIns() {
-			auto defineBuiltInType = [this](auto typeImpl, std::string const& Name) -> void {
-				// make it a class
-				auto classPtr = std::dynamic_pointer_cast<Class>(this->p_children.get_or_insert(Name, std::make_shared<Class>(user_type<decltype(typeImpl)>(), this->p_self, Name)));
-				classPtr->p_self = classPtr;
-
-				// add converters
-				this->tree.AddConverter<decltype(typeImpl), char>();
-				this->tree.AddConverter<decltype(typeImpl), int>();
-				this->tree.AddConverter<decltype(typeImpl), long>();
-				this->tree.AddConverter<decltype(typeImpl), float>();
-				this->tree.AddConverter<decltype(typeImpl), double>();
-				this->tree.AddConverter<decltype(typeImpl), size_t>();
-				this->tree.AddConverter<decltype(typeImpl), fibers::containers::number < double > >();
-				this->tree.AddConverter<decltype(typeImpl), signed char>();
-				this->tree.AddConverter<decltype(typeImpl), unsigned char>();
-				this->tree.AddConverter<decltype(typeImpl), char16_t >();
-				this->tree.AddConverter<decltype(typeImpl), char32_t >();
-				this->tree.AddConverter<decltype(typeImpl), wchar_t >();
-				this->tree.AddConverter<decltype(typeImpl), short>();
-				this->tree.AddConverter<decltype(typeImpl), unsigned short>();
-				this->tree.AddConverter<decltype(typeImpl), unsigned int>();
-				this->tree.AddConverter<decltype(typeImpl), unsigned long>();
-				this->tree.AddConverter<decltype(typeImpl), long long>();
-				this->tree.AddConverter<decltype(typeImpl), long double>();
-				this->tree.AddConverter([](decltype(typeImpl) o) -> std::string { return std::to_string(o); });
-
-				// Constructors
-				classPtr->m_functions.emplace(Name, make_callable([typeImplCopy = typeImpl]() -> decltype(typeImpl) { return typeImplCopy; })); // Default Constructor
-				classPtr->m_functions.emplace(Name, make_callable([](decltype(typeImpl) const& o) -> decltype(typeImpl) { return (decltype(typeImpl))(o); })); // Copy Constructor
-
-				// Comparisons
-				classPtr->m_functions.emplace("==", scripting::make_callable([](decltype(typeImpl) const& x, decltype(typeImpl) const& y) -> bool { return x == y; }));
-				classPtr->m_functions.emplace("!=", scripting::make_callable([](decltype(typeImpl) const& x, decltype(typeImpl) const& y) -> bool { return x != y; }));
-				classPtr->m_functions.emplace("<", scripting::make_callable([](decltype(typeImpl) const& x, decltype(typeImpl) const& y) -> bool { return x < y; }));
-				classPtr->m_functions.emplace("<=", scripting::make_callable([](decltype(typeImpl) const& x, decltype(typeImpl) const& y) -> bool { return x <= y; }));
-				classPtr->m_functions.emplace(">", scripting::make_callable([](decltype(typeImpl) const& x, decltype(typeImpl) const& y) -> bool { return x > y; }));
-				classPtr->m_functions.emplace(">=", scripting::make_callable([](decltype(typeImpl) const& x, decltype(typeImpl) const& y) -> bool { return x >= y; }));
-				classPtr->m_functions.emplace("+", scripting::make_callable([](decltype(typeImpl) const& x, decltype(typeImpl) const& y) -> decltype(typeImpl) { return x + y; }));
-				classPtr->m_functions.emplace("-", scripting::make_callable([](decltype(typeImpl) const& x, decltype(typeImpl) const& y) -> decltype(typeImpl) { return x - y; }));
-				classPtr->m_functions.emplace("*", scripting::make_callable([](decltype(typeImpl) const& x, decltype(typeImpl) const& y) -> decltype(typeImpl) { return x * y; }));
-				classPtr->m_functions.emplace("/", scripting::make_callable([](decltype(typeImpl) const& x, decltype(typeImpl) const& y) -> decltype(typeImpl) { if (y == 0) return std::numeric_limits<decltype(typeImpl)>::max(); else return x / y; }));
-				classPtr->m_functions.emplace("+=", scripting::make_callable([](decltype(typeImpl)& x, decltype(typeImpl) const& y) -> void { x += y; }));
-				classPtr->m_functions.emplace("-=", scripting::make_callable([](decltype(typeImpl)& x, decltype(typeImpl) const& y) -> void { x -= y; }));
-				classPtr->m_functions.emplace("*=", scripting::make_callable([](decltype(typeImpl)& x, decltype(typeImpl) const& y) -> void { x *= y; }));
-				classPtr->m_functions.emplace("/=", scripting::make_callable([](decltype(typeImpl)& x, decltype(typeImpl) const& y) -> void { if (y == 0) x = std::numeric_limits<decltype(typeImpl)>::max(); else x /= y; }));
-
-
-				// Functions
-				classPtr->m_functions.emplace("max", make_callable([]() { return std::numeric_limits<decltype(typeImpl)>::max(); }));
-				classPtr->m_functions.emplace("min", make_callable([]() { return std::numeric_limits<decltype(typeImpl)>::lowest(); }));
-				classPtr->m_functions.emplace("to_string", make_callable([](decltype(typeImpl) const& o) -> std::string { return std::to_string(o); }));
-				
-			};
-
-			// Built-in types
-			if (1) {
-#define DefineBuiltInType(V) defineBuiltInType(##V(0), #V);
-				DefineBuiltInType(bool);
-				FindClass("bool")->m_functions.emplace("to_string", make_callable([](bool const& o) -> std::string { if (o) { return "true"; } else { return "false"; } }));
-				DefineBuiltInType(char);
-				DefineBuiltInType(int);
-				DefineBuiltInType(long);
-				DefineBuiltInType(float);
-				DefineBuiltInType(double);
-				DefineBuiltInType(size_t);
-				defineBuiltInType(fibers::containers::number<double>(), "Number");
-				DefineBuiltInType(char16_t);
-				DefineBuiltInType(char32_t);
-				DefineBuiltInType(wchar_t);
-				DefineBuiltInType(short);
-				defineBuiltInType(unsigned char(0), "uchar");
-				defineBuiltInType(unsigned short(0), "ushort");
-				defineBuiltInType(unsigned int(0), "uint");
-				defineBuiltInType(unsigned long(0), "ulong");
-				defineBuiltInType(long long(0), "llong");
-				defineBuiltInType(long double(), "ldouble");
-#undef DefineBuiltInType
-
-				// String
-				if (1) {
-					auto string_namespace = std::dynamic_pointer_cast<Class>(this->p_children.get_or_insert("string", std::make_shared<Class>(user_type<std::string>(), this->p_self, "string")));
-					string_namespace->p_self = string_namespace;
-
-					// Constructors
-					string_namespace->m_functions.emplace("string", scripting::make_callable([]() -> std::string { return ""; })); // Default Constructor
-					string_namespace->m_functions.emplace("string", scripting::make_callable([](std::string const& x) -> std::string { return x; })); // Copy Constructor
-					
-					// Comparisons
-					string_namespace->m_functions.emplace("==", scripting::make_callable([](std::string const& x, std::string const& y) { return x == y; }));
-					string_namespace->m_functions.emplace("!=", scripting::make_callable([](std::string const& x, std::string const& y) { return x != y; }));
-					string_namespace->m_functions.emplace("<", scripting::make_callable([](std::string const& x, std::string const& y) { return x < y; }));
-					string_namespace->m_functions.emplace("<=", scripting::make_callable([](std::string const& x, std::string const& y) { return x <= y; }));
-					string_namespace->m_functions.emplace(">", scripting::make_callable([](std::string const& x, std::string const& y) { return x > y; }));
-					string_namespace->m_functions.emplace(">=", scripting::make_callable([](std::string const& x, std::string const& y) { return x >= y; }));
-					string_namespace->m_functions.emplace("+", scripting::make_callable([](std::string const& x, std::string const& y) { return x + y; }));
-
-					// Functions
-					string_namespace->m_functions.emplace("length", scripting::make_callable([](std::string const& x) -> size_t { return x.length(); }));
-					string_namespace->m_functions.emplace("substr", scripting::make_callable([](std::string const& x, size_t Off) -> std::string { return x.substr(Off); }), { "input", "Off" });
-					string_namespace->m_functions.emplace("substr", scripting::make_callable([](std::string const& x, size_t Off, size_t Count) -> std::string { return x.substr(Off, Count); }), { "input", "Off", "Count"});
-					string_namespace->m_functions.emplace("size", scripting::make_callable([](std::string const& x) -> size_t { return x.size(); }));
-					string_namespace->m_functions.emplace("front", scripting::make_callable([](std::string const& x) -> char { return x.front(); }));
-					string_namespace->m_functions.emplace("back", scripting::make_callable([](std::string const& x) -> char { return x.back(); }));
-					string_namespace->m_functions.emplace("at", scripting::make_callable([](std::string const& x, size_t Off) -> char { return x.at(Off); }), { "input", "Off" });
-					string_namespace->m_functions.emplace("to_string", make_callable([](std::string const& o) -> std::string { return o; }));
-
-					// Objects or Constants
-					string_namespace->AddObject("npos", std::make_shared<Any>(std::string::npos));
-				}
-
-
-			}
-
-			// Built-In functions
-			if (1) {
-				// Returns the type of the Any obj
-				this->m_functions.emplace("Type", scripting::Param_Types({ { std::string("obj"), scripting::user_type<Any>() } }), scripting::make_callable(
-					[](Any const& x) -> fibers::Type_Info {
-						if (auto p = x.Type().lock())
-							return *p;
-						else
-							return fibers::user_type<void>();
-					}
-				), true);
-				
-				// Returns a stringified version of the provided Any obj. This is meant to be a fall-back. 
-				this->m_functions.emplace("to_string", scripting::Param_Types({ { "obj", user_type<Any>() } }), scripting::make_callable(
-					[](Any const& x) -> std::string { return Units::printf("`%s`", x.TypeName()); }
-				));
-			}
-		};
-
-	public:
-
-		// Return the conversion tree(s) from the nearest Global namespace
-		virtual void TypeConversionTrees(std::vector<Type_Converter_Tree*>& out, std::set<size_t>& previous)  override {
-			if (previous.find((size_t)p_self.lock().get()) == previous.end()) {
-				previous.insert((size_t)p_self.lock().get());
-				for (auto& Using : p_using) {
-					if (Using) {
-						if (auto ptr = std::dynamic_pointer_cast<Scope>(Using->second.lock())) {
-							ptr->TypeConversionTrees(out, previous);
-						}
-					}
-				}
-				out.push_back(&tree);
-			}
-
-		};
-		// Return the conversion tree(s) from the nearest Global namespace
-		virtual void TypeConversionTrees(std::vector<const Type_Converter_Tree*>& out, std::set<size_t>& previous) const override {
-			if (previous.find((size_t)p_self.lock().get()) == previous.end()) {
-				previous.insert((size_t)p_self.lock().get());
-				for (auto& Using : p_using) {
-					if (Using) {
-						if (auto ptr = std::dynamic_pointer_cast<Scope>(Using->second.lock())) {
-							ptr->TypeConversionTrees(out, previous);
-						}
-					}
-				}
-				out.push_back(&tree);
-			}
-
-		};
-		virtual Type_Converter_Tree* TypeConversionTree() override {
-			return &tree;
-		};
-		virtual const Type_Converter_Tree* TypeConversionTree() const override {
-			return &tree;
-		};
-
-	public:
-		Type_Converter_Tree tree;
-		mutable fibers::synchronization::atomic_number<size_t> p_version;
-
-		virtual size_t GetCurrentVersion(std::shared_ptr<std::set<std::shared_ptr<Scope>>> evaluated = std::make_shared<std::set<std::shared_ptr<Scope>>>()) const override {
-			constexpr auto A = 54059; /* a prime */
-			constexpr auto B = 76963; /* another prime */
-			constexpr auto C = 86969; /* yet another prime */
-			constexpr auto FIRSTH = 37; /* also prime */
-			size_t h = FIRSTH;
-
-			evaluated->emplace(this->p_self.lock());
-
-			// get my parent first...
-			if (auto ptr = p_parent.lock()) {
-				if (evaluated->count(ptr) <= 0)
-					h = (h * A) ^ (ptr->GetCurrentVersion(evaluated) * B);
-			}
-
-			// get my "using" children... 
-			for (auto& usingScope : this->p_using) {
-				if (usingScope) {
-					if (auto ptr = usingScope->second.lock()) {
-						h = (h * A) ^ (ptr->GetCurrentVersion(evaluated) * B);
-					}
-				}
-			}
-
-			// also remember to add myself (if I am a Global)...
-			h = (h * A) ^ (p_version.load() * B);
-
-			return h % C;
-		};
-	};
-#endif
 
 	class Scope2;
 	class Namespace2;
@@ -5333,54 +3607,20 @@ namespace scripting {
 
 			size_t operator()(std::weak_ptr<Scope2> const& ptr) const noexcept {
 				return std::hash<std::shared_ptr<Scope2>>()(ptr.lock());
-
-				//static auto hasher{ std::hash<std::string>() };
-				//if (auto p = ptr.lock()) {
-				//	return hasher(p->p_UniqueName);
-				//} else {
-				//	return 37; // prime
-				//}
 			};
 			size_t operator()(std::weak_ptr<Namespace2> const& ptr) const noexcept {
-				return std::hash<std::shared_ptr<Scope2>>()(std::dynamic_pointer_cast<Scope2>(ptr.lock()));
-
-				//static auto hasher{ std::hash<std::string>() };
-				//if (auto p = ptr.lock()) {
-				//	if (auto p2 = (Scope2*)(void*)p.get()) {
-				//		return hasher(p2->p_UniqueName);
-				//	}					
-				//}
-				//else {
-				//	return 37; // prime
-				//}
+				return std::hash<std::shared_ptr<Scope2>>()(std::dynamic_pointer_cast<Scope2>(ptr.lock()));				
 			};
 			size_t operator()(std::weak_ptr<Class2> const& ptr) const noexcept {
-				return std::hash<std::shared_ptr<Scope2>>()(std::dynamic_pointer_cast<Scope2>(ptr.lock()));
-
-				//static auto hasher{ std::hash<std::string>() };
-				//if (auto p = ptr.lock()) {
-				//	if (auto p2 = (Scope2*)(void*)p.get()) {
-				//		return hasher(p2->p_UniqueName);
-				//	}
-				//}
-				//else {
-				//	return 37; // prime
-				//}
+				return std::hash<std::shared_ptr<Scope2>>()(std::dynamic_pointer_cast<Scope2>(ptr.lock()));				
 			};
 			size_t operator()(std::weak_ptr<Global2> const& ptr) const noexcept {
-				return std::hash<std::shared_ptr<Scope2>>()(std::dynamic_pointer_cast<Scope2>(ptr.lock()));
-
-				//static auto hasher{ std::hash<std::string>() };
-				//if (auto p = ptr.lock()) {
-				//	if (auto p2 = (Scope2*)(void*)p.get()) {
-				//		return hasher(p2->p_UniqueName);
-				//	}
-				//}
-				//else {
-				//	return 37; // prime
-				//}
+				return std::hash<std::shared_ptr<Scope2>>()(std::dynamic_pointer_cast<Scope2>(ptr.lock()));				
 			};
-			
+			size_t operator()(std::weak_ptr<Type_Converter_Tree> const& ptr) const noexcept {
+				return std::hash<std::shared_ptr<Type_Converter_Tree>>()(ptr.lock());
+			};
+
 			size_t operator()(std::shared_ptr<Scope2> const& p) const noexcept {
 				return std::hash<std::shared_ptr<Scope2>>()(p);
 
@@ -6008,7 +4248,6 @@ namespace scripting {
 		};
 #endif
 
-
 		virtual std::shared_ptr< Functions2 > GetFunctions() const {
 			if (auto namespacePtr = std::dynamic_pointer_cast<Scope2>(GetNamespace())) {
 				return namespacePtr->GetFunctions();
@@ -6061,6 +4300,204 @@ namespace scripting {
 				return nullptr;
 			}
 		};
+
+	private:	
+		inline static void hash_combine(std::size_t& seed) { };
+		template <typename T, typename... Rest> 
+		inline static void hash_combine(std::size_t& seed, T&& v, Rest &&... rest) {
+			std::hash<T> hasher{};
+			seed ^= hasher(std::forward<T>(v)) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+			hash_combine(seed, std::forward<Rest>(rest)...);
+		};
+		template <typename T, typename... Rest>
+		inline static void hash_combine(std::size_t& seed, T const& v, Rest const&... rest) {
+			std::hash<T> hasher{};
+			seed ^= hasher(v) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+			hash_combine(seed, rest...);
+		};
+
+		using CacheContainer = fibers::containers::Map<size_t, std::weak_ptr<void>>;
+		using TemplatedCacheContainer = fibers::containers::Map<size_t, std::shared_ptr<CacheContainer>>; // organizes multiple caches for several purposes...
+		using VersionedCacheContainer = fibers::containers::Map<size_t, std::shared_ptr<TemplatedCacheContainer>>; // use this mutex to delete entire caches once the version is out-of-date
+		std::shared_ptr<VersionedCacheContainer>
+			SearchCache{ std::make_shared<VersionedCacheContainer>() };
+
+		std::shared_ptr<TemplatedCacheContainer> GetVersionedCacheContainer(std::shared_ptr<Type_Converter_Tree> const& tree)const {
+			auto version = std::hash<std::shared_ptr<Type_Converter_Tree>>()(tree);
+			if (SearchCache) {
+				if (auto ptr = SearchCache->at_or(version, nullptr)) {
+					return ptr;
+				}
+				else {
+					return SearchCache->get_or_insert(version, std::make_shared<TemplatedCacheContainer>());
+				}
+			}
+			return nullptr;
+		};
+		template<size_t CacheID> std::shared_ptr<CacheContainer> GetCacheContainer(std::shared_ptr<Type_Converter_Tree> const& tree)const {
+			if (auto version_container = GetVersionedCacheContainer(tree)) {
+				if (auto ptr = version_container->at_or(CacheID, nullptr)) {
+					return ptr;
+				}
+				else {
+					return version_container->get_or_insert(CacheID, std::make_shared<CacheContainer>());
+				}
+			}
+			return nullptr;
+		};
+		template<size_t CacheID, typename... Rest> std::shared_ptr<void> GetCached(/*size_t CacheID, */std::shared_ptr<Type_Converter_Tree> const& tree, Rest const&... rest) const {
+			if (std::shared_ptr<CacheContainer> cache_container = GetCacheContainer<CacheID>(tree)) {
+				size_t hash = 0;
+				hash_combine(hash, rest...);
+
+				if (auto p = cache_container->at_or(hash, std::weak_ptr<void>()).lock()) {
+					return p;
+				}
+			}
+			return nullptr;
+		};
+		template<size_t CacheID, typename... Rest> void InsertCached(/*size_t CacheID, */std::shared_ptr<Type_Converter_Tree> const& tree, std::shared_ptr<void> const& obj, Rest const&... rest) const {
+			if (std::shared_ptr<CacheContainer> cache_container = GetCacheContainer<CacheID>(tree)) {
+				size_t hash = 0;
+				hash_combine(hash, rest...);
+				(void)cache_container->get_or_insert(hash, obj);
+			}
+		};
+
+		//std::shared_ptr<TemplatedCacheContainer> GetVersionedCacheContainer() {
+		//	auto version = std::hash<std::shared_ptr<Type_Converter_Tree>>()(this->GetTypeConverterTree());
+		//	if (SearchCache) {
+		//		if (auto ptr = SearchCache->at_or(version, nullptr)) {
+		//			return ptr;
+		//		}
+		//		else {
+		//			return SearchCache->get_or_insert(version, std::make_shared<TemplatedCacheContainer>());
+		//		}
+		//	}
+		//	return nullptr;
+		//};
+		//template<size_t CacheID> std::shared_ptr<CacheContainer> GetCacheContainer() {
+		//	if (auto version_container = GetVersionedCacheContainer()) {
+		//		if (auto ptr = version_container->at_or(CacheID, nullptr)) {
+		//			return ptr;
+		//		}
+		//		else {
+		//			return version_container->get_or_insert(CacheID, std::make_shared<CacheContainer>());
+		//		}
+		//	}
+		//	return nullptr;
+		//};
+		//template<size_t CacheID, typename... Rest> std::shared_ptr<void> GetCached(Rest... rest) {
+		//	if (std::shared_ptr<CacheContainer> cache_container = GetCacheContainer<CacheID>()) {
+		//		size_t hash = 0;
+		//		hash_combine(hash, rest...);
+		//		if (auto p = cache_container->at_or(hash, std::weak_ptr<void>()).lock()) {
+		//			return p;
+		//		}
+		//	}
+		//	return nullptr;
+		//};
+		//template<size_t CacheID, typename... Rest> void InsertCached(std::shared_ptr<void> const& obj, Rest... rest) {
+		//	if (std::shared_ptr<CacheContainer> cache_container = GetCacheContainer<CacheID>()) {
+		//		size_t hash = 0;
+		//		hash_combine(hash, rest...);
+		//		(void)cache_container->get_or_insert(hash, obj);
+		//	}
+		//};
+
+
+#if 0
+		using NamespaceCache3Type = std::pair<std::shared_mutex, std::weak_ptr<Namespace2>>;
+		using NamespaceCache2Type = concurrency::concurrent_unordered_map<std::string, std::shared_ptr < NamespaceCache3Type>>;
+		using NamespaceCache1Type = std::pair < std::shared_mutex, concurrency::concurrent_unordered_map<size_t, std::shared_ptr<NamespaceCache2Type>>>;
+		std::shared_ptr< NamespaceCache1Type >
+			FindNamespaceCache{ std::make_shared<NamespaceCache1Type>() };
+		static std::shared_ptr<NamespaceCache2Type> GetNamespaceCache(std::shared_ptr<NamespaceCache1Type> const& cache, size_t cache1_key) {
+			auto locked{ std::shared_lock(cache->first) };
+
+			while (cache) {
+				auto f = cache->second.find(cache1_key);
+				if (f != cache->second.end()) {
+					std::shared_ptr<NamespaceCache2Type> out = f->second;
+					return out;
+				}
+				else {
+					cache->second.insert(std::pair<size_t, std::shared_ptr<NamespaceCache2Type>>{ cache1_key, std::make_shared<NamespaceCache2Type>() });
+				}
+			}
+			return nullptr;
+		};
+		static void EraseNamespaceCache(std::shared_ptr<NamespaceCache1Type> const& cache, size_t cache1_key) {
+			auto locked{ std::unique_lock(cache->first) };
+
+			if (cache) {
+				cache->second.unsafe_erase(cache1_key);
+			}
+		};
+		static void EraseAllNamespaceCacheExcept(std::shared_ptr<NamespaceCache1Type> const& cache, size_t cache1_key) {
+			std::set< size_t > keys;
+
+			if (cache) {
+				auto locked{ std::shared_lock(cache->first) };
+
+				for (auto& x : cache->second) {
+					keys.insert(x.first);
+				}
+
+				keys.erase(cache1_key);
+			}
+
+			if (cache && (keys.size() > 0)) {
+				auto locked{ std::unique_lock(cache->first) };
+				for (auto& key : keys) {
+					cache->second.unsafe_erase(key);
+				}
+			}
+		};
+		static bool TryGetNamespaceCache(std::shared_ptr<NamespaceCache1Type> cache, size_t cache1_key, std::string const& cache_key, std::shared_ptr<Namespace2>& out) {
+			if (cache) {
+				auto locked{ std::shared_lock(cache->first) };
+				auto f = cache->second.find(cache1_key);
+				if (f != cache->second.end()) {
+					if (std::shared_ptr<NamespaceCache2Type> cache2 = f->second) {
+						auto f = cache2->find(cache_key);
+						if (f != cache2->end()) {
+							if (f->second) {
+								auto locked{ std::shared_lock(f->second->first) };
+								out = f->second->second.lock();
+								return (bool)out;
+							}
+						}
+					}
+				}
+			}
+			return false;
+		};
+		static bool EmplaceNamespaceCache(std::shared_ptr<NamespaceCache1Type> cache, size_t cache1_key, std::string const& cache_key, std::shared_ptr<Namespace2> const& obj) {
+			if (cache) {
+				auto locked{ std::unique_lock(cache->first) };
+				auto f = cache->second.find(cache1_key);
+				if (f != cache->second.end()) {
+					while (std::shared_ptr<NamespaceCache2Type> cache2 = f->second) {
+						auto f = cache2->find(cache_key);
+						if (f != cache2->end()) {
+							if (f->second) {
+								auto locked{ std::unique_lock(f->second->first) };
+								f->second->second = obj;
+								return true;
+							}
+						}
+						else {
+							cache2->insert(std::pair<std::string, std::shared_ptr<NamespaceCache3Type>>{ cache_key, std::make_shared<NamespaceCache3Type>() });
+						}
+					}
+				}
+			}
+			return false;
+		};
+#endif
+
+	public:
 		std::shared_ptr<Namespace2> FindNamespace(std::string QualifiedOrUnqualifiedNamespaceName) const {
 			static auto fixNamespace{ [](std::string x) -> std::string {
 				while (x.find("::") == 0 && x.length() > 2) {
@@ -6077,19 +4514,41 @@ namespace scripting {
 			if (QualifiedOrUnqualifiedNamespaceName == "" || QualifiedOrUnqualifiedNamespaceName == "::") { return std::dynamic_pointer_cast<Namespace2>(this->GetLibrary()); }
 
 			std::shared_ptr<Namespace2> out;
+
+			auto tree = this->GetTypeConverterTree();
+			if (out = std::static_pointer_cast<Namespace2>(GetCached<1>(tree, QualifiedOrUnqualifiedNamespaceName))) {
+				return out;
+			}
+
+
+			//auto tree_hash = Hasher()(std::weak_ptr<Type_Converter_Tree>(this->GetTypeConverterTree()));
+			//auto cache1 = GetNamespaceCache(FindNamespaceCache, tree_hash);
+			//defer(EraseAllNamespaceCacheExcept(FindNamespaceCache, tree_hash));
+			//if (TryGetNamespaceCache(FindNamespaceCache, tree_hash, QualifiedOrUnqualifiedNamespaceName, out))
+			//	return out;
+
 #if 1
 			long long len = QualifiedOrUnqualifiedNamespaceName.length();
 			if (TryFindNearestNamespaceWhere(out, [&len, tryFind = QualifiedOrUnqualifiedNamespaceName](std::shared_ptr<Namespace2> const& namespacePtr)->bool {
-				auto qualifiedName = std::dynamic_pointer_cast<Scope2>(namespacePtr)->GetQualifiedNamespace();
-
-				// remove "::" from end
-				while (qualifiedName.size() >= 2 && (qualifiedName.rfind("::") == (qualifiedName.length() - 2))) { qualifiedName = qualifiedName.substr(0, qualifiedName.length() - 2); }
-
-				long long qualifiedNameLen = qualifiedName.length();
-				auto F = qualifiedName.find(tryFind);
-				if ((F != std::string::npos) && (F == (qualifiedNameLen - len))) return true;				
-				return false;
+				std::string const& qualifiedName = std::dynamic_pointer_cast<Scope2>(namespacePtr)->GetQualifiedNamespace();
+				if ((qualifiedName.size() >= 2) && (qualifiedName.substr(qualifiedName.length() - 2) == "::")) {
+					// remove "::" from end
+					std::string QualifiedName = qualifiedName.substr(0, qualifiedName.length() - 2);
+					while (QualifiedName.size() >= 2 && (QualifiedName.substr(QualifiedName.length() - 2) == "::")) QualifiedName = QualifiedName.substr(0, QualifiedName.length() - 2);
+					
+					long long QualifiedNameLen = QualifiedName.length();
+					auto F = QualifiedName.find(tryFind);
+					if ((F != std::string::npos) && (F == (QualifiedNameLen - len))) return true;
+					return false;
+				}
+				else {
+					long long qualifiedNameLen = qualifiedName.length();
+					auto F = qualifiedName.find(tryFind);
+					if ((F != std::string::npos) && (F == (qualifiedNameLen - len))) return true;
+					return false;
+				}
 			})) {
+				InsertCached<1>(tree, out, QualifiedOrUnqualifiedNamespaceName);
 				return out;
 			}
 #else
@@ -6129,7 +4588,13 @@ namespace scripting {
 				}
 
 				// Find the first part
-				auto partPtr = FindNamespace(parts[0]);
+				std::shared_ptr<Namespace2> partPtr;
+				if (!this->IsNamespace()) {
+					partPtr = std::dynamic_pointer_cast<Scope2>(GetNamespace())->FindNamespace(parts[0]); // may recieve a speed-up by searching the parent first
+				}
+				if (!partPtr) {
+					partPtr = this->FindNamespace(parts[0]); // may recieve a speed-up by having searched the parent first
+				}
 				for (int i = 1; i < parts.size(); i++) {
 					if (auto p = std::dynamic_pointer_cast<Scope2>(partPtr)) {
 						if (auto ptr = p->p_children.at_or(parts[i], nullptr)) {
@@ -6192,48 +4657,17 @@ namespace scripting {
 						}
 					}
 					return false;
-				})) { return out; }				
+				})) { 
+					return out;
+				}
 			}
 #endif		
 			return nullptr;			
 		};
-		std::shared_ptr<Class2> FindClass(fibers::Type_Info typeInfo) const {
-			std::shared_ptr<Namespace2> out;
-			if (TryFindNearestNamespaceWhere(out, [tryFind = std::move(typeInfo)](std::shared_ptr<Namespace2> const& namespacePtr)->bool {
-				if (auto ptr = std::dynamic_pointer_cast<Scope2>(namespacePtr)) {
-					if (ptr->IsClass()) {
-						if (tryFind == ptr->GetClassType()) {
-							return true;
-						}
-					}
-				}
-				return false;
-			})) {
-				return std::dynamic_pointer_cast<Class2>(out);
-			}
-			else {
-				return nullptr;
-			}
-		};
-		std::shared_ptr<Class2> FindClass(Type_Info typeInfo) const {
-			std::shared_ptr<Namespace2> out;
-			if (TryFindNearestNamespaceWhere(out, [tryFind = std::move(typeInfo)](std::shared_ptr<Namespace2> const& namespacePtr)->bool {
-				if (auto ptr = std::dynamic_pointer_cast<Scope2>(namespacePtr)) {
-					if (ptr->IsClass()) {
-						if (tryFind == ptr->GetClassType()) {
-							return true;
-						}
-					}
-				}
-				return false;
-			})) {
-				return std::dynamic_pointer_cast<Class2>(out);
-			}
-			else {
-				return nullptr;
-			}
-		};
 		std::shared_ptr<Class2> FindClass(std::string QualifiedOrUnqualifiedNamespaceName) const {
+#if 1
+			return std::dynamic_pointer_cast<Class2>(FindNamespace(QualifiedOrUnqualifiedNamespaceName));
+#else
 			static auto fixNamespace{ [](std::string x) -> std::string {
 				while (x.find("::") == 0 && x.length() > 2) {
 					x = x.substr(2);
@@ -6264,12 +4698,71 @@ namespace scripting {
 					if ((F != std::string::npos) && (F == (qualifiedNameLen - len))) return true;
 				}
 				return false;
-			})) {
+				})) {
 				return std::dynamic_pointer_cast<Class2>(out);
 			}
 			return nullptr;
+#endif
 		};
 
+	public:
+		std::shared_ptr<Class2> FindClass(fibers::Type_Info const& typeInfo) const {
+			std::shared_ptr<Namespace2> out;
+
+			//auto tree_hash = Hasher()(std::weak_ptr<Type_Converter_Tree>(this->GetTypeConverterTree()));
+			//auto cache1 = GetClassCache(FindClassCache, tree_hash);
+			//defer(EraseAllClassCacheExcept(FindClassCache, tree_hash));
+			//std::shared_ptr<Class2> out2;
+			//if (TryGetClassCache(FindClassCache, tree_hash, std::hash<fibers::Type_Info>()(typeInfo), out2))
+			//	return out2;
+
+			if (TryFindNearestNamespaceWhere(out, [tryFind = typeInfo](std::shared_ptr<Namespace2> const& namespacePtr)->bool {
+				if (auto ptr = std::dynamic_pointer_cast<Scope2>(namespacePtr)) {
+					if (ptr->IsClass()) {
+						if (tryFind == ptr->GetClassType()) {
+							return true;
+						}
+					}
+				}
+				return false;
+			})) {
+				//EmplaceClassCache(FindClassCache, tree_hash, std::hash<fibers::Type_Info>()(typeInfo), std::dynamic_pointer_cast<Class2>(out));
+				return std::dynamic_pointer_cast<Class2>(out);
+			}
+			else {
+				//EmplaceClassCache(FindClassCache, tree_hash, std::hash<fibers::Type_Info>()(typeInfo), nullptr);
+				return nullptr;
+			}
+		};
+		std::shared_ptr<Class2> FindClass(Type_Info const& typeInfo) const {
+			std::shared_ptr<Namespace2> out;
+
+			//auto tree_hash = Hasher()(std::weak_ptr<Type_Converter_Tree>(this->GetTypeConverterTree()));
+			//auto cache1 = GetClassCache(FindClassCache, tree_hash);
+			//defer(EraseAllClassCacheExcept(FindClassCache, tree_hash));
+			//std::shared_ptr<Class2> out2;
+			//if (TryGetClassCache(FindClassCache, tree_hash, std::hash<Type_Info>()(typeInfo), out2))
+			//	return out2;
+
+			if (TryFindNearestNamespaceWhere(out, [tryFind = typeInfo](std::shared_ptr<Namespace2> const& namespacePtr)->bool {
+				if (auto ptr = std::dynamic_pointer_cast<Scope2>(namespacePtr)) {
+					if (ptr->IsClass()) {
+						if (tryFind == ptr->GetClassType()) {
+							return true;
+						}
+					}
+				}
+				return false;
+			})) {
+				//EmplaceClassCache(FindClassCache, tree_hash, std::hash<Type_Info>()(typeInfo), std::dynamic_pointer_cast<Class2>(out));
+				return std::dynamic_pointer_cast<Class2>(out);
+			}
+			else {
+				//EmplaceClassCache(FindClassCache, tree_hash, std::hash<Type_Info>()(typeInfo), nullptr);
+				return nullptr;
+			}
+		};
+		
 		std::shared_ptr<Scope2> FindScopeWithObj(std::string objName) const {
 			static auto fixNamespace{ [](std::string x) -> std::string {
 				while (x.find("::") == 0 && x.length() > 2) {
@@ -6518,9 +5011,23 @@ namespace scripting {
 			return out;
 		};
 
+	private:
 		bool TryFindFunctionImpl(std::string const& functionName, scripting::Function_Params const& params, std::shared_ptr<Type_Converter_Tree> const& m_conversionTree, Functions2::FunctionActualPtr& out) const {
 			if (!m_conversionTree) return false;
 			
+			if (out = std::static_pointer_cast<Functions2::FunctionActual>(GetCached<0>(m_conversionTree, functionName, params))) {
+				return (bool)out;
+			}
+			defer(InsertCached<0>(m_conversionTree, out, functionName, params));
+
+			//auto tree_hash = Hasher()(std::weak_ptr<Type_Converter_Tree>(m_conversionTree));
+			//auto cache1 = GetCache(FindFunctionCache, tree_hash);
+			//defer(EraseAllCacheExcept(FindFunctionCache, tree_hash));
+			//auto cache2 = GetCache(GetCache(FindFunctionCache, tree_hash), functionName);
+			//if (TryGetCache(cache2, params, out)) 
+			//	return (bool)out;
+			//defer(EmplaceCache(cache2, params, out));
+
 			size_t lastOfColons{ 0 };
 			if ((lastOfColons = functionName.find_last_of("::")) == std::string::npos) {
 				std::shared_ptr<Scope2> firstParamScopePtr{ nullptr };
@@ -6544,22 +5051,34 @@ namespace scripting {
 								if (func->second.conversion_cost(params, *m_conversionTree) != std::numeric_limits<double>::max()) {
 									// The function is available and requires (potentially) conversion of other parameters. 
 									out = func;
+									// EmplaceCache(cache2, params, out);
 									return true;
 								}
 							}
 						}
 					}
 					
-
-					for (auto& scope : GetScopesForObjectSearch()) {
-						if (scope) {
+					// try to find the function from nearby scopes... 
+					(void)FindNearestNamespaceWhere([&sort, &functionName, &params, &m_conversionTree](std::shared_ptr<Namespace2> const& namespace_ptr) -> bool {
+						if (auto scope = std::dynamic_pointer_cast<Scope2>(namespace_ptr)) {
 							if (auto ptr = scope->GetFunctions()) {
 								if (auto func = ptr->BuildMatch(functionName, params, *m_conversionTree, false, true)) {
 									sort.emplace(func->second.conversion_cost(params, *m_conversionTree), func);
+									// return true; // found a nearby match? Give up? Add a give-up criteria? 
 								}
 							}
-						}						
-					}
+						}
+						return false;
+					});
+					//for (auto& scope : GetScopesForObjectSearch()) {
+					//	if (scope) {
+					//		if (auto ptr = scope->GetFunctions()) {
+					//			if (auto func = ptr->BuildMatch(functionName, params, *m_conversionTree, false, true)) {
+					//				sort.emplace(func->second.conversion_cost(params, *m_conversionTree), func);
+					//			}
+					//		}
+					//	}						
+					//}
 					//{
 					//	auto firstParam = params.begin();
 					//	if (firstParam != params.end()) {
@@ -6588,31 +5107,35 @@ namespace scripting {
 						}
 
 						// Can the conversion tree do this itself, without any help?
-						//if (params.size() == 1) {
-						//	if (m_conversionTree->Converts(params[0].Type(), constructorScopePtr->GetClassType())) {
-						//		auto func = make_callable([tree = std::weak_ptr<Type_Converter_Tree>(m_conversionTree), toType = constructorScopePtr->GetClassType()](Any const& from)->Any {
-						//			if (auto Tree = tree.lock()) {
-						//				if (Tree->Converts(from.Type(), toType)) {
-						//					try {
-						//						return Tree->Convert(from, toType);
-						//					}
-						//					catch (exception::bad_boxed_cast const& e) {
-						//						std::cout << "Conversion is no longer available" << std::endl;
-						//						throw exception::not_found_error("Conversion is no longer available");
-						//					}
-						//				}
-						//			}
-						//			std::cout << "Conversion is no longer available" << std::endl;
-						//			throw exception::not_found_error("Conversion is no longer available");									
-						//		});
-						//		func->SetReturnType(constructorScopePtr->GetClassType());
-						//		sort.emplace(func->conversion_cost(params, *m_conversionTree), std::make_shared<Functions2::FunctionActual>(func, scripting::Param_Types(
-						//			{ {"From", params[0].Type() } }
-						//		)));
-						//	}
-						//}
+						/*if (params.size() == 1) {
+							if (m_conversionTree->Converts(params[0].Type(), constructorScopePtr->GetClassType())) {
+								auto func = make_callable([tree = std::weak_ptr<Type_Converter_Tree>(m_conversionTree), toType = constructorScopePtr->GetClassType()](Any const& from)->Any {
+									if (auto Tree = tree.lock()) {
+										if (Tree->Converts(from.Type(), toType)) {
+											try {
+												return Tree->Convert(from, toType);
+											}
+											catch (exception::bad_boxed_cast const& e) {
+												std::cout << "Conversion is no longer available" << std::endl;
+												throw exception::not_found_error("Conversion is no longer available");
+											}
+										}
+									}
+									std::cout << "Conversion is no longer available" << std::endl;
+									throw exception::not_found_error("Conversion is no longer available");									
+								});
+								func->SetReturnType(constructorScopePtr->GetClassType());
+								sort.emplace(func->conversion_cost(params, *m_conversionTree), std::make_shared<Functions2::FunctionActual>(func, scripting::Param_Types(
+									{ {"From", params[0].Type() } }
+								)));
+							}
+						}*/
 					}
-					for (auto& s : sort) { if (s.first != std::numeric_limits<double>::max()) { out = s.second; return true; } }
+					for (auto& s : sort) { if (s.first != std::numeric_limits<double>::max()) { 
+						out = s.second; 
+						// EmplaceCache(cache2, params, out);
+						return true; 
+					} }
 				}
 
 				// SECOND SEARCH ALLOWS FOR TEMPLATE FUNCTIONS
@@ -6672,7 +5195,11 @@ namespace scripting {
 						//	}
 						//}
 					}
-					for (auto& s : sort) { if (s.first != std::numeric_limits<double>::max()) { out = s.second; return true; } }
+					for (auto& s : sort) { if (s.first != std::numeric_limits<double>::max()) { 
+						out = s.second; 
+						// EmplaceCache(cache2, params, out);
+						return true; 
+					} }
 				}
 
 				// IF ALL SEARCHES FAILED, PERHAPS THE USER MEANT TO CALL THE CONSTRUCTOR FOR A CLASS
@@ -6682,28 +5209,47 @@ namespace scripting {
 							if (auto func = functions->BuildMatch(functionName, params, *m_conversionTree, true, true)) {
 								if (func->second.conversion_cost(params, *m_conversionTree) != std::numeric_limits<double>::max()) {
 									out = func;
+									// EmplaceCache(cache2, params, out);
 									return true;
 								}
 							}
 						}
 					}
 				}
-
-				return false;
 			}
 			else {
 				std::string functionNameActual{ functionName.substr(lastOfColons + 1) };
 				std::string scopeName{ functionName.substr(0, lastOfColons - 1) };
 
 				if (auto namespacePtr = std::dynamic_pointer_cast<Scope2>(FindNamespace(functionName))) {
-					return namespacePtr->TryFindFunctionImpl(functionNameActual, params, m_conversionTree, out);
+					if (namespacePtr->TryFindFunctionImpl(functionNameActual, params, m_conversionTree, out)) {
+						// EmplaceCache(cache2, params, out);
+						return true;
+					}
+					else {
+						// EmplaceCache(cache2, params, out);
+						return false;
+					}
 				}
-
-				return false;
 			}
+
+			// EmplaceCache(cache2, params, out);
+			return false;
 		};
 
+    public:
 		Functions2::FunctionActualPtr BuildFunction(std::string const& functionName, scripting::Function_Params const& params, std::shared_ptr<Type_Converter_Tree> const& m_conversionTree) const {
+			// note: if this scope is a non-namespace, has no "Using" statements, and has no children, then we can potentially speed-up the process by calling this function on the parent. The parent will do the caching, speeding up that parent scope (hopefully)
+			if (!this->IsNamespace()) {
+				if (this->p_using.size() == 0) {
+					if (this->p_children.size() == 0){
+						if (auto p = this->p_parent.lock()) {
+							return p->BuildFunction(functionName, params, m_conversionTree);
+						}
+					}
+				}
+			}
+
 			Functions2::FunctionActualPtr out{ nullptr };
 			if (TryFindFunctionImpl(functionName, params, m_conversionTree, out)) {
 				return out;
@@ -6797,7 +5343,6 @@ namespace scripting {
 			throw exception::not_found_error(user_type<T>().lock()->name());			
 		};
 
-		
 	};
 
 	class Namespace2 : public Scope2 {
@@ -8576,8 +7121,6 @@ namespace scripting {
 
 
 #endif
-
-
 
 };
 
