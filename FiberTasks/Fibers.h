@@ -5899,7 +5899,7 @@ namespace fibers {
 		private:
 			concurrency::concurrent_unordered_map<size_t, std::shared_ptr<std::pair<const KeyType, ObjType>>> 
 				map;
-			mutable fibers::synchronization::shared_mutex<fibers::synchronization::mutex> 
+			mutable std::shared_mutex // fibers::synchronization::shared_mutex<fibers::synchronization::mutex> 
 				mut;
 
 		public:
@@ -5908,24 +5908,33 @@ namespace fibers {
 				, mut()
 			{};
 			Map(Map const& o) 
-				: map(o.map)
+				: map()
 				, mut()
-			{};
+			{
+				auto lock{ std::unique_lock(mut) };
+				auto lock2{ std::unique_lock(o.mut) };
+				map = o.map;
+			};
 			Map(Map&& o)
-				: map(o.map)
+				: map(std::move(o.map))
 				, mut()
 			{};
 			Map& operator=(Map const& o) {
+				if (this == &o) return *this;
+
 				auto lock{ std::unique_lock(mut) };
+				auto lock2{ std::unique_lock(o.mut) };
 				map = o.map;
 			};
 			Map& operator=(Map&& o) {
 				auto lock{ std::unique_lock(mut) };
+				auto lock2{ std::unique_lock(o.mut) };
 				map = o.map;
 			};
 			~Map() = default;
 
 		public:
+			// Quickly get the first pair from the map. User must anticipate that this could be any value, and is not ordered. 
 			std::shared_ptr<std::pair<const KeyType, ObjType>> first() const {
 				auto lock{ std::shared_lock(mut) };
 				auto b = map.begin();
@@ -5937,7 +5946,6 @@ namespace fibers {
 					return nullptr;
 				}
 			};
-
 			/* emplaces the object at the key in the map. */
 			bool emplace(KeyType const& key, ObjType const& object, bool overwriteIfExists = true) {
 				static auto hasher{ Hasher() };
@@ -6023,6 +6031,18 @@ namespace fibers {
 				}
 			};
 			/* returns a COPY of the value at the key. Returns empty if the value is not found. */
+			ObjType at_hash_or(size_t const& key_hash, ObjType const& defaultObj = ObjType()) const {
+				auto lock{ std::shared_lock(mut) };
+
+				auto f = map.find(key_hash);
+				if (f != map.end() && f->second) {
+					return f->second->second;
+				}
+				else {
+					return defaultObj;
+				}
+			};
+			/* returns a COPY of the value at the key. Returns empty if the value is not found. */
 			std::optional<std::pair<const KeyType, ObjType>> pair_at_hash(size_t const& key_hash) const {
 				auto lock{ std::shared_lock(mut) };
 
@@ -6034,23 +6054,43 @@ namespace fibers {
 					return std::nullopt;
 				}
 			};
-			/* returns a COPY of the value at the key. Returns default values if the value is not found. */
-			ObjType at_hash_or(size_t const& key_hash, ObjType const& defaultObj = ObjType()) const { return at_hash(key_hash).value_or(defaultObj); };
 			/* returns a COPY of the value at the key. Returns empty if the value is not found. */
 			std::optional<ObjType> at(KeyType const& key) const { static auto hasher{ Hasher() }; return at_hash(hasher(key)); };
 			/* returns a COPY of the value at the key. Returns default values if the value is not found. */
-			ObjType at_or(KeyType const& key, ObjType const& defaultObj = ObjType()) const { return at(key).value_or(defaultObj); };
+			ObjType at_or(KeyType const& key, ObjType const& defaultObj = ObjType()) const { static auto hasher{ Hasher() }; return at_hash_or(hasher(key), defaultObj); };
 
 			/* returns a COPY of the value at the hashed key. Returns empty if the value is not found.
 			Allows user to calculate the hash externally from the Map. */
 			ObjType get_or_insert(KeyType const& key, ObjType const& defaultObj = ObjType()) {
-				while (true) {
-					auto optionalF = at(key);
-					if (optionalF.has_value())
-						return optionalF.value();
-					else
-						emplace(key, defaultObj);
+				static auto hasher{ Hasher() };
+
+				auto hash{ hasher(key) };
+				if (1) {
+					auto lock{ std::shared_lock(mut) };
+					auto f = map.find(hash);
+					if (f != map.end()) {
+						return f->second->second;
+					}
 				}
+				if (1) {
+					auto lock{ std::unique_lock(mut) };
+					auto f = map.find(hash);
+					if (f != map.end()) {
+						return f->second->second;
+					}
+					else {
+						map.insert({ hash,  std::make_shared<std::pair<const KeyType, ObjType>>((const KeyType)key, defaultObj) });
+						return defaultObj;
+					}
+				}
+
+				//while (true) {
+				//	auto optionalF = at(key);
+				//	if (optionalF.has_value())
+				//		return optionalF.value();
+				//	else
+				//		emplace(key, defaultObj);
+				//}
 			};
 
 			/* queues the key to be erased. Note that the erasure may be delayed depending on use of the map. */

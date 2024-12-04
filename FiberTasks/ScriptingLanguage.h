@@ -629,11 +629,11 @@ namespace scripting {
 				return true;
 			}
 			else {
-				if (auto node_ptr = nodes.at(fromType).value_or(nullptr)) {
+				if (auto node_ptr = nodes.at_or(fromType, nullptr)) {
 					auto& node = *node_ptr;
 
 					// If the conversion path does not exist OR is outdated, then re-create it. 
-					auto f = node.cached_conversions.at(to).value_or(nullptr);
+					auto f = node.cached_conversions.at_or(to, nullptr);
 					if (!f || std::get<1>(*f) < version.GetValue()) {
 						std::vector<scripting::Type_Info> newCached;
 						{
@@ -687,7 +687,7 @@ namespace scripting {
 									if (auto f = currentNode->connections.at_or(intermediate_to_type, nullptr)) {
 										currentFrom = f->convert(currentFrom);
 										if (auto p = currentFrom.Type().lock()) {
-											currentNode = nodes.at(p).value_or(nullptr);
+											currentNode = nodes.at_or(p, nullptr);
 										}
 										else {
 											throw std::runtime_error("Something went wrong with the analysis at " + std::to_string(__LINE__));
@@ -741,11 +741,11 @@ namespace scripting {
 				return 0;
 			}
 			else {
-				if (auto node_ptr = nodes.at(From).value_or(nullptr)) {
+				if (auto node_ptr = nodes.at_or(From, nullptr)) {
 					auto& node = *node_ptr;
 
 					// If the conversion path does not exist OR is outdated, then re-create it. 
-					auto f = node.cached_conversions.at(To).value_or(nullptr);
+					auto f = node.cached_conversions.at_or(To, nullptr);
 					if (!f || std::get<1>(*f) < version.GetValue()) {
 						std::vector<scripting::Type_Info> newCached;
 						{
@@ -782,7 +782,7 @@ namespace scripting {
 								return std::numeric_limits<double>::max();
 							}
 						}
-						f = node.cached_conversions.at(To).value_or(nullptr);
+						f = node.cached_conversions.at_or(To, nullptr);
 					}
 
 					if (f) {
@@ -793,7 +793,7 @@ namespace scripting {
 							for (auto& intermediate_to_type : conversion_path) {
 								if (auto f = currentNode->connections.at_or(intermediate_to_type, nullptr)) {
 									cost += f->cost();
-									currentNode = nodes.at_hash(std::hash<scripting::Type_Info>()(intermediate_to_type)).value_or(nullptr);
+									currentNode = nodes.at_hash_or(std::hash<scripting::Type_Info>()(intermediate_to_type), nullptr);
 								}
 								else {
 									throw std::runtime_error("Something went wrong with the analysis at " + std::to_string(__LINE__));
@@ -818,11 +818,11 @@ namespace scripting {
 				return true;
 						}
 			else {
-				if (auto node_ptr = nodes.at(From).value_or(nullptr)) {
+				if (auto node_ptr = nodes.at_or(From, nullptr)) {
 					auto& node = *node_ptr;
 
 					// If the conversion path does not exist OR is outdated, then re-create it. 
-					auto f = node.cached_conversions.at(To).value_or(nullptr);
+					auto f = node.cached_conversions.at_or(To, nullptr);
 					if (!f || std::get<1>(*f) < version.GetValue()) {
 						std::vector<scripting::Type_Info> newCached;
 						{
@@ -859,7 +859,7 @@ namespace scripting {
 								return false;
 							}
 						}
-						f = node.cached_conversions.at(To).value_or(nullptr);
+						f = node.cached_conversions.at_or(To, nullptr);
 					}
 
 					// try again... hopefully it has been made (for better or worse)
@@ -4302,6 +4302,8 @@ namespace scripting {
 		};
 
 	private:	
+#define useCachedData
+#ifdef useCachedData
 		inline static void hash_combine(std::size_t& seed) { };
 		template <typename T, typename... Rest> 
 		inline static void hash_combine(std::size_t& seed, T&& v, Rest &&... rest) {
@@ -4316,187 +4318,99 @@ namespace scripting {
 			hash_combine(seed, rest...);
 		};
 
-		using CacheContainer = fibers::containers::Map<size_t, std::weak_ptr<void>>;
-		using TemplatedCacheContainer = fibers::containers::Map<size_t, std::shared_ptr<CacheContainer>>; // organizes multiple caches for several purposes...
-		using VersionedCacheContainer = fibers::containers::Map<size_t, std::shared_ptr<TemplatedCacheContainer>>; // use this mutex to delete entire caches once the version is out-of-date
+		using CacheContainer = std::pair < std::shared_mutex, concurrency::concurrent_unordered_map<size_t, std::weak_ptr<void>>>;
+		using TemplatedCacheContainer = std::pair<std::shared_mutex, concurrency::concurrent_unordered_map<size_t, std::shared_ptr<CacheContainer>>>; // organizes multiple caches for several purposes...
+		using VersionedCacheContainer = std::pair<std::shared_mutex, concurrency::concurrent_unordered_map<size_t, std::shared_ptr<TemplatedCacheContainer>>>; // use this mutex to delete entire caches once the version is out-of-date
 		std::shared_ptr<VersionedCacheContainer>
 			SearchCache{ std::make_shared<VersionedCacheContainer>() };
 
 		std::shared_ptr<TemplatedCacheContainer> GetVersionedCacheContainer(std::shared_ptr<Type_Converter_Tree> const& tree)const {
 			auto version = std::hash<std::shared_ptr<Type_Converter_Tree>>()(tree);
-			if (SearchCache) {
-				if (auto ptr = SearchCache->at_or(version, nullptr)) {
-					return ptr;
+			while (SearchCache) {
+				// test if exists
+				if (1) {
+					auto locked{ std::shared_lock(SearchCache->first) };
+					auto f = SearchCache->second.find(version);
+					if (f != SearchCache->second.end()) {
+						return f->second;
+					}
 				}
-				else {
-					return SearchCache->get_or_insert(version, std::make_shared<TemplatedCacheContainer>());
+
+				// didn't exist yet
+				if (1) {
+					auto locked{ std::unique_lock(SearchCache->first) };
+					auto f = SearchCache->second.find(version);
+					if (f != SearchCache->second.end()) {
+						return f->second;
+					}
+					else {
+						SearchCache->second.insert(std::pair<size_t, std::shared_ptr<TemplatedCacheContainer>>{ version, std::make_shared<TemplatedCacheContainer>() });
+					}
 				}
 			}
 			return nullptr;
 		};
 		template<size_t CacheID> std::shared_ptr<CacheContainer> GetCacheContainer(std::shared_ptr<Type_Converter_Tree> const& tree)const {
 			if (auto version_container = GetVersionedCacheContainer(tree)) {
-				if (auto ptr = version_container->at_or(CacheID, nullptr)) {
-					return ptr;
+				// test if exists
+				if (1) {
+					auto locked{ std::shared_lock(version_container->first) };
+					auto f = version_container->second.find(CacheID);
+					if (f != version_container->second.end()) {
+						return f->second;
+					}
 				}
-				else {
-					return version_container->get_or_insert(CacheID, std::make_shared<CacheContainer>());
+
+				// didn't exist yet
+				if (1) {
+					auto locked{ std::unique_lock(version_container->first) };
+					auto f = version_container->second.find(CacheID);
+					if (f != version_container->second.end()) {
+						return f->second;
+					}
+					else {
+						version_container->second.insert(std::pair<size_t, std::shared_ptr<CacheContainer>>{ CacheID, std::make_shared<CacheContainer>() });
+					}
 				}
 			}
 			return nullptr;
 		};
-		template<size_t CacheID, typename... Rest> std::shared_ptr<void> GetCached(/*size_t CacheID, */std::shared_ptr<Type_Converter_Tree> const& tree, Rest const&... rest) const {
+		template<size_t CacheID, typename... Rest> std::shared_ptr<void> GetCached(std::shared_ptr<Type_Converter_Tree> const& tree, Rest const&... rest) const {
 			if (std::shared_ptr<CacheContainer> cache_container = GetCacheContainer<CacheID>(tree)) {
 				size_t hash = 0;
 				hash_combine(hash, rest...);
 
-				if (auto p = cache_container->at_or(hash, std::weak_ptr<void>()).lock()) {
-					return p;
+				// test if exists
+				if (1) {
+					auto locked{ std::shared_lock(cache_container->first) };
+					auto f = cache_container->second.find(hash);
+					if (f != cache_container->second.end()) {
+						return f->second.lock();
+					}
 				}
 			}
 			return nullptr;
 		};
-		template<size_t CacheID, typename... Rest> void InsertCached(/*size_t CacheID, */std::shared_ptr<Type_Converter_Tree> const& tree, std::shared_ptr<void> const& obj, Rest const&... rest) const {
+		template<size_t CacheID, typename... Rest> void InsertCached(std::shared_ptr<Type_Converter_Tree> const& tree, std::shared_ptr<void> const& obj, Rest const&... rest) const {
 			if (std::shared_ptr<CacheContainer> cache_container = GetCacheContainer<CacheID>(tree)) {
 				size_t hash = 0;
 				hash_combine(hash, rest...);
-				(void)cache_container->get_or_insert(hash, obj);
-			}
-		};
 
-		//std::shared_ptr<TemplatedCacheContainer> GetVersionedCacheContainer() {
-		//	auto version = std::hash<std::shared_ptr<Type_Converter_Tree>>()(this->GetTypeConverterTree());
-		//	if (SearchCache) {
-		//		if (auto ptr = SearchCache->at_or(version, nullptr)) {
-		//			return ptr;
-		//		}
-		//		else {
-		//			return SearchCache->get_or_insert(version, std::make_shared<TemplatedCacheContainer>());
-		//		}
-		//	}
-		//	return nullptr;
-		//};
-		//template<size_t CacheID> std::shared_ptr<CacheContainer> GetCacheContainer() {
-		//	if (auto version_container = GetVersionedCacheContainer()) {
-		//		if (auto ptr = version_container->at_or(CacheID, nullptr)) {
-		//			return ptr;
-		//		}
-		//		else {
-		//			return version_container->get_or_insert(CacheID, std::make_shared<CacheContainer>());
-		//		}
-		//	}
-		//	return nullptr;
-		//};
-		//template<size_t CacheID, typename... Rest> std::shared_ptr<void> GetCached(Rest... rest) {
-		//	if (std::shared_ptr<CacheContainer> cache_container = GetCacheContainer<CacheID>()) {
-		//		size_t hash = 0;
-		//		hash_combine(hash, rest...);
-		//		if (auto p = cache_container->at_or(hash, std::weak_ptr<void>()).lock()) {
-		//			return p;
-		//		}
-		//	}
-		//	return nullptr;
-		//};
-		//template<size_t CacheID, typename... Rest> void InsertCached(std::shared_ptr<void> const& obj, Rest... rest) {
-		//	if (std::shared_ptr<CacheContainer> cache_container = GetCacheContainer<CacheID>()) {
-		//		size_t hash = 0;
-		//		hash_combine(hash, rest...);
-		//		(void)cache_container->get_or_insert(hash, obj);
-		//	}
-		//};
-
-
-#if 0
-		using NamespaceCache3Type = std::pair<std::shared_mutex, std::weak_ptr<Namespace2>>;
-		using NamespaceCache2Type = concurrency::concurrent_unordered_map<std::string, std::shared_ptr < NamespaceCache3Type>>;
-		using NamespaceCache1Type = std::pair < std::shared_mutex, concurrency::concurrent_unordered_map<size_t, std::shared_ptr<NamespaceCache2Type>>>;
-		std::shared_ptr< NamespaceCache1Type >
-			FindNamespaceCache{ std::make_shared<NamespaceCache1Type>() };
-		static std::shared_ptr<NamespaceCache2Type> GetNamespaceCache(std::shared_ptr<NamespaceCache1Type> const& cache, size_t cache1_key) {
-			auto locked{ std::shared_lock(cache->first) };
-
-			while (cache) {
-				auto f = cache->second.find(cache1_key);
-				if (f != cache->second.end()) {
-					std::shared_ptr<NamespaceCache2Type> out = f->second;
-					return out;
-				}
-				else {
-					cache->second.insert(std::pair<size_t, std::shared_ptr<NamespaceCache2Type>>{ cache1_key, std::make_shared<NamespaceCache2Type>() });
-				}
-			}
-			return nullptr;
-		};
-		static void EraseNamespaceCache(std::shared_ptr<NamespaceCache1Type> const& cache, size_t cache1_key) {
-			auto locked{ std::unique_lock(cache->first) };
-
-			if (cache) {
-				cache->second.unsafe_erase(cache1_key);
-			}
-		};
-		static void EraseAllNamespaceCacheExcept(std::shared_ptr<NamespaceCache1Type> const& cache, size_t cache1_key) {
-			std::set< size_t > keys;
-
-			if (cache) {
-				auto locked{ std::shared_lock(cache->first) };
-
-				for (auto& x : cache->second) {
-					keys.insert(x.first);
-				}
-
-				keys.erase(cache1_key);
-			}
-
-			if (cache && (keys.size() > 0)) {
-				auto locked{ std::unique_lock(cache->first) };
-				for (auto& key : keys) {
-					cache->second.unsafe_erase(key);
-				}
-			}
-		};
-		static bool TryGetNamespaceCache(std::shared_ptr<NamespaceCache1Type> cache, size_t cache1_key, std::string const& cache_key, std::shared_ptr<Namespace2>& out) {
-			if (cache) {
-				auto locked{ std::shared_lock(cache->first) };
-				auto f = cache->second.find(cache1_key);
-				if (f != cache->second.end()) {
-					if (std::shared_ptr<NamespaceCache2Type> cache2 = f->second) {
-						auto f = cache2->find(cache_key);
-						if (f != cache2->end()) {
-							if (f->second) {
-								auto locked{ std::shared_lock(f->second->first) };
-								out = f->second->second.lock();
-								return (bool)out;
-							}
-						}
+				// didn't exist yet
+				if (1) {
+					auto locked{ std::unique_lock(cache_container->first) };
+					auto f = cache_container->second.find(hash);
+					if (f != cache_container->second.end()) {
+						// do nothing?
+						f->second = obj;
+					}
+					else {
+						cache_container->second.insert(std::pair<size_t, std::weak_ptr<void>>{ hash, obj });
 					}
 				}
 			}
-			return false;
-		};
-		static bool EmplaceNamespaceCache(std::shared_ptr<NamespaceCache1Type> cache, size_t cache1_key, std::string const& cache_key, std::shared_ptr<Namespace2> const& obj) {
-			if (cache) {
-				auto locked{ std::unique_lock(cache->first) };
-				auto f = cache->second.find(cache1_key);
-				if (f != cache->second.end()) {
-					while (std::shared_ptr<NamespaceCache2Type> cache2 = f->second) {
-						auto f = cache2->find(cache_key);
-						if (f != cache2->end()) {
-							if (f->second) {
-								auto locked{ std::unique_lock(f->second->first) };
-								f->second->second = obj;
-								return true;
-							}
-						}
-						else {
-							cache2->insert(std::pair<std::string, std::shared_ptr<NamespaceCache3Type>>{ cache_key, std::make_shared<NamespaceCache3Type>() });
-						}
-					}
-				}
-			}
-			return false;
 		};
 #endif
-
 	public:
 		std::shared_ptr<Namespace2> FindNamespace(std::string QualifiedOrUnqualifiedNamespaceName) const {
 			static auto fixNamespace{ [](std::string x) -> std::string {
@@ -4515,17 +4429,23 @@ namespace scripting {
 
 			std::shared_ptr<Namespace2> out;
 
+#ifdef useCachedData
+			// note: if this scope is a non-namespace, has no "Using" statements, and has no children, then we can potentially speed-up the process by calling this function on the parent. The parent will do the caching, speeding up that parent scope (hopefully)
+			if (!this->IsNamespace()) {
+				if (this->p_using.size() == 0) {
+					if (this->p_children.size() == 0) {
+						if (auto p = this->p_parent.lock()) {
+							return p->FindNamespace(QualifiedOrUnqualifiedNamespaceName);
+						}
+					}
+				}
+			}
+
 			auto tree = this->GetTypeConverterTree();
 			if (out = std::static_pointer_cast<Namespace2>(GetCached<1>(tree, QualifiedOrUnqualifiedNamespaceName))) {
 				return out;
 			}
-
-
-			//auto tree_hash = Hasher()(std::weak_ptr<Type_Converter_Tree>(this->GetTypeConverterTree()));
-			//auto cache1 = GetNamespaceCache(FindNamespaceCache, tree_hash);
-			//defer(EraseAllNamespaceCacheExcept(FindNamespaceCache, tree_hash));
-			//if (TryGetNamespaceCache(FindNamespaceCache, tree_hash, QualifiedOrUnqualifiedNamespaceName, out))
-			//	return out;
+#endif
 
 #if 1
 			long long len = QualifiedOrUnqualifiedNamespaceName.length();
@@ -4548,7 +4468,9 @@ namespace scripting {
 					return false;
 				}
 			})) {
+#ifdef useCachedData
 				InsertCached<1>(tree, out, QualifiedOrUnqualifiedNamespaceName);
+#endif
 				return out;
 			}
 #else
@@ -4709,12 +4631,12 @@ namespace scripting {
 		std::shared_ptr<Class2> FindClass(fibers::Type_Info const& typeInfo) const {
 			std::shared_ptr<Namespace2> out;
 
-			//auto tree_hash = Hasher()(std::weak_ptr<Type_Converter_Tree>(this->GetTypeConverterTree()));
-			//auto cache1 = GetClassCache(FindClassCache, tree_hash);
-			//defer(EraseAllClassCacheExcept(FindClassCache, tree_hash));
-			//std::shared_ptr<Class2> out2;
-			//if (TryGetClassCache(FindClassCache, tree_hash, std::hash<fibers::Type_Info>()(typeInfo), out2))
-			//	return out2;
+#ifdef useCachedData
+			auto tree = this->GetTypeConverterTree();
+			if (auto out2 = std::static_pointer_cast<Class2>(GetCached<2>(tree, typeInfo))) {
+				return out2;
+			}
+#endif
 
 			if (TryFindNearestNamespaceWhere(out, [tryFind = typeInfo](std::shared_ptr<Namespace2> const& namespacePtr)->bool {
 				if (auto ptr = std::dynamic_pointer_cast<Scope2>(namespacePtr)) {
@@ -4726,23 +4648,27 @@ namespace scripting {
 				}
 				return false;
 			})) {
-				//EmplaceClassCache(FindClassCache, tree_hash, std::hash<fibers::Type_Info>()(typeInfo), std::dynamic_pointer_cast<Class2>(out));
+#ifdef useCachedData
+				InsertCached<2>(tree, std::dynamic_pointer_cast<Class2>(out), typeInfo);
+#endif				
 				return std::dynamic_pointer_cast<Class2>(out);
 			}
 			else {
-				//EmplaceClassCache(FindClassCache, tree_hash, std::hash<fibers::Type_Info>()(typeInfo), nullptr);
+#ifdef useCachedData
+				InsertCached<2>(tree, nullptr, typeInfo);
+#endif				
 				return nullptr;
 			}
 		};
 		std::shared_ptr<Class2> FindClass(Type_Info const& typeInfo) const {
 			std::shared_ptr<Namespace2> out;
 
-			//auto tree_hash = Hasher()(std::weak_ptr<Type_Converter_Tree>(this->GetTypeConverterTree()));
-			//auto cache1 = GetClassCache(FindClassCache, tree_hash);
-			//defer(EraseAllClassCacheExcept(FindClassCache, tree_hash));
-			//std::shared_ptr<Class2> out2;
-			//if (TryGetClassCache(FindClassCache, tree_hash, std::hash<Type_Info>()(typeInfo), out2))
-			//	return out2;
+#ifdef useCachedData
+			auto tree = this->GetTypeConverterTree();
+			if (auto out2 = std::static_pointer_cast<Class2>(GetCached<2>(tree, typeInfo))) {
+				return out2;
+			}
+#endif
 
 			if (TryFindNearestNamespaceWhere(out, [tryFind = typeInfo](std::shared_ptr<Namespace2> const& namespacePtr)->bool {
 				if (auto ptr = std::dynamic_pointer_cast<Scope2>(namespacePtr)) {
@@ -4754,11 +4680,15 @@ namespace scripting {
 				}
 				return false;
 			})) {
-				//EmplaceClassCache(FindClassCache, tree_hash, std::hash<Type_Info>()(typeInfo), std::dynamic_pointer_cast<Class2>(out));
+#ifdef useCachedData
+				InsertCached<2>(tree, std::dynamic_pointer_cast<Class2>(out), typeInfo);
+#endif	
 				return std::dynamic_pointer_cast<Class2>(out);
 			}
 			else {
-				//EmplaceClassCache(FindClassCache, tree_hash, std::hash<Type_Info>()(typeInfo), nullptr);
+#ifdef useCachedData
+				InsertCached<2>(tree, nullptr, typeInfo);
+#endif	
 				return nullptr;
 			}
 		};
@@ -4775,6 +4705,36 @@ namespace scripting {
 			} };
 			objName = fixNamespace(objName);
 
+#ifdef useCachedData
+			// note: if this scope is a non-namespace, has no "Using" statements, and has no children, then we can potentially speed-up the process by calling this function on the parent. The parent will do the caching, speeding up that parent scope (hopefully)
+			if (!this->IsNamespace()) {
+				if (this->p_using.size() == 0) {
+					if (this->p_children.size() == 0) {
+						if (auto objFound = GetObj(objName)) {
+							return p_self.lock();
+						}
+						if (auto p = this->p_parent.lock()) {
+							return p->FindScopeWithObj(objName);
+						}
+					}
+				}
+			}
+
+			auto tree = this->GetTypeConverterTree();
+			if (auto out = std::static_pointer_cast<Scope2>(GetCached<3>(tree, objName))) {
+				if (out->TryFindNearestScopeWhere(out, [&objName](std::shared_ptr<Scope2> const& namespacePtr)->bool {
+					if (auto ptr = std::dynamic_pointer_cast<Scope2>(namespacePtr)) {
+						if (auto objFound = ptr->GetObj(objName)) {
+							return true;
+						}
+					}
+					return false;
+					})) {
+					return out;
+				}
+			}
+#endif
+
 			auto lastOfColons = objName.find_last_of("::");
 			if (lastOfColons == std::string::npos) {
 				std::shared_ptr<Scope2> out;
@@ -4786,9 +4746,11 @@ namespace scripting {
 					}
 					return false;
 				})) {
+					InsertCached<3>(tree, out, objName);
 					return out;
 				}
 				else {
+					InsertCached<3>(tree, nullptr, objName);
 					return nullptr;
 				}
 			}
@@ -4796,9 +4758,12 @@ namespace scripting {
 				std::string Namespace = objName.substr(0, lastOfColons-1);
 				objName = objName.substr(lastOfColons + 1);
 				if (auto namespacePtr = std::dynamic_pointer_cast<Scope2>(FindNamespace(Namespace))) {
-					return namespacePtr->FindScopeWithObj(objName);
+					auto out = namespacePtr->FindScopeWithObj(objName);
+					InsertCached<3>(tree, out, objName);
+					return out;
 				}
 				else {
+					InsertCached<3>(tree, nullptr, objName);
 					return nullptr;
 				}
 			}
@@ -5014,12 +4979,12 @@ namespace scripting {
 	private:
 		bool TryFindFunctionImpl(std::string const& functionName, scripting::Function_Params const& params, std::shared_ptr<Type_Converter_Tree> const& m_conversionTree, Functions2::FunctionActualPtr& out) const {
 			if (!m_conversionTree) return false;
-			
+#ifdef useCachedData
 			if (out = std::static_pointer_cast<Functions2::FunctionActual>(GetCached<0>(m_conversionTree, functionName, params))) {
 				return (bool)out;
 			}
 			defer(InsertCached<0>(m_conversionTree, out, functionName, params));
-
+#endif
 			//auto tree_hash = Hasher()(std::weak_ptr<Type_Converter_Tree>(m_conversionTree));
 			//auto cache1 = GetCache(FindFunctionCache, tree_hash);
 			//defer(EraseAllCacheExcept(FindFunctionCache, tree_hash));
@@ -5070,32 +5035,6 @@ namespace scripting {
 						}
 						return false;
 					});
-					//for (auto& scope : GetScopesForObjectSearch()) {
-					//	if (scope) {
-					//		if (auto ptr = scope->GetFunctions()) {
-					//			if (auto func = ptr->BuildMatch(functionName, params, *m_conversionTree, false, true)) {
-					//				sort.emplace(func->second.conversion_cost(params, *m_conversionTree), func);
-					//			}
-					//		}
-					//	}						
-					//}
-					//{
-					//	auto firstParam = params.begin();
-					//	if (firstParam != params.end()) {
-					//		firstParamScopePtr = std::dynamic_pointer_cast<Scope2>(this->FindClass(firstParam->Type()));
-					//	}
-					//}
-					//if (firstParamScopePtr) {
-					//	for (auto& scope : firstParamScopePtr->GetScopesForObjectSearch()) {
-					//		if (scope) {
-					//			if (auto ptr = scope->GetFunctions()) {
-					//				if (auto func = ptr->BuildMatch(functionName, params, *m_conversionTree, false, true)) {
-					//					sort.emplace(func->second.conversion_cost(params, *m_conversionTree), func);
-					//				}
-					//			}
-					//		}
-					//	}
-					//}
 
 					// PERHAPS THE USER MEANT TO CALL THE CONSTRUCTOR FOR A CLASS (ALLOW FOR CONVERSIONS, BUT NO TEMPLATES)
 					if (constructorScopePtr = std::dynamic_pointer_cast<Scope2>(this->FindClass(functionName))) {
@@ -6191,14 +6130,14 @@ namespace scripting {
 			CachedTypeConverterTree{ std::make_shared<Type_Converter_Tree>() };
 		fibers::containers::number<unsigned __int64>
 			CachedTypeConverterTreeVersion{ 0 };
-		fibers::synchronization::shared_mutex<fibers::synchronization::mutex>
+		std::shared_mutex // fibers::synchronization::shared_mutex<fibers::synchronization::mutex>
 			CachedTypeConverterTreeMutex{};
 
 		std::shared_ptr<std::map<Type_Info, std::weak_ptr<Class2>>>
 			CachedClassList{ std::make_shared<std::map<Type_Info, std::weak_ptr<Class2>>>() };
 		fibers::containers::number<unsigned __int64>
 			CachedClassListVersion{ 0 };
-		fibers::synchronization::shared_mutex<fibers::synchronization::mutex>
+		std::shared_mutex // fibers::synchronization::shared_mutex<fibers::synchronization::mutex>
 			CachedClassListMutex{};
 
 		//fibers::containers::number<unsigned int> 
@@ -6207,6 +6146,8 @@ namespace scripting {
 			CleanupVersion{ 0 };
 		fibers::containers::number<unsigned __int64>
 			RecordVersion{ 0 };
+		fibers::containers::number<unsigned __int64>
+			LibraryVersion{ 0 };
 
 		virtual void RemoveStaleReferences() override {
 			auto oldVersion = CleanupVersion.load();
@@ -6326,6 +6267,13 @@ namespace scripting {
 			return false;
 		};
 
+		//virtual bool RecordChild(std::shared_ptr<Scope2> ptr) {
+
+		//};
+		//virtual bool RecordObj(std::shared_ptr<Scope2> ptr) {
+
+		//};
+		
 
 	};
 

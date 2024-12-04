@@ -353,11 +353,12 @@ public:
 
 		static std::string GetValueStr(value const& V) noexcept {
 			auto v = V();
-			if (std::fmod(v, 1.0) == 0.0) { // integer?
-				return Units::printf("%lld", (long long)v);
+			if (std::fmod(v, 1.0) == 0.0) { // integer
+				return std::to_string((long long)v);
+				//return Units::printf("%lld", (long long)v);
 			}
 			else { // floating-point
-				std::string out{ Units::printf("%.4f", v) };
+				std::string out{ std::to_string(v) /*Units::printf("%.4f", v)*/ };
 				Units::removeTrailingCharacters(out, '0'); // e.g. 25.5000 -> 25.5
 				Units::removeTrailingCharacters(out, '.'); // e.g. 25.0000 -> 25. -> 25
 				return out;

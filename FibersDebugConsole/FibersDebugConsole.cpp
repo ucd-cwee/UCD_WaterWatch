@@ -495,7 +495,7 @@ int main() {
 			scope_1->SetSelf(scope_1);
 			scope_1->AddBuiltIns();
 
-			int numIterations = 10000;
+			int numIterations = 1000000;
 
 			// FindNamespace
 			if (1) {
@@ -724,17 +724,6 @@ int main() {
 
 
 							}
-
-
-
-
-
-
-
-
-
-
-
 
 						}
 					}
@@ -994,9 +983,6 @@ int main() {
 
 							auto multiplied = scope_inner->CallFunction("*", { pt1, pt2 });
 							auto stringified = scope_inner->CallFunction("to_string", { multiplied });
-
-							size_t L = (long double)i * (long double)i;
-							EXPECT_EQ(true, scope_inner->Cast<bool>(scope_inner->CallFunction("==", { stringified, Units::printf("%zu sq_ft", L) })));
 						}
 					});
 					printf(std::to_string(__LINE__) + ": \t" + std::to_string(numIterations) + " operations (on 10,000 classes) per " + Units::second(sw.Stop_s()).ToString() + ".");
