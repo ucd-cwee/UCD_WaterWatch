@@ -644,7 +644,7 @@ int main() {
 			// Units
 			if (1) {
 				// #include "Units"
-				if (1) {
+				if (0) {
 					auto global_scope2{ std::make_shared<Global2>() }; // global should always be a Namespace
 					global_scope2->SetSelf(global_scope2);
 					global_scope2->AddBuiltIns();
@@ -768,6 +768,40 @@ int main() {
 					}
 
 				}
+
+				// Basic conversions
+				EXPECT_EQ(true, (scope_1->GetTypeConverterTree()->Converts<int, double>()));
+				EXPECT_EQ(true, (scope_1->GetTypeConverterTree()->Converts<double, int>()));
+				EXPECT_EQ(true, (scope_1->GetTypeConverterTree()->Converts<double, Units::value>()));
+				EXPECT_EQ(true, (scope_1->GetTypeConverterTree()->Converts<int, Units::value>()));
+
+
+				EXPECT_EQ(true, (scope_1->GetTypeConverterTree()->Converts<double, Units::foot>()));
+				EXPECT_EQ(true, (scope_1->GetTypeConverterTree()->Converts<int, Units::foot>()));
+
+				EXPECT_EQ(true, (scope_1->GetTypeConverterTree()->Converts<Units::foot, double>()));
+				EXPECT_EQ(true, (scope_1->GetTypeConverterTree()->Converts<Units::foot, int>()));
+
+				std::shared_ptr<Type_Converter_Tree> tempTree = std::make_shared<Type_Converter_Tree>();
+				scope_1->CreateTypeConverterTree(tempTree, true);
+				// EXPECT_EQ(true, (tempTree->Converts<double, Units::foot>()));
+
+
+
+				std::vector<scripting::Type_Info> tempResult;
+				EXPECT_EQ(true, (tempTree->TryCreateConversionPath2(user_type<int>(), user_type<double>(), tempResult)));
+				EXPECT_EQ(true, (tempTree->TryCreateConversionPath2(user_type<double>(), user_type<int>(), tempResult)));
+				EXPECT_EQ(true, (tempTree->TryCreateConversionPath2(user_type<int>(), user_type<Units::value>(), tempResult)));
+				EXPECT_EQ(true, (tempTree->TryCreateConversionPath2(user_type<Units::value>(), user_type<Units::foot>(), tempResult)));
+				EXPECT_EQ(true, (tempTree->TryCreateConversionPath2(user_type<double>(), user_type<Units::foot>(), tempResult)));
+				EXPECT_EQ(true, (tempTree->TryCreateConversionPath2(user_type<int>(), user_type<Units::foot>(), tempResult)));
+				EXPECT_EQ(false, (tempTree->TryCreateConversionPath2(user_type<std::string>(), user_type<int>(), tempResult)));
+
+				
+
+
+
+
 
 				// slowest
 				if (1) {
@@ -990,6 +1024,16 @@ int main() {
 			}
 
 
+
+			// DateTime
+			if (1) {
+
+
+
+
+
+
+			}
 
 
 

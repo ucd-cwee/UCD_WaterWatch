@@ -888,7 +888,8 @@ namespace fibers {
 				}
 			};
 			template<typename T> static std::shared_ptr<void> get_data(std::shared_ptr<T>&& data) {
-				return std::static_pointer_cast<void>(std::forward<std::shared_ptr<T>>(data));
+				return std::static_pointer_cast<void>(std::const_pointer_cast<std::remove_const_t<T>>(std::forward<std::shared_ptr<T>>(data)));
+				// return std::static_pointer_cast<void>(std::forward<std::shared_ptr<T>>(data));
 			};
 
 		public:

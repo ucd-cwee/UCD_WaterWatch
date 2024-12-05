@@ -5,6 +5,7 @@
 // #include "Units.h"
 
 namespace scripting {
+#if 0
 	namespace UnitsLibrary {
 		template<typename T>
 		static void AddUnit(std::shared_ptr<scripting::Namespace2> const& std_namespace, std::shared_ptr<scripting::Class2> const& value_namespace) {
@@ -54,5 +55,5 @@ namespace scripting {
 		};
 
 	}
-
+#endif
 };

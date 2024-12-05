@@ -7682,8 +7682,9 @@ namespace fibers{
 // Meant to be used in parallel with Units for proper unit management while manipulating DateTime ranges.
 // E.g: using namespace literals; return DateTime::make_time(1940, 1, 1) + 1_d - 30_s;
 class DateTime {
-protected:
+public:
 	Units::day time; // stored as a thread-safe double
+protected:
 	static boost::posix_time::ptime const& Shared_Epoch_posixTime() {
 		static boost::posix_time::ptime rc{ boost::posix_time::time_from_string("1970/1/1 0:0:0") };
 		return rc;

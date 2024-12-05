@@ -341,7 +341,181 @@ namespace scripting {
 
 		constexpr static bool printTypeConversionSuccesses{ false };
 
-	private:
+	public:
+        // iPair ==> Integer Pair
+		class iPair {
+		public:
+			iPair() = default;
+			iPair(Type_Info id, double weight) : first(id.lock()), second(weight), path{ { id } } {};
+			iPair(Type_Info id, double weight, std::vector< Type_Info > const& Path) : first(id.lock()), second(weight), path{ Path } {
+				path.push_back(id);
+			};
+			iPair(iPair const&) = default;
+			iPair(iPair &&) = default;
+			iPair& operator=(iPair const&) = default;
+			iPair& operator=(iPair&&) = default;
+			~iPair() = default;
+
+			std::shared_ptr<fibers::Type_Info> first; // id
+			double second; // weight
+			std::vector<Type_Info> path;
+
+			//bool operator==(iPair const& rhs) const {
+			//	return first == rhs.first;
+			//};
+			//bool operator!=(iPair const& rhs) const {
+			//	return !operator==(rhs);
+			//};
+			bool operator>(iPair const& rhs) const {
+				return second > rhs.second;
+			};
+			bool operator<=(iPair const& rhs) const {
+				return !operator>(rhs);
+			};
+			bool operator<(iPair const& rhs) const {
+				return second < rhs.second;
+			};
+			bool operator>=(iPair const& rhs) const {
+				return !operator<(rhs);
+			};
+		};
+
+		// Class representing a graph using adjacency list representation
+		class Graph {
+			std::map<Type_Info, std::vector<iPair>, std::owner_less<Type_Info>> adj; // Adjacency list
+			std::set<Type_Info, std::owner_less<Type_Info>> vertexIds;
+		public:
+			Graph() {};
+			void addEdge(Type_Info u, Type_Info v, double w) {
+				adj[u].push_back(iPair(v, w));
+				//adj[v].push_back(iPair(u, w)); // Since the graph is undirected
+				
+				vertexIds.insert(u);
+				vertexIds.insert(v);
+			}; // Function to add an edge
+			void shortestPath(Type_Info From, Type_Info To) {
+				// Create a priority queue to store vertices being processed
+				// Priority queue sorted by the first element of the pair (distance)
+				std::priority_queue<iPair, std::vector<iPair>, std::greater<iPair>> pq;
+
+				// Create a map to store distances and initialize all distances as INF
+				std::map<Type_Info, iPair, std::owner_less<Type_Info>> dist;
+				for (auto& vert : adj)
+					dist[vert.first] = iPair(vert.first, std::numeric_limits<double>::infinity());// INF;
+
+				// Insert source into priority queue and initialize its distance as 0
+				pq.push(iPair(From, 0.0));
+				dist[From] = iPair(From, 0.0);
+
+				// Process the priority queue
+				while (!pq.empty()) {
+					// Get the vertex with the minimum distance
+					auto vertU = pq.top();
+					auto& u = vertU.first;
+					auto& distU = dist[u];
+					pq.pop();
+
+					if (distU.second < std::numeric_limits<double>::infinity()) {
+						// Iterate through all adjacent vertices of the current vertex
+						for (auto& neighbor : adj[u]) {
+							auto& v = neighbor.first;
+							auto& weight = neighbor.second;
+							// If a shorter path to v is found
+							if (dist[v].second > (distU.second + weight)) {
+								// Update distance and push new distance to the priority queue
+								dist[v].second = (distU.second + weight);
+								dist[v].path = distU.path;
+								dist[v].path.push_back(v);
+
+								pq.push(iPair(v, dist[v].second, vertU.path));
+							}
+						}
+					}
+				}
+
+				// Print the shortest distances
+				auto distance = dist[To];
+
+				//std::cout << "Vertex Distance from Source" << std::endl;
+				//for (auto& distance : dist) {
+					std::cout << To.lock()->name() << ": \t\t " << distance.second << "\n\t";
+					for (auto& x : distance.path)
+						std::cout << x.lock()->name() << " ... ";
+					std::cout << std::endl;
+				//}		
+			}; // Function to print shortest path from source
+		};
+
+
+
+
+		// Solves Dijkstra's algorithm to determine the shortest path for "From" to "To", puts the path in "Out", and returns true. 
+		// If no path is possible, returns false.
+		bool TryCreateConversionPath2(scripting::Type_Info const& From, scripting::Type_Info const& To, std::vector<scripting::Type_Info>& out) const {			
+			Graph g{};
+
+			// Add edges to the graph
+			std::vector<Type_Info> test{
+				  user_type<int>() 
+				, user_type<bool>()
+				, user_type<long>()
+				, user_type<char>()
+				, user_type<double>()
+				, user_type<float>()
+				, user_type<unsigned char>()
+				, user_type<unsigned int>()
+				, user_type<long double>()
+			};
+
+			g.addEdge(test[0], test[1], 4);
+			g.addEdge(test[1], test[0], 4);
+
+			g.addEdge(test[0], test[7], 8);
+			g.addEdge(test[7], test[0], 8);
+
+			g.addEdge(test[1], test[2], 8);
+			g.addEdge(test[2], test[1], 8);
+
+			g.addEdge(test[1], test[7], 11);
+			g.addEdge(test[7], test[1], 11);
+
+			g.addEdge(test[2], test[3], 7);
+			g.addEdge(test[3], test[2], 7);
+
+			g.addEdge(test[2], test[8], 2);
+			g.addEdge(test[8], test[2], 2);
+
+			g.addEdge(test[2], test[5], 4);
+			g.addEdge(test[5], test[2], 4);
+
+			g.addEdge(test[3], test[4], 9);
+			g.addEdge(test[4], test[3], 9);
+
+			g.addEdge(test[3], test[5], 14);
+			g.addEdge(test[5], test[3], 14);
+
+			g.addEdge(test[4], test[5], 10);
+			g.addEdge(test[5], test[4], 10);
+
+			g.addEdge(test[5], test[6], 2);
+			g.addEdge(test[6], test[5], 2);
+
+			g.addEdge(test[6], test[7], 1);
+			g.addEdge(test[7], test[6], 1);
+
+			g.addEdge(test[6], test[8], 6);
+			g.addEdge(test[8], test[6], 6);
+
+			g.addEdge(test[7], test[8], 7);
+			g.addEdge(test[8], test[7], 7);
+
+			// Call the shortestPath function
+			g.shortestPath(test[0], test[4]);
+
+			return 0;			
+		};
+
+
 		// Solves Dijkstra's algorithm to determine the shortest path for "From" to "To", puts the path in "Out", and returns true. 
 		// If no path is possible, returns false.
 		bool TryCreateConversionPath(scripting::Type_Info const& From, scripting::Type_Info const& To, std::vector<scripting::Type_Info>& out) const {
@@ -1083,7 +1257,7 @@ namespace scripting {
 		// Performs the conversion from the input parameters to the necessary types, if possible. Throws otherwise. 
 		std::vector<Any> convert(Function_Params t_params, Type_Converter_Tree const& t_conversions) const {
 			auto vals = t_params.to_vector();
-			if (m_types.size() > vals.size()) throw(exception::arity_error(m_types.size(), vals.size()));
+			if (m_types.size() != vals.size()) throw(exception::arity_error(m_types.size(), vals.size()));
 			vals.resize(m_types.size()); // become smaller if necessary
 			for (size_t i = 0; i < m_types.size(); ++i) {
 				const auto& bv = vals[i];
@@ -1102,7 +1276,7 @@ namespace scripting {
 			// Quick return if the types exactly match.
 			if (t_params.hash() == hash()) { return true; }
 
-			if (m_types.size() > t_params.size()) return false;
+			if (m_types.size() != t_params.size()) return false;
 
 			for (size_t i = 0; i < m_types.size(); ++i) {
 				//const auto& name = m_types[i].first;
@@ -1124,7 +1298,8 @@ namespace scripting {
 			// Quick return if the types exactly match.
 			if (t_params.hash() == hash()) { return 0; }
 
-			if (m_types.size() > t_params.size()) return std::numeric_limits<double>::max();
+			if (m_types.size() != t_params.size()) return std::numeric_limits<double>::max();
+
 			size_t i = 0;
 			for (; i < m_types.size(); ++i) {
 				const auto& bv = t_params[i];
@@ -5698,6 +5873,56 @@ namespace scripting {
 
 	};
 
+	namespace UnitsLibrary {
+		template<typename T>
+		static void AddUnit(std::shared_ptr<scripting::Namespace2> const& std_namespace, std::shared_ptr<scripting::Class2> const& value_namespace) {
+			std::string UnitName = T().UnitName();
+			auto foot_namespace{ std::make_shared<scripting::Class2>(std_namespace, UnitName, scripting::user_type<T>(), value_namespace) };
+			foot_namespace->SetSelf(foot_namespace);
+			std_namespace->AddChild(foot_namespace);
+			{
+				// Constructors
+				// foot()
+				foot_namespace->AddFunction(UnitName, scripting::make_callable([]() -> T { return T{}; }));
+				// foot(double)
+				//foot_namespace->AddFunction(UnitName, scripting::make_callable([](double const& o)->T { return o; }));
+				// foot(value)
+				foot_namespace->AddFunction(UnitName, scripting::make_callable([](Units::value const& makeCopy) -> T { return makeCopy; }));
+				// foot() = value();
+				foot_namespace->AddFunction("=", scripting::make_callable([](scripting::Any const& a, Units::value const& b) -> scripting::Any { T& out = a.cast(); out = b; return a; }), scripting::Param_Types({ {std::string("a"), scripting::user_type<T>() }, {std::string("b"), scripting::user_type<Units::value>() } }));
+
+				// Comparisons & operators
+				//foot_namespace->AddFunction("==", scripting::make_callable([](T const& x, T const& y) -> bool { return x == y; }));
+				//foot_namespace->AddFunction("!=", scripting::make_callable([](T const& x, T const& y) -> bool { return x != y; }));
+				//foot_namespace->AddFunction("<", scripting::make_callable([](T const& x, T const& y) -> bool { return x < y; }));
+				//foot_namespace->AddFunction(">", scripting::make_callable([](T const& x, T const& y) -> bool { return x > y; }));
+				//foot_namespace->AddFunction("<=", scripting::make_callable([](T const& x, T const& y) -> bool { return x <= y; }));
+				//foot_namespace->AddFunction(">=", scripting::make_callable([](T const& x, T const& y) -> bool { return x >= y; }));
+				////foot_namespace->AddFunction("+", scripting::make_callable([](T const& x, T const& y) -> T { return x + y; }));
+				////foot_namespace->AddFunction("-", scripting::make_callable([](T const& x, T const& y) -> T { return x - y; }));
+				////foot_namespace->AddFunction("*", scripting::make_callable([](T const& x, T const& y) -> T { return x * y; }));
+				////foot_namespace->AddFunction("/", scripting::make_callable([](T const& x, T const& y) -> T { return x / y; }));
+				//foot_namespace->AddFunction("+=", scripting::make_callable([](scripting::Any const& a, T const& b) -> scripting::Any { T& out = a.cast(); out += b; return a; }), scripting::Param_Types({ {std::string("a"), scripting::user_type<T>() }, {std::string("b"), scripting::user_type<T>() } }));
+				//foot_namespace->AddFunction("-=", scripting::make_callable([](scripting::Any const& a, T const& b) -> scripting::Any { T& out = a.cast(); out -= b; return a; }), scripting::Param_Types({ {std::string("a"), scripting::user_type<T>() }, {std::string("b"), scripting::user_type<T>() } }));
+				//foot_namespace->AddFunction("*=", scripting::make_callable([](scripting::Any const& a, T const& b) -> scripting::Any { T& out = a.cast(); out *= b; return a; }), scripting::Param_Types({ {std::string("a"), scripting::user_type<T>() }, {std::string("b"), scripting::user_type<T>() } }));
+				//foot_namespace->AddFunction("/=", scripting::make_callable([](scripting::Any const& a, T const& b) -> scripting::Any { T& out = a.cast(); out /= b; return a; }), scripting::Param_Types({ {std::string("a"), scripting::user_type<T>() }, {std::string("b"), scripting::user_type<T>() } }));
+
+				// value(foot)
+				value_namespace->AddFunction(value_namespace->GetName(), scripting::make_callable([](scripting::Any const& from) -> std::shared_ptr<Units::value> {
+					return std::dynamic_pointer_cast<Units::value>(from.cast<std::shared_ptr<T>>());
+				}), scripting::Param_Types({ { "from", foot_namespace->GetClassType() } }));
+			}
+		};
+
+		class UnitsLibrary {
+		public:
+			static void Part1(std::shared_ptr<scripting::Namespace2> const& std_namespace, std::shared_ptr<scripting::Class2> const& value_namespace);
+			static void Part2(std::shared_ptr<scripting::Namespace2> const& std_namespace, std::shared_ptr<scripting::Class2> const& value_namespace);
+			static void Part3(std::shared_ptr<scripting::Namespace2> const& std_namespace, std::shared_ptr<scripting::Class2> const& value_namespace);
+		};
+
+	}
+
 	class Global2 final : public Namespace2 {
 	public:
 		Global2()
@@ -5919,7 +6144,7 @@ namespace scripting {
 					classPtr->AddObj("npos", std::make_shared<Any>(std::string::npos));
 				}
 
-				// Type
+				// Types
 				if (1) {
 					// make it a class
 					std::shared_ptr<Class2> classPtr; {
@@ -5942,7 +6167,7 @@ namespace scripting {
 					classPtr->AddFunction(">=", scripting::make_callable([](fibers::Type_Info const& x, fibers::Type_Info const& y) -> bool { return x >= y; }));
 
 					// Functions
-					classPtr->AddFunction("to_string", make_callable([self = classPtr->p_self](fibers::Type_Info const& from) -> std::string {
+					classPtr->AddFunction("to_string", make_callable([self = classPtr->p_self](fibers::Type_Info const& from)->std::string {
 						if (auto p = self.lock()) if (auto p2 = p->FindClass(from)) return p2->GetName();
 						return from.name();
 					}));
@@ -5960,6 +6185,164 @@ namespace scripting {
 						return from.is_void();
 					}));
 				}
+
+				// Units
+				if (1) {
+					auto selfPtr = this->p_self.lock();
+					auto std_namespace{ std::make_shared<Namespace2>(selfPtr, "Units") };
+					std_namespace->SetSelf(std_namespace);
+					this->AddChild(std_namespace);
+
+					// the "std" namespace imports the "string" namespace...
+					{
+						auto value_namespace{ std::make_shared<Class2>(std_namespace, "value", scripting::user_type<Units::value>()) };
+						value_namespace->SetSelf(value_namespace);
+						std_namespace->AddChild(value_namespace);
+
+						// which has the following types groups... 
+						{
+							// value -> double
+							if (auto p = std_namespace->FindClass(user_type<double>())) {
+								p->AddFunction(p->GetName(), make_callable([](Units::value const& o) -> double { return o(); }));
+							}
+							// value -> float
+							if (auto p = std_namespace->FindClass(user_type<float>())) {
+								p->AddFunction(p->GetName(), make_callable([](Units::value const& o) -> float { return o(); }));
+							}
+							// value -> int
+							if (auto p = std_namespace->FindClass(user_type<int>())) {
+								p->AddFunction(p->GetName(), make_callable([](Units::value const& o) -> int { return o(); }));
+							}
+							// value -> string
+							if (auto p = std_namespace->FindClass(user_type<std::string>())) {
+								p->AddFunction(p->GetName(), make_callable([](Units::value const& o) -> std::string { return o.ToString(); }));
+							}
+
+							value_namespace->AddFunction("abbreviation", make_callable([](Units::value const& x)->std::string {
+								return x.Abbreviation();
+								}));
+							value_namespace->AddFunction("name", make_callable([](Units::value const& x)->std::string {
+								return x.UnitName();
+								}));
+							value_namespace->AddFunction("to_string", make_callable([](Units::value const& x)->std::string {
+								return x.ToString();
+								}));
+
+							// Constructors
+							value_namespace->AddFunction("value", make_callable([]() -> Units::value { return Units::value{}; }));
+							value_namespace->AddFunction("value", make_callable([](Units::value const& makeCopy) -> Units::value { return makeCopy; }));
+							value_namespace->AddFunction("value", make_callable([](int const& o)->Units::value { return o; }));
+							value_namespace->AddFunction("value", make_callable([](float const& o)->Units::value { return o; }));
+							value_namespace->AddFunction("value", make_callable([](double const& o)->Units::value { return o; }));
+							value_namespace->AddFunction("=", make_callable([](Any const& a, Units::value const& b) -> Any { Units::value& out = a.cast(); out = b; return a; }), Param_Types({ {std::string("a"), user_type<Units::value>() }, {std::string("b"), user_type<Units::value>() } }));
+
+							// Comparisons & operators
+							value_namespace->AddFunction("==", scripting::make_callable([](Units::value const& x, Units::value const& y) -> bool { return x == y; }));
+							value_namespace->AddFunction("!=", scripting::make_callable([](Units::value const& x, Units::value const& y) -> bool { return x != y; }));
+							value_namespace->AddFunction("<", scripting::make_callable([](Units::value const& x, Units::value const& y) -> bool { return x < y; }));
+							value_namespace->AddFunction(">", scripting::make_callable([](Units::value const& x, Units::value const& y) -> bool { return x > y; }));
+							value_namespace->AddFunction("<=", scripting::make_callable([](Units::value const& x, Units::value const& y) -> bool { return x <= y; }));
+							value_namespace->AddFunction(">=", scripting::make_callable([](Units::value const& x, Units::value const& y) -> bool { return x >= y; }));
+							value_namespace->AddFunction("+", scripting::make_callable([](Units::value const& x, Units::value const& y) -> Units::value { return x + y; }));
+							value_namespace->AddFunction("-", scripting::make_callable([](Units::value const& x, Units::value const& y) -> Units::value { return x - y; }));
+							value_namespace->AddFunction("*", scripting::make_callable([](Units::value const& x, Units::value const& y) -> Units::value { return x * y; }));
+							value_namespace->AddFunction("/", scripting::make_callable([](Units::value const& x, Units::value const& y) -> Units::value { return x / y; }));
+							value_namespace->AddFunction("+=", make_callable([](Any const& a, Units::value const& b) -> Any { Units::value& out = a.cast(); out += b; return a; }), Param_Types({ {std::string("a"), user_type<Units::value>() }, {std::string("b"), user_type<Units::value>() } }));
+							value_namespace->AddFunction("-=", make_callable([](Any const& a, Units::value const& b) -> Any { Units::value& out = a.cast(); out -= b; return a; }), Param_Types({ {std::string("a"), user_type<Units::value>() }, {std::string("b"), user_type<Units::value>() } }));
+							value_namespace->AddFunction("*=", make_callable([](Any const& a, Units::value const& b) -> Any { Units::value& out = a.cast(); out *= b; return a; }), Param_Types({ {std::string("a"), user_type<Units::value>() }, {std::string("b"), user_type<Units::value>() } }));
+							value_namespace->AddFunction("/=", make_callable([](Any const& a, Units::value const& b) -> Any { Units::value& out = a.cast(); out /= b; return a; }), Param_Types({ {std::string("a"), user_type<Units::value>() }, {std::string("b"), user_type<Units::value>() } }));
+						}
+
+						if (1) {
+							scripting::UnitsLibrary::UnitsLibrary::Part1(std_namespace, value_namespace);
+							scripting::UnitsLibrary::UnitsLibrary::Part2(std_namespace, value_namespace);
+							scripting::UnitsLibrary::UnitsLibrary::Part3(std_namespace, value_namespace);
+						}
+					}
+					
+				}
+
+				// DateTime
+				if (1) {
+					using thisType = DateTime;
+					std::string thisTypeName = "DateTime";
+
+					// make it a class
+					std::shared_ptr<Class2> classPtr; {
+						classPtr.reset(new Class2(this->p_self.lock(), thisTypeName, user_type<thisType>()));
+					}
+					classPtr->SetSelf(classPtr);
+					this->AddChild(classPtr);
+					scripting::Type_Info thisTypeInfo = classPtr->ClassType;
+
+					// Constructors
+					classPtr->AddFunction(thisTypeName, make_callable([]() -> thisType { return thisType{}; }));
+					classPtr->AddFunction(thisTypeName, make_callable([](thisType const& makeCopy) -> thisType { return makeCopy; }));
+					classPtr->AddFunction("=", make_callable([](Any const& a, thisType const& b) -> Any { thisType& out = a.cast(); out = b; return a; }), Param_Types({ {"a", thisTypeInfo }, {"b", thisTypeInfo } }));
+					classPtr->AddFunction(thisTypeName, make_callable([](Units::second const& from) -> thisType { return from; }));
+					// classPtr->AddFunction(thisTypeName, make_callable([](std::string const& from) -> thisType { return thisType(from); })/*, true, true*/); // explicit = cannot be used for conversion trees, and must be called directly with exact type match, e.g. DateTime("string")
+
+					// Converters
+					if (auto p = this->FindClass(user_type<std::string>())) {
+						p->AddFunction(p->GetName(), make_callable([](thisType const& from) -> std::string { return from.c_str(); }));
+					}
+
+					// Comparisons
+					classPtr->AddFunction("==", scripting::make_callable([](thisType const& x, thisType const& y) -> bool { return x == y; }));
+					classPtr->AddFunction("!=", scripting::make_callable([](thisType const& x, thisType const& y) -> bool { return x != y; }));
+					classPtr->AddFunction("<", scripting::make_callable([](thisType const& x, thisType const& y) -> bool { return x < y; }));
+					classPtr->AddFunction("<=", scripting::make_callable([](thisType const& x, thisType const& y) -> bool { return x <= y; }));
+					classPtr->AddFunction(">", scripting::make_callable([](thisType const& x, thisType const& y) -> bool { return x > y; }));
+					classPtr->AddFunction(">=", scripting::make_callable([](thisType const& x, thisType const& y) -> bool { return x >= y; }));
+
+					// Operators
+					classPtr->AddFunction("+", scripting::make_callable([](thisType const& x, thisType const& y) -> thisType { return x + y; }));
+					classPtr->AddFunction("-", scripting::make_callable([](thisType const& x, thisType const& y) -> thisType { return x - y; }));
+					classPtr->AddFunction("*", scripting::make_callable([](thisType const& x, thisType const& y) -> thisType { return x * y; }));
+					classPtr->AddFunction("/", scripting::make_callable([](thisType const& x, thisType const& y) -> thisType { if (y == 0) return (Units::second)(std::numeric_limits<Units::second>::max()); else return x / y; }));
+					classPtr->AddFunction("+=", make_callable([](Any const& a, Units::second const& b) -> Any { thisType& x = a.cast(); x += b; return a; }), Param_Types({ {"obj",thisTypeInfo }, { "toOperateWith",user_type<Units::second>()} }));
+					classPtr->AddFunction("-=", make_callable([](Any const& a, Units::second const& b) -> Any { thisType& x = a.cast(); x -= b; return a; }), Param_Types({ {"obj",thisTypeInfo }, { "toOperateWith",user_type<Units::second>()} }));
+					classPtr->AddFunction("*=", make_callable([](Any const& a, Units::second const& b) -> Any { thisType& x = a.cast(); x *= b; return a; }), Param_Types({ {"obj",thisTypeInfo }, { "toOperateWith",user_type<Units::second>()} }));
+					classPtr->AddFunction("/=", make_callable([](Any const& a, Units::second const& b) -> Any { thisType& x = a.cast(); if (b != 0) x /= b; else x = (Units::second)(std::numeric_limits<Units::second>::max()); return a; }), Param_Types({ {"obj",thisTypeInfo }, { "toOperateWith",user_type<Units::second>()} }));
+
+					// Functions
+					classPtr->AddFunction("max", make_callable([]() { return std::numeric_limits<thisType>::max(); }));
+					classPtr->AddFunction("min", make_callable([]() { return std::numeric_limits<thisType>::lowest(); }));
+					classPtr->AddFunction("to_string", make_callable([](thisType const& o) -> std::string { return o.c_str(); }));
+					classPtr->AddFunction("Epoch", make_callable(&DateTime::Epoch));
+					classPtr->AddFunction("Now", make_callable(&DateTime::Now));
+					classPtr->AddFunction("tm_fractionalsec", make_callable(&DateTime::tm_fractionalsec));
+					classPtr->AddFunction("tm_sec", make_callable(&DateTime::tm_sec));
+					classPtr->AddFunction("tm_min", make_callable(&DateTime::tm_min));
+					classPtr->AddFunction("tm_hour", make_callable(&DateTime::tm_hour));
+					classPtr->AddFunction("tm_mday", make_callable(&DateTime::tm_mday));
+					classPtr->AddFunction("tm_mon", make_callable(&DateTime::tm_mon));
+					classPtr->AddFunction("tm_yday", make_callable(&DateTime::tm_yday));
+					classPtr->AddFunction("tm_wday", make_callable(&DateTime::tm_wday));
+					classPtr->AddFunction("tm_year", make_callable(&DateTime::tm_year));
+					classPtr->AddFunction("load", make_callable(&DateTime::load));
+					classPtr->AddFunction("getNumDaysInSameMonth", make_callable(&DateTime::getNumDaysInSameMonth));
+					classPtr->AddFunction("make_time", make_callable([]() { return DateTime::make_time(); }));
+					classPtr->AddFunction("make_time", make_callable([](int year) { return DateTime::make_time(year); }));
+					classPtr->AddFunction("make_time", make_callable([](int year, int month) { return DateTime::make_time(year, month); }));
+					classPtr->AddFunction("make_time", make_callable([](int year, int month, int day) { return DateTime::make_time(year, month, day); }));
+					classPtr->AddFunction("make_time", make_callable([](int year, int month, int day, int hour) { return DateTime::make_time(year, month, day, hour); }));
+					classPtr->AddFunction("make_time", make_callable([](int year, int month, int day, int hour, int minute) { return DateTime::make_time(year, month, day, hour, minute); }));
+					classPtr->AddFunction("make_time", make_callable([](int year, int month, int day, int hour, int minute, float second) { return DateTime::make_time(year, month, day, hour, minute, second); }));
+					classPtr->AddFunction("make_time", make_callable([](int year, int month, int day, int hour, int minute, float second, bool useLocalTime) { return DateTime::make_time(year, month, day, hour, minute, second, useLocalTime); }));
+					classPtr->AddFunction("ToStartOfMonth", make_callable([](DateTime from) -> DateTime { return from.ToStartOfMonth(); }));
+					classPtr->AddFunction("ToEndOfMonth", make_callable([](DateTime from) -> DateTime { return from.ToEndOfMonth(); }));
+					classPtr->AddFunction("ToStartOfDay", make_callable([](DateTime from) -> DateTime { return from.ToStartOfDay(); }));
+					classPtr->AddFunction("ToEndOfDay", make_callable([](DateTime from) -> DateTime { return from.ToEndOfDay(); }));
+					classPtr->AddFunction("ToStartOfHour", make_callable([](DateTime from) -> DateTime { return from.ToStartOfHour(); }));
+					classPtr->AddFunction("ToEndOfHour", make_callable([](DateTime from) -> DateTime { return from.ToEndOfHour(); }));
+					classPtr->AddFunction("ToStartOfMinute", make_callable([](DateTime from) -> DateTime { return from.ToStartOfMinute(); }));
+					classPtr->AddFunction("ToEndOfMinute", make_callable([](DateTime from) -> DateTime { return from.ToEndOfMinute(); }));
+
+					// Parameters
+					classPtr->AddFunction("time", make_callable(&DateTime::time));
+				}
+
 			}
 
 			// Built-In functions
@@ -6068,9 +6451,9 @@ namespace scripting {
 				return CachedClassList;
 			}
 		};
-	private:
+	public:
 		// Creates a tree of type-converter functions using the classes found with GetAllAvailableClasses()
-		void CreateTypeConverterTree(std::shared_ptr<Type_Converter_Tree>& out) const {
+		void CreateTypeConverterTree(std::shared_ptr<Type_Converter_Tree>& out, bool printOut = false) const {
 			if (auto classes = GetAllAvailableClasses()) {
 				for (auto& FoundClass : *classes) {
 					auto& outputType = FoundClass.first;
@@ -6083,14 +6466,19 @@ namespace scripting {
 								if (constructor && constructor->second) {
 									// ... whose inputs are size of 1 ...
 									if (constructor->first.size() == 1) {
-										auto& inputType = constructor->second->second[0].second; //  constructor->first[0].second;
+										auto& inputType = constructor->second->second[0].second; 
 										out->AddConverter([func = constructor->second, this](Any const& input)->Any {
-											std::vector<Any> params = { input }; 
-											//if (auto Tree = this->CachedTypeConverterTree)
-											//	return scripting::call(func->first, params, *Tree);
-											//else 
-												return func->first->operator()(params);											
+											std::vector<Any> params = { input };
+											return func->first->operator()(params);											
 										}, inputType, outputType);
+
+										if (printOut) {
+											auto inputTypeName = inputType.lock()->name();
+											auto outputTypeName = outputType.lock()->name();
+											std::cout << Units::printf("%s( %s )\n", outputTypeName, inputTypeName);
+										}
+
+
 									}
 								}
 							}
