@@ -135,7 +135,7 @@ namespace scripting {
 
 	namespace details {
 		// Tuning parameter. Should be larger than the slowest conversion time. Large values encourages fewer conversions. Smaller values encourages faster conversions.
-		static constexpr auto TypeConversionBaselineCost = 100.0; 
+		static constexpr auto TypeConversionBaselineCost = 1000.0; 
 		static constexpr auto TypeConversionWorstCaseCost = 1000000000000.0;
 		class Type_Conversion_Base {
 		public:
@@ -178,13 +178,15 @@ namespace scripting {
 					user_type<std::decay_t<std::tuple_element_t<0, fibers::utilities::function_traits< decltype(std::function(t_func)) >::arguments>>>()
 				)
 				, m_func(std::move(t_func))
+				, m_cost(std::nullopt)
 			{};
-			Custom_Type_Conversion_Impl(Callable t_func, Type_Info inboundType, Type_Info outboundType)
+			Custom_Type_Conversion_Impl(Callable t_func, Type_Info inboundType, Type_Info outboundType, std::optional<double> Cost = std::nullopt)
 				: Type_Conversion_Base(
 					outboundType,
 					inboundType
 				)
 				, m_func(std::move(t_func))
+				, m_cost(std::move(Cost))
 			{};
 
 			// To -> From
@@ -201,23 +203,28 @@ namespace scripting {
 
 			// returns the actual time (in nanoseconds) to perform the conversion
 			double cost() const noexcept override {
-				static double actualCost{ -1 };
-				static std::decay_t<std::tuple_element_t<0, fibers::utilities::function_traits< decltype(std::function(m_func)) >::arguments>> inputObj{};
-				if (actualCost < 0) {
-					double temp{ 0 };
-					for (int i = 0; i < 10; i++) {
-						auto startT = clock_ns();
-						(void)(m_func(inputObj));
-						temp += (double)(clock_ns() - startT) / 100.0;
-					}
-					actualCost = TypeConversionBaselineCost + temp / 10.0;
+				if (m_cost.has_value()) {
+					return m_cost.value();
 				}
-				return actualCost;
+				else {
+					static double actualCost{ -1 };
+					static std::decay_t<std::tuple_element_t<0, fibers::utilities::function_traits< decltype(std::function(m_func)) >::arguments>> inputObj{};
+					if (actualCost < 0) {
+						double temp{ 0 };
+						for (int i = 0; i < 10; i++) {
+							auto startT = clock_ns();
+							(void)(m_func(inputObj));
+							temp += (double)(clock_ns() - startT) / 100.0;
+						}
+						actualCost = TypeConversionBaselineCost + temp / 10.0;
+					}
+					return actualCost;
+				}
 			};
 
 		private:
 			Callable m_func;
-
+			std::optional<double> m_cost;
 		};
 
 		namespace impl {
@@ -323,11 +330,13 @@ namespace scripting {
 			// does not support deleting type conversions, but that should be OK, since type conversions should be baked-in.
 			mutable fibers::containers::Map <
 				scripting::Type_Info, // to
-				std::shared_ptr<std::tuple<
+				std::shared_ptr<
+				std::tuple<
 				std::vector<scripting::Type_Info> // list of target types to convert to, including the final "to". 
 				, long // version of this conversion list
-				>>
-				> cached_conversions;
+				>
+				>
+			> cached_conversions;
 		};
 		// does not support deleting type conversions, but that should be OK, since type conversions should be baked-in.
 		fibers::containers::Map<
@@ -346,7 +355,9 @@ namespace scripting {
 		class iPair {
 		public:
 			iPair() = default;
-			iPair(Type_Info id, double weight) : first(id.lock()), second(weight), path{ { id } } {};
+			iPair(Type_Info id, double weight) : first(id.lock()), second(weight), path{} {
+				path.push_back(id);
+			};
 			iPair(Type_Info id, double weight, std::vector< Type_Info > const& Path) : first(id.lock()), second(weight), path{ Path } {
 				path.push_back(id);
 			};
@@ -367,16 +378,20 @@ namespace scripting {
 			//	return !operator==(rhs);
 			//};
 			bool operator>(iPair const& rhs) const {
-				return second > rhs.second;
+				return first->operator>(*rhs.first);
+				// return second > rhs.second;
 			};
 			bool operator<=(iPair const& rhs) const {
-				return !operator>(rhs);
+				return first->operator<=(*rhs.first);
+				// return !operator>(rhs);
 			};
 			bool operator<(iPair const& rhs) const {
-				return second < rhs.second;
+				return first->operator<(*rhs.first);
+				// return second < rhs.second;
 			};
 			bool operator>=(iPair const& rhs) const {
-				return !operator<(rhs);
+				return first->operator>=(*rhs.first);
+				// return !operator<(rhs);
 			};
 		};
 
@@ -393,128 +408,354 @@ namespace scripting {
 				vertexIds.insert(u);
 				vertexIds.insert(v);
 			}; // Function to add an edge
-			void shortestPath(Type_Info From, Type_Info To) {
-				// Create a priority queue to store vertices being processed
-				// Priority queue sorted by the first element of the pair (distance)
-				std::priority_queue<iPair, std::vector<iPair>, std::greater<iPair>> pq;
+			std::map < Type_Info, std::vector<Type_Info>, std::owner_less<Type_Info>> shortestPaths(Type_Info From) {
+				std::map < Type_Info, std::vector<Type_Info>, std::owner_less<Type_Info>> out; {
 
-				// Create a map to store distances and initialize all distances as INF
-				std::map<Type_Info, iPair, std::owner_less<Type_Info>> dist;
-				for (auto& vert : adj)
-					dist[vert.first] = iPair(vert.first, std::numeric_limits<double>::infinity());// INF;
+					// Create a priority queue to store vertices being processed
+					// Priority queue sorted by the first element of the pair (distance)
+					std::priority_queue<iPair, std::vector<iPair>, std::less<iPair>> pq;
 
-				// Insert source into priority queue and initialize its distance as 0
-				pq.push(iPair(From, 0.0));
-				dist[From] = iPair(From, 0.0);
+					// Create a map to store distances and initialize all distances as INF
+					std::map<Type_Info, iPair, std::owner_less<Type_Info>> dist;
+					for (auto& vert : adj)
+						dist[vert.first] = iPair(vert.first, std::numeric_limits<double>::infinity());// INF;
 
-				// Process the priority queue
-				while (!pq.empty()) {
-					// Get the vertex with the minimum distance
-					auto vertU = pq.top();
-					auto& u = vertU.first;
-					auto& distU = dist[u];
-					pq.pop();
+					// Insert source into priority queue and initialize its distance as 0
+					pq.push(iPair(From, 0.0));
+					dist[From] = iPair(From, 0.0);
 
-					if (distU.second < std::numeric_limits<double>::infinity()) {
-						// Iterate through all adjacent vertices of the current vertex
-						for (auto& neighbor : adj[u]) {
-							auto& v = neighbor.first;
-							auto& weight = neighbor.second;
-							// If a shorter path to v is found
-							if (dist[v].second > (distU.second + weight)) {
-								// Update distance and push new distance to the priority queue
-								dist[v].second = (distU.second + weight);
-								dist[v].path = distU.path;
-								dist[v].path.push_back(v);
+					// Process the priority queue
+					while (!pq.empty()) {
+						// Get the vertex with the minimum distance
+						auto vertU = pq.top();
+						auto& u = vertU.first;
+						auto& distU = dist[u];
+						pq.pop();
 
-								pq.push(iPair(v, dist[v].second, vertU.path));
+						if (distU.second < std::numeric_limits<double>::infinity()) {
+							// Iterate through all adjacent vertices of the current vertex
+							for (auto& neighbor : adj[u]) {
+								auto& v = neighbor.first;
+								auto& weight = neighbor.second;
+								// If a shorter path to v is found
+								if (dist[v].second > (distU.second + weight)) {
+									// Update distance and push new distance to the priority queue
+									auto newDistance = iPair(v, (distU.second + weight), distU.path);
+									dist[v] = newDistance;
+									pq.push(newDistance);
+								}
 							}
 						}
 					}
+
+					// import to "out"
+					for (auto& distance : dist) {
+						if (auto p1 = From.lock()) {
+							if (auto p2 = distance.first.lock()) {
+								std::string inner = p1->name();
+								for (auto& x : distance.second.path) {
+									if (auto p3 = x.lock()) {
+										inner += Units::printf(" ... %s", p3->name());
+									}
+								}
+								std::cout << Units::printf("Converting %s -> %s requires: %f\n\t%s\n", p1->name(), p2->name(), (float)distance.second.second, inner.c_str());
+							}
+						}
+
+
+						out[distance.first] = distance.second.path;
+
+						//if (distance.second.path.size() >= 2) {
+						//	std::vector<Type_Info> toSave(distance.second.path.size() - 1, Type_Info());
+						//	for (int i = 1; i < distance.second.path.size(); i++) {
+						//		toSave[i - 1] = distance.second.path[i];
+						//	}
+						//	out[distance.first] = toSave;
+						//}
+						//else {
+						//	out[distance.first] = {};
+						//}
+					}
 				}
-
-				// Print the shortest distances
-				auto distance = dist[To];
-
-				//std::cout << "Vertex Distance from Source" << std::endl;
-				//for (auto& distance : dist) {
-					std::cout << To.lock()->name() << ": \t\t " << distance.second << "\n\t";
-					for (auto& x : distance.path)
-						std::cout << x.lock()->name() << " ... ";
-					std::cout << std::endl;
-				//}		
+				return out;
 			}; // Function to print shortest path from source
 		};
 
+		class UniformCostSearchNode {
+		public:
+			UniformCostSearchNode() = default;
+			UniformCostSearchNode(Type_Info const& a, double const& b, std::vector<Type_Info> const& c) : thisVertexType(a), distanceFromTarget(b), bestPath(c) {};
+			UniformCostSearchNode(UniformCostSearchNode&&) = default;
+			UniformCostSearchNode(UniformCostSearchNode const&) = default;
+			UniformCostSearchNode& operator=(UniformCostSearchNode&&) = default;
+			UniformCostSearchNode& operator=(UniformCostSearchNode const&) = default;
+			~UniformCostSearchNode() = default;
+		public:
+			Type_Info thisVertexType;
+			double distanceFromTarget; // if not known, then we can simply guess. 
+			std::vector<Type_Info> bestPath;
 
+		public:
+			bool operator()(const UniformCostSearchNode* a, const UniformCostSearchNode* b) const {
+				return a->distanceFromTarget > b->distanceFromTarget;
+			};
+			bool operator()(const std::shared_ptr<UniformCostSearchNode>& a, const std::shared_ptr<UniformCostSearchNode>& b) const {
+				return a->distanceFromTarget > b->distanceFromTarget;
+			};
+		};
 
 
 		// Solves Dijkstra's algorithm to determine the shortest path for "From" to "To", puts the path in "Out", and returns true. 
 		// If no path is possible, returns false.
-		bool TryCreateConversionPath2(scripting::Type_Info const& From, scripting::Type_Info const& To, std::vector<scripting::Type_Info>& out) const {			
+		bool TryCreateConversionPath2(scripting::Type_Info const& From, scripting::Type_Info const& To, std::vector<scripting::Type_Info>& out) const {
+			std::map<Type_Info, std::shared_ptr<UniformCostSearchNode>, std::owner_less<Type_Info>> vertices;
+			
+			fibers::utilities::Allocator< UniformCostSearchNode> alloc;
+
+			// create an empty vertex set
+			std::priority_queue< std::shared_ptr<UniformCostSearchNode>, std::vector<std::shared_ptr<UniformCostSearchNode>>, UniformCostSearchNode > vertexSet;
+
+			// Add the source vertex into the set
+			vertexSet.push(alloc.AllocShared(From, 0.0, std::vector<Type_Info>{ /*From*/ }));
+
+			// is the vertex set empty?
+			while (vertexSet.size() != 0) {
+				// extract the vertex with the smallest distance value from the set
+				auto smallestDistanceNode = vertexSet.top();
+				vertexSet.pop();
+
+				// for each neighbor of the extracted vertex... 
+				if (auto smallestDistanceNodeActual = nodes.at_or(smallestDistanceNode->thisVertexType, nullptr)) {
+					for (auto connection : smallestDistanceNodeActual->connections) {
+						if (connection) {
+							// calculate distance value for the neighbor vertex
+							auto toType = connection->first;
+							if (vertices.count(toType) <= 0) {
+								auto path = std::vector<Type_Info>(smallestDistanceNode->bestPath);
+								path.push_back(toType);
+								vertices[toType] = alloc.AllocShared(toType, std::numeric_limits<double>::infinity(), std::vector<Type_Info>{ toType });
+							}
+							auto& toVertex = vertices[toType];
+
+							if (toVertex->distanceFromTarget > (smallestDistanceNode->distanceFromTarget + connection->second->cost())) {
+								toVertex->distanceFromTarget = (smallestDistanceNode->distanceFromTarget + connection->second->cost());
+								toVertex->bestPath = smallestDistanceNode->bestPath;
+								toVertex->bestPath.push_back(toVertex->thisVertexType);
+
+								vertexSet.push(toVertex);
+							}
+						}
+					}
+				}
+			}
+
+			for (auto& vertex : vertices) {
+				if (auto p1 = From.lock()) {
+					if (auto p2 = vertex.first.lock()) {
+						std::string inner = p1->name();
+						for (auto& x : vertex.second->bestPath) {
+							if (auto p3 = x.lock()) {
+								inner += Units::printf(" ... %s", p3->name());
+							}
+						}
+						std::cout << Units::printf("Converting %s -> %s requires:\n\t%s\n", p1->name(), p2->name(), inner.c_str());
+					}
+				}
+			}
+
+			auto ptr = vertices.find(To);
+			if (ptr != vertices.end()) {
+				out = ptr->second->bestPath;
+
+				if (auto p1 = From.lock()) {
+					if (auto p2 = To.lock()) {
+						std::string inner = p1->name();
+						for (auto& x : out) {
+							if (auto p3 = x.lock()) {
+								inner += Units::printf(" ... %s", p3->name());
+							}
+						}
+						std::cout << Units::printf("Converting %s -> %s requires:\n\t%s\n", p1->name(), p2->name(), inner.c_str());
+					}
+				}
+
+				return true;
+			}
+			else {
+				out.clear();
+				return false;
+			}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+			// test the cache before anythign else
+			if (auto FromNode = nodes.at_or(From, nullptr)) {
+				if (auto finalAnswer = FromNode->cached_conversions.at_or(To, nullptr)) {
+					out = std::get<0>(*finalAnswer);
+					if (out.size() > 0) {
+						if (auto p1 = From.lock()) {
+							if (auto p2 = To.lock()) {
+								std::string inner = p1->name();
+								for (auto& x : out) {
+									if (auto p3 = x.lock()) {
+										inner += Units::printf(" ... %s", p3->name());
+									}
+								}
+								std::cout << Units::printf("Converting %s -> %s requires:\n\t%s\n", p1->name(), p2->name(), inner.c_str());
+							}
+						}
+						return true;
+					}
+					else {
+						if (auto p1 = From.lock()) {
+							if (auto p2 = To.lock()) {
+								std::cout << Units::printf("Converting %s -> %s cannot be completed.\n", p1->name(), p2->name());
+							}
+						}
+						return false;
+					}
+				}
+			}
+
+
+
+			auto thisVersion = version.load();
+
+			// instance graph
 			Graph g{};
 
 			// Add edges to the graph
-			std::vector<Type_Info> test{
-				  user_type<int>() 
-				, user_type<bool>()
-				, user_type<long>()
-				, user_type<char>()
-				, user_type<double>()
-				, user_type<float>()
-				, user_type<unsigned char>()
-				, user_type<unsigned int>()
-				, user_type<long double>()
-			};
+			for (auto& node : nodes) {
+				if (node && node->second) {
+					if (auto FromType = node->first.lock()) {
+						for (auto& connection : node->second->connections) {
+							if (connection && connection->second) {
+								if (auto ToType = connection->first.lock()) {
+									auto cost = connection->second->cost();
+									g.addEdge(FromType, ToType, cost);
 
-			g.addEdge(test[0], test[1], 4);
-			g.addEdge(test[1], test[0], 4);
+									std::cout << Units::printf("%s -> %s costs %f\n", FromType->name(), ToType->name(), (float)cost);									
+								}
+							}
+						}
+					}
+				}
+			}
 
-			g.addEdge(test[0], test[7], 8);
-			g.addEdge(test[7], test[0], 8);
+			// analyze the graph for shortest paths to all connections from "From"
+			auto paths = g.shortestPaths(From);
 
-			g.addEdge(test[1], test[2], 8);
-			g.addEdge(test[2], test[1], 8);
+			// cache these results to prevent duplicate work
+			if (auto FromNode = nodes.at_or(From, nullptr)) {
+				for (auto& path : paths) {
+					if (!FromNode->cached_conversions.contains(path.first)) {
 
-			g.addEdge(test[1], test[7], 11);
-			g.addEdge(test[7], test[1], 11);
+						//if constexpr (printTypeConversionSuccesses) {
+							if (auto p1 = FromNode->from.lock()) {
+								if (auto p2 = path.first.lock()) {
+									std::string inner = p1->name();
+									for (auto& x : path.second) {
+										if (auto p3 = x.lock()) {
+											inner += Units::printf(" ... %s", p3->name());
+										}
+									}
+									std::cout << Units::printf("Converting %s -> %s requires:\n\t%s\n", p1->name(), p2->name(), inner.c_str());
+								}
+							}
+						//}
 
-			g.addEdge(test[2], test[3], 7);
-			g.addEdge(test[3], test[2], 7);
 
-			g.addEdge(test[2], test[8], 2);
-			g.addEdge(test[8], test[2], 2);
 
-			g.addEdge(test[2], test[5], 4);
-			g.addEdge(test[5], test[2], 4);
+						FromNode->cached_conversions.emplace(path.first, std::make_shared<std::tuple<std::vector<scripting::Type_Info>, long>>(std::tuple<std::vector<scripting::Type_Info>, long>{
+							path.second
+							, (long)thisVersion
+						}), false);
+					}
+				}
 
-			g.addEdge(test[3], test[4], 9);
-			g.addEdge(test[4], test[3], 9);
+				if (auto finalAnswer = FromNode->cached_conversions.at_or(To, nullptr)) {
+					out = std::get<0>(*finalAnswer);
+					if (out.size() > 0) {
+						return true;
+					}
+				}
+			}
 
-			g.addEdge(test[3], test[5], 14);
-			g.addEdge(test[5], test[3], 14);
-
-			g.addEdge(test[4], test[5], 10);
-			g.addEdge(test[5], test[4], 10);
-
-			g.addEdge(test[5], test[6], 2);
-			g.addEdge(test[6], test[5], 2);
-
-			g.addEdge(test[6], test[7], 1);
-			g.addEdge(test[7], test[6], 1);
-
-			g.addEdge(test[6], test[8], 6);
-			g.addEdge(test[8], test[6], 6);
-
-			g.addEdge(test[7], test[8], 7);
-			g.addEdge(test[8], test[7], 7);
-
-			// Call the shortestPath function
-			g.shortestPath(test[0], test[4]);
-
-			return 0;			
+			return false;
 		};
-
 
 		// Solves Dijkstra's algorithm to determine the shortest path for "From" to "To", puts the path in "Out", and returns true. 
 		// If no path is possible, returns false.
@@ -762,14 +1003,14 @@ namespace scripting {
 		// adds a customized conversion (e.g. calls a custom function)
 		// tree.AddConverter([](float v) -> double { return v; }))
 		// tree.AddConverter([](std::string const& v) -> const char* { return v.c_str(); }))
-		template <class Callable> bool AddConverter(Callable t_func, Type_Info inboundType, Type_Info outboundType) {
+		template <class Callable> bool AddConverter(Callable t_func, Type_Info inboundType, Type_Info outboundType, std::optional<double> Cost = std::nullopt) {
 			std::shared_ptr<Node> node = nodes.get_or_insert(inboundType, std::make_shared<Node>());
 			node->from = inboundType;
 
 			auto targetLocation = node->connections.at_or(outboundType, nullptr);
 			if (!targetLocation) {
 				targetLocation = node->connections.get_or_insert(outboundType, std::dynamic_pointer_cast<details::Type_Conversion_Base>(
-					std::make_shared<details::Custom_Type_Conversion_Impl<Callable>>(std::move(t_func), inboundType, outboundType)
+					std::make_shared<details::Custom_Type_Conversion_Impl<Callable>>(std::move(t_func), inboundType, outboundType, Cost)
 				));
 			}
 			if (1) {
@@ -3555,7 +3796,22 @@ namespace scripting {
 	*/
 	class Functions2 {
 	public:
-		using FunctionActual = std::pair<Proxy_Function, Param_Types>; // this can never be seperated. The underlying function needs this conversion to function properly. 
+		class FunctionActual {
+		public:
+			FunctionActual() = default;
+			FunctionActual(Proxy_Function const& a, Param_Types const& b) : first(a), second(b) {};
+			FunctionActual(Proxy_Function const& a, Param_Types const& b, double Cost) : first(a), second(b), cost(Cost) {};
+			FunctionActual(FunctionActual &&) = default;
+			FunctionActual(FunctionActual const&) = delete;
+			FunctionActual& operator=(FunctionActual&&) = delete;
+			FunctionActual& operator=(FunctionActual const&) = delete;
+			~FunctionActual() = default;
+
+			Proxy_Function first;
+			Param_Types second;
+			std::optional<double> cost;
+		};
+		// using FunctionActual = std::pair<Proxy_Function, Param_Types>; // this can never be seperated. The underlying function needs this conversion to function properly. 
 		using FunctionActualPtr = std::shared_ptr<FunctionActual>;
 		using FunctionSort = fibers::containers::Map< Param_Types, FunctionActualPtr>; // sorts actual functions by filters, to speed-up filtering and finding with repeat conversions
 		using FunctionMap = fibers::containers::Map< std::string, std::shared_ptr< FunctionSort > >;
@@ -3636,6 +3892,35 @@ namespace scripting {
 		bool emplace_free(std::string const& key, Proxy_Function func, bool replaceIfAlreadyExists = false) { if (func) return emplace_free(key, func->Arguments(), func, replaceIfAlreadyExists); else return false; };
 		bool emplace_free(std::string const& key, Proxy_Function func, std::vector<std::string> const& params, bool replaceIfAlreadyExists = false) { if (func) return emplace_free(key, func, Param_Types(func->Arguments(), params), replaceIfAlreadyExists); else return false; };
 		bool emplace_free(std::string const& key, std::vector<std::string> const& params, Proxy_Function func, bool replaceIfAlreadyExists = false) { if (func) return emplace_free(key, func, Param_Types(func->Arguments(), params), replaceIfAlreadyExists); else return false; };
+
+		bool emplace_constructor(std::string const& key, Param_Types const& params, Proxy_Function func, bool replaceIfAlreadyExists = false) {
+			if (func) {
+				if (auto ptr = operator()(key)) {
+					defer(ptr->TryCleanupUnusedMemory());
+					return ptr->emplace(params, std::make_shared<FunctionActual>(func, params), replaceIfAlreadyExists);
+				}
+			}
+			return false;
+		};
+		bool emplace_constructor(std::string const& key, Param_Types const& params, Proxy_Function func, Any const& inputObjImpl, bool replaceIfAlreadyExists = false) {
+			if (func) {
+				std::vector<Any> params2{ inputObjImpl };
+
+				double temp{ 0 };
+				for (int i = 0; i < 10; i++) {
+					auto startT = clock_ns();
+					(void)func->operator()(params2);
+					temp += (double)(clock_ns() - startT) / 100.0;
+				}
+				double actualCost = details::TypeConversionBaselineCost + temp / 10.0;
+
+				if (auto ptr = operator()(key)) {
+					defer(ptr->TryCleanupUnusedMemory());
+					return ptr->emplace(params, std::make_shared<FunctionActual>(func, params, actualCost), replaceIfAlreadyExists);
+				}
+			}
+			return false;
+		};
 
 		/* Given a function name and call parameters, will attempt to find an exact-match function, variadic instantiation, or convertable function call, or return nullptr. */
 		scripting::Functions2::FunctionActualPtr BuildMatch(std::string const& functionName, scripting::Function_Params const& params, Type_Converter_Tree const& m_typeConverters = Type_Converter_Tree(), bool AllowTemplateInstantiation = true, bool AllowTypeConversion = true) {
@@ -4286,7 +4571,7 @@ namespace scripting {
 		virtual Type_Info GetClassType() const { return Type_Info(); };
 
 	public:
-		virtual bool AddFunction(std::string const& name, Proxy_Function function, bool overrideIfAlreadyExists) {
+		virtual bool AddFunction(std::string const& name, Proxy_Function function, bool overrideIfAlreadyExists = true) {
 			if (auto namespacePtr = std::dynamic_pointer_cast<Scope2>(GetNamespace())) {
 				return namespacePtr->AddFunction(name, function, overrideIfAlreadyExists);
 			}
@@ -5552,12 +5837,48 @@ namespace scripting {
 			return false;
 		};
 	public:
-		virtual bool AddFunction(std::string const& name, Proxy_Function function, bool overrideIfAlreadyExists = false) override {
+		virtual bool AddFunction(std::string const& name, Proxy_Function function, bool overrideIfAlreadyExists = true) override {
 			defer(this->RecordFunction(name, function, overrideIfAlreadyExists));
+			if (this->IsClass() && (this->GetName() == name) && (function->Arguments().size() <= 1)) {
+				if (function->Arguments().size() == 1) {
+					if (auto inputClass = std::dynamic_pointer_cast<Scope2>(this->FindClass(function->Arguments()[0].second))) {
+						try {
+							if (auto func = inputClass->GetFunction(inputClass->GetName(), Function_Params())) {
+								if (func->first) {
+									if (auto inputParamImpl = func->first->operator()(Function_Params())) {
+										return p_functions->emplace_constructor(name, function->Arguments(), function, inputParamImpl, overrideIfAlreadyExists);
+									}
+								}
+							}
+						}
+						catch (...) {}
+
+					}
+				}
+				return p_functions->emplace_constructor(name, function->Arguments(), function, overrideIfAlreadyExists);
+			}
 			return p_functions->emplace(name, function, overrideIfAlreadyExists);
+					
 		};
-		virtual bool AddFunction(std::string const& name, Proxy_Function function, Param_Types const& params, bool overrideIfAlreadyExists = false) override {
+		virtual bool AddFunction(std::string const& name, Proxy_Function function, Param_Types const& params, bool overrideIfAlreadyExists = true) override {
 			defer(this->RecordFunction(name, function, overrideIfAlreadyExists));
+			if (this->IsClass() && (this->GetName() == name) && (params.size() <= 1)) {
+				if (params.size() == 1) {
+					if (auto inputClass = std::dynamic_pointer_cast<Scope2>(this->FindClass(params[0].second))) {
+						try {
+							if (auto func = inputClass->GetFunction(inputClass->GetName(), Function_Params())) {
+								if (func->first) {
+									if (auto inputParamImpl = func->first->operator()(Function_Params())) {
+										return p_functions->emplace_constructor(name, params, function, inputParamImpl, overrideIfAlreadyExists);
+									}
+								}
+							}
+						} catch (...) {}
+
+					}
+				}
+				return p_functions->emplace_constructor(name, params, function, overrideIfAlreadyExists);
+			}
 			return p_functions->emplace(name, function, params, overrideIfAlreadyExists);
 		};
 
@@ -6467,18 +6788,25 @@ namespace scripting {
 									// ... whose inputs are size of 1 ...
 									if (constructor->first.size() == 1) {
 										auto& inputType = constructor->second->second[0].second; 
-										out->AddConverter([func = constructor->second, this](Any const& input)->Any {
-											std::vector<Any> params = { input };
-											return func->first->operator()(params);											
-										}, inputType, outputType);
+
+										if (constructor->second->cost.has_value()) {
+											out->AddConverter([func = constructor->second, this](Any const& input)->Any {
+												std::vector<Any> params = { input };
+												return func->first->operator()(params);
+											}, inputType, outputType, constructor->second->cost.value());
+										}
+										else {
+											out->AddConverter([func = constructor->second, this](Any const& input)->Any {
+												std::vector<Any> params = { input };
+												return func->first->operator()(params);
+											}, inputType, outputType);
+										}
 
 										if (printOut) {
 											auto inputTypeName = inputType.lock()->name();
 											auto outputTypeName = outputType.lock()->name();
 											std::cout << Units::printf("%s( %s )\n", outputTypeName, inputTypeName);
 										}
-
-
 									}
 								}
 							}
