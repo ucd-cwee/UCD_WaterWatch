@@ -171,6 +171,7 @@
 #include <functional>
 #include <memory>
 #include <utility>
+#include <map>
 
 // Finally is a pure virtual base class, implemented by the templated FinallyImpl.
 class Finally { public:
@@ -456,21 +457,35 @@ namespace std {
 
 	template <>
 	struct hash<std::weak_ptr<fibers::Type_Info>> {
-		std::size_t operator()(const std::weak_ptr<fibers::Type_Info>& k) const
-		{
-			if (auto ptr = k.lock())
-				return reinterpret_cast<size_t>(ptr->bare_type_info());
-			else
-				return std::hash<fibers::Type_Info>()(fibers::Type_Info());
-		}
+		std::size_t operator()(const std::weak_ptr<fibers::Type_Info>& k) const {
+			//static std::shared_mutex cache_lock;
+			//static std::map< std::weak_ptr<fibers::Type_Info>, size_t, std::owner_less<std::weak_ptr<fibers::Type_Info>>> cache;
+			static auto badhash{ std::hash<fibers::Type_Info>()(fibers::Type_Info()) };
+
+			//if (1) {
+			//	auto locked{ std::shared_lock(cache_lock) };
+			//	auto f = cache.find(k);
+			//	if (f != cache.end()) {
+			//		return f->second;
+			//	}
+			//}
+
+			if (1) {
+				//size_t out;
+				if (auto ptr = k.lock()) /*out =*/ return reinterpret_cast<size_t>(ptr->bare_type_info());
+				else /*out =*/ return badhash;
+
+				//auto locked{ std::unique_lock(cache_lock) };
+				//return cache[k] = out;
+			}
+		};
 	};
 
 	template<> struct less<fibers::Type_Info>
 	{
-		bool operator() (const fibers::Type_Info& lhs, const fibers::Type_Info& rhs) const
-		{
+		bool operator() (const fibers::Type_Info& lhs, const fibers::Type_Info& rhs) const {
 			return lhs < rhs;
-		}
+		};
 	};
 
 	template<> struct less<std::weak_ptr<fibers::Type_Info>>
@@ -489,7 +504,7 @@ namespace std {
 			else {
 				return LHS.get() < RHS.get();
 			}
-		}
+		};
 	};
 
 };
@@ -853,8 +868,28 @@ namespace fibers {
 		template<class T> struct get_type<const std::shared_ptr<T>*> { using type = typename get_type<T>::type; };
 
 		class AnyData {
+		private:
+			static auto& GetHasher() {
+				static std::hash<std::weak_ptr<Type_Info>> sharedHash;
+				return sharedHash;
+			};
 		public:
-			AnyData(std::shared_ptr<void> const& t_ptr, std::weak_ptr<Type_Info> t_type, const bool t_const) noexcept : m_ptr(t_ptr), m_type(t_type), m_const(t_const) {};
+			AnyData(std::shared_ptr<void> const& t_ptr, std::weak_ptr<Type_Info> t_type, const bool t_const) noexcept 
+				: m_ptr(t_ptr)
+				, m_type(t_type)
+				, m_const(t_const) 
+				, m_type_hash(GetHasher()(t_type))
+			{
+/*				static auto DynamicType{ user_type<DynamicObject>() };
+				static auto hasher{ std::hash<decltype(DynamicType)>() };
+				static auto DynamicTypeHash{ hasher(DynamicType) };
+
+				if (m_type_hash == DynamicTypeHash) {
+					if (auto p2 = std::static_pointer_cast<DynamicObject>(m_ptr)) {
+						m_type_hash = std::hash<std::weak_ptr< Type_Info >>()(p2->m_classType);
+					}
+				}	*/		
+			};
 			AnyData(AnyData const&) = default;
 			AnyData(AnyData&&) = default;
 			AnyData& operator=(AnyData const&) = default;
@@ -896,9 +931,10 @@ namespace fibers {
 			std::shared_ptr<void>					m_ptr; // underlying shared ptr for the provided object. (e.g. std::shared_ptr<int>, etc.)
 			std::weak_ptr<Type_Info>                m_type; // type information of the saved object
 			const bool						        m_const; // whether or not the saved object is const
-
+			const size_t                            m_type_hash;
 		};	
 	}
+	
 	class Any;
 
 	class FunctionBase {
@@ -1514,7 +1550,7 @@ namespace fibers {
 
 		std::weak_ptr< Type_Info >
 			m_classType;
-		concurrency::concurrent_unordered_map<std::string, std::shared_ptr<Any>> 
+		concurrency::concurrent_unordered_map<std::string, std::shared_ptr<Any>>
 			m_objects;
 
 	};
@@ -1536,7 +1572,8 @@ namespace fibers {
 				}
 				else {
 					static auto sharedType{ std::make_shared<Type_Info>(user_type<S>()) };
-					return std::shared_ptr<AnyData>(new AnyData(AnyData::get_data<S>(obj), sharedType, std::is_const_v<S>));
+					return std::make_shared<AnyData>(AnyData::get_data<S>(obj), sharedType, std::is_const_v<S>);
+					// return std::shared_ptr<AnyData>(new AnyData(AnyData::get_data<S>(obj), sharedType, std::is_const_v<S>));
 				}				
 			};
 			template <template<class> class H, class S, typename = std::enable_if_t<std::is_same_v<H<S>, std::shared_ptr<S>>>> static decltype(auto) get(H<S>&& obj) {
@@ -1551,7 +1588,8 @@ namespace fibers {
 				}
 				else {
 					static auto sharedType{ std::make_shared<Type_Info>(user_type<S>()) };
-					return std::shared_ptr<AnyData>(new AnyData(AnyData::get_data<S>(std::forward<H<S>>(obj)), sharedType, std::is_const_v<S>));
+					return std::make_shared<AnyData>(AnyData::get_data<S>(std::forward<H<S>>(obj)), sharedType, std::is_const_v<S>);
+					// return std::shared_ptr<AnyData>(new AnyData(AnyData::get_data<S>(std::forward<H<S>>(obj)), sharedType, std::is_const_v<S>));
 				}				
 			};
 			
@@ -1620,28 +1658,16 @@ namespace fibers {
 			}
 		};
 		std::weak_ptr<Type_Info> Type() const noexcept {
+			static auto DynamicType{ user_type<DynamicObject>() };
+			static auto hasher{ std::hash<decltype(DynamicType)>() };
+			static auto DynamicTypeHash{ hasher(DynamicType) };
+
 			std::shared_ptr<AnyData> m = container;
 			if (m) { 
-				if (auto p = m->m_type.lock()) {
-					if (*p == user_type<DynamicObject>()) {
-						if (auto p2 = std::static_pointer_cast<DynamicObject>(m->m_ptr)) {
-							if (auto p3 = p2->m_classType.lock()) {
-								return p3;
-							}
-							else {
-								return p;
-							}
-						}
-						else {
-							return p;
-						}
+				if (/*hasher(m->m_type)*/m->m_type_hash == DynamicTypeHash) {
+					if (auto p2 = std::static_pointer_cast<DynamicObject>(m->m_ptr)) {
+						return p2->m_classType;
 					}
-					else {
-						return p;
-					}
-				}
-				else {
-					return m->m_type;
 				}
 				return m->m_type;
 			} else { 
@@ -1649,20 +1675,53 @@ namespace fibers {
 				return SharedT;
 			}
 		};
-		template<typename VType> bool IsTypeOf() const noexcept {
-			return Type() == TypeOf<VType>();
-		};
-		bool IsTypeOf(Type_Info const& targetType) const noexcept {
-			if (auto p = Type().lock()) {
-				return targetType == *p;
+		size_t TypeHash() const noexcept {
+			static auto DynamicType{ user_type<DynamicObject>() };
+			static auto hasher{ std::hash<std::weak_ptr<Type_Info>>() };
+			static auto DynamicTypeHash{ std::hash<decltype(DynamicType)>()(DynamicType) };
+
+			std::shared_ptr<AnyData> m = container;
+			if (m) {
+				if (m->m_type_hash == DynamicTypeHash) {
+					if (auto p2 = std::static_pointer_cast<DynamicObject>(m->m_ptr)) {
+						return hasher(p2->m_classType);
+					}
+				}
+				return m->m_type_hash;
 			}
 			else {
-				return targetType == user_type<void>();
+				static auto SharedT{ std::make_shared<Type_Info>(user_type<void>()) };
+				return hasher(SharedT);
 			}
+
+			//static auto hasher{ std::hash<Type_Info>() };
+			////return hasher(Type());
+
+			//std::shared_ptr<AnyData> m = container;
+			//if (m) return m->m_type_hash;
+			//else return hasher(user_type<void>());
 		};
 		bool IsTypeOf(std::weak_ptr<Type_Info> const& targetType) const noexcept {
-			return Type() == targetType;
+			//return Type() == targetType;
+
+			static auto hasher{ std::hash<std::weak_ptr<Type_Info>>() };
+			std::shared_ptr<AnyData> m = container;
+			if (m) return m->m_type_hash == hasher(targetType);
+			else return Type() == targetType;
 		};
+		bool IsTypeOf(Type_Info const& targetType) const noexcept {
+			//return Type() == targetType;
+
+			static auto hasher{ std::hash<Type_Info>() };
+			std::shared_ptr<AnyData> m = container;
+			if (m) return m->m_type_hash == hasher(targetType);
+			else return targetType == user_type<void>();
+		};
+		template<typename VType> bool IsTypeOf() const noexcept {
+			return IsTypeOf(TypeOf<VType>());
+		};
+
+
 #pragma region Boolean Operators
 	public:
 		explicit operator bool() const { return (bool)container; };

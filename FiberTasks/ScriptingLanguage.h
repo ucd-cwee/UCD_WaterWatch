@@ -384,25 +384,25 @@ namespace scripting {
 					if (auto finalAnswer = FromNode->cached_conversions.at_or(To, nullptr)) {
 						out = std::get<0>(*finalAnswer);
 						if (out.size() > 0) {
-							if (auto p1 = From.lock()) {
-								if (auto p2 = To.lock()) {
-									std::string inner = p1->name();
-									for (auto& x : out) {
-										if (auto p3 = x.lock()) {
-											inner += Units::printf(" ... %s", p3->name());
-										}
-									}
-									std::cout << Units::printf("Converting %s -> %s requires:\n\t%s\n", p1->name(), p2->name(), inner.c_str());
-								}
-							}
+							//if (auto p1 = From.lock()) {
+							//	if (auto p2 = To.lock()) {
+							//		std::string inner = p1->name();
+							//		for (auto& x : out) {
+							//			if (auto p3 = x.lock()) {
+							//				inner += Units::printf(" ... %s", p3->name());
+							//			}
+							//		}
+							//		std::cout << Units::printf("Converting %s -> %s requires:\n\t%s\n", p1->name(), p2->name(), inner.c_str());
+							//	}
+							//}
 							return true;
 						}
 						else {
-							if (auto p1 = From.lock()) {
-								if (auto p2 = To.lock()) {
-									std::cout << Units::printf("Converting %s -> %s cannot be completed.\n", p1->name(), p2->name());
-								}
-							}
+							//if (auto p1 = From.lock()) {
+							//	if (auto p2 = To.lock()) {
+							//		std::cout << Units::printf("Converting %s -> %s cannot be completed.\n", p1->name(), p2->name());
+							//	}
+							//}
 							return false;
 						}
 					}
@@ -468,17 +468,17 @@ namespace scripting {
 			if (ptr != vertices.end()) {
 				out = ptr->second->bestPath;
 
-				if (auto p1 = From.lock()) {
-					if (auto p2 = To.lock()) {
-						std::string inner = p1->name();
-						for (auto& x : out) {
-							if (auto p3 = x.lock()) {
-								inner += Units::printf(" ... %s", p3->name());
-							}
-						}
-						std::cout << Units::printf("Converting %s -> %s requires:\n\t%s\n", p1->name(), p2->name(), inner.c_str());
-					}
-				}
+				//if (auto p1 = From.lock()) {
+				//	if (auto p2 = To.lock()) {
+				//		std::string inner = p1->name();
+				//		for (auto& x : out) {
+				//			if (auto p3 = x.lock()) {
+				//				inner += Units::printf(" ... %s", p3->name());
+				//			}
+				//		}
+				//		std::cout << Units::printf("Converting %s -> %s requires:\n\t%s\n", p1->name(), p2->name(), inner.c_str());
+				//	}
+				//}
 
 				return true;
 			}
@@ -660,7 +660,8 @@ namespace scripting {
 				return false;
 			}
 
-			std::shared_ptr<Node> node = nodes.get_or_insert(fromTypeInfo, std::make_shared<Node>());
+			std::shared_ptr<Node> node = nodes.at_or(fromTypeInfo, nullptr);
+			if (!node) node = nodes.get_or_insert(fromTypeInfo, std::make_shared<Node>());
 			node->from = fromTypeInfo;
 
 
@@ -718,7 +719,8 @@ namespace scripting {
 				>();
 			}
 
-			std::shared_ptr<Node> node = nodes.get_or_insert(fromTypeInfo, std::make_shared<Node>());
+			std::shared_ptr<Node> node = nodes.at_or(fromTypeInfo, nullptr);
+			if (!node) node = nodes.get_or_insert(fromTypeInfo, std::make_shared<Node>());
 			node->from = fromTypeInfo;
 
 			auto targetLocation = node->connections.at_or(toTypeInfo, nullptr);
@@ -744,7 +746,8 @@ namespace scripting {
 		// tree.AddConverter([](float v) -> double { return v; }))
 		// tree.AddConverter([](std::string const& v) -> const char* { return v.c_str(); }))
 		template <class Callable> bool AddConverter(Callable t_func, Type_Info inboundType, Type_Info outboundType, std::optional<double> Cost = std::nullopt) {
-			std::shared_ptr<Node> node = nodes.get_or_insert(inboundType, std::make_shared<Node>());
+			std::shared_ptr<Node> node = nodes.at_or(inboundType, nullptr);
+			if (!node) node = nodes.get_or_insert(inboundType, std::make_shared<Node>());		
 			node->from = inboundType;
 
 			auto targetLocation = node->connections.at_or(outboundType, nullptr);
@@ -772,10 +775,10 @@ namespace scripting {
 		/// returns true if it could convert "From" to "To" type, and stores the converted answer in "result". Otherwise returns false. 
 		/// </summary>
 		bool TryConvert(Any const& From, scripting::Type_Info const& to, Any& result) const {
-			auto fromType = From.Type().lock();
-			if (!fromType) return false;
+			auto fromType = From.Type();// .lock();
+			//if (!fromType) return false;
 
-			if (fromType == to) {
+			if (From.IsTypeOf(to)) {
 				result = From;
 				return true;
 			}
@@ -801,7 +804,7 @@ namespace scripting {
 								}, false)) {
 									// successfully added a new, valid conversion
 									if constexpr (printTypeConversionSuccesses) {
-										if (auto p1 = fromType) {
+										if (auto p1 = fromType.lock()) {
 											if (auto p2 = to.lock()) {
 												std::string inner = p1->name();
 												for (auto& x : newCached) {
@@ -841,12 +844,14 @@ namespace scripting {
 								for (auto& intermediate_to_type : conversion_path) {
 									if (auto f = currentNode->connections.at_or(intermediate_to_type, nullptr)) {
 										currentFrom = f->convert(currentFrom);
-										if (auto p = currentFrom.Type().lock()) {
-											currentNode = nodes.at_or(p, nullptr);
-										}
-										else {
-											throw std::runtime_error("Something went wrong with the analysis at " + std::to_string(__LINE__));
-										}
+										currentNode = nodes.at_or(currentFrom.Type(), nullptr);
+
+										//if (auto p = currentFrom.Type().lock()) {
+										//	currentNode = nodes.at_or(p, nullptr);
+										//}
+										//else {
+										//	throw std::runtime_error("Something went wrong with the analysis at " + std::to_string(__LINE__));
+										//}
 									}
 									else {
 										throw std::runtime_error("Something went wrong with the analysis at " + std::to_string(__LINE__));
@@ -1081,6 +1086,7 @@ namespace scripting {
 	class Function_Params {
 	private:
 		size_t HashTypes() {
+			// static auto hashObj{ std::hash<scripting::Type_Info>() };
 			constexpr auto A = 54059; /* a prime */
 			constexpr auto B = 76963; /* another prime */
 			constexpr auto C = 86969; /* yet another prime */
@@ -1089,7 +1095,8 @@ namespace scripting {
 			size_t h = FIRSTH;
 			if (size() > 0) {
 				for (auto& s : *this) {
-					h = (h * A) ^ (std::hash<scripting::Type_Info>()(s.Type()) * B);
+					// h = (h * A) ^ (hashObj(s.Type()) * B);
+					h = (h * A) ^ (s.TypeHash() * B);
 				}
 			}
 			auto result = h % C;
@@ -1243,11 +1250,14 @@ namespace scripting {
 			for (size_t i = 0; i < m_types.size(); ++i) {
 				const auto& bv = vals[i];
 				const auto& ti = m_types[i].second;
-				if (auto p = ti.lock()) {
-					if (!p->is_undef()) {
-						vals[i] = t_conversions.Convert(bv, p); // success or failure, caches the result for faster future eval's
-					}
-				}
+
+				vals[i] = t_conversions.Convert(bv, ti);
+
+				//if (auto p = ti.lock()) {
+				//	if (!p->is_undef()) {
+				//		vals[i] = t_conversions.Convert(bv, p); // success or failure, caches the result for faster future eval's
+				//	}
+				//}
 			}
 			return vals;
 		};
@@ -1263,11 +1273,14 @@ namespace scripting {
 				//const auto& name = m_types[i].first;
 				const auto& bv = t_params[i];
 				const auto& ti = m_types[i].second;
-				if (auto p = ti.lock()) {
-					if (!p->is_undef()) {
-						if (!t_conversions.Converts(bv.Type(), p)) return false;
-					}
-				}
+
+				if (!t_conversions.Converts(bv.Type(), ti)) return false;
+
+				//if (auto p = ti.lock()) {
+				//	if (!p->is_undef()) {
+				//		if (!t_conversions.Converts(bv.Type(), p)) return false;
+				//	}
+				//}
 			}
 			return true;
 		};
@@ -1285,16 +1298,16 @@ namespace scripting {
 			for (; i < m_types.size(); ++i) {
 				const auto& bv = t_params[i];
 				const auto& ti = m_types[i].second;
-				if (auto p = ti.lock()) {
-					if (!p->is_undef()) {
-						if (!t_conversions.Converts(bv.Type(), p)) return std::numeric_limits<double>::max();
+				//if (auto p = ti.lock()) {
+					//if (!p->is_undef()) {
+						if (!t_conversions.Converts(bv.Type(), ti/*p*/)) return std::numeric_limits<double>::max();
 						else {
-							auto cost = t_conversions.ConversionCost(bv.Type(), p);
+							auto cost = t_conversions.ConversionCost(bv.Type(), ti/*p*/);
 							if (cost == std::numeric_limits<double>::max()) return std::numeric_limits<double>::max();
 							else out += cost;
 						}
-					}
-				}
+					//}
+				//}
 			}
 			for (; i < t_params.size(); ++i) {
 				out += details::TypeConversionWorstCaseCost; // large penalty for not using the provided type(s).
@@ -1378,6 +1391,12 @@ namespace scripting {
 				throw exception::arity_error(static_cast<int>(params.size()), m_types.size());
 			};
 
+			Any operator()(Any& param) const {
+				if (1 == m_types.size()) {
+					return do_call({ param });
+				}
+				throw exception::arity_error(1, m_types.size());
+			};
 
 			bool operator==(const Proxy_Function_Base& other) const noexcept {
 				return m_types == other.m_types && m_return == other.m_return; // same signature
@@ -3688,6 +3707,10 @@ namespace scripting {
 									}
 									else {
 										if (function->first.converts(params, m_typeConverters)) {
+											if (function->second->function_is_explicit && (function->first.hash() != params.hash())) {
+												// Must be an exact match for "explicit" functions - conversions are not allowed. 
+												continue;
+											}
 											candidates.insert({ function->first.conversion_cost(params, m_typeConverters), function->second });
 										}
 									}
@@ -3704,6 +3727,10 @@ namespace scripting {
 								if (function) {
 									if (function->first.Template()) {
 										if (function->first.converts(params, m_typeConverters)) {
+											if (function->second->function_is_explicit && (function->first.hash() != params.hash())) {
+												// Must be an exact match for "explicit" functions - conversions are not allowed. 
+												continue;
+											}
 											candidates.insert({ function->first.conversion_cost(params, m_typeConverters), function->second });
 										}
 									}
@@ -6354,6 +6381,9 @@ namespace scripting {
 					if (auto p = this->FindClass(user_type<std::string>())) {
 						p->AddFunction(p->GetName(), make_callable([](thisType const& from) -> std::string { return from.c_str(); }));
 					}
+					if (auto p = this->FindClass(user_type<Units::second>())) {
+						p->AddFunction(p->GetName(), make_callable([](thisType const& from) -> Units::second { return (Units::second)from; }));
+					}
 
 					// Comparisons
 					classPtr->AddFunction("==", scripting::make_callable([](thisType const& x, thisType const& y) -> bool { return x == y; }));
@@ -6487,30 +6517,32 @@ namespace scripting {
 	
 	private:
 		// Searches for all classes that are defined in the current and "used" libraries. 
-		std::map<Type_Info, std::weak_ptr<Class2>> GetAllAvailableClassesImpl() const {
+		std::unordered_map<size_t, std::weak_ptr<Class2>> GetAllAvailableClassesImpl() const {
 			thread_local static std::unordered_map<size_t, std::weak_ptr<Class2>> allClasses{};
 			thread_local static std::unordered_map<size_t, std::weak_ptr<Scope2>> uniqueList{};
 			defer(allClasses.clear());
 			defer(uniqueList.clear());
 
 			GetAllAvailableClassesImpl(allClasses, uniqueList);
-			{
-				std::map<Type_Info, std::weak_ptr<Class2>> out;
-				for (auto& x : allClasses) {
-					if (auto p = std::dynamic_pointer_cast<Scope2>(x.second.lock())) {
-						out[p->GetClassType()] = x.second;
-					}					
-				}
-				return out;
-			}
+			return allClasses;
+
+			//{
+			//	std::map<Type_Info, std::weak_ptr<Class2>> out;
+			//	for (auto& x : allClasses) {
+			//		if (auto p = std::dynamic_pointer_cast<Scope2>(x.second.lock())) {
+			//			out[p->GetClassType()] = x.second;
+			//		}					
+			//	}
+			//	return out;
+			//}
 		};
 	public:
-		std::shared_ptr<std::map<Type_Info, std::weak_ptr<Class2>>> GetAllAvailableClasses() const {
+		std::shared_ptr<std::unordered_map<size_t, std::weak_ptr<Class2>>> GetAllAvailableClasses() const {
 			auto oldVersion = CachedClassListVersion.load();
 			if (oldVersion != RecordVersion) {
 				auto guard{ std::unique_lock(const_cast<Global2*>(this)->CachedClassListMutex) };
 				if (const_cast<Global2*>(this)->CachedClassListVersion.CompareExchange(oldVersion, RecordVersion)) {
-					return const_cast<Global2*>(this)->CachedClassList = std::make_shared<std::map<Type_Info, std::weak_ptr<Class2>>>(GetAllAvailableClassesImpl());
+					return const_cast<Global2*>(this)->CachedClassList = std::make_shared<std::unordered_map<size_t, std::weak_ptr<Class2>>>(GetAllAvailableClassesImpl());
 				}
 			}
 			
@@ -6524,8 +6556,8 @@ namespace scripting {
 		void CreateTypeConverterTree(std::shared_ptr<Type_Converter_Tree>& out/*, bool printOut = false*/) const {
 			if (auto classes = GetAllAvailableClasses()) {
 				for (auto& FoundClass : *classes) {
-					auto& outputType = FoundClass.first;
 					if (auto p = FoundClass.second.lock()) {
+						auto& outputType = p->ClassType; //  FoundClass.first;
 						// Type Conversions are identical to Constructors with one input type. Therefore ...
 						auto className = p->GetName();						
 						// ... find all constructors ...
@@ -6539,14 +6571,12 @@ namespace scripting {
 										if (!constructor->second->function_is_explicit) {
 											if (constructor->second->cost.has_value()) {
 												out->AddConverter([func = constructor->second, this](Any const& input)->Any {
-													std::vector<Any> params = { input };
-													return func->first->operator()(params);
+													return func->first->operator()(const_cast<Any&>(input));
 												}, inputType, outputType, constructor->second->cost.value());
 											}
 											else {
 												out->AddConverter([func = constructor->second, this](Any const& input)->Any {
-													std::vector<Any> params = { input };
-													return func->first->operator()(params);
+													return func->first->operator()(const_cast<Any&>(input));
 												}, inputType, outputType);
 											}
 										}
@@ -6598,8 +6628,8 @@ namespace scripting {
 		std::shared_mutex // fibers::synchronization::shared_mutex<fibers::synchronization::mutex>
 			CachedTypeConverterTreeMutex{};
 
-		std::shared_ptr<std::map<Type_Info, std::weak_ptr<Class2>>>
-			CachedClassList{ std::make_shared<std::map<Type_Info, std::weak_ptr<Class2>>>() };
+		std::shared_ptr<std::unordered_map<size_t, std::weak_ptr<Class2>>>
+			CachedClassList{ std::make_shared<std::unordered_map<size_t, std::weak_ptr<Class2>>>() };
 		fibers::containers::number<unsigned __int64>
 			CachedClassListVersion{ 0 };
 		std::shared_mutex // fibers::synchronization::shared_mutex<fibers::synchronization::mutex>

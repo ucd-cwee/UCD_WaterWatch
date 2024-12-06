@@ -644,6 +644,7 @@ int main() {
 			// Units
 			if (1) {
 				// #include "Units"
+				// Trying to have Units be built-in, but this still demo's how to make a seperate library and make it included as-if it were built-in. 
 				if (0) {
 					auto global_scope2{ std::make_shared<Global2>() }; // global should always be a Namespace
 					global_scope2->SetSelf(global_scope2);
@@ -789,11 +790,14 @@ int main() {
 					EXPECT_EQ(true, (tempTree->TryCreateConversionPath(user_type<Units::value>(), user_type<Units::foot>(), tempResult)));
 					EXPECT_EQ(true, (tempTree->TryCreateConversionPath(user_type<double>(), user_type<Units::foot>(), tempResult)));
 					EXPECT_EQ(true, (tempTree->TryCreateConversionPath(user_type<int>(), user_type<Units::foot>(), tempResult)));
-					EXPECT_EQ(false, (tempTree->TryCreateConversionPath(user_type<std::string>(), user_type<int>(), tempResult)));
+					EXPECT_EQ(false, (tempTree->TryCreateConversionPath(user_type<std::string>(), user_type<int>(), tempResult))); // int(string) is not built-in
 					EXPECT_EQ(true, (tempTree->TryCreateConversionPath(user_type<int>(), user_type<DateTime>(), tempResult)));
 					EXPECT_EQ(true, (tempTree->TryCreateConversionPath(user_type<double>(), user_type<DateTime>(), tempResult)));
-					EXPECT_EQ(false, (tempTree->TryCreateConversionPath(user_type<std::string>(), user_type<DateTime>(), tempResult)));
+					EXPECT_EQ(false, (tempTree->TryCreateConversionPath(user_type<std::string>(), user_type<DateTime>(), tempResult))); // DateTime(string) is explicit, and must be requested directly
 					EXPECT_EQ(true, (tempTree->TryCreateConversionPath(user_type<DateTime>(), user_type<std::string>(), tempResult)));
+
+					// return (string)(DateTime)(double)(Units::second)DateTime::Now();
+					printf(tempTree->Convert< std::string>(tempTree->Convert< DateTime >((double)(Units::second)DateTime::Now())));
 				}
 
 				// slowest
@@ -1020,12 +1024,16 @@ int main() {
 
 			// DateTime
 			if (1) {
+				EXPECT_EQ(true, (scope_1->CallFunction("DateTime", Function_Params{}).IsTypeOf<DateTime>()));
+				EXPECT_EQ(true, (scope_1->CallFunction("DateTime", { std::string("2024/12/5 18:58:59.576000") }).IsTypeOf<DateTime>()));
+				EXPECT_EQ(true, (scope_1->CallFunction("DateTime", { scope_1->CallFunction("Units::second", { 1733454336 }) }).IsTypeOf<DateTime>()));
 
+				EXPECT_EQ(true, (scope_1->GetTypeConverterTree()->Converts<long double, DateTime>()));
 
-
-
-
-
+				EXPECT_EQ(true, (scope_1->CallFunction("DateTime", { 1733454336.0l }).IsTypeOf<DateTime>()));
+				EXPECT_EQ(true, (scope_1->CallFunction("Units::second", { DateTime::Now() }).IsTypeOf<Units::second>()));
+				EXPECT_EQ(true, (scope_1->CallFunction("Units::value", { DateTime::Now() }).IsTypeOf<Units::value>()));
+				EXPECT_EQ(true, (scope_1->CallFunction("double", { DateTime::Now() }).IsTypeOf<double>()));
 			}
 
 
