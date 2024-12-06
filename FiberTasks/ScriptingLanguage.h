@@ -784,9 +784,6 @@ namespace scripting {
 		/// returns true if it could convert "From" to "To" type, and stores the converted answer in "result". Otherwise returns false. 
 		/// </summary>
 		bool TryConvert(Any const& From, scripting::Type_Info const& to, Any& result) const {
-			auto fromType = From.Type();// .lock();
-			//if (!fromType) return false;
-
 			if (From.IsTypeOf(to)) {
 				result = From;
 				return true;
@@ -796,7 +793,8 @@ namespace scripting {
 				return true;
 			}
 			else {
-				if (auto node_ptr = nodes.at_or(fromType, nullptr)) {
+				auto fromType = From.Type();
+				if (auto node_ptr = nodes.at_hash_or(From.TypeHash(), nullptr)) {
 					auto& node = *node_ptr;
 
 					// If the conversion path does not exist OR is outdated, then re-create it. 
@@ -848,25 +846,18 @@ namespace scripting {
 						try {
 							std::vector<scripting::Type_Info>& conversion_path = std::get<0>(*f);
 							if (conversion_path.size() > 0) {
-								Any currentFrom = From;
+								result = From;
 								std::shared_ptr<Node> currentNode = node_ptr;
+								std::shared_ptr<details::Type_Conversion_Base> f;
 								for (auto& intermediate_to_type : conversion_path) {
-									if (auto f = currentNode->connections.at_or(intermediate_to_type, nullptr)) {
-										currentFrom = f->convert(currentFrom);
-										currentNode = nodes.at_or(currentFrom.Type(), nullptr);
-
-										//if (auto p = currentFrom.Type().lock()) {
-										//	currentNode = nodes.at_or(p, nullptr);
-										//}
-										//else {
-										//	throw std::runtime_error("Something went wrong with the analysis at " + std::to_string(__LINE__));
-										//}
+									if (f = currentNode->connections.at_or(intermediate_to_type, nullptr)) {
+										result = f->convert(result);
+										currentNode = nodes.at_hash_or(result.TypeHash(), nullptr);
 									}
 									else {
 										throw std::runtime_error("Something went wrong with the analysis at " + std::to_string(__LINE__));
 									}
 								}
-								result = currentFrom;
 								return true;
 							}
 						}
@@ -876,7 +867,8 @@ namespace scripting {
 									std::vector<scripting::Type_Info>(), 
 									version.GetValue()
 								) 
-							}, false);
+							}, false);			
+							result.Clear();
 							return false;
 						}
 					}
@@ -1253,43 +1245,35 @@ namespace scripting {
 
 		// Performs the conversion from the input parameters to the necessary types, if possible. Throws otherwise. 
 		std::vector<Any> convert(Function_Params t_params, Type_Converter_Tree const& t_conversions) const {
-			auto vals = t_params.to_vector();
-			if (m_types.size() > vals.size()) throw(exception::arity_error(m_types.size(), vals.size()));
-			vals.resize(m_types.size()); // become smaller if necessary
-			for (size_t i = 0; i < m_types.size(); ++i) {
-				const auto& bv = vals[i];
-				const auto& ti = m_types[i].second;
-
-				vals[i] = t_conversions.Convert(bv, ti);
-
-				//if (auto p = ti.lock()) {
-				//	if (!p->is_undef()) {
-				//		vals[i] = t_conversions.Convert(bv, p); // success or failure, caches the result for faster future eval's
-				//	}
-				//}
+			if (m_types.size() > t_params.size()) throw(exception::arity_error(m_types.size(), t_params.size()));
+			if (m_types.size() == 0) {
+				// do nothing
+				return {};
 			}
-			return vals;
+			else if (m_types.size() == 1) {
+				return { t_conversions.Convert(t_params[0], m_types[0].second) };
+			}
+			else {
+				auto vals = t_params.to_vector();
+				vals.resize(m_types.size()); // become smaller if necessary
+				for (size_t i = 0; i < m_types.size(); ++i) {
+					const auto& bv = vals[i];
+					const auto& ti = m_types[i].second;
+					vals[i] = t_conversions.Convert(bv, ti);
+				}
+				return vals;
+			}
 		};
 
 		// Tests if the conversion from the input parameters to the necessary types is possible. 
 		bool converts(Function_Params t_params, Type_Converter_Tree const& t_conversions) const {
 			// Quick return if the types exactly match.
-			if (t_params.hash() == hash()) { return true; }
-
 			if (m_types.size() > t_params.size()) return false;
-
+			if (t_params.hash() == hash()) { return true; }
 			for (size_t i = 0; i < m_types.size(); ++i) {
-				//const auto& name = m_types[i].first;
 				const auto& bv = t_params[i];
 				const auto& ti = m_types[i].second;
-
 				if (!t_conversions.Converts(bv.Type(), ti)) return false;
-
-				//if (auto p = ti.lock()) {
-				//	if (!p->is_undef()) {
-				//		if (!t_conversions.Converts(bv.Type(), p)) return false;
-				//	}
-				//}
 			}
 			return true;
 		};
@@ -1299,24 +1283,19 @@ namespace scripting {
 			double out{ 0 };
 
 			// Quick return if the types exactly match.
-			if (t_params.hash() == hash()) { return 0; }
-
 			if (m_types.size() > t_params.size()) return std::numeric_limits<double>::max();
+			if (t_params.hash() == hash()) { return 0; }		
 
 			size_t i = 0;
 			for (; i < m_types.size(); ++i) {
 				const auto& bv = t_params[i];
 				const auto& ti = m_types[i].second;
-				//if (auto p = ti.lock()) {
-					//if (!p->is_undef()) {
-						if (!t_conversions.Converts(bv.Type(), ti/*p*/)) return std::numeric_limits<double>::max();
-						else {
-							auto cost = t_conversions.ConversionCost(bv.Type(), ti/*p*/);
-							if (cost == std::numeric_limits<double>::max()) return std::numeric_limits<double>::max();
-							else out += cost;
-						}
-					//}
-				//}
+				if (!t_conversions.Converts(bv.Type(), ti)) return std::numeric_limits<double>::max();
+				else {
+					auto cost = t_conversions.ConversionCost(bv.Type(), ti);
+					if (cost == std::numeric_limits<double>::max()) return std::numeric_limits<double>::max();
+					else out += cost;
+				}
 			}
 			for (; i < t_params.size(); ++i) {
 				out += details::TypeConversionWorstCaseCost; // large penalty for not using the provided type(s).
@@ -1537,106 +1516,106 @@ namespace scripting {
 					static Any temp;
 					if constexpr (numArgs == 16) {
 						F_m(
-							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
-							r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
-							r[8].cast(), r[9].cast(), r[10].cast(), r[11].cast(),
-							r[12].cast(), r[13].cast(), r[14].cast(), r[15].cast()
+							r[0].cast(false), r[1].cast(false), r[2].cast(false), r[3].cast(false),
+							r[4].cast(false), r[5].cast(false), r[6].cast(false), r[7].cast(false),
+							r[8].cast(false), r[9].cast(false), r[10].cast(false), r[11].cast(false),
+							r[12].cast(false), r[13].cast(false), r[14].cast(false), r[15].cast(false)
 						);
 					}
 					else if constexpr (numArgs == 15) {
 						F_m(
-							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
-							r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
-							r[8].cast(), r[9].cast(), r[10].cast(), r[11].cast(),
-							r[12].cast(), r[13].cast(), r[14].cast()
+							r[0].cast(false), r[1].cast(false), r[2].cast(false), r[3].cast(false),
+							r[4].cast(false), r[5].cast(false), r[6].cast(false), r[7].cast(false),
+							r[8].cast(false), r[9].cast(false), r[10].cast(false), r[11].cast(false),
+							r[12].cast(false), r[13].cast(false), r[14].cast(false)
 						);
 					}
 					else if constexpr (numArgs == 14) {
 						F_m(
-							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
-							r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
-							r[8].cast(), r[9].cast(), r[10].cast(), r[11].cast(),
-							r[12].cast(), r[13].cast()
+							r[0].cast(false), r[1].cast(false), r[2].cast(false), r[3].cast(false),
+							r[4].cast(false), r[5].cast(false), r[6].cast(false), r[7].cast(false),
+							r[8].cast(false), r[9].cast(false), r[10].cast(false), r[11].cast(false),
+							r[12].cast(false), r[13].cast(false)
 						);
 					}
 					else if constexpr (numArgs == 13) {
 						F_m(
-							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
-							r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
-							r[8].cast(), r[9].cast(), r[10].cast(), r[11].cast(),
-							r[12].cast()
+							r[0].cast(false), r[1].cast(false), r[2].cast(false), r[3].cast(false),
+							r[4].cast(false), r[5].cast(false), r[6].cast(false), r[7].cast(false),
+							r[8].cast(false), r[9].cast(false), r[10].cast(false), r[11].cast(false),
+							r[12].cast(false)
 						);
 					}
 					else if constexpr (numArgs == 12) {
 						F_m(
-							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
-							r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
-							r[8].cast(), r[9].cast(), r[10].cast(), r[11].cast()
+							r[0].cast(false), r[1].cast(false), r[2].cast(false), r[3].cast(false),
+							r[4].cast(false), r[5].cast(false), r[6].cast(false), r[7].cast(false),
+							r[8].cast(false), r[9].cast(false), r[10].cast(false), r[11].cast(false)
 						);
 					}
 					else if constexpr (numArgs == 11) {
 						F_m(
-							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
-							r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
-							r[8].cast(), r[9].cast(), r[10].cast()
+							r[0].cast(false), r[1].cast(false), r[2].cast(false), r[3].cast(false),
+							r[4].cast(false), r[5].cast(false), r[6].cast(false), r[7].cast(false),
+							r[8].cast(false), r[9].cast(false), r[10].cast(false)
 						);
 					}
 					else if constexpr (numArgs == 10) {
 						F_m(
-							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
-							r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
-							r[8].cast(), r[9].cast()
+							r[0].cast(false), r[1].cast(false), r[2].cast(false), r[3].cast(false),
+							r[4].cast(false), r[5].cast(false), r[6].cast(false), r[7].cast(false),
+							r[8].cast(false), r[9].cast(false)
 						);
 					}
 					else if constexpr (numArgs == 9) {
 						F_m(
-							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
-							r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
-							r[8].cast()
+							r[0].cast(false), r[1].cast(false), r[2].cast(false), r[3].cast(false),
+							r[4].cast(false), r[5].cast(false), r[6].cast(false), r[7].cast(false),
+							r[8].cast(false)
 						);
 					}
 					else if constexpr (numArgs == 8) {
 						F_m(
-							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
-							r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast()
+							r[0].cast(false), r[1].cast(false), r[2].cast(false), r[3].cast(false),
+							r[4].cast(false), r[5].cast(false), r[6].cast(false), r[7].cast(false)
 						);
 					}
 					else if constexpr (numArgs == 7) {
 						F_m(
-							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
-							r[4].cast(), r[5].cast(), r[6].cast()
+							r[0].cast(false), r[1].cast(false), r[2].cast(false), r[3].cast(false),
+							r[4].cast(false), r[5].cast(false), r[6].cast(false)
 						);
 					}
 					else if constexpr (numArgs == 6) {
 						F_m(
-							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
-							r[4].cast(), r[5].cast()
+							r[0].cast(false), r[1].cast(false), r[2].cast(false), r[3].cast(false),
+							r[4].cast(false), r[5].cast(false)
 						);
 					}
 					else if constexpr (numArgs == 5) {
 						F_m(
-							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
-							r[4].cast()
+							r[0].cast(false), r[1].cast(false), r[2].cast(false), r[3].cast(false),
+							r[4].cast(false)
 						);
 					}
 					else if constexpr (numArgs == 4) {
 						F_m(
-							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast()
+							r[0].cast(false), r[1].cast(false), r[2].cast(false), r[3].cast(false)
 						);
 					}
 					else if constexpr (numArgs == 3) {
 						F_m(
-							r[0].cast(), r[1].cast(), r[2].cast()
+							r[0].cast(false), r[1].cast(false), r[2].cast(false)
 						);
 					}
 					else if constexpr (numArgs == 2) {
 						F_m(
-							r[0].cast(), r[1].cast()
+							r[0].cast(false), r[1].cast(false)
 						);
 					}
 					else if constexpr (numArgs == 1) {
 						F_m(
-							r[0].cast()
+							r[0].cast(false)
 						);
 					}
 					else if constexpr (numArgs <= 0) {
@@ -1648,106 +1627,106 @@ namespace scripting {
 
 					if constexpr (numArgs == 16) {
 						return F_m(
-							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
-							r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
-							r[8].cast(), r[9].cast(), r[10].cast(), r[11].cast(),
-							r[12].cast(), r[13].cast(), r[14].cast(), r[15].cast()
+							r[0].cast(false), r[1].cast(false), r[2].cast(false), r[3].cast(false),
+							r[4].cast(false), r[5].cast(false), r[6].cast(false), r[7].cast(false),
+							r[8].cast(false), r[9].cast(false), r[10].cast(false), r[11].cast(false),
+							r[12].cast(false), r[13].cast(false), r[14].cast(false), r[15].cast(false)
 						);
 					}
 					else if constexpr (numArgs == 15) {
 						return F_m(
-							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
-							r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
-							r[8].cast(), r[9].cast(), r[10].cast(), r[11].cast(),
-							r[12].cast(), r[13].cast(), r[14].cast()
+							r[0].cast(false), r[1].cast(false), r[2].cast(false), r[3].cast(false),
+							r[4].cast(false), r[5].cast(false), r[6].cast(false), r[7].cast(false),
+							r[8].cast(false), r[9].cast(false), r[10].cast(false), r[11].cast(false),
+							r[12].cast(false), r[13].cast(false), r[14].cast(false)
 						);
 					}
 					else if constexpr (numArgs == 14) {
 						return F_m(
-							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
-							r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
-							r[8].cast(), r[9].cast(), r[10].cast(), r[11].cast(),
-							r[12].cast(), r[13].cast()
+							r[0].cast(false), r[1].cast(false), r[2].cast(false), r[3].cast(false),
+							r[4].cast(false), r[5].cast(false), r[6].cast(false), r[7].cast(false),
+							r[8].cast(false), r[9].cast(false), r[10].cast(false), r[11].cast(false),
+							r[12].cast(false), r[13].cast(false)
 						);
 					}
 					else if constexpr (numArgs == 13) {
 						return F_m(
-							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
-							r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
-							r[8].cast(), r[9].cast(), r[10].cast(), r[11].cast(),
-							r[12].cast()
+							r[0].cast(false), r[1].cast(false), r[2].cast(false), r[3].cast(false),
+							r[4].cast(false), r[5].cast(false), r[6].cast(false), r[7].cast(false),
+							r[8].cast(false), r[9].cast(false), r[10].cast(false), r[11].cast(false),
+							r[12].cast(false)
 						);
 					}
 					else if constexpr (numArgs == 12) {
 						return F_m(
-							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
-							r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
-							r[8].cast(), r[9].cast(), r[10].cast(), r[11].cast()
+							r[0].cast(false), r[1].cast(false), r[2].cast(false), r[3].cast(false),
+							r[4].cast(false), r[5].cast(false), r[6].cast(false), r[7].cast(false),
+							r[8].cast(false), r[9].cast(false), r[10].cast(false), r[11].cast(false)
 						);
 					}
 					else if constexpr (numArgs == 11) {
 						return F_m(
-							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
-							r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
-							r[8].cast(), r[9].cast(), r[10].cast()
+							r[0].cast(false), r[1].cast(false), r[2].cast(false), r[3].cast(false),
+							r[4].cast(false), r[5].cast(false), r[6].cast(false), r[7].cast(false),
+							r[8].cast(false), r[9].cast(false), r[10].cast(false)
 						);
 					}
 					else if constexpr (numArgs == 10) {
 						return F_m(
-							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
-							r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
-							r[8].cast(), r[9].cast()
+							r[0].cast(false), r[1].cast(false), r[2].cast(false), r[3].cast(false),
+							r[4].cast(false), r[5].cast(false), r[6].cast(false), r[7].cast(false),
+							r[8].cast(false), r[9].cast(false)
 						);
 					}
 					else if constexpr (numArgs == 9) {
 						return F_m(
-							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
-							r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
-							r[8].cast()
+							r[0].cast(false), r[1].cast(false), r[2].cast(false), r[3].cast(false),
+							r[4].cast(false), r[5].cast(false), r[6].cast(false), r[7].cast(false),
+							r[8].cast(false)
 						);
 					}
 					else if constexpr (numArgs == 8) {
 						return F_m(
-							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
-							r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast()
+							r[0].cast(false), r[1].cast(false), r[2].cast(false), r[3].cast(false),
+							r[4].cast(false), r[5].cast(false), r[6].cast(false), r[7].cast(false)
 						);
 					}
 					else if constexpr (numArgs == 7) {
 						return F_m(
-							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
-							r[4].cast(), r[5].cast(), r[6].cast()
+							r[0].cast(false), r[1].cast(false), r[2].cast(false), r[3].cast(false),
+							r[4].cast(false), r[5].cast(false), r[6].cast(false)
 						);
 					}
 					else if constexpr (numArgs == 6) {
 						return F_m(
-							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
-							r[4].cast(), r[5].cast()
+							r[0].cast(false), r[1].cast(false), r[2].cast(false), r[3].cast(false),
+							r[4].cast(false), r[5].cast(false)
 						);
 					}
 					else if constexpr (numArgs == 5) {
 						return F_m(
-							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
-							r[4].cast()
+							r[0].cast(false), r[1].cast(false), r[2].cast(false), r[3].cast(false),
+							r[4].cast(false)
 						);
 					}
 					else if constexpr (numArgs == 4) {
 						return F_m(
-							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast()
+							r[0].cast(false), r[1].cast(false), r[2].cast(false), r[3].cast(false)
 						);
 					}
 					else if constexpr (numArgs == 3) {
 						return F_m(
-							r[0].cast(), r[1].cast(), r[2].cast()
+							r[0].cast(false), r[1].cast(false), r[2].cast(false)
 						);
 					}
 					else if constexpr (numArgs == 2) {
 						return F_m(
-							r[0].cast(), r[1].cast()
+							r[0].cast(false), r[1].cast(false)
 						);
 					}
 					else if constexpr (numArgs == 1) {
 						return F_m(
-							r[0].cast()
+							r[0].cast(false)
 						);
 					}
 					else if constexpr (numArgs <= 0) {
@@ -3437,6 +3416,17 @@ namespace scripting {
 		return call(std::move(callable), std::move(converted), conversionTree);
 	};
 	
+	// Call a generic, proxy function using a vector of inputs (may be empty), which will be converted as necessary to the expected types. 
+	__forceinline Any call(Proxy_Function callable, std::vector<Any> const& inputs) {
+		if (callable) {
+			return callable->operator()(Function_Params{ const_cast<std::vector<Any>&>(inputs) });
+		}
+		else {
+			throw exception::arity_error(inputs.size(), -1);
+		}
+	};
+
+
 	/*
 	// If a function is namespaced in a class, that means it's a free function in the namespace of _CLASS_NAME_, whose first parameter is to be that class type.
 	def _CLASS_NAME_::_FUNCTION_NAME_(Type_Info _PARAM_NAME_, ...) -> Type_Info { ... };
@@ -5478,8 +5468,9 @@ namespace scripting {
 			auto tree = GetTypeConverterTree(); // builds and caches the tree. Updates the tree only if the situation has changed (new functions, new classes, or new Using statements)
 			if (tree) {
 				if (auto func = BuildFunction(functionName, params, tree)) {
-					auto converted = func->second.convert(params, *tree);
-					return scripting::call(func->first, converted, *tree);
+					auto converted = func->second.convert(params, *tree); // converts to the params the user suggested, not the types requested by the function's impl (accounts for templates this way)
+					// return scripting::call(func->first, converted, *tree); // this then allows for casting from the converted type to the impl's expectations, which will either exactly match or be an "Any"
+					return scripting::call(func->first, converted); 
 				}
 				else {
 					// function was not found with the given params
@@ -5507,9 +5498,7 @@ namespace scripting {
 		};
 		Any CallFunction(std::string const& functionName, std::vector<Any> const& params) const {
 			scripting::Function_Params Params{ const_cast<std::vector<Any>&>(params) };
-			Any toReturn;
-			toReturn = CallFunction(functionName, Params);
-			return toReturn;
+			return CallFunction(functionName, Params);
 		};
 
 		template <typename T>

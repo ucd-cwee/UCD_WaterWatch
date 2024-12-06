@@ -1645,7 +1645,7 @@ namespace fibers {
 
 			std::shared_ptr<AnyData> m = container;
 			if (m) { 
-				if (/*hasher(m->m_type)*/m->m_type_hash == DynamicTypeHash) {
+				if (m->m_type_hash == DynamicTypeHash) {
 					if (auto p2 = std::static_pointer_cast<DynamicObject>(m->m_ptr)) {
 						return p2->m_classType;
 					}
@@ -1674,29 +1674,14 @@ namespace fibers {
 				static auto SharedT{ std::make_shared<Type_Info>(user_type<void>()) };
 				return hasher(SharedT);
 			}
-
-			//static auto hasher{ std::hash<Type_Info>() };
-			////return hasher(Type());
-
-			//std::shared_ptr<AnyData> m = container;
-			//if (m) return m->m_type_hash;
-			//else return hasher(user_type<void>());
 		};
 		bool IsTypeOf(std::weak_ptr<Type_Info> const& targetType) const noexcept {
-			//return Type() == targetType;
-
 			static auto hasher{ std::hash<std::weak_ptr<Type_Info>>() };
-			std::shared_ptr<AnyData> m = container;
-			if (m) return m->m_type_hash == hasher(targetType);
-			else return Type() == targetType;
+			return TypeHash() == hasher(targetType);
 		};
 		bool IsTypeOf(Type_Info const& targetType) const noexcept {
-			//return Type() == targetType;
-
 			static auto hasher{ std::hash<Type_Info>() };
-			std::shared_ptr<AnyData> m = container;
-			if (m) return m->m_type_hash == hasher(targetType);
-			else return targetType == user_type<void>();
+			return TypeHash() == hasher(targetType);
 		};
 		template<typename VType> bool IsTypeOf() const noexcept {
 			return IsTypeOf(TypeOf<VType>());
