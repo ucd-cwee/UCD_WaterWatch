@@ -495,7 +495,7 @@ int main() {
 			scope_1->SetSelf(scope_1);
 			scope_1->AddBuiltIns();
 
-			int numIterations = 1000000;
+			int numIterations = 10000;
 
 			// FindNamespace
 			if (1) {
@@ -1034,6 +1034,11 @@ int main() {
 				EXPECT_EQ(true, (scope_1->CallFunction("Units::second", { DateTime::Now() }).IsTypeOf<Units::second>()));
 				EXPECT_EQ(true, (scope_1->CallFunction("Units::value", { DateTime::Now() }).IsTypeOf<Units::value>()));
 				EXPECT_EQ(true, (scope_1->CallFunction("double", { DateTime::Now() }).IsTypeOf<double>()));
+
+				EXPECT_EQ(true, (scope_1->CallFunction("Now", { DateTime() }).IsTypeOf<DateTime>()));
+				EXPECT_EQ(true, (scope_1->CallFunction("DateTime::Now", Function_Params{ }).IsTypeOf<DateTime>()));
+				EXPECT_EQ(true, (scope_1->CallFunction("time", { DateTime::Now() }).IsTypeOf<Units::day>()));
+
 			}
 
 

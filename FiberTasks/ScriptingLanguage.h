@@ -1245,7 +1245,7 @@ namespace scripting {
 		// Performs the conversion from the input parameters to the necessary types, if possible. Throws otherwise. 
 		std::vector<Any> convert(Function_Params t_params, Type_Converter_Tree const& t_conversions) const {
 			auto vals = t_params.to_vector();
-			if (m_types.size() != vals.size()) throw(exception::arity_error(m_types.size(), vals.size()));
+			if (m_types.size() > vals.size()) throw(exception::arity_error(m_types.size(), vals.size()));
 			vals.resize(m_types.size()); // become smaller if necessary
 			for (size_t i = 0; i < m_types.size(); ++i) {
 				const auto& bv = vals[i];
@@ -1267,7 +1267,7 @@ namespace scripting {
 			// Quick return if the types exactly match.
 			if (t_params.hash() == hash()) { return true; }
 
-			if (m_types.size() != t_params.size()) return false;
+			if (m_types.size() > t_params.size()) return false;
 
 			for (size_t i = 0; i < m_types.size(); ++i) {
 				//const auto& name = m_types[i].first;
@@ -1292,7 +1292,7 @@ namespace scripting {
 			// Quick return if the types exactly match.
 			if (t_params.hash() == hash()) { return 0; }
 
-			if (m_types.size() != t_params.size()) return std::numeric_limits<double>::max();
+			if (m_types.size() > t_params.size()) return std::numeric_limits<double>::max();
 
 			size_t i = 0;
 			for (; i < m_types.size(); ++i) {
@@ -6408,7 +6408,8 @@ namespace scripting {
 					classPtr->AddFunction("min", make_callable([]() { return std::numeric_limits<thisType>::lowest(); }));
 					classPtr->AddFunction("to_string", make_callable([](thisType const& o) -> std::string { return o.c_str(); }));
 					classPtr->AddFunction("Epoch", make_callable(&DateTime::Epoch));
-					classPtr->AddFunction("Now", make_callable(&DateTime::Now));
+					// classPtr->AddFunction("Now", make_callable(&DateTime::Now));
+					classPtr->AddFunction("Now", make_callable([]() -> DateTime { return DateTime::Now(); }));
 					classPtr->AddFunction("tm_fractionalsec", make_callable(&DateTime::tm_fractionalsec));
 					classPtr->AddFunction("tm_sec", make_callable(&DateTime::tm_sec));
 					classPtr->AddFunction("tm_min", make_callable(&DateTime::tm_min));
