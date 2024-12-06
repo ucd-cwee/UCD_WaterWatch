@@ -797,7 +797,7 @@ int main() {
 					EXPECT_EQ(true, (tempTree->TryCreateConversionPath(user_type<DateTime>(), user_type<std::string>(), tempResult)));
 
 					// return (string)(DateTime)(double)(Units::second)DateTime::Now();
-					printf(tempTree->Convert< std::string>(tempTree->Convert< DateTime >((double)(Units::second)DateTime::Now())));
+					(void)tempTree->Convert< std::string>(tempTree->Convert< DateTime >((double)(Units::second)DateTime::Now()));
 				}
 
 				// slowest
@@ -1036,10 +1036,24 @@ int main() {
 				EXPECT_EQ(true, (scope_1->CallFunction("double", { DateTime::Now() }).IsTypeOf<double>()));
 
 				EXPECT_EQ(true, (scope_1->CallFunction("Now", { DateTime() }).IsTypeOf<DateTime>()));
+				EXPECT_EQ(true, (scope_1->CallFunction("time", { DateTime::Now() }).IsTypeOf<Units::day>())); 
+				EXPECT_EQ(true, (scope_1->CallFunction("DateTime::Now", { DateTime() }).IsTypeOf<DateTime>()));
 				EXPECT_EQ(true, (scope_1->CallFunction("DateTime::Now", Function_Params{ }).IsTypeOf<DateTime>()));
-				EXPECT_EQ(true, (scope_1->CallFunction("time", { DateTime::Now() }).IsTypeOf<Units::day>()));
-
+				
+				(void)scope_1->Cast<std::string>(scope_1->CallFunction("to_string", { scope_1->CallFunction("+", { scope_1->CallFunction("time", { DateTime::Now() }), scope_1->CallFunction("Units::year", { 1 }) }) }));
+				
+				EXPECT_EQ(true, (scope_1->CallFunction("DateTime::Epoch", Function_Params{ }).IsTypeOf<DateTime>()));
+				try {
+					scope_1->CallFunction("tm_year", Function_Params{ }); // it will fail to find the function with those params and throw an error
+					EXPECT_EQ(true, false);
+				}
+				catch (...) {}
+				EXPECT_EQ(true, (scope_1->CallFunction("tm_year", { DateTime::Now() }).IsTypeOf<int>()));
+				EXPECT_EQ(true, (scope_1->CallFunction("getNumDaysInSameMonth", { DateTime::Now() }).IsTypeOf<int>()));
+				EXPECT_EQ(true, (scope_1->Cast<bool>(scope_1->CallFunction("==", { scope_1->CallFunction("DateTime::Epoch", Function_Params{ }), scope_1->CallFunction("DateTime::Epoch", Function_Params{ }) }))));
 			}
+
+
 
 
 
