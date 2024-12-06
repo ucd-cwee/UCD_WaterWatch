@@ -449,34 +449,18 @@ namespace fibers {
 namespace std {
 	template <>
 	struct hash<fibers::Type_Info> {
-		std::size_t operator()(const fibers::Type_Info& k) const
-		{
+		std::size_t operator()(const fibers::Type_Info& k) const {
 			return reinterpret_cast<size_t>(k.bare_type_info());
-		}
+		};
 	};
 
 	template <>
 	struct hash<std::weak_ptr<fibers::Type_Info>> {
 		std::size_t operator()(const std::weak_ptr<fibers::Type_Info>& k) const {
-			//static std::shared_mutex cache_lock;
-			//static std::map< std::weak_ptr<fibers::Type_Info>, size_t, std::owner_less<std::weak_ptr<fibers::Type_Info>>> cache;
 			static auto badhash{ std::hash<fibers::Type_Info>()(fibers::Type_Info()) };
-
-			//if (1) {
-			//	auto locked{ std::shared_lock(cache_lock) };
-			//	auto f = cache.find(k);
-			//	if (f != cache.end()) {
-			//		return f->second;
-			//	}
-			//}
-
 			if (1) {
-				//size_t out;
-				if (auto ptr = k.lock()) /*out =*/ return reinterpret_cast<size_t>(ptr->bare_type_info());
-				else /*out =*/ return badhash;
-
-				//auto locked{ std::unique_lock(cache_lock) };
-				//return cache[k] = out;
+				if (auto ptr = k.lock()) return reinterpret_cast<size_t>(ptr->bare_type_info());
+				else return badhash;
 			}
 		};
 	};
@@ -923,8 +907,13 @@ namespace fibers {
 				}
 			};
 			template<typename T> static std::shared_ptr<void> get_data(std::shared_ptr<T>&& data) {
-				return std::static_pointer_cast<void>(std::const_pointer_cast<std::remove_const_t<T>>(std::forward<std::shared_ptr<T>>(data)));
-				// return std::static_pointer_cast<void>(std::forward<std::shared_ptr<T>>(data));
+				if constexpr (std::is_const< T >::value) {
+					return std::const_pointer_cast<void>(std::static_pointer_cast<const void>(std::forward<std::shared_ptr<T>>(data)));
+				}
+				else {
+					return std::static_pointer_cast<void>(std::forward<std::shared_ptr<T>>(data));
+				}
+				// return std::static_pointer_cast<void>(std::const_pointer_cast<std::remove_const_t<T>>(std::forward<std::shared_ptr<T>>(data)));
 			};
 
 		public:
@@ -1562,34 +1551,26 @@ namespace fibers {
 			template <template<class> class H, class S, typename = std::enable_if_t<std::is_same_v<H<S>, std::shared_ptr<S>>>> static decltype(auto) get(const H<S>* obj) { return get(*obj); };
 			template <template<class> class H, class S, typename = std::enable_if_t<std::is_same_v<H<S>, std::shared_ptr<S>>>> static decltype(auto) get(const H<S>& obj) {
 				if constexpr (std::is_same<Any, S>::value) {
-					// we are trying to "get" from a std::shared_ptr<Any>
-					if (obj) {
-						return obj->container;
-					}
-					else {
-						return std::shared_ptr<AnyData>();
-					}
+					if (obj)  // we are trying to "get" from a std::shared_ptr<Any>
+						return obj->container;					
+					else 
+						return std::shared_ptr<AnyData>();					
 				}
 				else {
 					static auto sharedType{ std::make_shared<Type_Info>(user_type<S>()) };
 					return std::make_shared<AnyData>(AnyData::get_data<S>(obj), sharedType, std::is_const_v<S>);
-					// return std::shared_ptr<AnyData>(new AnyData(AnyData::get_data<S>(obj), sharedType, std::is_const_v<S>));
 				}				
 			};
 			template <template<class> class H, class S, typename = std::enable_if_t<std::is_same_v<H<S>, std::shared_ptr<S>>>> static decltype(auto) get(H<S>&& obj) {
 				if constexpr (std::is_same<Any, S>::value) {
-					// we are trying to "get" from a std::shared_ptr<Any>
-					if (obj) {
-						return obj->container;
-					}
-					else {
-						return std::shared_ptr<AnyData>();
-					}
+					if (obj)  // we are trying to "get" from a std::shared_ptr<Any>
+						return obj->container;					
+					else 
+						return std::shared_ptr<AnyData>();					
 				}
 				else {
 					static auto sharedType{ std::make_shared<Type_Info>(user_type<S>()) };
 					return std::make_shared<AnyData>(AnyData::get_data<S>(std::forward<H<S>>(obj)), sharedType, std::is_const_v<S>);
-					// return std::shared_ptr<AnyData>(new AnyData(AnyData::get_data<S>(std::forward<H<S>>(obj)), sharedType, std::is_const_v<S>));
 				}				
 			};
 			

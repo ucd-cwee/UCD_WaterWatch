@@ -495,7 +495,7 @@ int main() {
 			scope_1->SetSelf(scope_1);
 			scope_1->AddBuiltIns();
 
-			int numIterations = 10000;
+			int numIterations = 100000;
 
 			// FindNamespace
 			if (1) {

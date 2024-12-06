@@ -172,10 +172,14 @@ namespace scripting {
 		template<class Callable>
 		class Custom_Type_Conversion_Impl : public Type_Conversion_Base {
 		public:
+			using ReturnType = typename fibers::utilities::function_traits< typename decltype(std::function(std::declval<Callable>())) >::result_type;
+			using InputType = typename std::decay_t<std::tuple_element_t<0, typename fibers::utilities::function_traits< typename decltype(std::function(std::declval<Callable>())) >::arguments>>;
+
+		public:
 			Custom_Type_Conversion_Impl(Callable t_func)
 				: Type_Conversion_Base(
-					user_type<fibers::utilities::function_traits< decltype(std::function(t_func)) >::result_type>(),
-					user_type<std::decay_t<std::tuple_element_t<0, fibers::utilities::function_traits< decltype(std::function(t_func)) >::arguments>>>()
+					user_type<ReturnType>(),
+					user_type<InputType>()
 				)
 				, m_func(std::move(t_func))
 				, m_cost(std::nullopt)
@@ -196,7 +200,12 @@ namespace scripting {
 
 			// From -> To
 			Any convert(const Any& t_from) const override {
-				return m_func(t_from.cast()); // we do not know the exact desired input type, so we hope the auto-cast can figure it out.
+				if constexpr (std::is_same<InputType, Any>::value) {
+					return m_func(t_from);
+				}
+				else {
+					return m_func(t_from.cast());
+				}
 			};
 
 			bool bidir() const noexcept override { return false; }
