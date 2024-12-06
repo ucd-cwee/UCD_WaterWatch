@@ -769,39 +769,32 @@ int main() {
 
 				}
 
-				// Basic conversions
-				EXPECT_EQ(true, (scope_1->GetTypeConverterTree()->Converts<int, double>()));
-				EXPECT_EQ(true, (scope_1->GetTypeConverterTree()->Converts<double, int>()));
-				EXPECT_EQ(true, (scope_1->GetTypeConverterTree()->Converts<double, Units::value>()));
-				EXPECT_EQ(true, (scope_1->GetTypeConverterTree()->Converts<int, Units::value>()));
+				// Conversion Tree Test
+				{
+					EXPECT_EQ(true, (scope_1->GetTypeConverterTree()->Converts<int, double>()));
+					EXPECT_EQ(true, (scope_1->GetTypeConverterTree()->Converts<double, int>()));
+					EXPECT_EQ(true, (scope_1->GetTypeConverterTree()->Converts<double, Units::value>()));
+					EXPECT_EQ(true, (scope_1->GetTypeConverterTree()->Converts<int, Units::value>()));
+					EXPECT_EQ(true, (scope_1->GetTypeConverterTree()->Converts<double, Units::foot>()));
+					EXPECT_EQ(true, (scope_1->GetTypeConverterTree()->Converts<int, Units::foot>()));
+					EXPECT_EQ(true, (scope_1->GetTypeConverterTree()->Converts<Units::foot, double>()));
+					EXPECT_EQ(true, (scope_1->GetTypeConverterTree()->Converts<Units::foot, int>()));
 
-
-				EXPECT_EQ(true, (scope_1->GetTypeConverterTree()->Converts<double, Units::foot>()));
-				EXPECT_EQ(true, (scope_1->GetTypeConverterTree()->Converts<int, Units::foot>()));
-
-				EXPECT_EQ(true, (scope_1->GetTypeConverterTree()->Converts<Units::foot, double>()));
-				EXPECT_EQ(true, (scope_1->GetTypeConverterTree()->Converts<Units::foot, int>()));
-
-				std::shared_ptr<Type_Converter_Tree> tempTree = std::make_shared<Type_Converter_Tree>();
-				scope_1->CreateTypeConverterTree(tempTree, true);
-				// EXPECT_EQ(true, (tempTree->Converts<double, Units::foot>()));
-
-
-
-				std::vector<scripting::Type_Info> tempResult;
-				EXPECT_EQ(true, (tempTree->TryCreateConversionPath2(user_type<int>(), user_type<double>(), tempResult)));
-				EXPECT_EQ(true, (tempTree->TryCreateConversionPath2(user_type<double>(), user_type<int>(), tempResult)));
-				EXPECT_EQ(true, (tempTree->TryCreateConversionPath2(user_type<int>(), user_type<Units::value>(), tempResult)));
-				EXPECT_EQ(true, (tempTree->TryCreateConversionPath2(user_type<Units::value>(), user_type<Units::foot>(), tempResult)));
-				EXPECT_EQ(true, (tempTree->TryCreateConversionPath2(user_type<double>(), user_type<Units::foot>(), tempResult)));
-				EXPECT_EQ(true, (tempTree->TryCreateConversionPath2(user_type<int>(), user_type<Units::foot>(), tempResult)));
-				EXPECT_EQ(false, (tempTree->TryCreateConversionPath2(user_type<std::string>(), user_type<int>(), tempResult)));
-
-				
-
-
-
-
+					std::shared_ptr<Type_Converter_Tree> tempTree = std::make_shared<Type_Converter_Tree>();
+					scope_1->CreateTypeConverterTree(tempTree/*, false*/);
+					std::vector<scripting::Type_Info> tempResult;
+					EXPECT_EQ(true, (tempTree->TryCreateConversionPath(user_type<int>(), user_type<double>(), tempResult)));
+					EXPECT_EQ(true, (tempTree->TryCreateConversionPath(user_type<double>(), user_type<int>(), tempResult)));
+					EXPECT_EQ(true, (tempTree->TryCreateConversionPath(user_type<int>(), user_type<Units::value>(), tempResult)));
+					EXPECT_EQ(true, (tempTree->TryCreateConversionPath(user_type<Units::value>(), user_type<Units::foot>(), tempResult)));
+					EXPECT_EQ(true, (tempTree->TryCreateConversionPath(user_type<double>(), user_type<Units::foot>(), tempResult)));
+					EXPECT_EQ(true, (tempTree->TryCreateConversionPath(user_type<int>(), user_type<Units::foot>(), tempResult)));
+					EXPECT_EQ(false, (tempTree->TryCreateConversionPath(user_type<std::string>(), user_type<int>(), tempResult)));
+					EXPECT_EQ(true, (tempTree->TryCreateConversionPath(user_type<int>(), user_type<DateTime>(), tempResult)));
+					EXPECT_EQ(true, (tempTree->TryCreateConversionPath(user_type<double>(), user_type<DateTime>(), tempResult)));
+					EXPECT_EQ(false, (tempTree->TryCreateConversionPath(user_type<std::string>(), user_type<DateTime>(), tempResult)));
+					EXPECT_EQ(true, (tempTree->TryCreateConversionPath(user_type<DateTime>(), user_type<std::string>(), tempResult)));
+				}
 
 				// slowest
 				if (1) {
