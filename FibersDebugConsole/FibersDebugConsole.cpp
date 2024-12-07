@@ -429,60 +429,6 @@ int main() {
 		}
 #endif
 
-#if 0
-		if (1) {
-			delete (new int(5));
-			if (true) {
-				scripting::Functions funcs; // LEAK
-			}
-			delete (new int(5));
-		}
-
-		if (1) {
-			delete (new int(5));
-			if (true) {
-				scripting::Functions funcs;
-				funcs.emplace("Foo", scripting::make_callable([](){}), true);
-				funcs.emplace("Bar", scripting::make_callable([](int x){}), true);
-			}
-			delete (new int(5));
-		}
-
-		if (1) {
-			delete (new int(5));
-			if (true) {
-				scripting::Functions funcs;
-				funcs.emplace("Foo", scripting::make_callable([]() {}));
-				funcs.emplace("Bar", scripting::make_callable([](int x) {}));
-				funcs.emplace("Foo", scripting::make_callable([](int x) {}));
-				funcs.emplace("Bar", scripting::make_callable([](int x, int y) {}));
-			}
-			delete (new int(5));
-		}
-
-		if (1) {
-			delete (new int(5));
-			if (true) {
-				auto global_scope{ std::make_shared<scripting::Global>() };
-				global_scope->p_self = global_scope;
-				global_scope->AddBuiltIns();
-			}
-			delete (new int(5));
-		}
-
-		if (1) {
-			delete (new int(5));
-			if (true) {
-				auto global_scope{ std::make_shared<scripting::Global>() };
-				global_scope->p_self = global_scope;
-				global_scope->AddBuiltIns();
-				delete (new int(5));
-			}
-			delete (new int(5));
-		}
-#endif
-
-
 		// Re-build 2 Test
 		try {
 			using namespace scripting;
@@ -627,8 +573,8 @@ int main() {
 				EXPECT_EQ(n, (numIterations));
 			}
 
-			//EXPECT_EQ("100", scope_1->Cast<std::string>(scope_1->CallFunction("string", { 100 })));
-			//EXPECT_EQ("200", scope_1->Cast<std::string>(scope_1->CallFunction("::string", { scope_1->Cast<int>(scope_1->CallFunction("+", { 100.0f, 100.0 })) })));
+			EXPECT_EQ("100", scope_1->Cast<std::string>(scope_1->CallFunction("string", { 100 })));
+			EXPECT_EQ("200", scope_1->Cast<std::string>(scope_1->CallFunction("::string", { scope_1->Cast<int>(scope_1->CallFunction("+", { 100.0f, 100.0 })) })));
 
 			//printf(scope_1->Cast<std::string>(scope_1->CallFunction("Type", { 100 })));
 			//printf(scope_1->Cast<std::string>(scope_1->CallFunction("Type", { 100.0f })));
@@ -637,10 +583,9 @@ int main() {
 			//printf(scope_1->Cast<std::string>(scope_1->CallFunction("Type", { 'A' })));
 			//printf(scope_1->Cast<std::string>(scope_1->CallFunction("Type", { Units::acre(1) })));
 
-			//EXPECT_EQ(true, scope_1->Cast<bool>(scope_1->CallFunction("!=", { scope_1->CallFunction("Type", { 100.0 }), scope_1->CallFunction("Type", { 100.0f }) })));
-			//EXPECT_EQ(true, scope_1->Cast<bool>(scope_1->CallFunction("==", { scope_1->CallFunction("Type", { 100.0 }), scope_1->CallFunction("Type", { 100.0 }) })));
+			EXPECT_EQ(true, scope_1->Cast<bool>(scope_1->CallFunction("!=", { scope_1->CallFunction("Type", { 100.0 }), scope_1->CallFunction("Type", { 100.0f }) })));
+			EXPECT_EQ(true, scope_1->Cast<bool>(scope_1->CallFunction("==", { scope_1->CallFunction("Type", { 100.0 }), scope_1->CallFunction("Type", { 100.0 }) })));
 
-#if 1
 			// Units
 			if (1) {
 				// #include "Units"
@@ -1020,8 +965,6 @@ int main() {
 				}
 			}
 
-
-
 			// DateTime
 			if (1) {
 				EXPECT_EQ(true, (scope_1->CallFunction("DateTime", Function_Params{}).IsTypeOf<DateTime>()));
@@ -1053,705 +996,749 @@ int main() {
 				EXPECT_EQ(true, (scope_1->Cast<bool>(scope_1->CallFunction("==", { scope_1->CallFunction("DateTime::Epoch", Function_Params{ }), scope_1->CallFunction("DateTime::Epoch", Function_Params{ }) }))));
 			}
 
-
-
-
-
-
-
-#endif
-
-
-#if 0
-			EXPECT_EQ(true, scope_1->AddFunction("length", make_callable([]() -> size_t { return 0; }), true));
-			EXPECT_EQ(true, scope_1->AddFunction("size", make_callable([]() -> size_t { return 0; }), true));
-
+			// Simulate a complex, multithreaded ForLoop
 			{
-				auto scope_t = std::make_shared<Namespace2>(scope_1, "fibers"); // ::fibers::
-				scope_t->SetSelf(scope_t);
-				scope_1->AddChild(scope_t);
+				auto ScriptScope = std::make_shared<Scope2>(scope_1);
+				ScriptScope->SetSelf(ScriptScope);
+
+				ScriptScope->AddObj("x", std::make_shared<Any>(fibers::containers::number<double>(0)));
 
 				{
-					auto scope_t2 = std::make_shared<Namespace2>(scope_t, "containers"); // ::fibers::containers::
-					scope_t2->SetSelf(scope_t2);
-					scope_t->AddChild(scope_t2);
+					auto ForScope = std::make_shared<Scope2>(ScriptScope);
+					ForScope->SetSelf(ForScope);
 
-					{
-						auto scope_t3 = std::make_shared<Class2>(scope_t2, "Map", user_type<fibers::containers::Map<std::string, fibers::Any>>()); // ::fibers::containers::Map::
-						scope_t3->SetSelf(scope_t3);
-						scope_t2->AddChild(scope_t3);
+					fibers::parallel::For(0, 100, [&](int i) {
+						auto LoopScope = std::make_shared<Scope2>(ForScope);
+						LoopScope->SetSelf(LoopScope);
+
+						LoopScope->AddObj("i", std::make_shared<Any>((int)i));
+
+						if (auto i_obj = LoopScope->FindObj("i")) {
+							auto LengthObj = LoopScope->CallFunction("length", { // returns a size_t
+								LoopScope->CallFunction("string", { // returns a string
+									LoopScope->CallFunction("double", { // returns a double
+										i_obj
+									})
+								})
+							});
+
+							//printf(std::string("Length of ") + LoopScope->Cast<std::string>(i_obj) + " is " + LoopScope->Cast<std::string>(LengthObj));
+
+							if (auto x_obj = LoopScope->FindObj("x")) {
+								LoopScope->CallFunction("+=", { *x_obj, LengthObj });
+							}
+						}
+					});
+				}
+			}
+
+			// Simulate a complex, multithreaded ForLoop which Throws a runtime error during one (or multiple) evaluations
+			{
+				auto ScriptScope = std::make_shared<Scope2>(scope_1);
+				ScriptScope->SetSelf(ScriptScope);
+
+				ScriptScope->AddObj("x", std::make_shared<Any>(fibers::containers::number<double>(0)));
+
+				{
+					auto ForScope = std::make_shared<Scope2>(ScriptScope);
+					ForScope->SetSelf(ForScope);
+
+					try {
+						fibers::parallel::For(0, 100, [&](int i) {
+							auto LoopScope = std::make_shared<Scope2>(ForScope);
+							LoopScope->SetSelf(LoopScope);
+
+							LoopScope->AddObj("i", std::make_shared<Any>((int)i));
+
+							if (auto i_obj = LoopScope->FindObj("i")) {
+								auto LengthObj = LoopScope->CallFunction("length", { // returns a size_t
+									LoopScope->CallFunction("string", { // returns a string
+										LoopScope->CallFunction("double", { // returns a double
+											i_obj
+										})
+									})
+								});
+
+								// printf(std::string("Length of ") + Impl::Cast<std::string>(*i_obj, LoopScope) + " is " + Impl::Cast<std::string>(LengthObj, LoopScope));
+
+								if (auto x_obj = LoopScope->FindObj("x")) {
+									if (LoopScope->Cast<bool>(LoopScope->CallFunction(">", { x_obj, 800 }))) {
+										throw(std::runtime_error("x cannot be greater than 800 for some random reason!"));
+									}
+
+									LoopScope->CallFunction("+=", { *x_obj, LengthObj });
+								}
+							}
+						});
+						EXPECT_EQ(true, false); // we should not get here.
 					}
+					catch (std::runtime_error const& e) {}
 				}
 			}
-			auto scope_2 = std::make_shared<Namespace2>(scope_1, "std"); // ::std::
-			scope_2->SetSelf(scope_2);
-			scope_1->AddChild(scope_2);
 
-			EXPECT_EQ(true, scope_2->AddFunction("length", make_callable([](int x) -> size_t { return sizeof(int); }), true));
-			EXPECT_EQ(true, scope_2->AddFunction("size", make_callable([](int x) -> size_t { return sizeof(int); }), true));
-
-			EXPECT_EQ(true, scope_2->AddFunction("length", make_callable([](double x) -> size_t { return sizeof(double); }), true));
-			EXPECT_EQ(true, scope_2->AddFunction("size", make_callable([](double x) -> size_t { return sizeof(double); }), true));
-
-			auto scope_3 = std::make_shared<Class2>(scope_2, "string", user_type<std::string>()); // ::std::string::
-			scope_3->SetSelf(scope_3);
-			scope_2->AddChild(scope_3);
-			EXPECT_EQ(scope_3->AddObj("npos", std::make_shared<fibers::Any>(std::string::npos), true), true);
-			
-			auto scope_4 = std::make_shared<Scope2>(scope_3); // ::std::string::
-			scope_4->SetSelf(scope_4);
-
-			auto scope_5 = std::make_shared<Class2>(scope_4, "string"); // ::std::string::string::
-			scope_5->SetSelf(scope_5);
-			scope_4->AddChild(scope_5);
-
-
-
-
-			if (0) {
-				// support the default types
-				if (1) {
-					auto lambda = [&](auto type, std::string className) {
-						using TypeTypename = decltype(type);
-
-						auto defaultTypeClass = std::make_shared<Class2>(scope_1, className, user_type<TypeTypename>());
-						defaultTypeClass->SetSelf(defaultTypeClass);
-						scope_1->AddChild(defaultTypeClass);
-
-						defaultTypeClass->AddFunction(className, make_callable([]() -> TypeTypename { return TypeTypename{}; }));
-						defaultTypeClass->AddFunction(className, make_callable([](TypeTypename const& makeCopy) -> TypeTypename { return makeCopy; }));
-						defaultTypeClass->AddFunction("=", make_callable([](Any const& a, TypeTypename const& b) -> Any { a.cast<TypeTypename&>() = b; return a; }), Param_Types({ {"a", user_type<TypeTypename>() }, {"b", user_type<TypeTypename>() } }));
-						defaultTypeClass->AddFunction("==", make_callable([](TypeTypename const& a, TypeTypename const& b) -> bool { return a == b; }));
-						defaultTypeClass->AddFunction("!=", make_callable([](TypeTypename const& a, TypeTypename const& b) -> bool { return a != b; }));
-						defaultTypeClass->AddFunction(">", make_callable([](TypeTypename const& a, TypeTypename const& b) -> bool { return a > b; }));
-						defaultTypeClass->AddFunction(">=", make_callable([](TypeTypename const& a, TypeTypename const& b) -> bool { return a >= b; }));
-						defaultTypeClass->AddFunction("<", make_callable([](TypeTypename const& a, TypeTypename const& b) -> bool { return a < b; }));
-						defaultTypeClass->AddFunction("<=", make_callable([](TypeTypename const& a, TypeTypename const& b) -> bool { return a <= b; }));
-						defaultTypeClass->AddFunction("+", make_callable([](TypeTypename const& a, TypeTypename const& b) -> TypeTypename { return a + b; }));
-						defaultTypeClass->AddFunction("-", make_callable([](TypeTypename const& a, TypeTypename const& b) -> TypeTypename { return a - b; }));
-						defaultTypeClass->AddFunction("*", make_callable([](TypeTypename const& a, TypeTypename const& b) -> TypeTypename { return a * b; }));
-						defaultTypeClass->AddFunction("/", make_callable([](TypeTypename const& a, TypeTypename const& b) -> TypeTypename { return a / b; }));
-						defaultTypeClass->AddFunction("+=", make_callable([](Any const& a, TypeTypename const& b) -> Any { a.cast<TypeTypename&>() += b; return a; }), Param_Types({ {"a", user_type<TypeTypename>() }, {"b", user_type<TypeTypename>() } }));
-						defaultTypeClass->AddFunction("-=", make_callable([](Any const& a, TypeTypename const& b) -> Any { a.cast<TypeTypename&>() -= b; return a; }), Param_Types({ {"a", user_type<TypeTypename>() }, {"b", user_type<TypeTypename>() } }));
-						defaultTypeClass->AddFunction("*=", make_callable([](Any const& a, TypeTypename const& b) -> Any { a.cast<TypeTypename&>() *= b; return a; }), Param_Types({ {"a", user_type<TypeTypename>() }, {"b", user_type<TypeTypename>() } }));
-						defaultTypeClass->AddFunction("/=", make_callable([](Any const& a, TypeTypename const& b) -> Any { a.cast<TypeTypename&>() /= b; return a; }), Param_Types({ {"a", user_type<TypeTypename>() }, {"b", user_type<TypeTypename>() } }));
-					};
-
-#define MakeClasses(className) lambda(##className(), #className)
-					MakeClasses(bool);
-					MakeClasses(char);
-					MakeClasses(int);
-					MakeClasses(long);
-					MakeClasses(size_t);
-					MakeClasses(float);
-					MakeClasses(double);
-					lambda(fibers::containers::number<double>(), "number");
-#undef MakeClasses
-				}
-				if (1) {
-					auto lambda_oneWay = [&](auto FromType, auto ToType) {
-						using FromTypename = decltype(FromType);
-						using ToTypename = decltype(ToType);
-
-						if (auto ToClass = scope_1->FindClass(user_type<ToTypename>())) {
-							ToClass->AddFunction(ToClass->GetName(), make_callable([](FromTypename const& from) -> ToTypename { return (ToTypename)from; }));
-						}
-						else {
-							EXPECT_EQ(true, false);
-						}
-					};
-					auto lambda = [&](auto FromType, auto ToType) {
-						lambda_oneWay(FromType, ToType);
-						lambda_oneWay(ToType, FromType);
-					};
-
-#define MakeConverter(from, to) lambda(from(), to())
-
-#define MakeConverters(from) lambda(from(), bool()); \
-                             lambda(from(), char()); \
-                             lambda(from(), int()); \
-                             lambda(from(), long()); \
-                             lambda(from(), size_t()); \
-                             lambda(from(), float()); \
-                             lambda(from(), double())
-
-					//lambda(char(), bool());
-					//lambda(char(), int());
-					//lambda(long(), int());
-					//lambda(long(), size_t());
-					//lambda(float(), size_t());
-					//lambda(float(), double());
-					//lambda(fibers::containers::number<double>(), double());
-
-					MakeConverters(bool);
-					MakeConverters(char);
-					MakeConverters(int);
-					MakeConverters(long);
-					MakeConverters(size_t);
-					MakeConverters(float);
-					MakeConverters(double);
-					MakeConverters(fibers::containers::number<double>);
-#undef MakeConverters
-#undef MakeConverter
-				}
-				if (1) {
-					// constructors
-					scope_3->AddFunction("string", make_callable([]() -> std::string { return std::string{}; }));
-					scope_3->AddFunction("string", make_callable([](std::string const& makeCopy) -> std::string { return makeCopy; }));
-					scope_3->AddFunction("string", make_callable([](bool from) -> std::string { if (from) return "true"; else return "false"; }));
-					scope_3->AddFunction("string", make_callable([](int from) -> std::string { return std::to_string(from); }));
-					scope_3->AddFunction("string", make_callable([](long from) -> std::string { return std::to_string(from); }));
-					scope_3->AddFunction("string", make_callable([](size_t from) -> std::string { return std::to_string(from); }));
-					scope_3->AddFunction("string", make_callable([](float from) -> std::string { return std::to_string(from); }));
-					scope_3->AddFunction("string", make_callable([](double from) -> std::string { return std::to_string(from); }));
-					scope_3->AddFunction("string", make_callable([](fibers::containers::number<double> from) -> std::string { return std::to_string(from); }));
-
-					// operators
-					scope_3->AddFunction("=", make_callable([](Any const& a, std::string const& b) -> Any { a.cast<std::string&>() = b; return a; }), Param_Types({ {"a", user_type<std::string>() }, {"b", user_type<std::string>() } }));
-					scope_3->AddFunction("==", make_callable([](std::string const& a, std::string const& b) -> bool { return a == b; }));
-					scope_3->AddFunction("!=", make_callable([](std::string const& a, std::string const& b) -> bool { return a != b; }));
-					scope_3->AddFunction(">", make_callable([](std::string const& a, std::string const& b) -> bool { return a > b; }));
-					scope_3->AddFunction(">=", make_callable([](std::string const& a, std::string const& b) -> bool { return a >= b; }));
-					scope_3->AddFunction("<", make_callable([](std::string const& a, std::string const& b) -> bool { return a < b; }));
-					scope_3->AddFunction("<=", make_callable([](std::string const& a, std::string const& b) -> bool { return a <= b; }));
-					scope_3->AddFunction("+", make_callable([](std::string const& a, std::string const& b) -> std::string { return a + b; }));
-					scope_3->AddFunction("+=", make_callable([](Any const& a, std::string const& b) -> Any { a.cast<std::string&>() += b; return a; }), Param_Types({ {"a", user_type<std::string>() }, {"b", user_type<std::string>() } }));
-
-					// functions
-					scope_3->AddFunction("length", make_callable([](std::string const& a) -> size_t { return a.length(); }));
-					scope_3->AddFunction("size", make_callable([](std::string const& a) -> size_t { return a.size(); }));
-					scope_3->AddFunction("[]", make_callable([](std::string const& a, size_t index) -> char { return a[index]; }));
-					scope_3->AddFunction("front", make_callable([](std::string const& a) -> char { return a.front(); }));
-					scope_3->AddFunction("find", make_callable([](std::string const& a, std::string const& toFind) -> size_t { return a.find(toFind); }));
-					scope_3->AddFunction("find", make_callable([](std::string const& a, std::string const& toFind, size_t startPos) -> size_t { return a.find(toFind, startPos); }));
-
-				}
-
-
+			// Simulate a simple string operation
+			{
+				// {
+				auto ScriptScope = std::make_shared<Scope2>(scope_1); ScriptScope->SetSelf(ScriptScope);
+				// var x = "A";
+				ScriptScope->AddObj("x", std::make_shared<Any>(std::string("A")));
+				// var y = "B";
+				ScriptScope->AddObj("y", std::make_shared<Any>(std::string("B")));
+				// return x + y;
+				EXPECT_EQ("AB", (ScriptScope->Cast<std::string>(ScriptScope->CallFunction("+", {ScriptScope->FindObj("x"), ScriptScope->FindObj("y")}))));
+				// }
 			}
 
+			// Simulate a simple Units operation
+			{
+				// {
+				auto ScriptScope = std::make_shared<Scope2>(scope_1); ScriptScope->SetSelf(ScriptScope);
+				// Using namespace "Units"
+				ScriptScope->AddUsing(ScriptScope->FindNamespace("Units"));
+				// var x = foot(int(10.4));
+				ScriptScope->AddObj("x", std::make_shared<Any>(ScriptScope->CallFunction("foot", { ScriptScope->CallFunction("int", { 10.4 }) })));
+				// var y = meter(100);
+				ScriptScope->AddObj("y", std::make_shared<Any>(ScriptScope->CallFunction("meter", { 100 })));
+				// var z = inch(12);
+				ScriptScope->AddObj("z", std::make_shared<Any>(ScriptScope->CallFunction("inch", { 12 })));
+				// return Units::gallon(x*y*z);
+				auto result = ScriptScope->CallFunction("gallon", { ScriptScope->CallFunction("*", { ScriptScope->CallFunction("*", { ScriptScope->FindObj("x"), ScriptScope->FindObj("y") }), ScriptScope->FindObj("z") }) });
+				EXPECT_EQ("24542.398314 gal", (ScriptScope->Cast<std::string>(result)));
+				// }
+			}
 
-
-
-
-			// Demonstrate multiple classes with the same name being created, added to, and found from the same Scope
+			// Test a user-defined type ... 
 			if (1) {
-				fibers::containers::Map<std::shared_ptr<Scope2>, std::shared_ptr<Scope2>, Scope2::Hasher> set;
-				fibers::containers::number<int> counter{ 0 };
-				fibers::containers::number<int> counter_failed{ 0 };
-				fibers::parallel::For(0, 10000, [&](int i) {
-					
-					auto scope_6 = std::make_shared<Scope2>(scope_4); // ::std::string::
-					scope_6->SetSelf(scope_6);
-					{
+				auto UI_Namespace = std::make_shared<Namespace2>(scope_1, "UI");
+				UI_Namespace->SetSelf(UI_Namespace);
+				scope_1->AddChild(UI_Namespace);
+
+				if (1) {
+					// ... which imports the "Interactive" namespace...
+					auto interactive_namespace{ std::make_shared<Class2>(UI_Namespace, "Interactive") }; {
+						interactive_namespace->SetSelf(interactive_namespace);
+						UI_Namespace->AddChild(interactive_namespace);
+
 						{
-							auto scope_7 = std::make_shared<Class2>(scope_6, "Position"); // ::std::string::Position::
-							scope_7->SetSelf(scope_7);
-							scope_6->AddChild(scope_7);
+							auto impl_namespace{ std::make_shared<Namespace2>(interactive_namespace, "InteractiveImpl") };
+							impl_namespace->SetSelf(impl_namespace);
+							interactive_namespace->AddChild(impl_namespace);
 						}
 
-						// may (and is allowed to) discover any of the "Position" classes that are available in this Scope
-						if (auto p = std::dynamic_pointer_cast<Scope2>(scope_6->FindNamespace("Position"))) {
-							EXPECT_NE(p->GetQualifiedNamespace(true).find(scope_6->GetQualifiedNamespace(true)), std::string::npos);
-
-							if (set.emplace(p, p, false)) {
-								counter++;
+						// self-construct
+						interactive_namespace->AddFunction(interactive_namespace->GetName(), make_callable([thisClass = std::weak_ptr<Class2>(interactive_namespace)]()->fibers::DynamicObject {
+							if (auto classPtr = thisClass.lock()) {
+								auto out{ fibers::DynamicObject(classPtr->GetClassType()) };
+								/* add stuff to the dynamic object ... */
+								return out;
 							}
 							else {
-								counter_failed++;
+								throw scripting::exception::not_found_error("Could not find the class ptr for the requested class");
+							}
+						}));
+						// construct from other
+						interactive_namespace->AddFunction(interactive_namespace->GetName(), make_callable([thisClass = std::weak_ptr<Class2>(interactive_namespace)](Any const& rhs)->fibers::DynamicObject {
+							if (auto classPtr = thisClass.lock()) {
+								fibers::DynamicObject& RHS = rhs.cast();
+								fibers::DynamicObject LHS(RHS.m_classType); {
+									for (auto& obj : RHS.m_objects) {
+										if (obj.second) {
+											if (auto ObjClass = classPtr->FindClass(obj.second->Type())) {
+												LHS.m_objects[obj.first] = std::make_shared<Any>(ObjClass->CallFunction(ObjClass->GetName(), { obj.second }));
+											}
+											else {
+												LHS.m_objects[obj.first] = obj.second;
+											}
+										}
+										else {
+											LHS.m_objects[obj.first] = std::make_shared<Any>();
+										}
+									}
+								}
+								return LHS;
+							}
+							else {
+								throw scripting::exception::not_found_error("Could not find the class ptr for the requested class");
+							}
+						}), scripting::Param_Types({ { "rhs", interactive_namespace->GetClassType() } }));
+						// copy other
+						interactive_namespace->AddFunction("=", make_callable([thisClass = std::weak_ptr<Class2>(interactive_namespace)](std::shared_ptr<Any> lhs, Any const& rhs)->std::shared_ptr<Any> {
+							if (auto classPtr = thisClass.lock()) {
+								fibers::DynamicObject& RHS = rhs.cast();
+								fibers::DynamicObject LHS(RHS.m_classType); {
+									for (auto& obj : RHS.m_objects) {
+										if (obj.second) {
+											if (auto ObjClass = classPtr->FindClass(obj.second->Type())) {
+												LHS.m_objects[obj.first] = std::make_shared<Any>(ObjClass->CallFunction(ObjClass->GetName(), { obj.second }));
+											}
+											else {
+												LHS.m_objects[obj.first] = obj.second;
+											}
+										}
+										else {
+											LHS.m_objects[obj.first] = std::make_shared<Any>();
+										}
+									}
+								}
+								return lhs;
+							}
+							else {
+								throw scripting::exception::not_found_error("Could not find the class ptr for the requested class");
+							}
+						}), scripting::Param_Types({ { "lhs", interactive_namespace->GetClassType() }, { "rhs", interactive_namespace->GetClassType() } }));
+						// to_string
+						interactive_namespace->AddFunction("to_string", make_callable([thisScope = std::weak_ptr<Class2>(interactive_namespace)](Any const& parent)->std::string {
+							std::string out;
+							// generic code to "Print" the Dynamic Object
+							fibers::DynamicObject& Parent = parent.cast(false);
+							if (auto ptr = thisScope.lock()) {
+								for (auto& obj : Parent.m_objects) {
+									if (out.length() > 0) out += ",";
+									auto conv = ptr->Cast<std::string>(*obj.second);
+									out += std::string(Units::printf(" { \"%s\": %s }", obj.first.c_str(), conv.c_str()));
+								}
+							}
+							else {
+								throw scripting::exception::not_found_error("Could not find the class ptr for the requested class");
+							}
+							return std::string("{") + out + " }";
+						}), Param_Types({ { "parent", interactive_namespace->GetClassType() } }));
+						// explicit std::string(thisClass)...
+						if (auto stringClass = UI_Namespace->FindClass("string")) {
+							stringClass->AddFunction(stringClass->GetName(), make_callable([thisScope = std::weak_ptr<Class2>(interactive_namespace)](Any const& parent)->std::string {
+								std::string out;
+								// generic code to "Print" the Dynamic Object
+								fibers::DynamicObject& Parent = parent.cast(false);
+								if (auto ptr = thisScope.lock()) {
+									for (auto& obj : Parent.m_objects) {
+										if (out.length() > 0) out += ",";
+										auto conv = ptr->Cast<std::string>(*obj.second);
+										out += std::string(Units::printf(" { \"%s\": %s }", obj.first.c_str(), conv.c_str()));
+									}
+								}
+								else {
+									throw scripting::exception::not_found_error("Could not find the class ptr for the requested class");
+								}
+								return std::string("{") + out + " }";
+							}), Param_Types({ { "parent", interactive_namespace->GetClassType() } }), true, true);
+						}
+
+						interactive_namespace->AddFunction("X", make_callable([](Any const& parent)-> double {
+							return (double)std::rand() / (double)RAND_MAX;
+						}), Param_Types({ { "parent", interactive_namespace->GetClassType() } }));
+						interactive_namespace->AddFunction("Y", make_callable([](Any const& parent)-> double {
+							return (double)std::rand() / (double)RAND_MAX;
+						}), Param_Types({ { "parent", interactive_namespace->GetClassType() } }));
+						interactive_namespace->AddFunction("print", make_callable([thisScope = std::weak_ptr<Class2>(interactive_namespace)](Any const& parent)-> std::string {
+							std::string out;
+							// generic code to "Print" the Dynamic Object
+							fibers::DynamicObject& Parent = parent.cast(false);
+							if (auto ptr = thisScope.lock()) {
+								for (auto& obj : Parent.m_objects) {
+									if (out.length() > 0) out += ",";
+									auto conv = ptr->Cast<std::string>(*obj.second);
+									out += std::string(Units::printf(" { \"%s\": %s }", obj.first.c_str(), conv.c_str()));
+								}
+							}
+							else {
+								throw scripting::exception::not_found_error("Could not find the class ptr for the requested class");
+							}
+							return std::string("{") + out + " }";
+						}), Param_Types({ { "parent", interactive_namespace->GetClassType() } }));
+					}
+
+					// ... which is the parent type for children types ... 
+					if (1) {
+						auto child_namespace{ std::make_shared<Class2>(UI_Namespace, "Map", user_type<void>(), interactive_namespace) }; {
+							child_namespace->SetSelf(child_namespace);
+							UI_Namespace->AddChild(child_namespace);
+							{
+								auto impl_namespace{ std::make_shared<Namespace2>(child_namespace, "MapImpl") };
+								impl_namespace->SetSelf(impl_namespace);
+								child_namespace->AddChild(impl_namespace);
+							}
+							{
+								auto impl_namespace{ std::make_shared<Namespace2>(child_namespace, "Text") };
+								impl_namespace->SetSelf(impl_namespace);
+								child_namespace->AddChild(impl_namespace);
+							}
+
+							// self-construct
+							child_namespace->AddFunction(child_namespace->GetName(), make_callable([thisClass = std::weak_ptr<Class2>(child_namespace)]() -> fibers::DynamicObject {
+								if (auto classPtr = thisClass.lock()) {
+									auto out{ fibers::DynamicObject(classPtr->GetClassType()) };
+									/* add stuff to the dynamic object ... */
+									return out;
+								}
+								else {
+									throw scripting::exception::not_found_error("Could not find the class ptr for the requested class");
+								}								
+							}));
+							// construct from other
+							child_namespace->AddFunction(child_namespace->GetName(), make_callable([thisClass = std::weak_ptr<Class2>(child_namespace)](Any const& rhs) -> fibers::DynamicObject {
+								if (auto classPtr = thisClass.lock()) {
+									fibers::DynamicObject& RHS = rhs.cast();
+									fibers::DynamicObject LHS(RHS.m_classType); {
+										for (auto& obj : RHS.m_objects) {
+											if (obj.second) {
+												if (auto ObjClass = classPtr->FindClass(obj.second->Type())) {
+													LHS.m_objects[obj.first] = std::make_shared<Any>(ObjClass->CallFunction(ObjClass->GetName(), { obj.second }));
+												}
+												else {
+													LHS.m_objects[obj.first] = obj.second;
+												}
+											}
+											else {
+												LHS.m_objects[obj.first] = std::make_shared<Any>();
+											}
+										}
+									}
+									return LHS;
+								}
+								else {
+									throw scripting::exception::not_found_error("Could not find the class ptr for the requested class");
+								}
+							}), scripting::Param_Types({ { "rhs", child_namespace->GetClassType() } }));
+							// copy other
+							child_namespace->AddFunction("=", make_callable([thisClass = std::weak_ptr<Class2>(child_namespace)](std::shared_ptr<Any> lhs, Any const& rhs) -> std::shared_ptr<Any> {
+								if (auto classPtr = thisClass.lock()) {
+									fibers::DynamicObject& RHS = rhs.cast();
+									fibers::DynamicObject LHS(RHS.m_classType); {
+										for (auto& obj : RHS.m_objects) {
+											if (obj.second) {
+												if (auto ObjClass = classPtr->FindClass(obj.second->Type())) {
+													LHS.m_objects[obj.first] = std::make_shared<Any>(ObjClass->CallFunction(ObjClass->GetName(), { obj.second }));
+												}
+												else {
+													LHS.m_objects[obj.first] = obj.second;
+												}
+											}
+											else {
+												LHS.m_objects[obj.first] = std::make_shared<Any>();
+											}
+										}
+									}
+									return lhs;
+								}
+								else {
+									throw scripting::exception::not_found_error("Could not find the class ptr for the requested class");
+								}
+							}), scripting::Param_Types({ { "lhs", child_namespace->GetClassType() }, { "rhs", child_namespace->GetClassType() } }));
+							// to_string
+							child_namespace->AddFunction("to_string", make_callable([thisScope = std::weak_ptr<Class2>(child_namespace)](Any const& parent) -> std::string {
+								std::string out;
+								// generic code to "Print" the Dynamic Object
+								fibers::DynamicObject& Parent = parent.cast(false);
+								if (auto ptr = thisScope.lock()) {
+									for (auto& obj : Parent.m_objects) {
+										if (out.length() > 0) out += ",";
+										auto conv = ptr->Cast<std::string>(*obj.second);
+										out += std::string(Units::printf(" { \"%s\": %s }", obj.first.c_str(), conv.c_str()));
+									}
+								}
+								else {
+									throw scripting::exception::not_found_error("Could not find the class ptr for the requested class");
+								}
+								return std::string("{") + out + " }";
+							}), Param_Types({ { "parent", child_namespace->GetClassType() } }));
+							// explicit std::string(thisClass)...
+							if (auto stringClass = UI_Namespace->FindClass("string")) {
+								stringClass->AddFunction(stringClass->GetName(), make_callable([thisScope = std::weak_ptr<Class2>(child_namespace)](Any const& parent)->std::string {
+									std::string out;
+									// generic code to "Print" the Dynamic Object
+									fibers::DynamicObject& Parent = parent.cast(false);
+									if (auto ptr = thisScope.lock()) {
+										for (auto& obj : Parent.m_objects) {
+											if (out.length() > 0) out += ",";
+											auto conv = ptr->Cast<std::string>(*obj.second);
+											out += std::string(Units::printf(" { \"%s\": %s }", obj.first.c_str(), conv.c_str()));
+										}
+									}
+									else {
+										throw scripting::exception::not_found_error("Could not find the class ptr for the requested class");
+									}
+									return std::string("{") + out + " }";
+								}), Param_Types({ { "parent", child_namespace->GetClassType() } }), true, true);
+							}
+
+							// parent(child)
+							interactive_namespace->AddFunction(interactive_namespace->GetName(), scripting::make_callable([](Any const& parent) -> Any {
+								std::shared_ptr<fibers::DynamicObject> Parent = parent.cast(false);
+								return Parent;								
+							}), scripting::Param_Types({ { "from", child_namespace->GetClassType() } }));
+
+						}
+					}
+					if (1) {
+						auto child_namespace{ std::make_shared<Class2>(UI_Namespace, "Text", user_type<void>(), interactive_namespace) }; {
+							child_namespace->SetSelf(child_namespace);
+							UI_Namespace->AddChild(child_namespace);
+							{
+								auto impl_namespace{ std::make_shared<Namespace2>(child_namespace, "TextImpl") };
+								impl_namespace->SetSelf(impl_namespace);
+								child_namespace->AddChild(impl_namespace);
 							}
 						}
-						else {
-							EXPECT_EQ(true, false);
+
+						// self-construct
+						child_namespace->AddFunction(child_namespace->GetName(), make_callable([thisClass = std::weak_ptr<Class2>(child_namespace)]()->fibers::DynamicObject {
+							if (auto classPtr = thisClass.lock()) {
+								auto out{ fibers::DynamicObject(classPtr->GetClassType()) };
+								/* add stuff to the dynamic object ... */
+								return out;
+							}
+							else {
+								throw scripting::exception::not_found_error("Could not find the class ptr for the requested class");
+							}
+						}));
+						// construct from other
+						child_namespace->AddFunction(child_namespace->GetName(), make_callable([thisClass = std::weak_ptr<Class2>(child_namespace)](Any const& rhs)->fibers::DynamicObject {
+							if (auto classPtr = thisClass.lock()) {
+								fibers::DynamicObject& RHS = rhs.cast();
+								fibers::DynamicObject LHS(RHS.m_classType); {
+									for (auto& obj : RHS.m_objects) {
+										if (obj.second) {
+											if (auto ObjClass = classPtr->FindClass(obj.second->Type())) {
+												LHS.m_objects[obj.first] = std::make_shared<Any>(ObjClass->CallFunction(ObjClass->GetName(), { obj.second }));
+											}
+											else {
+												LHS.m_objects[obj.first] = obj.second;
+											}
+										}
+										else {
+											LHS.m_objects[obj.first] = std::make_shared<Any>();
+										}
+									}
+								}
+								return LHS;
+							}
+							else {
+								throw scripting::exception::not_found_error("Could not find the class ptr for the requested class");
+							}
+						}), scripting::Param_Types({ { "rhs", child_namespace->GetClassType() } }));
+						// copy other
+						child_namespace->AddFunction("=", make_callable([thisClass = std::weak_ptr<Class2>(child_namespace)](std::shared_ptr<Any> lhs, Any const& rhs)->std::shared_ptr<Any> {
+							if (auto classPtr = thisClass.lock()) {
+								fibers::DynamicObject& RHS = rhs.cast();
+								fibers::DynamicObject LHS(RHS.m_classType); {
+									for (auto& obj : RHS.m_objects) {
+										if (obj.second) {
+											if (auto ObjClass = classPtr->FindClass(obj.second->Type())) {
+												LHS.m_objects[obj.first] = std::make_shared<Any>(ObjClass->CallFunction(ObjClass->GetName(), { obj.second }));
+											}
+											else {
+												LHS.m_objects[obj.first] = obj.second;
+											}
+										}
+										else {
+											LHS.m_objects[obj.first] = std::make_shared<Any>();
+										}
+									}
+								}
+								return lhs;
+							}
+							else {
+								throw scripting::exception::not_found_error("Could not find the class ptr for the requested class");
+							}
+						}), scripting::Param_Types({ { "lhs", child_namespace->GetClassType() }, { "rhs", child_namespace->GetClassType() } }));
+						// to_string
+						child_namespace->AddFunction("to_string", make_callable([thisScope = std::weak_ptr<Class2>(child_namespace)](Any const& parent)->std::string {
+							std::string out;
+							// generic code to "Print" the Dynamic Object
+							fibers::DynamicObject& Parent = parent.cast(false);
+							if (auto ptr = thisScope.lock()) {
+								for (auto& obj : Parent.m_objects) {
+									if (out.length() > 0) out += ",";
+									auto conv = ptr->Cast<std::string>(*obj.second);
+									out += std::string(Units::printf(" { \"%s\": %s }", obj.first.c_str(), conv.c_str()));
+								}
+							}
+							else {
+								throw scripting::exception::not_found_error("Could not find the class ptr for the requested class");
+							}
+							return std::string("{") + out + " }";
+						}), Param_Types({ { "parent", child_namespace->GetClassType() } }));
+						// explicit std::string(thisClass)...
+						if (auto stringClass = UI_Namespace->FindClass("string")) {
+							stringClass->AddFunction(stringClass->GetName(), make_callable([thisScope = std::weak_ptr<Class2>(child_namespace)](Any const& parent)->std::string {
+								std::string out;
+								// generic code to "Print" the Dynamic Object
+								fibers::DynamicObject& Parent = parent.cast(false);
+								if (auto ptr = thisScope.lock()) {
+									for (auto& obj : Parent.m_objects) {
+										if (out.length() > 0) out += ",";
+										auto conv = ptr->Cast<std::string>(*obj.second);
+										out += std::string(Units::printf(" { \"%s\": %s }", obj.first.c_str(), conv.c_str()));
+									}
+								}
+								else {
+									throw scripting::exception::not_found_error("Could not find the class ptr for the requested class");
+								}
+								return std::string("{") + out + " }";
+							}), Param_Types({ { "parent", child_namespace->GetClassType() } }), true, true);
 						}
+
+						// parent(child)
+						interactive_namespace->AddFunction(interactive_namespace->GetName(), scripting::make_callable([](Any const& parent) -> Any {
+							std::shared_ptr<fibers::DynamicObject> Parent = parent.cast(false);
+							return Parent;
+						}), scripting::Param_Types({ { "from", child_namespace->GetClassType() } }));
 					}
-				});
-				EXPECT_EQ(counter.load(), set.size());
-				EXPECT_EQ(counter_failed.load(), 0);
+
+				}
+
+				// TESTS
+				if (1) {
+					auto mapObj = scope_1->CallFunction("UI::Map", Function_Params{});
+					mapObj.cast<fibers::DynamicObject>().m_objects.insert({ std::string{"title"}, std::make_shared<Any>(std::string("I AM A TITLE")) });
+
+					EXPECT_EQ(true, ((bool)scope_1->FindNamespace("UI::Map::Text"))); // correct!
+					if (auto ptr = scope_1->FindNamespace("UI::Map::Text")) { // correct!
+						EXPECT_EQ("::UI::Map::Text::", ptr->GetQualifiedNamespace());
+					}
+					if (auto ptr = scope_1->FindNamespace("UI::Text")) { // correct!
+						EXPECT_EQ("::UI::Text::", ptr->GetQualifiedNamespace());
+					}
+					if (auto ptr = scope_1->FindNamespace("Text")) { // correct!
+						EXPECT_EQ("::UI::Text::", ptr->GetQualifiedNamespace());
+					}
+
+					EXPECT_EQ("{ { \"title\": I AM A TITLE } }", (scope_1->Cast<std::string>(scope_1->CallFunction("to_string", {mapObj})))); // { { "title": I AM A TITLE } }
+					EXPECT_EQ("{ { \"title\": I AM A TITLE } }", (scope_1->Cast<std::string>(scope_1->CallFunction("string", { mapObj }))));
+
+					auto map2Obj = scope_1->CallFunction("UI::Map", { mapObj });
+					EXPECT_EQ("{ { \"title\": I AM A TITLE } }", (scope_1->Cast<std::string>(scope_1->CallFunction("to_string", { map2Obj }))));
+
+					map2Obj.cast<fibers::DynamicObject>().m_objects["title"]->cast<std::string>() = "I AM A NEW TITLE";
+					EXPECT_EQ("{ { \"title\": I AM A NEW TITLE } }", (scope_1->Cast<std::string>(scope_1->CallFunction("string", { map2Obj })))); // { { "title": I AM A NEW TITLE } }
+					EXPECT_EQ("{ { \"title\": I AM A TITLE } }", (scope_1->Cast<std::string>(scope_1->CallFunction("string", { mapObj })))); // { { "title": I AM A TITLE } }
+
+					// Calling the parent's inherited functions
+					// These functions aren't available anywhere else, so if they don't throw, they worked. 
+					(void)scope_1->Cast<std::string>(scope_1->CallFunction("X", { mapObj })); // rand number
+					(void)scope_1->Cast<std::string>(scope_1->CallFunction("Y", { mapObj })); // rand number
+					(void)scope_1->Cast<std::string>(scope_1->CallFunction("X", { map2Obj })); // rand number
+					(void)scope_1->Cast<std::string>(scope_1->CallFunction("Y", { map2Obj })); // rand number
+					(void)scope_1->Cast<std::string>(scope_1->CallFunction("print", { mapObj })); // { { "title": I AM A TITLE } }
+					(void)scope_1->Cast<std::string>(scope_1->CallFunction("print", { map2Obj })); // { { "title": I AM A NEW TITLE } }
+				}
 			}
 
-			// Demonstrate multiple classes with the same name being created and added to unique - but connected - Namespaces, and discovered from those unique Namespaces
-			// Bug to prevent is accidental discovery of another Namespace's class when an better-fit class is located more closely. 
+			// Simulate a for-loop that 1: creates a new Class, 2: adds functions to it, 3: adds a conversion for it to std::string, and 4: uses that conversion. 
 			if (1) {
-				auto scope_6 = std::make_shared<Namespace2>(scope_4, "For"); // Loop Start...
-				scope_6->SetSelf(scope_6);
-				scope_4->AddChild(scope_6);
+				auto ScriptScope = std::make_shared<Scope2>(scope_1);
+				ScriptScope->SetSelf(ScriptScope);
+				{
+					auto ForScope = std::make_shared<Scope2>(ScriptScope);
+					ForScope->SetSelf(ForScope);
 
-				
-				fibers::parallel::For(0, 1000, [&](int i) {
-					auto scope_7 = std::make_shared<Namespace2>(scope_6, "Each"); // ForLoop Scope ...
-					scope_7->SetSelf(scope_7);
-					scope_6->AddChild(scope_7);
+					fibers::parallel::For(0, 100, [&](int i) {
+						auto LoopScope = std::make_shared<Scope2>(ForScope);
+						LoopScope->SetSelf(LoopScope);
+						LoopScope->AddObj("i", std::make_shared<Any>((int)i));
 
-					{
-						auto scope_8 = std::make_shared<Class2>(scope_7, "Position"); // ::std::string::string::
-						scope_8->SetSelf(scope_8);
-						scope_7->AddChild(scope_8);
-					}
+						if (auto i_obj = LoopScope->FindObj("i")) {
+							// Make the new class...
+							auto Position = std::make_shared<Class2>(LoopScope, "Position");
+							Position->SetSelf(Position);
+							LoopScope->AddChild(Position);
+							if (1) {
+								// self-construct
+								Position->AddFunction(Position->GetName(), make_callable([thisClass = std::weak_ptr<Class2>(Position)]()->fibers::DynamicObject {
+									if (auto classPtr = thisClass.lock()) {
+										auto out{ fibers::DynamicObject(classPtr->GetClassType()) };
+										/* add stuff to the dynamic object ... */
+										{
+											out.m_objects.insert(std::pair<std::string, std::shared_ptr<Any>>(
+												"longitude", std::make_shared<Any>(classPtr->CallFunction("Number", Function_Params{}))
+											));
+											out.m_objects.insert(std::pair<std::string, std::shared_ptr<Any>>(
+												"latitude", std::make_shared<Any>(classPtr->CallFunction("Number", Function_Params{}))
+											));
+											out.m_objects.insert(std::pair<std::string, std::shared_ptr<Any>>(
+												"elevation", std::make_shared<Any>(classPtr->CallFunction("Units::foot", Function_Params{}))
+											));
+										}
+										return out;
+									}
+									else {
+										throw scripting::exception::not_found_error("Could not find the class ptr for the requested class");
+									}
+								}));
+								// construct from params
+								Position->AddFunction(Position->GetName(), make_callable([thisClass = std::weak_ptr<Class2>(Position)](Any const& longitude, Any const& latitude, Any const& elevation)->fibers::DynamicObject {
+									if (auto classPtr = thisClass.lock()) {
+										auto out{ fibers::DynamicObject(classPtr->GetClassType()) };
+										/* add stuff to the dynamic object ... */
+										{
+											out.m_objects.insert(std::pair<std::string, std::shared_ptr<Any>>(
+												"longitude", std::make_shared<Any>(classPtr->CallFunction("double", { longitude }))
+											));
+											out.m_objects.insert(std::pair<std::string, std::shared_ptr<Any>>(
+												"latitude", std::make_shared<Any>(classPtr->CallFunction("double", { latitude }))
+											));
+											out.m_objects.insert(std::pair<std::string, std::shared_ptr<Any>>(
+												"elevation", std::make_shared<Any>(classPtr->CallFunction("Units::foot", { elevation }))
+											));
+										}
+										return out;
+									}
+									else {
+										throw scripting::exception::not_found_error("Could not find the class ptr for the requested class");
+									}
+								}), scripting::Param_Types({ 
+									{ "longitude", Position->FindClass("double")->GetClassType() }
+									, { "latitude", Position->FindClass("double")->GetClassType() }
+								    , { "elevation", Position->FindClass("Units::foot")->GetClassType() }
+								}));
+								// construct from other
+								Position->AddFunction(Position->GetName(), make_callable([thisClass = std::weak_ptr<Class2>(Position)](Any const& rhs)->fibers::DynamicObject {
+									if (auto classPtr = thisClass.lock()) {
+										fibers::DynamicObject& RHS = rhs.cast();
+										fibers::DynamicObject LHS(RHS.m_classType); {
+											for (auto& obj : RHS.m_objects) {
+												if (obj.second) {
+													if (auto ObjClass = classPtr->FindClass(obj.second->Type())) {
+														LHS.m_objects[obj.first] = std::make_shared<Any>(ObjClass->CallFunction(ObjClass->GetName(), { obj.second }));
+													}
+													else {
+														LHS.m_objects[obj.first] = obj.second;
+													}
+												}
+												else {
+													LHS.m_objects[obj.first] = std::make_shared<Any>();
+												}
+											}
+										}
+										return LHS;
+									}
+									else {
+										throw scripting::exception::not_found_error("Could not find the class ptr for the requested class");
+									}
+								}), scripting::Param_Types({ { "rhs", Position->GetClassType() } }));
+								// copy other
+								Position->AddFunction("=", make_callable([thisClass = std::weak_ptr<Class2>(Position)](std::shared_ptr<Any> lhs, Any const& rhs)->std::shared_ptr<Any> {
+									if (auto classPtr = thisClass.lock()) {
+										fibers::DynamicObject& RHS = rhs.cast();
+										fibers::DynamicObject LHS(RHS.m_classType); {
+											for (auto& obj : RHS.m_objects) {
+												if (obj.second) {
+													if (auto ObjClass = classPtr->FindClass(obj.second->Type())) {
+														LHS.m_objects[obj.first] = std::make_shared<Any>(ObjClass->CallFunction(ObjClass->GetName(), { obj.second }));
+													}
+													else {
+														LHS.m_objects[obj.first] = obj.second;
+													}
+												}
+												else {
+													LHS.m_objects[obj.first] = std::make_shared<Any>();
+												}
+											}
+										}
+										return lhs;
+									}
+									else {
+										throw scripting::exception::not_found_error("Could not find the class ptr for the requested class");
+									}
+								}), scripting::Param_Types({ { "lhs", Position->GetClassType() }, { "rhs", Position->GetClassType() } }));
+								// to_string
+								Position->AddFunction("to_string", make_callable([thisScope = std::weak_ptr<Class2>(Position)](Any const& parent)->std::string {
+									std::string out;
+									// generic code to "Print" the Dynamic Object
+									fibers::DynamicObject& Parent = parent.cast(false);
+									if (auto ptr = thisScope.lock()) {
+										for (auto& obj : Parent.m_objects) {
+											if (out.length() > 0) out += ",";
+											auto conv = ptr->Cast<std::string>(*obj.second);
+											out += std::string(Units::printf(" { \"%s\": %s }", obj.first.c_str(), conv.c_str()));
+										}
+									}
+									else {
+										throw scripting::exception::not_found_error("Could not find the class ptr for the requested class");
+									}
+									return std::string("{") + out + " }";
+								}), Param_Types({ { "parent", Position->GetClassType() } }));
+								// explicit std::string(thisClass)...
+								if (auto stringClass = Position->FindClass("string")) {
+									stringClass->AddFunction(stringClass->GetName(), make_callable([thisScope = std::weak_ptr<Class2>(Position)](Any const& parent)->std::string {
+										std::string out;
+										// generic code to "Print" the Dynamic Object
+										fibers::DynamicObject& Parent = parent.cast(false);
+										if (auto ptr = thisScope.lock()) {
+											for (auto& obj : Parent.m_objects) {
+												if (out.length() > 0) out += ",";
+												auto conv = ptr->Cast<std::string>(*obj.second);
+												out += std::string(Units::printf(" { \"%s\": %s }", obj.first.c_str(), conv.c_str()));
+											}
+										}
+										else {
+											throw scripting::exception::not_found_error("Could not find the class ptr for the requested class");
+										}
+										return std::string("{") + out + " }";
+									}), Param_Types({ { "parent", Position->GetClassType() } }), true, true);
+								}
 
-					if (auto p = scope_7->FindNearestNamespaceWhere([](std::shared_ptr<Namespace2> const& namespacePtr)->bool {
-						std::string tryFind = "Position";
-						long long len = tryFind.length();
-						auto qualifiedName = namespacePtr->GetQualifiedNamespace();
+								Position->AddFunction("longitude", make_callable([](Any const& parent)-> Any {
+									auto& Parent = parent.cast<fibers::DynamicObject>(false);
+									return Parent.m_objects.at("longitude");
+								}), Param_Types({ { "parent", Position->GetClassType() } }));
+								Position->AddFunction("latitude", make_callable([](Any const& parent)-> Any {
+									auto& Parent = parent.cast<fibers::DynamicObject>(false);
+									return Parent.m_objects.at("latitude");
+								}), Param_Types({ { "parent", Position->GetClassType() } }));
+								Position->AddFunction("elevation", make_callable([](Any const& parent)-> Any {
+									auto& Parent = parent.cast<fibers::DynamicObject>(false);
+									return Parent.m_objects.at("elevation");
+								}), Param_Types({ { "parent", Position->GetClassType() } }));
+							}
 
-						// remove "::" from end
-						while (qualifiedName.size() >= 2 && (qualifiedName.rfind("::") == (qualifiedName.length() - 2))) { qualifiedName = qualifiedName.substr(0, qualifiedName.length() - 2); }
 
-						long long qualifiedNameLen = qualifiedName.length();
-						auto F = qualifiedName.find(tryFind);
-						if (F != std::string::npos) {
-							if (F == (qualifiedNameLen - len)) {
-								return true;
+							// Instance the class, and make sure we get the class we expect... 
+							if (1) {
+								auto PositionInstance1 = LoopScope->CallFunction("Position", Function_Params{  }); // create as instance
+								auto PositionInstance2 = LoopScope->CallFunction("Position", { -121, 32, Units::foot(15) }); // create from objs
+								auto PositionInstance3 = LoopScope->CallFunction("Position", { PositionInstance2 }); // create as copy
+
+								EXPECT_EQ((Position->GetClassType()), (PositionInstance1.Type()));
+								EXPECT_EQ((Position->GetClassType()), (PositionInstance2.Type()));
+								EXPECT_EQ((Position->GetClassType()), (PositionInstance3.Type()));
+
+								// Gets an object with the type of THIS Position...							
+
+								// ...which may have been replaced with a whole new version of Position by the time we get here...
+								// ...and since "longitude" would only be found if the class type of Position is found, which it never will be, it'll fail right here. 
+								EXPECT_EQ(-121, LoopScope->Cast<int>(LoopScope->CallFunction("longitude", { PositionInstance2 })));
+								EXPECT_EQ(-121, LoopScope->Cast<int>(LoopScope->CallFunction("longitude", { PositionInstance3 })));
+
+								auto& longitude = LoopScope->CallFunction("longitude", { PositionInstance2 }).cast<double>();
+								EXPECT_EQ(-121, longitude);
+								LoopScope->CallFunction("+=", { LoopScope->CallFunction("longitude", { PositionInstance2 }), -1 });
+								EXPECT_EQ(-122, longitude);
+								EXPECT_EQ(-122, LoopScope->CallFunction("longitude", { PositionInstance2 }).cast<double>());
+
+								EXPECT_EQ(-121, LoopScope->CallFunction("longitude", { PositionInstance3 }).cast<double>());
+
+								EXPECT_EQ("{ { \"elevation\": 15 ft }, { \"longitude\": -122.000000 }, { \"latitude\": 32.000000 } }", (LoopScope->Cast<std::string>(PositionInstance2)));
 							}
 						}
-						return false;
-					})) {
-						EXPECT_NE(p->GetQualifiedNamespace(true).find(scope_7->GetQualifiedNamespace(true)), std::string::npos);
-					}
-					else {
-						EXPECT_EQ(true, false);
-					}
-				});
+					});
+				}
 			}
 
-			int numIterations = 100000;
-
-			// this scope has a child AND parent, named "string". Expect return of parent. 
-			sw.Start();
-			fibers::parallel::For(0, numIterations, [&](int i) {
-				if (auto p = scope_4->FindNearestNamespaceWhere([](std::shared_ptr<Namespace2> const& namespacePtr)->bool {
-					return namespacePtr->GetName() == "string";
-					})) {
-					EXPECT_EQ(p->GetQualifiedNamespace(), "::std::string::");
-				}
-				else {
-					EXPECT_EQ(true, false);
-				}
-			});
-			printf(std::to_string(__LINE__) + ": \t" + std::to_string(numIterations) + " operations per " + Units::second(sw.Stop_s()).ToString() + ".");
-			
-			sw.Start();
-			fibers::parallel::For(0, numIterations, [&](int i) {
-				if (auto p = scope_4->FindNamespace("string")) {
-					EXPECT_EQ(p->GetQualifiedNamespace(), "::std::string::");
-				}
-				else {
-					EXPECT_EQ(true, false);
-				}
-				});
-			printf(std::to_string(__LINE__) + ": \t" + std::to_string(numIterations) + " operations per " + Units::second(sw.Stop_s()).ToString() + ".");
-
-			// Expect quick discovery of parent. 
-			sw.Start();
-			fibers::parallel::For(0, numIterations, [&](int i) {
-				if (auto p = scope_4->FindNearestNamespaceWhere([](std::shared_ptr<Namespace2> const& namespacePtr)->bool {
-					return namespacePtr->GetName() == "std";
-				})) {
-					EXPECT_EQ(p->GetQualifiedNamespace(), "::std::");
-				}
-				else {
-					EXPECT_EQ(true, false);
-				}
-			});
-			printf(std::to_string(__LINE__) + ": \t" + std::to_string(numIterations) + " operations per " + Units::second(sw.Stop_s()).ToString() + ".");
-			
-			sw.Start();
-			fibers::parallel::For(0, numIterations, [&](int i) {
-				if (auto p = scope_4->FindNamespace("std")) {
-					EXPECT_EQ(p->GetQualifiedNamespace(), "::std::");
-				}
-				else {
-					EXPECT_EQ(true, false);
-				}
-				});
-			printf(std::to_string(__LINE__) + ": \t" + std::to_string(numIterations) + " operations per " + Units::second(sw.Stop_s()).ToString() + ".");
-
-			// Qualified name requires a bit more work to find.
-			sw.Start();
-			fibers::parallel::For(0, numIterations, [&](int i) {
-				if (auto p = scope_4->FindNearestNamespaceWhere([](std::shared_ptr<Namespace2> const& namespacePtr)->bool {
-					std::string tryFind = "std::string";
-					long long len = tryFind.length();
-					auto qualifiedName = namespacePtr->GetQualifiedNamespace();
-
-					// remove "::" from end
-					while (qualifiedName.size() >= 2 && (qualifiedName.rfind("::") == (qualifiedName.length() - 2))) { qualifiedName = qualifiedName.substr(0, qualifiedName.length() - 2); }
-
-					long long qualifiedNameLen = qualifiedName.length();
-					auto F = qualifiedName.find(tryFind);
-					if (F != std::string::npos) {
-						if (F == (qualifiedNameLen - len)) {
-							return true;
-						}
-					}
-					return false;
-				})) {
-					EXPECT_EQ(p->GetQualifiedNamespace(), "::std::string::");
-				}
-				else {
-					EXPECT_EQ(true, false);
-				}
-			});
-			printf(std::to_string(__LINE__) + ": \t" + std::to_string(numIterations) + " operations per " + Units::second(sw.Stop_s()).ToString() + ".");
-			
-			sw.Start();
-			fibers::parallel::For(0, numIterations, [&](int i) {
-				if (auto p = scope_4->FindNamespace("std::string")) {
-					EXPECT_EQ(p->GetQualifiedNamespace(), "::std::string::");
-				}
-				else {
-					EXPECT_EQ(true, false);
-				}
-			});
-			printf(std::to_string(__LINE__) + ": \t" + std::to_string(numIterations) + " operations per " + Units::second(sw.Stop_s()).ToString() + ".");
-
-			// Qualified approach should work for unqualified search name. 
-			sw.Start();
-			fibers::parallel::For(0, numIterations, [&](int i) {
-				if (auto p = scope_4->FindNearestNamespaceWhere([](std::shared_ptr<Namespace2> const& namespacePtr)->bool {
-					std::string tryFind = "string";
-					long long len = tryFind.length();
-					auto qualifiedName = namespacePtr->GetQualifiedNamespace();
-
-					// remove "::" from end
-					while (qualifiedName.size() >= 2 && (qualifiedName.rfind("::") == (qualifiedName.length() - 2))) { qualifiedName = qualifiedName.substr(0, qualifiedName.length() - 2); }
-
-					long long qualifiedNameLen = qualifiedName.length();
-					auto F = qualifiedName.find(tryFind);
-					if (F != std::string::npos) {
-						if (F == (qualifiedNameLen - len)) {
-							return true;
-						}
-					}
-					return false;
-					})) {
-					EXPECT_EQ(p->GetQualifiedNamespace(), "::std::string::");
-				}
-				else {
-					EXPECT_EQ(true, false);
-				}
-			});
-			printf(std::to_string(__LINE__) + ": \t" + std::to_string(numIterations) + " operations per " + Units::second(sw.Stop_s()).ToString() + ".");
-			
-			sw.Start();
-			fibers::parallel::For(0, numIterations, [&](int i) {
-				if (auto p = scope_4->FindNamespace("string")) {
-					EXPECT_EQ(p->GetQualifiedNamespace(), "::std::string::");
-				}
-				else {
-					EXPECT_EQ(true, false);
-				}
-				});
-			printf(std::to_string(__LINE__) + ": \t" + std::to_string(numIterations) + " operations per " + Units::second(sw.Stop_s()).ToString() + ".");
-
-			// Expect scope to eventually try and check its own children.
-			sw.Start();
-			fibers::parallel::For(0, numIterations, [&](int i) {
-				if (auto p = scope_4->FindNearestNamespaceWhere([&](std::shared_ptr<Namespace2> const& namespacePtr)->bool {
-					std::string tryFind = "std::string::string";
-					long long len = tryFind.length();
-					auto qualifiedName = namespacePtr->GetQualifiedNamespace();
-				
-					// remove "::" from end
-					while (qualifiedName.size() >= 2 && (qualifiedName.rfind("::") == (qualifiedName.length() - 2))) { qualifiedName = qualifiedName.substr(0, qualifiedName.length() - 2); }
-
-					long long qualifiedNameLen = qualifiedName.length();
-					auto F = qualifiedName.find(tryFind);
-					if (F != std::string::npos) {
-						if (F == (qualifiedNameLen - len)) {
-							return true;
-						}
-					}
-					return false;
-				})) {
-					EXPECT_EQ(p->GetQualifiedNamespace(), "::std::string::string::");
-				}
-				else {
-					EXPECT_EQ(true, false);
-				}
-			});
-			printf(std::to_string(__LINE__) + ": \t" + std::to_string(numIterations) + " operations per " + Units::second(sw.Stop_s()).ToString() + ".");
-			
-			sw.Start();
-			fibers::parallel::For(0, numIterations, [&](int i) {
-				if (auto p = scope_4->FindNamespace("std::string::string")) {
-					EXPECT_EQ(p->GetQualifiedNamespace(), "::std::string::string::");
-				}
-				else {
-					EXPECT_EQ(true, false);
-				}
-			});
-			printf(std::to_string(__LINE__) + ": \t" + std::to_string(numIterations) + " operations per " + Units::second(sw.Stop_s()).ToString() + ".");
-
-			// Expect scope to eventually try and check children from the parents, and (eventually) discover this far-away qualified namespace
-			sw.Start();
-			fibers::parallel::For(0, numIterations, [&](int i) {
-				if (auto p = scope_4->FindNearestNamespaceWhere([&](std::shared_ptr<Namespace2> const& namespacePtr)->bool {
-					std::string tryFind = "fibers::containers::Map";
-					long long len = tryFind.length();
-					auto qualifiedName = namespacePtr->GetQualifiedNamespace();
-
-					// remove "::" from end
-					while (qualifiedName.size() >= 2 && (qualifiedName.rfind("::") == (qualifiedName.length() - 2))) { qualifiedName = qualifiedName.substr(0, qualifiedName.length() - 2); }
-
-					long long qualifiedNameLen = qualifiedName.length();
-					auto F = qualifiedName.find(tryFind);
-					if (F != std::string::npos) {
-						if (F == (qualifiedNameLen - len)) {
-							return true;
-						}
-					}
-					return false;
-				})) {
-					EXPECT_EQ(p->GetQualifiedNamespace(), "::fibers::containers::Map::");
-				}
-				else {
-					EXPECT_EQ(true, false);
-				}
-			});
-			printf(std::to_string(__LINE__) + ": \t" + std::to_string(numIterations) + " operations per " + Units::second(sw.Stop_s()).ToString() + ".");
-			
-			sw.Start();
-			fibers::parallel::For(0, numIterations, [&](int i) {
-				if (auto p = scope_4->FindNamespace("fibers::containers::Map")) {
-					EXPECT_EQ(p->GetQualifiedNamespace(), "::fibers::containers::Map::");
-				}
-				else {
-					EXPECT_EQ(true, false);
-				}
-				});
-			printf(std::to_string(__LINE__) + ": \t" + std::to_string(numIterations) + " operations per " + Units::second(sw.Stop_s()).ToString() + ".");
-
-			// Find Classes using TypeInfo tags
-			sw.Start();
-			fibers::parallel::For(0, numIterations, [&](int i) {
-				if (auto p = scope_4->FindClass(user_type<std::string>())) {
-					EXPECT_EQ(p->GetQualifiedNamespace(), "::std::string::");
-				}
-				else {
-					EXPECT_EQ(true, false);
-				}
-				});
-			printf(std::to_string(__LINE__) + ": \t" + std::to_string(numIterations) + " operations per " + Units::second(sw.Stop_s()).ToString() + ".");
-			
-			sw.Start();
-			fibers::parallel::For(0, numIterations, [&](int i) {
-				if (auto p = scope_4->FindClass(user_type<fibers::containers::Map<std::string, fibers::Any>>())) {
-					EXPECT_EQ(p->GetQualifiedNamespace(), "::fibers::containers::Map::");
-				}
-				else {
-					EXPECT_EQ(true, false);
-				}
-				});
-			printf(std::to_string(__LINE__) + ": \t" + std::to_string(numIterations) + " operations per " + Units::second(sw.Stop_s()).ToString() + ".");
-
-			// Find Objects
-			sw.Start();
-			fibers::parallel::For(0, numIterations, [&](int i) {
-				if (auto p = scope_4->FindObj("npos")) {
-					EXPECT_EQ(p->cast<size_t>(), std::string::npos);
-				}
-				else {
-					EXPECT_EQ(true, false);
-				}
-			});
-			printf(std::to_string(__LINE__) + ": \t" + std::to_string(numIterations) + " operations per " + Units::second(sw.Stop_s()).ToString() + ".");
-			
-			sw.Start();
-			fibers::parallel::For(0, numIterations, [&](int i) {
-				if (auto p = scope_4->FindObj("::std::string::npos")) {
-					EXPECT_EQ(p->cast<size_t>(), std::string::npos);
-				}
-				else {
-					EXPECT_EQ(true, false);
-				}
-			});
-			printf(std::to_string(__LINE__) + ": \t" + std::to_string(numIterations) + " operations per " + Units::second(sw.Stop_s()).ToString() + ".");
-			
-			sw.Start();
-			fibers::parallel::For(0, numIterations, [&](int i) {
-				if (auto p = scope_4->FindObj("::string::npos")) {
-					EXPECT_EQ(p->cast<size_t>(), std::string::npos);
-				}
-				else {
-					EXPECT_EQ(true, false);
-				}
-			});
-			printf(std::to_string(__LINE__) + ": \t" + std::to_string(numIterations) + " operations per " + Units::second(sw.Stop_s()).ToString() + ".");
-
-			// Find Functions
-			sw.Start();
-			fibers::parallel::For(0, numIterations, [&](int i) {
-				if (auto p = scope_4->FindFunctions("length")) {
-					//EXPECT_EQ(p->cast<size_t>(), std::string::npos);
-				}
-				else {
-					EXPECT_EQ(true, false);
-				}
-			});
-			printf(std::to_string(__LINE__) + ": \t" + std::to_string(numIterations) + " operations per " + Units::second(sw.Stop_s()).ToString() + ".");
-			
-			sw.Start();
-			fibers::parallel::For(0, numIterations, [&](int i) {
-				if (auto p = scope_4->FindFunctions("::std::string::length")) {
-					//EXPECT_EQ(p->cast<size_t>(), std::string::npos);
-				}
-				else {
-					EXPECT_EQ(true, false);
-				}
-			});
-			printf(std::to_string(__LINE__) + ": \t" + std::to_string(numIterations) + " operations per " + Units::second(sw.Stop_s()).ToString() + ".");
-			
-			sw.Start();
-			fibers::parallel::For(0, numIterations, [&](int i) {
-				if (auto p = scope_4->FindFunctions("::string::length")) {
-					//EXPECT_EQ(p->cast<size_t>(), std::string::npos);
-				}
-				else {
-					EXPECT_EQ(true, false);
-				}
-			});
-			printf(std::to_string(__LINE__) + ": \t" + std::to_string(numIterations) + " operations per " + Units::second(sw.Stop_s()).ToString() + ".");
-
-			// Find and Call Functions
 			if (1) {
-				std::vector<Any> params = { Any(std::string("TESTING")) };
-				
-				sw.Start();
-				fibers::parallel::For(0, numIterations, [&](int i) {
-					if (auto p = scope_4->FindFunction("length", scripting::Function_Params(params))) {
-						EXPECT_EQ(true, p->first->call_match(params, {}));
-						EXPECT_EQ(scripting::call(p->first, params, {}).cast<size_t>(), 7);
-					}
-					else {
-						EXPECT_EQ(true, false);
-					}
-				});
-				printf(std::to_string(__LINE__) + ": \t" + std::to_string(numIterations) + " operations per " + Units::second(sw.Stop_s()).ToString() + ".");
-				
-				sw.Start();
-				fibers::parallel::For(0, numIterations, [&](int i) {
-					if (auto p = scope_4->FindFunction("::std::string::length", scripting::Function_Params(params))) {
-						EXPECT_EQ(true, p->first->call_match(params, {}));
-						EXPECT_EQ(scripting::call(p->first, params, {}).cast<size_t>(), 7);
-					}
-					else {
-						EXPECT_EQ(true, false);
-					}
-				});
-				printf(std::to_string(__LINE__) + ": \t" + std::to_string(numIterations) + " operations per " + Units::second(sw.Stop_s()).ToString() + ".");
-				
-				sw.Start();
-				fibers::parallel::For(0, numIterations, [&](int i) {
-					if (auto p = scope_4->FindFunction("::string::length", scripting::Function_Params(params))) {
-						EXPECT_EQ(true, p->first->call_match(params, {}));
-						EXPECT_EQ(scripting::call(p->first, params, {}).cast<size_t>(), 7);
-					}
-					else {
-						EXPECT_EQ(true, false);
-					}
-				});
-				printf(std::to_string(__LINE__) + ": \t" + std::to_string(numIterations) + " operations per " + Units::second(sw.Stop_s()).ToString() + ".");
-			}
-			// Get All Available Classes
-			if (1) {
-				sw.Start();
-				fibers::parallel::For(0, numIterations, [&](int i)
-				{
-					auto classes = scope_4->GetLibrary()->GetAllAvailableClasses();
-					EXPECT_EQ(true, classes->size() >= 10);
-				}
-				);
-				printf(std::to_string(__LINE__) + ": \t" + std::to_string(numIterations) + " operations (on 10,000 classes) per " + Units::second(sw.Stop_s()).ToString() + ".");
+				// UI::Map::Text and similar namespaces should still be available
+				EXPECT_EQ(true, ((bool)scope_1->FindNamespace("UI::Map::Text")));
+				 
+				// But, the 100 "Position" classes we made should no longer be available or in-scope
+				EXPECT_EQ(false, ((bool)scope_1->FindNamespace("Position")));
+				EXPECT_EQ(false, ((bool)scope_1->FindClass("Position")));
+
+				try {
+					(void)scope_1->CallFunction("Position", Function_Params{});
+					EXPECT_EQ(false, true);
+				} catch(std::exception& e1) {}
 			}
 
-			// Create and test the type conversion tree, which builds itself from the constructors of the various classes.
-			if (1) {
-				sw.Start();
-				fibers::parallel::For(0, numIterations / 10, [&](int i)
-					{
-						auto tree = scope_4->GetTypeConverterTree(); // builds and caches the tree. Updates the tree only if the situation has changed (new functions, new classes, or new Using statements)
-
-						if (!tree->Converts<int, long>()) { EXPECT_EQ(true, false); }
-						if (!tree->Converts<float, long>()) { EXPECT_EQ(true, false); }
-						if (!tree->Converts<int, double>()) { EXPECT_EQ(true, false); }
-						if (!tree->Converts<bool, int>()) { EXPECT_EQ(true, false); }
-						if (!tree->Converts<int, int>()) { EXPECT_EQ(true, false); }
-						if (!tree->Converts<double, int>()) { EXPECT_EQ(true, false); }
-						if (!tree->Converts<bool, double>()) { EXPECT_EQ(true, false); }
-
-						EXPECT_EQ(100, tree->Convert<int>(100.0));
-						EXPECT_EQ(100.0, tree->Convert<double>(100l));
-						EXPECT_EQ(100l, tree->Convert<long>(100.0f));
-						EXPECT_EQ(100.0f, tree->Convert<float>(100.0));
-						EXPECT_EQ(true, tree->Convert<bool>(1));
-						EXPECT_EQ(100.0f, tree->Convert<float>(100l));
-						EXPECT_EQ(1.0, tree->Convert<double>(true));
-					}
-				);
-				printf(std::to_string(__LINE__) + ": \t" + std::to_string(numIterations / 10) + " operations (on 10,000 classes) per " + Units::second(sw.Stop_s()).ToString() + ".");
-			}
-
-			// Create and test the type conversion tree, which builds itself from the constructors of the various classes.
-			if (1) {
-
-				std::vector<Any> params = { Any(fibers::containers::number<double>(0)), Any(1) };
-				auto& n = params[0].cast<fibers::containers::number<double>&>();
-
-				sw.Start();
-				auto scope_outer = std::make_shared<Scope2>(scope_4);
-				scope_outer->SetSelf(scope_outer);
-				fibers::parallel::For(0, numIterations, [&](int i) {
-					auto scope_inner = std::make_shared<Scope2>(scope_outer);
-					scope_inner->SetSelf(scope_inner);
-					scope_inner->AddObj("i", std::make_shared<Any>(i));
-					{
-
-						scope_inner->CallFunction("+=", params);
-
-					}
-				});
-				printf(std::to_string(__LINE__) + ": \t" + std::to_string(numIterations) + " operations (on 10,000 classes) per " + Units::second(sw.Stop_s()).ToString() + ".");
-
-				{
-					EXPECT_EQ(true, scope_4->Cast<bool>(scope_4->CallFunction("==", { params[0], numIterations })));
-				}
-
-				{
-					printf(scope_4->Cast<std::string>(
-						scope_4->CallFunction("+", { 
-							scope_4->Cast<std::string>(params[0])
-							, std::string(" is the count") 
-						})
-					));
-				}
-
-				EXPECT_EQ(n, (numIterations));
-			}
-
-			EXPECT_EQ("100", scope_4->Cast<std::string>(scope_4->CallFunction("std::string", { 100 })));
-			EXPECT_EQ("200", scope_4->Cast<std::string>(scope_1->CallFunction("::std::string", { scope_4->Cast<int>(scope_1->CallFunction("+", { 100.0f, 100.0 })) })));
-
-
-
-
-
-
-
-
-			EXPECT_EQ(scope_1, scope_4->GetLibrary());
-
-			scope_4->AddUsing(scope_1);
-			scope_4->AddUsing(scope_4->GetLibrary());
-
-			EXPECT_EQ(scope_4->p_using.size(), 1);
-
-			scope_4->AddUsing(scope_3);
-			scope_4->AddUsing(scope_4->GetNamespace());
-			EXPECT_EQ(scope_4->p_using.size(), 2);
-
-
-#endif
 		}
 		catch (std::exception& e) {
 			printf(e.what());
@@ -1762,698 +1749,9 @@ int main() {
 
 		// MODERN TEST 2
 		if (1) {
-			using namespace scripting;
-			auto printf = [](auto x) { std::cout << x << std::endl; };
-
-			// Import Collection (to be owned and maintained by engine instance)
-			fibers::containers::Map<std::string, std::shared_ptr<Namespace>> imports;
-
-			// Global Namespace...
-			auto global_scope{ std::make_shared<Global>() };
-			global_scope->p_self = global_scope;
-			global_scope->AddBuiltIns();
-
-			//// Built-In Functions, Type, Conversions
-			//if (1) {
-			//	// template function (specified by the "Any" type) which be duplicated and instantiated whenever actually called by a "real" set of parameters
-			//	global_scope->m_functions.emplace("Type", scripting::Param_Types({ { std::string("obj"), scripting::user_type<Any>() } }), scripting::make_callable(
-			//		[](Any const& x) -> fibers::Type_Info {
-			//			if (auto p = x.Type().lock())
-			//				return *p;
-			//			else
-			//				return fibers::user_type<void>();
-			//		}
-			//	), true);
-			//	global_scope->m_functions.emplace("+", scripting::make_callable([](double a, double b) -> double {
-			//		return a + b;
-			//	}), true);
-			//	global_scope->m_functions.emplace("*", scripting::make_callable([](double a, double b) -> double {
-			//		return a * b;
-			//	}), true);
-			//	global_scope->m_functions.emplace("-", scripting::make_callable([](double a, double b) -> double {
-			//		return a - b;
-			//	}), true);
-			//	global_scope->m_functions.emplace("/", scripting::make_callable([](double a, double b) -> double {
-			//		return a / b;
-			//	}), true);
-			//	global_scope->m_functions.emplace("^", scripting::make_callable([](double a, double b) -> double {
-			//		return std::pow(a, b);
-			//	}), true);
-			//	global_scope->CallFunction("Type", { Any(100.0) });
-			//	global_scope->CallFunction("+", { Any(100.0), Any(100.0) });
-			//	global_scope->CallFunction("^", { Any(5.0), Any(2.0) });
-			//}
-
-			// Import Namespaces...
-			if (1) {
-				// #include "std"
-				if (1) {
-					auto global_scope2{ std::make_shared<Global>() }; 
-					global_scope2->p_self = global_scope2;
-
-					global_scope2->AddBuiltIns();
-
-					// Create STD library...
-					{
-						auto std_namespace{ std::make_shared<Namespace>(global_scope2, "std") };
-						std_namespace->p_self = std_namespace;
-						global_scope2->AddChild(std_namespace);
-
-						// the "std" namespace imports the "map" namespace...
-						{
-							auto string_namespace{ std::make_shared<Class>(fibers::user_type<std::map<std::string, fibers::Any>>(), std_namespace, "map") };
-							string_namespace->p_self = string_namespace;
-							std_namespace->AddChild(string_namespace);
-
-							// ... which imports the "impl" namespace...
-							{
-								auto impl_namespace{ std::make_shared<Namespace>(string_namespace, "impl") };
-								impl_namespace->p_self = impl_namespace;
-								string_namespace->AddChild(impl_namespace);
-							}
-						}
-
-						// the "std" namespace imports the "set" namespace...
-						{
-							auto string_namespace{ std::make_shared<Class>(fibers::user_type<std::set<std::string>>(), std_namespace, "set") };
-							string_namespace->p_self = string_namespace;
-							std_namespace->AddChild(string_namespace);
-
-							// ... which imports the "impl" namespace...
-							{
-								auto impl_namespace{ std::make_shared<Namespace>(string_namespace, "impl") };
-								impl_namespace->p_self = impl_namespace;
-								string_namespace->AddChild(impl_namespace);
-							}
-						}
-
-						// the "std" namespace imports the "vector" namespace...
-						{
-							auto string_namespace{ std::make_shared<Class>(fibers::user_type<std::vector<fibers::Any>>(), std_namespace, "vector") };
-							string_namespace->p_self = string_namespace;
-							std_namespace->AddChild(string_namespace);
-
-							// ... which imports the "impl" namespace...
-							{
-								auto impl_namespace{ std::make_shared<Namespace>(string_namespace, "impl") };
-								impl_namespace->p_self = impl_namespace;
-								string_namespace->AddChild(impl_namespace);
-							}
-						}
-					}
-
-					// add it to our script...
-					imports.emplace("github//scriptLanguage.std", global_scope2); // the import map guarrantees lifetime...
-					global_scope->AddUsing(global_scope2); // ... while "using" allows our global to share their global's custom namespaces and objects
-				}
-
-				// #include "fibers"
-				if (1) {
-					auto script_scope{ std::make_shared<Global>() }; // global should always be a Namespace
-					script_scope->p_self = script_scope;
-
-					script_scope->AddBuiltIns();
-
-					{
-						auto std_namespace{ std::make_shared<Namespace>(script_scope, "fibers") };
-						std_namespace->p_self = std_namespace;
-						script_scope->AddChild(std_namespace);
-
-						// the "fibers" namespace imports the "Number" namespace...
-						{
-							auto string_namespace{ std::make_shared<Class>(fibers::user_type<fibers::containers::number<double>>(), std_namespace, "Number") };
-							string_namespace->p_self = string_namespace;
-							std_namespace->AddChild(string_namespace);
-
-							// ... which imports the "impl" namespace...								
-							{
-								auto impl_namespace{ std::make_shared<Namespace>(string_namespace, "impl") };
-								impl_namespace->p_self = impl_namespace;
-								string_namespace->AddChild(impl_namespace);
-							}
-
-							string_namespace->TypeConversionTree()->AddConverter<fibers::containers::number<double>, unsigned int>();
-							string_namespace->TypeConversionTree()->AddConverter<fibers::containers::number<double>, int>();
-							string_namespace->TypeConversionTree()->AddConverter<fibers::containers::number<double>, float>();
-							string_namespace->TypeConversionTree()->AddConverter<fibers::containers::number<double>, double>();
-							string_namespace->TypeConversionTree()->AddConverter<fibers::containers::number<double>, size_t>();
-						}
-
-						// the "fibers" namespace imports the "Pattern" namespace...
-						{
-							auto string_namespace{ std::make_shared<Class>(fibers::user_type<fibers::containers::Pattern<double, double>>(), std_namespace, "Pattern") };
-							string_namespace->p_self = string_namespace;
-							std_namespace->AddChild(string_namespace);
-
-							// ... which imports the "impl" namespace...
-							{
-								auto impl_namespace{ std::make_shared<Namespace>(string_namespace, "impl") };
-								impl_namespace->p_self = impl_namespace;
-								string_namespace->AddChild(impl_namespace);
-							}
-						}
-
-						// the "fibers" namespace imports the "Matrix" namespace...
-						{
-							auto string_namespace{ std::make_shared<Class>(std_namespace, "Matrix") };
-							string_namespace->p_self = string_namespace;
-							std_namespace->AddChild(string_namespace);
-
-							// ... which imports the "impl" namespace...
-							{
-								auto impl_namespace{ std::make_shared<Namespace>(string_namespace, "impl") };
-								impl_namespace->p_self = impl_namespace;
-								string_namespace->AddChild(impl_namespace);
-							}
-						}
-
-						// the "fibers" namespace imports the "UI" namespace...
-						{
-							auto string_namespace{ std::make_shared<Namespace>(std_namespace, "UI") };
-							string_namespace->p_self = string_namespace;
-							std_namespace->AddChild(string_namespace);
-
-							// ... which imports the "Interactive" namespace...
-							auto interactive_namespace{ std::make_shared<Class>(string_namespace, "Interactive") }; {
-								interactive_namespace->p_self = interactive_namespace;
-								string_namespace->AddChild(interactive_namespace);
-
-								{
-									auto impl_namespace{ std::make_shared<Namespace>(interactive_namespace, "InteractiveImpl") };
-									impl_namespace->p_self = impl_namespace;
-									interactive_namespace->AddChild(impl_namespace);
-								}
-							}
-
-							// ... which imports the "Map" namespace...
-							{
-								auto impl_namespace{ std::make_shared<Class>(string_namespace, "Map", interactive_namespace) };
-								impl_namespace->p_self = impl_namespace;
-								string_namespace->AddChild(impl_namespace);
-
-								{
-									auto impl_namespace2{ std::make_shared<Namespace>(impl_namespace, "MapImpl") };
-									impl_namespace2->p_self = impl_namespace2;
-									impl_namespace->AddChild(impl_namespace2);
-								}
-
-								{
-									auto impl_namespace2{ std::make_shared<Namespace>(impl_namespace, "Text") };
-									impl_namespace2->p_self = impl_namespace2;
-									impl_namespace->AddChild(impl_namespace2);
-								}
-
-								impl_namespace->m_functions.emplace("=", make_callable([](Any& lhs, Any const& rhs) -> Any {
-									fibers::DynamicObject& LHS = lhs.cast();
-									fibers::DynamicObject& RHS = rhs.cast();
-									LHS = RHS;
-									return Any(lhs);
-									}), scripting::Param_Types({ { "lhs", impl_namespace->ClassType }, { "rhs", impl_namespace->ClassType } }));
-							}
-
-							// ... which imports the "Button" namespace...
-							{
-								auto impl_namespace{ std::make_shared<Class>(string_namespace, "Button", interactive_namespace) };
-								impl_namespace->p_self = impl_namespace;
-								string_namespace->AddChild(impl_namespace);
-							}
-
-							// ... which imports the "Grid" namespace...
-							{
-								auto impl_namespace{ std::make_shared<Class>(string_namespace, "Grid") };
-								impl_namespace->p_self = impl_namespace;
-								string_namespace->AddChild(impl_namespace);
-							}
-
-							// ... which imports the "Plot" namespace...
-							{
-								auto impl_namespace{ std::make_shared<Class>(string_namespace, "Plot") };
-								impl_namespace->p_self = impl_namespace;
-								string_namespace->AddChild(impl_namespace);
-							}
-
-							// ... which imports the "Text" namespace...
-							{
-								auto impl_namespace{ std::make_shared<Class>(string_namespace, "Text") };
-								impl_namespace->p_self = impl_namespace;
-								string_namespace->AddChild(impl_namespace);
-							}
-
-							// ... which imports the "WebPage" namespace...
-							{
-								auto impl_namespace{ std::make_shared<Class>(string_namespace, "WebPage") };
-								impl_namespace->p_self = impl_namespace;
-								string_namespace->AddChild(impl_namespace);
-							}
-
-						}
-					}
-
-					// add it to our script...
-					imports.emplace("github//scriptLanguage.fibers", script_scope); // the import map guarrantees lifetime...
-					global_scope->AddUsing(script_scope); // ... while "using" allows our global to share their global's custom namespaces and objects
-				}
-
-				// #include "Units"
-				if (1) {
-					auto global_scope2{ std::make_shared<Global>() }; // global should always be a Namespace
-					global_scope2->p_self = global_scope2;
-					auto& tree = *global_scope2->TypeConversionTree();
-
-					global_scope2->AddBuiltIns();
-
-					// Create library...
-					{
-						auto std_namespace{ std::make_shared<Namespace>(global_scope2, "Units") };
-						std_namespace->p_self = std_namespace;
-						global_scope2->AddChild(std_namespace);
-
-						// the "std" namespace imports the "string" namespace...
-						{
-							auto value_namespace{ std::make_shared<Class>(fibers::user_type<Units::value>(), std_namespace, "value") };
-							value_namespace->p_self = value_namespace;
-							std_namespace->AddChild(value_namespace);
-
-							// which has the following types groups... 
-
-							{
-								tree.AddConverter<Units::value, double>();
-								tree.AddConverter([](Units::value const& x) -> std::string { return x.ToString(); });
-								value_namespace->m_functions.emplace("abbreviation", make_callable([](Units::value const& x)->std::string {
-									return x.Abbreviation();
-								}));
-								value_namespace->m_functions.emplace("name", make_callable([](Units::value const& x)->std::string {
-									return x.UnitName();
-								}));
-								value_namespace->m_functions.emplace("to_string", make_callable([](Units::value const& x)->std::string {
-									return x.ToString();
-								}));
-
-								value_namespace->m_functions.emplace("*", make_callable([](Units::value const& x, Units::value const& y)->Units::value{
-									return x * y;
-								}));
-								value_namespace->m_functions.emplace("+", make_callable([](Units::value const& x, Units::value const& y)->Units::value {
-									return x + y;
-								}));
-								value_namespace->m_functions.emplace("-", make_callable([](Units::value const& x, Units::value const& y)->Units::value {
-									return x - y;
-								}));
-								value_namespace->m_functions.emplace("/", make_callable([](Units::value const& x, Units::value const& y)->Units::value {
-									return x / y;
-								}));
-								value_namespace->m_functions.emplace("+=", make_callable([](Units::value& x, Units::value const& y) -> void {
-									x += y;
-								}));
-								value_namespace->m_functions.emplace("*=", make_callable([](Units::value& x, Units::value const& y) -> void {
-									x *= y;
-								}));
-								value_namespace->m_functions.emplace("/=", make_callable([](Units::value& x, Units::value const& y) -> void {
-									x /= y;
-								}));
-								value_namespace->m_functions.emplace("-=", make_callable([](Units::value& x, Units::value const& y) -> void {
-									x -= y;
-								}));
-
-								// manually go through and add each unit type... 
-								auto allUnitTypes = Units::UnitsDetail::GetValueTypes();
-								auto addUnit = [&](auto impl, std::string const& name) -> void {
-									auto impl_namespace{ std::make_shared<Class>(std_namespace, name, value_namespace, user_type<decltype(impl)>()) };
-									impl_namespace->p_self = impl_namespace;
-									std_namespace->AddChild(impl_namespace);
-
-									// Polymorphic converter
-									tree.AddConverter<decltype(impl), Units::value>();
-									tree.AddConverter<Units::value, decltype(impl)>();
-									tree.AddConverter<decltype(impl), double>();
-									tree.AddConverter([](decltype(impl) const& x) -> std::string { return x.ToString(); });
-
-									bool found{ false };
-									for (auto& type_group : allUnitTypes) {
-										if (found) break;
-										for (auto& type : type_group) {
-											if (std::get<1>(type) == name) {
-												auto& abbrev = std::get<0>(type);
-
-												// POSTFIX
-												std_namespace->m_postfixes.emplace(abbrev, impl_namespace);
-
-												// CONSTRUCT {}
-												impl_namespace->m_functions.emplace(name, make_callable([/*thisT = impl*/]()->decltype(impl) {
-													decltype(impl) out;
-													out = 0;
-													return out;
-												}), scripting::Param_Types());
-
-												// CONSTRUCT { double }
-												impl_namespace->m_functions.emplace(name, make_callable([/*thisT = impl*/](double x)->decltype(impl) {
-													decltype(impl) out;
-													out = x;
-													return out;
-												}), scripting::Param_Types({ { "in", user_type<double>() } }));
-
-												// CONSTRUCT { Units::value }
-												impl_namespace->m_functions.emplace(name, make_callable([/*thisT = impl*/](Units::value const& x)->decltype(impl) {
-													decltype(impl) out;
-													out = x;
-													return out;
-												}), scripting::Param_Types({ { "in", user_type<Units::value>() } }));
-
-												// abbreviation
-												impl_namespace->m_functions.emplace("abbreviation", make_callable([thisT = abbrev]()->std::string {
-													return thisT;
-												}));
-
-												// name
-												impl_namespace->m_functions.emplace("name", make_callable([thisT = name]()->std::string {
-													return thisT;
-												}));
-
-												std_namespace->AddUsing(impl_namespace);
-
-												found = true;
-												break;
-											}
-										}
-									}
-								};
-
-								
-
-#define AddUnit(unitname) addUnit(Units::##unitname(), #unitname)
-								AddUnit(meter);
-								AddUnit(foot);
-								AddUnit(inch);
-								AddUnit(mile);
-								AddUnit(nauticalMile);
-								AddUnit(astronicalUnit);
-								AddUnit(yard);
-								AddUnit(gram);
-								AddUnit(metric_ton);
-								AddUnit(pound);
-								AddUnit(long_ton);
-								AddUnit(short_ton);
-								AddUnit(stone);
-								AddUnit(ounce);
-								AddUnit(carat);
-								AddUnit(slug);
-								AddUnit(second);
-								AddUnit(minute);
-								AddUnit(hour);
-								AddUnit(day);
-								AddUnit(week);
-								AddUnit(year);
-								AddUnit(month);
-								AddUnit(julian_year);
-								AddUnit(gregorian_year);
-								AddUnit(ampere);
-								AddUnit(Dollar);
-								AddUnit(MillionDollar);
-								AddUnit(hertz);
-								AddUnit(meters_per_second);
-								AddUnit(feet_per_second);
-								AddUnit(feet_per_minute);
-								AddUnit(feet_per_hour);
-								AddUnit(miles_per_hour);
-								AddUnit(kilometers_per_hour);
-								AddUnit(knot);
-								AddUnit(meters_per_second_squared);
-								AddUnit(feet_per_second_squared);
-								AddUnit(standard_gravity);
-								AddUnit(newton);
-								AddUnit(pound_f);
-								AddUnit(dyne);
-								AddUnit(kilopond);
-								AddUnit(poundal);
-								AddUnit(pascals);
-								AddUnit(bar);
-								AddUnit(atmosphere);
-								AddUnit(pounds_per_square_inch);
-								AddUnit(head);
-								AddUnit(torr);
-								AddUnit(coulomb);
-								AddUnit(ampere_hour);
-								AddUnit(watt);
-								AddUnit(horsepower);
-								AddUnit(joule);
-								AddUnit(calorie);
-								AddUnit(watt_minute);
-								AddUnit(watt_hour);
-								AddUnit(watt_day);
-								AddUnit(british_thermal_unit);
-								AddUnit(british_thermal_unit_iso);
-								AddUnit(british_thermal_unit_59);
-								AddUnit(therm);
-								AddUnit(foot_pound);
-								AddUnit(volt);
-								AddUnit(ohm);
-								AddUnit(siemens);
-								AddUnit(square_meter);
-								AddUnit(square_foot);
-								AddUnit(square_inch);
-								AddUnit(square_mile);
-								AddUnit(square_kilometer);
-								AddUnit(hectare);
-								AddUnit(acre);
-								AddUnit(cubic_meter);
-								AddUnit(cubic_millimeter);
-								AddUnit(cubic_kilometer);
-								AddUnit(liter);
-								AddUnit(cubic_inch);
-								AddUnit(cubic_foot);
-								AddUnit(cubic_yard);
-								AddUnit(cubic_mile);
-								AddUnit(gallon);
-								AddUnit(imperial_gallon);
-								AddUnit(million_gallon);
-								AddUnit(imperial_million_gallon);
-								AddUnit(acre_foot);
-								AddUnit(quart);
-								AddUnit(pint);
-								AddUnit(cup);
-								AddUnit(fluid_ounce);
-								AddUnit(barrel);
-								AddUnit(bushel);
-								AddUnit(cord);
-								AddUnit(tablespoon);
-								AddUnit(teaspoon);
-								AddUnit(pinch);
-								AddUnit(dash);
-								AddUnit(drop);
-								AddUnit(fifth);
-								AddUnit(dram);
-								AddUnit(gill);
-								AddUnit(peck);
-								AddUnit(sack);
-								AddUnit(shot);
-								AddUnit(strike);
-								AddUnit(gram_per_second);
-								AddUnit(metric_ton_per_second);
-								AddUnit(metric_ton_per_minute);
-								AddUnit(metric_ton_per_hour);
-								AddUnit(metric_ton_per_day);
-								AddUnit(metric_ton_per_year);
-								AddUnit(cubic_meter_per_second);
-								AddUnit(cubic_meter_per_hour);
-								AddUnit(cubic_meter_per_day);
-								AddUnit(cubic_millimeter_per_second);
-								AddUnit(liter_per_second);
-								AddUnit(liter_per_minute);
-								AddUnit(liter_per_day);
-								AddUnit(megaliter_per_day);
-								AddUnit(cubic_inch_per_second);
-								AddUnit(cubic_inch_per_hour);
-								AddUnit(cubic_foot_per_second);
-								AddUnit(cubic_foot_per_hour);
-								AddUnit(gallon_per_second);
-								AddUnit(gallon_per_minute);
-								AddUnit(gallon_per_hour);
-								AddUnit(gallon_per_day);
-								AddUnit(gallon_per_year);
-								AddUnit(million_gallon_per_second);
-								AddUnit(million_gallon_per_minute);
-								AddUnit(million_gallon_per_hour);
-								AddUnit(million_gallon_per_day);
-								AddUnit(million_gallon_per_year);
-								AddUnit(imperial_million_gallon_per_second);
-								AddUnit(imperial_million_gallon_per_minute);
-								AddUnit(imperial_million_gallon_per_hour);
-								AddUnit(imperial_million_gallon_per_day);
-								AddUnit(imperial_million_gallon_per_year);
-								AddUnit(acre_foot_per_second);
-								AddUnit(acre_foot_per_minute);
-								AddUnit(acre_foot_per_hour);
-								AddUnit(acre_foot_per_day);
-								AddUnit(acre_foot_per_year);
-								AddUnit(kilograms_per_cubic_meter);
-								AddUnit(grams_per_milliliter);
-								AddUnit(kilograms_per_liter);
-								AddUnit(ounces_per_cubic_foot);
-								AddUnit(ounces_per_cubic_inch);
-								AddUnit(ounces_per_gallon);
-								AddUnit(pounds_per_cubic_foot);
-								AddUnit(pounds_per_cubic_inch);
-								AddUnit(pounds_per_gallon);
-								AddUnit(slugs_per_cubic_foot);
-								AddUnit(Dollar_per_joule);
-								AddUnit(Dollar_per_kilowatt_hour);
-								AddUnit(Dollar_per_watt);
-								AddUnit(Dollar_per_kilowatt);
-								AddUnit(Dollar_per_cubic_meter);
-								AddUnit(Dollar_per_gallon);
-								AddUnit(kilowatt_hour_per_acre_foot);
-								AddUnit(Dollar_per_mile);
-								AddUnit(Dollar_per_ton);
-								AddUnit(ton_per_kilowatt_hour);
-#undef AddUnit
-							}
-
-							// std_namespace->AddUsing(value_namespace);
-						}
-					}
-
-					// add it to our script...
-					imports.emplace("github//scriptLanguage.Units", global_scope2); // the import map guarrantees lifetime...
-					global_scope->AddUsing(global_scope2); // ... while "using" allows our global to share their global's custom namespaces and objects
-				}
-			}
-
-			// TEST SHAREDPTR
-			if (1) {
-				fibers::utilities::SharedPtr<int> test;
-				fibers::parallel::For(0, 100, [&](int i) {
-					test = fibers::utilities::make_shared<int>(i);
-					fibers::utilities::SharedPtr<int> localCopy{ test };
-					if (localCopy) {
-						// printf(*localCopy);
-					}
-				});
-            }
-
-
+			
 			// TESTING...
 			if (1) {
-				// Simulate a complex, multithreaded ForLoop
-				{
-					auto ScriptScope = std::make_shared<Scope>(global_scope);
-					ScriptScope->p_self = ScriptScope;
-
-					ScriptScope->AddObject("x", std::make_shared<Any>(fibers::containers::number<double>(0)));
-
-					{
-
-						auto ForScope = std::make_shared<Scope>(ScriptScope);
-						ForScope->p_self = ForScope;
-
-						fibers::parallel::For(0, 100, [&](int i) {
-							auto LoopScope = std::make_shared<Scope>(ForScope);
-							LoopScope->p_self = LoopScope;
-
-							LoopScope->AddObject("i", std::make_shared<Any>((int)i));
-
-							if (auto i_obj = LoopScope->FindObject("i")) {
-								auto LengthObj = LoopScope->CallFunction("length", { // returns a size_t
-									LoopScope->CallFunction("string", { // returns a string
-										LoopScope->CallFunction("double", { // returns a double
-											*i_obj
-										})
-									})
-								});
-
-								printf(std::string("Length of ") + Impl::Cast<std::string>(*i_obj, LoopScope) + " is " + Impl::Cast<std::string>(LengthObj, LoopScope));
-
-								if (auto x_obj = LoopScope->FindObject("x")) {
-									LoopScope->CallFunction("+=", { *x_obj, LengthObj });
-								}
-							}
-						});
-					}
-					printf(std::string("Final Answer: \t") + Impl::Cast<std::string>(*ScriptScope->FindObject("x"), ScriptScope));
-				}
-
-				// Simulate a complex, multithreaded ForLoop which Throws a runtime error during one of the evaluations
-				{
-					auto ScriptScope = std::make_shared<Scope>(global_scope);
-					ScriptScope->p_self = ScriptScope;
-
-					ScriptScope->AddObject("x", std::make_shared<Any>(fibers::containers::number<double>(0)));
-
-					{
-						auto ForScope = std::make_shared<Scope>(ScriptScope);
-						ForScope->p_self = ForScope;
-
-						try {
-							fibers::parallel::For(0, 100, [&](int i) {
-								auto LoopScope = std::make_shared<Scope>(ForScope);
-								LoopScope->p_self = LoopScope;
-
-								LoopScope->AddObject("i", std::make_shared<Any>((int)i));
-
-								if (auto i_obj = LoopScope->FindObject("i")) {
-									auto LengthObj = LoopScope->CallFunction("length", { // returns a size_t
-										LoopScope->CallFunction("string", { // returns a string
-											LoopScope->CallFunction("double", { // returns a double
-												*i_obj
-											})
-										})
-									});
-
-									// printf(std::string("Length of ") + Impl::Cast<std::string>(*i_obj, LoopScope) + " is " + Impl::Cast<std::string>(LengthObj, LoopScope));
-
-									if (Impl::Cast<int>(*LoopScope->FindObject("x"), LoopScope) > 800) {
-										throw(std::runtime_error("x cannot be greater than 800 for some random reason!"));
-									}
-
-									if (auto x_obj = LoopScope->FindObject("x")) {
-										LoopScope->CallFunction("+=", { *x_obj, LengthObj });
-
-										if (Impl::Cast<bool>(LoopScope->CallFunction(">", { *x_obj, 800 }), LoopScope)) {
-											throw(std::runtime_error("x cannot be greater than 800 for some random reason"));
-										}
-									}
-								}
-							});
-							EXPECT_EQ(true, false); // we should not get here.
-						}
-						catch (std::runtime_error const& e) {
-							printf(e.what());
-						}
-					}
-
-					// the variable x should still be valid, and should have a value greater than 800
-					printf(std::string("Final Answer: \t") + Impl::Cast<std::string>(*ScriptScope->FindObject("x"), ScriptScope));
-				}
-
-				// Simulate a simple string operation
-				{
-					// {
-					auto ScriptScope = std::make_shared<Scope>(global_scope); ScriptScope->p_self = ScriptScope;
-					// var x = "A";
-					ScriptScope->AddObject("x", std::make_shared<Any>(std::string("A")));
-					// var y = "B";
-					ScriptScope->AddObject("y", std::make_shared<Any>(std::string("B")));
-					// return x + y;
-					printf(Impl::Cast<std::string>(ScriptScope->CallFunction("+", { *ScriptScope->FindObject("x"), *ScriptScope->FindObject("y") }), ScriptScope));
-					// }
-				}
-
-				// Simulate a simple Units operation
-				{
-					// {
-					auto ScriptScope = std::make_shared<Scope>(global_scope); ScriptScope->p_self = ScriptScope;
-					// Using namespace "Units"
-					ScriptScope->AddUsing(ScriptScope->FindNamespace("Units"));
-					// var x = foot(int(10.4));
-					ScriptScope->AddObject("x", std::make_shared<Any>(ScriptScope->CallFunction("foot", { ScriptScope->CallFunction("int", { 10.4 }) })));
-					// var y = meter(100);
-					ScriptScope->AddObject("y", std::make_shared<Any>(ScriptScope->CallFunction("meter", { 100 })));
-					// var z = inch(12);
-					ScriptScope->AddObject("z", std::make_shared<Any>(ScriptScope->CallFunction("inch", { 12 })));
-					// return Units::gallon(x*y*z);
-					auto result = ScriptScope->CallFunction("gallon", { ScriptScope->CallFunction("*", { ScriptScope->CallFunction("*", { *ScriptScope->FindObject("x"), *ScriptScope->FindObject("y") }), *ScriptScope->FindObject("z") }) });
-					printf(Impl::Cast<std::string>(result, ScriptScope));
-					// }
-				}
-
 				// Simulate a for-loop that 1: creates a new Class, 2: adds functions to it, 3: adds a conversion for it to std::string, and 4: uses that conversion. 
 				{
 					auto ScriptScope = std::make_shared<Scope>(global_scope);
