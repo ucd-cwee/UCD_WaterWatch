@@ -804,6 +804,7 @@ int main() {
 				tree.AddConverter<int, char>();
 				tree.AddConverter<bool, int>();
 				tree.AddConverter<float, double>();
+				tree.AddConverter<fibers::synchronization::atomic_number<double>, double>();
 				tree.AddConverter<int, float>();
 
 				tree.AddConverter([](int i) -> std::string { return std::to_string(i); });
@@ -811,23 +812,29 @@ int main() {
 				tree.AddConverter([](double i) -> std::string { return std::to_string(i); });
 				tree.AddConverter([](char i) -> std::string { return std::to_string(i); });
 				tree.AddConverter([](bool i) -> std::string { return std::to_string(i); });
+				tree.AddConverter([](fibers::synchronization::atomic_number<double> const& i) -> std::string { return std::to_string(i.GetValue()); });
 
 				EXPECT_EQ(tree.Convert<double>(10.0f), 10.0);
 				EXPECT_EQ(tree.Convert<bool>(1), true);
-
-				
+								
 				if (auto f = tree.FindConverter<int, double>()) {
 					std::cout << f->convert(100).TypeName() << std::endl;
 				}
 
-
-
-
 				EXPECT_EQ(tree.Convert<double>(100), 100.0); // int -> float -> double
-				EXPECT_EQ(tree.Convert<double>(true), 1.0); // bool -> int -> float -> double
+				EXPECT_EQ(tree.Convert<double>(true), 1.0); // bool -> int -> float -> double, which utilizes multiple daisy-chain conversions in a row. 
 				EXPECT_EQ(tree.Convert<std::string>(10), "10");
 
+				printf(tree.Convert<std::string>(100.0));
 
+
+
+
+				EXPECT_EQ(tree.Convert<double>(fibers::synchronization::atomic_number<double>(100)), 100.0); // int -> float -> double
+				printf(tree.Convert<std::string>(fibers::synchronization::atomic_number<double>(100))); // int -> float -> double
+
+
+				// EXPECT_EQ(tree.Convert<std::string>(100.0), 100.0); // int -> float -> double
 
 			}
 		
