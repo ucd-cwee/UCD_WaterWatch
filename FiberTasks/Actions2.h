@@ -1,0 +1,2524 @@
+#pragma once
+
+#pragma region Precompiled STL Headers
+#pragma warning(disable : 4005)				// macro redefinition
+#pragma warning(disable : 4010)				// single-line comment contains line-continuation character
+#pragma warning(disable : 4018)				// singed / unsigned mismatch
+#pragma warning(disable : 4100)				// unreferenced formal parameter
+#pragma warning(disable : 4101)				// unreferenced local variable
+#pragma warning(disable : 4127)				// conditional expression is constant
+#pragma warning(disable : 4172)				// returning address of local variable or temporary
+#pragma warning(disable : 4189)				// local variable is initialized but not referenced
+#pragma warning(disable : 4238)				// nonstandard extension used: class rvalue used as lvalue
+#pragma warning(disable : 4239)				// conversion from 'T' to 'T&'
+#pragma warning(disable : 4244)				// conversion to smaller type, possible loss of data
+#pragma warning(disable : 4251)				// needs to have dll-interface
+#pragma warning(disable : 4267)				// conversion from 'size_t' to 'int', possible loss of data
+#pragma warning(disable : 4273)				// inconsistent DLL linkage
+#pragma warning(disable : 4297)				// function assumed not to throw but does
+#pragma warning(disable : 4302)				// truncation from 'void *' to 'int'
+#pragma warning(disable : 4305)				// truncating a literal from double to float
+#pragma warning(disable : 4311)				// pointer truncation from 'void *' to 'int'
+#pragma warning(disable : 4312)				// conversion from 'int' to 'void*' of greater size
+#pragma warning(disable : 4390)				// ';' empty controlled statement
+#pragma warning(disable : 4456)				// declaration hides previous local declaration
+#pragma warning(disable : 4458)				// hides class member
+#pragma warning(disable : 4459)				// hides global declaration
+#pragma warning(disable : 4499)				// 'static': an explicit specialization cannot have a storage class
+#pragma warning(disable : 4505)				// unreferenced local function has been removed
+#pragma warning(disable : 4595)				// non-member operator new or delete functions may not be declared inline
+#pragma warning(disable : 4701)				// potentially uninitialized local variable
+#pragma warning(disable : 4714)				// function marked as __forceinline not inlined
+#pragma warning(disable : 4715)				// not all control paths return a value
+#pragma warning(disable : 4996)				// unsafe string operations
+#pragma warning(disable : 6011)				// Dereferencing NULL ptr
+#pragma warning(disable : 6385)				// Reading invalid data from buf
+#pragma warning(disable : 26110)			// Caller failing to hold lock
+#pragma warning(disable : 26439)			// This kind of function may not throw
+#pragma warning(disable : 26450)			// Arithmetic overflow: using '<<'
+#pragma warning(disable : 26451)			// Arithmetic overflow: using '*' on a 4 byte variable and casting to 8 bytes
+#pragma warning(disable : 26495)			// uninitialized member variable type 6
+#pragma warning(disable : 26498)			// Mark function constexpr if compile-time evaluation is desired
+#pragma warning(disable : 26812)			// prefer enum class to enum
+#pragma warning(disable : 28182)			// Dereferencing NULL pointer
+#pragma warning(disable : 28251)			// Inconsistent annotation for 'new'
+#define NOMINMAX
+#define _CRT_FUNCTIONS_REQUIRED 1
+#define _SILENCE_CXX17_ITERATOR_BASE_CLASS_DEPRECATION_WARNING
+#include <ShlDisp.h>
+#include <mutex>
+#include <shared_mutex>
+#include <synchapi.h>
+#include <handleapi.h>
+#include <ppl.h>
+#include <concurrent_vector.h>
+#include <concurrent_unordered_map.h>
+#include <concurrent_queue.h>
+#include <concurrent_unordered_set.h>
+#include <boost/any.hpp>
+#pragma endregion
+#pragma region iterator_definition
+#ifdef SETUP_STL_ITERATOR
+#else
+#define SETUP_STL_ITERATOR(ParentClass, IterType, StateType) typedef std::ptrdiff_t difference_type;											\
+	typedef size_t size_type; typedef IterType value_type; typedef IterType* pointer; typedef const IterType* const_pointer;					\
+	typedef IterType& reference;																												\
+	typedef const IterType& const_reference;																									\
+	class iterator {					\
+	public: const ParentClass* ref;	mutable StateType state;			\
+		iterator() : ref(nullptr), state() {};																									\
+		iterator(const ParentClass* parent) : ref(parent), state() {};																			\
+		iterator& operator+=(difference_type n) { for (int i = 0; i < n; i++) state.next(ref); return *this; };									\
+		iterator& operator-=(difference_type n) { for (int i = 0; i < n; i++) state.prev(ref); return *this; };									\
+		difference_type operator-(iterator const& other) { return state.distance(other.state); };												\
+		iterator& operator-(difference_type dist) { for (int i = 0; i < dist; i++) state.prev(ref); return *this; };							\
+		iterator& operator--() { state.prev(ref); return *this; };																				\
+		iterator operator--(int) { iterator retval = *this; --(*this); return retval; };														\
+		iterator& operator+(difference_type dist) { for (int i = 0; i < dist; i++) state.next(ref); return *this; };							\
+		iterator& operator++() { state.next(ref); return *this; };																				\
+		iterator operator++(int) { iterator retval = *this; ++(*this); return retval; };														\
+		bool operator==(iterator const& other) const { return !(operator!=(other)); };															\
+		bool operator!=(iterator const& other) const { return (ref != other.ref || state.cmp(other.state)); };									\
+		reference operator*() { return const_cast<reference>(state.get(ref)); };																\
+		pointer operator->() { return const_cast<pointer>(&state.get(ref)); };																	\
+		const_reference operator*() const { return state.get(ref); };																			\
+		const_pointer operator->() const { return &state.get(ref); };																			\
+		iterator& begin() { state.begin(ref); return *this; };																					\
+		iterator& end() { state.end(ref); return *this; };																						\
+	};																													\
+	iterator begin() { return iterator(this).begin(); };																						\
+	iterator end() { return iterator(this).end(); };																							\
+	class const_iterator {	\
+	public: const ParentClass* ref;	mutable StateType state;																					\
+		const_iterator() : ref(nullptr), state() {};																							\
+		const_iterator(const ParentClass* parent) : ref(parent), state() {};																	\
+		const_iterator& operator+=(difference_type n) { for (int i = 0; i < n; i++) state.next(ref); return *this; };							\
+		const_iterator& operator-=(difference_type n) { for (int i = 0; i < n; i++) state.prev(ref); return *this; };							\
+		difference_type operator-(const_iterator const& other) { return state.distance(other.state); };											\
+		const_iterator& operator-(difference_type dist) { for (int i = 0; i < dist; i++) state.prev(ref); return *this; };						\
+		const_iterator& operator--() { state.prev(ref); return *this; };																		\
+		const_iterator operator--(int) { const_iterator retval = *this; --(*this); return retval; };											\
+		const_iterator& operator+(difference_type dist) { for (int i = 0; i < dist; i++) state.next(ref); return *this; };						\
+		const_iterator& operator++() { state.next(ref); return *this; };																		\
+		const_iterator operator++(int) { const_iterator retval = *this; ++(*this); return retval; };											\
+		bool operator==(const_iterator const& other) const { return !(operator!=(other)); };													\
+		bool operator!=(const_iterator const& other) const { return (ref != other.ref || state.cmp(other.state)); };							\
+		const_reference operator*() { return const_cast<reference>(state.get(ref)); };															\
+		const_pointer operator->() { return const_cast<pointer>(&state.get(ref)); };															\
+		const_reference operator*() const { return state.get(ref); };																			\
+		const_pointer operator->() const { return &state.get(ref); };																			\
+		const_iterator& begin() { state.begin(ref); return *this; };																			\
+		const_iterator& end() { state.end(ref); return *this; };																				\
+	};																												\
+	const_iterator cbegin() const { return const_iterator(this).begin(); };																		\
+	const_iterator cend() const { return const_iterator(this).end(); };																			\
+	const_iterator begin() const { return cbegin(); };																							\
+	const_iterator end() const { return cend(); };																								\
+	class reverse_iterator {			\
+	public: const ParentClass* ref;	mutable StateType state;																					\
+		reverse_iterator() : ref(nullptr), state() {};																							\
+		reverse_iterator(const ParentClass* parent) : ref(parent), state() {};																	\
+		reverse_iterator& operator+=(difference_type n) { for (int i = 0; i < n; i++) state.prev(ref); return *this; };							\
+		reverse_iterator& operator-=(difference_type n) { for (int i = 0; i < n; i++) state.next(ref); return *this; };							\
+		difference_type operator-(reverse_iterator const& other) { return state.distance(other.state); };										\
+		reverse_iterator& operator-(difference_type dist) { for (int i = 0; i < dist; i++) state.next(ref); return *this; };					\
+		reverse_iterator& operator--() { state.next(ref); return *this; };																		\
+		reverse_iterator operator--(int) { reverse_iterator retval = *this; --(*this); return retval; };										\
+		reverse_iterator& operator+(difference_type dist) { for (int i = 0; i < dist; i++) state.prev(ref); return *this; };					\
+		reverse_iterator& operator++() { state.prev(ref); return *this; };																		\
+		reverse_iterator operator++(int) { reverse_iterator retval = *this; ++(*this); return retval; };										\
+		bool operator==(reverse_iterator const& other) const { return !(operator!=(other)); };													\
+		bool operator!=(reverse_iterator const& other) const { return (ref != other.ref || state.cmp(other.state)); };							\
+		reference operator*() { return const_cast<reference>(state.get(ref)); };																\
+		pointer operator->() { return const_cast<pointer>(&state.get(ref)); };																	\
+		const_reference operator*() const { return state.get(ref); };																			\
+		const_pointer operator->() const { return &state.get(ref); };																			\
+		reverse_iterator& begin() { state.end(ref); state.prev(ref); return *this; };															\
+		reverse_iterator& end() { state.begin(ref); state.prev(ref); return *this; };															\
+	};																											\
+	reverse_iterator rbegin() { return reverse_iterator(this).begin(); };																		\
+	reverse_iterator rend() { return reverse_iterator(this).end(); };																			\
+	class const_reverse_iterator {	\
+	public: const ParentClass* ref;	mutable StateType state;																					\
+		const_reverse_iterator() : ref(nullptr), state() {};																					\
+		const_reverse_iterator(const ParentClass* parent) : ref(parent), state() {};															\
+		const_reverse_iterator& operator+=(difference_type n) { for (int i = 0; i < n; i++) state.prev(ref); return *this; };					\
+		const_reverse_iterator& operator-=(difference_type n) { for (int i = 0; i < n; i++) state.next(ref); return *this; };					\
+		difference_type operator-(const_reverse_iterator const& other) { return state.distance(other.state); };									\
+		const_reverse_iterator& operator-(difference_type dist) { for (int i = 0; i < dist; i++) state.next(ref); return *this; };				\
+		const_reverse_iterator& operator--() { state.next(ref); return *this; };																\
+		const_reverse_iterator operator--(int) { const_reverse_iterator retval = *this; --(*this); return retval; };							\
+		const_reverse_iterator& operator+(difference_type dist) { for (int i = 0; i < dist; i++) state.prev(ref); return *this; };				\
+		const_reverse_iterator& operator++() { state.prev(ref); return *this; };																\
+		const_reverse_iterator operator++(int) { const_reverse_iterator retval = *this; ++(*this); return retval; };							\
+		bool operator==(const_reverse_iterator const& other) const { return !(operator!=(other)); };											\
+		bool operator!=(const_reverse_iterator const& other) const { return (ref != other.ref || state.cmp(other.state)); };					\
+		const_reference operator*() { return const_cast<reference>(state.get(ref)); };															\
+		const_pointer operator->() { return const_cast<pointer>(&state.get(ref)); };															\
+		const_reference operator*() const { return state.get(ref); };																			\
+		const_pointer operator->() const { return &state.get(ref); };																			\
+		const_reverse_iterator& begin() { state.end(ref); state.prev(ref); return *this; };														\
+		const_reverse_iterator& end() { state.begin(ref); state.prev(ref); return *this; };														\
+	};																										\
+	const_reverse_iterator rbegin() const { return const_reverse_iterator(this).begin(); };														\
+	const_reverse_iterator rend() const { return const_reverse_iterator(this).end(); };															\
+	const_reverse_iterator crbegin() const { return rbegin(); };																				\
+	const_reverse_iterator crend() const { return rend(); };
+#endif
+#pragma endregion 
+#include <type_traits>
+#include <functional>
+#include <memory>
+#include <utility>
+#include <map>
+
+namespace GoodLang {
+	// Finally is a pure virtual base class, implemented by the templated FinallyImpl.
+	class Finally {
+	public:
+		virtual ~Finally() = default;
+	};
+	// FinallyImpl implements a Finally.
+	// The template parameter F is the function type to be called when the finally is destructed. F must have the signature void().
+
+	template <typename F>
+	class FinallyImpl : public Finally {
+	public:
+		inline FinallyImpl(const F& func_) : func(func_) {};
+		inline FinallyImpl(F&& func_) : func(std::move(func_)) {};
+		inline FinallyImpl(FinallyImpl<F>&& other) : func(std::move(other.func)) { other.valid = false; };
+		inline ~FinallyImpl() { if (valid) { func(); } };
+
+	private:
+		FinallyImpl(const FinallyImpl<F>& other) = delete;
+		FinallyImpl<F>& operator=(const FinallyImpl<F>& other) = delete;
+		FinallyImpl<F>& operator=(FinallyImpl<F>&&) = delete;
+		F func;
+		bool valid = true;
+	};
+
+	template <typename F> __forceinline [[nodiscard]] FinallyImpl<F> make_finally(F&& f) { return FinallyImpl<F>(std::forward<F>(f)); };
+	template <typename F> __forceinline [[nodiscard]] std::shared_ptr<Finally> make_shared_finally(F&& f) { return std::make_shared<FinallyImpl<F>>(std::forward<F>(f)); };
+
+#define FINALLY_CONCAT_(a, b) a##b
+#define FINALLY_CONCAT(a, b) FINALLY_CONCAT_(a, b)
+
+	// defer() is a macro to defer execution of a statement until the surrounding scope is closed and is typically used to perform cleanup logic once a function returns.
+	// . .
+	// Note: Unlike golang's defer(), the defer statement is executed when the surrounding *scope* is closed, not necessarily the function.
+	// . .
+	// Example usage:
+	// . .
+	// void sayHelloWorld() {
+	//		defer(printf("world\n"));
+	//      printf("hello ");
+	// }
+#define defer(x) decltype(auto) FINALLY_CONCAT(defer_, __LINE__) { make_finally([&] { x; }) }
+
+	namespace impl {
+		template<typename T> static const auto& TypeId() {
+			static auto typeIdOfT{ boost::typeindex::type_id<T>() };
+			return typeIdOfT.type_info();
+		};
+		using underlying_type_info = decltype(TypeId<void>());
+	};
+	namespace details {
+		template<typename T>
+		struct Bare_Type {
+			using type = typename std::remove_cv<typename std::remove_pointer<typename std::remove_reference<T>::type>::type>::type;
+		};
+
+		inline static void hash_combine(std::size_t& seed) { };
+		template <typename T, typename... Rest>
+		inline static void hash_combine(std::size_t& seed, T&& v, Rest &&... rest) {
+			std::hash<T> hasher{};
+			seed ^= hasher(std::forward<T>(v)) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+			hash_combine(seed, std::forward<Rest>(rest)...);
+		};
+		template <typename T, typename... Rest>
+		inline static void hash_combine(std::size_t& seed, T const& v, Rest const&... rest) {
+			std::hash<T> hasher{};
+			seed ^= hasher(v) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+			hash_combine(seed, rest...);
+		};
+
+	};
+
+	// Type_Info records the type of either built-in or scripted, runtime types
+	//class BuiltIn_Type_Info; class Scripted_Type_Info;
+	class Type_Info {
+	public:
+		//friend class BuiltIn_Type_Info;
+		//friend class Scripted_Type_Info;
+	protected:
+		virtual size_t GetHashImpl() const {
+			return impl::TypeId<void>().hash_code();
+		};
+		virtual void CacheHash() noexcept {
+			uniqueHash = GetHashImpl();
+			details::hash_combine(uniqueHash, (size_t)is_const(), (size_t)is_ref());
+		};
+
+	public:
+		size_t GetHash() const {
+			return uniqueHash;
+		};
+
+		Type_Info() noexcept
+			: m_flags((static_cast<unsigned int>(false) << is_const_flag) + (static_cast<unsigned int>(true) << is_void_flag) + (static_cast<unsigned int>(false) << is_ref_flag))
+		{};
+		Type_Info(bool t_is_const, bool t_is_void, bool t_is_ref) noexcept
+			: m_flags((static_cast<unsigned int>(t_is_const) << is_const_flag) + (static_cast<unsigned int>(t_is_void) << is_void_flag) + (static_cast<unsigned int>(t_is_ref) << is_ref_flag))
+		{};
+		Type_Info(Type_Info const&) = delete;
+		Type_Info(Type_Info&&) = delete;
+		Type_Info& operator=(Type_Info const&) = delete;
+		Type_Info& operator=(Type_Info&&) = delete;
+		virtual ~Type_Info() = default;
+
+		// Returns true if the types are similar enough to be casted
+		static bool CanCast(Type_Info const& from, Type_Info const& to) {
+			if (from.GetHashImpl() == to.GetHashImpl()) { // underlying matches
+				// anything can convert into const T&
+				if (to.is_const() && to.is_ref()) return true;
+
+				// const T cannot be cast to T
+				if (!to.is_const() && from.is_const()) return false;
+
+				// T cannot be cast to T&
+				if (!from.is_ref() && to.is_ref()) return false;
+
+				return true;
+			}
+			return false;
+		};
+		// Returns true if the types are similar enough to be casted
+		bool CanCast(Type_Info const& to) const {
+			return CanCast(*this, to);
+		};
+
+		//// Operators
+		friend bool operator==(const Type_Info& a, const Type_Info& b) noexcept {
+			return a.GetHash() == b.GetHash();
+		};
+		friend bool operator!=(const Type_Info& a, const Type_Info& b) noexcept {
+			return a.GetHash() != b.GetHash();
+		};
+		friend bool operator<(const Type_Info& a, const Type_Info& b) noexcept {
+			return a.GetHash() < b.GetHash();
+		};
+		friend bool operator<=(const Type_Info& a, const Type_Info& b) noexcept {
+			return a.GetHash() <= b.GetHash();
+		};
+		friend bool operator>(const Type_Info& a, const Type_Info& b) noexcept {
+			return a.GetHash() > b.GetHash();
+		};
+		friend bool operator>=(const Type_Info& a, const Type_Info& b) noexcept {
+			return a.GetHash() >= b.GetHash();
+		};
+
+		// Query
+		bool is_const() const noexcept { return (m_flags & (1 << is_const_flag)) != 0; };
+		bool is_void() const noexcept { return (m_flags & (1 << is_void_flag)) != 0; };
+		bool is_ref() const noexcept { return (m_flags & (1 << is_ref_flag)) != 0; };
+		virtual std::string name() const noexcept { return impl::TypeId<void>().name(); };
+		virtual std::weak_ptr<Type_Info> MakeBase() const { return std::weak_ptr<Type_Info>(); };
+		virtual std::weak_ptr<Type_Info> MakeConst() const { return std::weak_ptr<Type_Info>(); };
+		virtual std::weak_ptr<Type_Info> MakeRef() const { return std::weak_ptr<Type_Info>(); };
+		virtual std::weak_ptr<Type_Info> RemoveConst() const { return std::weak_ptr<Type_Info>(); };
+		virtual std::weak_ptr<Type_Info> RemoveRef() const { return std::weak_ptr<Type_Info>(); };
+
+		unsigned int m_flags;
+		size_t uniqueHash;
+	private: // flags
+		static const int is_const_flag = 0;
+		static const int is_void_flag = 1;
+		static const int is_ref_flag = 2;
+	};
+
+	template <typename T>
+	class BuiltIn_Type_Info final : public Type_Info {
+	protected:
+		virtual size_t GetHashImpl() const override {
+			return this->m_type_info.hash_code();
+		};
+
+	public:
+
+		BuiltIn_Type_Info() noexcept
+			: Type_Info(false, true, false)
+			, m_type_info(impl::TypeId<void>())
+		{
+			this->CacheHash();
+		};
+		BuiltIn_Type_Info(impl::underlying_type_info t_ti, bool t_is_const = false, bool t_is_ref = false) noexcept
+			: Type_Info(t_is_const, false, t_is_ref)
+			, m_type_info(t_ti)
+		{
+			this->CacheHash();
+		};
+		BuiltIn_Type_Info(BuiltIn_Type_Info const&) = delete;
+		BuiltIn_Type_Info(BuiltIn_Type_Info&&) = delete;
+		BuiltIn_Type_Info& operator=(BuiltIn_Type_Info const&) = delete;
+		BuiltIn_Type_Info& operator=(BuiltIn_Type_Info&&) = delete;
+		virtual ~BuiltIn_Type_Info() = default;
+
+		virtual std::string name() const noexcept override {
+			if (is_const()) {
+				if (is_ref()) {
+					return std::string("const ") + std::string(m_type_info.name()) + "&";
+				}
+				else {
+					return std::string("const ") + std::string(m_type_info.name());
+				}
+			}
+			else {
+				if (is_ref()) {
+					return std::string(m_type_info.name()) + "&";
+				}
+				else {
+					return m_type_info.name();
+				}
+			}
+		};
+		impl::underlying_type_info type_info() const noexcept {
+			return m_type_info;
+		};
+		virtual std::weak_ptr<Type_Info> MakeBase() const { 
+			static auto out{ std::make_shared<BuiltIn_Type_Info<std::remove_const_t<T>>>(
+				impl::TypeId<std::remove_const_t<T>>(),
+				false,
+				false
+			) };
+			return std::dynamic_pointer_cast<Type_Info>(out);
+		};
+		virtual std::weak_ptr<Type_Info> MakeConst() const override {
+			static auto out{ std::make_shared<BuiltIn_Type_Info<std::add_const_t<T>>>(
+				impl::TypeId<std::add_const_t<T>>(),
+				true,
+				this->is_ref()
+			) };
+			return std::dynamic_pointer_cast<Type_Info>(out);
+		};
+		virtual std::weak_ptr<Type_Info> MakeRef() const override {
+			static auto out{ std::make_shared<BuiltIn_Type_Info<std::add_lvalue_reference_t<T>>>(
+				impl::TypeId<std::add_lvalue_reference_t<T>>(),
+				this->is_const(),
+				true
+			) };
+			return std::dynamic_pointer_cast<Type_Info>(out);
+		};
+		virtual std::weak_ptr<Type_Info> RemoveConst() const override {
+			static auto out{ std::make_shared<BuiltIn_Type_Info<std::remove_const_t<T>>>(
+				impl::TypeId<std::remove_const_t<T>>(),
+				false,
+				this->is_ref()
+			) };
+			return std::dynamic_pointer_cast<Type_Info>(out);
+		};
+		virtual std::weak_ptr<Type_Info> RemoveRef() const override {
+			static auto out{ std::make_shared<BuiltIn_Type_Info<std::remove_reference_t<T>>>(
+				impl::TypeId<std::remove_reference_t<T>>(),
+				this->is_const(),
+				false
+			) };
+			return std::dynamic_pointer_cast<Type_Info>(out);
+		};
+
+	private:
+		impl::underlying_type_info m_type_info;
+
+	};
+
+	class Scripted_Type_Info final : public Type_Info {
+	protected:
+		virtual size_t GetHashImpl() const override {
+			return this->m_uniqueHash;
+		};
+
+	public:
+		Scripted_Type_Info() noexcept
+			: Type_Info(false, true, false)
+			, m_full_name("")
+			, m_qualified_namespace("")
+			, m_name("")
+			, m_uniqueHash(impl::TypeId<void>().hash_code())
+		{
+			this->CacheHash();
+		};
+		Scripted_Type_Info(const std::string& t_namespace, const std::string& t_name, bool t_is_const = false, bool t_is_ref = false) noexcept
+			: Type_Info(t_is_const, false, t_is_ref)
+			, m_full_name(t_namespace + "::" + t_name)
+			, m_qualified_namespace(t_namespace)
+			, m_name(t_name)
+			, m_uniqueHash(std::hash<std::string>()(t_namespace + "::" + t_name))
+		{
+			this->CacheHash();
+		};
+		Scripted_Type_Info(Scripted_Type_Info const&) = delete;
+		Scripted_Type_Info(Scripted_Type_Info&&) = delete;
+		Scripted_Type_Info& operator=(Scripted_Type_Info const&) = delete;
+		Scripted_Type_Info& operator=(Scripted_Type_Info&&) = delete;
+		virtual ~Scripted_Type_Info() = default;
+
+		virtual std::string name() const noexcept override {
+			if (is_const()) {
+				if (is_ref()) {
+					return std::string("const ") + m_name + "&";
+				}
+				else {
+					return std::string("const ") + m_name;
+				}
+			}
+			else {
+				if (is_ref()) {
+					return m_name + "&";
+				}
+				else {
+					return m_name;
+				}
+			}
+
+			return m_full_name;
+		};
+		void SetSelf(std::shared_ptr<Scripted_Type_Info>& t_self) {
+			m_self = t_self;
+		};
+		virtual std::weak_ptr<Type_Info> MakeBase() const {
+			return MakeDuplicate(false, false);
+		};
+		virtual std::weak_ptr<Type_Info> MakeConst() const override {
+			return MakeDuplicate(true, is_ref());
+		};
+		virtual std::weak_ptr<Type_Info> MakeRef() const override {
+			return MakeDuplicate(is_const(), true);
+		};
+		virtual std::weak_ptr<Type_Info> RemoveConst() const override {
+			return MakeDuplicate(false, is_ref());
+		};
+		virtual std::weak_ptr<Type_Info> RemoveRef() const override {
+			return MakeDuplicate(is_const(), false);
+		};
+
+	protected:
+		std::string m_full_name; // namespace::name
+		std::string m_qualified_namespace; // namespace
+		std::string m_name; // name
+		size_t m_uniqueHash; // std::hash<std::string>()(m_full_name)
+		
+		std::weak_ptr<Scripted_Type_Info> m_self;
+		std::weak_ptr<Scripted_Type_Info> m_parent;
+		mutable std::shared_mutex m_children_mut;
+		mutable std::unordered_map<size_t, std::shared_ptr<Scripted_Type_Info>> m_children;
+		std::weak_ptr<Type_Info> MakeDuplicate(bool targetConst, bool targetRef) const {
+			size_t targetHash = this->GetHashImpl();
+			details::hash_combine(targetHash, (size_t)targetConst, (size_t)targetRef);
+
+			if (this->GetHash() == targetHash) {
+				return m_self;
+			}
+			else if (auto parentPtr = m_parent.lock()) {
+				return parentPtr->MakeConst();
+			}
+			else {
+				if (1) {
+					auto locked{ std::shared_lock(m_children_mut) };
+					auto p = m_children.find(targetHash);
+					if (p != m_children.end()) {
+						return std::dynamic_pointer_cast<Type_Info>(p->second);
+					}
+				}
+
+				if (1) {
+					auto locked{ std::unique_lock(m_children_mut) };
+					auto p = m_children.find(targetHash);
+					if (p != m_children.end()) {
+						return std::dynamic_pointer_cast<Type_Info>(p->second);
+					}
+					else {
+						auto out = std::make_shared<Scripted_Type_Info>(m_qualified_namespace, m_name, targetConst, targetRef);
+						out->SetSelf(out);
+						out->m_parent = this->m_self;
+
+						this->m_children.insert({ targetHash, out });
+						return std::dynamic_pointer_cast<Type_Info>(out);
+					}
+				}
+			}
+		};
+
+	};
+
+};
+
+namespace std {
+	template <> struct hash<GoodLang::Type_Info> {
+		std::size_t operator()(const GoodLang::Type_Info& k) const {
+			return k.GetHash();
+		};
+	};
+	template <> struct hash<std::shared_ptr<GoodLang::Type_Info>> {
+		std::size_t operator()(const std::shared_ptr<GoodLang::Type_Info>& k) const {
+			if (k) {
+				return k->GetHash();
+			}
+			else {
+				return GoodLang::impl::TypeId<void>().hash_code();
+			}
+		};
+	};
+	template <> struct hash<std::weak_ptr<GoodLang::Type_Info>> {
+		std::size_t operator()(const std::weak_ptr<GoodLang::Type_Info>& k) const {
+			if (auto p = k.lock()) {
+				return p->GetHash();
+			}
+			else {
+				return GoodLang::impl::TypeId<void>().hash_code();
+			}
+		};
+	};
+
+};
+
+namespace GoodLang {
+	template <typename T> auto& GetHash() {
+		static auto hasher{ std::hash<typename details::Bare_Type<T>::type>{} };
+		return hasher;
+	};
+	template <typename T> size_t GetHash(const T& a) {
+		return GetHash<T>()(a);
+	};
+};
+
+namespace std {
+	template <> struct less<GoodLang::Type_Info> {
+		std::size_t operator()(const GoodLang::Type_Info& lhs, const GoodLang::Type_Info& rhs) const {
+			return GoodLang::GetHash(lhs) < GoodLang::GetHash(rhs);
+		};
+	};
+	template <> struct less<std::shared_ptr<GoodLang::Type_Info>> {
+		std::size_t operator()(const std::shared_ptr<GoodLang::Type_Info>& lhs, const std::shared_ptr<GoodLang::Type_Info>& rhs) const {
+			return GoodLang::GetHash(lhs) < GoodLang::GetHash(rhs);
+		};
+	};
+	template <> struct less<std::weak_ptr<GoodLang::Type_Info>> {
+		std::size_t operator()(const std::weak_ptr<GoodLang::Type_Info>& lhs, const std::weak_ptr<GoodLang::Type_Info>& rhs) const {
+			return GoodLang::GetHash(lhs) < GoodLang::GetHash(rhs);
+		};
+	};
+
+	template <> struct greater<GoodLang::Type_Info> {
+		std::size_t operator()(const GoodLang::Type_Info& lhs, const GoodLang::Type_Info& rhs) const {
+			return GoodLang::GetHash(lhs) > GoodLang::GetHash(rhs);
+		};
+	};
+	template <> struct greater<std::shared_ptr<GoodLang::Type_Info>> {
+		std::size_t operator()(const std::shared_ptr<GoodLang::Type_Info>& lhs, const std::shared_ptr<GoodLang::Type_Info>& rhs) const {
+			return GoodLang::GetHash(lhs) > GoodLang::GetHash(rhs);
+		};
+	};
+	template <> struct greater<std::weak_ptr<GoodLang::Type_Info>> {
+		std::size_t operator()(const std::weak_ptr<GoodLang::Type_Info>& lhs, const std::weak_ptr<GoodLang::Type_Info>& rhs) const {
+			return GoodLang::GetHash(lhs) > GoodLang::GetHash(rhs);
+		};
+	};
+
+	template <> struct equal_to<GoodLang::Type_Info> {
+		std::size_t operator()(const GoodLang::Type_Info& lhs, const GoodLang::Type_Info& rhs) const {
+			return GoodLang::GetHash(lhs) == GoodLang::GetHash(rhs);
+		};
+	};
+	template <> struct equal_to<std::shared_ptr<GoodLang::Type_Info>> {
+		std::size_t operator()(const std::shared_ptr<GoodLang::Type_Info>& lhs, const std::shared_ptr<GoodLang::Type_Info>& rhs) const {
+			return GoodLang::GetHash(lhs) == GoodLang::GetHash(rhs);
+		};
+	};
+	template <> struct equal_to<std::weak_ptr<GoodLang::Type_Info>> {
+		std::size_t operator()(const std::weak_ptr<GoodLang::Type_Info>& lhs, const std::weak_ptr<GoodLang::Type_Info>& rhs) const {
+			return GoodLang::GetHash(lhs) == GoodLang::GetHash(rhs);
+		};
+	};
+
+
+};
+
+namespace GoodLang {
+
+	namespace details {
+		/// Helper used to create a Type_Info object
+		template<typename T>
+		struct Get_Type_Info {
+			static std::shared_ptr<BuiltIn_Type_Info<T>> get() noexcept {
+				return std::make_shared<BuiltIn_Type_Info<T>>(
+					impl::TypeId<T>(),
+					std::is_const<typename std::remove_pointer<typename std::remove_reference<T>::type>::type>::value,
+					std::is_reference<typename std::remove_pointer<T>::type>::value
+					);
+			}
+		};
+
+		template<typename T> struct Get_Type_Info<std::shared_ptr<T>> : Get_Type_Info<T> {};
+
+		template<typename T> struct Get_Type_Info<std::shared_ptr<T>&> : Get_Type_Info<std::shared_ptr<T>> {};
+
+		template<typename T> struct Get_Type_Info<const std::shared_ptr<T>&> : Get_Type_Info<T> {};
+	} // namespace detail
+
+
+	/// \brief Creates a Type_Info object representing the templated type
+	/// \tparam T Type of object to get a Type_Info for
+	/// \return Type_Info for T
+	///
+	/// \b Example:
+	/// \code
+	/// chaiscript::Type_Info ti = chaiscript::user_type<int>();
+	/// \endcode
+	template<typename T> std::weak_ptr<Type_Info> user_type_shared() noexcept {
+		static std::shared_ptr<Type_Info> out{ std::dynamic_pointer_cast<Type_Info>(details::Get_Type_Info<T>::get()) };
+		return out;
+	};
+
+	/// \brief Creates a Type_Info object representing the templated type
+	/// \tparam T Type of object to get a Type_Info for
+	/// \return Type_Info for T
+	///
+	/// \b Example:
+	/// \code
+	/// chaiscript::Type_Info ti = chaiscript::user_type<int>();
+	/// \endcode
+	template<typename T> const Type_Info& user_type() noexcept {
+		static std::shared_ptr<Type_Info> out{ user_type_shared<T>().lock() };
+		static const Type_Info& toReturn{ *out };
+		return toReturn;
+	};
+
+	/// \brief Creates a Type_Info object representing the type passed in
+	/// \tparam T Type of object to get a Type_Info for, derived from the passed in parameter
+	/// \return Type_Info for T
+	///
+	/// \b Example:
+	/// \code
+	/// int i;
+	/// chaiscript::Type_Info ti = chaiscript::user_type(i);
+	/// \endcode
+	template<typename T> const Type_Info& user_type(const T& /*t*/) noexcept {
+		return user_type<T>();
+	};
+
+
+
+};
+
+__forceinline bool operator==(std::weak_ptr<GoodLang::Type_Info> const& a, std::weak_ptr<GoodLang::Type_Info> const& b) {
+	return GetHash(a) == GetHash(b);
+};
+__forceinline bool operator!=(std::weak_ptr<GoodLang::Type_Info> const& a, std::weak_ptr<GoodLang::Type_Info> const& b) {
+	return !operator==(a, b);
+};
+__forceinline bool operator==(std::weak_ptr<GoodLang::Type_Info> const& a, GoodLang::Type_Info const& b) {
+	return GetHash(a) == GetHash(b);
+};
+__forceinline bool operator!=(std::weak_ptr<GoodLang::Type_Info> const& a, GoodLang::Type_Info const& b) {
+	return !operator==(a, b);
+};
+__forceinline bool operator==(GoodLang::Type_Info const& b, std::weak_ptr<GoodLang::Type_Info> const& a) {
+	return GetHash(a) == GetHash(b);
+};
+__forceinline bool operator!=(GoodLang::Type_Info const& b, std::weak_ptr<GoodLang::Type_Info> const& a) {
+	return !operator==(a, b);
+};
+
+namespace GoodLang {
+	namespace exception {
+		/// \brief Thrown in the event that an Any cannot be cast to the desired type
+		/// It is used internally during function dispatch.
+		class bad_any_cast : public std::bad_cast {
+		public:
+			/// \brief Description of what error occurred
+			const char* what() const noexcept override { return exc.c_str(); }
+
+			bad_any_cast() :
+				bad_cast(std::bad_cast::__construct_from_string_literal("Bad Any Cast")),
+				from(user_type<void>()),
+				to(user_type<void>()),
+				exc("Bad Any Cast")
+			{};
+			bad_any_cast(GoodLang::Type_Info const& from_m, GoodLang::Type_Info const& to_m) :
+				bad_cast(std::bad_cast::__construct_from_string_literal((std::string("Bad Any Cast From \"") + NameFromType(from_m) + "\" To \"" + NameFromType(to_m) + "\"").c_str())),
+				from(from_m),
+				to(to_m),
+				exc(std::string("Bad Any Cast From \"") + NameFromType(from_m) + "\" To \"" + NameFromType(to_m) + "\"")
+			{};
+			bad_any_cast(std::weak_ptr<GoodLang::Type_Info> from_m, std::weak_ptr<GoodLang::Type_Info> to_m) :
+				bad_cast(std::bad_cast::__construct_from_string_literal((std::string("Bad Any Cast From \"") + NameFromType(from_m) + "\" To \"" + NameFromType(to_m) + "\"").c_str())),
+				from(TypeFromPtr(from_m)),
+				to(TypeFromPtr(to_m)),
+				exc(std::string("Bad Any Cast From \"") + NameFromType(from_m) + "\" To \"" + NameFromType(to_m) + "\"")
+			{};
+		private:
+			std::string exc;
+			GoodLang::Type_Info const& from;
+			GoodLang::Type_Info const& to;
+
+			static std::string NameFromType(GoodLang::Type_Info const& x) { return x.name(); };
+			static std::string NameFromType(std::weak_ptr<GoodLang::Type_Info> const& x) { if (auto y = x.lock()) return y->name(); else return user_type<void>().name(); };
+			static GoodLang::Type_Info const& TypeFromPtr(std::weak_ptr<GoodLang::Type_Info> const& x) { if (auto y = x.lock()) return *y; else return user_type<void>(); };
+		};
+
+		/**
+		* Exception thrown when there is a mismatch in number of
+		* parameters during Proxy_Function execution
+		*/
+		struct arity_error : std::range_error {
+			arity_error(int t_got, int t_expected)
+				: std::range_error(
+					t_expected >= 0 ?
+					Units::printf("Arity mismatch: function requires %i parameters, but only %i were provided", t_expected, t_got)
+					: std::string("Function was not found")
+				)
+				, got(t_got)
+				, expected(t_expected) {
+			}
+
+			arity_error(const arity_error&) = default;
+
+			~arity_error() noexcept override = default;
+
+			int got;
+			int expected;
+		};
+
+		/**
+		* Exception thrown when there is a mismatch in number of
+		* parameters during Proxy_Function execution
+		*/
+		struct not_found_error : std::runtime_error {
+			not_found_error(const std::string& triedToFind)
+				: std::runtime_error(
+					Units::printf("Could not find \"%s\"", triedToFind.c_str())
+				), m_triedToFind(triedToFind)
+			{}
+			not_found_error(const not_found_error&) = default;
+			~not_found_error() noexcept override = default;
+
+			std::string m_triedToFind;
+		};
+	}; // namespace exception
+
+	namespace details {
+		template<class T> struct get_type { using type = T; };
+		template<class T> struct get_type<std::shared_ptr<T>> { using type = typename get_type<T>::type; };
+		template<class T> struct get_type<std::shared_ptr<T>&> { using type = typename get_type<T>::type; };
+		template<class T> struct get_type<std::shared_ptr<T>*> { using type = typename get_type<T>::type; };
+		template<class T> struct get_type<const std::shared_ptr<T>> { using type = typename get_type<T>::type; };
+		template<class T> struct get_type<const std::shared_ptr<T>&> { using type = typename get_type<T>::type; };
+		template<class T> struct get_type<const std::shared_ptr<T>*> { using type = typename get_type<T>::type; };
+	};
+
+	class AnyData {
+	public:
+		AnyData() noexcept = default;
+		AnyData(AnyData const&) = default;
+		AnyData(AnyData&&) = default;
+		AnyData& operator=(AnyData const&) = default;
+		AnyData& operator=(AnyData&&) = default;
+		virtual ~AnyData() = default;
+
+	public:
+		// user must set the ptr to the AnyData object, so that it is aware of itself
+		void SetSelf(std::shared_ptr< AnyData>& t_self) {
+			m_self = t_self;
+			typeHash = GetHash(GetType());
+		};
+
+	public:
+		size_t GetTypeHash() const { return typeHash; };
+		virtual bool CanCast(Type_Info const& to_type) const { return false; };
+		virtual Type_Info const& GetType() const { return user_type<void>(); };
+		virtual std::weak_ptr<Type_Info> const& GetTypeShared() const { return user_type_shared<void>(); };
+		virtual void* ptr() const { return nullptr; };
+		virtual std::shared_ptr<void> shared_ptr() const { return nullptr; };
+		template<typename ToType> std::shared_ptr<ToType> cast_shared() const {
+			Type_Info const& to_type{ user_type<ToType>() };
+
+			if (CanCast(to_type)) {
+				return std::static_pointer_cast<ToType>(shared_ptr());
+			}
+			else {
+				return nullptr;
+			}
+		};
+		template<typename ToType> ToType* cast() const {
+			Type_Info const& to_type{ user_type<ToType>() };
+
+			if (CanCast(to_type)) {
+				return static_cast<ToType*>(ptr());
+			}
+			else {
+				return nullptr;
+			}
+		};
+		void ThrowIfNot(Type_Info const& type) const {
+			if (!CanCast(type)) {
+				throw exception::bad_any_cast(GetType(), type);
+			}
+		};
+		template<typename T> static std::shared_ptr<void> get_data(const std::shared_ptr<T>& data) {
+			if constexpr (std::is_const< T >::value) {
+				return std::const_pointer_cast<void>(std::static_pointer_cast<const void>(data));
+			}
+			else {
+				return std::static_pointer_cast<void>(data);
+			}
+		};
+		template<typename T> static std::shared_ptr<void> get_data(std::shared_ptr<T>&& data) {
+			if constexpr (std::is_const< T >::value) {
+				return std::const_pointer_cast<void>(std::static_pointer_cast<const void>(std::forward<std::shared_ptr<T>>(data)));
+			}
+			else {
+				return std::static_pointer_cast<void>(std::forward<std::shared_ptr<T>>(data));
+			}
+			// return std::static_pointer_cast<void>(std::const_pointer_cast<std::remove_const_t<T>>(std::forward<std::shared_ptr<T>>(data)));
+		};
+
+	protected:
+		std::weak_ptr< AnyData> m_self;
+		size_t typeHash;
+	};
+
+	template <typename T>
+	class AnyData_Instanced final : public AnyData {
+	public:
+		AnyData_Instanced() noexcept = default;
+		AnyData_Instanced(T t_obj) noexcept
+			: AnyData()
+			, m_obj{ std::move(t_obj) }
+		{ };
+		AnyData_Instanced(AnyData_Instanced const&) = default;
+		AnyData_Instanced(AnyData_Instanced&&) = default;
+		AnyData_Instanced& operator=(AnyData_Instanced const&) = default;
+		AnyData_Instanced& operator=(AnyData_Instanced&&) = default;
+		virtual ~AnyData_Instanced() = default;
+
+		virtual bool CanCast(Type_Info const& to_type) const override { return GetType().CanCast(to_type); };
+		virtual Type_Info const& GetType() const override { return user_type<T>(); };
+		virtual std::weak_ptr<Type_Info> const& GetTypeShared() const override { return user_type_shared<T>(); };
+		virtual void* ptr() const override { return static_cast<void*>(&const_cast<std::remove_const_t<T>&>(m_obj)); };
+		virtual std::shared_ptr<void> shared_ptr() const override {
+			if (auto p = m_self.lock()) {
+				auto P = std::shared_ptr<T>(&const_cast<std::remove_const_t<T>&>(m_obj), [PTR = p](T* toDelete) { (void)PTR->ptr(); /* ThrowIfNot(user_type<T>());*/ });
+				return std::static_pointer_cast<void>(std::const_pointer_cast<std::remove_const_t<T>>(P));
+			}
+			return nullptr;
+		};
+
+	private:
+		T m_obj;
+
+	};
+
+	template <typename T>
+	class AnyData_Shared final : public AnyData {
+	public:
+		AnyData_Shared() noexcept = default;
+		AnyData_Shared(std::shared_ptr<T> const& t_obj) noexcept
+			: AnyData()
+			, m_obj(t_obj)
+		{ };
+		AnyData_Shared(std::shared_ptr<T>&& t_obj) noexcept
+			: AnyData()
+			, m_obj(std::forward<std::shared_ptr<T>>(t_obj))
+		{ };
+		AnyData_Shared(AnyData_Shared const&) = default;
+		AnyData_Shared(AnyData_Shared&&) = default;
+		AnyData_Shared& operator=(AnyData_Shared const&) = default;
+		AnyData_Shared& operator=(AnyData_Shared&&) = default;
+		virtual ~AnyData_Shared() = default;
+
+		virtual bool CanCast(Type_Info const& to_type) const override { return GetType().CanCast(to_type); };
+		virtual Type_Info const& GetType() const override { return user_type<T>(); };
+		virtual std::weak_ptr<Type_Info> const& GetTypeShared() const override { return user_type_shared<T>(); };
+		virtual void* ptr() const override { return m_obj.get(); };
+		virtual std::shared_ptr<void> shared_ptr() const override { return std::static_pointer_cast<void>(m_obj); };
+
+	private:
+		std::shared_ptr<T> m_obj;
+
+	};
+
+	namespace details {
+		class AnyAutoCast; /* forward decl */
+	};
+	class Any;
+	// serves as an instance of a customizable class
+	class DynamicObject {
+	public:
+		DynamicObject() = default;
+		DynamicObject(std::weak_ptr< Type_Info > const& type)
+			: m_classType(type)
+			, m_objects()
+		{};
+		DynamicObject(DynamicObject const&) = default;
+		DynamicObject(DynamicObject&&) = default;
+		DynamicObject& operator=(DynamicObject const&) = default;
+		DynamicObject& operator=(DynamicObject&&) = default;
+		~DynamicObject() = default;
+
+		std::weak_ptr< Type_Info >
+			m_classType;
+		concurrency::concurrent_unordered_map<std::string, std::shared_ptr<Any>>
+			m_objects;
+	};
+
+	/*! Generic container that enables the containment and sharing of any data type to/from std::shared_ptrs */
+	class Any {
+	public:
+		struct Object_Data {
+			template <template<class> class H, class S, typename = std::enable_if_t<std::is_same_v<H<S>, std::shared_ptr<S>>>> static decltype(auto) get(const H<S>* obj) { return get(*obj); };
+			template <template<class> class H, class S, typename = std::enable_if_t<std::is_same_v<H<S>, std::shared_ptr<S>>>> static decltype(auto) get(H<S> obj) {
+				if (obj) {
+					if constexpr (std::is_same<Any, S>::value) {
+						return obj->container;
+					}
+					else {
+						std::shared_ptr<AnyData> instanced_any = std::dynamic_pointer_cast<GoodLang::AnyData>(std::make_shared<GoodLang::AnyData_Shared<S>>(std::move(obj)));
+						instanced_any->SetSelf(instanced_any);
+						return instanced_any;
+					}
+				}
+				else {
+					return std::shared_ptr<AnyData>();
+				}
+			};
+			template<typename T, typename = std::enable_if_t<!std::is_same_v<GoodLang::details::AnyAutoCast, T>>> static decltype(auto) get(T* t) { return get(std::make_shared<T>(t)); };
+			template<typename T, typename = std::enable_if_t<!std::is_same_v<GoodLang::details::AnyAutoCast, T>>> static decltype(auto) get(const T* t) { return get(*t); };
+			template<typename T, typename = std::enable_if_t<!std::is_same_v<GoodLang::details::AnyAutoCast, T>>> static decltype(auto) get(const T& obj) {
+				return get((std::decay_t<T>)obj);
+			};
+			template<typename T, typename = std::enable_if_t<!std::is_same_v<GoodLang::details::AnyAutoCast, T>>> static decltype(auto) get(T&& obj) {
+				std::shared_ptr<AnyData> instanced_any = std::dynamic_pointer_cast<GoodLang::AnyData>(std::make_shared<GoodLang::AnyData_Instanced<std::decay_t<T>>>(std::forward<T>(obj)));
+				instanced_any->SetSelf(instanced_any);
+				return instanced_any;
+			};
+
+			static decltype(auto) get(const GoodLang::details::AnyAutoCast& obj);
+			static decltype(auto) get(const GoodLang::details::AnyAutoCast* t);
+		};
+		template<typename ValueType> static std::shared_ptr<AnyData> CreateContainer(const ValueType& r) { return Object_Data::get(r); };
+		template<typename ValueType> static std::shared_ptr<AnyData> CreateContainer(ValueType&& r) { return Object_Data::get(std::forward<ValueType>(r)); };
+
+	public: /*! Init */
+		Any() noexcept
+			: container(nullptr)
+			, mut()
+		{};
+		Any(std::nullptr_t) noexcept
+			: container(nullptr)
+			, mut()
+		{};
+		Any(const Any& rhs) noexcept
+			: container()
+			, mut()
+		{
+			auto locked2{ std::shared_lock(rhs.mut) };
+			container = rhs.container;
+		};
+		Any(Any&& rhs) noexcept
+			: container(std::move(rhs.container))
+			, mut()
+		{};
+
+	public: /*! Init w/ DATA ASSIGNMENT */
+		template<typename ValueType, typename = std::enable_if_t<!std::is_same_v<Any, std::decay_t<ValueType>>>> Any(const ValueType& value) noexcept
+			: container(CreateContainer(value))
+			, mut()
+		{};
+		template<typename ValueType, typename = std::enable_if_t<!std::is_same_v<Any, std::decay_t<ValueType>>>> Any(const ValueType* value) noexcept
+			: container(CreateContainer(value))
+			, mut()
+		{};
+		template<typename ValueType, typename = std::enable_if_t<!std::is_same_v<Any, std::decay_t<ValueType>>>> Any(ValueType* value) noexcept
+			: container(CreateContainer(value))
+			, mut()
+		{};
+		template<typename ValueType, typename = std::enable_if_t<!std::is_same_v<Any, std::decay_t<ValueType>>>> Any(ValueType&& value) noexcept
+			: container(CreateContainer(std::forward<ValueType>(value)))
+			, mut()
+		{};
+
+	public: /*! Destroy */
+		~Any() = default; // { Clear(); };
+
+	public: /*! Data Assignment AFTER INIT */
+		Any& swap(Any& rhs) noexcept {
+			if (this == &rhs) { return *this; }
+
+			auto locked{ std::unique_lock(mut) };
+			auto locked2{ std::unique_lock(rhs.mut) };
+
+			container.swap(rhs.container);
+			return *this;
+		};
+		Any& operator=(const Any& rhs) noexcept {
+			if (this == &rhs) { return *this; }
+
+			auto locked{ std::unique_lock(mut) };
+			auto locked2{ std::shared_lock(rhs.mut) };
+
+			container = rhs.container;
+			return *this;
+		};
+		Any& operator=(Any&& rhs) noexcept {
+			auto locked{ std::unique_lock(mut) };
+			auto locked2{ std::unique_lock(rhs.mut) };
+
+			container.swap(rhs.container);
+			return *this;
+		};
+		Any& operator=(std::nullptr_t) noexcept { Clear(); return *this; };
+
+		template <class ValueType, typename = std::enable_if_t<!std::is_same_v<Any, std::decay_t<ValueType>>>> Any& operator=(const ValueType& rhs) noexcept {
+			auto newContainer = CreateContainer(rhs);
+			mut.lock();
+			container.swap(newContainer);
+			mut.unlock();
+			return *this;
+		};
+		template <class ValueType, typename = std::enable_if_t<!std::is_same_v<Any, std::decay_t<ValueType>>>> Any& operator=(const ValueType* rhs) noexcept {
+			auto newContainer = CreateContainer(rhs);
+			mut.lock();
+			container.swap(newContainer);
+			mut.unlock();
+			return *this;
+		};
+		template <class ValueType, typename = std::enable_if_t<!std::is_same_v<Any, std::decay_t<ValueType>>>> Any& operator=(ValueType* rhs) noexcept {
+			auto newContainer = CreateContainer(rhs);
+			mut.lock();
+			container.swap(newContainer);
+			mut.unlock();
+			return *this;
+		};
+		template <class ValueType, typename = std::enable_if_t<!std::is_same_v<Any, std::decay_t<ValueType>>>> Any& operator=(ValueType&& rhs) noexcept {
+			auto newContainer = CreateContainer(std::forward<ValueType>(rhs));			
+			mut.lock();
+			container.swap(newContainer);
+			mut.unlock();			
+			return *this;
+		};
+
+	public:
+		/*! Checks if the Any has been assigned something */
+		bool IsEmpty() const noexcept {
+			auto locked{ std::shared_lock(mut) };
+			return (bool)container;
+		};
+
+		/*! Empties the Any and frees the memory. */
+		void Clear() noexcept {
+			auto locked{ std::unique_lock(mut) };
+			container = nullptr;
+		};
+
+		template <typename ValueT> static const char* TypeNameOf() { return TypeOf<ValueT>().name(); };
+		template <typename ValueT> static Type_Info TypeOf() { return user_type<ValueT>(); };
+
+		std::string TypeName() const noexcept {
+			if (auto p = Type().lock()) {
+				return p->name();
+			}
+			else {
+				return user_type<void>().name();
+			}
+		};
+		std::weak_ptr<Type_Info> Type() const noexcept {
+			static auto DynamicTypeHash{ GetHash(user_type<DynamicObject>()) };
+			auto locked{ std::shared_lock(mut) };
+			if (std::shared_ptr<AnyData>& m = container) {
+				if (m->GetTypeHash() == DynamicTypeHash) {
+					if (auto p2 = m->cast< DynamicObject>()) {
+						return p2->m_classType;
+					}
+				}
+				return m->GetTypeShared();
+			}
+			else {
+				return user_type_shared<void>();
+			}
+		};
+		size_t TypeHash() const noexcept {
+			static auto DynamicTypeHash{ GetHash(user_type<DynamicObject>()) };
+
+			auto locked{ std::shared_lock(mut) };
+			if (std::shared_ptr<AnyData>& m = container) {
+				if (m->GetTypeHash() == DynamicTypeHash) {
+					if (auto p2 = m->cast< DynamicObject>()) {
+						if (auto p3 = p2->m_classType.lock()) {
+							return p3->GetHash();
+						}
+					}
+				}
+				return m->GetTypeHash();
+			}
+			else {
+				static auto SharedT{ GetHash(user_type<void>()) };
+				return SharedT;
+			}
+		};
+		bool IsTypeOf(std::weak_ptr<Type_Info> const& targetType) const noexcept {
+			static auto hasher{ std::hash<std::weak_ptr<Type_Info>>() };
+			return TypeHash() == hasher(targetType);
+		};
+		bool IsTypeOf(Type_Info const& targetType) const noexcept {
+			static auto hasher{ std::hash<Type_Info>() };
+			return TypeHash() == hasher(targetType);
+		};
+		template<typename VType> bool IsTypeOf() const noexcept {
+			return IsTypeOf(user_type<VType>());
+		};
+
+#pragma region Boolean Operators
+	public:
+		explicit operator bool() const { auto locked{ std::shared_lock(mut) }; return (bool)container; };
+		friend bool operator==(const Any& a, const Any& b) noexcept { auto locked{ std::shared_lock(a.mut) }; auto locked2{ std::shared_lock(b.mut) }; return a.container == b.container; };
+		friend bool operator!=(const Any& a, const Any& b) noexcept { auto locked{ std::shared_lock(a.mut) }; auto locked2{ std::shared_lock(b.mut) }; return a.container != b.container; };
+		friend bool operator<(const Any& a, const Any& b) noexcept { auto locked{ std::shared_lock(a.mut) }; auto locked2{ std::shared_lock(b.mut) }; return a.container < b.container; };
+		friend bool operator<=(const Any& a, const Any& b) noexcept { auto locked{ std::shared_lock(a.mut) }; auto locked2{ std::shared_lock(b.mut) }; return a.container <= b.container; };
+		friend bool operator>(const Any& a, const Any& b) noexcept { auto locked{ std::shared_lock(a.mut) }; auto locked2{ std::shared_lock(b.mut) }; return a.container > b.container; };
+		friend bool operator>=(const Any& a, const Any& b) noexcept { auto locked{ std::shared_lock(a.mut) }; auto locked2{ std::shared_lock(b.mut) }; return a.container >= b.container; };
+		friend bool operator==(const Any& a, std::nullptr_t) noexcept { auto locked{ std::shared_lock(a.mut) }; return a.container == nullptr; };
+		friend bool operator!=(const Any& a, std::nullptr_t) noexcept { auto locked{ std::shared_lock(a.mut) }; return a.container != nullptr; };
+		friend bool operator<(const Any& a, std::nullptr_t) noexcept { auto locked{ std::shared_lock(a.mut) }; return a.container < nullptr; };
+		friend bool operator<=(const Any& a, std::nullptr_t) noexcept { auto locked{ std::shared_lock(a.mut) }; return a.container <= nullptr; };
+		friend bool operator>(const Any& a, std::nullptr_t) noexcept { auto locked{ std::shared_lock(a.mut) }; return a.container > nullptr; };
+		friend bool operator>=(const Any& a, std::nullptr_t) noexcept { auto locked{ std::shared_lock(a.mut) }; return a.container >= nullptr; };
+		friend bool operator==(std::nullptr_t, const Any& a) noexcept { auto locked{ std::shared_lock(a.mut) }; return nullptr == a.container; };
+		friend bool operator!=(std::nullptr_t, const Any& a) noexcept { auto locked{ std::shared_lock(a.mut) }; return nullptr != a.container; };
+		friend bool operator<(std::nullptr_t, const Any& a) noexcept { auto locked{ std::shared_lock(a.mut) }; return nullptr < a.container; };
+		friend bool operator<=(std::nullptr_t, const Any& a) noexcept { auto locked{ std::shared_lock(a.mut) }; return nullptr <= a.container; };
+		friend bool operator>(std::nullptr_t, const Any& a) noexcept { auto locked{ std::shared_lock(a.mut) }; return nullptr > a.container; };
+		friend bool operator>=(std::nullptr_t, const Any& a) noexcept { auto locked{ std::shared_lock(a.mut) }; return nullptr >= a.container; };
+#pragma endregion
+
+	public:
+		class DataCaster {
+		public:
+			template<typename T> struct is_SharedPtr_class { using type = std::false_type; };
+			template<typename T> struct is_SharedPtr_class<std::shared_ptr<T>> { using type = std::true_type; };
+			template<typename T> struct is_SharedPtr_class<std::shared_ptr<T>&> { using type = std::true_type; };
+			template<typename T> struct is_SharedPtr_class<std::shared_ptr<T>*> { using type = std::true_type; };
+			template<typename T> struct is_SharedPtr_class<const std::shared_ptr<T>> { using type = std::true_type; };
+			template<typename T> struct is_SharedPtr_class<const std::shared_ptr<T>&> { using type = std::true_type; };
+			template<typename T> struct is_SharedPtr_class<const std::shared_ptr<T>*> { using type = std::true_type; };
+			template<typename T> struct is_SharedPtr_class<std::shared_ptr<T>&&> { using type = std::true_type; };
+
+		private:
+			template <class VType> static decltype(auto) DoCast_Shared(Any* p) noexcept {
+				auto locked{ std::shared_lock(p->mut) };
+				if (p->container) {
+					return p->container->cast_shared<VType>();
+				}
+				else {
+					return std::shared_ptr<VType>{ nullptr };
+				}
+			};
+			template <class VType> static decltype(auto) DoCast_Shared_Sentinel(Any* p) noexcept {
+				throw("Casting Any to  std::shared_ptr<T>* or  std::shared_ptr<T>& is not recommended due to lifetime management concerns. Suggest changing cast to std::shared_ptr<T>.");
+			};
+			template<typename VType> static decltype(auto) DoCast_Unshared(Any* p) noexcept {
+				constexpr bool is_ptr = std::is_pointer_v<VType>;
+
+				typedef typename std::remove_reference<typename std::remove_pointer<VType>::type>::type desiredT;
+
+				auto locked{ std::shared_lock(p->mut) };
+				if (p->container) {
+					if constexpr (is_ptr) {
+						return p->container->cast< desiredT >();
+					}
+					else {
+						return *p->container->cast< desiredT >();
+					}
+				}
+				else {
+					if constexpr (is_ptr) {
+						return (desiredT*)nullptr;
+					}
+					else {
+						throw exception::bad_any_cast(p->Type(), user_type_shared<desiredT>());
+					}
+				}
+			};
+
+		public:
+			template<typename T> static decltype(auto) DoCast(Any* p) noexcept {
+				typedef typename is_SharedPtr_class<T>::type isShared;
+				constexpr bool is_shared_ptr = isShared::value;
+				constexpr bool is_ptr = std::is_pointer_v<T>;
+				constexpr bool is_ref = std::is_reference_v<T>;
+				if constexpr (is_shared_ptr) {
+					typedef typename details::get_type<T>::type innertype;
+					if constexpr (is_ptr) {
+						throw("Casting Any to std::shared_ptr<T>* or std::shared_ptr<T>& is not recommended due to lifetime management concerns. Suggest changing cast to std::shared_ptr<T>.");
+					}
+					else if constexpr (is_ref) {
+						throw("Casting Any to std::shared_ptr<T>* or std::shared_ptr<T>& is not recommended due to lifetime management concerns. Suggest changing cast to std::shared_ptr<T>.");
+					}
+					else {
+						return DoCast_Shared<innertype>(p);
+					}
+				}
+				else {
+					return DoCast_Unshared<T>(p);
+				}
+			};
+		};
+
+		template<typename VType, typename = std::enable_if_t<!std::is_same_v<Any, std::decay_t<typename std::remove_reference<typename std::remove_pointer<VType>::type>::type>>>>
+		decltype(auto) cast() const noexcept { return DataCaster::DoCast<VType>(const_cast<Any*>(this)); };
+
+		template<typename VType, typename = std::enable_if_t<!std::is_pointer<VType>::value&& std::is_same_v<Any, std::decay_t<typename std::remove_reference<typename std::remove_pointer<VType>::type>::type>>>>
+		Any& cast() const noexcept { return *const_cast<Any*>(this); };
+
+		template<typename VType, typename = std::enable_if_t<std::is_pointer<VType>::value&& std::is_same_v<Any, std::decay_t<typename std::remove_reference<typename std::remove_pointer<VType>::type>::type>>>>
+		Any* cast() const noexcept { return const_cast<Any*>(this); };
+
+		details::AnyAutoCast cast() const noexcept;
+
+		std::shared_ptr<AnyData> impl() const {
+			auto locked{ std::shared_lock(mut) };
+			return container;
+		};
+	private:
+		mutable std::shared_ptr<AnyData> container;
+		mutable std::shared_mutex mut;
+	};
+
+	namespace details {
+		/*! Supports forward-declaring a "cast" from an Any to the desired destination type. e.g: int& ref_int = any_obj.cast(); ... std::string str = any_obj.cast(); */
+		class AnyAutoCast {
+		public:
+			AnyAutoCast(const Any* _parent) 
+				: parent(const_cast<Any*>(_parent))
+				//, parentCopy(_parent->impl())
+			{};
+			AnyAutoCast(AnyAutoCast&& other) 
+				: parent(std::move(other.parent))
+				//, parentCopy(std::move(other.parentCopy))
+			{};
+
+			AnyAutoCast() = delete;
+			AnyAutoCast(const AnyAutoCast&) = delete;
+			AnyAutoCast& operator=(const AnyAutoCast&) = delete;
+			AnyAutoCast& operator=(AnyAutoCast&&) = delete;
+			~AnyAutoCast() {};
+
+			explicit operator Any& () const noexcept { return *parent; };
+			explicit operator Any* () const noexcept { return parent; };
+
+			template <typename T>
+			operator std::shared_ptr<T>() const noexcept { return parent->cast<std::shared_ptr<T>>(); };
+
+			template <typename T>
+			operator std::shared_ptr<T>* () const noexcept { return parent->cast<std::shared_ptr<T>*>(); };
+
+			template< bool cond, typename U >
+			using resolvedType = typename std::enable_if< cond, U >::type;
+
+			template< typename ValueTypeT, typename U = ValueTypeT&, typename = std::enable_if<!Any::DataCaster::is_SharedPtr_class<ValueTypeT>::type::value> >
+			operator ValueTypeT& () const noexcept { return parent->cast<ValueTypeT&>(); };
+
+			template< typename ValueTypeT, typename U = ValueTypeT*, typename = std::enable_if<!Any::DataCaster::is_SharedPtr_class<ValueTypeT>::type::value> >
+			operator ValueTypeT* () const noexcept { return parent->cast<ValueTypeT*>(); };
+
+			Any* parent;
+			// std::shared_ptr<AnyData> parentCopy;
+		};
+	};
+
+	/*! Casts to whatever is on the left-hand-side, with specializations for references, pointers, values, and std::shared_ptrs. References and pointers are lifetime-sensitive. */
+	__forceinline details::AnyAutoCast Any::cast() const noexcept { return details::AnyAutoCast(this); };
+	__forceinline decltype(auto) Any::Object_Data::get(const details::AnyAutoCast& obj) {
+		Any* t = const_cast<Any*>(obj.parent);
+		if (t) {
+			auto locked{ std::shared_lock(t->mut) };
+			return t->container;
+		}
+		return std::shared_ptr<AnyData>{ nullptr };
+	};
+	__forceinline decltype(auto) Any::Object_Data::get(const details::AnyAutoCast* t) { return get(*t); };
+
+};
+
+namespace GoodLang {
+	// A collection or list of parameter types. May be a list of types for input into a function, the argument types of the function, or a simple list of types.
+	// The types are hashed together to generate a unique hash for this list that can be used to quickly compare them.
+	class ParamTypes {
+	public:
+		static size_t CalculateHash() {
+			size_t out{ 37 };
+			return out;
+		};
+		static size_t CalculateHash(std::vector<std::weak_ptr<Type_Info>> const& t_types) {
+			size_t out{ 37 };
+			for (auto& x : t_types)
+				details::hash_combine(out, GetHash(x));
+			return out;
+		};
+
+	public:
+		ParamTypes()
+			: uniquehash{ CalculateHash() }
+			, m_types{ nullptr }
+		{};
+		ParamTypes(std::vector<std::weak_ptr<Type_Info>> const& t_types)
+			: uniquehash{ CalculateHash(t_types) }
+			, m_types(std::make_shared<std::vector<std::weak_ptr<Type_Info>>>(t_types))
+		{};
+		ParamTypes(std::vector<std::weak_ptr<Type_Info>>&& t_types)
+			: uniquehash{}
+			, m_types(std::make_shared<std::vector<std::weak_ptr<Type_Info>>>(std::forward<std::vector<std::weak_ptr<Type_Info>>>(t_types)))
+		{
+			uniquehash = CalculateHash(*m_types);
+		};
+		ParamTypes(std::vector<Any> const& params)
+			: uniquehash{}
+			, m_types(std::make_shared<std::vector<std::weak_ptr<Type_Info>>>(params.size(), std::weak_ptr<Type_Info>()))
+		{
+			for (int i = params.size() - 1; i >= 0; i--) m_types->at(i) = params[i].Type();
+			uniquehash = CalculateHash(*m_types);
+		};
+		ParamTypes(ParamTypes const&) = default;
+		ParamTypes(ParamTypes&&) = default;
+		ParamTypes& operator=(ParamTypes const&) = default;
+		ParamTypes& operator=(ParamTypes&&) = default;
+		~ParamTypes() = default;
+
+		const std::weak_ptr<Type_Info>& operator[](const std::size_t t_i) const noexcept { return m_types->operator[](t_i); };
+		std::weak_ptr<Type_Info>& operator[](const std::size_t t_i) noexcept { return m_types->operator[](t_i); };
+
+		friend bool operator==(ParamTypes const& a, ParamTypes const& b) {
+			return a.uniquehash == b.uniquehash;
+		};
+		friend bool operator!=(ParamTypes const& a, ParamTypes const& b) {
+			return a.uniquehash != b.uniquehash;
+		};
+		friend bool operator>(ParamTypes const& a, ParamTypes const& b) {
+			return a.uniquehash > b.uniquehash;
+		};
+		friend bool operator<(ParamTypes const& a, ParamTypes const& b) {
+			return a.uniquehash < b.uniquehash;
+		};
+		friend bool operator>=(ParamTypes const& a, ParamTypes const& b) {
+			return a.uniquehash >= b.uniquehash;
+		};
+		friend bool operator<=(ParamTypes const& a, ParamTypes const& b) {
+			return a.uniquehash <= b.uniquehash;
+		};
+
+		auto begin() const noexcept {
+			if (m_types) return m_types->begin();
+			else return std::vector<std::weak_ptr<Type_Info>>::iterator();
+		}
+		auto end() const noexcept {
+			if (m_types) return m_types->end();
+			else return std::vector<std::weak_ptr<Type_Info>>::iterator();
+		}
+		size_t size() const noexcept {
+			if (m_types) return m_types->size();
+			else return 0;
+		}
+		bool empty() const noexcept { return size() == 0; }
+		size_t hash() const noexcept { return uniquehash; };
+		bool CanCast(ParamTypes const& to) const {
+			if (uniquehash == to.uniquehash) { // exact match
+				return true;
+			}
+			else {
+				long long i = to.size() - 1;
+				if (i < 0) return true;
+				if (i >= size()) return false;
+				else {
+					auto& toVector = *to.m_types;
+					auto& fromVector = *m_types;
+					for (; i >= 0; i--) {
+						if (auto fromType = fromVector[i].lock()) {
+							if (auto toType = toVector[i].lock()) {
+								if (!fromType->CanCast(*toType)) {
+									return false;
+								}
+							}
+						}
+					}
+					return true;
+				}
+			}
+		};
+
+	private:
+		std::shared_ptr<std::vector<std::weak_ptr<Type_Info>>> m_types;
+		size_t uniquehash;
+
+	};
+
+	// A combination of ParamTypes (list of types) and variable names. Variable names do NOT impact the "uniqueness" of a list of function arguments. e.g;
+	// { int:"a" } == { int:"b" }
+	class FunctionArgs {
+	private:
+		static std::vector<std::string> DefaultVariableNames(size_t n){
+			auto out = std::vector<std::string>(n, "Param");
+			for (int i = 0; i < n; i++) {
+				out[i].append(std::to_string(i));
+			}
+			return out;
+		};
+		static std::vector<std::string> DefaultVariableNames(size_t n, std::vector<std::string> const& paramNames) {
+			auto out = std::vector<std::string>(n, "Param");
+			for (int i = 0; i < n; i++) {
+				if (paramNames.size() > i) {
+					out[i] = paramNames[i];
+				}
+				else {
+					out[i].append(std::to_string(i));
+				}
+			}
+			return out;
+		};
+
+	public:
+		FunctionArgs()
+			: m_names{}
+			, m_types{}
+		{};
+		FunctionArgs(ParamTypes const& t_types)
+			: m_names{ DefaultVariableNames(t_types.size()) }
+			, m_types{ t_types }
+		{};
+		FunctionArgs(ParamTypes const& t_types, std::vector<std::string> const& paramNames)
+			: m_names{ DefaultVariableNames(t_types.size(), paramNames) }
+			, m_types{ t_types }
+		{};
+		FunctionArgs(std::vector<std::pair<std::weak_ptr<Type_Info>, std::string>> const& TypesAndNames)
+			: m_names{}
+			, m_types{}
+		{
+			std::vector<std::weak_ptr<Type_Info>> types;
+			for (int i = 0; i < TypesAndNames.size(); i++) {
+				m_names.push_back(TypesAndNames[i].second);
+				types.push_back(TypesAndNames[i].first);
+			}
+			m_types = ParamTypes(types);		
+		};
+		FunctionArgs(FunctionArgs const&) = default;
+		FunctionArgs(FunctionArgs&&) = default;
+		FunctionArgs& operator=(FunctionArgs const&) = default;
+		FunctionArgs& operator=(FunctionArgs&&) = default;
+		~FunctionArgs() = default;
+
+		auto& Type(int i) const {
+			return m_types[i];
+		};
+		auto& Name(int i) const {
+			return m_names[i];
+		};
+		auto& Types() const {
+			return m_types;
+		};
+		auto& Names() const {
+			return m_names;
+		};
+
+		friend bool operator==(FunctionArgs const& a, FunctionArgs const& b) {
+			return a.m_types == b.m_types;
+		};
+		friend bool operator!=(FunctionArgs const& a, FunctionArgs const& b) {
+			return a.m_types != b.m_types;
+		};
+		friend bool operator>(FunctionArgs const& a, FunctionArgs const& b) {
+			return a.m_types > b.m_types;
+		};
+		friend bool operator<(FunctionArgs const& a, FunctionArgs const& b) {
+			return a.m_types < b.m_types;
+		};
+		friend bool operator>=(FunctionArgs const& a, FunctionArgs const& b) {
+			return a.m_types >= b.m_types;
+		};
+		friend bool operator<=(FunctionArgs const& a, FunctionArgs const& b) {
+			return a.m_types <= b.m_types;
+		};
+
+		size_t size() const noexcept {
+			return m_types.size();
+		}
+		bool empty() const noexcept { return m_types.empty(); }
+		size_t hash() const noexcept { return m_types.hash(); };
+
+		auto begin() const noexcept {
+			return m_types.begin();
+		};
+		auto end() const noexcept {
+			return m_types.end();
+		};
+
+		bool CanCastTo(ParamTypes const& to) const {
+			return m_types.CanCast(to);
+		};
+		bool CanCastFrom(ParamTypes const& from) const {
+			return from.CanCast(m_types);
+		};
+		bool CanCastTo(FunctionArgs const& to) const {
+			return m_types.CanCast(to.m_types);
+		};
+		bool CanCastFrom(FunctionArgs const& from) const {
+			return from.m_types.CanCast(m_types);
+		};
+
+	private:
+		ParamTypes m_types;
+		std::vector<std::string> m_names;
+
+	};
+
+	// A combination of FunctionArgs (argument types and names), return type, and function name. 
+	// Function names DO impact the "uniqueness" of a function signature.
+	// Return types do NOT impact the "uniqueness" of a function signature.
+	class FunctionSignature {
+	public:
+		static size_t CalculateHash(FunctionArgs const& arguments, std::string const& qualified_name) {
+			size_t out{ 37 };
+			details::hash_combine(out, arguments.hash());
+			details::hash_combine(out, std::hash<std::string>()(qualified_name));
+			return out;
+		};
+		static size_t CalculateHash(ParamTypes const& arguments, std::string const& qualified_name) {
+			size_t out{ 37 };
+			details::hash_combine(out, arguments.hash());
+			details::hash_combine(out, std::hash<std::string>()(qualified_name));
+			return out;
+		};
+
+	public:
+		FunctionSignature() 
+			: m_qualified_name("::") 
+		{
+			uniqueHash = CalculateHash(m_arguments, m_qualified_name);
+		};
+		FunctionSignature(std::weak_ptr<Type_Info> returnType, FunctionArgs const& args, std::string const& Namespace, std::string const& name) 
+			: m_arguments(args)
+			, m_namespace(Namespace)
+			, m_name(name)
+			, m_qualified_name(Namespace + "::" + name)
+			, m_returnType(returnType)
+			, uniqueHash(CalculateHash(args, Namespace + "::" + name))
+		{};
+		FunctionSignature(FunctionSignature const&) = default;
+		FunctionSignature(FunctionSignature&&) = default;
+		FunctionSignature& operator=(FunctionSignature const&) = default;
+		FunctionSignature& operator=(FunctionSignature&&) = default;
+		~FunctionSignature() = default;
+
+		const std::weak_ptr<Type_Info>& Returns() const { return m_returnType; };
+		const FunctionArgs& Arguments() const { return m_arguments; };
+		const std::string& Name() const { return m_name; };
+		const std::string& QualifiedName() const { return m_qualified_name; };
+		size_t hash() const noexcept { return uniqueHash; };
+
+		friend bool operator==(FunctionSignature const& a, FunctionSignature const& b) {
+			return a.uniqueHash == b.uniqueHash;
+		};
+		friend bool operator!=(FunctionSignature const& a, FunctionSignature const& b) {
+			return a.uniqueHash != b.uniqueHash;
+		};
+		friend bool operator>(FunctionSignature const& a, FunctionSignature const& b) {
+			return a.uniqueHash > b.uniqueHash;
+		};
+		friend bool operator<(FunctionSignature const& a, FunctionSignature const& b) {
+			return a.uniqueHash < b.uniqueHash;
+		};
+		friend bool operator>=(FunctionSignature const& a, FunctionSignature const& b) {
+			return a.uniqueHash >= b.uniqueHash;
+		};
+		friend bool operator<=(FunctionSignature const& a, FunctionSignature const& b) {
+			return a.uniqueHash <= b.uniqueHash;
+		};
+
+	private:
+		FunctionArgs m_arguments; // Use this for the hash.
+		std::string m_namespace;
+		std::string m_name;
+		std::string m_qualified_name; // m_namespace::m_name. Use this for the hash.
+		std::weak_ptr<Type_Info> m_returnType; // not used for the hash. 
+		size_t uniqueHash;
+	};
+
+};
+
+namespace std {
+	template <> struct hash<GoodLang::ParamTypes> {
+		std::size_t operator()(const GoodLang::ParamTypes& k) const {
+			return k.hash();
+		};
+	};
+	template <> struct less<GoodLang::ParamTypes> {
+		std::size_t operator()(const GoodLang::ParamTypes& lhs, const GoodLang::ParamTypes& rhs) const {
+			return lhs < rhs;
+		};
+	};
+	template <> struct greater<GoodLang::ParamTypes> {
+		std::size_t operator()(const GoodLang::ParamTypes& lhs, const GoodLang::ParamTypes& rhs) const {
+			return lhs > rhs;
+		};
+	};
+	template <> struct equal_to<GoodLang::ParamTypes> {
+		std::size_t operator()(const GoodLang::ParamTypes& lhs, const GoodLang::ParamTypes& rhs) const {
+			return lhs == rhs;
+		};
+	};
+
+	template <> struct hash<GoodLang::FunctionArgs> {
+		std::size_t operator()(const GoodLang::FunctionArgs& k) const {
+			return k.hash();
+		};
+	};
+	template <> struct less<GoodLang::FunctionArgs> {
+		std::size_t operator()(const GoodLang::FunctionArgs& lhs, const GoodLang::FunctionArgs& rhs) const {
+			return lhs < rhs;
+		};
+	};
+	template <> struct greater<GoodLang::FunctionArgs> {
+		std::size_t operator()(const GoodLang::FunctionArgs& lhs, const GoodLang::FunctionArgs& rhs) const {
+			return lhs > rhs;
+		};
+	};
+	template <> struct equal_to<GoodLang::FunctionArgs> {
+		std::size_t operator()(const GoodLang::FunctionArgs& lhs, const GoodLang::FunctionArgs& rhs) const {
+			return lhs == rhs;
+		};
+	};
+
+	template <> struct hash<GoodLang::FunctionSignature> {
+		std::size_t operator()(const GoodLang::FunctionSignature& k) const {
+			return k.hash();
+		};
+	};
+	template <> struct less<GoodLang::FunctionSignature> {
+		std::size_t operator()(const GoodLang::FunctionSignature& lhs, const GoodLang::FunctionSignature& rhs) const {
+			return lhs < rhs;
+		};
+	};
+	template <> struct greater<GoodLang::FunctionSignature> {
+		std::size_t operator()(const GoodLang::FunctionSignature& lhs, const GoodLang::FunctionSignature& rhs) const {
+			return lhs > rhs;
+		};
+	};
+	template <> struct equal_to<GoodLang::FunctionSignature> {
+		std::size_t operator()(const GoodLang::FunctionSignature& lhs, const GoodLang::FunctionSignature& rhs) const {
+			return lhs == rhs;
+		};
+	};
+};
+
+namespace GoodLang {
+	namespace details {
+		// Tuning parameter. Should be larger than the slowest conversion time. Large values encourages fewer conversions. Smaller values encourages faster conversions.
+		static constexpr auto TypeConversionBaselineCost = 1000.0;
+		static constexpr auto TypeConversionWorstCaseCost = 1000000000000.0;
+		class Type_Conversion_Base {
+		public:
+			// Converts From -> To, and places the result into the "From" container. Useful for faster conversions.
+			virtual void convert_in_place(Any& from) const = 0;
+			// From -> To
+			virtual Any convert(const Any& from) const = 0;
+			// To -> From
+			virtual Any convert_down(const Any& to) const = 0;
+
+			// returns the actual time (in nanoseconds) to perform the conversion
+			virtual double cost() const noexcept { return 0; };
+
+			// to type
+			const std::weak_ptr<Type_Info>& to() const noexcept { return m_to; }
+
+			// from type
+			const std::weak_ptr<Type_Info>& from() const noexcept { return m_from; }
+
+			// is bidirectional?
+			virtual bool bidir() const noexcept { return true; }
+
+			// is polymorphic conversion?
+			virtual bool polymorphic() const noexcept { return false; }
+
+			virtual ~Type_Conversion_Base() = default;
+
+		protected:
+			Type_Conversion_Base(std::weak_ptr<Type_Info> t_to, std::weak_ptr<Type_Info> t_from) : m_to(t_to), m_from(t_from) {}
+
+		private:
+			std::weak_ptr<Type_Info> m_to;
+			std::weak_ptr<Type_Info> m_from;
+		};
+
+		template<class Callable>
+		class Custom_Type_Conversion_Impl : public Type_Conversion_Base {
+		public:
+			using ReturnType = typename fibers::utilities::function_traits< typename decltype(std::function(std::declval<Callable>())) >::result_type;
+			using InputType = typename /*std::decay_t<*/std::tuple_element_t<0, typename fibers::utilities::function_traits< typename decltype(std::function(std::declval<Callable>())) >::arguments>/*>*/;
+
+		public:
+			Custom_Type_Conversion_Impl(Callable t_func)
+				: Type_Conversion_Base(
+					user_type_shared<ReturnType>(),
+					user_type_shared<InputType>()
+				)
+				, m_func(std::move(t_func))
+				, m_cost(std::nullopt)
+			{};
+			Custom_Type_Conversion_Impl(Callable t_func, std::weak_ptr<Type_Info> inboundType, std::weak_ptr<Type_Info> outboundType, std::optional<double> Cost = std::nullopt)
+				: Type_Conversion_Base(
+					outboundType,
+					inboundType
+				)
+				, m_func(std::move(t_func))
+				, m_cost(std::move(Cost))
+			{};
+
+			// To -> From
+			Any convert_down(const Any&) const override {
+				throw std::runtime_error("Custom_Type_Conversion_Impl is not bidirectional.");
+			};
+
+			// From -> To
+			void convert_in_place(Any& t_from) const override {
+				if constexpr (std::is_convertible<decltype(t_from), InputType>::value) {
+					t_from = m_func(t_from);
+				}
+				else {
+					t_from = m_func(t_from.cast());
+				}
+			};
+
+			// From -> To
+			Any convert(const Any& t_from) const override {
+				if constexpr (std::is_convertible<decltype(t_from), InputType>::value) {
+					return m_func(t_from);
+				}
+				else {
+					return m_func(t_from.cast());
+				}
+			};
+
+			bool bidir() const noexcept override { return false; }
+
+			// returns the actual time (in nanoseconds) to perform the conversion
+			double cost() const noexcept override {
+				if (m_cost.has_value()) {
+					return m_cost.value();
+				}
+				else {
+					static double actualCost{ -1 };
+					static std::decay_t<InputType> inputObj{};
+					if (actualCost < 0) {
+						double temp{ 0 };
+						for (int i = 0; i < 10; i++) {
+							auto startT = clock_ns();
+							(void)(m_func(inputObj));
+							temp += (double)(clock_ns() - startT) / 100.0;
+						}
+						actualCost = TypeConversionBaselineCost + temp / 10.0;
+					}
+					return actualCost;
+				}
+			};
+
+		private:
+			Callable m_func;
+			std::optional<double> m_cost;
+		};
+
+		namespace impl {
+			template <class From, class To, class = void>
+			struct is_explicitly_convertible_to_impl : std::false_type {};
+
+			template <class From, class To>	
+			struct is_explicitly_convertible_to_impl<From, To, std::void_t<decltype(static_cast<To>(std::declval<From>()))>> : std::true_type {};
+
+			template <class From, class To>
+			struct is_explicitly_convertible_to : is_explicitly_convertible_to_impl<From, To> {};
+
+			template <class From, class To>
+			inline constexpr bool is_explicitly_convertible_to_v = is_explicitly_convertible_to<From, To>::value;
+
+		};
+
+		template<typename From, typename To>
+		class Static_Type_Conversion_Impl : public Type_Conversion_Base {
+		private:
+			constexpr static bool is_bidir = impl::is_explicitly_convertible_to<To, From>::value;
+
+		public:
+			Static_Type_Conversion_Impl()
+				: Type_Conversion_Base(user_type_shared<To>(), user_type_shared<From>())
+			{};
+
+			// To -> From
+			Any convert_down(const Any& t_to) const override {
+				if constexpr (is_bidir) {
+					return (From)(t_to.cast<To const&>());
+				}
+				else {
+					throw std::runtime_error("Static_Type_Conversion_Impl was not bidirectional.");
+				}
+			};
+
+			// From -> To
+			void convert_in_place(Any& t_from) const override {
+				t_from = (To)(t_from.cast<From const&>());
+			};
+
+			// From -> To
+			Any convert(const Any& t_from) const override {
+				return (To)(t_from.cast<From const&>());
+			};
+
+			bool bidir() const noexcept override { return is_bidir; }
+
+			// returns the actual time (in nanoseconds) to perform the conversion
+			double cost() const noexcept override {
+				static double actualCost{ -1 };
+				static std::decay_t<From> inputObj{};
+				if (actualCost < 0) {
+					double temp{ 0 };
+					for (int i = 0; i < 10; i++) {
+						auto startT = clock_ns();
+						(void)((To)(inputObj));
+						temp += (double)(clock_ns() - startT) / 100.0;
+					}
+					actualCost = TypeConversionBaselineCost + temp / 10.0;
+				}
+				return actualCost;
+			};
+		};
+
+		template<typename ChildType, typename BaseType>
+		class Dynamic_Type_Conversion_Impl : public Type_Conversion_Base {
+		public:
+			Dynamic_Type_Conversion_Impl()
+				: Type_Conversion_Base(user_type_shared<BaseType>(), user_type_shared<ChildType>())
+			{};
+
+			// BaseType -> ChildType
+			Any convert_down(const Any& t_to) const override {
+				throw std::runtime_error("Dynamic_Type_Conversion_Impl is never bidirectional (Base -> Child). Only may cast from (Child -> Base).");
+			};
+
+			// ChildType -> BaseType
+			void convert_in_place(Any& t_from) const override {
+				std::shared_ptr<ChildType> ptr{ t_from.cast<std::shared_ptr<ChildType>>() };
+				t_from = std::dynamic_pointer_cast<BaseType>(ptr);
+			};
+
+			// ChildType -> BaseType
+			Any convert(const Any& t_from) const override {
+				std::shared_ptr<ChildType> ptr{ t_from.cast<std::shared_ptr<ChildType>>() };
+				return std::dynamic_pointer_cast<BaseType>(ptr);
+			};
+
+			bool bidir() const noexcept override { return false; }
+
+			double cost() const noexcept override { return 0; /* Assumes that dynamic casts are free */ };
+		};
+
+		// Create a function to cast from "From" to "To". Supports static or dynamic (polymorphic) casting. 
+		template<typename From, typename To> __forceinline std::shared_ptr<Type_Conversion_Base> MakeConversionFunc() {
+			constexpr static bool is_convertable = impl::is_explicitly_convertible_to<From, To>::value;
+			constexpr static bool is_bidir_convertable = impl::is_explicitly_convertible_to<To, From>::value;
+			constexpr static bool is_polymorphic = std::is_base_of<To, From>::value;
+			
+			if constexpr (is_polymorphic) {
+				return std::shared_ptr<Type_Conversion_Base >(new Dynamic_Type_Conversion_Impl<From, To>());
+			}
+			else {
+				if constexpr (is_convertable) {
+					return std::shared_ptr< Type_Conversion_Base >(new Static_Type_Conversion_Impl<From, To>());
+				}
+				else {
+					return nullptr;
+				}
+			}
+		};
+
+		// Create a wrapped user-defined function to cast provided types. Must have one (and only one) argument in the function. Argument may be an Any and do wild stuff.
+		template<class Callable> __forceinline std::shared_ptr<Type_Conversion_Base> MakeConversionFunc(Callable func) {
+			using CallableTypeAsStdFunc = decltype(std::function(std::declval<Callable>()));
+			using CallableArguments = typename fibers::utilities::function_traits< CallableTypeAsStdFunc >::arguments;
+			if constexpr (std::tuple_size_v< CallableArguments > != 1) {
+				return nullptr;
+			}
+			else {
+				using From = typename /*std::decay_t<*/std::tuple_element_t<0, CallableArguments>/*>*/;
+				using To = typename fibers::utilities::function_traits< CallableTypeAsStdFunc >::result_type;
+				constexpr static bool is_convertable = impl::is_explicitly_convertible_to<From, To>::value;
+				constexpr static bool is_bidir_convertable = impl::is_explicitly_convertible_to<To, From>::value;
+				constexpr static bool is_polymorphic = std::is_base_of<To, From>::value;
+
+				return std::shared_ptr< Type_Conversion_Base >(new Custom_Type_Conversion_Impl(std::move(func)));
+			}
+
+		};
+
+	};
+
+	// Tree that manages a complex graph network of conversion opportunities. 
+	// It's task is to organize those conversions, find the minimium or best conversion paths, and then cache the results. 
+
+
+	class TypeConverter {
+	private:
+		class UniformCostSearchNode {
+		public:
+			UniformCostSearchNode() = default;
+			UniformCostSearchNode(std::weak_ptr<Type_Info> const& a, double const& b, std::vector<std::weak_ptr<Type_Info>> const& c) : thisVertexType(a), distanceFromTarget(b), bestPath(c) {};
+			UniformCostSearchNode(UniformCostSearchNode&&) = default;
+			UniformCostSearchNode(UniformCostSearchNode const&) = default;
+			UniformCostSearchNode& operator=(UniformCostSearchNode&&) = default;
+			UniformCostSearchNode& operator=(UniformCostSearchNode const&) = default;
+			~UniformCostSearchNode() = default;
+		public:
+			std::weak_ptr<Type_Info> thisVertexType;
+			double distanceFromTarget; // if not known, then we can simply guess. 
+			std::vector<std::weak_ptr<Type_Info>> bestPath;
+			std::vector<std::shared_ptr< details::Type_Conversion_Base >> bestPathConverters;
+
+		public:
+			bool operator()(const UniformCostSearchNode* a, const UniformCostSearchNode* b) const {
+				return a->distanceFromTarget > b->distanceFromTarget;
+			};
+			bool operator()(const std::shared_ptr<UniformCostSearchNode>& a, const std::shared_ptr<UniformCostSearchNode>& b) const {
+				return a->distanceFromTarget > b->distanceFromTarget;
+			};
+		};
+
+	public:
+		using TypeConverterFunc = std::shared_ptr< details::Type_Conversion_Base >;
+
+		TypeConverter() = default;
+		TypeConverter(TypeConverter const& rhs) {
+			auto locked2{ std::shared_lock(const_cast<TypeConverter&>(rhs).AllConversionsMut) };
+			AllConversions = rhs.AllConversions;
+		};
+		TypeConverter(TypeConverter && rhs) {
+			auto locked2{ std::unique_lock(rhs.AllConversionsMut) };
+			AllConversions = std::move(rhs.AllConversions);
+		};
+		TypeConverter& operator=(TypeConverter const& rhs) {
+			auto locked1{ std::unique_lock(AllConversionsMut) };
+			auto locked2{ std::shared_lock(const_cast<TypeConverter&>(rhs).AllConversionsMut) };
+			AllConversions = rhs.AllConversions;
+		};
+		TypeConverter& operator=(TypeConverter&& rhs) {
+			auto locked1{ std::unique_lock(AllConversionsMut) };
+			auto locked2{ std::unique_lock(rhs.AllConversionsMut) };
+			AllConversions = std::move(rhs.AllConversions);
+		};
+		~TypeConverter() = default;
+
+	private:
+		// All conversions, will include "real" and cached conversions.
+		using conversionTreeType = std::unordered_map< std::weak_ptr<Type_Info>, // From
+			std::unordered_map< std::weak_ptr<Type_Info>, // To
+			    TypeConverterFunc // Function
+			>
+		>;
+		conversionTreeType AllConversions;
+		std::shared_mutex AllConversionsMut;
+
+		// may return nullptr
+		TypeConverterFunc GetExistingConverter(std::weak_ptr<Type_Info> const& From, std::weak_ptr<Type_Info> const& To) {
+			auto locked{ std::shared_lock(AllConversionsMut) };
+			return AllConversions[From][To];
+		};
+		// may return nullptr if it could not be built
+		TypeConverterFunc GetOrBuildConverter(std::weak_ptr<Type_Info> const& From, std::weak_ptr<Type_Info> const& To) {
+			// Solves the Uniform Cost Search Algorithm to determine the shortest path for "From" to "To", puts the path in "Out", and returns true. 
+            // If no path is possible, returns false.
+			static auto CreateConversionPaths{ [](fibers::utilities::Allocator< UniformCostSearchNode>& alloc, conversionTreeType& AllConversions, std::weak_ptr<Type_Info> const& From, std::weak_ptr<Type_Info> const& To) {
+				// create the shortest paths from "From" to all possible vertices. 
+
+				std::unordered_map<std::weak_ptr<Type_Info>, UniformCostSearchNode*> vertices;
+
+				if (1) {
+					// create an empty vertex set
+					std::priority_queue< UniformCostSearchNode*, std::vector<UniformCostSearchNode*>, UniformCostSearchNode > vertexSet;
+
+					// Add the source vertex into the set
+					vertexSet.push(alloc.Alloc(From, 0.0, std::vector<std::weak_ptr<Type_Info>>{}));
+
+					// is the vertex set empty?
+					while (vertexSet.size() != 0) {
+						// extract the vertex with the smallest distance value from the set
+						auto smallestDistanceNode = vertexSet.top();
+						vertexSet.pop();
+
+						// for each neighbor of the extracted vertex... 
+
+						for (auto& connection : AllConversions[smallestDistanceNode->thisVertexType]) {
+							if (connection.second) {
+								// Is the neighbor already in the vertex set? 
+								auto& toType = connection.first;
+								if (vertices.count(toType) <= 0) {
+									// Instance it before we start working with it on an as-needed basis
+									auto path = std::vector<std::weak_ptr<Type_Info>>(smallestDistanceNode->bestPath);
+									auto pathConverters = std::vector<std::shared_ptr< details::Type_Conversion_Base >>(smallestDistanceNode->bestPathConverters);
+									path.push_back(toType);
+									pathConverters.push_back(connection.second);
+									vertices[toType] = alloc.Alloc(toType, std::numeric_limits<double>::infinity(), std::vector<std::weak_ptr<Type_Info>>{ toType });
+								}
+								auto& toVertex = vertices[toType];
+
+								// calculate distance value for the neighbor vertex
+								double conversionCost = connection.second->cost();
+								if (toVertex->distanceFromTarget > (smallestDistanceNode->distanceFromTarget + conversionCost)) {
+									toVertex->distanceFromTarget = (smallestDistanceNode->distanceFromTarget + conversionCost);
+
+									toVertex->bestPathConverters = smallestDistanceNode->bestPathConverters;
+									if (toVertex->bestPath.size() > 0) {
+										toVertex->bestPathConverters.push_back(AllConversions[toVertex->bestPath[toVertex->bestPath.size()-1]][toVertex->thisVertexType]);
+									}
+									else {
+										toVertex->bestPathConverters.push_back(AllConversions[From][toVertex->thisVertexType]);
+									}
+
+									toVertex->bestPath = smallestDistanceNode->bestPath;
+									toVertex->bestPath.push_back(toVertex->thisVertexType);
+
+									vertexSet.push(toVertex);
+								}
+							}
+						}
+					}
+				}
+
+				return vertices;
+			} };
+
+			if (auto ptr = GetExistingConverter(From, To)) {
+				return ptr;
+			}
+			
+			// Add conversion for From to a large variety of types...
+			if (1) {
+				fibers::utilities::Allocator< UniformCostSearchNode> alloc;
+				AllConversionsMut.lock_shared();
+				auto conversions{ CreateConversionPaths(alloc, AllConversions, From, To) };
+				
+				// All of these are for "From"...
+				for (auto& conversion : conversions) {
+					auto& ToType = conversion.first; // To...
+					
+
+					auto& cost = conversion.second->distanceFromTarget; // cost
+					auto& path = conversion.second->bestPath; // conversion path
+					auto& conversionPath = conversion.second->bestPathConverters;
+
+					if (path.size() >= 1) {
+						TypeConverterFunc converterPtr = AllConversions[From][ToType];
+						if (converterPtr && (converterPtr->cost() < cost)) {
+							continue;
+						}
+						else {
+							// make new function, get hard lock, insert	
+							if (1) {
+								// make a new converter function
+								TypeConverterFunc newConverter; {
+									// convert the "type path" to a actual daisy-chains of weak_ptrs to converter functions
+									std::vector<std::weak_ptr<details::Type_Conversion_Base>> functors; {
+										std::weak_ptr<Type_Info> currentNodeType = From;
+
+										std::cout << "Converting: " << currentNodeType.lock()->name() << " ... ";
+										for (auto& nextNodeType : path) {
+											std::cout << nextNodeType.lock()->name() << " ... ";
+
+											auto& func = AllConversions[currentNodeType][nextNodeType];
+											if (!func) { // something went wrong -- this conversion has failed.
+												continue;
+											}
+											else {
+												functors.push_back(func);
+												currentNodeType = nextNodeType;
+											}
+										}
+										std::cout << "(" << cost << ")" << "\n";
+#define EXPECT_EQ(a,b) [&]()->bool{ if ((a) == (b)) { return true; } else { std::cout << Units::printf("FAILURE AT LINE %i\n", (int)__LINE__); return false; } }()
+										EXPECT_EQ(ToType, currentNodeType);
+#undef EXPECT_EQ
+									}
+
+									newConverter = std::shared_ptr< details::Type_Conversion_Base >(new details::Custom_Type_Conversion_Impl([converters = conversionPath](Any const& from)->Any {
+										Any out = from;
+										for (auto& converter : converters) {
+											std::cout << out.TypeName() << std::endl;
+											if (auto func = converter/*.lock()*/) {
+												out = func->convert(out);
+											}
+										}
+										std::cout << out.TypeName() << std::endl;
+										return out;
+									}, From, ToType, cost));
+								}
+
+								AllConversionsMut.unlock_shared();
+								// insert it (requires hard lock)
+								if (newConverter) {
+									auto locked{ std::unique_lock(AllConversionsMut) };
+									converterPtr = AllConversions[From][ToType];
+									if (converterPtr && (converterPtr->cost() < cost)) {}
+									else {
+										AllConversions[From][ToType] = newConverter;
+									}
+								}
+								AllConversionsMut.lock_shared();
+							}
+						}
+					}
+				}
+				AllConversionsMut.unlock_shared();
+			}
+
+			// try and get our target type back ... 
+			return GetExistingConverter(From, To);			
+		};
+	private:
+		// The BaseType can be converted to Type& without modification
+		// The BaseType can be converted to const Type without modification
+		// The BaseType can be converted to const Type& without modification
+		// The const Type can be converted to const Type& without modification
+		// The Type& can be converted to const Type& without modification
+		// 
+		// The const Type can be converted to const Type without modification
+		void AddDefaultConverters(std::weak_ptr<Type_Info> const& Type) {
+			if (auto ptr = Type.lock()) {
+				auto baseType = ptr->MakeBase().lock();
+				if (baseType) {
+					auto refType = baseType->MakeRef().lock();
+					auto constType = baseType->MakeConst().lock();
+					if (refType && constType) {
+						auto constRefType = constType->MakeRef().lock();
+						if (constRefType) {
+							// The BaseType can be converted to Type& without modification
+							if (1) {
+								auto func = std::shared_ptr< details::Type_Conversion_Base >(new details::Custom_Type_Conversion_Impl([](Any const& x)->Any {
+									return x;
+								}, baseType, refType, 0.0));
+								if (func) {
+									auto& From = func->from();
+									auto& To = func->to();
+									auto locked{ std::unique_lock(AllConversionsMut) };
+									AllConversions[From][To] = func;
+								}
+							}
+
+							// The BaseType can be converted to const Type without modification
+							if (1) {
+								auto func = std::shared_ptr< details::Type_Conversion_Base >(new details::Custom_Type_Conversion_Impl([](Any const& x)->Any {
+									return x;
+								}, baseType, constType, 0.0));
+								if (func) {
+									auto& From = func->from();
+									auto& To = func->to();
+									auto locked{ std::unique_lock(AllConversionsMut) };
+									AllConversions[From][To] = func;
+								}
+							}
+
+							// The BaseType can be converted to const Type& without modification
+							if (1) {
+								auto func = std::shared_ptr< details::Type_Conversion_Base >(new details::Custom_Type_Conversion_Impl([](Any const& x)->Any {
+									return x;
+								}, baseType, constRefType, 0.0));
+								if (func) {
+									auto& From = func->from();
+									auto& To = func->to();
+									auto locked{ std::unique_lock(AllConversionsMut) };
+									AllConversions[From][To] = func;
+								}
+							}
+
+							// The const Type can be converted to const Type& without modification
+							if (1) {
+								auto func = std::shared_ptr< details::Type_Conversion_Base >(new details::Custom_Type_Conversion_Impl([](Any const& x)->Any {
+									return x;
+								}, constType, constRefType, 0.0));
+								if (func) {
+									auto& From = func->from();
+									auto& To = func->to();
+									auto locked{ std::unique_lock(AllConversionsMut) };
+									AllConversions[From][To] = func;
+								}
+							}
+
+							// The Type& can be converted to const Type& without modification
+							if (1) {
+								auto func = std::shared_ptr< details::Type_Conversion_Base >(new details::Custom_Type_Conversion_Impl([](Any const& x)->Any {
+									return x;
+								}, refType, constRefType, 0.0));
+								if (func) {
+									auto& From = func->from();
+									auto& To = func->to();
+									auto locked{ std::unique_lock(AllConversionsMut) };
+									AllConversions[From][To] = func;
+								}
+							}
+
+
+
+							// The Type can be converted to Type without modification
+							if (1) {
+								auto func = std::shared_ptr< details::Type_Conversion_Base >(new details::Custom_Type_Conversion_Impl([](Any const& x)->Any {
+									return x;
+									}, baseType, baseType, 0.0));
+								if (func) {
+									auto& From = func->from();
+									auto& To = func->to();
+									auto locked{ std::unique_lock(AllConversionsMut) };
+									AllConversions[From][To] = func;
+								}
+							}
+							// The const Type can be converted to const Type without modification
+							if (1) {
+								auto func = std::shared_ptr< details::Type_Conversion_Base >(new details::Custom_Type_Conversion_Impl([](Any const& x)->Any {
+									return x;
+									}, constType, constType, 0.0));
+								if (func) {
+									auto& From = func->from();
+									auto& To = func->to();
+									auto locked{ std::unique_lock(AllConversionsMut) };
+									AllConversions[From][To] = func;
+								}
+							}
+							// The Type& can be converted to Type& without modification
+							if (1) {
+								auto func = std::shared_ptr< details::Type_Conversion_Base >(new details::Custom_Type_Conversion_Impl([](Any const& x)->Any {
+									return x;
+									}, refType, refType, 0.0));
+								if (func) {
+									auto& From = func->from();
+									auto& To = func->to();
+									auto locked{ std::unique_lock(AllConversionsMut) };
+									AllConversions[From][To] = func;
+								}
+							}
+							// The const Type& can be converted to const Type& without modification
+							if (1) {
+								auto func = std::shared_ptr< details::Type_Conversion_Base >(new details::Custom_Type_Conversion_Impl([](Any const& x)->Any {
+									return x;
+								}, constRefType, constRefType, 0.0));
+								if (func) {
+									auto& From = func->from();
+									auto& To = func->to();
+									auto locked{ std::unique_lock(AllConversionsMut) };
+									AllConversions[From][To] = func;
+								}
+							}
+
+						}
+					}
+				}
+			}
+		};
+
+
+	public:
+		// if does not exists, will add it. If exists, overwrites if the converter is better-performance.
+		template<typename From_t, typename To_t> void AddConverter() {
+			if (1) {
+				auto func = details::MakeConversionFunc<From_t, To_t>();
+				if (func) {
+					auto& From = func->from();
+					auto& To = func->to();
+					auto locked{ std::unique_lock(AllConversionsMut) };
+
+					TypeConverterFunc& converterPtr = AllConversions[From][To];
+					if (converterPtr && (converterPtr->cost() < func->cost())) {
+
+					}
+					else {
+						converterPtr = func;
+					}
+				}
+			}
+			if (1) {
+				auto func = details::MakeConversionFunc<To_t, From_t>();
+				if (func) {
+					auto& From = func->from();
+					auto& To = func->to();
+					auto locked{ std::unique_lock(AllConversionsMut) };
+
+					TypeConverterFunc& converterPtr = AllConversions[From][To];
+					if (converterPtr && (converterPtr->cost() < func->cost())) {
+
+					}
+					else {
+						converterPtr = func;
+					}
+				}
+			}
+			AddDefaultConverters(user_type_shared<From_t>());
+			AddDefaultConverters(user_type_shared<To_t>());
+		};
+		// if does not exists, will add it. If exists, overwrites if the converter is better-performance.
+		template<class Callable> void AddConverter(Callable Func) {
+			auto func = details::MakeConversionFunc(std::move(Func));
+			if (func) {
+				auto& From = func->from();
+				auto& To = func->to();
+				if (1) {
+					auto locked{ std::unique_lock(AllConversionsMut) };
+
+					TypeConverterFunc& converterPtr = AllConversions[From][To];
+					if (converterPtr && (converterPtr->cost() < func->cost())) {
+						return;
+					}
+					else {
+						converterPtr = func;
+					}
+				}
+				AddDefaultConverters(From);
+				AddDefaultConverters(To);
+			}
+		};
+		// Find or make converter to accomplish the request
+		TypeConverterFunc FindConverter(std::weak_ptr<Type_Info> const& From, std::weak_ptr<Type_Info> const& To) {
+			return GetOrBuildConverter(From, To);
+		};
+		// Find or make converter to accomplish the request
+		template<typename From_t, typename To_t> TypeConverterFunc FindConverter() {
+			return FindConverter(user_type_shared<From_t>(), user_type_shared<To_t>());
+		};
+
+		// will return an empty object if the conversion was impossible. (Assumes converting to void is not allowed or desired)
+		Any Convert(Any const& from, std::weak_ptr<Type_Info> const& To) {
+			if (auto f = FindConverter(from.Type(), To)) {
+				return f->convert(from);
+			}
+			return {};
+		};
+		// will throw an error if the conversion was impossible.
+		template<typename To_t> typename std::decay_t<To_t> Convert(Any const& from) {
+			if (auto f = FindConverter(from.Type(), user_type_shared<To_t>())) {
+				return f->convert(from).cast<To_t>();
+			}
+			throw exception::bad_any_cast(from.Type(), user_type_shared<To_t>());
+		};
+
+
+	};
+
+
+	namespace details {
+
+#if 0
+		/**
+		 * Pure virtual base class for all Proxy_Function implementations
+		 * Proxy_Functions are a type erasure of type-safe C++ function calls.
+		 * At runtime parameter types are expected to be tested against passed in types.
+		 * Dispatch_Engine only knows how to work with Proxy_Function, no other
+		 * function classes.
+		*/
+		class Proxy_Function_Base {
+		protected:
+			GoodLang::FunctionSignature signature;
+
+		public:
+			virtual ~Proxy_Function_Base() = default;
+
+			const GoodLang::FunctionSignature& GetSignature() const {
+				return signature;
+			};
+			int NumArguments() const {
+				return signature.Arguments().size();
+			};
+			const auto& Argument(size_t N) const noexcept { return signature.Arguments().Type(N); };
+			const auto& Arguments() const noexcept { return signature.Arguments(); };
+			const auto& Returns() const noexcept { return signature.Returns(); };
+
+
+
+			// Symbolic "cost" to perform the conversion, in 100's of nanoseconds. Not meant to be precise, but meant to be relative for comparison with other converters.
+			double conversion_cost(Function_Params t_params, const Type_Converter_Tree& t_conversions) const {
+				return m_types.conversion_cost(t_params, t_conversions);
+			};
+
+			Any operator()(const Function_Params& params, const Type_Converter_Tree& t_conversions) const {
+				if (params.size() >= m_types.size()) {
+					return do_call(convert(params, t_conversions));
+				}
+				throw exception::arity_error(static_cast<int>(params.size()), m_types.size());
+			};
+
+			Any operator()(const Function_Params& params) const {
+				if (params.size() == m_types.size()) {
+					return do_call(params.to_vector());
+				}
+				throw exception::arity_error(static_cast<int>(params.size()), m_types.size());
+			};
+
+			Any operator()(Any& param) const {
+				if (1 == m_types.size()) {
+					return do_call({ param });
+				}
+				throw exception::arity_error(1, m_types.size());
+			};
+
+			bool operator==(const Proxy_Function_Base& other) const noexcept {
+				return m_types == other.m_types && m_return == other.m_return; // same signature
+			};
+
+			bool call_match(const Function_Params& vals, const Type_Converter_Tree& t_conversions) const {
+				return m_types.converts(vals, t_conversions);
+			};
+			// Faster comparison for just the first parameter, to quickly rule-out if this function is available to the boxed value
+			bool compare_first_type(Any& bv, const Type_Converter_Tree& t_conversions) const noexcept {
+				if (m_types.size() > 0) {
+					if (auto p = m_types[0].second.lock()) {
+						return t_conversions.Converts(bv, p);
+					}
+					else {
+						return t_conversions.Converts(bv, scripting::user_type<void>());
+					}
+				}
+				else {
+					return false;
+				}
+			}
+
+		protected:
+			// Performs the conversion from the input parameters to the necessary types, if possible. Throws otherwise. 
+			std::vector<Any> convert(Function_Params t_params, const Type_Converter_Tree& t_conversions) const {
+				return m_types.convert(t_params, t_conversions);
+			};
+
+		protected:
+			virtual Any do_call(std::vector<Any> const&) const = 0;
+
+			Proxy_Function_Base(Param_Types t_types, Type_Info t_returns)
+				: m_types(std::move(t_types))
+				, m_return(std::move(t_returns))
+			{}
+		};
+#endif
+
+	};
+
+
+
+
+};
+
+
+
+
+
+
+
+
+
+
+
+

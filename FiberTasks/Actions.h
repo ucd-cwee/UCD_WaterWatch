@@ -833,13 +833,10 @@ namespace fibers {
 		template <typename T, typename C, typename R, typename... A> struct helper<T, R(C::*)(A...) const> { static const bool value = std::is_convertible<T, R(*)(A...)>::value; };
 		template<typename T> struct is_stateless { static const bool value = helper<T, T>::value; };
 
-
-		template<typename Lambda>
-		constexpr auto is_captureless_lambda_tester(int) -> decltype(+std::declval<Lambda>(), void(), std::true_type{});
-
-		template<typename Lambda>
-		constexpr auto is_captureless_lambda_tester(long) -> std::false_type;
-
+		//template<typename Lambda>
+		//constexpr auto is_captureless_lambda_tester(int) -> decltype(+std::declval<Lambda>(), void(), std::true_type{});
+		//template<typename Lambda>
+		//constexpr auto is_captureless_lambda_tester(long) -> std::false_type;
 	};
 
 	namespace {

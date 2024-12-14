@@ -31,6 +31,9 @@
     <ClInclude Include="UnitsLibrary.h">
       <Filter>Files\H</Filter>
     </ClInclude>
+    <ClInclude Include="Actions2.h">
+      <Filter>Files\H</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Fibers.cpp">

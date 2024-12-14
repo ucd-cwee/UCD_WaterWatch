@@ -27,6 +27,7 @@
     <ClCompile Include="UnitsLibrary_3.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="Actions2.h" />
     <ClInclude Include="Concurrent_Queue.h" />
     <ClInclude Include="Fibers.h" />
     <ClInclude Include="Actions.h" />

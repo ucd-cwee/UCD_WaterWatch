@@ -7,22 +7,26 @@
 #include <execution>
 #include "../WaterWatchCpp/Clock.h"
 
+#include "../FiberTasks/Actions2.h"
+
 class stackThing {
 public:
 	std::string varName;
 	fibers::Any var;
+	bool perform_cout;
 
 public:
-	stackThing() : varName(), var() {};
-	stackThing(std::string const& name) : varName(name), var() {};
-	template<typename T> stackThing(std::string const& name, T const& obj) : varName(name), var(obj) {};
-	template<typename T> stackThing(std::string const& name, T&& obj) : varName(name), var(std::forward<T>(obj)) {};
-	stackThing(stackThing const& r) : varName(r.varName), var(r.var) {};
-	stackThing(stackThing&& r) : varName(std::move(r.varName)), var(std::move(r.var)) {};
-	stackThing& operator=(stackThing const& r) { varName = r.varName; var = r.var; return *this; };
-	stackThing& operator=(stackThing&& r) { varName = std::move(r.varName); var = std::move(r.var); return *this; };
+	stackThing() : varName(), var(), perform_cout{ true }{};
+	stackThing(std::string const& name) : varName(name), var(), perform_cout{ true } {};
+	template<typename T> stackThing(std::string const& name, T const& obj) : varName(name), var(obj), perform_cout{ true } {};
+	template<typename T> stackThing(std::string const& name, T&& obj) : varName(name), var(std::forward<T>(obj)), perform_cout{ true } {};
+	template<typename T> stackThing(std::string const& name, T&& obj, bool doCout) : varName(name), var(std::forward<T>(obj)), perform_cout(doCout) {};
+	stackThing(stackThing const& r) = default;
+	stackThing(stackThing&& r) = default;
+	stackThing& operator=(stackThing const& r) = default;
+	stackThing& operator=(stackThing&& r) = default;
 	~stackThing() { 
-		if (!varName.empty()) { 
+		if (perform_cout && (!varName.empty())) {
 			std::cout << Units::printf("DELETING %s\n", varName.c_str());
 		}
 	};
@@ -59,6 +63,793 @@ int main() {
 
 	while (1) {
 		std::this_thread::yield();
+
+		// REVISED SCRIPTING LANGUAGE (starting over, to try and prevent random crashes)
+		while (1) {
+			auto printf = [](auto x) { std::cout << x << std::endl; };
+
+			// GoodLang::user_type
+			if (1) {
+				auto& voidType = GoodLang::user_type<void>();
+				auto& intType = GoodLang::user_type<int>();
+				auto& floatType = GoodLang::user_type<float>();
+				auto& constFloatType = GoodLang::user_type<const float>();
+				auto& constRefFloatType = GoodLang::user_type<const float&>();
+
+				EXPECT_EQ(voidType, voidType);
+				EXPECT_NE(voidType, intType);
+				EXPECT_NE(intType, floatType);
+				EXPECT_NE(floatType, constFloatType);
+				EXPECT_EQ(constFloatType, constFloatType);
+				EXPECT_NE(constFloatType, constRefFloatType);
+				EXPECT_EQ(constRefFloatType.CanCast(floatType), false); // would be true if we could teach it how to make copies. 
+				EXPECT_EQ(floatType.CanCast(constRefFloatType), true);  // const float& x = 0.0f; 			
+				EXPECT_EQ(constRefFloatType.CanCast(constFloatType), true); // const float x = (const float&)0.0f; 
+				EXPECT_EQ(constFloatType.CanCast(constRefFloatType), true); // const float& x = (const float)0.0f; 
+			}
+
+			// GoodLang::user_type_shared
+			if (1) {
+				auto voidType = GoodLang::user_type_shared<void>();
+				auto intType = GoodLang::user_type_shared<int>();
+				auto floatType = GoodLang::user_type_shared<float>();
+				auto constFloatType = GoodLang::user_type_shared<const float>();
+				auto constRefFloatType = GoodLang::user_type_shared<const float&>();
+
+				EXPECT_EQ(voidType, voidType);
+				EXPECT_NE(voidType, intType);
+				EXPECT_NE(intType, floatType);
+				EXPECT_NE(floatType, constFloatType);
+				EXPECT_EQ(constFloatType, constFloatType);
+				EXPECT_NE(constFloatType, constRefFloatType);
+
+				if (1) {
+					std::map< std::weak_ptr<GoodLang::Type_Info>, std::string> Map;
+					Map[voidType] = "void";
+					Map[intType] = "int";
+					Map[floatType] = "float";
+					Map[constFloatType] = "const float";
+					Map[constRefFloatType] = "const float&";
+					EXPECT_EQ(Map.size(), 5);
+				}
+				if (1) {
+					std::set< std::weak_ptr<GoodLang::Type_Info>> Map;
+					Map.insert(voidType);
+					Map.insert(intType);
+					Map.insert(floatType);
+					Map.insert(constFloatType);
+					Map.insert(constRefFloatType);
+					EXPECT_EQ(Map.size(), 5);
+				}
+				if (1) {
+					std::unordered_map< std::weak_ptr<GoodLang::Type_Info>, std::string> Map;
+					Map[voidType] = "void";
+					Map[intType] = "int";
+					Map[floatType] = "float";
+					Map[constFloatType] = "const float";
+					Map[constRefFloatType] = "const float&";
+					EXPECT_EQ(Map.size(), 5);
+				}
+				if (1) {
+					concurrency::concurrent_unordered_map< std::weak_ptr<GoodLang::Type_Info>, std::string> Map;
+					Map[voidType] = "void";
+					Map[intType] = "int";
+					Map[floatType] = "float";
+					Map[constFloatType] = "const float";
+					Map[constRefFloatType] = "const float&";
+					EXPECT_EQ(Map.size(), 5);
+				}
+			}
+
+			// test AnyData // WORKS
+			if (1) {
+				if (1) {
+					auto instanced_any = std::dynamic_pointer_cast<GoodLang::AnyData>(std::make_shared<GoodLang::AnyData_Instanced<std::string>>("TEST1"));
+					instanced_any->SetSelf(instanced_any);
+
+					if (auto* ptr = instanced_any->cast<std::string>()) {
+						EXPECT_EQ("TEST1", *ptr);
+					}
+					else {
+						EXPECT_EQ(false, true);
+					}
+				}
+				if (1) {
+					auto instanced_any = std::dynamic_pointer_cast<GoodLang::AnyData>(std::make_shared<GoodLang::AnyData_Instanced<const std::string>>("TEST2"));
+					instanced_any->SetSelf(instanced_any);
+
+					if (auto* ptr = instanced_any->cast<const std::string>()) {
+						EXPECT_EQ("TEST2", *ptr);
+					}
+					else {
+						EXPECT_EQ(false, true);
+					}
+				}
+				if (1) {
+					auto instanced_any = std::dynamic_pointer_cast<GoodLang::AnyData>(std::make_shared<GoodLang::AnyData_Instanced<const std::string>>("TEST3"));
+					instanced_any->SetSelf(instanced_any);
+
+					if (auto* ptr = instanced_any->cast<std::string>()) {
+						EXPECT_EQ(false, true);
+					}
+				}
+				if (1) {
+					auto instanced_any = std::dynamic_pointer_cast<GoodLang::AnyData>(std::make_shared<GoodLang::AnyData_Instanced<std::string>>("TEST4"));
+					instanced_any->SetSelf(instanced_any);
+
+					if (auto* ptr = instanced_any->cast<const std::string>()) {
+						EXPECT_EQ("TEST4", *ptr);
+					}
+					else {
+						EXPECT_EQ(false, true);
+					}
+				}
+				if (1) {
+					auto instanced_any = std::dynamic_pointer_cast<GoodLang::AnyData>(std::make_shared<GoodLang::AnyData_Instanced<std::string>>("TEST5"));
+					instanced_any->SetSelf(instanced_any);
+
+					if (auto ptr = instanced_any->cast_shared<std::string>()) {
+						EXPECT_EQ("TEST5", *ptr);
+					}
+					else {
+						EXPECT_EQ(false, true);
+					}
+				}
+				if (1) {
+					auto instanced_any = std::dynamic_pointer_cast<GoodLang::AnyData>(std::make_shared<GoodLang::AnyData_Instanced<const std::string>>("TEST6"));
+					instanced_any->SetSelf(instanced_any);
+
+					if (auto ptr = instanced_any->cast_shared<const std::string>()) {
+						EXPECT_EQ("TEST6", *ptr);
+					}
+					else {
+						EXPECT_EQ(false, true);
+					}
+				}
+				if (1) {
+					std::weak_ptr< GoodLang::AnyData> test;
+					if (1) {
+						std::shared_ptr<std::string> temp;
+						if (1) {
+							auto instanced_any = std::dynamic_pointer_cast<GoodLang::AnyData>(std::make_shared<GoodLang::AnyData_Instanced<std::string>>("TEST7"));
+							instanced_any->SetSelf(instanced_any);
+
+							temp = instanced_any->cast_shared<std::string>();
+							test = instanced_any;
+						}
+						if (temp) {
+							EXPECT_EQ("TEST7", *temp);
+						}
+						if (auto ptr = test.lock()) {
+
+						}
+						else {
+							EXPECT_EQ(false, true);
+						}
+					}
+
+					// this should now be out-of-scope and it should be destroyed. 
+					if (auto ptr = test.lock()) {
+						EXPECT_EQ(false, true);
+					}
+				}
+			}
+
+			// test Any (local instance) // WORKS
+			if (1) {
+				std::weak_ptr<GoodLang::AnyData> wrapped;
+				if (1) {
+					std::shared_ptr<std::string> string_ptr;
+					if (1) {
+						auto anyObj{ GoodLang::Any(std::string("TEST")) };
+						wrapped = anyObj.impl();
+
+						string_ptr = anyObj.cast<std::shared_ptr<std::string>>();
+						if (string_ptr) {
+							EXPECT_EQ(*string_ptr, "TEST");
+						}
+
+						EXPECT_EQ(anyObj.cast<std::string>(), "TEST");
+						EXPECT_EQ(anyObj.cast<const std::string>(), "TEST");
+						EXPECT_EQ((*anyObj.cast<std::string*>()), "TEST");
+						EXPECT_EQ((*anyObj.cast<const std::string*>()), "TEST");
+						EXPECT_EQ((anyObj.Type()), (GoodLang::user_type_shared<std::string>()));
+						EXPECT_EQ((anyObj.Type()), (GoodLang::user_type<std::string>()));
+						EXPECT_EQ((anyObj.TypeHash()), GoodLang::GetHash(GoodLang::user_type<std::string>()));
+						EXPECT_EQ(wrapped.expired(), false);
+					}
+					if (string_ptr) {
+						EXPECT_EQ(*string_ptr, "TEST");
+					}
+					EXPECT_EQ(wrapped.expired(), false); // wrapped is kept alive by its connection to the string_ptr, which itself is just referencing an object living inside of wrapped.
+				}
+				EXPECT_EQ(wrapped.expired(), true);
+			}
+
+			// test Any (shared impl) // WORKS
+			if (1) {
+				std::weak_ptr<GoodLang::AnyData> wrapped;
+				if (1) {
+					std::shared_ptr<std::string> string_ptr;
+					if (1) {
+						auto anyObj{ GoodLang::Any(std::make_shared<std::string>("TEST")) };
+						wrapped = anyObj.impl();
+
+						string_ptr = anyObj.cast<std::shared_ptr<std::string>>();
+						if (string_ptr) {
+							EXPECT_EQ(*string_ptr, "TEST");
+						}
+
+						EXPECT_EQ(anyObj.cast<std::string>(), "TEST");
+						EXPECT_EQ(anyObj.cast<const std::string>(), "TEST");
+						EXPECT_EQ((*anyObj.cast<std::string*>()), "TEST");
+						EXPECT_EQ((*anyObj.cast<const std::string*>()), "TEST");
+						EXPECT_EQ((anyObj.Type()), (GoodLang::user_type_shared<std::string>()));
+						EXPECT_EQ((anyObj.Type()), (GoodLang::user_type<std::string>()));
+						EXPECT_EQ((anyObj.TypeHash()), GoodLang::GetHash(GoodLang::user_type<std::string>()));
+						EXPECT_EQ(wrapped.expired(), false);
+					}
+					if (string_ptr) {
+						EXPECT_EQ(*string_ptr, "TEST");
+					}
+					EXPECT_EQ(wrapped.expired(), true); // wrapped is not kept alive since string_ptr is independant and has the data itself.
+				}
+				EXPECT_EQ(wrapped.expired(), true);
+			}
+
+			// test Any auto-casting and assignment // WORKS
+			if (1) {
+				std::shared_ptr<stackThing> a5;
+				if (1) {
+					GoodLang::Any anyObj;
+					anyObj = stackThing("TEST1", bool(), false);
+
+					stackThing& a2 = anyObj.cast();
+					const stackThing& a3 = anyObj.cast();
+
+					a5 = anyObj.cast<std::shared_ptr<stackThing>>();
+				}
+				if (1) {
+					GoodLang::Any anyObj;
+					anyObj = std::make_shared<stackThing>("TEST2", bool(), false);
+
+					stackThing& a2 = anyObj.cast();
+					const stackThing& a3 = anyObj.cast();
+					a5 = anyObj.cast<std::shared_ptr<stackThing>>();
+				}
+				a5 = nullptr;
+			}
+
+			// test Any auto-casting and assignment on a threaded race-condition // WORKS
+			if (1) {
+				GoodLang::Any anyObj;
+				fibers::parallel::For(0, 1000000, [&anyObj](int i) {
+					anyObj = stackThing(Units::printf("%i", i), i, false);
+
+					GoodLang::Any copy = anyObj;
+					GoodLang::Any copy2{ anyObj };
+					GoodLang::Any copy3; copy3 = anyObj;
+
+					stackThing& a1 = anyObj.cast<stackThing&>();
+
+					auto caster = anyObj.cast();
+
+					stackThing& a2 = caster; // note -- this is somewhat dangerous, since the Any object is bring overwritten in multiple threads.
+					const stackThing& a3 = anyObj.cast();
+					std::shared_ptr<stackThing> a4 = anyObj.cast();
+					std::shared_ptr<stackThing> a5 = anyObj.cast<std::shared_ptr<stackThing>>();
+					});
+				fibers::parallel::For(0, 1000000, [&anyObj](int i) {
+					stackThing& a2 = anyObj.cast();
+					const stackThing& a3 = anyObj.cast();
+					std::shared_ptr<stackThing> a4 = anyObj.cast();
+					std::shared_ptr<stackThing> a5 = anyObj.cast<std::shared_ptr<stackThing>>();
+					});
+			}
+
+			// test Instance memory lifetime on a threaded race-condition with assignment of different class types // WORKS
+			if (1) {
+				fibers::containers::number<long> N{ 0 };
+				fibers::containers::number<long> M{ 0 };
+				GoodLang::Any anyObj;
+				fibers::parallel::For(0, 1000000, [&anyObj, &N, &M](int i) {
+					// thread-safe to overwrite
+					if (i % 2 == 0) {
+						anyObj = Units::printf("%i", i);
+					}
+					else {
+						anyObj = stackThing(Units::printf("%i", i), i, false);
+					}
+
+					// thread-safe to cast
+
+					// If trying to cast to a reference, it may throw an error if the type doesn't match
+					try {
+						std::string& stringRef = anyObj.cast();
+					}
+					catch (...) {}
+
+					// If trying to cast to a ptr, it may return nullptr if the type doesn't match
+					std::string* stringPtr = anyObj.cast(); // note that this doesn't prevent the underlying object from being changed!
+
+					// If trying to cast to a shared_ptr, it may return nullptr if the type doesn't match
+					if (auto ptr = anyObj.cast<std::shared_ptr<std::string>>()) {
+						// now that we have access to a shared_ptr, the ptr will remain valid for as long as I have it. The Any object may be changed still
+						(void)ptr->c_str();
+						N++;
+					}
+					if (auto ptr = anyObj.cast<std::shared_ptr<stackThing>>()) {
+						// now that we have access to a shared_ptr, the ptr will remain valid for as long as I have it. The Any object may be changed still
+						(void)ptr->get_var_name();
+						M++;
+					}
+
+					});
+				// printf(Units::printf("Num Valid String Ptrs: %i\nNum Valid StackThing Ptrs: %i\nTotal: %i", (int)N, (int)M, (int)(N+M)));
+				EXPECT_EQ(N > (1000000.0 * 0.4), true);
+				EXPECT_EQ(M > (1000000.0 * 0.4), true);
+			}
+
+			// test a custom type info 
+			if (1) {
+				std::weak_ptr<GoodLang::Type_Info> stdMapRefType;
+				if (1) {
+					auto stdMapType = std::make_shared<GoodLang::Scripted_Type_Info>("std", "map");
+					stdMapType->SetSelf(stdMapType);
+
+					stdMapRefType = stdMapType->MakeRef();
+
+					auto obj{ GoodLang::DynamicObject(stdMapType) };
+
+					auto voidType = GoodLang::user_type_shared<void>();
+					auto intType = GoodLang::user_type_shared<int>();
+					auto floatType = GoodLang::user_type_shared<float>();
+					auto constFloatType = GoodLang::user_type_shared<const float>();
+					auto constRefFloatType = GoodLang::user_type_shared<const float&>();
+
+					EXPECT_EQ(voidType, voidType);
+					EXPECT_NE(voidType, intType);
+					EXPECT_NE(intType, floatType);
+					EXPECT_NE(floatType, constFloatType);
+					EXPECT_EQ(constFloatType, constFloatType);
+					EXPECT_NE(constFloatType, constRefFloatType);
+					EXPECT_NE(constFloatType, stdMapType);
+					EXPECT_NE(stdMapType, stdMapRefType);
+
+					if (1) {
+						std::map< std::weak_ptr<GoodLang::Type_Info>, std::string> Map;
+						Map[voidType] = "void";
+						Map[intType] = "int";
+						Map[floatType] = "float";
+						Map[constFloatType] = "const float";
+						Map[constRefFloatType] = "const float&";
+						Map[stdMapType] = "stdMapType";
+						Map[stdMapRefType] = "stdMapRefType";
+						EXPECT_EQ(Map.size(), 7);
+					}
+					printf(stdMapType->name());
+					printf(stdMapRefType.lock()->name());
+
+					// EXPECT_EQ("std::map", (stdMapType->name()));
+					// EXPECT_EQ("std::map", (stdMapRefType.lock()->name()));
+
+					EXPECT_EQ(false, stdMapRefType.expired());
+				}
+				EXPECT_EQ(true, stdMapRefType.expired());
+
+			}
+
+			// pretend that a function wants a "const ref" version of a type -- can we cast from our Type_Info to it? Can we detect it's different? 
+			if (1) {
+				// Built-In types offer unlimited lifetimes for their casts
+				if (1) {
+					std::weak_ptr<GoodLang::Type_Info> TypeConst;
+					if (1) {
+						auto Type = GoodLang::user_type_shared<float>();
+						TypeConst = Type.lock()->MakeConst();
+						auto TypeRef = Type.lock()->MakeRef();
+						auto TypeConstRef = TypeConst.lock()->MakeRef();
+
+						EXPECT_EQ(true, Type.lock()->CanCast(*TypeConstRef.lock()));
+						EXPECT_EQ(true, Type.lock()->CanCast(*TypeConst.lock()));
+						EXPECT_EQ(true, TypeRef.lock()->CanCast(*TypeConstRef.lock()));
+						EXPECT_EQ(false, TypeConst.lock()->CanCast(*Type.lock()));
+						EXPECT_EQ(false, Type.lock()->CanCast(*TypeRef.lock()));
+					}
+					EXPECT_EQ(false, TypeConst.expired());
+				}
+				// Scripted_Type_Info offer limited lifetimes, tied to the lifetime of the parent or original Scripted_Type_Info.
+				if (1) {
+					std::weak_ptr<GoodLang::Type_Info> TypeConst;
+					if (1) {
+						auto Type = std::make_shared<GoodLang::Scripted_Type_Info>("std", "map");
+						Type->SetSelf(Type);
+
+						TypeConst = Type->MakeConst();
+						auto TypeRef = Type->MakeRef();
+						auto TypeConstRef = TypeConst.lock()->MakeRef();
+
+						EXPECT_EQ(true, Type->CanCast(*TypeConstRef.lock()));
+						EXPECT_EQ(true, Type->CanCast(*TypeConst.lock()));
+						EXPECT_EQ(true, TypeRef.lock()->CanCast(*TypeConstRef.lock()));
+						EXPECT_EQ(false, TypeConst.lock()->CanCast(*Type));
+						EXPECT_EQ(false, Type->CanCast(*TypeRef.lock()));
+					}
+					EXPECT_EQ(true, TypeConst.expired());
+				}
+			}
+
+			// GoodLang::ParamTypes
+			if (1) {
+				using namespace GoodLang;
+
+				auto types0 = ParamTypes();
+				auto types1 = ParamTypes({ user_type_shared<int>() });
+				auto types1c = ParamTypes({ user_type_shared<const int>() });
+				auto types1cr = ParamTypes({ types1[0].lock()->MakeConst().lock()->MakeRef() });
+				auto types2 = ParamTypes({ user_type_shared<int>(), user_type_shared<int>() });
+
+				for (auto& type : types0) {}
+				for (auto& type : types1) {}
+				for (auto& type : types1c) {}
+				for (auto& type : types1cr) {}
+				for (auto& type : types2) {}
+
+				EXPECT_EQ(types0.size(), 0);
+				EXPECT_EQ(types1.size(), 1);
+				EXPECT_EQ(types1c.size(), 1);
+				EXPECT_EQ(types1cr.size(), 1);
+				EXPECT_EQ(types2.size(), 2);
+
+				EXPECT_EQ(types2.CanCast(types2), true);
+				EXPECT_EQ(types2.CanCast(types0), true);
+				EXPECT_EQ(types0.CanCast(types2), false);
+				EXPECT_EQ(types1.CanCast(types0), true);
+				EXPECT_EQ(types1.CanCast(types2), false);
+				EXPECT_EQ(types1.CanCast(types1cr), true);
+				EXPECT_EQ(types1.CanCast(types1c), true);
+				EXPECT_EQ(types1c.CanCast(types1cr), true);
+				EXPECT_EQ(types1cr.CanCast(types1c), true);
+				EXPECT_EQ(types1cr.CanCast(types1), false);
+
+				std::map< ParamTypes, int> test1;
+				std::unordered_map< ParamTypes, int> test2;
+				concurrency::concurrent_unordered_map< ParamTypes, int> test3;
+
+				test1[types0] = 0;
+				test1[types1] = 0;
+				test1[types1c] = 0;
+				test1[types1cr] = 0;
+				test1[types2] = 0;
+				EXPECT_EQ(test1.size(), 5);
+
+				test2[types0] = 0;
+				test2[types1] = 0;
+				test2[types1c] = 0;
+				test2[types1cr] = 0;
+				test2[types2] = 0;
+				EXPECT_EQ(test2.size(), 5);
+
+				test3[types0] = 0;
+				test3[types1] = 0;
+				test3[types1c] = 0;
+				test3[types1cr] = 0;
+				test3[types2] = 0;
+				EXPECT_EQ(test3.size(), 5);
+			}
+
+			// GoodLang::FunctionArgs
+			if (1) {
+				using namespace GoodLang;
+
+				auto types0 = FunctionArgs();
+				auto types1 = FunctionArgs(ParamTypes({ user_type_shared<int>() }));
+				auto types1c = FunctionArgs(ParamTypes({ user_type_shared<const int>() }));
+				auto types1cr = FunctionArgs(ParamTypes({ types1.Type(0).lock()->MakeConst().lock()->MakeRef() }));
+				auto types2 = FunctionArgs(ParamTypes({ user_type_shared<int>(), user_type_shared<int>() }));
+
+				for (auto& type : types0) {}
+				for (auto& type : types1) {}
+				for (auto& type : types1c) {}
+				for (auto& type : types1cr) {}
+				for (auto& type : types2) {}
+
+				EXPECT_EQ(types0.size(), 0);
+				EXPECT_EQ(types1.size(), 1);
+				EXPECT_EQ(types1c.size(), 1);
+				EXPECT_EQ(types1cr.size(), 1);
+				EXPECT_EQ(types2.size(), 2);
+
+				EXPECT_EQ(types2.CanCastTo(types2), true);
+				EXPECT_EQ(types2.CanCastTo(types0), true);
+				EXPECT_EQ(types0.CanCastTo(types2), false);
+				EXPECT_EQ(types1.CanCastTo(types0), true);
+				EXPECT_EQ(types1.CanCastTo(types2), false);
+				EXPECT_EQ(types1.CanCastTo(types1cr), true);
+				EXPECT_EQ(types1.CanCastTo(types1c), true);
+				EXPECT_EQ(types1c.CanCastTo(types1cr), true);
+				EXPECT_EQ(types1cr.CanCastTo(types1c), true);
+				EXPECT_EQ(types1cr.CanCastTo(types1), false);
+
+				std::map< FunctionArgs, int> test1;
+				std::unordered_map< FunctionArgs, int> test2;
+				concurrency::concurrent_unordered_map< FunctionArgs, int> test3;
+
+				test1[types0] = 0;
+				test1[types1] = 0;
+				test1[types1c] = 0;
+				test1[types1cr] = 0;
+				test1[types2] = 0;
+				EXPECT_EQ(test1.size(), 5);
+
+				test2[types0] = 0;
+				test2[types1] = 0;
+				test2[types1c] = 0;
+				test2[types1cr] = 0;
+				test2[types2] = 0;
+				EXPECT_EQ(test2.size(), 5);
+
+				test3[types0] = 0;
+				test3[types1] = 0;
+				test3[types1c] = 0;
+				test3[types1cr] = 0;
+				test3[types2] = 0;
+				EXPECT_EQ(test3.size(), 5);
+			}
+
+			// GoodLang::FunctionSignature
+			if (1) {
+				using namespace GoodLang;
+
+				auto types0 = FunctionSignature();
+				auto types1 = FunctionSignature(user_type_shared<int>(), ParamTypes({ user_type_shared<int>() }), "Namespace", "Name1");
+				auto types1c = FunctionSignature(user_type_shared<int>(), ParamTypes({ user_type_shared<const int>() }), "Namespace", "Name1");
+				auto types1cr = FunctionSignature(user_type_shared<int>(), ParamTypes({ user_type_shared<const int&>() }), "Namespace", "Name1");
+				auto types2 = FunctionSignature(user_type_shared<int>(), ParamTypes({ user_type_shared<int>(), user_type_shared<int>() }), "Namespace", "Name1");
+
+				for (auto& type : types0.Arguments()) {}
+				for (auto& type : types1.Arguments()) {}
+				for (auto& type : types1c.Arguments()) {}
+				for (auto& type : types1cr.Arguments()) {}
+				for (auto& type : types2.Arguments()) {}
+
+				EXPECT_EQ(types0.Arguments().size(), 0);
+				EXPECT_EQ(types1.Arguments().size(), 1);
+				EXPECT_EQ(types1c.Arguments().size(), 1);
+				EXPECT_EQ(types1cr.Arguments().size(), 1);
+				EXPECT_EQ(types2.Arguments().size(), 2);
+
+				EXPECT_EQ(types2.Arguments().CanCastTo(types2.Arguments()), true);
+				EXPECT_EQ(types2.Arguments().CanCastTo(types0.Arguments()), true);
+				EXPECT_EQ(types0.Arguments().CanCastTo(types2.Arguments()), false);
+				EXPECT_EQ(types1.Arguments().CanCastTo(types0.Arguments()), true);
+				EXPECT_EQ(types1.Arguments().CanCastTo(types2.Arguments()), false);
+				EXPECT_EQ(types1.Arguments().CanCastTo(types1cr.Arguments()), true);
+				EXPECT_EQ(types1.Arguments().CanCastTo(types1c.Arguments()), true);
+				EXPECT_EQ(types1c.Arguments().CanCastTo(types1cr.Arguments()), true);
+				EXPECT_EQ(types1cr.Arguments().CanCastTo(types1c.Arguments()), true);
+				EXPECT_EQ(types1cr.Arguments().CanCastTo(types1.Arguments()), false);
+
+				std::map< FunctionSignature, int> test1;
+				std::unordered_map< FunctionSignature, int> test2;
+				concurrency::concurrent_unordered_map< FunctionSignature, int> test3;
+
+				test1[types0] = 0;
+				test1[types1] = 0;
+				test1[types1c] = 0;
+				test1[types1cr] = 0;
+				test1[types2] = 0;
+				EXPECT_EQ(test1.size(), 5);
+
+				test2[types0] = 0;
+				test2[types1] = 0;
+				test2[types1c] = 0;
+				test2[types1cr] = 0;
+				test2[types2] = 0;
+				EXPECT_EQ(test2.size(), 5);
+
+				test3[types0] = 0;
+				test3[types1] = 0;
+				test3[types1c] = 0;
+				test3[types1cr] = 0;
+				test3[types2] = 0;
+				EXPECT_EQ(test3.size(), 5);
+			}
+
+			// GoodLang::details::Custom_Type_Conversion_Impl
+			if (1) {
+				using namespace GoodLang;
+
+				auto type_converter = std::shared_ptr< GoodLang::details::Type_Conversion_Base >(new GoodLang::details::Custom_Type_Conversion_Impl([](int x)->double { return x; }));
+				double answer1 = type_converter->convert(10).cast<double>();
+				double answer2 = type_converter->convert(10).cast<const double>();
+				double answer3 = type_converter->convert(10).cast<const double&>();
+				const float* answer4 = type_converter->convert(10).cast<const float*>(); // will be null
+
+				EXPECT_EQ(answer1, 10.0);
+				EXPECT_EQ(answer2, 10.0);
+				EXPECT_EQ(answer3, 10.0);
+				EXPECT_EQ(answer4, nullptr);
+			}
+
+			// GoodLang::details::Static_Type_Conversion_Impl
+			if (1) {
+				using namespace GoodLang;
+
+				auto type_converter = std::shared_ptr< GoodLang::details::Type_Conversion_Base >(new GoodLang::details::Static_Type_Conversion_Impl<int, double>());
+				double answer1 = type_converter->convert(10).cast<double>();
+				double answer2 = type_converter->convert(10).cast<const double>();
+				double answer3 = type_converter->convert(10).cast<const double&>();
+				const float* answer4 = type_converter->convert(10).cast<const float*>(); // will be null
+
+				EXPECT_EQ(answer1, 10.0);
+				EXPECT_EQ(answer2, 10.0);
+				EXPECT_EQ(answer3, 10.0);
+				EXPECT_EQ(answer4, nullptr);
+			}
+
+			// Any(int&)
+			if (1) {
+				using namespace GoodLang;
+				int from = 1;
+				auto int_Any = Any(from);
+				int& t1 = int_Any.cast<int>();
+				int& t2 = int_Any.cast<int&>();
+				int const& t3 = int_Any.cast<const int&>();
+				int* t4 = int_Any.cast<int*>();
+				const int* t5 = int_Any.cast<const int*>();
+
+				EXPECT_EQ(t1, 1);
+				EXPECT_EQ(t2, 1);
+				EXPECT_EQ(t3, 1);
+				EXPECT_EQ(*t4, 1);
+				EXPECT_EQ(*t5, 1);
+			}
+
+			// GoodLang::details::Dynamic_Type_Conversion_Impl
+			if (1) {
+				using namespace GoodLang;
+
+				auto type_converter = std::shared_ptr< GoodLang::details::Type_Conversion_Base >(new GoodLang::details::Dynamic_Type_Conversion_Impl<GoodLang::exception::bad_any_cast, std::bad_cast>());
+
+				auto from = GoodLang::exception::bad_any_cast(user_type_shared<double>(), user_type_shared<double>());
+
+				const std::bad_cast* answer3 = type_converter->convert(from).cast<const std::bad_cast*>();
+				const float* answer4 = type_converter->convert(from).cast<const float*>(); // will be null
+
+				EXPECT_NE(answer3, nullptr);
+				EXPECT_EQ(answer4, nullptr);
+			}
+
+			// GoodLang::details::MakeConversionFunc
+			if (1) {
+				using namespace GoodLang;
+
+				if (auto p = GoodLang::details::MakeConversionFunc([](int i) -> double { return i; })) {
+					auto x = Any(10);
+					p->convert_in_place(x);
+					EXPECT_EQ(x.cast<double>(), 10.0);
+					EXPECT_EQ(p->convert(10).cast<double>(), 10.0);
+				}
+				if (auto p = GoodLang::details::MakeConversionFunc([](int const& i) -> double { return i; })) {
+					auto x = Any(10);
+					p->convert_in_place(x);
+					EXPECT_EQ(x.cast<double>(), 10.0);
+					EXPECT_EQ(p->convert(10).cast<double>(), 10.0);
+				}
+				if (auto p = GoodLang::details::MakeConversionFunc([](int& i) -> double { return i; })) {
+					auto x = Any(10);
+					p->convert_in_place(x);
+					EXPECT_EQ(x.cast<double>(), 10.0);
+					EXPECT_EQ(p->convert(10).cast<double>(), 10.0);
+				}
+				if (auto p = GoodLang::details::MakeConversionFunc<int, double>()) {
+					auto x = Any(10);
+					p->convert_in_place(x);
+					EXPECT_EQ(x.cast<double>(), 10.0);
+					EXPECT_EQ(p->convert(10).cast<double>(), 10.0);
+				}
+				if (auto p = GoodLang::details::MakeConversionFunc<int&, double>()) {
+					auto x = Any(10);
+					p->convert_in_place(x);
+					EXPECT_EQ(x.cast<double>(), 10.0);
+					EXPECT_EQ(p->convert(10).cast<double>(), 10.0);
+				}
+				if (auto p = GoodLang::details::MakeConversionFunc<int const&, double>()) {
+					auto x = Any(10);
+					p->convert_in_place(x);
+					EXPECT_EQ(x.cast<double>(), 10.0);
+					EXPECT_EQ(p->convert(10).cast<double>(), 10.0);
+				}
+				if (auto p = GoodLang::details::MakeConversionFunc([](int i) -> std::string { return std::to_string(i); })) {
+					auto x = Any(10);
+					p->convert_in_place(x);
+					EXPECT_EQ(x.cast<std::string>(), "10");
+					EXPECT_EQ(p->convert(10).cast<std::string>(), "10");
+				}
+
+				// Any -> string
+				if (auto p = GoodLang::details::MakeConversionFunc([](Any const& i) -> std::string { return i.TypeName(); })) {
+					auto x = Any(10);
+					p->convert_in_place(x);
+					EXPECT_EQ(x.cast<std::string>(), "int");
+					EXPECT_EQ(p->convert(10).cast<std::string>(), "int");
+				}
+
+				// just a simple pass-through. Should get what you give.
+				if (auto p = GoodLang::details::MakeConversionFunc([](Any& i) -> Any { return i; })) {
+					EXPECT_EQ(p->convert(10).IsTypeOf<int>(), true);
+					EXPECT_EQ(p->convert(10.0).IsTypeOf<double>(), true);
+					EXPECT_EQ(p->convert(10.0f).IsTypeOf<float>(), true);
+				}
+
+				// just a simple pass-through. Should get what you give.
+				if (auto p = GoodLang::details::MakeConversionFunc([](std::shared_ptr<int> i) -> Any { return i; })) {
+					EXPECT_EQ(p->convert(10).IsTypeOf<int>(), true);
+					EXPECT_EQ(p->convert(10.0).IsTypeOf<double>(), false); // this will be false! It returns a nullptr, and a nullptr to Any should be empty...
+					EXPECT_EQ(p->convert(10.0f).IsTypeOf<float>(), false); // this will be false! It returns a nullptr, and a nullptr to Any should be empty...
+					EXPECT_EQ(p->convert(10.0f).IsTypeOf<int>(), false); // this will be false! It returns a nullptr, and a nullptr to Any should be empty...
+					EXPECT_EQ(p->convert(nullptr).IsTypeOf<int>(), false); // this will be false! It returns a nullptr, and a nullptr to Any should be empty...
+
+				}
+
+
+			}
+
+			// GoodLang::TypeConverter
+			if (1) {
+				using namespace GoodLang;
+
+				TypeConverter tree;
+				tree.AddConverter<int, char>();
+				tree.AddConverter<bool, int>();
+				tree.AddConverter<float, double>();
+				tree.AddConverter<int, float>();
+
+				tree.AddConverter([](int i) -> std::string { return std::to_string(i); });
+				tree.AddConverter([](float i) -> std::string { return std::to_string(i); });
+				tree.AddConverter([](double i) -> std::string { return std::to_string(i); });
+				tree.AddConverter([](char i) -> std::string { return std::to_string(i); });
+				tree.AddConverter([](bool i) -> std::string { return std::to_string(i); });
+
+				EXPECT_EQ(tree.Convert<double>(10.0f), 10.0);
+				EXPECT_EQ(tree.Convert<bool>(1), true);
+
+				
+				if (auto f = tree.FindConverter<int, double>()) {
+					std::cout << f->convert(100).TypeName() << std::endl;
+				}
+
+
+
+
+				EXPECT_EQ(tree.Convert<double>(100), 100.0); // int -> float -> double
+				EXPECT_EQ(tree.Convert<double>(true), 1.0); // bool -> int -> float -> double
+				EXPECT_EQ(tree.Convert<std::string>(10), "10");
+
+
+
+			}
+		
+
+
+		}
+		
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 		// Scripting language 
 		if (0) {
