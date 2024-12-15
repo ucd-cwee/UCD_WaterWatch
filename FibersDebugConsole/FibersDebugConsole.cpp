@@ -398,6 +398,7 @@ int main() {
 					stdMapType->SetSelf(stdMapType);
 
 					stdMapRefType = stdMapType->MakeRef();
+					auto stdMapConstRefType = stdMapRefType.lock()->MakeConst();
 
 					auto obj{ GoodLang::DynamicObject(stdMapType) };
 
@@ -427,11 +428,9 @@ int main() {
 						Map[stdMapRefType] = "stdMapRefType";
 						EXPECT_EQ(Map.size(), 7);
 					}
-					printf(stdMapType->name());
-					printf(stdMapRefType.lock()->name());
-
-					// EXPECT_EQ("std::map", (stdMapType->name()));
-					// EXPECT_EQ("std::map", (stdMapRefType.lock()->name()));
+					EXPECT_EQ("map", (stdMapType->name()));
+					EXPECT_EQ("map&", (stdMapRefType.lock()->name()));
+					EXPECT_EQ("const map&", (stdMapConstRefType.lock()->name()));
 
 					EXPECT_EQ(false, stdMapRefType.expired());
 				}
@@ -816,28 +815,69 @@ int main() {
 
 				EXPECT_EQ(tree.Convert<double>(10.0f), 10.0);
 				EXPECT_EQ(tree.Convert<bool>(1), true);
-								
-				if (auto f = tree.FindConverter<int, double>()) {
-					std::cout << f->convert(100).TypeName() << std::endl;
-				}
 
 				EXPECT_EQ(tree.Convert<double>(100), 100.0); // int -> float -> double
 				EXPECT_EQ(tree.Convert<double>(true), 1.0); // bool -> int -> float -> double, which utilizes multiple daisy-chain conversions in a row. 
 				EXPECT_EQ(tree.Convert<std::string>(10), "10");
 
-				printf(tree.Convert<std::string>(100.0));
-
-
-
+				EXPECT_EQ(tree.Convert<std::string>(100.0), "100.000000");
 
 				EXPECT_EQ(tree.Convert<double>(fibers::synchronization::atomic_number<double>(100)), 100.0); // int -> float -> double
-				printf(tree.Convert<std::string>(fibers::synchronization::atomic_number<double>(100))); // int -> float -> double
-
-
-				// EXPECT_EQ(tree.Convert<std::string>(100.0), 100.0); // int -> float -> double
-
+				EXPECT_EQ(tree.Convert<std::string>(fibers::synchronization::atomic_number<double>(100)), "100.000000"); // int -> float -> double
 			}
 		
+			// GoodLang::TypeConverter, with converters being added (and used) in multi-threaded context
+			if (1) {
+				using namespace GoodLang;
+				TypeConverter tree;
+				try {
+					fibers::parallel::For(0, 10000, [&](int i) {
+						switch (i % 4) {
+						case 0: {
+							tree.AddConverter<int, double>(); // single-thread locked and safe
+							break;
+						}
+						case 1: {
+							tree.AddConverter<int, double>(); // single-thread locked and safe
+							break;
+						}
+						case 2: {
+							tree.AddConverter<int, double>(); // single-thread locked and safe
+							break;
+						}
+						case 3: {
+							tree.AddConverter<int, double>(); // single-thread locked and safe
+							break;
+						}
+						}
+
+						EXPECT_EQ(tree.Convert<double>(10), 10.0);
+						EXPECT_EQ(tree.Convert<int>(10.0), 10);
+						EXPECT_EQ(tree.Convert<const int>(10.0), 10);
+						EXPECT_EQ(tree.Convert<const double>(10), 10.0);
+						EXPECT_EQ(tree.Convert<double&>(10), 10.0);
+						EXPECT_EQ(tree.Convert<const int&>(10.0), 10);
+
+
+
+
+
+
+					});
+				}
+				catch (std::exception& e) {
+					printf(e.what());
+				}
+			}
+
+
+
+
+
+
+
+
+
 
 
 		}

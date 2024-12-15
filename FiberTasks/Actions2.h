@@ -366,7 +366,7 @@ namespace GoodLang {
 		virtual std::string name() const noexcept override {
 			if (is_const()) {
 				if (is_ref()) {
-					return std::string("const ") + std::string(m_type_info.name()) + "&";
+					return std::string("const ") + std::string(m_type_info.name()) + " &";
 				}
 				else {
 					return std::string("const ") + std::string(m_type_info.name());
@@ -518,7 +518,7 @@ namespace GoodLang {
 				return m_self;
 			}
 			else if (auto parentPtr = m_parent.lock()) {
-				return parentPtr->MakeConst();
+				return parentPtr->MakeDuplicate(targetConst, targetRef);
 			}
 			else {
 				if (1) {
@@ -1227,23 +1227,21 @@ namespace GoodLang {
 			template<typename VType> static decltype(auto) DoCast_Unshared(Any* p) noexcept {
 				constexpr bool is_ptr = std::is_pointer_v<VType>;
 
-				typedef typename std::remove_reference<typename std::remove_pointer<VType>::type>::type desiredT;
-
 				auto locked{ std::shared_lock(p->mut) };
 				if (p->container) {
 					if constexpr (is_ptr) {
-						return p->container->cast< desiredT >();
+						return p->container->cast< typename std::remove_reference<typename std::remove_pointer<VType>::type>::type >();
 					}
 					else {
-						return *p->container->cast< desiredT >();
+						return *p->container->cast< typename std::remove_reference<typename std::remove_pointer<VType>::type>::type >();
 					}
 				}
 				else {
 					if constexpr (is_ptr) {
-						return (desiredT*)nullptr;
+						return (typename std::remove_reference<typename std::remove_pointer<VType>::type>::type *)nullptr;
 					}
 					else {
-						throw exception::bad_any_cast(p->Type(), user_type_shared<desiredT>());
+						throw exception::bad_any_cast(p->Type(), user_type_shared<typename std::remove_reference<typename std::remove_pointer<VType>::type>::type>());
 					}
 				}
 			};
@@ -1859,12 +1857,12 @@ namespace GoodLang {
 			// From -> To
 			void convert_in_place(Any& t_from) const override {
 				for (auto& converter : m_converters) {
-					//if (auto p = converter.lock()) {
-					converter->convert_in_place(t_from);
-					//}
-					//else {
-					//	throw exception::bad_any_cast(this->from(), this->to());
-					//}
+					if (auto& p = converter/*.lock()*/) {
+						p->convert_in_place(t_from);
+					}
+					else {
+						throw exception::bad_any_cast(this->from(), this->to());
+					}
 				}
 			};
 
@@ -1872,12 +1870,12 @@ namespace GoodLang {
 			Any convert(const Any& t_from) const override {
 				Any out = t_from;
 				for (auto& converter : m_converters) {
-					//if (auto p = converter.lock()) {
-						converter->convert_in_place(out);
-					//}
-					//else {
-					//	throw exception::bad_any_cast(this->from(), this->to());
-					//}
+					if (auto& p = converter/*.lock()*/) {
+						p->convert_in_place(out);
+					}
+					else {
+						throw exception::bad_any_cast(this->from(), this->to());
+					}
 				}
 				return out;
 			};
@@ -2176,7 +2174,7 @@ namespace GoodLang {
 
 					if (path.size() >= 1) {
 						TypeConverterFunc converterPtr = AllConversions[From][ToType];
-						if (converterPtr && (converterPtr->cost() < cost)) {
+						if (converterPtr && (converterPtr->cost() <= cost)) {
 							continue;
 						}
 						else {
@@ -2186,28 +2184,9 @@ namespace GoodLang {
 								TypeConverterFunc newConverter; {
 									// convert the "type path" to a actual daisy-chains of weak_ptrs to converter functions
 									std::vector<std::shared_ptr<details::Type_Conversion_Base>> functors; {
-#if 0
-										std::weak_ptr<Type_Info> currentNodeType = From;
-										std::cout << "Converting: " << currentNodeType.lock()->name() << " ... ";
-										for (auto& functor : conversionPath) {
-											currentNodeType = functor->to();
-											std::cout << currentNodeType.lock()->name() << " ... ";
-
-											if (functor) {
-												functors.push_back(functor);
-											}
-											else {
-												std::cout << "ERROR FOR SOME REASON?!" << std::endl;
-											}
-										}
-										std::cout << "(" << cost << ")" << "\n";
-#else
 										std::weak_ptr<Type_Info> currentNodeType = From;
 
-										std::cout << "Converting: " << currentNodeType.lock()->name() << " ... ";
 										for (auto& nextNodeType : path) {
-											std::cout << nextNodeType.lock()->name() << " ... ";
-
 											auto& func = AllConversions[currentNodeType][nextNodeType];
 											if (!func) { // something went wrong -- this conversion has failed.
 												continue;
@@ -2217,12 +2196,9 @@ namespace GoodLang {
 												currentNodeType = nextNodeType;
 											}
 										}
-										std::cout << "(" << cost << ")" << "\n";
 #define EXPECT_EQ(a,b) [&]()->bool{ if ((a) == (b)) { return true; } else { std::cout << Units::printf("FAILURE AT LINE %i\n", (int)__LINE__); return false; } }()
 										EXPECT_EQ(ToType, currentNodeType);
 #undef EXPECT_EQ
-
-#endif
 									}
 									if (functors.size() > 1) {
 										newConverter = std::shared_ptr< details::Type_Conversion_Base >(new details::DaisyChained_Type_Conversion_Impl(functors));
@@ -2237,7 +2213,7 @@ namespace GoodLang {
 								if (newConverter) {
 									auto locked{ std::unique_lock(AllConversionsMut) };
 									converterPtr = AllConversions[From][ToType];
-									if (converterPtr && (converterPtr->cost() < cost)) {}
+									if (converterPtr && (converterPtr->cost() <= cost)) {}
 									else {
 										AllConversions[From][ToType] = newConverter;
 									}
@@ -2279,7 +2255,9 @@ namespace GoodLang {
 									auto& From = func->from();
 									auto& To = func->to();
 									auto locked{ std::unique_lock(AllConversionsMut) };
-									AllConversions[From][To] = func;
+
+									auto& target = AllConversions[From][To];
+									if (target && (target->cost() <= func->cost())) { } else { target = func; }
 								}
 							}
 
@@ -2292,7 +2270,10 @@ namespace GoodLang {
 									auto& From = func->from();
 									auto& To = func->to();
 									auto locked{ std::unique_lock(AllConversionsMut) };
-									AllConversions[From][To] = func;
+									
+									auto& target = AllConversions[From][To];
+									if (target && (target->cost() <= func->cost())) {}
+									else { target = func; }
 								}
 							}
 
@@ -2305,7 +2286,10 @@ namespace GoodLang {
 									auto& From = func->from();
 									auto& To = func->to();
 									auto locked{ std::unique_lock(AllConversionsMut) };
-									AllConversions[From][To] = func;
+
+									auto& target = AllConversions[From][To];
+									if (target && (target->cost() <= func->cost())) {}
+									else { target = func; }
 								}
 							}
 
@@ -2318,7 +2302,10 @@ namespace GoodLang {
 									auto& From = func->from();
 									auto& To = func->to();
 									auto locked{ std::unique_lock(AllConversionsMut) };
-									AllConversions[From][To] = func;
+
+									auto& target = AllConversions[From][To];
+									if (target && (target->cost() <= func->cost())) {}
+									else { target = func; }
 								}
 							}
 
@@ -2331,7 +2318,10 @@ namespace GoodLang {
 									auto& From = func->from();
 									auto& To = func->to();
 									auto locked{ std::unique_lock(AllConversionsMut) };
-									AllConversions[From][To] = func;
+
+									auto& target = AllConversions[From][To];
+									if (target && (target->cost() <= func->cost())) {}
+									else { target = func; }
 								}
 							}
 
@@ -2346,7 +2336,10 @@ namespace GoodLang {
 									auto& From = func->from();
 									auto& To = func->to();
 									auto locked{ std::unique_lock(AllConversionsMut) };
-									AllConversions[From][To] = func;
+
+									auto& target = AllConversions[From][To];
+									if (target && (target->cost() <= func->cost())) {}
+									else { target = func; }
 								}
 							}
 							// The const Type can be converted to const Type without modification
@@ -2358,7 +2351,10 @@ namespace GoodLang {
 									auto& From = func->from();
 									auto& To = func->to();
 									auto locked{ std::unique_lock(AllConversionsMut) };
-									AllConversions[From][To] = func;
+
+									auto& target = AllConversions[From][To];
+									if (target && (target->cost() <= func->cost())) {}
+									else { target = func; }
 								}
 							}
 							// The Type& can be converted to Type& without modification
@@ -2370,7 +2366,10 @@ namespace GoodLang {
 									auto& From = func->from();
 									auto& To = func->to();
 									auto locked{ std::unique_lock(AllConversionsMut) };
-									AllConversions[From][To] = func;
+									
+									auto& target = AllConversions[From][To];
+									if (target && (target->cost() <= func->cost())) {}
+									else { target = func; }
 								}
 							}
 							// The const Type& can be converted to const Type& without modification
@@ -2382,7 +2381,10 @@ namespace GoodLang {
 									auto& From = func->from();
 									auto& To = func->to();
 									auto locked{ std::unique_lock(AllConversionsMut) };
-									AllConversions[From][To] = func;
+
+									auto& target = AllConversions[From][To];
+									if (target && (target->cost() <= func->cost())) {}
+									else { target = func; }
 								}
 							}
 
@@ -2396,15 +2398,15 @@ namespace GoodLang {
 	public:
 		// if does not exists, will add it. If exists, overwrites if the converter is better-performance.
 		template<typename From_t, typename To_t> void AddConverter() {
+			// forward
 			if (1) {
 				auto func = details::MakeConversionFunc<From_t, To_t>();
 				if (func) {
 					auto& From = func->from();
 					auto& To = func->to();
 					auto locked{ std::unique_lock(AllConversionsMut) };
-
 					TypeConverterFunc& converterPtr = AllConversions[From][To];
-					if (converterPtr && (converterPtr->cost() < func->cost())) {
+					if (converterPtr && (converterPtr->cost() <= func->cost())) {
 
 					}
 					else {
@@ -2412,15 +2414,15 @@ namespace GoodLang {
 					}
 				}
 			}
+			// backwards (may fail, which is OK)
 			if (1) {
 				auto func = details::MakeConversionFunc<To_t, From_t>();
 				if (func) {
 					auto& From = func->from();
 					auto& To = func->to();
 					auto locked{ std::unique_lock(AllConversionsMut) };
-
 					TypeConverterFunc& converterPtr = AllConversions[From][To];
-					if (converterPtr && (converterPtr->cost() < func->cost())) {
+					if (converterPtr && (converterPtr->cost() <= func->cost())) {
 
 					}
 					else {
@@ -2441,7 +2443,7 @@ namespace GoodLang {
 					auto locked{ std::unique_lock(AllConversionsMut) };
 
 					TypeConverterFunc& converterPtr = AllConversions[From][To];
-					if (converterPtr && (converterPtr->cost() < func->cost())) {
+					if (converterPtr && (converterPtr->cost() <= func->cost())) {
 						return;
 					}
 					else {
@@ -2469,9 +2471,10 @@ namespace GoodLang {
 			return {};
 		};
 		// will throw an error if the conversion was impossible.
-		template<typename To_t> typename std::decay_t<To_t> Convert(Any const& from) {
+		template<typename To_t> typename std::remove_reference_t<To_t> Convert(Any const& from) {
 			if (auto f = FindConverter(from.Type(), user_type_shared<To_t>())) {
-				return f->convert(from).cast<To_t>();
+				Any temp = f->convert(from);
+				return temp.cast<To_t>();
 			}
 			throw exception::bad_any_cast(from.Type(), user_type_shared<To_t>());
 		};

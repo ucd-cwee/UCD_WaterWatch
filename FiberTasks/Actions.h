@@ -1739,20 +1739,19 @@ namespace fibers {
 			template<typename VType> static decltype(auto) DoCast_Unshared(Any* p, bool typeCheck = true) noexcept {
 				constexpr bool is_ptr = std::is_pointer_v<VType>;
 
-				typedef typename std::remove_reference<typename std::remove_pointer<VType>::type>::type desiredT;
 				auto* ptr = p->container.get();
 				if (ptr) {
 					if (typeCheck) ptr->ThrowIfNot(user_type<typename std::decay_t<typename std::remove_reference_t<typename std::remove_pointer_t<typename std::remove_const_t<typename get_type< VType >::type>>>>>());
 
 					if constexpr (is_ptr) {
-						return static_cast<desiredT*>(ptr->ptr());
+						return static_cast<typename std::remove_reference<typename std::remove_pointer<VType>::type>::type *>(ptr->ptr());
 					}
 					else {
-						return *static_cast<desiredT*>(ptr->ptr());
+						return *static_cast<typename std::remove_reference<typename std::remove_pointer<VType>::type>::type *>(ptr->ptr());
 					}
 				}
 				else {
-					decltype(auto) q{ std::make_shared<desiredT>() };
+					decltype(auto) q{ std::make_shared<typename std::remove_reference<typename std::remove_pointer<VType>::type>::type>() };
 					p->container = Any::CreateContainer(q);
 					if constexpr (is_ptr) {
 						return q.get();
