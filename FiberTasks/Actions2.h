@@ -373,7 +373,7 @@ namespace GoodLang {
 		virtual std::string name() const noexcept override {
 			if (is_const()) {
 				if (is_ref()) {
-					return std::string("const ") + std::string(m_type_info.name()) + " &";
+					return std::string("const ") + std::string(m_type_info.name()) + "&";
 				}
 				else {
 					return std::string("const ") + std::string(m_type_info.name());
@@ -392,44 +392,141 @@ namespace GoodLang {
 			return m_type_info;
 		};
 		virtual std::weak_ptr<Type_Info> MakeBase() const { 
-			static auto out{ std::make_shared<BuiltIn_Type_Info<std::remove_const_t<T>>>(
-				impl::TypeId<std::remove_const_t<T>>(),
+			using baseType = typename std::decay_t<T>;
+			static auto out{ std::make_shared<BuiltIn_Type_Info<baseType>>(
+				impl::TypeId<baseType>(),
 				false,
 				false
 			) };
-			return std::dynamic_pointer_cast<Type_Info>(out);
+			return out;
 		};
 		virtual std::weak_ptr<Type_Info> MakeConst() const override {
-			static auto out{ std::make_shared<BuiltIn_Type_Info<std::add_const_t<T>>>(
-				impl::TypeId<std::add_const_t<T>>(),
-				true,
-				this->is_ref()
-			) };
-			return std::dynamic_pointer_cast<Type_Info>(out);
+			constexpr bool thisIsConst = std::is_const<T>::value;
+			constexpr bool thisIsRef = std::is_reference<T>::value;
+			using baseType = typename std::decay_t<T>;
+
+			if constexpr (std::is_same< baseType, void>::value) {
+				static auto out{ std::make_shared<BuiltIn_Type_Info<void>>(
+					 impl::TypeId<void>(),
+					 false,
+					 false
+				) };
+				return out;
+			}
+			else {
+				if constexpr (thisIsRef) {
+					static auto out{ std::make_shared<BuiltIn_Type_Info<const baseType&>>(
+						 impl::TypeId<const baseType&>(),
+						 true,
+						 thisIsRef
+					) };
+					return out;
+				}
+				else {
+					static auto out{ std::make_shared<BuiltIn_Type_Info<const baseType>>(
+						 impl::TypeId<const baseType>(),
+						 true,
+						 thisIsRef
+					) };
+					return out;
+				}
+			}
 		};
 		virtual std::weak_ptr<Type_Info> MakeRef() const override {
-			static auto out{ std::make_shared<BuiltIn_Type_Info<std::add_lvalue_reference_t<T>>>(
-				impl::TypeId<std::add_lvalue_reference_t<T>>(),
-				this->is_const(),
-				true
-			) };
-			return std::dynamic_pointer_cast<Type_Info>(out);
+			constexpr bool thisIsConst = std::is_const<T>::value;
+			constexpr bool thisIsRef = std::is_reference<T>::value;
+			using baseType = typename std::decay_t<T>;
+
+			if constexpr (std::is_same< baseType, void>::value) {
+				static auto out{ std::make_shared<BuiltIn_Type_Info<void>>(
+					 impl::TypeId<void>(),
+					 false,
+					 false
+				) };
+				return out;
+			}
+			else {
+				if constexpr (thisIsConst) {
+					static auto out{ std::make_shared<BuiltIn_Type_Info<const baseType&>>(
+						 impl::TypeId<const baseType&>(),
+						 thisIsConst,
+						 true
+					) };
+					return out;
+				}
+				else {
+					static auto out{ std::make_shared<BuiltIn_Type_Info<baseType&>>(
+						 impl::TypeId<baseType&>(),
+						 thisIsConst,
+						 true
+					) };
+					return out;
+				}
+			}
 		};
 		virtual std::weak_ptr<Type_Info> RemoveConst() const override {
-			static auto out{ std::make_shared<BuiltIn_Type_Info<std::remove_const_t<T>>>(
-				impl::TypeId<std::remove_const_t<T>>(),
-				false,
-				this->is_ref()
-			) };
-			return std::dynamic_pointer_cast<Type_Info>(out);
+			constexpr bool thisIsConst = std::is_const<T>::value;
+			constexpr bool thisIsRef = std::is_reference<T>::value;
+			using baseType = typename std::decay_t<T>;
+
+			if constexpr (std::is_same< baseType, void>::value) {
+				static auto out{ std::make_shared<BuiltIn_Type_Info<void>>(
+					 impl::TypeId<void>(),
+					 false,
+					 false
+				) };
+				return out;
+			}
+			else {
+				if constexpr (thisIsRef) {
+					static auto out{ std::make_shared<BuiltIn_Type_Info<baseType&>>(
+						 impl::TypeId<baseType&>(),
+						 false,
+						 thisIsRef
+					) };
+					return out;
+				}
+				else {
+					static auto out{ std::make_shared<BuiltIn_Type_Info<baseType>>(
+						 impl::TypeId<baseType>(),
+						 false,
+						 thisIsRef
+					) };
+					return out;
+				}
+			}
 		};
 		virtual std::weak_ptr<Type_Info> RemoveRef() const override {
-			static auto out{ std::make_shared<BuiltIn_Type_Info<std::remove_reference_t<T>>>(
-				impl::TypeId<std::remove_reference_t<T>>(),
-				this->is_const(),
-				false
-			) };
-			return std::dynamic_pointer_cast<Type_Info>(out);
+			constexpr bool thisIsConst = std::is_const<T>::value;
+			constexpr bool thisIsRef = std::is_reference<T>::value;
+			using baseType = typename std::decay_t<T>;
+
+			if constexpr (std::is_same< baseType, void>::value) {
+				static auto out{ std::make_shared<BuiltIn_Type_Info<void>>(
+					 impl::TypeId<void>(),
+					 false,
+					 false
+				) };
+				return out;
+			}
+			else {
+				if constexpr (thisIsConst) {
+					static auto out{ std::make_shared<BuiltIn_Type_Info<const baseType>>(
+						 impl::TypeId<const baseType>(),
+						 thisIsConst,
+						 false
+					) };
+					return out;
+				}
+				else {
+					static auto out{ std::make_shared<BuiltIn_Type_Info<baseType>>(
+						 impl::TypeId<baseType>(),
+						 thisIsConst,
+						 false
+					) };
+					return out;
+				}
+			}
 		};
 
 	private:
@@ -2094,9 +2191,9 @@ namespace GoodLang {
 			std::string out;
 			auto locked{ std::shared_lock(AllConversionsMut) };
 			for (auto& conv : AllConversions) {
-				out += (conv.first->name() + ": \n");
+				out += (conv.first->name() + " (" + std::to_string(conv.first->GetHash()) + "): \n");
 				for (auto& conv2 : conv.second) {
-					out += (std::string("\t -> ") + conv2.first->name() + + " (" + std::to_string(conv2.second->cost()) + ")\n");
+					out += (std::string("\t -> ") + conv2.first->name() + " (" + std::to_string(conv2.first->GetHash()) + ") " + " cost(" + std::to_string(conv2.second->cost()) + ")\n");
 				}
 			}
 			return out;
@@ -2104,12 +2201,12 @@ namespace GoodLang {
 
 	private:
 		// All conversions, will include "real" and cached conversions.
-		using conversionTreeType = std::map< std::shared_ptr<Type_Info>, // From
-			std::map< std::shared_ptr<Type_Info>, // To
+		using conversionTreeType = std::unordered_map< std::shared_ptr<Type_Info>, // From
+			std::unordered_map< std::shared_ptr<Type_Info>, // To
 			    TypeConverterFunc // Function
-			    , std::owner_less<std::shared_ptr<Type_Info>>
+			    // , std::owner_less<std::shared_ptr<Type_Info>>
 			>
-			, std::owner_less<std::shared_ptr<Type_Info>>
+			// , std::owner_less<std::shared_ptr<Type_Info>>
 		>;
 		conversionTreeType AllConversions;
 		std::shared_mutex AllConversionsMut;
@@ -2268,128 +2365,49 @@ namespace GoodLang {
 					if (refType && constType) {
 						auto constRefType = constType->MakeRef().lock();
 						if (constRefType) {
-							// The BaseType can be converted to Type& without modification
+							// Base -> const Base
 							if (1) {
-								auto func = std::shared_ptr< details::Type_Conversion_Base >(new details::Custom_Type_Conversion_Impl([](Any const& x)->Any {
+								if (auto func = std::shared_ptr< details::Type_Conversion_Base >(new details::Custom_Type_Conversion_Impl([](Any const& x)->Any {
 									return x;
-								}, baseType, refType, 0.0));
-								if (func) {
-									auto& From = func->from();
-									auto& To = func->to();
+								}, baseType, constType, 0.0))) {
 									auto locked{ std::unique_lock(AllConversionsMut) };
-
-									AllConversions[From.lock()][To.lock()] = func;
+									AllConversions[func->from().lock()][func->to().lock()] = func;
 								}
 							}
-
-							// The BaseType can be converted to const Type without modification
+							// Base -> Base&
 							if (1) {
-								auto func = std::shared_ptr< details::Type_Conversion_Base >(new details::Custom_Type_Conversion_Impl([](Any const& x)->Any {
+								if (auto func = std::shared_ptr< details::Type_Conversion_Base >(new details::Custom_Type_Conversion_Impl([](Any const& x)->Any {
 									return x;
-								}, baseType, constType, 0.0));
-								if (func) {
-									auto& From = func->from();
-									auto& To = func->to();
+									}, baseType, refType, 0.0))) {
 									auto locked{ std::unique_lock(AllConversionsMut) };
-									
-									AllConversions[From.lock()][To.lock()] = func;
+									AllConversions[func->from().lock()][func->to().lock()] = func;
 								}
 							}
-
-							// The BaseType can be converted to const Type& without modification
+							// Base -> const Base&
 							if (1) {
-								auto func = std::shared_ptr< details::Type_Conversion_Base >(new details::Custom_Type_Conversion_Impl([](Any const& x)->Any {
+								if (auto func = std::shared_ptr< details::Type_Conversion_Base >(new details::Custom_Type_Conversion_Impl([](Any const& x)->Any {
 									return x;
-								}, baseType, constRefType, 0.0));
-								if (func) {
-									auto& From = func->from();
-									auto& To = func->to();
+								}, baseType, constRefType, 0.0))) {
 									auto locked{ std::unique_lock(AllConversionsMut) };
-
-									AllConversions[From.lock()][To.lock()] = func;
+									AllConversions[func->from().lock()][func->to().lock()] = func;
 								}
 							}
-
-							// The const Type can be converted to const Type& without modification
+							// const Base -> const Base&
 							if (1) {
-								auto func = std::shared_ptr< details::Type_Conversion_Base >(new details::Custom_Type_Conversion_Impl([](Any const& x)->Any {
+								if (auto func = std::shared_ptr< details::Type_Conversion_Base >(new details::Custom_Type_Conversion_Impl([](Any const& x)->Any {
 									return x;
-								}, constType, constRefType, 0.0));
-								if (func) {
-									auto& From = func->from();
-									auto& To = func->to();
+									}, constType, constRefType, 0.0))) {
 									auto locked{ std::unique_lock(AllConversionsMut) };
-
-									AllConversions[From.lock()][To.lock()] = func;
+									AllConversions[func->from().lock()][func->to().lock()] = func;
 								}
 							}
-
-							// The Type& can be converted to const Type& without modification
+							// Base& -> const Base&
 							if (1) {
-								auto func = std::shared_ptr< details::Type_Conversion_Base >(new details::Custom_Type_Conversion_Impl([](Any const& x)->Any {
+								if (auto func = std::shared_ptr< details::Type_Conversion_Base >(new details::Custom_Type_Conversion_Impl([](Any const& x)->Any {
 									return x;
-								}, refType, constRefType, 0.0));
-								if (func) {
-									auto& From = func->from();
-									auto& To = func->to();
+								}, refType, constRefType, 0.0))) {
 									auto locked{ std::unique_lock(AllConversionsMut) };
-
-									AllConversions[From.lock()][To.lock()] = func;
-								}
-							}
-
-
-
-							// The Type can be converted to Type without modification
-							if (1) {
-								auto func = std::shared_ptr< details::Type_Conversion_Base >(new details::Custom_Type_Conversion_Impl([](Any const& x)->Any {
-									return x;
-									}, baseType, baseType, 0.0));
-								if (func) {
-									auto& From = func->from();
-									auto& To = func->to();
-									auto locked{ std::unique_lock(AllConversionsMut) };
-
-									AllConversions[From.lock()][To.lock()] = func;
-								}
-							}
-							// The const Type can be converted to const Type without modification
-							if (1) {
-								auto func = std::shared_ptr< details::Type_Conversion_Base >(new details::Custom_Type_Conversion_Impl([](Any const& x)->Any {
-									return x;
-									}, constType, constType, 0.0));
-								if (func) {
-									auto& From = func->from();
-									auto& To = func->to();
-									auto locked{ std::unique_lock(AllConversionsMut) };
-
-									AllConversions[From.lock()][To.lock()] = func;
-								}
-							}
-							// The Type& can be converted to Type& without modification
-							if (1) {
-								auto func = std::shared_ptr< details::Type_Conversion_Base >(new details::Custom_Type_Conversion_Impl([](Any const& x)->Any {
-									return x;
-									}, refType, refType, 0.0));
-								if (func) {
-									auto& From = func->from();
-									auto& To = func->to();
-									auto locked{ std::unique_lock(AllConversionsMut) };
-									
-									AllConversions[From.lock()][To.lock()] = func;
-								}
-							}
-							// The const Type& can be converted to const Type& without modification
-							if (1) {
-								auto func = std::shared_ptr< details::Type_Conversion_Base >(new details::Custom_Type_Conversion_Impl([](Any const& x)->Any {
-									return x;
-								}, constRefType, constRefType, 0.0));
-								if (func) {
-									auto& From = func->from();
-									auto& To = func->to();
-									auto locked{ std::unique_lock(AllConversionsMut) };
-
-									AllConversions[From.lock()][To.lock()] = func;
+									AllConversions[func->from().lock()][func->to().lock()] = func;
 								}
 							}
 
@@ -2405,28 +2423,59 @@ namespace GoodLang {
 		template<typename From_t, typename To_t> void AddConverter() {
 			// forward
 			if (1) {
-				auto func = details::MakeConversionFunc<From_t, To_t>();
+				auto func = details::MakeConversionFunc < const typename std::decay_t<From_t>&, typename std::decay_t<To_t> > ();
 				if (func) {
 					auto& From = func->from();
 					auto& To = func->to();
-					auto locked{ std::unique_lock(AllConversionsMut) };
-					TypeConverterFunc& converterPtr = AllConversions[From.lock()][To.lock()];
-					converterPtr = func;
-				}
+					if (1) {
+						auto locked{ std::unique_lock(AllConversionsMut) };
+						TypeConverterFunc& converterPtr = AllConversions[From.lock()][To.lock()];
+						converterPtr = func;
+					}
+					AddDefaultConverters(From);
+				}				
 			}
 			// backwards (may fail, which is OK)
 			if (1) {
-				auto func = details::MakeConversionFunc<To_t, From_t>();
+				auto func = details::MakeConversionFunc<const typename std::decay_t<To_t>&, typename std::decay_t<From_t>>();
 				if (func) {
 					auto& From = func->from();
 					auto& To = func->to();
-					auto locked{ std::unique_lock(AllConversionsMut) };
-					TypeConverterFunc& converterPtr = AllConversions[From.lock()][To.lock()];
-					converterPtr = func;
+					if (1) {
+						auto locked{ std::unique_lock(AllConversionsMut) };
+						TypeConverterFunc& converterPtr = AllConversions[From.lock()][To.lock()];
+						converterPtr = func;
+					}
+					AddDefaultConverters(From);
 				}
 			}
-			AddDefaultConverters(user_type_shared<From_t>());
-			AddDefaultConverters(user_type_shared<To_t>());
+
+			// Add "contructor" class for const Type& -> Type, if possible
+			if constexpr (std::is_copy_constructible<typename std::decay_t<From_t>>::value) {
+				auto func = details::MakeConversionFunc([](const typename std::decay_t<From_t>& f) -> typename std::decay_t<From_t> { return f; });
+				if (func) {
+					auto& From = func->from();
+					auto& To = func->to();
+					if (1) {
+						auto locked{ std::unique_lock(AllConversionsMut) };
+						TypeConverterFunc& converterPtr = AllConversions[From.lock()][To.lock()];
+						converterPtr = func;
+					}
+				}
+			}
+			if constexpr (std::is_copy_constructible<typename std::decay_t<To_t>>::value) {
+				auto func = details::MakeConversionFunc([](const typename std::decay_t<To_t>& f) -> typename std::decay_t<To_t> { return f; });
+				if (func) {
+					auto& From = func->from();
+					auto& To = func->to();
+					if (1) {
+						auto locked{ std::unique_lock(AllConversionsMut) };
+						TypeConverterFunc& converterPtr = AllConversions[From.lock()][To.lock()];
+						converterPtr = func;
+					}
+				}
+			}
+
 		};
 		// if does not exists, will add it. If exists, overwrites if the converter is better-performance.
 		template<class Callable> void AddConverter(Callable Func) {
@@ -2436,7 +2485,6 @@ namespace GoodLang {
 				auto& To = func->to();
 				if (1) {
 					auto locked{ std::unique_lock(AllConversionsMut) };
-
 					TypeConverterFunc& converterPtr = AllConversions[From.lock()][To.lock()];
 					converterPtr = func;
 				}
