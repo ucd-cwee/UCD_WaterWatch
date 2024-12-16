@@ -831,39 +831,64 @@ int main() {
 				using namespace GoodLang;
 				TypeConverter tree;
 				try {
-					fibers::parallel::For(0, 10000, [&](int i) {
+					for (int i = 0; i < 10000; i++){// fibers::parallel::For(0, 10000, [&](int i) {
 						switch (i % 4) {
 						case 0: {
 							tree.AddConverter<int, double>(); // single-thread locked and safe
+
+							// ISSUE! int (from above) and int->MakeBase() are giving different TypeInfo hash's. This needs to be resolved. 
+							// similarly, double is being duplicated... 
+
+
+							printf(tree.print());
+
+							EXPECT_EQ(tree.Convert<int>(10), 10);
+
+							printf(tree.print());
+
+							EXPECT_EQ(tree.Convert<const int>(10), 10);
+							EXPECT_EQ(tree.Convert<const int&>(10), 10);
+
+							EXPECT_EQ(tree.Convert<double>(10), 10.0);
+							EXPECT_EQ(tree.Convert<int>(10.0), 10);
+							EXPECT_EQ(tree.Convert<const int>(10.0), 10); //
+							EXPECT_EQ(tree.Convert<const double>(10), 10.0);
+							EXPECT_EQ(tree.Convert<double&>(10), 10.0);
+							EXPECT_EQ(tree.Convert<const int&>(10.0), 10); //
 							break;
 						}
 						case 1: {
-							tree.AddConverter<int, double>(); // single-thread locked and safe
+							tree.AddConverter<float, int>(); // single-thread locked and safe
+							EXPECT_EQ(tree.Convert<float>(10), 10.0f);
+							EXPECT_EQ(tree.Convert<int>(10.0f), 10);
+							EXPECT_EQ(tree.Convert<const int>(10.0f), 10);
+							EXPECT_EQ(tree.Convert<const float>(10), 10.0f);
+							EXPECT_EQ(tree.Convert<float&>(10), 10.0f);
+							EXPECT_EQ(tree.Convert<const int&>(10.0f), 10);
 							break;
 						}
 						case 2: {
-							tree.AddConverter<int, double>(); // single-thread locked and safe
+							tree.AddConverter<bool, int>(); // single-thread locked and safe
+							EXPECT_EQ(tree.Convert<bool>(1), true);
+							EXPECT_EQ(tree.Convert<int>(true), 1);
+							EXPECT_EQ(tree.Convert<const int>(true), 1); //
+							EXPECT_EQ(tree.Convert<const bool>(1), true);
+							EXPECT_EQ(tree.Convert<bool&>(1), true);
+							EXPECT_EQ(tree.Convert<const int&>(true), 1); //
 							break;
 						}
 						case 3: {
-							tree.AddConverter<int, double>(); // single-thread locked and safe
+							tree.AddConverter<bool, double>(); // single-thread locked and safe
+							EXPECT_EQ(tree.Convert<bool>(1.0), true);
+							EXPECT_EQ(tree.Convert<double>(true), 1.0);
+							EXPECT_EQ(tree.Convert<const double>(true), 1.0);
+							EXPECT_EQ(tree.Convert<const bool>(1.0), true);
+							EXPECT_EQ(tree.Convert<bool&>(1.0), true);
+							EXPECT_EQ(tree.Convert<const double&>(true), 1.0);
 							break;
 						}
 						}
-
-						EXPECT_EQ(tree.Convert<double>(10), 10.0);
-						EXPECT_EQ(tree.Convert<int>(10.0), 10);
-						EXPECT_EQ(tree.Convert<const int>(10.0), 10);
-						EXPECT_EQ(tree.Convert<const double>(10), 10.0);
-						EXPECT_EQ(tree.Convert<double&>(10), 10.0);
-						EXPECT_EQ(tree.Convert<const int&>(10.0), 10);
-
-
-
-
-
-
-					});
+					}// );
 				}
 				catch (std::exception& e) {
 					printf(e.what());
