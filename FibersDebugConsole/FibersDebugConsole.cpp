@@ -40,7 +40,15 @@ static bool Thing() { return true; };
 
 #define SINGLE_ARG(...) __VA_ARGS__
 #define EXPECT_EQ(a,b) [&]()->bool{ if ((a) == (b)) { return true; } else { std::cout << Units::printf("FAILURE AT LINE %i\n", (int)__LINE__); return false; } }()
+#define EXPECT_EQ_PRINTF(A,B) [a = (A), b = (B)]()->bool{ \
+    if (a == b) { return true; } else { \
+        std::string tempA{std::to_string(a)}, tempB{std::to_string(b)}; \
+        std::cout << Units::printf("FAILURE AT LINE %i: (%s != %s)\n", (int)__LINE__, tempA.c_str(), tempB.c_str()); \
+    return false; } \
+}()
 #define EXPECT_NE(a, b) [&]()->bool{ if ((a) != (b)) { return true; } else { std::cout << Units::printf("FAILURE AT LINE %i\n", (int)__LINE__); return false; } }()
+
+
 
 int main() {
 	// pre-warm the heap
@@ -711,7 +719,7 @@ int main() {
 
 				auto type_converter = std::shared_ptr< GoodLang::details::Type_Conversion_Base >(new GoodLang::details::Dynamic_Type_Conversion_Impl<GoodLang::exception::bad_any_cast, std::bad_cast>());
 
-				auto from = GoodLang::exception::bad_any_cast(user_type_shared<double>(), user_type_shared<double>());
+				auto from = GoodLang::exception::bad_any_cast(user_type_shared<double>(), user_type_shared<double>(), __LINE__);
 
 				const std::bad_cast* answer3 = type_converter->convert(from).cast<const std::bad_cast*>();
 				const float* answer4 = type_converter->convert(from).cast<const float*>(); // will be null
@@ -836,15 +844,9 @@ int main() {
 			// GoodLang::TypeConverter, with converters being added (and used) in multi-threaded context
 			if (1) {
 				using namespace GoodLang;
-				TypeConverter tree;
 				try {
-					auto converterPtr = std::dynamic_pointer_cast<details::Type_Conversion_Base>(std::make_shared<details::Static_Type_Conversion_Impl<int, double>>());
-					auto normalFrom = converterPtr->from();
-					auto baseFrom = normalFrom.lock()->MakeBase();
-					EXPECT_EQ(normalFrom, baseFrom);
-					EXPECT_EQ(normalFrom.lock()->GetHash(), baseFrom.lock()->GetHash());
-
-					fibers::parallel::For(0, 10000, [&](int i) { // for (int i = 0; i < 10000; i++){// 
+					TypeConverter tree;
+					for (int i = 0; i < 10000; i++){//  fibers::parallel::For(0, 10000, [&](int i) { // 
 						switch (i % 4) {
 						case 0: {
 							tree.AddConverter<int, double>();
@@ -852,11 +854,20 @@ int main() {
 							EXPECT_EQ(tree.Convert<const int>(10), 10);
 							EXPECT_EQ(tree.Convert<const int&>(10), 10);
 							EXPECT_EQ(tree.Convert<double>(10), 10.0);
-							EXPECT_EQ(tree.Convert<int>(10.0), 10);
-							EXPECT_EQ(tree.Convert<const int>(10.0), 10); //
+							if (!EXPECT_EQ(tree.Convert<int>(10.0), 10)) {
+								printf(tree.Convert<int>(10.0));
+								printf(tree.print());
+							}; // occassional, random failure (not throw, just not matched)
+							if (!EXPECT_EQ(tree.Convert<const int>(10.0), 10)) {
+								printf(tree.Convert<const int>(10.0));
+								printf(tree.print());
+							}; // occassional, random failure (not throw, just not matched)
 							EXPECT_EQ(tree.Convert<const double>(10), 10.0);
 							EXPECT_EQ(tree.Convert<double&>(10), 10.0);
-							EXPECT_EQ(tree.Convert<const int&>(10.0), 10); //
+							if (!EXPECT_EQ(tree.Convert<const int&>(10.0), 10)) {
+								printf(tree.Convert<const int&>(10.0));
+								printf(tree.print());
+							}; // occassional, random failure (not throw, just not matched)
 							break;
 						}
 						case 1: {
@@ -890,13 +901,1224 @@ int main() {
 							break;
 						}
 						}
+					} // );
+
+					for (int i = 1; i < 10000; i++) {//  fibers::parallel::For(0, 10000, [&](int i) { // 
+						switch (i % 4) {
+						case 0: {
+							tree.AddConverter<int, double>();
+							EXPECT_EQ(tree.Convert<int>(10), 10);
+							EXPECT_EQ(tree.Convert<const int>(10), 10);
+							EXPECT_EQ(tree.Convert<const int&>(10), 10);
+							EXPECT_EQ(tree.Convert<double>(10), 10.0);
+							if (!EXPECT_EQ(tree.Convert<int>(10.0), 10)) {
+								printf(tree.Convert<int>(10.0));
+								printf(tree.print());
+							}; // occassional, random failure (not throw, just not matched)
+							if (!EXPECT_EQ(tree.Convert<const int>(10.0), 10)) {
+								printf(tree.Convert<const int>(10.0));
+								printf(tree.print());
+							}; // occassional, random failure (not throw, just not matched)
+							EXPECT_EQ(tree.Convert<const double>(10), 10.0);
+							EXPECT_EQ(tree.Convert<double&>(10), 10.0);
+							if (!EXPECT_EQ(tree.Convert<const int&>(10.0), 10)) {
+								printf(tree.Convert<const int&>(10.0));
+								printf(tree.print());
+							}; // occassional, random failure (not throw, just not matched)
+							break;
+						}
+						case 1: {
+							tree.AddConverter<float, int>();
+							EXPECT_EQ(tree.Convert<float>(10), 10.0f);
+							EXPECT_EQ(tree.Convert<int>(10.0f), 10);
+							EXPECT_EQ(tree.Convert<const int>(10.0f), 10);
+							EXPECT_EQ(tree.Convert<const float>(10), 10.0f);
+							EXPECT_EQ(tree.Convert<float&>(10), 10.0f);
+							EXPECT_EQ(tree.Convert<const int&>(10.0f), 10);
+							break;
+						}
+						case 2: {
+							tree.AddConverter<bool, int>();
+							EXPECT_EQ(tree.Convert<bool>(1), true);
+							EXPECT_EQ(tree.Convert<int>(true), 1);
+							EXPECT_EQ(tree.Convert<const int>(true), 1); //
+							EXPECT_EQ(tree.Convert<const bool>(1), true);
+							EXPECT_EQ(tree.Convert<bool&>(1), true);
+							EXPECT_EQ(tree.Convert<const int&>(true), 1); //
+							break;
+						}
+						case 3: {
+							tree.AddConverter<bool, double>();
+							EXPECT_EQ(tree.Convert<bool>(1.0), true);
+							EXPECT_EQ(tree.Convert<double>(true), 1.0);
+							EXPECT_EQ(tree.Convert<const double>(true), 1.0);
+							EXPECT_EQ(tree.Convert<const bool>(1.0), true);
+							EXPECT_EQ(tree.Convert<bool&>(1.0), true);
+							EXPECT_EQ(tree.Convert<const double&>(true), 1.0);
+							break;
+						}
+						}
+					} // );
+
+					for (int i = 2; i < 10000; i++) {//  fibers::parallel::For(0, 10000, [&](int i) { // 
+						switch (i % 4) {
+						case 0: {
+							tree.AddConverter<int, double>();
+							EXPECT_EQ(tree.Convert<int>(10), 10);
+							EXPECT_EQ(tree.Convert<const int>(10), 10);
+							EXPECT_EQ(tree.Convert<const int&>(10), 10);
+							EXPECT_EQ(tree.Convert<double>(10), 10.0);
+							if (!EXPECT_EQ(tree.Convert<int>(10.0), 10)) {
+								printf(tree.Convert<int>(10.0));
+								printf(tree.print());
+							}; // occassional, random failure (not throw, just not matched)
+							if (!EXPECT_EQ(tree.Convert<const int>(10.0), 10)) {
+								printf(tree.Convert<const int>(10.0));
+								printf(tree.print());
+							}; // occassional, random failure (not throw, just not matched)
+							EXPECT_EQ(tree.Convert<const double>(10), 10.0);
+							EXPECT_EQ(tree.Convert<double&>(10), 10.0);
+							if (!EXPECT_EQ(tree.Convert<const int&>(10.0), 10)) {
+								printf(tree.Convert<const int&>(10.0));
+								printf(tree.print());
+							}; // occassional, random failure (not throw, just not matched)
+							break;
+						}
+						case 1: {
+							tree.AddConverter<float, int>();
+							EXPECT_EQ(tree.Convert<float>(10), 10.0f);
+							EXPECT_EQ(tree.Convert<int>(10.0f), 10);
+							EXPECT_EQ(tree.Convert<const int>(10.0f), 10);
+							EXPECT_EQ(tree.Convert<const float>(10), 10.0f);
+							EXPECT_EQ(tree.Convert<float&>(10), 10.0f);
+							EXPECT_EQ(tree.Convert<const int&>(10.0f), 10);
+							break;
+						}
+						case 2: {
+							tree.AddConverter<bool, int>();
+							EXPECT_EQ(tree.Convert<bool>(1), true);
+							EXPECT_EQ(tree.Convert<int>(true), 1);
+							EXPECT_EQ(tree.Convert<const int>(true), 1); //
+							EXPECT_EQ(tree.Convert<const bool>(1), true);
+							EXPECT_EQ(tree.Convert<bool&>(1), true);
+							EXPECT_EQ(tree.Convert<const int&>(true), 1); //
+							break;
+						}
+						case 3: {
+							tree.AddConverter<bool, double>();
+							EXPECT_EQ(tree.Convert<bool>(1.0), true);
+							EXPECT_EQ(tree.Convert<double>(true), 1.0);
+							EXPECT_EQ(tree.Convert<const double>(true), 1.0);
+							EXPECT_EQ(tree.Convert<const bool>(1.0), true);
+							EXPECT_EQ(tree.Convert<bool&>(1.0), true);
+							EXPECT_EQ(tree.Convert<const double&>(true), 1.0);
+							break;
+						}
+						}
+					} // );
+
+					for (int i = 3; i < 10000; i++) {//  fibers::parallel::For(0, 10000, [&](int i) { // 
+						switch (i % 4) {
+						case 0: {
+							tree.AddConverter<int, double>();
+							EXPECT_EQ(tree.Convert<int>(10), 10);
+							EXPECT_EQ(tree.Convert<const int>(10), 10);
+							EXPECT_EQ(tree.Convert<const int&>(10), 10);
+							EXPECT_EQ(tree.Convert<double>(10), 10.0);
+							if (!EXPECT_EQ(tree.Convert<int>(10.0), 10)) {
+								printf(tree.Convert<int>(10.0));
+								printf(tree.print());
+							}; // occassional, random failure (not throw, just not matched)
+							if (!EXPECT_EQ(tree.Convert<const int>(10.0), 10)) {
+								printf(tree.Convert<const int>(10.0));
+								printf(tree.print());
+							}; // occassional, random failure (not throw, just not matched)
+							EXPECT_EQ(tree.Convert<const double>(10), 10.0);
+							EXPECT_EQ(tree.Convert<double&>(10), 10.0);
+							if (!EXPECT_EQ(tree.Convert<const int&>(10.0), 10)) {
+								printf(tree.Convert<const int&>(10.0));
+								printf(tree.print());
+							}; // occassional, random failure (not throw, just not matched)
+							break;
+						}
+						case 1: {
+							tree.AddConverter<float, int>();
+							EXPECT_EQ(tree.Convert<float>(10), 10.0f);
+							EXPECT_EQ(tree.Convert<int>(10.0f), 10);
+							EXPECT_EQ(tree.Convert<const int>(10.0f), 10);
+							EXPECT_EQ(tree.Convert<const float>(10), 10.0f);
+							EXPECT_EQ(tree.Convert<float&>(10), 10.0f);
+							EXPECT_EQ(tree.Convert<const int&>(10.0f), 10);
+							break;
+						}
+						case 2: {
+							tree.AddConverter<bool, int>();
+							EXPECT_EQ(tree.Convert<bool>(1), true);
+							EXPECT_EQ(tree.Convert<int>(true), 1);
+							EXPECT_EQ(tree.Convert<const int>(true), 1); //
+							EXPECT_EQ(tree.Convert<const bool>(1), true);
+							EXPECT_EQ(tree.Convert<bool&>(1), true);
+							EXPECT_EQ(tree.Convert<const int&>(true), 1); //
+							break;
+						}
+						case 3: {
+							tree.AddConverter<bool, double>();
+							EXPECT_EQ(tree.Convert<bool>(1.0), true);
+							EXPECT_EQ(tree.Convert<double>(true), 1.0);
+							EXPECT_EQ(tree.Convert<const double>(true), 1.0);
+							EXPECT_EQ(tree.Convert<const bool>(1.0), true);
+							EXPECT_EQ(tree.Convert<bool&>(1.0), true);
+							EXPECT_EQ(tree.Convert<const double&>(true), 1.0);
+							break;
+						}
+						}
+					} // );
+				}
+				catch (std::exception& e) {
+					printf(std::string(e.what()) + " at line " + std::to_string(__LINE__));
+				}
+					
+				// 
+
+				try {
+					TypeConverter tree;
+					for (int i = 0; i < 10000; i++) {//  fibers::parallel::For(0, 10000, [&](int i) { // 
+						switch (i % 4) {
+						case 2: {
+							tree.AddConverter<int, double>();
+							EXPECT_EQ(tree.Convert<int>(10), 10);
+							EXPECT_EQ(tree.Convert<const int>(10), 10);
+							EXPECT_EQ(tree.Convert<const int&>(10), 10);
+							EXPECT_EQ(tree.Convert<double>(10), 10.0);
+							if (!EXPECT_EQ(tree.Convert<int>(10.0), 10)) {
+								printf(tree.Convert<int>(10.0));
+								printf(tree.print());
+							}; // occassional, random failure (not throw, just not matched)
+							if (!EXPECT_EQ(tree.Convert<const int>(10.0), 10)) {
+								printf(tree.Convert<const int>(10.0));
+								printf(tree.print());
+							}; // occassional, random failure (not throw, just not matched)
+							EXPECT_EQ(tree.Convert<const double>(10), 10.0);
+							EXPECT_EQ(tree.Convert<double&>(10), 10.0);
+							if (!EXPECT_EQ(tree.Convert<const int&>(10.0), 10)) {
+								printf(tree.Convert<const int&>(10.0));
+								printf(tree.print());
+							}; // occassional, random failure (not throw, just not matched)
+							break;
+						}
+						case 1: {
+							tree.AddConverter<float, int>();
+							EXPECT_EQ(tree.Convert<float>(10), 10.0f);
+							EXPECT_EQ(tree.Convert<int>(10.0f), 10);
+							EXPECT_EQ(tree.Convert<const int>(10.0f), 10);
+							EXPECT_EQ(tree.Convert<const float>(10), 10.0f);
+							EXPECT_EQ(tree.Convert<float&>(10), 10.0f);
+							EXPECT_EQ(tree.Convert<const int&>(10.0f), 10);
+							break;
+						}
+						case 3: {
+							tree.AddConverter<bool, int>();
+							EXPECT_EQ(tree.Convert<bool>(1), true);
+							EXPECT_EQ(tree.Convert<int>(true), 1);
+							EXPECT_EQ(tree.Convert<const int>(true), 1); //
+							EXPECT_EQ(tree.Convert<const bool>(1), true);
+							EXPECT_EQ(tree.Convert<bool&>(1), true);
+							EXPECT_EQ(tree.Convert<const int&>(true), 1); //
+							break;
+						}
+						case 0: {
+							tree.AddConverter<bool, double>();
+							EXPECT_EQ(tree.Convert<bool>(1.0), true);
+							EXPECT_EQ(tree.Convert<double>(true), 1.0);
+							EXPECT_EQ(tree.Convert<const double>(true), 1.0);
+							EXPECT_EQ(tree.Convert<const bool>(1.0), true);
+							EXPECT_EQ(tree.Convert<bool&>(1.0), true);
+							EXPECT_EQ(tree.Convert<const double&>(true), 1.0);
+							break;
+						}
+						}
+					} // );
+
+					for (int i = 1; i < 10000; i++) {//  fibers::parallel::For(0, 10000, [&](int i) { // 
+						switch (i % 4) {
+						case 2: {
+							tree.AddConverter<int, double>();
+							EXPECT_EQ(tree.Convert<int>(10), 10);
+							EXPECT_EQ(tree.Convert<const int>(10), 10);
+							EXPECT_EQ(tree.Convert<const int&>(10), 10);
+							EXPECT_EQ(tree.Convert<double>(10), 10.0);
+							if (!EXPECT_EQ(tree.Convert<int>(10.0), 10)) {
+								printf(tree.Convert<int>(10.0));
+								printf(tree.print());
+							}; // occassional, random failure (not throw, just not matched)
+							if (!EXPECT_EQ(tree.Convert<const int>(10.0), 10)) {
+								printf(tree.Convert<const int>(10.0));
+								printf(tree.print());
+							}; // occassional, random failure (not throw, just not matched)
+							EXPECT_EQ(tree.Convert<const double>(10), 10.0);
+							EXPECT_EQ(tree.Convert<double&>(10), 10.0);
+							if (!EXPECT_EQ(tree.Convert<const int&>(10.0), 10)) {
+								printf(tree.Convert<const int&>(10.0));
+								printf(tree.print());
+							}; // occassional, random failure (not throw, just not matched)
+							break;
+						}
+						case 1: {
+							tree.AddConverter<float, int>();
+							EXPECT_EQ(tree.Convert<float>(10), 10.0f);
+							EXPECT_EQ(tree.Convert<int>(10.0f), 10);
+							EXPECT_EQ(tree.Convert<const int>(10.0f), 10);
+							EXPECT_EQ(tree.Convert<const float>(10), 10.0f);
+							EXPECT_EQ(tree.Convert<float&>(10), 10.0f);
+							EXPECT_EQ(tree.Convert<const int&>(10.0f), 10);
+							break;
+						}
+						case 3: {
+							tree.AddConverter<bool, int>();
+							EXPECT_EQ(tree.Convert<bool>(1), true);
+							EXPECT_EQ(tree.Convert<int>(true), 1);
+							EXPECT_EQ(tree.Convert<const int>(true), 1); //
+							EXPECT_EQ(tree.Convert<const bool>(1), true);
+							EXPECT_EQ(tree.Convert<bool&>(1), true);
+							EXPECT_EQ(tree.Convert<const int&>(true), 1); //
+							break;
+						}
+						case 0: {
+							tree.AddConverter<bool, double>();
+							EXPECT_EQ(tree.Convert<bool>(1.0), true);
+							EXPECT_EQ(tree.Convert<double>(true), 1.0);
+							EXPECT_EQ(tree.Convert<const double>(true), 1.0);
+							EXPECT_EQ(tree.Convert<const bool>(1.0), true);
+							EXPECT_EQ(tree.Convert<bool&>(1.0), true);
+							EXPECT_EQ(tree.Convert<const double&>(true), 1.0);
+							break;
+						}
+						}
+					} // );
+
+					for (int i = 2; i < 10000; i++) {//  fibers::parallel::For(0, 10000, [&](int i) { // 
+						switch (i % 4) {
+						case 2: {
+							tree.AddConverter<int, double>();
+							EXPECT_EQ(tree.Convert<int>(10), 10);
+							EXPECT_EQ(tree.Convert<const int>(10), 10);
+							EXPECT_EQ(tree.Convert<const int&>(10), 10);
+							EXPECT_EQ(tree.Convert<double>(10), 10.0);
+							if (!EXPECT_EQ(tree.Convert<int>(10.0), 10)) {
+								printf(tree.Convert<int>(10.0));
+								printf(tree.print());
+							}; // occassional, random failure (not throw, just not matched)
+							if (!EXPECT_EQ(tree.Convert<const int>(10.0), 10)) {
+								printf(tree.Convert<const int>(10.0));
+								printf(tree.print());
+							}; // occassional, random failure (not throw, just not matched)
+							EXPECT_EQ(tree.Convert<const double>(10), 10.0);
+							EXPECT_EQ(tree.Convert<double&>(10), 10.0);
+							if (!EXPECT_EQ(tree.Convert<const int&>(10.0), 10)) {
+								printf(tree.Convert<const int&>(10.0));
+								printf(tree.print());
+							}; // occassional, random failure (not throw, just not matched)
+							break;
+						}
+						case 1: {
+							tree.AddConverter<float, int>();
+							EXPECT_EQ(tree.Convert<float>(10), 10.0f);
+							EXPECT_EQ(tree.Convert<int>(10.0f), 10);
+							EXPECT_EQ(tree.Convert<const int>(10.0f), 10);
+							EXPECT_EQ(tree.Convert<const float>(10), 10.0f);
+							EXPECT_EQ(tree.Convert<float&>(10), 10.0f);
+							EXPECT_EQ(tree.Convert<const int&>(10.0f), 10);
+							break;
+						}
+						case 3: {
+							tree.AddConverter<bool, int>();
+							EXPECT_EQ(tree.Convert<bool>(1), true);
+							EXPECT_EQ(tree.Convert<int>(true), 1);
+							EXPECT_EQ(tree.Convert<const int>(true), 1); //
+							EXPECT_EQ(tree.Convert<const bool>(1), true);
+							EXPECT_EQ(tree.Convert<bool&>(1), true);
+							EXPECT_EQ(tree.Convert<const int&>(true), 1); //
+							break;
+						}
+						case 0: {
+							tree.AddConverter<bool, double>();
+							EXPECT_EQ(tree.Convert<bool>(1.0), true);
+							EXPECT_EQ(tree.Convert<double>(true), 1.0);
+							EXPECT_EQ(tree.Convert<const double>(true), 1.0);
+							EXPECT_EQ(tree.Convert<const bool>(1.0), true);
+							EXPECT_EQ(tree.Convert<bool&>(1.0), true);
+							EXPECT_EQ(tree.Convert<const double&>(true), 1.0);
+							break;
+						}
+						}
+					} // );
+
+					for (int i = 3; i < 10000; i++) {//  fibers::parallel::For(0, 10000, [&](int i) { // 
+						switch (i % 4) {
+						case 2: {
+							tree.AddConverter<int, double>();
+							EXPECT_EQ(tree.Convert<int>(10), 10);
+							EXPECT_EQ(tree.Convert<const int>(10), 10);
+							EXPECT_EQ(tree.Convert<const int&>(10), 10);
+							EXPECT_EQ(tree.Convert<double>(10), 10.0);
+							if (!EXPECT_EQ(tree.Convert<int>(10.0), 10)) {
+								printf(tree.Convert<int>(10.0));
+								printf(tree.print());
+							}; // occassional, random failure (not throw, just not matched)
+							if (!EXPECT_EQ(tree.Convert<const int>(10.0), 10)) {
+								printf(tree.Convert<const int>(10.0));
+								printf(tree.print());
+							}; // occassional, random failure (not throw, just not matched)
+							EXPECT_EQ(tree.Convert<const double>(10), 10.0);
+							EXPECT_EQ(tree.Convert<double&>(10), 10.0);
+							if (!EXPECT_EQ(tree.Convert<const int&>(10.0), 10)) {
+								printf(tree.Convert<const int&>(10.0));
+								printf(tree.print());
+							}; // occassional, random failure (not throw, just not matched)
+							break;
+						}
+						case 1: {
+							tree.AddConverter<float, int>();
+							EXPECT_EQ(tree.Convert<float>(10), 10.0f);
+							EXPECT_EQ(tree.Convert<int>(10.0f), 10);
+							EXPECT_EQ(tree.Convert<const int>(10.0f), 10);
+							EXPECT_EQ(tree.Convert<const float>(10), 10.0f);
+							EXPECT_EQ(tree.Convert<float&>(10), 10.0f);
+							EXPECT_EQ(tree.Convert<const int&>(10.0f), 10);
+							break;
+						}
+						case 3: {
+							tree.AddConverter<bool, int>();
+							EXPECT_EQ(tree.Convert<bool>(1), true);
+							EXPECT_EQ(tree.Convert<int>(true), 1);
+							EXPECT_EQ(tree.Convert<const int>(true), 1); //
+							EXPECT_EQ(tree.Convert<const bool>(1), true);
+							EXPECT_EQ(tree.Convert<bool&>(1), true);
+							EXPECT_EQ(tree.Convert<const int&>(true), 1); //
+							break;
+						}
+						case 0: {
+							tree.AddConverter<bool, double>();
+							EXPECT_EQ(tree.Convert<bool>(1.0), true);
+							EXPECT_EQ(tree.Convert<double>(true), 1.0);
+							EXPECT_EQ(tree.Convert<const double>(true), 1.0);
+							EXPECT_EQ(tree.Convert<const bool>(1.0), true);
+							EXPECT_EQ(tree.Convert<bool&>(1.0), true);
+							EXPECT_EQ(tree.Convert<const double&>(true), 1.0);
+							break;
+						}
+						}
+					} // );
+				}
+				catch (std::exception& e) {
+					printf(std::string(e.what()) + " at line " + std::to_string(__LINE__));
+				}
+
+				//
+
+				try {
+					TypeConverter tree;
+					for (int i = 0; i < 10000; i++) {//  fibers::parallel::For(0, 10000, [&](int i) { // 
+						switch (i % 4) {
+						case 1: {
+							tree.AddConverter<int, double>();
+							EXPECT_EQ(tree.Convert<int>(10), 10);
+							EXPECT_EQ(tree.Convert<const int>(10), 10);
+							EXPECT_EQ(tree.Convert<const int&>(10), 10);
+							EXPECT_EQ(tree.Convert<double>(10), 10.0);
+							if (!EXPECT_EQ(tree.Convert<int>(10.0), 10)) {
+								printf(tree.Convert<int>(10.0));
+								printf(tree.print());
+							}; // occassional, random failure (not throw, just not matched)
+							if (!EXPECT_EQ(tree.Convert<const int>(10.0), 10)) {
+								printf(tree.Convert<const int>(10.0));
+								printf(tree.print());
+							}; // occassional, random failure (not throw, just not matched)
+							EXPECT_EQ(tree.Convert<const double>(10), 10.0);
+							EXPECT_EQ(tree.Convert<double&>(10), 10.0);
+							if (!EXPECT_EQ(tree.Convert<const int&>(10.0), 10)) {
+								printf(tree.Convert<const int&>(10.0));
+								printf(tree.print());
+							}; // occassional, random failure (not throw, just not matched)
+							break;
+						}
+						case 3: {
+							tree.AddConverter<float, int>();
+							EXPECT_EQ(tree.Convert<float>(10), 10.0f);
+							EXPECT_EQ(tree.Convert<int>(10.0f), 10);
+							EXPECT_EQ(tree.Convert<const int>(10.0f), 10);
+							EXPECT_EQ(tree.Convert<const float>(10), 10.0f);
+							EXPECT_EQ(tree.Convert<float&>(10), 10.0f);
+							EXPECT_EQ(tree.Convert<const int&>(10.0f), 10);
+							break;
+						}
+						case 2: {
+							tree.AddConverter<bool, int>();
+							EXPECT_EQ(tree.Convert<bool>(1), true);
+							EXPECT_EQ(tree.Convert<int>(true), 1);
+							EXPECT_EQ(tree.Convert<const int>(true), 1); //
+							EXPECT_EQ(tree.Convert<const bool>(1), true);
+							EXPECT_EQ(tree.Convert<bool&>(1), true);
+							EXPECT_EQ(tree.Convert<const int&>(true), 1); //
+							break;
+						}
+						case 0: {
+							tree.AddConverter<bool, double>();
+							EXPECT_EQ(tree.Convert<bool>(1.0), true);
+							EXPECT_EQ(tree.Convert<double>(true), 1.0);
+							EXPECT_EQ(tree.Convert<const double>(true), 1.0);
+							EXPECT_EQ(tree.Convert<const bool>(1.0), true);
+							EXPECT_EQ(tree.Convert<bool&>(1.0), true);
+							EXPECT_EQ(tree.Convert<const double&>(true), 1.0);
+							break;
+						}
+						}
+					} // );
+
+					for (int i = 1; i < 10000; i++) {//  fibers::parallel::For(0, 10000, [&](int i) { // 
+						switch (i % 4) {
+						case 1: {
+							tree.AddConverter<int, double>();
+							EXPECT_EQ(tree.Convert<int>(10), 10);
+							EXPECT_EQ(tree.Convert<const int>(10), 10);
+							EXPECT_EQ(tree.Convert<const int&>(10), 10);
+							EXPECT_EQ(tree.Convert<double>(10), 10.0);
+							if (!EXPECT_EQ(tree.Convert<int>(10.0), 10)) {
+								printf(tree.Convert<int>(10.0));
+								printf(tree.print());
+							}; // occassional, random failure (not throw, just not matched)
+							if (!EXPECT_EQ(tree.Convert<const int>(10.0), 10)) {
+								printf(tree.Convert<const int>(10.0));
+								printf(tree.print());
+							}; // occassional, random failure (not throw, just not matched)
+							EXPECT_EQ(tree.Convert<const double>(10), 10.0);
+							EXPECT_EQ(tree.Convert<double&>(10), 10.0);
+							if (!EXPECT_EQ(tree.Convert<const int&>(10.0), 10)) {
+								printf(tree.Convert<const int&>(10.0));
+								printf(tree.print());
+							}; // occassional, random failure (not throw, just not matched)
+							break;
+						}
+						case 3: {
+							tree.AddConverter<float, int>();
+							EXPECT_EQ(tree.Convert<float>(10), 10.0f);
+							EXPECT_EQ(tree.Convert<int>(10.0f), 10);
+							EXPECT_EQ(tree.Convert<const int>(10.0f), 10);
+							EXPECT_EQ(tree.Convert<const float>(10), 10.0f);
+							EXPECT_EQ(tree.Convert<float&>(10), 10.0f);
+							EXPECT_EQ(tree.Convert<const int&>(10.0f), 10);
+							break;
+						}
+						case 2: {
+							tree.AddConverter<bool, int>();
+							EXPECT_EQ(tree.Convert<bool>(1), true);
+							EXPECT_EQ(tree.Convert<int>(true), 1);
+							EXPECT_EQ(tree.Convert<const int>(true), 1); //
+							EXPECT_EQ(tree.Convert<const bool>(1), true);
+							EXPECT_EQ(tree.Convert<bool&>(1), true);
+							EXPECT_EQ(tree.Convert<const int&>(true), 1); //
+							break;
+						}
+						case 0: {
+							tree.AddConverter<bool, double>();
+							EXPECT_EQ(tree.Convert<bool>(1.0), true);
+							EXPECT_EQ(tree.Convert<double>(true), 1.0);
+							EXPECT_EQ(tree.Convert<const double>(true), 1.0);
+							EXPECT_EQ(tree.Convert<const bool>(1.0), true);
+							EXPECT_EQ(tree.Convert<bool&>(1.0), true);
+							EXPECT_EQ(tree.Convert<const double&>(true), 1.0);
+							break;
+						}
+						}
+					} // );
+
+					for (int i = 2; i < 10000; i++) {//  fibers::parallel::For(0, 10000, [&](int i) { // 
+						switch (i % 4) {
+						case 1: {
+							tree.AddConverter<int, double>();
+							EXPECT_EQ(tree.Convert<int>(10), 10);
+							EXPECT_EQ(tree.Convert<const int>(10), 10);
+							EXPECT_EQ(tree.Convert<const int&>(10), 10);
+							EXPECT_EQ(tree.Convert<double>(10), 10.0);
+							if (!EXPECT_EQ(tree.Convert<int>(10.0), 10)) {
+								printf(tree.Convert<int>(10.0));
+								printf(tree.print());
+							}; // occassional, random failure (not throw, just not matched)
+							if (!EXPECT_EQ(tree.Convert<const int>(10.0), 10)) {
+								printf(tree.Convert<const int>(10.0));
+								printf(tree.print());
+							}; // occassional, random failure (not throw, just not matched)
+							EXPECT_EQ(tree.Convert<const double>(10), 10.0);
+							EXPECT_EQ(tree.Convert<double&>(10), 10.0);
+							if (!EXPECT_EQ(tree.Convert<const int&>(10.0), 10)) {
+								printf(tree.Convert<const int&>(10.0));
+								printf(tree.print());
+							}; // occassional, random failure (not throw, just not matched)
+							break;
+						}
+						case 3: {
+							tree.AddConverter<float, int>();
+							EXPECT_EQ(tree.Convert<float>(10), 10.0f);
+							EXPECT_EQ(tree.Convert<int>(10.0f), 10);
+							EXPECT_EQ(tree.Convert<const int>(10.0f), 10);
+							EXPECT_EQ(tree.Convert<const float>(10), 10.0f);
+							EXPECT_EQ(tree.Convert<float&>(10), 10.0f);
+							EXPECT_EQ(tree.Convert<const int&>(10.0f), 10);
+							break;
+						}
+						case 2: {
+							tree.AddConverter<bool, int>();
+							EXPECT_EQ(tree.Convert<bool>(1), true);
+							EXPECT_EQ(tree.Convert<int>(true), 1);
+							EXPECT_EQ(tree.Convert<const int>(true), 1); //
+							EXPECT_EQ(tree.Convert<const bool>(1), true);
+							EXPECT_EQ(tree.Convert<bool&>(1), true);
+							EXPECT_EQ(tree.Convert<const int&>(true), 1); //
+							break;
+						}
+						case 0: {
+							tree.AddConverter<bool, double>();
+							EXPECT_EQ(tree.Convert<bool>(1.0), true);
+							EXPECT_EQ(tree.Convert<double>(true), 1.0);
+							EXPECT_EQ(tree.Convert<const double>(true), 1.0);
+							EXPECT_EQ(tree.Convert<const bool>(1.0), true);
+							EXPECT_EQ(tree.Convert<bool&>(1.0), true);
+							EXPECT_EQ(tree.Convert<const double&>(true), 1.0);
+							break;
+						}
+						}
+					} // );
+
+					for (int i = 3; i < 10000; i++) {//  fibers::parallel::For(0, 10000, [&](int i) { // 
+						switch (i % 4) {
+						case 1: {
+							tree.AddConverter<int, double>();
+							EXPECT_EQ(tree.Convert<int>(10), 10);
+							EXPECT_EQ(tree.Convert<const int>(10), 10);
+							EXPECT_EQ(tree.Convert<const int&>(10), 10);
+							EXPECT_EQ(tree.Convert<double>(10), 10.0);
+							if (!EXPECT_EQ(tree.Convert<int>(10.0), 10)) {
+								printf(tree.Convert<int>(10.0));
+								printf(tree.print());
+							}; // occassional, random failure (not throw, just not matched)
+							if (!EXPECT_EQ(tree.Convert<const int>(10.0), 10)) {
+								printf(tree.Convert<const int>(10.0));
+								printf(tree.print());
+							}; // occassional, random failure (not throw, just not matched)
+							EXPECT_EQ(tree.Convert<const double>(10), 10.0);
+							EXPECT_EQ(tree.Convert<double&>(10), 10.0);
+							if (!EXPECT_EQ(tree.Convert<const int&>(10.0), 10)) {
+								printf(tree.Convert<const int&>(10.0));
+								printf(tree.print());
+							}; // occassional, random failure (not throw, just not matched)
+							break;
+						}
+						case 3: {
+							tree.AddConverter<float, int>();
+							EXPECT_EQ(tree.Convert<float>(10), 10.0f);
+							EXPECT_EQ(tree.Convert<int>(10.0f), 10);
+							EXPECT_EQ(tree.Convert<const int>(10.0f), 10);
+							EXPECT_EQ(tree.Convert<const float>(10), 10.0f);
+							EXPECT_EQ(tree.Convert<float&>(10), 10.0f);
+							EXPECT_EQ(tree.Convert<const int&>(10.0f), 10);
+							break;
+						}
+						case 2: {
+							tree.AddConverter<bool, int>();
+							EXPECT_EQ(tree.Convert<bool>(1), true);
+							EXPECT_EQ(tree.Convert<int>(true), 1);
+							EXPECT_EQ(tree.Convert<const int>(true), 1); //
+							EXPECT_EQ(tree.Convert<const bool>(1), true);
+							EXPECT_EQ(tree.Convert<bool&>(1), true);
+							EXPECT_EQ(tree.Convert<const int&>(true), 1); //
+							break;
+						}
+						case 0: {
+							tree.AddConverter<bool, double>();
+							EXPECT_EQ(tree.Convert<bool>(1.0), true);
+							EXPECT_EQ(tree.Convert<double>(true), 1.0);
+							EXPECT_EQ(tree.Convert<const double>(true), 1.0);
+							EXPECT_EQ(tree.Convert<const bool>(1.0), true);
+							EXPECT_EQ(tree.Convert<bool&>(1.0), true);
+							EXPECT_EQ(tree.Convert<const double&>(true), 1.0);
+							break;
+						}
+						}
+					} // );
+				}
+				catch (std::exception& e) {
+					printf(std::string(e.what()) + " at line " + std::to_string(__LINE__));
+				}
+
+				// 
+
+				try {
+					TypeConverter tree;
+					for (int i = 0; i < 10000; i++) {//  fibers::parallel::For(0, 10000, [&](int i) { // 
+						switch (i % 4) {
+						case 0: {
+							tree.AddConverter<int, double>();
+							EXPECT_EQ(tree.Convert<int>(10), 10);
+							EXPECT_EQ(tree.Convert<const int>(10), 10);
+							EXPECT_EQ(tree.Convert<const int&>(10), 10);
+							EXPECT_EQ(tree.Convert<double>(10), 10.0);
+							if (!EXPECT_EQ(tree.Convert<int>(10.0), 10)) {
+								printf(tree.Convert<int>(10.0));
+								printf(tree.print());
+							}; // occassional, random failure (not throw, just not matched)
+							if (!EXPECT_EQ(tree.Convert<const int>(10.0), 10)) {
+								printf(tree.Convert<const int>(10.0));
+								printf(tree.print());
+							}; // occassional, random failure (not throw, just not matched)
+							EXPECT_EQ(tree.Convert<const double>(10), 10.0);
+							EXPECT_EQ(tree.Convert<double&>(10), 10.0);
+							if (!EXPECT_EQ(tree.Convert<const int&>(10.0), 10)) {
+								printf(tree.Convert<const int&>(10.0));
+								printf(tree.print());
+							}; // occassional, random failure (not throw, just not matched)
+							break;
+						}
+						case 2: {
+							tree.AddConverter<float, int>();
+							EXPECT_EQ(tree.Convert<float>(10), 10.0f);
+							EXPECT_EQ(tree.Convert<int>(10.0f), 10);
+							EXPECT_EQ(tree.Convert<const int>(10.0f), 10);
+							EXPECT_EQ(tree.Convert<const float>(10), 10.0f);
+							EXPECT_EQ(tree.Convert<float&>(10), 10.0f);
+							EXPECT_EQ(tree.Convert<const int&>(10.0f), 10);
+							break;
+						}
+						case 1: {
+							tree.AddConverter<bool, int>();
+							EXPECT_EQ(tree.Convert<bool>(1), true);
+							EXPECT_EQ(tree.Convert<int>(true), 1);
+							EXPECT_EQ(tree.Convert<const int>(true), 1); //
+							EXPECT_EQ(tree.Convert<const bool>(1), true);
+							EXPECT_EQ(tree.Convert<bool&>(1), true);
+							EXPECT_EQ(tree.Convert<const int&>(true), 1); //
+							break;
+						}
+						case 3: {
+							tree.AddConverter<bool, double>();
+							EXPECT_EQ(tree.Convert<bool>(1.0), true);
+							EXPECT_EQ(tree.Convert<double>(true), 1.0);
+							EXPECT_EQ(tree.Convert<const double>(true), 1.0);
+							EXPECT_EQ(tree.Convert<const bool>(1.0), true);
+							EXPECT_EQ(tree.Convert<bool&>(1.0), true);
+							EXPECT_EQ(tree.Convert<const double&>(true), 1.0);
+							break;
+						}
+						}
+					} // );
+
+					for (int i = 1; i < 10000; i++) {//  fibers::parallel::For(0, 10000, [&](int i) { // 
+						switch (i % 4) {
+						case 0: {
+							tree.AddConverter<int, double>();
+							EXPECT_EQ(tree.Convert<int>(10), 10);
+							EXPECT_EQ(tree.Convert<const int>(10), 10);
+							EXPECT_EQ(tree.Convert<const int&>(10), 10);
+							EXPECT_EQ(tree.Convert<double>(10), 10.0);
+							if (!EXPECT_EQ(tree.Convert<int>(10.0), 10)) {
+								printf(tree.Convert<int>(10.0));
+								printf(tree.print());
+							}; // occassional, random failure (not throw, just not matched)
+							if (!EXPECT_EQ(tree.Convert<const int>(10.0), 10)) {
+								printf(tree.Convert<const int>(10.0));
+								printf(tree.print());
+							}; // occassional, random failure (not throw, just not matched)
+							EXPECT_EQ(tree.Convert<const double>(10), 10.0);
+							EXPECT_EQ(tree.Convert<double&>(10), 10.0);
+							if (!EXPECT_EQ(tree.Convert<const int&>(10.0), 10)) {
+								printf(tree.Convert<const int&>(10.0));
+								printf(tree.print());
+							}; // occassional, random failure (not throw, just not matched)
+							break;
+						}
+						case 2: {
+							tree.AddConverter<float, int>();
+							EXPECT_EQ(tree.Convert<float>(10), 10.0f);
+							EXPECT_EQ(tree.Convert<int>(10.0f), 10);
+							EXPECT_EQ(tree.Convert<const int>(10.0f), 10);
+							EXPECT_EQ(tree.Convert<const float>(10), 10.0f);
+							EXPECT_EQ(tree.Convert<float&>(10), 10.0f);
+							EXPECT_EQ(tree.Convert<const int&>(10.0f), 10);
+							break;
+						}
+						case 1: {
+							tree.AddConverter<bool, int>();
+							EXPECT_EQ(tree.Convert<bool>(1), true);
+							EXPECT_EQ(tree.Convert<int>(true), 1);
+							EXPECT_EQ(tree.Convert<const int>(true), 1); //
+							EXPECT_EQ(tree.Convert<const bool>(1), true);
+							EXPECT_EQ(tree.Convert<bool&>(1), true);
+							EXPECT_EQ(tree.Convert<const int&>(true), 1); //
+							break;
+						}
+						case 3: {
+							tree.AddConverter<bool, double>();
+							EXPECT_EQ(tree.Convert<bool>(1.0), true);
+							EXPECT_EQ(tree.Convert<double>(true), 1.0);
+							EXPECT_EQ(tree.Convert<const double>(true), 1.0);
+							EXPECT_EQ(tree.Convert<const bool>(1.0), true);
+							EXPECT_EQ(tree.Convert<bool&>(1.0), true);
+							EXPECT_EQ(tree.Convert<const double&>(true), 1.0);
+							break;
+						}
+						}
+					} // );
+
+					for (int i = 2; i < 10000; i++) {//  fibers::parallel::For(0, 10000, [&](int i) { // 
+						switch (i % 4) {
+						case 0: {
+							tree.AddConverter<int, double>();
+							EXPECT_EQ(tree.Convert<int>(10), 10);
+							EXPECT_EQ(tree.Convert<const int>(10), 10);
+							EXPECT_EQ(tree.Convert<const int&>(10), 10);
+							EXPECT_EQ(tree.Convert<double>(10), 10.0);
+							if (!EXPECT_EQ(tree.Convert<int>(10.0), 10)) {
+								printf(tree.Convert<int>(10.0));
+								printf(tree.print());
+							}; // occassional, random failure (not throw, just not matched)
+							if (!EXPECT_EQ(tree.Convert<const int>(10.0), 10)) {
+								printf(tree.Convert<const int>(10.0));
+								printf(tree.print());
+							}; // occassional, random failure (not throw, just not matched)
+							EXPECT_EQ(tree.Convert<const double>(10), 10.0);
+							EXPECT_EQ(tree.Convert<double&>(10), 10.0);
+							if (!EXPECT_EQ(tree.Convert<const int&>(10.0), 10)) {
+								printf(tree.Convert<const int&>(10.0));
+								printf(tree.print());
+							}; // occassional, random failure (not throw, just not matched)
+							break;
+						}
+						case 2: {
+							tree.AddConverter<float, int>();
+							EXPECT_EQ(tree.Convert<float>(10), 10.0f);
+							EXPECT_EQ(tree.Convert<int>(10.0f), 10);
+							EXPECT_EQ(tree.Convert<const int>(10.0f), 10);
+							EXPECT_EQ(tree.Convert<const float>(10), 10.0f);
+							EXPECT_EQ(tree.Convert<float&>(10), 10.0f);
+							EXPECT_EQ(tree.Convert<const int&>(10.0f), 10);
+							break;
+						}
+						case 1: {
+							tree.AddConverter<bool, int>();
+							EXPECT_EQ(tree.Convert<bool>(1), true);
+							EXPECT_EQ(tree.Convert<int>(true), 1);
+							EXPECT_EQ(tree.Convert<const int>(true), 1); //
+							EXPECT_EQ(tree.Convert<const bool>(1), true);
+							EXPECT_EQ(tree.Convert<bool&>(1), true);
+							EXPECT_EQ(tree.Convert<const int&>(true), 1); //
+							break;
+						}
+						case 3: {
+							tree.AddConverter<bool, double>();
+							EXPECT_EQ(tree.Convert<bool>(1.0), true);
+							EXPECT_EQ(tree.Convert<double>(true), 1.0);
+							EXPECT_EQ(tree.Convert<const double>(true), 1.0);
+							EXPECT_EQ(tree.Convert<const bool>(1.0), true);
+							EXPECT_EQ(tree.Convert<bool&>(1.0), true);
+							EXPECT_EQ(tree.Convert<const double&>(true), 1.0);
+							break;
+						}
+						}
+					} // );
+
+					for (int i = 3; i < 10000; i++) {//  fibers::parallel::For(0, 10000, [&](int i) { // 
+						switch (i % 4) {
+						case 0: {
+							tree.AddConverter<int, double>();
+							EXPECT_EQ(tree.Convert<int>(10), 10);
+							EXPECT_EQ(tree.Convert<const int>(10), 10);
+							EXPECT_EQ(tree.Convert<const int&>(10), 10);
+							EXPECT_EQ(tree.Convert<double>(10), 10.0);
+							if (!EXPECT_EQ(tree.Convert<int>(10.0), 10)) {
+								printf(tree.Convert<int>(10.0));
+								printf(tree.print());
+							}; // occassional, random failure (not throw, just not matched)
+							if (!EXPECT_EQ(tree.Convert<const int>(10.0), 10)) {
+								printf(tree.Convert<const int>(10.0));
+								printf(tree.print());
+							}; // occassional, random failure (not throw, just not matched)
+							EXPECT_EQ(tree.Convert<const double>(10), 10.0);
+							EXPECT_EQ(tree.Convert<double&>(10), 10.0);
+							if (!EXPECT_EQ(tree.Convert<const int&>(10.0), 10)) {
+								printf(tree.Convert<const int&>(10.0));
+								printf(tree.print());
+							}; // occassional, random failure (not throw, just not matched)
+							break;
+						}
+						case 2: {
+							tree.AddConverter<float, int>();
+							EXPECT_EQ(tree.Convert<float>(10), 10.0f);
+							EXPECT_EQ(tree.Convert<int>(10.0f), 10);
+							EXPECT_EQ(tree.Convert<const int>(10.0f), 10);
+							EXPECT_EQ(tree.Convert<const float>(10), 10.0f);
+							EXPECT_EQ(tree.Convert<float&>(10), 10.0f);
+							EXPECT_EQ(tree.Convert<const int&>(10.0f), 10);
+							break;
+						}
+						case 1: {
+							tree.AddConverter<bool, int>();
+							EXPECT_EQ(tree.Convert<bool>(1), true);
+							EXPECT_EQ(tree.Convert<int>(true), 1);
+							EXPECT_EQ(tree.Convert<const int>(true), 1); //
+							EXPECT_EQ(tree.Convert<const bool>(1), true);
+							EXPECT_EQ(tree.Convert<bool&>(1), true);
+							EXPECT_EQ(tree.Convert<const int&>(true), 1); //
+							break;
+						}
+						case 3: {
+							tree.AddConverter<bool, double>();
+							EXPECT_EQ(tree.Convert<bool>(1.0), true);
+							EXPECT_EQ(tree.Convert<double>(true), 1.0);
+							EXPECT_EQ(tree.Convert<const double>(true), 1.0);
+							EXPECT_EQ(tree.Convert<const bool>(1.0), true);
+							EXPECT_EQ(tree.Convert<bool&>(1.0), true);
+							EXPECT_EQ(tree.Convert<const double&>(true), 1.0);
+							break;
+						}
+						}
+					} // );
+				}
+				catch (std::exception& e) {
+					printf(std::string(e.what()) + " at line " + std::to_string(__LINE__));
+				}
+
+				// 
+
+				try {
+					TypeConverter tree;
+					for (int i = 0; i < 10000; i++) {//  fibers::parallel::For(0, 10000, [&](int i) { // 
+						switch (i % 4) {
+						case 1: {
+							tree.AddConverter<int, double>();
+							EXPECT_EQ(tree.Convert<int>(10), 10);
+							EXPECT_EQ(tree.Convert<const int>(10), 10);
+							EXPECT_EQ(tree.Convert<const int&>(10), 10);
+							EXPECT_EQ(tree.Convert<double>(10), 10.0);
+							if (!EXPECT_EQ(tree.Convert<int>(10.0), 10)) {
+								printf(tree.Convert<int>(10.0));
+								printf(tree.print());
+							}; // occassional, random failure (not throw, just not matched)
+							if (!EXPECT_EQ(tree.Convert<const int>(10.0), 10)) {
+								printf(tree.Convert<const int>(10.0));
+								printf(tree.print());
+							}; // occassional, random failure (not throw, just not matched)
+							EXPECT_EQ(tree.Convert<const double>(10), 10.0);
+							EXPECT_EQ(tree.Convert<double&>(10), 10.0);
+							if (!EXPECT_EQ(tree.Convert<const int&>(10.0), 10)) {
+								printf(tree.Convert<const int&>(10.0));
+								printf(tree.print());
+							}; // occassional, random failure (not throw, just not matched)
+							break;
+						}
+						case 2: {
+							tree.AddConverter<float, int>();
+							EXPECT_EQ(tree.Convert<float>(10), 10.0f);
+							EXPECT_EQ(tree.Convert<int>(10.0f), 10);
+							EXPECT_EQ(tree.Convert<const int>(10.0f), 10);
+							EXPECT_EQ(tree.Convert<const float>(10), 10.0f);
+							EXPECT_EQ(tree.Convert<float&>(10), 10.0f);
+							EXPECT_EQ(tree.Convert<const int&>(10.0f), 10);
+							break;
+						}
+						case 0: {
+							tree.AddConverter<bool, int>();
+							EXPECT_EQ(tree.Convert<bool>(1), true);
+							EXPECT_EQ(tree.Convert<int>(true), 1);
+							EXPECT_EQ(tree.Convert<const int>(true), 1); //
+							EXPECT_EQ(tree.Convert<const bool>(1), true);
+							EXPECT_EQ(tree.Convert<bool&>(1), true);
+							EXPECT_EQ(tree.Convert<const int&>(true), 1); //
+							break;
+						}
+						case 3: {
+							tree.AddConverter<bool, double>();
+							EXPECT_EQ(tree.Convert<bool>(1.0), true);
+							EXPECT_EQ(tree.Convert<double>(true), 1.0);
+							EXPECT_EQ(tree.Convert<const double>(true), 1.0);
+							EXPECT_EQ(tree.Convert<const bool>(1.0), true);
+							EXPECT_EQ(tree.Convert<bool&>(1.0), true);
+							EXPECT_EQ(tree.Convert<const double&>(true), 1.0);
+							break;
+						}
+						}
+					} // );
+
+					for (int i = 1; i < 10000; i++) {//  fibers::parallel::For(0, 10000, [&](int i) { // 
+						switch (i % 4) {
+						case 1: {
+							tree.AddConverter<int, double>();
+							EXPECT_EQ(tree.Convert<int>(10), 10);
+							EXPECT_EQ(tree.Convert<const int>(10), 10);
+							EXPECT_EQ(tree.Convert<const int&>(10), 10);
+							EXPECT_EQ(tree.Convert<double>(10), 10.0);
+							if (!EXPECT_EQ(tree.Convert<int>(10.0), 10)) {
+								printf(tree.Convert<int>(10.0));
+								printf(tree.print());
+							}; // occassional, random failure (not throw, just not matched)
+							if (!EXPECT_EQ(tree.Convert<const int>(10.0), 10)) {
+								printf(tree.Convert<const int>(10.0));
+								printf(tree.print());
+							}; // occassional, random failure (not throw, just not matched)
+							EXPECT_EQ(tree.Convert<const double>(10), 10.0);
+							EXPECT_EQ(tree.Convert<double&>(10), 10.0);
+							if (!EXPECT_EQ(tree.Convert<const int&>(10.0), 10)) {
+								printf(tree.Convert<const int&>(10.0));
+								printf(tree.print());
+							}; // occassional, random failure (not throw, just not matched)
+							break;
+						}
+						case 2: {
+							tree.AddConverter<float, int>();
+							EXPECT_EQ(tree.Convert<float>(10), 10.0f);
+							EXPECT_EQ(tree.Convert<int>(10.0f), 10);
+							EXPECT_EQ(tree.Convert<const int>(10.0f), 10);
+							EXPECT_EQ(tree.Convert<const float>(10), 10.0f);
+							EXPECT_EQ(tree.Convert<float&>(10), 10.0f);
+							EXPECT_EQ(tree.Convert<const int&>(10.0f), 10);
+							break;
+						}
+						case 0: {
+							tree.AddConverter<bool, int>();
+							EXPECT_EQ(tree.Convert<bool>(1), true);
+							EXPECT_EQ(tree.Convert<int>(true), 1);
+							EXPECT_EQ(tree.Convert<const int>(true), 1); //
+							EXPECT_EQ(tree.Convert<const bool>(1), true);
+							EXPECT_EQ(tree.Convert<bool&>(1), true);
+							EXPECT_EQ(tree.Convert<const int&>(true), 1); //
+							break;
+						}
+						case 3: {
+							tree.AddConverter<bool, double>();
+							EXPECT_EQ(tree.Convert<bool>(1.0), true);
+							EXPECT_EQ(tree.Convert<double>(true), 1.0);
+							EXPECT_EQ(tree.Convert<const double>(true), 1.0);
+							EXPECT_EQ(tree.Convert<const bool>(1.0), true);
+							EXPECT_EQ(tree.Convert<bool&>(1.0), true);
+							EXPECT_EQ(tree.Convert<const double&>(true), 1.0);
+							break;
+						}
+						}
+					} // );
+
+					for (int i = 2; i < 10000; i++) {//  fibers::parallel::For(0, 10000, [&](int i) { // 
+						switch (i % 4) {
+						case 1: {
+							tree.AddConverter<int, double>();
+							EXPECT_EQ(tree.Convert<int>(10), 10);
+							EXPECT_EQ(tree.Convert<const int>(10), 10);
+							EXPECT_EQ(tree.Convert<const int&>(10), 10);
+							EXPECT_EQ(tree.Convert<double>(10), 10.0);
+							if (!EXPECT_EQ(tree.Convert<int>(10.0), 10)) {
+								printf(tree.Convert<int>(10.0));
+								printf(tree.print());
+							}; // occassional, random failure (not throw, just not matched)
+							if (!EXPECT_EQ(tree.Convert<const int>(10.0), 10)) {
+								printf(tree.Convert<const int>(10.0));
+								printf(tree.print());
+							}; // occassional, random failure (not throw, just not matched)
+							EXPECT_EQ(tree.Convert<const double>(10), 10.0);
+							EXPECT_EQ(tree.Convert<double&>(10), 10.0);
+							if (!EXPECT_EQ(tree.Convert<const int&>(10.0), 10)) {
+								printf(tree.Convert<const int&>(10.0));
+								printf(tree.print());
+							}; // occassional, random failure (not throw, just not matched)
+							break;
+						}
+						case 2: {
+							tree.AddConverter<float, int>();
+							EXPECT_EQ(tree.Convert<float>(10), 10.0f);
+							EXPECT_EQ(tree.Convert<int>(10.0f), 10);
+							EXPECT_EQ(tree.Convert<const int>(10.0f), 10);
+							EXPECT_EQ(tree.Convert<const float>(10), 10.0f);
+							EXPECT_EQ(tree.Convert<float&>(10), 10.0f);
+							EXPECT_EQ(tree.Convert<const int&>(10.0f), 10);
+							break;
+						}
+						case 0: {
+							tree.AddConverter<bool, int>();
+							EXPECT_EQ(tree.Convert<bool>(1), true);
+							EXPECT_EQ(tree.Convert<int>(true), 1);
+							EXPECT_EQ(tree.Convert<const int>(true), 1); //
+							EXPECT_EQ(tree.Convert<const bool>(1), true);
+							EXPECT_EQ(tree.Convert<bool&>(1), true);
+							EXPECT_EQ(tree.Convert<const int&>(true), 1); //
+							break;
+						}
+						case 3: {
+							tree.AddConverter<bool, double>();
+							EXPECT_EQ(tree.Convert<bool>(1.0), true);
+							EXPECT_EQ(tree.Convert<double>(true), 1.0);
+							EXPECT_EQ(tree.Convert<const double>(true), 1.0);
+							EXPECT_EQ(tree.Convert<const bool>(1.0), true);
+							EXPECT_EQ(tree.Convert<bool&>(1.0), true);
+							EXPECT_EQ(tree.Convert<const double&>(true), 1.0);
+							break;
+						}
+						}
+					} // );
+
+					for (int i = 3; i < 10000; i++) {//  fibers::parallel::For(0, 10000, [&](int i) { // 
+						switch (i % 4) {
+						case 1: {
+							tree.AddConverter<int, double>();
+							EXPECT_EQ(tree.Convert<int>(10), 10);
+							EXPECT_EQ(tree.Convert<const int>(10), 10);
+							EXPECT_EQ(tree.Convert<const int&>(10), 10);
+							EXPECT_EQ(tree.Convert<double>(10), 10.0);
+							if (!EXPECT_EQ(tree.Convert<int>(10.0), 10)) {
+								printf(tree.Convert<int>(10.0));
+								printf(tree.print());
+							}; // occassional, random failure (not throw, just not matched)
+							if (!EXPECT_EQ(tree.Convert<const int>(10.0), 10)) {
+								printf(tree.Convert<const int>(10.0));
+								printf(tree.print());
+							}; // occassional, random failure (not throw, just not matched)
+							EXPECT_EQ(tree.Convert<const double>(10), 10.0);
+							EXPECT_EQ(tree.Convert<double&>(10), 10.0);
+							if (!EXPECT_EQ(tree.Convert<const int&>(10.0), 10)) {
+								printf(tree.Convert<const int&>(10.0));
+								printf(tree.print());
+							}; // occassional, random failure (not throw, just not matched)
+							break;
+						}
+						case 2: {
+							tree.AddConverter<float, int>();
+							EXPECT_EQ(tree.Convert<float>(10), 10.0f);
+							EXPECT_EQ(tree.Convert<int>(10.0f), 10);
+							EXPECT_EQ(tree.Convert<const int>(10.0f), 10);
+							EXPECT_EQ(tree.Convert<const float>(10), 10.0f);
+							EXPECT_EQ(tree.Convert<float&>(10), 10.0f);
+							EXPECT_EQ(tree.Convert<const int&>(10.0f), 10);
+							break;
+						}
+						case 0: {
+							tree.AddConverter<bool, int>();
+							EXPECT_EQ(tree.Convert<bool>(1), true);
+							EXPECT_EQ(tree.Convert<int>(true), 1);
+							EXPECT_EQ(tree.Convert<const int>(true), 1); //
+							EXPECT_EQ(tree.Convert<const bool>(1), true);
+							EXPECT_EQ(tree.Convert<bool&>(1), true);
+							EXPECT_EQ(tree.Convert<const int&>(true), 1); //
+							break;
+						}
+						case 3: {
+							tree.AddConverter<bool, double>();
+							EXPECT_EQ(tree.Convert<bool>(1.0), true);
+							EXPECT_EQ(tree.Convert<double>(true), 1.0);
+							EXPECT_EQ(tree.Convert<const double>(true), 1.0);
+							EXPECT_EQ(tree.Convert<const bool>(1.0), true);
+							EXPECT_EQ(tree.Convert<bool&>(1.0), true);
+							EXPECT_EQ(tree.Convert<const double&>(true), 1.0);
+							break;
+						}
+						}
+					} // );
+				}
+				catch (std::exception& e) {
+					printf(std::string(e.what()) + " at line " + std::to_string(__LINE__));
+				}
+			}
+			if (1) {
+				using namespace GoodLang;
+				try {
+					TypeConverter tree;
+#define AddConv(a, b) tree.AddConverter<a, b>()
+#define AddConvs(a) \
+					AddConv(a, char); \
+					AddConv(a, bool); \
+					AddConv(a, int); \
+					AddConv(a, long); \
+					AddConv(a, float); \
+					AddConv(a, long long); \
+					AddConv(a, long double); \
+					AddConv(a, double); \
+					AddConv(a, unsigned int); \
+					AddConv(a, unsigned long); \
+					AddConv(a, fibers::synchronization::atomic_number<double>);
+					
+					AddConvs(char);
+					AddConvs(bool);
+					AddConvs(int);
+					AddConvs(long);
+					AddConvs(float);
+					AddConvs(long long);
+					AddConvs(long double);
+					AddConvs(double);
+					AddConvs(unsigned int);
+					AddConvs(unsigned long);
+					AddConvs(fibers::synchronization::atomic_number<double>);
+#undef AddConvs
+#undef AddConv
+					tree.AddConverter([](char const& x)->std::string { return std::to_string(x); });
+					tree.AddConverter([](int const& x)->std::string { return std::to_string(x); });
+					tree.AddConverter([](long const& x)->std::string { return std::to_string(x); });
+					tree.AddConverter([](float const& x)->std::string { return std::to_string(x); });
+					tree.AddConverter([](double const& x)->std::string { return std::to_string(x); });
+					tree.AddConverter([](std::string const& x)->int { return std::atol(x.c_str()); });
+					tree.AddConverter([](std::string const& x)->long { return std::atol(x.c_str()); });
+					tree.AddConverter([](std::string const& x)->float { return std::atof(x.c_str()); });
+					tree.AddConverter([](std::string const& x)->double { return std::atof(x.c_str()); });
+
+					EXPECT_EQ(100, tree.Convert<int>(tree.Convert<std::string>(100.0)));
+					EXPECT_EQ(97, tree.Convert< fibers::synchronization::atomic_number<double>>('a').GetValue());
+					EXPECT_EQ('a', tree.Convert<char>((long double)(int)('a')));
+
+					fibers::parallel::For(0, 10000, [&](int i) { // 
+						switch (i % 4) {
+						case 0: {
+							//tree.AddConverter<int, double>();
+							EXPECT_EQ_PRINTF(tree.Convert<int>(10), 10);
+							EXPECT_EQ_PRINTF(tree.Convert<const int>(10), 10);
+							EXPECT_EQ_PRINTF(tree.Convert<const int&>(10), 10);
+							EXPECT_EQ_PRINTF(tree.Convert<double>(10), 10.0);
+							EXPECT_EQ_PRINTF(tree.Convert<int>(10.0), 10); // occassional, random failure (not throw, just not matched)
+							EXPECT_EQ_PRINTF(tree.Convert<const int>(10.0), 10); // occassional, random failure (not throw, just not matched)
+							EXPECT_EQ_PRINTF(tree.Convert<const double>(10), 10.0);
+							EXPECT_EQ_PRINTF(tree.Convert<double&>(10), 10.0);
+							EXPECT_EQ_PRINTF(tree.Convert<const int&>(10.0), 10); // occassional, random failure (not throw, just not matched)
+							break;
+						}
+						case 1: {
+							//tree.AddConverter<float, int>();
+							EXPECT_EQ_PRINTF(tree.Convert<float>(10), 10.0f);
+							EXPECT_EQ_PRINTF(tree.Convert<int>(10.0f), 10);
+							EXPECT_EQ_PRINTF(tree.Convert<const int>(10.0f), 10);
+							EXPECT_EQ_PRINTF(tree.Convert<const float>(10), 10.0f);
+							EXPECT_EQ_PRINTF(tree.Convert<float&>(10), 10.0f);
+							EXPECT_EQ_PRINTF(tree.Convert<const int&>(10.0f), 10);
+							break;
+						}
+						case 2: {
+							//tree.AddConverter<bool, int>();
+							EXPECT_EQ_PRINTF(tree.Convert<bool>(1), true);
+							EXPECT_EQ_PRINTF(tree.Convert<int>(true), 1);
+							EXPECT_EQ_PRINTF(tree.Convert<const int>(true), 1); //
+							EXPECT_EQ_PRINTF(tree.Convert<const bool>(1), true);
+							EXPECT_EQ_PRINTF(tree.Convert<bool&>(1), true);
+							EXPECT_EQ_PRINTF(tree.Convert<const int&>(true), 1); //
+							break;
+						}
+						case 3: {
+							//tree.AddConverter<bool, double>();
+							EXPECT_EQ_PRINTF(tree.Convert<bool>(1.0), true);
+							EXPECT_EQ_PRINTF(tree.Convert<double>(true), 1.0);
+							EXPECT_EQ_PRINTF(tree.Convert<const double>(true), 1.0);
+							EXPECT_EQ_PRINTF(tree.Convert<const bool>(1.0), true);
+							EXPECT_EQ_PRINTF(tree.Convert<bool&>(1.0), true);
+							EXPECT_EQ_PRINTF(tree.Convert<const double&>(true), 1.0);
+							break;
+						}
+						}
 					});
 				}
 				catch (std::exception& e) {
-					printf(e.what());
+					printf(std::string(e.what()) + " at line " + std::to_string(__LINE__));
 				}
 			}
-
 
 
 

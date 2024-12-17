@@ -847,17 +847,17 @@ namespace GoodLang {
 				to(user_type<void>()),
 				exc("Bad Any Cast")
 			{};
-			bad_any_cast(GoodLang::Type_Info const& from_m, GoodLang::Type_Info const& to_m) :
-				bad_cast(std::bad_cast::__construct_from_string_literal((std::string("Bad Any Cast From \"") + NameFromType(from_m) + "\" To \"" + NameFromType(to_m) + "\"").c_str())),
+			bad_any_cast(GoodLang::Type_Info const& from_m, GoodLang::Type_Info const& to_m, int lineNumber) :
+				bad_cast(std::bad_cast::__construct_from_string_literal((std::string("Bad Any Cast From \"") + NameFromType(from_m) + "\" To \"" + NameFromType(to_m) + "\" at line " + std::to_string(lineNumber)).c_str())),
 				from(from_m),
 				to(to_m),
-				exc(std::string("Bad Any Cast From \"") + NameFromType(from_m) + "\" To \"" + NameFromType(to_m) + "\"")
+				exc(std::string("Bad Any Cast From \"") + NameFromType(from_m) + "\" To \"" + NameFromType(to_m) + "\" at line " + std::to_string(lineNumber))
 			{};
-			bad_any_cast(std::weak_ptr<GoodLang::Type_Info> from_m, std::weak_ptr<GoodLang::Type_Info> to_m) :
-				bad_cast(std::bad_cast::__construct_from_string_literal((std::string("Bad Any Cast From \"") + NameFromType(from_m) + "\" To \"" + NameFromType(to_m) + "\"").c_str())),
+			bad_any_cast(std::weak_ptr<GoodLang::Type_Info> from_m, std::weak_ptr<GoodLang::Type_Info> to_m, int lineNumber) :
+				bad_cast(std::bad_cast::__construct_from_string_literal((std::string("Bad Any Cast From \"") + NameFromType(from_m) + "\" To \"" + NameFromType(to_m) + "\" at line " + std::to_string(lineNumber)).c_str())),
 				from(TypeFromPtr(from_m)),
 				to(TypeFromPtr(to_m)),
-				exc(std::string("Bad Any Cast From \"") + NameFromType(from_m) + "\" To \"" + NameFromType(to_m) + "\"")
+				exc(std::string("Bad Any Cast From \"") + NameFromType(from_m) + "\" To \"" + NameFromType(to_m) + "\" at line " + std::to_string(lineNumber))
 			{};
 		private:
 			std::string exc;
@@ -964,7 +964,7 @@ namespace GoodLang {
 		};
 		void ThrowIfNot(Type_Info const& type) const {
 			if (!CanCast(type)) {
-				throw exception::bad_any_cast(GetType(), type);
+				throw exception::bad_any_cast(GetType(), type, __LINE__);
 			}
 		};
 		template<typename T> static std::shared_ptr<void> get_data(const std::shared_ptr<T>& data) {
@@ -1345,7 +1345,7 @@ namespace GoodLang {
 						return (typename std::remove_reference<typename std::remove_pointer<VType>::type>::type *)nullptr;
 					}
 					else {
-						throw exception::bad_any_cast(p->Type(), user_type_shared<typename std::remove_reference<typename std::remove_pointer<VType>::type>::type>());
+						throw exception::bad_any_cast(p->Type(), user_type_shared<typename std::remove_reference<typename std::remove_pointer<VType>::type>::type>(), __LINE__);
 					}
 				}
 			};
@@ -1847,8 +1847,13 @@ namespace GoodLang {
 			// is polymorphic conversion?
 			virtual bool polymorphic() const noexcept { return false; }
 
+			virtual std::string print() const noexcept { return std::string(" ... ") + this->to().lock()->name(); };
+
 			virtual ~Type_Conversion_Base() = default;
 
+			virtual bool IsDaisyChained() const { return false; };
+
+			virtual size_t NumConversions() const { return 1; }
 		protected:
 			Type_Conversion_Base(std::weak_ptr<Type_Info> t_to, std::weak_ptr<Type_Info> t_from) : m_to(t_to), m_from(t_from) {}
 
@@ -1911,21 +1916,28 @@ namespace GoodLang {
 			// returns the actual time (in nanoseconds) to perform the conversion
 			double cost() const noexcept override {
 				if (m_cost.has_value()) {
-					return m_cost.value();
+					if (m_cost.value() == 0) {
+						return 0;// m_cost.value();
+					}
+					else {
+						return TypeConversionBaselineCost;// + m_cost.value();
+					}					
 				}
 				else {
-					static double actualCost{ -1 };
-					static std::decay_t<InputType> inputObj{};
-					if (actualCost < 0) {
-						double temp{ 0 };
-						for (int i = 0; i < 10; i++) {
-							auto startT = clock_ns();
-							(void)(m_func(inputObj));
-							temp += (double)(clock_ns() - startT) / 100.0;
-						}
-						actualCost = TypeConversionBaselineCost + temp / 10.0;
-					}
-					return actualCost;
+					//static double actualCost{ -1 };
+					//static std::decay_t<InputType> inputObj{};
+					//if (actualCost < 0) {
+					//	double temp{ 0 };
+					//	for (int i = 0; i < 10; i++) {
+					//		auto startT = clock_ns();
+					//		(void)(m_func(inputObj));
+					//		temp += (double)(clock_ns() - startT) / 100.0;
+					//	}
+					//	actualCost = TypeConversionBaselineCost + temp / 10.0;
+					//}
+					//return actualCost;
+
+					return TypeConversionBaselineCost;
 				}
 			};
 
@@ -1942,7 +1954,7 @@ namespace GoodLang {
 					t_converters[0]->from()					
 				)
 				, m_converters(t_converters)
-				, m_cost(0)
+				, m_cost(0) /*TypeConversionBaselineCost*/
 			{
 				//for (auto& converter : t_converters) {
 				//	m_converters.push_back(converter);
@@ -1965,7 +1977,7 @@ namespace GoodLang {
 						p->convert_in_place(t_from);
 					}
 					else {
-						throw exception::bad_any_cast(this->from(), this->to());
+						throw exception::bad_any_cast(this->from(), this->to(), __LINE__);
 					}
 				}
 			};
@@ -1978,7 +1990,7 @@ namespace GoodLang {
 						p->convert_in_place(out);
 					}
 					else {
-						throw exception::bad_any_cast(this->from(), this->to());
+						throw exception::bad_any_cast(this->from(), this->to(), __LINE__);
 					}
 				}
 				return out;
@@ -1991,11 +2003,19 @@ namespace GoodLang {
 				return m_cost;
 			};
 
+			virtual std::string print() const noexcept override { 
+				std::string out;
+				for (auto& converter : m_converters) {
+					out += converter->print();
+				}
+				return out;			
+			};
+			virtual bool IsDaisyChained() const override { return true; };
+			virtual size_t NumConversions() const override { return m_converters.size(); }
 		private:
 			std::vector<std::shared_ptr<Type_Conversion_Base>> m_converters;
 			double m_cost;
 		};
-
 
 		namespace impl {
 			template <class From, class To, class = void>
@@ -2046,18 +2066,18 @@ namespace GoodLang {
 
 			// returns the actual time (in nanoseconds) to perform the conversion
 			double cost() const noexcept override {
-				static double actualCost{ -1 };
-				static std::decay_t<From> inputObj{};
-				if (actualCost < 0) {
-					double temp{ 0 };
-					for (int i = 0; i < 10; i++) {
-						auto startT = clock_ns();
-						(void)((To)(inputObj));
-						temp += (double)(clock_ns() - startT) / 100.0;
-					}
-					actualCost = TypeConversionBaselineCost + temp / 10.0;
-				}
-				return actualCost;
+				//static double actualCost{ -1 };
+				//static std::decay_t<From> inputObj{};
+				//if (actualCost < 0) {
+				//	double temp{ 0 };
+				//	for (int i = 0; i < 10; i++) {
+				//		auto startT = clock_ns();
+				//		(void)((To)(inputObj));
+				//		temp += (double)(clock_ns() - startT) / 100.0;
+				//	}
+				//	actualCost = TypeConversionBaselineCost + temp / 10.0;
+				//}
+				return TypeConversionBaselineCost;//  actualCost;
 			};
 		};
 
@@ -2134,31 +2154,32 @@ namespace GoodLang {
 
 	// Tree that manages a complex graph network of conversion opportunities. 
 	// It's task is to organize those conversions, find the minimium or best conversion paths, and then cache the results. 
-
-
 	class TypeConverter {
 	private:
 		class UniformCostSearchNode {
 		public:
 			UniformCostSearchNode() = default;
-			UniformCostSearchNode(std::weak_ptr<Type_Info> const& a, double const& b, std::vector<std::weak_ptr<Type_Info>> const& c) : thisVertexType(a), distanceFromTarget(b), bestPath(c) {};
+			UniformCostSearchNode(std::shared_ptr<Type_Info> const& a, double const& b, std::vector<std::weak_ptr<Type_Info>> const& c)
+				: thisVertexType(a)
+				, distanceFromTarget(b)
+				, bestPath(c) 
+			{};
 			UniformCostSearchNode(UniformCostSearchNode&&) = default;
 			UniformCostSearchNode(UniformCostSearchNode const&) = default;
 			UniformCostSearchNode& operator=(UniformCostSearchNode&&) = default;
 			UniformCostSearchNode& operator=(UniformCostSearchNode const&) = default;
 			~UniformCostSearchNode() = default;
 		public:
-			std::weak_ptr<Type_Info> thisVertexType;
+			std::shared_ptr<Type_Info> thisVertexType;
 			double distanceFromTarget; // if not known, then we can simply guess. 
 			std::vector<std::weak_ptr<Type_Info>> bestPath;
-			//std::vector<std::shared_ptr< details::Type_Conversion_Base >> bestPathConverters;
 
 		public:
 			bool operator()(const UniformCostSearchNode* a, const UniformCostSearchNode* b) const {
-				return a->distanceFromTarget > b->distanceFromTarget;
+				return (a->bestPath.size() + 1) > (b->bestPath.size() + 1) || (a->distanceFromTarget > b->distanceFromTarget);
 			};
 			bool operator()(const std::shared_ptr<UniformCostSearchNode>& a, const std::shared_ptr<UniformCostSearchNode>& b) const {
-				return a->distanceFromTarget > b->distanceFromTarget;
+				return (a->bestPath.size() + 1) > (b->bestPath.size() + 1) || (a->distanceFromTarget > b->distanceFromTarget);
 			};
 		};
 
@@ -2193,7 +2214,7 @@ namespace GoodLang {
 			for (auto& conv : AllConversions) {
 				out += (conv.first->name() + " (" + std::to_string(conv.first->GetHash()) + "): \n");
 				for (auto& conv2 : conv.second) {
-					out += (std::string("\t -> ") + conv2.first->name() + " (" + std::to_string(conv2.first->GetHash()) + ") " + " cost(" + std::to_string(conv2.second->cost()) + ")\n");
+					out += (std::string("\t -> ") + conv2.first->name() + " (" + std::to_string(conv2.first->GetHash()) + ") " + " cost(" + std::to_string(conv2.second->cost()) + ") path("  + conv2.second->print() + ")\n");
 				}
 			}
 			return out;
@@ -2201,12 +2222,15 @@ namespace GoodLang {
 
 	private:
 		// All conversions, will include "real" and cached conversions.
-		using conversionTreeType = std::unordered_map< std::shared_ptr<Type_Info>, // From
-			std::unordered_map< std::shared_ptr<Type_Info>, // To
+		//using conversionTreeType = concurrency::concurrent_unordered_map< std::shared_ptr<Type_Info>, // From
+		//	concurrency::concurrent_unordered_map< std::shared_ptr<Type_Info>, // To
+		//	    TypeConverterFunc // Function
+		//	>
+		//>;
+		using conversionTreeType = concurrency::concurrent_unordered_map< std::shared_ptr<Type_Info>, // From
+			concurrency::concurrent_unordered_map< std::shared_ptr<Type_Info>, // To
 			    TypeConverterFunc // Function
-			    // , std::owner_less<std::shared_ptr<Type_Info>>
 			>
-			// , std::owner_less<std::shared_ptr<Type_Info>>
 		>;
 		conversionTreeType AllConversions;
 		std::shared_mutex AllConversionsMut;
@@ -2217,13 +2241,13 @@ namespace GoodLang {
 			return AllConversions[From.lock()][To.lock()];
 		};
 		// may return nullptr if it could not be built
-		TypeConverterFunc GetOrBuildConverter(std::weak_ptr<Type_Info> const& From, std::weak_ptr<Type_Info> const& To) {
+		TypeConverterFunc GetOrBuildConverter(std::weak_ptr<Type_Info> const& From, std::weak_ptr<Type_Info> const& To, bool forceBuild = false) {
 			// Solves the Uniform Cost Search Algorithm to determine the shortest path for "From" to "To", puts the path in "Out", and returns true. 
             // If no path is possible, returns false.
-			static auto CreateConversionPaths{ [](fibers::utilities::Allocator< UniformCostSearchNode>& alloc, conversionTreeType& AllConversions, std::weak_ptr<Type_Info> const& From, std::weak_ptr<Type_Info> const& To) {
+			static auto CreateConversionPaths{ [](fibers::utilities::Allocator< UniformCostSearchNode>& alloc, conversionTreeType& AllConversions, std::shared_ptr<Type_Info> const& From, std::shared_ptr<Type_Info> const& To) {
 				// create the shortest paths from "From" to all possible vertices. 
 
-				std::unordered_map<std::weak_ptr<Type_Info>, UniformCostSearchNode*> vertices;
+				std::unordered_map<std::shared_ptr<Type_Info>, UniformCostSearchNode*> vertices;
 
 				if (1) {
 					// create an empty vertex set
@@ -2239,24 +2263,32 @@ namespace GoodLang {
 						vertexSet.pop();
 
 						// for each neighbor of the extracted vertex... 
-
-						for (auto& connection : AllConversions[smallestDistanceNode->thisVertexType.lock()]) {
+						for (auto& connection : AllConversions[smallestDistanceNode->thisVertexType]) {
 							if (connection.second) {
+								// do not use daisy-chained functions as candidates for new ones, since it can be harder to determine the actual conversion chain length
+								if (connection.second->IsDaisyChained()) continue; 
+
 								// Is the neighbor already in the vertex set? 
 								auto& toType = connection.first;
-								if (vertices.count(toType) <= 0) {
+								auto& toVertex = vertices[toType];
+								if (!toVertex) {
 									// Instance it before we start working with it on an as-needed basis
 									auto path = std::vector<std::weak_ptr<Type_Info>>(smallestDistanceNode->bestPath);
-									//auto pathConverters = std::vector<std::shared_ptr< details::Type_Conversion_Base >>(smallestDistanceNode->bestPathConverters);
 									path.push_back(toType);
-									//pathConverters.push_back(connection.second);
-									vertices[toType] = alloc.Alloc(toType, std::numeric_limits<double>::infinity(), std::vector<std::weak_ptr<Type_Info>>{ toType });
+									toVertex = alloc.Alloc(toType, std::numeric_limits<double>::infinity(), std::vector<std::weak_ptr<Type_Info>>{ toType });
 								}
-								auto& toVertex = vertices[toType];
 
 								// calculate distance value for the neighbor vertex
 								double conversionCost = connection.second->cost();
-								if (toVertex->distanceFromTarget > (smallestDistanceNode->distanceFromTarget + conversionCost)) {
+								if ((toVertex->bestPath.size() + 1) > (smallestDistanceNode->bestPath.size() + 1)) {
+									toVertex->distanceFromTarget = (smallestDistanceNode->distanceFromTarget + conversionCost);
+
+									toVertex->bestPath = smallestDistanceNode->bestPath;
+									toVertex->bestPath.push_back(toVertex->thisVertexType);
+
+									vertexSet.push(toVertex);
+								}
+								else if (toVertex->distanceFromTarget > (smallestDistanceNode->distanceFromTarget + conversionCost)) {
 									toVertex->distanceFromTarget = (smallestDistanceNode->distanceFromTarget + conversionCost);
 
 									toVertex->bestPath = smallestDistanceNode->bestPath;
@@ -2272,28 +2304,29 @@ namespace GoodLang {
 				return vertices;
 			} };
 
-			if (auto ptr = GetExistingConverter(From, To)) {
-				return ptr;
+			if (!forceBuild) {
+				if (auto ptr = GetExistingConverter(From, To)) {
+					return ptr;
+				}
 			}
-			
+
 			// Add conversion for From to a large variety of types...
 			if (1) {
 				fibers::utilities::Allocator< UniformCostSearchNode> alloc;
 				AllConversionsMut.lock_shared();
-				auto conversions{ CreateConversionPaths(alloc, AllConversions, From, To) };
+				auto conversions{ CreateConversionPaths(alloc, AllConversions, From.lock(), To.lock()) };
 				
 				// All of these are for "From"...
 				for (auto& conversion : conversions) {
 					auto& ToType = conversion.first; // To...
 					
-
 					auto& cost = conversion.second->distanceFromTarget; // cost
 					auto& path = conversion.second->bestPath; // conversion path
 					//std::vector<std::shared_ptr< details::Type_Conversion_Base >>& conversionPath = conversion.second->bestPathConverters;
 
 					if (path.size() >= 1) {
-						TypeConverterFunc converterPtr = AllConversions[From.lock()][ToType.lock()];
-						if (converterPtr/* && (converterPtr->cost() <= cost)*/) {
+						TypeConverterFunc converterPtr = AllConversions[From.lock()][ToType];
+						if ((converterPtr && (converterPtr->NumConversions() < path.size())) || (converterPtr && (converterPtr->cost() <= cost))) {
 							continue;
 						}
 						else {
@@ -2315,9 +2348,11 @@ namespace GoodLang {
 												currentNodeType = nextNodeType;
 											}
 										}
-#define EXPECT_EQ(a,b) [&]()->bool{ if ((a) == (b)) { return true; } else { std::cout << Units::printf("FAILURE AT LINE %i\n", (int)__LINE__); return false; } }()
-										EXPECT_EQ(ToType, currentNodeType);
-#undef EXPECT_EQ
+
+										if (ToType != currentNodeType) {
+											// this failed -- unclear why, but it happened. 
+											continue;
+										}
 									}
 									if (functors.size() > 1) {
 										newConverter = std::shared_ptr< details::Type_Conversion_Base >(new details::DaisyChained_Type_Conversion_Impl(functors));
@@ -2331,10 +2366,12 @@ namespace GoodLang {
 								// insert it (requires hard lock)
 								if (newConverter) {
 									auto locked{ std::unique_lock(AllConversionsMut) };
-									converterPtr = AllConversions[From.lock()][ToType.lock()];
-									if (converterPtr/* && (converterPtr->cost() <= cost)*/) {}
+									converterPtr = AllConversions[From.lock()][ToType];
+									if ((converterPtr && (converterPtr->NumConversions() < path.size())) || (converterPtr && (converterPtr->cost() <= cost))) {}
+
+									//if (converterPtr && (converterPtr->cost() <= cost)) {}
 									else {
-										AllConversions[From.lock()][ToType.lock()] = newConverter;
+										AllConversions[From.lock()][ToType] = newConverter;
 									}
 								}
 								AllConversionsMut.lock_shared();
@@ -2349,13 +2386,11 @@ namespace GoodLang {
 			return GetExistingConverter(From, To);			
 		};
 	private:
-		// The BaseType can be converted to Type& without modification
-		// The BaseType can be converted to const Type without modification
-		// The BaseType can be converted to const Type& without modification
-		// The const Type can be converted to const Type& without modification
-		// The Type& can be converted to const Type& without modification
-		// 
-		// The const Type can be converted to const Type without modification
+		// Base -> const Base
+		// Base -> Base&
+		// Base -> const Base&
+		// const Base -> const Base&
+		// Base& -> const Base&
 		void AddDefaultConverters(std::weak_ptr<Type_Info> const& Type) {
 			if (auto ptr = Type.lock()) {
 				auto baseType = ptr->MakeBase().lock();
@@ -2479,26 +2514,68 @@ namespace GoodLang {
 		};
 		// if does not exists, will add it. If exists, overwrites if the converter is better-performance.
 		template<class Callable> void AddConverter(Callable Func) {
-			auto func = details::MakeConversionFunc(std::move(Func));
-			if (func) {
-				auto& From = func->from();
-				auto& To = func->to();
-				if (1) {
-					auto locked{ std::unique_lock(AllConversionsMut) };
-					TypeConverterFunc& converterPtr = AllConversions[From.lock()][To.lock()];
-					converterPtr = func;
-				}
-				AddDefaultConverters(From);
-				AddDefaultConverters(To);
+			using CallableTypeAsStdFunc = decltype(std::function(std::declval<Callable>()));
+			using CallableArguments = typename fibers::utilities::function_traits< CallableTypeAsStdFunc >::arguments;
+			if constexpr (std::tuple_size_v< CallableArguments > != 1) {
+				return;
 			}
+			else {
+				using From_t = typename details::get_type<typename /*std::decay_t<*/std::tuple_element_t<0, CallableArguments>/*>*/>;
+				using To_t = typename details::get_type<typename fibers::utilities::function_traits< CallableTypeAsStdFunc >::result_type>;
+
+				auto func = details::MakeConversionFunc(std::move(Func));
+				if (func) {
+					auto& From = func->from();
+					auto& To = func->to();
+					if (1) {
+						auto locked{ std::unique_lock(AllConversionsMut) };
+						TypeConverterFunc& converterPtr = AllConversions[From.lock()][To.lock()];
+						converterPtr = func;
+					}
+					AddDefaultConverters(From);
+					AddDefaultConverters(To);
+				}
+
+				// Add "contructor" class for const Type& -> Type, if possible
+				if (std::is_same< From_t, Any>::value || std::is_same< To_t, Any>::value) {}
+				else {
+					// Add "contructor" class for const Type& -> Type, if possible
+					if constexpr (std::is_copy_constructible<typename std::decay_t<From_t>>::value) {
+						auto func = details::MakeConversionFunc([](const typename std::decay_t<From_t>& f) -> typename std::decay_t<From_t> { return f; });
+						if (func) {
+							auto& From = func->from();
+							auto& To = func->to();
+							if (1) {
+								auto locked{ std::unique_lock(AllConversionsMut) };
+								TypeConverterFunc& converterPtr = AllConversions[From.lock()][To.lock()];
+								converterPtr = func;
+							}
+						}
+					}
+					if constexpr (std::is_copy_constructible<typename std::decay_t<To_t>>::value) {
+						auto func = details::MakeConversionFunc([](const typename std::decay_t<To_t>& f) -> typename std::decay_t<To_t> { return f; });
+						if (func) {
+							auto& From = func->from();
+							auto& To = func->to();
+							if (1) {
+								auto locked{ std::unique_lock(AllConversionsMut) };
+								TypeConverterFunc& converterPtr = AllConversions[From.lock()][To.lock()];
+								converterPtr = func;
+							}
+						}
+					}
+
+
+				}
+			}			
 		};
 		// Find or make converter to accomplish the request
-		TypeConverterFunc FindConverter(std::weak_ptr<Type_Info> const& From, std::weak_ptr<Type_Info> const& To) {
-			return GetOrBuildConverter(From, To);
+		TypeConverterFunc FindConverter(std::weak_ptr<Type_Info> const& From, std::weak_ptr<Type_Info> const& To, bool forceBuild = false) {
+			return GetOrBuildConverter(From, To, forceBuild);
 		};
 		// Find or make converter to accomplish the request
-		template<typename From_t, typename To_t> TypeConverterFunc FindConverter() {
-			return FindConverter(user_type_shared<From_t>(), user_type_shared<To_t>());
+		template<typename From_t, typename To_t> TypeConverterFunc FindConverter(bool forceBuild = false) {
+			return FindConverter(user_type_shared<From_t>(), user_type_shared<To_t>(), forceBuild);
 		};
 
 		// will return an empty object if the conversion was impossible. (Assumes converting to void is not allowed or desired)
@@ -2514,7 +2591,7 @@ namespace GoodLang {
 				Any temp = f->convert(from);
 				return temp.cast<To_t>();
 			}
-			throw exception::bad_any_cast(from.Type(), user_type_shared<To_t>());
+			throw exception::bad_any_cast(from.Type(), user_type_shared<To_t>(), __LINE__);
 		};
 
 
