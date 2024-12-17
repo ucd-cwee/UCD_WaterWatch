@@ -2119,8 +2119,146 @@ int main() {
 					printf(std::string(e.what()) + " at line " + std::to_string(__LINE__));
 				}
 			}
+			
+			// GoodLang::TypeConverter, correctly handling references as well as copies
+			if (1) {
+				using namespace GoodLang;
+				TypeConverter tree;
+#define AddConv(a, b) tree.AddConverter<a, b>()
+#define AddConvs(a) \
+					AddConv(a, char); \
+					AddConv(a, bool); \
+					AddConv(a, int); \
+					AddConv(a, long); \
+					AddConv(a, float); \
+					AddConv(a, long long); \
+					AddConv(a, long double); \
+					AddConv(a, double); \
+					AddConv(a, unsigned int); \
+					AddConv(a, unsigned long); \
+					AddConv(a, fibers::synchronization::atomic_number<double>);
+
+				AddConvs(char);
+				AddConvs(bool);
+				AddConvs(int);
+				AddConvs(long);
+				AddConvs(float);
+				AddConvs(long long);
+				AddConvs(long double);
+				AddConvs(double);
+				AddConvs(unsigned int);
+				AddConvs(unsigned long);
+				AddConvs(fibers::synchronization::atomic_number<double>);
+#undef AddConvs
+#undef AddConv
+				tree.AddConverter([](char const& x)->std::string { return std::to_string(x); });
+				tree.AddConverter([](int const& x)->std::string { return std::to_string(x); });
+				tree.AddConverter([](long const& x)->std::string { return std::to_string(x); });
+				tree.AddConverter([](float const& x)->std::string { return std::to_string(x); });
+				tree.AddConverter([](double const& x)->std::string { return std::to_string(x); });
+				tree.AddConverter([](std::string const& x)->int { return std::atol(x.c_str()); });
+				tree.AddConverter([](std::string const& x)->long { return std::atol(x.c_str()); });
+				tree.AddConverter([](std::string const& x)->float { return std::atof(x.c_str()); });
+				tree.AddConverter([](std::string const& x)->double { return std::atof(x.c_str()); });
+
+				Any D = 0.0;
+				Any D_ref = tree.Convert(D, user_type_shared<double&>());
+				D_ref.cast<double&>() += 1;
+
+				Any D_copy = tree.Convert(D_ref, user_type_shared<double>());
+				D_copy.cast<double&>() += 1;
+
+				EXPECT_EQ_PRINTF(D.cast<double&>(), 1);
+				EXPECT_EQ_PRINTF(D_copy.cast<double&>(), 2);
+			}
+
+			// GoodLang::details::Explicit_Function_Impl
+			if (1) {
+				using namespace GoodLang;
+				TypeConverter tree;
+#define AddConv(a, b) tree.AddConverter<a, b>()
+#define AddConvs(a) \
+					AddConv(a, char); \
+					AddConv(a, bool); \
+					AddConv(a, int); \
+					AddConv(a, long); \
+					AddConv(a, float); \
+					AddConv(a, long long); \
+					AddConv(a, long double); \
+					AddConv(a, double); \
+					AddConv(a, unsigned int); \
+					AddConv(a, unsigned long); \
+					AddConv(a, fibers::synchronization::atomic_number<double>);
+
+				AddConvs(char);
+				AddConvs(bool);
+				AddConvs(int);
+				AddConvs(long);
+				AddConvs(float);
+				AddConvs(long long);
+				AddConvs(long double);
+				AddConvs(double);
+				AddConvs(unsigned int);
+				AddConvs(unsigned long);
+				AddConvs(fibers::synchronization::atomic_number<double>);
+#undef AddConvs
+#undef AddConv
+				tree.AddConverter([](char const& x)->std::string { return std::to_string(x); });
+				tree.AddConverter([](int const& x)->std::string { return std::to_string(x); });
+				tree.AddConverter([](long const& x)->std::string { return std::to_string(x); });
+				tree.AddConverter([](float const& x)->std::string { return std::to_string(x); });
+				tree.AddConverter([](double const& x)->std::string { return std::to_string(x); });
+				tree.AddConverter([](std::string const& x)->int { return std::atol(x.c_str()); });
+				tree.AddConverter([](std::string const& x)->long { return std::atol(x.c_str()); });
+				tree.AddConverter([](std::string const& x)->float { return std::atof(x.c_str()); });
+				tree.AddConverter([](std::string const& x)->double { return std::atof(x.c_str()); });
+
+				if (1) {
+					auto funcPtr = std::shared_ptr<GoodLang::details::Proxy_Function_Base>(new GoodLang::details::Explicit_Function_Impl([](int& from)-> int { return from; }));
+					EXPECT_EQ_PRINTF(funcPtr->operator()({ 10 }).IsTypeOf<int>(), true);
+					EXPECT_EQ_PRINTF(funcPtr->operator()({ 10 }, tree).IsTypeOf<int>(), true);
+					EXPECT_EQ_PRINTF(funcPtr->operator()({ 10.0 }, tree).IsTypeOf<int>(), true);
+				}
+				if (1) {
+					auto funcPtr = std::shared_ptr<GoodLang::details::Proxy_Function_Base>(new GoodLang::details::Explicit_Function_Impl([](int& from)-> int& { return from; }));
+					EXPECT_EQ_PRINTF(funcPtr->operator()({ 10 }).IsTypeOf<int>(), true);
+					EXPECT_EQ_PRINTF(funcPtr->operator()({ 10 }, tree).IsTypeOf<int>(), true);
+					EXPECT_EQ_PRINTF(funcPtr->operator()({ 10.0 }, tree).IsTypeOf<int>(), true);
+
+					Any result = funcPtr->operator()({ 10.0 }, tree);
+					int& result_intRef = result.cast<int&>();
+					EXPECT_EQ(result_intRef, 10);
+				}
+				if (1) {
+					auto funcPtr = std::shared_ptr<GoodLang::details::Proxy_Function_Base>(new GoodLang::details::Explicit_Function_Impl([](std::string& from)-> char& { return from[0]; }));
+					Any from = std::string("TEST");
+
+					EXPECT_EQ_PRINTF(funcPtr->operator()({ from }).IsTypeOf<char>(), true);
+					EXPECT_EQ_PRINTF(funcPtr->operator()({ from }).IsTypeOf<char&>(), true);
+					EXPECT_EQ_PRINTF(funcPtr->operator()({ from }).cast<char&>(), 'T');
+					Any result = funcPtr->operator()({ from });
+					result.cast<char&>() = 'F';
+					EXPECT_EQ(from.cast<std::string>(), "FEST");
+					EXPECT_EQ(result.cast<char>(), 'F');
 
 
+					Any result2 = funcPtr->operator()({ 10.0 }, tree);
+					char& result_Ref = result2.cast<char>();
+					EXPECT_EQ_PRINTF(result_Ref, '1');
+				}
+				// Test "Explicit_Function_Impl" supporting reference types by copying the function params and carrying them with the result, and NOT deleting it.
+				if (1) {
+					auto funcPtr = std::shared_ptr<GoodLang::details::Proxy_Function_Base>(new GoodLang::details::Explicit_Function_Impl(
+						[](std::string& from)-> char& { return from[0]; }
+					));
+					Any firstChar;
+					{
+						Any from = std::string("TEST");
+						firstChar = funcPtr->operator()({ from });
+					}
+					EXPECT_EQ_PRINTF(firstChar.cast<char>(), 'T');
+				}
+			}
 
 
 

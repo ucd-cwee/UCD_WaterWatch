@@ -1277,7 +1277,7 @@ namespace GoodLang {
 			return TypeHash() == hasher(targetType);
 		};
 		template<typename VType> bool IsTypeOf() const noexcept {
-			return IsTypeOf(user_type<VType>());
+			return IsTypeOf(user_type<typename std::decay_t<VType>>());
 		};
 
 #pragma region Boolean Operators
@@ -1451,6 +1451,813 @@ namespace GoodLang {
 };
 
 namespace GoodLang {
+	namespace details {
+		// Tuning parameter. Should be larger than the slowest conversion time. Large values encourages fewer conversions. Smaller values encourages faster conversions.
+		static constexpr auto TypeConversionBaselineCost = 1000.0;
+		static constexpr auto TypeConversionWorstCaseCost = 1000000000000.0;
+		class Type_Conversion_Base {
+		public:
+			// Converts From -> To, and places the result into the "From" container. Useful for faster conversions.
+			virtual void convert_in_place(Any& from) const = 0;
+			// From -> To
+			virtual Any convert(const Any& from) const = 0;
+			// To -> From
+			virtual Any convert_down(const Any& to) const = 0;
+
+			// returns the actual time (in nanoseconds) to perform the conversion
+			virtual double cost() const noexcept { return 0; };
+
+			// to type
+			const std::weak_ptr<Type_Info>& to() const noexcept { return m_to; }
+
+			// from type
+			const std::weak_ptr<Type_Info>& from() const noexcept { return m_from; }
+
+			// is bidirectional?
+			virtual bool bidir() const noexcept { return true; }
+
+			// is polymorphic conversion?
+			virtual bool polymorphic() const noexcept { return false; }
+
+			virtual std::string print() const noexcept { return std::string(" ... ") + this->to().lock()->name(); };
+
+			virtual ~Type_Conversion_Base() = default;
+
+			virtual bool IsDaisyChained() const { return false; };
+
+			virtual size_t NumConversions() const { return 1; }
+		protected:
+			Type_Conversion_Base(std::weak_ptr<Type_Info> t_to, std::weak_ptr<Type_Info> t_from) : m_to(t_to), m_from(t_from) {}
+
+		private:
+			std::weak_ptr<Type_Info> m_to;
+			std::weak_ptr<Type_Info> m_from;
+		};
+
+		template<class Callable>
+		class Custom_Type_Conversion_Impl : public Type_Conversion_Base {
+		public:
+			using ReturnType = typename fibers::utilities::function_traits< typename decltype(std::function(std::declval<Callable>())) >::result_type;
+			using InputType = typename /*std::decay_t<*/std::tuple_element_t<0, typename fibers::utilities::function_traits< typename decltype(std::function(std::declval<Callable>())) >::arguments>/*>*/;
+
+		public:
+			Custom_Type_Conversion_Impl(Callable t_func)
+				: Type_Conversion_Base(
+					user_type_shared<ReturnType>(),
+					user_type_shared<InputType>()
+				)
+				, m_func(std::move(t_func))
+				, m_cost(std::nullopt)
+			{};
+			Custom_Type_Conversion_Impl(Callable t_func, std::weak_ptr<Type_Info> inboundType, std::weak_ptr<Type_Info> outboundType, std::optional<double> Cost = std::nullopt)
+				: Type_Conversion_Base(
+					outboundType,
+					inboundType
+				)
+				, m_func(std::move(t_func))
+				, m_cost(std::move(Cost))
+			{};
+
+			// To -> From
+			Any convert_down(const Any&) const override {
+				throw std::runtime_error("Custom_Type_Conversion_Impl is not bidirectional.");
+			};
+
+			// From -> To
+			void convert_in_place(Any& t_from) const override {
+				if constexpr (std::is_convertible<decltype(t_from), InputType>::value) {
+					t_from = m_func(t_from);
+				}
+				else {
+					t_from = m_func(t_from.cast());
+				}
+			};
+
+			// From -> To
+			Any convert(const Any& t_from) const override {
+				if constexpr (std::is_convertible<decltype(t_from), InputType>::value) {
+					return m_func(t_from);
+				}
+				else {
+					return m_func(t_from.cast());
+				}
+			};
+
+			bool bidir() const noexcept override { return false; }
+
+			// returns the actual time (in nanoseconds) to perform the conversion
+			double cost() const noexcept override {
+				if (m_cost.has_value()) {
+					if (m_cost.value() == 0) {
+						return 0;// m_cost.value();
+					}
+					else {
+						return TypeConversionBaselineCost;// + m_cost.value();
+					}
+				}
+				else {
+					//static double actualCost{ -1 };
+					//static std::decay_t<InputType> inputObj{};
+					//if (actualCost < 0) {
+					//	double temp{ 0 };
+					//	for (int i = 0; i < 10; i++) {
+					//		auto startT = clock_ns();
+					//		(void)(m_func(inputObj));
+					//		temp += (double)(clock_ns() - startT) / 100.0;
+					//	}
+					//	actualCost = TypeConversionBaselineCost + temp / 10.0;
+					//}
+					//return actualCost;
+
+					return TypeConversionBaselineCost;
+				}
+			};
+
+		private:
+			Callable m_func;
+			std::optional<double> m_cost;
+		};
+
+		class DaisyChained_Type_Conversion_Impl : public Type_Conversion_Base {
+		public:
+			DaisyChained_Type_Conversion_Impl(std::vector<std::shared_ptr<Type_Conversion_Base>> const& t_converters)
+				: Type_Conversion_Base(
+					t_converters[t_converters.size() - 1]->to(),
+					t_converters[0]->from()
+				)
+				, m_converters(t_converters)
+				, m_cost(0) /*TypeConversionBaselineCost*/
+			{
+				//for (auto& converter : t_converters) {
+				//	m_converters.push_back(converter);
+				//}
+
+				for (auto& converter : t_converters) {
+					m_cost += converter->cost();
+				}
+			};
+
+			// To -> From
+			Any convert_down(const Any&) const override {
+				throw std::runtime_error("DaisyChained_Type_Conversion_Impl is not bidirectional.");
+			};
+
+			// From -> To
+			void convert_in_place(Any& t_from) const override {
+				for (auto& converter : m_converters) {
+					if (auto& p = converter/*.lock()*/) {
+						p->convert_in_place(t_from);
+					}
+					else {
+						throw exception::bad_any_cast(this->from(), this->to(), __LINE__);
+					}
+				}
+			};
+
+			// From -> To
+			Any convert(const Any& t_from) const override {
+				Any out = t_from;
+				for (auto& converter : m_converters) {
+					if (auto& p = converter/*.lock()*/) {
+						p->convert_in_place(out);
+					}
+					else {
+						throw exception::bad_any_cast(this->from(), this->to(), __LINE__);
+					}
+				}
+				return out;
+			};
+
+			bool bidir() const noexcept override { return false; }
+
+			// returns the actual time (in nanoseconds) to perform the conversion
+			double cost() const noexcept override {
+				return m_cost;
+			};
+
+			virtual std::string print() const noexcept override {
+				std::string out;
+				for (auto& converter : m_converters) {
+					out += converter->print();
+				}
+				return out;
+			};
+			virtual bool IsDaisyChained() const override { return true; };
+			virtual size_t NumConversions() const override { return m_converters.size(); }
+		private:
+			std::vector<std::shared_ptr<Type_Conversion_Base>> m_converters;
+			double m_cost;
+		};
+
+		namespace impl {
+			template <class From, class To, class = void>
+			struct is_explicitly_convertible_to_impl : std::false_type {};
+
+			template <class From, class To>
+			struct is_explicitly_convertible_to_impl<From, To, std::void_t<decltype(static_cast<To>(std::declval<From>()))>> : std::true_type {};
+
+			template <class From, class To>
+			struct is_explicitly_convertible_to : is_explicitly_convertible_to_impl<From, To> {};
+
+			template <class From, class To>
+			inline constexpr bool is_explicitly_convertible_to_v = is_explicitly_convertible_to<From, To>::value;
+
+		};
+
+		template<typename From, typename To>
+		class Static_Type_Conversion_Impl : public Type_Conversion_Base {
+		private:
+			constexpr static bool is_bidir = impl::is_explicitly_convertible_to<To, From>::value;
+
+		public:
+			Static_Type_Conversion_Impl()
+				: Type_Conversion_Base(user_type_shared<To>(), user_type_shared<From>())
+			{};
+
+			// To -> From
+			Any convert_down(const Any& t_to) const override {
+				if constexpr (is_bidir) {
+					return (From)(t_to.cast<To const&>());
+				}
+				else {
+					throw std::runtime_error("Static_Type_Conversion_Impl was not bidirectional.");
+				}
+			};
+
+			// From -> To
+			void convert_in_place(Any& t_from) const override {
+				t_from = (To)(t_from.cast<From const&>());
+			};
+
+			// From -> To
+			Any convert(const Any& t_from) const override {
+				return (To)(t_from.cast<From const&>());
+			};
+
+			bool bidir() const noexcept override { return is_bidir; }
+
+			// returns the actual time (in nanoseconds) to perform the conversion
+			double cost() const noexcept override {
+				//static double actualCost{ -1 };
+				//static std::decay_t<From> inputObj{};
+				//if (actualCost < 0) {
+				//	double temp{ 0 };
+				//	for (int i = 0; i < 10; i++) {
+				//		auto startT = clock_ns();
+				//		(void)((To)(inputObj));
+				//		temp += (double)(clock_ns() - startT) / 100.0;
+				//	}
+				//	actualCost = TypeConversionBaselineCost + temp / 10.0;
+				//}
+				return TypeConversionBaselineCost;//  actualCost;
+			};
+		};
+
+		template<typename ChildType, typename BaseType>
+		class Dynamic_Type_Conversion_Impl : public Type_Conversion_Base {
+		public:
+			Dynamic_Type_Conversion_Impl()
+				: Type_Conversion_Base(user_type_shared<BaseType>(), user_type_shared<ChildType>())
+			{};
+
+			// BaseType -> ChildType
+			Any convert_down(const Any& t_to) const override {
+				throw std::runtime_error("Dynamic_Type_Conversion_Impl is never bidirectional (Base -> Child). Only may cast from (Child -> Base).");
+			};
+
+			// ChildType -> BaseType
+			void convert_in_place(Any& t_from) const override {
+				std::shared_ptr<ChildType> ptr{ t_from.cast<std::shared_ptr<ChildType>>() };
+				t_from = std::dynamic_pointer_cast<BaseType>(ptr);
+			};
+
+			// ChildType -> BaseType
+			Any convert(const Any& t_from) const override {
+				std::shared_ptr<ChildType> ptr{ t_from.cast<std::shared_ptr<ChildType>>() };
+				return std::dynamic_pointer_cast<BaseType>(ptr);
+			};
+
+			bool bidir() const noexcept override { return false; }
+
+			double cost() const noexcept override { return 0; /* Assumes that dynamic casts are free */ };
+		};
+
+		// Create a wrapped user-defined function to cast provided types. Must have one (and only one) argument in the function. Argument may be an Any and do wild stuff.
+		template<class Callable> __forceinline std::shared_ptr<Type_Conversion_Base> MakeConversionFunc(Callable func) {
+			using CallableTypeAsStdFunc = decltype(std::function(std::declval<Callable>()));
+			using CallableArguments = typename fibers::utilities::function_traits< CallableTypeAsStdFunc >::arguments;
+			if constexpr (std::tuple_size_v< CallableArguments > != 1) {
+				return nullptr;
+			}
+			else {
+				using From = typename /*std::decay_t<*/std::tuple_element_t<0, CallableArguments>/*>*/;
+				using To = typename fibers::utilities::function_traits< CallableTypeAsStdFunc >::result_type;
+				constexpr static bool is_convertable = impl::is_explicitly_convertible_to<From, To>::value;
+				constexpr static bool is_bidir_convertable = impl::is_explicitly_convertible_to<To, From>::value;
+				constexpr static bool is_polymorphic = std::is_base_of<To, From>::value;
+
+				return std::shared_ptr< Type_Conversion_Base >(new Custom_Type_Conversion_Impl(std::move(func)));
+			}
+
+		};
+
+		// Create a function to cast from "From" to "To". Supports static or dynamic (polymorphic) casting. 
+		template<typename From, typename To> __forceinline std::shared_ptr<Type_Conversion_Base> MakeConversionFunc() {
+			constexpr static bool is_convertable = impl::is_explicitly_convertible_to<From, To>::value;
+			constexpr static bool is_bidir_convertable = impl::is_explicitly_convertible_to<To, From>::value;
+			constexpr static bool is_polymorphic = std::is_base_of<To, From>::value;
+
+			if constexpr (is_polymorphic) {
+				return std::shared_ptr<Type_Conversion_Base >(new Dynamic_Type_Conversion_Impl<From, To>());
+			}
+			else {
+				if constexpr (is_convertable) {
+					return std::shared_ptr< Type_Conversion_Base >(new Static_Type_Conversion_Impl<From, To>());
+				}
+				else {
+					return std::shared_ptr< Type_Conversion_Base >(new Custom_Type_Conversion_Impl([](From const& i) -> To { return To(i); }));
+				}
+			}
+		};
+	};
+
+	// Tree that manages a complex graph network of conversion opportunities. 
+	// It's task is to organize those conversions, find the minimium or best conversion paths, and then cache the results. 
+	// Best, most thread-safe use is to pre-populate the tree with converters before use. 
+	// Performance-wise, it caches all potential conversions for each new type all at once, so beware small hick-ups in timing due to this. 
+	// Can be fixed by pre-fetching all (or most) of the conversions you plan to use. 
+	class TypeConverter {
+	private:
+		class UniformCostSearchNode {
+		public:
+			UniformCostSearchNode() = default;
+			UniformCostSearchNode(std::shared_ptr<Type_Info> const& a, double const& b, std::vector<std::weak_ptr<Type_Info>> const& c)
+				: thisVertexType(a)
+				, distanceFromTarget(b)
+				, bestPath(c)
+			{};
+			UniformCostSearchNode(UniformCostSearchNode&&) = default;
+			UniformCostSearchNode(UniformCostSearchNode const&) = default;
+			UniformCostSearchNode& operator=(UniformCostSearchNode&&) = default;
+			UniformCostSearchNode& operator=(UniformCostSearchNode const&) = default;
+			~UniformCostSearchNode() = default;
+		public:
+			std::shared_ptr<Type_Info> thisVertexType;
+			double distanceFromTarget; // if not known, then we can simply guess. 
+			std::vector<std::weak_ptr<Type_Info>> bestPath;
+
+		public:
+			bool operator()(const UniformCostSearchNode* a, const UniformCostSearchNode* b) const {
+				return (a->bestPath.size() + 1) > (b->bestPath.size() + 1) || (a->distanceFromTarget > b->distanceFromTarget);
+			};
+			bool operator()(const std::shared_ptr<UniformCostSearchNode>& a, const std::shared_ptr<UniformCostSearchNode>& b) const {
+				return (a->bestPath.size() + 1) > (b->bestPath.size() + 1) || (a->distanceFromTarget > b->distanceFromTarget);
+			};
+		};
+
+	public:
+		using TypeConverterFunc = std::shared_ptr< details::Type_Conversion_Base >;
+
+		TypeConverter() = default;
+		TypeConverter(TypeConverter const& rhs) {
+			auto locked2{ std::shared_lock(const_cast<TypeConverter&>(rhs).AllConversionsMut) };
+			AllConversions = rhs.AllConversions;
+		};
+		TypeConverter(TypeConverter&& rhs) {
+			auto locked2{ std::unique_lock(rhs.AllConversionsMut) };
+			AllConversions = std::move(rhs.AllConversions);
+		};
+		TypeConverter& operator=(TypeConverter const& rhs) {
+			auto locked1{ std::unique_lock(AllConversionsMut) };
+			auto locked2{ std::shared_lock(const_cast<TypeConverter&>(rhs).AllConversionsMut) };
+			AllConversions = rhs.AllConversions;
+		};
+		TypeConverter& operator=(TypeConverter&& rhs) {
+			auto locked1{ std::unique_lock(AllConversionsMut) };
+			auto locked2{ std::unique_lock(rhs.AllConversionsMut) };
+			AllConversions = std::move(rhs.AllConversions);
+		};
+		~TypeConverter() = default;
+
+	public:
+		std::string print() {
+			std::string out;
+			auto locked{ std::shared_lock(AllConversionsMut) };
+			for (auto& conv : AllConversions) {
+				out += (conv.first->name() + " (" + std::to_string(conv.first->GetHash()) + "): \n");
+				for (auto& conv2 : conv.second) {
+					out += (std::string("\t -> ") + conv2.first->name() + " (" + std::to_string(conv2.first->GetHash()) + ") " + " cost(" + std::to_string(conv2.second->cost()) + ") path(" + conv2.second->print() + ")\n");
+				}
+			}
+			return out;
+		};
+
+	private:
+		// All conversions, will include "real" and cached conversions.
+		//using conversionTreeType = concurrency::concurrent_unordered_map< std::shared_ptr<Type_Info>, // From
+		//	concurrency::concurrent_unordered_map< std::shared_ptr<Type_Info>, // To
+		//	    TypeConverterFunc // Function
+		//	>
+		//>;
+		using conversionTreeType = concurrency::concurrent_unordered_map< std::shared_ptr<Type_Info>, // From
+			concurrency::concurrent_unordered_map< std::shared_ptr<Type_Info>, // To
+			TypeConverterFunc // Function
+			>
+		>;
+		conversionTreeType AllConversions;
+		std::shared_mutex AllConversionsMut;
+
+		// may return nullptr
+		TypeConverterFunc GetExistingConverter(std::weak_ptr<Type_Info> const& From, std::weak_ptr<Type_Info> const& To) {
+			auto locked{ std::shared_lock(AllConversionsMut) };
+			return AllConversions[From.lock()][To.lock()];
+		};
+		// may return nullptr if it could not be built
+		TypeConverterFunc GetOrBuildConverter(std::weak_ptr<Type_Info> const& From, std::weak_ptr<Type_Info> const& To, bool forceBuild = false) {
+			// Solves the Uniform Cost Search Algorithm to determine the shortest path for "From" to "To", puts the path in "Out", and returns true. 
+			// If no path is possible, returns false.
+			static auto CreateConversionPaths{ [](fibers::utilities::Allocator< UniformCostSearchNode>& alloc, conversionTreeType& AllConversions, std::shared_ptr<Type_Info> const& From, std::shared_ptr<Type_Info> const& To) {
+				// create the shortest paths from "From" to all possible vertices. 
+
+				std::unordered_map<std::shared_ptr<Type_Info>, UniformCostSearchNode*> vertices;
+
+				if (1) {
+					// create an empty vertex set
+					std::priority_queue< UniformCostSearchNode*, std::vector<UniformCostSearchNode*>, UniformCostSearchNode > vertexSet;
+
+					// Add the source vertex into the set
+					vertexSet.push(alloc.Alloc(From, 0.0, std::vector<std::weak_ptr<Type_Info>>{}));
+
+					// is the vertex set empty?
+					while (vertexSet.size() != 0) {
+						// extract the vertex with the smallest distance value from the set
+						auto smallestDistanceNode = vertexSet.top();
+						vertexSet.pop();
+
+						// for each neighbor of the extracted vertex... 
+						for (auto& connection : AllConversions[smallestDistanceNode->thisVertexType]) {
+							if (connection.second) {
+								// do not use daisy-chained functions as candidates for new ones, since it can be harder to determine the actual conversion chain length
+								if (connection.second->IsDaisyChained()) continue;
+
+								// Is the neighbor already in the vertex set? 
+								auto& toType = connection.first;
+								auto& toVertex = vertices[toType];
+								if (!toVertex) {
+									// Instance it before we start working with it on an as-needed basis
+									auto path = std::vector<std::weak_ptr<Type_Info>>(smallestDistanceNode->bestPath);
+									path.push_back(toType);
+									toVertex = alloc.Alloc(toType, std::numeric_limits<double>::infinity(), std::vector<std::weak_ptr<Type_Info>>{ toType });
+								}
+
+								// calculate distance value for the neighbor vertex
+								double conversionCost = connection.second->cost();
+								if ((toVertex->bestPath.size() + 1) > (smallestDistanceNode->bestPath.size() + 1)) {
+									toVertex->distanceFromTarget = (smallestDistanceNode->distanceFromTarget + conversionCost);
+
+									toVertex->bestPath = smallestDistanceNode->bestPath;
+									toVertex->bestPath.push_back(toVertex->thisVertexType);
+
+									vertexSet.push(toVertex);
+								}
+								else if (toVertex->distanceFromTarget > (smallestDistanceNode->distanceFromTarget + conversionCost)) {
+									toVertex->distanceFromTarget = (smallestDistanceNode->distanceFromTarget + conversionCost);
+
+									toVertex->bestPath = smallestDistanceNode->bestPath;
+									toVertex->bestPath.push_back(toVertex->thisVertexType);
+
+									vertexSet.push(toVertex);
+								}
+							}
+						}
+					}
+				}
+
+				return vertices;
+			} };
+
+			if (!forceBuild) {
+				if (auto ptr = GetExistingConverter(From, To)) {
+					return ptr;
+				}
+			}
+
+			// Add conversion for From to a large variety of types...
+			if (1) {
+				fibers::utilities::Allocator< UniformCostSearchNode> alloc;
+				AllConversionsMut.lock_shared();
+				auto conversions{ CreateConversionPaths(alloc, AllConversions, From.lock(), To.lock()) };
+
+				// All of these are for "From"...
+				for (auto& conversion : conversions) {
+					auto& ToType = conversion.first; // To...
+
+					auto& cost = conversion.second->distanceFromTarget; // cost
+					auto& path = conversion.second->bestPath; // conversion path
+					//std::vector<std::shared_ptr< details::Type_Conversion_Base >>& conversionPath = conversion.second->bestPathConverters;
+
+					if (path.size() >= 1) {
+						TypeConverterFunc converterPtr = AllConversions[From.lock()][ToType];
+						if ((converterPtr && (converterPtr->NumConversions() < path.size())) || (converterPtr && (converterPtr->cost() <= cost))) {
+							continue;
+						}
+						else {
+							// make new function, get hard lock, insert	
+							if (1) {
+								// make a new converter function
+								TypeConverterFunc newConverter; {
+									// convert the "type path" to a actual daisy-chains of weak_ptrs to converter functions
+									std::vector<std::shared_ptr<details::Type_Conversion_Base>> functors; {
+										std::weak_ptr<Type_Info> currentNodeType = From;
+
+										for (auto& nextNodeType : path) {
+											auto& func = AllConversions[currentNodeType.lock()][nextNodeType.lock()];
+											if (!func) { // something went wrong -- this conversion has failed.
+												continue;
+											}
+											else {
+												functors.push_back(func);
+												currentNodeType = nextNodeType;
+											}
+										}
+
+										if (ToType != currentNodeType) {
+											// this failed -- unclear why, but it happened. 
+											continue;
+										}
+									}
+									if (functors.size() > 1) {
+										newConverter = std::shared_ptr< details::Type_Conversion_Base >(new details::DaisyChained_Type_Conversion_Impl(functors));
+									}
+									else {
+										continue; // do nothing, assuming either the conversion failed or the shorter version was obviously already in the list.
+									}
+								}
+
+								AllConversionsMut.unlock_shared();
+								// insert it (requires hard lock)
+								if (newConverter) {
+									auto locked{ std::unique_lock(AllConversionsMut) };
+									converterPtr = AllConversions[From.lock()][ToType];
+									if ((converterPtr && (converterPtr->NumConversions() < path.size())) || (converterPtr && (converterPtr->cost() <= cost))) {}
+
+									//if (converterPtr && (converterPtr->cost() <= cost)) {}
+									else {
+										AllConversions[From.lock()][ToType] = newConverter;
+									}
+								}
+								AllConversionsMut.lock_shared();
+							}
+						}
+					}
+				}
+				AllConversionsMut.unlock_shared();
+			}
+
+			// try and get our target type back ... 
+			return GetExistingConverter(From, To);
+		};
+	private:
+		// Base -> const Base
+		// Base -> Base&
+		// Base -> const Base&
+		// const Base -> const Base&
+		// Base& -> const Base&
+		void AddDefaultConverters(std::weak_ptr<Type_Info> const& Type) {
+			if (auto ptr = Type.lock()) {
+				auto baseType = ptr->MakeBase().lock();
+				if (baseType) {
+					auto refType = baseType->MakeRef().lock();
+					auto constType = baseType->MakeConst().lock();
+					if (refType && constType) {
+						auto constRefType = constType->MakeRef().lock();
+						if (constRefType) {
+							// Base -> const Base
+							if (1) {
+								if (auto func = std::shared_ptr< details::Type_Conversion_Base >(new details::Custom_Type_Conversion_Impl([](Any const& x)->Any {
+									return x;
+									}, baseType, constType, 0.0))) {
+									auto locked{ std::unique_lock(AllConversionsMut) };
+									AllConversions[func->from().lock()][func->to().lock()] = func;
+								}
+							}
+							// Base -> Base&
+							if (1) {
+								if (auto func = std::shared_ptr< details::Type_Conversion_Base >(new details::Custom_Type_Conversion_Impl([](Any const& x)->Any {
+									return x;
+									}, baseType, refType, 0.0))) {
+									auto locked{ std::unique_lock(AllConversionsMut) };
+									AllConversions[func->from().lock()][func->to().lock()] = func;
+								}
+							}
+							// Base -> const Base&
+							if (1) {
+								if (auto func = std::shared_ptr< details::Type_Conversion_Base >(new details::Custom_Type_Conversion_Impl([](Any const& x)->Any {
+									return x;
+									}, baseType, constRefType, 0.0))) {
+									auto locked{ std::unique_lock(AllConversionsMut) };
+									AllConversions[func->from().lock()][func->to().lock()] = func;
+								}
+							}
+							// const Base -> const Base&
+							if (1) {
+								if (auto func = std::shared_ptr< details::Type_Conversion_Base >(new details::Custom_Type_Conversion_Impl([](Any const& x)->Any {
+									return x;
+									}, constType, constRefType, 0.0))) {
+									auto locked{ std::unique_lock(AllConversionsMut) };
+									AllConversions[func->from().lock()][func->to().lock()] = func;
+								}
+							}
+							// Base& -> const Base&
+							if (1) {
+								if (auto func = std::shared_ptr< details::Type_Conversion_Base >(new details::Custom_Type_Conversion_Impl([](Any const& x)->Any {
+									return x;
+									}, refType, constRefType, 0.0))) {
+									auto locked{ std::unique_lock(AllConversionsMut) };
+									AllConversions[func->from().lock()][func->to().lock()] = func;
+								}
+							}
+
+						}
+					}
+				}
+			}
+		};
+
+	public:
+		// if does not exists, will add it. If exists, overwrites if the converter is better-performance.
+		template<typename From_t, typename To_t> void AddConverter() {
+			// forward
+			if (1) {
+				auto func = details::MakeConversionFunc < const typename std::decay_t<From_t>&, typename std::decay_t<To_t> >();
+				if (func) {
+					auto& From = func->from();
+					auto& To = func->to();
+					if (1) {
+						auto locked{ std::unique_lock(AllConversionsMut) };
+						TypeConverterFunc& converterPtr = AllConversions[From.lock()][To.lock()];
+						converterPtr = func;
+					}
+					AddDefaultConverters(From);
+				}
+			}
+			// backwards (may fail, which is OK)
+			if (1) {
+				auto func = details::MakeConversionFunc<const typename std::decay_t<To_t>&, typename std::decay_t<From_t>>();
+				if (func) {
+					auto& From = func->from();
+					auto& To = func->to();
+					if (1) {
+						auto locked{ std::unique_lock(AllConversionsMut) };
+						TypeConverterFunc& converterPtr = AllConversions[From.lock()][To.lock()];
+						converterPtr = func;
+					}
+					AddDefaultConverters(From);
+				}
+			}
+
+			// Add "contructor" class for const Type& -> Type, if possible
+			if constexpr (std::is_copy_constructible<typename std::decay_t<From_t>>::value) {
+				auto func = details::MakeConversionFunc([](const typename std::decay_t<From_t>& f) -> typename std::decay_t<From_t> { return f; });
+				if (func) {
+					auto& From = func->from();
+					auto& To = func->to();
+					if (1) {
+						auto locked{ std::unique_lock(AllConversionsMut) };
+						TypeConverterFunc& converterPtr = AllConversions[From.lock()][To.lock()];
+						converterPtr = func;
+					}
+				}
+			}
+			if constexpr (std::is_copy_constructible<typename std::decay_t<To_t>>::value) {
+				auto func = details::MakeConversionFunc([](const typename std::decay_t<To_t>& f) -> typename std::decay_t<To_t> { return f; });
+				if (func) {
+					auto& From = func->from();
+					auto& To = func->to();
+					if (1) {
+						auto locked{ std::unique_lock(AllConversionsMut) };
+						TypeConverterFunc& converterPtr = AllConversions[From.lock()][To.lock()];
+						converterPtr = func;
+					}
+				}
+			}
+
+		};
+		// if does not exists, will add it. If exists, overwrites if the converter is better-performance.
+		template<class Callable> void AddConverter(Callable Func) {
+			using CallableTypeAsStdFunc = decltype(std::function(std::declval<Callable>()));
+			using CallableArguments = typename fibers::utilities::function_traits< CallableTypeAsStdFunc >::arguments;
+			if constexpr (std::tuple_size_v< CallableArguments > != 1) {
+				return;
+			}
+			else {
+				using From_t = typename details::get_type<typename /*std::decay_t<*/std::tuple_element_t<0, CallableArguments>/*>*/>;
+				using To_t = typename details::get_type<typename fibers::utilities::function_traits< CallableTypeAsStdFunc >::result_type>;
+
+				auto func = details::MakeConversionFunc(std::move(Func));
+				if (func) {
+					auto& From = func->from();
+					auto& To = func->to();
+					if (1) {
+						auto locked{ std::unique_lock(AllConversionsMut) };
+						TypeConverterFunc& converterPtr = AllConversions[From.lock()][To.lock()];
+						converterPtr = func;
+					}
+					AddDefaultConverters(From);
+					AddDefaultConverters(To);
+				}
+
+				// Add "contructor" class for const Type& -> Type, if possible
+				if (std::is_same< From_t, Any>::value || std::is_same< To_t, Any>::value) {}
+				else {
+					// Add "contructor" class for const Type& -> Type, if possible
+					if constexpr (std::is_copy_constructible<typename std::decay_t<From_t>>::value) {
+						auto func = details::MakeConversionFunc([](const typename std::decay_t<From_t>& f) -> typename std::decay_t<From_t> { return f; });
+						if (func) {
+							auto& From = func->from();
+							auto& To = func->to();
+							if (1) {
+								auto locked{ std::unique_lock(AllConversionsMut) };
+								TypeConverterFunc& converterPtr = AllConversions[From.lock()][To.lock()];
+								converterPtr = func;
+							}
+						}
+					}
+					if constexpr (std::is_copy_constructible<typename std::decay_t<To_t>>::value) {
+						auto func = details::MakeConversionFunc([](const typename std::decay_t<To_t>& f) -> typename std::decay_t<To_t> { return f; });
+						if (func) {
+							auto& From = func->from();
+							auto& To = func->to();
+							if (1) {
+								auto locked{ std::unique_lock(AllConversionsMut) };
+								TypeConverterFunc& converterPtr = AllConversions[From.lock()][To.lock()];
+								converterPtr = func;
+							}
+						}
+					}
+
+
+				}
+			}
+		};
+		// Find or make converter to accomplish the request
+		TypeConverterFunc FindConverter(std::weak_ptr<Type_Info> const& From, std::weak_ptr<Type_Info> const& To, bool forceBuild = false) {
+			return GetOrBuildConverter(From, To, forceBuild);
+		};
+		// Find or make converter to accomplish the request
+		template<typename From_t, typename To_t> TypeConverterFunc FindConverter(bool forceBuild = false) {
+			return FindConverter(user_type_shared<From_t>(), user_type_shared<To_t>(), forceBuild);
+		};
+
+		// will return an empty object if the conversion was impossible. (Assumes converting to void is not allowed or desired)
+		Any Convert(Any const& from, std::weak_ptr<Type_Info> const& To) {
+			if (auto f = FindConverter(from.Type(), To)) {
+				return f->convert(from);
+			}
+			return {};
+		};
+		// will throw an error if the conversion was impossible.
+		template<typename To_t> typename std::remove_reference_t<To_t> Convert(Any const& from) {
+			if (auto f = FindConverter(from.Type(), user_type_shared<To_t>())) {
+				Any temp = f->convert(from);
+				return temp.cast<To_t>();
+			}
+			throw exception::bad_any_cast(from.Type(), user_type_shared<To_t>(), __LINE__);
+		};
+
+		// will return an empty object if the conversion was impossible. (Assumes converting to void is not allowed or desired)
+		double ConversionCost(Any const& from, std::weak_ptr<Type_Info> const& To) {
+			if (auto f = FindConverter(from.Type(), To)) {
+				return f->cost();
+			}
+			return std::numeric_limits<double>::max();
+		};
+		// will throw an error if the conversion was impossible.
+		template<typename To_t> double ConversionCost(Any const& from) {
+			if (auto f = FindConverter(from.Type(), user_type_shared<To_t>())) {
+				return f->cost();
+			}
+			return std::numeric_limits<double>::max();
+		};
+
+		// will return an empty object if the conversion was impossible. (Assumes converting to void is not allowed or desired)
+		bool Converts(Any const& from, std::weak_ptr<Type_Info> const& To) {
+			if (auto f = FindConverter(from.Type(), To)) {
+				return true;
+			}
+			return false;
+		};
+		// will throw an error if the conversion was impossible.
+		template<typename To_t> bool Converts(Any const& from) {
+			if (auto f = FindConverter(from.Type(), user_type_shared<To_t>())) {
+				return true;
+			}
+			return false;
+		};
+	};
+};
+
+namespace GoodLang {
 	// A collection or list of parameter types. May be a list of types for input into a function, the argument types of the function, or a simple list of types.
 	// The types are hashed together to generate a unique hash for this list that can be used to quickly compare them.
 	class ParamTypes {
@@ -1565,7 +2372,7 @@ namespace GoodLang {
 	// { int:"a" } == { int:"b" }
 	class FunctionArgs {
 	private:
-		static std::vector<std::string> DefaultVariableNames(size_t n){
+		static std::vector<std::string> DefaultVariableNames(size_t n) {
 			auto out = std::vector<std::string>(n, "Param");
 			for (int i = 0; i < n; i++) {
 				out[i].append(std::to_string(i));
@@ -1607,7 +2414,7 @@ namespace GoodLang {
 				m_names.push_back(TypesAndNames[i].second);
 				types.push_back(TypesAndNames[i].first);
 			}
-			m_types = ParamTypes(types);		
+			m_types = ParamTypes(types);
 		};
 		FunctionArgs(FunctionArgs const&) = default;
 		FunctionArgs(FunctionArgs&&) = default;
@@ -1698,12 +2505,12 @@ namespace GoodLang {
 		};
 
 	public:
-		FunctionSignature() 
-			: m_qualified_name("::") 
+		FunctionSignature()
+			: m_qualified_name("::")
 		{
 			uniqueHash = CalculateHash(m_arguments, m_qualified_name);
 		};
-		FunctionSignature(std::weak_ptr<Type_Info> returnType, FunctionArgs const& args, std::string const& Namespace, std::string const& name) 
+		FunctionSignature(std::weak_ptr<Type_Info> returnType, FunctionArgs const& args, std::string const& Namespace, std::string const& name)
 			: m_arguments(args)
 			, m_namespace(Namespace)
 			, m_name(name)
@@ -1820,787 +2627,6 @@ namespace std {
 
 namespace GoodLang {
 	namespace details {
-		// Tuning parameter. Should be larger than the slowest conversion time. Large values encourages fewer conversions. Smaller values encourages faster conversions.
-		static constexpr auto TypeConversionBaselineCost = 1000.0;
-		static constexpr auto TypeConversionWorstCaseCost = 1000000000000.0;
-		class Type_Conversion_Base {
-		public:
-			// Converts From -> To, and places the result into the "From" container. Useful for faster conversions.
-			virtual void convert_in_place(Any& from) const = 0;
-			// From -> To
-			virtual Any convert(const Any& from) const = 0;
-			// To -> From
-			virtual Any convert_down(const Any& to) const = 0;
-
-			// returns the actual time (in nanoseconds) to perform the conversion
-			virtual double cost() const noexcept { return 0; };
-
-			// to type
-			const std::weak_ptr<Type_Info>& to() const noexcept { return m_to; }
-
-			// from type
-			const std::weak_ptr<Type_Info>& from() const noexcept { return m_from; }
-
-			// is bidirectional?
-			virtual bool bidir() const noexcept { return true; }
-
-			// is polymorphic conversion?
-			virtual bool polymorphic() const noexcept { return false; }
-
-			virtual std::string print() const noexcept { return std::string(" ... ") + this->to().lock()->name(); };
-
-			virtual ~Type_Conversion_Base() = default;
-
-			virtual bool IsDaisyChained() const { return false; };
-
-			virtual size_t NumConversions() const { return 1; }
-		protected:
-			Type_Conversion_Base(std::weak_ptr<Type_Info> t_to, std::weak_ptr<Type_Info> t_from) : m_to(t_to), m_from(t_from) {}
-
-		private:
-			std::weak_ptr<Type_Info> m_to;
-			std::weak_ptr<Type_Info> m_from;
-		};
-
-		template<class Callable>
-		class Custom_Type_Conversion_Impl : public Type_Conversion_Base {
-		public:
-			using ReturnType = typename fibers::utilities::function_traits< typename decltype(std::function(std::declval<Callable>())) >::result_type;
-			using InputType = typename /*std::decay_t<*/std::tuple_element_t<0, typename fibers::utilities::function_traits< typename decltype(std::function(std::declval<Callable>())) >::arguments>/*>*/;
-
-		public:
-			Custom_Type_Conversion_Impl(Callable t_func)
-				: Type_Conversion_Base(
-					user_type_shared<ReturnType>(),
-					user_type_shared<InputType>()
-				)
-				, m_func(std::move(t_func))
-				, m_cost(std::nullopt)
-			{};
-			Custom_Type_Conversion_Impl(Callable t_func, std::weak_ptr<Type_Info> inboundType, std::weak_ptr<Type_Info> outboundType, std::optional<double> Cost = std::nullopt)
-				: Type_Conversion_Base(
-					outboundType,
-					inboundType
-				)
-				, m_func(std::move(t_func))
-				, m_cost(std::move(Cost))
-			{};
-
-			// To -> From
-			Any convert_down(const Any&) const override {
-				throw std::runtime_error("Custom_Type_Conversion_Impl is not bidirectional.");
-			};
-
-			// From -> To
-			void convert_in_place(Any& t_from) const override {
-				if constexpr (std::is_convertible<decltype(t_from), InputType>::value) {
-					t_from = m_func(t_from);
-				}
-				else {
-					t_from = m_func(t_from.cast());
-				}
-			};
-
-			// From -> To
-			Any convert(const Any& t_from) const override {
-				if constexpr (std::is_convertible<decltype(t_from), InputType>::value) {
-					return m_func(t_from);
-				}
-				else {
-					return m_func(t_from.cast());
-				}
-			};
-
-			bool bidir() const noexcept override { return false; }
-
-			// returns the actual time (in nanoseconds) to perform the conversion
-			double cost() const noexcept override {
-				if (m_cost.has_value()) {
-					if (m_cost.value() == 0) {
-						return 0;// m_cost.value();
-					}
-					else {
-						return TypeConversionBaselineCost;// + m_cost.value();
-					}					
-				}
-				else {
-					//static double actualCost{ -1 };
-					//static std::decay_t<InputType> inputObj{};
-					//if (actualCost < 0) {
-					//	double temp{ 0 };
-					//	for (int i = 0; i < 10; i++) {
-					//		auto startT = clock_ns();
-					//		(void)(m_func(inputObj));
-					//		temp += (double)(clock_ns() - startT) / 100.0;
-					//	}
-					//	actualCost = TypeConversionBaselineCost + temp / 10.0;
-					//}
-					//return actualCost;
-
-					return TypeConversionBaselineCost;
-				}
-			};
-
-		private:
-			Callable m_func;
-			std::optional<double> m_cost;
-		};
-
-		class DaisyChained_Type_Conversion_Impl : public Type_Conversion_Base {
-		public:
-			DaisyChained_Type_Conversion_Impl(std::vector<std::shared_ptr<Type_Conversion_Base>> const& t_converters)
-				: Type_Conversion_Base(
-					t_converters[t_converters.size() - 1]->to(), 
-					t_converters[0]->from()					
-				)
-				, m_converters(t_converters)
-				, m_cost(0) /*TypeConversionBaselineCost*/
-			{
-				//for (auto& converter : t_converters) {
-				//	m_converters.push_back(converter);
-				//}
-
-				for (auto& converter : t_converters) {
-					m_cost += converter->cost();
-				}
-			};
-
-			// To -> From
-			Any convert_down(const Any&) const override {
-				throw std::runtime_error("DaisyChained_Type_Conversion_Impl is not bidirectional.");
-			};
-
-			// From -> To
-			void convert_in_place(Any& t_from) const override {
-				for (auto& converter : m_converters) {
-					if (auto& p = converter/*.lock()*/) {
-						p->convert_in_place(t_from);
-					}
-					else {
-						throw exception::bad_any_cast(this->from(), this->to(), __LINE__);
-					}
-				}
-			};
-
-			// From -> To
-			Any convert(const Any& t_from) const override {
-				Any out = t_from;
-				for (auto& converter : m_converters) {
-					if (auto& p = converter/*.lock()*/) {
-						p->convert_in_place(out);
-					}
-					else {
-						throw exception::bad_any_cast(this->from(), this->to(), __LINE__);
-					}
-				}
-				return out;
-			};
-
-			bool bidir() const noexcept override { return false; }
-
-			// returns the actual time (in nanoseconds) to perform the conversion
-			double cost() const noexcept override {
-				return m_cost;
-			};
-
-			virtual std::string print() const noexcept override { 
-				std::string out;
-				for (auto& converter : m_converters) {
-					out += converter->print();
-				}
-				return out;			
-			};
-			virtual bool IsDaisyChained() const override { return true; };
-			virtual size_t NumConversions() const override { return m_converters.size(); }
-		private:
-			std::vector<std::shared_ptr<Type_Conversion_Base>> m_converters;
-			double m_cost;
-		};
-
-		namespace impl {
-			template <class From, class To, class = void>
-			struct is_explicitly_convertible_to_impl : std::false_type {};
-
-			template <class From, class To>	
-			struct is_explicitly_convertible_to_impl<From, To, std::void_t<decltype(static_cast<To>(std::declval<From>()))>> : std::true_type {};
-
-			template <class From, class To>
-			struct is_explicitly_convertible_to : is_explicitly_convertible_to_impl<From, To> {};
-
-			template <class From, class To>
-			inline constexpr bool is_explicitly_convertible_to_v = is_explicitly_convertible_to<From, To>::value;
-
-		};
-
-		template<typename From, typename To>
-		class Static_Type_Conversion_Impl : public Type_Conversion_Base {
-		private:
-			constexpr static bool is_bidir = impl::is_explicitly_convertible_to<To, From>::value;
-
-		public:
-			Static_Type_Conversion_Impl()
-				: Type_Conversion_Base(user_type_shared<To>(), user_type_shared<From>())
-			{};
-
-			// To -> From
-			Any convert_down(const Any& t_to) const override {
-				if constexpr (is_bidir) {
-					return (From)(t_to.cast<To const&>());
-				}
-				else {
-					throw std::runtime_error("Static_Type_Conversion_Impl was not bidirectional.");
-				}
-			};
-
-			// From -> To
-			void convert_in_place(Any& t_from) const override {
-				t_from = (To)(t_from.cast<From const&>());
-			};
-
-			// From -> To
-			Any convert(const Any& t_from) const override {
-				return (To)(t_from.cast<From const&>());
-			};
-
-			bool bidir() const noexcept override { return is_bidir; }
-
-			// returns the actual time (in nanoseconds) to perform the conversion
-			double cost() const noexcept override {
-				//static double actualCost{ -1 };
-				//static std::decay_t<From> inputObj{};
-				//if (actualCost < 0) {
-				//	double temp{ 0 };
-				//	for (int i = 0; i < 10; i++) {
-				//		auto startT = clock_ns();
-				//		(void)((To)(inputObj));
-				//		temp += (double)(clock_ns() - startT) / 100.0;
-				//	}
-				//	actualCost = TypeConversionBaselineCost + temp / 10.0;
-				//}
-				return TypeConversionBaselineCost;//  actualCost;
-			};
-		};
-
-		template<typename ChildType, typename BaseType>
-		class Dynamic_Type_Conversion_Impl : public Type_Conversion_Base {
-		public:
-			Dynamic_Type_Conversion_Impl()
-				: Type_Conversion_Base(user_type_shared<BaseType>(), user_type_shared<ChildType>())
-			{};
-
-			// BaseType -> ChildType
-			Any convert_down(const Any& t_to) const override {
-				throw std::runtime_error("Dynamic_Type_Conversion_Impl is never bidirectional (Base -> Child). Only may cast from (Child -> Base).");
-			};
-
-			// ChildType -> BaseType
-			void convert_in_place(Any& t_from) const override {
-				std::shared_ptr<ChildType> ptr{ t_from.cast<std::shared_ptr<ChildType>>() };
-				t_from = std::dynamic_pointer_cast<BaseType>(ptr);
-			};
-
-			// ChildType -> BaseType
-			Any convert(const Any& t_from) const override {
-				std::shared_ptr<ChildType> ptr{ t_from.cast<std::shared_ptr<ChildType>>() };
-				return std::dynamic_pointer_cast<BaseType>(ptr);
-			};
-
-			bool bidir() const noexcept override { return false; }
-
-			double cost() const noexcept override { return 0; /* Assumes that dynamic casts are free */ };
-		};
-
-		// Create a wrapped user-defined function to cast provided types. Must have one (and only one) argument in the function. Argument may be an Any and do wild stuff.
-		template<class Callable> __forceinline std::shared_ptr<Type_Conversion_Base> MakeConversionFunc(Callable func) {
-			using CallableTypeAsStdFunc = decltype(std::function(std::declval<Callable>()));
-			using CallableArguments = typename fibers::utilities::function_traits< CallableTypeAsStdFunc >::arguments;
-			if constexpr (std::tuple_size_v< CallableArguments > != 1) {
-				return nullptr;
-			}
-			else {
-				using From = typename /*std::decay_t<*/std::tuple_element_t<0, CallableArguments>/*>*/;
-				using To = typename fibers::utilities::function_traits< CallableTypeAsStdFunc >::result_type;
-				constexpr static bool is_convertable = impl::is_explicitly_convertible_to<From, To>::value;
-				constexpr static bool is_bidir_convertable = impl::is_explicitly_convertible_to<To, From>::value;
-				constexpr static bool is_polymorphic = std::is_base_of<To, From>::value;
-
-				return std::shared_ptr< Type_Conversion_Base >(new Custom_Type_Conversion_Impl(std::move(func)));
-			}
-
-		};
-
-		// Create a function to cast from "From" to "To". Supports static or dynamic (polymorphic) casting. 
-		template<typename From, typename To> __forceinline std::shared_ptr<Type_Conversion_Base> MakeConversionFunc() {
-			constexpr static bool is_convertable = impl::is_explicitly_convertible_to<From, To>::value;
-			constexpr static bool is_bidir_convertable = impl::is_explicitly_convertible_to<To, From>::value;
-			constexpr static bool is_polymorphic = std::is_base_of<To, From>::value;
-			
-			if constexpr (is_polymorphic) {
-				return std::shared_ptr<Type_Conversion_Base >(new Dynamic_Type_Conversion_Impl<From, To>());
-			}
-			else {
-				if constexpr (is_convertable) {
-					return std::shared_ptr< Type_Conversion_Base >(new Static_Type_Conversion_Impl<From, To>());
-				}
-				else {
-					return std::shared_ptr< Type_Conversion_Base >(new Custom_Type_Conversion_Impl([](From const& i) -> To { return To(i); }));
-				}
-			}
-		};
-
-
-
-	};
-
-	// Tree that manages a complex graph network of conversion opportunities. 
-	// It's task is to organize those conversions, find the minimium or best conversion paths, and then cache the results. 
-	class TypeConverter {
-	private:
-		class UniformCostSearchNode {
-		public:
-			UniformCostSearchNode() = default;
-			UniformCostSearchNode(std::shared_ptr<Type_Info> const& a, double const& b, std::vector<std::weak_ptr<Type_Info>> const& c)
-				: thisVertexType(a)
-				, distanceFromTarget(b)
-				, bestPath(c) 
-			{};
-			UniformCostSearchNode(UniformCostSearchNode&&) = default;
-			UniformCostSearchNode(UniformCostSearchNode const&) = default;
-			UniformCostSearchNode& operator=(UniformCostSearchNode&&) = default;
-			UniformCostSearchNode& operator=(UniformCostSearchNode const&) = default;
-			~UniformCostSearchNode() = default;
-		public:
-			std::shared_ptr<Type_Info> thisVertexType;
-			double distanceFromTarget; // if not known, then we can simply guess. 
-			std::vector<std::weak_ptr<Type_Info>> bestPath;
-
-		public:
-			bool operator()(const UniformCostSearchNode* a, const UniformCostSearchNode* b) const {
-				return (a->bestPath.size() + 1) > (b->bestPath.size() + 1) || (a->distanceFromTarget > b->distanceFromTarget);
-			};
-			bool operator()(const std::shared_ptr<UniformCostSearchNode>& a, const std::shared_ptr<UniformCostSearchNode>& b) const {
-				return (a->bestPath.size() + 1) > (b->bestPath.size() + 1) || (a->distanceFromTarget > b->distanceFromTarget);
-			};
-		};
-
-	public:
-		using TypeConverterFunc = std::shared_ptr< details::Type_Conversion_Base >;
-
-		TypeConverter() = default;
-		TypeConverter(TypeConverter const& rhs) {
-			auto locked2{ std::shared_lock(const_cast<TypeConverter&>(rhs).AllConversionsMut) };
-			AllConversions = rhs.AllConversions;
-		};
-		TypeConverter(TypeConverter && rhs) {
-			auto locked2{ std::unique_lock(rhs.AllConversionsMut) };
-			AllConversions = std::move(rhs.AllConversions);
-		};
-		TypeConverter& operator=(TypeConverter const& rhs) {
-			auto locked1{ std::unique_lock(AllConversionsMut) };
-			auto locked2{ std::shared_lock(const_cast<TypeConverter&>(rhs).AllConversionsMut) };
-			AllConversions = rhs.AllConversions;
-		};
-		TypeConverter& operator=(TypeConverter&& rhs) {
-			auto locked1{ std::unique_lock(AllConversionsMut) };
-			auto locked2{ std::unique_lock(rhs.AllConversionsMut) };
-			AllConversions = std::move(rhs.AllConversions);
-		};
-		~TypeConverter() = default;
-
-	public:
-		std::string print() {
-			std::string out;
-			auto locked{ std::shared_lock(AllConversionsMut) };
-			for (auto& conv : AllConversions) {
-				out += (conv.first->name() + " (" + std::to_string(conv.first->GetHash()) + "): \n");
-				for (auto& conv2 : conv.second) {
-					out += (std::string("\t -> ") + conv2.first->name() + " (" + std::to_string(conv2.first->GetHash()) + ") " + " cost(" + std::to_string(conv2.second->cost()) + ") path("  + conv2.second->print() + ")\n");
-				}
-			}
-			return out;
-		};
-
-	private:
-		// All conversions, will include "real" and cached conversions.
-		//using conversionTreeType = concurrency::concurrent_unordered_map< std::shared_ptr<Type_Info>, // From
-		//	concurrency::concurrent_unordered_map< std::shared_ptr<Type_Info>, // To
-		//	    TypeConverterFunc // Function
-		//	>
-		//>;
-		using conversionTreeType = concurrency::concurrent_unordered_map< std::shared_ptr<Type_Info>, // From
-			concurrency::concurrent_unordered_map< std::shared_ptr<Type_Info>, // To
-			    TypeConverterFunc // Function
-			>
-		>;
-		conversionTreeType AllConversions;
-		std::shared_mutex AllConversionsMut;
-
-		// may return nullptr
-		TypeConverterFunc GetExistingConverter(std::weak_ptr<Type_Info> const& From, std::weak_ptr<Type_Info> const& To) {
-			auto locked{ std::shared_lock(AllConversionsMut) };
-			return AllConversions[From.lock()][To.lock()];
-		};
-		// may return nullptr if it could not be built
-		TypeConverterFunc GetOrBuildConverter(std::weak_ptr<Type_Info> const& From, std::weak_ptr<Type_Info> const& To, bool forceBuild = false) {
-			// Solves the Uniform Cost Search Algorithm to determine the shortest path for "From" to "To", puts the path in "Out", and returns true. 
-            // If no path is possible, returns false.
-			static auto CreateConversionPaths{ [](fibers::utilities::Allocator< UniformCostSearchNode>& alloc, conversionTreeType& AllConversions, std::shared_ptr<Type_Info> const& From, std::shared_ptr<Type_Info> const& To) {
-				// create the shortest paths from "From" to all possible vertices. 
-
-				std::unordered_map<std::shared_ptr<Type_Info>, UniformCostSearchNode*> vertices;
-
-				if (1) {
-					// create an empty vertex set
-					std::priority_queue< UniformCostSearchNode*, std::vector<UniformCostSearchNode*>, UniformCostSearchNode > vertexSet;
-
-					// Add the source vertex into the set
-					vertexSet.push(alloc.Alloc(From, 0.0, std::vector<std::weak_ptr<Type_Info>>{}));
-
-					// is the vertex set empty?
-					while (vertexSet.size() != 0) {
-						// extract the vertex with the smallest distance value from the set
-						auto smallestDistanceNode = vertexSet.top();
-						vertexSet.pop();
-
-						// for each neighbor of the extracted vertex... 
-						for (auto& connection : AllConversions[smallestDistanceNode->thisVertexType]) {
-							if (connection.second) {
-								// do not use daisy-chained functions as candidates for new ones, since it can be harder to determine the actual conversion chain length
-								if (connection.second->IsDaisyChained()) continue; 
-
-								// Is the neighbor already in the vertex set? 
-								auto& toType = connection.first;
-								auto& toVertex = vertices[toType];
-								if (!toVertex) {
-									// Instance it before we start working with it on an as-needed basis
-									auto path = std::vector<std::weak_ptr<Type_Info>>(smallestDistanceNode->bestPath);
-									path.push_back(toType);
-									toVertex = alloc.Alloc(toType, std::numeric_limits<double>::infinity(), std::vector<std::weak_ptr<Type_Info>>{ toType });
-								}
-
-								// calculate distance value for the neighbor vertex
-								double conversionCost = connection.second->cost();
-								if ((toVertex->bestPath.size() + 1) > (smallestDistanceNode->bestPath.size() + 1)) {
-									toVertex->distanceFromTarget = (smallestDistanceNode->distanceFromTarget + conversionCost);
-
-									toVertex->bestPath = smallestDistanceNode->bestPath;
-									toVertex->bestPath.push_back(toVertex->thisVertexType);
-
-									vertexSet.push(toVertex);
-								}
-								else if (toVertex->distanceFromTarget > (smallestDistanceNode->distanceFromTarget + conversionCost)) {
-									toVertex->distanceFromTarget = (smallestDistanceNode->distanceFromTarget + conversionCost);
-
-									toVertex->bestPath = smallestDistanceNode->bestPath;
-									toVertex->bestPath.push_back(toVertex->thisVertexType);
-
-									vertexSet.push(toVertex);
-								}
-							}
-						}
-					}
-				}
-
-				return vertices;
-			} };
-
-			if (!forceBuild) {
-				if (auto ptr = GetExistingConverter(From, To)) {
-					return ptr;
-				}
-			}
-
-			// Add conversion for From to a large variety of types...
-			if (1) {
-				fibers::utilities::Allocator< UniformCostSearchNode> alloc;
-				AllConversionsMut.lock_shared();
-				auto conversions{ CreateConversionPaths(alloc, AllConversions, From.lock(), To.lock()) };
-				
-				// All of these are for "From"...
-				for (auto& conversion : conversions) {
-					auto& ToType = conversion.first; // To...
-					
-					auto& cost = conversion.second->distanceFromTarget; // cost
-					auto& path = conversion.second->bestPath; // conversion path
-					//std::vector<std::shared_ptr< details::Type_Conversion_Base >>& conversionPath = conversion.second->bestPathConverters;
-
-					if (path.size() >= 1) {
-						TypeConverterFunc converterPtr = AllConversions[From.lock()][ToType];
-						if ((converterPtr && (converterPtr->NumConversions() < path.size())) || (converterPtr && (converterPtr->cost() <= cost))) {
-							continue;
-						}
-						else {
-							// make new function, get hard lock, insert	
-							if (1) {
-								// make a new converter function
-								TypeConverterFunc newConverter; {
-									// convert the "type path" to a actual daisy-chains of weak_ptrs to converter functions
-									std::vector<std::shared_ptr<details::Type_Conversion_Base>> functors; {
-										std::weak_ptr<Type_Info> currentNodeType = From;
-
-										for (auto& nextNodeType : path) {
-											auto& func = AllConversions[currentNodeType.lock()][nextNodeType.lock()];
-											if (!func) { // something went wrong -- this conversion has failed.
-												continue;
-											}
-											else {
-												functors.push_back(func);
-												currentNodeType = nextNodeType;
-											}
-										}
-
-										if (ToType != currentNodeType) {
-											// this failed -- unclear why, but it happened. 
-											continue;
-										}
-									}
-									if (functors.size() > 1) {
-										newConverter = std::shared_ptr< details::Type_Conversion_Base >(new details::DaisyChained_Type_Conversion_Impl(functors));
-									}
-									else {
-										continue; // do nothing, assuming either the conversion failed or the shorter version was obviously already in the list.
-									}									
-								}
-
-								AllConversionsMut.unlock_shared();
-								// insert it (requires hard lock)
-								if (newConverter) {
-									auto locked{ std::unique_lock(AllConversionsMut) };
-									converterPtr = AllConversions[From.lock()][ToType];
-									if ((converterPtr && (converterPtr->NumConversions() < path.size())) || (converterPtr && (converterPtr->cost() <= cost))) {}
-
-									//if (converterPtr && (converterPtr->cost() <= cost)) {}
-									else {
-										AllConversions[From.lock()][ToType] = newConverter;
-									}
-								}
-								AllConversionsMut.lock_shared();
-							}
-						}
-					}
-				}
-				AllConversionsMut.unlock_shared();
-			}
-
-			// try and get our target type back ... 
-			return GetExistingConverter(From, To);			
-		};
-	private:
-		// Base -> const Base
-		// Base -> Base&
-		// Base -> const Base&
-		// const Base -> const Base&
-		// Base& -> const Base&
-		void AddDefaultConverters(std::weak_ptr<Type_Info> const& Type) {
-			if (auto ptr = Type.lock()) {
-				auto baseType = ptr->MakeBase().lock();
-				if (baseType) {
-					auto refType = baseType->MakeRef().lock();
-					auto constType = baseType->MakeConst().lock();
-					if (refType && constType) {
-						auto constRefType = constType->MakeRef().lock();
-						if (constRefType) {
-							// Base -> const Base
-							if (1) {
-								if (auto func = std::shared_ptr< details::Type_Conversion_Base >(new details::Custom_Type_Conversion_Impl([](Any const& x)->Any {
-									return x;
-								}, baseType, constType, 0.0))) {
-									auto locked{ std::unique_lock(AllConversionsMut) };
-									AllConversions[func->from().lock()][func->to().lock()] = func;
-								}
-							}
-							// Base -> Base&
-							if (1) {
-								if (auto func = std::shared_ptr< details::Type_Conversion_Base >(new details::Custom_Type_Conversion_Impl([](Any const& x)->Any {
-									return x;
-									}, baseType, refType, 0.0))) {
-									auto locked{ std::unique_lock(AllConversionsMut) };
-									AllConversions[func->from().lock()][func->to().lock()] = func;
-								}
-							}
-							// Base -> const Base&
-							if (1) {
-								if (auto func = std::shared_ptr< details::Type_Conversion_Base >(new details::Custom_Type_Conversion_Impl([](Any const& x)->Any {
-									return x;
-								}, baseType, constRefType, 0.0))) {
-									auto locked{ std::unique_lock(AllConversionsMut) };
-									AllConversions[func->from().lock()][func->to().lock()] = func;
-								}
-							}
-							// const Base -> const Base&
-							if (1) {
-								if (auto func = std::shared_ptr< details::Type_Conversion_Base >(new details::Custom_Type_Conversion_Impl([](Any const& x)->Any {
-									return x;
-									}, constType, constRefType, 0.0))) {
-									auto locked{ std::unique_lock(AllConversionsMut) };
-									AllConversions[func->from().lock()][func->to().lock()] = func;
-								}
-							}
-							// Base& -> const Base&
-							if (1) {
-								if (auto func = std::shared_ptr< details::Type_Conversion_Base >(new details::Custom_Type_Conversion_Impl([](Any const& x)->Any {
-									return x;
-								}, refType, constRefType, 0.0))) {
-									auto locked{ std::unique_lock(AllConversionsMut) };
-									AllConversions[func->from().lock()][func->to().lock()] = func;
-								}
-							}
-
-						}
-					}
-				}
-			}
-		};
-
-
-	public:
-		// if does not exists, will add it. If exists, overwrites if the converter is better-performance.
-		template<typename From_t, typename To_t> void AddConverter() {
-			// forward
-			if (1) {
-				auto func = details::MakeConversionFunc < const typename std::decay_t<From_t>&, typename std::decay_t<To_t> > ();
-				if (func) {
-					auto& From = func->from();
-					auto& To = func->to();
-					if (1) {
-						auto locked{ std::unique_lock(AllConversionsMut) };
-						TypeConverterFunc& converterPtr = AllConversions[From.lock()][To.lock()];
-						converterPtr = func;
-					}
-					AddDefaultConverters(From);
-				}				
-			}
-			// backwards (may fail, which is OK)
-			if (1) {
-				auto func = details::MakeConversionFunc<const typename std::decay_t<To_t>&, typename std::decay_t<From_t>>();
-				if (func) {
-					auto& From = func->from();
-					auto& To = func->to();
-					if (1) {
-						auto locked{ std::unique_lock(AllConversionsMut) };
-						TypeConverterFunc& converterPtr = AllConversions[From.lock()][To.lock()];
-						converterPtr = func;
-					}
-					AddDefaultConverters(From);
-				}
-			}
-
-			// Add "contructor" class for const Type& -> Type, if possible
-			if constexpr (std::is_copy_constructible<typename std::decay_t<From_t>>::value) {
-				auto func = details::MakeConversionFunc([](const typename std::decay_t<From_t>& f) -> typename std::decay_t<From_t> { return f; });
-				if (func) {
-					auto& From = func->from();
-					auto& To = func->to();
-					if (1) {
-						auto locked{ std::unique_lock(AllConversionsMut) };
-						TypeConverterFunc& converterPtr = AllConversions[From.lock()][To.lock()];
-						converterPtr = func;
-					}
-				}
-			}
-			if constexpr (std::is_copy_constructible<typename std::decay_t<To_t>>::value) {
-				auto func = details::MakeConversionFunc([](const typename std::decay_t<To_t>& f) -> typename std::decay_t<To_t> { return f; });
-				if (func) {
-					auto& From = func->from();
-					auto& To = func->to();
-					if (1) {
-						auto locked{ std::unique_lock(AllConversionsMut) };
-						TypeConverterFunc& converterPtr = AllConversions[From.lock()][To.lock()];
-						converterPtr = func;
-					}
-				}
-			}
-
-		};
-		// if does not exists, will add it. If exists, overwrites if the converter is better-performance.
-		template<class Callable> void AddConverter(Callable Func) {
-			using CallableTypeAsStdFunc = decltype(std::function(std::declval<Callable>()));
-			using CallableArguments = typename fibers::utilities::function_traits< CallableTypeAsStdFunc >::arguments;
-			if constexpr (std::tuple_size_v< CallableArguments > != 1) {
-				return;
-			}
-			else {
-				using From_t = typename details::get_type<typename /*std::decay_t<*/std::tuple_element_t<0, CallableArguments>/*>*/>;
-				using To_t = typename details::get_type<typename fibers::utilities::function_traits< CallableTypeAsStdFunc >::result_type>;
-
-				auto func = details::MakeConversionFunc(std::move(Func));
-				if (func) {
-					auto& From = func->from();
-					auto& To = func->to();
-					if (1) {
-						auto locked{ std::unique_lock(AllConversionsMut) };
-						TypeConverterFunc& converterPtr = AllConversions[From.lock()][To.lock()];
-						converterPtr = func;
-					}
-					AddDefaultConverters(From);
-					AddDefaultConverters(To);
-				}
-
-				// Add "contructor" class for const Type& -> Type, if possible
-				if (std::is_same< From_t, Any>::value || std::is_same< To_t, Any>::value) {}
-				else {
-					// Add "contructor" class for const Type& -> Type, if possible
-					if constexpr (std::is_copy_constructible<typename std::decay_t<From_t>>::value) {
-						auto func = details::MakeConversionFunc([](const typename std::decay_t<From_t>& f) -> typename std::decay_t<From_t> { return f; });
-						if (func) {
-							auto& From = func->from();
-							auto& To = func->to();
-							if (1) {
-								auto locked{ std::unique_lock(AllConversionsMut) };
-								TypeConverterFunc& converterPtr = AllConversions[From.lock()][To.lock()];
-								converterPtr = func;
-							}
-						}
-					}
-					if constexpr (std::is_copy_constructible<typename std::decay_t<To_t>>::value) {
-						auto func = details::MakeConversionFunc([](const typename std::decay_t<To_t>& f) -> typename std::decay_t<To_t> { return f; });
-						if (func) {
-							auto& From = func->from();
-							auto& To = func->to();
-							if (1) {
-								auto locked{ std::unique_lock(AllConversionsMut) };
-								TypeConverterFunc& converterPtr = AllConversions[From.lock()][To.lock()];
-								converterPtr = func;
-							}
-						}
-					}
-
-
-				}
-			}			
-		};
-		// Find or make converter to accomplish the request
-		TypeConverterFunc FindConverter(std::weak_ptr<Type_Info> const& From, std::weak_ptr<Type_Info> const& To, bool forceBuild = false) {
-			return GetOrBuildConverter(From, To, forceBuild);
-		};
-		// Find or make converter to accomplish the request
-		template<typename From_t, typename To_t> TypeConverterFunc FindConverter(bool forceBuild = false) {
-			return FindConverter(user_type_shared<From_t>(), user_type_shared<To_t>(), forceBuild);
-		};
-
-		// will return an empty object if the conversion was impossible. (Assumes converting to void is not allowed or desired)
-		Any Convert(Any const& from, std::weak_ptr<Type_Info> const& To) {
-			if (auto f = FindConverter(from.Type(), To)) {
-				return f->convert(from);
-			}
-			return {};
-		};
-		// will throw an error if the conversion was impossible.
-		template<typename To_t> typename std::remove_reference_t<To_t> Convert(Any const& from) {
-			if (auto f = FindConverter(from.Type(), user_type_shared<To_t>())) {
-				Any temp = f->convert(from);
-				return temp.cast<To_t>();
-			}
-			throw exception::bad_any_cast(from.Type(), user_type_shared<To_t>(), __LINE__);
-		};
-
-
-	};
-
-
-	namespace details {
-
-#if 0
 		/**
 		 * Pure virtual base class for all Proxy_Function implementations
 		 * Proxy_Functions are a type erasure of type-safe C++ function calls.
@@ -2609,96 +2635,1951 @@ namespace GoodLang {
 		 * function classes.
 		*/
 		class Proxy_Function_Base {
+		private:
+
+			static double conversion_cost(std::vector<Any> const& t_from, ParamTypes const& t_to, TypeConverter& t_conversions) {
+				double out{ 0 };
+
+				// Quick return if the types exactly match.
+				if (t_to.size() > t_from.size()) return std::numeric_limits<double>::max();
+				// if (t_to.hash() == t_from.hash()) { return 0; } // exact match -- no conversions will happen
+				
+				size_t i = 0;
+				for (; i < t_to.size(); ++i) {
+					double conversionCost = t_conversions.ConversionCost(t_from[i], t_to[i]);
+					if (conversionCost == std::numeric_limits<double>::max()) {
+						return std::numeric_limits<double>::max();
+					}
+					else {
+						out += conversionCost;
+					}
+				}
+				for (; i < t_to.size(); ++i) {
+					out += details::TypeConversionWorstCaseCost; // large penalty for not using the provided type(s).
+				}
+				return out;
+			};
+			static std::vector<Any> convert(std::vector<Any> const& t_from, ParamTypes const& t_to, TypeConverter& t_conversions) {
+				std::vector<Any> out;
+
+				if (t_to.size() > t_from.size()) throw exception::arity_error(t_to.size(), t_to.size());
+
+				out.resize(t_to.size());
+
+				size_t i = 0;
+				for (; i < t_to.size(); ++i) {
+					out[i] = t_conversions.Convert(t_from[i], t_to[i]);
+				}
+
+				return out;
+			};
+
 		protected:
 			GoodLang::FunctionSignature signature;
 
 		public:
 			virtual ~Proxy_Function_Base() = default;
 
+			size_t hash() const {
+				return signature.hash();
+			};
 			const GoodLang::FunctionSignature& GetSignature() const {
 				return signature;
 			};
-			int NumArguments() const {
+			size_t NumArguments() const {
 				return signature.Arguments().size();
 			};
 			const auto& Argument(size_t N) const noexcept { return signature.Arguments().Type(N); };
 			const auto& Arguments() const noexcept { return signature.Arguments(); };
 			const auto& Returns() const noexcept { return signature.Returns(); };
 
-
-
-			// Symbolic "cost" to perform the conversion, in 100's of nanoseconds. Not meant to be precise, but meant to be relative for comparison with other converters.
-			double conversion_cost(Function_Params t_params, const Type_Converter_Tree& t_conversions) const {
-				return m_types.conversion_cost(t_params, t_conversions);
+			// Symbolic "cost" to perform the conversion. Not meant to be precise, but meant to be relative for comparison with other converters.
+			double conversion_cost(std::vector<Any> const& t_params, TypeConverter& t_conversions) const {
+				return Proxy_Function_Base::conversion_cost(t_params, Arguments().Types(), t_conversions);
 			};
 
-			Any operator()(const Function_Params& params, const Type_Converter_Tree& t_conversions) const {
-				if (params.size() >= m_types.size()) {
+			// Does want conversions -- ensure types match if possible.
+			Any operator()(const std::vector<Any>& params, TypeConverter& t_conversions) const {
+				if (params.size() >= NumArguments()) {
 					return do_call(convert(params, t_conversions));
 				}
-				throw exception::arity_error(static_cast<int>(params.size()), m_types.size());
+				throw exception::arity_error(static_cast<int>(params.size()), NumArguments());
 			};
 
-			Any operator()(const Function_Params& params) const {
-				if (params.size() == m_types.size()) {
-					return do_call(params.to_vector());
+			// Does not want conversions -- straight call.
+			Any operator()(const std::vector<Any>& params) const {
+				if (params.size() == NumArguments()) {
+					return do_call(params);
 				}
-				throw exception::arity_error(static_cast<int>(params.size()), m_types.size());
+				throw exception::arity_error(static_cast<int>(params.size()), NumArguments());
 			};
 
+			// Does not want conversions -- straight call.
 			Any operator()(Any& param) const {
-				if (1 == m_types.size()) {
+				if (1 == NumArguments()) {
 					return do_call({ param });
 				}
-				throw exception::arity_error(1, m_types.size());
+				throw exception::arity_error(1, NumArguments());
 			};
 
-			bool operator==(const Proxy_Function_Base& other) const noexcept {
-				return m_types == other.m_types && m_return == other.m_return; // same signature
+			friend bool operator==(const Proxy_Function_Base& lhs, const Proxy_Function_Base& rhs) noexcept {
+				return lhs.signature == rhs.signature; // same signature
 			};
-
-			bool call_match(const Function_Params& vals, const Type_Converter_Tree& t_conversions) const {
-				return m_types.converts(vals, t_conversions);
+			friend bool operator!=(const Proxy_Function_Base& lhs, const Proxy_Function_Base& rhs) noexcept {
+				return lhs.signature != rhs.signature; // same signature
 			};
-			// Faster comparison for just the first parameter, to quickly rule-out if this function is available to the boxed value
-			bool compare_first_type(Any& bv, const Type_Converter_Tree& t_conversions) const noexcept {
-				if (m_types.size() > 0) {
-					if (auto p = m_types[0].second.lock()) {
-						return t_conversions.Converts(bv, p);
-					}
-					else {
-						return t_conversions.Converts(bv, scripting::user_type<void>());
-					}
-				}
-				else {
-					return false;
-				}
-			}
+			friend bool operator>(const Proxy_Function_Base& lhs, const Proxy_Function_Base& rhs) noexcept {
+				return lhs.signature > rhs.signature; // same signature
+			};
+			friend bool operator>=(const Proxy_Function_Base& lhs, const Proxy_Function_Base& rhs) noexcept {
+				return lhs.signature >= rhs.signature; // same signature
+			};
+			friend bool operator<(const Proxy_Function_Base& lhs, const Proxy_Function_Base& rhs) noexcept {
+				return lhs.signature < rhs.signature; // same signature
+			};
+			friend bool operator<=(const Proxy_Function_Base& lhs, const Proxy_Function_Base& rhs) noexcept {
+				return lhs.signature <= rhs.signature; // same signature
+			};
 
 		protected:
 			// Performs the conversion from the input parameters to the necessary types, if possible. Throws otherwise. 
-			std::vector<Any> convert(Function_Params t_params, const Type_Converter_Tree& t_conversions) const {
-				return m_types.convert(t_params, t_conversions);
+			std::vector<Any> convert(std::vector<Any> const& t_params, TypeConverter& t_conversions) const {
+				return Proxy_Function_Base::convert(t_params, signature.Arguments().Types(), t_conversions);
 			};
 
 		protected:
 			virtual Any do_call(std::vector<Any> const&) const = 0;
 
-			Proxy_Function_Base(Param_Types t_types, Type_Info t_returns)
-				: m_types(std::move(t_types))
-				, m_return(std::move(t_returns))
+			Proxy_Function_Base(GoodLang::FunctionSignature const& p_signature)
+				: signature(p_signature)
 			{}
 		};
+	};
+};
+
+namespace std {
+	template <> struct hash<GoodLang::details::Proxy_Function_Base> {
+		std::size_t operator()(const GoodLang::details::Proxy_Function_Base& k) const {
+			return k.hash();
+		};
+	};
+	template <> struct less<GoodLang::details::Proxy_Function_Base> {
+		std::size_t operator()(const GoodLang::details::Proxy_Function_Base& lhs, const GoodLang::details::Proxy_Function_Base& rhs) const {
+			return lhs < rhs;
+		};
+	};
+	template <> struct greater<GoodLang::details::Proxy_Function_Base> {
+		std::size_t operator()(const GoodLang::details::Proxy_Function_Base& lhs, const GoodLang::details::Proxy_Function_Base& rhs) const {
+			return lhs > rhs;
+		};
+	};
+	template <> struct equal_to<GoodLang::details::Proxy_Function_Base> {
+		std::size_t operator()(const GoodLang::details::Proxy_Function_Base& lhs, const GoodLang::details::Proxy_Function_Base& rhs) const {
+			return lhs == rhs;
+		};
+	};
+
+	template <> struct hash<std::shared_ptr<GoodLang::details::Proxy_Function_Base>> {
+		std::size_t operator()(const std::shared_ptr<GoodLang::details::Proxy_Function_Base>& k) const {
+			if (k) return k->hash();
+			else return 0;
+		};
+	};
+	template <> struct less<std::shared_ptr<std::shared_ptr<GoodLang::details::Proxy_Function_Base>>> {
+		std::size_t operator()(const std::shared_ptr<GoodLang::details::Proxy_Function_Base>& lhs, const std::shared_ptr<GoodLang::details::Proxy_Function_Base>& rhs) const {
+			if (lhs && rhs) return *lhs < *rhs;
+			else return 0;
+		};
+	};
+	template <> struct greater<std::shared_ptr<GoodLang::details::Proxy_Function_Base>> {
+		std::size_t operator()(const std::shared_ptr<GoodLang::details::Proxy_Function_Base>& lhs, const std::shared_ptr<GoodLang::details::Proxy_Function_Base>& rhs) const {
+			if (lhs && rhs) return *lhs > *rhs;
+			else return 0;
+		};
+	};
+	template <> struct equal_to<std::shared_ptr<GoodLang::details::Proxy_Function_Base>> {
+		std::size_t operator()(const std::shared_ptr<GoodLang::details::Proxy_Function_Base>& lhs, const std::shared_ptr<GoodLang::details::Proxy_Function_Base>& rhs) const {
+			if (lhs && rhs) return *lhs == *rhs;
+			else return 0;
+		};
+	};
+};
+
+namespace GoodLang {
+	/// \brief Common typedef used for passing of any registered function in ChaiScript
+	using Proxy_Function = std::shared_ptr<details::Proxy_Function_Base>;
+
+	namespace details {
+		/**
+		 * Use to call member functions or free static functions
+		*/
+		template <class Callable>
+		class Explicit_Function_Impl : public Proxy_Function_Base {
+		protected:
+			static GoodLang::FunctionSignature CreateSignature() {
+				using argType = typename fibers::utilities::function_traits<decltype(std::function(std::declval<Callable>()))>::arguments;
+				using returnType = typename fibers::utilities::function_traits<decltype(std::function(std::declval<Callable>()))>::result_type;
+				static constexpr auto numArgs{ std::tuple_size_v< argType > };
+
+				std::vector<std::weak_ptr<Type_Info>> types(numArgs, std::weak_ptr<Type_Info>());
+#define argT(NN) if constexpr (numArgs > NN) { types[NN] = user_type_shared<typename std::tuple_element_t<NN, argType>>(); }
+				argT(0);
+				argT(1);
+				argT(2);
+				argT(3);
+				argT(4);
+				argT(5);
+				argT(6);
+				argT(7);
+				argT(8);
+				argT(9);
+				argT(10);
+				argT(11);
+				argT(12);
+				argT(13);
+				argT(14);
+				argT(15);
+#undef argT
+				GoodLang::ParamTypes params(types);
+				GoodLang::FunctionArgs args(params);
+				return GoodLang::FunctionSignature(user_type_shared<returnType>(), args, "", "");
+			};
+
+		public:
+			Explicit_Function_Impl(Callable F_p)
+				: Proxy_Function_Base(CreateSignature())
+				, F_m(std::move(F_p))
+			{};
+			virtual ~Explicit_Function_Impl() = default;
+
+		protected:
+			virtual Any do_call(std::vector<Any> const& r) const override {
+				using argType = typename fibers::utilities::function_traits<decltype(std::function(std::declval<Callable>()))>::arguments;
+				using returnType = typename fibers::utilities::function_traits<decltype(std::function(std::declval<Callable>()))>::result_type;
+				static constexpr auto numArgs{ std::tuple_size_v< argType > };
+
+				if constexpr (std::is_reference< returnType>::value) {
+					// if the return type is a reference, the parent(s) should be protected by carrying them along. 
+					using refAsBaseType = typename std::remove_reference_t< returnType>;
+					using ptrType = std::shared_ptr<refAsBaseType>;
+					ptrType out;
+					std::vector<Any> parents = r;
+					if constexpr (numArgs == 16) {
+						out = ptrType(&F_m(
+							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+							r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
+							r[8].cast(), r[9].cast(), r[10].cast(), r[11].cast(),
+							r[12].cast(), r[13].cast(), r[14].cast(), r[15].cast()
+						), [parents](refAsBaseType*) { if (parents.size() < numArgs) { std::cout << "ERR" << std::endl; } });
+					}
+					else if constexpr (numArgs == 15) {
+						out = ptrType(&F_m(
+							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+							r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
+							r[8].cast(), r[9].cast(), r[10].cast(), r[11].cast(),
+							r[12].cast(), r[13].cast(), r[14].cast()
+						), [parents](refAsBaseType*) { if (parents.size() < numArgs) { std::cout << "ERR" << std::endl; } });
+					}
+					else if constexpr (numArgs == 14) {
+						out = ptrType(&F_m(
+							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+							r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
+							r[8].cast(), r[9].cast(), r[10].cast(), r[11].cast(),
+							r[12].cast(), r[13].cast()
+						), [parents](refAsBaseType*) { if (parents.size() < numArgs) { std::cout << "ERR" << std::endl; } });
+					}
+					else if constexpr (numArgs == 13) {
+						out = ptrType(&F_m(
+							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+							r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
+							r[8].cast(), r[9].cast(), r[10].cast(), r[11].cast(),
+							r[12].cast()
+						), [parents](refAsBaseType*) { if (parents.size() < numArgs) { std::cout << "ERR" << std::endl; } });
+					}
+					else if constexpr (numArgs == 12) {
+						out = ptrType(&F_m(
+							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+							r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
+							r[8].cast(), r[9].cast(), r[10].cast(), r[11].cast()
+						), [parents](refAsBaseType*) { if (parents.size() < numArgs) { std::cout << "ERR" << std::endl; } });
+					}
+					else if constexpr (numArgs == 11) {
+						out = ptrType(&F_m(
+							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+							r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
+							r[8].cast(), r[9].cast(), r[10].cast()
+						), [parents](refAsBaseType*) { if (parents.size() < numArgs) { std::cout << "ERR" << std::endl; } });
+					}
+					else if constexpr (numArgs == 10) {
+						out = ptrType(&F_m(
+							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+							r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
+							r[8].cast(), r[9].cast()
+						), [parents](refAsBaseType*) { if (parents.size() < numArgs) { std::cout << "ERR" << std::endl; } });
+					}
+					else if constexpr (numArgs == 9) {
+						out = ptrType(&F_m(
+							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+							r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
+							r[8].cast()
+						), [parents](refAsBaseType*) { if (parents.size() < numArgs) { std::cout << "ERR" << std::endl; } });
+					}
+					else if constexpr (numArgs == 8) {
+						out = ptrType(&F_m(
+							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+							r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast()
+						), [parents](refAsBaseType*) { if (parents.size() < numArgs) { std::cout << "ERR" << std::endl; } });
+					}
+					else if constexpr (numArgs == 7) {
+						out = ptrType(&F_m(
+							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+							r[4].cast(), r[5].cast(), r[6].cast()
+						), [parents](refAsBaseType*) { if (parents.size() < numArgs) { std::cout << "ERR" << std::endl; } });
+					}
+					else if constexpr (numArgs == 6) {
+						out = ptrType(&F_m(
+							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+							r[4].cast(), r[5].cast()
+						), [parents](refAsBaseType*) { if (parents.size() < numArgs) { std::cout << "ERR" << std::endl; } });
+					}
+					else if constexpr (numArgs == 5) {
+						out = ptrType(&F_m(
+							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+							r[4].cast()
+						), [parents](refAsBaseType*) { if (parents.size() < numArgs) { std::cout << "ERR" << std::endl; } });
+					}
+					else if constexpr (numArgs == 4) {
+						out = ptrType(&F_m(
+							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast()
+						), [parents](refAsBaseType*) { if (parents.size() < numArgs) { std::cout << "ERR" << std::endl; } });
+					}
+					else if constexpr (numArgs == 3) {
+						out = ptrType(&F_m(
+							r[0].cast(), r[1].cast(), r[2].cast()
+						), [parents](refAsBaseType*) { if (parents.size() < numArgs) { std::cout << "ERR" << std::endl; } });
+					}
+					else if constexpr (numArgs == 2) {
+						out = ptrType(&F_m(
+							r[0].cast(), r[1].cast()
+						), [parents](refAsBaseType*) { if (parents.size() < numArgs) { std::cout << "ERR" << std::endl; } });
+					}
+					else if constexpr (numArgs == 1) {
+						out = ptrType(&F_m(
+							r[0].cast()
+						), [parents](refAsBaseType*) { if (parents.size() < numArgs) { std::cout << "ERR" << std::endl; } });
+					}
+					else if constexpr (numArgs <= 0) {
+					    out = ptrType(&F_m(), [parents](refAsBaseType*) { if (parents.size() < numArgs) { std::cout << "ERR" << std::endl; } });
+					}
+					return out;
+				}
+				else {
+					// best-case, normal operation
+					if constexpr (std::is_same_v<returnType, void>) {
+						static Any temp;
+						if constexpr (numArgs == 16) {
+							F_m(
+								r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+								r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
+								r[8].cast(), r[9].cast(), r[10].cast(), r[11].cast(),
+								r[12].cast(), r[13].cast(), r[14].cast(), r[15].cast()
+							);
+						}
+						else if constexpr (numArgs == 15) {
+							F_m(
+								r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+								r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
+								r[8].cast(), r[9].cast(), r[10].cast(), r[11].cast(),
+								r[12].cast(), r[13].cast(), r[14].cast()
+							);
+						}
+						else if constexpr (numArgs == 14) {
+							F_m(
+								r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+								r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
+								r[8].cast(), r[9].cast(), r[10].cast(), r[11].cast(),
+								r[12].cast(), r[13].cast()
+							);
+						}
+						else if constexpr (numArgs == 13) {
+							F_m(
+								r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+								r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
+								r[8].cast(), r[9].cast(), r[10].cast(), r[11].cast(),
+								r[12].cast()
+							);
+						}
+						else if constexpr (numArgs == 12) {
+							F_m(
+								r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+								r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
+								r[8].cast(), r[9].cast(), r[10].cast(), r[11].cast()
+							);
+						}
+						else if constexpr (numArgs == 11) {
+							F_m(
+								r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+								r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
+								r[8].cast(), r[9].cast(), r[10].cast()
+							);
+						}
+						else if constexpr (numArgs == 10) {
+							F_m(
+								r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+								r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
+								r[8].cast(), r[9].cast()
+							);
+						}
+						else if constexpr (numArgs == 9) {
+							F_m(
+								r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+								r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
+								r[8].cast()
+							);
+						}
+						else if constexpr (numArgs == 8) {
+							F_m(
+								r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+								r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast()
+							);
+						}
+						else if constexpr (numArgs == 7) {
+							F_m(
+								r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+								r[4].cast(), r[5].cast(), r[6].cast()
+							);
+						}
+						else if constexpr (numArgs == 6) {
+							F_m(
+								r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+								r[4].cast(), r[5].cast()
+							);
+						}
+						else if constexpr (numArgs == 5) {
+							F_m(
+								r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+								r[4].cast()
+							);
+						}
+						else if constexpr (numArgs == 4) {
+							F_m(
+								r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast()
+							);
+						}
+						else if constexpr (numArgs == 3) {
+							F_m(
+								r[0].cast(), r[1].cast(), r[2].cast()
+							);
+						}
+						else if constexpr (numArgs == 2) {
+							F_m(
+								r[0].cast(), r[1].cast()
+							);
+						}
+						else if constexpr (numArgs == 1) {
+							F_m(
+								r[0].cast()
+							);
+						}
+						else if constexpr (numArgs <= 0) {
+							F_m();
+						}
+						return temp;
+					}
+					else {
+
+						if constexpr (numArgs == 16) {
+							return F_m(
+								r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+								r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
+								r[8].cast(), r[9].cast(), r[10].cast(), r[11].cast(),
+								r[12].cast(), r[13].cast(), r[14].cast(), r[15].cast()
+							);
+						}
+						else if constexpr (numArgs == 15) {
+							return F_m(
+								r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+								r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
+								r[8].cast(), r[9].cast(), r[10].cast(), r[11].cast(),
+								r[12].cast(), r[13].cast(), r[14].cast()
+							);
+						}
+						else if constexpr (numArgs == 14) {
+							return F_m(
+								r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+								r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
+								r[8].cast(), r[9].cast(), r[10].cast(), r[11].cast(),
+								r[12].cast(), r[13].cast()
+							);
+						}
+						else if constexpr (numArgs == 13) {
+							return F_m(
+								r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+								r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
+								r[8].cast(), r[9].cast(), r[10].cast(), r[11].cast(),
+								r[12].cast()
+							);
+						}
+						else if constexpr (numArgs == 12) {
+							return F_m(
+								r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+								r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
+								r[8].cast(), r[9].cast(), r[10].cast(), r[11].cast()
+							);
+						}
+						else if constexpr (numArgs == 11) {
+							return F_m(
+								r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+								r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
+								r[8].cast(), r[9].cast(), r[10].cast()
+							);
+						}
+						else if constexpr (numArgs == 10) {
+							return F_m(
+								r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+								r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
+								r[8].cast(), r[9].cast()
+							);
+						}
+						else if constexpr (numArgs == 9) {
+							return F_m(
+								r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+								r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
+								r[8].cast()
+							);
+						}
+						else if constexpr (numArgs == 8) {
+							return F_m(
+								r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+								r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast()
+							);
+						}
+						else if constexpr (numArgs == 7) {
+							return F_m(
+								r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+								r[4].cast(), r[5].cast(), r[6].cast()
+							);
+						}
+						else if constexpr (numArgs == 6) {
+							return F_m(
+								r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+								r[4].cast(), r[5].cast()
+							);
+						}
+						else if constexpr (numArgs == 5) {
+							return F_m(
+								r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+								r[4].cast()
+							);
+						}
+						else if constexpr (numArgs == 4) {
+							return F_m(
+								r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast()
+							);
+						}
+						else if constexpr (numArgs == 3) {
+							return F_m(
+								r[0].cast(), r[1].cast(), r[2].cast()
+							);
+						}
+						else if constexpr (numArgs == 2) {
+							return F_m(
+								r[0].cast(), r[1].cast()
+							);
+						}
+						else if constexpr (numArgs == 1) {
+							return F_m(
+								r[0].cast()
+							);
+						}
+						else if constexpr (numArgs <= 0) {
+							return F_m();
+						}
+					}
+				}
+			};
+			Callable F_m;
+		};
+
+#if 0
+		/**
+		 * Use to call member objects:
+		 * struct Test{ public: std::string attr; }
+		 * var& func = fibers::details::Attribute_Access_Impl(&Test::attr);
+		 * assert(func(Test{ "STR" }).cast<std::string>() == "STR");
+		*/
+		template <typename T, class Class>
+		class Attribute_Access_Impl : public Proxy_Function_Base {
+		protected:
+			static Param_Types Get_Arg_Type() {
+				std::vector<std::pair<std::string, Type_Info>> t_types{ { "parent", user_type<Class>() } };
+				return Param_Types{ t_types };
+			};
+			static Type_Info Get_Return_Type() {
+				return user_type< T >();
+			};
+
+		public:
+			Attribute_Access_Impl(T Class::* t_attr)
+				: Proxy_Function_Base(Get_Arg_Type(), Get_Return_Type())
+				, m_attr(t_attr)
+			{};
+			virtual ~Attribute_Access_Impl() = default;
+
+		protected:
+			// assumes conversion already happened
+			virtual Any do_call(std::vector<Any> const& r) const override {
+				if (r.size() < 1) throw(exception::arity_error(0, 1));
+				return do_call_impl(r[0].cast<std::shared_ptr<Class>>());
+			};
+
+			auto& do_call_impl_impl(Class* o) const {
+				return o->*m_attr;
+			};
+
+			Any do_call_impl(std::shared_ptr<Class> o) const {
+				if constexpr (std::is_same_v<void, T>) {
+					// void? Return void.
+					return Any();
+				}
+				else if constexpr (std::is_same_v<Any, typename std::remove_reference_t<T>>) {
+					// Any? Return reference to the underlying value, NOT a reference to the Any.
+					return do_call_impl_impl(o.get());
+				}
+				else if constexpr (std::is_pointer<T>::value) {
+					// Pointer? Wrap it as a shared pointer.
+					using Type = typename std::remove_pointer<T>::type;
+					decltype(auto) ptr = do_call_impl_impl(o.get());
+					if (ptr) {
+						return std::shared_ptr<Type>(ptr, [=](Type*) { (void)o.get(); /* do nothing */ });
+					}
+					else {
+						return Any();
+					}
+				}
+				else {
+					// Reference? Wrap it as a shared pointer.
+					using Type = typename std::remove_reference<T>::type;
+					return std::shared_ptr<Type>(&(do_call_impl_impl(o.get())), [=](Type*) { (void)o.get(); /* do nothing */ });
+				}
+			};
+
+			T Class::* m_attr;
+		};
+
+		namespace detail {
+			/**
+			 * Use to call member functions:
+			 * struct Test{ public: std::string attr(){ return "TEST"; }; }
+			 * var& func = fibers::details::Attribute_Access_Impl(&Test::attr);
+			 * assert(func(Test{}).cast<std::string>() == "TEST");
+			*/
+			template <typename R, typename Class, typename... T>
+			class VolatileConst_Member_Function_Impl : public Proxy_Function_Base {
+			public:
+				using argType = std::tuple<Class, T...>;
+				static constexpr auto numArgs = std::tuple_size_v<argType> -1;
+				static Param_Types Get_Arg_Type() {
+					std::vector<std::pair<std::string, Type_Info>> t_types{ { "parent", user_type<Class>() } };
+					if constexpr (numArgs > 0) {
+						t_types.push_back({ "Param0", user_type<typename std::tuple_element_t<1, argType>>() });
+					}
+					if constexpr (numArgs > 1) {
+						t_types.push_back({ "Param1", user_type<typename std::tuple_element_t<2, argType>>() });
+					}
+					if constexpr (numArgs > 2) {
+						t_types.push_back({ "Param2", user_type<typename std::tuple_element_t<3, argType>>() });
+					}
+					if constexpr (numArgs > 3) {
+						t_types.push_back({ "Param3", user_type<typename std::tuple_element_t<4, argType>>() });
+					}
+					if constexpr (numArgs > 4) {
+						t_types.push_back({ "Param4", user_type<typename std::tuple_element_t<5, argType>>() });
+					}
+					if constexpr (numArgs > 5) {
+						t_types.push_back({ "Param5", user_type<typename std::tuple_element_t<6, argType>>() });
+					}
+					if constexpr (numArgs > 6) {
+						t_types.push_back({ "Param6", user_type<typename std::tuple_element_t<7, argType>>() });
+					}
+					if constexpr (numArgs > 7) {
+						t_types.push_back({ "Param7", user_type<typename std::tuple_element_t<8, argType>>() });
+					}
+					if constexpr (numArgs > 8) {
+						t_types.push_back({ "Param8", user_type<typename std::tuple_element_t<9, argType>>() });
+					}
+					if constexpr (numArgs > 9) {
+						t_types.push_back({ "Param9", user_type<typename std::tuple_element_t<10, argType>>() });
+					}
+					if constexpr (numArgs > 10) {
+						t_types.push_back({ "Param10", user_type<typename std::tuple_element_t<11, argType>>() });
+					}
+					if constexpr (numArgs > 11) {
+						t_types.push_back({ "Param11", user_type<typename std::tuple_element_t<12, argType>>() });
+					}
+					if constexpr (numArgs > 12) {
+						t_types.push_back({ "Param12", user_type<typename std::tuple_element_t<13, argType>>() });
+					}
+					if constexpr (numArgs > 13) {
+						t_types.push_back({ "Param13", user_type<typename std::tuple_element_t<14, argType>>() });
+					}
+					if constexpr (numArgs > 14) {
+						t_types.push_back({ "Param14", user_type<typename std::tuple_element_t<15, argType>>() });
+					}
+					if constexpr (numArgs > 15) {
+						t_types.push_back({ "Param15", user_type<typename std::tuple_element_t<16, argType>>() });
+					}
+					return Param_Types{ t_types };
+				};
+				static Type_Info Get_Return_Type() {
+					return user_type< R >();
+				};
+
+			public:
+				VolatileConst_Member_Function_Impl(R(Class::* f)(T...) volatile const)
+					: Proxy_Function_Base(Get_Arg_Type(), Get_Return_Type())
+					, m_attr(std::move(f)) {};
+				virtual ~VolatileConst_Member_Function_Impl() = default;
+
+			protected:
+				// assumes conversion already happened
+				virtual Any do_call(std::vector<Any> const& r) const override {
+					if (r.size() < (numArgs + 1)) throw(exception::arity_error(r.size(), numArgs + 1));
+
+					std::vector<Any> temp;
+					for (int i = 1; i < r.size(); i++) temp.push_back(r[i]);
+
+					return do_call_impl(r[0].cast<std::shared_ptr<Class>>(), temp);
+				};
+
+				decltype(auto) do_call_impl_impl(Class* o, std::vector<Any> const& r) const {
+					if constexpr (numArgs == 0) {
+						return (R)(o->*m_attr)();
+					}
+					else if constexpr (numArgs == 1) {
+						return (R)(o->*m_attr)(
+							r[0].cast()
+							);
+					}
+					else if constexpr (numArgs == 2) {
+						return (R)(o->*m_attr)(
+							r[0].cast(), r[1].cast()
+							);
+					}
+					else if constexpr (numArgs == 3) {
+						return (R)(o->*m_attr)(
+							r[0].cast(), r[1].cast(), r[2].cast()
+							);
+					}
+					else if constexpr (numArgs == 4) {
+						return (R)(o->*m_attr)(
+							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast()
+							);
+					}
+					else if constexpr (numArgs == 5) {
+						return (R)(o->*m_attr)(
+							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+							r[4].cast()
+							);
+					}
+					else if constexpr (numArgs == 6) {
+						return (R)(o->*m_attr)(
+							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+							r[4].cast(), r[5].cast()
+							);
+					}
+					else if constexpr (numArgs == 7) {
+						return (R)(o->*m_attr)(
+							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+							r[4].cast(), r[5].cast(), r[6].cast()
+							);
+					}
+					else if constexpr (numArgs == 8) {
+						return (R)(o->*m_attr)(
+							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+							r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast()
+							);
+					}
+					else if constexpr (numArgs == 9) {
+						return (R)(o->*m_attr)(
+							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+							r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
+							r[8].cast()
+							);
+					}
+					else if constexpr (numArgs == 10) {
+						return (R)(o->*m_attr)(
+							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+							r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
+							r[8].cast(), r[9].cast()
+							);
+					}
+					else if constexpr (numArgs == 11) {
+						return (R)(o->*m_attr)(
+							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+							r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
+							r[8].cast(), r[9].cast(), r[10].cast()
+							);
+					}
+					else if constexpr (numArgs == 12) {
+						return (R)(o->*m_attr)(
+							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+							r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
+							r[8].cast(), r[9].cast(), r[10].cast(), r[11].cast()
+							);
+					}
+					else if constexpr (numArgs == 13) {
+						return (R)(o->*m_attr)(
+							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+							r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
+							r[8].cast(), r[9].cast(), r[10].cast(), r[11].cast(),
+							r[12].cast()
+							);
+					}
+					else if constexpr (numArgs == 14) {
+						return (R)(o->*m_attr)(
+							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+							r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
+							r[8].cast(), r[9].cast(), r[10].cast(), r[11].cast(),
+							r[12].cast(), r[13].cast()
+							);
+					}
+					else if constexpr (numArgs == 15) {
+						return (R)(o->*m_attr)(
+							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+							r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
+							r[8].cast(), r[9].cast(), r[10].cast(), r[11].cast(),
+							r[12].cast(), r[13].cast(), r[14].cast()
+							);
+					}
+					else if constexpr (numArgs == 16) {
+						return (R)(o->*m_attr)(
+							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+							r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
+							r[8].cast(), r[9].cast(), r[10].cast(), r[11].cast(),
+							r[12].cast(), r[13].cast(), r[14].cast(), r[15].cast()
+							);
+					}
+				};
+
+				Any do_call_impl(std::shared_ptr<Class> o, std::vector<Any> const& r) const {
+					if constexpr (std::is_same_v<void, R>) {
+						do_call_impl_impl(o.get(), r);
+						return Any();
+					}
+					else {
+						R returned_obj{ do_call_impl_impl(o.get(), r) };
+						using Type = typename std::decay_t<decltype(returned_obj)>;
+
+						if constexpr (std::is_same_v<Any, typename std::remove_reference_t<Type>>) {
+							// Any? Return reference to the underlying value, NOT a reference to the Any.
+							return returned_obj;
+						}
+						else if constexpr (std::is_pointer<R>::value) {
+							// Pointer? Wrap it as a shared pointer.
+							using Type2 = typename std::remove_pointer<R>::type;
+							if (returned_obj) {
+								return std::shared_ptr<Type2>(returned_obj, [=](Type2*) { (void)o.get(); /* do nothing */ });
+							}
+							else {
+								return Any();
+							}
+						}
+						else if constexpr (std::is_reference<R>::value) {
+							// Reference? Wrap it as a shared pointer.
+							using Type2 = typename std::remove_reference<R>::type;
+							return std::shared_ptr<Type2>(&returned_obj, [=](Type2*) { (void)o.get(); /* do nothing */ });
+						}
+						else {
+							return std::move(returned_obj);
+						}
+					}
+				};
+
+				R(Class::* m_attr)(T...) volatile const;
+			};
+			template <typename R, typename Class, typename... T>
+			class Volatile_Member_Function_Impl : public Proxy_Function_Base {
+			public:
+				using argType = std::tuple<Class, T...>;
+				static constexpr auto numArgs = std::tuple_size_v<argType> -1;
+				static Param_Types Get_Arg_Type() {
+					std::vector<std::pair<std::string, Type_Info>> t_types{ { "parent", user_type<Class>() } };
+					if constexpr (numArgs > 0) {
+						t_types.push_back({ "Param0", user_type<typename std::tuple_element_t<1, argType>>() });
+					}
+					if constexpr (numArgs > 1) {
+						t_types.push_back({ "Param1", user_type<typename std::tuple_element_t<2, argType>>() });
+					}
+					if constexpr (numArgs > 2) {
+						t_types.push_back({ "Param2", user_type<typename std::tuple_element_t<3, argType>>() });
+					}
+					if constexpr (numArgs > 3) {
+						t_types.push_back({ "Param3", user_type<typename std::tuple_element_t<4, argType>>() });
+					}
+					if constexpr (numArgs > 4) {
+						t_types.push_back({ "Param4", user_type<typename std::tuple_element_t<5, argType>>() });
+					}
+					if constexpr (numArgs > 5) {
+						t_types.push_back({ "Param5", user_type<typename std::tuple_element_t<6, argType>>() });
+					}
+					if constexpr (numArgs > 6) {
+						t_types.push_back({ "Param6", user_type<typename std::tuple_element_t<7, argType>>() });
+					}
+					if constexpr (numArgs > 7) {
+						t_types.push_back({ "Param7", user_type<typename std::tuple_element_t<8, argType>>() });
+					}
+					if constexpr (numArgs > 8) {
+						t_types.push_back({ "Param8", user_type<typename std::tuple_element_t<9, argType>>() });
+					}
+					if constexpr (numArgs > 9) {
+						t_types.push_back({ "Param9", user_type<typename std::tuple_element_t<10, argType>>() });
+					}
+					if constexpr (numArgs > 10) {
+						t_types.push_back({ "Param10", user_type<typename std::tuple_element_t<11, argType>>() });
+					}
+					if constexpr (numArgs > 11) {
+						t_types.push_back({ "Param11", user_type<typename std::tuple_element_t<12, argType>>() });
+					}
+					if constexpr (numArgs > 12) {
+						t_types.push_back({ "Param12", user_type<typename std::tuple_element_t<13, argType>>() });
+					}
+					if constexpr (numArgs > 13) {
+						t_types.push_back({ "Param13", user_type<typename std::tuple_element_t<14, argType>>() });
+					}
+					if constexpr (numArgs > 14) {
+						t_types.push_back({ "Param14", user_type<typename std::tuple_element_t<15, argType>>() });
+					}
+					if constexpr (numArgs > 15) {
+						t_types.push_back({ "Param15", user_type<typename std::tuple_element_t<16, argType>>() });
+					}
+					return Param_Types{ t_types };
+				};
+				static Type_Info Get_Return_Type() {
+					return user_type< R >();
+				};
+
+			public:
+				Volatile_Member_Function_Impl(R(Class::* f)(T...) volatile)
+					: Proxy_Function_Base(Get_Arg_Type(), Get_Return_Type())
+					, m_attr(std::move(f)) {};
+				virtual ~Volatile_Member_Function_Impl() = default;
+
+			protected:
+				// assumes conversion already happened
+				virtual Any do_call(std::vector<Any> const& r) const override {
+					if (r.size() < (numArgs + 1)) throw(exception::arity_error(r.size(), numArgs + 1));
+
+					std::vector<Any> temp;
+					for (int i = 1; i < r.size(); i++) temp.push_back(r[i]);
+
+					return do_call_impl(r[0].cast<std::shared_ptr<Class>>(), temp);
+				};
+
+				decltype(auto) do_call_impl_impl(Class* o, std::vector<Any> const& r) const {
+					if constexpr (numArgs == 0) {
+						return (R)(o->*m_attr)();
+					}
+					else if constexpr (numArgs == 1) {
+						return (R)(o->*m_attr)(
+							r[0].cast()
+							);
+					}
+					else if constexpr (numArgs == 2) {
+						return (R)(o->*m_attr)(
+							r[0].cast(), r[1].cast()
+							);
+					}
+					else if constexpr (numArgs == 3) {
+						return (R)(o->*m_attr)(
+							r[0].cast(), r[1].cast(), r[2].cast()
+							);
+					}
+					else if constexpr (numArgs == 4) {
+						return (R)(o->*m_attr)(
+							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast()
+							);
+					}
+					else if constexpr (numArgs == 5) {
+						return (R)(o->*m_attr)(
+							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+							r[4].cast()
+							);
+					}
+					else if constexpr (numArgs == 6) {
+						return (R)(o->*m_attr)(
+							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+							r[4].cast(), r[5].cast()
+							);
+					}
+					else if constexpr (numArgs == 7) {
+						return (R)(o->*m_attr)(
+							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+							r[4].cast(), r[5].cast(), r[6].cast()
+							);
+					}
+					else if constexpr (numArgs == 8) {
+						return (R)(o->*m_attr)(
+							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+							r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast()
+							);
+					}
+					else if constexpr (numArgs == 9) {
+						return (R)(o->*m_attr)(
+							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+							r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
+							r[8].cast()
+							);
+					}
+					else if constexpr (numArgs == 10) {
+						return (R)(o->*m_attr)(
+							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+							r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
+							r[8].cast(), r[9].cast()
+							);
+					}
+					else if constexpr (numArgs == 11) {
+						return (R)(o->*m_attr)(
+							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+							r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
+							r[8].cast(), r[9].cast(), r[10].cast()
+							);
+					}
+					else if constexpr (numArgs == 12) {
+						return (R)(o->*m_attr)(
+							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+							r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
+							r[8].cast(), r[9].cast(), r[10].cast(), r[11].cast()
+							);
+					}
+					else if constexpr (numArgs == 13) {
+						return (R)(o->*m_attr)(
+							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+							r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
+							r[8].cast(), r[9].cast(), r[10].cast(), r[11].cast(),
+							r[12].cast()
+							);
+					}
+					else if constexpr (numArgs == 14) {
+						return (R)(o->*m_attr)(
+							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+							r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
+							r[8].cast(), r[9].cast(), r[10].cast(), r[11].cast(),
+							r[12].cast(), r[13].cast()
+							);
+					}
+					else if constexpr (numArgs == 15) {
+						return (R)(o->*m_attr)(
+							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+							r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
+							r[8].cast(), r[9].cast(), r[10].cast(), r[11].cast(),
+							r[12].cast(), r[13].cast(), r[14].cast()
+							);
+					}
+					else if constexpr (numArgs == 16) {
+						return (R)(o->*m_attr)(
+							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+							r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
+							r[8].cast(), r[9].cast(), r[10].cast(), r[11].cast(),
+							r[12].cast(), r[13].cast(), r[14].cast(), r[15].cast()
+							);
+					}
+				};
+
+				Any do_call_impl(std::shared_ptr<Class> o, std::vector<Any> const& r) const {
+					if constexpr (std::is_same_v<void, R>) {
+						do_call_impl_impl(o.get(), r);
+						return Any();
+					}
+					else {
+						R returned_obj{ do_call_impl_impl(o.get(), r) };
+						using Type = typename std::decay_t<decltype(returned_obj)>;
+
+						if constexpr (std::is_same_v<Any, typename std::remove_reference_t<Type>>) {
+							// Any? Return reference to the underlying value, NOT a reference to the Any.
+							return returned_obj;
+						}
+						else if constexpr (std::is_pointer<R>::value) {
+							// Pointer? Wrap it as a shared pointer.
+							using Type2 = typename std::remove_pointer<R>::type;
+							if (returned_obj) {
+								return std::shared_ptr<Type2>(returned_obj, [=](Type2*) { (void)o.get(); /* do nothing */ });
+							}
+							else {
+								return Any();
+							}
+						}
+						else if constexpr (std::is_reference<R>::value) {
+							// Reference? Wrap it as a shared pointer.
+							using Type2 = typename std::remove_reference<R>::type;
+							return std::shared_ptr<Type2>(&returned_obj, [=](Type2*) { (void)o.get(); /* do nothing */ });
+						}
+						else {
+							return std::move(returned_obj);
+						}
+					}
+				};
+
+				R(Class::* m_attr)(T...) volatile;
+			};
+			template <typename R, typename Class, typename... T>
+			class Const_Member_Function_Impl : public Proxy_Function_Base {
+			public:
+				using argType = std::tuple<Class, T...>;
+				static constexpr auto numArgs = std::tuple_size_v<argType> -1;
+				static Param_Types Get_Arg_Type() {
+					std::vector<std::pair<std::string, Type_Info>> t_types{ { "parent", user_type<Class>() } };
+					if constexpr (numArgs > 0) {
+						t_types.push_back({ "Param0", user_type<typename std::tuple_element_t<1, argType>>() });
+					}
+					if constexpr (numArgs > 1) {
+						t_types.push_back({ "Param1", user_type<typename std::tuple_element_t<2, argType>>() });
+					}
+					if constexpr (numArgs > 2) {
+						t_types.push_back({ "Param2", user_type<typename std::tuple_element_t<3, argType>>() });
+					}
+					if constexpr (numArgs > 3) {
+						t_types.push_back({ "Param3", user_type<typename std::tuple_element_t<4, argType>>() });
+					}
+					if constexpr (numArgs > 4) {
+						t_types.push_back({ "Param4", user_type<typename std::tuple_element_t<5, argType>>() });
+					}
+					if constexpr (numArgs > 5) {
+						t_types.push_back({ "Param5", user_type<typename std::tuple_element_t<6, argType>>() });
+					}
+					if constexpr (numArgs > 6) {
+						t_types.push_back({ "Param6", user_type<typename std::tuple_element_t<7, argType>>() });
+					}
+					if constexpr (numArgs > 7) {
+						t_types.push_back({ "Param7", user_type<typename std::tuple_element_t<8, argType>>() });
+					}
+					if constexpr (numArgs > 8) {
+						t_types.push_back({ "Param8", user_type<typename std::tuple_element_t<9, argType>>() });
+					}
+					if constexpr (numArgs > 9) {
+						t_types.push_back({ "Param9", user_type<typename std::tuple_element_t<10, argType>>() });
+					}
+					if constexpr (numArgs > 10) {
+						t_types.push_back({ "Param10", user_type<typename std::tuple_element_t<11, argType>>() });
+					}
+					if constexpr (numArgs > 11) {
+						t_types.push_back({ "Param11", user_type<typename std::tuple_element_t<12, argType>>() });
+					}
+					if constexpr (numArgs > 12) {
+						t_types.push_back({ "Param12", user_type<typename std::tuple_element_t<13, argType>>() });
+					}
+					if constexpr (numArgs > 13) {
+						t_types.push_back({ "Param13", user_type<typename std::tuple_element_t<14, argType>>() });
+					}
+					if constexpr (numArgs > 14) {
+						t_types.push_back({ "Param14", user_type<typename std::tuple_element_t<15, argType>>() });
+					}
+					if constexpr (numArgs > 15) {
+						t_types.push_back({ "Param15", user_type<typename std::tuple_element_t<16, argType>>() });
+					}
+					return Param_Types{ t_types };
+				};
+				static Type_Info Get_Return_Type() {
+					return user_type< R >();
+				};
+
+			public:
+				Const_Member_Function_Impl(R(Class::* f)(T...) const)
+					: Proxy_Function_Base(Get_Arg_Type(), Get_Return_Type())
+					, m_attr(std::move(f)) {};
+				virtual ~Const_Member_Function_Impl() = default;
+
+			protected:
+				// assumes conversion already happened
+				virtual Any do_call(std::vector<Any> const& r) const override {
+					if (r.size() < (numArgs + 1)) throw(exception::arity_error(r.size(), numArgs + 1));
+
+					std::vector<Any> temp;
+					for (int i = 1; i < r.size(); i++) temp.push_back(r[i]);
+
+					return do_call_impl(r[0].cast<std::shared_ptr<Class>>(), temp);
+				};
+
+				decltype(auto) do_call_impl_impl(Class* o, std::vector<Any> const& r) const {
+					if constexpr (numArgs == 0) {
+						return (R)(o->*m_attr)();
+					}
+					else if constexpr (numArgs == 1) {
+						return (R)(o->*m_attr)(
+							r[0].cast()
+							);
+					}
+					else if constexpr (numArgs == 2) {
+						return (R)(o->*m_attr)(
+							r[0].cast(), r[1].cast()
+							);
+					}
+					else if constexpr (numArgs == 3) {
+						return (R)(o->*m_attr)(
+							r[0].cast(), r[1].cast(), r[2].cast()
+							);
+					}
+					else if constexpr (numArgs == 4) {
+						return (R)(o->*m_attr)(
+							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast()
+							);
+					}
+					else if constexpr (numArgs == 5) {
+						return (R)(o->*m_attr)(
+							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+							r[4].cast()
+							);
+					}
+					else if constexpr (numArgs == 6) {
+						return (R)(o->*m_attr)(
+							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+							r[4].cast(), r[5].cast()
+							);
+					}
+					else if constexpr (numArgs == 7) {
+						return (R)(o->*m_attr)(
+							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+							r[4].cast(), r[5].cast(), r[6].cast()
+							);
+					}
+					else if constexpr (numArgs == 8) {
+						return (R)(o->*m_attr)(
+							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+							r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast()
+							);
+					}
+					else if constexpr (numArgs == 9) {
+						return (R)(o->*m_attr)(
+							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+							r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
+							r[8].cast()
+							);
+					}
+					else if constexpr (numArgs == 10) {
+						return (R)(o->*m_attr)(
+							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+							r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
+							r[8].cast(), r[9].cast()
+							);
+					}
+					else if constexpr (numArgs == 11) {
+						return (R)(o->*m_attr)(
+							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+							r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
+							r[8].cast(), r[9].cast(), r[10].cast()
+							);
+					}
+					else if constexpr (numArgs == 12) {
+						return (R)(o->*m_attr)(
+							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+							r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
+							r[8].cast(), r[9].cast(), r[10].cast(), r[11].cast()
+							);
+					}
+					else if constexpr (numArgs == 13) {
+						return (R)(o->*m_attr)(
+							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+							r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
+							r[8].cast(), r[9].cast(), r[10].cast(), r[11].cast(),
+							r[12].cast()
+							);
+					}
+					else if constexpr (numArgs == 14) {
+						return (R)(o->*m_attr)(
+							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+							r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
+							r[8].cast(), r[9].cast(), r[10].cast(), r[11].cast(),
+							r[12].cast(), r[13].cast()
+							);
+					}
+					else if constexpr (numArgs == 15) {
+						return (R)(o->*m_attr)(
+							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+							r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
+							r[8].cast(), r[9].cast(), r[10].cast(), r[11].cast(),
+							r[12].cast(), r[13].cast(), r[14].cast()
+							);
+					}
+					else if constexpr (numArgs == 16) {
+						return (R)(o->*m_attr)(
+							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+							r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
+							r[8].cast(), r[9].cast(), r[10].cast(), r[11].cast(),
+							r[12].cast(), r[13].cast(), r[14].cast(), r[15].cast()
+							);
+					}
+				};
+
+				Any do_call_impl(std::shared_ptr<Class> o, std::vector<Any> const& r) const {
+					if constexpr (std::is_same_v<void, R>) {
+						do_call_impl_impl(o.get(), r);
+						return Any();
+					}
+					else {
+						R returned_obj{ do_call_impl_impl(o.get(), r) };
+						using Type = typename std::decay_t<decltype(returned_obj)>;
+
+						if constexpr (std::is_same_v<Any, typename std::remove_reference_t<Type>>) {
+							// Any? Return reference to the underlying value, NOT a reference to the Any.
+							return returned_obj;
+						}
+						else if constexpr (std::is_pointer<R>::value) {
+							// Pointer? Wrap it as a shared pointer.
+							using Type2 = typename std::remove_pointer<R>::type;
+							if (returned_obj) {
+								return std::shared_ptr<Type2>(returned_obj, [=](Type2*) { (void)o.get(); /* do nothing */ });
+							}
+							else {
+								return Any();
+							}
+						}
+						else if constexpr (std::is_reference<R>::value) {
+							// Reference? Wrap it as a shared pointer.
+							using Type2 = typename std::remove_reference<R>::type;
+							return std::shared_ptr<Type2>(&returned_obj, [=](Type2*) { (void)o.get(); /* do nothing */ });
+						}
+						else {
+							return std::move(returned_obj);
+						}
+					}
+				};
+
+				R(Class::* m_attr)(T...) const;
+			};
+			template <typename R, typename Class, typename... T>
+			class Default_Member_Function_Impl : public Proxy_Function_Base {
+			public:
+				using argType = std::tuple<Class, T...>;
+				static constexpr auto numArgs = std::tuple_size_v<argType> -1;
+				static Param_Types Get_Arg_Type() {
+					std::vector<std::pair<std::string, Type_Info>> t_types{ { "parent", user_type<Class>() } };
+					if constexpr (numArgs > 0) {
+						t_types.push_back({ "Param0", user_type<typename std::tuple_element_t<1, argType>>() });
+					}
+					if constexpr (numArgs > 1) {
+						t_types.push_back({ "Param1", user_type<typename std::tuple_element_t<2, argType>>() });
+					}
+					if constexpr (numArgs > 2) {
+						t_types.push_back({ "Param2", user_type<typename std::tuple_element_t<3, argType>>() });
+					}
+					if constexpr (numArgs > 3) {
+						t_types.push_back({ "Param3", user_type<typename std::tuple_element_t<4, argType>>() });
+					}
+					if constexpr (numArgs > 4) {
+						t_types.push_back({ "Param4", user_type<typename std::tuple_element_t<5, argType>>() });
+					}
+					if constexpr (numArgs > 5) {
+						t_types.push_back({ "Param5", user_type<typename std::tuple_element_t<6, argType>>() });
+					}
+					if constexpr (numArgs > 6) {
+						t_types.push_back({ "Param6", user_type<typename std::tuple_element_t<7, argType>>() });
+					}
+					if constexpr (numArgs > 7) {
+						t_types.push_back({ "Param7", user_type<typename std::tuple_element_t<8, argType>>() });
+					}
+					if constexpr (numArgs > 8) {
+						t_types.push_back({ "Param8", user_type<typename std::tuple_element_t<9, argType>>() });
+					}
+					if constexpr (numArgs > 9) {
+						t_types.push_back({ "Param9", user_type<typename std::tuple_element_t<10, argType>>() });
+					}
+					if constexpr (numArgs > 10) {
+						t_types.push_back({ "Param10", user_type<typename std::tuple_element_t<11, argType>>() });
+					}
+					if constexpr (numArgs > 11) {
+						t_types.push_back({ "Param11", user_type<typename std::tuple_element_t<12, argType>>() });
+					}
+					if constexpr (numArgs > 12) {
+						t_types.push_back({ "Param12", user_type<typename std::tuple_element_t<13, argType>>() });
+					}
+					if constexpr (numArgs > 13) {
+						t_types.push_back({ "Param13", user_type<typename std::tuple_element_t<14, argType>>() });
+					}
+					if constexpr (numArgs > 14) {
+						t_types.push_back({ "Param14", user_type<typename std::tuple_element_t<15, argType>>() });
+					}
+					if constexpr (numArgs > 15) {
+						t_types.push_back({ "Param15", user_type<typename std::tuple_element_t<16, argType>>() });
+					}
+					return Param_Types{ t_types };
+				};
+				static Type_Info Get_Return_Type() {
+					return user_type< R >();
+				};
+
+			public:
+				Default_Member_Function_Impl(R(Class::* f)(T...))
+					: Proxy_Function_Base(Get_Arg_Type(), Get_Return_Type())
+					, m_attr(std::move(f)) {};
+				virtual ~Default_Member_Function_Impl() = default;
+
+			private:
+				// assumes conversion already happened
+				virtual Any do_call(std::vector<Any> const& r) const override {
+					if (r.size() < (numArgs + 1)) throw(exception::arity_error(r.size(), numArgs + 1));
+
+					std::vector<Any> temp;
+					for (int i = 1; i < r.size(); i++) temp.push_back(r[i]);
+
+					return do_call_impl(r[0].cast<std::shared_ptr<Class>>(), temp);
+				};
+
+				decltype(auto) do_call_impl_impl(Class* o, std::vector<Any> const& r) const {
+					if constexpr (numArgs == 0) {
+						return (R)(o->*m_attr)();
+					}
+					else if constexpr (numArgs == 1) {
+						return (R)(o->*m_attr)(
+							r[0].cast()
+							);
+					}
+					else if constexpr (numArgs == 2) {
+						return (R)(o->*m_attr)(
+							r[0].cast(), r[1].cast()
+							);
+					}
+					else if constexpr (numArgs == 3) {
+						return (R)(o->*m_attr)(
+							r[0].cast(), r[1].cast(), r[2].cast()
+							);
+					}
+					else if constexpr (numArgs == 4) {
+						return (R)(o->*m_attr)(
+							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast()
+							);
+					}
+					else if constexpr (numArgs == 5) {
+						return (R)(o->*m_attr)(
+							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+							r[4].cast()
+							);
+					}
+					else if constexpr (numArgs == 6) {
+						return (R)(o->*m_attr)(
+							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+							r[4].cast(), r[5].cast()
+							);
+					}
+					else if constexpr (numArgs == 7) {
+						return (R)(o->*m_attr)(
+							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+							r[4].cast(), r[5].cast(), r[6].cast()
+							);
+					}
+					else if constexpr (numArgs == 8) {
+						return (R)(o->*m_attr)(
+							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+							r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast()
+							);
+					}
+					else if constexpr (numArgs == 9) {
+						return (R)(o->*m_attr)(
+							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+							r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
+							r[8].cast()
+							);
+					}
+					else if constexpr (numArgs == 10) {
+						return (R)(o->*m_attr)(
+							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+							r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
+							r[8].cast(), r[9].cast()
+							);
+					}
+					else if constexpr (numArgs == 11) {
+						return (R)(o->*m_attr)(
+							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+							r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
+							r[8].cast(), r[9].cast(), r[10].cast()
+							);
+					}
+					else if constexpr (numArgs == 12) {
+						return (R)(o->*m_attr)(
+							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+							r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
+							r[8].cast(), r[9].cast(), r[10].cast(), r[11].cast()
+							);
+					}
+					else if constexpr (numArgs == 13) {
+						return (R)(o->*m_attr)(
+							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+							r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
+							r[8].cast(), r[9].cast(), r[10].cast(), r[11].cast(),
+							r[12].cast()
+							);
+					}
+					else if constexpr (numArgs == 14) {
+						return (R)(o->*m_attr)(
+							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+							r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
+							r[8].cast(), r[9].cast(), r[10].cast(), r[11].cast(),
+							r[12].cast(), r[13].cast()
+							);
+					}
+					else if constexpr (numArgs == 15) {
+						return (R)(o->*m_attr)(
+							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+							r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
+							r[8].cast(), r[9].cast(), r[10].cast(), r[11].cast(),
+							r[12].cast(), r[13].cast(), r[14].cast()
+							);
+					}
+					else if constexpr (numArgs == 16) {
+						return (R)(o->*m_attr)(
+							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+							r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
+							r[8].cast(), r[9].cast(), r[10].cast(), r[11].cast(),
+							r[12].cast(), r[13].cast(), r[14].cast(), r[15].cast()
+							);
+					}
+				};
+
+				Any do_call_impl(std::shared_ptr<Class> o, std::vector<Any> const& r) const {
+					if constexpr (std::is_same_v<void, R>) {
+						do_call_impl_impl(o.get(), r);
+						return Any();
+					}
+					else {
+						R returned_obj{ do_call_impl_impl(o.get(), r) };
+						using Type = typename std::decay_t<decltype(returned_obj)>;
+
+						if constexpr (std::is_same_v<Any, typename std::remove_reference_t<Type>>) {
+							// Any? Return reference to the underlying value, NOT a reference to the Any.
+							return returned_obj;
+						}
+						else if constexpr (std::is_pointer<R>::value) {
+							// Pointer? Wrap it as a shared pointer.
+							using Type2 = typename std::remove_pointer<R>::type;
+							if (returned_obj) {
+								return std::shared_ptr<Type2>(returned_obj, [=](Type2*) { (void)o.get(); /* do nothing */ });
+							}
+							else {
+								return Any();
+							}
+						}
+						else if constexpr (std::is_reference<R>::value) {
+							// Reference? Wrap it as a shared pointer.
+							using Type2 = typename std::remove_reference<R>::type;
+							return std::shared_ptr<Type2>(&returned_obj, [=](Type2*) { (void)o.get(); /* do nothing */ });
+						}
+						else {
+							return std::move(returned_obj);
+						}
+					}
+				};
+
+				R(Class::* m_attr)(T...);
+			};
+		};
+
+		template<typename Ret, typename Class, typename... Param>
+		Proxy_Function Member_Function_Impl(Ret(Class::* f)(Param...) volatile const) {
+			auto* function_impl = new detail::VolatileConst_Member_Function_Impl(f);
+			auto ptr{ std::static_pointer_cast<Proxy_Function_Base>(std::shared_ptr<typename std::remove_pointer<decltype(function_impl)>::type>(function_impl)) };
+			return ptr;
+		};
+		template<typename Ret, typename Class, typename... Param>
+		Proxy_Function Member_Function_Impl(Ret(Class::* f)(Param...) volatile) {
+			auto* function_impl = new detail::Volatile_Member_Function_Impl(f);
+			auto ptr{ std::static_pointer_cast<Proxy_Function_Base>(std::shared_ptr<typename std::remove_pointer<decltype(function_impl)>::type>(function_impl)) };
+			return ptr;
+		};
+		template<typename Ret, typename Class, typename... Param>
+		Proxy_Function Member_Function_Impl(Ret(Class::* f)(Param...) const) {
+			auto* function_impl = new detail::Const_Member_Function_Impl(f);
+			auto ptr{ std::static_pointer_cast<Proxy_Function_Base>(std::shared_ptr<typename std::remove_pointer<decltype(function_impl)>::type>(function_impl)) };
+			return ptr;
+		};
+		template<typename Ret, typename Class, typename... Param>
+		Proxy_Function Member_Function_Impl(Ret(Class::* f)(Param...)) {
+			auto* function_impl = new detail::Default_Member_Function_Impl(f);
+			auto ptr{ std::static_pointer_cast<Proxy_Function_Base>(std::shared_ptr<typename std::remove_pointer<decltype(function_impl)>::type>(function_impl)) };
+			return ptr;
+		};
+
+		/**
+		 * Use to call member functions:
+		 * struct Test{ public: std::string attr(){ return "TEST"; }; }
+		 * var& func = fibers::details::Attribute_Access_Impl(&Test::attr);
+		 * assert(func(Test{}).cast<std::string>() == "TEST");
+		*/
+		template <typename R, typename... T>
+		class Static_Function_Impl : public Proxy_Function_Base {
+		public:
+			using argType = std::tuple<R, T...>;
+			static constexpr auto numArgs = std::tuple_size_v<argType> -1;
+			static Param_Types Get_Arg_Type() {
+				std::vector<std::pair<std::string, Type_Info>> t_types{};
+				if constexpr (numArgs > 0) {
+					t_types.push_back({ "Param0", user_type<typename std::tuple_element_t<1, argType>>() });
+				}
+				if constexpr (numArgs > 1) {
+					t_types.push_back({ "Param1", user_type<typename std::tuple_element_t<2, argType>>() });
+				}
+				if constexpr (numArgs > 2) {
+					t_types.push_back({ "Param2", user_type<typename std::tuple_element_t<3, argType>>() });
+				}
+				if constexpr (numArgs > 3) {
+					t_types.push_back({ "Param3", user_type<typename std::tuple_element_t<4, argType>>() });
+				}
+				if constexpr (numArgs > 4) {
+					t_types.push_back({ "Param4", user_type<typename std::tuple_element_t<5, argType>>() });
+				}
+				if constexpr (numArgs > 5) {
+					t_types.push_back({ "Param5", user_type<typename std::tuple_element_t<6, argType>>() });
+				}
+				if constexpr (numArgs > 6) {
+					t_types.push_back({ "Param6", user_type<typename std::tuple_element_t<7, argType>>() });
+				}
+				if constexpr (numArgs > 7) {
+					t_types.push_back({ "Param7", user_type<typename std::tuple_element_t<8, argType>>() });
+				}
+				if constexpr (numArgs > 8) {
+					t_types.push_back({ "Param8", user_type<typename std::tuple_element_t<9, argType>>() });
+				}
+				if constexpr (numArgs > 9) {
+					t_types.push_back({ "Param9", user_type<typename std::tuple_element_t<10, argType>>() });
+				}
+				if constexpr (numArgs > 10) {
+					t_types.push_back({ "Param10", user_type<typename std::tuple_element_t<11, argType>>() });
+				}
+				if constexpr (numArgs > 11) {
+					t_types.push_back({ "Param11", user_type<typename std::tuple_element_t<12, argType>>() });
+				}
+				if constexpr (numArgs > 12) {
+					t_types.push_back({ "Param12", user_type<typename std::tuple_element_t<13, argType>>() });
+				}
+				if constexpr (numArgs > 13) {
+					t_types.push_back({ "Param13", user_type<typename std::tuple_element_t<14, argType>>() });
+				}
+				if constexpr (numArgs > 14) {
+					t_types.push_back({ "Param14", user_type<typename std::tuple_element_t<15, argType>>() });
+				}
+				if constexpr (numArgs > 15) {
+					t_types.push_back({ "Param15", user_type<typename std::tuple_element_t<16, argType>>() });
+				}
+				return Param_Types{ t_types };
+			};
+			static Type_Info Get_Return_Type() {
+				return user_type< R >();
+			};
+
+		public:
+			Static_Function_Impl(R(*f)(T...))
+				: Proxy_Function_Base(Get_Arg_Type(), Get_Return_Type())
+				, m_attr(std::move(f)) {};
+			virtual ~Static_Function_Impl() = default;
+
+		protected:
+			// assumes conversion already happened
+			virtual Any do_call(std::vector<Any> const& r) const override {
+				if (r.size() < numArgs) throw(exception::arity_error(r.size(), numArgs));
+				return do_call_impl(r);
+			};
+
+			decltype(auto) do_call_impl_impl(std::vector<Any> const& r) const {
+				if constexpr (numArgs == 0) {
+					return (*m_attr)();
+				}
+				else if constexpr (numArgs == 1) {
+					return (*m_attr)(
+						r[0].cast()
+						);
+				}
+				else if constexpr (numArgs == 2) {
+					return (*m_attr)(
+						r[0].cast(), r[1].cast()
+						);
+				}
+				else if constexpr (numArgs == 3) {
+					return (*m_attr)(
+						r[0].cast(), r[1].cast(), r[2].cast()
+						);
+				}
+				else if constexpr (numArgs == 4) {
+					return (*m_attr)(
+						r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast()
+						);
+				}
+				else if constexpr (numArgs == 5) {
+					return (*m_attr)(
+						r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+						r[4].cast()
+						);
+				}
+				else if constexpr (numArgs == 6) {
+					return (*m_attr)(
+						r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+						r[4].cast(), r[5].cast()
+						);
+				}
+				else if constexpr (numArgs == 7) {
+					return (*m_attr)(
+						r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+						r[4].cast(), r[5].cast(), r[6].cast()
+						);
+				}
+				else if constexpr (numArgs == 8) {
+					return (*m_attr)(
+						r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+						r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast()
+						);
+				}
+				else if constexpr (numArgs == 9) {
+					return (*m_attr)(
+						r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+						r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
+						r[8].cast()
+						);
+				}
+				else if constexpr (numArgs == 10) {
+					return (*m_attr)(
+						r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+						r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
+						r[8].cast(), r[9].cast()
+						);
+				}
+				else if constexpr (numArgs == 11) {
+					return (*m_attr)(
+						r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+						r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
+						r[8].cast(), r[9].cast(), r[10].cast()
+						);
+				}
+				else if constexpr (numArgs == 12) {
+					return (*m_attr)(
+						r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+						r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
+						r[8].cast(), r[9].cast(), r[10].cast(), r[11].cast()
+						);
+				}
+				else if constexpr (numArgs == 13) {
+					return (*m_attr)(
+						r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+						r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
+						r[8].cast(), r[9].cast(), r[10].cast(), r[11].cast(),
+						r[12].cast()
+						);
+				}
+				else if constexpr (numArgs == 14) {
+					return (*m_attr)(
+						r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+						r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
+						r[8].cast(), r[9].cast(), r[10].cast(), r[11].cast(),
+						r[12].cast(), r[13].cast()
+						);
+				}
+				else if constexpr (numArgs == 15) {
+					return (*m_attr)(
+						r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+						r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
+						r[8].cast(), r[9].cast(), r[10].cast(), r[11].cast(),
+						r[12].cast(), r[13].cast(), r[14].cast()
+						);
+				}
+				else if constexpr (numArgs == 16) {
+					return (*m_attr)(
+						r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+						r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
+						r[8].cast(), r[9].cast(), r[10].cast(), r[11].cast(),
+						r[12].cast(), r[13].cast(), r[14].cast(), r[15].cast()
+						);
+				}
+			};
+
+			Any do_call_impl(std::vector<Any> const& r) const {
+				decltype(auto) returned_obj = do_call_impl_impl(r);
+				using Type = typename std::decay_t<decltype(returned_obj)>;
+
+				if constexpr (std::is_same_v<void, Type>) {
+					// void? Return void.
+					return Any();
+				}
+				else if constexpr (std::is_same_v<Any, typename std::remove_reference_t<Type>>) {
+					// Any? Return reference to the underlying value, NOT a reference to the Any.
+					return returned_obj;
+				}
+				else if constexpr (std::is_pointer<Type>::value) {
+					// Pointer? Wrap it as a shared pointer.
+					using Type2 = typename std::remove_pointer<Type>::type;
+					if (returned_obj) {
+						return std::shared_ptr<Type2>(returned_obj, [=](Type2*) { /* do nothing */ });
+					}
+					else {
+						return Any();
+					}
+				}
+				else if constexpr (std::is_reference<Type>::value) {
+					// Reference? Wrap it as a shared pointer.
+					using Type2 = typename std::remove_reference<Type>::type;
+					return std::shared_ptr<Type2>(&returned_obj, [=](Type2*) { /* do nothing */ });
+				}
+				else {
+					return std::move(returned_obj);
+				}
+			};
+
+			R(*m_attr)(T...);
+		};
+
+		namespace detail {
+			template <typename T>
+			struct is_static_member_function : std::false_type {};
+
+			template <typename R, typename C, typename... Args>
+			struct is_static_member_function<R(C::*)(Args...) const> : std::false_type {};
+
+			template <typename R, typename C, typename... Args>
+			struct is_static_member_function<R(C::*)(Args...)> : std::false_type {};
+
+			template <typename R, typename C, typename... Args>
+			struct is_static_member_function<R(C::*)(Args...) const volatile> : std::false_type {};
+
+			template <typename R, typename C, typename... Args>
+			struct is_static_member_function<R(C::*)(Args...) volatile> : std::false_type {};
+
+			template <typename R, typename C, typename... Args>
+			struct is_static_member_function<R(C::*)(Args...)&> : std::false_type {};
+
+			template <typename R, typename C, typename... Args>
+			struct is_static_member_function<R(C::*)(Args...) const&> : std::false_type {};
+
+			template <typename R, typename C, typename... Args>
+			struct is_static_member_function<R(C::*)(Args...)&&> : std::false_type {};
+
+			template <typename R, typename C, typename... Args>
+			struct is_static_member_function<R(C::*)(Args...) const&&> : std::false_type {};
+
+			template <typename R, typename C, typename... Args>
+			struct is_static_member_function<R(C::*)(Args...) noexcept> : std::true_type {};
+
+			template <typename R, typename C, typename... Args>
+			struct is_static_member_function<R(C::*)(Args...) const noexcept> : std::true_type {};
+
+			template <typename R, typename C, typename... Args>
+			struct is_static_member_function<R(C::*)(Args...) volatile noexcept> : std::true_type {};
+
+			template <typename R, typename C, typename... Args>
+			struct is_static_member_function<R(C::*)(Args...) const volatile noexcept> : std::true_type {};
+
+
+			template<typename... Param> struct Function_Params {};
+
+			template<typename Ret, typename Class, typename Params, bool IsMember = false, bool IsMemberObject = false, bool IsObject = false>
+			struct Function_Signature {
+				using Param_Types = Params;
+				using Class_Type = Class;
+				using Return_Type = Ret;
+
+				constexpr static const bool is_object = IsObject; // e.g. lambda object
+				constexpr static const bool is_member = IsMember; // e.g. first param MUST be an alive Class type. May be function or parameter.
+				constexpr static const bool is_member_object = IsMemberObject; // e.g. first param MUST be an alive Class type. Will be a parameter of the Class.
+				constexpr static const bool is_member_function = !is_member_object && is_member; // e.g. first param MUST be an alive Class type. Will be a parameter of the Class.
+				constexpr static const bool is_static_member_function = std::is_same_v< Class_Type, void>; // e.g. free function
+
+				template<typename T> constexpr Function_Signature(T&&) noexcept { };
+				constexpr Function_Signature() noexcept = default;
+			};
+
+			// Free functions
+			template<typename Ret, typename... Param>
+			Function_Signature(Ret(*f)(Param...))
+				->Function_Signature<Ret, void, Function_Params<Param...>>; // static function
+
+			// no reference specifier
+			template<typename Ret, typename Class, typename... Param>
+			Function_Signature(Ret(Class::* f)(Param...) volatile)
+				->Function_Signature<Ret, Class, Function_Params<volatile Class&, Param...>, true>; // member function
+
+			template<typename Ret, typename Class, typename... Param>
+			Function_Signature(Ret(Class::* f)(Param...) volatile const)
+				->Function_Signature<Ret, Class, Function_Params<volatile const Class&, Param...>, true>; // member function
+
+			template<typename Ret, typename Class, typename... Param>
+			Function_Signature(Ret(Class::* f)(Param...))
+				->Function_Signature<Ret, Class, Function_Params<Class&, Param...>, true>; // member function
+
+			template<typename Ret, typename Class, typename... Param>
+			Function_Signature(Ret(Class::* f)(Param...) const)
+				->Function_Signature<Ret, Class, Function_Params<const Class&, Param...>, true>; // member function
+
+			// & reference specifier
+			template<typename Ret, typename Class, typename... Param>
+			Function_Signature(Ret(Class::* f)(Param...) volatile&)
+				->Function_Signature<Ret, Class, Function_Params<volatile Class&, Param...>, true>; // member function
+
+			template<typename Ret, typename Class, typename... Param>
+			Function_Signature(Ret(Class::* f)(Param...) volatile const&)
+				->Function_Signature<Ret, Class, Function_Params<volatile const Class&, Param...>, true>; // member function
+
+			template<typename Ret, typename Class, typename... Param>
+			Function_Signature(Ret(Class::* f)(Param...)&)
+				->Function_Signature<Ret, Class, Function_Params<Class&, Param...>, true>; // member function
+
+			template<typename Ret, typename Class, typename... Param>
+			Function_Signature(Ret(Class::* f)(Param...) const&)
+				->Function_Signature<Ret, Class, Function_Params<const Class&, Param...>, true>; // member function
+
+			// && reference specifier
+			template<typename Ret, typename Class, typename... Param>
+			Function_Signature(Ret(Class::* f)(Param...) volatile&&)
+				->Function_Signature<Ret, Class, Function_Params<volatile Class&&, Param...>, true>; // member function
+
+			template<typename Ret, typename Class, typename... Param>
+			Function_Signature(Ret(Class::* f)(Param...) volatile const&&)
+				->Function_Signature<Ret, Class, Function_Params<volatile const Class&&, Param...>, true>; // member function
+
+			template<typename Ret, typename Class, typename... Param>
+			Function_Signature(Ret(Class::* f)(Param...)&&)
+				->Function_Signature<Ret, Class, Function_Params<Class&&, Param...>, true>; // member function
+
+			template<typename Ret, typename Class, typename... Param>
+			Function_Signature(Ret(Class::* f)(Param...) const&&)
+				->Function_Signature<Ret, Class, Function_Params<const Class&&, Param...>, true>; // member function
+
+			template<typename Ret, typename Class>
+			Function_Signature(Ret Class::* f)
+				->Function_Signature<Ret, Class, Function_Params<Class&>, true, true>; // member object
+
+			// primary template handles types that have no nested ::type member:
+			template<class, class = std::void_t<>>
+			struct has_call_operator : std::false_type {};
+
+			// specialization recognizes types that do have a nested ::type member:
+			template<class T>
+			struct has_call_operator<T, std::void_t<decltype(&T::operator())>> : std::true_type {};
+
+			template<typename Func>
+			auto function_signature(const Func& f) {
+				if constexpr (has_call_operator<Func>::value) {
+					return Function_Signature<
+						typename decltype(Function_Signature{ &std::decay_t<Func>::operator() })::Return_Type,
+						typename decltype(Function_Signature{ &std::decay_t<Func>::operator() })::Class_Type,
+						typename decltype(Function_Signature{ &std::decay_t<Func>::operator() })::Param_Types,
+						false,
+						false,
+						true
+					> {};
+				}
+				else {
+					return Function_Signature{ f };
+				}
+			};
+
+			template<typename Obj, typename Param1, typename... Rest>
+			Param1 get_first_param(Function_Params<Param1, Rest...>, Obj&& obj) {
+				return static_cast<Param1>(std::forward<Obj>(obj));
+			};
+
+		} // namespace chaiscript::dispatch::detail
+
 #endif
 
 	};
 
 
 
-
 };
-
-
 
 
 
