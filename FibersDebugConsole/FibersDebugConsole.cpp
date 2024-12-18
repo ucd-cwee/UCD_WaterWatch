@@ -35,6 +35,34 @@ public:
 	bool operator==(stackThing const& a) const { return varName == a.varName; };
 	bool operator!=(stackThing const& a) const { return varName != a.varName; };
 };
+class stackThing2 {
+public:
+	std::string varName;
+	GoodLang::Any var;
+	bool perform_cout;
+
+public:
+	stackThing2() : varName(), var(), perform_cout{ true }{};
+	stackThing2(std::string const& name) : varName(name), var(), perform_cout{ true } {};
+	template<typename T> stackThing2(std::string const& name, T const& obj) : varName(name), var(obj), perform_cout{ true } {};
+	template<typename T> stackThing2(std::string const& name, T&& obj) : varName(name), var(std::forward<T>(obj)), perform_cout{ true } {};
+	template<typename T> stackThing2(std::string const& name, T&& obj, bool doCout) : varName(name), var(std::forward<T>(obj)), perform_cout(doCout) {};
+	stackThing2(stackThing2 const& r) = default;
+	stackThing2(stackThing2&& r) = default;
+	stackThing2& operator=(stackThing2 const& r) = default;
+	stackThing2& operator=(stackThing2&& r) = default;
+	~stackThing2() {
+		if (perform_cout && (!varName.empty())) {
+			std::cout << Units::printf("DELETING %s\n", varName.c_str());
+		}
+	};
+	int length() const { return varName.length(); };
+	std::string& get_var_name() { return varName; };
+	bool operator==(stackThing const& a) const { return varName == a.varName; };
+	bool operator!=(stackThing const& a) const { return varName != a.varName; };
+};
+
+
 
 static bool Thing() { return true; };
 
@@ -2258,9 +2286,160 @@ int main() {
 					}
 					EXPECT_EQ_PRINTF(firstChar.cast<char>(), 'T');
 				}
+
+				// Test "Explicit_Function_Impl" supporting reference types by copying the function params and carrying them with the result, and NOT deleting it.
+				if (1) {
+					auto varNameFunc = std::shared_ptr<GoodLang::details::Proxy_Function_Base>(new GoodLang::details::Explicit_Function_Impl([](stackThing2& x) -> std::string& {
+						return x.varName;
+					}));
+					auto varFunc = std::shared_ptr<GoodLang::details::Proxy_Function_Base>(new GoodLang::details::Explicit_Function_Impl([](stackThing2& x) -> Any& {
+						return x.var;
+					}));
+
+					Any obj = stackThing2("THING", 10, false); // make "true" if you want to see that this is correctly deleted.
+					auto varNameObj = varNameFunc->operator()({ obj });
+
+					auto varObj = varFunc->operator()({ obj });
+					EXPECT_EQ(varNameObj.IsTypeOf<std::string>(), true);
+					EXPECT_EQ(varObj.IsTypeOf<int>(), true);
+					EXPECT_EQ(varNameObj.cast<std::string>(), "THING");
+					EXPECT_EQ(varObj.cast<int>(), 10);
+				}
+				// Test "Attribute_Access_Impl" supporting reference types by copying the function params and carrying them with the result, and NOT deleting it.
+				if (1) {
+					auto varNameFunc = std::shared_ptr<GoodLang::details::Proxy_Function_Base>(new GoodLang::details::Attribute_Access_Impl(&stackThing2::varName));
+					auto varFunc = std::shared_ptr<GoodLang::details::Proxy_Function_Base>(new GoodLang::details::Attribute_Access_Impl(&stackThing2::var));
+
+					Any obj = stackThing2("THING", 10, false); // make "true" if you want to see that this is correctly deleted.
+					auto varNameObj = varNameFunc->operator()({ obj });
+
+					auto varObj = varFunc->operator()({ obj });
+					EXPECT_EQ(varNameObj.IsTypeOf<std::string>(), true);
+					EXPECT_EQ(varObj.IsTypeOf<int>(), true);
+					EXPECT_EQ(varNameObj.cast<std::string>(), "THING");
+					EXPECT_EQ(varObj.cast<int>(), 10);
+				}
+
+				// Test "Member_Function_Impl" 
+				if (1) {
+					auto func_ptr = GoodLang::details::Member_Function_Impl(&stackThing2::length);
+					Any obj = stackThing2("THING", 10, false);
+					EXPECT_EQ(func_ptr->operator()(obj).cast<int>(), 5);
+					EXPECT_EQ(func_ptr->operator()(obj).cast<int const&>(), 5);
+
+					Any obj2 = func_ptr->operator()(obj);
+					EXPECT_EQ(obj2.cast<int>(), 5);
+					EXPECT_EQ(obj2.cast<int const&>(), 5);
+				}
+				if (1) {
+					auto func_ptr = GoodLang::details::Member_Function_Impl(&stackThing2::get_var_name);
+					Any obj = stackThing2("THING", 10, false);
+					EXPECT_EQ(func_ptr->operator()(obj).cast<std::string>(), "THING");
+
+					Any obj2 = func_ptr->operator()(obj);
+					EXPECT_EQ(obj2.cast<std::string>(), "THING");
+				}
+
 			}
 
+			// make_callable(...), call(...)
+			if (1) {
+				using namespace GoodLang;
+				TypeConverter tree;
+#define AddConv(a, b) tree.AddConverter<a, b>()
+#define AddConvs(a) \
+					AddConv(a, char); \
+					AddConv(a, bool); \
+					AddConv(a, int); \
+					AddConv(a, long); \
+					AddConv(a, float); \
+					AddConv(a, long long); \
+					AddConv(a, long double); \
+					AddConv(a, double); \
+					AddConv(a, unsigned int); \
+					AddConv(a, unsigned long); \
+					AddConv(a, fibers::synchronization::atomic_number<double>);
 
+				AddConvs(char);
+				AddConvs(bool);
+				AddConvs(int);
+				AddConvs(long);
+				AddConvs(float);
+				AddConvs(long long);
+				AddConvs(long double);
+				AddConvs(double);
+				AddConvs(unsigned int);
+				AddConvs(unsigned long);
+				AddConvs(fibers::synchronization::atomic_number<double>);
+#undef AddConvs
+#undef AddConv
+				tree.AddConverter([](char const& x)->std::string { return std::to_string(x); });
+				tree.AddConverter([](int const& x)->std::string { return std::to_string(x); });
+				tree.AddConverter([](long const& x)->std::string { return std::to_string(x); });
+				tree.AddConverter([](float const& x)->std::string { return std::to_string(x); });
+				tree.AddConverter([](double const& x)->std::string { return std::to_string(x); });
+				tree.AddConverter([](std::string const& x)->int { return std::atol(x.c_str()); });
+				tree.AddConverter([](std::string const& x)->long { return std::atol(x.c_str()); });
+				tree.AddConverter([](std::string const& x)->float { return std::atof(x.c_str()); });
+				tree.AddConverter([](std::string const& x)->double { return std::atof(x.c_str()); });
+
+				auto randFunc0 = make_callable([]()-> double { return 0.0; }, tree); // 0
+				auto randFunc1 = make_callable([]()-> double { return (double)std::rand() / (double)RAND_MAX; }, tree); // rand 0-1
+				auto randFunc2 = make_callable([](double const& max)-> double { return max * ((double)std::rand() / (double)RAND_MAX); }, tree); // rand 0-1
+				auto randFunc3 = make_callable([](double const& max, double const& min)-> double { return min + (max-min)*((double)std::rand() / (double)RAND_MAX); }, tree); // rand 0-1
+
+				EXPECT_EQ(tree.Convert<double>(randFunc0->operator()({})), 0.0);
+				EXPECT_EQ((bool)randFunc1->operator()({}), true);
+				EXPECT_EQ((bool)randFunc1->operator()({ 1.0 }), true);
+				EXPECT_EQ((bool)randFunc1->operator()({ 1.0, 0.0 }), true);
+				EXPECT_EQ((bool)randFunc2->operator()({ 1.0 }), true);
+				EXPECT_EQ((bool)randFunc3->operator()({ 1.0, 0.0 }), true);
+				EXPECT_EQ((bool)randFunc1->operator()({}, tree), true);
+				EXPECT_EQ((bool)randFunc2->operator()({ 1.0 }, tree), true);
+				EXPECT_EQ((bool)randFunc3->operator()({ 1.0, 0.0 }, tree), true);
+				EXPECT_EQ((bool)randFunc1->operator()({ 1 }, tree), true);
+				EXPECT_EQ((bool)randFunc2->operator()({ 1 }, tree), true);
+				EXPECT_EQ((bool)randFunc3->operator()({ 1, 0 }, tree), true);
+				EXPECT_EQ((bool)randFunc3->operator()({ true, false }, tree), true);
+
+				EXPECT_EQ((bool)call(randFunc1, {}, tree), true);
+				EXPECT_EQ((bool)call(randFunc2, { 1.0 }, tree), true);
+				EXPECT_EQ((bool)call(randFunc3, { 1.0, 0.0 }, tree), true);
+				EXPECT_EQ((bool)call(randFunc1, { 1.0, 0.0 }, tree), true);
+				EXPECT_EQ((bool)call(randFunc2, { 1.0, 0.0 }, tree), true);
+				EXPECT_EQ((bool)call(randFunc3, { 1, 0 }, tree), true);
+				EXPECT_EQ((bool)call(randFunc3, { true, false }, tree), true);
+
+				auto get_var_name = make_callable(&stackThing2::get_var_name, tree);
+				auto length = make_callable(&stackThing2::length, tree);
+				auto varName = make_callable(&stackThing2::varName, tree);
+				auto var = make_callable(&stackThing2::var, tree);
+
+				Any obj = stackThing2("TEST", 100.0);
+
+				Any varNameObj1 = get_var_name->operator()(obj);
+				EXPECT_EQ(varNameObj1.cast<std::string&>(), "TEST");
+
+				Any varNameObj2 = get_var_name->operator()({ obj });
+				EXPECT_EQ(varNameObj2.cast<std::string&>(), "TEST");
+
+				Any varNameObj3 = get_var_name->operator()({ obj }, tree);
+				EXPECT_EQ(varNameObj3.cast<std::string&>(), "TEST");
+
+				// tree.AddConverter<stackThing2>();
+
+				Any varNameObj = call(get_var_name, { obj }, tree);
+				varNameObj.cast<std::string&>() = "TESTING";
+
+				EXPECT_EQ(varNameObj1.cast<std::string&>(), "TESTING");
+				EXPECT_EQ(varNameObj2.cast<std::string&>(), "TESTING");
+				EXPECT_EQ(varNameObj3.cast<std::string&>(), "TESTING");
+
+				EXPECT_EQ(call(var, { obj }, tree).IsTypeOf<double>(), true);
+				EXPECT_EQ(call(varName, { obj }, tree).cast<std::string>(), "TESTING");
+				EXPECT_EQ(tree.Convert<int>(call(length, { obj }, tree)), 7);
+				
+			}
 
 
 

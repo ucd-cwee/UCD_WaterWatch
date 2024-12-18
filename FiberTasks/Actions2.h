@@ -2200,6 +2200,23 @@ namespace GoodLang {
 				}
 			}
 		};
+		// if does not exists, will add it. If exists, overwrites if the converter is better-performance.
+		template<typename From_t> void AddConverter() {
+			// Add "contructor" class for const Type& -> Type, if possible
+			if constexpr (std::is_copy_constructible<typename std::decay_t<From_t>>::value) {
+				auto func = details::MakeConversionFunc([](const typename std::decay_t<From_t>& f) -> typename std::decay_t<From_t> { return f; });
+				if (func) {
+					auto& From = func->from();
+					auto& To = func->to();
+					if (1) {
+						auto locked{ std::unique_lock(AllConversionsMut) };
+						TypeConverterFunc& converterPtr = AllConversions[From.lock()][To.lock()];
+						converterPtr = func;
+					}
+				}
+			}
+		};
+
 		// Find or make converter to accomplish the request
 		TypeConverterFunc FindConverter(std::weak_ptr<Type_Info> const& From, std::weak_ptr<Type_Info> const& To, bool forceBuild = false) {
 			return GetOrBuildConverter(From, To, forceBuild);
@@ -2214,7 +2231,7 @@ namespace GoodLang {
 			if (auto f = FindConverter(from.Type(), To)) {
 				return f->convert(from);
 			}
-			return {};
+			return from;
 		};
 		// will throw an error if the conversion was impossible.
 		template<typename To_t> typename std::remove_reference_t<To_t> Convert(Any const& from) {
@@ -2222,7 +2239,12 @@ namespace GoodLang {
 				Any temp = f->convert(from);
 				return temp.cast<To_t>();
 			}
-			throw exception::bad_any_cast(from.Type(), user_type_shared<To_t>(), __LINE__);
+			else if (from.IsTypeOf<To_t>()) {
+				return from.cast<To_t>();
+			}
+			else {
+				throw exception::bad_any_cast(from.Type(), user_type_shared<To_t>(), __LINE__);
+			}
 		};
 
 		// will return an empty object if the conversion was impossible. (Assumes converting to void is not allowed or desired)
@@ -2230,14 +2252,24 @@ namespace GoodLang {
 			if (auto f = FindConverter(from.Type(), To)) {
 				return f->cost();
 			}
-			return std::numeric_limits<double>::max();
+			else if (from.IsTypeOf(To)) {
+				return 0;
+			}
+			else {
+				return std::numeric_limits<double>::max();
+			}
 		};
 		// will throw an error if the conversion was impossible.
 		template<typename To_t> double ConversionCost(Any const& from) {
 			if (auto f = FindConverter(from.Type(), user_type_shared<To_t>())) {
 				return f->cost();
 			}
-			return std::numeric_limits<double>::max();
+			else if (from.IsTypeOf<To_t>()) {
+				return 0;
+			}
+			else {
+				return std::numeric_limits<double>::max();
+			}
 		};
 
 		// will return an empty object if the conversion was impossible. (Assumes converting to void is not allowed or desired)
@@ -2245,14 +2277,24 @@ namespace GoodLang {
 			if (auto f = FindConverter(from.Type(), To)) {
 				return true;
 			}
-			return false;
+			else if (from.IsTypeOf(To)) {
+				return true;
+			}
+			else {
+				return false;
+			}
 		};
 		// will throw an error if the conversion was impossible.
 		template<typename To_t> bool Converts(Any const& from) {
 			if (auto f = FindConverter(from.Type(), user_type_shared<To_t>())) {
 				return true;
 			}
-			return false;
+			else if (from.IsTypeOf<To_t>()) {
+				return true;
+			}
+			else {
+				return false;
+			}
 		};
 	};
 };
@@ -2708,7 +2750,7 @@ namespace GoodLang {
 
 			// Does not want conversions -- straight call.
 			Any operator()(const std::vector<Any>& params) const {
-				if (params.size() == NumArguments()) {
+				if (params.size() >= NumArguments()) {
 					return do_call(params);
 				}
 				throw exception::arity_error(static_cast<int>(params.size()), NumArguments());
@@ -2716,7 +2758,7 @@ namespace GoodLang {
 
 			// Does not want conversions -- straight call.
 			Any operator()(Any& param) const {
-				if (1 == NumArguments()) {
+				if (1 >= NumArguments()) {
 					return do_call({ param });
 				}
 				throw exception::arity_error(1, NumArguments());
@@ -3201,7 +3243,6 @@ namespace GoodLang {
 			Callable F_m;
 		};
 
-#if 0
 		/**
 		 * Use to call member objects:
 		 * struct Test{ public: std::string attr; }
@@ -3211,17 +3252,18 @@ namespace GoodLang {
 		template <typename T, class Class>
 		class Attribute_Access_Impl : public Proxy_Function_Base {
 		protected:
-			static Param_Types Get_Arg_Type() {
-				std::vector<std::pair<std::string, Type_Info>> t_types{ { "parent", user_type<Class>() } };
-				return Param_Types{ t_types };
-			};
-			static Type_Info Get_Return_Type() {
-				return user_type< T >();
+			using ReturnType = typename std::decay_t<typename details::get_type<T>::type>;
+			static GoodLang::FunctionSignature CreateSignature() {
+				std::vector<std::weak_ptr<Type_Info>> types = { user_type_shared<Class&>() };
+				GoodLang::ParamTypes params(types);
+				GoodLang::FunctionArgs args(params);
+				return GoodLang::FunctionSignature(user_type_shared<ReturnType&>(), args, "", "");
 			};
 
 		public:
+			using actualT = typename std::decay_t<typename details::get_type<T>::type>;
 			Attribute_Access_Impl(T Class::* t_attr)
-				: Proxy_Function_Base(Get_Arg_Type(), Get_Return_Type())
+				: Proxy_Function_Base(CreateSignature())
 				, m_attr(t_attr)
 			{};
 			virtual ~Attribute_Access_Impl() = default;
@@ -3242,7 +3284,68 @@ namespace GoodLang {
 					// void? Return void.
 					return Any();
 				}
-				else if constexpr (std::is_same_v<Any, typename std::remove_reference_t<T>>) {
+				else if constexpr (std::is_same<Any, actualT>::value) { // typename std::remove_reference_t<T>
+					// Any? Return reference to the underlying value, NOT a reference to the Any.
+					return do_call_impl_impl(o.get());
+				}
+				else if constexpr (std::is_pointer<T>::value) {
+					// Pointer? Wrap it as a shared pointer.
+					using Type = typename std::remove_pointer<T>::type;
+					decltype(auto) ptr = do_call_impl_impl(o.get());
+					if (ptr) {
+						return std::shared_ptr<Type>(ptr, [=](Type*) { (void)o.get(); /* do nothing */ });
+					}
+					else {
+						return Any();
+					}
+				}
+				else {
+					// Reference? Wrap it as a shared pointer.
+					using Type = typename std::remove_reference<T>::type;
+					return std::shared_ptr<Type>(&(do_call_impl_impl(o.get())), [=](Type*) { (void)o.get(); /* do nothing */ });
+				}
+			};
+
+			T Class::* m_attr;
+		};
+
+		template <typename T, class Class>
+		class Const_Attribute_Access_Impl : public Proxy_Function_Base {
+		protected:
+			using ReturnType = typename std::decay_t<typename details::get_type<T>::type>;
+
+			static GoodLang::FunctionSignature CreateSignature() {
+				std::vector<std::weak_ptr<Type_Info>> types = { user_type_shared<const Class&>() };
+				GoodLang::ParamTypes params(types);
+				GoodLang::FunctionArgs args(params);
+				return GoodLang::FunctionSignature(user_type_shared<const ReturnType&>(), args, "", "");
+			};
+
+		public:
+			using actualT = typename std::decay_t<typename details::get_type<T>::type>;
+			Const_Attribute_Access_Impl(T Class::* t_attr)
+				: Proxy_Function_Base(CreateSignature())
+				, m_attr(t_attr)
+			{};
+			virtual ~Const_Attribute_Access_Impl() = default;
+
+		protected:
+			// assumes conversion already happened
+			virtual Any do_call(std::vector<Any> const& r) const override {
+				if (r.size() < 1) throw(exception::arity_error(0, 1));
+				return do_call_impl(r[0].cast<std::shared_ptr<Class>>());
+			};
+
+			auto& do_call_impl_impl(Class* o) const {
+				return o->*m_attr;
+			};
+
+			Any do_call_impl(std::shared_ptr<Class> o) const {
+				if constexpr (std::is_same_v<void, T>) {
+					// void? Return void.
+					return Any();
+				}
+				else if constexpr (std::is_same<Any, actualT>::value) { // typename std::remove_reference_t<T>
 					// Any? Return reference to the underlying value, NOT a reference to the Any.
 					return do_call_impl_impl(o.get());
 				}
@@ -3279,219 +3382,379 @@ namespace GoodLang {
 			public:
 				using argType = std::tuple<Class, T...>;
 				static constexpr auto numArgs = std::tuple_size_v<argType> -1;
-				static Param_Types Get_Arg_Type() {
-					std::vector<std::pair<std::string, Type_Info>> t_types{ { "parent", user_type<Class>() } };
-					if constexpr (numArgs > 0) {
-						t_types.push_back({ "Param0", user_type<typename std::tuple_element_t<1, argType>>() });
-					}
-					if constexpr (numArgs > 1) {
-						t_types.push_back({ "Param1", user_type<typename std::tuple_element_t<2, argType>>() });
-					}
-					if constexpr (numArgs > 2) {
-						t_types.push_back({ "Param2", user_type<typename std::tuple_element_t<3, argType>>() });
-					}
-					if constexpr (numArgs > 3) {
-						t_types.push_back({ "Param3", user_type<typename std::tuple_element_t<4, argType>>() });
-					}
-					if constexpr (numArgs > 4) {
-						t_types.push_back({ "Param4", user_type<typename std::tuple_element_t<5, argType>>() });
-					}
-					if constexpr (numArgs > 5) {
-						t_types.push_back({ "Param5", user_type<typename std::tuple_element_t<6, argType>>() });
-					}
-					if constexpr (numArgs > 6) {
-						t_types.push_back({ "Param6", user_type<typename std::tuple_element_t<7, argType>>() });
-					}
-					if constexpr (numArgs > 7) {
-						t_types.push_back({ "Param7", user_type<typename std::tuple_element_t<8, argType>>() });
-					}
-					if constexpr (numArgs > 8) {
-						t_types.push_back({ "Param8", user_type<typename std::tuple_element_t<9, argType>>() });
-					}
-					if constexpr (numArgs > 9) {
-						t_types.push_back({ "Param9", user_type<typename std::tuple_element_t<10, argType>>() });
-					}
-					if constexpr (numArgs > 10) {
-						t_types.push_back({ "Param10", user_type<typename std::tuple_element_t<11, argType>>() });
-					}
-					if constexpr (numArgs > 11) {
-						t_types.push_back({ "Param11", user_type<typename std::tuple_element_t<12, argType>>() });
-					}
-					if constexpr (numArgs > 12) {
-						t_types.push_back({ "Param12", user_type<typename std::tuple_element_t<13, argType>>() });
-					}
-					if constexpr (numArgs > 13) {
-						t_types.push_back({ "Param13", user_type<typename std::tuple_element_t<14, argType>>() });
-					}
-					if constexpr (numArgs > 14) {
-						t_types.push_back({ "Param14", user_type<typename std::tuple_element_t<15, argType>>() });
-					}
-					if constexpr (numArgs > 15) {
-						t_types.push_back({ "Param15", user_type<typename std::tuple_element_t<16, argType>>() });
-					}
-					return Param_Types{ t_types };
-				};
-				static Type_Info Get_Return_Type() {
-					return user_type< R >();
+				using actualT = typename std::decay_t<typename details::get_type<R>::type>;
+				static GoodLang::FunctionSignature CreateSignature() {
+					std::vector<std::weak_ptr<Type_Info>> types(numArgs + 1, std::weak_ptr<Type_Info>());
+					types[0] = user_type_shared<const Class&>();
+#define argT(NN) if constexpr (numArgs > NN) { types[NN+1] = user_type_shared<typename std::tuple_element_t<NN, argType>>(); }
+					argT(0);
+					argT(1);
+					argT(2);
+					argT(3);
+					argT(4);
+					argT(5);
+					argT(6);
+					argT(7);
+					argT(8);
+					argT(9);
+					argT(10);
+					argT(11);
+					argT(12);
+					argT(13);
+					argT(14);
+					argT(15);
+#undef argT
+					GoodLang::ParamTypes params(types);
+					GoodLang::FunctionArgs args(params);
+					return GoodLang::FunctionSignature(user_type_shared<typename details::get_type<R>::type>(), args, "", "");
 				};
 
 			public:
 				VolatileConst_Member_Function_Impl(R(Class::* f)(T...) volatile const)
-					: Proxy_Function_Base(Get_Arg_Type(), Get_Return_Type())
+					: Proxy_Function_Base(CreateSignature())
 					, m_attr(std::move(f)) {};
 				virtual ~VolatileConst_Member_Function_Impl() = default;
 
 			protected:
 				// assumes conversion already happened
 				virtual Any do_call(std::vector<Any> const& r) const override {
-					if (r.size() < (numArgs + 1)) throw(exception::arity_error(r.size(), numArgs + 1));
-
-					std::vector<Any> temp;
-					for (int i = 1; i < r.size(); i++) temp.push_back(r[i]);
-
-					return do_call_impl(r[0].cast<std::shared_ptr<Class>>(), temp);
-				};
-
-				decltype(auto) do_call_impl_impl(Class* o, std::vector<Any> const& r) const {
-					if constexpr (numArgs == 0) {
-						return (R)(o->*m_attr)();
-					}
-					else if constexpr (numArgs == 1) {
-						return (R)(o->*m_attr)(
-							r[0].cast()
-							);
-					}
-					else if constexpr (numArgs == 2) {
-						return (R)(o->*m_attr)(
-							r[0].cast(), r[1].cast()
-							);
-					}
-					else if constexpr (numArgs == 3) {
-						return (R)(o->*m_attr)(
-							r[0].cast(), r[1].cast(), r[2].cast()
-							);
-					}
-					else if constexpr (numArgs == 4) {
-						return (R)(o->*m_attr)(
-							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast()
-							);
-					}
-					else if constexpr (numArgs == 5) {
-						return (R)(o->*m_attr)(
-							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
-							r[4].cast()
-							);
-					}
-					else if constexpr (numArgs == 6) {
-						return (R)(o->*m_attr)(
-							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
-							r[4].cast(), r[5].cast()
-							);
-					}
-					else if constexpr (numArgs == 7) {
-						return (R)(o->*m_attr)(
-							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
-							r[4].cast(), r[5].cast(), r[6].cast()
-							);
-					}
-					else if constexpr (numArgs == 8) {
-						return (R)(o->*m_attr)(
-							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
-							r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast()
-							);
-					}
-					else if constexpr (numArgs == 9) {
-						return (R)(o->*m_attr)(
-							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
-							r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
-							r[8].cast()
-							);
-					}
-					else if constexpr (numArgs == 10) {
-						return (R)(o->*m_attr)(
-							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
-							r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
-							r[8].cast(), r[9].cast()
-							);
-					}
-					else if constexpr (numArgs == 11) {
-						return (R)(o->*m_attr)(
-							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
-							r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
-							r[8].cast(), r[9].cast(), r[10].cast()
-							);
-					}
-					else if constexpr (numArgs == 12) {
-						return (R)(o->*m_attr)(
-							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
-							r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
-							r[8].cast(), r[9].cast(), r[10].cast(), r[11].cast()
-							);
-					}
-					else if constexpr (numArgs == 13) {
-						return (R)(o->*m_attr)(
-							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
-							r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
-							r[8].cast(), r[9].cast(), r[10].cast(), r[11].cast(),
-							r[12].cast()
-							);
-					}
-					else if constexpr (numArgs == 14) {
-						return (R)(o->*m_attr)(
-							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
-							r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
-							r[8].cast(), r[9].cast(), r[10].cast(), r[11].cast(),
-							r[12].cast(), r[13].cast()
-							);
-					}
-					else if constexpr (numArgs == 15) {
-						return (R)(o->*m_attr)(
-							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
-							r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
-							r[8].cast(), r[9].cast(), r[10].cast(), r[11].cast(),
-							r[12].cast(), r[13].cast(), r[14].cast()
-							);
-					}
-					else if constexpr (numArgs == 16) {
-						return (R)(o->*m_attr)(
-							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
-							r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
-							r[8].cast(), r[9].cast(), r[10].cast(), r[11].cast(),
-							r[12].cast(), r[13].cast(), r[14].cast(), r[15].cast()
-							);
-					}
-				};
-
-				Any do_call_impl(std::shared_ptr<Class> o, std::vector<Any> const& r) const {
-					if constexpr (std::is_same_v<void, R>) {
-						do_call_impl_impl(o.get(), r);
-						return Any();
+					using returnType = R;
+					if constexpr (std::is_reference< returnType>::value) {
+						// if the return type is a reference, the parent(s) should be protected by carrying them along. 
+						using refAsBaseType = typename std::remove_reference_t< returnType>;
+						using ptrType = std::shared_ptr<refAsBaseType>;
+						ptrType out;
+						std::vector<Any> parents = r;
+						if constexpr (numArgs == 16) {
+							out = ptrType(&(r[0].cast<Class*>()->*m_attr)(
+								r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+								r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+								r[9].cast(), r[10].cast(), r[11].cast(), r[12].cast(),
+								r[13].cast(), r[14].cast(), r[15].cast(), r[16].cast()
+								), [parents](refAsBaseType*) { if (parents.size() < numArgs) { std::cout << "ERR" << std::endl; } });
+						}
+						else if constexpr (numArgs == 15) {
+							out = ptrType(&(r[0].cast<Class*>()->*m_attr)(
+								r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+								r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+								r[9].cast(), r[10].cast(), r[11].cast(), r[12].cast(),
+								r[13].cast(), r[14].cast(), r[15].cast()
+								), [parents](refAsBaseType*) { if (parents.size() < numArgs) { std::cout << "ERR" << std::endl; } });
+						}
+						else if constexpr (numArgs == 14) {
+							out = ptrType(&(r[0].cast<Class*>()->*m_attr)(
+								r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+								r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+								r[9].cast(), r[10].cast(), r[11].cast(), r[12].cast(),
+								r[13].cast(), r[14].cast()
+								), [parents](refAsBaseType*) { if (parents.size() < numArgs) { std::cout << "ERR" << std::endl; } });
+						}
+						else if constexpr (numArgs == 13) {
+							out = ptrType(&(r[0].cast<Class*>()->*m_attr)(
+								r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+								r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+								r[9].cast(), r[10].cast(), r[11].cast(), r[12].cast(),
+								r[13].cast()
+								), [parents](refAsBaseType*) { if (parents.size() < numArgs) { std::cout << "ERR" << std::endl; } });
+						}
+						else if constexpr (numArgs == 12) {
+							out = ptrType(&(r[0].cast<Class*>()->*m_attr)(
+								r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+								r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+								r[9].cast(), r[10].cast(), r[11].cast(), r[12].cast()
+								), [parents](refAsBaseType*) { if (parents.size() < numArgs) { std::cout << "ERR" << std::endl; } });
+						}
+						else if constexpr (numArgs == 11) {
+							out = ptrType(&(r[0].cast<Class*>()->*m_attr)(
+								r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+								r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+								r[9].cast(), r[10].cast(), r[11].cast()
+								), [parents](refAsBaseType*) { if (parents.size() < numArgs) { std::cout << "ERR" << std::endl; } });
+						}
+						else if constexpr (numArgs == 10) {
+							out = ptrType(&(r[0].cast<Class*>()->*m_attr)(
+								r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+								r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+								r[9].cast(), r[10].cast()
+								), [parents](refAsBaseType*) { if (parents.size() < numArgs) { std::cout << "ERR" << std::endl; } });
+						}
+						else if constexpr (numArgs == 9) {
+							out = ptrType(&(r[0].cast<Class*>()->*m_attr)(
+								r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+								r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+								r[9].cast()
+								), [parents](refAsBaseType*) { if (parents.size() < numArgs) { std::cout << "ERR" << std::endl; } });
+						}
+						else if constexpr (numArgs == 8) {
+							out = ptrType(&(r[0].cast<Class*>()->*m_attr)(
+								r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+								r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast()
+								), [parents](refAsBaseType*) { if (parents.size() < numArgs) { std::cout << "ERR" << std::endl; } });
+						}
+						else if constexpr (numArgs == 7) {
+							out = ptrType(&(r[0].cast<Class*>()->*m_attr)(
+								r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+								r[5].cast(), r[6].cast(), r[7].cast()
+								), [parents](refAsBaseType*) { if (parents.size() < numArgs) { std::cout << "ERR" << std::endl; } });
+						}
+						else if constexpr (numArgs == 6) {
+							out = ptrType(&(r[0].cast<Class*>()->*m_attr)(
+								r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+								r[5].cast(), r[6].cast()
+								), [parents](refAsBaseType*) { if (parents.size() < numArgs) { std::cout << "ERR" << std::endl; } });
+						}
+						else if constexpr (numArgs == 5) {
+							out = ptrType(&(r[0].cast<Class*>()->*m_attr)(
+								r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+								r[5].cast()
+								), [parents](refAsBaseType*) { if (parents.size() < numArgs) { std::cout << "ERR" << std::endl; } });
+						}
+						else if constexpr (numArgs == 4) {
+							out = ptrType(&(r[0].cast<Class*>()->*m_attr)(
+								r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast()
+								), [parents](refAsBaseType*) { if (parents.size() < numArgs) { std::cout << "ERR" << std::endl; } });
+						}
+						else if constexpr (numArgs == 3) {
+							out = ptrType(&(r[0].cast<Class*>()->*m_attr)(
+								r[1].cast(), r[2].cast(), r[3].cast()
+								), [parents](refAsBaseType*) { if (parents.size() < numArgs) { std::cout << "ERR" << std::endl; } });
+						}
+						else if constexpr (numArgs == 2) {
+							out = ptrType(&(r[0].cast<Class*>()->*m_attr)(
+								r[1].cast(), r[2].cast()
+								), [parents](refAsBaseType*) { if (parents.size() < numArgs) { std::cout << "ERR" << std::endl; } });
+						}
+						else if constexpr (numArgs == 1) {
+							out = ptrType(&(r[0].cast<Class*>()->*m_attr)(
+								r[1].cast()
+								), [parents](refAsBaseType*) { if (parents.size() < numArgs) { std::cout << "ERR" << std::endl; } });
+						}
+						else if constexpr (numArgs <= 0) {
+							out = ptrType(&(r[0].cast<Class*>()->*m_attr)(), [parents](refAsBaseType*) { if (parents.size() < numArgs) { std::cout << "ERR" << std::endl; } });
+						}
+						return out;
 					}
 					else {
-						R returned_obj{ do_call_impl_impl(o.get(), r) };
-						using Type = typename std::decay_t<decltype(returned_obj)>;
-
-						if constexpr (std::is_same_v<Any, typename std::remove_reference_t<Type>>) {
-							// Any? Return reference to the underlying value, NOT a reference to the Any.
-							return returned_obj;
-						}
-						else if constexpr (std::is_pointer<R>::value) {
-							// Pointer? Wrap it as a shared pointer.
-							using Type2 = typename std::remove_pointer<R>::type;
-							if (returned_obj) {
-								return std::shared_ptr<Type2>(returned_obj, [=](Type2*) { (void)o.get(); /* do nothing */ });
+						// best-case, normal operation
+						if constexpr (std::is_same_v<returnType, void>) {
+							static Any temp;
+							if constexpr (numArgs == 16) {
+								(r[0].cast<Class*>()->*m_attr)(
+									r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+									r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+									r[9].cast(), r[10].cast(), r[11].cast(), r[12].cast(),
+									r[13].cast(), r[14].cast(), r[15].cast(), r[16].cast()
+									);
 							}
-							else {
-								return Any();
+							else if constexpr (numArgs == 15) {
+								(r[0].cast<Class*>()->*m_attr)(
+									r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+									r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+									r[9].cast(), r[10].cast(), r[11].cast(), r[12].cast(),
+									r[13].cast(), r[14].cast(), r[15].cast()
+									);
 							}
-						}
-						else if constexpr (std::is_reference<R>::value) {
-							// Reference? Wrap it as a shared pointer.
-							using Type2 = typename std::remove_reference<R>::type;
-							return std::shared_ptr<Type2>(&returned_obj, [=](Type2*) { (void)o.get(); /* do nothing */ });
+							else if constexpr (numArgs == 14) {
+								(r[0].cast<Class*>()->*m_attr)(
+									r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+									r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+									r[9].cast(), r[10].cast(), r[11].cast(), r[12].cast(),
+									r[13].cast(), r[14].cast()
+									);
+							}
+							else if constexpr (numArgs == 13) {
+								(r[0].cast<Class*>()->*m_attr)(
+									r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+									r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+									r[9].cast(), r[10].cast(), r[11].cast(), r[12].cast(),
+									r[13].cast()
+									);
+							}
+							else if constexpr (numArgs == 12) {
+								(r[0].cast<Class*>()->*m_attr)(
+									r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+									r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+									r[9].cast(), r[10].cast(), r[11].cast(), r[12].cast()
+									);
+							}
+							else if constexpr (numArgs == 11) {
+								(r[0].cast<Class*>()->*m_attr)(
+									r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+									r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+									r[9].cast(), r[10].cast(), r[11].cast()
+									);
+							}
+							else if constexpr (numArgs == 10) {
+								(r[0].cast<Class*>()->*m_attr)(
+									r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+									r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+									r[9].cast(), r[10].cast()
+									);
+							}
+							else if constexpr (numArgs == 9) {
+								(r[0].cast<Class*>()->*m_attr)(
+									r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+									r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+									r[9].cast()
+									);
+							}
+							else if constexpr (numArgs == 8) {
+								(r[0].cast<Class*>()->*m_attr)(
+									r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+									r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast()
+									);
+							}
+							else if constexpr (numArgs == 7) {
+								(r[0].cast<Class*>()->*m_attr)(
+									r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+									r[5].cast(), r[6].cast(), r[7].cast()
+									);
+							}
+							else if constexpr (numArgs == 6) {
+								(r[0].cast<Class*>()->*m_attr)(
+									r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+									r[5].cast(), r[6].cast()
+									);
+							}
+							else if constexpr (numArgs == 5) {
+								(r[0].cast<Class*>()->*m_attr)(
+									r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+									r[5].cast()
+									);
+							}
+							else if constexpr (numArgs == 4) {
+								(r[0].cast<Class*>()->*m_attr)(
+									r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast()
+									);
+							}
+							else if constexpr (numArgs == 3) {
+								(r[0].cast<Class*>()->*m_attr)(
+									r[1].cast(), r[2].cast(), r[3].cast()
+									);
+							}
+							else if constexpr (numArgs == 2) {
+								(r[0].cast<Class*>()->*m_attr)(
+									r[1].cast(), r[2].cast()
+									);
+							}
+							else if constexpr (numArgs == 1) {
+								(r[0].cast<Class*>()->*m_attr)(
+									r[1].cast()
+									);
+							}
+							else if constexpr (numArgs <= 0) {
+								(r[0].cast<Class*>()->*m_attr)();
+							}
+							return temp;
 						}
 						else {
-							return std::move(returned_obj);
+							if constexpr (numArgs == 16) {
+								return (r[0].cast<Class*>()->*m_attr)(
+									r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+									r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+									r[9].cast(), r[10].cast(), r[11].cast(), r[12].cast(),
+									r[13].cast(), r[14].cast(), r[15].cast(), r[16].cast()
+									);
+							}
+							else if constexpr (numArgs == 15) {
+								return (r[0].cast<Class*>()->*m_attr)(
+									r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+									r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+									r[9].cast(), r[10].cast(), r[11].cast(), r[12].cast(),
+									r[13].cast(), r[14].cast(), r[15].cast()
+									);
+							}
+							else if constexpr (numArgs == 14) {
+								return (r[0].cast<Class*>()->*m_attr)(
+									r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+									r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+									r[9].cast(), r[10].cast(), r[11].cast(), r[12].cast(),
+									r[13].cast(), r[14].cast()
+									);
+							}
+							else if constexpr (numArgs == 13) {
+								return (r[0].cast<Class*>()->*m_attr)(
+									r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+									r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+									r[9].cast(), r[10].cast(), r[11].cast(), r[12].cast(),
+									r[13].cast()
+									);
+							}
+							else if constexpr (numArgs == 12) {
+								return (r[0].cast<Class*>()->*m_attr)(
+									r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+									r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+									r[9].cast(), r[10].cast(), r[11].cast(), r[12].cast()
+									);
+							}
+							else if constexpr (numArgs == 11) {
+								return (r[0].cast<Class*>()->*m_attr)(
+									r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+									r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+									r[9].cast(), r[10].cast(), r[11].cast()
+									);
+							}
+							else if constexpr (numArgs == 10) {
+								return (r[0].cast<Class*>()->*m_attr)(
+									r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+									r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+									r[9].cast(), r[10].cast()
+									);
+							}
+							else if constexpr (numArgs == 9) {
+								return (r[0].cast<Class*>()->*m_attr)(
+									r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+									r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+									r[9].cast()
+									);
+							}
+							else if constexpr (numArgs == 8) {
+								return (r[0].cast<Class*>()->*m_attr)(
+									r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+									r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast()
+									);
+							}
+							else if constexpr (numArgs == 7) {
+								return (r[0].cast<Class*>()->*m_attr)(
+									r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+									r[5].cast(), r[6].cast(), r[7].cast()
+									);
+							}
+							else if constexpr (numArgs == 6) {
+								return (r[0].cast<Class*>()->*m_attr)(
+									r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+									r[5].cast(), r[6].cast()
+									);
+							}
+							else if constexpr (numArgs == 5) {
+								return (r[0].cast<Class*>()->*m_attr)(
+									r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+									r[5].cast()
+									);
+							}
+							else if constexpr (numArgs == 4) {
+								return (r[0].cast<Class*>()->*m_attr)(
+									r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast()
+									);
+							}
+							else if constexpr (numArgs == 3) {
+								return (r[0].cast<Class*>()->*m_attr)(
+									r[1].cast(), r[2].cast(), r[3].cast()
+									);
+							}
+							else if constexpr (numArgs == 2) {
+								return (r[0].cast<Class*>()->*m_attr)(
+									r[1].cast(), r[2].cast()
+									);
+							}
+							else if constexpr (numArgs == 1) {
+								return (r[0].cast<Class*>()->*m_attr)(
+									r[1].cast()
+									);
+							}
+							else if constexpr (numArgs <= 0) {
+								return (r[0].cast<Class*>()->*m_attr)();
+							}
 						}
 					}
 				};
@@ -3503,219 +3766,379 @@ namespace GoodLang {
 			public:
 				using argType = std::tuple<Class, T...>;
 				static constexpr auto numArgs = std::tuple_size_v<argType> -1;
-				static Param_Types Get_Arg_Type() {
-					std::vector<std::pair<std::string, Type_Info>> t_types{ { "parent", user_type<Class>() } };
-					if constexpr (numArgs > 0) {
-						t_types.push_back({ "Param0", user_type<typename std::tuple_element_t<1, argType>>() });
-					}
-					if constexpr (numArgs > 1) {
-						t_types.push_back({ "Param1", user_type<typename std::tuple_element_t<2, argType>>() });
-					}
-					if constexpr (numArgs > 2) {
-						t_types.push_back({ "Param2", user_type<typename std::tuple_element_t<3, argType>>() });
-					}
-					if constexpr (numArgs > 3) {
-						t_types.push_back({ "Param3", user_type<typename std::tuple_element_t<4, argType>>() });
-					}
-					if constexpr (numArgs > 4) {
-						t_types.push_back({ "Param4", user_type<typename std::tuple_element_t<5, argType>>() });
-					}
-					if constexpr (numArgs > 5) {
-						t_types.push_back({ "Param5", user_type<typename std::tuple_element_t<6, argType>>() });
-					}
-					if constexpr (numArgs > 6) {
-						t_types.push_back({ "Param6", user_type<typename std::tuple_element_t<7, argType>>() });
-					}
-					if constexpr (numArgs > 7) {
-						t_types.push_back({ "Param7", user_type<typename std::tuple_element_t<8, argType>>() });
-					}
-					if constexpr (numArgs > 8) {
-						t_types.push_back({ "Param8", user_type<typename std::tuple_element_t<9, argType>>() });
-					}
-					if constexpr (numArgs > 9) {
-						t_types.push_back({ "Param9", user_type<typename std::tuple_element_t<10, argType>>() });
-					}
-					if constexpr (numArgs > 10) {
-						t_types.push_back({ "Param10", user_type<typename std::tuple_element_t<11, argType>>() });
-					}
-					if constexpr (numArgs > 11) {
-						t_types.push_back({ "Param11", user_type<typename std::tuple_element_t<12, argType>>() });
-					}
-					if constexpr (numArgs > 12) {
-						t_types.push_back({ "Param12", user_type<typename std::tuple_element_t<13, argType>>() });
-					}
-					if constexpr (numArgs > 13) {
-						t_types.push_back({ "Param13", user_type<typename std::tuple_element_t<14, argType>>() });
-					}
-					if constexpr (numArgs > 14) {
-						t_types.push_back({ "Param14", user_type<typename std::tuple_element_t<15, argType>>() });
-					}
-					if constexpr (numArgs > 15) {
-						t_types.push_back({ "Param15", user_type<typename std::tuple_element_t<16, argType>>() });
-					}
-					return Param_Types{ t_types };
-				};
-				static Type_Info Get_Return_Type() {
-					return user_type< R >();
+				using actualT = typename std::decay_t<typename details::get_type<R>::type>;
+				static GoodLang::FunctionSignature CreateSignature() {
+					std::vector<std::weak_ptr<Type_Info>> types(numArgs + 1, std::weak_ptr<Type_Info>());
+					types[0] = user_type_shared<Class&>();
+#define argT(NN) if constexpr (numArgs > NN) { types[NN+1] = user_type_shared<typename std::tuple_element_t<NN, argType>>(); }
+					argT(0);
+					argT(1);
+					argT(2);
+					argT(3);
+					argT(4);
+					argT(5);
+					argT(6);
+					argT(7);
+					argT(8);
+					argT(9);
+					argT(10);
+					argT(11);
+					argT(12);
+					argT(13);
+					argT(14);
+					argT(15);
+#undef argT
+					GoodLang::ParamTypes params(types);
+					GoodLang::FunctionArgs args(params);
+					return GoodLang::FunctionSignature(user_type_shared<typename details::get_type<R>::type>(), args, "", "");
 				};
 
 			public:
 				Volatile_Member_Function_Impl(R(Class::* f)(T...) volatile)
-					: Proxy_Function_Base(Get_Arg_Type(), Get_Return_Type())
+					: Proxy_Function_Base(CreateSignature())
 					, m_attr(std::move(f)) {};
 				virtual ~Volatile_Member_Function_Impl() = default;
 
 			protected:
 				// assumes conversion already happened
 				virtual Any do_call(std::vector<Any> const& r) const override {
-					if (r.size() < (numArgs + 1)) throw(exception::arity_error(r.size(), numArgs + 1));
-
-					std::vector<Any> temp;
-					for (int i = 1; i < r.size(); i++) temp.push_back(r[i]);
-
-					return do_call_impl(r[0].cast<std::shared_ptr<Class>>(), temp);
-				};
-
-				decltype(auto) do_call_impl_impl(Class* o, std::vector<Any> const& r) const {
-					if constexpr (numArgs == 0) {
-						return (R)(o->*m_attr)();
-					}
-					else if constexpr (numArgs == 1) {
-						return (R)(o->*m_attr)(
-							r[0].cast()
-							);
-					}
-					else if constexpr (numArgs == 2) {
-						return (R)(o->*m_attr)(
-							r[0].cast(), r[1].cast()
-							);
-					}
-					else if constexpr (numArgs == 3) {
-						return (R)(o->*m_attr)(
-							r[0].cast(), r[1].cast(), r[2].cast()
-							);
-					}
-					else if constexpr (numArgs == 4) {
-						return (R)(o->*m_attr)(
-							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast()
-							);
-					}
-					else if constexpr (numArgs == 5) {
-						return (R)(o->*m_attr)(
-							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
-							r[4].cast()
-							);
-					}
-					else if constexpr (numArgs == 6) {
-						return (R)(o->*m_attr)(
-							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
-							r[4].cast(), r[5].cast()
-							);
-					}
-					else if constexpr (numArgs == 7) {
-						return (R)(o->*m_attr)(
-							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
-							r[4].cast(), r[5].cast(), r[6].cast()
-							);
-					}
-					else if constexpr (numArgs == 8) {
-						return (R)(o->*m_attr)(
-							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
-							r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast()
-							);
-					}
-					else if constexpr (numArgs == 9) {
-						return (R)(o->*m_attr)(
-							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
-							r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
-							r[8].cast()
-							);
-					}
-					else if constexpr (numArgs == 10) {
-						return (R)(o->*m_attr)(
-							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
-							r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
-							r[8].cast(), r[9].cast()
-							);
-					}
-					else if constexpr (numArgs == 11) {
-						return (R)(o->*m_attr)(
-							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
-							r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
-							r[8].cast(), r[9].cast(), r[10].cast()
-							);
-					}
-					else if constexpr (numArgs == 12) {
-						return (R)(o->*m_attr)(
-							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
-							r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
-							r[8].cast(), r[9].cast(), r[10].cast(), r[11].cast()
-							);
-					}
-					else if constexpr (numArgs == 13) {
-						return (R)(o->*m_attr)(
-							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
-							r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
-							r[8].cast(), r[9].cast(), r[10].cast(), r[11].cast(),
-							r[12].cast()
-							);
-					}
-					else if constexpr (numArgs == 14) {
-						return (R)(o->*m_attr)(
-							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
-							r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
-							r[8].cast(), r[9].cast(), r[10].cast(), r[11].cast(),
-							r[12].cast(), r[13].cast()
-							);
-					}
-					else if constexpr (numArgs == 15) {
-						return (R)(o->*m_attr)(
-							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
-							r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
-							r[8].cast(), r[9].cast(), r[10].cast(), r[11].cast(),
-							r[12].cast(), r[13].cast(), r[14].cast()
-							);
-					}
-					else if constexpr (numArgs == 16) {
-						return (R)(o->*m_attr)(
-							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
-							r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
-							r[8].cast(), r[9].cast(), r[10].cast(), r[11].cast(),
-							r[12].cast(), r[13].cast(), r[14].cast(), r[15].cast()
-							);
-					}
-				};
-
-				Any do_call_impl(std::shared_ptr<Class> o, std::vector<Any> const& r) const {
-					if constexpr (std::is_same_v<void, R>) {
-						do_call_impl_impl(o.get(), r);
-						return Any();
+					using returnType = R;
+					if constexpr (std::is_reference< returnType>::value) {
+						// if the return type is a reference, the parent(s) should be protected by carrying them along. 
+						using refAsBaseType = typename std::remove_reference_t< returnType>;
+						using ptrType = std::shared_ptr<refAsBaseType>;
+						ptrType out;
+						std::vector<Any> parents = r;
+						if constexpr (numArgs == 16) {
+							out = ptrType(&(r[0].cast<Class*>()->*m_attr)(
+								r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+								r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+								r[9].cast(), r[10].cast(), r[11].cast(), r[12].cast(),
+								r[13].cast(), r[14].cast(), r[15].cast(), r[16].cast()
+								), [parents](refAsBaseType*) { if (parents.size() < numArgs) { std::cout << "ERR" << std::endl; } });
+						}
+						else if constexpr (numArgs == 15) {
+							out = ptrType(&(r[0].cast<Class*>()->*m_attr)(
+								r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+								r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+								r[9].cast(), r[10].cast(), r[11].cast(), r[12].cast(),
+								r[13].cast(), r[14].cast(), r[15].cast()
+								), [parents](refAsBaseType*) { if (parents.size() < numArgs) { std::cout << "ERR" << std::endl; } });
+						}
+						else if constexpr (numArgs == 14) {
+							out = ptrType(&(r[0].cast<Class*>()->*m_attr)(
+								r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+								r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+								r[9].cast(), r[10].cast(), r[11].cast(), r[12].cast(),
+								r[13].cast(), r[14].cast()
+								), [parents](refAsBaseType*) { if (parents.size() < numArgs) { std::cout << "ERR" << std::endl; } });
+						}
+						else if constexpr (numArgs == 13) {
+							out = ptrType(&(r[0].cast<Class*>()->*m_attr)(
+								r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+								r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+								r[9].cast(), r[10].cast(), r[11].cast(), r[12].cast(),
+								r[13].cast()
+								), [parents](refAsBaseType*) { if (parents.size() < numArgs) { std::cout << "ERR" << std::endl; } });
+						}
+						else if constexpr (numArgs == 12) {
+							out = ptrType(&(r[0].cast<Class*>()->*m_attr)(
+								r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+								r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+								r[9].cast(), r[10].cast(), r[11].cast(), r[12].cast()
+								), [parents](refAsBaseType*) { if (parents.size() < numArgs) { std::cout << "ERR" << std::endl; } });
+						}
+						else if constexpr (numArgs == 11) {
+							out = ptrType(&(r[0].cast<Class*>()->*m_attr)(
+								r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+								r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+								r[9].cast(), r[10].cast(), r[11].cast()
+								), [parents](refAsBaseType*) { if (parents.size() < numArgs) { std::cout << "ERR" << std::endl; } });
+						}
+						else if constexpr (numArgs == 10) {
+							out = ptrType(&(r[0].cast<Class*>()->*m_attr)(
+								r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+								r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+								r[9].cast(), r[10].cast()
+								), [parents](refAsBaseType*) { if (parents.size() < numArgs) { std::cout << "ERR" << std::endl; } });
+						}
+						else if constexpr (numArgs == 9) {
+							out = ptrType(&(r[0].cast<Class*>()->*m_attr)(
+								r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+								r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+								r[9].cast()
+								), [parents](refAsBaseType*) { if (parents.size() < numArgs) { std::cout << "ERR" << std::endl; } });
+						}
+						else if constexpr (numArgs == 8) {
+							out = ptrType(&(r[0].cast<Class*>()->*m_attr)(
+								r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+								r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast()
+								), [parents](refAsBaseType*) { if (parents.size() < numArgs) { std::cout << "ERR" << std::endl; } });
+						}
+						else if constexpr (numArgs == 7) {
+							out = ptrType(&(r[0].cast<Class*>()->*m_attr)(
+								r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+								r[5].cast(), r[6].cast(), r[7].cast()
+								), [parents](refAsBaseType*) { if (parents.size() < numArgs) { std::cout << "ERR" << std::endl; } });
+						}
+						else if constexpr (numArgs == 6) {
+							out = ptrType(&(r[0].cast<Class*>()->*m_attr)(
+								r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+								r[5].cast(), r[6].cast()
+								), [parents](refAsBaseType*) { if (parents.size() < numArgs) { std::cout << "ERR" << std::endl; } });
+						}
+						else if constexpr (numArgs == 5) {
+							out = ptrType(&(r[0].cast<Class*>()->*m_attr)(
+								r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+								r[5].cast()
+								), [parents](refAsBaseType*) { if (parents.size() < numArgs) { std::cout << "ERR" << std::endl; } });
+						}
+						else if constexpr (numArgs == 4) {
+							out = ptrType(&(r[0].cast<Class*>()->*m_attr)(
+								r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast()
+								), [parents](refAsBaseType*) { if (parents.size() < numArgs) { std::cout << "ERR" << std::endl; } });
+						}
+						else if constexpr (numArgs == 3) {
+							out = ptrType(&(r[0].cast<Class*>()->*m_attr)(
+								r[1].cast(), r[2].cast(), r[3].cast()
+								), [parents](refAsBaseType*) { if (parents.size() < numArgs) { std::cout << "ERR" << std::endl; } });
+						}
+						else if constexpr (numArgs == 2) {
+							out = ptrType(&(r[0].cast<Class*>()->*m_attr)(
+								r[1].cast(), r[2].cast()
+								), [parents](refAsBaseType*) { if (parents.size() < numArgs) { std::cout << "ERR" << std::endl; } });
+						}
+						else if constexpr (numArgs == 1) {
+							out = ptrType(&(r[0].cast<Class*>()->*m_attr)(
+								r[1].cast()
+								), [parents](refAsBaseType*) { if (parents.size() < numArgs) { std::cout << "ERR" << std::endl; } });
+						}
+						else if constexpr (numArgs <= 0) {
+							out = ptrType(&(r[0].cast<Class*>()->*m_attr)(), [parents](refAsBaseType*) { if (parents.size() < numArgs) { std::cout << "ERR" << std::endl; } });
+						}
+						return out;
 					}
 					else {
-						R returned_obj{ do_call_impl_impl(o.get(), r) };
-						using Type = typename std::decay_t<decltype(returned_obj)>;
-
-						if constexpr (std::is_same_v<Any, typename std::remove_reference_t<Type>>) {
-							// Any? Return reference to the underlying value, NOT a reference to the Any.
-							return returned_obj;
-						}
-						else if constexpr (std::is_pointer<R>::value) {
-							// Pointer? Wrap it as a shared pointer.
-							using Type2 = typename std::remove_pointer<R>::type;
-							if (returned_obj) {
-								return std::shared_ptr<Type2>(returned_obj, [=](Type2*) { (void)o.get(); /* do nothing */ });
+						// best-case, normal operation
+						if constexpr (std::is_same_v<returnType, void>) {
+							static Any temp;
+							if constexpr (numArgs == 16) {
+								(r[0].cast<Class*>()->*m_attr)(
+									r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+									r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+									r[9].cast(), r[10].cast(), r[11].cast(), r[12].cast(),
+									r[13].cast(), r[14].cast(), r[15].cast(), r[16].cast()
+									);
 							}
-							else {
-								return Any();
+							else if constexpr (numArgs == 15) {
+								(r[0].cast<Class*>()->*m_attr)(
+									r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+									r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+									r[9].cast(), r[10].cast(), r[11].cast(), r[12].cast(),
+									r[13].cast(), r[14].cast(), r[15].cast()
+									);
 							}
-						}
-						else if constexpr (std::is_reference<R>::value) {
-							// Reference? Wrap it as a shared pointer.
-							using Type2 = typename std::remove_reference<R>::type;
-							return std::shared_ptr<Type2>(&returned_obj, [=](Type2*) { (void)o.get(); /* do nothing */ });
+							else if constexpr (numArgs == 14) {
+								(r[0].cast<Class*>()->*m_attr)(
+									r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+									r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+									r[9].cast(), r[10].cast(), r[11].cast(), r[12].cast(),
+									r[13].cast(), r[14].cast()
+									);
+							}
+							else if constexpr (numArgs == 13) {
+								(r[0].cast<Class*>()->*m_attr)(
+									r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+									r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+									r[9].cast(), r[10].cast(), r[11].cast(), r[12].cast(),
+									r[13].cast()
+									);
+							}
+							else if constexpr (numArgs == 12) {
+								(r[0].cast<Class*>()->*m_attr)(
+									r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+									r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+									r[9].cast(), r[10].cast(), r[11].cast(), r[12].cast()
+									);
+							}
+							else if constexpr (numArgs == 11) {
+								(r[0].cast<Class*>()->*m_attr)(
+									r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+									r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+									r[9].cast(), r[10].cast(), r[11].cast()
+									);
+							}
+							else if constexpr (numArgs == 10) {
+								(r[0].cast<Class*>()->*m_attr)(
+									r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+									r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+									r[9].cast(), r[10].cast()
+									);
+							}
+							else if constexpr (numArgs == 9) {
+								(r[0].cast<Class*>()->*m_attr)(
+									r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+									r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+									r[9].cast()
+									);
+							}
+							else if constexpr (numArgs == 8) {
+								(r[0].cast<Class*>()->*m_attr)(
+									r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+									r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast()
+									);
+							}
+							else if constexpr (numArgs == 7) {
+								(r[0].cast<Class*>()->*m_attr)(
+									r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+									r[5].cast(), r[6].cast(), r[7].cast()
+									);
+							}
+							else if constexpr (numArgs == 6) {
+								(r[0].cast<Class*>()->*m_attr)(
+									r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+									r[5].cast(), r[6].cast()
+									);
+							}
+							else if constexpr (numArgs == 5) {
+								(r[0].cast<Class*>()->*m_attr)(
+									r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+									r[5].cast()
+									);
+							}
+							else if constexpr (numArgs == 4) {
+								(r[0].cast<Class*>()->*m_attr)(
+									r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast()
+									);
+							}
+							else if constexpr (numArgs == 3) {
+								(r[0].cast<Class*>()->*m_attr)(
+									r[1].cast(), r[2].cast(), r[3].cast()
+									);
+							}
+							else if constexpr (numArgs == 2) {
+								(r[0].cast<Class*>()->*m_attr)(
+									r[1].cast(), r[2].cast()
+									);
+							}
+							else if constexpr (numArgs == 1) {
+								(r[0].cast<Class*>()->*m_attr)(
+									r[1].cast()
+									);
+							}
+							else if constexpr (numArgs <= 0) {
+								(r[0].cast<Class*>()->*m_attr)();
+							}
+							return temp;
 						}
 						else {
-							return std::move(returned_obj);
+							if constexpr (numArgs == 16) {
+								return (r[0].cast<Class*>()->*m_attr)(
+									r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+									r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+									r[9].cast(), r[10].cast(), r[11].cast(), r[12].cast(),
+									r[13].cast(), r[14].cast(), r[15].cast(), r[16].cast()
+									);
+							}
+							else if constexpr (numArgs == 15) {
+								return (r[0].cast<Class*>()->*m_attr)(
+									r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+									r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+									r[9].cast(), r[10].cast(), r[11].cast(), r[12].cast(),
+									r[13].cast(), r[14].cast(), r[15].cast()
+									);
+							}
+							else if constexpr (numArgs == 14) {
+								return (r[0].cast<Class*>()->*m_attr)(
+									r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+									r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+									r[9].cast(), r[10].cast(), r[11].cast(), r[12].cast(),
+									r[13].cast(), r[14].cast()
+									);
+							}
+							else if constexpr (numArgs == 13) {
+								return (r[0].cast<Class*>()->*m_attr)(
+									r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+									r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+									r[9].cast(), r[10].cast(), r[11].cast(), r[12].cast(),
+									r[13].cast()
+									);
+							}
+							else if constexpr (numArgs == 12) {
+								return (r[0].cast<Class*>()->*m_attr)(
+									r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+									r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+									r[9].cast(), r[10].cast(), r[11].cast(), r[12].cast()
+									);
+							}
+							else if constexpr (numArgs == 11) {
+								return (r[0].cast<Class*>()->*m_attr)(
+									r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+									r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+									r[9].cast(), r[10].cast(), r[11].cast()
+									);
+							}
+							else if constexpr (numArgs == 10) {
+								return (r[0].cast<Class*>()->*m_attr)(
+									r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+									r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+									r[9].cast(), r[10].cast()
+									);
+							}
+							else if constexpr (numArgs == 9) {
+								return (r[0].cast<Class*>()->*m_attr)(
+									r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+									r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+									r[9].cast()
+									);
+							}
+							else if constexpr (numArgs == 8) {
+								return (r[0].cast<Class*>()->*m_attr)(
+									r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+									r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast()
+									);
+							}
+							else if constexpr (numArgs == 7) {
+								return (r[0].cast<Class*>()->*m_attr)(
+									r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+									r[5].cast(), r[6].cast(), r[7].cast()
+									);
+							}
+							else if constexpr (numArgs == 6) {
+								return (r[0].cast<Class*>()->*m_attr)(
+									r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+									r[5].cast(), r[6].cast()
+									);
+							}
+							else if constexpr (numArgs == 5) {
+								return (r[0].cast<Class*>()->*m_attr)(
+									r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+									r[5].cast()
+									);
+							}
+							else if constexpr (numArgs == 4) {
+								return (r[0].cast<Class*>()->*m_attr)(
+									r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast()
+									);
+							}
+							else if constexpr (numArgs == 3) {
+								return (r[0].cast<Class*>()->*m_attr)(
+									r[1].cast(), r[2].cast(), r[3].cast()
+									);
+							}
+							else if constexpr (numArgs == 2) {
+								return (r[0].cast<Class*>()->*m_attr)(
+									r[1].cast(), r[2].cast()
+									);
+							}
+							else if constexpr (numArgs == 1) {
+								return (r[0].cast<Class*>()->*m_attr)(
+									r[1].cast()
+									);
+							}
+							else if constexpr (numArgs <= 0) {
+								return (r[0].cast<Class*>()->*m_attr)();
+							}
 						}
 					}
 				};
@@ -3727,223 +4150,381 @@ namespace GoodLang {
 			public:
 				using argType = std::tuple<Class, T...>;
 				static constexpr auto numArgs = std::tuple_size_v<argType> -1;
-				static Param_Types Get_Arg_Type() {
-					std::vector<std::pair<std::string, Type_Info>> t_types{ { "parent", user_type<Class>() } };
-					if constexpr (numArgs > 0) {
-						t_types.push_back({ "Param0", user_type<typename std::tuple_element_t<1, argType>>() });
-					}
-					if constexpr (numArgs > 1) {
-						t_types.push_back({ "Param1", user_type<typename std::tuple_element_t<2, argType>>() });
-					}
-					if constexpr (numArgs > 2) {
-						t_types.push_back({ "Param2", user_type<typename std::tuple_element_t<3, argType>>() });
-					}
-					if constexpr (numArgs > 3) {
-						t_types.push_back({ "Param3", user_type<typename std::tuple_element_t<4, argType>>() });
-					}
-					if constexpr (numArgs > 4) {
-						t_types.push_back({ "Param4", user_type<typename std::tuple_element_t<5, argType>>() });
-					}
-					if constexpr (numArgs > 5) {
-						t_types.push_back({ "Param5", user_type<typename std::tuple_element_t<6, argType>>() });
-					}
-					if constexpr (numArgs > 6) {
-						t_types.push_back({ "Param6", user_type<typename std::tuple_element_t<7, argType>>() });
-					}
-					if constexpr (numArgs > 7) {
-						t_types.push_back({ "Param7", user_type<typename std::tuple_element_t<8, argType>>() });
-					}
-					if constexpr (numArgs > 8) {
-						t_types.push_back({ "Param8", user_type<typename std::tuple_element_t<9, argType>>() });
-					}
-					if constexpr (numArgs > 9) {
-						t_types.push_back({ "Param9", user_type<typename std::tuple_element_t<10, argType>>() });
-					}
-					if constexpr (numArgs > 10) {
-						t_types.push_back({ "Param10", user_type<typename std::tuple_element_t<11, argType>>() });
-					}
-					if constexpr (numArgs > 11) {
-						t_types.push_back({ "Param11", user_type<typename std::tuple_element_t<12, argType>>() });
-					}
-					if constexpr (numArgs > 12) {
-						t_types.push_back({ "Param12", user_type<typename std::tuple_element_t<13, argType>>() });
-					}
-					if constexpr (numArgs > 13) {
-						t_types.push_back({ "Param13", user_type<typename std::tuple_element_t<14, argType>>() });
-					}
-					if constexpr (numArgs > 14) {
-						t_types.push_back({ "Param14", user_type<typename std::tuple_element_t<15, argType>>() });
-					}
-					if constexpr (numArgs > 15) {
-						t_types.push_back({ "Param15", user_type<typename std::tuple_element_t<16, argType>>() });
-					}
-					return Param_Types{ t_types };
-				};
-				static Type_Info Get_Return_Type() {
-					return user_type< R >();
+				using actualT = typename std::decay_t<typename details::get_type<R>::type>;
+				static GoodLang::FunctionSignature CreateSignature() {
+					std::vector<std::weak_ptr<Type_Info>> types(numArgs + 1, std::weak_ptr<Type_Info>());
+					types[0] = user_type_shared<const Class&>();
+#define argT(NN) if constexpr (numArgs > NN) { types[NN+1] = user_type_shared<typename std::tuple_element_t<NN, argType>>(); }
+					argT(0);
+					argT(1);
+					argT(2);
+					argT(3);
+					argT(4);
+					argT(5);
+					argT(6);
+					argT(7);
+					argT(8);
+					argT(9);
+					argT(10);
+					argT(11);
+					argT(12);
+					argT(13);
+					argT(14);
+					argT(15);
+#undef argT
+					GoodLang::ParamTypes params(types);
+					GoodLang::FunctionArgs args(params);
+					return GoodLang::FunctionSignature(user_type_shared<typename details::get_type<R>::type>(), args, "", "");
 				};
 
 			public:
 				Const_Member_Function_Impl(R(Class::* f)(T...) const)
-					: Proxy_Function_Base(Get_Arg_Type(), Get_Return_Type())
+					: Proxy_Function_Base(CreateSignature())
 					, m_attr(std::move(f)) {};
 				virtual ~Const_Member_Function_Impl() = default;
 
 			protected:
-				// assumes conversion already happened
 				virtual Any do_call(std::vector<Any> const& r) const override {
-					if (r.size() < (numArgs + 1)) throw(exception::arity_error(r.size(), numArgs + 1));
-
-					std::vector<Any> temp;
-					for (int i = 1; i < r.size(); i++) temp.push_back(r[i]);
-
-					return do_call_impl(r[0].cast<std::shared_ptr<Class>>(), temp);
-				};
-
-				decltype(auto) do_call_impl_impl(Class* o, std::vector<Any> const& r) const {
-					if constexpr (numArgs == 0) {
-						return (R)(o->*m_attr)();
-					}
-					else if constexpr (numArgs == 1) {
-						return (R)(o->*m_attr)(
-							r[0].cast()
-							);
-					}
-					else if constexpr (numArgs == 2) {
-						return (R)(o->*m_attr)(
-							r[0].cast(), r[1].cast()
-							);
-					}
-					else if constexpr (numArgs == 3) {
-						return (R)(o->*m_attr)(
-							r[0].cast(), r[1].cast(), r[2].cast()
-							);
-					}
-					else if constexpr (numArgs == 4) {
-						return (R)(o->*m_attr)(
-							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast()
-							);
-					}
-					else if constexpr (numArgs == 5) {
-						return (R)(o->*m_attr)(
-							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
-							r[4].cast()
-							);
-					}
-					else if constexpr (numArgs == 6) {
-						return (R)(o->*m_attr)(
-							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
-							r[4].cast(), r[5].cast()
-							);
-					}
-					else if constexpr (numArgs == 7) {
-						return (R)(o->*m_attr)(
-							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
-							r[4].cast(), r[5].cast(), r[6].cast()
-							);
-					}
-					else if constexpr (numArgs == 8) {
-						return (R)(o->*m_attr)(
-							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
-							r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast()
-							);
-					}
-					else if constexpr (numArgs == 9) {
-						return (R)(o->*m_attr)(
-							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
-							r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
-							r[8].cast()
-							);
-					}
-					else if constexpr (numArgs == 10) {
-						return (R)(o->*m_attr)(
-							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
-							r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
-							r[8].cast(), r[9].cast()
-							);
-					}
-					else if constexpr (numArgs == 11) {
-						return (R)(o->*m_attr)(
-							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
-							r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
-							r[8].cast(), r[9].cast(), r[10].cast()
-							);
-					}
-					else if constexpr (numArgs == 12) {
-						return (R)(o->*m_attr)(
-							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
-							r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
-							r[8].cast(), r[9].cast(), r[10].cast(), r[11].cast()
-							);
-					}
-					else if constexpr (numArgs == 13) {
-						return (R)(o->*m_attr)(
-							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
-							r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
-							r[8].cast(), r[9].cast(), r[10].cast(), r[11].cast(),
-							r[12].cast()
-							);
-					}
-					else if constexpr (numArgs == 14) {
-						return (R)(o->*m_attr)(
-							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
-							r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
-							r[8].cast(), r[9].cast(), r[10].cast(), r[11].cast(),
-							r[12].cast(), r[13].cast()
-							);
-					}
-					else if constexpr (numArgs == 15) {
-						return (R)(o->*m_attr)(
-							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
-							r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
-							r[8].cast(), r[9].cast(), r[10].cast(), r[11].cast(),
-							r[12].cast(), r[13].cast(), r[14].cast()
-							);
-					}
-					else if constexpr (numArgs == 16) {
-						return (R)(o->*m_attr)(
-							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
-							r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
-							r[8].cast(), r[9].cast(), r[10].cast(), r[11].cast(),
-							r[12].cast(), r[13].cast(), r[14].cast(), r[15].cast()
-							);
-					}
-				};
-
-				Any do_call_impl(std::shared_ptr<Class> o, std::vector<Any> const& r) const {
-					if constexpr (std::is_same_v<void, R>) {
-						do_call_impl_impl(o.get(), r);
-						return Any();
+					using returnType = R;
+					if constexpr (std::is_reference< returnType>::value) {
+						// if the return type is a reference, the parent(s) should be protected by carrying them along. 
+						using refAsBaseType = typename std::remove_reference_t< returnType>;
+						using ptrType = std::shared_ptr<refAsBaseType>;
+						ptrType out;
+						std::vector<Any> parents = r;
+						if constexpr (numArgs == 16) {
+							out = ptrType(&(r[0].cast<Class*>()->*m_attr)(
+								r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+								r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+								r[9].cast(), r[10].cast(), r[11].cast(), r[12].cast(),
+								r[13].cast(), r[14].cast(), r[15].cast(), r[16].cast()
+								), [parents](refAsBaseType*) { if (parents.size() < numArgs) { std::cout << "ERR" << std::endl; } });
+						}
+						else if constexpr (numArgs == 15) {
+							out = ptrType(&(r[0].cast<Class*>()->*m_attr)(
+								r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+								r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+								r[9].cast(), r[10].cast(), r[11].cast(), r[12].cast(),
+								r[13].cast(), r[14].cast(), r[15].cast()
+								), [parents](refAsBaseType*) { if (parents.size() < numArgs) { std::cout << "ERR" << std::endl; } });
+						}
+						else if constexpr (numArgs == 14) {
+							out = ptrType(&(r[0].cast<Class*>()->*m_attr)(
+								r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+								r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+								r[9].cast(), r[10].cast(), r[11].cast(), r[12].cast(),
+								r[13].cast(), r[14].cast()
+								), [parents](refAsBaseType*) { if (parents.size() < numArgs) { std::cout << "ERR" << std::endl; } });
+						}
+						else if constexpr (numArgs == 13) {
+							out = ptrType(&(r[0].cast<Class*>()->*m_attr)(
+								r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+								r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+								r[9].cast(), r[10].cast(), r[11].cast(), r[12].cast(),
+								r[13].cast()
+								), [parents](refAsBaseType*) { if (parents.size() < numArgs) { std::cout << "ERR" << std::endl; } });
+						}
+						else if constexpr (numArgs == 12) {
+							out = ptrType(&(r[0].cast<Class*>()->*m_attr)(
+								r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+								r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+								r[9].cast(), r[10].cast(), r[11].cast(), r[12].cast()
+								), [parents](refAsBaseType*) { if (parents.size() < numArgs) { std::cout << "ERR" << std::endl; } });
+						}
+						else if constexpr (numArgs == 11) {
+							out = ptrType(&(r[0].cast<Class*>()->*m_attr)(
+								r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+								r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+								r[9].cast(), r[10].cast(), r[11].cast()
+								), [parents](refAsBaseType*) { if (parents.size() < numArgs) { std::cout << "ERR" << std::endl; } });
+						}
+						else if constexpr (numArgs == 10) {
+							out = ptrType(&(r[0].cast<Class*>()->*m_attr)(
+								r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+								r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+								r[9].cast(), r[10].cast()
+								), [parents](refAsBaseType*) { if (parents.size() < numArgs) { std::cout << "ERR" << std::endl; } });
+						}
+						else if constexpr (numArgs == 9) {
+							out = ptrType(&(r[0].cast<Class*>()->*m_attr)(
+								r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+								r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+								r[9].cast()
+								), [parents](refAsBaseType*) { if (parents.size() < numArgs) { std::cout << "ERR" << std::endl; } });
+						}
+						else if constexpr (numArgs == 8) {
+							out = ptrType(&(r[0].cast<Class*>()->*m_attr)(
+								r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+								r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast()
+								), [parents](refAsBaseType*) { if (parents.size() < numArgs) { std::cout << "ERR" << std::endl; } });
+						}
+						else if constexpr (numArgs == 7) {
+							out = ptrType(&(r[0].cast<Class*>()->*m_attr)(
+								r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+								r[5].cast(), r[6].cast(), r[7].cast()
+								), [parents](refAsBaseType*) { if (parents.size() < numArgs) { std::cout << "ERR" << std::endl; } });
+						}
+						else if constexpr (numArgs == 6) {
+							out = ptrType(&(r[0].cast<Class*>()->*m_attr)(
+								r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+								r[5].cast(), r[6].cast()
+								), [parents](refAsBaseType*) { if (parents.size() < numArgs) { std::cout << "ERR" << std::endl; } });
+						}
+						else if constexpr (numArgs == 5) {
+							out = ptrType(&(r[0].cast<Class*>()->*m_attr)(
+								r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+								r[5].cast()
+								), [parents](refAsBaseType*) { if (parents.size() < numArgs) { std::cout << "ERR" << std::endl; } });
+						}
+						else if constexpr (numArgs == 4) {
+							out = ptrType(&(r[0].cast<Class*>()->*m_attr)(
+								r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast()
+								), [parents](refAsBaseType*) { if (parents.size() < numArgs) { std::cout << "ERR" << std::endl; } });
+						}
+						else if constexpr (numArgs == 3) {
+							out = ptrType(&(r[0].cast<Class*>()->*m_attr)(
+								r[1].cast(), r[2].cast(), r[3].cast()
+								), [parents](refAsBaseType*) { if (parents.size() < numArgs) { std::cout << "ERR" << std::endl; } });
+						}
+						else if constexpr (numArgs == 2) {
+							out = ptrType(&(r[0].cast<Class*>()->*m_attr)(
+								r[1].cast(), r[2].cast()
+								), [parents](refAsBaseType*) { if (parents.size() < numArgs) { std::cout << "ERR" << std::endl; } });
+						}
+						else if constexpr (numArgs == 1) {
+							out = ptrType(&(r[0].cast<Class*>()->*m_attr)(
+								r[1].cast()
+								), [parents](refAsBaseType*) { if (parents.size() < numArgs) { std::cout << "ERR" << std::endl; } });
+						}
+						else if constexpr (numArgs <= 0) {
+							out = ptrType(&(r[0].cast<Class*>()->*m_attr)(), [parents](refAsBaseType*) { if (parents.size() < numArgs) { std::cout << "ERR" << std::endl; } });
+						}
+						return out;
 					}
 					else {
-						R returned_obj{ do_call_impl_impl(o.get(), r) };
-						using Type = typename std::decay_t<decltype(returned_obj)>;
-
-						if constexpr (std::is_same_v<Any, typename std::remove_reference_t<Type>>) {
-							// Any? Return reference to the underlying value, NOT a reference to the Any.
-							return returned_obj;
-						}
-						else if constexpr (std::is_pointer<R>::value) {
-							// Pointer? Wrap it as a shared pointer.
-							using Type2 = typename std::remove_pointer<R>::type;
-							if (returned_obj) {
-								return std::shared_ptr<Type2>(returned_obj, [=](Type2*) { (void)o.get(); /* do nothing */ });
+						// best-case, normal operation
+						if constexpr (std::is_same_v<returnType, void>) {
+							static Any temp;
+							if constexpr (numArgs == 16) {
+								(r[0].cast<Class*>()->*m_attr)(
+									r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+									r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+									r[9].cast(), r[10].cast(), r[11].cast(), r[12].cast(),
+									r[13].cast(), r[14].cast(), r[15].cast(), r[16].cast()
+									);
 							}
-							else {
-								return Any();
+							else if constexpr (numArgs == 15) {
+								(r[0].cast<Class*>()->*m_attr)(
+									r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+									r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+									r[9].cast(), r[10].cast(), r[11].cast(), r[12].cast(),
+									r[13].cast(), r[14].cast(), r[15].cast()
+									);
 							}
-						}
-						else if constexpr (std::is_reference<R>::value) {
-							// Reference? Wrap it as a shared pointer.
-							using Type2 = typename std::remove_reference<R>::type;
-							return std::shared_ptr<Type2>(&returned_obj, [=](Type2*) { (void)o.get(); /* do nothing */ });
+							else if constexpr (numArgs == 14) {
+								(r[0].cast<Class*>()->*m_attr)(
+									r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+									r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+									r[9].cast(), r[10].cast(), r[11].cast(), r[12].cast(),
+									r[13].cast(), r[14].cast()
+									);
+							}
+							else if constexpr (numArgs == 13) {
+								(r[0].cast<Class*>()->*m_attr)(
+									r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+									r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+									r[9].cast(), r[10].cast(), r[11].cast(), r[12].cast(),
+									r[13].cast()
+									);
+							}
+							else if constexpr (numArgs == 12) {
+								(r[0].cast<Class*>()->*m_attr)(
+									r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+									r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+									r[9].cast(), r[10].cast(), r[11].cast(), r[12].cast()
+									);
+							}
+							else if constexpr (numArgs == 11) {
+								(r[0].cast<Class*>()->*m_attr)(
+									r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+									r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+									r[9].cast(), r[10].cast(), r[11].cast()
+									);
+							}
+							else if constexpr (numArgs == 10) {
+								(r[0].cast<Class*>()->*m_attr)(
+									r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+									r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+									r[9].cast(), r[10].cast()
+									);
+							}
+							else if constexpr (numArgs == 9) {
+								(r[0].cast<Class*>()->*m_attr)(
+									r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+									r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+									r[9].cast()
+									);
+							}
+							else if constexpr (numArgs == 8) {
+								(r[0].cast<Class*>()->*m_attr)(
+									r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+									r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast()
+									);
+							}
+							else if constexpr (numArgs == 7) {
+								(r[0].cast<Class*>()->*m_attr)(
+									r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+									r[5].cast(), r[6].cast(), r[7].cast()
+									);
+							}
+							else if constexpr (numArgs == 6) {
+								(r[0].cast<Class*>()->*m_attr)(
+									r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+									r[5].cast(), r[6].cast()
+									);
+							}
+							else if constexpr (numArgs == 5) {
+								(r[0].cast<Class*>()->*m_attr)(
+									r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+									r[5].cast()
+									);
+							}
+							else if constexpr (numArgs == 4) {
+								(r[0].cast<Class*>()->*m_attr)(
+									r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast()
+									);
+							}
+							else if constexpr (numArgs == 3) {
+								(r[0].cast<Class*>()->*m_attr)(
+									r[1].cast(), r[2].cast(), r[3].cast()
+									);
+							}
+							else if constexpr (numArgs == 2) {
+								(r[0].cast<Class*>()->*m_attr)(
+									r[1].cast(), r[2].cast()
+									);
+							}
+							else if constexpr (numArgs == 1) {
+								(r[0].cast<Class*>()->*m_attr)(
+									r[1].cast()
+									);
+							}
+							else if constexpr (numArgs <= 0) {
+								(r[0].cast<Class*>()->*m_attr)();
+							}
+							return temp;
 						}
 						else {
-							return std::move(returned_obj);
+							if constexpr (numArgs == 16) {
+								return (r[0].cast<Class*>()->*m_attr)(
+									r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+									r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+									r[9].cast(), r[10].cast(), r[11].cast(), r[12].cast(),
+									r[13].cast(), r[14].cast(), r[15].cast(), r[16].cast()
+									);
+							}
+							else if constexpr (numArgs == 15) {
+								return (r[0].cast<Class*>()->*m_attr)(
+									r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+									r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+									r[9].cast(), r[10].cast(), r[11].cast(), r[12].cast(),
+									r[13].cast(), r[14].cast(), r[15].cast()
+									);
+							}
+							else if constexpr (numArgs == 14) {
+								return (r[0].cast<Class*>()->*m_attr)(
+									r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+									r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+									r[9].cast(), r[10].cast(), r[11].cast(), r[12].cast(),
+									r[13].cast(), r[14].cast()
+									);
+							}
+							else if constexpr (numArgs == 13) {
+								return (r[0].cast<Class*>()->*m_attr)(
+									r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+									r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+									r[9].cast(), r[10].cast(), r[11].cast(), r[12].cast(),
+									r[13].cast()
+									);
+							}
+							else if constexpr (numArgs == 12) {
+								return (r[0].cast<Class*>()->*m_attr)(
+									r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+									r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+									r[9].cast(), r[10].cast(), r[11].cast(), r[12].cast()
+									);
+							}
+							else if constexpr (numArgs == 11) {
+								return (r[0].cast<Class*>()->*m_attr)(
+									r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+									r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+									r[9].cast(), r[10].cast(), r[11].cast()
+									);
+							}
+							else if constexpr (numArgs == 10) {
+								return (r[0].cast<Class*>()->*m_attr)(
+									r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+									r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+									r[9].cast(), r[10].cast()
+									);
+							}
+							else if constexpr (numArgs == 9) {
+								return (r[0].cast<Class*>()->*m_attr)(
+									r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+									r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+									r[9].cast()
+									);
+							}
+							else if constexpr (numArgs == 8) {
+								return (r[0].cast<Class*>()->*m_attr)(
+									r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+									r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast()
+									);
+							}
+							else if constexpr (numArgs == 7) {
+								return (r[0].cast<Class*>()->*m_attr)(
+									r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+									r[5].cast(), r[6].cast(), r[7].cast()
+									);
+							}
+							else if constexpr (numArgs == 6) {
+								return (r[0].cast<Class*>()->*m_attr)(
+									r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+									r[5].cast(), r[6].cast()
+									);
+							}
+							else if constexpr (numArgs == 5) {
+								return (r[0].cast<Class*>()->*m_attr)(
+									r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+									r[5].cast()
+									);
+							}
+							else if constexpr (numArgs == 4) {
+								return (r[0].cast<Class*>()->*m_attr)(
+									r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast()
+									);
+							}
+							else if constexpr (numArgs == 3) {
+								return (r[0].cast<Class*>()->*m_attr)(
+									r[1].cast(), r[2].cast(), r[3].cast()
+									);
+							}
+							else if constexpr (numArgs == 2) {
+								return (r[0].cast<Class*>()->*m_attr)(
+									r[1].cast(), r[2].cast()
+									);
+							}
+							else if constexpr (numArgs == 1) {
+								return (r[0].cast<Class*>()->*m_attr)(
+									r[1].cast()
+									);
+							}
+							else if constexpr (numArgs <= 0) {
+								return (r[0].cast<Class*>()->*m_attr)();
+							}
 						}
 					}
 				};
-
 				R(Class::* m_attr)(T...) const;
 			};
 			template <typename R, typename Class, typename... T>
@@ -3951,225 +4532,386 @@ namespace GoodLang {
 			public:
 				using argType = std::tuple<Class, T...>;
 				static constexpr auto numArgs = std::tuple_size_v<argType> -1;
-				static Param_Types Get_Arg_Type() {
-					std::vector<std::pair<std::string, Type_Info>> t_types{ { "parent", user_type<Class>() } };
-					if constexpr (numArgs > 0) {
-						t_types.push_back({ "Param0", user_type<typename std::tuple_element_t<1, argType>>() });
-					}
-					if constexpr (numArgs > 1) {
-						t_types.push_back({ "Param1", user_type<typename std::tuple_element_t<2, argType>>() });
-					}
-					if constexpr (numArgs > 2) {
-						t_types.push_back({ "Param2", user_type<typename std::tuple_element_t<3, argType>>() });
-					}
-					if constexpr (numArgs > 3) {
-						t_types.push_back({ "Param3", user_type<typename std::tuple_element_t<4, argType>>() });
-					}
-					if constexpr (numArgs > 4) {
-						t_types.push_back({ "Param4", user_type<typename std::tuple_element_t<5, argType>>() });
-					}
-					if constexpr (numArgs > 5) {
-						t_types.push_back({ "Param5", user_type<typename std::tuple_element_t<6, argType>>() });
-					}
-					if constexpr (numArgs > 6) {
-						t_types.push_back({ "Param6", user_type<typename std::tuple_element_t<7, argType>>() });
-					}
-					if constexpr (numArgs > 7) {
-						t_types.push_back({ "Param7", user_type<typename std::tuple_element_t<8, argType>>() });
-					}
-					if constexpr (numArgs > 8) {
-						t_types.push_back({ "Param8", user_type<typename std::tuple_element_t<9, argType>>() });
-					}
-					if constexpr (numArgs > 9) {
-						t_types.push_back({ "Param9", user_type<typename std::tuple_element_t<10, argType>>() });
-					}
-					if constexpr (numArgs > 10) {
-						t_types.push_back({ "Param10", user_type<typename std::tuple_element_t<11, argType>>() });
-					}
-					if constexpr (numArgs > 11) {
-						t_types.push_back({ "Param11", user_type<typename std::tuple_element_t<12, argType>>() });
-					}
-					if constexpr (numArgs > 12) {
-						t_types.push_back({ "Param12", user_type<typename std::tuple_element_t<13, argType>>() });
-					}
-					if constexpr (numArgs > 13) {
-						t_types.push_back({ "Param13", user_type<typename std::tuple_element_t<14, argType>>() });
-					}
-					if constexpr (numArgs > 14) {
-						t_types.push_back({ "Param14", user_type<typename std::tuple_element_t<15, argType>>() });
-					}
-					if constexpr (numArgs > 15) {
-						t_types.push_back({ "Param15", user_type<typename std::tuple_element_t<16, argType>>() });
-					}
-					return Param_Types{ t_types };
-				};
-				static Type_Info Get_Return_Type() {
-					return user_type< R >();
+				using actualT = typename std::decay_t<typename details::get_type<R>::type>;
+				static GoodLang::FunctionSignature CreateSignature() {
+					std::vector<std::weak_ptr<Type_Info>> types(numArgs + 1, std::weak_ptr<Type_Info>());
+					types[0] = user_type_shared<Class&>();
+#define argT(NN) if constexpr (numArgs > NN) { types[NN+1] = user_type_shared<typename std::tuple_element_t<NN, argType>>(); }
+					argT(0);
+					argT(1);
+					argT(2);
+					argT(3);
+					argT(4);
+					argT(5);
+					argT(6);
+					argT(7);
+					argT(8);
+					argT(9);
+					argT(10);
+					argT(11);
+					argT(12);
+					argT(13);
+					argT(14);
+					argT(15);
+#undef argT
+					GoodLang::ParamTypes params(types);
+					GoodLang::FunctionArgs args(params);
+					return GoodLang::FunctionSignature(user_type_shared<typename details::get_type<R>::type>(), args, "", "");
 				};
 
 			public:
 				Default_Member_Function_Impl(R(Class::* f)(T...))
-					: Proxy_Function_Base(Get_Arg_Type(), Get_Return_Type())
+					: Proxy_Function_Base(CreateSignature())
 					, m_attr(std::move(f)) {};
 				virtual ~Default_Member_Function_Impl() = default;
 
 			private:
 				// assumes conversion already happened
 				virtual Any do_call(std::vector<Any> const& r) const override {
-					if (r.size() < (numArgs + 1)) throw(exception::arity_error(r.size(), numArgs + 1));
-
-					std::vector<Any> temp;
-					for (int i = 1; i < r.size(); i++) temp.push_back(r[i]);
-
-					return do_call_impl(r[0].cast<std::shared_ptr<Class>>(), temp);
-				};
-
-				decltype(auto) do_call_impl_impl(Class* o, std::vector<Any> const& r) const {
-					if constexpr (numArgs == 0) {
-						return (R)(o->*m_attr)();
-					}
-					else if constexpr (numArgs == 1) {
-						return (R)(o->*m_attr)(
-							r[0].cast()
-							);
-					}
-					else if constexpr (numArgs == 2) {
-						return (R)(o->*m_attr)(
-							r[0].cast(), r[1].cast()
-							);
-					}
-					else if constexpr (numArgs == 3) {
-						return (R)(o->*m_attr)(
-							r[0].cast(), r[1].cast(), r[2].cast()
-							);
-					}
-					else if constexpr (numArgs == 4) {
-						return (R)(o->*m_attr)(
-							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast()
-							);
-					}
-					else if constexpr (numArgs == 5) {
-						return (R)(o->*m_attr)(
-							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
-							r[4].cast()
-							);
-					}
-					else if constexpr (numArgs == 6) {
-						return (R)(o->*m_attr)(
-							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
-							r[4].cast(), r[5].cast()
-							);
-					}
-					else if constexpr (numArgs == 7) {
-						return (R)(o->*m_attr)(
-							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
-							r[4].cast(), r[5].cast(), r[6].cast()
-							);
-					}
-					else if constexpr (numArgs == 8) {
-						return (R)(o->*m_attr)(
-							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
-							r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast()
-							);
-					}
-					else if constexpr (numArgs == 9) {
-						return (R)(o->*m_attr)(
-							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
-							r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
-							r[8].cast()
-							);
-					}
-					else if constexpr (numArgs == 10) {
-						return (R)(o->*m_attr)(
-							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
-							r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
-							r[8].cast(), r[9].cast()
-							);
-					}
-					else if constexpr (numArgs == 11) {
-						return (R)(o->*m_attr)(
-							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
-							r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
-							r[8].cast(), r[9].cast(), r[10].cast()
-							);
-					}
-					else if constexpr (numArgs == 12) {
-						return (R)(o->*m_attr)(
-							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
-							r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
-							r[8].cast(), r[9].cast(), r[10].cast(), r[11].cast()
-							);
-					}
-					else if constexpr (numArgs == 13) {
-						return (R)(o->*m_attr)(
-							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
-							r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
-							r[8].cast(), r[9].cast(), r[10].cast(), r[11].cast(),
-							r[12].cast()
-							);
-					}
-					else if constexpr (numArgs == 14) {
-						return (R)(o->*m_attr)(
-							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
-							r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
-							r[8].cast(), r[9].cast(), r[10].cast(), r[11].cast(),
-							r[12].cast(), r[13].cast()
-							);
-					}
-					else if constexpr (numArgs == 15) {
-						return (R)(o->*m_attr)(
-							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
-							r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
-							r[8].cast(), r[9].cast(), r[10].cast(), r[11].cast(),
-							r[12].cast(), r[13].cast(), r[14].cast()
-							);
-					}
-					else if constexpr (numArgs == 16) {
-						return (R)(o->*m_attr)(
-							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
-							r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
-							r[8].cast(), r[9].cast(), r[10].cast(), r[11].cast(),
-							r[12].cast(), r[13].cast(), r[14].cast(), r[15].cast()
-							);
-					}
-				};
-
-				Any do_call_impl(std::shared_ptr<Class> o, std::vector<Any> const& r) const {
-					if constexpr (std::is_same_v<void, R>) {
-						do_call_impl_impl(o.get(), r);
-						return Any();
+					using returnType = R;
+					if constexpr (std::is_reference< returnType>::value) {
+						// if the return type is a reference, the parent(s) should be protected by carrying them along. 
+						using refAsBaseType = typename std::remove_reference_t< returnType>;
+						using ptrType = std::shared_ptr<refAsBaseType>;
+						ptrType out;
+						std::vector<Any> parents = r;
+						if constexpr (numArgs == 16) {
+							out = ptrType(&(r[0].cast<Class*>()->*m_attr)(
+								r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+								r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+								r[9].cast(), r[10].cast(), r[11].cast(), r[12].cast(),
+								r[13].cast(), r[14].cast(), r[15].cast(), r[16].cast()
+							), [parents](refAsBaseType*) { if (parents.size() < numArgs) { std::cout << "ERR" << std::endl; } });
+						}
+						else if constexpr (numArgs == 15) {
+							out = ptrType(&(r[0].cast<Class*>()->*m_attr)(
+								r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+								r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+								r[9].cast(), r[10].cast(), r[11].cast(), r[12].cast(),
+								r[13].cast(), r[14].cast(), r[15].cast()
+							), [parents](refAsBaseType*) { if (parents.size() < numArgs) { std::cout << "ERR" << std::endl; } });
+						}
+						else if constexpr (numArgs == 14) {
+							out = ptrType(&(r[0].cast<Class*>()->*m_attr)(
+								r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+								r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+								r[9].cast(), r[10].cast(), r[11].cast(), r[12].cast(),
+								r[13].cast(), r[14].cast()
+							), [parents](refAsBaseType*) { if (parents.size() < numArgs) { std::cout << "ERR" << std::endl; } });
+						}
+						else if constexpr (numArgs == 13) {
+							out = ptrType(&(r[0].cast<Class*>()->*m_attr)(
+								r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+								r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+								r[9].cast(), r[10].cast(), r[11].cast(), r[12].cast(),
+								r[13].cast()
+							), [parents](refAsBaseType*) { if (parents.size() < numArgs) { std::cout << "ERR" << std::endl; } });
+						}
+						else if constexpr (numArgs == 12) {
+							out = ptrType(&(r[0].cast<Class*>()->*m_attr)(
+								r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+								r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+								r[9].cast(), r[10].cast(), r[11].cast(), r[12].cast()
+							), [parents](refAsBaseType*) { if (parents.size() < numArgs) { std::cout << "ERR" << std::endl; } });
+						}
+						else if constexpr (numArgs == 11) {
+							out = ptrType(&(r[0].cast<Class*>()->*m_attr)(
+								r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+								r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+								r[9].cast(), r[10].cast(), r[11].cast()
+							), [parents](refAsBaseType*) { if (parents.size() < numArgs) { std::cout << "ERR" << std::endl; } });
+						}
+						else if constexpr (numArgs == 10) {
+							out = ptrType(&(r[0].cast<Class*>()->*m_attr)(
+								r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+								r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+								r[9].cast(), r[10].cast()
+							), [parents](refAsBaseType*) { if (parents.size() < numArgs) { std::cout << "ERR" << std::endl; } });
+						}
+						else if constexpr (numArgs == 9) {
+							out = ptrType(&(r[0].cast<Class*>()->*m_attr)(
+								r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+								r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+								r[9].cast()
+							), [parents](refAsBaseType*) { if (parents.size() < numArgs) { std::cout << "ERR" << std::endl; } });
+						}
+						else if constexpr (numArgs == 8) {
+							out = ptrType(&(r[0].cast<Class*>()->*m_attr)(
+								r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+								r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast()
+							), [parents](refAsBaseType*) { if (parents.size() < numArgs) { std::cout << "ERR" << std::endl; } });
+						}
+						else if constexpr (numArgs == 7) {
+							out = ptrType(&(r[0].cast<Class*>()->*m_attr)(
+								r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+								r[5].cast(), r[6].cast(), r[7].cast()
+							), [parents](refAsBaseType*) { if (parents.size() < numArgs) { std::cout << "ERR" << std::endl; } });
+						}
+						else if constexpr (numArgs == 6) {
+							out = ptrType(&(r[0].cast<Class*>()->*m_attr)(
+								r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+								r[5].cast(), r[6].cast()
+							), [parents](refAsBaseType*) { if (parents.size() < numArgs) { std::cout << "ERR" << std::endl; } });
+						}
+						else if constexpr (numArgs == 5) {
+							out = ptrType(&(r[0].cast<Class*>()->*m_attr)(
+								r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+								r[5].cast()
+							), [parents](refAsBaseType*) { if (parents.size() < numArgs) { std::cout << "ERR" << std::endl; } });
+						}
+						else if constexpr (numArgs == 4) {
+							out = ptrType(&(r[0].cast<Class*>()->*m_attr)(
+								r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast()
+							), [parents](refAsBaseType*) { if (parents.size() < numArgs) { std::cout << "ERR" << std::endl; } });
+						}
+						else if constexpr (numArgs == 3) {
+							out = ptrType(&(r[0].cast<Class*>()->*m_attr)(
+								r[1].cast(), r[2].cast(), r[3].cast()
+							), [parents](refAsBaseType*) { if (parents.size() < numArgs) { std::cout << "ERR" << std::endl; } });
+						}
+						else if constexpr (numArgs == 2) {
+							out = ptrType(&(r[0].cast<Class*>()->*m_attr)(
+								r[1].cast(), r[2].cast()
+							), [parents](refAsBaseType*) { if (parents.size() < numArgs) { std::cout << "ERR" << std::endl; } });
+						}
+						else if constexpr (numArgs == 1) {
+							out = ptrType(&(r[0].cast<Class*>()->*m_attr)(
+								r[1].cast()
+							), [parents](refAsBaseType*) { if (parents.size() < numArgs) { std::cout << "ERR" << std::endl; } });
+						}
+						else if constexpr (numArgs <= 0) {
+							out = ptrType(&(r[0].cast<Class*>()->*m_attr)(), [parents](refAsBaseType*) { if (parents.size() < numArgs) { std::cout << "ERR" << std::endl; } });
+						}
+						return out;
 					}
 					else {
-						R returned_obj{ do_call_impl_impl(o.get(), r) };
-						using Type = typename std::decay_t<decltype(returned_obj)>;
-
-						if constexpr (std::is_same_v<Any, typename std::remove_reference_t<Type>>) {
-							// Any? Return reference to the underlying value, NOT a reference to the Any.
-							return returned_obj;
-						}
-						else if constexpr (std::is_pointer<R>::value) {
-							// Pointer? Wrap it as a shared pointer.
-							using Type2 = typename std::remove_pointer<R>::type;
-							if (returned_obj) {
-								return std::shared_ptr<Type2>(returned_obj, [=](Type2*) { (void)o.get(); /* do nothing */ });
+						// best-case, normal operation
+						if constexpr (std::is_same_v<returnType, void>) {
+							static Any temp;
+							if constexpr (numArgs == 16) {
+								(r[0].cast<Class*>()->*m_attr)(
+									r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+									r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+									r[9].cast(), r[10].cast(), r[11].cast(), r[12].cast(),
+									r[13].cast(), r[14].cast(), r[15].cast(), r[16].cast()
+								);
 							}
-							else {
-								return Any();
+							else if constexpr (numArgs == 15) {
+								(r[0].cast<Class*>()->*m_attr)(
+									r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+									r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+									r[9].cast(), r[10].cast(), r[11].cast(), r[12].cast(),
+									r[13].cast(), r[14].cast(), r[15].cast()
+								);
 							}
-						}
-						else if constexpr (std::is_reference<R>::value) {
-							// Reference? Wrap it as a shared pointer.
-							using Type2 = typename std::remove_reference<R>::type;
-							return std::shared_ptr<Type2>(&returned_obj, [=](Type2*) { (void)o.get(); /* do nothing */ });
+							else if constexpr (numArgs == 14) {
+								(r[0].cast<Class*>()->*m_attr)(
+									r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+									r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+									r[9].cast(), r[10].cast(), r[11].cast(), r[12].cast(),
+									r[13].cast(), r[14].cast()
+								);
+							}
+							else if constexpr (numArgs == 13) {
+								(r[0].cast<Class*>()->*m_attr)(
+									r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+									r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+									r[9].cast(), r[10].cast(), r[11].cast(), r[12].cast(),
+									r[13].cast()
+								);
+							}
+							else if constexpr (numArgs == 12) {
+								(r[0].cast<Class*>()->*m_attr)(
+									r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+									r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+									r[9].cast(), r[10].cast(), r[11].cast(), r[12].cast()
+								);
+							}
+							else if constexpr (numArgs == 11) {
+								(r[0].cast<Class*>()->*m_attr)(
+									r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+									r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+									r[9].cast(), r[10].cast(), r[11].cast()
+								);
+							}
+							else if constexpr (numArgs == 10) {
+								(r[0].cast<Class*>()->*m_attr)(
+									r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+									r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+									r[9].cast(), r[10].cast()
+								);
+							}
+							else if constexpr (numArgs == 9) {
+								(r[0].cast<Class*>()->*m_attr)(
+									r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+									r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+									r[9].cast()
+								);
+							}
+							else if constexpr (numArgs == 8) {
+								(r[0].cast<Class*>()->*m_attr)(
+									r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+									r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast()
+								);
+							}
+							else if constexpr (numArgs == 7) {
+								(r[0].cast<Class*>()->*m_attr)(
+									r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+									r[5].cast(), r[6].cast(), r[7].cast()
+								);
+							}
+							else if constexpr (numArgs == 6) {
+								(r[0].cast<Class*>()->*m_attr)(
+									r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+									r[5].cast(), r[6].cast()
+								);
+							}
+							else if constexpr (numArgs == 5) {
+								(r[0].cast<Class*>()->*m_attr)(
+									r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+									r[5].cast()
+								);
+							}
+							else if constexpr (numArgs == 4) {
+								(r[0].cast<Class*>()->*m_attr)(
+									r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast()
+								);
+							}
+							else if constexpr (numArgs == 3) {
+								(r[0].cast<Class*>()->*m_attr)(
+									r[1].cast(), r[2].cast(), r[3].cast()
+								);
+							}
+							else if constexpr (numArgs == 2) {
+								(r[0].cast<Class*>()->*m_attr)(
+									r[1].cast(), r[2].cast()
+								);
+							}
+							else if constexpr (numArgs == 1) {
+								(r[0].cast<Class*>()->*m_attr)(
+									r[1].cast()
+								);
+							}
+							else if constexpr (numArgs <= 0) {
+								(r[0].cast<Class*>()->*m_attr)();
+							}
+							return temp;
 						}
 						else {
-							return std::move(returned_obj);
+							if constexpr (numArgs == 16) {
+								return (r[0].cast<Class*>()->*m_attr)(
+									r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+									r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+									r[9].cast(), r[10].cast(), r[11].cast(), r[12].cast(),
+									r[13].cast(), r[14].cast(), r[15].cast(), r[16].cast()
+								);
+							}
+							else if constexpr (numArgs == 15) {
+								return (r[0].cast<Class*>()->*m_attr)(
+									r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+									r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+									r[9].cast(), r[10].cast(), r[11].cast(), r[12].cast(),
+									r[13].cast(), r[14].cast(), r[15].cast()
+								);
+							}
+							else if constexpr (numArgs == 14) {
+								return (r[0].cast<Class*>()->*m_attr)(
+									r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+									r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+									r[9].cast(), r[10].cast(), r[11].cast(), r[12].cast(),
+									r[13].cast(), r[14].cast()
+								);
+							}
+							else if constexpr (numArgs == 13) {
+								return (r[0].cast<Class*>()->*m_attr)(
+									r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+									r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+									r[9].cast(), r[10].cast(), r[11].cast(), r[12].cast(),
+									r[13].cast()
+								);
+							}
+							else if constexpr (numArgs == 12) {
+								return (r[0].cast<Class*>()->*m_attr)(
+									r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+									r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+									r[9].cast(), r[10].cast(), r[11].cast(), r[12].cast()
+								);
+							}
+							else if constexpr (numArgs == 11) {
+								return (r[0].cast<Class*>()->*m_attr)(
+									r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+									r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+									r[9].cast(), r[10].cast(), r[11].cast()
+								);
+							}
+							else if constexpr (numArgs == 10) {
+								return (r[0].cast<Class*>()->*m_attr)(
+									r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+									r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+									r[9].cast(), r[10].cast()
+								);
+							}
+							else if constexpr (numArgs == 9) {
+								return (r[0].cast<Class*>()->*m_attr)(
+									r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+									r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+									r[9].cast()
+								);
+							}
+							else if constexpr (numArgs == 8) {
+								return (r[0].cast<Class*>()->*m_attr)(
+									r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+									r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast()
+								);
+							}
+							else if constexpr (numArgs == 7) {
+								return (r[0].cast<Class*>()->*m_attr)(
+									r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+									r[5].cast(), r[6].cast(), r[7].cast()
+								);
+							}
+							else if constexpr (numArgs == 6) {
+								return (r[0].cast<Class*>()->*m_attr)(
+									r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+									r[5].cast(), r[6].cast()
+								);
+							}
+							else if constexpr (numArgs == 5) {
+								return (r[0].cast<Class*>()->*m_attr)(
+									r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+									r[5].cast()
+								);
+							}
+							else if constexpr (numArgs == 4) {
+								return (r[0].cast<Class*>()->*m_attr)(
+									r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast()
+								);
+							}
+							else if constexpr (numArgs == 3) {
+								return (r[0].cast<Class*>()->*m_attr)(
+									r[1].cast(), r[2].cast(), r[3].cast()
+								);
+							}
+							else if constexpr (numArgs == 2) {
+								return (r[0].cast<Class*>()->*m_attr)(
+									r[1].cast(), r[2].cast()
+								);
+							}
+							else if constexpr (numArgs == 1) {
+								return (r[0].cast<Class*>()->*m_attr)(
+									r[1].cast()
+								);
+							}
+							else if constexpr (numArgs <= 0) {
+								return (r[0].cast<Class*>()->*m_attr)();
+							}
 						}
 					}
 				};
 
 				R(Class::* m_attr)(T...);
 			};
+
 		};
 
 		template<typename Ret, typename Class, typename... Param>
@@ -4208,66 +4950,35 @@ namespace GoodLang {
 		public:
 			using argType = std::tuple<R, T...>;
 			static constexpr auto numArgs = std::tuple_size_v<argType> -1;
-			static Param_Types Get_Arg_Type() {
-				std::vector<std::pair<std::string, Type_Info>> t_types{};
-				if constexpr (numArgs > 0) {
-					t_types.push_back({ "Param0", user_type<typename std::tuple_element_t<1, argType>>() });
-				}
-				if constexpr (numArgs > 1) {
-					t_types.push_back({ "Param1", user_type<typename std::tuple_element_t<2, argType>>() });
-				}
-				if constexpr (numArgs > 2) {
-					t_types.push_back({ "Param2", user_type<typename std::tuple_element_t<3, argType>>() });
-				}
-				if constexpr (numArgs > 3) {
-					t_types.push_back({ "Param3", user_type<typename std::tuple_element_t<4, argType>>() });
-				}
-				if constexpr (numArgs > 4) {
-					t_types.push_back({ "Param4", user_type<typename std::tuple_element_t<5, argType>>() });
-				}
-				if constexpr (numArgs > 5) {
-					t_types.push_back({ "Param5", user_type<typename std::tuple_element_t<6, argType>>() });
-				}
-				if constexpr (numArgs > 6) {
-					t_types.push_back({ "Param6", user_type<typename std::tuple_element_t<7, argType>>() });
-				}
-				if constexpr (numArgs > 7) {
-					t_types.push_back({ "Param7", user_type<typename std::tuple_element_t<8, argType>>() });
-				}
-				if constexpr (numArgs > 8) {
-					t_types.push_back({ "Param8", user_type<typename std::tuple_element_t<9, argType>>() });
-				}
-				if constexpr (numArgs > 9) {
-					t_types.push_back({ "Param9", user_type<typename std::tuple_element_t<10, argType>>() });
-				}
-				if constexpr (numArgs > 10) {
-					t_types.push_back({ "Param10", user_type<typename std::tuple_element_t<11, argType>>() });
-				}
-				if constexpr (numArgs > 11) {
-					t_types.push_back({ "Param11", user_type<typename std::tuple_element_t<12, argType>>() });
-				}
-				if constexpr (numArgs > 12) {
-					t_types.push_back({ "Param12", user_type<typename std::tuple_element_t<13, argType>>() });
-				}
-				if constexpr (numArgs > 13) {
-					t_types.push_back({ "Param13", user_type<typename std::tuple_element_t<14, argType>>() });
-				}
-				if constexpr (numArgs > 14) {
-					t_types.push_back({ "Param14", user_type<typename std::tuple_element_t<15, argType>>() });
-				}
-				if constexpr (numArgs > 15) {
-					t_types.push_back({ "Param15", user_type<typename std::tuple_element_t<16, argType>>() });
-				}
-				return Param_Types{ t_types };
-			};
-			static Type_Info Get_Return_Type() {
-				return user_type< R >();
+			static GoodLang::FunctionSignature CreateSignature() {
+				std::vector<std::weak_ptr<Type_Info>> types(numArgs, std::weak_ptr<Type_Info>());
+#define argT(NN) if constexpr (numArgs > NN) { types[NN] = user_type_shared<typename std::tuple_element_t<NN, argType>>(); }
+				argT(0);
+				argT(1);
+				argT(2);
+				argT(3);
+				argT(4);
+				argT(5);
+				argT(6);
+				argT(7);
+				argT(8);
+				argT(9);
+				argT(10);
+				argT(11);
+				argT(12);
+				argT(13);
+				argT(14);
+				argT(15);
+#undef argT
+				GoodLang::ParamTypes params(types);
+				GoodLang::FunctionArgs args(params);
+				return GoodLang::FunctionSignature(user_type_shared<R>(), args, "", "");
 			};
 
 		public:
 			Static_Function_Impl(R(*f)(T...))
-				: Proxy_Function_Base(Get_Arg_Type(), Get_Return_Type())
-				, m_attr(std::move(f)) {};
+				: Proxy_Function_Base(CreateSignature())
+				, F_m(std::move(f)) {};
 			virtual ~Static_Function_Impl() = default;
 
 		protected:
@@ -4277,149 +4988,349 @@ namespace GoodLang {
 				return do_call_impl(r);
 			};
 
-			decltype(auto) do_call_impl_impl(std::vector<Any> const& r) const {
-				if constexpr (numArgs == 0) {
-					return (*m_attr)();
-				}
-				else if constexpr (numArgs == 1) {
-					return (*m_attr)(
-						r[0].cast()
-						);
-				}
-				else if constexpr (numArgs == 2) {
-					return (*m_attr)(
-						r[0].cast(), r[1].cast()
-						);
-				}
-				else if constexpr (numArgs == 3) {
-					return (*m_attr)(
-						r[0].cast(), r[1].cast(), r[2].cast()
-						);
-				}
-				else if constexpr (numArgs == 4) {
-					return (*m_attr)(
-						r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast()
-						);
-				}
-				else if constexpr (numArgs == 5) {
-					return (*m_attr)(
-						r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
-						r[4].cast()
-						);
-				}
-				else if constexpr (numArgs == 6) {
-					return (*m_attr)(
-						r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
-						r[4].cast(), r[5].cast()
-						);
-				}
-				else if constexpr (numArgs == 7) {
-					return (*m_attr)(
-						r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
-						r[4].cast(), r[5].cast(), r[6].cast()
-						);
-				}
-				else if constexpr (numArgs == 8) {
-					return (*m_attr)(
-						r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
-						r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast()
-						);
-				}
-				else if constexpr (numArgs == 9) {
-					return (*m_attr)(
-						r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
-						r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
-						r[8].cast()
-						);
-				}
-				else if constexpr (numArgs == 10) {
-					return (*m_attr)(
-						r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
-						r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
-						r[8].cast(), r[9].cast()
-						);
-				}
-				else if constexpr (numArgs == 11) {
-					return (*m_attr)(
-						r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
-						r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
-						r[8].cast(), r[9].cast(), r[10].cast()
-						);
-				}
-				else if constexpr (numArgs == 12) {
-					return (*m_attr)(
-						r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
-						r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
-						r[8].cast(), r[9].cast(), r[10].cast(), r[11].cast()
-						);
-				}
-				else if constexpr (numArgs == 13) {
-					return (*m_attr)(
-						r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
-						r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
-						r[8].cast(), r[9].cast(), r[10].cast(), r[11].cast(),
-						r[12].cast()
-						);
-				}
-				else if constexpr (numArgs == 14) {
-					return (*m_attr)(
-						r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
-						r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
-						r[8].cast(), r[9].cast(), r[10].cast(), r[11].cast(),
-						r[12].cast(), r[13].cast()
-						);
-				}
-				else if constexpr (numArgs == 15) {
-					return (*m_attr)(
-						r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
-						r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
-						r[8].cast(), r[9].cast(), r[10].cast(), r[11].cast(),
-						r[12].cast(), r[13].cast(), r[14].cast()
-						);
-				}
-				else if constexpr (numArgs == 16) {
-					return (*m_attr)(
-						r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
-						r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
-						r[8].cast(), r[9].cast(), r[10].cast(), r[11].cast(),
-						r[12].cast(), r[13].cast(), r[14].cast(), r[15].cast()
-						);
-				}
-			};
-
 			Any do_call_impl(std::vector<Any> const& r) const {
-				decltype(auto) returned_obj = do_call_impl_impl(r);
-				using Type = typename std::decay_t<decltype(returned_obj)>;
-
-				if constexpr (std::is_same_v<void, Type>) {
-					// void? Return void.
-					return Any();
-				}
-				else if constexpr (std::is_same_v<Any, typename std::remove_reference_t<Type>>) {
-					// Any? Return reference to the underlying value, NOT a reference to the Any.
-					return returned_obj;
-				}
-				else if constexpr (std::is_pointer<Type>::value) {
-					// Pointer? Wrap it as a shared pointer.
-					using Type2 = typename std::remove_pointer<Type>::type;
-					if (returned_obj) {
-						return std::shared_ptr<Type2>(returned_obj, [=](Type2*) { /* do nothing */ });
+				if constexpr (std::is_reference< R>::value) {
+					// if the return type is a reference, the parent(s) should be protected by carrying them along. 
+					using refAsBaseType = typename std::remove_reference_t< R>;
+					using ptrType = std::shared_ptr<refAsBaseType>;
+					ptrType out;
+					std::vector<Any> parents = r;
+					if constexpr (numArgs == 16) {
+						out = ptrType(&F_m(
+							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+							r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
+							r[8].cast(), r[9].cast(), r[10].cast(), r[11].cast(),
+							r[12].cast(), r[13].cast(), r[14].cast(), r[15].cast()
+						), [parents](refAsBaseType*) { if (parents.size() < numArgs) { std::cout << "ERR" << std::endl; } });
 					}
-					else {
-						return Any();
+					else if constexpr (numArgs == 15) {
+						out = ptrType(&F_m(
+							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+							r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
+							r[8].cast(), r[9].cast(), r[10].cast(), r[11].cast(),
+							r[12].cast(), r[13].cast(), r[14].cast()
+						), [parents](refAsBaseType*) { if (parents.size() < numArgs) { std::cout << "ERR" << std::endl; } });
 					}
-				}
-				else if constexpr (std::is_reference<Type>::value) {
-					// Reference? Wrap it as a shared pointer.
-					using Type2 = typename std::remove_reference<Type>::type;
-					return std::shared_ptr<Type2>(&returned_obj, [=](Type2*) { /* do nothing */ });
+					else if constexpr (numArgs == 14) {
+						out = ptrType(&F_m(
+							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+							r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
+							r[8].cast(), r[9].cast(), r[10].cast(), r[11].cast(),
+							r[12].cast(), r[13].cast()
+						), [parents](refAsBaseType*) { if (parents.size() < numArgs) { std::cout << "ERR" << std::endl; } });
+					}
+					else if constexpr (numArgs == 13) {
+						out = ptrType(&F_m(
+							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+							r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
+							r[8].cast(), r[9].cast(), r[10].cast(), r[11].cast(),
+							r[12].cast()
+						), [parents](refAsBaseType*) { if (parents.size() < numArgs) { std::cout << "ERR" << std::endl; } });
+					}
+					else if constexpr (numArgs == 12) {
+						out = ptrType(&F_m(
+							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+							r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
+							r[8].cast(), r[9].cast(), r[10].cast(), r[11].cast()
+						), [parents](refAsBaseType*) { if (parents.size() < numArgs) { std::cout << "ERR" << std::endl; } });
+					}
+					else if constexpr (numArgs == 11) {
+						out = ptrType(&F_m(
+							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+							r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
+							r[8].cast(), r[9].cast(), r[10].cast()
+						), [parents](refAsBaseType*) { if (parents.size() < numArgs) { std::cout << "ERR" << std::endl; } });
+					}
+					else if constexpr (numArgs == 10) {
+						out = ptrType(&F_m(
+							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+							r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
+							r[8].cast(), r[9].cast()
+						), [parents](refAsBaseType*) { if (parents.size() < numArgs) { std::cout << "ERR" << std::endl; } });
+					}
+					else if constexpr (numArgs == 9) {
+						out = ptrType(&F_m(
+							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+							r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
+							r[8].cast()
+						), [parents](refAsBaseType*) { if (parents.size() < numArgs) { std::cout << "ERR" << std::endl; } });
+					}
+					else if constexpr (numArgs == 8) {
+						out = ptrType(&F_m(
+							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+							r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast()
+						), [parents](refAsBaseType*) { if (parents.size() < numArgs) { std::cout << "ERR" << std::endl; } });
+					}
+					else if constexpr (numArgs == 7) {
+						out = ptrType(&F_m(
+							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+							r[4].cast(), r[5].cast(), r[6].cast()
+						), [parents](refAsBaseType*) { if (parents.size() < numArgs) { std::cout << "ERR" << std::endl; } });
+					}
+					else if constexpr (numArgs == 6) {
+						out = ptrType(&F_m(
+							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+							r[4].cast(), r[5].cast()
+						), [parents](refAsBaseType*) { if (parents.size() < numArgs) { std::cout << "ERR" << std::endl; } });
+					}
+					else if constexpr (numArgs == 5) {
+						out = ptrType(&F_m(
+							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+							r[4].cast()
+						), [parents](refAsBaseType*) { if (parents.size() < numArgs) { std::cout << "ERR" << std::endl; } });
+					}
+					else if constexpr (numArgs == 4) {
+						out = ptrType(&F_m(
+							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast()
+						), [parents](refAsBaseType*) { if (parents.size() < numArgs) { std::cout << "ERR" << std::endl; } });
+					}
+					else if constexpr (numArgs == 3) {
+						out = ptrType(&F_m(
+							r[0].cast(), r[1].cast(), r[2].cast()
+						), [parents](refAsBaseType*) { if (parents.size() < numArgs) { std::cout << "ERR" << std::endl; } });
+					}
+					else if constexpr (numArgs == 2) {
+						out = ptrType(&F_m(
+							r[0].cast(), r[1].cast()
+						), [parents](refAsBaseType*) { if (parents.size() < numArgs) { std::cout << "ERR" << std::endl; } });
+					}
+					else if constexpr (numArgs == 1) {
+						out = ptrType(&F_m(
+							r[0].cast()
+						), [parents](refAsBaseType*) { if (parents.size() < numArgs) { std::cout << "ERR" << std::endl; } });
+					}
+					else if constexpr (numArgs <= 0) {
+						out = ptrType(&F_m(), [parents](refAsBaseType*) { if (parents.size() < numArgs) { std::cout << "ERR" << std::endl; } });
+					}
+					return out;
 				}
 				else {
-					return std::move(returned_obj);
+					// best-case, normal operation
+					if constexpr (std::is_same_v<R, void>) {
+						static Any temp;
+						if constexpr (numArgs == 16) {
+							F_m(
+								r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+								r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
+								r[8].cast(), r[9].cast(), r[10].cast(), r[11].cast(),
+								r[12].cast(), r[13].cast(), r[14].cast(), r[15].cast()
+							);
+						}
+						else if constexpr (numArgs == 15) {
+							F_m(
+								r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+								r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
+								r[8].cast(), r[9].cast(), r[10].cast(), r[11].cast(),
+								r[12].cast(), r[13].cast(), r[14].cast()
+							);
+						}
+						else if constexpr (numArgs == 14) {
+							F_m(
+								r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+								r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
+								r[8].cast(), r[9].cast(), r[10].cast(), r[11].cast(),
+								r[12].cast(), r[13].cast()
+							);
+						}
+						else if constexpr (numArgs == 13) {
+							F_m(
+								r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+								r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
+								r[8].cast(), r[9].cast(), r[10].cast(), r[11].cast(),
+								r[12].cast()
+							);
+						}
+						else if constexpr (numArgs == 12) {
+							F_m(
+								r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+								r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
+								r[8].cast(), r[9].cast(), r[10].cast(), r[11].cast()
+							);
+						}
+						else if constexpr (numArgs == 11) {
+							F_m(
+								r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+								r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
+								r[8].cast(), r[9].cast(), r[10].cast()
+							);
+						}
+						else if constexpr (numArgs == 10) {
+							F_m(
+								r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+								r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
+								r[8].cast(), r[9].cast()
+							);
+						}
+						else if constexpr (numArgs == 9) {
+							F_m(
+								r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+								r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
+								r[8].cast()
+							);
+						}
+						else if constexpr (numArgs == 8) {
+							F_m(
+								r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+								r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast()
+							);
+						}
+						else if constexpr (numArgs == 7) {
+							F_m(
+								r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+								r[4].cast(), r[5].cast(), r[6].cast()
+							);
+						}
+						else if constexpr (numArgs == 6) {
+							F_m(
+								r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+								r[4].cast(), r[5].cast()
+							);
+						}
+						else if constexpr (numArgs == 5) {
+							F_m(
+								r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+								r[4].cast()
+							);
+						}
+						else if constexpr (numArgs == 4) {
+							F_m(
+								r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast()
+							);
+						}
+						else if constexpr (numArgs == 3) {
+							F_m(
+								r[0].cast(), r[1].cast(), r[2].cast()
+							);
+						}
+						else if constexpr (numArgs == 2) {
+							F_m(
+								r[0].cast(), r[1].cast()
+							);
+						}
+						else if constexpr (numArgs == 1) {
+							F_m(
+								r[0].cast()
+							);
+						}
+						else if constexpr (numArgs <= 0) {
+							F_m();
+						}
+						return temp;
+					}
+					else {
+
+						if constexpr (numArgs == 16) {
+							return F_m(
+								r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+								r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
+								r[8].cast(), r[9].cast(), r[10].cast(), r[11].cast(),
+								r[12].cast(), r[13].cast(), r[14].cast(), r[15].cast()
+							);
+						}
+						else if constexpr (numArgs == 15) {
+							return F_m(
+								r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+								r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
+								r[8].cast(), r[9].cast(), r[10].cast(), r[11].cast(),
+								r[12].cast(), r[13].cast(), r[14].cast()
+							);
+						}
+						else if constexpr (numArgs == 14) {
+							return F_m(
+								r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+								r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
+								r[8].cast(), r[9].cast(), r[10].cast(), r[11].cast(),
+								r[12].cast(), r[13].cast()
+							);
+						}
+						else if constexpr (numArgs == 13) {
+							return F_m(
+								r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+								r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
+								r[8].cast(), r[9].cast(), r[10].cast(), r[11].cast(),
+								r[12].cast()
+							);
+						}
+						else if constexpr (numArgs == 12) {
+							return F_m(
+								r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+								r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
+								r[8].cast(), r[9].cast(), r[10].cast(), r[11].cast()
+							);
+						}
+						else if constexpr (numArgs == 11) {
+							return F_m(
+								r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+								r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
+								r[8].cast(), r[9].cast(), r[10].cast()
+							);
+						}
+						else if constexpr (numArgs == 10) {
+							return F_m(
+								r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+								r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
+								r[8].cast(), r[9].cast()
+							);
+						}
+						else if constexpr (numArgs == 9) {
+							return F_m(
+								r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+								r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
+								r[8].cast()
+							);
+						}
+						else if constexpr (numArgs == 8) {
+							return F_m(
+								r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+								r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast()
+							);
+						}
+						else if constexpr (numArgs == 7) {
+							return F_m(
+								r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+								r[4].cast(), r[5].cast(), r[6].cast()
+							);
+						}
+						else if constexpr (numArgs == 6) {
+							return F_m(
+								r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+								r[4].cast(), r[5].cast()
+							);
+						}
+						else if constexpr (numArgs == 5) {
+							return F_m(
+								r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+								r[4].cast()
+							);
+						}
+						else if constexpr (numArgs == 4) {
+							return F_m(
+								r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast()
+							);
+						}
+						else if constexpr (numArgs == 3) {
+							return F_m(
+								r[0].cast(), r[1].cast(), r[2].cast()
+							);
+						}
+						else if constexpr (numArgs == 2) {
+							return F_m(
+								r[0].cast(), r[1].cast()
+							);
+						}
+						else if constexpr (numArgs == 1) {
+							return F_m(
+								r[0].cast()
+							);
+						}
+						else if constexpr (numArgs <= 0) {
+							return F_m();
+						}
+					}
 				}
 			};
 
-			R(*m_attr)(T...);
+			R(*F_m)(T...);
 		};
 
 		namespace detail {
@@ -4463,7 +5374,10 @@ namespace GoodLang {
 			struct is_static_member_function<R(C::*)(Args...) const volatile noexcept> : std::true_type {};
 
 
-			template<typename... Param> struct Function_Params {};
+			template<typename... Param> struct Function_Params {
+				using argType = std::tuple<Param...>;
+				static constexpr auto numArgs = std::tuple_size_v<argType>;
+			};
 
 			template<typename Ret, typename Class, typename Params, bool IsMember = false, bool IsMemberObject = false, bool IsObject = false>
 			struct Function_Signature {
@@ -4573,11 +5487,94 @@ namespace GoodLang {
 
 		} // namespace chaiscript::dispatch::detail
 
-#endif
-
 	};
 
+	// Convert nearly any function or function pointer to a callable, generic proxy function. 
+	template<typename Func> Proxy_Function make_callable(Func&& func, TypeConverter& tree) {
+		using function_header = decltype(details::detail::function_signature(func));
 
+		static constexpr const bool is_static_member_function = function_header::is_static_member_function;
+		static constexpr const bool is_member = function_header::is_member;
+		static constexpr const bool is_object = function_header::is_object;
+		static constexpr const bool is_member_object = function_header::is_member_object;
+
+		tree.AddConverter< typename function_header::Class_Type>();
+		tree.AddConverter< typename function_header::Return_Type>();
+#define argT(NN) if constexpr (function_header::Param_Types::numArgs > NN) { tree.AddConverter< typename std::tuple_element_t<NN, function_header::Param_Types::argType> >(); }
+		argT(0);
+		argT(1);
+		argT(2);
+		argT(3);
+		argT(4);
+		argT(5);
+		argT(6);
+		argT(7);
+		argT(8);
+		argT(9);
+		argT(10);
+		argT(11);
+		argT(12);
+		argT(13);
+		argT(14);
+		argT(15);
+#undef argT
+
+		if constexpr (is_object) {
+			// function objects, e.g. auto x = [](){};
+			auto* function_impl = new details::Explicit_Function_Impl(std::forward<Func>(func));
+			auto ptr{ std::static_pointer_cast<details::Proxy_Function_Base>(std::shared_ptr<typename std::remove_pointer<decltype(function_impl)>::type>(function_impl)) };
+			return ptr;
+		}
+		else if constexpr (is_member_object) {
+			// member objects, e.g. return object.member;
+			auto* function_impl = new details::Attribute_Access_Impl(std::forward<Func>(func));
+			auto ptr{ std::static_pointer_cast<details::Proxy_Function_Base>(std::shared_ptr<typename std::remove_pointer<decltype(function_impl)>::type>(function_impl)) };
+			return ptr;
+		}
+		else if constexpr (is_member && !is_member_object) {
+			// member functions, e.g. return object.member();
+			return details::Member_Function_Impl(std::forward<Func>(func));
+		}
+		else if constexpr (is_static_member_function) {
+			// static function pointers, e.g. static foo(){};
+			auto* function_impl = new details::Static_Function_Impl(std::forward<Func>(func));
+			auto ptr{ std::static_pointer_cast<details::Proxy_Function_Base>(std::shared_ptr<typename std::remove_pointer<decltype(function_impl)>::type>(function_impl)) };
+			return ptr;
+		}
+		else {
+			throw std::runtime_error("Did not handle conversion of provided function to a PROXY_FUNCTION.");
+		}
+	};
+
+	// Call a generic, proxy function using a vector of inputs (may be empty), which will be converted as necessary to the expected types. 
+	__forceinline Any call(Proxy_Function callable, std::vector<Any> const& inputs, TypeConverter& conversionTree) {
+		if (callable) {
+			return callable->operator()(inputs, conversionTree);
+		}
+		else {
+			throw exception::arity_error(inputs.size(), -1);
+		}
+	};
+
+	// Call a generic, proxy function using a vector of inputs (may be empty), which will be converted as necessary to the expected types. 
+	__forceinline Any call(Proxy_Function callable, std::vector<Any> const& inputs) {
+		if (callable) {
+			return callable->operator()(inputs);
+		}
+		else {
+			throw exception::arity_error(inputs.size(), -1);
+		}
+	};
+
+	// Call a generic, proxy function using a vector of inputs (may be empty), which will be converted as necessary to the expected types. 
+	__forceinline Any call(Proxy_Function callable, Any const& input) {
+		if (callable) {
+			return callable->operator()({ input });
+		}
+		else {
+			throw exception::arity_error(1, -1);
+		}
+	};
 
 };
 
