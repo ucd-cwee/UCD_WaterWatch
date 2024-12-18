@@ -172,6 +172,7 @@
 #include <utility>
 #include <map>
 
+// Type_Info and defer(...)
 namespace GoodLang {
 	// Finally is a pure virtual base class, implemented by the templated FinallyImpl.
 	class Finally {
@@ -652,9 +653,9 @@ namespace GoodLang {
 		};
 
 	};
-
 };
 
+// Type_Info std::hash
 namespace std {
 	template <> struct hash<GoodLang::Type_Info> {
 		std::size_t operator()(const GoodLang::Type_Info& k) const {
@@ -681,9 +682,9 @@ namespace std {
 			}
 		};
 	};
-
 };
 
+// GetHash
 namespace GoodLang {
 	template <typename T> auto& GetHash() {
 		static auto hasher{ std::hash<typename details::Bare_Type<T>::type>{} };
@@ -694,6 +695,7 @@ namespace GoodLang {
 	};
 };
 
+// Type_Info std::less, std::greater, std::equal_to
 namespace std {
 	template <> struct less<GoodLang::Type_Info> {
 		std::size_t operator()(const GoodLang::Type_Info& lhs, const GoodLang::Type_Info& rhs) const {
@@ -746,8 +748,8 @@ namespace std {
 
 };
 
+// user_type & user_type_shared
 namespace GoodLang {
-
 	namespace details {
 		/// Helper used to create a Type_Info object
 		template<typename T>
@@ -767,7 +769,6 @@ namespace GoodLang {
 
 		template<typename T> struct Get_Type_Info<const std::shared_ptr<T>&> : Get_Type_Info<T> {};
 	} // namespace detail
-
 
 	/// \brief Creates a Type_Info object representing the templated type
 	/// \tparam T Type of object to get a Type_Info for
@@ -808,9 +809,6 @@ namespace GoodLang {
 	template<typename T> const Type_Info& user_type(const T& /*t*/) noexcept {
 		return user_type<T>();
 	};
-
-
-
 };
 
 __forceinline bool operator==(std::weak_ptr<GoodLang::Type_Info> const& a, std::weak_ptr<GoodLang::Type_Info> const& b) {
@@ -832,6 +830,7 @@ __forceinline bool operator!=(GoodLang::Type_Info const& b, std::weak_ptr<GoodLa
 	return !operator==(a, b);
 };
 
+// Any, AnyAutoCast, DynamicObject, exceptions
 namespace GoodLang {
 	namespace exception {
 		/// \brief Thrown in the event that an Any cannot be cast to the desired type
@@ -1450,6 +1449,7 @@ namespace GoodLang {
 
 };
 
+// Type_Conversion_Base, its impl's, & TypeConverter wrapper
 namespace GoodLang {
 	namespace details {
 		// Tuning parameter. Should be larger than the slowest conversion time. Large values encourages fewer conversions. Smaller values encourages faster conversions.
@@ -2299,6 +2299,7 @@ namespace GoodLang {
 	};
 };
 
+// FunctionSignature, FunctionArgs, & ParamTypes
 namespace GoodLang {
 	// A collection or list of parameter types. May be a list of types for input into a function, the argument types of the function, or a simple list of types.
 	// The types are hashed together to generate a unique hash for this list that can be used to quickly compare them.
@@ -2602,6 +2603,7 @@ namespace GoodLang {
 
 };
 
+// FunctionSignature, FunctionArgs, & ParamTypes std::hash, std::less, std::greater, std::equal_to
 namespace std {
 	template <> struct hash<GoodLang::ParamTypes> {
 		std::size_t operator()(const GoodLang::ParamTypes& k) const {
@@ -2667,6 +2669,7 @@ namespace std {
 	};
 };
 
+// Proxy_Function_Base 
 namespace GoodLang {
 	namespace details {
 		/**
@@ -2678,7 +2681,6 @@ namespace GoodLang {
 		*/
 		class Proxy_Function_Base {
 		private:
-
 			static double conversion_cost(std::vector<Any> const& t_from, ParamTypes const& t_to, TypeConverter& t_conversions) {
 				double out{ 0 };
 
@@ -2717,7 +2719,7 @@ namespace GoodLang {
 			};
 
 		protected:
-			GoodLang::FunctionSignature signature;
+			GoodLang::FunctionSignature signature; // FunctionArgs
 
 		public:
 			virtual ~Proxy_Function_Base() = default;
@@ -2799,6 +2801,7 @@ namespace GoodLang {
 	};
 };
 
+// Proxy_Function_Base std::hash, std::less, std::greater, std::equal_to
 namespace std {
 	template <> struct hash<GoodLang::details::Proxy_Function_Base> {
 		std::size_t operator()(const GoodLang::details::Proxy_Function_Base& k) const {
@@ -2847,6 +2850,7 @@ namespace std {
 	};
 };
 
+// Proxy Function typedef, make_callable(...), and call(...)
 namespace GoodLang {
 	/// \brief Common typedef used for passing of any registered function in ChaiScript
 	using Proxy_Function = std::shared_ptr<details::Proxy_Function_Base>;
@@ -5575,8 +5579,360 @@ namespace GoodLang {
 			throw exception::arity_error(1, -1);
 		}
 	};
+};
+
+// Functions wrapper
+#if 0
+namespace GoodLang {
+	/*
+	// If a function is namespaced in a class, that means it's a free function in the namespace of _CLASS_NAME_, whose first parameter is to be that class type.
+	def _CLASS_NAME_::_FUNCTION_NAME_(Type_Info _PARAM_NAME_, ...) -> Type_Info { ... };
+		e.g.
+		return _FUNCTION_NAME_( _CLASS_NAME_(),  ... );
+		or
+		return _CLASS_NAME_()._FUNCTION_NAME_(...);
+
+	// If a function is namespaced in a class but noted as "static", that means it is a free-function, within the namespace of _CLASS_NAME_.
+	def static _CLASS_NAME_::_FUNCTION_NAME_(Type_Info _PARAM_NAME_, ...) -> Type_Info { ... };
+		e.g.
+		return _CLASS_NAME_::_FUNCTION_NAME_( ... );
+
+	// If a function is declared but not namespaced, then it is assumed to be a free function declared in the current namespace
+	def _FUNCTION_NAME_(Type_Info _PARAM_NAME_, ...) -> Type_Info { ... };
+		e.g.
+		return _FUNCTION_NAME_( ... );
+
+	// if a function is namespaced in a namespace, then it is assumed to be a free function
+	def _NAMESPACE_NAME_::_FUNCTION_NAME_(Type_Info _PARAM_NAME_, ...) -> Type_Info {};
+		e.g.
+		return _NAMESPACE_NAME_::_FUNCTION_NAME_();
+		or
+		return (...)._FUNCTION_NAME_(...);
+
+	namespace { // e.g. global namespace
+		class _CLASS_NAME_ {
+			def _FUNCTION_NAME_(...) -> void {};
+				e.g.
+				return ::_CLASS_NAME_()._FUNCTION_NAME_( ... );
+				or
+				return ::_CLASS_NAME_::_FUNCTION_NAME_( ::_CLASS_NAME_(), ...);
+
+			def static _FUNCTION_NAME_(...) -> void {};
+				e.g.
+				return ::_CLASS_NAME_()._FUNCTION_NAME_( ... );
+				or
+				return ::_CLASS_NAME_::_FUNCTION_NAME_( ... );
+
+			def _CLASS_NAME_() -> _CLASS_NAME_ {}; // EXCEPTION TO THE ABOVE RULES. IF THE FUNCTION NAME MATCHES THE CLASS NAME, THEN IT'S A FUNCTION ADDED TO THE PARENT NAMESPACE
+				e.g.
+				return ::_CLASS_NAME_();
+
+			def _CLASS_NAME_(...) -> _CLASS_NAME_ {}; // EXCEPTION TO THE ABOVE RULES. IF THE FUNCTION NAME MATCHES THE CLASS NAME, THEN IT'S A FUNCTION ADDED TO THE PARENT NAMESPACE
+				e.g.
+				return ::_CLASS_NAME_(...);
+
+			Type_Info _PARAMETER_NAME_; // parameter within the class, accessible from an instance of it.
+				e.g.
+				return ::_CLASS_NAME_()._PARAMETER_NAME_;
+				or
+				return ::_CLASS_NAME_::_PARAMETER_NAME_( ::_CLASS_NAME_() );
+
+			static Type_Info _VARIABLE_NAME_; // static variable associated to a class, accessible from an instance of it or from the class name.
+				e.g.
+				return ::_CLASS_NAME_()._VARIABLE_NAME_;
+				or
+				return ::_CLASS_NAME_::_VARIABLE_NAME_;
+
+			class _CLASS_NAME_ { ... } // may declare classes within a class
+			namespace _NAMESPACE_NAME_ { ... } // may declare namespaces within a class
+
+		};
+	};
+
+	namespace { // e.g. global namespace
+		namespace _NAMESPACE_NAME_ {
+			def _FUNCTION_NAME_() -> void {}; // IMPLIED TO BE STATIC SINCE THIS IS A NAMESPACE, AND NOT A CLASS
+				e.g.
+				return ::_NAMESPACE_NAME_::_FUNCTION_NAME_();
+
+			def _FUNCTION_NAME_(...) -> void {}; // IMPLIED TO BE STATIC SINCE THIS IS A NAMESPACE, AND NOT A CLASS
+				e.g.
+				return ::_NAMESPACE_NAME_::_FUNCTION_NAME_(...);
+
+			Type_Info _VARIABLE_NAME_; // global variable within the namespace, accessible outside of it. IMPLIED TO BE STATIC SINCE THIS IS A NAMESPACE, AND NOT A CLASS
+				e.g.
+				return ::_NAMESPACE_NAME_::_VARIABLE_NAME_;
+
+			class _CLASS_NAME_ { ... } // may declare classes within a namespace
+			namespace _NAMESPACE_NAME_ { ... } // may declare namespaces within a namespace
+
+
+		};
+	};
+
+	// If a function is delcared in a namespace, how that namespace begins determines the ownership behavior
+	namespace _NAMESPACE_NAME_ { // e.g. current parent namespace
+		def _FUNCTION_NAME_(...) ->  void {};
+			e.g.
+			::_NAMESPACE_NAME_::_FUNCTION_NAME_(...); // incorporates the _NAMESPACE_NAME_
+
+		def ::_FUNCTION_NAME_(...) ->  void {};
+			e.g.
+			::_FUNCTION_NAME_(...); // ignores the _NAMESPACE_NAME_
+
+		def ::_NEW_NAMESPACE_NAME_::_FUNCTION_NAME_(...) ->  void {};
+			e.g.
+			::_NEW_NAMESPACE_NAME_::_FUNCTION_NAME_(...); // ignores the _NAMESPACE_NAME_
+	};
+
+	// A possible use of that feature would be extend global functions:
+	namespace _CLASS_NAME_ { // e.g. current parent namespace
+		def ::to_string() ->  void {}; // non-static implies the first parameter must be a _CLASS_NAME_
+			e.g.
+			_CLASS_NAME_().to_string();
+			or
+			to_string(_CLASS_NAME_());
+
+		def static ::to_json(_CLASS_NAME_ a) -> JSON {};
+			e.g.
+			to_json(_CLASS_NAME_()); // as a static, global function
+			or
+			_CLASS_NAME_().to_json; // as a static function called on a class_name object
+
+		def static ::`==`(_CLASS_NAME_ a, _CLASS_NAME_ b) -> bool {};
+			e.g.
+			_CLASS_NAME_() == _CLASS_NAME_();
+			or
+			`==`( _CLASS_NAME_(), _CLASS_NAME_() );
+	};
+
+
+
+	*/
+	class Functions2 {
+	public:
+		class FunctionActual {
+		public:
+			FunctionActual() = default;
+			FunctionActual(Proxy_Function const& a, Param_Types const& b) : first(a), second(b), function_is_explicit(false) {};
+			FunctionActual(Proxy_Function const& a, Param_Types const& b, bool& isExplicit) : first(a), second(b), function_is_explicit(isExplicit) {};
+			FunctionActual(Proxy_Function const& a, Param_Types const& b, double& Cost) : first(a), second(b), cost(Cost), function_is_explicit(false) {};
+			FunctionActual(Proxy_Function const& a, Param_Types const& b, double& Cost, bool& isExplicit) : first(a), second(b), cost(Cost), function_is_explicit(isExplicit) {};
+			FunctionActual(FunctionActual&&) = default;
+			FunctionActual(FunctionActual const&) = delete;
+			FunctionActual& operator=(FunctionActual&&) = delete;
+			FunctionActual& operator=(FunctionActual const&) = delete;
+			~FunctionActual() = default;
+
+			Proxy_Function first;
+			Param_Types second;
+			std::optional<double> cost;
+			bool function_is_explicit;
+		};
+		// using FunctionActual = std::pair<Proxy_Function, Param_Types>; // this can never be seperated. The underlying function needs this conversion to function properly. 
+		using FunctionActualPtr = std::shared_ptr<FunctionActual>;
+		using FunctionSort = fibers::containers::Map< Param_Types, FunctionActualPtr>; // sorts actual functions by filters, to speed-up filtering and finding with repeat conversions
+		using FunctionMap = fibers::containers::Map< std::string, std::shared_ptr< FunctionSort > >;
+
+		mutable std::shared_ptr< FunctionMap > m_functions{ std::make_shared<FunctionMap>() };
+
+		std::shared_ptr< FunctionSort > operator[](std::string const& key) {
+			std::shared_ptr< FunctionSort > temp;
+			while (true) {
+				auto optionalF = m_functions->at(key);
+				if (optionalF.has_value()) return optionalF.value();
+
+				if (!temp) temp = std::make_shared<FunctionSort>();
+				if (1) {
+					if (m_functions->emplace(key, temp, false)) {
+						m_functions->TryCleanupUnusedMemory();
+					}
+				}
+			}
+		};
+		std::shared_ptr< FunctionSort > operator[](std::string const& key) const {
+			auto optionalF = m_functions->at(key);
+			if (optionalF.has_value()) return optionalF.value();
+			return nullptr;
+		};
+		std::shared_ptr< FunctionSort > operator()(std::string const& key) { return operator[](key); };
+		std::shared_ptr< FunctionSort > operator()(std::string const& key) const { return operator[](key); };
+		std::shared_ptr< FunctionSort > at(std::string const& key) const { return operator()(key); };
+
+		FunctionActualPtr operator()(std::string const& key, Function_Params const& params) const {
+			if (auto ptr = operator()(key)) {
+				defer(ptr->TryCleanupUnusedMemory());
+				auto optionalF = ptr->at_hash(params.hash());
+				if (optionalF.has_value()) return optionalF.value();
+			}
+			return nullptr;
+		};
+		FunctionActualPtr at(std::string const& key, Function_Params const& params) const {
+			return operator()(key, params);
+		};
+
+		FunctionActualPtr operator()(std::string const& key, Param_Types const& params) const {
+			if (auto ptr = operator()(key)) {
+				defer(ptr->TryCleanupUnusedMemory());
+				auto optionalF = ptr->at(params);
+				if (optionalF.has_value()) return optionalF.value();
+			}
+			return nullptr;
+		};
+		FunctionActualPtr at(std::string const& key, Param_Types const& params) const {
+			return operator()(key, params);
+		};
+
+		bool emplace(std::string const& key, Param_Types const& params, Proxy_Function func, bool replaceIfAlreadyExists = false) {
+			if (func) {
+				if (auto ptr = operator()(key)) {
+					defer(ptr->TryCleanupUnusedMemory());
+					return ptr->emplace(params, std::make_shared<FunctionActual>(func, params), replaceIfAlreadyExists);
+				}
+			}
+			return false;
+		};
+		bool emplace(std::string const& key, Proxy_Function func, Param_Types const& params, bool replaceIfAlreadyExists = false) { return emplace(key, params, func, replaceIfAlreadyExists); };
+		bool emplace(std::string const& key, Proxy_Function func, bool replaceIfAlreadyExists = false) { if (func) return emplace(key, func->Arguments(), func, replaceIfAlreadyExists); else return false; };
+		bool emplace(std::string const& key, Proxy_Function func, std::vector<std::string> const& params, bool replaceIfAlreadyExists = false) { if (func) return emplace(key, func, Param_Types(func->Arguments(), params), replaceIfAlreadyExists); else return false; };
+		bool emplace(std::string const& key, std::vector<std::string> const& params, Proxy_Function func, bool replaceIfAlreadyExists = false) { if (func) return emplace(key, func, Param_Types(func->Arguments(), params), replaceIfAlreadyExists); else return false; };
+
+		bool emplace_free(std::string const& key, Param_Types const& params, Proxy_Function func, bool replaceIfAlreadyExists = false) {
+			if (func) {
+				if (auto ptr = operator()(key)) {
+					defer(ptr->TryCleanupUnusedMemory());
+					return ptr->emplace(params, std::make_shared<FunctionActual>(func, params), replaceIfAlreadyExists);
+				}
+			}
+			return false;
+		};
+		bool emplace_free(std::string const& key, Proxy_Function func, Param_Types const& params, bool replaceIfAlreadyExists = false) { return emplace_free(key, params, func, replaceIfAlreadyExists); };
+		bool emplace_free(std::string const& key, Proxy_Function func, bool replaceIfAlreadyExists = false) { if (func) return emplace_free(key, func->Arguments(), func, replaceIfAlreadyExists); else return false; };
+		bool emplace_free(std::string const& key, Proxy_Function func, std::vector<std::string> const& params, bool replaceIfAlreadyExists = false) { if (func) return emplace_free(key, func, Param_Types(func->Arguments(), params), replaceIfAlreadyExists); else return false; };
+		bool emplace_free(std::string const& key, std::vector<std::string> const& params, Proxy_Function func, bool replaceIfAlreadyExists = false) { if (func) return emplace_free(key, func, Param_Types(func->Arguments(), params), replaceIfAlreadyExists); else return false; };
+
+		bool emplace_constructor(std::string const& key, Param_Types const& params, Proxy_Function func, bool replaceIfAlreadyExists = false, bool isExplicit = false) {
+			if (func) {
+				if (auto ptr = operator()(key)) {
+					defer(ptr->TryCleanupUnusedMemory());
+					return ptr->emplace(params, std::make_shared<FunctionActual>(func, params, isExplicit), replaceIfAlreadyExists);
+				}
+			}
+			return false;
+		};
+		bool emplace_constructor(std::string const& key, Param_Types const& params, Proxy_Function func, Any const& inputObjImpl, bool replaceIfAlreadyExists = false, bool isExplicit = false) {
+			if (func) {
+				std::vector<Any> params2{ inputObjImpl };
+
+				double temp{ 0 };
+
+
+
+				for (int i = 0; i < 10; i++) {
+					auto startT = clock_ns();
+					(void)func->operator()(params2);
+					temp += ((double)(clock_ns() - startT) / 100.0);
+					temp += (((double)std::rand() / RAND_MAX) - 0.5);
+				}
+				double actualCost = details::TypeConversionBaselineCost + temp / 10.0;
+
+				if (auto ptr = operator()(key)) {
+					defer(ptr->TryCleanupUnusedMemory());
+					return ptr->emplace(params, std::make_shared<FunctionActual>(func, params, actualCost, isExplicit), replaceIfAlreadyExists);
+				}
+			}
+			return false;
+		};
+
+		/* Given a function name and call parameters, will attempt to find an exact-match function, variadic instantiation, or convertable function call, or return nullptr. */
+		scripting::Functions2::FunctionActualPtr BuildMatch(std::string const& functionName, scripting::Function_Params const& params, Type_Converter_Tree const& m_typeConverters = Type_Converter_Tree(), bool AllowTemplateInstantiation = true, bool AllowTypeConversion = true) {
+			if (auto func = at(functionName, params)) {
+				// exact match found
+				return func;
+			}
+			else {
+				std::multimap<double, scripting::Functions2::FunctionActualPtr> candidates;
+
+				if (AllowTypeConversion) {
+					if (auto ptr = this->operator[](functionName)) {
+						if (ptr) {
+							for (auto& function : *ptr) {
+								if (function) {
+									if (function->first.Template()) {
+										// already tried this...
+									}
+									else {
+										if (function->first.converts(params, m_typeConverters)) {
+											if (function->second->function_is_explicit && (function->first.hash() != params.hash())) {
+												// Must be an exact match for "explicit" functions - conversions are not allowed. 
+												continue;
+											}
+											candidates.insert({ function->first.conversion_cost(params, m_typeConverters), function->second });
+										}
+									}
+								}
+							}
+						}
+					}
+				}
+
+				if (AllowTemplateInstantiation) {
+					if (auto ptr = this->operator[](functionName)) {
+						if (ptr) {
+							for (auto& function : *ptr) {
+								if (function) {
+									if (function->first.Template()) {
+										if (function->first.converts(params, m_typeConverters)) {
+											if (function->second->function_is_explicit && (function->first.hash() != params.hash())) {
+												// Must be an exact match for "explicit" functions - conversions are not allowed. 
+												continue;
+											}
+											candidates.insert({ function->first.conversion_cost(params, m_typeConverters), function->second });
+										}
+									}
+									else {
+										// must be perfect match -- requires casting. We can try that, but only if no template exists that would work instead.
+									}
+								}
+							}
+						}
+					}
+				}
+
+				// Get the "cheapest" or fastest conversion option available at this scope.
+				for (auto& candidate : candidates) {
+					if (candidate.first == std::numeric_limits<double>::max()) { break; }
+					auto& func = candidate.second->first;
+					auto& param = candidate.second->second;
+
+					try {
+						auto newParms = scripting::Param_Types(params, param.types());
+
+						if (func) {
+							if (auto ptr = operator()(functionName)) {
+								defer(ptr->TryCleanupUnusedMemory());
+								if (ptr->emplace(newParms, candidate.second, false)) {
+									return candidate.second;
+								}
+								else {
+									// try again -- someone beat us to the punch. It'll (probably) be available this time. 
+									return BuildMatch(functionName, params, m_typeConverters, AllowTemplateInstantiation, AllowTypeConversion);
+								}
+							}
+						}
+					}
+					catch (scripting::exception::arity_error const& err) {}
+					catch (scripting::exception::bad_boxed_cast const& err) {}
+				}
+			}
+			return nullptr;
+		};
+
+	};
+
 
 };
+#endif
 
 
 
