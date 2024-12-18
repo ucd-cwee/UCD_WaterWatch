@@ -2553,7 +2553,11 @@ namespace GoodLang {
 		{
 			uniqueHash = CalculateHash(m_arguments, m_qualified_name);
 		};
-		FunctionSignature(std::weak_ptr<Type_Info> returnType, FunctionArgs const& args, std::string const& Namespace, std::string const& name)
+		FunctionSignature(
+			std::weak_ptr<Type_Info> returnType
+			, FunctionArgs const& args
+			, std::string const& Namespace = ""
+			, std::string const& name = "")
 			: m_arguments(args)
 			, m_namespace(Namespace)
 			, m_name(name)
@@ -2597,7 +2601,7 @@ namespace GoodLang {
 		std::string m_namespace;
 		std::string m_name;
 		std::string m_qualified_name; // m_namespace::m_name. Use this for the hash.
-		std::weak_ptr<Type_Info> m_returnType; // not used for the hash. 
+		std::weak_ptr<Type_Info> m_returnType; // not used for the hash.
 		size_t uniqueHash;
 	};
 
@@ -2719,23 +2723,23 @@ namespace GoodLang {
 			};
 
 		protected:
-			GoodLang::FunctionSignature signature; // FunctionArgs
+			GoodLang::FunctionSignature m_signature;
 
 		public:
 			virtual ~Proxy_Function_Base() = default;
 
 			size_t hash() const {
-				return signature.hash();
+				return m_signature.hash();
 			};
 			const GoodLang::FunctionSignature& GetSignature() const {
-				return signature;
+				return m_signature;
 			};
 			size_t NumArguments() const {
-				return signature.Arguments().size();
+				return m_signature.Arguments().size();
 			};
-			const auto& Argument(size_t N) const noexcept { return signature.Arguments().Type(N); };
-			const auto& Arguments() const noexcept { return signature.Arguments(); };
-			const auto& Returns() const noexcept { return signature.Returns(); };
+			const auto& Argument(size_t N) const noexcept { return m_signature.Arguments().Type(N); };
+			const auto& Arguments() const noexcept { return m_signature.Arguments(); };
+			const auto& Returns() const noexcept { return m_signature.Returns(); };
 
 			// Symbolic "cost" to perform the conversion. Not meant to be precise, but meant to be relative for comparison with other converters.
 			double conversion_cost(std::vector<Any> const& t_params, TypeConverter& t_conversions) const {
@@ -2767,35 +2771,35 @@ namespace GoodLang {
 			};
 
 			friend bool operator==(const Proxy_Function_Base& lhs, const Proxy_Function_Base& rhs) noexcept {
-				return lhs.signature == rhs.signature; // same signature
+				return lhs.m_signature == rhs.m_signature; // same signature
 			};
 			friend bool operator!=(const Proxy_Function_Base& lhs, const Proxy_Function_Base& rhs) noexcept {
-				return lhs.signature != rhs.signature; // same signature
+				return lhs.m_signature != rhs.m_signature; // same signature
 			};
 			friend bool operator>(const Proxy_Function_Base& lhs, const Proxy_Function_Base& rhs) noexcept {
-				return lhs.signature > rhs.signature; // same signature
+				return lhs.m_signature > rhs.m_signature; // same signature
 			};
 			friend bool operator>=(const Proxy_Function_Base& lhs, const Proxy_Function_Base& rhs) noexcept {
-				return lhs.signature >= rhs.signature; // same signature
+				return lhs.m_signature >= rhs.m_signature; // same signature
 			};
 			friend bool operator<(const Proxy_Function_Base& lhs, const Proxy_Function_Base& rhs) noexcept {
-				return lhs.signature < rhs.signature; // same signature
+				return lhs.m_signature < rhs.m_signature; // same signature
 			};
 			friend bool operator<=(const Proxy_Function_Base& lhs, const Proxy_Function_Base& rhs) noexcept {
-				return lhs.signature <= rhs.signature; // same signature
+				return lhs.m_signature <= rhs.m_signature; // same signature
 			};
 
 		protected:
 			// Performs the conversion from the input parameters to the necessary types, if possible. Throws otherwise. 
 			std::vector<Any> convert(std::vector<Any> const& t_params, TypeConverter& t_conversions) const {
-				return Proxy_Function_Base::convert(t_params, signature.Arguments().Types(), t_conversions);
+				return Proxy_Function_Base::convert(t_params, m_signature.Arguments().Types(), t_conversions);
 			};
 
 		protected:
 			virtual Any do_call(std::vector<Any> const&) const = 0;
 
 			Proxy_Function_Base(GoodLang::FunctionSignature const& p_signature)
-				: signature(p_signature)
+				: m_signature(p_signature)
 			{}
 		};
 	};
@@ -2857,7 +2861,7 @@ namespace GoodLang {
 
 	namespace details {
 		/**
-		 * Use to call member functions or free static functions
+		 * Use to call function objects
 		*/
 		template <class Callable>
 		class Explicit_Function_Impl : public Proxy_Function_Base {
@@ -5582,8 +5586,28 @@ namespace GoodLang {
 };
 
 // Functions wrapper
-#if 0
+#if 1
 namespace GoodLang {
+	class Function {
+	public:
+		Function() = default;
+		Function(Proxy_Function const& a) 
+			: m_function(a) 
+		{};
+		Function(Proxy_Function const& a, bool& isExplicit) 
+			: m_function(a)
+			, m_isEplicit(isExplicit) 
+		{};
+		Function(Function&&) = default;
+		Function(Function const&) = default;
+		Function& operator=(Function&&) = default;
+		Function& operator=(Function const&) = default;
+		~Function() = default;
+
+		Proxy_Function m_function{ nullptr };
+		bool m_isEplicit{ false };
+	};
+
 	/*
 	// If a function is namespaced in a class, that means it's a free function in the namespace of _CLASS_NAME_, whose first parameter is to be that class type.
 	def _CLASS_NAME_::_FUNCTION_NAME_(Type_Info _PARAM_NAME_, ...) -> Type_Info { ... };
@@ -5709,149 +5733,76 @@ namespace GoodLang {
 
 
 	*/
-	class Functions2 {
+	class Functions {
 	public:
-		class FunctionActual {
-		public:
-			FunctionActual() = default;
-			FunctionActual(Proxy_Function const& a, Param_Types const& b) : first(a), second(b), function_is_explicit(false) {};
-			FunctionActual(Proxy_Function const& a, Param_Types const& b, bool& isExplicit) : first(a), second(b), function_is_explicit(isExplicit) {};
-			FunctionActual(Proxy_Function const& a, Param_Types const& b, double& Cost) : first(a), second(b), cost(Cost), function_is_explicit(false) {};
-			FunctionActual(Proxy_Function const& a, Param_Types const& b, double& Cost, bool& isExplicit) : first(a), second(b), cost(Cost), function_is_explicit(isExplicit) {};
-			FunctionActual(FunctionActual&&) = default;
-			FunctionActual(FunctionActual const&) = delete;
-			FunctionActual& operator=(FunctionActual&&) = delete;
-			FunctionActual& operator=(FunctionActual const&) = delete;
-			~FunctionActual() = default;
-
-			Proxy_Function first;
-			Param_Types second;
-			std::optional<double> cost;
-			bool function_is_explicit;
+		Functions() = default;
+		Functions(Functions const& rhs) {
+			auto locked2{ std::shared_lock(rhs.m_mut) };
+			m_functions = rhs.m_functions;
 		};
-		// using FunctionActual = std::pair<Proxy_Function, Param_Types>; // this can never be seperated. The underlying function needs this conversion to function properly. 
-		using FunctionActualPtr = std::shared_ptr<FunctionActual>;
-		using FunctionSort = fibers::containers::Map< Param_Types, FunctionActualPtr>; // sorts actual functions by filters, to speed-up filtering and finding with repeat conversions
-		using FunctionMap = fibers::containers::Map< std::string, std::shared_ptr< FunctionSort > >;
+		Functions(Functions && rhs) {
+			auto locked2{ std::unique_lock(rhs.m_mut) };
+			m_functions = std::move(rhs.m_functions);
+		};
+		Functions& operator=(Functions const& rhs) {
+			auto locked{ std::unique_lock(m_mut) };
+			auto locked2{ std::shared_lock(rhs.m_mut) };
+			m_functions = rhs.m_functions;
+		};
+		Functions& operator=(Functions&& rhs) {
+			auto locked{ std::unique_lock(rhs.m_mut) };
+			auto locked2{ std::unique_lock(rhs.m_mut) };
+			m_functions = std::move(rhs.m_functions);
+		};
+		~Functions() = default;
 
-		mutable std::shared_ptr< FunctionMap > m_functions{ std::make_shared<FunctionMap>() };
+	public:
+		using FunctionPtr = std::shared_ptr<Function>;
+		using FunctionSort = std::unordered_map< ParamTypes, FunctionPtr>; // key may NOT be the function's underlying params, but just params that were previously searched... 
+		using FunctionMap = std::unordered_map< std::string, FunctionSort >;
 
-		std::shared_ptr< FunctionSort > operator[](std::string const& key) {
-			std::shared_ptr< FunctionSort > temp;
-			while (true) {
-				auto optionalF = m_functions->at(key);
-				if (optionalF.has_value()) return optionalF.value();
+		FunctionMap m_functions;
+		mutable std::shared_mutex m_mut{};
 
-				if (!temp) temp = std::make_shared<FunctionSort>();
-				if (1) {
-					if (m_functions->emplace(key, temp, false)) {
-						m_functions->TryCleanupUnusedMemory();
-					}
+		FunctionPtr operator()(std::string const& key, ParamTypes const& params) const {
+			auto locked{ std::shared_lock(m_mut) };
+			auto functionMapPtr = m_functions.find(key);
+			if (functionMapPtr != m_functions.end()) {
+				auto FunctionSortPtr = functionMapPtr->second.find(params);
+				if (FunctionSortPtr != functionMapPtr->second.end()) {
+					return FunctionSortPtr->second;
 				}
 			}
-		};
-		std::shared_ptr< FunctionSort > operator[](std::string const& key) const {
-			auto optionalF = m_functions->at(key);
-			if (optionalF.has_value()) return optionalF.value();
 			return nullptr;
 		};
-		std::shared_ptr< FunctionSort > operator()(std::string const& key) { return operator[](key); };
-		std::shared_ptr< FunctionSort > operator()(std::string const& key) const { return operator[](key); };
-		std::shared_ptr< FunctionSort > at(std::string const& key) const { return operator()(key); };
-
-		FunctionActualPtr operator()(std::string const& key, Function_Params const& params) const {
-			if (auto ptr = operator()(key)) {
-				defer(ptr->TryCleanupUnusedMemory());
-				auto optionalF = ptr->at_hash(params.hash());
-				if (optionalF.has_value()) return optionalF.value();
-			}
-			return nullptr;
-		};
-		FunctionActualPtr at(std::string const& key, Function_Params const& params) const {
+		FunctionPtr at(std::string const& key, ParamTypes const& params) const {
 			return operator()(key, params);
 		};
 
-		FunctionActualPtr operator()(std::string const& key, Param_Types const& params) const {
-			if (auto ptr = operator()(key)) {
-				defer(ptr->TryCleanupUnusedMemory());
-				auto optionalF = ptr->at(params);
-				if (optionalF.has_value()) return optionalF.value();
-			}
-			return nullptr;
+		FunctionPtr emplace(std::string const& key, ParamTypes const& params, Function const& func, bool replaceIfAlreadyExists = false) {
+			auto locked{ std::unique_lock(m_mut) };
+			auto& ptr = m_functions[key][params];
+			if (!ptr || (ptr && replaceIfAlreadyExists)) 
+				ptr = std::make_shared<Function>(func);
+			return ptr;
 		};
-		FunctionActualPtr at(std::string const& key, Param_Types const& params) const {
-			return operator()(key, params);
-		};
-
-		bool emplace(std::string const& key, Param_Types const& params, Proxy_Function func, bool replaceIfAlreadyExists = false) {
-			if (func) {
-				if (auto ptr = operator()(key)) {
-					defer(ptr->TryCleanupUnusedMemory());
-					return ptr->emplace(params, std::make_shared<FunctionActual>(func, params), replaceIfAlreadyExists);
-				}
-			}
-			return false;
-		};
-		bool emplace(std::string const& key, Proxy_Function func, Param_Types const& params, bool replaceIfAlreadyExists = false) { return emplace(key, params, func, replaceIfAlreadyExists); };
-		bool emplace(std::string const& key, Proxy_Function func, bool replaceIfAlreadyExists = false) { if (func) return emplace(key, func->Arguments(), func, replaceIfAlreadyExists); else return false; };
-		bool emplace(std::string const& key, Proxy_Function func, std::vector<std::string> const& params, bool replaceIfAlreadyExists = false) { if (func) return emplace(key, func, Param_Types(func->Arguments(), params), replaceIfAlreadyExists); else return false; };
-		bool emplace(std::string const& key, std::vector<std::string> const& params, Proxy_Function func, bool replaceIfAlreadyExists = false) { if (func) return emplace(key, func, Param_Types(func->Arguments(), params), replaceIfAlreadyExists); else return false; };
-
-		bool emplace_free(std::string const& key, Param_Types const& params, Proxy_Function func, bool replaceIfAlreadyExists = false) {
-			if (func) {
-				if (auto ptr = operator()(key)) {
-					defer(ptr->TryCleanupUnusedMemory());
-					return ptr->emplace(params, std::make_shared<FunctionActual>(func, params), replaceIfAlreadyExists);
-				}
-			}
-			return false;
-		};
-		bool emplace_free(std::string const& key, Proxy_Function func, Param_Types const& params, bool replaceIfAlreadyExists = false) { return emplace_free(key, params, func, replaceIfAlreadyExists); };
-		bool emplace_free(std::string const& key, Proxy_Function func, bool replaceIfAlreadyExists = false) { if (func) return emplace_free(key, func->Arguments(), func, replaceIfAlreadyExists); else return false; };
-		bool emplace_free(std::string const& key, Proxy_Function func, std::vector<std::string> const& params, bool replaceIfAlreadyExists = false) { if (func) return emplace_free(key, func, Param_Types(func->Arguments(), params), replaceIfAlreadyExists); else return false; };
-		bool emplace_free(std::string const& key, std::vector<std::string> const& params, Proxy_Function func, bool replaceIfAlreadyExists = false) { if (func) return emplace_free(key, func, Param_Types(func->Arguments(), params), replaceIfAlreadyExists); else return false; };
-
-		bool emplace_constructor(std::string const& key, Param_Types const& params, Proxy_Function func, bool replaceIfAlreadyExists = false, bool isExplicit = false) {
-			if (func) {
-				if (auto ptr = operator()(key)) {
-					defer(ptr->TryCleanupUnusedMemory());
-					return ptr->emplace(params, std::make_shared<FunctionActual>(func, params, isExplicit), replaceIfAlreadyExists);
-				}
-			}
-			return false;
-		};
-		bool emplace_constructor(std::string const& key, Param_Types const& params, Proxy_Function func, Any const& inputObjImpl, bool replaceIfAlreadyExists = false, bool isExplicit = false) {
-			if (func) {
-				std::vector<Any> params2{ inputObjImpl };
-
-				double temp{ 0 };
-
-
-
-				for (int i = 0; i < 10; i++) {
-					auto startT = clock_ns();
-					(void)func->operator()(params2);
-					temp += ((double)(clock_ns() - startT) / 100.0);
-					temp += (((double)std::rand() / RAND_MAX) - 0.5);
-				}
-				double actualCost = details::TypeConversionBaselineCost + temp / 10.0;
-
-				if (auto ptr = operator()(key)) {
-					defer(ptr->TryCleanupUnusedMemory());
-					return ptr->emplace(params, std::make_shared<FunctionActual>(func, params, actualCost, isExplicit), replaceIfAlreadyExists);
-				}
-			}
-			return false;
+		FunctionPtr emplace(std::string const& key, Function const& func, bool replaceIfAlreadyExists = false) {
+			auto locked{ std::unique_lock(m_mut) };
+			auto& ptr = m_functions[key][func.m_function->Arguments().Types()];
+			if (!ptr || (ptr && replaceIfAlreadyExists))
+				ptr = std::make_shared<Function>(func);
+			return ptr;
 		};
 
+#if 0
 		/* Given a function name and call parameters, will attempt to find an exact-match function, variadic instantiation, or convertable function call, or return nullptr. */
-		scripting::Functions2::FunctionActualPtr BuildMatch(std::string const& functionName, scripting::Function_Params const& params, Type_Converter_Tree const& m_typeConverters = Type_Converter_Tree(), bool AllowTemplateInstantiation = true, bool AllowTypeConversion = true) {
+		FunctionPtr BuildMatch(std::string const& functionName, ParamTypes const& params, TypeConverter& m_typeConverters, bool AllowTemplateInstantiation = true, bool AllowTypeConversion = true) {
 			if (auto func = at(functionName, params)) {
 				// exact match found
 				return func;
 			}
 			else {
-				std::multimap<double, scripting::Functions2::FunctionActualPtr> candidates;
+				std::multimap<double, FunctionPtr> candidates;
 
 				if (AllowTypeConversion) {
 					if (auto ptr = this->operator[](functionName)) {
@@ -5927,7 +5878,7 @@ namespace GoodLang {
 			}
 			return nullptr;
 		};
-
+#endif
 	};
 
 
