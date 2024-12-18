@@ -2243,13 +2243,11 @@ int main() {
 
 				if (1) {
 					auto funcPtr = std::shared_ptr<GoodLang::details::Proxy_Function_Base>(new GoodLang::details::Explicit_Function_Impl([](int& from)-> int { return from; }));
-					EXPECT_EQ_PRINTF(funcPtr->operator()({ 10 }).IsTypeOf<int>(), true);
 					EXPECT_EQ_PRINTF(funcPtr->operator()({ 10 }, tree).IsTypeOf<int>(), true);
 					EXPECT_EQ_PRINTF(funcPtr->operator()({ 10.0 }, tree).IsTypeOf<int>(), true);
 				}
 				if (1) {
 					auto funcPtr = std::shared_ptr<GoodLang::details::Proxy_Function_Base>(new GoodLang::details::Explicit_Function_Impl([](int& from)-> int& { return from; }));
-					EXPECT_EQ_PRINTF(funcPtr->operator()({ 10 }).IsTypeOf<int>(), true);
 					EXPECT_EQ_PRINTF(funcPtr->operator()({ 10 }, tree).IsTypeOf<int>(), true);
 					EXPECT_EQ_PRINTF(funcPtr->operator()({ 10.0 }, tree).IsTypeOf<int>(), true);
 
@@ -2261,10 +2259,10 @@ int main() {
 					auto funcPtr = std::shared_ptr<GoodLang::details::Proxy_Function_Base>(new GoodLang::details::Explicit_Function_Impl([](std::string& from)-> char& { return from[0]; }));
 					Any from = std::string("TEST");
 
-					EXPECT_EQ_PRINTF(funcPtr->operator()({ from }).IsTypeOf<char>(), true);
-					EXPECT_EQ_PRINTF(funcPtr->operator()({ from }).IsTypeOf<char&>(), true);
-					EXPECT_EQ_PRINTF(funcPtr->operator()({ from }).cast<char&>(), 'T');
-					Any result = funcPtr->operator()({ from });
+					EXPECT_EQ_PRINTF(funcPtr->operator()({ from }, tree).IsTypeOf<char>(), true);
+					EXPECT_EQ_PRINTF(funcPtr->operator()({ from }, tree).IsTypeOf<char&>(), true);
+					EXPECT_EQ_PRINTF(funcPtr->operator()({ from }, tree).cast<char&>(), 'T');
+					Any result = funcPtr->operator()({ from }, tree);
 					result.cast<char&>() = 'F';
 					EXPECT_EQ(from.cast<std::string>(), "FEST");
 					EXPECT_EQ(result.cast<char>(), 'F');
@@ -2282,7 +2280,7 @@ int main() {
 					Any firstChar;
 					{
 						Any from = std::string("TEST");
-						firstChar = funcPtr->operator()({ from });
+						firstChar = funcPtr->operator()({ from }, tree);
 					}
 					EXPECT_EQ_PRINTF(firstChar.cast<char>(), 'T');
 				}
@@ -2297,9 +2295,9 @@ int main() {
 					}));
 
 					Any obj = stackThing2("THING", 10, false); // make "true" if you want to see that this is correctly deleted.
-					auto varNameObj = varNameFunc->operator()({ obj });
+					auto varNameObj = varNameFunc->operator()({ obj }, tree);
 
-					auto varObj = varFunc->operator()({ obj });
+					auto varObj = varFunc->operator()({ obj }, tree);
 					EXPECT_EQ(varNameObj.IsTypeOf<std::string>(), true);
 					EXPECT_EQ(varObj.IsTypeOf<int>(), true);
 					EXPECT_EQ(varNameObj.cast<std::string>(), "THING");
@@ -2311,9 +2309,9 @@ int main() {
 					auto varFunc = std::shared_ptr<GoodLang::details::Proxy_Function_Base>(new GoodLang::details::Attribute_Access_Impl(&stackThing2::var));
 
 					Any obj = stackThing2("THING", 10, false); // make "true" if you want to see that this is correctly deleted.
-					auto varNameObj = varNameFunc->operator()({ obj });
+					auto varNameObj = varNameFunc->operator()({ obj }, tree);
 
-					auto varObj = varFunc->operator()({ obj });
+					auto varObj = varFunc->operator()({ obj }, tree);
 					EXPECT_EQ(varNameObj.IsTypeOf<std::string>(), true);
 					EXPECT_EQ(varObj.IsTypeOf<int>(), true);
 					EXPECT_EQ(varNameObj.cast<std::string>(), "THING");
@@ -2324,19 +2322,19 @@ int main() {
 				if (1) {
 					auto func_ptr = GoodLang::details::Member_Function_Impl(&stackThing2::length);
 					Any obj = stackThing2("THING", 10, false);
-					EXPECT_EQ(func_ptr->operator()(obj).cast<int>(), 5);
-					EXPECT_EQ(func_ptr->operator()(obj).cast<int const&>(), 5);
+					EXPECT_EQ(func_ptr->operator()({ obj }, tree).cast<int>(), 5);
+					EXPECT_EQ(func_ptr->operator()({ obj }, tree).cast<int const&>(), 5);
 
-					Any obj2 = func_ptr->operator()(obj);
+					Any obj2 = func_ptr->operator()({ obj }, tree);
 					EXPECT_EQ(obj2.cast<int>(), 5);
 					EXPECT_EQ(obj2.cast<int const&>(), 5);
 				}
 				if (1) {
 					auto func_ptr = GoodLang::details::Member_Function_Impl(&stackThing2::get_var_name);
 					Any obj = stackThing2("THING", 10, false);
-					EXPECT_EQ(func_ptr->operator()(obj).cast<std::string>(), "THING");
+					EXPECT_EQ(func_ptr->operator()({ obj }, tree).cast<std::string>(), "THING");
 
-					Any obj2 = func_ptr->operator()(obj);
+					Any obj2 = func_ptr->operator()({ obj }, tree);
 					EXPECT_EQ(obj2.cast<std::string>(), "THING");
 				}
 
@@ -2388,12 +2386,12 @@ int main() {
 				auto randFunc2 = make_callable([](double const& max)-> double { return max * ((double)std::rand() / (double)RAND_MAX); }, tree); // rand 0-1
 				auto randFunc3 = make_callable([](double const& max, double const& min)-> double { return min + (max-min)*((double)std::rand() / (double)RAND_MAX); }, tree); // rand 0-1
 
-				EXPECT_EQ(tree.Convert<double>(randFunc0->operator()({})), 0.0);
-				EXPECT_EQ((bool)randFunc1->operator()({}), true);
-				EXPECT_EQ((bool)randFunc1->operator()({ 1.0 }), true);
-				EXPECT_EQ((bool)randFunc1->operator()({ 1.0, 0.0 }), true);
-				EXPECT_EQ((bool)randFunc2->operator()({ 1.0 }), true);
-				EXPECT_EQ((bool)randFunc3->operator()({ 1.0, 0.0 }), true);
+				EXPECT_EQ(tree.Convert<double>(randFunc0->operator()({}, tree)), 0.0);
+				EXPECT_EQ((bool)randFunc1->operator()({}, tree), true);
+				EXPECT_EQ((bool)randFunc1->operator()({ 1.0 }, tree), true);
+				EXPECT_EQ((bool)randFunc1->operator()({ 1.0, 0.0 }, tree), true);
+				EXPECT_EQ((bool)randFunc2->operator()({ 1.0 }, tree), true);
+				EXPECT_EQ((bool)randFunc3->operator()({ 1.0, 0.0 }, tree), true);
 				EXPECT_EQ((bool)randFunc1->operator()({}, tree), true);
 				EXPECT_EQ((bool)randFunc2->operator()({ 1.0 }, tree), true);
 				EXPECT_EQ((bool)randFunc3->operator()({ 1.0, 0.0 }, tree), true);
@@ -2415,12 +2413,12 @@ int main() {
 				auto varName = make_callable(&stackThing2::varName, tree);
 				auto var = make_callable(&stackThing2::var, tree);
 
-				Any obj = stackThing2("TEST", 100.0);
+				Any obj = stackThing2("TEST", 100.0, false);
 
-				Any varNameObj1 = get_var_name->operator()(obj);
+				Any varNameObj1 = get_var_name->operator()({ obj }, tree);
 				EXPECT_EQ(varNameObj1.cast<std::string&>(), "TEST");
 
-				Any varNameObj2 = get_var_name->operator()({ obj });
+				Any varNameObj2 = get_var_name->operator()({ obj }, tree);
 				EXPECT_EQ(varNameObj2.cast<std::string&>(), "TEST");
 
 				Any varNameObj3 = get_var_name->operator()({ obj }, tree);
@@ -2441,7 +2439,177 @@ int main() {
 				
 			}
 
+			// Function & Functions
+			if (1) {
+				using namespace GoodLang;
+				TypeConverter tree;
+#define AddConv(a, b) tree.AddConverter<a, b>()
+#define AddConvs(a) \
+					AddConv(a, char); \
+					AddConv(a, bool); \
+					AddConv(a, int); \
+					AddConv(a, long); \
+					AddConv(a, float); \
+					AddConv(a, long long); \
+					AddConv(a, long double); \
+					AddConv(a, double); \
+					AddConv(a, unsigned int); \
+					AddConv(a, unsigned long); \
+					AddConv(a, fibers::synchronization::atomic_number<double>);
 
+				AddConvs(char);
+				AddConvs(bool);
+				AddConvs(int);
+				AddConvs(long);
+				AddConvs(float);
+				AddConvs(long long);
+				AddConvs(long double);
+				AddConvs(double);
+				AddConvs(unsigned int);
+				AddConvs(unsigned long);
+				AddConvs(fibers::synchronization::atomic_number<double>);
+#undef AddConvs
+#undef AddConv
+				tree.AddConverter([](char const& x)->std::string { return std::to_string(x); });
+				tree.AddConverter([](int const& x)->std::string { return std::to_string(x); });
+				tree.AddConverter([](long const& x)->std::string { return std::to_string(x); });
+				tree.AddConverter([](float const& x)->std::string { return std::to_string(x); });
+				tree.AddConverter([](double const& x)->std::string { return std::to_string(x); });
+				tree.AddConverter([](std::string const& x)->int { return std::atol(x.c_str()); });
+				tree.AddConverter([](std::string const& x)->long { return std::atol(x.c_str()); });
+				tree.AddConverter([](std::string const& x)->float { return std::atof(x.c_str()); });
+				tree.AddConverter([](std::string const& x)->double { return std::atof(x.c_str()); });
+
+				Functions funcs;
+				// emplace & at TEST in parallel
+				fibers::parallel::For(0, 10000, [&](int i) {
+					// emplace
+					switch (i % 5) {
+					case 0:
+						funcs.emplace("Foo", Function(make_callable([]() -> double { return 0.0; }, tree), false));
+						break;
+					case 1:
+						funcs.emplace("Foo", Function(make_callable([](int const& i) -> double { return i; }, tree), true)); // explicit only - no conversions
+						break;
+					case 2:
+						funcs.emplace("Foo", Function(make_callable([](double const& i) -> double { return i; }, tree), true)); // explicit only - no conversions
+						break;
+					case 3:
+						funcs.emplace("Foo", Function(make_callable([](float const& i) -> double { return i; }, tree), true)); // explicit only - no conversions
+						break;
+					case 4:
+						funcs.emplace("Foo", Function(make_callable([](Any const& i) -> Any { return i; }, tree), false));
+						break;
+					};
+
+					// at
+					switch (std::rand() % 4) {
+					case 0:
+						if (auto func = funcs.at("Foo", ParamTypes(std::vector<Any>{}))) {
+							(void)func->m_function->operator()(std::vector<Any>{  }, tree);
+						}
+						break;
+					case 1:
+						if (auto func = funcs.at("Foo", ParamTypes(std::vector<Any>{ 10 }))) {
+							(void)func->m_function->operator()(std::vector<Any>{ 10 }, tree);
+						}						
+						break;
+					case 2:
+						if (auto func = funcs.at("Foo", ParamTypes(std::vector<Any>{ 10.0 }))) {
+							(void)func->m_function->operator()(std::vector<Any>{ 10.0 }, tree);
+						}						
+						break;
+					case 3:
+						if (auto func = funcs.at("Foo", ParamTypes(std::vector<Any>{ 10.0f }))) {
+							(void)func->m_function->operator()(std::vector<Any>{ 10.0f }, tree);
+						}
+						break;
+					}
+				});
+				// at TEST in parallel
+				fibers::parallel::For(0, 10000, [&](int i) {
+					// at
+					switch (std::rand() % 4) {
+					case 0:
+						if (auto func = funcs.at("Foo", ParamTypes(std::vector<Any>{}))) {
+							(void)func->m_function->operator()(std::vector<Any>{  }, tree);
+						}
+						break;
+					case 1:
+						if (auto func = funcs.at("Foo", ParamTypes(std::vector<Any>{ 10 }))) {
+							(void)func->m_function->operator()(std::vector<Any>{ 10 }, tree);
+						}
+						break;
+					case 2:
+						if (auto func = funcs.at("Foo", ParamTypes(std::vector<Any>{ 10.0 }))) {
+							(void)func->m_function->operator()(std::vector<Any>{ 10.0 }, tree);
+						}
+						break;
+					case 3:
+						if (auto func = funcs.at("Foo", ParamTypes(std::vector<Any>{ 10.0f }))) {
+							(void)func->m_function->operator()(std::vector<Any>{ 10.0f }, tree);
+						}
+						break;
+					}
+				});
+				
+				// build TEST
+				if (auto func = funcs.BuildMatch("Foo", {}, tree)) {
+					(void)func->operator()({}, tree);
+				}
+				if (auto func = funcs.BuildMatch("Foo", { 10.0 }, tree)) {
+					EXPECT_EQ(10.0, tree.Convert<double>(func->operator()({ 10.0 }, tree)));
+				}
+				if (auto func = funcs.BuildMatch("Foo", { 10.0f }, tree)) {
+					EXPECT_EQ(10.0f, tree.Convert<double>(func->operator()({ 10.0f }, tree)));
+				}
+				if (auto func = funcs.BuildMatch("Foo", { 10 }, tree)) {
+					EXPECT_EQ(10, tree.Convert<double>(func->operator()({ 10 }, tree)));
+				}
+				if (auto func = funcs.BuildMatch("Foo", { 10l }, tree)) {
+					EXPECT_EQ("long", (func->operator()({ 10l }, tree).TypeName()));
+				}
+				if (auto func = funcs.BuildMatch("Foo", { 10.0l }, tree)) {
+					EXPECT_EQ("long double", (func->operator()({ 10.0l }, tree).TypeName()));
+				}
+				if (auto func = funcs.BuildMatch("Foo", { 'A' }, tree)) {
+					EXPECT_EQ("char", (func->operator()({'A'}, tree).TypeName()));
+				}
+
+				// at TEST in parallel
+				fibers::parallel::For(0, 100000, [&](int i) {
+					// at
+					switch (std::rand() % 9) {
+					case 0:
+						(void)funcs.Call("Foo", {}, tree);
+						break;
+					case 1:
+						(void)funcs.Call("Foo", { 10 }, tree);
+						break;
+					case 2:
+						(void)funcs.Call("Foo", { 10.0 }, tree);
+						break;
+					case 3:
+						(void)funcs.Call("Foo", { 10.0f }, tree);
+						break;
+					case 4:
+						(void)funcs.Call("Foo", { 10l }, tree);
+						break;
+					case 5:
+						(void)funcs.Call("Foo", { 10.0l }, tree);
+						break;
+					case 6:
+						(void)funcs.Call("Foo", { 'A' }, tree);
+						break;
+					case 7:
+						(void)funcs.Call("Foo", { (long long)i }, tree);
+						break;
+					case 8:
+						(void)funcs.Call("Foo", { (unsigned int)i }, tree);
+						break;
+					};
+				});
+			}
 
 
 

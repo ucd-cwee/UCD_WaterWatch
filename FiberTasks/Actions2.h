@@ -174,6 +174,8 @@
 
 // Type_Info and defer(...)
 namespace GoodLang {
+	class Any;
+
 	// Finally is a pure virtual base class, implemented by the templated FinallyImpl.
 	class Finally {
 	public:
@@ -256,8 +258,8 @@ namespace GoodLang {
 			return impl::TypeId<void>().hash_code();
 		};
 		void CacheHash() noexcept {
-			uniqueHash = this->GetHashImpl();
-			details::hash_combine(uniqueHash, (size_t)is_const(), (size_t)is_ref());
+			const_cast<size_t&>(uniqueHash) = this->GetHashImpl();
+			details::hash_combine(const_cast<size_t&>(uniqueHash), (size_t)is_const(), (size_t)is_ref());
 		};
 
 	public:
@@ -271,11 +273,13 @@ namespace GoodLang {
 			, isVoid(true)
 			, isRef(false)
 		{};
-		Type_Info(bool t_is_const, bool t_is_void, bool t_is_ref) noexcept
+		Type_Info(bool t_is_const, bool t_is_void, bool t_is_ref, bool t_is_any) noexcept
 			: uniqueHash(GetHashImpl())
 			, isConst(t_is_const)
 			, isVoid(t_is_void)
-			, isRef(t_is_ref) {};
+			, isRef(t_is_ref)
+			, isAny(t_is_any)
+		{};
 		Type_Info(Type_Info const&) = delete;
 		Type_Info(Type_Info&&) = delete;
 		Type_Info& operator=(Type_Info const&) = delete;
@@ -327,17 +331,22 @@ namespace GoodLang {
 		bool is_const() const noexcept { return isConst; };
 		bool is_void() const noexcept { return isVoid; };
 		bool is_ref() const noexcept { return isRef; };
+		bool is_any() const noexcept { return isAny; };
 		virtual std::string name() const noexcept { return impl::TypeId<void>().name(); };
 		virtual std::weak_ptr<Type_Info> MakeBase() const { return std::weak_ptr<Type_Info>(); };
 		virtual std::weak_ptr<Type_Info> MakeConst() const { return std::weak_ptr<Type_Info>(); };
 		virtual std::weak_ptr<Type_Info> MakeRef() const { return std::weak_ptr<Type_Info>(); };
+		virtual std::weak_ptr<Type_Info> MakeConstRef() const { return std::weak_ptr<Type_Info>(); };
 		virtual std::weak_ptr<Type_Info> RemoveConst() const { return std::weak_ptr<Type_Info>(); };
 		virtual std::weak_ptr<Type_Info> RemoveRef() const { return std::weak_ptr<Type_Info>(); };
-
+	
+		const size_t uniqueHash;
+	private:
 		bool isConst;
 		bool isVoid;
 		bool isRef;
-		size_t uniqueHash;
+		bool isAny;
+		
 	private: // flags
 		//static const int is_const_flag = 0;
 		//static const int is_void_flag = 1;
@@ -354,13 +363,13 @@ namespace GoodLang {
 	public:
 
 		BuiltIn_Type_Info() noexcept
-			: Type_Info(false, true, false)
+			: Type_Info(false, true, false, false)
 			, m_type_info(impl::TypeId<void>())
 		{
 			this->CacheHash();
 		};
 		BuiltIn_Type_Info(impl::underlying_type_info t_ti, bool t_is_const = false, bool t_is_ref = false) noexcept
-			: Type_Info(t_is_const, false, t_is_ref)
+			: Type_Info(t_is_const, false, t_is_ref, std::is_same<typename std::decay_t<T>, Any>::value)
 			, m_type_info(t_ti)
 		{
 			this->CacheHash();
@@ -465,6 +474,28 @@ namespace GoodLang {
 				}
 			}
 		};
+		virtual std::weak_ptr<Type_Info> MakeConstRef() const override {
+			constexpr bool thisIsConst = std::is_const<T>::value;
+			constexpr bool thisIsRef = std::is_reference<T>::value;
+			using baseType = typename std::decay_t<T>;
+
+			if constexpr (std::is_same< baseType, void>::value) {
+				static auto out{ std::make_shared<BuiltIn_Type_Info<void>>(
+					 impl::TypeId<void>(),
+					 false,
+					 false
+				) };
+				return out;
+			}
+			else {
+				static auto out{ std::make_shared<BuiltIn_Type_Info<baseType&>>(
+					 impl::TypeId<baseType&>(),
+					 true,
+					 true
+				) };
+				return out;
+			}
+		};
 		virtual std::weak_ptr<Type_Info> RemoveConst() const override {
 			constexpr bool thisIsConst = std::is_const<T>::value;
 			constexpr bool thisIsRef = std::is_reference<T>::value;
@@ -543,7 +574,7 @@ namespace GoodLang {
 
 	public:
 		Scripted_Type_Info() noexcept
-			: Type_Info(false, true, false)
+			: Type_Info(false, true, false, false)
 			, m_full_name("")
 			, m_qualified_namespace("")
 			, m_name("")
@@ -552,7 +583,7 @@ namespace GoodLang {
 			this->CacheHash();
 		};
 		Scripted_Type_Info(const std::string& t_namespace, const std::string& t_name, bool t_is_const = false, bool t_is_ref = false) noexcept
-			: Type_Info(t_is_const, false, t_is_ref)
+			: Type_Info(t_is_const, false, t_is_ref, false)
 			, m_full_name(t_namespace + "::" + t_name)
 			, m_qualified_namespace(t_namespace)
 			, m_name(t_name)
@@ -597,6 +628,9 @@ namespace GoodLang {
 		};
 		virtual std::weak_ptr<Type_Info> MakeRef() const override {
 			return MakeDuplicate(is_const(), true);
+		};
+		virtual std::weak_ptr<Type_Info> MakeConstRef() const override {
+			return MakeDuplicate(true, true);
 		};
 		virtual std::weak_ptr<Type_Info> RemoveConst() const override {
 			return MakeDuplicate(false, is_ref());
@@ -1052,7 +1086,7 @@ namespace GoodLang {
 	namespace details {
 		class AnyAutoCast; /* forward decl */
 	};
-	class Any;
+	
 	// serves as an instance of a customizable class
 	class DynamicObject {
 	public:
@@ -2228,19 +2262,26 @@ namespace GoodLang {
 
 		// will return an empty object if the conversion was impossible. (Assumes converting to void is not allowed or desired)
 		Any Convert(Any const& from, std::weak_ptr<Type_Info> const& To) {
-			if (auto f = FindConverter(from.Type(), To)) {
+			if (To.lock()->is_any()) {
+				return from;
+			}
+			else if (auto f = FindConverter(from.Type(), To)) {
 				return f->convert(from);
 			}
-			return from;
+			else return from;
 		};
 		// will throw an error if the conversion was impossible.
 		template<typename To_t> typename std::remove_reference_t<To_t> Convert(Any const& from) {
-			if (auto f = FindConverter(from.Type(), user_type_shared<To_t>())) {
+			static auto to_type { user_type_shared<To_t>().lock() };
+			if (auto f = FindConverter(from.Type(), to_type)) {
 				Any temp = f->convert(from);
 				return temp.cast<To_t>();
 			}
 			else if (from.IsTypeOf<To_t>()) {
 				return from.cast<To_t>();
+			}
+			else if (to_type->is_any()) {
+				return from.cast();
 			}
 			else {
 				throw exception::bad_any_cast(from.Type(), user_type_shared<To_t>(), __LINE__);
@@ -2255,16 +2296,23 @@ namespace GoodLang {
 			else if (from.IsTypeOf(To)) {
 				return 0;
 			}
+			else if (To.lock()->is_any()) {
+				return 0;
+			}
 			else {
 				return std::numeric_limits<double>::max();
 			}
 		};
 		// will throw an error if the conversion was impossible.
 		template<typename To_t> double ConversionCost(Any const& from) {
-			if (auto f = FindConverter(from.Type(), user_type_shared<To_t>())) {
+			static auto to_type{ user_type_shared<To_t>().lock() };
+			if (auto f = FindConverter(from.Type(), to_type)) {
 				return f->cost();
 			}
 			else if (from.IsTypeOf<To_t>()) {
+				return 0;
+			}
+			else if (to_type->is_any()) {
 				return 0;
 			}
 			else {
@@ -2280,16 +2328,23 @@ namespace GoodLang {
 			else if (from.IsTypeOf(To)) {
 				return true;
 			}
+			else if (To.lock()->is_any()) {
+				return true;
+			}
 			else {
 				return false;
 			}
 		};
 		// will throw an error if the conversion was impossible.
 		template<typename To_t> bool Converts(Any const& from) {
-			if (auto f = FindConverter(from.Type(), user_type_shared<To_t>())) {
+			static auto to_type{ user_type_shared<To_t>().lock() };
+			if (auto f = FindConverter(from.Type(), to_type)) {
 				return true;
 			}
 			else if (from.IsTypeOf<To_t>()) {
+				return true;
+			}
+			else if (to_type->is_any()) {
 				return true;
 			}
 			else {
@@ -2324,12 +2379,21 @@ namespace GoodLang {
 		ParamTypes(std::vector<std::weak_ptr<Type_Info>> const& t_types)
 			: uniquehash{ CalculateHash(t_types) }
 			, m_types(std::make_shared<std::vector<std::weak_ptr<Type_Info>>>(t_types))
-		{};
+		{
+			for (auto& type : *m_types) if (auto ptr = type.lock()) if (ptr->MakeBase() == user_type_shared<Any>()) {
+				isTemplate = true;
+				break;
+			}
+		};
 		ParamTypes(std::vector<std::weak_ptr<Type_Info>>&& t_types)
 			: uniquehash{}
 			, m_types(std::make_shared<std::vector<std::weak_ptr<Type_Info>>>(std::forward<std::vector<std::weak_ptr<Type_Info>>>(t_types)))
 		{
 			uniquehash = CalculateHash(*m_types);
+			for (auto& type : *m_types) if (auto ptr = type.lock()) if (ptr->MakeBase() == user_type_shared<Any>()) {
+				isTemplate = true;
+				break;
+			}
 		};
 		ParamTypes(std::vector<Any> const& params)
 			: uniquehash{}
@@ -2337,6 +2401,10 @@ namespace GoodLang {
 		{
 			for (int i = params.size() - 1; i >= 0; i--) m_types->at(i) = params[i].Type();
 			uniquehash = CalculateHash(*m_types);
+			for (auto& type : *m_types) if (auto ptr = type.lock()) if (ptr->MakeBase() == user_type_shared<Any>()) {
+				isTemplate = true; 
+				break;
+			}			
 		};
 		ParamTypes(ParamTypes const&) = default;
 		ParamTypes(ParamTypes&&) = default;
@@ -2404,11 +2472,12 @@ namespace GoodLang {
 				}
 			}
 		};
+		bool IsTemplate() const { return isTemplate; };
 
 	private:
 		std::shared_ptr<std::vector<std::weak_ptr<Type_Info>>> m_types;
 		size_t uniquehash;
-
+		bool isTemplate{ false };
 	};
 
 	// A combination of ParamTypes (list of types) and variable names. Variable names do NOT impact the "uniqueness" of a list of function arguments. e.g;
@@ -2522,11 +2591,10 @@ namespace GoodLang {
 		bool CanCastFrom(FunctionArgs const& from) const {
 			return from.m_types.CanCast(m_types);
 		};
-
+		bool IsTemplate() const { return m_types.IsTemplate(); };
 	private:
 		ParamTypes m_types;
 		std::vector<std::string> m_names;
-
 	};
 
 	// A combination of FunctionArgs (argument types and names), return type, and function name. 
@@ -2576,6 +2644,7 @@ namespace GoodLang {
 		const std::string& Name() const { return m_name; };
 		const std::string& QualifiedName() const { return m_qualified_name; };
 		size_t hash() const noexcept { return uniqueHash; };
+		bool IsTemplate() const { return m_arguments.IsTemplate(); };
 
 		friend bool operator==(FunctionSignature const& a, FunctionSignature const& b) {
 			return a.uniqueHash == b.uniqueHash;
@@ -2702,7 +2771,7 @@ namespace GoodLang {
 						out += conversionCost;
 					}
 				}
-				for (; i < t_to.size(); ++i) {
+				for (; i < t_from.size(); ++i) {
 					out += details::TypeConversionWorstCaseCost; // large penalty for not using the provided type(s).
 				}
 				return out;
@@ -2754,21 +2823,21 @@ namespace GoodLang {
 				throw exception::arity_error(static_cast<int>(params.size()), NumArguments());
 			};
 
-			// Does not want conversions -- straight call.
-			Any operator()(const std::vector<Any>& params) const {
-				if (params.size() >= NumArguments()) {
-					return do_call(params);
-				}
-				throw exception::arity_error(static_cast<int>(params.size()), NumArguments());
-			};
+			//// Does not want conversions -- straight call.
+			//Any operator()(const std::vector<Any>& params) const {
+			//	if (params.size() >= NumArguments()) {
+			//		return do_call(params);
+			//	}
+			//	throw exception::arity_error(static_cast<int>(params.size()), NumArguments());
+			//};
 
-			// Does not want conversions -- straight call.
-			Any operator()(Any& param) const {
-				if (1 >= NumArguments()) {
-					return do_call({ param });
-				}
-				throw exception::arity_error(1, NumArguments());
-			};
+			//// Does not want conversions -- straight call.
+			//Any operator()(Any& param) const {
+			//	if (1 >= NumArguments()) {
+			//		return do_call({ param });
+			//	}
+			//	throw exception::arity_error(1, NumArguments());
+			//};
 
 			friend bool operator==(const Proxy_Function_Base& lhs, const Proxy_Function_Base& rhs) noexcept {
 				return lhs.m_signature == rhs.m_signature; // same signature
@@ -5564,25 +5633,25 @@ namespace GoodLang {
 		}
 	};
 
-	// Call a generic, proxy function using a vector of inputs (may be empty), which will be converted as necessary to the expected types. 
-	__forceinline Any call(Proxy_Function callable, std::vector<Any> const& inputs) {
-		if (callable) {
-			return callable->operator()(inputs);
-		}
-		else {
-			throw exception::arity_error(inputs.size(), -1);
-		}
-	};
+	//// Call a generic, proxy function using a vector of inputs (may be empty), which will be converted as necessary to the expected types. 
+	//__forceinline Any call(Proxy_Function callable, std::vector<Any> const& inputs) {
+	//	if (callable) {
+	//		return callable->operator()(inputs);
+	//	}
+	//	else {
+	//		throw exception::arity_error(inputs.size(), -1);
+	//	}
+	//};
 
-	// Call a generic, proxy function using a vector of inputs (may be empty), which will be converted as necessary to the expected types. 
-	__forceinline Any call(Proxy_Function callable, Any const& input) {
-		if (callable) {
-			return callable->operator()({ input });
-		}
-		else {
-			throw exception::arity_error(1, -1);
-		}
-	};
+	//// Call a generic, proxy function using a vector of inputs (may be empty), which will be converted as necessary to the expected types. 
+	//__forceinline Any call(Proxy_Function callable, Any const& input) {
+	//	if (callable) {
+	//		return callable->operator()({ input });
+	//	}
+	//	else {
+	//		throw exception::arity_error(1, -1);
+	//	}
+	//};
 };
 
 // Functions wrapper
@@ -5594,9 +5663,10 @@ namespace GoodLang {
 		Function(Proxy_Function const& a) 
 			: m_function(a) 
 		{};
-		Function(Proxy_Function const& a, bool& isExplicit) 
+		Function(Proxy_Function const& a, bool isExplicit, bool isCached = false)
 			: m_function(a)
-			, m_isEplicit(isExplicit) 
+			, m_isEplicit(isExplicit)
+			, m_isCached(isCached)
 		{};
 		Function(Function&&) = default;
 		Function(Function const&) = default;
@@ -5606,6 +5676,7 @@ namespace GoodLang {
 
 		Proxy_Function m_function{ nullptr };
 		bool m_isEplicit{ false };
+		bool m_isCached{ false };
 	};
 
 	/*
@@ -5764,8 +5835,8 @@ namespace GoodLang {
 		FunctionMap m_functions;
 		mutable std::shared_mutex m_mut{};
 
-		FunctionPtr operator()(std::string const& key, ParamTypes const& params) const {
-			auto locked{ std::shared_lock(m_mut) };
+	private:
+		FunctionPtr at_unsafe(std::string const& key, ParamTypes const& params) const {
 			auto functionMapPtr = m_functions.find(key);
 			if (functionMapPtr != m_functions.end()) {
 				auto FunctionSortPtr = functionMapPtr->second.find(params);
@@ -5774,6 +5845,11 @@ namespace GoodLang {
 				}
 			}
 			return nullptr;
+		};
+	public:
+		FunctionPtr operator()(std::string const& key, ParamTypes const& params) const {
+			auto locked{ std::shared_lock(m_mut) };
+			return at_unsafe(key, params);
 		};
 		FunctionPtr at(std::string const& key, ParamTypes const& params) const {
 			return operator()(key, params);
@@ -5794,91 +5870,92 @@ namespace GoodLang {
 			return ptr;
 		};
 
-#if 0
 		/* Given a function name and call parameters, will attempt to find an exact-match function, variadic instantiation, or convertable function call, or return nullptr. */
-		FunctionPtr BuildMatch(std::string const& functionName, ParamTypes const& params, TypeConverter& m_typeConverters, bool AllowTemplateInstantiation = true, bool AllowTypeConversion = true) {
+		Proxy_Function BuildMatch(std::string const& functionName, std::vector<Any> const& params, TypeConverter& m_typeConverters, bool AllowTemplateInstantiation = true, bool AllowTypeConversion = true) {
 			if (auto func = at(functionName, params)) {
-				// exact match found
-				return func;
+				// cache (or actual) found
+				return func->m_function;
 			}
 			else {
-				std::multimap<double, FunctionPtr> candidates;
+				// Three sorted groups of candidates. 
+				// Group 1 = exact matches, Group 2 = type conversions, Group 3 = template functions
+				std::map< size_t, std::array<std::map<double, FunctionPtr, std::less<double>>, 3>, std::greater<size_t>>
+					candidates;
 
-				if (AllowTypeConversion) {
-					if (auto ptr = this->operator[](functionName)) {
-						if (ptr) {
-							for (auto& function : *ptr) {
-								if (function) {
-									if (function->first.Template()) {
-										// already tried this...
-									}
-									else {
-										if (function->first.converts(params, m_typeConverters)) {
-											if (function->second->function_is_explicit && (function->first.hash() != params.hash())) {
-												// Must be an exact match for "explicit" functions - conversions are not allowed. 
-												continue;
-											}
-											candidates.insert({ function->first.conversion_cost(params, m_typeConverters), function->second });
-										}
-									}
-								}
+				// Create candidates.
+				{
+					auto locked{ std::shared_lock(m_mut) }; // LOCKED
+					for (auto& function : m_functions[functionName]) {
+						if (!function.second) continue;
+						if (!function.second->m_function) continue;
+						if (function.second->m_isCached) continue; // ignoring pre-cached functions. Only interested in "true" functions. 
+						bool isTemplateFunc = function.second->m_function->GetSignature().IsTemplate();
+						bool isExplicitFunc = function.second->m_isEplicit;
+
+						auto conversionCost = function.second->m_function->conversion_cost(params, m_typeConverters);
+						if (conversionCost == std::numeric_limits<double>::max()) continue;							
+
+						if (isTemplateFunc) {
+							if (AllowTemplateInstantiation) {
+								candidates[function.second->m_function->NumArguments()][2][conversionCost] = function.second;
+							}
+						}
+						else {
+							if (conversionCost == 0) {
+								candidates[function.second->m_function->NumArguments()][0][conversionCost] = function.second;
+							}
+							else if (AllowTypeConversion && !isExplicitFunc) {
+								candidates[function.second->m_function->NumArguments()][1][conversionCost] = function.second;
+							}
+						}
+					}					
+				}
+
+				// Get the "cheapest" or fastest conversion option available at this scope, with the largest number of arguments, in order of group (e.g. preference).
+				for (auto& numParams : candidates) {
+					for (auto& preference_order : numParams.second) {
+						for (auto& candidate : preference_order) {
+							if (candidate.first == std::numeric_limits<double>::max()) continue;
+							if (!candidate.second) continue;
+
+							ParamTypes ParamTypesToCache{ params };
+							Function FunctionToCache{ candidate.second->m_function };
+							FunctionToCache.m_isCached = true;
+							// if someone already beat us to it, it should return the "current" value
+							if (auto func = this->emplace(functionName, ParamTypesToCache, FunctionToCache, false)) {
+								return func->m_function;
 							}
 						}
 					}
-				}
-
-				if (AllowTemplateInstantiation) {
-					if (auto ptr = this->operator[](functionName)) {
-						if (ptr) {
-							for (auto& function : *ptr) {
-								if (function) {
-									if (function->first.Template()) {
-										if (function->first.converts(params, m_typeConverters)) {
-											if (function->second->function_is_explicit && (function->first.hash() != params.hash())) {
-												// Must be an exact match for "explicit" functions - conversions are not allowed. 
-												continue;
-											}
-											candidates.insert({ function->first.conversion_cost(params, m_typeConverters), function->second });
-										}
-									}
-									else {
-										// must be perfect match -- requires casting. We can try that, but only if no template exists that would work instead.
-									}
-								}
-							}
-						}
-					}
-				}
-
-				// Get the "cheapest" or fastest conversion option available at this scope.
-				for (auto& candidate : candidates) {
-					if (candidate.first == std::numeric_limits<double>::max()) { break; }
-					auto& func = candidate.second->first;
-					auto& param = candidate.second->second;
-
-					try {
-						auto newParms = scripting::Param_Types(params, param.types());
-
-						if (func) {
-							if (auto ptr = operator()(functionName)) {
-								defer(ptr->TryCleanupUnusedMemory());
-								if (ptr->emplace(newParms, candidate.second, false)) {
-									return candidate.second;
-								}
-								else {
-									// try again -- someone beat us to the punch. It'll (probably) be available this time. 
-									return BuildMatch(functionName, params, m_typeConverters, AllowTemplateInstantiation, AllowTypeConversion);
-								}
-							}
-						}
-					}
-					catch (scripting::exception::arity_error const& err) {}
-					catch (scripting::exception::bad_boxed_cast const& err) {}
-				}
+				}				
 			}
 			return nullptr;
 		};
-#endif
+		Any Call(std::string const& functionName, std::vector<Any> const& params, TypeConverter& m_typeConverters) {
+			if (auto f = BuildMatch(functionName, params, m_typeConverters)) {
+				return f->operator()(params, m_typeConverters);
+			}
+			else {
+				std::string params_str;
+				for (auto& p : params) {
+					std::string className = p.TypeName(); {
+						//if (auto classPtr = std::dynamic_pointer_cast<Scope2>(this->FindClass(p.Type()))) {
+						//	className = classPtr->GetName();
+						//}
+					}
+
+					if (params_str.empty()) {
+						params_str += className;
+					}
+					else {
+						params_str += ", ";
+						params_str += className;
+					}
+				}
+				throw exception::not_found_error(Units::printf("`%s`(%s)", functionName.c_str(), params_str.c_str()));
+			}
+		};
+
 	};
 
 
