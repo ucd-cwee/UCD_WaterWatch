@@ -2381,10 +2381,10 @@ int main() {
 				tree.AddConverter([](std::string const& x)->float { return std::atof(x.c_str()); });
 				tree.AddConverter([](std::string const& x)->double { return std::atof(x.c_str()); });
 
-				auto randFunc0 = make_callable([]()-> double { return 0.0; }, tree); // 0
-				auto randFunc1 = make_callable([]()-> double { return (double)std::rand() / (double)RAND_MAX; }, tree); // rand 0-1
-				auto randFunc2 = make_callable([](double const& max)-> double { return max * ((double)std::rand() / (double)RAND_MAX); }, tree); // rand 0-1
-				auto randFunc3 = make_callable([](double const& max, double const& min)-> double { return min + (max-min)*((double)std::rand() / (double)RAND_MAX); }, tree); // rand 0-1
+				auto randFunc0 = make_callable([]()-> double { return 0.0; }); // 0
+				auto randFunc1 = make_callable([]()-> double { return (double)std::rand() / (double)RAND_MAX; }); // rand 0-1
+				auto randFunc2 = make_callable([](double const& max)-> double { return max * ((double)std::rand() / (double)RAND_MAX); }); // rand 0-1
+				auto randFunc3 = make_callable([](double const& max, double const& min)-> double { return min + (max-min)*((double)std::rand() / (double)RAND_MAX); }); // rand 0-1
 
 				EXPECT_EQ(tree.Convert<double>(randFunc0->operator()({}, tree)), 0.0);
 				EXPECT_EQ((bool)randFunc1->operator()({}, tree), true);
@@ -2408,10 +2408,10 @@ int main() {
 				EXPECT_EQ((bool)call(randFunc3, { 1, 0 }, tree), true);
 				EXPECT_EQ((bool)call(randFunc3, { true, false }, tree), true);
 
-				auto get_var_name = make_callable(&stackThing2::get_var_name, tree);
-				auto length = make_callable(&stackThing2::length, tree);
-				auto varName = make_callable(&stackThing2::varName, tree);
-				auto var = make_callable(&stackThing2::var, tree);
+				auto get_var_name = make_callable(&stackThing2::get_var_name);
+				auto length = make_callable(&stackThing2::length);
+				auto varName = make_callable(&stackThing2::varName);
+				auto var = make_callable(&stackThing2::var);
 
 				Any obj = stackThing2("TEST", 100.0, false);
 
@@ -2486,20 +2486,29 @@ int main() {
 					// emplace
 					switch (i % 5) {
 					case 0:
-						funcs.emplace("Foo", Function(make_callable([]() -> double { return 0.0; }, tree), false));
+						funcs.emplace("Foo", Function(make_callable([]() -> double { return 0.0; }), false));
 						break;
 					case 1:
 						// funcs.emplace("Foo", Function(make_callable([](int const& i) -> double { return i; }, tree), true)); // explicit only - no conversions
-						funcs.emplace("Foo", Function(make_callable([](Any const& i) -> Any { return (double)i.cast<int const&>(); }, tree, ParamTypes({ user_type_shared<int const&>(), user_type_shared<double>() })), true)); // explicit only - no conversions
+						funcs.emplace(
+							"Foo"
+							, Function(
+								make_callable(
+									[](Any const& i) -> Any { return (double)i.cast<int const&>(); } // call this function
+									, ParamTypes({ user_type_shared<int const&>(), user_type_shared<double>() }) // use these params
+								)
+								, true // explicit only - no conversions
+							)
+						); 
 						break;
 					case 2:
-						funcs.emplace("Foo", Function(make_callable([](double const& i) -> double { return i; }, tree), true)); // explicit only - no conversions
+						funcs.emplace("Foo", Function(make_callable([](double const& i) -> double { return i; }), true)); // explicit only - no conversions
 						break;
 					case 3:
-						funcs.emplace("Foo", Function(make_callable([](float const& i) -> double { return i; }, tree), true)); // explicit only - no conversions
+						funcs.emplace("Foo", Function(make_callable([](float const& i) -> double { return i; }), true)); // explicit only - no conversions
 						break;
 					case 4:
-						funcs.emplace("Foo", Function(make_callable([](Any const& i) -> Any { return i; }, tree), false));
+						funcs.emplace("Foo", Function(make_callable([](Any const& i) -> Any { return i; }), false));
 						break;
 					};
 
@@ -2677,6 +2686,22 @@ int main() {
 				EXPECT_EQ('a', tree.Convert<char>((long double)(int)('a')));
 				EXPECT_EQ("100.000000", tree.Convert<std::string>(100.0));
 				EXPECT_EQ(100, tree.Convert<float>(tree.Convert<std::string>(100.0)));
+			}
+
+			// automatic object copying
+			if (1) {
+				using namespace GoodLang;
+				auto intType = user_type_shared<int>().lock();
+				Any startingObj = (int)100;
+
+				Any copiedObj = intType->GetCopyConstructor()(startingObj);
+
+				EXPECT_EQ(startingObj.IsTypeOf<int>(), true); // ensure the basics
+				EXPECT_EQ(copiedObj.IsTypeOf<int>(), true); // ensure copy succeeded
+				EXPECT_EQ(copiedObj.cast<int>(), 100); // ensure copy succeeded
+				startingObj.cast<int>() = 50;
+				EXPECT_EQ(startingObj.cast<int>(), 50); // ensure change happened
+				EXPECT_EQ(copiedObj.cast<int>(), 100); // should still be 100, as it's a seperate copy
 			}
 
 			// Scopes

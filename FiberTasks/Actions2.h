@@ -340,6 +340,13 @@ namespace GoodLang {
 		virtual std::weak_ptr<Type_Info> RemoveConst() const { return std::weak_ptr<Type_Info>(); };
 		virtual std::weak_ptr<Type_Info> RemoveRef() const { return std::weak_ptr<Type_Info>(); };
 	
+		virtual std::function<Any(Any const&)>& GetCopyConstructor() const; /*{
+			static auto out{ std::function<Any(Any const&)>([](Any const& from) -> Any {
+				return from;
+			}) };
+			return out;
+		};*/
+
 		const size_t uniqueHash;
 	private:
 		bool isConst;
@@ -560,6 +567,13 @@ namespace GoodLang {
 				}
 			}
 		};
+		
+		virtual std::function<Any(Any const&)>& GetCopyConstructor() const override; /*{
+			static auto out{ std::function<Any(Any const&)>([](Any const& from) -> Any {
+				return typename std::decay_t<T>{ from.cast<T>() };
+			}) };
+			return out;
+		};*/
 
 	private:
 		impl::underlying_type_info m_type_info;
@@ -638,6 +652,14 @@ namespace GoodLang {
 		virtual std::weak_ptr<Type_Info> RemoveRef() const override {
 			return MakeDuplicate(is_const(), false);
 		};
+
+		virtual std::function<Any(Any const&)>& GetCopyConstructor() const override;/* {
+			static auto out{ std::function<Any(Any const&)>([](Any const& from) -> Any {
+				auto& dynObj = from.cast<DynamicObject>();
+				return DynamicObject(dynObj);
+			}) };
+			return out;
+		};*/
 
 	protected:
 		std::string m_full_name; // namespace::name
@@ -864,6 +886,28 @@ __forceinline bool operator!=(GoodLang::Type_Info const& b, std::weak_ptr<GoodLa
 	return !operator==(a, b);
 };
 
+namespace GoodLang {
+	// serves as an instance of a customizable class
+	class DynamicObject {
+	public:
+		DynamicObject() = default;
+		DynamicObject(std::weak_ptr< Type_Info > const& type)
+			: m_classType(type)
+			, m_objects()
+		{};
+		DynamicObject(DynamicObject const&) = default;
+		DynamicObject(DynamicObject&&) = default;
+		DynamicObject& operator=(DynamicObject const&) = default;
+		DynamicObject& operator=(DynamicObject&&) = default;
+		~DynamicObject() = default;
+
+		std::weak_ptr< Type_Info >
+			m_classType;
+		concurrency::concurrent_unordered_map<std::string, std::shared_ptr<Any>>
+			m_objects;
+	};
+};
+
 // Any, AnyAutoCast, DynamicObject, exceptions
 namespace GoodLang {
 	namespace exception {
@@ -1087,26 +1131,6 @@ namespace GoodLang {
 		class AnyAutoCast; /* forward decl */
 	};
 	
-	// serves as an instance of a customizable class
-	class DynamicObject {
-	public:
-		DynamicObject() = default;
-		DynamicObject(std::weak_ptr< Type_Info > const& type)
-			: m_classType(type)
-			, m_objects()
-		{};
-		DynamicObject(DynamicObject const&) = default;
-		DynamicObject(DynamicObject&&) = default;
-		DynamicObject& operator=(DynamicObject const&) = default;
-		DynamicObject& operator=(DynamicObject&&) = default;
-		~DynamicObject() = default;
-
-		std::weak_ptr< Type_Info >
-			m_classType;
-		concurrency::concurrent_unordered_map<std::string, std::shared_ptr<Any>>
-			m_objects;
-	};
-
 	/*! Generic container that enables the containment and sharing of any data type to/from std::shared_ptrs */
 	class Any {
 	public:
@@ -1480,7 +1504,40 @@ namespace GoodLang {
 		return std::shared_ptr<AnyData>{ nullptr };
 	};
 	__forceinline decltype(auto) Any::Object_Data::get(const details::AnyAutoCast* t) { return get(*t); };
+};
 
+// GetCopyConstructor
+namespace GoodLang {
+	__forceinline std::function<Any(Any const&)>& Type_Info::GetCopyConstructor() const {
+		static auto out{ std::function<Any(Any const&)>([](Any const& from) -> Any {
+			return from;
+		}) };
+		return out;
+	};
+	__forceinline std::function<Any(Any const&)>& Scripted_Type_Info::GetCopyConstructor() const {
+		static auto out{ std::function<Any(Any const&)>([](Any const& from) -> Any {
+			auto& dynObj = from.cast<DynamicObject>();
+			return DynamicObject(dynObj);
+		}) };
+		return out;
+	};
+	template <typename T> __forceinline std::function<Any(Any const&)>& BuiltIn_Type_Info<T>::GetCopyConstructor() const {
+		static auto out{ std::function<Any(Any const&)>([](Any const& from) -> Any {
+			if constexpr (std::is_same_v<T, void>) {
+				return from;
+			}
+			else {
+				if constexpr (std::is_copy_constructible_v<typename std::decay_t<T>>) {
+					return typename std::decay_t<T>{ from.cast<T>() };
+				}
+				else {
+					// we cannot copy construct -- we must simply pass through, since anything we do would have to be moved / copied to the Any regardless.
+					return from;
+				}				
+			}			
+		}) };
+		return out;
+	};
 };
 
 // Type_Conversion_Base, its impl's, & TypeConverter wrapper
@@ -2125,7 +2182,16 @@ namespace GoodLang {
 									AllConversions[func->from().lock()][func->to().lock()] = func;
 								}
 							}
-
+							// const Base& -> Base
+							if (1) {
+								auto& copyConstructor = baseType->GetCopyConstructor();
+								if (auto func = std::shared_ptr< details::Type_Conversion_Base >(new details::Custom_Type_Conversion_Impl([&copyConstructor](Any const& x)->Any {
+									return copyConstructor(x);
+								}, constRefType, baseType))) {
+									auto locked{ std::unique_lock(AllConversionsMut) };
+									AllConversions[func->from().lock()][func->to().lock()] = func;
+								}
+							}
 						}
 					}
 				}
@@ -2199,8 +2265,8 @@ namespace GoodLang {
 				return;
 			}
 			else {
-				using From_t = typename details::get_type<typename std::tuple_element_t<0, CallableArguments> >::type;
-				using To_t = typename details::get_type<typename fibers::utilities::function_traits< CallableTypeAsStdFunc >::result_type>::type;
+				//using From_t = typename details::get_type<typename std::tuple_element_t<0, CallableArguments> >::type;
+				//using To_t = typename details::get_type<typename fibers::utilities::function_traits< CallableTypeAsStdFunc >::result_type>::type;
 
 				auto func = details::MakeConversionFunc(std::move(Func));
 				if (func) {
@@ -2214,7 +2280,7 @@ namespace GoodLang {
 					AddDefaultConverters(From);
 					AddDefaultConverters(To);
 				}
-
+				/*
 				// Add "contructor" class for const Type& -> Type, if possible
 				if (std::is_same< From_t, Any>::value || std::is_same< To_t, Any>::value) {}
 				else {
@@ -2246,6 +2312,7 @@ namespace GoodLang {
 
 
 				}
+				*/
 			}
 		};
 		// if does not exists, will add it. If exists, overwrites if the converter is better-performance.
@@ -2282,6 +2349,7 @@ namespace GoodLang {
 							AddDefaultConverters(To);
 						}
 
+						/*
 						// Add "contructor" class for const Type& -> Type, if possible
 						if (fromTypePtr->is_any() || toTypePtr->is_any()) {}
 						else {
@@ -2311,25 +2379,10 @@ namespace GoodLang {
 								}
 							}
 						}
+						*/
 					}
 					else {
 						// something went wrong
-					}
-				}
-			}
-		};
-		// if does not exists, will add it. If exists, overwrites if the converter is better-performance.
-		template<typename From_t> void AddConverter() {
-			// Add "contructor" class for const Type& -> Type, if possible
-			if constexpr (std::is_copy_constructible<typename std::decay_t<From_t>>::value) {
-				auto func = details::MakeConversionFunc([](const typename std::decay_t<From_t>& f) -> typename std::decay_t<From_t> { return f; });
-				if (func) {
-					auto& From = func->from();
-					auto& To = func->to();
-					if (1) {
-						auto locked{ std::unique_lock(AllConversionsMut) };
-						TypeConverterFunc& converterPtr = AllConversions[From.lock()][To.lock()];
-						converterPtr = func;
 					}
 				}
 			}
@@ -5701,34 +5754,13 @@ namespace GoodLang {
 	};
 
 	// Convert nearly any function or function pointer to a callable, generic proxy function. 
-	template<typename Func> Proxy_Function make_callable(Func&& func, TypeConverter& tree) {
+	template<typename Func> Proxy_Function make_callable(Func&& func) {
 		using function_header = decltype(details::detail::function_signature(func));
 
 		static constexpr const bool is_static_member_function = function_header::is_static_member_function;
 		static constexpr const bool is_member = function_header::is_member;
 		static constexpr const bool is_object = function_header::is_object;
 		static constexpr const bool is_member_object = function_header::is_member_object;
-
-		tree.AddConverter< typename function_header::Class_Type>();
-		tree.AddConverter< typename function_header::Return_Type>();
-#define argT(NN) if constexpr (function_header::Param_Types::numArgs > NN) { tree.AddConverter< typename std::tuple_element_t<NN, function_header::Param_Types::argType> >(); }
-		argT(0);
-		argT(1);
-		argT(2);
-		argT(3);
-		argT(4);
-		argT(5);
-		argT(6);
-		argT(7);
-		argT(8);
-		argT(9);
-		argT(10);
-		argT(11);
-		argT(12);
-		argT(13);
-		argT(14);
-		argT(15);
-#undef argT
 
 		if constexpr (is_object) {
 			// function objects, e.g. auto x = [](){};
@@ -5758,34 +5790,13 @@ namespace GoodLang {
 	};
 
 	// Convert nearly any function or function pointer to a callable, generic proxy function. 
-	template<typename Func> Proxy_Function make_callable(Func&& func, TypeConverter& tree, ParamTypes const& paramTypes) {
+	template<typename Func> Proxy_Function make_callable(Func&& func, ParamTypes const& paramTypes) {
 		using function_header = decltype(details::detail::function_signature(func));
 
 		static constexpr const bool is_static_member_function = function_header::is_static_member_function;
 		static constexpr const bool is_member = function_header::is_member;
 		static constexpr const bool is_object = function_header::is_object;
 		static constexpr const bool is_member_object = function_header::is_member_object;
-
-		tree.AddConverter< typename function_header::Class_Type>();
-		tree.AddConverter< typename function_header::Return_Type>();
-#define argT(NN) if constexpr (function_header::Param_Types::numArgs > NN) { tree.AddConverter< typename std::tuple_element_t<NN, function_header::Param_Types::argType> >(); }
-		argT(0);
-		argT(1);
-		argT(2);
-		argT(3);
-		argT(4);
-		argT(5);
-		argT(6);
-		argT(7);
-		argT(8);
-		argT(9);
-		argT(10);
-		argT(11);
-		argT(12);
-		argT(13);
-		argT(14);
-		argT(15);
-#undef argT
 
 		if constexpr (is_object) {
 			// function objects, e.g. auto x = [](){};
