@@ -2489,7 +2489,8 @@ int main() {
 						funcs.emplace("Foo", Function(make_callable([]() -> double { return 0.0; }, tree), false));
 						break;
 					case 1:
-						funcs.emplace("Foo", Function(make_callable([](int const& i) -> double { return i; }, tree), true)); // explicit only - no conversions
+						// funcs.emplace("Foo", Function(make_callable([](int const& i) -> double { return i; }, tree), true)); // explicit only - no conversions
+						funcs.emplace("Foo", Function(make_callable([](Any const& i) -> Any { return (double)i.cast<int const&>(); }, tree, ParamTypes({ user_type_shared<int const&>(), user_type_shared<double>() })), true)); // explicit only - no conversions
 						break;
 					case 2:
 						funcs.emplace("Foo", Function(make_callable([](double const& i) -> double { return i; }, tree), true)); // explicit only - no conversions
@@ -2611,9 +2612,87 @@ int main() {
 				});
 			}
 
+			// TypeConverter with template types
+			if (1) {
+				using namespace GoodLang;
+				TypeConverter tree;
+#define AddConv(a, b) tree.AddConverter<a, b>()
+#define AddConvs(a) \
+					AddConv(a, char); \
+					AddConv(a, bool); \
+					AddConv(a, int); \
+					AddConv(a, long); \
+					AddConv(a, float); \
+					AddConv(a, long long); \
+					AddConv(a, long double); \
+					AddConv(a, double); \
+					AddConv(a, unsigned int); \
+					AddConv(a, unsigned long); \
+					AddConv(a, fibers::synchronization::atomic_number<double>);
+
+				AddConvs(char);
+				AddConvs(bool);
+				AddConvs(int);
+				AddConvs(long);
+				AddConvs(float);
+				AddConvs(long long);
+				AddConvs(long double);
+				AddConvs(double);
+				AddConvs(unsigned int);
+				AddConvs(unsigned long);
+				AddConvs(fibers::synchronization::atomic_number<double>);
+#undef AddConvs
+#undef AddConv
+
+				tree.AddConverter([](Any const& rhs) -> Any {
+					return std::to_string(rhs.cast<double>());
+				}, user_type_shared<double const&>(), user_type_shared<std::string>());
+				tree.AddConverter([](Any const& rhs) -> Any {
+					return std::to_string(rhs.cast<int>());
+				}, user_type_shared<int const&>(), user_type_shared<std::string>());
+				tree.AddConverter([](Any const& rhs) -> Any {
+					return std::to_string(rhs.cast<long>());
+				}, user_type_shared<long const&>(), user_type_shared<std::string>());
+				tree.AddConverter([](Any const& rhs) -> Any {
+					return std::to_string(rhs.cast<float>());
+				}, user_type_shared<float const&>(), user_type_shared<std::string>());
+				tree.AddConverter([](Any const& rhs) -> Any {
+					return std::to_string(rhs.cast<char>());
+				}, user_type_shared<char const&>(), user_type_shared<std::string>());
+				tree.AddConverter([](Any const& rhs) -> Any {
+					return (int)std::atol(rhs.cast<std::string>().c_str());
+				}, user_type_shared<std::string const&>(), user_type_shared<int>());
+				tree.AddConverter([](Any const& rhs) -> Any {
+					return (long)std::atol(rhs.cast<std::string>().c_str());
+				}, user_type_shared<std::string const&>(), user_type_shared<long>());
+				tree.AddConverter([](Any const& rhs) -> Any {
+					return (float)std::atof(rhs.cast<std::string>().c_str());
+				}, user_type_shared<std::string const&>(), user_type_shared<float>());
+				tree.AddConverter([](Any const& rhs) -> Any {
+					return (double)std::atof(rhs.cast<std::string>().c_str());
+				}, user_type_shared<std::string const&>(), user_type_shared<double>());
+
+				EXPECT_EQ(100, tree.Convert<int>(tree.Convert<std::string>(100.0)));
+				EXPECT_EQ(97, tree.Convert< fibers::synchronization::atomic_number<double>>('a').GetValue());
+				EXPECT_EQ('a', tree.Convert<char>((long double)(int)('a')));
+				EXPECT_EQ("100.000000", tree.Convert<std::string>(100.0));
+				EXPECT_EQ(100, tree.Convert<float>(tree.Convert<std::string>(100.0)));
+			}
+
+			// Scopes
+			if (1) {
+				using namespace GoodLang;
+				//fibers::containers::Map<std::string, std::shared_ptr<Global>> imports;
+
+				//auto scope_1 = std::make_shared<Global>(); // ::
+				//scope_1->SetSelf(scope_1);
+				//scope_1->AddBuiltIns();
 
 
 
+
+
+			}
 		}
 		
 
