@@ -2734,16 +2734,518 @@ int main() {
 
 				auto DT = scope_1->CallFunction("DateTime::Now", {  });
 				auto DT_time = scope_1->CallFunction("time", { DT });
-				printf(scope_1->Cast<std::string>(DT));
-				printf(scope_1->Cast<std::string>(DT_time));
+				//printf(scope_1->Cast<std::string>(DT));
+				//printf(scope_1->Cast<std::string>(DT_time));
+				auto time1 = scope_1->Cast<Units::second>(DT_time);
 
 				scope_1->CallFunction("+=", { DT, Units::day(7) });
-				printf(scope_1->Cast<std::string>(DT));
-				printf(scope_1->Cast<std::string>(DT_time));
+				//printf(scope_1->Cast<std::string>(DT));
+				//printf(scope_1->Cast<std::string>(DT_time));
+				auto time2 = scope_1->Cast<Units::second>(DT_time);
+				EXPECT_NE(time1, time2);
 			}
 
 			// Scopes, Namespaces, Classes
 			if (1) {
+				int numIterations = 100000;
+				auto sw = Stopwatch();
+
+				using namespace GoodLang;
+				fibers::containers::Map<std::string, std::shared_ptr<Global>> imports;
+
+				auto scope_1 = std::make_shared<Global>(); // ::
+				scope_1->SetSelf(scope_1);
+				scope_1->AddBuiltIns();
+
+				// FindNamespace
+				if (1) {
+					sw.Start();
+					fibers::parallel::For(0, numIterations, [&](int i) {
+						if (auto namespacePtr = scope_1->FindNamespace("string")) {
+
+						}
+						else {
+							EXPECT_EQ(true, false);
+						}
+						});
+					printf(std::to_string(__LINE__) + ": \t" + std::to_string(numIterations) + " operations per " + Units::second(sw.Stop_s()).ToString() + ".");
+				}
+
+				// FindClass
+				if (1) {
+					sw.Start();
+					fibers::parallel::For(0, numIterations, [&](int i) {
+						if (auto namespacePtr = scope_1->FindClass(user_type_shared<std::string>())) {
+
+						}
+						else {
+							EXPECT_EQ(true, false);
+						}
+						});
+					printf(std::to_string(__LINE__) + ": \t" + std::to_string(numIterations) + " operations per " + Units::second(sw.Stop_s()).ToString() + ".");
+				}
+
+				// Find Objects
+				if (1) {
+					sw.Start();
+					fibers::parallel::For(0, numIterations, [&](int i) {
+						if (auto p = scope_1->FindObj("npos")) {
+							EXPECT_EQ(p->cast<size_t>(), std::string::npos);
+						}
+						else {
+							EXPECT_EQ(true, false);
+						}
+						});
+					printf(std::to_string(__LINE__) + ": \t" + std::to_string(numIterations) + " operations per " + Units::second(sw.Stop_s()).ToString() + ".");
+
+					sw.Start();
+					fibers::parallel::For(0, numIterations, [&](int i) {
+						if (auto p = scope_1->FindObj("::string::npos")) {
+							EXPECT_EQ(p->cast<size_t>(), std::string::npos);
+						}
+						else {
+							EXPECT_EQ(true, false);
+						}
+						});
+					printf(std::to_string(__LINE__) + ": \t" + std::to_string(numIterations) + " operations per " + Units::second(sw.Stop_s()).ToString() + ".");
+				}
+
+				// Find Functions
+				if (1) {
+					sw.Start();
+					fibers::parallel::For(0, numIterations, [&](int i) {
+						if (auto p = scope_1->FindFunctions("length")) {
+
+						}
+						else {
+							EXPECT_EQ(true, false);
+						}
+						});
+					printf(std::to_string(__LINE__) + ": \t" + std::to_string(numIterations) + " operations per " + Units::second(sw.Stop_s()).ToString() + ".");
+
+					sw.Start();
+					fibers::parallel::For(0, numIterations, [&](int i) {
+						if (auto p = scope_1->FindFunctions("::string::length")) {
+
+						}
+						else {
+							EXPECT_EQ(true, false);
+						}
+						});
+					printf(std::to_string(__LINE__) + ": \t" + std::to_string(numIterations) + " operations per " + Units::second(sw.Stop_s()).ToString() + ".");
+				}
+
+				// Create and test the type conversion tree, which builds itself from the constructors of the various classes.
+				if (1) {
+					sw.Start();
+					fibers::parallel::For(0, numIterations, [&](int i)
+						{
+							auto tree = scope_1->GetTypeConverterTree(); // builds and caches the tree. Updates the tree only if the situation has changed (new functions, new classes, or new Using statements)
+
+							EXPECT_EQ(100, tree->Convert<int>(100.0));
+							EXPECT_EQ(100.0, tree->Convert<double>(100l));
+							EXPECT_EQ(100l, tree->Convert<long>(100.0f));
+							EXPECT_EQ(100.0f, tree->Convert<float>(100.0));
+							EXPECT_EQ(true, tree->Convert<bool>(1));
+							EXPECT_EQ(100.0f, tree->Convert<float>(100l));
+							EXPECT_EQ(1.0, tree->Convert<double>(true));
+						}
+					);
+					printf(std::to_string(__LINE__) + ": \t" + std::to_string(numIterations) + " operations (on 10,000 classes) per " + Units::second(sw.Stop_s()).ToString() + ".");
+				}
+
+				// Create and test the type conversion tree, which builds itself from the constructors of the various classes.
+				if (1) {
+					std::vector<Any> params = { Any(fibers::containers::number<double>(0)), Any(1) };
+					auto& n = params[0].cast<fibers::containers::number<double>&>();
+
+					sw.Start();
+					auto scope_outer = std::make_shared<Scope>(scope_1);
+					scope_outer->SetSelf(scope_outer);
+					fibers::parallel::For(0, numIterations, [&](int i) {
+						auto scope_inner = std::make_shared<Scope>(scope_outer);
+						scope_inner->SetSelf(scope_inner);
+						scope_inner->AddObj("i", std::make_shared<Any>(i));
+						{
+							scope_inner->CallFunction("+=", params);
+						}
+						});
+					printf(std::to_string(__LINE__) + ": \t" + std::to_string(numIterations) + " operations (on 10,000 classes) per " + Units::second(sw.Stop_s()).ToString() + ".");
+
+					{
+						EXPECT_EQ(true, scope_1->Cast<bool>(scope_1->CallFunction("==", { params[0], numIterations })));
+					}
+
+					EXPECT_EQ(n, (numIterations));
+				}
+
+				EXPECT_EQ("100", scope_1->Cast<std::string>(scope_1->CallFunction("string", { 100 })));
+				EXPECT_EQ("200", scope_1->Cast<std::string>(scope_1->CallFunction("::string", { scope_1->Cast<int>(scope_1->CallFunction("+", { 100.0f, 100.0 })) })));
+
+				EXPECT_EQ(true, scope_1->Cast<bool>(scope_1->CallFunction("!=", { scope_1->CallFunction("Type", { 100.0 }), scope_1->CallFunction("Type", { 100.0f }) })));
+				EXPECT_EQ(true, scope_1->Cast<bool>(scope_1->CallFunction("==", { scope_1->CallFunction("Type", { 100.0 }), scope_1->CallFunction("Type", { 100.0 }) })));
+
+				// Units
+				if (1) {
+					// slowest
+					if (1) {
+						sw.Start();
+						auto scope_outer = std::make_shared<Scope>(scope_1);
+						scope_outer->SetSelf(scope_outer);
+						fibers::parallel::For(0, numIterations, [&](int i) {
+							auto scope_inner = std::make_shared<Scope>(scope_outer);
+							scope_inner->SetSelf(scope_inner);
+							scope_inner->AddObj("i", std::make_shared<Any>(i));
+							{
+								EXPECT_EQ(true, scope_inner->Cast<bool>(scope_inner->CallFunction("==", { scope_inner->CallFunction("Units::value", { 100.0f }), 100l })));
+							}
+							});
+						printf(std::to_string(__LINE__) + ": \t" + std::to_string(numIterations) + " operations (on 10,000 classes) per " + Units::second(sw.Stop_s()).ToString() + ".");
+					}
+
+					// OPTIMIZATION IDEA: when using for-loops with Using statements: move those Using statements to the temporary parent scope (scope_outer) of the for-loop to reduce the number of cache misses of the type conversion tree
+					// fastest
+					if (1) {
+						// This one "uses" the Units namespace, to see if it provides a speed boost at all.
+						sw.Start();
+						auto scope_outer = std::make_shared<Scope>(scope_1);
+						scope_outer->SetSelf(scope_outer);
+						scope_outer->AddUsing(scope_outer->FindNamespace("Units"));
+						fibers::parallel::For(0, numIterations, [&](int i) {
+							auto scope_inner = std::make_shared<Scope>(scope_outer);
+							scope_inner->SetSelf(scope_inner);
+							scope_inner->AddObj("i", std::make_shared<Any>(i));
+							{
+								EXPECT_EQ(true, scope_inner->Cast<bool>(scope_inner->CallFunction("==", { scope_inner->CallFunction("Units::value", { 100.0f }), 100l })));
+							}
+							});
+						printf(std::to_string(__LINE__) + ": \t" + std::to_string(numIterations) + " operations (on 10,000 classes) per " + Units::second(sw.Stop_s()).ToString() + ".");
+					}
+
+					// for some reason, slightly slower!
+					if (1) {
+						// This one "uses" the Units namespace, but doesn't use the Units:: qualifier, to see if it provides a speed boost at all.
+						sw.Start();
+						auto scope_outer = std::make_shared<Scope>(scope_1);
+						scope_outer->SetSelf(scope_outer);
+						scope_outer->AddUsing(scope_outer->FindNamespace("Units"));
+						fibers::parallel::For(0, numIterations, [&](int i) {
+							auto scope_inner = std::make_shared<Scope>(scope_outer);
+							scope_inner->SetSelf(scope_inner);
+							scope_inner->AddObj("i", std::make_shared<Any>(i));
+							{
+								EXPECT_EQ(true, scope_inner->Cast<bool>(scope_inner->CallFunction("==", { scope_inner->CallFunction("value", { 100.0f }), 100l })));
+							}
+							});
+						// printf(std::to_string(__LINE__) + ": \t" + std::to_string(numIterations) + " operations (on 10,000 classes) per " + Units::second(sw.Stop_s()).ToString() + ".");
+					}
+
+					// Using Units;
+					// for (int i = 0; i < numIterations; i++){
+					//     true == (Units::value(i) == i);
+					// }
+					if (1) {
+						// This one "uses" the Units namespace, to see if it provides a speed boost at all.
+						sw.Start();
+						auto scope_outer = std::make_shared<Scope>(scope_1);
+						scope_outer->SetSelf(scope_outer);
+						scope_outer->AddUsing(scope_outer->FindNamespace("Units"));
+						fibers::parallel::For(0, numIterations, [&](int i) {
+							auto scope_inner = std::make_shared<Scope>(scope_outer);
+							scope_inner->SetSelf(scope_inner);
+							scope_inner->AddObj("i", std::make_shared<Any>(i));
+							{
+								auto i_obj = scope_inner->FindObj("i");
+								auto i_value = scope_inner->CallFunction("Units::value", { i_obj });
+								EXPECT_EQ(true, scope_inner->Cast<bool>(scope_inner->CallFunction("==", { i_value, i_obj })));
+							}
+							});
+						printf(std::to_string(__LINE__) + ": \t" + std::to_string(numIterations) + " operations (on 10,000 classes) per " + Units::second(sw.Stop_s()).ToString() + ".");
+					}
+
+					// Using Units;
+					// for (int i = 0; i < numIterations; i++){
+					//     true == (Units::value(string::npos) == string::npos); 
+					// }
+					if (1) {
+						// This one "uses" the Units namespace, to see if it provides a speed boost at all.
+						sw.Start();
+						auto scope_outer = std::make_shared<Scope>(scope_1);
+						scope_outer->SetSelf(scope_outer);
+						scope_outer->AddUsing(scope_outer->FindNamespace("Units"));
+						fibers::parallel::For(0, numIterations, [&](int i) {
+							auto scope_inner = std::make_shared<Scope>(scope_outer);
+							scope_inner->SetSelf(scope_inner);
+							scope_inner->AddObj("i", std::make_shared<Any>(i));
+							{
+								auto i_obj = scope_inner->FindObj("i"); // searching and failing to find does not throw, but returns an empty ptr
+								auto j_obj = scope_inner->FindObj("string::npos"); // searching and failing to find does not throw, but returns an empty ptr
+								EXPECT_EQ(true, scope_inner->Cast<bool>(scope_inner->CallFunction("!=", { i_obj, j_obj })));
+							}
+							});
+						printf(std::to_string(__LINE__) + ": \t" + std::to_string(numIterations) + " operations (on 10,000 classes) per " + Units::second(sw.Stop_s()).ToString() + ".");
+					}
+
+					// Using Units;
+					// for (int i = 0; i < numIterations; i++){
+					//	   true == ("ft" == Units::foot(i).abbreviation());
+					// }
+					if (1) {
+						// Requires up-casting Units::foot to Units::value before calling 'abbreviation' and getting the result from the polymorphic type. 
+						sw.Start();
+						auto scope_outer = std::make_shared<Scope>(scope_1);
+						scope_outer->SetSelf(scope_outer);
+						scope_outer->AddUsing(scope_outer->FindNamespace("Units"));
+						fibers::parallel::For(0, numIterations, [&](int i) { // for (int i = 0; i < numIterations;i++){// 
+							auto scope_inner = std::make_shared<Scope>(scope_outer);
+							scope_inner->SetSelf(scope_inner);
+							scope_inner->AddObj("i", std::make_shared<Any>(i));
+							{
+								auto i_obj = scope_inner->FindObj("i"); // searching and failing to find does not throw, but returns an empty ptr
+
+								// SOMETHING IS WRONG HERE, AND IT IS CRASHING... 
+								auto i_ft = scope_inner->CallFunction("Units::foot", { i_obj });
+								//auto ft_abbrev = scope_inner->CallFunction("abbreviation", { i_ft });
+								//EXPECT_EQ(scope_inner->Cast<std::string>(ft_abbrev), "ft");
+							}
+						});
+						printf(std::to_string(__LINE__) + ": \t" + std::to_string(numIterations) + " operations (on 10,000 classes) per " + Units::second(sw.Stop_s()).ToString() + ".");
+					}
+
+					// Using Units;
+					// for (int i = 0; i < numIterations; i++){
+					//	   true == ("foot" == Units::foot(i).name());
+					// }
+					if (1) {
+						// This one "uses" the Units namespace, to see if it provides a speed boost at all.
+						sw.Start();
+						auto scope_outer = std::make_shared<Scope>(scope_1);
+						scope_outer->SetSelf(scope_outer);
+						scope_outer->AddUsing(scope_outer->FindNamespace("Units"));
+						fibers::parallel::For(0, numIterations, [&](int i) {
+							auto scope_inner = std::make_shared<Scope>(scope_outer);
+							scope_inner->SetSelf(scope_inner);
+							scope_inner->AddObj("i", std::make_shared<Any>(i));
+							{
+								auto i_obj = scope_inner->FindObj("i"); // searching and failing to find does not throw, but returns an empty ptr
+								auto i_ft = scope_inner->CallFunction("Units::foot", { i_obj });
+								auto ft_abbrev = scope_inner->CallFunction("name", { i_ft });
+								EXPECT_EQ(scope_inner->Cast<std::string>(ft_abbrev), "foot");
+							}
+							});
+						printf(std::to_string(__LINE__) + ": \t" + std::to_string(numIterations) + " operations (on 10,000 classes) per " + Units::second(sw.Stop_s()).ToString() + ".");
+					}
+
+					// Using Units;
+					// for (int i = 0; i < numIterations; i++){
+					//     true == ("${i} ft" == Units::foot(i).value().to_string());
+					// }
+					if (1) {
+						// This one "uses" the Units namespace, to see if it provides a speed boost at all.
+						sw.Start();
+						auto scope_outer = std::make_shared<Scope>(scope_1);
+						scope_outer->SetSelf(scope_outer);
+						scope_outer->AddUsing(scope_outer->FindNamespace("Units"));
+						fibers::parallel::For(0, numIterations, [&](int i) {
+							auto scope_inner = std::make_shared<Scope>(scope_outer);
+							scope_inner->SetSelf(scope_inner);
+							scope_inner->AddObj("i", std::make_shared<Any>(i));
+							{
+								auto i_obj = scope_inner->FindObj("i"); // searching and failing to find does not throw, but returns an empty ptr
+								auto i_ft = scope_inner->CallFunction("value", { scope_inner->CallFunction("Units::foot", { i_obj }) });
+								auto ft_str = scope_inner->CallFunction("to_string", { i_ft });
+								EXPECT_EQ(scope_inner->Cast<std::string>(ft_str), Units::printf("%i ft", i));
+							}
+							});
+						printf(std::to_string(__LINE__) + ": \t" + std::to_string(numIterations) + " operations (on 10,000 classes) per " + Units::second(sw.Stop_s()).ToString() + ".");
+					}
+
+					// Using Units;
+					// for (int i = 0; i < numIterations; i++){
+					//     true == (Units::foot(i) == Units::meter(Units::foot(i)));
+					// }
+					if (1) {
+						// This one "uses" the Units namespace, to see if it provides a speed boost at all.
+						sw.Start();
+						auto scope_outer = std::make_shared<Scope>(scope_1);
+						scope_outer->SetSelf(scope_outer);
+						scope_outer->AddUsing(scope_outer->FindNamespace("Units"));
+						fibers::parallel::For(0, numIterations, [&](int i) {
+							auto scope_inner = std::make_shared<Scope>(scope_outer);
+							scope_inner->SetSelf(scope_inner);
+							scope_inner->AddObj("i", std::make_shared<Any>(i));
+							{
+								auto i_obj = scope_inner->FindObj("i");
+								EXPECT_EQ(true, scope_inner->Cast<bool>(scope_inner->CallFunction("==", { scope_inner->CallFunction("Units::foot", { i_obj }), scope_inner->CallFunction("Units::meter", { scope_inner->CallFunction("Units::foot", { i_obj }) }) })));
+							}
+							});
+						printf(std::to_string(__LINE__) + ": \t" + std::to_string(numIterations) + " operations (on 10,000 classes) per " + Units::second(sw.Stop_s()).ToString() + ".");
+					}
+
+					// Using Units;
+					// for (int i = 0; i < numIterations; i++){
+					//     (Units::foot(i) * Units::foot(i)).to_string == "${ i * i } sq_ft"
+					// }
+					if (1) {
+						// This one "uses" the Units namespace, to see if it provides a speed boost at all.
+						sw.Start();
+						auto scope_outer = std::make_shared<Scope>(scope_1);
+						scope_outer->SetSelf(scope_outer);
+						scope_outer->AddUsing(scope_outer->FindNamespace("Units"));
+						fibers::parallel::For(0, numIterations, [&](int i) {
+							auto scope_inner = std::make_shared<Scope>(scope_outer);
+							scope_inner->SetSelf(scope_inner);
+							scope_inner->AddObj("i", std::make_shared<Any>(i));
+							{
+								auto i_obj = scope_inner->FindObj("i");
+								auto pt1 = scope_inner->CallFunction("Units::foot", { i_obj });
+								auto pt2 = scope_inner->CallFunction("Units::foot", { i_obj });
+
+								auto multiplied = scope_inner->CallFunction("*", { pt1, pt2 });
+								auto stringified = scope_inner->CallFunction("to_string", { multiplied });
+							}
+							});
+						printf(std::to_string(__LINE__) + ": \t" + std::to_string(numIterations) + " operations (on 10,000 classes) per " + Units::second(sw.Stop_s()).ToString() + ".");
+					}
+				}
+
+				// DateTime
+				if (1) {
+					EXPECT_EQ(true, (scope_1->CallFunction("DateTime", {}).IsTypeOf<DateTime>()));
+					EXPECT_EQ(true, (scope_1->CallFunction("DateTime", { std::string("2024/12/5 18:58:59.576000") }).IsTypeOf<DateTime>()));
+					EXPECT_EQ(true, (scope_1->CallFunction("DateTime", { scope_1->CallFunction("Units::second", { 1733454336 }) }).IsTypeOf<DateTime>()));
+
+					EXPECT_EQ(true, (scope_1->CallFunction("DateTime", { 1733454336.0l }).IsTypeOf<DateTime>()));
+					EXPECT_EQ(true, (scope_1->CallFunction("Units::second", { DateTime::Now() }).IsTypeOf<Units::second>()));
+					EXPECT_EQ(true, (scope_1->CallFunction("Units::value", { DateTime::Now() }).IsTypeOf<Units::value>()));
+					EXPECT_EQ(true, (scope_1->CallFunction("double", { DateTime::Now() }).IsTypeOf<double>()));
+
+					EXPECT_EQ(true, (scope_1->CallFunction("Now", { DateTime() }).IsTypeOf<DateTime>()));
+					EXPECT_EQ(true, (scope_1->CallFunction("time", { DateTime::Now() }).IsTypeOf<Units::day>()));
+					EXPECT_EQ(true, (scope_1->CallFunction("DateTime::Now", { DateTime() }).IsTypeOf<DateTime>()));
+					EXPECT_EQ(true, (scope_1->CallFunction("DateTime::Now", { }).IsTypeOf<DateTime>()));
+
+					(void)scope_1->Cast<std::string>(scope_1->CallFunction("to_string", { scope_1->CallFunction("+", { scope_1->CallFunction("time", { DateTime::Now() }), scope_1->CallFunction("Units::year", { 1 }) }) }));
+
+					EXPECT_EQ(true, (scope_1->CallFunction("DateTime::Epoch", { }).IsTypeOf<DateTime>()));
+					try {
+						scope_1->CallFunction("tm_year", { }); // it will fail to find the function with those params and throw an error
+						EXPECT_EQ(true, false);
+					}
+					catch (...) {}
+					EXPECT_EQ(true, (scope_1->CallFunction("tm_year", { DateTime::Now() }).IsTypeOf<int>()));
+					EXPECT_EQ(true, (scope_1->CallFunction("getNumDaysInSameMonth", { DateTime::Now() }).IsTypeOf<int>()));
+					EXPECT_EQ(true, (scope_1->Cast<bool>(scope_1->CallFunction("==", { scope_1->CallFunction("DateTime::Epoch", { }), scope_1->CallFunction("DateTime::Epoch", { }) }))));
+				}
+
+				// Simulate a complex, multithreaded ForLoop
+				{
+					auto ScriptScope = std::make_shared<Scope>(scope_1);
+					ScriptScope->SetSelf(ScriptScope);
+
+					ScriptScope->AddObj("x", std::make_shared<Any>(fibers::containers::number<double>(0)));
+
+					{
+						auto ForScope = std::make_shared<Scope>(ScriptScope);
+						ForScope->SetSelf(ForScope);
+
+						fibers::parallel::For(0, 100, [&](int i) {
+							auto LoopScope = std::make_shared<Scope>(ForScope);
+							LoopScope->SetSelf(LoopScope);
+
+							LoopScope->AddObj("i", std::make_shared<Any>((int)i));
+
+							if (auto i_obj = LoopScope->FindObj("i")) {
+								auto LengthObj = LoopScope->CallFunction("length", { // returns a size_t
+									LoopScope->CallFunction("string", { // returns a string
+										LoopScope->CallFunction("double", { // returns a double
+											i_obj
+										})
+									})
+								});
+
+								if (auto x_obj = LoopScope->FindObj("x")) {
+									LoopScope->CallFunction("+=", { *x_obj, LengthObj });
+								}
+							}
+						});
+					}
+				}
+
+				// Simulate a complex, multithreaded ForLoop which Throws a runtime error during one (or multiple) evaluations
+				{
+					auto ScriptScope = std::make_shared<Scope>(scope_1);
+					ScriptScope->SetSelf(ScriptScope);
+
+					ScriptScope->AddObj("x", std::make_shared<Any>(fibers::containers::number<double>(0)));
+
+					{
+						auto ForScope = std::make_shared<Scope>(ScriptScope);
+						ForScope->SetSelf(ForScope);
+
+						try {
+							fibers::parallel::For(0, 100, [&](int i) {
+								auto LoopScope = std::make_shared<Scope>(ForScope);
+								LoopScope->SetSelf(LoopScope);
+
+								LoopScope->AddObj("i", std::make_shared<Any>((int)i));
+
+								if (auto i_obj = LoopScope->FindObj("i")) {
+									auto LengthObj = LoopScope->CallFunction("length", { // returns a size_t
+										LoopScope->CallFunction("string", { // returns a string
+											LoopScope->CallFunction("double", { // returns a double
+												i_obj
+											})
+										})
+										});
+
+									// printf(std::string("Length of ") + Impl::Cast<std::string>(*i_obj, LoopScope) + " is " + Impl::Cast<std::string>(LengthObj, LoopScope));
+
+									if (auto x_obj = LoopScope->FindObj("x")) {
+										if (LoopScope->Cast<bool>(LoopScope->CallFunction(">", { x_obj, 800 }))) {
+											throw(std::runtime_error("x cannot be greater than 800 for some random reason!"));
+										}
+
+										LoopScope->CallFunction("+=", { *x_obj, LengthObj });
+									}
+								}
+								});
+							EXPECT_EQ(true, false); // we should not get here.
+						}
+						catch (std::runtime_error const& e) {}
+					}
+				}
+
+				// Simulate a simple string operation
+				{
+					// {
+					auto ScriptScope = std::make_shared<Scope>(scope_1); ScriptScope->SetSelf(ScriptScope);
+					// var x = "A";
+					ScriptScope->AddObj("x", std::make_shared<Any>(std::string("A")));
+					// var y = "B";
+					ScriptScope->AddObj("y", std::make_shared<Any>(std::string("B")));
+					// return x + y;
+					EXPECT_EQ("AB", (ScriptScope->Cast<std::string>(ScriptScope->CallFunction("+", { ScriptScope->FindObj("x"), ScriptScope->FindObj("y") }))));
+					// }
+				}
+
+				// Simulate a simple Units operation
+				{
+					// {
+					auto ScriptScope = std::make_shared<Scope>(scope_1); ScriptScope->SetSelf(ScriptScope);
+					// Using namespace "Units"
+					ScriptScope->AddUsing(ScriptScope->FindNamespace("Units"));
+					// var x = foot(int(10.4));
+					ScriptScope->AddObj("x", std::make_shared<Any>(ScriptScope->CallFunction("foot", { ScriptScope->CallFunction("int", { 10.4 }) })));
+					// var y = meter(100);
+					ScriptScope->AddObj("y", std::make_shared<Any>(ScriptScope->CallFunction("meter", { 100 })));
+					// var z = inch(12);
+					ScriptScope->AddObj("z", std::make_shared<Any>(ScriptScope->CallFunction("inch", { 12 })));
+					// return Units::gallon(x*y*z);
+					auto result = ScriptScope->CallFunction("gallon", { ScriptScope->CallFunction("*", { ScriptScope->CallFunction("*", { ScriptScope->FindObj("x"), ScriptScope->FindObj("y") }), ScriptScope->FindObj("z") }) });
+					EXPECT_EQ("24542.398314 gal", (ScriptScope->Cast<std::string>(result)));
+					// }
+				}
 
 
 
@@ -3303,130 +3805,6 @@ int main() {
 			if (1) {
 				// #include "Units"
 				// Trying to have Units be built-in, but this still demo's how to make a seperate library and make it included as-if it were built-in. 
-				if (0) {
-					auto global_scope2{ std::make_shared<Global2>() }; // global should always be a Namespace
-					global_scope2->SetSelf(global_scope2);
-					global_scope2->AddBuiltIns();
-
-					// Create library...
-					{
-						auto std_namespace{ std::make_shared<Namespace2>(global_scope2, "Units") };
-						std_namespace->SetSelf(std_namespace);
-						global_scope2->AddChild(std_namespace);
-
-						// the "std" namespace imports the "string" namespace...
-						{
-							auto value_namespace{ std::make_shared<Class2>(std_namespace, "value", scripting::user_type<Units::value>()) };
-							value_namespace->SetSelf(value_namespace);
-							std_namespace->AddChild(value_namespace);
-
-							// which has the following types groups... 
-							{
-								// value -> double
-								if (auto p = std_namespace->FindClass(user_type<double>())) {
-									p->AddFunction(p->GetName(), make_callable([](Units::value const& o) -> double { return o(); }));
-								}
-								// value -> float
-								if (auto p = std_namespace->FindClass(user_type<float>())) {
-									p->AddFunction(p->GetName(), make_callable([](Units::value const& o) -> float { return o(); }));
-								}
-								// value -> int
-								if (auto p = std_namespace->FindClass(user_type<int>())) {
-									p->AddFunction(p->GetName(), make_callable([](Units::value const& o) -> int { return o(); }));
-								}
-								// value -> string
-								if (auto p = std_namespace->FindClass(user_type<std::string>())) {
-									p->AddFunction(p->GetName(), make_callable([](Units::value const& o) -> std::string { return o.ToString(); }));
-								}
-
-								value_namespace->AddFunction("abbreviation", make_callable([](Units::value const& x)->std::string {
-									return x.Abbreviation();
-								}));
-								value_namespace->AddFunction("name", make_callable([](Units::value const& x)->std::string {
-									return x.UnitName();
-								}));
-								value_namespace->AddFunction("to_string", make_callable([](Units::value const& x)->std::string {
-									return x.ToString();
-								}));
-
-								// Constructors
-								value_namespace->AddFunction("value", make_callable([]() -> Units::value { return Units::value{}; }));
-								value_namespace->AddFunction("value", make_callable([](Units::value const& makeCopy) -> Units::value { return makeCopy; }));
-								value_namespace->AddFunction("value", make_callable([](int const& o)->Units::value { return o; }));
-								value_namespace->AddFunction("value", make_callable([](float const& o)->Units::value { return o; }));
-								value_namespace->AddFunction("value", make_callable([](double const& o)->Units::value { return o; }));
-								value_namespace->AddFunction("=", make_callable([](Any const& a, Units::value const& b) -> Any { Units::value& out = a.cast(); out = b; return a; }), Param_Types({ {std::string("a"), user_type<Units::value>() }, {std::string("b"), user_type<Units::value>() } }));
-
-								// Comparisons & operators
-								value_namespace->AddFunction("==", scripting::make_callable([](Units::value const& x, Units::value const& y) -> bool { return x == y; }));
-								value_namespace->AddFunction("!=", scripting::make_callable([](Units::value const& x, Units::value const& y) -> bool { return x != y; }));
-								value_namespace->AddFunction("<", scripting::make_callable([](Units::value const& x, Units::value const& y) -> bool { return x < y; }));
-								value_namespace->AddFunction(">", scripting::make_callable([](Units::value const& x, Units::value const& y) -> bool { return x > y; }));
-								value_namespace->AddFunction("<=", scripting::make_callable([](Units::value const& x, Units::value const& y) -> bool { return x <= y; }));
-								value_namespace->AddFunction(">=", scripting::make_callable([](Units::value const& x, Units::value const& y) -> bool { return x >= y; }));
-								value_namespace->AddFunction("+", scripting::make_callable([](Units::value const& x, Units::value const& y) -> Units::value { return x + y; }));
-								value_namespace->AddFunction("-", scripting::make_callable([](Units::value const& x, Units::value const& y) -> Units::value { return x - y; }));
-								value_namespace->AddFunction("*", scripting::make_callable([](Units::value const& x, Units::value const& y) -> Units::value { return x * y; }));
-								value_namespace->AddFunction("/", scripting::make_callable([](Units::value const& x, Units::value const& y) -> Units::value { return x / y; }));
-								value_namespace->AddFunction("+=", make_callable([](Any const& a, Units::value const& b) -> Any { Units::value& out = a.cast(); out += b; return a; }), Param_Types({ {std::string("a"), user_type<Units::value>() }, {std::string("b"), user_type<Units::value>() } }));
-								value_namespace->AddFunction("-=", make_callable([](Any const& a, Units::value const& b) -> Any { Units::value& out = a.cast(); out -= b; return a; }), Param_Types({ {std::string("a"), user_type<Units::value>() }, {std::string("b"), user_type<Units::value>() } }));
-								value_namespace->AddFunction("*=", make_callable([](Any const& a, Units::value const& b) -> Any { Units::value& out = a.cast(); out *= b; return a; }), Param_Types({ {std::string("a"), user_type<Units::value>() }, {std::string("b"), user_type<Units::value>() } }));
-								value_namespace->AddFunction("/=", make_callable([](Any const& a, Units::value const& b) -> Any { Units::value& out = a.cast(); out /= b; return a; }), Param_Types({ {std::string("a"), user_type<Units::value>() }, {std::string("b"), user_type<Units::value>() } }));
-							}
-
-							if (1) {
-								//scripting::UnitsLibrary::UnitsLibrary::Part1(std_namespace, value_namespace);
-								//scripting::UnitsLibrary::UnitsLibrary::Part2(std_namespace, value_namespace);
-								//scripting::UnitsLibrary::UnitsLibrary::Part3(std_namespace, value_namespace);
-
-
-
-
-							}
-
-						}
-					}
-
-					// add it to our script...
-					imports.emplace("github//scriptLanguage.Units", global_scope2); // the import map guarrantees lifetime...
-					scope_1->AddUsing(global_scope2); // ... while "using" allows our global to share their global's custom namespaces and objects
-
-					if (auto p = scope_1->FindFunctions("Units::value")) {
-						EXPECT_EQ(true, true);
-					}
-					else {
-						EXPECT_EQ(false, true);
-					}
-
-					std::vector<Any> params = { 100 };
-					if (auto p = scope_1->BuildFunction("Units::value", params)) {
-						EXPECT_EQ(true, true);
-					}
-					else {
-						EXPECT_EQ(false, true);
-					}
-					if (auto p = scope_1->CallFunction("Units::value", params)) {
-						EXPECT_EQ(user_type<Units::value>(), p.Type());
-					}
-					else {
-						EXPECT_EQ(false, true);
-					}
-
-					std::vector<Any> params2 = { Units::value(100), 100 };
-					if (auto p = scope_1->BuildFunction("==", params2)) {
-						EXPECT_EQ(true, true);
-					}
-					else {
-						EXPECT_EQ(false, true);
-					}
-					if (auto p = scope_1->CallFunction("==", params2)) {
-						EXPECT_EQ(user_type<bool>(), p.Type());
-					}
-					else {
-						EXPECT_EQ(false, true);
-					}
-
-				}
 
 				// Conversion Tree Test
 				{

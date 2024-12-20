@@ -173,9 +173,14 @@ public:
 		return ret;
 	};
 	static std::string	printf(const char* fmt, ...) {
+		thread_local static std::shared_ptr<char> sp{ nullptr };
+		if (!sp) {
+			sp = std::shared_ptr<char>(new char[128000], std::default_delete<char[]>());
+		}
+
 		va_list argptr;
 
-		decltype(auto) buffer = new char[128000];
+		char* buffer = sp.get();// new char[128000];
 		buffer[128000 - 1] = '\0';
 
 		va_start(argptr, fmt);
@@ -185,7 +190,7 @@ public:
 
 		std::string out(buffer);
 
-		delete[] buffer;
+		//delete[] buffer;
 		return out;
 	};
 	static bool IsInteger(double value) {

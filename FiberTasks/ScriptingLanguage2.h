@@ -622,8 +622,7 @@ namespace GoodLang {
 		std::shared_ptr<VersionedCacheContainer>
 			SearchCache{ std::make_shared<VersionedCacheContainer>() };
 
-		std::shared_ptr<TemplatedCacheContainer> GetVersionedCacheContainer(std::shared_ptr<TypeConverter> const& tree)const {
-			auto version = std::hash<std::shared_ptr<TypeConverter>>()(tree);
+		std::shared_ptr<TemplatedCacheContainer> GetVersionedCacheContainer(size_t version)const {
 			while (SearchCache) {
 				// test if exists
 				if (1) {
@@ -648,8 +647,8 @@ namespace GoodLang {
 			}
 			return nullptr;
 		};
-		template<size_t CacheID> std::shared_ptr<CacheContainer> GetCacheContainer(std::shared_ptr<TypeConverter> const& tree)const {
-			if (auto version_container = GetVersionedCacheContainer(tree)) {
+		template<size_t CacheID> std::shared_ptr<CacheContainer> GetCacheContainer(size_t version)const {
+			if (auto version_container = GetVersionedCacheContainer(version)) {
 				// test if exists
 				if (1) {
 					auto locked{ std::shared_lock(version_container->first) };
@@ -673,8 +672,8 @@ namespace GoodLang {
 			}
 			return nullptr;
 		};
-		template<size_t CacheID, typename T, typename... Rest> bool TryGetCached(std::shared_ptr<TypeConverter> const& tree, std::shared_ptr<T>& out, Rest const&... rest) const {
-			if (std::shared_ptr<CacheContainer> cache_container = GetCacheContainer<CacheID>(tree)) {
+		template<size_t CacheID, typename T, typename... Rest> bool TryGetCached(size_t version, std::shared_ptr<T>& out, Rest const&... rest) const {
+			if (std::shared_ptr<CacheContainer> cache_container = GetCacheContainer<CacheID>(version)) {
 				size_t hash = 0;
 				hash_combine(hash, rest...);
 
@@ -691,8 +690,8 @@ namespace GoodLang {
 			out = nullptr;
 			return false;
 		};
-		template<size_t CacheID, typename... Rest> void InsertCached(std::shared_ptr<TypeConverter> const& tree, std::shared_ptr<void> const& obj, Rest const&... rest) const {
-			if (std::shared_ptr<CacheContainer> cache_container = GetCacheContainer<CacheID>(tree)) {
+		template<size_t CacheID, typename... Rest> void InsertCached(size_t version, std::shared_ptr<void> const& obj, Rest const&... rest) const {
+			if (std::shared_ptr<CacheContainer> cache_container = GetCacheContainer<CacheID>(version)) {
 				size_t hash = 0;
 				hash_combine(hash, rest...);
 
@@ -710,8 +709,8 @@ namespace GoodLang {
 				}
 			}
 		};
-		template<size_t CacheID, typename... Rest> void InsertCachedIfNotExist(std::shared_ptr<TypeConverter> const& tree, std::shared_ptr<void> const& obj, Rest const&... rest) const {
-			if (std::shared_ptr<CacheContainer> cache_container = GetCacheContainer<CacheID>(tree)) {
+		template<size_t CacheID, typename... Rest> void InsertCachedIfNotExist(size_t version, std::shared_ptr<void> const& obj, Rest const&... rest) const {
+			if (std::shared_ptr<CacheContainer> cache_container = GetCacheContainer<CacheID>(version)) {
 				size_t hash = 0;
 				hash_combine(hash, rest...);
 
@@ -760,8 +759,8 @@ namespace GoodLang {
 				}
 			}
 
-			auto tree = this->GetTypeConverterTree();
-			if (TryGetCached<1>(tree, out, QualifiedOrUnqualifiedNamespaceName)) {
+			auto treeV = this->GetTypeConverterTreeVersion();
+			if (TryGetCached<1>(treeV, out, QualifiedOrUnqualifiedNamespaceName)) {
 				return out;
 			}
 #endif
@@ -787,7 +786,7 @@ namespace GoodLang {
 				}
 				})) {
 #ifdef useCachedData
-				InsertCached<1>(tree, out, QualifiedOrUnqualifiedNamespaceName);
+				InsertCached<1>(treeV, out, QualifiedOrUnqualifiedNamespaceName);
 #endif
 				return out;
 			}
@@ -802,10 +801,10 @@ namespace GoodLang {
 			std::shared_ptr<Namespace> out;
 
 #ifdef useCachedData
-			auto tree = this->GetTypeConverterTree();
+			auto treeV = this->GetTypeConverterTreeVersion();
 			{
 				std::shared_ptr<Class> out2;
-				if (TryGetCached<2>(tree, out2, typeInfo)) {
+				if (TryGetCached<2>(treeV, out2, typeInfo)) {
 					return out2;
 				}
 			}			
@@ -822,13 +821,13 @@ namespace GoodLang {
 				return false;
 				})) {
 #ifdef useCachedData
-				InsertCached<2>(tree, std::dynamic_pointer_cast<Class>(out), typeInfo);
+				InsertCached<2>(treeV, std::dynamic_pointer_cast<Class>(out), typeInfo);
 #endif				
 				return std::dynamic_pointer_cast<Class>(out);
 			}
 			else {
 #ifdef useCachedData
-				InsertCached<2>(tree, nullptr, typeInfo);
+				InsertCached<2>(treeV, nullptr, typeInfo);
 #endif				
 				return nullptr;
 			}
@@ -861,11 +860,11 @@ namespace GoodLang {
 				}
 			}
 
-			auto tree = this->GetTypeConverterTree();
+			auto treeV = this->GetTypeConverterTreeVersion();
 			{
 				std::shared_ptr<Scope> out;
 
-				if (TryGetCached<3>(tree, out, objName)) {
+				if (TryGetCached<3>(treeV, out, objName)) {
 					if (out->TryFindNearestScopeWhere(out, [&objName](std::shared_ptr<Scope> const& namespacePtr)->bool {
 						if (auto ptr = std::dynamic_pointer_cast<Scope>(namespacePtr)) {
 							if (auto objFound = ptr->GetObj(objName)) {
@@ -891,11 +890,11 @@ namespace GoodLang {
 					}
 					return false;
 					})) {
-					InsertCached<3>(tree, out, objName);
+					InsertCached<3>(treeV, out, objName);
 					return out;
 				}
 				else {
-					InsertCached<3>(tree, nullptr, objName);
+					InsertCached<3>(treeV, nullptr, objName);
 					return nullptr;
 				}
 			}
@@ -904,11 +903,11 @@ namespace GoodLang {
 				objName = objName.substr(lastOfColons + 1);
 				if (auto namespacePtr = std::dynamic_pointer_cast<Scope>(FindNamespace(Namespace))) {
 					auto out = namespacePtr->FindScopeWithObj(objName);
-					InsertCached<3>(tree, out, objName);
+					InsertCached<3>(treeV, out, objName);
 					return out;
 				}
 				else {
-					InsertCached<3>(tree, nullptr, objName);
+					InsertCached<3>(treeV, nullptr, objName);
 					return nullptr;
 				}
 			}
@@ -1094,6 +1093,14 @@ namespace GoodLang {
 			}
 		};
 
+		virtual size_t GetTypeConverterTreeVersion() const {
+			if (auto p = std::dynamic_pointer_cast<Scope>(GetLibrary())) {
+				return p->GetTypeConverterTreeVersion();
+			}
+			else {
+				return 0;
+			}
+		};
 		virtual std::shared_ptr<TypeConverter> GetTypeConverterTree() const {
 			if (auto p = std::dynamic_pointer_cast<Scope>(GetLibrary())) {
 				return p->GetTypeConverterTree();
@@ -1125,10 +1132,11 @@ namespace GoodLang {
 		bool TryFindFunctionImpl(std::string const& functionName, std::vector<Any>  const& params, std::shared_ptr<TypeConverter> const& m_conversionTree, Proxy_Function& out) const {
 			if (!m_conversionTree) return false;
 #ifdef useCachedData
-			if (TryGetCached<0>(m_conversionTree, out, functionName, ParamTypes(params))) {
+			auto treeV = this->GetTypeConverterTreeVersion();
+			if (TryGetCached<0>(treeV, out, functionName, ParamTypes(params))) {
 				return (bool)out;
 			}
-			defer(InsertCachedIfNotExist<0>(m_conversionTree, out, functionName, ParamTypes(params)));
+			defer(InsertCachedIfNotExist<0>(treeV, out, functionName, ParamTypes(params)));
 #endif
 			//auto tree_hash = Hasher()(std::weak_ptr<TypeConverter>(m_conversionTree));
 			//auto cache1 = GetCache(FindFunctionCache, tree_hash);
@@ -2273,7 +2281,10 @@ namespace GoodLang {
 				this->AddFunction("Type_Info", make_callable([](Any const& obj) -> std::weak_ptr<Type_Info> {
 					return obj.Type();
 				}));
-
+				// Returns the type of Any object. By not specifying the type, the Any is treated like a Template
+				this->AddFunction("Type", make_callable([](Any const& obj) -> std::weak_ptr<Type_Info> {
+					return obj.Type();
+				}));
 				// Returns a stringified version of the provided Any obj. This is meant to be a fall-back template whenever no specialization is available. 
 				this->AddFunction("to_string", make_callable([](Any const& x) -> std::string {
 					auto name = x.TypeName();
@@ -2407,6 +2418,9 @@ namespace GoodLang {
 		};
 
 	public:
+		virtual size_t GetTypeConverterTreeVersion() const override {
+			return CachedTypeConverterTreeVersion.load();
+		};
 		virtual std::shared_ptr<TypeConverter> GetTypeConverterTree() const override {
 			auto oldVersion = CachedTypeConverterTreeVersion.load();
 			if (oldVersion != RecordVersion) {
