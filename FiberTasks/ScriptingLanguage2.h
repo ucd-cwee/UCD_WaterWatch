@@ -808,7 +808,7 @@ namespace GoodLang {
 				if (TryGetCached<2>(tree, out2, typeInfo)) {
 					return out2;
 				}
-			}
+			}			
 #endif
 
 			if (TryFindNearestNamespaceWhere(out, [tryFind = typeInfo](std::shared_ptr<Namespace> const& namespacePtr)->bool {
@@ -1826,7 +1826,7 @@ namespace GoodLang {
 				// value(foot)
 				value_namespace->AddFunction(value_namespace->GetName(), Function(make_callable([](Any const& from) -> std::shared_ptr<Units::value> {
 					return std::dynamic_pointer_cast<Units::value>(from.cast<std::shared_ptr<T>>());
-				}, ParamTypes({ foot_namespace->GetClassType() })), false));
+				}, ParamTypes({ foot_namespace->GetClassType().lock()->MakeConstRef() })), false));
 			}
 		};
 
@@ -1942,7 +1942,7 @@ namespace GoodLang {
 				// classPtr->AddFunction(Name, make_callable([](decltype(typeImpl) const& makeCopy) ->  decltype(typeImpl) { return makeCopy; }));
 				classPtr->AddFunction("=", make_callable(
 					[](Any const& a, decltype(typeImpl) const& b) -> Any { decltype(typeImpl)& x = a.cast(); x = b; return a; }
-					, ParamTypes({ user_type_shared<decltype(typeImpl)>(), user_type_shared<decltype(typeImpl)>() })
+					, ParamTypes({ user_type_shared<decltype(typeImpl)>().lock()->MakeRef(), user_type_shared<decltype(typeImpl)>().lock()->MakeConstRef() })
 				));
 
 				// Comparisons
@@ -2029,7 +2029,7 @@ namespace GoodLang {
 					// Constructors
 					classPtr->AddFunction("string", make_callable([]() -> std::string { return std::string{}; }));
 					// classPtr->AddFunction("string", make_callable([](std::string const& makeCopy) -> std::string { return makeCopy; }));
-					classPtr->AddFunction("=", make_callable([](Any const& a, std::string const& b) -> Any { std::string& out = a.cast(); out = b; return a; }, ParamTypes({ user_type_shared<std::string>(), user_type_shared<std::string>() })));
+					classPtr->AddFunction("=", make_callable([](Any const& a, std::string const& b) -> Any { std::string& out = a.cast(); out = b; return a; }, ParamTypes({ user_type_shared<std::string>().lock()->MakeRef(), user_type_shared<std::string>().lock()->MakeConstRef() })));
 
 					// Comparisons
 					classPtr->AddFunction("==", make_callable([](std::string const& x, std::string const& y) -> bool { return x == y; }));
@@ -2039,7 +2039,7 @@ namespace GoodLang {
 					classPtr->AddFunction(">", make_callable([](std::string const& x, std::string const& y) -> bool { return x > y; }));
 					classPtr->AddFunction(">=", make_callable([](std::string const& x, std::string const& y) -> bool { return x >= y; }));
 					classPtr->AddFunction("+", make_callable([](std::string const& x, std::string const& y) -> std::string { return x + y; }));
-					classPtr->AddFunction("+=", make_callable([](Any const& a, std::string const& b) -> Any { std::string& out = a.cast(); out += b; return a; }, ParamTypes({ user_type_shared<std::string>(), user_type_shared<std::string>() })));
+					classPtr->AddFunction("+=", make_callable([](Any const& a, std::string const& b) -> Any { std::string& out = a.cast(); out += b; return a; }, ParamTypes({ user_type_shared<std::string>().lock()->MakeRef(), user_type_shared<std::string>().lock()->MakeConstRef() })));
 
 					// Functions
 					classPtr->AddFunction("length", make_callable([](std::string const& a) -> size_t { return a.length(); }));
@@ -2069,7 +2069,7 @@ namespace GoodLang {
 					// Constructors
 					//classPtr->AddFunction("Type_Info", make_callable([]() -> std::weak_ptr<Type_Info> { return std::weak_ptr<Type_Info>{}; }));
 					//classPtr->AddFunction("Type_Info", make_callable([](std::weak_ptr<Type_Info> const& makeCopy) -> std::weak_ptr<Type_Info> { return makeCopy; }));
-					classPtr->AddFunction("=", make_callable([](Any const& a, std::weak_ptr<Type_Info> const& b) -> Any { std::weak_ptr<Type_Info>& out = a.cast(); out = b; return a; }, ParamTypes({ user_type_shared<std::weak_ptr<Type_Info>>(), user_type_shared<std::weak_ptr<Type_Info>>() })));
+					classPtr->AddFunction("=", make_callable([](Any const& a, std::weak_ptr<Type_Info> const& b) -> Any { std::weak_ptr<Type_Info>& out = a.cast(); out = b; return a; }, ParamTypes({ user_type_shared<std::weak_ptr<Type_Info>>().lock()->MakeRef(), user_type_shared<std::weak_ptr<Type_Info>>().lock()->MakeConstRef() })));
 
 					// Comparisons
 					classPtr->AddFunction("==", make_callable([](std::weak_ptr<Type_Info> const& x, std::weak_ptr<Type_Info> const& y) -> bool { return x == y; }));
@@ -2153,7 +2153,7 @@ namespace GoodLang {
 							value_namespace->AddFunction("value", make_callable([](float const& o)->Units::value { return o; }));
 							value_namespace->AddFunction("value", make_callable([](double const& o)->Units::value { return o; }));
 							value_namespace->AddFunction("=", make_callable(
-								[](Any const& a, Units::value const& b) -> Any { Units::value& out = a.cast(); out = b; return a; }, ParamTypes({ user_type_shared<Units::value>(), user_type_shared<Units::value>() })));
+								[](Any const& a, Units::value const& b) -> Any { Units::value& out = a.cast(); out = b; return a; }, ParamTypes({ user_type_shared<Units::value>().lock()->MakeRef(), user_type_shared<Units::value>() })));
 
 							// Comparisons & operators
 							value_namespace->AddFunction("==", make_callable([](Units::value const& x, Units::value const& y) -> bool { return x == y; }));
@@ -2166,10 +2166,10 @@ namespace GoodLang {
 							value_namespace->AddFunction("-", make_callable([](Units::value const& x, Units::value const& y) -> Units::value { return x - y; }));
 							value_namespace->AddFunction("*", make_callable([](Units::value const& x, Units::value const& y) -> Units::value { return x * y; }));
 							value_namespace->AddFunction("/", make_callable([](Units::value const& x, Units::value const& y) -> Units::value { return x / y; }));
-							value_namespace->AddFunction("+=", make_callable([](Any const& a, Units::value const& b) -> Any { Units::value& out = a.cast(); out += b; return a; }, ParamTypes({ user_type_shared<Units::value>(), user_type_shared<Units::value>() })));
-							value_namespace->AddFunction("-=", make_callable([](Any const& a, Units::value const& b) -> Any { Units::value& out = a.cast(); out -= b; return a; }, ParamTypes({ user_type_shared<Units::value>(), user_type_shared<Units::value>() })));
-							value_namespace->AddFunction("*=", make_callable([](Any const& a, Units::value const& b) -> Any { Units::value& out = a.cast(); out *= b; return a; }, ParamTypes({ user_type_shared<Units::value>(), user_type_shared<Units::value>() })));
-							value_namespace->AddFunction("/=", make_callable([](Any const& a, Units::value const& b) -> Any { Units::value& out = a.cast(); out /= b; return a; }, ParamTypes({ user_type_shared<Units::value>(), user_type_shared<Units::value>() })));
+							value_namespace->AddFunction("+=", make_callable([](Any const& a, Units::value const& b) -> Any { Units::value& out = a.cast(); out += b; return a; }, ParamTypes({ user_type_shared<Units::value>().lock()->MakeRef(), user_type_shared<Units::value>() })));
+							value_namespace->AddFunction("-=", make_callable([](Any const& a, Units::value const& b) -> Any { Units::value& out = a.cast(); out -= b; return a; }, ParamTypes({ user_type_shared<Units::value>().lock()->MakeRef(), user_type_shared<Units::value>() })));
+							value_namespace->AddFunction("*=", make_callable([](Any const& a, Units::value const& b) -> Any { Units::value& out = a.cast(); out *= b; return a; }, ParamTypes({ user_type_shared<Units::value>().lock()->MakeRef(), user_type_shared<Units::value>() })));
+							value_namespace->AddFunction("/=", make_callable([](Any const& a, Units::value const& b) -> Any { Units::value& out = a.cast(); out /= b; return a; }, ParamTypes({ user_type_shared<Units::value>().lock()->MakeRef(), user_type_shared<Units::value>() })));
 						}
 
 						if (1) {
@@ -2197,7 +2197,7 @@ namespace GoodLang {
 					// Constructors
 					classPtr->AddFunction(thisTypeName, make_callable([]() -> thisType { return thisType{}; }));
 					classPtr->AddFunction(thisTypeName, make_callable([](thisType const& makeCopy) -> thisType { return makeCopy; }));
-					classPtr->AddFunction("=", make_callable([](Any const& a, thisType const& b) -> Any { thisType& out = a.cast(); out = b; return a; }, ParamTypes({ thisTypeInfo , thisTypeInfo })));
+					classPtr->AddFunction("=", make_callable([](Any const& a, thisType const& b) -> Any { thisType& out = a.cast(); out = b; return a; }, ParamTypes({ thisTypeInfo->MakeRef(), thisTypeInfo->MakeConstRef() })));
 					classPtr->AddFunction(thisTypeName, make_callable([](Units::second const& from) -> thisType { return from; }));
 					classPtr->AddFunction(thisTypeName, Function(make_callable([](std::string const& from) -> thisType { return thisType(from); }), true)); // explicit = cannot be used for conversion trees, and must be called directly with exact type match, e.g. DateTime("string")
 
@@ -2222,17 +2222,16 @@ namespace GoodLang {
 					classPtr->AddFunction("-", make_callable([](thisType const& x, thisType const& y) -> thisType { return x - y; }));
 					classPtr->AddFunction("*", make_callable([](thisType const& x, thisType const& y) -> thisType { return x * y; }));
 					classPtr->AddFunction("/", make_callable([](thisType const& x, thisType const& y) -> thisType { if (y == 0) return (Units::second)(std::numeric_limits<Units::second>::max()); else return x / y; }));
-					classPtr->AddFunction("+=", make_callable([](Any const& a, Units::second const& b) -> Any { thisType& x = a.cast(); x += b; return a; }), Param_Types({ {"obj",thisTypeInfo }, { "toOperateWith",user_type<Units::second>()} }));
-					classPtr->AddFunction("-=", make_callable([](Any const& a, Units::second const& b) -> Any { thisType& x = a.cast(); x -= b; return a; }), Param_Types({ {"obj",thisTypeInfo }, { "toOperateWith",user_type<Units::second>()} }));
-					classPtr->AddFunction("*=", make_callable([](Any const& a, Units::second const& b) -> Any { thisType& x = a.cast(); x *= b; return a; }), Param_Types({ {"obj",thisTypeInfo }, { "toOperateWith",user_type<Units::second>()} }));
-					classPtr->AddFunction("/=", make_callable([](Any const& a, Units::second const& b) -> Any { thisType& x = a.cast(); if (b != 0) x /= b; else x = (Units::second)(std::numeric_limits<Units::second>::max()); return a; }, ParamTypes({ thisTypeInfo , user_type_shared<Units::second>() })));
+					classPtr->AddFunction("+=", make_callable([](Any const& a, Units::second const& b) -> Any { thisType& x = a.cast(); x += b; return a; }, ParamTypes({ thisTypeInfo->MakeRef(), user_type_shared<Units::second>().lock()->MakeConstRef() })));
+					classPtr->AddFunction("-=", make_callable([](Any const& a, Units::second const& b) -> Any { thisType& x = a.cast(); x -= b; return a; }, ParamTypes({ thisTypeInfo->MakeRef(), user_type_shared<Units::second>().lock()->MakeConstRef() })));
+					classPtr->AddFunction("*=", make_callable([](Any const& a, Units::second const& b) -> Any { thisType& x = a.cast(); x *= b; return a; }, ParamTypes({ thisTypeInfo->MakeRef(), user_type_shared<Units::second>().lock()->MakeConstRef() })));
+					classPtr->AddFunction("/=", make_callable([](Any const& a, Units::second const& b) -> Any { thisType& x = a.cast(); if (b != 0) x /= b; else x = (Units::second)(std::numeric_limits<Units::second>::max()); return a; }, ParamTypes({ thisTypeInfo->MakeRef(), user_type_shared<Units::second>().lock()->MakeConstRef() })));
 
 					// Functions
 					classPtr->AddFunction("max", make_callable([]() { return std::numeric_limits<thisType>::max(); }));
 					classPtr->AddFunction("min", make_callable([]() { return std::numeric_limits<thisType>::lowest(); }));
 					classPtr->AddFunction("to_string", make_callable([](thisType const& o) -> std::string { return o.c_str(); }));
 					classPtr->AddFunction("Epoch", make_callable(&DateTime::Epoch));
-					// classPtr->AddFunction("Now", make_callable(&DateTime::Now));
 					classPtr->AddFunction("Now", make_callable([]() -> DateTime { return DateTime::Now(); }));
 					classPtr->AddFunction("tm_fractionalsec", make_callable(&DateTime::tm_fractionalsec));
 					classPtr->AddFunction("tm_sec", make_callable(&DateTime::tm_sec));

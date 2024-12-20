@@ -1119,8 +1119,8 @@ namespace GoodLang {
 		virtual bool CanCast(Type_Info const& to_type) const override { return GetType().CanCast(to_type); };
 		virtual Type_Info const& GetType() const override { return user_type<T>(); };
 		virtual std::weak_ptr<Type_Info> const& GetTypeShared() const override { return user_type_shared<T>(); };
-		virtual void* ptr() const override { return m_obj.get(); };
-		virtual std::shared_ptr<void> shared_ptr() const override { return std::static_pointer_cast<void>(m_obj); };
+		virtual void* ptr() const override { return const_cast<void*>((const void*)(m_obj.get())); };
+		virtual std::shared_ptr<void> shared_ptr() const override { return std::const_pointer_cast<void>(std::static_pointer_cast<const void>(m_obj)); };
 
 	private:
 		std::shared_ptr<T> m_obj;
@@ -1959,16 +1959,16 @@ namespace GoodLang {
 
 	private:
 		// All conversions, will include "real" and cached conversions.
-		//using conversionTreeType = concurrency::concurrent_unordered_map< std::shared_ptr<Type_Info>, // From
-		//	concurrency::concurrent_unordered_map< std::shared_ptr<Type_Info>, // To
+		using conversionTreeType = concurrency::concurrent_unordered_map< std::shared_ptr<Type_Info>, // From
+			concurrency::concurrent_unordered_map< std::shared_ptr<Type_Info>, // To
+			    TypeConverterFunc // Function
+			>
+		>;
+		//using conversionTreeType = std::unordered_map< std::shared_ptr<Type_Info>, // From
+		//	std::unordered_map< std::shared_ptr<Type_Info>, // To
 		//	    TypeConverterFunc // Function
 		//	>
 		//>;
-		using conversionTreeType = concurrency::concurrent_unordered_map< std::shared_ptr<Type_Info>, // From
-			concurrency::concurrent_unordered_map< std::shared_ptr<Type_Info>, // To
-			TypeConverterFunc // Function
-			>
-		>;
 		conversionTreeType AllConversions;
 		std::shared_mutex AllConversionsMut;
 
@@ -2137,53 +2137,84 @@ namespace GoodLang {
 					if (refType && constType) {
 						auto constRefType = constType->MakeRef().lock();
 						if (constRefType) {
+							bool ExistsAlready = false;
+
 							// Base -> const Base
-							if (1) {
+							{
+								auto locked{ std::shared_lock(AllConversionsMut) };
+								ExistsAlready = AllConversions[baseType][constType].operator bool();
+							}
+							if (!ExistsAlready) {
 								if (auto func = std::shared_ptr< details::Type_Conversion_Base >(new details::Custom_Type_Conversion_Impl([](Any const& x)->Any {
 									return x;
-									}, baseType, constType, 0.0))) {
+								}, baseType, constType, 0.0))) {
 									auto locked{ std::unique_lock(AllConversionsMut) };
 									AllConversions[func->from().lock()][func->to().lock()] = func;
 								}
 							}
+
 							// Base -> Base&
-							if (1) {
+							{
+								auto locked{ std::shared_lock(AllConversionsMut) };
+								ExistsAlready = AllConversions[baseType][refType].operator bool();
+							}
+							if (!ExistsAlready) {
 								if (auto func = std::shared_ptr< details::Type_Conversion_Base >(new details::Custom_Type_Conversion_Impl([](Any const& x)->Any {
 									return x;
-									}, baseType, refType, 0.0))) {
+								}, baseType, refType, 0.0))) {
 									auto locked{ std::unique_lock(AllConversionsMut) };
 									AllConversions[func->from().lock()][func->to().lock()] = func;
 								}
 							}
+
 							// Base -> const Base&
-							if (1) {
+							{
+								auto locked{ std::shared_lock(AllConversionsMut) };
+								ExistsAlready = AllConversions[baseType][constRefType].operator bool();
+							}
+							if (!ExistsAlready) {
 								if (auto func = std::shared_ptr< details::Type_Conversion_Base >(new details::Custom_Type_Conversion_Impl([](Any const& x)->Any {
 									return x;
-									}, baseType, constRefType, 0.0))) {
+								}, baseType, constRefType, 0.0))) {
 									auto locked{ std::unique_lock(AllConversionsMut) };
 									AllConversions[func->from().lock()][func->to().lock()] = func;
 								}
 							}
+							
 							// const Base -> const Base&
-							if (1) {
+							{
+								auto locked{ std::shared_lock(AllConversionsMut) };
+								ExistsAlready = AllConversions[constType][constRefType].operator bool();
+							}
+							if (!ExistsAlready) {
 								if (auto func = std::shared_ptr< details::Type_Conversion_Base >(new details::Custom_Type_Conversion_Impl([](Any const& x)->Any {
 									return x;
-									}, constType, constRefType, 0.0))) {
+								}, constType, constRefType, 0.0))) {
 									auto locked{ std::unique_lock(AllConversionsMut) };
 									AllConversions[func->from().lock()][func->to().lock()] = func;
 								}
 							}
+							
 							// Base& -> const Base&
-							if (1) {
+							{
+								auto locked{ std::shared_lock(AllConversionsMut) };
+								ExistsAlready = AllConversions[refType][constRefType].operator bool();
+							}
+							if (!ExistsAlready) {
 								if (auto func = std::shared_ptr< details::Type_Conversion_Base >(new details::Custom_Type_Conversion_Impl([](Any const& x)->Any {
 									return x;
-									}, refType, constRefType, 0.0))) {
+								}, refType, constRefType, 0.0))) {
 									auto locked{ std::unique_lock(AllConversionsMut) };
 									AllConversions[func->from().lock()][func->to().lock()] = func;
 								}
 							}
+
 							// const Base& -> Base
-							if (1) {
+							{
+								auto locked{ std::shared_lock(AllConversionsMut) };
+								ExistsAlready = AllConversions[constRefType][baseType].operator bool();
+							}
+							if (!ExistsAlready) {
 								auto& copyConstructor = baseType->GetCopyConstructor();
 								if (auto func = std::shared_ptr< details::Type_Conversion_Base >(new details::Custom_Type_Conversion_Impl([&copyConstructor](Any const& x)->Any {
 									return copyConstructor(x);

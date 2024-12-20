@@ -2731,10 +2731,22 @@ int main() {
 				auto m_obj = scope_1->CallFunction("Units::meter", { Units::foot(100.0) });
 				EXPECT_EQ(true, scope_1->Cast<bool>(scope_1->CallFunction("==", { scope_1->CallFunction("+", {ft_obj, m_obj}), Units::foot(200) })));
 
+
+				auto DT = scope_1->CallFunction("DateTime::Now", {  });
+				auto DT_time = scope_1->CallFunction("time", { DT });
+				printf(scope_1->Cast<std::string>(DT));
+				printf(scope_1->Cast<std::string>(DT_time));
+
+				scope_1->CallFunction("+=", { DT, Units::day(7) });
+				printf(scope_1->Cast<std::string>(DT));
+				printf(scope_1->Cast<std::string>(DT_time));
 			}
 
 			// Scopes, Namespaces, Classes
 			if (1) {
+
+
+
 
 
 
