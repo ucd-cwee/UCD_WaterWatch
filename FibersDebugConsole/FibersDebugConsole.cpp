@@ -2732,6 +2732,17 @@ int main() {
 				EXPECT_EQ(true, scope_1->Cast<bool>(scope_1->CallFunction("==", { scope_1->CallFunction("+", {ft_obj, m_obj}), Units::foot(200) })));
 
 			}
+
+			// Scopes, Namespaces, Classes
+			if (1) {
+
+
+
+			}
+
+
+
+
 		}
 		
 

@@ -2180,7 +2180,7 @@ namespace GoodLang {
 					}
 				}
 
-#if 0
+#if 1
 				// DateTime
 				if (1) {
 					using thisType = DateTime;
@@ -2188,44 +2188,44 @@ namespace GoodLang {
 
 					// make it a class
 					std::shared_ptr<Class> classPtr; {
-						classPtr.reset(new Class(this->p_self.lock(), thisTypeName, user_type<thisType>()));
+						classPtr.reset(new Class(this->p_self.lock(), thisTypeName, user_type_shared<thisType>().lock()));
 					}
 					classPtr->SetSelf(classPtr);
 					this->AddChild(classPtr);
-					scripting::Type_Info thisTypeInfo = classPtr->ClassType;
+					auto thisTypeInfo = classPtr->ClassType;
 
 					// Constructors
 					classPtr->AddFunction(thisTypeName, make_callable([]() -> thisType { return thisType{}; }));
 					classPtr->AddFunction(thisTypeName, make_callable([](thisType const& makeCopy) -> thisType { return makeCopy; }));
-					classPtr->AddFunction("=", make_callable([](Any const& a, thisType const& b) -> Any { thisType& out = a.cast(); out = b; return a; }), Param_Types({ {"a", thisTypeInfo }, {"b", thisTypeInfo } }));
+					classPtr->AddFunction("=", make_callable([](Any const& a, thisType const& b) -> Any { thisType& out = a.cast(); out = b; return a; }, ParamTypes({ thisTypeInfo , thisTypeInfo })));
 					classPtr->AddFunction(thisTypeName, make_callable([](Units::second const& from) -> thisType { return from; }));
-					classPtr->AddFunction(thisTypeName, make_callable([](std::string const& from) -> thisType { return thisType(from); }), true, true); // explicit = cannot be used for conversion trees, and must be called directly with exact type match, e.g. DateTime("string")
+					classPtr->AddFunction(thisTypeName, Function(make_callable([](std::string const& from) -> thisType { return thisType(from); }), true)); // explicit = cannot be used for conversion trees, and must be called directly with exact type match, e.g. DateTime("string")
 
 					// Converters
-					if (auto p = this->FindClass(user_type<std::string>())) {
+					if (auto p = this->FindClass(user_type_shared<std::string>())) {
 						p->AddFunction(p->GetName(), make_callable([](thisType const& from) -> std::string { return from.c_str(); }));
 					}
-					if (auto p = this->FindClass(user_type<Units::second>())) {
+					if (auto p = this->FindClass(user_type_shared<Units::second>())) {
 						p->AddFunction(p->GetName(), make_callable([](thisType const& from) -> Units::second { return (Units::second)from; }));
 					}
 
 					// Comparisons
-					classPtr->AddFunction("==", scripting::make_callable([](thisType const& x, thisType const& y) -> bool { return x == y; }));
-					classPtr->AddFunction("!=", scripting::make_callable([](thisType const& x, thisType const& y) -> bool { return x != y; }));
-					classPtr->AddFunction("<", scripting::make_callable([](thisType const& x, thisType const& y) -> bool { return x < y; }));
-					classPtr->AddFunction("<=", scripting::make_callable([](thisType const& x, thisType const& y) -> bool { return x <= y; }));
-					classPtr->AddFunction(">", scripting::make_callable([](thisType const& x, thisType const& y) -> bool { return x > y; }));
-					classPtr->AddFunction(">=", scripting::make_callable([](thisType const& x, thisType const& y) -> bool { return x >= y; }));
+					classPtr->AddFunction("==", make_callable([](thisType const& x, thisType const& y) -> bool { return x == y; }));
+					classPtr->AddFunction("!=", make_callable([](thisType const& x, thisType const& y) -> bool { return x != y; }));
+					classPtr->AddFunction("<", make_callable([](thisType const& x, thisType const& y) -> bool { return x < y; }));
+					classPtr->AddFunction("<=", make_callable([](thisType const& x, thisType const& y) -> bool { return x <= y; }));
+					classPtr->AddFunction(">", make_callable([](thisType const& x, thisType const& y) -> bool { return x > y; }));
+					classPtr->AddFunction(">=", make_callable([](thisType const& x, thisType const& y) -> bool { return x >= y; }));
 
 					// Operators
-					classPtr->AddFunction("+", scripting::make_callable([](thisType const& x, thisType const& y) -> thisType { return x + y; }));
-					classPtr->AddFunction("-", scripting::make_callable([](thisType const& x, thisType const& y) -> thisType { return x - y; }));
-					classPtr->AddFunction("*", scripting::make_callable([](thisType const& x, thisType const& y) -> thisType { return x * y; }));
-					classPtr->AddFunction("/", scripting::make_callable([](thisType const& x, thisType const& y) -> thisType { if (y == 0) return (Units::second)(std::numeric_limits<Units::second>::max()); else return x / y; }));
+					classPtr->AddFunction("+", make_callable([](thisType const& x, thisType const& y) -> thisType { return x + y; }));
+					classPtr->AddFunction("-", make_callable([](thisType const& x, thisType const& y) -> thisType { return x - y; }));
+					classPtr->AddFunction("*", make_callable([](thisType const& x, thisType const& y) -> thisType { return x * y; }));
+					classPtr->AddFunction("/", make_callable([](thisType const& x, thisType const& y) -> thisType { if (y == 0) return (Units::second)(std::numeric_limits<Units::second>::max()); else return x / y; }));
 					classPtr->AddFunction("+=", make_callable([](Any const& a, Units::second const& b) -> Any { thisType& x = a.cast(); x += b; return a; }), Param_Types({ {"obj",thisTypeInfo }, { "toOperateWith",user_type<Units::second>()} }));
 					classPtr->AddFunction("-=", make_callable([](Any const& a, Units::second const& b) -> Any { thisType& x = a.cast(); x -= b; return a; }), Param_Types({ {"obj",thisTypeInfo }, { "toOperateWith",user_type<Units::second>()} }));
 					classPtr->AddFunction("*=", make_callable([](Any const& a, Units::second const& b) -> Any { thisType& x = a.cast(); x *= b; return a; }), Param_Types({ {"obj",thisTypeInfo }, { "toOperateWith",user_type<Units::second>()} }));
-					classPtr->AddFunction("/=", make_callable([](Any const& a, Units::second const& b) -> Any { thisType& x = a.cast(); if (b != 0) x /= b; else x = (Units::second)(std::numeric_limits<Units::second>::max()); return a; }), Param_Types({ {"obj",thisTypeInfo }, { "toOperateWith",user_type<Units::second>()} }));
+					classPtr->AddFunction("/=", make_callable([](Any const& a, Units::second const& b) -> Any { thisType& x = a.cast(); if (b != 0) x /= b; else x = (Units::second)(std::numeric_limits<Units::second>::max()); return a; }, ParamTypes({ thisTypeInfo , user_type_shared<Units::second>() })));
 
 					// Functions
 					classPtr->AddFunction("max", make_callable([]() { return std::numeric_limits<thisType>::max(); }));
