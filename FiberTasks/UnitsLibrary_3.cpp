@@ -2,9 +2,9 @@
 
 #include "UnitsLibrary.h"
 
-namespace scripting {
+namespace GoodLang {
 	namespace UnitsLibrary {
-		void UnitsLibrary::Part3(std::shared_ptr<scripting::Namespace2> const& std_namespace, std::shared_ptr<scripting::Class2> const& value_namespace) {
+		void UnitsLibrary::Part3(std::shared_ptr<Namespace> const& std_namespace, std::shared_ptr<Class> const& value_namespace) {
 #define CreateRow(Type) AddUnit<Units::Type>(std_namespace, value_namespace)
 #define CreateRowWithMetricPrefixes(Type)\
 			CreateRow(Type); \

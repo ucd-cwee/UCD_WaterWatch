@@ -6040,9 +6040,9 @@ namespace scripting {
 
 		class UnitsLibrary {
 		public:
-			static void Part1(std::shared_ptr<scripting::Namespace2> const& std_namespace, std::shared_ptr<scripting::Class2> const& value_namespace);
-			static void Part2(std::shared_ptr<scripting::Namespace2> const& std_namespace, std::shared_ptr<scripting::Class2> const& value_namespace);
-			static void Part3(std::shared_ptr<scripting::Namespace2> const& std_namespace, std::shared_ptr<scripting::Class2> const& value_namespace);
+			//static void Part1(std::shared_ptr<scripting::Namespace2> const& std_namespace, std::shared_ptr<scripting::Class2> const& value_namespace);
+			//static void Part2(std::shared_ptr<scripting::Namespace2> const& std_namespace, std::shared_ptr<scripting::Class2> const& value_namespace);
+			//static void Part3(std::shared_ptr<scripting::Namespace2> const& std_namespace, std::shared_ptr<scripting::Class2> const& value_namespace);
 		};
 
 	}
@@ -6378,9 +6378,9 @@ namespace scripting {
 						}
 
 						if (1) {
-							scripting::UnitsLibrary::UnitsLibrary::Part1(std_namespace, value_namespace);
-							scripting::UnitsLibrary::UnitsLibrary::Part2(std_namespace, value_namespace);
-							scripting::UnitsLibrary::UnitsLibrary::Part3(std_namespace, value_namespace);
+							//scripting::UnitsLibrary::UnitsLibrary::Part1(std_namespace, value_namespace);
+							//scripting::UnitsLibrary::UnitsLibrary::Part2(std_namespace, value_namespace);
+							//scripting::UnitsLibrary::UnitsLibrary::Part3(std_namespace, value_namespace);
 						}
 					}
 					

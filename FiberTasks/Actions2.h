@@ -2405,88 +2405,58 @@ namespace GoodLang {
 			else if (auto f = FindConverter(from.Type(), To)) {
 				return f->convert(from);
 			}
+			else if (from.IsTypeOf(To)) {
+				return from;
+			}
 			else return from;
 		};
 		// will throw an error if the conversion was impossible.
 		template<typename To_t> typename std::remove_reference_t<To_t> Convert(Any const& from) {
 			static auto to_type { user_type_shared<To_t>().lock() };
-			if (auto f = FindConverter(from.Type(), to_type)) {
-				Any temp = f->convert(from);
-				return temp.cast<To_t>();
-			}
-			else if (from.IsTypeOf<To_t>()) {
-				return from.cast<To_t>();
-			}
-			else if (to_type->is_any()) {
+			if (to_type->is_any()) {
 				return from.cast();
 			}
-			else {
-				throw exception::bad_any_cast(from.Type(), user_type_shared<To_t>(), __LINE__);
+			else if (auto f = FindConverter(from.Type(), to_type)) {
+				Any temp = f->convert(from);
+				return temp.cast();
 			}
+			else if (from.IsTypeOf(to_type)) {
+				return from.cast();
+			}
+			else 
+				throw exception::bad_any_cast(from.Type(), user_type_shared<To_t>(), __LINE__);
 		};
 
 		// will return an empty object if the conversion was impossible. (Assumes converting to void is not allowed or desired)
 		double ConversionCost(Any const& from, std::weak_ptr<Type_Info> const& To) {
-			if (auto f = FindConverter(from.Type(), To)) {
-				return f->cost();
+			double out; 
+			if (To.lock()->is_any()) {
+				out = 0;
+			}
+			else if (auto f = FindConverter(from.Type(), To)) {
+				out = f->cost();
 			}
 			else if (from.IsTypeOf(To)) {
-				return 0;
-			}
-			else if (To.lock()->is_any()) {
-				return 0;
+				out = 0;
 			}
 			else {
-				return std::numeric_limits<double>::max();
+				out = std::numeric_limits<double>::max();
 			}
+			return out;
 		};
 		// will throw an error if the conversion was impossible.
 		template<typename To_t> double ConversionCost(Any const& from) {
 			static auto to_type{ user_type_shared<To_t>().lock() };
-			if (auto f = FindConverter(from.Type(), to_type)) {
-				return f->cost();
-			}
-			else if (from.IsTypeOf<To_t>()) {
-				return 0;
-			}
-			else if (to_type->is_any()) {
-				return 0;
-			}
-			else {
-				return std::numeric_limits<double>::max();
-			}
+			return ConversionCost(from, to_type);
 		};
 
 		// will return an empty object if the conversion was impossible. (Assumes converting to void is not allowed or desired)
 		bool Converts(Any const& from, std::weak_ptr<Type_Info> const& To) {
-			if (auto f = FindConverter(from.Type(), To)) {
-				return true;
-			}
-			else if (from.IsTypeOf(To)) {
-				return true;
-			}
-			else if (To.lock()->is_any()) {
-				return true;
-			}
-			else {
-				return false;
-			}
+			return ConversionCost(from, To) != std::numeric_limits<double>::max();
 		};
 		// will throw an error if the conversion was impossible.
 		template<typename To_t> bool Converts(Any const& from) {
-			static auto to_type{ user_type_shared<To_t>().lock() };
-			if (auto f = FindConverter(from.Type(), to_type)) {
-				return true;
-			}
-			else if (from.IsTypeOf<To_t>()) {
-				return true;
-			}
-			else if (to_type->is_any()) {
-				return true;
-			}
-			else {
-				return false;
-			}
+			return ConversionCost<To_t>(from) != std::numeric_limits<double>::max();
 		};
 	};
 };
@@ -5844,26 +5814,6 @@ namespace GoodLang {
 			throw exception::arity_error(inputs.size(), -1);
 		}
 	};
-
-	//// Call a generic, proxy function using a vector of inputs (may be empty), which will be converted as necessary to the expected types. 
-	//__forceinline Any call(Proxy_Function callable, std::vector<Any> const& inputs) {
-	//	if (callable) {
-	//		return callable->operator()(inputs);
-	//	}
-	//	else {
-	//		throw exception::arity_error(inputs.size(), -1);
-	//	}
-	//};
-
-	//// Call a generic, proxy function using a vector of inputs (may be empty), which will be converted as necessary to the expected types. 
-	//__forceinline Any call(Proxy_Function callable, Any const& input) {
-	//	if (callable) {
-	//		return callable->operator()({ input });
-	//	}
-	//	else {
-	//		throw exception::arity_error(1, -1);
-	//	}
-	//};
 };
 
 // Functions wrapper

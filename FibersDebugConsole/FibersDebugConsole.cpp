@@ -4,6 +4,9 @@
 #include "../FiberTasks/Fibers.h"
 #include "../FiberTasks/ScriptingLanguage.h"
 #include "../FiberTasks/UnitsLibrary.h"
+
+#include "../FiberTasks/ScriptingLanguage2.h"
+
 #include <execution>
 #include "../WaterWatchCpp/Clock.h"
 
@@ -2707,15 +2710,26 @@ int main() {
 			// Scopes
 			if (1) {
 				using namespace GoodLang;
-				//fibers::containers::Map<std::string, std::shared_ptr<Global>> imports;
+				fibers::containers::Map<std::string, std::shared_ptr<Global>> imports;
 
-				//auto scope_1 = std::make_shared<Global>(); // ::
-				//scope_1->SetSelf(scope_1);
-				//scope_1->AddBuiltIns();
+				auto scope_1 = std::make_shared<Global>(); // ::
+				scope_1->SetSelf(scope_1);
+				scope_1->AddBuiltIns();
 
+				(void)scope_1->Cast<int>(100);
+				auto intObj = scope_1->CallFunction("int", { 100 });
+				auto doubleObj = scope_1->CallFunction("double", { intObj });
+				auto stringObj = scope_1->Cast<std::string>(doubleObj);
+				EXPECT_EQ("100.000000", stringObj);
+				EXPECT_EQ("int", scope_1->Cast<std::string>(scope_1->Cast<std::weak_ptr<Type_Info>>(100)));
+				EXPECT_EQ("ldouble", scope_1->Cast<std::string>(scope_1->Cast<std::weak_ptr<Type_Info>>(100.0l)));
+				EXPECT_EQ("char", scope_1->Cast<std::string>(scope_1->Cast<std::weak_ptr<Type_Info>>('c')));
 
+				EXPECT_EQ(20, scope_1->Cast<int>(scope_1->CallFunction("+", { 10.0, 10 })));
 
-
+				auto ft_obj = scope_1->CallFunction("Units::foot", { 100.0 });
+				auto m_obj = scope_1->CallFunction("Units::meter", { Units::foot(100.0) });
+				EXPECT_EQ(true, scope_1->Cast<bool>(scope_1->CallFunction("==", { scope_1->CallFunction("+", {ft_obj, m_obj}), Units::foot(200) })));
 
 			}
 		}
@@ -3338,9 +3352,9 @@ int main() {
 							}
 
 							if (1) {
-								scripting::UnitsLibrary::UnitsLibrary::Part1(std_namespace, value_namespace);
-								scripting::UnitsLibrary::UnitsLibrary::Part2(std_namespace, value_namespace);
-								scripting::UnitsLibrary::UnitsLibrary::Part3(std_namespace, value_namespace);
+								//scripting::UnitsLibrary::UnitsLibrary::Part1(std_namespace, value_namespace);
+								//scripting::UnitsLibrary::UnitsLibrary::Part2(std_namespace, value_namespace);
+								//scripting::UnitsLibrary::UnitsLibrary::Part3(std_namespace, value_namespace);
 
 
 
