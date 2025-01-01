@@ -516,9 +516,16 @@ namespace fibers {
 			while (IsBusy(ctx)) { std::this_thread::yield(); };
 			HandleExceptions(ctx);
 #else // supports jobs calling jobs
+			int i{ 0 };
 			internal_state.wakeCondition.notify_all(); // Wake any threads that might be sleeping:
 			while (IsBusy(ctx)) { // Do work
-				work(internal_state.nextQueue.Increment() % internal_state.numThreads, &ctx);
+				if (++i < 40) {
+					std::this_thread::yield();
+				}
+				else {
+					internal_state.wakeCondition.notify_all(); // Wake any threads that might be sleeping:
+					work(internal_state.nextQueue.Increment() % internal_state.numThreads, &ctx);
+				}
 			}
 			HandleExceptions(ctx);  // re-throw any exceptions that were caught during the workload
 #endif

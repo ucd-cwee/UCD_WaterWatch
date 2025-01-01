@@ -4,7 +4,7 @@
 
 namespace GoodLang {
 	namespace UnitsLibrary {
-		void UnitsLibrary::Part1(std::shared_ptr<Namespace> const& std_namespace, std::shared_ptr<Class> const& value_namespace) {
+		void UnitsLibrary::Part4(std::shared_ptr<Namespace> const& std_namespace, std::shared_ptr<Class> const& value_namespace) {
 #define CreateRow(Type) AddUnit<Units::Type>(std_namespace, value_namespace)
 #define CreateRowWithMetricPrefixes(Type)\
 			CreateRow(Type); \
@@ -23,26 +23,18 @@ namespace GoodLang {
 			CreateRow(tera ## Type); \
 			CreateRow(peta ## Type);
 
-			CreateRowWithMetricPrefixes(meter);
-			CreateRow(foot);
-			CreateRow(inch);
-			CreateRow(mile);
-			CreateRow(nauticalMile);
-			CreateRow(astronicalUnit);
-			CreateRow(yard);
-			CreateRowWithMetricPrefixes(gram);
-			CreateRow(metric_ton);
-			CreateRow(pound);
-			CreateRow(long_ton);
-			CreateRow(short_ton);
-			CreateRow(stone);
-			CreateRow(ounce);
-			CreateRow(carat);
-			CreateRow(slug);
-			CreateRowWithMetricPrefixes(second);			
-			CreateRow(minute);
-			CreateRow(hour);
-
+			CreateRow(horsepower);
+			CreateRowWithMetricPrefixes(joule);
+			CreateRowWithMetricPrefixes(calorie);
+			CreateRowWithMetricPrefixes(watt_minute);
+			CreateRowWithMetricPrefixes(watt_hour);
+			CreateRow(watt_day);
+			CreateRow(british_thermal_unit);
+			CreateRow(british_thermal_unit_iso);
+			CreateRow(british_thermal_unit_59);
+			CreateRow(therm);
+			CreateRow(foot_pound);
+			
 #undef CreateRowWithMetricPrefixes
 #undef CreateRow
 

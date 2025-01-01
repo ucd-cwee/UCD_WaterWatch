@@ -753,13 +753,13 @@ namespace fibers {
 
 			// Exclusive ownership
 			void lock() {
-				std::unique_lock<mutex> lk(mut_);
+				std::scoped_lock<mutex> lk(mut_);
 				while (state_ & write_entered_) gate1_.wait(lk);
 				state_ |= write_entered_;
 				while (state_ & n_readers_) gate2_.wait(lk);
 			};
 			bool try_lock() {
-				std::unique_lock<mutex> lk(mut_, std::try_to_lock_t);
+				std::scoped_lock<mutex> lk(mut_, std::try_to_lock_t);
 				if (lk.owns_lock() && state_ == 0) {
 					state_ = write_entered_;
 					return true;
@@ -776,14 +776,14 @@ namespace fibers {
 
 			// Shared ownership
 			void lock_shared() {
-				std::unique_lock<mutex> lk(mut_);
+				std::scoped_lock<mutex> lk(mut_);
 				while ((state_ & write_entered_) || (state_ & n_readers_) == n_readers_) gate1_.wait(lk);
 				unsigned num_readers = (state_ & n_readers_) + 1;
 				state_ &= ~n_readers_;
 				state_ |= num_readers;
 			};
 			bool try_lock_shared() {
-				std::unique_lock<mutex> lk(mut_, std::try_to_lock_t);
+				std::scoped_lock<mutex> lk(mut_, std::try_to_lock_t);
 				unsigned num_readers = state_ & n_readers_;
 				if (lk.owns_lock() && !(state_ & write_entered_) && num_readers != n_readers_) {
 					++num_readers;
@@ -5350,7 +5350,7 @@ namespace fibers {
 			/* queues the key to be erased. Note that the erasure may be delayed depending on use of the map. */
 			bool erase(KeyType const& key) {
 				size_t key_hash = Hasher()(key);
-				auto lock{ std::unique_lock(mut) };
+				auto lock{ std::scoped_lock(mut) };
 
 				return map.unsafe_erase(key_hash) > 0;
 			};
@@ -5911,8 +5911,8 @@ namespace fibers {
 				: map()
 				, mut()
 			{
-				auto lock{ std::unique_lock(mut) };
-				auto lock2{ std::unique_lock(o.mut) };
+				auto lock{ std::scoped_lock(mut) };
+				auto lock2{ std::scoped_lock(o.mut) };
 				map = o.map;
 			};
 			Map(Map&& o)
@@ -5922,13 +5922,13 @@ namespace fibers {
 			Map& operator=(Map const& o) {
 				if (this == &o) return *this;
 
-				auto lock{ std::unique_lock(mut) };
-				auto lock2{ std::unique_lock(o.mut) };
+				auto lock{ std::scoped_lock(mut) };
+				auto lock2{ std::scoped_lock(o.mut) };
 				map = o.map;
 			};
 			Map& operator=(Map&& o) {
-				auto lock{ std::unique_lock(mut) };
-				auto lock2{ std::unique_lock(o.mut) };
+				auto lock{ std::scoped_lock(mut) };
+				auto lock2{ std::scoped_lock(o.mut) };
 				map = o.map;
 			};
 			~Map() = default;
@@ -6073,7 +6073,7 @@ namespace fibers {
 					}
 				}
 				if (1) {
-					auto lock{ std::unique_lock(mut) };
+					auto lock{ std::scoped_lock(mut) };
 					auto f = map.find(hash);
 					if (f != map.end()) {
 						return f->second->second;
@@ -6096,14 +6096,14 @@ namespace fibers {
 			/* queues the key to be erased. Note that the erasure may be delayed depending on use of the map. */
 			bool erase(KeyType const& key) {
 				static auto hasher{ Hasher() };
-				auto lock{ std::unique_lock(mut) };
+				auto lock{ std::scoped_lock(mut) };
 				return map.unsafe_erase(hasher(key)) > 0;
 			};
 			/* queues the keys to be erased. Note that the erasure may be delayed depending on use of the map. */
 			void erase(std::vector<KeyType> const& keys) {
 				if (keys.size() > 0) {
 					static auto hasher{ Hasher() };
-					auto lock{ std::unique_lock(mut) };
+					auto lock{ std::scoped_lock(mut) };
 					for (auto& key : keys) map.unsafe_erase(hasher(key));
 				}
 			};
@@ -6147,7 +6147,7 @@ namespace fibers {
 			};
 			void TryCleanupUnusedMemory() {}; // does nothing 
 			void clear() {
-				auto lock{ std::unique_lock(mut) };
+				auto lock{ std::scoped_lock(mut) };
 				map.clear();
 			};
 			struct Iterator : public std::iterator<std::forward_iterator_tag, std::pair<const KeyType, ObjType>> {
@@ -6825,7 +6825,7 @@ namespace fibers{
 
 		template <typename T> class Queue {
 		public:
-#if 1 // breaks so far, for reasons unknown. May be a bug with AtomicQueue.
+#if 0 // breaks so far, for reasons unknown. May be a bug with AtomicQueue.
 			moodycamel::ConcurrentQueue<T> queue;
 			// fibers::containers::AtomicQueue<T> queue;
 

@@ -2747,7 +2747,7 @@ int main() {
 
 			// Scopes, Namespaces, Classes
 			if (1) {
-				int numIterations = 100000;
+				int numIterations = 12000;
 				auto sw = Stopwatch();
 
 				using namespace GoodLang;
@@ -3003,7 +3003,6 @@ int main() {
 							{
 								auto i_obj = scope_inner->FindObj("i"); // searching and failing to find does not throw, but returns an empty ptr
 
-								// SOMETHING IS WRONG HERE, AND IT IS CRASHING... 
 								auto i_ft = scope_inner->CallFunction("Units::foot", { i_obj });
 								//auto ft_abbrev = scope_inner->CallFunction("abbreviation", { i_ft });
 								//EXPECT_EQ(scope_inner->Cast<std::string>(ft_abbrev), "ft");
@@ -3011,6 +3010,88 @@ int main() {
 						});
 						printf(std::to_string(__LINE__) + ": \t" + std::to_string(numIterations) + " operations (on 10,000 classes) per " + Units::second(sw.Stop_s()).ToString() + ".");
 					}
+
+					// NO CRASH
+					if (1) {
+						// This one "uses" the Units namespace, to see if it provides a speed boost at all.
+						sw.Start();
+						auto scope_outer = std::make_shared<Scope>(scope_1);
+						scope_outer->SetSelf(scope_outer);
+						scope_outer->AddUsing(scope_outer->FindNamespace("Units"));
+						fibers::parallel::For(0, numIterations, [&](int i) {
+							auto scope_inner = std::make_shared<Scope>(scope_outer);
+							scope_inner->SetSelf(scope_inner);
+							scope_inner->AddObj("i", std::make_shared<Any>(i));
+							{
+								auto i_obj = scope_inner->FindObj("i"); // searching and failing to find does not throw, but returns an empty ptr
+								auto i_ft = scope_inner->CallFunction("Units::foot", { i_obj });
+
+								Any ft_abbrev;
+								if (1) {
+									std::vector<Any> params = { i_ft };
+									auto tree = scope_inner->GetTypeConverterTree(); // builds and caches the tree. Updates the tree only if the situation has changed (new functions, new classes, or new Using statements)
+									if (tree) {
+
+									}
+									else {
+										throw std::runtime_error("Scope was invalid");
+									}
+								}
+							}
+							});
+						printf(std::to_string(__LINE__) + ": \t" + std::to_string(numIterations) + " operations (on 10,000 classes) per " + Units::second(sw.Stop_s()).ToString() + ".");
+					}
+
+					// CRASH AT BUILDING THE FUNCTION. Issue might be the conversion for foot -> value 
+					if (1) {
+						// This one "uses" the Units namespace, to see if it provides a speed boost at all.
+						sw.Start();
+						auto scope_outer = std::make_shared<Scope>(scope_1);
+						scope_outer->SetSelf(scope_outer);
+						scope_outer->AddUsing(scope_outer->FindNamespace("Units"));
+						fibers::parallel::For(0, numIterations, [&](int i) {
+							auto scope_inner = std::make_shared<Scope>(scope_outer);
+							scope_inner->SetSelf(scope_inner);
+							scope_inner->AddObj("i", std::make_shared<Any>(i));
+							{
+								auto i_obj = scope_inner->FindObj("i"); // searching and failing to find does not throw, but returns an empty ptr
+								auto i_ft = scope_inner->CallFunction("Units::foot", { i_obj });
+
+								Any ft_abbrev;
+								if (1) {
+									std::vector<Any> params = { i_ft };
+									auto m_conversionTree = scope_outer->GetTypeConverterTree(); // builds and caches the tree. Updates the tree only if the situation has changed (new functions, new classes, or new Using statements)
+									if (m_conversionTree) {
+										auto value_ref_converted = m_conversionTree->Convert(params[0], user_type_shared<Units::value&>());
+										printf(value_ref_converted.cast< Units::value&>().UnitName());
+
+
+										Proxy_Function func;
+
+										// note: if this scope is a non-namespace, has no "Using" statements, and has no children, then we can potentially speed-up the process by calling this function on the parent. The parent will do the caching, speeding up that parent scope (hopefully)
+										if (!func) {
+											Proxy_Function out{ nullptr };
+											if (scope_outer->TryFindFunctionImpl("name", params, m_conversionTree, out)) {
+												func = out;
+											}
+											else {
+												func = nullptr;
+											}
+										}
+
+										if (func) { //auto func = scope_inner->BuildFunction("name", params, m_conversionTree)) {
+											//ft_abbrev = call(func, params, *tree);
+										}
+									}
+									else {
+										throw std::runtime_error("Scope was invalid");
+									}
+								}
+							}
+							});
+						printf(std::to_string(__LINE__) + ": \t" + std::to_string(numIterations) + " operations (on 10,000 classes) per " + Units::second(sw.Stop_s()).ToString() + ".");
+					}
+
 
 					// Using Units;
 					// for (int i = 0; i < numIterations; i++){
@@ -3030,9 +3111,10 @@ int main() {
 								auto i_obj = scope_inner->FindObj("i"); // searching and failing to find does not throw, but returns an empty ptr
 								auto i_ft = scope_inner->CallFunction("Units::foot", { i_obj });
 								auto ft_abbrev = scope_inner->CallFunction("name", { i_ft });
+								// SOMETHING IS WRONG HERE, AND IT IS CRASHING... 
 								EXPECT_EQ(scope_inner->Cast<std::string>(ft_abbrev), "foot");
 							}
-							});
+						});
 						printf(std::to_string(__LINE__) + ": \t" + std::to_string(numIterations) + " operations (on 10,000 classes) per " + Units::second(sw.Stop_s()).ToString() + ".");
 					}
 
@@ -3643,6 +3725,8 @@ int main() {
 			delete (new int(5));
 		}
 #endif
+
+#if 0
 
 		// Re-build 2 Test
 		try {
@@ -4835,6 +4919,7 @@ int main() {
 			printf(e.what());
 		}
 
+#endif
 
 #if 0
 

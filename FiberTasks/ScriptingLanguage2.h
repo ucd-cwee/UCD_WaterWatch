@@ -158,7 +158,7 @@ namespace GoodLang {
 			}
 		};
 
-	private:
+	public: // private:
 		std::weak_ptr<Scope> // parent scope, for navigation. Could be anything, or null.
 			p_parent{};
 		std::weak_ptr<Namespace> // parent's parent's ... parent's scope. The logical result of asking for p_parent on repeat until you get the first Namespace type. 
@@ -261,7 +261,7 @@ namespace GoodLang {
 			return false;
 		};
 
-	private:
+	public: // private:
 		fibers::containers::Map<std::string,
 			std::shared_ptr<
 			fibers::containers::Map<size_t, std::shared_ptr<Namespace>>
@@ -635,7 +635,7 @@ namespace GoodLang {
 
 				// didn't exist yet
 				if (1) {
-					auto locked{ std::unique_lock(SearchCache->first) };
+					auto locked{ std::scoped_lock(SearchCache->first) };
 					auto f = SearchCache->second.find(version);
 					if (f != SearchCache->second.end()) {
 						return f->second;
@@ -660,7 +660,7 @@ namespace GoodLang {
 
 				// didn't exist yet
 				if (1) {
-					auto locked{ std::unique_lock(version_container->first) };
+					auto locked{ std::scoped_lock(version_container->first) };
 					auto f = version_container->second.find(CacheID);
 					if (f != version_container->second.end()) {
 						return f->second;
@@ -697,7 +697,7 @@ namespace GoodLang {
 
 				// didn't exist yet
 				if (1) {
-					auto locked{ std::unique_lock(cache_container->first) };
+					auto locked{ std::scoped_lock(cache_container->first) };
 					auto f = cache_container->second.find(hash);
 					if (f != cache_container->second.end()) {
 						// do nothing?
@@ -716,7 +716,7 @@ namespace GoodLang {
 
 				// didn't exist yet
 				if (1) {
-					auto locked{ std::unique_lock(cache_container->first) };
+					auto locked{ std::scoped_lock(cache_container->first) };
 					auto f = cache_container->second.find(hash);
 					if (f != cache_container->second.end()) {
 						// do nothing?
@@ -1128,7 +1128,7 @@ namespace GoodLang {
 			return out;
 		};
 
-	private:
+	public: // private:
 		bool TryFindFunctionImpl(std::string const& functionName, std::vector<Any>  const& params, std::shared_ptr<TypeConverter> const& m_conversionTree, Proxy_Function& out) const {
 			if (!m_conversionTree) return false;
 #ifdef useCachedData
@@ -1240,7 +1240,6 @@ namespace GoodLang {
 					for (auto& s : sort) {
 						if (s.first != std::numeric_limits<double>::max()) {
 							out = s.second;
-							// EmplaceCache(cache2, params, out);
 							return true;
 						}
 					}
@@ -1253,7 +1252,6 @@ namespace GoodLang {
 							if (auto func = functions->BuildMatch(functionName, params, *m_conversionTree, true, true)) {
 								if (func->conversion_cost(params, *m_conversionTree) != std::numeric_limits<double>::max()) {
 									out = func;
-									// EmplaceCache(cache2, params, out);
 									return true;
 								}
 							}
@@ -1267,73 +1265,63 @@ namespace GoodLang {
 
 				if (auto namespacePtr = std::dynamic_pointer_cast<Scope>(FindNamespace(scopeName))) {
 					if (namespacePtr->TryFindFunctionImpl(functionNameActual, params, m_conversionTree, out)) {
-						// EmplaceCache(cache2, params, out);
 						return true;
 					}
 					else {
-						// EmplaceCache(cache2, params, out);
 						return false;
 					}
 				}
 			}
-
-			// EmplaceCache(cache2, params, out);
 			return false;
 		};
 
 	public:
-		Proxy_Function BuildFunction(std::string const& functionName, std::vector<Any> const& params, std::shared_ptr<TypeConverter> const& m_conversionTree) const {
+		std::pair<Proxy_Function, std::shared_ptr<TypeConverter>> BuildFunction(std::string const& functionName, std::vector<Any> const& params) const {			
 			// note: if this scope is a non-namespace, has no "Using" statements, and has no children, then we can potentially speed-up the process by calling this function on the parent. The parent will do the caching, speeding up that parent scope (hopefully)
 			if (!this->IsNamespace()) {
 				if (this->p_using.size() == 0) {
 					if (this->p_children.size() == 0) {
 						if (auto p = this->p_parent.lock()) {
-							return p->BuildFunction(functionName, params, m_conversionTree);
+							return p->BuildFunction(functionName, params);
 						}
 					}
 				}
 			}
 
-			Proxy_Function out{ nullptr };
-			if (TryFindFunctionImpl(functionName, params, m_conversionTree, out)) {
+			std::pair<Proxy_Function, std::shared_ptr<TypeConverter>> out{ nullptr, this->GetTypeConverterTree() };	
+			if (TryFindFunctionImpl(functionName, params, out.second, out.first)) {
 				return out;
 			}
 			else {
-				return nullptr;
-			}
-		};
-		Proxy_Function BuildFunction(std::string const& functionName, std::vector<Any> const& params) const {
-			return BuildFunction(functionName, params, GetTypeConverterTree());
+				return { nullptr, nullptr };
+			}			
 		};
 		Any CallFunction(std::string const& functionName, std::vector<Any> const& params) const {
-			auto tree = GetTypeConverterTree(); // builds and caches the tree. Updates the tree only if the situation has changed (new functions, new classes, or new Using statements)
-			if (tree) {
-				if (auto func = BuildFunction(functionName, params, tree)) {
-					return call(func, params, *tree);
-				}
-				else {
-					// function was not found with the given params
-					std::string params_str;
-					for (auto& p : params) {
-						std::string className = p.TypeName(); {
-							if (auto classPtr = std::dynamic_pointer_cast<Scope>(this->FindClass(p.Type()))) {
-								className = classPtr->GetName();
-							}
-						}
-
-						if (params_str.empty()) {
-							params_str += className;
-						}
-						else {
-							params_str += ", ";
-							params_str += className;
+			auto [func, tree] = BuildFunction(functionName, params);
+			if (func) {
+				return call(func, params, *tree);
+			}
+			else {
+				// function was not found with the given params
+				std::string params_str;
+				for (auto& p : params) {
+					std::string className = p.TypeName(); {
+						if (auto classPtr = std::dynamic_pointer_cast<Scope>(this->FindClass(p.Type()))) {
+							className = classPtr->GetName();
 						}
 					}
 
-					throw exception::not_found_error(Units::printf("`%s`(%s)", functionName.c_str(), params_str.c_str()));
+					if (params_str.empty()) {
+						params_str += className;
+					}
+					else {
+						params_str += ", ";
+						params_str += className;
+					}
 				}
+
+				throw exception::not_found_error(Units::printf("`%s`(%s)", functionName.c_str(), params_str.c_str()));
 			}
-			throw std::runtime_error("Scope was invalid");
 		};
 
 		template <typename T>
@@ -1513,11 +1501,12 @@ namespace GoodLang {
 			return p_functions;
 		};
 		virtual std::shared_ptr< Functions::FunctionSort > GetFunctions(std::string const& name) const override {
+			static auto hasher{ std::hash<std::string>() };
 			// movable shared lock
 			auto locked{ std::make_shared< std::shared_lock<std::shared_mutex> >(p_functions->m_mut) };
-			auto f = p_functions->m_functions.find(name);
+			auto f = p_functions->m_functions.find(hasher(name));
 			if (f != p_functions->m_functions.end()) {
-				return std::shared_ptr< Functions::FunctionSort >(&f->second, [lockedCopy = locked](Functions::FunctionSort*) { if (!lockedCopy) { std::cout << "ERR" << std::endl; }; });
+				return std::shared_ptr< Functions::FunctionSort >(&f->second.second, [lockedCopy = locked](Functions::FunctionSort*) { if (!lockedCopy) { std::cout << "ERR" << std::endl; }; });
 			}
 			return nullptr;
 		};
@@ -1817,7 +1806,7 @@ namespace GoodLang {
 
 	namespace UnitsLibrary {
 		template<typename T>
-		static void AddUnit(std::shared_ptr<Namespace> const& std_namespace, std::shared_ptr<Class> const& value_namespace) {
+		__forceinline static void AddUnit(std::shared_ptr<Namespace> const& std_namespace, std::shared_ptr<Class> const& value_namespace) {
 			std::string UnitName = T().UnitName();
 			std::shared_ptr<Class> foot_namespace{ std::make_shared<Class>(std_namespace, UnitName, user_type_shared<T>().lock(), value_namespace) };
 			foot_namespace->SetSelf(foot_namespace);
@@ -1834,7 +1823,7 @@ namespace GoodLang {
 				// value(foot)
 				value_namespace->AddFunction(value_namespace->GetName(), Function(make_callable([](Any const& from) -> std::shared_ptr<Units::value> {
 					return std::dynamic_pointer_cast<Units::value>(from.cast<std::shared_ptr<T>>());
-				}, ParamTypes({ foot_namespace->GetClassType().lock()->MakeConstRef() })), false));
+					}, ParamTypes({ foot_namespace->GetClassType().lock()->MakeConstRef() })), false));
 			}
 		};
 
@@ -1843,9 +1832,11 @@ namespace GoodLang {
 			static void Part1(std::shared_ptr<Namespace> const& std_namespace, std::shared_ptr<Class> const& value_namespace);
 			static void Part2(std::shared_ptr<Namespace> const& std_namespace, std::shared_ptr<Class> const& value_namespace);
 			static void Part3(std::shared_ptr<Namespace> const& std_namespace, std::shared_ptr<Class> const& value_namespace);
+			static void Part4(std::shared_ptr<Namespace> const& std_namespace, std::shared_ptr<Class> const& value_namespace);
+			static void Part5(std::shared_ptr<Namespace> const& std_namespace, std::shared_ptr<Class> const& value_namespace);
+			static void Part6(std::shared_ptr<Namespace> const& std_namespace, std::shared_ptr<Class> const& value_namespace);
 		};
-
-	}
+	};
 
 	class Global final : public Namespace {
 	public:
@@ -1978,26 +1969,24 @@ namespace GoodLang {
 
 			// Built-in types
 			if (1) {
-#define DefineBuiltInType(V) defineBuiltInType(##V(0), #V);
-				DefineBuiltInType(bool);
-				DefineBuiltInType(char);
-				DefineBuiltInType(int);
-				DefineBuiltInType(long);
-				DefineBuiltInType(float);
-				DefineBuiltInType(double);
-				DefineBuiltInType(size_t);
+				defineBuiltInType(bool{}, "bool");
+				defineBuiltInType(char{}, "char");
+				defineBuiltInType(int{}, "int");
+				defineBuiltInType(long{}, "long");
+				defineBuiltInType(float{}, "float");
+				defineBuiltInType(double{}, "double");
+				defineBuiltInType(size_t{}, "size_t");
 				defineBuiltInType(fibers::containers::number<double>(), "Number");
-				DefineBuiltInType(char16_t);
-				DefineBuiltInType(char32_t);
-				DefineBuiltInType(wchar_t);
-				DefineBuiltInType(short);
+				defineBuiltInType(char16_t{}, "char16_t");
+				defineBuiltInType(char32_t{}, "char32_t");
+				defineBuiltInType(wchar_t{}, "wchar_t");
+				defineBuiltInType(short{}, "short");
 				defineBuiltInType(unsigned char(0), "uchar");
 				defineBuiltInType(unsigned short(0), "ushort");
 				defineBuiltInType(unsigned int(0), "uint");
 				defineBuiltInType(unsigned long(0), "ulong");
 				defineBuiltInType(long long(0), "llong");
 				defineBuiltInType(long double(), "ldouble");
-#undef DefineBuiltInType
 
 				// String
 				if (1) {
@@ -2184,6 +2173,9 @@ namespace GoodLang {
 							UnitsLibrary::UnitsLibrary::Part1(std_namespace, value_namespace);
 							UnitsLibrary::UnitsLibrary::Part2(std_namespace, value_namespace);
 							UnitsLibrary::UnitsLibrary::Part3(std_namespace, value_namespace);
+							UnitsLibrary::UnitsLibrary::Part4(std_namespace, value_namespace);
+							UnitsLibrary::UnitsLibrary::Part5(std_namespace, value_namespace);
+							UnitsLibrary::UnitsLibrary::Part6(std_namespace, value_namespace);
 						}
 					}
 				}
@@ -2364,7 +2356,7 @@ namespace GoodLang {
 		std::shared_ptr<std::unordered_map<size_t, std::weak_ptr<Class>>> GetAllAvailableClasses() const {
 			auto oldVersion = CachedClassListVersion.load();
 			if (oldVersion != RecordVersion) {
-				auto guard{ std::unique_lock(const_cast<Global*>(this)->CachedClassListMutex) };
+				auto guard{ std::scoped_lock(const_cast<Global*>(this)->CachedClassListMutex) };
 				if (const_cast<Global*>(this)->CachedClassListVersion.CompareExchange(oldVersion, RecordVersion)) {
 					return const_cast<Global*>(this)->CachedClassList = std::make_shared<std::unordered_map<size_t, std::weak_ptr<Class>>>(GetAllAvailableClassesImpl());
 				}
@@ -2389,15 +2381,15 @@ namespace GoodLang {
 							// ... find all constructors ...
 							if (auto constructors = p->GetFunctions(className)) {
 								for (auto& constructor : *constructors) {
-									if (constructor.second) {
+									if (constructor.second.second) {
 										// ... whose inputs are size of 1 ...
-										if (constructor.second->m_function->NumArguments() == 1) {
-											if (!constructor.second->m_isCached && !constructor.second->m_isEplicit) {
-												if (auto inputType = constructor.second->m_function->Arguments().Types()[0].lock()) {
+										if (constructor.second.second->m_function->NumArguments() == 1) {
+											if (!constructor.second.second->m_isCached && !constructor.second.second->m_isEplicit) {
+												if (auto inputType = constructor.second.second->m_function->Arguments().Types()[0].lock()) {
 													if (inputType->is_any()) continue;
 													static TypeConverter localTree{};
 
-													out->AddConverter([func = constructor.second->m_function, TreeWeakPtr = std::weak_ptr<TypeConverter>(out)](Any const& input)->Any {
+													out->AddConverter([func = constructor.second.second->m_function, TreeWeakPtr = std::weak_ptr<TypeConverter>(out)](Any const& input)->Any {
 														//if (auto tree = TreeWeakPtr.lock()) {
 														//	return func->operator()({ input }, *tree);
 														//}
@@ -2424,7 +2416,7 @@ namespace GoodLang {
 		virtual std::shared_ptr<TypeConverter> GetTypeConverterTree() const override {
 			auto oldVersion = CachedTypeConverterTreeVersion.load();
 			if (oldVersion != RecordVersion) {
-				auto guard{ std::unique_lock(const_cast<Global*>(this)->CachedTypeConverterTreeMutex) };
+				auto guard{ std::scoped_lock(const_cast<Global*>(this)->CachedTypeConverterTreeMutex) };
 				if (const_cast<Global*>(this)->CachedTypeConverterTreeVersion.CompareExchange(oldVersion, RecordVersion)) {
 					auto tree = std::make_shared<TypeConverter>();
 					CreateTypeConverterTree(tree);

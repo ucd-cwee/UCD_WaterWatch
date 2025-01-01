@@ -1,5 +1,5 @@
 #pragma once
-
+#if 0
 #include "Fibers.h"
 
 namespace scripting {
@@ -6182,7 +6182,7 @@ namespace scripting {
 
 			// Built-in types
 			if (1) {
-#define DefineBuiltInType(V) defineBuiltInType(##V(0), #V);
+#define DefineBuiltInType(V) defineBuiltInType(##V{0}, #V);
 				DefineBuiltInType(bool);
 				DefineBuiltInType(char);
 				DefineBuiltInType(int);
@@ -7597,3 +7597,4 @@ namespace scripting {
 
 };
 
+#endif

@@ -6021,19 +6021,22 @@ namespace GoodLang {
 
 	public:
 		using FunctionPtr = std::shared_ptr<Function>;
-		using FunctionSort = std::unordered_map< ParamTypes, FunctionPtr>; // key may NOT be the function's underlying params, but just params that were previously searched... 
-		using FunctionMap = std::unordered_map< std::string, FunctionSort >;
+		using FunctionSort = std::unordered_map< size_t, std::pair<ParamTypes, FunctionPtr>>; // key may NOT be the function's underlying params, but just params that were previously searched... 
+		using FunctionMap = std::unordered_map< size_t, std::pair<std::string, FunctionSort> >;
 
 		FunctionMap m_functions;
 		mutable std::shared_mutex m_mut{};
 
 	private:
 		FunctionPtr at_unsafe(std::string const& key, ParamTypes const& params) const {
-			auto functionMapPtr = m_functions.find(key);
+			static auto hasher{ std::hash<std::string>() };
+			static auto hasher2{ std::hash<ParamTypes>() };
+
+			auto functionMapPtr = m_functions.find(hasher(key));
 			if (functionMapPtr != m_functions.end()) {
-				auto FunctionSortPtr = functionMapPtr->second.find(params);
-				if (FunctionSortPtr != functionMapPtr->second.end()) {
-					return FunctionSortPtr->second;
+				auto FunctionSortPtr = functionMapPtr->second.second.find(hasher2(params));
+				if (FunctionSortPtr != functionMapPtr->second.second.end()) {
+					return FunctionSortPtr->second.second;
 				}
 			}
 			return nullptr;
@@ -6048,15 +6051,21 @@ namespace GoodLang {
 		};
 
 		FunctionPtr emplace(std::string const& key, ParamTypes const& params, Function const& func, bool replaceIfAlreadyExists = false) {
+			static auto hasher{ std::hash<std::string>() };
+			static auto hasher2{ std::hash<ParamTypes>() };
+
 			auto locked{ std::unique_lock(m_mut) };
-			auto& ptr = m_functions[key][params];
+			auto& ptr = m_functions[hasher(key)].second[hasher2(params)].second;
 			if (!ptr || (ptr && replaceIfAlreadyExists)) 
 				ptr = std::make_shared<Function>(func);
 			return ptr;
 		};
 		FunctionPtr emplace(std::string const& key, Function const& func, bool replaceIfAlreadyExists = false) {
+			static auto hasher{ std::hash<std::string>() };
+			static auto hasher2{ std::hash<ParamTypes>() };
+
 			auto locked{ std::unique_lock(m_mut) };
-			auto& ptr = m_functions[key][func.m_function->Arguments().Types()];
+			auto& ptr = m_functions[hasher(key)].second[hasher2(func.m_function->Arguments().Types())].second;
 			if (!ptr || (ptr && replaceIfAlreadyExists))
 				ptr = std::make_shared<Function>(func);
 			return ptr;
@@ -6064,6 +6073,9 @@ namespace GoodLang {
 
 		/* Given a function name and call parameters, will attempt to find an exact-match function, variadic instantiation, or convertable function call, or return nullptr. */
 		Proxy_Function BuildMatch(std::string const& functionName, std::vector<Any> const& params, TypeConverter& m_typeConverters, bool AllowTemplateInstantiation = true, bool AllowTypeConversion = true) {
+			static auto hasher{ std::hash<std::string>() };
+			static auto hasher2{ std::hash<ParamTypes>() };
+
 			if (auto func = at(functionName, params)) {
 				// cache (or actual) found
 				return func->m_function;
@@ -6077,27 +6089,28 @@ namespace GoodLang {
 				// Create candidates.
 				{
 					auto locked{ std::shared_lock(m_mut) }; // LOCKED
-					for (auto& function : m_functions[functionName]) {
-						if (!function.second) continue;
-						if (!function.second->m_function) continue;
-						if (function.second->m_isCached) continue; // ignoring pre-cached functions. Only interested in "true" functions. 
-						bool isTemplateFunc = function.second->m_function->GetSignature().IsTemplate();
-						bool isExplicitFunc = function.second->m_isEplicit;
+					auto& m_func_find = m_functions[hasher(functionName)];
+					for (auto& function : m_func_find.second) {
+						if (!function.second.second) continue;
+						if (!function.second.second->m_function) continue;
+						if (function.second.second->m_isCached) continue; // ignoring pre-cached functions. Only interested in "true" functions. 
+						bool isTemplateFunc = function.second.second->m_function->GetSignature().IsTemplate();
+						bool isExplicitFunc = function.second.second->m_isEplicit;
 
-						auto conversionCost = function.second->m_function->conversion_cost(params, m_typeConverters);
+						auto conversionCost = function.second.second->m_function->conversion_cost(params, m_typeConverters);
 						if (conversionCost == std::numeric_limits<double>::max()) continue;							
 
 						if (isTemplateFunc) {
 							if (AllowTemplateInstantiation) {
-								candidates[function.second->m_function->NumArguments()][2][conversionCost] = function.second;
+								candidates[function.second.second->m_function->NumArguments()][2][conversionCost] = function.second.second;
 							}
 						}
 						else {
 							if (conversionCost == 0) {
-								candidates[function.second->m_function->NumArguments()][0][conversionCost] = function.second;
+								candidates[function.second.second->m_function->NumArguments()][0][conversionCost] = function.second.second;
 							}
 							else if (AllowTypeConversion && !isExplicitFunc) {
-								candidates[function.second->m_function->NumArguments()][1][conversionCost] = function.second;
+								candidates[function.second.second->m_function->NumArguments()][1][conversionCost] = function.second.second;
 							}
 						}
 					}					

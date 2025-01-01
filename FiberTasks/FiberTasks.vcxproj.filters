@@ -57,5 +57,14 @@
     <ClCompile Include="UnitsLibrary_3.cpp">
       <Filter>Files\CPP</Filter>
     </ClCompile>
+    <ClCompile Include="UnitsLibrary_4.cpp">
+      <Filter>Files\CPP</Filter>
+    </ClCompile>
+    <ClCompile Include="UnitsLibrary_5.cpp">
+      <Filter>Files\CPP</Filter>
+    </ClCompile>
+    <ClCompile Include="UnitsLibrary_6.cpp">
+      <Filter>Files\CPP</Filter>
+    </ClCompile>
   </ItemGroup>
 </Project>
