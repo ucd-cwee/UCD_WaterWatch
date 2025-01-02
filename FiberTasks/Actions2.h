@@ -1981,7 +1981,7 @@ namespace GoodLang {
 		TypeConverterFunc GetOrBuildConverter(std::weak_ptr<Type_Info> const& From, std::weak_ptr<Type_Info> const& To, bool forceBuild = false) {
 			// Solves the Uniform Cost Search Algorithm to determine the shortest path for "From" to "To", puts the path in "Out", and returns true. 
 			// If no path is possible, returns false.
-			static auto CreateConversionPaths{ [](fibers::utilities::Allocator< UniformCostSearchNode>& alloc, conversionTreeType& AllConversions, std::shared_ptr<Type_Info> const& From, std::shared_ptr<Type_Info> const& To) {
+			static auto CreateConversionPaths{ [](fibers::utilities::FastAllocator< UniformCostSearchNode>& alloc, conversionTreeType& AllConversions, std::shared_ptr<Type_Info> const& From, std::shared_ptr<Type_Info> const& To) {
 				// create the shortest paths from "From" to all possible vertices. 
 
 				std::unordered_map<std::shared_ptr<Type_Info>, UniformCostSearchNode*> vertices;
@@ -2049,7 +2049,7 @@ namespace GoodLang {
 
 			// Add conversion for From to a large variety of types...
 			if (1) {
-				fibers::utilities::Allocator< UniformCostSearchNode> alloc;
+				fibers::utilities::FastAllocator< UniformCostSearchNode, sizeof(UniformCostSearchNode) << 4> alloc;
 				AllConversionsMut.lock_shared();
 				auto conversions{ CreateConversionPaths(alloc, AllConversions, From.lock(), To.lock()) };
 
@@ -2508,6 +2508,12 @@ namespace GoodLang {
 				details::hash_combine(out, GetHash(x));
 			return out;
 		};
+		static size_t CalculateHash(std::vector<Any> const& params) {
+			size_t out{ 37 };
+			for (auto& x : params)
+				details::hash_combine(out, GetHash(x.Type()));
+			return out;
+		};
 
 	public:
 		ParamTypes()
@@ -2518,7 +2524,7 @@ namespace GoodLang {
 			: uniquehash{ CalculateHash(t_types) }
 			, m_types(std::make_shared<std::vector<std::weak_ptr<Type_Info>>>(t_types))
 		{
-			for (auto& type : *m_types) if (auto ptr = type.lock()) if (ptr->MakeBase() == user_type_shared<Any>()) {
+			for (auto& type : *m_types) if (auto ptr = type.lock()) if (ptr->is_any()/*MakeBase() == user_type_shared<Any>()*/) {
 				isTemplate = true;
 				break;
 			}
@@ -2528,7 +2534,7 @@ namespace GoodLang {
 			, m_types(std::make_shared<std::vector<std::weak_ptr<Type_Info>>>(std::forward<std::vector<std::weak_ptr<Type_Info>>>(t_types)))
 		{
 			uniquehash = CalculateHash(*m_types);
-			for (auto& type : *m_types) if (auto ptr = type.lock()) if (ptr->MakeBase() == user_type_shared<Any>()) {
+			for (auto& type : *m_types) if (auto ptr = type.lock()) if (ptr->is_any()/*MakeBase() == user_type_shared<Any>()*/) {
 				isTemplate = true;
 				break;
 			}
@@ -2539,7 +2545,7 @@ namespace GoodLang {
 		{
 			for (int i = params.size() - 1; i >= 0; i--) m_types->at(i) = params[i].Type();
 			uniquehash = CalculateHash(*m_types);
-			for (auto& type : *m_types) if (auto ptr = type.lock()) if (ptr->MakeBase() == user_type_shared<Any>()) {
+			for (auto& type : *m_types) if (auto ptr = type.lock()) if (ptr->is_any()/*MakeBase() == user_type_shared<Any>()*/) {
 				isTemplate = true; 
 				break;
 			}			
@@ -6021,8 +6027,8 @@ namespace GoodLang {
 
 	public:
 		using FunctionPtr = std::shared_ptr<Function>;
-		using FunctionSort = std::unordered_map< size_t, std::pair<ParamTypes, FunctionPtr>>; // key may NOT be the function's underlying params, but just params that were previously searched... 
-		using FunctionMap = std::unordered_map< size_t, std::pair<std::string, FunctionSort> >;
+		using FunctionSort = concurrency::concurrent_unordered_map< size_t, std::pair<ParamTypes, FunctionPtr>>; // key may NOT be the function's underlying params, but just params that were previously searched... 
+		using FunctionMap = concurrency::concurrent_unordered_map< size_t, std::pair<std::string, FunctionSort> >;
 
 		FunctionMap m_functions;
 		mutable std::shared_mutex m_mut{};

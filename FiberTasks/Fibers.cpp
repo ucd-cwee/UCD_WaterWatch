@@ -217,7 +217,7 @@ namespace fibers {
 				for (i = 0; i < internal_state.numThreads && (!parentCtx || (parentCtx && IsBusy(*parentCtx))); i++) {
 					threadID = (i + startingQueue) % internal_state.numThreads;
 					job_queue = &internal_state.jobQueuePerThread[threadID];
-					while ((!parentCtx || (parentCtx && IsBusy(*parentCtx))) && job_queue->try_pop(job)) {
+					while (job_queue->try_pop(job)) {
 						didWork = true;
 						if (!job.ctx->e) { // if another group threw an error, do not process this group at all.
 							args.groupID = job.groupID;
@@ -264,8 +264,16 @@ namespace fibers {
 							// Deallocate Shared Group Memory
 							if (args.sharedmemory && job.GroupEndJob) job.GroupEndJob(args.sharedmemory);								
 							
+
 						}
 						job.ctx->counter.Decrement(); // one group got finished, regardless of the outcome.
+
+						if (!parentCtx || (parentCtx && IsBusy(*parentCtx))) {
+
+						}
+						else {
+							break;
+						}
 					}
 					startingQueue++; // go to next queue
 				}
@@ -523,7 +531,7 @@ namespace fibers {
 					std::this_thread::yield();
 				}
 				else {
-					internal_state.wakeCondition.notify_all(); // Wake any threads that might be sleeping:
+					// internal_state.wakeCondition.notify_all(); // Wake any threads that might be sleeping:
 					work(internal_state.nextQueue.Increment() % internal_state.numThreads, &ctx);
 				}
 			}

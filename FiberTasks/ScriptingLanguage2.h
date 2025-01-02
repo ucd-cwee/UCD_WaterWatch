@@ -763,6 +763,17 @@ namespace GoodLang {
 			if (TryGetCached<1>(treeV, out, QualifiedOrUnqualifiedNamespaceName)) {
 				return out;
 			}
+
+			// note: if this scope is a non-namespace, has no "Using" statements, and has no children, then we can potentially speed-up the process by calling this function on the parent. The parent will do the caching, speeding up that parent scope (hopefully)
+			if (!this->IsNamespace()) {
+				if (this->p_using.size() == 0) {
+					if (this->p_children.size() == 0) {
+						if (auto p = this->p_parent.lock()) {
+							return p->FindNamespace(QualifiedOrUnqualifiedNamespaceName);
+						}
+					}
+				}
+			}
 #endif
 
 			long long len = QualifiedOrUnqualifiedNamespaceName.length();
@@ -807,7 +818,18 @@ namespace GoodLang {
 				if (TryGetCached<2>(treeV, out2, typeInfo)) {
 					return out2;
 				}
-			}			
+			}		
+
+			// note: if this scope is a non-namespace, has no "Using" statements, and has no children, then we can potentially speed-up the process by calling this function on the parent. The parent will do the caching, speeding up that parent scope (hopefully)
+			if (!this->IsNamespace()) {
+				if (this->p_using.size() == 0) {
+					if (this->p_children.size() == 0) {
+						if (auto p = this->p_parent.lock()) {
+							return p->FindClass(typeInfo);
+						}
+					}
+				}
+			}
 #endif
 
 			if (TryFindNearestNamespaceWhere(out, [tryFind = typeInfo](std::shared_ptr<Namespace> const& namespacePtr)->bool {
@@ -819,7 +841,7 @@ namespace GoodLang {
 					}
 				}
 				return false;
-				})) {
+			})) {
 #ifdef useCachedData
 				InsertCached<2>(treeV, std::dynamic_pointer_cast<Class>(out), typeInfo);
 #endif				
@@ -1132,11 +1154,12 @@ namespace GoodLang {
 		bool TryFindFunctionImpl(std::string const& functionName, std::vector<Any>  const& params, std::shared_ptr<TypeConverter> const& m_conversionTree, Proxy_Function& out) const {
 			if (!m_conversionTree) return false;
 #ifdef useCachedData
+			auto paramsHash = ParamTypes::CalculateHash(params);
 			auto treeV = this->GetTypeConverterTreeVersion();
-			if (TryGetCached<0>(treeV, out, functionName, ParamTypes(params))) {
+			if (TryGetCached<0>(treeV, out, functionName, paramsHash)) {
 				return (bool)out;
 			}
-			defer(InsertCachedIfNotExist<0>(treeV, out, functionName, ParamTypes(params)));
+			defer(InsertCachedIfNotExist<0>(treeV, out, functionName, paramsHash));
 #endif
 			//auto tree_hash = Hasher()(std::weak_ptr<TypeConverter>(m_conversionTree));
 			//auto cache1 = GetCache(FindFunctionCache, tree_hash);
@@ -1328,6 +1351,11 @@ namespace GoodLang {
 		T Cast(Any const& from) const {
 			auto ToType = user_type_shared<T>();
 			auto FromType = from.Type();
+
+			// see if it already matches (best option)
+			if (from.IsTypeOf(ToType)) {
+				return from.cast<T>();
+			}
 
 			// see if we can convert (fastest option)
 			if (auto Tree = this->GetTypeConverterTree()) {
@@ -2243,7 +2271,10 @@ namespace GoodLang {
 					classPtr->AddFunction("tm_wday", make_callable(&DateTime::tm_wday));
 					classPtr->AddFunction("tm_year", make_callable(&DateTime::tm_year));
 					classPtr->AddFunction("load", make_callable(&DateTime::load));
-					classPtr->AddFunction("getNumDaysInSameMonth", make_callable(&DateTime::getNumDaysInSameMonth));
+					// classPtr->AddFunction("getNumDaysInSameMonth", make_callable(&DateTime::getNumDaysInSameMonth));
+					classPtr->AddFunction("getNumDaysInSameMonth", make_callable([](DateTime const& dt) -> int {
+						return DateTime::getNumDaysInSameMonth(dt);
+					}));
 					classPtr->AddFunction("make_time", make_callable([]() { return DateTime::make_time(); }));
 					classPtr->AddFunction("make_time", make_callable([](int year) { return DateTime::make_time(year); }));
 					classPtr->AddFunction("make_time", make_callable([](int year, int month) { return DateTime::make_time(year, month); }));

@@ -2747,7 +2747,7 @@ int main() {
 
 			// Scopes, Namespaces, Classes
 			if (1) {
-				int numIterations = 12000;
+				int numIterations = 100000;
 				auto sw = Stopwatch();
 
 				using namespace GoodLang;
@@ -3003,6 +3003,32 @@ int main() {
 							{
 								auto i_obj = scope_inner->FindObj("i"); // searching and failing to find does not throw, but returns an empty ptr
 
+								auto [func, tree] = scope_inner->BuildFunction("Units::foot", { i_obj });
+								if (func) {
+									(void)call(func, { i_obj }, *tree);
+								}
+							}
+							});
+						printf(std::to_string(__LINE__) + ": \t" + std::to_string(numIterations) + " operations (on 10,000 classes) per " + Units::second(sw.Stop_s()).ToString() + ".");
+					}
+
+					// Using Units;
+					// for (int i = 0; i < numIterations; i++){
+					//	   true == ("ft" == Units::foot(i).abbreviation());
+					// }
+					if (1) {
+						// Requires up-casting Units::foot to Units::value before calling 'abbreviation' and getting the result from the polymorphic type. 
+						sw.Start();
+						auto scope_outer = std::make_shared<Scope>(scope_1);
+						scope_outer->SetSelf(scope_outer);
+						scope_outer->AddUsing(scope_outer->FindNamespace("Units"));
+						fibers::parallel::For(0, numIterations, [&](int i) { // for (int i = 0; i < numIterations;i++){// 
+							auto scope_inner = std::make_shared<Scope>(scope_outer);
+							scope_inner->SetSelf(scope_inner);
+							scope_inner->AddObj("i", std::make_shared<Any>(i));
+							{
+								auto i_obj = scope_inner->FindObj("i"); // searching and failing to find does not throw, but returns an empty ptr
+
 								auto i_ft = scope_inner->CallFunction("Units::foot", { i_obj });
 								//auto ft_abbrev = scope_inner->CallFunction("abbreviation", { i_ft });
 								//EXPECT_EQ(scope_inner->Cast<std::string>(ft_abbrev), "ft");
@@ -3063,7 +3089,7 @@ int main() {
 									auto m_conversionTree = scope_outer->GetTypeConverterTree(); // builds and caches the tree. Updates the tree only if the situation has changed (new functions, new classes, or new Using statements)
 									if (m_conversionTree) {
 										auto value_ref_converted = m_conversionTree->Convert(params[0], user_type_shared<Units::value&>());
-										printf(value_ref_converted.cast< Units::value&>().UnitName());
+										/*printf(*/value_ref_converted.cast< Units::value&>().UnitName();//);
 
 
 										Proxy_Function func;

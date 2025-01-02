@@ -6835,7 +6835,80 @@ namespace fibers {
 
 #endif
 
+		/* Allocates *_blockSize_* number of elements at a time. Blocks are free'd once the entire allocator goes out-of-scope. Not thread-safe. */
+		template <typename _type_, size_t _blockSize_ = (sizeof(_type_) << 4), bool ForcePOD = false, unsigned int forcedSize = sizeof(_type_)>
+		class FastBlockAllocator {
+		private: // data members
+			std::allocator<_type_> alloc{};
+			std::vector< _type_* > blocks{};
+			size_t capacity{ 0 };
+			size_t count{ 0 };
 
+			// returns whether the constructor/destructor needs to be called for each element. (Constructor is always called if args are provided on initialization)
+			static constexpr bool isPod() { return std::is_pod<_type_>::value || ForcePOD; };
+
+		public: // public API
+			// Request a new memory pointer. May be recovered from a previously-used location. Will be cleared and correctly initialized, if appropriate.
+			template <typename... TArgs> _type_* Alloc(TArgs&&... a) {
+				_type_* out;
+				long long index = count++;
+				if (index >= capacity) {
+					blocks.push_back(alloc.allocate(_blockSize_));
+					capacity += _blockSize_;
+				}
+
+				auto pos = std::div(index, _blockSize_);
+				out = &blocks[pos.quot][pos.rem];
+				alloc.construct(out, std::forward<TArgs>(a)...);
+
+				return out;
+			};
+			// Does nothing -- is now handled automatically during Free(...) calls.
+			void			FreeEmptyBlocks() {
+				return;
+			};
+			// Attempts to cleanup unused memory
+			auto TryCleanupUnusedMemory() ->void {};
+			// Returns the maximum number of blocks the allocator has reserved -- does not mean all of these blocks are in active use or even alive.
+			size_t          MaxBlockCapacity() const {
+				return 0;
+			};
+			// Approximate current (alive) block count. Not all elements in thse blocks are alive or allocated, but usually at least one is.
+			size_t          CurrentBlockCount() const {
+				return 0;
+			};
+			// Approximate current capacity for elements, based on the alive blocks.
+			size_t          TotalCapacity() const {
+				return 0;
+			};
+			// Approximate current alive element count
+			size_t          TotalAlive() const {
+				return 0;
+			};
+			// Report on the statistics for the allocator
+			std::string     ReportStatistics(bool includeEndLine = false) const {
+				std::string out;
+				return out;
+			};
+
+		public: // constructors and destructors
+			FastBlockAllocator() = default;
+			~FastBlockAllocator() {
+				if constexpr (!isPod()) {
+					_type_* p;
+					for (int i = 0; i < count; i++) {
+						auto pos = std::div(i, _blockSize_);
+						p = &blocks[pos.quot][pos.rem];
+						alloc.destroy(p);
+					}						
+				}
+				for(auto& block : blocks) 
+					alloc.deallocate(block, _blockSize_);
+			};
+		};
+
+		template<class _type_, int _blockSize_ = (sizeof(_type_) << 4), bool ForcePOD = false, unsigned int forcedSize = sizeof(_type_)>
+		using FastAllocator = FastBlockAllocator<_type_, _blockSize_, ForcePOD, forcedSize>;
 
 	};
 };
