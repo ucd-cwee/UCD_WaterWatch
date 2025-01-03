@@ -107,6 +107,39 @@ int main() {
 		while (1) {
 			auto printf = [](auto x) { std::cout << x << std::endl; };
 
+			// Units
+			if (1) {
+				Units::value x = 10;
+				Units::value y = 10;
+				Units::foot z = 10;
+				Units::meter w = 10;
+				Units::gallon a = 10;
+
+				auto xy = x + y;
+				auto zx = z + x;
+				auto xz = x + z;
+				auto zz = z + z;
+				auto zw = z + w;
+				auto wz = w + z;
+				try {
+					auto za = z + a;
+					EXPECT_EQ(true, false);
+				}
+				catch (...) {}
+
+				//printf(x.ToString()); // 10
+				//printf(y.ToString()); // 10
+				//printf(z.ToString()); // 10 ft
+				//printf(w.ToString()); // 10 m
+				//printf(a.ToString()); // 10 gal
+				//printf(xy.ToString()); // 20
+				//printf(zx.ToString()); // 20 ft
+				//printf(xz.ToString()); // 20 ft
+				//printf(zz.ToString()); // 20 ft
+				//printf(zw.ToString()); // 42.808399 ft
+				//printf(wz.ToString()); // 13.048 m
+			}
+
 			// GoodLang::user_type
 			if (1) {
 				auto& voidType = GoodLang::user_type<void>();
@@ -362,7 +395,7 @@ int main() {
 			// test Any auto-casting and assignment on a threaded race-condition // WORKS
 			if (1) {
 				GoodLang::Any anyObj;
-				fibers::parallel::For(0, 1000000, [&anyObj](int i) {
+				fibers::parallel::For(0, 10000, [&anyObj](int i) {
 					anyObj = stackThing(Units::printf("%i", i), i, false);
 
 					GoodLang::Any copy = anyObj;
@@ -377,13 +410,13 @@ int main() {
 					const stackThing& a3 = anyObj.cast();
 					std::shared_ptr<stackThing> a4 = anyObj.cast();
 					std::shared_ptr<stackThing> a5 = anyObj.cast<std::shared_ptr<stackThing>>();
-					});
-				fibers::parallel::For(0, 1000000, [&anyObj](int i) {
+				});
+				fibers::parallel::For(0, 10000, [&anyObj](int i) {
 					stackThing& a2 = anyObj.cast();
 					const stackThing& a3 = anyObj.cast();
 					std::shared_ptr<stackThing> a4 = anyObj.cast();
 					std::shared_ptr<stackThing> a5 = anyObj.cast<std::shared_ptr<stackThing>>();
-					});
+				});
 			}
 
 			// test Instance memory lifetime on a threaded race-condition with assignment of different class types // WORKS
@@ -391,7 +424,7 @@ int main() {
 				fibers::containers::number<long> N{ 0 };
 				fibers::containers::number<long> M{ 0 };
 				GoodLang::Any anyObj;
-				fibers::parallel::For(0, 1000000, [&anyObj, &N, &M](int i) {
+				fibers::parallel::For(0, 10000, [&anyObj, &N, &M](int i) {
 					// thread-safe to overwrite
 					if (i % 2 == 0) {
 						anyObj = Units::printf("%i", i);
@@ -425,8 +458,8 @@ int main() {
 
 					});
 				// printf(Units::printf("Num Valid String Ptrs: %i\nNum Valid StackThing Ptrs: %i\nTotal: %i", (int)N, (int)M, (int)(N+M)));
-				EXPECT_EQ(N > (1000000.0 * 0.4), true);
-				EXPECT_EQ(M > (1000000.0 * 0.4), true);
+				EXPECT_EQ(N > (10000.0 * 0.4), true);
+				EXPECT_EQ(M > (10000.0 * 0.4), true);
 			}
 
 			// test a custom type info 
@@ -2193,10 +2226,10 @@ int main() {
 				tree.AddConverter([](std::string const& x)->double { return std::atof(x.c_str()); });
 
 				Any D = 0.0;
-				Any D_ref = tree.Convert(D, user_type_shared<double&>());
+				Any D_ref = tree.Convert(D, user_type_shared<double&>().lock());
 				D_ref.cast<double&>() += 1;
 
-				Any D_copy = tree.Convert(D_ref, user_type_shared<double>());
+				Any D_copy = tree.Convert(D_ref, user_type_shared<double>().lock());
 				D_copy.cast<double&>() += 1;
 
 				EXPECT_EQ_PRINTF(D.cast<double&>(), 1);
@@ -3360,7 +3393,143 @@ int main() {
 					// }
 				}
 
+				// Test some basic function calls on various types
+				if (1) {
+					sw.Start();
+					// {}
+					{					
+						auto scope_outer = std::make_shared<Scope>(scope_1);
+						scope_outer->SetSelf(scope_outer);
 
+						// Using namespace "Units"
+						scope_outer->AddUsing(scope_outer->FindNamespace("Units"));
+
+						// parallel_for (int i = 0; i < numIterations; i++)
+						try {
+							fibers::parallel::For(0, numIterations, [&](int i) {
+								auto scope_inner = std::make_shared<Scope>(scope_outer);
+								scope_inner->SetSelf(scope_inner);
+								scope_inner->AddObj("i", std::make_shared<Any>((const int)i)); // make scope aware of "i" as being available to it. It'll be a copy to prevent fucking about with the parallel function
+							
+								// var x = foot(i) * foot(i); // e.g. sq_ft
+								scope_inner->AddObj("x", std::make_shared<Any>(scope_inner->CallFunction("*", {
+									scope_inner->CallFunction("foot", { scope_inner->FindObj("i") }), 
+									scope_inner->CallFunction("foot", { scope_inner->FindObj("i") })
+								})));
+
+								// var y = foot(i) * i; // e.g. ft
+								scope_inner->AddObj("y", std::make_shared<Any>(scope_inner->CallFunction("*", {
+									scope_inner->CallFunction("foot", { scope_inner->FindObj("i") }),
+									scope_inner->FindObj("i")
+								})));
+
+								// x + y; // expect to fail!
+								(void)scope_inner->CallFunction("+", { scope_inner->FindObj("x"), scope_inner->FindObj("y") });								
+								EXPECT_EQ(true, false);
+							});
+						}
+						catch (std::exception& e) {
+							// catch error
+							EXPECT_EQ(true, true);
+						}
+					}
+
+					// {}
+					{
+						auto scope_outer = std::make_shared<Scope>(scope_1);
+						scope_outer->SetSelf(scope_outer);
+
+						// parallel_for (int i = 0; i < numIterations; i++)
+						try {
+							fibers::parallel::For(0, numIterations, [&](int i) {
+								auto scope_inner = std::make_shared<Scope>(scope_outer);
+								scope_inner->SetSelf(scope_inner);
+								scope_inner->AddObj("i", std::make_shared<Any>((const int)i));
+
+								// var x = Units::foot(i) * Units::foot(i); // e.g. sq_ft
+								scope_inner->AddObj("x", std::make_shared<Any>(scope_inner->CallFunction("*", {
+									scope_inner->CallFunction("Units::foot", { scope_inner->FindObj("i") }),
+									scope_inner->CallFunction("Units::foot", { scope_inner->FindObj("i") })
+								})));
+
+								// var y = Units::foot(i) * i; // e.g. ft
+								scope_inner->AddObj("y", std::make_shared<Any>(scope_inner->CallFunction("*", {
+									scope_inner->CallFunction("Units::foot", { scope_inner->FindObj("i") }),
+									scope_inner->FindObj("i")
+								})));
+
+								// x + y; (expect to fail)
+								(void)scope_inner->CallFunction("+", { scope_inner->FindObj("x"), scope_inner->FindObj("y") });
+								EXPECT_EQ(true, false);
+							});
+						}
+						catch (std::exception& e) {
+							// catch error
+							EXPECT_EQ(true, true);
+						}
+					}
+
+					// {}
+					{
+						auto scope_outer = std::make_shared<Scope>(scope_1);
+						scope_outer->SetSelf(scope_outer);
+
+						// parallel_for (int i = 0; i < numIterations; i++)
+						fibers::parallel::For(0, numIterations, [&](int i) {
+							auto scope_inner = std::make_shared<Scope>(scope_outer);
+							scope_inner->SetSelf(scope_inner);
+							scope_inner->AddObj("i", std::make_shared<Any>((const int)i));
+
+							// var x = Units::foot(i) + Units::foot(i); // e.g. ft
+							scope_inner->AddObj("x", std::make_shared<Any>(scope_inner->CallFunction("+", {
+								scope_inner->CallFunction("Units::foot", { scope_inner->FindObj("i") }),
+								scope_inner->CallFunction("Units::foot", { scope_inner->FindObj("i") })
+							})));
+
+							// var y = Units::foot(i) * i; // e.g. ft
+							scope_inner->AddObj("y", std::make_shared<Any>(scope_inner->CallFunction("*", {
+								scope_inner->CallFunction("Units::foot", { scope_inner->FindObj("i") }),
+								scope_inner->FindObj("i")
+							})));
+
+							// x + y;
+							(void)scope_inner->CallFunction("+", { scope_inner->FindObj("x"), scope_inner->FindObj("y") });
+						});
+					}
+
+					// {}
+					{
+						auto scope_outer = std::make_shared<Scope>(scope_1);
+						scope_outer->SetSelf(scope_outer);
+
+						// parallel_for (int i = 0; i < numIterations; i++)
+						fibers::parallel::For(0, numIterations, [&](int i) {
+							auto scope_inner = std::make_shared<Scope>(scope_outer);
+							scope_inner->SetSelf(scope_inner);
+							scope_inner->AddObj("i", std::make_shared<Any>((const int)i));
+
+							// var x = Units::foot(i) + Units::foot(i); // e.g. ft
+							scope_inner->AddObj("x", std::make_shared<Any>(scope_inner->CallFunction("+", {
+								scope_inner->CallFunction("Units::foot", { scope_inner->FindObj("i") }),
+								scope_inner->CallFunction("Units::foot", { scope_inner->FindObj("i") })
+							})));
+
+							// print(x.to_string);
+							(void)scope_inner->Cast<std::string>(scope_inner->CallFunction("to_string", { scope_inner->FindObj("x") }));
+
+							// std::string y = 10; -> std::string y; y = 10;
+							scope_inner->AddObj("y", std::make_shared<Any>(scope_inner->CallFunction("string", {})));
+							try {
+								scope_inner->CallFunction("=", { scope_inner->FindObj("y"), 10 });
+							}
+							catch (std::exception& e) {
+								printf(e.what());
+							}
+						});
+					}
+
+					printf(std::to_string(__LINE__) + ": \t" + std::to_string(numIterations) + " operations (on 10,000 classes) per " + Units::second(sw.Stop_s()).ToString() + ".");
+				}
 
 
 

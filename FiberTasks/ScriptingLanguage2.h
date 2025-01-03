@@ -1178,7 +1178,7 @@ namespace GoodLang {
 				if (1) {
 					std::multimap<double, Proxy_Function> sort;
 
-					// FIRST, WE CHECK TO SEE IF THE DESIRED FUNCTION IS AVAILABLE FROM THE CLASS OF THE FIRST PARAM (e.g. to_string(Units::foot()) would search the Units::foot class before anything else)				
+					// FIRST, WE CHECK TO SEE IF THE DESIRED FUNCTION IS AVAILABLE FROM THE CLASS OF THE FIRST PARAM (e.g. to_string(Units::foot()) would search the Units::foot class before anything else)
 					{
 						auto firstParam = params.begin();
 						if (firstParam != params.end()) {
@@ -1187,6 +1187,22 @@ namespace GoodLang {
 					}
 					// While we normally try to minimize the conversion cost, 
 					if (firstParamScopePtr) {
+#if 1
+						(void)firstParamScopePtr->FindNearestNamespaceWhere([&sort, &functionName, &params, &m_conversionTree](std::shared_ptr<Namespace> const& namespace_ptr) -> bool {
+							if (auto scope = std::dynamic_pointer_cast<Scope>(namespace_ptr)) {
+								if (auto ptr = scope->GetFunctions()) {
+									if (auto func = ptr->BuildMatch(functionName, params, *m_conversionTree, false, true)) {
+										auto cost = func->conversion_cost(params, *m_conversionTree);
+										if (cost != std::numeric_limits<double>::max()) {
+											sort.emplace(cost, func);
+										}
+										// return true; // found a nearby match? Give up? Add a give-up criteria? 
+									}
+								}
+							}
+							return false;
+						});
+#else
 						if (auto ptr = firstParamScopePtr->GetFunctions()) {
 							if (auto func = ptr->BuildMatch(functionName, params, *m_conversionTree, false, true)) {
 								// The function is available and requires (potentially) conversion of other parameters. 
@@ -1195,6 +1211,7 @@ namespace GoodLang {
 								return true;
 							}
 						}
+#endif
 					}
 
 					// try to find the function from nearby scopes... 
@@ -1202,20 +1219,26 @@ namespace GoodLang {
 						if (auto scope = std::dynamic_pointer_cast<Scope>(namespace_ptr)) {
 							if (auto ptr = scope->GetFunctions()) {
 								if (auto func = ptr->BuildMatch(functionName, params, *m_conversionTree, false, true)) {
-									sort.emplace(func->conversion_cost(params, *m_conversionTree), func);
+									auto cost = func->conversion_cost(params, *m_conversionTree);
+									if (cost != std::numeric_limits<double>::max()) {
+										sort.emplace(cost+1, func);
+									}
 									// return true; // found a nearby match? Give up? Add a give-up criteria? 
 								}
 							}
 						}
 						return false;
-						});
+					});
 
 					// PERHAPS THE USER MEANT TO CALL THE CONSTRUCTOR FOR A CLASS (ALLOW FOR CONVERSIONS, BUT NO TEMPLATES)
 					if (constructorScopePtr = std::dynamic_pointer_cast<Scope>(this->FindClass(functionName))) {
 						// Is there a pre-defined constructor that this could work with?
 						if (auto functions = constructorScopePtr->GetFunctions()) {
 							if (auto func = functions->BuildMatch(functionName, params, *m_conversionTree, false, true)) {
-								sort.emplace(func->conversion_cost(params, *m_conversionTree), func);
+								auto cost = func->conversion_cost(params, *m_conversionTree);
+								if (cost != std::numeric_limits<double>::max()) {
+									sort.emplace(cost+2, func);
+								}
 							}
 						}
 					}
@@ -1235,7 +1258,10 @@ namespace GoodLang {
 						if (scope) {
 							if (auto ptr = scope->GetFunctions()) {
 								if (auto func = ptr->BuildMatch(functionName, params, *m_conversionTree, true, true)) {
-									sort.emplace(func->conversion_cost(params, *m_conversionTree), func);
+									auto cost = func->conversion_cost(params, *m_conversionTree);
+									if (cost != std::numeric_limits<double>::max()) {
+										sort.emplace(cost+3, func);
+									}
 								}
 							}
 						}
@@ -1245,7 +1271,10 @@ namespace GoodLang {
 							if (scope) {
 								if (auto ptr = scope->GetFunctions()) {
 									if (auto func = ptr->BuildMatch(functionName, params, *m_conversionTree, true, true)) {
-										sort.emplace(func->conversion_cost(params, *m_conversionTree), func);
+										auto cost = func->conversion_cost(params, *m_conversionTree);
+										if (cost != std::numeric_limits<double>::max()) {
+											sort.emplace(cost+4, func);
+										}
 									}
 								}
 							}
@@ -1256,7 +1285,10 @@ namespace GoodLang {
 						// Is there a pre-defined constructor that this could work with?
 						if (auto functions = constructorScopePtr->GetFunctions()) {
 							if (auto func = functions->BuildMatch(functionName, params, *m_conversionTree, true, true)) {
-								sort.emplace(func->conversion_cost(params, *m_conversionTree), func);
+								auto cost = func->conversion_cost(params, *m_conversionTree);
+								if (cost != std::numeric_limits<double>::max()) {
+									sort.emplace(cost+5, func);
+								}
 							}
 						}
 					}

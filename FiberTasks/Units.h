@@ -237,6 +237,12 @@ public:
 			ratio_m{ ratio_p },
 			value_m{ value_p * ratio_p }			
 		{};
+		constexpr AtomicUnitStruct(std::array< fibers::utilities::DoubleWrapper, NumUnits> const& unitType_p, double ratio_p, double value_p) noexcept :
+			unitType_m{ unitType_p },
+			ratio_m{ ratio_p },
+			value_m{ value_p }
+		{};
+
 		constexpr AtomicUnitStruct(AtomicUnitStruct const&) = default;
 		constexpr AtomicUnitStruct(AtomicUnitStruct&&) = default;
 		constexpr AtomicUnitStruct& operator=(AtomicUnitStruct const&) = default;
@@ -584,7 +590,7 @@ public:
 		template <bool multiplication = true> value& CompoundUnits(value const& other) noexcept {
 			Units::AtomicUnitStruct V { other.unit_m.load() };
 
-			unit_m.Update([V](Units::AtomicUnitStruct Data)->Units::AtomicUnitStruct {
+			unit_m.Update([&V](Units::AtomicUnitStruct Data)->Units::AtomicUnitStruct {
 				bool V_Is_Scalar{ is_scalar(V) }, I_am_Scalar{ is_scalar(Data) };
 
 				if (V_Is_Scalar) {
@@ -643,7 +649,7 @@ public:
 		
 		/* Used for exponential operations */
 		value& MultiplyUnits(double const& V) noexcept {
-			unit_m.Update([V](Units::AtomicUnitStruct Data)->Units::AtomicUnitStruct {
+			unit_m.Update([&V](Units::AtomicUnitStruct Data)->Units::AtomicUnitStruct {
 				if (V == 1.0 || is_scalar(Data)) {
 
 					Data.value_m = std::pow(Data.value_m / Data.ratio_m, V) * Data.ratio_m; // save in SI value
@@ -672,7 +678,7 @@ public:
 		value& operator=(value const& other) {
 			Units::AtomicUnitStruct V{ other.unit_m.load() };
 
-			unit_m.Update([V, this, &other](Units::AtomicUnitStruct Data)->Units::AtomicUnitStruct {
+			unit_m.Update([&V, this, &other](Units::AtomicUnitStruct Data)->Units::AtomicUnitStruct {
 				if (Data.IsSameCategory(V)) { // same category, but perhaps different conversion factor. That's OK. 
 					Data.value_m = V.value_m;
 				}
@@ -762,48 +768,94 @@ public:
 			return *this;
 		};
 		value operator++(int) { 
-			value out = *this; 
-			unit_m.Update([](Units::AtomicUnitStruct Data)->Units::AtomicUnitStruct {
-				Data.value_m += (double)Data.ratio_m;
-				return Data;
-			});
-			return out;
+			auto a_struct = unit_m.load();
+			return value(AtomicUnitStruct(
+				a_struct.unitType_m,
+				a_struct.ratio_m.load(),
+				a_struct.value_m.load() + a_struct.ratio_m.load()
+			));
+
+			//value out = *this; 
+			//unit_m.Update([](Units::AtomicUnitStruct Data)->Units::AtomicUnitStruct {
+			//	Data.value_m += (double)Data.ratio_m;
+			//	return Data;
+			//});
+			//return out;
 		};
 		value operator--(int) { 
-			value out = *this; 
-			unit_m.Update([](Units::AtomicUnitStruct Data)->Units::AtomicUnitStruct {
-				Data.value_m -= (double)Data.ratio_m;
-				return Data;
-			});
-			return out; 
+			auto a_struct = unit_m.load();
+			return value(AtomicUnitStruct(
+				a_struct.unitType_m,
+				a_struct.ratio_m.load(),
+				a_struct.value_m.load() - a_struct.ratio_m.load()
+			));
+
+			//value out = *this; 
+			//unit_m.Update([](Units::AtomicUnitStruct Data)->Units::AtomicUnitStruct {
+			//	Data.value_m -= (double)Data.ratio_m;
+			//	return Data;
+			//});
+			//return out; 
 		};
 
 	private: 
 		static value Add(value const& a, value const& b) {
-			value out1 = a;
-			value out2 = a; out2 = b;
+			auto a_struct = a.unit_m.load();
+			auto b_struct = b.unit_m.load();
 
-			auto V{ out2.unit_m.load() };
-			out1.unit_m.Update([V](Units::AtomicUnitStruct Data)->Units::AtomicUnitStruct {
-				HandleNormalArithmetic(Data, V);
-				Data.value_m += V.value_m;
-				return Data;
-			});
-
-			return out1;
+			if (a_struct.IsSameCategory(b_struct)) { // same category, but perhaps different conversion factor. That's OK. 
+				return value(AtomicUnitStruct(
+					a_struct.unitType_m,
+					a_struct.ratio_m.load(),
+					a_struct.value_m.load() + b_struct.value_m.load()
+				));
+			}
+			else if (is_scalar(b_struct)) { // incoming is a scaler and this unit is not. Use this unit's conversion factor.
+				return value( AtomicUnitStruct(
+					a_struct.unitType_m,
+					a_struct.ratio_m.load(),
+					a_struct.value_m.load() + ((b_struct.value_m.load() / b_struct.ratio_m.load()) * a_struct.ratio_m.load())
+				));
+			}
+			else if (is_scalar(a_struct)) { // I am a scaler but the incoming unit is not. Simply copy the incoming unit entirely.
+				return value(AtomicUnitStruct(
+					b_struct.unitType_m,
+					b_struct.ratio_m.load(),
+					b_struct.value_m.load() + ((a_struct.value_m.load() / a_struct.ratio_m.load()) * b_struct.ratio_m.load())
+				));
+			}
+			else { // incoming unit AND this unit are different non-scalers of different categories. No exchange is reasonable. 
+				throw(std::runtime_error(Units::printf("Add operation failed due to incompatible non-scalar value: '%s' and '%s'.", a.Abbreviation().c_str(), b.Abbreviation().c_str())));
+			}
 		};
 		static value Sub(value const& a, value const& b) {
-			value out1 = a;
-			value out2 = a; out2 = b;
+			auto a_struct = a.unit_m.load();
+			auto b_struct = b.unit_m.load();
 
-			auto V{ out2.unit_m.load() };
-			out1.unit_m.Update([V](Units::AtomicUnitStruct Data)->Units::AtomicUnitStruct {
-				HandleNormalArithmetic(Data, V);
-				Data.value_m -= V.value_m;
-				return Data;
-			});
-
-			return out1;
+			if (a_struct.IsSameCategory(b_struct)) { // same category, but perhaps different conversion factor. That's OK. 
+				return value(AtomicUnitStruct(
+					a_struct.unitType_m,
+					a_struct.ratio_m.load(),
+					a_struct.value_m.load() - b_struct.value_m.load()
+				));
+			}
+			else if (is_scalar(b_struct)) { // incoming is a scaler and this unit is not. Use this unit's conversion factor.
+				return value(AtomicUnitStruct(
+					a_struct.unitType_m,
+					a_struct.ratio_m.load(),
+					a_struct.value_m.load() - ((b_struct.value_m.load() / b_struct.ratio_m.load()) * a_struct.ratio_m.load())
+				));
+			}
+			else if (is_scalar(a_struct)) { // I am a scaler but the incoming unit is not. Simply copy the incoming unit entirely.
+				return value(AtomicUnitStruct(
+					b_struct.unitType_m,
+					b_struct.ratio_m.load(),
+					b_struct.value_m.load() - ((a_struct.value_m.load() / a_struct.ratio_m.load()) * b_struct.ratio_m.load())
+				));
+			}
+			else { // incoming unit AND this unit are different non-scalers of different categories. No exchange is reasonable. 
+				throw(std::runtime_error(Units::printf("Subtract operation failed due to incompatible non-scalar value: '%s' and '%s'.", a.Abbreviation().c_str(), b.Abbreviation().c_str())));
+			}
 		};
 		static value Multiply(value const& A, value const& V) {
 			value out = A;

@@ -1973,30 +1973,37 @@ namespace GoodLang {
 		std::shared_mutex AllConversionsMut;
 
 		// may return nullptr
-		TypeConverterFunc GetExistingConverter(std::weak_ptr<Type_Info> const& From, std::weak_ptr<Type_Info> const& To) {
+		TypeConverterFunc GetExistingConverter(std::shared_ptr<Type_Info> const& From, std::shared_ptr<Type_Info> const& To) {
 			auto locked{ std::shared_lock(AllConversionsMut) };
-			return AllConversions[From.lock()][To.lock()];
+			return AllConversions[From][To];
 		};
 		// may return nullptr if it could not be built
-		TypeConverterFunc GetOrBuildConverter(std::weak_ptr<Type_Info> const& From, std::weak_ptr<Type_Info> const& To, bool forceBuild = false) {
+		TypeConverterFunc GetOrBuildConverter(std::shared_ptr<Type_Info> const& From, std::shared_ptr<Type_Info> const& To, bool forceBuild = false) {
 			// Solves the Uniform Cost Search Algorithm to determine the shortest path for "From" to "To", puts the path in "Out", and returns true. 
 			// If no path is possible, returns false.
 			static auto CreateConversionPaths{ [](fibers::utilities::FastAllocator<UniformCostSearchNode>& alloc, conversionTreeType& AllConversions, std::shared_ptr<Type_Info> const& From, std::shared_ptr<Type_Info> const& To) {
 				// create the shortest paths from "From" to all possible vertices. 
-
-				std::unordered_map<std::shared_ptr<Type_Info>, UniformCostSearchNode*> vertices;
+				std::unordered_map <
+					std::shared_ptr<Type_Info>
+					, UniformCostSearchNode*
+				> vertices;
 
 				if (1) {
 					// create an empty vertex set
-					std::priority_queue< UniformCostSearchNode*, std::vector<UniformCostSearchNode*>, UniformCostSearchNode > vertexSet;
+					std::priority_queue< 
+						UniformCostSearchNode*
+						, std::vector<UniformCostSearchNode*>
+						, UniformCostSearchNode 
+					> vertexSet;
 
 					// Add the source vertex into the set
 					vertexSet.push(alloc.Alloc(From, 0.0, std::vector<std::weak_ptr<Type_Info>>{}));
 
 					// is the vertex set empty?
+					double conversionCost;
 					while (vertexSet.size() != 0) {
 						// extract the vertex with the smallest distance value from the set
-						auto smallestDistanceNode = vertexSet.top();
+						auto* smallestDistanceNode = std::move(vertexSet.top());
 						vertexSet.pop();
 
 						// for each neighbor of the extracted vertex... 
@@ -2008,15 +2015,12 @@ namespace GoodLang {
 								// Is the neighbor already in the vertex set? 
 								auto& toType = connection.first;
 								auto& toVertex = vertices[toType];
-								if (!toVertex) {
-									// Instance it before we start working with it on an as-needed basis
-									auto path = std::vector<std::weak_ptr<Type_Info>>(smallestDistanceNode->bestPath);
-									path.push_back(toType);
+								if (!toVertex) { // Instance it before we start working with it on an as-needed basis
 									toVertex = alloc.Alloc(toType, std::numeric_limits<double>::infinity(), std::vector<std::weak_ptr<Type_Info>>{ toType });
 								}
 
 								// calculate distance value for the neighbor vertex
-								double conversionCost = connection.second->cost();
+								conversionCost = connection.second->cost();
 								if ((toVertex->bestPath.size() + 1) > (smallestDistanceNode->bestPath.size() + 1)) {
 									toVertex->distanceFromTarget = (smallestDistanceNode->distanceFromTarget + conversionCost);
 
@@ -2037,7 +2041,6 @@ namespace GoodLang {
 						}
 					}
 				}
-
 				return vertices;
 			} };
 
@@ -2051,7 +2054,7 @@ namespace GoodLang {
 			if (1) {
 				fibers::utilities::FastAllocator< UniformCostSearchNode> alloc;
 				AllConversionsMut.lock_shared();
-				auto conversions{ CreateConversionPaths(alloc, AllConversions, From.lock(), To.lock()) };
+				auto conversions{ CreateConversionPaths(alloc, AllConversions, From, To) };
 
 				// All of these are for "From"...
 				for (auto& conversion : conversions) {
@@ -2062,7 +2065,7 @@ namespace GoodLang {
 					//std::vector<std::shared_ptr< details::Type_Conversion_Base >>& conversionPath = conversion.second->bestPathConverters;
 
 					if (path.size() >= 1) {
-						TypeConverterFunc converterPtr = AllConversions[From.lock()][ToType];
+						TypeConverterFunc converterPtr = AllConversions[From][ToType];
 						if ((converterPtr && (converterPtr->NumConversions() < path.size())) || (converterPtr && (converterPtr->cost() <= cost))) {
 							continue;
 						}
@@ -2103,12 +2106,12 @@ namespace GoodLang {
 								// insert it (requires hard lock)
 								if (newConverter) {
 									auto locked{ std::unique_lock(AllConversionsMut) };
-									converterPtr = AllConversions[From.lock()][ToType];
+									converterPtr = AllConversions[From][ToType];
 									if ((converterPtr && (converterPtr->NumConversions() < path.size())) || (converterPtr && (converterPtr->cost() <= cost))) {}
 
 									//if (converterPtr && (converterPtr->cost() <= cost)) {}
 									else {
-										AllConversions[From.lock()][ToType] = newConverter;
+										AllConversions[From][ToType] = newConverter;
 									}
 								}
 								AllConversionsMut.lock_shared();
@@ -2420,7 +2423,7 @@ namespace GoodLang {
 		};
 
 		// Find or make converter to accomplish the request
-		TypeConverterFunc FindConverter(std::weak_ptr<Type_Info> const& From, std::weak_ptr<Type_Info> const& To, bool forceBuild = false) {
+		TypeConverterFunc FindConverter(std::shared_ptr<Type_Info> const& From, std::shared_ptr<Type_Info> const& To, bool forceBuild = false) {
 			return GetOrBuildConverter(From, To, forceBuild);
 		};
 		// Find or make converter to accomplish the request
@@ -2439,11 +2442,11 @@ namespace GoodLang {
 		};
 
 		// will return an empty object if the conversion was impossible. (Assumes converting to void is not allowed or desired)
-		Any Convert(Any const& from, std::weak_ptr<Type_Info> const& To) {
-			if (To.lock()->is_any()) {
+		Any Convert(Any const& from, std::shared_ptr<Type_Info> const& To) {
+			if (To && To->is_any()) {
 				return from;
 			}
-			else if (auto f = FindConverter(from.Type(), To)) {
+			else if (auto f = FindConverter(from.Type().lock(), To)) {
 				return f->convert(from);
 			}
 			else if (from.IsTypeOf(To)) {
@@ -2457,7 +2460,7 @@ namespace GoodLang {
 			if (to_type->is_any()) {
 				return from.cast();
 			}
-			else if (auto f = FindConverter(from.Type(), to_type)) {
+			else if (auto f = FindConverter(from.Type().lock(), to_type)) {
 				Any temp = f->convert(from);
 				return temp.cast();
 			}
@@ -2469,12 +2472,12 @@ namespace GoodLang {
 		};
 
 		// will return an empty object if the conversion was impossible. (Assumes converting to void is not allowed or desired)
-		double ConversionCost(Any const& from, std::weak_ptr<Type_Info> const& To) {
+		double ConversionCost(Any const& from, std::shared_ptr<Type_Info> const& To) {
 			double out; 
-			if (To.lock()->is_any()) {
+			if (To && To->is_any()) {
 				out = 0;
 			}
-			else if (auto f = FindConverter(from.Type(), To)) {
+			else if (auto f = FindConverter(from.Type().lock(), To)) {
 				out = f->cost();
 			}
 			else if (from.IsTypeOf(To)) {
@@ -2492,7 +2495,7 @@ namespace GoodLang {
 		};
 
 		// will return an empty object if the conversion was impossible. (Assumes converting to void is not allowed or desired)
-		bool Converts(Any const& from, std::weak_ptr<Type_Info> const& To) {
+		bool Converts(Any const& from, std::shared_ptr<Type_Info> const& To) {
 			return ConversionCost(from, To) != std::numeric_limits<double>::max();
 		};
 		// will throw an error if the conversion was impossible.
@@ -2917,7 +2920,7 @@ namespace GoodLang {
 				
 				size_t i = 0;
 				for (; i < t_to.size(); ++i) {
-					double conversionCost = t_conversions.ConversionCost(t_from[i], t_to[i]);
+					double conversionCost = t_conversions.ConversionCost(t_from[i], t_to[i].lock());
 					if (conversionCost == std::numeric_limits<double>::max()) {
 						return std::numeric_limits<double>::max();
 					}
@@ -2939,7 +2942,7 @@ namespace GoodLang {
 
 				size_t i = 0;
 				for (; i < t_to.size(); ++i) {
-					out[i] = t_conversions.Convert(t_from[i], t_to[i]);
+					out[i] = t_conversions.Convert(t_from[i], t_to[i].lock());
 				}
 
 				return out;
