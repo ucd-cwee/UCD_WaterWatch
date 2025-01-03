@@ -2260,7 +2260,8 @@ namespace GoodLang {
 					classPtr->AddFunction("min", make_callable([]() { return std::numeric_limits<thisType>::lowest(); }));
 					classPtr->AddFunction("to_string", make_callable([](thisType const& o) -> std::string { return o.c_str(); }));
 					classPtr->AddFunction("Epoch", make_callable(&DateTime::Epoch));
-					classPtr->AddFunction("Now", make_callable([]() -> DateTime { return DateTime::Now(); }));
+					classPtr->AddFunction("Now", make_callable(&DateTime::Now));
+					// classPtr->AddFunction("Now", make_callable([]() -> DateTime { return DateTime::Now(); }));					
 					classPtr->AddFunction("tm_fractionalsec", make_callable(&DateTime::tm_fractionalsec));
 					classPtr->AddFunction("tm_sec", make_callable(&DateTime::tm_sec));
 					classPtr->AddFunction("tm_min", make_callable(&DateTime::tm_min));
@@ -2271,10 +2272,10 @@ namespace GoodLang {
 					classPtr->AddFunction("tm_wday", make_callable(&DateTime::tm_wday));
 					classPtr->AddFunction("tm_year", make_callable(&DateTime::tm_year));
 					classPtr->AddFunction("load", make_callable(&DateTime::load));
-					// classPtr->AddFunction("getNumDaysInSameMonth", make_callable(&DateTime::getNumDaysInSameMonth));
-					classPtr->AddFunction("getNumDaysInSameMonth", make_callable([](DateTime const& dt) -> int {
-						return DateTime::getNumDaysInSameMonth(dt);
-					}));
+					classPtr->AddFunction("getNumDaysInSameMonth", make_callable(&DateTime::getNumDaysInSameMonth));
+					//classPtr->AddFunction("getNumDaysInSameMonth", make_callable([](DateTime const& dt) -> int {
+					//	return DateTime::getNumDaysInSameMonth(dt);
+					//}));
 					classPtr->AddFunction("make_time", make_callable([]() { return DateTime::make_time(); }));
 					classPtr->AddFunction("make_time", make_callable([](int year) { return DateTime::make_time(year); }));
 					classPtr->AddFunction("make_time", make_callable([](int year, int month) { return DateTime::make_time(year, month); }));
@@ -2405,20 +2406,28 @@ namespace GoodLang {
 				for (auto& FoundClass : *classes) {
 					if (auto p = FoundClass.second.lock()) {
 						if (auto& outputType = p->ClassType) {
-							if (outputType->is_any()) continue;
+							// templated conversions are not acceptable
+							if (outputType->is_any()) continue; // note: this shouldn't happen. A Class with "Any" as its type is ill-formed.
 
-                            // Type Conversions are identical to Constructors with one input type. Therefore ...
+                            // Type Conversions are identical to Constructors with one input type and named after their class. Therefore ...
 							auto className = p->GetName();
-							// ... find all constructors ...
+							// ... find all constructors with the name of the class ...
 							if (auto constructors = p->GetFunctions(className)) {
 								for (auto& constructor : *constructors) {
-									if (constructor.second.second) {
+									if (constructor.second.second && constructor.second.second->m_function) {
 										// ... whose inputs are size of 1 ...
 										if (constructor.second.second->m_function->NumArguments() == 1) {
+											// Explicit or cached (e.g. built from previous tree) conversions are not acceptable. 
+											
+											// Cached conversions are built from "true" conversions, which will be re-built again by this new tree anyways, so their
+											// inclusion in the new tree is by definition not required. It may introduce a speed-up, but introduces lifetime issues and 
+											// so I prefer not to include those previous caches. 
 											if (!constructor.second.second->m_isCached && !constructor.second.second->m_isEplicit) {
 												if (auto inputType = constructor.second.second->m_function->Arguments().Types()[0].lock()) {
-													if (inputType->is_any()) continue;
-													out->AddConverter([func = constructor.second.second->m_function, TreeWeakPtr = std::weak_ptr<TypeConverter>(out)](Any const& input)->Any {		
+													// templated conversions are not acceptable
+													if (inputType->is_any()) continue; 
+
+													out->AddConverter([func = constructor.second.second->m_function](Any const& input)->Any {		
 														return func->operator()(const_cast<Any&>(input));
 													}, inputType, outputType);
 												}

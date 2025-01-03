@@ -3236,7 +3236,8 @@ int main() {
 					EXPECT_EQ(true, (scope_1->CallFunction("DateTime::Now", { DateTime() }).IsTypeOf<DateTime>()));
 					EXPECT_EQ(true, (scope_1->CallFunction("DateTime::Now", { }).IsTypeOf<DateTime>()));
 
-					(void)scope_1->Cast<std::string>(scope_1->CallFunction("to_string", { scope_1->CallFunction("+", { scope_1->CallFunction("time", { DateTime::Now() }), scope_1->CallFunction("Units::year", { 1 }) }) }));
+					//printf(scope_1->Cast<std::string>(scope_1->CallFunction("to_string", { scope_1->CallFunction("+", { scope_1->CallFunction("time", { DateTime::Now() }), scope_1->CallFunction("Units::year", { 1 }) }) })));
+					//printf(scope_1->Cast<std::string>(scope_1->CallFunction("getNumDaysInSameMonth", { scope_1->CallFunction("DateTime::Now", {}) })));
 
 					EXPECT_EQ(true, (scope_1->CallFunction("DateTime::Epoch", { }).IsTypeOf<DateTime>()));
 					try {
@@ -3246,6 +3247,7 @@ int main() {
 					catch (...) {}
 					EXPECT_EQ(true, (scope_1->CallFunction("tm_year", { DateTime::Now() }).IsTypeOf<int>()));
 					EXPECT_EQ(true, (scope_1->CallFunction("getNumDaysInSameMonth", { DateTime::Now() }).IsTypeOf<int>()));
+					EXPECT_EQ(true, (scope_1->CallFunction("getNumDaysInSameMonth", { DateTime::Now(), DateTime::Now() }).IsTypeOf<int>()));
 					EXPECT_EQ(true, (scope_1->Cast<bool>(scope_1->CallFunction("==", { scope_1->CallFunction("DateTime::Epoch", { }), scope_1->CallFunction("DateTime::Epoch", { }) }))));
 				}
 

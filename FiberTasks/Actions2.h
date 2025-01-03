@@ -5278,10 +5278,10 @@ namespace GoodLang {
 		class Static_Function_Impl : public Proxy_Function_Base {
 		public:
 			using argType = std::tuple<R, T...>;
-			static constexpr auto numArgs = std::tuple_size_v<argType> -1;
+			static constexpr auto numArgs = std::tuple_size_v<argType> - 1;
 			static GoodLang::FunctionSignature CreateSignature() {
 				std::vector<std::weak_ptr<Type_Info>> types(numArgs, std::weak_ptr<Type_Info>());
-#define argT(NN) if constexpr (numArgs > NN) { types[NN] = user_type_shared<typename std::tuple_element_t<NN, argType>>(); }
+#define argT(NN) if constexpr (numArgs > NN) { types[NN] = user_type_shared<typename std::tuple_element_t<NN+1, argType>>(); }
 				argT(0);
 				argT(1);
 				argT(2);
