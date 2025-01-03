@@ -1981,7 +1981,7 @@ namespace GoodLang {
 		TypeConverterFunc GetOrBuildConverter(std::weak_ptr<Type_Info> const& From, std::weak_ptr<Type_Info> const& To, bool forceBuild = false) {
 			// Solves the Uniform Cost Search Algorithm to determine the shortest path for "From" to "To", puts the path in "Out", and returns true. 
 			// If no path is possible, returns false.
-			static auto CreateConversionPaths{ [](fibers::utilities::FastAllocator< UniformCostSearchNode>& alloc, conversionTreeType& AllConversions, std::shared_ptr<Type_Info> const& From, std::shared_ptr<Type_Info> const& To) {
+			static auto CreateConversionPaths{ [](fibers::utilities::FastAllocator<UniformCostSearchNode>& alloc, conversionTreeType& AllConversions, std::shared_ptr<Type_Info> const& From, std::shared_ptr<Type_Info> const& To) {
 				// create the shortest paths from "From" to all possible vertices. 
 
 				std::unordered_map<std::shared_ptr<Type_Info>, UniformCostSearchNode*> vertices;
@@ -2049,7 +2049,7 @@ namespace GoodLang {
 
 			// Add conversion for From to a large variety of types...
 			if (1) {
-				fibers::utilities::FastAllocator< UniformCostSearchNode, sizeof(UniformCostSearchNode) << 4> alloc;
+				fibers::utilities::FastAllocator< UniformCostSearchNode> alloc;
 				AllConversionsMut.lock_shared();
 				auto conversions{ CreateConversionPaths(alloc, AllConversions, From.lock(), To.lock()) };
 
@@ -2426,6 +2426,16 @@ namespace GoodLang {
 		// Find or make converter to accomplish the request
 		template<typename From_t, typename To_t> TypeConverterFunc FindConverter(bool forceBuild = false) {
 			return FindConverter(user_type_shared<From_t>(), user_type_shared<To_t>(), forceBuild);
+		};
+
+		static Any Static_Convert(Any const& from, std::weak_ptr<Type_Info> const& To) {
+			if (To.lock()->is_any()) {
+				return from;
+			}			
+			else if (from.IsTypeOf(To)) {
+				return from;
+			}
+			else return from;
 		};
 
 		// will return an empty object if the conversion was impossible. (Assumes converting to void is not allowed or desired)
@@ -2934,6 +2944,34 @@ namespace GoodLang {
 
 				return out;
 			};
+			static std::vector<Any> convert(std::vector<Any> const& t_from, ParamTypes const& t_to) {
+				std::vector<Any> out;
+
+				if (t_to.size() > t_from.size()) throw exception::arity_error(t_to.size(), t_to.size());
+
+				out.resize(t_to.size());
+
+				size_t i = 0;
+				for (; i < t_to.size(); ++i) {
+					out[i] = TypeConverter::Static_Convert(t_from[i], t_to[i]);
+				}
+
+				return out;
+			};
+			static std::vector<Any> convert(Any& t_from, ParamTypes const& t_to) {
+				std::vector<Any> out;
+
+				if (t_to.size() > 1) throw exception::arity_error(t_to.size(), t_to.size());
+
+				out.resize(t_to.size());
+
+				size_t i = 0;
+				for (; i < t_to.size(); ++i) {
+					out[i] = TypeConverter::Static_Convert(t_from, t_to[i]);
+				}
+
+				return out;
+			};
 
 		protected:
 			GoodLang::FunctionSignature m_signature;
@@ -2965,6 +3003,20 @@ namespace GoodLang {
 					return do_call(convert(params, t_conversions));
 				}
 				throw exception::arity_error(static_cast<int>(params.size()), NumArguments());
+			};
+			// Does want conversions -- ensure types match if possible.
+			Any operator()(const std::vector<Any>& params) const {
+				if (params.size() >= NumArguments()) {
+					return do_call(convert(params));
+				}
+				throw exception::arity_error(static_cast<int>(params.size()), NumArguments());
+			};
+			// Does want conversions -- ensure types match if possible.
+			Any operator()(Any& params) const {
+				if (1 >= NumArguments()) {
+					return do_call(convert(params));
+				}
+				throw exception::arity_error(static_cast<int>(1), NumArguments());
 			};
 
 			//// Does not want conversions -- straight call.
@@ -3006,6 +3058,14 @@ namespace GoodLang {
 			// Performs the conversion from the input parameters to the necessary types, if possible. Throws otherwise. 
 			std::vector<Any> convert(std::vector<Any> const& t_params, TypeConverter& t_conversions) const {
 				return Proxy_Function_Base::convert(t_params, m_signature.Arguments().Types(), t_conversions);
+			};
+			// Performs the conversion from the input parameters to the necessary types, if possible. Throws otherwise. 
+			std::vector<Any> convert(std::vector<Any> const& t_params) const {
+				return Proxy_Function_Base::convert(t_params, m_signature.Arguments().Types());
+			};
+			// Performs the conversion from the input parameters to the necessary types, if possible. Throws otherwise. 
+			std::vector<Any> convert(Any& t_params) const {
+				return Proxy_Function_Base::convert(t_params, m_signature.Arguments().Types());
 			};
 
 		protected:

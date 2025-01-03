@@ -6834,16 +6834,184 @@ namespace fibers {
 		};
 
 #endif
+		namespace Moya {
+
+			template <class T, std::size_t growSize = 1024>
+			class MemoryPool
+			{
+				struct Block
+				{
+					Block* next;
+				};
+
+				class Buffer
+				{
+					static const std::size_t blockSize = sizeof(T) > sizeof(Block) ? sizeof(T) : sizeof(Block);
+					uint8_t data[blockSize * growSize];
+
+				public:
+
+					Buffer* const next;
+
+					Buffer(Buffer* next) :
+						next(next)
+					{
+					}
+
+					T* getBlock(std::size_t index)
+					{
+						return reinterpret_cast<T*>(&data[blockSize * index]);
+					}
+				};
+
+				Block* firstFreeBlock = nullptr;
+				Buffer* firstBuffer = nullptr;
+				std::size_t bufferedBlocks = growSize;
+
+			public:
+
+				MemoryPool() = default;
+				MemoryPool(MemoryPool&& memoryPool) = delete;
+				MemoryPool(const MemoryPool& memoryPool) = delete;
+				MemoryPool operator =(MemoryPool&& memoryPool) = delete;
+				MemoryPool operator =(const MemoryPool& memoryPool) = delete;
+
+				~MemoryPool()
+				{
+					while (firstBuffer) {
+						Buffer* buffer = firstBuffer;
+						firstBuffer = buffer->next;
+						delete buffer;
+					}
+				}
+
+				T* allocate()
+				{
+					if (firstFreeBlock) {
+						Block* block = firstFreeBlock;
+						firstFreeBlock = block->next;
+						return reinterpret_cast<T*>(block);
+					}
+
+					if (bufferedBlocks >= growSize) {
+						firstBuffer = new Buffer(firstBuffer);
+						bufferedBlocks = 0;
+					}
+
+					return firstBuffer->getBlock(bufferedBlocks++);
+				}
+
+				void deallocate(T* pointer)
+				{
+					Block* block = reinterpret_cast<Block*>(pointer);
+					block->next = firstFreeBlock;
+					firstFreeBlock = block;
+				}
+			};
+
+			template <class T, std::size_t growSize = 1024>
+			class Allocator : private MemoryPool<T, growSize>
+			{
+#if defined(_WIN32) && defined(ENABLE_OLD_WIN32_SUPPORT)
+				Allocator* copyAllocator = nullptr;
+				std::allocator<T>* rebindAllocator = nullptr;
+#endif
+
+			public:
+
+				typedef std::size_t size_type;
+				typedef std::ptrdiff_t difference_type;
+				typedef T* pointer;
+				typedef const T* const_pointer;
+				typedef T& reference;
+				typedef const T& const_reference;
+				typedef T value_type;
+
+				template <class U>
+				struct rebind
+				{
+					typedef Allocator<U, growSize> other;
+				};
+
+#if defined(_WIN32) && defined(ENABLE_OLD_WIN32_SUPPORT)
+				Allocator() = default;
+
+				Allocator(Allocator& allocator) :
+					copyAllocator(&allocator)
+				{
+				}
+
+				template <class U>
+				Allocator(const Allocator<U, growSize>& other)
+				{
+					if (!std::is_same<T, U>::value)
+						rebindAllocator = new std::allocator<T>();
+				}
+
+				~Allocator()
+				{
+					delete rebindAllocator;
+				}
+#endif
+
+				pointer allocate(size_type n, const void* hint = 0)
+				{
+#if defined(_WIN32) && defined(ENABLE_OLD_WIN32_SUPPORT)
+					if (copyAllocator)
+						return copyAllocator->allocate(n, hint);
+
+					if (rebindAllocator)
+						return rebindAllocator->allocate(n, hint);
+#endif
+
+					if (n != 1 || hint)
+						throw std::bad_alloc();
+
+					return MemoryPool<T, growSize>::allocate();
+				}
+
+				void deallocate(pointer p, size_type n)
+				{
+#if defined(_WIN32) && defined(ENABLE_OLD_WIN32_SUPPORT)
+					if (copyAllocator) {
+						copyAllocator->deallocate(p, n);
+						return;
+					}
+
+					if (rebindAllocator) {
+						rebindAllocator->deallocate(p, n);
+						return;
+					}
+#endif
+
+					MemoryPool<T, growSize>::deallocate(p);
+				}
+
+				template <typename... TArgs>
+				void construct(pointer p, TArgs&&... a) {
+					new (p) T(std::forward<TArgs>(a)...);
+				};
+
+				void destroy(pointer p) {
+					p->~T();
+				};
+			};
+
+		}
 
 		/* Allocates *_blockSize_* number of elements at a time. Blocks are free'd once the entire allocator goes out-of-scope. Not thread-safe. */
-		template <typename _type_, size_t _blockSize_ = (sizeof(_type_) << 4), bool ForcePOD = false, unsigned int forcedSize = sizeof(_type_)>
+		template <typename _type_, size_t _blockSize_ = std::max<size_t>(128, (sizeof(_type_) << 4)), bool ForcePOD = false>
 		class FastBlockAllocator {
 		private: // data members
+#if 1
 			std::allocator<_type_> alloc{};
 			std::vector< _type_* > blocks{};
 			size_t capacity{ 0 };
 			size_t count{ 0 };
-
+#else
+			Moya::Allocator< _type_> alloc{};
+			std::vector< _type_* > data{};
+#endif
 			// returns whether the constructor/destructor needs to be called for each element. (Constructor is always called if args are provided on initialization)
 			static constexpr bool isPod() { return std::is_pod<_type_>::value || ForcePOD; };
 
@@ -6851,14 +7019,18 @@ namespace fibers {
 			// Request a new memory pointer. May be recovered from a previously-used location. Will be cleared and correctly initialized, if appropriate.
 			template <typename... TArgs> _type_* Alloc(TArgs&&... a) {
 				_type_* out;
+#if 1
 				long long index = count++;
 				if (index >= capacity) {
 					blocks.push_back(alloc.allocate(_blockSize_));
 					capacity += _blockSize_;
 				}
-
 				auto pos = std::div(index, _blockSize_);
 				out = &blocks[pos.quot][pos.rem];
+#else
+				out = alloc.allocate(1);
+				data.push_back(out);
+#endif
 				alloc.construct(out, std::forward<TArgs>(a)...);
 
 				return out;
@@ -6894,6 +7066,7 @@ namespace fibers {
 		public: // constructors and destructors
 			FastBlockAllocator() = default;
 			~FastBlockAllocator() {
+#if 1
 				if constexpr (!isPod()) {
 					_type_* p;
 					for (int i = 0; i < count; i++) {
@@ -6904,11 +7077,19 @@ namespace fibers {
 				}
 				for(auto& block : blocks) 
 					alloc.deallocate(block, _blockSize_);
+#else
+				for (auto& p : data) {
+					if constexpr (!isPod()) {
+						alloc.destroy(p);
+					}
+					alloc.deallocate(p, 1);
+				}
+#endif
 			};
 		};
 
-		template<class _type_, int _blockSize_ = (sizeof(_type_) << 4), bool ForcePOD = false, unsigned int forcedSize = sizeof(_type_)>
-		using FastAllocator = FastBlockAllocator<_type_, _blockSize_, ForcePOD, forcedSize>;
+		template<class _type_, int _blockSize_ = std::max<size_t>(128, (sizeof(_type_) << 4)), bool ForcePOD = false>
+		using FastAllocator = FastBlockAllocator<_type_, _blockSize_, ForcePOD>;
 
 	};
 };

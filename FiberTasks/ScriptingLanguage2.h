@@ -2418,15 +2418,8 @@ namespace GoodLang {
 											if (!constructor.second.second->m_isCached && !constructor.second.second->m_isEplicit) {
 												if (auto inputType = constructor.second.second->m_function->Arguments().Types()[0].lock()) {
 													if (inputType->is_any()) continue;
-													static TypeConverter localTree{};
-
-													out->AddConverter([func = constructor.second.second->m_function, TreeWeakPtr = std::weak_ptr<TypeConverter>(out)](Any const& input)->Any {
-														//if (auto tree = TreeWeakPtr.lock()) {
-														//	return func->operator()({ input }, *tree);
-														//}
-														//else {
-															return func->operator()({ input }, localTree);
-														//}
+													out->AddConverter([func = constructor.second.second->m_function, TreeWeakPtr = std::weak_ptr<TypeConverter>(out)](Any const& input)->Any {		
+														return func->operator()(const_cast<Any&>(input));
 													}, inputType, outputType);
 												}
 											}

@@ -2990,6 +2990,7 @@ int main() {
 					// for (int i = 0; i < numIterations; i++){
 					//	   true == ("ft" == Units::foot(i).abbreviation());
 					// }
+#if 0
 					if (1) {
 						// Requires up-casting Units::foot to Units::value before calling 'abbreviation' and getting the result from the polymorphic type. 
 						sw.Start();
@@ -3011,6 +3012,7 @@ int main() {
 							});
 						printf(std::to_string(__LINE__) + ": \t" + std::to_string(numIterations) + " operations (on 10,000 classes) per " + Units::second(sw.Stop_s()).ToString() + ".");
 					}
+#endif
 
 					// Using Units;
 					// for (int i = 0; i < numIterations; i++){
@@ -3069,6 +3071,7 @@ int main() {
 					}
 
 					// CRASH AT BUILDING THE FUNCTION. Issue might be the conversion for foot -> value 
+#if 0
 					if (1) {
 						// This one "uses" the Units namespace, to see if it provides a speed boost at all.
 						sw.Start();
@@ -3117,7 +3120,7 @@ int main() {
 							});
 						printf(std::to_string(__LINE__) + ": \t" + std::to_string(numIterations) + " operations (on 10,000 classes) per " + Units::second(sw.Stop_s()).ToString() + ".");
 					}
-
+#endif
 
 					// Using Units;
 					// for (int i = 0; i < numIterations; i++){
