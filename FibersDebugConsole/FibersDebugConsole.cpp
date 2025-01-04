@@ -3531,7 +3531,27 @@ int main() {
 					printf(std::to_string(__LINE__) + ": \t" + std::to_string(numIterations) + " operations (on 10,000 classes) per " + Units::second(sw.Stop_s()).ToString() + ".");
 				}
 
+				// Test a custom class 
+				if (1) {
+					auto ScopedObj = std::make_shared<Class>(scope_1, "ScopedObj");
+					ScopedObj->SetSelf(ScopedObj);
+					scope_1->AddChild(ScopedObj);
 
+					// Define the "member objects" for this class
+					ScopedObj->DeclareMemberObject("name", user_type_shared<std::string>());
+					ScopedObj->DeclareMemberObject("value", user_type_shared<Any>());
+					
+					// Default constructor
+					ScopedObj->AddFunction("ScopedObj", make_callable([]()->Any {
+
+
+					}));
+
+
+
+
+
+				}
 
 
 			}

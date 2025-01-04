@@ -1624,9 +1624,50 @@ namespace GoodLang {
 			DerivedFrom; // e.g. this class derives from another Class
 		std::shared_ptr<Type_Info>
 			ClassType;
+		fibers::containers::Map<std::string, std::pair<std::weak_ptr<Type_Info>, std::shared_ptr<Any>>>
+			p_declared_member_objects; // declared member objects for the custom, scripted class which will be instantiated upon construction of the scripted class
+
+		void ConstructMemberObjects(DynamicObject& obj) const {
+			for (auto& member_obj : p_declared_member_objects) {
+				if (member_obj) {
+					std::string const& memberObjectName = member_obj->first;
+					if (auto memberObjectType = member_obj->second.first.lock()) {
+						if (auto memberObjectClassType = this->FindClass(memberObjectType)) {
+							auto& memberObjectDefaultInstance = member_obj->second.second;
+							if (memberObjectDefaultInstance) {
+								// default value was provided -- try to create a copy.
+								try {
+									Any defaultParam = memberObjectClassType->CallFunction(memberObjectClassType->GetName(), { memberObjectDefaultInstance });
+									obj.m_objects[memberObjectName] = std::make_shared<Any>(std::move(defaultParam));
+									continue;
+								}
+								catch (...) {
+									// could not create the copy for some reason. Place the default value directly.
+									Any defaultParam = memberObjectDefaultInstance;
+									obj.m_objects[memberObjectName] = std::make_shared<Any>(std::move(defaultParam));
+									continue;
+								}
+							}
+							else {
+								// undeclared default value -- try to create a new instance.
+								Any defaultParam = memberObjectClassType->CallFunction(memberObjectClassType->GetName(), {});
+								obj.m_objects[memberObjectName] = std::make_shared<Any>(std::move(defaultParam));
+								continue;
+							}
+						}
+					}
+
+					// something went wrong -- set it to void. The class type was not provided, could not be found, or could not be instanced.
+					obj.m_objects[memberObjectName] = std::make_shared<Any>();
+				}
+			}
+		};
 
 	public:
 		virtual std::weak_ptr<Type_Info> GetClassType() const override { return ClassType; };
+		void DeclareMemberObject(std::string const& name, std::weak_ptr<Type_Info> type, std::shared_ptr<Any> defaultValue = nullptr) {
+			p_declared_member_objects.emplace(name, { type, defaultValue });
+		};
 
 	private:
 		virtual bool TryFindNearestScopeWhere(
