@@ -2790,6 +2790,31 @@ int main() {
 				scope_1->SetSelf(scope_1);
 				scope_1->AddBuiltIns();
 
+				// "Any" type for scripting 
+				//if (1) {
+				//	auto AnyClass = std::make_shared<Class>(scope_1, "Any", user_type_shared<Any>());
+				//	AnyClass->SetSelf(AnyClass);
+				//	scope_1->AddChild(AnyClass);
+
+				//	// Constructors
+				//	AnyClass->AddFunction("Any", make_callable([]() -> Any { return Any{}; }));
+				//	AnyClass->AddFunction("Any", make_callable([](Any const& makeCopy) -> Any { return makeCopy; }));
+				//	AnyClass->AddFunction("=", make_callable([](Any& a, Any const& b) -> Any { a = b; return a; }
+				//		, ParamTypes({ user_type_shared<Any>().lock()->MakeRef(), user_type_shared<Any>().lock()->MakeConstRef() })
+				//	));
+				//	AnyClass->AddFunction("==", make_callable([](Any const& x, Any const& y) -> bool { return x == y; }));
+				//	AnyClass->AddFunction("!=", make_callable([](Any const& x, Any const& y) -> bool { return x != y; }));
+				//	 AnyClass->AddFunction("to_string", make_callable([](Any const& o) -> std::string { return std::to_string(o); }));
+
+				//}
+
+
+
+
+
+
+
+
 				// FindNamespace
 				if (1) {
 					sw.Start();
@@ -3531,22 +3556,89 @@ int main() {
 					printf(std::to_string(__LINE__) + ": \t" + std::to_string(numIterations) + " operations (on 10,000 classes) per " + Units::second(sw.Stop_s()).ToString() + ".");
 				}
 
-				// Test a custom class 
+				// Test a basic custom class 
 				if (1) {
-					auto ScopedObj = std::make_shared<Class>(scope_1, "ScopedObj");
-					ScopedObj->SetSelf(ScopedObj);
-					scope_1->AddChild(ScopedObj);
+					if (1) {
+						auto ScopedObj = std::make_shared<Class>(scope_1, "ScopedObj");
+						ScopedObj->SetSelf(ScopedObj);
+						scope_1->AddChild(ScopedObj);
 
-					// Define the "member objects" for this class
-					ScopedObj->DeclareMemberObject("name", user_type_shared<std::string>());
-					ScopedObj->DeclareMemberObject("value", user_type_shared<Any>());
+						// Define the "member objects" for this class
+						ScopedObj->DeclareMemberObject("name", user_type_shared<std::string>()); // if no default is provided, it will make its own at runtime
+						ScopedObj->DeclareMemberObject("number", user_type_shared<double>()); // if no default is provided, it will make its own at runtime
+						ScopedObj->DeclareMemberObject("value", user_type_shared<Var>()); // if no default is provided, it will make its own at runtime
+
+						// Default constructor
+						ScopedObj->AddFunction("ScopedObj", make_callable([selfPtr = std::weak_ptr<Class>(ScopedObj)]()->Any {
+							if (auto self = selfPtr.lock()) {
+								DynamicObject out{ self->GetClassType() };
+								self->ConstructMemberObjects(out);
+								return out;
+							}
+							else {
+								throw(exception::not_found_error("Custom class type was no longer available"));
+							}
+						}));
+						// Copy constructor
+						ScopedObj->AddFunction("ScopedObj", make_callable([selfPtr = std::weak_ptr<Class>(ScopedObj)](Any const& from)->Any {
+							DynamicObject const& obj = from.cast<DynamicObject const&>();
+							if (auto self = selfPtr.lock()) {
+								DynamicObject out{ self->GetClassType() };
+								self->ConstructMemberObjects(out, obj);
+								return out;
+							}
+							else {
+								throw(exception::not_found_error("Custom class type was no longer available"));
+							}
+						}, ParamTypes({ ScopedObj->GetClassType().lock()->MakeConstRef() })));
+						// assignment operator
+						ScopedObj->AddFunction("=", make_callable([selfPtr = std::weak_ptr<Class>(ScopedObj)](Any const& to, Any const& from)->Any {
+							DynamicObject& To = to.cast<DynamicObject&>();
+							To.m_objects.clear(); // NOT CONCURRENT-SAFE...
+							DynamicObject const& From = from.cast<DynamicObject const&>();
+							if (auto self = selfPtr.lock()) {
+								self->ConstructMemberObjects(To, From);
+								return to;
+							}
+							else {
+								throw(exception::not_found_error("Custom class type was no longer available"));
+							}
+						}, ParamTypes({ ScopedObj->GetClassType().lock()->MakeRef(), ScopedObj->GetClassType().lock()->MakeConstRef() })));
+						// Member objects
+						for (auto& member_obj : ScopedObj->GetMemberObjects()) {
+							// ref access
+							ScopedObj->AddFunction(member_obj.first, make_callable([objName = member_obj.first](Any const& from)->Any {
+								DynamicObject& From = from.cast<DynamicObject&>();
+								return From.m_objects.at(objName);
+							}, ParamTypes({ ScopedObj->GetClassType().lock()->MakeRef() }), member_obj.second.lock()->MakeRef()));
+							// const ref access
+							ScopedObj->AddFunction(member_obj.first, make_callable([objName = member_obj.first](Any const& from)->Any {
+								DynamicObject const& From = from.cast<DynamicObject const&>();
+								return From.m_objects.at(objName);
+							}, ParamTypes({ ScopedObj->GetClassType().lock()->MakeConstRef() }), member_obj.second.lock()->MakeConstRef()));
+						}
+					}
+
+					auto instance = scope_1->CallFunction("ScopedObj", {});
+					auto numberV = scope_1->CallFunction("number", { instance });
+					EXPECT_EQ(0, scope_1->Cast<int>(numberV));
+					scope_1->CallFunction("=", { numberV , 100 });
+					EXPECT_EQ(100, scope_1->Cast<int>(numberV));
+					auto anyV = scope_1->CallFunction("value", { instance });
+					scope_1->CallFunction("=", { anyV, 100 });
+					auto anyV2 = scope_1->CallFunction("value", { instance });
+					EXPECT_EQ(true, anyV.cast<Var&>().p_data.IsTypeOf<int>());
+					EXPECT_EQ(true, anyV2.cast<Var&>().p_data.IsTypeOf<int>());
+					EXPECT_EQ(100, scope_1->Cast<int>(scope_1->CallFunction("get", { anyV })));
+
+					auto instance2 = scope_1->CallFunction("ScopedObj", { instance });
+					auto anyV3 = scope_1->CallFunction("value", { instance2 });
+					EXPECT_EQ(true, anyV3.cast<Var&>().p_data.IsTypeOf<int>());
 					
-					// Default constructor
-					ScopedObj->AddFunction("ScopedObj", make_callable([]()->Any {
+					scope_1->CallFunction("=", { anyV3, std::string("TEST")});
 
-
-					}));
-
+					EXPECT_EQ(true, anyV3.cast<Var&>().p_data.IsTypeOf<std::string>());
+					EXPECT_EQ(true, anyV.cast<Var&>().p_data.IsTypeOf<int>());
 
 
 

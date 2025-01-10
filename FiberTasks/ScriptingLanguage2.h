@@ -5,6 +5,33 @@
 
 #if 1
 namespace GoodLang {
+	// class "Var" is a generic container for dynamically typed objects for use in the scripting language. 
+	// It defers from "Any" because Any objects are for use in C++ to contain statically typed objects. 
+	// "Var" objects are wrappers for Anys that allow the scripting language to process them as-expected
+	class Var {
+	public:
+		Var() = default;
+		explicit Var(Any const& data_f) : p_data(data_f) {};
+		Var(Var const&) = default;
+		Var(Var &&) = default;
+		Var& operator=(Var const&) = default;
+		Var& operator=(Var&&) = default;
+		~Var() = default;
+
+	public:
+		Any p_data;
+
+	};
+
+
+
+
+
+
+
+
+
+
 	class Scope;
 	class Namespace;
 	class Class;
@@ -1627,6 +1654,7 @@ namespace GoodLang {
 		fibers::containers::Map<std::string, std::pair<std::weak_ptr<Type_Info>, std::shared_ptr<Any>>>
 			p_declared_member_objects; // declared member objects for the custom, scripted class which will be instantiated upon construction of the scripted class
 
+	public:
 		void ConstructMemberObjects(DynamicObject& obj) const {
 			for (auto& member_obj : p_declared_member_objects) {
 				if (member_obj) {
@@ -1661,6 +1689,76 @@ namespace GoodLang {
 					obj.m_objects[memberObjectName] = std::make_shared<Any>();
 				}
 			}
+		};
+		void ConstructMemberObjects(DynamicObject& obj, DynamicObject const& CopyFrom) const {
+			for (auto& member_obj : p_declared_member_objects) {
+				if (member_obj) {
+					std::string const& memberObjectName = member_obj->first;
+					if (auto memberObjectType = member_obj->second.first.lock()) {
+						if (auto memberObjectClassType = this->FindClass(memberObjectType)) {
+							auto copyObjPtr = CopyFrom.m_objects.find(memberObjectName);
+							if ((copyObjPtr != CopyFrom.m_objects.end()) && copyObjPtr->second) {
+								auto& memberObjectDefaultInstance = copyObjPtr->second;
+								if (memberObjectDefaultInstance) {
+									// default value was provided -- try to create a copy.
+									try {
+										Any defaultParam = memberObjectClassType->CallFunction(memberObjectClassType->GetName(), { memberObjectDefaultInstance });
+										obj.m_objects[memberObjectName] = std::make_shared<Any>(std::move(defaultParam));
+										continue;
+									}
+									catch (...) {
+										// could not create the copy for some reason. Place the default value directly.
+										Any defaultParam = memberObjectDefaultInstance;
+										obj.m_objects[memberObjectName] = std::make_shared<Any>(std::move(defaultParam));
+										continue;
+									}
+								}
+								else {
+									// undeclared default value -- try to create a new instance.
+									Any defaultParam = memberObjectClassType->CallFunction(memberObjectClassType->GetName(), {});
+									obj.m_objects[memberObjectName] = std::make_shared<Any>(std::move(defaultParam));
+									continue;
+								}
+							}
+							else {
+								auto& memberObjectDefaultInstance = member_obj->second.second;
+								if (memberObjectDefaultInstance) {
+									// default value was provided -- try to create a copy.
+									try {
+										Any defaultParam = memberObjectClassType->CallFunction(memberObjectClassType->GetName(), { memberObjectDefaultInstance });
+										obj.m_objects[memberObjectName] = std::make_shared<Any>(std::move(defaultParam));
+										continue;
+									}
+									catch (...) {
+										// could not create the copy for some reason. Place the default value directly.
+										Any defaultParam = memberObjectDefaultInstance;
+										obj.m_objects[memberObjectName] = std::make_shared<Any>(std::move(defaultParam));
+										continue;
+									}
+								}
+								else {
+									// undeclared default value -- try to create a new instance.
+									Any defaultParam = memberObjectClassType->CallFunction(memberObjectClassType->GetName(), {});
+									obj.m_objects[memberObjectName] = std::make_shared<Any>(std::move(defaultParam));
+									continue;
+								}
+							}
+						}
+					}
+
+					// something went wrong -- set it to void. The class type was not provided, could not be found, or could not be instanced.
+					obj.m_objects[memberObjectName] = std::make_shared<Any>();
+				}
+			}
+		};
+		std::map<std::string, std::weak_ptr<Type_Info>> GetMemberObjects() const {
+			std::map<std::string, std::weak_ptr<Type_Info>> out;
+			for (auto x : p_declared_member_objects) {
+				if (x) {
+					out[x->first] = x->second.first;
+				}
+			}
+			return out;
 		};
 
 	public:
@@ -2281,7 +2379,6 @@ namespace GoodLang {
 					}
 				}
 
-#if 1
 				// DateTime
 				if (1) {
 					using thisType = DateTime;
@@ -2369,7 +2466,55 @@ namespace GoodLang {
 					// Parameters
 					classPtr->AddFunction("time", make_callable(&DateTime::time));
 				}
-#endif
+
+				// Var
+				if (1) {
+					std::shared_ptr<Class> classPtr; {
+						classPtr.reset(new Class(this->p_self.lock(), "Var", user_type_shared<Var>().lock()));
+					}
+					classPtr->p_self = classPtr;
+					this->AddChild(classPtr);
+
+					// Constructors
+					// Var()
+					classPtr->AddFunction("Var", make_callable([]() -> Var {
+						return Var();
+					})); // explicit = cannot be used for conversion trees
+					// Var(Var const&)
+					classPtr->AddFunction("Var", make_callable([](Var const& obj) -> Var {
+						return obj;
+					})); // explicit = cannot be used for conversion trees
+					// Var(Any)
+					classPtr->AddFunction("Var", Function(make_callable([](Any const& obj) -> Var {
+						return Var(obj);
+					}), true)); // explicit = cannot be used for conversion trees
+					// Var& = Var const&
+					classPtr->AddFunction("=", make_callable([](Any const& a, Var const& b) -> Any {
+						Var& out = a.cast(); out = b; return a;
+					}, ParamTypes({ user_type_shared<Var>().lock()->MakeRef(), user_type_shared<Var>().lock()->MakeConstRef() }), user_type_shared<Var>().lock()->MakeRef()));
+					// Var& = Any
+					classPtr->AddFunction("=", make_callable([](Any const& a, Any const& b) -> Any {
+						Var& out = a.cast(); out = Var(b); return a;
+					}, ParamTypes({ user_type_shared<Var>().lock()->MakeRef(), user_type_shared<Any>() }), user_type_shared<Var>().lock()->MakeRef())); 
+					// Var().get()
+					classPtr->AddFunction("get", make_callable([](Var const& b) -> Any {
+						return b.p_data;
+					})); 
+					// Returns the type of the contained object. By not specifying the type, the Any is treated like a Template
+					this->AddFunction("Type_Info", make_callable([](Var const& obj) -> std::weak_ptr<Type_Info> {
+						return obj.p_data.Type();
+					}));
+					// Returns the type of Any object. By not specifying the type, the Any is treated like a Template
+					this->AddFunction("Type", make_callable([](Var const& obj) -> std::weak_ptr<Type_Info> {
+						return obj.p_data.Type();
+					}));
+					// Returns a stringified version of the provided Any obj. This is meant to be a fall-back template whenever no specialization is available. 
+					this->AddFunction("to_string", make_callable([](Var const& x) -> std::string {
+						auto name = x.p_data.TypeName();
+						return Units::printf("`%s`", name.c_str());
+					}));
+				}
+
 			}
 
 			// Built-In static, templated functions

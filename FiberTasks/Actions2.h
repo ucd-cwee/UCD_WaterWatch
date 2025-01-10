@@ -376,7 +376,7 @@ namespace GoodLang {
 			this->CacheHash();
 		};
 		BuiltIn_Type_Info(impl::underlying_type_info t_ti, bool t_is_const = false, bool t_is_ref = false) noexcept
-			: Type_Info(t_is_const, false, t_is_ref, std::is_same<typename std::decay_t<T>, Any>::value)
+			: Type_Info(t_is_const, std::is_same<typename std::decay_t<T>, void>::value, t_is_ref, std::is_same<typename std::decay_t<T>, Any>::value)
 			, m_type_info(t_ti)
 		{
 			this->CacheHash();
@@ -5895,6 +5895,48 @@ namespace GoodLang {
 			auto* function_impl = new details::Static_Function_Impl(std::forward<Func>(func));
 			FunctionSignature& signature = function_impl->GetSignature();
 			function_impl->GetSignature() = FunctionSignature(signature.Returns(), FunctionArgs(paramTypes));
+
+			auto ptr{ std::static_pointer_cast<details::Proxy_Function_Base>(std::shared_ptr<typename std::remove_pointer<decltype(function_impl)>::type>(function_impl)) };
+			return ptr;
+		}
+		else {
+			throw std::runtime_error("Did not handle conversion of provided function to a PROXY_FUNCTION.");
+		}
+	};
+
+	// Convert nearly any function or function pointer to a callable, generic proxy function. 
+	template<typename Func> Proxy_Function make_callable(Func&& func, ParamTypes const& paramTypes, std::weak_ptr<Type_Info> const& resultType) {
+		using function_header = decltype(details::detail::function_signature(func));
+
+		static constexpr const bool is_static_member_function = function_header::is_static_member_function;
+		static constexpr const bool is_member = function_header::is_member;
+		static constexpr const bool is_object = function_header::is_object;
+		static constexpr const bool is_member_object = function_header::is_member_object;
+
+		if constexpr (is_object) {
+			// function objects, e.g. auto x = [](){};
+			auto* function_impl = new details::Explicit_Function_Impl(std::forward<Func>(func));
+			function_impl->GetSignature() = FunctionSignature(resultType, FunctionArgs(paramTypes));
+
+			auto ptr{ std::static_pointer_cast<details::Proxy_Function_Base>(std::shared_ptr<typename std::remove_pointer<decltype(function_impl)>::type>(function_impl)) };
+			return ptr;
+		}
+		else if constexpr (is_member_object) {
+			// member objects, e.g. return object.member;
+			auto* function_impl = new details::Attribute_Access_Impl(std::forward<Func>(func));
+			function_impl->GetSignature() = FunctionSignature(resultType, FunctionArgs(paramTypes));
+
+			auto ptr{ std::static_pointer_cast<details::Proxy_Function_Base>(std::shared_ptr<typename std::remove_pointer<decltype(function_impl)>::type>(function_impl)) };
+			return ptr;
+		}
+		else if constexpr (is_member && !is_member_object) {
+			// member functions, e.g. return object.member();
+			return details::Member_Function_Impl(std::forward<Func>(func), paramTypes);
+		}
+		else if constexpr (is_static_member_function) {
+			// static function pointers, e.g. static foo(){};
+			auto* function_impl = new details::Static_Function_Impl(std::forward<Func>(func));
+			function_impl->GetSignature() = FunctionSignature(resultType, FunctionArgs(paramTypes));
 
 			auto ptr{ std::static_pointer_cast<details::Proxy_Function_Base>(std::shared_ptr<typename std::remove_pointer<decltype(function_impl)>::type>(function_impl)) };
 			return ptr;
