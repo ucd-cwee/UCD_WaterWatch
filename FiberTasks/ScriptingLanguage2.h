@@ -1656,6 +1656,10 @@ namespace GoodLang {
 
 	public:
 		void ConstructMemberObjects(DynamicObject& obj) const {
+			if (auto parentType = DerivedFrom.lock()) {
+				parentType->ConstructMemberObjects(obj);
+			}
+
 			for (auto& member_obj : p_declared_member_objects) {
 				if (member_obj) {
 					std::string const& memberObjectName = member_obj->first;

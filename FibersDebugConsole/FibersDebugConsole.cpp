@@ -3639,12 +3639,106 @@ int main() {
 
 					EXPECT_EQ(true, anyV3.cast<Var&>().p_data.IsTypeOf<std::string>());
 					EXPECT_EQ(true, anyV.cast<Var&>().p_data.IsTypeOf<int>());
-
-
-
-
 				}
+				
+				// Test an inherited custom class 
+				if (1) {
+					if (auto parentClass = scope_1->FindClass("ScopedObj")) {
+						auto ScopedObj = std::make_shared<Class>(scope_1, "ScopedObj2", user_type_shared<void>().lock(), parentClass);
+						ScopedObj->SetSelf(ScopedObj);
+						scope_1->AddChild(ScopedObj);
 
+						// Define the "member objects" for this class
+						//ScopedObj->DeclareMemberObject("name", user_type_shared<std::string>()); // if no default is provided, it will make its own at runtime
+						//ScopedObj->DeclareMemberObject("number", user_type_shared<double>()); // if no default is provided, it will make its own at runtime
+						//ScopedObj->DeclareMemberObject("value", user_type_shared<Var>()); // if no default is provided, it will make its own at runtime
+
+                        // Default constructor
+						ScopedObj->AddFunction("ScopedObj2", make_callable([selfPtr = std::weak_ptr<Class>(ScopedObj)]()->Any {
+							if (auto self = selfPtr.lock()) {
+								DynamicObject out{ self->GetClassType() };
+								self->ConstructMemberObjects(out); // should automatically construct parent's objects in-order 
+								return out;
+							}
+							else {
+								throw(exception::not_found_error("Custom class type was no longer available"));
+							}
+						}));
+						// Upcast (const&)
+						ScopedObj->AddFunction("ScopedObj", make_callable([selfPtr = std::weak_ptr<Class>(ScopedObj)](Any const& from)->Any {
+							// ISSUE HERE. DOES NOT "ACTUALLY" CAST TO "ScopedObj". IT IS STILL A "ScopedObj2". THE LIE WAS NOT ENOUGH. 
+							// IDEA: set the dynamic object's object map to be a shared_ptr<map>, so that the objects can be easily shared, and we 
+							// would make the a new DynamicObject, change the "type", but have it share the same object pool. 
+
+							return from;
+						}, ParamTypes({ ScopedObj->GetClassType().lock()->MakeConstRef() }), parentClass->GetClassType().lock()->MakeConstRef()));
+						// Upcast (&)
+						ScopedObj->AddFunction("ScopedObj", make_callable([selfPtr = std::weak_ptr<Class>(ScopedObj)](Any const& from)->Any {
+
+							return from;
+						}, ParamTypes({ ScopedObj->GetClassType().lock()->MakeRef() }), parentClass->GetClassType().lock()->MakeRef()));
+
+						// Copy constructor
+						ScopedObj->AddFunction("ScopedObj2", make_callable([selfPtr = std::weak_ptr<Class>(ScopedObj)](Any const& from)->Any {
+							DynamicObject const& obj = from.cast<DynamicObject const&>();
+							if (auto self = selfPtr.lock()) {
+								DynamicObject out{ self->GetClassType() };
+								self->ConstructMemberObjects(out, obj);
+								return out;
+							}
+							else {
+								throw(exception::not_found_error("Custom class type was no longer available"));
+							}
+						}, ParamTypes({ ScopedObj->GetClassType().lock()->MakeConstRef() })));
+						// assignment operator
+						ScopedObj->AddFunction("=", make_callable([selfPtr = std::weak_ptr<Class>(ScopedObj)](Any const& to, Any const& from)->Any {
+							DynamicObject& To = to.cast<DynamicObject&>();
+							To.m_objects.clear(); // NOT CONCURRENT-SAFE...
+							DynamicObject const& From = from.cast<DynamicObject const&>();
+							if (auto self = selfPtr.lock()) {
+								self->ConstructMemberObjects(To, From);
+								return to;
+							}
+							else {
+								throw(exception::not_found_error("Custom class type was no longer available"));
+							}
+						}, ParamTypes({ ScopedObj->GetClassType().lock()->MakeRef(), ScopedObj->GetClassType().lock()->MakeConstRef() })));
+						//// Member objects
+						//for (auto& member_obj : ScopedObj->GetMemberObjects()) {
+						//	// ref access
+						//	ScopedObj->AddFunction(member_obj.first, make_callable([objName = member_obj.first](Any const& from)->Any {
+						//		DynamicObject& From = from.cast<DynamicObject&>();
+						//		return From.m_objects.at(objName);
+						//	}, ParamTypes({ ScopedObj->GetClassType().lock()->MakeRef() }), member_obj.second.lock()->MakeRef()));
+						//	// const ref access
+						//	ScopedObj->AddFunction(member_obj.first, make_callable([objName = member_obj.first](Any const& from)->Any {
+						//		DynamicObject const& From = from.cast<DynamicObject const&>();
+						//		return From.m_objects.at(objName);
+						//	}, ParamTypes({ ScopedObj->GetClassType().lock()->MakeConstRef() }), member_obj.second.lock()->MakeConstRef()));
+						//}
+					}
+
+					auto instance = scope_1->CallFunction("ScopedObj2", {});
+					auto numberV = scope_1->CallFunction("number", { instance });
+					EXPECT_EQ(0, scope_1->Cast<int>(numberV));
+					scope_1->CallFunction("=", { numberV , 100 });
+					EXPECT_EQ(100, scope_1->Cast<int>(numberV));
+					auto anyV = scope_1->CallFunction("value", { instance });
+					scope_1->CallFunction("=", { anyV, 100 });
+					auto anyV2 = scope_1->CallFunction("value", { instance });
+					EXPECT_EQ(true, anyV.cast<Var&>().p_data.IsTypeOf<int>());
+					EXPECT_EQ(true, anyV2.cast<Var&>().p_data.IsTypeOf<int>());
+					EXPECT_EQ(100, scope_1->Cast<int>(scope_1->CallFunction("get", { anyV })));
+
+					auto instance2 = scope_1->CallFunction("ScopedObj2", { instance });
+					auto anyV3 = scope_1->CallFunction("value", { instance2 });
+					EXPECT_EQ(true, anyV3.cast<Var&>().p_data.IsTypeOf<int>());
+
+					scope_1->CallFunction("=", { anyV3, std::string("TEST") });
+
+					EXPECT_EQ(true, anyV3.cast<Var&>().p_data.IsTypeOf<std::string>());
+					EXPECT_EQ(true, anyV.cast<Var&>().p_data.IsTypeOf<int>());
+				}
 
 			}
 
