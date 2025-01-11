@@ -753,13 +753,13 @@ namespace fibers {
 
 			// Exclusive ownership
 			void lock() {
-				std::scoped_lock<mutex> lk(mut_);
+				std::unique_lock<mutex> lk(mut_);
 				while (state_ & write_entered_) gate1_.wait(lk);
 				state_ |= write_entered_;
 				while (state_ & n_readers_) gate2_.wait(lk);
 			};
 			bool try_lock() {
-				std::scoped_lock<mutex> lk(mut_, std::try_to_lock_t);
+				std::unique_lock<mutex> lk(mut_, std::try_to_lock_t{});
 				if (lk.owns_lock() && state_ == 0) {
 					state_ = write_entered_;
 					return true;
@@ -768,7 +768,7 @@ namespace fibers {
 			};
 			void unlock() {
 				{
-					std::scoped_lock<mutex> _(mut_);
+					std::unique_lock<mutex> _(mut_);
 					state_ = 0;
 				}
 				gate1_.notify_all();
@@ -776,14 +776,14 @@ namespace fibers {
 
 			// Shared ownership
 			void lock_shared() {
-				std::scoped_lock<mutex> lk(mut_);
+				std::unique_lock<mutex> lk(mut_);
 				while ((state_ & write_entered_) || (state_ & n_readers_) == n_readers_) gate1_.wait(lk);
 				unsigned num_readers = (state_ & n_readers_) + 1;
 				state_ &= ~n_readers_;
 				state_ |= num_readers;
 			};
 			bool try_lock_shared() {
-				std::scoped_lock<mutex> lk(mut_, std::try_to_lock_t);
+				std::unique_lock<mutex> lk(mut_, std::try_to_lock_t{});
 				unsigned num_readers = state_ & n_readers_;
 				if (lk.owns_lock() && !(state_ & write_entered_) && num_readers != n_readers_) {
 					++num_readers;
@@ -794,7 +794,7 @@ namespace fibers {
 				return false;
 			};
 			void unlock_shared() {
-				std::scoped_lock<mutex> _(mut_);
+				std::unique_lock<mutex> _(mut_);
 				unsigned num_readers = (state_ & n_readers_) - 1;
 				state_ &= ~n_readers_;
 				state_ |= num_readers;

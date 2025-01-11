@@ -3594,7 +3594,7 @@ int main() {
 						// assignment operator
 						ScopedObj->AddFunction("=", make_callable([selfPtr = std::weak_ptr<Class>(ScopedObj)](Any const& to, Any const& from)->Any {
 							DynamicObject& To = to.cast<DynamicObject&>();
-							To.m_objects.clear(); // NOT CONCURRENT-SAFE...
+							To.m_objects->clear(); // NOT CONCURRENT-SAFE...
 							DynamicObject const& From = from.cast<DynamicObject const&>();
 							if (auto self = selfPtr.lock()) {
 								self->ConstructMemberObjects(To, From);
@@ -3609,12 +3609,12 @@ int main() {
 							// ref access
 							ScopedObj->AddFunction(member_obj.first, make_callable([objName = member_obj.first](Any const& from)->Any {
 								DynamicObject& From = from.cast<DynamicObject&>();
-								return From.m_objects.at(objName);
+								return From.m_objects->at(objName);
 							}, ParamTypes({ ScopedObj->GetClassType().lock()->MakeRef() }), member_obj.second.lock()->MakeRef()));
 							// const ref access
 							ScopedObj->AddFunction(member_obj.first, make_callable([objName = member_obj.first](Any const& from)->Any {
 								DynamicObject const& From = from.cast<DynamicObject const&>();
-								return From.m_objects.at(objName);
+								return From.m_objects->at(objName);
 							}, ParamTypes({ ScopedObj->GetClassType().lock()->MakeConstRef() }), member_obj.second.lock()->MakeConstRef()));
 						}
 					}
@@ -3665,18 +3665,15 @@ int main() {
 							}
 						}));
 						// Upcast (const&)
-						ScopedObj->AddFunction("ScopedObj", make_callable([selfPtr = std::weak_ptr<Class>(ScopedObj)](Any const& from)->Any {
-							// ISSUE HERE. DOES NOT "ACTUALLY" CAST TO "ScopedObj". IT IS STILL A "ScopedObj2". THE LIE WAS NOT ENOUGH. 
-							// IDEA: set the dynamic object's object map to be a shared_ptr<map>, so that the objects can be easily shared, and we 
-							// would make the a new DynamicObject, change the "type", but have it share the same object pool. 
-
-							return from;
-						}, ParamTypes({ ScopedObj->GetClassType().lock()->MakeConstRef() }), parentClass->GetClassType().lock()->MakeConstRef()));
-						// Upcast (&)
-						ScopedObj->AddFunction("ScopedObj", make_callable([selfPtr = std::weak_ptr<Class>(ScopedObj)](Any const& from)->Any {
-
-							return from;
-						}, ParamTypes({ ScopedObj->GetClassType().lock()->MakeRef() }), parentClass->GetClassType().lock()->MakeRef()));
+						parentClass->AddFunction("ScopedObj", make_callable([selfPtr = std::weak_ptr<Class>(parentClass)](Any const& from)->Any {
+							DynamicObject const& obj = from.cast<DynamicObject const&>();
+							if (auto p = selfPtr.lock()) {
+								return DynamicObject(p->GetClassType(), obj.m_objects);
+							}
+							else {
+								return from;
+							}
+						}, ParamTypes({ ScopedObj->GetClassType().lock()->MakeConstRef() }), parentClass->GetClassType()));
 
 						// Copy constructor
 						ScopedObj->AddFunction("ScopedObj2", make_callable([selfPtr = std::weak_ptr<Class>(ScopedObj)](Any const& from)->Any {
@@ -3693,7 +3690,7 @@ int main() {
 						// assignment operator
 						ScopedObj->AddFunction("=", make_callable([selfPtr = std::weak_ptr<Class>(ScopedObj)](Any const& to, Any const& from)->Any {
 							DynamicObject& To = to.cast<DynamicObject&>();
-							To.m_objects.clear(); // NOT CONCURRENT-SAFE...
+							To.m_objects->clear(); // NOT CONCURRENT-SAFE...
 							DynamicObject const& From = from.cast<DynamicObject const&>();
 							if (auto self = selfPtr.lock()) {
 								self->ConstructMemberObjects(To, From);
@@ -3708,12 +3705,12 @@ int main() {
 						//	// ref access
 						//	ScopedObj->AddFunction(member_obj.first, make_callable([objName = member_obj.first](Any const& from)->Any {
 						//		DynamicObject& From = from.cast<DynamicObject&>();
-						//		return From.m_objects.at(objName);
+						//		return From.m_objects->at(objName);
 						//	}, ParamTypes({ ScopedObj->GetClassType().lock()->MakeRef() }), member_obj.second.lock()->MakeRef()));
 						//	// const ref access
 						//	ScopedObj->AddFunction(member_obj.first, make_callable([objName = member_obj.first](Any const& from)->Any {
 						//		DynamicObject const& From = from.cast<DynamicObject const&>();
-						//		return From.m_objects.at(objName);
+						//		return From.m_objects->at(objName);
 						//	}, ParamTypes({ ScopedObj->GetClassType().lock()->MakeConstRef() }), member_obj.second.lock()->MakeConstRef()));
 						//}
 					}

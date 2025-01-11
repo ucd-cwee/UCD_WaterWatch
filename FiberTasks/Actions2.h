@@ -890,10 +890,17 @@ namespace GoodLang {
 	// serves as an instance of a customizable class
 	class DynamicObject {
 	public:
-		DynamicObject() = default;
+		DynamicObject()
+			: m_classType(std::weak_ptr< Type_Info >())
+			, m_objects(std::make_shared<concurrency::concurrent_unordered_map<std::string, std::shared_ptr<Any>>>())
+		{};
 		DynamicObject(std::weak_ptr< Type_Info > const& type)
 			: m_classType(type)
-			, m_objects()
+			, m_objects(std::make_shared<concurrency::concurrent_unordered_map<std::string, std::shared_ptr<Any>>>())
+		{};
+		DynamicObject(std::weak_ptr< Type_Info > const& type, std::shared_ptr<concurrency::concurrent_unordered_map<std::string, std::shared_ptr<Any>>> objs)
+			: m_classType(type)
+			, m_objects(objs)
 		{};
 		DynamicObject(DynamicObject const&) = default;
 		DynamicObject(DynamicObject&&) = default;
@@ -903,7 +910,7 @@ namespace GoodLang {
 
 		std::weak_ptr< Type_Info >
 			m_classType;
-		concurrency::concurrent_unordered_map<std::string, std::shared_ptr<Any>>
+		std::shared_ptr<concurrency::concurrent_unordered_map<std::string, std::shared_ptr<Any>>>
 			m_objects;
 	};
 };
@@ -1893,6 +1900,41 @@ namespace GoodLang {
 	// Can be fixed by pre-fetching all (or most) of the conversions you plan to use. 
 	class TypeConverter {
 	private:
+		class UncopiableSharedLock {
+		public:
+			UncopiableSharedLock() = default;
+			UncopiableSharedLock(UncopiableSharedLock const&) : p_mut{} {};
+			UncopiableSharedLock(UncopiableSharedLock&&) : p_mut{} {};
+			UncopiableSharedLock& operator=(UncopiableSharedLock const&) {};
+			UncopiableSharedLock& operator=(UncopiableSharedLock&&) {};
+			~UncopiableSharedLock() = default;
+
+			// Exclusive ownership
+			void lock() {
+				p_mut.lock();
+			};
+			bool try_lock() {
+				return p_mut.try_lock();
+			};
+			void unlock() {
+				p_mut.unlock();
+			};
+
+			// Shared ownership
+			void lock_shared() {
+				p_mut.lock_shared();
+			};
+			bool try_lock_shared() {
+				return p_mut.try_lock_shared();
+			};
+			void unlock_shared() {
+				p_mut.unlock_shared();
+			};
+		private:
+			// fibers::synchronization::shared_mutex< fibers::synchronization::mutex > p_mut;
+			std::shared_mutex p_mut;
+		};
+
 		class UniformCostSearchNode {
 		public:
 			UniformCostSearchNode() = default;
@@ -1925,21 +1967,15 @@ namespace GoodLang {
 
 		TypeConverter() = default;
 		TypeConverter(TypeConverter const& rhs) {
-			auto locked2{ std::shared_lock(const_cast<TypeConverter&>(rhs).AllConversionsMut) };
 			AllConversions = rhs.AllConversions;
 		};
 		TypeConverter(TypeConverter&& rhs) {
-			auto locked2{ std::unique_lock(rhs.AllConversionsMut) };
 			AllConversions = std::move(rhs.AllConversions);
 		};
 		TypeConverter& operator=(TypeConverter const& rhs) {
-			auto locked1{ std::unique_lock(AllConversionsMut) };
-			auto locked2{ std::shared_lock(const_cast<TypeConverter&>(rhs).AllConversionsMut) };
 			AllConversions = rhs.AllConversions;
 		};
 		TypeConverter& operator=(TypeConverter&& rhs) {
-			auto locked1{ std::unique_lock(AllConversionsMut) };
-			auto locked2{ std::unique_lock(rhs.AllConversionsMut) };
 			AllConversions = std::move(rhs.AllConversions);
 		};
 		~TypeConverter() = default;
@@ -1947,11 +1983,12 @@ namespace GoodLang {
 	public:
 		std::string print() {
 			std::string out;
-			auto locked{ std::shared_lock(AllConversionsMut) };
 			for (auto& conv : AllConversions) {
 				out += (conv.first->name() + " (" + std::to_string(conv.first->GetHash()) + "): \n");
 				for (auto& conv2 : conv.second) {
-					out += (std::string("\t -> ") + conv2.first->name() + " (" + std::to_string(conv2.first->GetHash()) + ") " + " cost(" + std::to_string(conv2.second->cost()) + ") path(" + conv2.second->print() + ")\n");
+					auto& pair = conv2.second;
+					auto locked{ std::shared_lock(pair.first) };
+					out += (std::string("\t -> ") + conv2.first->name() + " (" + std::to_string(conv2.first->GetHash()) + ") " + " cost(" + std::to_string(pair.second->cost()) + ") path(" + pair.second->print() + ")\n");
 				}
 			}
 			return out;
@@ -1961,7 +1998,7 @@ namespace GoodLang {
 		// All conversions, will include "real" and cached conversions.
 		using conversionTreeType = concurrency::concurrent_unordered_map< std::shared_ptr<Type_Info>, // From
 			concurrency::concurrent_unordered_map< std::shared_ptr<Type_Info>, // To
-			    TypeConverterFunc // Function
+			    std::pair<UncopiableSharedLock, TypeConverterFunc> // Function
 			>
 		>;
 		//using conversionTreeType = std::unordered_map< std::shared_ptr<Type_Info>, // From
@@ -1970,12 +2007,12 @@ namespace GoodLang {
 		//	>
 		//>;
 		conversionTreeType AllConversions;
-		std::shared_mutex AllConversionsMut;
 
 		// may return nullptr
 		TypeConverterFunc GetExistingConverter(std::shared_ptr<Type_Info> const& From, std::shared_ptr<Type_Info> const& To) {
-			auto locked{ std::shared_lock(AllConversionsMut) };
-			return AllConversions[From][To];
+			auto& pair = AllConversions[From][To];
+			auto locked2{ std::shared_lock(pair.first) };
+			return pair.second;
 		};
 		// may return nullptr if it could not be built
 		TypeConverterFunc GetOrBuildConverter(std::shared_ptr<Type_Info> const& From, std::shared_ptr<Type_Info> const& To, bool forceBuild = false) {
@@ -2008,9 +2045,13 @@ namespace GoodLang {
 
 						// for each neighbor of the extracted vertex... 
 						for (auto& connection : AllConversions[smallestDistanceNode->thisVertexType]) {
-							if (connection.second) {
+							TypeConverterFunc func; {
+								auto locked{ std::shared_lock(connection.second.first) };
+								func = connection.second.second;
+							}
+							if (func) {
 								// do not use daisy-chained functions as candidates for new ones, since it can be harder to determine the actual conversion chain length
-								if (connection.second->IsDaisyChained()) continue;
+								if (func->IsDaisyChained()) continue;
 
 								// Is the neighbor already in the vertex set? 
 								auto& toType = connection.first;
@@ -2020,7 +2061,7 @@ namespace GoodLang {
 								}
 
 								// calculate distance value for the neighbor vertex
-								conversionCost = connection.second->cost();
+								conversionCost = func->cost();
 								if ((toVertex->bestPath.size() + 1) > (smallestDistanceNode->bestPath.size() + 1)) {
 									toVertex->distanceFromTarget = (smallestDistanceNode->distanceFromTarget + conversionCost);
 
@@ -2053,7 +2094,6 @@ namespace GoodLang {
 			// Add conversion for From to a large variety of types...
 			if (1) {
 				fibers::utilities::FastAllocator< UniformCostSearchNode> alloc;
-				AllConversionsMut.lock_shared();
 				auto conversions{ CreateConversionPaths(alloc, AllConversions, From, To) };
 
 				// All of these are for "From"...
@@ -2065,7 +2105,11 @@ namespace GoodLang {
 					//std::vector<std::shared_ptr< details::Type_Conversion_Base >>& conversionPath = conversion.second->bestPathConverters;
 
 					if (path.size() >= 1) {
-						TypeConverterFunc converterPtr = AllConversions[From][ToType];
+						TypeConverterFunc converterPtr; {
+							auto& pair = AllConversions[From][ToType];
+							auto locked2{ std::shared_lock(pair.first) };
+							converterPtr = pair.second;
+						}
 						if ((converterPtr && (converterPtr->NumConversions() < path.size())) || (converterPtr && (converterPtr->cost() <= cost))) {
 							continue;
 						}
@@ -2076,16 +2120,21 @@ namespace GoodLang {
 								TypeConverterFunc newConverter; {
 									// convert the "type path" to a actual daisy-chains of weak_ptrs to converter functions
 									std::vector<std::shared_ptr<details::Type_Conversion_Base>> functors; {
-										std::weak_ptr<Type_Info> currentNodeType = From;
+										std::shared_ptr<Type_Info> currentNodeType = From;
 
 										for (auto& nextNodeType : path) {
-											auto& func = AllConversions[currentNodeType.lock()][nextNodeType.lock()];
+											auto nextNodeTypePtr = nextNodeType.lock();
+
+											auto& pair = AllConversions[currentNodeType][nextNodeTypePtr];
+											auto locked2{ std::shared_lock(pair.first) };
+
+											TypeConverterFunc& func = pair.second;
 											if (!func) { // something went wrong -- this conversion has failed.
 												continue;
 											}
 											else {
 												functors.push_back(func);
-												currentNodeType = nextNodeType;
+												currentNodeType = nextNodeTypePtr;
 											}
 										}
 
@@ -2102,24 +2151,19 @@ namespace GoodLang {
 									}
 								}
 
-								AllConversionsMut.unlock_shared();
 								// insert it (requires hard lock)
 								if (newConverter) {
-									auto locked{ std::unique_lock(AllConversionsMut) };
-									converterPtr = AllConversions[From][ToType];
-									if ((converterPtr && (converterPtr->NumConversions() < path.size())) || (converterPtr && (converterPtr->cost() <= cost))) {}
-
-									//if (converterPtr && (converterPtr->cost() <= cost)) {}
+									auto& pair = AllConversions[From][ToType];
+									auto locked2{ std::unique_lock(pair.first) };
+									if ((pair.second && (pair.second->NumConversions() < path.size())) || (pair.second && (pair.second->cost() <= cost))) {}
 									else {
-										AllConversions[From][ToType] = newConverter;
+										pair.second = newConverter;
 									}
 								}
-								AllConversionsMut.lock_shared();
 							}
 						}
 					}
 				}
-				AllConversionsMut.unlock_shared();
 			}
 
 			// try and get our target type back ... 
@@ -2144,86 +2188,98 @@ namespace GoodLang {
 
 							// Base -> const Base
 							{
-								auto locked{ std::shared_lock(AllConversionsMut) };
-								ExistsAlready = AllConversions[baseType][constType].operator bool();
+								auto& pair = AllConversions[baseType][constType];
+								auto locked{ std::shared_lock(pair.first) };
+								ExistsAlready = pair.second.operator bool();
 							}
 							if (!ExistsAlready) {
 								if (auto func = std::shared_ptr< details::Type_Conversion_Base >(new details::Custom_Type_Conversion_Impl([](Any const& x)->Any {
 									return x;
 								}, baseType, constType, 0.0))) {
-									auto locked{ std::unique_lock(AllConversionsMut) };
-									AllConversions[func->from().lock()][func->to().lock()] = func;
+									auto& pair = AllConversions[func->from().lock()][func->to().lock()];
+									auto locked{ std::unique_lock(pair.first) };
+									pair.second = func;
 								}
 							}
 
 							// Base -> Base&
 							{
-								auto locked{ std::shared_lock(AllConversionsMut) };
-								ExistsAlready = AllConversions[baseType][refType].operator bool();
+								auto& pair = AllConversions[baseType][refType];
+								auto locked{ std::shared_lock(pair.first) };
+								ExistsAlready = pair.second.operator bool();
 							}
 							if (!ExistsAlready) {
 								if (auto func = std::shared_ptr< details::Type_Conversion_Base >(new details::Custom_Type_Conversion_Impl([](Any const& x)->Any {
 									return x;
 								}, baseType, refType, 0.0))) {
-									auto locked{ std::unique_lock(AllConversionsMut) };
-									AllConversions[func->from().lock()][func->to().lock()] = func;
+									auto& pair = AllConversions[func->from().lock()][func->to().lock()];
+									auto locked{ std::unique_lock(pair.first) };
+									pair.second = func;
 								}
 							}
 
 							// Base -> const Base&
 							{
-								auto locked{ std::shared_lock(AllConversionsMut) };
-								ExistsAlready = AllConversions[baseType][constRefType].operator bool();
+								auto& pair = AllConversions[baseType][constRefType];
+								auto locked{ std::shared_lock(pair.first) };
+								ExistsAlready = pair.second.operator bool();
 							}
 							if (!ExistsAlready) {
 								if (auto func = std::shared_ptr< details::Type_Conversion_Base >(new details::Custom_Type_Conversion_Impl([](Any const& x)->Any {
 									return x;
 								}, baseType, constRefType, 0.0))) {
-									auto locked{ std::unique_lock(AllConversionsMut) };
-									AllConversions[func->from().lock()][func->to().lock()] = func;
+									auto& pair = AllConversions[func->from().lock()][func->to().lock()];
+									auto locked{ std::unique_lock(pair.first) };
+									pair.second = func;
 								}
 							}
 							
 							// const Base -> const Base&
 							{
-								auto locked{ std::shared_lock(AllConversionsMut) };
-								ExistsAlready = AllConversions[constType][constRefType].operator bool();
+								auto& pair = AllConversions[constType][constRefType];
+								auto locked{ std::shared_lock(pair.first) };
+								ExistsAlready = pair.second.operator bool();
 							}
 							if (!ExistsAlready) {
 								if (auto func = std::shared_ptr< details::Type_Conversion_Base >(new details::Custom_Type_Conversion_Impl([](Any const& x)->Any {
 									return x;
 								}, constType, constRefType, 0.0))) {
-									auto locked{ std::unique_lock(AllConversionsMut) };
-									AllConversions[func->from().lock()][func->to().lock()] = func;
+									auto& pair = AllConversions[func->from().lock()][func->to().lock()];
+									auto locked{ std::unique_lock(pair.first) };
+									pair.second = func;
 								}
 							}
 							
 							// Base& -> const Base&
 							{
-								auto locked{ std::shared_lock(AllConversionsMut) };
-								ExistsAlready = AllConversions[refType][constRefType].operator bool();
+								auto& pair = AllConversions[refType][constRefType];
+								auto locked{ std::shared_lock(pair.first) };
+								ExistsAlready = pair.second.operator bool();
 							}
 							if (!ExistsAlready) {
 								if (auto func = std::shared_ptr< details::Type_Conversion_Base >(new details::Custom_Type_Conversion_Impl([](Any const& x)->Any {
 									return x;
 								}, refType, constRefType, 0.0))) {
-									auto locked{ std::unique_lock(AllConversionsMut) };
-									AllConversions[func->from().lock()][func->to().lock()] = func;
+									auto& pair = AllConversions[func->from().lock()][func->to().lock()];
+									auto locked{ std::unique_lock(pair.first) };
+									pair.second = func;
 								}
 							}
 
 							// const Base& -> Base
 							{
-								auto locked{ std::shared_lock(AllConversionsMut) };
-								ExistsAlready = AllConversions[constRefType][baseType].operator bool();
+								auto& pair = AllConversions[constRefType][baseType];
+								auto locked{ std::shared_lock(pair.first) };
+								ExistsAlready = pair.second.operator bool();
 							}
 							if (!ExistsAlready) {
 								auto& copyConstructor = baseType->GetCopyConstructor();
 								if (auto func = std::shared_ptr< details::Type_Conversion_Base >(new details::Custom_Type_Conversion_Impl([&copyConstructor](Any const& x)->Any {
 									return copyConstructor(x);
 								}, constRefType, baseType))) {
-									auto locked{ std::unique_lock(AllConversionsMut) };
-									AllConversions[func->from().lock()][func->to().lock()] = func;
+									auto& pair = AllConversions[func->from().lock()][func->to().lock()];
+									auto locked{ std::unique_lock(pair.first) };
+									pair.second = func;
 								}
 							}
 						}
@@ -2242,9 +2298,9 @@ namespace GoodLang {
 					auto& From = func->from();
 					auto& To = func->to();
 					if (1) {
-						auto locked{ std::unique_lock(AllConversionsMut) };
-						TypeConverterFunc& converterPtr = AllConversions[From.lock()][To.lock()];
-						converterPtr = func;
+						auto& pair = AllConversions[From.lock()][To.lock()];
+						auto locked{ std::unique_lock(pair.first) };
+						pair.second = func;
 					}
 					AddDefaultConverters(From);
 				}
@@ -2256,9 +2312,9 @@ namespace GoodLang {
 					auto& From = func->from();
 					auto& To = func->to();
 					if (1) {
-						auto locked{ std::unique_lock(AllConversionsMut) };
-						TypeConverterFunc& converterPtr = AllConversions[From.lock()][To.lock()];
-						converterPtr = func;
+						auto& pair = AllConversions[From.lock()][To.lock()];
+						auto locked{ std::unique_lock(pair.first) };
+						pair.second = func;
 					}
 					AddDefaultConverters(From);
 				}
@@ -2271,9 +2327,9 @@ namespace GoodLang {
 					auto& From = func->from();
 					auto& To = func->to();
 					if (1) {
-						auto locked{ std::unique_lock(AllConversionsMut) };
-						TypeConverterFunc& converterPtr = AllConversions[From.lock()][To.lock()];
-						converterPtr = func;
+						auto& pair = AllConversions[From.lock()][To.lock()];
+						auto locked{ std::unique_lock(pair.first) };
+						pair.second = func;
 					}
 				}
 			}
@@ -2283,9 +2339,9 @@ namespace GoodLang {
 					auto& From = func->from();
 					auto& To = func->to();
 					if (1) {
-						auto locked{ std::unique_lock(AllConversionsMut) };
-						TypeConverterFunc& converterPtr = AllConversions[From.lock()][To.lock()];
-						converterPtr = func;
+						auto& pair = AllConversions[From.lock()][To.lock()];
+						auto locked{ std::unique_lock(pair.first) };
+						pair.second = func;
 					}
 				}
 			}
@@ -2307,46 +2363,13 @@ namespace GoodLang {
 					auto& From = func->from();
 					auto& To = func->to();
 					if (1) {
-						auto locked{ std::unique_lock(AllConversionsMut) };
-						TypeConverterFunc& converterPtr = AllConversions[From.lock()][To.lock()];
-						converterPtr = func;
+						auto& pair = AllConversions[From.lock()][To.lock()];
+						auto locked{ std::unique_lock(pair.first) };
+						pair.second = func;
 					}
 					AddDefaultConverters(From);
 					AddDefaultConverters(To);
 				}
-				/*
-				// Add "contructor" class for const Type& -> Type, if possible
-				if (std::is_same< From_t, Any>::value || std::is_same< To_t, Any>::value) {}
-				else {
-					// Add "contructor" class for const Type& -> Type, if possible
-					if constexpr (std::is_copy_constructible<typename std::decay_t<From_t>>::value) {
-						auto func = details::MakeConversionFunc([](const typename std::decay_t<From_t>& f) -> typename std::decay_t<From_t> { return f; });
-						if (func) {
-							auto& From = func->from();
-							auto& To = func->to();
-							if (1) {
-								auto locked{ std::unique_lock(AllConversionsMut) };
-								TypeConverterFunc& converterPtr = AllConversions[From.lock()][To.lock()];
-								converterPtr = func;
-							}
-						}
-					}
-					if constexpr (std::is_copy_constructible<typename std::decay_t<To_t>>::value) {
-						auto func = details::MakeConversionFunc([](const typename std::decay_t<To_t>& f) -> typename std::decay_t<To_t> { return f; });
-						if (func) {
-							auto& From = func->from();
-							auto& To = func->to();
-							if (1) {
-								auto locked{ std::unique_lock(AllConversionsMut) };
-								TypeConverterFunc& converterPtr = AllConversions[From.lock()][To.lock()];
-								converterPtr = func;
-							}
-						}
-					}
-
-
-				}
-				*/
 			}
 		};
 		// if does not exists, will add it. If exists, overwrites if the converter is better-performance.
@@ -2375,45 +2398,13 @@ namespace GoodLang {
 							auto& From = func->from();
 							auto& To = func->to();
 							if (1) {
-								auto locked{ std::unique_lock(AllConversionsMut) };
-								TypeConverterFunc& converterPtr = AllConversions[From.lock()][To.lock()];
-								converterPtr = func;
+								auto& pair = AllConversions[From.lock()][To.lock()];
+								auto locked{ std::unique_lock(pair.first) };
+								pair.second = func;
 							}
 							AddDefaultConverters(From);
 							AddDefaultConverters(To);
 						}
-
-						/*
-						// Add "contructor" class for const Type& -> Type, if possible
-						if (fromTypePtr->is_any() || toTypePtr->is_any()) {}
-						else {
-							// Add "contructor" class for const Type& -> Type, if possible
-							if constexpr (std::is_copy_constructible<typename std::decay_t<From_t>>::value) {
-								auto func = details::MakeConversionFunc([](const typename std::decay_t<From_t>& f) -> typename std::decay_t<From_t> { return f; });
-								if (func) {
-									auto& From = func->from();
-									auto& To = func->to();
-									if (1) {
-										auto locked{ std::unique_lock(AllConversionsMut) };
-										TypeConverterFunc& converterPtr = AllConversions[From.lock()][To.lock()];
-										converterPtr = func;
-									}
-								}
-							}
-							if constexpr (std::is_copy_constructible<typename std::decay_t<To_t>>::value) {
-								auto func = details::MakeConversionFunc([](const typename std::decay_t<To_t>& f) -> typename std::decay_t<To_t> { return f; });
-								if (func) {
-									auto& From = func->from();
-									auto& To = func->to();
-									if (1) {
-										auto locked{ std::unique_lock(AllConversionsMut) };
-										TypeConverterFunc& converterPtr = AllConversions[From.lock()][To.lock()];
-										converterPtr = func;
-									}
-								}
-							}
-						}
-						*/
 					}
 					else {
 						// something went wrong
@@ -6186,8 +6177,8 @@ namespace GoodLang {
 		Proxy_Function BuildMatch(std::string const& functionName, std::vector<Any> const& params, TypeConverter& m_typeConverters, bool AllowTemplateInstantiation = true, bool AllowTypeConversion = true) {
 			static auto hasher{ std::hash<std::string>() };
 			static auto hasher2{ std::hash<ParamTypes>() };
-
-			if (auto func = at(functionName, params)) {
+			ParamTypes Params{ params };
+			if (auto func = at(functionName, Params)) {
 				// cache (or actual) found
 				return func->m_function;
 			}

@@ -1670,57 +1670,61 @@ namespace GoodLang {
 								// default value was provided -- try to create a copy.
 								try {
 									Any defaultParam = memberObjectClassType->CallFunction(memberObjectClassType->GetName(), { memberObjectDefaultInstance });
-									obj.m_objects[memberObjectName] = std::make_shared<Any>(std::move(defaultParam));
+									obj.m_objects->operator[](memberObjectName) = std::make_shared<Any>(std::move(defaultParam));
 									continue;
 								}
 								catch (...) {
 									// could not create the copy for some reason. Place the default value directly.
 									Any defaultParam = memberObjectDefaultInstance;
-									obj.m_objects[memberObjectName] = std::make_shared<Any>(std::move(defaultParam));
+									obj.m_objects->operator[](memberObjectName) = std::make_shared<Any>(std::move(defaultParam));
 									continue;
 								}
 							}
 							else {
 								// undeclared default value -- try to create a new instance.
 								Any defaultParam = memberObjectClassType->CallFunction(memberObjectClassType->GetName(), {});
-								obj.m_objects[memberObjectName] = std::make_shared<Any>(std::move(defaultParam));
+								obj.m_objects->operator[](memberObjectName) = std::make_shared<Any>(std::move(defaultParam));
 								continue;
 							}
 						}
 					}
 
 					// something went wrong -- set it to void. The class type was not provided, could not be found, or could not be instanced.
-					obj.m_objects[memberObjectName] = std::make_shared<Any>();
+					obj.m_objects->operator[](memberObjectName) = std::make_shared<Any>();
 				}
 			}
 		};
 		void ConstructMemberObjects(DynamicObject& obj, DynamicObject const& CopyFrom) const {
+			if (auto parentType = DerivedFrom.lock()) {
+				parentType->ConstructMemberObjects(obj, CopyFrom);
+			}
+
 			for (auto& member_obj : p_declared_member_objects) {
 				if (member_obj) {
 					std::string const& memberObjectName = member_obj->first;
 					if (auto memberObjectType = member_obj->second.first.lock()) {
 						if (auto memberObjectClassType = this->FindClass(memberObjectType)) {
-							auto copyObjPtr = CopyFrom.m_objects.find(memberObjectName);
-							if ((copyObjPtr != CopyFrom.m_objects.end()) && copyObjPtr->second) {
+							auto copyObjPtr = CopyFrom.m_objects->find(memberObjectName);
+							if ((copyObjPtr != CopyFrom.m_objects->end()) && copyObjPtr->second) {
 								auto& memberObjectDefaultInstance = copyObjPtr->second;
 								if (memberObjectDefaultInstance) {
 									// default value was provided -- try to create a copy.
 									try {
 										Any defaultParam = memberObjectClassType->CallFunction(memberObjectClassType->GetName(), { memberObjectDefaultInstance });
-										obj.m_objects[memberObjectName] = std::make_shared<Any>(std::move(defaultParam));
+										obj.m_objects->operator[](memberObjectName) = std::make_shared<Any>(std::move(defaultParam));
 										continue;
 									}
 									catch (...) {
 										// could not create the copy for some reason. Place the default value directly.
 										Any defaultParam = memberObjectDefaultInstance;
-										obj.m_objects[memberObjectName] = std::make_shared<Any>(std::move(defaultParam));
+										obj.m_objects->operator[](memberObjectName) = std::make_shared<Any>(std::move(defaultParam));
 										continue;
 									}
 								}
 								else {
 									// undeclared default value -- try to create a new instance.
 									Any defaultParam = memberObjectClassType->CallFunction(memberObjectClassType->GetName(), {});
-									obj.m_objects[memberObjectName] = std::make_shared<Any>(std::move(defaultParam));
+									obj.m_objects->operator[](memberObjectName) = std::make_shared<Any>(std::move(defaultParam));
 									continue;
 								}
 							}
@@ -1730,20 +1734,20 @@ namespace GoodLang {
 									// default value was provided -- try to create a copy.
 									try {
 										Any defaultParam = memberObjectClassType->CallFunction(memberObjectClassType->GetName(), { memberObjectDefaultInstance });
-										obj.m_objects[memberObjectName] = std::make_shared<Any>(std::move(defaultParam));
+										obj.m_objects->operator[](memberObjectName) = std::make_shared<Any>(std::move(defaultParam));
 										continue;
 									}
 									catch (...) {
 										// could not create the copy for some reason. Place the default value directly.
 										Any defaultParam = memberObjectDefaultInstance;
-										obj.m_objects[memberObjectName] = std::make_shared<Any>(std::move(defaultParam));
+										obj.m_objects->operator[](memberObjectName) = std::make_shared<Any>(std::move(defaultParam));
 										continue;
 									}
 								}
 								else {
 									// undeclared default value -- try to create a new instance.
 									Any defaultParam = memberObjectClassType->CallFunction(memberObjectClassType->GetName(), {});
-									obj.m_objects[memberObjectName] = std::make_shared<Any>(std::move(defaultParam));
+									obj.m_objects->operator[](memberObjectName) = std::make_shared<Any>(std::move(defaultParam));
 									continue;
 								}
 							}
@@ -1751,12 +1755,17 @@ namespace GoodLang {
 					}
 
 					// something went wrong -- set it to void. The class type was not provided, could not be found, or could not be instanced.
-					obj.m_objects[memberObjectName] = std::make_shared<Any>();
+					obj.m_objects->operator[](memberObjectName) = std::make_shared<Any>();
 				}
 			}
 		};
 		std::map<std::string, std::weak_ptr<Type_Info>> GetMemberObjects() const {
 			std::map<std::string, std::weak_ptr<Type_Info>> out;
+
+			if (auto parentType = DerivedFrom.lock()) {
+				out = parentType->GetMemberObjects();
+			}
+
 			for (auto x : p_declared_member_objects) {
 				if (x) {
 					out[x->first] = x->second.first;
