@@ -3,7 +3,6 @@
 #include "Fibers.h"
 #include "Actions2.h"
 
-#if 1
 namespace GoodLang {
 	// class "Var" is a generic container for dynamically typed objects for use in the scripting language. 
 	// It defers from "Any" because Any objects are for use in C++ to contain statically typed objects. 
@@ -22,15 +21,6 @@ namespace GoodLang {
 		Any p_data;
 
 	};
-
-
-
-
-
-
-
-
-
 
 	class Scope;
 	class Namespace;
@@ -1614,14 +1604,16 @@ namespace GoodLang {
 		Class(
 			std::shared_ptr<Scope> const& parent
 			, std::string const& Name
-			, std::shared_ptr<Type_Info> type = user_type_shared<void>().lock()
-			, std::weak_ptr<Class> inheritance = std::weak_ptr<Class>() // e.g. this class derives from another Class
+			, std::shared_ptr<Type_Info> type
+			, std::vector<std::weak_ptr<Class>> inheritance // e.g. this class derives from another Class
 		)
 			: Namespace(parent, Name)
 			, DerivedFrom(inheritance)
 		{
-			if (auto ptr = std::dynamic_pointer_cast<Namespace>(DerivedFrom.lock())) {
-				this->AddUsing(ptr);
+			for (auto& p : DerivedFrom) {
+				if (auto ptr = std::dynamic_pointer_cast<Namespace>(p.lock())) {
+					this->AddUsing(ptr);
+				}
 			}
 
 			if ((!type) || (type->is_void())) {
@@ -1634,7 +1626,15 @@ namespace GoodLang {
 			qualifiedNamespaceWithQualifiers = this->GetQualifiedNamespaceImpl(true);
 			qualifiedNamespaceWithoutQualifiers = this->GetQualifiedNamespaceImpl();
 		};
+		Class(std::shared_ptr<Namespace> const& parent, std::string const& Name, std::shared_ptr<Type_Info> type, std::vector<std::weak_ptr<Class>> inheritance)
+			: Class(std::dynamic_pointer_cast<Scope>(parent), Name, type, inheritance) {};
+		Class(std::shared_ptr<Class> const& parent, std::string const& Name, std::shared_ptr<Type_Info> type, std::vector<std::weak_ptr<Class>> inheritance)
+			: Class(std::dynamic_pointer_cast<Scope>(parent), Name, type, inheritance) {};
+		Class(std::shared_ptr<Global> const& parent, std::string const& Name, std::shared_ptr<Type_Info> type, std::vector<std::weak_ptr<Class>> inheritance)
+			: Class(std::dynamic_pointer_cast<Scope>(parent), Name, type, inheritance) {};
 
+		Class(std::shared_ptr<Scope> const& parent, std::string const& Name, std::shared_ptr<Type_Info> type = user_type_shared<void>().lock(), std::weak_ptr<Class> inheritance = std::weak_ptr<Class>()) 
+			: Class(std::dynamic_pointer_cast<Scope>(parent), Name, type, std::vector<std::weak_ptr<Class>>{ inheritance }) {};
 		Class(std::shared_ptr<Namespace> const& parent, std::string const& Name, std::shared_ptr<Type_Info> type = user_type_shared<void>().lock(), std::weak_ptr<Class> inheritance = std::weak_ptr<Class>())
 			: Class(std::dynamic_pointer_cast<Scope>(parent), Name, type, inheritance) {};
 		Class(std::shared_ptr<Class> const& parent, std::string const& Name, std::shared_ptr<Type_Info> type = user_type_shared<void>().lock(), std::weak_ptr<Class> inheritance = std::weak_ptr<Class>())
@@ -1647,8 +1647,8 @@ namespace GoodLang {
 		virtual bool IsClass() const override { return true; };
 
 	private:
-		std::weak_ptr<Class>
-			DerivedFrom; // e.g. this class derives from another Class
+		std::vector<std::weak_ptr<Class>>
+			DerivedFrom; // e.g. this class derives from other Classes
 		std::shared_ptr<Type_Info>
 			ClassType;
 		fibers::containers::Map<std::string, std::pair<std::weak_ptr<Type_Info>, std::shared_ptr<Any>>>
@@ -1656,8 +1656,10 @@ namespace GoodLang {
 
 	public:
 		void ConstructMemberObjects(DynamicObject& obj) const {
-			if (auto parentType = DerivedFrom.lock()) {
-				parentType->ConstructMemberObjects(obj);
+			for (auto& Parent : DerivedFrom) {
+				if (auto parentType = Parent.lock()) {
+					parentType->ConstructMemberObjects(obj);
+				}
 			}
 
 			for (auto& member_obj : p_declared_member_objects) {
@@ -1695,8 +1697,10 @@ namespace GoodLang {
 			}
 		};
 		void ConstructMemberObjects(DynamicObject& obj, DynamicObject const& CopyFrom) const {
-			if (auto parentType = DerivedFrom.lock()) {
-				parentType->ConstructMemberObjects(obj, CopyFrom);
+			for (auto& Parent : DerivedFrom) {
+				if (auto parentType = Parent.lock()) {
+					parentType->ConstructMemberObjects(obj, CopyFrom);
+				}
 			}
 
 			for (auto& member_obj : p_declared_member_objects) {
@@ -1759,11 +1763,25 @@ namespace GoodLang {
 				}
 			}
 		};
+		// Gets the member objects of just this class
 		std::map<std::string, std::weak_ptr<Type_Info>> GetMemberObjects() const {
 			std::map<std::string, std::weak_ptr<Type_Info>> out;
 
-			if (auto parentType = DerivedFrom.lock()) {
-				out = parentType->GetMemberObjects();
+			for (auto x : p_declared_member_objects) {
+				if (x) {
+					out[x->first] = x->second.first;
+				}
+			}
+			return out;
+		};
+		// Gets the member objects of this class all all inherited classes (recursively)
+		std::map<std::string, std::weak_ptr<Type_Info>> GetAllMemberObjects() const {
+			std::map<std::string, std::weak_ptr<Type_Info>> out;
+
+			for (auto& Parent : DerivedFrom) {
+				if (auto parentType = Parent.lock()) {
+					out = parentType->GetAllMemberObjects();
+				}
 			}
 
 			for (auto x : p_declared_member_objects) {
@@ -1773,7 +1791,6 @@ namespace GoodLang {
 			}
 			return out;
 		};
-
 	public:
 		virtual std::weak_ptr<Type_Info> GetClassType() const override { return ClassType; };
 		void DeclareMemberObject(std::string const& name, std::weak_ptr<Type_Info> type, std::shared_ptr<Any> defaultValue = nullptr) {
@@ -1820,12 +1837,13 @@ namespace GoodLang {
 			}
 
 			// test my inherited namespace.
-			if (auto p = std::dynamic_pointer_cast<Scope>(DerivedFrom.lock())) {
-				if (p->TryFindNearestScopeWhere(bestMatch, func, CheckedSelf, CheckedAll)) {
-					return true;
+			for (auto& Parent : DerivedFrom){
+				if (auto p = std::dynamic_pointer_cast<Scope>(Parent.lock())) {
+					if (p->TryFindNearestScopeWhere(bestMatch, func, CheckedSelf, CheckedAll)) {
+						return true;
+					}
 				}
 			}
-
 
 			// test all of my parents
 			auto parentPtr = this->p_parent.lock();
@@ -1936,9 +1954,11 @@ namespace GoodLang {
 			}
 
 			// test my inherited namespace.
-			if (auto p = std::dynamic_pointer_cast<Scope>(DerivedFrom.lock())) {
-				if (p->TryFindNearestNamespaceWhere(bestMatch, func, CheckedSelf, CheckedAll)) {
-					return true;
+			for (auto& Parent : DerivedFrom) {
+				if (auto p = std::dynamic_pointer_cast<Scope>(Parent.lock())) {
+					if (p->TryFindNearestNamespaceWhere(bestMatch, func, CheckedSelf, CheckedAll)) {
+						return true;
+					}
 				}
 			}
 
@@ -2237,7 +2257,7 @@ namespace GoodLang {
 
 					// Constructors
 					classPtr->AddFunction("string", make_callable([]() -> std::string { return std::string{}; }));
-					// classPtr->AddFunction("string", make_callable([](std::string const& makeCopy) -> std::string { return makeCopy; }));
+					classPtr->AddFunction("string", make_callable([](std::string const& makeCopy) -> std::string { return makeCopy; }));
 					classPtr->AddFunction("=", make_callable([](Any const& a, std::string const& b) -> Any { std::string& out = a.cast(); out = b; return a; }, ParamTypes({ user_type_shared<std::string>().lock()->MakeRef(), user_type_shared<std::string>().lock()->MakeConstRef() })));
 
 					// Comparisons
@@ -2842,4 +2862,3 @@ namespace GoodLang {
 
 	};
 };
-#endif
