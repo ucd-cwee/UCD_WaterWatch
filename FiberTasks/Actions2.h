@@ -1900,39 +1900,54 @@ namespace GoodLang {
 	// Can be fixed by pre-fetching all (or most) of the conversions you plan to use. 
 	class TypeConverter {
 	private:
+		// shared lock that prioritizes uncontested shared access over (hopefully) rarer write access. 
 		class UncopiableSharedLock {
 		public:
 			UncopiableSharedLock() = default;
-			UncopiableSharedLock(UncopiableSharedLock const&) : p_mut{} {};
-			UncopiableSharedLock(UncopiableSharedLock&&) : p_mut{} {};
+			UncopiableSharedLock(UncopiableSharedLock const&) {};
+			UncopiableSharedLock(UncopiableSharedLock&&) {};
 			UncopiableSharedLock& operator=(UncopiableSharedLock const&) {};
 			UncopiableSharedLock& operator=(UncopiableSharedLock&&) {};
 			~UncopiableSharedLock() = default;
 
 			// Exclusive ownership
 			void lock() {
-				p_mut.lock();
+				while (!writeCount.TryIncrementTo(1)) {}
+				while (readCount.GetValue() != 0) {}
 			};
 			bool try_lock() {
-				return p_mut.try_lock();
+				while (!writeCount.TryIncrementTo(1)) { return false; }
+				while (readCount.GetValue() != 0) { writeCount.Decrement(); return false; }
+				return true;
 			};
 			void unlock() {
-				p_mut.unlock();
+				writeCount.Decrement();
 			};
 
 			// Shared ownership
 			void lock_shared() {
-				p_mut.lock_shared();
+				readCount.Increment();
+				while (writeCount.GetValue() != 0) {
+					readCount.Decrement();
+					readCount.Increment();
+				}				
 			};
 			bool try_lock_shared() {
-				return p_mut.try_lock_shared();
+				readCount.Increment();
+				while (writeCount.GetValue() != 0) {
+					readCount.Decrement();
+					return false;
+				}
+				return true;
 			};
 			void unlock_shared() {
-				p_mut.unlock_shared();
+				readCount.Decrement();
 			};
+		
 		private:
-			// fibers::synchronization::shared_mutex< fibers::synchronization::mutex > p_mut;
-			std::shared_mutex p_mut;
+			fibers::synchronization::impl::InterlockedLong readCount{ 0 };
+			fibers::synchronization::impl::InterlockedLong writeCount{ 0 };
+			// std::shared_mutex p_mut;
 		};
 
 		class UniformCostSearchNode {
