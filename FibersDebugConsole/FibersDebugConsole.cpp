@@ -2790,30 +2790,27 @@ int main() {
 				scope_1->SetSelf(scope_1);
 				scope_1->AddBuiltIns();
 
-				// "Any" type for scripting 
-				//if (1) {
-				//	auto AnyClass = std::make_shared<Class>(scope_1, "Any", user_type_shared<Any>());
-				//	AnyClass->SetSelf(AnyClass);
-				//	scope_1->AddChild(AnyClass);
+				// to_hash
+				if (1) {					
+					fibers::parallel::For(0, numIterations, [&](int i) {
+						scope_1->Cast<size_t>(scope_1->CallFunction("to_hash", { 100 }));
+						scope_1->Cast<size_t>(scope_1->CallFunction("to_hash", { std::string("TEST") }));
+						scope_1->Cast<size_t>(scope_1->CallFunction("to_hash", { 100ll }));
+						scope_1->Cast<size_t>(scope_1->CallFunction("to_hash", { Var(100) }));
+						scope_1->Cast<size_t>(scope_1->CallFunction("to_hash", { Var(100) }));
+					});
+				}
 
-				//	// Constructors
-				//	AnyClass->AddFunction("Any", make_callable([]() -> Any { return Any{}; }));
-				//	AnyClass->AddFunction("Any", make_callable([](Any const& makeCopy) -> Any { return makeCopy; }));
-				//	AnyClass->AddFunction("=", make_callable([](Any& a, Any const& b) -> Any { a = b; return a; }
-				//		, ParamTypes({ user_type_shared<Any>().lock()->MakeRef(), user_type_shared<Any>().lock()->MakeConstRef() })
-				//	));
-				//	AnyClass->AddFunction("==", make_callable([](Any const& x, Any const& y) -> bool { return x == y; }));
-				//	AnyClass->AddFunction("!=", make_callable([](Any const& x, Any const& y) -> bool { return x != y; }));
-				//	 AnyClass->AddFunction("to_string", make_callable([](Any const& o) -> std::string { return std::to_string(o); }));
-
-				//}
-
-
-
-
-
-
-
+				// to_string
+				if (1) {
+					fibers::parallel::For(0, numIterations, [&](int i) {
+						scope_1->Cast<std::string>(scope_1->CallFunction("to_string", { 100 }));
+						scope_1->Cast<std::string>(scope_1->CallFunction("to_string", { std::string("TEST") }));
+						scope_1->Cast<std::string>(scope_1->CallFunction("to_string", { 100ll }));
+						scope_1->Cast<std::string>(scope_1->CallFunction("to_string", { Var(100) }));
+						scope_1->Cast<std::string>(scope_1->CallFunction("to_string", { Var(100) }));
+					});
+				}
 
 				// FindNamespace
 				if (1) {
@@ -3653,6 +3650,10 @@ int main() {
 						//ScopedObj->DeclareMemberObject("number", user_type_shared<double>()); // if no default is provided, it will make its own at runtime
 						//ScopedObj->DeclareMemberObject("value", user_type_shared<Var>()); // if no default is provided, it will make its own at runtime
 
+						// ScopedObj->AddDefaultConstructors();
+
+
+
                         // Default constructor
 						ScopedObj->AddFunction("ScopedObj2", make_callable([selfPtr = std::weak_ptr<Class>(ScopedObj)]()->Any {
 							if (auto self = selfPtr.lock()) {
@@ -3668,7 +3669,7 @@ int main() {
 						parentClass->AddFunction("ScopedObj", make_callable([selfPtr = std::weak_ptr<Class>(parentClass)](Any const& from)->Any {
 							DynamicObject const& obj = from.cast<DynamicObject const&>();
 							if (auto p = selfPtr.lock()) {
-								return DynamicObject(p->GetClassType(), obj.m_objects);
+								return DynamicObject(p->GetClassType(), obj);
 							}
 							else {
 								return from;
@@ -3767,7 +3768,7 @@ int main() {
 						parentClass->AddFunction("ScopedObj2", make_callable([selfPtr = std::weak_ptr<Class>(parentClass)](Any const& from)->Any {
 							DynamicObject const& obj = from.cast<DynamicObject const&>();
 							if (auto p = selfPtr.lock()) {
-								return DynamicObject(p->GetClassType(), obj.m_objects);
+								return DynamicObject(p->GetClassType(), obj);
 							}
 							else {
 								return from;
@@ -3843,12 +3844,15 @@ int main() {
 
 					EXPECT_EQ(true, scope_1->Cast<bool>(scope_1->CallFunction("==", { scope_1->CallFunction("name2", { instance2 }), std::string("ScopedObj3") })));
 
+
+
 				}
 
 				// Test a multi-inherited custom class (e.g:)
 				// class A{}
 			    // class B{}
 				// class C : A, B {}
+				// Additionally, this demo's overloaded functions (from C) being accessed in parent classes (e.g. A and B) after casting
 				if (1) {
 					// Class A
 					if (1) {
@@ -4044,7 +4048,7 @@ int main() {
 							classA->AddFunction(classA->GetName(), make_callable([selfPtr = std::weak_ptr<Class>(classA)](Any const& from)->Any {
 								DynamicObject const& obj = from.cast<DynamicObject const&>();
 								if (auto p = selfPtr.lock()) {
-									return DynamicObject(p->GetClassType(), obj.m_objects);
+									return DynamicObject(p->GetClassType(), obj);
 								}
 								else {
 									return from;
@@ -4054,7 +4058,7 @@ int main() {
 							classB->AddFunction(classB->GetName(), make_callable([selfPtr = std::weak_ptr<Class>(classB)](Any const& from)->Any {
 								DynamicObject const& obj = from.cast<DynamicObject const&>();
 								if (auto p = selfPtr.lock()) {
-									return DynamicObject(p->GetClassType(), obj.m_objects);
+									return DynamicObject(p->GetClassType(), obj);
 								}
 								else {
 									return from;
@@ -4111,10 +4115,29 @@ int main() {
 
 						scope_1->CallFunction("=", { scope_1->CallFunction("name", { instance }), std::string("test") });
 						EXPECT_EQ(true, scope_1->Cast<bool>(scope_1->CallFunction(">=", { scope_1->CallFunction("name_len", {instance }), 4 })));
-
 						EXPECT_EQ(500, scope_1->Cast<size_t>(scope_1->CallFunction("name_len2", { instance })));
+						
+						// Demonstrate "overwritten" functions
+						auto B_Cast = scope_1->CallFunction("B", { instance });
+						auto varV_from_BCast = scope_1->CallFunction("var", { B_Cast }); 
+						EXPECT_EQ(varV_from_BCast.IsTypeOf<double>(), false);
+						EXPECT_EQ(varV_from_BCast.IsTypeOf<Var>(), true); 
+
+						// Demonstrate calling specialized (e.g. from "C") functions from parent classes ("A")
+						auto A_Cast = scope_1->CallFunction("A", { instance });
+						auto varV_from_ACast = scope_1->CallFunction("var", { B_Cast }); // Normally not possible to call this since "A" does not have this function, but since the child does have it, it'll succeed.
+						EXPECT_EQ(varV_from_ACast.IsTypeOf<double>(), false); 
+						EXPECT_EQ(varV_from_ACast.IsTypeOf<Var>(), true);
 					}
 				}
+
+				// the engine does NOT support inheriting from built-in types, and will silently fail if you do attempt to do this.
+				
+
+
+
+
+
 			}
 		}
 		

@@ -1199,7 +1199,7 @@ namespace GoodLang {
 					{
 						auto firstParam = params.begin();
 						if (firstParam != params.end()) {
-							firstParamScopePtr = std::dynamic_pointer_cast<Scope>(this->FindClass(firstParam->Type()));
+							firstParamScopePtr = std::dynamic_pointer_cast<Scope>(this->FindClass(firstParam->ActualType())); // firstParam->Type()
 						}
 					}
 					// While we normally try to minimize the conversion cost, 
@@ -1378,7 +1378,7 @@ namespace GoodLang {
 				std::string params_str;
 				for (auto& p : params) {
 					std::string className = p.TypeName(); {
-						if (auto classPtr = std::dynamic_pointer_cast<Scope>(this->FindClass(p.Type()))) {
+						if (auto classPtr = std::dynamic_pointer_cast<Scope>(this->FindClass(p.ActualType()))) {
 							className = classPtr->GetName();
 						}
 					}
@@ -1601,6 +1601,8 @@ namespace GoodLang {
 	public:
 		friend class Global;
 
+		// TO-DO, throw an error when constructing Class if the inheritance list utilizes ANY built-in types.
+		// The current design simply does not support built-in types as inherited objects. 
 		Class(
 			std::shared_ptr<Scope> const& parent
 			, std::string const& Name
@@ -1610,6 +1612,17 @@ namespace GoodLang {
 			: Namespace(parent, Name)
 			, DerivedFrom(inheritance)
 		{
+			for (int i = DerivedFrom.size() - 1; i >= 0; i--) {
+				if (auto InteritedClass = DerivedFrom[i].lock()) {
+					if (auto InteritedClassType = InteritedClass->GetClassType().lock()) {
+						if (InteritedClassType->IsBuiltInType()) { // cannot include built-in types
+							DerivedFrom.erase(DerivedFrom.begin() + i); // remove this inheritance from the list, and consider throwing an error
+							// currently not throwing because that would prevent calling the destructor, which is 100% a requirement to prevent a memory leak.
+						}
+					}
+				}
+			}
+
 			for (auto& p : DerivedFrom) {
 				if (auto ptr = std::dynamic_pointer_cast<Namespace>(p.lock())) {
 					this->AddUsing(ptr);
@@ -1791,6 +1804,83 @@ namespace GoodLang {
 			}
 			return out;
 		};
+
+	public:
+		void AddDefaultConstructors() {
+			// note, only do this if this class is a scripted type
+			if (ClassType && !ClassType->IsBuiltInType()) {
+				// Default constructor
+				this->AddFunction(this->GetName(), make_callable([selfPtr = std::weak_ptr<Class>(std::dynamic_pointer_cast<Class>(p_self.lock()))]()->Any {
+					if (auto self = selfPtr.lock()) {
+						DynamicObject out{ self->GetClassType() };
+						self->ConstructMemberObjects(out); // should automatically construct parent's objects in-order 
+						return out;
+					}
+					else {
+						throw(exception::not_found_error("Custom class type was no longer available"));
+					}
+				}));
+
+				// Copy constructor
+				this->AddFunction(this->GetName(), make_callable([selfPtr = std::weak_ptr<Class>(std::dynamic_pointer_cast<Class>(p_self.lock()))](Any const& from)->Any {
+					DynamicObject const& obj = from.cast<DynamicObject const&>();
+					if (auto self = selfPtr.lock()) {
+						DynamicObject out{ self->GetClassType() };
+						self->ConstructMemberObjects(out, obj);
+						return out;
+					}
+					else {
+						throw(exception::not_found_error("Custom class type was no longer available"));
+					}
+				}, ParamTypes({ ClassType->MakeConstRef() })));
+
+				// assignment operator
+				this->AddFunction("=", make_callable([selfPtr = std::weak_ptr<Class>(std::dynamic_pointer_cast<Class>(p_self.lock()))](Any const& to, Any const& from)->Any {
+					DynamicObject& To = to.cast<DynamicObject&>();
+					// To.m_objects->clear(); // NOT CONCURRENT-SAFE...
+					DynamicObject const& From = from.cast<DynamicObject const&>();
+					if (auto self = selfPtr.lock()) {
+						self->ConstructMemberObjects(To, From);
+						return to;
+					}
+					else {
+						throw(exception::not_found_error("Custom class type was no longer available"));
+					}
+				}, ParamTypes({ ClassType->MakeRef(), ClassType->MakeConstRef() })));
+
+				// upcast constructor for inherited types
+				for (auto& derivedFrom : DerivedFrom) {
+					if (auto parentClass = derivedFrom.lock()) {
+						// Upcast (const&)
+						parentClass->AddFunction(parentClass->GetName(), make_callable([selfPtr = std::weak_ptr<Class>(std::dynamic_pointer_cast<Class>(p_self.lock()))](Any const& from)->Any {
+							DynamicObject const& obj = from.cast<DynamicObject const&>();
+							if (auto p = selfPtr.lock()) {
+								return DynamicObject(p->GetClassType(), obj);
+							}
+							else {
+								return from;
+							}
+						}, ParamTypes({ ClassType->MakeConstRef() }), parentClass->GetClassType()));
+					}
+				}
+
+				// Member objects
+				for (auto& member_obj : this->GetMemberObjects()) {
+					// ref access
+					this->AddFunction(member_obj.first, make_callable([objName = member_obj.first](Any const& from)->Any {
+						DynamicObject& From = from.cast<DynamicObject&>();
+						return From.m_objects->at(objName);
+					}, ParamTypes({ ClassType->MakeRef() }), member_obj.second.lock()->MakeRef()));
+					// const ref access
+					this->AddFunction(member_obj.first, make_callable([objName = member_obj.first](Any const& from)->Any {
+						DynamicObject const& From = from.cast<DynamicObject const&>();
+						return From.m_objects->at(objName);
+					}, ParamTypes({ ClassType->MakeConstRef() }), member_obj.second.lock()->MakeConstRef()));
+				}
+
+			}
+		};
+
 	public:
 		virtual std::weak_ptr<Type_Info> GetClassType() const override { return ClassType; };
 		void DeclareMemberObject(std::string const& name, std::weak_ptr<Type_Info> type, std::shared_ptr<Any> defaultValue = nullptr) {
@@ -2196,7 +2286,9 @@ namespace GoodLang {
 				classPtr->AddFunction("max", make_callable([]() { return std::numeric_limits<decltype(typeImpl)>::max(); }));
 				classPtr->AddFunction("min", make_callable([]() { return std::numeric_limits<decltype(typeImpl)>::lowest(); }));
 				classPtr->AddFunction("to_string", make_callable([](decltype(typeImpl) const& o) -> std::string { return std::to_string(o); }));
-
+				if constexpr (fibers::utilities::is_std_hashable_v<decltype(typeImpl)>) {
+					classPtr->AddFunction("to_hash", make_callable([](decltype(typeImpl) const& o) -> size_t { return std::hash<decltype(typeImpl)>()(o); }));
+				}
 			};
 
 			// Built-in types
@@ -2281,6 +2373,7 @@ namespace GoodLang {
 					classPtr->AddFunction("substr", make_callable([](std::string const& x, size_t Off) -> std::string { return x.substr(Off); })/*, { "input", "Off" }*/);
 					classPtr->AddFunction("substr", make_callable([](std::string const& x, size_t Off, size_t Count) -> std::string { return x.substr(Off, Count); })/*, { "input", "Off", "Count" }*/);
 					classPtr->AddFunction("to_string", make_callable([](std::string const& o) -> std::string { return o; }));
+					classPtr->AddFunction("to_hash", make_callable([](std::string const& o) -> size_t { return std::hash<std::string>()(o); }));
 
 					// Objects or Constants
 					classPtr->AddObj("npos", std::make_shared<Any>(std::string::npos));
@@ -2310,6 +2403,11 @@ namespace GoodLang {
 						else if (auto p = from.lock()) return p->name();
 						else return user_type<void>().name();
 					}));
+					classPtr->AddFunction("to_hash", make_callable([self = classPtr->p_self](std::weak_ptr<Type_Info> const& from) -> size_t {
+						if (auto p = self.lock()) if (auto p2 = p->FindClass(from)) return std::hash<std::string>()(p2->GetName());
+						else if (auto p = from.lock()) return std::hash<std::string>()(p->name());
+						else return std::hash<std::string>()(user_type<void>().name());
+					}));
 					classPtr->AddFunction("name", make_callable([self = classPtr->p_self](std::weak_ptr<Type_Info> const& from)->std::string {
 						if (auto p = self.lock()) if (auto p2 = p->FindClass(from)) return p2->GetName();
 						else if (auto p = from.lock()) return p->name();
@@ -2331,6 +2429,21 @@ namespace GoodLang {
 						if (auto p = from.lock()) return p->is_void();
 						else return true;
 					}));
+					//classPtr->AddFunction("member_objects", make_callable([self = classPtr->p_self](std::weak_ptr<Type_Info> const& from) -> 
+					//	fibers::containers::Map<std::string, Any> {
+					//	if (auto p = self.lock()) {
+					//		if (auto p2 = p->FindClass(from)) {
+					//			fibers::containers::Map<std::string, Any> out;
+					//			for (auto& x : p2->GetAllMemberObjects()) {
+					//				out.emplace(x.first, x.second);
+					//			}
+					//			return out;
+					//		}
+					//	}
+					//	return {};
+					//}));
+
+
 				}
 
 				// Units
@@ -2374,6 +2487,7 @@ namespace GoodLang {
 							value_namespace->AddFunction("to_string", make_callable([](Units::value const& x)->std::string {
 								return x.ToString();
 							}));
+							// hashes do not exist for Units because their values are only approximations
 
 							// Constructors
 							value_namespace->AddFunction("value", make_callable([]() -> Units::value { return Units::value{}; }));
@@ -2462,6 +2576,8 @@ namespace GoodLang {
 					classPtr->AddFunction("max", make_callable([]() { return std::numeric_limits<thisType>::max(); }));
 					classPtr->AddFunction("min", make_callable([]() { return std::numeric_limits<thisType>::lowest(); }));
 					classPtr->AddFunction("to_string", make_callable([](thisType const& o) -> std::string { return o.c_str(); }));
+					classPtr->AddFunction("to_hash", make_callable([](thisType const& o) -> size_t { return (size_t)(double)(Units::millisecond)(Units::second)o; }));
+
 					classPtr->AddFunction("Epoch", make_callable(&DateTime::Epoch));
 					classPtr->AddFunction("Now", make_callable(&DateTime::Now));
 					// classPtr->AddFunction("Now", make_callable([]() -> DateTime { return DateTime::Now(); }));					
@@ -2542,9 +2658,23 @@ namespace GoodLang {
 						return obj.p_data.Type();
 					}));
 					// Returns a stringified version of the provided Any obj. This is meant to be a fall-back template whenever no specialization is available. 
-					this->AddFunction("to_string", make_callable([](Var const& x) -> std::string {
-						auto name = x.p_data.TypeName();
-						return Units::printf("`%s`", name.c_str());
+					this->AddFunction("to_string", make_callable([self = std::weak_ptr<Class>(classPtr)](Var const& x) -> std::string {
+						if (auto Self = self.lock()) {
+							return Self->Cast<std::string>(Self->CallFunction("to_string", { x.p_data }));
+						}
+						else {
+							auto name = x.p_data.TypeName();
+							return Units::printf("`%s`", name.c_str());
+						}
+					}));
+					// Returns a stringified version of the provided Any obj. This is meant to be a fall-back template whenever no specialization is available. 
+					this->AddFunction("to_hash", make_callable([self = std::weak_ptr<Class>(classPtr)](Var const& x) -> size_t {
+						if (auto Self = self.lock()) {
+							return Self->Cast<size_t>(Self->CallFunction("to_hash", { x.p_data }));
+						}
+						else {
+							throw exception::not_found_error("to_hash");
+						}
 					}));
 				}
 

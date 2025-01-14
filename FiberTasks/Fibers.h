@@ -1667,6 +1667,17 @@ namespace fibers {
 	};
 
 	namespace utilities {
+		template <typename T, typename = std::void_t<>>
+		struct is_std_hashable : std::false_type { };
+
+		template <typename T>
+		struct is_std_hashable<T, std::void_t<decltype(std::declval<std::hash<T>>()(std::declval<T>()))>> : std::true_type { };
+
+		template <typename T>
+		constexpr bool is_std_hashable_v = is_std_hashable<T>::value;
+
+
+
 		/* 
 		Allows user to queue ptrs for deletion or actions to take place during garbage collection phases. Garbage collection or deletion can be postponed until safe, utilizing scope guards. 
 		If a thread is accessing a pointer and is at-risk for another thread deleting the pointer, then this GC tool may be a solution. Guarrantees that any ptr's queued for deletion will be deleted, even if this GC goes out-of-scope.
