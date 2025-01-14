@@ -1903,6 +1903,7 @@ namespace GoodLang {
 		// shared lock that prioritizes uncontested shared access over (hopefully) rarer write access. 
 		class UncopiableSharedLock {
 		public:
+#define UncopiableSharedLockAsSharedMutex
 			UncopiableSharedLock() = default;
 			UncopiableSharedLock(UncopiableSharedLock const&) {};
 			UncopiableSharedLock(UncopiableSharedLock&&) {};
@@ -1912,51 +1913,136 @@ namespace GoodLang {
 
 			// Exclusive ownership
 			void lock() {
-				while (!writeCount.TryIncrementTo(1)) {}
-				while (readCount.GetValue() != 0) {}
+#ifndef UncopiableSharedLockAsSharedMutex
+				while (!writeCount.TryIncrementTo(1)) { std::this_thread::yield(); }
+				while (readCount.GetValue() != 0) { std::this_thread::yield(); }
+#else
+				p_mut.lock();
+#endif
 			};
 			bool try_lock() {
+#ifndef UncopiableSharedLockAsSharedMutex
 				while (!writeCount.TryIncrementTo(1)) { return false; }
 				while (readCount.GetValue() != 0) { writeCount.Decrement(); return false; }
 				return true;
+#else
+				return p_mut.try_lock();
+#endif
 			};
 			void unlock() {
+#ifndef UncopiableSharedLockAsSharedMutex
 				writeCount.Decrement();
+#else
+				p_mut.unlock();
+#endif
 			};
 
 			// Shared ownership
 			void lock_shared() {
+#ifndef UncopiableSharedLockAsSharedMutex
 				readCount.Increment();
 				while (writeCount.GetValue() != 0) {
 					readCount.Decrement();
+					std::this_thread::yield();
 					readCount.Increment();
 				}				
+#else
+				p_mut.lock_shared();
+#endif
 			};
 			bool try_lock_shared() {
+#ifndef UncopiableSharedLockAsSharedMutex
 				readCount.Increment();
 				while (writeCount.GetValue() != 0) {
 					readCount.Decrement();
 					return false;
 				}
 				return true;
+#else
+				return p_mut.try_lock_shared();
+#endif
 			};
 			void unlock_shared() {
+#ifndef UncopiableSharedLockAsSharedMutex
 				readCount.Decrement();
+#else
+				p_mut.unlock_shared();
+#endif
 			};
-		
+#ifndef UncopiableSharedLockAsSharedMutex
+			// gets the unique lock while unlocking the shared lock.
+			void lock_upgrade_from_shared() {
+
+				while (!writeCount.TryIncrementTo(1)) {
+					readCount.Decrement();
+					std::this_thread::yield();
+					readCount.Increment();
+				}
+				readCount.Decrement();
+				while (readCount.GetValue() != 0) { std::this_thread::yield(); }
+			};
+#endif	
+
 		private:
+#ifndef UncopiableSharedLockAsSharedMutex
 			fibers::synchronization::impl::InterlockedLong readCount{ 0 };
 			fibers::synchronization::impl::InterlockedLong writeCount{ 0 };
-			// std::shared_mutex p_mut;
+#else
+			std::shared_mutex p_mut;
+#endif
+		};
+
+		class UniformCostSearchNodeBestPath {
+		public:
+			UniformCostSearchNodeBestPath() = default;
+			UniformCostSearchNodeBestPath(UniformCostSearchNodeBestPath* previous, std::weak_ptr<Type_Info> const& nextNodePath) 
+				:previousBestPath(previous)
+				, thisNodePath(nextNodePath)
+			{};
+			UniformCostSearchNodeBestPath(UniformCostSearchNodeBestPath const&) = default;
+			UniformCostSearchNodeBestPath(UniformCostSearchNodeBestPath &&) = default;
+			UniformCostSearchNodeBestPath& operator=(UniformCostSearchNodeBestPath const&) = default;
+			UniformCostSearchNodeBestPath& operator=(UniformCostSearchNodeBestPath&&) = default;
+			~UniformCostSearchNodeBestPath() = default;
+
+			UniformCostSearchNodeBestPath* previousBestPath { nullptr };
+			std::weak_ptr<Type_Info> thisNodePath;
+
+		private:
+			void get_impl(std::vector<std::weak_ptr<Type_Info>>& out) const {
+				if (previousBestPath) {
+					previousBestPath->get_impl(out);
+					out.push_back(thisNodePath);
+				}
+				else {
+					out.push_back(thisNodePath);
+				}
+			};
+
+		public:
+			std::vector<std::weak_ptr<Type_Info>> get() const {
+				std::vector<std::weak_ptr<Type_Info>> out;
+				out.reserve(16);
+				get_impl(out);
+				return out;
+			};
+			size_t size() const {
+				if (previousBestPath) {
+					return 1 + previousBestPath->size();
+				}
+				else {
+					return 1;
+				}
+			};
 		};
 
 		class UniformCostSearchNode {
 		public:
 			UniformCostSearchNode() = default;
-			UniformCostSearchNode(std::shared_ptr<Type_Info> const& a, double b, std::vector<std::weak_ptr<Type_Info>> && c)
+			UniformCostSearchNode(std::shared_ptr<Type_Info> const& a, double b, UniformCostSearchNodeBestPath* c)
 				: thisVertexType(a)
 				, distanceFromTarget(std::move(b))
-				, bestPath(std::forward<std::vector<std::weak_ptr<Type_Info>>>(c))
+				, bestPath(std::move(c))
 			{};
 			UniformCostSearchNode(UniformCostSearchNode&&) = default;
 			UniformCostSearchNode(UniformCostSearchNode const&) = default;
@@ -1966,14 +2052,22 @@ namespace GoodLang {
 		public:
 			std::shared_ptr<Type_Info> thisVertexType;
 			double distanceFromTarget; // if not known, then we can simply guess. 
-			std::vector<std::weak_ptr<Type_Info>> bestPath;
+			UniformCostSearchNodeBestPath* bestPath{ nullptr };
 
 		public:
+			size_t size() const {
+				if (bestPath) {
+					return bestPath->size();
+				}
+				else {
+					return 0;
+				}
+			};
 			bool operator()(const UniformCostSearchNode* a, const UniformCostSearchNode* b) const {
-				return (a->bestPath.size() + 1) > (b->bestPath.size() + 1) || (a->distanceFromTarget > b->distanceFromTarget);
+				return ((a->size() + 1) > (b->size() + 1)) || (a->distanceFromTarget > b->distanceFromTarget);
 			};
 			bool operator()(const std::shared_ptr<UniformCostSearchNode>& a, const std::shared_ptr<UniformCostSearchNode>& b) const {
-				return (a->bestPath.size() + 1) > (b->bestPath.size() + 1) || (a->distanceFromTarget > b->distanceFromTarget);
+				return ((a->size() + 1) > (b->size() + 1)) || (a->distanceFromTarget > b->distanceFromTarget);
 			};
 		};
 
@@ -2029,7 +2123,10 @@ namespace GoodLang {
 		TypeConverterFunc GetOrBuildConverter(std::shared_ptr<Type_Info> const& From, std::shared_ptr<Type_Info> const& To, bool forceBuild = false) {
 			// Solves the Uniform Cost Search Algorithm to determine the shortest path for "From" to "To", puts the path in "Out", and returns true. 
 			// If no path is possible, returns false.
-			static auto CreateConversionPaths{ [this](fibers::utilities::FastAllocator<UniformCostSearchNode, 1024>& alloc, conversionTreeType& AllConversions, std::shared_ptr<Type_Info> const& From, std::shared_ptr<Type_Info> const& To) {
+			static auto CreateConversionPaths{ [this](
+				fibers::utilities::FastAllocator<UniformCostSearchNode, 1024>& alloc, 
+				fibers::utilities::FastAllocator<UniformCostSearchNodeBestPath, 1024>& alloc2,
+				conversionTreeType& AllConversions, std::shared_ptr<Type_Info> const& From, std::shared_ptr<Type_Info> const& To) {
 				// create the shortest paths from "From" to all possible vertices. 
 				std::unordered_map <
 					std::shared_ptr<Type_Info>
@@ -2045,7 +2142,7 @@ namespace GoodLang {
 					> vertexSet;
 
 					// Add the source vertex into the set
-					vertexSet.push(alloc.Alloc(From, 0.0, std::vector<std::weak_ptr<Type_Info>>{}));
+					vertexSet.push(alloc.Alloc(From, 0.0, nullptr));
 
 					// is the vertex set empty?
 					double conversionCost;
@@ -2071,24 +2168,26 @@ namespace GoodLang {
 									auto& toType = connection.first;
 									auto& toVertex = vertices[toType];
 									if (!toVertex) { // Instance it before we start working with it on an as-needed basis
-										toVertex = alloc.Alloc(toType, std::numeric_limits<double>::infinity(), std::vector<std::weak_ptr<Type_Info>>{ toType });
+										toVertex = alloc.Alloc(
+											toType, 
+											std::numeric_limits<double>::infinity(), 
+											alloc2.Alloc(nullptr, toType)
+										);
 									}
 
 									// calculate distance value for the neighbor vertex
 									conversionCost = func->cost();
-									if ((toVertex->bestPath.size() + 1) > (smallestDistanceNode->bestPath.size() + 1)) {
+									if ((toVertex->size() + 1) > (smallestDistanceNode->size() + 1)) {
 										toVertex->distanceFromTarget = (smallestDistanceNode->distanceFromTarget + conversionCost);
 
-										toVertex->bestPath = smallestDistanceNode->bestPath;
-										toVertex->bestPath.push_back(toVertex->thisVertexType);
+										toVertex->bestPath = alloc2.Alloc(smallestDistanceNode->bestPath, toVertex->thisVertexType);
 
 										vertexSet.push(toVertex);
 									}
 									else if (toVertex->distanceFromTarget > (smallestDistanceNode->distanceFromTarget + conversionCost)) {
 										toVertex->distanceFromTarget = (smallestDistanceNode->distanceFromTarget + conversionCost);
 
-										toVertex->bestPath = smallestDistanceNode->bestPath;
-										toVertex->bestPath.push_back(toVertex->thisVertexType);
+										toVertex->bestPath = alloc2.Alloc(smallestDistanceNode->bestPath, toVertex->thisVertexType);
 
 										vertexSet.push(toVertex);
 									}
@@ -2108,74 +2207,104 @@ namespace GoodLang {
 
 			// Add conversion for From to a large variety of types...
 			if (1) {
+				fibers::utilities::FastAllocator<UniformCostSearchNodeBestPath, 1024> alloc2;
 				fibers::utilities::FastAllocator< UniformCostSearchNode, 1024> alloc;
-				auto conversions{ CreateConversionPaths(alloc, AllConversions, From, To) };
+				auto conversions{ CreateConversionPaths(alloc, alloc2, AllConversions, From, To) };
+
+				std::deque<std::tuple<std::shared_ptr<Type_Info>, TypeConverterFunc, size_t, double>> toAdd;
 
 				// All of these are for "From"...
-				for (auto& conversion : conversions) {
-					auto& ToType = conversion.first; // To...
+				if (1) {
+					
+					for (auto& conversion : conversions) {
+						auto& ToType = conversion.first; // To...
 
-					auto& cost = conversion.second->distanceFromTarget; // cost
-					auto& path = conversion.second->bestPath; // conversion path
+						auto& cost = conversion.second->distanceFromTarget; // cost
+						auto& path = conversion.second->bestPath; // conversion path
 
-					if (path.size() >= 1) {
-						TypeConverterFunc converterPtr; {
-							auto& pair = AllConversions[From][ToType];
-							auto locked2{ std::shared_lock(AllConversionsLock/*pair.first*/) };
-							converterPtr = pair.second;
-						}
-						if ((converterPtr && (converterPtr->NumConversions() < path.size())) || (converterPtr && (converterPtr->cost() <= cost))) {
-							continue;
-						}
-						else {
-							// make new function, get hard lock, insert	
-							if (1) {
-								// make a new converter function
-								TypeConverterFunc newConverter; {
-									// convert the "type path" to a actual daisy-chains of weak_ptrs to converter functions
-									std::vector<std::shared_ptr<details::Type_Conversion_Base>> functors; {
-										std::shared_ptr<Type_Info> currentNodeType = From;
+						if (path) {
+							auto pathSize = path->size();
+							if (pathSize >= 1) {
+								//TypeConverterFunc converterPtr; {
+								//	auto locked2{ std::shared_lock(AllConversionsLock) };
+								//	converterPtr = AllConversions[From][ToType].second;
+								//}
+								//if ((converterPtr && (converterPtr->NumConversions() < pathSize)) || (converterPtr && (converterPtr->cost() <= cost))) { continue; } else 
+								{
+									// make new function, get hard lock, insert	
+									if (1) {
+										// make a new converter function
+										TypeConverterFunc newConverter; {
+											// convert the "type path" to a actual daisy-chains of weak_ptrs to converter functions
+											std::vector<std::shared_ptr<details::Type_Conversion_Base>> functors; {
+												std::shared_ptr<Type_Info> currentNodeType = From;
+												for (auto& nextNodeType : path->get()) {
+													auto nextNodeTypePtr = nextNodeType.lock();
 
-										for (auto& nextNodeType : path) {
-											auto nextNodeTypePtr = nextNodeType.lock();
+													TypeConverterFunc& func = AllConversions[currentNodeType][nextNodeTypePtr].second;
+													if (!func) { // something went wrong -- this conversion has failed.
+														continue;
+													}
+													else {
+														if (1) {
+															auto locked2{ std::shared_lock(AllConversionsLock) };
+															functors.push_back(func);
+														}
+														currentNodeType = nextNodeTypePtr;
+													}
+												}
 
-											auto& pair = AllConversions[currentNodeType][nextNodeTypePtr];
-											auto locked2{ std::shared_lock(AllConversionsLock/*pair.first*/) };
-
-											TypeConverterFunc& func = pair.second;
-											if (!func) { // something went wrong -- this conversion has failed.
-												continue;
+												if (ToType != currentNodeType) {
+													// this failed -- unclear why, but it happened. 
+													continue;
+												}
+											}
+											if (functors.size() > 1) {
+												newConverter = std::shared_ptr< details::Type_Conversion_Base >(new details::DaisyChained_Type_Conversion_Impl(functors));
 											}
 											else {
-												functors.push_back(func);
-												currentNodeType = nextNodeTypePtr;
+												continue; // do nothing, assuming either the conversion failed or the shorter version was obviously already in the list.
 											}
 										}
 
-										if (ToType != currentNodeType) {
-											// this failed -- unclear why, but it happened. 
-											continue;
+										// insert it (requires hard lock)
+										if (newConverter) {
+											toAdd.push_back(std::tuple<std::shared_ptr<Type_Info>, TypeConverterFunc, size_t, double>(ToType, newConverter, pathSize, cost));
 										}
-									}
-									if (functors.size() > 1) {
-										newConverter = std::shared_ptr< details::Type_Conversion_Base >(new details::DaisyChained_Type_Conversion_Impl(functors));
-									}
-									else {
-										continue; // do nothing, assuming either the conversion failed or the shorter version was obviously already in the list.
-									}
-								}
-
-								// insert it (requires hard lock)
-								if (newConverter) {
-									auto& pair = AllConversions[From][ToType];
-									auto locked2{ std::unique_lock(AllConversionsLock/*pair.first*/) };
-									if ((pair.second && (pair.second->NumConversions() < path.size())) || (pair.second && (pair.second->cost() <= cost))) {}
-									else {
-										pair.second = newConverter;
 									}
 								}
 							}
 						}
+					}
+				}
+				
+				if (1) {
+					auto& FromPair = AllConversions[From];
+					
+					while (!toAdd.empty()) {
+						auto& toDo = toAdd.front();
+						{
+							auto& pair = FromPair[std::get<0>(toDo)];
+#ifndef UncopiableSharedLockAsSharedMutex
+							AllConversionsLock.lock_shared();
+							if ((pair.second && (pair.second->NumConversions() < std::get<2>(toDo))) || (pair.second && (pair.second->cost() <= std::get<3>(toDo)))) {
+								AllConversionsLock.unlock_shared();
+							}
+							else {
+								AllConversionsLock.lock_upgrade_from_shared();
+								pair.second = std::get<1>(toDo);
+								AllConversionsLock.unlock();
+							}
+#else
+							AllConversionsLock.lock();
+							if ((pair.second && (pair.second->NumConversions() < std::get<2>(toDo))) || (pair.second && (pair.second->cost() <= std::get<3>(toDo)))) {}
+							else {
+								pair.second = std::get<1>(toDo);
+							}
+							AllConversionsLock.unlock();
+#endif
+						}
+						toAdd.pop_front();
 					}
 				}
 			}
