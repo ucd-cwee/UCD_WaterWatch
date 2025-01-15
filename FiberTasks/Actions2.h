@@ -1607,6 +1607,7 @@ namespace GoodLang {
 
 			virtual size_t NumConversions() const { return 1; }
 		protected:
+			Type_Conversion_Base() : m_to{}, m_from{} {}
 			Type_Conversion_Base(std::weak_ptr<Type_Info> t_to, std::weak_ptr<Type_Info> t_from) : m_to(t_to), m_from(t_from) {}
 
 		protected:
@@ -1714,19 +1715,15 @@ namespace GoodLang {
 
 		class DaisyChained_Type_Conversion_Impl : public Type_Conversion_Base {
 		public:
-			DaisyChained_Type_Conversion_Impl(std::vector<std::shared_ptr<Type_Conversion_Base>> const& t_converters)
-				: Type_Conversion_Base(
-					t_converters[t_converters.size() - 1]->to(),
-					t_converters[0]->from()
-				)
-				, m_converters(t_converters)
-				, m_cost(0) /*TypeConversionBaselineCost*/
+			DaisyChained_Type_Conversion_Impl(std::vector<std::shared_ptr<Type_Conversion_Base>> && t_converters)
+				: Type_Conversion_Base()
+				, m_converters(std::forward<std::vector<std::shared_ptr<Type_Conversion_Base>>>(t_converters))
+				, m_cost(0) 
 			{
-				//for (auto& converter : t_converters) {
-				//	m_converters.push_back(converter);
-				//}
+				this->m_to = m_converters[m_converters.size() - 1]->to();
+				this->m_from = m_converters[0]->from();
 
-				for (auto& converter : t_converters) {
+				for (auto& converter : m_converters) {
 					m_cost += converter->cost();
 				}
 			};
@@ -1922,7 +1919,7 @@ namespace GoodLang {
 	// Can be fixed by pre-fetching all (or most) of the conversions you plan to use. 
 	class TypeConverter {
 	private:
-		// shared lock that prioritizes uncontested shared access over (hopefully) rarer write access. 
+		// shared lock that prioritizes uncontested shared access and uncontested write access. Contested access prioritizes readers, and fairly orders writers.
 		class UncopiableSharedLock {
 		public:
 #define UncopiableSharedLockAsSharedMutex
@@ -1936,23 +1933,63 @@ namespace GoodLang {
 			// Exclusive ownership
 			void lock() {
 #ifndef UncopiableSharedLockAsSharedMutex
-				while (!writeCount.TryIncrementTo(1)) { std::this_thread::yield(); }
+				writeCount.Increment();
+
+				auto my_ticket = write_ticket.fetch_add(1, std::memory_order::memory_order_relaxed);
+				int spin = 0;
+				while (my_ticket != write_serving.load(std::memory_order::memory_order_acquire)) {
+					if (spin < 10)
+					{
+						_mm_pause(); // SMT thread swap can occur here
+					}
+					else
+					{
+						std::this_thread::yield(); // OS thread swap can occur here. It is important to keep it as fallback, to avoid any chance of lockup by busy wait
+					}
+					spin++;
+				}
+
+				// it is my turn to get the write access. Are the readers done? 
 				while (readCount.GetValue() != 0) { std::this_thread::yield(); }
 #else
 				p_mut.lock();
 #endif
 			};
-			bool try_lock() {
-#ifndef UncopiableSharedLockAsSharedMutex
-				while (!writeCount.TryIncrementTo(1)) { return false; }
-				while (readCount.GetValue() != 0) { writeCount.Decrement(); return false; }
-				return true;
-#else
-				return p_mut.try_lock();
-#endif
-			};
+//			bool try_lock() {
+//#ifndef UncopiableSharedLockAsSharedMutex
+//				long currentWriteCount = writeCount.Increment();
+//				if (currentWriteCount != 1) {
+//					writeCount.Decrement();
+//					return false;
+//				}
+//				else {
+//					// must now wait for the actual lock.
+//					auto my_ticket = write_ticket.fetch_add(1, std::memory_order::memory_order_relaxed);
+//					int spin = 0;
+//					while (my_ticket != write_serving.load(std::memory_order::memory_order_acquire)) {
+//						if (spin < 10)
+//						{
+//							_mm_pause(); // SMT thread swap can occur here
+//						}
+//						else
+//						{
+//							std::this_thread::yield(); // OS thread swap can occur here. It is important to keep it as fallback, to avoid any chance of lockup by busy wait
+//						}
+//						spin++;
+//					}
+//				}
+//
+//				// it is my turn to get the write access. Are the readers done? 
+//				while (readCount.GetValue() != 0) { std::this_thread::yield(); }
+//
+//				return true;
+//#else
+//				return p_mut.try_lock();
+//#endif
+//			};
 			void unlock() {
 #ifndef UncopiableSharedLockAsSharedMutex
+				write_serving.fetch_add(1, std::memory_order::memory_order_release);
 				writeCount.Decrement();
 #else
 				p_mut.unlock();
@@ -1967,23 +2004,24 @@ namespace GoodLang {
 					readCount.Decrement();
 					std::this_thread::yield();
 					readCount.Increment();
-				}				
+				}
 #else
 				p_mut.lock_shared();
 #endif
 			};
-			bool try_lock_shared() {
-#ifndef UncopiableSharedLockAsSharedMutex
-				readCount.Increment();
-				while (writeCount.GetValue() != 0) {
-					readCount.Decrement();
-					return false;
-				}
-				return true;
-#else
-				return p_mut.try_lock_shared();
-#endif
-			};
+//			bool try_lock_shared() {
+//#ifndef UncopiableSharedLockAsSharedMutex
+//				readCount.Increment();
+//				// we are the final read -- go ahead and wait for the write lock before we go
+//				while (writeCount.GetValue() != 0) {
+//					readCount.Decrement();
+//					return false;
+//				}
+//				return true;
+//#else
+//				return p_mut.try_lock_shared();
+//#endif
+//			};
 			void unlock_shared() {
 #ifndef UncopiableSharedLockAsSharedMutex
 				readCount.Decrement();
@@ -1991,25 +2029,15 @@ namespace GoodLang {
 				p_mut.unlock_shared();
 #endif
 			};
-#ifndef UncopiableSharedLockAsSharedMutex
-			// gets the unique lock while unlocking the shared lock.
-			void lock_upgrade_from_shared() {
-
-				while (!writeCount.TryIncrementTo(1)) {
-					readCount.Decrement();
-					std::this_thread::yield();
-					readCount.Increment();
-				}
-				readCount.Decrement();
-				while (readCount.GetValue() != 0) { std::this_thread::yield(); }
-			};
-#endif	
 
 		private:
 #ifndef UncopiableSharedLockAsSharedMutex
 			fibers::synchronization::impl::InterlockedLong readCount{ 0 };
+			std::atomic<unsigned long> write_ticket{ 0 };
+			std::atomic<unsigned long> write_serving{ 0 };
 			fibers::synchronization::impl::InterlockedLong writeCount{ 0 };
 #else
+			// sf::contention_free_shared_mutex<> p_mut;
 			std::shared_mutex p_mut;
 #endif
 		};
@@ -2175,16 +2203,17 @@ namespace GoodLang {
 						// for each neighbor of the extracted vertex... 
 						auto f = AllConversions.find(smallestDistanceNode->thisVertexType);
 						if (f != AllConversions.end()) {
-							TypeConverterFunc func;
 							for (auto& connection : f->second) {
 								if (1) {
+									auto& func = connection.second.second;
 									auto locked{ std::shared_lock(connection.second.first) };
-									func = connection.second.second;
-								}
-								if (func) {
+									if (!func) continue;									
 									// do not use daisy-chained functions as candidates for new ones, since it can be harder to determine the actual conversion chain length
 									if (func->IsDaisyChained()) continue;
-
+									// calculate distance value for the neighbor vertex
+									conversionCost = func->cost();
+								}
+								if (1) {
 									// Is the neighbor already in the vertex set? 
 									auto& toType = connection.first;
 									auto& toVertex = vertices[toType];
@@ -2195,21 +2224,14 @@ namespace GoodLang {
 											alloc2.Alloc(nullptr, toType)
 										);
 									}
-
-									// calculate distance value for the neighbor vertex
-									conversionCost = func->cost();
 									if ((toVertex->size() + 1) > (smallestDistanceNode->size() + 1)) {
 										toVertex->distanceFromTarget = (smallestDistanceNode->distanceFromTarget + conversionCost);
-
 										toVertex->bestPath = alloc2.Alloc(smallestDistanceNode->bestPath, toVertex->thisVertexType);
-
 										vertexSet.push(toVertex);
 									}
 									else if (toVertex->distanceFromTarget > (smallestDistanceNode->distanceFromTarget + conversionCost)) {
 										toVertex->distanceFromTarget = (smallestDistanceNode->distanceFromTarget + conversionCost);
-
 										toVertex->bestPath = alloc2.Alloc(smallestDistanceNode->bestPath, toVertex->thisVertexType);
-
 										vertexSet.push(toVertex);
 									}
 								}
@@ -2236,7 +2258,10 @@ namespace GoodLang {
 
 				// All of these are for "From"...
 				if (1) {
-					
+					std::shared_ptr<Type_Info> currentNodeType;
+					std::vector<std::weak_ptr<Type_Info>> pathToFollow;
+					std::vector<std::shared_ptr<details::Type_Conversion_Base>> functors;
+					TypeConverterFunc newConverter;
 					for (auto& conversion : conversions) {
 						auto& ToType = conversion.first; // To...
 
@@ -2250,21 +2275,35 @@ namespace GoodLang {
 									// make new function, get hard lock, insert	
 									if (1) {
 										// make a new converter function
-										TypeConverterFunc newConverter; {
+										newConverter = nullptr; {
 											// convert the "type path" to a actual daisy-chains of weak_ptrs to converter functions
-											std::vector<std::shared_ptr<details::Type_Conversion_Base>> functors; {
-												std::shared_ptr<Type_Info> currentNodeType = From;
-												for (auto& nextNodeType : path->get()) {
-													auto nextNodeTypePtr = nextNodeType.lock();
-													auto& pair = AllConversions[currentNodeType][nextNodeTypePtr];
-													auto locked2{ std::shared_lock(pair.first) };
-													if (!pair.second) { // something went wrong -- this conversion has failed.
-														currentNodeType = nullptr;
-														break;
+											functors.clear(); {
+												currentNodeType = From;
+												pathToFollow = path->get();
+												functors.reserve(pathToFollow.size() + 1);
+												for (auto& nextNodeType : pathToFollow) {
+													auto p1 = AllConversions.find(currentNodeType);
+													if (p1 != AllConversions.end()) {
+														auto p2 = p1->second.find(currentNodeType = nextNodeType.lock());
+														if (p2 != p1->second.end()) {
+															auto& pair = p2->second;
+															auto locked2{ std::shared_lock(pair.first) };
+															if (pair.second) { // something went wrong -- this conversion has failed.
+																functors.push_back(pair.second);
+															}
+															else {
+																currentNodeType = nullptr;
+																break;
+															}
+														}
+														else {
+															currentNodeType = nullptr;
+															break;
+														}
 													}
 													else {
-														functors.push_back(pair.second);
-														currentNodeType = nextNodeTypePtr;
+														currentNodeType = nullptr;
+														break;
 													}
 												}
 
@@ -2274,7 +2313,7 @@ namespace GoodLang {
 												}
 											}
 											if (functors.size() > 1) {
-												newConverter = std::shared_ptr< details::Type_Conversion_Base >(new details::DaisyChained_Type_Conversion_Impl(functors));
+												newConverter = std::shared_ptr< details::Type_Conversion_Base >(new details::DaisyChained_Type_Conversion_Impl(std::move(functors)));
 											}
 											else {
 												continue; // do nothing, assuming either the conversion failed or the shorter version was obviously already in the list.
@@ -2299,24 +2338,19 @@ namespace GoodLang {
 						auto& toDo = toAdd.front();
 						{
 							auto& pair = FromPair[std::get<0>(toDo)];
-#ifndef UncopiableSharedLockAsSharedMutex
+
 							pair.first.lock_shared();
 							if ((pair.second && (pair.second->NumConversions() < std::get<2>(toDo))) || (pair.second && (pair.second->cost() <= std::get<3>(toDo)))) {
 								pair.first.unlock_shared();
 							}
 							else {
-								pair.first.lock_upgrade_from_shared();
+								pair.first.unlock_shared();
+
+								pair.first.lock();
 								pair.second = std::get<1>(toDo);
 								pair.first.unlock();
 							}
-#else
-							pair.first.lock();
-							if ((pair.second && (pair.second->NumConversions() < std::get<2>(toDo))) || (pair.second && (pair.second->cost() <= std::get<3>(toDo)))) {}
-							else {
-								pair.second = std::get<1>(toDo);
-							}
-							pair.first.unlock();
-#endif
+							
 						}
 						toAdd.pop_front();
 					}
@@ -2626,6 +2660,23 @@ namespace GoodLang {
 				out = 0;
 			}
 			else if (auto f = FindConverter(from.Type().lock(), To)) {
+				out = f->cost();
+			}
+			else if (from.IsTypeOf(To)) {
+				out = 0;
+			}
+			else {
+				out = std::numeric_limits<double>::max();
+			}
+			return out;
+		};
+		// will return an empty object if the conversion was impossible. (Assumes converting to void is not allowed or desired)
+		double ConversionCost_Fast(Any const& from, std::shared_ptr<Type_Info> const& From, std::shared_ptr<Type_Info> const& To) {
+			double out;
+			if (To && To->is_any()) {
+				out = 0;
+			}
+			else if (auto f = FindConverter(From, To)) {
 				out = f->cost();
 			}
 			else if (from.IsTypeOf(To)) {
@@ -3059,6 +3110,29 @@ namespace GoodLang {
 		*/
 		class Proxy_Function_Base {
 		private:
+			static double conversion_cost_fast(std::vector<Any> const& t_from, std::vector<std::shared_ptr<Type_Info>> const& t_FromTypes, ParamTypes const& t_to, TypeConverter& t_conversions) {
+				double out{ 0 };
+
+				// Quick return if the types exactly match.
+				if (t_to.size() > t_from.size()) return std::numeric_limits<double>::max();
+				// if (t_to.hash() == t_from.hash()) { return 0; } // exact match -- no conversions will happen
+
+				size_t i = 0;
+				double conversionCost;
+				for (; i < t_to.size(); ++i) {
+					conversionCost = t_conversions.ConversionCost_Fast(t_from[i], t_FromTypes[i], t_to[i].lock());
+					if (conversionCost == std::numeric_limits<double>::max()) {
+						return std::numeric_limits<double>::max();
+					}
+					else {
+						out += conversionCost;
+					}
+				}
+				for (; i < t_from.size(); ++i) {
+					out += details::TypeConversionWorstCaseCost; // large penalty for not using the provided type(s).
+				}
+				return out;
+			};
 			static double conversion_cost(std::vector<Any> const& t_from, ParamTypes const& t_to, TypeConverter& t_conversions) {
 				double out{ 0 };
 
@@ -3066,9 +3140,10 @@ namespace GoodLang {
 				if (t_to.size() > t_from.size()) return std::numeric_limits<double>::max();
 				// if (t_to.hash() == t_from.hash()) { return 0; } // exact match -- no conversions will happen
 				
-				size_t i = 0;
+				size_t i = 0; 
+				double conversionCost;
 				for (; i < t_to.size(); ++i) {
-					double conversionCost = t_conversions.ConversionCost(t_from[i], t_to[i].lock());
+					conversionCost = t_conversions.ConversionCost(t_from[i], t_to[i].lock());
 					if (conversionCost == std::numeric_limits<double>::max()) {
 						return std::numeric_limits<double>::max();
 					}
@@ -3146,6 +3221,10 @@ namespace GoodLang {
 			// Symbolic "cost" to perform the conversion. Not meant to be precise, but meant to be relative for comparison with other converters.
 			double conversion_cost(std::vector<Any> const& t_params, TypeConverter& t_conversions) const {
 				return Proxy_Function_Base::conversion_cost(t_params, Arguments().Types(), t_conversions);
+			};
+			// Symbolic "cost" to perform the conversion. Not meant to be precise, but meant to be relative for comparison with other converters.
+			double conversion_cost_fast(std::vector<Any> const& t_params, std::vector<std::shared_ptr<Type_Info>> const& t_FromTypes, TypeConverter& t_conversions) const {
+				return Proxy_Function_Base::conversion_cost_fast(t_params, t_FromTypes, Arguments().Types(), t_conversions);
 			};
 
 			// Does want conversions -- ensure types match if possible.
@@ -6347,6 +6426,10 @@ namespace GoodLang {
 
 				// Create candidates.
 				{
+					std::vector<std::shared_ptr<Type_Info>> paramTypes;
+					for (auto& x : Params) paramTypes.push_back(x.lock()); 
+
+
 					auto locked{ std::shared_lock(m_mut) }; // LOCKED
 					auto& m_func_find = m_functions[hasher(functionName)];
 					for (auto& function : m_func_find.second) {
@@ -6356,7 +6439,7 @@ namespace GoodLang {
 						bool isTemplateFunc = function.second.second->m_function->GetSignature().IsTemplate();
 						bool isExplicitFunc = function.second.second->m_isEplicit;
 
-						auto conversionCost = function.second.second->m_function->conversion_cost(params, m_typeConverters);
+						auto conversionCost = function.second.second->m_function->conversion_cost_fast(params, paramTypes, m_typeConverters);
 						if (conversionCost == std::numeric_limits<double>::max()) continue;							
 
 						if (isTemplateFunc) {

@@ -3560,60 +3560,15 @@ int main() {
 						ScopedObj->SetSelf(ScopedObj);
 						scope_1->AddChild(ScopedObj);
 
+						// Default Constructors
+						ScopedObj->AddDefaultConstructors();
+
 						// Define the "member objects" for this class
 						ScopedObj->DeclareMemberObject("name", user_type_shared<std::string>()); // if no default is provided, it will make its own at runtime
 						ScopedObj->DeclareMemberObject("number", user_type_shared<double>()); // if no default is provided, it will make its own at runtime
 						ScopedObj->DeclareMemberObject("value", user_type_shared<Var>()); // if no default is provided, it will make its own at runtime
 
-						// Default constructor
-						ScopedObj->AddFunction("ScopedObj", make_callable([selfPtr = std::weak_ptr<Class>(ScopedObj)]()->Any {
-							if (auto self = selfPtr.lock()) {
-								DynamicObject out{ self->GetClassType() };
-								self->ConstructMemberObjects(out);
-								return out;
-							}
-							else {
-								throw(exception::not_found_error("Custom class type was no longer available"));
-							}
-						}));
-						// Copy constructor
-						ScopedObj->AddFunction("ScopedObj", make_callable([selfPtr = std::weak_ptr<Class>(ScopedObj)](Any const& from)->Any {
-							DynamicObject const& obj = from.cast<DynamicObject const&>();
-							if (auto self = selfPtr.lock()) {
-								DynamicObject out{ self->GetClassType() };
-								self->ConstructMemberObjects(out, obj);
-								return out;
-							}
-							else {
-								throw(exception::not_found_error("Custom class type was no longer available"));
-							}
-						}, ParamTypes({ ScopedObj->GetClassType().lock()->MakeConstRef() })));
-						// assignment operator
-						ScopedObj->AddFunction("=", make_callable([selfPtr = std::weak_ptr<Class>(ScopedObj)](Any const& to, Any const& from)->Any {
-							DynamicObject& To = to.cast<DynamicObject&>();
-							// To.m_objects->clear(); // NOT CONCURRENT-SAFE...
-							DynamicObject const& From = from.cast<DynamicObject const&>();
-							if (auto self = selfPtr.lock()) {
-								self->ConstructMemberObjects(To, From);
-								return to;
-							}
-							else {
-								throw(exception::not_found_error("Custom class type was no longer available"));
-							}
-						}, ParamTypes({ ScopedObj->GetClassType().lock()->MakeRef(), ScopedObj->GetClassType().lock()->MakeConstRef() })));
-						// Member objects
-						for (auto& member_obj : ScopedObj->GetMemberObjects()) {
-							// ref access
-							ScopedObj->AddFunction(member_obj.first, make_callable([objName = member_obj.first](Any const& from)->Any {
-								DynamicObject& From = from.cast<DynamicObject&>();
-								return From.m_objects->at(objName);
-							}, ParamTypes({ ScopedObj->GetClassType().lock()->MakeRef() }), member_obj.second.lock()->MakeRef()));
-							// const ref access
-							ScopedObj->AddFunction(member_obj.first, make_callable([objName = member_obj.first](Any const& from)->Any {
-								DynamicObject const& From = from.cast<DynamicObject const&>();
-								return From.m_objects->at(objName);
-							}, ParamTypes({ ScopedObj->GetClassType().lock()->MakeConstRef() }), member_obj.second.lock()->MakeConstRef()));
-						}
+						
 					}
 
 					auto instance = scope_1->CallFunction("ScopedObj", {});
@@ -3645,75 +3600,13 @@ int main() {
 						ScopedObj->SetSelf(ScopedObj);
 						scope_1->AddChild(ScopedObj);
 
+						// Default Constructors
+						ScopedObj->AddDefaultConstructors();
+
 						// Define the "member objects" for this class
 						//ScopedObj->DeclareMemberObject("name", user_type_shared<std::string>()); // if no default is provided, it will make its own at runtime
 						//ScopedObj->DeclareMemberObject("number", user_type_shared<double>()); // if no default is provided, it will make its own at runtime
 						//ScopedObj->DeclareMemberObject("value", user_type_shared<Var>()); // if no default is provided, it will make its own at runtime
-
-						// ScopedObj->AddDefaultConstructors();
-
-
-
-                        // Default constructor
-						ScopedObj->AddFunction("ScopedObj2", make_callable([selfPtr = std::weak_ptr<Class>(ScopedObj)]()->Any {
-							if (auto self = selfPtr.lock()) {
-								DynamicObject out{ self->GetClassType() };
-								self->ConstructMemberObjects(out); // should automatically construct parent's objects in-order 
-								return out;
-							}
-							else {
-								throw(exception::not_found_error("Custom class type was no longer available"));
-							}
-						}));
-						// Upcast (const&)
-						parentClass->AddFunction("ScopedObj", make_callable([selfPtr = std::weak_ptr<Class>(parentClass)](Any const& from)->Any {
-							DynamicObject const& obj = from.cast<DynamicObject const&>();
-							if (auto p = selfPtr.lock()) {
-								return DynamicObject(p->GetClassType(), obj);
-							}
-							else {
-								return from;
-							}
-						}, ParamTypes({ ScopedObj->GetClassType().lock()->MakeConstRef() }), parentClass->GetClassType()));
-
-						// Copy constructor
-						ScopedObj->AddFunction("ScopedObj2", make_callable([selfPtr = std::weak_ptr<Class>(ScopedObj)](Any const& from)->Any {
-							DynamicObject const& obj = from.cast<DynamicObject const&>();
-							if (auto self = selfPtr.lock()) {
-								DynamicObject out{ self->GetClassType() };
-								self->ConstructMemberObjects(out, obj);
-								return out;
-							}
-							else {
-								throw(exception::not_found_error("Custom class type was no longer available"));
-							}
-						}, ParamTypes({ ScopedObj->GetClassType().lock()->MakeConstRef() })));
-						// assignment operator
-						ScopedObj->AddFunction("=", make_callable([selfPtr = std::weak_ptr<Class>(ScopedObj)](Any const& to, Any const& from)->Any {
-							DynamicObject& To = to.cast<DynamicObject&>();
-							// To.m_objects->clear(); // NOT CONCURRENT-SAFE...
-							DynamicObject const& From = from.cast<DynamicObject const&>();
-							if (auto self = selfPtr.lock()) {
-								self->ConstructMemberObjects(To, From);
-								return to;
-							}
-							else {
-								throw(exception::not_found_error("Custom class type was no longer available"));
-							}
-						}, ParamTypes({ ScopedObj->GetClassType().lock()->MakeRef(), ScopedObj->GetClassType().lock()->MakeConstRef() })));
-						// Member objects
-						for (auto& member_obj : ScopedObj->GetMemberObjects()) {
-							// ref access
-							ScopedObj->AddFunction(member_obj.first, make_callable([objName = member_obj.first](Any const& from)->Any {
-								DynamicObject& From = from.cast<DynamicObject&>();
-								return From.m_objects->at(objName);
-							}, ParamTypes({ ScopedObj->GetClassType().lock()->MakeRef() }), member_obj.second.lock()->MakeRef()));
-							// const ref access
-							ScopedObj->AddFunction(member_obj.first, make_callable([objName = member_obj.first](Any const& from)->Any {
-								DynamicObject const& From = from.cast<DynamicObject const&>();
-								return From.m_objects->at(objName);
-							}, ParamTypes({ ScopedObj->GetClassType().lock()->MakeConstRef() }), member_obj.second.lock()->MakeConstRef()));
-						}
 					}
 
 					auto instance = scope_1->CallFunction("ScopedObj2", {});
@@ -3748,71 +3641,13 @@ int main() {
 						ScopedObj->SetSelf(ScopedObj);
 						scope_1->AddChild(ScopedObj);
 
+						// Default Constructors
+						ScopedObj->AddDefaultConstructors();
+
 						// Define the "member objects" for this class
 						ScopedObj->DeclareMemberObject("name2", user_type_shared<std::string>(), std::make_shared<Any>(ScopedObj->GetName())); // if no default is provided, it will make its own at runtime
 						//ScopedObj->DeclareMemberObject("number", user_type_shared<double>()); // if no default is provided, it will make its own at runtime
 						//ScopedObj->DeclareMemberObject("value", user_type_shared<Var>()); // if no default is provided, it will make its own at runtime
-
-						// Default constructor
-						ScopedObj->AddFunction("ScopedObj3", make_callable([selfPtr = std::weak_ptr<Class>(ScopedObj)]()->Any {
-							if (auto self = selfPtr.lock()) {
-								DynamicObject out{ self->GetClassType() };
-								self->ConstructMemberObjects(out); // should automatically construct parent's objects in-order 
-								return out;
-							}
-							else {
-								throw(exception::not_found_error("Custom class type was no longer available"));
-							}
-						}));
-						// Upcast (const&)
-						parentClass->AddFunction("ScopedObj2", make_callable([selfPtr = std::weak_ptr<Class>(parentClass)](Any const& from)->Any {
-							DynamicObject const& obj = from.cast<DynamicObject const&>();
-							if (auto p = selfPtr.lock()) {
-								return DynamicObject(p->GetClassType(), obj);
-							}
-							else {
-								return from;
-							}
-						}, ParamTypes({ ScopedObj->GetClassType().lock()->MakeConstRef() }), parentClass->GetClassType()));
-
-						// Copy constructor
-						ScopedObj->AddFunction("ScopedObj3", make_callable([selfPtr = std::weak_ptr<Class>(ScopedObj)](Any const& from)->Any {
-							DynamicObject const& obj = from.cast<DynamicObject const&>();
-							if (auto self = selfPtr.lock()) {
-								DynamicObject out{ self->GetClassType() };
-								self->ConstructMemberObjects(out, obj);
-								return out;
-							}
-							else {
-								throw(exception::not_found_error("Custom class type was no longer available"));
-							}
-						}, ParamTypes({ ScopedObj->GetClassType().lock()->MakeConstRef() })));
-						// assignment operator
-						ScopedObj->AddFunction("=", make_callable([selfPtr = std::weak_ptr<Class>(ScopedObj)](Any const& to, Any const& from)->Any {
-							DynamicObject& To = to.cast<DynamicObject&>();
-							// To.m_objects->clear(); // NOT CONCURRENT-SAFE...
-							DynamicObject const& From = from.cast<DynamicObject const&>();
-							if (auto self = selfPtr.lock()) {
-								self->ConstructMemberObjects(To, From);
-								return to;
-							}
-							else {
-								throw(exception::not_found_error("Custom class type was no longer available"));
-							}
-						}, ParamTypes({ ScopedObj->GetClassType().lock()->MakeRef(), ScopedObj->GetClassType().lock()->MakeConstRef() })));
-						// Member objects
-						for (auto& member_obj : ScopedObj->GetMemberObjects()) {
-							// ref access
-							ScopedObj->AddFunction(member_obj.first, make_callable([objName = member_obj.first](Any const& from)->Any {
-								DynamicObject& From = from.cast<DynamicObject&>();
-								return From.m_objects->at(objName);
-							}, ParamTypes({ ScopedObj->GetClassType().lock()->MakeRef() }), member_obj.second.lock()->MakeRef()));
-							// const ref access
-							ScopedObj->AddFunction(member_obj.first, make_callable([objName = member_obj.first](Any const& from)->Any {
-								DynamicObject const& From = from.cast<DynamicObject const&>();
-								return From.m_objects->at(objName);
-							}, ParamTypes({ ScopedObj->GetClassType().lock()->MakeConstRef() }), member_obj.second.lock()->MakeConstRef()));
-						}
 					}
 
 					auto instance = scope_1->CallFunction("ScopedObj3", {});
@@ -3861,6 +3696,9 @@ int main() {
 							ScopedObj->SetSelf(ScopedObj);
 							scope_1->AddChild(ScopedObj);
 
+							// Default Constructors
+							ScopedObj->AddDefaultConstructors();
+
 							// Define the "member objects" for this class
 							ScopedObj->DeclareMemberObject("name", user_type_shared<std::string>()); // if no default is provided, it will make its own at runtime
 							// member functions
@@ -3871,58 +3709,6 @@ int main() {
 								}
 								throw(exception::not_found_error("Custom class type was no longer available"));								
 							}, ParamTypes({ ScopedObj->GetClassType().lock()->MakeConstRef() }), user_type_shared<size_t>() ));
-
-							// Default constructor
-							ScopedObj->AddFunction("A", make_callable([selfPtr = std::weak_ptr<Class>(ScopedObj)]()->Any {
-								if (auto self = selfPtr.lock()) {
-									DynamicObject out{ self->GetClassType() };
-									self->ConstructMemberObjects(out);
-									return out;
-								}
-								else {
-									throw(exception::not_found_error("Custom class type was no longer available"));
-								}
-							}));
-							// Copy constructor
-							ScopedObj->AddFunction("A", make_callable([selfPtr = std::weak_ptr<Class>(ScopedObj)](Any const& from)->Any {
-								DynamicObject const& obj = from.cast<DynamicObject const&>();
-								if (auto self = selfPtr.lock()) {
-									DynamicObject out{ self->GetClassType() };
-									self->ConstructMemberObjects(out, obj);
-									return out;
-								}
-								else {
-									throw(exception::not_found_error("Custom class type was no longer available"));
-								}
-							}, ParamTypes({ ScopedObj->GetClassType().lock()->MakeConstRef() })));
-							// assignment operator
-							ScopedObj->AddFunction("=", make_callable([selfPtr = std::weak_ptr<Class>(ScopedObj)](Any const& to, Any const& from)->Any {
-								DynamicObject& To = to.cast<DynamicObject&>();
-								// To.m_objects->clear(); // NOT CONCURRENT-SAFE...
-								DynamicObject const& From = from.cast<DynamicObject const&>();
-								if (auto self = selfPtr.lock()) {
-									self->ConstructMemberObjects(To, From);
-									return to;
-								}
-								else {
-									throw(exception::not_found_error("Custom class type was no longer available"));
-								}
-							}, ParamTypes({ ScopedObj->GetClassType().lock()->MakeRef(), ScopedObj->GetClassType().lock()->MakeConstRef() })));
-							// Member objects
-							for (auto& member_obj : ScopedObj->GetMemberObjects()) {
-								// ref access
-								ScopedObj->AddFunction(member_obj.first, make_callable([objName = member_obj.first](Any const& from)->Any {
-									DynamicObject& From = from.cast<DynamicObject&>();
-									return From.m_objects->at(objName);
-								}, ParamTypes({ ScopedObj->GetClassType().lock()->MakeRef() }), member_obj.second.lock()->MakeRef()));
-								// const ref access
-								ScopedObj->AddFunction(member_obj.first, make_callable([objName = member_obj.first](Any const& from)->Any {
-									DynamicObject const& From = from.cast<DynamicObject const&>();
-									return From.m_objects->at(objName);
-								}, ParamTypes({ ScopedObj->GetClassType().lock()->MakeConstRef() }), member_obj.second.lock()->MakeConstRef()));
-							}
-							
-
 						}
 
 						auto instance = scope_1->CallFunction("A", {});
@@ -3939,6 +3725,9 @@ int main() {
 							ScopedObj->SetSelf(ScopedObj);
 							scope_1->AddChild(ScopedObj);
 
+							// Default Constructors
+							ScopedObj->AddDefaultConstructors();
+
 							// Define the "member objects" for this class
 							ScopedObj->DeclareMemberObject("value", user_type_shared<double>()); // if no default is provided, it will make its own at runtime
 							ScopedObj->DeclareMemberObject("var", user_type_shared<double>()); // if no default is provided, it will make its own at runtime
@@ -3950,57 +3739,6 @@ int main() {
 								}
 								throw(exception::not_found_error("Custom class type was no longer available"));
 							}, ParamTypes({ ScopedObj->GetClassType().lock()->MakeConstRef() }), user_type_shared<size_t>()));
-
-
-							// Default constructor
-							ScopedObj->AddFunction("B", make_callable([selfPtr = std::weak_ptr<Class>(ScopedObj)]()->Any {
-								if (auto self = selfPtr.lock()) {
-									DynamicObject out{ self->GetClassType() };
-									self->ConstructMemberObjects(out);
-									return out;
-								}
-								else {
-									throw(exception::not_found_error("Custom class type was no longer available"));
-								}
-							}));
-							// Copy constructor
-							ScopedObj->AddFunction("B", make_callable([selfPtr = std::weak_ptr<Class>(ScopedObj)](Any const& from)->Any {
-								DynamicObject const& obj = from.cast<DynamicObject const&>();
-								if (auto self = selfPtr.lock()) {
-									DynamicObject out{ self->GetClassType() };
-									self->ConstructMemberObjects(out, obj);
-									return out;
-								}
-								else {
-									throw(exception::not_found_error("Custom class type was no longer available"));
-								}
-							}, ParamTypes({ ScopedObj->GetClassType().lock()->MakeConstRef() })));
-							// assignment operator
-							ScopedObj->AddFunction("=", make_callable([selfPtr = std::weak_ptr<Class>(ScopedObj)](Any const& to, Any const& from)->Any {
-								DynamicObject& To = to.cast<DynamicObject&>();
-								// To.m_objects->clear(); // NOT CONCURRENT-SAFE...
-								DynamicObject const& From = from.cast<DynamicObject const&>();
-								if (auto self = selfPtr.lock()) {
-									self->ConstructMemberObjects(To, From);
-									return to;
-								}
-								else {
-									throw(exception::not_found_error("Custom class type was no longer available"));
-								}
-							}, ParamTypes({ ScopedObj->GetClassType().lock()->MakeRef(), ScopedObj->GetClassType().lock()->MakeConstRef() })));
-							// Member objects
-							for (auto& member_obj : ScopedObj->GetMemberObjects()) {
-								// ref access
-								ScopedObj->AddFunction(member_obj.first, make_callable([objName = member_obj.first](Any const& from)->Any {
-									DynamicObject& From = from.cast<DynamicObject&>();
-									return From.m_objects->at(objName);
-								}, ParamTypes({ ScopedObj->GetClassType().lock()->MakeRef() }), member_obj.second.lock()->MakeRef()));
-								// const ref access
-								ScopedObj->AddFunction(member_obj.first, make_callable([objName = member_obj.first](Any const& from)->Any {
-									DynamicObject const& From = from.cast<DynamicObject const&>();
-									return From.m_objects->at(objName);
-								}, ParamTypes({ ScopedObj->GetClassType().lock()->MakeConstRef() }), member_obj.second.lock()->MakeConstRef()));
-							}
 						}
 
 						auto instance = scope_1->CallFunction("B", {});
@@ -4021,6 +3759,9 @@ int main() {
 							ScopedObj->SetSelf(ScopedObj);
 							scope_1->AddChild(ScopedObj);
 
+							// Default Constructors
+							ScopedObj->AddDefaultConstructors();
+
 							// Define the "member objects" for this class
 							ScopedObj->DeclareMemberObject("var", user_type_shared<Var>()); // if no default is provided, it will make its own at runtime
 
@@ -4031,77 +3772,6 @@ int main() {
 								}
 								throw(exception::not_found_error("Custom class type was no longer available"));
 							}, ParamTypes({ ScopedObj->GetClassType().lock()->MakeConstRef() }), user_type_shared<size_t>()));
-
-
-							// Default constructor
-							ScopedObj->AddFunction("C", make_callable([selfPtr = std::weak_ptr<Class>(ScopedObj)]()->Any {
-								if (auto self = selfPtr.lock()) {
-									DynamicObject out{ self->GetClassType() };
-									self->ConstructMemberObjects(out); // should automatically construct parent's objects in-order 
-									return out;
-								}
-								else {
-									throw(exception::not_found_error("Custom class type was no longer available"));
-								}
-							}));
-							// Upcast (const&)
-							classA->AddFunction(classA->GetName(), make_callable([selfPtr = std::weak_ptr<Class>(classA)](Any const& from)->Any {
-								DynamicObject const& obj = from.cast<DynamicObject const&>();
-								if (auto p = selfPtr.lock()) {
-									return DynamicObject(p->GetClassType(), obj);
-								}
-								else {
-									return from;
-								}
-							}, ParamTypes({ ScopedObj->GetClassType().lock()->MakeConstRef() }), classA->GetClassType()));
-							// Upcast (const&)
-							classB->AddFunction(classB->GetName(), make_callable([selfPtr = std::weak_ptr<Class>(classB)](Any const& from)->Any {
-								DynamicObject const& obj = from.cast<DynamicObject const&>();
-								if (auto p = selfPtr.lock()) {
-									return DynamicObject(p->GetClassType(), obj);
-								}
-								else {
-									return from;
-								}
-							}, ParamTypes({ ScopedObj->GetClassType().lock()->MakeConstRef() }), classB->GetClassType()));
-							// Copy constructor
-							ScopedObj->AddFunction("C", make_callable([selfPtr = std::weak_ptr<Class>(ScopedObj)](Any const& from)->Any {
-								DynamicObject const& obj = from.cast<DynamicObject const&>();
-								if (auto self = selfPtr.lock()) {
-									DynamicObject out{ self->GetClassType() };
-									self->ConstructMemberObjects(out, obj);
-									return out;
-								}
-								else {
-									throw(exception::not_found_error("Custom class type was no longer available"));
-								}
-							}, ParamTypes({ ScopedObj->GetClassType().lock()->MakeConstRef() })));
-							// assignment operator
-							ScopedObj->AddFunction("=", make_callable([selfPtr = std::weak_ptr<Class>(ScopedObj)](Any const& to, Any const& from)->Any {
-								DynamicObject& To = to.cast<DynamicObject&>();
-								// To.m_objects->clear(); // NOT CONCURRENT-SAFE...
-								DynamicObject const& From = from.cast<DynamicObject const&>();
-								if (auto self = selfPtr.lock()) {
-									self->ConstructMemberObjects(To, From);
-									return to;
-								}
-								else {
-									throw(exception::not_found_error("Custom class type was no longer available"));
-								}
-							}, ParamTypes({ ScopedObj->GetClassType().lock()->MakeRef(), ScopedObj->GetClassType().lock()->MakeConstRef() })));
-							// Member objects
-							for (auto& member_obj : ScopedObj->GetMemberObjects()) {
-								// ref access
-								ScopedObj->AddFunction(member_obj.first, make_callable([objName = member_obj.first](Any const& from)->Any {
-									DynamicObject& From = from.cast<DynamicObject&>();
-									return From.m_objects->at(objName);
-								}, ParamTypes({ ScopedObj->GetClassType().lock()->MakeRef() }), member_obj.second.lock()->MakeRef()));
-								// const ref access
-								ScopedObj->AddFunction(member_obj.first, make_callable([objName = member_obj.first](Any const& from)->Any {
-									DynamicObject const& From = from.cast<DynamicObject const&>();
-									return From.m_objects->at(objName);
-								}, ParamTypes({ ScopedObj->GetClassType().lock()->MakeConstRef() }), member_obj.second.lock()->MakeConstRef()));
-							}
 						}
 
 						auto instance = scope_1->CallFunction("C", {});

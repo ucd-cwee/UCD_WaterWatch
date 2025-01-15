@@ -1864,27 +1864,41 @@ namespace GoodLang {
 					}
 				}
 
-				// Member objects
-				for (auto& member_obj : this->GetMemberObjects()) {
-					// ref access
-					this->AddFunction(member_obj.first, make_callable([objName = member_obj.first](Any const& from)->Any {
-						DynamicObject& From = from.cast<DynamicObject&>();
-						return From.m_objects->at(objName);
-					}, ParamTypes({ ClassType->MakeRef() }), member_obj.second.lock()->MakeRef()));
-					// const ref access
-					this->AddFunction(member_obj.first, make_callable([objName = member_obj.first](Any const& from)->Any {
-						DynamicObject const& From = from.cast<DynamicObject const&>();
-						return From.m_objects->at(objName);
-					}, ParamTypes({ ClassType->MakeConstRef() }), member_obj.second.lock()->MakeConstRef()));
-				}
-
+				//// Member objects
+				//for (auto& member_obj : this->GetMemberObjects()) {
+				//	// ref access
+				//	this->AddFunction(member_obj.first, make_callable([objName = member_obj.first](Any const& from)->Any {
+				//		DynamicObject& From = from.cast<DynamicObject&>();
+				//		return From.m_objects->at(objName);
+				//	}, ParamTypes({ ClassType->MakeRef() }), member_obj.second.lock()->MakeRef()));
+				//	// const ref access
+				//	this->AddFunction(member_obj.first, make_callable([objName = member_obj.first](Any const& from)->Any {
+				//		DynamicObject const& From = from.cast<DynamicObject const&>();
+				//		return From.m_objects->at(objName);
+				//	}, ParamTypes({ ClassType->MakeConstRef() }), member_obj.second.lock()->MakeConstRef()));
+				//}
 			}
 		};
 
 	public:
 		virtual std::weak_ptr<Type_Info> GetClassType() const override { return ClassType; };
 		void DeclareMemberObject(std::string const& name, std::weak_ptr<Type_Info> type, std::shared_ptr<Any> defaultValue = nullptr) {
-			p_declared_member_objects.emplace(name, { type, defaultValue });
+			if (ClassType && !ClassType->IsBuiltInType()) {
+
+				p_declared_member_objects.emplace(name, { type, defaultValue });
+
+				// ref access
+				this->AddFunction(name, make_callable([objName = name](Any const& from)->Any {
+					DynamicObject& From = from.cast<DynamicObject&>();
+					return From.m_objects->at(objName);
+				}, ParamTypes({ ClassType->MakeRef() }), type.lock()->MakeRef()));
+
+				// const ref access
+				this->AddFunction(name, make_callable([objName = name](Any const& from)->Any {
+					DynamicObject const& From = from.cast<DynamicObject const&>();
+					return From.m_objects->at(objName);
+				}, ParamTypes({ ClassType->MakeConstRef() }), type.lock()->MakeConstRef()));
+			}
 		};
 
 	private:
