@@ -1922,7 +1922,7 @@ namespace GoodLang {
 		// shared lock that prioritizes uncontested shared access and uncontested write access. Contested access prioritizes readers, and fairly orders writers.
 		class UncopiableSharedLock {
 		public:
-#define UncopiableSharedLockAsSharedMutex
+// #define UncopiableSharedLockAsSharedMutex
 			UncopiableSharedLock() = default;
 			UncopiableSharedLock(UncopiableSharedLock const&) {};
 			UncopiableSharedLock(UncopiableSharedLock&&) {};
