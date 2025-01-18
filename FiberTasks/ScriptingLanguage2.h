@@ -4,24 +4,6 @@
 #include "Actions2.h"
 
 namespace GoodLang {
-	// class "Var" is a generic container for dynamically typed objects for use in the scripting language. 
-	// It defers from "Any" because Any objects are for use in C++ to contain statically typed objects. 
-	// "Var" objects are wrappers for Anys that allow the scripting language to process them as-expected
-	class Var {
-	public:
-		Var() = default;
-		explicit Var(Any const& data_f) : p_data(data_f) {};
-		Var(Var const&) = default;
-		Var(Var &&) = default;
-		Var& operator=(Var const&) = default;
-		Var& operator=(Var&&) = default;
-		~Var() = default;
-
-	public:
-		Any p_data;
-
-	};
-
 	class Scope;
 	class Namespace;
 	class Class;
@@ -616,23 +598,33 @@ namespace GoodLang {
 			}
 		};
 
-	private:
+	public:
 #define useCachedData
 #ifdef useCachedData
 		inline static void hash_combine(std::size_t& seed) { };
 		template <typename T, typename... Rest>
 		inline static void hash_combine(std::size_t& seed, T&& v, Rest &&... rest) {
-			std::hash<T> hasher{};
-			seed ^= hasher(std::forward<T>(v)) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+			if constexpr (std::is_same_v<typename std::decay_t<T>, size_t>) {
+				seed ^= v + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+			}
+			else {
+				std::hash<T> hasher{};
+				seed ^= hasher(std::forward<T>(v)) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+			}
 			hash_combine(seed, std::forward<Rest>(rest)...);
 		};
 		template <typename T, typename... Rest>
 		inline static void hash_combine(std::size_t& seed, T const& v, Rest const&... rest) {
-			std::hash<T> hasher{};
-			seed ^= hasher(v) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+			if constexpr (std::is_same_v<typename std::decay_t<T>, size_t>) {
+				seed ^= v + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+			}
+			else {
+				std::hash<T> hasher{};
+				seed ^= hasher(v) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+			}
 			hash_combine(seed, rest...);
 		};
-
+	private:
 		using CacheContainer = std::pair < std::shared_mutex, concurrency::concurrent_unordered_map<size_t, std::weak_ptr<void>>>;
 		using TemplatedCacheContainer = std::pair<std::shared_mutex, concurrency::concurrent_unordered_map<size_t, std::shared_ptr<CacheContainer>>>; // organizes multiple caches for several purposes...
 		using VersionedCacheContainer = std::pair<std::shared_mutex, concurrency::concurrent_unordered_map<size_t, std::shared_ptr<TemplatedCacheContainer>>>; // use this mutex to delete entire caches once the version is out-of-date
@@ -1176,7 +1168,7 @@ namespace GoodLang {
 			if (TryGetCached<0>(treeV, out, functionName, paramsHash)) {
 				return (bool)out;
 			}
-			defer(InsertCachedIfNotExist<0>(treeV, out, functionName, paramsHash));
+			defer(if (out) InsertCachedIfNotExist<0>(treeV, out, functionName, paramsHash));
 #endif
 			//auto tree_hash = Hasher()(std::weak_ptr<TypeConverter>(m_conversionTree));
 			//auto cache1 = GetCache(FindFunctionCache, tree_hash);
@@ -1210,7 +1202,7 @@ namespace GoodLang {
 								if (auto ptr = scope->GetFunctions()) {
 									if (auto func = ptr->BuildMatch(functionName, params, *m_conversionTree, false, true)) {
 										auto cost = func->conversion_cost(params, *m_conversionTree);
-										if (cost != std::numeric_limits<double>::max()) {
+										if (cost < details::TypeConversionWorstCaseCost) {
 											sort.emplace(cost, func);
 										}
 										// return true; // found a nearby match? Give up? Add a give-up criteria? 
@@ -1237,7 +1229,7 @@ namespace GoodLang {
 							if (auto ptr = scope->GetFunctions()) {
 								if (auto func = ptr->BuildMatch(functionName, params, *m_conversionTree, false, true)) {
 									auto cost = func->conversion_cost(params, *m_conversionTree);
-									if (cost != std::numeric_limits<double>::max()) {
+									if (cost < details::TypeConversionWorstCaseCost) {
 										sort.emplace(cost+1, func);
 									}
 									// return true; // found a nearby match? Give up? Add a give-up criteria? 
@@ -1253,14 +1245,14 @@ namespace GoodLang {
 						if (auto functions = constructorScopePtr->GetFunctions()) {
 							if (auto func = functions->BuildMatch(functionName, params, *m_conversionTree, false, true)) {
 								auto cost = func->conversion_cost(params, *m_conversionTree);
-								if (cost != std::numeric_limits<double>::max()) {
+								if (cost < details::TypeConversionWorstCaseCost) {
 									sort.emplace(cost+2, func);
 								}
 							}
 						}
 					}
 					for (auto& s : sort) {
-						if (s.first != std::numeric_limits<double>::max()) {
+						if (s.first < details::TypeConversionWorstCaseCost) {
 							out = s.second;
 							// EmplaceCache(cache2, params, out);
 							return true;
@@ -1276,7 +1268,7 @@ namespace GoodLang {
 							if (auto ptr = scope->GetFunctions()) {
 								if (auto func = ptr->BuildMatch(functionName, params, *m_conversionTree, true, true)) {
 									auto cost = func->conversion_cost(params, *m_conversionTree);
-									if (cost != std::numeric_limits<double>::max()) {
+									if (cost < details::TypeConversionWorstCaseCost) {
 										sort.emplace(cost+3, func);
 									}
 								}
@@ -1289,7 +1281,7 @@ namespace GoodLang {
 								if (auto ptr = scope->GetFunctions()) {
 									if (auto func = ptr->BuildMatch(functionName, params, *m_conversionTree, true, true)) {
 										auto cost = func->conversion_cost(params, *m_conversionTree);
-										if (cost != std::numeric_limits<double>::max()) {
+										if (cost < details::TypeConversionWorstCaseCost) {
 											sort.emplace(cost+4, func);
 										}
 									}
@@ -1303,14 +1295,14 @@ namespace GoodLang {
 						if (auto functions = constructorScopePtr->GetFunctions()) {
 							if (auto func = functions->BuildMatch(functionName, params, *m_conversionTree, true, true)) {
 								auto cost = func->conversion_cost(params, *m_conversionTree);
-								if (cost != std::numeric_limits<double>::max()) {
+								if (cost < details::TypeConversionWorstCaseCost) {
 									sort.emplace(cost+5, func);
 								}
 							}
 						}
 					}
 					for (auto& s : sort) {
-						if (s.first != std::numeric_limits<double>::max()) {
+						if (s.first < details::TypeConversionWorstCaseCost) {
 							out = s.second;
 							return true;
 						}
@@ -1322,7 +1314,7 @@ namespace GoodLang {
 					if (constructorScopePtr) {
 						if (auto functions = constructorScopePtr->GetFunctions()) {
 							if (auto func = functions->BuildMatch(functionName, params, *m_conversionTree, true, true)) {
-								if (func->conversion_cost(params, *m_conversionTree) != std::numeric_limits<double>::max()) {
+								if (func->conversion_cost(params, *m_conversionTree) < details::TypeConversionWorstCaseCost) {
 									out = func;
 									return true;
 								}
@@ -2140,6 +2132,7 @@ namespace GoodLang {
 
 	};
 
+	// Support for Units
 	namespace UnitsLibrary {
 		template<typename T>
 		__forceinline static void AddUnit(std::shared_ptr<Namespace> const& std_namespace, std::shared_ptr<Class> const& value_namespace) {
@@ -2562,7 +2555,7 @@ namespace GoodLang {
 
 					// Converters
 					if (auto p = this->FindClass(user_type_shared<std::string>())) {
-						p->AddFunction(p->GetName(), make_callable([](thisType const& from) -> std::string { return from.c_str(); }));
+						p->AddFunction(p->GetName(), Function(make_callable([](thisType const& from) -> std::string { return from.c_str(); }), true)); // explicit
 					}
 					if (auto p = this->FindClass(user_type_shared<Units::second>())) {
 						p->AddFunction(p->GetName(), make_callable([](thisType const& from) -> Units::second { return (Units::second)from; }));
@@ -2649,7 +2642,12 @@ namespace GoodLang {
 					})); // explicit = cannot be used for conversion trees
 					// Var(Any)
 					classPtr->AddFunction("Var", Function(make_callable([](Any const& obj) -> Var {
-						return Var(obj);
+						if (obj.IsTypeOf<Var>()) {
+							return obj.cast<Var&>();
+						}
+						else {
+							return Var(obj);
+						}
 					}), true)); // explicit = cannot be used for conversion trees
 					// Var& = Var const&
 					classPtr->AddFunction("=", make_callable([](Any const& a, Var const& b) -> Any {
@@ -2663,13 +2661,24 @@ namespace GoodLang {
 					classPtr->AddFunction("get", make_callable([](Var const& b) -> Any {
 						return b.p_data;
 					})); 
+					// template func, Any = Var const&
+					classPtr->AddFunction("=", make_callable([self = std::weak_ptr<Class>(classPtr)](Any & a, Var const& b) -> Any {
+						if (auto Self = self.lock()) {
+							return Self->CallFunction("=", { a, b.p_data });
+						}
+						else {
+							a = b.p_data;
+							return a;
+						}
+					}));
+
 					// Returns the type of the contained object. By not specifying the type, the Any is treated like a Template
 					this->AddFunction("Type_Info", make_callable([](Var const& obj) -> std::weak_ptr<Type_Info> {
-						return obj.p_data.Type();
+						return obj.p_data->Type();
 					}));
 					// Returns the type of Any object. By not specifying the type, the Any is treated like a Template
 					this->AddFunction("Type", make_callable([](Var const& obj) -> std::weak_ptr<Type_Info> {
-						return obj.p_data.Type();
+						return obj.p_data->Type();
 					}));
 					// Returns a stringified version of the provided Any obj. This is meant to be a fall-back template whenever no specialization is available. 
 					this->AddFunction("to_string", make_callable([self = std::weak_ptr<Class>(classPtr)](Var const& x) -> std::string {
@@ -2677,7 +2686,7 @@ namespace GoodLang {
 							return Self->Cast<std::string>(Self->CallFunction("to_string", { x.p_data }));
 						}
 						else {
-							auto name = x.p_data.TypeName();
+							auto name = x.p_data->TypeName();
 							return Units::printf("`%s`", name.c_str());
 						}
 					}));
@@ -2692,6 +2701,60 @@ namespace GoodLang {
 					}));
 				}
 
+				// Pair
+				if (1) {
+					using thisType = std::pair<Var, Var>;
+					std::string thisTypeName = "pair";
+
+					std::shared_ptr<Class> classPtr; {
+						classPtr.reset(new Class(this->p_self.lock(), thisTypeName, user_type_shared<thisType>().lock()));
+					}
+					classPtr->p_self = classPtr;
+					this->AddChild(classPtr);
+					auto thisTypeInfo = classPtr->ClassType;
+
+					// Constructors
+					classPtr->AddFunction(thisTypeName, make_callable([]() -> thisType { return thisType{}; }));
+					classPtr->AddFunction(thisTypeName, make_callable([](thisType const& makeCopy) -> thisType { return makeCopy; }));
+					classPtr->AddFunction(thisTypeName, make_callable([](Any const& a, Any const& b) -> thisType { return thisType{ Var(a), Var(b) }; }));
+					classPtr->AddFunction("=", make_callable([](Any const& a, thisType const& b) -> Any { 
+						thisType& out = a.cast(); out = b; return a; 
+					}, 
+						ParamTypes({ thisTypeInfo->MakeRef(), thisTypeInfo->MakeConstRef() })));
+
+					// Functions
+					classPtr->AddFunction("first", make_callable([](thisType & r) -> Var& { return r.first; }));
+					classPtr->AddFunction("first", make_callable([](thisType const& r) -> Var const& { return r.first; }));
+					classPtr->AddFunction("second", make_callable([](thisType& r) -> Var& { return r.second; }));
+					classPtr->AddFunction("second", make_callable([](thisType const& r) -> Var const& { return r.second; }));
+
+					// Returns a stringified version of the provided Any obj. This is meant to be a fall-back template whenever no specialization is available. 
+					this->AddFunction("to_string", make_callable([self = std::weak_ptr<Class>(classPtr)](thisType const& x)->std::string {
+						if (auto Self = self.lock()) {
+							std::string a = Self->Cast<std::string>(Self->CallFunction("to_string", { x.first.p_data }));
+							std::string b = Self->Cast<std::string>(Self->CallFunction("to_string", { x.second.p_data }));
+							return Units::printf("[%s, %s]", a.c_str(), b.c_str());
+						}
+						else {
+							throw exception::not_found_error("to_string");
+						}
+					}));
+					// Returns a stringified version of the provided Any obj. This is meant to be a fall-back template whenever no specialization is available. 
+					this->AddFunction("to_hash", make_callable([self = std::weak_ptr<Class>(classPtr)](thisType const& x)->size_t {
+						if (auto Self = self.lock()) {
+							size_t a = Self->Cast<size_t>(Self->CallFunction("to_hash", { x.first.p_data }));
+							size_t b = Self->Cast<size_t>(Self->CallFunction("to_hash", { x.second.p_data }));
+							Scope::hash_combine(a, b);
+							return a;
+						}
+						else {
+							throw exception::not_found_error("to_hash");
+						}
+					}));
+
+
+
+				}
 			}
 
 			// Built-In static, templated functions

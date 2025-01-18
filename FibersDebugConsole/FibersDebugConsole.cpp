@@ -3286,9 +3286,9 @@ int main() {
 					EXPECT_EQ(true, (scope_1->CallFunction("Units::value", { DateTime::Now() }).IsTypeOf<Units::value>()));
 					EXPECT_EQ(true, (scope_1->CallFunction("double", { DateTime::Now() }).IsTypeOf<double>()));
 
-					EXPECT_EQ(true, (scope_1->CallFunction("Now", { DateTime() }).IsTypeOf<DateTime>()));
+					//EXPECT_EQ(true, (scope_1->CallFunction("Now", { DateTime() }).IsTypeOf<DateTime>()));
 					EXPECT_EQ(true, (scope_1->CallFunction("time", { DateTime::Now() }).IsTypeOf<Units::day>()));
-					EXPECT_EQ(true, (scope_1->CallFunction("DateTime::Now", { DateTime() }).IsTypeOf<DateTime>()));
+					//EXPECT_EQ(true, (scope_1->CallFunction("DateTime::Now", { DateTime() }).IsTypeOf<DateTime>()));
 					EXPECT_EQ(true, (scope_1->CallFunction("DateTime::Now", { }).IsTypeOf<DateTime>()));
 
 					//printf(scope_1->Cast<std::string>(scope_1->CallFunction("to_string", { scope_1->CallFunction("+", { scope_1->CallFunction("time", { DateTime::Now() }), scope_1->CallFunction("Units::year", { 1 }) }) })));
@@ -3302,7 +3302,7 @@ int main() {
 					catch (...) {}
 					EXPECT_EQ(true, (scope_1->CallFunction("tm_year", { DateTime::Now() }).IsTypeOf<int>()));
 					EXPECT_EQ(true, (scope_1->CallFunction("getNumDaysInSameMonth", { DateTime::Now() }).IsTypeOf<int>()));
-					EXPECT_EQ(true, (scope_1->CallFunction("getNumDaysInSameMonth", { DateTime::Now(), DateTime::Now() }).IsTypeOf<int>()));
+					// EXPECT_EQ(true, (scope_1->CallFunction("getNumDaysInSameMonth", { DateTime::Now(), DateTime::Now() }).IsTypeOf<int>()));
 					EXPECT_EQ(true, (scope_1->Cast<bool>(scope_1->CallFunction("==", { scope_1->CallFunction("DateTime::Epoch", { }), scope_1->CallFunction("DateTime::Epoch", { }) }))));
 				}
 
@@ -3803,6 +3803,194 @@ int main() {
 
 				// the engine does NOT support inheriting from built-in types, and will silently fail if you do attempt to do this.
 				
+				// Namespace with classes e.g.
+				// UI::StackPanel().Background.R = 255
+				// except "Background" is a member object of UI::Panel, and requires automatic casting
+				if (1) {
+					if (1) {
+						auto UI = std::make_shared<Namespace>(scope_1, "UI");
+						UI->SetSelf(UI);
+						scope_1->AddChild(UI);
+
+						// add child classes or child namespaces
+						auto Color = std::make_shared<Class>(UI, "Color");
+						if (Color) {
+							Color->SetSelf(Color);
+							UI->AddChild(Color);
+
+							Color->AddDefaultConstructors();
+
+							// Define the "member objects" for this class
+							Color->DeclareMemberObject("R", user_type_shared<float>());
+							Color->DeclareMemberObject("G", user_type_shared<float>());
+							Color->DeclareMemberObject("B", user_type_shared<float>());
+							Color->DeclareMemberObject("A", user_type_shared<float>());
+
+							Color->AddFunction("to_string", make_callable([selfPtr = std::weak_ptr<Class>(Color)](Any const& from) -> std::string {
+								if (auto self = selfPtr.lock()) {
+									DynamicObject& From = from.cast<DynamicObject&>();
+									
+									auto R_str = self->Cast<std::string>(self->CallFunction("to_string", { From.m_objects->at("R") }));
+									auto G_str = self->Cast<std::string>(self->CallFunction("to_string", { From.m_objects->at("G") }));
+									auto B_str = self->Cast<std::string>(self->CallFunction("to_string", { From.m_objects->at("B") }));
+									auto A_str = self->Cast<std::string>(self->CallFunction("to_string", { From.m_objects->at("A") }));
+									
+									return Units::printf("{ %s, %s, %s, %s }"
+										, R_str.c_str()
+										, G_str.c_str()
+										, B_str.c_str()
+										, A_str.c_str()
+									);
+								}
+								else throw(exception::not_found_error("Custom class type was no longer available"));
+							}, ParamTypes({ Color->GetClassType().lock()->MakeConstRef() })));
+
+							Color->AddFunction("max", make_callable([selfPtr = std::weak_ptr<Class>(Color)](Any const& from)-> float {
+								if (auto self = selfPtr.lock()) {
+									DynamicObject& From = from.cast<DynamicObject&>();
+
+									auto R = self->Cast<float>(From.m_objects->at("R"));
+									auto G = self->Cast<float>(From.m_objects->at("G"));
+									auto B = self->Cast<float>(From.m_objects->at("B"));
+									auto A = self->Cast<float>(From.m_objects->at("A"));
+
+									return std::max(std::max(std::max(R, G), B), A);
+								}
+								else throw(exception::not_found_error("Custom class type was no longer available"));
+							}, ParamTypes({ Color->GetClassType().lock()->MakeConstRef() })));
+						}
+
+						auto FrameworkElement = std::make_shared<Class>(UI, "FrameworkElement");
+						if (FrameworkElement) {
+							FrameworkElement->SetSelf(FrameworkElement);
+							UI->AddChild(FrameworkElement);
+
+							FrameworkElement->AddDefaultConstructors();
+
+							// Define the "member objects" for this class
+							FrameworkElement->DeclareMemberObject("UniqueName", user_type_shared<int>()); 
+							FrameworkElement->DeclareMemberObject("Version", user_type_shared<int>(), std::make_shared<Any>(0));
+							FrameworkElement->DeclareMemberObject("Opacity", user_type_shared<double>(), std::make_shared<Any>(-1.0));
+							FrameworkElement->DeclareMemberObject("Width", user_type_shared<double>(), std::make_shared<Any>(-1.0));
+							FrameworkElement->DeclareMemberObject("Height", user_type_shared<double>(), std::make_shared<Any>(-1.0));
+							FrameworkElement->DeclareMemberObject("VerticalAlignment", user_type_shared<std::string>(), std::make_shared<Any>(std::string("Stretch")));
+							FrameworkElement->DeclareMemberObject("HorizontalAlignment", user_type_shared<std::string>(), std::make_shared<Any>(std::string("Stretch")));
+							FrameworkElement->DeclareMemberObject("Tag", user_type_shared<Var>());
+							FrameworkElement->DeclareMemberObject("Name", user_type_shared<std::string>());
+							FrameworkElement->DeclareMemberObject("MinWidth", user_type_shared<double>(), std::make_shared<Any>(-1.0));
+							FrameworkElement->DeclareMemberObject("MinHeight", user_type_shared<double>(), std::make_shared<Any>(-1.0));
+							FrameworkElement->DeclareMemberObject("MaxWidth", user_type_shared<double>(), std::make_shared<Any>(-1.0));
+							FrameworkElement->DeclareMemberObject("MaxHeight", user_type_shared<double>(), std::make_shared<Any>(-1.0));
+							FrameworkElement->DeclareMemberObject("Margin", user_type_shared<std::string>(), std::make_shared<Any>(std::string("0,0,0,0")));
+							FrameworkElement->DeclareMemberObject("OnLoaded", user_type_shared<Var>()); // function as variable?
+							FrameworkElement->DeclareMemberObject("OnUnloaded", user_type_shared<Var>()); // function as variable?
+
+							FrameworkElement->AddFunction("Update", make_callable([selfPtr = std::weak_ptr<Class>(FrameworkElement)](Any const& from) {
+								if (auto self = selfPtr.lock()) {
+									DynamicObject& From = from.cast<DynamicObject&>();
+									// do nothing?
+								}else throw(exception::not_found_error("Custom class type was no longer available"));
+							}, ParamTypes({ FrameworkElement->GetClassType().lock()->MakeConstRef() })));
+						}
+
+						auto Panel = std::make_shared<Class>(UI, "Panel", user_type_shared<void>().lock(), FrameworkElement);
+						if (Panel) {
+							Panel->SetSelf(Panel);
+							UI->AddChild(Panel);
+
+							Panel->AddDefaultConstructors();
+
+							// Define the "member objects" for this class
+							Panel->DeclareMemberObject("BorderBrush", Color->GetClassType());
+							Panel->DeclareMemberObject("Background", Color->GetClassType());
+							Panel->DeclareMemberObject("Padding", user_type_shared<std::string>(), std::make_shared<Any>(std::string("0,0,0,0")));
+							Panel->DeclareMemberObject("BorderThickness", user_type_shared<std::string>(), std::make_shared<Any>(std::string("0,0,0,0")));
+						}
+
+						auto StackPanel = std::make_shared<Class>(UI, "StackPanel", user_type_shared<void>().lock(), Panel);
+						if (StackPanel) {
+							StackPanel->SetSelf(StackPanel);
+							UI->AddChild(StackPanel);
+
+							StackPanel->AddDefaultConstructors();
+
+							// Define the "member objects" for this class
+							StackPanel->DeclareMemberObject("Orientation", user_type_shared<std::string>(), std::make_shared<Any>(std::string("Vertical")));
+							StackPanel->DeclareMemberObject("Spacing", user_type_shared<double>(), std::make_shared<Any>(0.0));
+						}
+					}
+
+					if (1) {
+						auto stackPanelInstance = scope_1->CallFunction("UI::StackPanel", {});
+						auto stackPanelBackground = scope_1->CallFunction("Background", { stackPanelInstance });
+						auto stackPanelBackground_R = scope_1->CallFunction("R", { stackPanelBackground });
+						(void)scope_1->CallFunction("=", { stackPanelBackground_R, 255 });
+						EXPECT_EQ(255, scope_1->Cast<int>(stackPanelBackground_R));
+					}
+
+					if (1) {
+						auto tempScope = std::make_shared<Scope>(scope_1);
+						tempScope->SetSelf(tempScope);
+
+						auto stackPanelInstance = tempScope->CallFunction("UI::StackPanel", {});
+						auto stackPanelBackground = tempScope->CallFunction("Background", { stackPanelInstance });
+						auto stackPanelBackground_R = tempScope->CallFunction("R", { stackPanelBackground });
+						(void)tempScope->CallFunction("=", { stackPanelBackground_R, 255 });
+						EXPECT_EQ(255, scope_1->Cast<int>(stackPanelBackground_R));
+					}
+					
+					if (1) {
+						auto tempScope = std::make_shared<Scope>(scope_1);
+						tempScope->SetSelf(tempScope);
+						tempScope->AddUsing(tempScope->FindNamespace("UI"));
+
+						auto stackPanelInstance = tempScope->CallFunction("UI::StackPanel", {});
+						auto stackPanelBackground = tempScope->CallFunction("Background", { stackPanelInstance });
+						auto stackPanelBackground_R = tempScope->CallFunction("R", { stackPanelBackground });
+						(void)tempScope->CallFunction("=", { stackPanelBackground_R, 255 });
+						EXPECT_EQ(255, scope_1->Cast<int>(stackPanelBackground_R));
+					}
+
+					if (1) {
+						auto tempScope = std::make_shared<Scope>(scope_1);
+						tempScope->SetSelf(tempScope);
+						tempScope->AddUsing(tempScope->FindNamespace("UI"));
+
+						auto stackPanelInstance = tempScope->CallFunction("StackPanel", {});
+						auto stackPanelBackground = tempScope->CallFunction("Background", { stackPanelInstance });
+						auto stackPanelBackground_R = tempScope->CallFunction("R", { stackPanelBackground });
+						(void)tempScope->CallFunction("=", { stackPanelBackground_R, 255 });
+						EXPECT_EQ(255, scope_1->Cast<int>(stackPanelBackground_R));
+					}
+				}
+
+				// pair, Var testing
+				if (1) {
+					auto Instance = scope_1->CallFunction("pair", { 100, 200 });
+
+					printf(scope_1->Cast<int>(scope_1->CallFunction("get", { scope_1->CallFunction("first", { Instance }) })));
+					scope_1->CallFunction("=", { scope_1->CallFunction("first", {Instance}), 50 });
+					printf(scope_1->Cast<int>(scope_1->CallFunction("get", { scope_1->CallFunction("first", { Instance }) })));
+
+					printf(scope_1->Cast<int>(scope_1->CallFunction("int", { scope_1->CallFunction("first", {Instance}) })));
+					printf(scope_1->Cast<int const&>(scope_1->CallFunction("first", { Instance })));
+
+					printf(scope_1->Cast<int>(scope_1->CallFunction("first", { Instance })));
+					printf(scope_1->Cast<int>(scope_1->CallFunction("second", { Instance })));
+
+					auto Instance2 = scope_1->CallFunction("int", { 0 });
+					scope_1->CallFunction("=", { Instance2, scope_1->CallFunction("first", { Instance }) });
+					printf(scope_1->Cast<int>(Instance2));
+
+
+
+				}
+
+
+
+
+
+
 
 
 

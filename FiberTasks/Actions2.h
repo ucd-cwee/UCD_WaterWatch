@@ -919,6 +919,24 @@ namespace GoodLang {
 		std::shared_ptr<concurrency::concurrent_unordered_map<std::string, std::shared_ptr<Any>>>
 			m_objects;
 	};
+	
+	// class "Var" is a generic container for dynamically typed objects for use in the scripting language. 
+	// It defers from "Any" because Any objects are for use in C++ to contain statically typed objects. 
+	// "Var" objects are wrappers for Anys that allow the scripting language to process them as-expected
+	class Var {
+	public:
+		Var() : p_data(std::make_shared<Any>()) {}
+		explicit Var(Any const& data_f) : p_data(std::make_shared<Any>(data_f)) {};
+		Var(Var const&) = default;
+		Var(Var&&) = default;
+		Var& operator=(Var const&) = default;
+		Var& operator=(Var&&) = default;
+		~Var() = default;
+
+	public:
+		std::shared_ptr<Any> p_data;
+
+	};
 };
 
 // Any, AnyAutoCast, DynamicObject, exceptions
@@ -1307,11 +1325,17 @@ namespace GoodLang {
 		// DynamicObjects can "present" as one class but actually be another. This checks the ACTUAL class, not the presenting class.
 		std::weak_ptr<Type_Info> ActualType() const noexcept {
 			static auto DynamicTypeHash{ GetHash(user_type<DynamicObject>()) };
+			static auto VarHash{ GetHash(user_type<Var>()) };
 			auto locked{ std::shared_lock(mut) };
 			if (std::shared_ptr<AnyData>& m = container) {
 				if (m->GetTypeHash() == DynamicTypeHash) {
 					if (auto p2 = m->cast< DynamicObject>()) {
 						return p2->m_actualType;
+					}
+				}
+				if (m->GetTypeHash() == VarHash) {
+					if (auto p2 = m->cast< Var>()) {
+						return p2->p_data->ActualType();
 					}
 				}
 				return m->GetTypeShared();
@@ -1322,11 +1346,17 @@ namespace GoodLang {
 		};
 		std::weak_ptr<Type_Info> Type() const noexcept {
 			static auto DynamicTypeHash{ GetHash(user_type<DynamicObject>()) };
+			static auto VarHash{ GetHash(user_type<Var>()) };
 			auto locked{ std::shared_lock(mut) };
 			if (std::shared_ptr<AnyData>& m = container) {
 				if (m->GetTypeHash() == DynamicTypeHash) {
 					if (auto p2 = m->cast< DynamicObject>()) {
 						return p2->m_classType;
+					}
+				}
+				if (m->GetTypeHash() == VarHash) {
+					if (auto p2 = m->cast< Var>()) {
+						return p2->p_data->Type();
 					}
 				}
 				return m->GetTypeShared();
@@ -1337,12 +1367,19 @@ namespace GoodLang {
 		};
 		size_t TypeHash() const noexcept {
 			static auto DynamicTypeHash{ GetHash(user_type<DynamicObject>()) };
-
+			static auto VarHash{ GetHash(user_type<Var>()) };
 			auto locked{ std::shared_lock(mut) };
 			if (std::shared_ptr<AnyData>& m = container) {
 				if (m->GetTypeHash() == DynamicTypeHash) {
 					if (auto p2 = m->cast< DynamicObject>()) {
 						if (auto p3 = p2->m_classType.lock()) {
+							return p3->GetHash();
+						}
+					}
+				}
+				if (m->GetTypeHash() == VarHash) {
+					if (auto p2 = m->cast< Var>()) {
+						if (auto p3 = p2->p_data->Type().lock()) {
 							return p3->GetHash();
 						}
 					}
@@ -1438,6 +1475,7 @@ namespace GoodLang {
 
 		public:
 			template<typename T> static decltype(auto) DoCast(Any* p) noexcept {
+				static auto VarHash{ GetHash(user_type<Var>()) };
 				typedef typename is_SharedPtr_class<T>::type isShared;
 				constexpr bool is_shared_ptr = isShared::value;
 				constexpr bool is_ptr = std::is_pointer_v<T>;
@@ -1451,10 +1489,26 @@ namespace GoodLang {
 						throw("Casting Any to std::shared_ptr<T>* or std::shared_ptr<T>& is not recommended due to lifetime management concerns. Suggest changing cast to std::shared_ptr<T>.");
 					}
 					else {
+						if (std::shared_ptr<AnyData>& m = p->container) {
+							if (m->GetTypeHash() == VarHash) {
+								// this is a Var and the cast should pass-through to its child
+								if (auto p2 = m->cast<Var>()) {
+									return DoCast_Shared<innertype>(&*p2->p_data);
+								}
+							}
+						}
 						return DoCast_Shared<innertype>(p);
 					}
 				}
 				else {
+					if (std::shared_ptr<AnyData>& m = p->container) {
+						if (m->GetTypeHash() == VarHash) {
+							// this is a Var and the cast should pass-through to its child
+							if (auto p2 = m->cast<Var>()) {
+								return DoCast_Unshared<T>(&*p2->p_data);
+							}
+						}
+					}
 					return DoCast_Unshared<T>(p);
 				}
 			};
@@ -1922,7 +1976,7 @@ namespace GoodLang {
 		// shared lock that prioritizes uncontested shared access and uncontested write access. Contested access prioritizes readers, and fairly orders writers.
 		class UncopiableSharedLock {
 		public:
-// #define UncopiableSharedLockAsSharedMutex
+#define UncopiableSharedLockAsSharedMutex
 			UncopiableSharedLock() = default;
 			UncopiableSharedLock(UncopiableSharedLock const&) {};
 			UncopiableSharedLock(UncopiableSharedLock&&) {};
@@ -6416,9 +6470,11 @@ namespace GoodLang {
 			ParamTypes Params{ params };
 			if (auto func = at(functionName, Params)) {
 				// cache (or actual) found
-				return func->m_function;
+				if (func->m_function) {
+					return func->m_function;
+				}
 			}
-			else {
+			if (1) {
 				// Three sorted groups of candidates. 
 				// Group 1 = exact matches, Group 2 = type conversions, Group 3 = template functions
 				std::map< size_t, std::array<std::map<double, FunctionPtr, std::less<double>>, 3>, std::greater<size_t>>
@@ -6440,7 +6496,7 @@ namespace GoodLang {
 						bool isExplicitFunc = function.second.second->m_isEplicit;
 
 						auto conversionCost = function.second.second->m_function->conversion_cost_fast(params, paramTypes, m_typeConverters);
-						if (conversionCost == std::numeric_limits<double>::max()) continue;							
+						if (conversionCost >= details::TypeConversionWorstCaseCost) continue;							
 
 						if (isTemplateFunc) {
 							if (AllowTemplateInstantiation) {
@@ -6462,7 +6518,7 @@ namespace GoodLang {
 				for (auto& numParams : candidates) {
 					for (auto& preference_order : numParams.second) {
 						for (auto& candidate : preference_order) {
-							if (candidate.first == std::numeric_limits<double>::max()) continue;
+							if (candidate.first >= details::TypeConversionWorstCaseCost) continue;
 							if (!candidate.second) continue;
 
 							ParamTypes ParamTypesToCache{ params };
