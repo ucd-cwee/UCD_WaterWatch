@@ -3577,20 +3577,49 @@ int main() {
 					scope_1->CallFunction("=", { numberV , 100 });
 					EXPECT_EQ(100, scope_1->Cast<int>(numberV));
 					auto anyV = scope_1->CallFunction("value", { instance });
+					printf(anyV.Type().lock()->name());
 					scope_1->CallFunction("=", { anyV, 100 });
+					printf(anyV.Type().lock()->name());
 					auto anyV2 = scope_1->CallFunction("value", { instance });
-					EXPECT_EQ(true, anyV.cast<Var&>().p_data.IsTypeOf<int>());
-					EXPECT_EQ(true, anyV2.cast<Var&>().p_data.IsTypeOf<int>());
-					EXPECT_EQ(100, scope_1->Cast<int>(scope_1->CallFunction("get", { anyV })));
+					EXPECT_EQ(true, anyV.cast<Var&>().p_data->IsTypeOf<int>());
+					EXPECT_EQ(true, anyV2.cast<Var&>().p_data->IsTypeOf<int>());
+					EXPECT_EQ(100, scope_1->Cast<int>(anyV));
 
 					auto instance2 = scope_1->CallFunction("ScopedObj", { instance });
 					auto anyV3 = scope_1->CallFunction("value", { instance2 });
-					EXPECT_EQ(true, anyV3.cast<Var&>().p_data.IsTypeOf<int>());
+					EXPECT_EQ(true, anyV3.cast<Var&>().p_data->IsTypeOf<int>());
 					
-					scope_1->CallFunction("=", { anyV3, std::string("TEST")});
+					if (auto* VarContainerPtr = anyV3.container->cast<Var>()) {
+						if (auto* p = &*VarContainerPtr->p_data) {
+							if (int* p_int_ptr = p->container->cast<int>()) {
+								printf(*p_int_ptr);
+							}
+							else {
+								printf(p->container->GetType().name());
+							}
+						}
+						else {
+							printf("VarContainerPtr was empty");
+						}
+					}
+					else {
+						printf(anyV3.container->GetType().name());
+					}
 
-					EXPECT_EQ(true, anyV3.cast<Var&>().p_data.IsTypeOf<std::string>());
-					EXPECT_EQ(true, anyV.cast<Var&>().p_data.IsTypeOf<int>());
+
+					const int& test = anyV3.cast<const int&>();
+					printf(test);
+
+					const int& test2 = anyV3.cast();
+					printf(test2);
+
+					try {
+						scope_1->CallFunction("=", { anyV3, std::string("TEST") }); // fails, since was already an int
+					}
+					catch (...) {}
+
+					// EXPECT_EQ(true, anyV3.cast<Var&>().p_data->IsTypeOf<std::string>());
+					EXPECT_EQ(true, anyV.cast<Var&>().p_data->IsTypeOf<int>());
 				}
 				
 				// Test an inherited custom class 
@@ -3617,18 +3646,17 @@ int main() {
 					auto anyV = scope_1->CallFunction("value", { instance });
 					scope_1->CallFunction("=", { anyV, 100 });
 					auto anyV2 = scope_1->CallFunction("value", { instance });
-					EXPECT_EQ(true, anyV.cast<Var&>().p_data.IsTypeOf<int>());
-					EXPECT_EQ(true, anyV2.cast<Var&>().p_data.IsTypeOf<int>());
-					EXPECT_EQ(100, scope_1->Cast<int>(scope_1->CallFunction("get", { anyV })));
+					EXPECT_EQ(true, anyV.cast<Var&>().p_data->IsTypeOf<int>());
+					EXPECT_EQ(true, anyV2.cast<Var&>().p_data->IsTypeOf<int>());
+					EXPECT_EQ(100, scope_1->Cast<int>(anyV));
 
 					auto instance2 = scope_1->CallFunction("ScopedObj2", { instance });
 					auto anyV3 = scope_1->CallFunction("value", { instance2 });
-					EXPECT_EQ(true, anyV3.cast<Var&>().p_data.IsTypeOf<int>());
+					EXPECT_EQ(true, anyV3.cast<Var&>().p_data->IsTypeOf<int>());
 
-					scope_1->CallFunction("=", { anyV3, std::string("TEST") });
-
-					EXPECT_EQ(true, anyV3.cast<Var&>().p_data.IsTypeOf<std::string>());
-					EXPECT_EQ(true, anyV.cast<Var&>().p_data.IsTypeOf<int>());
+					//scope_1->CallFunction("=", { anyV3, std::string("TEST") });
+					//EXPECT_EQ(true, anyV3.cast<Var&>().p_data->IsTypeOf<std::string>());
+					EXPECT_EQ(true, anyV.cast<Var&>().p_data->IsTypeOf<int>());
 				}
 
 				// Test a inherited-then-inherited custom class (e.g:)
@@ -3658,9 +3686,9 @@ int main() {
 					auto anyV = scope_1->CallFunction("value", { instance });
 					scope_1->CallFunction("=", { anyV, 100 });
 					auto anyV2 = scope_1->CallFunction("value", { instance });
-					EXPECT_EQ(true, anyV.cast<Var&>().p_data.IsTypeOf<int>());
-					EXPECT_EQ(true, anyV2.cast<Var&>().p_data.IsTypeOf<int>());
-					EXPECT_EQ(100, scope_1->Cast<int>(scope_1->CallFunction("get", { anyV })));
+					EXPECT_EQ(true, anyV.cast<Var&>().p_data->IsTypeOf<int>());
+					EXPECT_EQ(true, anyV2.cast<Var&>().p_data->IsTypeOf<int>());
+					EXPECT_EQ(100, scope_1->Cast<int>(anyV));
 
 					auto name2 = scope_1->CallFunction("name2", { instance });
 					auto equality = scope_1->CallFunction("==", { name2, std::string("ScopedObj3") });
@@ -3670,12 +3698,11 @@ int main() {
 
 					auto instance2 = scope_1->CallFunction("ScopedObj3", { instance });
 					auto anyV3 = scope_1->CallFunction("value", { instance2 });
-					EXPECT_EQ(true, anyV3.cast<Var&>().p_data.IsTypeOf<int>());
+					EXPECT_EQ(true, anyV3.cast<Var&>().p_data->IsTypeOf<int>());
 
-					scope_1->CallFunction("=", { anyV3, std::string("TEST") });
-
-					EXPECT_EQ(true, anyV3.cast<Var&>().p_data.IsTypeOf<std::string>());
-					EXPECT_EQ(true, anyV.cast<Var&>().p_data.IsTypeOf<int>());
+					//scope_1->CallFunction("=", { anyV3, std::string("TEST") });
+					//EXPECT_EQ(true, anyV3.cast<Var&>().p_data->IsTypeOf<std::string>());
+					EXPECT_EQ(true, anyV.cast<Var&>().p_data->IsTypeOf<int>());
 
 					EXPECT_EQ(true, scope_1->Cast<bool>(scope_1->CallFunction("==", { scope_1->CallFunction("name2", { instance2 }), std::string("ScopedObj3") })));
 
@@ -3968,12 +3995,18 @@ int main() {
 				if (1) {
 					auto Instance = scope_1->CallFunction("pair", { 100, 200 });
 
-					printf(scope_1->Cast<int>(scope_1->CallFunction("get", { scope_1->CallFunction("first", { Instance }) })));
+					printf(scope_1->Cast<int>(scope_1->CallFunction("first", { Instance })));
 					scope_1->CallFunction("=", { scope_1->CallFunction("first", {Instance}), 50 });
-					printf(scope_1->Cast<int>(scope_1->CallFunction("get", { scope_1->CallFunction("first", { Instance }) })));
+					printf(scope_1->Cast<int>(scope_1->CallFunction("first", { Instance })));
 
 					printf(scope_1->Cast<int>(scope_1->CallFunction("int", { scope_1->CallFunction("first", {Instance}) })));
-					printf(scope_1->Cast<int const&>(scope_1->CallFunction("first", { Instance })));
+
+					printf(scope_1->Cast<std::string>(scope_1->CallFunction("name", { scope_1->CallFunction("Type_Info", { scope_1->CallFunction("first", { Instance }) }) })));
+
+
+
+
+					// printf(scope_1->Cast<int const&>(scope_1->CallFunction("first", { Instance })));
 
 					printf(scope_1->Cast<int>(scope_1->CallFunction("first", { Instance })));
 					printf(scope_1->Cast<int>(scope_1->CallFunction("second", { Instance })));
@@ -3982,11 +4015,43 @@ int main() {
 					scope_1->CallFunction("=", { Instance2, scope_1->CallFunction("first", { Instance }) });
 					printf(scope_1->Cast<int>(Instance2));
 
+					if (scope_1->Cast<bool>(scope_1->CallFunction("try_reset", { scope_1->CallFunction("first", { Instance }) }))) {
+						printf("try_reset succeeded");
+					}
+					else {
+						printf("try_reset failed");
+					}
 
+					scope_1->CallFunction("=", { scope_1->CallFunction("first", { Instance }), std::string("TEST")});
 
+					printf(scope_1->Cast<std::string>(scope_1->CallFunction("to_string", { scope_1->CallFunction("first", { Instance }) })));
 				}
 
-
+				// Var test with custom class
+				if (1) {
+					if (1) {
+						// Var x;
+						auto VarInstance = scope_1->CallFunction("Var", {});
+						// x = UI::StackPanel();
+						scope_1->CallFunction("=", { VarInstance, scope_1->CallFunction("UI::StackPanel", {}) });
+						// x.Background.R = 255;
+						scope_1->CallFunction("=", { scope_1->CallFunction("R", { scope_1->CallFunction("Background", { VarInstance }) }), 255 });
+						// assert(x.Background.R == 255);
+						EXPECT_EQ(255, scope_1->Cast<int>(scope_1->CallFunction("R", { scope_1->CallFunction("Background", { VarInstance }) })));
+					}
+					if (1) {
+						// Var x = UI::StackPanel();
+						auto VarInstance = scope_1->CallFunction("Var", { scope_1->CallFunction("UI::StackPanel", {}) });
+						// x.Background.R = 255;
+						scope_1->CallFunction("=", { scope_1->CallFunction("R", { scope_1->CallFunction("Background", { VarInstance }) }), 255 });
+						// assert(x.Background.R == 255);
+						EXPECT_EQ(255, scope_1->Cast<int>(scope_1->CallFunction("R", { scope_1->CallFunction("Background", { VarInstance }) })));
+					}
+					if (1) {
+						// Var(UI::StackPanel()).Background.R = 255;
+						scope_1->CallFunction("=", { scope_1->CallFunction("R", { scope_1->CallFunction("Background", { scope_1->CallFunction("Var", { scope_1->CallFunction("UI::StackPanel", {}) }) }) }), 255 });
+					}
+				}
 
 
 

@@ -2657,10 +2657,24 @@ namespace GoodLang {
 					classPtr->AddFunction("=", make_callable([](Any const& a, Any const& b) -> Any {
 						Var& out = a.cast(); out = Var(b); return a;
 					}, ParamTypes({ user_type_shared<Var>().lock()->MakeRef(), user_type_shared<Any>() }), user_type_shared<Var>().lock()->MakeRef())); 
-					// Var().get()
-					classPtr->AddFunction("get", make_callable([](Var const& b) -> Any {
-						return b.p_data;
-					})); 
+					
+					// Reset a Var
+					classPtr->AddFunction("try_reset", make_callable([](Any const& a) -> bool {
+						if (Var* p = a.cast<Var*>()) { // will succeed for "Var" types. Note that Var's with values will LIE about their types -- can only find out by trying to do this cast.
+							p->p_data = std::make_shared<Any>();
+							return true;
+						}
+						return false;
+					}));
+					// Reset a Var
+					classPtr->AddFunction("try_reset", make_callable([](Any const& a, Any const& b) -> bool {
+						if (Var* p = a.cast<Var*>()) { // will succeed for "Var" types. Note that Var's with values will LIE about their types -- can only find out by trying to do this cast.
+							p->p_data = std::make_shared<Any>(b);
+							return true;
+						}
+						return false;
+					}));
+
 					// template func, Any = Var const&
 					classPtr->AddFunction("=", make_callable([self = std::weak_ptr<Class>(classPtr)](Any & a, Var const& b) -> Any {
 						if (auto Self = self.lock()) {
@@ -2751,10 +2765,16 @@ namespace GoodLang {
 							throw exception::not_found_error("to_hash");
 						}
 					}));
-
-
-
 				}
+
+
+
+
+
+
+
+
+
 			}
 
 			// Built-In static, templated functions

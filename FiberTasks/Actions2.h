@@ -920,9 +920,11 @@ namespace GoodLang {
 			m_objects;
 	};
 	
-	// class "Var" is a generic container for dynamically typed objects for use in the scripting language. 
-	// It defers from "Any" because Any objects are for use in C++ to contain statically typed objects. 
-	// "Var" objects are wrappers for Anys that allow the scripting language to process them as-expected
+#define AllowInlineVarTyping
+	/* class "Var" is a generic container for dynamically typed objects for use in the scripting language. 
+	It defers from "Any" because Any objects are for use in C++ to contain statically typed objects. 
+	"Var" objects are wrappers for Anys that allow the scripting language to process them as 
+	empty & assignable, or filled and implimented */
 	class Var {
 	public:
 		Var() : p_data(std::make_shared<Any>()) {}
@@ -1302,7 +1304,13 @@ namespace GoodLang {
 		/*! Checks if the Any has been assigned something */
 		bool IsEmpty() const noexcept {
 			auto locked{ std::shared_lock(mut) };
-			return (bool)container;
+			if ((bool)container) {
+				return container->GetType().is_void();
+			}
+			else {
+				return true;
+			}
+			// return (bool)container;
 		};
 
 		/*! Empties the Any and frees the memory. */
@@ -1333,11 +1341,18 @@ namespace GoodLang {
 						return p2->m_actualType;
 					}
 				}
-				if (m->GetTypeHash() == VarHash) {
+#ifdef AllowInlineVarTyping
+				//if (m->GetTypeHash() == VarHash) {
 					if (auto p2 = m->cast< Var>()) {
-						return p2->p_data->ActualType();
+						if (!p2->p_data->IsEmpty()) {
+							return p2->p_data->ActualType();
+						}
+						else {
+							return m->GetTypeShared();
+						}
 					}
-				}
+				//}
+#endif
 				return m->GetTypeShared();
 			}
 			else {
@@ -1354,11 +1369,18 @@ namespace GoodLang {
 						return p2->m_classType;
 					}
 				}
-				if (m->GetTypeHash() == VarHash) {
+#ifdef AllowInlineVarTyping
+				//if (m->GetTypeHash() == VarHash) {
 					if (auto p2 = m->cast< Var>()) {
-						return p2->p_data->Type();
+						if (!p2->p_data->IsEmpty()) {
+							return p2->p_data->Type();
+						}
+						else {
+							return m->GetTypeShared();
+						}
 					}
-				}
+				//}
+#endif
 				return m->GetTypeShared();
 			}
 			else {
@@ -1377,13 +1399,18 @@ namespace GoodLang {
 						}
 					}
 				}
-				if (m->GetTypeHash() == VarHash) {
+#ifdef AllowInlineVarTyping
+				//if (m->GetTypeHash() == VarHash) {
 					if (auto p2 = m->cast< Var>()) {
-						if (auto p3 = p2->p_data->Type().lock()) {
-							return p3->GetHash();
+						if (!p2->p_data->IsEmpty()) {
+							return p2->p_data->TypeHash();
+						}
+						else {
+							return m->GetTypeHash();
 						}
 					}
-				}
+				//}
+#endif
 				return m->GetTypeHash();
 			}
 			else {
@@ -1475,41 +1502,57 @@ namespace GoodLang {
 
 		public:
 			template<typename T> static decltype(auto) DoCast(Any* p) noexcept {
-				static auto VarHash{ GetHash(user_type<Var>()) };
-				typedef typename is_SharedPtr_class<T>::type isShared;
-				constexpr bool is_shared_ptr = isShared::value;
-				constexpr bool is_ptr = std::is_pointer_v<T>;
-				constexpr bool is_ref = std::is_reference_v<T>;
-				if constexpr (is_shared_ptr) {
-					typedef typename details::get_type<T>::type innertype;
-					if constexpr (is_ptr) {
-						throw("Casting Any to std::shared_ptr<T>* or std::shared_ptr<T>& is not recommended due to lifetime management concerns. Suggest changing cast to std::shared_ptr<T>.");
-					}
-					else if constexpr (is_ref) {
-						throw("Casting Any to std::shared_ptr<T>* or std::shared_ptr<T>& is not recommended due to lifetime management concerns. Suggest changing cast to std::shared_ptr<T>.");
-					}
-					else {
-						if (std::shared_ptr<AnyData>& m = p->container) {
-							if (m->GetTypeHash() == VarHash) {
-								// this is a Var and the cast should pass-through to its child
-								if (auto p2 = m->cast<Var>()) {
-									return DoCast_Shared<innertype>(&*p2->p_data);
+				while (true) {
+					static auto VarHash{ GetHash(user_type<Var>()) };
+					typedef typename is_SharedPtr_class<T>::type isShared;
+					constexpr bool is_shared_ptr = isShared::value;
+					constexpr bool is_ptr = std::is_pointer_v<T>;
+					constexpr bool is_ref = std::is_reference_v<T>;
+					if constexpr (is_shared_ptr) {
+						typedef typename details::get_type<T>::type innertype;
+						if constexpr (is_ptr) {
+							throw("Casting Any to std::shared_ptr<T>* or std::shared_ptr<T>& is not recommended due to lifetime management concerns. Suggest changing cast to std::shared_ptr<T>.");
+						}
+						else if constexpr (is_ref) {
+							throw("Casting Any to std::shared_ptr<T>* or std::shared_ptr<T>& is not recommended due to lifetime management concerns. Suggest changing cast to std::shared_ptr<T>.");
+						}
+						else {
+#ifdef AllowInlineVarTyping
+							if constexpr (std::is_same_v<typename std::remove_pointer_t<typename std::decay_t<T>>, Var>) {
+								return DoCast_Shared<innertype>(p);
+							}
+							else {
+								if (std::shared_ptr<AnyData>& m = p->container) {
+									//if (m->GetTypeHash() == VarHash) {
+									if (auto p2 = m->cast<Var>()) {
+										p = &*p2->p_data;
+										continue;
+									}
+									//}
 								}
 							}
+#endif
+							return DoCast_Shared<innertype>(p);
 						}
-						return DoCast_Shared<innertype>(p);
 					}
-				}
-				else {
-					if (std::shared_ptr<AnyData>& m = p->container) {
-						if (m->GetTypeHash() == VarHash) {
-							// this is a Var and the cast should pass-through to its child
-							if (auto p2 = m->cast<Var>()) {
-								return DoCast_Unshared<T>(&*p2->p_data);
+					else {
+#ifdef AllowInlineVarTyping
+						if constexpr (std::is_same_v<typename std::remove_pointer_t<typename std::decay_t<T>>, Var>) {
+							return DoCast_Unshared<T>(p);
+						}
+						else {
+							if (std::shared_ptr<AnyData>& m = p->container) {
+								//if (m->GetTypeHash() == VarHash) {
+								if (auto p2 = m->cast<Var>()) {
+									p = &*p2->p_data;
+									continue;
+								}
+								//}
 							}
 						}
+#endif
+						return DoCast_Unshared<T>(p);
 					}
-					return DoCast_Unshared<T>(p);
 				}
 			};
 		};
@@ -1529,7 +1572,7 @@ namespace GoodLang {
 			auto locked{ std::shared_lock(mut) };
 			return container;
 		};
-	private:
+	public:
 		mutable std::shared_ptr<AnyData> container;
 		mutable std::shared_mutex mut;
 	};
