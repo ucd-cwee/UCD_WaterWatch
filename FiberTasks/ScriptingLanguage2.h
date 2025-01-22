@@ -2167,6 +2167,21 @@ namespace GoodLang {
 		};
 	};
 
+};
+
+// <Any, Scope> hash
+namespace std {
+	template <> struct hash<std::pair<GoodLang::Any, std::weak_ptr<GoodLang::Scope>>> {
+		std::size_t operator()(const std::pair<GoodLang::Any, std::weak_ptr<GoodLang::Scope>>& k) const {
+			if (auto p = k.second.lock()) {
+				return p->Cast<size_t>(p->CallFunction("to_hash", { k.first }));
+			}
+			return 0;
+		};
+	};
+};
+
+namespace GoodLang {
 	class Global final : public Namespace {
 	public:
 		Global()
@@ -2767,14 +2782,273 @@ namespace GoodLang {
 					}));
 				}
 
+				// Map
+				if (1) {
+					using thisType = fibers::containers::Map<
+						std::pair<GoodLang::Any, std::weak_ptr<GoodLang::Scope>>
+						, std::shared_ptr<Var>
+						, std::hash<std::pair<GoodLang::Any, std::weak_ptr<GoodLang::Scope>>>
+					>;
+					std::string thisTypeName = "Map";
 
+					std::shared_ptr<Class> classPtr; {
+						classPtr.reset(new Class(this->p_self.lock(), thisTypeName, user_type_shared<thisType>().lock()));
+					}
+					classPtr->p_self = classPtr;
+					this->AddChild(classPtr);
+					auto thisTypeInfo = classPtr->ClassType;
 
+					// Constructor
+					classPtr->AddFunction(thisTypeName, make_callable([]() -> thisType { return thisType{}; }));
+					// Copy constructor
+					classPtr->AddFunction(thisTypeName, make_callable([](thisType const& makeCopy) -> thisType { return makeCopy; }));
+					// assignment operator
+					classPtr->AddFunction("=", make_callable([](Any const& a, thisType const& b) -> Any {
+						thisType& out = a.cast(); out = b; return a;
+						},
+						ParamTypes({ thisTypeInfo->MakeRef(), thisTypeInfo->MakeConstRef() })));
 
+					// Functions
+					classPtr->AddFunction("at", make_callable([Self = classPtr->p_self](thisType const& r, Any const& key)->Any {
+						if (auto ptr = r.at_or({ key, Self })) {
+							return Any(ptr);
+						}
+						throw std::out_of_range("key was not found");
+					}, ParamTypes({ thisTypeInfo->MakeConstRef(), user_type_shared<Any>() }), user_type_shared<Var>().lock()->MakeRef()));
+					classPtr->AddFunction("[]", make_callable([Self = classPtr->p_self](thisType& r, Any const& key)->Any {
+						if (auto ptr = r.at_or({ key, Self })) {
+							return Any(ptr);
+						}
+						else {
+							return Any(r.get_or_insert({ key, Self }, std::make_shared<Var>()));
+						}
+					}, ParamTypes({ thisTypeInfo->MakeRef(), user_type_shared<Any>() }), user_type_shared<Var>().lock()->MakeRef()));
+					classPtr->AddFunction("emplace", make_callable([Self = classPtr->p_self](thisType& r, Any const& key, Any const& value) {
+						r.emplace({ key, Self }, std::make_shared<Var>(value));
+					}));
+					classPtr->AddFunction("contains", make_callable([Self = classPtr->p_self](thisType& r, Any const& key) -> bool {
+						return r.contains({ key, Self });
+					}));
+					classPtr->AddFunction("size", make_callable([Self = classPtr->p_self](thisType& r, Any const& key) -> size_t {
+						return r.size();
+					}));
+					
+					// to_string
+					classPtr->AddFunction("to_string", make_callable([Self = classPtr->p_self](thisType const& r)->std::string {
+						if (auto self = Self.lock()) {
+							std::string out;
+							for (auto x : r) {
+								if (x) {
+									const Any& key = x->first.first;
+									Any value = x->second;
 
+									auto key_str = self->Cast<std::string>(self->CallFunction("to_string", { key }));
+									auto value_str = self->Cast<std::string>(self->CallFunction("to_string", { value }));
 
+									if (out.size() == 0) {
+										out = key_str + ":" + value_str;
+									}
+									else {
+										out += ", ";
+										out += (key_str + ":" + value_str);
+									}
+								}
+							}
+							return "[" + out + "]";
+						}
+						return "[]";
+					}));
 
+					// to_hash
+					classPtr->AddFunction("to_hash", make_callable([Self = classPtr->p_self](thisType const& r)->size_t {
+						std::size_t out = 0; 
+						if (auto self = Self.lock()) {
+							for (auto x : r) {
+								if (x) {
+									const Any& key = x->first.first;
+									Any value = x->second;
 
+									auto key_hash = self->Cast<size_t>(self->CallFunction("to_hash", { key }));
+									auto value_hash = self->Cast<size_t>(self->CallFunction("to_hash", { value }));
 
+									Scope::hash_combine(out, key_hash);
+									Scope::hash_combine(out, value_hash);
+								}
+							}
+						}
+						return out;
+					}));
+
+					// Iterator
+					if (1) {
+						using thisIteratorType = thisType::iterator;
+						std::string thisIteratorTypeName = "iterator";
+
+						std::shared_ptr<Class> iterator_classPtr; {
+							iterator_classPtr.reset(new Class(classPtr, thisIteratorTypeName, user_type_shared<thisIteratorType>().lock()));
+						}
+						iterator_classPtr->p_self = iterator_classPtr;
+						classPtr->AddChild(iterator_classPtr);
+						auto thisIteratorTypeInfo = iterator_classPtr->ClassType;
+
+						// Constructor
+						iterator_classPtr->AddFunction(thisIteratorTypeName, make_callable([]() -> thisIteratorType { return thisIteratorType{}; }));
+						// Copy constructor
+						iterator_classPtr->AddFunction(thisIteratorTypeName, make_callable([](thisIteratorType const& makeCopy) -> thisIteratorType { return makeCopy; }));
+						// assignment operator
+						iterator_classPtr->AddFunction("=", make_callable([](Any const& a, thisIteratorType const& b) -> Any {
+							thisIteratorType& out = a.cast(); out = b; return a;
+						},
+						ParamTypes({ thisIteratorTypeInfo->MakeRef(), thisIteratorTypeInfo->MakeConstRef() }), thisIteratorTypeInfo->MakeRef()));
+
+						// equality
+						iterator_classPtr->AddFunction("==", make_callable([](thisIteratorType const& lhs, thisIteratorType const& rhs) -> bool { return lhs == rhs; }));
+						iterator_classPtr->AddFunction("!=", make_callable([](thisIteratorType const& lhs, thisIteratorType const& rhs) -> bool { return lhs != rhs; }));
+						// iter
+						iterator_classPtr->AddFunction("++", make_callable([](Any const& a) -> Any {
+							thisIteratorType& out = a.cast(); 
+							out.operator++();
+							return a;
+						},
+						ParamTypes({ thisIteratorTypeInfo->MakeRef() }), thisIteratorTypeInfo->MakeRef()));
+						// first (convenience function for this specialization)
+						iterator_classPtr->AddFunction("first", make_callable([](thisIteratorType const& makeCopy) -> Any {
+							return (*makeCopy)->first.first;
+						}));
+						// second (convenience function for this specialization)
+						iterator_classPtr->AddFunction("second", make_callable([](thisIteratorType const& makeCopy) -> Any {
+							return (*makeCopy)->second;
+						}));
+						// get // must be implimented by the iterator
+						iterator_classPtr->AddFunction("get", make_callable([](thisIteratorType const& makeCopy) -> std::pair<Var, Var> {
+							return std::pair<Var, Var>{ Any((*makeCopy)->first.first), Any((*makeCopy)->second) };
+						}));
+					}
+					classPtr->AddFunction("begin", make_callable([Self = classPtr->p_self](thisType const& r) -> thisType::iterator {
+						return r.begin();
+					}));
+					classPtr->AddFunction("end", make_callable([Self = classPtr->p_self](thisType const& r)->thisType::iterator {
+						return r.end();
+					}));
+
+				}
+#if 0
+				// Set 
+				if (1) {
+					using thisType = fibers::containers::Set<
+						std::pair<GoodLang::Any, std::weak_ptr<GoodLang::Scope>>
+						, std::hash<std::pair<GoodLang::Any, std::weak_ptr<GoodLang::Scope>>>
+					>;
+					std::string thisTypeName = "Set";
+
+					std::shared_ptr<Class> classPtr; {
+						classPtr.reset(new Class(this->p_self.lock(), thisTypeName, user_type_shared<thisType>().lock()));
+					}
+					classPtr->p_self = classPtr;
+					this->AddChild(classPtr);
+					auto thisTypeInfo = classPtr->ClassType;
+
+					// Constructor
+					classPtr->AddFunction(thisTypeName, make_callable([]() -> thisType { return thisType{}; }));
+					// Copy constructor
+					classPtr->AddFunction(thisTypeName, make_callable([](thisType const& makeCopy) -> thisType { return makeCopy; }));
+					// assignment operator
+					classPtr->AddFunction("=", make_callable([](Any const& a, thisType const& b) -> Any {
+						thisType& out = a.cast(); out = b; return a;
+						},
+						ParamTypes({ thisTypeInfo->MakeRef(), thisTypeInfo->MakeConstRef() })));
+
+					// Functions
+					classPtr->AddFunction("emplace", make_callable([Self = classPtr->p_self](thisType& r, Any const& key) {
+						r.emplace({ key, Self });
+					}));
+					classPtr->AddFunction("contains", make_callable([Self = classPtr->p_self](thisType& r, Any const& key) -> bool {
+						return r.contains({ key, Self });
+					}));
+					classPtr->AddFunction("size", make_callable([Self = classPtr->p_self](thisType& r, Any const& key)->size_t {
+						return r.size();
+					}));
+
+					// to_string
+					classPtr->AddFunction("to_string", make_callable([Self = classPtr->p_self](thisType const& r)->std::string {
+						if (auto self = Self.lock()) {
+							std::string out;
+							for (auto x : r) {
+								const Any& key = x.first;
+								auto key_str = self->Cast<std::string>(self->CallFunction("to_string", { key }));
+
+								if (out.size() == 0) {
+									out = key_str;
+								}
+								else {
+									out += ", ";
+									out += key_str;
+								}
+							}
+							return "[" + out + "]";
+						}
+						return "[]";
+					}));
+
+					// to_hash
+					classPtr->AddFunction("to_hash", make_callable([Self = classPtr->p_self](thisType const& r)->size_t {
+						std::size_t out = 0;
+						if (auto self = Self.lock()) {
+							for (auto x : r) {
+								const Any& key = x.first;
+								auto key_hash = self->Cast<size_t>(self->CallFunction("to_hash", { key }));
+								Scope::hash_combine(out, key_hash);							
+							}
+						}
+						return out;
+					}));
+
+					// Iterator
+					if (1) {
+						using thisIteratorType = thisType::iterator;
+						std::string thisIteratorTypeName = "iterator";
+
+						std::shared_ptr<Class> iterator_classPtr; {
+							iterator_classPtr.reset(new Class(classPtr, thisIteratorTypeName, user_type_shared<thisIteratorType>().lock()));
+						}
+						iterator_classPtr->p_self = iterator_classPtr;
+						classPtr->AddChild(iterator_classPtr);
+						auto thisIteratorTypeInfo = iterator_classPtr->ClassType;
+
+						// Constructor
+						iterator_classPtr->AddFunction(thisIteratorTypeName, make_callable([]() -> thisIteratorType { return thisIteratorType{}; }));
+						// Copy constructor
+						iterator_classPtr->AddFunction(thisIteratorTypeName, make_callable([](thisIteratorType const& makeCopy) -> thisIteratorType { return makeCopy; }));
+						// assignment operator
+						iterator_classPtr->AddFunction("=", make_callable([](Any const& a, thisIteratorType const& b) -> Any {
+							thisIteratorType& out = a.cast(); out = b; return a;
+							},
+							ParamTypes({ thisIteratorTypeInfo->MakeRef(), thisIteratorTypeInfo->MakeConstRef() }), thisIteratorTypeInfo->MakeRef()));
+
+						// equality
+						iterator_classPtr->AddFunction("==", make_callable([](thisIteratorType const& lhs, thisIteratorType const& rhs) -> bool { return lhs == rhs; }));
+						iterator_classPtr->AddFunction("!=", make_callable([](thisIteratorType const& lhs, thisIteratorType const& rhs) -> bool { return lhs != rhs; }));
+						// iter
+						iterator_classPtr->AddFunction("++", make_callable([](Any const& a) -> Any {
+							thisIteratorType& out = a.cast();
+							out.operator++();
+							return a;
+						},
+						ParamTypes({ thisIteratorTypeInfo->MakeRef() }), thisIteratorTypeInfo->MakeRef()));
+						// get // must be implimented by the iterator
+						iterator_classPtr->AddFunction("get", make_callable([](thisIteratorType const& makeCopy) -> Any {
+							return (*makeCopy).first;
+						}));
+					}
+					classPtr->AddFunction("begin", make_callable([Self = classPtr->p_self](thisType const& r)->thisType::iterator {
+						return r.begin();
+					}));
+					classPtr->AddFunction("end", make_callable([Self = classPtr->p_self](thisType const& r)->thisType::iterator {
+						return r.end();
+					}));
+
+				}
+#endif
 			}
 
 			// Built-In static, templated functions

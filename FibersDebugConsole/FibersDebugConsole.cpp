@@ -2,7 +2,7 @@
 
 #include <iostream>
 #include "../FiberTasks/Fibers.h"
-#include "../FiberTasks/ScriptingLanguage.h"
+//#include "../FiberTasks/ScriptingLanguage.h"
 #include "../FiberTasks/UnitsLibrary.h"
 
 #include "../FiberTasks/ScriptingLanguage2.h"
@@ -64,8 +64,6 @@ public:
 	bool operator==(stackThing const& a) const { return varName == a.varName; };
 	bool operator!=(stackThing const& a) const { return varName != a.varName; };
 };
-
-
 
 static bool Thing() { return true; };
 
@@ -4053,7 +4051,76 @@ int main() {
 					}
 				}
 
+				// Map. Allows mixed-type keys and values. Keys must support the to_hash function. Be careful mixing key-types, though, since there's no guarrantee the hashes won't overlap.
+				if (1) {
+					// Map x;
+					auto Instance = scope_1->CallFunction("Map", {});
+					// x[100] = "TEST";
+					scope_1->CallFunction("=", { scope_1->CallFunction("[]", { Instance, 100 }), std::string("TEST")});
+					// x["TEST"] = 100;
+					scope_1->CallFunction("=", { scope_1->CallFunction("[]", { Instance, std::string("TEST") }), 100 });
+					// x["TEST"] = 200;
+					scope_1->CallFunction("=", { scope_1->CallFunction("[]", { Instance, std::string("TEST") }), 200 });
+					// auto v = x.at(100);
+					auto ObjAtKey = scope_1->CallFunction("at", { Instance, 100 });
+					// print(v);
+					printf(scope_1->Cast<std::string>(scope_1->CallFunction("to_string", { ObjAtKey })));
+					// print(x);
+					printf(scope_1->Cast<std::string>(scope_1->CallFunction("to_string", { Instance })));
+					// print(to_hash(x));
+					printf(scope_1->Cast<size_t>(scope_1->CallFunction("to_hash", { Instance })));
 
+					auto iter = scope_1->CallFunction("begin", { Instance });
+					auto iter_end = scope_1->CallFunction("end", { Instance });
+					while (scope_1->Cast<bool>(scope_1->CallFunction("!=", { iter, iter_end }))) {
+						printf(
+							scope_1->Cast<std::string>(scope_1->CallFunction("to_string", { 
+								scope_1->CallFunction("first", { scope_1->CallFunction("get", { iter }) }) 
+							}))
+						);
+						std::cout << "\t";
+						printf(
+							scope_1->Cast<std::string>(scope_1->CallFunction("to_string", {
+								scope_1->CallFunction("second", { iter })
+							}))
+						);
+						scope_1->CallFunction("++", { iter });
+					}
+				}
+
+#if 0
+				// Set. Allows mixed-type keys. Keys must support the to_hash function. Be careful mixing key-types, though, since there's no guarrantee the hashes won't overlap.
+				if (1) {
+					// Map x;
+					auto Instance = scope_1->CallFunction("Set", {});
+
+					scope_1->CallFunction("emplace", { Instance, 100 });
+					scope_1->CallFunction("emplace", { Instance, std::string("TEST") });
+					scope_1->CallFunction("emplace", { Instance, std::string("TESTING") });
+					try {
+						scope_1->CallFunction("emplace", { Instance, 200.0 }); // will fail, because doubles are not hashable
+						EXPECT_EQ(true, false);
+					} catch (...) {}
+
+					printf(scope_1->Cast<bool>(scope_1->CallFunction("contains", { Instance, std::string("TESTING") })));
+
+					// print(x);
+					printf(scope_1->Cast<std::string>(scope_1->CallFunction("to_string", { Instance })));
+
+					// print(to_hash(x));
+					printf(scope_1->Cast<size_t>(scope_1->CallFunction("to_hash", { Instance })));
+
+					auto iter = scope_1->CallFunction("begin", { Instance });
+					auto iter_end = scope_1->CallFunction("end", { Instance });
+					for (; scope_1->Cast<bool>(scope_1->CallFunction("!=", { iter, iter_end })); (void)scope_1->CallFunction("++", { iter })) {
+						printf(
+							scope_1->Cast<std::string>(scope_1->CallFunction("to_string", {
+								scope_1->CallFunction("get", { iter })
+							}))
+						);
+					}
+				}
+#endif
 
 
 
@@ -4078,8 +4145,7 @@ int main() {
 
 
 
-
-
+#if 0
 		// Scripting language 
 		if (0) {
 			if (1) {
@@ -4177,6 +4243,7 @@ int main() {
 				});
 			}
 		}
+#endif
 
 #if 0
 		if (1) {
@@ -4249,6 +4316,7 @@ int main() {
 		}
 #endif
 
+#if 0
 		// Leak Test
 		if (0) {
 			delete (new int(5));
@@ -4283,6 +4351,7 @@ int main() {
 			}
 			delete (new int(5));
 		}
+#endif
 
 #if 0
 		if (1) {

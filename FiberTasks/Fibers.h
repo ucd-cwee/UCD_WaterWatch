@@ -6631,9 +6631,11 @@ namespace fibers {
 			{};
 			Set& operator=(Set const& o) {
 				map = o.map;
+				return *this;
 			};
 			Set& operator=(Set&& o) {
 				map = o.map;
+				return *this;
 			};
 			~Set() = default;
 
