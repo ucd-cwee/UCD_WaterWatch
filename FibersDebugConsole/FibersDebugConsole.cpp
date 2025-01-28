@@ -74,9 +74,9 @@
         std::cout << GoodLang::printf("FAILURE AT LINE %i: (%s != %s)\n", (int)__LINE__, tempA.c_str(), tempB.c_str()); \
     return false; } \
 }()
-#define EXPECT_NE(a, b) [&]()->bool{ if ((a) != (b)) { return true; } else { std::cout << GoodLang::printf("FAILURE AT LINE %i\n", (int)__LINE__); return false; } }()
 #define print(a) defer(std::cout << a << std::endl)
-#define EXPECT_EQ(a, b) if (a != b){ std::cout << GoodLang::printf("FAILURE AT LINE %i\n", (int)__LINE__); }
+#define EXPECT_EQ(a, b) if (a != b){ print(GoodLang::printf("FAILURE AT LINE %i\n", (int)__LINE__)); }
+#define EXPECT_NE(a, b) if (a == b){ print(GoodLang::printf("FAILURE AT LINE %i\n", (int)__LINE__)); }
 
 int main() {
 	using namespace GoodLang;
@@ -103,6 +103,13 @@ int main() {
 	TypeConverter converter;
 	auto result = call(func, { 100 }, converter);
 	EXPECT_EQ(true, result.IsTypeOf<int>());
+
+	Functions F;
+	F.emplace("foo", make_callable([](double x) -> double { return x * x; }), true);
+	
+	func = F.BuildMatch("foo", { 100.0 }, converter);
+	result = call(func, { 100.0 }, converter);
+	EXPECT_EQ(true, result.IsTypeOf<double>());
 
 
 

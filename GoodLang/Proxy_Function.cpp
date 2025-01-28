@@ -59,10 +59,7 @@ namespace GoodLang {
 		bool DaisyChained_Type_Conversion_Impl::IsDaisyChained() const { return true; };
 		size_t DaisyChained_Type_Conversion_Impl::NumConversions() const { return m_converters.size(); }
 	};
-};
 
-// Type_Conversion_Base, its impl's, & TypeConverter wrapper
-namespace GoodLang {
 	namespace {
 		// shared lock that prioritizes uncontested shared access and uncontested write access. Contested access prioritizes readers, and fairly orders writers.
 		class UniformCostSearchNodeBestPath {
