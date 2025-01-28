@@ -19,9 +19,11 @@
     </ProjectConfiguration>
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="BuiltIns.cpp" />
     <ClCompile Include="Fibers.cpp" />
+    <ClCompile Include="GoodLang_Actions.cpp" />
     <ClCompile Include="MultiWord_CompareAndSwap.cpp" />
-    <ClCompile Include="ScriptingLanguage.h" />
+    <ClCompile Include="ScriptingLanguage2.cpp" />
     <ClCompile Include="UnitsLibrary_2.cpp" />
     <ClCompile Include="UnitsLibrary_1.cpp" />
     <ClCompile Include="UnitsLibrary_3.cpp" />
@@ -34,6 +36,7 @@
     <ClInclude Include="Concurrent_Queue.h" />
     <ClInclude Include="Fibers.h" />
     <ClInclude Include="Actions.h" />
+    <ClInclude Include="GoodLang_Actions.h" />
     <ClInclude Include="MultiWord_CompareAndSwap.h" />
     <ClInclude Include="ScriptingLanguage2.h" />
     <ClInclude Include="Units.h" />
@@ -179,7 +182,7 @@
       <StringPooling>true</StringPooling>
       <EnableEnhancedInstructionSet>NotSet</EnableEnhancedInstructionSet>
       <EnableFiberSafeOptimizations>true</EnableFiberSafeOptimizations>
-      <AdditionalOptions>/DPARALLEL %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalOptions>/DPARALLEL /Zm10 %(AdditionalOptions)</AdditionalOptions>
       <LanguageStandard>stdcpp17</LanguageStandard>
       <Optimization>Full</Optimization>
     </ClCompile>

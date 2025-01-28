@@ -1262,22 +1262,24 @@ public:
 
 	class UnitsDetail {
 	private:
-		static fibers::utilities::BlockAllocator< fibers::Type_Info >& user_type_allocator() {
-			static fibers::utilities::BlockAllocator< fibers::Type_Info > allocator{};
-			return allocator;
-		};
+		//static fibers::utilities::BlockAllocator< std::weak_ptr<GoodLang::Type_Info> >& user_type_allocator() {
+		//	static fibers::utilities::BlockAllocator< std::weak_ptr<GoodLang::Type_Info> > allocator{};
+		//	return allocator;
+		//};
 	public:
-		template <typename T> /*__forceinline */static std::weak_ptr<fibers::Type_Info> user_type() {			
-			static auto f{ user_type_allocator().AllocShared(fibers::user_type<T>()) };
-			static std::weak_ptr<fibers::Type_Info> j{ f };
-			// static auto f{ std::make_shared<fibers::Type_Info>(fibers::user_type<T>()) };
-			//return f;
+		template <typename T> /*__forceinline */static std::weak_ptr<GoodLang::Type_Info> user_type() {
+			return GoodLang::user_type_shared<T>();
 
-			return j;
+			//static auto f{ user_type_allocator().AllocShared(GoodLang::user_type_shared<T>()) };
+			//static std::weak_ptr<fibers::Type_Info> j{ f };
+			//// static auto f{ std::make_shared<fibers::Type_Info>(fibers::user_type<T>()) };
+			////return f;
+
+			//return j;
 		};
 
 //#define CreateRow(model, Type) { model->second[Type::UnitHash()].Insert(static_cast<uint64_t>(static_cast<long double>(Type::conversion()) * 1e8l), model->first.Alloc(std::tuple< const char*, const char*, Units::value, std::weak_ptr<fibers::Type_Info>>{ Type::specialized_abbreviation(), #Type, Type(), user_type<Type>() }), false); }
-#define CreateRow(model, Type) { model->second[Type::UnitHash()][static_cast<uint64_t>(static_cast<long double>(Type::conversion()) * 1e8l)] = model->first.Alloc(std::tuple< const char*, const char*, Units::value, std::weak_ptr<fibers::Type_Info>>{ Type::specialized_abbreviation(), #Type, Type(), user_type<Type>() }); }
+#define CreateRow(model, Type) { model->second[Type::UnitHash()][static_cast<uint64_t>(static_cast<long double>(Type::conversion()) * 1e8l)] = model->first.Alloc(std::tuple< const char*, const char*, Units::value, std::weak_ptr<GoodLang::Type_Info>>{ Type::specialized_abbreviation(), #Type, Type(), GoodLang::user_type_shared<Type>() }); }
 #define CreateRowWithMetricPrefixes(model, Type)\
 			CreateRow(model, Type); \
 			CreateRow(model, femto ## Type); \
@@ -1305,14 +1307,14 @@ public:
 		UnitHash determines the class of unit (length, time, length/time, length/time^2, length^1.25, etc.
 		UnitRatio determines the specific ratio within that class (meter, foot, inch, etc.)
 		*/
-		static std::tuple< const char*, const char*, Units::value, std::weak_ptr<fibers::Type_Info>>& lookup_impl(size_t UnitHash, double& UnitRatio) noexcept {
+		static std::tuple< const char*, const char*, Units::value, std::weak_ptr<GoodLang::Type_Info>>& lookup_impl(size_t UnitHash, double& UnitRatio) noexcept {
 			auto targetRatio = static_cast<uint64_t>(static_cast<long double>(UnitRatio) * 1e8l);
 
-			static std::tuple<const char*, const char*, Units::value, std::weak_ptr<fibers::Type_Info>> out{ "", "", Units::value(), std::weak_ptr<fibers::Type_Info>() };
+			static std::tuple<const char*, const char*, Units::value, std::weak_ptr<GoodLang::Type_Info>> out{ "", "", Units::value(), std::weak_ptr<GoodLang::Type_Info>() };
 			auto& [mut, Tag] = Shared_Data();
 
-			using AllocType = fibers::utilities::Allocator<std::tuple< const char*, const char*, Units::value, std::weak_ptr<fibers::Type_Info>>>;
-			using TreeType = std::map/*fibers::containers::Pattern*/<uint64_t, std::tuple< const char*, const char*, Units::value, std::weak_ptr<fibers::Type_Info>>*>;
+			using AllocType = fibers::utilities::Allocator<std::tuple< const char*, const char*, Units::value, std::weak_ptr<GoodLang::Type_Info>>>;
+			using TreeType = std::map/*fibers::containers::Pattern*/<uint64_t, std::tuple< const char*, const char*, Units::value, std::weak_ptr<GoodLang::Type_Info>>*>;
 			using ModelType = std::pair< AllocType, std::map<size_t, TreeType>>;
 
 			auto FindLargestSmallerEqual = [](TreeType const& f, uint64_t pos) {
@@ -1563,7 +1565,7 @@ public:
 			return out;
 		};
 
-		static std::vector<std::vector<std::tuple<std::string, std::string, Units::value, std::weak_ptr<fibers::Type_Info>>>> GetValueTypes() noexcept {
+		static std::vector<std::vector<std::tuple<std::string, std::string, Units::value, std::weak_ptr<GoodLang::Type_Info>>>> GetValueTypes() noexcept {
 			static double temp{ 0 };
 			static auto temp2{ lookup_impl(0, temp) };
 
@@ -1573,15 +1575,15 @@ public:
 				        std::string, 
 				        std::string,
 				        Units::value,
-				        std::weak_ptr<fibers::Type_Info>
+				        std::weak_ptr<GoodLang::Type_Info>
 					>
 				>
 			> out;
 			
 			auto& [mut, Tag] = Shared_Data();
 
-			using AllocType = fibers::utilities::Allocator<std::tuple< const char*, const char*, Units::value, std::weak_ptr<fibers::Type_Info>>>;
-			using TreeType = std::map/*fibers::containers::Pattern*/<uint64_t, std::tuple< const char*, const char*, Units::value, std::weak_ptr<fibers::Type_Info>>*>;
+			using AllocType = fibers::utilities::Allocator<std::tuple< const char*, const char*, Units::value, std::weak_ptr<GoodLang::Type_Info>>>;
+			using TreeType = std::map/*fibers::containers::Pattern*/<uint64_t, std::tuple< const char*, const char*, Units::value, std::weak_ptr<GoodLang::Type_Info>>*>;
 			using ModelType = std::pair< AllocType, std::map<size_t, TreeType>>;
 
 			auto locked{ std::shared_lock(mut) };
@@ -1592,7 +1594,7 @@ public:
 						std::string,
 						std::string,
 						Units::value,
-						std::weak_ptr<fibers::Type_Info>
+						std::weak_ptr<GoodLang::Type_Info>
 						>
 					> temp;
 
@@ -1600,7 +1602,7 @@ public:
 						std::string abbrev = std::get<0>(*each.second);
 						std::string fullName = std::get<1>(*each.second);
 						Units::value& impl = std::get<2>(*each.second);
-						temp.push_back(std::tuple<std::string, std::string, Units::value, std::weak_ptr<fibers::Type_Info>>(
+						temp.push_back(std::tuple<std::string, std::string, Units::value, std::weak_ptr<GoodLang::Type_Info>>(
 							abbrev, 
 							fullName, 
 							impl, 

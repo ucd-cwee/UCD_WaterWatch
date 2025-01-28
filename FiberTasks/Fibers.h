@@ -730,9 +730,9 @@ namespace fibers::utilities {
 	};
 };
 
-#include "Actions.h"
-#include "Concurrent_Queue.h"
 #include "../WaterWatchCpp/enum.h"
+#include "Actions2.h"
+#include "Concurrent_Queue.h"
 #include <set>
 #include <functional>
 #include <vector>
@@ -1102,7 +1102,7 @@ namespace fibers {
 			};
 
 		public:
-			using cond_var = typename fibers::utilities::function_traits<decltype(std::function(GetUnderlyingConditionalVariableExample))>::result_type;
+			using cond_var = typename GoodLang::utilities::function_traits<decltype(std::function(GetUnderlyingConditionalVariableExample))>::result_type;
 
 		private:
 			mutex    mut_;
@@ -1205,7 +1205,7 @@ namespace fibers {
 					}
 				}
 			};
-			using internalType = typename std::remove_const_t<typename fibers::utilities::function_traits<decltype(std::function(ValidTypeExample))>::result_type>;
+			using internalType = typename std::remove_const_t<typename GoodLang::utilities::function_traits<decltype(std::function(ValidTypeExample))>::result_type>;
 
 		public:
 			constexpr atomic_number() : value{ static_cast<internalType>(0) }  {};
@@ -1711,7 +1711,7 @@ namespace fibers {
 					return std::make_shared<value>(std::forward<value>(v));
 				}
 			};
-			using ValueStorageType = typename fibers::utilities::function_traits<decltype(std::function(GetValueStorageType))>::result_type;
+			using ValueStorageType = typename GoodLang::utilities::function_traits<decltype(std::function(GetValueStorageType))>::result_type;
 			static value& GetValueFromStorageType(ValueStorageType& v) {
 				if constexpr (std::is_pod<value>::value) {
 					return v;
@@ -2136,7 +2136,7 @@ namespace fibers {
 			};
 
 		private: // Using statements
-			using EpochStorageType = typename fibers::utilities::function_traits<decltype(std::function(GetCurrentEpoch))>::result_type;
+			using EpochStorageType = typename GoodLang::utilities::function_traits<decltype(std::function(GetCurrentEpoch))>::result_type;
 			using EpochDeleteType = std::function<void()>;
 			using EpochQueueType = std::pair<EpochGarbageCollector::EpochStorageType, EpochDeleteType>;
 			using IDManager = fibers::utilities::dbgroup::thread::IDManager;
@@ -6790,6 +6790,709 @@ namespace std {
 };
 
 namespace fibers{
+	class FunctionBase {
+	public:
+		virtual ~FunctionBase() = default;
+		virtual void Invoke() = 0;
+	};
+
+	/*
+	Wrapper for std::function that can capture input parameters for later evaluation. e.g:
+	. auto f = Function(std::function([](int i, double x)->int{ return i+x; }), 10, 0.0);
+	. int value = f.Invoke().cast();
+	. assert(value == 10);
+	*/
+	template <typename F = void()> class Function final : public FunctionBase {
+	public:
+		template<typename T> struct count_arg;
+		template<typename R, typename ...Args> struct count_arg<std::function<R(Args...)>> { static constexpr const size_t value = sizeof...(Args); };
+		template <typename... Args> constexpr size_t sizeOfParameterPack(Args... Fargs) { return sizeof...(Args); }
+		template<class R> struct function_traits { using result_type = R; using arguments = std::tuple<>; static constexpr const size_t num_arguments = 0; };
+		template<class R> struct function_traits<std::function<R(void)>> { using result_type = R; using arguments = std::tuple<>; static constexpr const size_t num_arguments = 0; };
+		template<class R, class... Args> struct function_traits<std::function<R(Args...)>> { using result_type = R; using arguments = std::tuple<Args...>; static constexpr const size_t num_arguments = sizeof...(Args); };
+
+		using Type = typename F;
+		using ResultType = typename function_traits<std::function<Type>>::result_type;
+		using Arguments = typename function_traits<std::function<Type>>::arguments;
+		static constexpr const size_t NumArguments = function_traits<std::function<Type>>::num_arguments;
+
+	private:
+		template<int N, bool badIndex> struct function_destination_impl {
+			using type = typename std::tuple_element<N, typename Arguments>::type;
+		};
+		template<int N> struct function_destination_impl<N, true> {
+			using type = int;
+		};
+
+		template<int N> struct ArgumentType {
+			static constexpr bool is_bad_index = N >= NumArguments;
+
+			struct function_destination {
+				using type = typename function_destination_impl<N, is_bad_index>::type;
+				using underlying_type = typename GoodLang::details::get_type<typename type>::type;
+
+				static constexpr bool is_shared_ptr = !std::is_same<typename GoodLang::details::get_type<type>::type, type>::value;
+				static constexpr bool is_reference = std::is_reference<underlying_type>::value;
+				static constexpr bool is_pointer = std::is_pointer<underlying_type>::value;
+				static constexpr bool is_const = std::is_const<typename std::remove_pointer<typename std::remove_reference<underlying_type>::type>::type>::value;
+			};
+			struct parameter_pack {
+			private:
+				template<bool is_shared_ptr> struct underlying_type_impl {
+					using type = typename std::remove_pointer<typename std::decay<typename function_destination::underlying_type>::type>::type;
+					using package_type = type;
+				};
+				template<> struct underlying_type_impl<true> {
+					using type = typename function_destination::underlying_type;
+					using package_type = std::shared_ptr<type>;
+				};
+
+			public:
+				using underlying_type = typename underlying_type_impl<function_destination::is_shared_ptr>::type;
+				using shared_ptr_type = std::shared_ptr<underlying_type>;
+				using unique_ptr_type = std::unique_ptr<underlying_type>;
+				using type = typename underlying_type_impl<function_destination::is_shared_ptr>::package_type;
+
+				static constexpr bool is_trivial = std::is_trivial<underlying_type>::value;
+				static constexpr bool is_move_constructible = std::is_move_constructible<underlying_type>::value;
+				static constexpr bool is_copy_constructible = std::is_copy_constructible<underlying_type>::value;
+			};
+		};
+#define parameterPackFoundation std::tuple
+#define getParam(N, O) std::get<N>(O)
+		//#define parameterPackFoundation cweeUnion
+		//#define getParam(N, O) O.get<N>()
+		template <int N> struct ParameterPackImpl {
+			using type = parameterPackFoundation<>;
+		};
+		template <> struct ParameterPackImpl<0> {
+			using type = parameterPackFoundation<>;
+		};
+		template <> struct ParameterPackImpl<1> {
+			using type = parameterPackFoundation<
+				typename ArgumentType<0>::parameter_pack::type
+			>;
+		};
+		template <> struct ParameterPackImpl<2> {
+			using type = parameterPackFoundation<
+				typename ArgumentType<0>::parameter_pack::type,
+				typename ArgumentType<1>::parameter_pack::type
+			>;
+		};
+		template <> struct ParameterPackImpl<3> {
+			using type = parameterPackFoundation<
+				typename ArgumentType<0>::parameter_pack::type,
+				typename ArgumentType<1>::parameter_pack::type,
+				typename ArgumentType<2>::parameter_pack::type
+			>;
+		};
+		template <> struct ParameterPackImpl<4> {
+			using type = parameterPackFoundation<
+				typename ArgumentType<0>::parameter_pack::type,
+				typename ArgumentType<1>::parameter_pack::type,
+				typename ArgumentType<2>::parameter_pack::type,
+				typename ArgumentType<3>::parameter_pack::type
+			>;
+		};
+		template <> struct ParameterPackImpl<5> {
+			using type = parameterPackFoundation<
+				typename ArgumentType<0>::parameter_pack::type,
+				typename ArgumentType<1>::parameter_pack::type,
+				typename ArgumentType<2>::parameter_pack::type,
+				typename ArgumentType<3>::parameter_pack::type,
+				typename ArgumentType<4>::parameter_pack::type
+			>;
+		};
+		template <> struct ParameterPackImpl<6> {
+			using type = parameterPackFoundation<
+				typename ArgumentType<0>::parameter_pack::type,
+				typename ArgumentType<1>::parameter_pack::type,
+				typename ArgumentType<2>::parameter_pack::type,
+				typename ArgumentType<3>::parameter_pack::type,
+				typename ArgumentType<4>::parameter_pack::type,
+				typename ArgumentType<5>::parameter_pack::type
+			>;
+		};
+		template <> struct ParameterPackImpl<7> {
+			using type = parameterPackFoundation<
+				typename ArgumentType<0>::parameter_pack::type,
+				typename ArgumentType<1>::parameter_pack::type,
+				typename ArgumentType<2>::parameter_pack::type,
+				typename ArgumentType<3>::parameter_pack::type,
+				typename ArgumentType<4>::parameter_pack::type,
+				typename ArgumentType<5>::parameter_pack::type,
+				typename ArgumentType<6>::parameter_pack::type
+			>;
+		};
+		template <> struct ParameterPackImpl<8> {
+			using type = parameterPackFoundation<
+				typename ArgumentType<0>::parameter_pack::type,
+				typename ArgumentType<1>::parameter_pack::type,
+				typename ArgumentType<2>::parameter_pack::type,
+				typename ArgumentType<3>::parameter_pack::type,
+				typename ArgumentType<4>::parameter_pack::type,
+				typename ArgumentType<5>::parameter_pack::type,
+				typename ArgumentType<6>::parameter_pack::type,
+				typename ArgumentType<7>::parameter_pack::type
+			>;
+		};
+		template <> struct ParameterPackImpl<9> {
+			using type = parameterPackFoundation<
+				typename ArgumentType<0>::parameter_pack::type,
+				typename ArgumentType<1>::parameter_pack::type,
+				typename ArgumentType<2>::parameter_pack::type,
+				typename ArgumentType<3>::parameter_pack::type,
+				typename ArgumentType<4>::parameter_pack::type,
+				typename ArgumentType<5>::parameter_pack::type,
+				typename ArgumentType<6>::parameter_pack::type,
+				typename ArgumentType<7>::parameter_pack::type,
+				typename ArgumentType<8>::parameter_pack::type
+			>;
+		};
+		template <> struct ParameterPackImpl<10> {
+			using type = parameterPackFoundation<
+				typename ArgumentType<0>::parameter_pack::type,
+				typename ArgumentType<1>::parameter_pack::type,
+				typename ArgumentType<2>::parameter_pack::type,
+				typename ArgumentType<3>::parameter_pack::type,
+				typename ArgumentType<4>::parameter_pack::type,
+				typename ArgumentType<5>::parameter_pack::type,
+				typename ArgumentType<6>::parameter_pack::type,
+				typename ArgumentType<7>::parameter_pack::type,
+				typename ArgumentType<8>::parameter_pack::type,
+				typename ArgumentType<9>::parameter_pack::type
+			>;
+		};
+		template <> struct ParameterPackImpl<11> {
+			using type = parameterPackFoundation<
+				typename ArgumentType<0>::parameter_pack::type,
+				typename ArgumentType<1>::parameter_pack::type,
+				typename ArgumentType<2>::parameter_pack::type,
+				typename ArgumentType<3>::parameter_pack::type,
+				typename ArgumentType<4>::parameter_pack::type,
+				typename ArgumentType<5>::parameter_pack::type,
+				typename ArgumentType<6>::parameter_pack::type,
+				typename ArgumentType<7>::parameter_pack::type,
+				typename ArgumentType<8>::parameter_pack::type,
+				typename ArgumentType<9>::parameter_pack::type,
+				typename ArgumentType<10>::parameter_pack::type
+			>;
+		};
+		template <> struct ParameterPackImpl<12> {
+			using type = parameterPackFoundation<
+				typename ArgumentType<0>::parameter_pack::type,
+				typename ArgumentType<1>::parameter_pack::type,
+				typename ArgumentType<2>::parameter_pack::type,
+				typename ArgumentType<3>::parameter_pack::type,
+				typename ArgumentType<4>::parameter_pack::type,
+				typename ArgumentType<5>::parameter_pack::type,
+				typename ArgumentType<6>::parameter_pack::type,
+				typename ArgumentType<7>::parameter_pack::type,
+				typename ArgumentType<8>::parameter_pack::type,
+				typename ArgumentType<9>::parameter_pack::type,
+				typename ArgumentType<10>::parameter_pack::type,
+				typename ArgumentType<11>::parameter_pack::type
+			>;
+		};
+		template <> struct ParameterPackImpl<13> {
+			using type = parameterPackFoundation<
+				typename ArgumentType<0>::parameter_pack::type,
+				typename ArgumentType<1>::parameter_pack::type,
+				typename ArgumentType<2>::parameter_pack::type,
+				typename ArgumentType<3>::parameter_pack::type,
+				typename ArgumentType<4>::parameter_pack::type,
+				typename ArgumentType<5>::parameter_pack::type,
+				typename ArgumentType<6>::parameter_pack::type,
+				typename ArgumentType<7>::parameter_pack::type,
+				typename ArgumentType<8>::parameter_pack::type,
+				typename ArgumentType<9>::parameter_pack::type,
+				typename ArgumentType<10>::parameter_pack::type,
+				typename ArgumentType<11>::parameter_pack::type,
+				typename ArgumentType<12>::parameter_pack::type
+			>;
+		};
+		template <> struct ParameterPackImpl<14> {
+			using type = parameterPackFoundation<
+				typename ArgumentType<0>::parameter_pack::type,
+				typename ArgumentType<1>::parameter_pack::type,
+				typename ArgumentType<2>::parameter_pack::type,
+				typename ArgumentType<3>::parameter_pack::type,
+				typename ArgumentType<4>::parameter_pack::type,
+				typename ArgumentType<5>::parameter_pack::type,
+				typename ArgumentType<6>::parameter_pack::type,
+				typename ArgumentType<7>::parameter_pack::type,
+				typename ArgumentType<8>::parameter_pack::type,
+				typename ArgumentType<9>::parameter_pack::type,
+				typename ArgumentType<10>::parameter_pack::type,
+				typename ArgumentType<11>::parameter_pack::type,
+				typename ArgumentType<12>::parameter_pack::type,
+				typename ArgumentType<13>::parameter_pack::type
+			>;
+		};
+		template <> struct ParameterPackImpl<15> {
+			using type = parameterPackFoundation<
+				typename ArgumentType<0>::parameter_pack::type,
+				typename ArgumentType<1>::parameter_pack::type,
+				typename ArgumentType<2>::parameter_pack::type,
+				typename ArgumentType<3>::parameter_pack::type,
+				typename ArgumentType<4>::parameter_pack::type,
+				typename ArgumentType<5>::parameter_pack::type,
+				typename ArgumentType<6>::parameter_pack::type,
+				typename ArgumentType<7>::parameter_pack::type,
+				typename ArgumentType<8>::parameter_pack::type,
+				typename ArgumentType<9>::parameter_pack::type,
+				typename ArgumentType<10>::parameter_pack::type,
+				typename ArgumentType<11>::parameter_pack::type,
+				typename ArgumentType<12>::parameter_pack::type,
+				typename ArgumentType<13>::parameter_pack::type,
+				typename ArgumentType<14>::parameter_pack::type
+			>;
+		};
+		template <> struct ParameterPackImpl<16> {
+			using type = parameterPackFoundation<
+				typename ArgumentType<0>::parameter_pack::type,
+				typename ArgumentType<1>::parameter_pack::type,
+				typename ArgumentType<2>::parameter_pack::type,
+				typename ArgumentType<3>::parameter_pack::type,
+				typename ArgumentType<4>::parameter_pack::type,
+				typename ArgumentType<5>::parameter_pack::type,
+				typename ArgumentType<6>::parameter_pack::type,
+				typename ArgumentType<7>::parameter_pack::type,
+				typename ArgumentType<8>::parameter_pack::type,
+				typename ArgumentType<9>::parameter_pack::type,
+				typename ArgumentType<10>::parameter_pack::type,
+				typename ArgumentType<11>::parameter_pack::type,
+				typename ArgumentType<12>::parameter_pack::type,
+				typename ArgumentType<13>::parameter_pack::type,
+				typename ArgumentType<14>::parameter_pack::type,
+				typename ArgumentType<15>::parameter_pack::type
+			>;
+		};
+#undef parameterPackFoundation
+	public:
+		std::function<typename F> function;
+		typename ParameterPackImpl<NumArguments>::type parameter_pack;
+
+		template<int N> auto& GetParameter() noexcept {
+			return getParam(N, parameter_pack);
+		};
+		template<int N> const auto& GetParameter() const noexcept {
+			return getParam(N, parameter_pack);
+		};
+
+	private:
+		template <int N = 0> static void AddData(typename ParameterPackImpl<NumArguments>::type& d) {
+			if constexpr (N < NumArguments) {
+				static constexpr bool desire_shared_ptr = !std::is_same<typename GoodLang::details::get_type<typename ArgumentType<N>::parameter_pack::type>::type, typename ArgumentType<N>::parameter_pack::type>::value;
+				if constexpr (desire_shared_ptr) {
+					// we WANT a shared ptr. 
+					getParam(N, d) = std::make_shared<typename ArgumentType<N>::parameter_pack::underlying_type>();
+				}
+				else {
+					// we DO NOT want a shared ptr. Did we get one?
+					getParam(N, d) = typename ArgumentType<N>::parameter_pack::type();
+				}
+				if constexpr (N + 1 < NumArguments) {
+					AddData<N + 1>(d);
+				}
+			}
+		};
+		template<int N = 0, typename T, typename... Targs> static void AddData(typename ParameterPackImpl<NumArguments>::type& d, T&& value, Targs && ... Fargs) {// recursive function		
+			if constexpr (std::is_same<T, void>::value) {
+				AddData<N + 1>(d, std::forward<Targs>(Fargs)...);
+			}
+			else {
+				static constexpr bool desire_shared_ptr = !std::is_same<typename GoodLang::details::get_type<typename ArgumentType<N>::parameter_pack::type>::type, typename ArgumentType<N>::parameter_pack::type>::value;
+				static constexpr bool got_shared_ptr = !std::is_same<typename GoodLang::details::get_type<T>::type, T>::value;
+
+				if constexpr (desire_shared_ptr) {
+					// we WANT a shared ptr. Did we get one? 
+					if constexpr (got_shared_ptr) {
+						getParam(N, d) = std::forward<T>(value);
+					}
+					else {
+						getParam(N, d) = std::make_shared<typename ArgumentType<N>::parameter_pack::underlying_type>(std::forward<T>(value));
+					}
+				}
+				else {
+					// we DO NOT want a shared ptr. Did we get one?
+					if constexpr (got_shared_ptr) {
+						getParam(N, d) = *value;
+					}
+					else {
+						getParam(N, d) = std::forward<T>(value);
+					}
+				}
+
+				if constexpr (N + 1 < NumArguments) {
+					AddData<N + 1>(d, std::forward<Targs>(Fargs)...);
+				}
+			}
+		};
+#undef getParam
+
+	public:
+		template <typename... Args>
+		Function(std::function<F>&& function, Args && ... Fargs) noexcept : FunctionBase(), function(std::forward<std::function<F>>(function)), parameter_pack() {
+			AddData(parameter_pack, std::forward<Args>(Fargs)...);
+		};
+		Function() = default;
+		Function(Function const&) = default;
+		Function(Function&&) = default;
+		Function& operator=(Function const&) = default;
+		Function& operator=(Function&&) = default;
+		~Function() = default;
+
+		ResultType operator()() {
+			if constexpr (NumArguments == 16) {
+				return function(
+					GetParameter<0>(), GetParameter<1>(), GetParameter<2>(),
+					GetParameter<3>(), GetParameter<4>(), GetParameter<5>(),
+					GetParameter<6>(), GetParameter<7>(), GetParameter<8>(),
+					GetParameter<9>(), GetParameter<10>(), GetParameter<11>(),
+					GetParameter<12>(), GetParameter<13>(), GetParameter<14>(),
+					GetParameter<15>()
+				);
+			}
+			else if constexpr (NumArguments == 15) {
+				return function(
+					GetParameter<0>(), GetParameter<1>(), GetParameter<2>(),
+					GetParameter<3>(), GetParameter<4>(), GetParameter<5>(),
+					GetParameter<6>(), GetParameter<7>(), GetParameter<8>(),
+					GetParameter<9>(), GetParameter<10>(), GetParameter<11>(),
+					GetParameter<12>(), GetParameter<13>(), GetParameter<14>()
+				);
+			}
+			else if constexpr (NumArguments == 14) {
+				return function(
+					GetParameter<0>(), GetParameter<1>(), GetParameter<2>(),
+					GetParameter<3>(), GetParameter<4>(), GetParameter<5>(),
+					GetParameter<6>(), GetParameter<7>(), GetParameter<8>(),
+					GetParameter<9>(), GetParameter<10>(), GetParameter<11>(),
+					GetParameter<12>(), GetParameter<13>()
+				);
+			}
+			else if constexpr (NumArguments == 13) {
+				return function(
+					GetParameter<0>(), GetParameter<1>(), GetParameter<2>(),
+					GetParameter<3>(), GetParameter<4>(), GetParameter<5>(),
+					GetParameter<6>(), GetParameter<7>(), GetParameter<8>(),
+					GetParameter<9>(), GetParameter<10>(), GetParameter<11>(),
+					GetParameter<12>()
+				);
+			}
+			else if constexpr (NumArguments == 12) {
+				return function(
+					GetParameter<0>(), GetParameter<1>(), GetParameter<2>(),
+					GetParameter<3>(), GetParameter<4>(), GetParameter<5>(),
+					GetParameter<6>(), GetParameter<7>(), GetParameter<8>(),
+					GetParameter<9>(), GetParameter<10>(), GetParameter<11>()
+				);
+			}
+			else if constexpr (NumArguments == 11) {
+				return function(
+					GetParameter<0>(), GetParameter<1>(), GetParameter<2>(),
+					GetParameter<3>(), GetParameter<4>(), GetParameter<5>(),
+					GetParameter<6>(), GetParameter<7>(), GetParameter<8>(),
+					GetParameter<9>(), GetParameter<10>()
+				);
+			}
+			else if constexpr (NumArguments == 10) {
+				return function(
+					GetParameter<0>(), GetParameter<1>(), GetParameter<2>(),
+					GetParameter<3>(), GetParameter<4>(), GetParameter<5>(),
+					GetParameter<6>(), GetParameter<7>(), GetParameter<8>(),
+					GetParameter<9>()
+				);
+			}
+			else if constexpr (NumArguments == 9) {
+				return function(
+					GetParameter<0>(), GetParameter<1>(), GetParameter<2>(),
+					GetParameter<3>(), GetParameter<4>(), GetParameter<5>(),
+					GetParameter<6>(), GetParameter<7>(), GetParameter<8>()
+				);
+			}
+			else if constexpr (NumArguments == 8) {
+				return function(
+					GetParameter<0>(), GetParameter<1>(), GetParameter<2>(),
+					GetParameter<3>(), GetParameter<4>(), GetParameter<5>(),
+					GetParameter<6>(), GetParameter<7>()
+				);
+			}
+			else if constexpr (NumArguments == 7) {
+				return function(
+					GetParameter<0>(), GetParameter<1>(), GetParameter<2>(),
+					GetParameter<3>(), GetParameter<4>(), GetParameter<5>(),
+					GetParameter<6>()
+				);
+			}
+			else if constexpr (NumArguments == 6) {
+				return function(
+					GetParameter<0>(), GetParameter<1>(), GetParameter<2>(),
+					GetParameter<3>(), GetParameter<4>(), GetParameter<5>()
+				);
+			}
+			else if constexpr (NumArguments == 5) {
+				return function(
+					GetParameter<0>(), GetParameter<1>(), GetParameter<2>(),
+					GetParameter<3>(), GetParameter<4>()
+				);
+			}
+			else if constexpr (NumArguments == 4) {
+				return function(
+					GetParameter<0>(), GetParameter<1>(), GetParameter<2>(),
+					GetParameter<3>()
+				);
+			}
+			else if constexpr (NumArguments == 3) {
+				return function(
+					GetParameter<0>(), GetParameter<1>(), GetParameter<2>()
+				);
+			}
+			else if constexpr (NumArguments == 2) {
+				return function(
+					GetParameter<0>(), GetParameter<1>()
+				);
+			}
+			else if constexpr (NumArguments == 1) {
+				return function(
+					GetParameter<0>()
+				);
+			}
+			else if constexpr (NumArguments == 0) {
+				return function();
+			}
+			else {
+				throw(std::runtime_error("The number of arguments and number of parameters did not match"));
+			}
+		};
+		void Invoke() override final { operator()(); };
+
+		template<int N> static std::weak_ptr<GoodLang::Type_Info> InputType() noexcept {
+			return GoodLang::user_type_shared< typename ArgumentType<N>::parameter_pack::type >();
+		};
+		std::vector<std::weak_ptr<GoodLang::Type_Info>> InputTypes() noexcept {
+			if constexpr (NumArguments == 0) {
+				return {};
+			}
+			else if constexpr (NumArguments == 1) {
+				return { InputType<0>() };
+			}
+			else if constexpr (NumArguments == 2) {
+				return { InputType<0>(), InputType<1>() };
+			}
+			else if constexpr (NumArguments == 3) {
+				return { InputType<0>(), InputType<1>(), InputType<2>() };
+			}
+			else if constexpr (NumArguments == 4) {
+				return { InputType<0>(), InputType<1>(), InputType<2>(), InputType<3>() };
+			}
+			else if constexpr (NumArguments == 5) {
+				return {
+					InputType<0>(), InputType<1>(), InputType<2>(), InputType<3>(),
+					InputType<4>()
+				};
+			}
+			else if constexpr (NumArguments == 6) {
+				return {
+					InputType<0>(), InputType<1>(), InputType<2>(), InputType<3>(),
+					InputType<4>(), InputType<5>()
+				};
+			}
+			else if constexpr (NumArguments == 7) {
+				return {
+					InputType<0>(), InputType<1>(), InputType<2>(), InputType<3>(),
+					InputType<4>(), InputType<5>(), InputType<6>()
+				};
+			}
+			else if constexpr (NumArguments == 8) {
+				return {
+					InputType<0>(), InputType<1>(), InputType<2>(), InputType<3>(),
+					InputType<4>(), InputType<5>(), InputType<6>(), InputType<7>()
+				};
+			}
+			else if constexpr (NumArguments == 9) {
+				return {
+					InputType<0>(), InputType<1>(), InputType<2>(), InputType<3>(),
+					InputType<4>(), InputType<5>(), InputType<6>(), InputType<7>(),
+					InputType<8>()
+				};
+			}
+			else if constexpr (NumArguments == 10) {
+				return {
+					InputType<0>(), InputType<1>(), InputType<2>(), InputType<3>(),
+					InputType<4>(), InputType<5>(), InputType<6>(), InputType<7>(),
+					InputType<8>(), InputType<9>()
+				};
+			}
+			else if constexpr (NumArguments == 11) {
+				return {
+					InputType<0>(), InputType<1>(), InputType<2>(), InputType<3>(),
+					InputType<4>(), InputType<5>(), InputType<6>(), InputType<7>(),
+					InputType<8>(), InputType<9>(), InputType<10>()
+				};
+			}
+			else if constexpr (NumArguments == 12) {
+				return {
+					InputType<0>(), InputType<1>(), InputType<2>(), InputType<3>(),
+					InputType<4>(), InputType<5>(), InputType<6>(), InputType<7>(),
+					InputType<8>(), InputType<9>(), InputType<10>(), InputType<11>()
+				};
+			}
+			else if constexpr (NumArguments == 13) {
+				return {
+					InputType<0>(), InputType<1>(), InputType<2>(), InputType<3>(),
+					InputType<4>(), InputType<5>(), InputType<6>(), InputType<7>(),
+					InputType<8>(), InputType<9>(), InputType<10>(), InputType<11>(),
+					InputType<12>()
+				};
+			}
+			else if constexpr (NumArguments == 14) {
+				return {
+					InputType<0>(), InputType<1>(), InputType<2>(), InputType<3>(),
+					InputType<4>(), InputType<5>(), InputType<6>(), InputType<7>(),
+					InputType<8>(), InputType<9>(), InputType<10>(), InputType<11>(),
+					InputType<12>(), InputType<13>()
+				};
+			}
+			else if constexpr (NumArguments == 15) {
+				return {
+					InputType<0>(), InputType<1>(), InputType<2>(), InputType<3>(),
+					InputType<4>(), InputType<5>(), InputType<6>(), InputType<7>(),
+					InputType<8>(), InputType<9>(), InputType<10>(), InputType<11>(),
+					InputType<12>(), InputType<13>(), InputType<14>()
+				};
+			}
+			else if constexpr (NumArguments == 16) {
+				return {
+					InputType<0>(), InputType<1>(), InputType<2>(), InputType<3>(),
+					InputType<4>(), InputType<5>(), InputType<6>(), InputType<7>(),
+					InputType<8>(), InputType<9>(), InputType<10>(), InputType<11>(),
+					InputType<12>(), InputType<13>(), InputType<14>(), InputType<15>()
+				};
+			}
+		};
+
+		static constexpr size_t NumInputs() noexcept { return NumArguments; };
+		static constexpr bool ReturnsNothing() {
+			return returnsNothing;
+		};
+		const char* FunctionName() const {
+			return function.target_type().name();
+		};
+
+		static constexpr bool returnsNothing{ std::is_same<ResultType, void>::value };
+	};
+
+	class Action_Base {
+	public:
+		Action_Base() = default;
+		Action_Base(Action_Base const&) = delete;
+		Action_Base(Action_Base&&) = delete;
+		Action_Base& operator=(Action_Base const&) = delete;
+		Action_Base& operator=(Action_Base&&) = delete;
+		virtual ~Action_Base() = default;
+
+		virtual const GoodLang::Any& GetResult() const = 0;
+		virtual GoodLang::Any& Invoke() = 0;
+		virtual bool IsStatic() const noexcept = 0;
+		virtual std::weak_ptr<GoodLang::Type_Info> returnType() const = 0;
+		virtual std::string FunctionName() const = 0;
+	};
+	template<typename F>
+	class Action_NoReturn final : public Action_Base {
+	private:
+		fibers::Function<F> func;
+		bool stateless;
+
+	public:
+		Action_NoReturn() : Action_Base() {};
+		Action_NoReturn(fibers::Function<F>&& function, bool isStateless) : Action_Base(), func(std::forward<fibers::Function<F>>(function)), stateless(isStateless) {};
+		Action_NoReturn(Action_NoReturn const&) = delete;
+		Action_NoReturn(Action_NoReturn&&) = delete;
+		Action_NoReturn& operator=(Action_NoReturn const&) = delete;
+		Action_NoReturn& operator=(Action_NoReturn&&) = delete;
+		~Action_NoReturn() = default;
+
+		const GoodLang::Any& GetResult() const override final {
+			if constexpr (decltype(func)::returnsNothing) {
+				static GoodLang::Any staticVal{};
+				return staticVal;
+			}
+			else {
+				throw(std::runtime_error("Action_NoReturn does not support returning anything."));
+			}
+		};
+		GoodLang::Any& Invoke() override final {
+			if constexpr (decltype(func)::returnsNothing) {
+				static GoodLang::Any staticVal{};
+				func.Invoke();
+				return staticVal;
+			}
+			else {
+				throw(std::runtime_error("Action_NoReturn does not support returning anything."));
+			}
+
+		};
+		bool IsStatic() const noexcept override final {
+			return stateless;
+		};
+		std::weak_ptr<GoodLang::Type_Info> returnType() const override final {
+			return GoodLang::user_type_shared<void>();
+		};
+		std::string FunctionName() const override final {
+			return func.FunctionName();
+		};
+	};
+	template<typename F>
+	class Action_Returns final : public Action_Base {
+	private:
+		fibers::Function<F> func;
+		GoodLang::Any any;
+		bool stateless;
+
+	public:
+		Action_Returns() : Action_Base(), any() {};
+		Action_Returns(fibers::Function<F>&& function, bool isStateless) : Action_Base(), func(std::forward<fibers::Function<F>>(function)), any(), stateless(isStateless) {};
+		Action_Returns(Action_Returns const&) = delete;
+		Action_Returns(Action_Returns&&) = delete;
+		Action_Returns& operator=(Action_Returns const&) = delete;
+		Action_Returns& operator=(Action_Returns&&) = delete;
+		~Action_Returns() = default;
+
+		const GoodLang::Any& GetResult() const override final {
+			if constexpr (decltype(func)::returnsNothing) {
+				static GoodLang::Any staticVal{};
+				return staticVal;
+			}
+			else {
+				return any;
+			}
+
+		};
+		GoodLang::Any& Invoke() override final {
+			if constexpr (decltype(func)::returnsNothing) {
+				static GoodLang::Any staticVal{};
+				func.Invoke();
+				return staticVal;
+			}
+			else {
+				any = func();
+				return any;
+			}
+
+		};
+		bool IsStatic() const noexcept override final {
+			return stateless;
+		};
+		std::weak_ptr<GoodLang::Type_Info> returnType() const override final {
+			return GoodLang::user_type_shared<decltype(func)::ResultType>();
+		};
+		std::string FunctionName() const override final {
+			return func.FunctionName();
+		};
+	};
+
 	namespace containers{
 		template <typename value> class AtomicQueue {
 		public:
@@ -7485,7 +8188,7 @@ namespace fibers{
 		template<typename T, typename Arguments> static constexpr const bool IsStatelessTest() {
 			if constexpr (IsStaticFunction<T>()) { return true; }
 			else {
-				// using Arguments = typename fibers::utilities::function_traits<std::function<T(Args...)>>::arguments; // tuple
+				// using Arguments = typename GoodLang::utilities::function_traits<std::function<T(Args...)>>::arguments; // tuple
 
 #define Ty(n) typename std::tuple_element<n, Arguments>::type
 #define TIter0() Ty(0)
@@ -7557,7 +8260,7 @@ namespace fibers{
 		Job& operator=(Job&& other) { impl = std::move(other.impl); return *this; };
 
 		/* Creates a job from a function and (optionally) input parameters. Can handle basic type-casting from inputs to parameters, and supports shared_ptr casting (to and from). */
-		template < typename T, typename... Args, typename = std::enable_if_t< !std::is_same_v<fibers::Job, std::decay_t<T>> && !std::is_same_v<fibers::Any, std::decay_t<T>> >> explicit Job(T&& function, Args && ... Fargs) : impl(nullptr) {
+		template < typename T, typename... Args, typename = std::enable_if_t< !std::is_same_v<fibers::Job, std::decay_t<T>> && !std::is_same_v<GoodLang::Any, std::decay_t<T>> >> explicit Job(T&& function, Args && ... Fargs) : impl(nullptr) {
 			auto func{ fibers::Function(std::function(std::forward<T>(function)), std::forward<Args>(Fargs)...) };
 
 			static constexpr const bool is_stateless{ IsStateless<T, typename decltype(func)::Arguments>() };
@@ -7577,8 +8280,8 @@ namespace fibers{
 
 	public:
 		/* Do the task immediately, without using any thread/fiber tools, and returns the result (if any). */
-		fibers::Any& Invoke() const noexcept {
-			static fibers::Any staticVal{};
+		GoodLang::Any& Invoke() const noexcept {
+			static GoodLang::Any staticVal{};
 			if (impl) {
 				return impl->Invoke();
 			}
@@ -7614,8 +8317,8 @@ namespace fibers{
 		};
 
 		/* Returns the result of the job, if any, if already performed. If not performed, the result will be empty. */
-		const fibers::Any& GetResult() const {
-			static fibers::Any staticVal{};
+		const GoodLang::Any& GetResult() const {
+			static GoodLang::Any staticVal{};
 			if (impl) {
 				return impl->GetResult();
 			}
@@ -7623,7 +8326,7 @@ namespace fibers{
 		};
 
 		/* Do the task immediately, without using any thread/fiber tools, and returns the result (if any). */
-		fibers::Any& operator()() {
+		GoodLang::Any& operator()() {
 			return Invoke();
 		};
 	};
@@ -7892,14 +8595,14 @@ namespace fibers{
 		class promise {
 		protected:
 			std::shared_ptr< synchronization::atomic_ptr<JobGroup> > shared_state;
-			std::shared_ptr< synchronization::atomic_ptr<Any> > result;
+			std::shared_ptr< synchronization::atomic_ptr<GoodLang::Any> > result;
 			std::shared_ptr< synchronization::mutex > waiting;
 
 		public:
 			promise() : shared_state(nullptr), result(nullptr), waiting(nullptr) {};
 			promise(Job const& job) :
 				shared_state(std::shared_ptr<synchronization::atomic_ptr<JobGroup>>(new synchronization::atomic_ptr<JobGroup>(new JobGroup(job)), [](synchronization::atomic_ptr<JobGroup>* anyP) { if (anyP) { auto* p = anyP->Set(nullptr); if (p) { delete p; } delete anyP; } })),
-				result(std::shared_ptr<synchronization::atomic_ptr<Any>>(new synchronization::atomic_ptr<Any>(), [](synchronization::atomic_ptr<Any>* anyP) { if (anyP) { auto* p = anyP->Set(nullptr); if (p) { delete p; } delete anyP; } })),
+				result(std::shared_ptr<synchronization::atomic_ptr<GoodLang::Any>>(new synchronization::atomic_ptr<GoodLang::Any>(), [](synchronization::atomic_ptr<GoodLang::Any>* anyP) { if (anyP) { auto* p = anyP->Set(nullptr); if (p) { delete p; } delete anyP; } })),
 				waiting(std::shared_ptr<synchronization::mutex>(new synchronization::mutex()))
 			{};
 			promise(promise const&) = default;
@@ -7913,32 +8616,32 @@ namespace fibers{
 			/* Wait until the requested job is completed. Repeated waiting is OK, however only the first "waiting" thread actually helps to complete the job - the remaining waiters will spin-wait. */
 			void wait() {
 				JobGroup* p{ nullptr };
-				Any* p2{ nullptr };
+				GoodLang::Any* p2{ nullptr };
 				
-				defer(if (p) { delete p; });
-				defer(if (p2) { delete p2; });
+				defer(if (p) delete p);
+				defer(if (p2) delete p2);
 
 				if (valid() && !result->load()) {
 					auto guard{ std::lock_guard(*waiting) };
 
 					p = shared_state->Set(nullptr);
 					if (p) {
-						p2 = result->Set(new Any(p->Wait_Get()));					
+						p2 = result->Set(new GoodLang::Any(p->Wait_Get()));
 					}					
 				}
 			};
 			/* Try to get the result, if available. Does not wait. */
-			Any get_any() const noexcept {
+			GoodLang::Any get_any() const noexcept {
 				if (result) {
-					Any* p = result->Get();
+					GoodLang::Any* p = result->Get();
 					if (p) {
-						return Any(*p);
+						return GoodLang::Any(*p);
 					}
 				}
-				return Any();
+				return GoodLang::Any();
 			};
 			/* Get the result, once available. Waits for the result, if necessary. */
-			Any wait_get_any() {
+			GoodLang::Any wait_get_any() {
 				wait();
 				return get_any();
 			};
@@ -7967,7 +8670,7 @@ namespace fibers{
 			/* get a copy of the result of the task. must have already waited. */
 			decltype(auto) get() {
 				if (result) {
-					Any* p = result->Get();
+					GoodLang::Any* p = result->Get();
 					if (p) {
 						if constexpr (std::is_same<void, T>()) {
 							return;
@@ -7988,7 +8691,7 @@ namespace fibers{
 			/* get a reference to the result of the task. Note: lifetime of return reference must not outlive the future<T> object. must have already waited. */
 			decltype(auto) get_ref() {
 				if (result) {
-					Any* p = result->Get();
+					GoodLang::Any* p = result->Get();
 					if (p) {
 						if constexpr (std::is_same<void, T>()) {
 							return;
@@ -8009,7 +8712,7 @@ namespace fibers{
 			/* get a shared_pointer of the result of the task. must have already waited. */
 			decltype(auto) get_shared() {
 				if (result) {
-					Any* p = result->Get();
+					GoodLang::Any* p = result->Get();
 					if (p) {
 						if constexpr (std::is_same<void, T>()) {
 							return;
@@ -8046,15 +8749,14 @@ namespace fibers{
 		};
 
 		/* returns a future<T> object for awaiting the results of the job. */
-		template < typename F, typename... Args, typename = std::enable_if_t< !std::is_same_v<Job, std::decay_t<F>> && !std::is_same_v<Any, std::decay_t<F>> >>
+		template < typename F, typename... Args, typename = std::enable_if_t< !std::is_same_v<Job, std::decay_t<F>> && !std::is_same_v<GoodLang::Any, std::decay_t<F>> >>
 		__forceinline static decltype(auto) async(F function, Args... Fargs) {
-			return future<typename utilities::function_traits<decltype(std::function(function))>::result_type>(Job(function, Fargs...));
+			return future<typename GoodLang::utilities::function_traits<decltype(std::function(function))>::result_type>(Job(function, Fargs...));
 		};
 	};
 };
 
 #include "Units.h"
-
 #include <boost/date_time.hpp>
 // Thread- and Fiber-safe wrapper for Units::day which supports fundamental DateTime and Duration math. Utilizes Boost for the timezone math, AM/PM extractions, string conversions, etc.
 // Meant to be used in parallel with Units for proper unit management while manipulating DateTime ranges.

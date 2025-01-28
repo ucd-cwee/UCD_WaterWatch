@@ -37,6 +37,9 @@
     <ClInclude Include="ScriptingLanguage2.h">
       <Filter>Files\H</Filter>
     </ClInclude>
+    <ClInclude Include="GoodLang_Actions.h">
+      <Filter>Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Fibers.cpp">
@@ -44,9 +47,6 @@
     </ClCompile>
     <ClCompile Include="MultiWord_CompareAndSwap.cpp">
       <Filter>Files\CPP</Filter>
-    </ClCompile>
-    <ClCompile Include="ScriptingLanguage.h">
-      <Filter>Files\H</Filter>
     </ClCompile>
     <ClCompile Include="UnitsLibrary_2.cpp">
       <Filter>Files\CPP</Filter>
@@ -65,6 +65,15 @@
     </ClCompile>
     <ClCompile Include="UnitsLibrary_6.cpp">
       <Filter>Files\CPP</Filter>
+    </ClCompile>
+    <ClCompile Include="GoodLang_Actions.cpp">
+      <Filter>Files</Filter>
+    </ClCompile>
+    <ClCompile Include="ScriptingLanguage2.cpp">
+      <Filter>Files</Filter>
+    </ClCompile>
+    <ClCompile Include="BuiltIns.cpp">
+      <Filter>Files</Filter>
     </ClCompile>
   </ItemGroup>
 </Project>

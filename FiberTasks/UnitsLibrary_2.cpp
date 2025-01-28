@@ -1,6 +1,6 @@
 #pragma once
 
-#include "UnitsLibrary.h"
+#include "ScriptingLanguage2.h"
 
 namespace GoodLang {
 	namespace UnitsLibrary {
@@ -23,32 +23,31 @@ namespace GoodLang {
 			CreateRow(tera ## Type); \
 			CreateRow(peta ## Type);
 
-			
-			CreateRow(day);
-			CreateRow(week);
-			CreateRow(year);
-			CreateRow(month);
-			CreateRow(julian_year);
-			CreateRow(gregorian_year);
-			CreateRowWithMetricPrefixes(ampere);
-			CreateRow(Dollar);
-			CreateRow(MillionDollar);
-			CreateRowWithMetricPrefixes(hertz);
-			CreateRow(meters_per_second);
-			CreateRow(feet_per_second);
-			CreateRow(feet_per_minute);
-			CreateRow(feet_per_hour);
-			CreateRow(miles_per_hour);
-			CreateRow(kilometers_per_hour);
-			CreateRow(knot);
-			CreateRow(meters_per_second_squared);
-			CreateRow(feet_per_second_squared);
-			CreateRow(standard_gravity);
-			CreateRowWithMetricPrefixes(newton);
-			CreateRowWithMetricPrefixes(pound_f);
-			CreateRow(dyne);
-			CreateRow(kilopond);
-			CreateRow(poundal);
+			//CreateRow(day);
+			//CreateRow(week);
+			//CreateRow(year);
+			//CreateRow(month);
+			//CreateRow(julian_year);
+			//CreateRow(gregorian_year);
+			//CreateRowWithMetricPrefixes(ampere);
+			//CreateRow(Dollar);
+			//CreateRow(MillionDollar);
+			//CreateRowWithMetricPrefixes(hertz);
+			//CreateRow(meters_per_second);
+			//CreateRow(feet_per_second);
+			//CreateRow(feet_per_minute);
+			//CreateRow(feet_per_hour);
+			//CreateRow(miles_per_hour);
+			//CreateRow(kilometers_per_hour);
+			//CreateRow(knot);
+			//CreateRow(meters_per_second_squared);
+			//CreateRow(feet_per_second_squared);
+			//CreateRow(standard_gravity);
+			//CreateRowWithMetricPrefixes(newton);
+			//CreateRowWithMetricPrefixes(pound_f);
+			//CreateRow(dyne);
+			//CreateRow(kilopond);
+			//CreateRow(poundal);
 
 #undef CreateRowWithMetricPrefixes
 #undef CreateRow

@@ -1,89 +1,112 @@
 // FibersDebugConsole.cpp : This file contains the 'main' function. Program execution begins and ends there.
 
 #include <iostream>
-#include "../FiberTasks/Fibers.h"
-//#include "../FiberTasks/ScriptingLanguage.h"
-#include "../FiberTasks/UnitsLibrary.h"
+#include <string>
+#include "../GoodLang/Any.h"
+#include "../GoodLang/Proxy_Function.h"
 
-#include "../FiberTasks/ScriptingLanguage2.h"
-
-#include <execution>
-#include "../WaterWatchCpp/Clock.h"
-
-#include "../FiberTasks/Actions2.h"
-
-class stackThing {
-public:
-	std::string varName;
-	fibers::Any var;
-	bool perform_cout;
-
-public:
-	stackThing() : varName(), var(), perform_cout{ true }{};
-	stackThing(std::string const& name) : varName(name), var(), perform_cout{ true } {};
-	template<typename T> stackThing(std::string const& name, T const& obj) : varName(name), var(obj), perform_cout{ true } {};
-	template<typename T> stackThing(std::string const& name, T&& obj) : varName(name), var(std::forward<T>(obj)), perform_cout{ true } {};
-	template<typename T> stackThing(std::string const& name, T&& obj, bool doCout) : varName(name), var(std::forward<T>(obj)), perform_cout(doCout) {};
-	stackThing(stackThing const& r) = default;
-	stackThing(stackThing&& r) = default;
-	stackThing& operator=(stackThing const& r) = default;
-	stackThing& operator=(stackThing&& r) = default;
-	~stackThing() { 
-		if (perform_cout && (!varName.empty())) {
-			std::cout << Units::printf("DELETING %s\n", varName.c_str());
-		}
-	};
-	int length() const { return varName.length(); };
-	std::string& get_var_name() { return varName; };
-	bool operator==(stackThing const& a) const { return varName == a.varName; };
-	bool operator!=(stackThing const& a) const { return varName != a.varName; };
-};
-class stackThing2 {
-public:
-	std::string varName;
-	GoodLang::Any var;
-	bool perform_cout;
-
-public:
-	stackThing2() : varName(), var(), perform_cout{ true }{};
-	stackThing2(std::string const& name) : varName(name), var(), perform_cout{ true } {};
-	template<typename T> stackThing2(std::string const& name, T const& obj) : varName(name), var(obj), perform_cout{ true } {};
-	template<typename T> stackThing2(std::string const& name, T&& obj) : varName(name), var(std::forward<T>(obj)), perform_cout{ true } {};
-	template<typename T> stackThing2(std::string const& name, T&& obj, bool doCout) : varName(name), var(std::forward<T>(obj)), perform_cout(doCout) {};
-	stackThing2(stackThing2 const& r) = default;
-	stackThing2(stackThing2&& r) = default;
-	stackThing2& operator=(stackThing2 const& r) = default;
-	stackThing2& operator=(stackThing2&& r) = default;
-	~stackThing2() {
-		if (perform_cout && (!varName.empty())) {
-			std::cout << Units::printf("DELETING %s\n", varName.c_str());
-		}
-	};
-	int length() const { return varName.length(); };
-	std::string& get_var_name() { return varName; };
-	bool operator==(stackThing const& a) const { return varName == a.varName; };
-	bool operator!=(stackThing const& a) const { return varName != a.varName; };
-};
-
-static bool Thing() { return true; };
-
+//#include "../FiberTasks/Fibers.h"
+//#include "../FiberTasks/UnitsLibrary.h"
+//#include "../FiberTasks/ScriptingLanguage2.h"
+//#include <execution>
+//#include "../WaterWatchCpp/Clock.h"
+//#include "../FiberTasks/Actions2.h"
+//class stackThing {
+//public:
+//	std::string varName;
+//	fibers::Any var;
+//	bool perform_cout;
+//
+//public:
+//	stackThing() : varName(), var(), perform_cout{ true }{};
+//	stackThing(std::string const& name) : varName(name), var(), perform_cout{ true } {};
+//	template<typename T> stackThing(std::string const& name, T const& obj) : varName(name), var(obj), perform_cout{ true } {};
+//	template<typename T> stackThing(std::string const& name, T&& obj) : varName(name), var(std::forward<T>(obj)), perform_cout{ true } {};
+//	template<typename T> stackThing(std::string const& name, T&& obj, bool doCout) : varName(name), var(std::forward<T>(obj)), perform_cout(doCout) {};
+//	stackThing(stackThing const& r) = default;
+//	stackThing(stackThing&& r) = default;
+//	stackThing& operator=(stackThing const& r) = default;
+//	stackThing& operator=(stackThing&& r) = default;
+//	~stackThing() { 
+//		if (perform_cout && (!varName.empty())) {
+//			std::cout << Units::printf("DELETING %s\n", varName.c_str());
+//		}
+//	};
+//	int length() const { return varName.length(); };
+//	std::string& get_var_name() { return varName; };
+//	bool operator==(stackThing const& a) const { return varName == a.varName; };
+//	bool operator!=(stackThing const& a) const { return varName != a.varName; };
+//};
+//class stackThing2 {
+//public:
+//	std::string varName;
+//	GoodLang::Any var;
+//	bool perform_cout;
+//
+//public:
+//	stackThing2() : varName(), var(), perform_cout{ true }{};
+//	stackThing2(std::string const& name) : varName(name), var(), perform_cout{ true } {};
+//	template<typename T> stackThing2(std::string const& name, T const& obj) : varName(name), var(obj), perform_cout{ true } {};
+//	template<typename T> stackThing2(std::string const& name, T&& obj) : varName(name), var(std::forward<T>(obj)), perform_cout{ true } {};
+//	template<typename T> stackThing2(std::string const& name, T&& obj, bool doCout) : varName(name), var(std::forward<T>(obj)), perform_cout(doCout) {};
+//	stackThing2(stackThing2 const& r) = default;
+//	stackThing2(stackThing2&& r) = default;
+//	stackThing2& operator=(stackThing2 const& r) = default;
+//	stackThing2& operator=(stackThing2&& r) = default;
+//	~stackThing2() {
+//		if (perform_cout && (!varName.empty())) {
+//			std::cout << Units::printf("DELETING %s\n", varName.c_str());
+//		}
+//	};
+//	int length() const { return varName.length(); };
+//	std::string& get_var_name() { return varName; };
+//	bool operator==(stackThing const& a) const { return varName == a.varName; };
+//	bool operator!=(stackThing const& a) const { return varName != a.varName; };
+//};
+//
+//static bool Thing() { return true; };
+//
 #define SINGLE_ARG(...) __VA_ARGS__
-#define EXPECT_EQ(a,b) [&]()->bool{ if ((a) == (b)) { return true; } else { std::cout << Units::printf("FAILURE AT LINE %i\n", (int)__LINE__); return false; } }()
+// #define EXPECT_EQ(a,b) [&]()->bool{ if ((a) == (b)) { return true; } else { std::cout << GoodLang::printf("FAILURE AT LINE %i\n", (int)__LINE__); return false; } }()
 #define EXPECT_EQ_PRINTF(A,B) [a = (A), b = (B)]()->bool{ \
     if (a == b) { return true; } else { \
         std::string tempA{std::to_string(a)}, tempB{std::to_string(b)}; \
-        std::cout << Units::printf("FAILURE AT LINE %i: (%s != %s)\n", (int)__LINE__, tempA.c_str(), tempB.c_str()); \
+        std::cout << GoodLang::printf("FAILURE AT LINE %i: (%s != %s)\n", (int)__LINE__, tempA.c_str(), tempB.c_str()); \
     return false; } \
 }()
-#define EXPECT_NE(a, b) [&]()->bool{ if ((a) != (b)) { return true; } else { std::cout << Units::printf("FAILURE AT LINE %i\n", (int)__LINE__); return false; } }()
-
-
+#define EXPECT_NE(a, b) [&]()->bool{ if ((a) != (b)) { return true; } else { std::cout << GoodLang::printf("FAILURE AT LINE %i\n", (int)__LINE__); return false; } }()
+#define print(a) defer(std::cout << a << std::endl)
+#define EXPECT_EQ(a, b) if (a != b){ std::cout << GoodLang::printf("FAILURE AT LINE %i\n", (int)__LINE__); }
 
 int main() {
+	using namespace GoodLang;
+
 	// pre-warm the heap
 	for (int i = 0; i < 100000; i++) delete (new int(5));
 
+	auto f{ GoodLang::Scripted_Type_Info() };
 
+	auto& type_int = GoodLang::user_type<int>();
+	type_int.IsBuiltInType();
+
+	Any x = 100;
+	print(x.TypeName());
+	
+	x = 500;
+
+	utilities::FastAllocator<int> xxx;
+	xxx.Alloc();
+	
+	(void)x.cast<int>();
+
+	auto func = make_callable([](int x) -> int { return x * x; });
+	TypeConverter converter;
+	auto result = call(func, { 100 }, converter);
+	EXPECT_EQ(true, result.IsTypeOf<int>());
+
+
+
+#if 0
 	fibers::utilities::Computer_Usage usage_start;
 	auto TestMemory = [&](long currentLine) {
 		fibers::utilities::Computer_Usage currentMemory;
@@ -4121,6 +4144,7 @@ int main() {
 					}
 				}
 #endif
+
 
 
 
@@ -10262,6 +10286,7 @@ int main() {
 #endif
 
 	}
+#endif
 
 	return 0;
 };

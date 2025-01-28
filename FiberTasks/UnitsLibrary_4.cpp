@@ -1,6 +1,6 @@
 #pragma once
 
-#include "UnitsLibrary.h"
+#include "ScriptingLanguage2.h"
 
 namespace GoodLang {
 	namespace UnitsLibrary {
@@ -23,17 +23,17 @@ namespace GoodLang {
 			CreateRow(tera ## Type); \
 			CreateRow(peta ## Type);
 
-			CreateRow(horsepower);
-			CreateRowWithMetricPrefixes(joule);
-			CreateRowWithMetricPrefixes(calorie);
-			CreateRowWithMetricPrefixes(watt_minute);
-			CreateRowWithMetricPrefixes(watt_hour);
-			CreateRow(watt_day);
-			CreateRow(british_thermal_unit);
-			CreateRow(british_thermal_unit_iso);
-			CreateRow(british_thermal_unit_59);
-			CreateRow(therm);
-			CreateRow(foot_pound);
+			//CreateRow(horsepower);
+			//CreateRowWithMetricPrefixes(joule);
+			//CreateRowWithMetricPrefixes(calorie);
+			//CreateRowWithMetricPrefixes(watt_minute);
+			//CreateRowWithMetricPrefixes(watt_hour);
+			//CreateRow(watt_day);
+			//CreateRow(british_thermal_unit);
+			//CreateRow(british_thermal_unit_iso);
+			//CreateRow(british_thermal_unit_59);
+			//CreateRow(therm);
+			//CreateRow(foot_pound);
 			
 #undef CreateRowWithMetricPrefixes
 #undef CreateRow

@@ -21,37 +21,36 @@
   <PropertyGroup Label="Globals">
     <VCProjectVersion>16.0</VCProjectVersion>
     <Keyword>Win32Proj</Keyword>
-    <ProjectGuid>{a24ff745-1a2e-4261-8a8f-a2a0abaafd84}</ProjectGuid>
-    <RootNamespace>FibersDebugConsole</RootNamespace>
+    <ProjectGuid>{b4845e23-67fe-409d-bafe-2d73131d28dd}</ProjectGuid>
+    <RootNamespace>GoodLang</RootNamespace>
     <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
-    <ConfigurationType>Application</ConfigurationType>
+    <ConfigurationType>StaticLibrary</ConfigurationType>
     <UseDebugLibraries>true</UseDebugLibraries>
     <PlatformToolset>v142</PlatformToolset>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="Configuration">
-    <ConfigurationType>Application</ConfigurationType>
+    <ConfigurationType>StaticLibrary</ConfigurationType>
     <UseDebugLibraries>false</UseDebugLibraries>
     <PlatformToolset>v142</PlatformToolset>
     <WholeProgramOptimization>true</WholeProgramOptimization>
     <CharacterSet>MultiByte</CharacterSet>
-    <PreferredToolArchitecture>x64</PreferredToolArchitecture>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
-    <ConfigurationType>Application</ConfigurationType>
+    <ConfigurationType>StaticLibrary</ConfigurationType>
     <UseDebugLibraries>true</UseDebugLibraries>
     <PlatformToolset>v142</PlatformToolset>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
-    <ConfigurationType>Application</ConfigurationType>
+    <ConfigurationType>StaticLibrary</ConfigurationType>
     <UseDebugLibraries>false</UseDebugLibraries>
     <PlatformToolset>v142</PlatformToolset>
     <WholeProgramOptimization>true</WholeProgramOptimization>
-    <CharacterSet>Unicode</CharacterSet>
+    <CharacterSet>MultiByte</CharacterSet>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
   <ImportGroup Label="ExtensionSettings">
@@ -75,8 +74,7 @@
     <LinkIncremental>true</LinkIncremental>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
-    <LinkIncremental>
-    </LinkIncremental>
+    <LinkIncremental>false</LinkIncremental>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <LinkIncremental>true</LinkIncremental>
@@ -88,11 +86,14 @@
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
       <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>WIN32;_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>WIN32;_DEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
+      <PrecompiledHeader>Use</PrecompiledHeader>
+      <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
     </ClCompile>
     <Link>
-      <SubSystem>Console</SubSystem>
+      <SubSystem>
+      </SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
     </Link>
   </ItemDefinitionGroup>
@@ -102,35 +103,41 @@
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>NDEBUG;_WINDOWS;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>NDEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <PrecompiledHeaderFile>
+      </PrecompiledHeaderFile>
       <LanguageStandard>stdcpp17</LanguageStandard>
-      <AdditionalIncludeDirectories>$(SolutionDir)EDMS_DLL_Codebase;$(SolutionDir)EDMS_DLL_Codebase\include;$(ProjectDir)include;$(SolutionDir)dlib-19.17\source\;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <Optimization>Full</Optimization>
+      <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
       <EnableFiberSafeOptimizations>true</EnableFiberSafeOptimizations>
-      <AdditionalOptions>/bigobj /DPARALLEL %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalOptions>/DPARALLEL </AdditionalOptions>
+      <AdditionalIncludeDirectories>$(ProjectDir)third_party\catch2\third_party;$(ProjectDir)third_party\boost_context\include;$(ProjectDir)third_party;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
-      <SubSystem>Console</SubSystem>
+      <SubSystem>
+      </SubSystem>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalLibraryDirectories>$(SolutionDir)GDAL\lib;$(SolutionDir)epanet;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <AdditionalDependencies>boost_context.lib;libmysql.lib; libcurl_a.lib; apr-1.lib; aprapp-1.lib; aprutil-1.lib; apr_dbd_odbc-1.lib; apr_ldap-1.lib; cairo.lib; cfitsio.lib; fontconfig.lib; freetype.lib; freexl.lib; freexl_i.lib; fribidi.lib; fts5.lib; gdal_i.lib; geos.lib; geos_c.lib; geotiff.lib; giflib.lib; harfbuzz.lib; hdf.lib; hdf5.lib; hdf5_cpp.lib; hdf5_hl.lib; hdf5_hl_cpp.lib; iconv.lib; kmlbase.lib; kmlconvenience.lib; kmldom.lib; kmlengine.lib; kmlregionator.lib; kmlxsd.lib; libapr-1.lib; libaprapp-1.lib; libaprutil-1.lib; libcrypto.lib; libcrypto_static.lib; libcurl_imp.lib; libexpat.lib; libfcgi.lib; libhdf.lib; libhdf5.lib; libhdf5_cpp.lib; libhdf5_hl.lib; libhdf5_hl_cpp.lib; libhttpd.lib; libjpeg.lib; libkea.lib; libmfhdf.lib; libmysql.lib; libpng16.lib; libpng16_static.lib; libpq.lib; libprotobuf-lite.lib; libprotobuf.lib; libprotoc.lib; librttopo.lib; libsharpyuv.lib; libsqlite3.lib; libssl.lib; libssl_static.lib; libsvg-cairo.lib; libsvg.lib; libszip.lib; libwebp.lib; libwebpdecoder.lib; libwebpdemux.lib; libwebpmux.lib; libxdr.lib; libxml2.lib; mapcache.lib; mapserver.lib; mfhdf.lib; minizip.lib; netcdf.lib; ogdi.lib; openjp2.lib; pcre.lib; pcrecpp.lib; pcreposix.lib; pixman-1.lib; poppler.lib; proj.lib; proj9.lib; proj_4_9.lib; proj_i.lib; protobuf-c.lib; spatialite.lib; spatialite_i.lib; sqlite3.lib; sqlite3_i.lib; szip.lib; tiff.lib; tiffxx.lib; uriparser.lib; xdr.lib; xerces-c_3.lib; zlib.lib; zlibstatic.lib; zstd.lib; zstd_static.lib</AdditionalDependencies>
     </Link>
-    <ProjectReference>
-      <UseLibraryDependencyInputs>true</UseLibraryDependencyInputs>
-    </ProjectReference>
+    <Lib>
+      <AdditionalLibraryDirectories>${ProjectDir)include;</AdditionalLibraryDirectories>
+    </Lib>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
       <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>_DEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
+      <PrecompiledHeader>Use</PrecompiledHeader>
+      <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
     </ClCompile>
     <Link>
-      <SubSystem>Console</SubSystem>
+      <SubSystem>
+      </SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
     </Link>
   </ItemDefinitionGroup>
@@ -140,34 +147,36 @@
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>NDEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <PrecompiledHeaderFile>
+      </PrecompiledHeaderFile>
       <LanguageStandard>stdcpp17</LanguageStandard>
       <Optimization>Full</Optimization>
       <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
-      <EnableFiberSafeOptimizations>true</EnableFiberSafeOptimizations>
-      <MultiProcessorCompilation>true</MultiProcessorCompilation>
     </ClCompile>
     <Link>
-      <SubSystem>Console</SubSystem>
+      <SubSystem>
+      </SubSystem>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="FibersDebugConsole.cpp" />
+    <ClCompile Include="Any.cpp" />
+    <ClCompile Include="GoodLang.cpp" />
+    <ClCompile Include="Proxy_Function.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\GoodLang\GoodLang.vcxproj">
-      <Project>{b4845e23-67fe-409d-bafe-2d73131d28dd}</Project>
-    </ProjectReference>
-    <ProjectReference Include="..\WindowsPlatformTools\WindowsPlatformTools.vcxproj">
-      <Project>{6d90b501-45bf-4777-8ee1-be7f74a8d6d1}</Project>
-    </ProjectReference>
+    <ClInclude Include="Any.h" />
+    <ClInclude Include="Foundation.h" />
+    <ClInclude Include="Proxy_Function.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
+    <Import Project="$(VCTargetsPath)\BuildCustomizations\masm.targets" />
     <Import Project="..\packages\boost.1.81.0\build\boost.targets" Condition="Exists('..\packages\boost.1.81.0\build\boost.targets')" />
   </ImportGroup>
 </Project>

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "UnitsLibrary.h"
+#include "ScriptingLanguage2.h"
 
 namespace GoodLang {
 	namespace UnitsLibrary {
@@ -23,49 +23,48 @@ namespace GoodLang {
 			CreateRow(tera ## Type); \
 			CreateRow(peta ## Type);
 
-			CreateRowWithMetricPrefixes(volt);
-			CreateRowWithMetricPrefixes(ohm);
-			CreateRow(siemens); // WithMetricPrefixes
-			CreateRow(square_meter);
-			CreateRow(square_foot);
-			CreateRow(square_inch);
-			CreateRow(square_mile);
-			CreateRow(square_kilometer);
-			CreateRow(hectare);
-			CreateRow(acre);
-			CreateRow(cubic_meter);
-			CreateRow(cubic_millimeter);
-			CreateRow(cubic_kilometer);
-			CreateRowWithMetricPrefixes(liter);
-			CreateRow(cubic_inch);
-			CreateRow(cubic_foot);
-			CreateRow(cubic_yard);
-			CreateRow(cubic_mile);
-			CreateRowWithMetricPrefixes(gallon);
-			CreateRow(imperial_gallon);
-			CreateRow(million_gallon);
-			CreateRow(imperial_million_gallon);
-			CreateRow(acre_foot);
-			CreateRow(quart);
-			CreateRow(pint);
-			CreateRow(cup);
-			CreateRow(fluid_ounce);
-			CreateRow(barrel);
-			CreateRow(bushel);
-			CreateRow(cord);
-			CreateRow(tablespoon);
-			CreateRow(teaspoon);
-			CreateRow(pinch);
-			CreateRow(dash);
-			CreateRow(drop);
-			CreateRow(fifth);
-			CreateRow(dram);
-			CreateRow(gill);
-			CreateRow(peck);
-			CreateRow(sack);
-			CreateRow(shot);
-			CreateRow(strike);
-			
+			//CreateRowWithMetricPrefixes(volt);
+			//CreateRowWithMetricPrefixes(ohm);
+			//CreateRow(siemens); // WithMetricPrefixes
+			//CreateRow(square_meter);
+			//CreateRow(square_foot);
+			//CreateRow(square_inch);
+			//CreateRow(square_mile);
+			//CreateRow(square_kilometer);
+			//CreateRow(hectare);
+			//CreateRow(acre);
+			//CreateRow(cubic_meter);
+			//CreateRow(cubic_millimeter);
+			//CreateRow(cubic_kilometer);
+			//CreateRowWithMetricPrefixes(liter);
+			//CreateRow(cubic_inch);
+			//CreateRow(cubic_foot);
+			//CreateRow(cubic_yard);
+			//CreateRow(cubic_mile);
+			//CreateRowWithMetricPrefixes(gallon);
+			//CreateRow(imperial_gallon);
+			//CreateRow(million_gallon);
+			//CreateRow(imperial_million_gallon);
+			//CreateRow(acre_foot);
+			//CreateRow(quart);
+			//CreateRow(pint);
+			//CreateRow(cup);
+			//CreateRow(fluid_ounce);
+			//CreateRow(barrel);
+			//CreateRow(bushel);
+			//CreateRow(cord);
+			//CreateRow(tablespoon);
+			//CreateRow(teaspoon);
+			//CreateRow(pinch);
+			//CreateRow(dash);
+			//CreateRow(drop);
+			//CreateRow(fifth);
+			//CreateRow(dram);
+			//CreateRow(gill);
+			//CreateRow(peck);
+			//CreateRow(sack);
+			//CreateRow(shot);
+			//CreateRow(strike);			
 
 #undef CreateRowWithMetricPrefixes
 #undef CreateRow

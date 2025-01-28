@@ -1,0 +1,285 @@
+#pragma once
+
+#pragma region Precompiled STL Headers
+#pragma warning(disable : 4005)				// macro redefinition
+#pragma warning(disable : 4010)				// single-line comment contains line-continuation character
+#pragma warning(disable : 4018)				// singed / unsigned mismatch
+#pragma warning(disable : 4100)				// unreferenced formal parameter
+#pragma warning(disable : 4101)				// unreferenced local variable
+#pragma warning(disable : 4127)				// conditional expression is constant
+#pragma warning(disable : 4172)				// returning address of local variable or temporary
+#pragma warning(disable : 4189)				// local variable is initialized but not referenced
+#pragma warning(disable : 4238)				// nonstandard extension used: class rvalue used as lvalue
+#pragma warning(disable : 4239)				// conversion from 'T' to 'T&'
+#pragma warning(disable : 4244)				// conversion to smaller type, possible loss of data
+#pragma warning(disable : 4251)				// needs to have dll-interface
+#pragma warning(disable : 4267)				// conversion from 'size_t' to 'int', possible loss of data
+#pragma warning(disable : 4273)				// inconsistent DLL linkage
+#pragma warning(disable : 4297)				// function assumed not to throw but does
+#pragma warning(disable : 4302)				// truncation from 'void *' to 'int'
+#pragma warning(disable : 4305)				// truncating a literal from double to float
+#pragma warning(disable : 4311)				// pointer truncation from 'void *' to 'int'
+#pragma warning(disable : 4312)				// conversion from 'int' to 'void*' of greater size
+#pragma warning(disable : 4390)				// ';' empty controlled statement
+#pragma warning(disable : 4456)				// declaration hides previous local declaration
+#pragma warning(disable : 4458)				// hides class member
+#pragma warning(disable : 4459)				// hides global declaration
+#pragma warning(disable : 4499)				// 'static': an explicit specialization cannot have a storage class
+#pragma warning(disable : 4505)				// unreferenced local function has been removed
+#pragma warning(disable : 4595)				// non-member operator new or delete functions may not be declared inline
+#pragma warning(disable : 4701)				// potentially uninitialized local variable
+#pragma warning(disable : 4714)				// function marked as __forceinline not inlined
+#pragma warning(disable : 4715)				// not all control paths return a value
+#pragma warning(disable : 4996)				// unsafe string operations
+#pragma warning(disable : 6011)				// Dereferencing NULL ptr
+#pragma warning(disable : 6385)				// Reading invalid data from buf
+#pragma warning(disable : 26110)			// Caller failing to hold lock
+#pragma warning(disable : 26439)			// This kind of function may not throw
+#pragma warning(disable : 26450)			// Arithmetic overflow: using '<<'
+#pragma warning(disable : 26451)			// Arithmetic overflow: using '*' on a 4 byte variable and casting to 8 bytes
+#pragma warning(disable : 26495)			// uninitialized member variable type 6
+#pragma warning(disable : 26498)			// Mark function constexpr if compile-time evaluation is desired
+#pragma warning(disable : 26812)			// prefer enum class to enum
+#pragma warning(disable : 28182)			// Dereferencing NULL pointer
+#pragma warning(disable : 28251)			// Inconsistent annotation for 'new'
+#define NOMINMAX
+#define _CRT_FUNCTIONS_REQUIRED 1
+#define _SILENCE_CXX17_ITERATOR_BASE_CLASS_DEPRECATION_WARNING
+#include <string>
+#include <vector>
+#pragma endregion
+#pragma region iterator_definition
+#ifdef SETUP_STL_ITERATOR
+#else
+#define SETUP_STL_ITERATOR(ParentClass, IterType, StateType) typedef std::ptrdiff_t difference_type;											\
+	typedef size_t size_type; typedef IterType value_type; typedef IterType* pointer; typedef const IterType* const_pointer;					\
+	typedef IterType& reference;																												\
+	typedef const IterType& const_reference;																									\
+	class iterator {					\
+	public: const ParentClass* ref;	mutable StateType state;			\
+		iterator() : ref(nullptr), state() {};																									\
+		iterator(const ParentClass* parent) : ref(parent), state() {};																			\
+		iterator& operator+=(difference_type n) { for (int i = 0; i < n; i++) state.next(ref); return *this; };									\
+		iterator& operator-=(difference_type n) { for (int i = 0; i < n; i++) state.prev(ref); return *this; };									\
+		difference_type operator-(iterator const& other) { return state.distance(other.state); };												\
+		iterator& operator-(difference_type dist) { for (int i = 0; i < dist; i++) state.prev(ref); return *this; };							\
+		iterator& operator--() { state.prev(ref); return *this; };																				\
+		iterator operator--(int) { iterator retval = *this; --(*this); return retval; };														\
+		iterator& operator+(difference_type dist) { for (int i = 0; i < dist; i++) state.next(ref); return *this; };							\
+		iterator& operator++() { state.next(ref); return *this; };																				\
+		iterator operator++(int) { iterator retval = *this; ++(*this); return retval; };														\
+		bool operator==(iterator const& other) const { return !(operator!=(other)); };															\
+		bool operator!=(iterator const& other) const { return (ref != other.ref || state.cmp(other.state)); };									\
+		reference operator*() { return const_cast<reference>(state.get(ref)); };																\
+		pointer operator->() { return const_cast<pointer>(&state.get(ref)); };																	\
+		const_reference operator*() const { return state.get(ref); };																			\
+		const_pointer operator->() const { return &state.get(ref); };																			\
+		iterator& begin() { state.begin(ref); return *this; };																					\
+		iterator& end() { state.end(ref); return *this; };																						\
+	};																													\
+	iterator begin() { return iterator(this).begin(); };																						\
+	iterator end() { return iterator(this).end(); };																							\
+	class const_iterator {	\
+	public: const ParentClass* ref;	mutable StateType state;																					\
+		const_iterator() : ref(nullptr), state() {};																							\
+		const_iterator(const ParentClass* parent) : ref(parent), state() {};																	\
+		const_iterator& operator+=(difference_type n) { for (int i = 0; i < n; i++) state.next(ref); return *this; };							\
+		const_iterator& operator-=(difference_type n) { for (int i = 0; i < n; i++) state.prev(ref); return *this; };							\
+		difference_type operator-(const_iterator const& other) { return state.distance(other.state); };											\
+		const_iterator& operator-(difference_type dist) { for (int i = 0; i < dist; i++) state.prev(ref); return *this; };						\
+		const_iterator& operator--() { state.prev(ref); return *this; };																		\
+		const_iterator operator--(int) { const_iterator retval = *this; --(*this); return retval; };											\
+		const_iterator& operator+(difference_type dist) { for (int i = 0; i < dist; i++) state.next(ref); return *this; };						\
+		const_iterator& operator++() { state.next(ref); return *this; };																		\
+		const_iterator operator++(int) { const_iterator retval = *this; ++(*this); return retval; };											\
+		bool operator==(const_iterator const& other) const { return !(operator!=(other)); };													\
+		bool operator!=(const_iterator const& other) const { return (ref != other.ref || state.cmp(other.state)); };							\
+		const_reference operator*() { return const_cast<reference>(state.get(ref)); };															\
+		const_pointer operator->() { return const_cast<pointer>(&state.get(ref)); };															\
+		const_reference operator*() const { return state.get(ref); };																			\
+		const_pointer operator->() const { return &state.get(ref); };																			\
+		const_iterator& begin() { state.begin(ref); return *this; };																			\
+		const_iterator& end() { state.end(ref); return *this; };																				\
+	};																												\
+	const_iterator cbegin() const { return const_iterator(this).begin(); };																		\
+	const_iterator cend() const { return const_iterator(this).end(); };																			\
+	const_iterator begin() const { return cbegin(); };																							\
+	const_iterator end() const { return cend(); };																								\
+	class reverse_iterator {			\
+	public: const ParentClass* ref;	mutable StateType state;																					\
+		reverse_iterator() : ref(nullptr), state() {};																							\
+		reverse_iterator(const ParentClass* parent) : ref(parent), state() {};																	\
+		reverse_iterator& operator+=(difference_type n) { for (int i = 0; i < n; i++) state.prev(ref); return *this; };							\
+		reverse_iterator& operator-=(difference_type n) { for (int i = 0; i < n; i++) state.next(ref); return *this; };							\
+		difference_type operator-(reverse_iterator const& other) { return state.distance(other.state); };										\
+		reverse_iterator& operator-(difference_type dist) { for (int i = 0; i < dist; i++) state.next(ref); return *this; };					\
+		reverse_iterator& operator--() { state.next(ref); return *this; };																		\
+		reverse_iterator operator--(int) { reverse_iterator retval = *this; --(*this); return retval; };										\
+		reverse_iterator& operator+(difference_type dist) { for (int i = 0; i < dist; i++) state.prev(ref); return *this; };					\
+		reverse_iterator& operator++() { state.prev(ref); return *this; };																		\
+		reverse_iterator operator++(int) { reverse_iterator retval = *this; ++(*this); return retval; };										\
+		bool operator==(reverse_iterator const& other) const { return !(operator!=(other)); };													\
+		bool operator!=(reverse_iterator const& other) const { return (ref != other.ref || state.cmp(other.state)); };							\
+		reference operator*() { return const_cast<reference>(state.get(ref)); };																\
+		pointer operator->() { return const_cast<pointer>(&state.get(ref)); };																	\
+		const_reference operator*() const { return state.get(ref); };																			\
+		const_pointer operator->() const { return &state.get(ref); };																			\
+		reverse_iterator& begin() { state.end(ref); state.prev(ref); return *this; };															\
+		reverse_iterator& end() { state.begin(ref); state.prev(ref); return *this; };															\
+	};																											\
+	reverse_iterator rbegin() { return reverse_iterator(this).begin(); };																		\
+	reverse_iterator rend() { return reverse_iterator(this).end(); };																			\
+	class const_reverse_iterator {	\
+	public: const ParentClass* ref;	mutable StateType state;																					\
+		const_reverse_iterator() : ref(nullptr), state() {};																					\
+		const_reverse_iterator(const ParentClass* parent) : ref(parent), state() {};															\
+		const_reverse_iterator& operator+=(difference_type n) { for (int i = 0; i < n; i++) state.prev(ref); return *this; };					\
+		const_reverse_iterator& operator-=(difference_type n) { for (int i = 0; i < n; i++) state.next(ref); return *this; };					\
+		difference_type operator-(const_reverse_iterator const& other) { return state.distance(other.state); };									\
+		const_reverse_iterator& operator-(difference_type dist) { for (int i = 0; i < dist; i++) state.next(ref); return *this; };				\
+		const_reverse_iterator& operator--() { state.next(ref); return *this; };																\
+		const_reverse_iterator operator--(int) { const_reverse_iterator retval = *this; --(*this); return retval; };							\
+		const_reverse_iterator& operator+(difference_type dist) { for (int i = 0; i < dist; i++) state.prev(ref); return *this; };				\
+		const_reverse_iterator& operator++() { state.prev(ref); return *this; };																\
+		const_reverse_iterator operator++(int) { const_reverse_iterator retval = *this; ++(*this); return retval; };							\
+		bool operator==(const_reverse_iterator const& other) const { return !(operator!=(other)); };											\
+		bool operator!=(const_reverse_iterator const& other) const { return (ref != other.ref || state.cmp(other.state)); };					\
+		const_reference operator*() { return const_cast<reference>(state.get(ref)); };															\
+		const_pointer operator->() { return const_cast<pointer>(&state.get(ref)); };															\
+		const_reference operator*() const { return state.get(ref); };																			\
+		const_pointer operator->() const { return &state.get(ref); };																			\
+		const_reverse_iterator& begin() { state.end(ref); state.prev(ref); return *this; };														\
+		const_reverse_iterator& end() { state.begin(ref); state.prev(ref); return *this; };														\
+	};																										\
+	const_reverse_iterator rbegin() const { return const_reverse_iterator(this).begin(); };														\
+	const_reverse_iterator rend() const { return const_reverse_iterator(this).end(); };															\
+	const_reverse_iterator crbegin() const { return rbegin(); };																				\
+	const_reverse_iterator crend() const { return rend(); };
+#endif
+#pragma endregion 
+
+// Finally is a pure virtual base class, implemented by the templated FinallyImpl.
+namespace GoodLang {
+	namespace utilities {
+		class Finally {
+		public:
+			virtual ~Finally() = default;
+		};
+
+		// FinallyImpl implements a Finally.
+		// The template parameter F is the function type to be called when the finally is destructed. F must have the signature void().
+		template <typename F>
+		class FinallyImpl : public Finally {
+		public:
+			inline FinallyImpl(const F& func_) : func(func_) {};
+			inline FinallyImpl(F&& func_) : func(std::move(func_)) {};
+			inline FinallyImpl(FinallyImpl<F>&& other) : func(std::move(other.func)) { other.valid = false; };
+			inline ~FinallyImpl() { if (valid) { func(); } };
+
+		private:
+			FinallyImpl(const FinallyImpl<F>& other) = delete;
+			FinallyImpl<F>& operator=(const FinallyImpl<F>& other) = delete;
+			FinallyImpl<F>& operator=(FinallyImpl<F>&&) = delete;
+			F func;
+			bool valid = true;
+		};
+
+		template <typename F> __forceinline [[nodiscard]] FinallyImpl<F> make_finally(F&& f) { return FinallyImpl<F>(std::forward<F>(f)); };
+	};
+};
+
+#define FINALLY_CONCAT_(a, b) a##b
+#define FINALLY_CONCAT(a, b) FINALLY_CONCAT_(a, b)
+
+// defer() is a macro to defer execution of a statement until the surrounding scope is closed and is typically used to perform cleanup logic once a function returns.
+// . .
+// Note: Unlike golang's defer(), the defer statement is executed when the surrounding *scope* is closed, not necessarily the function.
+// . .
+// Example usage:
+// . .
+// void sayHelloWorld() {
+//		defer(printf("world\n"));
+//      printf("hello ");
+// }
+#define defer(x) decltype(auto) FINALLY_CONCAT(defer_, __LINE__) { GoodLang::utilities::make_finally([&] { x; }) }
+
+// FastBlockAllocator
+namespace GoodLang {
+	namespace utilities {
+		/* Allocates *_blockSize_* number of elements at a time. Blocks are free'd once the entire allocator goes out-of-scope. Not thread-safe. */
+		template <typename _type_, size_t _blockSize_ = std::max<size_t>(128, (sizeof(_type_) << 4)), bool ForcePOD = false>
+		class FastBlockAllocator {
+		private: // data members
+
+			std::allocator<_type_> alloc{};
+			std::vector< _type_* > blocks{};
+			size_t capacity{ 0 };
+			size_t count{ 0 };
+
+			// returns whether the constructor/destructor needs to be called for each element. (Constructor is always called if args are provided on initialization)
+			static constexpr bool isPod() { return std::is_pod<_type_>::value || ForcePOD; };
+
+		public: // public API
+			// Request a new memory pointer. May be recovered from a previously-used location. Will be cleared and correctly initialized, if appropriate.
+			template <typename... TArgs> _type_* Alloc(TArgs&&... a) {
+				_type_* out;
+
+				long long index = count++;
+				if (index >= capacity) {
+					blocks.push_back(alloc.allocate(_blockSize_));
+					capacity += _blockSize_;
+				}
+				auto pos = std::div(index, _blockSize_);
+				out = &blocks[pos.quot][pos.rem];
+				alloc.construct(out, std::forward<TArgs>(a)...);
+
+				return out;
+			};
+			// Does nothing -- is now handled automatically during Free(...) calls.
+			void			FreeEmptyBlocks() {
+				return;
+			};
+			// Attempts to cleanup unused memory
+			auto TryCleanupUnusedMemory() ->void {};
+			// Returns the maximum number of blocks the allocator has reserved -- does not mean all of these blocks are in active use or even alive.
+			size_t          MaxBlockCapacity() const {
+				return 0;
+			};
+			// Approximate current (alive) block count. Not all elements in thse blocks are alive or allocated, but usually at least one is.
+			size_t          CurrentBlockCount() const {
+				return 0;
+			};
+			// Approximate current capacity for elements, based on the alive blocks.
+			size_t          TotalCapacity() const {
+				return 0;
+			};
+			// Approximate current alive element count
+			size_t          TotalAlive() const {
+				return 0;
+			};
+			// Report on the statistics for the allocator
+			std::string     ReportStatistics(bool includeEndLine = false) const {
+				std::string out;
+				return out;
+			};
+
+		public: // constructors and destructors
+			FastBlockAllocator() = default;
+			~FastBlockAllocator() {
+				if constexpr (!isPod()) {
+					_type_* p;
+					for (int i = 0; i < count; i++) {
+						auto pos = std::div(i, _blockSize_);
+						p = &blocks[pos.quot][pos.rem];
+						alloc.destroy(p);
+					}
+				}
+				for (auto& block : blocks)
+					alloc.deallocate(block, _blockSize_);
+			};
+		};
+
+		template<class _type_, int _blockSize_ = std::max<size_t>(128, (sizeof(_type_) << 4)), bool ForcePOD = false>
+		using FastAllocator = FastBlockAllocator<_type_, _blockSize_, ForcePOD>;
+	};
+};
