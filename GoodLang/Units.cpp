@@ -839,14 +839,73 @@ namespace GoodLang {
 				throw(std::runtime_error(GoodLang::printf("Subtract operation failed due to incompatible non-scalar value: '%s' and '%s'.", a.Abbreviation().c_str(), b.Abbreviation().c_str())));
 			}
 		};
+
+		/* Used for multiplication or division operations */
+		template <bool multiplication = true> static void CompoundUnits(value& This, value const& other) noexcept {
+			UnitDefinition V{ other.unit_m.load() };
+			This.unit_m.Update([&V](UnitDefinition Data)->UnitDefinition {
+				bool V_Is_Scalar{ V.IsScalar() }, I_am_Scalar{ Data.IsScalar() };
+
+				if (V_Is_Scalar) {
+					if constexpr (multiplication) {
+						Data.value_m *= V.value_m;
+					}
+					else {
+						Data.value_m /= V.value_m;
+					}
+					return Data; // do nothing
+				}
+
+				// remove the abbreviation since we either don't know what we are or we will become empty anyhow.
+				// Data.abbreviation_m = const_cast<char*>("");
+
+				// V is not a scaler, but I could become one.
+				//bool allZero = true;
+				for (int i = Data.unitType_m.size() - 1; i >= 0; i--) {
+					if constexpr (multiplication) {
+						Data.unitType_m[i] += V.unitType_m[i];
+					}
+					else {
+						Data.unitType_m[i] -= V.unitType_m[i];
+					}
+					//allZero = allZero && Data.unitType_m[i] == 0;
+				}
+				//if (allZero) { Data.IsScalar() = true; }
+				//else { Data.IsScalar() = false; }
+
+				// now that we have modified the unit type (length, time, etc.), the conversion ratio makes no sense anymore (e.g. within length, is it a foot, meter, yard, etc.)
+				if constexpr (multiplication) {
+					Data.ratio_m *= V.ratio_m;
+				}
+				else {
+					Data.ratio_m /= V.ratio_m;
+				}
+
+				// unitless values cannot have "ratios" -- there are not alternatives of "unitless". 
+				if (Data.IsScalar()) {
+					Data.ratio_m = 1;
+				}
+
+				{
+					if constexpr (multiplication) {
+						Data.value_m *= V.value_m;
+					}
+					else {
+						Data.value_m /= V.value_m;
+					}
+					return Data;
+				}
+				});
+		};
+
 		value value::Multiply(value const& A, value const& V) {
 			value out = A;
-			out.CompoundUnits<true>(V);
+			CompoundUnits<true>(out, V);
 			return out;
 		};
 		value value::Divide(value const& A, value const& V) {
 			value out = A;
-			out.CompoundUnits<false>(V);
+			CompoundUnits<false>(out, V);
 			return out;
 		};
 		value value::operator-() const { return -1.0 * (*this); };

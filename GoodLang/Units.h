@@ -197,67 +197,6 @@ namespace GoodLang {
 			friend std::stringstream& operator>>(std::stringstream& os, value& obj) { double v = 0; os >> v; obj = v; return os; };
 
 		private:
-			/* Used for multiplication or division operations */
-			template <bool multiplication = true> value& CompoundUnits(value const& other) noexcept {
-				UnitDefinition V{ other.unit_m.load() };
-
-				unit_m.Update([&V](UnitDefinition Data)->UnitDefinition {
-					bool V_Is_Scalar{ is_scalar(V) }, I_am_Scalar{ is_scalar(Data) };
-
-					if (V_Is_Scalar) {
-						if constexpr (multiplication) {
-							Data.value_m *= V.value_m;
-						}
-						else {
-							Data.value_m /= V.value_m;
-						}
-						return Data; // do nothing
-					}
-
-					// remove the abbreviation since we either don't know what we are or we will become empty anyhow.
-					// Data.abbreviation_m = const_cast<char*>("");
-
-					// V is not a scaler, but I could become one.
-					//bool allZero = true;
-					for (int i = Data.unitType_m.size() - 1; i >= 0; i--) {
-						if constexpr (multiplication) {
-							Data.unitType_m[i] += V.unitType_m[i];
-						}
-						else {
-							Data.unitType_m[i] -= V.unitType_m[i];
-						}
-						//allZero = allZero && Data.unitType_m[i] == 0;
-					}
-					//if (allZero) { Data.IsScalar() = true; }
-					//else { Data.IsScalar() = false; }
-
-					// now that we have modified the unit type (length, time, etc.), the conversion ratio makes no sense anymore (e.g. within length, is it a foot, meter, yard, etc.)
-					if constexpr (multiplication) {
-						Data.ratio_m *= V.ratio_m;
-					}
-					else {
-						Data.ratio_m /= V.ratio_m;
-					}
-
-					// unitless values cannot have "ratios" -- there are not alternatives of "unitless". 
-					if (Data.IsScalar()) {
-						Data.ratio_m = 1;
-					}
-
-					{
-						if constexpr (multiplication) {
-							Data.value_m *= V.value_m;
-						}
-						else {
-							Data.value_m /= V.value_m;
-						}
-						return Data;
-					}
-					});
-
-				return *this;
-			};
-
 			/* Used for exponential operations */
 			value& MultiplyUnits(double const& V) noexcept;
 
@@ -368,17 +307,6 @@ namespace GoodLang {
 		};
 		using scalar = value;
 
-		//class traits {
-		//	/* test if two unit types are convertable */
-		//	template<class U1, class U2> struct is_convertible_unit_t {
-		//		static constexpr const std::intmax_t value = (U1::UnitHash() == U2::UnitHash());
-		//	};
-
-		//	template<class U1> struct is_unit_t {
-		//		static constexpr const std::intmax_t value = std::is_base_of<Units::value, U1>::value;
-		//	};
-		//};
-
 		// Base classes
 		DefineCategoryType(length, 1, 0, 0, 0, 0);
 		DefineCategoryType(mass, 0, 1, 0, 0, 0);
@@ -413,9 +341,10 @@ namespace GoodLang {
 
 		/* LENGTH DERIVATIONS */
 		DerivedUnitTypeWithMetricPrefixes(meter, length, m, 1.0);
-		DerivedUnitType(foot, length, ft, 381.0 / 1250.0);
+		DerivedUnitType(foot, length, ft, 0.3048); // 381.0 / 1250.0
 		DerivedUnitType(inch, length, in, Conversion<foot>(1.0 / 12.0));
-		DerivedUnitType(mile, length, mi, Conversion<foot>(5280.0 / 1.0));
+		DerivedUnitType(furlong, length, fur, Conversion<foot>(660));
+		DerivedUnitType(mile, length, mi, Conversion<foot>(5280));
 		DerivedUnitType(nauticalMile, length, nmi, Conversion<meter>(1852.0));
 		DerivedUnitType(astronicalUnit, length, au, Conversion<meter>(149597870700.0));
 		DerivedUnitType(yard, length, yd, Conversion<foot>(3.0));

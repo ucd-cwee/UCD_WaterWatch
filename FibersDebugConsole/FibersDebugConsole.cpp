@@ -169,6 +169,11 @@ int main() {
 	print(volume);
 	print(Units::million_gallon{ volume });
 
+	using namespace literals;
+
+	print(1234_MG);
+	print(1234_ac_ft);
+
 
 #if 0
 	fibers::utilities::Computer_Usage usage_start;
