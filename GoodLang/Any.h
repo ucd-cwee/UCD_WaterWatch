@@ -124,6 +124,15 @@ namespace GoodLang {
 	};
 };
 
+// std::hash for double type
+//namespace std {
+//	template <> struct hash<double> {
+//		std::size_t operator()(double k) const {
+//			return *(uint64_t*)(void*)(&k);
+//		};
+//	};
+//};
+
 // forward decl
 namespace GoodLang {
 	class Any;
@@ -145,16 +154,14 @@ namespace GoodLang {
 		};
 
 		inline static void hash_combine(std::size_t& seed) { };
-		template <typename T, typename... Rest>
-		inline static void hash_combine(std::size_t& seed, T&& v, Rest &&... rest) {
-			std::hash<T> hasher{};
-			seed ^= hasher(std::forward<T>(v)) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
-			hash_combine(seed, std::forward<Rest>(rest)...);
-		};
-		template <typename T, typename... Rest>
-		inline static void hash_combine(std::size_t& seed, T const& v, Rest const&... rest) {
-			std::hash<T> hasher{};
-			seed ^= hasher(v) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+		template <typename T, typename... Rest> inline static void hash_combine(std::size_t& seed, T const& v, Rest const&... rest) {
+			if constexpr (std::is_same_v<double, typename std::remove_reference_t<typename std::decay<T>>>) {
+				seed ^= *(uint64_t*)(void*)(&v) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+			}
+			else {
+				std::hash<T> hasher{};
+				seed ^= hasher(v) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+			}
 			hash_combine(seed, rest...);
 		};
 	};

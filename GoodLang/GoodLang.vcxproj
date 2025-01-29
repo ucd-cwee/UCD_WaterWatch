@@ -168,11 +168,15 @@
     <ClCompile Include="Any.cpp" />
     <ClCompile Include="GoodLang.cpp" />
     <ClCompile Include="Proxy_Function.cpp" />
+    <ClCompile Include="ThreadSafeContainers.cpp" />
+    <ClCompile Include="Units.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Any.h" />
     <ClInclude Include="Foundation.h" />
     <ClInclude Include="Proxy_Function.h" />
+    <ClInclude Include="ThreadSafeContainers.h" />
+    <ClInclude Include="Units.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

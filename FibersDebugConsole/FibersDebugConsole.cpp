@@ -4,6 +4,8 @@
 #include <string>
 #include "../GoodLang/Any.h"
 #include "../GoodLang/Proxy_Function.h"
+#include "../GoodLang/ThreadSafeContainers.h"
+#include "../GoodLang/Units.h"
 
 //#include "../FiberTasks/Fibers.h"
 //#include "../FiberTasks/UnitsLibrary.h"
@@ -74,7 +76,7 @@
         std::cout << GoodLang::printf("FAILURE AT LINE %i: (%s != %s)\n", (int)__LINE__, tempA.c_str(), tempB.c_str()); \
     return false; } \
 }()
-#define print(a) defer(std::cout << a << std::endl)
+#define print(a) std::cout << a << std::endl
 #define EXPECT_EQ(a, b) if (a != b){ print(GoodLang::printf("FAILURE AT LINE %i\n", (int)__LINE__)); }
 #define EXPECT_NE(a, b) if (a == b){ print(GoodLang::printf("FAILURE AT LINE %i\n", (int)__LINE__)); }
 
@@ -111,6 +113,25 @@ int main() {
 	result = call(func, { 100.0 }, converter);
 	EXPECT_EQ(true, result.IsTypeOf<double>());
 
+	Union<int, int> y;
+	y.get<0>() += 1;
+
+	DoubleWrapper xyz{ 5 };
+	xyz += 1;
+	xyz -= 2.0;
+	xyz /= 5.0f;
+	print(xyz);
+
+
+	Units::UnitDefinition def;
+	def.IsSI();
+	print(def.HashCategory());
+
+
+	Units::scalar S;
+	S += 10;
+	S /= 5;
+	print(S);
 
 
 #if 0

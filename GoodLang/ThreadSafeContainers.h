@@ -1,0 +1,1640 @@
+#pragma once
+#include "Foundation.h"
+#include "Any"
+#include "Proxy_Function.h"
+
+#include <complex>
+#include <array>
+#include <chrono>
+#include <thread>
+#include <emmintrin.h> // _mm_pause()
+#include <functional>
+#include <cassert>
+
+namespace GoodLang {
+	namespace utilities {
+		namespace HasDefaultConstructor
+		{
+			template <class... T> struct Friend;
+			struct testing_tag;
+
+			// specialisation simply to check if default constructible
+			template <class T> struct Friend<T, testing_tag> {
+				// sfinae trick has to be nested in the Friend class
+				// this candidate will be ignored if X does not have a default constructor
+				template <class X, class = decltype(X())>
+				static std::true_type Get(X*);
+
+				template <class X>
+				static std::false_type Get(...);
+
+				static constexpr bool value = decltype(Get<T>(0))::value;
+			};
+			template <class T> using has_any_default_constructor = Friend<T, testing_tag>;
+			template <class T> constexpr bool HasDefaultConstructor_v() {
+				return has_any_default_constructor < T >::value;
+			};
+		}
+
+		// ATOMIC
+		#define MWCAS_CAPACITY 14
+		#define MWCAS_RETRY_THRESHOLD 10
+		#define MWCAS_SLEEP_TIME 10
+		#define BZTREE_PAGE_SIZE 1024
+		#define BZTREE_MAX_DELTA_RECORD_NUM 64
+		#define BZTREE_MAX_DELETED_SPACE_SIZE (BZTREE_PAGE_SIZE / 8)
+		#define BZTREE_MIN_FREE_SPACE_SIZE (BZTREE_PAGE_SIZE / 8)
+		#define BZTREE_MIN_NODE_SIZE (BZTREE_PAGE_SIZE / 16)
+		#define BZTREE_MAX_MERGED_SIZE (BZTREE_PAGE_SIZE / 2)
+		#define BZTREE_MAX_VARIABLE_DATA_SIZE 128
+		#define DBGROUP_MAX_THREAD_NUM 128
+		#define CPP_UTILITY_SPINLOCK_RETRY_NUM 10
+		#define CPP_UTILITY_BACKOFF_TIME 10
+		#define BW_TREE_PAGE_SIZE 1024
+		static __forceinline constexpr size_t LOG2(size_t n) { return ((n < 2) ? 1 : 1 + LOG2(n / 2)); };
+		#define BW_TREE_DELTA_RECORD_NUM_THRESHOLD (2 * LOG2(BW_TREE_PAGE_SIZE / 256))
+		#define BW_TREE_MAX_DELTA_RECORD_NUM 64
+		#define BW_TREE_MIN_NODE_SIZE (BW_TREE_PAGE_SIZE / 16)
+		#define BW_TREE_MAX_VARIABLE_DATA_SIZE 128
+		#define BW_TREE_RETRY_THRESHOLD 10
+		#define BW_TREE_SLEEP_TIME 10
+		// utility
+		namespace dbgroup::atomic::mwcas {
+			/*######################################################################################
+			 * Global enum and constants
+			 *####################################################################################*/
+
+			 /// The maximum number of retries for preventing busy loops.
+			constexpr size_t kRetryNum = MWCAS_RETRY_THRESHOLD;
+
+			/// A sleep time for preventing busy loops [us].
+			static constexpr auto kShortSleep = std::chrono::microseconds{ MWCAS_SLEEP_TIME };
+
+			/*######################################################################################
+			 * Global utility functions
+			 *####################################################################################*/
+
+			 /**
+			  * @tparam T a MwCAS target class.
+			  * @retval true if a target class can be updated by MwCAS.
+			  * @retval false otherwise.
+			  */
+			template <class T> constexpr auto CanMwCAS() -> bool {
+				if constexpr (sizeof(uint64_t) == sizeof(T)) {
+					return true;
+				}
+				else {
+					if constexpr (std::is_same_v<T, uint64_t> || std::is_pointer_v<T>) {
+						return true;
+					}
+					else {
+						return false;
+					}
+				}
+			};
+
+		}  // namespace dbgroup::atomic::mwcas
+		// common
+		namespace dbgroup::atomic::mwcas::component
+		{
+			/*######################################################################################
+			 * Global enum and constants
+			 *####################################################################################*/
+
+			 /// Assumes that the length of one word is 8 bytes
+			constexpr size_t kWordSize = 8;
+
+			/// Assumes that the size of one cache line is 64 bytes
+			constexpr size_t kCacheLineSize = 64; // e.g. maximum of 8 words simultaneously? 
+
+			/*######################################################################################
+			 * Global utility structs
+			 *####################################################################################*/
+
+			 /**
+			  * @brief An union to convert MwCAS target data into uint64_t.
+			  *
+			  * @tparam T a type of target data
+			  */
+			template <class T>
+			union CASTargetConverter {
+				const T target_data;
+				const uint64_t converted_data;
+
+				explicit constexpr CASTargetConverter(const uint64_t converted) : converted_data{ converted } {}
+
+				explicit constexpr CASTargetConverter(const T target) : target_data{ target } {}
+			};
+
+			/**
+			 * @brief Specialization for unsigned long type.
+			 *
+			 */
+			template <>
+			union CASTargetConverter<uint64_t> {
+				const uint64_t target_data;
+				const uint64_t converted_data;
+
+				explicit constexpr CASTargetConverter(const uint64_t target) : target_data{ target } {}
+			};
+
+		}  // namespace dbgroup::atomic::mwcas::component
+		// field 
+		namespace dbgroup::atomic::mwcas::component
+		{
+			/**
+			 * @brief A class to represent a MwCAS target field.
+			 *
+			 */
+			class MwCASField
+			{
+			public:
+				/*####################################################################################
+				 * Public constructors and assignment operators
+				 *##################################################################################*/
+
+				 /**
+				  * @brief Construct an empty field for MwCAS.
+				  *
+				  */
+				constexpr MwCASField() : target_bit_arr_{}, mwcas_flag_{ 0 } {}
+
+				/**
+				 * @brief Construct a MwCAS field with given data.
+				 *
+				 * @tparam T a target class to be embedded.
+				 * @param target_data target data to be embedded.
+				 * @param is_mwcas_descriptor a flag to indicate this field contains a descriptor.
+				 */
+				template <class T>
+				explicit constexpr MwCASField(  //
+					T target_data,
+					bool is_mwcas_descriptor = false)
+					: target_bit_arr_{ ConvertToUint64(target_data) }, mwcas_flag_{ is_mwcas_descriptor }
+				{
+					// static check to validate MwCAS targets
+					static_assert(sizeof(T) == kWordSize);  // NOLINT
+					static_assert(std::is_trivially_copyable_v<T>);
+					static_assert(std::is_copy_constructible_v<T>);
+					static_assert(std::is_move_constructible_v<T>);
+					static_assert(std::is_copy_assignable_v<T>);
+					static_assert(std::is_move_assignable_v<T>);
+					static_assert(CanMwCAS<T>());
+				}
+
+				constexpr MwCASField(const MwCASField&) = default;
+				constexpr MwCASField(MwCASField&&) = default;
+
+				constexpr auto operator=(const MwCASField& obj)->MwCASField & = default;
+				constexpr auto operator=(MwCASField&&)->MwCASField & = default;
+
+				/*####################################################################################
+				 * Public destructor
+				 *##################################################################################*/
+
+				 /**
+				  * @brief Destroy the MwCASField object.
+				  *
+				  */
+				~MwCASField() = default;
+
+				/*####################################################################################
+				 * Public operators
+				 *##################################################################################*/
+
+				auto
+					operator==(const MwCASField& obj) const  //
+					-> bool
+				{
+					return memcmp(this, &obj, sizeof(MwCASField)) == 0;
+				}
+
+				auto
+					operator!=(const MwCASField& obj) const  //
+					-> bool
+				{
+					return memcmp(this, &obj, sizeof(MwCASField)) != 0;
+				}
+
+				/*####################################################################################
+				 * Public getters/setters
+				 *##################################################################################*/
+
+				 /**
+				  * @retval true if this field contains a descriptor.
+				  * @retval false otherwise.
+				  */
+				[[nodiscard]] constexpr auto
+					IsMwCASDescriptor() const  //
+					-> bool
+				{
+					return mwcas_flag_;
+				}
+
+				/**
+				 * @tparam T an expected class of data.
+				 * @return data retained in this field.
+				 */
+				template <class T>
+				[[nodiscard]] constexpr auto
+					GetTargetData() const  //
+					-> T
+				{
+					if constexpr (std::is_same_v<T, uint64_t>) {
+						return target_bit_arr_;
+					}
+					else if constexpr (std::is_pointer_v<T>) {
+						return reinterpret_cast<T>(target_bit_arr_);  // NOLINT
+					}
+					else {
+						return CASTargetConverter<T>{target_bit_arr_}.target_data;  // NOLINT
+					}
+				}
+
+			private:
+				/*####################################################################################
+				 * Internal utility functions
+				 *##################################################################################*/
+
+				 /**
+				  * @brief Conver given data into uint64_t.
+				  *
+				  * @tparam T a class of given data.
+				  * @param data data to be converted.
+				  * @return data converted to uint64_t.
+				  */
+				template <class T>
+				constexpr auto
+					ConvertToUint64(const T data)  //
+					-> uint64_t
+				{
+					if constexpr (std::is_same_v<T, uint64_t>) {
+						return data;
+					}
+					else if constexpr (std::is_pointer_v<T>) {
+						return reinterpret_cast<uint64_t>(data);  // NOLINT
+					}
+					else {
+						return CASTargetConverter<T>{data}.converted_data;  // NOLINT
+					}
+				}
+
+				/*####################################################################################
+				 * Internal member variables
+				 *##################################################################################*/
+
+				 /// An actual target data
+				uint64_t target_bit_arr_ : 63;
+
+				/// Representing whether this field contains a MwCAS descriptor
+				uint64_t mwcas_flag_ : 1;
+			};
+
+			// CAS target words must be one word
+			static_assert(sizeof(MwCASField) == kWordSize);
+
+		}  // namespace dbgroup::atomic::mwcas::component
+		// target
+		namespace dbgroup::atomic::mwcas::component
+		{
+			/**
+			 * @brief A class to represent a MwCAS target.
+			 *
+			 */
+			class MwCASTarget
+			{
+			public:
+				/*####################################################################################
+				 * Public constructors and assignment operators
+				 *##################################################################################*/
+
+				 /**
+				  * @brief Construct an empty MwCAS target.
+				  *
+				  */
+				constexpr MwCASTarget() = default;
+
+				/**
+				 * @brief Construct a new MwCAS target based on given information.
+				 *
+				 * @tparam T a class of MwCAS targets.
+				 * @param addr a target memory address.
+				 * @param old_val an expected value of the target address.
+				 * @param new_val an desired value of the target address.
+				 */
+				template <class T>
+				constexpr MwCASTarget(  //
+					void* addr,
+					const T old_val,
+					const T new_val,
+					const std::memory_order fence)
+					: addr_{ static_cast<std::atomic<MwCASField> *>(addr) },
+					old_val_{ old_val },
+					new_val_{ new_val },
+					fence_{ fence }
+				{
+				}
+
+				constexpr MwCASTarget(const MwCASTarget&) = default;
+				constexpr MwCASTarget(MwCASTarget&&) = default;
+
+				constexpr auto operator=(const MwCASTarget& obj)->MwCASTarget & = default;
+				constexpr auto operator=(MwCASTarget&&)->MwCASTarget & = default;
+
+				/*####################################################################################
+				 * Public destructor
+				 *##################################################################################*/
+
+				 /**
+				  * @brief Destroy the MwCASTarget object.
+				  *
+				  */
+				~MwCASTarget() = default;
+
+				/*####################################################################################
+				 * Public utility functions
+				 *##################################################################################*/
+
+				 /**
+				  * @brief Embed a descriptor into this target address to linearlize MwCAS operations.
+				  *
+				  * @param desc_addr a memory address of a target descriptor.
+				  * @retval true if the descriptor address is successfully embedded.
+				  * @retval false otherwise.
+				  */
+				auto
+					EmbedDescriptor(const MwCASField desc_addr)  //
+					-> bool
+				{
+					for (size_t i = 1; true; ++i) {
+						// try to embed a MwCAS decriptor
+						auto expected = addr_->load(std::memory_order_relaxed);
+						if (expected == old_val_
+							&& addr_->compare_exchange_strong(expected, desc_addr, std::memory_order_relaxed)) {
+							return true;
+						}
+						if (!expected.IsMwCASDescriptor() || i >= kRetryNum) return false;
+
+						// retry if another desctiptor is embedded
+					}
+				}
+
+				/**
+				 * @brief Update a value of this target address.
+				 *
+				 */
+				void
+					RedoMwCAS()
+				{
+					addr_->store(new_val_, fence_);
+				}
+
+				/**
+				 * @brief Revert a value of this target address.
+				 *
+				 */
+				void
+					UndoMwCAS()
+				{
+					addr_->store(old_val_, std::memory_order_relaxed);
+				}
+
+			private:
+				/*####################################################################################
+				 * Internal member variables
+				 *##################################################################################*/
+
+				 /// A target memory address
+				std::atomic<MwCASField>* addr_{};
+
+				/// An expected value of a target field
+				MwCASField old_val_{};
+
+				/// An inserting value into a target field
+				MwCASField new_val_{};
+
+				/// A fence to be inserted when embedding a new value.
+				std::memory_order fence_{ std::memory_order_seq_cst };
+			};
+
+		}  // namespace dbgroup::atomic::mwcas::component
+		// descriptor
+		namespace dbgroup::atomic::mwcas
+		{
+			/**
+			 * @brief A class to manage a MwCAS (multi-words compare-and-swap) operation.
+			 *
+			 */
+			template <int kMwCASCapacity>
+			class alignas(component::kCacheLineSize) MwCASDescriptor
+			{
+				/*####################################################################################
+				 * Type aliases
+				 *##################################################################################*/
+
+				using MwCASTarget = component::MwCASTarget;
+				using MwCASField = component::MwCASField;
+
+			public:
+				/*####################################################################################
+				 * Public constructors and assignment operators
+				 *##################################################################################*/
+
+				 /**
+				  * @brief Construct an empty descriptor for MwCAS operations.
+				  *
+				  */
+				constexpr MwCASDescriptor() = default;
+
+				constexpr MwCASDescriptor(const MwCASDescriptor&) = default;
+				constexpr MwCASDescriptor(MwCASDescriptor&&) = default;
+
+				constexpr auto operator=(const MwCASDescriptor& obj)->MwCASDescriptor & = default;
+				constexpr auto operator=(MwCASDescriptor&&)->MwCASDescriptor & = default;
+
+				/*####################################################################################
+				 * Public destructors
+				 *##################################################################################*/
+
+				 /**
+				  * @brief Destroy the MwCASDescriptor object.
+				  *
+				  */
+				~MwCASDescriptor() = default;
+
+				/*####################################################################################
+				 * Public getters/setters
+				 *##################################################################################*/
+
+				 /**
+				  * @return the number of registered MwCAS targets
+				  */
+				[[nodiscard]] constexpr auto
+					Size() const  //
+					-> size_t
+				{
+					return target_count_;
+				}
+
+				/*####################################################################################
+				 * Public utility functions
+				 *##################################################################################*/
+
+				 /**
+				  * @brief Read a value from a given memory address.
+				  * \e NOTE: if a memory address is included in MwCAS target fields, it must be read via this function.
+				  *
+				  * @tparam T an expected class of a target field
+				  * @param addr a target memory address to read
+				  * @param fence a flag for controling std::memory_order.
+				  * @return a read value
+				  */
+				template <class T>
+				static auto
+					Read(  //
+						const void* addr,
+						const std::memory_order fence = std::memory_order_seq_cst)  //
+					-> T
+				{
+					const auto* target_addr = static_cast<const std::atomic<MwCASField> *>(addr);
+					size_t i;
+					MwCASField target_word{};
+					while (true) {
+						for (i = 0; i < kRetryNum; ++i) {
+							target_word = target_addr->load(fence);
+							if (!target_word.IsMwCASDescriptor()) return target_word.GetTargetData<T>();
+						}
+						std::this_thread::sleep_for(kShortSleep); // wait to prevent busy loop
+					}
+				}
+
+				/**
+				 * @brief Add a new MwCAS target to this descriptor.
+				 *
+				 * @tparam T a class of a target
+				 * @param addr a target memory address
+				 * @param old_val an expected value of a target field
+				 * @param new_val an inserting value into a target field
+				 * @param fence a flag for controling std::memory_order.
+				 */
+				template <class T>
+				constexpr void
+					AddMwCASTarget(  //
+						void* addr,
+						const T old_val,
+						const T new_val,
+						const std::memory_order fence = std::memory_order_seq_cst)
+				{
+
+					assert(target_count_ < kMwCASCapacity);
+
+					targets_[target_count_++] = MwCASTarget{ addr, old_val, new_val, fence };
+				}
+
+				/**
+				 * @brief Perform a MwCAS operation by using registered targets.
+				 *
+				 * @retval true if a MwCAS operation succeeds
+				 * @retval false if a MwCAS operation fails
+				 */
+				auto
+					MwCAS()  //
+					-> bool
+				{
+					const MwCASField desc_addr{ this, true };
+
+					// serialize MwCAS operations by embedding a descriptor
+					auto mwcas_success = true;
+					size_t embedded_count = 0;
+					for (size_t i = 0; i < target_count_; ++i, ++embedded_count) {
+						if (!targets_[i].EmbedDescriptor(desc_addr)) {
+							// if a target field has been already updated, MwCAS fails
+							mwcas_success = false;
+							break;
+						}
+					}
+
+					// complete MwCAS
+					if (mwcas_success) {
+						for (size_t i = 0; i < embedded_count; ++i) {
+							targets_[i].RedoMwCAS();
+						}
+					}
+					else {
+						for (size_t i = 0; i < embedded_count; ++i) {
+							targets_[i].UndoMwCAS();
+						}
+					}
+
+					return mwcas_success;
+				}
+
+			private:
+				/*####################################################################################
+				 * Internal member variables
+				 *##################################################################################*/
+
+				 /// Target entries of MwCAS
+				MwCASTarget targets_[kMwCASCapacity];
+
+				/// The number of registered MwCAS targets
+				size_t target_count_{ 0 };
+			};
+
+		}  // namespace dbgroup::atomic::mwcas
+
+	};
+
+	/* Implimentation of std::tuple, with built-in get<n>() functions. It is only as thread-safe as the inner types */
+	template<typename... Args> class Union {
+	private:
+#pragma region IMPLIMENTATION DETAILS
+		using byte = unsigned char;
+		template<int N> using NthTypeOf = typename std::remove_const<typename std::remove_reference<typename std::tuple_element<N, std::tuple<Args...>>::type>::type>::type;
+		static constexpr size_t num_parameters = sizeof...(Args);
+		template<int N>	static constexpr size_t SizeOfFirstN() {
+			size_t d(0);
+			if constexpr (num_parameters >= 1 && N >= 1) {
+				d += sizeof(NthTypeOf<0>);
+			}
+			if constexpr (num_parameters >= 2 && N >= 2) {
+				d += sizeof(NthTypeOf<1>);
+			}
+			if constexpr (num_parameters >= 3 && N >= 3) {
+				d += sizeof(NthTypeOf<2>);
+			}
+			if constexpr (num_parameters >= 4 && N >= 4) {
+				d += sizeof(NthTypeOf<3>);
+			}
+			if constexpr (num_parameters >= 5 && N >= 5) {
+				d += sizeof(NthTypeOf<4>);
+			}
+			if constexpr (num_parameters >= 6 && N >= 6) {
+				d += sizeof(NthTypeOf<5>);
+			}
+			if constexpr (num_parameters >= 7 && N >= 7) {
+				d += sizeof(NthTypeOf<6>);
+			}
+			if constexpr (num_parameters >= 8 && N >= 8) {
+				d += sizeof(NthTypeOf<7>);
+			}
+			if constexpr (num_parameters >= 9 && N >= 9) {
+				d += sizeof(NthTypeOf<8>);
+			}
+			if constexpr (num_parameters >= 10 && N >= 10) {
+				d += sizeof(NthTypeOf<9>);
+			}
+			if constexpr (num_parameters >= 11 && N >= 11) {
+				d += sizeof(NthTypeOf<10>);
+			}
+			if constexpr (num_parameters >= 12 && N >= 12) {
+				d += sizeof(NthTypeOf<11>);
+			}
+			if constexpr (num_parameters >= 13 && N >= 13) {
+				d += sizeof(NthTypeOf<12>);
+			}
+			if constexpr (num_parameters >= 13 && N >= 14) {
+				d += sizeof(NthTypeOf<13>);
+			}
+			if constexpr (num_parameters >= 14 && N >= 15) {
+				d += sizeof(NthTypeOf<14>);
+			}
+			if constexpr (num_parameters >= 15 && N >= 16) {
+				d += sizeof(NthTypeOf<15>);
+			}
+			return d;
+		};
+		static constexpr size_t SizeOfAll() {
+			return SizeOfFirstN<num_parameters>();
+		};
+		static constexpr size_t sizeOfArgs = SizeOfAll();
+		static constexpr size_t bitOffset_0 = SizeOfFirstN<0>();
+		static constexpr size_t bitOffset_1 = SizeOfFirstN<1>();
+		static constexpr size_t bitOffset_2 = SizeOfFirstN<2>();
+		static constexpr size_t bitOffset_3 = SizeOfFirstN<3>();
+		static constexpr size_t bitOffset_4 = SizeOfFirstN<4>();
+		static constexpr size_t bitOffset_5 = SizeOfFirstN<5>();
+		static constexpr size_t bitOffset_6 = SizeOfFirstN<6>();
+		static constexpr size_t bitOffset_7 = SizeOfFirstN<7>();
+		static constexpr size_t bitOffset_8 = SizeOfFirstN<8>();
+		static constexpr size_t bitOffset_9 = SizeOfFirstN<9>();
+		static constexpr size_t bitOffset_10 = SizeOfFirstN<10>();
+		static constexpr size_t bitOffset_11 = SizeOfFirstN<11>();
+		static constexpr size_t bitOffset_12 = SizeOfFirstN<12>();
+		static constexpr size_t bitOffset_13 = SizeOfFirstN<13>();
+		static constexpr size_t bitOffset_14 = SizeOfFirstN<14>();
+		static constexpr size_t bitOffset_15 = SizeOfFirstN<15>();
+
+#pragma endregion
+	public:
+#pragma region INTENDED PUBLIC FUCNTIONS AND USES
+		/* ALLOC THE UNIONED DATA IN STACK */
+		Union() noexcept : data{ 0 } { Alloc(&data[0]); };
+		/* ALLOC THE UNIONED DATA FROM PARAMETERS */ template <typename T, typename = std::enable_if_t<!std::is_same_v<typename std::remove_reference<T>::type, Union>>, typename... TArgs>
+		explicit Union(T&& b, TArgs&&... a) noexcept : data{ 0 } {
+			InitAndSet(std::forward<T>(b), std::forward<TArgs>(a)...);
+		};
+
+		/* INIT AND COPY THE UNIONED DATA FROM ANOTHER UNION */
+		Union(Union const& a) noexcept : data{ 0 } { InitAndCopy(a); };
+		/* INIT AND TAKE THE UNIONED DATA FROM ANOTHER UNION */
+		Union(Union&& a) noexcept : data{ 0 } { InitAndTake(std::forward<Union>(a)); };
+		/* COPY THE UNIONED DATA FROM ANOTHER UNION */
+		Union& operator=(Union const& a) { Copy(a); return *this; };
+		/* TAKE THE UNIONED DATA FROM ANOTHER UNION */
+		Union& operator=(Union&& a) { Take(std::forward<Union>(a)); return *this; };
+		/* DESTROY THE UNION ONCE OUT-OF-SCOPE */
+		~Union() { Delete(); };
+
+		/* GET A REFERENCE TO THE N'th ITEM */  template<int N>
+		constexpr NthTypeOf<N>& get() const noexcept {
+			static_assert(N < num_parameters&& N >= 0, "Cannot access parameters beyond the allocated buffer.");
+			constexpr size_t index = SizeOfFirstN<N>();
+			return *static_cast<NthTypeOf<N>*>(static_cast<void*>(&data[index]));
+
+			//constexpr NthTypeOf<N>* out = static_cast<NthTypeOf<N>*>(static_cast<void*>((static_cast<byte*>(&const_cast<byte&>(data[SizeOfFirstN<N>()])))));
+			//return *out;
+		};
+		/* GET THE SIZE (in bytes) OF THE ENTIRE UNION */
+		static constexpr size_t size() noexcept { return SizeOfAll(); };
+		/* GET THE SIZE (in bytes) OF THE N'th ITEM */ template<int N>
+		static constexpr size_t size() noexcept { return sizeof(NthTypeOf<N>); };
+
+		/* COMPARE WITH ANOTHER UNION */
+		friend bool operator==(Union const& a, Union const& b) {
+			return Equals(a, b);
+		};
+		friend bool operator!=(Union const& a, Union const& b) {
+			return !operator==(a, b);
+		};
+#pragma endregion
+	private:
+#pragma region DATA ARRAY (BYTES)
+		mutable byte data[sizeOfArgs];
+#pragma endregion
+	private:
+#pragma region STATIC UTILITY FUNCTIONS
+		template<typename _type_> static bool is_empty(_type_* d, size_t size) { byte* buf = static_cast<byte*>(static_cast<void*>(d)); return buf[0] == 0 && 0 == ::memcmp(buf, buf + 1, size - 1); };
+		template<typename _type_> static constexpr bool isPod() { return std::is_pod<_type_>::value; };
+		template<typename _type_> static void InstantiateData(_type_* ptr) {
+			if constexpr (isPod<_type_>()) {
+				/* already cleared during instantiation */
+			}
+			else {
+				if constexpr (utilities::HasDefaultConstructor::HasDefaultConstructor_v<_type_>()) {
+					new (&ptr[0]) _type_;
+				}
+			}
+		};
+		template<typename _type_> static void InstantiateData(_type_* ptr, _type_&& srce) {
+			if constexpr (isPod<_type_>()) {
+				*ptr = std::forward<_type_>(srce);
+			}
+			else {
+				if constexpr (std::is_move_constructible<_type_>::value) {
+					new (&ptr[0]) _type_(std::forward<_type_>(srce));
+				}
+				else if constexpr (std::is_copy_constructible<_type_>::value) {
+					new (&ptr[0]) _type_(srce);
+				}
+			}
+		};
+		template<typename _type_> static void InstantiateData(_type_* ptr, _type_ const& srce) {
+			if constexpr (isPod<_type_>()) {
+				*ptr = srce;
+			}
+			else {
+				if constexpr (std::is_copy_constructible<_type_>::value) {
+					new (&ptr[0]) _type_(srce);
+				}
+			}
+		};
+		template<typename _type_, typename _type2_, typename = std::enable_if_t<!std::is_same_v<_type2_, _type_>>>
+		static void InstantiateData(_type_* ptr, _type2_&& srce) {
+			if constexpr (isPod<_type_>()) {
+				*ptr = static_cast<_type_>(srce);
+			}
+			else {
+				new (&ptr[0]) _type_(std::forward<_type2_>(srce));
+			}
+		};
+		template<typename _type_, typename _type2_, typename = std::enable_if_t<!std::is_same_v<_type2_, _type_>>>
+		static void InstantiateData(_type_* ptr, _type2_ const& srce) {
+			if constexpr (isPod<_type_>()) {
+				*ptr = static_cast<_type_>(srce);
+			}
+			else {
+				new (&ptr[0]) _type_(srce);
+			}
+		};
+		template<typename _type_> static void DestroyData(_type_* ptr) {
+			if constexpr (isPod<_type_>()) { /* does not require clearing */ }
+			else {
+				if (!is_empty(ptr, sizeof(_type_))) {
+					ptr[0].~_type_();
+				}
+			}
+		};
+		template <int N> static NthTypeOf<N>* PtrAt(byte* data) { return static_cast<NthTypeOf<N>*>(static_cast<void*>(&data[SizeOfFirstN<N>()])); };
+		static void Alloc(byte* data) {
+			if constexpr (num_parameters >= 1) { InstantiateData(PtrAt<0>(data)); }
+			if constexpr (num_parameters >= 2) { InstantiateData(PtrAt<1>(data)); }
+			if constexpr (num_parameters >= 3) { InstantiateData(PtrAt<2>(data)); }
+			if constexpr (num_parameters >= 4) { InstantiateData(PtrAt<3>(data)); }
+			if constexpr (num_parameters >= 5) { InstantiateData(PtrAt<4>(data)); }
+			if constexpr (num_parameters >= 6) { InstantiateData(PtrAt<5>(data)); }
+			if constexpr (num_parameters >= 7) { InstantiateData(PtrAt<6>(data)); }
+			if constexpr (num_parameters >= 8) { InstantiateData(PtrAt<7>(data)); }
+			if constexpr (num_parameters >= 9) { InstantiateData(PtrAt<8>(data)); }
+			if constexpr (num_parameters >= 10) { InstantiateData(PtrAt<9>(data)); }
+			if constexpr (num_parameters >= 11) { InstantiateData(PtrAt<10>(data)); }
+			if constexpr (num_parameters >= 12) { InstantiateData(PtrAt<11>(data)); }
+			if constexpr (num_parameters >= 13) { InstantiateData(PtrAt<12>(data)); }
+			if constexpr (num_parameters >= 14) { InstantiateData(PtrAt<13>(data)); }
+			if constexpr (num_parameters >= 15) { InstantiateData(PtrAt<14>(data)); }
+			if constexpr (num_parameters >= 16) { InstantiateData(PtrAt<15>(data)); }
+		};
+#pragma endregion
+	private:
+#pragma region UTILITY FUNCTIONS
+		template <int N> bool ElementIsZero() { return is_empty(PtrAt<N>(&data[0]), sizeof(NthTypeOf<N>)); };
+		bool IsAllZero() { return is_empty(&data[0], sizeOfArgs); };
+		void Clear() { ::memset(&data[0], 0, sizeOfArgs); };
+		template <int N> void Clear() { ::memset(&get<N>(), 0, sizeof(NthTypeOf<N>)); };
+		void Delete() {
+			if (IsAllZero()) return; // sign that this item was not initialized, is all POD, or was recently "taken" over
+			if constexpr (num_parameters >= 1) { DestroyData(PtrAt<0>(data)); }
+			if constexpr (num_parameters >= 2) { DestroyData(PtrAt<1>(data)); }
+			if constexpr (num_parameters >= 3) { DestroyData(PtrAt<2>(data)); }
+			if constexpr (num_parameters >= 4) { DestroyData(PtrAt<3>(data)); }
+			if constexpr (num_parameters >= 5) { DestroyData(PtrAt<4>(data)); }
+			if constexpr (num_parameters >= 6) { DestroyData(PtrAt<5>(data)); }
+			if constexpr (num_parameters >= 7) { DestroyData(PtrAt<6>(data)); }
+			if constexpr (num_parameters >= 8) { DestroyData(PtrAt<7>(data)); }
+			if constexpr (num_parameters >= 9) { DestroyData(PtrAt<8>(data)); }
+			if constexpr (num_parameters >= 10) { DestroyData(PtrAt<9>(data)); }
+			if constexpr (num_parameters >= 11) { DestroyData(PtrAt<10>(data)); }
+			if constexpr (num_parameters >= 12) { DestroyData(PtrAt<11>(data)); }
+			if constexpr (num_parameters >= 13) { DestroyData(PtrAt<12>(data)); }
+			if constexpr (num_parameters >= 14) { DestroyData(PtrAt<13>(data)); }
+			if constexpr (num_parameters >= 15) { DestroyData(PtrAt<14>(data)); }
+			if constexpr (num_parameters >= 16) { DestroyData(PtrAt<15>(data)); }
+			Clear();
+		};
+
+#pragma endregion
+	private:
+#pragma region SET WITH PARAMETER ARGS
+		/* INIT DATA USING PARAMETER */ template <int N> void InitAndSetAt(NthTypeOf<N> const& a) {
+			InstantiateData(PtrAt<N>(&data[0]), a);
+		};
+		/* INIT DATA USING PARAMETER */ template <int N> void InitAndSetAt(NthTypeOf<N>&& a) {
+			InstantiateData(PtrAt<N>(&data[0]), std::forward<NthTypeOf<N>>(a));
+		};
+		/* INIT DATA USING PARAMETER */ template <int N, typename T, typename = std::enable_if_t<!std::is_same_v<T, NthTypeOf<N>>>> void InitAndSetAt(T&& a) {
+			InstantiateData(PtrAt<N>(&data[0]), std::forward<T>(a));
+		};
+		/* EMPTY PARAMETER PACK -> END RECURSION */ void InitAndSetDataWith() { return; };
+		/* RECURSIVELY UNPACK THE PARAMETER PACK */ template<typename T, typename... Targs> void InitAndSetDataWith(const T& value, Targs&&... Fargs) {
+			InitAndSetAt<num_parameters - (1 + sizeof...(Fargs))>(value);
+			InitAndSetDataWith(std::forward<Targs>(Fargs)...);
+		};
+		/* RECURSIVELY UNPACK THE PARAMETER PACK */ template<typename T, typename... Targs> void InitAndSetDataWith(T&& value, Targs&&... Fargs) {
+			InitAndSetAt<num_parameters - (1 + sizeof...(Fargs))>(std::forward<T>(value));
+			InitAndSetDataWith(std::forward<Targs>(Fargs)...);
+		};
+		/* SET WITH PARAMETER PACK */ template <typename... TArgs> void InitAndSet(TArgs const&... a) {
+			static_assert((sizeof...(TArgs)) == num_parameters, "Union initializer must use the same number of parametrers as are defined in the Union.");
+			InitAndSetDataWith(a...);
+		};
+		/* SET WITH PARAMETER PACK */ template <typename... TArgs> void InitAndSet(TArgs&&... a) {
+			static_assert((sizeof...(TArgs)) == num_parameters, "Union initializer must use the same number of parametrers as are defined in the Union.");
+			InitAndSetDataWith(std::forward<TArgs>(a)...);
+		};
+
+		/* SET DATA USING PARAMETER */ template <int N> void SetAt(NthTypeOf<N> const& a) { this->get<N>() = a; };
+		/* SET DATA USING PARAMETER */ template <int N> void SetAt(NthTypeOf<N>&& a) { this->get<N>() = std::forward<NthTypeOf<N>>(a); };
+		/* EMPTY PARAMETER PACK -> END RECURSION */ void SetDataWith() { return; };
+		/* RECURSIVELY UNPACK THE PARAMETER PACK */ template<typename T, typename... Targs> void SetDataWith(const T& value, Targs&&... Fargs) { SetAt<num_parameters - (1 + sizeof...(Fargs))>(value); SetDataWith(std::forward<Targs>(Fargs)...); };
+		/* RECURSIVELY UNPACK THE PARAMETER PACK */ template<typename T, typename... Targs> void SetDataWith(T&& value, Targs&&... Fargs) { SetAt<num_parameters - (1 + sizeof...(Fargs))>(std::forward<T>(value)); SetDataWith(std::forward<Targs>(Fargs)...); };
+		/* SET WITH PARAMETER PACK */ template <typename... TArgs> void Set(TArgs const&... a) {
+			static_assert((sizeof...(TArgs)) == num_parameters, "Union initializer must use the same number of parametrers as are defined in the Union.");
+			SetDataWith(a...);
+		};
+		/* SET WITH PARAMETER PACK */ template <typename... TArgs> void Set(TArgs&&... a) {
+			static_assert((sizeof...(TArgs)) == num_parameters, "Union initializer must use the same number of parametrers as are defined in the Union.");
+			SetDataWith(std::forward<TArgs>(a)...);
+		};
+#pragma endregion
+#pragma region COMPARE WITH CONST&
+		template <int N> static bool EqualsAt(Union const& a, Union const& b) {
+			return a.get<N>() == b.get<N>();
+		};
+		static bool Equals(Union const& a, Union const& b) {
+			bool out = true;
+			if constexpr (num_parameters >= 1) { out = out && EqualsAt<0>(a, b); if (!out) return out; }
+			if constexpr (num_parameters >= 2) { out = out && EqualsAt<1>(a, b); if (!out) return out; }
+			if constexpr (num_parameters >= 3) { out = out && EqualsAt<2>(a, b); if (!out) return out; }
+			if constexpr (num_parameters >= 4) { out = out && EqualsAt<3>(a, b); if (!out) return out; }
+			if constexpr (num_parameters >= 5) { out = out && EqualsAt<4>(a, b); if (!out) return out; }
+			if constexpr (num_parameters >= 6) { out = out && EqualsAt<5>(a, b); if (!out) return out; }
+			if constexpr (num_parameters >= 7) { out = out && EqualsAt<6>(a, b); if (!out) return out; }
+			if constexpr (num_parameters >= 8) { out = out && EqualsAt<7>(a, b); if (!out) return out; }
+			if constexpr (num_parameters >= 9) { out = out && EqualsAt<8>(a, b); if (!out) return out; }
+			if constexpr (num_parameters >= 10) { out = out && EqualsAt<9>(a, b); if (!out) return out; }
+			if constexpr (num_parameters >= 11) { out = out && EqualsAt<10>(a, b); if (!out) return out; }
+			if constexpr (num_parameters >= 12) { out = out && EqualsAt<11>(a, b); if (!out) return out; }
+			if constexpr (num_parameters >= 13) { out = out && EqualsAt<12>(a, b); if (!out) return out; }
+			if constexpr (num_parameters >= 14) { out = out && EqualsAt<13>(a, b); if (!out) return out; }
+			if constexpr (num_parameters >= 15) { out = out && EqualsAt<14>(a, b); if (!out) return out; }
+			if constexpr (num_parameters >= 16) { out = out && EqualsAt<15>(a, b); if (!out) return out; }
+			return out;
+		};
+#pragma endregion
+#pragma region COPY FROM CONST&
+		template <int N> void InitAndCopyAt(Union const& a) { InstantiateData(PtrAt<N>(&data[0]), a.get<N>()); };
+		void InitAndCopy(Union const& a) {
+			if constexpr (num_parameters >= 1) { InitAndCopyAt<0>(a); }
+			if constexpr (num_parameters >= 2) { InitAndCopyAt<1>(a); }
+			if constexpr (num_parameters >= 3) { InitAndCopyAt<2>(a); }
+			if constexpr (num_parameters >= 4) { InitAndCopyAt<3>(a); }
+			if constexpr (num_parameters >= 5) { InitAndCopyAt<4>(a); }
+			if constexpr (num_parameters >= 6) { InitAndCopyAt<5>(a); }
+			if constexpr (num_parameters >= 7) { InitAndCopyAt<6>(a); }
+			if constexpr (num_parameters >= 8) { InitAndCopyAt<7>(a); }
+			if constexpr (num_parameters >= 9) { InitAndCopyAt<8>(a); }
+			if constexpr (num_parameters >= 10) { InitAndCopyAt<9>(a); }
+			if constexpr (num_parameters >= 11) { InitAndCopyAt<10>(a); }
+			if constexpr (num_parameters >= 12) { InitAndCopyAt<11>(a); }
+			if constexpr (num_parameters >= 13) { InitAndCopyAt<12>(a); }
+			if constexpr (num_parameters >= 14) { InitAndCopyAt<13>(a); }
+			if constexpr (num_parameters >= 15) { InitAndCopyAt<14>(a); }
+			if constexpr (num_parameters >= 16) { InitAndCopyAt<15>(a); }
+		};
+
+		template <int N> void CopyAt(Union const& a) { this->get<N>() = a.get<N>(); };
+		void Copy(Union const& a) {
+			if constexpr (num_parameters >= 1) { CopyAt<0>(a); }
+			if constexpr (num_parameters >= 2) { CopyAt<1>(a); }
+			if constexpr (num_parameters >= 3) { CopyAt<2>(a); }
+			if constexpr (num_parameters >= 4) { CopyAt<3>(a); }
+			if constexpr (num_parameters >= 5) { CopyAt<4>(a); }
+			if constexpr (num_parameters >= 6) { CopyAt<5>(a); }
+			if constexpr (num_parameters >= 7) { CopyAt<6>(a); }
+			if constexpr (num_parameters >= 8) { CopyAt<7>(a); }
+			if constexpr (num_parameters >= 9) { CopyAt<8>(a); }
+			if constexpr (num_parameters >= 10) { CopyAt<9>(a); }
+			if constexpr (num_parameters >= 11) { CopyAt<10>(a); }
+			if constexpr (num_parameters >= 12) { CopyAt<11>(a); }
+			if constexpr (num_parameters >= 13) { CopyAt<12>(a); }
+			if constexpr (num_parameters >= 14) { CopyAt<13>(a); }
+			if constexpr (num_parameters >= 15) { CopyAt<14>(a); }
+			if constexpr (num_parameters >= 16) { CopyAt<15>(a); }
+		};
+#pragma endregion
+#pragma region TAKE FROM &&
+		template <int N> void InitAndTakeAt(Union&& a) {
+			InstantiateData(PtrAt<N>(&data[0]), std::move(a.get<N>()));
+			if constexpr (!isPod<NthTypeOf<N>>()) { a.Clear<N>(); }
+		};
+		void InitAndTake(Union&& a) {
+			if constexpr (num_parameters >= 1) { InitAndTakeAt<0>(std::forward<Union>(a)); }
+			if constexpr (num_parameters >= 2) { InitAndTakeAt<1>(std::forward<Union>(a)); }
+			if constexpr (num_parameters >= 3) { InitAndTakeAt<2>(std::forward<Union>(a)); }
+			if constexpr (num_parameters >= 4) { InitAndTakeAt<3>(std::forward<Union>(a)); }
+			if constexpr (num_parameters >= 5) { InitAndTakeAt<4>(std::forward<Union>(a)); }
+			if constexpr (num_parameters >= 6) { InitAndTakeAt<5>(std::forward<Union>(a)); }
+			if constexpr (num_parameters >= 7) { InitAndTakeAt<6>(std::forward<Union>(a)); }
+			if constexpr (num_parameters >= 8) { InitAndTakeAt<7>(std::forward<Union>(a)); }
+			if constexpr (num_parameters >= 9) { InitAndTakeAt<8>(std::forward<Union>(a)); }
+			if constexpr (num_parameters >= 10) { InitAndTakeAt<9>(std::forward<Union>(a)); }
+			if constexpr (num_parameters >= 11) { InitAndTakeAt<10>(std::forward<Union>(a)); }
+			if constexpr (num_parameters >= 12) { InitAndTakeAt<11>(std::forward<Union>(a)); }
+			if constexpr (num_parameters >= 13) { InitAndTakeAt<12>(std::forward<Union>(a)); }
+			if constexpr (num_parameters >= 14) { InitAndTakeAt<13>(std::forward<Union>(a)); }
+			if constexpr (num_parameters >= 15) { InitAndTakeAt<14>(std::forward<Union>(a)); }
+			if constexpr (num_parameters >= 16) { InitAndTakeAt<15>(std::forward<Union>(a)); }
+			a.Clear();
+		};
+
+		template <int N> void TakeAt(Union&& a) {
+			get<N>() = std::move(a.get<N>());
+			if constexpr (!isPod<NthTypeOf<N>>()) { a.Clear<N>(); }
+		};
+		void Take(Union&& a) {
+			if constexpr (num_parameters >= 1) { TakeAt<0>(std::forward<Union>(a)); }
+			if constexpr (num_parameters >= 2) { TakeAt<1>(std::forward<Union>(a)); }
+			if constexpr (num_parameters >= 3) { TakeAt<2>(std::forward<Union>(a)); }
+			if constexpr (num_parameters >= 4) { TakeAt<3>(std::forward<Union>(a)); }
+			if constexpr (num_parameters >= 5) { TakeAt<4>(std::forward<Union>(a)); }
+			if constexpr (num_parameters >= 6) { TakeAt<5>(std::forward<Union>(a)); }
+			if constexpr (num_parameters >= 7) { TakeAt<6>(std::forward<Union>(a)); }
+			if constexpr (num_parameters >= 8) { TakeAt<7>(std::forward<Union>(a)); }
+			if constexpr (num_parameters >= 9) { TakeAt<8>(std::forward<Union>(a)); }
+			if constexpr (num_parameters >= 10) { TakeAt<9>(std::forward<Union>(a)); }
+			if constexpr (num_parameters >= 11) { TakeAt<10>(std::forward<Union>(a)); }
+			if constexpr (num_parameters >= 12) { TakeAt<11>(std::forward<Union>(a)); }
+			if constexpr (num_parameters >= 13) { TakeAt<12>(std::forward<Union>(a)); }
+			if constexpr (num_parameters >= 14) { TakeAt<13>(std::forward<Union>(a)); }
+			if constexpr (num_parameters >= 15) { TakeAt<14>(std::forward<Union>(a)); }
+			if constexpr (num_parameters >= 16) { TakeAt<15>(std::forward<Union>(a)); }
+			a.Clear();
+		};
+#pragma endregion
+	};
+
+	/* *THREAD SAFE* Thread-safe and fiber-safe wrapper for atomic operations on pointers, without having to utilize std::atomic<T*> */
+	template< typename T>
+	struct atomic_ptr {
+	private:
+		static void* Sys_InterlockedExchangePointer(void*& ptr, void* exchange);
+		static void* Sys_InterlockedCompareExchangePointer(void*& ptr, void* comparand, void* exchange);
+
+	public:
+		constexpr atomic_ptr() noexcept : ptr(nullptr) {}
+		constexpr atomic_ptr(T* newSource) noexcept : ptr(newSource) {}
+		constexpr atomic_ptr(const atomic_ptr& other) noexcept : ptr(other.ptr) {};
+		atomic_ptr& operator=(const atomic_ptr& other) noexcept { Set(other.Get()); return *this; };
+		atomic_ptr& operator=(T* newSource) noexcept { Set(newSource); return *this; };
+		~atomic_ptr() { ptr = nullptr; };
+
+		explicit operator bool() { return ptr; };
+		explicit operator bool() const { return ptr; };
+
+		operator T* () noexcept { return ptr; };
+		operator const T* () const noexcept { return ptr; };
+
+		/* atomically sets the pointer and returns the previous pointer value */
+		T* Set(T* newPtr) noexcept {
+			return static_cast<T*>(Sys_InterlockedExchangePointer((void*&)ptr, static_cast<void*>(newPtr)));
+		};
+		bool TrySet(T* newPtr, T*& oldPtr) noexcept {
+			T* PREV_VAL = this->load();
+			if (this->CompareExchange(PREV_VAL, newPtr) == PREV_VAL) {
+				oldPtr = PREV_VAL;
+				return true;
+			}
+			else {
+				return false;
+			}
+		};
+		bool TrySet(T* newPtr, atomic_ptr<T>& oldPtr) noexcept {
+			T* PREV_VAL = this->load();
+			if (this->CompareExchange(PREV_VAL, newPtr) == PREV_VAL) {
+				oldPtr = PREV_VAL;
+				return true;
+			}
+			else {
+				return false;
+			}
+		};
+
+		/* atomically sets the pointer to 'newPtr' only if the previous pointer is equal to 'comparePtr' */
+		T* CompareExchange(T* comparePtr, T* newPtr) noexcept {
+			return static_cast<T*>(Sys_InterlockedCompareExchangePointer((void*&)ptr, static_cast<void*>(comparePtr), static_cast<void*>(newPtr)));
+		};
+
+		T* operator->() noexcept { return Get(); };
+		const T* operator->() const noexcept { return Get(); };
+		T* Get() noexcept { return ptr; };
+		T* Get() const noexcept { return ptr; };
+		T* load() noexcept { return Get(); };
+		T* load() const noexcept { return Get(); };
+
+	protected:
+		T* ptr;
+	};
+
+	/* thread-safe and fiber-safe integer (atomic swapping of integers) */
+	class InterlockedLong {
+	public:
+		constexpr InterlockedLong() noexcept : value(0) {};
+		constexpr InterlockedLong(long a) noexcept : value(a) {};
+		InterlockedLong(const InterlockedLong& other) : value(other.GetValue()) {};
+		InterlockedLong& operator=(const InterlockedLong& other) { SetValue(other.GetValue()); return *this; };
+		InterlockedLong& operator=(long newSource) { SetValue(newSource); return *this; };
+
+		explicit operator long() { return GetValue(); };
+		explicit operator long() const { return GetValue(); };
+
+		explicit operator bool() { if (GetValue() == 0) return false; else return true; };
+		explicit operator bool() const { if (GetValue() == 0) return false; else return true; };
+
+		friend InterlockedLong operator+(long i, const InterlockedLong& b) { InterlockedLong out(b); out.Add(i); return out; };
+		friend InterlockedLong operator+(const InterlockedLong& b, long i) { InterlockedLong out(b); out.Add(i); return out; };
+		friend InterlockedLong operator-(long i, const InterlockedLong& b) { InterlockedLong out(i); out.Add(-b.GetValue()); return out; };
+		friend InterlockedLong operator-(const InterlockedLong& b, long i) { InterlockedLong out(b); out.Add(-i); return out; };
+		friend InterlockedLong operator/(long i, const InterlockedLong& b) { return i / b.GetValue(); };
+		friend InterlockedLong operator/(const InterlockedLong& b, long i) { return b.GetValue() / i; };
+
+		friend bool operator<=(long i, const InterlockedLong& b) { return i <= b.GetValue(); };
+		friend bool operator<=(const InterlockedLong& b, long i) { return i > b.GetValue(); };
+		friend bool operator>=(long i, const InterlockedLong& b) { return i >= b.GetValue(); };
+		friend bool operator>=(const InterlockedLong& b, long i) { return i < b.GetValue(); };
+		friend bool operator>(long i, const InterlockedLong& b) { return i > b.GetValue(); };
+		friend bool operator>(const InterlockedLong& b, long i) { return i <= b.GetValue(); };
+		friend bool operator<(long i, const InterlockedLong& b) { return i < b.GetValue(); };
+		friend bool operator<(const InterlockedLong& b, long i) { return i >= b.GetValue(); };
+
+		friend bool operator<=(const InterlockedLong& i, const InterlockedLong& b) { return i.GetValue() <= b.GetValue(); };
+		friend bool operator>=(const InterlockedLong& i, const InterlockedLong& b) { return i.GetValue() >= b.GetValue(); };
+		friend bool operator>(const InterlockedLong& i, const InterlockedLong& b) { return i.GetValue() > b.GetValue(); };
+		friend bool operator<(const InterlockedLong& i, const InterlockedLong& b) { return i.GetValue() < b.GetValue(); };
+
+		InterlockedLong operator++(int) { InterlockedLong out{ *this }; Increment(); return out; };
+		InterlockedLong& operator++() { Increment(); return *this; };
+
+		InterlockedLong operator--(int) { InterlockedLong out{ *this }; Decrement(); return out; };
+		InterlockedLong& operator--() { Decrement(); return *this; };
+
+		InterlockedLong& operator+=(long i) {
+			if (i == 1) {
+				Increment();
+			}
+			else if (i == -1) {
+				Decrement();
+			}
+			else {
+				Add(i);
+			}
+			return *this;
+		};
+		InterlockedLong& operator-=(long i) {
+			if (i == 1) {
+				Decrement();
+			}
+			else if (i == -1) {
+				Increment();
+			}
+			else {
+				Add(-i);
+			}
+			return *this;
+		};
+
+		InterlockedLong& operator+=(const InterlockedLong& i) { return operator+=(i.GetValue()); };
+		InterlockedLong& operator-=(const InterlockedLong& i) { return operator-=(i.GetValue()); };
+
+		bool operator==(long i) { return i == GetValue(); };
+		bool operator!=(long i) { return i != GetValue(); };
+		bool operator==(const InterlockedLong& i) { return i.GetValue() == GetValue(); };
+		bool operator!=(const InterlockedLong& i) { return i.GetValue() != GetValue(); };
+
+		long Increment(); // atomically increments the integer and returns the new value
+		long Decrement(); // atomically decrements the integer and returns the new value
+		long Add(long v); // atomically adds a value to the integer and returns the new value
+		long Sub(long v); // atomically subtracts a value from the integer and returns the new value
+		long GetValue() const; // returns the current value of the integer
+		void SetValue(long v);
+		bool SetValueIfEqual(long desired, long compare);
+		bool TryIncrementTo(long n);
+		void lock();
+		void unlock();
+
+	private:
+		long	value;
+
+	};
+
+	// constexpr wrapper that guarrantees the underlying storage data maintains a '0' in the final bit, which is necessary for CAS atomic operations.
+	class DoubleWrapper {
+	public:
+		using Arg = double;
+	protected:
+		static Arg abs(Arg val);
+		static Arg floor(Arg val);
+
+		// assumes the structure of the double is MANTISSA, EXPONENT, SIGN. 
+		// and assumes that the exponent can be reduced by one bit, the sign can be moved over, and the final bit can be cleared, reserved for CAS swaps.
+		static uint64_t pack_fast(double value);
+		static double unpack_fast(uint64_t value);
+
+	protected:
+		uint64_t representation;
+
+	private:
+		static double unpack_impl(uint64_t source);
+		static uint64_t pack_impl(double value);
+
+	protected:
+		void pack(double a);
+		Arg unpack() const;
+
+	public:
+		DoubleWrapper() : representation{ pack_impl(0) } {};
+		template <typename T, typename = std::enable_if_t<!std::is_same<std::decay_t<T>, DoubleWrapper>::value>> DoubleWrapper(T a) : representation{ pack_impl(static_cast<double>(a)) } {};
+		DoubleWrapper(const DoubleWrapper& a) = default;
+		DoubleWrapper& operator=(const DoubleWrapper& a) = default;
+		DoubleWrapper(DoubleWrapper&& a) = default;
+		DoubleWrapper& operator=(DoubleWrapper&& a) = default;
+		~DoubleWrapper() = default;
+
+	public:
+		operator Arg();
+		operator const Arg() const;
+
+		DoubleWrapper operator+(DoubleWrapper& b);
+		DoubleWrapper operator-(DoubleWrapper& b);
+		DoubleWrapper operator/(DoubleWrapper& b);
+		DoubleWrapper operator*(DoubleWrapper& b);
+
+		DoubleWrapper& operator--();
+		DoubleWrapper& operator++();
+		DoubleWrapper operator--(int);
+		DoubleWrapper operator++(int);
+
+		DoubleWrapper& operator+=(const DoubleWrapper& i);
+		DoubleWrapper& operator-=(const DoubleWrapper& i);
+		DoubleWrapper& operator/=(const DoubleWrapper& i);
+		DoubleWrapper& operator*=(const DoubleWrapper& i);
+
+		template <typename T> bool operator==(T b) const {
+			return std::abs(load() - (Arg)b) <= 0.00005l;
+		};
+		template <typename T> bool operator!=(T b) const { return !operator==(b); };
+
+		bool operator<=(DoubleWrapper& b);
+		bool operator>=(DoubleWrapper& b);
+		bool operator<(DoubleWrapper& b);
+		bool operator>(DoubleWrapper& b);
+
+		DoubleWrapper Pow(DoubleWrapper const& V) const;
+		DoubleWrapper Sqrt() const;
+		DoubleWrapper Abs() const;
+		DoubleWrapper Floor() const;
+		DoubleWrapper Ceiling() const;
+
+	public:
+		Arg Swap(Arg const& input);
+		Arg Add(Arg const& input);
+		// Function must be of the type: Update([](Arg x)->Arg{ return x; });
+		template <typename Func> Arg Update(Func updateFunction) {
+			auto out{ load() };
+			pack(updateFunction(out));
+			return out;
+		}; // returns the previous value while incrementing the actual counter
+
+	public: // std::atomic compatability
+		Arg fetch_add(Arg const& v);
+		Arg fetch_sub(Arg const& v);
+		Arg exchange(Arg const& v);
+		Arg load() const;
+		void store(Arg const& v);
+
+	};
+
+	// constexpr wrapper that guarrantees the underlying storage data maintains a '0' in the final bit, which is necessary for CAS atomic operations.
+	class FloatWrapper {
+		using Arg = float;
+	protected:
+		static Arg abs(Arg val);
+		static Arg floor(Arg val);
+
+		static uint32_t pack_fast(float value);
+		static float unpack_fast(uint32_t value);
+
+	protected:
+		uint32_t representation;
+
+	private:
+		static float unpack_impl(uint32_t source);
+		static uint32_t pack_impl(float value);
+
+	protected:
+		void pack(float a);
+		Arg unpack() const;
+
+	public:
+		FloatWrapper() : representation{ pack_impl(0) } {};
+		template <typename T, typename = std::enable_if_t<!std::is_same<std::decay_t<T>, FloatWrapper>::value>> FloatWrapper(T a) : representation{ pack_impl(static_cast<float>(a)) } {};
+		// FloatWrapper(Arg&& a) : representation{ pack_impl(a) } {};
+		FloatWrapper(const FloatWrapper& a) = default; // : representation(a.unpack()) {};
+		FloatWrapper& operator=(const FloatWrapper& a) = default; //{ pack(a.unpack()); };
+		FloatWrapper(FloatWrapper&& a) = default; //: representation(a.unpack()) {};
+		FloatWrapper& operator=(FloatWrapper&& a) = default; //{ pack(a.unpack()); };
+		~FloatWrapper() = default;
+
+	public:
+		operator Arg();
+		operator const Arg() const;
+		FloatWrapper operator+(FloatWrapper& b);
+		FloatWrapper operator-(FloatWrapper& b);
+		FloatWrapper operator/(FloatWrapper& b);
+		FloatWrapper operator*(FloatWrapper& b);
+		FloatWrapper& operator--();
+		FloatWrapper& operator++();
+		FloatWrapper operator--(int);
+		FloatWrapper operator++(int);
+		FloatWrapper& operator+=(const FloatWrapper& i);
+		FloatWrapper& operator-=(const FloatWrapper& i);
+		FloatWrapper& operator/=(const FloatWrapper& i);
+		FloatWrapper& operator*=(const FloatWrapper& i);
+
+		template <typename T> bool operator==(T b) const {
+			return std::abs(load() - (Arg)b) <= 0.00005l;
+		};
+		template <typename T> bool operator!=(T b) const { return !operator==(b); };
+		bool operator<=(FloatWrapper& b);
+		bool operator>=(FloatWrapper& b);
+		bool operator<(FloatWrapper& b);
+		bool operator>(FloatWrapper& b);
+
+		FloatWrapper Pow(FloatWrapper const& V) const;
+		FloatWrapper Sqrt() const;
+		FloatWrapper Abs() const;
+		FloatWrapper Floor() const;
+		FloatWrapper Ceiling() const;
+
+	public:
+		Arg Swap(Arg const& input); // returns the previous value while changing the underlying value
+		Arg Add(Arg const& input); // returns the previous value while incrementing the actual counter
+		
+		// Function must be of the type: Update([](Arg x)->Arg{ return x; });
+		template <typename Func> Arg Update(Func updateFunction) {
+			auto out{ load() };
+			pack(updateFunction(out));
+			return out;
+		}; // returns the previous value while incrementing the actual counter
+
+	public: // std::atomic compatability
+		Arg fetch_add(Arg const& v); // returns the previous value while incrementing the actual counter
+		Arg fetch_sub(Arg const& v);// returns the previous value while decrementing the actual counter
+		Arg exchange(Arg const& v); // returns the previous value while setting the value to the input
+		Arg load() const; // gets the value
+		void store(Arg const& v); // sets the value to the input
+
+	};
+
+	// constexpr wrapper that guarrantees the underlying storage data maintains a '0' in the final bit, which is necessary for CAS atomic operations.
+	class LongLongWrapper {
+	private:
+		using Arg = long long;
+
+	protected:
+		static Arg abs(Arg val);
+		static Arg floor(Arg val);
+
+		static uint64_t pack_fast(Arg value);
+		static Arg unpack_fast(uint64_t value);
+
+	protected:
+		uint64_t representation;
+
+	private:
+		static Arg unpack_impl(uint64_t source);
+		static uint64_t pack_impl(Arg value);
+
+	protected:
+		void pack(Arg a);
+		Arg unpack() const;
+
+	public:
+		 LongLongWrapper() : representation{ pack_impl(0) } {};
+		 template <typename T, typename = std::enable_if_t<!std::is_same<std::decay_t<T>, LongLongWrapper>::value>>  LongLongWrapper(T a) : representation{ pack_impl(static_cast<Arg>(a)) } {};
+		 LongLongWrapper(const LongLongWrapper& a) = default;
+		 LongLongWrapper& operator=(const LongLongWrapper& a) = default;
+		 LongLongWrapper(LongLongWrapper&& a) = default;
+		 LongLongWrapper& operator=(LongLongWrapper&& a) = default;
+		 ~LongLongWrapper() = default;
+
+	public:
+		operator Arg();
+		operator const Arg() const;
+
+		LongLongWrapper operator+(LongLongWrapper& b);
+		LongLongWrapper operator-(LongLongWrapper& b);
+		 LongLongWrapper operator/(LongLongWrapper& b);
+		 LongLongWrapper operator*(LongLongWrapper& b);
+
+		 LongLongWrapper& operator--();
+		 LongLongWrapper& operator++();
+		 LongLongWrapper operator--(int);
+		 LongLongWrapper operator++(int);
+
+		 LongLongWrapper& operator+=(const LongLongWrapper& i);
+		 LongLongWrapper& operator-=(const LongLongWrapper& i);
+		 LongLongWrapper& operator/=(const LongLongWrapper& i);
+		 LongLongWrapper& operator*=(const LongLongWrapper& i);
+
+		template <typename T>  bool operator==(T b) const {
+			return std::abs(load() - (Arg)b) <= 0.00005l;
+		};
+		template <typename T>  bool operator!=(T b) const { return !operator==(b); };
+
+		bool operator<=(LongLongWrapper& b);
+		bool operator>=(LongLongWrapper& b);
+		bool operator<(LongLongWrapper& b);
+		bool operator>(LongLongWrapper& b);
+
+		LongLongWrapper Pow(LongLongWrapper const& V) const;
+		LongLongWrapper Sqrt() const;
+		LongLongWrapper Abs() const;
+		LongLongWrapper Floor() const;
+		LongLongWrapper Ceiling() const;
+
+	public:
+		Arg Swap(Arg const& input);
+		Arg Add(Arg const& input);
+		// Function must be of the type: Update([](Arg x)->Arg{ return x; });
+		template <typename Func> Arg Update(Func updateFunction) {
+			auto out{ load() };
+			pack(updateFunction(out));
+			return out;
+		}; // returns the previous value while incrementing the actual counter
+
+	public: // std::atomic compatability
+		Arg fetch_add(Arg const& v);
+		Arg fetch_sub(Arg const& v);
+		Arg exchange(Arg const& v);
+		Arg load() const;
+		void store(Arg const& v);
+
+	};
+
+	namespace impl {
+		template <typename T> auto CAS_Safe_Type_F() {
+			if constexpr (std::is_floating_point<T>::value) {
+				if constexpr (std::is_same<T, float>::value) {
+					return FloatWrapper();
+				}
+				else {
+					return DoubleWrapper();
+				}
+			}
+			else {
+				if constexpr (std::is_pointer<T>::value) {
+					return T{ nullptr };
+				}
+				else if constexpr (std::is_same<T, long long>::value) {
+					return LongLongWrapper();
+				}
+				else if constexpr (std::is_arithmetic<T>::value && std::is_signed<T>::value) {
+					return uint64_t();
+				}
+				else {
+					return T();
+				}
+			}
+		};
+
+		template <typename T> struct CAS_Safe_Type {
+			typedef decltype(details::detail::function_signature(CAS_Safe_Type_F<T>)) 
+				function_header;
+			typedef typename function_header::Return_Type
+				type;
+		};
+	};
+
+	/* Converts any small POD-style struct into an atomic struct using multi-word compare and swap operations.
+	Capacity is about 56 bytes, or about 7 pointers / integers. Can be used for a POD collection (like a struct) or non-standard POD items like floats to long doubles.
+	The item should be smaller than a uint64_t, OR the final bit of every uin64_t word must exactly be 0 and unused, without exception.
+	*/
+	template <typename Arg> class CAS_Container {
+	public:
+		typedef typename impl::CAS_Safe_Type<Arg>::type 
+			storageType;
+		static constexpr size_t NumWords{ sizeof(storageType) / 8 };
+
+	protected:
+		union ContainerImpl {
+			storageType data;
+			uint64_t addresses[NumWords];
+		};
+		ContainerImpl data;
+
+		CAS_Container<Arg> Copy() const {
+			using namespace utilities::dbgroup::atomic::mwcas;
+			CAS_Container<Arg> temp; // constexpr
+			MwCASDescriptor<NumWords> desc{}; // constexpr
+
+			for (size_t index = 0; index < NumWords; index++) {
+				temp.Word(index) = desc.Read< uint64_t>(&Word(index));
+			}
+			return temp;
+		};
+		constexpr uint64_t& Word(size_t index) {
+			return data.addresses[index];
+		};
+		constexpr const uint64_t& Word(size_t index) const {
+			return data.addresses[index];
+		};
+
+	public:
+		constexpr const storageType& Data() const { return data.data; };
+		constexpr storageType& Data() { return data.data; };
+		operator Arg() const {
+			return load();
+		};
+
+	public:
+		constexpr CAS_Container() : data{ storageType{} } {
+			static_assert(std::is_trivially_destructible< Arg >::value
+				&& std::is_trivially_copy_constructible< Arg >::value
+				&& std::is_trivially_copy_assignable< Arg >::value
+				&& std::is_trivially_copyable< Arg >::value, "Compare-and-swap operations only work with trivial structs.");
+		};
+		constexpr CAS_Container(Arg const& a) : data{ storageType{ a } } {
+			static_assert(std::is_trivially_destructible< Arg >::value
+				&& std::is_trivially_copy_constructible< Arg >::value
+				&& std::is_trivially_copy_assignable< Arg >::value
+				&& std::is_trivially_copyable< Arg >::value, "Compare-and-swap operations only work with trivial structs.");
+		};
+		constexpr CAS_Container(const CAS_Container&) = default;
+		constexpr CAS_Container& operator=(const CAS_Container&) = default;
+		constexpr CAS_Container(CAS_Container&&) = default;
+		constexpr CAS_Container& operator=(CAS_Container&&) = default;
+		~CAS_Container() = default;
+
+		template <typename T> bool operator==(T b) const {
+			const auto x = Copy();
+			return x.Data() == b;
+		};
+		template <typename T> bool operator!=(T b) const {
+			return !operator==(b);
+		};
+
+
+	public:
+		bool CompareSwap(Arg const& compare, Arg const& input) {
+			using utilities::dbgroup::atomic::mwcas::MwCASDescriptor;
+
+			CAS_Container<Arg>
+				OldCopy(compare),
+				UpdateCopy(input);
+			size_t
+				index;
+
+			// continue until a MwCAS operation succeeds
+			while (true) {
+				// create a MwCAS descriptor
+				MwCASDescriptor<NumWords> desc{};
+
+				// prepare the swap target(s)
+				for (index = 0; index < NumWords; index++) {
+					desc.AddMwCASTarget(&Word(index), OldCopy.Word(index), UpdateCopy.Word(index));
+				}
+
+				// try multi-word compare and swap
+				if (desc.MwCAS()) return true;
+				else return false;
+			}
+		}; // returns the previous value while changing the underlying value
+		Arg Swap(Arg const& input, bool allowMiss = false) {
+			using utilities::dbgroup::atomic::mwcas::MwCASDescriptor;
+
+			CAS_Container<Arg> OldCopy, UpdateCopy;
+			size_t index;
+
+			// continue until a MwCAS operation succeeds
+			while (true) {
+				// create a MwCAS descriptor
+				MwCASDescriptor<NumWords> desc{};
+
+				// capture the old words
+				for (index = 0; index < NumWords; index++) {
+					OldCopy.Word(index) = UpdateCopy.Word(index) = MwCASDescriptor<NumWords>::template Read<uint64_t>(&Word(index));
+				}
+
+				// update the actual data
+				UpdateCopy.Data() = storageType{ input };
+
+				// prepare the swap target(s)
+				for (index = 0; index < NumWords; index++) {
+					desc.AddMwCASTarget(&Word(index), OldCopy.Word(index), UpdateCopy.Word(index));
+				}
+
+				// try multi-word compare and swap
+				if (desc.MwCAS()) break;
+				else if (allowMiss) break;
+			}
+			return OldCopy.load();
+		}; // returns the previous value while changing the underlying value
+		Arg Add(Arg const& input) {
+			using utilities::dbgroup::atomic::mwcas::MwCASDescriptor;
+
+			CAS_Container<Arg> OldCopy, UpdateCopy;
+			size_t index;
+
+			// continue until a MwCAS operation succeeds
+			while (true) {
+				// create a MwCAS descriptor
+				MwCASDescriptor<NumWords> desc{};
+
+				// capture the old words
+				for (index = 0; index < NumWords; index++) {
+					OldCopy.Word(index) = UpdateCopy.Word(index) = MwCASDescriptor<NumWords>::template Read<uint64_t>(&Word(index));
+				}
+
+				// update the actual data
+				UpdateCopy.Data() = storageType{ (Arg)OldCopy.Data() + input };
+
+				// prepare the swap target(s)
+				for (index = 0; index < NumWords; index++) {
+					desc.AddMwCASTarget(&Word(index), OldCopy.Word(index), UpdateCopy.Word(index));
+				}
+
+				// try multi-word compare and swap
+				if (desc.MwCAS()) break;
+			}
+			return OldCopy.load();
+		}; // returns the previous value while incrementing the actual counter
+		Arg Update(std::function<Arg(Arg)> const& updateFunction) {
+			using utilities::dbgroup::atomic::mwcas::MwCASDescriptor;
+
+			CAS_Container<Arg> OldCopy, UpdateCopy;
+			size_t index;
+
+			// continue until a MwCAS operation succeeds
+			while (true) {
+				// create a MwCAS descriptor
+				MwCASDescriptor<NumWords> desc{};
+
+				// capture the old words
+				for (index = 0; index < NumWords; index++) {
+					OldCopy.Word(index) = MwCASDescriptor<NumWords>::template Read<uint64_t>(&Word(index));
+				}
+
+				// update the actual data
+				UpdateCopy.Data() = storageType{ updateFunction((Arg)OldCopy.Data()) };
+
+				// prepare the swap target(s)
+				for (index = 0; index < NumWords; index++) {
+					desc.AddMwCASTarget(&Word(index), OldCopy.Word(index), UpdateCopy.Word(index));
+				}
+
+				// try multi-word compare and swap
+				if (desc.MwCAS()) break;
+			}
+			return OldCopy.load();
+		}; // returns the previous value while incrementing the actual counter
+
+	public: // std::atomic compatability
+		Arg fetch_add(Arg const& v) {
+			return Add(v);
+		}; // returns the previous value while incrementing the actual counter
+		Arg fetch_sub(Arg const& v) {
+			return Add(-v);
+		}; // returns the previous value while decrementing the actual counter
+		Arg exchange(Arg const& v) {
+			return Swap(v);
+		}; // returns the previous value while setting the value to the input
+		Arg load() const {
+			const CAS_Container<Arg> x = Copy();
+			return (Arg)x.Data();
+		}; // gets the value
+		void store(Arg const& v) {
+			Swap(v);
+			return;
+		}; // sets the value to the input
+
+	};
+
+
+
+
+
+
+
+
+};
+

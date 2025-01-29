@@ -420,9 +420,6 @@ namespace fibers {
 			auto end() const { return Iterator(&functor, max, min, step); };
 		};
 
-
-
-
 		template<typename... Args> class Union {
 		private:
 #pragma region IMPLIMENTATION DETAILS
