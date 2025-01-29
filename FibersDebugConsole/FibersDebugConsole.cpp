@@ -162,8 +162,12 @@ int main() {
 
 	print(Units::foot{ 5 }.pow(0.25)); // 1.111082 m^0.25
 
+	auto rate = Units::gallon{ 5 } / Units::minute{ 1 };
+	auto volume = rate * Units::year{ 1 };
 
-
+	print(rate);
+	print(volume);
+	print(Units::million_gallon{ volume });
 
 
 #if 0

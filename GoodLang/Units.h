@@ -347,9 +347,9 @@ namespace GoodLang {
 
 		public: // pow and sqrt Operators
 			// atomicly updates the value with a custom user-provided function.
-			value& update(std::function<double(double)> updateFunction);
+			value& update(std::function<double(double)> const& updateFunction);
 			// Creats a copy of the value and updates it with a custom user-provided function.
-			value update(std::function<double(double)> updateFunction) const;
+			value update(std::function<double(double)> const& updateFunction) const;
 			// Returns a new value multiplied by itself "V" times. (e.g. (3_m).pow(3) => 3_cu_m)
 			value pow(value const& V) const;
 			// atomicly updates the value by exponentiating the underlying value (e.g. (3_m).pow_value(3) => 9_m)

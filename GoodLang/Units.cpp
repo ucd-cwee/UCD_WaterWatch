@@ -912,14 +912,14 @@ namespace GoodLang {
 				});
 			return *this;
 		};
-		value& value::update(std::function<double(double)> updateFunction) {
+		value& value::update(std::function<double(double)> const& updateFunction) {
 			unit_m.Update([&updateFunction](UnitDefinition Data)->UnitDefinition {
 				Data.value_m = updateFunction(Data.value_m / Data.ratio_m) * Data.ratio_m;
 				return Data;
 				});
 			return *this;
 		};
-		value value::update(std::function<double(double)> updateFunction) const {
+		value value::update(std::function<double(double)> const& updateFunction) const {
 			auto out{ value(*this) };
 			out.update(updateFunction);
 			return out;
