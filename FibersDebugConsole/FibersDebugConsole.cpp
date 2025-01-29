@@ -68,8 +68,10 @@
 //
 //static bool Thing() { return true; };
 //
+
+
+// *
 #define SINGLE_ARG(...) __VA_ARGS__
-// #define EXPECT_EQ(a,b) [&]()->bool{ if ((a) == (b)) { return true; } else { std::cout << GoodLang::printf("FAILURE AT LINE %i\n", (int)__LINE__); return false; } }()
 #define EXPECT_EQ_PRINTF(A,B) [a = (A), b = (B)]()->bool{ \
     if (a == b) { return true; } else { \
         std::string tempA{std::to_string(a)}, tempB{std::to_string(b)}; \
@@ -127,11 +129,41 @@ int main() {
 	def.IsSI();
 	print(def.HashCategory());
 
-
 	Units::scalar S;
 	S += 10;
 	S /= 5;
+	S = S + Units::scalar{ 55 };
 	print(S);
+
+	auto length = Units::foot{ 1 } + Units::meter{ 1 };
+	print(length);
+
+
+	auto length2 = Units::meter{ 1 } + Units::petameter{ 1 };
+	print(length2);
+
+
+	auto length3 = Units::meter{ 1 } + Units::femtometer{ 10000 };
+	print(length3);
+
+	print(Units::foot{ 5 }); // 5 ft
+
+	print(Units::foot{ 5 } * Units::foot{ 5 }); // 25 sq_ft
+
+	print(Units::foot{ 5 }.pow(2)); // 25 sq_ft
+
+	print(Units::foot{ 5 }.pow(3)); // 125.000029 cu_ft
+
+	print(Units::foot{ 5 } * Units::foot{ 5 } * Units::foot{ 5 }); // 125.000029 cu_ft
+
+	print(Units::inch{ 5 } * Units::foot{ 5 } * Units::meter{ 5 }); // 109.848622 pk
+
+	print(Units::foot{ 5 }.pow(2).pow(0.5)); // 5 ft
+
+	print(Units::foot{ 5 }.pow(0.25)); // 1.111082 m^0.25
+
+
+
 
 
 #if 0
