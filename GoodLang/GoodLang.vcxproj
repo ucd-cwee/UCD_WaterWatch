@@ -168,6 +168,7 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="Any.cpp" />
+    <ClCompile Include="DateTime.cpp" />
     <ClCompile Include="GoodLang.cpp" />
     <ClCompile Include="Proxy_Function.cpp" />
     <ClCompile Include="ThreadSafeContainers.cpp" />
@@ -176,6 +177,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Any.h" />
+    <ClInclude Include="DateTime.h" />
     <ClInclude Include="Foundation.h" />
     <ClInclude Include="Proxy_Function.h" />
     <ClInclude Include="ThreadSafeContainers.h" />

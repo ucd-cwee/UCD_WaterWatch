@@ -1136,6 +1136,102 @@ namespace GoodLang {
 
 	};
 
+	/* allows any copiable object to be thread-safe by wrapping it in a locking container. */
+	template <typename Arg> class Lockable {
+	public:
+		class SharedObj {
+		public:
+			Arg& obj;
+			std::scoped_lock< GoodLang::InterlockedLong > locked;
+			SharedObj(Arg& object, GoodLang::InterlockedLong& lock) : obj{ object }, locked{ lock } {};
+			Arg* operator->() { return &obj; };
+			Arg& operator*() { return obj; };
+		};
+		class SharedConstObj {
+		public:
+			const Arg& obj;
+			std::scoped_lock< GoodLang::InterlockedLong > locked;
+			SharedConstObj(const Arg& object, GoodLang::InterlockedLong& lock) : obj{ object }, locked{ lock } {};
+			const Arg* operator->() { return &obj; };
+			const Arg& operator*() { return obj; };
+		};
+
+	private:
+		Arg data;
+		mutable GoodLang::InterlockedLong lock{ 0 };
+
+	public:
+		[[nodiscard]] SharedConstObj Read() const { return SharedConstObj(data, lock); };
+		[[nodiscard]] SharedObj Read() { return SharedObj(data, lock); };
+
+	public:
+		Lockable Copy() const {
+			return Lockable(load());
+		};
+
+	public:
+		operator Arg() const {
+			return load();
+		};
+
+	public:
+		Lockable() : data{ Arg{} } {};
+		Lockable(Arg const& a) : data{ a } {};
+		Lockable(const Lockable& r) : data{ *r.Read() } {};
+		Lockable& operator=(const Lockable& r) {
+			*Read() = *r.Read();
+		};
+		Lockable(Lockable&& r) : data{ *r.Read() } {};
+		Lockable& operator=(Lockable&& r) {
+			*Read() = *r.Read();
+		};
+		~Lockable() = default;
+
+		template <typename T> bool operator==(T b) const {
+			return *Read() == b;
+		};
+		template <typename T> bool operator!=(T b) const {
+			return !operator==(b);
+		};
+
+	public:
+		bool CompareSwap(Arg const& compare, Arg const& input) {
+			auto x = Read();
+			if (*x == compare) {
+				*x = input;
+				return true;
+			}
+			else {
+				return false;
+			}
+		}; // returns the previous value while changing the underlying value
+		Arg Swap(Arg const& input) {
+			auto x = Read();
+			Arg out = *x;
+			*x = input;
+			return out;
+		}; // returns the previous value while changing the underlying value
+		template <typename F> // std::function<Arg(Arg)>
+		Arg Update(F const& updateFunction) {
+			auto x = Read();
+			Arg out;
+			*x = updateFunction(out = *x);
+			return out;
+		}; // returns the previous value while incrementing the actual counter
+
+	public: // std::atomic compatability
+		Arg exchange(Arg const& v) {
+			return Swap(v);
+		}; // returns the previous value while setting the value to the input
+		Arg load() const {
+			return *Read();
+		}; // gets the value
+		void store(Arg const& v) {
+			Swap(v);
+			return;
+		}; // sets the value to the input
+	};
+
 	// constexpr wrapper that guarrantees the underlying storage data maintains a '0' in the final bit, which is necessary for CAS atomic operations.
 	class DoubleWrapper {
 	public:
@@ -1208,7 +1304,7 @@ namespace GoodLang {
 		Arg Swap(Arg const& input);
 		Arg Add(Arg const& input);
 		// Function must be of the type: Update([](Arg x)->Arg{ return x; });
-		template <typename Func> Arg Update(Func updateFunction) {
+		template <typename Func> Arg Update(Func const& updateFunction) {
 			auto out{ load() };
 			pack(updateFunction(out));
 			return out;
@@ -1578,7 +1674,8 @@ namespace GoodLang {
 			}
 			return OldCopy.load();
 		}; // returns the previous value while incrementing the actual counter
-		Arg Update(std::function<Arg(Arg)> const& updateFunction) {
+		template <typename F> // std::function<Arg(Arg)>
+		Arg Update(F const& updateFunction) {
 			using utilities::dbgroup::atomic::mwcas::MwCASDescriptor;
 
 			CAS_Container<Arg> OldCopy, UpdateCopy;

@@ -588,7 +588,7 @@ namespace GoodLang {
 			std::string_view toReturn{ "" };
 			unit_m.Update([&toReturn, this](UnitDefinition Data)->UnitDefinition {
 				auto [abbreviation, ratio] = Data.LookupAbbreviation(this->IsStaticType());
-				//Data.abbreviation_m = const_cast<char*>(abbreviation);
+
 				Data.ratio_m = ratio;
 
 				toReturn = Data.LookupTypeName();
@@ -601,7 +601,7 @@ namespace GoodLang {
 			unit_m.store(UnitDefinition{});
 		};
 		void value::Swap(value const& other) const {
-			unit_m.Swap(other.unit_m.load(), false);
+			unit_m.Swap(other.unit_m.load());
 		};
 		std::string value::Abbreviation(double* visibleValue) const noexcept {
 			bool isStatic{ IsStaticType() };
@@ -743,45 +743,31 @@ namespace GoodLang {
 			unit_m.Update([](UnitDefinition Data)->UnitDefinition {
 				Data.value_m += (double)Data.ratio_m;
 				return Data;
-				});
+			});
 			return *this;
 		};
 		value& value::operator--() {
 			unit_m.Update([](UnitDefinition Data)->UnitDefinition {
 				Data.value_m -= (double)Data.ratio_m;
 				return Data;
-				});
+			});
 			return *this;
 		};
 		value value::operator++(int) {
 			auto a_struct = unit_m.load();
 			return value(UnitDefinition(
 				a_struct.unitType_m,
-				a_struct.ratio_m.load(),
-				a_struct.value_m.load() + a_struct.ratio_m.load()
+				a_struct.ratio_m,
+				a_struct.value_m + a_struct.ratio_m
 			));
-
-			//value out = *this; 
-			//unit_m.Update([](UnitDefinition Data)->UnitDefinition {
-			//	Data.value_m += (double)Data.ratio_m;
-			//	return Data;
-			//});
-			//return out;
 		};
 		value value::operator--(int) {
 			auto a_struct = unit_m.load();
 			return value(UnitDefinition(
 				a_struct.unitType_m,
-				a_struct.ratio_m.load(),
-				a_struct.value_m.load() - a_struct.ratio_m.load()
+				a_struct.ratio_m,
+				a_struct.value_m - a_struct.ratio_m
 			));
-
-			//value out = *this; 
-			//unit_m.Update([](UnitDefinition Data)->UnitDefinition {
-			//	Data.value_m -= (double)Data.ratio_m;
-			//	return Data;
-			//});
-			//return out; 
 		};
 		value Add(value const& a, value const& b) {
 			auto a_struct = a.unit_m.load();
@@ -790,22 +776,22 @@ namespace GoodLang {
 			if (a_struct.IsSameCategory(b_struct)) { // same category, but perhaps different conversion factor. That's OK. 
 				return value(UnitDefinition(
 					a_struct.unitType_m,
-					a_struct.ratio_m.load(),
-					a_struct.value_m.load() + b_struct.value_m.load()
+					a_struct.ratio_m,
+					a_struct.value_m + b_struct.value_m
 				));
 			}
 			else if (is_scalar(b_struct)) { // incoming is a scaler and this unit is not. Use this unit's conversion factor.
 				return value(UnitDefinition(
 					a_struct.unitType_m,
-					a_struct.ratio_m.load(),
-					a_struct.value_m.load() + ((b_struct.value_m.load() / b_struct.ratio_m.load()) * a_struct.ratio_m.load())
+					a_struct.ratio_m,
+					a_struct.value_m + ((b_struct.value_m / b_struct.ratio_m) * a_struct.ratio_m)
 				));
 			}
 			else if (is_scalar(a_struct)) { // I am a scaler but the incoming unit is not. Simply copy the incoming unit entirely.
 				return value(UnitDefinition(
 					b_struct.unitType_m,
-					b_struct.ratio_m.load(),
-					b_struct.value_m.load() + ((a_struct.value_m.load() / a_struct.ratio_m.load()) * b_struct.ratio_m.load())
+					b_struct.ratio_m,
+					b_struct.value_m + ((a_struct.value_m / a_struct.ratio_m) * b_struct.ratio_m)
 				));
 			}
 			else { // incoming unit AND this unit are different non-scalers of different categories. No exchange is reasonable. 
@@ -819,22 +805,22 @@ namespace GoodLang {
 			if (a_struct.IsSameCategory(b_struct)) { // same category, but perhaps different conversion factor. That's OK. 
 				return value(UnitDefinition(
 					a_struct.unitType_m,
-					a_struct.ratio_m.load(),
-					a_struct.value_m.load() - b_struct.value_m.load()
+					a_struct.ratio_m,
+					a_struct.value_m - b_struct.value_m
 				));
 			}
 			else if (is_scalar(b_struct)) { // incoming is a scaler and this unit is not. Use this unit's conversion factor.
 				return value(UnitDefinition(
 					a_struct.unitType_m,
-					a_struct.ratio_m.load(),
-					a_struct.value_m.load() - ((b_struct.value_m.load() / b_struct.ratio_m.load()) * a_struct.ratio_m.load())
+					a_struct.ratio_m,
+					a_struct.value_m - ((b_struct.value_m / b_struct.ratio_m) * a_struct.ratio_m)
 				));
 			}
 			else if (is_scalar(a_struct)) { // I am a scaler but the incoming unit is not. Simply copy the incoming unit entirely.
 				return value(UnitDefinition(
 					b_struct.unitType_m,
-					b_struct.ratio_m.load(),
-					b_struct.value_m.load() - ((a_struct.value_m.load() / a_struct.ratio_m.load()) * b_struct.ratio_m.load())
+					b_struct.ratio_m,
+					b_struct.value_m - ((a_struct.value_m / a_struct.ratio_m) * b_struct.ratio_m)
 				));
 			}
 			else { // incoming unit AND this unit are different non-scalers of different categories. No exchange is reasonable. 
@@ -843,13 +829,15 @@ namespace GoodLang {
 		};
 
 		/* Used for multiplication or division operations */
-		template <bool multiplication = true> static void CompoundUnits(value& This, value const& other) noexcept {
+		void CompoundUnits(value& This, value const& other, bool multiplication = true) noexcept {
 			UnitDefinition V{ other.unit_m.load() };
-			This.unit_m.Update([&V](UnitDefinition Data)->UnitDefinition {
-				bool V_Is_Scalar{ V.IsScalar() }, I_am_Scalar{ Data.IsScalar() };
+			This.unit_m.Update([&V, multiplication](UnitDefinition Data)->UnitDefinition {
+				bool 
+					V_Is_Scalar{ V.IsScalar() }, 
+					I_am_Scalar{ Data.IsScalar() };
 
 				if (V_Is_Scalar) {
-					if constexpr (multiplication) {
+					if (multiplication) {
 						Data.value_m *= V.value_m;
 					}
 					else {
@@ -858,25 +846,18 @@ namespace GoodLang {
 					return Data; // do nothing
 				}
 
-				// remove the abbreviation since we either don't know what we are or we will become empty anyhow.
-				// Data.abbreviation_m = const_cast<char*>("");
-
 				// V is not a scaler, but I could become one.
-				//bool allZero = true;
-				for (int i = Data.unitType_m.size() - 1; i >= 0; i--) {
-					if constexpr (multiplication) {
-						Data.unitType_m[i] += V.unitType_m[i];
-					}
-					else {
-						Data.unitType_m[i] -= V.unitType_m[i];
-					}
-					//allZero = allZero && Data.unitType_m[i] == 0;
+				if (multiplication) {
+					for (int i = Data.unitType_m.size() - 1; i >= 0; i--)
+						Data.unitType_m[i] += V.unitType_m[i];					
 				}
-				//if (allZero) { Data.IsScalar() = true; }
-				//else { Data.IsScalar() = false; }
+				else {
+					for (int i = Data.unitType_m.size() - 1; i >= 0; i--) 
+						Data.unitType_m[i] -= V.unitType_m[i];					
+				}
 
 				// now that we have modified the unit type (length, time, etc.), the conversion ratio makes no sense anymore (e.g. within length, is it a foot, meter, yard, etc.)
-				if constexpr (multiplication) {
+				if (multiplication) {
 					Data.ratio_m *= V.ratio_m;
 				}
 				else {
@@ -888,26 +869,25 @@ namespace GoodLang {
 					Data.ratio_m = 1;
 				}
 
-				{
-					if constexpr (multiplication) {
-						Data.value_m *= V.value_m;
-					}
-					else {
-						Data.value_m /= V.value_m;
-					}
-					return Data;
+				if (multiplication) {
+					Data.value_m *= V.value_m;
 				}
-				});
+				else {
+					Data.value_m /= V.value_m;
+				}
+				
+				return Data;
+			});
 		};
 
 		value Multiply(value const& A, value const& V) {
 			value out = A;
-			CompoundUnits<true>(out, V);
+			CompoundUnits(out, V, true);
 			return out;
 		};
 		value Divide(value const& A, value const& V) {
 			value out = A;
-			CompoundUnits<false>(out, V);
+			CompoundUnits(out, V, false);
 			return out;
 		};
 		value value::operator-() const { return -1.0 * (*this); };
@@ -958,7 +938,7 @@ namespace GoodLang {
 		value& value::operator*=(value const& V) {
 			auto other{ V.unit_m.load() };
 			HandleNotScalar(other);
-			unit_m.Update([other](UnitDefinition Data)->UnitDefinition {
+			unit_m.Update([&other](UnitDefinition Data)->UnitDefinition {
 				Data.value_m *= other.value_m;
 				return Data;
 				});
@@ -967,7 +947,7 @@ namespace GoodLang {
 		value& value::operator/=(value const& V) {
 			auto other{ V.unit_m.load() };
 			HandleNotScalar(other);
-			unit_m.Update([other](UnitDefinition Data)->UnitDefinition {
+			unit_m.Update([&other](UnitDefinition Data)->UnitDefinition {
 				Data.value_m /= other.value_m;
 				return Data;
 				});
@@ -977,7 +957,7 @@ namespace GoodLang {
 			unit_m.Update([&updateFunction](UnitDefinition Data)->UnitDefinition {
 				Data.value_m = updateFunction(Data.value_m / Data.ratio_m) * Data.ratio_m;
 				return Data;
-				});
+			});
 			return *this;
 		};
 		value value::update(std::function<double(double)> const& updateFunction) const {
@@ -998,7 +978,7 @@ namespace GoodLang {
 		value& value::pow_value(value const& V) {
 			auto other{ V.unit_m.load() };
 			HandleNotScalar(other);
-			unit_m.Update([other](UnitDefinition Data)->UnitDefinition {
+			unit_m.Update([&other](UnitDefinition Data)->UnitDefinition {
 				Data.value_m = std::pow(Data.value_m / Data.ratio_m, other.value_m / other.ratio_m) * Data.ratio_m;
 				return Data;
 			});

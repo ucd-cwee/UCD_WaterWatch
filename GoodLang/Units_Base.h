@@ -14,9 +14,9 @@ namespace GoodLang {
 			template <typename T> static constexpr T abs(T x) { return x > (T)0 ? x : -x; };
 
 		public:
-			std::array< DoubleWrapper, NumUnits> unitType_m; // power exponents for the SI units (e.g. m^1 * kg^0 * s^-1 * A^0 * $^0 = m/s)
-			DoubleWrapper ratio_m; // ratio multiplier for converting from the SI units to this actual unit (e.g. 1 = meters, 0.304 = feet, etc.) 
-			DoubleWrapper value_m; // underlying value of the unit if represented as SI units. (e.g. will always be in meters, regardless of the actual unit being in feet)
+			std::array< double, NumUnits> unitType_m; // power exponents for the SI units (e.g. m^1 * kg^0 * s^-1 * A^0 * $^0 = m/s)
+			double ratio_m; // ratio multiplier for converting from the SI units to this actual unit (e.g. 1 = meters, 0.304 = feet, etc.) 
+			double value_m; // underlying value of the unit if represented as SI units. (e.g. will always be in meters, regardless of the actual unit being in feet)
 
 			bool IsSI() const;
 			bool IsScalar() const;
@@ -37,7 +37,7 @@ namespace GoodLang {
 				ratio_m{ ratio_p },
 				value_m{ value_p * ratio_p }
 			{};
-			UnitDefinition(std::array< DoubleWrapper, NumUnits> const& unitType_p, double ratio_p, double value_p) noexcept :
+			UnitDefinition(std::array< double, NumUnits> const& unitType_p, double ratio_p, double value_p) noexcept :
 				unitType_m{ unitType_p },
 				ratio_m{ ratio_p },
 				value_m{ value_p }
@@ -57,7 +57,7 @@ namespace GoodLang {
 			std::string CreateAbbreviation(bool isStatic) const noexcept;
 
 		};
-
+		
 		static __forceinline size_t HashUnits(double a, double b, double c, double d, double e) noexcept {
 			size_t out{ 37 };
 			GoodLang::details::hash_combine(out, a, b, c, d, e);
@@ -69,7 +69,7 @@ namespace GoodLang {
 
 		class value {
 		public:
-			mutable CAS_Container<UnitDefinition> unit_m;
+			mutable Lockable<UnitDefinition> unit_m;
 
 		public: // constructors
 			value() : unit_m{ UnitDefinition{} } {};

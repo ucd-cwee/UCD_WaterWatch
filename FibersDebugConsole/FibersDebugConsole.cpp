@@ -6,6 +6,7 @@
 #include "../GoodLang/Proxy_Function.h"
 #include "../GoodLang/ThreadSafeContainers.h"
 #include "../GoodLang/Units.h"
+#include "../GoodLang/DateTime.h"
 
 //#include "../FiberTasks/Fibers.h"
 //#include "../FiberTasks/UnitsLibrary.h"
@@ -164,7 +165,8 @@ int main() {
 	auto rate = Units::gallon{ 5 } / Units::minute{ 1 };
 	auto volume = rate * Units::year{ 1 };
 
-	print(rate);
+	print(rate); // Units::gallon{ 5 } / Units::minute{ 1 }
+	print(Units::gallon_per_minute{ 5 }); // identical to the manual type-calculation
 	print(volume);
 	print(Units::million_gallon{ volume });
 
@@ -203,16 +205,22 @@ int main() {
 		auto vStr = velocity.ToString();
 		print(GoodLang::printf("pos = %s \t t = %s \t v = %s;", posStr.c_str(), tStr.c_str(), vStr.c_str()));
 		
-		// I am guessing that when the velocity value becomes 0, the negative sign does not always successfully flip, causing a major bug. :(
 		pos += velocity * timeStep;
 	}
 
-	print((Units::constants::g() * 12_m / 2).sqrt()); // should be 7.67 mps
-	print((0_mps * 32.8_s) + (0.5 * 3.2_mps_sq * (32.8_s).pow(2))); // should be 1720 m
-	print((65_mps).pow(2) / (2 * 3_mps_sq)); // should be 704 m
-
+	print((Units::constants::g() * 12_m / 2).sqrt()); // should be ~ 7.67 mps
+	print((0_mps * 32.8_s) + (0.5 * 3.2_mps_sq * (32.8_s).pow(2))); // should be ~ 1720 m
+	print((65_mps).pow(2) / (2 * 3_mps_sq)); // should be ~ 704 m
 
 	(void)Units::value::GetValueTypes();
+
+
+	print(DateTime::Now());
+	print(DateTime::Now() + 30_d);
+	print(DateTime::Now() + 365_yr);
+
+
+
 
 #if 0
 	fibers::utilities::Computer_Usage usage_start;

@@ -36,6 +36,9 @@
     <ClCompile Include="Units_Instances.cpp">
       <Filter>Units</Filter>
     </ClCompile>
+    <ClCompile Include="DateTime.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Any.h">
@@ -61,6 +64,9 @@
     </ClInclude>
     <ClInclude Include="Units_Literals.h">
       <Filter>Units</Filter>
+    </ClInclude>
+    <ClInclude Include="DateTime.h">
+      <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
 </Project>

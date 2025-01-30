@@ -1,6 +1,7 @@
 #pragma once
 #include "ThreadSafeContainers.h"
 #include <ShlDisp.h> // InterlockedExchangePointer
+#include <iostream>
 
 namespace GoodLang {
 	// atomic_ptr
@@ -45,16 +46,16 @@ namespace GoodLang {
 		return (val >= (Arg)0 ? fval_int : (val == fval_int ? val : fval_int - (Arg)1));
 	};
 	uint64_t DoubleWrapper::pack_fast(double value) {
-		if (value == 0) return 0;
+		if ((value + 0.0) == 0) return 0;
 		struct tempContainer { short value : 10; };
-		uint64_t toReturn = (*reinterpret_cast<uint64_t*>(&value) << (64 - (DBL_MANT_DIG - 1))) >> (64 - (DBL_MANT_DIG - 1));
+		uint64_t toReturn = ((*(uint64_t*)(void*)(double*)(&value)) << (64 - (DBL_MANT_DIG - 1))) >> (64 - (DBL_MANT_DIG - 1));
 		uint64_t exponent_literal{ *(uint64_t*)(void*)(double*)(&value) >> (DBL_MANT_DIG - 1) };
-		auto exponent_signed{ tempContainer{ static_cast<short>(static_cast<long long>(exponent_literal) - 1023ll) } };
+		tempContainer exponent_signed{ static_cast<short>(static_cast<long long>(exponent_literal) - 1023ll) };
 		exponent_signed.value += 50;
 		return (toReturn | ((*(uint64_t*)(void*)(tempContainer*)(&exponent_signed)) << (DBL_MANT_DIG - 1))) | (((*(uint64_t*)(void*)(double*)(&value)) >> 63) << 62);
 	};
 	double DoubleWrapper::unpack_fast(uint64_t value) {
-		if (value == 0) return 0;
+		if ((value + 0.0) == 0) return 0;
 		uint64_t toReturn{ (value << (64 - (DBL_MANT_DIG - 1))) >> (64 - (DBL_MANT_DIG - 1)) };
 		uint64_t exponent_signed{ ((*(uint64_t*)(void*)&value) << 2) >> (DBL_MANT_DIG + 1) };
 		uint64_t exponent_literal{ static_cast<uint64_t>(static_cast<long long>(exponent_signed) - 50ll + 1023ll) };
@@ -65,10 +66,10 @@ namespace GoodLang {
 		return unpack_fast(source);
 	};
 	uint64_t DoubleWrapper::pack_impl(double value) {
-		return pack_fast(value);
+		return pack_fast(std::move(value));
 	};
 	void DoubleWrapper::pack(double a) {
-		representation = pack_impl(a);
+		representation = pack_impl(std::move(a));
 	};
 	DoubleWrapper::Arg DoubleWrapper::unpack() const {
 		return unpack_impl(representation);
@@ -98,19 +99,19 @@ namespace GoodLang {
 	DoubleWrapper DoubleWrapper::operator--(int) { return operator--() + 1; };
 	DoubleWrapper DoubleWrapper::operator++(int) { return operator++() - 1; };
 	DoubleWrapper& DoubleWrapper::operator+=(const DoubleWrapper& i) {
-		Update([&i](Arg x)->Arg { return x + i.load(); });
+		pack(this->load() + i.load());
 		return *this;
 	};
 	DoubleWrapper& DoubleWrapper::operator-=(const DoubleWrapper& i) {
-		Update([&i](Arg x)->Arg { return x - i.load(); });
+		pack(this->load() - i.load());
 		return *this;
 	};
 	DoubleWrapper& DoubleWrapper::operator/=(const DoubleWrapper& i) {
-		Update([&i](Arg x)->Arg { return x / i.load(); });
+		pack(this->load() / i.load());
 		return *this;
 	};
 	DoubleWrapper& DoubleWrapper::operator*=(const DoubleWrapper& i) {
-		Update([&i](Arg x)->Arg { return x * i.load(); });
+		pack(this->load() * i.load());
 		return *this;
 	};
 	bool DoubleWrapper::operator<=(DoubleWrapper& b) { auto x{ load() }; auto y{ b.load() }; return x <= y; };
