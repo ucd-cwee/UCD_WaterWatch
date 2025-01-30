@@ -218,8 +218,8 @@ int main() {
 	print(DateTime::Now());
 	print(DateTime::Now() + 30_d);
 	print(DateTime::Now() + 365_yr);
-
-
+	print(DateTime(2014, 1, 1));
+	print((Units::second)(DateTime::Now() - DateTime(2014, 1, 1)));
 
 
 #if 0

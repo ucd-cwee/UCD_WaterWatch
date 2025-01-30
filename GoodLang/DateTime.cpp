@@ -28,8 +28,12 @@ namespace GoodLang {
 	};
 
 	// DateTime::DateTime(const boost::posix_time::ptime& t) : time{ FromPTime(t) } {};
-	DateTime::DateTime() : time{ FromPTime(Shared_Epoch_posixTime()) } {};
-	DateTime::DateTime(std::string const& t) : time{ FromPTime(Shared_Epoch_posixTime()) } { this->FromString(t); };
+	DateTime::DateTime() 
+		: time{ FromPTime(Shared_Epoch_posixTime()) } {};
+	DateTime::DateTime(std::string const& t) 
+		: time{ FromPTime(Shared_Epoch_posixTime()) } { this->FromString(t); };
+	DateTime::DateTime(int year, int month, int day, int hour, int minute, float second, bool useLocalTime) 
+		: time{ FromPTime(Shared_Epoch_posixTime()) } { this->FromString(GoodLang::printf("%i/%i/%i %i:%i:%f", year, month, day, hour, minute, second)); };
 
 	Units::day& DateTime::Add(const Units::day& v) { time += v; return time; }; // atomically adds a value and returns the new value
 	Units::day& DateTime::Sub(const Units::day & v) { time -= v; return time; }; // atomically subtracts a value and returns the new value

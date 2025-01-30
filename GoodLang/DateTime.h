@@ -13,6 +13,7 @@ namespace GoodLang {
 
 	public:
 		DateTime();
+		DateTime(int year, int month, int day, int hour = 0, int minute = 0, float second = 0, bool useLocalTime = true);
 		DateTime(Units::second const& a) : time{ a } {};
 		DateTime(Units::second&& a) : time{ a } {};
 		DateTime(const DateTime& other) = default;
