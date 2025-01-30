@@ -179,9 +179,6 @@ int main() {
 	Units::mile h = 200_acre / 1.25_mi;
 	print(h);
 
-	// Units::constants::g;
-
-
 	Units::meters_per_second V0 = -12.0_mps;
 	Units::meter X0 = 4.6_m;
 	auto accelerationFormula = [](Units::second t) -> Units::meters_per_second_squared {
@@ -194,10 +191,6 @@ int main() {
 		Units::meters_per_second_squared b = 2.4_mps_sq;
 		return (0.5 * a * t * t) + (b * t) + V0;
 	};
-
-
-
-
 
 	Units::meter pos = X0;
 	Units::meters_per_second velocity = V0;
@@ -214,7 +207,10 @@ int main() {
 		pos += velocity * timeStep;
 	}
 
-	print((Units::constants::g() * 12_m / 2).sqrt());
+	print((Units::constants::g() * 12_m / 2).sqrt()); // should be 7.67 mps
+	print((0_mps * 32.8_s) + (0.5 * 3.2_mps_sq * (32.8_s).pow(2))); // should be 1720 m
+	print((65_mps).pow(2) / (2 * 3_mps_sq)); // should be 704 m
+
 
 	(void)Units::value::GetValueTypes();
 
