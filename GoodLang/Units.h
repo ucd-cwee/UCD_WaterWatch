@@ -164,21 +164,6 @@ namespace GoodLang {
 		protected:
 			virtual bool IsStaticType() const;
 
-		private:
-			double GetVisibleValue() const noexcept;
-
-			static std::string GetValueStr(value const& V) noexcept;
-
-			static bool IdenticalUnits(UnitDefinition const& LHS, UnitDefinition const& RHS) noexcept;
-			static bool is_scalar(UnitDefinition const& V) noexcept;
-
-			static bool NormalArithmeticOkay(UnitDefinition const& LHS, UnitDefinition const& RHS) noexcept;
-			static bool UnaryArithmeticOkay(UnitDefinition const& LHS, UnitDefinition const& RHS) noexcept;
-			static void HandleNormalArithmetic(UnitDefinition const& LHS, UnitDefinition const& RHS);
-			static void HandleUnaryArithmetic(UnitDefinition const& LHS, UnitDefinition const& RHS);
-			static void HandleNotScalar(UnitDefinition const& V);
-			static std::string AbbreviationFast(UnitDefinition const& V) noexcept;
-
 		public: // value operator
 			explicit operator double() const noexcept;
 			double operator()() const noexcept;
@@ -193,70 +178,19 @@ namespace GoodLang {
 			std::string ToString() const;
 
 		public: // Streaming functions (should be specialized per type)
-			friend std::ostream& operator<<(std::ostream& os, value const& obj) { os << obj.ToString(); return os; };
-			friend std::stringstream& operator>>(std::stringstream& os, value& obj) { double v = 0; os >> v; obj = v; return os; };
-
-		private:
-			/* Used for exponential operations */
-			value& MultiplyUnits(double const& V) noexcept;
+			friend std::ostream& operator<<(std::ostream& os, value const& obj);
+			friend std::stringstream& operator>>(std::stringstream& os, value& obj);
 
 		public: // = Operators
 			value& operator=(value const& other);
 
 		public: // Comparison operators
-			friend bool operator==(value const& A, value const& V)  noexcept {
-				auto Data1{ A.unit_m.load() };
-				auto Data2{ V.unit_m.load() };
-
-				if (!NormalArithmeticOkay(Data1, Data2)) return false;
-
-				if (is_scalar(Data1) == is_scalar(Data2)) {
-					return Data1.value_m == Data2.value_m;
-				}
-				else if (is_scalar(Data2)) {
-					value W = A; W = V; return Data1.value_m == W.unit_m.load().value_m;
-				}
-				else {
-					value W = V; W = A; return W.unit_m.load().value_m == Data2.value_m;
-				}
-			};
-			friend bool operator<(value const& A, value const& V) {
-				auto Data1{ A.unit_m.load() };
-				auto Data2{ V.unit_m.load() };
-
-				HandleNormalArithmetic(Data1, Data2);
-				if (is_scalar(Data2) == is_scalar(Data1)) {
-					return Data1.value_m < Data2.value_m;
-				}
-				else if (is_scalar(Data2)) {
-					value W = A; W = V;
-					return Data1.value_m < W.unit_m.load().value_m;
-				}
-				else {
-					value W = V; W = A;
-					return W.unit_m.load().value_m < Data2.value_m;
-				}
-			};
-			friend bool operator<=(value const& A, value const& V) {
-				auto Data1{ A.unit_m.load() };
-				auto Data2{ V.unit_m.load() };
-
-				HandleNormalArithmetic(Data1, Data2);
-				if (is_scalar(Data2) == is_scalar(Data1)) {
-					return Data1.value_m <= Data2.value_m;
-				}
-				else if (is_scalar(Data2)) {
-					value W = A; W = V;
-					return Data1.value_m <= W.unit_m.load().value_m;
-				}
-				else {
-					value W = V; W = A;
-					return W.unit_m.load().value_m <= Data2.value_m;
-				}
-			};
-			friend bool operator>(value const& A, value const& V) { return !(A <= V); };;
-			friend bool operator>=(value const& A, value const& V) { return !(A < V); };;
-			friend bool operator!=(value const& A, value const& V) noexcept { return !(operator==(A, V)); };;
+			friend bool operator==(value const& A, value const& V) noexcept;
+			friend bool operator<(value const& A, value const& V);
+			friend bool operator<=(value const& A, value const& V);
+			friend bool operator>(value const& A, value const& V);
+			friend bool operator>=(value const& A, value const& V);
+			friend bool operator!=(value const& A, value const& V) noexcept;
 
 		public: // Unary operators
 			value& operator++();
@@ -264,23 +198,17 @@ namespace GoodLang {
 			value operator++(int);
 			value operator--(int);
 
-		private:
-			static value Add(value const& a, value const& b);
-			static value Sub(value const& a, value const& b);
-			static value Multiply(value const& A, value const& V);
-			static value Divide(value const& A, value const& V);
-
 		public: // + and - Operators
 			value operator-() const;
 
-			friend value operator+(value const& A, value const& V) { return Add(A, V); };
-			friend value operator-(value const& A, value const& V) { return Sub(A, V); };
+			friend value operator+(value const& A, value const& V);
+			friend value operator-(value const& A, value const& V);
 			value& operator+=(value const& V);
 			value& operator-=(value const& V);
 
 		public: // * and / Operators
-			friend value operator*(value const& A, value const& V) { return Multiply(A, V); };
-			friend value operator/(value const& A, value const& V) { return Divide(A, V); };
+			friend value operator*(value const& A, value const& V);
+			friend value operator/(value const& A, value const& V);
 			value& operator*=(value const& V);
 			value& operator/=(value const& V);
 

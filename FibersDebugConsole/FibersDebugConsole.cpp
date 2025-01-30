@@ -174,6 +174,7 @@ int main() {
 	print(1234_MG);
 	print(1234_ac_ft);
 
+	(void)(Units::gallon{ 5 } != Units::cubic_foot{ 5 });
 
 #if 0
 	fibers::utilities::Computer_Usage usage_start;

@@ -476,12 +476,12 @@ namespace GoodLang {
 
 		// Value
 		bool value::IsStaticType() const { return false; };
-		double value::GetVisibleValue() const noexcept {
+		double GetVisibleValue(value const& V) noexcept {
 			double out{ 0. };
-			Abbreviation(&out);
+			V.Abbreviation(&out);
 			return out;
 		};
-		std::string value::GetValueStr(value const& V) noexcept {
+		std::string GetValueStr(value const& V) noexcept {
 			auto v = V();
 			if (std::fmod(v, 1.0) == 0.0) { // integer
 				return std::to_string((long long)v);
@@ -494,31 +494,19 @@ namespace GoodLang {
 				return out;
 			}
 		};
-		bool value::IdenticalUnits(UnitDefinition const& LHS, UnitDefinition const& RHS) noexcept { return LHS.IsSameCategory(RHS); };
-		bool value::is_scalar(UnitDefinition const& V) noexcept { return V.IsScalar(); };
-		bool value::NormalArithmeticOkay(UnitDefinition const& LHS, UnitDefinition const& RHS) noexcept {
+		bool IdenticalUnits(UnitDefinition const& LHS, UnitDefinition const& RHS) noexcept { return LHS.IsSameCategory(RHS); };
+		bool is_scalar(UnitDefinition const& V) noexcept { return V.IsScalar(); };
+		bool NormalArithmeticOkay(UnitDefinition const& LHS, UnitDefinition const& RHS) noexcept {
 			if (is_scalar(LHS) || is_scalar(RHS)) return true;
 			if (IdenticalUnits(LHS, RHS)) return true;
 			return false;
 		};
-		bool value::UnaryArithmeticOkay(UnitDefinition const& LHS, UnitDefinition const& RHS) noexcept {
+		bool UnaryArithmeticOkay(UnitDefinition const& LHS, UnitDefinition const& RHS) noexcept {
 			if (is_scalar(RHS)) return true;
 			if (IdenticalUnits(LHS, RHS)) return true;
 			return false;
 		};
-		void value::HandleNormalArithmetic(UnitDefinition const& LHS, UnitDefinition const& RHS) {
-			if (NormalArithmeticOkay(LHS, RHS)) return;
-			throw(std::runtime_error(GoodLang::printf("Normal, dynamic arithmetic failed due to incompatible non-scalar value: '%s' and '%s'", AbbreviationFast(LHS).c_str(), AbbreviationFast(RHS).c_str())));
-		};
-		void value::HandleUnaryArithmetic(UnitDefinition const& LHS, UnitDefinition const& RHS) {
-			if (UnaryArithmeticOkay(LHS, RHS)) return;
-			throw(std::runtime_error(GoodLang::printf("Unary (in-place or self-modifying) arithmetic failed due to incompatible value: '%s' and '%s'", AbbreviationFast(LHS).c_str(), AbbreviationFast(RHS).c_str())));
-		};
-		void value::HandleNotScalar(UnitDefinition const& V) {
-			if (is_scalar(V)) return;
-			throw(std::runtime_error(GoodLang::printf("Type must be scalar (was '%s').", AbbreviationFast(V).c_str())));
-		};
-		std::string value::AbbreviationFast(UnitDefinition const& V) noexcept {
+		std::string AbbreviationFast(UnitDefinition const& V) noexcept {
 			std::string toReturn{ /*V.abbreviation_m*/ };
 
 			if (V.IsScalar() && toReturn.empty()) {
@@ -580,8 +568,21 @@ namespace GoodLang {
 
 			return toReturn;
 		};
-		value::operator double() const noexcept { return GetVisibleValue(); };
-		double value::operator()() const noexcept { return GetVisibleValue(); };
+		void HandleNormalArithmetic(UnitDefinition const& LHS, UnitDefinition const& RHS) {
+			if (NormalArithmeticOkay(LHS, RHS)) return;
+			throw(std::runtime_error(GoodLang::printf("Normal, dynamic arithmetic failed due to incompatible non-scalar value: '%s' and '%s'", AbbreviationFast(LHS).c_str(), AbbreviationFast(RHS).c_str())));
+		};
+		void HandleUnaryArithmetic(UnitDefinition const& LHS, UnitDefinition const& RHS) {
+			if (UnaryArithmeticOkay(LHS, RHS)) return;
+			throw(std::runtime_error(GoodLang::printf("Unary (in-place or self-modifying) arithmetic failed due to incompatible value: '%s' and '%s'", AbbreviationFast(LHS).c_str(), AbbreviationFast(RHS).c_str())));
+		};
+		void HandleNotScalar(UnitDefinition const& V) {
+			if (is_scalar(V)) return;
+			throw(std::runtime_error(GoodLang::printf("Type must be scalar (was '%s').", AbbreviationFast(V).c_str())));
+		};
+		
+		value::operator double() const noexcept { return GetVisibleValue(*this); };
+		double value::operator()() const noexcept { return GetVisibleValue(*this); };
 		std::string_view value::UnitName() const noexcept {
 			std::string_view toReturn{ "" };
 			unit_m.Update([&toReturn, this](UnitDefinition Data)->UnitDefinition {
@@ -691,8 +692,8 @@ namespace GoodLang {
 			if (abbreviation.length() > 0) return GetValueStr(out) + " " + abbreviation;
 			else return GetValueStr(out);
 		};
-		value& value::MultiplyUnits(double const& V) noexcept {
-			unit_m.Update([&V](UnitDefinition Data)->UnitDefinition {
+		value& MultiplyUnits(value& This, double const& V) noexcept {
+			This.unit_m.Update([&V](UnitDefinition Data)->UnitDefinition {
 				if (V == 1.0 || is_scalar(Data)) {
 
 					Data.value_m = std::pow(Data.value_m / Data.ratio_m, V) * Data.ratio_m; // save in SI value
@@ -714,7 +715,7 @@ namespace GoodLang {
 				Data.value_m = std::pow(Data.value_m, V);
 				return Data;
 			});
-			return *this;
+			return This;
 		};
 		value& value::operator=(value const& other) {
 			UnitDefinition V{ other.unit_m.load() };
@@ -781,7 +782,7 @@ namespace GoodLang {
 			//});
 			//return out; 
 		};
-		value value::Add(value const& a, value const& b) {
+		value Add(value const& a, value const& b) {
 			auto a_struct = a.unit_m.load();
 			auto b_struct = b.unit_m.load();
 
@@ -810,7 +811,7 @@ namespace GoodLang {
 				throw(std::runtime_error(GoodLang::printf("Add operation failed due to incompatible non-scalar value: '%s' and '%s'.", a.Abbreviation().c_str(), b.Abbreviation().c_str())));
 			}
 		};
-		value value::Sub(value const& a, value const& b) {
+		value Sub(value const& a, value const& b) {
 			auto a_struct = a.unit_m.load();
 			auto b_struct = b.unit_m.load();
 
@@ -898,12 +899,12 @@ namespace GoodLang {
 				});
 		};
 
-		value value::Multiply(value const& A, value const& V) {
+		value Multiply(value const& A, value const& V) {
 			value out = A;
 			CompoundUnits<true>(out, V);
 			return out;
 		};
-		value value::Divide(value const& A, value const& V) {
+		value Divide(value const& A, value const& V) {
 			value out = A;
 			CompoundUnits<false>(out, V);
 			return out;
@@ -989,7 +990,7 @@ namespace GoodLang {
 			HandleNotScalar(other);
 
 			value out = *this;
-			out.MultiplyUnits(other.value_m);
+			MultiplyUnits(out, other.value_m);
 
 			return out;
 		};
@@ -1021,6 +1022,67 @@ namespace GoodLang {
 			out.ceiling();
 			return out;
 		};
+
+		bool operator==(value const& A, value const& V)  noexcept {
+			auto Data1{ A.unit_m.load() };
+			auto Data2{ V.unit_m.load() };
+
+			if (!NormalArithmeticOkay(Data1, Data2)) return false;
+
+			if (is_scalar(Data1) == is_scalar(Data2)) {
+				return Data1.value_m == Data2.value_m;
+			}
+			else if (is_scalar(Data2)) {
+				value W = A; W = V; return Data1.value_m == W.unit_m.load().value_m;
+			}
+			else {
+				value W = V; W = A; return W.unit_m.load().value_m == Data2.value_m;
+			}
+		};
+		bool operator<(value const& A, value const& V) {
+			auto Data1{ A.unit_m.load() };
+			auto Data2{ V.unit_m.load() };
+
+			HandleNormalArithmetic(Data1, Data2);
+			if (is_scalar(Data2) == is_scalar(Data1)) {
+				return Data1.value_m < Data2.value_m;
+			}
+			else if (is_scalar(Data2)) {
+				value W = A; W = V;
+				return Data1.value_m < W.unit_m.load().value_m;
+			}
+			else {
+				value W = V; W = A;
+				return W.unit_m.load().value_m < Data2.value_m;
+			}
+		};
+		bool operator<=(value const& A, value const& V) {
+			auto Data1{ A.unit_m.load() };
+			auto Data2{ V.unit_m.load() };
+
+			HandleNormalArithmetic(Data1, Data2);
+			if (is_scalar(Data2) == is_scalar(Data1)) {
+				return Data1.value_m <= Data2.value_m;
+			}
+			else if (is_scalar(Data2)) {
+				value W = A; W = V;
+				return Data1.value_m <= W.unit_m.load().value_m;
+			}
+			else {
+				value W = V; W = A;
+				return W.unit_m.load().value_m <= Data2.value_m;
+			}
+		};
+		bool operator>(value const& A, value const& V) { return !(A <= V); };
+		bool operator>=(value const& A, value const& V) { return !(A < V); };
+		bool operator!=(value const& A, value const& V) noexcept { return !(operator==(A, V)); };
+		std::ostream& operator<<(std::ostream& os, value const& obj) { os << obj.ToString(); return os; };
+		std::stringstream& operator>>(std::stringstream& os, value& obj) { double v = 0; os >> v; obj = v; return os; };
+		value operator+(value const& A, value const& V) { return Add(A, V); };
+		value operator-(value const& A, value const& V) { return Sub(A, V); };
+		value operator*(value const& A, value const& V) { return Multiply(A, V); };
+		value operator/(value const& A, value const& V) { return Divide(A, V); };
+
 
 		// DerivedUnits
 
