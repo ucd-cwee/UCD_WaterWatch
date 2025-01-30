@@ -69,7 +69,6 @@
 //static bool Thing() { return true; };
 //
 
-
 // *
 #define SINGLE_ARG(...) __VA_ARGS__
 #define EXPECT_EQ_PRINTF(A,B) [a = (A), b = (B)]()->bool{ \
@@ -175,6 +174,48 @@ int main() {
 	print(1234_ac_ft);
 
 	(void)(Units::gallon{ 5 } != Units::cubic_foot{ 5 });
+	(void)(Units::gallon{ 50 } != Units::cubic_foot{ 50 });
+
+	Units::mile h = 200_acre / 1.25_mi;
+	print(h);
+
+	// Units::constants::g;
+
+
+	Units::meters_per_second V0 = -12.0_mps;
+	Units::meter X0 = 4.6_m;
+	auto accelerationFormula = [](Units::second t) -> Units::meters_per_second_squared {
+		auto a = 0.3_m / (1_s * 1_s * 1_s);
+		Units::meters_per_second_squared b = 2.4_mps_sq;
+		return (a * t) + b;
+	};
+	auto velocityFormula = [](Units::second t, Units::meters_per_second V0) -> Units::meters_per_second {
+		auto a = 0.3_m / (1_s * 1_s * 1_s);
+		Units::meters_per_second_squared b = 2.4_mps_sq;
+		return (0.5 * a * t * t) + (b * t) + V0;
+	};
+
+
+
+
+
+	Units::meter pos = X0;
+	Units::meters_per_second velocity = V0;
+	Units::second timeStep = 0.1_s;
+	for (Units::second t = 0; t < 8_s; t += timeStep) {
+		velocity = velocityFormula(t, V0);
+
+		auto posStr = pos.ToString();
+		auto tStr = t.ToString();
+		auto vStr = velocity.ToString();
+		print(GoodLang::printf("pos = %s \t t = %s \t v = %s;", posStr.c_str(), tStr.c_str(), vStr.c_str()));
+		
+		// I am guessing that when the velocity value becomes 0, the negative sign does not always successfully flip, causing a major bug. :(
+		pos += velocity * timeStep;
+	}
+
+	print((Units::constants::g() * 12_m / 2).sqrt());
+
 
 #if 0
 	fibers::utilities::Computer_Usage usage_start;

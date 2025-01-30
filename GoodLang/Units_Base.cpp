@@ -1,6 +1,7 @@
 #pragma once
 #include "Any.h"
-#include "Units.h"
+#include "Units_Base.h"
+#include "Units_Instances.h"
 #include <map>
 
 namespace GoodLang {
@@ -1083,64 +1084,6 @@ namespace GoodLang {
 		value operator*(value const& A, value const& V) { return Multiply(A, V); };
 		value operator/(value const& A, value const& V) { return Divide(A, V); };
 
-
-		// DerivedUnits
-
-		// math
-		namespace math {
-			Units::value fabs(const Units::value& V) {
-				if (V < 0) return V * -1.0; else return V;
-			};
-			Units::value abs(const Units::value& V) {
-				return fabs(V);
-			};
-			Units::value clamp(const Units::value& V, const Units::value& min, const Units::value& max) {
-				if (V < min) return min;
-				if (V > max) return max;
-				return V;
-			};
-			Units::value floor(const Units::value& f) {
-				return f.floor();
-			};
-			Units::value ceiling(const Units::value& f) {
-				return f.ceiling();
-			};
-			Units::value round(const Units::value& a, float magnitude) {
-				return floor((a / magnitude) + 0.5) * magnitude;
-			};
-			Units::value max(const Units::value& a, const Units::value& b) {
-				return a > b ? a : b;
-			};
-			Units::value min(const Units::value& a, const Units::value& b) {
-				return a < b ? a : b;
-			};
-			void max_ref(Units::value* a, const Units::value& b) {
-				if (b > *a) *a = b;
-
-			};
-			void min_ref(Units::value* a, const Units::value& b) {
-				if (b < *a) *a = b;
-			};
-		};
-
-		// constants
-		namespace constants {
-			Units::scalar					    pi() {
-				return 3.141592653589793238462643383279502884197169399375105820974944;
-			};
-			Units::meters_per_second		    c() {
-				return 299792458.0;
-			};
-			Units::value				        G() {
-				return Units::meter(6.67408e-11) * Units::meter(1) * Units::meter(1) / (Units::kilogram(1) * Units::second(1) * Units::second(1));
-			};
-			Units::value				        g() {
-				return Units::meter(9.8067) / (Units::second(1) * Units::second(1));
-			};
-			Units::value                        d() {
-				return Units::kilogram(998.57) / (Units::meter(1) * Units::meter(1) * Units::meter(1));
-			};
-		};
 
 	};
 };

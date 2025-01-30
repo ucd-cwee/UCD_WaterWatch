@@ -49,7 +49,7 @@
     <ConfigurationType>StaticLibrary</ConfigurationType>
     <UseDebugLibraries>false</UseDebugLibraries>
     <PlatformToolset>v142</PlatformToolset>
-    <WholeProgramOptimization>true</WholeProgramOptimization>
+    <WholeProgramOptimization>false</WholeProgramOptimization>
     <CharacterSet>MultiByte</CharacterSet>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
@@ -154,7 +154,9 @@
       </PrecompiledHeaderFile>
       <LanguageStandard>stdcpp17</LanguageStandard>
       <Optimization>Full</Optimization>
-      <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
+      <FavorSizeOrSpeed>Size</FavorSizeOrSpeed>
+      <EnableFiberSafeOptimizations>true</EnableFiberSafeOptimizations>
+      <AdditionalOptions>/bigobj %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
     <Link>
       <SubSystem>
@@ -169,7 +171,8 @@
     <ClCompile Include="GoodLang.cpp" />
     <ClCompile Include="Proxy_Function.cpp" />
     <ClCompile Include="ThreadSafeContainers.cpp" />
-    <ClCompile Include="Units.cpp" />
+    <ClCompile Include="Units_Base.cpp" />
+    <ClCompile Include="Units_Instances.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Any.h" />
@@ -177,6 +180,9 @@
     <ClInclude Include="Proxy_Function.h" />
     <ClInclude Include="ThreadSafeContainers.h" />
     <ClInclude Include="Units.h" />
+    <ClInclude Include="Units_Base.h" />
+    <ClInclude Include="Units_Literals.h" />
+    <ClInclude Include="Units_Instances.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

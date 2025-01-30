@@ -13,6 +13,9 @@
       <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
       <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
     </Filter>
+    <Filter Include="Units">
+      <UniqueIdentifier>{5352ccac-3626-4de3-8dd2-c103382cf752}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="GoodLang.cpp">
@@ -27,8 +30,11 @@
     <ClCompile Include="ThreadSafeContainers.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="Units.cpp">
-      <Filter>Source Files</Filter>
+    <ClCompile Include="Units_Base.cpp">
+      <Filter>Units</Filter>
+    </ClCompile>
+    <ClCompile Include="Units_Instances.cpp">
+      <Filter>Units</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -45,7 +51,16 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="Units.h">
-      <Filter>Header Files</Filter>
+      <Filter>Units</Filter>
+    </ClInclude>
+    <ClInclude Include="Units_Base.h">
+      <Filter>Units</Filter>
+    </ClInclude>
+    <ClInclude Include="Units_Instances.h">
+      <Filter>Units</Filter>
+    </ClInclude>
+    <ClInclude Include="Units_Literals.h">
+      <Filter>Units</Filter>
     </ClInclude>
   </ItemGroup>
 </Project>
