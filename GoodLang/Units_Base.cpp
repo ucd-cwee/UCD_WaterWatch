@@ -300,7 +300,7 @@ namespace GoodLang {
 			}
 			return out;
 		};
-		std::vector<std::vector<std::tuple<std::string, std::string, Units::value, std::weak_ptr<GoodLang::Type_Info>>>> GetValueTypes() noexcept {
+		std::vector<std::vector<std::tuple<std::string, std::string, Units::value, std::weak_ptr<GoodLang::Type_Info>>>> value::GetValueTypes() noexcept {
 			static double temp{ 0 };
 			static auto temp2{ lookup_impl(0, temp) };
 
@@ -317,8 +317,8 @@ namespace GoodLang {
 
 			auto& [mut, Tag] = Shared_Data();
 
-			using AllocType = GoodLang::utilities::FastAllocator<std::tuple< const char*, const char*, Units::value, std::weak_ptr<GoodLang::Type_Info>>>;
-			using TreeType = std::map<uint64_t, std::tuple< const char*, const char*, Units::value, std::weak_ptr<GoodLang::Type_Info>>*>;
+			using AllocType = GoodLang::utilities::FastAllocator<std::tuple< std::string_view, std::string_view, Units::value, std::weak_ptr<GoodLang::Type_Info>>>;
+			using TreeType = std::map<uint64_t, std::tuple< std::string_view, std::string_view, Units::value, std::weak_ptr<GoodLang::Type_Info>>*>;
 			using ModelType = std::pair< AllocType, std::map<size_t, TreeType>>;
 
 			auto locked{ std::shared_lock(mut) };
@@ -334,15 +334,15 @@ namespace GoodLang {
 					> temp;
 
 					for (auto& each : typeValue.second) {
-						std::string abbrev = std::get<0>(*each.second);
-						std::string fullName = std::get<1>(*each.second);
+						std::string_view abbrev = std::get<0>(*each.second);
+						std::string_view fullName = std::get<1>(*each.second);
 						Units::value& impl = std::get<2>(*each.second);
 						temp.push_back(std::tuple<std::string, std::string, Units::value, std::weak_ptr<GoodLang::Type_Info>>(
 							abbrev,
 							fullName,
 							impl,
 							std::get<3>(*each.second)
-							));
+						));
 					}
 
 					out.push_back(temp);

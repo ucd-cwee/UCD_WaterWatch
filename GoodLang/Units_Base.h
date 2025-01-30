@@ -66,9 +66,6 @@ namespace GoodLang {
 		template <typename Derived> static constexpr __forceinline long double Conversion(long double X) { return Derived::conversion * X; };
 		static constexpr __forceinline long double SQUARED(long double X) { return X * X; };
 		static constexpr __forceinline long double CUBED(long double X) { return X * X * X; };
-		template<typename T, typename U> static auto constexpr pow(T base, U exponent) {
-			return exponent == 0 ? 1 : base * pow(base, exponent - 1);
-		};
 
 		class value {
 		public:
@@ -157,8 +154,12 @@ namespace GoodLang {
 			// Creats a copy of the value and ceilings (rounds to upper whole integer) the underlying value
 			value ceiling() const;
 
+		public:
+			static std::vector<std::vector<std::tuple<std::string, std::string, Units::value, std::weak_ptr<GoodLang::Type_Info>>>> GetValueTypes() noexcept;
+
 		};
 		using scalar = value;
+
 	};
 };
 

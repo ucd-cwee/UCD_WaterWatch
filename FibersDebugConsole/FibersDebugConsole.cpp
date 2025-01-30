@@ -216,6 +216,7 @@ int main() {
 
 	print((Units::constants::g() * 12_m / 2).sqrt());
 
+	(void)Units::value::GetValueTypes();
 
 #if 0
 	fibers::utilities::Computer_Usage usage_start;
