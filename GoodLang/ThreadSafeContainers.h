@@ -10,6 +10,7 @@
 #include <emmintrin.h> // _mm_pause()
 #include <functional>
 #include <cassert>
+#include <ShlDisp.h> // InterlockedExchangePointer
 
 namespace GoodLang {
 	namespace utilities {
@@ -987,8 +988,12 @@ namespace GoodLang {
 	template< typename T>
 	struct atomic_ptr {
 	private:
-		static void* Sys_InterlockedExchangePointer(void*& ptr, void* exchange);
-		static void* Sys_InterlockedCompareExchangePointer(void*& ptr, void* comparand, void* exchange);
+		static void* Sys_InterlockedExchangePointer(void*& ptr, void* exchange) {
+			return InterlockedExchangePointer(&ptr, exchange);
+		};
+		static void* Sys_InterlockedCompareExchangePointer(void*& ptr, void* comparand, void* exchange) {
+			return InterlockedCompareExchangePointer(&ptr, exchange, comparand);
+		};
 
 	public:
 		constexpr atomic_ptr() noexcept : ptr(nullptr) {}
@@ -1142,23 +1147,24 @@ namespace GoodLang {
 		class SharedObj {
 		public:
 			Arg& obj;
-			std::scoped_lock< GoodLang::InterlockedLong > locked;
-			SharedObj(Arg& object, GoodLang::InterlockedLong& lock) : obj{ object }, locked{ lock } {};
+			std::scoped_lock< decltype(Lockable::lock) > locked;
+			SharedObj(Arg& object, decltype(Lockable::lock)& lock) : obj{ object }, locked{ lock } {};
 			Arg* operator->() { return &obj; };
 			Arg& operator*() { return obj; };
 		};
 		class SharedConstObj {
 		public:
 			const Arg& obj;
-			std::scoped_lock< GoodLang::InterlockedLong > locked;
-			SharedConstObj(const Arg& object, GoodLang::InterlockedLong& lock) : obj{ object }, locked{ lock } {};
+			std::scoped_lock< decltype(Lockable::lock) > locked;
+			SharedConstObj(const Arg& object, decltype(Lockable::lock)& lock) : obj{ object }, locked{ lock } {};
 			const Arg* operator->() { return &obj; };
 			const Arg& operator*() { return obj; };
 		};
 
-	private:
+	protected:
 		Arg data;
-		mutable GoodLang::InterlockedLong lock{ 0 };
+		// mutable GoodLang::InterlockedLong lock{ 0 };
+		mutable std::mutex lock{};
 
 	public:
 		[[nodiscard]] SharedConstObj Read() const { return SharedConstObj(data, lock); };
@@ -1725,6 +1731,8 @@ namespace GoodLang {
 		}; // sets the value to the input
 
 	};
+
+
 
 
 

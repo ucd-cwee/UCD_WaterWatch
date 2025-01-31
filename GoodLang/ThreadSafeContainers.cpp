@@ -3,15 +3,7 @@
 #include <ShlDisp.h> // InterlockedExchangePointer
 #include <iostream>
 
-namespace GoodLang {
-	// atomic_ptr
-	template< typename T> void* atomic_ptr<T>::Sys_InterlockedExchangePointer(void*& ptr, void* exchange) {
-		return InterlockedExchangePointer(&ptr, exchange);
-	};
-	template< typename T> void* atomic_ptr<T>::Sys_InterlockedCompareExchangePointer(void*& ptr, void* comparand, void* exchange) {
-		return InterlockedCompareExchangePointer(&ptr, exchange, comparand);
-	};
-	
+namespace GoodLang {	
 	// InterlockedLong
 	long InterlockedLong::Increment() { return InterlockedIncrementAcquire(&value); } // atomically increments the integer and returns the new value
 	long InterlockedLong::Decrement() { return InterlockedDecrementRelease(&value); } // atomically decrements the integer and returns the new value

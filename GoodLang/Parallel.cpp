@@ -1,8 +1,8 @@
+#pragma once
+#include "Parallel.h"
+
 // FiberPool based on:
 // http://roar11.com/2016/01/a-platform-independent-thread-pool-using-c14/
-#pragma once
-
-#include "Fibers.h"
 #include <assert.h>
 #include <stdint.h>
 #include <atomic>
@@ -125,7 +125,173 @@ namespace fibers::platform {
 #include <pthread.h>
 #endif // PLATFORM_LINUX
 
-namespace fibers {
+
+
+
+namespace GoodLang {
+	__forceinline static void* Mem_Alloc64(const size_t& size) { if (!size) return nullptr; const size_t paddedSize = (size + 63) & ~63; return ::_aligned_malloc(paddedSize, 64); };
+	__forceinline static void* Mem_Alloc16(const size_t& size) { if (!size) return nullptr; const size_t paddedSize = (size + 15) & ~15; return ::_aligned_malloc(paddedSize, 16); };
+	__forceinline static void  Mem_Free64(void* ptr) { if (ptr) ::_aligned_free(ptr); };
+	__forceinline static void  Mem_Free16(void* ptr) { if (ptr) ::_aligned_free(ptr); };
+	__forceinline static void* Mem_ClearedAlloc(const size_t& size) { void* mem = Mem_Alloc16(size); ::memset(mem, 0, size); return mem; };
+	__forceinline static void  Mem_Free(void* ptr) { Mem_Free16(ptr); }
+	__forceinline static void* Mem_Alloc(const size_t size) { return Mem_ClearedAlloc(size); }
+	__forceinline static char* Mem_CopyString(const char* in) { size_t L{ strlen(in) + 1 }; char* out = (char*)Mem_Alloc(L); ::strncpy(out, in, L - 1);  return out; };
+
+	class Hardware {
+	public:
+		static int GetNumCpuCores() {
+
+			typedef BOOL(WINAPI* LPFN_GLPI)(PSYSTEM_LOGICAL_PROCESSOR_INFORMATION, PDWORD);
+
+			PSYSTEM_LOGICAL_PROCESSOR_INFORMATION buffer = nullptr; // NULL
+			PSYSTEM_LOGICAL_PROCESSOR_INFORMATION ptr = nullptr; // NULL
+			PCACHE_DESCRIPTOR Cache;
+			LPFN_GLPI	glpi;
+			BOOL		done = FALSE;
+			DWORD		returnLength = 0;
+			DWORD		byteOffset = 0;
+
+			CpuInfo_t cpuInfo;
+			cpuInfo = CpuInfo_t();
+
+			glpi = (LPFN_GLPI)GetProcAddress(GetModuleHandle(TEXT("kernel32")), "GetLogicalProcessorInformation");
+			if (NULL == glpi) {
+				return 0;
+			}
+
+			while (!done) {
+				DWORD rc = glpi(buffer, &returnLength);
+
+				if (FALSE == rc) {
+					if (GetLastError() == ERROR_INSUFFICIENT_BUFFER) {
+						if (buffer) {
+							free(buffer);
+						}
+
+						buffer = (PSYSTEM_LOGICAL_PROCESSOR_INFORMATION)malloc(returnLength);
+					}
+					else {
+						return 0;
+					}
+				}
+				else {
+					done = TRUE;
+				}
+			}
+
+			ptr = buffer;
+
+			while (byteOffset + sizeof(SYSTEM_LOGICAL_PROCESSOR_INFORMATION) <= returnLength) {
+				switch ((e_LOGICAL_PROCESSOR_RELATIONSHIP_LOCAL)ptr->Relationship) {
+				case e_localRelationProcessorCore: // A hyperthreaded core supplies more than one logical processor.
+					cpuInfo.processorCoreCount++;
+					cpuInfo.logicalProcessorCount += CountSetBits(ptr->ProcessorMask);
+					break;
+
+				case e_localRelationNumaNode: // Non-NUMA systems report a single record of this type.
+					cpuInfo.numaNodeCount++;
+					break;
+
+				case e_localRelationCache: // Cache data is in ptr->Cache, one CACHE_DESCRIPTOR structure for each cache. 
+					Cache = &ptr->Cache;
+					if (Cache->Level >= 1 && Cache->Level <= 3) {
+						int level = Cache->Level - 1;
+						if (cpuInfo.cacheLevel[level].count > 0) {
+							cpuInfo.cacheLevel[level].count++;
+						}
+						else {
+							cpuInfo.cacheLevel[level].associativity = Cache->Associativity;
+							cpuInfo.cacheLevel[level].lineSize = Cache->LineSize;
+							cpuInfo.cacheLevel[level].size = Cache->Size;
+						}
+					}
+					break;
+
+				case e_localRelationProcessorPackage: // Logical processors share a physical package.
+					cpuInfo.processorPackageCount++;
+					break;
+
+				default:
+					break;
+				}
+				byteOffset += sizeof(SYSTEM_LOGICAL_PROCESSOR_INFORMATION);
+				ptr++;
+			}
+
+			free(buffer);
+
+			if (cpuInfo.logicalProcessorCount > 32) cpuInfo.logicalProcessorCount = 32;
+			if (cpuInfo.logicalProcessorCount <= 0) cpuInfo.logicalProcessorCount = 1;
+
+			return cpuInfo.logicalProcessorCount;
+
+			// return static_cast<int>(WindowsPlatform::GetCPUInfo().logicalProcessorCount); // std::thread::hardware_concurrency());
+		};
+		static float GetPercentCpuLoad() {
+			auto CalculateCPULoad = [](unsigned long long idleTicks, unsigned long long totalTicks)->float
+			{
+				static unsigned long long _previousTotalTicks = 0;
+				static unsigned long long _previousIdleTicks = 0;
+
+				unsigned long long totalTicksSinceLastTime = totalTicks - _previousTotalTicks;
+				unsigned long long idleTicksSinceLastTime = idleTicks - _previousIdleTicks;
+
+				float ret = 1.0f - ((totalTicksSinceLastTime > 0) ? ((float)idleTicksSinceLastTime) / totalTicksSinceLastTime : 0);
+
+				_previousTotalTicks = totalTicks;
+				_previousIdleTicks = idleTicks;
+				return ret;
+			};
+			auto FileTimeToInt64 = [](const FILETIME& ft)->unsigned long long
+			{
+				return (((unsigned long long)(ft.dwHighDateTime)) << 32) | ((unsigned long long)ft.dwLowDateTime);
+			};
+
+			FILETIME idleTime, kernelTime, userTime;
+			return GetSystemTimes(&idleTime, &kernelTime, &userTime) ? 100.0f * CalculateCPULoad(FileTimeToInt64(idleTime), FileTimeToInt64(kernelTime) + FileTimeToInt64(userTime)) : -1.0f;
+		};
+
+	private:
+		enum e_LOGICAL_PROCESSOR_RELATIONSHIP_LOCAL {
+			e_localRelationProcessorCore,
+			e_localRelationNumaNode,
+			e_localRelationCache,
+			e_localRelationProcessorPackage
+		};
+		static __forceinline DWORD CountSetBits(ULONG_PTR bitMask) {
+			DWORD LSHIFT = sizeof(ULONG_PTR) * 8 - 1;
+			DWORD bitSetCount = 0;
+			ULONG_PTR bitTest = (ULONG_PTR)1 << LSHIFT;
+
+			for (DWORD i = 0; i <= LSHIFT; i++) {
+				bitSetCount += ((bitMask & bitTest) ? 1 : 0);
+				bitTest /= 2;
+			}
+
+			return bitSetCount;
+		};
+		class CpuInfo_t {
+		public:
+			CpuInfo_t() : processorPackageCount(0), processorCoreCount(0), logicalProcessorCount(0), numaNodeCount(0), cacheLevel() {};
+			int processorPackageCount;
+			int processorCoreCount;
+			int logicalProcessorCount; // the value we care about -- indicated the number of actual "threads" that can run at once. 
+			int numaNodeCount;
+			class cacheInfo_t {
+			public:
+				cacheInfo_t() : count(0), associativity(0), lineSize(0), size(0) {};
+				int count;
+				int associativity;
+				int lineSize;
+				int size;
+			};
+			cacheInfo_t cacheLevel[3];
+		};
+	};
+
+
+
 	namespace impl {
 
 		inline void work(uint32_t startingQueue, const context* parentCtx) noexcept {
@@ -138,10 +304,10 @@ namespace fibers {
 				, 0 // groupIndex
 				, nullptr // sharedmemory
 			};
-			
+
 			uint32_t sizeOfData{ 0 };
 			void* data{ nullptr };
-			defer(if (data) { fibers::utilities::Mem_Free16(data); });
+			defer(if (data) { Mem_Free16(data); });
 
 			bool didWork = true;
 			while (didWork && (!parentCtx || (parentCtx && IsBusy(*parentCtx)))) {
@@ -157,8 +323,8 @@ namespace fibers {
 							{
 								if (job.sharedmemory_size > 0) {
 									if (sizeOfData < job.sharedmemory_size) {
-										if (data) fibers::utilities::Mem_Free16(data);
-										data = fibers::utilities::Mem_Alloc16(job.sharedmemory_size);
+										if (data) Mem_Free16(data);
+										data = Mem_Alloc16(job.sharedmemory_size);
 										sizeOfData = job.sharedmemory_size;
 									}
 
@@ -167,7 +333,7 @@ namespace fibers {
 									args.sharedmemory = data;
 
 									if (job.GroupStartJob) {
-										job.GroupStartJob(args.sharedmemory);
+										job.GroupStartJob->operator()(args.sharedmemory);
 									}
 								}
 								else {
@@ -176,11 +342,12 @@ namespace fibers {
 							}
 
 							// Do Group Jobs Until Done or Error is Thrown
+							auto& ToDo = *job.task;
 							for (j = job.groupJobOffset; !job.ctx->e && j < job.groupJobEnd; ++j) {
 								args.jobIndex = j;
 								args.groupIndex = j - job.groupJobOffset;
 								try {
-									job.task(args);
+									ToDo(args);
 								}
 								catch (...) {
 									if (!job.ctx->e) {
@@ -194,9 +361,7 @@ namespace fibers {
 							}
 
 							// Deallocate Shared Group Memory
-							if (args.sharedmemory && job.GroupEndJob) job.GroupEndJob(args.sharedmemory);								
-							
-
+							if (args.sharedmemory && job.GroupEndJob) job.GroupEndJob->operator()(args.sharedmemory);
 						}
 						job.ctx->counter.Decrement(); // one group got finished, regardless of the outcome.
 
@@ -224,7 +389,7 @@ namespace fibers {
 
 			uint32_t sizeOfData{ 0 };
 			void* data{ nullptr };
-			defer(if (data) { fibers::utilities::Mem_Free16(data); });
+			defer(if (data) { Mem_Free16(data); });
 
 			bool didWork = true;
 			while (didWork) {
@@ -240,8 +405,8 @@ namespace fibers {
 							{
 								if (job.sharedmemory_size > 0) {
 									if (sizeOfData < job.sharedmemory_size) {
-										if (data) fibers::utilities::Mem_Free16(data);
-										data = fibers::utilities::Mem_Alloc16(job.sharedmemory_size);
+										if (data) Mem_Free16(data);
+										data = Mem_Alloc16(job.sharedmemory_size);
 										sizeOfData = job.sharedmemory_size;
 									}
 
@@ -250,7 +415,7 @@ namespace fibers {
 									args.sharedmemory = data;
 
 									if (job.GroupStartJob) {
-										job.GroupStartJob(args.sharedmemory);
+										job.GroupStartJob->operator()(args.sharedmemory);
 									}
 								}
 								else {
@@ -259,11 +424,12 @@ namespace fibers {
 							}
 
 							// Do Group Jobs Until Done or Error is Thrown
+							auto& ToDo = *job.task;
 							for (j = job.groupJobOffset; !job.ctx->e && j < job.groupJobEnd; ++j) {
 								args.jobIndex = j;
 								args.groupIndex = j - job.groupJobOffset;
 								try {
-									job.task(args);
+									ToDo(args);
 								}
 								catch (...) {
 									if (!job.ctx->e) {
@@ -277,7 +443,7 @@ namespace fibers {
 							}
 
 							// Deallocate Shared Group Memory
-							if (args.sharedmemory && job.GroupEndJob) job.GroupEndJob(args.sharedmemory);
+							if (args.sharedmemory && job.GroupEndJob) job.GroupEndJob->operator()(args.sharedmemory);
 
 						}
 						job.ctx->counter.Decrement(); // one group got finished, regardless of the outcome.
@@ -292,7 +458,7 @@ namespace fibers {
 			maxThreadCount = std::max(1u, maxThreadCount);
 
 			// Retrieve the number of hardware threads in this system:
-			internal_state.numCores = fibers::utilities::Hardware::GetNumCpuCores();
+			internal_state.numCores = Hardware::GetNumCpuCores();
 
 			// Calculate the actual number of worker threads we want (-1 main thread):
 			internal_state.numThreads = std::min(maxThreadCount, std::max(1u, internal_state.numCores - 1));
@@ -305,18 +471,18 @@ namespace fibers {
 					// pre-warm this thread's heap
 					for (int i = 0; i < 100000; i++) delete (new int(5));
 
-					while (internal_state.alive.load()) {
+					while (internal_state.alive.GetValue()) {
 						// Work until no more jobs are found
-						work(threadID); 
+						work(threadID);
 
 						// go to sleep, to be awoken when new jobs are added
 						auto lock{ std::unique_lock(internal_state.wakeMutex) };
 						internal_state.wakeCondition.wait(lock);
 					}
-				});
+					});
 				std::thread& worker = internal_state.threads.back();
 
-	#ifdef _WIN32
+#ifdef _WIN32
 				// Do Windows-specific thread setup:
 				HANDLE handle = (HANDLE)worker.native_handle();
 
@@ -333,8 +499,8 @@ namespace fibers {
 				std::wstring wthreadname = L"wi::jobsystem_" + std::to_wstring(threadID);
 				HRESULT hr = SetThreadDescription(handle, wthreadname.c_str());
 				assert(SUCCEEDED(hr));
-	#elif defined(PLATFORM_LINUX)
-	#define handle_error_en(en, msg) \
+#elif defined(PLATFORM_LINUX)
+#define handle_error_en(en, msg) \
 				   do { errno = en; perror(msg); } while (0)
 
 				int ret;
@@ -352,25 +518,25 @@ namespace fibers {
 				ret = pthread_setname_np(worker.native_handle(), thread_name.c_str());
 				if (ret != 0)
 					handle_error_en(ret, std::string(" pthread_setname_np[" + std::to_string(threadID) + ']').c_str());
-	#undef handle_error_en
-	#elif defined(PLATFORM_PS5)
+#undef handle_error_en
+#elif defined(PLATFORM_PS5)
 				wi::jobsystem::ps5::SetupWorker(worker, threadID);
-	#endif // _WIN32
+#endif // _WIN32
 			}
 
 			return true;
 		};
 		void ShutDown() { internal_state.ShutDown(); };
 
-		void Execute(context& ctx, std::function<void(JobArgs const&)> const& task) noexcept {
+		void Execute(context& ctx, std::function<void(JobArgs const&)> task) noexcept {
 			ctx.counter.Increment(); // Context state is updated:
-			internal_state.jobQueuePerThread[internal_state.nextQueue.Increment() % internal_state.numThreads].push({ task, &ctx, 0, 0, 1, 0 });
+			internal_state.jobQueuePerThread[internal_state.nextQueue.Increment() % internal_state.numThreads].push({ std::make_shared<std::function<void(JobArgs const&)>>(std::move(task)), &ctx, 0, 0, 1, 0 });
 			internal_state.wakeCondition.notify_one(); // 
 		};
 		void Dispatch(
 			context& ctx,
 			uint32_t jobCount,
-			std::function<void(JobArgs const&)> const& task
+			std::function<void(JobArgs const&)> task
 		) noexcept {
 			if (jobCount == 0) { return; }
 
@@ -383,7 +549,7 @@ namespace fibers {
 
 			// create the overarching task:
 			Task job{
-				task,
+				std::make_shared<std::function<void(JobArgs const&)>>(std::move(task)),
 				&ctx, 0, 0, 1, 0, nullptr, nullptr
 			};
 
@@ -401,12 +567,12 @@ namespace fibers {
 			internal_state.wakeCondition.notify_all();
 		};
 		void Dispatch(
-			context& ctx, 
-			uint32_t jobCount, 
-			std::function<void(JobArgs const&)> const& task,
+			context& ctx,
+			uint32_t jobCount,
+			std::function<void(JobArgs const&)> task,
 			size_t sharedmemory_size,
-			std::function<void(void*)> const& GroupStartJob, // callback func with memory for type T
-			std::function<void(void*)> const& GroupEndJob // callback func with memory for type T
+			std::function<void(void*)> GroupStartJob, // callback func with memory for type T
+			std::function<void(void*)> GroupEndJob // callback func with memory for type T
 		) noexcept {
 			if (jobCount == 0) { return; }
 
@@ -418,18 +584,18 @@ namespace fibers {
 			ctx.counter.Add(groupCount);
 
 			// create the overarching task:
-			Task job{ 
-				task, 
-				&ctx, 0, 0, 1, (uint32_t)sharedmemory_size, 
-				GroupStartJob,
-				GroupEndJob
+			Task job{
+				std::make_shared<std::function<void(JobArgs const&)>>(std::move(task)),
+				&ctx, 0, 0, 1, (uint32_t)sharedmemory_size,
+				std::make_shared<std::function<void(void*)>>(std::move(GroupStartJob)),
+				std::make_shared<std::function<void(void*)>>(std::move(GroupEndJob))
 			};
 
 			// submit groups evenly into the thread pool:
 			for (uint32_t groupID = 0; ; ++groupID) { // groupID < groupCount
 				// For each group, generate one real job:
 				job.groupID = groupID;
-				job.groupJobOffset = groupID * groupSize; 
+				job.groupJobOffset = groupID * groupSize;
 				job.groupJobEnd = std::min(job.groupJobOffset + groupSize, jobCount);
 				if (job.groupJobOffset >= job.groupJobEnd) break; // this is how we know we've produced enough job groups to cover the number of jobs requested, and no more.
 				internal_state.jobQueuePerThread[internal_state.nextQueue.Increment() % internal_state.numThreads].push(job);
@@ -472,19 +638,19 @@ namespace fibers {
 		};
 	};
 
-	JobGroup::JobGroup() : 
-		impl(new JobGroup::JobGroupImpl(std::static_pointer_cast<void>(std::shared_ptr<impl::TaskGroup>(new impl::TaskGroup())))) 
+	JobGroup::JobGroup() :
+		impl(new JobGroup::JobGroupImpl(std::static_pointer_cast<void>(std::shared_ptr<impl::TaskGroup>(new impl::TaskGroup()))))
 	{};
-	JobGroup::JobGroup(Job const& job) : 
-		impl(new JobGroup::JobGroupImpl(std::static_pointer_cast<void>(std::shared_ptr<impl::TaskGroup>(new impl::TaskGroup())))) 
-	{ Queue(job); };
+	JobGroup::JobGroup(Job const& job) :
+		impl(new JobGroup::JobGroupImpl(std::static_pointer_cast<void>(std::shared_ptr<impl::TaskGroup>(new impl::TaskGroup()))))
+	{
+		Queue(job);
+	};
 	void JobGroup::JobGroupImpl::Queue(Job const& job) {
 		std::shared_ptr<impl::TaskGroup> wg = std::static_pointer_cast<impl::TaskGroup>(waitGroup);
 		if (!wg) throw(std::runtime_error("Job Group was empty."));
-		wg->Queue([impl = job.impl](impl::JobArgs const& args) {
-			if (impl) {
-				impl->Invoke();
-			}
+		wg->Queue([impl = job](impl::JobArgs const& args) {
+			impl.Invoke();
 		});
 		last_job = job;
 	};
@@ -496,7 +662,7 @@ namespace fibers {
 			listOfJobs[args.jobIndex].Invoke();
 		});
 
-		if (listOfJobs.size() > 0) 
+		if (listOfJobs.size() > 0)
 			last_job = listOfJobs[listOfJobs.size() - 1];
 	};
 	void JobGroup::JobGroupImpl::Wait() {
@@ -505,35 +671,24 @@ namespace fibers {
 		wg->Wait();
 	};
 	[[nodiscard]] JobGroup Job::AsyncInvoke() { return JobGroup(*this); };
-	void Job::AsyncFireAndForget() {
-		if (this->IsStatic()) {
-			std::shared_ptr< impl::context > ctx = std::make_shared<impl::context>();
-			ctx->counter.Increment();
-			impl::Execute(*ctx, [action = this->impl, context = ctx](impl::JobArgs const& args) {
-				context->counter.Decrement();
-				if (action) {
-					action->Invoke();
-				}
-			});
-		}
-		else {
-			throw(std::runtime_error("Only static or stateless functions can be called from a fire-and-forget methodology."));
-		}
-	};
 
 };
 
+
+
+
+
 namespace {
-	class MultithreadingInstanceManagerImpl final : public MultithreadingInstanceManager {
+	class MultithreadingInstanceManagerImpl final : public GoodLang::MultithreadingInstanceManager {
 	public:
-		MultithreadingInstanceManagerImpl() : MultithreadingInstanceManager() {
-			fibers::impl::Initialize();
+		MultithreadingInstanceManagerImpl() : GoodLang::MultithreadingInstanceManager() {
+			GoodLang::impl::Initialize();
 		};
 		~MultithreadingInstanceManagerImpl() {
-			fibers::impl::ShutDown();
+			GoodLang::impl::ShutDown();
 		};
 	};
 };
 /* Instances the fiber system, and destroys it if the DLL / library is unloaded. */
-std::shared_ptr<MultithreadingInstanceManager> multithreadingInstance = std::static_pointer_cast<MultithreadingInstanceManager>(std::make_shared<MultithreadingInstanceManagerImpl>());
+std::shared_ptr<GoodLang::MultithreadingInstanceManager> multithreadingInstance = std::static_pointer_cast<GoodLang::MultithreadingInstanceManager>(std::make_shared<MultithreadingInstanceManagerImpl>());
 

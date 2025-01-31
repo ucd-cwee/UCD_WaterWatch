@@ -754,20 +754,16 @@ namespace GoodLang {
 			return *this;
 		};
 		value value::operator++(int) {
-			auto a_struct = unit_m.load();
-			return value(UnitDefinition(
-				a_struct.unitType_m,
-				a_struct.ratio_m,
-				a_struct.value_m + a_struct.ratio_m
-			));
+			return value{ unit_m.Update([](UnitDefinition Data)->UnitDefinition {
+				Data.value_m += (double)Data.ratio_m;
+				return Data;
+			}) };
 		};
 		value value::operator--(int) {
-			auto a_struct = unit_m.load();
-			return value(UnitDefinition(
-				a_struct.unitType_m,
-				a_struct.ratio_m,
-				a_struct.value_m - a_struct.ratio_m
-			));
+			return value{ unit_m.Update([](UnitDefinition Data)->UnitDefinition {
+				Data.value_m -= (double)Data.ratio_m;
+				return Data;
+			}) };
 		};
 		value Add(value const& a, value const& b) {
 			auto a_struct = a.unit_m.load();

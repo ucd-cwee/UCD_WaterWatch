@@ -7,6 +7,7 @@
 #include "../GoodLang/ThreadSafeContainers.h"
 #include "../GoodLang/Units.h"
 #include "../GoodLang/DateTime.h"
+#include "../GoodLang/Parallel.h"
 
 //#include "../FiberTasks/Fibers.h"
 //#include "../FiberTasks/UnitsLibrary.h"
@@ -95,12 +96,12 @@ int main() {
 
 	Any x = 100;
 	print(x.TypeName());
-	
+
 	x = 500;
 
 	utilities::FastAllocator<int> xxx;
 	xxx.Alloc();
-	
+
 	(void)x.cast<int>();
 
 	auto func = make_callable([](int x) -> int { return x * x; });
@@ -110,7 +111,7 @@ int main() {
 
 	Functions F;
 	F.emplace("foo", make_callable([](double x) -> double { return x * x; }), true);
-	
+
 	func = F.BuildMatch("foo", { 100.0 }, converter);
 	result = call(func, { 100.0 }, converter);
 	EXPECT_EQ(true, result.IsTypeOf<double>());
@@ -148,15 +149,15 @@ int main() {
 
 	print(Units::foot{ 5 }); // 5 ft
 
-	print(Units::foot{ 5 } * Units::foot{ 5 }); // 25 sq_ft
+	print(Units::foot{ 5 } *Units::foot{ 5 }); // 25 sq_ft
 
 	print(Units::foot{ 5 }.pow(2)); // 25 sq_ft
 
 	print(Units::foot{ 5 }.pow(3)); // 125.000029 cu_ft
 
-	print(Units::foot{ 5 } * Units::foot{ 5 } * Units::foot{ 5 }); // 125.000029 cu_ft
+	print(Units::foot{ 5 } *Units::foot{ 5 } *Units::foot{ 5 }); // 125.000029 cu_ft
 
-	print(Units::inch{ 5 } * Units::foot{ 5 } * Units::meter{ 5 }); // 109.848622 pk
+	print(Units::inch{ 5 } *Units::foot{ 5 } *Units::meter{ 5 }); // 109.848622 pk
 
 	print(Units::foot{ 5 }.pow(2).pow(0.5)); // 5 ft
 
@@ -204,7 +205,7 @@ int main() {
 		auto tStr = t.ToString();
 		auto vStr = velocity.ToString();
 		print(GoodLang::printf("pos = %s \t t = %s \t v = %s;", posStr.c_str(), tStr.c_str(), vStr.c_str()));
-		
+
 		pos += velocity * timeStep;
 	}
 
@@ -214,12 +215,90 @@ int main() {
 
 	(void)Units::value::GetValueTypes();
 
-
 	print(DateTime::Now());
 	print(DateTime::Now() + 30_d);
 	print(DateTime::Now() + 365_yr);
 	print(DateTime(2014, 1, 1));
 	print((Units::second)(DateTime::Now() - DateTime(2014, 1, 1)));
+
+	// Direct Invoke
+	print(GoodLang::Job([](int x)->int { return x; }, 5).Invoke().cast<int>());
+	// Async and Await
+	print(GoodLang::Job([](int x)->int { return x; }, 5).AsyncInvoke().Wait_Get<int>());
+	// Async, do stuff, then Await
+	if (1) {
+		auto group = GoodLang::Job([](int x)->int { return x; }, 5).AsyncInvoke();
+		Sleep(10);
+		print(group.Wait_Get<int>());
+	}
+	// 100 parallel jobs
+	if (1) {
+		Units::scalar V{ 0 };
+		parallel::For(0, 100, [&](int i) {
+			V++;
+			});
+		print(V);
+	}
+	// 100,000 parallel jobs
+	if (1) {
+		std::atomic<int> V{ 0 };
+		// Units::scalar V{ 0 }; // At high levels of parallelism, the Units lock will choke the threads
+		parallel::For(0, 100000, [&](int i) {
+			V++;
+			});
+		print(V);
+	}
+	// 10,000,000 parallel jobs
+	if (1) {
+		std::atomic<int> V{ 0 };
+		// Units::scalar V{ 0 }; // At high levels of parallelism, the Units lock will choke the threads
+		parallel::For(0, 10000000, [&](int i) {
+			V++;
+		});
+		print(V);
+	}
+	// parallel jobs that each ALSO dispatch parallel jobs, for a total of 10,000,000 parallel jobs
+	if (1) {
+		std::atomic<int> V{ 0 };
+		parallel::For(0, 100, [&](int i) {
+			parallel::For(0, 100000, [&](int j) {
+				V++;
+			});
+		});
+		print(V);		
+	}
+	// catch exceptions thrown from inside of a job
+	if (1) {
+		Units::foot V{ 0 };
+		try {
+			parallel::For(0, 100, [&](int i) {
+				parallel::For(0, 100000, [&](int j) {
+					V += 5_gpm; // will fail due to incompatable units. 
+				});
+			});
+			print(V);
+		} catch (std::exception& e) {
+			print(e.what());
+		} // note that catching exceptions is a slow process (relatively), but is preferred to general crash. 
+	}
+	//// parallel jobs iterating over a vector
+	//if (1) {
+	//	auto seq{ Sequence(0, 1000000) };
+	//	std::atomic<int> V{ 0 };
+	//	parallel::ForEach(seq, [&](int const& i) {
+	//		V++;
+	//	});
+	//	print(V);
+	//}
+	//if (1) {
+	//	std::vector<int> data{ 100000, 1 };
+	//	auto seq{ IteratorSequence(data.begin(), data.end()) };
+	//	std::atomic<int> V{ 0 };
+	//	parallel::ForEach(seq, [&](std::pair<int, int*> i) {
+	//		V++;
+	//	});
+	//	print(V);
+	//}
 
 
 #if 0

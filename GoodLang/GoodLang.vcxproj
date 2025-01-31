@@ -170,6 +170,7 @@
     <ClCompile Include="Any.cpp" />
     <ClCompile Include="DateTime.cpp" />
     <ClCompile Include="GoodLang.cpp" />
+    <ClCompile Include="Parallel.cpp" />
     <ClCompile Include="Proxy_Function.cpp" />
     <ClCompile Include="ThreadSafeContainers.cpp" />
     <ClCompile Include="Units_Base.cpp" />
@@ -179,6 +180,7 @@
     <ClInclude Include="Any.h" />
     <ClInclude Include="DateTime.h" />
     <ClInclude Include="Foundation.h" />
+    <ClInclude Include="Parallel.h" />
     <ClInclude Include="Proxy_Function.h" />
     <ClInclude Include="ThreadSafeContainers.h" />
     <ClInclude Include="Units.h" />
