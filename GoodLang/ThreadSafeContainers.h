@@ -1943,114 +1943,50 @@ namespace GoodLang {
 			return shared->empty();
 		};
 		
-#if 0
 
-		struct Iterator : public std::iterator<std::forward_iterator_tag, KeyType> {
+	private:
+		class it_state {			
 		public:
-			Set* parent{ nullptr };
-			mutable typename decltype(map)::iterator _ptr{};
-			mutable typename decltype(map)::iterator _end{};
-			//mutable fibers::utilities::SharedPtr<std::pair<const KeyType, ObjType>> result{ nullptr };
+			using thisType = Map;
+			using value_type = typename underlying::value_type;
+			using iterator_category = std::forward_iterator_tag;
+			using difference_type = typename std::iterator<iterator_category, value_type>::difference_type;
 
-		public:
-			using difference_type = typename std::iterator<std::forward_iterator_tag, KeyType>::difference_type;
+			// data
+			mutable typename underlying::iterator 
+				_ptr{};
+			std::shared_ptr<std::shared_lock<std::shared_mutex>> 
+				lifetime{ nullptr };
 
-			Iterator() = default;
-			Iterator(Set* _parent) :
-				parent{ _parent }
-				, _ptr{ begin_impl(_parent) }
-				, _end{ end_impl(_parent) }
-				//, result{ nullptr }
-			{};
-			Iterator(const Iterator& rhs) = default;
-			Iterator(Iterator&& rhs) = default;
-			Iterator& operator=(const Iterator& rhs) = default;
-			Iterator& operator=(Iterator&& rhs) = default;
-			~Iterator() = default;
-
-			KeyType operator*() {
-				if (auto p = *_ptr) {
-					return p->second;
-				}
-				return KeyType();
+			// functions
+			void Initialize(thisType* ref) {
+				auto shared = ref->data.Shared();
+				lifetime = shared.ForwardLock();
 			};
-			KeyType operator*() const {
-				if (auto p = *_ptr) {
-					return p->second;
-				}
-				return KeyType();
+			void ToBeginning(thisType* ref) {
+				auto shared = ref->data.Shared();
+				_ptr = shared->begin();
 			};
-
-			Iterator& operator++() { Increment(); return *this; }
-
-			explicit operator bool() const { return Valid(); };
-			bool operator==(const Iterator& rhs) const {
-				if (!rhs.Valid() && !Valid()) return true;
-				if (!rhs.Valid()) {
-					return !Valid();
-				}
-				if (!Valid()) {
-					return !rhs.Valid();
-				}
+			void ToEnd(thisType* ref) {
+				auto shared = ref->data.Shared();
+				_ptr = shared->end();
+			};
+			void Next(thisType* ref) {
+				++_ptr;
+			};
+			void Prev(thisType* ref) {
+				--_ptr;
+			};
+			value_type& Get(thisType* ref) const {
+				return *_ptr;
+			};
+			bool operator==(it_state const& rhs) const {
 				return _ptr == rhs._ptr;
-			}
-			bool operator!=(const Iterator& rhs) const { return !operator==(rhs); }
-
-			Iterator begin() const { return Iterator(*this); };
-			Iterator end() const { return Iterator(nullptr); };
-
-		private:
-			bool Valid() const {
-				return /*parent && */(_ptr != _end);
 			};
-			void Increment() { if (Valid()) ++_ptr; };
-
-			static decltype(_ptr) begin_impl(Set* parent) {
-				if (parent) {
-					return parent->map.begin();
-				}
-				return decltype(_ptr){};
-			};
-			static decltype(_end) end_impl(Set* parent) {
-				if (parent) {
-					return parent->map.end();
-				}
-				return decltype(_end){};
-			};
+			difference_type Distance(it_state const& other) const { return _ptr - other._ptr; };
 		};
-		using iterator = Iterator;
-		using const_iterator = Iterator;
-
-#endif
-
-
-
-		//struct it_state {
-		//	std::shared_ptr<std::shared_lock<std::shared_mutex>> 
-		//		lifetime;
-		//	typename std::map<key_type, T, Cmp>::iterator 
-		//		pos;
-
-		//	inline void begin(const Map* ref) { 
-		//		auto shared = ref->data.Shared();
-		//		pos = shared->begin();
-		//		lifetime = shared.ForwardLock();
-		//	};
-		//	inline void next(const Map* ref) { ++pos; };
-		//	inline void end(const Map* ref) { 
-		//		auto shared = ref->data.Shared();
-		//		pos = shared->end();
-		//		lifetime = shared.ForwardLock();
-		//	};
-		//	inline typename underlying::value_type& get(Map* ref) { return *pos; };
-		//	inline bool cmp(const it_state& s) const { return (pos == s.pos) ? false : true; };
-		//	inline long long distance(const it_state& s) const { return pos - s.pos; };
-		//	// Optional to allow operator--() and reverse iterators:
-		//	inline void prev(const Map* ref) { --pos; };
-		//	// Optional to allow `const_iterator`:
-		//	inline const typename underlying::value_type& get(const Map* ref) const { return *pos; };
-		//};
-		//SETUP_STL_ITERATOR(Map, typename underlying::value_type, it_state);
+	public:
+        SETUP_ITERATOR(it_state);
 
 	public:
 		friend bool operator==(Map const& _Left, Map const& _Right) {

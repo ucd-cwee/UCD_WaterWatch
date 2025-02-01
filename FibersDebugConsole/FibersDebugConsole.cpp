@@ -366,9 +366,16 @@ int main() {
 		});
 		print(map.size());
 
-		//parallel::ForEach(map, [&](auto& i) {
-		//	print(i.second);
-		//});
+		(void)std::distance(map.begin(), map.end());
+
+
+
+
+		Units::scalar V;
+		parallel::ForEach(map, [&](auto& i) {
+			V += i.second;
+		});
+		print(V);
 
 
 		
