@@ -47,6 +47,10 @@
 #define _SILENCE_CXX17_ITERATOR_BASE_CLASS_DEPRECATION_WARNING
 #include <string>
 #include <vector>
+#include <ShlDisp.h>
+#include <condition_variable>
+#include <Windows.h>
+#include <winnt.h>
 #pragma endregion
 #pragma region iterator_definition
 #ifdef SETUP_STL_ITERATOR
@@ -282,4 +286,115 @@ namespace GoodLang {
 		template<class _type_, int _blockSize_ = std::max<size_t>(128, (sizeof(_type_) << 4)), bool ForcePOD = false>
 		using FastAllocator = FastBlockAllocator<_type_, _blockSize_, ForcePOD>;
 	};
+
+	/* *THREAD SAFE* Windows-specific high-performance lock that only locks the OS (slow) when contention actually happens. When there is no contention, this is very fast.
+	Generally speaking, out-performs std::mutex under most conditions. */
+	class mutex {
+	private:
+		using mutexHandle_t =   RTL_CRITICAL_SECTION;;
+		static void				Sys_MutexCreate(mutexHandle_t& handle) noexcept { InitializeCriticalSection(&handle); };
+		static void				Sys_MutexDestroy(mutexHandle_t& handle) noexcept { DeleteCriticalSection(&handle); };
+		static void				Sys_MutexLock(mutexHandle_t& handle) noexcept { EnterCriticalSection(&handle); };
+		static bool				Sys_MutexTryLock(mutexHandle_t& handle) noexcept { return TryEnterCriticalSection(&handle) != 0; };
+		static void				Sys_MutexUnlock(mutexHandle_t& handle) noexcept { LeaveCriticalSection(&handle); };
+
+	public:
+		mutex() noexcept { Sys_MutexCreate(Handle); };
+		~mutex() noexcept { Sys_MutexDestroy(Handle); };
+
+		void lock() {
+			Sys_MutexLock(Handle);
+		};
+		bool try_lock() {
+			return Sys_MutexTryLock(Handle);
+		};
+		void unlock() {
+			Sys_MutexUnlock(Handle);
+		};
+
+		mutex(const mutex&) = delete;
+		mutex(mutex&&) = delete;
+		mutex& operator=(mutex const&) = delete;
+		mutex& operator=(mutex&&) = delete;
+
+	protected:
+		mutexHandle_t Handle;
+
+	};
+
+	/* mutex which allows multiple readers OR one writer to access a critical section at the same time. */
+	class shared_mutex {
+	public:
+		using cond_var = std::condition_variable_any;
+
+	private:
+		mutex    mut_;
+		cond_var gate1_;
+		cond_var gate2_;
+		unsigned state_;
+
+		static const unsigned write_entered_ = 1U << (sizeof(unsigned) * CHAR_BIT - 1);
+		static const unsigned n_readers_ = ~write_entered_;
+
+	public:
+		shared_mutex() : mut_(), gate1_(), gate2_(), state_(0) {}
+
+		// Exclusive ownership
+		void lock() {
+			std::unique_lock<mutex> lk(mut_);
+			while (state_ & write_entered_) gate1_.wait(lk);
+			state_ |= write_entered_;
+			while (state_ & n_readers_) gate2_.wait(lk);
+		};
+		bool try_lock() {
+			std::unique_lock<mutex> lk(mut_, std::try_to_lock_t{});
+			if (lk.owns_lock() && state_ == 0) {
+				state_ = write_entered_;
+				return true;
+			}
+			return false;
+		};
+		void unlock() {
+			{
+				std::unique_lock<mutex> _(mut_);
+				state_ = 0;
+			}
+			gate1_.notify_all();
+		};
+
+		// Shared ownership
+		void lock_shared() {
+			std::unique_lock<mutex> lk(mut_);
+			while ((state_ & write_entered_) || (state_ & n_readers_) == n_readers_) gate1_.wait(lk);
+			unsigned num_readers = (state_ & n_readers_) + 1;
+			state_ &= ~n_readers_;
+			state_ |= num_readers;
+		};
+		bool try_lock_shared() {
+			std::unique_lock<mutex> lk(mut_, std::try_to_lock_t{});
+			unsigned num_readers = state_ & n_readers_;
+			if (lk.owns_lock() && !(state_ & write_entered_) && num_readers != n_readers_) {
+				++num_readers;
+				state_ &= ~n_readers_;
+				state_ |= num_readers;
+				return true;
+			}
+			return false;
+		};
+		void unlock_shared() {
+			std::unique_lock<mutex> _(mut_);
+			unsigned num_readers = (state_ & n_readers_) - 1;
+			state_ &= ~n_readers_;
+			state_ |= num_readers;
+			if (state_ & write_entered_) {
+				if (num_readers == 0) gate2_.notify_one();
+			}
+			else {
+				if (num_readers == n_readers_ - 1) gate1_.notify_one();
+			}
+		};
+
+	};
+
 };
+

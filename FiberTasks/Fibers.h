@@ -1677,6 +1677,7 @@ namespace fibers {
 
 		};
 	};
+
 	namespace containers {
 		/* *THREAD SAFE* Thread- and Fiber-safe queue with Last-In-First-Out functionality.
 		* POD types are stored by-value, non-POD types are stored as shared_ptr's.

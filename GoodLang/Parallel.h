@@ -141,8 +141,8 @@ namespace GoodLang {
 			uint32_t jobCount,
 			std::function<void(JobArgs const&)> task,
 			size_t sharedmemory_size,
-			std::function<void(void*)> const& GroupStartJob, // callback func with memory for type T
-			std::function<void(void*)> const& GroupEndJob // callback func with memory for type T
+			std::function<void(void*)> GroupStartJob, // callback func with memory for type T
+			std::function<void(void*)> GroupEndJob // callback func with memory for type T
 		) noexcept;
 
 		// Returns the amount of job groups that will be created for a set number of jobs and group size

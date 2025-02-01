@@ -12,6 +12,8 @@
 #include <cassert>
 #include <ShlDisp.h> // InterlockedExchangePointer
 
+#include <map>
+
 namespace GoodLang {
 	namespace utilities {
 		namespace HasDefaultConstructor
@@ -1164,7 +1166,7 @@ namespace GoodLang {
 	protected:
 		Arg data;
 		// mutable GoodLang::InterlockedLong lock{ 0 };
-		mutable std::mutex lock{};
+		mutable std::mutex lock{}; // GoodLang::
 
 	public:
 		[[nodiscard]] SharedConstObj Read() const { return SharedConstObj(data, lock); };
@@ -1231,6 +1233,142 @@ namespace GoodLang {
 		}; // returns the previous value while setting the value to the input
 		Arg load() const {
 			return *Read();
+		}; // gets the value
+		void store(Arg const& v) {
+			Swap(v);
+			return;
+		}; // sets the value to the input
+	};
+
+	/* allows any copiable object to be thread-safe by wrapping it in a locking container. */
+	template <typename Arg> class SharedLockable {
+	public:
+		class SharedObj {
+			typedef std::shared_lock< decltype(SharedLockable::lock) > lockType;
+			Arg& obj;
+			std::shared_ptr<lockType> locked;
+
+		public:
+			SharedObj(Arg& object, decltype(SharedLockable::lock)& lock) : obj{ object }, locked{ std::make_shared<lockType>(lock) } {};
+			SharedObj(Arg& object, decltype(locked) lock) : obj{ object }, locked{ std::move(lock) } {};
+			Arg* operator->() { return &obj; };
+			Arg& operator*() { return obj; };
+			std::shared_ptr<lockType> ForwardLock() { return locked; };
+			operator bool() const { return (bool)locked; };
+		};
+		class SharedConstObj {
+			typedef std::shared_lock< decltype(SharedLockable::lock) > lockType;
+			const Arg& obj;
+			std::shared_ptr<lockType> locked;
+
+		public:
+			SharedConstObj(const Arg& object, decltype(SharedLockable::lock)& lock) : obj{ object }, locked{ std::make_shared<lockType>(lock) } {};
+			SharedConstObj(const Arg& object, decltype(locked) lock) : obj{ object }, locked{ std::move(lock) } {};
+			const Arg* operator->() { return &obj; };
+			const Arg& operator*() { return obj; };
+			std::shared_ptr<lockType> ForwardLock() { return locked; };
+			operator bool() const { return (bool)locked; };
+		};
+		class Obj {
+			typedef std::unique_lock< decltype(SharedLockable::lock) > lockType;
+			Arg& obj;
+			std::shared_ptr<lockType> locked;
+
+		public:
+			Obj(Arg& object, decltype(SharedLockable::lock)& lock) : obj{ object }, locked{ std::make_shared<lockType>(lock) } {};
+			Obj(Arg& object, decltype(locked) lock) : obj{ object }, locked{ std::move(lock) } {};
+			Arg* operator->() { return &obj; };
+			Arg& operator*() { return obj; };
+			std::shared_ptr<lockType> ForwardLock() { return locked; };
+			operator bool() const { return (bool)locked; };
+		};
+		class ConstObj {
+			typedef std::unique_lock< decltype(SharedLockable::lock) > lockType;
+			const Arg& obj;
+			std::shared_ptr<lockType> locked;
+
+		public:
+			ConstObj(const Arg& object, decltype(SharedLockable::lock)& lock) : obj{ object }, locked{ std::make_shared<lockType>(lock) } {};
+			ConstObj(const Arg& object, decltype(locked) lock) : obj{ object }, locked{ std::move(lock) } {};
+			const Arg* operator->() { return &obj; };
+			const Arg& operator*() { return obj; };
+			std::shared_ptr<lockType> ForwardLock() { return locked; };
+			operator bool() const { return (bool)locked; };
+		};
+
+	protected:
+		Arg data;
+		mutable std::shared_mutex lock{};
+
+	public:
+		auto& GetLock() const { return lock; };
+
+		[[nodiscard]] ConstObj Unique() const { return ConstObj(data, lock); };
+		[[nodiscard]] Obj Unique() { return Obj(data, lock); };
+		[[nodiscard]] SharedConstObj Shared() const { return SharedConstObj(data, lock); };
+		[[nodiscard]] SharedObj Shared() { return SharedObj(data, lock); };
+
+	public:
+		SharedLockable Copy() const {
+			return SharedLockable(load());
+		};
+
+	public:
+		operator Arg() const {
+			return load();
+		};
+
+	public:
+		SharedLockable() : data{ Arg{} } {};
+		SharedLockable(Arg const& a) : data{ a } {};
+		SharedLockable(const SharedLockable& r) : data{ *r.Shared() } {};
+		SharedLockable& operator=(const SharedLockable& r) {
+			*Unique() = *r.Shared();
+		};
+		SharedLockable(SharedLockable&& r) : data{ *r.Shared() } {};
+		SharedLockable& operator=(SharedLockable&& r) {
+			*Unique() = *r.Shared();
+		};
+		~SharedLockable() = default;
+
+		template <typename T> bool operator==(T b) const {
+			return *Shared() == b;
+		};
+		template <typename T> bool operator!=(T b) const {
+			return !operator==(b);
+		};
+
+	public:
+		bool CompareSwap(Arg const& compare, Arg const& input) {
+			auto x = Unique();
+			if (*x == compare) {
+				*x = input;
+				return true;
+			}
+			else {
+				return false;
+			}
+		}; // returns the previous value while changing the underlying value
+		Arg Swap(Arg const& input) {
+			auto x = Unique();
+			Arg out = *x;
+			*x = input;
+			return out;
+		}; // returns the previous value while changing the underlying value
+		template <typename F> // std::function<Arg(Arg)>
+		Arg Update(F const& updateFunction) {
+			auto x = Unique();
+			Arg out;
+			*x = updateFunction(out = *x);
+			return out;
+		}; // returns the previous value while incrementing the actual counter
+
+	public: // std::atomic compatability
+		Arg exchange(Arg const& v) {
+			return Swap(v);
+		}; // returns the previous value while setting the value to the input
+		Arg load() const {
+			return *Shared();
 		}; // gets the value
 		void store(Arg const& v) {
 			Swap(v);
@@ -1732,13 +1870,198 @@ namespace GoodLang {
 
 	};
 
+	template <typename key_type, typename T, typename Cmp = std::less<key_type>>
+	class Map {
+	protected:
+		SharedLockable<std::map<key_type, T, Cmp>> data;
+		typedef std::map<key_type, T, Cmp> underlying;
+
+	public:
+		template <class... _Mappedty> void try_emplace(const key_type& _Keyval, _Mappedty&&... _Mapval) {
+			auto shared = data.Unique();
+			shared->try_emplace(_Keyval, std::forward<_Mappedty>(_Mapval)...);
+		};
+		template <class... _Mappedty> void try_emplace(key_type&& _Keyval, _Mappedty&&... _Mapval) {
+			auto shared = data.Unique();
+			shared->try_emplace(std::move(_Keyval), std::forward<_Mappedty>(_Mapval)...);
+		};
+		template <class _Mappedty> void insert_or_assign(const key_type& _Keyval, _Mappedty&& _Mapval) {
+			auto shared = data.Unique();
+			shared->insert_or_assign(_Keyval, std::forward<_Mappedty>(_Mapval));
+		};
+		template <class _Mappedty> void insert_or_assign(key_type&& _Keyval, _Mappedty&& _Mapval) {
+			auto shared = data.Unique();
+			shared->insert_or_assign(std::move(_Keyval), std::forward<_Mappedty>(_Mapval));
+		};
+		typename SharedLockable<T>::SharedObj operator[](const key_type& _Keyval) {
+			while (true) {
+				if (auto shared = data.Unique()) {
+					(void)shared->operator[](_Keyval);
+				}
+				if (auto shared = data.Shared()) {
+					try {
+						T& result = shared->at(_Keyval);
+						return typename SharedLockable<T>::SharedObj(result, shared.ForwardLock());
+					}
+					catch (std::out_of_range&) {}
+				}
+			}
+		};
+		typename SharedLockable<T>::SharedConstObj operator[](const key_type& _Keyval) const {
+			auto shared = data.Shared();
+			const T& result = shared->at(_Keyval);
+			return typename SharedLockable<T>::SharedConstObj(result, shared.ForwardLock());
+		};
+		typename SharedLockable<T>::SharedObj at(const key_type& _Keyval) {
+			auto shared = data.Shared();
+			T& result = shared->at(_Keyval);
+			return typename SharedLockable<T>::SharedObj(result, shared.ForwardLock());
+		};
+		typename SharedLockable<T>::SharedConstObj at(const key_type& _Keyval) const {
+			auto shared = data.Shared();
+			const T& result = shared->at(_Keyval);
+			return typename SharedLockable<T>::SharedConstObj(result, shared.ForwardLock());
+		};
+		size_t size() const {
+			auto shared = data.Shared();
+			return shared->size();
+		};
+		size_t erase(const key_type& _Keyval) {
+			auto shared = data.Unique();
+			return shared->erase(_Keyval);
+		};
+		void clear() {
+			auto shared = data.Unique();
+			shared->clear();
+		};
+		size_t count(const key_type& _Keyval) const {
+			auto shared = data.Shared();
+			return shared->count(_Keyval);
+		};
+		bool empty() const {
+			auto shared = data.Shared();
+			return shared->empty();
+		};
+		
+#if 0
+
+		struct Iterator : public std::iterator<std::forward_iterator_tag, KeyType> {
+		public:
+			Set* parent{ nullptr };
+			mutable typename decltype(map)::iterator _ptr{};
+			mutable typename decltype(map)::iterator _end{};
+			//mutable fibers::utilities::SharedPtr<std::pair<const KeyType, ObjType>> result{ nullptr };
+
+		public:
+			using difference_type = typename std::iterator<std::forward_iterator_tag, KeyType>::difference_type;
+
+			Iterator() = default;
+			Iterator(Set* _parent) :
+				parent{ _parent }
+				, _ptr{ begin_impl(_parent) }
+				, _end{ end_impl(_parent) }
+				//, result{ nullptr }
+			{};
+			Iterator(const Iterator& rhs) = default;
+			Iterator(Iterator&& rhs) = default;
+			Iterator& operator=(const Iterator& rhs) = default;
+			Iterator& operator=(Iterator&& rhs) = default;
+			~Iterator() = default;
+
+			KeyType operator*() {
+				if (auto p = *_ptr) {
+					return p->second;
+				}
+				return KeyType();
+			};
+			KeyType operator*() const {
+				if (auto p = *_ptr) {
+					return p->second;
+				}
+				return KeyType();
+			};
+
+			Iterator& operator++() { Increment(); return *this; }
+
+			explicit operator bool() const { return Valid(); };
+			bool operator==(const Iterator& rhs) const {
+				if (!rhs.Valid() && !Valid()) return true;
+				if (!rhs.Valid()) {
+					return !Valid();
+				}
+				if (!Valid()) {
+					return !rhs.Valid();
+				}
+				return _ptr == rhs._ptr;
+			}
+			bool operator!=(const Iterator& rhs) const { return !operator==(rhs); }
+
+			Iterator begin() const { return Iterator(*this); };
+			Iterator end() const { return Iterator(nullptr); };
+
+		private:
+			bool Valid() const {
+				return /*parent && */(_ptr != _end);
+			};
+			void Increment() { if (Valid()) ++_ptr; };
+
+			static decltype(_ptr) begin_impl(Set* parent) {
+				if (parent) {
+					return parent->map.begin();
+				}
+				return decltype(_ptr){};
+			};
+			static decltype(_end) end_impl(Set* parent) {
+				if (parent) {
+					return parent->map.end();
+				}
+				return decltype(_end){};
+			};
+		};
+		using iterator = Iterator;
+		using const_iterator = Iterator;
+
+#endif
 
 
 
+		//struct it_state {
+		//	std::shared_ptr<std::shared_lock<std::shared_mutex>> 
+		//		lifetime;
+		//	typename std::map<key_type, T, Cmp>::iterator 
+		//		pos;
 
+		//	inline void begin(const Map* ref) { 
+		//		auto shared = ref->data.Shared();
+		//		pos = shared->begin();
+		//		lifetime = shared.ForwardLock();
+		//	};
+		//	inline void next(const Map* ref) { ++pos; };
+		//	inline void end(const Map* ref) { 
+		//		auto shared = ref->data.Shared();
+		//		pos = shared->end();
+		//		lifetime = shared.ForwardLock();
+		//	};
+		//	inline typename underlying::value_type& get(Map* ref) { return *pos; };
+		//	inline bool cmp(const it_state& s) const { return (pos == s.pos) ? false : true; };
+		//	inline long long distance(const it_state& s) const { return pos - s.pos; };
+		//	// Optional to allow operator--() and reverse iterators:
+		//	inline void prev(const Map* ref) { --pos; };
+		//	// Optional to allow `const_iterator`:
+		//	inline const typename underlying::value_type& get(const Map* ref) const { return *pos; };
+		//};
+		//SETUP_STL_ITERATOR(Map, typename underlying::value_type, it_state);
 
+	public:
+		friend bool operator==(Map const& _Left, Map const& _Right) {
+			return (_Left.size() == _Right.size())
+				&& (*_Left.data.Shared() == *_Right.data.Shared());
+		};
+		friend bool operator!=(Map const& _Left, Map const& _Right) {
+			return !operator==(_Left, _Right);
+		};
 
-
+	};
 
 
 };

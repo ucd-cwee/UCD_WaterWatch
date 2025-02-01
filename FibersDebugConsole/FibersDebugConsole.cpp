@@ -8,6 +8,7 @@
 #include "../GoodLang/Units.h"
 #include "../GoodLang/DateTime.h"
 #include "../GoodLang/Parallel.h"
+#include "../WaterWatchCpp/Clock.h"
 
 //#include "../FiberTasks/Fibers.h"
 //#include "../FiberTasks/UnitsLibrary.h"
@@ -242,20 +243,45 @@ int main() {
 	// 100,000 parallel jobs
 	if (1) {
 		std::atomic<int> V{ 0 };
-		// Units::scalar V{ 0 }; // At high levels of parallelism, the Units lock will choke the threads
+		Units::scalar V2{ 0 }; // At high levels of parallelism, the Units lock will choke the threads
+		Stopwatch sw;
+
+		sw.Start();
 		parallel::For(0, 100000, [&](int i) {
 			V++;
-			});
+		});
+		print(Units::second(sw.Stop_s()));
+
+		sw.Start();
+		parallel::For(0, 100000, [&](int i) {
+			V2++;
+		});
+		print(Units::second(sw.Stop_s()));
+
 		print(V);
+		print(V2);
 	}
 	// 10,000,000 parallel jobs
 	if (1) {
+		Stopwatch sw;
+
 		std::atomic<int> V{ 0 };
-		// Units::scalar V{ 0 }; // At high levels of parallelism, the Units lock will choke the threads
+		Units::scalar V2{ 0 }; // At high levels of parallelism, the Units lock will choke the threads
+
+		sw.Start();
 		parallel::For(0, 10000000, [&](int i) {
 			V++;
 		});
+		print(Units::second(sw.Stop_s()));
+
+		sw.Start();
+		parallel::For(0, 10000000, [&](int i) {
+			V2++;
+		});
+		print(Units::second(sw.Stop_s()));
+
 		print(V);
+		print(V2);
 	}
 	// parallel jobs that each ALSO dispatch parallel jobs, for a total of 10,000,000 parallel jobs
 	if (1) {
@@ -281,24 +307,73 @@ int main() {
 			print(e.what());
 		} // note that catching exceptions is a slow process (relatively), but is preferred to general crash. 
 	}
-	//// parallel jobs iterating over a vector
-	//if (1) {
-	//	auto seq{ Sequence(0, 1000000) };
-	//	std::atomic<int> V{ 0 };
-	//	parallel::ForEach(seq, [&](int const& i) {
-	//		V++;
-	//	});
-	//	print(V);
-	//}
-	//if (1) {
-	//	std::vector<int> data{ 100000, 1 };
-	//	auto seq{ IteratorSequence(data.begin(), data.end()) };
-	//	std::atomic<int> V{ 0 };
-	//	parallel::ForEach(seq, [&](std::pair<int, int*> i) {
-	//		V++;
-	//	});
-	//	print(V);
-	//}
+	//// parallel jobs iterating over sequences and iterators
+	if (1) {
+		auto seq{ Sequence(0, 10000000, 1) }; // sequence is an iterator with little to no memory usage, but allows iterating on a counter
+		std::atomic<int> V{ 0 };
+		parallel::ForEach(seq, [&](int i) {
+			V++;
+		});
+		print(V);
+	}
+	// iterate over Sequence wrapper, for basic count-from-0-to-10 operations
+	if (1) {
+		auto seq{ Sequence(10000000, 0, -1) }; // sequence is an iterator with little to no memory usage, but allows iterating on a counter
+		std::atomic<int> V{ 0 };
+		parallel::ForEach(seq, [&](int i) {
+			V++;
+		});
+		print(V);
+	}
+	// iterate over IteratorSequence wrapper (allows looping over iterators randomly while tracking the correct index)
+	if (1) {
+		std::vector<std::string> data(100000, "TEST");
+		auto seq{ IteratorSequence(data.begin(), data.end()) };
+		std::atomic<int> V{ 0 };
+		parallel::ForEach(seq, [&](std::pair<
+			int, // index
+			std::string* // data
+		> const& i) {
+			V++;
+		});
+		print(V);
+	}
+	// iterate over container
+	if (1) {
+		std::vector<std::string> data(100000, "TEST");
+		std::atomic<int> V{ 0 };
+		parallel::ForEach(data, [&](std::string const& i) {
+			V++;
+		});
+		print(V);
+	}
+
+	// Map
+	if (1) {
+		GoodLang::Map<int, Units::scalar> map;
+		*map[0] = 1;
+		*map[1] = 2;
+
+		parallel::For(0, 100000, [&](int i) {
+			(void)map.size(); // OK
+			map.try_emplace(i, i); // OK
+			map.at(0)->operator++(); // OK
+			*map[i] = i; // OK
+			try {
+				map.erase(100000.0 * (static_cast<double>(std::rand()) / static_cast<double>(RAND_MAX)));
+			} catch (std::out_of_range&) {}
+
+		});
+		print(map.size());
+
+		//parallel::ForEach(map, [&](auto& i) {
+		//	print(i.second);
+		//});
+
+
+		
+	}
+
 
 
 #if 0

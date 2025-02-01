@@ -740,30 +740,48 @@ namespace GoodLang {
 			return *this;
 		};
 		value& value::operator++() {
-			unit_m.Update([](UnitDefinition Data)->UnitDefinition {
+			auto r{ unit_m.Read() };
+			r->value_m += r->ratio_m;
+			return *this;
+			
+			/*unit_m.Update([](UnitDefinition Data)->UnitDefinition {
 				Data.value_m += (double)Data.ratio_m;
 				return Data;
 			});
-			return *this;
+			return *this;*/
 		};
 		value& value::operator--() {
-			unit_m.Update([](UnitDefinition Data)->UnitDefinition {
-				Data.value_m -= (double)Data.ratio_m;
-				return Data;
-			});
+			auto r{ unit_m.Read() };
+			r->value_m -= r->ratio_m;
 			return *this;
+
+			//unit_m.Update([](UnitDefinition Data)->UnitDefinition {
+			//	Data.value_m -= (double)Data.ratio_m;
+			//	return Data;
+			//});
+			//return *this;
 		};
 		value value::operator++(int) {
-			return value{ unit_m.Update([](UnitDefinition Data)->UnitDefinition {
-				Data.value_m += (double)Data.ratio_m;
-				return Data;
-			}) };
+			auto r{ unit_m.Read() };
+			value out{ *r };
+			r->value_m += r->ratio_m;
+			return out;
+
+			//return value{ unit_m.Update([](UnitDefinition Data)->UnitDefinition {
+			//	Data.value_m += (double)Data.ratio_m;
+			//	return Data;
+			//}) };
 		};
 		value value::operator--(int) {
-			return value{ unit_m.Update([](UnitDefinition Data)->UnitDefinition {
-				Data.value_m -= (double)Data.ratio_m;
-				return Data;
-			}) };
+			auto r{ unit_m.Read() };
+			value out{ *r };
+			r->value_m -= r->ratio_m;
+			return out;
+
+			//return value{ unit_m.Update([](UnitDefinition Data)->UnitDefinition {
+			//	Data.value_m -= (double)Data.ratio_m;
+			//	return Data;
+			//}) };
 		};
 		value Add(value const& a, value const& b) {
 			auto a_struct = a.unit_m.load();
