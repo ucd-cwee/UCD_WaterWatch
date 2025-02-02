@@ -120,13 +120,6 @@ int main() {
 	Union<int, int> y;
 	y.get<0>() += 1;
 
-	DoubleWrapper xyz{ 5 };
-	xyz += 1;
-	xyz -= 2.0;
-	xyz /= 5.0f;
-	print(xyz);
-
-
 	Units::UnitDefinition def;
 	def.IsSI();
 	print(def.HashCategory());
@@ -249,13 +242,13 @@ int main() {
 		sw.Start();
 		parallel::For(0, 100000, [&](int i) {
 			V++;
-		});
+			});
 		print(Units::second(sw.Stop_s()));
 
 		sw.Start();
 		parallel::For(0, 100000, [&](int i) {
 			V2++;
-		});
+			});
 		print(Units::second(sw.Stop_s()));
 
 		print(V);
@@ -271,13 +264,13 @@ int main() {
 		sw.Start();
 		parallel::For(0, 10000000, [&](int i) {
 			V++;
-		});
+			});
 		print(Units::second(sw.Stop_s()));
 
 		sw.Start();
 		parallel::For(0, 10000000, [&](int i) {
 			V2++;
-		});
+			});
 		print(Units::second(sw.Stop_s()));
 
 		print(V);
@@ -289,9 +282,9 @@ int main() {
 		parallel::For(0, 100, [&](int i) {
 			parallel::For(0, 100000, [&](int j) {
 				V++;
+				});
 			});
-		});
-		print(V);		
+		print(V);
 	}
 	// catch exceptions thrown from inside of a job
 	if (1) {
@@ -300,10 +293,11 @@ int main() {
 			parallel::For(0, 100, [&](int i) {
 				parallel::For(0, 100000, [&](int j) {
 					V += 5_gpm; // will fail due to incompatable units. 
+					});
 				});
-			});
 			print(V);
-		} catch (std::exception& e) {
+		}
+		catch (std::exception& e) {
 			print(e.what());
 		} // note that catching exceptions is a slow process (relatively), but is preferred to general crash. 
 	}
@@ -313,7 +307,7 @@ int main() {
 		std::atomic<int> V{ 0 };
 		parallel::ForEach(seq, [&](int i) {
 			V++;
-		});
+			});
 		print(V);
 	}
 	// iterate over Sequence wrapper, for basic count-from-0-to-10 operations
@@ -322,7 +316,7 @@ int main() {
 		std::atomic<int> V{ 0 };
 		parallel::ForEach(seq, [&](int i) {
 			V++;
-		});
+			});
 		print(V);
 	}
 	// iterate over IteratorSequence wrapper (allows looping over iterators randomly while tracking the correct index)
@@ -334,8 +328,8 @@ int main() {
 			int, // index
 			std::string* // data
 		> const& i) {
-			V++;
-		});
+				V++;
+			});
 		print(V);
 	}
 	// iterate over container
@@ -344,7 +338,7 @@ int main() {
 		std::atomic<int> V{ 0 };
 		parallel::ForEach(data, [&](std::string const& i) {
 			V++;
-		});
+			});
 		print(V);
 	}
 
@@ -361,15 +355,15 @@ int main() {
 			*map[i] = i; // OK
 			try {
 				map.erase(100000.0 * (static_cast<double>(std::rand()) / static_cast<double>(RAND_MAX)));
-			} catch (std::out_of_range&) {}
+			}
+			catch (std::out_of_range&) {}
 
-		});
+			});
 		print(map.size());
 
 		(void)std::distance(map.begin(), map.end());
 
-
-
+		for (auto f = map.find(0); f != map.end(); f++) {}
 
 		Units::scalar V;
 		parallel::ForEach(map, [&](auto& i) {
@@ -377,8 +371,63 @@ int main() {
 		});
 		print(V);
 
+	}
+	// Map as pattern
+	if (1) {
+		GoodLang::Map<double, double> map;
+		parallel::ForEach(GoodLang::Sequence(0.0, 1000.0, 50.0), [&](double i) {
+			*map[i] = i;
+			});
+
+		auto f0 = map.FindLargestSmallerEqual(25);
+		auto f50 = map.FindSmallestLargerEqual(25);
+
+		if (f0 != map.end()) {
+			EXPECT_EQ(f0->second, 0.0);
+		}
+		if (f50 != map.end()) {
+			EXPECT_EQ(f50->second, 50.0);
+		}
+
+		parallel::ForEach(map, [](auto& x) {
+			x.second++;
+		});
+	}
+	// Map with strings
+	if (1) {
+		GoodLang::Map<std::string, double> map;
+		*map["TEST"] = 10;
+		*map["TEST2"] = 102;
 
 		
+	}
+
+	// Unordered Map
+	if (1) {
+		GoodLang::UnorderedMap<int, Units::scalar> map;
+		parallel::For(0, 100000, [&](int i) {
+			++(*map[i]);
+		});
+		for (auto f = map.find(0); f != map.end(); f++) {}
+		parallel::ForEach(map, [](auto& x) {
+			x.second++;
+		});
+		print(map.size());
+
+	}
+
+	// Vector
+	if (1) {
+		GoodLang::Vector<Units::scalar> vec;
+		Units::scalar count{ 0 };
+		parallel::For(0, 100000, [&](int i) {
+			vec.push_back(i);
+			vec[vec.size() - 1]->operator++();
+			vec.erase_fast(0);
+		});
+		for (auto f = vec.begin(); f != vec.end(); f++) {}
+		print(vec.size());
+
 	}
 
 

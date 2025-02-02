@@ -26,6 +26,7 @@ namespace GoodLang {
 		Decrement();
 	};
 
+#if 0
 	// DoubleWrapper
 	DoubleWrapper::Arg DoubleWrapper::abs(Arg val) {
 		return val >= (Arg)0 ? val : -val;
@@ -392,10 +393,6 @@ namespace GoodLang {
 		Swap(v);
 		return;
 	}; // sets the value to the input
-
-
-
-
-
+#endif
 
 };

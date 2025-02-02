@@ -549,8 +549,8 @@ namespace GoodLang {
 			ConstIterator(Type rhs, Type min, Type step) : _ptr(rhs), _min(min), _step(step) {}
 			ConstIterator(const ConstIterator& rhs) : _ptr(rhs._ptr), _min(rhs._min), _step(rhs._step) {}
 
-			inline ConstIterator& operator+=(difference_type rhs) { _ptr += rhs * step; return *this; }
-			inline ConstIterator& operator-=(difference_type rhs) { _ptr -= rhs * step; return *this; }
+			inline ConstIterator& operator+=(difference_type rhs) { _ptr += rhs * _step; return *this; }
+			inline ConstIterator& operator-=(difference_type rhs) { _ptr -= rhs * _step; return *this; }
 			inline const Type& operator*() const { return _ptr; }
 			inline const Type* operator->() const { return &_ptr; }
 			inline const Type operator[](difference_type rhs) const { return static_cast<Type>(_min + rhs * _step); }

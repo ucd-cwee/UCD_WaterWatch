@@ -5653,7 +5653,6 @@ namespace fibers {
 
 		};
 
-
 #if 0
 		/* *THREAD SAFE* Fiber- and thread-safe unsorted map. KeyType may be anything that can be hashed, and ObjType must be copy-by-value. */
 		template <typename KeyType = std::string, typename ObjType = std::string, typename Hasher = std::hash<KeyType>> class MapImpl {

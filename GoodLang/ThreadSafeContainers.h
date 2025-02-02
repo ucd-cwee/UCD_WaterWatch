@@ -11,7 +11,6 @@
 #include <functional>
 #include <cassert>
 #include <ShlDisp.h> // InterlockedExchangePointer
-
 #include <map>
 
 namespace GoodLang {
@@ -1376,6 +1375,7 @@ namespace GoodLang {
 		}; // sets the value to the input
 	};
 
+#if 0
 	// constexpr wrapper that guarrantees the underlying storage data maintains a '0' in the final bit, which is necessary for CAS atomic operations.
 	class DoubleWrapper {
 	public:
@@ -1869,11 +1869,12 @@ namespace GoodLang {
 		}; // sets the value to the input
 
 	};
+#endif
 
-	template <typename key_type, typename T, typename Cmp = std::less<key_type>>
-	class Map {
+	// thread-safe sorted dictionary.
+	template <typename key_type, typename T, typename Cmp = std::less<key_type>> class Map {		
 	protected:
-		SharedLockable<std::map<key_type, T, Cmp>> data;
+		mutable SharedLockable<std::map<key_type, T, Cmp>> data;
 		typedef std::map<key_type, T, Cmp> underlying;
 
 	public:
@@ -1943,7 +1944,6 @@ namespace GoodLang {
 			return shared->empty();
 		};
 		
-
 	private:
 		class it_state {			
 		public:
@@ -1986,7 +1986,60 @@ namespace GoodLang {
 			difference_type Distance(it_state const& other) const { return _ptr - other._ptr; };
 		};
 	public:
-        SETUP_ITERATOR(it_state);
+        SETUP_ITERATOR(Map, it_state);
+
+		iterator find(const key_type& _Keyval) const {
+			auto iter = this->end();
+			if (auto shared = data.Shared()) {
+				iter.state._ptr = shared->find(_Keyval);
+			}
+			return iter;
+		};
+		iterator lower_bound(const key_type& _Keyval) const {
+			iterator iter{ this->end() };
+			if (auto shared = data.Shared()) {
+				iter.state._ptr = shared->lower_bound(_Keyval);
+			}
+			return iter;
+		};
+		iterator upper_bound(const key_type& _Keyval) const {
+			auto iter{ this->end() };
+			if (auto shared = data.Shared()) {
+				iter.state._ptr = shared->upper_bound(_Keyval);
+			}
+			return iter;
+		};
+		iterator FindLargestSmallerEqual(const key_type& pos) const {
+			iterator iter{ this->end() };
+			if (auto f = data.Shared()) {
+				auto ptr = f->lower_bound(pos); // equal to or larger than pos
+				if (ptr != f->end()) {
+					// map is not empty, AND we either found the actual key, or the one JUST larger than it 
+					if (ptr->first == pos) { // consider converting this to using the std::less (e.g. Cmp) comparator, rather than the == comparitor.
+						// DONE
+					}
+					else {
+						// we are beyond our goal -- move back one. 
+						ptr = std::prev(ptr);
+
+						// what if this was actually the first position? 
+						if (ptr == f->end()) {
+							ptr = f->begin();
+						}
+					}
+				}
+				else {
+					if (!f->empty()) {
+						ptr = std::prev(f->end()); // get what you get
+					}
+				}
+				iter.state._ptr = ptr;
+			}
+			return iter;
+		};
+		iterator FindSmallestLargerEqual(const key_type& pos) const {
+			return lower_bound(pos); // equal to or larger than pos
+		};
 
 	public:
 		friend bool operator==(Map const& _Left, Map const& _Right) {
@@ -1998,6 +2051,296 @@ namespace GoodLang {
 		};
 
 	};
+	
+	// thread-safe unsorted dictionary. Higher performance than the sorted dictionary.
+	template <typename key_type, typename T, typename Hasher = std::hash<key_type>> class UnorderedMap {
+	protected:
+		typedef concurrency::concurrent_unordered_map<key_type, T, Hasher> underlying;
+		mutable SharedLockable<underlying> data;
+	
+	public:
+		template <class... _Mappedty> void try_emplace(const key_type& _Keyval, _Mappedty&&... _Mapval) {
+			auto shared = data.Shared();
+			shared->insert(underlying::value_type(_Keyval, std::forward<_Mappedty>(_Mapval)...));
+		};
+		template <class... _Mappedty> void try_emplace(key_type&& _Keyval, _Mappedty&&... _Mapval) {
+			auto shared = data.Shared();
+			shared->insert(underlying::value_type(std::move(_Keyval), std::forward<_Mappedty>(_Mapval)...));
+		};
+		template <class _Mappedty> void insert_or_assign(const key_type& _Keyval, _Mappedty&& _Mapval) {
+			auto shared = data.Shared();
+			shared->insert(underlying::value_type(_Keyval, std::forward<_Mappedty>(_Mapval)...));
+		};
+		template <class _Mappedty> void insert_or_assign(key_type&& _Keyval, _Mappedty&& _Mapval) {
+			auto shared = data.Shared();
+			shared->insert(underlying::value_type(std::move(_Keyval), std::forward<_Mappedty>(_Mapval)...));
+		};
+		typename SharedLockable<T>::SharedObj operator[](const key_type& _Keyval) {
+			auto shared = data.Shared();
+			T& result = shared->operator[](_Keyval);
+			return typename SharedLockable<T>::SharedObj(result, shared.ForwardLock());
+		};
+		typename SharedLockable<T>::SharedConstObj operator[](const key_type& _Keyval) const {
+			auto shared = data.Shared();
+			const T& result = shared->at(_Keyval);
+			return typename SharedLockable<T>::SharedConstObj(result, shared.ForwardLock());
+		};
+		typename SharedLockable<T>::SharedObj at(const key_type& _Keyval) {
+			auto shared = data.Shared();			
+			T& result = shared->at(_Keyval);
+			return typename SharedLockable<T>::SharedObj(result, shared.ForwardLock());
+		};
+		typename SharedLockable<T>::SharedConstObj at(const key_type& _Keyval) const {
+			auto shared = data.Shared();
+			const T& result = shared->at(_Keyval);
+			return typename SharedLockable<T>::SharedConstObj(result, shared.ForwardLock());
+		};
+		size_t size() const {
+			auto shared = data.Shared();
+			return shared->size();
+		};
+		void erase(const key_type& _Keyval) {
+			auto shared = data.Unique();
+			return shared->unsafe_erase(_Keyval);
+		};
+		void clear() {
+			auto shared = data.Unique();
+			shared->clear();
+		};
+		size_t count(const key_type& _Keyval) const {
+			auto shared = data.Shared();
+			return shared->count(_Keyval);
+		};
+		bool empty() const {
+			auto shared = data.Shared();
+			return shared->empty();
+		};
+
+	private:
+		class it_state {
+		public:
+			using thisType = UnorderedMap;
+			using value_type = typename underlying::value_type;
+			using iterator_category = std::forward_iterator_tag;
+			using difference_type = typename std::iterator<iterator_category, value_type>::difference_type;
+
+			// data
+			mutable typename underlying::iterator
+				_ptr{};
+			std::shared_ptr<std::shared_lock<std::shared_mutex>>
+				lifetime{ nullptr };
+
+			// functions
+			void Initialize(thisType* ref) {
+				auto shared = ref->data.Shared();
+				lifetime = shared.ForwardLock();
+			};
+			void ToBeginning(thisType* ref) {
+				auto shared = ref->data.Shared();
+				_ptr = shared->begin();
+			};
+			void ToEnd(thisType* ref) {
+				auto shared = ref->data.Shared();
+				_ptr = shared->end();
+			};
+			void Next(thisType* ref) {
+				++_ptr;
+			};
+			void Prev(thisType* ref) {
+				--_ptr;
+			};
+			value_type& Get(thisType* ref) const {
+				return *_ptr;
+			};
+			bool operator==(it_state const& rhs) const {
+				return _ptr == rhs._ptr;
+			};
+			difference_type Distance(it_state const& other) const { return _ptr - other._ptr; };
+		};
+	public:
+		SETUP_ITERATOR(UnorderedMap, it_state);
+		iterator find(const key_type& _Keyval) const {
+			auto iter = this->end();
+			if (auto shared = data.Shared()) {
+				iter.state._ptr = shared->find(_Keyval);
+			}
+			return iter;
+		};
+
+	public:
+		friend bool operator==(UnorderedMap const& _Left, UnorderedMap const& _Right) {
+			return (_Left.size() == _Right.size())
+				&& (*_Left.data.Shared() == *_Right.data.Shared());
+		};
+		friend bool operator!=(UnorderedMap const& _Left, UnorderedMap const& _Right) {
+			return !operator==(_Left, _Right);
+		};
+
+	};
+
+	// thread-safe std::vector.
+	template <typename T> class Vector {
+	protected:
+		typedef std::vector<T> underlying;
+		mutable SharedLockable<underlying> data;
+
+	public:
+		void push_back(T&& V) {
+			auto shared = data.Unique();
+			shared->push_back(std::move(V));
+		};
+		void push_back(const T& V) {
+			auto shared = data.Unique();
+			shared->push_back(V);
+		};
+		typename SharedLockable<T>::SharedObj operator[](size_t _Keyval) {
+			auto shared = data.Shared();
+			T& result = shared->operator[](_Keyval);
+			return typename SharedLockable<T>::SharedObj(result, shared.ForwardLock());
+		};
+		typename SharedLockable<T>::SharedConstObj operator[](size_t _Keyval) const {
+			auto shared = data.Shared();
+			const T& result = shared->at(_Keyval);
+			return typename SharedLockable<T>::SharedConstObj(result, shared.ForwardLock());
+		};
+		typename SharedLockable<T>::SharedObj at(size_t _Keyval) {
+			auto shared = data.Shared();
+			T& result = shared->at(_Keyval);
+			return typename SharedLockable<T>::SharedObj(result, shared.ForwardLock());
+		};
+		typename SharedLockable<T>::SharedConstObj at(size_t _Keyval) const {
+			auto shared = data.Shared();
+			const T& result = shared->at(_Keyval);
+			return typename SharedLockable<T>::SharedConstObj(result, shared.ForwardLock());
+		};
+		typename SharedLockable<T>::SharedObj front() {
+			auto shared = data.Shared();
+			T& result = shared->front();
+			return typename SharedLockable<T>::SharedObj(result, shared.ForwardLock());
+		};
+		typename SharedLockable<T>::SharedConstObj front() const {
+			auto shared = data.Shared();
+			const T& result = shared->front();
+			return typename SharedLockable<T>::SharedConstObj(result, shared.ForwardLock());
+		};
+		typename SharedLockable<T>::SharedObj back() {
+			auto shared = data.Shared();
+			T& result = shared->back();
+			return typename SharedLockable<T>::SharedObj(result, shared.ForwardLock());
+		};
+		typename SharedLockable<T>::SharedConstObj back() const {
+			auto shared = data.Shared();
+			const T& result = shared->back();
+			return typename SharedLockable<T>::SharedConstObj(result, shared.ForwardLock());
+		};
+		size_t size() const {
+			auto shared = data.Shared();
+			return shared->size();
+		};
+		bool empty() const {
+			auto shared = data.Shared();
+			return shared->empty();
+		};
+		size_t capacity() const {
+			auto shared = data.Shared();
+			return shared->capacity();
+		};
+		void reserve(size_t N) const {
+			auto shared = data.Unique();
+			return shared->reserve(N);
+		};
+		void resize(size_t N) const {
+			auto shared = data.Unique();
+			return shared->resize(N);
+		};
+		void resize(size_t N, const T& V) const {
+			auto shared = data.Unique();
+			return shared->resize(N, V);
+		};
+		size_t max_size() {
+			auto shared = data.Shared();
+			return shared->max_size();
+		};
+		void clear() {
+			auto shared = data.Unique();
+			shared->clear();
+		};
+		// removes element, shifts all other elements to maintain order
+		void erase(size_t index) {
+			auto shared = data.Unique();
+			shared->erase(shared->begin() + index);
+		};
+		// removes element, swapping with the last element, and does NOT maintain order of the list.
+		void erase_fast(size_t index) {
+			auto shared = data.Unique();
+			shared->operator[](index) = shared->operator[](shared->size()-1);
+			shared->resize(shared->size() - 1);
+		};
+		friend bool operator==(Vector const& _Left, Vector const& _Right) {
+			return (_Left.size() == _Right.size())
+				&& (*_Left.data.Shared() == *_Right.data.Shared());
+		};
+		friend bool operator!=(Vector const& _Left, Vector const& _Right) {
+			return !operator==(_Left, _Right);
+		};
+
+	private:
+		class it_state {
+		public:
+			using thisType = Vector;
+			using value_type = typename underlying::value_type;
+			using iterator_category = std::forward_iterator_tag;
+			using difference_type = typename std::iterator<iterator_category, value_type>::difference_type;
+
+			// data
+			mutable typename underlying::iterator
+				_ptr{};
+			std::shared_ptr<std::shared_lock<std::shared_mutex>>
+				lifetime{ nullptr };
+
+			// functions
+			void Initialize(thisType* ref) {
+				auto shared = ref->data.Shared();
+				lifetime = shared.ForwardLock();
+			};
+			void ToBeginning(thisType* ref) {
+				auto shared = ref->data.Shared();
+				_ptr = shared->begin();
+			};
+			void ToEnd(thisType* ref) {
+				auto shared = ref->data.Shared();
+				_ptr = shared->end();
+			};
+			void Next(thisType* ref) {
+				++_ptr;
+			};
+			void Prev(thisType* ref) {
+				--_ptr;
+			};
+			value_type& Get(thisType* ref) const {
+				return *_ptr;
+			};
+			bool operator==(it_state const& rhs) const {
+				return _ptr == rhs._ptr;
+			};
+			difference_type Distance(it_state const& other) const { return _ptr - other._ptr; };
+		};
+	public:
+		SETUP_ITERATOR(Vector, it_state);
+
+	};
+
+	// Queue
+
+	// Set
+
+	// Unordered Set
+
+	// Stack
+
+	// Pattern
+
+
 
 
 };

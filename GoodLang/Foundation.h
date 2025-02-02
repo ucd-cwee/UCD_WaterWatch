@@ -54,10 +54,11 @@
 #pragma endregion
 
 #pragma region iterator_definition
-#define SETUP_ITERATOR(it_state)   \
+#define SETUP_ITERATOR(parentClassType, it_state)   \
 		class Iterator : public std::iterator<typename it_state::iterator_category, typename it_state::value_type> {   \
 		public:   \
 			using thisType = typename it_state::thisType;   \
+            friend class parentClassType; \
 			using value_type = typename it_state::value_type;   \
 			using difference_type = typename std::iterator<typename it_state::iterator_category, value_type>::difference_type;   \
 		protected:   \
@@ -98,11 +99,11 @@
 		};   \
 		using iterator = Iterator;   \
 		using const_iterator = Iterator;   \
-		Iterator begin() {   \
+		Iterator begin() const {   \
 			typedef typename std::remove_const_t< typename std::remove_pointer_t< decltype(&*this) > > thisType;   \
 			return Iterator(const_cast<thisType*>(this));   \
 		};   \
-		Iterator end() { return begin().end(); };   \
+		Iterator end() const { return begin().end(); };   \
 		Iterator cbegin() const { return begin(); };   \
 		Iterator cend() const { return end(); };
 #pragma endregion 
