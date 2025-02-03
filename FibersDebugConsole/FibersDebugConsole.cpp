@@ -9,6 +9,7 @@
 #include "../GoodLang/DateTime.h"
 #include "../GoodLang/Parallel.h"
 #include "../WaterWatchCpp/Clock.h"
+#include "../GoodLang/Scopes.h"
 
 //#include "../FiberTasks/Fibers.h"
 //#include "../FiberTasks/UnitsLibrary.h"
@@ -429,6 +430,35 @@ int main() {
 		print(vec.size());
 
 	}
+
+	// Scopes
+	if (1) {
+		auto s0 = std::make_shared<GoodLang::Global>();
+		s0->SetSelf(s0);
+		s0->AddBuiltIns();
+		{
+			auto s1 = std::make_shared<GoodLang::Scope>(s0);
+			s1->SetSelf(s1);
+			s1->AddObj("x", std::make_shared<GoodLang::Any>(100));
+
+			s1->AddFunction("foo", make_callable([](int x) -> int { return x * 2; }));
+			
+			Any result1 = s1->CallFunction("foo", { 100 });
+			Any result2 = s1->CallFunction("foo", { 100.0 });
+
+
+			auto L1 = s1->CallFunction("Units::foot", { 100.0 });
+			auto L2 = s1->CallFunction("Units::meter", { 100.0 });
+			print(s1->Cast<std::string>(s1->CallFunction("to_string", { s1->CallFunction("+", { L1, L2 }) })));
+
+
+		}
+	}
+
+
+
+
+
 
 
 

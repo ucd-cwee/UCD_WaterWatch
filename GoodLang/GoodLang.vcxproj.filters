@@ -16,6 +16,9 @@
     <Filter Include="Units">
       <UniqueIdentifier>{5352ccac-3626-4de3-8dd2-c103382cf752}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Units\UnitsLibrary">
+      <UniqueIdentifier>{f548ad70-4b7f-4565-861d-91cfcf7b01b1}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="GoodLang.cpp">
@@ -40,6 +43,30 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="Parallel.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Scopes.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="UnitsLibrary_1.cpp">
+      <Filter>Units\UnitsLibrary</Filter>
+    </ClCompile>
+    <ClCompile Include="UnitsLibrary_2.cpp">
+      <Filter>Units\UnitsLibrary</Filter>
+    </ClCompile>
+    <ClCompile Include="UnitsLibrary_3.cpp">
+      <Filter>Units\UnitsLibrary</Filter>
+    </ClCompile>
+    <ClCompile Include="UnitsLibrary_4.cpp">
+      <Filter>Units\UnitsLibrary</Filter>
+    </ClCompile>
+    <ClCompile Include="UnitsLibrary_5.cpp">
+      <Filter>Units\UnitsLibrary</Filter>
+    </ClCompile>
+    <ClCompile Include="UnitsLibrary_6.cpp">
+      <Filter>Units\UnitsLibrary</Filter>
+    </ClCompile>
+    <ClCompile Include="Built_In_Classes.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
@@ -72,6 +99,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="Parallel.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Scopes.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

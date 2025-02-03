@@ -25,6 +25,12 @@ namespace GoodLang {
 	void InterlockedLong::unlock() {
 		Decrement();
 	};
+	long InterlockedLong::load() const { return GetValue(); };
+	bool InterlockedLong::CompareExchange(long oldVersion, long RecordVersion) {
+		return SetValueIfEqual(RecordVersion, oldVersion);
+	};
+
+
 
 #if 0
 	// DoubleWrapper

@@ -1,0 +1,989 @@
+#pragma once
+#include "Foundation.h"
+#include "Any"
+#include "Proxy_Function.h"
+#include "ThreadSafeContainers.h"
+#include "Units_Base.h"
+#include <unordered_set>
+
+// forward decl
+namespace GoodLang {
+	class Scope;
+	class Namespace;
+	class Class;
+	class Global;
+};
+
+#define useCachedData
+
+// Scope
+namespace GoodLang {
+
+	class Scope {
+	public:
+		friend class Namespace;
+		friend class Class;
+		friend class Global;
+
+		Scope(std::shared_ptr<Scope> const& parent)
+			: p_UniqueName(" _ _ _ _ _ _")
+			, p_self()
+			, p_parent(parent)
+			, p_namespace()
+			, p_library()
+			, p_using()
+		{
+			static auto randN{ [](double min, double max) -> double { return (((double)std::rand() / (double)RAND_MAX) * (max - min)) + min; } };
+			for (int i = 0; i < 12; i++) {
+				if (i < 2)
+					p_UniqueName[i] = (char)(int)randN((int)('A'), (int)('Z'));
+				else if (i < 6)
+					p_UniqueName[i] = (char)(int)randN((int)('0'), (int)('9'));
+				else if (i < 8)
+					p_UniqueName[i] = (char)(int)randN((int)('A'), (int)('Z'));
+				else if (i < 12)
+					p_UniqueName[i] = (char)(int)randN((int)('0'), (int)('9'));
+			};
+
+			if (auto p = p_parent.lock()) { p_namespace = p->GetNamespaceImpl(); }
+			else { p_namespace = std::dynamic_pointer_cast<Namespace>(p_self.lock()); }
+
+			if (auto p = p_parent.lock()) { p_library = p->GetLibraryImpl(); }
+			else { p_library = std::dynamic_pointer_cast<Global>(p_self.lock()); }
+
+			qualifiedNamespaceWithQualifiers = GetQualifiedNamespaceImpl(true);
+			qualifiedNamespaceWithoutQualifiers = GetQualifiedNamespaceImpl();
+		};
+		Scope(std::shared_ptr<Namespace> const& parent) : Scope(std::dynamic_pointer_cast<Scope>(parent)) {};
+		Scope(std::shared_ptr<Class> const& parent) : Scope(std::dynamic_pointer_cast<Scope>(parent)) {};
+		Scope(std::shared_ptr<Global> const& parent) : Scope(std::dynamic_pointer_cast<Scope>(parent)) {};
+
+		Scope(Scope const&) = default;
+		Scope(Scope&&) = default;
+		Scope& operator=(Scope const&) = default;
+		Scope& operator=(Scope&&) = default;
+		virtual ~Scope() = default;
+
+	private:
+		std::string // randomly generated, truly unique name. 
+			p_UniqueName;
+	public:
+		class Hasher {
+		public:
+			Hasher() = default;
+			~Hasher() = default;
+			Hasher(Hasher const&) = default;
+			Hasher(Hasher&&) = default;
+			Hasher& operator=(Hasher const&) = default;
+			Hasher& operator=(Hasher&&) = default;
+
+			size_t operator()(std::weak_ptr<Scope> const& ptr) const noexcept {
+				return std::hash<std::shared_ptr<Scope>>()(ptr.lock());
+			};
+			size_t operator()(std::weak_ptr<Namespace> const& ptr) const noexcept {
+				return std::hash<std::shared_ptr<Scope>>()(std::dynamic_pointer_cast<Scope>(ptr.lock()));
+			};
+			size_t operator()(std::weak_ptr<Class> const& ptr) const noexcept {
+				return std::hash<std::shared_ptr<Scope>>()(std::dynamic_pointer_cast<Scope>(ptr.lock()));
+			};
+			size_t operator()(std::weak_ptr<Global> const& ptr) const noexcept {
+				return std::hash<std::shared_ptr<Scope>>()(std::dynamic_pointer_cast<Scope>(ptr.lock()));
+			};
+			size_t operator()(std::weak_ptr<TypeConverter> const& ptr) const noexcept {
+				return std::hash<std::shared_ptr<TypeConverter>>()(ptr.lock());
+			};
+
+			size_t operator()(std::shared_ptr<Scope> const& p) const noexcept {
+				return std::hash<std::shared_ptr<Scope>>()(p);
+			};
+			size_t operator()(std::shared_ptr<Namespace> const& p) const noexcept {
+				return std::hash<std::shared_ptr<Scope>>()(std::dynamic_pointer_cast<Scope>(p));
+			};
+			size_t operator()(std::shared_ptr<Class> const& p) const noexcept {
+				return std::hash<std::shared_ptr<Scope>>()(std::dynamic_pointer_cast<Scope>(p));
+			};
+			size_t operator()(std::shared_ptr<Global> const& p) const noexcept {
+				return std::hash<std::shared_ptr<Scope>>()(std::dynamic_pointer_cast<Scope>(p));
+			};
+		};
+
+	private:
+		std::string GetQualifiedNamespaceImpl(bool GetUniqueQualifier = false) const {
+			std::string path = "::";
+
+			auto parent = p_parent.lock();
+
+			if (!parent) {
+				path = "::";
+			}
+			else {
+				auto name{ GetName() };
+				if (GetUniqueQualifier) {
+					if (name == "") {
+						name = p_UniqueName;
+					}
+					else {
+						name = p_UniqueName + "_" + name;
+					}
+				}
+				if (!name.empty()) {
+					path = parent->GetQualifiedNamespace(GetUniqueQualifier) + name + "::";
+				}
+				else {
+					path = parent->GetQualifiedNamespace(GetUniqueQualifier);
+				}
+			}
+
+			while (path.find("::::") != std::string::npos) {
+				size_t start_pos = 0;
+				while ((start_pos = path.find("::::", start_pos)) != std::string::npos) {
+					path = path.replace(start_pos, 4, "::");
+					start_pos += 2; // In case 'to' contains 'from', like replacing 'x' with 'yx'
+				}
+			}
+
+			return path;
+		};
+
+	private:
+		std::weak_ptr<Scope> // shared_pointer to itself. MUST be set immediately after creating the Scope/Class/Namespace/Global.
+			p_self{};
+		std::string
+			qualifiedNamespaceWithQualifiers{};
+		std::string
+			qualifiedNamespaceWithoutQualifiers{};
+
+	public:
+		std::shared_ptr<Scope> GetSelf() const { return p_self.lock(); };
+		void SetSelf(std::shared_ptr<Scope>& p) { p_self = p; };
+		virtual bool IsClass() const { return false; };
+		virtual bool IsNamespace() const { return false; };
+		virtual std::string GetName() const { return ""; };
+		std::string const& GetQualifiedNamespace(bool GetUniqueQualifier = false) const {
+			if (GetUniqueQualifier) {
+				return qualifiedNamespaceWithQualifiers;
+			}
+			else {
+				return qualifiedNamespaceWithoutQualifiers;
+			}
+		};
+
+	public: // private:
+		std::weak_ptr<Scope> // parent scope, for navigation. Could be anything, or null.
+			p_parent{};
+		std::weak_ptr<Namespace> // parent's parent's ... parent's scope. The logical result of asking for p_parent on repeat until you get the first Namespace type. 
+			p_namespace{};
+		// if Namespace or Class or Global, returns self. Otherwise, returns the parent's Namespace. 
+		std::weak_ptr<Namespace> GetNamespaceImpl() const {
+			if (auto p = std::dynamic_pointer_cast<Namespace>(p_self.lock())) {
+				return p;
+			}
+			else {
+				return p_namespace;
+			}
+		};
+
+	public:
+		// if Namespace or Class or Global, returns self. Otherwise, returns the parent's Namespace. 
+		std::shared_ptr<Namespace> GetNamespace() const { return p_namespace.lock(); };
+
+	private:
+		UnorderedMap<std::string, std::shared_ptr<Any>>
+			p_objects; // scopes of all types may declare objects. Namespace objects may be global objects, but still. 
+
+	public:
+		// try and find the object with the requested key.
+		std::shared_ptr<Any> GetObj(std::string const& name) const {
+			return *p_objects[name];
+		};
+		// Returns true if successful. Returns false is replaceIfExisting==false and the object already existed on the Scope.
+		bool AddObj(std::string const& name, std::shared_ptr<Any> const& obj) {
+			return p_objects.emplace(name, obj);
+		};
+		// Returns true if successful.
+		bool EraseObj(std::string const& name) {
+			return p_objects.erase(name);
+		};
+		// Returns true if successful.
+		bool EraseObj(std::shared_ptr<Any> const& Obj) {
+			std::string key;
+			bool doErasure = false;
+			for (auto& obj : p_objects) {
+				if (obj.second == Obj) {
+					key = obj.first;
+					doErasure = true;
+					break;
+				}
+			}
+			if (doErasure) return EraseObj(key);
+			else return false;
+		};
+
+	private:
+		std::weak_ptr<Global> // parent's parent's ... parent's scope. The logical result of asking for p_parent on repeat until you get the end. 
+			p_library{};
+		// if Global, returns self. Otherwise, returns the parent's Library. 
+		std::weak_ptr<Global> GetLibraryImpl() const {
+			if (auto p = std::dynamic_pointer_cast<Global>(p_self.lock())) {
+				return p;
+			}
+			else {
+				return p_library;
+			}
+		};
+
+	public:
+		// if Global, returns self. Otherwise, returns the parent's Library. 
+		std::shared_ptr<Global> GetLibrary() const {
+			if (auto p = p_library.lock())
+				return p;
+			else if (auto p = std::dynamic_pointer_cast<Global>(p_self.lock()))
+				return p;
+			else
+				return nullptr;
+		};
+
+	public:
+		UnorderedMap< size_t, std::weak_ptr<Namespace>> // allows this scope to use the children of other scopes as if they were their own.
+			p_using;
+		// the Library should know about our "using" list
+		virtual bool RecordUsing(std::shared_ptr<Namespace> ptr) {
+			if (auto p = std::dynamic_pointer_cast<Scope>(GetLibrary())) {
+				return p->RecordUsing(ptr);
+			}
+			return false;
+		};
+
+	public:
+		// allows this scope to use the children of other scopes as if they were their own.
+		bool AddUsing(std::weak_ptr<Namespace> namespacePtr);
+
+	public: // private:
+		UnorderedMap<std::string,
+		    UnorderedMap<size_t, std::shared_ptr<Namespace>>
+		> // children namespaces - may be classes or namespaces. By this design, imported namespaces may be "unloaded" on scope unloading, which is on purpose.
+			p_children;
+		// the Library should know about our "Class" list
+		virtual bool RecordClass(std::shared_ptr<Class> ptr) {
+			if (auto p = std::dynamic_pointer_cast<Scope>(GetLibrary())) {
+				return p->RecordClass(ptr);
+			}
+			return false;
+		};
+
+	public:
+		bool AddChild(std::shared_ptr<Namespace> NamespacePtr);
+
+	private:
+		virtual void RemoveStaleReferences() {
+			// p_using
+			while (true) {
+				size_t toRemove{};
+				bool doRemoval = false;
+				for (auto& ref : p_using) {
+					if (ref.second.expired()) {
+						toRemove = ref.first;
+						doRemoval = true;
+						break;
+					}					
+				}
+				if (doRemoval) {
+					p_using.erase(toRemove);
+				}
+				else {
+					break;
+				}
+			}
+		};
+
+		virtual bool TryFindNearestScopeWhere(
+			std::shared_ptr<Scope>& bestMatch,
+			std::function<bool(std::shared_ptr<Scope> const&)> const& func,
+			std::unordered_set< std::shared_ptr<Scope> > const& CheckedSelf = {},
+			std::unordered_set< std::shared_ptr<Scope> > const& CheckedAll = {}
+		) const;
+		virtual bool TryFindNearestNamespaceWhere(
+			std::shared_ptr<Namespace>& bestMatch,
+			std::function<bool(std::shared_ptr<Namespace> const&)> const& func,
+			std::unordered_set< std::shared_ptr<Scope> > const& CheckedSelf = {},
+			std::unordered_set< std::shared_ptr<Scope> > const& CheckedAll = {}
+		) const;
+
+	protected:
+		virtual std::weak_ptr<Type_Info> GetClassType() const { return user_type_shared<void>(); };
+
+	public:
+		virtual bool AddFunction(std::string const& name, Function const& function, bool overrideIfAlreadyExists = true);
+
+	public:
+		virtual std::shared_ptr< Functions > GetFunctions() const;
+		virtual std::shared_ptr< Functions::FunctionSort > GetFunctions(std::string const& name) const;
+		virtual Proxy_Function GetFunction(std::string const& name, std::vector<Any> const& params);
+		virtual Proxy_Function GetFunction(std::string const& name, std::vector<Any> const& params, TypeConverter& tree);
+
+	public:
+		std::shared_ptr<Scope> FindNearestScopeWhere(std::function<bool(std::shared_ptr<Scope> const&)> const& func) const;
+		std::shared_ptr<Namespace> FindNearestNamespaceWhere(std::function<bool(std::shared_ptr<Namespace> const&)> const& func) const;
+
+	public:
+#ifdef useCachedData
+		inline static void hash_combine(std::size_t& seed) { };
+		template <typename T, typename... Rest>
+		inline static void hash_combine(std::size_t& seed, T&& v, Rest &&... rest) {
+			if constexpr (std::is_same_v<typename std::decay_t<T>, size_t>) {
+				seed ^= v + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+			}
+			else {
+				std::hash<T> hasher{};
+				seed ^= hasher(std::forward<T>(v)) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+			}
+			hash_combine(seed, std::forward<Rest>(rest)...);
+		};
+		template <typename T, typename... Rest>
+		inline static void hash_combine(std::size_t& seed, T const& v, Rest const&... rest) {
+			if constexpr (std::is_same_v<typename std::decay_t<T>, size_t>) {
+				seed ^= v + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+			}
+			else {
+				std::hash<T> hasher{};
+				seed ^= hasher(v) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+			}
+			hash_combine(seed, rest...);
+		};
+	private:
+		using CacheContainer = std::pair < std::shared_mutex, concurrency::concurrent_unordered_map<size_t, std::weak_ptr<void>>>;
+		using TemplatedCacheContainer = std::pair<std::shared_mutex, concurrency::concurrent_unordered_map<size_t, std::shared_ptr<CacheContainer>>>; // organizes multiple caches for several purposes...
+		using VersionedCacheContainer = std::pair<std::shared_mutex, concurrency::concurrent_unordered_map<size_t, std::shared_ptr<TemplatedCacheContainer>>>; // use this mutex to delete entire caches once the version is out-of-date
+		std::shared_ptr<VersionedCacheContainer>
+			SearchCache{ std::make_shared<VersionedCacheContainer>() };
+
+		std::shared_ptr<TemplatedCacheContainer> GetVersionedCacheContainer(size_t version)const {
+			while (SearchCache) {
+				// test if exists
+				if (1) {
+					auto locked{ std::shared_lock(SearchCache->first) };
+					auto f = SearchCache->second.find(version);
+					if (f != SearchCache->second.end()) {
+						return f->second;
+					}
+				}
+
+				// didn't exist yet
+				if (1) {
+					auto locked{ std::scoped_lock(SearchCache->first) };
+					auto f = SearchCache->second.find(version);
+					if (f != SearchCache->second.end()) {
+						return f->second;
+					}
+					else {
+						SearchCache->second.insert(std::pair<size_t, std::shared_ptr<TemplatedCacheContainer>>{ version, std::make_shared<TemplatedCacheContainer>() });
+					}
+				}
+			}
+			return nullptr;
+		};
+		template<size_t CacheID> std::shared_ptr<CacheContainer> GetCacheContainer(size_t version)const {
+			if (auto version_container = GetVersionedCacheContainer(version)) {
+				// test if exists
+				if (1) {
+					auto locked{ std::shared_lock(version_container->first) };
+					auto f = version_container->second.find(CacheID);
+					if (f != version_container->second.end()) {
+						return f->second;
+					}
+				}
+
+				// didn't exist yet
+				if (1) {
+					auto locked{ std::scoped_lock(version_container->first) };
+					auto f = version_container->second.find(CacheID);
+					if (f != version_container->second.end()) {
+						return f->second;
+					}
+					else {
+						version_container->second.insert(std::pair<size_t, std::shared_ptr<CacheContainer>>{ CacheID, std::make_shared<CacheContainer>() });
+					}
+				}
+			}
+			return nullptr;
+		};
+		template<size_t CacheID, typename T, typename... Rest> bool TryGetCached(size_t version, std::shared_ptr<T>& out, Rest const&... rest) const {
+			if (std::shared_ptr<CacheContainer> cache_container = GetCacheContainer<CacheID>(version)) {
+				size_t hash = 0;
+				hash_combine(hash, rest...);
+
+				// test if exists
+				if (1) {
+					auto locked{ std::shared_lock(cache_container->first) };
+					auto f = cache_container->second.find(hash);
+					if (f != cache_container->second.end()) {
+						out = std::static_pointer_cast<T>(f->second.lock());
+						return true;
+					}
+				}
+			}
+			out = nullptr;
+			return false;
+		};
+		template<size_t CacheID, typename... Rest> void InsertCached(size_t version, std::shared_ptr<void> const& obj, Rest const&... rest) const {
+			if (std::shared_ptr<CacheContainer> cache_container = GetCacheContainer<CacheID>(version)) {
+				size_t hash = 0;
+				hash_combine(hash, rest...);
+
+				// didn't exist yet
+				if (1) {
+					auto locked{ std::scoped_lock(cache_container->first) };
+					auto f = cache_container->second.find(hash);
+					if (f != cache_container->second.end()) {
+						// do nothing?
+						f->second = obj;
+					}
+					else {
+						cache_container->second.insert(std::pair<size_t, std::weak_ptr<void>>{ hash, obj });
+					}
+				}
+			}
+		};
+		template<size_t CacheID, typename... Rest> void InsertCachedIfNotExist(size_t version, std::shared_ptr<void> const& obj, Rest const&... rest) const {
+			if (std::shared_ptr<CacheContainer> cache_container = GetCacheContainer<CacheID>(version)) {
+				size_t hash = 0;
+				hash_combine(hash, rest...);
+
+				// didn't exist yet
+				if (1) {
+					auto locked{ std::scoped_lock(cache_container->first) };
+					auto f = cache_container->second.find(hash);
+					if (f != cache_container->second.end()) {
+						// do nothing?
+						// f->second = obj;
+					}
+					else {
+						cache_container->second.insert(std::pair<size_t, std::weak_ptr<void>>{ hash, obj });
+					}
+				}
+			}
+		};
+#endif
+	public:
+		std::shared_ptr<Namespace> FindNamespace(std::string QualifiedOrUnqualifiedNamespaceName) const;
+		std::shared_ptr<Class> FindClass(std::string const& QualifiedOrUnqualifiedNamespaceName) const;
+
+	public:
+		std::shared_ptr<Class> FindClass(std::weak_ptr<Type_Info> const& typeInfo) const;
+
+		std::shared_ptr<Scope> FindScopeWithObj(std::string objName) const;
+		std::shared_ptr<Any> FindObj(std::string objName) const;
+
+		std::shared_ptr<Namespace> FindNamespaceWithFunction(std::string functionName) const;
+		std::shared_ptr< Functions::FunctionSort > FindFunctions(std::string functionName) const;
+
+		std::shared_ptr<Namespace> FindNamespaceWithFunction(std::string functionName, std::vector<Any> const& params, TypeConverter& tree);
+		Proxy_Function FindFunction(std::string functionName, std::vector<Any> const& params, TypeConverter& tree);
+
+		virtual size_t GetTypeConverterTreeVersion() const;
+		virtual std::shared_ptr<TypeConverter> GetTypeConverterTree() const;
+
+		std::shared_ptr<Namespace> FindNamespaceWithFunction(std::string functionName, std::vector<Any> const& params);
+		Proxy_Function FindFunction(std::string functionName, std::vector<Any> const& params);
+
+		std::vector<std::shared_ptr<Scope>> GetScopesForObjectSearch() const;
+
+	public: // private:
+		bool TryFindFunctionImpl(std::string const& functionName, std::vector<Any>  const& params, std::shared_ptr<TypeConverter> const& m_conversionTree, Proxy_Function& out) const;
+
+	public:
+		std::pair<Proxy_Function, std::shared_ptr<TypeConverter>> BuildFunction(std::string const& functionName, std::vector<Any> const& params) const;
+		Any CallFunction(std::string const& functionName, std::vector<Any> const& params) const;
+
+		template <typename T>
+		T Cast(Any const& from) const {
+			auto ToType = user_type_shared<T>();
+			auto FromType = from.Type();
+
+			// see if it already matches (best option)
+			if (from.IsTypeOf(ToType)) {
+				return from.cast<T>();
+			}
+
+			// see if we can convert (fastest option)
+			if (auto Tree = this->GetTypeConverterTree()) {
+				if (Tree->Converts<T>(FromType)) {
+					try {
+						return Tree->Convert<T>(from);
+					}
+					catch (exception::bad_any_cast&) {}
+				}
+			}
+
+			auto ToClass = std::dynamic_pointer_cast<Scope>(this->FindClass(user_type_shared<T>()));
+			if (ToClass) {
+				// see if he can convert (fastest option)
+				if (auto Tree2 = ToClass->GetTypeConverterTree()) {
+					if (Tree2->Converts<T>(FromType)) {
+						try {
+							return Tree2->Convert<T>(from);
+						}
+						catch (exception::bad_any_cast&) {}
+					}
+				}
+
+				// search for a function that can do it
+				if (1) {
+					std::vector<Any> params = { from };
+
+					// call a functor from our scope
+					try {
+						return this->CallFunction(ToClass->GetName(), params).cast<T>();
+					}
+					catch (exception::not_found_error) {}
+
+					// call a functor from their scope
+					try {
+						return ToClass->CallFunction(ToClass->GetName(), params).cast<T>();
+					}
+					catch (exception::not_found_error) {}
+				}
+
+				// Failure
+				throw exception::not_found_error(ToClass->GetName());
+			}
+
+			// Failure
+			throw exception::not_found_error(user_type_shared<T>().lock()->name());
+		};
+
+	};
+
+	class Namespace : public Scope {
+	public:
+		friend class Class;
+		friend class Global;
+
+		Namespace(std::shared_ptr<Scope> const& parent, std::string const& Name)
+			: Scope(parent)
+			, p_Name(Name)
+		{
+			qualifiedNamespaceWithQualifiers = this->GetQualifiedNamespaceImpl(true);
+			qualifiedNamespaceWithoutQualifiers = this->GetQualifiedNamespaceImpl();
+		};
+		Namespace(std::shared_ptr<Namespace> const& parent, std::string const& Name) : Namespace(std::dynamic_pointer_cast<Scope>(parent), Name) {};
+		Namespace(std::shared_ptr<Class> const& parent, std::string const& Name) : Namespace(std::dynamic_pointer_cast<Scope>(parent), Name) {};
+		Namespace(std::shared_ptr<Global> const& parent, std::string const& Name) : Namespace(std::dynamic_pointer_cast<Scope>(parent), Name) {};
+
+		virtual ~Namespace() {};
+		void SetSelf(std::shared_ptr<Namespace>& p) { this->p_self = std::dynamic_pointer_cast<Scope>(p); };
+		virtual bool IsClass() const override { return false; };
+		virtual bool IsNamespace() const override { return true; };
+		virtual std::string GetName() const override { return p_Name; };
+
+	private:
+		std::string  // e.g. "", or "_NAMESPACE_NAME_", or "_CLASS_NAME_"
+			p_Name;
+	public:
+
+	private:
+		UnorderedMap<std::string, std::weak_ptr<Class>> // allowed postfixes (e.g. 10_ft, where "_ft" is the key) to their desired typename. Duplicate are not allowed.
+			p_postfixes;
+
+	public:
+
+
+	private:
+		std::shared_ptr<Functions> // functions. (e.g. `==` or `to_string`). Duplicate names are expected. 
+			p_functions{ std::make_shared<Functions>() };
+
+	private:
+		virtual void RemoveStaleReferences() override {
+			// p_using
+			while (true) {
+				size_t toRemove{};
+				bool doRemoval = false;
+				for (auto& ref : p_using) {
+					if (ref.second.expired()) {
+						toRemove = ref.first;
+						doRemoval = true;
+						break;
+					}					
+				}
+				if (doRemoval) {
+					p_using.erase(toRemove);
+				}
+				else {
+					break;
+				}
+			}
+
+			// p_postfixes
+			while (true) {
+				std::string toRemove{};
+				bool doRemoval = false;
+				for (auto& ref : p_postfixes) {
+					if (ref.second.expired()) {
+						toRemove = ref.first;
+						doRemoval = true;
+						break;
+					}
+					
+				}
+				if (doRemoval) {
+					p_postfixes.erase(toRemove);
+				}
+				else {
+					break;
+				}
+			}
+
+			// p_functions
+		};
+		virtual bool RecordFunction(std::string const& Name, Function const& ptr) {
+			if (auto p = std::dynamic_pointer_cast<Namespace>(GetLibrary())) {
+				return p->RecordFunction(Name, ptr);
+			}
+			return false;
+		};
+
+	public:
+		virtual bool AddFunction(std::string const& name, Function const& function, bool overrideIfAlreadyExists = true) override;
+
+	public:
+		virtual std::shared_ptr< Functions > GetFunctions() const override;
+		virtual std::shared_ptr< Functions::FunctionSort > GetFunctions(std::string const& name) const override;
+		virtual Proxy_Function GetFunction(std::string const& name, std::vector<Any> const& params, TypeConverter& tree) override;
+		virtual Proxy_Function GetFunction(std::string const& name, std::vector<Any> const& params) override;
+
+	};
+
+	class Class final : public Namespace {
+	public:
+		friend class Global;
+
+		// TO-DO, throw an error when constructing Class if the inheritance list utilizes ANY built-in types.
+		// The current design simply does not support built-in types as inherited objects. 
+		Class(
+			std::shared_ptr<Scope> const& parent
+			, std::string const& Name
+			, std::shared_ptr<Type_Info> type
+			, std::vector<std::weak_ptr<Class>> inheritance // e.g. this class derives from another Class
+		)
+			: Namespace(parent, Name)
+			, DerivedFrom(inheritance)
+		{
+			for (int i = DerivedFrom.size() - 1; i >= 0; i--) {
+				if (auto InteritedClass = DerivedFrom[i].lock()) {
+					if (auto InteritedClassType = InteritedClass->GetClassType().lock()) {
+						if (InteritedClassType->IsBuiltInType()) { // cannot include built-in types
+							DerivedFrom.erase(DerivedFrom.begin() + i); // remove this inheritance from the list, and consider throwing an error
+							// currently not throwing because that would prevent calling the destructor, which is 100% a requirement to prevent a memory leak.
+						}
+					}
+				}
+			}
+
+			for (auto& p : DerivedFrom) {
+				if (auto ptr = std::dynamic_pointer_cast<Namespace>(p.lock())) {
+					this->AddUsing(ptr);
+				}
+			}
+
+			if ((!type) || (type->is_void())) {
+				ClassType = std::dynamic_pointer_cast<Type_Info>(std::make_shared<Scripted_Type_Info>(this->p_UniqueName, Name, false, false));
+			}
+			else {
+				ClassType = type;
+			}
+
+			qualifiedNamespaceWithQualifiers = this->GetQualifiedNamespaceImpl(true);
+			qualifiedNamespaceWithoutQualifiers = this->GetQualifiedNamespaceImpl();
+		};
+		Class(std::shared_ptr<Namespace> const& parent, std::string const& Name, std::shared_ptr<Type_Info> type, std::vector<std::weak_ptr<Class>> inheritance)
+			: Class(std::dynamic_pointer_cast<Scope>(parent), Name, type, inheritance) {};
+		Class(std::shared_ptr<Class> const& parent, std::string const& Name, std::shared_ptr<Type_Info> type, std::vector<std::weak_ptr<Class>> inheritance)
+			: Class(std::dynamic_pointer_cast<Scope>(parent), Name, type, inheritance) {};
+		Class(std::shared_ptr<Global> const& parent, std::string const& Name, std::shared_ptr<Type_Info> type, std::vector<std::weak_ptr<Class>> inheritance)
+			: Class(std::dynamic_pointer_cast<Scope>(parent), Name, type, inheritance) {};
+
+		Class(std::shared_ptr<Scope> const& parent, std::string const& Name, std::shared_ptr<Type_Info> type = user_type_shared<void>().lock(), std::weak_ptr<Class> inheritance = std::weak_ptr<Class>())
+			: Class(std::dynamic_pointer_cast<Scope>(parent), Name, type, std::vector<std::weak_ptr<Class>>{ inheritance }) {};
+		Class(std::shared_ptr<Namespace> const& parent, std::string const& Name, std::shared_ptr<Type_Info> type = user_type_shared<void>().lock(), std::weak_ptr<Class> inheritance = std::weak_ptr<Class>())
+			: Class(std::dynamic_pointer_cast<Scope>(parent), Name, type, inheritance) {};
+		Class(std::shared_ptr<Class> const& parent, std::string const& Name, std::shared_ptr<Type_Info> type = user_type_shared<void>().lock(), std::weak_ptr<Class> inheritance = std::weak_ptr<Class>())
+			: Class(std::dynamic_pointer_cast<Scope>(parent), Name, type, inheritance) {};
+		Class(std::shared_ptr<Global> const& parent, std::string const& Name, std::shared_ptr<Type_Info> type = user_type_shared<void>().lock(), std::weak_ptr<Class> inheritance = std::weak_ptr<Class>())
+			: Class(std::dynamic_pointer_cast<Scope>(parent), Name, type, inheritance) {};
+
+		virtual ~Class() {};
+		void SetSelf(std::shared_ptr<Class>& p) { this->p_self = std::dynamic_pointer_cast<Scope>(p); };
+		virtual bool IsClass() const override { return true; };
+
+	private:
+		std::vector<std::weak_ptr<Class>>
+			DerivedFrom; // e.g. this class derives from other Classes
+		std::shared_ptr<Type_Info>
+			ClassType;
+		UnorderedMap<std::string, std::pair<std::weak_ptr<Type_Info>, std::shared_ptr<Any>>>
+			p_declared_member_objects; // declared member objects for the custom, scripted class which will be instantiated upon construction of the scripted class
+
+	public:
+		void ConstructMemberObjects(DynamicObject& obj) const;
+		void ConstructMemberObjects(DynamicObject& obj, DynamicObject const& CopyFrom) const;
+		// Gets the member objects of just this class
+		std::map<std::string, std::weak_ptr<Type_Info>> GetMemberObjects() const;
+		// Gets the member objects of this class all all inherited classes (recursively)
+		std::map<std::string, std::weak_ptr<Type_Info>> GetAllMemberObjects() const;
+
+	public:
+		void AddDefaultConstructors();
+
+	public:
+		virtual std::weak_ptr<Type_Info> GetClassType() const override { return ClassType; };
+		void DeclareMemberObject(std::string const& name, std::weak_ptr<Type_Info> type, std::shared_ptr<Any> defaultValue = nullptr);
+
+	private:
+		virtual bool TryFindNearestScopeWhere(
+			std::shared_ptr<Scope>& bestMatch,
+			std::function<bool(std::shared_ptr<Scope> const&)> const& func,
+			std::unordered_set< std::shared_ptr<Scope> > const& CheckedSelf = {},
+			std::unordered_set< std::shared_ptr<Scope> > const& CheckedAll = {}
+		) const;
+
+		virtual bool TryFindNearestNamespaceWhere(
+			std::shared_ptr<Namespace>& bestMatch,
+			std::function<bool(std::shared_ptr<Namespace> const&)> const& func,
+			std::unordered_set< std::shared_ptr<Scope> > const& CheckedSelf = {},
+			std::unordered_set< std::shared_ptr<Scope> > const& CheckedAll = {}
+		) const;
+
+	};
+
+	// Support for Units
+	class UnitsLibrary {
+	public:
+		template<typename T>
+		__forceinline static void AddUnit(std::shared_ptr<Namespace> const& std_namespace, std::shared_ptr<Class> const& value_namespace) {
+			std::string UnitName = T().UnitName().data();
+			std::shared_ptr<Class> foot_namespace{ std::make_shared<Class>(std_namespace, UnitName, user_type_shared<T>().lock(), value_namespace) };
+			foot_namespace->SetSelf(foot_namespace);
+			std_namespace->AddChild(foot_namespace);
+			{
+				// Constructors
+				// foot()
+				foot_namespace->AddFunction(UnitName, Function(make_callable([]() -> T { return T{}; }), false));
+				// foot(value)
+				foot_namespace->AddFunction(UnitName, Function(make_callable([](Units::value const& makeCopy) -> T { return makeCopy; }), false));
+				// foot() = value();
+				foot_namespace->AddFunction("=", Function(make_callable([](Any const& a, Units::value const& b) -> Any { T& out = a.cast(); out = b; return a; }, ParamTypes({ user_type_shared<T>(), user_type_shared<Units::value>() })), false));
+
+				// value(foot)
+				value_namespace->AddFunction(value_namespace->GetName(), Function(make_callable([](Any const& from) -> std::shared_ptr<Units::value> {
+					return std::dynamic_pointer_cast<Units::value>(from.cast<std::shared_ptr<T>>());
+					}, ParamTypes({ foot_namespace->GetClassType().lock()->MakeConstRef() })), false));
+			}
+		};
+
+		static void Part1(std::shared_ptr<Namespace> const& std_namespace, std::shared_ptr<Class> const& value_namespace);
+		static void Part2(std::shared_ptr<Namespace> const& std_namespace, std::shared_ptr<Class> const& value_namespace);
+		static void Part3(std::shared_ptr<Namespace> const& std_namespace, std::shared_ptr<Class> const& value_namespace);
+		static void Part4(std::shared_ptr<Namespace> const& std_namespace, std::shared_ptr<Class> const& value_namespace);
+		static void Part5(std::shared_ptr<Namespace> const& std_namespace, std::shared_ptr<Class> const& value_namespace);
+		static void Part6(std::shared_ptr<Namespace> const& std_namespace, std::shared_ptr<Class> const& value_namespace);
+	};
+	
+};
+
+// <Any, Scope> hash
+namespace std {
+	template <> struct hash<std::pair<GoodLang::Any, std::weak_ptr<GoodLang::Scope>>> {
+		std::size_t operator()(const std::pair<GoodLang::Any, std::weak_ptr<GoodLang::Scope>>& k) const {
+			if (auto p = k.second.lock()) {
+				return p->Cast<size_t>(p->CallFunction("to_hash", { k.first }));
+			}
+			return 0;
+		};
+	};
+	template <> struct less<std::pair<GoodLang::Any, std::weak_ptr<GoodLang::Scope>>> {
+		std::size_t operator()(const std::pair<GoodLang::Any, std::weak_ptr<GoodLang::Scope>>& lhs, const std::pair<GoodLang::Any, std::weak_ptr<GoodLang::Scope>>& rhs) const {
+			static std::hash< std::pair<GoodLang::Any, std::weak_ptr<GoodLang::Scope>> > hasher{};
+			return hasher(lhs) < hasher(rhs);
+		};
+	};
+};
+
+namespace GoodLang {
+	class Global final : public Namespace {
+	public:
+		Global()
+			: Namespace(std::shared_ptr<Scope>(), "")
+		{
+			qualifiedNamespaceWithQualifiers = this->GetQualifiedNamespaceImpl(true);
+			qualifiedNamespaceWithoutQualifiers = this->GetQualifiedNamespaceImpl();
+		};
+		virtual ~Global() {};
+		void SetSelf(std::shared_ptr<Global>& p) { this->p_self = std::dynamic_pointer_cast<Scope>(p); };
+
+		std::vector<std::weak_ptr<Class>> GetClasses() const;
+		std::vector<std::weak_ptr<Namespace>> GetUsing() const;
+
+	public:
+		void AddBuiltIns();
+
+	private:
+		void GetClasses(std::unordered_map<size_t, std::weak_ptr<Class>>& out) const;
+		void GetAllAvailableClassesImpl(
+			std::unordered_map<size_t, std::weak_ptr<Class>>& out,
+			std::unordered_map<size_t, std::weak_ptr<Scope>>& uniqueLibraries
+		) const;
+
+	private:
+		// Searches for all classes that are defined in the current and "used" libraries. 
+		std::unordered_map<size_t, std::weak_ptr<Class>> GetAllAvailableClassesImpl() const;
+	public:
+		std::shared_ptr<std::unordered_map<size_t, std::weak_ptr<Class>>> GetAllAvailableClasses() const;
+
+	public:
+		// Creates a tree of type-converter functions using the classes found with GetAllAvailableClasses()
+		void CreateTypeConverterTree(std::shared_ptr<TypeConverter>& out) const;
+
+	public:
+		virtual size_t GetTypeConverterTreeVersion() const override;
+		virtual std::shared_ptr<TypeConverter> GetTypeConverterTree() const override;
+
+	private:
+		UnorderedMap<size_t, std::weak_ptr<Class>> // collection of all classes that are added as "children" of this library
+			Classes;
+		UnorderedMap<size_t, std::weak_ptr<Namespace>> // collection of all namespaces that are added being "used" by this library
+			Usings;
+		UnorderedMap<size_t, std::pair<std::string, std::weak_ptr<details::Proxy_Function_Base>>> // collection of all namespaces that are added being "used" by this library
+			Functions;
+
+		std::shared_ptr<TypeConverter>
+			CachedTypeConverterTree{ std::make_shared<TypeConverter>() };
+
+		GoodLang::InterlockedLong
+			CachedTypeConverterTreeVersion{ 0 };
+		std::shared_mutex // fibers::synchronization::shared_mutex<fibers::synchronization::mutex>
+			CachedTypeConverterTreeMutex{};
+
+		std::shared_ptr<std::unordered_map<size_t, std::weak_ptr<Class>>>
+			CachedClassList{ std::make_shared<std::unordered_map<size_t, std::weak_ptr<Class>>>() };
+		GoodLang::InterlockedLong
+			CachedClassListVersion{ 0 };
+		std::shared_mutex // fibers::synchronization::shared_mutex<fibers::synchronization::mutex>
+			CachedClassListMutex{};
+
+		//fibers::containers::number<unsigned int> 
+			//CleanupRequested{ 0 };
+		GoodLang::InterlockedLong
+			CleanupVersion{ 0 };
+		GoodLang::InterlockedLong
+			RecordVersion{ 0 };
+		GoodLang::InterlockedLong
+			LibraryVersion{ 0 };
+
+		virtual void RemoveStaleReferences() override {
+			auto oldVersion = CleanupVersion.load();
+			if (oldVersion != RecordVersion) {
+				if (CleanupVersion.CompareExchange(oldVersion, RecordVersion.GetValue())) {
+					// p_using
+					while (true) {
+						size_t toRemove{};
+						bool doRemoval = false;
+						for (auto& ref : p_using) {
+							if (ref.second.expired()) {
+								toRemove = ref.first;
+								doRemoval = true;
+								break;
+							}
+							
+						}
+						if (doRemoval) {
+							p_using.erase(toRemove);
+						}
+						else {
+							break;
+						}
+					}
+
+					// p_postfixes
+					while (true) {
+						std::string toRemove{};
+						bool doRemoval = false;
+						for (auto& ref : p_postfixes) {
+							if (ref.second.expired()) {
+								toRemove = ref.first;
+								doRemoval = true;
+								break;
+							}							
+						}
+						if (doRemoval) {
+							p_postfixes.erase(toRemove);
+						}
+						else {
+							break;
+						}
+					}
+
+					// Classes
+					if (1) {
+						thread_local static std::vector<size_t> toRemove{};
+						for (auto& ref : Classes) {
+							if (ref.second.expired()) {
+								toRemove.push_back(ref.first);
+							}
+						}
+						for (auto& x : toRemove) Classes.erase(x);
+						toRemove.clear();
+					}
+
+					// Usings
+					if (1) {
+						thread_local static std::vector<size_t> toRemove{};
+						for (auto& ref : Usings) {
+							if (ref.second.expired()) {
+								toRemove.push_back(ref.first);
+							}							
+						}
+						for (auto& x : toRemove) Usings.erase(x);
+						toRemove.clear();
+					}
+
+					// Functions
+					if (1) {
+						thread_local static std::vector<size_t> toRemove{};
+						for (auto& ref : Functions) {
+							if (ref.second.second.expired()) {
+								toRemove.push_back(ref.first);
+							}							
+						}
+						for (auto& x : toRemove) Functions.erase(x);
+						toRemove.clear();
+					}
+				}
+			}
+		};
+
+		virtual bool RecordClass(std::shared_ptr<Class> ptr) override {
+			if (Classes.emplace(Scope::Hasher()(ptr), ptr)) {
+				RecordVersion++;
+				return true;
+			}
+			return false;
+		};
+
+		virtual bool RecordUsing(std::shared_ptr<Namespace> ptr) override {
+			if (Usings.emplace(Scope::Hasher()(ptr), ptr)) {
+				RecordVersion++;
+				return true;
+			}
+			return false;
+		};
+
+		virtual bool RecordFunction(std::string const& Name, Function const& ptr) override {
+			if (Functions.emplace(std::hash<Proxy_Function>()(ptr.m_function), std::pair<std::string, std::weak_ptr<details::Proxy_Function_Base>>{ Name, ptr.m_function })) {
+				RecordVersion++;
+				return true;
+			}
+			return false;
+		};
+
+	};
+};

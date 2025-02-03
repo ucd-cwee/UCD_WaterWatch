@@ -1121,10 +1121,8 @@ namespace GoodLang {
 		InterlockedLong& operator+=(const InterlockedLong& i) { return operator+=(i.GetValue()); };
 		InterlockedLong& operator-=(const InterlockedLong& i) { return operator-=(i.GetValue()); };
 
-		bool operator==(long i) { return i == GetValue(); };
-		bool operator!=(long i) { return i != GetValue(); };
-		bool operator==(const InterlockedLong& i) { return i.GetValue() == GetValue(); };
-		bool operator!=(const InterlockedLong& i) { return i.GetValue() != GetValue(); };
+		friend bool operator==(const InterlockedLong& i, const InterlockedLong& j) { return i.GetValue() == j.GetValue(); };
+		friend bool operator!=(const InterlockedLong& i, const InterlockedLong& j) { return i.GetValue() != j.GetValue(); };
 
 		long Increment(); // atomically increments the integer and returns the new value
 		long Decrement(); // atomically decrements the integer and returns the new value
@@ -1136,6 +1134,11 @@ namespace GoodLang {
 		bool TryIncrementTo(long n);
 		void lock();
 		void unlock();
+
+		long load() const;
+		bool CompareExchange(long oldVersion, long RecordVersion);
+
+
 
 	private:
 		long	value;
@@ -2059,21 +2062,24 @@ namespace GoodLang {
 		mutable SharedLockable<underlying> data;
 	
 	public:
-		template <class... _Mappedty> void try_emplace(const key_type& _Keyval, _Mappedty&&... _Mapval) {
+		template <class... _Mappedty> bool insert(const key_type& _Keyval, _Mappedty&&... _Mapval) {
 			auto shared = data.Shared();
-			shared->insert(underlying::value_type(_Keyval, std::forward<_Mappedty>(_Mapval)...));
+			return shared->insert(underlying::value_type(_Keyval, std::forward<_Mappedty>(_Mapval)...)).second;
 		};
-		template <class... _Mappedty> void try_emplace(key_type&& _Keyval, _Mappedty&&... _Mapval) {
+		template <class... _Mappedty> bool insert(key_type&& _Keyval, _Mappedty&&... _Mapval) {
 			auto shared = data.Shared();
-			shared->insert(underlying::value_type(std::move(_Keyval), std::forward<_Mappedty>(_Mapval)...));
+			return shared->insert(underlying::value_type(std::move(_Keyval), std::forward<_Mappedty>(_Mapval)...)).second;
 		};
-		template <class _Mappedty> void insert_or_assign(const key_type& _Keyval, _Mappedty&& _Mapval) {
+		template <class... _Mappedty> bool emplace(const key_type& _Keyval, _Mappedty&&... _Mapval) {
 			auto shared = data.Shared();
-			shared->insert(underlying::value_type(_Keyval, std::forward<_Mappedty>(_Mapval)...));
-		};
-		template <class _Mappedty> void insert_or_assign(key_type&& _Keyval, _Mappedty&& _Mapval) {
-			auto shared = data.Shared();
-			shared->insert(underlying::value_type(std::move(_Keyval), std::forward<_Mappedty>(_Mapval)...));
+			auto V{ underlying::value_type(_Keyval, std::forward<_Mappedty>(_Mapval)...) };
+			if (shared->insert(V).second) {
+				return true;
+			}
+			else {
+				shared->operator[](_Keyval) = std::move(V.second);
+				return true;
+			}
 		};
 		typename SharedLockable<T>::SharedObj operator[](const key_type& _Keyval) {
 			auto shared = data.Shared();
@@ -2095,13 +2101,20 @@ namespace GoodLang {
 			const T& result = shared->at(_Keyval);
 			return typename SharedLockable<T>::SharedConstObj(result, shared.ForwardLock());
 		};
+		
+		template <class... _Mappedty> typename SharedLockable<T>::SharedObj get_or_insert(const key_type& _Keyval, _Mappedty&&... _Mapval) {
+			auto shared = data.Shared();
+			T& result = shared->insert(underlying::value_type(std::move(_Keyval), std::forward<_Mappedty>(_Mapval)...)).first->second;
+			return typename SharedLockable<T>::SharedObj(result, shared.ForwardLock());
+		};
+
 		size_t size() const {
 			auto shared = data.Shared();
 			return shared->size();
 		};
-		void erase(const key_type& _Keyval) {
+		bool erase(const key_type& _Keyval) {
 			auto shared = data.Unique();
-			return shared->unsafe_erase(_Keyval);
+			return shared->unsafe_erase(_Keyval) != 0;
 		};
 		void clear() {
 			auto shared = data.Unique();

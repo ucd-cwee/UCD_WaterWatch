@@ -168,11 +168,19 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="Any.cpp" />
+    <ClCompile Include="Built_In_Classes.cpp" />
     <ClCompile Include="DateTime.cpp" />
     <ClCompile Include="GoodLang.cpp" />
     <ClCompile Include="Parallel.cpp" />
     <ClCompile Include="Proxy_Function.cpp" />
+    <ClCompile Include="Scopes.cpp" />
     <ClCompile Include="ThreadSafeContainers.cpp" />
+    <ClCompile Include="UnitsLibrary_1.cpp" />
+    <ClCompile Include="UnitsLibrary_2.cpp" />
+    <ClCompile Include="UnitsLibrary_3.cpp" />
+    <ClCompile Include="UnitsLibrary_4.cpp" />
+    <ClCompile Include="UnitsLibrary_5.cpp" />
+    <ClCompile Include="UnitsLibrary_6.cpp" />
     <ClCompile Include="Units_Base.cpp" />
     <ClCompile Include="Units_Instances.cpp" />
   </ItemGroup>
@@ -182,6 +190,7 @@
     <ClInclude Include="Foundation.h" />
     <ClInclude Include="Parallel.h" />
     <ClInclude Include="Proxy_Function.h" />
+    <ClInclude Include="Scopes.h" />
     <ClInclude Include="ThreadSafeContainers.h" />
     <ClInclude Include="Units.h" />
     <ClInclude Include="Units_Base.h" />
