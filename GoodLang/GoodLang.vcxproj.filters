@@ -9,15 +9,14 @@
       <UniqueIdentifier>{93995380-89BD-4b04-88EB-625FBE52EBFB}</UniqueIdentifier>
       <Extensions>h;hh;hpp;hxx;h++;hm;inl;inc;ipp;xsd</Extensions>
     </Filter>
-    <Filter Include="Resource Files">
-      <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
-      <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
-    </Filter>
     <Filter Include="Units">
       <UniqueIdentifier>{5352ccac-3626-4de3-8dd2-c103382cf752}</UniqueIdentifier>
     </Filter>
     <Filter Include="Units\UnitsLibrary">
       <UniqueIdentifier>{f548ad70-4b7f-4565-861d-91cfcf7b01b1}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Language Resources">
+      <UniqueIdentifier>{5a3f1859-c981-4d69-9b6d-fd036aae6b51}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
   <ItemGroup>
@@ -103,6 +102,12 @@
     </ClInclude>
     <ClInclude Include="Scopes.h">
       <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="AST_Node.h">
+      <Filter>Language Resources</Filter>
+    </ClInclude>
+    <ClInclude Include="LanguageCommon.h">
+      <Filter>Language Resources</Filter>
     </ClInclude>
   </ItemGroup>
 </Project>

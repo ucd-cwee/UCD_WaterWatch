@@ -3,6 +3,7 @@
 #include "../WaterWatchCpp/enum.h"
 #include <string_view>
 #include <initializer_list>
+#include <WinDNS.h>
 
 namespace GoodLang {
 	namespace Units {
@@ -235,84 +236,83 @@ namespace GoodLang {
 			static std::string Abbreviation(UnitDefinitionBase const& Data, Number* visibleValue) noexcept {
 				std::string toReturn{ "" };
 				{
-					{
-						toReturn = Data.BuiltInAbbreviation();
-						bool isStatic{ toReturn != "" };
-						if (isStatic) {
-							// early exit
-							if (visibleValue) *visibleValue = Data.value() / Data.ratio();
-						}
-						else if (Data.IsScalar()) {
-							if (visibleValue) *visibleValue = Data.value();
-						}
-						else {
-							// I am nto a scalar, and I am a non-static (e.g. dynamic) variable.
-							Number ratio_to_use = Data.ratio();
+					toReturn = Data.BuiltInAbbreviation();
+					bool isStatic{ toReturn != "" };
+					if (isStatic) {
+						// early exit
+						if (visibleValue) *visibleValue = Data.value() / Data.ratio();
+					}
+					else if (Data.IsScalar()) {
+						if (visibleValue) *visibleValue = Data.value();
+					}
+					else {
+						// I am not a scalar, and I am a non-static (e.g. dynamic) variable.
+						Number ratio_to_use = Data.ratio();
 
-							// need to do a look-up
-							bool lookupFailed = true; // To-Do...
+						// need to do a look-up
+						bool lookupFailed = true; // To-Do...
 
-							// if the look-up failed, create a custom unit name
-							if (lookupFailed) {
-								if (!Data.IsScalar() && toReturn.empty()) {
-									// const_cast<double&>(Data.ratio()) = 1; // return to SI units. It couldn't be looked-up, so we don't have an option. 
-									std::array< const char*, UnitDefinitionBase::NumUnits> unitBases{ "m", "kg", "s", "A", "$" };
-									bool anyNegatives = false;
+						// if the look-up failed, create a custom unit name
+						if (lookupFailed) {
+							if (!Data.IsScalar() && toReturn.empty()) {
+								// const_cast<double&>(Data.ratio()) = 1; // return to SI units. It couldn't be looked-up, so we don't have an option. 
+								ratio_to_use = 1; // return to SI units. It couldn't be looked-up, so we don't have an option. 
+								std::array< const char*, UnitDefinitionBase::NumUnits> unitBases{ "m", "kg", "s", "A", "$" };
+								bool anyNegatives = false;
+								for (int i = UnitDefinitionBase::NumUnits - 1; i >= 0; i--) {
+									decltype(auto) unitBase = unitBases[i];
+									decltype(auto) v = Data.unitType()[i];
+
+									if (v > 0) {
+										if (v == 1)
+											AddToDelimiter(toReturn, unitBase, " ");
+										else {
+											std::string Num;
+											if (IsInteger(v)) {
+												Num = std::to_string((int)v);
+											}
+											else {
+												Num = std::to_string(v);
+												removeTrailingCharacters(Num, '0');
+												removeTrailingCharacters(Num, '.');
+											}
+											AddToDelimiter(toReturn, printf("%s^%s", unitBase, Num.c_str()), " ");
+										}
+									}
+									else if (v < 0) {
+										anyNegatives = true;
+									}
+								}
+								if (anyNegatives) {
+									toReturn += " /";
 									for (int i = UnitDefinitionBase::NumUnits - 1; i >= 0; i--) {
 										decltype(auto) unitBase = unitBases[i];
 										decltype(auto) v = Data.unitType()[i];
 
-										if (v > 0) {
-											if (v == 1)
+										if (v < 0) {
+											if (v == -1)
 												AddToDelimiter(toReturn, unitBase, " ");
 											else {
 												std::string Num;
 												if (IsInteger(v)) {
-													Num = std::to_string((int)v);
+													Num = std::to_string((int)(-1.0 * v));
 												}
 												else {
-													Num = std::to_string(v);
+													Num = std::to_string((-1.0 * v));
 													removeTrailingCharacters(Num, '0');
 													removeTrailingCharacters(Num, '.');
 												}
 												AddToDelimiter(toReturn, printf("%s^%s", unitBase, Num.c_str()), " ");
 											}
 										}
-										else if (v < 0) {
-											anyNegatives = true;
-										}
-									}
-									if (anyNegatives) {
-										toReturn += " /";
-										for (int i = UnitDefinitionBase::NumUnits - 1; i >= 0; i--) {
-											decltype(auto) unitBase = unitBases[i];
-											decltype(auto) v = Data.unitType()[i];
-
-											if (v < 0) {
-												if (v == -1)
-													AddToDelimiter(toReturn, unitBase, " ");
-												else {
-													std::string Num;
-													if (IsInteger(v)) {
-														Num = std::to_string((int)(-1.0 * v));
-													}
-													else {
-														Num = std::to_string((-1.0 * v));
-														removeTrailingCharacters(Num, '0');
-														removeTrailingCharacters(Num, '.');
-													}
-													AddToDelimiter(toReturn, printf("%s^%s", unitBase, Num.c_str()), " ");
-												}
-											}
-										}
 									}
 								}
 							}
-
-							if (visibleValue) *visibleValue = Data.value() / ratio_to_use; // the ratio may have been updated by the previous functions, and that's OK
 						}
-						return toReturn;
+
+						if (visibleValue) *visibleValue = Data.value() / ratio_to_use; // the ratio may have been updated by the previous functions, and that's OK
 					}
+					return toReturn;					
 				}
 			};
 		
@@ -382,12 +382,7 @@ namespace GoodLang {
 					)));
 				}
 			};
-
-		public:
-			explicit operator Number() const noexcept { return GetVisibleValue(*this); };
-			Number operator()() const noexcept { return GetVisibleValue(*this); };
-
-			std::string GetValueStr(Number const& v) const noexcept {
+			static __forceinline std::string GetValueStr(Number const& v) noexcept {
 				if (std::fmod((double)v, 1.0) == 0.0) { // integer
 					return std::to_string((long long)v);
 				}
@@ -398,6 +393,10 @@ namespace GoodLang {
 					return out;
 				}
 			};
+
+		public:
+			explicit operator Number() const noexcept { return GetVisibleValue(*this); };
+			Number operator()() const noexcept { return GetVisibleValue(*this); };
 			std::string ToString() const {
 				Number out{ 0.0 };
 				auto Data = this->unit_m.Shared();
@@ -535,33 +534,18 @@ namespace GoodLang {
 			};
 
 		private: // Instancing Operators
-			template <typename Func> static value_t AddOrSubtract(Func const& toDo, value_t const& a, value_t const& b) {
+			template <typename Func> static __forceinline value_t AddOrSubtract(Func const& toDo, value_t const& a, value_t const& b) {
 				auto a_struct = a.unit_m.Shared();
 				auto b_struct = b.unit_m.Shared();
 
 				if (a_struct->IsSameCategory(*b_struct)) { // same category, but perhaps different conversion factor / ratio. That's OK. 
-					value_t out{ a_struct->Copy() };
-					{
-						auto thisItem = out.unit_m.Unique();
-						toDo(thisItem->value(), b_struct->value());
-					}
-					return out;
+					return value_t(toDo(a_struct->value(), b_struct->value()) * a_struct->ratio(), *a_struct);
 				}
 				else if (b_struct->IsScalar()) { // incoming is a scaler and this unit is not. Use this unit's conversion factor.
-					value_t out{ a_struct->Copy() };
-					{
-						auto thisItem = out.unit_m.Unique();
-						toDo(thisItem->value(), (b_struct->value() / b_struct->ratio()) * a_struct->ratio());
-					}
-					return out;
+					return value_t(toDo(a_struct->value(), ((b_struct->value() / b_struct->ratio()) * a_struct->ratio())) * a_struct->ratio(), *a_struct);
 				}
 				else if (a_struct->IsScalar()) { // I am a scaler but the incoming unit is not. Simply copy the incoming unit entirely.
-					value_t out{ b_struct->Copy() };
-					{
-						auto thisItem = out.unit_m.Unique();
-						toDo(thisItem->value(), (a_struct->value() / a_struct->ratio()) * b_struct->ratio());
-					}
-					return out;
+					return value_t(toDo(b_struct->value(), ((a_struct->value() / a_struct->ratio()) * b_struct->ratio())) * b_struct->ratio(), *b_struct);
 				}
 				else { // incoming unit AND this unit are different non-scalers of different categories. No exchange is reasonable. 
 					auto A1 = Abbreviation(*a_struct, nullptr);
@@ -572,11 +556,92 @@ namespace GoodLang {
 					)));
 				}
 			};
-			static value_t Add(value_t const& a, value_t const& b) {
-				return AddOrSubtract([](Number& lhs, Number const& rhs) { lhs += rhs; }, a, b);
+			static __forceinline value_t Add(value_t const& a, value_t const& b) {
+				return AddOrSubtract([](Number const& lhs, Number const& rhs) -> Number { return lhs + rhs; }, a, b);
 			};
-			static value_t Sub(value_t const& a, value_t const& b) {
-				return AddOrSubtract([](Number& lhs, Number const& rhs) { lhs -= rhs; }, a, b);
+			static __forceinline value_t Sub(value_t const& a, value_t const& b) {
+				return AddOrSubtract([](Number const& lhs, Number const& rhs) -> Number { return lhs - rhs; }, a, b);
+			};
+
+			/* Used for multiplication or division operations */
+			static __forceinline value_t CompoundUnits(value_t const& LHS, value_t const& RHS, bool multiplication = true) noexcept {
+				// if we are multiplying or dividing by a scalar, then we can simply do a Unary operation
+				auto lhs = LHS.unit_m.Shared();
+				auto rhs = RHS.unit_m.Shared();
+
+				bool lhs_is_scalar = lhs->IsScalar();
+				bool rhs_is_scalar = rhs->IsScalar();
+
+				// early-exit if the RHS is a scalar, which will not change the units of the LHS
+				if (rhs_is_scalar) {
+					if (multiplication) {
+						return value_t((lhs->value() * rhs->value()) * lhs->ratio(), *lhs);
+					}
+					else {
+						return value_t((lhs->value() / rhs->value()) * lhs->ratio(), *lhs);
+					}
+				}
+
+				// RHS is not a scaler, so the result could become one.
+				std::unique_ptr<dynamicUnitDefinition> ptr;
+				if (multiplication) {
+					ptr = std::make_unique<dynamicUnitDefinition>(
+						lhs->unitType()[0] + rhs->unitType()[0], 
+						lhs->unitType()[1] + rhs->unitType()[1], 
+						lhs->unitType()[2] + rhs->unitType()[2], 
+						lhs->unitType()[3] + rhs->unitType()[3], 
+						lhs->unitType()[4] + rhs->unitType()[4], 
+						lhs->ratio() * rhs->ratio(), 
+						lhs->value() * rhs->value()
+					);
+				}
+				else {
+					ptr = std::make_unique<dynamicUnitDefinition>(
+						lhs->unitType()[0] - rhs->unitType()[0],
+						lhs->unitType()[1] - rhs->unitType()[1],
+						lhs->unitType()[2] - rhs->unitType()[2],
+						lhs->unitType()[3] - rhs->unitType()[3],
+						lhs->unitType()[4] - rhs->unitType()[4],
+						lhs->ratio() / rhs->ratio(),
+						lhs->value() / rhs->value()
+					);
+				}
+
+				// unitless values cannot have "ratios" -- there are not alternatives of "unitless". 
+				if (ptr->IsScalar()) {
+					ptr->ratio() = 1;
+				}
+
+				return value_t(std::move(ptr));
+			};
+			static __forceinline value_t Multiply(value_t const& LHS, value_t const& RHS) {
+				return CompoundUnits(LHS, RHS, true);
+			};
+			static __forceinline value_t Divide(value_t const& LHS, value_t const& RHS) {
+				return CompoundUnits(LHS, RHS, false);
+			};
+
+			static value_t MultiplyUnits(value_t const& LHS, double RHS) noexcept {				
+				if (RHS == 1.0) {
+					return LHS;
+				}
+				else {
+					auto Data = LHS.unit_m.Shared();
+					if (Data->IsScalar()) {
+						return value_t(std::pow(Data->value() / Data->ratio(), RHS) * Data->ratio() * Data->ratio(), *Data);
+					}
+					else {
+						return value_t(std::make_unique<dynamicUnitDefinition>(
+							Data->unitType()[0] * RHS,
+							Data->unitType()[1] * RHS,
+							Data->unitType()[2] * RHS,
+							Data->unitType()[3] * RHS,
+							Data->unitType()[4] * RHS,
+							std::pow(Data->ratio(), RHS),
+							std::pow(Data->value(), RHS)
+						));
+					}
+				}
 			};
 
 		public: 
@@ -596,32 +661,67 @@ namespace GoodLang {
 			friend value_t operator-(value_t const& A, value_t const& B) {
 				return Sub(A, B);
 			};
-			
-#if 0
-			value_t operator-() const;
-			friend value_t operator*(value_t const& A, value_t const& V);
-			friend value_t operator/(value_t const& A, value_t const& V);
-
-		public: // pow and sqrt Operators
+			friend value_t operator*(value_t const& A, value_t const& V) {
+				return Multiply(A, V);
+			};
+			friend value_t operator/(value_t const& A, value_t const& V) {
+				return Divide(A, V);
+			};
+			value_t operator-() const {
+				return Multiply(*this, -1);
+			};
 			// atomicly updates the value_t with a custom user-provided function.
-			value_t& update(std::function<double(double)> const& updateFunction);
+			value_t& update(std::function<double(double)> const& updateFunction) {
+				auto Data = this->unit_m.Unique();
+				Data->value() = updateFunction(Data->value() / Data->ratio()) * Data->ratio();
+				return *this;
+			};
 			// Creats a copy of the value_t and updates it with a custom user-provided function.
-			value_t update(std::function<double(double)> const& updateFunction) const;
+			value_t update(std::function<double(double)> const& updateFunction) const {
+				auto Data = this->unit_m.Shared();
+				return value_t(updateFunction(Data->value() / Data->ratio()) * Data->ratio() * Data->ratio(), *Data);
+			};
 			// Returns a new value_t multiplied by itself "V" times. (e.g. (3_m).pow(3) => 3_cu_m)
-			value_t pow(value_t const& V) const;
+			value_t pow(value_t const& V) const {
+				auto other = V.unit_m.Shared();
+				HandleNotScalar(*other);
+				return MultiplyUnits(*this, other->value());
+			};
 			// atomicly updates the value_t by exponentiating the underlying value_t (e.g. (3_m).pow_value_t(3) => 9_m)
-			value_t& pow_value_t(value_t const& V);
+			value_t& pow_value(value_t const& V) {
+				auto Data = this->unit_m.Unique();
+				auto Other = V.unit_m.Shared();
+				HandleNotScalar(*Other);
+				Data->value() = std::pow(Data->value() / Data->ratio(), Other->value()) * Data->ratio();
+				return *this;
+			};
+			// atomicly updates the value_t by exponentiating the underlying value_t (e.g. (3_m).pow_value_t(3) => 9_m)
+			value_t pow_value(value_t const& V) const {
+				auto Other = V.unit_m.Shared(); 
+				HandleNotScalar(*Other);
+				return this->update([&Other](double x)->double { return std::pow(x, Other->value()); });
+			};
 			// pow(0.5)
-			value_t sqrt() const;
+			value_t sqrt() const {
+				return pow(0.5);
+			};
 			// atomicly floors (rounds to lower whole integer) the underlying value_t
-			value_t& floor();
+			value_t& floor() {
+				return update([](double v)->double { return std::floor(v); });
+			};
 			// Creats a copy of the value_t and floors (rounds to lower whole integer) the underlying value_t
-			value_t floor() const;
+			value_t floor() const {
+				return update([](double v)->double { return std::floor(v); });
+			};
 			// atomicly ceilings (rounds to upper whole integer) the underlying value_t
-			value_t& ceiling();
+			value_t& ceiling() {
+				return update([](double v)->double { return std::ceil(v); });
+			};
 			// Creats a copy of the value_t and ceilings (rounds to upper whole integer) the underlying value_t
-			value_t ceiling() const;
-
+			value_t ceiling() const {
+				return update([](double v)->double { return std::ceil(v); });
+			};
+#if 0
 		public:
 			static std::vector<std::vector<std::tuple<std::string, std::string, Units::value_t, std::weak_ptr<GoodLang::Type_Info>>>> GetValueTypes() noexcept;
 #endif

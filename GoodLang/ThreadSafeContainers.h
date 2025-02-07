@@ -1314,10 +1314,10 @@ namespace GoodLang {
 	public:
 		auto& GetLock() const { return lock; };
 
-		[[nodiscard]] ConstObj Unique() const { return ConstObj(*data.get(), lock); };
-		[[nodiscard]] Obj Unique() { return Obj(*data.get(), lock); };
-		[[nodiscard]] SharedConstObj Shared() const { return SharedConstObj(*data.get(), lock); };
-		[[nodiscard]] SharedObj Shared() { return SharedObj(*data.get(), lock); };
+		[[nodiscard]] ConstObj Unique() const { if (!data) throw std::runtime_error("Bad call to Unique()"); return ConstObj(*data.get(), lock); };
+		[[nodiscard]] Obj Unique() { if (!data) throw std::runtime_error("Bad call to Unique()"); return Obj(*data.get(), lock); };
+		[[nodiscard]] SharedConstObj Shared() const { if (!data) throw std::runtime_error("Bad call to Shared()"); return SharedConstObj(*data.get(), lock); };
+		[[nodiscard]] SharedObj Shared() { if (!data) throw std::runtime_error("Bad call to Shared()"); return SharedObj(*data.get(), lock); };
 
 	public:
 		SharedLockable Copy() const {

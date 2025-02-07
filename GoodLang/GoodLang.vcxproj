@@ -186,8 +186,10 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Any.h" />
+    <ClInclude Include="AST_Node.h" />
     <ClInclude Include="DateTime.h" />
     <ClInclude Include="Foundation.h" />
+    <ClInclude Include="LanguageCommon.h" />
     <ClInclude Include="Parallel.h" />
     <ClInclude Include="Proxy_Function.h" />
     <ClInclude Include="Scopes.h" />

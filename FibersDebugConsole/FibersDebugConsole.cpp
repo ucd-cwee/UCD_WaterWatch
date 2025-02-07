@@ -698,8 +698,24 @@ int main() {
 		print(Units::foot_t(Units::meter_t(5)) + Units::foot_t(5));
 		print(Units::meter_t(5) - Units::meter_t(5));
 
+		print(Units::meter_t(5) * Units::meter_t(Units::foot_t(5))); // 7.62 m^2 // correct
+		print(Units::meter_t(5) * Units::foot_t(5)); // 7.62 m^2 // correct
+		print(Units::foot_t(5) * Units::meter_t(5)); // 7.62 m^2 // correct
+		print(Units::foot_t(Units::meter_t(5)) * Units::foot_t(5)); // 7.62 m^2 // correct, but failed to look-up the sq_ft extension (yet!)
+		print(Units::meter_t(5) / Units::meter_t(5)); // 1 // correct 
+		
+		print(-Units::meter_t(5));
 
+		Units::meter_t mutableUnitExample{ 5 };
+		print(mutableUnitExample.update([](double x) -> double { return x; }));
 
+		const Units::meter_t constUnitExample{ 5 };
+		print(constUnitExample.update([](double x) -> double { return x; }));
+
+		print(mutableUnitExample.pow_value(2));
+		print(constUnitExample.pow_value(2));
+		print(constUnitExample.pow(2));
+		print(constUnitExample.pow(2).sqrt());
 
 
 
@@ -736,33 +752,33 @@ int main() {
 	if (1) {
 		Stopwatch sw;
 		sw.Start();
-		parallel::For(0, 1000000, [](int i) { // Slow (x1) 0.148525 s
-			Units::meter x{};
-			(void)x.operator()();
+		parallel::For(0, 1000000, [](int i) { // Slow (x1) 0.148525 s ... 0.110108 s ... 0.105353 s
+			Units::meter x{}; (void)x.operator()();
 			x++;
+			(void)x.pow(2);
 		});
 		print(Units::second(sw.Stop_s()));
 		sw.Start();
-		parallel::For(0, 1000000, [](int i) { // Fast (x10) 0.016274 s
-			Units::meter_t x{};
-			(void)x.operator()();
+		parallel::For(0, 1000000, [](int i) { // Fast (x10) 0.016274 s ... 0.035358 s ... 0.064283 s
+			Units::meter_t x{}; (void)x.operator()();
 			x++;
+			(void)x.pow(2);
 		});
 		print(Units::second(sw.Stop_s()));
 		sw.Start();
-		parallel::For(0, 1000000, [](int i) { // Fast (x10) 0.015514 s
-			Units::value_t x{};
-			(void)x.operator()();
+		parallel::For(0, 1000000, [](int i) { // Fast (x10) 0.015514 s ... 0.035237 s ... 0.070302 s
+			Units::value_t x{}; (void)x.operator()();
 			x++;
+			(void)x.pow(2);
 		});
 		print(Units::second(sw.Stop_s()));
-		sw.Start();
-		parallel::For(0, 1000000, [](int i) { // V. Fast (x500) 0.000581 s
-			double x{};
-			(void)(double(x));
-			x++;
-		});
-		print(Units::second(sw.Stop_s()));
+		//sw.Start();
+		//parallel::For(0, 1000000, [](int i) { // Fast (x500) 0.000581 s ... 0.00032 s
+		//	double x{}; (void)(double(x));
+		//	x++;
+
+		//});
+		//print(Units::second(sw.Stop_s()));
 	}
 
 
