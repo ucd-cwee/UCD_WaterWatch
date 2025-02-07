@@ -718,9 +718,6 @@ int main() {
 		print(constUnitExample.pow(2).sqrt());
 
 
-
-
-
 		Units::value_t x;
 		print(x); // 0
 		x = Units::meter_t(5);
@@ -731,7 +728,7 @@ int main() {
 		x = Units::foot_t(22.9659); // m <- ft should be legal
 
 		try {
-			x = Units::meter_squared_t(1); // m <- m_sq should be illegal
+			x = Units::square_meter_t(1); // m <- m_sq should be illegal
 		}
 		catch (std::exception& e) {
 			print(e.what());
@@ -745,6 +742,9 @@ int main() {
 		print(x++);
 		print(++x);
 		print(x++);
+
+		print(Units::square_meter_t(Units::acre_t(55)).pow(0.5));
+
 
 	}
 

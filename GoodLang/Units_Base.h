@@ -18,6 +18,7 @@ namespace GoodLang {
 			return out;
 		};
 		template <typename Derived> static constexpr __forceinline long double Conversion(double X) { return Derived::conversion * X; };
+		template <typename Derived> static constexpr __forceinline long double Conversion_t(double X) { return Derived::definition::ratio_m * X; };
 		static constexpr __forceinline double SQUARED(double X) { return X * X; };
 		static constexpr __forceinline double CUBED(double X) { return X * X * X; };
 
@@ -89,151 +90,158 @@ namespace GoodLang {
 		};
 	
 		using Number = double;
-		class UnitDefinitionBase {
-		public:
-			static constexpr size_t NumUnits{ Units::units_type::_size_constant };
-		protected:
-			Number value_m; // underlying value of the unit if represented as SI units. (e.g. will always be in meters, regardless of the actual unit being in feet)
-			
-		private:
-			template <typename T> static constexpr T abs(T x) { return x > (T)0 ? x : -x; };
 
-		public:
-			UnitDefinitionBase() = delete; //  : value_m{ 0 } {};
-			UnitDefinitionBase(Number V) : value_m{ std::move(V) } {};
-			~UnitDefinitionBase() = default;
+		namespace Definitions {
+			class UnitDefinitionBase {
+			public:
+				static constexpr size_t NumUnits{ Units::units_type::_size_constant };
+			protected:
+				Number value_m; // underlying value of the unit if represented as SI units. (e.g. will always be in meters, regardless of the actual unit being in feet)
 
-			virtual std::unique_ptr<UnitDefinitionBase> Copy() const = 0;
-			virtual const std::array<double, NumUnits>& unitType() const = 0;
-			virtual const double& ratio() const = 0;
-			Number& value() { return value_m; };
-			const Number& value() const { return value_m; };
-			virtual const char* BuiltInName() const { return ""; };
-			virtual const char* BuiltInAbbreviation() const { return ""; };
+			private:
+				template <typename T> static constexpr T abs(T x) { return x > (T)0 ? x : -x; };
 
-			bool IsSI() const {
-				auto& ut = unitType();
-				return ((abs(ut[0]) + abs(ut[1]) + abs(ut[2]) + abs(ut[3]) + abs(ut[4])) == 1.0) && (abs(ratio()) == 1.0);
-			};
-			bool IsScalar() const {
-				auto& ut = unitType();
-				return ((abs(ut[0]) + abs(ut[1]) + abs(ut[2]) + abs(ut[3]) + abs(ut[4])) == 0.0) && (abs(ratio()) == 1.0);
-			};
-			bool IsSameCategory(UnitDefinitionBase const& other) const noexcept {
-				if (IsScalar() && other.IsScalar()) return true;
-				auto& ut1 = unitType();
-				auto& ut2 = other.unitType();
-				return std::memcmp(&ut1, &ut2, sizeof(ut1)) == 0;
-			};
-			bool IsSameUnit(UnitDefinitionBase const& other) const noexcept {
-				return IsSameCategory(other) && (ratio() == other.ratio());
-			};
-			size_t HashCategory() const noexcept {
-				auto& ut = unitType();
-				return Units::HashUnits(ut[0], ut[1], ut[2], ut[3], ut[4]);
-			};
-			/* TO-DO */ std::pair<std::string_view, double> LookupAbbreviation(bool isStatic) const noexcept { return { "", 0.0 }; };
-			/* TO-DO */ std::string_view LookupTypeName() const noexcept { return BuiltInName(); };
-			/* TO-DO */ std::string CreateAbbreviation(bool isStatic) const noexcept { return BuiltInAbbreviation(); };
-			virtual void Clear() {
-				this->value_m = 0;
+			public:
+				UnitDefinitionBase() = delete; //  : value_m{ 0 } {};
+				UnitDefinitionBase(Number V) : value_m{ std::move(V) } {};
+				~UnitDefinitionBase() = default;
+
+				virtual std::unique_ptr<UnitDefinitionBase> Copy() const = 0;
+				virtual const std::array<double, NumUnits>& unitType() const = 0;
+				virtual const double& ratio() const = 0;
+				Number& value() { return value_m; };
+				const Number& value() const { return value_m; };
+				virtual const char* BuiltInName() const { return ""; };
+				virtual const char* BuiltInAbbreviation() const { return ""; };
+
+				bool IsSI() const {
+					auto& ut = unitType();
+					return ((abs(ut[0]) + abs(ut[1]) + abs(ut[2]) + abs(ut[3]) + abs(ut[4])) == 1.0) && (abs(ratio()) == 1.0);
+				};
+				bool IsScalar() const {
+					auto& ut = unitType();
+					return ((abs(ut[0]) + abs(ut[1]) + abs(ut[2]) + abs(ut[3]) + abs(ut[4])) == 0.0) && (abs(ratio()) == 1.0);
+				};
+				bool IsSameCategory(UnitDefinitionBase const& other) const noexcept {
+					if (IsScalar() && other.IsScalar()) return true;
+					auto& ut1 = unitType();
+					auto& ut2 = other.unitType();
+					return std::memcmp(&ut1, &ut2, sizeof(ut1)) == 0;
+				};
+				bool IsSameUnit(UnitDefinitionBase const& other) const noexcept {
+					return IsSameCategory(other) && (ratio() == other.ratio());
+				};
+				size_t HashCategory() const noexcept {
+					auto& ut = unitType();
+					return Units::HashUnits(ut[0], ut[1], ut[2], ut[3], ut[4]);
+				};
+				/* TO-DO */ std::pair<std::string_view, double> LookupAbbreviation(bool isStatic) const noexcept { return { "", 0.0 }; };
+				/* TO-DO */ std::string_view LookupTypeName() const noexcept { return BuiltInName(); };
+				/* TO-DO */ std::string CreateAbbreviation(bool isStatic) const noexcept { return BuiltInAbbreviation(); };
+				virtual void Clear() {
+					this->value_m = 0;
+				};
+
 			};
 
-		};
-		class dynamicUnitDefinition final : public UnitDefinitionBase {
-		protected:
-			std::array< double, NumUnits> unitType_m; // power exponents for the SI units (e.g. m^1 * kg^0 * s^-1 * A^0 * $^0 = m/s)
-			double ratio_m; // ratio multiplier for converting from the SI units to this actual unit (e.g. 1 = meters, 0.304 = feet, etc.) 
+			class dynamicUnitDefinition final : public UnitDefinitionBase {
+			protected:
+				std::array< double, NumUnits> unitType_m; // power exponents for the SI units (e.g. m^1 * kg^0 * s^-1 * A^0 * $^0 = m/s)
+				double ratio_m; // ratio multiplier for converting from the SI units to this actual unit (e.g. 1 = meters, 0.304 = feet, etc.) 
 
-		public:
-			dynamicUnitDefinition() : UnitDefinitionBase(0.0) {};
-			dynamicUnitDefinition(Number value_p = 0.0)
-				: UnitDefinitionBase(std::move(value_p)),
-				unitType_m{ 0,0,0,0,0 },
-				ratio_m{ 1.0 }
-			{}
-			dynamicUnitDefinition(dynamicUnitDefinition const&) = default;
-			dynamicUnitDefinition(dynamicUnitDefinition &&) = default;
-			dynamicUnitDefinition& operator=(dynamicUnitDefinition const&) = default;
-			dynamicUnitDefinition& operator=(dynamicUnitDefinition&&) = default;
-			dynamicUnitDefinition(double a, double b, double c, double d, double e, double ratio_p, Number value_p)
-				: UnitDefinitionBase(std::move(value_p)),
-				unitType_m{ std::move(a), std::move(b), std::move(c), std::move(d), std::move(e) },
-				ratio_m{ std::move(ratio_p) }
-			{}
-			~dynamicUnitDefinition() = default;
+			public:
+				dynamicUnitDefinition() : UnitDefinitionBase(0.0) {};
+				dynamicUnitDefinition(Number value_p = 0.0)
+					: UnitDefinitionBase(std::move(value_p)),
+					unitType_m{ 0,0,0,0,0 },
+					ratio_m{ 1.0 }
+				{}
+				dynamicUnitDefinition(dynamicUnitDefinition const&) = default;
+				dynamicUnitDefinition(dynamicUnitDefinition&&) = default;
+				dynamicUnitDefinition& operator=(dynamicUnitDefinition const&) = default;
+				dynamicUnitDefinition& operator=(dynamicUnitDefinition&&) = default;
+				dynamicUnitDefinition(double a, double b, double c, double d, double e, double ratio_p, Number value_p)
+					: UnitDefinitionBase(std::move(value_p)),
+					unitType_m{ std::move(a), std::move(b), std::move(c), std::move(d), std::move(e) },
+					ratio_m{ std::move(ratio_p) }
+				{}
+				~dynamicUnitDefinition() = default;
 
-			std::unique_ptr<UnitDefinitionBase> Copy() const override {
-				return std::make_unique<dynamicUnitDefinition>(*this);
-			}
-			const std::array<double, NumUnits>& unitType() const override {
-				return unitType_m;
+				std::unique_ptr<UnitDefinitionBase> Copy() const override {
+					return std::make_unique<dynamicUnitDefinition>(*this);
+				}
+				const std::array<double, NumUnits>& unitType() const override {
+					return unitType_m;
+				};
+				const double& ratio() const override {
+					return ratio_m;
+				};
+				std::array<double, NumUnits>& unitType() {
+					return unitType_m;
+				};
+				double& ratio() {
+					return ratio_m;
+				};
+				void Clear() override {
+					this->value_m = 0;
+					this->ratio_m = 0;
+					for (auto& x : this->unitType_m) x = 0;
+				};
 			};
-			const double& ratio() const override {
-				return ratio_m;
-			};
-			std::array<double, NumUnits>& unitType() {
-				return unitType_m;
-			};
-			double& ratio() {
-				return ratio_m;
-			};
-			void Clear() override {
-				this->value_m = 0;
-				this->ratio_m = 0;
-				for (auto& x : this->unitType_m) x = 0;
-			};
-		};
-		template<unsigned nameHash> class unitDefinition : public UnitDefinitionBase {
-		protected:
-			static constexpr size_t thisHash{ nameHash };
-			
-		protected:
-			unitDefinition() : UnitDefinitionBase(0.0) {};
-			unitDefinition(Number V) : UnitDefinitionBase(std::move(V)) {};
-		public:
-			virtual ~unitDefinition() = default;
-		};
-		class scalarDefinition final : public unitDefinition<0> {
-		private:
-			static constexpr std::array<double, NumUnits> unitType_m{ 0, 0, 0, 0, 0 };
-			static constexpr double ratio_m{ 1.0 };
-		public:
-			scalarDefinition() : unitDefinition(0.0) {};
-			scalarDefinition(Number V) : unitDefinition(V) {};
-			scalarDefinition(scalarDefinition const&) = default;
-			scalarDefinition(scalarDefinition&&) = default;
-			scalarDefinition& operator=(scalarDefinition const&) = default;
-			scalarDefinition& operator=(scalarDefinition&&) = default;
-			virtual ~scalarDefinition() = default;
-			const std::array<double, NumUnits>& unitType() const override { return unitType_m; };
-			const double& ratio() const override { return ratio_m; };
-			const char* BuiltInName() const override { return ""; };
-			const char* BuiltInAbbreviation() const override { return ""; };
-			std::unique_ptr<UnitDefinitionBase> Copy() const override {
-				typedef typename std::remove_const_t< typename std::remove_pointer_t< decltype(&*this) > > thisType;
-				return std::make_unique<thisType>(*this);
+			template<unsigned nameHash> class unitDefinition : public UnitDefinitionBase {
+			protected:
+				static constexpr size_t thisHash{ nameHash };
+
+			protected:
+				unitDefinition() : UnitDefinitionBase(0.0) {};
+				unitDefinition(Number V) : UnitDefinitionBase(std::move(V)) {};
+			public:
+				virtual ~unitDefinition() = default;
 			};
 		};
+		namespace Definitions {
+			class scalarDefinition final : public Definitions::unitDefinition<0> {
+			private:
+				static constexpr std::array<double, NumUnits> unitType_m{ 0, 0, 0, 0, 0 };
+				static constexpr double ratio_m{ 1.0 };
+			public:
+				scalarDefinition() : unitDefinition(0.0) {};
+				scalarDefinition(Number V) : unitDefinition(V) {};
+				scalarDefinition(scalarDefinition const&) = default;
+				scalarDefinition(scalarDefinition&&) = default;
+				scalarDefinition& operator=(scalarDefinition const&) = default;
+				scalarDefinition& operator=(scalarDefinition&&) = default;
+				virtual ~scalarDefinition() = default;
+				const std::array<double, NumUnits>& unitType() const override { return unitType_m; };
+				const double& ratio() const override { return ratio_m; };
+				const char* BuiltInName() const override { return ""; };
+				const char* BuiltInAbbreviation() const override { return ""; };
+				std::unique_ptr<UnitDefinitionBase> Copy() const override {
+					typedef typename std::remove_const_t< typename std::remove_pointer_t< decltype(&*this) > > thisType;
+					return std::make_unique<thisType>(*this);
+				};
+			};
+		};
+
 		class value_t {
 		public:
-			mutable SharedLockable<UnitDefinitionBase> unit_m;
+			mutable SharedLockable<Definitions::UnitDefinitionBase> unit_m;
 
 		public: // constructors
-			value_t() : unit_m{ std::make_unique<scalarDefinition>() } {};
-			explicit value_t(std::unique_ptr<UnitDefinitionBase>&& unit_p) : unit_m{ std::move(unit_p) } {};
-			explicit value_t(Number const& V, UnitDefinitionBase const& unit_p) : unit_m{ unit_p.Copy() } {
+			value_t() : unit_m{ std::make_unique<Definitions::scalarDefinition>() } {};
+			explicit value_t(std::unique_ptr<Definitions::UnitDefinitionBase>&& unit_p) : unit_m{ std::move(unit_p) } {};
+			explicit value_t(Number const& V, Definitions::UnitDefinitionBase const& unit_p) : unit_m{ unit_p.Copy() } {
 				auto get = unit_m.Unique();
 				get->value() = (V / get->ratio());
 			};
 			value_t(value_t&& V) : unit_m{ std::move(V.unit_m) } {};
 			value_t(value_t const& V) : unit_m{ V.unit_m.Shared()->Copy() } {};
-			value_t(Number V) : unit_m{ std::make_unique<scalarDefinition>(std::move(V)) } {};
+			value_t(Number V) : unit_m{ std::make_unique<Definitions::scalarDefinition>(std::move(V)) } {};
 			virtual ~value_t() = default;
 
 		protected:
 			// TO-DO, support full look-up table for data types
-			static std::string Abbreviation(UnitDefinitionBase const& Data, Number* visibleValue) noexcept {
+			static std::string Abbreviation(Definitions::UnitDefinitionBase const& Data, Number* visibleValue) noexcept {
 				std::string toReturn{ "" };
 				{
 					toReturn = Data.BuiltInAbbreviation();
@@ -257,9 +265,9 @@ namespace GoodLang {
 							if (!Data.IsScalar() && toReturn.empty()) {
 								// const_cast<double&>(Data.ratio()) = 1; // return to SI units. It couldn't be looked-up, so we don't have an option. 
 								ratio_to_use = 1; // return to SI units. It couldn't be looked-up, so we don't have an option. 
-								std::array< const char*, UnitDefinitionBase::NumUnits> unitBases{ "m", "kg", "s", "A", "$" };
+								std::array< const char*, Definitions::UnitDefinitionBase::NumUnits> unitBases{ "m", "kg", "s", "A", "$" };
 								bool anyNegatives = false;
-								for (int i = UnitDefinitionBase::NumUnits - 1; i >= 0; i--) {
+								for (int i = Definitions::UnitDefinitionBase::NumUnits - 1; i >= 0; i--) {
 									decltype(auto) unitBase = unitBases[i];
 									decltype(auto) v = Data.unitType()[i];
 
@@ -285,7 +293,7 @@ namespace GoodLang {
 								}
 								if (anyNegatives) {
 									toReturn += " /";
-									for (int i = UnitDefinitionBase::NumUnits - 1; i >= 0; i--) {
+									for (int i = Definitions::UnitDefinitionBase::NumUnits - 1; i >= 0; i--) {
 										decltype(auto) unitBase = unitBases[i];
 										decltype(auto) v = Data.unitType()[i];
 
@@ -339,18 +347,18 @@ namespace GoodLang {
 					obj += toAdd;
 				}
 			};
-			static __forceinline bool IdenticalUnits(UnitDefinitionBase const& LHS, UnitDefinitionBase const& RHS) noexcept { return LHS.IsSameCategory(RHS); };
-			static __forceinline bool NormalArithmeticOkay(UnitDefinitionBase const& LHS, UnitDefinitionBase const& RHS) noexcept {
+			static __forceinline bool IdenticalUnits(Definitions::UnitDefinitionBase const& LHS, Definitions::UnitDefinitionBase const& RHS) noexcept { return LHS.IsSameCategory(RHS); };
+			static __forceinline bool NormalArithmeticOkay(Definitions::UnitDefinitionBase const& LHS, Definitions::UnitDefinitionBase const& RHS) noexcept {
 				if (LHS.IsScalar() || RHS.IsScalar()) return true;
 				if (LHS.IsSameCategory(RHS)) return true;
 				return false;
 			};
-			static __forceinline bool UnaryArithmeticOkay(UnitDefinitionBase const& LHS, UnitDefinitionBase const& RHS) noexcept {
+			static __forceinline bool UnaryArithmeticOkay(Definitions::UnitDefinitionBase const& LHS, Definitions::UnitDefinitionBase const& RHS) noexcept {
 				if (RHS.IsScalar()) return true;
 				if (LHS.IsSameCategory(RHS)) return true;
 				return false;
 			};
-			static __forceinline void HandleNormalArithmetic(UnitDefinitionBase const& LHS, UnitDefinitionBase const& RHS) {
+			static __forceinline void HandleNormalArithmetic(Definitions::UnitDefinitionBase const& LHS, Definitions::UnitDefinitionBase const& RHS) {
 				if (NormalArithmeticOkay(LHS, RHS)) return;
 				else {
 					auto A1 = Abbreviation(LHS, nullptr);
@@ -361,7 +369,7 @@ namespace GoodLang {
 					)));
 				}
 			};
-			static __forceinline void HandleUnaryArithmetic(UnitDefinitionBase const& LHS, UnitDefinitionBase const& RHS) {
+			static __forceinline void HandleUnaryArithmetic(Definitions::UnitDefinitionBase const& LHS, Definitions::UnitDefinitionBase const& RHS) {
 				if (UnaryArithmeticOkay(LHS, RHS)) return;
 				else {
 					auto A1 = Abbreviation(LHS, nullptr);
@@ -373,7 +381,7 @@ namespace GoodLang {
 					)));
 				}
 			};
-			static __forceinline void HandleNotScalar(UnitDefinitionBase const& V) {
+			static __forceinline void HandleNotScalar(Definitions::UnitDefinitionBase const& V) {
 				if (V.IsScalar()) return;
 				else {
 					auto A1 = Abbreviation(V, nullptr);
@@ -583,9 +591,9 @@ namespace GoodLang {
 				}
 
 				// RHS is not a scaler, so the result could become one.
-				std::unique_ptr<dynamicUnitDefinition> ptr;
+				std::unique_ptr<Definitions::dynamicUnitDefinition> ptr;
 				if (multiplication) {
-					ptr = std::make_unique<dynamicUnitDefinition>(
+					ptr = std::make_unique<Definitions::dynamicUnitDefinition>(
 						lhs->unitType()[0] + rhs->unitType()[0], 
 						lhs->unitType()[1] + rhs->unitType()[1], 
 						lhs->unitType()[2] + rhs->unitType()[2], 
@@ -596,7 +604,7 @@ namespace GoodLang {
 					);
 				}
 				else {
-					ptr = std::make_unique<dynamicUnitDefinition>(
+					ptr = std::make_unique<Definitions::dynamicUnitDefinition>(
 						lhs->unitType()[0] - rhs->unitType()[0],
 						lhs->unitType()[1] - rhs->unitType()[1],
 						lhs->unitType()[2] - rhs->unitType()[2],
@@ -631,7 +639,7 @@ namespace GoodLang {
 						return value_t(std::pow(Data->value() / Data->ratio(), RHS) * Data->ratio() * Data->ratio(), *Data);
 					}
 					else {
-						return value_t(std::make_unique<dynamicUnitDefinition>(
+						return value_t(std::make_unique<Definitions::dynamicUnitDefinition>(
 							Data->unitType()[0] * RHS,
 							Data->unitType()[1] * RHS,
 							Data->unitType()[2] * RHS,
@@ -727,393 +735,216 @@ namespace GoodLang {
 #endif
 
 		};
+		using scalar_t = value_t;
+
+		namespace Categories {
+			class length { 
+			public: static constexpr std::array<double, Definitions::UnitDefinitionBase::NumUnits> unitType_m{ 1, 0, 0, 0, 0 }; };
+		    class mass { 
+			public: static constexpr std::array<double, Definitions::UnitDefinitionBase::NumUnits> unitType_m{ 0, 1, 0, 0, 0 }; };
+			class time { 
+			public: static constexpr std::array<double, Definitions::UnitDefinitionBase::NumUnits> unitType_m{ 0, 0, 1, 0, 0 }; };
+			class current { 
+			public: static constexpr std::array<double, Definitions::UnitDefinitionBase::NumUnits> unitType_m{ 0, 0, 0, 1, 0 }; };
+			class dollar { 
+			public: static constexpr std::array<double, Definitions::UnitDefinitionBase::NumUnits> unitType_m{ 0, 0, 0, 0, 1 }; };
+			class frequency { 
+			public: static constexpr std::array<double, Definitions::UnitDefinitionBase::NumUnits> unitType_m{ 0, 0, -1, 0, 0 }; };
+			class velocity { 
+			public: static constexpr std::array<double, Definitions::UnitDefinitionBase::NumUnits> unitType_m{ 1, 0, -1, 0, 0 }; };
+			class acceleration { 
+			public: static constexpr std::array<double, Definitions::UnitDefinitionBase::NumUnits> unitType_m{ 1, 0, -2, 0, 0 }; };
+			class force { 
+			public: static constexpr std::array<double, Definitions::UnitDefinitionBase::NumUnits> unitType_m{ 1, 1, -2, 0, 0 }; };
+			class pressure { 
+			public: static constexpr std::array<double, Definitions::UnitDefinitionBase::NumUnits> unitType_m{ -1, 1, -2, 0, 0 }; };
+			class charge { 
+			public: static constexpr std::array<double, Definitions::UnitDefinitionBase::NumUnits> unitType_m{ 0, 0, 1, 1, 0 }; };
+			class power { 
+			public: static constexpr std::array<double, Definitions::UnitDefinitionBase::NumUnits> unitType_m{ 2, 1, -3, 0, 0 }; };
+			class energy { 
+			public: static constexpr std::array<double, Definitions::UnitDefinitionBase::NumUnits> unitType_m{ 2, 1, -2, 0, 0 }; };
+			class voltage {
+			public: static constexpr std::array<double, Definitions::UnitDefinitionBase::NumUnits> unitType_m{ 2, 1, -3, -1, 0 }; };
+			class impedance {
+			public: static constexpr std::array<double, Definitions::UnitDefinitionBase::NumUnits> unitType_m{ 2, 1, -3, -2, 0 }; };
+			class conductance {
+			public: static constexpr std::array<double, Definitions::UnitDefinitionBase::NumUnits> unitType_m{ -2, -1, 3, 2, 0 }; };
+			class area {
+			public: static constexpr std::array<double, Definitions::UnitDefinitionBase::NumUnits> unitType_m{ 2, 0, 0, 0, 0 }; };
+			class volume { 
+			public: static constexpr std::array<double, Definitions::UnitDefinitionBase::NumUnits> unitType_m{ 3, 0, 0, 0, 0 }; };
+			class fillrate { 
+			public: static constexpr std::array<double, Definitions::UnitDefinitionBase::NumUnits> unitType_m{ 0, 1, -1, 0, 0 }; };
+			class flowrate {
+			public: static constexpr std::array<double, Definitions::UnitDefinitionBase::NumUnits> unitType_m{ 3, 0, -1, 0, 0 }; };
+			class density {
+			public: static constexpr std::array<double, Definitions::UnitDefinitionBase::NumUnits> unitType_m{ -3, 1, 0, 0, 0 }; };
+			class energy_cost_rate {
+			public: static constexpr std::array<double, Definitions::UnitDefinitionBase::NumUnits> unitType_m{ -2, -1, 2, 0, 1 }; };
+			class power_cost_rate {
+			public: static constexpr std::array<double, Definitions::UnitDefinitionBase::NumUnits> unitType_m{ -2, -1, 3, 0, 1 }; };
+			class volume_cost_rate {
+			public: static constexpr std::array<double, Definitions::UnitDefinitionBase::NumUnits> unitType_m{ -3, 0, 0, 0, 1 }; };
+			class energy_intensity {
+			public: static constexpr std::array<double, Definitions::UnitDefinitionBase::NumUnits> unitType_m{ -1, 1, -2, 0, 1 }; };
+			class length_cost_rate {
+			public: static constexpr std::array<double, Definitions::UnitDefinitionBase::NumUnits> unitType_m{ -1, 0, 0, 0, 1 }; };
+			class mass_cost_rate {
+			public: static constexpr std::array<double, Definitions::UnitDefinitionBase::NumUnits> unitType_m{ 0, -1, 0, 0, 1 }; };
+			class emission_rate {
+			public: static constexpr std::array<double, Definitions::UnitDefinitionBase::NumUnits> unitType_m{ -2, 0, 2, 0, 1 }; };
+			class time_rate {
+			public: static constexpr std::array<double, Definitions::UnitDefinitionBase::NumUnits> unitType_m{ 0, 0, -1, 0, 1 }; };
 
 
-
-
-		// BASE CLASS DEFINITION
-		class meterDefinition final : public unitDefinition<impl::const_hash("meter")> {
-		public:
-			using unitDefBase = unitDefinition<impl::const_hash("meter")>;
-			static constexpr auto Name_m{ impl::concat("meter") };
-			static constexpr auto Abbreviation_m{ impl::concat("m") };
-		public:
-			static constexpr std::array<double, NumUnits> unitType_m{ 1, 0, 0, 0, 0 };
-			static constexpr double ratio_m{ 1.0 };
-		public:
-			meterDefinition() : unitDefBase(0) {};
-			meterDefinition(Number V) : unitDefBase(V * (Number)ratio_m) {};
-			meterDefinition(meterDefinition const&) = default;
-			meterDefinition(meterDefinition &&) = default;
-			meterDefinition& operator=(meterDefinition const&) = default;
-			meterDefinition& operator=(meterDefinition&&) = default;
-			virtual ~meterDefinition() = default;
-			const std::array<double, NumUnits>& unitType() const override { return unitType_m; };
-			const double& ratio() const override { return ratio_m; };
-			const char* BuiltInName() const override { return &Name_m.c[0]; };
-			const char* BuiltInAbbreviation() const override { return &Abbreviation_m.c[0]; };
-			std::unique_ptr<UnitDefinitionBase> Copy() const override {
-				typedef typename std::remove_const_t< typename std::remove_pointer_t< decltype(&*this) > > thisType;
-				return std::make_unique<thisType>(*this);
-			};
-		};
-		class meter_t final : public value_t {
-		public:
-			using definition = meterDefinition;
-			meter_t() : value_t(std::make_unique<definition>()) {};
-			meter_t(value_t const& other) : meter_t() {
-				auto V = other.unit_m.Shared();
-				auto Data = this->unit_m.Unique();
-
-				if (Data->IsSameCategory(*V)) { // same category, but perhaps different conversion factor. That's OK. 
-					Data->value() = V->value();
-				}
-				else if (V->IsScalar()) { // incoming is a scaler and this unit is not. Use this unit's conversion factor.
-					Data->value() = (V->value() / V->ratio()) * Data->ratio();
-				}
-				else if (Data->IsScalar()) { // I am a scaler but the incoming unit is not. Simply copy the incoming unit entirely.
-					this->unit_m.unsafe_set_ptr(V->Copy());
-				}
-				else { // incoming unit AND this unit are different non-scalers of different categories. No exchange is reasonable. 
-					throw(std::runtime_error(GoodLang::printf("Assignment(const&) failed due to incompatible non-scalar value: '%s' and '%s'.",
-						this->Abbreviation(*Data, nullptr).c_str(),
-						other.Abbreviation(*V, nullptr).c_str()
-					)));
-				}
-				
-				//this->unit_m.Update([V = other.unit_m.load(), this, &other](GoodLang::Units::UnitDefinition Data)->GoodLang::Units::UnitDefinition { 
-				//		if (Data.IsSameCategory(V)) Data.value_m = V.value_m; 
-				//		else if (V.IsScalar()) Data.value_m = (V.value_m / V.ratio_m) * ratio; 
-				//		else if (Data.IsScalar()) Data = V; 
-				//		else throw(std::runtime_error(GoodLang::printf("Assignment(const&) failed due to incompatible non-scalar value: '%s' and '%s'.", this->Abbreviation().c_str(), other.Abbreviation().c_str()))); 
-				//			return Data; 
-				//}); 
-			}; 
-			meter_t(Number const& V) : meter_t() {
-				auto get = unit_m.Unique();
-				get->value() = V * get->ratio();
-			};
-			virtual ~meter_t() = default;
-		};
-
-		// BASE CLASS DEFINITION
-		class footDefinition final : public unitDefinition<impl::const_hash("foot")> {
-		public:
-			using unitDefBase = unitDefinition<impl::const_hash("foot")>;
-			static constexpr auto Name_m{ impl::concat("foot") };
-			static constexpr auto Abbreviation_m{ impl::concat("ft") };
-		public:
-			static constexpr std::array<double, NumUnits> unitType_m{ 1, 0, 0, 0, 0 };
-			static constexpr double ratio_m{ 381.0 / 1250.0 };
-		public:
-			footDefinition() : unitDefBase(0) {};
-			footDefinition(Number V) : unitDefBase(V * (Number)ratio_m) {};
-			footDefinition(footDefinition const&) = default;
-			footDefinition(footDefinition&&) = default;
-			footDefinition& operator=(footDefinition const&) = default;
-			footDefinition& operator=(footDefinition&&) = default;
-			virtual ~footDefinition() = default;
-			const std::array<double, NumUnits>& unitType() const override { return unitType_m; };
-			const double& ratio() const override { return ratio_m; };
-			const char* BuiltInName() const override { return &Name_m.c[0]; };
-			const char* BuiltInAbbreviation() const override { return &Abbreviation_m.c[0]; };
-			std::unique_ptr<UnitDefinitionBase> Copy() const override {
-				typedef typename std::remove_const_t< typename std::remove_pointer_t< decltype(&*this) > > thisType;
-				return std::make_unique<thisType>(*this);
-			};
-		};
-		class foot_t final : public value_t {
-		public:
-			using definition = footDefinition;
-			foot_t() : value_t(std::make_unique<definition>()) {};
-			foot_t(value_t const& other) : foot_t() {
-				auto V = other.unit_m.Shared();
-				auto Data = this->unit_m.Unique();
-
-				if (Data->IsSameCategory(*V)) { // same category, but perhaps different conversion factor. That's OK. 
-					Data->value() = V->value();
-				}
-				else if (V->IsScalar()) { // incoming is a scaler and this unit is not. Use this unit's conversion factor.
-					Data->value() = (V->value() / V->ratio()) * Data->ratio();
-				}
-				else if (Data->IsScalar()) { // I am a scaler but the incoming unit is not. Simply copy the incoming unit entirely.
-					this->unit_m.unsafe_set_ptr(V->Copy());
-				}
-				else { // incoming unit AND this unit are different non-scalers of different categories. No exchange is reasonable. 
-					throw(std::runtime_error(GoodLang::printf("Assignment(const&) failed due to incompatible non-scalar value: '%s' and '%s'.",
-						this->Abbreviation(*Data, nullptr).c_str(),
-						other.Abbreviation(*V, nullptr).c_str()
-					)));
-				} 
-			};
-			foot_t(Number const& V) : foot_t() {
-				auto get = unit_m.Unique();
-				get->value() = V * get->ratio();
-			};
-			virtual ~foot_t() = default;
-		};
-
-		// BASE CLASS DEFINITION
-		class meter_squaredDefinition final : public unitDefinition<impl::const_hash("meter_squared")> {
-		public:
-			using unitDefBase = unitDefinition<impl::const_hash("meter_squared")>;
-			static constexpr auto Name_m{ impl::concat("meter_squared") };
-			static constexpr auto Abbreviation_m{ impl::concat("m_sq") };
-		public:
-			static constexpr std::array<double, NumUnits> unitType_m{ 2, 0, 0, 0, 0 };
-			static constexpr double ratio_m{ meterDefinition::ratio_m * meterDefinition::ratio_m };
-		public:
-			meter_squaredDefinition() : unitDefBase(0) {};
-			meter_squaredDefinition(Number V) : unitDefBase(V* (Number)ratio_m) {};
-			meter_squaredDefinition(meter_squaredDefinition const&) = default;
-			meter_squaredDefinition(meter_squaredDefinition&&) = default;
-			meter_squaredDefinition& operator=(meter_squaredDefinition const&) = default;
-			meter_squaredDefinition& operator=(meter_squaredDefinition&&) = default;
-			virtual ~meter_squaredDefinition() = default;
-			const std::array<double, NumUnits>& unitType() const override { return unitType_m; };
-			const double& ratio() const override { return ratio_m; };
-			const char* BuiltInName() const override { return &Name_m.c[0]; };
-			const char* BuiltInAbbreviation() const override { return &Abbreviation_m.c[0]; };
-			std::unique_ptr<UnitDefinitionBase> Copy() const override {
-				typedef typename std::remove_const_t< typename std::remove_pointer_t< decltype(&*this) > > thisType;
-				return std::make_unique<thisType>(*this);
-			};
-		};
-		class meter_squared_t final : public value_t {
-		public:
-			using definition = meter_squaredDefinition;
-			meter_squared_t() : value_t(std::make_unique<definition>()) {};
-			meter_squared_t(value_t const& other) : meter_squared_t() {
-				auto V = other.unit_m.Shared();
-				auto Data = this->unit_m.Unique();
-
-				if (Data->IsSameCategory(*V)) { // same category, but perhaps different conversion factor. That's OK. 
-					Data->value() = V->value();
-				}
-				else if (V->IsScalar()) { // incoming is a scaler and this unit is not. Use this unit's conversion factor.
-					Data->value() = (V->value() / V->ratio()) * Data->ratio();
-				}
-				else if (Data->IsScalar()) { // I am a scaler but the incoming unit is not. Simply copy the incoming unit entirely.
-					this->unit_m.unsafe_set_ptr(V->Copy());
-				}
-				else { // incoming unit AND this unit are different non-scalers of different categories. No exchange is reasonable. 
-					throw(std::runtime_error(GoodLang::printf("Assignment(const&) failed due to incompatible non-scalar value: '%s' and '%s'.",
-						this->Abbreviation(*Data, nullptr).c_str(),
-						other.Abbreviation(*V, nullptr).c_str()
-					)));
-				}
-			};
-			meter_squared_t(Number const& V) : meter_squared_t() {
-				auto get = unit_m.Unique();
-				get->value() = V * get->ratio();
-			};
-			virtual ~meter_squared_t() = default;
-		};
-
-		// BASE CLASS DEFINITION
-		class meter_cubedDefinition final : public unitDefinition<impl::const_hash("meter_cubed")> {
-		public:
-			using unitDefBase = unitDefinition<impl::const_hash("meter_cubed")>;
-			static constexpr auto Name_m{ impl::concat("meter_cubed") };
-			static constexpr auto Abbreviation_m{ impl::concat("m_cu") };
-		public:
-			static constexpr std::array<double, NumUnits> unitType_m{ 3, 0, 0, 0, 0 };
-			static constexpr double ratio_m{ meterDefinition::ratio_m * meterDefinition::ratio_m * meterDefinition::ratio_m };
-		public:
-			meter_cubedDefinition() : unitDefBase(0) {};
-			meter_cubedDefinition(Number V) : unitDefBase(V* (Number)ratio_m) {};
-			meter_cubedDefinition(meter_cubedDefinition const&) = default;
-			meter_cubedDefinition(meter_cubedDefinition&&) = default;
-			meter_cubedDefinition& operator=(meter_cubedDefinition const&) = default;
-			meter_cubedDefinition& operator=(meter_cubedDefinition&&) = default;
-			virtual ~meter_cubedDefinition() = default;
-			const std::array<double, NumUnits>& unitType() const override { return unitType_m; };
-			const double& ratio() const override { return ratio_m; };
-			const char* BuiltInName() const override { return &Name_m.c[0]; };
-			const char* BuiltInAbbreviation() const override { return &Abbreviation_m.c[0]; };
-			std::unique_ptr<UnitDefinitionBase> Copy() const override {
-				typedef typename std::remove_const_t< typename std::remove_pointer_t< decltype(&*this) > > thisType;
-				return std::make_unique<thisType>(*this);
-			};
-		};
-		class meter_cubed_t final : public value_t {
-		public:
-			using definition = meter_cubedDefinition;
-			meter_cubed_t() : value_t(std::make_unique<definition>()) {};
-			meter_cubed_t(value_t const& other) : meter_cubed_t() {
-				auto V = other.unit_m.Shared();
-				auto Data = this->unit_m.Unique();
-
-				if (Data->IsSameCategory(*V)) { // same category, but perhaps different conversion factor. That's OK. 
-					Data->value() = V->value();
-				}
-				else if (V->IsScalar()) { // incoming is a scaler and this unit is not. Use this unit's conversion factor.
-					Data->value() = (V->value() / V->ratio()) * Data->ratio();
-				}
-				else if (Data->IsScalar()) { // I am a scaler but the incoming unit is not. Simply copy the incoming unit entirely.
-					this->unit_m.unsafe_set_ptr(V->Copy());
-				}
-				else { // incoming unit AND this unit are different non-scalers of different categories. No exchange is reasonable. 
-					throw(std::runtime_error(GoodLang::printf("Assignment(const&) failed due to incompatible non-scalar value: '%s' and '%s'.",
-						this->Abbreviation(*Data, nullptr).c_str(),
-						other.Abbreviation(*V, nullptr).c_str()
-					)));
-				}
-			};
-			meter_cubed_t(Number const& V) : meter_cubed_t() {
-				auto get = unit_m.Unique();
-				get->value() = V * get->ratio();
-			};
-			virtual ~meter_cubed_t() = default;
-		};
-
-		// BASE CLASS DEFINITION
-		class foot_squaredDefinition final : public unitDefinition<impl::const_hash("foot_squared")> {
-		public:
-			using unitDefBase = unitDefinition<impl::const_hash("foot_squared")>;
-			static constexpr auto Name_m{ impl::concat("foot_squared") };
-			static constexpr auto Abbreviation_m{ impl::concat("ft_sq") };
-		public:
-			static constexpr std::array<double, NumUnits> unitType_m{ 2, 0, 0, 0, 0 };
-			static constexpr double ratio_m{ footDefinition::ratio_m * footDefinition::ratio_m };
-		public:
-			foot_squaredDefinition() : unitDefBase(0) {};
-			foot_squaredDefinition(Number V) : unitDefBase(V* (Number)ratio_m) {};
-			foot_squaredDefinition(foot_squaredDefinition const&) = default;
-			foot_squaredDefinition(foot_squaredDefinition&&) = default;
-			foot_squaredDefinition& operator=(foot_squaredDefinition const&) = default;
-			foot_squaredDefinition& operator=(foot_squaredDefinition&&) = default;
-			virtual ~foot_squaredDefinition() = default;
-			const std::array<double, NumUnits>& unitType() const override { return unitType_m; };
-			const double& ratio() const override { return ratio_m; };
-			const char* BuiltInName() const override { return &Name_m.c[0]; };
-			const char* BuiltInAbbreviation() const override { return &Abbreviation_m.c[0]; };
-			std::unique_ptr<UnitDefinitionBase> Copy() const override {
-				typedef typename std::remove_const_t< typename std::remove_pointer_t< decltype(&*this) > > thisType;
-				return std::make_unique<thisType>(*this);
-			};
-		};
-		class foot_squared_t final : public value_t {
-		public:
-			using definition = foot_squaredDefinition;
-			foot_squared_t() : value_t(std::make_unique<definition>()) {};
-			foot_squared_t(value_t const& other) : foot_squared_t() {
-				auto V = other.unit_m.Shared();
-				auto Data = this->unit_m.Unique();
-
-				if (Data->IsSameCategory(*V)) { // same category, but perhaps different conversion factor. That's OK. 
-					Data->value() = V->value();
-				}
-				else if (V->IsScalar()) { // incoming is a scaler and this unit is not. Use this unit's conversion factor.
-					Data->value() = (V->value() / V->ratio()) * Data->ratio();
-				}
-				else if (Data->IsScalar()) { // I am a scaler but the incoming unit is not. Simply copy the incoming unit entirely.
-					this->unit_m.unsafe_set_ptr(V->Copy());
-				}
-				else { // incoming unit AND this unit are different non-scalers of different categories. No exchange is reasonable. 
-					throw(std::runtime_error(GoodLang::printf("Assignment(const&) failed due to incompatible non-scalar value: '%s' and '%s'.",
-						this->Abbreviation(*Data, nullptr).c_str(),
-						other.Abbreviation(*V, nullptr).c_str()
-					)));
-				}
-			};
-			foot_squared_t(Number const& V) : foot_squared_t() {
-				auto get = unit_m.Unique();
-				get->value() = V * get->ratio();
-			};
-			virtual ~foot_squared_t() = default;
 		};
 
 		// METRIX PREFIX CLASS DEFINITION
-		template<typename ratioType = std::milli, typename baseType = meterDefinition>
-		class MetricPrefixedDefinition final : public unitDefinition<impl::const_hash(impl::concat(impl::ratioType_to_name<ratioType>::Name().c, baseType::Name_m.c).c)> {
-		public:
-			using unitDefBase = unitDefinition<impl::const_hash(impl::concat(impl::ratioType_to_name<ratioType>::Name().c, baseType::Name_m.c).c)>;
-			static constexpr double ratio_m{ baseType::ratio_m * ((double)ratioType::num / (double)ratioType::den) };
-			static constexpr auto Name_m{ impl::concat(impl::ratioType_to_name<ratioType>::Name().c, baseType::Name_m.c) };
-			static constexpr auto Abbreviation_m{ impl::concat(impl::ratioType_to_name<ratioType>::Abbreviation().c, baseType::Abbreviation_m.c) };
-		public:
-			MetricPrefixedDefinition() : unitDefBase(0) {};
-			MetricPrefixedDefinition(Number V) : unitDefBase(V * (Number)ratio_m) {};
-			MetricPrefixedDefinition(MetricPrefixedDefinition const&) = default;
-			MetricPrefixedDefinition(MetricPrefixedDefinition&&) = default;
-			MetricPrefixedDefinition& operator=(MetricPrefixedDefinition const&) = default;
-			MetricPrefixedDefinition& operator=(MetricPrefixedDefinition&&) = default;
-			virtual ~MetricPrefixedDefinition() = default;
-			const std::array<double, UnitDefinitionBase::NumUnits>& unitType() const override { return baseType::unitType_m; };
-			const double& ratio() const override { return ratio_m; };
-			const char* BuiltInName() const override { return &Name_m.c[0]; };
-			const char* BuiltInAbbreviation() const override { return &Abbreviation_m.c[0]; };
-			std::unique_ptr<UnitDefinitionBase> Copy() const override {
-				typedef typename std::remove_const_t< typename std::remove_pointer_t< decltype(&*this) > > thisType;
-				return std::make_unique<thisType>(*this);
+		namespace Definitions {
+			template<typename ratioType, typename baseType>
+			class MetricPrefixedDefinition final : public unitDefinition<impl::const_hash(impl::concat(impl::ratioType_to_name<ratioType>::Name().c, baseType::Name_m.c).c)> {
+			public:
+				using unitDefBase = unitDefinition<impl::const_hash(impl::concat(impl::ratioType_to_name<ratioType>::Name().c, baseType::Name_m.c).c)>;
+				static constexpr double ratio_m{ baseType::ratio_m * ((double)ratioType::num / (double)ratioType::den) };
+				static constexpr auto Name_m{ impl::concat(impl::ratioType_to_name<ratioType>::Name().c, baseType::Name_m.c) };
+				static constexpr auto Abbreviation_m{ impl::concat(impl::ratioType_to_name<ratioType>::Abbreviation().c, baseType::Abbreviation_m.c) };
+			public:
+				MetricPrefixedDefinition() : unitDefBase(0) {};
+				MetricPrefixedDefinition(Number V) : unitDefBase(V* (Number)ratio_m) {};
+				MetricPrefixedDefinition(MetricPrefixedDefinition const&) = default;
+				MetricPrefixedDefinition(MetricPrefixedDefinition&&) = default;
+				MetricPrefixedDefinition& operator=(MetricPrefixedDefinition const&) = default;
+				MetricPrefixedDefinition& operator=(MetricPrefixedDefinition&&) = default;
+				virtual ~MetricPrefixedDefinition() = default;
+				const std::array<double, UnitDefinitionBase::NumUnits>& unitType() const override { return baseType::unitType_m; };
+				const double& ratio() const override { return ratio_m; };
+				const char* BuiltInName() const override { return &Name_m.c[0]; };
+				const char* BuiltInAbbreviation() const override { return &Abbreviation_m.c[0]; };
+				std::unique_ptr<UnitDefinitionBase> Copy() const override {
+					typedef typename std::remove_const_t< typename std::remove_pointer_t< decltype(&*this) > > thisType;
+					return std::make_unique<thisType>(*this);
+				};
 			};
 		};
 
-		class millimeter_t final : public value_t {
-		public:
-			using definition = Units::MetricPrefixedDefinition<std::milli, Units::meterDefinition>;
-			millimeter_t() : value_t(std::make_unique<definition>()) {};
-			millimeter_t(value_t const& other) : millimeter_t() {
-				auto V = other.unit_m.Shared();
-				auto Data = this->unit_m.Unique();
-				if (Data->IsSameCategory(*V)) { // same category, but perhaps different conversion factor. That's OK. 
-					Data->value() = V->value();
-				}
-				else if (V->IsScalar()) { // incoming is a scaler and this unit is not. Use this unit's conversion factor.
-					Data->value() = (V->value() / V->ratio()) * Data->ratio();
-				}
-				else if (Data->IsScalar()) { // I am a scaler but the incoming unit is not. Simply copy the incoming unit entirely.
-					this->unit_m.unsafe_set_ptr(V->Copy());
-				}
-				else { // incoming unit AND this unit are different non-scalers of different categories. No exchange is reasonable. 
-					throw(std::runtime_error(GoodLang::printf("Assignment(const&) failed due to incompatible non-scalar value: '%s' and '%s'.",
-						this->Abbreviation(*Data, nullptr).c_str(),
-						other.Abbreviation(*V, nullptr).c_str()
-					)));
-				}
-			};
-			millimeter_t(Number const& V) : millimeter_t() {
-				auto get = unit_m.Unique();
-				get->value() = V * get->ratio();
-			};
-			virtual ~millimeter_t() = default;
-		};
-		class kilometer_t final : public value_t {
-		public:
-			using definition = Units::MetricPrefixedDefinition<std::kilo, Units::meterDefinition>;
-			kilometer_t() : value_t(std::make_unique<definition>()) {};
-			kilometer_t(value_t const& other) : kilometer_t() {
-				auto V = other.unit_m.Shared();
-				auto Data = this->unit_m.Unique();
-				if (Data->IsSameCategory(*V)) { // same category, but perhaps different conversion factor. That's OK. 
-					Data->value() = V->value();
-				}
-				else if (V->IsScalar()) { // incoming is a scaler and this unit is not. Use this unit's conversion factor.
-					Data->value() = (V->value() / V->ratio()) * Data->ratio();
-				}
-				else if (Data->IsScalar()) { // I am a scaler but the incoming unit is not. Simply copy the incoming unit entirely.
-					this->unit_m.unsafe_set_ptr(V->Copy());
-				}
-				else { // incoming unit AND this unit are different non-scalers of different categories. No exchange is reasonable. 
-					throw(std::runtime_error(GoodLang::printf("Assignment(const&) failed due to incompatible non-scalar value: '%s' and '%s'.",
-						this->Abbreviation(*Data, nullptr).c_str(),
-						other.Abbreviation(*V, nullptr).c_str()
-					)));
-				}
-			};
-			kilometer_t(Number const& V) : kilometer_t() {
-				auto get = unit_m.Unique();
-				get->value() = V * get->ratio();
-			};
-			virtual ~kilometer_t() = default;
-		};
+#define DerivedUnitList \
+	DerivedUnitTypeWithMetricPrefixes(meter, length, m, 1.0); \
+	DerivedUnitType(foot, length, ft, Conversion_t<meter_t>(381.0 / 1250.0)); \
+	DerivedUnitType(inch, length, in, Conversion_t<foot_t>(1.0 / 12.0)); \
+	DerivedUnitType(furlong, length, fur, Conversion_t<foot_t>(660)); \
+	DerivedUnitType(mile, length, mi, Conversion_t<foot_t>(5280)); \
+	DerivedUnitType(nauticalMile, length, nmi, Conversion_t<meter_t>(1852.0)); \
+	DerivedUnitType(astronicalUnit, length, au, Conversion_t<meter_t>(149597870700.0)); \
+	DerivedUnitType(yard, length, yd, Conversion_t<foot_t>(3.0)); \
+	DerivedUnitTypeWithMetricPrefixes(gram, mass, g, 1.0 / 1000.0); \
+	DerivedUnitType(metric_ton, mass, t, Conversion_t<kilogram_t>(1000.0)); \
+	DerivedUnitType(pound, mass, lb, Conversion_t<kilogram_t>(45359237.0 / 100000000.0)); \
+	DerivedUnitType(long_ton, mass, ln_t, Conversion_t < pound_t >(2240.0)); \
+	DerivedUnitType(short_ton, mass, sh_t, Conversion_t < pound_t >(2000.0)); \
+	DerivedUnitType(stone, mass, st, Conversion_t < pound_t >(14.0)); \
+	DerivedUnitType(ounce, mass, oz, Conversion_t < pound_t >(1.0 / 16.0)); \
+	DerivedUnitType(carat, mass, ct, Conversion_t < milligram_t >(200.0)); \
+	DerivedUnitType(slug, mass, slug, Conversion_t<kilogram_t >(145939029.0 / 10000000.0)); \
+	DerivedUnitType(square_meter, area, sq_m, 1.0); \
+	DerivedUnitType(square_foot, area, sq_ft, Conversion_t<foot_t>(1.0)* Conversion_t<foot_t>(1.0)); \
+	DerivedUnitType(square_inch, area, sq_in, Conversion_t<inch_t>(1.0)* Conversion_t<inch_t>(1.0)); \
+	DerivedUnitType(square_mile, area, sq_mi, Conversion_t<mile_t>(1.0)* Conversion_t<mile_t>(1.0)); \
+	DerivedUnitType(square_kilometer, area, sq_km, Conversion_t<kilometer_t>(1.0)* Conversion_t<kilometer_t>(1.0)); \
+	DerivedUnitType(hectare, area, ha, Conversion_t<square_meter_t>(1000.0)); \
+	DerivedUnitType(acre, area, acre, Conversion_t<square_foot_t>(43560.0))
 
+#define DerivedUnitType(type, category, abbreviation, Ratio) namespace Definitions { class type ## Definition final : public unitDefinition<impl::const_hash(#type)>, public Categories::category { \
+	public: \
+		using unitDefBase = unitDefinition<impl::const_hash(#type)>; \
+		static constexpr auto Name_m{ impl::concat(#type) }; \
+		static constexpr auto Abbreviation_m{ impl::concat(#abbreviation) }; \
+		static constexpr double ratio_m{ Ratio }; \
+		type ## Definition() : unitDefBase(0) {}; \
+		type ## Definition(Number V) : unitDefBase(V* (Number)ratio_m) {}; \
+        type ## Definition(type ## Definition const&) = default; \
+		type ## Definition(type ## Definition&&) = default; \
+		type ## Definition& operator=(type ## Definition const&) = default; \
+		type ## Definition& operator=(type ## Definition&&) = default; \
+		virtual ~type ## Definition() = default; \
+		const std::array<double, UnitDefinitionBase::NumUnits>& unitType() const override { return this->unitType_m; }; \
+		const double& ratio() const override { return ratio_m; }; \
+		const char* BuiltInName() const override { return &Name_m.c[0]; }; \
+		const char* BuiltInAbbreviation() const override { return &Abbreviation_m.c[0]; }; \
+		std::unique_ptr<UnitDefinitionBase> Copy() const override { \
+			return std::make_unique<typename std::remove_const_t< typename std::remove_pointer_t< decltype(&*this) > >>(*this); \
+		}; \
+	}; }; \
+	class type ## _t final : public value_t { \
+	public: \
+		using definition = Definitions::type ## Definition; \
+		type ## _t() : value_t(std::make_unique<definition>()) {}; \
+		type ## _t(value_t const& other) : type ## _t() { \
+			auto V = other.unit_m.Shared(); \
+			auto Data = this->unit_m.Unique(); \
+			if (Data->IsSameCategory(*V)) Data->value() = V->value(); \
+			else if (V->IsScalar()) Data->value() = (V->value() / V->ratio()) * Data->ratio(); \
+			else if (Data->IsScalar()) this->unit_m.unsafe_set_ptr(V->Copy()); \
+			else {  \
+				throw(std::runtime_error(GoodLang::printf("Assignment(const&) failed due to incompatible non-scalar value: '%s' and '%s'.", \
+					this->Abbreviation(*Data, nullptr).c_str(), \
+					other.Abbreviation(*V, nullptr).c_str() \
+				))); \
+			} \
+		}; \
+		type ## _t(Number const& V) : type ## _t() { \
+			auto get = unit_m.Unique(); \
+			get->value() = V * get->ratio(); \
+		}; \
+		virtual ~type ## _t() = default; \
+	};
 
+#define DerivedUnitTypeWithMetricPrefix(type, prefix) class prefix ## type ## _t final : public value_t { \
+	public: \
+		using definition = Units::Definitions::MetricPrefixedDefinition<std::prefix, Units::Definitions::type ## Definition>; \
+		prefix ## type ## _t() : value_t(std::make_unique<definition>()) {}; \
+		prefix ## type ## _t(value_t const& other) : prefix ## type ## _t() { \
+			auto V = other.unit_m.Shared(); \
+			auto Data = this->unit_m.Unique(); \
+			if (Data->IsSameCategory(*V)) Data->value() = V->value(); \
+			else if (V->IsScalar()) Data->value() = (V->value() / V->ratio()) * Data->ratio(); \
+			else if (Data->IsScalar()) this->unit_m.unsafe_set_ptr(V->Copy()); \
+			else {  \
+				throw(std::runtime_error(GoodLang::printf("Assignment(const&) failed due to incompatible non-scalar value: '%s' and '%s'.", \
+					this->Abbreviation(*Data, nullptr).c_str(), \
+					other.Abbreviation(*V, nullptr).c_str() \
+				))); \
+			} \
+		}; \
+		prefix ## type ## _t(Number const& V) : prefix ## type ## _t() { \
+			auto get = unit_m.Unique(); \
+			get->value() = V * get->ratio(); \
+		}; \
+		virtual ~prefix ## type ## _t() = default; \
+	};
 
+#define DerivedUnitTypeWithMetricPrefixes(type, category, abbreviation, ratio) \
+	DerivedUnitType(type, category, abbreviation, ratio); \
+	DerivedUnitTypeWithMetricPrefix(type, femto); \
+	DerivedUnitTypeWithMetricPrefix(type, pico); \
+	DerivedUnitTypeWithMetricPrefix(type, nano); \
+	DerivedUnitTypeWithMetricPrefix(type, micro); \
+	DerivedUnitTypeWithMetricPrefix(type, milli); \
+	DerivedUnitTypeWithMetricPrefix(type, centi); \
+	DerivedUnitTypeWithMetricPrefix(type, deci); \
+	DerivedUnitTypeWithMetricPrefix(type, deca); \
+	DerivedUnitTypeWithMetricPrefix(type, hecto); \
+	DerivedUnitTypeWithMetricPrefix(type, kilo); \
+	DerivedUnitTypeWithMetricPrefix(type, mega); \
+	DerivedUnitTypeWithMetricPrefix(type, giga); \
+	DerivedUnitTypeWithMetricPrefix(type, tera); \
+	DerivedUnitTypeWithMetricPrefix(type, peta)
 
+	DerivedUnitList; // this loops through the definitions for DerivedUnitTypeWithMetricPrefixes() and DerivedUnitType() for all units. Change thosse macro definitions to change the implimentations. 
 
-
+#undef DerivedUnitTypeWithMetricPrefix
+#undef DerivedUnitTypeWithMetricPrefixes
+#undef DerivedUnitType
 
 #endif	
 
@@ -1260,6 +1091,17 @@ namespace GoodLang {
 		};
 		using scalar = value;
 
+	};
+};
+
+namespace std {
+	template<> class numeric_limits<GoodLang::Units::value_t> {
+	public:
+		static constexpr double min() { return std::numeric_limits<double>::min(); }
+		static constexpr double max() { return std::numeric_limits<double>::max(); }
+		static constexpr double lowest() { return std::numeric_limits<double>::lowest(); }
+		static constexpr bool is_integer = std::numeric_limits<double>::is_integer;
+		static constexpr bool is_signed = std::numeric_limits<double>::is_signed;
 	};
 };
 

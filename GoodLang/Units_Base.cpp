@@ -1053,4 +1053,73 @@ namespace GoodLang {
 
 
 	};
+
+#if 0
+	namespace Units {
+#define DerivedUnitType(type, category, abbreviation, Ratio) \
+	type ## _t::type ## _t() : value_t(std::make_unique<definition>()) {}; \
+	type ## _t::type ## _t(value_t const& other) : type ## _t() { \
+		auto V = other.unit_m.Shared(); \
+		auto Data = this->unit_m.Unique(); \
+		if (Data->IsSameCategory(*V)) Data->value() = V->value(); \
+		else if (V->IsScalar()) Data->value() = (V->value() / V->ratio()) * Data->ratio(); \
+		else if (Data->IsScalar()) this->unit_m.unsafe_set_ptr(V->Copy()); \
+		else {  \
+			throw(std::runtime_error(GoodLang::printf("Assignment(const&) failed due to incompatible non-scalar value: '%s' and '%s'.", \
+				this->Abbreviation(*Data, nullptr).c_str(), \
+				other.Abbreviation(*V, nullptr).c_str() \
+			))); \
+		} \
+	}; \
+	type ## _t::type ## _t(Number const& V) : type ## _t() { \
+		auto get = unit_m.Unique(); \
+		get->value() = V * get->ratio(); \
+	};
+	
+#define DerivedUnitTypeWithMetricPrefix(type, prefix) \
+		prefix ## type ## _t::prefix ## type ## _t() : value_t(std::make_unique<definition>()) {}; \
+		prefix ## type ## _t::prefix ## type ## _t(value_t const& other) : prefix ## type ## _t() { \
+			auto V = other.unit_m.Shared(); \
+			auto Data = this->unit_m.Unique(); \
+			if (Data->IsSameCategory(*V)) Data->value() = V->value(); \
+			else if (V->IsScalar()) Data->value() = (V->value() / V->ratio()) * Data->ratio(); \
+			else if (Data->IsScalar()) this->unit_m.unsafe_set_ptr(V->Copy()); \
+			else {  \
+				throw(std::runtime_error(GoodLang::printf("Assignment(const&) failed due to incompatible non-scalar value: '%s' and '%s'.", \
+					this->Abbreviation(*Data, nullptr).c_str(), \
+					other.Abbreviation(*V, nullptr).c_str() \
+				))); \
+			} \
+		}; \
+		prefix ## type ## _t::prefix ## type ## _t(Number const& V) : prefix ## type ## _t() { \
+			auto get = unit_m.Unique(); \
+			get->value() = V * get->ratio(); \
+		}; \
+	
+#define DerivedUnitTypeWithMetricPrefixes(type, category, abbreviation, ratio) \
+	DerivedUnitType(type, category, abbreviation, ratio); \
+	DerivedUnitTypeWithMetricPrefix(type, femto); \
+	DerivedUnitTypeWithMetricPrefix(type, pico); \
+	DerivedUnitTypeWithMetricPrefix(type, nano); \
+	DerivedUnitTypeWithMetricPrefix(type, micro); \
+	DerivedUnitTypeWithMetricPrefix(type, milli); \
+	DerivedUnitTypeWithMetricPrefix(type, centi); \
+	DerivedUnitTypeWithMetricPrefix(type, deci); \
+	DerivedUnitTypeWithMetricPrefix(type, deca); \
+	DerivedUnitTypeWithMetricPrefix(type, hecto); \
+	DerivedUnitTypeWithMetricPrefix(type, kilo); \
+	DerivedUnitTypeWithMetricPrefix(type, mega); \
+	DerivedUnitTypeWithMetricPrefix(type, giga); \
+	DerivedUnitTypeWithMetricPrefix(type, tera); \
+	DerivedUnitTypeWithMetricPrefix(type, peta)
+
+		DerivedUnitList; // this loops through the definitions for DerivedUnitTypeWithMetricPrefixes() and DerivedUnitType() for all units. Change thosse macro definitions to change the implimentations. 
+
+#undef DerivedUnitTypeWithMetricPrefix
+#undef DerivedUnitTypeWithMetricPrefixes
+#undef DerivedUnitType
+
+	};
+#endif
+
 };
