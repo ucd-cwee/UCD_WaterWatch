@@ -1054,10 +1054,31 @@ namespace GoodLang {
 
 	};
 
-#if 0
+#if 1
 	namespace Units {
-#define DerivedUnitType(type, category, abbreviation, Ratio) \
-	type ## _t::type ## _t() : value_t(std::make_unique<definition>()) {}; \
+#define CalculateMetricPrefixV(metric) ((long double)std::metric::num / (long double)std::metric::den)
+#define DerivedUnitType(type, category, abbreviation, Ratio) namespace Definitions { class type ## Definition final : public unitDefinition<impl::const_hash(#type)>, public Categories::category { \
+	public: \
+		using unitDefBase = unitDefinition<impl::const_hash(#type)>; \
+		static constexpr auto Name_m{ impl::concat(#type) }; \
+		static constexpr auto Abbreviation_m{ impl::concat(#abbreviation) }; \
+		static constexpr double ratio_m{ Ratio }; \
+		type ## Definition() : unitDefBase(0) {}; \
+		type ## Definition(Number V) : unitDefBase(V* (Number)ratio_m) {}; \
+        type ## Definition(type ## Definition const&) = default; \
+		type ## Definition(type ## Definition&&) = default; \
+		type ## Definition& operator=(type ## Definition const&) = default; \
+		type ## Definition& operator=(type ## Definition&&) = default; \
+		virtual ~type ## Definition() = default; \
+		const std::array<double, UnitDefinitionBase::NumUnits>& unitType() const override { return this->unitType_m; }; \
+		const double& ratio() const override { return ratio_m; }; \
+		const char* BuiltInName() const override { return &Name_m.c[0]; }; \
+		const char* BuiltInAbbreviation() const override { return &Abbreviation_m.c[0]; }; \
+		std::unique_ptr<UnitDefinitionBase> Copy() const override { \
+			return std::make_unique<typename std::remove_const_t< typename std::remove_pointer_t< decltype(&*this) > >>(*this); \
+		}; \
+	}; }; \
+	type ## _t::type ## _t() : value_t(std::make_unique<Definitions::type ## Definition>()) {}; \
 	type ## _t::type ## _t(value_t const& other) : type ## _t() { \
 		auto V = other.unit_m.Shared(); \
 		auto Data = this->unit_m.Unique(); \
@@ -1077,7 +1098,7 @@ namespace GoodLang {
 	};
 	
 #define DerivedUnitTypeWithMetricPrefix(type, prefix) \
-		prefix ## type ## _t::prefix ## type ## _t() : value_t(std::make_unique<definition>()) {}; \
+		prefix ## type ## _t::prefix ## type ## _t() : value_t(std::make_unique<Definitions::MetricPrefixedDefinition<std::prefix, Units::Definitions::type ## Definition>>()) {}; \
 		prefix ## type ## _t::prefix ## type ## _t(value_t const& other) : prefix ## type ## _t() { \
 			auto V = other.unit_m.Shared(); \
 			auto Data = this->unit_m.Unique(); \
@@ -1118,6 +1139,85 @@ namespace GoodLang {
 #undef DerivedUnitTypeWithMetricPrefix
 #undef DerivedUnitTypeWithMetricPrefixes
 #undef DerivedUnitType
+
+		// return absolute value
+		Units::value_t math_t::fabs(const Units::value_t& V) {
+			if (V < 0) return V * -1.0; else return V;
+		};
+		// return absolute value
+		Units::value_t math_t::abs(const Units::value_t& V) {
+			return fabs(V);
+		};
+		// clamp number to lower/upper bound
+		Units::value_t math_t::clamp(const Units::value_t& V, const Units::value_t& min, const Units::value_t& max) {
+			if (V < min) return min;
+			if (V > max) return max;
+			return V;
+		};
+		// round to lower whole number
+		Units::value_t math_t::floor(const Units::value_t& f) {
+			return f.floor();
+		};
+		// round to higher whole number
+		Units::value_t math_t::ceiling(const Units::value_t& f) {
+			return f.ceiling();
+		};
+		// round to nearest whole number
+		Units::value_t math_t::round(const Units::value_t& a, float magnitude) {
+			return floor((a / magnitude) + 0.5) * magnitude;
+		};
+		// return max(a, b);
+		Units::value_t math_t::max(const Units::value_t& a, const Units::value_t& b) {
+			return a > b ? a : b;
+		};
+		// return min(a, b);
+		Units::value_t math_t::min(const Units::value_t& a, const Units::value_t& b) {
+			return a < b ? a : b;
+		};
+		// if (b > a) a = b; // prevents copying when not necessary
+		void math_t::max_ref(Units::value_t& a, const Units::value_t& b) {
+			if (b > a) a = b;
+		};
+		// if (b < a) a = b; // prevents copying when not necessary
+		void math_t::min_ref(Units::value_t& a, const Units::value_t& b) {
+			if (b < a) a = b;
+		};
+		/* PI (unitless) */
+		Units::scalar_t					constants_t::pi() {
+			return 3.141592653589793238462643383279502884197169399375105820974944;
+		};
+		/* speed of light in a vacuum (m/s) */
+		Units::meters_per_second_t		    constants_t::c() {
+			return 299792458.0;
+		};
+		/* ( m^3 / (kg * s^2) ) */
+		Units::value_t				        constants_t::G() {
+			return Units::meter_t(6.67408e-11) * Units::meter_t(1) * Units::meter_t(1) / (Units::kilogram_t(1) * Units::second_t(1) * Units::second_t(1));
+		};
+		/* acceleration due to gravity ( m/s^2 ) */
+		Units::meters_per_second_squared_t	constants_t::g() {
+			return Units::meters_per_second_squared_t(9.8067);
+		};
+		/* density of water ( kg/m^3 ) */
+		Units::kilograms_per_cubic_meter_t constants_t::d() {
+			return Units::kilograms_per_cubic_meter_t(998.57);
+		};
+		
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 	};
 #endif

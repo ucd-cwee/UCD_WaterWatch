@@ -648,12 +648,23 @@ int main() {
 
 	if (1) {
 		// NOTE, repeat this test with the new system once ready
-		print(Units::newton(Units::millipound_f(1)));  // expect 0.004448222 N
-		print(Units::newton(Units::pound_f(Units::millipound_f(1)))); // expect 0.004448222 N
-		auto squareNewtons = Units::newton(0.004448222).pow(2);
-		auto squareMilliPound = Units::millipound_f(1).pow(2);
-		print(squareNewtons - squareMilliPound); // expect nearly 0
-		print(Units::joule(Units::milliwatt_hour(1))); // expect 3.6
+		if (1) {
+			print(Units::newton(Units::millipound_f(1)));  // expect 0.004448222 N
+			print(Units::newton(Units::pound_f(Units::millipound_f(1)))); // expect 0.004448222 N
+			auto squareNewtons = Units::newton(0.004448222).pow(2);
+			auto squareMilliPound = Units::millipound_f(1).pow(2);
+			print(squareNewtons - squareMilliPound); // expect nearly 0
+			print(Units::joule(Units::milliwatt_hour(1))); // expect 3.6
+		}
+
+		if (1) {
+			print(Units::newton_t(Units::millipound_f_t(1)));  // expect 0.004448222 N
+			print(Units::newton_t(Units::pound_f_t(Units::millipound_f_t(1)))); // expect 0.004448222 N
+			auto squareNewtons = Units::newton_t(0.004448222).pow(2);
+			auto squareMilliPound = Units::millipound_f_t(1).pow(2);
+			print(squareNewtons - squareMilliPound); // expect nearly 0
+			print(Units::joule_t(Units::milliwatt_hour_t(1))); // expect 3.6
+		}
 
 
 
@@ -662,12 +673,9 @@ int main() {
 
 
 
-
-
-
-
-		print(&Units::meter_t::definition::Name_m.c[0]);
-		print(&Units::millimeter_t::definition::Name_m.c[0]);
+		print(Units::meter_t::conversion_ratio);
+		print(Units::millimeter_t::conversion_ratio);
+		print(Units::foot_t::conversion_ratio);
 
 		print(Units::meter_t(5));
 		print(Units::millimeter_t(5000));
@@ -752,33 +760,37 @@ int main() {
 	if (1) {
 		Stopwatch sw;
 		sw.Start();
-		parallel::For(0, 1000000, [](int i) { // Slow (x1) 0.148525 s ... 0.110108 s ... 0.105353 s
+		parallel::For(0, 1000000, [](int i) { // Slow (x1) 0.148525 s ... 0.110108 s ... 0.105353 s ... 0.134672 s
 			Units::meter x{}; (void)x.operator()();
 			x++;
 			(void)x.pow(2);
+			auto y{ x * x * x };
 		});
-		print(Units::second(sw.Stop_s()));
+		print(Units::second_t(sw.Stop_s()));
 		sw.Start();
-		parallel::For(0, 1000000, [](int i) { // Fast (x10) 0.016274 s ... 0.035358 s ... 0.064283 s
+		parallel::For(0, 1000000, [](int i) { // Fast (x10) 0.016274 s ... 0.035358 s ... 0.064283 s ... 0.076939 s
 			Units::meter_t x{}; (void)x.operator()();
 			x++;
 			(void)x.pow(2);
+			auto y{ x * x * x };
 		});
-		print(Units::second(sw.Stop_s()));
+		print(Units::second_t(sw.Stop_s()));
 		sw.Start();
-		parallel::For(0, 1000000, [](int i) { // Fast (x10) 0.015514 s ... 0.035237 s ... 0.070302 s
+		parallel::For(0, 1000000, [](int i) { // Fast (x10) 0.015514 s ... 0.035237 s ... 0.070302 s ... 0.091723 s
 			Units::value_t x{}; (void)x.operator()();
 			x++;
 			(void)x.pow(2);
+			auto y{ x * x * x };
 		});
-		print(Units::second(sw.Stop_s()));
-		//sw.Start();
-		//parallel::For(0, 1000000, [](int i) { // Fast (x500) 0.000581 s ... 0.00032 s
-		//	double x{}; (void)(double(x));
-		//	x++;
-
-		//});
-		//print(Units::second(sw.Stop_s()));
+		print(Units::second_t(sw.Stop_s()));
+		sw.Start();
+		parallel::For(0, 1000000, [](int i) { // Fast(x500) 0.000581 s ... 0.00032 s ...   UNKNOWN   ... 0.000211 s
+			double x{}; (void)(double(x));
+			x++;
+			(void)std::pow(x, 2);
+			auto y{ x * x * x };
+		});
+		print(Units::second_t(sw.Stop_s()));
 	}
 
 
