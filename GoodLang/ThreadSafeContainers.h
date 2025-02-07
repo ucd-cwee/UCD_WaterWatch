@@ -12,6 +12,13 @@
 #include <cassert>
 #include <ShlDisp.h> // InterlockedExchangePointer
 #include <map>
+#include <concurrent_queue.h>
+#include <set>
+#include <concurrent_unordered_set.h>
+#include <stack>
+
+#include <boost/math/constants/constants.hpp>
+#include <boost/multiprecision/cpp_dec_float.hpp>
 
 namespace GoodLang {
 	namespace utilities {
@@ -586,6 +593,8 @@ namespace GoodLang {
 		}  // namespace dbgroup::atomic::mwcas
 
 	};
+
+	using number = boost::multiprecision::number<boost::multiprecision::cpp_dec_float< std::numeric_limits<double>::digits10 * 4 > >; // extremely high precision number for scientific experiments or analysis
 
 	/* Implimentation of std::tuple, with built-in get<n>() functions. It is only as thread-safe as the inner types */
 	template<typename... Args> class Union {
@@ -1299,16 +1308,16 @@ namespace GoodLang {
 		};
 
 	protected:
-		Arg data;
+		std::unique_ptr<Arg> data;
 		mutable std::shared_mutex lock{};
 
 	public:
 		auto& GetLock() const { return lock; };
 
-		[[nodiscard]] ConstObj Unique() const { return ConstObj(data, lock); };
-		[[nodiscard]] Obj Unique() { return Obj(data, lock); };
-		[[nodiscard]] SharedConstObj Shared() const { return SharedConstObj(data, lock); };
-		[[nodiscard]] SharedObj Shared() { return SharedObj(data, lock); };
+		[[nodiscard]] ConstObj Unique() const { return ConstObj(*data.get(), lock); };
+		[[nodiscard]] Obj Unique() { return Obj(*data.get(), lock); };
+		[[nodiscard]] SharedConstObj Shared() const { return SharedConstObj(*data.get(), lock); };
+		[[nodiscard]] SharedObj Shared() { return SharedObj(*data.get(), lock); };
 
 	public:
 		SharedLockable Copy() const {
@@ -1320,14 +1329,33 @@ namespace GoodLang {
 			return load();
 		};
 
+	private:
+		static std::unique_ptr<Arg> TryInstance() {
+			if constexpr (std::is_constructible_v<Arg>) {
+				return std::make_unique<Arg>();
+			}
+			else {
+				return nullptr;
+			}
+		};
+		static std::unique_ptr<Arg> TryInstance(Arg const& a) {
+			if constexpr (std::is_copy_constructible_v<Arg>) {
+				return std::make_unique<Arg>(a);
+			}
+			else {
+				return nullptr;
+			}
+		};
+
 	public:
-		SharedLockable() : data{ Arg{} } {};
-		SharedLockable(Arg const& a) : data{ a } {};
-		SharedLockable(const SharedLockable& r) : data{ *r.Shared() } {};
+		SharedLockable() : data{ TryInstance() } {};
+		SharedLockable(Arg const& a) : data{ TryInstance(a) } {};
+		SharedLockable(std::unique_ptr<Arg> && a) : data{ std::move(a) } {};
+		SharedLockable(const SharedLockable& r) : data{ TryInstance(*r.Shared()) } {};
 		SharedLockable& operator=(const SharedLockable& r) {
 			*Unique() = *r.Shared();
 		};
-		SharedLockable(SharedLockable&& r) : data{ *r.Shared() } {};
+		SharedLockable(SharedLockable&& r) : data{ TryInstance(*r.Shared()) } {};
 		SharedLockable& operator=(SharedLockable&& r) {
 			*Unique() = *r.Shared();
 		};
@@ -1364,6 +1392,10 @@ namespace GoodLang {
 			*x = updateFunction(out = *x);
 			return out;
 		}; // returns the previous value while incrementing the actual counter
+
+		void unsafe_set_ptr(std::unique_ptr<Arg>&& input) {
+			data = std::move(input);
+		}; // returns the previous value while changing the underlying value
 
 	public: // std::atomic compatability
 		Arg exchange(Arg const& v) {
@@ -1874,7 +1906,7 @@ namespace GoodLang {
 	};
 #endif
 
-	// thread-safe sorted dictionary.
+	// thread-safe sorted std::map.
 	template <typename key_type, typename T, typename Cmp = std::less<key_type>> class Map {		
 	protected:
 		mutable SharedLockable<std::map<key_type, T, Cmp>> data;
@@ -1952,7 +1984,7 @@ namespace GoodLang {
 		public:
 			using thisType = Map;
 			using value_type = typename underlying::value_type;
-			using iterator_category = std::forward_iterator_tag;
+			using iterator_category = std::bidirectional_iterator_tag;
 			using difference_type = typename std::iterator<iterator_category, value_type>::difference_type;
 
 			// data
@@ -2055,7 +2087,7 @@ namespace GoodLang {
 
 	};
 	
-	// thread-safe unsorted dictionary. Higher performance than the sorted dictionary.
+	// thread-safe unsorted concurrency::unordered_map. Higher performance than the sorted map.
 	template <typename key_type, typename T, typename Hasher = std::hash<key_type>> class UnorderedMap {
 	protected:
 		typedef concurrency::concurrent_unordered_map<key_type, T, Hasher> underlying;
@@ -2191,7 +2223,7 @@ namespace GoodLang {
 
 	};
 
-	// thread-safe std::vector.
+	// thread-safe std::vector
 	template <typename T> class Vector {
 	protected:
 		typedef std::vector<T> underlying;
@@ -2302,7 +2334,7 @@ namespace GoodLang {
 		public:
 			using thisType = Vector;
 			using value_type = typename underlying::value_type;
-			using iterator_category = std::forward_iterator_tag;
+			using iterator_category = std::bidirectional_iterator_tag;
 			using difference_type = typename std::iterator<iterator_category, value_type>::difference_type;
 
 			// data
@@ -2343,18 +2375,553 @@ namespace GoodLang {
 
 	};
 
-	// Queue
+	// thread-safe concurrent queue, with First-In-First-Out (FIFO) functionality.
+	template <typename T> class Queue {
+	protected:
+		typedef concurrency::concurrent_queue<T> underlying;
+		mutable SharedLockable<underlying> data;
 
-	// Set
+	public:
+		void push(T&& V) {
+			auto shared = data.Shared();
+			shared->push(std::move(V));
+		};
+		void push(const T& V) {
+			auto shared = data.Shared();
+			shared->push(V);
+		};
+		bool try_pop(T& V) {
+			auto shared = data.Shared();
+			return shared->try_pop(V);
+		};
+		[[nodiscard]] std::optional<T> pop() {
+			auto shared = data.Shared();
+			T out;
+			if (shared->try_pop(out)) {
+				return std::move(out);
+			}
+			else {
+				return std::nullopt;
+			}
+		};
+		size_t size() const {
+			auto shared = data.Unique();
+			return shared->unsafe_size();
+		};
+		bool empty() const {
+			auto shared = data.Shared();
+			return shared->empty();
+		};
+		void clear() {
+			auto shared = data.Unique();
+			shared->clear();
+		};
 
-	// Unordered Set
+	};
 
-	// Stack
+	// thread-safe queue, with Last-In-First-Out (LIFO) functionality. FIFO Queue is higher-performance under contention, utilizing a concurrent queue.
+	template <typename T> class Stack {
+	protected:
+		typedef std::stack<T> underlying;
+		mutable SharedLockable<underlying> data;
 
-	// Pattern
+	public:
+		bool empty() const {
+			auto shared = data.Shared();
+			return shared->empty();
+		};
+		size_t size() const {
+			auto shared = data.Shared();
+			return shared->size();
+		};
+		template <class... _Valty> void emplace(_Valty&&... _Val) {
+			auto shared = data.Unique();
+			return shared->emplace(std::forward<_Valty>(_Val)...);
+		};
+		void push(T&& _Val) {
+			auto shared = data.Unique();
+			return shared->push(std::forward<T>(_Val));
+		};
+		void push(T const& _Val) {
+			auto shared = data.Unique();
+			return shared->push(_Val);
+		};
+		bool try_pop(T& _Val) {
+			auto shared = data.Unique();
+			if (shared->size() > 0) {
+				_Val = shared->top();
+				shared->pop();
+				return true;
+			}
+			else {
+				return false;
+			}
+		};
+		[[nodiscard]] std::optional<T> pop() {
+			auto shared = data.Unique();
+			if (shared->size() > 0) {
+				defer(shared->pop());
+				return shared->top();
+			}
+			else {
+				return std::nullopt;
+			}
+		};
+	};
+
+	// thread-safe sorted std::set
+	template <typename key_type, typename Cmp = std::less<key_type>> class Set {
+	protected:
+		typedef std::set<key_type, Cmp> underlying;
+		mutable SharedLockable<underlying> data;		
+
+	public:
+		bool emplace(const key_type& _Keyval) {
+			auto shared = data.Unique();
+			return shared->emplace(_Keyval).second;
+		};
+		bool emplace(key_type&& _Keyval) {
+			auto shared = data.Unique();
+			return shared->emplace(std::move(_Keyval)).second;
+		};
+		bool contains(key_type const& _Keyval) {
+			auto shared = data.Shared();
+			return shared->count(_Keyval) > 0;
+		};
+		size_t count(key_type const& _Keyval) {
+			auto shared = data.Shared();
+			return shared->count(_Keyval);
+		};
+		size_t size() const {
+			auto shared = data.Shared();
+			return shared->size();
+		};
+		size_t erase(const key_type& _Keyval) {
+			auto shared = data.Unique();
+			return shared->erase(_Keyval);
+		};
+		void clear() {
+			auto shared = data.Unique();
+			shared->clear();
+		};
+		bool empty() const {
+			auto shared = data.Shared();
+			return shared->empty();
+		};
+
+	private:
+		class it_state {
+		public:
+			using thisType = Set;
+			using value_type = typename underlying::value_type;
+			using iterator_category = std::bidirectional_iterator_tag;
+			using difference_type = typename std::iterator<iterator_category, value_type>::difference_type;
+
+			// data
+			mutable typename underlying::iterator
+				_ptr{};
+			std::shared_ptr<std::shared_lock<std::shared_mutex>>
+				lifetime{ nullptr };
+
+			// functions
+			void Initialize(thisType* ref) {
+				auto shared = ref->data.Shared();
+				lifetime = shared.ForwardLock();
+			};
+			void ToBeginning(thisType* ref) {
+				auto shared = ref->data.Shared();
+				_ptr = shared->begin();
+			};
+			void ToEnd(thisType* ref) {
+				auto shared = ref->data.Shared();
+				_ptr = shared->end();
+			};
+			void Next(thisType* ref) {
+				++_ptr;
+			};
+			void Prev(thisType* ref) {
+				--_ptr;
+			};
+			value_type Get(thisType* ref) const {
+				return *_ptr;
+			};
+			bool operator==(it_state const& rhs) const {
+				return _ptr == rhs._ptr;
+			};
+			difference_type Distance(it_state const& other) const { return _ptr - other._ptr; };
+		};
+	public:
+		SETUP_ITERATOR(Set, it_state);
+
+		iterator find(const key_type& _Keyval) const {
+			auto iter = this->end();
+			if (auto shared = data.Shared()) {
+				iter.state._ptr = shared->find(_Keyval);
+			}
+			return iter;
+		};
+		iterator lower_bound(const key_type& _Keyval) const {
+			iterator iter{ this->end() };
+			if (auto shared = data.Shared()) {
+				iter.state._ptr = shared->lower_bound(_Keyval);
+			}
+			return iter;
+		};
+		iterator upper_bound(const key_type& _Keyval) const {
+			auto iter{ this->end() };
+			if (auto shared = data.Shared()) {
+				iter.state._ptr = shared->upper_bound(_Keyval);
+			}
+			return iter;
+		};
+		iterator FindLargestSmallerEqual(const key_type& pos) const {
+			iterator iter{ this->end() };
+			if (auto f = data.Shared()) {
+				auto ptr = f->lower_bound(pos); // equal to or larger than pos
+				if (ptr != f->end()) {
+					// map is not empty, AND we either found the actual key, or the one JUST larger than it 
+					if (*ptr == pos) { // consider converting this to using the std::less (e.g. Cmp) comparator, rather than the == comparitor.
+						// DONE
+					}
+					else {
+						// we are beyond our goal -- move back one. 
+						ptr = std::prev(ptr);
+
+						// what if this was actually the first position? 
+						if (ptr == f->end()) {
+							ptr = f->begin();
+						}
+					}
+				}
+				else {
+					if (!f->empty()) {
+						ptr = std::prev(f->end()); // get what you get
+					}
+				}
+				iter.state._ptr = ptr;
+			}
+			return iter;
+		};
+		iterator FindSmallestLargerEqual(const key_type& pos) const {
+			return lower_bound(pos); // equal to or larger than pos
+		};
+
+	public:
+		friend bool operator==(Set const& _Left, Set const& _Right) {
+			return (_Left.size() == _Right.size())
+				&& (*_Left.data.Shared() == *_Right.data.Shared());
+		};
+		friend bool operator!=(Set const& _Left, Set const& _Right) {
+			return !operator==(_Left, _Right);
+		};
+
+	};
+
+	// thread-safe unsorted concurrency::unordered_set. Higher performance than the sorted set.
+	template <typename key_type, typename Cmp = std::hash<key_type>> class UnorderedSet {
+	protected:
+		typedef concurrency::concurrent_unordered_set<key_type, Cmp> underlying;
+		mutable SharedLockable<underlying> data;
+
+	public:
+		bool emplace(const key_type& _Keyval) {
+			auto shared = data.Shared();
+			return shared->insert(_Keyval).second;
+		};
+		bool emplace(key_type&& _Keyval) {
+			auto shared = data.Shared();
+			return shared->insert(std::move(_Keyval)).second;
+		};
+		bool contains(key_type const& _Keyval) {
+			auto shared = data.Shared();
+			return shared->count(_Keyval) > 0;
+		};
+		size_t count(key_type const& _Keyval) {
+			auto shared = data.Shared();
+			return shared->count(_Keyval);
+		};
+		size_t size() const {
+			auto shared = data.Shared();
+			return shared->size();
+		};
+		size_t erase(const key_type& _Keyval) {
+			auto shared = data.Unique();
+			return shared->unsafe_erase(_Keyval);
+		};
+		void clear() {
+			auto shared = data.Unique();
+			shared->clear();
+		};
+		bool empty() const {
+			auto shared = data.Shared();
+			return shared->empty();
+		};
+
+	private:
+		class it_state {
+		public:
+			using thisType = UnorderedSet;
+			using value_type = typename underlying::value_type;
+			using iterator_category = std::forward_iterator_tag;
+			using difference_type = typename std::iterator<iterator_category, value_type>::difference_type;
+
+			// data
+			mutable typename underlying::iterator
+				_ptr{};
+			std::shared_ptr<std::shared_lock<std::shared_mutex>>
+				lifetime{ nullptr };
+
+			// functions
+			void Initialize(thisType* ref) {
+				auto shared = ref->data.Shared();
+				lifetime = shared.ForwardLock();
+			};
+			void ToBeginning(thisType* ref) {
+				auto shared = ref->data.Shared();
+				_ptr = shared->begin();
+			};
+			void ToEnd(thisType* ref) {
+				auto shared = ref->data.Shared();
+				_ptr = shared->end();
+			};
+			void Next(thisType* ref) {
+				++_ptr;
+			};
+			void Prev(thisType* ref) {
+				--_ptr;
+			};
+			value_type Get(thisType* ref) const {
+				return *_ptr;
+			};
+			bool operator==(it_state const& rhs) const {
+				return _ptr == rhs._ptr;
+			};
+			difference_type Distance(it_state const& other) const { return _ptr - other._ptr; };
+		};
+	public:
+		SETUP_ITERATOR(UnorderedSet, it_state);
+		iterator find(const key_type& _Keyval) const {
+			auto iter = this->end();
+			if (auto shared = data.Shared()) {
+				iter.state._ptr = shared->find(_Keyval);
+			}
+			return iter;
+		};
+
+	public:
+		friend bool operator==(UnorderedSet const& _Left, UnorderedSet const& _Right) {
+			return (_Left.size() == _Right.size())
+				&& (*_Left.data.Shared() == *_Right.data.Shared());
+		};
+		friend bool operator!=(UnorderedSet const& _Left, UnorderedSet const& _Right) {
+			return !operator==(_Left, _Right);
+		};
+
+	};
 
 
+	struct linear {};
+	struct left_snap {};
+	struct right_snap {};
+	struct spline {};
+	// thread-safe concurrent spline, interpolating between values
+	template <typename Key, typename Value> class Spline {
+	protected:
+		Map<Key, Value> data;
 
+	public:
+		Spline() = default;
+		Spline(Spline const&) = default;
+		Spline(Spline &&) = default;
+		Spline& operator=(Spline const&) = default;
+		Spline& operator=(Spline&&) = default;
+		virtual ~Spline() = default;
+
+		using iterator = typename decltype(data)::iterator;
+		using const_iterator = iterator;
+		iterator begin() const {
+			return data.begin();
+		};
+		iterator end() const { return begin().end(); };
+		iterator cbegin() const { return begin(); };
+		iterator cend() const { return end(); };
+
+		iterator FindLargestSmallerEqual(Key const& pos) const {
+			return data.FindLargestSmallerEqual(pos);
+		};
+		iterator FindSmallestLargerEqual(Key const& pos) const {
+			return data.FindSmallestLargerEqual(pos);
+		};
+		void emplace(Key const& x, Value const& y) {
+			data.insert_or_assign(x, y);
+		};
+		size_t erase(Key const& x) {
+			return data.erase(x);
+		};
+		bool contains(Key const& x) {
+			return data.count(x) != 0;
+		};
+		bool empty() const {
+			return data.empty();
+		};
+		size_t size() const {
+			return data.size();
+		};
+		iterator at_index(size_t index) const {
+			auto iter{ data.begin() };
+			std::advance(iter, index);
+			return iter;
+		};
+		iterator find(Key const& x) const {
+			return data.find(x);
+		};
+		
+	private:
+		virtual Value spline_interpolate(Key const& x) const {
+			return interpolate(x, linear{});
+		};
+
+	public:
+		Value interpolate(Key const& x, left_snap) const {
+			iterator p1 = FindLargestSmallerEqual(x);
+			// p0 ... p1 ... * ...  p2 ... p3
+
+			if (p1 != end()) 
+				return p1->second;			
+			else 
+				return Value{};
+		};
+		Value interpolate(Key const& x, right_snap) const {
+			iterator p2 = FindSmallestLargerEqual(x);
+			// p0 ... p1 ... * ...  p2 ... p3
+
+			if (p2 != end()) 
+				return p2->second;			
+			else 
+				return Value{};
+		};
+		Value interpolate(Key const& x, linear) const {
+			iterator
+				p1{ FindLargestSmallerEqual(x) },
+				p2{ FindSmallestLargerEqual(x) };
+			// p0 ... p1 ... * ...  p2 ... p3
+
+			auto End = end();
+			if (p1 != End) {
+				if (p2 != End) {
+					if (p1 != p2) {
+						// All golden
+						double t = (double)((x - p1->first) / (p2->first - p1->first));
+						Value copy = p2->second;
+						copy = ::fma(t, (double)p2->second, ::fma(-t, (double)p1->second, (double)p1->second));
+						return copy;
+
+						//auto ratio = (x - p1->first) / (p2->first - p1->first); // 1 means 100% p2, 0 means 100% p1
+						//auto ratio_invert = ratio;
+						//ratio_invert = 1;
+						//ratio_invert -= ratio;
+						//return (p2->second * ratio) + (p1->second * ratio_invert);
+					}
+					else {
+						// we have landed ontop of a datapoint
+						return p1->second;
+					}
+				}
+				else {
+					// Snap Left
+					return p1->second;
+				}
+			}
+			else {
+				if (p2 != End) {
+					// Snap Right
+					return p2->second;
+				}
+				else {
+					// No Data
+					return Value{};
+				}
+			}
+		};
+		Value interpolate(Key const& x) const { // assumes spline interpolation
+			return interpolate(x, spline{});
+		};
+		Value interpolate(Key const& x, spline) const {
+			return spline_interpolate(x);
+		};
+
+		/// <summary>
+		/// Creates an iterator that will step through from Start to End at interval Step, sampling the pattern using the InterpolationType. 
+		/// </summary>
+		/// <param name="start"></param>
+		/// <param name="end"></param>
+		/// <param name="step"></param>
+		/// <param name="interpolationType"></param>
+		/// <returns>Iterator that will sample at the requested interval using the interpolationType</returns>
+		template<typename interpType = spline>
+		auto GetTimeSeries(Key const& start, Key const& end, Key const& step) const {
+			return CustomizedSequence<std::pair<Key, Value>, Key>(
+				std::function([this](Key const& x) -> std::pair<Key, Value> {
+					return std::pair<Key, Value>{ x, this->interpolate(x, interpType{}) };
+				})
+				, start
+				, end
+				, step
+			);
+		};
+
+	};
+	// Special type of spline that crosses through its control points utilizing a catmull-rom algorithm. Generally a good spline for natural data, like water flowrates. 
+	template <typename Key, typename Value> class CatmullRomSpline final : public Spline<Key, Value> {
+	public:
+		CatmullRomSpline() = default;
+		CatmullRomSpline(CatmullRomSpline const&) = default;
+		CatmullRomSpline(CatmullRomSpline&&) = default;
+		CatmullRomSpline& operator=(CatmullRomSpline const&) = default;
+		CatmullRomSpline& operator=(CatmullRomSpline&&) = default;
+		virtual ~CatmullRomSpline() = default;
+	
+	private:
+		virtual Value spline_interpolate(Key const& x) const override {
+			auto
+				p1{ this->FindLargestSmallerEqual(x) },
+				p2{ this->FindSmallestLargerEqual(x) };
+			auto
+				p0{ std::prev(p1) },
+				p3{ std::next(p2) };
+			// p0 ... p1 ... * ...  p2 ... p3
+
+			auto End = this->end();
+			if ((p1 != End) && (p2 != End) && (p0 != End) && (p3 != End) && (p1 != p2)) {
+				double Y0 = (double)p0->second;
+				double Y1 = (double)p1->second;
+				double Y2 = (double)p2->second;
+				double Y3 = (double)p3->second;
+
+				double X0 = (double)p0->first;
+				double X1 = (double)p1->first;
+				double X2 = (double)p2->first;
+				double X3 = (double)p3->first;
+
+				double s = ((double)x - X1) / (X2 - X1);
+				if (!::isfinite(s)) s = 0;
+
+				Value out = p1->second;
+				out = ::fma(Y0, ((2.0f - s) * s - 1.0f) * s * 0.5f,                    // -0.5f s * s * s + s * s - 0.5f * s
+						::fma(Y1, (((3.0f * s - 5.0f) * s) * s + 2.0f) * 0.5f,         // 1.5f * s * s * s - 2.5f * s * s + 1.0f
+							::fma(Y2, ((-3.0f * s + 4.0f) * s + 1.0f) * s * 0.5f,      // -1.5f * s * s * s - 2.0f * s * s + 0.5f s
+								::fma(Y3, ((s - 1.0f) * s * s) * 0.5f,                 // 0.5f * s * s * s - 0.5f * s * s
+									0))));
+
+				return out;
+			}
+			else {
+				return this->interpolate(x, linear{});
+			}
+		};
+		
+
+	};
 
 };
 

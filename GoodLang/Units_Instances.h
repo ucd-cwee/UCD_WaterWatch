@@ -4,18 +4,18 @@
 #define DefineCategoryType(type, a, b, c, d, e) namespace categories { class type : public value { public: \
 	type() noexcept = delete; \
 	type(double V) noexcept = delete; \
-	type(double V, const char* abbreviation) noexcept = delete; \
-	type(double V, const char* abbreviation, double ratio) noexcept : value(UnitDefinition(a, b, c, d, e, false, abbreviation, ratio, V)) {}; \
+	type(valueType_t V, const char* abbreviation) noexcept = delete; \
+	type(valueType_t V, const char* abbreviation, valueType_t ratio) noexcept : value(UnitDefinition(a, b, c, d, e, false, abbreviation, ratio, V)) {}; \
     type(value const&) noexcept = delete; \
     type& operator=(value const&) noexcept = delete; \
     virtual ~type() {}; \
 	static size_t UnitHash() { return GoodLang::Units::HashUnits(a,b,c,d,e); }; \
 }; };
 #define DerivedUnitType(type, category, abbreviation, ratio) class type final : public categories::category  { public: \
-	static constexpr long double conversion { ratio }; \
+	static constexpr double conversion { ratio }; \
 	static constexpr std::string_view specialized_abbreviation { #abbreviation }; \
 	static constexpr std::string_view specialized_name { #type }; \
-	type() noexcept : categories::category(0.0, #abbreviation, ratio) {}; \
+	type() noexcept : categories::category((valueType_t)0.0, #abbreviation, ratio) {}; \
 	type(double V) noexcept : categories::category(V, #abbreviation, ratio) {}; \
 	type(value const& other) : categories::category(0.0, #abbreviation, ratio) { \
 		this->unit_m.Update([V = other.unit_m.load(), this, &other](GoodLang::Units::UnitDefinition Data)->GoodLang::Units::UnitDefinition { \

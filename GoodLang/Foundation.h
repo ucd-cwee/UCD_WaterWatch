@@ -51,6 +51,8 @@
 #include <condition_variable>
 #include <Windows.h>
 #include <winnt.h>
+#include <functional>
+
 #pragma endregion
 
 #pragma region iterator_definition
@@ -136,6 +138,239 @@ namespace GoodLang {
 
 		template <typename F> __forceinline [[nodiscard]] FinallyImpl<F> make_finally(F&& f) { return FinallyImpl<F>(std::forward<F>(f)); };
 	};
+
+	template<typename Type = size_t>
+	class Sequence {
+	private:
+		Type min;
+		Type max;
+		Type step;
+	public:
+		Sequence() : min(0), max(0), step(1) {};
+		Sequence(Type N) : min(0), max(N), step(1) {};
+		Sequence(Type N0, Type N1) : min(N0), max(N1), step(1) {};
+		Sequence(Type N0, Type N1, Type Step) : min(N0), max(N1), step(Step) {};
+
+		class Iterator : public std::iterator<std::random_access_iterator_tag, Type> {
+		public:
+			using difference_type = typename std::iterator<std::random_access_iterator_tag, Type>::difference_type;
+
+			Iterator() : _ptr(0), _min(0), _step(1) {}
+			Iterator(Type rhs, Type min, Type step) : _ptr(rhs), _min(min), _step(step) {}
+			Iterator(const Iterator& rhs) : _ptr(rhs._ptr), _min(rhs._min), _step(rhs._step) {}
+
+			inline Iterator& operator+=(difference_type rhs) { _ptr += rhs * _step; return *this; }
+			inline Iterator& operator-=(difference_type rhs) { _ptr -= rhs * _step; return *this; }
+			inline Type& operator*() { return _ptr; }
+			inline Type* operator->() { return &_ptr; }
+			inline Type operator[](difference_type rhs) { return static_cast<Type>(_min + rhs * _step); }
+			inline const Type& operator*() const { return _ptr; }
+			inline const Type* operator->() const { return &_ptr; }
+			inline const Type operator[](difference_type rhs) const { return static_cast<Type>(_min + rhs * _step); }
+
+			inline Iterator& operator++() { _ptr += _step; return *this; }
+			inline Iterator& operator--() { _ptr -= _step; return *this; }
+			inline Iterator operator++(int) { Iterator tmp(*this); _ptr += _step; return tmp; }
+			inline Iterator operator--(int) { Iterator tmp(*this); _ptr -= _step; return tmp; }
+			inline difference_type operator-(const Iterator& rhs) const { return (_ptr - rhs._ptr) / _step; }
+			inline Iterator operator+(difference_type rhs) const { return Iterator(_ptr + rhs * _step, _min, _step); }
+			inline Iterator operator-(difference_type rhs) const { return Iterator(_ptr - rhs * _step, _min, _step); }
+			friend inline Iterator operator+(difference_type lhs, const Iterator& rhs) { return Iterator((lhs * rhs._step) + rhs._ptr, rhs._min, rhs._step); }
+			friend inline Iterator operator-(difference_type lhs, const Iterator& rhs) { return Iterator((lhs * rhs._step) - rhs._ptr, rhs._min, rhs._step); }
+
+			inline bool operator==(const Iterator& rhs) const { return _ptr == rhs._ptr; }
+			inline bool operator!=(const Iterator& rhs) const { return _ptr != rhs._ptr; }
+			inline bool operator>(const Iterator& rhs) const { return _ptr > rhs._ptr; }
+			inline bool operator<(const Iterator& rhs) const { return _ptr < rhs._ptr; }
+			inline bool operator>=(const Iterator& rhs) const { return _ptr >= rhs._ptr; }
+			inline bool operator<=(const Iterator& rhs) const { return _ptr <= rhs._ptr; }
+
+		protected:
+			Type _min;
+			Type _ptr;
+			Type _step;
+		};
+		class ConstIterator : public std::iterator<std::random_access_iterator_tag, Type> {
+		public:
+			using difference_type = typename std::iterator<std::random_access_iterator_tag, Type>::difference_type;
+
+			ConstIterator() : _ptr(0), _min(0), _step(1) {}
+			ConstIterator(Type rhs, Type min, Type step) : _ptr(rhs), _min(min), _step(step) {}
+			ConstIterator(const ConstIterator& rhs) : _ptr(rhs._ptr), _min(rhs._min), _step(rhs._step) {}
+
+			inline ConstIterator& operator+=(difference_type rhs) { _ptr += rhs * _step; return *this; }
+			inline ConstIterator& operator-=(difference_type rhs) { _ptr -= rhs * _step; return *this; }
+			inline const Type& operator*() const { return _ptr; }
+			inline const Type* operator->() const { return &_ptr; }
+			inline const Type operator[](difference_type rhs) const { return static_cast<Type>(_min + rhs * _step); }
+
+			inline ConstIterator& operator++() { _ptr += _step; return *this; }
+			inline ConstIterator& operator--() { _ptr -= _step; return *this; }
+			inline ConstIterator operator++(int) { ConstIterator tmp(*this); _ptr += _step; return tmp; }
+			inline ConstIterator operator--(int) { ConstIterator tmp(*this); _ptr -= _step; return tmp; }
+			inline difference_type operator-(const ConstIterator& rhs) const { return (_ptr - rhs._ptr) / _step; }
+			inline ConstIterator operator+(difference_type rhs) const { return ConstIterator(_ptr + rhs * _step, _min, _step); }
+			inline ConstIterator operator-(difference_type rhs) const { return ConstIterator(_ptr - rhs * _step, _min, _step); }
+			friend inline ConstIterator operator+(difference_type lhs, const ConstIterator& rhs) { return ConstIterator((lhs * rhs._step) + rhs._ptr, rhs._min, rhs._step); }
+			friend inline ConstIterator operator-(difference_type lhs, const ConstIterator& rhs) { return ConstIterator((lhs * rhs._step) - rhs._ptr, rhs._min, rhs._step); }
+
+			inline bool operator==(const ConstIterator& rhs) const { return _ptr == rhs._ptr; }
+			inline bool operator!=(const ConstIterator& rhs) const { return _ptr != rhs._ptr; }
+			inline bool operator>(const ConstIterator& rhs) const { return _ptr > rhs._ptr; }
+			inline bool operator<(const ConstIterator& rhs) const { return _ptr < rhs._ptr; }
+			inline bool operator>=(const ConstIterator& rhs) const { return _ptr >= rhs._ptr; }
+			inline bool operator<=(const ConstIterator& rhs) const { return _ptr <= rhs._ptr; }
+
+		protected:
+			Type _min;
+			Type _ptr;
+			Type _step;
+		};
+
+		using iterator = Iterator;
+		using const_iterator = ConstIterator;
+
+		auto begin() { return Iterator(min, min, step); };
+		auto end() { return Iterator(max, min, step); };
+		auto cbegin() const { return ConstIterator(min, min, step); };
+		auto cend() const { return ConstIterator(max, min, step); };
+		auto begin() const { return ConstIterator(min, min, step); };
+		auto end() const { return ConstIterator(max, min, step); };
+	};
+
+	template<typename Type>
+	class IteratorSequence {
+	private:
+		using iterator_tag = typename Type::iterator_category;
+		using target_value_type = typename std::remove_reference_t<typename Type::reference>;
+		using value_type = std::pair<int, target_value_type*>;
+
+		Type min;
+		Type max;
+		typename std::iterator<iterator_tag, value_type>::difference_type count;
+
+	public:
+		IteratorSequence() : min{}, max{}, count{ 0 } {};
+		IteratorSequence(Type begin, Type end) : min{ begin }, max{ end }, count{ std::distance(begin, end) } {};
+
+		class Iterator : public std::iterator<iterator_tag, value_type> {
+		public:
+			using difference_type = typename std::iterator<iterator_tag, value_type>::difference_type;
+
+			Iterator() : _ptr{}, _index{ 0 }, _result{ 0,nullptr }  {};
+			Iterator(Type rhs, difference_type index) : _ptr{ rhs }, _index{ index }, _result{ 0,nullptr } {};
+			Iterator(const Iterator& rhs) : _ptr{ rhs._ptr }, _index{ rhs._index }, _result{ 0,nullptr } {};
+
+			inline Iterator& operator+=(difference_type rhs) { _ptr += rhs; _index += rhs; return *this; };
+			inline Iterator& operator-=(difference_type rhs) { _ptr -= rhs; _index -= rhs; return *this; };
+			inline value_type& operator*() { _result.first = _index; _result.second = &*_ptr; return _result; };
+			inline value_type* operator->() { _result.first = _index; _result.second = &*_ptr; return &_result; };
+			inline value_type operator[](difference_type rhs) { _temp = *_ptr[rhs]; return value_type(rhs, &_temp); };
+			inline const value_type& operator*() const { _result.first = _index; _result.second = &*_ptr; return _result; };
+			inline const value_type* operator->() const { _result.first = _index; _result.second = &*_ptr; return &_result; };
+			inline const value_type operator[](difference_type rhs) const { _temp = *_ptr[rhs]; return value_type(rhs, &_temp); };
+
+			inline Iterator& operator++() { ++_ptr; ++_index; return *this; }
+			inline Iterator& operator--() { --_ptr; --_index; return *this; }
+			inline Iterator operator++(int) { Iterator tmp(*this); ++_ptr; ++_index; return tmp; }
+			inline Iterator operator--(int) { Iterator tmp(*this); --_ptr; --_index; return tmp; }
+			inline difference_type operator-(const Iterator& rhs) const { return _index - rhs._index; }
+			inline Iterator operator+(difference_type rhs) const { return Iterator(_ptr + rhs, _index + rhs); }
+			inline Iterator operator-(difference_type rhs) const { return Iterator(_ptr - rhs, _index - rhs); }
+			friend inline Iterator operator+(difference_type lhs, const Iterator& rhs) { return Iterator(lhs + rhs._ptr, lhs + rhs._index); }
+			friend inline Iterator operator-(difference_type lhs, const Iterator& rhs) { return Iterator(lhs - rhs._ptr, lhs - rhs._index); }
+
+			inline bool operator==(const Iterator& rhs) const { return _index == rhs._index; }
+			inline bool operator!=(const Iterator& rhs) const { return _index != rhs._index; }
+			inline bool operator>(const Iterator& rhs) const { return _index > rhs._index; }
+			inline bool operator<(const Iterator& rhs) const { return _index < rhs._index; }
+			inline bool operator>=(const Iterator& rhs) const { return _index >= rhs._index; }
+			inline bool operator<=(const Iterator& rhs) const { return _index <= rhs._index; }
+
+		private:
+			Type _ptr;
+			difference_type _index;
+			mutable value_type _result;
+			mutable std::remove_const_t<target_value_type> _temp;
+		};
+
+		using iterator = Iterator;
+
+		auto begin() { return Iterator(min, 0); };
+		auto end() { return Iterator(max, count); };
+	};
+
+	template<class returnType, typename Type = size_t>
+	class CustomizedSequence {
+	private:
+		std::function<returnType(Type)> functor;
+		Type min;
+		Type max;
+		Type step;
+
+	public:
+		CustomizedSequence() : functor(), min(0), max(0), step(1) {};
+		CustomizedSequence(std::function<returnType(Type)>&& toDo, Type N) : functor(std::forward<std::function<returnType(Type)>>(toDo)), min(0), max(N), step(1) {};
+		CustomizedSequence(std::function<returnType(Type)>&& toDo, Type N0, Type N1) : functor(std::forward<std::function<returnType(Type)>>(toDo)), min(N0), max(N1), step(1) {};
+		CustomizedSequence(std::function<returnType(Type)>&& toDo, Type N0, Type N1, Type Step) : functor(std::forward<std::function<returnType(Type)>>(toDo)), min(N0), max(N1), step(Step) {};
+		CustomizedSequence(CustomizedSequence const&) = default;
+		CustomizedSequence(CustomizedSequence&&) = default;
+		CustomizedSequence& operator=(CustomizedSequence const&) = default;
+		CustomizedSequence& operator=(CustomizedSequence&&) = default;
+		~CustomizedSequence() = default;
+
+		class Iterator : public std::iterator<std::random_access_iterator_tag, Type> {
+		public:
+			using difference_type = typename std::iterator<std::random_access_iterator_tag, Type>::difference_type;
+
+			Iterator() : _functor(nullptr), _ptr(0), _min(0), _step(1), _out{} {}
+			Iterator(std::function<returnType(Type)>* toDo, Type rhs, Type min, Type step) : _functor(toDo), _ptr(rhs), _min(min), _step(step), _out{} {}
+			Iterator(const Iterator& rhs) : _functor(rhs._functor), _ptr(rhs._ptr), _min(rhs._min), _step(rhs._step), _out{ rhs._out } {}
+
+			inline Iterator& operator+=(difference_type rhs) { _ptr += rhs * step; return *this; }
+			inline Iterator& operator-=(difference_type rhs) { _ptr -= rhs * step; return *this; }
+			inline returnType& operator*() { _out = (*_functor)(_ptr); return _out; }
+			inline returnType* operator->() { _out = (*_functor)(_ptr); return &_out; }
+			inline returnType operator[](difference_type rhs) { return (*_functor)(static_cast<Type>(_min + rhs * _step)); }
+			inline const returnType& operator*() const { _out = (*_functor)(_ptr); return _out; }
+			inline const returnType* operator->() const { _out = (*_functor)(_ptr); return &_out; }
+			inline const returnType operator[](difference_type rhs) const { return (*_functor)(static_cast<Type>(_min + rhs * _step)); }
+
+			inline Iterator& operator++() { _ptr += _step; return *this; }
+			inline Iterator& operator--() { _ptr -= _step; return *this; }
+			inline Iterator operator++(int) { Iterator tmp(*this); _ptr += _step; return tmp; }
+			inline Iterator operator--(int) { Iterator tmp(*this); _ptr -= _step; return tmp; }
+			inline difference_type operator-(const Iterator& rhs) const { return (_ptr - rhs._ptr) / _step; }
+			inline Iterator operator+(difference_type rhs) const { return Iterator(rhs._functor, _ptr + rhs * _step, _min, _step); }
+			inline Iterator operator-(difference_type rhs) const { return Iterator(rhs._functor, _ptr - rhs * _step, _min, _step); }
+			friend inline Iterator operator+(difference_type lhs, const Iterator& rhs) { return Iterator(rhs._functor, (lhs * rhs._step) + rhs._ptr, rhs._min, rhs._step); }
+			friend inline Iterator operator-(difference_type lhs, const Iterator& rhs) { return Iterator(rhs._functor, (lhs * rhs._step) - rhs._ptr, rhs._min, rhs._step); }
+
+			inline bool operator==(const Iterator& rhs) const { return _ptr == rhs._ptr; }
+			inline bool operator!=(const Iterator& rhs) const { return _ptr != rhs._ptr; }
+			inline bool operator>(const Iterator& rhs) const { return _ptr > rhs._ptr; }
+			inline bool operator<(const Iterator& rhs) const { return _ptr < rhs._ptr; }
+			inline bool operator>=(const Iterator& rhs) const { return _ptr >= rhs._ptr; }
+			inline bool operator<=(const Iterator& rhs) const { return _ptr <= rhs._ptr; }
+
+		protected:
+			std::function<returnType(Type)>* _functor;
+			Type _min;
+			Type _ptr;
+			Type _step;
+			returnType _out{};
+
+		};
+		using iterator = Iterator;
+
+		auto begin() { return Iterator(&functor, min, min, step); };
+		auto end() { return Iterator(&functor, max, min, step); };
+		auto cbegin() const { return Iterator(&functor, min, min, step); };
+		auto cend() const { return Iterator(&functor, max, min, step); };
+		auto begin() const { return Iterator(&functor, min, min, step); };
+		auto end() const { return Iterator(&functor, max, min, step); };
+	};
+
 };
 
 #define FINALLY_CONCAT_(a, b) a##b

@@ -1,23 +1,6 @@
 #pragma once
 #include "Any.h"
 
-//#include <ShlDisp.h>
-//#include <synchapi.h>
-//#include <handleapi.h>
-//#include <ppl.h>
-//#include <concurrent_vector.h>
-//#include <concurrent_unordered_map.h>
-//#include <concurrent_queue.h>
-//#include <concurrent_unordered_set.h>
-//#include <type_traits>
-//#include <functional>
-//#include <memory>
-//#include <utility>
-//#include <map>
-//#include <optional>
-//#include <iostream>
-//#include <string>
-
 // Type_Info
 namespace GoodLang {
 	size_t Type_Info::GetHashImpl() const {

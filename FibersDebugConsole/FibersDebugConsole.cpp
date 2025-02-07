@@ -369,10 +369,11 @@ int main() {
 		Units::scalar V;
 		parallel::ForEach(map, [&](auto& i) {
 			V += i.second;
-		});
+			});
 		print(V);
 
 	}
+
 	// Map as pattern
 	if (1) {
 		GoodLang::Map<double, double> map;
@@ -392,15 +393,16 @@ int main() {
 
 		parallel::ForEach(map, [](auto& x) {
 			x.second++;
-		});
+			});
 	}
+
 	// Map with strings
 	if (1) {
 		GoodLang::Map<std::string, double> map;
 		*map["TEST"] = 10;
 		*map["TEST2"] = 102;
 
-		
+
 	}
 
 	// Unordered Map
@@ -408,11 +410,11 @@ int main() {
 		GoodLang::UnorderedMap<int, Units::scalar> map;
 		parallel::For(0, 100000, [&](int i) {
 			++(*map[i]);
-		});
+			});
 		for (auto f = map.find(0); f != map.end(); f++) {}
 		parallel::ForEach(map, [](auto& x) {
 			x.second++;
-		});
+			});
 		print(map.size());
 
 	}
@@ -425,9 +427,121 @@ int main() {
 			vec.push_back(i);
 			vec[vec.size() - 1]->operator++();
 			vec.erase_fast(0);
-		});
+			});
 		for (auto f = vec.begin(); f != vec.end(); f++) {}
 		print(vec.size());
+
+	}
+
+	// Queue
+	if (1) {
+		GoodLang::Queue<double> q;
+		q.push(10);
+		auto item = q.pop();
+		if (!item.has_value()) {
+			EXPECT_EQ(true, false);
+		}
+
+		parallel::For(0, 100000, [&](int i) {
+			q.push(i);
+			auto IT = q.pop();
+			if (!item.has_value()) {
+				EXPECT_EQ(true, false);
+			}
+			});
+	}
+
+	// Stack
+	if (1) {
+		GoodLang::Stack<double> q;
+		q.push(10);
+		auto item = q.pop();
+		if (!item.has_value()) {
+			EXPECT_EQ(true, false);
+		}
+
+		parallel::For(0, 100000, [&](int i) {
+			q.push(i);
+			auto IT = q.pop();
+			if (!item.has_value()) {
+				EXPECT_EQ(true, false);
+			}
+			});
+	}
+
+	// Set as pattern
+	if (1) {
+		GoodLang::Set<double> map;
+		parallel::ForEach(GoodLang::Sequence(0.0, 1000.0, 50.0), [&](double i) {
+			map.emplace(i);
+			});
+
+		auto f0 = map.FindLargestSmallerEqual(25);
+		auto f50 = map.FindSmallestLargerEqual(25);
+
+		if (f0 != map.end()) {
+			EXPECT_EQ(*f0, 0.0);
+		}
+		if (f50 != map.end()) {
+			EXPECT_EQ(*f50, 50.0);
+		}
+
+		parallel::ForEach(map, [](double const& x) {
+			// 
+			});
+	}
+
+	// UnorderedSet
+	if (1) {
+		GoodLang::UnorderedSet<std::string> map;
+		parallel::ForEach(GoodLang::Sequence(0.0, 1000.0, 50.0), [&](double i) {
+			map.emplace(std::to_string(i));
+			});
+
+		parallel::ForEach(map, [](std::string const& x) {
+			// 
+			});
+	}
+
+	// Spline
+	if (1) {
+		GoodLang::CatmullRomSpline<Units::second, Units::gallon_per_minute> consumption;
+
+		// emplacing data
+		for (DateTime t = DateTime::Now(); t < (DateTime::Now() + 1_yr); t += 1_d) {
+			consumption.emplace((Units::second)t, t.tm_mday() * t.tm_mday() * t.tm_mday());
+		}
+
+		// interpolations
+		for (DateTime t = DateTime::Now(); t < (DateTime::Now() + 1_yr); t += 0.25_d) {
+			print(consumption.interpolate((Units::second)t, GoodLang::left_snap{}));
+			print(consumption.interpolate((Units::second)t, GoodLang::linear{}));
+			print(consumption.interpolate((Units::second)t, GoodLang::spline{}));
+			print(consumption.interpolate((Units::second)t, GoodLang::right_snap{}));
+			std::cout << std::endl;
+		}
+
+		std::cout << std::endl;
+		std::cout << std::endl;
+
+		// time-series sample (sample as-you-go, preventing large vector allocations)
+		for (auto& x : consumption.GetTimeSeries(DateTime::Now(), DateTime::Now() + 30_d, 0.5_d)) {
+			print(x.second);
+		}
+
+		std::cout << std::endl;
+		std::cout << std::endl;
+		std::cout << std::endl;
+
+		// loop through knots
+		for (auto& x : consumption) {
+			x.second += 100_gpm;
+		}
+
+		// time-series sample (sample as-you-go, preventing large vector allocations)
+		for (auto& x : consumption.GetTimeSeries(DateTime::Now(), DateTime::Now() + 30_d, 0.5_d)) {
+			print(x.second);
+		}
 
 	}
 
@@ -442,7 +556,7 @@ int main() {
 			s1->AddObj("x", std::make_shared<GoodLang::Any>(100));
 
 			s1->AddFunction("foo", make_callable([](int x) -> int { return x * 2; }));
-			
+
 			Any result1 = s1->CallFunction("foo", { 100 });
 			Any result2 = s1->CallFunction("foo", { 100.0 });
 
@@ -451,16 +565,233 @@ int main() {
 			auto L2 = s1->CallFunction("Units::meter", { 100.0 });
 			print(s1->Cast<std::string>(s1->CallFunction("to_string", { s1->CallFunction("+", { L1, L2 }) })));
 
+			print(s1->Cast<std::string>(s1->CallFunction("to_string", { s1->CallFunction("*", { L1, L2 }) })));
+
+			print(s1->Cast<std::string>(s1->CallFunction("to_string", { s1->CallFunction("/", { L1, L2 }) })));
+
+			// print(Units::horsepower(180_lbf * 2.4 * 2.0 * Units::constants::pi() * 12_ft / 1_min));
+
+			auto paired = s1->CallFunction("pair", { 100.0, Units::gallon{ 5 } });
+			EXPECT_EQ(true, s1->Cast<bool>(s1->CallFunction("==", { s1->CallFunction("second", {paired}), Units::cubic_foot{ Units::gallon{ 5 } } })));
+
+			s1->AddUsing(s1->FindNamespace("Units"));
+			EXPECT_EQ(true, s1->Cast<bool>(s1->CallFunction("==", { s1->CallFunction("second", {paired}), Units::cubic_foot{ Units::gallon{ 5 } } })));
+
+			print(s1->Cast<std::string>(s1->CallFunction("to_string", { s1->CallFunction("cubic_foot", {s1->CallFunction("second", {paired})}) })));
+
+
+
+
+
 
 		}
+	}
+
+	//Units::UnitDefinition_Constexpr<0, 0, 0, 0, 0> xyzwabc;
+
+	// meter = 273106626U
+	// foot = 2090766941U
+	// millimeter = 1777659705U
+
+
+	//std::unique_ptr<Units::UnitDefinitionBase> dynamic_definition{ std::make_unique<Units::dynamicUnitDefinition>(0, 0, 0, 0, 0, 1, 0) };
+	//std::unique_ptr<Units::UnitDefinitionBase> meter_definition{ std::make_unique<Units::meterDefinition>() };
+	//std::unique_ptr<Units::UnitDefinitionBase> scalar_definition{ std::make_unique<Units::scalarDefinition>() };
+	//sizeof(Units::dynamicUnitDefinition); // 120u64
+	//sizeof(Units::meterDefinition); // 68u64
+	//sizeof(Units::scalarDefinition); // 68u64
+
+
+	//auto xyzwabc = Units::meterDefinition();
+	// auto xyzwabc2 = Units::millimeterDefinition();
+
+	//print(xyzwabc.BuiltInName());
+	//(void)xyzwabc.unitType();
+	//auto copied = xyzwabc.Copy();
+	//(void)copied->BuiltInAbbreviation();
+
+
+	SharedLockable<std::string> p{ "Original" };
+	(void)p.Shared()->c_str();
+	p.Update([](std::string& x)-> std::string {
+		return "UPDATED";
+	});
+	(void)p.Unique()->c_str();
+
+
+	//SharedLockable<Units::UnitDefinitionBase> unit_m{ std::make_unique<Units::scalarDefinition>() };
+	//(void)unit_m.Unique()->IsSI();
+
+	//Units::value_t valueT{ 5 };
+	//Units::meter_t meterT{ 5 };
+	//Units::millimeter_t millimeterT{ 5000 };
+	//print(valueT);
+	//print(meterT);
+	//print(millimeterT);
+
+
+	Units::value valueT2{ 5 };
+	Units::meter meterT2{ 5 };
+	Units::millimeter millimeterT2{ 5000 };
+	Units::gallon_per_minute gpmT2{ 5 };
+	print(valueT2);
+	print(meterT2);
+	print(millimeterT2);
+	print(gpmT2);
+
+	//static constexpr auto size_dynamic{ sizeof(decltype(valueT)) + sizeof(Units::dynamicUnitDefinition) }; // 144 -> 88
+	//static constexpr auto size_scalar{ sizeof(decltype(valueT)) + sizeof(Units::scalarDefinition) }; // 92 -> 40
+	//static constexpr auto size_meter{ sizeof(decltype(meterT)) + sizeof(Units::meterDefinition) }; // 92 -> 40
+	//static constexpr auto size_millimeter{ sizeof(decltype(millimeterT)) + sizeof(Units::millimeterDefinition) }; // 92 -> 40
+
+	sizeof(Units::meter); // 232 (high precision) -> 128 (double precision)
+
+	if (1) {
+		// NOTE, repeat this test with the new system once ready
+		print(Units::newton(Units::millipound_f(1)));  // expect 0.004448222 N
+		print(Units::newton(Units::pound_f(Units::millipound_f(1)))); // expect 0.004448222 N
+		auto squareNewtons = Units::newton(0.004448222).pow(2);
+		auto squareMilliPound = Units::millipound_f(1).pow(2);
+		print(squareNewtons - squareMilliPound); // expect nearly 0
+		print(Units::joule(Units::milliwatt_hour(1))); // expect 3.6
+
+
+
+
+
+
+
+
+
+
+
+
+		print(&Units::meter_t::definition::Name_m.c[0]);
+		print(&Units::millimeter_t::definition::Name_m.c[0]);
+
+		print(Units::meter_t(5));
+		print(Units::millimeter_t(5000));
+
+		if (1) {
+			auto temp = Units::meter_t(5);
+			temp *= 50;
+			print(temp);
+		}
+		if (1) {
+			auto temp = Units::meter_t(5);
+			temp += 50;
+			print(temp);
+		}
+
+		EXPECT_EQ(true, Units::meter_t(5) > Units::meter_t(1));
+		EXPECT_EQ(true, Units::meter_t(5) > Units::millimeter_t(5));
+		EXPECT_EQ(true, Units::meter_t(1) < Units::millimeter_t(5000));
+		EXPECT_EQ(true, Units::meter_t(1) == Units::millimeter_t(1000));
+
+
+
+
+
+		print(Units::meter_t(5) + Units::meter_t(Units::foot_t(5)));
+		print(Units::meter_t(5) + Units::foot_t(5));
+		print(Units::foot_t(5) + Units::meter_t(5));
+		print(Units::foot_t(Units::meter_t(5)) + Units::foot_t(5));
+		print(Units::meter_t(5) - Units::meter_t(5));
+
+
+
+
+
+
+
+
+		Units::value_t x;
+		print(x); // 0
+		x = Units::meter_t(5);
+		print(x); // 5 m
+		x = Units::millimeter_t(6000); // m <- mm is legal
+		print(x); // 6 m
+
+		x = Units::foot_t(22.9659); // m <- ft should be legal
+
+		try {
+			x = Units::meter_squared_t(1); // m <- m_sq should be illegal
+		}
+		catch (std::exception& e) {
+			print(e.what());
+		}
+
+		print(x); // x should still be a legal value (7 m)
+
+		x = Units::kilometer_t(1); // m <- km should be legal
+		print(x);
+
+		print(x++);
+		print(++x);
+		print(x++);
+
+	}
+
+
+	if (1) {
+		Stopwatch sw;
+		sw.Start();
+		parallel::For(0, 1000000, [](int i) { // Slow (x1) 0.148525 s
+			Units::meter x{};
+			(void)x.operator()();
+			x++;
+		});
+		print(Units::second(sw.Stop_s()));
+		sw.Start();
+		parallel::For(0, 1000000, [](int i) { // Fast (x10) 0.016274 s
+			Units::meter_t x{};
+			(void)x.operator()();
+			x++;
+		});
+		print(Units::second(sw.Stop_s()));
+		sw.Start();
+		parallel::For(0, 1000000, [](int i) { // Fast (x10) 0.015514 s
+			Units::value_t x{};
+			(void)x.operator()();
+			x++;
+		});
+		print(Units::second(sw.Stop_s()));
+		sw.Start();
+		parallel::For(0, 1000000, [](int i) { // V. Fast (x500) 0.000581 s
+			double x{};
+			(void)(double(x));
+			x++;
+		});
+		print(Units::second(sw.Stop_s()));
 	}
 
 
 
 
+	//sizeof(decltype(xyzwabc)); // 68u64
+	//sizeof(decltype(copied)); // 120u64
 
 
 
+
+
+
+
+	//sizeof(float);  // 4u64
+	//sizeof(double); // 8u64
+	//sizeof(number); // 60u64 // enormous, but for higher precision
+
+	/*
+	sizeof(float); // 4u64
+	sizeof(double); // 8u64  @ 15 Digits10
+	sizeof(number); // 32u64 @ 8 Digits10
+		            // 36u64 @ 16 Digits10
+					// 40u64 @ 24 Digits10
+					// 48u64 @ 36 Digits10
+	                // 56u64 @ 50 Digits10
+					// 80u64 @ 100 Digits10
+	std::numeric_limits<double>::digits10;
+	*/
 
 #if 0
 	fibers::utilities::Computer_Usage usage_start;

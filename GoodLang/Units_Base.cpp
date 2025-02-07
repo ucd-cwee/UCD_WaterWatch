@@ -359,13 +359,31 @@ namespace GoodLang {
 			return std::get<1>(lookup_impl(UnitHash, UnitRatio));
 		};
 
+		// Static functions
+		static __forceinline bool IsInteger(double value) {
+			double intpart;
+			return modf(value, &intpart) == 0.0;
+		};
+		static __forceinline void removeTrailingCharacters(std::string& str, const char charToRemove) {
+			str.erase(str.find_last_not_of(charToRemove) + 1, std::string::npos);
+		};
+		static __forceinline void AddToDelimiter(std::string& obj, std::string const& toAdd, std::string const& delim) {
+			if (obj.length() == 0) {
+				obj += toAdd;
+			}
+			else {
+				obj += delim;
+				obj += toAdd;
+			}
+		};
+
 		// UnitDefinition
 		bool UnitDefinition::IsSI() const {
-			return (abs((float)unitType_m[0]) + abs((float)unitType_m[1]) + abs((float)unitType_m[2]) + abs((float)unitType_m[3]) + abs((float)unitType_m[4])) == 1.0f
+			return (abs(unitType_m[0]) + abs(unitType_m[1]) + abs(unitType_m[2]) + abs(unitType_m[3]) + abs(unitType_m[4])) == 1.0f
 				&& abs((double)ratio_m) == 1.0;
 		};
 		bool UnitDefinition::IsScalar() const {
-			return (abs((float)unitType_m[0]) + abs((float)unitType_m[1]) + abs((float)unitType_m[2]) + abs((float)unitType_m[3]) + abs((float)unitType_m[4])) == 0.0f
+			return (abs(unitType_m[0]) + abs(unitType_m[1]) + abs(unitType_m[2]) + abs(unitType_m[3]) + abs(unitType_m[4])) == 0.0f
 				&& abs((double)ratio_m) == 1.0;
 		};
 		bool UnitDefinition::IsSameCategory(UnitDefinition const& other) const noexcept {
@@ -378,7 +396,7 @@ namespace GoodLang {
 		size_t UnitDefinition::HashCategory() const noexcept {
 			return Units::HashUnits(unitType_m[0], unitType_m[1], unitType_m[2], unitType_m[3], unitType_m[4]);
 		};
-		std::pair<std::string_view, double> UnitDefinition::LookupAbbreviation(bool isStatic) const noexcept {
+		std::pair<std::string_view, valueType_t> UnitDefinition::LookupAbbreviation(bool isStatic) const noexcept {
 			double ratio_bestFit = (double)ratio_m;
 			std::string_view abbrev_bestFit = Units::lookup_abbreviation(HashCategory(), ratio_bestFit);
 			return { abbrev_bestFit, ratio_bestFit };
@@ -389,8 +407,6 @@ namespace GoodLang {
 			return TypeName_bestFit;
 		};
 		std::string UnitDefinition::CreateAbbreviation(bool isStatic) const noexcept {
-			// TO-DO
-#if 0
 			if (IsScalar()) {
 				return "";
 			}
@@ -415,7 +431,7 @@ namespace GoodLang {
 									Num = std::to_string((int)v);
 								}
 								else {
-									Num = std::to_string((float)v);
+									Num = std::to_string(v);
 									removeTrailingCharacters(Num, '0');
 									removeTrailingCharacters(Num, '.');
 								}
@@ -441,7 +457,7 @@ namespace GoodLang {
 										Num = std::to_string((int)(-1.0 * v));
 									}
 									else {
-										Num = std::to_string((float)(-1.0 * v));
+										Num = std::to_string((-1.0 * v));
 										removeTrailingCharacters(Num, '0');
 										removeTrailingCharacters(Num, '.');
 									}
@@ -453,43 +469,22 @@ namespace GoodLang {
 				}
 				return out;
 			}
-#endif
 			return "";
-		};
-
-		// Static functions
-		static __forceinline bool IsInteger(double value) {
-			double intpart;
-			return modf(value, &intpart) == 0.0;
-		};
-		static __forceinline void removeTrailingCharacters(std::string& str, const char charToRemove) {
-			str.erase(str.find_last_not_of(charToRemove) + 1, std::string::npos);
-		};
-		static __forceinline void AddToDelimiter(std::string& obj, std::string const& toAdd, std::string const& delim) {
-			if (obj.length() == 0) {
-				obj += toAdd;
-			}
-			else {
-				obj += delim;
-				obj += toAdd;
-			}
 		};
 
 		// Value
 		bool value::IsStaticType() const { return false; };
-		double GetVisibleValue(value const& V) noexcept {
-			double out{ 0. };
+		valueType_t GetVisibleValue(value const& V) noexcept {
+			valueType_t out{ 0. };
 			V.Abbreviation(&out);
 			return out;
 		};
-		std::string GetValueStr(value const& V) noexcept {
-			auto v = V();
-			if (std::fmod(v, 1.0) == 0.0) { // integer
+		std::string GetValueStr(valueType_t const& v) noexcept {
+			if (std::fmod((double)v, 1.0) == 0.0) { // integer
 				return std::to_string((long long)v);
-				//return Units::printf("%lld", (long long)v);
 			}
 			else { // floating-point
-				std::string out{ std::to_string(v) /*Units::printf("%.4f", v)*/ };
+				std::string out{ std::to_string((double)v) /*Units::printf("%.4f", v)*/ };
 				Units::removeTrailingCharacters(out, '0'); // e.g. 25.5000 -> 25.5
 				Units::removeTrailingCharacters(out, '.'); // e.g. 25.0000 -> 25. -> 25
 				return out;
@@ -530,7 +525,7 @@ namespace GoodLang {
 									Num = std::to_string((int)v);
 								}
 								else {
-									Num = std::to_string((float)v);
+									Num = std::to_string(v);
 									removeTrailingCharacters(Num, '0');
 									removeTrailingCharacters(Num, '.');
 								}
@@ -555,7 +550,7 @@ namespace GoodLang {
 										Num = std::to_string((int)(-1.0 * v));
 									}
 									else {
-										Num = std::to_string((float)(-1.0 * v));
+										Num = std::to_string((-1.0 * v));
 										removeTrailingCharacters(Num, '0');
 										removeTrailingCharacters(Num, '.');
 									}
@@ -582,8 +577,8 @@ namespace GoodLang {
 			throw(std::runtime_error(GoodLang::printf("Type must be scalar (was '%s').", AbbreviationFast(V).c_str())));
 		};
 		
-		value::operator double() const noexcept { return GetVisibleValue(*this); };
-		double value::operator()() const noexcept { return GetVisibleValue(*this); };
+		value::operator double() const noexcept { return (double)GetVisibleValue(*this); };
+		double value::operator()() const noexcept { return (double)GetVisibleValue(*this); };
 		std::string_view value::UnitName() const noexcept {
 			std::string_view toReturn{ "" };
 			unit_m.Update([&toReturn, this](UnitDefinition Data)->UnitDefinition {
@@ -603,7 +598,7 @@ namespace GoodLang {
 		void value::Swap(value const& other) const {
 			unit_m.Swap(other.unit_m.load());
 		};
-		std::string value::Abbreviation(double* visibleValue) const noexcept {
+		std::string value::Abbreviation(valueType_t* visibleValue) const noexcept {
 			bool isStatic{ IsStaticType() };
 			std::string toReturn{ "" };
 
@@ -631,7 +626,7 @@ namespace GoodLang {
 							std::string Num;
 							for (int i = UnitDefinition::NumUnits - 1; i >= 0; i--) {
 								std::string_view unitBase = unitBases[i];
-								double v = (float)Data.unitType_m[i];
+								double v = Data.unitType_m[i];
 
 								if (v > 0) {
 									if (v == 1)
@@ -641,7 +636,7 @@ namespace GoodLang {
 											Num = std::to_string(static_cast<int>(v));
 										}
 										else {
-											Num = std::to_string((float)v);
+											Num = std::to_string(v);
 											removeTrailingCharacters(Num, '0');
 											removeTrailingCharacters(Num, '.');
 										}
@@ -656,7 +651,7 @@ namespace GoodLang {
 								toReturn += " /";
 								for (int i = UnitDefinition::NumUnits - 1; i >= 0; i--) {
 									std::string_view unitBase = unitBases[i];
-									double v = (float)Data.unitType_m[i];
+									double v = Data.unitType_m[i];
 
 									if (v < 0) {
 										if (v == -1)
@@ -666,7 +661,7 @@ namespace GoodLang {
 												Num = std::to_string(static_cast<int>(-1.0 * v));
 											}
 											else {
-												Num = std::to_string((float)(-1.0 * v));
+												Num = std::to_string((-1.0 * v));
 												removeTrailingCharacters(Num, '0');
 												removeTrailingCharacters(Num, '.');
 											}
@@ -688,32 +683,32 @@ namespace GoodLang {
 			return toReturn;
 		};
 		std::string value::ToString() const {
-			double out{ 0.0 };
+			valueType_t out{ 0.0 };
 			std::string abbreviation{ Abbreviation(&out) };
 			if (abbreviation.length() > 0) return GetValueStr(out) + " " + abbreviation;
 			else return GetValueStr(out);
 		};
-		value& MultiplyUnits(value& This, double const& V) noexcept {
+		value& MultiplyUnits(value& This, valueType_t const& V) noexcept {
 			This.unit_m.Update([&V](UnitDefinition Data)->UnitDefinition {
 				if (V == 1.0 || is_scalar(Data)) {
 
-					Data.value_m = std::pow(Data.value_m / Data.ratio_m, V) * Data.ratio_m; // save in SI value
+					Data.value_m = std::pow((double)(Data.value_m / Data.ratio_m), (double)V) * Data.ratio_m; // save in SI value
 
 					return Data;
 				}
-				for (int i = Data.unitType_m.size() - 1; i >= 0; i--) Data.unitType_m[i] *= V;
+				for (int i = Data.unitType_m.size() - 1; i >= 0; i--) Data.unitType_m[i] *= (double)V;
 				// if (V == 0) Data.IsScalar() = true;
 
 				// remove the abbreviation since we either don't know what we are or we will become empty anyhow.
 				// Data.abbreviation_m = const_cast<char*>("");
 
 				// now that we have modified the value, the conversion ratio makes no sense anymore and must be reset. 
-				Data.ratio_m = std::pow(Data.ratio_m, V);
+				Data.ratio_m = std::pow((double)Data.ratio_m, (double)V);
 
 				// do the exonentiation of the value
 				// i.e. (10 (ft)) ^ (3) -> (1000 (cu_ft)) * (1 / 35.3147 (cu_m/cu_ft)) -> 28.3168 cu_m in SI value
 				// Data.value_m = std::pow(Data.value_m / Data.ratio_m, V) * Data.ratio_m; // save in SI value
-				Data.value_m = std::pow(Data.value_m, V);
+				Data.value_m = std::pow((double)Data.value_m, (double)V);
 				return Data;
 			});
 			return This;
@@ -743,45 +738,23 @@ namespace GoodLang {
 			auto r{ unit_m.Read() };
 			r->value_m += r->ratio_m;
 			return *this;
-			
-			/*unit_m.Update([](UnitDefinition Data)->UnitDefinition {
-				Data.value_m += (double)Data.ratio_m;
-				return Data;
-			});
-			return *this;*/
 		};
 		value& value::operator--() {
 			auto r{ unit_m.Read() };
 			r->value_m -= r->ratio_m;
 			return *this;
-
-			//unit_m.Update([](UnitDefinition Data)->UnitDefinition {
-			//	Data.value_m -= (double)Data.ratio_m;
-			//	return Data;
-			//});
-			//return *this;
 		};
 		value value::operator++(int) {
 			auto r{ unit_m.Read() };
 			value out{ *r };
 			r->value_m += r->ratio_m;
 			return out;
-
-			//return value{ unit_m.Update([](UnitDefinition Data)->UnitDefinition {
-			//	Data.value_m += (double)Data.ratio_m;
-			//	return Data;
-			//}) };
 		};
 		value value::operator--(int) {
 			auto r{ unit_m.Read() };
 			value out{ *r };
 			r->value_m -= r->ratio_m;
 			return out;
-
-			//return value{ unit_m.Update([](UnitDefinition Data)->UnitDefinition {
-			//	Data.value_m -= (double)Data.ratio_m;
-			//	return Data;
-			//}) };
 		};
 		value Add(value const& a, value const& b) {
 			auto a_struct = a.unit_m.load();
@@ -967,14 +940,14 @@ namespace GoodLang {
 				});
 			return *this;
 		};
-		value& value::update(std::function<double(double)> const& updateFunction) {
+		value& value::update(std::function<valueType_t(valueType_t)> const& updateFunction) {
 			unit_m.Update([&updateFunction](UnitDefinition Data)->UnitDefinition {
 				Data.value_m = updateFunction(Data.value_m / Data.ratio_m) * Data.ratio_m;
 				return Data;
 			});
 			return *this;
 		};
-		value value::update(std::function<double(double)> const& updateFunction) const {
+		value value::update(std::function<valueType_t(valueType_t)> const& updateFunction) const {
 			auto out{ value(*this) };
 			out.update(updateFunction);
 			return out;
@@ -993,7 +966,7 @@ namespace GoodLang {
 			auto other{ V.unit_m.load() };
 			HandleNotScalar(other);
 			unit_m.Update([&other](UnitDefinition Data)->UnitDefinition {
-				Data.value_m = std::pow(Data.value_m / Data.ratio_m, other.value_m / other.ratio_m) * Data.ratio_m;
+				Data.value_m = std::pow((double)(Data.value_m / Data.ratio_m), (double)(other.value_m / other.ratio_m)) * Data.ratio_m;
 				return Data;
 			});
 			return *this;
@@ -1002,7 +975,7 @@ namespace GoodLang {
 			return pow(0.5);
 		};
 		value& value::floor() {
-			return update([](double v)->double { return std::floor(v); });
+			return update([](valueType_t v)->valueType_t { return std::floor((double)v); });
 		};
 		value value::floor() const {
 			auto out{ value(*this) };
@@ -1010,7 +983,7 @@ namespace GoodLang {
 			return out;
 		};
 		value& value::ceiling() {
-			return update([](double v)->double { return std::ceil(v); });
+			return update([](valueType_t v)->valueType_t { return std::ceil((double)v); });
 		};
 		value value::ceiling() const {
 			auto out{ value(*this) };

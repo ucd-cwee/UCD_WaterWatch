@@ -11,14 +11,6 @@ namespace GoodLang {
 
 	template<typename A, typename B>
 	static void add_converter(std::shared_ptr<Class>& classPtr, std::string const& Name) {
-		// static function pointers, e.g. static foo(){};
-		//auto* function_impl = new details::Static_Function_Impl(&convert<A, B>);
-		//(void)std::shared_ptr<void>(function_impl, [function_impl](void* p) { delete function_impl; });
-
-		// (void)std::static_pointer_cast<details::Proxy_Function_Base>(std::shared_ptr<typename std::remove_pointer<decltype(function_impl)>::type>(function_impl));
-
-
-		//(void)make_callable(&convert<A, B>);
 		classPtr->AddFunction(Name, Function(make_callable(&convert<A, B>)), true);
 	};
 

@@ -6,17 +6,18 @@
 #include "Units_Base.h"
 #include <unordered_set>
 
+#define useCachedData
+
 // forward decl
 namespace GoodLang {
 	class Scope;
 	class Namespace;
 	class Class;
 	class Global;
+
 };
 
-#define useCachedData
-
-// Scope
+// Scope, Namespace, Class
 namespace GoodLang {
 
 	class Scope {
@@ -986,4 +987,5 @@ namespace GoodLang {
 		};
 
 	};
+
 };
