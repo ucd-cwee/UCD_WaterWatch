@@ -4,64 +4,6 @@
 namespace GoodLang {
 	// Units
 	namespace Units {
-		// math
-		Units::value math::fabs(const Units::value& V) {
-			if (V < 0) return V * -1.0; else return V;
-		};
-		Units::value math::abs(const Units::value& V) {
-			return fabs(V);
-		};
-		Units::value math::clamp(const Units::value& V, const Units::value& min, const Units::value& max) {
-			if (V < min) return min;
-			if (V > max) return max;
-			return V;
-		};
-		Units::value math::floor(const Units::value& f) {
-			return f.floor();
-		};
-		Units::value math::ceiling(const Units::value& f) {
-			return f.ceiling();
-		};
-		Units::value math::round(const Units::value& a, float magnitude) {
-			return floor((a / magnitude) + 0.5) * magnitude;
-		};
-		Units::value math::max(const Units::value& a, const Units::value& b) {
-			return a > b ? a : b;
-		};
-		Units::value math::min(const Units::value& a, const Units::value& b) {
-			return a < b ? a : b;
-		};
-		void math::max_ref(Units::value& a, const Units::value& b) {
-			if (b > a) a = b;
-		};
-		void math::min_ref(Units::value& a, const Units::value& b) {
-			if (b < a) a = b;
-		};
-
-		// constants
-		Units::scalar					    constants::pi() {
-			return 3.141592653589793238462643383279502884197169399375105820974944;
-		};
-		Units::meters_per_second		    constants::c() {
-			return 299792458.0;
-		};
-		Units::value				        constants::G() {
-			return Units::meter(6.67408e-11) * Units::meter(1) * Units::meter(1) / (Units::kilogram(1) * Units::second(1) * Units::second(1));
-		};
-		Units::meters_per_second_squared	constants::g() {
-			return Units::meters_per_second_squared(9.8067);
-		};
-		Units::kilograms_per_cubic_meter    constants::d() {
-			return Units::kilograms_per_cubic_meter(998.57);
-		};
-
-	};
-};
-
-// value_t definitions
-namespace GoodLang {
-	// Units
-	namespace Units {
 
 #define CalculateMetricPrefixV(metric) ((long double)std::metric::num / (long double)std::metric::den)
 #define DerivedUnitType(type, category, abbreviation, Ratio) namespace Definitions { class type ## Definition final : public unitDefinition<impl::const_hash(#type)>, public Categories::category { \
@@ -85,8 +27,8 @@ namespace GoodLang {
 			return std::make_unique<typename std::remove_const_t< typename std::remove_pointer_t< decltype(&*this) > >>(*this); \
 		}; \
 	}; }; \
-	type ## _t::type ## _t() : value_t(std::make_unique<Definitions::type ## Definition>()) {}; \
-	type ## _t::type ## _t(value_t const& other) : type ## _t() { \
+	type ::type () : value(std::make_unique<Definitions::type ## Definition>()) {}; \
+	type ::type (value const& other) : type () { \
 		auto V = other.unit_m.Shared(); \
 		auto Data = this->unit_m.Unique(); \
 		if (Data->IsSameCategory(*V)) Data->value() = V->value(); \
@@ -101,14 +43,14 @@ namespace GoodLang {
 			))); \
 		} \
 	}; \
-	type ## _t::type ## _t(Number const& V) : type ## _t() { \
+	type ::type (Number const& V) : type () { \
 		auto get = unit_m.Unique(); \
 		get->value() = V * get->ratio(); \
 	};
 
 #define DerivedUnitTypeWithMetricPrefix(type, prefix) \
-		prefix ## type ## _t::prefix ## type ## _t() : value_t(std::make_unique<Definitions::MetricPrefixedDefinition<std::prefix, Units::Definitions::type ## Definition>>()) {}; \
-		prefix ## type ## _t::prefix ## type ## _t(value_t const& other) : prefix ## type ## _t() { \
+		prefix ## type ::prefix ## type () : value(std::make_unique<Definitions::MetricPrefixedDefinition<std::prefix, Units::Definitions::type ## Definition>>()) {}; \
+		prefix ## type ::prefix ## type (value const& other) : prefix ## type () { \
 			auto V = other.unit_m.Shared(); \
 			auto Data = this->unit_m.Unique(); \
 			if (Data->IsSameCategory(*V)) Data->value() = V->value(); \
@@ -123,7 +65,7 @@ namespace GoodLang {
 				))); \
 			} \
 		}; \
-		prefix ## type ## _t::prefix ## type ## _t(Number const& V) : prefix ## type ## _t() { \
+		prefix ## type ::prefix ## type (Number const& V) : prefix ## type () { \
 			auto get = unit_m.Unique(); \
 			get->value() = V * get->ratio(); \
 		}; \
@@ -152,66 +94,66 @@ namespace GoodLang {
 #undef DerivedUnitType
 
 		// return absolute value
-		Units::value_t math_t::fabs(const Units::value_t& V) {
+		Units::value math::fabs(const Units::value& V) {
 			if (V < 0) return V * -1.0; else return V;
 		};
 		// return absolute value
-		Units::value_t math_t::abs(const Units::value_t& V) {
+		Units::value math::abs(const Units::value& V) {
 			return fabs(V);
 		};
 		// clamp number to lower/upper bound
-		Units::value_t math_t::clamp(const Units::value_t& V, const Units::value_t& min, const Units::value_t& max) {
+		Units::value math::clamp(const Units::value& V, const Units::value& min, const Units::value& max) {
 			if (V < min) return min;
 			if (V > max) return max;
 			return V;
 		};
 		// round to lower whole number
-		Units::value_t math_t::floor(const Units::value_t& f) {
+		Units::value math::floor(const Units::value& f) {
 			return f.floor();
 		};
 		// round to higher whole number
-		Units::value_t math_t::ceiling(const Units::value_t& f) {
+		Units::value math::ceiling(const Units::value& f) {
 			return f.ceiling();
 		};
 		// round to nearest whole number
-		Units::value_t math_t::round(const Units::value_t& a, float magnitude) {
+		Units::value math::round(const Units::value& a, float magnitude) {
 			return floor((a / magnitude) + 0.5) * magnitude;
 		};
 		// return max(a, b);
-		Units::value_t math_t::max(const Units::value_t& a, const Units::value_t& b) {
+		Units::value math::max(const Units::value& a, const Units::value& b) {
 			return a > b ? a : b;
 		};
 		// return min(a, b);
-		Units::value_t math_t::min(const Units::value_t& a, const Units::value_t& b) {
+		Units::value math::min(const Units::value& a, const Units::value& b) {
 			return a < b ? a : b;
 		};
 		// if (b > a) a = b; // prevents copying when not necessary
-		void math_t::max_ref(Units::value_t& a, const Units::value_t& b) {
+		void math::max_ref(Units::value& a, const Units::value& b) {
 			if (b > a) a = b;
 		};
 		// if (b < a) a = b; // prevents copying when not necessary
-		void math_t::min_ref(Units::value_t& a, const Units::value_t& b) {
+		void math::min_ref(Units::value& a, const Units::value& b) {
 			if (b < a) a = b;
 		};
 		/* PI (unitless) */
-		Units::scalar_t					constants_t::pi() {
+		Units::scalar					constants::pi() {
 			return 3.141592653589793238462643383279502884197169399375105820974944;
 		};
 		/* speed of light in a vacuum (m/s) */
-		Units::meters_per_second_t		    constants_t::c() {
+		Units::meters_per_second		    constants::c() {
 			return 299792458.0;
 		};
 		/* ( m^3 / (kg * s^2) ) */
-		Units::value_t				        constants_t::G() {
-			return Units::meter_t(6.67408e-11) * Units::meter_t(1) * Units::meter_t(1) / (Units::kilogram_t(1) * Units::second_t(1) * Units::second_t(1));
+		Units::value				        constants::G() {
+			return Units::meter(6.67408e-11) * Units::meter(1) * Units::meter(1) / (Units::kilogram(1) * Units::second(1) * Units::second(1));
 		};
 		/* acceleration due to gravity ( m/s^2 ) */
-		Units::meters_per_second_squared_t	constants_t::g() {
-			return Units::meters_per_second_squared_t(9.8067);
+		Units::meters_per_second_squared	constants::g() {
+			return Units::meters_per_second_squared(9.8067);
 		};
 		/* density of water ( kg/m^3 ) */
-		Units::kilograms_per_cubic_meter_t constants_t::d() {
-			return Units::kilograms_per_cubic_meter_t(998.57);
+		Units::kilograms_per_cubic_meter constants::d() {
+			return Units::kilograms_per_cubic_meter(998.57);
 		};
 
 	};
