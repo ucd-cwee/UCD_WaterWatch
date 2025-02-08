@@ -396,6 +396,33 @@ int main() {
 			});
 	}
 
+	// Map as pattern
+	if (1) {
+		GoodLang::Map<Units::second, Units::gallon_per_minute> map;
+		parallel::ForEach(GoodLang::Sequence(0.0, 1000.0, 50.0), [&](double i) {
+			*map[i] = i;
+		});
+
+		auto f0 = map.FindLargestSmallerEqual(25);
+		auto f50 = map.FindSmallestLargerEqual(25);
+
+		if (f0 != map.end()) {
+			EXPECT_EQ(f0->second, 0.0);
+		}
+		if (f50 != map.end()) {
+			EXPECT_EQ(f50->second, 50.0);
+		}
+
+		parallel::ForEach(map, [](auto& x) {
+			x.second++;
+		});
+
+		for (auto& x : map) {
+			print(x.first.ToString() + ", " + x.second.ToString());
+		}
+
+	}
+
 	// Map with strings
 	if (1) {
 		GoodLang::Map<std::string, double> map;

@@ -575,14 +575,16 @@ namespace GoodLang {
 		};
 
 		value value::operator++(int) {
-			value out{ *this }; // copy
-			defer(auto Data{ this->unit_m.Unique() }; Data->value() += Data->ratio();); // increment
-			return out; // returns old value, increments after
+			auto Data = this->unit_m.Unique();
+			value out{ Data->Copy() };
+			Data->value() += Data->ratio();
+			return out;
 		};
 		value value::operator--(int) {
-			value out{ *this }; // copy
-			defer(auto Data{ this->unit_m.Unique() }; Data->value() -= Data->ratio();); // increment
-			return out; // returns old value, increments after
+			auto Data = this->unit_m.Unique();
+			value out{ Data->Copy() };
+			Data->value() -= Data->ratio();
+			return out;
 		};
 		value operator+(value const& A, value const& B) {
 			return Add(A, B);
