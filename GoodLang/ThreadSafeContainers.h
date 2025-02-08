@@ -1929,6 +1929,12 @@ namespace GoodLang {
 			auto shared = data.Unique();
 			shared->insert_or_assign(std::move(_Keyval), std::forward<_Mappedty>(_Mapval));
 		};
+		// Equal to operator[], but returns a unique lock
+		typename SharedLockable<T>::Obj UniqueAt(const key_type& _Keyval) {
+			auto shared = data.Unique();
+			T& result = shared->operator[](_Keyval);
+			return typename SharedLockable<T>::Obj(result, shared.ForwardLock());
+		};
 		typename SharedLockable<T>::SharedObj operator[](const key_type& _Keyval) {
 			while (true) {
 				if (auto shared = data.Unique()) {
