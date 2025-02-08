@@ -238,7 +238,7 @@ namespace GoodLang {
 				auto get = unit_m.Unique();
 				get->value() = (V / get->ratio());
 			};
-			value(value&& V) : unit_m{ std::move(V.unit_m) } {};
+			value(value&& V) : unit_m{ V.unit_m.Shared()->Copy() } {};
 			value(value const& V) : unit_m{ V.unit_m.Shared()->Copy() } {};
 			value(Number V) : unit_m{ std::make_unique<Definitions::scalarDefinition>(std::move(V)) } {};
 			virtual ~value() = default;
@@ -249,6 +249,7 @@ namespace GoodLang {
 			std::string ToString() const;
 			friend std::ostream& operator<<(std::ostream& os, value const& obj);
 			std::string_view UnitName() const noexcept;
+			std::string_view UnitAbbreviation() const noexcept;
 			void Clear();
 		public: // = Operators
 			value& operator=(value const& other);

@@ -1913,21 +1913,13 @@ namespace GoodLang {
 		typedef std::map<key_type, T, Cmp> underlying;
 
 	public:
-		template <class... _Mappedty> void try_emplace(const key_type& _Keyval, _Mappedty&&... _Mapval) {
+		void try_emplace(const key_type& _Keyval, T _Mapval) {
 			auto shared = data.Unique();
-			shared->try_emplace(_Keyval, std::forward<_Mappedty>(_Mapval)...);
+			shared->try_emplace(_Keyval, std::move(_Mapval));
 		};
-		template <class... _Mappedty> void try_emplace(key_type&& _Keyval, _Mappedty&&... _Mapval) {
+		void insert_or_assign(const key_type& _Keyval, T _Mapval) {
 			auto shared = data.Unique();
-			shared->try_emplace(std::move(_Keyval), std::forward<_Mappedty>(_Mapval)...);
-		};
-		template <class _Mappedty> void insert_or_assign(const key_type& _Keyval, _Mappedty&& _Mapval) {
-			auto shared = data.Unique();
-			shared->insert_or_assign(_Keyval, std::forward<_Mappedty>(_Mapval));
-		};
-		template <class _Mappedty> void insert_or_assign(key_type&& _Keyval, _Mappedty&& _Mapval) {
-			auto shared = data.Unique();
-			shared->insert_or_assign(std::move(_Keyval), std::forward<_Mappedty>(_Mapval));
+			shared->insert_or_assign(_Keyval, std::move(_Mapval));
 		};
 		// Equal to operator[], but returns a unique lock
 		typename SharedLockable<T>::Obj UniqueAt(const key_type& _Keyval) {

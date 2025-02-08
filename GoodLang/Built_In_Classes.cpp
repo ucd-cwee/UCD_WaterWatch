@@ -278,7 +278,7 @@ namespace GoodLang {
 						}
 
 						value_namespace->AddFunction("abbreviation", make_callable([](Units::value const& x)->std::string {
-							return x.Abbreviation();
+							return x.UnitAbbreviation().data();
 						}));
 						value_namespace->AddFunction("name", make_callable([](Units::value const& x)->std::string {
 							return x.UnitName().data();

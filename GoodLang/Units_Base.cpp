@@ -18,14 +18,14 @@ namespace GoodLang {
 		};
 
 		// Static functions
-		static __forceinline bool IsInteger(double value) {
+		static /*__forceinline*/ bool IsInteger(double value) {
 			double intpart;
 			return modf(value, &intpart) == 0.0;
 		};
-		static __forceinline void removeTrailingCharacters(std::string& str, const char charToRemove) {
+		static /*__forceinline*/ void removeTrailingCharacters(std::string& str, const char charToRemove) {
 			str.erase(str.find_last_not_of(charToRemove) + 1, std::string::npos);
 		};
-		static __forceinline void AddToDelimiter(std::string& obj, std::string const& toAdd, std::string const& delim) {
+		static /*__forceinline*/ void AddToDelimiter(std::string& obj, std::string const& toAdd, std::string const& delim) {
 			if (obj.length() == 0) {
 				obj += toAdd;
 			}
@@ -38,7 +38,7 @@ namespace GoodLang {
 
 	namespace Units {
 		namespace impl {
-			using TreeType = GoodLang::Map<uint64_t, std::tuple<Units::value, std::weak_ptr<GoodLang::Type_Info>>>; // look-up with unit ratio
+			using TreeType = GoodLang::Map<uint64_t, std::pair<Units::value, std::weak_ptr<GoodLang::Type_Info>>>; // look-up with unit ratio
 			using ModelType = GoodLang::Map<size_t, TreeType>; // look-up with unit category
 
 			static ModelType& Shared_Data() noexcept {
@@ -50,24 +50,22 @@ namespace GoodLang {
 			UnitHash determines the class of unit (length, time, length/time, length/time^2, length^1.25, etc.
 			UnitRatio determines the specific ratio within that class (meter, foot, inch, etc.)
 			*/
-			static const std::tuple< Units::value, std::weak_ptr<GoodLang::Type_Info>>& lookup_impl(size_t UnitHash, double& UnitRatio) noexcept {
+			static const std::pair< Units::value, std::weak_ptr<GoodLang::Type_Info>>& lookup_impl(size_t UnitHash, double& UnitRatio) noexcept {
 				auto targetRatio = Encode(UnitRatio);
 
-				static std::tuple<Units::value, std::weak_ptr<GoodLang::Type_Info>> out{ Units::value(), std::weak_ptr<GoodLang::Type_Info>() };
+				static std::pair<Units::value, std::weak_ptr<GoodLang::Type_Info>> out{ Units::value(), std::weak_ptr<GoodLang::Type_Info>() };
 
 				auto& model = Shared_Data();
 
-				if (model.size() == 0) { // add all rows					
-					// model.UniqueAt(HashUnits(Categories::length::unitType_m))->try_emplace(Encode(meter_t::conversion_ratio), std::tuple<Units::value_t, std::weak_ptr<GoodLang::Type_Info>>{ meter_t(), GoodLang::user_type_shared<meter_t>() });
-
+				if (model.size() == 0) { // add all rows
 #define CalculateMetricPrefixV(metric) \
 	((long double)std::metric::num / (long double)std::metric::den)
 
 #define DerivedUnitType(type, category, abbreviation, Ratio) \
-    *model.UniqueAt(HashUnits(Categories::category::unitType_m))->operator[](Encode( type ::conversion_ratio)) = std::tuple<Units::value, std::weak_ptr<GoodLang::Type_Info>>{ type (), GoodLang::user_type_shared< type  >() };
+    model.UniqueAt(HashUnits(Categories::category::unitType_m))->insert_or_assign(Encode( type ::conversion_ratio), std::pair<Units::value, std::weak_ptr<GoodLang::Type_Info>>{ type(), GoodLang::user_type_shared< type >() });
 		
 #define DerivedUnitTypeWithMetricPrefix(type, category, prefix) \
-    *model.UniqueAt(HashUnits(Categories::category::unitType_m))->operator[](Encode( prefix ## type ::conversion_ratio)) = std::tuple<Units::value, std::weak_ptr<GoodLang::Type_Info>>{ prefix ## type (), GoodLang::user_type_shared< prefix ## type  >() };
+    model.UniqueAt(HashUnits(Categories::category::unitType_m))->insert_or_assign(Encode( prefix ## type ::conversion_ratio), std::pair<Units::value, std::weak_ptr<GoodLang::Type_Info>>{ prefix ## type(), GoodLang::user_type_shared< prefix ## type >() });
 
 #define DerivedUnitTypeWithMetricPrefixes(type, category, abbreviation, ratio) \
 	DerivedUnitType(type, category, abbreviation, ratio); \
@@ -233,21 +231,21 @@ namespace GoodLang {
 			}
 		};
 
-		static __forceinline Number GetVisibleValue(value const& V) noexcept {
+		static /*__forceinline*/ Number GetVisibleValue(value const& V) noexcept {
 			Number out{ 0 };
 			auto Data = V.unit_m.Shared();
 			(void)Abbreviation(*Data, &out);
 			return out;
 		};
 #if 0
-		static __forceinline bool IsInteger(double value) {
+		static /*__forceinline*/ bool IsInteger(double value) {
 			double intpart;
 			return modf(value, &intpart) == 0.0;
 		};
-		static __forceinline void removeTrailingCharacters(std::string& str, const char charToRemove) {
+		static /*__forceinline*/ void removeTrailingCharacters(std::string& str, const char charToRemove) {
 			str.erase(str.find_last_not_of(charToRemove) + 1, std::string::npos);
 		};
-		static __forceinline void AddToDelimiter(std::string& obj, std::string const& toAdd, std::string const& delim) {
+		static /*__forceinline*/ void AddToDelimiter(std::string& obj, std::string const& toAdd, std::string const& delim) {
 			if (obj.length() == 0) {
 				obj += toAdd;
 			}
@@ -257,18 +255,18 @@ namespace GoodLang {
 			}
 		};
 #endif
-		static __forceinline bool IdenticalUnits(Definitions::UnitDefinitionBase const& LHS, Definitions::UnitDefinitionBase const& RHS) noexcept { return LHS.IsSameCategory(RHS); };
-		static __forceinline bool NormalArithmeticOkay(Definitions::UnitDefinitionBase const& LHS, Definitions::UnitDefinitionBase const& RHS) noexcept {
+		static /*__forceinline*/ bool IdenticalUnits(Definitions::UnitDefinitionBase const& LHS, Definitions::UnitDefinitionBase const& RHS) noexcept { return LHS.IsSameCategory(RHS); };
+		static /*__forceinline*/ bool NormalArithmeticOkay(Definitions::UnitDefinitionBase const& LHS, Definitions::UnitDefinitionBase const& RHS) noexcept {
 			if (LHS.IsScalar() || RHS.IsScalar()) return true;
 			if (LHS.IsSameCategory(RHS)) return true;
 			return false;
 		};
-		static __forceinline bool UnaryArithmeticOkay(Definitions::UnitDefinitionBase const& LHS, Definitions::UnitDefinitionBase const& RHS) noexcept {
+		static /*__forceinline*/ bool UnaryArithmeticOkay(Definitions::UnitDefinitionBase const& LHS, Definitions::UnitDefinitionBase const& RHS) noexcept {
 			if (RHS.IsScalar()) return true;
 			if (LHS.IsSameCategory(RHS)) return true;
 			return false;
 		};
-		static __forceinline void HandleNormalArithmetic(Definitions::UnitDefinitionBase const& LHS, Definitions::UnitDefinitionBase const& RHS) {
+		static /*__forceinline*/ void HandleNormalArithmetic(Definitions::UnitDefinitionBase const& LHS, Definitions::UnitDefinitionBase const& RHS) {
 			if (NormalArithmeticOkay(LHS, RHS)) return;
 			else {
 				auto A1 = Abbreviation(LHS, nullptr);
@@ -279,7 +277,7 @@ namespace GoodLang {
 				)));
 			}
 		};
-		static __forceinline void HandleUnaryArithmetic(Definitions::UnitDefinitionBase const& LHS, Definitions::UnitDefinitionBase const& RHS) {
+		static /*__forceinline*/ void HandleUnaryArithmetic(Definitions::UnitDefinitionBase const& LHS, Definitions::UnitDefinitionBase const& RHS) {
 			if (UnaryArithmeticOkay(LHS, RHS)) return;
 			else {
 				auto A1 = Abbreviation(LHS, nullptr);
@@ -291,7 +289,7 @@ namespace GoodLang {
 				)));
 			}
 		};
-		static __forceinline void HandleNotScalar(Definitions::UnitDefinitionBase const& V) {
+		static /*__forceinline*/ void HandleNotScalar(Definitions::UnitDefinitionBase const& V) {
 			if (V.IsScalar()) return;
 			else {
 				auto A1 = Abbreviation(V, nullptr);
@@ -300,8 +298,7 @@ namespace GoodLang {
 				)));
 			}
 		};
-#if 0
-		static __forceinline std::string GetValueStr(Number const& v) noexcept {
+		static /*__forceinline*/ std::string GetValueStr(Number const& v) noexcept {
 			if (std::fmod((double)v, 1.0) == 0.0) { // integer
 				return std::to_string((long long)v);
 			}
@@ -312,8 +309,6 @@ namespace GoodLang {
 				return out;
 			}
 		};
-#endif
-
 		value::operator Number() const noexcept { return GetVisibleValue(*this); };
 		Number value::operator()() const noexcept { return GetVisibleValue(*this); };
 		std::string value::ToString() const {
@@ -342,6 +337,10 @@ namespace GoodLang {
 				else 
 					return toReturn;
 			}
+		};
+		std::string_view value::UnitAbbreviation() const noexcept {
+			auto Data = unit_m.Shared();
+			return Abbreviation(*Data, nullptr);
 		};
 		void value::Clear() {
 			auto Data = unit_m.Unique();
@@ -373,7 +372,7 @@ namespace GoodLang {
 			return *this;
 		};
 
-		template<typename Func> static __forceinline bool DoComparison(Func const& toDo, value const& A, value const& V) noexcept {
+		template<typename Func> static /*__forceinline*/ bool DoComparison(Func const& toDo, value const& A, value const& V) noexcept {
 			auto Data1 = A.unit_m.Shared();
 			auto Data2 = V.unit_m.Shared();
 
@@ -412,7 +411,7 @@ namespace GoodLang {
 
 		// continue replacing _t from here...
 
-		template<typename Func> static __forceinline void DoUnaryOperation(Func const& toDo, value_t& A, value_t const& V) noexcept {
+		template<typename Func> static /*__forceinline*/ void DoUnaryOperation(Func const& toDo, value& A, value const& V) {
 			auto Data = A.unit_m.Unique();
 			auto other = V.unit_m.Shared();
 
@@ -427,37 +426,37 @@ namespace GoodLang {
 			}
 			else { // incoming unit AND this unit are different non-scalers of different categories. No exchange is reasonable. 
 				HandleUnaryArithmetic(*Data, *other);
-				value_t temp(Data->Copy());
-				temp = value_t(other->Copy());
+				value temp(Data->Copy());
+				temp = value(other->Copy());
 				(void)toDo(Data->value(), temp.unit_m.Unique()->value());
 			}
 		};
-		value_t& value_t::operator++() {
+		value& value::operator++() {
 			auto Data = this->unit_m.Unique();
 			Data->value() += Data->ratio();
 			return *this;
 		};
-		value_t& value_t::operator--() {
+		value& value::operator--() {
 			auto Data = this->unit_m.Unique();
 			Data->value() -= Data->ratio();
 			return *this;
 		};
-		value_t& value_t::operator+=(value_t const& V) {
+		value& value::operator+=(value const& V) {
 			DoUnaryOperation([](Number& lhs, Number const& rhs) { lhs += rhs; }, *this, V);
 			return *this;
 		};
-		value_t& value_t::operator-=(value_t const& V) {
+		value& value::operator-=(value const& V) {
 			DoUnaryOperation([](Number& lhs, Number const& rhs) { lhs -= rhs; }, *this, V);
 			return *this;
 		};
-		value_t& value_t::operator*=(value_t const& V) {
+		value& value::operator*=(value const& V) {
 			auto other = V.unit_m.Shared();
 			HandleNotScalar(*other);
 			auto Data = this->unit_m.Unique();
 			Data->value() *= other->value();
 			return *this;
 		};
-		value_t& value_t::operator/=(value_t const& V) {
+		value& value::operator/=(value const& V) {
 			auto other = V.unit_m.Shared();
 			HandleNotScalar(*other);
 			auto Data = this->unit_m.Unique();
@@ -465,18 +464,18 @@ namespace GoodLang {
 			return *this;
 		};
 
-		template <typename Func> static __forceinline value_t AddOrSubtract(Func const& toDo, value_t const& a, value_t const& b) {
+		template <typename Func> static /*__forceinline*/ value AddOrSubtract(Func const& toDo, value const& a, value const& b) {
 			auto a_struct = a.unit_m.Shared();
 			auto b_struct = b.unit_m.Shared();
 
 			if (a_struct->IsSameCategory(*b_struct)) { // same category, but perhaps different conversion factor / ratio. That's OK. 
-				return value_t(toDo(a_struct->value(), b_struct->value()) * a_struct->ratio(), *a_struct);
+				return value(toDo(a_struct->value(), b_struct->value()) * a_struct->ratio(), *a_struct);
 			}
 			else if (b_struct->IsScalar()) { // incoming is a scaler and this unit is not. Use this unit's conversion factor.
-				return value_t(toDo(a_struct->value(), ((b_struct->value() / b_struct->ratio()) * a_struct->ratio())) * a_struct->ratio(), *a_struct);
+				return value(toDo(a_struct->value(), ((b_struct->value() / b_struct->ratio()) * a_struct->ratio())) * a_struct->ratio(), *a_struct);
 			}
 			else if (a_struct->IsScalar()) { // I am a scaler but the incoming unit is not. Simply copy the incoming unit entirely.
-				return value_t(toDo(b_struct->value(), ((a_struct->value() / a_struct->ratio()) * b_struct->ratio())) * b_struct->ratio(), *b_struct);
+				return value(toDo(b_struct->value(), ((a_struct->value() / a_struct->ratio()) * b_struct->ratio())) * b_struct->ratio(), *b_struct);
 			}
 			else { // incoming unit AND this unit are different non-scalers of different categories. No exchange is reasonable. 
 				auto A1 = Abbreviation(*a_struct, nullptr);
@@ -487,15 +486,15 @@ namespace GoodLang {
 				)));
 			}
 		};
-		static __forceinline value_t Add(value_t const& a, value_t const& b) {
+		static /*__forceinline*/ value Add(value const& a, value const& b) {
 			return AddOrSubtract([](Number const& lhs, Number const& rhs) -> Number { return lhs + rhs; }, a, b);
 		};
-		static __forceinline value_t Sub(value_t const& a, value_t const& b) {
+		static /*__forceinline*/ value Sub(value const& a, value const& b) {
 			return AddOrSubtract([](Number const& lhs, Number const& rhs) -> Number { return lhs - rhs; }, a, b);
 		};
 
 		/* Used for multiplication or division operations */
-		static __forceinline value_t CompoundUnits(value_t const& LHS, value_t const& RHS, bool multiplication = true) noexcept {
+		static /*__forceinline*/ value CompoundUnits(value const& LHS, value const& RHS, bool multiplication = true) {
 			// if we are multiplying or dividing by a scalar, then we can simply do a Unary operation
 			auto lhs = LHS.unit_m.Shared();
 			auto rhs = RHS.unit_m.Shared();
@@ -506,10 +505,10 @@ namespace GoodLang {
 			// early-exit if the RHS is a scalar, which will not change the units of the LHS
 			if (rhs_is_scalar) {
 				if (multiplication) {
-					return value_t((lhs->value() * rhs->value()) * lhs->ratio(), *lhs);
+					return value((lhs->value() * rhs->value()) * lhs->ratio(), *lhs);
 				}
 				else {
-					return value_t((lhs->value() / rhs->value()) * lhs->ratio(), *lhs);
+					return value((lhs->value() / rhs->value()) * lhs->ratio(), *lhs);
 				}
 			}
 
@@ -543,26 +542,26 @@ namespace GoodLang {
 				ptr->ratio() = 1;
 			}
 
-			return value_t(std::move(ptr));
+			return value(std::move(ptr));
 		};
-		static __forceinline value_t Multiply(value_t const& LHS, value_t const& RHS) {
+		static /*__forceinline*/ value Multiply(value const& LHS, value const& RHS) {
 			return CompoundUnits(LHS, RHS, true);
 		};
-		static __forceinline value_t Divide(value_t const& LHS, value_t const& RHS) {
+		static /*__forceinline*/ value Divide(value const& LHS, value const& RHS) {
 			return CompoundUnits(LHS, RHS, false);
 		};
 
-		static value_t MultiplyUnits(value_t const& LHS, double RHS) noexcept {
+		static value MultiplyUnits(value const& LHS, double RHS) {
 			if (RHS == 1.0) {
 				return LHS;
 			}
 			else {
 				auto Data = LHS.unit_m.Shared();
 				if (Data->IsScalar()) {
-					return value_t(std::pow(Data->value() / Data->ratio(), RHS) * Data->ratio() * Data->ratio(), *Data);
+					return value(std::pow(Data->value() / Data->ratio(), RHS) * Data->ratio() * Data->ratio(), *Data);
 				}
 				else {
-					return value_t(std::make_unique<Definitions::dynamicUnitDefinition>(
+					return value(std::make_unique<Definitions::dynamicUnitDefinition>(
 						Data->unitType()[0] * RHS,
 						Data->unitType()[1] * RHS,
 						Data->unitType()[2] * RHS,
@@ -575,80 +574,80 @@ namespace GoodLang {
 			}
 		};
 
-		value_t value_t::operator++(int) {
-			value_t out{ *this }; // copy
+		value value::operator++(int) {
+			value out{ *this }; // copy
 			defer(auto Data{ this->unit_m.Unique() }; Data->value() += Data->ratio();); // increment
 			return out; // returns old value, increments after
 		};
-		value_t value_t::operator--(int) {
-			value_t out{ *this }; // copy
+		value value::operator--(int) {
+			value out{ *this }; // copy
 			defer(auto Data{ this->unit_m.Unique() }; Data->value() -= Data->ratio();); // increment
 			return out; // returns old value, increments after
 		};
-		value_t operator+(value_t const& A, value_t const& B) {
+		value operator+(value const& A, value const& B) {
 			return Add(A, B);
 		};
-		value_t operator-(value_t const& A, value_t const& B) {
+		value operator-(value const& A, value const& B) {
 			return Sub(A, B);
 		};
-		value_t operator*(value_t const& A, value_t const& V) {
+		value operator*(value const& A, value const& V) {
 			return Multiply(A, V);
 		};
-		value_t operator/(value_t const& A, value_t const& V) {
+		value operator/(value const& A, value const& V) {
 			return Divide(A, V);
 		};
-		value_t value_t::operator-() const {
+		value value::operator-() const {
 			return Multiply(*this, -1);
 		};
-		// atomicly updates the value_t with a custom user-provided function.
-		value_t& value_t::update(std::function<double(double)> const& updateFunction) {
+		// atomicly updates the value with a custom user-provided function.
+		value& value::update(std::function<double(double)> const& updateFunction) {
 			auto Data = this->unit_m.Unique();
 			Data->value() = updateFunction(Data->value() / Data->ratio()) * Data->ratio();
 			return *this;
 		};
-		// Creats a copy of the value_t and updates it with a custom user-provided function.
-		value_t value_t::update(std::function<double(double)> const& updateFunction) const {
+		// Creats a copy of the value and updates it with a custom user-provided function.
+		value value::update(std::function<double(double)> const& updateFunction) const {
 			auto Data = this->unit_m.Shared();
-			return value_t(updateFunction(Data->value() / Data->ratio()) * Data->ratio() * Data->ratio(), *Data);
+			return value(updateFunction(Data->value() / Data->ratio()) * Data->ratio() * Data->ratio(), *Data);
 		};
-		// Returns a new value_t multiplied by itself "V" times. (e.g. (3_m).pow(3) => 3_cu_m)
-		value_t value_t::pow(value_t const& V) const {
+		// Returns a new value multiplied by itself "V" times. (e.g. (3_m).pow(3) => 3_cu_m)
+		value value::pow(value const& V) const {
 			auto other = V.unit_m.Shared();
 			HandleNotScalar(*other);
 			return MultiplyUnits(*this, other->value());
 		};
-		// atomicly updates the value_t by exponentiating the underlying value_t (e.g. (3_m).pow_value_t(3) => 9_m)
-		value_t& value_t::pow_value(value_t const& V) {
+		// atomicly updates the value by exponentiating the underlying value (e.g. (3_m).pow_value(3) => 9_m)
+		value& value::pow_value(value const& V) {
 			auto Data = this->unit_m.Unique();
 			auto Other = V.unit_m.Shared();
 			HandleNotScalar(*Other);
 			Data->value() = std::pow(Data->value() / Data->ratio(), Other->value()) * Data->ratio();
 			return *this;
 		};
-		// atomicly updates the value_t by exponentiating the underlying value_t (e.g. (3_m).pow_value_t(3) => 9_m)
-		value_t value_t::pow_value(value_t const& V) const {
+		// atomicly updates the value by exponentiating the underlying value (e.g. (3_m).pow_value(3) => 9_m)
+		value value::pow_value(value const& V) const {
 			auto Other = V.unit_m.Shared();
 			HandleNotScalar(*Other);
 			return this->update([&Other](double x)->double { return std::pow(x, Other->value()); });
 		};
 		// pow(0.5)
-		value_t value_t::sqrt() const {
+		value value::sqrt() const {
 			return pow(0.5);
 		};
-		// atomicly floors (rounds to lower whole integer) the underlying value_t
-		value_t& value_t::floor() {
+		// atomicly floors (rounds to lower whole integer) the underlying value
+		value& value::floor() {
 			return update([](double v)->double { return std::floor(v); });
 		};
-		// Creats a copy of the value_t and floors (rounds to lower whole integer) the underlying value_t
-		value_t value_t::floor() const {
+		// Creats a copy of the value and floors (rounds to lower whole integer) the underlying value
+		value value::floor() const {
 			return update([](double v)->double { return std::floor(v); });
 		};
-		// atomicly ceilings (rounds to upper whole integer) the underlying value_t
-		value_t& value_t::ceiling() {
+		// atomicly ceilings (rounds to upper whole integer) the underlying value
+		value& value::ceiling() {
 			return update([](double v)->double { return std::ceil(v); });
 		};
-		// Creats a copy of the value_t and ceilings (rounds to upper whole integer) the underlying value_t
-		value_t value_t::ceiling() const {
+		// Creats a copy of the value and ceilings (rounds to upper whole integer) the underlying value
+		value value::ceiling() const {
 			return update([](double v)->double { return std::ceil(v); });
 		};
 

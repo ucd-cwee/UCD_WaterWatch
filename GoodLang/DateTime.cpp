@@ -255,7 +255,6 @@ namespace GoodLang {
 	bool	operator<(const Units::second & a, DateTime const& t) { return !(a >= t); };
 
 	std::ostream& operator<<(std::ostream & os, DateTime const& obj) { os << obj.ToString(); return os; };
-	std::stringstream& operator>>(std::stringstream & os, DateTime & obj) { Units::second v = 0; os >> v; obj = v; return os; };
 
 	DateTime& DateTime::operator+=(Units::second seconds) {
 		time += Units::second(seconds);

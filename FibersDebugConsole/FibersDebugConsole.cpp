@@ -121,9 +121,9 @@ int main() {
 	Union<int, int> y;
 	y.get<0>() += 1;
 
-	Units::UnitDefinition def;
-	def.IsSI();
-	print(def.HashCategory());
+	//Units::UnitDefinition def;
+	//def.IsSI();
+	//print(def.HashCategory());
 
 	Units::scalar S;
 	S += 10;
@@ -144,15 +144,15 @@ int main() {
 
 	print(Units::foot{ 5 }); // 5 ft
 
-	print(Units::foot{ 5 } *Units::foot{ 5 }); // 25 sq_ft
+	print(Units::foot{ 5 } * Units::foot{ 5 }); // 25 sq_ft
 
 	print(Units::foot{ 5 }.pow(2)); // 25 sq_ft
 
-	print(Units::foot{ 5 }.pow(3)); // 125.000029 cu_ft
+	print(Units::foot{ 5 }.pow(3)); // 125 cu_ft
 
-	print(Units::foot{ 5 } *Units::foot{ 5 } *Units::foot{ 5 }); // 125.000029 cu_ft
+	print(Units::foot{ 5 } *Units::foot{ 5 } *Units::foot{ 5 }); // 125 cu_ft
 
-	print(Units::inch{ 5 } *Units::foot{ 5 } *Units::meter{ 5 }); // 109.848622 pk
+	print(Units::inch{ 5 } *Units::foot{ 5 } *Units::meter{ 5 }); // 109.848528 pk
 
 	print(Units::foot{ 5 }.pow(2).pow(0.5)); // 5 ft
 
@@ -208,7 +208,7 @@ int main() {
 	print((0_mps * 32.8_s) + (0.5 * 3.2_mps_sq * (32.8_s).pow(2))); // should be ~ 1720 m
 	print((65_mps).pow(2) / (2 * 3_mps_sq)); // should be ~ 704 m
 
-	(void)Units::value::GetValueTypes();
+	// (void)Units::value::GetValueTypes();
 
 	print(DateTime::Now());
 	print(DateTime::Now() + 30_d);
@@ -658,12 +658,12 @@ int main() {
 		}
 
 		if (1) {
-			print(Units::newton_t(Units::millipound_f_t(1)));  // expect 0.004448222 N
-			print(Units::newton_t(Units::pound_f_t(Units::millipound_f_t(1)))); // expect 0.004448222 N
-			auto squareNewtons = Units::newton_t(0.004448222).pow(2);
-			auto squareMilliPound = Units::millipound_f_t(1).pow(2);
+			print(Units::newton(Units::millipound_f(1)));  // expect 0.004448222 N
+			print(Units::newton(Units::pound_f(Units::millipound_f(1)))); // expect 0.004448222 N
+			auto squareNewtons = Units::newton(0.004448222).pow(2);
+			auto squareMilliPound = Units::millipound_f(1).pow(2);
 			print(squareNewtons - squareMilliPound); // expect nearly 0
-			print(Units::joule_t(Units::milliwatt_hour_t(1))); // expect 3.6
+			print(Units::joule(Units::milliwatt_hour(1))); // expect 3.6
 		}
 
 
@@ -673,51 +673,51 @@ int main() {
 
 
 
-		print(Units::meter_t::conversion_ratio);
-		print(Units::millimeter_t::conversion_ratio);
-		print(Units::foot_t::conversion_ratio);
+		print(Units::meter::conversion_ratio);
+		print(Units::millimeter::conversion_ratio);
+		print(Units::foot::conversion_ratio);
 
-		print(Units::meter_t(5));
-		print(Units::millimeter_t(5000));
+		print(Units::meter(5));
+		print(Units::millimeter(5000));
 
 		if (1) {
-			auto temp = Units::meter_t(5);
+			auto temp = Units::meter(5);
 			temp *= 50;
 			print(temp);
 		}
 		if (1) {
-			auto temp = Units::meter_t(5);
+			auto temp = Units::meter(5);
 			temp += 50;
 			print(temp);
 		}
 
-		EXPECT_EQ(true, Units::meter_t(5) > Units::meter_t(1));
-		EXPECT_EQ(true, Units::meter_t(5) > Units::millimeter_t(5));
-		EXPECT_EQ(true, Units::meter_t(1) < Units::millimeter_t(5000));
-		EXPECT_EQ(true, Units::meter_t(1) == Units::millimeter_t(1000));
+		EXPECT_EQ(true, Units::meter(5) > Units::meter(1));
+		EXPECT_EQ(true, Units::meter(5) > Units::millimeter(5));
+		EXPECT_EQ(true, Units::meter(1) < Units::millimeter(5000));
+		EXPECT_EQ(true, Units::meter(1) == Units::millimeter(1000));
 
 
 
 
 
-		print(Units::meter_t(5) + Units::meter_t(Units::foot_t(5)));
-		print(Units::meter_t(5) + Units::foot_t(5));
-		print(Units::foot_t(5) + Units::meter_t(5));
-		print(Units::foot_t(Units::meter_t(5)) + Units::foot_t(5));
-		print(Units::meter_t(5) - Units::meter_t(5));
+		print(Units::meter(5) + Units::meter(Units::foot(5)));
+		print(Units::meter(5) + Units::foot(5));
+		print(Units::foot(5) + Units::meter(5));
+		print(Units::foot(Units::meter(5)) + Units::foot(5));
+		print(Units::meter(5) - Units::meter(5));
 
-		print(Units::meter_t(5) * Units::meter_t(Units::foot_t(5))); // 7.62 m^2 // correct
-		print(Units::meter_t(5) * Units::foot_t(5)); // 7.62 m^2 // correct
-		print(Units::foot_t(5) * Units::meter_t(5)); // 7.62 m^2 // correct
-		print(Units::foot_t(Units::meter_t(5)) * Units::foot_t(5)); // 7.62 m^2 // correct, but failed to look-up the sq_ft extension (yet!)
-		print(Units::meter_t(5) / Units::meter_t(5)); // 1 // correct 
+		print(Units::meter(5) * Units::meter(Units::foot(5))); // 7.62 m^2 // correct
+		print(Units::meter(5) * Units::foot(5)); // 7.62 m^2 // correct
+		print(Units::foot(5) * Units::meter(5)); // 7.62 m^2 // correct
+		print(Units::foot(Units::meter(5)) * Units::foot(5)); // 7.62 m^2 // correct, but failed to look-up the sq_ft extension (yet!)
+		print(Units::meter(5) / Units::meter(5)); // 1 // correct 
 		
-		print(-Units::meter_t(5));
+		print(-Units::meter(5));
 
-		Units::meter_t mutableUnitExample{ 5 };
+		Units::meter mutableUnitExample{ 5 };
 		print(mutableUnitExample.update([](double x) -> double { return x; }));
 
-		const Units::meter_t constUnitExample{ 5 };
+		const Units::meter constUnitExample{ 5 };
 		print(constUnitExample.update([](double x) -> double { return x; }));
 
 		print(mutableUnitExample.pow_value(2));
@@ -726,17 +726,17 @@ int main() {
 		print(constUnitExample.pow(2).sqrt());
 
 
-		Units::value_t x;
+		Units::value x;
 		print(x); // 0
-		x = Units::meter_t(5);
+		x = Units::meter(5);
 		print(x); // 5 m
-		x = Units::millimeter_t(6000); // m <- mm is legal
+		x = Units::millimeter(6000); // m <- mm is legal
 		print(x); // 6 m
 
-		x = Units::foot_t(22.9659); // m <- ft should be legal
+		x = Units::foot(22.9659); // m <- ft should be legal
 
 		try {
-			x = Units::square_meter_t(1); // m <- m_sq should be illegal
+			x = Units::square_meter(1); // m <- m_sq should be illegal
 		}
 		catch (std::exception& e) {
 			print(e.what());
@@ -744,14 +744,14 @@ int main() {
 
 		print(x); // x should still be a legal value (7 m)
 
-		x = Units::kilometer_t(1); // m <- km should be legal
+		x = Units::kilometer(1); // m <- km should be legal
 		print(x);
 
 		print(x++);
 		print(++x);
 		print(x++);
 
-		print(Units::square_meter_t(Units::acre_t(55)).pow(0.5));
+		print(Units::square_meter(Units::acre(55)).pow(0.5));
 
 
 	}
@@ -766,23 +766,23 @@ int main() {
 			(void)x.pow(2);
 			auto y{ x * x * x };
 		});
-		print(Units::second_t(sw.Stop_s()));
+		print(Units::second(sw.Stop_s()));
 		sw.Start();
 		parallel::For(0, 1000000, [](int i) { // Fast (x10) 0.016274 s ... 0.035358 s ... 0.064283 s ... 0.076939 s
-			Units::meter_t x{}; (void)x.operator()();
+			Units::meter x{}; (void)x.operator()();
 			x++;
 			(void)x.pow(2);
 			auto y{ x * x * x };
 		});
-		print(Units::second_t(sw.Stop_s()));
+		print(Units::second(sw.Stop_s()));
 		sw.Start();
 		parallel::For(0, 1000000, [](int i) { // Fast (x10) 0.015514 s ... 0.035237 s ... 0.070302 s ... 0.091723 s
-			Units::value_t x{}; (void)x.operator()();
+			Units::value x{}; (void)x.operator()();
 			x++;
 			(void)x.pow(2);
 			auto y{ x * x * x };
 		});
-		print(Units::second_t(sw.Stop_s()));
+		print(Units::second(sw.Stop_s()));
 		sw.Start();
 		parallel::For(0, 1000000, [](int i) { // Fast(x500) 0.000581 s ... 0.00032 s ...   UNKNOWN   ... 0.000211 s
 			double x{}; (void)(double(x));
@@ -790,7 +790,7 @@ int main() {
 			(void)std::pow(x, 2);
 			auto y{ x * x * x };
 		});
-		print(Units::second_t(sw.Stop_s()));
+		print(Units::second(sw.Stop_s()));
 	}
 
 
