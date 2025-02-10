@@ -34,6 +34,8 @@ namespace GoodLang {
 				obj += toAdd;
 			}
 		};
+		template <typename T> static constexpr T abs(T x) { return x > (T)0 ? x : -x; };
+
 	};
 
 	namespace Units {
@@ -132,15 +134,71 @@ namespace GoodLang {
 			};
 		};
 
+		namespace Definitions {
+			// UnitDefinitionBase
+			Number& UnitDefinitionBase::value() { return value_m; };
+			const Number& UnitDefinitionBase::value() const { return value_m; };
+			const char* UnitDefinitionBase::BuiltInName() const { return ""; };
+			const char* UnitDefinitionBase::BuiltInAbbreviation() const { return ""; };
+			bool UnitDefinitionBase::IsSI() const {
+				auto& ut = unitType();
+				return ((abs(ut[0]) + abs(ut[1]) + abs(ut[2]) + abs(ut[3]) + abs(ut[4])) == 1.0) && (abs(ratio()) == 1.0);
+			};
+			bool UnitDefinitionBase::IsScalar() const {
+				auto& ut = unitType();
+				return ((abs(ut[0]) + abs(ut[1]) + abs(ut[2]) + abs(ut[3]) + abs(ut[4])) == 0.0) && (abs(ratio()) == 1.0);
+			};
+			bool UnitDefinitionBase::IsSameCategory(UnitDefinitionBase const& other) const noexcept {
+				if (IsScalar() && other.IsScalar()) return true;
+				auto& ut1 = unitType();
+				auto& ut2 = other.unitType();
+				return std::memcmp(&ut1, &ut2, sizeof(ut1)) == 0;
+			};
+			bool UnitDefinitionBase::IsSameUnit(UnitDefinitionBase const& other) const noexcept {
+				return IsSameCategory(other) && (ratio() == other.ratio());
+			};
+			size_t UnitDefinitionBase::HashCategory() const noexcept {
+				auto& ut = unitType();
+				return Units::HashUnits(ut[0], ut[1], ut[2], ut[3], ut[4]);
+			};
+			void UnitDefinitionBase::Clear() {
+				this->value_m = 0;
+			};
 
+			// dynamicUnitDefinition
+			std::unique_ptr<UnitDefinitionBase> dynamicUnitDefinition::Copy() const {
+				return std::make_unique<dynamicUnitDefinition>(*this);
+			}
+			const std::array<double, UnitDefinitionBase::NumUnits>& dynamicUnitDefinition::unitType() const {
+				return unitType_m;
+			};
+			const double& dynamicUnitDefinition::ratio() const {
+				return ratio_m;
+			};
+			std::array<double, UnitDefinitionBase::NumUnits>& dynamicUnitDefinition::unitType() {
+				return unitType_m;
+			};
+			double& dynamicUnitDefinition::ratio() {
+				return ratio_m;
+			};
+			void dynamicUnitDefinition::Clear() {
+				this->value_m = 0;
+				this->ratio_m = 0;
+				for (auto& x : this->unitType_m) x = 0;
+			};
 
+			// scalarDefinition
+			const std::array<double, UnitDefinitionBase::NumUnits>& scalarDefinition::unitType() const { return unitType_m; };
+			const double& scalarDefinition::ratio() const { return ratio_m; };
+			const char* scalarDefinition::BuiltInName() const { return ""; };
+			const char* scalarDefinition::BuiltInAbbreviation() const { return ""; };
+			std::unique_ptr<UnitDefinitionBase> scalarDefinition::Copy() const {
+				typedef typename std::remove_const_t< typename std::remove_pointer_t< decltype(&*this) > > thisType;
+				return std::make_unique<thisType>(*this);
+			};
+		};
 
-
-
-
-
-
-		// TO-DO, support full look-up table for data types
+		// Performs the look-up for all built-in types, including (if needed)
 		static std::string Abbreviation(Definitions::UnitDefinitionBase const& Data, Number* visibleValue) noexcept {
 			std::string toReturn{ "" };
 			{
@@ -237,24 +295,6 @@ namespace GoodLang {
 			(void)Abbreviation(*Data, &out);
 			return out;
 		};
-#if 0
-		static /*__forceinline*/ bool IsInteger(double value) {
-			double intpart;
-			return modf(value, &intpart) == 0.0;
-		};
-		static /*__forceinline*/ void removeTrailingCharacters(std::string& str, const char charToRemove) {
-			str.erase(str.find_last_not_of(charToRemove) + 1, std::string::npos);
-		};
-		static /*__forceinline*/ void AddToDelimiter(std::string& obj, std::string const& toAdd, std::string const& delim) {
-			if (obj.length() == 0) {
-				obj += toAdd;
-			}
-			else {
-				obj += delim;
-				obj += toAdd;
-			}
-		};
-#endif
 		static /*__forceinline*/ bool IdenticalUnits(Definitions::UnitDefinitionBase const& LHS, Definitions::UnitDefinitionBase const& RHS) noexcept { return LHS.IsSameCategory(RHS); };
 		static /*__forceinline*/ bool NormalArithmeticOkay(Definitions::UnitDefinitionBase const& LHS, Definitions::UnitDefinitionBase const& RHS) noexcept {
 			if (LHS.IsScalar() || RHS.IsScalar()) return true;

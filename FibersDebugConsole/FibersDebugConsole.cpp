@@ -823,6 +823,18 @@ int main() {
 
 
 
+
+
+
+	constexpr size_t a1 = sizeof(double); // 8u64
+	constexpr size_t a2 = sizeof(Units::value) + sizeof(Units::Definitions::scalarDefinition); // 40u64
+	constexpr size_t a3 = sizeof(Units::meter) + sizeof(Units::Definitions::dynamicUnitDefinition); // 88u64
+
+
+
+
+
+
 	//sizeof(decltype(xyzwabc)); // 68u64
 	//sizeof(decltype(copied)); // 120u64
 

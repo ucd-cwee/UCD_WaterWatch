@@ -99,11 +99,9 @@ namespace GoodLang {
 			class UnitDefinitionBase {
 			public:
 				static constexpr size_t NumUnits{ Units::units_type::_size_constant };
+
 			protected:
 				Number value_m; // underlying value of the unit if represented as SI units. (e.g. will always be in meters, regardless of the actual unit being in feet)
-
-			private:
-				template <typename T> static constexpr T abs(T x) { return x > (T)0 ? x : -x; };
 
 			public:
 				UnitDefinitionBase() = delete; //  : value_m{ 0 } {};
@@ -113,39 +111,16 @@ namespace GoodLang {
 				virtual std::unique_ptr<UnitDefinitionBase> Copy() const = 0;
 				virtual const std::array<double, NumUnits>& unitType() const = 0;
 				virtual const double& ratio() const = 0;
-				Number& value() { return value_m; };
-				const Number& value() const { return value_m; };
-				virtual const char* BuiltInName() const { return ""; };
-				virtual const char* BuiltInAbbreviation() const { return ""; };
-
-				bool IsSI() const {
-					auto& ut = unitType();
-					return ((abs(ut[0]) + abs(ut[1]) + abs(ut[2]) + abs(ut[3]) + abs(ut[4])) == 1.0) && (abs(ratio()) == 1.0);
-				};
-				bool IsScalar() const {
-					auto& ut = unitType();
-					return ((abs(ut[0]) + abs(ut[1]) + abs(ut[2]) + abs(ut[3]) + abs(ut[4])) == 0.0) && (abs(ratio()) == 1.0);
-				};
-				bool IsSameCategory(UnitDefinitionBase const& other) const noexcept {
-					if (IsScalar() && other.IsScalar()) return true;
-					auto& ut1 = unitType();
-					auto& ut2 = other.unitType();
-					return std::memcmp(&ut1, &ut2, sizeof(ut1)) == 0;
-				};
-				bool IsSameUnit(UnitDefinitionBase const& other) const noexcept {
-					return IsSameCategory(other) && (ratio() == other.ratio());
-				};
-				size_t HashCategory() const noexcept {
-					auto& ut = unitType();
-					return Units::HashUnits(ut[0], ut[1], ut[2], ut[3], ut[4]);
-				};
-				/* TO-DO */ std::pair<std::string_view, double> LookupAbbreviation(bool isStatic) const noexcept { return { "", 0.0 }; };
-				/* TO-DO */ std::string_view LookupTypeName() const noexcept { return BuiltInName(); };
-				/* TO-DO */ std::string CreateAbbreviation(bool isStatic) const noexcept { return BuiltInAbbreviation(); };
-				virtual void Clear() {
-					this->value_m = 0;
-				};
-
+				Number& value();
+				const Number& value() const;
+				virtual const char* BuiltInName() const;
+				virtual const char* BuiltInAbbreviation() const;
+				bool IsSI() const;
+				bool IsScalar() const;
+				bool IsSameCategory(UnitDefinitionBase const& other) const noexcept;
+				bool IsSameUnit(UnitDefinitionBase const& other) const noexcept;
+				size_t HashCategory() const noexcept;
+				virtual void Clear();
 			};
 
 			class dynamicUnitDefinition final : public UnitDefinitionBase {
@@ -171,26 +146,12 @@ namespace GoodLang {
 				{}
 				~dynamicUnitDefinition() = default;
 
-				std::unique_ptr<UnitDefinitionBase> Copy() const override {
-					return std::make_unique<dynamicUnitDefinition>(*this);
-				}
-				const std::array<double, NumUnits>& unitType() const override {
-					return unitType_m;
-				};
-				const double& ratio() const override {
-					return ratio_m;
-				};
-				std::array<double, NumUnits>& unitType() {
-					return unitType_m;
-				};
-				double& ratio() {
-					return ratio_m;
-				};
-				void Clear() override {
-					this->value_m = 0;
-					this->ratio_m = 0;
-					for (auto& x : this->unitType_m) x = 0;
-				};
+				std::unique_ptr<UnitDefinitionBase> Copy() const override;
+				const std::array<double, UnitDefinitionBase::NumUnits>& unitType() const override;
+				const double& ratio() const override;
+				std::array<double, UnitDefinitionBase::NumUnits>& unitType();
+				double& ratio();
+				void Clear() override;
 			};
 			template<unsigned nameHash> class unitDefinition : public UnitDefinitionBase {
 			protected:
@@ -216,14 +177,11 @@ namespace GoodLang {
 				scalarDefinition& operator=(scalarDefinition const&) = default;
 				scalarDefinition& operator=(scalarDefinition&&) = default;
 				virtual ~scalarDefinition() = default;
-				const std::array<double, NumUnits>& unitType() const override { return unitType_m; };
-				const double& ratio() const override { return ratio_m; };
-				const char* BuiltInName() const override { return ""; };
-				const char* BuiltInAbbreviation() const override { return ""; };
-				std::unique_ptr<UnitDefinitionBase> Copy() const override {
-					typedef typename std::remove_const_t< typename std::remove_pointer_t< decltype(&*this) > > thisType;
-					return std::make_unique<thisType>(*this);
-				};
+				const std::array<double, NumUnits>& unitType() const override;
+				const double& ratio() const override;
+				const char* BuiltInName() const override;
+				const char* BuiltInAbbreviation() const override;
+				std::unique_ptr<UnitDefinitionBase> Copy() const override;
 			};
 		};
 
@@ -372,7 +330,7 @@ namespace GoodLang {
 
 		};
 
-		// METRIX PREFIX CLASS DEFINITION
+		// METRIC PREFIX CLASS DEFINITION
 		namespace Definitions {
 			template<typename ratioType, typename baseType>
 			class MetricPrefixedDefinition final : public unitDefinition<impl::const_hash(impl::concat(impl::ratioType_to_name<ratioType>::Name().c, baseType::Name_m.c).c)> {
@@ -399,7 +357,6 @@ namespace GoodLang {
 				};
 			};
 		};
-
 #endif	
 	};
 };
