@@ -12,14 +12,14 @@
 
 namespace GoodLang {
 	namespace impl {
-		bool Initialize(uint32_t maxThreadCount = std::numeric_limits< uint32_t>::max());
+		bool Initialize(long long maxThreadCount = std::numeric_limits< long long>::max());
 		void ShutDown();
 
 		/* job arguments used to perform work as part of a loop over a Task */
 		struct JobArgs {
-			uint32_t jobIndex;		// job index relative to dispatch (like SV_DispatchThreadID in HLSL)
-			uint32_t groupID;		// group index relative to dispatch (like SV_GroupID in HLSL)
-			uint32_t groupIndex;	// job index relative to group (like SV_GroupIndex in HLSL)
+			long long jobIndex;		// job index relative to dispatch (like SV_DispatchThreadID in HLSL)
+			long long groupID;		// group index relative to dispatch (like SV_GroupID in HLSL)
+			long long groupIndex;	// job index relative to group (like SV_GroupIndex in HLSL)
 			void* sharedmemory;		// stack memory shared within the current group (jobs within a group execute serially)
 		};
 
@@ -33,10 +33,10 @@ namespace GoodLang {
 		struct Task {
 			std::shared_ptr<std::function<void(JobArgs const&)>> task;
 			context* ctx;
-			uint32_t groupID;
-			uint32_t groupJobOffset;
-			uint32_t groupJobEnd;
-			uint32_t sharedmemory_size;
+			long long groupID;
+			long long groupJobOffset;
+			long long groupJobEnd;
+			long long sharedmemory_size;
 			std::shared_ptr < std::function<void(void*)>> GroupStartJob; // callback func with memory for type T
 			std::shared_ptr < std::function<void(void*)>> GroupEndJob; // callback func with memory for type T
 		};
@@ -90,8 +90,8 @@ namespace GoodLang {
 		};
 
 		struct InternalState {
-			uint32_t numCores = 0;
-			uint32_t numThreads = 0;
+			long long numCores = 0;
+			long long numThreads = 0;
 
 			std::unique_ptr<Queue<Task>[]> jobQueuePerThread;
 
@@ -121,7 +121,7 @@ namespace GoodLang {
 			};
 		} static internal_state;
 
-		__forceinline uint32_t GetThreadCount() { return internal_state.numThreads; };
+		__forceinline long long GetThreadCount() { return internal_state.numThreads; };
 
 		// Add a task to execute asynchronously. Any idle thread will execute this.
 		void Execute(context& ctx, std::function<void(JobArgs const&)> task) noexcept;
@@ -132,13 +132,13 @@ namespace GoodLang {
 		//	task		: receives a JobArgs as parameter
 		void Dispatch(
 			context& ctx,
-			uint32_t jobCount,
+			long long jobCount,
 			std::function<void(JobArgs const&)> task
 		) noexcept;
 
 		void Dispatch(
 			context& ctx,
-			uint32_t jobCount,
+			long long jobCount,
 			std::function<void(JobArgs const&)> task,
 			size_t sharedmemory_size,
 			std::function<void(void*)> GroupStartJob, // callback func with memory for type T
@@ -146,7 +146,7 @@ namespace GoodLang {
 		) noexcept;
 
 		// Returns the amount of job groups that will be created for a set number of jobs and group size
-		__forceinline constexpr uint32_t DispatchGroupCount(uint32_t jobCount, uint32_t groupSize) { return (jobCount + groupSize - 1) / groupSize; /* Calculate the amount of job groups to dispatch (overestimate, or "ceil"): */ };
+		__forceinline constexpr long long DispatchGroupCount(long long jobCount, long long groupSize) { return (jobCount + groupSize - 1) / groupSize; /* Calculate the amount of job groups to dispatch (overestimate, or "ceil"): */ };
 
 		// Check if any threads are working currently or not
 		bool IsBusy(const context& ctx);
@@ -167,7 +167,7 @@ namespace GoodLang {
 
 			/* Dispatch a function that does not need to share memory within a group / cluster of the Task jobs. */
 			auto Dispatch(
-				uint32_t jobCount,
+				long long jobCount,
 				std::function<void(JobArgs const&)> task
 			) {
 				return impl::Dispatch(ctx, jobCount, std::move(task));
@@ -175,7 +175,7 @@ namespace GoodLang {
 
 			/* Dispatch a function that intends to share memory serially within a group / cluster of the Task jobs. */
 			template <typename T> auto Dispatch(
-				uint32_t jobCount,
+				long long jobCount,
 				std::function<void(JobArgs const&)> task,
 				std::function<void(void*)> GroupStartJob, // callback func with memory for type T
 				std::function<void(void*)> GroupEndJob // callback func with memory for type T
@@ -497,12 +497,11 @@ namespace GoodLang {
 			static void RethrowsExceptions(bool TF); // Set
 		};
 
-
 		// #define UseStdForEachForParallelManager // without, we are very stable (>1.5hr) and memory-leak free (so far). However, the competition from high parallelism causes memory usage overloads.
 
 		/* parallel_for (auto i = start; i < end; i++){ todo(i); }
 		If the todo(i) returns anything, it will be collected into a vector at the end. */
-		template<typename iteratorType, class F> decltype(auto) For(iteratorType start, iteratorType end, F ToDo) {
+		template<typename iteratorType, class F> decltype(auto) For(iteratorType start, iteratorType end, F const& ToDo) {
 #ifdef UseStdForEachForParallelManager			
 			fibers::utilities::Sequence seq(start, end); // 0..999
 			fibers::synchronization::atomic_ptr<std::exception_ptr> e{ nullptr };
@@ -534,7 +533,7 @@ namespace GoodLang {
 
 		/* parallel_for (auto i = start; i < end; i++){ todo(i); }
 		If the todo(i) returns anything, it will be collected into a vector at the end. */
-		template<typename iteratorType, class F> decltype(auto) For(iteratorType start, iteratorType end, iteratorType step, F ToDo) {
+		template<typename iteratorType, class F> decltype(auto) For(iteratorType start, iteratorType end, iteratorType step, F const& ToDo) {
 #ifdef UseStdForEachForParallelManager			
 			fibers::utilities::Sequence seq(start, end, step); // 0..999
 			fibers::synchronization::atomic_ptr<std::exception_ptr> e{ nullptr };
@@ -567,7 +566,7 @@ namespace GoodLang {
 
 		/* parallel_for (auto i = container.begin(); i != container.end(); i++){ todo(*i); }
 		If the todo(*i) returns anything, it will be collected into a vector at the end. */
-		template<typename containerType, typename F> decltype(auto) ForEach(containerType& container, F ToDo) {
+		template<typename containerType, typename F> decltype(auto) ForEach(containerType& container, F const& ToDo) {
 #ifdef UseStdForEachForParallelManager		
 			fibers::synchronization::atomic_ptr<std::exception_ptr> e{ nullptr };
 
@@ -617,7 +616,7 @@ namespace GoodLang {
 
 		/* parallel_for (auto i = container.begin(); i != container.end(); i++){ todo(*i); }
 		If the todo(*i) returns anything, it will be collected into a vector at the end. */
-		template<typename containerType, typename F> decltype(auto) ForEach(containerType const& container, F ToDo) {
+		template<typename containerType, typename F> decltype(auto) ForEach(containerType const& container, F const& ToDo) {
 #ifdef UseStdForEachForParallelManager		
 			fibers::synchronization::atomic_ptr<std::exception_ptr> e{ nullptr };
 

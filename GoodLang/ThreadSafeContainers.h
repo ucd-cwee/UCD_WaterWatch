@@ -1956,7 +1956,8 @@ namespace GoodLang {
 	};
 
 	/// <summary>
-	/// thread-safe queue, with Last-In-First-Out (LIFO) functionality. FIFO Queue is higher-performance under contention, utilizing a concurrent queue.
+	/// thread-safe queue, with Last-In-First-Out (LIFO) functionality. 
+	/// FIFO Queue is higher-performance under contention, utilizing a concurrent queue.
 	/// </summary>
 	/// <typeparam name="T"></typeparam>
 	template <typename T> class Stack {

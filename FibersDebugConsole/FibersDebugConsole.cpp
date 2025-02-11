@@ -520,106 +520,166 @@ int main() {
 				(s1->Cast<std::string>(s1->CallFunction("to_string", { s1->CallFunction("cubic_foot", {s1->CallFunction("second", {paired})}) })));
 			}
 		}
-		SharedLockable<std::string> p{ "Original" };
-		(void)p.Shared()->c_str();
-		p.Update([](std::string& x)-> std::string {
-			return "UPDATED";
-			});
-		(void)p.Unique()->c_str();
-
-		Units::value valueT2{ 5 };
-		Units::meter meterT2{ 5 };
-		Units::millimeter millimeterT2{ 5000 };
-		Units::gallon_per_minute gpmT2{ 5 };
-		EXPECT_EQ(5, valueT2);
-		EXPECT_EQ(5, meterT2);
-		EXPECT_EQ(5000, millimeterT2);
-		EXPECT_EQ(5, gpmT2);
+		// SharedLockable
 		if (1) {
-			// NOTE, repeat this test with the new system once ready
+			SharedLockable<std::string> p{ "Original" };
+			(void)p.Shared()->c_str();
+			p.Update([](std::string& x)-> std::string {
+				return "UPDATED";
+				});
+			(void)p.Unique()->c_str();
+
+			Units::value valueT2{ 5 };
+			Units::meter meterT2{ 5 };
+			Units::millimeter millimeterT2{ 5000 };
+			Units::gallon_per_minute gpmT2{ 5 };
+			EXPECT_EQ(5, valueT2);
+			EXPECT_EQ(5, meterT2);
+			EXPECT_EQ(5000, millimeterT2);
+			EXPECT_EQ(5, gpmT2);
 			if (1) {
-				EXPECT_EQ(Units::newton(Units::millipound_f(1)), Units::newton(Units::pound_f(Units::millipound_f(1))));
+				// NOTE, repeat this test with the new system once ready
+				if (1) {
+					EXPECT_EQ(Units::newton(Units::millipound_f(1)), Units::newton(Units::pound_f(Units::millipound_f(1))));
 
-				auto squareNewtons = Units::newton(0.004448222).pow(2);
-				auto squareMilliPound = Units::millipound_f(1).pow(2);
-				(void)(squareNewtons - squareMilliPound); // expect nearly 0
-				EXPECT_EQ(3.6, Units::joule(Units::milliwatt_hour(1))); // expect 3.6
+					auto squareNewtons = Units::newton(0.004448222).pow(2);
+					auto squareMilliPound = Units::millipound_f(1).pow(2);
+					(void)(squareNewtons - squareMilliPound); // expect nearly 0
+					EXPECT_EQ(3.6, Units::joule(Units::milliwatt_hour(1))); // expect 3.6
+				}
+
+				EXPECT_EQ(1, Units::meter::conversion_ratio);
+				EXPECT_EQ(0.001, Units::millimeter::conversion_ratio);
+				EXPECT_EQ(0.3048, Units::foot::conversion_ratio);
+
+				if (1) {
+					auto temp = Units::meter(5);
+					temp *= 50;
+					EXPECT_EQ(250, temp);
+				}
+				if (1) {
+					auto temp = Units::meter(5);
+					temp += 50;
+					EXPECT_EQ(55, temp);
+				}
+
+				EXPECT_EQ(true, Units::meter(5) > Units::meter(1));
+				EXPECT_EQ(true, Units::meter(5) > Units::millimeter(5));
+				EXPECT_EQ(true, Units::meter(1) < Units::millimeter(5000));
+				EXPECT_EQ(true, Units::meter(1) == Units::millimeter(1000));
+
+				Units::meter mutableUnitExample{ 5 };
+
+				const Units::meter constUnitExample{ 5 };
+
+				Units::value x;
+
+				x = Units::meter(5);
+				x = Units::millimeter(6000); // m <- mm is legal
+				x = Units::foot(22.9659); // m <- ft should be legal
+
+				try {
+					x = Units::square_meter(1); // m <- m_sq should be illegal
+				}
+				catch (std::exception& e) {}
+
+
+				x = Units::kilometer(1); // m <- km should be legal
 			}
-
-			EXPECT_EQ(1, Units::meter::conversion_ratio);
-			EXPECT_EQ(0.001, Units::millimeter::conversion_ratio);
-			EXPECT_EQ(0.3048, Units::foot::conversion_ratio);
-
 			if (1) {
-				auto temp = Units::meter(5);
-				temp *= 50;
-				EXPECT_EQ(250, temp);
+				Stopwatch sw;
+				sw.Start();
+				parallel::For(0, 1000000, [](int i) { // Slow (x1) 0.148525 s ... 0.110108 s ... 0.105353 s ... 0.134672 s
+					Units::meter x{}; (void)x.operator()();
+					++x;
+					(void)x.pow(2);
+					auto y{ x * x * x };
+					});
+				sw.Start();
+				parallel::For(0, 1000000, [](int i) { // Fast (x10) 0.016274 s ... 0.035358 s ... 0.064283 s ... 0.076939 s
+					Units::meter x{}; (void)x.operator()();
+					++x;
+					(void)x.pow(2);
+					auto y{ x * x * x };
+					});
+				sw.Start();
+				parallel::For(0, 1000000, [](int i) { // Fast (x10) 0.015514 s ... 0.035237 s ... 0.070302 s ... 0.091723 s
+					Units::value x{}; (void)x.operator()();
+					++x;
+					(void)x.pow(2);
+					auto y{ x * x * x };
+					});
+				sw.Start();
+				parallel::For(0, 1000000, [](int i) { // Fast(x500) 0.000581 s ... 0.00032 s ...   UNKNOWN   ... 0.000211 s
+					double x{}; (void)(double(x));
+					++x;
+					(void)std::pow(x, 2);
+					auto y{ x * x * x };
+					});
 			}
 			if (1) {
-				auto temp = Units::meter(5);
-				temp += 50;
-				EXPECT_EQ(55, temp);
+				for (auto& val : Units::value::GetValueTypes()) {
+					// print(val.first.lock()->name() + ": \n\t" + val.second.UnitName().data());
+				}
 			}
-
-			EXPECT_EQ(true, Units::meter(5) > Units::meter(1));
-			EXPECT_EQ(true, Units::meter(5) > Units::millimeter(5));
-			EXPECT_EQ(true, Units::meter(1) < Units::millimeter(5000));
-			EXPECT_EQ(true, Units::meter(1) == Units::millimeter(1000));
-
-			Units::meter mutableUnitExample{ 5 };
-
-			const Units::meter constUnitExample{ 5 };
-
-			Units::value x;
-
-			x = Units::meter(5);
-			x = Units::millimeter(6000); // m <- mm is legal
-			x = Units::foot(22.9659); // m <- ft should be legal
-
-			try {
-				x = Units::square_meter(1); // m <- m_sq should be illegal
-			}
-			catch (std::exception& e) {}
-
-
-			x = Units::kilometer(1); // m <- km should be legal
 		}
+		// catching layered errors and returning their result
 		if (1) {
 			Stopwatch sw;
+
 			sw.Start();
-			parallel::For(0, 1000000, [](int i) { // Slow (x1) 0.148525 s ... 0.110108 s ... 0.105353 s ... 0.134672 s
-				Units::meter x{}; (void)x.operator()();
-				++x;
-				(void)x.pow(2);
-				auto y{ x * x * x };
-				});
-			sw.Start();
-			parallel::For(0, 1000000, [](int i) { // Fast (x10) 0.016274 s ... 0.035358 s ... 0.064283 s ... 0.076939 s
-				Units::meter x{}; (void)x.operator()();
-				++x;
-				(void)x.pow(2);
-				auto y{ x * x * x };
-				});
-			sw.Start();
-			parallel::For(0, 1000000, [](int i) { // Fast (x10) 0.015514 s ... 0.035237 s ... 0.070302 s ... 0.091723 s
-				Units::value x{}; (void)x.operator()();
-				++x;
-				(void)x.pow(2);
-				auto y{ x * x * x };
-				});
-			sw.Start();
-			parallel::For(0, 1000000, [](int i) { // Fast(x500) 0.000581 s ... 0.00032 s ...   UNKNOWN   ... 0.000211 s
-				double x{}; (void)(double(x));
-				++x;
-				(void)std::pow(x, 2);
-				auto y{ x * x * x };
-				});
-		}
-		if (1) {
-			for (auto& val : Units::value::GetValueTypes()) {
-				// print(val.first.lock()->name() + ": \n\t" + val.second.UnitName().data());
+			// Loop 1
+			for (int i = 0; i < 1000; i++) {
+				// Loop 2
+				for (int j = 0; j < 100; j++) {
+					// Loop 3
+					for (int k = 0; k < 100; k++) {
+						(void)(Units::gallon(5) + Units::gallon(5));	
+					}
+				}
 			}
+			print(Units::second(sw.Stop_s()));
+
+			sw.Start();
+			try {
+				// Loop 1
+				parallel::For(0, 1000, [](int i) {
+					try {
+						// Loop 2
+						parallel::For(0, 100, [](int j) {
+							try {
+								// Loop 3
+								parallel::For(0, 100, [](int k) {
+									try {
+										(void)(Units::gallon(5) + Units::gallon(5));
+									}
+									catch (...) {
+										std::throw_with_nested(std::runtime_error("Error in Loop 4"));
+									}
+								});
+							}
+							catch (...) {
+								std::throw_with_nested(std::runtime_error("Error in Loop 3"));
+							}
+						});
+					}
+					catch (...) {
+						std::throw_with_nested(std::runtime_error("Error in Loop 2"));
+					}
+				});
+			}
+			catch (...) {
+				//print(GoodLang::ExceptionHandling::what(std::current_exception()));
+			}
+			print(Units::second(sw.Stop_s()));
+			//print("Got out of the loop");
+
+
 		}
+
+
+
+
 	}
 
 #if 0
