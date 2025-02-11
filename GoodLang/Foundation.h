@@ -111,18 +111,22 @@
 		Iterator cend() const { return end(); };
 #pragma endregion 
 
-// Finally is a pure virtual base class, implemented by the templated FinallyImpl.
+
 namespace GoodLang {
 	namespace utilities {
+		/// <summary>
+		/// Finally is a pure virtual base class, implemented by the templated FinallyImpl.
+		/// </summary>
 		class Finally {
 		public:
 			virtual ~Finally() = default;
 		};
 
-		// FinallyImpl implements a Finally.
-		// The template parameter F is the function type to be called when the finally is destructed. F must have the signature void().
-		template <typename F>
-		class FinallyImpl : public Finally {
+		/// <summary>
+		/// FinallyImpl implements a Finally. The template parameter F is the function type to be called when the finally is destructed. F must have the signature void().
+		/// </summary>
+		/// <typeparam name="F"></typeparam>
+		template <typename F> class FinallyImpl : public Finally {
 		public:
 			inline FinallyImpl(const F& func_) : func(func_) {};
 			inline FinallyImpl(F&& func_) : func(std::move(func_)) {};
@@ -140,17 +144,44 @@ namespace GoodLang {
 		template <typename F> __forceinline [[nodiscard]] FinallyImpl<F> make_finally(F&& f) { return FinallyImpl<F>(std::forward<F>(f)); };
 	};
 
-	template<typename Type = size_t>
-	class Sequence {
+	/// <summary>
+	/// Iterator that steps through a list, without needing to instance the whole list. 
+	/// </summary>
+	/// <typeparam name="Type"></typeparam>
+	template<typename Type = size_t> class Sequence {
 	private:
 		Type min;
 		Type max;
 		Type step;
+
+		static std::tuple<Type, Type, Type> DetermineSteps(Type N0, Type N1, Type Step) {
+			if (Step >= 0) {
+				// want to go from small to large
+				if (N1 >= N0) {
+					return { N0, N1, Step };
+				}
+				else {
+					return { N1, N0, Step };
+				}
+			}
+			else {
+				// want to go from large to small
+				if (N1 >= N0) {
+					return { N1, N0, Step }; 
+				}
+				else {
+					return { N0, N1, Step };
+				}
+			}			
+		};
+
 	public:
-		Sequence() : min(0), max(0), step(1) {};
-		Sequence(Type N) : min(0), max(N), step(1) {};
-		Sequence(Type N0, Type N1) : min(N0), max(N1), step(1) {};
-		Sequence(Type N0, Type N1, Type Step) : min(N0), max(N1), step(Step) {};
+		Sequence(Type N0, Type N1, Type Step) {
+			std::tie(min, max, step) = DetermineSteps(std::move(N0), std::move(N1), std::move(Step));
+		};
+		Sequence() : Sequence(0, 0, 1) {};
+		Sequence(Type N) : Sequence(0, N, 1) {};
+		Sequence(Type N0, Type N1) : Sequence(N0, N1, 1) {};		
 
 		class Iterator : public std::iterator<std::random_access_iterator_tag, Type> {
 		public:
@@ -239,8 +270,7 @@ namespace GoodLang {
 		auto end() const { return ConstIterator(max, min, step); };
 	};
 
-	template<typename Type>
-	class IteratorSequence {
+	template<typename Type> class IteratorSequence {
 	private:
 		using iterator_tag = typename Type::iterator_category;
 		using target_value_type = typename std::remove_reference_t<typename Type::reference>;
@@ -301,8 +331,7 @@ namespace GoodLang {
 		auto end() { return Iterator(max, count); };
 	};
 
-	template<class returnType, typename Type = size_t>
-	class CustomizedSequence {
+	template<class returnType, typename Type = size_t> class CustomizedSequence {
 	private:
 		std::function<returnType(Type)> functor;
 		Type min;

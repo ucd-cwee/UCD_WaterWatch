@@ -458,7 +458,7 @@ int main() {
 		}
 		// Spline
 		if (1) {
-			GoodLang::CatmullRomSpline<Units::second, Units::gallon_per_minute> consumption;
+			GoodLang::spline::CatmullRomSpline<Units::second, Units::gallon_per_minute> consumption;
 
 			// emplacing data
 			for (DateTime t = DateTime::Now(); t < (DateTime::Now() + 1_yr); t += 1_d) {
@@ -467,10 +467,10 @@ int main() {
 
 			// interpolations
 			for (DateTime t = DateTime::Now(); t < (DateTime::Now() + 1_yr); t += 0.25_d) {
-				(void)(consumption.interpolate((Units::second)t, GoodLang::left_snap{}));
-				(void)(consumption.interpolate((Units::second)t, GoodLang::linear{}));
-				(void)(consumption.interpolate((Units::second)t, GoodLang::spline{}));
-				(void)(consumption.interpolate((Units::second)t, GoodLang::right_snap{}));
+				(void)(consumption.interpolate((Units::second)t, GoodLang::spline::left_snap{}));
+				(void)(consumption.interpolate((Units::second)t, GoodLang::spline::linear{}));
+				(void)(consumption.interpolate((Units::second)t, GoodLang::spline::spline{}));
+				(void)(consumption.interpolate((Units::second)t, GoodLang::spline::right_snap{}));
 			}
 
 			// time-series sample (sample as-you-go, preventing large vector allocations)
@@ -503,13 +503,13 @@ int main() {
 
 				auto L1 = s1->CallFunction("Units::foot", { 100.0 });
 				auto L2 = s1->CallFunction("Units::meter", { 100.0 });
-				print(s1->Cast<std::string>(s1->CallFunction("to_string", { s1->CallFunction("+", { L1, L2 }) })));
+				(s1->Cast<std::string>(s1->CallFunction("to_string", { s1->CallFunction("+", { L1, L2 }) })));
 
-				print(s1->Cast<std::string>(s1->CallFunction("to_string", { s1->CallFunction("*", { L1, L2 }) })));
+				(s1->Cast<std::string>(s1->CallFunction("to_string", { s1->CallFunction("*", { L1, L2 }) })));
 
-				print(s1->Cast<std::string>(s1->CallFunction("to_string", { s1->CallFunction("/", { L1, L2 }) })));
+				(s1->Cast<std::string>(s1->CallFunction("to_string", { s1->CallFunction("/", { L1, L2 }) })));
 
-				print(Units::horsepower(180_lbf * 2.4 * 2.0 * Units::constants::pi() * 12_ft / 1_min));
+				(Units::horsepower(180_lbf * 2.4 * 2.0 * Units::constants::pi() * 12_ft / 1_min));
 
 				auto paired = s1->CallFunction("pair", { 100.0, Units::gallon{ 5 } });
 				EXPECT_EQ(true, s1->Cast<bool>(s1->CallFunction("==", { s1->CallFunction("second", {paired}), Units::cubic_foot{ Units::gallon{ 5 } } })));
@@ -517,7 +517,7 @@ int main() {
 				s1->AddUsing(s1->FindNamespace("Units"));
 				EXPECT_EQ(true, s1->Cast<bool>(s1->CallFunction("==", { s1->CallFunction("second", {paired}), Units::cubic_foot{ Units::gallon{ 5 } } })));
 
-				print(s1->Cast<std::string>(s1->CallFunction("to_string", { s1->CallFunction("cubic_foot", {s1->CallFunction("second", {paired})}) })));
+				(s1->Cast<std::string>(s1->CallFunction("to_string", { s1->CallFunction("cubic_foot", {s1->CallFunction("second", {paired})}) })));
 			}
 		}
 		SharedLockable<std::string> p{ "Original" };

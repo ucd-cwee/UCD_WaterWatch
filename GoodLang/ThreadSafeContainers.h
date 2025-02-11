@@ -17,8 +17,8 @@
 #include <concurrent_unordered_set.h>
 #include <stack>
 
-#include <boost/math/constants/constants.hpp>
-#include <boost/multiprecision/cpp_dec_float.hpp>
+// #include <boost/math/constants/constants.hpp>
+// #include <boost/multiprecision/cpp_dec_float.hpp>
 
 namespace GoodLang {
 	namespace utilities {
@@ -594,9 +594,15 @@ namespace GoodLang {
 
 	};
 
-	using number = boost::multiprecision::number<boost::multiprecision::cpp_dec_float< std::numeric_limits<double>::digits10 * 4 > >; // extremely high precision number for scientific experiments or analysis
+	/// <summary>
+	/// extremely high precision number for scientific experiments or analysis
+	/// </summary>
+	// using number = boost::multiprecision::number<boost::multiprecision::cpp_dec_float< std::numeric_limits<double>::digits10 * 4 > >; 
 
-	/* Implimentation of std::tuple, with built-in get<n>() functions. It is only as thread-safe as the inner types */
+	/// <summary>
+	/// Implimentation of std_tuple, with built-in get() functions. It is only as thread-safe as the inner types.
+	/// </summary>
+	/// <typeparam name="...Args"></typeparam>
 	template<typename... Args> class Union {
 	private:
 #pragma region IMPLIMENTATION DETAILS
@@ -994,9 +1000,11 @@ namespace GoodLang {
 #pragma endregion
 	};
 
-	/* *THREAD SAFE* Thread-safe and fiber-safe wrapper for atomic operations on pointers, without having to utilize std::atomic<T*> */
-	template< typename T>
-	struct atomic_ptr {
+	/// <summary>
+	/// Thread-safe and fiber-safe wrapper for atomic operations on pointers, without having to utilize std_atomic(T*)
+	/// </summary>
+	/// <typeparam name="T"></typeparam>
+	template< typename T> struct atomic_ptr {
 	private:
 		static void* Sys_InterlockedExchangePointer(void*& ptr, void* exchange) {
 			return InterlockedExchangePointer(&ptr, exchange);
@@ -1060,7 +1068,9 @@ namespace GoodLang {
 		T* ptr;
 	};
 
-	/* thread-safe and fiber-safe integer (atomic swapping of integers) */
+	/// <summary>
+	/// thread-safe and fiber-safe integer (atomic swapping of integers)
+	/// </summary>
 	class InterlockedLong {
 	public:
 		constexpr InterlockedLong() noexcept : value(0) {};
@@ -1154,7 +1164,10 @@ namespace GoodLang {
 
 	};
 
-	/* allows any copiable object to be thread-safe by wrapping it in a locking container. */
+	/// <summary>
+	/// allows any copiable object to be thread-safe by wrapping it in a locking container.
+	/// </summary>
+	/// <typeparam name="Arg"></typeparam>
 	template <typename Arg> class Lockable {
 	public:
 		class SharedObj {
@@ -1251,7 +1264,10 @@ namespace GoodLang {
 		}; // sets the value to the input
 	};
 
-	/* allows any copiable object to be thread-safe by wrapping it in a locking container. */
+	/// <summary>
+	/// allows any copiable object to be thread-safe by wrapping it in a locking container.
+	/// </summary>
+	/// <typeparam name="Arg"></typeparam>
 	template <typename Arg> class SharedLockable {
 	public:
 		class SharedObj {
@@ -1410,7 +1426,12 @@ namespace GoodLang {
 		}; // sets the value to the input
 	};
 
-	// thread-safe sorted std::map.
+	/// <summary>
+	/// thread-safe sorted std::map.
+	/// </summary>
+	/// <typeparam name="key_type"></typeparam>
+	/// <typeparam name="T"></typeparam>
+	/// <typeparam name="Cmp"></typeparam>
 	template <typename key_type, typename T, typename Cmp = std::less<key_type>> class Map {		
 	protected:
 		mutable SharedLockable<std::map<key_type, T, Cmp>> data;
@@ -1591,7 +1612,12 @@ namespace GoodLang {
 
 	};
 	
-	// thread-safe unsorted concurrency::unordered_map. Higher performance than the sorted map.
+	/// <summary>
+	/// thread-safe unsorted concurrency::unordered_map. Higher performance than the sorted map.
+	/// </summary>
+	/// <typeparam name="key_type"></typeparam>
+	/// <typeparam name="T"></typeparam>
+	/// <typeparam name="Hasher"></typeparam>
 	template <typename key_type, typename T, typename Hasher = std::hash<key_type>> class UnorderedMap {
 	protected:
 		typedef concurrency::concurrent_unordered_map<key_type, T, Hasher> underlying;
@@ -1727,7 +1753,10 @@ namespace GoodLang {
 
 	};
 
-	// thread-safe std::vector
+	/// <summary>
+	/// thread-safe std::vector
+	/// </summary>
+	/// <typeparam name="T"></typeparam>
 	template <typename T> class Vector {
 	protected:
 		typedef std::vector<T> underlying;
@@ -1879,7 +1908,10 @@ namespace GoodLang {
 
 	};
 
-	// thread-safe concurrent queue, with First-In-First-Out (FIFO) functionality.
+	/// <summary>
+	/// thread-safe concurrent queue, with First-In-First-Out (FIFO) functionality.
+	/// </summary>
+	/// <typeparam name="T"></typeparam>
 	template <typename T> class Queue {
 	protected:
 		typedef concurrency::concurrent_queue<T> underlying;
@@ -1923,7 +1955,10 @@ namespace GoodLang {
 
 	};
 
-	// thread-safe queue, with Last-In-First-Out (LIFO) functionality. FIFO Queue is higher-performance under contention, utilizing a concurrent queue.
+	/// <summary>
+	/// thread-safe queue, with Last-In-First-Out (LIFO) functionality. FIFO Queue is higher-performance under contention, utilizing a concurrent queue.
+	/// </summary>
+	/// <typeparam name="T"></typeparam>
 	template <typename T> class Stack {
 	protected:
 		typedef std::stack<T> underlying;
@@ -1973,7 +2008,11 @@ namespace GoodLang {
 		};
 	};
 
-	// thread-safe sorted std::set
+	/// <summary>
+	/// thread-safe sorted std::set
+	/// </summary>
+	/// <typeparam name="key_type"></typeparam>
+	/// <typeparam name="Cmp"></typeparam>
 	template <typename key_type, typename Cmp = std::less<key_type>> class Set {
 	protected:
 		typedef std::set<key_type, Cmp> underlying;
@@ -2121,7 +2160,11 @@ namespace GoodLang {
 
 	};
 
-	// thread-safe unsorted concurrency::unordered_set. Higher performance than the sorted set.
+	/// <summary>
+	/// thread-safe unsorted concurrency::unordered_set. Higher performance than the sorted set.
+	/// </summary>
+	/// <typeparam name="key_type"></typeparam>
+	/// <typeparam name="Cmp"></typeparam>
 	template <typename key_type, typename Cmp = std::hash<key_type>> class UnorderedSet {
 	protected:
 		typedef concurrency::concurrent_unordered_set<key_type, Cmp> underlying;
@@ -2223,202 +2266,215 @@ namespace GoodLang {
 
 	};
 
+	/// <summary>
+	/// Splines are wrappers for a dictionary of 2D values, which can interpolate between the values smoothly based on your position. 
+	/// </summary>
+	namespace spline {
+		struct linear {};
+		struct left_snap {};
+		struct right_snap {};
+		struct spline {};
 
-	struct linear {};
-	struct left_snap {};
-	struct right_snap {};
-	struct spline {};
-	// thread-safe concurrent spline, interpolating between values
-	template <typename Key, typename Value> class Spline {
-	protected:
-		Map<Key, Value> data;
+		/// <summary>
+		/// thread-safe concurrent spline, interpolating between values
+		/// </summary>
+		/// <typeparam name="Key"></typeparam>
+		/// <typeparam name="Value"></typeparam>
+		template <typename Key, typename Value> class Spline {
+		protected:
+			Map<Key, Value> data; // underlying data container
 
-	public:
-		Spline() = default;
-		Spline(Spline const&) = default;
-		Spline(Spline &&) = default;
-		Spline& operator=(Spline const&) = default;
-		Spline& operator=(Spline&&) = default;
-		virtual ~Spline() = default;
+		public:
+			Spline() = default;
+			Spline(Spline const&) = default;
+			Spline(Spline&&) = default;
+			Spline& operator=(Spline const&) = default;
+			Spline& operator=(Spline&&) = default;
+			virtual ~Spline() = default;
 
-		using iterator = typename decltype(data)::iterator;
-		using const_iterator = iterator;
-		iterator begin() const {
-			return data.begin();
-		};
-		iterator end() const { return begin().end(); };
-		iterator cbegin() const { return begin(); };
-		iterator cend() const { return end(); };
+			using iterator = typename decltype(data)::iterator;
+			using const_iterator = iterator;
+			iterator begin() const {
+				return data.begin();
+			};
+			iterator end() const { return begin().end(); };
+			iterator cbegin() const { return begin(); };
+			iterator cend() const { return end(); };
 
-		iterator FindLargestSmallerEqual(Key const& pos) const {
-			return data.FindLargestSmallerEqual(pos);
-		};
-		iterator FindSmallestLargerEqual(Key const& pos) const {
-			return data.FindSmallestLargerEqual(pos);
-		};
-		void emplace(Key const& x, Value const& y) {
-			data.insert_or_assign(x, y);
-		};
-		size_t erase(Key const& x) {
-			return data.erase(x);
-		};
-		bool contains(Key const& x) {
-			return data.count(x) != 0;
-		};
-		bool empty() const {
-			return data.empty();
-		};
-		size_t size() const {
-			return data.size();
-		};
-		iterator at_index(size_t index) const {
-			auto iter{ data.begin() };
-			std::advance(iter, index);
-			return iter;
-		};
-		iterator find(Key const& x) const {
-			return data.find(x);
-		};
-		
-	private:
-		virtual Value spline_interpolate(Key const& x) const {
-			return interpolate(x, linear{});
-		};
+			iterator FindLargestSmallerEqual(Key const& pos) const {
+				return data.FindLargestSmallerEqual(pos);
+			};
+			iterator FindSmallestLargerEqual(Key const& pos) const {
+				return data.FindSmallestLargerEqual(pos);
+			};
+			void emplace(Key const& x, Value const& y) {
+				data.insert_or_assign(x, y);
+			};
+			size_t erase(Key const& x) {
+				return data.erase(x);
+			};
+			bool contains(Key const& x) {
+				return data.count(x) != 0;
+			};
+			bool empty() const {
+				return data.empty();
+			};
+			size_t size() const {
+				return data.size();
+			};
+			iterator at_index(size_t index) const {
+				auto iter{ data.begin() };
+				std::advance(iter, index);
+				return iter;
+			};
+			iterator find(Key const& x) const {
+				return data.find(x);
+			};
 
-	public:
-		Value interpolate(Key const& x, left_snap) const {
-			iterator p1 = FindLargestSmallerEqual(x);
-			// p0 ... p1 ... * ...  p2 ... p3
+		private:
+			virtual Value spline_interpolate(Key const& x) const {
+				return interpolate(x, linear{});
+			};
 
-			if (p1 != end()) 
-				return p1->second;			
-			else 
-				return Value{};
-		};
-		Value interpolate(Key const& x, right_snap) const {
-			iterator p2 = FindSmallestLargerEqual(x);
-			// p0 ... p1 ... * ...  p2 ... p3
+		public:
+			Value interpolate(Key const& x, left_snap) const {
+				iterator p1 = FindLargestSmallerEqual(x);
+				// p0 ... p1 ... * ...  p2 ... p3
 
-			if (p2 != end()) 
-				return p2->second;			
-			else 
-				return Value{};
-		};
-		Value interpolate(Key const& x, linear) const {
-			iterator
-				p1{ FindLargestSmallerEqual(x) },
-				p2{ FindSmallestLargerEqual(x) };
-			// p0 ... p1 ... * ...  p2 ... p3
+				if (p1 != end())
+					return p1->second;
+				else
+					return Value{};
+			};
+			Value interpolate(Key const& x, right_snap) const {
+				iterator p2 = FindSmallestLargerEqual(x);
+				// p0 ... p1 ... * ...  p2 ... p3
 
-			auto End = end();
-			if (p1 != End) {
-				if (p2 != End) {
-					if (p1 != p2) {
-						// All golden
-						double t = (double)((x - p1->first) / (p2->first - p1->first));
-						Value copy = p2->second;
-						copy = ::fma(t, (double)p2->second, ::fma(-t, (double)p1->second, (double)p1->second));
-						return copy;
+				if (p2 != end())
+					return p2->second;
+				else
+					return Value{};
+			};
+			Value interpolate(Key const& x, linear) const {
+				iterator
+					p1{ FindLargestSmallerEqual(x) },
+					p2{ FindSmallestLargerEqual(x) };
+				// p0 ... p1 ... * ...  p2 ... p3
+
+				auto End = end();
+				if (p1 != End) {
+					if (p2 != End) {
+						if (p1 != p2) {
+							// All golden
+							double t = (double)((x - p1->first) / (p2->first - p1->first));
+							Value copy = p2->second;
+							copy = ::fma(t, (double)p2->second, ::fma(-t, (double)p1->second, (double)p1->second));
+							return copy;
+						}
+						else {
+							// we have landed ontop of a datapoint
+							return p1->second;
+						}
 					}
 					else {
-						// we have landed ontop of a datapoint
+						// Snap Left
 						return p1->second;
 					}
 				}
 				else {
-					// Snap Left
-					return p1->second;
+					if (p2 != End) {
+						// Snap Right
+						return p2->second;
+					}
+					else {
+						// No Data
+						return Value{};
+					}
 				}
-			}
-			else {
-				if (p2 != End) {
-					// Snap Right
-					return p2->second;
-				}
-				else {
-					// No Data
-					return Value{};
-				}
-			}
-		};
-		Value interpolate(Key const& x) const { // assumes spline interpolation
-			return interpolate(x, spline{});
-		};
-		Value interpolate(Key const& x, spline) const {
-			return spline_interpolate(x);
+			};
+			Value interpolate(Key const& x) const { // assumes spline interpolation
+				return interpolate(x, spline::spline{});
+			};
+			Value interpolate(Key const& x, spline) const {
+				return spline_interpolate(x);
+			};
+
+			/// <summary>
+			/// Creates an iterator that will step through from Start to End at interval Step, sampling the pattern using the InterpolationType. 
+			/// </summary>
+			/// <param name="start"></param>
+			/// <param name="end"></param>
+			/// <param name="step"></param>
+			/// <param name="interpolationType"></param>
+			/// <returns>Iterator that will sample at the requested interval using the interpolationType</returns>
+			template<typename interpType = spline> auto GetTimeSeries(Key const& start, Key const& end, Key const& step) const {
+				return CustomizedSequence<std::pair<Key, Value>, Key>(
+					std::function([this](Key const& x) -> std::pair<Key, Value> {
+						return std::pair<Key, Value>{ x, this->interpolate(x, interpType{}) };
+					})
+					, start
+					, end
+					, step
+				);
+			};
 		};
 
 		/// <summary>
-		/// Creates an iterator that will step through from Start to End at interval Step, sampling the pattern using the InterpolationType. 
+		/// Special type of spline that crosses through its control points utilizing the centripetal catmull-rom algorithm (alpha = 0.5). Generally a good spline for natural data such as water consumption flowrates, tank levels, air wind speed, etc. 
 		/// </summary>
-		/// <param name="start"></param>
-		/// <param name="end"></param>
-		/// <param name="step"></param>
-		/// <param name="interpolationType"></param>
-		/// <returns>Iterator that will sample at the requested interval using the interpolationType</returns>
-		template<typename interpType = spline>
-		auto GetTimeSeries(Key const& start, Key const& end, Key const& step) const {
-			return CustomizedSequence<std::pair<Key, Value>, Key>(
-				std::function([this](Key const& x) -> std::pair<Key, Value> {
-					return std::pair<Key, Value>{ x, this->interpolate(x, interpType{}) };
-				})
-				, start
-				, end
-				, step
-			);
+		/// <typeparam name="Key"></typeparam>
+		/// <typeparam name="Value"></typeparam>
+		template <typename Key, typename Value> class CatmullRomSpline final : public Spline<Key, Value> {
+		public:
+			CatmullRomSpline() = default;
+			CatmullRomSpline(CatmullRomSpline const&) = default;
+			CatmullRomSpline(CatmullRomSpline&&) = default;
+			CatmullRomSpline& operator=(CatmullRomSpline const&) = default;
+			CatmullRomSpline& operator=(CatmullRomSpline&&) = default;
+			virtual ~CatmullRomSpline() = default;
+
+		private:
+			virtual Value spline_interpolate(Key const& x) const override {
+				auto
+					p1{ this->FindLargestSmallerEqual(x) },
+					p2{ this->FindSmallestLargerEqual(x) };
+				auto
+					p0{ std::prev(p1) },
+					p3{ std::next(p2) };
+				// p0 ... p1 ... * ...  p2 ... p3
+
+				auto End = this->end();
+				// if all the data is available, do the catmull-rom spline
+				if ((p1 != End) && (p2 != End) && (p0 != End) && (p3 != End) && (p1 != p2)) {
+					double Y0 = (double)p0->second;
+					double Y1 = (double)p1->second;
+					double Y2 = (double)p2->second;
+					double Y3 = (double)p3->second;
+
+					double X0 = (double)p0->first;
+					double X1 = (double)p1->first;
+					double X2 = (double)p2->first;
+					double X3 = (double)p3->first;
+
+					double s = ((double)x - X1) / (X2 - X1);
+					if (!::isfinite(s)) s = 0;
+
+					Value out = p1->second;
+					out = ::fma(Y0, ((2.0 - s) * s - 1.0) * s * 0.5,                   // -0.5f s * s * s + s * s - 0.5f * s
+						::fma(Y1, (((3.0 * s - 5.0) * s) * s + 2.0) * 0.5,            // 1.5f * s * s * s - 2.5f * s * s + 1.0f
+							::fma(Y2, ((-3.0 * s + 4.0) * s + 1.0) * s * 0.5,        // -1.5f * s * s * s - 2.0f * s * s + 0.5f s
+								::fma(Y3, ((s - 1.0) * s * s) * 0.5,                // 0.5f * s * s * s - 0.5f * s * s
+									0.0))));
+
+					return out;
+				}
+				// otherwise, default to the linear spline
+				else {
+					return this->interpolate(x, linear{});
+				}
+			};
+
 		};
-
-	};
-	// Special type of spline that crosses through its control points utilizing a catmull-rom algorithm. Generally a good spline for natural data, like water flowrates. 
-	template <typename Key, typename Value> class CatmullRomSpline final : public Spline<Key, Value> {
-	public:
-		CatmullRomSpline() = default;
-		CatmullRomSpline(CatmullRomSpline const&) = default;
-		CatmullRomSpline(CatmullRomSpline&&) = default;
-		CatmullRomSpline& operator=(CatmullRomSpline const&) = default;
-		CatmullRomSpline& operator=(CatmullRomSpline&&) = default;
-		virtual ~CatmullRomSpline() = default;
-	
-	private:
-		virtual Value spline_interpolate(Key const& x) const override {
-			auto
-				p1{ this->FindLargestSmallerEqual(x) },
-				p2{ this->FindSmallestLargerEqual(x) };
-			auto
-				p0{ std::prev(p1) },
-				p3{ std::next(p2) };
-			// p0 ... p1 ... * ...  p2 ... p3
-
-			auto End = this->end();
-			if ((p1 != End) && (p2 != End) && (p0 != End) && (p3 != End) && (p1 != p2)) {
-				double Y0 = (double)p0->second;
-				double Y1 = (double)p1->second;
-				double Y2 = (double)p2->second;
-				double Y3 = (double)p3->second;
-
-				double X0 = (double)p0->first;
-				double X1 = (double)p1->first;
-				double X2 = (double)p2->first;
-				double X3 = (double)p3->first;
-
-				double s = ((double)x - X1) / (X2 - X1);
-				if (!::isfinite(s)) s = 0;
-
-				Value out = p1->second;
-				out = ::fma(Y0, ((2.0f - s) * s - 1.0f) * s * 0.5f,                    // -0.5f s * s * s + s * s - 0.5f * s
-						::fma(Y1, (((3.0f * s - 5.0f) * s) * s + 2.0f) * 0.5f,         // 1.5f * s * s * s - 2.5f * s * s + 1.0f
-							::fma(Y2, ((-3.0f * s + 4.0f) * s + 1.0f) * s * 0.5f,      // -1.5f * s * s * s - 2.0f * s * s + 0.5f s
-								::fma(Y3, ((s - 1.0f) * s * s) * 0.5f,                 // 0.5f * s * s * s - 0.5f * s * s
-									0))));
-
-				return out;
-			}
-			else {
-				return this->interpolate(x, linear{});
-			}
-		};
-		
-
 	};
 
 };

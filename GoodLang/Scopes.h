@@ -19,7 +19,6 @@ namespace GoodLang {
 
 // Scope, Namespace, Class
 namespace GoodLang {
-
 	class Scope {
 	public:
 		friend class Namespace;
