@@ -179,7 +179,7 @@ namespace GoodLang {
 		type(); \
 		type(value const& other); \
 		type(Number const& V); \
-		virtual ~type() = default; \
+		~type() = default; \
 	};
 
 #define DerivedUnitTypeWithMetricPrefix(type, prefix) class prefix ## type final : public value { \
@@ -188,7 +188,7 @@ namespace GoodLang {
 		prefix ## type(); \
 		prefix ## type(value const& other); \
 		prefix ## type(Number const& V); \
-		virtual ~prefix ## type() = default; \
+		~prefix ## type() = default; \
 	};
 
 #define DerivedUnitTypeWithMetricPrefixes(type, category, abbreviation, ratio) \

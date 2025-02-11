@@ -52,6 +52,7 @@
 #include <Windows.h>
 #include <winnt.h>
 #include <functional>
+#include <typeinfo>
 
 #pragma endregion
 
@@ -577,5 +578,42 @@ namespace GoodLang {
 
 	};
 
+	class ExceptionHandling {
+	public:
+		template <typename T> static std::exception_ptr get_nested(const T& e) {
+			try
+			{
+				auto& nested = dynamic_cast<const std::nested_exception&>(e);
+				return nested.nested_ptr();
+			}
+			catch (const std::bad_cast&)
+			{
+				return nullptr;
+			}
+		};
+		static std::string what(std::exception_ptr eptr = std::current_exception()) {
+			if (!eptr) { throw std::bad_exception(); }
+
+			std::string whaaat;
+			std::size_t num_nested = 0;
+		next_exception_ptr:
+			{
+				try
+				{
+					std::exception_ptr yeptr;
+					std::swap(eptr, yeptr);
+					std::rethrow_exception(yeptr);
+				}
+				catch (const std::exception& e) { whaaat += e.what(); eptr = get_nested(e); }
+				catch (const std::string& e) { whaaat += e; }
+				catch (const char* e) { whaaat += e; }
+				catch (...) { whaaat += "who knows"; }
+
+				if (eptr) { whaaat += " ("; num_nested++; goto next_exception_ptr; }
+			}
+			whaaat += std::string(num_nested, ')');
+			return whaaat;
+		};
+	};
 };
 

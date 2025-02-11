@@ -491,6 +491,13 @@ namespace GoodLang {
 	};
 
 	namespace parallel {
+		class options {
+		public:
+			static bool RethrowsExceptions(); // Get
+			static void RethrowsExceptions(bool TF); // Set
+		};
+
+
 		// #define UseStdForEachForParallelManager // without, we are very stable (>1.5hr) and memory-leak free (so far). However, the competition from high parallelism causes memory usage overloads.
 
 		/* parallel_for (auto i = start; i < end; i++){ todo(i); }

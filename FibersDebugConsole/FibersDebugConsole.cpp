@@ -72,8 +72,9 @@
 //
 //static bool Thing() { return true; };
 //
-
 // *
+
+
 #define SINGLE_ARG(...) __VA_ARGS__
 #define EXPECT_EQ_PRINTF(A,B) [a = (A), b = (B)]()->bool{ \
     if (a == b) { return true; } else { \
@@ -91,774 +92,535 @@ int main() {
 	// pre-warm the heap
 	for (int i = 0; i < 100000; i++) delete (new int(5));
 
-	auto f{ GoodLang::Scripted_Type_Info() };
+	// DEBUG -- allows catching and walking thrown errors.
+	// parallel::options::RethrowsExceptions(false);
 
-	auto& type_int = GoodLang::user_type<int>();
-	type_int.IsBuiltInType();
+	while (true) {
+		auto f{ GoodLang::Scripted_Type_Info() };
+		auto& type_int = GoodLang::user_type<int>();
+		type_int.IsBuiltInType();
+		Any x = 100;
+		EXPECT_EQ("int", x.TypeName());
+		x = 500;
+		utilities::FastAllocator<int> xxx;
+		xxx.Alloc();
+		(void)x.cast<int>();
+		auto func = make_callable([](int x) -> int { return x * x; });
+		TypeConverter converter;
+		auto result = call(func, { 100 }, converter);
+		EXPECT_EQ(true, result.IsTypeOf<int>());
+		Functions F;
+		F.emplace("foo", make_callable([](double x) -> double { return x * x; }), true);
+		func = F.BuildMatch("foo", { 100.0 }, converter);
+		result = call(func, { 100.0 }, converter);
+		EXPECT_EQ(true, result.IsTypeOf<double>());
+		Union<int, int> y;
+		y.get<0>() += 1;
+		Units::scalar S;
+		S += 10;
+		S /= 5;
+		S = S + Units::scalar{ 55 };
+		EXPECT_EQ(57, S);
+		auto length = Units::foot{ 1 } + Units::meter{ 1 };
+		auto length2 = Units::meter{ 1 } + Units::petameter{ 1 };
+		auto length3 = Units::meter{ 1 } + Units::femtometer{ 10000 };
+		auto rate = Units::gallon{ 5 } / Units::minute{ 1 };
+		auto volume = rate * Units::year{ 1 };
+		using namespace literals;
+		(void)(Units::gallon{ 5 } != Units::cubic_foot{ 5 });
+		(void)(Units::gallon{ 50 } != Units::cubic_foot{ 50 });
+		Units::mile h = 200_acre / 1.25_mi;
+		EXPECT_EQ(0.25_mi, h);
+		Units::meters_per_second V0 = -12.0_mps;
+		Units::meter X0 = 4.6_m;
+		auto accelerationFormula = [](Units::second t) -> Units::meters_per_second_squared {
+			auto a = 0.3_m / (1_s * 1_s * 1_s);
+			Units::meters_per_second_squared b = 2.4_mps_sq;
+			return (a * t) + b;
+		};
+		auto velocityFormula = [](Units::second t, Units::meters_per_second V0) -> Units::meters_per_second {
+			auto a = 0.3_m / (1_s * 1_s * 1_s);
+			Units::meters_per_second_squared b = 2.4_mps_sq;
+			return (0.5 * a * t * t) + (b * t) + V0;
+		};
+		Units::meter pos = X0;
+		Units::meters_per_second velocity = V0;
+		Units::second timeStep = 0.1_s;
+		for (Units::second t = 0; t < 8_s; t += timeStep) {
+			velocity = velocityFormula(t, V0);
 
-	Any x = 100;
-	print(x.TypeName());
+			auto posStr = pos.ToString();
+			auto tStr = t.ToString();
+			auto vStr = velocity.ToString();
 
-	x = 500;
+			if (velocity == 0_mps) {
+				EXPECT_EQ(t, 4_s);
+				break;
+			}
 
-	utilities::FastAllocator<int> xxx;
-	xxx.Alloc();
-
-	(void)x.cast<int>();
-
-	auto func = make_callable([](int x) -> int { return x * x; });
-	TypeConverter converter;
-	auto result = call(func, { 100 }, converter);
-	EXPECT_EQ(true, result.IsTypeOf<int>());
-
-	Functions F;
-	F.emplace("foo", make_callable([](double x) -> double { return x * x; }), true);
-
-	func = F.BuildMatch("foo", { 100.0 }, converter);
-	result = call(func, { 100.0 }, converter);
-	EXPECT_EQ(true, result.IsTypeOf<double>());
-
-	Union<int, int> y;
-	y.get<0>() += 1;
-
-	//Units::UnitDefinition def;
-	//def.IsSI();
-	//print(def.HashCategory());
-
-	Units::scalar S;
-	S += 10;
-	S /= 5;
-	S = S + Units::scalar{ 55 };
-	print(S);
-
-	auto length = Units::foot{ 1 } + Units::meter{ 1 };
-	print(length);
-
-
-	auto length2 = Units::meter{ 1 } + Units::petameter{ 1 };
-	print(length2);
-
-
-	auto length3 = Units::meter{ 1 } + Units::femtometer{ 10000 };
-	print(length3);
-
-	print(Units::foot{ 5 }); // 5 ft
-
-	print(Units::foot{ 5 } * Units::foot{ 5 }); // 25 sq_ft
-
-	print(Units::foot{ 5 }.pow(2)); // 25 sq_ft
-
-	print(Units::foot{ 5 }.pow(3)); // 125 cu_ft
-
-	print(Units::foot{ 5 } *Units::foot{ 5 } *Units::foot{ 5 }); // 125 cu_ft
-
-	print(Units::inch{ 5 } *Units::foot{ 5 } *Units::meter{ 5 }); // 109.848528 pk
-
-	print(Units::foot{ 5 }.pow(2).pow(0.5)); // 5 ft
-
-	print(Units::foot{ 5 }.pow(0.25)); // 1.111082 m^0.25
-
-	auto rate = Units::gallon{ 5 } / Units::minute{ 1 };
-	auto volume = rate * Units::year{ 1 };
-
-	print(rate); // Units::gallon{ 5 } / Units::minute{ 1 }
-	print(Units::gallon_per_minute{ 5 }); // identical to the manual type-calculation
-	print(volume);
-	print(Units::million_gallon{ volume });
-
-	using namespace literals;
-
-	print(1234_MG);
-	print(1234_ac_ft);
-
-	(void)(Units::gallon{ 5 } != Units::cubic_foot{ 5 });
-	(void)(Units::gallon{ 50 } != Units::cubic_foot{ 50 });
-
-	Units::mile h = 200_acre / 1.25_mi;
-	print(h);
-
-	Units::meters_per_second V0 = -12.0_mps;
-	Units::meter X0 = 4.6_m;
-	auto accelerationFormula = [](Units::second t) -> Units::meters_per_second_squared {
-		auto a = 0.3_m / (1_s * 1_s * 1_s);
-		Units::meters_per_second_squared b = 2.4_mps_sq;
-		return (a * t) + b;
-	};
-	auto velocityFormula = [](Units::second t, Units::meters_per_second V0) -> Units::meters_per_second {
-		auto a = 0.3_m / (1_s * 1_s * 1_s);
-		Units::meters_per_second_squared b = 2.4_mps_sq;
-		return (0.5 * a * t * t) + (b * t) + V0;
-	};
-
-	Units::meter pos = X0;
-	Units::meters_per_second velocity = V0;
-	Units::second timeStep = 0.1_s;
-	for (Units::second t = 0; t < 8_s; t += timeStep) {
-		velocity = velocityFormula(t, V0);
-
-		auto posStr = pos.ToString();
-		auto tStr = t.ToString();
-		auto vStr = velocity.ToString();
-		print(GoodLang::printf("pos = %s \t t = %s \t v = %s;", posStr.c_str(), tStr.c_str(), vStr.c_str()));
-
-		pos += velocity * timeStep;
-	}
-
-	print((Units::constants::g() * 12_m / 2).sqrt()); // should be ~ 7.67 mps
-	print((0_mps * 32.8_s) + (0.5 * 3.2_mps_sq * (32.8_s).pow(2))); // should be ~ 1720 m
-	print((65_mps).pow(2) / (2 * 3_mps_sq)); // should be ~ 704 m
-
-	// (void)Units::value::GetValueTypes();
-
-	print(DateTime::Now());
-	print(DateTime::Now() + 30_d);
-	print(DateTime::Now() + 365_yr);
-	print(DateTime(2014, 1, 1));
-	print((Units::second)(DateTime::Now() - DateTime(2014, 1, 1)));
-
-	// Direct Invoke
-	print(GoodLang::Job([](int x)->int { return x; }, 5).Invoke().cast<int>());
-	// Async and Await
-	print(GoodLang::Job([](int x)->int { return x; }, 5).AsyncInvoke().Wait_Get<int>());
-	// Async, do stuff, then Await
-	if (1) {
-		auto group = GoodLang::Job([](int x)->int { return x; }, 5).AsyncInvoke();
-		Sleep(10);
-		print(group.Wait_Get<int>());
-	}
-	// 100 parallel jobs
-	if (1) {
-		Units::scalar V{ 0 };
-		parallel::For(0, 100, [&](int i) {
-			V++;
-			});
-		print(V);
-	}
-	// 100,000 parallel jobs
-	if (1) {
-		std::atomic<int> V{ 0 };
-		Units::scalar V2{ 0 }; // At high levels of parallelism, the Units lock will choke the threads
-		Stopwatch sw;
-
-		sw.Start();
-		parallel::For(0, 100000, [&](int i) {
-			V++;
-			});
-		print(Units::second(sw.Stop_s()));
-
-		sw.Start();
-		parallel::For(0, 100000, [&](int i) {
-			V2++;
-			});
-		print(Units::second(sw.Stop_s()));
-
-		print(V);
-		print(V2);
-	}
-	// 10,000,000 parallel jobs
-	if (1) {
-		Stopwatch sw;
-
-		std::atomic<int> V{ 0 };
-		Units::scalar V2{ 0 }; // At high levels of parallelism, the Units lock will choke the threads
-
-		sw.Start();
-		parallel::For(0, 10000000, [&](int i) {
-			V++;
-			});
-		print(Units::second(sw.Stop_s()));
-
-		sw.Start();
-		parallel::For(0, 10000000, [&](int i) {
-			V2++;
-			});
-		print(Units::second(sw.Stop_s()));
-
-		print(V);
-		print(V2);
-	}
-	// parallel jobs that each ALSO dispatch parallel jobs, for a total of 10,000,000 parallel jobs
-	if (1) {
-		std::atomic<int> V{ 0 };
-		parallel::For(0, 100, [&](int i) {
-			parallel::For(0, 100000, [&](int j) {
-				V++;
-				});
-			});
-		print(V);
-	}
-	// catch exceptions thrown from inside of a job
-	if (1) {
-		Units::foot V{ 0 };
-		try {
+			pos += velocity * timeStep;
+		}
+		(void)Units::value::GetValueTypes();
+		// Direct Invoke
+		EXPECT_EQ(5, GoodLang::Job([](int x)->int { return x; }, 5).Invoke().cast<int>());
+		// Async and Await
+		EXPECT_EQ(5, GoodLang::Job([](int x)->int { return x; }, 5).AsyncInvoke().Wait_Get<int>());
+		// Async, do stuff, then Await
+		if (1) {
+			auto group = GoodLang::Job([](int x)->int { return x; }, 5).AsyncInvoke();
+			Sleep(10);
+			EXPECT_EQ(5, group.Wait_Get<int>());
+		}
+		// 100 parallel jobs
+		if (1) {
+			Units::scalar V{ 0 };
 			parallel::For(0, 100, [&](int i) {
-				parallel::For(0, 100000, [&](int j) {
-					V += 5_gpm; // will fail due to incompatable units. 
-					});
+				++V;
 				});
-			print(V);
+			EXPECT_EQ(100, V);
 		}
-		catch (std::exception& e) {
-			print(e.what());
-		} // note that catching exceptions is a slow process (relatively), but is preferred to general crash. 
-	}
-	//// parallel jobs iterating over sequences and iterators
-	if (1) {
-		auto seq{ Sequence(0, 10000000, 1) }; // sequence is an iterator with little to no memory usage, but allows iterating on a counter
-		std::atomic<int> V{ 0 };
-		parallel::ForEach(seq, [&](int i) {
-			V++;
-			});
-		print(V);
-	}
-	// iterate over Sequence wrapper, for basic count-from-0-to-10 operations
-	if (1) {
-		auto seq{ Sequence(10000000, 0, -1) }; // sequence is an iterator with little to no memory usage, but allows iterating on a counter
-		std::atomic<int> V{ 0 };
-		parallel::ForEach(seq, [&](int i) {
-			V++;
-			});
-		print(V);
-	}
-	// iterate over IteratorSequence wrapper (allows looping over iterators randomly while tracking the correct index)
-	if (1) {
-		std::vector<std::string> data(100000, "TEST");
-		auto seq{ IteratorSequence(data.begin(), data.end()) };
-		std::atomic<int> V{ 0 };
-		parallel::ForEach(seq, [&](std::pair<
-			int, // index
-			std::string* // data
-		> const& i) {
+		// 100,000 parallel jobs
+		if (1) {
+			std::atomic<int> V{ 0 };
+			Units::scalar V2{ 0 }; // At high levels of parallelism, the Units lock will choke the threads
+			Stopwatch sw;
+
+			sw.Start();
+			parallel::For(0, 100000, [&](int i) {
 				V++;
-			});
-		print(V);
-	}
-	// iterate over container
-	if (1) {
-		std::vector<std::string> data(100000, "TEST");
-		std::atomic<int> V{ 0 };
-		parallel::ForEach(data, [&](std::string const& i) {
-			V++;
-			});
-		print(V);
-	}
+				});
 
-	// Map
-	if (1) {
-		GoodLang::Map<int, Units::scalar> map;
-		*map[0] = 1;
-		*map[1] = 2;
+			sw.Start();
+			parallel::For(0, 100000, [&](int i) {
+				++V2;
+				});
 
-		parallel::For(0, 100000, [&](int i) {
-			(void)map.size(); // OK
-			map.try_emplace(i, i); // OK
-			map.at(0)->operator++(); // OK
-			*map[i] = i; // OK
+			EXPECT_EQ(100000, V);
+			EXPECT_EQ(100000, V2);
+		}
+		// 1,000,000 parallel jobs
+		if (1) {
+			Stopwatch sw;
+
+			std::atomic<int> V{ 0 };
+			Units::scalar V2{ 0 }; // At high levels of parallelism, the Units lock will choke the threads
+
+			sw.Start();
+			parallel::For(0, 1000000, [&](int i) {
+				++V;
+			});
+
+			sw.Start();
+			parallel::For(0, 1000000, [&](int i) {
+				++V2;
+			});
+
+			EXPECT_EQ(1000000, V);
+			EXPECT_EQ(1000000, V2);
+		}
+		// parallel jobs that each ALSO dispatch parallel jobs, for a total of 10,000,000 parallel jobs
+		if (1) {
+			std::atomic<int> V{ 0 };
+			parallel::For(0, 100 * 100000, [&](int i) {
+				//parallel::For(0, 100000, [&](int j) {
+					V++;
+				//});
+			});
+			EXPECT_EQ(10000000, V);
+		}
+		// catch exceptions thrown from inside of a job
+		if (1) {
+			Units::foot V{ 0 };
 			try {
-				map.erase(100000.0 * (static_cast<double>(std::rand()) / static_cast<double>(RAND_MAX)));
+				parallel::For(0, 100 * 100000, [&](int i) {
+					// parallel::For(0, 100000, [&](int j) {
+						V += 5_gpm; // will fail due to incompatable units. 
+					//});
+				});
 			}
-			catch (std::out_of_range&) {}
-
-			});
-		print(map.size());
-
-		(void)std::distance(map.begin(), map.end());
-
-		for (auto f = map.find(0); f != map.end(); f++) {}
-
-		Units::scalar V;
-		parallel::ForEach(map, [&](auto& i) {
-			V += i.second;
-			});
-		print(V);
-
-	}
-
-	// Map as pattern
-	if (1) {
-		GoodLang::Map<double, double> map;
-		parallel::ForEach(GoodLang::Sequence(0.0, 1000.0, 50.0), [&](double i) {
-			*map[i] = i;
-			});
-
-		auto f0 = map.FindLargestSmallerEqual(25);
-		auto f50 = map.FindSmallestLargerEqual(25);
-
-		if (f0 != map.end()) {
-			EXPECT_EQ(f0->second, 0.0);
+			catch (std::exception& e) {
+			} // note that catching exceptions is a slow process (relatively), but is preferred to general crash. 
 		}
-		if (f50 != map.end()) {
-			EXPECT_EQ(f50->second, 50.0);
+		//// parallel jobs iterating over sequences and iterators
+		if (1) {
+			auto seq{ Sequence(0, 10000000, 1) }; // sequence is an iterator with little to no memory usage, but allows iterating on a counter
+			std::atomic<int> V{ 0 };
+			parallel::ForEach(seq, [&](int i) {
+				V++;
+				});
+			EXPECT_EQ(10000000, V);
 		}
+		// iterate over Sequence wrapper, for basic count-from-0-to-10 operations
+		if (1) {
+			auto seq{ Sequence(10000000, 0, -1) }; // sequence is an iterator with little to no memory usage, but allows iterating on a counter
+			std::atomic<int> V{ 0 };
+			parallel::ForEach(seq, [&](int i) {
+				V++;
+				});
+			EXPECT_EQ(10000000, V);
+		}
+		// iterate over IteratorSequence wrapper (allows looping over iterators randomly while tracking the correct index)
+		if (1) {
+			std::vector<std::string> data(100000, "TEST");
+			auto seq{ IteratorSequence(data.begin(), data.end()) };
+			std::atomic<int> V{ 0 };
+			parallel::ForEach(seq, [&](std::pair<
+				int, // index
+				std::string* // data
+			> const& i) {
+					V++;
+				});
+			EXPECT_EQ(100000, V);
+		}
+		// iterate over container
+		if (1) {
+			std::vector<std::string> data(100000, "TEST");
+			std::atomic<int> V{ 0 };
+			parallel::ForEach(data, [&](std::string const& i) {
+				V++;
+				});
+			EXPECT_EQ(100000, V);
+		}
+		// Map
+		if (1) {
+			GoodLang::Map<int, Units::scalar> map;
+			*map[0] = 1;
+			*map[1] = 2;
 
-		parallel::ForEach(map, [](auto& x) {
-			x.second++;
+			parallel::For(0, 100000, [&](int i) {
+				(void)map.size(); // OK
+				map.try_emplace(i, i); // OK
+				map[0]->operator++(); // OK
+				*map[i] = i; // OK
+				try {
+					map.erase(100000.0 * (static_cast<double>(std::rand()) / static_cast<double>(RAND_MAX)));
+				}
+				catch (std::out_of_range&) {}
 			});
-	}
 
-	// Map as pattern
-	if (1) {
-		GoodLang::Map<Units::second, Units::gallon_per_minute> map;
-		parallel::ForEach(GoodLang::Sequence(0.0, 1000.0, 50.0), [&](double i) {
-			*map[i] = i;
-		});
+			(void)std::distance(map.begin(), map.end());
 
-		auto f0 = map.FindLargestSmallerEqual(25);
-		auto f50 = map.FindSmallestLargerEqual(25);
+			for (auto f = map.find(0); f != map.end(); f++) {}
 
-		if (f0 != map.end()) {
-			EXPECT_EQ(f0->second, 0.0);
-		}
-		if (f50 != map.end()) {
-			EXPECT_EQ(f50->second, 50.0);
-		}
-
-		parallel::ForEach(map, [](auto& x) {
-			x.second++;
-		});
-
-		for (auto& x : map) {
-			print(x.first.ToString() + ", " + x.second.ToString());
-		}
-
-	}
-
-	// Map with strings
-	if (1) {
-		GoodLang::Map<std::string, double> map;
-		*map["TEST"] = 10;
-		*map["TEST2"] = 102;
-
-
-	}
-
-	// Unordered Map
-	if (1) {
-		GoodLang::UnorderedMap<int, Units::scalar> map;
-		parallel::For(0, 100000, [&](int i) {
-			++(*map[i]);
+			Units::scalar V;
+			parallel::ForEach(map, [&](auto& i) {
+				V += i.second;
 			});
-		for (auto f = map.find(0); f != map.end(); f++) {}
-		parallel::ForEach(map, [](auto& x) {
-			x.second++;
-			});
-		print(map.size());
-
-	}
-
-	// Vector
-	if (1) {
-		GoodLang::Vector<Units::scalar> vec;
-		Units::scalar count{ 0 };
-		parallel::For(0, 100000, [&](int i) {
-			vec.push_back(i);
-			vec[vec.size() - 1]->operator++();
-			vec.erase_fast(0);
-			});
-		for (auto f = vec.begin(); f != vec.end(); f++) {}
-		print(vec.size());
-
-	}
-
-	// Queue
-	if (1) {
-		GoodLang::Queue<double> q;
-		q.push(10);
-		auto item = q.pop();
-		if (!item.has_value()) {
-			EXPECT_EQ(true, false);
 		}
+		// Map as pattern
+		if (1) {
+			GoodLang::Map<double, double> map;
+			parallel::ForEach(GoodLang::Sequence(0.0, 1000.0, 50.0), [&](double i) {
+				*map[i] = i;
+				});
 
-		parallel::For(0, 100000, [&](int i) {
-			q.push(i);
-			auto IT = q.pop();
+			auto f0 = map.FindLargestSmallerEqual(25);
+			auto f50 = map.FindSmallestLargerEqual(25);
+
+			if (f0 != map.end()) {
+				EXPECT_EQ(f0->second, 0.0);
+			}
+			if (f50 != map.end()) {
+				EXPECT_EQ(f50->second, 50.0);
+			}
+
+			parallel::ForEach(map, [](auto& x) {
+				x.second++;
+				});
+		}
+		// Map as pattern
+		if (1) {
+			GoodLang::Map<Units::second, Units::gallon_per_minute> map;
+			parallel::ForEach(GoodLang::Sequence(0.0, 1000.0, 50.0), [&](double i) {
+				*map[i] = i;
+				});
+
+			auto f0 = map.FindLargestSmallerEqual(25);
+			auto f50 = map.FindSmallestLargerEqual(25);
+
+			if (f0 != map.end()) {
+				EXPECT_EQ(f0->second, 0.0);
+			}
+			if (f50 != map.end()) {
+				EXPECT_EQ(f50->second, 50.0);
+			}
+
+			parallel::ForEach(map, [](auto& x) {
+				++x.second;
+				});
+
+			for (auto& x : map) {
+				EXPECT_EQ(true, x.first() < x.second());
+			}
+
+		}
+		// Map with strings
+		if (1) {
+			GoodLang::Map<std::string, double> map;
+			*map["TEST"] = 10;
+			*map["TEST2"] = 102;
+
+
+		}
+		// Unordered Map
+		if (1) {
+			GoodLang::UnorderedMap<int, Units::scalar> map;
+			parallel::For(0, 100000, [&](int i) {
+				++(*map[i]);
+				});
+			for (auto f = map.find(0); f != map.end(); f++) {}
+			parallel::ForEach(map, [](auto& x) {
+				++x.second;
+				});
+			EXPECT_EQ(map.size(), 100000);
+
+		}
+		// Vector
+		if (1) {
+			GoodLang::Vector<Units::scalar> vec;
+			Units::scalar count{ 0 };
+			parallel::For(0, 100000, [&](int i) {
+				vec.push_back(i);
+				{
+					auto At = vec.at(0);
+					At->operator++(); // increment the first one
+				}
+				vec.erase_fast(0);
+				});
+			for (auto f = vec.begin(); f != vec.end(); f++) {}
+			EXPECT_EQ(0, vec.size());
+		}
+		// Queue
+		if (1) {
+			GoodLang::Queue<double> q;
+			q.push(10);
+			auto item = q.pop();
 			if (!item.has_value()) {
 				EXPECT_EQ(true, false);
 			}
-			});
-	}
 
-	// Stack
-	if (1) {
-		GoodLang::Stack<double> q;
-		q.push(10);
-		auto item = q.pop();
-		if (!item.has_value()) {
-			EXPECT_EQ(true, false);
+			parallel::For(0, 100000, [&](int i) {
+				q.push(i);
+				auto IT = q.pop();
+				if (!item.has_value()) {
+					EXPECT_EQ(true, false);
+				}
+				});
 		}
-
-		parallel::For(0, 100000, [&](int i) {
-			q.push(i);
-			auto IT = q.pop();
+		// Stack
+		if (1) {
+			GoodLang::Stack<double> q;
+			q.push(10);
+			auto item = q.pop();
 			if (!item.has_value()) {
 				EXPECT_EQ(true, false);
 			}
-			});
-	}
 
-	// Set as pattern
-	if (1) {
-		GoodLang::Set<double> map;
-		parallel::ForEach(GoodLang::Sequence(0.0, 1000.0, 50.0), [&](double i) {
-			map.emplace(i);
-			});
-
-		auto f0 = map.FindLargestSmallerEqual(25);
-		auto f50 = map.FindSmallestLargerEqual(25);
-
-		if (f0 != map.end()) {
-			EXPECT_EQ(*f0, 0.0);
+			parallel::For(0, 100000, [&](int i) {
+				q.push(i);
+				auto IT = q.pop();
+				if (!item.has_value()) {
+					EXPECT_EQ(true, false);
+				}
+				});
 		}
-		if (f50 != map.end()) {
-			EXPECT_EQ(*f50, 50.0);
-		}
-
-		parallel::ForEach(map, [](double const& x) {
-			// 
-			});
-	}
-
-	// UnorderedSet
-	if (1) {
-		GoodLang::UnorderedSet<std::string> map;
-		parallel::ForEach(GoodLang::Sequence(0.0, 1000.0, 50.0), [&](double i) {
-			map.emplace(std::to_string(i));
-			});
-
-		parallel::ForEach(map, [](std::string const& x) {
-			// 
-			});
-	}
-
-	// Spline
-	if (1) {
-		GoodLang::CatmullRomSpline<Units::second, Units::gallon_per_minute> consumption;
-
-		// emplacing data
-		for (DateTime t = DateTime::Now(); t < (DateTime::Now() + 1_yr); t += 1_d) {
-			consumption.emplace((Units::second)t, t.tm_mday() * t.tm_mday() * t.tm_mday());
-		}
-
-		// interpolations
-		for (DateTime t = DateTime::Now(); t < (DateTime::Now() + 1_yr); t += 0.25_d) {
-			print(consumption.interpolate((Units::second)t, GoodLang::left_snap{}));
-			print(consumption.interpolate((Units::second)t, GoodLang::linear{}));
-			print(consumption.interpolate((Units::second)t, GoodLang::spline{}));
-			print(consumption.interpolate((Units::second)t, GoodLang::right_snap{}));
-			std::cout << std::endl;
-		}
-
-		std::cout << std::endl;
-		std::cout << std::endl;
-
-		// time-series sample (sample as-you-go, preventing large vector allocations)
-		for (auto& x : consumption.GetTimeSeries(DateTime::Now(), DateTime::Now() + 30_d, 0.5_d)) {
-			print(x.second);
-		}
-
-		std::cout << std::endl;
-		std::cout << std::endl;
-		std::cout << std::endl;
-
-		// loop through knots
-		for (auto& x : consumption) {
-			x.second += 100_gpm;
-		}
-
-		// time-series sample (sample as-you-go, preventing large vector allocations)
-		for (auto& x : consumption.GetTimeSeries(DateTime::Now(), DateTime::Now() + 30_d, 0.5_d)) {
-			print(x.second);
-		}
-
-	}
-
-	// Scopes
-	if (1) {
-		auto s0 = std::make_shared<GoodLang::Global>();
-		s0->SetSelf(s0);
-		s0->AddBuiltIns();
-		{
-			auto s1 = std::make_shared<GoodLang::Scope>(s0);
-			s1->SetSelf(s1);
-			s1->AddObj("x", std::make_shared<GoodLang::Any>(100));
-
-			s1->AddFunction("foo", make_callable([](int x) -> int { return x * 2; }));
-
-			Any result1 = s1->CallFunction("foo", { 100 });
-			Any result2 = s1->CallFunction("foo", { 100.0 });
-
-
-			auto L1 = s1->CallFunction("Units::foot", { 100.0 });
-			auto L2 = s1->CallFunction("Units::meter", { 100.0 });
-			print(s1->Cast<std::string>(s1->CallFunction("to_string", { s1->CallFunction("+", { L1, L2 }) })));
-
-			print(s1->Cast<std::string>(s1->CallFunction("to_string", { s1->CallFunction("*", { L1, L2 }) })));
-
-			print(s1->Cast<std::string>(s1->CallFunction("to_string", { s1->CallFunction("/", { L1, L2 }) })));
-
-			// print(Units::horsepower(180_lbf * 2.4 * 2.0 * Units::constants::pi() * 12_ft / 1_min));
-
-			auto paired = s1->CallFunction("pair", { 100.0, Units::gallon{ 5 } });
-			EXPECT_EQ(true, s1->Cast<bool>(s1->CallFunction("==", { s1->CallFunction("second", {paired}), Units::cubic_foot{ Units::gallon{ 5 } } })));
-
-			s1->AddUsing(s1->FindNamespace("Units"));
-			EXPECT_EQ(true, s1->Cast<bool>(s1->CallFunction("==", { s1->CallFunction("second", {paired}), Units::cubic_foot{ Units::gallon{ 5 } } })));
-
-			print(s1->Cast<std::string>(s1->CallFunction("to_string", { s1->CallFunction("cubic_foot", {s1->CallFunction("second", {paired})}) })));
-
-
-
-
-
-
-		}
-	}
-
-	//Units::UnitDefinition_Constexpr<0, 0, 0, 0, 0> xyzwabc;
-
-	// meter = 273106626U
-	// foot = 2090766941U
-	// millimeter = 1777659705U
-
-
-	//std::unique_ptr<Units::UnitDefinitionBase> dynamic_definition{ std::make_unique<Units::dynamicUnitDefinition>(0, 0, 0, 0, 0, 1, 0) };
-	//std::unique_ptr<Units::UnitDefinitionBase> meter_definition{ std::make_unique<Units::meterDefinition>() };
-	//std::unique_ptr<Units::UnitDefinitionBase> scalar_definition{ std::make_unique<Units::scalarDefinition>() };
-	//sizeof(Units::dynamicUnitDefinition); // 120u64
-	//sizeof(Units::meterDefinition); // 68u64
-	//sizeof(Units::scalarDefinition); // 68u64
-
-
-	//auto xyzwabc = Units::meterDefinition();
-	// auto xyzwabc2 = Units::millimeterDefinition();
-
-	//print(xyzwabc.BuiltInName());
-	//(void)xyzwabc.unitType();
-	//auto copied = xyzwabc.Copy();
-	//(void)copied->BuiltInAbbreviation();
-
-
-	SharedLockable<std::string> p{ "Original" };
-	(void)p.Shared()->c_str();
-	p.Update([](std::string& x)-> std::string {
-		return "UPDATED";
-	});
-	(void)p.Unique()->c_str();
-
-
-	//SharedLockable<Units::UnitDefinitionBase> unit_m{ std::make_unique<Units::scalarDefinition>() };
-	//(void)unit_m.Unique()->IsSI();
-
-	//Units::value_t valueT{ 5 };
-	//Units::meter_t meterT{ 5 };
-	//Units::millimeter_t millimeterT{ 5000 };
-	//print(valueT);
-	//print(meterT);
-	//print(millimeterT);
-
-
-	Units::value valueT2{ 5 };
-	Units::meter meterT2{ 5 };
-	Units::millimeter millimeterT2{ 5000 };
-	Units::gallon_per_minute gpmT2{ 5 };
-	print(valueT2);
-	print(meterT2);
-	print(millimeterT2);
-	print(gpmT2);
-
-	//static constexpr auto size_dynamic{ sizeof(decltype(valueT)) + sizeof(Units::dynamicUnitDefinition) }; // 144 -> 88
-	//static constexpr auto size_scalar{ sizeof(decltype(valueT)) + sizeof(Units::scalarDefinition) }; // 92 -> 40
-	//static constexpr auto size_meter{ sizeof(decltype(meterT)) + sizeof(Units::meterDefinition) }; // 92 -> 40
-	//static constexpr auto size_millimeter{ sizeof(decltype(millimeterT)) + sizeof(Units::millimeterDefinition) }; // 92 -> 40
-
-	sizeof(Units::meter); // 232 (high precision) -> 128 (double precision)
-
-	if (1) {
-		// NOTE, repeat this test with the new system once ready
+		// Set as pattern
 		if (1) {
-			print(Units::newton(Units::millipound_f(1)));  // expect 0.004448222 N
-			print(Units::newton(Units::pound_f(Units::millipound_f(1)))); // expect 0.004448222 N
-			auto squareNewtons = Units::newton(0.004448222).pow(2);
-			auto squareMilliPound = Units::millipound_f(1).pow(2);
-			print(squareNewtons - squareMilliPound); // expect nearly 0
-			print(Units::joule(Units::milliwatt_hour(1))); // expect 3.6
+			GoodLang::Set<double> map;
+			parallel::ForEach(GoodLang::Sequence(0.0, 1000.0, 50.0), [&](double i) {
+				map.emplace(i);
+				});
+
+			auto f0 = map.FindLargestSmallerEqual(25);
+			auto f50 = map.FindSmallestLargerEqual(25);
+
+			if (f0 != map.end()) {
+				EXPECT_EQ(*f0, 0.0);
+			}
+			if (f50 != map.end()) {
+				EXPECT_EQ(*f50, 50.0);
+			}
+
+			parallel::ForEach(map, [](double const& x) {
+				// 
+				});
 		}
-
+		// UnorderedSet
 		if (1) {
-			print(Units::newton(Units::millipound_f(1)));  // expect 0.004448222 N
-			print(Units::newton(Units::pound_f(Units::millipound_f(1)))); // expect 0.004448222 N
-			auto squareNewtons = Units::newton(0.004448222).pow(2);
-			auto squareMilliPound = Units::millipound_f(1).pow(2);
-			print(squareNewtons - squareMilliPound); // expect nearly 0
-			print(Units::joule(Units::milliwatt_hour(1))); // expect 3.6
+			GoodLang::UnorderedSet<std::string> map;
+			parallel::ForEach(GoodLang::Sequence(0.0, 1000.0, 50.0), [&](double i) {
+				map.emplace(std::to_string(i));
+				});
+
+			parallel::ForEach(map, [](std::string const& x) {
+				// 
+				});
 		}
-
-
-
-
-
-
-
-
-		print(Units::meter::conversion_ratio);
-		print(Units::millimeter::conversion_ratio);
-		print(Units::foot::conversion_ratio);
-
-		print(Units::meter(5));
-		print(Units::millimeter(5000));
-
+		// Spline
 		if (1) {
-			auto temp = Units::meter(5);
-			temp *= 50;
-			print(temp);
+			GoodLang::CatmullRomSpline<Units::second, Units::gallon_per_minute> consumption;
+
+			// emplacing data
+			for (DateTime t = DateTime::Now(); t < (DateTime::Now() + 1_yr); t += 1_d) {
+				consumption.emplace((Units::second)t, t.tm_mday() * t.tm_mday() * t.tm_mday());
+			}
+
+			// interpolations
+			for (DateTime t = DateTime::Now(); t < (DateTime::Now() + 1_yr); t += 0.25_d) {
+				(void)(consumption.interpolate((Units::second)t, GoodLang::left_snap{}));
+				(void)(consumption.interpolate((Units::second)t, GoodLang::linear{}));
+				(void)(consumption.interpolate((Units::second)t, GoodLang::spline{}));
+				(void)(consumption.interpolate((Units::second)t, GoodLang::right_snap{}));
+			}
+
+			// time-series sample (sample as-you-go, preventing large vector allocations)
+			for (auto& x : consumption.GetTimeSeries(DateTime::Now(), DateTime::Now() + 30_d, 0.5_d)) {}
+
+			// loop through knots
+			for (auto& x : consumption) {
+				x.second += 100_gpm;
+			}
+
+			// time-series sample (sample as-you-go, preventing large vector allocations)
+			for (auto& x : consumption.GetTimeSeries(DateTime::Now(), DateTime::Now() + 30_d, 0.5_d)) {}
+
+		}
+		// Scopes
+		if (1) {
+			auto s0 = std::make_shared<GoodLang::Global>();
+			s0->SetSelf(s0);
+			s0->AddBuiltIns();
+			{
+				auto s1 = std::make_shared<GoodLang::Scope>(s0);
+				s1->SetSelf(s1);
+				s1->AddObj("x", std::make_shared<GoodLang::Any>(100));
+
+				s1->AddFunction("foo", make_callable([](int x) -> int { return x * 2; }));
+
+				Any result1 = s1->CallFunction("foo", { 100 });
+				Any result2 = s1->CallFunction("foo", { 100.0 });
+
+
+				auto L1 = s1->CallFunction("Units::foot", { 100.0 });
+				auto L2 = s1->CallFunction("Units::meter", { 100.0 });
+				print(s1->Cast<std::string>(s1->CallFunction("to_string", { s1->CallFunction("+", { L1, L2 }) })));
+
+				print(s1->Cast<std::string>(s1->CallFunction("to_string", { s1->CallFunction("*", { L1, L2 }) })));
+
+				print(s1->Cast<std::string>(s1->CallFunction("to_string", { s1->CallFunction("/", { L1, L2 }) })));
+
+				print(Units::horsepower(180_lbf * 2.4 * 2.0 * Units::constants::pi() * 12_ft / 1_min));
+
+				auto paired = s1->CallFunction("pair", { 100.0, Units::gallon{ 5 } });
+				EXPECT_EQ(true, s1->Cast<bool>(s1->CallFunction("==", { s1->CallFunction("second", {paired}), Units::cubic_foot{ Units::gallon{ 5 } } })));
+
+				s1->AddUsing(s1->FindNamespace("Units"));
+				EXPECT_EQ(true, s1->Cast<bool>(s1->CallFunction("==", { s1->CallFunction("second", {paired}), Units::cubic_foot{ Units::gallon{ 5 } } })));
+
+				print(s1->Cast<std::string>(s1->CallFunction("to_string", { s1->CallFunction("cubic_foot", {s1->CallFunction("second", {paired})}) })));
+			}
+		}
+		SharedLockable<std::string> p{ "Original" };
+		(void)p.Shared()->c_str();
+		p.Update([](std::string& x)-> std::string {
+			return "UPDATED";
+			});
+		(void)p.Unique()->c_str();
+
+		Units::value valueT2{ 5 };
+		Units::meter meterT2{ 5 };
+		Units::millimeter millimeterT2{ 5000 };
+		Units::gallon_per_minute gpmT2{ 5 };
+		EXPECT_EQ(5, valueT2);
+		EXPECT_EQ(5, meterT2);
+		EXPECT_EQ(5000, millimeterT2);
+		EXPECT_EQ(5, gpmT2);
+		if (1) {
+			// NOTE, repeat this test with the new system once ready
+			if (1) {
+				EXPECT_EQ(Units::newton(Units::millipound_f(1)), Units::newton(Units::pound_f(Units::millipound_f(1))));
+
+				auto squareNewtons = Units::newton(0.004448222).pow(2);
+				auto squareMilliPound = Units::millipound_f(1).pow(2);
+				(void)(squareNewtons - squareMilliPound); // expect nearly 0
+				EXPECT_EQ(3.6, Units::joule(Units::milliwatt_hour(1))); // expect 3.6
+			}
+
+			EXPECT_EQ(1, Units::meter::conversion_ratio);
+			EXPECT_EQ(0.001, Units::millimeter::conversion_ratio);
+			EXPECT_EQ(0.3048, Units::foot::conversion_ratio);
+
+			if (1) {
+				auto temp = Units::meter(5);
+				temp *= 50;
+				EXPECT_EQ(250, temp);
+			}
+			if (1) {
+				auto temp = Units::meter(5);
+				temp += 50;
+				EXPECT_EQ(55, temp);
+			}
+
+			EXPECT_EQ(true, Units::meter(5) > Units::meter(1));
+			EXPECT_EQ(true, Units::meter(5) > Units::millimeter(5));
+			EXPECT_EQ(true, Units::meter(1) < Units::millimeter(5000));
+			EXPECT_EQ(true, Units::meter(1) == Units::millimeter(1000));
+
+			Units::meter mutableUnitExample{ 5 };
+
+			const Units::meter constUnitExample{ 5 };
+
+			Units::value x;
+
+			x = Units::meter(5);
+			x = Units::millimeter(6000); // m <- mm is legal
+			x = Units::foot(22.9659); // m <- ft should be legal
+
+			try {
+				x = Units::square_meter(1); // m <- m_sq should be illegal
+			}
+			catch (std::exception& e) {}
+
+
+			x = Units::kilometer(1); // m <- km should be legal
 		}
 		if (1) {
-			auto temp = Units::meter(5);
-			temp += 50;
-			print(temp);
+			Stopwatch sw;
+			sw.Start();
+			parallel::For(0, 1000000, [](int i) { // Slow (x1) 0.148525 s ... 0.110108 s ... 0.105353 s ... 0.134672 s
+				Units::meter x{}; (void)x.operator()();
+				++x;
+				(void)x.pow(2);
+				auto y{ x * x * x };
+				});
+			sw.Start();
+			parallel::For(0, 1000000, [](int i) { // Fast (x10) 0.016274 s ... 0.035358 s ... 0.064283 s ... 0.076939 s
+				Units::meter x{}; (void)x.operator()();
+				++x;
+				(void)x.pow(2);
+				auto y{ x * x * x };
+				});
+			sw.Start();
+			parallel::For(0, 1000000, [](int i) { // Fast (x10) 0.015514 s ... 0.035237 s ... 0.070302 s ... 0.091723 s
+				Units::value x{}; (void)x.operator()();
+				++x;
+				(void)x.pow(2);
+				auto y{ x * x * x };
+				});
+			sw.Start();
+			parallel::For(0, 1000000, [](int i) { // Fast(x500) 0.000581 s ... 0.00032 s ...   UNKNOWN   ... 0.000211 s
+				double x{}; (void)(double(x));
+				++x;
+				(void)std::pow(x, 2);
+				auto y{ x * x * x };
+				});
 		}
-
-		EXPECT_EQ(true, Units::meter(5) > Units::meter(1));
-		EXPECT_EQ(true, Units::meter(5) > Units::millimeter(5));
-		EXPECT_EQ(true, Units::meter(1) < Units::millimeter(5000));
-		EXPECT_EQ(true, Units::meter(1) == Units::millimeter(1000));
-
-
-
-
-
-		print(Units::meter(5) + Units::meter(Units::foot(5)));
-		print(Units::meter(5) + Units::foot(5));
-		print(Units::foot(5) + Units::meter(5));
-		print(Units::foot(Units::meter(5)) + Units::foot(5));
-		print(Units::meter(5) - Units::meter(5));
-
-		print(Units::meter(5) * Units::meter(Units::foot(5))); // 7.62 m^2 // correct
-		print(Units::meter(5) * Units::foot(5)); // 7.62 m^2 // correct
-		print(Units::foot(5) * Units::meter(5)); // 7.62 m^2 // correct
-		print(Units::foot(Units::meter(5)) * Units::foot(5)); // 7.62 m^2 // correct, but failed to look-up the sq_ft extension (yet!)
-		print(Units::meter(5) / Units::meter(5)); // 1 // correct 
-		
-		print(-Units::meter(5));
-
-		Units::meter mutableUnitExample{ 5 };
-		print(mutableUnitExample.update([](double x) -> double { return x; }));
-
-		const Units::meter constUnitExample{ 5 };
-		print(constUnitExample.update([](double x) -> double { return x; }));
-
-		print(mutableUnitExample.pow_value(2));
-		print(constUnitExample.pow_value(2));
-		print(constUnitExample.pow(2));
-		print(constUnitExample.pow(2).sqrt());
-
-
-		Units::value x;
-		print(x); // 0
-		x = Units::meter(5);
-		print(x); // 5 m
-		x = Units::millimeter(6000); // m <- mm is legal
-		print(x); // 6 m
-
-		x = Units::foot(22.9659); // m <- ft should be legal
-
-		try {
-			x = Units::square_meter(1); // m <- m_sq should be illegal
+		if (1) {
+			for (auto& val : Units::value::GetValueTypes()) {
+				// print(val.first.lock()->name() + ": \n\t" + val.second.UnitName().data());
+			}
 		}
-		catch (std::exception& e) {
-			print(e.what());
-		}
-
-		print(x); // x should still be a legal value (7 m)
-
-		x = Units::kilometer(1); // m <- km should be legal
-		print(x);
-
-		print(x++);
-		print(++x);
-		print(x++);
-
-		print(Units::square_meter(Units::acre(55)).pow(0.5));
-
-
 	}
-
-
-	if (1) {
-		Stopwatch sw;
-		sw.Start();
-		parallel::For(0, 1000000, [](int i) { // Slow (x1) 0.148525 s ... 0.110108 s ... 0.105353 s ... 0.134672 s
-			Units::meter x{}; (void)x.operator()();
-			x++;
-			(void)x.pow(2);
-			auto y{ x * x * x };
-		});
-		print(Units::second(sw.Stop_s()));
-		sw.Start();
-		parallel::For(0, 1000000, [](int i) { // Fast (x10) 0.016274 s ... 0.035358 s ... 0.064283 s ... 0.076939 s
-			Units::meter x{}; (void)x.operator()();
-			x++;
-			(void)x.pow(2);
-			auto y{ x * x * x };
-		});
-		print(Units::second(sw.Stop_s()));
-		sw.Start();
-		parallel::For(0, 1000000, [](int i) { // Fast (x10) 0.015514 s ... 0.035237 s ... 0.070302 s ... 0.091723 s
-			Units::value x{}; (void)x.operator()();
-			x++;
-			(void)x.pow(2);
-			auto y{ x * x * x };
-		});
-		print(Units::second(sw.Stop_s()));
-		sw.Start();
-		parallel::For(0, 1000000, [](int i) { // Fast(x500) 0.000581 s ... 0.00032 s ...   UNKNOWN   ... 0.000211 s
-			double x{}; (void)(double(x));
-			x++;
-			(void)std::pow(x, 2);
-			auto y{ x * x * x };
-		});
-		print(Units::second(sw.Stop_s()));
-	}
-
-
-
-
-
-
-
-	constexpr size_t a1 = sizeof(double); // 8u64
-	constexpr size_t a2 = sizeof(Units::value) + sizeof(Units::Definitions::scalarDefinition); // 40u64
-	constexpr size_t a3 = sizeof(Units::meter) + sizeof(Units::Definitions::dynamicUnitDefinition); // 88u64
-
-
-
-
-
-
-	//sizeof(decltype(xyzwabc)); // 68u64
-	//sizeof(decltype(copied)); // 120u64
-
-
-
-
-
-
-
-	//sizeof(float);  // 4u64
-	//sizeof(double); // 8u64
-	//sizeof(number); // 60u64 // enormous, but for higher precision
-
-	/*
-	sizeof(float); // 4u64
-	sizeof(double); // 8u64  @ 15 Digits10
-	sizeof(number); // 32u64 @ 8 Digits10
-		            // 36u64 @ 16 Digits10
-					// 40u64 @ 24 Digits10
-					// 48u64 @ 36 Digits10
-	                // 56u64 @ 50 Digits10
-					// 80u64 @ 100 Digits10
-	std::numeric_limits<double>::digits10;
-	*/
 
 #if 0
 	fibers::utilities::Computer_Usage usage_start;

@@ -8,6 +8,7 @@
 #include <atomic>
 #include <array>
 #include <thread>
+#include <iostream>
 
 #ifdef _WIN32
 
@@ -126,6 +127,18 @@ namespace fibers::platform {
 #endif // PLATFORM_LINUX
 
 
+namespace GoodLang {
+	namespace parallel {
+		static std::atomic_bool m_rethrowExceptions{ true };
+		bool options::RethrowsExceptions() {
+			return m_rethrowExceptions;
+		}; // Get
+		void options::RethrowsExceptions(bool TF) {
+			m_rethrowExceptions = TF;
+		}; // Set
+
+	};
+};
 
 
 namespace GoodLang {
@@ -611,7 +624,13 @@ namespace GoodLang {
 				if (eptr) {
 					std::exception_ptr copy{ *eptr };
 					delete eptr;
-					std::rethrow_exception(std::move(copy));
+					if (parallel::options::RethrowsExceptions()) {
+						std::rethrow_exception(std::move(copy));
+					}
+					else {
+						// should at least announce the error...
+						std::cout << ExceptionHandling::what(copy) << std::endl;
+					}
 				}
 			}
 		};
@@ -673,10 +692,6 @@ namespace GoodLang {
 	[[nodiscard]] JobGroup Job::AsyncInvoke() { return JobGroup(*this); };
 
 };
-
-
-
-
 
 namespace {
 	class MultithreadingInstanceManagerImpl final : public GoodLang::MultithreadingInstanceManager {

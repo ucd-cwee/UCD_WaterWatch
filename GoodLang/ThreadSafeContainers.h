@@ -1433,15 +1433,17 @@ namespace GoodLang {
 		};
 		typename SharedLockable<T>::SharedObj operator[](const key_type& _Keyval) {
 			while (true) {
-				if (auto shared = data.Unique()) {
-					(void)shared->operator[](_Keyval);
-				}
+				// try to get it straight-away
 				if (auto shared = data.Shared()) {
 					try {
 						T& result = shared->at(_Keyval);
 						return typename SharedLockable<T>::SharedObj(result, shared.ForwardLock());
 					}
 					catch (std::out_of_range&) {}
+				}
+				// failed -- try to create it.
+				if (auto shared = data.Unique()) {
+					(void)shared->operator[](_Keyval);
 				}
 			}
 		};

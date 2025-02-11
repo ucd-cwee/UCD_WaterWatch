@@ -12,7 +12,6 @@ namespace GoodLang {
 		using unitType_t = float;
 		using valueType_t = double; // there was no improvement to accuracy with the high-precision units approach
 
-
 		static __forceinline size_t HashUnits(double a, double b, double c, double d, double e) noexcept {
 			size_t out{ 37 };
 			GoodLang::details::hash_combine(out, a, b, c, d, e);
@@ -25,9 +24,10 @@ namespace GoodLang {
 		template <typename Derived> static constexpr __forceinline long double Conversion_t(double X) { return Derived::conversion_ratio * X; };
 		static constexpr __forceinline double SQUARED(double X) { return X * X; };
 		static constexpr __forceinline double CUBED(double X) { return X * X * X; };
-
-#if 1   // experiment to convert unit system to utilize std::unique_ptr<> within		
+	
 		namespace impl {
+			class value_accessor;
+
 			__forceinline constexpr unsigned const_hash(char const* input) {
 				return *input ? static_cast<unsigned int>(*input) + 33 * const_hash(input + 1) : 5381;
 			};
@@ -106,7 +106,7 @@ namespace GoodLang {
 			public:
 				UnitDefinitionBase() = delete; //  : value_m{ 0 } {};
 				UnitDefinitionBase(Number V) : value_m{ std::move(V) } {};
-				~UnitDefinitionBase() = default;
+				virtual ~UnitDefinitionBase() = default;
 
 				virtual std::unique_ptr<UnitDefinitionBase> Copy() const = 0;
 				virtual const std::array<double, NumUnits>& unitType() const = 0;
@@ -122,7 +122,6 @@ namespace GoodLang {
 				size_t HashCategory() const noexcept;
 				virtual void Clear();
 			};
-
 			class dynamicUnitDefinition final : public UnitDefinitionBase {
 			protected:
 				std::array< double, NumUnits> unitType_m; // power exponents for the SI units (e.g. m^1 * kg^0 * s^-1 * A^0 * $^0 = m/s)
@@ -153,30 +152,18 @@ namespace GoodLang {
 				double& ratio();
 				void Clear() override;
 			};
-			template<unsigned nameHash> class unitDefinition : public UnitDefinitionBase {
-			protected:
-				static constexpr size_t thisHash{ nameHash };
-
-			protected:
-				unitDefinition() : UnitDefinitionBase(0.0) {};
-				unitDefinition(Number V) : UnitDefinitionBase(std::move(V)) {};
-			public:
-				virtual ~unitDefinition() = default;
-			};
-		};
-		namespace Definitions {
-			class scalarDefinition final : public Definitions::unitDefinition<0> {
+			class scalarDefinition final : public UnitDefinitionBase {
 			private:
 				static constexpr std::array<double, NumUnits> unitType_m{ 0, 0, 0, 0, 0 };
 				static constexpr double ratio_m{ 1.0 };
 			public:
-				scalarDefinition() : unitDefinition(0.0) {};
-				scalarDefinition(Number V) : unitDefinition(V) {};
+				scalarDefinition() : UnitDefinitionBase(0.0) {};
+				scalarDefinition(Number V) : UnitDefinitionBase(V) {};
 				scalarDefinition(scalarDefinition const&) = default;
 				scalarDefinition(scalarDefinition&&) = default;
 				scalarDefinition& operator=(scalarDefinition const&) = default;
 				scalarDefinition& operator=(scalarDefinition&&) = default;
-				virtual ~scalarDefinition() = default;
+				~scalarDefinition() = default;
 				const std::array<double, NumUnits>& unitType() const override;
 				const double& ratio() const override;
 				const char* BuiltInName() const override;
@@ -186,9 +173,12 @@ namespace GoodLang {
 		};
 
 		class value {
-		public:
-			mutable SharedLockable<Definitions::UnitDefinitionBase> unit_m;
+			friend class impl::value_accessor;
 
+		protected:
+			SharedLockable<Definitions::UnitDefinitionBase> 
+				unit_m; // allows shared/unique locking and abstracts the underlying actual unit definition. 
+			
 		public: // constructors
 			value() : unit_m{ std::make_unique<Definitions::scalarDefinition>() } {};
 			explicit value(std::unique_ptr<Definitions::UnitDefinitionBase>&& unit_p) : unit_m{ std::move(unit_p) } {};
@@ -201,7 +191,7 @@ namespace GoodLang {
 			value(Number V) : unit_m{ std::make_unique<Definitions::scalarDefinition>(std::move(V)) } {};
 			virtual ~value() = default;
 
-		public:
+		public: 
 			explicit operator Number() const noexcept;
 			Number operator()() const noexcept;
 			std::string ToString() const;
@@ -209,11 +199,11 @@ namespace GoodLang {
 			std::string_view UnitName() const noexcept;
 			std::string_view UnitAbbreviation() const noexcept;
 			void Clear();
-		public: // = Operators
-			value& operator=(value const& other);
 
-		// Comparison operators
-		public:
+		public: // Assignment operator
+			value& operator=(value const& other);
+		
+		public: // Comparison operators
 			friend bool operator==(value const& A, value const& V) noexcept;
 			friend bool operator<(value const& A, value const& V);
 			friend bool operator<=(value const& A, value const& V);
@@ -221,22 +211,28 @@ namespace GoodLang {
 			friend bool operator>=(value const& A, value const& V);
 			friend bool operator!=(value const& A, value const& V) noexcept;
 
-		// Unary operators
-		public:
+		public: // Unary operators (e.g. mody in-place)
 			value& operator++();
 			value& operator--();
 			value& operator+=(value const& V);
 			value& operator-=(value const& V);
 			value& operator*=(value const& V);
 			value& operator/=(value const& V);
+			// atomicly updates the value by exponentiating the underlying value (e.g. (3_m).pow_value(3) => 9_m)
+			value& pow_value(value const& V);
+			// atomicly floors (rounds to lower whole integer) the underlying value
+			value& floor();
+			// atomicly ceilings (rounds to upper whole integer) the underlying value
+			value& ceiling();
 
-		public: 
-			value operator++(int);
-			value operator--(int);
+		public: // Instance operators (e.g. makes a copy and modifies the copy)
+			[[nodiscard]] value operator++(int);
+			[[nodiscard]] value operator--(int);
 			friend value operator+(value const& A, value const& B);
 			friend value operator-(value const& A, value const& B);
 			friend value operator*(value const& A, value const& V);
 			friend value operator/(value const& A, value const& V);
+			// inverts the sign of the value
 			value operator-() const;
 			// atomicly updates the value with a custom user-provided function.
 			value& update(std::function<double(double)> const& updateFunction);
@@ -245,27 +241,31 @@ namespace GoodLang {
 			// Returns a new value multiplied by itself "V" times. (e.g. (3_m).pow(3) => 3_cu_m)
 			value pow(value const& V) const;
 			// atomicly updates the value by exponentiating the underlying value (e.g. (3_m).pow_value(3) => 9_m)
-			value& pow_value(value const& V);
-			// atomicly updates the value by exponentiating the underlying value (e.g. (3_m).pow_value(3) => 9_m)
 			value pow_value(value const& V) const;
 			// pow(0.5)
 			value sqrt() const;
-			// atomicly floors (rounds to lower whole integer) the underlying value
-			value& floor();
 			// Creats a copy of the value and floors (rounds to lower whole integer) the underlying value
 			value floor() const;
-			// atomicly ceilings (rounds to upper whole integer) the underlying value
-			value& ceiling();
 			// Creats a copy of the value and ceilings (rounds to upper whole integer) the underlying value
 			value ceiling() const;
 
-#if 0
 		public:
-			static std::vector<std::vector<std::tuple<std::string, std::string, Units::value, std::weak_ptr<GoodLang::Type_Info>>>> GetValueTypes() noexcept;
-#endif
+			static Map<std::weak_ptr<GoodLang::Type_Info>, Units::value> GetValueTypes() noexcept;
 
 		};
 		using scalar = value;
+
+		namespace impl {
+			class value_accessor {
+			public:
+				static const SharedLockable<Definitions::UnitDefinitionBase>& GetUnits(value const& rhs) {
+					return rhs.unit_m;
+				};
+				static SharedLockable<Definitions::UnitDefinitionBase>& GetUnits(value& rhs) {
+					return rhs.unit_m;
+				};
+			};
+		};
 
 		namespace Categories {
 			class length { 
@@ -333,9 +333,9 @@ namespace GoodLang {
 		// METRIC PREFIX CLASS DEFINITION
 		namespace Definitions {
 			template<typename ratioType, typename baseType>
-			class MetricPrefixedDefinition final : public unitDefinition<impl::const_hash(impl::concat(impl::ratioType_to_name<ratioType>::Name().c, baseType::Name_m.c).c)> {
+			class MetricPrefixedDefinition final : public UnitDefinitionBase {
 			public:
-				using unitDefBase = unitDefinition<impl::const_hash(impl::concat(impl::ratioType_to_name<ratioType>::Name().c, baseType::Name_m.c).c)>;
+				using unitDefBase = UnitDefinitionBase;
 				static constexpr double ratio_m{ baseType::ratio_m * ((double)ratioType::num / (double)ratioType::den) };
 				static constexpr auto Name_m{ impl::concat(impl::ratioType_to_name<ratioType>::Name().c, baseType::Name_m.c) };
 				static constexpr auto Abbreviation_m{ impl::concat(impl::ratioType_to_name<ratioType>::Abbreviation().c, baseType::Abbreviation_m.c) };
@@ -346,7 +346,7 @@ namespace GoodLang {
 				MetricPrefixedDefinition(MetricPrefixedDefinition&&) = default;
 				MetricPrefixedDefinition& operator=(MetricPrefixedDefinition const&) = default;
 				MetricPrefixedDefinition& operator=(MetricPrefixedDefinition&&) = default;
-				virtual ~MetricPrefixedDefinition() = default;
+				~MetricPrefixedDefinition() = default;
 				const std::array<double, UnitDefinitionBase::NumUnits>& unitType() const override { return baseType::unitType_m; };
 				const double& ratio() const override { return ratio_m; };
 				const char* BuiltInName() const override { return &Name_m.c[0]; };
@@ -357,7 +357,6 @@ namespace GoodLang {
 				};
 			};
 		};
-#endif	
 	};
 };
 

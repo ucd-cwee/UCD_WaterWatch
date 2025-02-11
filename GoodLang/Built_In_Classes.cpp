@@ -23,7 +23,6 @@ namespace GoodLang {
 		add_converter<float, T>(classPtr, Name);
 		add_converter<double, T>(classPtr, Name);
 		add_converter<size_t, T>(classPtr, Name);
-		// add_converter<fibers::containers::number < double >, T>(classPtr, Name);
 		add_converter<signed char, T>(classPtr, Name);
 		add_converter<unsigned char, T>(classPtr, Name);
 		add_converter<char16_t, T>(classPtr, Name);
@@ -82,6 +81,12 @@ namespace GoodLang {
 		if constexpr (utilities::is_std_hashable_v<T>) {
 			classPtr->AddFunction("to_hash", make_callable([](T const& o) -> size_t { return std::hash<T>()(o); }));
 		}
+		else {
+			if constexpr (std::is_floating_point_v<T>) {
+				classPtr->AddFunction("to_hash", make_callable([](T const& o) -> size_t { size_t out{ 37 }; details::hash_combine(out, (double)o); return out; }));
+			}
+
+		}
 	};
 
 
@@ -93,7 +98,6 @@ namespace GoodLang {
 		DefineBuiltInType(This, float{}, "float");
 		DefineBuiltInType(This, double{}, "double");
 		DefineBuiltInType(This, size_t{}, "size_t");
-		// DefineBuiltInType(This, fibers::containers::number<double>(), "Number");
 		DefineBuiltInType(This, char16_t{}, "char16_t");
 		DefineBuiltInType(This, char32_t{}, "char32_t");
 		DefineBuiltInType(This, wchar_t{}, "wchar_t");

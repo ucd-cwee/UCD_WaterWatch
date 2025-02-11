@@ -6,9 +6,9 @@ namespace GoodLang {
 	namespace Units {
 
 #define CalculateMetricPrefixV(metric) ((long double)std::metric::num / (long double)std::metric::den)
-#define DerivedUnitType(type, category, abbreviation, Ratio) namespace Definitions { class type ## Definition final : public unitDefinition<impl::const_hash(#type)>, public Categories::category { \
+#define DerivedUnitType(type, category, abbreviation, Ratio) namespace Definitions { class type ## Definition final : public UnitDefinitionBase, public Categories::category { \
 	public: \
-		using unitDefBase = unitDefinition<impl::const_hash(#type)>; \
+		using unitDefBase = UnitDefinitionBase; \
 		static constexpr auto Name_m{ impl::concat(#type) }; \
 		static constexpr auto Abbreviation_m{ impl::concat(#abbreviation) }; \
 		static constexpr double ratio_m{ Ratio }; \
@@ -18,7 +18,7 @@ namespace GoodLang {
 		type ## Definition(type ## Definition&&) = default; \
 		type ## Definition& operator=(type ## Definition const&) = default; \
 		type ## Definition& operator=(type ## Definition&&) = default; \
-		virtual ~type ## Definition() = default; \
+		~type ## Definition() = default; \
 		const std::array<double, UnitDefinitionBase::NumUnits>& unitType() const override { return this->unitType_m; }; \
 		const double& ratio() const override { return ratio_m; }; \
 		const char* BuiltInName() const override { return &Name_m.c[0]; }; \
@@ -29,7 +29,7 @@ namespace GoodLang {
 	}; }; \
 	type ::type () : value(std::make_unique<Definitions::type ## Definition>()) {}; \
 	type ::type (value const& other) : type () { \
-		auto V = other.unit_m.Shared(); \
+		auto V = impl::value_accessor::GetUnits(other).Shared(); \
 		auto Data = this->unit_m.Unique(); \
 		if (Data->IsSameCategory(*V)) Data->value() = V->value(); \
 		else if (V->IsScalar()) Data->value() = (V->value() / V->ratio()) * Data->ratio(); \
@@ -44,14 +44,14 @@ namespace GoodLang {
 		} \
 	}; \
 	type ::type (Number const& V) : type () { \
-		auto get = unit_m.Unique(); \
+		auto get = this->unit_m.Unique(); \
 		get->value() = V * get->ratio(); \
 	};
 
 #define DerivedUnitTypeWithMetricPrefix(type, prefix) \
 		prefix ## type ::prefix ## type () : value(std::make_unique<Definitions::MetricPrefixedDefinition<std::prefix, Units::Definitions::type ## Definition>>()) {}; \
 		prefix ## type ::prefix ## type (value const& other) : prefix ## type () { \
-			auto V = other.unit_m.Shared(); \
+			auto V = impl::value_accessor::GetUnits(other).Shared(); \
 			auto Data = this->unit_m.Unique(); \
 			if (Data->IsSameCategory(*V)) Data->value() = V->value(); \
 			else if (V->IsScalar()) Data->value() = (V->value() / V->ratio()) * Data->ratio(); \
@@ -66,7 +66,7 @@ namespace GoodLang {
 			} \
 		}; \
 		prefix ## type ::prefix ## type (Number const& V) : prefix ## type () { \
-			auto get = unit_m.Unique(); \
+			auto get = this->unit_m.Unique(); \
 			get->value() = V * get->ratio(); \
 		}; \
 
