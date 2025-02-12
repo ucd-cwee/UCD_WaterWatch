@@ -306,104 +306,6 @@ namespace GoodLang {
 
 
 	namespace impl {
-		struct WorkCach {
-			const context* parentCtx;
-			int j;
-			JobArgs args;
-			long long sizeOfData;
-			void* data;
-
-			Task job;
-		};
-		void WorkCached(long long p_startingQueue, const context* parentCtx = nullptr) {
-			static thread_local std::stack<WorkCach> cache{};
-			static thread_local long long threadID{ p_startingQueue };
-			static thread_local Queue<Task>* job_queue;
-
-			cache.push(WorkCach{
-				parentCtx,
-				0, 
-				JobArgs{
-					0 // jobIndex
-					, 0 // groupID
-					, 0 // groupIndex
-					, nullptr // sharedmemory
-			    }, 
-				0,
-				nullptr
-			});
-			defer(cache.pop());
-			defer(if (cache.top().data) { Mem_Free16(cache.top().data); });
-
-			bool didWork = true;
-			while (didWork && (!cache.top().parentCtx || (cache.top().parentCtx && IsBusy(*cache.top().parentCtx)))) {
-				didWork = false;
-
-				// loop through all queues...
-				threadID = (threadID + 1) % internal_state.numThreads;
-				job_queue = &internal_state.jobQueuePerThread[threadID];
-
-				while (job_queue->try_pop(cache.top().job)) {
-					didWork = true;
-					if (!cache.top().job.ctx->e) { // if another group threw an error, do not process this group at all.
-						cache.top().args.groupID = cache.top().job.groupID;
-						// Allocate Shared Group Memory (heap allocates only when more memory is needed than was previously used).
-						{
-							if (cache.top().job.sharedmemory_size > 0) {
-								if (cache.top().sizeOfData < cache.top().job.sharedmemory_size) {
-									if (cache.top().data) Mem_Free16(cache.top().data);
-									cache.top().data = Mem_Alloc16(cache.top().job.sharedmemory_size);
-									cache.top().sizeOfData = cache.top().job.sharedmemory_size;
-								}
-
-								::memset(cache.top().data, 0, cache.top().job.sharedmemory_size);
-
-								cache.top().args.sharedmemory = cache.top().data;
-
-								if (cache.top().job.GroupStartJob) {
-									cache.top().job.GroupStartJob->operator()(cache.top().args.sharedmemory);
-								}
-							}
-							else {
-								cache.top().args.sharedmemory = nullptr;
-							}
-						}
-
-						// Do Group Jobs Until Done or Error is Thrown
-						for (cache.top().j = cache.top().job.groupJobOffset; (!cache.top().job.ctx->e) && (cache.top().j < cache.top().job.groupJobEnd); ++cache.top().j) {
-							cache.top().args.jobIndex = cache.top().j;
-							cache.top().args.groupIndex = cache.top().j - cache.top().job.groupJobOffset;
-							try {
-								cache.top().job.task->operator()(cache.top().args);
-							}
-							catch (...) {
-								if (!cache.top().job.ctx->e) {
-									auto eptr = cache.top().job.ctx->e.Set(new std::exception_ptr(std::current_exception())); // Sets the error to the new PTR
-									if (eptr) { // If we accidentilly errored at the same time as another group, prevent leak
-										delete eptr;
-									}
-								}
-								break;
-							}
-						}
-
-						// Deallocate Shared Group Memory
-						if (cache.top().args.sharedmemory && cache.top().job.GroupEndJob) cache.top().job.GroupEndJob->operator()(cache.top().args.sharedmemory);
-					}
-					cache.top().job.ctx->counter.Decrement(); // one group got finished, regardless of the outcome.
-
-					if (!cache.top().parentCtx || (cache.top().parentCtx && IsBusy(*cache.top().parentCtx))) {
-
-					}
-					else {
-						break;
-					}
-
-
-				}
-			}
-		};
-
 		inline void work(long long startingQueue, const context* parentCtx) noexcept {
 			long long i, j, threadID;
 			Queue<Task>* job_queue;
@@ -656,7 +558,7 @@ namespace GoodLang {
 			internal_state.wakeCondition.notify_all();
 		};
 
-		static thread_local std::atomic<long> wait_depth{ 0 }; // allows detection of when job dispatch may be from within an existing job
+		static thread_local long long wait_depth{ 0 }; // allows detection of when job dispatch may be from within an existing job
 		void Dispatch(
 			context& ctx,
 			long long jobCount,
@@ -664,22 +566,21 @@ namespace GoodLang {
 		) noexcept {
 			if (jobCount == 0) { return; }
 
-			
 			// if a job dispatch is within an existing job, groupCount needs to narrow down to prevent overflow.
-			long long groupCount = wait_depth <= 0 ?
-				std::max<long long>(1, std::min<long long>(jobCount, internal_state.numThreads << 3)) :
-				(
-					wait_depth <= 2 ?
-					std::max<long long>(1, std::min<long long>(jobCount, internal_state.numThreads >> 2)) :
-					1
-				);
+			long long groupCount;
+			switch (wait_depth) {
+			case 0: groupCount = internal_state.numThreads << 3; break;
+			case 1: groupCount = internal_state.numThreads << 0; break;
+			default: groupCount = internal_state.numThreads >> wait_depth; break;
+			}
+			groupCount = std::max<long long>(1, std::min<long long>(jobCount, groupCount));
 			long long groupSize = jobCount / groupCount;
 			while ((long long)(groupCount * groupSize) < jobCount) groupCount++;
 
 			// context state is updated to its maximum:
 			ctx.counter.Add(groupCount);
 
-			if (wait_depth > 3) {
+			if ((wait_depth > 0) && (groupCount <= 1)) {
 				// do the work directly:
 				for (long long groupID = 0; ; ++groupID) {
 					auto groupJobOffset = groupID * groupSize;
@@ -740,20 +641,20 @@ namespace GoodLang {
 			if (jobCount == 0) { return; }
 
 			// if a job dispatch is within an existing job, groupCount needs to narrow down to prevent overflow.
-			long long groupCount = wait_depth <= 0 ?
-				std::max<long long>(1, std::min<long long>(jobCount, internal_state.numThreads << 3)) :
-				(
-					wait_depth <= 2 ?
-					std::max<long long>(1, std::min<long long>(jobCount, internal_state.numThreads >> 2)) :
-					1
-				);
+			long long groupCount;
+			switch (wait_depth) {
+			case 0: groupCount = internal_state.numThreads << 3; break;
+			case 1: groupCount = internal_state.numThreads << 0; break;
+			default: groupCount = internal_state.numThreads >> wait_depth; break;
+			}
+			groupCount = std::max<long long>(1, std::min<long long>(jobCount, groupCount));
 			long long groupSize = jobCount / groupCount;
 			while ((long long)(groupCount * groupSize) < jobCount) groupCount++;
 
 			// context state is updated to its maximum:
 			ctx.counter.Add(groupCount);
 
-			if (wait_depth > 3) {
+			if ((wait_depth > 0) && (groupCount <= 1)) {
 				// do the work directly:
 				for (long long groupID = 0; ; ++groupID) { // groupID < groupCount
 					// For each group, generate one real job:
@@ -858,11 +759,10 @@ namespace GoodLang {
 #else // supports jobs calling jobs
 			int i{ 0 };
 			while (IsBusy(ctx)) { // Do work
-				if (++i < 40) {
+				if (++i < 40) { // give the threads the chance to do their jobs
 					std::this_thread::yield();
 				}
-				else {
-					// WorkCached(internal_state.nextQueue.Increment() % internal_state.numThreads, &ctx);
+				else { // threads need help
 					work(internal_state.nextQueue.Increment() % internal_state.numThreads, &ctx);
 				}
 			}
@@ -907,7 +807,13 @@ namespace GoodLang {
 		wg->Wait();
 	};
 	[[nodiscard]] JobGroup Job::AsyncInvoke() { return JobGroup(*this); };
-
+	[[nodiscard]] JobGroup Job::AsyncInvoke(std::vector<Any> const& p_inputs) const { 
+		Job out; {
+			out.impl = this->impl;
+			*out.inputs = p_inputs;
+		}
+		return JobGroup(out);
+	};
 };
 
 namespace {

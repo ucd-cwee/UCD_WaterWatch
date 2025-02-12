@@ -627,29 +627,44 @@ int main() {
 		if (1) {
 			Stopwatch sw;
 
+			// C++ standard loop. 
 			sw.Start();
-			// Loop 1
-			for (int i = 0; i < 1000; i++) {
+			for (int i = 0; i < 10; i++) {
 				// Loop 2
-				for (int j = 0; j < 100; j++) {
+				for (int j = 0; j < 200; j++) {
 					// Loop 3
-					for (int k = 0; k < 100; k++) {
+					for (int k = 0; k < 500; k++) {
 						(void)(Units::gallon(5) + Units::gallon(5));	
 					}
 				}
 			}
-			print(Units::second(sw.Stop_s()));
+			//print(Units::second(sw.Stop_s()));
 
+			// C++ built-in parallel loops. Requires compiler support, otherwise identical to C++ standard loop. 
+			sw.Start();
+			auto seq1 = Sequence(0, 10);
+			std::for_each(seq1.begin(), seq1.end(), [](auto& i) {
+				auto seq2 = Sequence(0, 200);
+				std::for_each(seq2.begin(), seq2.end(), [](auto& j) {
+					auto seq3 = Sequence(0, 500);
+					std::for_each(seq3.begin(), seq3.end(), [](auto& k) {
+						(void)(Units::gallon(5) + Units::gallon(5));
+					});
+				});
+			});
+			//print(Units::second(sw.Stop_s()));
+
+			// parallel::For(...), 10x faster than standard loop, specialized for incremental (0, 1, 2, 3... etc.) loops
 			sw.Start();
 			try {
 				// Loop 1
-				parallel::For(0, 1000, [](int i) {
+				parallel::For(0, 10, [](int i) {
 					try {
 						// Loop 2
-						parallel::For(0, 100, [](int j) {
+						parallel::For(0, 200, [](int j) {
 							try {
 								// Loop 3
-								parallel::For(0, 100, [](int k) {
+								parallel::For(0, 500, [](int k) {
 									try {
 										(void)(Units::gallon(5) + Units::gallon(5));
 									}
@@ -671,13 +686,40 @@ int main() {
 			catch (...) {
 				//print(GoodLang::ExceptionHandling::what(std::current_exception()));
 			}
-			print(Units::second(sw.Stop_s()));
-			//print("Got out of the loop");
+			//print(Units::second(sw.Stop_s()));
 
-
+			// parallel::ForEach(...), 5x faster than standard loop, specialized for Iterator loops
+			sw.Start();
+			parallel::ForEach(Sequence(0, 10), [](auto const& i) {
+				parallel::ForEach(Sequence(0, 200), [](auto const& j) {
+					parallel::ForEach(Sequence(0, 500), [](auto const& k) {
+						(void)(Units::gallon(5) + Units::gallon(5));
+					});
+				});
+			});
+			//print(Units::second(sw.Stop_s()));
 		}
 
+		// Dispatching jobs at random
+		if (1) {
+			(void)Job([]() -> double { return (double)std::rand() / (double)RAND_MAX; }).AsyncInvoke().Wait_Get<double>();
+			(void)parallel::async([]() -> double { return (double)std::rand() / (double)RAND_MAX; }).as_promise().wait_get_any().cast<double>();
 
+			auto job = Job([](int From, int To, std::function<void(int)> const& toDo) {
+				parallel::For(From, To, [&](auto i) {
+					toDo(i);
+				});
+			});
+
+			std::atomic<long> V{ 0 };
+			auto await1 = job.AsyncInvoke({ 0, 100, std::function<void(int)>([&V](int i) { V++; }) });
+			auto await2 = job.AsyncInvoke({ 0, 100, std::function<void(int)>([&V](int i) { V++; }) });
+
+			await1.Wait();
+			await2.Wait();
+
+			EXPECT_EQ(200, V.load());
+		}
 
 
 	}

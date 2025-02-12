@@ -382,16 +382,17 @@ namespace GoodLang {
 		~Job() = default;
 
 		/* Creates a job from a function and (optionally) input parameters. Can handle basic type-casting from inputs to parameters, and supports shared_ptr casting (to and from). */
-		template < typename T, typename... Args, typename = std::enable_if_t< !std::is_same_v<Job, std::decay_t<T>> && !std::is_same_v<Any, std::decay_t<T>> >> explicit Job(
-			T&& function, Args && ... Fargs
-		) : impl(nullptr) {
+		template < typename T, typename... Args, typename = std::enable_if_t< !std::is_same_v<Job, std::decay_t<T>> && !std::is_same_v<Any, std::decay_t<T>> >> 
+		explicit Job(T&& function, Args && ... Fargs) 
+			: impl(nullptr) 
+		{
 			impl = make_callable(std::forward<T>(function));
 			AddItem(*inputs, std::forward<Args>(Fargs)...);
 		};		
 
 	public:
 		/* Do the task immediately, without using any thread/fiber tools, and returns the result (if any). */
-		GoodLang::Any Invoke() const noexcept {
+		GoodLang::Any Invoke() const {
 			static GoodLang::Any staticVal{};
 			static GoodLang::TypeConverter converter{};
 			if (impl) {
@@ -403,9 +404,22 @@ namespace GoodLang {
 				return staticVal;
 			}
 		};
+		/* Do the task immediately, without using any thread/fiber tools, and returns the result (if any). */
+		GoodLang::Any Invoke(std::vector<Any> const& p_inputs) const {
+			static GoodLang::Any staticVal{};
+			static GoodLang::TypeConverter converter{};
+			if (impl) {
+				return call(impl, p_inputs, converter);
+			}
+			else {
+				return staticVal;
+			}
+		};
 
 		/* Add the task to a thread / fiber, and retrieve an awaiter group. The awaiter group guarrantees job completion before the awaiter or job goes out-of-scope. Useful for most basic task scheduling. */
 		[[nodiscard]] JobGroup AsyncInvoke();
+		/* Add the task to a thread / fiber, and retrieve an awaiter group. The awaiter group guarrantees job completion before the awaiter or job goes out-of-scope. Useful for most basic task scheduling. */
+		[[nodiscard]] JobGroup AsyncInvoke(std::vector<Any> const& p_inputs) const;
 
 		/* Returns the result of the job, if any, if already performed. If not performed, the result will be empty. */
 		GoodLang::Any GetResult() const {
@@ -413,8 +427,12 @@ namespace GoodLang {
 		};
 
 		/* Do the task immediately, without using any thread/fiber tools, and returns the result (if any). */
-		GoodLang::Any operator()() {
+		GoodLang::Any operator()() const {
 			return Invoke();
+		};
+		/* Do the task immediately, without using any thread/fiber tools, and returns the result (if any). */
+		GoodLang::Any operator()(std::vector<Any> const& p_inputs) const {
+			return Invoke(p_inputs);
 		};
 	};
 
@@ -468,11 +486,13 @@ namespace GoodLang {
 		template <typename T = void>
 		decltype(auto) Wait_Get() {
 			impl->Wait();
+			
 			if constexpr (std::is_same<T, void>::value) {
 				return impl->last_job.GetResult();
 			}
 			else {
-				return impl->last_job.GetResult().cast<T>();
+				auto result = impl->last_job.GetResult();
+				return (T)result.cast<T>();
 			}
 		};
 
