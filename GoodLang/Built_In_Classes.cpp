@@ -5,6 +5,7 @@
 #include "DateTime.h"
 #include <memory>
 #include <unordered_map>
+#include "Parallel.h"
 
 namespace GoodLang {
 	template<typename A, typename B> static B convert(A const& from) { return from; };
@@ -511,6 +512,29 @@ namespace GoodLang {
 				}));
 			}
 
+			// Promise
+			if (1) {
+				using thisType = parallel::promise;
+				std::string thisTypeName = "Promise";
+
+				// make it a class
+				std::shared_ptr<Class> classPtr; {
+					classPtr.reset(new Class(this->p_self.lock(), thisTypeName, user_type_shared<thisType>().lock()));
+				}
+				classPtr->SetSelf(classPtr);
+				this->AddChild(classPtr);
+				auto thisTypeInfo = classPtr->ClassType;
+
+				// Constructors
+				classPtr->AddFunction(thisTypeName, make_callable([]() -> thisType { return thisType{}; }));
+				classPtr->AddFunction(thisTypeName, make_callable([](thisType const& makeCopy) -> thisType { return makeCopy; }));
+				classPtr->AddFunction("=", make_callable([](Any const& a, thisType const& b) -> Any { thisType& out = a.cast(); out = b; return a; }, ParamTypes({ thisTypeInfo->MakeRef(), thisTypeInfo->MakeConstRef() })));
+
+				// Functions
+				classPtr->AddFunction("await", make_callable([](thisType& o) -> Var { return Var(o.wait_get_any()); }));
+				classPtr->AddFunction("returns", make_callable([](thisType const& o) -> std::weak_ptr<Type_Info> { return o.Type(); }));
+			}
+
 			// Pair
 			if (1) {
 				using thisType = std::pair<Var, Var>;
@@ -837,11 +861,11 @@ namespace GoodLang {
 			// Returns the type of Any object. By not specifying the type, the Any is treated like a Template
 			this->AddFunction("Type_Info", make_callable([](Any const& obj) -> std::weak_ptr<Type_Info> {
 				return obj.Type();
-				}));
+			}));
 			// Returns the type of Any object. By not specifying the type, the Any is treated like a Template
 			this->AddFunction("Type", make_callable([](Any const& obj) -> std::weak_ptr<Type_Info> {
 				return obj.Type();
-				}));
+			}));
 			// Returns a stringified version of the provided Any obj. This is meant to be a fall-back template whenever no specialization is available. 
 			this->AddFunction("to_string", make_callable([](Any const& x) -> std::string {
 				auto name = x.TypeName();

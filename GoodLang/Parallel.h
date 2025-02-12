@@ -434,6 +434,15 @@ namespace GoodLang {
 		GoodLang::Any operator()(std::vector<Any> const& p_inputs) const {
 			return Invoke(p_inputs);
 		};
+
+		std::weak_ptr<Type_Info> Type() const {
+			if (impl) {
+				return impl->Returns();
+			}
+			else {
+				return {};
+			}
+		};
 	};
 
 	/*! Class used to queue and await one or multiple jobs submitted to a concurrent fiber manager. */
@@ -706,16 +715,38 @@ namespace GoodLang {
 		/* Generic form of a future<T>, which can be used to wait on and get the results of any job. Can be safely shared if multiple places will need access to the result once available. */
 		class promise {
 		protected:
-			std::shared_ptr< atomic_ptr<JobGroup> > shared_state;
-			std::shared_ptr< atomic_ptr<GoodLang::Any> > result;
-			std::shared_ptr< std::mutex > waiting;
+			std::shared_ptr< JobGroup > 
+				shared_state;
+			std::shared_ptr< SharedLockable<atomic_ptr<GoodLang::Any>> > 
+				result;
+			std::weak_ptr<Type_Info> 
+				type;
 
 		public:
-			promise() : shared_state(nullptr), result(nullptr), waiting(nullptr) {};
+			promise() : 
+				shared_state(nullptr), 
+				result(nullptr), 
+				type() 
+			{};
+			promise(Job const& job, std::weak_ptr<Type_Info> const& Type) :
+				shared_state(std::make_shared<JobGroup>(job)),
+				result(std::shared_ptr<SharedLockable<atomic_ptr<GoodLang::Any>>>(new SharedLockable<atomic_ptr<GoodLang::Any>>(), [](SharedLockable<atomic_ptr<GoodLang::Any>>* anyP) { 
+				    if (anyP) { 
+						if (auto* p = anyP->Unique()->Set(nullptr)) delete p;
+						delete anyP;
+					}
+				})),
+				type(Type)
+			{};
 			promise(Job const& job) :
-				shared_state(std::shared_ptr<atomic_ptr<JobGroup>>(new atomic_ptr<JobGroup>(new JobGroup(job)), [](atomic_ptr<JobGroup>* anyP) { if (anyP) { auto* p = anyP->Set(nullptr); if (p) { delete p; } delete anyP; } })),
-				result(std::shared_ptr<atomic_ptr<GoodLang::Any>>(new atomic_ptr<GoodLang::Any>(), [](atomic_ptr<GoodLang::Any>* anyP) { if (anyP) { auto* p = anyP->Set(nullptr); if (p) { delete p; } delete anyP; } })),
-				waiting(std::shared_ptr<std::mutex>(new std::mutex()))
+				shared_state(std::make_shared<JobGroup>(job)),
+				result(std::shared_ptr<SharedLockable<atomic_ptr<GoodLang::Any>>>(new SharedLockable<atomic_ptr<GoodLang::Any>>(), [](SharedLockable<atomic_ptr<GoodLang::Any>>* anyP) {
+				    if (anyP) {
+					    if (auto* p = anyP->Unique()->Set(nullptr)) delete p;
+					    delete anyP;
+				    }
+				})),
+				type(job.Type())
 			{};
 			promise(promise const&) = default;
 			promise(promise&&) = default;
@@ -725,29 +756,33 @@ namespace GoodLang {
 
 			/* Returns true if this promise has been initialized correctly. Otherwise, false. */
 			bool valid() const noexcept { return (bool)shared_state; };
-			/* Wait until the requested job is completed. Repeated waiting is OK, however only the first "waiting" thread actually helps to complete the job - the remaining waiters will spin-wait. */
+			/* Wait until the requested job is completed. Repeated or simultaneous waiting is OK. */
 			void wait() {
-				JobGroup* p{ nullptr };
-				GoodLang::Any* p2{ nullptr };
-
-				defer(if (p) delete p);
-				defer(if (p2) delete p2);
-
-				if (valid() && !result->load()) {
-					auto guard{ std::lock_guard(*waiting) };
-
-					p = shared_state->Set(nullptr);
-					if (p) {
-						p2 = result->Set(new GoodLang::Any(p->Wait_Get()));
+				if (shared_state && result) {
+					if (auto s = result->Shared()) {
+						if (auto p = s->load()) { // 
+							return; // we are already done
+						}
+					}
+					Any R = shared_state->Wait_Get(); // multiple threads are allowed to contribute
+					if (auto s = result->Unique()) {
+						if (auto p = s->load()) {
+							return; // we are already done
+						}
+						else {
+							auto* p2 = s->Set(new Any(R)); // should only happen once
+							if (p2) delete p2;
+						}
 					}
 				}
 			};
 			/* Try to get the result, if available. Does not wait. */
 			GoodLang::Any get_any() const noexcept {
 				if (result) {
-					GoodLang::Any* p = result->Get();
-					if (p) {
-						return GoodLang::Any(*p);
+					if (auto s = result->Shared()) {
+						if (auto p = s->load()) {
+							return *p;
+						}
 					}
 				}
 				return GoodLang::Any();
@@ -756,6 +791,10 @@ namespace GoodLang {
 			GoodLang::Any wait_get_any() {
 				wait();
 				return get_any();
+			};
+
+			std::weak_ptr<Type_Info> Type() const {
+				return type;
 			};
 		};
 
@@ -766,9 +805,15 @@ namespace GoodLang {
 		Note: Only the first thread that "waits" on a future<T> assists the thread pool. More waiters != more jobs, and therefore additional waiters are spin-locking.
 		Recommended that only the thread (or consuming thread) that scheduled the future<T> object should wait for it. */
 		template <typename T> class future final : public promise/*, public future_type*/ {
+		private:
+			static std::weak_ptr<Type_Info> ThisType() {
+				typedef decltype(details::detail::function_signature(&future::get)) function_header;
+				return user_type_shared<typename function_header::Return_Type>();
+			};
+
 		public:
 			future() : promise()/*, future_type()*/ {};
-			future(Job const& job) : promise(job)/*, future_type()*/ {};
+			future(Job const& job) : promise(job, ThisType())/*, future_type()*/ {};
 			future(promise const& p_promise) : promise(p_promise)/*, future_type()*/ {};
 			future(future const&) = default;
 			future(future&&) = default;
@@ -781,79 +826,43 @@ namespace GoodLang {
 
 			/* get a copy of the result of the task. must have already waited. */
 			decltype(auto) get() {
-				if (result) {
-					GoodLang::Any* p = result->Get();
-					if (p) {
-						if constexpr (std::is_same<void, T>()) {
-							return;
-						}
-						else {
-							// if the return type is itself a future_type, then we should "wait_get" it as well.
-							//if constexpr (std::is_base_of_v<future_type, T>) {
-							//	return static_cast<T>(p->cast<T>()).wait_get();
-							//}
-							//else {
-							return static_cast<T>(p->cast<T>());
-							//}
-						}
-					}
+				if constexpr (std::is_same<void, T>()) {
+					return;
 				}
-				throw(std::runtime_error("future was empty"));
+				else {
+					return static_cast<T>(get_any().cast<T&>());
+				}
 			};
 			/* get a reference to the result of the task. Note: lifetime of return reference must not outlive the future<T> object. must have already waited. */
 			decltype(auto) get_ref() {
-				if (result) {
-					GoodLang::Any* p = result->Get();
-					if (p) {
-						if constexpr (std::is_same<void, T>()) {
-							return;
-						}
-						else {
-							// if the return type is itself a future_type, then we should "wait_get" it as well.
-							//if constexpr (std::is_base_of_v<future_type, T>) {
-							//	return static_cast<T>(p->cast<T>()).wait_get_ref();
-							//}
-							//else {
-							return static_cast<T&>(p->cast<T&>());
-							//}
-						}
-					}
+				if constexpr (std::is_same<void, T>()) {
+					return;
 				}
-				throw(std::runtime_error("future was empty"));
+				else {
+					return static_cast<T&>(get_any().cast<T>());
+				}
 			};
 			/* get a shared_pointer of the result of the task. must have already waited. */
 			decltype(auto) get_shared() {
-				if (result) {
-					GoodLang::Any* p = result->Get();
-					if (p) {
-						if constexpr (std::is_same<void, T>()) {
-							return;
-						}
-						else {
-							// if the return type is itself a future_type, then we should "wait_get" it as well.
-							//if constexpr (std::is_base_of_v<future_type, T>) {
-							//	return static_cast<T>(p->cast<T>()).wait_get_shared();
-							//}
-							//else {
-							return static_cast<std::shared_ptr<T>>(p->cast<std::shared_ptr<T>>());
-							//}
-						}
-					}
+				if constexpr (std::is_same<void, T>()) {
+					return;
 				}
-				throw(std::runtime_error("future was empty"));
+				else {
+					return static_cast<std::shared_ptr<T>>(get_any().cast<std::shared_ptr<T>>());
+				}
 			};
 
-			/* wait to get a copy of the result of the task. Repeated waiting is OK. */
+			/* wait to get a copy of the result of the task. Repeated or simultaneous waiting is OK. */
 			decltype(auto) wait_get() {
 				wait();
 				return get();
 			};
-			/* wait to get a reference to the result of the task. Note: lifetime of return reference must not outlive the future<T> object. Repeated waiting is OK. */
+			/* wait to get a reference to the result of the task. Note: lifetime of return reference must not outlive the future<T> object. Repeated or simultaneous waiting is OK. */
 			decltype(auto) wait_get_ref() {
 				wait();
 				return get_ref();
 			};
-			/* wait to get a shared_pointer of the result of the task. Repeated waiting is OK. */
+			/* wait to get a shared_pointer of the result of the task. Repeated or simultaneous waiting is OK. */
 			decltype(auto) wait_get_shared() {
 				wait();
 				return get_shared();

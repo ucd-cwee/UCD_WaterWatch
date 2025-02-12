@@ -473,8 +473,18 @@ int main() {
 				(void)(consumption.interpolate((Units::second)t, GoodLang::spline::right_snap{}));
 			}
 
+			auto TS = consumption.GetTimeSeries(DateTime::Now(), DateTime::Now() + 30_d, 0.5_d);
+			auto bg = TS.begin();
+			auto e = TS.end();
+			(void)(bg != e);
+			bg++;
+			++bg;
+			(void)bg->first;
+
 			// time-series sample (sample as-you-go, preventing large vector allocations)
-			for (auto& x : consumption.GetTimeSeries(DateTime::Now(), DateTime::Now() + 30_d, 0.5_d)) {}
+			for (auto& x : consumption.GetTimeSeries(DateTime::Now(), DateTime::Now() + 30_d, 0.5_d)) {
+				// print(x.first.ToString() + ", " + x.second.ToString());
+			}
 
 			// loop through knots
 			for (auto& x : consumption) {
@@ -482,8 +492,9 @@ int main() {
 			}
 
 			// time-series sample (sample as-you-go, preventing large vector allocations)
-			for (auto& x : consumption.GetTimeSeries(DateTime::Now(), DateTime::Now() + 30_d, 0.5_d)) {}
-
+			for (auto& x : consumption.GetTimeSeries(DateTime::Now(), DateTime::Now() + 30_d, 0.5_d)) {
+				// print(x.first.ToString() + ", " + x.second.ToString());
+			}
 		}
 		// Scopes
 		if (1) {
@@ -509,7 +520,7 @@ int main() {
 
 				(s1->Cast<std::string>(s1->CallFunction("to_string", { s1->CallFunction("/", { L1, L2 }) })));
 
-				(Units::horsepower(180_lbf * 2.4 * 2.0 * Units::constants::pi() * 12_ft / 1_min));
+				(void)(Units::horsepower(180_lbf * 2.4 * 2.0 * Units::constants::pi() * 12_ft / 1_min));
 
 				auto paired = s1->CallFunction("pair", { 100.0, Units::gallon{ 5 } });
 				EXPECT_EQ(true, s1->Cast<bool>(s1->CallFunction("==", { s1->CallFunction("second", {paired}), Units::cubic_foot{ Units::gallon{ 5 } } })));
@@ -518,6 +529,39 @@ int main() {
 				EXPECT_EQ(true, s1->Cast<bool>(s1->CallFunction("==", { s1->CallFunction("second", {paired}), Units::cubic_foot{ Units::gallon{ 5 } } })));
 
 				(s1->Cast<std::string>(s1->CallFunction("to_string", { s1->CallFunction("cubic_foot", {s1->CallFunction("second", {paired})}) })));
+
+
+				// Promise tests
+				{
+					auto promise = parallel::async([]() -> int { ::Sleep(3000); return 100; }).as_promise(); // sleeps 300 milliseconds and returns "100". Down-casted to a promise, performing type-erasure. 
+					if (1) { // thread_local waiting from a specialized promise (no contention)
+						EXPECT_EQ(promise.Type(), user_type_shared<int>()); // returns an int
+						EXPECT_EQ(true, s1->Cast<bool>(s1->CallFunction("==", { s1->CallFunction("returns", { promise }), s1->CallFunction("Type", { 100 }) })));
+						EXPECT_EQ(true, s1->Cast<bool>(s1->CallFunction("==", { s1->CallFunction("await", { promise }), 100 })));
+					}
+
+					if (1) { // parallel waiting from a specialized promise (w/ contention)
+						promise = parallel::async([]() -> int { ::Sleep(3000); return 100; }).as_promise(); // sleeps 300 milliseconds and returns "100". Down-casted to a promise, performing type-erasure. 
+						EXPECT_EQ(promise.Type(), user_type_shared<int>()); // returns an int
+						parallel::For(0, 100, [&](int i) {
+							auto s2 = std::make_shared<GoodLang::Scope>(s1);
+							s2->SetSelf(s2);
+							EXPECT_EQ(true, s2->Cast<bool>(s2->CallFunction("==", { s2->CallFunction("returns", { promise }), s2->CallFunction("Type", { 100 }) })));
+							EXPECT_EQ(true, s2->Cast<bool>(s2->CallFunction("==", { s2->CallFunction("await", { promise }), 100 })));
+						});
+					}
+
+					if (1) { // parallel waiting from a non-specialized promise (w/ contention)
+						promise = parallel::promise(Job([]() -> int { ::Sleep(3000); return 100; })); // sleeps 300 milliseconds and returns "100". Down-casted to a promise, performing type-erasure. 				
+						EXPECT_EQ(promise.Type(), user_type_shared<int>()); // returns an int
+						parallel::For(0, 100, [&](int i) {
+							auto s2 = std::make_shared<GoodLang::Scope>(s1);
+							s2->SetSelf(s2);
+							EXPECT_EQ(true, s2->Cast<bool>(s2->CallFunction("==", { s2->CallFunction("returns", { promise }), s2->CallFunction("Type", { 100 }) })));
+							EXPECT_EQ(true, s2->Cast<bool>(s2->CallFunction("==", { s2->CallFunction("await", { promise }), 100 })));
+						});
+					}
+				}
 			}
 		}
 		// SharedLockable
@@ -701,24 +745,36 @@ int main() {
 		}
 
 		// Dispatching jobs at random
-		if (1) {
+		if (0) {
+			auto GetRand = []() -> double { return (double)std::rand() / (double)RAND_MAX; };
+
 			(void)Job([]() -> double { return (double)std::rand() / (double)RAND_MAX; }).AsyncInvoke().Wait_Get<double>();
 			(void)parallel::async([]() -> double { return (double)std::rand() / (double)RAND_MAX; }).as_promise().wait_get_any().cast<double>();
 
-			auto job = Job([](int From, int To, std::function<void(int)> const& toDo) {
-				parallel::For(From, To, [&](auto i) {
-					toDo(i);
-				});
+			Job job1{};
+			Job job2{};
+			print("Starting:");
+			job1 = Job([&job2, &GetRand]() {
+				print("\tCalling Job 1...");
+				if (GetRand() < 0.8) {
+					return Any(job2.AsyncInvoke({}));
+				}
+				else {
+					return Any();
+				}
+			});
+			job2 = Job([&job1, &GetRand]() {
+				print("\tCalling Job 2...");
+				if (GetRand() < 0.8) {
+					return Any(job1.AsyncInvoke({}));
+				}
+				else {
+					return Any();
+				}
 			});
 
-			std::atomic<long> V{ 0 };
-			auto await1 = job.AsyncInvoke({ 0, 100, std::function<void(int)>([&V](int i) { V++; }) });
-			auto await2 = job.AsyncInvoke({ 0, 100, std::function<void(int)>([&V](int i) { V++; }) });
-
-			await1.Wait();
-			await2.Wait();
-
-			EXPECT_EQ(200, V.load());
+			auto awaiter = job1.AsyncInvoke({});
+			awaiter.Wait();
 		}
 
 
