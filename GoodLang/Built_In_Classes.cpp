@@ -433,12 +433,12 @@ namespace GoodLang {
 				// Var()
 				classPtr->AddFunction("Var", make_callable([]() -> Var {
 					return Var();
-					})); // explicit = cannot be used for conversion trees
-					// Var(Var const&)
+				})); // explicit = cannot be used for conversion trees
+				// Var(Var const&)
 				classPtr->AddFunction("Var", make_callable([](Var const& obj) -> Var {
 					return obj;
-					})); // explicit = cannot be used for conversion trees
-					// Var(Any)
+				})); // explicit = cannot be used for conversion trees
+				// Var(Any)
 				classPtr->AddFunction("Var", Function(make_callable([](Any const& obj) -> Var {
 					if (obj.IsTypeOf<Var>()) {
 						return obj.cast<Var&>();
@@ -446,16 +446,31 @@ namespace GoodLang {
 					else {
 						return Var(obj);
 					}
-					}), true)); // explicit = cannot be used for conversion trees
-					// Var& = Var const&
-				classPtr->AddFunction("=", make_callable([](Any const& a, Var const& b) -> Any {
-					Var& out = a.cast(); out = b; return a;
-					}, ParamTypes({ user_type_shared<Var>().lock()->MakeRef(), user_type_shared<Var>().lock()->MakeConstRef() }), user_type_shared<Var>().lock()->MakeRef()));
+				}), true)); // explicit = cannot be used for conversion trees
+				// Var& = Var const&
+				classPtr->AddFunction("=", make_callable([self = std::weak_ptr<Class>(classPtr)](Any const& a, Var const& b) -> Any {
+					Var& out = a.cast(); 
+					if (*out.p_data) {
+						if (auto Self = self.lock()) Self->CallFunction("=", { out.p_data, b.p_data });	else *out.p_data = *b.p_data;
+					}
+					else {
+						*out.p_data = *b.p_data;
+					}
+					// out = b; // copy its references
+					return a;
+				}, ParamTypes({ user_type_shared<Var>().lock()->MakeRef(), user_type_shared<Var>().lock()->MakeConstRef() }), user_type_shared<Var>().lock()->MakeRef()));
 				// Var& = Any
-				classPtr->AddFunction("=", make_callable([](Any const& a, Any const& b) -> Any {
-					Var& out = a.cast(); out = Var(b); return a;
-					}, ParamTypes({ user_type_shared<Var>().lock()->MakeRef(), user_type_shared<Any>() }), user_type_shared<Var>().lock()->MakeRef()));
-
+				classPtr->AddFunction("=", make_callable([self = std::weak_ptr<Class>(classPtr)](Any const& a, Any const& b) -> Any {
+					Var& out = a.cast(); 
+					if (*out.p_data) {
+						if (auto Self = self.lock()) Self->CallFunction("=", { out.p_data, b }); else *out.p_data = b;
+					}
+					else {
+						*out.p_data = b;
+					}
+					// out = Var(b); // redirect our reference
+					return a;
+				}, ParamTypes({ user_type_shared<Var>().lock()->MakeRef(), user_type_shared<Any>() }), user_type_shared<Var>().lock()->MakeRef()));
 				// Reset a Var
 				classPtr->AddFunction("try_reset", make_callable([](Any const& a) -> bool {
 					if (Var* p = a.cast<Var*>()) { // will succeed for "Var" types. Note that Var's with values will LIE about their types -- can only find out by trying to do this cast.
@@ -487,11 +502,11 @@ namespace GoodLang {
 				// Returns the type of the contained object. By not specifying the type, the Any is treated like a Template
 				this->AddFunction("Type_Info", make_callable([](Var const& obj) -> std::weak_ptr<Type_Info> {
 					return obj.p_data->Type();
-					}));
+				}));
 				// Returns the type of Any object. By not specifying the type, the Any is treated like a Template
 				this->AddFunction("Type", make_callable([](Var const& obj) -> std::weak_ptr<Type_Info> {
 					return obj.p_data->Type();
-					}));
+				}));
 				// Returns a stringified version of the provided Any obj. This is meant to be a fall-back template whenever no specialization is available. 
 				this->AddFunction("to_string", make_callable([self = std::weak_ptr<Class>(classPtr)](Var const& x)->std::string {
 					if (auto Self = self.lock()) {
@@ -568,7 +583,7 @@ namespace GoodLang {
 					if (auto Self = self.lock()) {
 						std::string a = Self->Cast<std::string>(Self->CallFunction("to_string", { x.first.p_data }));
 						std::string b = Self->Cast<std::string>(Self->CallFunction("to_string", { x.second.p_data }));
-						return GoodLang::printf("[%s, %s]", a.c_str(), b.c_str());
+						return GoodLang::printf("<%s, %s>", a.c_str(), b.c_str());
 					}
 					else {
 						throw exception::not_found_error("to_string");
@@ -630,40 +645,40 @@ namespace GoodLang {
 				classPtr->AddFunction("at", make_callable([](thisType const& o, size_t _Keyval) -> Var { 
 					auto Shared = o.at(_Keyval);
 					auto& var = *Shared;
-					std::shared_ptr<Any> toReturn = std::shared_ptr<Any>(new Any(Shared->p_data), [_lock = Shared.ForwardLock()](Any* p) {
-						delete p; 
+					std::shared_ptr<Any> toReturn = std::shared_ptr<Any>(Shared->p_data.get(), [_lock = Shared.ForwardLock(), _shared = Shared->p_data](Any* p) {
+						/* delete p; */
 					});
 					return Var(toReturn);
 				}));
 				classPtr->AddFunction("[]", make_callable([](thisType& o, size_t _Keyval) -> Var {
 					auto Shared = o[_Keyval];
 					auto& var = *Shared;
-					std::shared_ptr<Any> toReturn = std::shared_ptr<Any>(new Any(Shared->p_data), [_lock = Shared.ForwardLock()](Any* p) {
-						delete p;
+					std::shared_ptr<Any> toReturn = std::shared_ptr<Any>(Shared->p_data.get(), [_lock = Shared.ForwardLock(), _shared = Shared->p_data](Any* p) {
+						/* delete p; */
 					});
 					return Var(toReturn);
 				}));
 				classPtr->AddFunction("[]", make_callable([](thisType const& o, size_t _Keyval) -> Var {
 					auto Shared = o[_Keyval];
 					auto& var = *Shared;
-					std::shared_ptr<Any> toReturn = std::shared_ptr<Any>(new Any(Shared->p_data), [_lock = Shared.ForwardLock()](Any* p) {
-						delete p;
+					std::shared_ptr<Any> toReturn = std::shared_ptr<Any>(Shared->p_data.get(), [_lock = Shared.ForwardLock(), _shared = Shared->p_data](Any* p) {
+						/* delete p; */
 					});
 					return Var(toReturn);
 				}));
 				classPtr->AddFunction("front", make_callable([](thisType const& o) -> Var {
 					auto Shared = o.front();
 					auto& var = *Shared;
-					std::shared_ptr<Any> toReturn = std::shared_ptr<Any>(new Any(Shared->p_data), [_lock = Shared.ForwardLock()](Any* p) {
-						delete p;
+					std::shared_ptr<Any> toReturn = std::shared_ptr<Any>(Shared->p_data.get(), [_lock = Shared.ForwardLock(), _shared = Shared->p_data](Any* p) {
+						/* delete p; */
 					});
 					return Var(toReturn);
 				}));
 				classPtr->AddFunction("back", make_callable([](thisType const& o) -> Var {
 					auto Shared = o.back();
 					auto& var = *Shared;
-					std::shared_ptr<Any> toReturn = std::shared_ptr<Any>(new Any(Shared->p_data), [_lock = Shared.ForwardLock()](Any* p) {
-						delete p;
+					std::shared_ptr<Any> toReturn = std::shared_ptr<Any>(Shared->p_data.get(), [_lock = Shared.ForwardLock(), _shared = Shared->p_data](Any* p) {
+						/* delete p; */
 					});
 					return Var(toReturn);
 				}));
@@ -703,8 +718,262 @@ namespace GoodLang {
 						throw exception::not_found_error("to_hash");
 					}
 				}));
+
+				// Iterator
+				if (1) {
+					using thisIteratorType = thisType::iterator;
+					std::string thisIteratorTypeName = "iterator";
+
+					std::shared_ptr<Class> iterator_classPtr; {
+						iterator_classPtr.reset(new Class(classPtr, thisIteratorTypeName, user_type_shared<thisIteratorType>().lock()));
+					}
+					iterator_classPtr->p_self = iterator_classPtr;
+					classPtr->AddChild(iterator_classPtr);
+					auto thisIteratorTypeInfo = iterator_classPtr->ClassType;
+
+					// Constructor
+					iterator_classPtr->AddFunction(thisIteratorTypeName, make_callable([]() -> thisIteratorType { return thisIteratorType{}; }));
+					// Copy constructor
+					iterator_classPtr->AddFunction(thisIteratorTypeName, make_callable([](thisIteratorType const& makeCopy) -> thisIteratorType { return makeCopy; }));
+					// assignment operator
+					iterator_classPtr->AddFunction("=", make_callable([](Any const& a, thisIteratorType const& b) -> Any {
+						thisIteratorType& out = a.cast(); out = b; return a;
+					}, ParamTypes({ thisIteratorTypeInfo->MakeRef(), thisIteratorTypeInfo->MakeConstRef() }), thisIteratorTypeInfo->MakeRef()));
+
+					// equality
+					iterator_classPtr->AddFunction("==", make_callable([](thisIteratorType const& lhs, thisIteratorType const& rhs) -> bool { return lhs == rhs; }));
+					iterator_classPtr->AddFunction("!=", make_callable([](thisIteratorType const& lhs, thisIteratorType const& rhs) -> bool { return lhs != rhs; }));
+
+					// iter
+					iterator_classPtr->AddFunction("++", make_callable([](Any const& a) -> Any {
+						thisIteratorType& out = a.cast();
+						out.operator++();
+						return a;
+					}, ParamTypes({ thisIteratorTypeInfo->MakeRef() }), thisIteratorTypeInfo->MakeRef()));
+					//// first (convenience function for this specialization)
+					//iterator_classPtr->AddFunction("first", make_callable([](thisIteratorType const& makeCopy) -> Any {
+					//	return (*makeCopy).first.first;
+					//}));
+					//// second (convenience function for this specialization)
+					//iterator_classPtr->AddFunction("second", make_callable([](thisIteratorType const& makeCopy) -> Any {
+					//	return (*makeCopy).second;
+					//}));
+					//// get // must be implimented by the iterator
+					//iterator_classPtr->AddFunction("get", make_callable([](thisIteratorType const& makeCopy) -> std::pair<Var, Var> {
+					//	return std::pair<Var, Var>{ Any((*makeCopy).first.first), Any((*makeCopy).second) };
+					//}));
+
+					// get // must be implimented by the iterator
+					iterator_classPtr->AddFunction("get", make_callable([](thisIteratorType const& makeCopy) -> Var {
+						std::shared_ptr<Any> toReturn = std::shared_ptr<Any>(makeCopy->p_data.get(), [_lock = makeCopy](Any* p) {
+							/* delete p; */
+						});
+						return Var(toReturn);
+					}));
+				}
+				classPtr->AddFunction("begin", make_callable([Self = classPtr->p_self](thisType const& r)->thisType::iterator {
+					return r.begin();
+				}));
+				classPtr->AddFunction("end", make_callable([Self = classPtr->p_self](thisType const& r)->thisType::iterator {
+					return r.end();
+				}));
+
+
+
+
+
 			}
 
+			// Map
+			if (1) {
+				using thisType = Map<size_t, std::pair<Var, Var>>;
+				std::string thisTypeName = "Map";
+
+				std::shared_ptr<Class> classPtr; {
+					classPtr.reset(new Class(this->p_self.lock(), thisTypeName, user_type_shared<thisType>().lock()));
+				}
+				classPtr->p_self = classPtr;
+				this->AddChild(classPtr);
+				auto thisTypeInfo = classPtr->ClassType;
+
+				// Constructors
+				classPtr->AddFunction(thisTypeName, make_callable([]() -> thisType { return thisType{}; }));
+				classPtr->AddFunction(thisTypeName, make_callable([](thisType const& makeCopy) -> thisType { return makeCopy; }));
+				classPtr->AddFunction("=", make_callable(
+					[](Any const& a, thisType const& b) -> Any { thisType& out = a.cast(); out = b; return a; }
+					, ParamTypes({ thisTypeInfo->MakeRef(), thisTypeInfo->MakeConstRef() })
+				));
+
+				// Comparisons
+				classPtr->AddFunction("==", make_callable([](thisType const& x, thisType const& y) -> bool { return x == y; }));
+				classPtr->AddFunction("!=", make_callable([](thisType const& x, thisType const& y) -> bool { return x != y; }));
+
+				// Functions
+				classPtr->AddFunction("size", make_callable(&thisType::size));
+				classPtr->AddFunction("empty", make_callable(&thisType::empty));				
+				classPtr->AddFunction("clear", make_callable(&thisType::clear));
+				classPtr->AddFunction("erase", make_callable([Self = classPtr->p_self](thisType& r, Any const& key)->size_t {
+					if (auto scope = Self.lock()) {
+						auto _key = scope->Cast<size_t>(scope->CallFunction("to_hash", { key }));
+						return r.erase(_key);
+					}
+					else {
+						throw std::runtime_error("Class not available");
+					}
+				}));
+				classPtr->AddFunction("count", make_callable([Self = classPtr->p_self](thisType& r, Any const& key)->size_t {
+					if (auto scope = Self.lock()) {
+						auto _key = scope->Cast<size_t>(scope->CallFunction("to_hash", { key }));
+						return r.count(_key);
+					}
+					else {
+						throw std::runtime_error("Class not available");
+					}
+				}));
+				classPtr->AddFunction("at", make_callable([Self = classPtr->p_self](thisType const& o, Any const& key) -> Var {
+					if (auto scope = Self.lock()) {
+						auto _key = scope->Cast<size_t>(scope->CallFunction("to_hash", { key }));
+						auto Shared = o.at(_key);
+						auto& var = *Shared;
+						std::shared_ptr<Any> toReturn = std::shared_ptr<Any>(Shared->second.p_data.get(), [_lock = Shared.ForwardLock(), _shared = Shared->second.p_data](Any* p) {
+							/* delete p; */
+						});
+						return Var(toReturn);
+					}
+					else {
+						throw std::runtime_error("Class not available");
+					}
+				}));
+				classPtr->AddFunction("[]", make_callable([Self = classPtr->p_self](thisType const& o, Any const& key) -> Var {
+					if (auto scope = Self.lock()) {
+						auto _key = scope->Cast<size_t>(scope->CallFunction("to_hash", { key }));
+						auto Shared = o.at(_key);
+						auto& var = *Shared;
+						std::shared_ptr<Any> toReturn = std::shared_ptr<Any>(Shared->second.p_data.get(), [_lock = Shared.ForwardLock(), _shared = Shared->second.p_data](Any* p) {
+							/* delete p; */
+						});
+						return Var(toReturn);
+					}
+					else {
+						throw std::runtime_error("Class not available");
+					}
+				}));
+				classPtr->AddFunction("[]", make_callable([Self = classPtr->p_self](thisType& o, Any const& key) -> Var {
+					if (auto scope = Self.lock()) {
+						auto _key = scope->Cast<size_t>(scope->CallFunction("to_hash", { key }));
+						auto Shared = o.get_or_insert(_key, std::pair<Var, Var>{ Var(key), Var() });
+						auto& var = *Shared;
+						std::shared_ptr<Any> toReturn = std::shared_ptr<Any>(Shared->second.p_data.get(), [_lock = Shared.ForwardLock(), _shared = Shared->second.p_data](Any* p) {
+							/* delete p; */
+						});
+						return Var(toReturn);
+					}
+					else {
+						throw std::runtime_error("Class not available");
+					}
+				}));
+
+				// Returns a string
+				this->AddFunction("to_string", make_callable([self = std::weak_ptr<Class>(classPtr)](thisType const& x)->std::string {
+					if (auto Self = self.lock()) {
+						std::string r;
+						for (auto& i : x) {
+							if (r.empty())
+								r = Self->Cast<std::string>(Self->CallFunction("to_string", { i.second }));
+							else {
+								r += ", ";
+								r += Self->Cast<std::string>(Self->CallFunction("to_string", { i.second }));
+							}
+						}
+						return GoodLang::printf("[%s]", r.c_str());
+					}
+					else {
+						throw exception::not_found_error("to_string");
+					}
+				}));
+				// Returns a hash
+				this->AddFunction("to_hash", make_callable([self = std::weak_ptr<Class>(classPtr)](thisType const& x)->size_t {
+					if (auto Self = self.lock()) {
+						size_t o{ 0 };
+						for (auto& i : x) {
+							if (o == 0) {
+								o = Self->Cast<size_t>(Self->CallFunction("to_hash", { i.second }));
+							}
+							else {
+								Scope::hash_combine(o, Self->Cast<size_t>(Self->CallFunction("to_hash", { i.second })));
+							}
+						}
+						return o;
+					}
+					else {
+						throw exception::not_found_error("to_hash");
+					}
+				}));
+
+				// Iterator
+				if (1) {
+					using thisIteratorType = thisType::iterator;
+					std::string thisIteratorTypeName = "iterator";
+
+					std::shared_ptr<Class> iterator_classPtr; {
+						iterator_classPtr.reset(new Class(classPtr, thisIteratorTypeName, user_type_shared<thisIteratorType>().lock()));
+					}
+					iterator_classPtr->p_self = iterator_classPtr;
+					classPtr->AddChild(iterator_classPtr);
+					auto thisIteratorTypeInfo = iterator_classPtr->ClassType;
+
+					// Constructor
+					iterator_classPtr->AddFunction(thisIteratorTypeName, make_callable([]() -> thisIteratorType { return thisIteratorType{}; }));
+					// Copy constructor
+					iterator_classPtr->AddFunction(thisIteratorTypeName, make_callable([](thisIteratorType const& makeCopy) -> thisIteratorType { return makeCopy; }));
+					// assignment operator
+					iterator_classPtr->AddFunction("=", make_callable([](Any const& a, thisIteratorType const& b) -> Any {
+						thisIteratorType& out = a.cast(); out = b; return a;
+					}, ParamTypes({ thisIteratorTypeInfo->MakeRef(), thisIteratorTypeInfo->MakeConstRef() }), thisIteratorTypeInfo->MakeRef()));
+
+					// equality
+					iterator_classPtr->AddFunction("==", make_callable([](thisIteratorType const& lhs, thisIteratorType const& rhs) -> bool { return lhs == rhs; }));
+					iterator_classPtr->AddFunction("!=", make_callable([](thisIteratorType const& lhs, thisIteratorType const& rhs) -> bool { return lhs != rhs; }));
+
+					// iter
+					iterator_classPtr->AddFunction("++", make_callable([](Any const& a) -> Any {
+						thisIteratorType& out = a.cast();
+						out.operator++();
+						return a;
+					}, ParamTypes({ thisIteratorTypeInfo->MakeRef() }), thisIteratorTypeInfo->MakeRef()));
+					// first (convenience function for this specialization)
+					iterator_classPtr->AddFunction("first", make_callable([](thisIteratorType const& makeCopy) -> Any {
+						std::shared_ptr<Any> toReturn = std::shared_ptr<Any>(makeCopy->second.first.p_data.get(), [_lock = makeCopy](Any* p) {
+							/* delete p; */
+						});
+						return Var(toReturn);
+					}));
+					// second (convenience function for this specialization)
+					iterator_classPtr->AddFunction("second", make_callable([](thisIteratorType const& makeCopy) -> Any {
+						std::shared_ptr<Any> toReturn = std::shared_ptr<Any>(makeCopy->second.second.p_data.get(), [_lock = makeCopy](Any* p) {
+							/* delete p; */
+						});
+						return Var(toReturn);
+					}));
+					// get // must be implimented by the iterator
+					iterator_classPtr->AddFunction("get", make_callable([](thisIteratorType const& makeCopy) -> std::pair<Var, Var> {
+						std::shared_ptr<Any> toReturn1 = std::shared_ptr<Any>(makeCopy->second.first.p_data.get(), [_lock = makeCopy](Any* p) {
+							/* delete p; */
+						});
+						std::shared_ptr<Any> toReturn2 = std::shared_ptr<Any>(makeCopy->second.second.p_data.get(), [_lock = makeCopy](Any* p) {
+							/* delete p; */
+						});
+						return std::pair<Var, Var>{ Var(toReturn1), Var(toReturn2) };
+					}));
+				}
+				classPtr->AddFunction("begin", make_callable([Self = classPtr->p_self](thisType const& r)->thisType::iterator {
+					return r.begin();
+				}));
+				classPtr->AddFunction("end", make_callable([Self = classPtr->p_self](thisType const& r)->thisType::iterator {
+					return r.end();
+				}));
+
+			}
 
 #if 0
 			// Map

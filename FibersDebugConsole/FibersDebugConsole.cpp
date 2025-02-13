@@ -89,762 +89,843 @@
 int main() {
 	using namespace GoodLang;
 
-	// pre-warm the heap
-	for (int i = 0; i < 100000; i++) delete (new int(5));
+	try{
+		// pre-warm the heap
+		for (int i = 0; i < 100000; i++) delete (new int(5));
 
-	// DEBUG -- allows catching and walking thrown errors.
-	// parallel::options::RethrowsExceptions(false);
+		// DEBUG -- allows catching and walking thrown errors.
+		// parallel::options::RethrowsExceptions(false);
 
-	while (true) {
-		auto f{ GoodLang::Scripted_Type_Info() };
-		auto& type_int = GoodLang::user_type<int>();
-		type_int.IsBuiltInType();
-		Any x = 100;
-		EXPECT_EQ("int", x.TypeName());
-		x = 500;
-		utilities::FastAllocator<int> xxx;
-		xxx.Alloc();
-		(void)x.cast<int>();
-		auto func = make_callable([](int x) -> int { return x * x; });
-		TypeConverter converter;
-		auto result = call(func, { 100 }, converter);
-		EXPECT_EQ(true, result.IsTypeOf<int>());
-		Functions F;
-		F.emplace("foo", make_callable([](double x) -> double { return x * x; }), true);
-		func = F.BuildMatch("foo", { 100.0 }, converter);
-		result = call(func, { 100.0 }, converter);
-		EXPECT_EQ(true, result.IsTypeOf<double>());
-		Union<int, int> y;
-		y.get<0>() += 1;
-		Units::scalar S;
-		S += 10;
-		S /= 5;
-		S = S + Units::scalar{ 55 };
-		EXPECT_EQ(57, S);
-		auto length = Units::foot{ 1 } + Units::meter{ 1 };
-		auto length2 = Units::meter{ 1 } + Units::petameter{ 1 };
-		auto length3 = Units::meter{ 1 } + Units::femtometer{ 10000 };
-		auto rate = Units::gallon{ 5 } / Units::minute{ 1 };
-		auto volume = rate * Units::year{ 1 };
-		using namespace literals;
-		(void)(Units::gallon{ 5 } != Units::cubic_foot{ 5 });
-		(void)(Units::gallon{ 50 } != Units::cubic_foot{ 50 });
-		Units::mile h = 200_acre / 1.25_mi;
-		EXPECT_EQ(0.25_mi, h);
-		Units::meters_per_second V0 = -12.0_mps;
-		Units::meter X0 = 4.6_m;
-		auto accelerationFormula = [](Units::second t) -> Units::meters_per_second_squared {
-			auto a = 0.3_m / (1_s * 1_s * 1_s);
-			Units::meters_per_second_squared b = 2.4_mps_sq;
-			return (a * t) + b;
-		};
-		auto velocityFormula = [](Units::second t, Units::meters_per_second V0) -> Units::meters_per_second {
-			auto a = 0.3_m / (1_s * 1_s * 1_s);
-			Units::meters_per_second_squared b = 2.4_mps_sq;
-			return (0.5 * a * t * t) + (b * t) + V0;
-		};
-		Units::meter pos = X0;
-		Units::meters_per_second velocity = V0;
-		Units::second timeStep = 0.1_s;
-		for (Units::second t = 0; t < 8_s; t += timeStep) {
-			velocity = velocityFormula(t, V0);
+		while (true) {
+			auto f{ GoodLang::Scripted_Type_Info() };
+			auto& type_int = GoodLang::user_type<int>();
+			type_int.IsBuiltInType();
+			Any x = 100;
+			EXPECT_EQ("int", x.TypeName());
+			x = 500;
+			utilities::FastAllocator<int> xxx;
+			xxx.Alloc();
+			(void)x.cast<int>();
+			auto func = make_callable([](int x) -> int { return x * x; });
+			TypeConverter converter;
+			auto result = call(func, { 100 }, converter);
+			EXPECT_EQ(true, result.IsTypeOf<int>());
+			Functions F;
+			F.emplace("foo", make_callable([](double x) -> double { return x * x; }), true);
+			func = F.BuildMatch("foo", { 100.0 }, converter);
+			result = call(func, { 100.0 }, converter);
+			EXPECT_EQ(true, result.IsTypeOf<double>());
+			Union<int, int> y;
+			y.get<0>() += 1;
+			Units::scalar S;
+			S += 10;
+			S /= 5;
+			S = S + Units::scalar{ 55 };
+			EXPECT_EQ(57, S);
+			auto length = Units::foot{ 1 } + Units::meter{ 1 };
+			auto length2 = Units::meter{ 1 } + Units::petameter{ 1 };
+			auto length3 = Units::meter{ 1 } + Units::femtometer{ 10000 };
+			auto rate = Units::gallon{ 5 } / Units::minute{ 1 };
+			auto volume = rate * Units::year{ 1 };
+			using namespace literals;
+			(void)(Units::gallon{ 5 } != Units::cubic_foot{ 5 });
+			(void)(Units::gallon{ 50 } != Units::cubic_foot{ 50 });
+			Units::mile h = 200_acre / 1.25_mi;
+			EXPECT_EQ(0.25_mi, h);
+			Units::meters_per_second V0 = -12.0_mps;
+			Units::meter X0 = 4.6_m;
+			auto accelerationFormula = [](Units::second t) -> Units::meters_per_second_squared {
+				auto a = 0.3_m / (1_s * 1_s * 1_s);
+				Units::meters_per_second_squared b = 2.4_mps_sq;
+				return (a * t) + b;
+			};
+			auto velocityFormula = [](Units::second t, Units::meters_per_second V0) -> Units::meters_per_second {
+				auto a = 0.3_m / (1_s * 1_s * 1_s);
+				Units::meters_per_second_squared b = 2.4_mps_sq;
+				return (0.5 * a * t * t) + (b * t) + V0;
+			};
+			Units::meter pos = X0;
+			Units::meters_per_second velocity = V0;
+			Units::second timeStep = 0.1_s;
+			for (Units::second t = 0; t < 8_s; t += timeStep) {
+				velocity = velocityFormula(t, V0);
 
-			auto posStr = pos.ToString();
-			auto tStr = t.ToString();
-			auto vStr = velocity.ToString();
+				auto posStr = pos.ToString();
+				auto tStr = t.ToString();
+				auto vStr = velocity.ToString();
 
-			if (velocity == 0_mps) {
-				EXPECT_EQ(t, 4_s);
-				break;
-			}
-
-			pos += velocity * timeStep;
-		}
-		(void)Units::value::GetValueTypes();
-		// Direct Invoke
-		EXPECT_EQ(5, GoodLang::Job([](int x)->int { return x; }, 5).Invoke().cast<int>());
-		// Async and Await
-		EXPECT_EQ(5, GoodLang::Job([](int x)->int { return x; }, 5).AsyncInvoke().Wait_Get<int>());
-		// Async, do stuff, then Await
-		if (1) {
-			auto group = GoodLang::Job([](int x)->int { return x; }, 5).AsyncInvoke();
-			Sleep(10);
-			EXPECT_EQ(5, group.Wait_Get<int>());
-		}
-		// 100 parallel jobs
-		if (1) {
-			Units::scalar V{ 0 };
-			parallel::For(0, 100, [&](int i) {
-				++V;
-				});
-			EXPECT_EQ(100, V);
-		}
-		// 100,000 parallel jobs
-		if (1) {
-			std::atomic<int> V{ 0 };
-			Units::scalar V2{ 0 }; // At high levels of parallelism, the Units lock will choke the threads
-			Stopwatch sw;
-
-			sw.Start();
-			parallel::For(0, 100000, [&](int i) {
-				V++;
-				});
-
-			sw.Start();
-			parallel::For(0, 100000, [&](int i) {
-				++V2;
-				});
-
-			EXPECT_EQ(100000, V);
-			EXPECT_EQ(100000, V2);
-		}
-		// 1,000,000 parallel jobs
-		if (1) {
-			Stopwatch sw;
-
-			std::atomic<int> V{ 0 };
-			Units::scalar V2{ 0 }; // At high levels of parallelism, the Units lock will choke the threads
-
-			sw.Start();
-			parallel::For(0, 1000000, [&](int i) {
-				++V;
-			});
-
-			sw.Start();
-			parallel::For(0, 1000000, [&](int i) {
-				++V2;
-			});
-
-			EXPECT_EQ(1000000, V);
-			EXPECT_EQ(1000000, V2);
-		}
-		// parallel jobs that each ALSO dispatch parallel jobs, for a total of 10,000,000 parallel jobs
-		if (1) {
-			std::atomic<int> V{ 0 };
-			parallel::For(0, 100 * 100000, [&](int i) {
-				//parallel::For(0, 100000, [&](int j) {
-					V++;
-				//});
-			});
-			EXPECT_EQ(10000000, V);
-		}
-		// catch exceptions thrown from inside of a job
-		if (1) {
-			Units::foot V{ 0 };
-			try {
-				parallel::For(0, 100 * 100000, [&](int i) {
-					// parallel::For(0, 100000, [&](int j) {
-						V += 5_gpm; // will fail due to incompatable units. 
-					//});
-				});
-			}
-			catch (std::exception& e) {
-			} // note that catching exceptions is a slow process (relatively), but is preferred to general crash. 
-		}
-		//// parallel jobs iterating over sequences and iterators
-		if (1) {
-			auto seq{ Sequence(0, 10000000, 1) }; // sequence is an iterator with little to no memory usage, but allows iterating on a counter
-			std::atomic<int> V{ 0 };
-			parallel::ForEach(seq, [&](int i) {
-				V++;
-				});
-			EXPECT_EQ(10000000, V);
-		}
-		// iterate over Sequence wrapper, for basic count-from-0-to-10 operations
-		if (1) {
-			auto seq{ Sequence(10000000, 0, -1) }; // sequence is an iterator with little to no memory usage, but allows iterating on a counter
-			std::atomic<int> V{ 0 };
-			parallel::ForEach(seq, [&](int i) {
-				V++;
-				});
-			EXPECT_EQ(10000000, V);
-		}
-		// iterate over IteratorSequence wrapper (allows looping over iterators randomly while tracking the correct index)
-		if (1) {
-			std::vector<std::string> data(100000, "TEST");
-			auto seq{ IteratorSequence(data.begin(), data.end()) };
-			std::atomic<int> V{ 0 };
-			parallel::ForEach(seq, [&](std::pair<
-				int, // index
-				std::string* // data
-			> const& i) {
-					V++;
-				});
-			EXPECT_EQ(100000, V);
-		}
-		// iterate over container
-		if (1) {
-			std::vector<std::string> data(100000, "TEST");
-			std::atomic<int> V{ 0 };
-			parallel::ForEach(data, [&](std::string const& i) {
-				V++;
-				});
-			EXPECT_EQ(100000, V);
-		}
-		// Map
-		if (1) {
-			GoodLang::Map<int, Units::scalar> map;
-			*map[0] = 1;
-			*map[1] = 2;
-
-			parallel::For(0, 100000, [&](int i) {
-				(void)map.size(); // OK
-				map.try_emplace(i, i); // OK
-				map[0]->operator++(); // OK
-				*map[i] = i; // OK
-				try {
-					map.erase(100000.0 * (static_cast<double>(std::rand()) / static_cast<double>(RAND_MAX)));
-				}
-				catch (std::out_of_range&) {}
-			});
-
-			(void)std::distance(map.begin(), map.end());
-
-			for (auto f = map.find(0); f != map.end(); f++) {}
-
-			Units::scalar V;
-			parallel::ForEach(map, [&](auto& i) {
-				V += i.second;
-			});
-		}
-		// Map as pattern
-		if (1) {
-			GoodLang::Map<double, double> map;
-			parallel::ForEach(GoodLang::Sequence(0.0, 1000.0, 50.0), [&](double i) {
-				*map[i] = i;
-				});
-
-			auto f0 = map.FindLargestSmallerEqual(25);
-			auto f50 = map.FindSmallestLargerEqual(25);
-
-			if (f0 != map.end()) {
-				EXPECT_EQ(f0->second, 0.0);
-			}
-			if (f50 != map.end()) {
-				EXPECT_EQ(f50->second, 50.0);
-			}
-
-			parallel::ForEach(map, [](auto& x) {
-				x.second++;
-				});
-		}
-		// Map as pattern
-		if (1) {
-			GoodLang::Map<Units::second, Units::gallon_per_minute> map;
-			parallel::ForEach(GoodLang::Sequence(0.0, 1000.0, 50.0), [&](double i) {
-				*map[i] = i;
-				});
-
-			auto f0 = map.FindLargestSmallerEqual(25);
-			auto f50 = map.FindSmallestLargerEqual(25);
-
-			if (f0 != map.end()) {
-				EXPECT_EQ(f0->second, 0.0);
-			}
-			if (f50 != map.end()) {
-				EXPECT_EQ(f50->second, 50.0);
-			}
-
-			parallel::ForEach(map, [](auto& x) {
-				++x.second;
-				});
-
-			for (auto& x : map) {
-				EXPECT_EQ(true, x.first() < x.second());
-			}
-
-		}
-		// Map with strings
-		if (1) {
-			GoodLang::Map<std::string, double> map;
-			*map["TEST"] = 10;
-			*map["TEST2"] = 102;
-
-
-		}
-		// Unordered Map
-		if (1) {
-			GoodLang::UnorderedMap<int, Units::scalar> map;
-			parallel::For(0, 100000, [&](int i) {
-				++(*map[i]);
-				});
-			for (auto f = map.find(0); f != map.end(); f++) {}
-			parallel::ForEach(map, [](auto& x) {
-				++x.second;
-				});
-			EXPECT_EQ(map.size(), 100000);
-
-		}
-		// Vector
-		if (1) {
-			GoodLang::Vector<Units::scalar> vec;
-			Units::scalar count{ 0 };
-			parallel::For(0, 100000, [&](int i) {
-				vec.push_back(i);
-				{
-					auto At = vec.at(0);
-					At->operator++(); // increment the first one
-				}
-				vec.erase_fast(0);
-				});
-			for (auto f = vec.begin(); f != vec.end(); f++) {}
-			EXPECT_EQ(0, vec.size());
-		}
-		// Queue
-		if (1) {
-			GoodLang::Queue<double> q;
-			q.push(10);
-			auto item = q.pop();
-			if (!item.has_value()) {
-				EXPECT_EQ(true, false);
-			}
-
-			parallel::For(0, 100000, [&](int i) {
-				q.push(i);
-				auto IT = q.pop();
-				if (!item.has_value()) {
-					EXPECT_EQ(true, false);
-				}
-				});
-		}
-		// Stack
-		if (1) {
-			GoodLang::Stack<double> q;
-			q.push(10);
-			auto item = q.pop();
-			if (!item.has_value()) {
-				EXPECT_EQ(true, false);
-			}
-
-			parallel::For(0, 100000, [&](int i) {
-				q.push(i);
-				auto IT = q.pop();
-				if (!item.has_value()) {
-					EXPECT_EQ(true, false);
-				}
-				});
-		}
-		// Set as pattern
-		if (1) {
-			GoodLang::Set<double> map;
-			parallel::ForEach(GoodLang::Sequence(0.0, 1000.0, 50.0), [&](double i) {
-				map.emplace(i);
-				});
-
-			auto f0 = map.FindLargestSmallerEqual(25);
-			auto f50 = map.FindSmallestLargerEqual(25);
-
-			if (f0 != map.end()) {
-				EXPECT_EQ(*f0, 0.0);
-			}
-			if (f50 != map.end()) {
-				EXPECT_EQ(*f50, 50.0);
-			}
-
-			parallel::ForEach(map, [](double const& x) {
-				// 
-				});
-		}
-		// UnorderedSet
-		if (1) {
-			GoodLang::UnorderedSet<std::string> map;
-			parallel::ForEach(GoodLang::Sequence(0.0, 1000.0, 50.0), [&](double i) {
-				map.emplace(std::to_string(i));
-				});
-
-			parallel::ForEach(map, [](std::string const& x) {
-				// 
-				});
-		}
-		// Spline
-		if (1) {
-			GoodLang::spline::CatmullRomSpline<Units::second, Units::gallon_per_minute> consumption;
-
-			// emplacing data
-			for (DateTime t = DateTime::Now(); t < (DateTime::Now() + 1_yr); t += 1_d) {
-				consumption.emplace((Units::second)t, t.tm_mday() * t.tm_mday() * t.tm_mday());
-			}
-
-			// interpolations
-			for (DateTime t = DateTime::Now(); t < (DateTime::Now() + 1_yr); t += 0.25_d) {
-				(void)(consumption.interpolate((Units::second)t, GoodLang::spline::left_snap{}));
-				(void)(consumption.interpolate((Units::second)t, GoodLang::spline::linear{}));
-				(void)(consumption.interpolate((Units::second)t, GoodLang::spline::spline{}));
-				(void)(consumption.interpolate((Units::second)t, GoodLang::spline::right_snap{}));
-			}
-
-			auto TS = consumption.GetTimeSeries(DateTime::Now(), DateTime::Now() + 30_d, 0.5_d);
-			auto bg = TS.begin();
-			auto e = TS.end();
-			(void)(bg != e);
-			bg++;
-			++bg;
-			(void)bg->first;
-
-			// time-series sample (sample as-you-go, preventing large vector allocations)
-			for (auto& x : consumption.GetTimeSeries(DateTime::Now(), DateTime::Now() + 30_d, 0.5_d)) {
-				// print(x.first.ToString() + ", " + x.second.ToString());
-			}
-
-			// loop through knots
-			for (auto& x : consumption) {
-				x.second += 100_gpm;
-			}
-
-			// time-series sample (sample as-you-go, preventing large vector allocations)
-			for (auto& x : consumption.GetTimeSeries(DateTime::Now(), DateTime::Now() + 30_d, 0.5_d)) {
-				// print(x.first.ToString() + ", " + x.second.ToString());
-			}
-		}
-		// Scopes
-		if (1) {
-			auto s0 = std::make_shared<GoodLang::Global>();
-			s0->SetSelf(s0);
-			s0->AddBuiltIns();
-			{
-				auto s1 = std::make_shared<GoodLang::Scope>(s0);
-				s1->SetSelf(s1);
-				s1->AddObj("x", std::make_shared<GoodLang::Any>(100));
-
-				s1->AddFunction("foo", make_callable([](int x) -> int { return x * 2; }));
-
-				Any result1 = s1->CallFunction("foo", { 100 });
-				Any result2 = s1->CallFunction("foo", { 100.0 });
-
-
-				auto L1 = s1->CallFunction("Units::foot", { 100.0 });
-				auto L2 = s1->CallFunction("Units::meter", { 100.0 });
-				(s1->Cast<std::string>(s1->CallFunction("to_string", { s1->CallFunction("+", { L1, L2 }) })));
-
-				(s1->Cast<std::string>(s1->CallFunction("to_string", { s1->CallFunction("*", { L1, L2 }) })));
-
-				(s1->Cast<std::string>(s1->CallFunction("to_string", { s1->CallFunction("/", { L1, L2 }) })));
-
-				(void)(Units::horsepower(180_lbf * 2.4 * 2.0 * Units::constants::pi() * 12_ft / 1_min));
-
-				auto paired = s1->CallFunction("Pair", { 100.0, Units::gallon{ 5 } });
-				EXPECT_EQ(true, s1->Cast<bool>(s1->CallFunction("==", { s1->CallFunction("second", {paired}), Units::cubic_foot{ Units::gallon{ 5 } } })));
-
-				s1->AddUsing(s1->FindNamespace("Units"));
-				EXPECT_EQ(true, s1->Cast<bool>(s1->CallFunction("==", { s1->CallFunction("second", {paired}), Units::cubic_foot{ Units::gallon{ 5 } } })));
-
-				(s1->Cast<std::string>(s1->CallFunction("to_string", { s1->CallFunction("cubic_foot", {s1->CallFunction("second", {paired})}) })));
-
-				// Promise tests
-				if (1) {
-					auto promise = parallel::async([]() -> int { ::Sleep(300); return 100; }).as_promise(); // sleeps 300 milliseconds and returns "100". Down-casted to a promise, performing type-erasure. 
-					if (1) { // thread_local waiting from a specialized promise (no contention)
-						EXPECT_EQ(promise.Type(), user_type_shared<int>()); // returns an int
-						EXPECT_EQ(true, s1->Cast<bool>(s1->CallFunction("==", { s1->CallFunction("returns", { promise }), s1->CallFunction("Type", { 100 }) })));
-						EXPECT_EQ(true, s1->Cast<bool>(s1->CallFunction("==", { s1->CallFunction("await", { promise }), 100 })));
-					}
-
-					if (1) { // parallel waiting from a specialized promise (w/ contention)
-						promise = parallel::async([]() -> int { ::Sleep(300); return 100; }).as_promise(); // sleeps 300 milliseconds and returns "100". Down-casted to a promise, performing type-erasure. 
-						EXPECT_EQ(promise.Type(), user_type_shared<int>()); // returns an int
-						parallel::For(0, 100, [&](int i) {
-							auto s2 = std::make_shared<GoodLang::Scope>(s1);
-							s2->SetSelf(s2);
-							EXPECT_EQ(true, s2->Cast<bool>(s2->CallFunction("==", { s2->CallFunction("returns", { promise }), s2->CallFunction("Type", { 100 }) })));
-							EXPECT_EQ(true, s2->Cast<bool>(s2->CallFunction("==", { s2->CallFunction("await", { promise }), 100 })));
-						});
-					}
-
-					if (1) { // parallel waiting from a non-specialized promise (w/ contention)
-						promise = parallel::promise(Job([]() -> int { ::Sleep(300); return 100; })); // sleeps 300 milliseconds and returns "100". Down-casted to a promise, performing type-erasure. 				
-						EXPECT_EQ(promise.Type(), user_type_shared<int>()); // returns an int
-						parallel::For(0, 100, [&](int i) {
-							auto s2 = std::make_shared<GoodLang::Scope>(s1);
-							s2->SetSelf(s2);
-							EXPECT_EQ(true, s2->Cast<bool>(s2->CallFunction("==", { s2->CallFunction("returns", { promise }), s2->CallFunction("Type", { 100 }) })));
-							EXPECT_EQ(true, s2->Cast<bool>(s2->CallFunction("==", { s2->CallFunction("await", { promise }), 100 })));
-						});
-					}
+				if (velocity == 0_mps) {
+					EXPECT_EQ(t, 4_s);
+					break;
 				}
 
-				// Vector tests
-				if (1) {
-					if (1) {
-						auto vec = s1->CallFunction("Vector", {});
-						(void)(s1->Cast<size_t>(s1->CallFunction("to_hash", { vec })));
-						s1->CallFunction("push_back", { vec, 100 });
-						(void)(s1->Cast<size_t>(s1->CallFunction("to_hash", { vec })));
-						s1->CallFunction("push_back", { vec, 200 });
-						(void)(s1->Cast<size_t>(s1->CallFunction("to_hash", { vec })));
-						s1->CallFunction("push_back", { vec, 300 });
-						(void)(s1->Cast<size_t>(s1->CallFunction("to_hash", { vec })));
-						(void)(s1->Cast<std::string>(s1->CallFunction("to_string", { vec })));
-
-						(void)(s1->Cast<std::string>(s1->CallFunction("to_string", { s1->CallFunction("at", { vec, 0 }) })));
-						(void)(s1->Cast<std::string>(s1->CallFunction("to_string", { s1->CallFunction("at", { vec, 1 }) })));
-						(void)(s1->Cast<std::string>(s1->CallFunction("to_string", { s1->CallFunction("at", { vec, 2 }) })));
-					}
-
-					if (1) {
-						auto vec = s1->CallFunction("Vector", {});
-
-						// concurrently adding to the vector
-						parallel::For(0, 1000, [&vec, &s1](int i) {
-							auto s2 = std::make_shared<GoodLang::Scope>(s1);
-							s2->SetSelf(s2);
-
-							s2->CallFunction("push_back", { vec, i });
-						});
-
-						(void)(s1->Cast<size_t>(s1->CallFunction("to_hash", { vec })));
-						(void)(s1->Cast<std::string>(s1->CallFunction("to_string", { vec })));
-
-						// concurrently accessing the vector
-						parallel::For(0, 1000, [&vec, &s1](int i) {
-							auto s2 = std::make_shared<GoodLang::Scope>(s1);
-							s2->SetSelf(s2);
-
-							(void)(s1->Cast<std::string>(s1->CallFunction("to_string", { s1->CallFunction("at", { vec, i }) })));
-						});
-
-						// concurrently modifying the vector
-						parallel::For(0, 1000, [&vec, &s1](int i) {
-							auto s2 = std::make_shared<GoodLang::Scope>(s1);
-							s2->SetSelf(s2);
-
-							(void)(s1->Cast<std::string>(s1->CallFunction("to_string", { s1->CallFunction("at", { vec, i }) })));
-							s2->CallFunction("push_back", { vec, i + 1000 });
-						});
-
-						EXPECT_EQ(2000, s1->Cast<size_t>(s1->CallFunction("size", { vec })));
-						// concurrently erase from the vector						
-						parallel::For(0, 2000, [&vec, &s1](int i) {
-							auto s2 = std::make_shared<GoodLang::Scope>(s1);
-							s2->SetSelf(s2);
-							s2->CallFunction("erase_fast", { vec, (size_t)0 }); // swaps with the last value, rather than re-ordering
-						});
-						EXPECT_EQ(0, s1->Cast<size_t>(s1->CallFunction("size", { vec })));
-					}
-
-
-
-
-
-
-				}
-
+				pos += velocity * timeStep;
 			}
-		}
-		// SharedLockable
-		if (1) {
-			SharedLockable<std::string> p{ "Original" };
-			(void)p.Shared()->c_str();
-			p.Update([](std::string& x)-> std::string {
-				return "UPDATED";
-				});
-			(void)p.Unique()->c_str();
-
-			Units::value valueT2{ 5 };
-			Units::meter meterT2{ 5 };
-			Units::millimeter millimeterT2{ 5000 };
-			Units::gallon_per_minute gpmT2{ 5 };
-			EXPECT_EQ(5, valueT2);
-			EXPECT_EQ(5, meterT2);
-			EXPECT_EQ(5000, millimeterT2);
-			EXPECT_EQ(5, gpmT2);
+			(void)Units::value::GetValueTypes();
+			// Direct Invoke
+			EXPECT_EQ(5, GoodLang::Job([](int x)->int { return x; }, 5).Invoke().cast<int>());
+			// Async and Await
+			EXPECT_EQ(5, GoodLang::Job([](int x)->int { return x; }, 5).AsyncInvoke().Wait_Get<int>());
+			// Async, do stuff, then Await
 			if (1) {
-				// NOTE, repeat this test with the new system once ready
-				if (1) {
-					EXPECT_EQ(Units::newton(Units::millipound_f(1)), Units::newton(Units::pound_f(Units::millipound_f(1))));
-
-					auto squareNewtons = Units::newton(0.004448222).pow(2);
-					auto squareMilliPound = Units::millipound_f(1).pow(2);
-					(void)(squareNewtons - squareMilliPound); // expect nearly 0
-					EXPECT_EQ(3.6, Units::joule(Units::milliwatt_hour(1))); // expect 3.6
-				}
-
-				EXPECT_EQ(1, Units::meter::conversion_ratio);
-				EXPECT_EQ(0.001, Units::millimeter::conversion_ratio);
-				EXPECT_EQ(0.3048, Units::foot::conversion_ratio);
-
-				if (1) {
-					auto temp = Units::meter(5);
-					temp *= 50;
-					EXPECT_EQ(250, temp);
-				}
-				if (1) {
-					auto temp = Units::meter(5);
-					temp += 50;
-					EXPECT_EQ(55, temp);
-				}
-
-				EXPECT_EQ(true, Units::meter(5) > Units::meter(1));
-				EXPECT_EQ(true, Units::meter(5) > Units::millimeter(5));
-				EXPECT_EQ(true, Units::meter(1) < Units::millimeter(5000));
-				EXPECT_EQ(true, Units::meter(1) == Units::millimeter(1000));
-
-				Units::meter mutableUnitExample{ 5 };
-
-				const Units::meter constUnitExample{ 5 };
-
-				Units::value x;
-
-				x = Units::meter(5);
-				x = Units::millimeter(6000); // m <- mm is legal
-				x = Units::foot(22.9659); // m <- ft should be legal
-
-				try {
-					x = Units::square_meter(1); // m <- m_sq should be illegal
-				}
-				catch (std::exception& e) {}
-
-
-				x = Units::kilometer(1); // m <- km should be legal
+				auto group = GoodLang::Job([](int x)->int { return x; }, 5).AsyncInvoke();
+				Sleep(10);
+				EXPECT_EQ(5, group.Wait_Get<int>());
 			}
+			// 100 parallel jobs
+			if (1) {
+				Units::scalar V{ 0 };
+				parallel::For(0, 100, [&](int i) {
+					++V;
+					});
+				EXPECT_EQ(100, V);
+			}
+			// 100,000 parallel jobs
+			if (1) {
+				std::atomic<int> V{ 0 };
+				Units::scalar V2{ 0 }; // At high levels of parallelism, the Units lock will choke the threads
+				Stopwatch sw;
+
+				sw.Start();
+				parallel::For(0, 100000, [&](int i) {
+					V++;
+					});
+
+				sw.Start();
+				parallel::For(0, 100000, [&](int i) {
+					++V2;
+					});
+
+				EXPECT_EQ(100000, V);
+				EXPECT_EQ(100000, V2);
+			}
+			// 1,000,000 parallel jobs
 			if (1) {
 				Stopwatch sw;
+
+				std::atomic<int> V{ 0 };
+				Units::scalar V2{ 0 }; // At high levels of parallelism, the Units lock will choke the threads
+
 				sw.Start();
-				parallel::For(0, 1000000, [](int i) { // Slow (x1) 0.148525 s ... 0.110108 s ... 0.105353 s ... 0.134672 s
-					Units::meter x{}; (void)x.operator()();
-					++x;
-					(void)x.pow(2);
-					auto y{ x * x * x };
-					});
+				parallel::For(0, 1000000, [&](int i) {
+					++V;
+				});
+
 				sw.Start();
-				parallel::For(0, 1000000, [](int i) { // Fast (x10) 0.016274 s ... 0.035358 s ... 0.064283 s ... 0.076939 s
-					Units::meter x{}; (void)x.operator()();
-					++x;
-					(void)x.pow(2);
-					auto y{ x * x * x };
-					});
-				sw.Start();
-				parallel::For(0, 1000000, [](int i) { // Fast (x10) 0.015514 s ... 0.035237 s ... 0.070302 s ... 0.091723 s
-					Units::value x{}; (void)x.operator()();
-					++x;
-					(void)x.pow(2);
-					auto y{ x * x * x };
-					});
-				sw.Start();
-				parallel::For(0, 1000000, [](int i) { // Fast(x500) 0.000581 s ... 0.00032 s ...   UNKNOWN   ... 0.000211 s
-					double x{}; (void)(double(x));
-					++x;
-					(void)std::pow(x, 2);
-					auto y{ x * x * x };
-					});
+				parallel::For(0, 1000000, [&](int i) {
+					++V2;
+				});
+
+				EXPECT_EQ(1000000, V);
+				EXPECT_EQ(1000000, V2);
 			}
+			// parallel jobs that each ALSO dispatch parallel jobs, for a total of 10,000,000 parallel jobs
 			if (1) {
-				for (auto& val : Units::value::GetValueTypes()) {
-					// print(val.first.lock()->name() + ": \n\t" + val.second.UnitName().data());
-				}
-			}
-		}
-		// catching layered errors and returning their result
-		if (1) {
-			Stopwatch sw;
-
-			// C++ standard loop. 
-			sw.Start();
-			for (int i = 0; i < 10; i++) {
-				// Loop 2
-				for (int j = 0; j < 200; j++) {
-					// Loop 3
-					for (int k = 0; k < 500; k++) {
-						(void)(Units::gallon(5) + Units::gallon(5));	
-					}
-				}
-			}
-			//print(Units::second(sw.Stop_s()));
-
-			// C++ built-in parallel loops. Requires compiler support, otherwise identical to C++ standard loop. 
-			sw.Start();
-			auto seq1 = Sequence(0, 10);
-			std::for_each(seq1.begin(), seq1.end(), [](auto& i) {
-				auto seq2 = Sequence(0, 200);
-				std::for_each(seq2.begin(), seq2.end(), [](auto& j) {
-					auto seq3 = Sequence(0, 500);
-					std::for_each(seq3.begin(), seq3.end(), [](auto& k) {
-						(void)(Units::gallon(5) + Units::gallon(5));
-					});
+				std::atomic<int> V{ 0 };
+				parallel::For(0, 100 * 100000, [&](int i) {
+					//parallel::For(0, 100000, [&](int j) {
+						V++;
+					//});
 				});
-			});
-			//print(Units::second(sw.Stop_s()));
+				EXPECT_EQ(10000000, V);
+			}
+			// catch exceptions thrown from inside of a job
+			if (1) {
+				Units::foot V{ 0 };
+				try {
+					parallel::For(0, 100 * 100000, [&](int i) {
+						// parallel::For(0, 100000, [&](int j) {
+							V += 5_gpm; // will fail due to incompatable units. 
+						//});
+					});
+				}
+				catch (std::exception& e) {
+				} // note that catching exceptions is a slow process (relatively), but is preferred to general crash. 
+			}
+			//// parallel jobs iterating over sequences and iterators
+			if (1) {
+				auto seq{ Sequence(0, 10000000, 1) }; // sequence is an iterator with little to no memory usage, but allows iterating on a counter
+				std::atomic<int> V{ 0 };
+				parallel::ForEach(seq, [&](int i) {
+					V++;
+					});
+				EXPECT_EQ(10000000, V);
+			}
+			// iterate over Sequence wrapper, for basic count-from-0-to-10 operations
+			if (1) {
+				auto seq{ Sequence(10000000, 0, -1) }; // sequence is an iterator with little to no memory usage, but allows iterating on a counter
+				std::atomic<int> V{ 0 };
+				parallel::ForEach(seq, [&](int i) {
+					V++;
+					});
+				EXPECT_EQ(10000000, V);
+			}
+			// iterate over IteratorSequence wrapper (allows looping over iterators randomly while tracking the correct index)
+			if (1) {
+				std::vector<std::string> data(100000, "TEST");
+				auto seq{ IteratorSequence(data.begin(), data.end()) };
+				std::atomic<int> V{ 0 };
+				parallel::ForEach(seq, [&](std::pair<
+					int, // index
+					std::string* // data
+				> const& i) {
+						V++;
+					});
+				EXPECT_EQ(100000, V);
+			}
+			// iterate over container
+			if (1) {
+				std::vector<std::string> data(100000, "TEST");
+				std::atomic<int> V{ 0 };
+				parallel::ForEach(data, [&](std::string const& i) {
+					V++;
+					});
+				EXPECT_EQ(100000, V);
+			}
+			// Map
+			if (1) {
+				GoodLang::Map<int, Units::scalar> map;
+				*map[0] = 1;
+				*map[1] = 2;
 
-			// parallel::For(...), 10x faster than standard loop, specialized for incremental (0, 1, 2, 3... etc.) loops
-			sw.Start();
-			try {
-				// Loop 1
-				parallel::For(0, 10, [](int i) {
+				parallel::For(0, 100000, [&](int i) {
+					(void)map.size(); // OK
+					map.try_emplace(i, i); // OK
+					map[0]->operator++(); // OK
+					*map[i] = i; // OK
 					try {
-						// Loop 2
-						parallel::For(0, 200, [](int j) {
-							try {
-								// Loop 3
-								parallel::For(0, 500, [](int k) {
-									try {
-										(void)(Units::gallon(5) + Units::gallon(5));
-									}
-									catch (...) {
-										std::throw_with_nested(std::runtime_error("Error in Loop 4"));
-									}
-								});
-							}
-							catch (...) {
-								std::throw_with_nested(std::runtime_error("Error in Loop 3"));
-							}
-						});
+						map.erase(100000.0 * (static_cast<double>(std::rand()) / static_cast<double>(RAND_MAX)));
 					}
-					catch (...) {
-						std::throw_with_nested(std::runtime_error("Error in Loop 2"));
-					}
+					catch (std::out_of_range&) {}
+				});
+
+				(void)std::distance(map.begin(), map.end());
+
+				for (auto f = map.find(0); f != map.end(); f++) {}
+
+				Units::scalar V;
+				parallel::ForEach(map, [&](auto& i) {
+					V += i.second;
 				});
 			}
-			catch (...) {
-				//print(GoodLang::ExceptionHandling::what(std::current_exception()));
-			}
-			//print(Units::second(sw.Stop_s()));
+			// Map as pattern
+			if (1) {
+				GoodLang::Map<double, double> map;
+				parallel::ForEach(GoodLang::Sequence(0.0, 1000.0, 50.0), [&](double i) {
+					*map[i] = i;
+					});
 
-			// parallel::ForEach(...), 5x faster than standard loop, specialized for Iterator loops
-			sw.Start();
-			parallel::ForEach(Sequence(0, 10), [](auto const& i) {
-				parallel::ForEach(Sequence(0, 200), [](auto const& j) {
-					parallel::ForEach(Sequence(0, 500), [](auto const& k) {
-						(void)(Units::gallon(5) + Units::gallon(5));
+				auto f0 = map.FindLargestSmallerEqual(25);
+				auto f50 = map.FindSmallestLargerEqual(25);
+
+				if (f0 != map.end()) {
+					EXPECT_EQ(f0->second, 0.0);
+				}
+				if (f50 != map.end()) {
+					EXPECT_EQ(f50->second, 50.0);
+				}
+
+				parallel::ForEach(map, [](auto& x) {
+					x.second++;
+					});
+			}
+			// Map as pattern
+			if (1) {
+				GoodLang::Map<Units::second, Units::gallon_per_minute> map;
+				parallel::ForEach(GoodLang::Sequence(0.0, 1000.0, 50.0), [&](double i) {
+					*map[i] = i;
+					});
+
+				auto f0 = map.FindLargestSmallerEqual(25);
+				auto f50 = map.FindSmallestLargerEqual(25);
+
+				if (f0 != map.end()) {
+					EXPECT_EQ(f0->second, 0.0);
+				}
+				if (f50 != map.end()) {
+					EXPECT_EQ(f50->second, 50.0);
+				}
+
+				parallel::ForEach(map, [](auto& x) {
+					++x.second;
+					});
+
+				for (auto& x : map) {
+					EXPECT_EQ(true, x.first() < x.second());
+				}
+
+			}
+			// Map with strings
+			if (1) {
+				GoodLang::Map<std::string, double> map;
+				*map["TEST"] = 10;
+				*map["TEST2"] = 102;
+
+
+			}
+			// Unordered Map
+			if (1) {
+				GoodLang::UnorderedMap<int, Units::scalar> map;
+				parallel::For(0, 100000, [&](int i) {
+					++(*map[i]);
+					});
+				for (auto f = map.find(0); f != map.end(); f++) {}
+				parallel::ForEach(map, [](auto& x) {
+					++x.second;
+					});
+				EXPECT_EQ(map.size(), 100000);
+
+			}
+			// Vector
+			if (1) {
+				GoodLang::Vector<Units::scalar> vec;
+				Units::scalar count{ 0 };
+				parallel::For(0, 100000, [&](int i) {
+					vec.push_back(i);
+					{
+						auto At = vec.at(0);
+						At->operator++(); // increment the first one
+					}
+					vec.erase_fast(0);
+					});
+				for (auto f = vec.begin(); f != vec.end(); f++) {}
+				EXPECT_EQ(0, vec.size());
+			}
+			// Queue
+			if (1) {
+				GoodLang::Queue<double> q;
+				q.push(10);
+				auto item = q.pop();
+				if (!item.has_value()) {
+					EXPECT_EQ(true, false);
+				}
+
+				parallel::For(0, 100000, [&](int i) {
+					q.push(i);
+					auto IT = q.pop();
+					if (!item.has_value()) {
+						EXPECT_EQ(true, false);
+					}
+					});
+			}
+			// Stack
+			if (1) {
+				GoodLang::Stack<double> q;
+				q.push(10);
+				auto item = q.pop();
+				if (!item.has_value()) {
+					EXPECT_EQ(true, false);
+				}
+
+				parallel::For(0, 100000, [&](int i) {
+					q.push(i);
+					auto IT = q.pop();
+					if (!item.has_value()) {
+						EXPECT_EQ(true, false);
+					}
+					});
+			}
+			// Set as pattern
+			if (1) {
+				GoodLang::Set<double> map;
+				parallel::ForEach(GoodLang::Sequence(0.0, 1000.0, 50.0), [&](double i) {
+					map.emplace(i);
+					});
+
+				auto f0 = map.FindLargestSmallerEqual(25);
+				auto f50 = map.FindSmallestLargerEqual(25);
+
+				if (f0 != map.end()) {
+					EXPECT_EQ(*f0, 0.0);
+				}
+				if (f50 != map.end()) {
+					EXPECT_EQ(*f50, 50.0);
+				}
+
+				parallel::ForEach(map, [](double const& x) {
+					// 
+					});
+			}
+			// UnorderedSet
+			if (1) {
+				GoodLang::UnorderedSet<std::string> map;
+				parallel::ForEach(GoodLang::Sequence(0.0, 1000.0, 50.0), [&](double i) {
+					map.emplace(std::to_string(i));
+					});
+
+				parallel::ForEach(map, [](std::string const& x) {
+					// 
+					});
+			}
+			// Spline
+			if (1) {
+				GoodLang::spline::CatmullRomSpline<Units::second, Units::gallon_per_minute> consumption;
+
+				// emplacing data
+				for (DateTime t = DateTime::Now(); t < (DateTime::Now() + 1_yr); t += 1_d) {
+					consumption.emplace((Units::second)t, t.tm_mday() * t.tm_mday() * t.tm_mday());
+				}
+
+				// interpolations
+				for (DateTime t = DateTime::Now(); t < (DateTime::Now() + 1_yr); t += 0.25_d) {
+					(void)(consumption.interpolate((Units::second)t, GoodLang::spline::left_snap{}));
+					(void)(consumption.interpolate((Units::second)t, GoodLang::spline::linear{}));
+					(void)(consumption.interpolate((Units::second)t, GoodLang::spline::spline{}));
+					(void)(consumption.interpolate((Units::second)t, GoodLang::spline::right_snap{}));
+				}
+
+				auto TS = consumption.GetTimeSeries(DateTime::Now(), DateTime::Now() + 30_d, 0.5_d);
+				auto bg = TS.begin();
+				auto e = TS.end();
+				(void)(bg != e);
+				bg++;
+				++bg;
+				(void)bg->first;
+
+				// time-series sample (sample as-you-go, preventing large vector allocations)
+				for (auto& x : consumption.GetTimeSeries(DateTime::Now(), DateTime::Now() + 30_d, 0.5_d)) {
+					// print(x.first.ToString() + ", " + x.second.ToString());
+				}
+
+				// loop through knots
+				for (auto& x : consumption) {
+					x.second += 100_gpm;
+				}
+
+				// time-series sample (sample as-you-go, preventing large vector allocations)
+				for (auto& x : consumption.GetTimeSeries(DateTime::Now(), DateTime::Now() + 30_d, 0.5_d)) {
+					// print(x.first.ToString() + ", " + x.second.ToString());
+				}
+			}
+			// Scopes
+			if (1) {
+				auto s0 = std::make_shared<GoodLang::Global>();
+				s0->SetSelf(s0);
+				s0->AddBuiltIns();
+				{
+					auto s1 = std::make_shared<GoodLang::Scope>(s0);
+					s1->SetSelf(s1);
+					s1->AddObj("x", std::make_shared<GoodLang::Any>(100));
+
+					s1->AddFunction("foo", make_callable([](int x) -> int { return x * 2; }));
+
+					Any result1 = s1->CallFunction("foo", { 100 });
+					Any result2 = s1->CallFunction("foo", { 100.0 });
+
+
+					auto L1 = s1->CallFunction("Units::foot", { 100.0 });
+					auto L2 = s1->CallFunction("Units::meter", { 100.0 });
+					(s1->Cast<std::string>(s1->CallFunction("to_string", { s1->CallFunction("+", { L1, L2 }) })));
+
+					(s1->Cast<std::string>(s1->CallFunction("to_string", { s1->CallFunction("*", { L1, L2 }) })));
+
+					(s1->Cast<std::string>(s1->CallFunction("to_string", { s1->CallFunction("/", { L1, L2 }) })));
+
+					(void)(Units::horsepower(180_lbf * 2.4 * 2.0 * Units::constants::pi() * 12_ft / 1_min));
+
+					auto paired = s1->CallFunction("Pair", { 100.0, Units::gallon{ 5 } });
+					EXPECT_EQ(true, s1->Cast<bool>(s1->CallFunction("==", { s1->CallFunction("second", {paired}), Units::cubic_foot{ Units::gallon{ 5 } } })));
+
+					s1->AddUsing(s1->FindNamespace("Units"));
+					EXPECT_EQ(true, s1->Cast<bool>(s1->CallFunction("==", { s1->CallFunction("second", {paired}), Units::cubic_foot{ Units::gallon{ 5 } } })));
+
+					(s1->Cast<std::string>(s1->CallFunction("to_string", { s1->CallFunction("cubic_foot", {s1->CallFunction("second", {paired})}) })));
+
+					// Promise tests
+					if (1) {
+						auto promise = parallel::async([]() -> int { ::Sleep(300); return 100; }).as_promise(); // sleeps 300 milliseconds and returns "100". Down-casted to a promise, performing type-erasure. 
+						if (1) { // thread_local waiting from a specialized promise (no contention)
+							EXPECT_EQ(promise.Type(), user_type_shared<int>()); // returns an int
+							EXPECT_EQ(true, s1->Cast<bool>(s1->CallFunction("==", { s1->CallFunction("returns", { promise }), s1->CallFunction("Type", { 100 }) })));
+							EXPECT_EQ(true, s1->Cast<bool>(s1->CallFunction("==", { s1->CallFunction("await", { promise }), 100 })));
+						}
+
+						if (1) { // parallel waiting from a specialized promise (w/ contention)
+							promise = parallel::async([]() -> int { ::Sleep(300); return 100; }).as_promise(); // sleeps 300 milliseconds and returns "100". Down-casted to a promise, performing type-erasure. 
+							EXPECT_EQ(promise.Type(), user_type_shared<int>()); // returns an int
+							parallel::For(0, 100, [&](int i) {
+								auto s2 = std::make_shared<GoodLang::Scope>(s1);
+								s2->SetSelf(s2);
+								EXPECT_EQ(true, s2->Cast<bool>(s2->CallFunction("==", { s2->CallFunction("returns", { promise }), s2->CallFunction("Type", { 100 }) })));
+								EXPECT_EQ(true, s2->Cast<bool>(s2->CallFunction("==", { s2->CallFunction("await", { promise }), 100 })));
+							});
+						}
+
+						if (1) { // parallel waiting from a non-specialized promise (w/ contention)
+							promise = parallel::promise(Job([]() -> int { ::Sleep(300); return 100; })); // sleeps 300 milliseconds and returns "100". Down-casted to a promise, performing type-erasure. 				
+							EXPECT_EQ(promise.Type(), user_type_shared<int>()); // returns an int
+							parallel::For(0, 100, [&](int i) {
+								auto s2 = std::make_shared<GoodLang::Scope>(s1);
+								s2->SetSelf(s2);
+								EXPECT_EQ(true, s2->Cast<bool>(s2->CallFunction("==", { s2->CallFunction("returns", { promise }), s2->CallFunction("Type", { 100 }) })));
+								EXPECT_EQ(true, s2->Cast<bool>(s2->CallFunction("==", { s2->CallFunction("await", { promise }), 100 })));
+							});
+						}
+					}
+
+					// Vector tests
+					if (1) {
+						if (1) {
+							auto vec = s1->CallFunction("Vector", {});
+							(void)(s1->Cast<size_t>(s1->CallFunction("to_hash", { vec })));
+							s1->CallFunction("push_back", { vec, 100 });
+							(void)(s1->Cast<size_t>(s1->CallFunction("to_hash", { vec })));
+							s1->CallFunction("push_back", { vec, 200 });
+							(void)(s1->Cast<size_t>(s1->CallFunction("to_hash", { vec })));
+							s1->CallFunction("push_back", { vec, 300 });
+							(void)(s1->Cast<size_t>(s1->CallFunction("to_hash", { vec })));
+							(void)(s1->Cast<std::string>(s1->CallFunction("to_string", { vec })));
+
+							(void)(s1->Cast<std::string>(s1->CallFunction("to_string", { s1->CallFunction("at", { vec, 0 }) })));
+							(void)(s1->Cast<std::string>(s1->CallFunction("to_string", { s1->CallFunction("at", { vec, 1 }) })));
+							(void)(s1->Cast<std::string>(s1->CallFunction("to_string", { s1->CallFunction("at", { vec, 2 }) })));
+						}
+
+						if (1) {
+							auto vec = s1->CallFunction("Vector", {});
+
+							// concurrently adding to the vector
+							parallel::For(0, 1000, [&vec, &s1](int i) {
+								auto s2 = std::make_shared<GoodLang::Scope>(s1);
+								s2->SetSelf(s2);
+								s2->CallFunction("push_back", { vec, i });
+							});
+
+							(void)(s1->Cast<size_t>(s1->CallFunction("to_hash", { vec })));
+							(void)(s1->Cast<std::string>(s1->CallFunction("to_string", { vec })));
+
+							// concurrently accessing the vector
+							parallel::For(0, 100, [&vec, &s1](int i) {
+								auto s2 = std::make_shared<GoodLang::Scope>(s1);
+								s2->SetSelf(s2);
+
+								(void)(s1->Cast<std::string>(s1->CallFunction("to_string", { s1->CallFunction("at", { vec, i }) })));
+							});
+
+							// concurrently modifying the vector
+							parallel::For(100, 200, [&vec, &s1](int i) {
+								auto s2 = std::make_shared<GoodLang::Scope>(s1);
+								s2->SetSelf(s2);
+
+								(void)(s1->Cast<std::string>(s1->CallFunction("to_string", { s1->CallFunction("at", { vec, i - 100 }) })));
+								s2->CallFunction("push_back", { vec, i });
+							});
+
+							// Testign For-loop
+							for (auto iterPos = s1->CallFunction("begin", { vec }), iterEnd = s1->CallFunction("end", { vec });
+								s1->Cast<bool>(s1->CallFunction("!=", { iterPos, iterEnd }));
+								s1->CallFunction("++", { iterPos })
+							) {
+								auto s2 = std::make_shared<GoodLang::Scope>(s1);
+								s2->SetSelf(s2); {
+									s2->CallFunction("+=", { s2->CallFunction("get", { iterPos }), 100 });
+								}
+							};
+
+							// Example implimentation of
+							// for (auto& x : Vector(...)){ x += 100; }
+							for (auto iterPos = s1->CallFunction("begin", { vec }), iterEnd = s1->CallFunction("end", { vec });
+								s1->Cast<bool>(s1->CallFunction("!=", { iterPos, iterEnd }));
+								s1->CallFunction("++", { iterPos })
+							) {
+								auto s2 = std::make_shared<GoodLang::Scope>(s1);
+								s2->SetSelf(s2); 
+								s2->AddObj("x", std::make_shared<Any>(s2->CallFunction("get", { iterPos })));
+								if (1) {
+									s2->CallFunction("+=", { s2->GetObj("x"), 100 });
+								}
+							};
+
+							// Example implimentation of
+                            // for (auto iter = V.begin(); iter != V.end(); iter++){ iter.get() += 100; }
+							if (1) {
+								auto s2 = std::make_shared<GoodLang::Scope>(s1);
+								s2->SetSelf(s2);
+								s2->AddObj("iter", std::make_shared<Any>(s2->CallFunction("begin", { vec })));
+								for (; s2->Cast<bool>(s2->CallFunction("!=", { s2->GetObj("iter"), s2->CallFunction("end", { vec }) }));
+									s2->CallFunction("++", { s2->GetObj("iter") })
+								) {
+									auto s3 = std::make_shared<GoodLang::Scope>(s2);
+									s3->SetSelf(s3);
+
+									s3->CallFunction("+=", { s3->CallFunction("get", { s2->GetObj("iter") }), 100 });
+								};
+							}
+
+							// concurrently erase from the vector						
+							parallel::For(0, 200, [&vec, &s1](int i) {
+								auto s2 = std::make_shared<GoodLang::Scope>(s1);
+								s2->SetSelf(s2);
+								s2->CallFunction("erase_fast", { vec, (size_t)0 }); // swaps with the last value, rather than re-ordering
+							});
+							s1->CallFunction("clear", { vec });
+							EXPECT_EQ(0, s1->Cast<size_t>(s1->CallFunction("size", { vec })));
+
+							s1->CallFunction("push_back", { vec, Units::value() });
+							s1->CallFunction("=", { s1->CallFunction("[]", { vec, 0 }), 500 });
+							(void)(s1->Cast<std::string>(s1->CallFunction("to_string", { s1->CallFunction("[]", { vec, 0 }) })));
+
+							// Hardest test so far -- parallel threads competing for appending, accessing, and erasing a vector
+							parallel::For(0, 200000, [&vec, &s1](int i) {
+								auto s2 = std::make_shared<GoodLang::Scope>(s1);
+								s2->SetSelf(s2);
+
+								switch (i % 3) {
+								case 0:
+									s2->CallFunction("push_back", { vec, Units::value() }); // Appending should be the most common exercise, and can't fail
+									break;
+								case 1:
+									try {
+										s2->CallFunction("=", { s2->CallFunction("[]", { vec, 0 }), std::rand() }); // Access, which directly competes with the erasure
+									} catch (...) {} // will throw if out-of-bounds of the vector
+									break;
+								case 2:
+									s2->CallFunction("erase_fast", { vec, (size_t)0 }); // Erase, will silently fail if the index was bad
+									break;
+								};
+							});
+
+						}
+					}
+
+					// Map tests
+					if (1) {
+						if (1) {
+							auto vec = s1->CallFunction("Map", {});
+							print(s1->Cast<size_t>(s1->CallFunction("to_hash", { vec })));
+							s1->CallFunction("=", { s1->CallFunction("[]", { vec, 100 }), std::string("TEST")});
+							print(s1->Cast<size_t>(s1->CallFunction("to_hash", { vec })));
+							s1->CallFunction("=", { s1->CallFunction("[]", { vec, 200 }), std::string("TEST2") });
+							print(s1->Cast<size_t>(s1->CallFunction("to_hash", { vec })));
+							s1->CallFunction("=", { s1->CallFunction("[]", { vec, 300 }), std::string("TEST3") });
+							print(s1->Cast<size_t>(s1->CallFunction("to_hash", { vec })));
+							print(s1->Cast<std::string>(s1->CallFunction("to_string", { vec })));
+
+							print(s1->Cast<std::string>(s1->CallFunction("to_string", { s1->CallFunction("at", { vec, 100 }) })));
+							print(s1->Cast<std::string>(s1->CallFunction("to_string", { s1->CallFunction("at", { vec, 200 }) })));
+							print(s1->Cast<std::string>(s1->CallFunction("to_string", { s1->CallFunction("at", { vec, 300 }) })));
+
+						}
+
+					}
+
+
+				}
+			}
+			// SharedLockable
+			if (1) {
+				SharedLockable<std::string> p{ "Original" };
+				(void)p.Shared()->c_str();
+				p.Update([](std::string& x)-> std::string {
+					return "UPDATED";
+					});
+				(void)p.Unique()->c_str();
+
+				Units::value valueT2{ 5 };
+				Units::meter meterT2{ 5 };
+				Units::millimeter millimeterT2{ 5000 };
+				Units::gallon_per_minute gpmT2{ 5 };
+				EXPECT_EQ(5, valueT2);
+				EXPECT_EQ(5, meterT2);
+				EXPECT_EQ(5000, millimeterT2);
+				EXPECT_EQ(5, gpmT2);
+				if (1) {
+					// NOTE, repeat this test with the new system once ready
+					if (1) {
+						EXPECT_EQ(Units::newton(Units::millipound_f(1)), Units::newton(Units::pound_f(Units::millipound_f(1))));
+
+						auto squareNewtons = Units::newton(0.004448222).pow(2);
+						auto squareMilliPound = Units::millipound_f(1).pow(2);
+						(void)(squareNewtons - squareMilliPound); // expect nearly 0
+						EXPECT_EQ(3.6, Units::joule(Units::milliwatt_hour(1))); // expect 3.6
+					}
+
+					EXPECT_EQ(1, Units::meter::conversion_ratio);
+					EXPECT_EQ(0.001, Units::millimeter::conversion_ratio);
+					EXPECT_EQ(0.3048, Units::foot::conversion_ratio);
+
+					if (1) {
+						auto temp = Units::meter(5);
+						temp *= 50;
+						EXPECT_EQ(250, temp);
+					}
+					if (1) {
+						auto temp = Units::meter(5);
+						temp += 50;
+						EXPECT_EQ(55, temp);
+					}
+
+					EXPECT_EQ(true, Units::meter(5) > Units::meter(1));
+					EXPECT_EQ(true, Units::meter(5) > Units::millimeter(5));
+					EXPECT_EQ(true, Units::meter(1) < Units::millimeter(5000));
+					EXPECT_EQ(true, Units::meter(1) == Units::millimeter(1000));
+
+					Units::meter mutableUnitExample{ 5 };
+
+					const Units::meter constUnitExample{ 5 };
+
+					Units::value x;
+
+					x = Units::meter(5);
+					x = Units::millimeter(6000); // m <- mm is legal
+					x = Units::foot(22.9659); // m <- ft should be legal
+
+					try {
+						x = Units::square_meter(1); // m <- m_sq should be illegal
+					}
+					catch (std::exception& e) {}
+
+
+					x = Units::kilometer(1); // m <- km should be legal
+				}
+				if (1) {
+					Stopwatch sw;
+					sw.Start();
+					parallel::For(0, 1000000, [](int i) { // Slow (x1) 0.148525 s ... 0.110108 s ... 0.105353 s ... 0.134672 s
+						Units::meter x{}; (void)x.operator()();
+						++x;
+						(void)x.pow(2);
+						auto y{ x * x * x };
+						});
+					sw.Start();
+					parallel::For(0, 1000000, [](int i) { // Fast (x10) 0.016274 s ... 0.035358 s ... 0.064283 s ... 0.076939 s
+						Units::meter x{}; (void)x.operator()();
+						++x;
+						(void)x.pow(2);
+						auto y{ x * x * x };
+						});
+					sw.Start();
+					parallel::For(0, 1000000, [](int i) { // Fast (x10) 0.015514 s ... 0.035237 s ... 0.070302 s ... 0.091723 s
+						Units::value x{}; (void)x.operator()();
+						++x;
+						(void)x.pow(2);
+						auto y{ x * x * x };
+						});
+					sw.Start();
+					parallel::For(0, 1000000, [](int i) { // Fast(x500) 0.000581 s ... 0.00032 s ...   UNKNOWN   ... 0.000211 s
+						double x{}; (void)(double(x));
+						++x;
+						(void)std::pow(x, 2);
+						auto y{ x * x * x };
+						});
+				}
+				if (1) {
+					for (auto& val : Units::value::GetValueTypes()) {
+						// print(val.first.lock()->name() + ": \n\t" + val.second.UnitName().data());
+					}
+				}
+			}
+			// catching layered errors and returning their result
+			if (1) {
+				Stopwatch sw;
+
+				// C++ standard loop. 
+				sw.Start();
+				for (int i = 0; i < 10; i++) {
+					// Loop 2
+					for (int j = 0; j < 200; j++) {
+						// Loop 3
+						for (int k = 0; k < 500; k++) {
+							(void)(Units::gallon(5) + Units::gallon(5));	
+						}
+					}
+				}
+				//print(Units::second(sw.Stop_s()));
+
+				// C++ built-in parallel loops. Requires compiler support, otherwise identical to C++ standard loop. 
+				sw.Start();
+				auto seq1 = Sequence(0, 10);
+				std::for_each(seq1.begin(), seq1.end(), [](auto& i) {
+					auto seq2 = Sequence(0, 200);
+					std::for_each(seq2.begin(), seq2.end(), [](auto& j) {
+						auto seq3 = Sequence(0, 500);
+						std::for_each(seq3.begin(), seq3.end(), [](auto& k) {
+							(void)(Units::gallon(5) + Units::gallon(5));
+						});
 					});
 				});
-			});
-			//print(Units::second(sw.Stop_s()));
+				//print(Units::second(sw.Stop_s()));
+
+				// parallel::For(...), 10x faster than standard loop, specialized for incremental (0, 1, 2, 3... etc.) loops
+				sw.Start();
+				try {
+					// Loop 1
+					parallel::For(0, 10, [](int i) {
+						try {
+							// Loop 2
+							parallel::For(0, 200, [](int j) {
+								try {
+									// Loop 3
+									parallel::For(0, 500, [](int k) {
+										try {
+											(void)(Units::gallon(5) + Units::gallon(5));
+										}
+										catch (...) {
+											std::throw_with_nested(std::runtime_error("Error in Loop 4"));
+										}
+									});
+								}
+								catch (...) {
+									std::throw_with_nested(std::runtime_error("Error in Loop 3"));
+								}
+							});
+						}
+						catch (...) {
+							std::throw_with_nested(std::runtime_error("Error in Loop 2"));
+						}
+					});
+				}
+				catch (...) {
+					//print(GoodLang::ExceptionHandling::what(std::current_exception()));
+				}
+				//print(Units::second(sw.Stop_s()));
+
+				// parallel::ForEach(...), 5x faster than standard loop, specialized for Iterator loops
+				sw.Start();
+				parallel::ForEach(Sequence(0, 10), [](auto const& i) {
+					parallel::ForEach(Sequence(0, 200), [](auto const& j) {
+						parallel::ForEach(Sequence(0, 500), [](auto const& k) {
+							(void)(Units::gallon(5) + Units::gallon(5));
+						});
+					});
+				});
+				//print(Units::second(sw.Stop_s()));
+			}
+			// Dispatching jobs at random
+			if (0) {
+				auto GetRand = []() -> double { return (double)std::rand() / (double)RAND_MAX; };
+
+				(void)Job([]() -> double { return (double)std::rand() / (double)RAND_MAX; }).AsyncInvoke().Wait_Get<double>();
+				(void)parallel::async([]() -> double { return (double)std::rand() / (double)RAND_MAX; }).as_promise().wait_get_any().cast<double>();
+
+				Job job1{};
+				Job job2{};
+				print("Starting:");
+				job1 = Job([&job2, &GetRand]() {
+					print("\tCalling Job 1...");
+					if (GetRand() < 0.8) {
+						return Any(job2.AsyncInvoke({}));
+					}
+					else {
+						return Any();
+					}
+				});
+				job2 = Job([&job1, &GetRand]() {
+					print("\tCalling Job 2...");
+					if (GetRand() < 0.8) {
+						return Any(job1.AsyncInvoke({}));
+					}
+					else {
+						return Any();
+					}
+				});
+
+				auto awaiter = job1.AsyncInvoke({});
+				awaiter.Wait();
+			}
+
+
 		}
-
-		// Dispatching jobs at random
-		if (0) {
-			auto GetRand = []() -> double { return (double)std::rand() / (double)RAND_MAX; };
-
-			(void)Job([]() -> double { return (double)std::rand() / (double)RAND_MAX; }).AsyncInvoke().Wait_Get<double>();
-			(void)parallel::async([]() -> double { return (double)std::rand() / (double)RAND_MAX; }).as_promise().wait_get_any().cast<double>();
-
-			Job job1{};
-			Job job2{};
-			print("Starting:");
-			job1 = Job([&job2, &GetRand]() {
-				print("\tCalling Job 1...");
-				if (GetRand() < 0.8) {
-					return Any(job2.AsyncInvoke({}));
-				}
-				else {
-					return Any();
-				}
-			});
-			job2 = Job([&job1, &GetRand]() {
-				print("\tCalling Job 2...");
-				if (GetRand() < 0.8) {
-					return Any(job1.AsyncInvoke({}));
-				}
-				else {
-					return Any();
-				}
-			});
-
-			auto awaiter = job1.AsyncInvoke({});
-			awaiter.Wait();
-		}
-
-
-	}
 
 #if 0
 	fibers::utilities::Computer_Usage usage_start;
@@ -11027,7 +11108,11 @@ int main() {
 
 	}
 #endif
-
+	}
+	catch (...) {
+		print(GoodLang::ExceptionHandling::what());
+		return -1;
+	}
 	return 0;
 };
 #undef EXPECT_EQ

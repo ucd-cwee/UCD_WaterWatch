@@ -1452,6 +1452,37 @@ namespace GoodLang {
 			T& result = shared->operator[](_Keyval);
 			return typename SharedLockable<T>::Obj(result, shared.ForwardLock());
 		};
+		
+		/// <summary>
+		/// Similar to at(), except if the object does not exist, it will instantiate it with the provided content, and then return the referenced object.
+		/// Is less efficienct due to the redundant checks, so recommend only doing this when necessary.
+		/// </summary>
+		/// <param name="_Keyval"></param>
+		/// <param name="_Mapval"></param>
+		/// <returns></returns>
+		typename SharedLockable<T>::SharedObj get_or_insert(const key_type& _Keyval, T _Mapval = T()) {
+			while (true) {
+				// try to get it straight-away
+				if (auto shared = data.Shared()) {
+					try {
+						T& result = shared->at(_Keyval);
+						return typename SharedLockable<T>::SharedObj(result, shared.ForwardLock());
+					}
+					catch (std::out_of_range&) {}
+				}
+				// failed -- try to create it.
+				if (auto shared = data.Unique()) {
+					try {
+						(void)shared->at(_Keyval);						
+					}
+					catch (std::out_of_range&) {
+						// does not exist -- create it and assign
+						shared->insert_or_assign(_Keyval, std::move(_Mapval));
+					}
+				}
+			}
+		};
+
 		typename SharedLockable<T>::SharedObj operator[](const key_type& _Keyval) {
 			while (true) {
 				// try to get it straight-away
@@ -1545,6 +1576,7 @@ namespace GoodLang {
 			};
 			difference_type Distance(it_state const& other) const { return _ptr - other._ptr; };
 		};
+
 	public:
         SETUP_ITERATOR(Map, it_state);
 
@@ -1773,41 +1805,49 @@ namespace GoodLang {
 		};
 		typename SharedLockable<T>::SharedObj operator[](size_t _Keyval) {
 			auto shared = data.Shared();
+			if (shared->size() <= _Keyval) throw std::out_of_range("Out of range of Vector");
 			T& result = shared->operator[](_Keyval);
 			return typename SharedLockable<T>::SharedObj(result, shared.ForwardLock());
 		};
 		typename SharedLockable<T>::SharedConstObj operator[](size_t _Keyval) const {
 			auto shared = data.Shared();
+			if (shared->size() <= _Keyval) throw std::out_of_range("Out of range of Vector");
 			const T& result = shared->at(_Keyval);
 			return typename SharedLockable<T>::SharedConstObj(result, shared.ForwardLock());
 		};
 		typename SharedLockable<T>::SharedObj at(size_t _Keyval) {
 			auto shared = data.Shared();
+			if (shared->size() <= _Keyval) throw std::out_of_range("Out of range of Vector");
 			T& result = shared->at(_Keyval);
 			return typename SharedLockable<T>::SharedObj(result, shared.ForwardLock());
 		};
 		typename SharedLockable<T>::SharedConstObj at(size_t _Keyval) const {
 			auto shared = data.Shared();
+			if (shared->size() <= _Keyval) throw std::out_of_range("Out of range of Vector");
 			const T& result = shared->at(_Keyval);
 			return typename SharedLockable<T>::SharedConstObj(result, shared.ForwardLock());
 		};
 		typename SharedLockable<T>::SharedObj front() {
 			auto shared = data.Shared();
+			if (shared->size() <= 0) throw std::out_of_range("Out of range of Vector");
 			T& result = shared->front();
 			return typename SharedLockable<T>::SharedObj(result, shared.ForwardLock());
 		};
 		typename SharedLockable<T>::SharedConstObj front() const {
 			auto shared = data.Shared();
+			if (shared->size() <= 0) throw std::out_of_range("Out of range of Vector");
 			const T& result = shared->front();
 			return typename SharedLockable<T>::SharedConstObj(result, shared.ForwardLock());
 		};
 		typename SharedLockable<T>::SharedObj back() {
 			auto shared = data.Shared();
+			if (shared->size() <= 0) throw std::out_of_range("Out of range of Vector");
 			T& result = shared->back();
 			return typename SharedLockable<T>::SharedObj(result, shared.ForwardLock());
 		};
 		typename SharedLockable<T>::SharedConstObj back() const {
 			auto shared = data.Shared();
+			if (shared->size() <= 0) throw std::out_of_range("Out of range of Vector");
 			const T& result = shared->back();
 			return typename SharedLockable<T>::SharedConstObj(result, shared.ForwardLock());
 		};
@@ -1846,11 +1886,13 @@ namespace GoodLang {
 		// removes element, shifts all other elements to maintain order
 		void erase(size_t index) {
 			auto shared = data.Unique();
+			if (index >= shared->size()) return;
 			shared->erase(shared->begin() + index);
 		};
 		// removes element, swapping with the last element, and does NOT maintain order of the list.
 		void erase_fast(size_t index) {
 			auto shared = data.Unique();
+			if (index >= shared->size()) return;
 			if ((shared->size() - 1) != index) { // no point in moving data if the index would be identical
 				shared->operator[](index) = shared->operator[](shared->size() - 1);
 			}
@@ -1910,6 +1952,7 @@ namespace GoodLang {
 			};
 			difference_type Distance(it_state const& other) const { return _ptr - other._ptr; };
 		};
+
 	public:
 		SETUP_ITERATOR(Vector, it_state);
 
