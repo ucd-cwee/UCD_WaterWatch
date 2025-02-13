@@ -6,6 +6,7 @@
 #include <memory>
 #include <unordered_map>
 #include "Parallel.h"
+#include <iostream>
 
 namespace GoodLang {
 	template<typename A, typename B> static B convert(A const& from) { return from; };
@@ -538,7 +539,7 @@ namespace GoodLang {
 			// Pair
 			if (1) {
 				using thisType = std::pair<Var, Var>;
-				std::string thisTypeName = "pair";
+				std::string thisTypeName = "Pair";
 
 				std::shared_ptr<Class> classPtr; {
 					classPtr.reset(new Class(this->p_self.lock(), thisTypeName, user_type_shared<thisType>().lock()));
@@ -553,8 +554,8 @@ namespace GoodLang {
 				classPtr->AddFunction(thisTypeName, make_callable([](Any const& a, Any const& b) -> thisType { return thisType{ Var(a), Var(b) }; }));
 				classPtr->AddFunction("=", make_callable([](Any const& a, thisType const& b) -> Any {
 					thisType& out = a.cast(); out = b; return a;
-					},
-					ParamTypes({ thisTypeInfo->MakeRef(), thisTypeInfo->MakeConstRef() })));
+				},
+				ParamTypes({ thisTypeInfo->MakeRef(), thisTypeInfo->MakeConstRef() })));
 
 				// Functions
 				classPtr->AddFunction("first", make_callable([](thisType& r) -> Var& { return r.first; }));
@@ -586,6 +587,124 @@ namespace GoodLang {
 					}
 				}));
 			}
+
+			// Vector
+			if (1) {
+				using thisType = Vector<Var>;
+				std::string thisTypeName = "Vector";
+
+				std::shared_ptr<Class> classPtr; {
+					classPtr.reset(new Class(this->p_self.lock(), thisTypeName, user_type_shared<thisType>().lock()));
+				}
+				classPtr->p_self = classPtr;
+				this->AddChild(classPtr);
+				auto thisTypeInfo = classPtr->ClassType;
+
+				// Constructors
+				classPtr->AddFunction(thisTypeName, make_callable([]() -> thisType { return thisType{}; }));
+				classPtr->AddFunction(thisTypeName, make_callable([](thisType const& makeCopy) -> thisType { return makeCopy; }));
+				classPtr->AddFunction("=", make_callable(
+					[](Any const& a, thisType const& b) -> Any { thisType& out = a.cast(); out = b; return a; }
+				    , ParamTypes({ thisTypeInfo->MakeRef(), thisTypeInfo->MakeConstRef() })
+				));
+
+				// Comparisons
+				classPtr->AddFunction("==", make_callable([](thisType const& x, thisType const& y) -> bool { return x == y; }));
+				classPtr->AddFunction("!=", make_callable([](thisType const& x, thisType const& y) -> bool { return x != y; }));
+
+				// Functions
+				classPtr->AddFunction("size", make_callable(&thisType::size));
+				classPtr->AddFunction("empty", make_callable(&thisType::empty));
+				classPtr->AddFunction("capacity", make_callable(&thisType::capacity));
+				classPtr->AddFunction("reserve", make_callable(&thisType::reserve));
+				classPtr->AddFunction("max_size", make_callable(&thisType::max_size));
+				classPtr->AddFunction("clear", make_callable(&thisType::clear));
+				classPtr->AddFunction("erase", make_callable(&thisType::erase));
+				classPtr->AddFunction("erase_fast", make_callable(&thisType::erase_fast));
+				classPtr->AddFunction("pop_back", make_callable(&thisType::pop_back));
+				classPtr->AddFunction("push_back", make_callable([](thisType& o, Any const& r) { o.push_back(Var(r)); }));
+				classPtr->AddFunction("resize", make_callable([](thisType& o, size_t N) { o.resize(N); }));
+				classPtr->AddFunction("resize", make_callable([](thisType& o, size_t N, Any const& r) { o.resize(N, Var(r)); }));
+
+				// operator[], at, front, back
+				classPtr->AddFunction("at", make_callable([](thisType const& o, size_t _Keyval) -> Var { 
+					auto Shared = o.at(_Keyval);
+					auto& var = *Shared;
+					std::shared_ptr<Any> toReturn = std::shared_ptr<Any>(new Any(Shared->p_data), [_lock = Shared.ForwardLock()](Any* p) {
+						delete p; 
+					});
+					return Var(toReturn);
+				}));
+				classPtr->AddFunction("[]", make_callable([](thisType& o, size_t _Keyval) -> Var {
+					auto Shared = o[_Keyval];
+					auto& var = *Shared;
+					std::shared_ptr<Any> toReturn = std::shared_ptr<Any>(new Any(Shared->p_data), [_lock = Shared.ForwardLock()](Any* p) {
+						delete p;
+					});
+					return Var(toReturn);
+				}));
+				classPtr->AddFunction("[]", make_callable([](thisType const& o, size_t _Keyval) -> Var {
+					auto Shared = o[_Keyval];
+					auto& var = *Shared;
+					std::shared_ptr<Any> toReturn = std::shared_ptr<Any>(new Any(Shared->p_data), [_lock = Shared.ForwardLock()](Any* p) {
+						delete p;
+					});
+					return Var(toReturn);
+				}));
+				classPtr->AddFunction("front", make_callable([](thisType const& o) -> Var {
+					auto Shared = o.front();
+					auto& var = *Shared;
+					std::shared_ptr<Any> toReturn = std::shared_ptr<Any>(new Any(Shared->p_data), [_lock = Shared.ForwardLock()](Any* p) {
+						delete p;
+					});
+					return Var(toReturn);
+				}));
+				classPtr->AddFunction("back", make_callable([](thisType const& o) -> Var {
+					auto Shared = o.back();
+					auto& var = *Shared;
+					std::shared_ptr<Any> toReturn = std::shared_ptr<Any>(new Any(Shared->p_data), [_lock = Shared.ForwardLock()](Any* p) {
+						delete p;
+					});
+					return Var(toReturn);
+				}));
+				// Returns a string
+				this->AddFunction("to_string", make_callable([self = std::weak_ptr<Class>(classPtr)](thisType const& x) -> std::string {
+					if (auto Self = self.lock()) {
+						std::string r;
+						for (auto& i : x) {
+							if (r.empty())
+								r = Self->Cast<std::string>(Self->CallFunction("to_string", { i.p_data }));
+							else {
+								r += ", ";
+								r += Self->Cast<std::string>(Self->CallFunction("to_string", { i.p_data }));
+							}
+						}
+						return GoodLang::printf("[%s]", r.c_str());
+					}
+					else {
+						throw exception::not_found_error("to_string");
+					}
+				}));
+				// Returns a hash
+				this->AddFunction("to_hash", make_callable([self = std::weak_ptr<Class>(classPtr)](thisType const& x) -> size_t {
+					if (auto Self = self.lock()) {
+						size_t o{ 0 };
+						for (auto& i : x) {
+							if (o == 0) {
+								o = Self->Cast<size_t>(Self->CallFunction("to_hash", { i.p_data }));
+							}
+							else {
+								Scope::hash_combine( o, Self->Cast<size_t>(Self->CallFunction("to_hash", { i.p_data })) );
+							}
+						}
+						return o;
+					}
+					else {
+						throw exception::not_found_error("to_hash");
+					}
+				}));
+			}
+
 
 #if 0
 			// Map

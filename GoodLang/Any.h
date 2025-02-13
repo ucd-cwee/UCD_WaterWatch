@@ -748,6 +748,13 @@ namespace GoodLang {
 	public:
 		std::shared_ptr<Any> p_data;
 
+	public:
+		friend bool operator==(Var const& _Left, Var const& _Right) {
+			return _Left.p_data == _Right.p_data;
+		};
+		friend bool operator!=(Var const& _Left, Var const& _Right) {
+			return !operator==(_Left, _Right);
+		};
 	};
 };
 

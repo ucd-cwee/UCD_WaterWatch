@@ -1605,7 +1605,7 @@ namespace GoodLang {
 				static GoodLang::FunctionSignature CreateSignature() {
 					std::vector<std::weak_ptr<Type_Info>> types(numArgs + 1, std::weak_ptr<Type_Info>());
 					types[0] = user_type_shared<const Class&>();
-#define argT(NN) if constexpr (numArgs > NN) { types[NN+1] = user_type_shared<typename std::tuple_element_t<NN, argType>>(); }
+#define argT(NN) if constexpr (numArgs > NN) { types[NN+1] = user_type_shared<typename std::tuple_element_t<NN+1, argType>>(); }
 					argT(0);
 					argT(1);
 					argT(2);
@@ -1991,7 +1991,7 @@ namespace GoodLang {
 				static GoodLang::FunctionSignature CreateSignature() {
 					std::vector<std::weak_ptr<Type_Info>> types(numArgs + 1, std::weak_ptr<Type_Info>());
 					types[0] = user_type_shared<Class&>();
-#define argT(NN) if constexpr (numArgs > NN) { types[NN+1] = user_type_shared<typename std::tuple_element_t<NN, argType>>(); }
+#define argT(NN) if constexpr (numArgs > NN) { types[NN+1] = user_type_shared<typename std::tuple_element_t<NN+1, argType>>(); }
 					argT(0);
 					argT(1);
 					argT(2);
@@ -2377,7 +2377,7 @@ namespace GoodLang {
 				static GoodLang::FunctionSignature CreateSignature() {
 					std::vector<std::weak_ptr<Type_Info>> types(numArgs + 1, std::weak_ptr<Type_Info>());
 					types[0] = user_type_shared<const Class&>();
-#define argT(NN) if constexpr (numArgs > NN) { types[NN+1] = user_type_shared<typename std::tuple_element_t<NN, argType>>(); }
+#define argT(NN) if constexpr (numArgs > NN) { types[NN+1] = user_type_shared<typename std::tuple_element_t<NN+1, argType>>(); }
 					argT(0);
 					argT(1);
 					argT(2);
@@ -2761,7 +2761,7 @@ namespace GoodLang {
 				static GoodLang::FunctionSignature CreateSignature() {
 					std::vector<std::weak_ptr<Type_Info>> types(numArgs + 1, std::weak_ptr<Type_Info>());
 					types[0] = user_type_shared<Class&>();
-#define argT(NN) if constexpr (numArgs > NN) { types[NN+1] = user_type_shared<typename std::tuple_element_t<NN, argType>>(); }
+#define argT(NN) if constexpr (numArgs > NN) { types[NN+1] = user_type_shared<typename std::tuple_element_t<NN+1, argType>>(); }
 					argT(0);
 					argT(1);
 					argT(2);

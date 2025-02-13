@@ -1823,19 +1823,19 @@ namespace GoodLang {
 			auto shared = data.Shared();
 			return shared->capacity();
 		};
-		void reserve(size_t N) const {
+		void reserve(size_t N) {
 			auto shared = data.Unique();
 			return shared->reserve(N);
 		};
-		void resize(size_t N) const {
+		void resize(size_t N) {
 			auto shared = data.Unique();
 			return shared->resize(N);
 		};
-		void resize(size_t N, const T& V) const {
+		void resize(size_t N, const T& V) {
 			auto shared = data.Unique();
 			return shared->resize(N, V);
 		};
-		size_t max_size() {
+		size_t max_size() const {
 			auto shared = data.Shared();
 			return shared->max_size();
 		};
@@ -1851,8 +1851,15 @@ namespace GoodLang {
 		// removes element, swapping with the last element, and does NOT maintain order of the list.
 		void erase_fast(size_t index) {
 			auto shared = data.Unique();
-			shared->operator[](index) = shared->operator[](shared->size()-1);
-			shared->resize(shared->size() - 1);
+			if ((shared->size() - 1) != index) { // no point in moving data if the index would be identical
+				shared->operator[](index) = shared->operator[](shared->size() - 1);
+			}
+			shared->pop_back();
+		};
+		// removes element, swapping with the last element, and does NOT maintain order of the list.
+		void pop_back() {
+			auto shared = data.Unique();
+			shared->pop_back();
 		};
 		friend bool operator==(Vector const& _Left, Vector const& _Right) {
 			return (_Left.size() == _Right.size())

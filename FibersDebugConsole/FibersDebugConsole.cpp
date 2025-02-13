@@ -522,7 +522,7 @@ int main() {
 
 				(void)(Units::horsepower(180_lbf * 2.4 * 2.0 * Units::constants::pi() * 12_ft / 1_min));
 
-				auto paired = s1->CallFunction("pair", { 100.0, Units::gallon{ 5 } });
+				auto paired = s1->CallFunction("Pair", { 100.0, Units::gallon{ 5 } });
 				EXPECT_EQ(true, s1->Cast<bool>(s1->CallFunction("==", { s1->CallFunction("second", {paired}), Units::cubic_foot{ Units::gallon{ 5 } } })));
 
 				s1->AddUsing(s1->FindNamespace("Units"));
@@ -530,10 +530,9 @@ int main() {
 
 				(s1->Cast<std::string>(s1->CallFunction("to_string", { s1->CallFunction("cubic_foot", {s1->CallFunction("second", {paired})}) })));
 
-
 				// Promise tests
-				{
-					auto promise = parallel::async([]() -> int { ::Sleep(3000); return 100; }).as_promise(); // sleeps 300 milliseconds and returns "100". Down-casted to a promise, performing type-erasure. 
+				if (1) {
+					auto promise = parallel::async([]() -> int { ::Sleep(300); return 100; }).as_promise(); // sleeps 300 milliseconds and returns "100". Down-casted to a promise, performing type-erasure. 
 					if (1) { // thread_local waiting from a specialized promise (no contention)
 						EXPECT_EQ(promise.Type(), user_type_shared<int>()); // returns an int
 						EXPECT_EQ(true, s1->Cast<bool>(s1->CallFunction("==", { s1->CallFunction("returns", { promise }), s1->CallFunction("Type", { 100 }) })));
@@ -541,7 +540,7 @@ int main() {
 					}
 
 					if (1) { // parallel waiting from a specialized promise (w/ contention)
-						promise = parallel::async([]() -> int { ::Sleep(3000); return 100; }).as_promise(); // sleeps 300 milliseconds and returns "100". Down-casted to a promise, performing type-erasure. 
+						promise = parallel::async([]() -> int { ::Sleep(300); return 100; }).as_promise(); // sleeps 300 milliseconds and returns "100". Down-casted to a promise, performing type-erasure. 
 						EXPECT_EQ(promise.Type(), user_type_shared<int>()); // returns an int
 						parallel::For(0, 100, [&](int i) {
 							auto s2 = std::make_shared<GoodLang::Scope>(s1);
@@ -552,7 +551,7 @@ int main() {
 					}
 
 					if (1) { // parallel waiting from a non-specialized promise (w/ contention)
-						promise = parallel::promise(Job([]() -> int { ::Sleep(3000); return 100; })); // sleeps 300 milliseconds and returns "100". Down-casted to a promise, performing type-erasure. 				
+						promise = parallel::promise(Job([]() -> int { ::Sleep(300); return 100; })); // sleeps 300 milliseconds and returns "100". Down-casted to a promise, performing type-erasure. 				
 						EXPECT_EQ(promise.Type(), user_type_shared<int>()); // returns an int
 						parallel::For(0, 100, [&](int i) {
 							auto s2 = std::make_shared<GoodLang::Scope>(s1);
@@ -562,6 +561,73 @@ int main() {
 						});
 					}
 				}
+
+				// Vector tests
+				if (1) {
+					if (1) {
+						auto vec = s1->CallFunction("Vector", {});
+						(void)(s1->Cast<size_t>(s1->CallFunction("to_hash", { vec })));
+						s1->CallFunction("push_back", { vec, 100 });
+						(void)(s1->Cast<size_t>(s1->CallFunction("to_hash", { vec })));
+						s1->CallFunction("push_back", { vec, 200 });
+						(void)(s1->Cast<size_t>(s1->CallFunction("to_hash", { vec })));
+						s1->CallFunction("push_back", { vec, 300 });
+						(void)(s1->Cast<size_t>(s1->CallFunction("to_hash", { vec })));
+						(void)(s1->Cast<std::string>(s1->CallFunction("to_string", { vec })));
+
+						(void)(s1->Cast<std::string>(s1->CallFunction("to_string", { s1->CallFunction("at", { vec, 0 }) })));
+						(void)(s1->Cast<std::string>(s1->CallFunction("to_string", { s1->CallFunction("at", { vec, 1 }) })));
+						(void)(s1->Cast<std::string>(s1->CallFunction("to_string", { s1->CallFunction("at", { vec, 2 }) })));
+					}
+
+					if (1) {
+						auto vec = s1->CallFunction("Vector", {});
+
+						// concurrently adding to the vector
+						parallel::For(0, 1000, [&vec, &s1](int i) {
+							auto s2 = std::make_shared<GoodLang::Scope>(s1);
+							s2->SetSelf(s2);
+
+							s2->CallFunction("push_back", { vec, i });
+						});
+
+						(void)(s1->Cast<size_t>(s1->CallFunction("to_hash", { vec })));
+						(void)(s1->Cast<std::string>(s1->CallFunction("to_string", { vec })));
+
+						// concurrently accessing the vector
+						parallel::For(0, 1000, [&vec, &s1](int i) {
+							auto s2 = std::make_shared<GoodLang::Scope>(s1);
+							s2->SetSelf(s2);
+
+							(void)(s1->Cast<std::string>(s1->CallFunction("to_string", { s1->CallFunction("at", { vec, i }) })));
+						});
+
+						// concurrently modifying the vector
+						parallel::For(0, 1000, [&vec, &s1](int i) {
+							auto s2 = std::make_shared<GoodLang::Scope>(s1);
+							s2->SetSelf(s2);
+
+							(void)(s1->Cast<std::string>(s1->CallFunction("to_string", { s1->CallFunction("at", { vec, i }) })));
+							s2->CallFunction("push_back", { vec, i + 1000 });
+						});
+
+						EXPECT_EQ(2000, s1->Cast<size_t>(s1->CallFunction("size", { vec })));
+						// concurrently erase from the vector						
+						parallel::For(0, 2000, [&vec, &s1](int i) {
+							auto s2 = std::make_shared<GoodLang::Scope>(s1);
+							s2->SetSelf(s2);
+							s2->CallFunction("erase_fast", { vec, (size_t)0 }); // swaps with the last value, rather than re-ordering
+						});
+						EXPECT_EQ(0, s1->Cast<size_t>(s1->CallFunction("size", { vec })));
+					}
+
+
+
+
+
+
+				}
+
 			}
 		}
 		// SharedLockable
