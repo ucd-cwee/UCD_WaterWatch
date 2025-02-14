@@ -74,6 +74,29 @@
 //
 // *
 
+class stackThing {
+public:
+	std::string varName;
+	bool perform_cout;
+
+public:
+	stackThing() : varName(), perform_cout{ true }{};
+	stackThing(std::string const& name) : varName(name), perform_cout{ true } {};
+	stackThing(std::string const& name, bool DoCout) : varName(name), perform_cout{ DoCout } {};
+	stackThing(stackThing const& r) = default;
+	stackThing(stackThing&& r) = default;
+	stackThing& operator=(stackThing const& r) = default;
+	stackThing& operator=(stackThing&& r) = default;
+	~stackThing() { 
+		if (perform_cout && (!varName.empty())) {
+			std::cout << GoodLang::printf("DELETING %s\n", varName.c_str()) << std::endl;
+		}
+	};
+	int length() const { return varName.length(); };
+	std::string& get_var_name() { return varName; };
+	bool operator==(stackThing const& a) const { return varName == a.varName; };
+	bool operator!=(stackThing const& a) const { return varName != a.varName; };
+};
 
 #define SINGLE_ARG(...) __VA_ARGS__
 #define EXPECT_EQ_PRINTF(A,B) [a = (A), b = (B)]()->bool{ \
@@ -690,24 +713,141 @@ int main() {
 
 					// Map tests
 					if (1) {
-						if (1) {
+						if (1) { // int as keys
 							auto vec = s1->CallFunction("Map", {});
-							print(s1->Cast<size_t>(s1->CallFunction("to_hash", { vec })));
+							(void)(s1->Cast<size_t>(s1->CallFunction("to_hash", { vec })));
 							s1->CallFunction("=", { s1->CallFunction("[]", { vec, 100 }), std::string("TEST")});
-							print(s1->Cast<size_t>(s1->CallFunction("to_hash", { vec })));
+							(void)(s1->Cast<size_t>(s1->CallFunction("to_hash", { vec })));
 							s1->CallFunction("=", { s1->CallFunction("[]", { vec, 200 }), std::string("TEST2") });
-							print(s1->Cast<size_t>(s1->CallFunction("to_hash", { vec })));
+							(void)(s1->Cast<size_t>(s1->CallFunction("to_hash", { vec })));
 							s1->CallFunction("=", { s1->CallFunction("[]", { vec, 300 }), std::string("TEST3") });
-							print(s1->Cast<size_t>(s1->CallFunction("to_hash", { vec })));
-							print(s1->Cast<std::string>(s1->CallFunction("to_string", { vec })));
+							(void)(s1->Cast<size_t>(s1->CallFunction("to_hash", { vec })));
+							(void)(s1->Cast<std::string>(s1->CallFunction("to_string", { vec })));
 
-							print(s1->Cast<std::string>(s1->CallFunction("to_string", { s1->CallFunction("at", { vec, 100 }) })));
-							print(s1->Cast<std::string>(s1->CallFunction("to_string", { s1->CallFunction("at", { vec, 200 }) })));
-							print(s1->Cast<std::string>(s1->CallFunction("to_string", { s1->CallFunction("at", { vec, 300 }) })));
+							(void)(s1->Cast<std::string>(s1->CallFunction("to_string", { s1->CallFunction("at", { vec, 100 }) })));
+							(void)(s1->Cast<std::string>(s1->CallFunction("to_string", { s1->CallFunction("at", { vec, 200 }) })));
+							(void)(s1->Cast<std::string>(s1->CallFunction("to_string", { s1->CallFunction("at", { vec, 300 }) })));
 
+							// Example implimentation of
+							// for (auto& x : Map(...)){ x.second += 100; }
+							for (auto iterPos = s1->CallFunction("begin", { vec }), iterEnd = s1->CallFunction("end", { vec });
+								s1->Cast<bool>(s1->CallFunction("!=", { iterPos, iterEnd }));
+								s1->CallFunction("++", { iterPos })
+								) {
+								auto s2 = std::make_shared<GoodLang::Scope>(s1);
+								s2->SetSelf(s2);
+								s2->AddObj("x", std::make_shared<Any>(s2->CallFunction("get", { iterPos })));
+								if (1) {
+									s2->CallFunction("+=", { 
+										s2->CallFunction("second", { s2->GetObj("x") })
+										, 100 
+									});
+
+
+
+								}
+							};
+
+							// Example implimentation of
+							// for (auto iter = V.begin(); iter != V.end(); iter++){ iter.get().second += 100; }
+							if (1) {
+								auto s2 = std::make_shared<GoodLang::Scope>(s1);
+								s2->SetSelf(s2);
+								s2->AddObj("iter", std::make_shared<Any>(s2->CallFunction("begin", { vec })));
+								for (; s2->Cast<bool>(s2->CallFunction("!=", { s2->GetObj("iter"), s2->CallFunction("end", { vec }) }));
+									s2->CallFunction("++", { s2->GetObj("iter") })
+									) {
+									auto s3 = std::make_shared<GoodLang::Scope>(s2);
+									s3->SetSelf(s3);
+
+									s3->CallFunction("+=", { s3->CallFunction("second", { s3->CallFunction("get", { s2->GetObj("iter") }) }), 100 });
+								};
+							}
+
+							(void)(s1->Cast<std::string>(s1->CallFunction("to_string", { vec })));
 						}
 
-					}
+						if (1) { // random keys
+							auto vec = s1->CallFunction("Map", {});
+							s1->CallFunction("=", { s1->CallFunction("[]", { vec, std::string("TEST")}), std::string("TEST")});
+							s1->CallFunction("=", { s1->CallFunction("[]", { vec, 100}), 100 });
+							s1->CallFunction("=", { s1->CallFunction("[]", { vec, 100.0 }), 100.0 });
+							s1->CallFunction("=", { s1->CallFunction("[]", { vec, Units::foot(100) }), Units::foot(100) });
+							s1->CallFunction("=", { s1->CallFunction("[]", { vec, Units::meter(100) }), Units::meter(100) });
+							s1->CallFunction("=", { s1->CallFunction("[]", { vec, std::pair<Var, Var>(Var(Any(100)), Var(Any(100))) }), std::pair<Var, Var>(Var(Any(100)), Var(Any(100))) });
+
+							print(s1->Cast<std::string>(s1->CallFunction("to_string", { vec })));
+							print(s1->Cast<size_t>(s1->CallFunction("to_hash", { vec })));
+						}
+
+					//	if (0) {
+					//		if (1) {
+					//			using thisType = stackThing;
+					//			std::string thisTypeName = "stackThing";
+
+					//			// make it a class
+					//			std::shared_ptr<Class> classPtr; {
+					//				classPtr.reset(new Class(s1->GetSelf(), thisTypeName, user_type_shared<thisType>().lock()));
+					//			}
+					//			classPtr->SetSelf(classPtr);
+					//			s1->AddChild(classPtr);
+					//			auto thisTypeInfo = classPtr->GetClassType().lock();
+
+					//			// Constructors
+					//			classPtr->AddFunction(thisTypeName, make_callable([]() -> thisType { return thisType{}; }));
+					//			classPtr->AddFunction(thisTypeName, make_callable([](thisType const& makeCopy) -> thisType { return makeCopy; }));
+					//			classPtr->AddFunction("=", make_callable([](Any const& a, thisType const& b) -> Any { thisType& out = a.cast(); out = b; return a; }, ParamTypes({ thisTypeInfo->MakeRef(), thisTypeInfo->MakeConstRef() })));
+					//		}
+
+
+
+
+
+
+
+
+
+
+
+
+
+					//		Map<size_t, std::pair<Var, Var>> vec;
+					//		s1->CallFunction("=", { s1->CallFunction("[]", { vec, std::string("TEST") }), stackThing("#1") });
+					//		auto result = s1->CallFunction("[]", { vec, std::string("TEST") });
+					//		auto ptr = s1->Cast<stackThing>(result);
+					//		// auto ref = s1->Cast<stackThing>(result);
+					//		s1->CallFunction("get", { s1->CallFunction("begin", { vec }) });
+
+
+
+					//	}
+
+
+					//}
+
+					print(s1->Cast<size_t>(s1->CallFunction("to_hash", { 100 })));                                  // 14740360096876770257 // int and long are identical
+					print(s1->Cast<size_t>(s1->CallFunction("to_hash", { 100l })));                                 // 14740360096876770257 // int and long are identical
+					
+					print(s1->Cast<size_t>(s1->CallFunction("to_hash", { -100ll })));                               // 13526353293655554174 // negative long long is still unique
+					print(s1->Cast<size_t>(s1->CallFunction("to_hash", { 100ll })));                                // 879817313296471393 // long long and size_t are identical
+					print(s1->Cast<size_t>(s1->CallFunction("to_hash", { 100ull })));                               // 879817313296471393 // long long and size_t are identical
+
+					print(s1->Cast<size_t>(s1->CallFunction("to_hash", { 100.0f })));                               // 5367592014500867015 // float != double
+					print(s1->Cast<size_t>(s1->CallFunction("to_hash", { 100.0 })));                                // 12199198273835788356 // double and long double are identical?
+					print(s1->Cast<size_t>(s1->CallFunction("to_hash", { 100.0l })));                               // 12199198273835788356 // double and long double are identical?
+
+					print(s1->Cast<size_t>(s1->CallFunction("to_hash", { Units::meter(100) })));                    // 11515290314681484498 // 100_m == 100_m
+					print(s1->Cast<size_t>(s1->CallFunction("to_hash", { Units::foot(Units::meter(100)) })));       // 11515290314681484498 // 100_m == 100_m
+					print(s1->Cast<size_t>(s1->CallFunction("to_hash", { Units::value(100) })));                    // 10174072778362014296 // 100 != 100_m
+					print(s1->Cast<size_t>(s1->CallFunction("to_hash", { Units::foot(100) })));                     // 16763820920937584519 // 100_ft != 100_m
+					
+
+
+
+
+
+
+
 
 
 				}

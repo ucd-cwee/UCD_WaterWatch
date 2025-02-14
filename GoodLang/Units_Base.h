@@ -236,7 +236,7 @@ namespace GoodLang {
 			value operator-() const;
 			// atomicly updates the value with a custom user-provided function.
 			value& update(std::function<double(double)> const& updateFunction);
-			// Creats a copy of the value and updates it with a custom user-provided function.
+			// Creates a copy of the value and updates it with a custom user-provided function.
 			value update(std::function<double(double)> const& updateFunction) const;
 			// Returns a new value multiplied by itself "V" times. (e.g. (3_m).pow(3) => 3_cu_m)
 			value pow(value const& V) const;
@@ -244,10 +244,12 @@ namespace GoodLang {
 			value pow_value(value const& V) const;
 			// pow(0.5)
 			value sqrt() const;
-			// Creats a copy of the value and floors (rounds to lower whole integer) the underlying value
+			// Creates a copy of the value and floors (rounds to lower whole integer) the underlying value
 			value floor() const;
-			// Creats a copy of the value and ceilings (rounds to upper whole integer) the underlying value
+			// Creates a copy of the value and ceilings (rounds to upper whole integer) the underlying value
 			value ceiling() const;
+			// return a unique hash for the unit/value combo
+			size_t hash() const;
 
 		public:
 			static Map<std::weak_ptr<GoodLang::Type_Info>, Units::value> GetValueTypes() noexcept;

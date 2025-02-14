@@ -696,7 +696,21 @@ namespace GoodLang {
 		value value::ceiling() const {
 			return update([](double v)->double { return std::ceil(v); });
 		};
-
+		// return a unique hash for the unit/value combo
+		size_t value::hash() const {
+			auto Data = this->unit_m.Shared();
+			size_t out{ 37 };
+			GoodLang::details::hash_combine(
+				out, 
+				Data->value(), 
+				Data->unitType()[0], 
+				Data->unitType()[1],
+				Data->unitType()[2],
+				Data->unitType()[3],
+				Data->unitType()[4]
+			);
+			return out;
+		};
 
 	};
 

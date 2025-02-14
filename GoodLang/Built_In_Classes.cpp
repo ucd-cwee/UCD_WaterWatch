@@ -292,7 +292,9 @@ namespace GoodLang {
 						value_namespace->AddFunction("to_string", make_callable([](Units::value const& x)->std::string {
 							return x.ToString();
 						}));
-						// hashes do not exist for Units because their values are only approximations
+						value_namespace->AddFunction("to_hash", make_callable([](Units::value const& x)->size_t {
+							return x.hash();
+						}));
 
 						// Constructors
 						value_namespace->AddFunction("value", make_callable([]() -> Units::value { return Units::value{}; }));
@@ -381,7 +383,7 @@ namespace GoodLang {
 				classPtr->AddFunction("max", make_callable([]() { return std::numeric_limits<thisType>::max(); }));
 				classPtr->AddFunction("min", make_callable([]() { return std::numeric_limits<thisType>::lowest(); }));
 				classPtr->AddFunction("to_string", make_callable([](thisType const& o) -> std::string { return o.c_str(); }));
-				classPtr->AddFunction("to_hash", make_callable([](thisType const& o) -> size_t { return (size_t)(double)(Units::millisecond)(Units::second)o; }));
+				classPtr->AddFunction("to_hash", make_callable([](thisType const& o) -> size_t { return ((Units::second)o).hash(); }));
 
 				classPtr->AddFunction("Epoch", make_callable(&DateTime::Epoch));
 				classPtr->AddFunction("Now", make_callable(&DateTime::Now));
@@ -645,40 +647,40 @@ namespace GoodLang {
 				classPtr->AddFunction("at", make_callable([](thisType const& o, size_t _Keyval) -> Var { 
 					auto Shared = o.at(_Keyval);
 					auto& var = *Shared;
-					std::shared_ptr<Any> toReturn = std::shared_ptr<Any>(Shared->p_data.get(), [_lock = Shared.ForwardLock(), _shared = Shared->p_data](Any* p) {
-						/* delete p; */
+					std::shared_ptr<Any> toReturn = std::shared_ptr<Any>(new Any(var), [_lock = Shared.ForwardLock(), _shared = Shared->p_data](Any* p) {
+						delete p;
 					});
 					return Var(toReturn);
 				}));
 				classPtr->AddFunction("[]", make_callable([](thisType& o, size_t _Keyval) -> Var {
 					auto Shared = o[_Keyval];
 					auto& var = *Shared;
-					std::shared_ptr<Any> toReturn = std::shared_ptr<Any>(Shared->p_data.get(), [_lock = Shared.ForwardLock(), _shared = Shared->p_data](Any* p) {
-						/* delete p; */
+					std::shared_ptr<Any> toReturn = std::shared_ptr<Any>(new Any(var), [_lock = Shared.ForwardLock(), _shared = Shared->p_data](Any* p) {
+						delete p;
 					});
 					return Var(toReturn);
 				}));
 				classPtr->AddFunction("[]", make_callable([](thisType const& o, size_t _Keyval) -> Var {
 					auto Shared = o[_Keyval];
 					auto& var = *Shared;
-					std::shared_ptr<Any> toReturn = std::shared_ptr<Any>(Shared->p_data.get(), [_lock = Shared.ForwardLock(), _shared = Shared->p_data](Any* p) {
-						/* delete p; */
+					std::shared_ptr<Any> toReturn = std::shared_ptr<Any>(new Any(var), [_lock = Shared.ForwardLock(), _shared = Shared->p_data](Any* p) {
+						delete p;
 					});
 					return Var(toReturn);
 				}));
 				classPtr->AddFunction("front", make_callable([](thisType const& o) -> Var {
 					auto Shared = o.front();
 					auto& var = *Shared;
-					std::shared_ptr<Any> toReturn = std::shared_ptr<Any>(Shared->p_data.get(), [_lock = Shared.ForwardLock(), _shared = Shared->p_data](Any* p) {
-						/* delete p; */
+					std::shared_ptr<Any> toReturn = std::shared_ptr<Any>(new Any(var), [_lock = Shared.ForwardLock(), _shared = Shared->p_data](Any* p) {
+						delete p;
 					});
 					return Var(toReturn);
 				}));
 				classPtr->AddFunction("back", make_callable([](thisType const& o) -> Var {
 					auto Shared = o.back();
 					auto& var = *Shared;
-					std::shared_ptr<Any> toReturn = std::shared_ptr<Any>(Shared->p_data.get(), [_lock = Shared.ForwardLock(), _shared = Shared->p_data](Any* p) {
-						/* delete p; */
+					std::shared_ptr<Any> toReturn = std::shared_ptr<Any>(new Any(var), [_lock = Shared.ForwardLock(), _shared = Shared->p_data](Any* p) {
+						delete p;
 					});
 					return Var(toReturn);
 				}));
@@ -750,23 +752,10 @@ namespace GoodLang {
 						out.operator++();
 						return a;
 					}, ParamTypes({ thisIteratorTypeInfo->MakeRef() }), thisIteratorTypeInfo->MakeRef()));
-					//// first (convenience function for this specialization)
-					//iterator_classPtr->AddFunction("first", make_callable([](thisIteratorType const& makeCopy) -> Any {
-					//	return (*makeCopy).first.first;
-					//}));
-					//// second (convenience function for this specialization)
-					//iterator_classPtr->AddFunction("second", make_callable([](thisIteratorType const& makeCopy) -> Any {
-					//	return (*makeCopy).second;
-					//}));
-					//// get // must be implimented by the iterator
-					//iterator_classPtr->AddFunction("get", make_callable([](thisIteratorType const& makeCopy) -> std::pair<Var, Var> {
-					//	return std::pair<Var, Var>{ Any((*makeCopy).first.first), Any((*makeCopy).second) };
-					//}));
-
 					// get // must be implimented by the iterator
 					iterator_classPtr->AddFunction("get", make_callable([](thisIteratorType const& makeCopy) -> Var {
-						std::shared_ptr<Any> toReturn = std::shared_ptr<Any>(makeCopy->p_data.get(), [_lock = makeCopy](Any* p) {
-							/* delete p; */
+						std::shared_ptr<Any> toReturn = std::shared_ptr<Any>(new Any(*makeCopy), [_lock = makeCopy](Any* p) {
+							delete p;
 						});
 						return Var(toReturn);
 					}));
@@ -777,10 +766,6 @@ namespace GoodLang {
 				classPtr->AddFunction("end", make_callable([Self = classPtr->p_self](thisType const& r)->thisType::iterator {
 					return r.end();
 				}));
-
-
-
-
 
 			}
 
@@ -834,9 +819,8 @@ namespace GoodLang {
 					if (auto scope = Self.lock()) {
 						auto _key = scope->Cast<size_t>(scope->CallFunction("to_hash", { key }));
 						auto Shared = o.at(_key);
-						auto& var = *Shared;
-						std::shared_ptr<Any> toReturn = std::shared_ptr<Any>(Shared->second.p_data.get(), [_lock = Shared.ForwardLock(), _shared = Shared->second.p_data](Any* p) {
-							/* delete p; */
+						std::shared_ptr<Any> toReturn = std::shared_ptr<Any>(new Any(Shared->second), [_lock = Shared.ForwardLock(), _shared = Shared->second.p_data](Any* p) {
+							delete p;
 						});
 						return Var(toReturn);
 					}
@@ -849,8 +833,8 @@ namespace GoodLang {
 						auto _key = scope->Cast<size_t>(scope->CallFunction("to_hash", { key }));
 						auto Shared = o.at(_key);
 						auto& var = *Shared;
-						std::shared_ptr<Any> toReturn = std::shared_ptr<Any>(Shared->second.p_data.get(), [_lock = Shared.ForwardLock(), _shared = Shared->second.p_data](Any* p) {
-							/* delete p; */
+						std::shared_ptr<Any> toReturn = std::shared_ptr<Any>(new Any(Shared->second), [_lock = Shared.ForwardLock(), _shared = Shared->second.p_data](Any* p) {
+							delete p;
 						});
 						return Var(toReturn);
 					}
@@ -863,8 +847,8 @@ namespace GoodLang {
 						auto _key = scope->Cast<size_t>(scope->CallFunction("to_hash", { key }));
 						auto Shared = o.get_or_insert(_key, std::pair<Var, Var>{ Var(key), Var() });
 						auto& var = *Shared;
-						std::shared_ptr<Any> toReturn = std::shared_ptr<Any>(Shared->second.p_data.get(), [_lock = Shared.ForwardLock(), _shared = Shared->second.p_data](Any* p) {
-							/* delete p; */
+						std::shared_ptr<Any> toReturn = std::shared_ptr<Any>(new Any(Shared->second), [_lock = Shared.ForwardLock(), _shared = Shared->second.p_data](Any* p) {
+							delete p;
 						});
 						return Var(toReturn);
 					}
@@ -943,25 +927,25 @@ namespace GoodLang {
 					}, ParamTypes({ thisIteratorTypeInfo->MakeRef() }), thisIteratorTypeInfo->MakeRef()));
 					// first (convenience function for this specialization)
 					iterator_classPtr->AddFunction("first", make_callable([](thisIteratorType const& makeCopy) -> Any {
-						std::shared_ptr<Any> toReturn = std::shared_ptr<Any>(makeCopy->second.first.p_data.get(), [_lock = makeCopy](Any* p) {
-							/* delete p; */
+						std::shared_ptr<Any> toReturn = std::shared_ptr<Any>(new Any(makeCopy->second.first), [_lock = makeCopy](Any* p) {
+							delete p;
 						});
 						return Var(toReturn);
 					}));
 					// second (convenience function for this specialization)
 					iterator_classPtr->AddFunction("second", make_callable([](thisIteratorType const& makeCopy) -> Any {
-						std::shared_ptr<Any> toReturn = std::shared_ptr<Any>(makeCopy->second.second.p_data.get(), [_lock = makeCopy](Any* p) {
-							/* delete p; */
+						std::shared_ptr<Any> toReturn = std::shared_ptr<Any>(new Any(makeCopy->second.second), [_lock = makeCopy](Any* p) {
+							delete p;
 						});
 						return Var(toReturn);
 					}));
 					// get // must be implimented by the iterator
 					iterator_classPtr->AddFunction("get", make_callable([](thisIteratorType const& makeCopy) -> std::pair<Var, Var> {
-						std::shared_ptr<Any> toReturn1 = std::shared_ptr<Any>(makeCopy->second.first.p_data.get(), [_lock = makeCopy](Any* p) {
-							/* delete p; */
+						std::shared_ptr<Any> toReturn1 = std::shared_ptr<Any>(new Any(makeCopy->second.first), [_lock = makeCopy](Any* p) {
+							delete p;
 						});
-						std::shared_ptr<Any> toReturn2 = std::shared_ptr<Any>(makeCopy->second.second.p_data.get(), [_lock = makeCopy](Any* p) {
-							/* delete p; */
+						std::shared_ptr<Any> toReturn2 = std::shared_ptr<Any>(new Any(makeCopy->second.second), [_lock = makeCopy](Any* p) {
+							delete p;
 						});
 						return std::pair<Var, Var>{ Var(toReturn1), Var(toReturn2) };
 					}));
