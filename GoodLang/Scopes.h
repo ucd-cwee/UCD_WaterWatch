@@ -154,6 +154,39 @@ namespace GoodLang {
 			qualifiedNamespaceWithoutQualifiers{};
 
 	public:
+		std::string GetTypeName(std::weak_ptr<Type_Info> const& ti) const {
+			if (auto p = ti.lock()) {
+				if (auto c = std::dynamic_pointer_cast<Scope>(this->FindClass(p))) {
+					if (p->is_const()) {
+						if (p->is_ref()) {
+							return std::string("const ") + c->GetName() + "&";
+						}
+						else {
+							return std::string("const ") + c->GetName();
+						}
+					}
+					else {
+						if (p->is_ref()) {
+							return c->GetName() + "&";
+						}
+						else {
+							return c->GetName();
+						}
+					}
+				}
+				else {
+					if (p->is_any()) {
+						return "Any";
+					}
+					else {
+						return p->name();
+					}
+				}
+			}
+			return user_type<void>().name();
+		};
+
+	public:
 		std::shared_ptr<Scope> GetSelf() const { return p_self.lock(); };
 		void SetSelf(std::shared_ptr<Scope>& p) { p_self = p; };
 		virtual bool IsClass() const { return false; };
@@ -469,7 +502,7 @@ namespace GoodLang {
 		std::shared_ptr<Class> FindClass(std::string const& QualifiedOrUnqualifiedNamespaceName) const;
 
 	public:
-		std::shared_ptr<Class> FindClass(std::weak_ptr<Type_Info> const& typeInfo) const;
+		std::shared_ptr<Class> FindClass(std::weak_ptr<Type_Info> typeInfo) const;
 
 		std::shared_ptr<Scope> FindScopeWithObj(std::string objName) const;
 		std::shared_ptr<Any> FindObj(std::string objName) const;
@@ -544,12 +577,12 @@ namespace GoodLang {
 					catch (exception::not_found_error) {}
 				}
 
-				// Failure
-				throw exception::not_found_error(ToClass->GetName());
+				// Failure to cast From -> To
+				throw exception::bad_any_cast(FromType, ToType, __LINE__);
 			}
 
 			// Failure
-			throw exception::not_found_error(user_type_shared<T>().lock()->name());
+			throw exception::not_found_error(GetTypeName(user_type_shared<T>()));
 		};
 
 	};
@@ -771,12 +804,14 @@ namespace GoodLang {
 				// foot(value)
 				foot_namespace->AddFunction(UnitName, Function(make_callable([](Units::value const& makeCopy) -> T { return makeCopy; }), false));
 				// foot() = value();
-				foot_namespace->AddFunction("=", Function(make_callable([](Any const& a, Units::value const& b) -> Any { T& out = a.cast(); out = b; return a; }, ParamTypes({ user_type_shared<T>(), user_type_shared<Units::value>() })), false));
+				foot_namespace->AddFunction("=", Function(make_callable([](Any const& a, Units::value const& b) -> Any { 
+					T& out = a.cast(); out = b; return a; 
+				}, ParamTypes({ foot_namespace->GetClassType().lock()->MakeRef(), user_type_shared<Units::value>().lock()->MakeConstRef() }), foot_namespace->GetClassType().lock()->MakeRef()), false));
 
 				// value(foot)
 				value_namespace->AddFunction(value_namespace->GetName(), Function(make_callable([](Any const& from) -> std::shared_ptr<Units::value> {
 					return std::dynamic_pointer_cast<Units::value>(from.cast<std::shared_ptr<T>>());
-					}, ParamTypes({ foot_namespace->GetClassType().lock()->MakeConstRef() })), false));
+				}, ParamTypes({ foot_namespace->GetClassType().lock()->MakeConstRef() })), false));
 			}
 		};
 

@@ -834,6 +834,8 @@ namespace GoodLang {
 		const FunctionArgs& Arguments() const { return m_arguments; };
 		const std::string& Name() const { return m_name; };
 		const std::string& QualifiedName() const { return m_qualified_name; };
+		void Name(const std::string& input) { m_name = input; };
+		void QualifiedName(const std::string& input) { m_qualified_name = input; };
 		size_t hash() const noexcept { return uniqueHash; };
 		bool IsTemplate() const { return m_arguments.IsTemplate(); };
 
@@ -958,6 +960,7 @@ namespace GoodLang {
 
 			size_t hash() const;
 			const GoodLang::FunctionSignature& GetSignature() const;
+			GoodLang::FunctionSignature& GetSignature();
 			size_t NumArguments() const;
 			const auto& Argument(size_t N) const noexcept { return m_signature.Arguments().Type(N); };
 			const auto& Arguments() const noexcept { return m_signature.Arguments(); };

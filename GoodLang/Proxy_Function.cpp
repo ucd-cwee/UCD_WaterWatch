@@ -503,43 +503,35 @@ namespace GoodLang {
 		else if (from.IsTypeOf(To)) {
 			return from;
 		}
-		else return from;
+		throw exception::bad_any_cast(from.Type(), To, __LINE__);
 	};
 
 	// will return an empty object if the conversion was impossible. (Assumes converting to void is not allowed or desired)
 	double TypeConverter::ConversionCost(Any const& from, std::shared_ptr<Type_Info> const& To) {
-		double out;
 		if (To && To->is_any()) {
-			out = 0;
+			return 0;
 		}
 		else if (auto f = FindConverter(from.Type().lock(), To)) {
-			out = f->cost();
+			return f->cost();
 		}
 		else if (from.IsTypeOf(To)) {
-			out = 0;
+			return 0;
 		}
-		else {
-			out = std::numeric_limits<double>::max();
-		}
-		return out;
+		return std::numeric_limits<double>::max();		
 	};
 
 	// will return an empty object if the conversion was impossible. (Assumes converting to void is not allowed or desired)
 	double TypeConverter::ConversionCost_Fast(Any const& from, std::shared_ptr<Type_Info> const& From, std::shared_ptr<Type_Info> const& To) {
-		double out;
 		if (To && To->is_any()) {
-			out = 0;
+			return 0;
 		}
 		else if (auto f = FindConverter(From, To)) {
-			out = f->cost();
+			return  f->cost();
 		}
 		else if (from.IsTypeOf(To)) {
-			out = 0;
+			return 0;
 		}
-		else {
-			out = std::numeric_limits<double>::max();
-		}
-		return out;
+		return std::numeric_limits<double>::max();		
 	};
 
 	// will return an empty object if the conversion was impossible. (Assumes converting to void is not allowed or desired)
@@ -722,6 +714,9 @@ namespace GoodLang {
 			return m_signature.hash();
 		};
 		const GoodLang::FunctionSignature& Proxy_Function_Base::GetSignature() const {
+			return m_signature;
+		};
+		GoodLang::FunctionSignature& Proxy_Function_Base::GetSignature() {
 			return m_signature;
 		};
 		size_t Proxy_Function_Base::NumArguments() const {

@@ -353,7 +353,9 @@ namespace GoodLang {
 	std::shared_ptr<Class> Scope::FindClass(std::string const& QualifiedOrUnqualifiedNamespaceName) const {
 		return std::dynamic_pointer_cast<Class>(FindNamespace(QualifiedOrUnqualifiedNamespaceName));
 	};
-	std::shared_ptr<Class> Scope::FindClass(std::weak_ptr<Type_Info> const& typeInfo) const {
+	std::shared_ptr<Class> Scope::FindClass(std::weak_ptr<Type_Info> typeInfo) const {
+		if (auto p = typeInfo.lock()) typeInfo = p->MakeBase(); // revert to base to help with searching
+
 		std::shared_ptr<Namespace> out;
 
 #ifdef useCachedData
@@ -924,6 +926,10 @@ namespace GoodLang {
 
 
 	bool Namespace::AddFunction(std::string const& name, Function const& function, bool overrideIfAlreadyExists) {
+		const_cast<Function&>(function).m_function->GetSignature().Name(name);
+		const_cast<Function&>(function).m_function->GetSignature().QualifiedName(this->GetQualifiedNamespace() + name);
+		
+		function.m_function->GetSignature().Name(name);
 		defer(this->RecordFunction(name, function));
 		if (this->IsClass() && (this->GetName() == name) && (function.m_function->Arguments().size() <= 1)) {
 			if (function.m_function->Arguments().size() == 1) {
