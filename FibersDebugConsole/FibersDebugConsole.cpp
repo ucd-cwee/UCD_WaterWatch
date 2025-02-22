@@ -887,7 +887,7 @@ int main() {
 							} catch (exception::bad_any_cast&) {}
 						}
 
-						if (1) {
+						if (0) {
 							print(s1->Cast<std::string>(s1->CallFunction("to_string", { make_callable([](double min, double max) -> double { return 0; }) })));
 							print(s1->Cast<std::string>(s1->CallFunction("to_string", { make_callable([](int min, float const& max) -> std::string { return ""; }) })));
 							print(s1->Cast<std::string>(s1->CallFunction("to_string", { make_callable(&stackThing::get_var_name) })));
@@ -991,16 +991,7 @@ int main() {
 							}
 
 						}
-
-
-
-
-
-
 					}
-
-
-
 				}
 			}
 			// SharedLockable
