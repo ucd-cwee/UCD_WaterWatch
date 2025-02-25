@@ -13,6 +13,7 @@
 #include <ShlDisp.h> // InterlockedExchangePointer
 #include <map>
 #include <concurrent_queue.h>
+#include <concurrent_vector.h>
 #include <set>
 #include <concurrent_unordered_set.h>
 #include <stack>
@@ -708,9 +709,6 @@ namespace GoodLang {
 			static_assert(N < num_parameters&& N >= 0, "Cannot access parameters beyond the allocated buffer.");
 			constexpr size_t index = SizeOfFirstN<N>();
 			return *static_cast<NthTypeOf<N>*>(static_cast<void*>(&data[index]));
-
-			//constexpr NthTypeOf<N>* out = static_cast<NthTypeOf<N>*>(static_cast<void*>((static_cast<byte*>(&const_cast<byte&>(data[SizeOfFirstN<N>()])))));
-			//return *out;
 		};
 		/* GET THE SIZE (in bytes) OF THE ENTIRE UNION */
 		static constexpr size_t size() noexcept { return SizeOfAll(); };
@@ -1164,6 +1162,388 @@ namespace GoodLang {
 
 	};
 
+	namespace cas_impl {
+		template<typename... Args> struct UnionDetails {
+		public:
+			using byte = unsigned char;
+			template<int N> using NthTypeOf = typename std::remove_const<typename std::remove_reference<typename std::tuple_element<N, std::tuple<Args...>>::type>::type>::type;
+			static constexpr size_t num_parameters = sizeof...(Args);
+			template<int N>	static constexpr size_t SizeOfFirstN() {
+				size_t d(0);
+				if constexpr (num_parameters >= 1 && N >= 1) {
+					d += sizeof(NthTypeOf<0>);
+				}
+				if constexpr (num_parameters >= 2 && N >= 2) {
+					d += sizeof(NthTypeOf<1>);
+				}
+				if constexpr (num_parameters >= 3 && N >= 3) {
+					d += sizeof(NthTypeOf<2>);
+				}
+				if constexpr (num_parameters >= 4 && N >= 4) {
+					d += sizeof(NthTypeOf<3>);
+				}
+				if constexpr (num_parameters >= 5 && N >= 5) {
+					d += sizeof(NthTypeOf<4>);
+				}
+				if constexpr (num_parameters >= 6 && N >= 6) {
+					d += sizeof(NthTypeOf<5>);
+				}
+				if constexpr (num_parameters >= 7 && N >= 7) {
+					d += sizeof(NthTypeOf<6>);
+				}
+				if constexpr (num_parameters >= 8 && N >= 8) {
+					d += sizeof(NthTypeOf<7>);
+				}
+				if constexpr (num_parameters >= 9 && N >= 9) {
+					d += sizeof(NthTypeOf<8>);
+				}
+				if constexpr (num_parameters >= 10 && N >= 10) {
+					d += sizeof(NthTypeOf<9>);
+				}
+				if constexpr (num_parameters >= 11 && N >= 11) {
+					d += sizeof(NthTypeOf<10>);
+				}
+				if constexpr (num_parameters >= 12 && N >= 12) {
+					d += sizeof(NthTypeOf<11>);
+				}
+				if constexpr (num_parameters >= 13 && N >= 13) {
+					d += sizeof(NthTypeOf<12>);
+				}
+				if constexpr (num_parameters >= 13 && N >= 14) {
+					d += sizeof(NthTypeOf<13>);
+				}
+				if constexpr (num_parameters >= 14 && N >= 15) {
+					d += sizeof(NthTypeOf<14>);
+				}
+				if constexpr (num_parameters >= 15 && N >= 16) {
+					d += sizeof(NthTypeOf<15>);
+				}
+				return d;
+			};
+			static constexpr size_t SizeOfAll() {
+				return SizeOfFirstN<num_parameters>();
+			};
+			static constexpr size_t sizeOfArgs = SizeOfAll();
+		private:
+			static constexpr size_t bitOffset_0 = SizeOfFirstN<0>();
+			static constexpr size_t bitOffset_1 = SizeOfFirstN<1>();
+			static constexpr size_t bitOffset_2 = SizeOfFirstN<2>();
+			static constexpr size_t bitOffset_3 = SizeOfFirstN<3>();
+			static constexpr size_t bitOffset_4 = SizeOfFirstN<4>();
+			static constexpr size_t bitOffset_5 = SizeOfFirstN<5>();
+			static constexpr size_t bitOffset_6 = SizeOfFirstN<6>();
+			static constexpr size_t bitOffset_7 = SizeOfFirstN<7>();
+			static constexpr size_t bitOffset_8 = SizeOfFirstN<8>();
+			static constexpr size_t bitOffset_9 = SizeOfFirstN<9>();
+			static constexpr size_t bitOffset_10 = SizeOfFirstN<10>();
+			static constexpr size_t bitOffset_11 = SizeOfFirstN<11>();
+			static constexpr size_t bitOffset_12 = SizeOfFirstN<12>();
+			static constexpr size_t bitOffset_13 = SizeOfFirstN<13>();
+			static constexpr size_t bitOffset_14 = SizeOfFirstN<14>();
+			static constexpr size_t bitOffset_15 = SizeOfFirstN<15>();
+		public:
+			template <int N> static NthTypeOf<N>* PtrAt(byte* data) { return static_cast<NthTypeOf<N>*>(static_cast<void*>(&data[SizeOfFirstN<N>()])); };
+
+		};
+		template <typename type1, typename type2, typename type3, typename type4> class CAS4 {
+		private:
+			using wrapperDetails = UnionDetails<type1, type2, type3, type4>;
+		public:
+			struct Data {
+			protected:
+				typename wrapperDetails::byte data[wrapperDetails::sizeOfArgs];
+
+			public:
+				type1& a() {
+					return *wrapperDetails::PtrAt<0>(&data[0]);
+				};
+				type2& b() {
+					return *wrapperDetails::PtrAt<1>(&data[0]);
+				};
+				type3& c() {
+					return *wrapperDetails::PtrAt<2>(&data[0]);
+				};
+				type4& d() {
+					return *wrapperDetails::PtrAt<3>(&data[0]);
+				};
+
+				Data() = default;
+				~Data() = default;
+				Data(type1 A, type2 B = {}, type3 C = {}, type4 D = {}) {
+					a() = A;
+					b() = B;
+					c() = C;
+					d() = D;
+				};
+			};
+
+		public:
+			CAS4(type1 a = {}, type2 b = {}, type3 c = {}, type4 d = {}) : read_write(Data(a, b, c, d)) {};
+			CAS4(Data const& RHS) : read_write(RHS) {};
+			CAS4(CAS4 const& RHS) : read_write(RHS.read_write.load()) {};
+			CAS4(CAS4&& RHS) : read_write(RHS.read_write.load()) {};
+			CAS4& operator=(CAS4 const& RHS) { read_write.store(RHS.read_write.load()); return *this; };
+			CAS4& operator=(CAS4&& RHS) { read_write.store(RHS.read_write.load()); return *this; };
+			~CAS4() = default;
+
+			void store(Data const& RHS) {
+				read_write.store(RHS);
+			};
+			Data load() const {
+				return read_write.load();
+			};
+			Data exchange(Data const& RHS) {
+				return read_write.exchange(RHS);
+			};
+			bool compare_exchange_strong(Data& _Expected, const Data& _Desired) {
+				return read_write.compare_exchange_strong(_Expected, _Desired);
+			};
+			bool compare_exchange_weak(Data& _Expected, const Data& _Desired) {
+				return read_write.compare_exchange_weak(_Expected, _Desired);
+			};
+
+		private:
+			std::atomic < Data > read_write;
+			static_assert(decltype(read_write)::is_always_lock_free);
+		public:
+			static constexpr bool is_always_lock_free{ decltype(read_write)::is_always_lock_free };
+		};
+		template <typename type1, typename type2, typename type3> class CAS3 {
+		private:
+			using wrapperDetails = UnionDetails<type1, type2, type3>;
+		public:
+			struct Data {
+			protected:
+				typename wrapperDetails::byte data[wrapperDetails::sizeOfArgs];
+
+			public:
+				type1& a() {
+					return *wrapperDetails::PtrAt<0>(&data[0]);
+				};
+				type2& b() {
+					return *wrapperDetails::PtrAt<1>(&data[0]);
+				};
+				type3& c() {
+					return *wrapperDetails::PtrAt<2>(&data[0]);
+				};
+
+				Data() = default;
+				~Data() = default;
+				Data(type1 A, type2 B = {}, type3 C = {}) {
+					a() = A;
+					b() = B;
+					c() = C;
+				};
+			};
+
+		public:
+			CAS3(type1 a = {}, type2 b = {}, type3 c = {}) : read_write(Data(a, b, c)) {};
+			CAS3(Data const& RHS) : read_write(RHS) {};
+			CAS3(CAS3 const& RHS) : read_write(RHS.read_write.load()) {};
+			CAS3(CAS3&& RHS) : read_write(RHS.read_write.load()) {};
+			CAS3& operator=(CAS3 const& RHS) { read_write.store(RHS.read_write.load()); return *this; };
+			CAS3& operator=(CAS3&& RHS) { read_write.store(RHS.read_write.load()); return *this; };
+			~CAS3() = default;
+
+			void store(Data const& RHS) {
+				read_write.store(RHS);
+			};
+			Data load() const {
+				return read_write.load();
+			};
+			Data exchange(Data const& RHS) {
+				return read_write.exchange(RHS);
+			};
+			bool compare_exchange_strong(Data& _Expected, const Data& _Desired) {
+				return read_write.compare_exchange_strong(_Expected, _Desired);
+			};
+			bool compare_exchange_weak(Data& _Expected, const Data& _Desired) {
+				return read_write.compare_exchange_weak(_Expected, _Desired);
+			};
+
+		private:
+			std::atomic < Data > read_write;
+			static_assert(decltype(read_write)::is_always_lock_free);
+		public:
+			static constexpr bool is_always_lock_free{ decltype(read_write)::is_always_lock_free };
+		};
+		template <typename type1, typename type2> class CAS2 {
+		private:
+			using wrapperDetails = UnionDetails<type1, type2>;
+		public:
+			struct Data {
+			protected:
+				typename wrapperDetails::byte data[wrapperDetails::sizeOfArgs];
+
+			public:
+				type1& a() {
+					return *wrapperDetails::PtrAt<0>(&data[0]);
+				};
+				type2& b() {
+					return *wrapperDetails::PtrAt<1>(&data[0]);
+				};
+
+				Data() = default;
+				~Data() = default;
+				Data(type1 A, type2 B = {}) {
+					a() = A;
+					b() = B;
+				};
+			};
+		public:
+			CAS2(type1 a = {}, type2 b = {}) : read_write(Data(a, b)) {};
+			CAS2(Data const& RHS) : read_write(RHS) {};
+			CAS2(CAS2 const& RHS) : read_write(RHS.read_write.load()) {};
+			CAS2(CAS2&& RHS) : read_write(RHS.read_write.load()) {};
+			CAS2& operator=(CAS2 const& RHS) { read_write.store(RHS.read_write.load()); return *this; };
+			CAS2& operator=(CAS2&& RHS) { read_write.store(RHS.read_write.load()); return *this; };
+			~CAS2() = default;
+
+			void store(Data const& RHS) {
+				read_write.store(RHS);
+			};
+			Data load() const {
+				return read_write.load();
+			};
+			Data exchange(Data const& RHS) {
+				return read_write.exchange(RHS);
+			};
+			bool compare_exchange_strong(Data& _Expected, const Data& _Desired) {
+				return read_write.compare_exchange_strong(_Expected, _Desired);
+			};
+			bool compare_exchange_weak(Data& _Expected, const Data& _Desired) {
+				return read_write.compare_exchange_weak(_Expected, _Desired);
+			};
+
+		private:
+			std::atomic < Data > read_write;
+			static_assert(decltype(read_write)::is_always_lock_free);
+		public:
+			static constexpr bool is_always_lock_free{ decltype(read_write)::is_always_lock_free };
+		};
+		template <typename type1> class CAS1 {
+		private:
+			using wrapperDetails = UnionDetails<type1>;
+		public:
+			struct Data {
+			protected:
+				typename wrapperDetails::byte data[wrapperDetails::sizeOfArgs];
+
+			public:
+				type1& a() {
+					return *wrapperDetails::PtrAt<0>(&data[0]);
+				};
+
+				Data() = default;
+				~Data() = default;
+				Data(type1 A) {
+					a() = A;
+				};
+			};
+
+		public:
+			CAS1(type1 a = {}) : read_write(Data(a)) {};
+			CAS1(Data const& RHS) : read_write(RHS) {};
+			CAS1(CAS1 const& RHS) : read_write(RHS.read_write.load()) {};
+			CAS1(CAS1&& RHS) : read_write(RHS.read_write.load()) {};
+			CAS1& operator=(CAS1 const& RHS) { read_write.store(RHS.read_write.load()); return *this; };
+			CAS1& operator=(CAS1&& RHS) { read_write.store(RHS.read_write.load()); return *this; };
+			~CAS1() = default;
+
+			void store(Data const& RHS) {
+				read_write.store(RHS);
+			};
+			Data load() const {
+				return read_write.load();
+			};
+			Data exchange(Data const& RHS) {
+				return read_write.exchange(RHS);
+			};
+			bool compare_exchange_strong(Data& _Expected, const Data& _Desired) {
+				return read_write.compare_exchange_strong(_Expected, _Desired);
+			};
+			bool compare_exchange_weak(Data& _Expected, const Data& _Desired) {
+				return read_write.compare_exchange_weak(_Expected, _Desired);
+			};
+
+		private:
+			std::atomic < Data > read_write;
+			static_assert(decltype(read_write)::is_always_lock_free);
+		public:
+			static constexpr bool is_always_lock_free{ decltype(read_write)::is_always_lock_free };
+		};
+	};
+	/// <summary>
+	/// Single-word compare-and-swap wrapper for multiple types that fit within the size of a uint64_t, like 4 shorts or 2 ints. 
+	/// </summary>
+	/// <typeparam name="...Args"></typeparam>
+	template <typename... Args> class CAS {
+	private:
+		using wrapperDetails = cas_impl::UnionDetails<Args...>;
+		static_assert(wrapperDetails::num_parameters >= 1);
+		static_assert(wrapperDetails::num_parameters <= 4);
+
+		static auto TypeTest() {
+			if constexpr (wrapperDetails::num_parameters == 1) {
+				return cas_impl::CAS1<Args...>();
+			}
+			else if constexpr (wrapperDetails::num_parameters == 2) {
+				return cas_impl::CAS2<Args...>();
+			}
+			else if constexpr (wrapperDetails::num_parameters == 3) {
+				return cas_impl::CAS3<Args...>();
+			}
+			else if constexpr (wrapperDetails::num_parameters == 4) {
+				return cas_impl::CAS4<Args...>();
+			}
+		};
+		typedef typename GoodLang::utilities::function_traits<decltype(std::function(&TypeTest)) >::result_type thisType;
+		typename thisType read_write;
+
+	public:
+		using Data = typename thisType::Data;
+		static constexpr bool is_always_lock_free{ decltype(read_write)::is_always_lock_free };
+		static constexpr size_t TupleSize() {
+			if constexpr (wrapperDetails::num_parameters == 1) {
+				return 1;
+			}
+			else if constexpr (wrapperDetails::num_parameters == 2) {
+				return 2;
+			}
+			else if constexpr (wrapperDetails::num_parameters == 3) {
+				return 3;
+			}
+			else if constexpr (wrapperDetails::num_parameters == 4) {
+				return 4;
+			}
+		};
+
+		CAS() : read_write() {};
+		CAS(Data const& RHS) : read_write(RHS) {};
+		CAS(CAS const& RHS) : read_write(RHS.read_write.load()) {};
+		CAS(CAS&& RHS) : read_write(RHS.read_write.load()) {};
+		CAS& operator=(CAS const& RHS) { read_write.store(RHS.read_write.load()); return *this; };
+		CAS& operator=(CAS&& RHS) { read_write.store(RHS.read_write.load()); return *this; };
+		~CAS() = default;
+
+		void store(Data const& RHS) {
+			read_write.store(RHS);
+		};
+		Data load() const {
+			return read_write.load();
+		};
+		Data exchange(Data const& RHS) {
+			return read_write.exchange(RHS);
+		};
+		bool compare_exchange_strong(Data& _Expected, const Data& _Desired) {
+			return read_write.compare_exchange_strong(_Expected, _Desired);
+		};
+		bool compare_exchange_weak(Data& _Expected, const Data& _Desired) {
+			return read_write.compare_exchange_weak(_Expected, _Desired);
+		};
+
+	};
+
 	/// <summary>
 	/// allows any copiable object to be thread-safe by wrapping it in a locking container.
 	/// </summary>
@@ -1268,7 +1648,7 @@ namespace GoodLang {
 	/// allows any copiable object to be thread-safe by wrapping it in a locking container.
 	/// </summary>
 	/// <typeparam name="Arg"></typeparam>
-	template <typename Arg> class SharedLockable {
+	template <typename Arg, typename Deleter = std::default_delete<Arg>> class SharedLockable {
 	public:
 		class SharedObj {
 			typedef std::shared_lock< decltype(SharedLockable::lock) > lockType;
@@ -1324,7 +1704,7 @@ namespace GoodLang {
 		};
 
 	protected:
-		std::unique_ptr<Arg> data;
+		std::unique_ptr<Arg, Deleter> data;
 		mutable std::shared_mutex lock{};
 
 	public:
@@ -1346,7 +1726,7 @@ namespace GoodLang {
 		};
 
 	private:
-		static std::unique_ptr<Arg> TryInstance() {
+		static std::unique_ptr<Arg, Deleter> TryInstance() {
 			if constexpr (std::is_constructible_v<Arg>) {
 				return std::make_unique<Arg>();
 			}
@@ -1354,7 +1734,7 @@ namespace GoodLang {
 				return nullptr;
 			}
 		};
-		static std::unique_ptr<Arg> TryInstance(Arg const& a) {
+		static std::unique_ptr<Arg, Deleter> TryInstance(Arg const& a) {
 			if constexpr (std::is_copy_constructible_v<Arg>) {
 				return std::make_unique<Arg>(a);
 			}
@@ -1366,7 +1746,7 @@ namespace GoodLang {
 	public:
 		SharedLockable() : data{ TryInstance() } {};
 		SharedLockable(Arg const& a) : data{ TryInstance(a) } {};
-		SharedLockable(std::unique_ptr<Arg> && a) : data{ std::move(a) } {};
+		SharedLockable(std::unique_ptr<Arg, Deleter> && a) : data{ std::move(a) } {};
 		SharedLockable(const SharedLockable& r) : data{ TryInstance(*r.Shared()) } {};
 		SharedLockable& operator=(const SharedLockable& r) {
 			*Unique() = *r.Shared();
@@ -1409,7 +1789,7 @@ namespace GoodLang {
 			return out;
 		}; // returns the previous value while incrementing the actual counter
 
-		void unsafe_set_ptr(std::unique_ptr<Arg>&& input) {
+		void unsafe_set_ptr(std::unique_ptr<Arg, Deleter>&& input) {
 			data = std::move(input);
 		}; // returns the previous value while changing the underlying value
 
@@ -1425,6 +1805,469 @@ namespace GoodLang {
 			return;
 		}; // sets the value to the input
 	};
+
+	/* To-Do, upgrade RingBuffer to use CAS object wrapper. */
+
+	namespace impl {
+		template<typename Type, unsigned short maxCapacity, bool FailWhenFull = false> class RingQueue {
+		public:
+			std::array<Type, maxCapacity> elements;
+			CAS<unsigned short, unsigned short, unsigned short, unsigned short> impl;
+
+			bool push_back(Type const& val) {
+				while (true) {
+					auto data = impl.load();
+
+					auto& head_position = data.a();
+					// auto& tail_position = data.b();
+					auto& writing = data.c();
+					auto& full = data.d();
+
+					if (full) return false;
+
+					if (writing) continue;
+
+					auto size = head_position + 1;
+					if (size > maxCapacity) {
+						return false;
+					}
+
+					// begin transaction
+					if (impl.compare_exchange_weak(data, { (unsigned short)(head_position + 1), (unsigned short)0, (unsigned short)(writing + 1), (unsigned short)(size >= maxCapacity) })) {
+						elements[head_position] = val;
+						//end transaction
+						while (true) {
+							auto data2 = impl.load();
+							auto& head_position2 = data2.a();
+							// auto& tail_position = data2.b();
+							auto& writing2 = data2.c();
+							auto& full2 = data2.d();
+
+							if (impl.compare_exchange_weak(data2, { (unsigned short)head_position2, (unsigned short)0, (unsigned short)(writing2 - 1), (unsigned short)full2 })) {
+								return true;
+							}
+						}
+					}
+				}
+			};
+			bool try_pop(Type& val) {
+				while (true) {
+					auto data = impl.load();
+
+					auto& head_position = data.a();
+					// auto& tail_position = data.b();
+					auto& writing = data.c();
+					auto& full = data.d();
+
+					if (full) return false;
+
+					if (writing) continue;
+
+					if (head_position <= 0) { return false; }
+
+					if constexpr (FailWhenFull) {
+						if (head_position >= maxCapacity) {
+							return false;
+						}
+					}
+
+					// begin transaction
+					if (impl.compare_exchange_weak(data, { (unsigned short)(head_position - 1), (unsigned short)0, (unsigned short)(writing + 1), (unsigned short)(head_position >= maxCapacity) })) {
+						val = std::move(elements[head_position-1]);
+						//end transaction
+						while (true) {
+							auto data2 = impl.load();
+							auto& head_position2 = data2.a();
+							// auto& tail_position = data2.b();
+							auto& writing2 = data2.c();
+							auto& full2 = data2.d();
+
+							if (impl.compare_exchange_weak(data2, { (unsigned short)head_position2, (unsigned short)0, (unsigned short)(writing2 - 1), (unsigned short)full2 })) {
+								return true;
+							}
+						}
+					}
+				}
+			};
+
+		};
+
+
+		/* Thread- and fiber-safe queue which utilizes a fixed-sized buffer of size *maxCapacity*
+	   Can optionally lock-up once the buffer is full, to support some atomic operations like memory allocators. */
+		template<typename Type, int maxCapacity, bool FailWhenFull = false> class RingBuffer {
+		private:
+			std::vector<Type> _elements;
+			std::atomic < std::pair<long, long> > read_write;
+
+		public:
+			RingBuffer() :
+				_elements(maxCapacity, Type()),
+				read_write(std::pair<long, long>{ 0, 0 }) {};
+			RingBuffer(RingBuffer const& a) :
+				_elements(a._elements),
+				read_write(a.read_write.load()) {};
+			RingBuffer(RingBuffer&& a) :
+				_elements(a._elements),
+				read_write(a.read_write.load()) {};
+			RingBuffer& operator=(RingBuffer const& a) {
+				_elements = a._elements;
+				read_write = a.read_write.load();
+			};
+			RingBuffer& operator=(RingBuffer&& a) {
+				_elements = a._elements;
+				read_write = a.read_write.load();
+			};
+			~RingBuffer() = default;
+
+			bool push_back(Type const& val) {
+				while (true) {
+					auto old_read = read_write.load();
+					auto& this_read_position = old_read.first;
+					auto& this_write_position = old_read.second;
+
+					auto size = (this_write_position + 1) - this_read_position;
+					if (size > maxCapacity) {
+						return false;
+					}
+
+					if (read_write.compare_exchange_weak(old_read, std::pair<long, long>{ this_read_position, this_write_position + 1 })) {
+						// successfully swapped the write position!
+						_elements[this_write_position % maxCapacity] = val;
+						return true;
+					}
+				}
+			};
+			bool push_back(Type&& val) {
+				while (true) {
+					auto old_read = read_write.load();
+					auto& this_read_position = old_read.first;
+					auto& this_write_position = old_read.second;
+
+					auto size = (this_write_position + 1) - this_read_position;
+					if (size > maxCapacity) {
+						return false;
+					}
+
+					if (read_write.compare_exchange_weak(old_read, std::pair<long, long>{ this_read_position, this_write_position + 1 })) {
+						// successfully swapped the write position!
+						_elements[this_write_position % maxCapacity] = std::forward<Type>(val);
+						return true;
+					}
+				}
+			};
+			bool try_pop(Type& val) {
+				while (true) {
+					auto old_read = read_write.load();
+					auto& this_read_position = old_read.first;
+					auto& this_write_position = old_read.second;
+
+					if (this_read_position >= this_write_position) {
+						// nothing to be done -- do not move the read position forward.
+						return false;
+					}
+					else {
+						if constexpr (FailWhenFull) {
+							auto size = this_write_position - this_read_position;
+							if (size >= maxCapacity) {
+								return false;
+							}
+						}
+
+						if (read_write.compare_exchange_weak(old_read, std::pair<long, long>{ this_read_position + 1, this_write_position })) {
+							// successfully swapped the read position!
+							val = std::move(_elements[this_read_position % maxCapacity]);
+							return true;
+						}
+					}
+				}
+			};
+			size_t size() {
+				auto old_read = read_write.load();
+				auto& this_read_position = old_read.first;
+				auto& this_write_position = old_read.second;
+				return this_write_position - this_read_position;
+			};
+			constexpr size_t capacity() const {
+				return maxCapacity;
+			};
+			void clear() {
+				read_write.exchange(std::pair<long, long>{0, 0}, std::memory_order_relaxed);
+			};
+		};
+
+		template <typename element_item, int _blockSize_>
+		class memory_block_impl {
+		public:
+			element_item
+				elements[_blockSize_]; // static buffer -- does not grow or shrink. Cannot allocate less than this, and if needs more, we allocate another block.			
+			RingBuffer< element_item*, _blockSize_, true>
+				free_queue; // locks-up and prevents getting free'd items once it fills up, to support deletion.
+			size_t
+				memory_blocks_index;
+
+			memory_block_impl() :
+				elements{},
+				free_queue{},
+				memory_blocks_index{ 0 }
+			{};
+			memory_block_impl(memory_block_impl const&) = delete;
+			memory_block_impl(memory_block_impl&&) = delete;
+			memory_block_impl& operator=(memory_block_impl const&) = delete;
+			memory_block_impl& operator=(memory_block_impl&&) = delete;
+			~memory_block_impl() = default;
+		};
+	};
+
+	/* 
+	Thread-safe allocator. Allocates '_blockSize_' number of elements at a time. Once all of the elements from a block are freed, the entire block is freed. 
+	Currently slightly buggy, with rare crashes. Unknown why. 
+	*/
+	template <typename _type_, size_t _blockSize_ = (sizeof(_type_) << 4), bool ForcePOD = false, unsigned int forcedSize = sizeof(_type_)>
+	class BlockAllocator {
+	private: // definitions
+		class element_item {
+		public:
+			// actual underlying data
+			char data[forcedSize];
+			// parent memory_block index
+			size_t parent_index;
+			// non-POD, but can be "forgotten" without consequence. 
+			bool initialized;
+		};
+		using memory_block = impl::memory_block_impl<element_item, _blockSize_>;
+		using memory_block_ptr = GoodLang::SharedLockable<std::shared_ptr<memory_block>>;
+
+	private: // data members
+#define use_cached_memory_block_ptrs
+		std::atomic<size_t>
+			memory_blocks_size{ 0 };
+		concurrency::concurrent_vector< memory_block_ptr >
+			memory_blocks{}; // can only grow -- but is only a list of ptr's, so impact is fairly small.
+		concurrency::concurrent_queue< size_t >
+			deleted_memory_block_indexes{}; // once a memory block is free'd, its index is available to be used again. 
+		impl::RingBuffer< std::shared_ptr<memory_block>, 25, false > 
+			recent_memory_blocks;
+		std::atomic<long>
+			total{ 0 };
+		std::atomic<long>
+			active{ 0 };
+		std::mutex
+			lock{};
+#ifdef use_cached_memory_block_ptrs
+		impl::RingBuffer < memory_block*, 16>
+			cached_memory_block_ptrs;
+#endif
+
+	private: // private static functors
+		// returns whether the constructor/destructor needs to be called for each element. (Constructor is always called if args are provided on initialization)
+		static constexpr bool isPod() { return std::is_pod<_type_>::value || ForcePOD; };
+		// Free an allocated block and all interior memory allocations associated to it.
+		static bool FreeBlock(BlockAllocator* parent, memory_block* block, size_t index) {
+			if (!block || !parent) return false; // failure
+			defer(parent->deleted_memory_block_indexes.push(index));
+
+			// free any custom allocated memory within the memory block (this should not be necessary, but we do it to be sure)
+			for (size_t i = 0; i < _blockSize_; i++) {
+				if (block->elements[i].initialized) { // ... but only when the element was already initialized ...
+					if constexpr (!isPod()) { // ... because non-POD types must call their destructors to prevent memory leaks per element ...
+						((_type_*)(void*)(&block->elements[i]))->~_type_(); // ... we call the type-specific destructor function.
+					}
+					block->elements[i].initialized = false;
+					parent->active--;
+				}
+			}
+
+			parent->total -= _blockSize_;
+			block->free_queue.clear();
+
+			// free the memory block itself
+#ifdef use_cached_memory_block_ptrs
+			if (!parent->cached_memory_block_ptrs.push_back(block)) {
+				delete block;
+			}
+#else
+			delete block;
+#endif
+
+			// success
+			return true;
+		};
+		// creates a new memory_block (may re-use an old index though) and returns an uninitialized ptr to the first element of that memory_block. 
+		static element_item* AllocNewBlock(BlockAllocator* parent) {
+			if (!parent) return nullptr;
+
+			auto locked{ std::unique_lock(parent->lock) };
+
+			// try to get an already-available element if possible
+			for (memory_block_ptr& memory_block_atomic : parent->memory_blocks) {
+				auto memory_block_atomic_ptr = *memory_block_atomic.Shared();
+				if (memory_block_atomic_ptr) {
+					element_item* element{ nullptr };
+					if (memory_block_atomic_ptr->free_queue.try_pop(element)) { // locks-up if full, which may indicate that it's to be deleted. 
+						return element;
+					}
+					else if (memory_block_atomic_ptr->free_queue.size() == _blockSize_) {
+						parent->memory_blocks[memory_block_atomic_ptr->memory_blocks_index].exchange(nullptr);
+					}
+				}
+			}
+
+			// determine the target destination for this memory_block
+			size_t memory_blocks_index{ 0 };
+			if (!parent->deleted_memory_block_indexes.try_pop(memory_blocks_index)) {
+				// we failed to pull the index of a free slot in the memory_blocks -- so append a new slot to the end.
+				memory_blocks_index = (size_t)parent->memory_blocks_size.fetch_add(1);
+				parent->memory_blocks.push_back(memory_block_ptr());
+			}
+
+			// create the actual memory_block
+			memory_block* block{ nullptr };
+#ifdef use_cached_memory_block_ptrs
+			if (!parent->cached_memory_block_ptrs.try_pop(block)) {
+				block = new memory_block();
+			}
+#else
+			block = new memory_block();
+#endif
+			parent->total += _blockSize_;
+			for (size_t i = 0; i < _blockSize_; i++) {
+				block->elements[i].data[0] = '\0';
+				block->elements[i].parent_index = memory_blocks_index;
+				block->elements[i].initialized = false;
+			}
+
+			// queue all but the first elements as being free and available
+			for (size_t i = 1; i < _blockSize_; i++) {
+				block->free_queue.push_back(&block->elements[i]);
+			}
+			block->memory_blocks_index = memory_blocks_index;
+
+			// place the new memory_block into its designated index
+			parent->memory_blocks[memory_blocks_index] = std::shared_ptr<memory_block>(block, [parent, memory_blocks_index](memory_block* p)->void {
+				FreeBlock(parent, (memory_block*)p, memory_blocks_index);
+			});
+
+			// return the first new element
+			return &block->elements[0];
+		};
+
+	public: // public API
+		// Request a new memory pointer. May be recovered from a previously-used location. Will be cleared and correctly initialized, if appropriate.
+		template <typename... TArgs> _type_* Alloc(TArgs&&... a) {
+			_type_* t{ nullptr };
+			element_item* element{ nullptr };
+			std::shared_ptr<memory_block> local_block{ nullptr };
+			
+			//// Quickly try the recents and see if we get a winner
+			if (recent_memory_blocks.try_pop(local_block)) if (local_block) local_block->free_queue.try_pop(element);
+				
+			while (!element) {
+				for (memory_block_ptr& memory_block_atomic : memory_blocks) {
+					auto memory_block_atomic_ptr = memory_block_atomic.Shared(); 
+					if (memory_block_atomic_ptr->operator bool()) {
+						if (memory_block_atomic_ptr->operator*().free_queue.try_pop(element)) {
+							break;
+						}
+					}					
+				}
+
+				// if this failed, we must allocate a new block to the vector
+				if (!element) element = AllocNewBlock(this);
+			}
+
+			t = static_cast<_type_*>(static_cast<void*>(element));
+
+			if constexpr (isPod()) {
+				if constexpr (sizeof...(TArgs) > 0) {
+					new (t) _type_(std::forward<TArgs>(a)...);
+				}
+				else {
+					::memset(t, 0, forcedSize);
+				}
+			}
+			else {
+				new (t) _type_(std::forward<TArgs>(a)...);
+			}
+			element->initialized = true;
+			active++;
+
+			return t;
+		};
+
+		// Frees the memory pointer, previously provided by this allocator. Calls the destructor for non-POD types, and will store the pointer for later use.
+		template <bool skipDestructor = false> void Free(const _type_* element) {
+			if (!element) return; // no work to be done
+			element_item* t{ static_cast<element_item*>(static_cast<void*>(const_cast<_type_*>(element))) };
+			if (t && element) {
+				if constexpr (!isPod() && !skipDestructor) {
+					element->~_type_();
+				}
+				t->initialized = false;
+
+				memory_block_ptr& memory_block_atomic{ memory_blocks[t->parent_index] };
+				auto memory_block_atomic_ptr = memory_block_atomic.Shared(); {
+					if (memory_block_atomic_ptr->operator bool()) {
+						memory_block_atomic_ptr->operator*().free_queue.push_back(t);
+						recent_memory_blocks.push_back(*memory_block_atomic_ptr);
+					}
+				}
+				active--;
+			}
+		};
+
+		// Request a shared memory ptr, which uses the allocator for memory handling. Allocator must out-live the memory lifetime of this shared_ptr. 
+		template <typename... TArgs> std::shared_ptr< _type_ > AllocShared(TArgs&&... a) {
+			return std::shared_ptr<_type_>(Alloc(std::forward<TArgs>(a)...), [this](_type_* p) { Free(p); });
+		};
+
+		// Returns the maximum number of blocks the allocator has reserved -- does not mean all of these blocks are in active use or even alive.
+		size_t          MaxBlockCapacity() const {
+			return memory_blocks_size.load();
+		};
+
+		// Approximate current (alive) block count. Not all elements in thse blocks are alive or allocated, but usually at least one is.
+		size_t          CurrentBlockCount() const {
+			return total.load() / _blockSize_;
+		};
+
+		// Approximate current capacity for elements, based on the alive blocks.
+		size_t          TotalCapacity() const {
+			return total.load();
+		};
+
+		// Approximate current alive element count
+		size_t          TotalAlive() const {
+			return active.load();
+		};
+
+	public: // constructors and destructors
+		BlockAllocator() = default;
+		~BlockAllocator() {
+			while (total > 0) {
+				// memory_blocks captured "this" and must be expunged before our destruction
+				if (1) {
+					for (memory_block_ptr& block : memory_blocks) {
+						block.Unique()->operator=(nullptr);
+					}
+				}
+				// free the cache
+#ifdef use_cached_memory_block_ptrs
+				if (1) {
+					memory_block* block{ nullptr };
+					while (cached_memory_block_ptrs.try_pop(block)) {
+						delete block;
+					}
+
+				}
+#endif
+			}
+		};
+
+	};
+
+
+
 
 	/// <summary>
 	/// thread-safe sorted std::map.

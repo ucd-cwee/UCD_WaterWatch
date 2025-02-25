@@ -11,6 +11,8 @@
 #include "../WaterWatchCpp/Clock.h"
 #include "../GoodLang/Scopes.h"
 
+#include <concurrent_vector.h>
+
 //#include "../FiberTasks/Fibers.h"
 //#include "../FiberTasks/UnitsLibrary.h"
 //#include "../FiberTasks/ScriptingLanguage2.h"
@@ -112,6 +114,143 @@ public:
 
 int main() {
 	using namespace GoodLang;
+
+	if (1) {
+		if (0) {
+			CAS<short, short, short, short> read_write; 
+			decltype(read_write)::is_always_lock_free;
+
+			read_write.store({ 0, 0, 0, 0 });
+			auto prev = read_write.exchange({ 1, 1, 1, 0 });
+			
+			EXPECT_EQ(false, read_write.compare_exchange_weak(prev, { 2, 2, 2, 2 }));
+			prev = read_write.exchange({ 1, 1, 1, 0 });
+			EXPECT_EQ(true, read_write.compare_exchange_weak(prev, { 2, 2, 2, 2 }));
+		}
+		if (0) {
+			CAS<short, short, int> read_write;
+			decltype(read_write)::is_always_lock_free;
+
+			read_write.store({ 0, 0, 0 });
+			auto prev = read_write.exchange({ 1, 1, 1 });
+
+			EXPECT_EQ(false, read_write.compare_exchange_weak(prev, { 2, 2, 2 }));
+			prev = read_write.exchange({ 1, 1, 1 });
+			EXPECT_EQ(true, read_write.compare_exchange_weak(prev, { 2, 2, 2 }));
+		}
+		if (0) {
+			CAS<short, short> read_write;
+			decltype(read_write)::is_always_lock_free;
+
+			read_write.store({ 0, 0 });
+			auto prev = read_write.exchange({ 1, 1 });
+
+			EXPECT_EQ(false, read_write.compare_exchange_weak(prev, { 2, 2 }));
+			prev = read_write.exchange({ 1, 1 });
+			EXPECT_EQ(true, read_write.compare_exchange_weak(prev, { 2, 2 }));
+
+			parallel::For(0, 30000, [&](int i) {
+				while (true) {
+					auto D = read_write.load();
+					if (read_write.compare_exchange_weak(D, { D.a() + 1, D.b() - 1 })) {
+						break;
+					}
+				}
+			});
+			auto R = read_write.load();
+			print(R.a());
+			print(R.b());
+		}
+		if (0) {
+			CAS<int, int> read_write;
+			decltype(read_write)::is_always_lock_free;
+
+			read_write.store({ 0, 0 });
+			auto prev = read_write.exchange({ 0, 1 });
+
+			EXPECT_EQ(false, read_write.compare_exchange_weak(prev, { 0, 2 }));
+			prev = read_write.exchange({ 0, 1 });
+			EXPECT_EQ(true, read_write.compare_exchange_weak(prev, { 0, 2 }));
+		}
+		if (0) {
+			CAS<int, int> read_write;
+			parallel::For(0, 214748364, [&](int i) {
+				while (true) {
+					auto D = read_write.load();
+					if (read_write.compare_exchange_weak(D, { D.a() + 1, D.b() - 1 })) {
+						break;
+					}
+		        }
+			});
+			auto R = read_write.load();
+			print(R.a());
+			print(R.b());
+
+		}
+
+
+		if (0) {
+			impl::RingBuffer<stackThing, 20, false> buf;
+			parallel::For(0, 10000000, [&](int i) {
+				stackThing temp;
+				if (buf.try_pop(temp)) {
+					if (!buf.push_back(stackThing(temp.get_var_name()))) {
+						print("FULL1");
+					}
+					temp.varName = "";
+				}
+				else {
+					if (!buf.push_back(stackThing(std::to_string(i)))) {
+						print("FULL2");
+					};
+				}
+			});
+			if (1) {
+				stackThing temp;
+				while (buf.try_pop(temp)) {
+					print(temp.get_var_name());
+				}
+			}
+		}
+
+		if (1) {
+			impl::RingQueue<stackThing, 20, false> buf;
+			stackThing temp;
+			buf.push_back(stackThing("TEST1"));
+			buf.push_back(stackThing("TEST2"));
+			buf.try_pop(temp);
+			print(temp.get_var_name());
+
+			parallel::For(0, 1000, [&](int i) {
+				stackThing temp;
+				if (buf.try_pop(temp)) {
+					if (!buf.push_back(stackThing(temp.get_var_name()))) {
+						print("FULL1");
+					}
+					temp.varName = "";
+				}
+				else {
+					if (!buf.push_back(stackThing(std::to_string(i)))) {
+						print("FULL2");
+					};
+				}
+			});
+		}
+
+
+
+
+	}
+
+
+
+
+
+
+
+
+
+
 
 	try{
 		// pre-warm the heap
@@ -783,6 +922,33 @@ int main() {
 						}
 
 						// stackThing test
+						//if (1) {
+						//	if (1) {
+						//		using thisType = stackThing;
+						//		std::string thisTypeName = "stackThing";
+						//		// make it a class
+						//		std::shared_ptr<Class> classPtr; {
+						//			classPtr.reset(new Class(s0, thisTypeName, user_type_shared<thisType>().lock()));
+						//		}
+						//		classPtr->SetSelf(classPtr);
+						//		s0->AddChild(classPtr);
+						//		auto thisTypeInfo = classPtr->GetClassType().lock();
+						//		// Constructors
+						//		classPtr->AddFunction(thisTypeName, make_callable([]() -> thisType { return thisType{}; }));
+						//		classPtr->AddFunction(thisTypeName, make_callable([](thisType const& makeCopy) -> thisType { return makeCopy; }));
+						//		classPtr->AddFunction("=", make_callable([](Any const& a, thisType const& b) -> Any { thisType& out = a.cast(); out = b; return a; }, ParamTypes({ thisTypeInfo->MakeRef(), thisTypeInfo->MakeConstRef() })));
+						//	}
+						//	// s1->CallFunction("stackThing", {});
+						// 
+						//	Map<size_t, std::pair<Var, Var>> M;
+						//	s1->CallFunction("=", { s1->CallFunction("[]", { M, std::string("TEST") }), stackThing("#1") });
+						//	auto res = s1->CallFunction("[]", { M, std::string("TEST") });
+						//	auto ptr = s1->Cast<stackThing>(res);
+						//	// auto ref = s1->Cast<stackThing>(result);
+						//	s1->CallFunction("get", { s1->CallFunction("begin", { M }) });
+						// 
+						//}
+
 						if (1) {
 							if (1) {
 								using thisType = stackThing;
