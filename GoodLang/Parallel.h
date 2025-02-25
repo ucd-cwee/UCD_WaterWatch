@@ -622,23 +622,26 @@ namespace GoodLang {
 			impl::Dispatch(ctx,
 				std::distance(begin, end),
 				[&ToDo](impl::JobArgs const& _args)-> void {
-					iterType& iter = *((iterType*)_args.sharedmemory);
+					iterType& iter = *static_cast<iterType*>(_args.sharedmemory);
 					if (_args.groupIndex == 0) {
+						// start of a group, so help it
 						std::advance(iter, _args.jobIndex);
 					}
 					else {
+						// within a group, we know the jobs are done in sequence, so we can safely increment by 1.
 						std::advance(iter, 1);
 					}
+					// user-defined task
 					ToDo(*iter);
 				},
 				sizeof(iterType),
-					[&begin](void* p)->void {
+				[&begin](void* p) -> void {
 					new (p) iterType{ begin };
 				},
-					[](void* p)->void {
+				[](void* p) -> void {
 					((iterType*)p)->~iterType();
 				}
-				);
+			);
 			impl::Wait(ctx);
 #endif
 		};
@@ -874,6 +877,73 @@ namespace GoodLang {
 		__forceinline static decltype(auto) async(F function, Args... Fargs) {
 			return future<typename GoodLang::utilities::function_traits<decltype(std::function(function))>::result_type>(Job(function, Fargs...));
 		};
+
+		/* while (G()) { Do(); } */
+		template<typename F, typename G> decltype(auto) While(F const& WhileBoolean, G const& Do) {
+			while (async(WhileBoolean).wait_get()) {
+				async(Do).wait();
+			}
+		};
+
+		/* while (true){ Do(); if (Until){ return; } } */
+		template<typename F, typename G> decltype(auto) Until(F const& Do, G const& Until) {
+			while (true) {
+				async(Do).wait();
+				if (async(Until).wait_get()) break;
+			}
+		};
+
+		/* for (int i = 0; i < numToDispatch; i++){ ToDo(i, SharedObject); } return SharedObject; */
+		template<typename F, typename G> decltype(auto) Dispatch(size_t numToDispatch, F&& SharedObject, G const& ToDo) {
+			F out{ std::forward<F>(SharedObject) };
+
+			using sharedType = std::shared_ptr<F>;
+			sharedType shared = std::shared_ptr<F>(&out, [](F*) { /* do nothing */ });
+
+			impl::context ctx;
+			impl::Dispatch(ctx,
+				numToDispatch,
+				[&ToDo](impl::JobArgs const& _args)-> void {
+					sharedType& iter = *static_cast<sharedType*>(_args.sharedmemory);
+
+					ToDo(_args.jobIndex, *iter); // user-defined task
+				},
+				sizeof(sharedType),
+				[&shared](void* p) -> void {
+					new (p) sharedType{ shared };
+				},
+				[](void* p) -> void {
+					((sharedType*)p)->~sharedType();
+				}
+			);
+			impl::Wait(ctx);
+
+			return out;
+		};
+
+		/* for (int i = 0; i < numToDispatch; i++){ ToDo(i, SharedObject); } return SharedObject; */
+		template<typename F, typename G> decltype(auto) Dispatch(size_t numToDispatch, F& SharedObject, G const& ToDo) {
+			using sharedType = std::shared_ptr<F>;
+			sharedType shared = std::shared_ptr<F>(&SharedObject, [](F*) { /* do nothing */ });
+			impl::context ctx;
+			impl::Dispatch(ctx,
+				numToDispatch,
+				[&ToDo](impl::JobArgs const& _args)-> void {
+					sharedType& iter = *static_cast<sharedType*>(_args.sharedmemory);
+					ToDo(_args.jobIndex, *iter); // user-defined task
+				},
+				sizeof(sharedType),
+				[&shared](void* p) -> void {
+					new (p) sharedType{ shared };
+				},
+				[](void* p) -> void {
+					((sharedType*)p)->~sharedType();
+				}
+			);
+			impl::Wait(ctx);
+			return SharedObject;
+		};
+
 	};
 
 	class MultithreadingInstanceManager {

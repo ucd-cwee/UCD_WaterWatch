@@ -1173,6 +1173,246 @@ int main() {
 				});
 				//print(Units::second(sw.Stop_s()));
 			}
+
+			// Scripting with async functions
+			if (1) {
+				auto s0 = std::make_shared<GoodLang::Global>();
+				s0->SetSelf(s0);
+				s0->AddBuiltIns();
+				if (1) {
+					auto s1 = std::make_shared<GoodLang::Scope>(s0);
+					s1->SetSelf(s1);
+
+					auto GetRand = []() -> double { return (double)std::rand() / (double)RAND_MAX; };
+
+					s1->AddFunction("Foo", make_callable([GetRand, self = std::weak_ptr<GoodLang::Scope>(s0)]() -> Any {
+						return parallel::async([GetRand, self]() -> Any {
+							if (GetRand() > 0.05) {
+								// async
+								if (auto Self = self.lock()) {
+									return Self->CallFunction("Foo", {});
+								}
+								else {
+									throw std::runtime_error("Out of scope");
+								}
+							}
+							else {
+								// end async
+								return Any(GetRand());
+							}
+						}).wait_get_any();
+					}));
+
+					(void)(s1->Cast<double>(s1->CallFunction("Foo", {})));
+
+
+
+
+
+
+				}
+			}
+
+			// parallel extensions test
+			if (1) {
+				// While
+				if (1) {
+					std::atomic<int> count{ 100 };
+					parallel::While(
+						[&]()->bool {
+							return count > 0;
+						},
+						[&]() {
+							count--;
+						}
+					);
+				}
+				
+				// Until
+				if (1) {
+					std::atomic<int> count{ 100 };
+					parallel::Until(
+						[&]() {
+							count--;
+						}, 
+						[&]()->bool {
+							return count <= 0;
+						}
+					);
+				}
+
+				// Dispatch
+				if (1) {
+					auto result = parallel::Dispatch(100, Units::foot(0), [](int i, Units::foot& x) {
+						++x;
+					});
+					parallel::Dispatch(100, result, [](int i, Units::foot& x) {
+						++x;
+					});
+				}
+
+				// Combined
+				if (1) {
+					class memory { public:
+						int numIterations{ 0 };
+						Units::foot max_v{ 0 };
+						Units::foot current_v{ 0 };
+					};
+
+					memory temp;
+					auto GetRand = []() -> double { return (double)std::rand() / (double)RAND_MAX; };
+
+					parallel::While(
+						[&]()->bool { // objective
+							temp.numIterations++;
+							return temp.max_v <= Units::foot(10);
+						},
+						[&]() { // dispatcher
+							(void)parallel::Dispatch(1000, temp, [&](int i, memory& x) {
+								if (GetRand() > 0.5) {
+									Units::math::max_ref(x.max_v, ++x.current_v);
+								}
+								else {
+									Units::math::max_ref(x.max_v, --x.current_v);
+								}
+							});
+						}
+					);
+				}
+				
+				// combined, but throw errors
+				if (1) {
+					class memory {
+					public:
+						int numIterations{ 0 };
+						Units::foot max_v{ 0 };
+						Units::foot current_v{ 0 };
+					};
+
+					memory temp;
+					auto GetRand = []() -> double { return (double)std::rand() / (double)RAND_MAX; };
+
+					try {
+						parallel::While(
+							[&]()->bool { // objective
+								if (++temp.numIterations >= 20) {
+									throw std::runtime_error("BAD!");
+								};
+								return temp.max_v <= Units::foot(10);
+							},
+							[&]() { // dispatcher
+								(void)parallel::Dispatch(1000, temp, [&](int i, memory& x) {
+									if (GetRand() > 0.95) {
+										Units::math::max_ref(x.max_v, ++x.current_v);
+									}
+									else {
+										Units::math::max_ref(x.max_v, --x.current_v);
+									}
+								});
+							}
+						);
+					} catch (...) { }
+
+					try {
+						parallel::While(
+							[&]()->bool { // objective
+								++temp.numIterations;
+								return temp.max_v <= Units::foot(10);
+							},
+							[&]() { // dispatcher
+								(void)parallel::Dispatch(1000, temp, [&](int i, memory& x) {
+									if (GetRand() > 0.95) {
+										throw std::runtime_error("BAD DISPATCH ERROR!");
+									}
+									else {
+										Units::math::max_ref(x.max_v, --x.current_v);
+									}
+								});
+							}
+						);
+					} catch (...) { }
+
+				}
+
+				// example of a dumb-as-rocks optimization
+				if (1) {
+					class optimization_DB { public:
+						int dispatchSize = 1000;
+						int numIterations{ 0 };
+						std::vector< double > best;
+						double performance{ std::numeric_limits<double>::max() };
+					};
+
+					class dispatch_DB {
+					public:
+						std::vector< std::vector< double > > policies;
+						std::vector < double > performances;
+					};
+
+					auto GetRand = []() -> double { return (double)std::rand() / (double)RAND_MAX; };
+
+					try {
+						optimization_DB DB;
+						parallel::While(
+							// While...
+							[&]()->bool {
+								// too many iterations
+								if (++DB.numIterations > 200) return false; 
+								
+								// perfect performance
+								if (DB.performance <= 0) return false; 
+								
+								// continue
+								return true;
+							},
+							// Do...
+							[&]() { // dispatcher
+								// set-up the policies
+								dispatch_DB dispatch; {
+									dispatch.policies.resize(DB.dispatchSize, std::vector< double >({ 0.0, 0.0, 0.0 }));
+									dispatch.performances.resize(DB.dispatchSize, std::numeric_limits<double>::max());
+
+									parallel::For(0, DB.dispatchSize, [&dispatch, &GetRand](int i) {
+										dispatch.policies[i][0] = GetRand();
+										dispatch.policies[i][1] = GetRand();
+										dispatch.policies[i][2] = GetRand();
+									});
+								}
+
+								// perform the dispatch
+								(void)parallel::Dispatch(DB.dispatchSize, dispatch, [](int index, dispatch_DB& x) {
+									auto distance = std::sqrt((x.policies[index][0] * x.policies[index][0]) + (x.policies[index][1] * x.policies[index][1]));
+									x.performances[index] = std::abs(distance - x.policies[index][2]);
+								});
+
+								// evaluate the performances
+								for (int i = 0; i < DB.dispatchSize; i++) {
+									if (DB.performance >= dispatch.performances[i]) {
+										DB.performance = dispatch.performances[i];
+										DB.best = dispatch.policies[i];
+									}
+								}
+							}
+						);
+					}
+					catch (...) {
+						print(GoodLang::ExceptionHandling::what());
+					}
+
+
+
+
+
+
+
+				}
+
+
+
+			}
+
+
+
 			// Dispatching jobs at random
 			if (0) {
 				auto GetRand = []() -> double { return (double)std::rand() / (double)RAND_MAX; };
