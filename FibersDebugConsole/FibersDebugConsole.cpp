@@ -365,7 +365,7 @@ namespace TEST {
 		public:
 			std::array< element_item, _blockSize_>
 				elements{};
-			impl::RingBuffer< element_item*, _blockSize_, true>
+			impl::RingBuffer< element_item*, _blockSize_, false>
 				free_queue{}; // locks-up and prevents getting free'd items once it fills up, to support deletion.
 			size_t
 				memory_blocks_index{ 0 };
@@ -411,8 +411,11 @@ namespace TEST {
 			memory_lock{ 0 };
 		impl::RingBuffer< memory_block*, 25>
 			reused_memory_blocks{};
+// #define useRecents
+#ifdef useRecents
 		impl::RingBuffer< GoodLang::atomic_ptr<memory_block>*, 25, false >
 			recent_memory_blocks;
+#endif
 		std::atomic<size_t>
 			active;
 		std::atomic<size_t>
@@ -494,17 +497,34 @@ namespace TEST {
 			if (!parent) return false;
 
 			// Lock, and ensure nobody is here.
-			while (true) {
-				if (--parent->memory_lock < 0) break;
+			if (--parent->memory_lock >= 0) {
 				++parent->memory_lock;
+				while (true) {
+					if (--parent->memory_lock < 0) break;
+					++parent->memory_lock;
+				}
 			}
 
 			// step 1, swap it out.
 #ifdef useStdVector
 			if (memory_block* block = parent->memory_blocks.Shared()->at(index).Set(nullptr)) {
 #else
-			if (memory_block* block = parent->memory_blocks.at(index).Set(nullptr)) {
+			if (memory_block* block = parent->memory_blocks[index].Set(nullptr)) {
 #endif
+				// ensure the free_queue is full
+				if (block->free_queue.size() < _blockSize_) {
+#ifdef useStdVector
+					parent->memory_blocks.Shared()->at(index).Set(block);
+#else
+					parent->memory_blocks[index].Set(block);
+#endif
+					// return failure
+					if (1) {
+						++parent->memory_lock;
+						return false;
+					}
+				}
+
 				parent->total -= _blockSize_;
 
 				// step 2, free any custom allocated memory within the memory block (this should not be necessary, but we do it to be sure)
@@ -595,12 +615,14 @@ namespace TEST {
 				}
 			}
 
+#ifdef useRecents
 			// quickly try the recents
 			if (recent_memory_blocks.try_pop(temp)) {
 				if (local_block = temp->Get()) {
 					local_block->free_queue.try_pop(element);
 				}
 			}
+#endif
 
 			// Do Work
 			while (!element) {
@@ -744,17 +766,22 @@ namespace TEST {
 
 				// Do Work
 				memory_block* p;
+
 #ifdef useStdVector
 				if (1) {
 					auto shared = memory_blocks.Shared();
 					auto& P = shared->at(t->parent_index);
+#ifdef useRecents
 					recent_memory_blocks.push_back(&P);
+#endif
 					p = P.Get();
 				}
 #else
 				if (1) {
 					auto& P = memory_blocks.at(t->parent_index);
+#ifdef useRecents
 					recent_memory_blocks.push_back(&P);
+#endif
 					p = P.Get();
 				}
 #endif
@@ -784,7 +811,7 @@ namespace TEST {
 
 		// Returns the maximum number of blocks the allocator has reserved -- does not mean all of these blocks are in active use or even alive.
 		size_t          MaxBlockCapacity() const {
-			return 0;//return memory_blocks_size.load();
+			return memory_blocks.size();
 		};
 
 		// Approximate current (alive) block count. Not all elements in thse blocks are alive or allocated, but usually at least one is.
@@ -794,12 +821,12 @@ namespace TEST {
 
 		// Approximate current capacity for elements, based on the alive blocks.
 		size_t          TotalCapacity() const {
-			return 0;//return total.load();
+			return total.load();
 		};
 
 		// Approximate current alive element count
 		size_t          TotalAlive() const {
-			return 0;//return active.load();
+			return active.load();
 		};
 
 	};
