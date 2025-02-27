@@ -1806,44 +1806,176 @@ namespace GoodLang {
 		}; // sets the value to the input
 	};
 
-	/* To-Do, upgrade RingBuffer to use CAS object wrapper. */
+	template <typename Arg> class FastLockable {
+	public:
+		class SharedObj {
+			FastLockable<Arg>* parent_m;
+
+		public:
+			SharedObj(FastLockable<Arg>* parent_p) : parent_m{ parent_p } {
+				parent_m->shared_lock();
+			};
+			~SharedObj() {
+				parent_m->shared_unlock();
+			};
+			Arg* operator->() { return &parent_m->data; };
+			Arg& operator*() { return parent_m->data; };
+
+		};
+		class SharedConstObj {
+			FastLockable<Arg> const* parent_m;
+
+		public:
+			SharedConstObj(FastLockable<Arg> const* parent_p) : parent_m{ parent_p } {
+				parent_m->shared_lock();
+			};
+			~SharedConstObj() {
+				parent_m->shared_unlock();
+			};
+			const Arg* operator->() { return &parent_m->data; };
+			const Arg& operator*() { return parent_m->data; };
+
+		};
+		class Obj {
+			FastLockable<Arg>* parent_m;
+
+		public:
+			Obj(FastLockable<Arg>* parent_p) : parent_m{ parent_p } {
+				parent_m->lock();
+			};
+			~Obj() {
+				parent_m->unlock();
+			};
+			Arg* operator->() { return &parent_m->data; };
+			Arg& operator*() { return parent_m->data; };
+
+		};
+		class ConstObj {
+			FastLockable<Arg> const* parent_m;
+
+		public:
+			ConstObj(FastLockable<Arg> const* parent_p) : parent_m{ parent_p } {
+				parent_m->lock();
+			};
+			~ConstObj() {
+				parent_m->unlock();
+			};
+			const Arg* operator->() { return &parent_m->data; };
+			const Arg& operator*() { return parent_m->data; };
+
+		};
+
+	protected:
+		Arg data;
+		mutable std::shared_mutex lock_m;
+		// mutable std::atomic<short> lock_m{ 0 };
+
+	protected:
+		void unlock()const {
+			lock_m.unlock();
+			// lock_m += 32;
+		};
+		void lock()const {
+			lock_m.lock();
+
+			//if ((lock_m -= 32) != -32) {
+			//	unlock();
+			//	while(true) {
+			//		if ((lock_m -= 32) == -32) break;
+			//		unlock();
+			//	}
+			//}
+		};
+		void shared_unlock()const {
+			lock_m.unlock_shared();
+			// --lock_m;
+		};
+		void shared_lock()const {
+			lock_m.lock_shared();
+
+			/*if (++lock_m <= 0) {
+				shared_unlock();
+				while (true) {
+					if (++lock_m > 0) break;
+					shared_unlock();
+				}
+			}*/
+		};
+
+	public:
+		[[nodiscard]] ConstObj Unique() const { return ConstObj(this); };
+		[[nodiscard]] Obj Unique() { return Obj(this); };
+		[[nodiscard]] SharedConstObj Shared() const { return SharedConstObj(this); };
+		[[nodiscard]] SharedObj Shared() { return SharedObj(this); };
+
+	public:
+		FastLockable() : data{} {};
+		FastLockable(Arg const& a) : data{ a } {};
+		FastLockable(const FastLockable& r) : data{ *r.Shared() } {};
+		FastLockable& operator=(const FastLockable& r) {
+			*Unique() = *r.Shared();
+		};
+		FastLockable(FastLockable&& r) : data{ *r.Shared() } {};
+		FastLockable& operator=(FastLockable&& r) {
+			*Unique() = *r.Shared();
+		};
+		~FastLockable() = default;
+
+		template <typename T> bool operator==(T b) const {
+			return *Shared() == b;
+		};
+		template <typename T> bool operator!=(T b) const {
+			return !operator==(b);
+		};
+
+	};
 
 	namespace impl {
-		template<typename Type, unsigned short maxCapacity, bool FailWhenFull = false> class RingQueue {
+		/* Thread- and fiber-safe queue which utilizes a fixed-sized buffer of size *maxCapacity*
+		Can optionally lock-up once the buffer is full, to support some atomic operations like memory allocators. */
+		template<typename Type, short maxCapacity, bool FailWhenFull = false> class RingBuffer {
 		public:
-			std::array<Type, maxCapacity> elements;
-			CAS<unsigned short, unsigned short, unsigned short, unsigned short> impl;
+			std::array<Type, maxCapacity>
+				elements;
+			GoodLang::CAS<short, short, short, short>
+				impl{ { (short)-1, (short)0, (short)0, (short)0 } };
 
-			bool push_back(Type const& val) {
+			bool push_back(Type val) {
+				GoodLang::CAS<short, short, short, short>::Data data;
 				while (true) {
-					auto data = impl.load();
+					data = impl.load();
 
-					auto& head_position = data.a();
-					// auto& tail_position = data.b();
-					auto& writing = data.c();
-					auto& full = data.d();
+					const auto& Write_Reservation = data.a(); // last write
+					const auto& Read_Reservation = data.b();  // current read
+					const auto& Write_Position = data.c();    // next write
+					const auto& Read_Position = data.d();     // next read
 
-					if (full) return false;
+					// if ALL FOUR positions are above maxCapacity, then revert all four by that amount. 
+					if ((Write_Reservation >= maxCapacity) && (Read_Reservation >= maxCapacity) && (Write_Position >= maxCapacity) && (Read_Position >= maxCapacity)) {
+						impl.compare_exchange_weak(data, { Write_Reservation - maxCapacity, Read_Reservation - maxCapacity, Write_Position - maxCapacity, Read_Position - maxCapacity });
+						continue;
+					}
 
-					if (writing) continue;
-
-					auto size = head_position + 1;
-					if (size > maxCapacity) {
+					// If full, return failed
+					if ((1 + ((Write_Reservation + 1) - Read_Reservation)) > maxCapacity) {
 						return false;
 					}
 
-					// begin transaction
-					if (impl.compare_exchange_weak(data, { (unsigned short)(head_position + 1), (unsigned short)0, (unsigned short)(writing + 1), (unsigned short)(size >= maxCapacity) })) {
-						elements[head_position] = val;
-						//end transaction
-						while (true) {
-							auto data2 = impl.load();
-							auto& head_position2 = data2.a();
-							// auto& tail_position = data2.b();
-							auto& writing2 = data2.c();
-							auto& full2 = data2.d();
+					// Do insertion
+					if (impl.compare_exchange_weak(data, { Write_Reservation + 1, Read_Reservation, Write_Position, Read_Position })) {
+						// do the write
+						elements[(Write_Reservation + 1) % maxCapacity] = std::move(val);
 
-							if (impl.compare_exchange_weak(data2, { (unsigned short)head_position2, (unsigned short)0, (unsigned short)(writing2 - 1), (unsigned short)full2 })) {
+						while (true) {
+							// increment write_position
+							data = impl.load();
+
+							const auto& Write_Reservation2 = data.a();
+							const auto& Read_Reservation2 = data.b();
+							const auto& Write_Position2 = data.c();
+							const auto& Read_Position2 = data.d();
+
+							if (impl.compare_exchange_weak(data, { Write_Reservation2, Read_Reservation2, Write_Position2 + 1, Read_Position2 })) {
 								return true;
 							}
 						}
@@ -1851,166 +1983,81 @@ namespace GoodLang {
 				}
 			};
 			bool try_pop(Type& val) {
+				GoodLang::CAS<short, short, short, short>::Data data;
 				while (true) {
-					auto data = impl.load();
+					data = impl.load();
 
-					auto& head_position = data.a();
-					// auto& tail_position = data.b();
-					auto& writing = data.c();
-					auto& full = data.d();
+					const auto& Write_Reservation = data.a(); // last write
+					const auto& Read_Reservation = data.b();  // current read
+					const auto& Write_Position = data.c();    // next write
+					const auto& Read_Position = data.d();     // next read
 
-					if (full) return false;
+					// if ALL FOUR positions are above maxCapacity, then revert all four by that amount. 
+					if ((Write_Reservation >= maxCapacity) && (Read_Reservation >= maxCapacity) && (Write_Position >= maxCapacity) && (Read_Position >= maxCapacity)) {
+						impl.compare_exchange_weak(data, { Write_Reservation - maxCapacity, Read_Reservation - maxCapacity, Write_Position - maxCapacity, Read_Position - maxCapacity });
+						continue;
+					}
 
-					if (writing) continue;
+					// If empty, return failed.
+					if ((Read_Position + 1) > Write_Position) {
+						return false;
+					}
 
-					if (head_position <= 0) { return false; }
-
+					// If full, return failed
 					if constexpr (FailWhenFull) {
-						if (head_position >= maxCapacity) {
+						if ((1 + ((Write_Reservation + 1) - Read_Reservation)) > maxCapacity) {
 							return false;
 						}
 					}
 
-					// begin transaction
-					if (impl.compare_exchange_weak(data, { (unsigned short)(head_position - 1), (unsigned short)0, (unsigned short)(writing + 1), (unsigned short)(head_position >= maxCapacity) })) {
-						val = std::move(elements[head_position-1]);
-						//end transaction
+					// Do extraction
+					if (impl.compare_exchange_weak(data, { Write_Reservation, Read_Reservation, Write_Position, Read_Position + 1 })) {
+						// do the read
+						val = std::move(elements[Read_Position % maxCapacity]);
 						while (true) {
-							auto data2 = impl.load();
-							auto& head_position2 = data2.a();
-							// auto& tail_position = data2.b();
-							auto& writing2 = data2.c();
-							auto& full2 = data2.d();
+							data = impl.load();
 
-							if (impl.compare_exchange_weak(data2, { (unsigned short)head_position2, (unsigned short)0, (unsigned short)(writing2 - 1), (unsigned short)full2 })) {
+							const auto& Write_Reservation2 = data.a();
+							const auto& Read_Reservation2 = data.b();
+							const auto& Write_Position2 = data.c();
+							const auto& Read_Position2 = data.d();
+
+							if (impl.compare_exchange_weak(data, { Write_Reservation2, Read_Reservation2 + 1, Write_Position2, Read_Position2 })) {
 								return true;
 							}
-						}
-					}
-				}
-			};
-
-		};
-
-
-		/* Thread- and fiber-safe queue which utilizes a fixed-sized buffer of size *maxCapacity*
-	   Can optionally lock-up once the buffer is full, to support some atomic operations like memory allocators. */
-		template<typename Type, int maxCapacity, bool FailWhenFull = false> class RingBuffer {
-		private:
-			std::vector<Type> _elements;
-			std::atomic < std::pair<long, long> > read_write;
-
-		public:
-			RingBuffer() :
-				_elements(maxCapacity, Type()),
-				read_write(std::pair<long, long>{ 0, 0 }) {};
-			RingBuffer(RingBuffer const& a) :
-				_elements(a._elements),
-				read_write(a.read_write.load()) {};
-			RingBuffer(RingBuffer&& a) :
-				_elements(a._elements),
-				read_write(a.read_write.load()) {};
-			RingBuffer& operator=(RingBuffer const& a) {
-				_elements = a._elements;
-				read_write = a.read_write.load();
-			};
-			RingBuffer& operator=(RingBuffer&& a) {
-				_elements = a._elements;
-				read_write = a.read_write.load();
-			};
-			~RingBuffer() = default;
-
-			bool push_back(Type const& val) {
-				while (true) {
-					auto old_read = read_write.load();
-					auto& this_read_position = old_read.first;
-					auto& this_write_position = old_read.second;
-
-					auto size = (this_write_position + 1) - this_read_position;
-					if (size > maxCapacity) {
-						return false;
-					}
-
-					if (read_write.compare_exchange_weak(old_read, std::pair<long, long>{ this_read_position, this_write_position + 1 })) {
-						// successfully swapped the write position!
-						_elements[this_write_position % maxCapacity] = val;
-						return true;
-					}
-				}
-			};
-			bool push_back(Type&& val) {
-				while (true) {
-					auto old_read = read_write.load();
-					auto& this_read_position = old_read.first;
-					auto& this_write_position = old_read.second;
-
-					auto size = (this_write_position + 1) - this_read_position;
-					if (size > maxCapacity) {
-						return false;
-					}
-
-					if (read_write.compare_exchange_weak(old_read, std::pair<long, long>{ this_read_position, this_write_position + 1 })) {
-						// successfully swapped the write position!
-						_elements[this_write_position % maxCapacity] = std::forward<Type>(val);
-						return true;
-					}
-				}
-			};
-			bool try_pop(Type& val) {
-				while (true) {
-					auto old_read = read_write.load();
-					auto& this_read_position = old_read.first;
-					auto& this_write_position = old_read.second;
-
-					if (this_read_position >= this_write_position) {
-						// nothing to be done -- do not move the read position forward.
-						return false;
-					}
-					else {
-						if constexpr (FailWhenFull) {
-							auto size = this_write_position - this_read_position;
-							if (size >= maxCapacity) {
-								return false;
-							}
-						}
-
-						if (read_write.compare_exchange_weak(old_read, std::pair<long, long>{ this_read_position + 1, this_write_position })) {
-							// successfully swapped the read position!
-							val = std::move(_elements[this_read_position % maxCapacity]);
-							return true;
 						}
 					}
 				}
 			};
 			size_t size() {
-				auto old_read = read_write.load();
-				auto& this_read_position = old_read.first;
-				auto& this_write_position = old_read.second;
-				return this_write_position - this_read_position;
+				auto data = impl.load();
+
+				const auto& Write_Reservation = data.a(); // last write
+				const auto& Read_Reservation = data.b();  // current read
+				const auto& Write_Position = data.c();    // next write
+				const auto& Read_Position = data.d();     // next read
+
+				return Write_Position - Read_Position;
 			};
 			constexpr size_t capacity() const {
 				return maxCapacity;
 			};
 			void clear() {
-				read_write.exchange(std::pair<long, long>{0, 0}, std::memory_order_relaxed);
+				impl.exchange({ (short)-1, (short)0, (short)0, (short)0 });
 			};
 		};
 
 		template <typename element_item, int _blockSize_>
 		class memory_block_impl {
 		public:
-			element_item
-				elements[_blockSize_]; // static buffer -- does not grow or shrink. Cannot allocate less than this, and if needs more, we allocate another block.			
-			RingBuffer< element_item*, _blockSize_, true>
-				free_queue; // locks-up and prevents getting free'd items once it fills up, to support deletion.
+			std::array< element_item, _blockSize_>
+				elements{};
+			impl::RingBuffer< element_item*, _blockSize_, true>
+				free_queue{}; // locks-up and prevents getting free'd items once it fills up, to support deletion.
 			size_t
-				memory_blocks_index;
+				memory_blocks_index{ 0 };
 
-			memory_block_impl() :
-				elements{},
-				free_queue{},
-				memory_blocks_index{ 0 }
-			{};
+			memory_block_impl() = default;
 			memory_block_impl(memory_block_impl const&) = delete;
 			memory_block_impl(memory_block_impl&&) = delete;
 			memory_block_impl& operator=(memory_block_impl const&) = delete;
@@ -2019,9 +2066,9 @@ namespace GoodLang {
 		};
 	};
 
-	/* 
-	Thread-safe allocator. Allocates '_blockSize_' number of elements at a time. Once all of the elements from a block are freed, the entire block is freed. 
-	Currently slightly buggy, with rare crashes. Unknown why. 
+	/*
+	Thread-safe allocator. Allocates '_blockSize_' number of elements at a time. Once all of the elements from a block are freed, the entire block is freed.
+	Currently slightly buggy, with rare crashes. Unknown why.
 	*/
 	template <typename _type_, size_t _blockSize_ = (sizeof(_type_) << 4), bool ForcePOD = false, unsigned int forcedSize = sizeof(_type_)>
 	class BlockAllocator {
@@ -2036,145 +2083,258 @@ namespace GoodLang {
 			bool initialized;
 		};
 		using memory_block = impl::memory_block_impl<element_item, _blockSize_>;
-		using memory_block_ptr = GoodLang::SharedLockable<std::shared_ptr<memory_block>>;
 
 	private: // data members
-#define use_cached_memory_block_ptrs
-		std::atomic<size_t>
-			memory_blocks_size{ 0 };
-		concurrency::concurrent_vector< memory_block_ptr >
-			memory_blocks{}; // can only grow -- but is only a list of ptr's, so impact is fairly small.
-		concurrency::concurrent_queue< size_t >
-			deleted_memory_block_indexes{}; // once a memory block is free'd, its index is available to be used again. 
-		impl::RingBuffer< std::shared_ptr<memory_block>, 25, false > 
-			recent_memory_blocks;
-		std::atomic<long>
-			total{ 0 };
-		std::atomic<long>
-			active{ 0 };
-		std::mutex
-			lock{};
-#ifdef use_cached_memory_block_ptrs
-		impl::RingBuffer < memory_block*, 16>
-			cached_memory_block_ptrs;
+// #define useStdVector
+#ifdef useStdVector
+		FastLockable< std::vector<GoodLang::atomic_ptr<memory_block>> >
+#else
+		concurrency::concurrent_vector< GoodLang::atomic_ptr<memory_block> >
 #endif
+			memory_blocks; // list of lockable pointers, some active, some inactive. 
+		concurrency::concurrent_queue< size_t >
+			free_memory_blocks{}; // once a memory block is free'd, its index is available to be used again. 
+		std::atomic<short>
+			memory_lock{ 0 };
+		impl::RingBuffer< memory_block*, 25>
+			reused_memory_blocks{};
+		impl::RingBuffer< GoodLang::atomic_ptr<memory_block>*, 25, false >
+			recent_memory_blocks;
+		std::atomic<size_t>
+			active;
+		std::atomic<size_t>
+			total;
+
+		// creates a new memory_block (may re-use an old index though) and returns an uninitialized ptr to the first element of that memory_block. 
+		static element_item* AllocBlock(BlockAllocator* parent) {
+			if (!parent) return nullptr;
+
+			// create a new memory_block
+			memory_block* block;
+			if (!parent->reused_memory_blocks.try_pop(block)) {
+				block = new memory_block();
+
+				// try to re-use the start of the list, otherwise place at the end
+				if (!parent->free_memory_blocks.try_pop(block->memory_blocks_index)) {
+#ifdef useStdVector
+					auto R = parent->memory_blocks.Unique();
+					/*auto iter =*/ R->push_back(block);
+					block->memory_blocks_index = R->size() - 1; //  std::distance(R->begin(), iter);
+#else
+					auto iter = parent->memory_blocks.push_back(block);
+					block->memory_blocks_index = std::distance(parent->memory_blocks.begin(), iter);
+#endif
+				}
+			}
+
+			parent->total += _blockSize_;
+
+			if (block) {
+				// ensure the elements are roughly initialized
+				for (size_t i = 0; i < _blockSize_; i++) {
+					block->elements[i].data[0] = '\0';
+					block->elements[i].parent_index = block->memory_blocks_index;
+					block->elements[i].initialized = false;
+				}
+
+				// queue all but the first element as being free and available
+				for (size_t i = 1; i < _blockSize_; i++) {
+					block->free_queue.push_back(&block->elements[i]);
+				}
+
+				// return the first new element
+				return &block->elements[0];
+			}
+			else {
+				throw std::runtime_error("Out of memory!");
+			}
+		};
+		// Free an allocated block and all interior memory allocations associated to it.
+		static bool FreeBlock(BlockAllocator* parent, size_t index, bool skipCustomAllocFree = false) {
+			if (!parent) return false;
+
+			// Lock, and ensure nobody is here.
+			while (true) {
+				if (--parent->memory_lock < 0) break;
+				++parent->memory_lock;
+			}
+
+			// step 1, swap it out.
+#ifdef useStdVector
+			if (memory_block* block = parent->memory_blocks.Shared()->at(index).Set(nullptr)) {
+#else
+			if (memory_block* block = parent->memory_blocks.at(index).Set(nullptr)) {
+#endif
+				// step 2, free any custom allocated memory within the memory block (this should not be necessary, but we do it to be sure)
+				if (!skipCustomAllocFree) {
+					for (size_t i = 0; i < _blockSize_; i++) {
+						if (block->elements[i].initialized) { // ... but only when the element was already initialized ...
+							if constexpr (!isPod()) { // ... because non-POD types must call their destructors to prevent memory leaks per element ...
+								((_type_*)(void*)(&block->elements[i]))->~_type_(); // ... we call the type-specific destructor function.
+							}
+							block->elements[i].initialized = false;
+						}
+					}
+				}
+
+				// step 3, clear the free_queue
+				block->free_queue.clear();
+
+				// step 4, delete the memory block
+				if (!parent->reused_memory_blocks.push_back(block)) {
+					delete block;
+				}
+				parent->total -= _blockSize_;
+
+				// step 5, allow the index to be re-used
+				parent->free_memory_blocks.push(index);
+
+				// return success
+				if (1) {
+					++parent->memory_lock;
+					return true;
+				}
+					}
+			// return failure
+			if (1) {
+				++parent->memory_lock;
+				return false;
+			}
+				};
 
 	private: // private static functors
 		// returns whether the constructor/destructor needs to be called for each element. (Constructor is always called if args are provided on initialization)
 		static constexpr bool isPod() { return std::is_pod<_type_>::value || ForcePOD; };
-		// Free an allocated block and all interior memory allocations associated to it.
-		static bool FreeBlock(BlockAllocator* parent, memory_block* block, size_t index) {
-			if (!block || !parent) return false; // failure
-			defer(parent->deleted_memory_block_indexes.push(index));
 
-			// free any custom allocated memory within the memory block (this should not be necessary, but we do it to be sure)
-			for (size_t i = 0; i < _blockSize_; i++) {
-				if (block->elements[i].initialized) { // ... but only when the element was already initialized ...
-					if constexpr (!isPod()) { // ... because non-POD types must call their destructors to prevent memory leaks per element ...
-						((_type_*)(void*)(&block->elements[i]))->~_type_(); // ... we call the type-specific destructor function.
-					}
-					block->elements[i].initialized = false;
-					parent->active--;
-				}
-			}
-
-			parent->total -= _blockSize_;
-			block->free_queue.clear();
-
-			// free the memory block itself
-#ifdef use_cached_memory_block_ptrs
-			if (!parent->cached_memory_block_ptrs.push_back(block)) {
-				delete block;
-			}
+	public: // constructors and destructors
+		BlockAllocator() = default;
+		~BlockAllocator() {
+			// free each index 
+#ifdef useStdVector
+			auto R = memory_blocks.Shared();
+			for (auto& block_ptr : *R) {
 #else
-			delete block;
+			for (auto& block_ptr : memory_blocks) {
 #endif
-
-			// success
-			return true;
-		};
-		// creates a new memory_block (may re-use an old index though) and returns an uninitialized ptr to the first element of that memory_block. 
-		static element_item* AllocNewBlock(BlockAllocator* parent) {
-			if (!parent) return nullptr;
-
-			auto locked{ std::unique_lock(parent->lock) };
-
-			// try to get an already-available element if possible
-			for (memory_block_ptr& memory_block_atomic : parent->memory_blocks) {
-				auto memory_block_atomic_ptr = *memory_block_atomic.Shared();
-				if (memory_block_atomic_ptr) {
-					element_item* element{ nullptr };
-					if (memory_block_atomic_ptr->free_queue.try_pop(element)) { // locks-up if full, which may indicate that it's to be deleted. 
-						return element;
+				auto* p = block_ptr.Get();
+				if (p) {
+					try {
+						FreeBlock(this, p->memory_blocks_index, false); // the user may not have deleted everything, so check everything. 
 					}
-					else if (memory_block_atomic_ptr->free_queue.size() == _blockSize_) {
-						parent->memory_blocks[memory_block_atomic_ptr->memory_blocks_index].exchange(nullptr);
-					}
+					catch (...) {}
 				}
 			}
 
-			// determine the target destination for this memory_block
-			size_t memory_blocks_index{ 0 };
-			if (!parent->deleted_memory_block_indexes.try_pop(memory_blocks_index)) {
-				// we failed to pull the index of a free slot in the memory_blocks -- so append a new slot to the end.
-				memory_blocks_index = (size_t)parent->memory_blocks_size.fetch_add(1);
-				parent->memory_blocks.push_back(memory_block_ptr());
-			}
-
-			// create the actual memory_block
+			// delete all cached blocks
 			memory_block* block{ nullptr };
-#ifdef use_cached_memory_block_ptrs
-			if (!parent->cached_memory_block_ptrs.try_pop(block)) {
-				block = new memory_block();
+			while (this->reused_memory_blocks.try_pop(block)) {
+				if (block) {
+					delete block;
+				}
 			}
-#else
-			block = new memory_block();
-#endif
-			parent->total += _blockSize_;
-			for (size_t i = 0; i < _blockSize_; i++) {
-				block->elements[i].data[0] = '\0';
-				block->elements[i].parent_index = memory_blocks_index;
-				block->elements[i].initialized = false;
-			}
-
-			// queue all but the first elements as being free and available
-			for (size_t i = 1; i < _blockSize_; i++) {
-				block->free_queue.push_back(&block->elements[i]);
-			}
-			block->memory_blocks_index = memory_blocks_index;
-
-			// place the new memory_block into its designated index
-			parent->memory_blocks[memory_blocks_index] = std::shared_ptr<memory_block>(block, [parent, memory_blocks_index](memory_block* p)->void {
-				FreeBlock(parent, (memory_block*)p, memory_blocks_index);
-			});
-
-			// return the first new element
-			return &block->elements[0];
-		};
+			};
 
 	public: // public API
 		// Request a new memory pointer. May be recovered from a previously-used location. Will be cleared and correctly initialized, if appropriate.
 		template <typename... TArgs> _type_* Alloc(TArgs&&... a) {
 			_type_* t{ nullptr };
 			element_item* element{ nullptr };
-			std::shared_ptr<memory_block> local_block{ nullptr };
-			
-			//// Quickly try the recents and see if we get a winner
-			if (recent_memory_blocks.try_pop(local_block)) if (local_block) local_block->free_queue.try_pop(element);
-				
-			while (!element) {
-				for (memory_block_ptr& memory_block_atomic : memory_blocks) {
-					auto memory_block_atomic_ptr = memory_block_atomic.Shared(); 
-					if (memory_block_atomic_ptr->operator bool()) {
-						if (memory_block_atomic_ptr->operator*().free_queue.try_pop(element)) {
-							break;
-						}
-					}					
+			memory_block* local_block{ nullptr };
+			GoodLang::atomic_ptr<memory_block>* temp{ nullptr };
+
+			// Enter the critical area
+			if (++memory_lock <= 0) {
+				--memory_lock;
+				while (true) {
+					if (++memory_lock > 0) break;
+					--memory_lock;
+					std::this_thread::yield();
 				}
+			}
+
+			// try the recents
+			if (recent_memory_blocks.try_pop(temp)) {
+				if (local_block = temp->Get()) {
+					local_block->free_queue.try_pop(element);
+				}
+			}
+
+			// Do Work
+			while (!element) {
+#ifdef useStdVector
+				if constexpr (0) {
+					auto R = memory_blocks.Shared();
+					size_t count = std::distance(R->begin(), R->end());
+					for (size_t pos = 0; pos < count; pos++) {
+						if (pos % 2 == 0) {
+							size_t indexToTry = pos / 2;
+							if (local_block = R->at(indexToTry).Get()) {
+								if (local_block->free_queue.try_pop(element)) {
+									break;
+								}
+							}
+						}
+						else {
+							size_t indexToTry = (count - 1) - (pos / 2);
+							if (local_block = R->at(indexToTry).Get()) {
+								if (local_block->free_queue.try_pop(element)) {
+									break;
+								}
+							}
+						}
+					}
+				}
+				else {
+					auto R = memory_blocks.Shared();
+					auto end = R->rend();
+					for (auto iter = R->rbegin(); iter != end; ++iter) {
+						if (local_block = iter->Get()) {
+							if (local_block->free_queue.try_pop(element)) {
+								break;
+							}
+						}
+					}
+				}
+#else
+				if constexpr (0) {
+					size_t count = std::distance(memory_blocks.begin(), memory_blocks.end());
+					for (size_t pos = 0; pos < count; pos++) {
+						if (pos % 2 == 0) {
+							size_t indexToTry = pos / 2;
+							if (local_block = memory_blocks.at(indexToTry).Get()) {
+								if (local_block->free_queue.try_pop(element)) {
+									break;
+								}
+							}
+						}
+						else {
+							size_t indexToTry = (count - 1) - (pos / 2);
+							if (local_block = memory_blocks.at(indexToTry).Get()) {
+								if (local_block->free_queue.try_pop(element)) {
+									break;
+								}
+							}
+						}
+					}
+				}
+				else {
+					auto end = memory_blocks.end();
+					for (auto iter = memory_blocks.begin(); iter != end; ++iter) {
+						if (local_block = iter->Get()) {
+							if (local_block->free_queue.try_pop(element)) {
+								break;
+							}
+						}
+					}
+				}
+#endif
 
 				// if this failed, we must allocate a new block to the vector
-				if (!element) element = AllocNewBlock(this);
+				if (!element) element = AllocBlock(this);
 			}
+
+			// Leave the critical area
+			--memory_lock;
 
 			t = static_cast<_type_*>(static_cast<void*>(element));
 
@@ -2190,29 +2350,64 @@ namespace GoodLang {
 				new (t) _type_(std::forward<TArgs>(a)...);
 			}
 			element->initialized = true;
-			active++;
+			++active;
 
 			return t;
 		};
 
 		// Frees the memory pointer, previously provided by this allocator. Calls the destructor for non-POD types, and will store the pointer for later use.
-		template <bool skipDestructor = false> void Free(const _type_* element) {
+		template <bool skipDestructor = false> void Free(const _type_ * element) {
 			if (!element) return; // no work to be done
+
+			long long block_index_to_delete{ -1 };
 			element_item* t{ static_cast<element_item*>(static_cast<void*>(const_cast<_type_*>(element))) };
 			if (t && element) {
 				if constexpr (!isPod() && !skipDestructor) {
 					element->~_type_();
 				}
 				t->initialized = false;
+				--active;
 
-				memory_block_ptr& memory_block_atomic{ memory_blocks[t->parent_index] };
-				auto memory_block_atomic_ptr = memory_block_atomic.Shared(); {
-					if (memory_block_atomic_ptr->operator bool()) {
-						memory_block_atomic_ptr->operator*().free_queue.push_back(t);
-						recent_memory_blocks.push_back(*memory_block_atomic_ptr);
+				// Enter the critical area
+				if (++memory_lock <= 0) {
+					--memory_lock;
+					while (true) {
+						if (++memory_lock > 0) break;
+						--memory_lock;
+						std::this_thread::yield();
 					}
 				}
-				active--;
+
+				// Do Work
+				memory_block* p;
+#ifdef useStdVector
+				if (1) {
+					auto shared = memory_blocks.Shared();
+					auto& P = shared->at(t->parent_index);
+					recent_memory_blocks.push_back(&P);
+					p = P.Get();
+				}
+#else
+				if (1) {
+					auto& P = memory_blocks.at(t->parent_index);
+					recent_memory_blocks.push_back(&P);
+					p = P.Get();
+				}
+#endif
+				if (p) {
+					p->free_queue.push_back(t);
+					if (p->free_queue.size() == _blockSize_) {
+						// the free_queue is full and should be actually free'd
+						block_index_to_delete = (long long)t->parent_index;
+					}
+				}
+
+				// Leave the critical area
+				--memory_lock;
+			}
+
+			if (block_index_to_delete >= 0) {
+				FreeBlock(this, block_index_to_delete, true); // this occurs only if we free'd everything using the runtime
 			}
 		};
 
@@ -2223,51 +2418,25 @@ namespace GoodLang {
 
 		// Returns the maximum number of blocks the allocator has reserved -- does not mean all of these blocks are in active use or even alive.
 		size_t          MaxBlockCapacity() const {
-			return memory_blocks_size.load();
+			return 0;//return memory_blocks_size.load();
 		};
 
 		// Approximate current (alive) block count. Not all elements in thse blocks are alive or allocated, but usually at least one is.
 		size_t          CurrentBlockCount() const {
-			return total.load() / _blockSize_;
+			return 0;// return total.load() / _blockSize_;
 		};
 
 		// Approximate current capacity for elements, based on the alive blocks.
 		size_t          TotalCapacity() const {
-			return total.load();
+			return 0;//return total.load();
 		};
 
 		// Approximate current alive element count
 		size_t          TotalAlive() const {
-			return active.load();
-		};
-
-	public: // constructors and destructors
-		BlockAllocator() = default;
-		~BlockAllocator() {
-			while (total > 0) {
-				// memory_blocks captured "this" and must be expunged before our destruction
-				if (1) {
-					for (memory_block_ptr& block : memory_blocks) {
-						block.Unique()->operator=(nullptr);
-					}
-				}
-				// free the cache
-#ifdef use_cached_memory_block_ptrs
-				if (1) {
-					memory_block* block{ nullptr };
-					while (cached_memory_block_ptrs.try_pop(block)) {
-						delete block;
-					}
-
-				}
-#endif
-			}
+			return 0;//return active.load();
 		};
 
 	};
-
-
-
 
 	/// <summary>
 	/// thread-safe sorted std::map.
