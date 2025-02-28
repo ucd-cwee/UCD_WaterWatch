@@ -1933,19 +1933,40 @@ namespace GoodLang {
 	namespace impl {
 		/* Thread- and fiber-safe queue which utilizes a fixed-sized buffer of size *maxCapacity*
 		Can optionally lock-up once the buffer is full, to support some atomic operations like memory allocators. */
-		template<typename Type, bool FailWhenFull = false> class RingBuffer {
-		public:
-			std::vector<Type>
-				elements;
+		template<typename Type, short capacity_m, bool FailWhenFull = false> class RingBuffer {
+		private:
+			static constexpr bool isPod() { return std::is_pod<Type>::value; };
+
+		private:
+			char
+				elements[ sizeof(Type) * capacity_m ];
 			GoodLang::CAS<short, short, short, short>
 				impl{ { (short)-1, (short)0, (short)0, (short)0 } };
-			const short
-				capacity_m;
-			RingBuffer(short capacity) : elements(capacity, Type()), capacity_m{ capacity } {}
+
+		public:
+			RingBuffer() {
+				if constexpr (isPod()) {
+					::memset(static_cast<void*>(&elements[0]), 0, sizeof(Type) * capacity_m);
+				}
+				else {
+					for (short i = 0; i < capacity_m; i++) {
+						new (static_cast<void*>(&elements[ sizeof(Type) * i ])) Type();
+					}
+				}
+			};
+			~RingBuffer() {
+				if constexpr (!isPod()) {
+					for (short i = 0; i < capacity_m; i++) {
+						static_cast<Type*>(static_cast<void*>(&elements[sizeof(Type) * i]))->~Type();
+					}
+					::memset(static_cast<void*>(&elements[0]), 0, sizeof(Type) * capacity_m);
+				}
+			};
 
 			bool push_back(Type val) {
 				GoodLang::CAS<short, short, short, short>::Data data;
-				while (true) {
+				int maxIterations = 1000; 
+				while (--maxIterations > 0) {
 					data = impl.load();
 
 					const auto& Write_Reservation = data.a(); // last write
@@ -1954,7 +1975,7 @@ namespace GoodLang {
 					const auto& Read_Position = data.d();     // next read
 
 					// if ALL FOUR positions are above maxCapacity, then revert all four by that amount. 
-					if ((Write_Reservation >= capacity_m) && (Read_Reservation >= capacity_m) && (Write_Position >= capacity_m) && (Read_Position >= capacity_m)) {
+					if ((Write_Reservation > capacity_m) && (Read_Reservation > capacity_m) && (Write_Position > capacity_m) && (Read_Position > capacity_m)) {
 						impl.compare_exchange_weak(data, { Write_Reservation - capacity_m, Read_Reservation - capacity_m, Write_Position - capacity_m, Read_Position - capacity_m });
 						continue;
 					}
@@ -1967,7 +1988,7 @@ namespace GoodLang {
 					// Do insertion
 					if (impl.compare_exchange_weak(data, { Write_Reservation + 1, Read_Reservation, Write_Position, Read_Position })) {
 						// do the write
-						elements[(Write_Reservation + 1) % capacity_m] = std::move(val);
+						*static_cast<Type*>(static_cast<void*>(&elements[sizeof(Type) * ((Write_Reservation + 1) % capacity_m)])) = std::move(val);
 
 						while (true) {
 							// increment write_position
@@ -1984,10 +2005,12 @@ namespace GoodLang {
 						}
 					}
 				}
+				return false;
 			};
 			bool try_pop(Type& val) {
 				GoodLang::CAS<short, short, short, short>::Data data;
-				while (true) {
+				int maxIterations = 1000;
+				while (--maxIterations > 0) {
 					data = impl.load();
 
 					const auto& Write_Reservation = data.a(); // last write
@@ -1995,11 +2018,11 @@ namespace GoodLang {
 					const auto& Write_Position = data.c();    // next write
 					const auto& Read_Position = data.d();     // next read
 
-					// if ALL FOUR positions are above maxCapacity, then revert all four by that amount. 
-					if ((Write_Reservation >= capacity_m) && (Read_Reservation >= capacity_m) && (Write_Position >= capacity_m) && (Read_Position >= capacity_m)) {
+					// if ALL FOUR positions are above maxCapacity, then revert all four by that amount.					
+					if ((Write_Reservation > capacity_m) && (Read_Reservation > capacity_m) && (Write_Position > capacity_m) && (Read_Position > capacity_m)) {
 						impl.compare_exchange_weak(data, { Write_Reservation - capacity_m, Read_Reservation - capacity_m, Write_Position - capacity_m, Read_Position - capacity_m });
 						continue;
-					}
+					}					
 
 					// If empty, return failed.
 					if ((Read_Position + 1) > Write_Position) {
@@ -2016,7 +2039,8 @@ namespace GoodLang {
 					// Do extraction
 					if (impl.compare_exchange_weak(data, { Write_Reservation, Read_Reservation, Write_Position, Read_Position + 1 })) {
 						// do the read
-						val = std::move(elements[Read_Position % capacity_m]);
+						val = std::move(*static_cast<Type*>(static_cast<void*>(&elements[sizeof(Type) * (Read_Position % capacity_m)])));
+
 						while (true) {
 							data = impl.load();
 
@@ -2031,6 +2055,7 @@ namespace GoodLang {
 						}
 					}
 				}
+				return false;
 			};
 			size_t size() {
 				auto data = impl.load();
@@ -2042,7 +2067,7 @@ namespace GoodLang {
 
 				return Write_Position - Read_Position;
 			};
-			size_t capacity() const {
+			constexpr size_t capacity() const {
 				return capacity_m;
 			};
 			void clear() {
@@ -2078,19 +2103,19 @@ namespace GoodLang {
 			};
 		};
 
-		template <typename element_item>
+		template <typename element_item, short capacity_m>
 		class memory_block_impl {
 		public:
 			std::vector< element_item >
 				elements;
-			impl::RingBuffer<element_item*> // impl::ConcurrentQueue< element_item*>
+			impl::RingBuffer<element_item*, capacity_m> // impl::ConcurrentQueue< element_item*>
 				free_queue; // locks-up and prevents getting free'd items once it fills up, to support deletion.
 			size_t
 				memory_blocks_index{ 0 };
-			const size_t
-				capacity_m;
+			//const size_t
+			//	capacity_m;
 
-			memory_block_impl(size_t capacity) : elements(capacity, element_item()), capacity_m{ capacity }, free_queue{ capacity } {};
+			memory_block_impl(/*size_t capacity*/) : elements(capacity_m, element_item()) /*, capacity_m{ capacity }, *//*free_queue{ capacity }*/ {};
 			memory_block_impl(memory_block_impl const&) = delete;
 			memory_block_impl(memory_block_impl&&) = delete;
 			memory_block_impl& operator=(memory_block_impl const&) = delete;
@@ -2105,16 +2130,12 @@ namespace GoodLang {
 	/// </summary>
 	template <typename _type_, size_t _blockSize_ = (sizeof(_type_) << 4), bool ForcePOD = false, unsigned int forcedSize = sizeof(_type_)> class Allocator {
 	private: // definitions
-		class element_item {
-		public:
-			// actual underlying data
-			char data[forcedSize];
-			// parent memory_block index
-			size_t parent_index;
-			// non-POD, but can be "forgotten" without consequence. 
-			bool initialized;
+		struct element_item {
+			char data[forcedSize]; // actual underlying data			
+			size_t parent_index; // parent memory_block index			
+			bool initialized; // non-POD, but can be "forgotten" without consequence. 
 		};
-		using memory_block = impl::memory_block_impl<element_item>;
+		using memory_block = impl::memory_block_impl<element_item, _blockSize_>;
 
 	private: // data members
 		concurrency::concurrent_vector< GoodLang::atomic_ptr<memory_block> >
@@ -2123,8 +2144,8 @@ namespace GoodLang {
 			free_memory_blocks{}; // once a memory block is free'd, its index is available to be used again. 
 		std::atomic<short>
 			memory_lock{ 0 };
-		impl::RingBuffer <memory_block* > // impl::ConcurrentQueue< memory_block* >
-			reused_memory_blocks{ 25 };
+		impl::RingBuffer <memory_block*, 25 > // impl::ConcurrentQueue< memory_block* >
+			reused_memory_blocks;
 		std::atomic<size_t>
 			active;
 		std::atomic<size_t>
@@ -2138,8 +2159,9 @@ namespace GoodLang {
 
 			// create a new memory_block
 			if (!parent->reused_memory_blocks.try_pop(block)) {
-				size_t CapacityIncrease = _blockSize_ * (1 + (parent->memory_blocks.size() << 2) / _blockSize_);
-				block = new memory_block(CapacityIncrease);
+				// size_t CapacityIncrease = _blockSize_;// *(1 + (parent->memory_blocks.size() << 2) / _blockSize_);
+				// CapacityIncrease = std::min<size_t>(CapacityIncrease, std::numeric_limits<short>::max() / 2);
+				block = new memory_block(/*CapacityIncrease*/);
 
 				// try to re-use the start of the list, otherwise place at the end
 				if (!parent->free_memory_blocks.try_pop(block->memory_blocks_index)) {
@@ -2160,7 +2182,7 @@ namespace GoodLang {
 				}
 			}
 
-			parent->total += block->capacity_m;
+			parent->total += _blockSize_/*block->capacity_m*/;
 
 			if (block) {
 				// ensure the elements are roughly initialized
@@ -2171,7 +2193,7 @@ namespace GoodLang {
 				}
 
 				// queue all but the first element as being free and available
-				for (size_t i = 1; i < block->capacity_m; i++) {
+				for (size_t i = 1; i < _blockSize_/*block->capacity_m*/; i++) {
 					block->free_queue.push_back(&block->elements[i]);
 				}
 
@@ -2215,7 +2237,7 @@ namespace GoodLang {
 			if (block = parent->memory_blocks[index].Set(nullptr)) {				
 				if (skipCustomAllocFree) {
 					// ensure the free_queue is full after the swap					
-					if (block->free_queue.size() < block->capacity_m) {
+					if (block->free_queue.size() < _blockSize_/*block->capacity_m*/) {
 						parent->memory_blocks[index].Set(block); // put it back
 						// return failure
 						++parent->memory_lock;
@@ -2223,11 +2245,11 @@ namespace GoodLang {
 					}
 				}
 
-				parent->total -= block->capacity_m;
+				parent->total -= _blockSize_/*block->capacity_m*/;
 
 				// step 2, free any custom allocated memory within the memory block (this should not be necessary, but we do it to be sure)
 				if (!skipCustomAllocFree) {
-					for (size_t i = 0; i < block->capacity_m; i++) {
+					for (size_t i = 0; i < _blockSize_/*block->capacity_m*/; i++) {
 						if (block->elements[i].initialized) { // ... but only when the element was already initialized ...
 							if constexpr (!isPod()) { // ... because non-POD types must call their destructors to prevent memory leaks per element ...
 								((_type_*)(void*)(&block->elements[i]))->~_type_(); // ... we call the type-specific destructor function.
@@ -2417,7 +2439,7 @@ namespace GoodLang {
 
 				if (p) {
 					p->free_queue.push_back(t);
-					if (p->free_queue.size() == p->capacity_m) {
+					if (p->free_queue.size() == _blockSize_/*p->capacity_m*/) {
 						// the free_queue is full and should be actually free'd
 						block_index_to_delete = (long long)t->parent_index;
 					}

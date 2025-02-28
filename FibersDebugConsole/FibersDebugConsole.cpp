@@ -190,8 +190,94 @@ int main() {
 		}
 
 		while (1) {
+			int numTests = 10;
+			for (int j = 0; j < 5; j++) {
+				numTests *= 10;
+				impl::RingBuffer< unsigned long long, 256 > buf;
+
+				parallel::For(0, numTests, [&](int i) {
+					buf.push_back(i);
+				});
+				parallel::For(0, numTests, [&](int i) {
+					unsigned long long p;
+					buf.try_pop(p);
+				});
+				parallel::For(0, numTests, [&](int i) {
+					unsigned long long p;
+					buf.push_back(i);
+					buf.try_pop(p);
+				});
+				parallel::For(0, numTests, [&](int i) {
+					if (i % 2 == 0) {
+						buf.push_back(i);
+					}
+					else {
+						unsigned long long p; buf.try_pop(p);
+					}
+				});
+			}
+
+			numTests = 10;
+			for (int j = 0; j < 5; j++) {
+				numTests *= 10;
+				impl::RingBuffer< int*, 256 > buf;
+
+				parallel::For(0, numTests, [&](int i) {
+					buf.push_back(nullptr);
+				});
+				parallel::For(0, numTests, [&](int i) {
+					int* p;
+					buf.try_pop(p);
+				});
+				parallel::For(0, numTests, [&](int i) {
+					int* p;
+					buf.push_back(nullptr);
+					buf.try_pop(p);
+				});
+				parallel::For(0, numTests, [&](int i) {
+					if (i % 2 == 0) {
+						buf.push_back(nullptr);
+					}
+					else {
+						int* p; buf.try_pop(p);
+					}
+				});
+			}
+
+			numTests = 10;
+			for (int j = 0; j < 5; j++) {
+				numTests *= 10;
+				impl::RingBuffer< std::string, 256 > buf;
+
+				parallel::For(0, numTests, [&](int i) {
+					buf.push_back(std::to_string(i));
+				});
+				parallel::For(0, numTests, [&](int i) {
+					std::string p;
+					buf.try_pop(p);
+				});
+				parallel::For(0, numTests, [&](int i) {
+					std::string p;
+					buf.push_back(std::to_string(i));
+					buf.try_pop(p);
+				});
+				parallel::For(0, numTests, [&](int i) {
+					if (i % 2 == 0) {
+						buf.push_back(std::to_string(i));
+					}
+					else {
+						std::string p; buf.try_pop(p);
+					}
+				});
+			}
+		}
+
+
+		while (1) {
 			Stopwatch sw;			
 			int numTests = 1000000;
+			
+			print("\n1:");
 			if (1) {
 				std::vector< std::string* > pointers(numTests, nullptr);
 				if (1) {
@@ -219,7 +305,7 @@ int main() {
 					}
 					print(Units::second(sw.Stop_s() / 10.0));
 				}
-				if (1) {
+				if (0) {
 					sw.Start();
 					for (int j = 0; j < 10; j++) {
 						parallel::For(0, numTests, [&](int i) {
@@ -231,7 +317,7 @@ int main() {
 					}
 					print(Units::second(sw.Stop_s() / 10.0));
 				}
-				if (1) {
+				if (0) {
 					sw.Start();
 					for (int j = 0; j < 10; j++) {
 						parallel::For(0, numTests, [&](int i) {
@@ -245,7 +331,7 @@ int main() {
 					}
 					print(Units::second(sw.Stop_s() / 10.0));
 				}
-				if (1) {
+				if (0) {
 					std::allocator< std::string > allocator;
 
 					sw.Start();
@@ -262,8 +348,8 @@ int main() {
 					print(Units::second(sw.Stop_s() / 10.0));
 				}
 			}
-			print("\n");
-
+			
+			print("\n2:");
 			if (1) {
 				std::vector< int* > pointers(numTests, nullptr);
 				if (1) {
@@ -291,7 +377,7 @@ int main() {
 					}
 					print(Units::second(sw.Stop_s() / 10.0));
 				}
-				if (1) {
+				if (0) {
 					sw.Start();
 					for (int j = 0; j < 10; j++) {
 						parallel::For(0, numTests, [&](int i) {
@@ -303,7 +389,7 @@ int main() {
 					}
 					print(Units::second(sw.Stop_s() / 10.0));
 				}
-				if (1) {
+				if (0) {
 					sw.Start();
 					for (int j = 0; j < 10; j++) {
 						parallel::For(0, numTests, [&](int i) {
@@ -317,7 +403,7 @@ int main() {
 					}
 					print(Units::second(sw.Stop_s() / 10.0));
 				}
-				if (1) {
+				if (0) {
 					std::allocator< int > allocator;
 
 					sw.Start();
@@ -335,8 +421,7 @@ int main() {
 				}
 			}
 
-			print("\n");
-
+			print("\n3:");
 			if (1) {
 				std::vector< std::string* > pointers(numTests, nullptr);
 				if (1) {
@@ -362,7 +447,7 @@ int main() {
 					}
 					print(Units::second(sw.Stop_s() / 10.0));
 				}
-				if (1) {
+				if (0) {
 					sw.Start();
 					for (int j = 0; j < 10; j++) {
 						parallel::For(0, numTests, [&](int i) {
@@ -372,7 +457,7 @@ int main() {
 					}
 					print(Units::second(sw.Stop_s() / 10.0));
 				}
-				if (1) {
+				if (0) {
 					sw.Start();
 					for (int j = 0; j < 10; j++) {
 						parallel::For(0, numTests, [&](int i) {
@@ -384,7 +469,7 @@ int main() {
 					}
 					print(Units::second(sw.Stop_s() / 10.0));
 				}
-				if (1) {
+				if (0) {
 					std::allocator< std::string > allocator;
 
 					sw.Start();
