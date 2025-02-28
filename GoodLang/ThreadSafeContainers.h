@@ -1936,12 +1936,33 @@ namespace GoodLang {
 		template<typename Type, short capacity_m, bool FailWhenFull = false> class RingBuffer {
 		private:
 			static constexpr bool isPod() { return std::is_pod<Type>::value; };
+			static constexpr bool preventOverflow{ false }; // about 200% slower if using preventOverflow
 
 		private:
-			char
-				elements[ sizeof(Type) * capacity_m ];
-			GoodLang::CAS<short, short, short, short>
-				impl{ { (short)-1, (short)0, (short)0, (short)0 } };
+			/// <summary>
+			///  data stored as a series of bytes, which can be "fogotten" when POD types are being managed
+			/// </summary>
+			char elements[sizeof(Type) * capacity_m];
+			/// <summary>
+			/// incremented when writing, and results in the next to-be-written index. 
+			/// </summary>
+			std::atomic<long long> Write_Reservation{ -1 }; 
+			/// <summary>
+			/// holds the position of the smallest active read (e.g. Read_Reservation == 1 means we are currently reading from index 1)
+			/// </summary>
+			std::atomic<long long> Read_Reservation{ 0 };
+			/// <summary>
+			/// Smallest write position that is not-yet-ready for reading. (e.g. if Write_Position == 2, it means we are currently writing to index 2, and it's not ready for reading yet)
+			/// </summary>
+			std::atomic<long long> Write_Position{ 0 };
+			/// <summary>
+			/// // incremented when reading, and results in the next to-be-read index.
+			/// </summary>
+			std::atomic<long long> Read_Position{ 0 }; 
+
+			// the following are only used when preventOverflow is set to true:
+			std::atomic<short> entry{ 0 }; // counts the number of threads using the buffer
+			std::atomic<short> locked{ 0 }; // simple exclusive lock
 
 		public:
 			RingBuffer() {
@@ -1950,7 +1971,7 @@ namespace GoodLang {
 				}
 				else {
 					for (short i = 0; i < capacity_m; i++) {
-						new (static_cast<void*>(&elements[ sizeof(Type) * i ])) Type();
+						new (static_cast<void*>(&elements[sizeof(Type) * i])) Type();
 					}
 				}
 			};
@@ -1964,118 +1985,125 @@ namespace GoodLang {
 			};
 
 			bool push_back(Type val) {
-				GoodLang::CAS<short, short, short, short>::Data data;
-				int maxIterations = 1000; 
-				while (--maxIterations > 0) {
-					data = impl.load();
+				if constexpr (preventOverflow) {
+					while (locked > 0) {};
+					(void)entry++;
+				}
 
-					const auto& Write_Reservation = data.a(); // last write
-					const auto& Read_Reservation = data.b();  // current read
-					const auto& Write_Position = data.c();    // next write
-					const auto& Read_Position = data.d();     // next read
-
-					// if ALL FOUR positions are above maxCapacity, then revert all four by that amount. 
-					if ((Write_Reservation > capacity_m) && (Read_Reservation > capacity_m) && (Write_Position > capacity_m) && (Read_Position > capacity_m)) {
-						impl.compare_exchange_weak(data, { Write_Reservation - capacity_m, Read_Reservation - capacity_m, Write_Position - capacity_m, Read_Position - capacity_m });
-						continue;
+				// If full, return failed
+				if ((1 + ((Write_Reservation + 1) - Read_Reservation)) > capacity_m) {
+					if constexpr (preventOverflow) {
+						entry--;
 					}
+					return false;
+				}
 
-					// If full, return failed
-					if ((1 + ((Write_Reservation + 1) - Read_Reservation)) > capacity_m) {
-						return false;
-					}
+				auto write_position = ++Write_Reservation;
 
-					// Do insertion
-					if (impl.compare_exchange_weak(data, { Write_Reservation + 1, Read_Reservation, Write_Position, Read_Position })) {
-						// do the write
-						*static_cast<Type*>(static_cast<void*>(&elements[sizeof(Type) * ((Write_Reservation + 1) % capacity_m)])) = std::move(val);
+				// do the write
+				*static_cast<Type*>(static_cast<void*>(&elements[sizeof(Type) * ((write_position) % capacity_m)])) = std::move(val);
+				(void)++Write_Position;
 
-						while (true) {
-							// increment write_position
-							data = impl.load();
+				if constexpr (preventOverflow) {
+					constexpr static long long threshold{ (long long)capacity_m * (long long)10000 };
+					if (write_position > threshold) {
+						if (Write_Reservation > threshold) {
+							if (Read_Reservation > threshold) {
+								if (Write_Position > threshold) {
+									if (Read_Position > threshold) {
+										if (++locked == 1) {
+											while (entry > 1) {}
 
-							const auto& Write_Reservation2 = data.a();
-							const auto& Read_Reservation2 = data.b();
-							const auto& Write_Position2 = data.c();
-							const auto& Read_Position2 = data.d();
-
-							if (impl.compare_exchange_weak(data, { Write_Reservation2, Read_Reservation2, Write_Position2 + 1, Read_Position2 })) {
-								return true;
+											Write_Reservation -= threshold;
+											Read_Reservation -= threshold;
+											Write_Position -= threshold;
+											Read_Position -= threshold;
+										}
+										(void)locked--;
+									}
+								}
 							}
 						}
 					}
+					(void)entry--;
 				}
-				return false;
+
+				return true;
 			};
 			bool try_pop(Type& val) {
-				GoodLang::CAS<short, short, short, short>::Data data;
-				int maxIterations = 1000;
-				while (--maxIterations > 0) {
-					data = impl.load();
+				if constexpr (preventOverflow) {
+					while (locked > 0) {};
+					(void)entry++;
+				}
 
-					const auto& Write_Reservation = data.a(); // last write
-					const auto& Read_Reservation = data.b();  // current read
-					const auto& Write_Position = data.c();    // next write
-					const auto& Read_Position = data.d();     // next read
+				// If empty, return failed.
+				if ((Read_Position + 1) > Write_Position) {
+					if constexpr (preventOverflow) {
+						(void)entry--;
+					}
+					return false;
+				}
 
-					// if ALL FOUR positions are above maxCapacity, then revert all four by that amount.					
-					if ((Write_Reservation > capacity_m) && (Read_Reservation > capacity_m) && (Write_Position > capacity_m) && (Read_Position > capacity_m)) {
-						impl.compare_exchange_weak(data, { Write_Reservation - capacity_m, Read_Reservation - capacity_m, Write_Position - capacity_m, Read_Position - capacity_m });
-						continue;
-					}					
-
-					// If empty, return failed.
-					if ((Read_Position + 1) > Write_Position) {
+				// If full, return failed
+				if constexpr (FailWhenFull) {
+					if ((1 + ((Write_Reservation + 1) - Read_Reservation)) > capacity_m) {
+						if constexpr (preventOverflow) {
+							(void)entry--;
+						}
 						return false;
 					}
-
-					// If full, return failed
-					if constexpr (FailWhenFull) {
-						if ((1 + ((Write_Reservation + 1) - Read_Reservation)) > capacity_m) {
-							return false;
-						}
-					}
-
-					// Do extraction
-					if (impl.compare_exchange_weak(data, { Write_Reservation, Read_Reservation, Write_Position, Read_Position + 1 })) {
-						// do the read
-						val = std::move(*static_cast<Type*>(static_cast<void*>(&elements[sizeof(Type) * (Read_Position % capacity_m)])));
-
-						while (true) {
-							data = impl.load();
-
-							const auto& Write_Reservation2 = data.a();
-							const auto& Read_Reservation2 = data.b();
-							const auto& Write_Position2 = data.c();
-							const auto& Read_Position2 = data.d();
-
-							if (impl.compare_exchange_weak(data, { Write_Reservation2, Read_Reservation2 + 1, Write_Position2, Read_Position2 })) {
-								return true;
-							}
-						}
-					}
 				}
-				return false;
+
+				// Do extraction
+				val = std::move(*static_cast<Type*>(static_cast<void*>(&elements[sizeof(Type) * (Read_Position++ % capacity_m)])));
+				(void)++Read_Reservation;
+				if constexpr (preventOverflow) {
+					(void)entry--;
+				}
+				return true;
 			};
 			size_t size() {
-				auto data = impl.load();
-
-				const auto& Write_Reservation = data.a(); // last write
-				const auto& Read_Reservation = data.b();  // current read
-				const auto& Write_Position = data.c();    // next write
-				const auto& Read_Position = data.d();     // next read
-
-				return Write_Position - Read_Position;
+				if constexpr (preventOverflow) {
+					while (locked > 0) {};
+					(void)entry++;
+				}
+				auto out = Write_Position - Read_Position;
+				if constexpr (preventOverflow) {
+					(void)entry--;
+				}
+				return out;
 			};
 			constexpr size_t capacity() const {
 				return capacity_m;
 			};
 			void clear() {
-				impl.exchange({ (short)-1, (short)0, (short)0, (short)0 });
+				if constexpr (preventOverflow) {
+					// guarranteed to be thread-safe
+					while (true) {
+						while (locked > 0) {};
+						(void)entry++;
+
+						if (++locked == 1) {
+							while (entry > 1) {}
+							Write_Reservation = Read_Reservation = Write_Position = Read_Position = 0;
+							(void)locked--;
+							(void)entry--;
+							return;
+						}
+						else {
+							(void)locked--;
+							(void)entry--;
+						}
+					}
+				}
+				else {
+					// not guarranteed to be thread-safe
+					Write_Reservation = Read_Reservation = Write_Position = Read_Position = 0;
+				}
 			};
 		};
 
-		/* Thread- and fiber-safe queue which utilizes a fixed-sized buffer of size *maxCapacity*
+		/* Thread- and fiber-safe queue which utilizes a fixed-sized buffer of size *capacity_m*
 		Can optionally lock-up once the buffer is full, to support some atomic operations like memory allocators. */
 		template<typename Type> class ConcurrentQueue {
 		public:
@@ -2087,17 +2115,32 @@ namespace GoodLang {
 			ConcurrentQueue& operator=(ConcurrentQueue const&) = delete;
 			ConcurrentQueue& operator=(ConcurrentQueue&&) = delete;
 			~ConcurrentQueue() = default;
-
+			
+			/// <summary>
+			/// Concurrent-safe
+			/// </summary>
 			bool push_back(Type val) {
 				queue.push(std::move(val));
 				return true;
 			};
+
+			/// <summary>
+			/// Concurrent-safe
+			/// </summary>
 			bool try_pop(Type& val) {
 				return queue.try_pop(val);
 			};
+
+			/// <summary>
+			/// Not concurrent-safe
+			/// </summary>
 			size_t size() {
 				return queue.unsafe_size();
 			};
+
+			/// <summary>
+			/// Not concurrent-safe
+			/// </summary>
 			void clear() {
 				queue.clear();
 			};
@@ -2108,7 +2151,7 @@ namespace GoodLang {
 		public:
 			std::vector< element_item >
 				elements;
-			impl::RingBuffer<element_item*, capacity_m> // impl::ConcurrentQueue< element_item*>
+			impl::RingBuffer<element_item*, capacity_m, true> // impl::ConcurrentQueue< element_item*>
 				free_queue; // locks-up and prevents getting free'd items once it fills up, to support deletion.
 			size_t
 				memory_blocks_index{ 0 };
